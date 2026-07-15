@@ -1,0 +1,47 @@
+# Desarrollo local. Espeja la topología del NAS (app + Postgres, red interna),
+# con dos diferencias deliberadas:
+#  - Postgres expone 5432 SOLO en localhost, para poder usar `npm run dev`.
+#    (En el NAS ese puerto NO se expone — regla inviolable.)
+#  - La imagen de la app se construye para la plataforma local (x86); la de
+#    producción la construye el CI para linux/arm64.
+services:
+  app:
+    build: .
+    ports:
+      - "9080:3080"
+    environment:
+      DATABASE_URL: postgres://sgc:sgc_dev@bd:5432/sgc
+    depends_on:
+      bd:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+
+  bd:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: sgc
+      POSTGRES_PASSWORD: sgc_dev
+      POSTGRES_DB: sgc
+    ports:
+      # 5434 en el host: 5432 lo ocupa un Postgres nativo de Windows y 5433
+      # el proyecto doctime en esta máquina de desarrollo
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - bd_datos:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sgc -d sgc"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+volumes:
+  bd_datos:
