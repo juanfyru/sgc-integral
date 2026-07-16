@@ -13,6 +13,7 @@ import {
   formatearTamano,
   formatoDesdeMime,
 } from "@/componentes/documentos/IconoFormato";
+import { VisorPdf } from "@/componentes/documentos/VisorPdf";
 import { Migas } from "@/componentes/navegacion/Migas";
 import { MiniMapa } from "@/componentes/navegacion/MiniMapa";
 import {
@@ -128,26 +129,17 @@ export default async function FichaDocumento({
       </header>
 
       <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-[1fr_minmax(280px,340px)]">
-        <div className="min-w-0">
+        {/* En pantallas angostas (una columna) la información va primero y la
+            vista previa al final: entrar directo al documento muestra todo el
+            contenido sin tener que pasar por encima del visor. */}
+        <div className="order-2 min-w-0 lg:order-1">
           {pdf ? (
             <section aria-label="Vista previa del documento">
-              <object
-                data={`${rutaBase}/archivos/${pdf.id}`}
-                type="application/pdf"
-                aria-label={`Vista previa de ${ficha.titulo}`}
-                className="h-[70vh] min-h-96 w-full rounded-xl border border-border bg-muted shadow-xs"
-              >
-                <p className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground">
-                  El navegador no puede mostrar la vista previa del PDF.
-                  <a
-                    href={`${rutaBase}/archivos/${pdf.id}?descarga=1`}
-                    className="inline-flex items-center gap-2 rounded-lg bg-[var(--color-banda)] px-4 py-2 font-medium text-white hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-banda)]"
-                  >
-                    <Download className="size-4" aria-hidden="true" />
-                    Descargar el documento
-                  </a>
-                </p>
-              </object>
+              <VisorPdf
+                src={`${rutaBase}/archivos/${pdf.id}`}
+                urlDescarga={`${rutaBase}/archivos/${pdf.id}?descarga=1`}
+                titulo={ficha.titulo}
+              />
             </section>
           ) : (
             <p className="rounded-xl border border-dashed border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
@@ -157,7 +149,7 @@ export default async function FichaDocumento({
           )}
         </div>
 
-        <div className="flex min-w-0 flex-col gap-6">
+        <div className="order-1 flex min-w-0 flex-col gap-6 lg:order-2">
           <section
             aria-labelledby="titulo-archivos"
             className="rounded-xl border border-border bg-card p-4 shadow-xs"
