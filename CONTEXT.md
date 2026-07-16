@@ -25,8 +25,8 @@
    (D14); el guard de sesión va ahí + verificación en cada acción. La validación
    fuerte del código sigue bloqueada por la convención oficial (pendiente del
    usuario); usar el patrón configurable provisional.
-3. **Estado del entorno al pausar:** CI verde en `2666a6d`; el commit de Fase 5 se
-   pusheó al cierre de esta sesión (verificar su CI al retomar). Node 24 en
+3. **Estado del entorno al pausar:** CI verde en `c3a1fb8` (Fase 5: lint+build e
+   imagen linux/arm64, verificado antes de pausar). Node 24 en
    CI/Docker/dev — no volver a Node 22: npm 10 rechaza el lockfile de npm 11.
    Contenedores dev: `sgc-app-1` (9080) y `sgc-bd-1` (PG en 127.0.0.1:5434). En esta
    máquina 5432 lo ocupa un Postgres nativo y 5433 el proyecto doctime. Suele quedar
