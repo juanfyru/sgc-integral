@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Archivo, Geist, Geist_Mono } from "next/font/google";
+import { EncabezadoSitio } from "@/componentes/EncabezadoSitio";
 import "./globals.css";
 
 // next/font descarga y empaqueta las fuentes en build (CI con internet);
@@ -41,7 +42,10 @@ export default function RootLayout({
       lang="es"
       className={`${geistSans.variable} ${geistMono.variable} ${archivo.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <EncabezadoSitio />
+        {children}
+      </body>
     </html>
   );
 }

@@ -5,8 +5,13 @@ import { type NextRequest, NextResponse } from "next/server";
 import { obtenerArchivoVigente } from "@/db/consultas/documentos";
 import { ipDePeticion, registrarEventoConsulta } from "@/db/consultas/eventos";
 import { resolverRutaAlmacen } from "@/lib/almacen";
+import { crearLimitador } from "@/lib/limite";
 
 export const dynamic = "force-dynamic";
+
+// Rate limiting en memoria (Fase 5): 60 archivos/minuto por IP es holgado
+// para consulta humana y frena la descarga masiva automatizada.
+const permitirArchivo = crearLimitador({ limite: 60, ventanaMs: 60_000 });
 
 // Content-Disposition con nombre ASCII de respaldo + filename* UTF-8
 // (RFC 6266/5987) para títulos con acentos.
@@ -30,6 +35,13 @@ export async function GET(
   { params }: { params: Promise<{ codigo: string; archivoId: string }> },
 ) {
   const { codigo, archivoId } = await params;
+
+  if (!permitirArchivo(ipDePeticion(peticion.headers))) {
+    return NextResponse.json(
+      { error: "Demasiadas peticiones, intente de nuevo en un momento" },
+      { status: 429, headers: { "Retry-After": "60" } },
+    );
+  }
 
   const id = Number(archivoId);
   if (!Number.isInteger(id) || id <= 0) return respuesta404();

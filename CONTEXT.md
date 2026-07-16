@@ -1,32 +1,37 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-07-16** (Fase 4).
+> Se actualiza al cierre de cada fase. Última actualización: **2026-07-16** (Fase 5).
 
 ## ⏸ Punto de reanudación (próxima sesión)
 
-1. **Lo primero:** pedir al usuario el veredicto de la Fase 4. Ya probó la ficha y
-   reportó dos problemas del visor PDF (scroll atrapado y dimensiones rígidas),
-   corregidos y pusheados en `2666a6d` (CI verde) — confirmar que el fix le sirve.
-   Recorrido de prueba: `npm run dev` → http://localhost:3000 → "Gestión del
-   Talento Humano" → toggle "Solo del proceso / Incluir subprocesos" → subproceso
-   "Ingreso" → documento PR-GTH-001 → en la ficha: bajar con la rueda del mouse
-   con el cursor sobre el visor (ya no se atrapa), "Clic para navegar el PDF" /
-   "Liberar el scroll", redimensionar la ventana (el visor se adapta), descargas,
-   chips "Dónde aplica", relacionados. Verificar que /documentos/ft-cal-003
-   (borrador) e /documentos/in-gic-002 (anulado) den 404. Si la BD está vacía:
+1. **Lo primero:** pedir al usuario el veredicto de la Fase 5 (búsqueda). Recorrido
+   de prueba: `npm run dev` → http://localhost:3000 → la barra del encabezado está
+   en todas las páginas (form GET, funciona sin JS) → escribir "vacunasion" (con
+   error de tipeo: debe traer los 2 de Vacunación), "GTH" (todo talento humano),
+   "acta de reunión" con y sin acentos → en /buscar: filtros de tipo/proceso (con
+   conteos), subprocesos anidados al elegir proceso, fechas desde/hasta, "Limpiar
+   todo", resaltado verde de coincidencias, vacío con sugerencias → verificar en BD
+   que `busquedas` registra término + cantidad → rate limiting: >30 búsquedas/min
+   por IP muestra aviso amable; >60 archivos/min responde 429. Si la BD está vacía:
    `docker compose -f docker-compose.dev.yml up -d bd && npm run db:migrate &&
-   npm run db:seed` (el seed también genera `./almacen` con los 36 archivos).
-2. **Con su visto bueno → Fase 5** (búsqueda + filtros facetados, ver PLAN.md):
-   barra prominente siempre accesible, resultados con debounce, filtros combinables
-   (tipo/proceso/subproceso/fechas), resaltado, tolerancia a acentos y tipeo
-   (FTS `espanol_unaccent` + pg_trgm ya operativos desde Fase 2), solo vigentes,
-   registro en tabla `busquedas`, vacío elegante, rate limiting en memoria.
-   Decisión a proponer antes de construir: arquitectura del buscador (Server
-   Component con searchParams vs. route handler + cliente ligero con debounce).
-3. **Estado del entorno al pausar:** CI verde en `2666a6d` (Node 24 en CI/Docker/dev —
-   no volver a Node 22: npm 10 rechaza el lockfile de npm 11). Contenedores dev:
-   `sgc-app-1` (9080) y `sgc-bd-1` (PG en 127.0.0.1:5434). En esta máquina 5432 lo
-   ocupa un Postgres nativo y 5433 el proyecto doctime. La cuenta GitHub es `juanfyru`
+   npm run db:seed`.
+2. **Con su visto bueno → Fase 6** (auth + panel admin: carga y versionado, ver
+   PLAN.md): login del admin (cookie httpOnly + tabla `sesiones` + Argon2id con
+   `@node-rs/argon2`, prebuilds ARM64 — verificar en CI), carga drag & drop
+   multiarchivo, validación por extensión Y magic bytes (`file-type` ya es
+   dependencia), publicar nueva versión en un clic con obsolescencia automática en
+   transacción, marca visual de obsoletos/borradores, test de auditoría de rutas
+   (mutaciones sin cookie → 401/403). OJO: Next 16 renombró `middleware` a `proxy`
+   (D14); el guard de sesión va ahí + verificación en cada acción. La validación
+   fuerte del código sigue bloqueada por la convención oficial (pendiente del
+   usuario); usar el patrón configurable provisional.
+3. **Estado del entorno al pausar:** CI verde en `2666a6d`; el commit de Fase 5 se
+   pusheó al cierre de esta sesión (verificar su CI al retomar). Node 24 en
+   CI/Docker/dev — no volver a Node 22: npm 10 rechaza el lockfile de npm 11.
+   Contenedores dev: `sgc-app-1` (9080) y `sgc-bd-1` (PG en 127.0.0.1:5434). En esta
+   máquina 5432 lo ocupa un Postgres nativo y 5433 el proyecto doctime. Suele quedar
+   un `next dev` huérfano en el puerto 3000 de sesiones anteriores (Next avisa el
+   PID; sirve tal cual porque recompila en caliente). La cuenta GitHub es `juanfyru`
    (repo privado sgc-suaza); no hay `gh` CLI — el estado del CI se consulta con el
    token de `git credential fill` contra la API.
 4. **Sigue pendiente del usuario:** convención oficial de códigos (siglas de tipos y
@@ -34,11 +39,14 @@
 
 ## Estado actual
 
-- **Fase actual:** 4 — completada. Navegación en profundidad funcionando de punta a
-  punta con 45/45 tests en verde: mapa → proceso → subproceso → ficha de documento →
-  vista previa PDF → descarga. Verificado en navegador real (recorrido GTH completo,
-  captura de la ficha FT-CAL-001 con vista previa del placeholder embebida) y por
-  HTTP (borrador/anulado → 404, path traversal → 404, eventos en BD).
+- **Fase actual:** 5 — completada, pendiente del veredicto del usuario. Búsqueda con
+  filtros facetados funcionando de punta a punta con 64/64 tests en verde; verificada
+  en navegador real (tipeo "vacunasion", acentos, GTH parcial, filtros combinados
+  tipo+proceso+subproceso, registro en `busquedas`, límite de búsqueda visible en la
+  petición 31+ y 429 en la descarga 61+) y `npm run build` limpio.
+- **Hecho (Fase 4):** navegación en profundidad completa (mapa → proceso →
+  subproceso → ficha → vista previa PDF → descarga), aprobada por el usuario el
+  2026-07-16 tras el fix del visor (`2666a6d`).
 - **Hecho (Fase 3):** el mapa de procesos interactivo es la página de inicio: 100%
   data-driven desde la BD, con las 4 bandas, entradas/salidas, PHVA, convenciones y
   lema; aprobado por el usuario el 2026-07-16 ("Aprobado, sigue con Fase 4").
@@ -75,7 +83,17 @@
   compartidos (IconoFormato por MIME, Migas, MiniMapa, NavHermanos, GruposPorTipo,
   TarjetaDocumento); eventos_consulta con IP + user-agent (D8); `vitest.config.ts`
   con alias `@/`; dependencias nuevas: `file-type` (runtime), `jszip` (dev).
-- **Sigue:** Fase 5 — búsqueda + filtros facetados (ver PLAN.md).
+- **Hecho (Fase 5):** consulta `src/db/consultas/busqueda.ts` (`buscarDocumentos`:
+  FTS + ILIKE de código + `word_similarity`, facetas de tipo/proceso que no se
+  autofiltran, resaltado con `ts_headline`, solo vigentes; `registrarBusqueda`);
+  rate limiting en memoria `src/lib/limite.ts` (`crearLimitador`, reloj inyectable);
+  página `/buscar` (Server Component con searchParams: filtros server-driven por
+  links, fechas por form GET, vacíos con sugerencias, aviso de límite); componentes
+  `src/componentes/busqueda/` (CampoBusqueda client con debounce 350 ms +
+  router.replace, TarjetaResultado, TextoResaltado) y `EncabezadoSitio` global en el
+  layout (marca + form GET a /buscar en todas las páginas); 429 con Retry-After en
+  el route handler de archivos; tests `busqueda-fase5` (15) y `limite` (4).
+- **Sigue:** Fase 6 — auth + panel admin: carga y versionado (ver PLAN.md).
 
 ## Decisiones tomadas y su porqué
 
@@ -161,6 +179,16 @@
 | D29 | Toggle "incluir subprocesos" ACTIVO por defecto (`?subprocesos=0` lo excluye), server-driven con links | El conteo D10 de la tarjeta del mapa incluye subprocesos: al entrar, el usuario ve el mismo número. Sin JS: funciona sin hidratación | 2026-07-16 |
 | D30 | "También aplica aquí" muestra la procedencia ("Propio de: X") con estilo distinguible (borde punteado, fondo muted) | El funcionario sabe de inmediato que el documento pertenece a otro proceso y dónde vive el original | 2026-07-16 |
 | D31 | Visor PDF (`VisorPdf`, client) con overlay de activación: inactivo por defecto (`pointer-events: none`) + "Clic para navegar el PDF" / "Liberar el scroll"; altura `clamp(20rem, 100dvh−16rem, 50rem)`; en <lg la información va antes que el visor | El plugin PDF consume la rueda del mouse y atrapaba el scroll de la página (bug reportado por el usuario tras probar la Fase 4). NO volver al `<object>` plano | 2026-07-16 |
+
+## Decisiones adicionales (Fase 5)
+
+| # | Decisión | Porqué | Fecha |
+|---|---|---|---|
+| D32 | Buscador híbrido: campo cliente que sincroniza `?q=` en la URL con debounce (350 ms, `router.replace`) + Server Component que lee searchParams y consulta; form GET real como fallback | Elegido por el usuario sobre la alternativa route handler + fetch: URLs compartibles, funciona sin JS, sin endpoint JSON público extra que auditar/ratelimitar | 2026-07-16 |
+| D33 | Tres señales combinadas en `buscarDocumentos`: FTS `espanol_unaccent` + `ILIKE` sobre código (índice trigram) + `word_similarity ≥ 0.4` sobre título (solo términos de 4+ caracteres) | FTS solo no cubre "GTH" parcial ni "vacunasion" con tipeo; el umbral y el mínimo de caracteres evitan ruido en búsquedas cortas | 2026-07-16 |
+| D34 | Resaltado con `ts_headline` y marcadores `⟦⟧` que React parte en `<mark>` (nunca innerHTML) | El contenido documental jamás se interpreta como HTML: sin XSS por títulos/descripciones | 2026-07-16 |
+| D35 | Las facetas no se filtran a sí mismas (tipo se calcula sin el filtro de tipo; proceso sin el de proceso) y los links de facetas llevan `prefetch={false}` | Cambiar de tipo/proceso nunca es callejón sin salida; sin prefetch=false, el hover de un link registraría búsquedas fantasma en `busquedas` | 2026-07-16 |
+| D36 | `crearLimitador` (ventana deslizante en Map, reloj inyectable): 30 búsquedas/min y 60 archivos/min por IP; el registro en `busquedas` solo ocurre cuando hay `q` | Instancia única en el NAS (sin Redis); el reloj como parámetro permite probar la ventana sin fake timers; el debounce ya evita registrar tecleos parciales | 2026-07-16 |
 
 ## Deuda técnica conocida
 
