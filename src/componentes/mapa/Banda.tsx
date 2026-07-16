@@ -1,0 +1,48 @@
+import { Icono } from "@/componentes/iconos";
+import type { MacroprocesoMapa } from "@/db/consultas/mapa";
+import { TarjetaProceso } from "./TarjetaProceso";
+
+// Banda del mapa: encabezado institucional + tarjetas que fluyen (D1).
+// Agregar o quitar procesos en la BD reacomoda la banda sin tocar código.
+export function Banda({
+  macro,
+  indice,
+}: {
+  macro: MacroprocesoMapa;
+  indice: number;
+}) {
+  return (
+    <section
+      aria-labelledby={`banda-${macro.slug}`}
+      className="banda-animada rounded-2xl border p-3 sm:p-4"
+      style={
+        {
+          "--color-banda": macro.color,
+          "--indice-banda": indice,
+          borderColor: "color-mix(in srgb, var(--color-banda) 28%, white)",
+          background: "color-mix(in srgb, var(--color-banda) 4%, white)",
+        } as React.CSSProperties
+      }
+    >
+      <header className="mb-3 flex items-center gap-2.5">
+        <span className="grid size-7 place-items-center rounded-md bg-[var(--color-banda)] text-white">
+          <Icono nombre={macro.icono} className="size-4" />
+        </span>
+        <h2
+          id={`banda-${macro.slug}`}
+          className="font-display text-sm font-bold uppercase tracking-[0.08em] text-[color-mix(in_srgb,var(--color-banda)_80%,black)]"
+        >
+          <span aria-hidden="true">{macro.letra}. </span>
+          {macro.nombre}
+        </h2>
+      </header>
+      <ul className="grid list-none grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-4 min-[1400px]:grid-cols-[repeat(auto-fill,minmax(160px,1fr))]">
+        {macro.procesos.map((p) => (
+          <li key={p.id} className="min-w-0">
+            <TarjetaProceso proceso={p} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}

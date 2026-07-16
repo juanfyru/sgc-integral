@@ -1,12 +1,16 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-07-15** (Fase 2).
+> Se actualiza al cierre de cada fase. Última actualización: **2026-07-16** (Fase 3).
 
 ## Estado actual
 
-- **Fase actual:** 2 — completada (pendiente única: visto bueno del usuario al seed).
-  Esquema de 16 tablas migrado, seed del mapa real + 28 documentos, 14 tests de reglas
-  de negocio y búsqueda en verde. CI de Fase 1 en verde (imagen ARM64 en GHCR + tar).
+- **Fase actual:** 3 — completada. El mapa de procesos interactivo es la página de
+  inicio: 100% data-driven desde la BD, con las 4 bandas, entradas/salidas, PHVA,
+  convenciones y lema. Verificado: hover con elevación y color de banda, conteos D10
+  correctos en los 19 procesos (revisados uno a uno contra el seed), navegación por
+  teclado con foco visible del color de la banda, acordeón móvil a 390px, clic →
+  vista de proceso placeholder con breadcrumb sin recarga dura, y prueba data-driven
+  real (desactivar GJU en BD lo quita del mapa sin tocar código).
 - **Hecho (Fase 0):** planeación entregada y aprobada; mapa validado; stack cerrado.
 - **Hecho (Fase 1):** repo `github.com/juanfyru/sgc-suaza` (privado); Next.js 16.2 +
   Tailwind 4 + shadcn/ui; Dockerfile ARM64 standalone; compose dev; CSP y cabeceras;
@@ -20,9 +24,17 @@
   la BD: una sola versión vigente, una sola asociación principal, un solo archivo
   principal por versión, CHECKs de estados/aprobación, FTS sin acentos, código parcial
   y tolerancia a tipos ("consulta esterna" → Consulta Externa).
-- **Sigue:** Fase 3 — el mapa de procesos interactivo en pantalla (el corazón del
-  producto). Página de inicio 100% data-driven con las 4 bandas, hover con conteos,
-  acordeón mobile, accesibilidad AA.
+- **Hecho (Fase 3):** capa de datos `src/db/consultas/mapa.ts` (conteos D10 en SQL);
+  componentes `src/componentes/mapa/` (TarjetaProceso, Banda, Conector, RailPeriferico,
+  Phva, MapaProcesos escritorio, AcordeonMapa móvil con details/summary nativos);
+  registro de íconos data-driven con fallback (`src/componentes/iconos.tsx`); tokens
+  institucionales en `globals.css` (azul #1B4E8E, verde #2E9B47, lienzo #F6F8FB);
+  tipografía display Archivo + Geist; placeholder `procesos/[slug]` con breadcrumb.
+- **Sigue:** Fase 4 — navegación en profundidad: vista de proceso completa (documentos
+  propios + "También aplica aquí" + toggle subprocesos), vista de subproceso agrupada
+  por tipo, ficha de documento (metadatos ISO, vista previa PDF, formatos vinculados,
+  chips de procesos), migas de pan, navegación lateral, mini-mapa, íconos de formato
+  por MIME. Requiere generar archivos placeholder físicos para vista previa/descarga.
 
 ## Decisiones tomadas y su porqué
 
@@ -86,6 +98,17 @@
 | D17 | Config FTS propia `espanol_unaccent` (spanish + unaccent) usada en columna generada `tsv` con pesos A/B/C, + índices trigram en código y título | Búsqueda insensible a acentos con ranking; trigram cubre código parcial y errores de tipeo | 2026-07-15 |
 | D18 | Siglas de proceso PROVISIONALES de 3 letras (GES, CAL, SOG, RIE, ATU, CEX, PYM, ADX, ATE, AIN, INT, GBS, GTH, GRF, GJU, GIC, GDO, SCI, AEV) | El usuario aún no entrega la convención oficial; son editables desde el admin sin migración | 2026-07-15 |
 | D19 | Tests de reglas de negocio contra la BD dev sembrada (no mocks) | Lo que se verifica es que la BD misma rechace violaciones (índices parciales, CHECKs) — un mock no probaría nada | 2026-07-15 |
+
+## Decisiones adicionales (Fase 3)
+
+| # | Decisión | Porqué | Fecha |
+|---|---|---|---|
+| D20 | Colores de banda como CSS custom property `--color-banda` + derivados con `color-mix` (tintes 12%, texto 80% hacia negro) | El color vive en BD (hex editable); los derivados se calculan en CSS y mantienen contraste razonable para cualquier color que elija el admin | 2026-07-16 |
+| D21 | Acordeón móvil con `<details>/<summary>` nativos, sin JavaScript | Accesible por defecto, funciona sin hidratación, cero peso JS | 2026-07-16 |
+| D22 | Sin Framer Motion todavía: hover/entradas con CSS puro (`transition`, keyframes + `animation-delay`) | A esta escala CSS basta; Motion se evaluará en Fase 9 para transiciones de página. Menos JS en un portal de intranet | 2026-07-16 |
+| D23 | Tipografía: Archivo (display) + Geist (UI), ambas empaquetadas por next/font en build | Sin CDN en runtime (NAS offline); Archivo da carácter institucional latinoamericano sin caer en la estética genérica | 2026-07-16 |
+| D24 | CSP permite `unsafe-eval` SOLO en desarrollo | El overlay de errores de Next lo requiere; producción queda estricta | 2026-07-16 |
+| D25 | Íconos de mapa por nombre (kebab-case lucide) resueltos contra un registro explícito con fallback | Data-driven sin `import *` (tree-shaking intacto); un nombre mal escrito en admin nunca rompe el render | 2026-07-16 |
 
 ## Deuda técnica conocida
 

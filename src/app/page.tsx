@@ -1,21 +1,38 @@
-export default function Inicio() {
+import { AcordeonMapa } from "@/componentes/mapa/AcordeonMapa";
+import { MapaProcesos } from "@/componentes/mapa/MapaProcesos";
+import { obtenerDatosMapa } from "@/db/consultas/mapa";
+
+// El mapa vive en BD: siempre se lee en el momento de la petición.
+export const dynamic = "force-dynamic";
+
+export default async function Inicio() {
+  const datos = await obtenerDatosMapa();
+  const { configuracion } = datos;
+
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
-      <p className="text-sm font-medium uppercase tracking-widest text-green-700">
-        ESE Hospital Nuestra Señora de Fátima de Suaza
-      </p>
-      <h1 className="text-3xl font-bold text-blue-900 sm:text-4xl">
-        SGC Documental
-      </h1>
-      <p className="max-w-md text-balance text-muted-foreground">
-        Sistema de gestión documental de calidad — NTC ISO 9001:2015. Aquí
-        vivirá el mapa de procesos interactivo (Fase 3).
-      </p>
-      <p className="text-xs text-muted-foreground">
-        Comprometidos con la <span className="font-semibold text-green-700">vida</span> y
-        el <span className="font-semibold text-green-700">bienestar</span> de nuestra
-        comunidad
-      </p>
-    </main>
+    <div className="mx-auto w-full max-w-[1500px] px-4 py-6 sm:px-6 lg:py-8">
+      <header className="mb-6 lg:mb-8">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-verde-texto">
+          {configuracion.nombre_entidad ?? ""}
+        </p>
+        <h1 className="mt-1.5 font-display text-3xl font-extrabold tracking-tight text-azul-tinta sm:text-4xl">
+          Mapa de Procesos
+        </h1>
+        <p className="mt-1.5 text-sm text-muted-foreground">
+          {configuracion.subtitulo_mapa ?? ""} · Seleccione un proceso para
+          consultar sus documentos vigentes.
+        </p>
+      </header>
+
+      {/* Escritorio: el mapa completo por bandas. Mobile: acordeón (D9). */}
+      <main>
+        <div className="hidden lg:block">
+          <MapaProcesos datos={datos} />
+        </div>
+        <div className="lg:hidden">
+          <AcordeonMapa datos={datos} />
+        </div>
+      </main>
+    </div>
   );
 }

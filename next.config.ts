@@ -2,9 +2,13 @@ import type { NextConfig } from "next";
 
 // CSP restrictiva: la intranet no carga NADA externo (el NAS no tiene internet).
 // 'unsafe-inline' en style-src es requerido por los estilos inline de Next/Tailwind.
+const esDesarrollo = process.env.NODE_ENV !== "production";
+
 const csp = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
+  // unsafe-eval SOLO en desarrollo: el overlay de errores de Next lo necesita.
+  // En producción React nunca usa eval y la política queda estricta.
+  `script-src 'self' 'unsafe-inline'${esDesarrollo ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self'",
