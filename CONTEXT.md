@@ -4,20 +4,26 @@
 
 ## ⏸ Punto de reanudación (próxima sesión)
 
-1. **Lo primero:** pedir al usuario el veredicto de la Fase 4. Recorrido de prueba:
-   `npm run dev` → http://localhost:3000 → clic en "Gestión del Talento Humano" →
-   toggle "Solo del proceso / Incluir subprocesos" → subproceso "Ingreso" →
-   documento PR-GTH-001 → vista previa PDF, descargas, chips "Dónde aplica",
-   relacionados. Verificar también que /documentos/ft-cal-003 (borrador) e
-   /documentos/in-gic-002 (anulado) den 404. Si la BD está vacía:
+1. **Lo primero:** pedir al usuario el veredicto de la Fase 4. Ya probó la ficha y
+   reportó dos problemas del visor PDF (scroll atrapado y dimensiones rígidas),
+   corregidos y pusheados en `2666a6d` (CI verde) — confirmar que el fix le sirve.
+   Recorrido de prueba: `npm run dev` → http://localhost:3000 → "Gestión del
+   Talento Humano" → toggle "Solo del proceso / Incluir subprocesos" → subproceso
+   "Ingreso" → documento PR-GTH-001 → en la ficha: bajar con la rueda del mouse
+   con el cursor sobre el visor (ya no se atrapa), "Clic para navegar el PDF" /
+   "Liberar el scroll", redimensionar la ventana (el visor se adapta), descargas,
+   chips "Dónde aplica", relacionados. Verificar que /documentos/ft-cal-003
+   (borrador) e /documentos/in-gic-002 (anulado) den 404. Si la BD está vacía:
    `docker compose -f docker-compose.dev.yml up -d bd && npm run db:migrate &&
-   npm run db:seed` (el seed ahora también genera `./almacen` con los 36 archivos).
+   npm run db:seed` (el seed también genera `./almacen` con los 36 archivos).
 2. **Con su visto bueno → Fase 5** (búsqueda + filtros facetados, ver PLAN.md):
    barra prominente siempre accesible, resultados con debounce, filtros combinables
    (tipo/proceso/subproceso/fechas), resaltado, tolerancia a acentos y tipeo
    (FTS `espanol_unaccent` + pg_trgm ya operativos desde Fase 2), solo vigentes,
    registro en tabla `busquedas`, vacío elegante, rate limiting en memoria.
-3. **Estado del entorno al pausar:** CI verde en `7455367` (Node 24 en CI/Docker/dev —
+   Decisión a proponer antes de construir: arquitectura del buscador (Server
+   Component con searchParams vs. route handler + cliente ligero con debounce).
+3. **Estado del entorno al pausar:** CI verde en `2666a6d` (Node 24 en CI/Docker/dev —
    no volver a Node 22: npm 10 rechaza el lockfile de npm 11). Contenedores dev:
    `sgc-app-1` (9080) y `sgc-bd-1` (PG en 127.0.0.1:5434). En esta máquina 5432 lo
    ocupa un Postgres nativo y 5433 el proyecto doctime. La cuenta GitHub es `juanfyru`
@@ -154,6 +160,7 @@
 | D28 | El evento `vista` lo registra la ficha; `descarga` solo el handler con `?descarga=1` | El `<object>` de la vista previa dispara un fetch del PDF: registrarlo duplicaría cada vista | 2026-07-16 |
 | D29 | Toggle "incluir subprocesos" ACTIVO por defecto (`?subprocesos=0` lo excluye), server-driven con links | El conteo D10 de la tarjeta del mapa incluye subprocesos: al entrar, el usuario ve el mismo número. Sin JS: funciona sin hidratación | 2026-07-16 |
 | D30 | "También aplica aquí" muestra la procedencia ("Propio de: X") con estilo distinguible (borde punteado, fondo muted) | El funcionario sabe de inmediato que el documento pertenece a otro proceso y dónde vive el original | 2026-07-16 |
+| D31 | Visor PDF (`VisorPdf`, client) con overlay de activación: inactivo por defecto (`pointer-events: none`) + "Clic para navegar el PDF" / "Liberar el scroll"; altura `clamp(20rem, 100dvh−16rem, 50rem)`; en <lg la información va antes que el visor | El plugin PDF consume la rueda del mouse y atrapaba el scroll de la página (bug reportado por el usuario tras probar la Fase 4). NO volver al `<object>` plano | 2026-07-16 |
 
 ## Deuda técnica conocida
 
