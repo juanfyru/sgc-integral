@@ -13,7 +13,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Node 24 LTS: mismo major que desarrollo y que la imagen Docker.
+          # npm 10 (Node 22) rechaza lockfiles generados por npm 11.
+          node-version: 24
           cache: npm
       - run: npm ci
       - run: npm run lint

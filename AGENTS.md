@@ -68,7 +68,7 @@ QTS + Container Station). De ahí salen estas reglas. No son negociables:
 
 | Capa | Elección | Notas |
 |---|---|---|
-| Framework | Next.js (App Router) + TypeScript estricto, `output: 'standalone'` | Node 22 LTS en la imagen |
+| Framework | Next.js (App Router) + TypeScript estricto, `output: 'standalone'` | Node 24 LTS en la imagen, CI y desarrollo (mismo major en los tres: npm 10 y 11 generan lockfiles incompatibles) |
 | UI | Tailwind CSS + shadcn/ui | Íconos: `lucide-react` (local) |
 | Animación | Motion (Framer Motion) | Respetar `prefers-reduced-motion` siempre |
 | Mapa | SVG/HTML generado desde datos, layout por bandas con CSS grid | Sin lib de diagramas |
