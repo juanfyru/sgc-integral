@@ -2,6 +2,38 @@
 
 > Se actualiza al cierre de cada fase. Última actualización: **2026-07-16** (Fase 3).
 
+## ⏸ Punto de reanudación (próxima sesión)
+
+1. **Lo primero:** pedir al usuario el veredicto visual de la Fase 3 (criterio: "se
+   reconoce como el mapa de las carteleras y no parece software del Estado"). Ajustar
+   lo que pida antes de seguir. El mapa corre con `npm run dev` → http://localhost:3000
+   (requiere `docker compose -f docker-compose.dev.yml up -d bd`; si la BD está vacía:
+   `npm run db:migrate && npm run db:seed`).
+2. **Con su visto bueno → Fase 4** (navegación en profundidad, ver PLAN.md):
+   - Generar archivos placeholder FÍSICOS (PDF/DOCX/XLSX mínimos válidos) para los 36
+     archivos del seed — sin ellos no hay vista previa ni descarga que demostrar.
+     Carpeta local `./almacen` (gitignored) simulando el bind mount del NAS.
+   - Vista de proceso completa: documentos propios + sección "También aplica aquí"
+     (distinguible) + toggle "incluir subprocesos" + tarjetas de subprocesos.
+   - Vista de subproceso: documentos agrupados por tipo.
+   - Ficha de documento: metadatos ISO, vista previa PDF embebida (`<object>`, la CSP
+     ya permite `object-src 'self'`), descarga vía route handler (archivos fuera del
+     webroot, Content-Disposition, anti path-traversal + test), formatos/anexos
+     vinculados (tabla documento_relaciones), chips navegables de todos los procesos.
+   - Breadcrumbs persistentes + navegación lateral entre hermanos + mini-mapa.
+   - Íconos de formato derivados del MIME guardado (colores convencionales Word azul/
+     Excel verde/PDF rojo, etiqueta textual + tamaño, aria-label, fallback, señal
+     diligenciable vs solo lectura).
+   - Registrar eventos_consulta (vista/descarga) con IP + user-agent (D8).
+3. **Estado del entorno al pausar:** CI verde en `7455367` (Node 24 en CI/Docker/dev —
+   no volver a Node 22: npm 10 rechaza el lockfile de npm 11). Contenedores dev:
+   `sgc-app-1` (9080) y `sgc-bd-1` (PG en 127.0.0.1:5434). En esta máquina 5432 lo
+   ocupa un Postgres nativo y 5433 el proyecto doctime. La cuenta GitHub es `juanfyru`
+   (repo privado sgc-suaza); no hay `gh` CLI — el estado del CI se consulta con el
+   token de `git credential fill` contra la API.
+4. **Sigue pendiente del usuario:** convención oficial de códigos (siglas de tipos y
+   procesos, alcance del consecutivo) y logo institucional en buena resolución.
+
 ## Estado actual
 
 - **Fase actual:** 3 — completada. El mapa de procesos interactivo es la página de
