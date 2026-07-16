@@ -1,106 +1,202 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronRight, FileText, Layers } from "lucide-react";
+import { FileText, Layers, Share2 } from "lucide-react";
+import { GruposPorTipo } from "@/componentes/documentos/GruposPorTipo";
+import { TarjetaDocumento } from "@/componentes/documentos/TarjetaDocumento";
 import { Icono } from "@/componentes/iconos";
-import { obtenerSql } from "@/db/cliente";
+import { Migas } from "@/componentes/navegacion/Migas";
+import { MiniMapa } from "@/componentes/navegacion/MiniMapa";
+import { NavHermanos } from "@/componentes/navegacion/NavHermanos";
+import {
+  obtenerDetalleProceso,
+  obtenerDocumentosDeProceso,
+} from "@/db/consultas/procesos";
 
 export const dynamic = "force-dynamic";
 
-// Placeholder de la Fase 3: confirma la navegación mapa → proceso.
-// La vista completa (documentos, subprocesos, breadcrumbs enriquecidos,
-// "también aplica aquí") llega en la Fase 4.
 export default async function VistaProceso({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ subprocesos?: string }>;
 }) {
-  const { slug } = await params;
-  const sql = obtenerSql();
+  const [{ slug }, { subprocesos: parametroSubprocesos }] = await Promise.all([
+    params,
+    searchParams,
+  ]);
 
-  const [proceso] = await sql`
-    SELECT p.id, p.nombre, p.sigla, p.icono, p.descripcion,
-           m.nombre AS macro_nombre, m.color, m.letra
-    FROM procesos p
-    JOIN macroprocesos m ON m.id = p.macroproceso_id
-    WHERE p.slug = ${slug} AND p.activo`;
-
+  const proceso = await obtenerDetalleProceso(slug);
   if (!proceso) notFound();
 
-  const subprocesos = await sql`
-    SELECT nombre FROM subprocesos
-    WHERE proceso_id = ${proceso.id} AND activo ORDER BY orden`;
+  const tieneSubprocesos = proceso.subprocesos.length > 0;
+  const incluirSubprocesos = tieneSubprocesos && parametroSubprocesos !== "0";
+  const documentos = await obtenerDocumentosDeProceso(
+    proceso.id,
+    incluirSubprocesos,
+  );
+
+  const propios = documentos.filter((d) => d.esPrincipal);
+  const tambienAplican = documentos.filter((d) => !d.esPrincipal);
 
   return (
     <div
       className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 lg:py-10"
-      style={{ "--color-banda": proceso.color as string } as React.CSSProperties}
+      style={{ "--color-banda": proceso.macro.color } as React.CSSProperties}
     >
-      <nav aria-label="Miga de pan" className="mb-6">
-        <ol className="flex list-none flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
-          <li>
-            <Link
-              href="/"
-              className="rounded hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-            >
-              Mapa de procesos
-            </Link>
-          </li>
-          <li aria-hidden="true">
-            <ChevronRight className="size-3.5" />
-          </li>
-          <li>{proceso.macro_nombre as string}</li>
-          <li aria-hidden="true">
-            <ChevronRight className="size-3.5" />
-          </li>
-          <li aria-current="page" className="font-medium text-foreground">
-            {proceso.nombre as string}
-          </li>
-        </ol>
-      </nav>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <Migas
+          items={[{ nombre: proceso.macro.nombre }, { nombre: proceso.nombre }]}
+        />
+        <MiniMapa banda={proceso.macro.banda} nombreMacro={proceso.macro.nombre} />
+      </div>
 
       <header className="flex items-start gap-4">
         <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-[color-mix(in_srgb,var(--color-banda)_12%,white)] text-[color-mix(in_srgb,var(--color-banda)_80%,black)]">
-          <Icono nombre={proceso.icono as string} className="size-7" />
+          <Icono nombre={proceso.icono} className="size-7" />
         </span>
         <div>
           <p className="font-mono text-xs tracking-wide text-muted-foreground">
-            {proceso.sigla as string}
+            {proceso.sigla}
           </p>
           <h1 className="font-display text-2xl font-extrabold tracking-tight text-azul-tinta sm:text-3xl">
-            {proceso.nombre as string}
+            {proceso.nombre}
           </h1>
-          {proceso.descripcion ? (
+          {proceso.descripcion && (
             <p className="mt-2 max-w-2xl text-sm/relaxed text-muted-foreground">
-              {proceso.descripcion as string}
+              {proceso.descripcion}
             </p>
-          ) : null}
+          )}
         </div>
       </header>
 
-      {subprocesos.length > 0 && (
-        <section className="mt-8">
-          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+      {tieneSubprocesos && (
+        <section className="mt-8" aria-labelledby="titulo-subprocesos">
+          <h2
+            id="titulo-subprocesos"
+            className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground"
+          >
             <Layers className="size-4 text-muted-foreground" aria-hidden="true" />
             Subprocesos
           </h2>
-          <ul className="flex list-none flex-wrap gap-2">
-            {subprocesos.map((s) => (
-              <li
-                key={s.nombre as string}
-                className="rounded-full border border-border bg-card px-3 py-1.5 text-sm text-foreground/85"
-              >
-                {s.nombre as string}
+          <ul className="grid list-none grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {proceso.subprocesos.map((sub) => (
+              <li key={sub.id}>
+                <Link
+                  href={`/procesos/${proceso.slug}/${sub.slug}`}
+                  aria-label={`${sub.nombre}: ${sub.docsVigentes} ${sub.docsVigentes === 1 ? "documento vigente" : "documentos vigentes"}`}
+                  className="group flex items-center justify-between gap-2 rounded-xl border border-border bg-card px-3.5 py-3 shadow-xs transition-all duration-200 hover:-translate-y-px hover:border-[var(--color-banda)] hover:shadow-md focus-visible:border-[var(--color-banda)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-banda)]"
+                >
+                  <span className="text-sm/snug font-medium text-foreground">
+                    {sub.nombre}
+                  </span>
+                  <span
+                    className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium tabular-nums text-muted-foreground transition-colors group-hover:bg-[color-mix(in_srgb,var(--color-banda)_12%,white)] group-hover:text-[color-mix(in_srgb,var(--color-banda)_80%,black)]"
+                    aria-hidden="true"
+                  >
+                    <FileText className="size-3" />
+                    {sub.docsVigentes}
+                  </span>
+                </Link>
               </li>
             ))}
           </ul>
         </section>
       )}
 
-      <p className="mt-10 flex items-center gap-2.5 rounded-xl border border-dashed border-border bg-card px-4 py-3.5 text-sm text-muted-foreground">
-        <FileText className="size-4 shrink-0" aria-hidden="true" />
-        Los documentos de este proceso se mostrarán aquí en la Fase 4
-        (navegación en profundidad).
-      </p>
+      <section className="mt-8" aria-labelledby="titulo-documentos">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2
+            id="titulo-documentos"
+            className="flex items-center gap-2 text-sm font-semibold text-foreground"
+          >
+            <FileText className="size-4 text-muted-foreground" aria-hidden="true" />
+            Documentos del proceso
+          </h2>
+          {tieneSubprocesos && (
+            <nav
+              aria-label="Alcance del listado de documentos"
+              className="flex rounded-lg border border-border bg-muted p-0.5 text-xs font-medium"
+            >
+              <Link
+                href={`/procesos/${proceso.slug}?subprocesos=0`}
+                scroll={false}
+                aria-current={!incluirSubprocesos ? "true" : undefined}
+                className={
+                  !incluirSubprocesos
+                    ? "rounded-md bg-card px-2.5 py-1 text-foreground shadow-xs"
+                    : "rounded-md px-2.5 py-1 text-muted-foreground hover:text-foreground"
+                }
+              >
+                Solo del proceso
+              </Link>
+              <Link
+                href={`/procesos/${proceso.slug}`}
+                scroll={false}
+                aria-current={incluirSubprocesos ? "true" : undefined}
+                className={
+                  incluirSubprocesos
+                    ? "rounded-md bg-card px-2.5 py-1 text-foreground shadow-xs"
+                    : "rounded-md px-2.5 py-1 text-muted-foreground hover:text-foreground"
+                }
+              >
+                Incluir subprocesos
+              </Link>
+            </nav>
+          )}
+        </div>
+
+        {propios.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
+            Este proceso aún no tiene documentos vigentes propios
+            {tieneSubprocesos && !incluirSubprocesos
+              ? " — pruebe incluyendo los subprocesos"
+              : ""}
+            .
+          </p>
+        ) : (
+          <GruposPorTipo
+            documentos={propios}
+            contextoDe={(doc) =>
+              doc.subproceso ? `En subproceso: ${doc.subproceso.nombre}` : undefined
+            }
+          />
+        )}
+      </section>
+
+      {tambienAplican.length > 0 && (
+        <section className="mt-8" aria-labelledby="titulo-tambien">
+          <h2
+            id="titulo-tambien"
+            className="mb-1 flex items-center gap-2 text-sm font-semibold text-foreground"
+          >
+            <Share2 className="size-4 text-muted-foreground" aria-hidden="true" />
+            También aplica aquí
+          </h2>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Documentos de otros procesos que se usan o consultan en este.
+          </p>
+          <ul className="grid list-none grid-cols-1 gap-2 rounded-xl border border-dashed border-border bg-muted/40 p-3 sm:grid-cols-2">
+            {tambienAplican.map((doc) => (
+              <TarjetaDocumento
+                key={doc.codigo}
+                documento={doc}
+                contexto={doc.propietario ? `Propio de: ${doc.propietario}` : undefined}
+              />
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <div className="mt-10">
+        <NavHermanos
+          anterior={proceso.anterior}
+          siguiente={proceso.siguiente}
+          base="/procesos"
+          etiqueta="proceso"
+        />
+      </div>
     </div>
   );
 }
+

@@ -20,6 +20,9 @@
 # production
 /build
 
+# almacén local de archivos de documentos (lo regenera npm run db:seed)
+/almacen
+
 # misc
 .DS_Store
 *.pem

@@ -1,30 +1,22 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-07-16** (Fase 3).
+> Se actualiza al cierre de cada fase. Última actualización: **2026-07-16** (Fase 4).
 
 ## ⏸ Punto de reanudación (próxima sesión)
 
-1. **Lo primero:** pedir al usuario el veredicto visual de la Fase 3 (criterio: "se
-   reconoce como el mapa de las carteleras y no parece software del Estado"). Ajustar
-   lo que pida antes de seguir. El mapa corre con `npm run dev` → http://localhost:3000
-   (requiere `docker compose -f docker-compose.dev.yml up -d bd`; si la BD está vacía:
-   `npm run db:migrate && npm run db:seed`).
-2. **Con su visto bueno → Fase 4** (navegación en profundidad, ver PLAN.md):
-   - Generar archivos placeholder FÍSICOS (PDF/DOCX/XLSX mínimos válidos) para los 36
-     archivos del seed — sin ellos no hay vista previa ni descarga que demostrar.
-     Carpeta local `./almacen` (gitignored) simulando el bind mount del NAS.
-   - Vista de proceso completa: documentos propios + sección "También aplica aquí"
-     (distinguible) + toggle "incluir subprocesos" + tarjetas de subprocesos.
-   - Vista de subproceso: documentos agrupados por tipo.
-   - Ficha de documento: metadatos ISO, vista previa PDF embebida (`<object>`, la CSP
-     ya permite `object-src 'self'`), descarga vía route handler (archivos fuera del
-     webroot, Content-Disposition, anti path-traversal + test), formatos/anexos
-     vinculados (tabla documento_relaciones), chips navegables de todos los procesos.
-   - Breadcrumbs persistentes + navegación lateral entre hermanos + mini-mapa.
-   - Íconos de formato derivados del MIME guardado (colores convencionales Word azul/
-     Excel verde/PDF rojo, etiqueta textual + tamaño, aria-label, fallback, señal
-     diligenciable vs solo lectura).
-   - Registrar eventos_consulta (vista/descarga) con IP + user-agent (D8).
+1. **Lo primero:** pedir al usuario el veredicto de la Fase 4. Recorrido de prueba:
+   `npm run dev` → http://localhost:3000 → clic en "Gestión del Talento Humano" →
+   toggle "Solo del proceso / Incluir subprocesos" → subproceso "Ingreso" →
+   documento PR-GTH-001 → vista previa PDF, descargas, chips "Dónde aplica",
+   relacionados. Verificar también que /documentos/ft-cal-003 (borrador) e
+   /documentos/in-gic-002 (anulado) den 404. Si la BD está vacía:
+   `docker compose -f docker-compose.dev.yml up -d bd && npm run db:migrate &&
+   npm run db:seed` (el seed ahora también genera `./almacen` con los 36 archivos).
+2. **Con su visto bueno → Fase 5** (búsqueda + filtros facetados, ver PLAN.md):
+   barra prominente siempre accesible, resultados con debounce, filtros combinables
+   (tipo/proceso/subproceso/fechas), resaltado, tolerancia a acentos y tipeo
+   (FTS `espanol_unaccent` + pg_trgm ya operativos desde Fase 2), solo vigentes,
+   registro en tabla `busquedas`, vacío elegante, rate limiting en memoria.
 3. **Estado del entorno al pausar:** CI verde en `7455367` (Node 24 en CI/Docker/dev —
    no volver a Node 22: npm 10 rechaza el lockfile de npm 11). Contenedores dev:
    `sgc-app-1` (9080) y `sgc-bd-1` (PG en 127.0.0.1:5434). En esta máquina 5432 lo
@@ -36,13 +28,14 @@
 
 ## Estado actual
 
-- **Fase actual:** 3 — completada. El mapa de procesos interactivo es la página de
-  inicio: 100% data-driven desde la BD, con las 4 bandas, entradas/salidas, PHVA,
-  convenciones y lema. Verificado: hover con elevación y color de banda, conteos D10
-  correctos en los 19 procesos (revisados uno a uno contra el seed), navegación por
-  teclado con foco visible del color de la banda, acordeón móvil a 390px, clic →
-  vista de proceso placeholder con breadcrumb sin recarga dura, y prueba data-driven
-  real (desactivar GJU en BD lo quita del mapa sin tocar código).
+- **Fase actual:** 4 — completada. Navegación en profundidad funcionando de punta a
+  punta con 45/45 tests en verde: mapa → proceso → subproceso → ficha de documento →
+  vista previa PDF → descarga. Verificado en navegador real (recorrido GTH completo,
+  captura de la ficha FT-CAL-001 con vista previa del placeholder embebida) y por
+  HTTP (borrador/anulado → 404, path traversal → 404, eventos en BD).
+- **Hecho (Fase 3):** el mapa de procesos interactivo es la página de inicio: 100%
+  data-driven desde la BD, con las 4 bandas, entradas/salidas, PHVA, convenciones y
+  lema; aprobado por el usuario el 2026-07-16 ("Aprobado, sigue con Fase 4").
 - **Hecho (Fase 0):** planeación entregada y aprobada; mapa validado; stack cerrado.
 - **Hecho (Fase 1):** repo `github.com/juanfyru/sgc-suaza` (privado); Next.js 16.2 +
   Tailwind 4 + shadcn/ui; Dockerfile ARM64 standalone; compose dev; CSP y cabeceras;
@@ -62,11 +55,21 @@
   registro de íconos data-driven con fallback (`src/componentes/iconos.tsx`); tokens
   institucionales en `globals.css` (azul #1B4E8E, verde #2E9B47, lienzo #F6F8FB);
   tipografía display Archivo + Geist; placeholder `procesos/[slug]` con breadcrumb.
-- **Sigue:** Fase 4 — navegación en profundidad: vista de proceso completa (documentos
-  propios + "También aplica aquí" + toggle subprocesos), vista de subproceso agrupada
-  por tipo, ficha de documento (metadatos ISO, vista previa PDF, formatos vinculados,
-  chips de procesos), migas de pan, navegación lateral, mini-mapa, íconos de formato
-  por MIME. Requiere generar archivos placeholder físicos para vista previa/descarga.
+- **Hecho (Fase 4):** almacén físico generado por el seed (`src/db/placeholders.ts`:
+  PDF a mano + DOCX/XLSX con jszip; hash SHA-256 y tamaño en BD son los del archivo
+  real; `./almacen` gitignored, ruta por `ALMACEN_RUTA`); servido seguro de archivos
+  (`src/lib/almacen.ts` anti path-traversal con tests;
+  `/documentos/[codigo]/archivos/[id]` valida pertenencia a la versión VIGENTE,
+  MIME de BD, Content-Disposition RFC 5987, `Cache-Control: no-store`, streaming);
+  consultas (`src/db/consultas/procesos.ts`, `documentos.ts`, `eventos.ts`); vista de
+  proceso completa (subprocesos con conteo, toggle server-driven, "También aplica
+  aquí" con procedencia); vista de subproceso agrupada por tipo; ficha de documento
+  (metadatos ISO, vista previa PDF `<object>`, descargas por rol, chips "Dónde
+  aplica" con propietario destacado, relacionados bidireccionales); componentes
+  compartidos (IconoFormato por MIME, Migas, MiniMapa, NavHermanos, GruposPorTipo,
+  TarjetaDocumento); eventos_consulta con IP + user-agent (D8); `vitest.config.ts`
+  con alias `@/`; dependencias nuevas: `file-type` (runtime), `jszip` (dev).
+- **Sigue:** Fase 5 — búsqueda + filtros facetados (ver PLAN.md).
 
 ## Decisiones tomadas y su porqué
 
@@ -142,6 +145,16 @@
 | D24 | CSP permite `unsafe-eval` SOLO en desarrollo | El overlay de errores de Next lo requiere; producción queda estricta | 2026-07-16 |
 | D25 | Íconos de mapa por nombre (kebab-case lucide) resueltos contra un registro explícito con fallback | Data-driven sin `import *` (tree-shaking intacto); un nombre mal escrito en admin nunca rompe el render | 2026-07-16 |
 
+## Decisiones adicionales (Fase 4)
+
+| # | Decisión | Porqué | Fecha |
+|---|---|---|---|
+| D26 | El seed genera los archivos FÍSICOS del almacén (PDF escrito a mano; DOCX/XLSX con `jszip`, devDependency) y guarda hash/tamaño REALES | Metadatos y disco nunca divergen; `file-type` detecta el MIME correcto de cada placeholder (test). jszip no viaja en la imagen del NAS | 2026-07-16 |
+| D27 | URL de archivos anidada bajo el código: `/documentos/[codigo]/archivos/[id]`; inline por defecto, `?descarga=1` como adjunto; `Cache-Control: no-store` | La query valida que el archivo pertenezca a la versión VIGENTE de ESE documento (regla 3); no-store evita servir desde caché algo que dejó de estar vigente | 2026-07-16 |
+| D28 | El evento `vista` lo registra la ficha; `descarga` solo el handler con `?descarga=1` | El `<object>` de la vista previa dispara un fetch del PDF: registrarlo duplicaría cada vista | 2026-07-16 |
+| D29 | Toggle "incluir subprocesos" ACTIVO por defecto (`?subprocesos=0` lo excluye), server-driven con links | El conteo D10 de la tarjeta del mapa incluye subprocesos: al entrar, el usuario ve el mismo número. Sin JS: funciona sin hidratación | 2026-07-16 |
+| D30 | "También aplica aquí" muestra la procedencia ("Propio de: X") con estilo distinguible (borde punteado, fondo muted) | El funcionario sabe de inmediato que el documento pertenece a otro proceso y dónde vive el original | 2026-07-16 |
+
 ## Deuda técnica conocida
 
 - `npm audit` reporta vulnerabilidades moderadas (transitivas del scaffold/tooling).
@@ -149,8 +162,9 @@
 - El artefacto `.tar.gz` del CI aún no se ha probado con `docker load` en un NAS real
   (se hará en Fase 10; el formato `type=docker` es el estándar que Container Station
   acepta).
-- Los archivos del seed existen solo como metadatos en BD: no hay PDFs/Office físicos
-  en disco todavía. La Fase 4 generará archivos placeholder para poder demostrar la
-  vista previa y la descarga.
-- Los tests de BD requieren la BD dev migrada y sembrada; no corren en CI todavía
-  (agregar un job con Postgres de servicio cuando el esquema se estabilice).
+- Los tests de BD (esquema, archivos-vigentes, consultas-fase4) requieren la BD dev
+  migrada y sembrada; no corren en CI todavía (agregar un job con Postgres de
+  servicio cuando el esquema se estabilice). Los de almacén y placeholders sí son
+  autónomos.
+- El route handler de archivos lee el archivo completo vía stream pero sin soporte de
+  `Range`; irrelevante a esta escala, revisar solo si los PDF reales resultan enormes.

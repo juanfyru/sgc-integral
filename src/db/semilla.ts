@@ -8,6 +8,10 @@
  */
 import { loadEnvConfig } from "@next/env";
 import { createHash } from "node:crypto";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { generarPlaceholder } from "./placeholders";
+import { rutaBaseAlmacen } from "../lib/almacen";
 
 loadEnvConfig(process.cwd());
 
@@ -27,6 +31,12 @@ async function main() {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/(^-|-$)/g, "");
+
+  // El almacén físico se regenera junto con la BD: metadatos y archivos en
+  // disco nunca divergen (hash y tamaño en BD son los del archivo real).
+  const almacen = rutaBaseAlmacen();
+  console.log(`Limpiando almacén de archivos (${almacen})…`);
+  await rm(almacen, { recursive: true, force: true });
 
   console.log("Limpiando tablas…");
   await db.execute(dsql`
@@ -519,8 +529,24 @@ async function main() {
         .returning();
 
       for (const a of v.archivos) {
-        const ruta = `${def.codigo}/v${v.numero}/${def.codigo.toLowerCase()}-v${v.numero}.${a.ext}`;
-        const hash = createHash("sha256").update(ruta).digest("hex");
+        // El rol distingue archivos de la misma versión y extensión (p. ej.
+        // principal PDF + anexo PDF) sin colisión de ruta.
+        const nombreArchivo =
+          a.rol === "principal"
+            ? `${def.codigo.toLowerCase()}-v${v.numero}.${a.ext}`
+            : `${def.codigo.toLowerCase()}-v${v.numero}-${a.rol}.${a.ext}`;
+        const ruta = `${def.codigo}/v${v.numero}/${nombreArchivo}`;
+
+        const contenido = await generarPlaceholder({
+          codigo: def.codigo,
+          titulo: def.titulo,
+          numeroVersion: v.numero,
+          ext: a.ext,
+        });
+        const destino = path.join(almacen, ...ruta.split("/"));
+        await mkdir(path.dirname(destino), { recursive: true });
+        await writeFile(destino, contenido);
+
         await db.insert(e.archivos).values({
           versionId: version.id,
           rol: a.rol,
@@ -528,8 +554,8 @@ async function main() {
           nombreOriginal: `${def.codigo} ${def.titulo} v${v.numero}.${a.ext}`,
           extension: a.ext,
           mime: MIMES[a.ext],
-          tamanoBytes: 80_000 + (parseInt(hash.slice(0, 6), 16) % 400_000),
-          hashSha256: hash,
+          tamanoBytes: contenido.length,
+          hashSha256: createHash("sha256").update(contenido).digest("hex"),
         });
       }
     }
