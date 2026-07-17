@@ -1,40 +1,44 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-07-16** (Fase 5).
+> Se actualiza al cierre de cada fase. Última actualización: **2026-07-16**
+> (Fase 5 aprobada; Fase 6 diseñada y planificada, ejecución NO iniciada).
 
 ## ⏸ Punto de reanudación (próxima sesión)
 
-1. **Lo primero:** pedir al usuario el veredicto de la Fase 5 (búsqueda). Recorrido
-   de prueba: `npm run dev` → http://localhost:3000 → la barra del encabezado está
-   en todas las páginas (form GET, funciona sin JS) → escribir "vacunasion" (con
-   error de tipeo: debe traer los 2 de Vacunación), "GTH" (todo talento humano),
-   "acta de reunión" con y sin acentos → en /buscar: filtros de tipo/proceso (con
-   conteos), subprocesos anidados al elegir proceso, fechas desde/hasta, "Limpiar
-   todo", resaltado verde de coincidencias, vacío con sugerencias → verificar en BD
-   que `busquedas` registra término + cantidad → rate limiting: >30 búsquedas/min
-   por IP muestra aviso amable; >60 archivos/min responde 429. Si la BD está vacía:
-   `docker compose -f docker-compose.dev.yml up -d bd && npm run db:migrate &&
-   npm run db:seed`.
-2. **Con su visto bueno → Fase 6** (auth + panel admin: carga y versionado, ver
-   PLAN.md): login del admin (cookie httpOnly + tabla `sesiones` + Argon2id con
-   `@node-rs/argon2`, prebuilds ARM64 — verificar en CI), carga drag & drop
-   multiarchivo, validación por extensión Y magic bytes (`file-type` ya es
-   dependencia), publicar nueva versión en un clic con obsolescencia automática en
-   transacción, marca visual de obsoletos/borradores, test de auditoría de rutas
-   (mutaciones sin cookie → 401/403). OJO: Next 16 renombró `middleware` a `proxy`
-   (D14); el guard de sesión va ahí + verificación en cada acción. La validación
-   fuerte del código sigue bloqueada por la convención oficial (pendiente del
-   usuario); usar el patrón configurable provisional.
-3. **Estado del entorno al pausar:** CI verde en `c3a1fb8` (Fase 5: lint+build e
-   imagen linux/arm64, verificado antes de pausar). Node 24 en
-   CI/Docker/dev — no volver a Node 22: npm 10 rechaza el lockfile de npm 11.
+1. **Dónde quedamos:** el usuario aprobó la Fase 5 y el diseño completo de la
+   Fase 6. Hay dos documentos commiteados que son la fuente de verdad:
+   - Spec aprobado: `docs/superpowers/specs/2026-07-16-fase6-auth-admin-design.md`
+   - Plan de implementación (13 tareas TDD con código completo por paso):
+     `docs/superpowers/plans/2026-07-16-fase6-auth-admin.md`
+   El usuario eligió ejecución **inline** (skill superpowers:executing-plans, no
+   subagentes). Se creó la lista de todos (T1–T13) y se verificó que `sgc-bd-1`
+   está corriendo. **No se escribió NI UNA línea de código de la Fase 6**: la
+   sesión se pausó justo antes de arrancar la Task 1.
+2. **Lo primero al reanudar:** ejecutar el plan tarea por tarea desde la
+   **Task 1** (instalar `@node-rs/argon2`, `src/lib/clave.ts` con TDD, smoke
+   ARM64 en el Dockerfile). Seguir los pasos del plan AL PIE DE LA LETRA (cada
+   tarea trae test que falla → implementación → test verde → lint → commit).
+   Convención establecida: se trabaja directamente en `main`, un commit por
+   tarea. Antes de las tareas con BD (T2+): la BD dev debe estar migrada y
+   sembrada (`docker compose -f docker-compose.dev.yml up -d bd &&
+   npm run db:migrate && npm run db:seed`).
+3. **Decisiones de la Fase 6 ya tomadas por el usuario** (no volver a preguntar):
+   flujo borrador → publicar con confirmación; 25 MB máx. por archivo; admin por
+   env vars (`ADMIN_USUARIO`/`ADMIN_CLAVE`) + script de reseteo; alcance = ciclo
+   completo (publicar, anular, editar metadatos); mutaciones = Server Actions +
+   route handler dedicado de subida. Ajustes documentados en el plan: subida por
+   **cuerpo crudo streaming** (no multipart), y se añaden GET admin (vista previa
+   de borradores) y DELETE de archivos de borrador.
+4. **Estado del entorno al pausar:** CI verde en `c3a1fb8`; después solo hubo
+   commits de docs (`9b2ce89` spec, `24cbc23` plan — pendientes de push). Node 24
+   en CI/Docker/dev — no volver a Node 22: npm 10 rechaza el lockfile de npm 11.
    Contenedores dev: `sgc-app-1` (9080) y `sgc-bd-1` (PG en 127.0.0.1:5434). En esta
    máquina 5432 lo ocupa un Postgres nativo y 5433 el proyecto doctime. Suele quedar
    un `next dev` huérfano en el puerto 3000 de sesiones anteriores (Next avisa el
    PID; sirve tal cual porque recompila en caliente). La cuenta GitHub es `juanfyru`
    (repo privado sgc-suaza); no hay `gh` CLI — el estado del CI se consulta con el
    token de `git credential fill` contra la API.
-4. **Sigue pendiente del usuario:** convención oficial de códigos (siglas de tipos y
+5. **Sigue pendiente del usuario:** convención oficial de códigos (siglas de tipos y
    procesos, alcance del consecutivo) y logo institucional en buena resolución.
 
 ## Estado actual
