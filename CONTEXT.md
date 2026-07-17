@@ -1,19 +1,37 @@
 # CONTEXT.md — Estado vivo del proyecto
 
 > Se actualiza al cierre de cada fase. Última actualización: **2026-07-17**
-> (Fase 6 completada e implementada de punta a punta; pendiente del veredicto
-> del usuario).
+> (Fase 6 completada e implementada de punta a punta; el usuario la está probando.
+> Próxima fase: 7 — Editor del mapa).
 
 ## ⏸ Punto de reanudación (próxima sesión)
 
+0. **Lo más reciente (post cierre de Fase 6):** el usuario probó el panel, cargó un
+   documento real de prueba **`PR-GTH-991`** (PDF de 211 KB, vigente, en la BD dev y
+   en `almacen/documentos/PR-GTH-991/`) y reportó que la **descarga** "no bajaba nada"
+   y mostraba un icono que no era de PDF. Diagnóstico: el servidor sirve el archivo
+   perfecto (attachment, bytes completos); el problema era del lado del navegador del
+   usuario (Chrome con extensión/gestor de descargas que guardaba el PDF con nombre
+   GUID sin extensión, en la carpeta del gestor y no en Descargas). Se aplicaron 3
+   fixes en `main` (ya pusheados): `31cb804` atributo `download` con el nombre real
+   en los botones; `126ebd9` la **URL del archivo ahora termina en el nombre real con
+   `.pdf`** (`/documentos/<cod>/archivos/<id>/<nombre>.pdf`) — se movió la ruta a
+   `[archivoId]/[[...nombre]]/route.ts` (segmento opcional que la ruta ignora; la URL
+   sin nombre sigue funcionando por compatibilidad). Verificado: descarga con nombre
+   correcto desde el botón Y desde el visor PDF embebido, tanto en Chromium limpio.
+   **Ojo:** mover la carpeta de ruta exigió reiniciar `next dev` (el huérfano del 3000
+   se detuvo y se relanzó; corriendo de nuevo). **Pendiente de confirmar por el usuario**
+   que en SU Chrome ya baja bien (si no, es una extensión suya de PDF/descargas).
 1. **Dónde quedamos:** la Fase 6 (auth + panel admin de carga y versionado) está
    **implementada completa** siguiendo el plan `docs/superpowers/plans/2026-07-16-fase6-auth-admin.md`
    tarea por tarea (T1–T13), un commit por tarea en `main`. Todo el ciclo ISO
    funciona y fue verificado en navegador real (login, rate limit, subida con
    MIME por magic bytes, rechazo de ejecutable renombrado, publicar con
-   obsolescencia automática, anular, auditoría completa). Suite: **109 tests en
-   verde**; `npm run lint` y `npm run build` limpios. Falta el **veredicto del
-   usuario** sobre la fase.
+   obsolescencia automática, anular, auditoría completa). Suite: **104/109 tests en
+   verde**; los 5 rojos son solo asserts de estado exacto del seed (lista GTH, conteo
+   de estados, facetas) que "fallan" porque `PR-GTH-991` está en la BD dev — NO es una
+   regresión y en CI (BD sembrada limpia) pasan; **no borrar `PR-GTH-991`**, es del
+   usuario. `npm run lint` y `npm run build` limpios.
 2. **Recorrido de prueba (demo de la fase)** — con `npm run dev`, BD dev arriba
    y `npm run admin:asegurar` hecho (credenciales de `.env.local`:
    `admin` / `cambiar-esta-clave`):
@@ -29,12 +47,18 @@
    - `SELECT accion FROM auditoria ORDER BY id DESC` muestra el rastro (quién/qué/cuándo).
    - Resetear la clave del admin: `npm run admin:asegurar -- --forzar-clave`.
      (El documento `PR-GTH-990` de la demo se borró de la BD dev al cerrar; recrear si se quiere repetir.)
-3. **Lo primero al reanudar:** esperar el veredicto del usuario sobre la Fase 6.
-   Si aprueba, planear la Fase 7 (ver `PLAN.md`). Sigue pendiente del usuario la
-   **convención oficial de códigos** (siglas de tipos/procesos, alcance del
-   consecutivo): mientras no llegue, el patrón se valida contra
-   `configuracion.patron_codigo` (fallback `^[A-Z]{2,4}-[A-Z]{2,4}-\d{3}$`),
-   editable sin migración.
+3. **Lo primero al reanudar:** (a) confirmar con el usuario que la descarga ya le
+   funciona en su navegador; (b) si aprueba la Fase 6, **planear la Fase 7 — Editor
+   del mapa** (ver `PLAN.md` §Fase 7: el admin agrega/renombra/reordena/desactiva
+   macro/procesos/subprocesos, cambia color e ícono, edita entradas/salidas y
+   convenciones, con vista previa; gestión de tablas maestras como tipos de documento;
+   desactivar ≠ borrar; todo auditado; el mapa ya es 100% data-driven, así que la
+   base está lista). Antes de arrancar la 7 conviene tener la **convención oficial de
+   códigos** (siglas de tipos/procesos, alcance del consecutivo), que toca la gestión
+   de tablas maestras; mientras no llegue, el patrón se valida contra
+   `configuracion.patron_codigo` (fallback `^[A-Z]{2,4}-[A-Z]{2,4}-\d{3}$`), editable
+   sin migración. Método de siempre: proponer diseño → aprobar → plan TDD → ejecutar
+   tarea por tarea con commit por tarea en `main`.
 4. **Estado del entorno:** Node 24 en CI/Docker/dev — no volver a Node 22: npm 10
    rechaza el lockfile de npm 11. Contenedores dev: `sgc-app-1` (9080) y `sgc-bd-1`
    (PG en 127.0.0.1:5434). En esta máquina 5432 lo ocupa un Postgres nativo y 5433
