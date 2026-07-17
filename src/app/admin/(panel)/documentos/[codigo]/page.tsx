@@ -1,0 +1,156 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import {
+  anularAccion,
+  crearVersionAccion,
+  editarVersionAccion,
+  publicarAccion,
+} from "@/app/admin/acciones";
+import { EliminarArchivo } from "@/componentes/admin/EliminarArchivo";
+import { EstadoBadge } from "@/componentes/admin/EstadoBadge";
+import { FormAccion } from "@/componentes/admin/FormAccion";
+import { FormularioVersionCliente } from "@/componentes/admin/FormularioVersionCliente";
+import { ZonaCarga } from "@/componentes/admin/ZonaCarga";
+import { obtenerDocumentoAdmin, type VersionAdmin } from "@/db/consultas/admin";
+
+export const metadata: Metadata = { title: "Documento — Administración SGC" };
+
+function tamanoLegible(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function SeccionVersion({ version, vigenteExiste }: { version: VersionAdmin; vigenteExiste: boolean }) {
+  const fueraDeCirculacion = version.estado === "obsoleto" || version.estado === "anulado";
+  return (
+    <section
+      className={`rounded-lg border p-4 ${fueraDeCirculacion ? "marca-estado opacity-80" : ""}`}
+      data-marca={fueraDeCirculacion ? version.estado.toUpperCase() : undefined}
+      aria-label={`Versión ${version.numero}, ${version.estado}`}
+    >
+      <header className="mb-3 flex items-center gap-3">
+        <h3 className="font-display text-lg font-semibold">Versión {version.numero}</h3>
+        <EstadoBadge estado={version.estado} />
+      </header>
+
+      <ul className="mb-3 flex flex-col gap-1 text-sm">
+        {version.archivos.map((a) => (
+          <li key={a.id} className="flex flex-wrap items-center gap-2">
+            <a href={`/admin/api/archivos/${a.id}`} target="_blank" className="font-medium hover:underline">
+              {a.nombreOriginal}
+            </a>
+            <span className="text-muted-foreground">
+              {a.rol} · {a.mime} · {tamanoLegible(a.tamanoBytes)}
+            </span>
+            {version.estado === "borrador" && <EliminarArchivo archivoId={a.id} />}
+          </li>
+        ))}
+        {version.archivos.length === 0 && (
+          <li className="text-muted-foreground">Sin archivos todavía.</li>
+        )}
+      </ul>
+
+      {version.estado === "borrador" && (
+        <div className="flex flex-col gap-4">
+          <ZonaCarga versionId={version.id} />
+
+          <details className="rounded-md border p-3" open={!version.aprobo}>
+            <summary className="cursor-pointer text-sm font-medium">
+              Control de la versión (elaboró / revisó / aprobó)
+            </summary>
+            <FormularioVersionCliente
+              versionId={version.id}
+              valores={version}
+              accion={editarVersionAccion}
+            />
+          </details>
+
+          <FormAccion
+            accion={publicarAccion}
+            etiqueta={`Publicar versión ${version.numero}`}
+            confirmacion={
+              vigenteExiste
+                ? "La versión vigente actual pasará a OBSOLETO en el mismo instante. Los funcionarios verán esta versión de inmediato."
+                : "El documento quedará visible para todo el hospital."
+            }
+            campos={{ versionId: version.id }}
+          />
+        </div>
+      )}
+      {version.resumenCambios && (
+        <p className="mt-2 text-sm text-muted-foreground">Cambios: {version.resumenCambios}</p>
+      )}
+    </section>
+  );
+}
+
+export default async function PaginaDocumentoAdmin({
+  params,
+}: {
+  params: Promise<{ codigo: string }>;
+}) {
+  const { codigo } = await params;
+  const documento = await obtenerDocumentoAdmin(decodeURIComponent(codigo));
+  if (!documento) notFound();
+
+  const vigente = documento.versiones.find((v) => v.estado === "vigente");
+  const borrador = documento.versiones.find((v) => v.estado === "borrador");
+
+  return (
+    <main className="flex flex-col gap-6">
+      <header>
+        <p className="font-mono text-sm text-muted-foreground">{documento.codigo}</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="font-display text-2xl font-semibold">{documento.titulo}</h1>
+          <Link
+            href={`/admin/documentos/${documento.codigo}/editar`}
+            className="rounded-md border px-3 py-1 text-sm hover:bg-muted"
+          >
+            Editar metadatos
+          </Link>
+        </div>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {documento.tipoNombre} · Aplica en:{" "}
+          {documento.asociaciones
+            .map((a) => (a.esPrincipal ? `${a.nombre} (propietario)` : a.nombre))
+            .join(" · ")}
+        </p>
+      </header>
+
+      <div className="flex flex-wrap gap-3">
+        {!borrador && (
+          <FormAccion
+            accion={crearVersionAccion}
+            etiqueta="Nueva versión (borrador)"
+            campos={{ documentoId: documento.id }}
+          />
+        )}
+        {vigente && (
+          <FormAccion
+            accion={anularAccion}
+            etiqueta="Anular documento"
+            tono="peligro"
+            confirmacion="El documento saldrá de circulación SIN versión de reemplazo. Dejará de ser visible para los funcionarios. La versión queda retenida como ANULADO."
+            campos={{ documentoId: documento.id }}
+          />
+        )}
+        {vigente && (
+          <Link
+            href={`/documentos/${documento.codigo}`}
+            className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+          >
+            Ver ficha pública
+          </Link>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-4">
+        {documento.versiones.map((v) => (
+          <SeccionVersion key={v.id} version={v} vigenteExiste={Boolean(vigente)} />
+        ))}
+      </div>
+    </main>
+  );
+}
