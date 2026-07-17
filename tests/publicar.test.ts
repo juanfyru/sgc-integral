@@ -14,12 +14,14 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 
 import { obtenerSql } from "@/db/cliente";
 import {
+  anularVigente,
   asegurarAdmin,
   crearDocumento,
   crearVersionBorrador,
   editarMetadatos,
   editarVersionBorrador,
   obtenerPatronCodigo,
+  publicarVersion,
 } from "@/db/consultas/admin";
 
 const sql = () => obtenerSql();
@@ -112,5 +114,75 @@ describe("crear y editar", () => {
     const patron = await obtenerPatronCodigo();
     expect(patron.test("PR-GTH-001")).toBe(true);
     expect(patron.test("basura")).toBe(false);
+  });
+});
+
+// Inserta una fila mínima en archivos para poder publicar (el flujo real
+// pasa por el handler de subida; aquí se prueba SOLO la transacción).
+async function archivoFalso(versionId: number, sufijo: string) {
+  await sql()`INSERT INTO archivos (version_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
+    VALUES (${versionId}, 'principal', ${"pruebas/falso-" + sufijo + ".pdf"},
+            'falso.pdf', 'pdf', 'application/pdf', 100, ${"hash-" + sufijo})`;
+}
+
+describe("publicar y anular", () => {
+  it("no publica sin archivo principal", async () => {
+    const [v] = await sql()`SELECT v.id FROM documento_versiones v
+      JOIN documentos d ON d.id = v.documento_id
+      WHERE d.codigo = ${CODIGO} AND v.estado = 'borrador'`;
+    await expect(publicarVersion(v.id, usuarioId)).rejects.toThrow(/principal/);
+  });
+
+  it("publica v1: queda vigente, con auditoria", async () => {
+    const [v] = await sql()`SELECT v.id FROM documento_versiones v
+      JOIN documentos d ON d.id = v.documento_id
+      WHERE d.codigo = ${CODIGO} AND v.estado = 'borrador'`;
+    await archivoFalso(v.id, "v1");
+    const r = await publicarVersion(v.id, usuarioId);
+    expect(r.obsoletas).toBe(0);
+    const [v2] = await sql()`SELECT estado FROM documento_versiones WHERE id = ${v.id}`;
+    expect(v2.estado).toBe("vigente");
+  });
+
+  it("publicar v2 vuelve obsoleta a v1 en la misma transaccion", async () => {
+    const [d] = await sql()`SELECT id FROM documentos WHERE codigo = ${CODIGO}`;
+    const { versionId } = await crearVersionBorrador(d.id, usuarioId);
+    await editarVersionBorrador(versionId, {
+      fechaElaboracion: null, fechaRevision: null, fechaAprobacion: "2026-07-15",
+      elaboro: null, reviso: null, aprobo: "Gerente", resumenCambios: "Cambio",
+    }, usuarioId);
+    await archivoFalso(versionId, "v2");
+    const r = await publicarVersion(versionId, usuarioId);
+    expect(r.obsoletas).toBe(1);
+
+    const estados = await sql()`SELECT numero, estado FROM documento_versiones
+      WHERE documento_id = ${d.id} ORDER BY numero`;
+    expect(estados).toMatchObject([
+      { numero: 1, estado: "obsoleto" },
+      { numero: 2, estado: "vigente" },
+    ]);
+    // La regla de oro: exactamente UNA vigente.
+    const vigentes = await sql()`SELECT 1 FROM documento_versiones
+      WHERE documento_id = ${d.id} AND estado = 'vigente'`;
+    expect(vigentes.length).toBe(1);
+  });
+
+  it("no publica un borrador sin evidencia de aprobacion", async () => {
+    const [d] = await sql()`SELECT id FROM documentos WHERE codigo = ${CODIGO}`;
+    const { versionId } = await crearVersionBorrador(d.id, usuarioId);
+    await archivoFalso(versionId, "v3");
+    await expect(publicarVersion(versionId, usuarioId)).rejects.toThrow(/aprobaci/);
+  });
+
+  it("anularVigente saca el documento de circulacion", async () => {
+    const [d] = await sql()`SELECT id FROM documentos WHERE codigo = ${CODIGO}`;
+    await anularVigente(d.id, usuarioId);
+    const vigentes = await sql()`SELECT 1 FROM documento_versiones
+      WHERE documento_id = ${d.id} AND estado = 'vigente'`;
+    expect(vigentes.length).toBe(0);
+    const [anulada] = await sql()`SELECT 1 FROM documento_versiones
+      WHERE documento_id = ${d.id} AND estado = 'anulado'`;
+    expect(anulada).toBeTruthy();
+    await expect(anularVigente(d.id, usuarioId)).rejects.toThrow(/vigente/);
   });
 });
