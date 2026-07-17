@@ -15,10 +15,16 @@ const permitirArchivo = crearLimitador({ limite: 60, ventanaMs: 60_000 });
  * webroot (reglas 3 y 7). Sin `?descarga=1` responde inline (vista previa);
  * con él, como adjunto y registra el evento de descarga (D8). La vista de la
  * ficha ya registra el evento 'vista' — el servido inline no lo duplica.
+ *
+ * El último segmento opcional `[[...nombre]]` es cosmético: lleva el nombre
+ * real del archivo (con su extensión) al final de la URL. El archivo se
+ * resuelve SIEMPRE por `archivoId`; el nombre solo hace que el visor de PDF
+ * embebido del navegador (y las extensiones/gestores de descarga) deriven un
+ * nombre correcto con extensión en vez de un GUID sin extensión.
  */
 export async function GET(
   peticion: NextRequest,
-  { params }: { params: Promise<{ codigo: string; archivoId: string }> },
+  { params }: { params: Promise<{ codigo: string; archivoId: string; nombre?: string[] }> },
 ) {
   const { codigo, archivoId } = await params;
 

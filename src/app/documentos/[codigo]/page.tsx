@@ -68,6 +68,13 @@ export default async function FichaDocumento({
   const pdf = ficha.archivos.find((a) => a.mime === "application/pdf");
   const rutaBase = `/documentos/${ficha.codigo.toLowerCase()}`;
 
+  // URL del archivo con el nombre real al final: el visor de PDF embebido del
+  // navegador (y extensiones/gestores de descarga) derivan el nombre de la
+  // URL, no siempre del Content-Disposition. Sin esto algunos lo guardan con
+  // un GUID sin extensión. El archivo se resuelve por id; el nombre es cosmético.
+  const urlArchivo = (id: number, nombre: string, descarga = false) =>
+    `${rutaBase}/archivos/${id}/${encodeURIComponent(nombre)}${descarga ? "?descarga=1" : ""}`;
+
   return (
     <div
       className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:py-10"
@@ -136,8 +143,8 @@ export default async function FichaDocumento({
           {pdf ? (
             <section aria-label="Vista previa del documento">
               <VisorPdf
-                src={`${rutaBase}/archivos/${pdf.id}`}
-                urlDescarga={`${rutaBase}/archivos/${pdf.id}?descarga=1`}
+                src={urlArchivo(pdf.id, pdf.nombreOriginal)}
+                urlDescarga={urlArchivo(pdf.id, pdf.nombreOriginal, true)}
                 nombreDescarga={pdf.nombreOriginal}
                 titulo={ficha.titulo}
               />
@@ -180,7 +187,7 @@ export default async function FichaDocumento({
                     <div className="flex shrink-0 items-center gap-1">
                       {archivo.mime === "application/pdf" && (
                         <a
-                          href={`${rutaBase}/archivos/${archivo.id}`}
+                          href={urlArchivo(archivo.id, archivo.nombreOriginal)}
                           target="_blank"
                           rel="noopener"
                           aria-label={`Abrir ${ETIQUETA_ROL[archivo.rol]} (${formato.etiqueta}) en una pestaña nueva`}
@@ -190,7 +197,7 @@ export default async function FichaDocumento({
                         </a>
                       )}
                       <a
-                        href={`${rutaBase}/archivos/${archivo.id}?descarga=1`}
+                        href={urlArchivo(archivo.id, archivo.nombreOriginal, true)}
                         download={archivo.nombreOriginal}
                         aria-label={`Descargar ${ETIQUETA_ROL[archivo.rol]} (${formato.etiqueta}, ${formatearTamano(archivo.tamanoBytes)})`}
                         className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-banda)] px-2.5 py-1.5 text-xs font-medium text-white hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-banda)]"
