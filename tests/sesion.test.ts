@@ -11,6 +11,8 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 }
 
 import { obtenerSql } from "@/db/cliente";
+import { asegurarAdmin } from "@/db/consultas/admin";
+import { verificarClave } from "@/lib/clave";
 import { cerrarSesion, crearSesion, validarSesion } from "@/lib/sesion";
 
 const sql = () => obtenerSql();
@@ -75,5 +77,23 @@ describe("sesiones", () => {
     const { token } = await crearSesion(usuarioId);
     await cerrarSesion(token);
     expect(await validarSesion(token)).toBeNull();
+  });
+});
+
+describe("asegurarAdmin", () => {
+  afterAll(async () => {
+    await sql()`DELETE FROM usuarios WHERE usuario = 'admin_prueba'`;
+  });
+
+  it("crea, no duplica, y solo cambia la clave con forzar", async () => {
+    expect(await asegurarAdmin("admin_prueba", "Admin", "clave-uno")).toBe("creado");
+    expect(await asegurarAdmin("admin_prueba", "Admin", "clave-dos")).toBe("existente");
+
+    let [u] = await sql()`SELECT hash_clave FROM usuarios WHERE usuario = 'admin_prueba'`;
+    expect(await verificarClave(u.hash_clave, "clave-uno")).toBe(true);
+
+    expect(await asegurarAdmin("admin_prueba", "Admin", "clave-dos", true)).toBe("clave_actualizada");
+    [u] = await sql()`SELECT hash_clave FROM usuarios WHERE usuario = 'admin_prueba'`;
+    expect(await verificarClave(u.hash_clave, "clave-dos")).toBe(true);
   });
 });

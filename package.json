@@ -10,7 +10,8 @@
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:seed": "tsx src/db/semilla.ts"
+    "db:seed": "tsx src/db/semilla.ts",
+    "admin:asegurar": "tsx scripts/asegurar-admin.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

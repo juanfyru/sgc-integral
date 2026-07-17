@@ -1,4 +1,4 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+﻿# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
 /node_modules
@@ -20,7 +20,7 @@
 # production
 /build
 
-# almacén local de archivos de documentos (lo regenera npm run db:seed)
+# almacÃ©n local de archivos de documentos (lo regenera npm run db:seed)
 /almacen
 
 # misc
@@ -35,6 +35,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
