@@ -1,5 +1,14 @@
 import { NextRequest } from "next/server";
 import { describe, expect, it } from "vitest";
+import {
+  anularAccion,
+  crearDocumentoAccion,
+  crearVersionAccion,
+  editarDocumentoAccion,
+  editarVersionAccion,
+  publicarAccion,
+  salir,
+} from "@/app/admin/acciones";
 import { DELETE as eliminarArchivo, GET as verArchivo } from "@/app/admin/api/archivos/[archivoId]/route";
 import { POST as subirArchivo } from "@/app/admin/api/archivos/route";
 import { proxy } from "@/proxy";
@@ -57,4 +66,24 @@ describe("handlers de archivos sin sesión", () => {
     );
     expect(res.status).toBe(401);
   });
+});
+
+describe("actions de mutación sin sesión", () => {
+  // Fuera de un request de Next, cookies() lanza y requerirSesion propaga:
+  // ninguna mutación es alcanzable sin sesión (regla ISO 4).
+  const fd = new FormData();
+  const casos: Array<[string, () => Promise<unknown>]> = [
+    ["crearDocumentoAccion", () => crearDocumentoAccion(null, fd)],
+    ["editarDocumentoAccion", () => editarDocumentoAccion(null, fd)],
+    ["crearVersionAccion", () => crearVersionAccion(null, fd)],
+    ["editarVersionAccion", () => editarVersionAccion(null, fd)],
+    ["publicarAccion", () => publicarAccion(null, fd)],
+    ["anularAccion", () => anularAccion(null, fd)],
+    ["salir", () => salir()],
+  ];
+  for (const [nombre, invocar] of casos) {
+    it(`${nombre} rechaza sin sesión`, async () => {
+      await expect(invocar()).rejects.toThrow();
+    });
+  }
 });
