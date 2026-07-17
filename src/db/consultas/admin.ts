@@ -248,6 +248,81 @@ export async function publicarVersion(
   });
 }
 
+export async function obtenerVersionParaSubida(versionId: number) {
+  const sql = obtenerSql();
+  const [v] = await sql`SELECT v.id, v.numero, v.estado, d.id AS documento_id, d.codigo
+    FROM documento_versiones v JOIN documentos d ON d.id = v.documento_id
+    WHERE v.id = ${versionId}`;
+  if (!v) return null;
+  return {
+    id: v.id, numero: v.numero, estado: v.estado,
+    documentoId: v.documento_id, codigo: v.codigo,
+  };
+}
+
+export async function registrarArchivo(
+  datos: {
+    versionId: number; rol: string; ruta: string; nombreOriginal: string;
+    extension: string; mime: string; tamanoBytes: number; hashSha256: string;
+  },
+  usuarioId: number,
+): Promise<{ id: number }> {
+  const sql = obtenerSql();
+  try {
+    return await sql.begin(async (tx) => {
+      const [archivo] = await tx`INSERT INTO archivos
+          (version_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
+        VALUES (${datos.versionId}, ${datos.rol}, ${datos.ruta}, ${datos.nombreOriginal},
+                ${datos.extension}, ${datos.mime}, ${datos.tamanoBytes}, ${datos.hashSha256})
+        RETURNING id`;
+      await registrarAuditoria(tx, {
+        usuarioId, accion: "subir_archivo", entidad: "archivo", entidadId: archivo.id,
+        detalle: { versionId: datos.versionId, rol: datos.rol, nombre: datos.nombreOriginal },
+      });
+      return { id: archivo.id };
+    });
+  } catch (err) {
+    if ((err as { code?: string }).code === "23505") {
+      throw new Error("Ya hay un archivo principal en esta versión");
+    }
+    throw err;
+  }
+}
+
+export async function obtenerArchivoAdmin(archivoId: number) {
+  const sql = obtenerSql();
+  const [a] = await sql`SELECT a.id, a.ruta, a.mime, a.nombre_original, a.version_id, v.estado
+    FROM archivos a JOIN documento_versiones v ON v.id = a.version_id
+    WHERE a.id = ${archivoId}`;
+  if (!a) return null;
+  return {
+    id: a.id, ruta: a.ruta, mime: a.mime, nombreOriginal: a.nombre_original,
+    versionId: a.version_id, estadoVersion: a.estado,
+  };
+}
+
+export async function eliminarArchivoBorrador(
+  archivoId: number,
+  usuarioId: number,
+): Promise<{ ruta: string }> {
+  const sql = obtenerSql();
+  return await sql.begin(async (tx) => {
+    const [archivo] = await tx`SELECT a.id, a.ruta, a.nombre_original, v.estado
+      FROM archivos a JOIN documento_versiones v ON v.id = a.version_id
+      WHERE a.id = ${archivoId} FOR UPDATE`;
+    if (!archivo) throw new Error("El archivo no existe");
+    if (archivo.estado !== "borrador") {
+      throw new Error("Solo se pueden eliminar archivos de una versión en borrador");
+    }
+    await tx`DELETE FROM archivos WHERE id = ${archivoId}`;
+    await registrarAuditoria(tx, {
+      usuarioId, accion: "eliminar_archivo", entidad: "archivo", entidadId: archivoId,
+      detalle: { nombre: archivo.nombre_original },
+    });
+    return { ruta: archivo.ruta };
+  });
+}
+
 export async function anularVigente(
   documentoId: number,
   usuarioId: number,
