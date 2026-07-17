@@ -138,6 +138,7 @@ export default async function FichaDocumento({
               <VisorPdf
                 src={`${rutaBase}/archivos/${pdf.id}`}
                 urlDescarga={`${rutaBase}/archivos/${pdf.id}?descarga=1`}
+                nombreDescarga={pdf.nombreOriginal}
                 titulo={ficha.titulo}
               />
             </section>
@@ -190,6 +191,7 @@ export default async function FichaDocumento({
                       )}
                       <a
                         href={`${rutaBase}/archivos/${archivo.id}?descarga=1`}
+                        download={archivo.nombreOriginal}
                         aria-label={`Descargar ${ETIQUETA_ROL[archivo.rol]} (${formato.etiqueta}, ${formatearTamano(archivo.tamanoBytes)})`}
                         className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-banda)] px-2.5 py-1.5 text-xs font-medium text-white hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-banda)]"
                       >
