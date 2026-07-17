@@ -23,7 +23,9 @@ import { crearLimitador } from "@/lib/limite";
 import { cerrarSesion, crearSesion, COOKIE_SESION } from "@/lib/sesion";
 import { requerirSesion } from "@/lib/sesion-actual";
 
-export type EstadoAccion = { ok: false; error: string } | null;
+export type EstadoAccion =
+  | { ok: false; error: string; valores?: Record<string, string | string[]> }
+  | null;
 
 // 5 intentos de login por minuto por IP: frena fuerza bruta sin castigar
 // un dedazo. Instancia única en el NAS — el Map en memoria basta (D36).
@@ -153,6 +155,21 @@ function parsearVersion(formData: FormData): DatosVersion {
   };
 }
 
+// React 19 resetea los campos no controlados al completar la action: los
+// valores enviados vuelven en el estado para repoblarlos como defaultValue.
+function valoresDeFormulario(
+  formData: FormData,
+): Record<string, string | string[]> {
+  const valores: Record<string, string | string[]> = {};
+  for (const clave of new Set(formData.keys())) {
+    const todos = formData
+      .getAll(clave)
+      .filter((v): v is string => typeof v === "string");
+    valores[clave] = todos.length > 1 ? todos : (todos[0] ?? "");
+  }
+  return valores;
+}
+
 // Envuelve la mutación: requerirSesion SIEMPRE primero; los errores de
 // negocio vuelven al formulario como { ok: false } sin perder lo escrito.
 // redirect lanza NEXT_REDIRECT a propósito — va FUERA del try para no
@@ -166,7 +183,11 @@ async function mutacion(
   try {
     destino = await fn(sesion.usuarioId, formData);
   } catch (err) {
-    return { ok: false, error: (err as Error).message };
+    return {
+      ok: false,
+      error: (err as Error).message,
+      valores: valoresDeFormulario(formData),
+    };
   }
   revalidatePath("/", "layout");
   if (destino) redirect(destino);
