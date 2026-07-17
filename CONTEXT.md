@@ -1,53 +1,61 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-07-16**
-> (Fase 5 aprobada; Fase 6 diseñada y planificada, ejecución NO iniciada).
+> Se actualiza al cierre de cada fase. Última actualización: **2026-07-17**
+> (Fase 6 completada e implementada de punta a punta; pendiente del veredicto
+> del usuario).
 
 ## ⏸ Punto de reanudación (próxima sesión)
 
-1. **Dónde quedamos:** el usuario aprobó la Fase 5 y el diseño completo de la
-   Fase 6. Hay dos documentos commiteados que son la fuente de verdad:
-   - Spec aprobado: `docs/superpowers/specs/2026-07-16-fase6-auth-admin-design.md`
-   - Plan de implementación (13 tareas TDD con código completo por paso):
-     `docs/superpowers/plans/2026-07-16-fase6-auth-admin.md`
-   El usuario eligió ejecución **inline** (skill superpowers:executing-plans, no
-   subagentes). Se creó la lista de todos (T1–T13) y se verificó que `sgc-bd-1`
-   está corriendo. **No se escribió NI UNA línea de código de la Fase 6**: la
-   sesión se pausó justo antes de arrancar la Task 1.
-2. **Lo primero al reanudar:** ejecutar el plan tarea por tarea desde la
-   **Task 1** (instalar `@node-rs/argon2`, `src/lib/clave.ts` con TDD, smoke
-   ARM64 en el Dockerfile). Seguir los pasos del plan AL PIE DE LA LETRA (cada
-   tarea trae test que falla → implementación → test verde → lint → commit).
-   Convención establecida: se trabaja directamente en `main`, un commit por
-   tarea. Antes de las tareas con BD (T2+): la BD dev debe estar migrada y
-   sembrada (`docker compose -f docker-compose.dev.yml up -d bd &&
-   npm run db:migrate && npm run db:seed`).
-3. **Decisiones de la Fase 6 ya tomadas por el usuario** (no volver a preguntar):
-   flujo borrador → publicar con confirmación; 25 MB máx. por archivo; admin por
-   env vars (`ADMIN_USUARIO`/`ADMIN_CLAVE`) + script de reseteo; alcance = ciclo
-   completo (publicar, anular, editar metadatos); mutaciones = Server Actions +
-   route handler dedicado de subida. Ajustes documentados en el plan: subida por
-   **cuerpo crudo streaming** (no multipart), y se añaden GET admin (vista previa
-   de borradores) y DELETE de archivos de borrador.
-4. **Estado del entorno al pausar:** CI verde en `c3a1fb8`; después solo hubo
-   commits de docs (`9b2ce89` spec, `24cbc23` plan — pendientes de push). Node 24
-   en CI/Docker/dev — no volver a Node 22: npm 10 rechaza el lockfile de npm 11.
-   Contenedores dev: `sgc-app-1` (9080) y `sgc-bd-1` (PG en 127.0.0.1:5434). En esta
-   máquina 5432 lo ocupa un Postgres nativo y 5433 el proyecto doctime. Suele quedar
-   un `next dev` huérfano en el puerto 3000 de sesiones anteriores (Next avisa el
-   PID; sirve tal cual porque recompila en caliente). La cuenta GitHub es `juanfyru`
-   (repo privado sgc-suaza); no hay `gh` CLI — el estado del CI se consulta con el
-   token de `git credential fill` contra la API.
-5. **Sigue pendiente del usuario:** convención oficial de códigos (siglas de tipos y
-   procesos, alcance del consecutivo) y logo institucional en buena resolución.
+1. **Dónde quedamos:** la Fase 6 (auth + panel admin de carga y versionado) está
+   **implementada completa** siguiendo el plan `docs/superpowers/plans/2026-07-16-fase6-auth-admin.md`
+   tarea por tarea (T1–T13), un commit por tarea en `main`. Todo el ciclo ISO
+   funciona y fue verificado en navegador real (login, rate limit, subida con
+   MIME por magic bytes, rechazo de ejecutable renombrado, publicar con
+   obsolescencia automática, anular, auditoría completa). Suite: **109 tests en
+   verde**; `npm run lint` y `npm run build` limpios. Falta el **veredicto del
+   usuario** sobre la fase.
+2. **Recorrido de prueba (demo de la fase)** — con `npm run dev`, BD dev arriba
+   y `npm run admin:asegurar` hecho (credenciales de `.env.local`:
+   `admin` / `cambiar-esta-clave`):
+   - `/admin` redirige a `/admin/ingreso`; clave mala → error; 6 intentos → "Espere un minuto".
+   - Login correcto → tabla con los 28 documentos del seed y sus badges de estado.
+   - "Nuevo documento" `PR-GTH-990` con propietario Gestión del Talento Humano →
+     redirige al detalle (versión 1 borrador). Código inválido conserva lo escrito.
+   - En el detalle: arrastrar un PDF (aparece con MIME real) y un `.exe` renombrado
+     a `.pdf` (rechazo 415). Publicar sin "aprobó" → error. Llenar control de
+     versión → publicar (confirmación) → VIGENTE; ficha pública y búsqueda la muestran.
+   - "Nueva versión" → subir PDF, aprobar, publicar → v1 queda OBSOLETO con banda
+     diagonal; el público solo ve v2. "Anular" → 404 público, ANULADO retenido.
+   - `SELECT accion FROM auditoria ORDER BY id DESC` muestra el rastro (quién/qué/cuándo).
+   - Resetear la clave del admin: `npm run admin:asegurar -- --forzar-clave`.
+     (El documento `PR-GTH-990` de la demo se borró de la BD dev al cerrar; recrear si se quiere repetir.)
+3. **Lo primero al reanudar:** esperar el veredicto del usuario sobre la Fase 6.
+   Si aprueba, planear la Fase 7 (ver `PLAN.md`). Sigue pendiente del usuario la
+   **convención oficial de códigos** (siglas de tipos/procesos, alcance del
+   consecutivo): mientras no llegue, el patrón se valida contra
+   `configuracion.patron_codigo` (fallback `^[A-Z]{2,4}-[A-Z]{2,4}-\d{3}$`),
+   editable sin migración.
+4. **Estado del entorno:** Node 24 en CI/Docker/dev — no volver a Node 22: npm 10
+   rechaza el lockfile de npm 11. Contenedores dev: `sgc-app-1` (9080) y `sgc-bd-1`
+   (PG en 127.0.0.1:5434). En esta máquina 5432 lo ocupa un Postgres nativo y 5433
+   el proyecto doctime. Suele quedar un `next dev` huérfano en el puerto 3000 de
+   sesiones anteriores (Next avisa el PID; sirve tal cual porque recompila en
+   caliente). La cuenta GitHub es `juanfyru` (repo privado sgc-suaza); no hay `gh`
+   CLI — el estado del CI se consulta con el token de `git credential fill` contra
+   la API.
 
 ## Estado actual
 
-- **Fase actual:** 5 — completada, pendiente del veredicto del usuario. Búsqueda con
-  filtros facetados funcionando de punta a punta con 64/64 tests en verde; verificada
-  en navegador real (tipeo "vacunasion", acentos, GTH parcial, filtros combinados
-  tipo+proceso+subproceso, registro en `busquedas`, límite de búsqueda visible en la
-  petición 31+ y 429 en la descarga 61+) y `npm run build` limpio.
+- **Fase actual:** 6 — completada, pendiente del veredicto del usuario. Auth propia
+  (cookie httpOnly + tabla `sesiones` con token hasheado SHA-256 + Argon2id) y panel
+  admin con el ciclo documental ISO completo (crear, subir archivos en streaming,
+  publicar con obsolescencia automática en una transacción, anular, editar metadatos),
+  todo auditado y con guard en dos capas (proxy optimista + `requerirSesion` real).
+  Verificado en navegador de punta a punta; 109 tests en verde; lint y build limpios.
+- **Hecho (Fase 5):** búsqueda con filtros facetados funcionando de punta a punta;
+  verificada en navegador real (tipeo "vacunasion", acentos, GTH parcial, filtros
+  combinados tipo+proceso+subproceso, registro en `busquedas`, límite de búsqueda
+  visible en la petición 31+ y 429 en la descarga 61+) y `npm run build` limpio.
 - **Hecho (Fase 4):** navegación en profundidad completa (mapa → proceso →
   subproceso → ficha → vista previa PDF → descarga), aprobada por el usuario el
   2026-07-16 tras el fix del visor (`2666a6d`).
@@ -97,7 +105,28 @@
   router.replace, TarjetaResultado, TextoResaltado) y `EncabezadoSitio` global en el
   layout (marca + form GET a /buscar en todas las páginas); 429 con Retry-After en
   el route handler de archivos; tests `busqueda-fase5` (15) y `limite` (4).
-- **Sigue:** Fase 6 — auth + panel admin: carga y versionado (ver PLAN.md).
+- **Hecho (Fase 6):** hash de claves con Argon2id (`src/lib/clave.ts`, smoke ARM64 en
+  el Dockerfile); ciclo de sesión en BD con token cuyo SHA-256 es la PK de `sesiones`,
+  renovación deslizante 12 h y limpieza oportunista (`src/lib/sesion.ts`,
+  `sesion-constantes.ts`); bootstrap idempotente del admin por env vars
+  (`asegurarAdmin` en `src/db/consultas/admin.ts`, script `scripts/asegurar-admin.ts`,
+  `npm run admin:asegurar [-- --forzar-clave]`); guard en dos capas (`src/proxy.ts`
+  optimista + `src/lib/sesion-actual.ts` `requerirSesion`); consultas de escritura y
+  lectura del panel (crear documento/versión, editar metadatos/versión, publicar,
+  anular, listados, detalle — todas en `admin.ts`) con auditoría transaccional;
+  validación de subida por allowlist + magic bytes con nombres saneados
+  (`src/lib/subida.ts`); handlers de archivos del admin (POST subida por cuerpo crudo
+  en streaming, GET vista previa de cualquier estado, DELETE de borrador) y
+  `src/lib/servir-archivo.ts` extraído del route público sin cambiar su comportamiento;
+  Server Actions del ciclo (`src/app/admin/acciones.ts`) con login rate-limitado y
+  errores de negocio que conservan lo escrito; UI del panel (login, tabla con badges,
+  formulario de documento con asociaciones al mapa, detalle con carga drag & drop +
+  progreso XHR, publicar/anular con confirmación por `<details>`, banda diagonal
+  OBSOLETO/ANULADO); tests nuevos: `clave` (3), `sesion`+`asegurarAdmin` (7),
+  `guardia` (14), `publicar` (11), `subida` (10). Dependencia nueva: `@node-rs/argon2`
+  (prebuilds ARM64). `vitest.config.ts` excluye `.next/**` (el output standalone
+  copiaba los tests y los corría duplicados).
+- **Sigue:** Fase 7 (ver PLAN.md), tras el veredicto del usuario.
 
 ## Decisiones tomadas y su porqué
 
@@ -194,6 +223,19 @@
 | D35 | Las facetas no se filtran a sí mismas (tipo se calcula sin el filtro de tipo; proceso sin el de proceso) y los links de facetas llevan `prefetch={false}` | Cambiar de tipo/proceso nunca es callejón sin salida; sin prefetch=false, el hover de un link registraría búsquedas fantasma en `busquedas` | 2026-07-16 |
 | D36 | `crearLimitador` (ventana deslizante en Map, reloj inyectable): 30 búsquedas/min y 60 archivos/min por IP; el registro en `busquedas` solo ocurre cuando hay `q` | Instancia única en el NAS (sin Redis); el reloj como parámetro permite probar la ventana sin fake timers; el debounce ya evita registrar tecleos parciales | 2026-07-16 |
 
+## Decisiones adicionales (Fase 6)
+
+| # | Decisión | Porqué | Fecha |
+|---|---|---|---|
+| D37 | Sesión: token aleatorio de 32 bytes en cookie httpOnly; en BD vive solo su **SHA-256** como PK de `sesiones`. Vigencia 12 h con renovación deslizante (<6 h restantes → extiende) y limpieza oportunista de vencidas en cada validación | Si la BD se filtra, los hashes no sirven como tokens. La renovación evita expulsar al admin a mitad de trabajo; la tabla es diminuta (un usuario) así que el DELETE de limpieza es gratis | 2026-07-17 |
+| D38 | Cookie de sesión con `maxAge` de **7 días** aunque la sesión en BD dura 12 h | La BD es la única fuente de verdad: un token vencido simplemente no valida. Una cookie más larga evita que el navegador la borre antes y deje al admin sin poder "salir" con auditoría | 2026-07-17 |
+| D39 | Guard en **dos capas**: `proxy.ts` (Next 16, no middleware) solo mira si la cookie existe — nunca toca la BD; la validación real contra BD es `requerirSesion()` en el layout del panel y como primera línea de toda action/handler | El proxy corre en cada request y debe ser barato; la seguridad real (regla ISO 4: ninguna escritura sin sesión) se refuerza donde ocurre la mutación, no en el borde | 2026-07-17 |
+| D40 | Bootstrap del admin por **variables de entorno** (`ADMIN_USUARIO`/`ADMIN_NOMBRE`/`ADMIN_CLAVE`) con script idempotente `asegurar-admin.ts` (`--forzar-clave` resetea) | Un solo admin, sin registro público. El script corre en el arranque del contenedor y es el camino de "olvidé la clave" en el NAS. **Retirar `ADMIN_CLAVE` del compose tras el primer arranque** (documentar en Fase 10 / INSTALACION.md) | 2026-07-17 |
+| D41 | Subida por **cuerpo crudo en streaming** (archivo como body, nombre en header `x-nombre-archivo`, versión/rol en query) en vez de multipart | Streaming real a disco con hash y tope de 25 MB sin materializar el archivo en RAM (presupuesto de 768 MB) ni agregar un parser multipart. La validación (sesión, Origin, borrador, tamaño, magic bytes) es idéntica a la del spec | 2026-07-17 |
+| D42 | Se añaden `GET` (vista previa admin de **cualquier** estado) y `DELETE` (archivo de borrador) en `/admin/api/archivos/[archivoId]`, además del POST | El admin necesita revisar borradores antes de publicar y quitar un archivo mal subido sin dejar el borrador atascado. La ruta pública sigue siendo la única para funcionarios y solo sirve vigentes | 2026-07-17 |
+| D43 | MIME por **magic bytes** con allowlist extensión→MIMEs que acepta también `application/zip` para los OOXML (docx/xlsx/pptx) | `file-type` no siempre distingue el subtipo OOXML con la muestra inicial; el riesgo residual (un zip renombrado) es aceptable en una intranet con un único admin autenticado. Un ejecutable renombrado a `.pdf` sí se rechaza (probado) | 2026-07-17 |
+| D44 | Los errores de negocio de las Server Actions devuelven los **valores enviados**; el formulario los repuebla como `defaultValue` | React 19 resetea los campos no controlados al completar una action; sin esto, un código inválido borraría todo lo que el admin escribió | 2026-07-17 |
+
 ## Deuda técnica conocida
 
 - `npm audit` reporta vulnerabilidades moderadas (transitivas del scaffold/tooling).
@@ -201,9 +243,11 @@
 - El artefacto `.tar.gz` del CI aún no se ha probado con `docker load` en un NAS real
   (se hará en Fase 10; el formato `type=docker` es el estándar que Container Station
   acepta).
-- Los tests de BD (esquema, archivos-vigentes, consultas-fase4) requieren la BD dev
-  migrada y sembrada; no corren en CI todavía (agregar un job con Postgres de
-  servicio cuando el esquema se estabilice). Los de almacén y placeholders sí son
-  autónomos.
+- Los tests de BD (esquema, archivos-vigentes, consultas-fase4, **sesion, publicar**)
+  requieren la BD dev migrada y sembrada; no corren en CI todavía (agregar un job con
+  Postgres de servicio cuando el esquema se estabilice). Los de almacén, placeholders,
+  clave, subida, limite y guardia sí son autónomos.
+- Retirar `ADMIN_CLAVE` del compose del NAS tras el primer arranque (queda en el
+  entorno del contenedor); documentarlo en el INSTALACION.md de la Fase 10.
 - El route handler de archivos lee el archivo completo vía stream pero sin soporte de
   `Range`; irrelevante a esta escala, revisar solo si los PDF reales resultan enormes.
