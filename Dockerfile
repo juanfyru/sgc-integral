@@ -8,6 +8,9 @@ FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
+# Verifica que el prebuild ARM64 de @node-rs/argon2 carga y funciona.
+# Si falta el binario para linux/arm64, el build de CI truena aquí, no en el NAS.
+RUN node -e "const{hashSync,verifySync}=require('@node-rs/argon2');if(!verifySync(hashSync('humo'),'humo'))process.exit(1)"
 
 # --- Build ---
 FROM base AS builder
