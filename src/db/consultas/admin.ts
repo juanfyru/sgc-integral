@@ -323,6 +323,121 @@ export async function eliminarArchivoBorrador(
   });
 }
 
+export type FilaDocumentoAdmin = {
+  id: number; codigo: string; titulo: string;
+  tipoNombre: string; tipoSigla: string;
+  versionVigente: number | null; versionBorrador: number | null;
+  anulado: boolean; actualizadoEn: string;
+};
+
+export async function listarDocumentosAdmin(): Promise<FilaDocumentoAdmin[]> {
+  const sql = obtenerSql();
+  const filas = await sql`
+    SELECT d.id, d.codigo, d.titulo, t.nombre AS tipo_nombre, t.sigla AS tipo_sigla,
+      d.actualizado_en,
+      (SELECT numero FROM documento_versiones WHERE documento_id = d.id AND estado = 'vigente') AS vigente,
+      (SELECT numero FROM documento_versiones WHERE documento_id = d.id AND estado = 'borrador') AS borrador,
+      EXISTS (SELECT 1 FROM documento_versiones WHERE documento_id = d.id AND estado = 'anulado') AS anulado
+    FROM documentos d JOIN tipos_documento t ON t.id = d.tipo_id
+    ORDER BY d.actualizado_en DESC`;
+  return filas.map((f) => ({
+    id: f.id, codigo: f.codigo, titulo: f.titulo,
+    tipoNombre: f.tipo_nombre, tipoSigla: f.tipo_sigla,
+    versionVigente: f.vigente, versionBorrador: f.borrador,
+    anulado: f.anulado, actualizadoEn: String(f.actualizado_en),
+  }));
+}
+
+export async function listarTiposActivos() {
+  const sql = obtenerSql();
+  const filas = await sql`SELECT id, nombre, sigla FROM tipos_documento
+    WHERE activo ORDER BY orden`;
+  return filas.map((f) => ({ id: f.id, nombre: f.nombre, sigla: f.sigla }));
+}
+
+export async function listarMapaParaFormulario() {
+  const sql = obtenerSql();
+  const filas = await sql`
+    SELECT p.id, p.nombre,
+      coalesce(json_agg(json_build_object('id', s.id, 'nombre', s.nombre) ORDER BY s.orden)
+        FILTER (WHERE s.id IS NOT NULL), '[]') AS subprocesos
+    FROM procesos p
+    LEFT JOIN subprocesos s ON s.proceso_id = p.id AND s.activo
+    WHERE p.activo
+    GROUP BY p.id ORDER BY p.nombre`;
+  return filas.map((f) => ({
+    id: f.id,
+    nombre: f.nombre,
+    subprocesos: f.subprocesos as Array<{ id: number; nombre: string }>,
+  }));
+}
+
+export type VersionAdmin = {
+  id: number; numero: number; estado: string;
+  fechaElaboracion: string | null; fechaRevision: string | null;
+  fechaAprobacion: string | null; elaboro: string | null;
+  reviso: string | null; aprobo: string | null; resumenCambios: string | null;
+  archivos: Array<{ id: number; rol: string; nombreOriginal: string; mime: string; tamanoBytes: number }>;
+};
+
+export type DocumentoAdmin = {
+  id: number; codigo: string; titulo: string; tipoId: number; tipoNombre: string;
+  descripcion: string | null; palabrasClave: string | null; publicado: boolean;
+  asociaciones: Array<{ procesoId: number | null; subprocesoId: number | null; nombre: string; esPrincipal: boolean }>;
+  versiones: VersionAdmin[];
+};
+
+export async function obtenerDocumentoAdmin(
+  codigo: string,
+): Promise<DocumentoAdmin | null> {
+  const sql = obtenerSql();
+  const [doc] = await sql`SELECT d.id, d.codigo, d.titulo, d.tipo_id, t.nombre AS tipo_nombre,
+      d.descripcion, d.palabras_clave,
+      EXISTS (SELECT 1 FROM documento_versiones WHERE documento_id = d.id AND estado <> 'borrador') AS publicado
+    FROM documentos d JOIN tipos_documento t ON t.id = d.tipo_id
+    WHERE d.codigo = ${codigo}`;
+  if (!doc) return null;
+
+  const asociaciones = await sql`
+    SELECT dp.proceso_id, dp.subproceso_id, dp.es_principal,
+      coalesce(p.nombre, pr.nombre || ' › ' || s.nombre) AS nombre
+    FROM documento_proceso dp
+    LEFT JOIN procesos p ON p.id = dp.proceso_id
+    LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
+    LEFT JOIN procesos pr ON pr.id = s.proceso_id
+    WHERE dp.documento_id = ${doc.id}
+    ORDER BY dp.es_principal DESC, nombre`;
+
+  const versiones = await sql`
+    SELECT v.id, v.numero, v.estado, v.fecha_elaboracion, v.fecha_revision,
+      v.fecha_aprobacion, v.elaboro, v.reviso, v.aprobo, v.resumen_cambios,
+      coalesce(json_agg(json_build_object(
+          'id', a.id, 'rol', a.rol, 'nombreOriginal', a.nombre_original,
+          'mime', a.mime, 'tamanoBytes', a.tamano_bytes) ORDER BY a.rol)
+        FILTER (WHERE a.id IS NOT NULL), '[]') AS archivos
+    FROM documento_versiones v
+    LEFT JOIN archivos a ON a.version_id = v.id
+    WHERE v.documento_id = ${doc.id}
+    GROUP BY v.id ORDER BY v.numero DESC`;
+
+  return {
+    id: doc.id, codigo: doc.codigo, titulo: doc.titulo, tipoId: doc.tipo_id,
+    tipoNombre: doc.tipo_nombre, descripcion: doc.descripcion,
+    palabrasClave: doc.palabras_clave, publicado: doc.publicado,
+    asociaciones: asociaciones.map((a) => ({
+      procesoId: a.proceso_id, subprocesoId: a.subproceso_id,
+      nombre: a.nombre, esPrincipal: a.es_principal,
+    })),
+    versiones: versiones.map((v) => ({
+      id: v.id, numero: v.numero, estado: v.estado,
+      fechaElaboracion: v.fecha_elaboracion, fechaRevision: v.fecha_revision,
+      fechaAprobacion: v.fecha_aprobacion, elaboro: v.elaboro, reviso: v.reviso,
+      aprobo: v.aprobo, resumenCambios: v.resumen_cambios,
+      archivos: v.archivos as VersionAdmin["archivos"],
+    })),
+  };
+}
+
 export async function anularVigente(
   documentoId: number,
   usuarioId: number,

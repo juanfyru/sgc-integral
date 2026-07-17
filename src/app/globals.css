@@ -165,3 +165,25 @@
   animation: aparecer-banda 0.45s ease-out both;
   animation-delay: calc(var(--indice-banda, 0) * 90ms);
 }
+/* Marca visual inequívoca de versiones fuera de circulación (regla ISO 2). */
+.marca-estado {
+  position: relative;
+  overflow: hidden;
+}
+.marca-estado::after {
+  content: attr(data-marca);
+  position: absolute;
+  top: 1rem;
+  right: -3rem;
+  transform: rotate(35deg);
+  padding: 0.15rem 3.5rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: white;
+  background: color-mix(in srgb, #6b7280 90%, black);
+  pointer-events: none;
+}
+.marca-estado[data-marca="ANULADO"]::after {
+  background: color-mix(in srgb, #b91c1c 90%, black);
+}
