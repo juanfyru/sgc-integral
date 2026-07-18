@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import type { EstadoAccion } from "@/app/admin/acciones";
+import type { EstadoAccion } from "@/app/admin/comun";
 
 type Tipo = { id: number; nombre: string; sigla: string };
 type ProcesoConSub = {

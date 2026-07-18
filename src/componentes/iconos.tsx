@@ -86,3 +86,6 @@ export function Icono({
   const Componente = (nombre && REGISTRO[nombre]) || FileText;
   return <Componente className={className} aria-hidden="true" />;
 }
+
+// Catálogo de íconos válidos para el editor del mapa (nombres kebab-case).
+export const NOMBRES_ICONO: string[] = Object.keys(REGISTRO).sort();
