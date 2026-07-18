@@ -11,8 +11,10 @@ import {
 import {
   alternarActivo,
   borrar,
+  CLAVES_TEXTO,
   crearTipo,
   editarTipo,
+  guardarTextos,
   mover,
   TABLAS_MAPA,
   type Tabla,
@@ -85,5 +87,19 @@ export async function editarTipoAccion(
   return mutacion(formData, async (usuarioId) => {
     await editarTipo(idNumerico(formData, "id"), parsearTipo(formData), usuarioId);
     return "/admin/tipos";
+  });
+}
+
+// ── Textos institucionales ──
+
+export async function guardarTextosAccion(
+  _prev: EstadoAccion,
+  formData: FormData,
+): Promise<EstadoAccion> {
+  return mutacion(formData, async (usuarioId) => {
+    const valores: Record<string, string> = {};
+    for (const { clave } of CLAVES_TEXTO) valores[clave] = texto(formData, clave);
+    await guardarTextos(valores, usuarioId);
+    return "/admin/mapa/textos";
   });
 }

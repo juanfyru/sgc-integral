@@ -14,6 +14,7 @@ import {
   borrarAccion,
   crearTipoAccion,
   editarTipoAccion,
+  guardarTextosAccion,
   moverAccion,
 } from "@/app/admin/acciones-mapa";
 import { DELETE as eliminarArchivo, GET as verArchivo } from "@/app/admin/api/archivos/[archivoId]/route";
@@ -91,6 +92,7 @@ describe("actions de mutación sin sesión", () => {
     ["moverAccion", () => moverAccion(fd)],
     ["alternarAccion", () => alternarAccion(fd)],
     ["borrarAccion", () => borrarAccion(fd)],
+    ["guardarTextosAccion", () => guardarTextosAccion(null, fd)],
     ["salir", () => salir()],
   ];
   for (const [nombre, invocar] of casos) {

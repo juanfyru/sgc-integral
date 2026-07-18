@@ -18,8 +18,10 @@ import {
   borrar,
   crearTipo,
   editarTipo,
+  guardarTextos,
   listarTipos,
   mover,
+  obtenerTextos,
   obtenerTipo,
 } from "@/db/consultas/mapa-admin";
 
@@ -168,5 +170,20 @@ describe("tipos_documento CRUD", () => {
     await expect(
       crearTipo({ nombre: "ZZ Otro", sigla: existente.sigla, esDiligenciable: false }, usuarioId),
     ).rejects.toThrow(/ya existe/i);
+  });
+});
+
+describe("textos institucionales", () => {
+  it("guarda por UPSERT y valida el patrón de código", async () => {
+    const antes = await obtenerTextos();
+    await guardarTextos({ ...antes, lema: "ZZ lema de prueba" }, usuarioId);
+    const despues = await obtenerTextos();
+    expect(despues.lema).toBe("ZZ lema de prueba");
+    // restaurar
+    await guardarTextos({ ...despues, lema: antes.lema ?? "" }, usuarioId);
+
+    await expect(
+      guardarTextos({ patron_codigo: "(sin cerrar" }, usuarioId),
+    ).rejects.toThrow(/regular/i);
   });
 });

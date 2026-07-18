@@ -1,6 +1,7 @@
 import type { Sql, TransactionSql } from "postgres";
 import { obtenerSql } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
+import { validarPatronCodigo } from "@/lib/validaciones-mapa";
 
 export type Cliente = Sql | TransactionSql;
 
@@ -211,4 +212,50 @@ export async function editarTipo(
   } catch (err) {
     throw traducirUnico(err, "Ya existe un tipo con ese nombre o sigla");
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Textos institucionales (tabla clave-valor `configuracion`)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const CLAVES_TEXTO: ReadonlyArray<{
+  clave: string; etiqueta: string; textarea?: boolean;
+}> = [
+  { clave: "nombre_entidad", etiqueta: "Nombre de la entidad" },
+  { clave: "subtitulo_mapa", etiqueta: "Subtítulo del mapa" },
+  { clave: "lema", etiqueta: "Lema institucional", textarea: true },
+  { clave: "titulo_phva", etiqueta: "Título del ciclo PHVA" },
+  { clave: "texto_phva", etiqueta: "Texto del ciclo PHVA", textarea: true },
+  { clave: "patron_codigo", etiqueta: "Patrón del código (expresión regular)" },
+];
+
+export async function obtenerTextos(): Promise<Record<string, string>> {
+  const sql = obtenerSql();
+  const claves = CLAVES_TEXTO.map((c) => c.clave);
+  const filas = await sql`SELECT clave, valor FROM configuracion
+    WHERE clave IN ${sql(claves)}`;
+  return Object.fromEntries(filas.map((f) => [f.clave, f.valor]));
+}
+
+export async function guardarTextos(
+  valores: Record<string, string>,
+  usuarioId: number,
+): Promise<void> {
+  // Solo claves conocidas; ignora cualquier otra que llegue.
+  const permitidas = new Set(CLAVES_TEXTO.map((c) => c.clave));
+  const entradas = Object.entries(valores).filter(([k]) => permitidas.has(k));
+  if ("patron_codigo" in valores) {
+    validarPatronCodigo(valores.patron_codigo);
+  }
+  const sql = obtenerSql();
+  await sql.begin(async (tx) => {
+    for (const [clave, valor] of entradas) {
+      await tx`INSERT INTO configuracion (clave, valor) VALUES (${clave}, ${valor})
+        ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor`;
+    }
+    await registrarAuditoria(tx, {
+      usuarioId, accion: "editar_configuracion", entidad: "configuracion",
+      entidadId: null, detalle: { claves: entradas.map(([k]) => k) },
+    });
+  });
 }
