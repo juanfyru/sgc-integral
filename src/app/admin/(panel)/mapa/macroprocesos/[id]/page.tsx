@@ -3,7 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { editarMacroprocesoAccion } from "@/app/admin/acciones-mapa";
 import { FormularioMacroproceso } from "@/componentes/admin/mapa/FormularioMacroproceso";
-import { obtenerMacroproceso } from "@/db/consultas/mapa-admin";
+import { ListaProcesos } from "@/componentes/admin/mapa/ListaProcesos";
+import { listarProcesos, obtenerMacroproceso } from "@/db/consultas/mapa-admin";
 
 export const metadata: Metadata = { title: "Editar macroproceso — Administración SGC" };
 
@@ -14,6 +15,7 @@ export default async function PaginaEditarMacroproceso({
 }) {
   const m = await obtenerMacroproceso(Number((await params).id));
   if (!m) notFound();
+  const procesos = await listarProcesos(m.id);
   return (
     <main>
       <div className="mb-6 flex items-center justify-between">
@@ -26,10 +28,10 @@ export default async function PaginaEditarMacroproceso({
         </Link>
       </div>
       <FormularioMacroproceso accion={editarMacroprocesoAccion} id={m.id} valores={m} />
-      <p className="mt-6 text-sm text-muted-foreground">
-        Los procesos de este macroproceso se gestionan desde el
-        <Link href="/admin/mapa" className="ml-1 underline">editor del mapa</Link>.
-      </p>
+      <section className="mt-8">
+        <h2 className="mb-2 font-display text-lg font-semibold">Procesos</h2>
+        <ListaProcesos procesos={procesos} volverA={`/admin/mapa/macroprocesos/${m.id}`} />
+      </section>
     </main>
   );
 }

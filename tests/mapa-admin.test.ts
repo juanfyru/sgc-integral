@@ -18,17 +18,21 @@ import {
   borrar,
   crearMacroproceso,
   crearPeriferico,
+  crearProceso,
   crearTipo,
   editarMacroproceso,
   editarPeriferico,
+  editarProceso,
   editarTipo,
   guardarTextos,
   listarMacroprocesos,
   listarPerifericos,
+  listarProcesos,
   listarTipos,
   mover,
   obtenerMacroproceso,
   obtenerPeriferico,
+  obtenerProceso,
   obtenerTextos,
   obtenerTipo,
 } from "@/db/consultas/mapa-admin";
@@ -244,5 +248,26 @@ describe("macroprocesos CRUD", () => {
     await expect(
       crearMacroproceso({ letra: "Q", nombre: "ZZ", banda: "apoyo", color: "rojo", icono: "target", slug: "zz-q" }, usuarioId),
     ).rejects.toThrow(/hex/i);
+  });
+});
+
+describe("procesos CRUD", () => {
+  it("crea bajo un macroproceso, aparece en su lista y edita", async () => {
+    const [macro] = await sql()`SELECT id FROM macroprocesos ORDER BY orden LIMIT 1`;
+    const { id } = await crearProceso({
+      macroprocesoId: macro.id, nombre: "ZZ Proceso Prueba", sigla: "ZZP",
+      icono: "target", descripcion: null, slug: "zz-proceso-prueba",
+    }, usuarioId);
+    const lista = await listarProcesos(macro.id);
+    const fila = lista.find((f) => f.id === id);
+    expect(fila).toMatchObject({ sigla: "ZZP", numSubprocesos: 0, numDocs: 0 });
+
+    await editarProceso(id, {
+      macroprocesoId: macro.id, nombre: "ZZ Proceso Editado", sigla: "ZZQ",
+      icono: "users", descripcion: "desc", slug: "zz-proceso-prueba",
+    }, usuarioId);
+    const p = await obtenerProceso(id);
+    expect(p).toMatchObject({ sigla: "ZZQ", descripcion: "desc" });
+    await sql()`DELETE FROM procesos WHERE id = ${id}`;
   });
 });

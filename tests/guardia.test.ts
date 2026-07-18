@@ -14,9 +14,11 @@ import {
   borrarAccion,
   crearMacroprocesoAccion,
   crearPerifericoAccion,
+  crearProcesoAccion,
   crearTipoAccion,
   editarMacroprocesoAccion,
   editarPerifericoAccion,
+  editarProcesoAccion,
   editarTipoAccion,
   guardarTextosAccion,
   moverAccion,
@@ -101,6 +103,8 @@ describe("actions de mutación sin sesión", () => {
     ["editarPerifericoAccion", () => editarPerifericoAccion(null, fd)],
     ["crearMacroprocesoAccion", () => crearMacroprocesoAccion(null, fd)],
     ["editarMacroprocesoAccion", () => editarMacroprocesoAccion(null, fd)],
+    ["crearProcesoAccion", () => crearProcesoAccion(null, fd)],
+    ["editarProcesoAccion", () => editarProcesoAccion(null, fd)],
     ["salir", () => salir()],
   ];
   for (const [nombre, invocar] of casos) {

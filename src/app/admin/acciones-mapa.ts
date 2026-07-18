@@ -6,6 +6,7 @@ import {
   idNumerico,
   mutacion,
   texto,
+  textoONulo,
   type EstadoAccion,
 } from "@/app/admin/comun";
 import { NOMBRES_ICONO } from "@/componentes/iconos";
@@ -15,9 +16,11 @@ import {
   CLAVES_TEXTO,
   crearMacroproceso,
   crearPeriferico,
+  crearProceso,
   crearTipo,
   editarMacroproceso,
   editarPeriferico,
+  editarProceso,
   editarTipo,
   guardarTextos,
   mover,
@@ -173,5 +176,40 @@ export async function editarMacroprocesoAccion(
   return mutacion(formData, async (usuarioId) => {
     await editarMacroproceso(idNumerico(formData, "id"), parsearMacroproceso(formData), usuarioId);
     return "/admin/mapa";
+  });
+}
+
+// ── Procesos ──
+
+function parsearProceso(formData: FormData) {
+  const nombre = texto(formData, "nombre");
+  const slugManual = texto(formData, "slug");
+  return {
+    macroprocesoId: idNumerico(formData, "macroprocesoId"),
+    nombre,
+    sigla: texto(formData, "sigla"),
+    icono: validarIcono(texto(formData, "icono"), NOMBRES_ICONO),
+    descripcion: textoONulo(formData, "descripcion"),
+    slug: slugManual || generarSlug(nombre),
+  };
+}
+
+export async function crearProcesoAccion(
+  _prev: EstadoAccion,
+  formData: FormData,
+): Promise<EstadoAccion> {
+  return mutacion(formData, async (usuarioId) => {
+    await crearProceso(parsearProceso(formData), usuarioId);
+    return `/admin/mapa/macroprocesos/${idNumerico(formData, "macroprocesoId")}`;
+  });
+}
+
+export async function editarProcesoAccion(
+  _prev: EstadoAccion,
+  formData: FormData,
+): Promise<EstadoAccion> {
+  return mutacion(formData, async (usuarioId) => {
+    await editarProceso(idNumerico(formData, "id"), parsearProceso(formData), usuarioId);
+    return `/admin/mapa/macroprocesos/${idNumerico(formData, "macroprocesoId")}`;
   });
 }

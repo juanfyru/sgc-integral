@@ -5,6 +5,7 @@ import {
   validarBanda,
   validarColor,
   validarPatronCodigo,
+  validarSigla,
   validarSlug,
 } from "@/lib/validaciones-mapa";
 
@@ -456,5 +457,109 @@ export async function editarMacroproceso(
     });
   } catch (err) {
     throw traducirUnico(err, "Ya existe un macroproceso con esa letra o slug");
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Procesos (segunda capa del mapa)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type FilaProceso = {
+  id: number; nombre: string; sigla: string; icono: string; slug: string;
+  orden: number; activo: boolean; numSubprocesos: number; numDocs: number;
+  docsAfectados: string[];
+};
+
+export async function listarProcesos(macroprocesoId: number): Promise<FilaProceso[]> {
+  const sql = obtenerSql();
+  const filas = await sql`
+    SELECT p.id, p.nombre, p.sigla, p.icono, p.slug, p.orden, p.activo,
+      (SELECT count(*)::int FROM subprocesos s WHERE s.proceso_id = p.id) AS num_subprocesos,
+      (SELECT count(*)::int FROM documento_proceso dp WHERE dp.proceso_id = p.id) AS num_docs,
+      coalesce((
+        SELECT json_agg(DISTINCT d.codigo ORDER BY d.codigo)
+        FROM documentos d
+        WHERE EXISTS (SELECT 1 FROM documento_versiones v
+                      WHERE v.documento_id = d.id AND v.estado = 'vigente')
+          AND EXISTS (
+            SELECT 1 FROM documento_proceso dp
+            LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
+            WHERE dp.documento_id = d.id AND (dp.proceso_id = p.id OR s.proceso_id = p.id)
+          )
+      ), '[]') AS docs_afectados
+    FROM procesos p WHERE p.macroproceso_id = ${macroprocesoId}
+    ORDER BY p.orden`;
+  return filas.map((f) => ({
+    id: f.id, nombre: f.nombre, sigla: f.sigla, icono: f.icono, slug: f.slug,
+    orden: f.orden, activo: f.activo, numSubprocesos: f.num_subprocesos,
+    numDocs: f.num_docs, docsAfectados: f.docs_afectados as string[],
+  }));
+}
+
+export async function obtenerProceso(id: number) {
+  const sql = obtenerSql();
+  const [f] = await sql`SELECT id, macroproceso_id, nombre, sigla, icono, descripcion, slug
+    FROM procesos WHERE id = ${id}`;
+  if (!f) return null;
+  return { id: f.id, macroprocesoId: f.macroproceso_id, nombre: f.nombre,
+    sigla: f.sigla, icono: f.icono, descripcion: f.descripcion, slug: f.slug };
+}
+
+export type DatosProceso = {
+  macroprocesoId: number; nombre: string; sigla: string;
+  icono: string; descripcion: string | null; slug: string;
+};
+
+function normalizarProceso(d: DatosProceso) {
+  const datos = { ...d, sigla: validarSigla(d.sigla), slug: validarSlug(d.slug) };
+  if (!datos.nombre.trim()) throw new Error("El nombre es obligatorio");
+  return datos;
+}
+
+export async function crearProceso(
+  d: DatosProceso,
+  usuarioId: number,
+): Promise<{ id: number }> {
+  const datos = normalizarProceso(d);
+  const sql = obtenerSql();
+  try {
+    return await sql.begin(async (tx) => {
+      const orden = await siguienteOrden(tx, "procesos", "macroproceso_id", datos.macroprocesoId);
+      const [p] = await tx`INSERT INTO procesos
+          (macroproceso_id, nombre, sigla, slug, descripcion, icono, orden)
+        VALUES (${datos.macroprocesoId}, ${datos.nombre}, ${datos.sigla}, ${datos.slug},
+                ${datos.descripcion}, ${datos.icono}, ${orden}) RETURNING id`;
+      await registrarAuditoria(tx, {
+        usuarioId, accion: "crear_proceso", entidad: "procesos",
+        entidadId: p.id, detalle: datos,
+      });
+      return { id: p.id };
+    });
+  } catch (err) {
+    throw traducirUnico(err, "Ya existe un proceso con esa sigla o slug");
+  }
+}
+
+export async function editarProceso(
+  id: number,
+  d: DatosProceso,
+  usuarioId: number,
+): Promise<void> {
+  const datos = normalizarProceso(d);
+  const sql = obtenerSql();
+  try {
+    await sql.begin(async (tx) => {
+      const [p] = await tx`UPDATE procesos SET nombre = ${datos.nombre},
+          sigla = ${datos.sigla}, slug = ${datos.slug}, descripcion = ${datos.descripcion},
+          icono = ${datos.icono}
+        WHERE id = ${id} RETURNING id`;
+      if (!p) throw new Error("El proceso no existe");
+      await registrarAuditoria(tx, {
+        usuarioId, accion: "editar_proceso", entidad: "procesos",
+        entidadId: id, detalle: datos,
+      });
+    });
+  } catch (err) {
+    throw traducirUnico(err, "Ya existe un proceso con esa sigla o slug");
   }
 }
