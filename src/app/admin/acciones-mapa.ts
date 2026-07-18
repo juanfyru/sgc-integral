@@ -62,11 +62,17 @@ export async function alternarAccion(formData: FormData): Promise<void> {
   revalidatePath("/", "layout");
 }
 
+// Solo rutas internas relativas: evita open redirect si el campo se manipula.
+function rutaInterna(v: FormDataEntryValue | null): string {
+  const ruta = String(v || "");
+  return ruta.startsWith("/") && !ruta.startsWith("//") ? ruta : "/admin/mapa";
+}
+
 export async function borrarAccion(formData: FormData): Promise<void> {
   const sesion = await requerirSesion();
   await borrar(tablaValida(formData.get("tabla")), idNumerico(formData, "id"), sesion.usuarioId);
   revalidatePath("/", "layout");
-  redirect(String(formData.get("volverA") || "/admin/mapa"));
+  redirect(rutaInterna(formData.get("volverA")));
 }
 
 // ── Tipos de documento ──
