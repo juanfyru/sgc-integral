@@ -131,3 +131,84 @@ export async function borrar(
     }
   });
 }
+
+// Traduce la violación de índice único (23505) en un error de negocio legible.
+export function traducirUnico(err: unknown, mensaje: string): Error {
+  if ((err as { code?: string }).code === "23505") return new Error(mensaje);
+  return err as Error;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tipos de documento (tabla maestra)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type FilaTipo = {
+  id: number; nombre: string; sigla: string;
+  esDiligenciable: boolean; orden: number; activo: boolean; numDocs: number;
+};
+
+export async function listarTipos(): Promise<FilaTipo[]> {
+  const sql = obtenerSql();
+  const filas = await sql`
+    SELECT t.id, t.nombre, t.sigla, t.es_diligenciable, t.orden, t.activo,
+      (SELECT count(*)::int FROM documentos d WHERE d.tipo_id = t.id) AS num_docs
+    FROM tipos_documento t ORDER BY t.orden`;
+  return filas.map((f) => ({
+    id: f.id, nombre: f.nombre, sigla: f.sigla,
+    esDiligenciable: f.es_diligenciable, orden: f.orden,
+    activo: f.activo, numDocs: f.num_docs,
+  }));
+}
+
+export async function obtenerTipo(id: number) {
+  const sql = obtenerSql();
+  const [f] = await sql`SELECT id, nombre, sigla, es_diligenciable
+    FROM tipos_documento WHERE id = ${id}`;
+  if (!f) return null;
+  return { id: f.id, nombre: f.nombre, sigla: f.sigla, esDiligenciable: f.es_diligenciable };
+}
+
+export type DatosTipo = { nombre: string; sigla: string; esDiligenciable: boolean };
+
+export async function crearTipo(
+  d: DatosTipo,
+  usuarioId: number,
+): Promise<{ id: number }> {
+  const sql = obtenerSql();
+  try {
+    return await sql.begin(async (tx) => {
+      const orden = await siguienteOrden(tx, "tipos_documento", null, null);
+      const [t] = await tx`INSERT INTO tipos_documento (nombre, sigla, es_diligenciable, orden)
+        VALUES (${d.nombre}, ${d.sigla}, ${d.esDiligenciable}, ${orden}) RETURNING id`;
+      await registrarAuditoria(tx, {
+        usuarioId, accion: "crear_tipo_documento", entidad: "tipos_documento",
+        entidadId: t.id, detalle: d,
+      });
+      return { id: t.id };
+    });
+  } catch (err) {
+    throw traducirUnico(err, "Ya existe un tipo con ese nombre o sigla");
+  }
+}
+
+export async function editarTipo(
+  id: number,
+  d: DatosTipo,
+  usuarioId: number,
+): Promise<void> {
+  const sql = obtenerSql();
+  try {
+    await sql.begin(async (tx) => {
+      const [t] = await tx`UPDATE tipos_documento SET nombre = ${d.nombre},
+          sigla = ${d.sigla}, es_diligenciable = ${d.esDiligenciable}
+        WHERE id = ${id} RETURNING id`;
+      if (!t) throw new Error("El tipo no existe");
+      await registrarAuditoria(tx, {
+        usuarioId, accion: "editar_tipo_documento", entidad: "tipos_documento",
+        entidadId: id, detalle: d,
+      });
+    });
+  } catch (err) {
+    throw traducirUnico(err, "Ya existe un tipo con ese nombre o sigla");
+  }
+}

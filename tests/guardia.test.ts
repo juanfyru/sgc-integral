@@ -9,6 +9,13 @@ import {
   publicarAccion,
   salir,
 } from "@/app/admin/acciones";
+import {
+  alternarAccion,
+  borrarAccion,
+  crearTipoAccion,
+  editarTipoAccion,
+  moverAccion,
+} from "@/app/admin/acciones-mapa";
 import { DELETE as eliminarArchivo, GET as verArchivo } from "@/app/admin/api/archivos/[archivoId]/route";
 import { POST as subirArchivo } from "@/app/admin/api/archivos/route";
 import { proxy } from "@/proxy";
@@ -79,6 +86,11 @@ describe("actions de mutación sin sesión", () => {
     ["editarVersionAccion", () => editarVersionAccion(null, fd)],
     ["publicarAccion", () => publicarAccion(null, fd)],
     ["anularAccion", () => anularAccion(null, fd)],
+    ["crearTipoAccion", () => crearTipoAccion(null, fd)],
+    ["editarTipoAccion", () => editarTipoAccion(null, fd)],
+    ["moverAccion", () => moverAccion(fd)],
+    ["alternarAccion", () => alternarAccion(fd)],
+    ["borrarAccion", () => borrarAccion(fd)],
     ["salir", () => salir()],
   ];
   for (const [nombre, invocar] of casos) {

@@ -23,6 +23,8 @@ export default async function LayoutPanel({
           </Link>
           <nav className="flex gap-4 text-sm">
             <Link href="/admin" className="hover:underline">Documentos</Link>
+            <Link href="/admin/mapa" className="hover:underline">Mapa</Link>
+            <Link href="/admin/tipos" className="hover:underline">Tipos de documento</Link>
             <Link href="/" className="text-muted-foreground hover:underline">
               Ver portal público
             </Link>

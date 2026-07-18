@@ -13,7 +13,15 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 
 import { obtenerSql } from "@/db/cliente";
 import { asegurarAdmin } from "@/db/consultas/admin";
-import { alternarActivo, borrar, mover } from "@/db/consultas/mapa-admin";
+import {
+  alternarActivo,
+  borrar,
+  crearTipo,
+  editarTipo,
+  listarTipos,
+  mover,
+  obtenerTipo,
+} from "@/db/consultas/mapa-admin";
 
 const sql = () => obtenerSql();
 let usuarioId: number;
@@ -134,5 +142,31 @@ describe("borrar", () => {
     const aud = await sql()`SELECT 1 FROM auditoria
       WHERE accion = 'borrar_tipo_documento' AND entidad_id = ${tipo.id}`;
     expect(aud.length).toBe(0);
+  });
+});
+
+describe("tipos_documento CRUD", () => {
+  it("crea, aparece en el listado y se puede editar", async () => {
+    const { id } = await crearTipo(
+      { nombre: "ZZ Formato Prueba", sigla: "ZZF", esDiligenciable: true },
+      usuarioId,
+    );
+    const lista = await listarTipos();
+    const fila = lista.find((f) => f.id === id);
+    expect(fila).toMatchObject({ sigla: "ZZF", esDiligenciable: true, numDocs: 0 });
+
+    await editarTipo(id, { nombre: "ZZ Formato Prueba", sigla: "ZZG", esDiligenciable: false }, usuarioId);
+    const t = await obtenerTipo(id);
+    expect(t).toMatchObject({ sigla: "ZZG", esDiligenciable: false });
+    const [aud] = await sql()`SELECT 1 FROM auditoria
+      WHERE accion = 'editar_tipo_documento' AND entidad_id = ${id}`;
+    expect(aud).toBeTruthy();
+  });
+
+  it("rechaza sigla duplicada con error legible", async () => {
+    const [existente] = await sql()`SELECT sigla FROM tipos_documento WHERE activo LIMIT 1`;
+    await expect(
+      crearTipo({ nombre: "ZZ Otro", sigla: existente.sigla, esDiligenciable: false }, usuarioId),
+    ).rejects.toThrow(/ya existe/i);
   });
 });
