@@ -1,64 +1,50 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-07-17**
-> (Fase 6 completada e implementada de punta a punta; el usuario la está probando.
-> Próxima fase: 7 — Editor del mapa).
+> Se actualiza al cierre de cada fase. Última actualización: **2026-07-18**
+> (Fase 7 completada e implementada de punta a punta; verificada en navegador real.
+> Próxima fase: 8 — Listado Maestro + estadísticas + bitácora).
 
 ## ⏸ Punto de reanudación (próxima sesión)
 
-0. **Lo más reciente (post cierre de Fase 6):** el usuario probó el panel, cargó un
-   documento real de prueba **`PR-GTH-991`** (PDF de 211 KB, vigente, en la BD dev y
-   en `almacen/documentos/PR-GTH-991/`) y reportó que la **descarga** "no bajaba nada"
-   y mostraba un icono que no era de PDF. Diagnóstico: el servidor sirve el archivo
-   perfecto (attachment, bytes completos); el problema era del lado del navegador del
-   usuario (Chrome con extensión/gestor de descargas que guardaba el PDF con nombre
-   GUID sin extensión, en la carpeta del gestor y no en Descargas). Se aplicaron 3
-   fixes en `main` (ya pusheados): `31cb804` atributo `download` con el nombre real
-   en los botones; `126ebd9` la **URL del archivo ahora termina en el nombre real con
-   `.pdf`** (`/documentos/<cod>/archivos/<id>/<nombre>.pdf`) — se movió la ruta a
-   `[archivoId]/[[...nombre]]/route.ts` (segmento opcional que la ruta ignora; la URL
-   sin nombre sigue funcionando por compatibilidad). Verificado: descarga con nombre
-   correcto desde el botón Y desde el visor PDF embebido, tanto en Chromium limpio.
-   **Ojo:** mover la carpeta de ruta exigió reiniciar `next dev` (el huérfano del 3000
-   se detuvo y se relanzó; corriendo de nuevo). **Pendiente de confirmar por el usuario**
-   que en SU Chrome ya baja bien (si no, es una extensión suya de PDF/descargas).
-1. **Dónde quedamos:** la Fase 6 (auth + panel admin de carga y versionado) está
-   **implementada completa** siguiendo el plan `docs/superpowers/plans/2026-07-16-fase6-auth-admin.md`
-   tarea por tarea (T1–T13), un commit por tarea en `main`. Todo el ciclo ISO
-   funciona y fue verificado en navegador real (login, rate limit, subida con
-   MIME por magic bytes, rechazo de ejecutable renombrado, publicar con
-   obsolescencia automática, anular, auditoría completa). Suite: **104/109 tests en
-   verde**; los 5 rojos son solo asserts de estado exacto del seed (lista GTH, conteo
-   de estados, facetas) que "fallan" porque `PR-GTH-991` está en la BD dev — NO es una
-   regresión y en CI (BD sembrada limpia) pasan; **no borrar `PR-GTH-991`**, es del
-   usuario. `npm run lint` y `npm run build` limpios.
-2. **Recorrido de prueba (demo de la fase)** — con `npm run dev`, BD dev arriba
-   y `npm run admin:asegurar` hecho (credenciales de `.env.local`:
-   `admin` / `cambiar-esta-clave`):
-   - `/admin` redirige a `/admin/ingreso`; clave mala → error; 6 intentos → "Espere un minuto".
-   - Login correcto → tabla con los 28 documentos del seed y sus badges de estado.
-   - "Nuevo documento" `PR-GTH-990` con propietario Gestión del Talento Humano →
-     redirige al detalle (versión 1 borrador). Código inválido conserva lo escrito.
-   - En el detalle: arrastrar un PDF (aparece con MIME real) y un `.exe` renombrado
-     a `.pdf` (rechazo 415). Publicar sin "aprobó" → error. Llenar control de
-     versión → publicar (confirmación) → VIGENTE; ficha pública y búsqueda la muestran.
-   - "Nueva versión" → subir PDF, aprobar, publicar → v1 queda OBSOLETO con banda
-     diagonal; el público solo ve v2. "Anular" → 404 público, ANULADO retenido.
-   - `SELECT accion FROM auditoria ORDER BY id DESC` muestra el rastro (quién/qué/cuándo).
-   - Resetear la clave del admin: `npm run admin:asegurar -- --forzar-clave`.
-     (El documento `PR-GTH-990` de la demo se borró de la BD dev al cerrar; recrear si se quiere repetir.)
-3. **Lo primero al reanudar:** (a) confirmar con el usuario que la descarga ya le
-   funciona en su navegador; (b) si aprueba la Fase 6, **planear la Fase 7 — Editor
-   del mapa** (ver `PLAN.md` §Fase 7: el admin agrega/renombra/reordena/desactiva
-   macro/procesos/subprocesos, cambia color e ícono, edita entradas/salidas y
-   convenciones, con vista previa; gestión de tablas maestras como tipos de documento;
-   desactivar ≠ borrar; todo auditado; el mapa ya es 100% data-driven, así que la
-   base está lista). Antes de arrancar la 7 conviene tener la **convención oficial de
-   códigos** (siglas de tipos/procesos, alcance del consecutivo), que toca la gestión
-   de tablas maestras; mientras no llegue, el patrón se valida contra
-   `configuracion.patron_codigo` (fallback `^[A-Z]{2,4}-[A-Z]{2,4}-\d{3}$`), editable
-   sin migración. Método de siempre: proponer diseño → aprobar → plan TDD → ejecutar
-   tarea por tarea con commit por tarea en `main`.
+0. **Dónde quedamos:** la Fase 7 (editor del mapa + tablas maestras) está
+   **implementada completa** siguiendo el plan
+   `docs/superpowers/plans/2026-07-17-fase7-editor-mapa.md` tarea por tarea (T1–T10),
+   un commit por tarea en `main`. El admin gestiona desde el panel: tipos de documento,
+   textos institucionales, periféricos (entradas/salidas/convenciones), y las tres
+   capas del mapa (macroprocesos, procesos, subprocesos) con reordenar (↑↓),
+   activar/desactivar, borrar-solo-si-vacío, y vista previa con inactivos. Todo auditado.
+   Verificado en navegador real (crear/borrar tipo, crear proceso "Vigilancia
+   Epidemiológica" y verlo en el mapa público sin despliegue → borrarlo, advertencia de
+   huérfanos con códigos reales, vista previa con nodo inactivo en gris vs. oculto en el
+   público). Suite: **140/145 tests** (los 5 rojos son los preexistentes del seed por
+   `PR-GTH-991`; NO regresión, en CI pasan; **no borrar `PR-GTH-991`**). `npm run lint`
+   y `npm run build` limpios.
+1. **Diseño y decisiones de la Fase 7** en `docs/superpowers/specs/2026-07-17-fase7-editor-mapa-design.md`:
+   listas CRUD (no WYSIWYG), reordenar con botones ↑↓, desactivar por defecto / borrar
+   solo si vacío, cambios en vivo + vista previa con inactivos, desactivar con
+   documentos vigentes permite pero advierte con la lista de códigos huérfanos.
+2. **Recorrido de prueba (demo de la fase)** — con `npm run dev`, BD dev arriba, sesión
+   iniciada (`admin` / `cambiar-esta-clave`). En la nav del panel: **Mapa** y **Tipos de
+   documento**.
+   - `/admin/tipos`: crear un tipo (sigla 2–4 letras), reordenar con ↑↓, desactivar; el
+     botón **Borrar** solo aparece en tipos con 0 documentos.
+   - `/admin/mapa/textos`: cambiar el lema → recargar `/` y verlo cambiado.
+   - `/admin/mapa/perifericos`: crear una entrada con ícono, reordenar, desactivar.
+   - `/admin/mapa`: reordenar macroprocesos en su banda; entrar a uno → "+ Proceso",
+     crear "Vigilancia Epidemiológica" sigla VEP → abrir `/` y verlo en el mapa público
+     **sin reiniciar nada**. Desactivar un proceso con documentos vigentes → aparece la
+     advertencia con los códigos. Entrar a un proceso → "+ Subproceso".
+   - `/admin/mapa/vista-previa`: el mapa con los nodos inactivos en gris marcados
+     "inactivo" (el público no los ve).
+   - `SELECT accion FROM auditoria ORDER BY id DESC` muestra el rastro de cada cambio.
+3. **Lo primero al reanudar:** si el usuario aprueba la Fase 7, **planear la Fase 8 —
+   Listado Maestro + estadísticas + bitácora** (ver `PLAN.md` §Fase 8: Listado Maestro
+   generado desde BD, export Excel `exceljs` + PDF por hoja de impresión; dashboard de
+   más vistos/descargados y búsquedas sin resultados; vista de bitácora con filtros).
+   Sigue pendiente (no bloqueante) la **convención oficial de códigos**; mientras, el
+   patrón se valida y ahora se edita desde `/admin/mapa/textos` (`patron_codigo`).
+   Método de siempre: proponer diseño → aprobar → plan TDD → ejecutar tarea por tarea
+   con commit por tarea en `main`.
 4. **Estado del entorno:** Node 24 en CI/Docker/dev — no volver a Node 22: npm 10
    rechaza el lockfile de npm 11. Contenedores dev: `sgc-app-1` (9080) y `sgc-bd-1`
    (PG en 127.0.0.1:5434). En esta máquina 5432 lo ocupa un Postgres nativo y 5433
@@ -70,12 +56,18 @@
 
 ## Estado actual
 
-- **Fase actual:** 6 — completada, pendiente del veredicto del usuario. Auth propia
-  (cookie httpOnly + tabla `sesiones` con token hasheado SHA-256 + Argon2id) y panel
-  admin con el ciclo documental ISO completo (crear, subir archivos en streaming,
-  publicar con obsolescencia automática en una transacción, anular, editar metadatos),
-  todo auditado y con guard en dos capas (proxy optimista + `requerirSesion` real).
-  Verificado en navegador de punta a punta; 109 tests en verde; lint y build limpios.
+- **Fase actual:** 7 — completada, pendiente del veredicto del usuario. Editor del
+  mapa 100% data-driven y tablas maestras desde el panel admin: motor genérico
+  (`mover`/`alternarActivo`/`borrar` por nombre de tabla), CRUD de tipos de documento,
+  textos institucionales, periféricos, macro/procesos/subprocesos; reordenar con ↑↓,
+  desactivar con advertencia de huérfanos, borrar-solo-si-vacío, vista previa con
+  inactivos. Todo auditado. Verificado en navegador de punta a punta; 140 tests en
+  verde (5 rojos preexistentes del seed); lint y build limpios.
+- **Fase 6 (hecha):** auth propia (cookie httpOnly + tabla `sesiones` con token
+  hasheado SHA-256 + Argon2id) y panel admin con el ciclo documental ISO completo
+  (crear, subir archivos en streaming, publicar con obsolescencia automática en una
+  transacción, anular, editar metadatos), todo auditado y con guard en dos capas
+  (proxy optimista + `requerirSesion` real).
 - **Hecho (Fase 5):** búsqueda con filtros facetados funcionando de punta a punta;
   verificada en navegador real (tipeo "vacunasion", acentos, GTH parcial, filtros
   combinados tipo+proceso+subproceso, registro en `busquedas`, límite de búsqueda
@@ -150,7 +142,23 @@
   `guardia` (14), `publicar` (11), `subida` (10). Dependencia nueva: `@node-rs/argon2`
   (prebuilds ARM64). `vitest.config.ts` excluye `.next/**` (el output standalone
   copiaba los tests y los corría duplicados).
-- **Sigue:** Fase 7 (ver PLAN.md), tras el veredicto del usuario.
+- **Hecho (Fase 7):** motor genérico `src/db/consultas/mapa-admin.ts` (`mover`,
+  `alternarActivo`, `borrar`, `siguienteOrden` parametrizados por nombre de tabla con
+  `sql(tabla)`; `traducirUnico` para 23505; CRUD de tipos, periféricos, macro/procesos/
+  subprocesos con `docsAfectados` para la advertencia de huérfanos; UPSERT de textos con
+  `patron_codigo` validado); acciones `src/app/admin/acciones-mapa.ts` (genéricas de
+  fila `mover/alternar/borrar` con `tabla` validada contra allowlist + create/edit por
+  entidad, todas envueltas en `mutacion`); helpers puros extraídos a
+  `src/app/admin/comun.ts`, validadores `src/lib/validaciones-mapa.ts` y
+  `src/lib/slug.ts`; componentes UI compartidos `src/componentes/admin/mapa/`
+  (BotonesOrden, BotonToggle, BotonBorrar, ConfirmarDesactivar, SelectorIcono,
+  Formulario*/Lista* por entidad); páginas `src/app/admin/(panel)/mapa/**` y
+  `/tipos/**`; `obtenerDatosMapaAdmin()` + flag `activo?` opcional en los tipos y
+  componentes del mapa para la vista previa (el camino público intacto);
+  `NOMBRES_ICONO` expuesto desde `iconos.tsx`; tests `mapa-admin` (15) y
+  `validaciones-mapa` (7), `guardia` extendido con las nuevas rutas. Sin cambios de
+  esquema (todas las columnas ya existían).
+- **Sigue:** Fase 8 (ver PLAN.md), tras el veredicto del usuario.
 
 ## Decisiones tomadas y su porqué
 
@@ -259,6 +267,17 @@
 | D42 | Se añaden `GET` (vista previa admin de **cualquier** estado) y `DELETE` (archivo de borrador) en `/admin/api/archivos/[archivoId]`, además del POST | El admin necesita revisar borradores antes de publicar y quitar un archivo mal subido sin dejar el borrador atascado. La ruta pública sigue siendo la única para funcionarios y solo sirve vigentes | 2026-07-17 |
 | D43 | MIME por **magic bytes** con allowlist extensión→MIMEs que acepta también `application/zip` para los OOXML (docx/xlsx/pptx) | `file-type` no siempre distingue el subtipo OOXML con la muestra inicial; el riesgo residual (un zip renombrado) es aceptable en una intranet con un único admin autenticado. Un ejecutable renombrado a `.pdf` sí se rechaza (probado) | 2026-07-17 |
 | D44 | Los errores de negocio de las Server Actions devuelven los **valores enviados**; el formulario los repuebla como `defaultValue` | React 19 resetea los campos no controlados al completar una action; sin esto, un código inválido borraría todo lo que el admin escribió | 2026-07-17 |
+
+## Decisiones adicionales (Fase 7)
+
+| # | Decisión | Porqué | Fecha |
+|---|---|---|---|
+| D45 | Motor genérico por **nombre de tabla** (`mover`/`alternarActivo`/`borrar`) con `sql(tabla)` y ámbito de orden configurable (banda/macro/proceso/tipo/global) | Cinco entidades ordenables comparten la misma lógica; parametrizar evita duplicar swap/toggle/delete y sus tests. postgres.js escapa identificadores dinámicos de forma segura | 2026-07-18 |
+| D46 | **Reordenar con botones ↑↓** (Server Action que intercambia `orden` con el vecino del mismo ámbito), no drag&drop | Accesible por teclado por defecto (regla no negociable), casi sin JS, encaja con el estilo server-driven; a 2–7 hijos por nodo el drag&drop aporta poco y agrega superficie de bugs | 2026-07-18 |
+| D47 | **Desactivar por defecto; borrar solo si vacío** — el botón Borrar solo se renderiza si no hay dependientes; la FK `onDelete restrict` (traducida de 23503) es la red de seguridad | Retención ISO: nada con historia se elimina. La UI no ofrece borrar lo que tiene documentos/hijos; el intento igual falla en BD con mensaje legible | 2026-07-18 |
+| D48 | **Cambios en vivo + vista previa con inactivos** (flag `activo?` opcional en los tipos del mapa; `obtenerDatosMapaAdmin` sin filtro), sin sistema de borrador/staging | Cumple "ver el cambio en el mapa público sin despliegue"; el staging del mapa entero sería sobreingeniería. El flag opcional deja el camino público sin cambios de conducta | 2026-07-18 |
+| D49 | Al **desactivar un nodo con documentos vigentes** debajo, se permite pero se advierte con la lista de códigos que quedarán sin ruta en el mapa (siguen vigentes y buscables), no se bloquea | Evita callejones sin salida en reorganizaciones legítimas; el admin confirma con conocimiento de causa y queda en auditoría | 2026-07-18 |
+| D50 | **Slug** auto-generado del nombre al crear, estable al renombrar, editable en "opciones avanzadas" con aviso de que rompe enlaces | Preserva URLs/marcadores por defecto; permite corregir un slug cuando hace falta sin migración | 2026-07-18 |
 
 ## Deuda técnica conocida
 
