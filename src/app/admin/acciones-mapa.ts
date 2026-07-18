@@ -8,11 +8,14 @@ import {
   texto,
   type EstadoAccion,
 } from "@/app/admin/comun";
+import { NOMBRES_ICONO } from "@/componentes/iconos";
 import {
   alternarActivo,
   borrar,
   CLAVES_TEXTO,
+  crearPeriferico,
   crearTipo,
+  editarPeriferico,
   editarTipo,
   guardarTextos,
   mover,
@@ -20,7 +23,7 @@ import {
   type Tabla,
 } from "@/db/consultas/mapa-admin";
 import { requerirSesion } from "@/lib/sesion-actual";
-import { validarSigla } from "@/lib/validaciones-mapa";
+import { validarIcono, validarSigla } from "@/lib/validaciones-mapa";
 
 // ── Acciones genéricas de fila (la tabla llega del formulario y se valida) ──
 
@@ -101,5 +104,36 @@ export async function guardarTextosAccion(
     for (const { clave } of CLAVES_TEXTO) valores[clave] = texto(formData, clave);
     await guardarTextos(valores, usuarioId);
     return "/admin/mapa/textos";
+  });
+}
+
+// ── Elementos periféricos ──
+
+function parsearPeriferico(formData: FormData) {
+  const iconoBruto = texto(formData, "icono");
+  return {
+    tipo: texto(formData, "tipo"),
+    texto: texto(formData, "texto"),
+    icono: iconoBruto ? validarIcono(iconoBruto, NOMBRES_ICONO) : null,
+  };
+}
+
+export async function crearPerifericoAccion(
+  _prev: EstadoAccion,
+  formData: FormData,
+): Promise<EstadoAccion> {
+  return mutacion(formData, async (usuarioId) => {
+    await crearPeriferico(parsearPeriferico(formData), usuarioId);
+    return "/admin/mapa/perifericos";
+  });
+}
+
+export async function editarPerifericoAccion(
+  _prev: EstadoAccion,
+  formData: FormData,
+): Promise<EstadoAccion> {
+  return mutacion(formData, async (usuarioId) => {
+    await editarPeriferico(idNumerico(formData, "id"), parsearPeriferico(formData), usuarioId);
+    return "/admin/mapa/perifericos";
   });
 }

@@ -259,3 +259,88 @@ export async function guardarTextos(
     });
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Elementos periféricos (entradas / salidas / convenciones)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const TIPOS_PERIFERICO = ["entrada", "salida", "convencion"] as const;
+type TipoPeriferico = (typeof TIPOS_PERIFERICO)[number];
+
+export type FilaPeriferico = {
+  id: number; tipo: string; texto: string;
+  icono: string | null; orden: number; activo: boolean;
+};
+
+export async function listarPerifericos(): Promise<
+  Record<TipoPeriferico, FilaPeriferico[]>
+> {
+  const sql = obtenerSql();
+  const filas = await sql`SELECT id, tipo, texto, icono, orden, activo
+    FROM elementos_perifericos ORDER BY tipo, orden`;
+  const grupos: Record<TipoPeriferico, FilaPeriferico[]> = {
+    entrada: [], salida: [], convencion: [],
+  };
+  for (const f of filas) {
+    grupos[f.tipo as TipoPeriferico]?.push({
+      id: f.id, tipo: f.tipo, texto: f.texto, icono: f.icono,
+      orden: f.orden, activo: f.activo,
+    });
+  }
+  return grupos;
+}
+
+export async function obtenerPeriferico(id: number) {
+  const sql = obtenerSql();
+  const [f] = await sql`SELECT id, tipo, texto, icono FROM elementos_perifericos WHERE id = ${id}`;
+  if (!f) return null;
+  return { id: f.id, tipo: f.tipo, texto: f.texto, icono: f.icono };
+}
+
+export type DatosPeriferico = { tipo: string; texto: string; icono: string | null };
+
+function validarTipoPeriferico(tipo: string): TipoPeriferico {
+  if (!(TIPOS_PERIFERICO as readonly string[]).includes(tipo)) {
+    throw new Error("El tipo debe ser entrada, salida o convención");
+  }
+  return tipo as TipoPeriferico;
+}
+
+export async function crearPeriferico(
+  d: DatosPeriferico,
+  usuarioId: number,
+): Promise<{ id: number }> {
+  const tipo = validarTipoPeriferico(d.tipo);
+  if (!d.texto.trim()) throw new Error("El texto es obligatorio");
+  const sql = obtenerSql();
+  return await sql.begin(async (tx) => {
+    const orden = await siguienteOrden(tx, "elementos_perifericos", "tipo", tipo);
+    const [p] = await tx`INSERT INTO elementos_perifericos (tipo, texto, icono, orden)
+      VALUES (${tipo}, ${d.texto}, ${d.icono}, ${orden}) RETURNING id`;
+    await registrarAuditoria(tx, {
+      usuarioId, accion: "crear_periferico", entidad: "elementos_perifericos",
+      entidadId: p.id, detalle: d,
+    });
+    return { id: p.id };
+  });
+}
+
+export async function editarPeriferico(
+  id: number,
+  d: DatosPeriferico,
+  usuarioId: number,
+): Promise<void> {
+  const tipo = validarTipoPeriferico(d.tipo);
+  if (!d.texto.trim()) throw new Error("El texto es obligatorio");
+  const sql = obtenerSql();
+  await sql.begin(async (tx) => {
+    const [p] = await tx`UPDATE elementos_perifericos
+      SET tipo = ${tipo}, texto = ${d.texto}, icono = ${d.icono}
+      WHERE id = ${id} RETURNING id`;
+    if (!p) throw new Error("El elemento no existe");
+    await registrarAuditoria(tx, {
+      usuarioId, accion: "editar_periferico", entidad: "elementos_perifericos",
+      entidadId: id, detalle: d,
+    });
+  });
+}

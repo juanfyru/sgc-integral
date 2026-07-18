@@ -16,11 +16,15 @@ import { asegurarAdmin } from "@/db/consultas/admin";
 import {
   alternarActivo,
   borrar,
+  crearPeriferico,
   crearTipo,
+  editarPeriferico,
   editarTipo,
   guardarTextos,
+  listarPerifericos,
   listarTipos,
   mover,
+  obtenerPeriferico,
   obtenerTextos,
   obtenerTipo,
 } from "@/db/consultas/mapa-admin";
@@ -185,5 +189,26 @@ describe("textos institucionales", () => {
     await expect(
       guardarTextos({ patron_codigo: "(sin cerrar" }, usuarioId),
     ).rejects.toThrow(/regular/i);
+  });
+});
+
+describe("periféricos CRUD", () => {
+  it("crea con orden al final de su tipo y edita", async () => {
+    const { id } = await crearPeriferico(
+      { tipo: "entrada", texto: "ZZ-entrada nueva", icono: "target" },
+      usuarioId,
+    );
+    const grupos = await listarPerifericos();
+    expect(grupos.entrada.some((f) => f.id === id)).toBe(true);
+    await editarPeriferico(id, { tipo: "entrada", texto: "ZZ-entrada editada", icono: null }, usuarioId);
+    const p = await obtenerPeriferico(id);
+    expect(p).toMatchObject({ texto: "ZZ-entrada editada", icono: null });
+    await sql()`DELETE FROM elementos_perifericos WHERE id = ${id}`;
+  });
+
+  it("rechaza tipo inválido", async () => {
+    await expect(
+      crearPeriferico({ tipo: "otro", texto: "ZZ-x", icono: null }, usuarioId),
+    ).rejects.toThrow(/tipo/i);
   });
 });

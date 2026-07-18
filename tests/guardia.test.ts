@@ -12,7 +12,9 @@ import {
 import {
   alternarAccion,
   borrarAccion,
+  crearPerifericoAccion,
   crearTipoAccion,
+  editarPerifericoAccion,
   editarTipoAccion,
   guardarTextosAccion,
   moverAccion,
@@ -93,6 +95,8 @@ describe("actions de mutación sin sesión", () => {
     ["alternarAccion", () => alternarAccion(fd)],
     ["borrarAccion", () => borrarAccion(fd)],
     ["guardarTextosAccion", () => guardarTextosAccion(null, fd)],
+    ["crearPerifericoAccion", () => crearPerifericoAccion(null, fd)],
+    ["editarPerifericoAccion", () => editarPerifericoAccion(null, fd)],
     ["salir", () => salir()],
   ];
   for (const [nombre, invocar] of casos) {
