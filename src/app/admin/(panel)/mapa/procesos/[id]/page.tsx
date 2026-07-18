@@ -3,7 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { editarProcesoAccion } from "@/app/admin/acciones-mapa";
 import { FormularioProceso } from "@/componentes/admin/mapa/FormularioProceso";
-import { obtenerProceso } from "@/db/consultas/mapa-admin";
+import { ListaSubprocesos } from "@/componentes/admin/mapa/ListaSubprocesos";
+import { listarSubprocesos, obtenerProceso } from "@/db/consultas/mapa-admin";
 
 export const metadata: Metadata = { title: "Editar proceso — Administración SGC" };
 
@@ -14,6 +15,7 @@ export default async function PaginaEditarProceso({
 }) {
   const p = await obtenerProceso(Number((await params).id));
   if (!p) notFound();
+  const subprocesos = await listarSubprocesos(p.id);
   return (
     <main>
       <Link
@@ -32,6 +34,10 @@ export default async function PaginaEditarProceso({
         </Link>
       </div>
       <FormularioProceso accion={editarProcesoAccion} macroprocesoId={p.macroprocesoId} id={p.id} valores={p} />
+      <section className="mt-8">
+        <h2 className="mb-2 font-display text-lg font-semibold">Subprocesos</h2>
+        <ListaSubprocesos subprocesos={subprocesos} volverA={`/admin/mapa/procesos/${p.id}`} />
+      </section>
     </main>
   );
 }

@@ -19,20 +19,24 @@ import {
   crearMacroproceso,
   crearPeriferico,
   crearProceso,
+  crearSubproceso,
   crearTipo,
   editarMacroproceso,
   editarPeriferico,
   editarProceso,
+  editarSubproceso,
   editarTipo,
   guardarTextos,
   listarMacroprocesos,
   listarPerifericos,
   listarProcesos,
+  listarSubprocesos,
   listarTipos,
   mover,
   obtenerMacroproceso,
   obtenerPeriferico,
   obtenerProceso,
+  obtenerSubproceso,
   obtenerTextos,
   obtenerTipo,
 } from "@/db/consultas/mapa-admin";
@@ -269,5 +273,21 @@ describe("procesos CRUD", () => {
     const p = await obtenerProceso(id);
     expect(p).toMatchObject({ sigla: "ZZQ", descripcion: "desc" });
     await sql()`DELETE FROM procesos WHERE id = ${id}`;
+  });
+});
+
+describe("subprocesos CRUD", () => {
+  it("crea bajo un proceso, aparece en su lista y edita", async () => {
+    const [proc] = await sql()`SELECT id FROM procesos ORDER BY orden LIMIT 1`;
+    const { id } = await crearSubproceso(
+      { procesoId: proc.id, nombre: "ZZ Subproceso Prueba", slug: "zz-sub-prueba" },
+      usuarioId,
+    );
+    const lista = await listarSubprocesos(proc.id);
+    expect(lista.some((f) => f.id === id)).toBe(true);
+    await editarSubproceso(id, { procesoId: proc.id, nombre: "ZZ Sub Editado", slug: "zz-sub-prueba" }, usuarioId);
+    const s = await obtenerSubproceso(id);
+    expect(s?.nombre).toBe("ZZ Sub Editado");
+    await sql()`DELETE FROM subprocesos WHERE id = ${id}`;
   });
 });

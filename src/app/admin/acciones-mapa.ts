@@ -17,10 +17,12 @@ import {
   crearMacroproceso,
   crearPeriferico,
   crearProceso,
+  crearSubproceso,
   crearTipo,
   editarMacroproceso,
   editarPeriferico,
   editarProceso,
+  editarSubproceso,
   editarTipo,
   guardarTextos,
   mover,
@@ -211,5 +213,37 @@ export async function editarProcesoAccion(
   return mutacion(formData, async (usuarioId) => {
     await editarProceso(idNumerico(formData, "id"), parsearProceso(formData), usuarioId);
     return `/admin/mapa/macroprocesos/${idNumerico(formData, "macroprocesoId")}`;
+  });
+}
+
+// ── Subprocesos ──
+
+function parsearSubproceso(formData: FormData) {
+  const nombre = texto(formData, "nombre");
+  const slugManual = texto(formData, "slug");
+  return {
+    procesoId: idNumerico(formData, "procesoId"),
+    nombre,
+    slug: slugManual || generarSlug(nombre),
+  };
+}
+
+export async function crearSubprocesoAccion(
+  _prev: EstadoAccion,
+  formData: FormData,
+): Promise<EstadoAccion> {
+  return mutacion(formData, async (usuarioId) => {
+    await crearSubproceso(parsearSubproceso(formData), usuarioId);
+    return `/admin/mapa/procesos/${idNumerico(formData, "procesoId")}`;
+  });
+}
+
+export async function editarSubprocesoAccion(
+  _prev: EstadoAccion,
+  formData: FormData,
+): Promise<EstadoAccion> {
+  return mutacion(formData, async (usuarioId) => {
+    await editarSubproceso(idNumerico(formData, "id"), parsearSubproceso(formData), usuarioId);
+    return `/admin/mapa/procesos/${idNumerico(formData, "procesoId")}`;
   });
 }

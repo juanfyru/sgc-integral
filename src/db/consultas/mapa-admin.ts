@@ -563,3 +563,92 @@ export async function editarProceso(
     throw traducirUnico(err, "Ya existe un proceso con esa sigla o slug");
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Subprocesos (tercera capa del mapa)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type FilaSubproceso = {
+  id: number; nombre: string; slug: string; orden: number; activo: boolean;
+  numDocs: number; docsAfectados: string[];
+};
+
+export async function listarSubprocesos(procesoId: number): Promise<FilaSubproceso[]> {
+  const sql = obtenerSql();
+  const filas = await sql`
+    SELECT s.id, s.nombre, s.slug, s.orden, s.activo,
+      (SELECT count(*)::int FROM documento_proceso dp WHERE dp.subproceso_id = s.id) AS num_docs,
+      coalesce((
+        SELECT json_agg(DISTINCT d.codigo ORDER BY d.codigo)
+        FROM documentos d
+        WHERE EXISTS (SELECT 1 FROM documento_versiones v
+                      WHERE v.documento_id = d.id AND v.estado = 'vigente')
+          AND EXISTS (SELECT 1 FROM documento_proceso dp
+                      WHERE dp.documento_id = d.id AND dp.subproceso_id = s.id)
+      ), '[]') AS docs_afectados
+    FROM subprocesos s WHERE s.proceso_id = ${procesoId}
+    ORDER BY s.orden`;
+  return filas.map((f) => ({
+    id: f.id, nombre: f.nombre, slug: f.slug, orden: f.orden, activo: f.activo,
+    numDocs: f.num_docs, docsAfectados: f.docs_afectados as string[],
+  }));
+}
+
+export async function obtenerSubproceso(id: number) {
+  const sql = obtenerSql();
+  const [f] = await sql`SELECT id, proceso_id, nombre, slug FROM subprocesos WHERE id = ${id}`;
+  if (!f) return null;
+  return { id: f.id, procesoId: f.proceso_id, nombre: f.nombre, slug: f.slug };
+}
+
+export type DatosSubproceso = { procesoId: number; nombre: string; slug: string };
+
+function normalizarSubproceso(d: DatosSubproceso) {
+  const datos = { ...d, slug: validarSlug(d.slug) };
+  if (!datos.nombre.trim()) throw new Error("El nombre es obligatorio");
+  return datos;
+}
+
+export async function crearSubproceso(
+  d: DatosSubproceso,
+  usuarioId: number,
+): Promise<{ id: number }> {
+  const datos = normalizarSubproceso(d);
+  const sql = obtenerSql();
+  try {
+    return await sql.begin(async (tx) => {
+      const orden = await siguienteOrden(tx, "subprocesos", "proceso_id", datos.procesoId);
+      const [s] = await tx`INSERT INTO subprocesos (proceso_id, nombre, slug, orden)
+        VALUES (${datos.procesoId}, ${datos.nombre}, ${datos.slug}, ${orden}) RETURNING id`;
+      await registrarAuditoria(tx, {
+        usuarioId, accion: "crear_subproceso", entidad: "subprocesos",
+        entidadId: s.id, detalle: datos,
+      });
+      return { id: s.id };
+    });
+  } catch (err) {
+    throw traducirUnico(err, "Ya existe un subproceso con ese slug en este proceso");
+  }
+}
+
+export async function editarSubproceso(
+  id: number,
+  d: DatosSubproceso,
+  usuarioId: number,
+): Promise<void> {
+  const datos = normalizarSubproceso(d);
+  const sql = obtenerSql();
+  try {
+    await sql.begin(async (tx) => {
+      const [s] = await tx`UPDATE subprocesos SET nombre = ${datos.nombre}, slug = ${datos.slug}
+        WHERE id = ${id} RETURNING id`;
+      if (!s) throw new Error("El subproceso no existe");
+      await registrarAuditoria(tx, {
+        usuarioId, accion: "editar_subproceso", entidad: "subprocesos",
+        entidadId: id, detalle: datos,
+      });
+    });
+  } catch (err) {
+    throw traducirUnico(err, "Ya existe un subproceso con ese slug en este proceso");
+  }
+}
