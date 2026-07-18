@@ -71,7 +71,7 @@ export function MapaProcesos({ datos }: { datos: DatosMapa }) {
         {convenciones.map((c) => (
           <span
             key={c.texto}
-            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+            className={`inline-flex items-center gap-1.5 text-xs text-muted-foreground ${c.activo === false ? "opacity-50 line-through" : ""}`}
           >
             <Icono nombre={c.icono} className="size-3.5 text-verde-texto" />
             {c.texto}

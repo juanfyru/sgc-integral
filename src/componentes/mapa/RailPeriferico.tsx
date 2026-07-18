@@ -32,11 +32,19 @@ export function RailPeriferico({
       </header>
       <ul className="list-none divide-y divide-border/70">
         {elementos.map((e) => (
-          <li key={e.texto} className="flex items-start gap-2.5 px-1.5 py-2.5">
+          <li
+            key={e.texto}
+            className={`flex items-start gap-2.5 px-1.5 py-2.5 ${e.activo === false ? "opacity-50" : ""}`}
+          >
             <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-md bg-[color-mix(in_srgb,var(--acento)_10%,white)] text-[color-mix(in_srgb,var(--acento)_80%,black)]">
               <Icono nombre={e.icono} className="size-3.5" />
             </span>
-            <span className="text-xs/relaxed text-foreground/85">{e.texto}</span>
+            <span className="text-xs/relaxed text-foreground/85">
+              {e.texto}
+              {e.activo === false && (
+                <span className="ml-1 text-[10px] uppercase text-muted-foreground">(inactivo)</span>
+              )}
+            </span>
           </li>
         ))}
       </ul>

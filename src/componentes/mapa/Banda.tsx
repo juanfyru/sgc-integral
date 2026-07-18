@@ -14,7 +14,7 @@ export function Banda({
   return (
     <section
       aria-labelledby={`banda-${macro.slug}`}
-      className="banda-animada rounded-2xl border p-3 sm:p-4"
+      className={`banda-animada rounded-2xl border p-3 sm:p-4 ${macro.activo === false ? "opacity-50 grayscale" : ""}`}
       style={
         {
           "--color-banda": macro.color,
@@ -35,6 +35,11 @@ export function Banda({
           <span aria-hidden="true">{macro.letra}. </span>
           {macro.nombre}
         </h2>
+        {macro.activo === false && (
+          <span className="rounded-full border border-dashed px-2 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
+            inactivo
+          </span>
+        )}
       </header>
       <ul className="grid list-none grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-4 min-[1400px]:grid-cols-[repeat(auto-fill,minmax(160px,1fr))]">
         {macro.procesos.map((p) => (
