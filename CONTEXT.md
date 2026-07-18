@@ -7,18 +7,22 @@
 ## ⏸ Punto de reanudación (próxima sesión)
 
 0. **Dónde quedamos:** la Fase 7 (editor del mapa + tablas maestras) está
-   **implementada completa** siguiendo el plan
+   **implementada completa y pusheada a `origin/main`** (el CI ARM64 se disparó con el
+   push del 2026-07-18), siguiendo el plan
    `docs/superpowers/plans/2026-07-17-fase7-editor-mapa.md` tarea por tarea (T1–T10),
-   un commit por tarea en `main`. El admin gestiona desde el panel: tipos de documento,
+   un commit por tarea. El admin gestiona desde el panel: tipos de documento,
    textos institucionales, periféricos (entradas/salidas/convenciones), y las tres
    capas del mapa (macroprocesos, procesos, subprocesos) con reordenar (↑↓),
    activar/desactivar, borrar-solo-si-vacío, y vista previa con inactivos. Todo auditado.
    Verificado en navegador real (crear/borrar tipo, crear proceso "Vigilancia
    Epidemiológica" y verlo en el mapa público sin despliegue → borrarlo, advertencia de
    huérfanos con códigos reales, vista previa con nodo inactivo en gris vs. oculto en el
-   público). Suite: **140/145 tests** (los 5 rojos son los preexistentes del seed por
+   público). Un último commit `fix:` valida `volverA` en `borrarAccion` contra open
+   redirect (hallazgo de la revisión de seguridad automática; solo rutas internas
+   relativas). Suite: **140/145 tests** (los 5 rojos son los preexistentes del seed por
    `PR-GTH-991`; NO regresión, en CI pasan; **no borrar `PR-GTH-991`**). `npm run lint`
    y `npm run build` limpios.
+   **Pendiente del veredicto del usuario sobre la Fase 7** antes de arrancar la 8.
 1. **Diseño y decisiones de la Fase 7** en `docs/superpowers/specs/2026-07-17-fase7-editor-mapa-design.md`:
    listas CRUD (no WYSIWYG), reordenar con botones ↑↓, desactivar por defecto / borrar
    solo si vacío, cambios en vivo + vista previa con inactivos, desactivar con
