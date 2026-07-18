@@ -16,14 +16,18 @@ import { asegurarAdmin } from "@/db/consultas/admin";
 import {
   alternarActivo,
   borrar,
+  crearMacroproceso,
   crearPeriferico,
   crearTipo,
+  editarMacroproceso,
   editarPeriferico,
   editarTipo,
   guardarTextos,
+  listarMacroprocesos,
   listarPerifericos,
   listarTipos,
   mover,
+  obtenerMacroproceso,
   obtenerPeriferico,
   obtenerTextos,
   obtenerTipo,
@@ -210,5 +214,35 @@ describe("periféricos CRUD", () => {
     await expect(
       crearPeriferico({ tipo: "otro", texto: "ZZ-x", icono: null }, usuarioId),
     ).rejects.toThrow(/tipo/i);
+  });
+});
+
+describe("macroprocesos CRUD", () => {
+  it("crea con slug/color normalizados y aparece en su banda", async () => {
+    const { id } = await crearMacroproceso(
+      { letra: "Q", nombre: "ZZ Macro Prueba", banda: "apoyo",
+        color: "#1b4e8e", icono: "target", slug: "zz-macro-prueba" },
+      usuarioId,
+    );
+    const m = await obtenerMacroproceso(id);
+    expect(m).toMatchObject({ banda: "apoyo", color: "#1B4E8E", slug: "zz-macro-prueba" });
+    const lista = await listarMacroprocesos();
+    const fila = lista.find((f) => f.id === id);
+    expect(fila).toMatchObject({ numProcesos: 0 });
+    expect(Array.isArray(fila?.docsAfectados)).toBe(true);
+
+    await editarMacroproceso(id, {
+      letra: "Q", nombre: "ZZ Macro Editada", banda: "apoyo",
+      color: "#2E9B47", icono: "users", slug: "zz-macro-prueba",
+    }, usuarioId);
+    const m2 = await obtenerMacroproceso(id);
+    expect(m2?.nombre).toBe("ZZ Macro Editada");
+    await sql()`DELETE FROM macroprocesos WHERE id = ${id}`;
+  });
+
+  it("rechaza color inválido", async () => {
+    await expect(
+      crearMacroproceso({ letra: "Q", nombre: "ZZ", banda: "apoyo", color: "rojo", icono: "target", slug: "zz-q" }, usuarioId),
+    ).rejects.toThrow(/hex/i);
   });
 });

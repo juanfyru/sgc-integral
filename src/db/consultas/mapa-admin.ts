@@ -1,7 +1,12 @@
 import type { Sql, TransactionSql } from "postgres";
 import { obtenerSql } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
-import { validarPatronCodigo } from "@/lib/validaciones-mapa";
+import {
+  validarBanda,
+  validarColor,
+  validarPatronCodigo,
+  validarSlug,
+} from "@/lib/validaciones-mapa";
 
 export type Cliente = Sql | TransactionSql;
 
@@ -343,4 +348,113 @@ export async function editarPeriferico(
       entidadId: id, detalle: d,
     });
   });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Macroprocesos (primera capa del mapa)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type FilaMacro = {
+  id: number; letra: string; nombre: string; banda: string; color: string;
+  icono: string; slug: string; orden: number; activo: boolean;
+  numProcesos: number; docsAfectados: string[];
+};
+
+export async function listarMacroprocesos(): Promise<FilaMacro[]> {
+  const sql = obtenerSql();
+  const filas = await sql`
+    SELECT m.id, m.letra, m.nombre, m.banda, m.color, m.icono, m.slug, m.orden, m.activo,
+      (SELECT count(*)::int FROM procesos p WHERE p.macroproceso_id = m.id) AS num_procesos,
+      coalesce((
+        SELECT json_agg(DISTINCT d.codigo ORDER BY d.codigo)
+        FROM documentos d
+        WHERE EXISTS (SELECT 1 FROM documento_versiones v
+                      WHERE v.documento_id = d.id AND v.estado = 'vigente')
+          AND EXISTS (
+            SELECT 1 FROM documento_proceso dp
+            LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
+            JOIN procesos p ON p.id = coalesce(dp.proceso_id, s.proceso_id)
+            WHERE dp.documento_id = d.id AND p.macroproceso_id = m.id
+          )
+      ), '[]') AS docs_afectados
+    FROM macroprocesos m
+    ORDER BY array_position(ARRAY['estrategicos','misionales','apoyo','evaluacion'], m.banda), m.orden`;
+  return filas.map((f) => ({
+    id: f.id, letra: f.letra, nombre: f.nombre, banda: f.banda, color: f.color,
+    icono: f.icono, slug: f.slug, orden: f.orden, activo: f.activo,
+    numProcesos: f.num_procesos, docsAfectados: f.docs_afectados as string[],
+  }));
+}
+
+export async function obtenerMacroproceso(id: number) {
+  const sql = obtenerSql();
+  const [f] = await sql`SELECT id, letra, nombre, banda, color, icono, slug
+    FROM macroprocesos WHERE id = ${id}`;
+  if (!f) return null;
+  return { id: f.id, letra: f.letra, nombre: f.nombre, banda: f.banda,
+    color: f.color, icono: f.icono, slug: f.slug };
+}
+
+export type DatosMacro = {
+  letra: string; nombre: string; banda: string;
+  color: string; icono: string; slug: string;
+};
+
+function normalizarMacro(d: DatosMacro) {
+  const datos = {
+    ...d,
+    banda: validarBanda(d.banda),
+    color: validarColor(d.color),
+    slug: validarSlug(d.slug),
+    letra: d.letra.trim().toUpperCase(),
+  };
+  if (!datos.nombre.trim()) throw new Error("El nombre es obligatorio");
+  return datos;
+}
+
+export async function crearMacroproceso(
+  d: DatosMacro,
+  usuarioId: number,
+): Promise<{ id: number }> {
+  const datos = normalizarMacro(d);
+  const sql = obtenerSql();
+  try {
+    return await sql.begin(async (tx) => {
+      const orden = await siguienteOrden(tx, "macroprocesos", "banda", datos.banda);
+      const [m] = await tx`INSERT INTO macroprocesos (letra, nombre, slug, banda, color, icono, orden)
+        VALUES (${datos.letra}, ${datos.nombre}, ${datos.slug}, ${datos.banda},
+                ${datos.color}, ${datos.icono}, ${orden}) RETURNING id`;
+      await registrarAuditoria(tx, {
+        usuarioId, accion: "crear_macroproceso", entidad: "macroprocesos",
+        entidadId: m.id, detalle: datos,
+      });
+      return { id: m.id };
+    });
+  } catch (err) {
+    throw traducirUnico(err, "Ya existe un macroproceso con esa letra o slug");
+  }
+}
+
+export async function editarMacroproceso(
+  id: number,
+  d: DatosMacro,
+  usuarioId: number,
+): Promise<void> {
+  const datos = normalizarMacro(d);
+  const sql = obtenerSql();
+  try {
+    await sql.begin(async (tx) => {
+      const [m] = await tx`UPDATE macroprocesos SET letra = ${datos.letra},
+          nombre = ${datos.nombre}, slug = ${datos.slug}, banda = ${datos.banda},
+          color = ${datos.color}, icono = ${datos.icono}
+        WHERE id = ${id} RETURNING id`;
+      if (!m) throw new Error("El macroproceso no existe");
+      await registrarAuditoria(tx, {
+        usuarioId, accion: "editar_macroproceso", entidad: "macroprocesos",
+        entidadId: id, detalle: datos,
+      });
+    });
+  } catch (err) {
+    throw traducirUnico(err, "Ya existe un macroproceso con esa letra o slug");
+  }
 }

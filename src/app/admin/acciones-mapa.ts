@@ -13,8 +13,10 @@ import {
   alternarActivo,
   borrar,
   CLAVES_TEXTO,
+  crearMacroproceso,
   crearPeriferico,
   crearTipo,
+  editarMacroproceso,
   editarPeriferico,
   editarTipo,
   guardarTextos,
@@ -22,6 +24,7 @@ import {
   TABLAS_MAPA,
   type Tabla,
 } from "@/db/consultas/mapa-admin";
+import { generarSlug } from "@/lib/slug";
 import { requerirSesion } from "@/lib/sesion-actual";
 import { validarIcono, validarSigla } from "@/lib/validaciones-mapa";
 
@@ -135,5 +138,40 @@ export async function editarPerifericoAccion(
   return mutacion(formData, async (usuarioId) => {
     await editarPeriferico(idNumerico(formData, "id"), parsearPeriferico(formData), usuarioId);
     return "/admin/mapa/perifericos";
+  });
+}
+
+// ── Macroprocesos ──
+
+function parsearMacroproceso(formData: FormData) {
+  const nombre = texto(formData, "nombre");
+  const slugManual = texto(formData, "slug");
+  return {
+    letra: texto(formData, "letra"),
+    nombre,
+    banda: texto(formData, "banda"),
+    color: texto(formData, "color"),
+    icono: validarIcono(texto(formData, "icono"), NOMBRES_ICONO),
+    slug: slugManual || generarSlug(nombre),
+  };
+}
+
+export async function crearMacroprocesoAccion(
+  _prev: EstadoAccion,
+  formData: FormData,
+): Promise<EstadoAccion> {
+  return mutacion(formData, async (usuarioId) => {
+    await crearMacroproceso(parsearMacroproceso(formData), usuarioId);
+    return "/admin/mapa";
+  });
+}
+
+export async function editarMacroprocesoAccion(
+  _prev: EstadoAccion,
+  formData: FormData,
+): Promise<EstadoAccion> {
+  return mutacion(formData, async (usuarioId) => {
+    await editarMacroproceso(idNumerico(formData, "id"), parsearMacroproceso(formData), usuarioId);
+    return "/admin/mapa";
   });
 }
