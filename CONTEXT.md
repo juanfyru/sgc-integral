@@ -1,54 +1,47 @@
 # CONTEXT.md — Estado vivo del proyecto
 
 > Se actualiza al cierre de cada fase. Última actualización: **2026-07-21**
-> (Fase 8 completada e implementada de punta a punta; verificada en navegador real.
-> Próxima fase: 9 — Pulido visual, animaciones, accesibilidad, responsive).
+> (Fase 9 completada e implementada de punta a punta; verificada en navegador real con
+> Lighthouse. Próxima fase: 10 — Despliegue en el NAS + respaldos + documentación).
 
 ## ⏸ Punto de reanudación (próxima sesión)
 
-0. **Dónde quedamos:** la Fase 8 (Listado Maestro + estadísticas + bitácora) está
-   **implementada completa en `main`**, siguiendo el plan
-   `docs/superpowers/plans/2026-07-18-fase8-listado-maestro-estadisticas-bitacora.md`
-   tarea por tarea (T1–T11), un commit por tarea. Nuevo en el nav del panel: **Listado
-   Maestro**, **Estadísticas** y **Bitácora**. Verificado en navegador real (Listado
-   Maestro con 27 vigentes + descarga del `.xlsx` end-to-end con firma PK válida +
-   impresión PDF; dashboard con KPIs 28 vistas/17 descargas, gráfico SVG y top-N
-   enlazando a fichas; bitácora con frases legibles incluida "Emitió el Listado Maestro
-   (excel, vigentes)" del propio export, código resuelto `PR-GTH-991` y fallback "un
-   documento" cuando ya no existe). Un commit `fix:` neutraliza la inyección de fórmulas
-   CSV/Excel en el export (hallazgo de la revisión de seguridad automática: se antepone
-   `'` a celdas de texto que empiecen por `=`,`+`,`-`,`@`,tab,CR). Suite: **161/166**
-   (los **5 rojos son los preexistentes del seed** por los docs manuales
-   `PR-GTH-990/991` que inflan el conteo de vigentes; NO regresión, en CI pasan con seed
+0. **Dónde quedamos:** la Fase 9 (pulido visual, animaciones, accesibilidad, responsive)
+   está **implementada completa en `main`**, siguiendo el plan
+   `docs/superpowers/plans/2026-07-21-fase9-pulido-visual-a11y-responsive.md` tarea por
+   tarea (T1–T7), un commit por tarea + un `fix:` de hallazgos de verificación.
+   Verificado en navegador real con **Lighthouse a11y = 100/100 en las 5 vistas públicas**
+   (inicio/mapa, proceso, subproceso, ficha, buscar) y las 3 admin cara-a-auditor
+   (Maestro/Estadísticas/Bitácora) con **0 fallos de contraste** (escaneo axe-lite),
+   tablas como región enfocable por teclado y **sin desborde horizontal a 390 px**
+   (screenshots en `.playwright-mcp/fase9-movil-*.png`). Suite: **182/187** (los **5
+   rojos son los preexistentes del seed** `busqueda-fase5`×3 + `esquema`×2 por los docs
+   manuales `PR-GTH-990/991` que inflan el conteo; NO regresión, en CI pasan con seed
    fresco; **no borrar `PR-GTH-991`**). `npm run lint` y `npm run build` limpios.
-   **Pusheado a `origin/main`** el 2026-07-21 (`73b17c1`; CI ARM64 disparado).
-   **Pendiente del veredicto del usuario sobre la Fase 8** antes de arrancar la 9.
-1. **Diseño y decisiones de la Fase 8** en
-   `docs/superpowers/specs/2026-07-18-fase8-listado-maestro-estadisticas-bitacora-design.md`:
-   Listado Maestro solo-vigentes por defecto con filtro opcional a "todos" (el export
-   respeta el filtro), encabezado institucional en Excel y PDF, dashboard Top-N +
-   mini-gráficos SVG puros con selector de rango, bitácora con filtros
-   (acción/entidad/fecha/texto) y `detalle` renderizado legible.
-2. **Recorrido de prueba (demo de la fase)** — con `npm run dev`, BD dev arriba, sesión
-   iniciada (`admin` / `cambiar-esta-clave`):
-   - `/admin/maestro`: tabla de vigentes con encabezado institucional; link "Todos"
-     agrega los no vigentes; "Descargar Excel" baja el `.xlsx` (respeta el filtro y abre
-     limpio); "Imprimir / Guardar PDF" abre el diálogo con nav/controles ocultos.
-   - `/admin/estadisticas`: KPIs de vistas/descargas, gráfico de consultas por día,
-     Top-10 más vistos/descargados (enlazan a la ficha) y búsquedas sin resultados;
-     el selector 7/30/90/Todo recalcula.
-   - `/admin/bitacora`: eventos más recientes con frases legibles; filtrar por
-     acción/entidad/fecha y por texto (ej. un código); paginación que conserva filtros.
-     El export de Excel aparece como "Emitió el Listado Maestro".
-3. **Lo primero al reanudar:** si el usuario aprueba la Fase 8, **planear la Fase 9 —
-   Pulido visual, animaciones, accesibilidad, responsive** (ver `PLAN.md` §Fase 9:
-   microinteracciones, entradas
-   escalonadas, skeletons, modo oscuro opcional, Lighthouse accesibilidad ≥ 95,
-   `prefers-reduced-motion`, recorrido en celular real; también resolver el `npm audit`
-   moderado, deuda técnica). Sigue pendiente (no bloqueante) la **convención oficial de
-   códigos** (`patron_codigo` editable en `/admin/mapa/textos`). Método de siempre:
-   proponer diseño → aprobar → plan TDD → ejecutar tarea por tarea con commit por tarea
-   en `main`.
+   **Pendiente: push a `origin/main` y el veredicto del usuario sobre la Fase 9** antes de
+   arrancar la 10.
+1. **Diseño y decisiones de la Fase 9** en
+   `docs/superpowers/specs/2026-07-21-fase9-pulido-visual-a11y-responsive-design.md`:
+   sin modo oscuro (F9-D1), animación 100% CSS (F9-D2), pulido premium en público +
+   Maestro/Estadísticas/Bitácora y solo a11y/responsive en los CRUD internos (F9-D3),
+   verificación manual/herramienta (F9-D4). Ver §Decisiones adicionales (Fase 9).
+2. **Recorrido de prueba (demo de la fase)** — con `npm run dev`, BD dev arriba:
+   - Tabular en cualquier página: el primer Tab revela **"Saltar al contenido"**; el
+     anillo de foco azul es visible en todos los controles.
+   - Público: al navegar hay **skeletons** (no spinners) y **entradas escalonadas** en
+     las tarjetas; hover con elevación suave. En la ficha, los botones de descarga verdes
+     ahora contrastan (verde oscurecido al 80%, blanco 5.22:1).
+   - En un **celular real**: mapa→proceso→subproceso→ficha→buscar; y en el panel
+     Maestro/Estadísticas/Bitácora — las tablas anchas se **deslizan dentro de su marco**
+     sin desbordar la página, la nav del panel envuelve, objetivos táctiles cómodos.
+3. **Lo primero al reanudar:** si el usuario aprueba la Fase 9, **planear la Fase 10 —
+   Despliegue en el NAS + respaldos + documentación** (ver `PLAN.md` §Fase 10:
+   `docker-compose.yml` para Container Station con límites de memoria y red interna,
+   flujo offline tar→SMB→`docker load`, `pg_dump` + snapshots QNAP, restauración probada,
+   `INSTALACION.md`, retirar `ADMIN_CLAVE` tras el primer arranque, RAM < 1.3 GB con 20
+   concurrentes). Sigue pendiente (no bloqueante) la **convención oficial de códigos**
+   (`patron_codigo` editable en `/admin/mapa/textos`). Método de siempre: proponer
+   diseño → aprobar → plan TDD → ejecutar tarea por tarea con commit por tarea en `main`.
 4. **Estado del entorno:** Node 24 en CI/Docker/dev — no volver a Node 22: npm 10
    rechaza el lockfile de npm 11. Contenedores dev: `sgc-app-1` (9080) y `sgc-bd-1`
    (PG en 127.0.0.1:5434). En esta máquina 5432 lo ocupa un Postgres nativo y 5433
@@ -60,13 +53,21 @@
 
 ## Estado actual
 
-- **Fase actual:** 8 — completada y pusheada (`73b17c1`), pendiente del veredicto del usuario.
-  Listado Maestro generado desde BD (una fila por documento por asociación principal,
-  vigentes por defecto con filtro a "todos", export Excel con encabezado institucional
-  + PDF por impresión), dashboard de estadísticas (KPIs, Top-N vistos/descargados,
-  búsquedas sin resultados, mini-gráfico SVG por rango) y bitácora filtrable con
-  `detalle` legible. El export de Excel queda auditado. Verificado en navegador de punta
-  a punta; 161 tests en verde (5 rojos preexistentes del seed); lint y build limpios.
+- **Fase actual:** 9 — completada en `main`, pendiente de push y del veredicto del usuario.
+  Pulido visual y de accesibilidad de punta a punta: tokens de elevación/movimiento y
+  anillo de foco global, enlace "saltar al contenido", entradas escalonadas y skeletons
+  por ruta (no spinners), contraste AA validado por función pura y corregido donde
+  fallaba (texto blanco sobre el verde institucional → banda oscurecida al 80%), tablas
+  del panel como región enfocable por teclado, y responsive a 390 px (nav del panel que
+  envuelve, tablas anchas que se deslizan dentro de su marco). **Lighthouse a11y = 100**
+  en las 5 vistas públicas; 182 tests en verde (5 rojos preexistentes del seed); lint y
+  build limpios. Sin modo oscuro y sin Motion (decisiones F9-D1/D2).
+- **Fase 8 (hecha):** Listado Maestro generado desde BD (una fila por documento por
+  asociación principal, vigentes por defecto con filtro a "todos", export Excel con
+  encabezado institucional + PDF por impresión), dashboard de estadísticas (KPIs, Top-N
+  vistos/descargados, búsquedas sin resultados, mini-gráfico SVG por rango) y bitácora
+  filtrable con `detalle` legible. El export de Excel queda auditado. Pusheado a
+  `origin/main` (`73b17c1`).
 - **Fase 7 (hecha):** editor del mapa 100% data-driven y tablas maestras desde el panel
   admin: motor genérico (`mover`/`alternarActivo`/`borrar` por nombre de tabla), CRUD de
   tipos de documento, textos institucionales, periféricos, macro/procesos/subprocesos;
@@ -187,7 +188,26 @@
   nueva: `exceljs` (JS puro, ARM64 seguro). `vitest.config.ts` ahora con
   `fileParallelism: false` (los tests de BD comparten la BD dev; en paralelo los fixtures
   de uno ensuciaban las aserciones de conteo de otro).
-- **Sigue:** Fase 9 (ver PLAN.md), tras el veredicto del usuario y el push.
+- **Hecho (Fase 9):** en `globals.css`, tokens `--dur-rapida/-media`, `--ease-salida`,
+  `--sombra-1/2/3`, anillo `:focus-visible` global de especificidad 0 (`:where`),
+  utilidad `.entrada` (generaliza `.banda-animada` con `--indice`), `.skeleton` (shimmer
+  apagado por el bloque global `prefers-reduced-motion`) y `.saltar-al-contenido`;
+  `layout.tsx` con el skip-link + `<div id="contenido">` (bloque `flex-1 min-w-0` para
+  que las tablas anchas se desplacen dentro de su región, no del body); primitiva
+  `src/componentes/Skeleton.tsx` + `loading.tsx` en las 8 rutas premium; entrada
+  escalonada + elevación por token en `TarjetaResultado` (prop `indice`) y en las
+  tarjetas KPI del dashboard; `src/lib/contraste.ts` (`contrasteWCAG`/`luminanciaRelativa`
+  puras) con test que fija los pares reales de la UI ≥ 4.5:1; fix de contraste del verde
+  (banda `color-mix(... 80%, black)` para texto blanco, opacidades removidas en
+  `IconoFormato`, ficha y `VisorPdf`); tablas de Maestro/Bitácora como `role="region"`
+  `tabIndex={0}` con `aria-label` y foco visible + objetivos táctiles `py-2`; campo de
+  búsqueda del `EncabezadoSitio` a `focus-visible`; nav del panel con `flex-wrap`.
+  Tests nuevos: `a11y-estructura` (11: skip-link, 8 skeletons, 2 regiones) y `contraste`
+  (10). Sin dependencias nuevas. `npm audit`: 11 moderadas transitivas de tooling, sin
+  fix seguro (ver Deuda técnica). Verificación con Lighthouse + Playwright (teclado,
+  contraste axe-lite, móvil 390 px).
+- **Sigue:** Fase 10 — Despliegue en el NAS (ver PLAN.md), tras el veredicto del usuario
+  y el push.
 
 ## Decisiones tomadas y su porqué
 
@@ -319,6 +339,17 @@
 | D55 (B4) | Dashboard **Top-N + mini-gráfico SVG puro** (sin librería de charts) con selector de rango y reloj inyectable | Frugal en el NAS (sin dependencia extra); la geometría es una función pura testeada; el gráfico lleva tabla equivalente `sr-only` (accesibilidad) | 2026-07-21 |
 | D56 (B5) | Bitácora con **`detalle` renderizado legible** (`describirEvento`, función pura) y **código del documento resuelto por `LATERAL`** (por entidad o `detalle->>'documentoId'`) | Responde "¿por qué desapareció este formato?" en lenguaje claro y permite buscar por código; fallback seguro para acciones no mapeadas, nunca JSON crudo ni HTML | 2026-07-21 |
 | D57 | `vitest.config.ts` con **`fileParallelism: false`** | Los tests de BD comparten la BD dev; en paralelo los fixtures de un archivo son visibles para los lectores concurrentes de otro y ensucian sus aserciones de conteo. Secuencial → cada `afterAll` limpia antes del siguiente archivo | 2026-07-21 |
+
+## Decisiones adicionales (Fase 9)
+
+| # | Decisión | Porqué | Fecha |
+|---|---|---|---|
+| F9-D1 | **Sin modo oscuro.** Se deja el andamiaje `.dark` de shadcn intacto, sin toggle ni afinado a la marca | Intranet de trabajo diurno, un solo admin, funcionarios de consulta. Afinar y verificar el oscuro en cada vista rinde menos que invertir el esfuerzo en el modo claro (YAGNI) | 2026-07-21 |
+| F9-D2 | **Animación 100% CSS puro**; no se introduce Motion pese a estar en el stack | Frugal para el NAS (4 GB, offline): cero JS extra en páginas públicas. A esta escala CSS/keyframes alcanza; consistente con D22 | 2026-07-21 |
+| F9-D3 | **Pulido premium** en público + Maestro/Estadísticas/Bitácora; los CRUD internos solo reciben a11y/teclado/responsive | Mejor relación esfuerzo/valor: el pulido rinde donde lo ve un auditor o funcionario, no en formularios de un solo usuario | 2026-07-21 |
+| F9-D4 | Verificación **manual/herramienta** (Lighthouse, teclado, celular real); solo se automatiza a11y estructural no frágil (skip-link, existencia de `loading.tsx`, regiones) | Inventar tests de píxeles sería frágil; el grueso del criterio se ejecuta y se observa | 2026-07-21 |
+| F9-D5 | **Texto blanco sobre banda** usa la banda oscurecida `color-mix(in srgb, var(--color-banda) 80%, black)`, no el color crudo | El verde institucional `#2e9b47` daba 3.56:1 con blanco (falla AA); oscurecer al 80% garantiza ≥ 5:1 para **cualquier** color que elija el admin, sin hardcodear (hallazgo de Lighthouse) | 2026-07-21 |
+| F9-D6 | El anillo de foco global usa `:where(...)` (especificidad 0) y `#contenido` es bloque `min-w-0` | Especificidad 0 deja que cualquier componente sobreescriba el foco; `min-w-0` permite que las tablas anchas se desplacen dentro de su región en vez de desbordar el body en móvil | 2026-07-21 |
 
 ## Deuda técnica conocida
 
