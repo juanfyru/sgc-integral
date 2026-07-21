@@ -322,8 +322,13 @@
 
 ## Deuda técnica conocida
 
-- `npm audit` reporta vulnerabilidades moderadas (transitivas del scaffold/tooling).
-  Revisar y resolver a más tardar en Fase 9.
+- `npm audit`: revisado en Fase 9. Las 11 moderadas son **transitivas de tooling de
+  build/dev** (esbuild vía `@esbuild-kit`→`drizzle-kit`; postcss vía `next`; uuid vía
+  `exceljs`) y **ninguna llega al runtime del NAS**. `npm audit fix` sin `--force` no
+  aplica ningún cambio; los únicos "fixes" exigen `--force` con downgrades rotos
+  (`drizzle-kit@0.18.1`, `next@9.3.3`, `exceljs@3.4.0`). Se **aceptan** hasta que los
+  paquetes upstream publiquen versiones parcheadas; revisar al subir de major de Next.
+  (`npm audit fix` subió de patch `shadcn` 4.13.0→4.13.1, CLI de dev, inofensivo.)
 - El artefacto `.tar.gz` del CI aún no se ha probado con `docker load` en un NAS real
   (se hará en Fase 10; el formato `type=docker` es el estándar que Container Station
   acepta).
