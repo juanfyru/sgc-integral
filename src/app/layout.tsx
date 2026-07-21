@@ -43,8 +43,13 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} ${archivo.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        <a href="#contenido" className="saltar-al-contenido">
+          Saltar al contenido
+        </a>
         <EncabezadoSitio />
-        {children}
+        <div id="contenido" tabIndex={-1} className="flex flex-1 flex-col outline-none">
+          {children}
+        </div>
       </body>
     </html>
   );
