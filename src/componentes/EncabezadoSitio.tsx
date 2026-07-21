@@ -52,7 +52,7 @@ export function EncabezadoSitio() {
               placeholder="Buscar documentos…"
               aria-label="Buscar documentos"
               autoComplete="off"
-              className="h-9 w-full rounded-lg border border-border bg-card pl-9 pr-3 text-sm text-foreground shadow-xs outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-azul focus:ring-2 focus:ring-azul/20"
+              className="h-9 w-full rounded-lg border border-border bg-card pl-9 pr-3 text-sm text-foreground shadow-xs transition-colors placeholder:text-muted-foreground/70 focus-visible:border-azul focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-azul"
             />
           </form>
         )}

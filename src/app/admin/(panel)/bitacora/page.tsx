@@ -60,13 +60,18 @@ export default async function PaginaBitacora({
           <span className="text-muted-foreground">Texto (código…)</span>
           <input type="text" name="texto" defaultValue={sp.texto ?? ""} className="rounded-md border px-2 py-1" />
         </label>
-        <button type="submit" className="rounded-md bg-primary px-4 py-1.5 font-medium text-primary-foreground">
+        <button type="submit" className="rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground">
           Filtrar
         </button>
         <Link href="/admin/bitacora" className="px-2 py-1.5 text-muted-foreground hover:underline">Limpiar</Link>
       </form>
 
-      <div className="overflow-x-auto rounded-lg border">
+      <div
+        role="region"
+        aria-label="Tabla de la bitácora (desplazable horizontalmente)"
+        tabIndex={0}
+        className="overflow-x-auto rounded-lg border outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-azul"
+      >
         <table className="w-full text-sm">
           <thead className="bg-muted text-left">
             <tr>
@@ -93,8 +98,8 @@ export default async function PaginaBitacora({
       <div className="mt-4 flex items-center justify-between text-sm">
         <span className="text-muted-foreground">{r.total} registros · página {r.pagina} de {r.totalPaginas}</span>
         <div className="flex gap-2">
-          {r.pagina > 1 && <Link href={conservar(r.pagina - 1)} className="rounded-md border px-3 py-1 hover:bg-muted">Anterior</Link>}
-          {r.pagina < r.totalPaginas && <Link href={conservar(r.pagina + 1)} className="rounded-md border px-3 py-1 hover:bg-muted">Siguiente</Link>}
+          {r.pagina > 1 && <Link href={conservar(r.pagina - 1)} className="rounded-md border px-3 py-2 hover:bg-muted">Anterior</Link>}
+          {r.pagina < r.totalPaginas && <Link href={conservar(r.pagina + 1)} className="rounded-md border px-3 py-2 hover:bg-muted">Siguiente</Link>}
         </div>
       </div>
     </main>

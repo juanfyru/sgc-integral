@@ -26,4 +26,15 @@ describe("estructura de accesibilidad (Fase 9)", () => {
   it.each(rutasConSkeleton)("existe el skeleton de carga %s", (ruta) => {
     expect(existsSync(path.join(raiz, ruta))).toBe(true);
   });
+
+  it.each([
+    "src/app/admin/(panel)/maestro/page.tsx",
+    "src/app/admin/(panel)/bitacora/page.tsx",
+  ])("la tabla desplazable de %s es enfocable por teclado con etiqueta", (ruta) => {
+    const src = readFileSync(path.join(raiz, ruta), "utf8");
+    expect(src).toMatch(/overflow-x-auto/);
+    expect(src).toContain('role="region"');
+    expect(src).toContain("tabIndex={0}");
+    expect(src).toMatch(/aria-label=/);
+  });
 });

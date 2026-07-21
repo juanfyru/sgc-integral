@@ -32,13 +32,13 @@ export default async function PaginaMaestro({
         <div className="flex gap-2 text-sm">
           <Link
             href="/admin/maestro"
-            className={`rounded-md border px-3 py-1 ${incluir === "vigentes" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
+            className={`rounded-md border px-3 py-2 ${incluir === "vigentes" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
           >
             Solo vigentes
           </Link>
           <Link
             href="/admin/maestro?incluir=todos"
-            className={`rounded-md border px-3 py-1 ${incluir === "todos" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
+            className={`rounded-md border px-3 py-2 ${incluir === "todos" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
           >
             Todos
           </Link>
@@ -52,7 +52,12 @@ export default async function PaginaMaestro({
         <BotonImprimir />
       </div>
 
-      <div className="overflow-x-auto rounded-lg border print:border-0">
+      <div
+        role="region"
+        aria-label="Tabla del Listado Maestro (desplazable horizontalmente)"
+        tabIndex={0}
+        className="overflow-x-auto rounded-lg border outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-azul print:border-0"
+      >
         <table className="w-full text-sm">
           <thead className="bg-muted text-left print:bg-transparent">
             <tr>
