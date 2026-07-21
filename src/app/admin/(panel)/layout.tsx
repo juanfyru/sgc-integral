@@ -25,6 +25,7 @@ export default async function LayoutPanel({
             <Link href="/admin" className="hover:underline">Documentos</Link>
             <Link href="/admin/mapa" className="hover:underline">Mapa</Link>
             <Link href="/admin/tipos" className="hover:underline">Tipos de documento</Link>
+            <Link href="/admin/maestro" className="hover:underline">Listado Maestro</Link>
             <Link href="/" className="text-muted-foreground hover:underline">
               Ver portal público
             </Link>
