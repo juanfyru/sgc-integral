@@ -1,54 +1,54 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-07-18**
-> (Fase 7 completada e implementada de punta a punta; verificada en navegador real.
-> Próxima fase: 8 — Listado Maestro + estadísticas + bitácora).
+> Se actualiza al cierre de cada fase. Última actualización: **2026-07-21**
+> (Fase 8 completada e implementada de punta a punta; verificada en navegador real.
+> Próxima fase: 9 — Pulido visual, animaciones, accesibilidad, responsive).
 
 ## ⏸ Punto de reanudación (próxima sesión)
 
-0. **Dónde quedamos:** la Fase 7 (editor del mapa + tablas maestras) está
-   **implementada completa y pusheada a `origin/main`** (el CI ARM64 se disparó con el
-   push del 2026-07-18), siguiendo el plan
-   `docs/superpowers/plans/2026-07-17-fase7-editor-mapa.md` tarea por tarea (T1–T10),
-   un commit por tarea. El admin gestiona desde el panel: tipos de documento,
-   textos institucionales, periféricos (entradas/salidas/convenciones), y las tres
-   capas del mapa (macroprocesos, procesos, subprocesos) con reordenar (↑↓),
-   activar/desactivar, borrar-solo-si-vacío, y vista previa con inactivos. Todo auditado.
-   Verificado en navegador real (crear/borrar tipo, crear proceso "Vigilancia
-   Epidemiológica" y verlo en el mapa público sin despliegue → borrarlo, advertencia de
-   huérfanos con códigos reales, vista previa con nodo inactivo en gris vs. oculto en el
-   público). Un último commit `fix:` valida `volverA` en `borrarAccion` contra open
-   redirect (hallazgo de la revisión de seguridad automática; solo rutas internas
-   relativas). Suite: **140/145 tests** (los 5 rojos son los preexistentes del seed por
-   `PR-GTH-991`; NO regresión, en CI pasan; **no borrar `PR-GTH-991`**). `npm run lint`
-   y `npm run build` limpios.
-   **Pendiente del veredicto del usuario sobre la Fase 7** antes de arrancar la 8.
-1. **Diseño y decisiones de la Fase 7** en `docs/superpowers/specs/2026-07-17-fase7-editor-mapa-design.md`:
-   listas CRUD (no WYSIWYG), reordenar con botones ↑↓, desactivar por defecto / borrar
-   solo si vacío, cambios en vivo + vista previa con inactivos, desactivar con
-   documentos vigentes permite pero advierte con la lista de códigos huérfanos.
+0. **Dónde quedamos:** la Fase 8 (Listado Maestro + estadísticas + bitácora) está
+   **implementada completa en `main`**, siguiendo el plan
+   `docs/superpowers/plans/2026-07-18-fase8-listado-maestro-estadisticas-bitacora.md`
+   tarea por tarea (T1–T11), un commit por tarea. Nuevo en el nav del panel: **Listado
+   Maestro**, **Estadísticas** y **Bitácora**. Verificado en navegador real (Listado
+   Maestro con 27 vigentes + descarga del `.xlsx` end-to-end con firma PK válida +
+   impresión PDF; dashboard con KPIs 28 vistas/17 descargas, gráfico SVG y top-N
+   enlazando a fichas; bitácora con frases legibles incluida "Emitió el Listado Maestro
+   (excel, vigentes)" del propio export, código resuelto `PR-GTH-991` y fallback "un
+   documento" cuando ya no existe). Un commit `fix:` neutraliza la inyección de fórmulas
+   CSV/Excel en el export (hallazgo de la revisión de seguridad automática: se antepone
+   `'` a celdas de texto que empiecen por `=`,`+`,`-`,`@`,tab,CR). Suite: **161/166**
+   (los **5 rojos son los preexistentes del seed** por los docs manuales
+   `PR-GTH-990/991` que inflan el conteo de vigentes; NO regresión, en CI pasan con seed
+   fresco; **no borrar `PR-GTH-991`**). `npm run lint` y `npm run build` limpios.
+   **Pendiente del veredicto del usuario sobre la Fase 8** y del **push a `origin/main`**
+   (dispara el CI ARM64) antes de arrancar la 9.
+1. **Diseño y decisiones de la Fase 8** en
+   `docs/superpowers/specs/2026-07-18-fase8-listado-maestro-estadisticas-bitacora-design.md`:
+   Listado Maestro solo-vigentes por defecto con filtro opcional a "todos" (el export
+   respeta el filtro), encabezado institucional en Excel y PDF, dashboard Top-N +
+   mini-gráficos SVG puros con selector de rango, bitácora con filtros
+   (acción/entidad/fecha/texto) y `detalle` renderizado legible.
 2. **Recorrido de prueba (demo de la fase)** — con `npm run dev`, BD dev arriba, sesión
-   iniciada (`admin` / `cambiar-esta-clave`). En la nav del panel: **Mapa** y **Tipos de
-   documento**.
-   - `/admin/tipos`: crear un tipo (sigla 2–4 letras), reordenar con ↑↓, desactivar; el
-     botón **Borrar** solo aparece en tipos con 0 documentos.
-   - `/admin/mapa/textos`: cambiar el lema → recargar `/` y verlo cambiado.
-   - `/admin/mapa/perifericos`: crear una entrada con ícono, reordenar, desactivar.
-   - `/admin/mapa`: reordenar macroprocesos en su banda; entrar a uno → "+ Proceso",
-     crear "Vigilancia Epidemiológica" sigla VEP → abrir `/` y verlo en el mapa público
-     **sin reiniciar nada**. Desactivar un proceso con documentos vigentes → aparece la
-     advertencia con los códigos. Entrar a un proceso → "+ Subproceso".
-   - `/admin/mapa/vista-previa`: el mapa con los nodos inactivos en gris marcados
-     "inactivo" (el público no los ve).
-   - `SELECT accion FROM auditoria ORDER BY id DESC` muestra el rastro de cada cambio.
-3. **Lo primero al reanudar:** si el usuario aprueba la Fase 7, **planear la Fase 8 —
-   Listado Maestro + estadísticas + bitácora** (ver `PLAN.md` §Fase 8: Listado Maestro
-   generado desde BD, export Excel `exceljs` + PDF por hoja de impresión; dashboard de
-   más vistos/descargados y búsquedas sin resultados; vista de bitácora con filtros).
-   Sigue pendiente (no bloqueante) la **convención oficial de códigos**; mientras, el
-   patrón se valida y ahora se edita desde `/admin/mapa/textos` (`patron_codigo`).
-   Método de siempre: proponer diseño → aprobar → plan TDD → ejecutar tarea por tarea
-   con commit por tarea en `main`.
+   iniciada (`admin` / `cambiar-esta-clave`):
+   - `/admin/maestro`: tabla de vigentes con encabezado institucional; link "Todos"
+     agrega los no vigentes; "Descargar Excel" baja el `.xlsx` (respeta el filtro y abre
+     limpio); "Imprimir / Guardar PDF" abre el diálogo con nav/controles ocultos.
+   - `/admin/estadisticas`: KPIs de vistas/descargas, gráfico de consultas por día,
+     Top-10 más vistos/descargados (enlazan a la ficha) y búsquedas sin resultados;
+     el selector 7/30/90/Todo recalcula.
+   - `/admin/bitacora`: eventos más recientes con frases legibles; filtrar por
+     acción/entidad/fecha y por texto (ej. un código); paginación que conserva filtros.
+     El export de Excel aparece como "Emitió el Listado Maestro".
+3. **Lo primero al reanudar:** si el usuario aprueba la Fase 8, hacer el **push a
+   `origin/main`** y luego **planear la Fase 9 — Pulido visual, animaciones,
+   accesibilidad, responsive** (ver `PLAN.md` §Fase 9: microinteracciones, entradas
+   escalonadas, skeletons, modo oscuro opcional, Lighthouse accesibilidad ≥ 95,
+   `prefers-reduced-motion`, recorrido en celular real; también resolver el `npm audit`
+   moderado, deuda técnica). Sigue pendiente (no bloqueante) la **convención oficial de
+   códigos** (`patron_codigo` editable en `/admin/mapa/textos`). Método de siempre:
+   proponer diseño → aprobar → plan TDD → ejecutar tarea por tarea con commit por tarea
+   en `main`.
 4. **Estado del entorno:** Node 24 en CI/Docker/dev — no volver a Node 22: npm 10
    rechaza el lockfile de npm 11. Contenedores dev: `sgc-app-1` (9080) y `sgc-bd-1`
    (PG en 127.0.0.1:5434). En esta máquina 5432 lo ocupa un Postgres nativo y 5433
@@ -60,13 +60,18 @@
 
 ## Estado actual
 
-- **Fase actual:** 7 — completada, pendiente del veredicto del usuario. Editor del
-  mapa 100% data-driven y tablas maestras desde el panel admin: motor genérico
-  (`mover`/`alternarActivo`/`borrar` por nombre de tabla), CRUD de tipos de documento,
-  textos institucionales, periféricos, macro/procesos/subprocesos; reordenar con ↑↓,
-  desactivar con advertencia de huérfanos, borrar-solo-si-vacío, vista previa con
-  inactivos. Todo auditado. Verificado en navegador de punta a punta; 140 tests en
-  verde (5 rojos preexistentes del seed); lint y build limpios.
+- **Fase actual:** 8 — completada, pendiente del veredicto del usuario y del push.
+  Listado Maestro generado desde BD (una fila por documento por asociación principal,
+  vigentes por defecto con filtro a "todos", export Excel con encabezado institucional
+  + PDF por impresión), dashboard de estadísticas (KPIs, Top-N vistos/descargados,
+  búsquedas sin resultados, mini-gráfico SVG por rango) y bitácora filtrable con
+  `detalle` legible. El export de Excel queda auditado. Verificado en navegador de punta
+  a punta; 161 tests en verde (5 rojos preexistentes del seed); lint y build limpios.
+- **Fase 7 (hecha):** editor del mapa 100% data-driven y tablas maestras desde el panel
+  admin: motor genérico (`mover`/`alternarActivo`/`borrar` por nombre de tabla), CRUD de
+  tipos de documento, textos institucionales, periféricos, macro/procesos/subprocesos;
+  reordenar con ↑↓, desactivar con advertencia de huérfanos, borrar-solo-si-vacío, vista
+  previa con inactivos. Todo auditado. Pusheado a `origin/main` (CI ARM64 verde).
 - **Fase 6 (hecha):** auth propia (cookie httpOnly + tabla `sesiones` con token
   hasheado SHA-256 + Argon2id) y panel admin con el ciclo documental ISO completo
   (crear, subir archivos en streaming, publicar con obsolescencia automática en una
@@ -162,7 +167,27 @@
   `NOMBRES_ICONO` expuesto desde `iconos.tsx`; tests `mapa-admin` (15) y
   `validaciones-mapa` (7), `guardia` extendido con las nuevas rutas. Sin cambios de
   esquema (todas las columnas ya existían).
-- **Sigue:** Fase 8 (ver PLAN.md), tras el veredicto del usuario.
+- **Hecho (Fase 8):** capa de datos `src/db/consultas/maestro.ts` (una fila por documento
+  por asociación principal con `JOIN LATERAL` de la versión representativa; propietario
+  desde proceso o subproceso), `estadisticas.ts` (KPIs, Top-10 vistos/descargados,
+  búsquedas sin resultados agrupadas, serie por día; reloj `ahora` inyectable) y
+  `bitacora.ts` (filtros acción/entidad/fecha/texto, paginación 50 con COUNT separado,
+  código del documento resuelto por LATERAL para responder "¿por qué desapareció?");
+  constructor puro `src/lib/maestro-excel.ts` (exceljs, encabezado institucional, autofiltro,
+  saneo de inyección de fórmulas) servido por el route handler
+  `src/app/admin/(panel)/maestro/excel/route.ts` (guard `requerirSesion` + auditoría
+  `exporto_maestro`); `src/lib/bitacora-detalle.ts` (`describirEvento`, frase legible por
+  acción con fallback seguro); componentes `src/componentes/admin/estadisticas/`
+  (`geometria.ts` pura + `GraficoBarras.tsx` SVG accesible con tabla equivalente) y
+  `src/componentes/admin/maestro/BotonImprimir.tsx`; páginas `/admin/maestro`,
+  `/admin/estadisticas`, `/admin/bitacora` (Server Components, filtros server-driven,
+  estilos `print:` para el PDF); tres entradas nuevas en el nav del panel. Tests:
+  `maestro` (3), `maestro-excel` (3, incluye inyección de fórmulas), `estadisticas` (3),
+  `geometria` (2), `bitacora-detalle` (6), `bitacora` (3), `guardia` +1. Dependencia
+  nueva: `exceljs` (JS puro, ARM64 seguro). `vitest.config.ts` ahora con
+  `fileParallelism: false` (los tests de BD comparten la BD dev; en paralelo los fixtures
+  de uno ensuciaban las aserciones de conteo de otro).
+- **Sigue:** Fase 9 (ver PLAN.md), tras el veredicto del usuario y el push.
 
 ## Decisiones tomadas y su porqué
 
@@ -282,6 +307,18 @@
 | D48 | **Cambios en vivo + vista previa con inactivos** (flag `activo?` opcional en los tipos del mapa; `obtenerDatosMapaAdmin` sin filtro), sin sistema de borrador/staging | Cumple "ver el cambio en el mapa público sin despliegue"; el staging del mapa entero sería sobreingeniería. El flag opcional deja el camino público sin cambios de conducta | 2026-07-18 |
 | D49 | Al **desactivar un nodo con documentos vigentes** debajo, se permite pero se advierte con la lista de códigos que quedarán sin ruta en el mapa (siguen vigentes y buscables), no se bloquea | Evita callejones sin salida en reorganizaciones legítimas; el admin confirma con conocimiento de causa y queda en auditoría | 2026-07-18 |
 | D50 | **Slug** auto-generado del nombre al crear, estable al renombrar, editable en "opciones avanzadas" con aviso de que rompe enlaces | Preserva URLs/marcadores por defecto; permite corregir un slug cuando hace falta sin migración | 2026-07-18 |
+
+## Decisiones adicionales (Fase 8)
+
+| # | Decisión | Porqué | Fecha |
+|---|---|---|---|
+| D51 (B2) | Listado Maestro **solo-vigentes por defecto** con filtro opcional a "todos"; el export respeta el filtro activo | La vista por defecto es la que exporta el auditor (documentos en circulación); el filtro da inventario completo cuando el admin lo necesita, sin dos reportes distintos | 2026-07-21 |
+| D52 (B3) | Export **con encabezado institucional** (hospital, título, fecha/hora, alcance, total) en Excel y PDF | Presentable para auditoría; un maestro que revisa un auditor lleva ese bloque. El Excel es una función pura (fecha inyectada) → testeable | 2026-07-21 |
+| D53 | Export **Excel por route handler** con su propio guard `requerirSesion` + auditoría `exporto_maestro`; **PDF por `window.print()`** con estilos `print:`, sin ruta servidor | Regla del NAS: nada de Puppeteer. El Excel pasa por el servidor (se audita); el PDF es cliente (no se audita en esta fase). Un solo camino de datos, dos presentaciones | 2026-07-21 |
+| D54 | **Saneo de inyección de fórmulas** en el Excel: se antepone `'` a celdas de texto que empiecen por `=`,`+`,`-`,`@`,tab,CR | Títulos/códigos/responsables son texto libre del admin; sin esto una celda `=HYPERLINK(...)` se ejecutaría al abrir el archivo en el Excel del hospital (hallazgo de la revisión de seguridad automática) | 2026-07-21 |
+| D55 (B4) | Dashboard **Top-N + mini-gráfico SVG puro** (sin librería de charts) con selector de rango y reloj inyectable | Frugal en el NAS (sin dependencia extra); la geometría es una función pura testeada; el gráfico lleva tabla equivalente `sr-only` (accesibilidad) | 2026-07-21 |
+| D56 (B5) | Bitácora con **`detalle` renderizado legible** (`describirEvento`, función pura) y **código del documento resuelto por `LATERAL`** (por entidad o `detalle->>'documentoId'`) | Responde "¿por qué desapareció este formato?" en lenguaje claro y permite buscar por código; fallback seguro para acciones no mapeadas, nunca JSON crudo ni HTML | 2026-07-21 |
+| D57 | `vitest.config.ts` con **`fileParallelism: false`** | Los tests de BD comparten la BD dev; en paralelo los fixtures de un archivo son visibles para los lectores concurrentes de otro y ensucian sus aserciones de conteo. Secuencial → cada `afterAll` limpia antes del siguiente archivo | 2026-07-21 |
 
 ## Deuda técnica conocida
 
