@@ -18,8 +18,8 @@
    rojos son los preexistentes del seed** `busqueda-fase5`×3 + `esquema`×2 por los docs
    manuales `PR-GTH-990/991` que inflan el conteo; NO regresión, en CI pasan con seed
    fresco; **no borrar `PR-GTH-991`**). `npm run lint` y `npm run build` limpios.
-   **Pendiente: push a `origin/main` y el veredicto del usuario sobre la Fase 9** antes de
-   arrancar la 10.
+   **Pusheado a `origin/main`** el 2026-07-21 (`f14e172`; CI ARM64 disparado).
+   **Pendiente del veredicto del usuario sobre la Fase 9** antes de arrancar la 10.
 1. **Diseño y decisiones de la Fase 9** en
    `docs/superpowers/specs/2026-07-21-fase9-pulido-visual-a11y-responsive-design.md`:
    sin modo oscuro (F9-D1), animación 100% CSS (F9-D2), pulido premium en público +
