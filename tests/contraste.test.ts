@@ -25,6 +25,10 @@ describe("contrasteWCAG", () => {
     ["verde-texto / lienzo", "#1e7a35", LIENZO],
     ["blanco / azul", "#ffffff", "#1b4e8e"],
     ["primary-foreground / azul", "#fbfbfb", "#1b4e8e"],
+    // Superficies de texto blanco sobre banda oscurecida al 80% (fix Fase 9):
+    // el verde crudo #2e9b47 sólo daba 3.56; oscurecerlo garantiza AA para
+    // cualquier color de banda que elija el admin. #257c39 = verde @80% negro.
+    ["blanco / banda-solida verde", "#ffffff", "#257c39"],
   ];
 
   it.each(paresTextoNormal)("%s cumple AA (≥ 4.5:1)", (_n, a, b) => {

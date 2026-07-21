@@ -42,7 +42,7 @@ export function VisorPdf({
           <a
             href={urlDescarga}
             download={nombreDescarga}
-            className="pointer-events-auto inline-flex items-center gap-2 rounded-lg bg-[var(--color-banda)] px-4 py-2 font-medium text-white hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-banda)]"
+            className="pointer-events-auto inline-flex items-center gap-2 rounded-lg bg-[color-mix(in_srgb,var(--color-banda)_80%,black)] px-4 py-2 font-medium text-white hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-banda)]"
           >
             <Download className="size-4" aria-hidden="true" />
             Descargar el documento

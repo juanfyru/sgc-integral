@@ -89,7 +89,7 @@ export function IconoFormato({
     >
       <Icono className="size-3" aria-hidden="true" />
       {etiqueta}
-      <span className="font-normal opacity-75">{tamano}</span>
+      <span className="font-normal">{tamano}</span>
     </span>
   );
 }

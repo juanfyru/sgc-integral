@@ -47,7 +47,7 @@ export default function RootLayout({
           Saltar al contenido
         </a>
         <EncabezadoSitio />
-        <div id="contenido" tabIndex={-1} className="flex flex-1 flex-col outline-none">
+        <div id="contenido" tabIndex={-1} className="flex-1 min-w-0 outline-none">
           {children}
         </div>
       </body>

@@ -17,11 +17,11 @@ export default async function LayoutPanel({
   return (
     <div className="mx-auto max-w-6xl px-4 pb-16">
       <header className="mb-8 flex flex-wrap items-center justify-between gap-4 border-b py-4">
-        <div className="flex items-center gap-6">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
           <Link href="/admin" className="font-display text-lg font-semibold">
             Administración SGC
           </Link>
-          <nav className="flex gap-4 text-sm">
+          <nav className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
             <Link href="/admin" className="hover:underline">Documentos</Link>
             <Link href="/admin/mapa" className="hover:underline">Mapa</Link>
             <Link href="/admin/tipos" className="hover:underline">Tipos de documento</Link>
