@@ -21,8 +21,8 @@
    (los **5 rojos son los preexistentes del seed** por los docs manuales
    `PR-GTH-990/991` que inflan el conteo de vigentes; NO regresión, en CI pasan con seed
    fresco; **no borrar `PR-GTH-991`**). `npm run lint` y `npm run build` limpios.
-   **Pendiente del veredicto del usuario sobre la Fase 8** y del **push a `origin/main`**
-   (dispara el CI ARM64) antes de arrancar la 9.
+   **Pusheado a `origin/main`** el 2026-07-21 (`73b17c1`; CI ARM64 disparado).
+   **Pendiente del veredicto del usuario sobre la Fase 8** antes de arrancar la 9.
 1. **Diseño y decisiones de la Fase 8** en
    `docs/superpowers/specs/2026-07-18-fase8-listado-maestro-estadisticas-bitacora-design.md`:
    Listado Maestro solo-vigentes por defecto con filtro opcional a "todos" (el export
@@ -40,9 +40,9 @@
    - `/admin/bitacora`: eventos más recientes con frases legibles; filtrar por
      acción/entidad/fecha y por texto (ej. un código); paginación que conserva filtros.
      El export de Excel aparece como "Emitió el Listado Maestro".
-3. **Lo primero al reanudar:** si el usuario aprueba la Fase 8, hacer el **push a
-   `origin/main`** y luego **planear la Fase 9 — Pulido visual, animaciones,
-   accesibilidad, responsive** (ver `PLAN.md` §Fase 9: microinteracciones, entradas
+3. **Lo primero al reanudar:** si el usuario aprueba la Fase 8, **planear la Fase 9 —
+   Pulido visual, animaciones, accesibilidad, responsive** (ver `PLAN.md` §Fase 9:
+   microinteracciones, entradas
    escalonadas, skeletons, modo oscuro opcional, Lighthouse accesibilidad ≥ 95,
    `prefers-reduced-motion`, recorrido en celular real; también resolver el `npm audit`
    moderado, deuda técnica). Sigue pendiente (no bloqueante) la **convención oficial de
@@ -60,7 +60,7 @@
 
 ## Estado actual
 
-- **Fase actual:** 8 — completada, pendiente del veredicto del usuario y del push.
+- **Fase actual:** 8 — completada y pusheada (`73b17c1`), pendiente del veredicto del usuario.
   Listado Maestro generado desde BD (una fila por documento por asociación principal,
   vigentes por defecto con filtro a "todos", export Excel con encabezado institucional
   + PDF por impresión), dashboard de estadísticas (KPIs, Top-N vistos/descargados,
