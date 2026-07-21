@@ -25,8 +25,7 @@ async function limpiar() {
 
 beforeAll(async () => {
   await limpiar();
-  let tipoId: number;
-  [{ id: tipoId }] = await sql()`SELECT id FROM tipos_documento LIMIT 1`;
+  const [{ id: tipoId }] = await sql()`SELECT id FROM tipos_documento LIMIT 1`;
   [{ id: docA }] = await sql()`INSERT INTO documentos (codigo, titulo, tipo_id)
     VALUES ('ZZ-EST-001', 'Doc A', ${tipoId}) RETURNING id`;
   [{ id: docB }] = await sql()`INSERT INTO documentos (codigo, titulo, tipo_id)
