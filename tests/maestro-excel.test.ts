@@ -1,0 +1,61 @@
+/**
+ * Constructor puro del Excel del Listado Maestro (Fase 8): función determinista
+ * que recibe filas + metadatos y devuelve el Buffer del xlsx. Se verifica
+ * parseándolo de vuelta con exceljs.
+ */
+import { describe, expect, it } from "vitest";
+import ExcelJS from "exceljs";
+import { construirExcelMaestro } from "@/lib/maestro-excel";
+import type { FilaMaestro } from "@/db/consultas/maestro";
+
+const FILA: FilaMaestro = {
+  codigo: "PR-GTH-001",
+  titulo: "Procedimiento de Ingreso",
+  tipo: "Procedimiento",
+  version: 3,
+  estado: "vigente",
+  fechaElaboracion: "2025-01-01",
+  fechaRevision: "2025-02-01",
+  fechaAprobacion: "2025-03-01",
+  elaboro: "Ana",
+  reviso: "Beto",
+  aprobo: "Carla",
+  propietario: "Gestión del Talento Humano",
+};
+
+async function abrir(buf: Buffer) {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buf as unknown as ArrayBuffer);
+  return wb.worksheets[0];
+}
+
+describe("construirExcelMaestro", () => {
+  it("incluye encabezado institucional y una fila por documento", async () => {
+    const buf = await construirExcelMaestro([FILA], {
+      hospital: "ESE Hospital Nuestra Señora de Fátima de Suaza",
+      generadoEn: "2026-07-18 10:30",
+      alcance: "Documentos vigentes",
+      total: 1,
+    });
+    const hoja = await abrir(buf);
+    const textoTodo = JSON.stringify(hoja.getSheetValues());
+    expect(textoTodo).toContain("ESE Hospital Nuestra Señora de Fátima de Suaza");
+    expect(textoTodo).toContain("Listado Maestro de Documentos");
+    expect(textoTodo).toContain("2026-07-18 10:30");
+    expect(textoTodo).toContain("PR-GTH-001");
+    expect(textoTodo).toContain("Gestión del Talento Humano");
+  });
+
+  it("la fila de encabezados de columna trae todas las columnas", async () => {
+    const buf = await construirExcelMaestro([FILA], {
+      hospital: "H",
+      generadoEn: "x",
+      alcance: "Todos los documentos",
+      total: 1,
+    });
+    const hoja = await abrir(buf);
+    const encabezados = JSON.stringify(hoja.getSheetValues());
+    for (const c of ["Código", "Título", "Tipo", "Versión", "Estado", "Elaboró", "Revisó", "Aprobó", "Proceso propietario"])
+      expect(encabezados).toContain(c);
+  });
+});
