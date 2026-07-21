@@ -46,6 +46,26 @@ describe("construirExcelMaestro", () => {
     expect(textoTodo).toContain("Gestión del Talento Humano");
   });
 
+  it("neutraliza la inyección de fórmulas en celdas de texto", async () => {
+    const malicioso: FilaMaestro = {
+      ...FILA,
+      titulo: "=HYPERLINK(\"http://malo\")",
+      elaboro: "+cmd",
+      propietario: "-2+3",
+    };
+    const buf = await construirExcelMaestro([malicioso], {
+      hospital: "H",
+      generadoEn: "x",
+      alcance: "Documentos vigentes",
+      total: 1,
+    });
+    const hoja = await abrir(buf);
+    const valores = JSON.stringify(hoja.getSheetValues());
+    expect(valores).toContain("'=HYPERLINK");
+    expect(valores).toContain("'+cmd");
+    expect(valores).toContain("'-2+3");
+  });
+
   it("la fila de encabezados de columna trae todas las columnas", async () => {
     const buf = await construirExcelMaestro([FILA], {
       hospital: "H",

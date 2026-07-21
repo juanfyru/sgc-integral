@@ -28,6 +28,18 @@ const COLUMNAS: Array<{
 ];
 
 /**
+ * Neutraliza la inyección de fórmulas: si una celda de texto empieza por un
+ * carácter que Excel/LibreOffice interpretan como fórmula, se antepone un
+ * apóstrofo para forzar que se trate como texto. Los títulos, códigos y
+ * responsables son texto libre del admin: sin esto, un valor como "=HYPERLINK(...)"
+ * se ejecutaría al abrir el archivo en el Excel del hospital.
+ */
+function sanearCelda(v: string | number | null): string | number | null {
+  if (typeof v === "string" && /^[=+\-@\t\r]/.test(v)) return `'${v}`;
+  return v;
+}
+
+/**
  * Construye el workbook del Listado Maestro. Función pura: recibe filas y
  * metadatos (incluida la fecha ya formateada) y devuelve el Buffer del xlsx.
  * Sin acceso a BD ni al reloj: determinista y testeable.
@@ -64,7 +76,7 @@ export async function construirExcelMaestro(
     to: { row: cabecera.number, column: ultima },
   };
 
-  for (const f of filas) hoja.addRow(COLUMNAS.map((c) => c.valor(f)));
+  for (const f of filas) hoja.addRow(COLUMNAS.map((c) => sanearCelda(c.valor(f))));
 
   const ab = await wb.xlsx.writeBuffer();
   return Buffer.from(ab as ArrayBuffer);
