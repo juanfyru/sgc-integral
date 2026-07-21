@@ -27,6 +27,7 @@ import {
 } from "@/app/admin/acciones-mapa";
 import { DELETE as eliminarArchivo, GET as verArchivo } from "@/app/admin/api/archivos/[archivoId]/route";
 import { POST as subirArchivo } from "@/app/admin/api/archivos/route";
+import { GET as excelMaestro } from "@/app/admin/(panel)/maestro/excel/route";
 import { proxy } from "@/proxy";
 
 describe("proxy (guard optimista)", () => {
@@ -79,6 +80,15 @@ describe("handlers de archivos sin sesión", () => {
     const res = await eliminarArchivo(
       new NextRequest("http://localhost:3000/admin/api/archivos/1", { method: "DELETE" }),
       params,
+    );
+    expect(res.status).toBe(401);
+  });
+});
+
+describe("export del maestro sin sesión", () => {
+  it("GET /admin/maestro/excel sin cookie responde 401", async () => {
+    const res = await excelMaestro(
+      new NextRequest("http://localhost:3000/admin/maestro/excel"),
     );
     expect(res.status).toBe(401);
   });
