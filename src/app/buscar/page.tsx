@@ -340,8 +340,8 @@ export default async function PaginaBuscar({
               <SinResultados parametros={parametros} hayFiltros={hayFiltros} />
             ) : (
               <ul className="space-y-2.5">
-                {respuesta.resultados.map((resultado) => (
-                  <TarjetaResultado key={resultado.id} resultado={resultado} />
+                {respuesta.resultados.map((resultado, indice) => (
+                  <TarjetaResultado key={resultado.id} resultado={resultado} indice={indice} />
                 ))}
               </ul>
             )}

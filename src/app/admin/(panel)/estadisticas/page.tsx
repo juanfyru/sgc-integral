@@ -39,11 +39,17 @@ export default async function PaginaEstadisticas({
       </div>
 
       <div className="grid grid-cols-2 gap-4 sm:max-w-md">
-        <div className="rounded-lg border p-4">
+        <div
+          className="entrada rounded-lg border bg-card p-4 shadow-[var(--sombra-1)]"
+          style={{ "--indice": 0 } as React.CSSProperties}
+        >
           <p className="text-sm text-muted-foreground">Vistas</p>
           <p className="font-display text-3xl font-semibold">{e.totalVistas}</p>
         </div>
-        <div className="rounded-lg border p-4">
+        <div
+          className="entrada rounded-lg border bg-card p-4 shadow-[var(--sombra-1)]"
+          style={{ "--indice": 1 } as React.CSSProperties}
+        >
           <p className="text-sm text-muted-foreground">Descargas</p>
           <p className="font-display text-3xl font-semibold">{e.totalDescargas}</p>
         </div>

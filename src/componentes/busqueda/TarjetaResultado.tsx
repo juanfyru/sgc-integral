@@ -9,17 +9,19 @@ const formatoFecha = new Intl.DateTimeFormat("es-CO", { dateStyle: "medium" });
 /** Resultado de búsqueda: enlaza a la ficha y resalta las coincidencias. */
 export function TarjetaResultado({
   resultado,
+  indice = 0,
 }: {
   resultado: ResultadoBusqueda;
+  indice?: number;
 }) {
   const color = resultado.propietario?.color ?? "var(--color-azul)";
 
   return (
-    <li className="list-none">
+    <li className="entrada list-none" style={{ "--indice": indice } as React.CSSProperties}>
       <Link
         href={`/documentos/${resultado.codigo.toLowerCase()}`}
         style={{ "--color-banda": color } as React.CSSProperties}
-        className="group flex flex-col gap-1.5 rounded-xl border border-border bg-card p-4 shadow-xs transition-all duration-200 hover:-translate-y-px hover:border-[var(--color-banda)] hover:shadow-md focus-visible:border-[var(--color-banda)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-banda)]"
+        className="group flex flex-col gap-1.5 rounded-xl border border-border bg-card p-4 shadow-[var(--sombra-1)] transition-all duration-200 hover:-translate-y-px hover:border-[var(--color-banda)] hover:shadow-[var(--sombra-2)] focus-visible:border-[var(--color-banda)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-banda)]"
       >
         <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
           <span className="font-mono text-xs tracking-wide text-muted-foreground">
