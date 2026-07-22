@@ -18,8 +18,11 @@
    rojos son los preexistentes del seed** `busqueda-fase5`×3 + `esquema`×2 por los docs
    manuales `PR-GTH-990/991` que inflan el conteo; NO regresión, en CI pasan con seed
    fresco; **no borrar `PR-GTH-991`**). `npm run lint` y `npm run build` limpios.
-   **Pusheado a `origin/main`** el 2026-07-21 (`f14e172`; CI ARM64 disparado).
-   **Pendiente del veredicto del usuario sobre la Fase 9** antes de arrancar la 10.
+   **Pusheado a `origin/main`** el 2026-07-21. El CI de `f14e172` salió **rojo** (los
+   `loading.tsx` hacían prerenderizar el panel admin en build, que sin `DATABASE_URL`
+   fallaba); se corrigió con `force-dynamic` en el layout `(panel)` (ver F9-D7) —
+   verificado con build sin `.env.local`. **Pendiente del veredicto del usuario sobre la
+   Fase 9 y de ver el CI verde** antes de arrancar la 10.
 1. **Diseño y decisiones de la Fase 9** en
    `docs/superpowers/specs/2026-07-21-fase9-pulido-visual-a11y-responsive-design.md`:
    sin modo oscuro (F9-D1), animación 100% CSS (F9-D2), pulido premium en público +
@@ -350,6 +353,7 @@
 | F9-D4 | Verificación **manual/herramienta** (Lighthouse, teclado, celular real); solo se automatiza a11y estructural no frágil (skip-link, existencia de `loading.tsx`, regiones) | Inventar tests de píxeles sería frágil; el grueso del criterio se ejecuta y se observa | 2026-07-21 |
 | F9-D5 | **Texto blanco sobre banda** usa la banda oscurecida `color-mix(in srgb, var(--color-banda) 80%, black)`, no el color crudo | El verde institucional `#2e9b47` daba 3.56:1 con blanco (falla AA); oscurecer al 80% garantiza ≥ 5:1 para **cualquier** color que elija el admin, sin hardcodear (hallazgo de Lighthouse) | 2026-07-21 |
 | F9-D6 | El anillo de foco global usa `:where(...)` (especificidad 0) y `#contenido` es bloque `min-w-0` | Especificidad 0 deja que cualquier componente sobreescriba el foco; `min-w-0` permite que las tablas anchas se desplacen dentro de su región en vez de desbordar el body en móvil | 2026-07-21 |
+| F9-D7 | **`export const dynamic = "force-dynamic"` en `(panel)/layout.tsx`** | Los `loading.tsx` (límites de Suspense) inducen a Next a generar el **shell estático** de las páginas admin de **ruta fija** (p. ej. `/admin/documentos/nuevo`) en build, ejecutando sus consultas a BD; el CI/NAS compila **sin `DATABASE_URL`** (D12) y fallaba al prerenderizar. `force-dynamic` en el layout marca todo el panel como por-petición: nunca se prerenderiza. Regla durable: **página autenticada que consulta BD + `loading.tsx` ⇒ debe ser dinámica.** Las páginas públicas con `loading.tsx` no sufren esto (la home y `/buscar` ya son `force-dynamic`; proceso/subproceso/ficha son de parámetro dinámico `ƒ`, no se prerenderizan) | 2026-07-21 |
 
 ## Deuda técnica conocida
 
