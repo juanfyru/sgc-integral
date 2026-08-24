@@ -1,0 +1,59 @@
+# Producción en el QNAP TS-832PX (Container Station). Ver INSTALACION.md.
+# Reglas inviolables que este archivo materializa:
+#  - Solo DOS contenedores; límites de memoria explícitos (app 768M, bd 512M).
+#  - Postgres SIN puertos publicados; sus datos en volumen Docker local
+#    (jamás en carpeta SMB/CIFS: se corrompen).
+#  - Documentos en la carpeta compartida del NAS (bind mount) — la cubren
+#    los snapshots.
+#  - Puerto 9080 en el host (8080/443 los ocupa QTS).
+# Las variables ${...} salen del archivo .env junto a este yml.
+services:
+  app:
+    image: sgc-suaza:${SGC_VERSION:-latest}
+    container_name: sgc-app
+    ports:
+      - "9080:3080"
+    environment:
+      DATABASE_URL: postgres://${SGC_BD_USUARIO:-sgc}:${SGC_BD_CLAVE:?Definir SGC_BD_CLAVE en .env}@bd:5432/${SGC_BD_NOMBRE:-sgc}
+      ALMACEN_RUTA: /almacen
+      NEXT_TELEMETRY_DISABLED: "1"
+      ADMIN_USUARIO: ${ADMIN_USUARIO:-}
+      ADMIN_NOMBRE: ${ADMIN_NOMBRE:-}
+      ADMIN_CLAVE: ${ADMIN_CLAVE:-}
+      ADMIN_FORZAR_CLAVE: ${ADMIN_FORZAR_CLAVE:-}
+    volumes:
+      - ${SGC_DOCUMENTOS:-/share/sgc-documentos}:/almacen
+    depends_on:
+      bd:
+        condition: service_healthy
+    healthcheck:
+      # /api/salud consulta la BD y responde 503 si falla: cubre app y BD.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3080/api/salud || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    mem_limit: 768m
+    memswap_limit: 768m
+    restart: unless-stopped
+
+  bd:
+    image: postgres:16-alpine
+    container_name: sgc-bd
+    environment:
+      POSTGRES_USER: ${SGC_BD_USUARIO:-sgc}
+      POSTGRES_PASSWORD: ${SGC_BD_CLAVE:?Definir SGC_BD_CLAVE en .env}
+      POSTGRES_DB: ${SGC_BD_NOMBRE:-sgc}
+    volumes:
+      - bd_datos:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SGC_BD_USUARIO:-sgc} -d ${SGC_BD_NOMBRE:-sgc}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 512m
+    memswap_limit: 512m
+    restart: unless-stopped
+
+volumes:
+  bd_datos:
