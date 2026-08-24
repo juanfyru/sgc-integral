@@ -1061,3 +1061,44 @@ git push origin main
 - [ ] **Step 4: Verificar CI verde y el artefacto con doble tag** — con el token de `git credential fill` contra la API (no hay `gh`): estado del run del último push = `success`, y el artefacto se llama `sgc-suaza-arm64-docker-<AAAAMMDD>-<sha7>`.
 
 - [ ] **Step 5: Decirle al usuario qué probar** — recorrido del ensayo (comandos del Task 7 Step 3–8 resumidos), dónde leer `INSTALACION.md`, y qué quedará para el día de instalación real.
+
+---
+
+## Evidencia del ensayo (Task 7)
+
+**Fecha:** 2026-08-24, ejecutado completo en local (Docker Desktop, imagen x86
+`sgc-suaza:ensayo` construida con el Dockerfile real).
+
+1. **Instalación desde cero:** `up -d --build` → `[arranque]` esperó la BD
+   (intento 1), migró desde vacío, creó `admin`; `/api/salud` = ok; ambos
+   contenedores `healthy`; límites verificados por inspect: app 805306368
+   (768M), bd 536870912 (512M).
+2. **Seed + re-bootstrap:** `npm run db:seed` contra 127.0.0.1:5435 con
+   `ALMACEN_RUTA=.\almacen-ensayo` (36 archivos físicos); el seed TRUNCA
+   `usuarios`, así que un `docker restart sgc-app` re-creó el admin
+   (comportamiento diseñado: el bootstrap es idempotente en cada arranque).
+3. **Verificación pre-respaldo:** conteos `documentos=28 versiones=29
+   archivos=36`; mapa público con el seed; PDF vigente descargado con la marca
+   "COPIA NO CONTROLADA" en todas las páginas; clave del admin validada por
+   Argon2 contra la BD.
+4. **Respaldo:** `./nas/respaldo.sh ./respaldos-ensayo` → `sgc-20260824-1711.dump`
+   (60K, validado con `pg_restore --list` por el propio script) + copia del
+   almacén.
+5. **Destrucción:** `down -v` (volumen `sgc-ensayo_bd_datos` eliminado) +
+   borrado de `almacen-ensayo/`. Sin volúmenes remanentes.
+6. **Restauración:** `up -d` con clave de bootstrap DISTINTA
+   (`otra-tras-desastre`) a propósito; almacén devuelto desde la copia;
+   `echo SI | ./nas/restaurar.sh ./respaldos-ensayo/sgc-20260824-1711.dump`
+   (stop app → dropdb/createdb → pg_restore → start; el arranque re-verificó
+   migraciones "al día" y dejó el admin restaurado intacto: "existente").
+7. **Verificación post-restauración:** conteos documentales IDÉNTICOS
+   (`documentos=28 versiones=29 archivos=36`); mapa y PDF estampado OK; la
+   clave ORIGINAL del respaldo valida y la del re-bootstrap post-desastre NO
+   (exit 1) — la BD restaurada manda, el bootstrap no pisa usuarios existentes.
+
+**Hallazgos operativos (van a INSTALACION.md):**
+- Al devolver los archivos, copiar el CONTENIDO de la copia
+  (`cp -r copia/. /share/sgc-documentos/`), no la carpeta: Docker ya creó el
+  punto de montaje y anidar la carpeta deja los documentos invisibles (404).
+- `restaurar.sh` leyó la confirmación por stdin también bajo pipe
+  (`echo SI |`), útil para operación remota documentada.

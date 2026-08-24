@@ -1,0 +1,17 @@
+# Override de ENSAYO LOCAL del despliegue NAS (Fase 10). Diferencias
+# deliberadas con producción, todas visibles aquí:
+#  - build local (x86 de esta máquina) en vez de imagen cargada por docker load
+#  - bind mounts a carpetas del repo (gitignored) en vez de /share/*
+#  - bd publica 127.0.0.1:5435 SOLO para sembrar y verificar desde el host
+# Uso (con el compose dev APAGADO para liberar el puerto 9080):
+#   docker compose -f docker-compose.nas.yml -f docker-compose.ensayo.yml `
+#     -p sgc-ensayo --env-file .env.ensayo up -d --build
+services:
+  app:
+    build: .
+    image: sgc-suaza:ensayo
+    volumes:
+      - ./almacen-ensayo:/almacen
+  bd:
+    ports:
+      - "127.0.0.1:5435:5432"
