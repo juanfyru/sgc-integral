@@ -44,12 +44,19 @@ export type DecisionAdmin =
   | { accion: "asegurar"; config: ConfigAdmin }
   | { accion: "omitir"; motivo: string };
 
+export type EnvAdmin = Partial<
+  Record<
+    "ADMIN_USUARIO" | "ADMIN_NOMBRE" | "ADMIN_CLAVE" | "ADMIN_FORZAR_CLAVE",
+    string
+  >
+>;
+
 /**
  * Decide el bootstrap del admin a partir del entorno. Sin ADMIN_USUARIO o
  * ADMIN_CLAVE solo se omite (con motivo): un NAS ya aprovisionado retira
  * ADMIN_CLAVE del .env tras el primer arranque y eso NO es un error.
  */
-export function configurarAdminDesdeEnv(env: NodeJS.ProcessEnv): DecisionAdmin {
+export function configurarAdminDesdeEnv(env: EnvAdmin): DecisionAdmin {
   const usuario = env.ADMIN_USUARIO;
   const clave = env.ADMIN_CLAVE;
   if (!usuario) return { accion: "omitir", motivo: "falta ADMIN_USUARIO" };
