@@ -18,6 +18,10 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
+# Bundle del arrancador (migraciones + admin). @node-rs/argon2 queda externo:
+# el standalone ya copia su prebuild ARM64 a node_modules (lo usa la app).
+RUN npx esbuild scripts/arrancar.ts --bundle --platform=node --format=cjs \
+  --external:@node-rs/argon2 --alias:@=./src --outfile=arrancar.js
 
 # --- Runtime (standalone: solo lo necesario, sin node_modules completo) ---
 FROM base AS runner
@@ -32,8 +36,12 @@ RUN addgroup --system --gid 1001 nodejs \
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/arrancar.js ./arrancar.js
+COPY --from=builder --chown=nextjs:nodejs /app/drizzle ./drizzle
 
 USER nextjs
 EXPOSE 3080
 
-CMD ["node", "server.js"]
+# Migrar y asegurar admin ANTES de servir (F10-D2). Con `exec`, node recibe
+# las señales de parada de Docker.
+CMD ["sh", "-c", "node arrancar.js && exec node server.js"]
