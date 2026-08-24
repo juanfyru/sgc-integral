@@ -56,12 +56,13 @@ export async function GET(
     }).catch((err) => console.error("No se pudo registrar la descarga:", err));
   }
 
-  // ISO 7.5.3: la copia que sale del sistema deja de estar controlada. Solo
-  // la DESCARGA pública se estampa; la vista previa inline y el admin sirven
-  // el original, y los formatos no-PDF bajan tal cual (existen para
-  // diligenciarse).
-  if (esDescarga && archivo.mime === "application/pdf") {
-    return respuestaArchivoEstampado(archivo);
+  // ISO 7.5.3: la copia que sale del sistema deja de estar controlada. TODO
+  // PDF que salga por la ruta pública va estampado — también la vista previa
+  // inline, porque el visor del navegador permite descargar e imprimir. El
+  // admin sirve el original por su propia ruta, y los formatos no-PDF bajan
+  // tal cual (existen para diligenciarse).
+  if (archivo.mime === "application/pdf") {
+    return respuestaArchivoEstampado(archivo, esDescarga);
   }
   return respuestaArchivo(archivo, esDescarga);
 }

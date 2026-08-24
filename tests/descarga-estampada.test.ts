@@ -1,17 +1,15 @@
 /**
  * Cableado del route público de archivos con la marca de agua (reglas 3/6/7 +
- * ISO 7.5.3): con ?descarga=1 un PDF vigente sale estampado; la vista previa
- * inline sale byte a byte igual al original del almacén. Requiere la BD dev
- * migrada y sembrada (D19) y el ./almacen generado por el seed.
+ * ISO 7.5.3): TODO PDF vigente que sale por la ruta pública va estampado —
+ * la descarga como adjunto y la vista previa inline (el visor del navegador
+ * permite descargar/imprimir, así que una vista limpia sería un hueco).
+ * Requiere la BD dev migrada y sembrada (D19) y el ./almacen del seed.
  */
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { NextRequest } from "next/server";
 import { afterAll, describe, expect, it } from "vitest";
 import { GET } from "@/app/documentos/[codigo]/archivos/[archivoId]/[[...nombre]]/route";
 import { obtenerSql } from "@/db/cliente";
-import { rutaBaseAlmacen } from "@/lib/almacen";
 import { contenidoPorPagina, contieneTexto } from "./utiles/pdf";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
@@ -67,8 +65,8 @@ describe("route público de archivos — marca de agua", () => {
     }
   });
 
-  it("sin ?descarga=1 la vista previa sirve el original byte a byte", async () => {
-    const { id, ruta } = await archivoPdfVigente("MN-CAL-001");
+  it("sin ?descarga=1 la vista previa también sale estampada, inline", async () => {
+    const { id } = await archivoPdfVigente("MN-CAL-001");
     const res = await GET(
       peticion(`http://localhost:3000/documentos/mn-cal-001/archivos/${id}`),
       { params: Promise.resolve({ codigo: "mn-cal-001", archivoId: String(id) }) },
@@ -76,10 +74,11 @@ describe("route público de archivos — marca de agua", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Disposition")).toContain("inline");
 
-    const cuerpo = Buffer.from(await res.arrayBuffer());
-    const original = await readFile(
-      path.join(rutaBaseAlmacen(), ...ruta.split("/")),
-    );
-    expect(cuerpo.equals(original)).toBe(true);
+    const cuerpo = new Uint8Array(await res.arrayBuffer());
+    const paginas = await contenidoPorPagina(cuerpo);
+    expect(paginas.length).toBeGreaterThanOrEqual(1);
+    for (const contenido of paginas) {
+      expect(contieneTexto(contenido, "COPIA NO CONTROLADA")).toBe(true);
+    }
   });
 });

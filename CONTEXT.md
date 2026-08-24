@@ -46,10 +46,10 @@
    (`patron_codigo` editable en `/admin/mapa/textos`). Método de siempre: proponer
    diseño → aprobar → plan TDD → ejecutar tarea por tarea con commit por tarea en `main`.
 3b. **Además (2026-08-24, post-Fase 9):** implementada la **marca de agua "COPIA NO
-   CONTROLADA"** en las descargas públicas de PDF (ver D58 y
-   `src/lib/marca-agua.ts`); 9 tests nuevos (`marca-agua`, `descarga-estampada`),
-   verificada visualmente contra el dev server. Pendiente de push junto con lo que
-   decida el usuario.
+   CONTROLADA"** en toda salida pública de PDF — descarga y vista previa inline
+   (ver D58 y `src/lib/marca-agua.ts`); 10 tests nuevos (`marca-agua`,
+   `descarga-estampada`), verificada visualmente contra el dev server. Pendiente de
+   push junto con lo que decida el usuario.
 4. **Estado del entorno:** Node 24 en CI/Docker/dev — no volver a Node 22: npm 10
    rechaza el lockfile de npm 11. Contenedores dev: `sgc-app-1` (9080) y `sgc-bd-1`
    (PG en 127.0.0.1:5434). En esta máquina 5432 lo ocupa un Postgres nativo y 5433
@@ -215,11 +215,13 @@
   fix seguro (ver Deuda técnica). Verificación con Lighthouse + Playwright (teclado,
   contraste axe-lite, móvil 390 px).
 - **Post-Fase 9 (2026-08-24):** marca de agua **"COPIA NO CONTROLADA"** + fecha de
-  descarga, estampada al vuelo en cada página de los PDF que salen por la descarga
-  pública (`?descarga=1`): `src/lib/marca-agua.ts` (pdf-lib, fecha inyectable),
-  `respuestaArchivoEstampado` en `servir-archivo.ts` y cableado en el route público.
-  Vista previa inline, panel admin y formatos no-PDF siguen sirviendo el original.
-  Tests: `marca-agua` (7) y `descarga-estampada` (2, contra BD dev). Ver D58.
+  descarga, estampada al vuelo en cada página de **todo PDF que sale por la ruta
+  pública** (descarga adjunta Y vista previa inline — el visor del navegador permite
+  descargar/imprimir, así que la vista limpia era un hueco y el usuario pidió
+  cerrarlo): `src/lib/marca-agua.ts` (pdf-lib, fecha inyectable),
+  `respuestaArchivoEstampado(archivo, esDescarga)` en `servir-archivo.ts` y cableado
+  en el route público. Panel admin y formatos no-PDF siguen sirviendo el original.
+  Tests: `marca-agua` (8) y `descarga-estampada` (2, contra BD dev). Ver D58.
 - **Sigue:** Fase 10 — Despliegue en el NAS (ver PLAN.md), tras el veredicto del usuario
   y el push.
 
@@ -370,7 +372,7 @@
 
 | # | Decisión | Porqué | Fecha |
 |---|---|---|---|
-| D58 | Marca de agua "COPIA NO CONTROLADA" **solo en la descarga pública** de PDF (`?descarga=1`), elegida por el usuario entre tres alcances; la vista previa inline y el admin sirven el original, y los no-PDF bajan tal cual. Estampado con **pdf-lib** (JS puro, ARM64/offline seguro, Helvetica embebida) página por página + leyenda "Descargada el DD/MM/AAAA — verifique su vigencia en el SGC". **Fail-open**: si el PDF no se puede estampar (cifrado/corrupto) se sirve el original con `console.error` — la marca es salvaguarda, nunca deja inaccesible un documento vigente. Sin streaming en ese camino (el estampado exige el buffer completo; el tope de subida de 25 MB lo acota) | ISO 7.5.3: la copia que sale del sistema deja de estar controlada; en el NAS no hay Puppeteer ni binarios nativos posibles. El usuario descartó estampar la vista previa (queda el hueco teórico de imprimir desde el visor embebido, decisión consciente) | 2026-08-24 |
+| D58 | Marca de agua "COPIA NO CONTROLADA" en **toda salida pública de PDF** — descarga (`?descarga=1`, attachment) **y vista previa inline** (el ojo / `<object>` de la ficha); el admin sirve el original por su propia ruta y los no-PDF bajan tal cual. Estampado con **pdf-lib** (JS puro, ARM64/offline seguro, Helvetica embebida) página por página + leyenda "Descargada el DD/MM/AAAA — verifique su vigencia en el SGC". **Fail-open**: si el PDF no se puede estampar (cifrado/corrupto) se sirve el original con `console.error` — la marca es salvaguarda, nunca deja inaccesible un documento vigente. Sin streaming en ese camino (el estampado exige el buffer completo; el tope de subida de 25 MB lo acota) | ISO 7.5.3: la copia que sale del sistema deja de estar controlada; en el NAS no hay Puppeteer ni binarios nativos posibles. El alcance inicial era solo la descarga (elección del usuario), pero el visor del navegador permite descargar/imprimir desde la vista inline sin marca; el usuario pidió cerrar ese hueco el mismo día | 2026-08-24 |
 
 ## Deuda técnica conocida
 

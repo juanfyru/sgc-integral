@@ -92,6 +92,7 @@ describe("respuestaArchivoEstampado", () => {
         mime: "application/pdf",
         nombreOriginal: "Manual de calidad.pdf",
       },
+      true,
       FECHA,
     );
     expect(res.status).toBe(200);
@@ -105,6 +106,24 @@ describe("respuestaArchivoEstampado", () => {
     expect(contieneTexto(pagina, "COPIA NO CONTROLADA")).toBe(true);
   });
 
+  it("sirve el PDF estampado inline para la vista previa", async () => {
+    const res = await respuestaArchivoEstampado(
+      {
+        ruta: "DOC/v1/doc.pdf",
+        mime: "application/pdf",
+        nombreOriginal: "Manual de calidad.pdf",
+      },
+      false,
+      FECHA,
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Disposition")).toContain("inline");
+
+    const cuerpo = new Uint8Array(await res.arrayBuffer());
+    const [pagina] = await contenidoPorPagina(cuerpo);
+    expect(contieneTexto(pagina, "COPIA NO CONTROLADA")).toBe(true);
+  });
+
   it("ante un PDF que no se puede estampar sirve el original intacto y lo registra", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
@@ -114,6 +133,7 @@ describe("respuestaArchivoEstampado", () => {
           mime: "application/pdf",
           nombreOriginal: "roto.pdf",
         },
+        true,
         FECHA,
       );
       expect(res.status).toBe(200);
@@ -135,6 +155,7 @@ describe("respuestaArchivoEstampado", () => {
           mime: "application/pdf",
           nombreOriginal: "no-existe.pdf",
         },
+        true,
         FECHA,
       );
       expect(res.status).toBe(404);

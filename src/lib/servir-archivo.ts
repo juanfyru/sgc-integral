@@ -68,8 +68,10 @@ export function respuesta404() {
 }
 
 /**
- * Descarga pública de un PDF con la marca "COPIA NO CONTROLADA" estampada al
- * vuelo. Si el estampado falla (PDF cifrado o corrupto), sirve el original:
+ * Salida pública de un PDF con la marca "COPIA NO CONTROLADA" estampada al
+ * vuelo — tanto la descarga como la vista previa inline: el visor del
+ * navegador permite descargar e imprimir, así que una vista limpia sería un
+ * hueco. Si el estampado falla (PDF cifrado o corrupto), sirve el original:
  * la marca es una salvaguarda, nunca un motivo para dejar inaccesible un
  * documento vigente — el error queda en el log para corregir el archivo.
  * A diferencia de respuestaArchivo, aquí no hay streaming: estampar exige el
@@ -77,6 +79,7 @@ export function respuesta404() {
  */
 export async function respuestaArchivoEstampado(
   archivo: ArchivoServible,
+  esDescarga: boolean,
   fecha: Date = new Date(),
 ): Promise<NextResponse> {
   const rutaAbsoluta = resolverRutaAlmacen(archivo.ruta);
@@ -108,7 +111,7 @@ export async function respuestaArchivoEstampado(
       "Content-Type": archivo.mime,
       "Content-Length": String(cuerpo.byteLength),
       "Content-Disposition": contentDisposition(
-        "attachment",
+        esDescarga ? "attachment" : "inline",
         archivo.nombreOriginal,
       ),
       "X-Content-Type-Options": "nosniff",
