@@ -2,7 +2,11 @@ import { type NextRequest, NextResponse } from "next/server";
 import { obtenerArchivoVigente } from "@/db/consultas/documentos";
 import { ipDePeticion, registrarEventoConsulta } from "@/db/consultas/eventos";
 import { crearLimitador } from "@/lib/limite";
-import { respuesta404, respuestaArchivo } from "@/lib/servir-archivo";
+import {
+  respuesta404,
+  respuestaArchivo,
+  respuestaArchivoEstampado,
+} from "@/lib/servir-archivo";
 
 export const dynamic = "force-dynamic";
 
@@ -52,5 +56,12 @@ export async function GET(
     }).catch((err) => console.error("No se pudo registrar la descarga:", err));
   }
 
+  // ISO 7.5.3: la copia que sale del sistema deja de estar controlada. Solo
+  // la DESCARGA pública se estampa; la vista previa inline y el admin sirven
+  // el original, y los formatos no-PDF bajan tal cual (existen para
+  // diligenciarse).
+  if (esDescarga && archivo.mime === "application/pdf") {
+    return respuestaArchivoEstampado(archivo);
+  }
   return respuestaArchivo(archivo, esDescarga);
 }

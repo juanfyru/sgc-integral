@@ -1,8 +1,9 @@
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { NextResponse } from "next/server";
 import { resolverRutaAlmacen } from "@/lib/almacen";
+import { estamparCopiaNoControlada } from "@/lib/marca-agua";
 
 export type ArchivoServible = {
   ruta: string;
@@ -64,4 +65,54 @@ export async function respuestaArchivo(
 
 export function respuesta404() {
   return NextResponse.json({ error: "Archivo no encontrado" }, { status: 404 });
+}
+
+/**
+ * Descarga pública de un PDF con la marca "COPIA NO CONTROLADA" estampada al
+ * vuelo. Si el estampado falla (PDF cifrado o corrupto), sirve el original:
+ * la marca es una salvaguarda, nunca un motivo para dejar inaccesible un
+ * documento vigente — el error queda en el log para corregir el archivo.
+ * A diferencia de respuestaArchivo, aquí no hay streaming: estampar exige el
+ * PDF completo en memoria (el tope de subida ya lo acota a 25 MB).
+ */
+export async function respuestaArchivoEstampado(
+  archivo: ArchivoServible,
+  fecha: Date = new Date(),
+): Promise<NextResponse> {
+  const rutaAbsoluta = resolverRutaAlmacen(archivo.ruta);
+  if (!rutaAbsoluta) {
+    console.error(`Ruta de almacén inválida en BD: ${archivo.ruta}`);
+    return respuesta404();
+  }
+
+  let original: Buffer;
+  try {
+    original = await readFile(rutaAbsoluta);
+  } catch {
+    console.error(`Archivo faltante en el almacén: ${archivo.ruta}`);
+    return respuesta404();
+  }
+
+  let cuerpo: Uint8Array = original;
+  try {
+    cuerpo = await estamparCopiaNoControlada(original, fecha);
+  } catch (err) {
+    console.error(
+      `No se pudo estampar ${archivo.ruta}; se sirve el original:`,
+      err,
+    );
+  }
+
+  return new NextResponse(new Uint8Array(cuerpo), {
+    headers: {
+      "Content-Type": archivo.mime,
+      "Content-Length": String(cuerpo.byteLength),
+      "Content-Disposition": contentDisposition(
+        "attachment",
+        archivo.nombreOriginal,
+      ),
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "no-store",
+    },
+  });
 }
