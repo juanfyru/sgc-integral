@@ -66,12 +66,20 @@ jobs:
       # El NAS no tiene internet: no puede hacer `docker pull`. Este .tar se
       # descarga desde Actions, se copia al NAS por SMB y se carga con
       # `docker load -i sgc-suaza-arm64.tar` en Container Station.
+      # Doble tag (F10-D7): `latest` + versionado, para poder conservar el
+      # tar anterior y hacer rollback offline cambiando SGC_VERSION en .env.
+      - name: Tag versionado para rollback offline
+        id: version
+        run: echo "tag=$(date +%Y%m%d)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
       - name: Exportar imagen como .tar para despliegue offline
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/arm64
-          tags: sgc-suaza:latest
+          tags: |
+            sgc-suaza:latest
+            sgc-suaza:${{ steps.version.outputs.tag }}
           outputs: type=docker,dest=/tmp/sgc-suaza-arm64.tar
           cache-from: type=gha
 
@@ -81,6 +89,6 @@ jobs:
       - name: Publicar artefacto
         uses: actions/upload-artifact@v4
         with:
-          name: sgc-suaza-arm64-docker
+          name: sgc-suaza-arm64-docker-${{ steps.version.outputs.tag }}
           path: /tmp/sgc-suaza-arm64.tar.gz
           retention-days: 30
