@@ -1102,3 +1102,14 @@ git push origin main
   punto de montaje y anidar la carpeta deja los documentos invisibles (404).
 - `restaurar.sh` leyó la confirmación por stdin también bajo pipe
   (`echo SI |`), útil para operación remota documentada.
+
+## Evidencia de la prueba de carga (Task 8)
+
+**2026-08-24, local x86 (cota de referencia; el criterio < 1.3 GB se mide en el
+NAS el día de instalación):** `npx tsx scripts/carga.ts http://127.0.0.1:9080
+60 20` contra el ensayo restaurado → **2944 peticiones en 60 s, 0 errores**;
+p50/p95: mapa 31/70 ms, proceso 31/75 ms, ficha 31/73 ms, búsqueda 32/105 ms,
+**PDF estampado 86/169 ms**; los presupuestos respetaron exactamente los rate
+limits (50 archivos y 25 búsquedas en el minuto, ningún 429). RAM durante la
+carga (`docker stats`, 3 muestras): app ≈ 84 MiB / 768 MiB, bd ≈ 80 MiB /
+512 MiB — **≈ 165 MiB en total**.
