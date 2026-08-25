@@ -19,6 +19,13 @@
    Evidencia completa en el plan §Evidencia. Suite: **205 tests, 200 en verde** (los
    5 rojos son los preexistentes del seed `busqueda-fase5`×3 + `esquema`×2; NO
    regresión; **no borrar `PR-GTH-991`**). Lint y build limpios.
+0b. **Pendiente inmediato (temporizador de GitHub):** los runs del 2026-08-25 quedaron
+   rojos SOLO en "Publicar artefacto" por **cuota de almacenamiento de Actions agotada**
+   (1.13 GB de tars viejos, ya borrados vía API; la retención bajó a 30→7 días en
+   `af10e27`). GitHub recalcula el uso cada 6-12 h: pasado ese lapso, **relanzar los
+   jobs fallidos del último run** (Actions → run → "Re-run failed jobs") y verificar
+   que el artefacto `sgc-suaza-arm64-docker-<AAAAMMDD>-<sha7>` quede descargable.
+   Lint+build, imagen ARM64, push a GHCR y doble tag ya salieron bien en esos runs.
 1. **Lo que sigue (bloqueado por el usuario): el DÍA DE INSTALACIÓN** cuando haya
    acceso al NAS — ejecutar `INSTALACION.md` tal cual (checklist §1, instalación §2,
    respaldos §4), medir la prueba de carga real (§8, criterio RAM < 1.3 GB) y retirar
