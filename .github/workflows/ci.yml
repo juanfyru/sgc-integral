@@ -91,4 +91,7 @@ jobs:
         with:
           name: sgc-suaza-arm64-docker-${{ steps.version.outputs.tag }}
           path: /tmp/sgc-suaza-arm64.tar.gz
-          retention-days: 30
+          # 7 días: el tar se descarga cuando se va a desplegar y se conserva
+          # en el NAS; retenerlo 30 días acumuló >1 GB y agotó la cuota de
+          # almacenamiento de Actions de la cuenta (visto el 2026-08-25).
+          retention-days: 7
