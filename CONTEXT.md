@@ -1,56 +1,40 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-07-21**
-> (Fase 9 completada e implementada de punta a punta; verificada en navegador real con
-> Lighthouse. Próxima fase: 10 — Despliegue en el NAS + respaldos + documentación).
+> Se actualiza al cierre de cada fase. Última actualización: **2026-08-25**
+> (Fase 10 completada: paquete de despliegue NAS verificado en ensayo local
+> destructivo. El proyecto queda a la espera del acceso al QNAP real para el
+> "día de instalación").
 
 ## ⏸ Punto de reanudación (próxima sesión)
 
-0. **Dónde quedamos:** la Fase 9 (pulido visual, animaciones, accesibilidad, responsive)
-   está **implementada completa en `main`**, siguiendo el plan
-   `docs/superpowers/plans/2026-07-21-fase9-pulido-visual-a11y-responsive.md` tarea por
-   tarea (T1–T7), un commit por tarea + un `fix:` de hallazgos de verificación.
-   Verificado en navegador real con **Lighthouse a11y = 100/100 en las 5 vistas públicas**
-   (inicio/mapa, proceso, subproceso, ficha, buscar) y las 3 admin cara-a-auditor
-   (Maestro/Estadísticas/Bitácora) con **0 fallos de contraste** (escaneo axe-lite),
-   tablas como región enfocable por teclado y **sin desborde horizontal a 390 px**
-   (screenshots en `.playwright-mcp/fase9-movil-*.png`). Suite: **182/187** (los **5
-   rojos son los preexistentes del seed** `busqueda-fase5`×3 + `esquema`×2 por los docs
-   manuales `PR-GTH-990/991` que inflan el conteo; NO regresión, en CI pasan con seed
-   fresco; **no borrar `PR-GTH-991`**). `npm run lint` y `npm run build` limpios.
-   **Pusheado a `origin/main`** el 2026-07-21. El CI de `f14e172` salió **rojo** (los
-   `loading.tsx` hacían prerenderizar el panel admin en build, que sin `DATABASE_URL`
-   fallaba); se corrigió con `force-dynamic` en el layout `(panel)` (ver F9-D7) —
-   verificado con build sin `.env.local`. **Pendiente del veredicto del usuario sobre la
-   Fase 9 y de ver el CI verde** antes de arrancar la 10.
-1. **Diseño y decisiones de la Fase 9** en
-   `docs/superpowers/specs/2026-07-21-fase9-pulido-visual-a11y-responsive-design.md`:
-   sin modo oscuro (F9-D1), animación 100% CSS (F9-D2), pulido premium en público +
-   Maestro/Estadísticas/Bitácora y solo a11y/responsive en los CRUD internos (F9-D3),
-   verificación manual/herramienta (F9-D4). Ver §Decisiones adicionales (Fase 9).
-2. **Recorrido de prueba (demo de la fase)** — con `npm run dev`, BD dev arriba:
-   - Tabular en cualquier página: el primer Tab revela **"Saltar al contenido"**; el
-     anillo de foco azul es visible en todos los controles.
-   - Público: al navegar hay **skeletons** (no spinners) y **entradas escalonadas** en
-     las tarjetas; hover con elevación suave. En la ficha, los botones de descarga verdes
-     ahora contrastan (verde oscurecido al 80%, blanco 5.22:1).
-   - En un **celular real**: mapa→proceso→subproceso→ficha→buscar; y en el panel
-     Maestro/Estadísticas/Bitácora — las tablas anchas se **deslizan dentro de su marco**
-     sin desbordar la página, la nav del panel envuelve, objetivos táctiles cómodos.
-3. **Lo primero al reanudar:** si el usuario aprueba la Fase 9, **planear la Fase 10 —
-   Despliegue en el NAS + respaldos + documentación** (ver `PLAN.md` §Fase 10:
-   `docker-compose.yml` para Container Station con límites de memoria y red interna,
-   flujo offline tar→SMB→`docker load`, `pg_dump` + snapshots QNAP, restauración probada,
-   `INSTALACION.md`, retirar `ADMIN_CLAVE` tras el primer arranque, RAM < 1.3 GB con 20
-   concurrentes). Sigue pendiente (no bloqueante) la **convención oficial de códigos**
-   (`patron_codigo` editable en `/admin/mapa/textos`). Método de siempre: proponer
-   diseño → aprobar → plan TDD → ejecutar tarea por tarea con commit por tarea en `main`.
-3b. **Además (2026-08-24, post-Fase 9):** implementada la **marca de agua "COPIA NO
-   CONTROLADA"** en toda salida pública de PDF — descarga y vista previa inline
-   (ver D58 y `src/lib/marca-agua.ts`); 10 tests nuevos (`marca-agua`,
-   `descarga-estampada`), verificada visualmente contra el dev server. Pendiente de
-   push junto con lo que decida el usuario.
-4. **Estado del entorno:** Node 24 en CI/Docker/dev — no volver a Node 22: npm 10
+0. **Dónde quedamos:** la **Fase 10** (despliegue NAS) está **implementada completa
+   en `main`**, siguiendo el plan
+   `docs/superpowers/plans/2026-08-24-fase10-despliegue-nas.md` tarea por tarea
+   (T1–T10, un commit por tarea). El usuario **aún no tiene acceso al QNAP** (F10-D1):
+   la fase entregó el paquete completo y lo verificó en un **ensayo local
+   destructivo** (instalar desde cero → sembrar → respaldar con `nas/respaldo.sh` →
+   destruir contenedores+volúmenes+almacén → restaurar con `nas/restaurar.sh` →
+   conteos idénticos, clave del respaldo manda, PDF estampado OK) y una **prueba de
+   carga** (2944 req/60 s × 20 clientes, 0 errores, RAM ≈ 165 MiB total en x86).
+   Evidencia completa en el plan §Evidencia. Suite: **205 tests, 200 en verde** (los
+   5 rojos son los preexistentes del seed `busqueda-fase5`×3 + `esquema`×2; NO
+   regresión; **no borrar `PR-GTH-991`**). Lint y build limpios.
+1. **Lo que sigue (bloqueado por el usuario): el DÍA DE INSTALACIÓN** cuando haya
+   acceso al NAS — ejecutar `INSTALACION.md` tal cual (checklist §1, instalación §2,
+   respaldos §4), medir la prueba de carga real (§8, criterio RAM < 1.3 GB) y retirar
+   `ADMIN_CLAVE` tras el primer arranque (§2.6). No hay más fases de desarrollo en
+   `PLAN.md`.
+2. **Antes del despliegue** también siguen pendientes del usuario (no bloquean nada):
+   la **convención oficial de códigos** (`patron_codigo` editable en
+   `/admin/mapa/textos`), los **documentos reales** aprobados (el seed es ficticio) y
+   el **logo institucional** vectorial.
+3. **Deuda técnica a evaluar** (mantenimiento, no funcional): subir Next 16.2.10 →
+   16.3.2+ por advisories nuevos (ver §Deuda técnica); agregar job de CI con Postgres
+   de servicio para los tests de BD.
+4. **Marca de agua (2026-08-24, post-Fase 9):** toda salida pública de PDF va
+   estampada "COPIA NO CONTROLADA" — descarga y vista previa inline (D58,
+   `src/lib/marca-agua.ts`).
+5. **Estado del entorno:** Node 24 en CI/Docker/dev — no volver a Node 22: npm 10
    rechaza el lockfile de npm 11. Contenedores dev: `sgc-app-1` (9080) y `sgc-bd-1`
    (PG en 127.0.0.1:5434). En esta máquina 5432 lo ocupa un Postgres nativo y 5433
    el proyecto doctime. Suele quedar un `next dev` huérfano en el puerto 3000 de
@@ -61,7 +45,18 @@
 
 ## Estado actual
 
-- **Fase actual:** 9 — completada en `main`, pendiente de push y del veredicto del usuario.
+- **Fase actual:** 10 — completada en `main` (2026-08-25). Paquete de despliegue NAS:
+  arranque del contenedor con migraciones (`src/lib/arranque.ts` + `scripts/arrancar.ts`
+  bundleado con esbuild al build de la imagen; CMD `node arrancar.js && exec node
+  server.js`), `docker-compose.nas.yml` (mem_limit 768M/512M, bd sin puertos, healthcheck
+  `/api/salud`) + `.env.nas.example`, doble tag del tar en CI para rollback offline,
+  `nas/respaldo.sh`/`restaurar.sh` (crontab QTS, retención 30 días), ensayo local
+  destructivo con restauración probada (`docker-compose.ensayo.yml` + `.env.ensayo`),
+  `scripts/carga.ts` (presupuestos de rate limit por IP única) e `INSTALACION.md`
+  operable por sistemas. Tests nuevos: `arranque` (8). Evidencia del ensayo y la carga
+  en el plan de la fase. **El despliegue físico queda para el día de instalación**
+  (sin acceso al NAS todavía, F10-D1).
+- **Fase 9 (hecha):** completada y aprobada por el usuario el 2026-08-24; CI verde.
   Pulido visual y de accesibilidad de punta a punta: tokens de elevación/movimiento y
   anillo de foco global, enlace "saltar al contenido", entradas escalonadas y skeletons
   por ruta (no spinners), contraste AA validado por función pura y corregido donde
@@ -222,8 +217,8 @@
   `respuestaArchivoEstampado(archivo, esDescarga)` en `servir-archivo.ts` y cableado
   en el route público. Panel admin y formatos no-PDF siguen sirviendo el original.
   Tests: `marca-agua` (8) y `descarga-estampada` (2, contra BD dev). Ver D58.
-- **Sigue:** Fase 10 — Despliegue en el NAS (ver PLAN.md), tras el veredicto del usuario
-  y el push.
+- **Sigue:** el **día de instalación** en el QNAP real (ejecutar `INSTALACION.md`),
+  cuando el usuario tenga acceso. No quedan fases de desarrollo en `PLAN.md`.
 
 ## Decisiones tomadas y su porqué
 
@@ -373,6 +368,19 @@
 | # | Decisión | Porqué | Fecha |
 |---|---|---|---|
 | D58 | Marca de agua "COPIA NO CONTROLADA" en **toda salida pública de PDF** — descarga (`?descarga=1`, attachment) **y vista previa inline** (el ojo / `<object>` de la ficha); el admin sirve el original por su propia ruta y los no-PDF bajan tal cual. Estampado con **pdf-lib** (JS puro, ARM64/offline seguro, Helvetica embebida) página por página + leyenda "Descargada el DD/MM/AAAA — verifique su vigencia en el SGC". **Fail-open**: si el PDF no se puede estampar (cifrado/corrupto) se sirve el original con `console.error` — la marca es salvaguarda, nunca deja inaccesible un documento vigente. Sin streaming en ese camino (el estampado exige el buffer completo; el tope de subida de 25 MB lo acota) | ISO 7.5.3: la copia que sale del sistema deja de estar controlada; en el NAS no hay Puppeteer ni binarios nativos posibles. El alcance inicial era solo la descarga (elección del usuario), pero el visor del navegador permite descargar/imprimir desde la vista inline sin marca; el usuario pidió cerrar ese hueco el mismo día | 2026-08-24 |
+
+## Decisiones adicionales (Fase 10)
+
+| # | Decisión | Porqué | Fecha |
+|---|---|---|---|
+| F10-D1 | **Alcance sin NAS:** la fase cierra con el ensayo local completo + documentación; el criterio "RAM < 1.3 GB con 20 concurrentes" se midió localmente como cota (≈165 MiB) y queda como verificación vinculante del día de instalación | El usuario no tiene acceso al QNAP todavía | 2026-08-24 |
+| F10-D2 | **Arranque por script precompilado:** esbuild bundlea `scripts/arrancar.ts` → `arrancar.js` en el build; CMD `node arrancar.js && exec node server.js` | Si la migración falla, el server NO arranca y la restart policy reintenta con el error evidente; `instrumentation.ts` no garantiza no servir tráfico antes de migrar | 2026-08-24 |
+| F10-D3 | Migraciones con **`migrate()` de drizzle-orm** (conexión propia `max: 1`) leyendo `drizzle/` copiada a la imagen | `drizzle-kit` es devDependency pesada; `migrate()` es el mecanismo de producción de Drizzle | 2026-08-24 |
+| F10-D4 | **`ADMIN_FORZAR_CLAVE=1`** en el arranque como camino de "olvidé la clave" | `asegurar-admin.ts` es tsx y no existe en la imagen; un env var + recrear contenedor lo ejecuta sistemas sin herramientas | 2026-08-24 |
+| F10-D5 | **`mem_limit`/`memswap_limit`** en el compose del NAS (no `deploy.resources` como en dev) | Lo respeta cualquier Container Station sin swarm; verificado por inspect (805306368 / 536870912) | 2026-08-24 |
+| F10-D6 | Respaldo por **crontab de QTS** + `docker exec pg_dump -Fc`, verificación `pg_restore --list`, retención 30 días | Prohibido un tercer contenedor; QTS trae cron persistente (`/etc/config/crontab`) | 2026-08-24 |
+| F10-D7 | Tar del CI con **doble tag** `latest` + `AAAAMMDD-sha7` y artefacto nombrado con el tag | Rollback offline: conservar el tar anterior y cambiar `SGC_VERSION` en `.env` | 2026-08-24 |
+| F10-D8 | La prueba de carga usa **presupuestos globales por minuto** (50 archivos, 25 búsquedas) bajo los rate limits | Toda la carga sale de UNA IP: sin presupuestos se mediría el 429, no la app | 2026-08-24 |
 
 ## Deuda técnica conocida
 
