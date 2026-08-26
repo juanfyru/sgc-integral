@@ -29,8 +29,12 @@
 1. **Lo que sigue (bloqueado por el usuario): el DÍA DE INSTALACIÓN** cuando haya
    acceso al NAS — ejecutar `INSTALACION.md` tal cual (checklist §1, instalación §2,
    respaldos §4), medir la prueba de carga real (§8, criterio RAM < 1.3 GB) y retirar
-   `ADMIN_CLAVE` tras el primer arranque (§2.6). No hay más fases de desarrollo en
-   `PLAN.md`.
+   `ADMIN_CLAVE` tras el primer arranque (§2.6). Si el NAS tuviera salida a internet,
+   usar en su lugar **`INSTALACION_INTERNET.md`** (2026-08-26: pull desde GHCR con
+   token `read:packages`, `SGC_IMAGEN` en el `.env`, actualización en dos comandos,
+   HBS a destino remoto; el CI ahora publica el tag versionado también en GHCR, y el
+   paquete offline incluye el tar de `postgres:16-alpine` — hueco detectado al
+   escribir la variante). No hay más fases de desarrollo en `PLAN.md`.
 2. **Antes del despliegue** también siguen pendientes del usuario (no bloquean nada):
    la **convención oficial de códigos** (`patron_codigo` editable en
    `/admin/mapa/textos`), los **documentos reales** aprobados (el seed es ficticio) y

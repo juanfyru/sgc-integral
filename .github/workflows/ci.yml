@@ -37,6 +37,13 @@ jobs:
         id: imagen
         run: echo "nombre=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
 
+      # Tag versionado (F10-D7): va tanto en GHCR (despliegue con internet,
+      # INSTALACION_INTERNET.md) como en el .tar offline — en ambos casos el
+      # rollback es cambiar SGC_VERSION en el .env a este tag.
+      - name: Tag versionado para rollback
+        id: version
+        run: echo "tag=$(date +%Y%m%d)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
       - uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
@@ -60,18 +67,13 @@ jobs:
           tags: |
             ${{ steps.imagen.outputs.nombre }}:latest
             ${{ steps.imagen.outputs.nombre }}:${{ github.sha }}
+            ${{ steps.imagen.outputs.nombre }}:${{ steps.version.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # El NAS no tiene internet: no puede hacer `docker pull`. Este .tar se
-      # descarga desde Actions, se copia al NAS por SMB y se carga con
-      # `docker load -i sgc-suaza-arm64.tar` en Container Station.
-      # Doble tag (F10-D7): `latest` + versionado, para poder conservar el
-      # tar anterior y hacer rollback offline cambiando SGC_VERSION en .env.
-      - name: Tag versionado para rollback offline
-        id: version
-        run: echo "tag=$(date +%Y%m%d)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-
+      # Despliegue offline (INSTALACION.md): el .tar se descarga desde
+      # Actions, se copia al NAS por SMB y se carga con `docker load`.
+      # Lleva doble tag: `latest` + el versionado del paso anterior.
       - name: Exportar imagen como .tar para despliegue offline
         uses: docker/build-push-action@v6
         with:

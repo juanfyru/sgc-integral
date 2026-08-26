@@ -27,7 +27,9 @@ NAS** como administrador, salvo donde se indique otra cosa.
       - `sgc-documentos` — archivos de los documentos del SGC.
       - `sgc-respaldos` — respaldos diarios de la base de datos.
 - [ ] El **paquete de despliegue**, copiado desde el PC por SMB (ver §2):
-      - `sgc-suaza-arm64-docker-<versión>.tar.gz` (imagen; artefacto del CI)
+      - `sgc-suaza-arm64-docker-<versión>.tar.gz` (imagen de la app; artefacto del CI)
+      - `postgres-16-alpine-arm64.tar.gz` (imagen de la base de datos; se
+        genera una vez desde un PC con Docker e internet, ver §2.2)
       - `docker-compose.nas.yml`
       - `.env.nas.example`
       - carpeta `nas/` (`respaldo.sh`, `restaurar.sh`)
@@ -47,16 +49,28 @@ ls
 # docker-compose.nas.yml  .env.nas.example  nas/  sgc-suaza-arm64-docker-<versión>.tar.gz
 ```
 
-**2.2. Cargar la imagen** (el NAS no tiene internet; la imagen entra por
-archivo):
+**2.2. Cargar las imágenes** (el NAS no tiene internet; entran por archivo).
+
+La imagen de la **base de datos** se genera UNA vez, desde cualquier PC con
+Docker e internet, y se copia al NAS junto al resto del paquete:
+
+```sh
+# En el PC (una sola vez):
+docker pull --platform linux/arm64 postgres:16-alpine
+docker save postgres:16-alpine | gzip > postgres-16-alpine-arm64.tar.gz
+```
+
+En el NAS, cargar ambas:
 
 ```sh
 cd /share/Container/sgc
 # gunzip con redirección: conserva el .tar.gz original (sirve para rollback)
 gunzip < sgc-suaza-arm64-docker-<versión>.tar.gz > sgc-suaza-arm64-docker-<versión>.tar
 docker load -i sgc-suaza-arm64-docker-<versión>.tar
-docker images | grep sgc-suaza
-# Debe listar dos tags: latest y <versión> (AAAAMMDD-sha7)
+gunzip < postgres-16-alpine-arm64.tar.gz > postgres-16-alpine-arm64.tar
+docker load -i postgres-16-alpine-arm64.tar
+docker images | grep -E "sgc-suaza|postgres"
+# sgc-suaza debe listar dos tags (latest y AAAAMMDD-sha7) y postgres el 16-alpine
 ```
 
 **2.3. Configurar variables.** Copiar el ejemplo y completarlo:

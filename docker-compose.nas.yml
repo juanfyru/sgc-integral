@@ -9,7 +9,10 @@
 # Las variables ${...} salen del archivo .env junto a este yml.
 services:
   app:
-    image: sgc-suaza:${SGC_VERSION:-latest}
+    # Sin internet (default): imagen local cargada con `docker load`.
+    # Con internet: SGC_IMAGEN=ghcr.io/juanfyru/sgc-suaza en el .env
+    # (ver INSTALACION_INTERNET.md) y la imagen llega por `docker compose pull`.
+    image: ${SGC_IMAGEN:-sgc-suaza}:${SGC_VERSION:-latest}
     container_name: sgc-app
     ports:
       - "9080:3080"
