@@ -65,7 +65,15 @@ async function principal() {
 
   // Después de migrar: los GRANT necesitan que las tablas existan.
   if (cx.claveApp) {
-    const rol = await asegurarRolApp(sql, cx.claveApp);
+    let rol;
+    try {
+      rol = await asegurarRolApp(sql, cx.claveApp);
+    } catch (error) {
+      // Solo message y code: no volcar el objeto del error (cuidado con la clave).
+      const e = error as { message?: string; code?: string };
+      console.error(`[arranque] FALLO al asegurar el rol sgc_app: ${e.message} (${e.code ?? "sin código"})`);
+      process.exit(1);
+    }
     console.log(`[arranque] Rol sgc_app ${rol} y privilegios aplicados`);
   }
 

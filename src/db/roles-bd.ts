@@ -19,13 +19,23 @@ export async function asegurarRolApp(
     const [{ existe }] = await tx<{ existe: boolean }[]>`
       SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = ${NOMBRE_ROL_APP}) AS existe`;
     await tx`SELECT set_config('sgc.clave_app', ${clave}, true)`;
+    // Cada EXECUTE va envuelto: sin esto el CONTEXT del error (PostgresError.where)
+    // trae la sentencia ya formateada, con la clave. El RAISE deja el CONTEXT en el bloque.
     await tx.unsafe(`
       DO $$
       BEGIN
         IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${NOMBRE_ROL_APP}') THEN
-          EXECUTE format('ALTER ROLE ${NOMBRE_ROL_APP} WITH LOGIN PASSWORD %L', current_setting('sgc.clave_app'));
+          BEGIN
+            EXECUTE format('ALTER ROLE ${NOMBRE_ROL_APP} WITH LOGIN PASSWORD %L', current_setting('sgc.clave_app'));
+          EXCEPTION WHEN OTHERS THEN
+            RAISE EXCEPTION 'No se pudo crear o actualizar el rol ${NOMBRE_ROL_APP}: %', SQLERRM USING ERRCODE = SQLSTATE;
+          END;
         ELSE
-          EXECUTE format('CREATE ROLE ${NOMBRE_ROL_APP} LOGIN PASSWORD %L', current_setting('sgc.clave_app'));
+          BEGIN
+            EXECUTE format('CREATE ROLE ${NOMBRE_ROL_APP} LOGIN PASSWORD %L', current_setting('sgc.clave_app'));
+          EXCEPTION WHEN OTHERS THEN
+            RAISE EXCEPTION 'No se pudo crear o actualizar el rol ${NOMBRE_ROL_APP}: %', SQLERRM USING ERRCODE = SQLSTATE;
+          END;
         END IF;
       END
       $$`);

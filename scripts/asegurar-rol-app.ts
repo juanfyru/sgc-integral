@@ -23,6 +23,11 @@ async function principal() {
   const sql = postgres(cx.migrador, { max: 1, types: TIPOS_SQL });
   try {
     console.log(`Rol sgc_app: ${await asegurarRolApp(sql, cx.claveApp)}`);
+  } catch (error) {
+    // Solo message y code: no volcar el objeto del error (cuidado con la clave).
+    const e = error as { message?: string; code?: string };
+    console.error(`FALLO al asegurar el rol sgc_app: ${e.message} (${e.code ?? "sin código"})`);
+    process.exitCode = 1;
   } finally {
     await sql.end();
   }
