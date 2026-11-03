@@ -13,13 +13,9 @@ import {
   decidirConexiones,
   esperarConReintentos,
 } from "@/lib/arranque";
+import { appSecretoValido } from "@/lib/cifrado";
 import { TIPOS_SQL } from "@/db/cliente";
 import { asegurarRolApp } from "@/db/roles-bd";
-
-/** APP_SECRETO: 32 bytes en base64 (cifra los secretos TOTP en reposo). */
-function secretoValido(valor: string | undefined): boolean {
-  return !!valor && Buffer.from(valor, "base64").length === 32;
-}
 
 async function principal() {
   let cx;
@@ -37,7 +33,7 @@ async function principal() {
 
   if (
     process.env.NODE_ENV === "production" &&
-    !secretoValido(process.env.APP_SECRETO)
+    !appSecretoValido(process.env.APP_SECRETO)
   ) {
     console.error(
       "[arranque] APP_SECRETO falta o no son 32 bytes en base64 (generar con: openssl rand -base64 32)",

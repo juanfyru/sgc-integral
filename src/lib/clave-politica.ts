@@ -6,7 +6,7 @@ export const LONGITUD_MAXIMA = 128;
 
 const COMUNES = new Set<string>(lista as string[]);
 
-const ALFABETO_TEMPORAL = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+export const ALFABETO_TEMPORAL = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
 /** Devuelve el motivo de rechazo en español, o null si la clave cumple la política. */
 export function validarClave(claveOriginal: string, contexto: { usuario: string }): string | null {

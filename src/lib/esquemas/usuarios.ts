@@ -1,0 +1,44 @@
+import { z } from "zod";
+import { ROLES } from "../roles";
+
+const vacioANulo = (v: unknown) => (v === "" || v === undefined ? null : v);
+
+const idOpcional = z.preprocess(
+  vacioANulo,
+  z.coerce.number().int().positive().nullable(),
+);
+
+const listaDeIds = (v: unknown): unknown => {
+  if (v === undefined || v === null || v === "") return [];
+  return (Array.isArray(v) ? v : [v]).map((x) => (typeof x === "string" ? Number(x) : x));
+};
+
+export const EsquemaUsuario = z
+  .object({
+    usuario: z.string().regex(/^[a-z0-9._-]{3,40}$/, "Use 3 a 40 caracteres: minúsculas, números, punto, guion o guion bajo"),
+    nombre: z.string().trim().min(3).max(120),
+    correo: z.preprocess(vacioANulo, z.string().trim().email().nullable()),
+    rol: z.enum(ROLES),
+    cargoId: idOpcional,
+    jefeInmediatoId: idOpcional,
+    procesoIds: z.preprocess(listaDeIds, z.array(z.number().int().positive())),
+    verHistorial: z.preprocess((v) => v === "on" || v === true, z.boolean()),
+  })
+  .strict()
+  .refine((d) => d.rol !== "lider_proceso" || d.procesoIds.length >= 1, {
+    path: ["procesoIds"],
+    message: "El líder de proceso debe tener al menos un proceso asignado",
+  });
+
+export type DatosUsuarioFormulario = z.output<typeof EsquemaUsuario>;
+
+export const EsquemaFilaLote = z
+  .object({
+    usuario: z.string(),
+    nombre: z.string(),
+    correo: z.string(),
+    rol: z.string(),
+    cargo: z.string(),
+    procesos: z.string(),
+  })
+  .strict();

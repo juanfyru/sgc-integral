@@ -21,9 +21,5 @@ export async function registrarEventoConsulta(evento: EventoConsulta) {
             ${evento.ip}, ${evento.userAgent})`;
 }
 
-/** IP del cliente detrás del reverse proxy de QTS (o null en acceso directo). */
-export function ipDePeticion(headers: Headers): string | null {
-  const reenviada = headers.get("x-forwarded-for");
-  if (reenviada) return reenviada.split(",")[0].trim();
-  return headers.get("x-real-ip");
-}
+// Reexportada hasta la Tarea 8; la lógica vive en @/lib/ip.
+export { ipDePeticion } from "@/lib/ip";

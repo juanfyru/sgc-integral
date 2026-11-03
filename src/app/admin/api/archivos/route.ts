@@ -8,6 +8,7 @@ import {
   registrarArchivo,
 } from "@/db/consultas/admin";
 import { resolverRutaAlmacen } from "@/lib/almacen";
+import { origenValido } from "@/lib/origen";
 import { requerirSesion } from "@/lib/sesion-actual";
 import {
   ROLES_ARCHIVO,
@@ -24,19 +25,6 @@ function error(estado: number, mensaje: string) {
   return NextResponse.json({ error: mensaje }, { status: estado });
 }
 
-// CSRF del handler (las actions lo traen integrado; aquí es manual): el
-// Origin, si viene, debe coincidir con el host servido.
-function origenValido(peticion: NextRequest): boolean {
-  const origen = peticion.headers.get("origin");
-  if (!origen) return true; // sin Origin no hay vector CSRF de navegador
-  const host =
-    peticion.headers.get("x-forwarded-host") ?? peticion.headers.get("host");
-  try {
-    return new URL(origen).host === host;
-  } catch {
-    return false;
-  }
-}
 
 /** Sufija -2, -3… si el nombre ya existe en la carpeta de la versión. */
 async function rutaLibre(carpetaRelativa: string, nombre: string) {
@@ -64,7 +52,7 @@ export async function POST(peticion: NextRequest) {
   } catch {
     return error(401, "No autorizado");
   }
-  if (!origenValido(peticion)) return error(403, "Origen no permitido");
+  if (!origenValido(peticion.headers)) return error(403, "Origen no permitido");
 
   const versionId = Number(peticion.nextUrl.searchParams.get("version"));
   const rol = peticion.nextUrl.searchParams.get("rol") as RolArchivo;
