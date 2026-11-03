@@ -12,13 +12,18 @@
    La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
    proyecto**.
 1. **Dónde quedamos:** la variante nació como clon completo con historia (91 commits de
-   las Fases 0–10) en `F:\sgc-integral`, repo privado `juanfyru/sgc-integral`. Cambios
+   las Fases 0–10) en `F:\sgc-integral`. Repo destino `juanfyru/sgc-integral` (privado),
+   **pendiente de crear en GitHub y hacer el primer push**; el remoto `origin` ya apunta
+   ahí. Cambios
    de la bifurcación: nombre de paquete, imagen y artefacto `sgc-integral`; puertos de
    desarrollo propios; job de imagen ARM64 manual en el CI. **Verificado en BD nueva:**
    migraciones y semilla (mismos conteos: 4 macros, 19 procesos, 56 subprocesos, 28
    documentos), lint limpio, **205/205 tests en verde**, build limpio, mapa e ingreso
    al panel admin en el navegador.
-2. **Lo que sigue:** definir con el usuario las **nuevas funcionalidades** (aún no
+2. **Lo que sigue:** (a) crear el repo `sgc-integral` en GitHub, privado y **vacío** (sin
+   README, .gitignore ni licencia), y correr `git push -u origin main`; el primer push
+   corre lint y build en Actions y omite el job ARM64, como se espera. (b) Definir con
+   el usuario las **nuevas funcionalidades** (aún no
    descritas). Primera conversación de diseño pendiente: qué debe hacer la variante que
    la original no hace. Las fases nuevas se numeran desde la 11 (§Fases de la variante
    en `PLAN.md`) y siguen la metodología de `AGENTS.md`.
@@ -53,7 +58,9 @@
    y la carpeta `/share/sgc-documentos` del original. Si la variante va a **convivir**
    con la original en el mismo QNAP, hay que cambiar esas tres cosas antes de instalar
    (y revisar el presupuesto de ~2 GB de RAM, que no alcanza para dos pares app+BD). Si
-   la **reemplaza**, sirven tal cual.
+   la **reemplaza**, sirven tal cual. El ensayo local (`docker-compose.ensayo.yml`)
+   también publica 9080, que en esta máquina ocupa `sgc-app-1` de la original: apagar
+   ese contenedor antes de ensayar desde aquí.
 7. **Marca visible:** la UI todavía dice "SGC Documental" (`src/app/layout.tsx` y el
    encabezado). Cambiarla es decisión del usuario; no se tocó.
 8. **Pendientes heredados del usuario** (siguen valiendo aquí): convención oficial de
