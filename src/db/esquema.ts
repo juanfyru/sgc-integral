@@ -1,5 +1,6 @@
 import { sql, type SQL } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   bigint,
   boolean,
   check,
@@ -10,6 +11,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -295,16 +297,91 @@ export const documentoRelaciones = pgTable(
 // Grupo 3: operación y trazabilidad
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const usuarios = pgTable("usuarios", {
+// Estructura organizacional: áreas y cargos (con jerarquía por superior).
+export const areas = pgTable("areas", {
   id: id(),
-  usuario: text("usuario").notNull().unique(),
-  nombre: text("nombre").notNull(),
-  hashClave: text("hash_clave").notNull(),
+  nombre: text("nombre").notNull().unique(),
+  orden: integer("orden").notNull().default(0),
   activo: boolean("activo").notNull().default(true),
-  creadoEn: timestamp("creado_en", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
 });
+
+export const cargos = pgTable(
+  "cargos",
+  {
+    id: id(),
+    nombre: text("nombre").notNull(),
+    areaId: bigint("area_id", { mode: "number" })
+      .notNull()
+      .references(() => areas.id, { onDelete: "restrict" }),
+    superiorId: bigint("superior_id", { mode: "number" }).references(
+      (): AnyPgColumn => cargos.id,
+      { onDelete: "restrict" },
+    ),
+    activo: boolean("activo").notNull().default(true),
+  },
+  (t) => [unique("cargos_area_nombre_unico").on(t.areaId, t.nombre)],
+);
+
+export const usuarios = pgTable(
+  "usuarios",
+  {
+    id: id(),
+    usuario: text("usuario").notNull().unique(),
+    nombre: text("nombre").notNull(),
+    hashClave: text("hash_clave").notNull(),
+    activo: boolean("activo").notNull().default(true),
+    creadoEn: timestamp("creado_en", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    rol: text("rol").notNull().default("consulta"),
+    correo: text("correo"),
+    // Nullable: el admin de arranque no tiene cargo.
+    cargoId: bigint("cargo_id", { mode: "number" }).references(
+      () => cargos.id,
+      { onDelete: "restrict" },
+    ),
+    jefeInmediatoId: bigint("jefe_inmediato_id", { mode: "number" }).references(
+      (): AnyPgColumn => usuarios.id,
+      { onDelete: "restrict" },
+    ),
+    debeCambiarClave: boolean("debe_cambiar_clave").notNull().default(false),
+    intentosFallidos: integer("intentos_fallidos").notNull().default(0),
+    bloqueosConsecutivos: integer("bloqueos_consecutivos").notNull().default(0),
+    bloqueadoHasta: timestamp("bloqueado_hasta", { withTimezone: true }),
+    totpSecretoCifrado: text("totp_secreto_cifrado"),
+    totpActivo: boolean("totp_activo").notNull().default(false),
+    verHistorial: boolean("ver_historial").notNull().default(false),
+    aceptoDatosEn: timestamp("acepto_datos_en", { withTimezone: true }),
+    actualizadoEn: timestamp("actualizado_en", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    check(
+      "usuarios_rol_valido",
+      sql`${t.rol} IN ('admin_sgc', 'gerencia', 'control_interno', 'lider_proceso', 'consulta')`,
+    ),
+    uniqueIndex("usuarios_correo_idx")
+      .on(sql`lower(${t.correo})`)
+      .where(sql`${t.correo} IS NOT NULL`),
+  ],
+);
+
+export const usuarioProcesos = pgTable(
+  "usuario_procesos",
+  {
+    usuarioId: bigint("usuario_id", { mode: "number" })
+      .notNull()
+      .references(() => usuarios.id, { onDelete: "cascade" }),
+    procesoId: bigint("proceso_id", { mode: "number" })
+      .notNull()
+      .references(() => procesos.id, { onDelete: "restrict" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.usuarioId, t.procesoId] }),
+    index("usuario_procesos_proceso_idx").on(t.procesoId),
+  ],
+);
 
 export const sesiones = pgTable(
   "sesiones",
@@ -318,6 +395,12 @@ export const sesiones = pgTable(
     creadoEn: timestamp("creado_en", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    ultimoUsoEn: timestamp("ultimo_uso_en", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    factorPendiente: boolean("factor_pendiente").notNull().default(false),
+    ip: inet("ip"),
+    userAgent: text("user_agent"),
   },
   (t) => [
     index("sesiones_usuario_idx").on(t.usuarioId),
@@ -332,7 +415,7 @@ export const auditoria = pgTable(
     id: id(),
     usuarioId: bigint("usuario_id", { mode: "number" }).references(
       () => usuarios.id,
-      { onDelete: "set null" },
+      { onDelete: "restrict" },
     ),
     accion: text("accion").notNull(),
     entidad: text("entidad").notNull(),
@@ -348,6 +431,48 @@ export const auditoria = pgTable(
   ],
 );
 
+// Solo-inserción (trigger en la migración). Los usuarios con historial no se
+// borran, se desactivan: por eso la FK es restrict y no set null (un set null
+// sería un UPDATE y el trigger lo rechazaría).
+export const accesos = pgTable(
+  "accesos",
+  {
+    id: id(),
+    usuarioId: bigint("usuario_id", { mode: "number" }).references(
+      () => usuarios.id,
+      { onDelete: "restrict" },
+    ),
+    usuarioTexto: text("usuario_texto").notNull(),
+    resultado: text("resultado").notNull(),
+    ip: inet("ip"),
+    userAgent: text("user_agent"),
+    creadoEn: timestamp("creado_en", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    check(
+      "accesos_resultado_valido",
+      sql`${t.resultado} IN ('ingreso', 'salida', 'fallo', 'bloqueo', 'desbloqueo', 'restablecimiento', 'factor_fallo', 'cierre_forzado')`,
+    ),
+    index("accesos_usuario_idx").on(t.usuarioId, t.creadoEn),
+    index("accesos_creado_idx").on(t.creadoEn),
+  ],
+);
+
+export const codigosRecuperacion = pgTable(
+  "codigos_recuperacion",
+  {
+    id: id(),
+    usuarioId: bigint("usuario_id", { mode: "number" })
+      .notNull()
+      .references(() => usuarios.id, { onDelete: "cascade" }),
+    hash: text("hash").notNull(),
+    usadoEn: timestamp("usado_en", { withTimezone: true }),
+  },
+  (t) => [index("codigos_recuperacion_usuario_idx").on(t.usuarioId)],
+);
+
 // Rastro de consulta pública sin login: IP + user-agent (D8).
 export const eventosConsulta = pgTable(
   "eventos_consulta",
@@ -360,6 +485,10 @@ export const eventosConsulta = pgTable(
     versionId: bigint("version_id", { mode: "number" }).references(
       () => documentoVersiones.id,
       { onDelete: "restrict" },
+    ),
+    usuarioId: bigint("usuario_id", { mode: "number" }).references(
+      () => usuarios.id,
+      { onDelete: "set null" },
     ),
     ip: inet("ip"),
     userAgent: text("user_agent"),

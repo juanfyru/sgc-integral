@@ -183,3 +183,44 @@ describe("estados del seed (datos de demostración)", () => {
     ]);
   });
 });
+
+describe("Fase 11: roles, estructura y accesos en BD", () => {
+  it("rechaza un rol fuera de la lista", async () => {
+    const codigo = await codigoDeError(
+      sql`INSERT INTO usuarios (usuario, nombre, hash_clave, rol) VALUES ('zz_rol', 'x', 'h', 'root')`,
+    );
+    expect(codigo).toBe(CHECK_VIOLATION);
+  });
+  it("el rol por defecto es consulta y cargo_id admite nulo", async () => {
+    const [u] = await sql`INSERT INTO usuarios (usuario, nombre, hash_clave) VALUES ('zz_defecto', 'x', 'h') RETURNING rol, cargo_id, debe_cambiar_clave, ver_historial`;
+    expect(u).toMatchObject({ rol: "consulta", cargo_id: null, debe_cambiar_clave: false, ver_historial: false });
+    await sql`DELETE FROM usuarios WHERE usuario = 'zz_defecto'`;
+  });
+  it("correo es único sin distinguir mayúsculas", async () => {
+    await sql`INSERT INTO usuarios (usuario, nombre, hash_clave, correo) VALUES ('zz_c1', 'x', 'h', 'Persona@Hospital.gov.co')`;
+    const codigo = await codigoDeError(
+      sql`INSERT INTO usuarios (usuario, nombre, hash_clave, correo) VALUES ('zz_c2', 'x', 'h', 'persona@hospital.gov.co')`,
+    );
+    expect(codigo).toBe(UNIQUE_VIOLATION);
+    await sql`DELETE FROM usuarios WHERE usuario IN ('zz_c1', 'zz_c2')`;
+  });
+  it("accesos rechaza un resultado desconocido", async () => {
+    const codigo = await codigoDeError(
+      sql`INSERT INTO accesos (usuario_texto, resultado) VALUES ('x', 'otro')`,
+    );
+    expect(codigo).toBe(CHECK_VIOLATION);
+  });
+  it("auditoria y accesos son de solo inserción incluso para el dueño", async () => {
+    const [a] = await sql`INSERT INTO accesos (usuario_texto, resultado) VALUES ('zz_inmutable', 'fallo') RETURNING id`;
+    expect(await codigoDeError(sql`UPDATE accesos SET resultado = 'ingreso' WHERE id = ${a.id}`)).toBe("42501");
+    expect(await codigoDeError(sql`DELETE FROM accesos WHERE id = ${a.id}`)).toBe("42501");
+    const [b] = await sql`INSERT INTO auditoria (usuario_id, accion, entidad) VALUES (NULL, 'zz_inmutable', 'prueba') RETURNING id`;
+    expect(await codigoDeError(sql`DELETE FROM auditoria WHERE id = ${b.id}`)).toBe("42501");
+  });
+  it("un usuario con historial no se puede borrar (RESTRICT)", async () => {
+    const nombre = `zz_hist_${Date.now()}`;
+    const [u] = await sql`INSERT INTO usuarios (usuario, nombre, hash_clave) VALUES (${nombre}, 'x', 'h') RETURNING id`;
+    await sql`INSERT INTO accesos (usuario_id, usuario_texto, resultado) VALUES (${u.id}, ${nombre}, 'ingreso')`;
+    expect(await codigoDeError(sql`DELETE FROM usuarios WHERE id = ${u.id}`)).toBe("23503");
+  });
+});

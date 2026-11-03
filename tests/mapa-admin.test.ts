@@ -43,6 +43,8 @@ import {
 
 const sql = () => obtenerSql();
 let usuarioId: number;
+// Con historial en auditoria el usuario no se borra (FK restrict + trigger): nombre único por corrida.
+const USUARIO = `admin_mapa_${Date.now()}`;
 
 async function limpiar() {
   await sql()`DELETE FROM subprocesos WHERE slug LIKE 'zz-%'`;
@@ -50,15 +52,12 @@ async function limpiar() {
   await sql()`DELETE FROM macroprocesos WHERE slug LIKE 'zz-%'`;
   await sql()`DELETE FROM elementos_perifericos WHERE texto LIKE 'ZZ-%'`;
   await sql()`DELETE FROM tipos_documento WHERE sigla LIKE 'ZZ%'`;
-  await sql()`DELETE FROM auditoria WHERE usuario_id IN
-    (SELECT id FROM usuarios WHERE usuario = 'admin_mapa')`;
-  await sql()`DELETE FROM usuarios WHERE usuario = 'admin_mapa'`;
 }
 
 beforeAll(async () => {
   await limpiar();
-  await asegurarAdmin("admin_mapa", "Admin Mapa", "x");
-  [{ id: usuarioId }] = await sql()`SELECT id FROM usuarios WHERE usuario = 'admin_mapa'`;
+  await asegurarAdmin(USUARIO, "Admin Mapa", "x");
+  [{ id: usuarioId }] = await sql()`SELECT id FROM usuarios WHERE usuario = ${USUARIO}`;
 });
 
 afterAll(async () => {

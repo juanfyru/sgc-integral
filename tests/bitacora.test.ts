@@ -9,20 +9,15 @@ import { obtenerSql } from "@/db/cliente";
 import { obtenerBitacora } from "@/db/consultas/bitacora";
 
 const sql = () => obtenerSql();
-const MARCA = "ZZ_BIT_ACCION";
-
-async function limpiar() {
-  await sql()`DELETE FROM auditoria WHERE accion = ${MARCA}`;
-}
+// La bitácora es de solo inserción: no se limpia; la marca es única por corrida.
+const MARCA = `ZZ_BIT_${Date.now()}`;
 
 beforeAll(async () => {
-  await limpiar();
   for (let i = 0; i < 3; i++)
     await sql()`INSERT INTO auditoria (usuario_id, accion, entidad, entidad_id, detalle)
       VALUES (NULL, ${MARCA}, 'prueba', ${i}, ${sql().json({ n: i })})`;
 });
 afterAll(async () => {
-  await limpiar();
   await sql().end();
 });
 

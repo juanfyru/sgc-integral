@@ -30,23 +30,22 @@ let procesoId: number;
 let tipoId: number;
 
 const CODIGO = "ZZ-TST-901";
+// Con historial en auditoria el usuario no se borra (FK restrict + trigger): nombre único por corrida.
+const USUARIO = `admin_pub_${Date.now()}`;
 
 async function limpiar() {
-  await sql()`DELETE FROM auditoria WHERE usuario_id IN
-    (SELECT id FROM usuarios WHERE usuario = 'admin_pub')`;
   await sql()`DELETE FROM archivos WHERE version_id IN (
     SELECT v.id FROM documento_versiones v
     JOIN documentos d ON d.id = v.documento_id WHERE d.codigo LIKE 'ZZ-TST-%')`;
   await sql()`DELETE FROM documento_versiones WHERE documento_id IN
     (SELECT id FROM documentos WHERE codigo LIKE 'ZZ-TST-%')`;
   await sql()`DELETE FROM documentos WHERE codigo LIKE 'ZZ-TST-%'`;
-  await sql()`DELETE FROM usuarios WHERE usuario = 'admin_pub'`;
 }
 
 beforeAll(async () => {
   await limpiar();
-  await asegurarAdmin("admin_pub", "Admin", "x");
-  [{ id: usuarioId }] = await sql()`SELECT id FROM usuarios WHERE usuario = 'admin_pub'`;
+  await asegurarAdmin(USUARIO, "Admin", "x");
+  [{ id: usuarioId }] = await sql()`SELECT id FROM usuarios WHERE usuario = ${USUARIO}`;
   [{ id: procesoId }] = await sql()`SELECT id FROM procesos WHERE activo LIMIT 1`;
   [{ id: tipoId }] = await sql()`SELECT id FROM tipos_documento WHERE activo LIMIT 1`;
 });

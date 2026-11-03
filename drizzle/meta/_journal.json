@@ -15,6 +15,13 @@
       "when": 1784166595336,
       "tag": "0001_esquema-inicial",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793747212920,
+      "tag": "0002_fase11-acceso",
+      "breakpoints": true
     }
   ]
 }

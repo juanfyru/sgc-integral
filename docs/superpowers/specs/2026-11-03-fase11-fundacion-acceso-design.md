@@ -40,7 +40,7 @@ indica, CHECK en BD, identidad `bigint`.
 | `cargos` (nueva) | `id`, `nombre text`, `area_id` FK `areas`, `superior_id` FK `cargos` (nullable, auto-referencia), `activo boolean DEFAULT true`; UNIQUE (`area_id`, `nombre`) |
 | `usuario_procesos` (nueva) | `usuario_id` FK `usuarios` ON DELETE CASCADE, `proceso_id` FK `procesos`; PK compuesta; índice por `proceso_id` |
 | `sesiones` | `ultimo_uso_en timestamptz NOT NULL DEFAULT now()`, `factor_pendiente boolean NOT NULL DEFAULT false`, `ip inet`, `user_agent text` |
-| `accesos` (nueva) | `id`, `usuario_id` FK `usuarios` ON DELETE SET NULL, `usuario_texto text NOT NULL` (lo tecleado), `resultado text NOT NULL` CHECK IN (`ingreso`, `salida`, `fallo`, `bloqueo`, `desbloqueo`, `restablecimiento`, `factor_fallo`, `cierre_forzado`), `ip inet`, `user_agent text`, `creado_en`; índices (`usuario_id`, `creado_en`) y (`creado_en`) |
+| `accesos` (nueva) | `id`, `usuario_id` FK `usuarios` ON DELETE RESTRICT, `usuario_texto text NOT NULL` (lo tecleado), `resultado text NOT NULL` CHECK IN (`ingreso`, `salida`, `fallo`, `bloqueo`, `desbloqueo`, `restablecimiento`, `factor_fallo`, `cierre_forzado`), `ip inet`, `user_agent text`, `creado_en`; índices (`usuario_id`, `creado_en`) y (`creado_en`) |
 | `codigos_recuperacion` (nueva) | `id`, `usuario_id` FK `usuarios` ON DELETE CASCADE, `hash text NOT NULL`, `usado_en timestamptz`; índice por `usuario_id` |
 | `eventos_consulta` | `usuario_id` FK `usuarios` ON DELETE SET NULL |
 
@@ -53,8 +53,11 @@ SQL manual añadido al final de la migración generada:
   '42501'` y triggers `BEFORE UPDATE OR DELETE` en `auditoria` y `accesos`
   (`auditoria_inmutable`, `accesos_inmutable`). Sin puerta trasera: ni la app ni el
   dueño del esquema pueden modificar o borrar filas; los tests dejan de limpiar
-  `auditoria` (los registros de prueba referencian usuarios de prueba y quedan como
-  "sistema" cuando estos se borran, por `ON DELETE SET NULL`).
+  `auditoria`. Un `ON DELETE SET NULL` sería un UPDATE y el trigger lo rechazaría, así
+  que `auditoria.usuario_id` (antes SET NULL en la 0001) y `accesos.usuario_id` pasan a
+  ON DELETE RESTRICT: los usuarios con historial no se borran, se desactivan. Los
+  tests usan nombres de usuario únicos por corrida (`zz_<algo>_${Date.now()}`) y no
+  borran a quienes generan filas en estas tablas.
 
 ## 3. Roles de base de datos (migración `0003`, SQL manual)
 
