@@ -51,3 +51,6 @@ next-env.d.ts
 # Ensayo local del despliegue NAS (Fase 10)
 almacen-ensayo/
 respaldos-ensayo/
+
+# Maquetas del visual companion de brainstorming
+.superpowers/

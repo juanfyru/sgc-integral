@@ -24,6 +24,14 @@ en `PLAN.md`.
 
 ## Restricciones INVIOLABLES (hardware real de despliegue)
 
+> ⚠️ **Sección superada el 2026-11-03 (SGC Integral).** La app ya no se despliega en el
+> QNAP: el piso nuevo (servidor por entidad, contenedores en Windows o Linux, tres
+> contenedores con proxy TLS, imagen `amd64`) está en
+> `docs/superpowers/specs/2026-11-03-sgc-integral-plataforma-design.md` §4, que manda
+> sobre esta sección, sobre las reglas de negocio 3 y 4 y sobre la fila "Auth (solo
+> admin)" del stack hasta que la **Fase 11** reescriba este archivo. Lo que sigue se
+> conserva como registro del origen.
+
 El despliegue es un **QNAP TS-832PX** (ARM Cortex-A57 quad-core @1.7 GHz, **4 GB RAM**,
 QTS + Container Station). De ahí salen estas reglas. No son negociables:
 

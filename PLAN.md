@@ -254,10 +254,29 @@ Backup Sync; migraciones en el arranque; healthchecks y restart policy.
 
 ## Fases de la variante SGC Integral
 
-**Por definir con el usuario** (2026-11-03). La numeración sigue desde la Fase 11.
-Cada fase nueva respeta la metodología de `AGENTS.md`: propuesta → aprobación → spec
-en `docs/superpowers/specs/` → plan en `docs/superpowers/plans/` → ejecución → cierre
-con `CONTEXT.md` actualizado e instrucciones de prueba.
+Diseño maestro de la ampliación:
+`docs/superpowers/specs/2026-11-03-sgc-integral-plataforma-design.md` (**aprobado** por
+el usuario el 2026-11-03). Su §8 fija alcance, demostración, criterios de seguridad y capítulo del
+manual de cada fase; su §4.2 lista las reglas heredadas de `AGENTS.md` que quedan
+superadas (hardware del NAS, reglas de negocio 3 y 4, "un solo admin"). Orden aprobado
+por el usuario el 2026-11-03. Cada fase respeta la metodología de `AGENTS.md`:
+propuesta → spec en `docs/superpowers/specs/` → plan en `docs/superpowers/plans/` →
+ejecución → cierre con `CONTEXT.md` actualizado e instrucciones de prueba. La seguridad
+no es una fase: cada una trae sus criterios; la 19 es la auditoría final contra los 20
+riesgos del usuario.
+
+| Fase | Nombre | Entrega demostrable |
+|---|---|---|
+| 11 | Fundación de acceso | Usuarios con cinco roles y procesos asignados (una por una y por lote desde plantilla), cargos con jerarquía, login en toda la app, clave temporal y cambio obligatorio, bloqueo, TOTP opcional, registro de accesos, roles de BD de mínimo privilegio y bitácora inmutable; Next actualizado; `AGENTS.md` reescrito para el nuevo piso |
+| 12 | Nueva estructura visual | Cascarón tipo Linear por rol (barra lateral por módulos, búsqueda `Ctrl K`, campana, tema claro/oscuro), marca configurable por entidad con validación AA, componentes base; pantallas existentes migradas |
+| 13 | Documentación SGC | Solicitud de cambio, flujo elaboración → revisión → aprobación → publicación con concepto y firma, acta PDF, caracterización estructurada, obsoletos por permiso, listas de distribución y acuses, copias controladas, normograma, documentos externos, nivel de acceso, baja con aprobación, semáforo documental |
+| 14 | Indicadores | Ficha técnica versionada, variables compartidas, fórmula con intérprete propio, metas y semáforo por periodo, mediciones con análisis y evidencias, gráficas, cierre de periodo, "sin dato", regulatorios ligados al normograma, permisos por indicador |
+| 15 | Planes de mejoramiento | Motor único de acciones: planes, hallazgos con máquina de estados, causa raíz, cuatro tipos de acción, actividades con evidencias, verificación de eficacia, reincidencia, formato Contraloría/Supersalud, objetivos institucionales; "abrir acción" desde documento, proceso e indicador |
+| 16 | Notificaciones y planificador | Planificador en la app, cola de correo con reintentos, resumen diario e inmediatas, escalamiento al supervisor, recordatorios, verificación de correo, "olvidé mi clave" |
+| 17 | Tablero gerencial y reportes | Tablero por rol con cuatro franjas y matriz de pendientes, foto mensual, informe de revisión por la dirección, catálogo de reportes Excel/PDF con pie de control |
+| 18 | Trazabilidad, exportación y respaldos | Bitácora unificada, historial antes/después, exportación completa, respaldo diario cifrado desde la app, vigilancia de 26 h, restauración probada |
+| 19 | Pulido, accesibilidad y auditoría de seguridad | Tabla de los 20 riesgos con evidencia, Lighthouse a11y, teclado, 390 px, claro y oscuro, dependencias y cabeceras |
+| 20 | Despliegue y documentación | Compose de producción (proxy, app, bd) en Windows (WSL2) o Linux, reinicio sin intervención, TLS, SMTP real, ensayo de actualización desde un respaldo de `sgc-suaza`; manual de usuario, manual técnico y procedimiento de respaldo y restauración |
 
 ## Riesgos principales y mitigación
 

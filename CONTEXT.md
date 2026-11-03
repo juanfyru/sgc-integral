@@ -1,8 +1,14 @@
 # CONTEXT.md — Estado vivo del proyecto
 
 > Se actualiza al cierre de cada fase. Última actualización: **2026-11-03**
-> (nacimiento de **SGC Integral**, variante ampliada de `sgc-suaza` bifurcada en
-> `9644ceb`. Aún sin fases propias: las nuevas funcionalidades están por definir).
+> (sesión de diseño de **SGC Integral**: documento maestro **aprobado** por el usuario;
+> fases 11–20 definidas en `PLAN.md`). La variante nació el mismo día, bifurcada de
+> `sgc-suaza` en `9644ceb`.
+>
+> ⚠️ **La sección "Restricciones INVIOLABLES (hardware)" de `AGENTS.md` está
+> desactualizada**: describe el QNAP. Manda §4 del spec
+> `docs/superpowers/specs/2026-11-03-sgc-integral-plataforma-design.md` hasta que la
+> Fase 11 la reescriba.
 
 ## ⏸ Punto de reanudación (próxima sesión)
 
@@ -20,13 +26,16 @@
    migraciones y semilla (mismos conteos: 4 macros, 19 procesos, 56 subprocesos, 28
    documentos), lint limpio, **205/205 tests en verde**, build limpio, mapa e ingreso
    al panel admin en el navegador.
-2. **Lo que sigue:** (a) crear el repo `sgc-integral` en GitHub, privado y **vacío** (sin
-   README, .gitignore ni licencia), y correr `git push -u origin main`; el primer push
-   corre lint y build en Actions y omite el job ARM64, como se espera. (b) Definir con
-   el usuario las **nuevas funcionalidades** (aún no
-   descritas). Primera conversación de diseño pendiente: qué debe hacer la variante que
-   la original no hace. Las fases nuevas se numeran desde la 11 (§Fases de la variante
-   en `PLAN.md`) y siguen la metodología de `AGENTS.md`.
+2. **Lo que sigue:** el diseño maestro
+   `docs/superpowers/specs/2026-11-03-sgc-integral-plataforma-design.md` fue **aprobado
+   por el usuario el 2026-11-03** (tras una ronda de revisión de un subagente
+   constructor). (a) Escribir la spec y el plan de la **Fase 11 — Fundación de acceso**
+   (skill `writing-plans`) y ejecutarla; arranca subiendo Next 16.2.10 → 16.3.x.
+   (b) Pendiente operativo: crear el repo `sgc-integral` en GitHub, privado y **vacío**,
+   y correr `git push -u origin main`. Las fases 11–20 están en `PLAN.md` §Fases de la
+   variante y siguen la metodología de `AGENTS.md`. Insumos que dependen del usuario:
+   spec §11 (SMTP, versión de Windows, planta de cargos, plantilla del plan de
+   mejoramiento, total de cuentas, etc.).
 3. **Entorno de desarrollo** (convive con `sgc-suaza` en la misma máquina):
 
    | Pieza | SGC Integral (esta) | sgc-suaza (original) |
@@ -52,7 +61,9 @@
    cumplir "verificar ARM64 desde temprano" de `AGENTS.md`, lanzarlo a mano al cierre de
    cada fase que agregue dependencias, o reactivar el disparo automático cuando la
    variante tenga destino.
-6. **Despliegue: abierto.** Los archivos de despliegue (`docker-compose.nas.yml`,
+6. **Despliegue: decidido en el spec §4** (contenedores portables, Windows con WSL2 o
+   Linux, tres contenedores proxy+app+bd; se construye en la Fase 20). Lo que sigue
+   describe los archivos heredados del NAS, que esa fase reemplaza. Los archivos de despliegue (`docker-compose.nas.yml`,
    `INSTALACION*.md`, `nas/`) se heredaron con el nombre de imagen y artefacto ya
    cambiado, pero conservan el puerto 9080, los nombres de contenedor `sgc-app`/`sgc-bd`
    y la carpeta `/share/sgc-documentos` del original. Si la variante va a **convivir**
@@ -62,7 +73,8 @@
    también publica 9080, que en esta máquina ocupa `sgc-app-1` de la original: apagar
    ese contenedor antes de ensayar desde aquí.
 7. **Marca visible:** la UI todavía dice "SGC Documental" (`src/app/layout.tsx` y el
-   encabezado). Cambiarla es decisión del usuario; no se tocó.
+   encabezado). Decidido: la marca (nombre, logo, colores) pasa a ser configuración por
+   entidad en la Fase 12 (spec §5.10).
 8. **Pendientes heredados del usuario** (siguen valiendo aquí): convención oficial de
    códigos (`patron_codigo` en `/admin/mapa/textos`), documentos reales aprobados, logo
    institucional vectorial. **Deuda técnica heredada:** subir Next 16.2.10 → 16.3.2+
@@ -75,7 +87,9 @@
 > Todo lo que sigue es el registro del proyecto original hasta `9644ceb`. Los pendientes
 > operativos que menciona (cuota de Actions, día de instalación, F10-D1) son de
 > `sgc-suaza`, no de esta variante. Las decisiones D1–D10 y las de cada fase siguen
-> vigentes aquí mientras no se revisen.
+> vigentes aquí salvo las que el spec de SGC Integral marca como superadas (§4.2: D3
+> parcial, D4 opcional, D8 ampliada, F9-D1, F10-D6, reglas de hardware 1–3 y 5, reglas
+> de negocio 3 y 4).
 
 ### Estado al bifurcar
 
@@ -415,6 +429,29 @@
 | F10-D6 | Respaldo por **crontab de QTS** + `docker exec pg_dump -Fc`, verificación `pg_restore --list`, retención 30 días | Prohibido un tercer contenedor; QTS trae cron persistente (`/etc/config/crontab`) | 2026-08-24 |
 | F10-D7 | Tar del CI con **doble tag** `latest` + `AAAAMMDD-sha7` y artefacto nombrado con el tag | Rollback offline: conservar el tar anterior y cambiar `SGC_VERSION` en `.env` | 2026-08-24 |
 | F10-D8 | La prueba de carga usa **presupuestos globales por minuto** (50 archivos, 25 búsquedas) bajo los rate limits | Toda la carga sale de UNA IP: sin presupuestos se mediría el 429, no la app | 2026-08-24 |
+
+## Decisiones de la sesión de diseño de SGC Integral (2026-11-03)
+
+El detalle y el porqué de cada una están en el spec maestro
+(`docs/superpowers/specs/2026-11-03-sgc-integral-plataforma-design.md`, §10 para las de
+Claude). Aquí solo el índice:
+
+| # | Decisión | Quién |
+|---|---|---|
+| SI-1 | La app deja el NAS: servidor por entidad (Suaza: Windows en el hospital), posible exposición a internet; se diseña como si estuviera expuesta | Usuario / Claude |
+| SI-2 | Todo requiere sesión; el portal abierto desaparece. Reglas de negocio 3 y 4 reformuladas como visibilidad por rol (spec §5.3) | Usuario |
+| SI-3 | 40+ usuarios creados a mano; cinco roles fijos en código + asignación de procesos; matriz en `permisos.ts` con tests por celda | Usuario / Claude |
+| SI-4 | Jerarquía organizacional: áreas, cargos con cargo superior, usuario con un cargo y jefe inmediato opcional | Usuario |
+| SI-5 | Un solo motor de acciones de mejora con campo origen, compartido por los tres módulos | Usuario |
+| SI-6 | Orden de fases 11–20 (`PLAN.md`) | Usuario |
+| SI-7 | Instalación independiente por entidad, sin multi-tenancy; marca configurable; semilla mínima separada de la demo | Usuario / Claude |
+| SI-8 | Contenedores sin atar el sistema operativo: compose con Caddy + app + PostgreSQL; `amd64` siempre, `arm64` bajo demanda; en Windows, Docker Engine en WSL2 | Usuario / Claude |
+| SI-9 | Dirección visual C (clara, color de módulo y estado con significado) con tema oscuro opcional; tres capas de color: marca, módulo, estado | Usuario / Claude |
+| SI-10 | Seguridad: mapa de los 20 riesgos del usuario (spec §5.9); zod, TOTP opcional exigible por rol, bloqueo por cuenta, roles de BD de mínimo privilegio, bitácora inmutable | Usuario / Claude |
+| SI-11 | Planificador dentro de la app; respaldo diario cifrado ejecutado por la app; exportación completa | Claude |
+| SI-12 | Documentación final obligatoria: manual de usuario (por capítulos al cierre de cada fase), manual técnico y procedimiento de respaldo y restauración (Fase 20) | Usuario |
+| SI-13 | Carga histórica: los documentos ya aprobados en papel entran por publicación directa del Admin SGC, marcados "aprobación registrada fuera de la plataforma", sin acta; la versión siguiente recorre el flujo (spec §6.1, DC26) | Claude |
+| SI-14 | Cuenta personal para todo funcionario que consulte, con alta por lote; `sgc-suaza` no se instala en Suaza sino en otro hospital, y las migraciones de Integral se mantienen aplicables sobre su base (spec DC29, DC31, DC32) | Usuario / Claude |
 
 ## Deuda técnica conocida
 
