@@ -13,6 +13,7 @@ export class ErrorValidacion extends Error {
 function formDataAObjeto(formData: FormData): Record<string, string | string[]> {
   const objeto: Record<string, string | string[]> = {};
   for (const clave of new Set(formData.keys())) {
+    if (clave.startsWith("$ACTION_")) continue; // campos internos de React (useActionState, bind)
     const valores = formData
       .getAll(clave)
       .filter((v): v is string => typeof v === "string" && v !== "");

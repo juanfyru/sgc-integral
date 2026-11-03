@@ -11,6 +11,13 @@ it("convierte FormData y reporta el primer error en espanol con el campo", () =>
   expect(() => parsearFormulario(malo, EsquemaIngreso)).toThrow(/^usuario: /);
 });
 
+it("ignora los campos $ACTION_ de React aun con esquema estricto", () => {
+  const fd = new FormData();
+  fd.set("$ACTION_KEY", "k123"); fd.set("$ACTION_1:0", "[1]"); fd.set("$ACTION_REF_1", "x");
+  fd.set("usuario", "ana"); fd.set("clave", "x");
+  expect(parsearFormulario(fd, EsquemaIngreso)).toEqual({ usuario: "ana", clave: "x" });
+});
+
 it("EsquemaUsuario exige procesos al lider y rechaza campos extra", () => {
   expect(() => EsquemaUsuario.parse({ usuario: "ana.p", nombre: "Ana Pérez", rol: "lider_proceso", procesoIds: [], verHistorial: false })).toThrow(/proceso/);
   expect(() => EsquemaUsuario.parse({ usuario: "ana.p", nombre: "Ana Pérez", rol: "consulta", procesoIds: [], verHistorial: false, extra: 1 })).toThrow();

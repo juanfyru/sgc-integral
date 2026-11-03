@@ -7,4 +7,8 @@ it("rutaInterna acepta solo rutas internas", () => {
   expect(rutaInterna("https://evil.com")).toBe("/");
   expect(rutaInterna("/\\evil.com")).toBe("/");
   expect(rutaInterna(null, "/admin")).toBe("/admin");
+  expect(rutaInterna("/\t/evil.com")).toBe("/");
+  expect(rutaInterna("/\n/evil.com")).toBe("/");
+  expect(rutaInterna("/\r/evil.com")).toBe("/");
+  expect(rutaInterna("/procesos/con espacio")).toBe("/procesos/con espacio");
 });
