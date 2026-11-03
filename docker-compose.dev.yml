@@ -11,7 +11,13 @@ services:
       # 9081 en el host: 9080 lo usa sgc-suaza (F:\sgc) en esta misma máquina
       - "9081:3080"
     environment:
-      DATABASE_URL: postgres://sgc:sgc_dev@bd:5432/sgc
+      DATABASE_URL: postgres://sgc_app:sgc_app_dev@bd:5432/sgc
+      DATABASE_URL_MIGRADOR: postgres://sgc:sgc_dev@bd:5432/sgc
+      # Idéntica a BD_APP_CLAVE de .env.local: el contenedor re-sincroniza la
+      # clave del rol en cada arranque sobre la misma base que usan los tests.
+      BD_APP_CLAVE: sgc_app_dev
+      # La imagen corre con NODE_ENV=production, que exige APP_SECRETO. Solo desarrollo.
+      APP_SECRETO: EydHcw1DuRRigzlQG5UXcwVA+SHK+ScJTToKXv6qQic=
     depends_on:
       bd:
         condition: service_healthy

@@ -3,7 +3,11 @@
  * bootstrap del admin desde variables de entorno. Sin BD ni timers reales.
  */
 import { describe, expect, it } from "vitest";
-import { configurarAdminDesdeEnv, esperarConReintentos } from "@/lib/arranque";
+import {
+  configurarAdminDesdeEnv,
+  decidirConexiones,
+  esperarConReintentos,
+} from "@/lib/arranque";
 
 describe("esperarConReintentos", () => {
   it("devuelve 1 si el primer intento funciona, sin dormir", async () => {
@@ -92,5 +96,31 @@ describe("configurarAdminDesdeEnv", () => {
     const r = configurarAdminDesdeEnv({ ADMIN_CLAVE: "x" });
     expect(r.accion).toBe("omitir");
     if (r.accion === "omitir") expect(r.motivo).toContain("ADMIN_USUARIO");
+  });
+});
+
+describe("decidirConexiones", () => {
+  it("con las tres variables usa migrador y app distintas, sin advertencias", () => {
+    const c = decidirConexiones({
+      DATABASE_URL: "postgres://app",
+      DATABASE_URL_MIGRADOR: "postgres://dueno",
+      BD_APP_CLAVE: "k",
+    });
+    expect(c).toEqual({
+      migrador: "postgres://dueno",
+      app: "postgres://app",
+      claveApp: "k",
+      advertencias: [],
+    });
+  });
+  it("sin migrador cae al modo heredado con advertencia", () => {
+    const c = decidirConexiones({ DATABASE_URL: "postgres://x" });
+    expect(c.migrador).toBe("postgres://x");
+    expect(c.claveApp).toBeNull();
+    expect(c.advertencias.join(" ")).toMatch(/DATABASE_URL_MIGRADOR/);
+    expect(c.advertencias.join(" ")).toMatch(/BD_APP_CLAVE/);
+  });
+  it("sin DATABASE_URL lanza", () => {
+    expect(() => decidirConexiones({})).toThrow(/DATABASE_URL/);
   });
 });

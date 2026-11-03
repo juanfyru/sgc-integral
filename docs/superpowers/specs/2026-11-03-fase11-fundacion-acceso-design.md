@@ -59,23 +59,29 @@ SQL manual añadido al final de la migración generada:
   tests usan nombres de usuario únicos por corrida (`zz_<algo>_${Date.now()}`) y no
   borran a quienes generan filas en estas tablas.
 
-## 3. Roles de base de datos (migración `0003`, SQL manual)
+## 3. Roles de base de datos (`asegurarRolApp`, sin migración)
 
 - Dos cadenas de conexión: `DATABASE_URL_MIGRADOR` (dueño del esquema; corre migraciones,
   semillas y crea el rol de la app) y `DATABASE_URL` (rol `sgc_app`, el que usa la app).
-- El arranque (`scripts/arrancar.ts`) con la conexión del migrador: espera la BD →
-  `asegurarRolApp(sql, BD_APP_CLAVE)` → migraciones → admin por entorno. La clave llega
-  a `CREATE ROLE`/`ALTER ROLE` por `set_config('sgc.clave_app', $1, true)` dentro de un
-  bloque `DO` con `format('%L', current_setting(...))`: el DDL no acepta parámetros y la
-  clave nunca se concatena en el texto SQL. El nombre del rol es la constante `sgc_app`.
-- Migración `0003_privilegios-sgc-app.sql`: `REVOKE CREATE ON SCHEMA public FROM PUBLIC;
-  GRANT USAGE ON SCHEMA public TO sgc_app; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL
-  TABLES IN SCHEMA public TO sgc_app; REVOKE UPDATE, DELETE ON auditoria, accesos FROM
-  sgc_app; GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO sgc_app; ALTER
-  DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO
-  sgc_app; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO
-  sgc_app;`. Los privilegios por defecto quedan ligados al migrador, que es quien crea las
-  tablas futuras. `TRUNCATE` no se concede: la semilla corre con el migrador.
+- Orden de arranque (`scripts/arrancar.ts`): `decidirConexiones` (avisos) → validación de
+  `APP_SECRETO` en producción (32 bytes en base64; si no, sale con error) → espera de BD con
+  la conexión del migrador → migraciones → `asegurarRolApp(sql, BD_APP_CLAVE)` → admin por
+  entorno (con `DATABASE_URL`, es decir `sgc_app`). La clave llega a `CREATE ROLE`/`ALTER
+  ROLE` por `set_config('sgc.clave_app', $1, true)` dentro de un bloque `DO` con
+  `format('%L', current_setting(...))`: el DDL no acepta parámetros y la clave nunca se
+  concatena en el texto SQL. El nombre del rol es la constante `sgc_app`.
+- **No hay migración 0003.** Los privilegios los aplica `asegurarRolApp` en cada arranque,
+  después de las migraciones, de forma idempotente y en una sola transacción (en modo
+  heredado el rol no existe y un GRANT en una migración fallaría; en una base nueva los
+  REVOKE sobre `auditoria`/`accesos` exigen que las tablas ya existan): `REVOKE CREATE ON
+  SCHEMA public FROM PUBLIC; GRANT USAGE ON SCHEMA public TO sgc_app; GRANT SELECT, INSERT,
+  UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO sgc_app; REVOKE UPDATE, DELETE ON
+  auditoria, accesos FROM sgc_app; GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO
+  sgc_app; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON
+  TABLES TO sgc_app; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON
+  SEQUENCES TO sgc_app;`. Los privilegios por defecto quedan ligados al migrador, que es
+  quien crea las tablas futuras. `TRUNCATE` no se concede: la semilla corre con el migrador.
+  Manualmente: `npm run db:preparar` (migrar y luego `db:roles`).
 - **Modo heredado:** si falta `DATABASE_URL_MIGRADOR`, el arranque usa `DATABASE_URL`
   para todo y avisa en consola ("la app corre con el rol dueño"). Así una base de
   `sgc-suaza` restaurada arranca aunque su compose no traiga las variables nuevas; el

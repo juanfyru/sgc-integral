@@ -21,7 +21,10 @@ async function main() {
   const postgres = (await import("postgres")).default;
   const e = await import("./esquema");
 
-  const cliente = postgres(process.env.DATABASE_URL!, { max: 1 });
+  const cliente = postgres(
+    (process.env.DATABASE_URL_MIGRADOR ?? process.env.DATABASE_URL)!,
+    { max: 1 },
+  );
   const db = drizzle(cliente);
 
   const slug = (texto: string) =>

@@ -71,3 +71,41 @@ export function configurarAdminDesdeEnv(env: EnvAdmin): DecisionAdmin {
     },
   };
 }
+
+export type Conexiones = {
+  migrador: string;
+  app: string;
+  claveApp: string | null;
+  advertencias: string[];
+};
+
+/**
+ * Decide las dos conexiones (F11 §3). Modo heredado: sin
+ * DATABASE_URL_MIGRADOR todo corre con DATABASE_URL (rol dueño) y se avisa;
+ * sin BD_APP_CLAVE no se crea el rol sgc_app.
+ */
+export function decidirConexiones(
+  env: Partial<
+    Record<"DATABASE_URL" | "DATABASE_URL_MIGRADOR" | "BD_APP_CLAVE", string>
+  >,
+): Conexiones {
+  const app = env.DATABASE_URL;
+  if (!app) throw new Error("Falta DATABASE_URL en el entorno");
+  const advertencias: string[] = [];
+  if (!env.DATABASE_URL_MIGRADOR) {
+    advertencias.push(
+      "Falta DATABASE_URL_MIGRADOR: modo heredado, la app corre con el rol dueño de la base.",
+    );
+  }
+  if (!env.BD_APP_CLAVE) {
+    advertencias.push(
+      "Falta BD_APP_CLAVE: se omite la creación del rol sgc_app de mínimo privilegio.",
+    );
+  }
+  return {
+    migrador: env.DATABASE_URL_MIGRADOR || app,
+    app,
+    claveApp: env.BD_APP_CLAVE || null,
+    advertencias,
+  };
+}

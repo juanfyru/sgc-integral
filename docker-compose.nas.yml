@@ -18,6 +18,10 @@ services:
       - "9080:3080"
     environment:
       DATABASE_URL: postgres://${SGC_BD_USUARIO:-sgc}:${SGC_BD_CLAVE:?Definir SGC_BD_CLAVE en .env}@bd:5432/${SGC_BD_NOMBRE:-sgc}
+      # Fase 11: archivo heredado del NAS; el compose de producción se rehace en la Fase 20.
+      DATABASE_URL_MIGRADOR: postgres://${SGC_BD_USUARIO:-sgc}:${SGC_BD_CLAVE:?Definir SGC_BD_CLAVE en .env}@bd:5432/${SGC_BD_NOMBRE:-sgc}
+      BD_APP_CLAVE: ${SGC_BD_APP_CLAVE:-}
+      APP_SECRETO: ${APP_SECRETO:?Definir APP_SECRETO en .env (openssl rand -base64 32)}
       ALMACEN_RUTA: /almacen
       NEXT_TELEMETRY_DISABLED: "1"
       ADMIN_USUARIO: ${ADMIN_USUARIO:-}

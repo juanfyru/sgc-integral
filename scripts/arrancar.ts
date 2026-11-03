@@ -8,17 +8,44 @@ import path from "node:path";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
-import { configurarAdminDesdeEnv, esperarConReintentos } from "@/lib/arranque";
+import {
+  configurarAdminDesdeEnv,
+  decidirConexiones,
+  esperarConReintentos,
+} from "@/lib/arranque";
+import { asegurarRolApp } from "@/db/roles-bd";
+
+/** APP_SECRETO: 32 bytes en base64 (cifra los secretos TOTP en reposo). */
+function secretoValido(valor: string | undefined): boolean {
+  return !!valor && Buffer.from(valor, "base64").length === 32;
+}
 
 async function principal() {
-  const url = process.env.DATABASE_URL;
-  if (!url) {
-    console.error("[arranque] Falta DATABASE_URL en el entorno");
+  let cx;
+  try {
+    cx = decidirConexiones({
+    DATABASE_URL: process.env.DATABASE_URL,
+    DATABASE_URL_MIGRADOR: process.env.DATABASE_URL_MIGRADOR,
+    BD_APP_CLAVE: process.env.BD_APP_CLAVE,
+  });
+  } catch (error) {
+    console.error(`[arranque] ${(error as Error).message}`);
+    process.exit(1);
+  }
+  for (const aviso of cx.advertencias) console.warn(`[arranque] ${aviso}`);
+
+  if (
+    process.env.NODE_ENV === "production" &&
+    !secretoValido(process.env.APP_SECRETO)
+  ) {
+    console.error(
+      "[arranque] APP_SECRETO falta o no son 32 bytes en base64 (generar con: openssl rand -base64 32)",
+    );
     process.exit(1);
   }
 
   // max: 1 — recomendación de Drizzle para la conexión de migraciones.
-  const sql = postgres(url, { max: 1, connect_timeout: 5 });
+  const sql = postgres(cx.migrador, { max: 1, connect_timeout: 5 });
 
   console.log("[arranque] Esperando la base de datos…");
   const intento = await esperarConReintentos(
@@ -34,6 +61,12 @@ async function principal() {
     migrationsFolder: path.join(process.cwd(), "drizzle"),
   });
   console.log("[arranque] Migraciones al día");
+
+  // Después de migrar: los GRANT necesitan que las tablas existan.
+  if (cx.claveApp) {
+    const rol = await asegurarRolApp(sql, cx.claveApp);
+    console.log(`[arranque] Rol sgc_app ${rol} y privilegios aplicados`);
+  }
 
   const decision = configurarAdminDesdeEnv({
     ADMIN_USUARIO: process.env.ADMIN_USUARIO,
