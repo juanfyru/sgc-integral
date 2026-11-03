@@ -14,6 +14,13 @@ describe("validarClave", () => {
     expect(validarClave(comun, { usuario: "ana" })).toMatch(/común/);
     expect(validarClave(comun.toUpperCase(), { usuario: "ana" })).toMatch(/común/);
   });
+  it("toda entrada de la lista tiene entre 12 y 128 caracteres y está en minúsculas", () => {
+    for (const c of lista as string[]) {
+      expect(c.length).toBeGreaterThanOrEqual(12);
+      expect(c.length).toBeLessThanOrEqual(128);
+      expect(c).toBe(c.toLowerCase());
+    }
+  });
   it("rechaza la que contiene el nombre de usuario", () => {
     expect(validarClave("Hospital-ana.perez-2026", { usuario: "ana.perez" })).toMatch(/usuario/);
   });
