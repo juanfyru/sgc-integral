@@ -5,6 +5,7 @@
 import { loadEnvConfig } from "@next/env";
 import postgres from "postgres";
 import { decidirConexiones } from "../src/lib/arranque";
+import { TIPOS_SQL } from "../src/db/cliente";
 import { asegurarRolApp } from "../src/db/roles-bd";
 
 loadEnvConfig(process.cwd());
@@ -19,7 +20,7 @@ async function principal() {
     console.error("Falta BD_APP_CLAVE: no se puede asegurar el rol sgc_app");
     process.exit(1);
   }
-  const sql = postgres(cx.migrador, { max: 1 });
+  const sql = postgres(cx.migrador, { max: 1, types: TIPOS_SQL });
   try {
     console.log(`Rol sgc_app: ${await asegurarRolApp(sql, cx.claveApp)}`);
   } finally {

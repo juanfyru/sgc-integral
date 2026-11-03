@@ -13,6 +13,7 @@ import {
   decidirConexiones,
   esperarConReintentos,
 } from "@/lib/arranque";
+import { TIPOS_SQL } from "@/db/cliente";
 import { asegurarRolApp } from "@/db/roles-bd";
 
 /** APP_SECRETO: 32 bytes en base64 (cifra los secretos TOTP en reposo). */
@@ -45,7 +46,7 @@ async function principal() {
   }
 
   // max: 1 — recomendación de Drizzle para la conexión de migraciones.
-  const sql = postgres(cx.migrador, { max: 1, connect_timeout: 5 });
+  const sql = postgres(cx.migrador, { max: 1, connect_timeout: 5, types: TIPOS_SQL });
 
   console.log("[arranque] Esperando la base de datos…");
   const intento = await esperarConReintentos(

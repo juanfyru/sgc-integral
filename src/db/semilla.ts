@@ -20,10 +20,11 @@ async function main() {
   const { sql: dsql } = await import("drizzle-orm");
   const postgres = (await import("postgres")).default;
   const e = await import("./esquema");
+  const { TIPOS_SQL } = await import("./cliente");
 
   const cliente = postgres(
     (process.env.DATABASE_URL_MIGRADOR ?? process.env.DATABASE_URL)!,
-    { max: 1 },
+    { max: 1, types: TIPOS_SQL },
   );
   const db = drizzle(cliente);
 

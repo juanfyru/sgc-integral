@@ -6,6 +6,7 @@ import { existsSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Sql } from "postgres";
 import postgres from "postgres";
+import { TIPOS_SQL } from "@/db/cliente";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
@@ -25,8 +26,8 @@ describe.skipIf(!process.env.DATABASE_URL_MIGRADOR)("rol sgc_app", () => {
   let dueno: Sql;
 
   beforeAll(() => {
-    app = postgres(process.env.DATABASE_URL!, { max: 1 });
-    dueno = postgres(process.env.DATABASE_URL_MIGRADOR!, { max: 1 });
+    app = postgres(process.env.DATABASE_URL!, { max: 1, types: TIPOS_SQL });
+    dueno = postgres(process.env.DATABASE_URL_MIGRADOR!, { max: 1, types: TIPOS_SQL });
   });
   afterAll(async () => {
     await app.end();
@@ -48,7 +49,7 @@ describe.skipIf(!process.env.DATABASE_URL_MIGRADOR)("rol sgc_app", () => {
   });
   it("sí puede insertar, leer y borrar en tablas operativas", async () => {
     const [u] = await app`INSERT INTO usuarios (usuario, nombre, hash_clave) VALUES (${'zz_priv_u_' + Date.now()}, 'x', 'h') RETURNING id`;
-    expect(u.id).toBeTruthy();
+    expect(u.id).toBeGreaterThan(0);
     await app`DELETE FROM usuarios WHERE id = ${u.id}`;
   });
   it("el trigger frena también al dueño del esquema", async () => {
