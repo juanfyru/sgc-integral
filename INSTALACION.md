@@ -27,7 +27,7 @@ NAS** como administrador, salvo donde se indique otra cosa.
       - `sgc-documentos` — archivos de los documentos del SGC.
       - `sgc-respaldos` — respaldos diarios de la base de datos.
 - [ ] El **paquete de despliegue**, copiado desde el PC por SMB (ver §2):
-      - `sgc-suaza-arm64-docker-<versión>.tar.gz` (imagen de la app; artefacto del CI)
+      - `sgc-integral-arm64-docker-<versión>.tar.gz` (imagen de la app; artefacto del CI)
       - `postgres-16-alpine-arm64.tar.gz` (imagen de la base de datos; se
         genera una vez desde un PC con Docker e internet, ver §2.2)
       - `docker-compose.nas.yml`
@@ -46,7 +46,7 @@ Copiar ahí los archivos del paquete. Por SSH:
 ```sh
 cd /share/Container/sgc
 ls
-# docker-compose.nas.yml  .env.nas.example  nas/  sgc-suaza-arm64-docker-<versión>.tar.gz
+# docker-compose.nas.yml  .env.nas.example  nas/  sgc-integral-arm64-docker-<versión>.tar.gz
 ```
 
 **2.2. Cargar las imágenes** (el NAS no tiene internet; entran por archivo).
@@ -65,12 +65,12 @@ En el NAS, cargar ambas:
 ```sh
 cd /share/Container/sgc
 # gunzip con redirección: conserva el .tar.gz original (sirve para rollback)
-gunzip < sgc-suaza-arm64-docker-<versión>.tar.gz > sgc-suaza-arm64-docker-<versión>.tar
-docker load -i sgc-suaza-arm64-docker-<versión>.tar
+gunzip < sgc-integral-arm64-docker-<versión>.tar.gz > sgc-integral-arm64-docker-<versión>.tar
+docker load -i sgc-integral-arm64-docker-<versión>.tar
 gunzip < postgres-16-alpine-arm64.tar.gz > postgres-16-alpine-arm64.tar
 docker load -i postgres-16-alpine-arm64.tar
-docker images | grep -E "sgc-suaza|postgres"
-# sgc-suaza debe listar dos tags (latest y AAAAMMDD-sha7) y postgres el 16-alpine
+docker images | grep -E "sgc-integral|postgres"
+# sgc-integral debe listar dos tags (latest y AAAAMMDD-sha7) y postgres el 16-alpine
 ```
 
 **2.3. Configurar variables.** Copiar el ejemplo y completarlo:
@@ -182,22 +182,22 @@ tail -3 /share/sgc-respaldos/respaldo.log
 ## 5. Actualización de versión
 
 1. Descargar del CI (GitHub Actions del repositorio, hecho por quien tenga
-   acceso) el artefacto `sgc-suaza-arm64-docker-<versión-nueva>` y copiarlo a
+   acceso) el artefacto `sgc-integral-arm64-docker-<versión-nueva>` y copiarlo a
    `/share/Container/sgc` por SMB. **Conservar el `.tar.gz` anterior** (es el
    camino de rollback).
 2. Por SSH:
 
 ```sh
 cd /share/Container/sgc
-gunzip < sgc-suaza-arm64-docker-<versión-nueva>.tar.gz > sgc-suaza-arm64-docker-<versión-nueva>.tar
-docker load -i sgc-suaza-arm64-docker-<versión-nueva>.tar
+gunzip < sgc-integral-arm64-docker-<versión-nueva>.tar.gz > sgc-integral-arm64-docker-<versión-nueva>.tar
+docker load -i sgc-integral-arm64-docker-<versión-nueva>.tar
 docker compose -f docker-compose.nas.yml up -d     # con SGC_VERSION=latest toma la recién cargada
 docker logs --tail 20 sgc-app                      # "Migraciones al día ... Listo"
 wget -qO- http://127.0.0.1:9080/api/salud
 ```
 
 **Rollback:** cada `.tar` trae también un tag fijo `AAAAMMDD-sha7`
-(`docker images | grep sgc-suaza` los lista). Para volver atrás:
+(`docker images | grep sgc-integral` los lista). Para volver atrás:
 
 ```sh
 vi .env             # SGC_VERSION=<tag-anterior>   (p. ej. 20260824-e324d2e)

@@ -58,7 +58,7 @@ vi .env
 
 Dejar así (lo demás del archivo, como está):
 
-- `SGC_IMAGEN=ghcr.io/juanfyru/sgc-suaza`  ← **quitarle el `#` del inicio**
+- `SGC_IMAGEN=ghcr.io/juanfyru/sgc-integral`  ← **quitarle el `#` del inicio**
 - `SGC_BD_CLAVE=` una clave larga y aleatoria (solo la usan los contenedores)
 - `ADMIN_CLAVE=` una clave **temporal** para el primer ingreso del admin
 
@@ -149,6 +149,6 @@ Seguir `INSTALACION.md` directamente para:
 | Síntoma | Qué hacer |
 |---|---|
 | `docker login` dice "unauthorized" | El token está mal copiado, vencido, o no tiene la casilla `read:packages`. Crear uno nuevo (§1) y repetir el login. |
-| `pull` dice "denied" o "not found" | Falta el login (§2.2) o `SGC_IMAGEN` quedó mal escrita en el `.env`: debe ser exactamente `ghcr.io/juanfyru/sgc-suaza`. |
+| `pull` dice "denied" o "not found" | Falta el login (§2.2) o `SGC_IMAGEN` quedó mal escrita en el `.env`: debe ser exactamente `ghcr.io/juanfyru/sgc-integral`. |
 | `pull` no conecta (timeout / lookup error) | El NAS no está saliendo a internet: revisar puerta de enlace y DNS en Panel de control → Red, y el firewall del hospital (necesita HTTPS de salida hacia `ghcr.io` y `*.docker.com`). |
 | El NAS pierde internet más adelante | El sistema sigue funcionando normal (nada del portal depende de internet). Solo las ACTUALIZACIONES vuelven al flujo del `.tar` de `INSTALACION.md` §5, que funciona siempre. |

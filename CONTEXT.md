@@ -1,60 +1,76 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-08-25**
-> (Fase 10 completada: paquete de despliegue NAS verificado en ensayo local
-> destructivo. El proyecto queda a la espera del acceso al QNAP real para el
-> "día de instalación").
+> Se actualiza al cierre de cada fase. Última actualización: **2026-11-03**
+> (nacimiento de **SGC Integral**, variante ampliada de `sgc-suaza` bifurcada en
+> `9644ceb`. Aún sin fases propias: las nuevas funcionalidades están por definir).
 
 ## ⏸ Punto de reanudación (próxima sesión)
 
-0. **Dónde quedamos:** la **Fase 10** (despliegue NAS) está **implementada completa
-   en `main`**, siguiendo el plan
-   `docs/superpowers/plans/2026-08-24-fase10-despliegue-nas.md` tarea por tarea
-   (T1–T10, un commit por tarea). El usuario **aún no tiene acceso al QNAP** (F10-D1):
-   la fase entregó el paquete completo y lo verificó en un **ensayo local
-   destructivo** (instalar desde cero → sembrar → respaldar con `nas/respaldo.sh` →
-   destruir contenedores+volúmenes+almacén → restaurar con `nas/restaurar.sh` →
-   conteos idénticos, clave del respaldo manda, PDF estampado OK) y una **prueba de
-   carga** (2944 req/60 s × 20 clientes, 0 errores, RAM ≈ 165 MiB total en x86).
-   Evidencia completa en el plan §Evidencia. Suite: **205 tests, 200 en verde** (los
-   5 rojos son los preexistentes del seed `busqueda-fase5`×3 + `esquema`×2; NO
-   regresión; **no borrar `PR-GTH-991`**). Lint y build limpios.
-0b. **Pendiente inmediato (temporizador de GitHub):** los runs del 2026-08-25 quedaron
-   rojos SOLO en "Publicar artefacto" por **cuota de almacenamiento de Actions agotada**
-   (1.13 GB de tars viejos, ya borrados vía API; la retención bajó a 30→7 días en
-   `af10e27`). GitHub recalcula el uso cada 6-12 h: pasado ese lapso, **relanzar los
-   jobs fallidos del último run** (Actions → run → "Re-run failed jobs") y verificar
-   que el artefacto `sgc-suaza-arm64-docker-<AAAAMMDD>-<sha7>` quede descargable.
-   Lint+build, imagen ARM64, push a GHCR y doble tag ya salieron bien en esos runs.
-1. **Lo que sigue (bloqueado por el usuario): el DÍA DE INSTALACIÓN** cuando haya
-   acceso al NAS — ejecutar `INSTALACION.md` tal cual (checklist §1, instalación §2,
-   respaldos §4), medir la prueba de carga real (§8, criterio RAM < 1.3 GB) y retirar
-   `ADMIN_CLAVE` tras el primer arranque (§2.6). Si el NAS tuviera salida a internet,
-   usar en su lugar **`INSTALACION_INTERNET.md`** (2026-08-26: pull desde GHCR con
-   token `read:packages`, `SGC_IMAGEN` en el `.env`, actualización en dos comandos,
-   HBS a destino remoto; el CI ahora publica el tag versionado también en GHCR, y el
-   paquete offline incluye el tar de `postgres:16-alpine` — hueco detectado al
-   escribir la variante). No hay más fases de desarrollo en `PLAN.md`.
-2. **Antes del despliegue** también siguen pendientes del usuario (no bloquean nada):
-   la **convención oficial de códigos** (`patron_codigo` editable en
-   `/admin/mapa/textos`), los **documentos reales** aprobados (el seed es ficticio) y
-   el **logo institucional** vectorial.
-3. **Deuda técnica a evaluar** (mantenimiento, no funcional): subir Next 16.2.10 →
-   16.3.2+ por advisories nuevos (ver §Deuda técnica); agregar job de CI con Postgres
-   de servicio para los tests de BD.
-4. **Marca de agua (2026-08-24, post-Fase 9):** toda salida pública de PDF va
-   estampada "COPIA NO CONTROLADA" — descarga y vista previa inline (D58,
-   `src/lib/marca-agua.ts`).
-5. **Estado del entorno:** Node 24 en CI/Docker/dev — no volver a Node 22: npm 10
-   rechaza el lockfile de npm 11. Contenedores dev: `sgc-app-1` (9080) y `sgc-bd-1`
-   (PG en 127.0.0.1:5434). En esta máquina 5432 lo ocupa un Postgres nativo y 5433
-   el proyecto doctime. Suele quedar un `next dev` huérfano en el puerto 3000 de
-   sesiones anteriores (Next avisa el PID; sirve tal cual porque recompila en
-   caliente). La cuenta GitHub es `juanfyru` (repo privado sgc-suaza); no hay `gh`
-   CLI — el estado del CI se consulta con el token de `git credential fill` contra
-   la API.
+0. **Qué es este proyecto:** SGC Integral es la variante ampliada de SGC Documental
+   (`sgc-suaza`). El usuario decidió el 2026-11-03 dejar la app original tal como está,
+   con sus funcionalidades, y construir aquí otra con **funcionalidades más completas**.
+   La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
+   proyecto**.
+1. **Dónde quedamos:** la variante nació como clon completo con historia (91 commits de
+   las Fases 0–10) en `F:\sgc-integral`, repo privado `juanfyru/sgc-integral`. Cambios
+   de la bifurcación: nombre de paquete, imagen y artefacto `sgc-integral`; puertos de
+   desarrollo propios; job de imagen ARM64 manual en el CI. **Verificado en BD nueva:**
+   migraciones y semilla (mismos conteos: 4 macros, 19 procesos, 56 subprocesos, 28
+   documentos), lint limpio, **205/205 tests en verde**, build limpio, mapa e ingreso
+   al panel admin en el navegador.
+2. **Lo que sigue:** definir con el usuario las **nuevas funcionalidades** (aún no
+   descritas). Primera conversación de diseño pendiente: qué debe hacer la variante que
+   la original no hace. Las fases nuevas se numeran desde la 11 (§Fases de la variante
+   en `PLAN.md`) y siguen la metodología de `AGENTS.md`.
+3. **Entorno de desarrollo** (convive con `sgc-suaza` en la misma máquina):
 
-## Estado actual
+   | Pieza | SGC Integral (esta) | sgc-suaza (original) |
+   |---|---|---|
+   | Carpeta | `F:\sgc-integral` | `F:\sgc` |
+   | Postgres dev | `sgc-integral-bd-1`, `127.0.0.1:5435` | `sgc-bd-1`, `127.0.0.1:5434` |
+   | `npm run dev` | `http://localhost:3002` (fijo en el script) | 3000 |
+   | App en Docker (compose dev) | 9081 | 9080 |
+
+   En esta máquina 5432 lo ocupa un Postgres nativo, 5433 y 3001 el proyecto doctime.
+   **BD nueva desde cero:** `docker compose -f docker-compose.dev.yml up -d bd` →
+   `npm run db:migrate` → `npm run db:seed` → **`npm run admin:asegurar`** (crea
+   `admin`/`cambiar-esta-clave`; `next dev` no lo crea solo, en el contenedor lo hace
+   `arrancar.js`). Node 24 en todo; no bajar a 22.
+4. **Tests:** con la BD de la variante recién sembrada pasan **todos**. Los 5 rojos que
+   arrastra `sgc-suaza` vienen de documentos manuales (`PR-GTH-990/991`) que solo
+   existen en la BD de ese proyecto; aquí cualquier rojo es una señal real.
+5. **CI (decisión de la bifurcación, tomada por Claude):** lint y build corren en cada
+   push; el job de imagen ARM64 (GHCR + artefacto `.tar`) solo corre con **Actions →
+   CI → Run workflow**. Motivos: el destino de despliegue de la variante no está
+   definido, la cuota de almacenamiento de Actions es de la cuenta y la comparte con
+   `sgc-suaza` (se agotó el 2026-08-25), y cada build ARM64 por QEMU es lento. Para
+   cumplir "verificar ARM64 desde temprano" de `AGENTS.md`, lanzarlo a mano al cierre de
+   cada fase que agregue dependencias, o reactivar el disparo automático cuando la
+   variante tenga destino.
+6. **Despliegue: abierto.** Los archivos de despliegue (`docker-compose.nas.yml`,
+   `INSTALACION*.md`, `nas/`) se heredaron con el nombre de imagen y artefacto ya
+   cambiado, pero conservan el puerto 9080, los nombres de contenedor `sgc-app`/`sgc-bd`
+   y la carpeta `/share/sgc-documentos` del original. Si la variante va a **convivir**
+   con la original en el mismo QNAP, hay que cambiar esas tres cosas antes de instalar
+   (y revisar el presupuesto de ~2 GB de RAM, que no alcanza para dos pares app+BD). Si
+   la **reemplaza**, sirven tal cual.
+7. **Marca visible:** la UI todavía dice "SGC Documental" (`src/app/layout.tsx` y el
+   encabezado). Cambiarla es decisión del usuario; no se tocó.
+8. **Pendientes heredados del usuario** (siguen valiendo aquí): convención oficial de
+   códigos (`patron_codigo` en `/admin/mapa/textos`), documentos reales aprobados, logo
+   institucional vectorial. **Deuda técnica heredada:** subir Next 16.2.10 → 16.3.2+
+   por advisories; job de CI con Postgres de servicio para los tests de BD.
+9. **Memoria de Claude Code:** es por carpeta, así que `F:\sgc-integral` arranca sin
+   memoria propia. Este archivo es el contexto durable de la variante.
+
+## Herencia: fases 0–10 de sgc-suaza (estado al bifurcar)
+
+> Todo lo que sigue es el registro del proyecto original hasta `9644ceb`. Los pendientes
+> operativos que menciona (cuota de Actions, día de instalación, F10-D1) son de
+> `sgc-suaza`, no de esta variante. Las decisiones D1–D10 y las de cada fase siguen
+> vigentes aquí mientras no se revisen.
+
+### Estado al bifurcar
 
 - **Fase actual:** 10 — completada en `main` (2026-08-25). Paquete de despliegue NAS:
   arranque del contenedor con migraciones (`src/lib/arranque.ts` + `scripts/arrancar.ts`

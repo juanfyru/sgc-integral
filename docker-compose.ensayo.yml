@@ -9,7 +9,7 @@
 services:
   app:
     build: .
-    image: sgc-suaza:ensayo
+    image: sgc-integral:ensayo
     volumes:
       - ./almacen-ensayo:/almacen
   bd:

@@ -4,7 +4,12 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
-# SGC Documental — ESE Hospital Nuestra Señora de Fátima de Suaza
+# SGC Integral — ESE Hospital Nuestra Señora de Fátima de Suaza
+
+> **Variante ampliada de SGC Documental (`sgc-suaza`)**, bifurcada el 2026-11-03 desde
+> el commit `9644ceb` (fin de su Fase 10). Hereda todas sus funcionalidades y estas
+> reglas; aquí se construyen funcionalidades nuevas. La app original vive en `F:\sgc`
+> (repo `juanfyru/sgc-suaza`) y **no se toca desde este proyecto**.
 
 Portal de intranet para **control de documentos ISO 9001:2015 (numeral 7.5)**.
 No es un repositorio de archivos: es una herramienta de control documental. El sistema
@@ -81,7 +86,7 @@ QTS + Container Station). De ahí salen estas reglas. No son negociables:
 | Export Excel | `exceljs` (JS puro) | Listado Maestro |
 | Export PDF | Hoja de estilos de impresión (`window.print`) | Prohibido Puppeteer en el NAS |
 | Rate limiting | En memoria, en la app (instancia única) | Sin Redis |
-| CI/CD | GitHub Actions → build `linux/arm64` → GHCR + artefacto `.tar` para carga offline | Repo en cuenta personal de GitHub |
+| CI/CD | GitHub Actions → build `linux/arm64` → GHCR + artefacto `.tar` para carga offline | Repo en cuenta personal de GitHub (`juanfyru/sgc-integral`). En esta variante el job ARM64 se lanza **a mano** (Run workflow); lint+build corren en cada push |
 
 ## Convenciones de código
 
@@ -117,7 +122,7 @@ npm run db:seed      # datos semilla (mapa real + documentos ficticios verosími
 Build de imagen (local, para verificar ARM64):
 
 ```bash
-docker buildx build --platform linux/arm64 -t sgc-suaza:local .
+docker buildx build --platform linux/arm64 -t sgc-integral:local .
 ```
 
 ## Estilo de commits

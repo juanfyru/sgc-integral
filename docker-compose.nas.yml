@@ -10,9 +10,9 @@
 services:
   app:
     # Sin internet (default): imagen local cargada con `docker load`.
-    # Con internet: SGC_IMAGEN=ghcr.io/juanfyru/sgc-suaza en el .env
+    # Con internet: SGC_IMAGEN=ghcr.io/juanfyru/sgc-integral en el .env
     # (ver INSTALACION_INTERNET.md) y la imagen llega por `docker compose pull`.
-    image: ${SGC_IMAGEN:-sgc-suaza}:${SGC_VERSION:-latest}
+    image: ${SGC_IMAGEN:-sgc-integral}:${SGC_VERSION:-latest}
     container_name: sgc-app
     ports:
       - "9080:3080"

@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  # La imagen ARM64 se construye solo a mano (Actions → CI → Run workflow):
+  # el destino de despliegue de esta variante no está definido aún, la cuota
+  # de almacenamiento de Actions de la cuenta es compartida con sgc-suaza y
+  # cada build ARM64 por QEMU es lento. Lint y build sí corren en cada push.
+  workflow_dispatch:
 
 jobs:
   verificar:
@@ -26,6 +31,7 @@ jobs:
   imagen-arm64:
     name: Imagen Docker linux/arm64
     needs: verificar
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -51,19 +57,19 @@ jobs:
       - uses: docker/setup-buildx-action@v3
 
       - name: Login a GHCR
-        if: github.event_name == 'push'
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build y push a GHCR (solo en main)
+      - name: Build y push a GHCR
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/arm64
-          push: ${{ github.event_name == 'push' }}
+          push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ${{ steps.imagen.outputs.nombre }}:latest
             ${{ steps.imagen.outputs.nombre }}:${{ github.sha }}
@@ -80,19 +86,19 @@ jobs:
           context: .
           platforms: linux/arm64
           tags: |
-            sgc-suaza:latest
-            sgc-suaza:${{ steps.version.outputs.tag }}
-          outputs: type=docker,dest=/tmp/sgc-suaza-arm64.tar
+            sgc-integral:latest
+            sgc-integral:${{ steps.version.outputs.tag }}
+          outputs: type=docker,dest=/tmp/sgc-integral-arm64.tar
           cache-from: type=gha
 
       - name: Comprimir imagen
-        run: gzip -1 /tmp/sgc-suaza-arm64.tar
+        run: gzip -1 /tmp/sgc-integral-arm64.tar
 
       - name: Publicar artefacto
         uses: actions/upload-artifact@v4
         with:
-          name: sgc-suaza-arm64-docker-${{ steps.version.outputs.tag }}
-          path: /tmp/sgc-suaza-arm64.tar.gz
+          name: sgc-integral-arm64-docker-${{ steps.version.outputs.tag }}
+          path: /tmp/sgc-integral-arm64.tar.gz
           # 7 días: el tar se descarga cuando se va a desplegar y se conserva
           # en el NAS; retenerlo 30 días acumuló >1 GB y agotó la cuota de
           # almacenamiento de Actions de la cuenta (visto el 2026-08-25).

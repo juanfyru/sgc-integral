@@ -3,6 +3,10 @@
 Portal de control de documentos ISO 9001:2015 para la ESE Hospital Nuestra Señora de
 Fátima de Suaza. Reglas permanentes en `CLAUDE.md`; estado vivo en `CONTEXT.md`.
 
+> **SGC Integral** es la variante ampliada de `sgc-suaza`, bifurcada el 2026-11-03 en
+> `9644ceb`. Las Fases 0–10 de abajo son **heredadas** (ya construidas y verificadas en
+> el proyecto original). Las fases nuevas van en §Fases de la variante.
+
 Principio rector: **cada fase termina en algo que el usuario puede VER y probar.**
 Al cierre de cada fase: actualizar `CONTEXT.md` + commit + instrucciones de prueba.
 
@@ -111,6 +115,8 @@ aplican al nodo (asociación principal o secundaria), **incluyendo sus descendie
 El Listado Maestro cuenta cada documento **una vez**, por su asociación principal.
 
 ## Fases
+
+> Fases 0–10: heredadas de `sgc-suaza` (completas al bifurcar).
 
 ### Fase 0 — Planeación ✅ (esta sesión)
 **Entregable:** `CLAUDE.md`, `CONTEXT.md`, `PLAN.md`; mapa validado; stack cerrado.
@@ -245,6 +251,13 @@ Backup Sync; migraciones en el arranque; healthchecks y restart policy.
   desarrollador.
 - Consumo de RAM total de los contenedores < 1.3 GB bajo carga de prueba (20
   concurrentes simulados).
+
+## Fases de la variante SGC Integral
+
+**Por definir con el usuario** (2026-11-03). La numeración sigue desde la Fase 11.
+Cada fase nueva respeta la metodología de `AGENTS.md`: propuesta → aprobación → spec
+en `docs/superpowers/specs/` → plan en `docs/superpowers/plans/` → ejecución → cierre
+con `CONTEXT.md` actualizado e instrucciones de prueba.
 
 ## Riesgos principales y mitigación
 

@@ -8,7 +8,8 @@ services:
   app:
     build: .
     ports:
-      - "9080:3080"
+      # 9081 en el host: 9080 lo usa sgc-suaza (F:\sgc) en esta misma máquina
+      - "9081:3080"
     environment:
       DATABASE_URL: postgres://sgc:sgc_dev@bd:5432/sgc
     depends_on:
@@ -27,9 +28,9 @@ services:
       POSTGRES_PASSWORD: sgc_dev
       POSTGRES_DB: sgc
     ports:
-      # 5434 en el host: 5432 lo ocupa un Postgres nativo de Windows y 5433
-      # el proyecto doctime en esta máquina de desarrollo
-      - "127.0.0.1:5434:5432"
+      # 5435 en el host: 5432 lo ocupa un Postgres nativo de Windows, 5433
+      # el proyecto doctime y 5434 sgc-suaza (F:\sgc) en esta máquina
+      - "127.0.0.1:5435:5432"
     volumes:
       - bd_datos:/var/lib/postgresql/data
     healthcheck:

@@ -1,5 +1,5 @@
 # Imagen para linux/arm64 (QNAP TS-832PX). Construir SIEMPRE con:
-#   docker buildx build --platform linux/arm64 -t sgc-suaza .
+#   docker buildx build --platform linux/arm64 -t sgc-integral .
 FROM node:24-alpine AS base
 ENV NEXT_TELEMETRY_DISABLED=1
 
