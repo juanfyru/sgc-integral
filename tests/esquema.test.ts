@@ -7,6 +7,7 @@ import { existsSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Sql } from "postgres";
 import postgres from "postgres";
+import { ROLES } from "@/lib/roles";
 
 // vitest pone NODE_ENV=test y en ese modo @next/env ignora .env.local;
 // se carga con el mecanismo nativo de Node (>=20.12).
@@ -203,6 +204,11 @@ describe("Fase 11: roles, estructura y accesos en BD", () => {
     );
     expect(codigo).toBe(UNIQUE_VIOLATION);
     await sql`DELETE FROM usuarios WHERE usuario IN ('zz_c1', 'zz_c2')`;
+  });
+  it("el CHECK de roles en BD coincide con ROLES (como conjunto)", async () => {
+    const [{ def }] = await sql`SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = 'usuarios_rol_valido'`;
+    const enBd = [...String(def).matchAll(/'([^']+)'/g)].map((m) => m[1]).sort();
+    expect(enBd).toEqual([...ROLES].sort());
   });
   it("accesos rechaza un resultado desconocido", async () => {
     const codigo = await codigoDeError(
