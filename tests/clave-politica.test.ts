@@ -21,6 +21,13 @@ describe("validarClave", () => {
       expect(c).toBe(c.toLowerCase());
     }
   });
+  it("rechaza una clave común escrita con caracteres de ancho completo", () => {
+    const comun = (lista as string[]).find((c) => c.length >= 12 && /^[a-z0-9]+$/.test(c))!;
+    expect(comun).toBeDefined();
+    const ancho = [...comun].map((ch) => String.fromCharCode(ch.charCodeAt(0) + 0xfee0)).join("");
+    expect(ancho).not.toBe(comun);
+    expect(validarClave(ancho, { usuario: "ana" })).toMatch(/común/);
+  });
   it("rechaza la que contiene el nombre de usuario", () => {
     expect(validarClave("Hospital-ana.perez-2026", { usuario: "ana.perez" })).toMatch(/usuario/);
   });

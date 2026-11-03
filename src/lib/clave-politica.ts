@@ -9,7 +9,9 @@ const COMUNES = new Set<string>(lista as string[]);
 const ALFABETO_TEMPORAL = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
 /** Devuelve el motivo de rechazo en español, o null si la clave cumple la política. */
-export function validarClave(clave: string, contexto: { usuario: string }): string | null {
+export function validarClave(claveOriginal: string, contexto: { usuario: string }): string | null {
+  // NFKC unifica formas compatibles (p. ej. ancho completo) antes de medir y comparar.
+  const clave = claveOriginal.normalize("NFKC");
   if (clave.length < LONGITUD_MINIMA) {
     return `La clave debe tener al menos ${LONGITUD_MINIMA} caracteres.`;
   }
@@ -20,7 +22,7 @@ export function validarClave(clave: string, contexto: { usuario: string }): stri
   if (COMUNES.has(minuscula)) {
     return "Esa clave es demasiado común; elija otra.";
   }
-  const usuario = contexto.usuario.trim().toLowerCase();
+  const usuario = contexto.usuario.normalize("NFKC").trim().toLowerCase();
   if (usuario.length >= 3 && minuscula.includes(usuario)) {
     return "La clave no puede contener el nombre de usuario.";
   }
