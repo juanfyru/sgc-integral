@@ -14,15 +14,9 @@ export type UsuarioParaIngreso = {
   totpSecretoCifrado: string | null;
 } & EstadoBloqueo;
 
-/** Busca por usuario sin distinguir mayúsculas, esté activo o no (el llamador decide). */
-export async function buscarParaIngreso(
-  usuario: string,
-): Promise<UsuarioParaIngreso | null> {
-  const [f] = await obtenerSql()`
-    SELECT id, usuario, nombre, hash_clave, activo, rol, totp_activo,
-           totp_secreto_cifrado, intentos_fallidos, bloqueos_consecutivos, bloqueado_hasta
-    FROM usuarios WHERE lower(usuario) = lower(${usuario})`;
-  if (!f) return null;
+import type { Row } from "postgres";
+
+function aUsuarioParaIngreso(f: Row): UsuarioParaIngreso {
   return {
     id: Number(f.id),
     usuario: f.usuario,
@@ -36,6 +30,28 @@ export async function buscarParaIngreso(
     bloqueosConsecutivos: f.bloqueos_consecutivos,
     bloqueadoHasta: f.bloqueado_hasta ? new Date(f.bloqueado_hasta) : null,
   };
+}
+
+/** Busca por usuario sin distinguir mayúsculas, esté activo o no (el llamador decide). */
+export async function buscarParaIngreso(
+  usuario: string,
+): Promise<UsuarioParaIngreso | null> {
+  const [f] = await obtenerSql()`
+    SELECT id, usuario, nombre, hash_clave, activo, rol, totp_activo,
+           totp_secreto_cifrado, intentos_fallidos, bloqueos_consecutivos, bloqueado_hasta
+    FROM usuarios WHERE lower(usuario) = lower(${usuario})`;
+  return f ? aUsuarioParaIngreso(f) : null;
+}
+
+/** Relee el estado de la cuenta por id (dentro del candado, antes de decidir). */
+export async function buscarParaIngresoPorId(
+  id: number,
+): Promise<UsuarioParaIngreso | null> {
+  const [f] = await obtenerSql()`
+    SELECT id, usuario, nombre, hash_clave, activo, rol, totp_activo,
+           totp_secreto_cifrado, intentos_fallidos, bloqueos_consecutivos, bloqueado_hasta
+    FROM usuarios WHERE id = ${id}`;
+  return f ? aUsuarioParaIngreso(f) : null;
 }
 
 export async function guardarEstadoBloqueo(

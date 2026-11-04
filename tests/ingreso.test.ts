@@ -11,7 +11,7 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 
 import { obtenerSql } from "@/db/cliente";
 import { asegurarAdmin } from "@/db/consultas/admin";
-import { activarTotp, guardarEstadoBloqueo, guardarSecretoTotpPendiente } from "@/db/consultas/autenticacion";
+import { activarTotp, buscarParaIngreso, guardarEstadoBloqueo, guardarSecretoTotpPendiente } from "@/db/consultas/autenticacion";
 import { SIN_BLOQUEO } from "@/lib/bloqueo";
 import { cifrar } from "@/lib/cifrado";
 import { MENSAJE_CREDENCIALES, intentarFactor, intentarIngreso } from "@/lib/ingreso";
@@ -83,6 +83,35 @@ describe("intentarIngreso", () => {
     expect((await estado(id)).bloqueos_consecutivos).toBe(0);
     expect((await accesos(id)).at(-1)).toBe("ingreso");
     if (r.tipo === "sesion") expect((await validarSesion(r.token))?.usuarioId).toBe(id);
+  });
+});
+
+describe("candado por id de cuenta (R25)", () => {
+  const n = nombre("iii");
+  const variante = n.replaceAll("i", String.fromCharCode(304)); // İ: Postgres lo iguala a "i", JS no
+  let id: number;
+  beforeAll(async () => {
+    id = await crearUsuario(n);
+  });
+
+  it("la variante con İ llega a la misma fila (si no, este test pasaría en vacío)", async () => {
+    expect(variante).not.toBe(n);
+    expect(variante.toLowerCase()).not.toBe(n.toLowerCase());
+    expect((await buscarParaIngreso(variante))?.id).toBe(id);
+  });
+  it("10 fallos mezclando nombre y variante se cuentan todos", async () => {
+    await Promise.all(
+      Array.from({ length: 10 }, (_, i) =>
+        intentarIngreso({ usuario: i % 2 ? n : variante, clave: "mala", ...ctx }),
+      ),
+    );
+    const e = await estado(id);
+    expect(e.bloqueos_consecutivos).toBe(1);
+    expect(e.intentos_fallidos).toBe(0);
+    const a = await accesos(id);
+    expect(a).toHaveLength(10);
+    expect(a.filter((x) => x === "bloqueo")).toHaveLength(1);
+    expect(a.filter((x) => x === "fallo")).toHaveLength(9);
   });
 });
 

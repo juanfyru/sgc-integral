@@ -1,11 +1,13 @@
 /**
  * Núcleo del ingreso y del segundo factor, sin contexto de petición (sin
  * cookies ni redirect) para poder probarlo contra la BD. Todo va bajo un
- * candado por cuenta: buscar, verificar y escribir el bloqueo es una sola
+ * candado por id de cuenta (no por el texto tecleado: Postgres y JS no coinciden
+ * en lower() para todo Unicode): buscar, verificar y escribir el bloqueo es una sola
  * unidad, así N intentos en paralelo se cuentan en serie.
  */
 import {
   buscarParaIngreso,
+  buscarParaIngresoPorId,
   consumirCodigoRecuperacion,
   guardarEstadoBloqueo,
   obtenerSecretoTotp,
@@ -13,7 +15,7 @@ import {
   type ResultadoAcceso,
 } from "@/db/consultas/autenticacion";
 import { SIN_BLOQUEO, estaBloqueado, estadoTrasFallo } from "@/lib/bloqueo";
-import { conCandado } from "@/lib/candado";
+import { claveCandadoUsuario, conCandado } from "@/lib/candado";
 import { descifrar } from "@/lib/cifrado";
 import { hashearClave, verificarClave } from "@/lib/clave";
 import { cerrarSesionPorId, confirmarSegundoFactor, crearSesion, type SesionValida } from "@/lib/sesion";
@@ -38,12 +40,23 @@ export function intentarIngreso(
   const registrar = (usuarioId: number | null, resultado: ResultadoAcceso) =>
     registrarAcceso({ usuarioId, usuarioTexto: usuario, resultado, ip, userAgent });
 
-  return conCandado(usuario.toLowerCase(), async () => {
-    const u = await buscarParaIngreso(usuario);
-    if (!u || !u.activo) {
+  return (async () => {
+    const hallada = await buscarParaIngreso(usuario);
+    if (!hallada || !hallada.activo) {
       // Mismo costo que verificar: no se distingue por tiempo si el usuario existe.
       await hashearClave(clave);
-      await registrar(u?.id ?? null, "fallo");
+      await registrar(hallada?.id ?? null, "fallo");
+      return error;
+    }
+    return conCandado(claveCandadoUsuario(hallada.id), () => ingresarBajoCandado(hallada.id));
+  })();
+
+  async function ingresarBajoCandado(id: number): Promise<ResultadoIngreso> {
+    // Se relee dentro del candado: el estado de la primera lectura pudo quedar viejo.
+    const u = await buscarParaIngresoPorId(id);
+    if (!u || !u.activo) {
+      await hashearClave(clave);
+      await registrar(id, "fallo");
       return error;
     }
     if (estaBloqueado(u, ahora)) {
@@ -67,7 +80,7 @@ export function intentarIngreso(
     });
     if (!u.totpActivo) await registrar(u.id, "ingreso");
     return { tipo: "sesion", token, factorPendiente: u.totpActivo };
-  });
+  }
 }
 
 export type ResultadoFactor =
@@ -92,8 +105,8 @@ export function intentarFactor(
       userAgent,
     });
 
-  return conCandado(sesion.usuario.toLowerCase(), async () => {
-    const u = await buscarParaIngreso(sesion.usuario);
+  return conCandado(claveCandadoUsuario(sesion.usuarioId), async () => {
+    const u = await buscarParaIngresoPorId(sesion.usuarioId);
     if (!u || estaBloqueado(u, ahora)) {
       // Cuenta bloqueada: no se evalúa el código.
       await cerrarSesionPorId(sesion.sesionId);

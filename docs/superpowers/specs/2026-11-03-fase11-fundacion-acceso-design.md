@@ -145,8 +145,8 @@ bloqueada: "Usuario o clave incorrectos. Si falló varias veces, la cuenta se bl
 temporalmente; espere o pida al administrador que la desbloquee." Con la cuenta bloqueada
 la clave NO se verifica (se calcula el hash para igualar el costo): la respuesta es idéntica
 sea la clave correcta o no, sin oráculo, y esos intentos no suman ni prolongan el bloqueo.
-Buscar, verificar y escribir el estado de bloqueo van bajo un candado en memoria por cuenta,
-de modo que los intentos en paralelo se cuentan en serie. Cada intento queda en `accesos`
+Buscar, verificar y escribir el estado de bloqueo van bajo un candado en memoria por cuenta
+(por id, no por el texto tecleado, que Postgres y JS normalizan distinto), de modo que los intentos en paralelo se cuentan en serie. Cada intento queda en `accesos`
 con usuario tecleado, IP y user-agent. El parámetro `volver` solo acepta rutas internas
 (`/...`, no `//`).
 

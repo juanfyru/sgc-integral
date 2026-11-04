@@ -19,3 +19,8 @@ export async function conCandado<T>(clave: string, fn: () => Promise<T>): Promis
     if (colas.get(clave) === cola) colas.delete(clave);
   }
 }
+
+/** Clave única del candado de una cuenta: ingreso, factor, desbloqueo y restablecimiento la comparten. */
+export function claveCandadoUsuario(id: number): string {
+  return `usuario:${id}`;
+}
