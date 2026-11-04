@@ -1,15 +1,16 @@
 "use client";
 
 import { useActionState } from "react";
-import { ingresar, type EstadoAccion } from "@/app/admin/acciones";
+import { ingresar, type EstadoAccion } from "@/app/acciones-cuenta";
 
-export function FormularioIngreso() {
+export function FormularioIngreso({ volver = "/" }: { volver?: string }) {
   const [estado, accion, pendiente] = useActionState<EstadoAccion, FormData>(
     ingresar,
     null,
   );
   return (
     <form action={accion} className="flex w-full max-w-sm flex-col gap-4">
+      <input type="hidden" name="volver" value={volver} />
       <label className="flex flex-col gap-1 text-sm font-medium text-foreground">
         Usuario
         <input

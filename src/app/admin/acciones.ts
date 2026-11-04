@@ -1,7 +1,5 @@
 "use server";
 
-import { cookies, headers } from "next/headers";
-import { redirect } from "next/navigation";
 import {
   idNumerico,
   mutacion,
@@ -9,7 +7,6 @@ import {
   textoONulo,
   type EstadoAccion,
 } from "@/app/admin/comun";
-import { obtenerSql } from "@/db/cliente";
 import {
   anularVigente,
   crearDocumento,
@@ -18,83 +15,12 @@ import {
   editarVersionBorrador,
   obtenerPatronCodigo,
   publicarVersion,
-  registrarAuditoria,
   type AsociacionEntrada,
   type DatosDocumento,
   type DatosVersion,
 } from "@/db/consultas/admin";
-import { ipDePeticion } from "@/db/consultas/eventos";
-import { hashearClave, verificarClave } from "@/lib/clave";
-import { crearLimitador } from "@/lib/limite";
-import { cerrarSesion, crearSesion, COOKIE_SESION } from "@/lib/sesion";
-import { requerirSesion } from "@/lib/sesion-actual";
 
 export type { EstadoAccion } from "@/app/admin/comun";
-
-// 5 intentos de login por minuto por IP: frena fuerza bruta sin castigar
-// un dedazo. Instancia única en el NAS — el Map en memoria basta (D36).
-const permitirIngreso = crearLimitador({ limite: 5, ventanaMs: 60_000 });
-
-const ERROR_CREDENCIALES: EstadoAccion = {
-  ok: false,
-  error: "Usuario o clave incorrectos",
-};
-
-export async function ingresar(
-  _estadoPrevio: EstadoAccion,
-  formData: FormData,
-): Promise<EstadoAccion> {
-  const usuario = String(formData.get("usuario") ?? "").trim();
-  const clave = String(formData.get("clave") ?? "");
-  if (!usuario || !clave) return ERROR_CREDENCIALES;
-
-  const ip = ipDePeticion(await headers());
-  if (!permitirIngreso(ip)) {
-    return { ok: false, error: "Demasiados intentos. Espere un minuto." };
-  }
-
-  const sql = obtenerSql();
-  const [fila] = await sql`SELECT id, nombre, hash_clave FROM usuarios
-    WHERE usuario = ${usuario} AND activo`;
-  if (!fila) {
-    // Mismo costo que verificar: no se puede distinguir por tiempo si el
-    // usuario existe (enumeración).
-    await hashearClave(clave);
-    return ERROR_CREDENCIALES;
-  }
-  if (!(await verificarClave(fila.hash_clave, clave))) return ERROR_CREDENCIALES;
-
-  const { token } = await crearSesion(fila.id, {
-    ip,
-    userAgent: (await headers()).get("user-agent"),
-  });
-  (await cookies()).set(COOKIE_SESION, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    // La cookie dura más que la sesión a propósito: la BD es la fuente de
-    // verdad (12 h deslizantes); un token vencido simplemente no valida.
-    maxAge: 60 * 60 * 24 * 7,
-  });
-  await registrarAuditoria(sql, {
-    usuarioId: fila.id, accion: "ingreso", entidad: "sesion",
-    detalle: { ip },
-  });
-  redirect("/admin");
-}
-
-export async function salir(): Promise<void> {
-  const sesion = await requerirSesion();
-  const almacen = await cookies();
-  const token = almacen.get(COOKIE_SESION)?.value;
-  if (token) await cerrarSesion(token);
-  almacen.delete(COOKIE_SESION);
-  await registrarAuditoria(obtenerSql(), {
-    usuarioId: sesion.usuarioId, accion: "salida", entidad: "sesion",
-  });
-  redirect("/admin/ingreso");
-}
 
 // ── Parseo de formularios ──
 

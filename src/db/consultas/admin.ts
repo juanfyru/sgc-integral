@@ -19,12 +19,14 @@ export async function asegurarAdmin(
   const [existente] = await sql`SELECT id FROM usuarios WHERE usuario = ${usuario}`;
 
   if (!existente) {
-    await sql`INSERT INTO usuarios (usuario, nombre, hash_clave)
-      VALUES (${usuario}, ${nombre}, ${await hashearClave(clave)})`;
+    await sql`INSERT INTO usuarios (usuario, nombre, hash_clave, rol, debe_cambiar_clave)
+      VALUES (${usuario}, ${nombre}, ${await hashearClave(clave)}, 'admin_sgc', true)`;
     return "creado";
   }
   if (forzarClave) {
-    await sql`UPDATE usuarios SET hash_clave = ${await hashearClave(clave)}, activo = true
+    await sql`UPDATE usuarios SET hash_clave = ${await hashearClave(clave)}, activo = true,
+      debe_cambiar_clave = true, intentos_fallidos = 0, bloqueos_consecutivos = 0,
+      bloqueado_hasta = NULL, actualizado_en = now()
       WHERE id = ${existente.id}`;
     return "clave_actualizada";
   }

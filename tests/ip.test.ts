@@ -12,4 +12,11 @@ describe("ipDePeticion", () => {
   });
   it("ignora elementos vacios al final", () =>
     expect(ipDePeticion(new Headers({ "x-forwarded-for": "1.1.1.1, ," }), true)).toBe("1.1.1.1"));
+  it("devuelve null si el valor no es una IP válida (evita romper columnas inet)", () => {
+    expect(ipDePeticion(new Headers({ "x-forwarded-for": "1.2.3.4:5678" }), true)).toBeNull();
+    expect(ipDePeticion(new Headers({ "x-forwarded-for": "unknown" }), true)).toBeNull();
+    expect(ipDePeticion(new Headers({ "x-real-ip": "basura" }), true)).toBeNull();
+  });
+  it("acepta IPv6", () =>
+    expect(ipDePeticion(new Headers({ "x-forwarded-for": "2001:db8::1" }), true)).toBe("2001:db8::1"));
 });

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
-import { salir } from "@/app/admin/acciones";
+import { salir } from "@/app/acciones-cuenta";
 import { COOKIE_SESION, validarSesion } from "@/lib/sesion";
 
 // Todo el panel es autenticado y por-petición: nunca se prerenderiza en build.

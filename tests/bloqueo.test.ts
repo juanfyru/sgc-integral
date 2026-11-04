@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SIN_BLOQUEO, estaBloqueado, registrarIntentoFallido, type EstadoBloqueo } from "@/lib/bloqueo";
+import { SIN_BLOQUEO, estadoTrasFallo, estaBloqueado, registrarIntentoFallido, type EstadoBloqueo } from "@/lib/bloqueo";
 
 const t0 = new Date("2026-11-03T10:00:00Z");
 describe("bloqueo por intentos", () => {
@@ -25,5 +25,19 @@ describe("bloqueo por intentos", () => {
     expect(estaBloqueado(e, t0)).toBe(true);
     expect(estaBloqueado(e, new Date(t0.getTime() + 61_000))).toBe(false);
     expect(estaBloqueado(SIN_BLOQUEO, t0)).toBe(false);
+  });
+});
+
+describe("estadoTrasFallo (R16: sin acumular durante un bloqueo)", () => {
+  const bloqueado: EstadoBloqueo = { intentosFallidos: 0, bloqueosConsecutivos: 2, bloqueadoHasta: new Date(t0.getTime() + 30 * 60_000) };
+  it("con la cuenta bloqueada el estado no cambia (ni cuenta, ni extiende, ni reemplaza)", () => {
+    expect(estadoTrasFallo(bloqueado, t0)).toBe(bloqueado);
+    const casiQuinto = { ...bloqueado, intentosFallidos: 4 };
+    expect(estadoTrasFallo(casiQuinto, t0)).toBe(casiQuinto);
+  });
+  it("libre, el fallo cuenta como siempre", () => {
+    expect(estadoTrasFallo(SIN_BLOQUEO, t0).intentosFallidos).toBe(1);
+    const vencido = { ...bloqueado, bloqueadoHasta: new Date(t0.getTime() - 1) };
+    expect(estadoTrasFallo(vencido, t0).intentosFallidos).toBe(1);
   });
 });

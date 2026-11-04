@@ -35,3 +35,12 @@ export function registrarIntentoFallido(estado: EstadoBloqueo, ahora: Date): Est
 export function estaBloqueado(estado: EstadoBloqueo, ahora: Date): boolean {
   return estado.bloqueadoHasta !== null && estado.bloqueadoHasta.getTime() > ahora.getTime();
 }
+
+/**
+ * Estado tras una clave errónea. Con la cuenta ya bloqueada no cambia nada:
+ * los intentos durante el bloqueo no se acumulan ni lo prolongan (solo cuentan
+ * los hechos con la cuenta libre).
+ */
+export function estadoTrasFallo(estado: EstadoBloqueo, ahora: Date): EstadoBloqueo {
+  return estaBloqueado(estado, ahora) ? estado : registrarIntentoFallido(estado, ahora);
+}

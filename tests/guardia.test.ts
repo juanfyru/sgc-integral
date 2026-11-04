@@ -7,8 +7,8 @@ import {
   editarDocumentoAccion,
   editarVersionAccion,
   publicarAccion,
-  salir,
 } from "@/app/admin/acciones";
+import { salir } from "@/app/acciones-cuenta";
 import {
   alternarAccion,
   borrarAccion,

@@ -109,7 +109,7 @@ describe("sesiones", () => {
     const [a] = await sql()`SELECT ultimo_uso_en FROM sesiones WHERE id = ${s!.sesionId}`;
     await validarSesion(token);
     const [b] = await sql()`SELECT ultimo_uso_en FROM sesiones WHERE id = ${s!.sesionId}`;
-    expect(String(b.ultimo_uso_en)).toBe(String(a.ultimo_uso_en));
+    expect(new Date(b.ultimo_uso_en).getTime()).toBe(new Date(a.ultimo_uso_en).getTime());
     await sql()`UPDATE sesiones SET ultimo_uso_en = now() - interval '2 minutes' WHERE id = ${s!.sesionId}`;
     await validarSesion(token);
     const [c] = await sql()`SELECT ultimo_uso_en FROM sesiones WHERE id = ${s!.sesionId}`;
@@ -156,5 +156,16 @@ describe("asegurarAdmin", () => {
     expect(await asegurarAdmin("admin_prueba", "Admin", "clave-dos", true)).toBe("clave_actualizada");
     [u] = await sql()`SELECT hash_clave FROM usuarios WHERE usuario = 'admin_prueba'`;
     expect(await verificarClave(u.hash_clave, "clave-dos")).toBe(true);
+  });
+
+  it("crea con rol admin_sgc y debe_cambiar_clave; forzarClave desbloquea y reinicia contadores", async () => {
+    let [u] = await sql()`SELECT rol, debe_cambiar_clave FROM usuarios WHERE usuario = 'admin_prueba'`;
+    expect(u).toEqual({ rol: "admin_sgc", debe_cambiar_clave: true });
+    await sql()`UPDATE usuarios SET debe_cambiar_clave = false, activo = false, intentos_fallidos = 3,
+      bloqueos_consecutivos = 2, bloqueado_hasta = now() + interval '1 hour' WHERE usuario = 'admin_prueba'`;
+    await asegurarAdmin("admin_prueba", "Admin", "clave-tres", true);
+    [u] = await sql()`SELECT debe_cambiar_clave, activo, intentos_fallidos, bloqueos_consecutivos, bloqueado_hasta
+      FROM usuarios WHERE usuario = 'admin_prueba'`;
+    expect(u).toEqual({ debe_cambiar_clave: true, activo: true, intentos_fallidos: 0, bloqueos_consecutivos: 0, bloqueado_hasta: null });
   });
 });
