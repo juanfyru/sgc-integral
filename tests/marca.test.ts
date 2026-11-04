@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { contrasteWCAG } from "../src/lib/contraste";
-import { oklchAHex } from "../src/lib/color";
+import { hexAOklch, oklchAHex } from "../src/lib/color";
 import {
   MARCA_DEFECTO,
   TOKENS_MARCA,
@@ -66,6 +66,7 @@ describe("derivados sobre una malla de 12 tonos × 5 luminosidades × 3 cromas",
   for (let h = 0; h < 360; h += 30)
     for (const l of [0.25, 0.35, 0.45, 0.55, 0.65])
       for (const c of [0.05, 0.1, 0.15]) casos.push(oklchAHex({ l, c, h }));
+  casos.push("#0000ff", "#ff0000", "#ffd100", "#8000ff");
   it.each(casos)("%s", (hex) => {
     const t = derivarMarca({ primario: hex, secundario: hex });
     expect(contrasteWCAG(t.oscuro.marca, "#161a20")).toBeGreaterThanOrEqual(4.5);
@@ -83,4 +84,40 @@ it("estiloMarca emite las catorce variables con sufijo", () => {
   const e = estiloMarca(derivarMarca(MARCA_DEFECTO));
   expect(Object.keys(e).sort()).toEqual(TOKENS_MARCA.flatMap((t) => [`--${t}-c`, `--${t}-o`]).sort());
   expect(e["--marca-relleno-c"]).toBe("#1b4e8e");
+});
+
+it("los valores por defecto no cambian con el mapeo a gamut", () => {
+  expect(sugerirPrimario("#9ecbff")).toBe("#4a74a3");
+  const t = derivarMarca(MARCA_DEFECTO);
+  expect(t.claro["marca-oscurecida"]).toBe("#003775");
+  expect(t.oscuro.marca).toBe("#5083c8");
+  expect(t.claro["marca-2-texto"]).toBe("#00822f");
+});
+
+describe("los ajustes de luminosidad conservan el tono", () => {
+  const desvio = (a: string, b: string) => {
+    const d = Math.abs(hexAOklch(a).h - hexAOklch(b).h) % 360;
+    return Math.min(d, 360 - d);
+  };
+  it.each(["#fcd116", "#f39200", "#8000ff"])("%s", (hex) => {
+    const t = derivarMarca({ primario: hex, secundario: hex });
+    const derivados = [
+      t.oscuro.marca,
+      t.claro["marca-2-texto"],
+      t.oscuro["marca-2-texto"],
+      sugerirPrimario(hex),
+      sugerirSecundario(hex),
+    ];
+    for (const d of derivados) {
+      if (hexAOklch(d).c >= 0.02) expect(desvio(hex, d)).toBeLessThanOrEqual(3);
+    }
+  });
+});
+
+it("derivarMarca rechaza colores inválidos y usa los de la marca por defecto", () => {
+  const t = derivarMarca({ primario: "red;x:y", secundario: "#2e9b47" });
+  expect(t.claro["marca-relleno"]).toBe("#1b4e8e");
+  const e = estiloMarca(t);
+  for (const v of Object.values(e)) expect(v).toMatch(/^#[0-9a-f]{6}$/);
+  expect(derivarMarca({ primario: "#1B4E8E", secundario: "#2E9B47" }).claro.marca).toBe("#1b4e8e");
 });

@@ -1,4 +1,4 @@
-import { aclararHasta, ajustarLuminosidad, oscurecerHasta } from "./color";
+import { aclararHasta, ajustarLuminosidad, hexValido, normalizarHex, oscurecerHasta } from "./color";
 import { contrasteWCAG } from "./contraste";
 
 export const SUPERFICIES = {
@@ -43,7 +43,10 @@ const TINTA = "#16181d";
 const FONDO_CLARO = SUPERFICIES.claro.fondo;
 const PANEL_OSCURO = SUPERFICIES.oscuro.panel;
 
-export function derivarMarca({ primario, secundario }: ColoresMarca): TokensMarca {
+export function derivarMarca(colores: ColoresMarca): TokensMarca {
+  // Estos valores terminan en el style de <html>: un hex inválido nunca pasa.
+  const primario = hexValido(colores.primario) ? normalizarHex(colores.primario) : MARCA_DEFECTO.primario;
+  const secundario = hexValido(colores.secundario) ? normalizarHex(colores.secundario) : MARCA_DEFECTO.secundario;
   const oscurecida = ajustarLuminosidad(primario, -0.08);
   const sobreBlanco = contrasteWCAG(secundario, BLANCO) >= 4.5;
   const sobreTinta = contrasteWCAG(secundario, TINTA) >= 4.5;

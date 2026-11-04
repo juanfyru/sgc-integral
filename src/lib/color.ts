@@ -39,26 +39,52 @@ export function hexAOklch(hex: string): Oklch {
   return { l: L, c, h };
 }
 
-export function oklchAHex({ l, c, h }: Oklch): string {
+function oklchALineal({ l, c, h }: Oklch): [number, number, number] {
   const rad = (h * Math.PI) / 180;
   const A = c * Math.cos(rad);
   const B = c * Math.sin(rad);
   const l_ = (l + 0.3963377774 * A + 0.2158037573 * B) ** 3;
   const m_ = (l - 0.1055613458 * A - 0.0638541728 * B) ** 3;
   const s_ = (l - 0.0894841775 * A - 1.291485548 * B) ** 3;
-  const r = 4.0767416621 * l_ - 3.3077115913 * m_ + 0.2309699292 * s_;
-  const g = -1.2684380046 * l_ + 2.6097574011 * m_ - 0.3413193965 * s_;
-  const b = -0.0041960863 * l_ - 0.7034186147 * m_ + 1.707614701 * s_;
+  return [
+    4.0767416621 * l_ - 3.3077115913 * m_ + 0.2309699292 * s_,
+    -1.2684380046 * l_ + 2.6097574011 * m_ - 0.3413193965 * s_,
+    -0.0041960863 * l_ - 0.7034186147 * m_ + 1.707614701 * s_,
+  ];
+}
+
+export function oklchAHex(color: Oklch): string {
   const canal = (v: number) => {
     const x = Math.min(255, Math.max(0, Math.round(deLineal(v))));
     return x.toString(16).padStart(2, "0");
   };
+  const [r, g, b] = oklchALineal(color);
   return `#${canal(r)}${canal(g)}${canal(b)}`;
+}
+
+const EPS_GAMUT = 1e-4;
+
+function enGamut(o: Oklch): boolean {
+  return oklchALineal(o).every((v) => v >= -EPS_GAMUT && v <= 1 + EPS_GAMUT);
+}
+
+// Conserva L y h y baja C lo mínimo para entrar en sRGB; el recorte por canal
+// de oklchAHex desplazaría el tono en colores saturados.
+function mapearAGamut(o: Oklch): Oklch {
+  if (enGamut(o)) return o;
+  let bajo = 0;
+  let alto = o.c;
+  for (let i = 0; i < 30; i++) {
+    const medio = (bajo + alto) / 2;
+    if (enGamut({ ...o, c: medio })) bajo = medio;
+    else alto = medio;
+  }
+  return { ...o, c: bajo };
 }
 
 export function ajustarLuminosidad(hex: string, delta: number): string {
   const o = hexAOklch(hex);
-  return oklchAHex({ ...o, l: Math.min(1, Math.max(0, o.l + delta)) });
+  return oklchAHex(mapearAGamut({ ...o, l: Math.min(1, Math.max(0, o.l + delta)) }));
 }
 
 const PASO_L = 0.02;
@@ -69,7 +95,7 @@ export function aclararHasta(hex: string, fondo: string, minimo: number, topeL =
   let l = o.l;
   while (contrasteWCAG(actual, fondo) < minimo && l < topeL) {
     l = Math.min(topeL, l + PASO_L);
-    actual = oklchAHex({ ...o, l });
+    actual = oklchAHex(mapearAGamut({ ...o, l }));
   }
   return actual;
 }
@@ -80,7 +106,7 @@ export function oscurecerHasta(hex: string, fondo: string, minimo: number, pisoL
   let l = o.l;
   while (contrasteWCAG(actual, fondo) < minimo && l > pisoL) {
     l = Math.max(pisoL, l - PASO_L);
-    actual = oklchAHex({ ...o, l });
+    actual = oklchAHex(mapearAGamut({ ...o, l }));
   }
   return actual;
 }
