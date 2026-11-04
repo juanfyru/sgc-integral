@@ -61,6 +61,18 @@ export function describirEvento(e: EventoAuditoria): string {
       return "Activó el segundo factor";
     case "quitar_segundo_factor":
       return "Desactivó el segundo factor";
+    case "crear_usuario":
+      return `Creó el usuario «${texto(d.usuario) ?? "?"}»`;
+    case "editar_usuario":
+      return `Editó el usuario «${texto(d.usuario) ?? "?"}»`;
+    case "desactivar_usuario":
+      return `Desactivó el usuario «${texto(d.usuario) ?? "?"}»`;
+    case "reactivar_usuario":
+      return `Reactivó el usuario «${texto(d.usuario) ?? "?"}»`;
+    case "restablecer_clave":
+      return `Restableció la clave de «${texto(d.usuario) ?? "?"}»`;
+    case "desbloquear_usuario":
+      return `Desbloqueó al usuario «${texto(d.usuario) ?? "?"}»`;
     case "editar_configuracion":
       return "Editó los textos institucionales";
   }

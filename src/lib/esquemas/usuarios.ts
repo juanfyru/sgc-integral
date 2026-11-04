@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ROLES } from "../roles";
+import { parsearFormulario } from "../validacion";
 
 const vacioANulo = (v: unknown) => (v === "" || v === undefined ? null : v);
 
@@ -31,6 +32,11 @@ export const EsquemaUsuario = z
   });
 
 export type DatosUsuarioFormulario = z.output<typeof EsquemaUsuario>;
+
+/** Pura y fuera de "use server": el campo `id` de ruta (edición) se omite antes del esquema estricto. */
+export function parsearUsuario(formData: FormData): DatosUsuarioFormulario {
+  return parsearFormulario(formData, EsquemaUsuario, { omitir: ["id"] });
+}
 
 export const EsquemaFilaLote = z
   .object({

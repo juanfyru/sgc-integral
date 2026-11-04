@@ -59,3 +59,16 @@ describe("describirEvento", () => {
     expect(describirEvento({ accion, entidad: "usuario", entidadId: 1, detalle: {} })).toBe(texto);
   });
 });
+
+describe("acciones de administración de usuarios", () => {
+  it.each([
+    ["crear_usuario", "Creó el usuario «maria»"],
+    ["editar_usuario", "Editó el usuario «maria»"],
+    ["desactivar_usuario", "Desactivó el usuario «maria»"],
+    ["reactivar_usuario", "Reactivó el usuario «maria»"],
+    ["restablecer_clave", "Restableció la clave de «maria»"],
+    ["desbloquear_usuario", "Desbloqueó al usuario «maria»"],
+  ])("%s se describe como «%s»", (accion, texto) => {
+    expect(describirEvento({ accion, entidad: "usuario", entidadId: 1, detalle: { usuario: "maria" } })).toBe(texto);
+  });
+});
