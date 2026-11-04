@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { FormularioAviso } from "@/componentes/cuenta/FormularioAviso";
-import { obtenerTextos } from "@/db/consultas/mapa-admin";
+import { obtenerEntidad } from "@/db/consultas/entidad";
 import { rutaInterna } from "@/lib/rutas";
 import { exigirSesionConPendientes } from "@/lib/paginas";
 
@@ -20,7 +20,7 @@ export default async function PaginaAvisoDatos({
   const sesion = await exigirSesionConPendientes();
   if (sesion.debeCambiarClave) redirect("/cuenta/clave-inicial");
   if (sesion.aceptoDatos) redirect(rutaInterna(volver));
-  const texto = (await obtenerTextos()).aviso_datos_personales?.trim() || AVISO_POR_DEFECTO;
+  const texto = (await obtenerEntidad()).avisoDatosPersonales.trim() || AVISO_POR_DEFECTO;
   const parrafos = texto.split(/\r?\n+/).filter((p) => p.trim());
   return (
     <>

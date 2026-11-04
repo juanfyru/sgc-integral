@@ -5,7 +5,7 @@ import QRCode from "qrcode";
 import { iniciarTotpAccion, salir } from "@/app/acciones-cuenta";
 import { FormularioDesactivarTotp, PanelSegundoFactor } from "@/componentes/cuenta/PanelSegundoFactor";
 import { obtenerSecretoTotp } from "@/db/consultas/autenticacion";
-import { obtenerTextos } from "@/db/consultas/mapa-admin";
+import { obtenerMarca } from "@/db/consultas/entidad";
 import { descifrar } from "@/lib/cifrado";
 import { pendienteDeCuenta, puedeDesactivarTotp, rutaDePendiente } from "@/lib/cuenta-estado";
 import { exigirSesionConPendientes } from "@/lib/paginas";
@@ -84,7 +84,7 @@ export default async function PaginaSegundoFactor({
         </PanelSegundoFactor>
       );
     } else {
-      const entidad = (await obtenerTextos()).nombre_entidad?.trim() || "SGC Integral";
+      const entidad = (await obtenerMarca()).nombre;
       // PNG en data: URL (la CSP permite img-src data:); nunca SVG inyectado.
       const qr = await QRCode.toDataURL(uriTotp(secreto, sesion.usuario, entidad), { margin: 1, width: 224 });
       contenido = (

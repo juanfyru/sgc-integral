@@ -8,7 +8,7 @@
  * Ejecutar: npm run db:seed   (borra y recarga TODO — solo desarrollo/demo)
  */
 import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { eq } from "drizzle-orm";
 import { rutaBaseAlmacen } from "../../lib/almacen";
@@ -18,6 +18,8 @@ import { generarPlaceholder } from "../placeholders";
 import { limpiarTodo, sembrarBase, type Db } from "./minima";
 
 export const CLAVE_DEMO = "Demo-SGC-2026-clave";
+const NOMBRE_ENTIDAD = "ESE Hospital Nuestra Señora de Fátima de Suaza";
+const LOGO_DEMO = path.join("src", "db", "semillas", "recursos", "logo-demo.png");
 
 const slug = (texto: string) =>
   texto
@@ -27,6 +29,20 @@ const slug = (texto: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
 
+/** Copia el logo demo al almacén (marca/logo-<hash>.png) y registra sus tres claves. */
+async function sembrarLogoDemo(db: Db, almacen: string): Promise<void> {
+  const hash = createHash("sha256").update(await readFile(LOGO_DEMO)).digest("hex").slice(0, 8);
+  const ruta = `marca/logo-${hash}.png`;
+  const destino = path.join(almacen, ...ruta.split("/"));
+  await mkdir(path.dirname(destino), { recursive: true });
+  await copyFile(LOGO_DEMO, destino);
+  await db.insert(e.configuracion).values([
+    { clave: "logo_ruta", valor: ruta },
+    { clave: "logo_mime", valor: "image/png" },
+    { clave: "logo_version", valor: hash },
+  ]);
+}
+
 export async function sembrarDemo(db: Db): Promise<void> {
   await limpiarTodo(db);
   const { tipoPorSigla } = await sembrarBase(db);
@@ -34,8 +50,13 @@ export async function sembrarDemo(db: Db): Promise<void> {
 
   await db
     .update(e.configuracion)
-    .set({ valor: "ESE Hospital Nuestra Señora de Fátima de Suaza" })
+    .set({ valor: NOMBRE_ENTIDAD })
     .where(eq(e.configuracion.clave, "nombre_entidad"));
+  await db
+    .update(e.configuracion)
+    .set({ valor: "HNSF" })
+    .where(eq(e.configuracion.clave, "sigla_entidad"));
+  await sembrarLogoDemo(db, almacen);
   await db
     .update(e.configuracion)
     .set({ valor: "Comprometidos con la vida y el bienestar de nuestra comunidad" })
@@ -511,6 +532,7 @@ export async function sembrarDemo(db: Db): Promise<void> {
           titulo: def.titulo,
           numeroVersion: v.numero,
           ext: a.ext,
+          entidad: NOMBRE_ENTIDAD,
         });
         const destino = path.join(almacen, ...ruta.split("/"));
         await mkdir(path.dirname(destino), { recursive: true });
@@ -637,6 +659,13 @@ async function sembrarEstructuraYUsuarios(
         aceptoDatosEn: new Date(),
       })
       .returning();
+    await db.insert(e.notificaciones).values({
+      usuarioId: fila.id,
+      tipo: "bienvenida",
+      titulo: "Bienvenida al SGC Integral",
+      cuerpo: "Explore el mapa de procesos y revise su cuenta en Mi cuenta.",
+      enlace: "/cuenta",
+    });
     if (u.proceso) {
       await db
         .insert(e.usuarioProcesos)

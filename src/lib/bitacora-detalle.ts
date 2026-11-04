@@ -53,6 +53,10 @@ export function describirEvento(e: EventoAuditoria): string {
       return `Anuló ${cod ?? "un documento"} (versión vigente ${d.versionAnulada ?? "?"})`;
     case "exporto_maestro":
       return `Emitió el Listado Maestro (${texto(d.formato) ?? "?"}, ${texto(d.incluir) ?? "?"})`;
+    case "subir_logo":
+      return `Cambió el logo de la entidad («${texto(d.nombre) ?? "?"}», ${d.ancho ?? "?"} × ${d.alto ?? "?"})`;
+    case "quitar_logo":
+      return "Quitó el logo de la entidad";
     case "cambiar_clave":
       return "Cambió su clave";
     case "aceptar_aviso_datos":

@@ -32,7 +32,7 @@ export async function limpiarTodo(db: Db): Promise<void> {
       configuracion, tipos_documento, documentos, documento_versiones,
       archivos, documento_proceso, documento_relaciones, areas, cargos,
       usuarios, usuario_procesos, sesiones, accesos, codigos_recuperacion,
-      auditoria, eventos_consulta, busquedas
+      auditoria, eventos_consulta, busquedas, notificaciones
     RESTART IDENTITY CASCADE
   `);
 }
@@ -44,6 +44,9 @@ export async function sembrarBase(
   await db.insert(e.configuracion).values([
     { clave: "nombre_entidad", valor: "Entidad sin configurar" },
     { clave: "subtitulo_mapa", valor: "Enfoque basado en procesos — NTC ISO 9001:2015" },
+    { clave: "sigla_entidad", valor: "SGC" },
+    { clave: "color_primario", valor: "#1b4e8e" },
+    { clave: "color_secundario", valor: "#2e9b47" },
     { clave: "lema", valor: "" },
     { clave: "titulo_phva", valor: "Mejora Continua" },
     { clave: "texto_phva", valor: "" },

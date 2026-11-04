@@ -81,3 +81,17 @@ describe("acciones de administración de usuarios", () => {
     expect(describirEvento({ accion, entidad: "usuario", entidadId: 1, detalle: { usuario: "maria" } })).toBe(texto);
   });
 });
+
+describe("describirEvento — marca de la entidad", () => {
+  it("subir_logo", () => {
+    expect(describirEvento({
+      accion: "subir_logo", entidad: "configuracion", entidadId: null,
+      detalle: { nombre: "logo.png", bytes: 10, mime: "image/png", ancho: 256, alto: 128 },
+    })).toBe("Cambió el logo de la entidad («logo.png», 256 × 128)");
+  });
+
+  it("quitar_logo", () => {
+    expect(describirEvento({ accion: "quitar_logo", entidad: "configuracion", entidadId: null, detalle: {} }))
+      .toBe("Quitó el logo de la entidad");
+  });
+});

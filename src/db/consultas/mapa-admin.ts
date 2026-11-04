@@ -227,12 +227,9 @@ export async function editarTipo(
 export const CLAVES_TEXTO: ReadonlyArray<{
   clave: string; etiqueta: string; textarea?: boolean;
 }> = [
-  { clave: "nombre_entidad", etiqueta: "Nombre de la entidad" },
   { clave: "subtitulo_mapa", etiqueta: "Subtítulo del mapa" },
-  { clave: "lema", etiqueta: "Lema institucional", textarea: true },
   { clave: "titulo_phva", etiqueta: "Título del ciclo PHVA" },
   { clave: "texto_phva", etiqueta: "Texto del ciclo PHVA", textarea: true },
-  { clave: "aviso_datos_personales", etiqueta: "Aviso de tratamiento de datos personales", textarea: true },
   { clave: "patron_codigo", etiqueta: "Patrón del código (expresión regular)" },
 ];
 

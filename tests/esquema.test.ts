@@ -306,3 +306,20 @@ describe("Fase 11: roles, estructura y accesos en BD", () => {
     expect(fk.confdeltype).toBe("r");
   });
 });
+
+describe("marca y notificaciones de la semilla demo", () => {
+  it("la demo trae sigla, colores y logo de 8 hex", async () => {
+    const filas = await sql`SELECT clave, valor FROM configuracion
+      WHERE clave IN ('sigla_entidad', 'color_primario', 'logo_version')`;
+    const c = Object.fromEntries(filas.map((f) => [f.clave, f.valor]));
+    expect(c.sigla_entidad).toBe("HNSF");
+    expect(c.color_primario).toBe("#1b4e8e");
+    expect(c.logo_version).toMatch(/^[0-9a-f]{8}$/);
+  });
+  it("existe una notificación de bienvenida para gerente", async () => {
+    const [n] = await sql`SELECT count(*)::int AS n FROM notificaciones nt
+      JOIN usuarios u ON u.id = nt.usuario_id
+      WHERE u.usuario = 'gerente' AND nt.tipo = 'bienvenida'`;
+    expect(n.n).toBeGreaterThanOrEqual(1);
+  });
+});

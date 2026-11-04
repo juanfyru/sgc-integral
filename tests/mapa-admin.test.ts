@@ -191,11 +191,11 @@ describe("tipos_documento CRUD", () => {
 describe("textos institucionales", () => {
   it("guarda por UPSERT y valida el patrón de código", async () => {
     const antes = await obtenerTextos();
-    await guardarTextos({ ...antes, lema: "ZZ lema de prueba" }, usuarioId);
+    await guardarTextos({ ...antes, titulo_phva: "ZZ título de prueba" }, usuarioId);
     const despues = await obtenerTextos();
-    expect(despues.lema).toBe("ZZ lema de prueba");
+    expect(despues.titulo_phva).toBe("ZZ título de prueba");
     // restaurar
-    await guardarTextos({ ...despues, lema: antes.lema ?? "" }, usuarioId);
+    await guardarTextos({ ...despues, titulo_phva: antes.titulo_phva ?? "" }, usuarioId);
 
     await expect(
       guardarTextos({ patron_codigo: "(sin cerrar" }, usuarioId),

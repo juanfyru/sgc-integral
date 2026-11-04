@@ -13,18 +13,18 @@ export type DatosPlaceholder = {
   titulo: string;
   numeroVersion: number;
   ext: ExtPlaceholder;
+  entidad: string;
 };
 
 const AVISO =
   "Archivo placeholder de desarrollo — contenido ficticio, no es un documento real.";
-const ENTIDAD = "ESE Hospital Nuestra Señora de Fátima de Suaza";
 
 function lineas(datos: DatosPlaceholder): string[] {
   return [
     datos.codigo,
     datos.titulo,
     `Versión ${datos.numeroVersion}`,
-    ENTIDAD,
+    datos.entidad,
     AVISO,
   ];
 }

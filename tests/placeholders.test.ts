@@ -28,6 +28,7 @@ describe("generarPlaceholder — magic bytes correctos", () => {
         titulo: "Procedimiento de Ingreso de Personal",
         numeroVersion: 1,
         ext: caso.ext,
+        entidad: "Entidad de prueba",
       });
       expect(buffer.length).toBeGreaterThan(0);
       const detectado = await fileTypeFromBuffer(buffer);
@@ -41,12 +42,14 @@ describe("generarPlaceholder — magic bytes correctos", () => {
       titulo: "Formato de Acta de Reunión",
       numeroVersion: 1,
       ext: "pdf",
+      entidad: "Entidad de prueba",
     });
     const b = await generarPlaceholder({
       codigo: "FT-CAL-002",
       titulo: "Formato de Informe",
       numeroVersion: 1,
       ext: "pdf",
+      entidad: "Entidad de prueba",
     });
     expect(a.equals(b)).toBe(false);
   });
