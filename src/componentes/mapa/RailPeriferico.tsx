@@ -20,7 +20,7 @@ export function RailPeriferico({
       className="rounded-2xl border border-border bg-card p-3 shadow-xs"
       style={{ "--color-banda": acento } as React.CSSProperties}
     >
-      <header className="mb-2 flex items-center gap-2 rounded-lg bg-[var(--color-banda)] px-2.5 py-2 text-white">
+      <header className="mb-2 flex items-center gap-2 rounded-lg banda-solido px-2.5 py-2 text-white">
         {tipo === "entrada" ? (
           <LogIn className="size-4" aria-hidden="true" />
         ) : (
