@@ -2,7 +2,7 @@
 
 > Se actualiza al cierre de cada fase. Última actualización: **2026-11-03**, cierre de la
 > **Fase 11 — Fundación de acceso**, fusionada en `main` el 2026-11-04 tras la prueba
-> del usuario (sin publicar en `origin`). La variante nació el mismo día, bifurcada de `sgc-suaza` en
+> del usuario y publicada en `origin`. La variante nació el mismo día, bifurcada de `sgc-suaza` en
 > `9644ceb`; el diseño maestro de las fases 11–20
 > (`docs/superpowers/specs/2026-11-03-sgc-integral-plataforma-design.md`) está aprobado
 > y `AGENTS.md` ya describe el piso de despliegue nuevo.
@@ -31,11 +31,14 @@
    F11-D30; el usuario lo repitió con la sección "Qué probar y cómo (Fase 11)" el
    2026-11-04. La revisión final de la rama dio «Con correcciones» y la ola final de
    arreglos (F11-D31 a F11-D34 y los menores de "Hecho") entró antes de fusionar. La rama
-   se fusionó en `main` (avance rápido) y se borró. Pendiente: push de `main` a `origin`
-   (`juanfyru/sgc-integral`), que va por detrás desde `755e8ca`, el diseño maestro.
+   se fusionó en `main` (avance rápido), se borró y `main` se publicó en `origin`
+   (`juanfyru/sgc-integral`) el 2026-11-04. El test de la semilla demo ya no cuenta filas:
+   comprueba áreas y cargos por nombre, para que probar en la BD de desarrollo no lo rompa.
 2. **Lo que sigue:** escribir la spec y el plan de la **Fase 12 — Nueva estructura
    visual** (spec §8 Fase 12, §5.10 marca configurable, §5.11 sistema visual) y
-   ejecutarla, con la metodología de `AGENTS.md`. La marca visible todavía dice "SGC
+   ejecutarla, con la metodología de `AGENTS.md`. Incluye además el índice único sobre
+   `lower(usuario)` (migración 0003, ver Deuda técnica), por decisión del usuario del
+   2026-11-04. La marca visible todavía dice "SGC
    Documental" (`src/app/layout.tsx`, `src/componentes/EncabezadoSitio.tsx`): la Fase 12
    la vuelve configuración por entidad. Insumos que dependen del usuario: spec §11
    (SMTP, versión de Windows del servidor, planta de cargos real, plantilla del plan de
@@ -133,6 +136,11 @@ desarrollo en `http://localhost:3002`.
    caracteres, no común, sin el usuario) → **Aviso de datos personales** → portal. El
    cambio obligatorio aparece porque el paso 1 resembró la base y `admin:asegurar`
    recreó la cuenta; sobre una base no resembrada el admin existente solo ve el aviso.
+   **`ADMIN_CLAVE` solo se aplica al crear la cuenta:** cambiarla después en `.env.local`
+   no cambia la clave de un `admin` que ya existe (el ingreso responde "Usuario o clave
+   incorrectos"). Para aplicarla, `npm run admin:asegurar -- --forzar-clave`, que también
+   pide cambiarla al ingresar. La clave real va solo en `.env.local`, nunca en
+   `.env.example` ni `.env.ensayo`, que están versionados.
 3. Menú con su nombre → **Administración** → **Estructura**: crear un área (**Nueva
    área**) y un cargo (**Nuevo cargo**, con área y cargo superior). **Usuarios** →
    **Nuevo usuario**: crear un usuario por rol y anotar la clave temporal que se muestra
@@ -734,8 +742,8 @@ esta tabla quedan solo como equivalencia, porque algunos tests los citan en sus 
   bloqueando la cuenta). Entra con un código de recuperación, o el administrador le quita
   el segundo factor y lo vuelve a activar. Va al **manual técnico de la Fase 20**, junto
   con la generación de `APP_SECRETO` al instalar.
-- **Propuesta: índice único sobre `lower(usuario)`** en la próxima migración (0003, solo
-  añade). Hoy la unicidad sin distinguir mayúsculas es por convención: el patrón zod
+- **Índice único sobre `lower(usuario)`: el usuario decidió (2026-11-04) hacerlo en la
+  Fase 12**, en la próxima migración (0003, solo añade). Hoy la unicidad sin distinguir mayúsculas es por convención: el patrón zod
   fuerza minúsculas y `asegurarAdmin` busca con `lower()` y crea en minúsculas (F11-D32),
   pero el `UNIQUE` de la columna distingue mayúsculas. No se hizo en la Fase 11 porque la
   migración fallaría en el arranque sobre una base heredada que tenga `admin` y `Admin` a

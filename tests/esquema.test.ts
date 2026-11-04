@@ -161,9 +161,27 @@ describe("búsqueda en español (FTS + trigramas + unaccent)", () => {
 });
 
 describe("estados del seed (datos de demostración)", () => {
-  it("la demo trae cinco áreas, nueve cargos y cinco usuarios de ejemplo con sus roles", async () => {
-    expect((await sql`SELECT count(*)::int AS n FROM areas`)[0].n).toBe(5);
-    expect((await sql`SELECT count(*)::int AS n FROM cargos`)[0].n).toBe(9);
+  // Por nombre y no por conteo: la BD de desarrollo es también la de las pruebas manuales,
+  // y un área o cargo creado al probar no debe romper esta verificación de la semilla.
+  it("la demo trae sus cinco áreas, sus nueve cargos y cinco usuarios de ejemplo con sus roles", async () => {
+    const AREAS_DEMO = ["Gerencia", "Subgerencia Científica", "Subgerencia Administrativa", "Oficina de Calidad", "Control Interno"];
+    const areas = await sql`SELECT nombre FROM areas WHERE nombre = ANY(${AREAS_DEMO})`;
+    expect(areas.map((a) => a.nombre).sort()).toEqual([...AREAS_DEMO].sort());
+    const CARGOS_DEMO = [
+      ["Gerencia", "Gerente"],
+      ["Subgerencia Científica", "Auxiliar de Enfermería"],
+      ["Subgerencia Científica", "Enfermera Jefe"],
+      ["Subgerencia Científica", "Médico Coordinador"],
+      ["Subgerencia Científica", "Subgerente Científico"],
+      ["Subgerencia Administrativa", "Coordinadora de Talento Humano"],
+      ["Subgerencia Administrativa", "Subgerente Administrativo"],
+      ["Oficina de Calidad", "Líder de Calidad"],
+      ["Control Interno", "Jefe de Control Interno"],
+    ];
+    const cargos = await sql`SELECT a.nombre AS area, c.nombre FROM cargos c JOIN areas a ON a.id = c.area_id
+      WHERE a.nombre = ANY(${AREAS_DEMO}) AND c.nombre = ANY(${CARGOS_DEMO.map(([, c]) => c)})`;
+    const comoTexto = (pares: string[][]) => pares.map(([a, c]) => `${a} > ${c}`).sort();
+    expect(comoTexto(cargos.map((c) => [c.area, c.nombre]))).toEqual(comoTexto(CARGOS_DEMO));
     const usuarios = await sql`SELECT usuario, rol FROM usuarios WHERE usuario IN ('gerente','control.interno','lider.gth','lider.cex','consulta') ORDER BY usuario`;
     expect(usuarios.map((u) => ({ usuario: u.usuario, rol: u.rol }))).toEqual([
       { usuario: "consulta", rol: "consulta" },
