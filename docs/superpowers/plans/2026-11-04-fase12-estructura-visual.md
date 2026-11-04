@@ -389,7 +389,7 @@ it("los valores por defecto pasan la validación", () => expect(validarMarca({ p
 it("P1 rechaza un primario claro con la razón y una sugerencia que pasa", () => {
   const [e] = validarMarca({ primario: "#9ecbff", secundario: "#2e9b47" });
   expect(e.campo).toBe("color_primario");
-  expect(e.mensaje).toMatch(/^El color primario #9ecbff no tiene contraste suficiente con el texto blanco \(1,6:1; mínimo 4,5:1\)\. Pruebe #[0-9a-f]{6}\.$/);
+  expect(e.mensaje).toMatch(/^El color primario #9ecbff no tiene contraste suficiente con el texto blanco \(1,7:1; mínimo 4,5:1\)\. Pruebe #[0-9a-f]{6}\.$/);
   expect(contrasteWCAG(e.sugerencia, "#ffffff")).toBeGreaterThanOrEqual(4.5);
 });
 it("P2 rechaza un secundario que no se distingue del fondo", () => {
@@ -487,7 +487,8 @@ git commit -m "feat(f12): color OKLCH y derivación y validación de la marca (P
   (`misTareas` devuelve `[]` con un comentario de que la Fase 13 añade las fuentes).
 - Produces (`src/lib/bitacora-detalle.ts`): `subir_logo` → `Cambió el logo de la entidad («${nombre}», ${ancho} × ${alto})`; `quitar_logo` → `Quitó el logo de la entidad`.
 - `CLAVES_TEXTO` queda con `subtitulo_mapa`, `titulo_phva`, `texto_phva`, `patron_codigo`.
-- Semillas: `sembrarBase` (mínima) escribe además `sigla_entidad` = `SGC`, `color_primario` = `#1b4e8e`,
+- Semillas: `limpiarTodo` (`src/db/semillas/minima.ts`) añade `notificaciones` a la lista de tablas que vacía
+  (su FK a `usuarios` es RESTRICT: sin esto, vaciar `usuarios` falla). `sembrarBase` (mínima) escribe además `sigla_entidad` = `SGC`, `color_primario` = `#1b4e8e`,
   `color_secundario` = `#2e9b47` (sin claves de logo). `sembrarDemo` fija `sigla_entidad` = `HNSF`,
   copia `src/db/semillas/recursos/logo-demo.png` a `<almacen>/marca/logo-<8 hex sha256>.png`
   (creando la carpeta), escribe `logo_ruta` = `marca/logo-<hash>.png`, `logo_mime` = `image/png`,
@@ -607,9 +608,10 @@ git commit -m "feat(f12): consultas de entidad y notificaciones, misTareas, semi
     lo fija `color-scheme`: `[data-tema="claro"] { color-scheme: light }`,
     `[data-tema="oscuro"] { color-scheme: dark }`, `[data-tema="sistema"] { color-scheme: light dark }`.
     Los de marca: `--marca: light-dark(var(--marca-c), var(--marca-o))`, etc.
-  - Tailwind: en `@theme inline`, `--color-marca: var(--marca)`, `--color-mod-documentos`,
-    `--color-mod-indicadores`, `--color-mod-planes`, `--color-estado-*` (base, `-fondo`, `-texto`),
-    y los alias `--color-azul: var(--marca-relleno)`, `--color-azul-profundo: var(--marca-oscurecida)`,
+  - Tailwind: en `@theme inline`, `--color-marca: var(--marca)`, `--color-marca-relleno`, `--color-marca-oscurecida`,
+    `--color-marca-tinte`, `--color-marca-2`, `--color-marca-2-texto`, `--color-linea-suave`, `--color-texto-terciario`,
+    `--color-mod-documentos`, `--color-mod-indicadores`, `--color-mod-planes`, `--color-estado-*` (base, `-fondo`, `-texto`,
+    para los cinco estados), y los alias `--color-azul: var(--marca-relleno)`, `--color-azul-profundo: var(--marca-oscurecida)`,
     `--color-azul-tinta: var(--foreground)`, `--color-verde: var(--marca-2)`,
     `--color-verde-texto: var(--marca-2-texto)`.
     `@custom-variant dark { &:where([data-tema="oscuro"], [data-tema="oscuro"] *) { @slot } @media (prefers-color-scheme: dark) { &:where([data-tema="sistema"], [data-tema="sistema"] *) { @slot } } }`.
@@ -646,9 +648,9 @@ it("los colores de módulo y las superficies son los del spec", () => {
   expect(css).toMatch(/--color-marca:\s*var\(--marca\)/);
   expect(css).not.toMatch(/\.dark\s*\{/);
 });
-it("no queda text-azul en el código: pasó a text-marca", () => {
+it("no queda text-azul en el código: pasó a text-marca (text-azul-tinta sigue siendo válido)", () => {
   const archivos = readdirSync("src", { recursive: true }).filter((f) => String(f).endsWith(".tsx"));
-  for (const f of archivos) expect(readFileSync(path.join("src", String(f)), "utf8")).not.toMatch(/\btext-azul\b/);
+  for (const f of archivos) expect(readFileSync(path.join("src", String(f)), "utf8")).not.toMatch(/\btext-azul(?![\w-])/);
 });
 ```
 
@@ -658,8 +660,9 @@ it("no queda text-azul en el código: pasó a text-marca", () => {
 `.marca-estado`, los tokens de movimiento y el anillo de foco global; retirar el bloque `.dark`
 de shadcn y la variante `dark (&:is(.dark *))`).
 
-- [ ] **Step 4: Reemplazo mecánico** — `grep -rl "text-azul\b" src --include=*.tsx | xargs sed -i 's/\btext-azul\b/text-marca/g'`
-(no toca `text-azul-tinta`, que lleva guion). Revisar el `diff` por si alguna clase fuera `hover:text-azul`: también pasa a `text-marca`.
+- [ ] **Step 4: Reemplazo mecánico** — `grep -rlE "text-azul([^-A-Za-z0-9_]|$)" src --include=*.tsx | xargs sed -i -E 's/text-azul([^-A-Za-z0-9_]|$)/text-marca\1/g'`.
+**Ojo:** `\b` no sirve aquí porque `text-azul-tinta` también tiene frontera de palabra tras `azul`; el patrón exige que lo que sigue no sea letra, dígito, `_` ni `-`.
+Revisar el `diff`: `hover:text-azul` y `group-hover:text-azul` también pasan a `text-marca`; `text-azul-tinta` queda intacto.
 
 - [ ] **Step 5: Layout raíz** según Interfaces; `src/lib/version.ts`.
 
@@ -1063,6 +1066,8 @@ manual con `gerente` (la demo trae la bienvenida): contador 1 → abrir → puls
   - Mapa: todos los `color-mix(... white)` y `color-mix(... black)` de los cinco componentes y las tres páginas
     pasan a las clases `banda-tinte` / `banda-texto` / `banda-borde` (la `Banda` conserva el `--color-banda` y el
     `--indice-banda` en `style`); el fondo de la banda `color-mix(… 4%, white)` → `color-mix(… 4%, var(--background))`.
+    `RailPeriferico` y el acordeón usan hoy una variable propia `--acento` para el mismo papel: pasa a llamarse
+    `--color-banda` donde se define (el `style` del contenedor), de modo que las mismas tres clases les sirvan.
 
 - [ ] **Step 1: Tests que fallan**
 
@@ -1080,8 +1085,9 @@ it("una tarea vencida lleva insignia crítica con texto", () => {
 ```
 
 `tests/mapa-oscuro.test.ts` (estructural): ningún archivo de `src/componentes/mapa/` ni de
-`src/app/(app)/procesos/`, `src/app/(app)/documentos/` contiene `color-mix(in srgb, var(--color-banda)` seguido de `white)` o `black)`
-ni `_white)]` / `_black)]`; `src/app/(app)/page.tsx` contiene `<MisTareas` y no contiene `<main`.
+`src/app/(app)/procesos/`, `src/app/(app)/documentos/` contiene `color-mix(` con `var(--color-banda)` o `var(--acento)`
+seguido de `white)` o `black)` (en `style` o en clases arbitrarias con `_white)]` / `_black)]`), ni la variable `--acento`;
+`src/app/(app)/page.tsx` contiene `<MisTareas` y no contiene `<main`.
 
 - [ ] **Step 2–3: Fallar, implementar.** **Step 4: Verificar** — tests de la tarea + `npm run lint && npm test`;
 manual en oscuro: las bandas conservan su color, los tintes no son blancos, el texto de las bandas se lee; con
