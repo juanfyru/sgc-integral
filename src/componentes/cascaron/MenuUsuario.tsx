@@ -37,7 +37,15 @@ export function MenuUsuario({ nombre, etiquetaRol, tema }: { nombre: string; eti
           Mi cuenta
         </Link>
 
-        <form action={cambiarTemaAccion} className="mt-3 border-t border-linea-suave pt-3">
+        <form
+          action={cambiarTemaAccion}
+          // Conserva la query string (filtros, búsqueda); sin JavaScript queda la ruta sola.
+          onSubmit={(e) => {
+            const volver = e.currentTarget.elements.namedItem("volver");
+            if (volver instanceof HTMLInputElement) volver.value = location.pathname + location.search;
+          }}
+          className="mt-3 border-t border-linea-suave pt-3"
+        >
           <input type="hidden" name="volver" value={ruta} />
           <fieldset>
             <legend className="mb-1 px-2 text-xs font-semibold text-muted-foreground">Tema</legend>

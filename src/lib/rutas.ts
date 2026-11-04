@@ -10,3 +10,8 @@ export function rutaInterna(v: unknown, porDefecto = "/"): string {
 export function mensajeDeParametro(mapa: Readonly<Record<string, string>>, clave: unknown): string | undefined {
   return typeof clave === "string" && Object.hasOwn(mapa, clave) ? mapa[clave] : undefined;
 }
+
+/** Destino al abrir una notificación: solo rutas internas; cualquier otro enlace cae a la portada. */
+export function destinoNotificacion(enlace: string | null): string {
+  return rutaInterna(enlace, "/");
+}

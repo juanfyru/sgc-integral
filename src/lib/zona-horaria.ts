@@ -38,3 +38,19 @@ export function fechaCompactaLocal(d: Date): string {
   const p = partesLocales(d);
   return `${p.year}${p.month}${p.day}`;
 }
+
+/** «hace 5 min», «hace 2 h», «ayer» o «AAAA-MM-DD»; el día se cuenta en la zona de la instalación. */
+export function tiempoRelativo(fecha: Date, ahora: Date = new Date()): string {
+  const minutos = Math.floor((ahora.getTime() - fecha.getTime()) / 60_000);
+  if (minutos < 1) return "ahora";
+  if (minutos < 60) return `hace ${minutos} min`;
+  const dia = (d: Date) => {
+    const p = partesLocales(d);
+    return Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day)) / 86_400_000;
+  };
+  const dias = dia(ahora) - dia(fecha);
+  if (dias <= 0) return `hace ${Math.floor(minutos / 60)} h`;
+  if (dias === 1) return "ayer";
+  const p = partesLocales(fecha);
+  return `${p.year}-${p.month}-${p.day}`;
+}

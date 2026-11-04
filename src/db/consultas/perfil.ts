@@ -46,5 +46,5 @@ export async function obtenerPerfil(usuarioId: number): Promise<Perfil | null> {
 
 /** Preferencia de tema del perfil; el CHECK de la columna rechaza cualquier otro valor. */
 export async function guardarTema(usuarioId: number, tema: Tema): Promise<void> {
-  await obtenerSql()`UPDATE usuarios SET tema = ${tema} WHERE id = ${usuarioId}`;
+  await obtenerSql()`UPDATE usuarios SET tema = ${tema}, actualizado_en = now() WHERE id = ${usuarioId}`;
 }

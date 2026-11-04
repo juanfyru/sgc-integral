@@ -11,6 +11,7 @@ import {
   obtenerSecretoTotp,
   registrarAcceso,
 } from "@/db/consultas/autenticacion";
+import { marcarLeida, marcarTodasLeidas } from "@/db/consultas/notificaciones";
 import { guardarTema } from "@/db/consultas/perfil";
 import { claveCandadoUsuario, conCandado } from "@/lib/candado";
 import { hashearClave } from "@/lib/clave";
@@ -27,13 +28,13 @@ import {
   EsquemaConfirmarTotp,
   EsquemaIngreso,
 } from "@/lib/esquemas/cuenta";
-import { EsquemaTema } from "@/lib/esquemas/entidad";
+import { EsquemaIdNotificacion, EsquemaTema } from "@/lib/esquemas/entidad";
 import { comprobarClaveActual, confirmarSegundoFactor, quitarSegundoFactor, type EstadoFactor } from "@/lib/segundo-factor";
 import { generarSecretoTotp } from "@/lib/totp";
 import { intentarFactor, intentarIngreso } from "@/lib/ingreso";
 import { ipDePeticion } from "@/lib/ip";
 import { crearLimitador } from "@/lib/limite";
-import { rutaInterna } from "@/lib/rutas";
+import { destinoNotificacion, rutaInterna } from "@/lib/rutas";
 import { cerrarSesion, COOKIE_SESION } from "@/lib/sesion";
 import { requerirSesion, sesionActual } from "@/lib/sesion-actual";
 import { COOKIE_TEMA } from "@/lib/tema";
@@ -274,7 +275,15 @@ export async function desactivarTotpAccion(
 export async function cambiarTemaAccion(formData: FormData): Promise<void> {
   const sesion = await requerirSesion();
   // `volver` es la ruta donde estaba el menú; no es un dato del tema.
-  const { tema } = parsearFormulario(formData, EsquemaTema, { omitir: ["volver"] });
+  let tema;
+  try {
+    tema = parsearFormulario(formData, EsquemaTema, { omitir: ["volver"] }).tema;
+  } catch (err) {
+    if (!(err instanceof ErrorValidacion)) throw err;
+    // Tema fabricado: no cambia nada y vuelve a donde estaba.
+    revalidatePath("/", "layout");
+    redirect(rutaInterna(formData.get("volver"), "/"));
+  }
   await guardarTema(sesion.usuarioId, tema);
   (await cookies()).set(COOKIE_TEMA, tema, {
     httpOnly: true,
@@ -283,6 +292,30 @@ export async function cambiarTemaAccion(formData: FormData): Promise<void> {
     path: "/",
     maxAge: 31_536_000, // un año
   });
+  revalidatePath("/", "layout");
+  redirect(rutaInterna(formData.get("volver"), "/"));
+}
+
+/** Marca una notificación propia como leída y abre su enlace (solo rutas internas). */
+export async function marcarNotificacionLeidaAccion(formData: FormData): Promise<void> {
+  const sesion = await requerirSesion();
+  let id: number;
+  try {
+    id = parsearFormulario(formData, EsquemaIdNotificacion).id;
+  } catch (err) {
+    if (!(err instanceof ErrorValidacion)) throw err;
+    revalidatePath("/", "layout");
+    redirect("/");
+  }
+  const enlace = await marcarLeida(id, sesion.usuarioId);
+  revalidatePath("/", "layout");
+  redirect(destinoNotificacion(enlace));
+}
+
+/** Marca todas las notificaciones propias como leídas y vuelve a la ruta indicada. */
+export async function marcarNotificacionesLeidasAccion(formData: FormData): Promise<void> {
+  const sesion = await requerirSesion();
+  await marcarTodasLeidas(sesion.usuarioId);
   revalidatePath("/", "layout");
   redirect(rutaInterna(formData.get("volver"), "/"));
 }

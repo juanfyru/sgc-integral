@@ -7,6 +7,7 @@ import { VERSION_APP } from "@/lib/version";
 import { BarraLateral } from "./BarraLateral";
 import { BarraSuperior } from "./BarraSuperior";
 import { Buscador } from "./Buscador";
+import { Campana } from "./Campana";
 import { MenuUsuario } from "./MenuUsuario";
 import { entradasVisibles } from "./navegacion";
 
@@ -34,9 +35,8 @@ export async function Cascaron({ sesion, children }: { sesion: SesionValida; chi
           entradas={entradas}
           tareas={tareas.length}
           version={VERSION_APP}
-          // Marcador: la Tarea 10 pone la campana (con estas cifras).
           buscador={<Buscador entradas={entradas} />}
-          campana={<div data-pendiente="campana" data-no-leidas={noLeidas} data-recientes={recientes.length} />}
+          campana={<Campana noLeidas={noLeidas} recientes={recientes} />}
           menuUsuario={<MenuUsuario nombre={sesion.nombre} etiquetaRol={ETIQUETA_ROL[sesion.rol]} tema={sesion.tema} />}
         />
         <main id="contenido" tabIndex={-1} className="mx-auto w-full max-w-[1400px] px-4 py-6 outline-none sm:px-6 lg:py-8">
