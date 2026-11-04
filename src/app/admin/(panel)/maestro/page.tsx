@@ -4,6 +4,7 @@ import { obtenerListadoMaestro } from "@/db/consultas/maestro";
 import { BotonImprimir } from "@/componentes/admin/maestro/BotonImprimir";
 import { exigirPermiso } from "@/lib/paginas";
 import { alcanceMaestro, puede } from "@/lib/permisos";
+import { fechaHoraLocal } from "@/lib/zona-horaria";
 
 export const metadata: Metadata = { title: "Listado Maestro — Administración SGC" };
 
@@ -17,7 +18,7 @@ export default async function PaginaMaestro({
   const incluir = alcanceMaestro(sesion, incluirParam);
   const veNoVigentes = puede(sesion, "documentos.ver_historial");
   const filas = await obtenerListadoMaestro({ incluir });
-  const generadoEn = new Date().toISOString().slice(0, 16).replace("T", " ");
+  const generadoEn = fechaHoraLocal(new Date());
 
   return (
     <main>

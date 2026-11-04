@@ -5,3 +5,8 @@ export function rutaInterna(v: unknown, porDefecto = "/"): string {
     ? ruta
     : porDefecto;
 }
+
+/** Mensaje elegido por un parámetro de la URL: solo claves propias (`?motivo=__proto__` no rompe la página). */
+export function mensajeDeParametro(mapa: Readonly<Record<string, string>>, clave: unknown): string | undefined {
+  return typeof clave === "string" && Object.hasOwn(mapa, clave) ? mapa[clave] : undefined;
+}

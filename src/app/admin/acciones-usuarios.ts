@@ -16,7 +16,7 @@ import {
 } from "@/db/consultas/usuarios";
 import { obtenerSql } from "@/db/cliente";
 import { listarCargos } from "@/db/consultas/estructura";
-import { normalizar, parsearLoteCsv, type Catalogo } from "@/lib/lote-usuarios";
+import { catalogoDeCargos, parsearLoteCsv, type Catalogo } from "@/lib/lote-usuarios";
 import { registrarAcceso } from "@/db/consultas/autenticacion";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { cerrarSesionPorId } from "@/lib/sesion";
@@ -151,7 +151,7 @@ export async function crearLoteAccion(_prev: EstadoLote, formData: FormData): Pr
       obtenerSql()`SELECT id, sigla FROM procesos WHERE activo`,
     ]);
     const catalogo: Catalogo = {
-      cargos: new Map(cargos.filter((c) => c.activo).map((c) => [normalizar(c.nombre), c.id])),
+      cargos: catalogoDeCargos(cargos.filter((c) => c.activo)),
       procesos: new Map(procesos.map((p) => [String(p.sigla).toUpperCase(), Number(p.id)])),
     };
     const { validas, invalidas } = parsearLoteCsv(texto, catalogo);

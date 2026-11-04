@@ -6,6 +6,7 @@ import { obtenerPerfil } from "@/db/consultas/perfil";
 import { pendienteDeCuenta, rutaDePendiente } from "@/lib/cuenta-estado";
 import { exigirSesionConPendientes } from "@/lib/paginas";
 import { ETIQUETA_ROL } from "@/lib/roles";
+import { mensajeDeParametro } from "@/lib/rutas";
 
 export const metadata: Metadata = { title: "Mi cuenta — SGC Integral" };
 export const dynamic = "force-dynamic";
@@ -22,7 +23,7 @@ export default async function PaginaMiCuenta({
 }: {
   searchParams: Promise<{ aviso?: string }>;
 }) {
-  const { aviso } = await searchParams;
+  const aviso = mensajeDeParametro(AVISOS, (await searchParams).aviso);
   const sesion = await exigirSesionConPendientes();
   const pendiente = pendienteDeCuenta(sesion);
   if (pendiente) redirect(rutaDePendiente(pendiente));
@@ -46,9 +47,9 @@ export default async function PaginaMiCuenta({
         </Link>
         <h1 className="mt-2 font-display text-2xl font-semibold">Mi cuenta</h1>
       </div>
-      {aviso && AVISOS[aviso] && (
+      {aviso && (
         <p role="status" className="rounded-lg border border-border bg-muted p-3 text-sm text-foreground">
-          {AVISOS[aviso]}
+          {aviso}
         </p>
       )}
 

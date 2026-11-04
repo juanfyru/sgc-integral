@@ -45,6 +45,9 @@ export async function asegurarRolApp(
     await tx.unsafe(`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${r}`);
     await tx.unsafe(`REVOKE UPDATE, DELETE ON auditoria, accesos FROM ${r}`);
     await tx.unsafe(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${r}`);
+    // Toda tabla futura nace con UPDATE y DELETE para sgc_app. Una tabla inmutable nueva
+    // (p. ej. `firmas`, Fase 13) debe entrar al REVOKE de arriba y al trigger
+    // sgc_impedir_modificacion() de su migración; si no, la app podrá modificarla.
     await tx.unsafe(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ${r}`);
     await tx.unsafe(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO ${r}`);
     return existe ? "actualizado" : "creado";

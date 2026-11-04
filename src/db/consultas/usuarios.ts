@@ -1,3 +1,4 @@
+import type { TransactionSql } from "postgres";
 import { obtenerSql } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { desactivarTotp, obtenerSecretoTotp } from "@/db/consultas/autenticacion";
@@ -127,6 +128,22 @@ export async function contarAdminsActivos(): Promise<number> {
   return Number(n);
 }
 
+export const MENSAJE_ULTIMO_ADMIN = "Debe quedar al menos un Administrador del SGC activo.";
+
+/**
+ * Para un cambio que quita a `id` el rol admin_sgc o lo desactiva: bloquea las filas de los
+ * Admin SGC activos y lo rechaza si `id` es el último. Se llama antes de bloquear la fila de
+ * `id`: si cada transacción bloqueara primero su fila, dos administradores que se bajan a la
+ * vez se cruzarían (interbloqueo). El orden por id fija el mismo orden de bloqueo para todas.
+ */
+export async function exigirOtroAdminActivo(tx: TransactionSql, id: number): Promise<void> {
+  const admins = await tx`SELECT id FROM usuarios WHERE rol = 'admin_sgc' AND activo
+    ORDER BY id FOR UPDATE`;
+  if (admins.length <= 1 && admins.some((a) => Number(a.id) === id)) {
+    throw new Error(MENSAJE_ULTIMO_ADMIN);
+  }
+}
+
 function traducirErrorUsuario(err: unknown): Error {
   const e = err as { code?: string; constraint_name?: string };
   if (e.code === "23505") {
@@ -195,6 +212,7 @@ export async function editarUsuario(
   const despuesCompleto: Editable = { ...datos, procesoIds };
   try {
     await obtenerSql().begin(async (tx) => {
+      if (datos.rol !== "admin_sgc") await exigirOtroAdminActivo(tx, id);
       const [f] = await tx`SELECT usuario, nombre, correo, rol, cargo_id, jefe_inmediato_id, ver_historial
         FROM usuarios WHERE id = ${id} FOR UPDATE`;
       if (!f) throw new Error("El usuario no existe");
@@ -234,6 +252,7 @@ export async function cambiarActivo(id: number, activo: boolean, actorId: number
   if (!activo && actorId === id) throw new Error("No puede desactivar su propia cuenta");
   await conCandado(claveCandadoUsuario(id), () =>
     obtenerSql().begin(async (tx) => {
+      if (!activo) await exigirOtroAdminActivo(tx, id);
       const [f] = await tx`SELECT usuario, activo FROM usuarios WHERE id = ${id} FOR UPDATE`;
       if (!f) throw new Error("El usuario no existe");
       if (f.activo === activo) return;

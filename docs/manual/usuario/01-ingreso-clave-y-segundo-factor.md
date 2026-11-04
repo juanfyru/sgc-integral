@@ -80,10 +80,14 @@ La clave nueva debe cumplir tres reglas, que la pantalla recuerda:
 - **No ser una clave común** (el SGC trae una lista de claves muy usadas y las rechaza).
 - **No contener su nombre de usuario.**
 
+Además, **no puede ser la misma clave temporal**: esa clave también la conoce quien se la
+entregó.
+
 Si no las cumple, el SGC le dice el motivo: por ejemplo "La clave debe tener al menos 12
-caracteres.", "Esa clave es demasiado común; elija otra." o "La clave no puede contener el
-nombre de usuario.". Si las dos casillas no coinciden, aparece un aviso de que la
-confirmación no coincide con la clave nueva.
+caracteres.", "Esa clave es demasiado común; elija otra.", "La clave no puede contener el
+nombre de usuario." o "La clave nueva debe ser distinta de la clave temporal.". Si las dos
+casillas no coinciden, aparece un aviso de que la confirmación no coincide con la clave
+nueva.
 
 **Consejo:** una frase de varias palabras que solo usted conozca es fácil de recordar y
 difícil de adivinar (por ejemplo, cuatro palabras sin relación entre sí). La clave no

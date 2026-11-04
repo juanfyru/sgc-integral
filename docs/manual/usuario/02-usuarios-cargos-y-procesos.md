@@ -147,7 +147,9 @@ Para dar de alta a todo un servicio o a toda la planta: Administración → **Us
    - **rol:** el código o el nombre del rol. La página lista los válidos (por ejemplo
      `lider_proceso` o "Líder de proceso").
    - **cargo:** opcional; el nombre de un cargo activo tal como aparece en la página (no
-     importan mayúsculas ni tildes).
+     importan mayúsculas ni tildes). La página lista cada cargo con su área. Si el mismo
+     nombre existe en varias áreas, escriba el área delante, separada con `>`: por ejemplo
+     `Urgencias > Auxiliar de Enfermería`.
    - **procesos:** las siglas separadas por `|`, por ejemplo `GTH|CEX`. Obligatorio para
      los líderes de proceso. La página lista las siglas disponibles.
 3. Guarde el archivo como **CSV UTF-8**: en Excel, «Guardar como» y elija «CSV UTF-8».
@@ -174,6 +176,7 @@ Motivos de rechazo más comunes:
 |---|---|
 | Rol desconocido «…» | Use un rol de la lista de la página |
 | Cargo inexistente «…» | Escriba el cargo como aparece en la lista, o créelo antes en Estructura |
+| El cargo «…» existe en varias áreas; escríbalo como Área > Cargo | Escriba el área delante del cargo, como en la lista de la página |
 | Proceso inexistente «…» | Use las siglas de la lista, separadas por `\|` |
 | Usuario repetido en el archivo (ya aparece en la línea …) | Cada usuario una sola vez en el archivo |
 | Ya existe un usuario con ese nombre | Esa cuenta ya existe en el SGC |
@@ -242,9 +245,10 @@ alguien intentando adivinar la clave.
 ### 5.5 Quitar el segundo factor (teléfono perdido)
 
 Si la persona perdió el teléfono y no tiene sus códigos de recuperación: **Quitar segundo
-factor…** → **Quitar segundo factor**. Desde ese momento ingresa solo con su clave hasta
-que vuelva a activarlo en Mi cuenta (si su rol lo exige, el SGC se lo pedirá al ingresar).
-Confirme antes la identidad de quien lo pide.
+factor…** → **Quitar segundo factor**. Se cierran todas sus sesiones abiertas (por si el
+teléfono se perdió con una sesión iniciada). Desde ese momento ingresa solo con su clave
+hasta que vuelva a activarlo en Mi cuenta (si su rol lo exige, el SGC se lo pedirá al
+ingresar). Confirme antes la identidad de quien lo pide.
 
 ### 5.6 Su propia cuenta
 
@@ -316,9 +320,16 @@ vacaciones, se retira o pierde el acceso, nadie puede crear cuentas, restablecer
 desbloquear. Cree una segunda cuenta con el rol **Administrador del SGC** para otra
 persona de confianza (no una segunda cuenta para usted mismo).
 
+Lo que sí se impide es quedarse sin ninguno: si un cambio de rol o una desactivación
+dejaría la instalación sin Administradores del SGC activos, el SGC lo rechaza con "Debe
+quedar al menos un Administrador del SGC activo.".
+
 Si aun así la entidad se queda sin ningún administrador que pueda ingresar, el área de
 sistemas puede recuperar la cuenta del primer administrador con el procedimiento de
-rescate de la instalación (manual técnico).
+rescate de la instalación (manual técnico). El rescate le pone una clave temporal nueva y
+la deja lista para usar: con el rol Administrador del SGC, activa, desbloqueada, sin
+segundo factor (se activa de nuevo en Mi cuenta) y sin sesiones abiertas. Queda registrado
+en **Accesos** como restablecimiento.
 
 ## 10. Aviso de datos personales
 

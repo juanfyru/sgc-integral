@@ -2,7 +2,7 @@
  * Administración de usuarios contra la BD de desarrollo. Los usuarios con
  * historia (accesos/auditoría) no se borran: todos llevan nombre único por corrida.
  */
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
@@ -17,6 +17,7 @@ import {
   crearUsuario,
   desbloquearUsuario,
   editarUsuario,
+  exigirOtroAdminActivo,
   listarUsuarios,
   obtenerUsuario,
   quitarSegundoFactor,
@@ -172,6 +173,53 @@ describe("estado de la cuenta", () => {
     const [u] = await sql()`SELECT totp_activo FROM usuarios WHERE id = ${u1}`;
     expect(u.totp_activo).toBe(false);
     expect(await contar()).toBe(antes + 1);
+  });
+});
+
+describe("siempre queda un Administrador del SGC activo (M10)", () => {
+  const ULTIMO = "Debe quedar al menos un Administrador del SGC activo.";
+  class Revertir extends Error {}
+  let a: number;
+  let b: number;
+  beforeAll(async () => {
+    ({ id: a } = await crearUsuario({ ...base, usuario: `zz_m10a_${ts}`, rol: "admin_sgc" }, claveLarga, actorId));
+    ({ id: b } = await crearUsuario({ ...base, usuario: `zz_m10b_${ts}`, rol: "admin_sgc" }, claveLarga, actorId));
+  });
+
+  it("dos administradores que se bajan mutuamente: el segundo cambio se rechaza", async () => {
+    await expect(
+      obtenerSql().begin(async (tx) => {
+        // Solo en esta transacción, que se revierte: los demás administradores dejan de contar.
+        await tx`UPDATE usuarios SET activo = false WHERE rol = 'admin_sgc' AND activo AND id NOT IN (${a}, ${b})`;
+        await exigirOtroAdminActivo(tx, b); // A le quita el rol a B: queda A
+        await tx`UPDATE usuarios SET rol = 'consulta' WHERE id = ${b}`;
+        await expect(exigirOtroAdminActivo(tx, a)).rejects.toThrow(ULTIMO); // B intenta lo mismo con A
+        await exigirOtroAdminActivo(tx, b); // B ya no es admin activo: tocarlo no cambia la cuenta
+        throw new Revertir();
+      }),
+    ).rejects.toBeInstanceOf(Revertir);
+    const [fila] = await sql()`SELECT rol FROM usuarios WHERE id = ${b}`;
+    expect(fila.rol).toBe("admin_sgc");
+  });
+
+  it("editarUsuario y cambiarActivo pasan por la regla antes de bloquear la fila del usuario", () => {
+    const src = readFileSync("src/db/consultas/usuarios.ts", "utf8");
+    for (const funcion of ["editarUsuario", "cambiarActivo"]) {
+      const inicio = src.indexOf(`export async function ${funcion}(`);
+      const cuerpo = src.slice(inicio, src.indexOf("\nexport ", inicio + 1));
+      const regla = cuerpo.indexOf("exigirOtroAdminActivo(tx, id)");
+      expect(regla, funcion).toBeGreaterThan(0);
+      expect(regla, funcion).toBeLessThan(cuerpo.indexOf("WHERE id = ${id} FOR UPDATE"));
+    }
+  });
+
+  it("con otro administrador activo, A y B se bajan mutuamente a la vez sin interbloqueo", async () => {
+    await Promise.all([
+      editarUsuario(b, { ...base, rol: "consulta" }, a),
+      cambiarActivo(a, false, b),
+    ]);
+    const filas = await sql()`SELECT id, rol, activo FROM usuarios WHERE id IN (${a}, ${b}) ORDER BY id`;
+    expect(filas.map((f) => [f.rol, f.activo])).toEqual([["admin_sgc", false], ["consulta", true]]);
   });
 });
 

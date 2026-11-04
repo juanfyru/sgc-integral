@@ -142,34 +142,78 @@ describe("sesiones", () => {
 });
 
 describe("asegurarAdmin", () => {
+  // forzarClave deja fila en `accesos`: nombres únicos por corrida que no se borran.
+  const ts = Date.now();
+  const ADMIN = `zz_sesion_admin_${ts}`;
+  const idDe = async (usuario: string) =>
+    Number((await sql()`SELECT id FROM usuarios WHERE usuario = ${usuario}`)[0].id);
+
   afterAll(async () => {
-    await sql()`DELETE FROM usuarios WHERE usuario = 'admin_prueba'`;
+    await sql()`UPDATE usuarios SET activo = false WHERE usuario LIKE ${`zz\\_sesion\\_%\\_${ts}`}`;
   });
 
   it("crea, no duplica, y solo cambia la clave con forzar", async () => {
-    expect(await asegurarAdmin("admin_prueba", "Admin", "clave-uno")).toBe("creado");
-    expect(await asegurarAdmin("admin_prueba", "Admin", "clave-dos")).toBe("existente");
+    expect(await asegurarAdmin(ADMIN, "Admin", "clave-uno")).toBe("creado");
+    expect(await asegurarAdmin(ADMIN, "Admin", "clave-dos")).toBe("existente");
 
-    let [u] = await sql()`SELECT hash_clave FROM usuarios WHERE usuario = 'admin_prueba'`;
+    let [u] = await sql()`SELECT hash_clave FROM usuarios WHERE usuario = ${ADMIN}`;
     expect(await verificarClave(u.hash_clave, "clave-uno")).toBe(true);
 
-    expect(await asegurarAdmin("admin_prueba", "Admin", "clave-dos", true)).toBe("clave_actualizada");
-    [u] = await sql()`SELECT hash_clave FROM usuarios WHERE usuario = 'admin_prueba'`;
+    expect(await asegurarAdmin(ADMIN, "Admin", "clave-dos", true)).toBe("clave_actualizada");
+    [u] = await sql()`SELECT hash_clave FROM usuarios WHERE usuario = ${ADMIN}`;
     expect(await verificarClave(u.hash_clave, "clave-dos")).toBe(true);
   });
 
   it("crea con rol admin_sgc y debe_cambiar_clave; forzarClave desbloquea y reinicia contadores", async () => {
-    let [u] = await sql()`SELECT rol, debe_cambiar_clave FROM usuarios WHERE usuario = 'admin_prueba'`;
+    let [u] = await sql()`SELECT rol, debe_cambiar_clave FROM usuarios WHERE usuario = ${ADMIN}`;
     expect(u).toEqual({ rol: "admin_sgc", debe_cambiar_clave: true });
     await sql()`UPDATE usuarios SET debe_cambiar_clave = false, activo = false, intentos_fallidos = 3,
-      bloqueos_consecutivos = 2, bloqueado_hasta = now() + interval '1 hour' WHERE usuario = 'admin_prueba'`;
-    await asegurarAdmin("admin_prueba", "Admin", "clave-tres", true);
+      bloqueos_consecutivos = 2, bloqueado_hasta = now() + interval '1 hour' WHERE usuario = ${ADMIN}`;
+    await asegurarAdmin(ADMIN, "Admin", "clave-tres", true);
     [u] = await sql()`SELECT debe_cambiar_clave, activo, intentos_fallidos, bloqueos_consecutivos, bloqueado_hasta
-      FROM usuarios WHERE usuario = 'admin_prueba'`;
+      FROM usuarios WHERE usuario = ${ADMIN}`;
     expect(u).toEqual({ debe_cambiar_clave: true, activo: true, intentos_fallidos: 0, bloqueos_consecutivos: 0, bloqueado_hasta: null });
-    const [{ id }] = await sql()`SELECT id FROM usuarios WHERE usuario = 'admin_prueba'`;
-    const { token } = await crearSesion(Number(id), SIN_CONTEXTO);
-    await asegurarAdmin("admin_prueba", "Admin", "clave-cuatro", true);
+    const { token } = await crearSesion(await idDe(ADMIN), SIN_CONTEXTO);
+    await asegurarAdmin(ADMIN, "Admin", "clave-cuatro", true);
     expect(await validarSesion(token)).toBeNull(); // restablecer cierra sesiones
+  });
+
+  it("sin forzarClave no toca rol, estado ni segundo factor", async () => {
+    const id = await idDe(ADMIN);
+    await sql()`UPDATE usuarios SET rol = 'consulta', activo = false, totp_activo = true,
+      totp_secreto_cifrado = 'secreto-de-prueba' WHERE id = ${id}`;
+    expect(await asegurarAdmin(ADMIN, "Admin", "otra-clave")).toBe("existente");
+    const [u] = await sql()`SELECT rol, activo, totp_activo, totp_secreto_cifrado FROM usuarios WHERE id = ${id}`;
+    expect(u).toEqual({ rol: "consulta", activo: false, totp_activo: true, totp_secreto_cifrado: "secreto-de-prueba" });
+  });
+
+  it("el rescate repone el rol, quita el segundo factor, cierra sesiones y deja fila en accesos", async () => {
+    const id = await idDe(ADMIN);
+    await sql()`UPDATE usuarios SET rol = 'consulta', activo = false, totp_activo = true,
+      totp_secreto_cifrado = 'secreto-de-prueba' WHERE id = ${id}`;
+    await sql()`INSERT INTO codigos_recuperacion (usuario_id, hash) VALUES (${id}, ${`hash-${ts}`})`;
+    const { token } = await crearSesion(id, SIN_CONTEXTO);
+    expect(await asegurarAdmin(ADMIN, "Admin", "clave-rescate", true)).toBe("clave_actualizada");
+
+    const [u] = await sql()`SELECT rol, activo, totp_activo, totp_secreto_cifrado, debe_cambiar_clave
+      FROM usuarios WHERE id = ${id}`;
+    expect(u).toEqual({ rol: "admin_sgc", activo: true, totp_activo: false, totp_secreto_cifrado: null, debe_cambiar_clave: true });
+    expect(await sql()`SELECT 1 FROM codigos_recuperacion WHERE usuario_id = ${id}`).toHaveLength(0);
+    expect(await validarSesion(token)).toBeNull();
+    const [acc] = await sql()`SELECT usuario_texto, resultado, ip, user_agent FROM accesos
+      WHERE usuario_id = ${id} ORDER BY id DESC LIMIT 1`;
+    expect(acc).toEqual({ usuario_texto: ADMIN, resultado: "restablecimiento", ip: null, user_agent: null });
+  });
+
+  it("busca sin distinguir mayúsculas y crea el usuario en minúsculas", async () => {
+    const mixto = `ZZ_Sesion_Mayus_${ts}`;
+    expect(await asegurarAdmin(mixto, "Admin", "clave-uno")).toBe("creado");
+    const filas = await sql()`SELECT usuario FROM usuarios WHERE lower(usuario) = lower(${mixto})`;
+    expect(filas.map((f) => f.usuario)).toEqual([mixto.toLowerCase()]);
+    expect(await asegurarAdmin(mixto.toUpperCase(), "Admin", "clave-dos")).toBe("existente");
+    expect(await asegurarAdmin(mixto.toUpperCase(), "Admin", "clave-tres", true)).toBe("clave_actualizada");
+    const [acc] = await sql()`SELECT usuario_texto FROM accesos
+      WHERE usuario_id = ${await idDe(mixto.toLowerCase())} ORDER BY id DESC LIMIT 1`;
+    expect(acc.usuario_texto).toBe(mixto.toLowerCase());
   });
 });

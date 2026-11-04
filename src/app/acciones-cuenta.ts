@@ -13,6 +13,7 @@ import {
 } from "@/db/consultas/autenticacion";
 import { claveCandadoUsuario, conCandado } from "@/lib/candado";
 import { hashearClave } from "@/lib/clave";
+import { fijarClaveInicial } from "@/lib/clave-inicial";
 import { validarClave } from "@/lib/clave-politica";
 import { cifrar } from "@/lib/cifrado";
 import { inscripcionBloqueada, pendienteDeCuenta } from "@/lib/cuenta-estado";
@@ -154,10 +155,13 @@ export async function claveInicialAccion(
   } catch (err) {
     return errorDeFormulario(err);
   }
-  const motivo = validarClave(datos.claveNueva, { usuario: sesion.usuario });
+  const motivo = await fijarClaveInicial({
+    usuarioId: sesion.usuarioId,
+    usuario: sesion.usuario,
+    sesionId: sesion.sesionId,
+    claveNueva: datos.claveNueva,
+  });
   if (motivo) return { ok: false, error: motivo };
-
-  await cambiarClaveDeUsuario(sesion.usuarioId, await hashearClave(datos.claveNueva), sesion.sesionId);
   revalidatePath("/", "layout");
   redirect("/");
 }

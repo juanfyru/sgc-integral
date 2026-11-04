@@ -4,10 +4,26 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  avisoRolApp,
   configurarAdminDesdeEnv,
   decidirConexiones,
   esperarConReintentos,
 } from "@/lib/arranque";
+
+describe("avisoRolApp (M4)", () => {
+  it("no avisa si la app conecta como sgc_app, ni sin BD_APP_CLAVE", () => {
+    expect(avisoRolApp("sgc_app", "clave")).toBeNull();
+    expect(avisoRolApp("sgc", null)).toBeNull();
+  });
+  it("con BD_APP_CLAVE y otro rol avisa que la app corre como dueña, nombrando el rol", () => {
+    const aviso = avisoRolApp("sgc", "s3creto-del-rol");
+    expect(aviso).toContain("«sgc»");
+    expect(aviso).toMatch(/dueñ/);
+    expect(aviso).toContain("DATABASE_URL");
+    expect(aviso).toContain("sgc_app");
+    expect(aviso).not.toContain("s3creto-del-rol"); // nunca la clave en el log
+  });
+});
 
 describe("esperarConReintentos", () => {
   it("devuelve 1 si el primer intento funciona, sin dormir", async () => {

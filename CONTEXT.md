@@ -21,13 +21,15 @@
    cambio de clave obligatorio y aviso de datos personales; bloqueo por cuenta; segundo
    factor TOTP opcional y exigible por rol; registro de accesos; sesiones activas con
    cierre forzado; rol de BD `sgc_app` de mínimo privilegio y bitácora inmutable;
-   semillas mínima y demo. **Verificado al cierre:** lint limpio; **547/547 tests**
-   (54 archivos; línea base de la fase: 205); build sin `.env.local`; compose de
+   semillas mínima y demo. **Verificado al cierre** (tras la ola final de arreglos de la
+   revisión de la rama): lint limpio; **586/586 tests**
+   (59 archivos; línea base de la fase: 205); build sin `.env.local`; compose de
    desarrollo (arranque con rol y migraciones, `/` → 307 a `/ingreso`, `/api/salud`
    200); `sgc_app` recibe `permission denied` (42501) al intentar `DELETE` en
    `auditoria`. **El recorrido de demostración en navegador lo hace el usuario** (sección
-   "Qué probar y cómo (Fase 11)"). Pendiente: revisión final de la rama, fusión en
-   `main` y push. El repo `juanfyru/sgc-integral` ya existe en GitHub (`origin`); `main`
+   "Qué probar y cómo (Fase 11)"). La revisión final de la rama dio «Con correcciones» y
+   la ola final de arreglos (F11-D31 a F11-D34 y los menores de "Hecho") ya está en la
+   rama. Pendiente: fusión en `main` y push. El repo `juanfyru/sgc-integral` ya existe en GitHub (`origin`); `main`
    local va un commit (`755e8ca`, el diseño maestro) por delante de `origin/main` y la
    rama de la fase no se ha publicado.
 2. **Lo que sigue:** escribir la spec y el plan de la **Fase 12 — Nueva estructura
@@ -61,7 +63,7 @@
    | `SESION_INACTIVIDAD_MIN` | `60` | Cierre de sesión por inactividad |
    | `EXIGIR_2FA_ROLES` | vacío | Roles con TOTP obligatorio, p. ej. `admin_sgc,gerencia` |
    | `ADMIN_USUARIO`, `ADMIN_NOMBRE`, `ADMIN_CLAVE` | `admin`, …, `cambiar-esta-clave` | Primer Admin SGC (`admin:asegurar` o el arranque del contenedor) |
-   | `ADMIN_FORZAR_CLAVE` | — | `1` en el contenedor: rescate del admin (en desarrollo, `npm run admin:asegurar -- --forzar-clave`) |
+   | `ADMIN_FORZAR_CLAVE` | — | `1` en el contenedor: rescate del admin (en desarrollo, `npm run admin:asegurar -- --forzar-clave`). Pone la clave de `ADMIN_CLAVE` con cambio obligatorio y además repone el rol `admin_sgc`, reactiva y desbloquea la cuenta, le quita el segundo factor, cierra sus sesiones y deja fila `restablecimiento` en Accesos (F11-D32) |
 
    **BD nueva desde cero:** `docker compose -f docker-compose.dev.yml up -d bd` →
    `npm run db:preparar` (migraciones y luego rol `sgc_app`) → `npm run db:seed` (demo)
@@ -89,7 +91,7 @@
    `npm run db:seed:minima` deja una instalación nueva: "Entidad sin configurar", aviso
    de datos de ejemplo, 9 tipos de documento y patrón de código; sin mapa, áreas,
    documentos ni usuarios (después hay que correr `admin:asegurar`).
-5. **Tests:** 547 en 54 archivos, en serie (`fileParallelism: false`), contra la BD de
+5. **Tests:** 586 en 59 archivos, en serie (`fileParallelism: false`), contra la BD de
    desarrollo sembrada y **conectados como `sgc_app`**, igual que la app; el test de
    privilegios usa además `DATABASE_URL_MIGRADOR`. Los usuarios de prueba con historia
    (`zz_<algo>_<timestamp>`) se acumulan porque no se pueden borrar (F11-D2); `db:seed` los
@@ -169,6 +171,18 @@ desarrollo en `http://localhost:3002`.
    "Creó N usuarios por lote (M rechazados)", "Desbloqueó al usuario «…»", "Cerró la
    sesión de «…»", "Desactivó el segundo factor"…).
 
+10. **Arreglos de la revisión final:** (a) con un usuario recién creado, escribir la
+    clave temporal como clave nueva → «La clave nueva debe ser distinta de la clave
+    temporal.»; (b) crear en Estructura dos cargos con el mismo nombre en áreas distintas
+    y subir un lote con ese cargo → la fila se rechaza pidiendo `Área > Cargo`, y con
+    `Área > Cargo` se crea con el área correcta; (c) restablecer la clave de un usuario
+    **bloqueado** → la clave temporal sigue en pantalla aunque «Desbloquear» desaparece;
+    (d) quitar el segundo factor a un usuario con sesión abierta en otra ventana → su
+    siguiente clic va a `/ingreso`; (e) abrir `/ingreso?motivo=__proto__` → la página
+    carga normal. La regla «Debe quedar al menos un Administrador del SGC activo.»
+    (F11-D34) no se alcanza desde la interfaz sin dos cambios simultáneos (nadie se baja a
+    sí mismo y quien deja de ser admin pierde el permiso): la prueban los tests.
+
 Manual de usuario de esta fase: `docs/manual/usuario/01-ingreso-clave-y-segundo-factor.md`
 y `docs/manual/usuario/02-usuarios-cargos-y-procesos.md`.
 
@@ -242,12 +256,24 @@ Plan: `docs/superpowers/plans/2026-11-03-fase11-fundacion-acceso.md`; diseño de
   para las acciones nuevas.
 - **Semillas:** `src/db/semilla.ts` despacha `src/db/semillas/demo.ts` (mapa,
   documentos, 5 áreas, 9 cargos, 5 usuarios demo) y `minima.ts` (`--minima`).
-- **Tests:** de 205 a **547**. Nuevos: `permisos`, `roles`, `alcance`, `bloqueo`,
+- **Ola final de arreglos de la revisión de la rama:** clave inicial distinta de la
+  temporal (F11-D31), rescate por entorno que devuelve una cuenta de administración
+  usable (F11-D32), cargo ambiguo del lote rechazado y forma `Área > Cargo` (F11-D33),
+  nunca cero Admin SGC activos (F11-D34). Menores: el Listado Maestro (página, Excel y
+  nombre del archivo) fecha en `ZONA_HORARIA` (`fechaHoraLocal`, `fechaCompactaLocal`) y
+  ya no queda ningún `toISOString()` que se muestre al usuario; `?motivo=` de `/ingreso`
+  y `?aviso=` de `/cuenta` con `mensajeDeParametro` (`Object.hasOwn`); `/api/salud`
+  responde solo `{ estado: "ok" | "error" }` (versión y error del driver al log); el
+  arranque avisa si la app conecta con otro rol que `sgc_app` teniendo `BD_APP_CLAVE`
+  (`avisoRolApp`, solo aviso); quitar el segundo factor a otra persona cierra todas sus
+  sesiones; comentarios en `roles-bd.ts` (tablas inmutables futuras) y junto a
+  `BotonRestablecer` (por qué conserva la clave temporal).
+- **Tests:** de 205 a **586**. Nuevos: `permisos`, `roles`, `alcance`, `bloqueo`,
   `clave-politica`, `totp`, `cifrado`, `cuenta-estado`, `candado`, `ip`, `origen`,
   `rutas`, `validacion`, `sesion-actual`, `ingreso`, `autenticacion`,
   `segundo-factor`, `perfil`, `estructura`, `usuarios`, `lote-usuarios`, `accesos`,
-  `privilegios-bd`, `cliente`, `proxy-matcher`, `handlers-permisos`, `archivos-origen`
-  y los estructurales `acciones-permisos` y `paginas-sesion`; los heredados (`guardia`,
+  `privilegios-bd`, `cliente`, `proxy-matcher`, `handlers-permisos`, `archivos-origen`,
+  `clave-inicial`, `salud` y los estructurales `acciones-permisos` y `paginas-sesion`; los heredados (`guardia`,
   `publicar`, `esquema`, `descarga-estampada`, `bitacora`, `mapa-admin`, `sesion`…)
   reescritos para sesión y rol.
 - **Documentos:** `AGENTS.md` reescrito para el piso nuevo; manual de usuario, capítulos
@@ -664,6 +690,10 @@ esta tabla quedan solo como equivalencia, porque algunos tests los citan en sus 
 | F11-D28 | **Códigos de recuperación: `PanelSegundoFactor` envuelve todas las ramas de `/cuenta/segundo-factor`** (sin secreto, secreto pendiente, activo, error de descifrado) como único elemento raíz, con `confirmar` y `children`; lo exige `tests/segundo-factor-panel.test.ts` | `confirmarTotpAccion` revalida el layout (F11-D27) y la página pasaba a la rama «activo», desmontando el panel y perdiendo los códigos (estado de `useActionState`). Con el panel montado en todas las ramas React conserva el estado. Ninguna otra acción de `acciones-cuenta.ts` revalida sin redirigir | 2026-11-03 |
 | F11-D29 | **`ZONA_HORARIA` cableada** (defecto `America/Bogota`): la conexión de la app abre con `TimeZone = zonaHoraria()` y los `Intl.DateTimeFormat` usan el helper; zona inválida = el arranque falla | Bitácora mostraba UTC y Accesos Bogotá para el mismo instante, y los filtros por fecha y las estadísticas por día cortaban en UTC. Con el TimeZone de la sesión de BD ninguna consulta fija zona | 2026-11-03 |
 | F11-D30 | Ajustes menores del recorrido final: la auditoría del lote de usuarios cuenta las filas rechazadas por el CSV (`crearUsuariosEnLote(filas, actorId, rechazadasAntes)`); al quitar el 2FA de otra persona la bitácora la nombra (`detalle.usuario`); «Mis procesos» va dentro de `<main>` | Hallazgos del recorrido de demostración | 2026-11-03 |
+| F11-D31 | **La clave inicial no puede ser la temporal:** `fijarClaveInicial` (`src/lib/clave-inicial.ts`, sin contexto de petición; `claveInicialAccion` delega) aplica la política y después verifica la clave nueva contra el hash actual de la cuenta; si coincide, rechaza con «La clave nueva debe ser distinta de la clave temporal.» | La temporal también la conoce el administrador que la generó: si queda como definitiva, el «quién» de la bitácora deja de ser de una sola persona (spec §5.9: claves temporales de un solo uso). Revisión final de la rama, I1 | 2026-11-03 |
+| F11-D32 | **El rescate por entorno devuelve una cuenta de administración usable:** `asegurarAdmin` con `forzarClave` (`ADMIN_FORZAR_CLAVE=1` o `admin:asegurar -- --forzar-clave`), en una transacción, pone además `rol = 'admin_sgc'` y `activo`, quita el segundo factor sin condición (`totp_activo`, secreto y `codigos_recuperacion`), cierra todas las sesiones y deja fila `restablecimiento` en `accesos` (IP y navegador nulos). Sin `forzarClave` no cambia nada. `asegurarAdmin` busca la cuenta con `lower(usuario)` y crea el usuario en minúsculas (parte de M9; el índice queda en la Deuda técnica) | Es el único camino de recuperación sin tocar la BD a mano. Si la cuenta del bootstrap se había bajado a `consulta`, o tenía TOTP con el teléfono y los códigos perdidos, el rescate devolvía una cuenta que no administraba o que seguía pidiendo el código. Revisión final, I2 | 2026-11-03 |
+| F11-D33 | **El lote no asigna en silencio un cargo ambiguo:** `catalogoDeCargos` (`src/lib/lote-usuarios.ts`, lo usa `crearLoteAccion`) indexa cada cargo por nombre y por área + nombre, normalizados, y marca `ambiguo` la clave que se repite; la columna `cargo` acepta `Área > Cargo`; un nombre que existe en varias áreas se rechaza con «El cargo «X» existe en varias áreas; escríbalo como Área > Cargo». La página del lote lista los cargos como `Área > Cargo` | Los cargos son únicos por `(area_id, nombre)`, no por nombre: el `Map` por nombre se quedaba con el último y la fila nacía con el área y el supervisor equivocados, sin error. Revisión final, I3 | 2026-11-03 |
+| F11-D34 | **Nunca cero Admin SGC activos:** `editarUsuario` (si el rol nuevo no es `admin_sgc`) y `cambiarActivo` (al desactivar) llaman, dentro de su transacción, `exigirOtroAdminActivo(tx, id)`, que bloquea con `FOR UPDATE` y en orden de id las filas de los Admin SGC activos **antes** de bloquear la fila del usuario y rechaza con «Debe quedar al menos un Administrador del SGC activo.» si `id` es el último | Dos administradores que se bajaban mutuamente dejaban la instalación sin ninguno. Bloquear el conjunto antes que la fila propia evita que esos dos cambios simultáneos se interbloqueen. Con uno solo sigue el aviso, sin bloquear (spec). Revisión final, M10 | 2026-11-03 |
 
 ## Deuda técnica conocida
 
@@ -692,10 +722,31 @@ esta tabla quedan solo como equivalencia, porque algunos tests los citan en sus 
 - `next build` avisa que `src/lib/almacen.ts` (`path.resolve(process.env.ALMACEN_RUTA …)`)
   hace trazar todo el proyecto en `.next/standalone` (heredado de la Fase 4; la imagen
   no copia `.env*` por `.dockerignore`). Acotar la ruta en la Fase 19.
+- **Para la Fase 13 (tablas inmutables nuevas):** `asegurarRolApp` da a `sgc_app`, por
+  `ALTER DEFAULT PRIVILEGES`, `UPDATE` y `DELETE` sobre toda tabla que se cree después.
+  Toda tabla inmutable nueva (`firmas`, spec §5.9) debe entrar al `REVOKE UPDATE, DELETE`
+  de `src/db/roles-bd.ts` (junto a `auditoria` y `accesos`) y llevar en su migración el
+  trigger `BEFORE UPDATE OR DELETE` con `sgc_impedir_modificacion()`, más un caso en
+  `tests/privilegios-bd.test.ts`.
+- **Rotar `APP_SECRETO` invalida los secretos TOTP:** quien tiene segundo factor ya no
+  puede validar el código de su aplicación (cada intento cuenta como fallo y termina
+  bloqueando la cuenta). Entra con un código de recuperación, o el administrador le quita
+  el segundo factor y lo vuelve a activar. Va al **manual técnico de la Fase 20**, junto
+  con la generación de `APP_SECRETO` al instalar.
+- **Propuesta: índice único sobre `lower(usuario)`** en la próxima migración (0003, solo
+  añade). Hoy la unicidad sin distinguir mayúsculas es por convención: el patrón zod
+  fuerza minúsculas y `asegurarAdmin` busca con `lower()` y crea en minúsculas (F11-D32),
+  pero el `UNIQUE` de la columna distingue mayúsculas. No se hizo en la Fase 11 porque la
+  migración fallaría en el arranque sobre una base heredada que tenga `admin` y `Admin` a
+  la vez: antes hay que detectar y resolver esos duplicados.
+- La leyenda «Descargada el …» de la marca de agua de los PDF (`src/lib/marca-agua.ts`)
+  toma el día con `getDate()`/`getMonth()`, en la zona del proceso (UTC en el
+  contenedor), no en `ZONA_HORARIA`: entre las 19:00 y la medianoche de Bogotá sale el día
+  siguiente. No es un `toISOString()` y quedó fuera de la ola final; al corregirlo hay que
+  pasar `tests/marca-agua.test.ts` a un instante fijo en UTC.
 - Menores diferidos de las revisiones (para F12/F19 o al tocar el archivo):
   - Los mensajes de validación muestran el nombre interno del campo delante
     (`confirmacion: …`, `procesoIds: …`).
-  - `/cuenta?aviso=__proto__` rompe el render (usar `Object.hasOwn` o un `Map`).
   - Tras activar el segundo factor, el QR sigue visible encima de los códigos hasta
     recargar; el foco no se mueve al título.
   - `cerrarSesionAccion` lanza (pantalla de error de Next) al superar el límite de ritmo.

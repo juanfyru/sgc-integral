@@ -9,6 +9,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 import {
+  avisoRolApp,
   configurarAdminDesdeEnv,
   decidirConexiones,
   esperarConReintentos,
@@ -79,6 +80,18 @@ async function principal() {
       process.exit(1);
     }
     console.log(`[arranque] Rol sgc_app ${rol} y privilegios aplicados`);
+
+    // Con qué rol conecta de verdad la app. Solo avisa: el compose heredado usa el dueño en las dos URL.
+    const app = postgres(cx.app, { max: 1, connect_timeout: 5 });
+    try {
+      const [{ usuario }] = await app<{ usuario: string }[]>`SELECT current_user AS usuario`;
+      const aviso = avisoRolApp(usuario, cx.claveApp);
+      if (aviso) console.warn(`[arranque] AVISO: ${aviso}`);
+    } catch (error) {
+      console.warn(`[arranque] AVISO: no se pudo comprobar el rol de DATABASE_URL: ${(error as Error).message}`);
+    } finally {
+      await app.end();
+    }
   }
 
   const decision = configurarAdminDesdeEnv({

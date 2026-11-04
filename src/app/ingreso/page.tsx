@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { FormularioIngreso } from "@/componentes/cuenta/FormularioIngreso";
-import { rutaInterna } from "@/lib/rutas";
+import { mensajeDeParametro, rutaInterna } from "@/lib/rutas";
 import { sesionActual } from "@/lib/sesion-actual";
 
 export const metadata: Metadata = { title: "Ingreso — SGC Integral" };
@@ -26,7 +26,7 @@ export default async function PaginaIngreso({
         : destino,
     );
   }
-  const aviso = motivo ? MENSAJES[motivo] : undefined;
+  const aviso = mensajeDeParametro(MENSAJES, motivo);
   return (
     <main className="mx-auto flex min-h-[70dvh] max-w-md flex-col items-center justify-center gap-6 px-4">
       <div className="text-center">

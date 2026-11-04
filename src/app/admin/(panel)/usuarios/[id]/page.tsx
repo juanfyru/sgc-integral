@@ -99,6 +99,14 @@ export default async function PaginaUsuario({ params }: { params: Promise<{ id: 
             tono="peligro"
           />
         )}
+        {/*
+          BotonRestablecer conserva la clave temporal tras la revalidación (restablecer quita el
+          bloqueo y «Desbloquear» desaparece) porque sigue en la misma posición entre sus hermanos:
+          cada condicional de arriba ocupa siempre su hueco (`&&` deja un `false`). Si esta sección
+          se arma como lista con `filter` o `push` (las posiciones se corren), o la rama del botón
+          pasa a un ternario cuyo tipo cambie tras la acción, el componente se desmonta y la clave
+          se pierde, como pasó con los códigos de recuperación.
+        */}
         {esYo ? (
           <p className="text-sm text-muted-foreground">
             Para cambiar su clave o su segundo factor use Mi cuenta.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { neutralizarFormula } from "@/lib/celdas";
-import { parsearLoteCsv, plantillaCsv, resultadosCsv } from "@/lib/lote-usuarios";
+import { catalogoDeCargos, parsearLoteCsv, plantillaCsv, resultadosCsv } from "@/lib/lote-usuarios";
 
 const catalogo = { cargos: new Map([["enfermera jefe", 7]]), procesos: new Map([["GTH", 3], ["CEX", 4]]) };
 
@@ -39,6 +39,60 @@ describe("parsearLoteCsv", () => {
     expect(() => parsearLoteCsv("usuario;nombre\n", catalogo)).toThrow(/cabecera/i);
     const muchas = "usuario;nombre;correo;rol;cargo;procesos\n" + Array.from({ length: 501 }, (_, i) => `u${i};N;;consulta;;`).join("\n");
     expect(() => parsearLoteCsv(muchas, catalogo)).toThrow(/500/);
+  });
+});
+
+describe("cargos con el mismo nombre en varias áreas", () => {
+  const catalogoAreas = {
+    cargos: catalogoDeCargos([
+      { id: 11, nombre: "Auxiliar de Enfermería", areaNombre: "Urgencias" },
+      { id: 12, nombre: "Auxiliar de enfermeria", areaNombre: "Hospitalización" },
+      { id: 13, nombre: "Enfermera Jefe", areaNombre: "Urgencias" },
+    ]),
+    procesos: new Map<string, number>(),
+  };
+  const csv = (...cargos: string[]) =>
+    ["usuario;nombre;correo;rol;cargo;procesos", ...cargos.map((c, i) => `u${i}.x;Persona ${i};;consulta;${c};`)].join("\n");
+
+  it("el nombre solo, repetido entre áreas, se rechaza y pide Área > Cargo", () => {
+    const r = parsearLoteCsv(csv("Auxiliar de Enfermería"), catalogoAreas);
+    expect(r.validas).toEqual([]);
+    expect(r.invalidas).toEqual([
+      { linea: 2, usuario: "u0.x", error: "El cargo «Auxiliar de Enfermería» existe en varias áreas; escríbalo como Área > Cargo" },
+    ]);
+  });
+
+  it("Área > Cargo resuelve el cargo de esa área, normalizando ambas partes", () => {
+    const r = parsearLoteCsv(
+      csv("Urgencias > Auxiliar de Enfermería", "hospitalizacion>AUXILIAR DE ENFERMERÍA", "  Urgencias  >  enfermera   jefe "),
+      catalogoAreas,
+    );
+    expect(r.invalidas).toEqual([]);
+    expect(r.validas.map((v) => v.datos.cargoId)).toEqual([11, 12, 13]);
+  });
+
+  it("un nombre único sigue valiendo solo; un Área > Cargo que no existe se rechaza", () => {
+    const r = parsearLoteCsv(csv("Enfermera Jefe", "Hospitalización > Enfermera Jefe", "> Enfermera Jefe"), catalogoAreas);
+    expect(r.validas.map((v) => v.datos.cargoId)).toEqual([13]);
+    expect(r.invalidas.map((i) => i.error)).toEqual([
+      "Cargo inexistente «Hospitalización > Enfermera Jefe»",
+      "Cargo inexistente «> Enfermera Jefe»",
+    ]);
+  });
+
+  it("dos cargos del área que solo difieren en tildes o mayúsculas tampoco se eligen en silencio", () => {
+    const repetidos = {
+      cargos: catalogoDeCargos([
+        { id: 21, nombre: "Camillero", areaNombre: "Urgencias" },
+        { id: 22, nombre: "camillero", areaNombre: "Urgencias" },
+      ]),
+      procesos: new Map<string, number>(),
+    };
+    const r = parsearLoteCsv(csv("Urgencias > Camillero"), repetidos);
+    expect(r.validas).toEqual([]);
+    expect(r.invalidas[0].error).toBe(
+      "El cargo «Urgencias > Camillero» está repetido en esa área con nombres casi iguales; corríjalo en Estructura",
+    );
   });
 });
 

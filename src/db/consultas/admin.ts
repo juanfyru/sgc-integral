@@ -6,8 +6,10 @@ type Cliente = Sql | TransactionSql;
 
 /**
  * Crea el usuario admin si no existe (idempotente: arranque del contenedor y
- * dev). Con forzarClave restablece la clave — el camino de "la olvidé",
- * ejecutando el script en el NAS.
+ * dev). Busca sin distinguir mayúsculas y crea en minúsculas, como el ingreso.
+ * Con forzarClave es el rescate de la instalación: deja una cuenta de
+ * administración usable (rol admin_sgc, activa, sin segundo factor ni
+ * sesiones) con clave nueva y cambio obligatorio.
  */
 export async function asegurarAdmin(
   usuario: string,
@@ -16,20 +18,29 @@ export async function asegurarAdmin(
   forzarClave = false,
 ): Promise<"creado" | "existente" | "clave_actualizada"> {
   const sql = obtenerSql();
-  const [existente] = await sql`SELECT id FROM usuarios WHERE usuario = ${usuario}`;
+  const [existente] = await sql`SELECT id, usuario FROM usuarios
+    WHERE lower(usuario) = lower(${usuario}) ORDER BY id LIMIT 1`;
 
   if (!existente) {
     await sql`INSERT INTO usuarios (usuario, nombre, hash_clave, rol, debe_cambiar_clave)
-      VALUES (${usuario}, ${nombre}, ${await hashearClave(clave)}, 'admin_sgc', true)`;
+      VALUES (${usuario.toLowerCase()}, ${nombre}, ${await hashearClave(clave)}, 'admin_sgc', true)`;
     return "creado";
   }
   if (forzarClave) {
-    await sql`UPDATE usuarios SET hash_clave = ${await hashearClave(clave)}, activo = true,
-      debe_cambiar_clave = true, intentos_fallidos = 0, bloqueos_consecutivos = 0,
-      bloqueado_hasta = NULL, actualizado_en = now()
-      WHERE id = ${existente.id}`;
-    // Restablecer la clave cierra las sesiones abiertas (diseño F11 §6).
-    await sql`DELETE FROM sesiones WHERE usuario_id = ${existente.id}`;
+    const hash = await hashearClave(clave);
+    await sql.begin(async (tx) => {
+      // El rescate no puede devolver una cuenta degradada ni atada a un teléfono perdido.
+      await tx`UPDATE usuarios SET hash_clave = ${hash}, rol = 'admin_sgc', activo = true,
+        debe_cambiar_clave = true, intentos_fallidos = 0, bloqueos_consecutivos = 0,
+        bloqueado_hasta = NULL, totp_activo = false, totp_secreto_cifrado = NULL,
+        actualizado_en = now()
+        WHERE id = ${existente.id}`;
+      await tx`DELETE FROM codigos_recuperacion WHERE usuario_id = ${existente.id}`;
+      // Restablecer la clave cierra las sesiones abiertas (diseño F11 §6).
+      await tx`DELETE FROM sesiones WHERE usuario_id = ${existente.id}`;
+      await tx`INSERT INTO accesos (usuario_id, usuario_texto, resultado, ip, user_agent)
+        VALUES (${existente.id}, ${existente.usuario}, 'restablecimiento', NULL, NULL)`;
+    });
     return "clave_actualizada";
   }
   return "existente";

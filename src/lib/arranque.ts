@@ -2,6 +2,7 @@
  * Lógica de arranque del contenedor (Fase 10). Sin dependencias de Next:
  * este módulo se bundlea en arrancar.js (esbuild) y también se prueba solo.
  */
+import { NOMBRE_ROL_APP } from "@/db/roles-bd";
 
 export type OpcionesEspera = {
   intentos: number;
@@ -70,6 +71,20 @@ export function configurarAdminDesdeEnv(env: EnvAdmin): DecisionAdmin {
       forzarClave: env.ADMIN_FORZAR_CLAVE === "1",
     },
   };
+}
+
+/**
+ * Con BD_APP_CLAVE definida se espera que la app conecte como sgc_app. Si
+ * `usuarioActual` (el `current_user` de la conexión de la app) es otro, la app
+ * corre como dueña del esquema: solo se avisa, porque el compose heredado del
+ * NAS usa las dos URL con el dueño (Fase 20).
+ */
+export function avisoRolApp(usuarioActual: string, claveApp: string | null): string | null {
+  if (!claveApp || usuarioActual === NOMBRE_ROL_APP) return null;
+  return (
+    `La app conecta a la base como «${usuarioActual}», no como ${NOMBRE_ROL_APP}: corre como dueña del ` +
+    `esquema, sin el mínimo privilegio. Ponga ${NOMBRE_ROL_APP} y su clave (BD_APP_CLAVE) en DATABASE_URL.`
+  );
 }
 
 export type Conexiones = {

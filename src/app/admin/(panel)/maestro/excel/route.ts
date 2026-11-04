@@ -5,12 +5,9 @@ import { obtenerListadoMaestro } from "@/db/consultas/maestro";
 import { construirExcelMaestro } from "@/lib/maestro-excel";
 import { alcanceMaestro, puede } from "@/lib/permisos";
 import { sesionDePeticion } from "@/lib/sesion-actual";
+import { fechaCompactaLocal, fechaHoraLocal } from "@/lib/zona-horaria";
 
 export const dynamic = "force-dynamic";
-
-function formatoFecha(d: Date): string {
-  return d.toISOString().slice(0, 16).replace("T", " ");
-}
 
 export async function GET(peticion: NextRequest): Promise<Response> {
   const sesion = await sesionDePeticion(peticion);
@@ -24,7 +21,7 @@ export async function GET(peticion: NextRequest): Promise<Response> {
   const ahora = new Date();
   const buffer = await construirExcelMaestro(filas, {
     hospital: "ESE Hospital Nuestra Señora de Fátima de Suaza",
-    generadoEn: formatoFecha(ahora),
+    generadoEn: fechaHoraLocal(ahora),
     alcance: incluir === "todos" ? "Todos los documentos" : "Documentos vigentes",
     total: filas.length,
   });
@@ -37,7 +34,7 @@ export async function GET(peticion: NextRequest): Promise<Response> {
     detalle: { formato: "excel", incluir, total: filas.length },
   });
 
-  const nombre = `listado-maestro-${ahora.toISOString().slice(0, 10).replace(/-/g, "")}.xlsx`;
+  const nombre = `listado-maestro-${fechaCompactaLocal(ahora)}.xlsx`;
   return new Response(new Uint8Array(buffer), {
     status: 200,
     headers: {

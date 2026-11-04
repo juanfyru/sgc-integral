@@ -7,8 +7,17 @@ import "@/lib/validacion"; // configura los mensajes de zod en español
 export const COLUMNAS_LOTE = ["usuario", "nombre", "correo", "rol", "cargo", "procesos"] as const;
 export const MAXIMO_FILAS_LOTE = 500;
 
-/** Claves normalizadas: cargo en minúsculas sin acentos ni espacios dobles; sigla en mayúsculas. */
-export type Catalogo = { cargos: Map<string, number>; procesos: Map<string, number> };
+export const CARGO_AMBIGUO = "ambiguo" as const;
+
+/**
+ * Claves normalizadas: cargo en minúsculas sin acentos ni espacios dobles, por nombre y
+ * por «área > cargo» (`claveCargo`); sigla en mayúsculas. Una clave de cargo que se
+ * repite queda como CARGO_AMBIGUO: los cargos son únicos por área, no por nombre.
+ */
+export type Catalogo = {
+  cargos: Map<string, number | typeof CARGO_AMBIGUO>;
+  procesos: Map<string, number>;
+};
 export type FilaLoteValida = { linea: number; datos: DatosUsuario };
 export type FilaLoteInvalida = { linea: number; usuario: string; error: string };
 
@@ -21,6 +30,41 @@ export function normalizar(texto: string): string {
     .toLowerCase()
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** Clave del cargo en el catálogo; el salto de línea no sobrevive a normalizar, así que no choca con un nombre. */
+function claveCargo(nombre: string, area?: string): string {
+  return area === undefined ? normalizar(nombre) : `${normalizar(area)}\n${normalizar(nombre)}`;
+}
+
+export function catalogoDeCargos(
+  cargos: ReadonlyArray<{ id: number; nombre: string; areaNombre: string }>,
+): Catalogo["cargos"] {
+  const mapa: Catalogo["cargos"] = new Map();
+  const poner = (clave: string, id: number) => mapa.set(clave, mapa.has(clave) ? CARGO_AMBIGUO : id);
+  for (const c of cargos) {
+    poner(claveCargo(c.nombre), c.id);
+    poner(claveCargo(c.nombre, c.areaNombre), c.id);
+  }
+  return mapa;
+}
+
+/** Texto de la columna cargo: «Cargo» o «Área > Cargo». */
+function resolverCargo(texto: string, cargos: Catalogo["cargos"]): { id: number } | { error: string } {
+  const separador = texto.indexOf(">");
+  const clave =
+    separador < 0 ? claveCargo(texto) : claveCargo(texto.slice(separador + 1), texto.slice(0, separador));
+  const id = cargos.get(clave);
+  if (id === undefined) return { error: `Cargo inexistente «${texto}»` };
+  if (id === CARGO_AMBIGUO) {
+    return {
+      error:
+        separador < 0
+          ? `El cargo «${texto}» existe en varias áreas; escríbalo como Área > Cargo`
+          : `El cargo «${texto}» está repetido en esa área con nombres casi iguales; corríjalo en Estructura`,
+    };
+  }
+  return { id };
 }
 
 export function plantillaCsv(): string {
@@ -155,12 +199,12 @@ export function parsearLoteCsv(
     }
     let cargoId: number | null = null;
     if (cargoTexto) {
-      const id = catalogo.cargos.get(normalizar(cargoTexto));
-      if (id === undefined) {
-        rechazar(`Cargo inexistente «${cargoTexto}»`);
+      const cargo = resolverCargo(cargoTexto, catalogo.cargos);
+      if ("error" in cargo) {
+        rechazar(cargo.error);
         continue;
       }
-      cargoId = id;
+      cargoId = cargo.id;
     }
     const procesoIds: number[] = [];
     let siglaMala: string | null = null;

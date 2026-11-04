@@ -34,7 +34,11 @@ export default async function PaginaLote() {
           <strong>Roles válidos:</strong> {ROLES.map((r) => `${r} (${ETIQUETA_ROL[r]})`).join("; ")}. El líder de
           proceso necesita al menos un proceso. Los procesos se separan con «|» (por ejemplo GTH|CEX).
         </p>
-        <p><strong>Cargos disponibles:</strong> {cargos.filter((c) => c.activo).map((c) => c.nombre).join("; ") || "ninguno"}.</p>
+        <p>
+          <strong>Cargos disponibles:</strong>{" "}
+          {cargos.filter((c) => c.activo).map((c) => `${c.areaNombre} > ${c.nombre}`).join("; ") || "ninguno"}. En la
+          columna cargo basta el nombre; si el mismo nombre existe en varias áreas, escríbalo como Área &gt; Cargo.
+        </p>
         <p><strong>Siglas de proceso:</strong> {procesos.map((p) => String(p.sigla)).join(", ") || "ninguna"}.</p>
         <p>Cada cuenta nace con una clave temporal que deberá cambiar al ingresar.</p>
       </section>

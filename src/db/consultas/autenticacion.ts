@@ -145,12 +145,17 @@ export async function activarTotp(
   });
 }
 
-/** `actorId` quien lo hace (el propio usuario o un admin); la auditoría lo registra a él. */
+/**
+ * `actorId` quien lo hace (el propio usuario o un admin); la auditoría lo registra a él.
+ * Si lo quita un administrador, se cierran todas las sesiones de la persona: el caso
+ * típico es un teléfono perdido o robado, quizá con una sesión abierta.
+ */
 export async function desactivarTotp(usuarioId: number, actorId: number): Promise<void> {
   await obtenerSql().begin(async (tx) => {
     const [afectado] = await tx`UPDATE usuarios SET totp_activo = false, totp_secreto_cifrado = NULL,
       actualizado_en = now() WHERE id = ${usuarioId} RETURNING usuario`;
     await tx`DELETE FROM codigos_recuperacion WHERE usuario_id = ${usuarioId}`;
+    if (actorId !== usuarioId) await tx`DELETE FROM sesiones WHERE usuario_id = ${usuarioId}`;
     await registrarAuditoria(tx, {
       usuarioId: actorId, accion: "quitar_segundo_factor", entidad: "usuario",
       entidadId: usuarioId,

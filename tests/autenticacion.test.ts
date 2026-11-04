@@ -120,4 +120,26 @@ describe("clave, aviso y segundo factor", () => {
     const [aud] = await sql()`SELECT detalle FROM auditoria WHERE accion = 'quitar_segundo_factor' AND usuario_id = ${actorId} ORDER BY id DESC LIMIT 1`;
     expect(aud.detalle).toEqual({ usuario: u.usuario });
   });
+
+  it("desactivarTotp cierra todas las sesiones de la persona solo si lo quita otra (M8)", async () => {
+    const sinContexto = { ip: null, userAgent: null };
+    const propia = await crearSesion(usuarioId, sinContexto);
+    await activarTotp(usuarioId, []);
+    await desactivarTotp(usuarioId, usuarioId);
+    expect(await validarSesion(propia.token)).not.toBeNull(); // desde Mi cuenta conserva su sesión
+
+    const nombreActor = `zz_auth_m8_${Date.now()}`;
+    await asegurarAdmin(nombreActor, "Actor de prueba", "clave-inicial-larga-1");
+    const [actor] = await sql()`SELECT id FROM usuarios WHERE usuario = ${nombreActor}`;
+    const actorId = Number(actor.id);
+    const { token: tokenActor } = await crearSesion(actorId, sinContexto);
+    const pendiente = await crearSesion(usuarioId, { ...sinContexto, factorPendiente: true });
+    await activarTotp(usuarioId, []);
+    await desactivarTotp(usuarioId, actorId);
+    expect(await validarSesion(propia.token)).toBeNull();
+    expect(await validarSesion(pendiente.token)).toBeNull();
+    expect(await sql()`SELECT 1 FROM sesiones WHERE usuario_id = ${usuarioId}`).toHaveLength(0);
+    expect(await validarSesion(tokenActor)).not.toBeNull(); // las del administrador no se tocan
+    await sql()`UPDATE usuarios SET activo = false WHERE id = ${actorId}`;
+  });
 });
