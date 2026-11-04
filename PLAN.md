@@ -267,7 +267,7 @@ riesgos del usuario.
 
 | Fase | Nombre | Entrega demostrable |
 |---|---|---|
-| 11 | Fundación de acceso | Usuarios con cinco roles y procesos asignados (una por una y por lote desde plantilla), cargos con jerarquía, login en toda la app, clave temporal y cambio obligatorio, bloqueo, TOTP opcional, registro de accesos, roles de BD de mínimo privilegio y bitácora inmutable; Next actualizado; `AGENTS.md` reescrito para el nuevo piso |
+| 11 | Fundación de acceso ✅ (2026-11-03) | Usuarios con cinco roles y procesos asignados (una por una y por lote desde plantilla), cargos con jerarquía, login en toda la app, clave temporal y cambio obligatorio, bloqueo, TOTP opcional, registro de accesos, roles de BD de mínimo privilegio y bitácora inmutable; Next actualizado; `AGENTS.md` reescrito para el nuevo piso |
 | 12 | Nueva estructura visual | Cascarón tipo Linear por rol (barra lateral por módulos, búsqueda `Ctrl K`, campana, tema claro/oscuro), marca configurable por entidad con validación AA, componentes base; pantallas existentes migradas |
 | 13 | Documentación SGC | Solicitud de cambio, flujo elaboración → revisión → aprobación → publicación con concepto y firma, acta PDF, caracterización estructurada, obsoletos por permiso, listas de distribución y acuses, copias controladas, normograma, documentos externos, nivel de acceso, baja con aprobación, semáforo documental |
 | 14 | Indicadores | Ficha técnica versionada, variables compartidas, fórmula con intérprete propio, metas y semáforo por periodo, mediciones con análisis y evidencias, gráficas, cierre de periodo, "sin dato", regulatorios ligados al normograma, permisos por indicador |

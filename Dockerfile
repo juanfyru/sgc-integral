@@ -1,5 +1,5 @@
-# Imagen para linux/arm64 (QNAP TS-832PX). Construir SIEMPRE con:
-#   docker buildx build --platform linux/arm64 -t sgc-integral .
+# Imagen multi-arquitectura; en desarrollo `docker build`, en CI `linux/amd64` y `arm64`
+# bajo demanda (buildx --platform linux/arm64).
 FROM node:24-alpine AS base
 ENV NEXT_TELEMETRY_DISABLED=1
 

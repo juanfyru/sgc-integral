@@ -1,14 +1,11 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-11-03**
-> (sesión de diseño de **SGC Integral**: documento maestro **aprobado** por el usuario;
-> fases 11–20 definidas en `PLAN.md`). La variante nació el mismo día, bifurcada de
-> `sgc-suaza` en `9644ceb`.
->
-> ⚠️ **La sección "Restricciones INVIOLABLES (hardware)" de `AGENTS.md` está
-> desactualizada**: describe el QNAP. Manda §4 del spec
-> `docs/superpowers/specs/2026-11-03-sgc-integral-plataforma-design.md` hasta que la
-> Fase 11 la reescriba.
+> Se actualiza al cierre de cada fase. Última actualización: **2026-11-03**, cierre de la
+> **Fase 11 — Fundación de acceso** (rama `fase-11-fundacion-acceso`, todavía sin
+> fusionar en `main`). La variante nació el mismo día, bifurcada de `sgc-suaza` en
+> `9644ceb`; el diseño maestro de las fases 11–20
+> (`docs/superpowers/specs/2026-11-03-sgc-integral-plataforma-design.md`) está aprobado
+> y `AGENTS.md` ya describe el piso de despliegue nuevo.
 
 ## ⏸ Punto de reanudación (próxima sesión)
 
@@ -17,24 +14,28 @@
    con sus funcionalidades, y construir aquí otra con **funcionalidades más completas**.
    La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
    proyecto**.
-1. **Dónde quedamos:** la variante nació como clon completo con historia (91 commits de
-   las Fases 0–10) en `F:\sgc-integral`. Repo destino `juanfyru/sgc-integral` (privado),
-   **pendiente de crear en GitHub y hacer el primer push**; el remoto `origin` ya apunta
-   ahí. Cambios
-   de la bifurcación: nombre de paquete, imagen y artefacto `sgc-integral`; puertos de
-   desarrollo propios; job de imagen ARM64 manual en el CI. **Verificado en BD nueva:**
-   migraciones y semilla (mismos conteos: 4 macros, 19 procesos, 56 subprocesos, 28
-   documentos), lint limpio, **205/205 tests en verde**, build limpio, mapa e ingreso
-   al panel admin en el navegador.
-2. **Lo que sigue:** el diseño maestro
-   `docs/superpowers/specs/2026-11-03-sgc-integral-plataforma-design.md` fue **aprobado
-   por el usuario el 2026-11-03** (tras una ronda de revisión de un subagente
-   constructor). (a) Escribir la spec y el plan de la **Fase 11 — Fundación de acceso**
-   (skill `writing-plans`) y ejecutarla; arranca subiendo Next 16.2.10 → 16.3.x.
-   (b) Pendiente operativo: crear el repo `sgc-integral` en GitHub, privado y **vacío**,
-   y correr `git push -u origin main`. Las fases 11–20 están en `PLAN.md` §Fases de la
-   variante y siguen la metodología de `AGENTS.md`. Insumos que dependen del usuario:
-   spec §11 (SMTP, versión de Windows, planta de cargos, plantilla del plan de
+1. **Dónde quedamos:** la **Fase 11 está hecha** en la rama `fase-11-fundacion-acceso`
+   (sale de `main` en `755e8ca`; spec y plan en `1f4562c`; 31 commits de código y este
+   de cierre). Toda la app exige sesión; cinco roles fijos con matriz de permisos;
+   áreas y cargos con jerarquía; usuarios uno a uno y por lote con clave temporal;
+   cambio de clave obligatorio y aviso de datos personales; bloqueo por cuenta; segundo
+   factor TOTP opcional y exigible por rol; registro de accesos; sesiones activas con
+   cierre forzado; rol de BD `sgc_app` de mínimo privilegio y bitácora inmutable;
+   semillas mínima y demo. **Verificado al cierre:** lint limpio; **547/547 tests**
+   (54 archivos; línea base de la fase: 205); build sin `.env.local`; compose de
+   desarrollo (arranque con rol y migraciones, `/` → 307 a `/ingreso`, `/api/salud`
+   200); `sgc_app` recibe `permission denied` (42501) al intentar `DELETE` en
+   `auditoria`. **El recorrido de demostración en navegador lo hace el usuario** (sección
+   "Qué probar y cómo (Fase 11)"). Pendiente: revisión final de la rama, fusión en
+   `main` y push. El repo `juanfyru/sgc-integral` ya existe en GitHub (`origin`); `main`
+   local va un commit (`755e8ca`, el diseño maestro) por delante de `origin/main` y la
+   rama de la fase no se ha publicado.
+2. **Lo que sigue:** escribir la spec y el plan de la **Fase 12 — Nueva estructura
+   visual** (spec §8 Fase 12, §5.10 marca configurable, §5.11 sistema visual) y
+   ejecutarla, con la metodología de `AGENTS.md`. La marca visible todavía dice "SGC
+   Documental" (`src/app/layout.tsx`, `src/componentes/EncabezadoSitio.tsx`): la Fase 12
+   la vuelve configuración por entidad. Insumos que dependen del usuario: spec §11
+   (SMTP, versión de Windows del servidor, planta de cargos real, plantilla del plan de
    mejoramiento, total de cuentas, etc.).
 3. **Entorno de desarrollo** (convive con `sgc-suaza` en la misma máquina):
 
@@ -46,41 +47,207 @@
    | App en Docker (compose dev) | 9081 | 9080 |
 
    En esta máquina 5432 lo ocupa un Postgres nativo, 5433 y 3001 el proyecto doctime.
+   Node 24 en todo; no bajar a 22. Variables de `.env.local` (plantilla:
+   `.env.example`):
+
+   | Variable | Valor en desarrollo | Para qué |
+   |---|---|---|
+   | `DATABASE_URL` | `postgres://sgc_app:sgc_app_dev@localhost:5435/sgc` | Conexión de la app **y de los tests** (rol `sgc_app`) |
+   | `DATABASE_URL_MIGRADOR` | `postgres://sgc:sgc_dev@localhost:5435/sgc` | Dueño del esquema: migraciones, semillas, `db:roles`. Si falta, modo heredado (todo con `DATABASE_URL`, con aviso) |
+   | `BD_APP_CLAVE` | `sgc_app_dev` | Clave del rol `sgc_app`; se sincroniza en cada `db:roles` y arranque. La misma en el compose de desarrollo |
+   | `APP_SECRETO` | El de `.env.example` (solo desarrollo) | 32 bytes en base64; cifra los secretos TOTP (AES-256-GCM). Obligatoria en producción: sin ella el arranque falla |
+   | `CONFIAR_PROXY` | vacío | `1` detrás de Caddy (Fase 20): la IP sale de `X-Forwarded-For`/`X-Real-IP` |
+   | `SESION_INACTIVIDAD_MIN` | `60` | Cierre de sesión por inactividad |
+   | `EXIGIR_2FA_ROLES` | vacío | Roles con TOTP obligatorio, p. ej. `admin_sgc,gerencia` |
+   | `ADMIN_USUARIO`, `ADMIN_NOMBRE`, `ADMIN_CLAVE` | `admin`, …, `cambiar-esta-clave` | Primer Admin SGC (`admin:asegurar` o el arranque del contenedor) |
+   | `ADMIN_FORZAR_CLAVE` | — | `1` en el contenedor: rescate del admin (en desarrollo, `npm run admin:asegurar -- --forzar-clave`) |
+
    **BD nueva desde cero:** `docker compose -f docker-compose.dev.yml up -d bd` →
-   `npm run db:migrate` → `npm run db:seed` → **`npm run admin:asegurar`** (crea
-   `admin`/`cambiar-esta-clave`; `next dev` no lo crea solo, en el contenedor lo hace
-   `arrancar.js`). Node 24 en todo; no bajar a 22.
-4. **Tests:** con la BD de la variante recién sembrada pasan **todos**. Los 5 rojos que
-   arrastra `sgc-suaza` vienen de documentos manuales (`PR-GTH-990/991`) que solo
-   existen en la BD de ese proyecto; aquí cualquier rojo es una señal real.
-5. **CI (decisión de la bifurcación, tomada por Claude):** lint y build corren en cada
+   `npm run db:preparar` (migraciones y luego rol `sgc_app`) → `npm run db:seed` (demo)
+   → **`npm run admin:asegurar`** (crea `admin` / `cambiar-esta-clave`) → `npm run dev`
+   → primer ingreso de `admin` con cambio de clave obligatorio → aviso de datos →
+   portal. Las semillas vacían `usuarios`: tras cada `db:seed` hay que repetir
+   `admin:asegurar` y cambiar la clave otra vez. El contenedor `app` del compose de
+   desarrollo no trae `ADMIN_*`: su arranque omite el admin (lo dice en el log) y usa la
+   misma base que `npm run dev` y los tests.
+4. **Usuarios demo** (tras `npm run db:seed`; **solo desarrollo**). Clave común
+   `Demo-SGC-2026-clave`, sin cambio obligatorio y con el aviso aceptado:
+
+   | Usuario | Rol | Cargo | Procesos |
+   |---|---|---|---|
+   | `gerente` | gerencia | Gerente | — |
+   | `control.interno` | control_interno | Jefe de Control Interno | — |
+   | `lider.gth` | lider_proceso | Coordinadora de Talento Humano | GTH |
+   | `lider.cex` | lider_proceso | Médico Coordinador | CEX |
+   | `consulta` | consulta | Auxiliar de Enfermería | — |
+
+   Más `admin` / `cambiar-esta-clave` (admin_sgc) de `npm run admin:asegurar`, que pide
+   cambiar la clave. La demo trae 5 áreas y 9 cargos con jerarquía; mapa y documentos
+   sin cambios (28 documentos: 26 vigentes, 1 obsoleto, 1 borrador, 1 anulado).
+   `npm run db:seed:minima` deja una instalación nueva: "Entidad sin configurar", aviso
+   de datos de ejemplo, 9 tipos de documento y patrón de código; sin mapa, áreas,
+   documentos ni usuarios (después hay que correr `admin:asegurar`).
+5. **Tests:** 547 en 54 archivos, en serie (`fileParallelism: false`), contra la BD de
+   desarrollo sembrada y **conectados como `sgc_app`**, igual que la app; el test de
+   privilegios usa además `DATABASE_URL_MIGRADOR`. Los usuarios de prueba con historia
+   (`zz_<algo>_<timestamp>`) se acumulan porque no se pueden borrar (R2); `db:seed` los
+   limpia. Con la BD recién sembrada pasan todos: un rojo es una señal real (salvo el
+   intermitente de la Deuda técnica).
+6. **CI (decisión de la bifurcación, tomada por Claude):** lint y build corren en cada
    push; el job de imagen ARM64 (GHCR + artefacto `.tar`) solo corre con **Actions →
-   CI → Run workflow**. Motivos: el destino de despliegue de la variante no está
-   definido, la cuota de almacenamiento de Actions es de la cuenta y la comparte con
-   `sgc-suaza` (se agotó el 2026-08-25), y cada build ARM64 por QEMU es lento. Para
-   cumplir "verificar ARM64 desde temprano" de `AGENTS.md`, lanzarlo a mano al cierre de
-   cada fase que agregue dependencias, o reactivar el disparo automático cuando la
-   variante tenga destino.
-6. **Despliegue: decidido en el spec §4** (contenedores portables, Windows con WSL2 o
-   Linux, tres contenedores proxy+app+bd; se construye en la Fase 20). Lo que sigue
-   describe los archivos heredados del NAS, que esa fase reemplaza. Los archivos de despliegue (`docker-compose.nas.yml`,
-   `INSTALACION*.md`, `nas/`) se heredaron con el nombre de imagen y artefacto ya
-   cambiado, pero conservan el puerto 9080, los nombres de contenedor `sgc-app`/`sgc-bd`
-   y la carpeta `/share/sgc-documentos` del original. Si la variante va a **convivir**
-   con la original en el mismo QNAP, hay que cambiar esas tres cosas antes de instalar
-   (y revisar el presupuesto de ~2 GB de RAM, que no alcanza para dos pares app+BD). Si
-   la **reemplaza**, sirven tal cual. El ensayo local (`docker-compose.ensayo.yml`)
-   también publica 9080, que en esta máquina ocupa `sgc-app-1` de la original: apagar
-   ese contenedor antes de ensayar desde aquí.
-7. **Marca visible:** la UI todavía dice "SGC Documental" (`src/app/layout.tsx` y el
-   encabezado). Decidido: la marca (nombre, logo, colores) pasa a ser configuración por
-   entidad en la Fase 12 (spec §5.10).
+   CI → Run workflow**. Motivos: la cuota de almacenamiento de Actions es de la cuenta y
+   la comparte con `sgc-suaza` (se agotó el 2026-08-25) y cada build ARM64 por QEMU es
+   lento. La imagen `amd64` del CI llega en la Fase 20. La Fase 11 añadió `otpauth`,
+   `qrcode` y `zod` (todos JS puro); no consta en la bitácora de la fase que el job
+   ARM64 se haya relanzado: lanzarlo a mano antes de la Fase 20.
+7. **Despliegue: decidido en el spec §4 y escrito en `AGENTS.md` ("Piso de despliegue")**
+   (contenedores portables, Windows con WSL2 o Linux, tres contenedores proxy + app +
+   bd; se construye en la Fase 20). Los archivos de despliegue heredados del NAS
+   (`docker-compose.nas.yml`, `INSTALACION*.md`, `nas/`) conservan el puerto 9080, los
+   nombres `sgc-app`/`sgc-bd` y la carpeta `/share/sgc-documentos` del original. La
+   Fase 11 solo les añadió lo mínimo para arrancar: `APP_SECRETO` obligatorio (sin él la
+   imagen de producción **no arranca**), `DATABASE_URL_MIGRADOR` y `SGC_BD_APP_CLAVE`
+   opcional; la app sigue conectando como dueño allí, y `INSTALACION*.md` no describen
+   las variables nuevas. La Fase 20 los reemplaza. El ensayo local
+   (`docker-compose.ensayo.yml`) publica 9080, que en esta máquina ocupa `sgc-app-1` de
+   la original.
 8. **Pendientes heredados del usuario** (siguen valiendo aquí): convención oficial de
    códigos (`patron_codigo` en `/admin/mapa/textos`), documentos reales aprobados, logo
-   institucional vectorial. **Deuda técnica heredada:** subir Next 16.2.10 → 16.3.2+
-   por advisories; job de CI con Postgres de servicio para los tests de BD.
+   institucional vectorial. La subida de Next quedó hecha en la Fase 11 (16.4.5).
 9. **Memoria de Claude Code:** es por carpeta, así que `F:\sgc-integral` arranca sin
    memoria propia. Este archivo es el contexto durable de la variante.
+
+## Qué probar y cómo (Fase 11)
+
+Recorrido de demostración del spec §8 Fase 11. Base recién sembrada y servidor de
+desarrollo en `http://localhost:3002`.
+
+1. Preparar: `npm run db:preparar && npm run db:seed && npm run admin:asegurar && npm
+   run dev`.
+2. Entrar como `admin` / `cambiar-esta-clave` → **Cambie su clave inicial** (12 a 128
+   caracteres, no común, sin el usuario) → **Aviso de datos personales** → portal. El
+   cambio obligatorio aparece porque el paso 1 resembró la base y `admin:asegurar`
+   recreó la cuenta; sobre una base no resembrada el admin existente solo ve el aviso.
+3. Menú con su nombre → **Administración** → **Estructura**: crear un área (**Nueva
+   área**) y un cargo (**Nuevo cargo**, con área y cargo superior). **Usuarios** →
+   **Nuevo usuario**: crear un usuario por rol y anotar la clave temporal que se muestra
+   una sola vez. **Usuarios** → **Alta por lote**: descargar la plantilla, borrar su
+   fila de ejemplo (`ana.perez`; si se deja, se crea), llenarla con 20 filas válidas y
+   2 inválidas (por ejemplo un rol inexistente y un usuario
+   repetido), guardarla como CSV UTF-8 y subirla: 20 creados, 2 rechazados con su línea
+   y motivo; probar **Descargar resultados (CSV)**.
+4. En ventanas privadas, entrar con `gerente`, `control.interno`, `lider.gth` y
+   `consulta` (clave `Demo-SGC-2026-clave`):
+   - `gerente`: en Administración ve **Listado Maestro** (solo vigentes, sin Excel) y
+     **Estadísticas**.
+   - `control.interno`: ve **Documentos** (detalle sin botones de edición), **Listado
+     Maestro** con Excel, **Estadísticas**, **Bitácora** y **Accesos**.
+   - `lider.gth`: el inicio muestra **Mis procesos** con Gestión del Talento Humano; el
+     menú no tiene Administración y abrir `/admin` lleva a `/sin-acceso`.
+   - `consulta`: solo el portal (mapa, procesos, documentos vigentes, búsqueda).
+5. Con `consulta`, cinco claves erradas → la cuenta queda bloqueada: con la clave
+   correcta sigue saliendo el mensaje general "Usuario o clave incorrectos. Si falló
+   varias veces…" (no se muestra la hora, a propósito: R19). Como `admin`, en
+   **Usuarios** la fila dice "Bloqueado hasta HH:MM"; abrir la persona → **Desbloquear**
+   → `consulta` vuelve a entrar.
+6. Con un usuario de prueba: menú → **Mi cuenta** → **Activar segundo factor** →
+   **Activar segundo factor** → escanear el QR con una app (Google Authenticator,
+   Aegis…) → código de 6 dígitos + **Clave actual** → **Confirmar y activar** → guardar
+   los 8 códigos de recuperación (se ven una sola vez). **Salir**, entrar de nuevo: pide
+   **Verificación en dos pasos** con el código de la app. Salir otra vez y entrar con
+   **Usar un código de recuperación**. Como `admin`: abrir esa persona en Usuarios →
+   **Quitar segundo factor…** → confirmar; el siguiente ingreso ya no lo pide.
+7. Como `admin`, **Sesiones**: **Cerrar** la sesión de otro usuario abierto en otra
+   ventana; su siguiente clic va a `/ingreso`.
+8. **Accesos**: filtrar por resultado **Bloqueo** y por usuario (`consulta`): aparecen
+   los fallos, el bloqueo, el desbloqueo y el cierre forzado.
+9. **Bitácora**: las acciones sobre usuarios con texto legible ("Creó el usuario «…»",
+   "Creó N usuarios por lote (M rechazados)", "Desbloqueó al usuario «…»", "Cerró la
+   sesión de «…»", "Desactivó el segundo factor"…).
+
+Manual de usuario de esta fase: `docs/manual/usuario/01-ingreso-clave-y-segundo-factor.md`
+y `docs/manual/usuario/02-usuarios-cargos-y-procesos.md`.
+
+## Hecho (Fase 11)
+
+Plan: `docs/superpowers/plans/2026-11-03-fase11-fundacion-acceso.md`; diseño de detalle:
+`docs/superpowers/specs/2026-11-03-fase11-fundacion-acceso-design.md`.
+
+- **Dependencias:** Next 16.2.10 → **16.4.5** (y `eslint-config-next`); `zod` 4,
+  `otpauth`, `qrcode` (JS puro); `shadcn` pasa a `devDependencies` (R12).
+- **Esquema (`drizzle/0002_fase11-acceso.sql`, `src/db/esquema.ts`):** `usuarios` con
+  rol (CHECK en los cinco roles), correo único sin distinguir mayúsculas, cargo, jefe
+  inmediato, `debe_cambiar_clave`, contadores y fin de bloqueo, secreto TOTP cifrado,
+  `ver_historial`, `acepto_datos_en`; tablas `areas`, `cargos` (superior
+  autorreferido), `usuario_procesos`, `accesos`, `codigos_recuperacion`; `sesiones` con
+  último uso, factor pendiente, IP y navegador; `eventos_consulta.usuario_id`; todo
+  usuario previo pasa a `admin_sgc`; función `sgc_impedir_modificacion()` y triggers
+  `auditoria_inmutable`/`accesos_inmutable`; FK de `auditoria` y `accesos` a usuarios en
+  `RESTRICT`.
+- **Roles de BD y arranque:** `src/db/roles-bd.ts` (`asegurarRolApp`: crea o sincroniza
+  `sgc_app` con la clave por `set_config`, sin concatenarla, y aplica GRANT/REVOKE y
+  privilegios por defecto), `scripts/asegurar-rol-app.ts` (`npm run db:roles`),
+  `src/lib/arranque.ts` (`decidirConexiones`, modo heredado),
+  `scripts/arrancar.ts` (esperar BD → migrar → rol → admin; `APP_SECRETO` obligatorio en
+  producción), `src/db/cliente.ts` (`TIPOS_SQL`: `int8` como número), `drizzle.config.ts`
+  con la conexión del migrador.
+- **Reglas de cuenta (`src/lib`):** `roles.ts` (roles, etiquetas, `EXIGIR_2FA_ROLES`),
+  `permisos.ts` (matriz, `puede`, `requerirPermiso`, `puedeEntrarAlPanel`,
+  `alcanceMaestro`), `alcance.ts` (`alcanceProcesos`, `procesosAsignados`),
+  `bloqueo.ts` (5 fallos, 15 min ×2 hasta 24 h), `clave-politica.ts` + `datos/claves-
+  comunes.json` (12–128, NFKC, lista común, sin el usuario; clave temporal
+  `XXXX-XXXX-XXXX-XXXX`; generada por `scripts/generar-claves-comunes.mjs`), `totp.ts`
+  (otpauth, ±1 periodo, 8 códigos de recuperación con SHA-256), `cifrado.ts`
+  (AES-256-GCM con `APP_SECRETO`), `cuenta-estado.ts` (orden de pasos pendientes:
+  factor > clave > aviso > TOTP obligatorio), `candado.ts` (cola en memoria por cuenta),
+  `ip.ts` (`CONFIAR_PROXY`, `net.isIP`), `origen.ts` (`origenValido`), `rutas.ts`
+  (`rutaInterna`), `validacion.ts` (`parsearFormulario` con `omitir`, zod en español),
+  `celdas.ts` (`neutralizarFormula`), `esquemas/{cuenta,usuarios,estructura}.ts`.
+- **Sesión y guard:** `src/lib/sesion.ts` (rol y marcas en `SesionValida`, factor
+  pendiente, inactividad, cierre masivo, `listarSesionesActivas`), `sesion-actual.ts`
+  (`requerirSesion` con `permitirPendientes`, `sesionDePeticion`), `paginas.ts`
+  (`exigirSesion`, `exigirSesionConPendientes`, `exigirPermiso`, `exigirEntradaPanel`),
+  `src/proxy.ts` (protege todo salvo `/ingreso` y `/api/salud`; 401 JSON en `/api` y
+  `/admin/api`; `volver`; cabecera `x-sgc-ruta`; matcher con `[.]`).
+- **Ingreso y cuenta:** `src/lib/ingreso.ts` (`intentarIngreso`, `intentarFactor`, sin
+  oráculo, bajo candado), `src/lib/segundo-factor.ts` (activar con clave + código,
+  desactivar con clave), `src/app/acciones-cuenta.ts` (ingresar, verificar, salir, clave
+  inicial, aviso, cambio de clave, TOTP), `src/db/consultas/{autenticacion,perfil}.ts`;
+  páginas `src/app/ingreso/{page,verificar/page}.tsx`, grupo `src/app/(cuenta)/`
+  (`/cuenta`, `/cuenta/clave-inicial`, `/cuenta/segundo-factor`, `/aviso-datos`) y
+  componentes `src/componentes/cuenta/` (formularios, `PanelSegundoFactor` con QR PNG y
+  códigos, `MenuUsuario` en el encabezado). `/admin/ingreso` redirige a `/ingreso`.
+- **Portal:** las páginas públicas pasan al grupo `src/app/(portal)/` (las URL no
+  cambian), cada una con `exigirSesion()`; `/sin-acceso`; bloque `MisProcesos` en el
+  inicio para líderes; `eventos_consulta` y búsqueda con usuario; límites de búsqueda y
+  archivos por usuario.
+- **Panel:** `src/app/admin/comun.ts` (`mutacion(formData, permiso, fn)`,
+  `comprobarLimite`, `idNumerico`), `src/componentes/admin/enlaces-panel.ts`
+  (navegación por permiso), layout con `exigirEntradaPanel`; cada página con
+  `exigirPermiso`; handlers con `sesionDePeticion` + `puede` y `Origin` en el DELETE de
+  archivos; maestro "todos" solo con `ver_historial`.
+- **Usuarios y estructura:** `src/db/consultas/{usuarios,estructura,accesos}.ts`,
+  `src/app/admin/{acciones-usuarios,acciones-estructura}.ts`, `src/lib/lote-usuarios.ts`
+  (plantilla y resultados CSV con BOM y `;`, 500 filas, validación por fila); páginas
+  `/admin/usuarios` (lista con filtros y aviso de un solo admin), `/nuevo`, `/[id]`
+  (editar, desactivar, desbloquear, restablecer, quitar 2FA, autoprotección),
+  `/lote` y `/lote/plantilla`, `/admin/estructura` (áreas con ↑↓ y cargos con superior,
+  sin ciclos), `/admin/accesos` (filtros, 50 por página), `/admin/sesiones` (cierre
+  forzado); componentes `src/componentes/admin/{usuarios,estructura}/`
+  (`ClaveTemporal` muestra la clave una vez). `src/lib/bitacora-detalle.ts` con frases
+  para las acciones nuevas.
+- **Semillas:** `src/db/semilla.ts` despacha `src/db/semillas/demo.ts` (mapa,
+  documentos, 5 áreas, 9 cargos, 5 usuarios demo) y `minima.ts` (`--minima`).
+- **Tests:** de 205 a **547**. Nuevos: `permisos`, `roles`, `alcance`, `bloqueo`,
+  `clave-politica`, `totp`, `cifrado`, `cuenta-estado`, `candado`, `ip`, `origen`,
+  `rutas`, `validacion`, `sesion-actual`, `ingreso`, `autenticacion`,
+  `segundo-factor`, `perfil`, `estructura`, `usuarios`, `lote-usuarios`, `accesos`,
+  `privilegios-bd`, `cliente`, `proxy-matcher`, `handlers-permisos`, `archivos-origen`
+  y los estructurales `acciones-permisos` y `paginas-sesion`; los heredados (`guardia`,
+  `publicar`, `esquema`, `descarga-estampada`, `bitacora`, `mapa-admin`, `sesion`…)
+  reescritos para sesión y rol.
+- **Documentos:** `AGENTS.md` reescrito para el piso nuevo; manual de usuario, capítulos
+  1 y 2 (`docs/manual/usuario/`); `README.md` y `.env.example` al día.
 
 ## Herencia: fases 0–10 de sgc-suaza (estado al bifurcar)
 
@@ -453,23 +620,107 @@ Claude). Aquí solo el índice:
 | SI-13 | Carga histórica: los documentos ya aprobados en papel entran por publicación directa del Admin SGC, marcados "aprobación registrada fuera de la plataforma", sin acta; la versión siguiente recorre el flujo (spec §6.1, DC26) | Claude |
 | SI-14 | Cuenta personal para todo funcionario que consulte, con alta por lote; `sgc-suaza` no se instala en Suaza sino en otro hospital, y las migraciones de Integral se mantienen aplicables sobre su base (spec DC29, DC31, DC32) | Usuario / Claude |
 
+## Decisiones adicionales (Fase 11)
+
+F11-D1 a F11-D10 vienen del diseño de detalle de la fase. Las demás son resoluciones del
+controlador durante la ejecución (las "Rn" de la bitácora de la fase, que no se
+conserva); varias corrigen el diseño o el plan y mandan sobre ellos.
+
+| # | Decisión | Porqué | Fecha |
+|---|---|---|---|
+| F11-D1 | **Dos roles de BD** (`DATABASE_URL_MIGRADOR` dueño del esquema; `DATABASE_URL` con `sgc_app`, solo DML, sin `UPDATE`/`DELETE` en `auditoria` y `accesos`, sin DDL ni `TRUNCATE`) con **modo heredado**: sin `DATABASE_URL_MIGRADOR` todo corre con `DATABASE_URL` y el arranque avisa; sin `BD_APP_CLAVE` se omite el rol. **No hay migración 0003** (R3): `asegurarRolApp` crea o sincroniza el rol y aplica todos los privilegios de forma idempotente, en una transacción, en cada arranque **después** de migrar; `db:preparar` = `db:migrate` + `db:roles` | Spec §5.9 (mínimo privilegio). El modo heredado deja arrancar una base restaurada de `sgc-suaza` sin variables nuevas; un GRANT en una migración fallaría en ese modo (el rol no existe) y los REVOKE exigen las tablas ya migradas | 2026-11-03 |
+| F11-D2 | **Bitácora inmutable sin puerta trasera:** `sgc_impedir_modificacion()` + triggers `BEFORE UPDATE OR DELETE` en `auditoria` y `accesos` que frenan también al dueño. Las FK de usuario en esas tablas pasan a `ON DELETE RESTRICT` (R2): los usuarios con historia se desactivan, nunca se borran; los tests no limpian auditoría y usan nombres únicos por corrida (`zz_<algo>_${Date.now()}`) que no se borran | ISO 7.5.3.2 y spec §5.1 ("se desactivan, nunca se borran"). Un `SET NULL` sería un UPDATE que el trigger rechaza. Los triggers de fila no frenan `TRUNCATE`: las semillas vacían como dueño; `sgc_app` no tiene `TRUNCATE` | 2026-11-03 |
+| F11-D3 | **`sesionDePeticion(peticion)`** para route handlers: lee la cookie del `NextRequest` y devuelve null ante sesión inválida o con cualquier paso pendiente | Los handlers se prueban pasando la cookie en la petición, sin `cookies()` de Next | 2026-11-03 |
+| F11-D4 | ~~Mostrar la hora de desbloqueo solo con la clave correcta~~ **Reemplazada por F11-D13 (R19):** no hay mensaje de bloqueo | El diseño original dejaba un oráculo: con la cuenta bloqueada se podía seguir probando claves y distinguir la correcta | 2026-11-03 |
+| F11-D5 | **Límites por usuario** (búsqueda 30/min, archivos del portal 60/min, mutaciones 60/min, subida 30/min) y **por IP solo con proxy de confianza**. Ingreso (R23): 30/min por IP conocida; con IP desconocida (sin `CONFIAR_PROXY`), un balde compartido de 120/min | Todo el hospital puede salir por una sola IP: el control fino es por cuenta (bloqueo). El balde compartido protege la CPU de Argon2 aunque no se conozca la IP | 2026-11-03 |
+| F11-D6 | **QR del TOTP como PNG en `data:` URL** (`qrcode`), nunca SVG inyectado | La CSP vigente ya permite `img-src data:`; un SVG en el DOM es superficie de XSS | 2026-11-03 |
+| F11-D7 | **`tokens_un_uso` se pospone a la Fase 16** | Sin SMTP no tiene consumidor (activación y restablecimiento por enlace) | 2026-11-03 |
+| F11-D8 | **Next a la última 16.x** (16.4.5 al cerrar), no 16.3.x como decía el spec | Mismo major y misma intención: no escribir código nuevo sobre una versión con avisos de seguridad | 2026-11-03 |
+| F11-D9 | **Grupos de rutas `(portal)` y `(cuenta)`**; `/ingreso` público y `/admin/(panel)`; las URL no cambian. **Cada página llama ella misma** `exigirSesion`/`exigirPermiso`/`exigirSesionConPendientes` (R28), con test estructural | En Next 16 los layouts no se re-ejecutan en la navegación de cliente ni impiden que la página entre en el payload RSC: el layout solo no protege | 2026-11-03 |
+| F11-D10 | **`APP_SECRETO` obligatorio en producción** (32 bytes en base64; el arranque falla sin él). Es el `SESION_SECRETO` del spec, renombrado | Cifra los secretos TOTP en reposo (AES-256-GCM); no firma sesiones (los tokens son aleatorios). En desarrollo, clave fija con aviso | 2026-11-03 |
+| F11-D11 | El cliente de BD parsea `int8` como número de JS (`TIPOS_SQL`, R14) | postgres.js devolvía los ids `bigint` como texto: las comparaciones de identidad (autoprotección, `procesoIds`) fallaban en silencio. Los ids están muy por debajo de 2^53 | 2026-11-03 |
+| F11-D12 | **Lista de claves comunes** desde SecLists `xato-net-10-million-passwords-1000000.txt` (MIT): solo entradas de 12 a 128 caracteres, en minúsculas, sin duplicados, por frecuencia (46 146 entradas, 767 KB, `scripts/generar-claves-comunes.mjs`); la clave se normaliza a NFKC antes de validarla (R15) | Con mínimo 12, la lista de 10 000 que nombra el diseño F11 §6 solo tenía 10 entradas útiles. El texto del diseño quedó desactualizado: manda esta decisión | 2026-11-03 |
+| F11-D13 | **Bloqueo sin oráculo** (R16, R19, R20, R21, R24, R25): con la cuenta bloqueada la clave no se verifica (se calcula un hash para igualar el costo), se registra `fallo` y se responde el mismo mensaje genérico de siempre, con la pista fija "Si falló varias veces, la cuenta se bloquea temporalmente…"; los intentos durante el bloqueo no lo prolongan. Con TOTP, la clave correcta no reinicia los contadores (solo el factor confirmado); cada fallo de factor suma al mismo contador y el que bloquea cierra la sesión pendiente; sin limitador aparte por sesión. Buscar, verificar y escribir el estado van bajo un **candado en memoria por id de cuenta** (no por el texto tecleado), compartido con desbloqueo y restablecimiento | Revisión de seguridad de la Tarea 7: el mensaje con hora permitía adivinar sin límite durante el bloqueo; abrir sesiones nuevas reiniciaba el límite del factor; intentos en paralelo contaban como uno; `lower()` de Postgres y de JS difieren en Unicode | 2026-11-03 |
+| F11-D14 | `rutaInterna` rechaza además caracteres de control C0 y DEL (R17); `ipDePeticion` devuelve null si el valor no pasa `net.isIP` (R18) | `"/\t/evil.com"` era una redirección abierta; una IP malformada del proxy rompía el INSERT en columnas `inet` y tumbaba el ingreso | 2026-11-03 |
+| F11-D15 | Núcleos de ingreso y de factor en `src/lib/ingreso.ts` (`intentarIngreso`, `intentarFactor`), sin contexto de petición; las acciones solo ponen cookies y redirigen (R22) | Probables contra la BD, con tests de paralelismo, bloqueo y factor | 2026-11-03 |
+| F11-D16 | **Completitud de la cuenta en el servidor** (R26): `requerirSesion` y `sesionDePeticion` rechazan cualquier paso pendiente (factor siempre; clave inicial, aviso y TOTP obligatorio salvo `permitirPendientes`, que solo usan los flujos de cuenta) | Antes solo los layouts aplicaban el TOTP obligatorio: un rol obligado sin activarlo podía descargar y mutar | 2026-11-03 |
+| F11-D17 | Matcher del proxy con `[.]` para los puntos literales y test de comportamiento con `unstable_doesMiddlewareMatch` (R27) | Next no escapa el `.` y `\.` coincide con cualquier carácter: `/procesos/apoyo-diagnostico` quedaba fuera del proxy | 2026-11-03 |
+| F11-D18 | **Reglas del segundo factor** (R29, R30, R31, R36): un rol de `EXIGIR_2FA_ROLES` no puede desactivarlo; activarlo pide la clave actual además del código; desactivar sin factor activo da error y no audita; desde el panel nadie restablece su propia clave ni quita su propio segundo factor ("Use Mi cuenta…"); crear usuario y restablecer clave (las acciones con Argon2) pasan por el límite de mutaciones | Con una sesión robada se podía inscribir un factor ajeno; el autoservicio desde el panel saltaba la confirmación de clave; no debe quedar una fila de bitácora falsa | 2026-11-03 |
+| F11-D19 | **Entrada al panel con `panel.entrar` o la marca `ver_historial`** (`puedeEntrarAlPanel`, R32); quien entra solo por la marca ve únicamente Documentos en solo lectura | El diseño da la marca a líder y consulta para la lista y el detalle de documentos, pero esos roles no tienen `panel.entrar` | 2026-11-03 |
+| F11-D20 | En el Listado Maestro (página y Excel), `incluir=todos` exige `documentos.ver_historial`; sin él se fuerza "vigentes" y el selector no aparece; la bitácora registra el alcance efectivo (R33) | Spec §5.3: lo no vigente es de Admin SGC, Control Interno y la marca. Gerencia pide el inventario completo a Calidad | 2026-11-03 |
+| F11-D21 | `parsearFormulario(formData, esquema, { omitir })` descarta claves de ruta antes del esquema estricto; las ediciones pasan `omitir: ["id"]` (R34) | El campo oculto `id` chocaba con los esquemas `.strict()` y editar áreas y cargos fallaba siempre | 2026-11-03 |
+| F11-D22 | `supervisoresDe` ignora un jefe inmediato inactivo y cae al organigrama (R35) | Un supervisor desactivado no debe recibir escalamientos (Fase 16) | 2026-11-03 |
+| F11-D23 | Todo CSV que genera la app (plantilla y resultados del lote) neutraliza fórmulas con la regla de D54 (`neutralizarFormula`, R37) | El administrador abre los resultados en Excel y los nombres son texto libre | 2026-11-03 |
+| F11-D24 | Áreas con funciones propias (`moverArea`, `alternarArea`) y no por el motor genérico del mapa (R4); `editarCargo` toma `LOCK TABLE cargos` contra ciclos concurrentes | El motor genérico saltaba la regla "área con cargos activos" y abría las áreas a las acciones genéricas por formulario manipulado | 2026-11-03 |
+| F11-D25 | `shadcn` pasa a `devDependencies` (R12); se aceptan 3 advertencias altas transitivas de `npm audit --omit=dev` sin `--force` (R13) | `shadcn` solo se usa como `@import` CSS en build y arrastraba express/undici a producción. Las altas restantes no se alcanzan con entrada del usuario (ver Deuda técnica) | 2026-11-03 |
+| F11-D26 | Extras de los implementadores aceptados en revisión: el proxy reenvía la ruta pedida en la cabecera `x-sgc-ruta` (siempre sobrescrita) para que el aviso de datos devuelva a ella; verificar la clave actual (cambio de clave, activar o desactivar el TOTP) tiene un límite de 10 intentos por 15 minutos por usuario; la clave nueva debe ser distinta de la actual | Conservar `volver` a través de los pasos obligatorios; con una sesión robada no se debe poder adivinar la clave actual desde Mi cuenta | 2026-11-03 |
+
 ## Deuda técnica conocida
 
-- `npm audit`: revisado en Fase 9. Las 11 moderadas son **transitivas de tooling de
-  build/dev** (esbuild vía `@esbuild-kit`→`drizzle-kit`; postcss vía `next`; uuid vía
-  `exceljs`) y **ninguna llega al runtime del NAS**. `npm audit fix` sin `--force` no
-  aplica ningún cambio; los únicos "fixes" exigen `--force` con downgrades rotos
-  (`drizzle-kit@0.18.1`, `next@9.3.3`, `exceljs@3.4.0`). Se **aceptan** hasta que los
-  paquetes upstream publiquen versiones parcheadas; revisar al subir de major de Next.
-  (`npm audit fix` subió de patch `shadcn` 4.13.0→4.13.1, CLI de dev, inofensivo.)
-- El artefacto `.tar.gz` del CI aún no se ha probado con `docker load` en un NAS real
-  (se hará en Fase 10; el formato `type=docker` es el estándar que Container Station
-  acepta).
-- Los tests de BD (esquema, archivos-vigentes, consultas-fase4, **sesion, publicar**)
-  requieren la BD dev migrada y sembrada; no corren en CI todavía (agregar un job con
-  Postgres de servicio cuando el esquema se estabilice). Los de almacén, placeholders,
-  clave, subida, limite y guardia sí son autónomos.
-- Retirar `ADMIN_CLAVE` del compose del NAS tras el primer arranque (queda en el
-  entorno del contenedor); documentarlo en el INSTALACION.md de la Fase 10.
+**De la Fase 11:**
+
+- `scripts/carga.ts` (prueba de carga de la Fase 10) recorre rutas sin sesión y ya no
+  sirve tal cual: se adapta en la **Fase 19**.
+- **Los tests de BD no corren en CI** (hoy casi todos: esquema, sesión, ingreso,
+  usuarios, estructura, privilegios, publicar…). Falta un job con Postgres de servicio,
+  migraciones, `db:roles` y semilla demo.
+- `npm audit --omit=dev`: 0 críticas, **3 altas transitivas aceptadas** (F11-D25):
+  `brace-expansion` vía `exceljs` → `archiver` → `glob` → `minimatch`; `nanoid` y
+  `source-map-js` vía `next` → `postcss` (de build). Más 10 moderadas. Ninguna se
+  alcanza con entrada del usuario; la **Fase 19** revisa dependencias y fija el umbral
+  del audit en CI.
+- **Fallo intermitente en la primera corrida** de la suite tras editar código: visto dos
+  veces (un archivo entero en rojo, unos 14 tests) y no reproducido en las corridas
+  siguientes. Sospecha: arranque en frío + Argon2 en `beforeAll` con el timeout por
+  defecto. Si reaparece, capturar la salida y revisar timeouts de esos `beforeAll`.
+- `tokens_un_uso` (activación y restablecimiento por enlace) pospuesta a la **Fase 16**
+  (F11-D7).
+- `ZONA_HORARIA` (regla 8 del piso de despliegue) no está cableada: fijan
+  `America/Bogota` `src/app/admin/(panel)/sesiones/page.tsx`,
+  `src/app/admin/(panel)/usuarios/page.tsx`, `src/app/admin/(panel)/usuarios/[id]/page.tsx`
+  y `src/db/consultas/accesos.ts`. Cablearla cuando el primer módulo calcule cortes o
+  periodos (Fase 14) o antes.
+- Archivos de despliegue heredados: `docker-compose.nas.yml` y `.env.nas.example` solo
+  tienen lo mínimo de la Fase 11 (la app conecta como dueño, no como `sgc_app`) e
+  `INSTALACION*.md` no describe las variables nuevas; el compose de desarrollo y el
+  `Dockerfile` aún mencionan el NAS/ARM64 en comentarios. Los reemplaza la **Fase 20**.
+- `next build` avisa que `src/lib/almacen.ts` (`path.resolve(process.env.ALMACEN_RUTA …)`)
+  hace trazar todo el proyecto en `.next/standalone` (heredado de la Fase 4; la imagen
+  no copia `.env*` por `.dockerignore`). Acotar la ruta en la Fase 19.
+- Menores diferidos de las revisiones (para F12/F19 o al tocar el archivo):
+  - Los mensajes de validación muestran el nombre interno del campo delante
+    (`confirmacion: …`, `procesoIds: …`).
+  - `/cuenta?aviso=__proto__` rompe el render (usar `Object.hasOwn` o un `Map`).
+  - Tras activar el segundo factor, el QR sigue visible encima de los códigos hasta
+    recargar; el foco no se mueve al título.
+  - `cerrarSesionAccion` lanza (pantalla de error de Next) al superar el límite de ritmo.
+  - Cierre forzado + acceso + auditoría no van en una transacción; en el lote, si falla
+    la auditoría final, las cuentas existen pero se pierden las claves temporales.
+  - La bitácora de "quitar segundo factor" a otra persona no nombra al afectado;
+    `alternar_*`/`reordenar_area` auditan sin el nombre del área o cargo.
+  - Un bloqueo causado por fallos del segundo factor queda como `factor_fallo`, sin fila
+    `bloqueo` en accesos.
+  - Sin `CONFIAR_PROXY`, un cliente puede agotar el balde compartido de ingreso (120/min):
+    documentar `CONFIAR_PROXY=1` en la guía de la Fase 20.
+  - Los códigos de recuperación se guardan como SHA-256 sin sal (pasar a HMAC con clave
+    derivada de `APP_SECRETO`); `totp.ts` importa la lista de claves (767 KB) solo por el
+    alfabeto.
+  - El servidor acepta cargo, procesos o jefe inactivos ya existentes al crear o editar
+    (solo la interfaz los filtra); `crearCargo` no comprueba que el área esté activa.
+  - El contador de sesiones activas del detalle de usuario cuenta sesiones vencidas por
+    inactividad.
+  - Un lote de 500 filas tarda decenas de segundos (Argon2 en serie) sin indicador de
+    progreso.
+  - `texto_phva` vacío en la semilla demo (la original traía el texto del PHVA).
+  - Cobertura: `mutacion` sin test de comportamiento; las regex de los tests
+    estructurales son laxas; las acciones de TOTP sin tests a nivel de acción.
+  - `ALTER ROLE sgc_app` no fija `NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION
+    NOBYPASSRLS`; en el modo heredado la app corre como dueño solo con un aviso.
+
+**Heredada:**
+
+- El artefacto `.tar.gz` del CI aún no se ha probado con `docker load` en un NAS real.
+- Retirar `ADMIN_CLAVE` del entorno del contenedor tras el primer arranque (queda en el
+  entorno); la guía de instalación de la Fase 20 debe decirlo.
 - El route handler de archivos lee el archivo completo vía stream pero sin soporte de
   `Range`; irrelevante a esta escala, revisar solo si los PDF reales resultan enormes.

@@ -43,9 +43,16 @@ npm run db:seed:minima
 
 ## Despliegue
 
-El destino es un QNAP TS-832PX (**linux/arm64**, 4 GB RAM, sin salida a
-internet). El CI construye la imagen ARM64 y la publica en GHCR y como
-artefacto `.tar.gz` para carga offline (`docker load`). El procedimiento
-completo está en `INSTALACION.md` (sin internet) e `INSTALACION_INTERNET.md`.
-En esta variante la imagen ARM64 se construye a mano desde Actions
-("Run workflow"); en cada push solo corren lint y build.
+El piso de despliegue está en el diseño maestro
+(`docs/superpowers/specs/2026-11-03-sgc-integral-plataforma-design.md` §4) y en
+`AGENTS.md`: un servidor por entidad (Windows con Docker Engine en WSL2, o
+Linux), `docker compose` con tres contenedores (proxy Caddy con TLS, app y
+PostgreSQL), imagen `linux/amd64` y `arm64` bajo demanda. El compose de
+producción, el procedimiento de instalación y el de respaldo y restauración se
+construyen en la **Fase 20**.
+
+Hoy en cada push solo corren lint y build; la imagen `arm64` (GHCR + artefacto
+`.tar.gz` para `docker load`) se construye a mano desde Actions ("Run
+workflow"). `INSTALACION.md`, `INSTALACION_INTERNET.md`,
+`docker-compose.nas.yml` y `nas/` son los archivos heredados de `sgc-suaza` y
+quedan como registro hasta la Fase 20.
