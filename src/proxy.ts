@@ -1,23 +1,44 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { COOKIE_SESION } from "@/lib/sesion-constantes";
+import { CABECERA_RUTA, COOKIE_SESION } from "@/lib/sesion-constantes";
 
-/**
- * Guard OPTIMISTA (Next 16: proxy, no middleware): solo mira si la cookie
- * existe — la validación real contra BD ocurre en el layout del panel y como
- * primera línea de cada action/handler (requerirSesion). Aquí nunca se toca
- * la BD.
- */
-export function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-  if (pathname === "/admin/ingreso") return NextResponse.next();
+/** Rutas alcanzables sin cookie de sesión. /api/salud lo usa el healthcheck del compose. */
+export const RUTAS_PUBLICAS = ["/ingreso", "/api/salud"] as const;
 
-  const hayCookie = Boolean(request.cookies.get(COOKIE_SESION)?.value);
-  if (hayCookie) return NextResponse.next();
-
-  if (pathname.startsWith("/admin/api")) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-  return NextResponse.redirect(new URL("/admin/ingreso", request.url));
+function esPublica(pathname: string): boolean {
+  return RUTAS_PUBLICAS.some((r) => pathname === r || pathname.startsWith(`${r}/`));
 }
 
-export const config = { matcher: "/admin/:path*" };
+/**
+ * Guard OPTIMISTA global (Next 16: proxy, no middleware): solo mira si la
+ * cookie existe — la validación real contra BD ocurre en los layouts de grupo
+ * y como primera línea de cada action/handler (requerirSesion). Aquí nunca se
+ * toca la BD. Importa solo sesion-constantes para no arrastrar la BD al proxy.
+ */
+export function proxy(request: NextRequest) {
+  const { pathname, search } = request.nextUrl;
+  if (pathname === "/admin/ingreso") {
+    return NextResponse.redirect(new URL("/ingreso", request.url));
+  }
+  if (esPublica(pathname)) return NextResponse.next();
+  if (request.cookies.get(COOKIE_SESION)?.value) {
+    // Reenvía la ruta pedida a los layouts (que no la conocen) para conservar
+    // `volver` en los pasos obligatorios de la cuenta. Siempre se sobrescribe.
+    const cabeceras = new Headers(request.headers);
+    cabeceras.set(CABECERA_RUTA, pathname + search);
+    return NextResponse.next({ request: { headers: cabeceras } });
+  }
+
+  if (pathname.startsWith("/api/") || pathname.startsWith("/admin/api/")) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
+  const destino = new URL("/ingreso", request.url);
+  if (pathname !== "/") destino.searchParams.set("volver", pathname + search);
+  return NextResponse.redirect(destino);
+}
+
+// El matcher debe ser una constante literal (Next lo analiza estáticamente).
+export const config = {
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|.*\.(?:png|jpg|jpeg|webp|svg|ico|woff2?)$).*)",
+  ],
+};

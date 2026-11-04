@@ -1,8 +1,6 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { salir } from "@/app/acciones-cuenta";
-import { COOKIE_SESION, validarSesion } from "@/lib/sesion";
+import { exigirPermiso } from "@/lib/paginas";
 
 // Todo el panel es autenticado y por-petición: nunca se prerenderiza en build.
 // Sin esto, los loading.tsx (Suspense) inducen a Next a generar el shell estático
@@ -16,9 +14,7 @@ export default async function LayoutPanel({
 }: {
   children: React.ReactNode;
 }) {
-  const almacen = await cookies();
-  const sesion = await validarSesion(almacen.get(COOKIE_SESION)?.value);
-  if (!sesion) redirect("/admin/ingreso");
+  const sesion = await exigirPermiso("panel.entrar");
 
   return (
     <div className="mx-auto max-w-6xl px-4 pb-16">

@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import Link from "next/link";
 import { Suspense } from "react";
 import { CalendarRange, FileSearch, Filter, SearchX, TimerOff } from "lucide-react";
@@ -12,16 +11,16 @@ import {
   type FiltrosBusqueda,
   type RespuestaBusqueda,
 } from "@/db/consultas/busqueda";
-import { ipDePeticion } from "@/db/consultas/eventos";
 import { obtenerDetalleProceso } from "@/db/consultas/procesos";
 import { crearLimitador } from "@/lib/limite";
+import { sesionActual } from "@/lib/sesion-actual";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "Buscar documentos" };
 
 // Instancia única en el NAS: el limitador vive en la memoria del proceso.
-// 30 búsquedas/minuto por IP absorbe el debounce sin frenar a nadie real.
+// 30 búsquedas/minuto por usuario absorbe el debounce sin frenar a nadie real.
 const permitirBusqueda = crearLimitador({ limite: 30, ventanaMs: 60_000 });
 
 const SUGERENCIAS = [
@@ -84,8 +83,8 @@ export default async function PaginaBuscar({
   };
 
   if (conCriterios) {
-    const ip = ipDePeticion(await headers());
-    if (!permitirBusqueda(ip)) {
+    const sesion = await sesionActual();
+    if (!sesion || !permitirBusqueda(String(sesion.usuarioId))) {
       limitado = true;
     } else {
       respuesta = await buscarDocumentos(filtros);

@@ -232,6 +232,7 @@ export const CLAVES_TEXTO: ReadonlyArray<{
   { clave: "lema", etiqueta: "Lema institucional", textarea: true },
   { clave: "titulo_phva", etiqueta: "Título del ciclo PHVA" },
   { clave: "texto_phva", etiqueta: "Texto del ciclo PHVA", textarea: true },
+  { clave: "aviso_datos_personales", etiqueta: "Aviso de tratamiento de datos personales", textarea: true },
   { clave: "patron_codigo", etiqueta: "Patrón del código (expresión regular)" },
 ];
 

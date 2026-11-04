@@ -20,7 +20,9 @@ import {
   type ArchivoFicha,
   obtenerFichaDocumento,
 } from "@/db/consultas/documentos";
-import { ipDePeticion, registrarEventoConsulta } from "@/db/consultas/eventos";
+import { registrarEventoConsulta } from "@/db/consultas/eventos";
+import { ipDePeticion } from "@/lib/ip";
+import { sesionActual } from "@/lib/sesion-actual";
 
 export const dynamic = "force-dynamic";
 
@@ -56,10 +58,12 @@ export default async function FichaDocumento({
   // Trazabilidad D8: la consulta de la ficha queda en la bitácora de
   // eventos; si falla, la página igual responde.
   const cabeceras = await headers();
+  const sesion = await sesionActual();
   await registrarEventoConsulta({
     tipo: "vista",
     documentoId: ficha.id,
     versionId: ficha.version.id,
+    usuarioId: sesion?.usuarioId ?? null,
     ip: ipDePeticion(cabeceras),
     userAgent: cabeceras.get("user-agent"),
   }).catch((err) => console.error("No se pudo registrar la vista:", err));

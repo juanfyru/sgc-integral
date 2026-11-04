@@ -13,11 +13,11 @@ describe("estructura de accesibilidad (Fase 9)", () => {
   });
 
   const rutasConSkeleton = [
-    "src/app/loading.tsx",
-    "src/app/procesos/[slug]/loading.tsx",
-    "src/app/procesos/[slug]/[sub]/loading.tsx",
-    "src/app/documentos/[codigo]/loading.tsx",
-    "src/app/buscar/loading.tsx",
+    "src/app/(portal)/loading.tsx",
+    "src/app/(portal)/procesos/[slug]/loading.tsx",
+    "src/app/(portal)/procesos/[slug]/[sub]/loading.tsx",
+    "src/app/(portal)/documentos/[codigo]/loading.tsx",
+    "src/app/(portal)/buscar/loading.tsx",
     "src/app/admin/(panel)/maestro/loading.tsx",
     "src/app/admin/(panel)/estadisticas/loading.tsx",
     "src/app/admin/(panel)/bitacora/loading.tsx",

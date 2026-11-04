@@ -3,14 +3,16 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import type { EstadoAccion } from "@/app/admin/comun";
-import { registrarAcceso } from "@/db/consultas/autenticacion";
-import { EsquemaCodigoFactor, EsquemaIngreso } from "@/lib/esquemas/cuenta";
+import { aceptarAvisoDatos, cambiarClaveDeUsuario, registrarAcceso } from "@/db/consultas/autenticacion";
+import { hashearClave } from "@/lib/clave";
+import { validarClave } from "@/lib/clave-politica";
+import { EsquemaAviso, EsquemaClaveInicial, EsquemaCodigoFactor, EsquemaIngreso } from "@/lib/esquemas/cuenta";
 import { intentarFactor, intentarIngreso } from "@/lib/ingreso";
 import { ipDePeticion } from "@/lib/ip";
 import { crearLimitador } from "@/lib/limite";
 import { rutaInterna } from "@/lib/rutas";
 import { cerrarSesion, COOKIE_SESION } from "@/lib/sesion";
-import { sesionActual } from "@/lib/sesion-actual";
+import { requerirSesion, sesionActual } from "@/lib/sesion-actual";
 import { ErrorValidacion, parsearFormulario } from "@/lib/validacion";
 
 export type { EstadoAccion } from "@/app/admin/comun";
@@ -107,4 +109,43 @@ export async function salir(): Promise<void> {
     });
   }
   redirect("/ingreso");
+}
+
+/** Primer paso obligatorio: reemplaza la clave temporal y conserva solo la sesión actual. */
+export async function claveInicialAccion(
+  _estadoPrevio: EstadoAccion,
+  formData: FormData,
+): Promise<EstadoAccion> {
+  const sesion = await requerirSesion({ permitirPendientes: true });
+  if (!sesion.debeCambiarClave) redirect("/");
+
+  let datos;
+  try {
+    datos = parsearFormulario(formData, EsquemaClaveInicial);
+  } catch (err) {
+    return errorDeFormulario(err);
+  }
+  const motivo = validarClave(datos.claveNueva, { usuario: sesion.usuario });
+  if (motivo) return { ok: false, error: motivo };
+
+  await cambiarClaveDeUsuario(sesion.usuarioId, await hashearClave(datos.claveNueva), sesion.sesionId);
+  redirect("/");
+}
+
+export async function aceptarAvisoAccion(
+  _estadoPrevio: EstadoAccion,
+  formData: FormData,
+): Promise<EstadoAccion> {
+  const sesion = await requerirSesion({ permitirPendientes: true });
+  // El orden de los pasos lo fija pendienteDeCuenta: primero la clave.
+  if (sesion.debeCambiarClave) redirect("/cuenta/clave-inicial");
+
+  let datos;
+  try {
+    datos = parsearFormulario(formData, EsquemaAviso);
+  } catch (err) {
+    return errorDeFormulario(err);
+  }
+  if (!sesion.aceptoDatos) await aceptarAvisoDatos(sesion.usuarioId);
+  redirect(rutaInterna(datos.volver));
 }

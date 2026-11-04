@@ -1,7 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { obtenerArchivoVigente } from "@/db/consultas/documentos";
-import { ipDePeticion, registrarEventoConsulta } from "@/db/consultas/eventos";
+import { registrarEventoConsulta } from "@/db/consultas/eventos";
+import { ipDePeticion } from "@/lib/ip";
 import { crearLimitador } from "@/lib/limite";
+import { sesionDePeticion } from "@/lib/sesion-actual";
 import {
   respuesta404,
   respuestaArchivo,
@@ -10,7 +12,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-// Rate limiting en memoria (Fase 5): 60 archivos/minuto por IP es holgado
+// Rate limiting en memoria (Fase 5): 60 archivos/minuto por usuario es holgado
 // para consulta humana y frena la descarga masiva automatizada.
 const permitirArchivo = crearLimitador({ limite: 60, ventanaMs: 60_000 });
 
@@ -30,9 +32,13 @@ export async function GET(
   peticion: NextRequest,
   { params }: { params: Promise<{ codigo: string; archivoId: string; nombre?: string[] }> },
 ) {
+  const sesion = await sesionDePeticion(peticion);
+  if (!sesion) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
   const { codigo, archivoId } = await params;
 
-  if (!permitirArchivo(ipDePeticion(peticion.headers))) {
+  if (!permitirArchivo(String(sesion.usuarioId))) {
     return NextResponse.json(
       { error: "Demasiadas peticiones, intente de nuevo en un momento" },
       { status: 429, headers: { "Retry-After": "60" } },
@@ -51,6 +57,7 @@ export async function GET(
       tipo: "descarga",
       documentoId: archivo.documentoId,
       versionId: archivo.versionId,
+      usuarioId: sesion.usuarioId,
       ip: ipDePeticion(peticion.headers),
       userAgent: peticion.headers.get("user-agent"),
     }).catch((err) => console.error("No se pudo registrar la descarga:", err));

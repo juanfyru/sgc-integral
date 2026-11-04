@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { Archivo, Geist, Geist_Mono } from "next/font/google";
 import { EncabezadoSitio } from "@/componentes/EncabezadoSitio";
+import { puede } from "@/lib/permisos";
+import { ETIQUETA_ROL } from "@/lib/roles";
+import { sesionActual } from "@/lib/sesion-actual";
 import "./globals.css";
 
 // next/font descarga y empaqueta las fuentes en build (CI con internet);
@@ -32,11 +35,24 @@ export const metadata: Metadata = {
     "Sistema de gestión documental de calidad de la ESE Hospital Nuestra Señora de Fátima de Suaza — NTC ISO 9001:2015",
 };
 
-export default function RootLayout({
+// Lee la cookie de sesión en cada petición: nada del sitio se prerenderiza.
+export const dynamic = "force-dynamic";
+
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Sin cookie validarSesion devuelve null antes de tocar la BD (el build no la necesita).
+  const sesion = await sesionActual();
+  const usuario =
+    sesion && !sesion.factorPendiente
+      ? {
+          nombre: sesion.nombre,
+          etiquetaRol: ETIQUETA_ROL[sesion.rol],
+          verPanel: puede(sesion, "panel.entrar"),
+        }
+      : null;
   return (
     <html
       lang="es"
@@ -46,7 +62,7 @@ export default function RootLayout({
         <a href="#contenido" className="saltar-al-contenido">
           Saltar al contenido
         </a>
-        <EncabezadoSitio />
+        <EncabezadoSitio usuario={usuario} />
         <div id="contenido" tabIndex={-1} className="flex-1 min-w-0 outline-none">
           {children}
         </div>

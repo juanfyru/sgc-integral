@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Search } from "lucide-react";
+import { MenuUsuario, type UsuarioMenu } from "@/componentes/cuenta/MenuUsuario";
 
 /**
  * Barra superior presente en todas las páginas (Fase 5): marca + búsqueda
  * siempre accesible. El form es un GET real a /buscar — funciona sin
  * JavaScript. En /buscar se oculta el campo: allí manda el campo principal.
  */
-export function EncabezadoSitio() {
+export function EncabezadoSitio({ usuario }: { usuario: UsuarioMenu | null }) {
   const ruta = usePathname();
   const enBuscar = ruta === "/buscar";
 
@@ -36,7 +37,7 @@ export function EncabezadoSitio() {
           </span>
         </Link>
 
-        {!enBuscar && (
+        {usuario && !enBuscar && (
           <form
             action="/buscar"
             role="search"
@@ -55,6 +56,11 @@ export function EncabezadoSitio() {
               className="h-9 w-full rounded-lg border border-border bg-card pl-9 pr-3 text-sm text-foreground shadow-xs transition-colors placeholder:text-muted-foreground/70 focus-visible:border-azul focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-azul"
             />
           </form>
+        )}
+        {usuario && (
+          <div className={enBuscar ? "ml-auto" : undefined}>
+            <MenuUsuario usuario={usuario} />
+          </div>
         )}
       </div>
     </header>

@@ -17,6 +17,10 @@ export const EsquemaCodigoFactor = z
   })
   .strict();
 
+export const EsquemaAviso = z
+  .object({ acepto: z.literal("si", { message: "Debe aceptar el aviso para continuar" }), volver })
+  .strict();
+
 export const EsquemaClaveInicial = z
   .object({ claveNueva: clave, confirmacion: clave })
   .strict()
