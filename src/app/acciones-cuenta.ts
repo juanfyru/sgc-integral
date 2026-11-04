@@ -11,6 +11,7 @@ import {
   obtenerSecretoTotp,
   registrarAcceso,
 } from "@/db/consultas/autenticacion";
+import { guardarTema } from "@/db/consultas/perfil";
 import { claveCandadoUsuario, conCandado } from "@/lib/candado";
 import { hashearClave } from "@/lib/clave";
 import { fijarClaveInicial } from "@/lib/clave-inicial";
@@ -26,6 +27,7 @@ import {
   EsquemaConfirmarTotp,
   EsquemaIngreso,
 } from "@/lib/esquemas/cuenta";
+import { EsquemaTema } from "@/lib/esquemas/entidad";
 import { comprobarClaveActual, confirmarSegundoFactor, quitarSegundoFactor, type EstadoFactor } from "@/lib/segundo-factor";
 import { generarSecretoTotp } from "@/lib/totp";
 import { intentarFactor, intentarIngreso } from "@/lib/ingreso";
@@ -34,6 +36,7 @@ import { crearLimitador } from "@/lib/limite";
 import { rutaInterna } from "@/lib/rutas";
 import { cerrarSesion, COOKIE_SESION } from "@/lib/sesion";
 import { requerirSesion, sesionActual } from "@/lib/sesion-actual";
+import { COOKIE_TEMA } from "@/lib/tema";
 import { ErrorValidacion, parsearFormulario } from "@/lib/validacion";
 
 export type { EstadoAccion } from "@/app/admin/comun";
@@ -262,4 +265,24 @@ export async function desactivarTotpAccion(
   if (r) return r;
   revalidatePath("/", "layout");
   redirect("/cuenta?aviso=factor-desactivado");
+}
+
+/**
+ * Tema del menú de usuario: lo guarda en el perfil y en una cookie del dispositivo, para
+ * que el ingreso y los pasos de la cuenta (sin sesión completa) respeten el último elegido.
+ */
+export async function cambiarTemaAccion(formData: FormData): Promise<void> {
+  const sesion = await requerirSesion();
+  // `volver` es la ruta donde estaba el menú; no es un dato del tema.
+  const { tema } = parsearFormulario(formData, EsquemaTema, { omitir: ["volver"] });
+  await guardarTema(sesion.usuarioId, tema);
+  (await cookies()).set(COOKIE_TEMA, tema, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 31_536_000, // un año
+  });
+  revalidatePath("/", "layout");
+  redirect(rutaInterna(formData.get("volver"), "/"));
 }

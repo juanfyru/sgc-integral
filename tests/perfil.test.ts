@@ -10,7 +10,7 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 }
 
 import { obtenerSql } from "@/db/cliente";
-import { obtenerPerfil } from "@/db/consultas/perfil";
+import { guardarTema, obtenerPerfil } from "@/db/consultas/perfil";
 
 const sql = () => obtenerSql();
 let usuarioId: number;
@@ -59,5 +59,15 @@ describe("obtenerPerfil", () => {
       await sql()`DELETE FROM cargos WHERE id = ${cJefe.id}`;
       await sql()`DELETE FROM areas WHERE id = ${a.id}`;
     }
+  });
+});
+
+describe("guardarTema", () => {
+  it("guarda el tema en el perfil", async () => {
+    const temaDe = async () => (await sql()`SELECT tema FROM usuarios WHERE id = ${usuarioId}`)[0].tema;
+    await guardarTema(usuarioId, "oscuro");
+    expect(await temaDe()).toBe("oscuro");
+    await guardarTema(usuarioId, "sistema");
+    expect(await temaDe()).toBe("sistema");
   });
 });

@@ -1,0 +1,38 @@
+import { describe, expect, it, vi } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
+import { ContenidoBarra } from "@/componentes/cascaron/ContenidoBarra";
+import { MenuUsuario } from "@/componentes/cascaron/MenuUsuario";
+import { entradasVisibles } from "@/componentes/cascaron/navegacion";
+
+// Fuera del enrutador de Next usePathname devuelve null: se fija la ruta para todo el archivo.
+vi.mock("next/navigation", () => ({ usePathname: () => "/admin/usuarios/5" }));
+
+const marca = { nombre: "Hospital X", sigla: "HX", logoUrl: null };
+
+describe("cascarón (render estático de los componentes cliente)", () => {
+  it("ContenidoBarra marca la ruta activa, agrupa y pinta el pie con la versión", () => {
+    const h = renderToStaticMarkup(
+      <ContenidoBarra marca={marca} entradas={entradasVisibles({ rol: "admin_sgc" })} tareas={0} version="0.1.0" />,
+    );
+    expect(h).toMatch(/aria-current="page"[^>]*href="\/admin\/usuarios"|href="\/admin\/usuarios"[^>]*aria-current="page"/);
+    expect(h).toContain("Documentos");
+    expect(h).toContain("Administración");
+    expect(h).toContain("SGC Integral · v0.1.0");
+    expect(h).toContain("HX"); // monograma sin logo
+  });
+  it("sin tareas no hay contador; con 3, lo muestra", () => {
+    const entradas = entradasVisibles({ rol: "admin_sgc" });
+    expect(
+      renderToStaticMarkup(<ContenidoBarra marca={marca} entradas={entradas} tareas={0} version="0.1.0" />),
+    ).not.toContain("data-contador");
+    expect(
+      renderToStaticMarkup(<ContenidoBarra marca={marca} entradas={entradas} tareas={3} version="0.1.0" />),
+    ).toContain('data-contador="3"');
+  });
+  it("MenuUsuario ofrece los tres temas con el actual marcado", () => {
+    const h = renderToStaticMarkup(<MenuUsuario nombre="Ana" etiquetaRol="Gerencia" tema="oscuro" />);
+    expect(h).toContain("Según el sistema");
+    // React escribe checked antes que value en los <input>: se acepta cualquier orden.
+    expect(h).toMatch(/value="oscuro"[^>]*checked=""|checked=""[^>]*value="oscuro"/);
+  });
+});

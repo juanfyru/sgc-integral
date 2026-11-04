@@ -1,6 +1,7 @@
 import { obtenerSql } from "@/db/cliente";
 import { supervisoresDe } from "@/db/consultas/estructura";
 import type { Rol } from "@/lib/roles";
+import type { Tema } from "@/lib/tema";
 
 export type Perfil = {
   id: number;
@@ -41,4 +42,9 @@ export async function obtenerPerfil(usuarioId: number): Promise<Perfil | null> {
     procesos: procesos.map((p) => ({ id: Number(p.id), nombre: p.nombre, slug: p.slug })),
     supervisores: (await supervisoresDe(usuarioId)).map((s) => ({ nombre: s.nombre, cargo: s.cargo })),
   };
+}
+
+/** Preferencia de tema del perfil; el CHECK de la columna rechaza cualquier otro valor. */
+export async function guardarTema(usuarioId: number, tema: Tema): Promise<void> {
+  await obtenerSql()`UPDATE usuarios SET tema = ${tema} WHERE id = ${usuarioId}`;
 }

@@ -43,6 +43,19 @@ export const obtenerMarca: () => Promise<Marca> = cache(async () => {
   };
 });
 
+/**
+ * La marca para el cromo (layout raíz, cascarón, pantalla centrada): si la BD no responde,
+ * la marca por defecto evita tumbar /ingreso y las páginas de error. Una vez por petición.
+ */
+export const obtenerMarcaSegura: () => Promise<Marca> = cache(async () => {
+  try {
+    return await obtenerMarca();
+  } catch (e) {
+    console.error("[marca] no se pudo leer la marca de la entidad:", e instanceof Error ? e.message : String(e));
+    return MARCA_DEFECTO;
+  }
+});
+
 export type DatosEntidad = {
   nombre: string;
   sigla: string;

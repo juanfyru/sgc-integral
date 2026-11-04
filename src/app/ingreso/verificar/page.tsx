@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { salir } from "@/app/acciones-cuenta";
+import { PantallaCentrada } from "@/componentes/cascaron/PantallaCentrada";
 import { FormularioFactor } from "@/componentes/cuenta/FormularioFactor";
 import { rutaInterna } from "@/lib/rutas";
 import { sesionActual } from "@/lib/sesion-actual";
 
-export const metadata: Metadata = { title: "Verificación en dos pasos — SGC Integral" };
+export const metadata: Metadata = { title: "Verificación en dos pasos" };
 export const dynamic = "force-dynamic";
 
 export default async function PaginaVerificar({
@@ -17,7 +18,7 @@ export default async function PaginaVerificar({
   const sesion = await sesionActual();
   if (!sesion?.factorPendiente) redirect("/ingreso");
   return (
-    <main className="mx-auto flex min-h-[70dvh] max-w-md flex-col items-center justify-center gap-6 px-4">
+    <PantallaCentrada>
       <div className="text-center">
         <h1 className="font-display text-2xl font-semibold">Verificación en dos pasos</h1>
         <p className="text-sm text-muted-foreground">
@@ -33,6 +34,6 @@ export default async function PaginaVerificar({
           Cancelar y salir
         </button>
       </form>
-    </main>
+    </PantallaCentrada>
   );
 }

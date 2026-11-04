@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { PantallaCentrada } from "@/componentes/cascaron/PantallaCentrada";
 import { FormularioIngreso } from "@/componentes/cuenta/FormularioIngreso";
 import { mensajeDeParametro, rutaInterna } from "@/lib/rutas";
 import { sesionActual } from "@/lib/sesion-actual";
 
-export const metadata: Metadata = { title: "Ingreso — SGC Integral" };
+export const metadata: Metadata = { title: "Ingreso" };
 export const dynamic = "force-dynamic";
 
 const MENSAJES: Record<string, string> = {
@@ -28,19 +29,14 @@ export default async function PaginaIngreso({
   }
   const aviso = mensajeDeParametro(MENSAJES, motivo);
   return (
-    <main className="mx-auto flex min-h-[70dvh] max-w-md flex-col items-center justify-center gap-6 px-4">
-      <div className="text-center">
-        <h1 className="font-display text-2xl font-semibold">Ingreso al SGC</h1>
-        <p className="text-sm text-muted-foreground">
-          Sistema de Gestión de Calidad — ESE Hospital Nuestra Señora de Fátima
-        </p>
-      </div>
+    <PantallaCentrada>
+      <h1 className="font-display text-2xl font-semibold">Ingreso al SGC</h1>
       {aviso && (
         <p role="alert" className="text-sm text-destructive">
           {aviso}
         </p>
       )}
       <FormularioIngreso volver={destino} />
-    </main>
+    </PantallaCentrada>
   );
 }
