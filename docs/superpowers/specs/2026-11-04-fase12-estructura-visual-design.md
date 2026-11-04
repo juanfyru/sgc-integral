@@ -411,8 +411,8 @@ claro**; el oscuro se deriva para cumplir por construcción (§6.2):
 Si falla, la acción devuelve el error con el valor medido y una **sugerencia**: el tono más
 cercano que pasa, obtenido bajando L en OKLCH de 0.02 en 0.02 manteniendo tono y croma.
 Formato del mensaje: «El color primario #9ecbff no tiene contraste suficiente con el texto
-blanco (1,7:1; mínimo 4,5:1). Pruebe #2f6fbe.» (el hex de la sugerencia lo calcula el
-algoritmo; `#2f6fbe` da 5,1:1 y sirve de ejemplo en el manual). El valor nuevo se guarda
+blanco (1,7:1; mínimo 4,5:1). Pruebe #4a74a3.» (el hex de la sugerencia lo calcula el
+algoritmo; `#4a74a3` da 4,86:1 y sirve de ejemplo en el manual). El valor nuevo se guarda
 solo si todo pasa; la vista previa del cliente (§7.3) muestra el mismo cálculo mientras se
 escribe, pero **la validación que vale es la del servidor**.
 

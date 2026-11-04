@@ -1297,7 +1297,7 @@ Inicio, un proceso y una lista.
 - Modify: `CONTEXT.md`, `PLAN.md` (fila 12 ✅), `AGENTS.md` (si alguna regla durable salió de la fase: `light-dark()` y `data-tema`; componentes base en `src/componentes/ui`; ruta pública `/marca/logo`), `README.md` (variables y comandos si cambiaron: `db:migrate` ahora comprueba duplicados)
 
 - [ ] **Step 1: Manual** — capítulo 3 (barra lateral y qué ve cada rol, Inicio y Mis tareas, `Ctrl K`, campana, Mi cuenta y tema, celular, imprimir)
-y capítulo 4 (nombre, sigla y lema; colores y contraste con el ejemplo `#9ecbff` → `#2f6fbe`; preparar y subir el logo; dónde se ve cada cosa; Textos del mapa),
+y capítulo 4 (nombre, sigla y lema; colores y contraste con el ejemplo `#9ecbff` → `#4a74a3` (el valor que calcula el algoritmo); preparar y subir el logo; dónde se ve cada cosa; Textos del mapa),
 con el formato del capítulo 1 y cadenas de interfaz **copiadas del código**.
 
 - [ ] **Step 2: `CONTEXT.md`** — cabecera con fecha; punto de reanudación hacia la Fase 13; «Qué probar y cómo (Fase 12)» con la
