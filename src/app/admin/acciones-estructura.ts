@@ -13,26 +13,20 @@ import {
 } from "@/db/consultas/estructura";
 import { requerirPermiso } from "@/lib/permisos";
 import { requerirSesion } from "@/lib/sesion-actual";
-import { EsquemaArea, EsquemaCargo } from "@/lib/esquemas/estructura";
-import { parsearFormulario } from "@/lib/validacion";
+import { parsearArea, parsearCargo } from "@/lib/esquemas/estructura";
 
 const RUTA = "/admin/estructura";
 
-function parsearCargo(formData: FormData) {
-  const d = parsearFormulario(formData, EsquemaCargo);
-  return { nombre: d.nombre, areaId: d.areaId, superiorId: d.superiorId ?? null };
-}
-
 export async function crearAreaAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "estructura.administrar", async (usuarioId) => {
-    await crearArea(parsearFormulario(formData, EsquemaArea), usuarioId);
+    await crearArea(parsearArea(formData), usuarioId);
     return RUTA;
   });
 }
 
 export async function editarAreaAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "estructura.administrar", async (usuarioId) => {
-    await editarArea(idNumerico(formData, "id"), parsearFormulario(formData, EsquemaArea), usuarioId);
+    await editarArea(idNumerico(formData, "id"), parsearArea(formData), usuarioId);
     return RUTA;
   });
 }

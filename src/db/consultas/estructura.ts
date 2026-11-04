@@ -210,7 +210,7 @@ export async function alternarCargo(id: number, activo: boolean, actorId: number
 
 // ── Supervisores ──
 
-/** Jefe inmediato si existe; si no, usuarios activos con el cargo superior. */
+/** Jefe inmediato activo si existe; si no, usuarios activos con el cargo superior. */
 export async function supervisoresDe(
   usuarioId: number,
 ): Promise<Array<{ id: number; nombre: string; cargo: string | null }>> {
@@ -220,8 +220,9 @@ export async function supervisoresDe(
   if (u.jefe_inmediato_id !== null) {
     const filas = await sql`SELECT u.id, u.nombre, c.nombre AS cargo
       FROM usuarios u LEFT JOIN cargos c ON c.id = u.cargo_id
-      WHERE u.id = ${u.jefe_inmediato_id}`;
-    return filas.map((f) => ({ id: Number(f.id), nombre: f.nombre, cargo: f.cargo }));
+      WHERE u.id = ${u.jefe_inmediato_id} AND u.activo`;
+    // Un jefe inmediato inactivo se ignora y se cae al organigrama.
+    if (filas.length > 0) return filas.map((f) => ({ id: Number(f.id), nombre: f.nombre, cargo: f.cargo }));
   }
   if (u.cargo_id === null) return [];
   const filas = await sql`SELECT s.id, s.nombre, sc.nombre AS cargo

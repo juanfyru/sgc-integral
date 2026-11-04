@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { EsquemaArea } from "@/lib/esquemas/estructura";
 import { EsquemaIngreso } from "@/lib/esquemas/cuenta";
 import { EsquemaUsuario, type DatosUsuarioFormulario } from "@/lib/esquemas/usuarios";
 import { ErrorValidacion, parsearFormulario } from "@/lib/validacion";
@@ -41,4 +42,10 @@ it("EsquemaUsuario coacciona lo que llega de un formulario", () => {
 it("EsquemaUsuario acepta objetos ya tipados (lote)", () => {
   const d = EsquemaUsuario.parse({ usuario: "ana.p", nombre: "Ana Pérez", correo: null, rol: "consulta", cargoId: null, jefeInmediatoId: null, procesoIds: [], verHistorial: false });
   expect(d.correo).toBeNull();
+});
+
+it("omitir descarta claves de ruta antes del esquema estricto", () => {
+  const fd = new FormData(); fd.set("id", "5"); fd.set("nombre", "Urgencias");
+  expect(() => parsearFormulario(fd, EsquemaArea)).toThrow(ErrorValidacion);
+  expect(parsearFormulario(fd, EsquemaArea, { omitir: ["id"] })).toEqual({ nombre: "Urgencias" });
 });

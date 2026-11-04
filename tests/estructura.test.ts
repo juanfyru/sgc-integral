@@ -11,6 +11,7 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 }
 
 import { obtenerSql } from "@/db/cliente";
+import { parsearArea, parsearCargo } from "@/lib/esquemas/estructura";
 import {
   alternarArea,
   alternarCargo,
@@ -61,6 +62,18 @@ afterAll(async () => {
   await sql().end();
 });
 
+describe("parseo de formularios de edición", () => {
+  it("omite el campo id de ruta y conserva el esquema estricto", () => {
+    const fa = new FormData(); fa.set("id", "5"); fa.set("nombre", "Urgencias");
+    expect(parsearArea(fa)).toEqual({ nombre: "Urgencias" });
+    const fc = new FormData();
+    fc.set("id", "7"); fc.set("nombre", "Médico"); fc.set("areaId", "2"); fc.set("superiorId", "");
+    expect(parsearCargo(fc)).toEqual({ nombre: "Médico", areaId: 2, superiorId: null });
+    fc.set("extra", "x");
+    expect(() => parsearCargo(fc)).toThrow();
+  });
+});
+
 describe("detectarCiclo", () => {
   const cargos = [{ id: 1, superiorId: null }, { id: 2, superiorId: 1 }, { id: 3, superiorId: 2 }];
   it("detecta ciclo directo e indirecto y acepta cadenas válidas", () => {
@@ -107,6 +120,9 @@ describe("áreas y cargos en BD", () => {
     await sql()`UPDATE usuarios SET jefe_inmediato_id = ${otroId} WHERE id = ${subId}`;
     expect((await supervisoresDe(subId)).map((s) => s.id)).toEqual([otroId]);
     expect(await supervisoresDe(jefeId)).toEqual([]);
+    // Jefe inmediato inactivo: se ignora y vale el organigrama.
+    await sql()`UPDATE usuarios SET activo = false WHERE id = ${otroId}`;
+    expect((await supervisoresDe(subId)).map((s) => s.id)).toEqual([jefeId]);
   });
   it("todo queda en bitácora", async () => {
     const filas = await sql()`SELECT accion FROM auditoria WHERE usuario_id = ${actorId}
