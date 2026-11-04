@@ -72,6 +72,10 @@ export function PanelSegundoFactor() {
           className={`${CLASE_CAMPO} tracking-widest`}
         />
       </label>
+      <label className="flex flex-col gap-1 text-sm font-medium text-foreground">
+        Clave actual
+        <input type="password" name="clave" autoComplete="current-password" maxLength={128} required className={CLASE_CAMPO} />
+      </label>
       {estado && !estado.ok && (
         <p role="alert" className="text-sm text-destructive">
           {estado.error}

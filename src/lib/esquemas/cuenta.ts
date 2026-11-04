@@ -38,3 +38,7 @@ export const EsquemaCambioClave = z
   });
 
 export const EsquemaClaveSola = z.object({ clave }).strict();
+
+export const EsquemaConfirmarTotp = z
+  .object({ codigo: z.string().trim().regex(/^\d{6}$/, "Código no válido"), clave })
+  .strict();

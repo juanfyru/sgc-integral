@@ -40,3 +40,8 @@ export function puedeDesactivarTotp(
 ): boolean {
   return !rolesObligatorios.includes(rol);
 }
+
+/** Inscribir el segundo factor solo es válido si no quedan antes la clave inicial ni el aviso. */
+export function inscripcionBloqueada(pendiente: Pendiente | null): boolean {
+  return pendiente === "clave" || pendiente === "aviso";
+}

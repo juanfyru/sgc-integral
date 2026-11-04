@@ -5,28 +5,27 @@ import { redirect } from "next/navigation";
 import type { EstadoAccion } from "@/app/admin/comun";
 import {
   aceptarAvisoDatos,
-  activarTotp,
-  buscarParaIngresoPorId,
   cambiarClaveDeUsuario,
-  desactivarTotp,
   guardarSecretoTotpPendiente,
   obtenerSecretoTotp,
   registrarAcceso,
 } from "@/db/consultas/autenticacion";
 import { claveCandadoUsuario, conCandado } from "@/lib/candado";
-import { hashearClave, verificarClave } from "@/lib/clave";
+import { hashearClave } from "@/lib/clave";
 import { validarClave } from "@/lib/clave-politica";
-import { cifrar, descifrar } from "@/lib/cifrado";
-import { puedeDesactivarTotp } from "@/lib/cuenta-estado";
+import { cifrar } from "@/lib/cifrado";
+import { inscripcionBloqueada, pendienteDeCuenta } from "@/lib/cuenta-estado";
 import {
   EsquemaAviso,
   EsquemaCambioClave,
   EsquemaClaveInicial,
   EsquemaClaveSola,
   EsquemaCodigoFactor,
+  EsquemaConfirmarTotp,
   EsquemaIngreso,
 } from "@/lib/esquemas/cuenta";
-import { generarCodigosRecuperacion, generarSecretoTotp, hashCodigoRecuperacion, verificarTotp } from "@/lib/totp";
+import { comprobarClaveActual, confirmarSegundoFactor, quitarSegundoFactor, type EstadoFactor } from "@/lib/segundo-factor";
+import { generarSecretoTotp } from "@/lib/totp";
 import { intentarFactor, intentarIngreso } from "@/lib/ingreso";
 import { ipDePeticion } from "@/lib/ip";
 import { crearLimitador } from "@/lib/limite";
@@ -36,6 +35,7 @@ import { requerirSesion, sesionActual } from "@/lib/sesion-actual";
 import { ErrorValidacion, parsearFormulario } from "@/lib/validacion";
 
 export type { EstadoAccion } from "@/app/admin/comun";
+export type { EstadoFactor } from "@/lib/segundo-factor";
 
 // Instancia única en el NAS: los límites viven en memoria (sin Redis).
 const permitirIngresoPorIp = crearLimitador({ limite: 30, ventanaMs: 60_000 });
@@ -169,15 +169,6 @@ export async function aceptarAvisoAccion(
   if (!sesion.aceptoDatos) await aceptarAvisoDatos(sesion.usuarioId);
   redirect(rutaInterna(datos.volver));
 }
-
-// Quien tiene una sesión robada no debe poder adivinar la clave actual desde aquí.
-const permitirVerificacionDeClave = crearLimitador({ limite: 10, ventanaMs: 15 * 60_000 });
-
-export type EstadoFactor = EstadoAccion | { ok: true; codigos: string[] };
-
-const MENSAJE_SECRETO_ILEGIBLE =
-  "No se pudo leer el segundo factor; pida al administrador que lo restablezca.";
-
 /** Cambio voluntario de clave: exige la actual y conserva solo esta sesión. */
 export async function cambiarClaveAccion(
   _estadoPrevio: EstadoAccion,
@@ -190,13 +181,8 @@ export async function cambiarClaveAccion(
   } catch (err) {
     return errorDeFormulario(err);
   }
-  if (!permitirVerificacionDeClave(String(sesion.usuarioId))) {
-    return { ok: false, error: "Demasiados intentos. Espere unos minutos." };
-  }
-  const usuario = await buscarParaIngresoPorId(sesion.usuarioId);
-  if (!usuario || !(await verificarClave(usuario.hashClave, datos.claveActual))) {
-    return { ok: false, error: "La clave actual no es correcta" };
-  }
+  const errorClave = await comprobarClaveActual(sesion.usuarioId, datos.claveActual, "La clave actual no es correcta");
+  if (errorClave) return { ok: false, error: errorClave };
   if (datos.claveNueva === datos.claveActual) {
     return { ok: false, error: "La clave nueva debe ser distinta de la actual" };
   }
@@ -207,10 +193,17 @@ export async function cambiarClaveAccion(
   redirect("/cuenta?aviso=clave");
 }
 
-/** Genera un secreto pendiente (aún no exigido al ingresar) y lleva a mostrar el QR. */
-export async function iniciarTotpAccion(): Promise<void> {
+/** Solo se inscribe el segundo factor con la cuenta al día: clave inicial y aviso van antes. */
+async function sesionParaInscribir() {
   // Un rol con TOTP obligatorio debe poder inscribirse con ese paso pendiente.
   const sesion = await requerirSesion({ permitirPendientes: true });
+  if (inscripcionBloqueada(pendienteDeCuenta(sesion))) throw new Error("Cuenta pendiente de completar");
+  return sesion;
+}
+
+/** Genera un secreto pendiente (aún no exigido al ingresar) y lleva a mostrar el QR. */
+export async function iniciarTotpAccion(): Promise<void> {
+  const sesion = await sesionParaInscribir();
   await conCandado(claveCandadoUsuario(sesion.usuarioId), async () => {
     const actual = await obtenerSecretoTotp(sesion.usuarioId);
     // Con el factor activo no se pisa el secreto: primero hay que desactivarlo.
@@ -219,37 +212,19 @@ export async function iniciarTotpAccion(): Promise<void> {
   redirect("/cuenta/segundo-factor");
 }
 
-/** Confirma el secreto pendiente con un código y entrega los códigos de recuperación (una sola vez). */
+/** Confirma el secreto pendiente con la clave y un código; entrega los códigos de recuperación (una sola vez). */
 export async function confirmarTotpAccion(
   _estadoPrevio: EstadoFactor,
   formData: FormData,
 ): Promise<EstadoFactor> {
-  const sesion = await requerirSesion({ permitirPendientes: true });
+  const sesion = await sesionParaInscribir();
   let datos;
   try {
-    datos = parsearFormulario(formData, EsquemaCodigoFactor);
+    datos = parsearFormulario(formData, EsquemaConfirmarTotp);
   } catch (err) {
     return errorDeFormulario(err);
   }
-  return conCandado(claveCandadoUsuario(sesion.usuarioId), async (): Promise<EstadoFactor> => {
-    const { secretoCifrado, activo } = await obtenerSecretoTotp(sesion.usuarioId);
-    if (activo) return { ok: false, error: "El segundo factor ya está activo." };
-    if (!secretoCifrado) {
-      return { ok: false, error: "Primero inicie la activación del segundo factor." };
-    }
-    let secreto: string;
-    try {
-      secreto = descifrar(secretoCifrado);
-    } catch {
-      console.error("No se pudo descifrar el secreto TOTP del usuario", sesion.usuarioId);
-      return { ok: false, error: MENSAJE_SECRETO_ILEGIBLE };
-    }
-    if (!verificarTotp(secreto, datos.codigo)) return { ok: false, error: "Código incorrecto" };
-
-    const codigos = generarCodigosRecuperacion(8);
-    await activarTotp(sesion.usuarioId, codigos.map(hashCodigoRecuperacion));
-    return { ok: true, codigos };
-  });
+  return confirmarSegundoFactor({ usuarioId: sesion.usuarioId, clave: datos.clave, codigo: datos.codigo });
 }
 
 /** Quita el segundo factor tras confirmar la clave; los roles que lo exigen no pueden. */
@@ -264,18 +239,7 @@ export async function desactivarTotpAccion(
   } catch (err) {
     return errorDeFormulario(err);
   }
-  if (!puedeDesactivarTotp(sesion.rol)) {
-    return { ok: false, error: "Su rol exige segundo factor; no puede desactivarlo." };
-  }
-  if (!permitirVerificacionDeClave(String(sesion.usuarioId))) {
-    return { ok: false, error: "Demasiados intentos. Espere unos minutos." };
-  }
-  const usuario = await buscarParaIngresoPorId(sesion.usuarioId);
-  if (!usuario || !(await verificarClave(usuario.hashClave, datos.clave))) {
-    return { ok: false, error: "La clave no es correcta" };
-  }
-  await conCandado(claveCandadoUsuario(sesion.usuarioId), () =>
-    desactivarTotp(sesion.usuarioId, sesion.usuarioId),
-  );
+  const r = await quitarSegundoFactor({ usuarioId: sesion.usuarioId, rol: sesion.rol, clave: datos.clave });
+  if (r) return r;
   redirect("/cuenta?aviso=factor-desactivado");
 }
