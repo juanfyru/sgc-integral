@@ -57,7 +57,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   // Con historia: se desactivan, no se borran.
-  await sql()`UPDATE usuarios SET activo = false WHERE usuario LIKE ${`zz\\_%\\_${ts}%`} AND id <> ${actorId}`;
+  await sql()`UPDATE usuarios SET activo = false WHERE usuario LIKE ${`zz\\_%\\_${ts}%`}`;
 });
 
 describe("crear", () => {
