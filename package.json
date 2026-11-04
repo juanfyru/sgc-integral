@@ -13,6 +13,7 @@
     "db:roles": "tsx scripts/asegurar-rol-app.ts",
     "db:preparar": "npm run db:migrate && npm run db:roles",
     "db:seed": "tsx src/db/semilla.ts",
+    "db:seed:minima": "tsx src/db/semilla.ts --minima",
     "admin:asegurar": "tsx scripts/asegurar-admin.ts"
   },
   "dependencies": {

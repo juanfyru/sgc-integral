@@ -161,6 +161,38 @@ describe("búsqueda en español (FTS + trigramas + unaccent)", () => {
 });
 
 describe("estados del seed (datos de demostración)", () => {
+  it("la demo trae cinco áreas, nueve cargos y cinco usuarios de ejemplo con sus roles", async () => {
+    expect((await sql`SELECT count(*)::int AS n FROM areas`)[0].n).toBe(5);
+    expect((await sql`SELECT count(*)::int AS n FROM cargos`)[0].n).toBe(9);
+    const usuarios = await sql`SELECT usuario, rol FROM usuarios WHERE usuario IN ('gerente','control.interno','lider.gth','lider.cex','consulta') ORDER BY usuario`;
+    expect(usuarios.map((u) => ({ usuario: u.usuario, rol: u.rol }))).toEqual([
+      { usuario: "consulta", rol: "consulta" },
+      { usuario: "control.interno", rol: "control_interno" },
+      { usuario: "gerente", rol: "gerencia" },
+      { usuario: "lider.cex", rol: "lider_proceso" },
+      { usuario: "lider.gth", rol: "lider_proceso" },
+    ]);
+    const [gth] = await sql`SELECT p.sigla FROM usuario_procesos up JOIN procesos p ON p.id = up.proceso_id JOIN usuarios u ON u.id = up.usuario_id WHERE u.usuario = 'lider.gth'`;
+    expect(gth.sigla).toBe("GTH");
+    const [cex] = await sql`SELECT p.sigla FROM usuario_procesos up JOIN procesos p ON p.id = up.proceso_id JOIN usuarios u ON u.id = up.usuario_id WHERE u.usuario = 'lider.cex'`;
+    expect(cex.sigla).toBe("CEX");
+  });
+
+  it("la clave demo cumple la política de claves y los usuarios demo la verifican", async () => {
+    const { CLAVE_DEMO } = await import("../src/db/semillas/demo");
+    const { validarClave } = await import("@/lib/clave-politica");
+    const { verificarClave } = await import("@/lib/clave");
+    const nombres = ["gerente", "control.interno", "lider.gth", "lider.cex", "consulta"];
+    const filas = await sql`SELECT usuario, hash_clave, debe_cambiar_clave, acepto_datos_en FROM usuarios WHERE usuario = ANY(${nombres})`;
+    expect(filas).toHaveLength(5);
+    for (const f of filas) {
+      expect(validarClave(CLAVE_DEMO, { usuario: f.usuario })).toBeNull();
+      expect(await verificarClave(f.hash_clave, CLAVE_DEMO)).toBe(true);
+      expect(f.debe_cambiar_clave).toBe(false);
+      expect(f.acepto_datos_en).not.toBeNull();
+    }
+  });
+
   it("cubre los cuatro estados", async () => {
     const filas = await sql`
       SELECT estado, count(*)::int AS cantidad

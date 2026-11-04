@@ -23,8 +23,19 @@ docker compose -f docker-compose.dev.yml up --build
 docker compose -f docker-compose.dev.yml up -d bd
 cp .env.example .env.local
 npm install
+npm run db:preparar     # migraciones + rol de BD de la app (sgc_app)
+npm run db:seed         # semilla demo: mapa, documentos, estructura y usuarios de ejemplo
+npm run admin:asegurar  # crea el admin (pide cambiar la clave al primer ingreso)
 npm run dev
 # → http://localhost:3002
+
+# Semilla mínima (instalación nueva: solo tipos de documento y configuración,
+# sin mapa, documentos ni usuarios). Ambas semillas BORRAN todo antes de sembrar:
+npm run db:seed:minima
+
+# Usuarios demo (clave común: Demo-SGC-2026-clave):
+#   gerente (gerencia), control.interno (control_interno),
+#   lider.gth y lider.cex (lider_proceso, de GTH y CEX), consulta (consulta).
 
 # Puertos elegidos para convivir con sgc-suaza en la misma máquina:
 # Postgres 5435, app en Docker 9081, next dev 3002.

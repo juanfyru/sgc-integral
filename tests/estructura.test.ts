@@ -59,6 +59,11 @@ afterAll(async () => {
   await sql()`UPDATE usuarios SET jefe_inmediato_id = NULL WHERE id = ANY(${usuariosCreados})`;
   await sql()`DELETE FROM usuarios WHERE id = ANY(${usuariosCreados.filter((i) => i !== actorId)})`;
   await sql()`UPDATE usuarios SET activo = false WHERE id = ${actorId}`;
+  // Áreas y cargos de prueba: no deben sobrevivir (la demo cuenta cinco áreas).
+  const patron = `%${sufijo}`;
+  await sql()`UPDATE cargos SET superior_id = NULL WHERE area_id IN (SELECT id FROM areas WHERE nombre LIKE ${patron})`;
+  await sql()`DELETE FROM cargos WHERE area_id IN (SELECT id FROM areas WHERE nombre LIKE ${patron})`;
+  await sql()`DELETE FROM areas WHERE nombre LIKE ${patron}`;
   await sql().end();
 });
 
