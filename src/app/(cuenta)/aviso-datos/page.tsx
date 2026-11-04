@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { FormularioAviso } from "@/componentes/cuenta/FormularioAviso";
 import { obtenerTextos } from "@/db/consultas/mapa-admin";
 import { rutaInterna } from "@/lib/rutas";
-import { sesionActual } from "@/lib/sesion-actual";
+import { exigirSesionConPendientes } from "@/lib/paginas";
 
 export const metadata: Metadata = { title: "Aviso de datos personales — SGC Integral" };
 export const dynamic = "force-dynamic";
@@ -17,9 +17,9 @@ export default async function PaginaAvisoDatos({
   searchParams: Promise<{ volver?: string }>;
 }) {
   const { volver } = await searchParams;
-  const sesion = await sesionActual();
-  if (sesion?.debeCambiarClave) redirect("/cuenta/clave-inicial");
-  if (sesion?.aceptoDatos) redirect(rutaInterna(volver));
+  const sesion = await exigirSesionConPendientes();
+  if (sesion.debeCambiarClave) redirect("/cuenta/clave-inicial");
+  if (sesion.aceptoDatos) redirect(rutaInterna(volver));
   const texto = (await obtenerTextos()).aviso_datos_personales?.trim() || AVISO_POR_DEFECTO;
   const parrafos = texto.split(/\r?\n+/).filter((p) => p.trim());
   return (

@@ -11,6 +11,7 @@ import {
   obtenerDetalleProceso,
   obtenerDocumentosDeProceso,
 } from "@/db/consultas/procesos";
+import { exigirSesion } from "@/lib/paginas";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,7 @@ export default async function VistaProceso({
   params: Promise<{ slug: string }>;
   searchParams: Promise<{ subprocesos?: string }>;
 }) {
+  await exigirSesion();
   const [{ slug }, { subprocesos: parametroSubprocesos }] = await Promise.all([
     params,
     searchParams,

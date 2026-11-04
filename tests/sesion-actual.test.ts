@@ -62,4 +62,16 @@ describe("sesionDePeticion y sesiones pendientes", () => {
     const p = await peticionCon({ debeCambiarClave: false, aceptoDatos: true });
     expect((await sesionDePeticion(p))?.usuarioId).toBe(usuarioId);
   });
+  it("TOTP obligatorio sin TOTP: sin la opción null; con la opción, la sesión", async () => {
+    const previo = process.env.EXIGIR_2FA_ROLES;
+    process.env.EXIGIR_2FA_ROLES = "control_interno";
+    try {
+      const p = await peticionCon({ debeCambiarClave: false, aceptoDatos: true });
+      expect(await sesionDePeticion(p)).toBeNull();
+      expect((await sesionDePeticion(p, { permitirPendientes: true }))?.usuarioId).toBe(usuarioId);
+    } finally {
+      if (previo === undefined) delete process.env.EXIGIR_2FA_ROLES;
+      else process.env.EXIGIR_2FA_ROLES = previo;
+    }
+  });
 });

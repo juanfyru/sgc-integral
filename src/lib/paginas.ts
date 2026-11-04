@@ -26,6 +26,17 @@ export async function exigirSesion(): Promise<SesionValida> {
   return sesion;
 }
 
+/**
+ * Para los pasos obligatorios de la cuenta (clave inicial, aviso, TOTP): exige
+ * sesión con el segundo factor ya resuelto, pero admite pasos pendientes.
+ */
+export async function exigirSesionConPendientes(): Promise<SesionValida> {
+  const sesion = await sesionActual();
+  if (!sesion) redirect("/ingreso");
+  if (sesion.factorPendiente) redirect("/ingreso/verificar");
+  return sesion;
+}
+
 export async function exigirPermiso(permiso: Permiso): Promise<SesionValida> {
   const sesion = await exigirSesion();
   if (!puede(sesion, permiso)) redirect("/sin-acceso");

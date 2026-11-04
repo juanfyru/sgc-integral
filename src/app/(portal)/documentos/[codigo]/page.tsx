@@ -22,7 +22,7 @@ import {
 } from "@/db/consultas/documentos";
 import { registrarEventoConsulta } from "@/db/consultas/eventos";
 import { ipDePeticion } from "@/lib/ip";
-import { sesionActual } from "@/lib/sesion-actual";
+import { exigirSesion } from "@/lib/paginas";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +50,7 @@ export default async function FichaDocumento({
 }: {
   params: Promise<{ codigo: string }>;
 }) {
+  const sesion = await exigirSesion();
   const { codigo } = await params;
 
   const ficha = await obtenerFichaDocumento(codigo);
@@ -58,12 +59,11 @@ export default async function FichaDocumento({
   // Trazabilidad D8: la consulta de la ficha queda en la bitácora de
   // eventos; si falla, la página igual responde.
   const cabeceras = await headers();
-  const sesion = await sesionActual();
   await registrarEventoConsulta({
     tipo: "vista",
     documentoId: ficha.id,
     versionId: ficha.version.id,
-    usuarioId: sesion?.usuarioId ?? null,
+    usuarioId: sesion.usuarioId,
     ip: ipDePeticion(cabeceras),
     userAgent: cabeceras.get("user-agent"),
   }).catch((err) => console.error("No se pudo registrar la vista:", err));

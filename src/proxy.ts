@@ -37,8 +37,12 @@ export function proxy(request: NextRequest) {
 }
 
 // El matcher debe ser una constante literal (Next lo analiza estáticamente).
+// El punto va como [.]: Next deja el `.` sin escapar y `\.` haría coincidir
+// cualquier carácter (p. ej. /procesos/apoyo-diagnostico quedaba fuera del proxy).
+// Una URL de archivo del portal con nombre cosmético .png/.svg queda fuera del
+// proxy: la protege el 401 del handler.
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\.(?:png|jpg|jpeg|webp|svg|ico|woff2?)$).*)",
+    "/((?!_next/static|_next/image|favicon[.]ico|.*[.](?:png|jpg|jpeg|webp|svg|ico|woff2?)$).*)",
   ],
 };

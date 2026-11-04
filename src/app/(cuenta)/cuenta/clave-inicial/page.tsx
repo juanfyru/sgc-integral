@@ -3,14 +3,14 @@ import { redirect } from "next/navigation";
 import { claveInicialAccion } from "@/app/acciones-cuenta";
 import { FormularioClave } from "@/componentes/cuenta/FormularioClave";
 import { LONGITUD_MAXIMA, LONGITUD_MINIMA } from "@/lib/clave-politica";
-import { sesionActual } from "@/lib/sesion-actual";
+import { exigirSesionConPendientes } from "@/lib/paginas";
 
 export const metadata: Metadata = { title: "Cambio de clave inicial — SGC Integral" };
 export const dynamic = "force-dynamic";
 
 export default async function PaginaClaveInicial() {
-  const sesion = await sesionActual();
-  if (!sesion?.debeCambiarClave) redirect("/");
+  const sesion = await exigirSesionConPendientes();
+  if (!sesion.debeCambiarClave) redirect("/");
   return (
     <>
       <div className="text-center">

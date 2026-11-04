@@ -13,7 +13,7 @@ import {
 } from "@/db/consultas/busqueda";
 import { obtenerDetalleProceso } from "@/db/consultas/procesos";
 import { crearLimitador } from "@/lib/limite";
-import { sesionActual } from "@/lib/sesion-actual";
+import { exigirSesion } from "@/lib/paginas";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +61,7 @@ export default async function PaginaBuscar({
 }: {
   searchParams: Promise<Parametros>;
 }) {
+  const sesion = await exigirSesion();
   const sp = await searchParams;
   const parametros: Parametros = Object.fromEntries(
     CLAVES.map((c) => [c, typeof sp[c] === "string" ? sp[c] : undefined]),
@@ -83,8 +84,7 @@ export default async function PaginaBuscar({
   };
 
   if (conCriterios) {
-    const sesion = await sesionActual();
-    if (!sesion || !permitirBusqueda(String(sesion.usuarioId))) {
+    if (!permitirBusqueda(String(sesion.usuarioId))) {
       limitado = true;
     } else {
       respuesta = await buscarDocumentos(filtros);

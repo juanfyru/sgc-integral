@@ -1,11 +1,13 @@
 import { AcordeonMapa } from "@/componentes/mapa/AcordeonMapa";
 import { MapaProcesos } from "@/componentes/mapa/MapaProcesos";
 import { obtenerDatosMapa } from "@/db/consultas/mapa";
+import { exigirSesion } from "@/lib/paginas";
 
 // El mapa vive en BD: siempre se lee en el momento de la petición.
 export const dynamic = "force-dynamic";
 
 export default async function Inicio() {
+  await exigirSesion();
   const datos = await obtenerDatosMapa();
   const { configuracion } = datos;
 

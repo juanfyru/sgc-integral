@@ -1,25 +1,22 @@
 import { cache } from "react";
 import { cookies } from "next/headers";
 import type { NextRequest } from "next/server";
+import { pendienteDeCuenta } from "@/lib/cuenta-estado";
 import { COOKIE_SESION } from "@/lib/sesion-constantes";
 import { validarSesion, type SesionValida } from "@/lib/sesion";
 
 export type OpcionesRequerir = { permitirPendientes?: boolean };
 
 // Regla única de "sesión aceptable": segundo factor pendiente nunca pasa;
-// cambio de clave o aviso de datos pendientes pasan solo si se permiten.
+// cambio de clave, aviso de datos o TOTP obligatorio pendientes pasan solo si se permiten.
 // Devuelve el mensaje de rechazo o null si es aceptable.
 function motivoRechazo(
   sesion: SesionValida,
   opciones?: OpcionesRequerir,
 ): string | null {
-  if (sesion.factorPendiente) return "No autorizado";
-  if (
-    (sesion.debeCambiarClave || !sesion.aceptoDatos) &&
-    !opciones?.permitirPendientes
-  ) {
-    return "Cuenta pendiente de completar";
-  }
+  const pendiente = pendienteDeCuenta(sesion);
+  if (pendiente === "factor") return "No autorizado";
+  if (pendiente && !opciones?.permitirPendientes) return "Cuenta pendiente de completar";
   return null;
 }
 
