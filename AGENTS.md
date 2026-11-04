@@ -57,11 +57,12 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
 7. **TLS siempre.** Con dominio público, certificado automático (ACME) en Caddy; solo
    intranet, el certificado de la autoridad interna o el que Caddy genera. HSTS cuando
    hay TLS.
-8. **Zona horaria por instalación** (objetivo, **pendiente de cablear**): variable
-   `ZONA_HORARIA`, por defecto `America/Bogota`; toda fecha de corte, periodo y resumen
-   se calculará en esa zona y la BD guarda `timestamptz`. Hoy la variable no existe y
-   cuatro archivos fijan `America/Bogota` (ver "Deuda técnica" en `CONTEXT.md`); el
-   código nuevo no debe añadir más zonas fijas.
+8. **Zona horaria por instalación:** variable `ZONA_HORARIA` (nombre IANA), por defecto
+   `America/Bogota`; la BD guarda `timestamptz`. La conexión de la app abre con
+   `TimeZone = zonaHoraria()` (`src/db/cliente.ts`), así `to_char`, `date_trunc` y los
+   casts `::date` de toda consulta calculan en esa zona; el código TypeScript que formatea
+   fechas con `Intl` usa el helper `zonaHoraria()` (`src/lib/zona-horaria.ts`). Nunca se
+   fija una zona en el código. Una zona inválida impide el arranque (`scripts/arrancar.ts`).
 9. **Una sola instancia de app.** Los límites de ritmo viven en memoria. La IP del
    cliente se toma de `X-Forwarded-For` (último elemento) o `X-Real-IP` **solo con
    `CONFIAR_PROXY=1`** (el único camino de entrada es el proxy); sin la variable la IP es

@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import { cerrarSesionAccion } from "@/app/admin/acciones-usuarios";
 import { exigirPermiso } from "@/lib/paginas";
+import { zonaHoraria } from "@/lib/zona-horaria";
 import { ETIQUETA_ROL } from "@/lib/roles";
 import { listarSesionesActivas } from "@/lib/sesion";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Sesiones — Administración SGC" };
 
-const fecha = new Intl.DateTimeFormat("es-CO", { dateStyle: "short", timeStyle: "medium", timeZone: "America/Bogota" });
+const fecha = new Intl.DateTimeFormat("es-CO", { dateStyle: "short", timeStyle: "medium", timeZone: zonaHoraria() });
 const f = (iso: string) => fecha.format(new Date(iso));
 
 export default async function PaginaSesiones() {

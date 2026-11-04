@@ -29,10 +29,10 @@ export default async function Inicio() {
         </p>
       </header>
 
-      {misProcesos && <MisProcesos procesos={misProcesos} />}
-
       {/* Escritorio: el mapa completo por bandas. Mobile: acordeón (D9). */}
       <main>
+        {misProcesos && <MisProcesos procesos={misProcesos} />}
+
         <div className="hidden lg:block">
           <MapaProcesos datos={datos} />
         </div>

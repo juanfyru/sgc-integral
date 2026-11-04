@@ -59,8 +59,10 @@ export function describirEvento(e: EventoAuditoria): string {
       return "Aceptó el aviso de tratamiento de datos personales";
     case "activar_segundo_factor":
       return "Activó el segundo factor";
-    case "quitar_segundo_factor":
-      return "Desactivó el segundo factor";
+    case "quitar_segundo_factor": {
+      const afectado = texto(d.usuario);
+      return afectado ? `Quitó el segundo factor de «${afectado}»` : "Desactivó el segundo factor";
+    }
     case "crear_usuario":
       return `Creó el usuario «${texto(d.usuario) ?? "?"}»`;
     case "editar_usuario":

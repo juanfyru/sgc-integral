@@ -18,6 +18,7 @@ services:
       BD_APP_CLAVE: sgc_app_dev
       # La imagen corre con NODE_ENV=production, que exige APP_SECRETO. Solo desarrollo.
       APP_SECRETO: EydHcw1DuRRigzlQG5UXcwVA+SHK+ScJTToKXv6qQic=
+      ZONA_HORARIA: ${ZONA_HORARIA:-America/Bogota}
     depends_on:
       bd:
         condition: service_healthy

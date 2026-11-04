@@ -106,4 +106,18 @@ describe("clave, aviso y segundo factor", () => {
     const [aud] = await sql()`SELECT 1 FROM auditoria WHERE accion = 'quitar_segundo_factor' AND usuario_id = ${usuarioId}`;
     expect(aud).toBeTruthy();
   });
+
+  it("desactivarTotp guarda el usuario afectado solo si lo quita otra persona", async () => {
+    const propio = await sql()`SELECT detalle FROM auditoria WHERE accion = 'quitar_segundo_factor' AND usuario_id = ${usuarioId} ORDER BY id DESC LIMIT 1`;
+    expect(propio[0].detalle?.usuario).toBeUndefined();
+    const [u] = await sql()`SELECT usuario FROM usuarios WHERE id = ${usuarioId}`;
+    const nombreActor = `zz_auth_actor_${Date.now()}`;
+    await asegurarAdmin(nombreActor, "Actor de prueba", "clave-inicial-larga-1");
+    const [actor] = await sql()`SELECT id FROM usuarios WHERE usuario = ${nombreActor}`;
+    const actorId = Number(actor.id);
+    await desactivarTotp(usuarioId, actorId);
+    await sql()`UPDATE usuarios SET activo = false WHERE id = ${actorId}`;
+    const [aud] = await sql()`SELECT detalle FROM auditoria WHERE accion = 'quitar_segundo_factor' AND usuario_id = ${actorId} ORDER BY id DESC LIMIT 1`;
+    expect(aud.detalle).toEqual({ usuario: u.usuario });
+  });
 });

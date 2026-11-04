@@ -349,8 +349,12 @@ export type ResultadoLote = {
  * Cada fila va en su propia transacción: el error de una no detiene las demás.
  * La auditoría del lote guarda conteos y nombres de usuario, jamás las claves.
  */
-export async function crearUsuariosEnLote(filas: FilaLoteValida[], actorId: number): Promise<ResultadoLote> {
-  const resultado: ResultadoLote = { creados: [], fallidos: [] };
+export async function crearUsuariosEnLote(
+  filas: FilaLoteValida[],
+  actorId: number,
+  rechazadasAntes: FilaLoteInvalida[] = [],
+): Promise<ResultadoLote> {
+  const resultado: ResultadoLote = { creados: [], fallidos: [...rechazadasAntes] };
   for (const { linea, datos } of filas) {
     const claveTemporal = generarClaveTemporal();
     try {
@@ -360,6 +364,7 @@ export async function crearUsuariosEnLote(filas: FilaLoteValida[], actorId: numb
       resultado.fallidos.push({ linea, usuario: datos.usuario, error: (err as Error).message });
     }
   }
+  resultado.fallidos.sort((a, b) => a.linea - b.linea);
   await registrarAuditoria(obtenerSql(), {
     usuarioId: actorId, accion: "crear_usuarios_lote", entidad: "usuario", entidadId: null,
     detalle: {

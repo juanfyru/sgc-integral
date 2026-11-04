@@ -13,13 +13,14 @@ import { BotonRestablecer } from "@/componentes/admin/usuarios/BotonRestablecer"
 import { FormularioUsuario } from "@/componentes/admin/usuarios/FormularioUsuario";
 import { obtenerUsuario, opcionesFormularioUsuario } from "@/db/consultas/usuarios";
 import { exigirPermiso } from "@/lib/paginas";
+import { zonaHoraria } from "@/lib/zona-horaria";
 import { puede } from "@/lib/permisos";
 import { ETIQUETA_ROL } from "@/lib/roles";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Usuario — Administración SGC" };
 
-const fecha = new Intl.DateTimeFormat("es-CO", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Bogota" });
+const fecha = new Intl.DateTimeFormat("es-CO", { dateStyle: "medium", timeStyle: "short", timeZone: zonaHoraria() });
 const f = (iso: string | null) => (iso ? fecha.format(new Date(iso)) : "—");
 
 export default async function PaginaUsuario({ params }: { params: Promise<{ id: string }> }) {

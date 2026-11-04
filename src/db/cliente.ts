@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { zonaHoraria } from "../lib/zona-horaria";
 
 // Cliente único de postgres.js (el mismo driver que usará Drizzle en Fase 2).
 // Inicialización perezosa: Next evalúa los módulos durante `next build`,
@@ -27,7 +28,13 @@ export function obtenerSql() {
     throw new Error("DATABASE_URL no está definida");
   }
 
-  const sql = postgres(url, { max: 5, connect_timeout: 5, types: TIPOS_SQL });
+  const sql = postgres(url, {
+    max: 5,
+    connect_timeout: 5,
+    types: TIPOS_SQL,
+    // La sesión de BD calcula to_char, date_trunc y ::date en la zona de la instalación.
+    connection: { TimeZone: zonaHoraria() },
+  });
   // Reutilizar la conexión entre recargas de HMR en desarrollo y entre
   // invocaciones en producción.
   globalThis.__sql = sql;

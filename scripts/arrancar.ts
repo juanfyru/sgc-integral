@@ -16,6 +16,7 @@ import {
 import { appSecretoValido } from "@/lib/cifrado";
 import { TIPOS_SQL } from "@/db/cliente";
 import { asegurarRolApp } from "@/db/roles-bd";
+import { zonaHoraria } from "@/lib/zona-horaria";
 
 async function principal() {
   let cx;
@@ -38,6 +39,13 @@ async function principal() {
     console.error(
       "[arranque] APP_SECRETO falta o no son 32 bytes en base64 (generar con: openssl rand -base64 32)",
     );
+    process.exit(1);
+  }
+
+  try {
+    zonaHoraria();
+  } catch (error) {
+    console.error(`[arranque] ${(error as Error).message}`);
     process.exit(1);
   }
 

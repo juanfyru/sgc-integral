@@ -155,10 +155,9 @@ export async function crearLoteAccion(_prev: EstadoLote, formData: FormData): Pr
       procesos: new Map(procesos.map((p) => [String(p.sigla).toUpperCase(), Number(p.id)])),
     };
     const { validas, invalidas } = parsearLoteCsv(texto, catalogo);
-    const creacion = await crearUsuariosEnLote(validas, sesion.usuarioId);
+    const creacion = await crearUsuariosEnLote(validas, sesion.usuarioId, invalidas);
     revalidatePath("/", "layout");
-    const fallidos = [...invalidas, ...creacion.fallidos].sort((a, b) => a.linea - b.linea);
-    return { ok: true, resultado: { creados: creacion.creados, fallidos } };
+    return { ok: true, resultado: creacion };
   } catch (err) {
     return { ok: false, error: (err as Error).message };
   }

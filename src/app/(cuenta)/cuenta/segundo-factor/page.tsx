@@ -35,10 +35,13 @@ export default async function PaginaSegundoFactor({
   const { secretoCifrado, activo } = await obtenerSecretoTotp(sesion.usuarioId);
   const exigido = pendiente === "totp_obligatorio" || obligatorio === "1";
 
+  // Toda rama de `contenido` es un <PanelSegundoFactor> como único elemento raíz: al confirmar,
+  // la acción revalida el layout y la página pasa a «activo»; si el panel cambiara de tipo o de
+  // posición se desmontaría y se perderían los códigos de recuperación (estado del cliente).
   let contenido: React.ReactNode;
   if (activo) {
     contenido = (
-      <>
+      <PanelSegundoFactor confirmar={false}>
         <p className="text-sm text-foreground">
           El segundo factor está <strong>activo</strong>: al ingresar se le pedirá un código de su aplicación.
         </p>
@@ -49,11 +52,11 @@ export default async function PaginaSegundoFactor({
             Su rol exige segundo factor; no puede desactivarlo.
           </p>
         )}
-      </>
+      </PanelSegundoFactor>
     );
   } else if (!secretoCifrado) {
     contenido = (
-      <>
+      <PanelSegundoFactor confirmar={false}>
         <p className="text-sm text-muted-foreground">
           Protege su cuenta con un código temporal de una aplicación de autenticación (Google
           Authenticator, Aegis, etc.).
@@ -63,7 +66,7 @@ export default async function PaginaSegundoFactor({
             Activar segundo factor
           </button>
         </form>
-      </>
+      </PanelSegundoFactor>
     );
   } else {
     let secreto: string | null = null;
@@ -74,16 +77,18 @@ export default async function PaginaSegundoFactor({
     }
     if (!secreto) {
       contenido = (
-        <p role="alert" className="text-sm text-destructive">
-          No se pudo leer el segundo factor; pida al administrador que lo restablezca.
-        </p>
+        <PanelSegundoFactor confirmar={false}>
+          <p role="alert" className="text-sm text-destructive">
+            No se pudo leer el segundo factor; pida al administrador que lo restablezca.
+          </p>
+        </PanelSegundoFactor>
       );
     } else {
       const entidad = (await obtenerTextos()).nombre_entidad?.trim() || "SGC Integral";
       // PNG en data: URL (la CSP permite img-src data:); nunca SVG inyectado.
       const qr = await QRCode.toDataURL(uriTotp(secreto, sesion.usuario, entidad), { margin: 1, width: 224 });
       contenido = (
-        <>
+        <PanelSegundoFactor confirmar>
           <ol className="list-decimal space-y-1 pl-5 text-sm text-foreground">
             <li>Escanee el código con su aplicación de autenticación.</li>
             <li>Escriba el código de 6 dígitos que ella muestra.</li>
@@ -94,8 +99,7 @@ export default async function PaginaSegundoFactor({
             ¿No puede escanear? Escriba esta clave en la aplicación:{" "}
             <code className="font-mono text-foreground">{enGrupos(secreto)}</code>
           </p>
-          <PanelSegundoFactor />
-        </>
+        </PanelSegundoFactor>
       );
     }
   }

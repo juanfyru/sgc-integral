@@ -23,6 +23,7 @@ services:
       BD_APP_CLAVE: ${SGC_BD_APP_CLAVE:-}
       APP_SECRETO: ${APP_SECRETO:?Definir APP_SECRETO en .env (openssl rand -base64 32)}
       ALMACEN_RUTA: /almacen
+      ZONA_HORARIA: ${ZONA_HORARIA:-America/Bogota}
       NEXT_TELEMETRY_DISABLED: "1"
       ADMIN_USUARIO: ${ADMIN_USUARIO:-}
       ADMIN_NOMBRE: ${ADMIN_NOMBRE:-}

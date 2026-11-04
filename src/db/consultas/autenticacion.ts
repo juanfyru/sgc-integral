@@ -148,12 +148,14 @@ export async function activarTotp(
 /** `actorId` quien lo hace (el propio usuario o un admin); la auditoría lo registra a él. */
 export async function desactivarTotp(usuarioId: number, actorId: number): Promise<void> {
   await obtenerSql().begin(async (tx) => {
-    await tx`UPDATE usuarios SET totp_activo = false, totp_secreto_cifrado = NULL,
-      actualizado_en = now() WHERE id = ${usuarioId}`;
+    const [afectado] = await tx`UPDATE usuarios SET totp_activo = false, totp_secreto_cifrado = NULL,
+      actualizado_en = now() WHERE id = ${usuarioId} RETURNING usuario`;
     await tx`DELETE FROM codigos_recuperacion WHERE usuario_id = ${usuarioId}`;
     await registrarAuditoria(tx, {
       usuarioId: actorId, accion: "quitar_segundo_factor", entidad: "usuario",
       entidadId: usuarioId,
+      // Si lo quita un administrador, la bitácora nombra a la persona afectada.
+      ...(actorId !== usuarioId && afectado ? { detalle: { usuario: afectado.usuario as string } } : {}),
     });
   });
 }

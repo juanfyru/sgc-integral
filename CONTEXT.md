@@ -56,6 +56,7 @@
    | `DATABASE_URL_MIGRADOR` | `postgres://sgc:sgc_dev@localhost:5435/sgc` | Dueño del esquema: migraciones, semillas, `db:roles`. Si falta, modo heredado (todo con `DATABASE_URL`, con aviso) |
    | `BD_APP_CLAVE` | `sgc_app_dev` | Clave del rol `sgc_app`; se sincroniza en cada `db:roles` y arranque. La misma en el compose de desarrollo |
    | `APP_SECRETO` | El de `.env.example` (solo desarrollo) | 32 bytes en base64; cifra los secretos TOTP (AES-256-GCM). Obligatoria en producción: sin ella el arranque falla |
+   | `ZONA_HORARIA` | `America/Bogota` | Zona IANA de la instalación: TimeZone de la sesión de BD y formato de fechas (`zonaHoraria()`). Inválida = el arranque falla |
    | `CONFIAR_PROXY` | vacío | `1` detrás de Caddy (Fase 20): la IP sale de `X-Forwarded-For`/`X-Real-IP` |
    | `SESION_INACTIVIDAD_MIN` | `60` | Cierre de sesión por inactividad |
    | `EXIGIR_2FA_ROLES` | vacío | Roles con TOTP obligatorio, p. ej. `admin_sgc,gerencia` |
@@ -660,6 +661,9 @@ esta tabla quedan solo como equivalencia, porque algunos tests los citan en sus 
 | F11-D25 | `shadcn` pasa a `devDependencies` (R12); se aceptan 3 advertencias altas transitivas de `npm audit --omit=dev` sin `--force` (R13) | `shadcn` solo se usa como `@import` CSS en build y arrastraba express/undici a producción. Las altas restantes no se alcanzan con entrada del usuario (ver Deuda técnica) | 2026-11-03 |
 | F11-D26 | Extras de los implementadores aceptados en revisión: el proxy reenvía la ruta pedida en la cabecera `x-sgc-ruta` (siempre sobrescrita) para que el aviso de datos devuelva a ella; verificar la clave actual (cambio de clave, activar o desactivar el TOTP) tiene un límite de 10 intentos por 15 minutos por usuario; la clave nueva debe ser distinta de la actual | Conservar `volver` a través de los pasos obligatorios; con una sesión robada no se debe poder adivinar la clave actual desde Mi cuenta | 2026-11-03 |
 | F11-D27 | **Toda acción de `src/app/acciones-cuenta.ts` que cambia el estado de la sesión o de la cuenta llama `revalidatePath("/", "layout")` antes de `redirect`** (ingresar, verificar el factor, salir, clave inicial, aviso, cambio de clave, iniciar y desactivar el TOTP; confirmar el TOTP no redirige pero también revalida al activarse); lo exige `tests/acciones-cuenta-cache.test.ts` (R39, commit `d79e9d4`) | En producción la caché del enrutador del cliente reutilizaba la precarga de `/` hecha antes de cambiar la clave y causaba un bucle `/` ↔ `/cuenta/clave-inicial`. En desarrollo no se ve: solo aparece con la imagen de producción | 2026-11-03 |
+| F11-D28 | **Códigos de recuperación: `PanelSegundoFactor` envuelve todas las ramas de `/cuenta/segundo-factor`** (sin secreto, secreto pendiente, activo, error de descifrado) como único elemento raíz, con `confirmar` y `children`; lo exige `tests/segundo-factor-panel.test.ts` | `confirmarTotpAccion` revalida el layout (F11-D27) y la página pasaba a la rama «activo», desmontando el panel y perdiendo los códigos (estado de `useActionState`). Con el panel montado en todas las ramas React conserva el estado. Ninguna otra acción de `acciones-cuenta.ts` revalida sin redirigir | 2026-11-03 |
+| F11-D29 | **`ZONA_HORARIA` cableada** (defecto `America/Bogota`): la conexión de la app abre con `TimeZone = zonaHoraria()` y los `Intl.DateTimeFormat` usan el helper; zona inválida = el arranque falla | Bitácora mostraba UTC y Accesos Bogotá para el mismo instante, y los filtros por fecha y las estadísticas por día cortaban en UTC. Con el TimeZone de la sesión de BD ninguna consulta fija zona | 2026-11-03 |
+| F11-D30 | Ajustes menores del recorrido final: la auditoría del lote de usuarios cuenta las filas rechazadas por el CSV (`crearUsuariosEnLote(filas, actorId, rechazadasAntes)`); al quitar el 2FA de otra persona la bitácora la nombra (`detalle.usuario`); «Mis procesos» va dentro de `<main>` | Hallazgos del recorrido de demostración | 2026-11-03 |
 
 ## Deuda técnica conocida
 
@@ -681,11 +685,6 @@ esta tabla quedan solo como equivalencia, porque algunos tests los citan en sus 
   defecto. Si reaparece, capturar la salida y revisar timeouts de esos `beforeAll`.
 - `tokens_un_uso` (activación y restablecimiento por enlace) pospuesta a la **Fase 16**
   (F11-D7).
-- `ZONA_HORARIA` (regla 8 del piso de despliegue) no está cableada: fijan
-  `America/Bogota` `src/app/admin/(panel)/sesiones/page.tsx`,
-  `src/app/admin/(panel)/usuarios/page.tsx`, `src/app/admin/(panel)/usuarios/[id]/page.tsx`
-  y `src/db/consultas/accesos.ts`. Cablearla cuando el primer módulo calcule cortes o
-  periodos (Fase 14) o antes.
 - Archivos de despliegue heredados: `docker-compose.nas.yml` y `.env.nas.example` solo
   tienen lo mínimo de la Fase 11 (la app conecta como dueño, no como `sgc_app`) e
   `INSTALACION*.md` no describe las variables nuevas; el compose de desarrollo y el

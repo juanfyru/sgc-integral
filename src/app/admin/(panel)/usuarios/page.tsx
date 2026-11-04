@@ -2,14 +2,15 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { contarAdminsActivos, listarUsuarios, type FilaUsuario } from "@/db/consultas/usuarios";
 import { exigirPermiso } from "@/lib/paginas";
+import { zonaHoraria } from "@/lib/zona-horaria";
 import { esRol, ETIQUETA_ROL, ROLES } from "@/lib/roles";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Usuarios — Administración SGC" };
 
 const claseCampo = "rounded-md border border-border bg-card px-3 py-2 text-sm";
-const hora = new Intl.DateTimeFormat("es-CO", { hour: "2-digit", minute: "2-digit", timeZone: "America/Bogota" });
-const fecha = new Intl.DateTimeFormat("es-CO", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Bogota" });
+const hora = new Intl.DateTimeFormat("es-CO", { hour: "2-digit", minute: "2-digit", timeZone: zonaHoraria() });
+const fecha = new Intl.DateTimeFormat("es-CO", { dateStyle: "medium", timeStyle: "short", timeZone: zonaHoraria() });
 
 function Insignia({ fila }: { fila: FilaUsuario }) {
   const estilo = "inline-block rounded-full border px-2 py-0.5 text-xs font-semibold";

@@ -226,4 +226,17 @@ describe("crearUsuariosEnLote", () => {
     expect(fila.detalle).toMatchObject({ creados: 2, fallidos: 1, usuarios: [a, b] });
     for (const c of r.creados) expect(JSON.stringify(fila.detalle)).not.toContain(c.claveTemporal);
   });
+
+  it("las filas rechazadas antes cuentan en fallidos, ordenadas por línea, y en la auditoría", async () => {
+    const mk = (usuario: string, linea: number) => ({ linea, datos: { ...base, usuario } });
+    const a = `zz_lote_c_${ts}`;
+    const b = `zz_lote_d_${ts}`;
+    const rechazada = { linea: 3, usuario: `zz_rechazada_${ts}`, error: "Rol no válido" };
+    const r = await crearUsuariosEnLote([mk(a, 2), mk(b, 4), mk(a, 5)], actorId, [rechazada]);
+    expect(r.creados.map((c) => c.usuario)).toEqual([a, b]);
+    expect(r.fallidos.map((f) => f.linea)).toEqual([3, 5]);
+    expect(r.fallidos[0]).toEqual(rechazada);
+    const [fila] = await sql()`SELECT detalle FROM auditoria WHERE accion = 'crear_usuarios_lote' AND usuario_id = ${actorId} ORDER BY id DESC LIMIT 1`;
+    expect(fila.detalle).toMatchObject({ creados: 2, fallidos: 2 });
+  });
 });

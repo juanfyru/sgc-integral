@@ -60,6 +60,14 @@ describe("describirEvento", () => {
   });
 });
 
+describe("quitar_segundo_factor nombra al afectado cuando lo quita otra persona", () => {
+  it("con usuario en el detalle", () => {
+    expect(
+      describirEvento({ accion: "quitar_segundo_factor", entidad: "usuario", entidadId: 1, detalle: { usuario: "gerente" } }),
+    ).toBe("Quitó el segundo factor de «gerente»");
+  });
+});
+
 describe("acciones de administración de usuarios", () => {
   it.each([
     ["crear_usuario", "Creó el usuario «maria»"],

@@ -55,7 +55,7 @@ export async function obtenerAccesos(filtros: FiltrosAccesos): Promise<Respuesta
   const [filas, conteo] = await Promise.all([
     sql`
       SELECT a.id, a.usuario_texto, u.nombre, a.resultado, host(a.ip) AS ip, a.user_agent,
-             to_char(a.creado_en AT TIME ZONE 'America/Bogota', 'YYYY-MM-DD HH24:MI:SS') AS creado_en
+             to_char(a.creado_en, 'YYYY-MM-DD HH24:MI:SS') AS creado_en
       FROM accesos a LEFT JOIN usuarios u ON u.id = a.usuario_id
       WHERE true ${cond}
       ORDER BY a.creado_en DESC, a.id DESC
