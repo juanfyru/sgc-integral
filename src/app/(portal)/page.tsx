@@ -1,13 +1,16 @@
 import { AcordeonMapa } from "@/componentes/mapa/AcordeonMapa";
 import { MapaProcesos } from "@/componentes/mapa/MapaProcesos";
 import { obtenerDatosMapa } from "@/db/consultas/mapa";
+import { MisProcesos } from "@/componentes/MisProcesos";
+import { procesosAsignados } from "@/lib/alcance";
 import { exigirSesion } from "@/lib/paginas";
 
 // El mapa vive en BD: siempre se lee en el momento de la petición.
 export const dynamic = "force-dynamic";
 
 export default async function Inicio() {
-  await exigirSesion();
+  const sesion = await exigirSesion();
+  const misProcesos = sesion.rol === "lider_proceso" ? await procesosAsignados(sesion.usuarioId) : null;
   const datos = await obtenerDatosMapa();
   const { configuracion } = datos;
 
@@ -25,6 +28,8 @@ export default async function Inicio() {
           consultar sus documentos vigentes.
         </p>
       </header>
+
+      {misProcesos && <MisProcesos procesos={misProcesos} />}
 
       {/* Escritorio: el mapa completo por bandas. Mobile: acordeón (D9). */}
       <main>
