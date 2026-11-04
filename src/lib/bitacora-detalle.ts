@@ -51,6 +51,14 @@ export function describirEvento(e: EventoAuditoria): string {
       return `Anuló ${cod ?? "un documento"} (versión vigente ${d.versionAnulada ?? "?"})`;
     case "exporto_maestro":
       return `Emitió el Listado Maestro (${texto(d.formato) ?? "?"}, ${texto(d.incluir) ?? "?"})`;
+    case "cambiar_clave":
+      return "Cambió su clave";
+    case "aceptar_aviso_datos":
+      return "Aceptó el aviso de tratamiento de datos personales";
+    case "activar_segundo_factor":
+      return "Activó el segundo factor";
+    case "quitar_segundo_factor":
+      return "Desactivó el segundo factor";
     case "editar_configuracion":
       return "Editó los textos institucionales";
   }

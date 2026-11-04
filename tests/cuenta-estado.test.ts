@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { pendienteDeCuenta, rutaDePendiente } from "@/lib/cuenta-estado";
+import { pendienteDeCuenta, puedeDesactivarTotp, rutaDePendiente } from "@/lib/cuenta-estado";
 
 const base = { rol: "consulta" as const, factorPendiente: false, debeCambiarClave: false, aceptoDatos: true, totpActivo: false };
 it("devuelve null cuando no hay pendientes y respeta el orden factor > clave > aviso > totp", () => {
@@ -15,4 +15,10 @@ it("rutaDePendiente mapea las cuatro rutas", () => {
   expect(rutaDePendiente("clave")).toBe("/cuenta/clave-inicial");
   expect(rutaDePendiente("aviso")).toBe("/aviso-datos");
   expect(rutaDePendiente("totp_obligatorio")).toBe("/cuenta/segundo-factor?obligatorio=1");
+});
+
+it("puedeDesactivarTotp niega a los roles que exigen segundo factor", () => {
+  expect(puedeDesactivarTotp("admin_sgc", ["admin_sgc", "gerencia"])).toBe(false);
+  expect(puedeDesactivarTotp("consulta", ["admin_sgc", "gerencia"])).toBe(true);
+  expect(puedeDesactivarTotp("admin_sgc", [])).toBe(true);
 });

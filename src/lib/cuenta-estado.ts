@@ -32,3 +32,11 @@ const RUTAS: Record<Pendiente, string> = {
 export function rutaDePendiente(p: Pendiente): string {
   return RUTAS[p];
 }
+
+/** Un rol que exige segundo factor no puede quitárselo (se reabriría el paso pendiente). */
+export function puedeDesactivarTotp(
+  rol: Rol,
+  rolesObligatorios: readonly Rol[] = rolesConTotpObligatorio(),
+): boolean {
+  return !rolesObligatorios.includes(rol);
+}

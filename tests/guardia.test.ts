@@ -8,7 +8,16 @@ import {
   editarVersionAccion,
   publicarAccion,
 } from "@/app/admin/acciones";
-import { aceptarAvisoAccion, claveInicialAccion, salir, verificarFactor } from "@/app/acciones-cuenta";
+import {
+  aceptarAvisoAccion,
+  cambiarClaveAccion,
+  claveInicialAccion,
+  confirmarTotpAccion,
+  desactivarTotpAccion,
+  iniciarTotpAccion,
+  salir,
+  verificarFactor,
+} from "@/app/acciones-cuenta";
 import {
   alternarAccion,
   borrarAccion,
@@ -135,6 +144,10 @@ describe("actions de mutación sin sesión", () => {
     ["claveInicialAccion", () => claveInicialAccion(null, fd)],
     ["aceptarAvisoAccion", () => aceptarAvisoAccion(null, fd)],
     ["verificarFactor", () => verificarFactor(null, fd)],
+    ["cambiarClaveAccion", () => cambiarClaveAccion(null, fd)],
+    ["iniciarTotpAccion", () => iniciarTotpAccion()],
+    ["confirmarTotpAccion", () => confirmarTotpAccion(null, fd)],
+    ["desactivarTotpAccion", () => desactivarTotpAccion(null, fd)],
   ];
   for (const [nombre, invocar] of casos) {
     it(`${nombre} rechaza sin sesión`, async () => {

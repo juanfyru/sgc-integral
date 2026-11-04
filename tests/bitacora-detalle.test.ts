@@ -49,4 +49,13 @@ describe("describirEvento", () => {
     expect(frase).toContain("algo_raro");
     expect(typeof frase).toBe("string");
   });
+
+  it.each([
+    ["cambiar_clave", "Cambió su clave"],
+    ["aceptar_aviso_datos", "Aceptó el aviso de tratamiento de datos personales"],
+    ["activar_segundo_factor", "Activó el segundo factor"],
+    ["quitar_segundo_factor", "Desactivó el segundo factor"],
+  ])("%s se describe como «%s»", (accion, texto) => {
+    expect(describirEvento({ accion, entidad: "usuario", entidadId: 1, detalle: {} })).toBe(texto);
+  });
 });
