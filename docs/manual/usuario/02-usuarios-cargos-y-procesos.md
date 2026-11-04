@@ -326,8 +326,9 @@ quedar al menos un Administrador del SGC activo.".
 
 Si aun así la entidad se queda sin ningún administrador que pueda ingresar, el área de
 sistemas puede recuperar la cuenta del primer administrador con el procedimiento de
-rescate de la instalación (manual técnico). El rescate le pone una clave temporal nueva y
-la deja lista para usar: con el rol Administrador del SGC, activa, desbloqueada, sin
+rescate de la instalación (manual técnico). El rescate le asigna la clave inicial que el
+área de sistemas define en la configuración de la instalación, que deberá cambiar al
+ingresar, y la deja lista para usar: con el rol Administrador del SGC, activa, desbloqueada, sin
 segundo factor (se activa de nuevo en Mi cuenta) y sin sesiones abiertas. Queda registrado
 en **Accesos** como restablecimiento.
 

@@ -747,13 +747,15 @@ esta tabla quedan solo como equivalencia, porque algunos tests los citan en sus 
 - Menores diferidos de las revisiones (para F12/F19 o al tocar el archivo):
   - Los mensajes de validación muestran el nombre interno del campo delante
     (`confirmacion: …`, `procesoIds: …`).
-  - Tras activar el segundo factor, el QR sigue visible encima de los códigos hasta
-    recargar; el foco no se mueve al título.
+  - Tras activar el segundo factor, el foco no se mueve al título de los códigos de
+    recuperación.
   - `cerrarSesionAccion` lanza (pantalla de error de Next) al superar el límite de ritmo.
   - Cierre forzado + acceso + auditoría no van en una transacción; en el lote, si falla
     la auditoría final, las cuentas existen pero se pierden las claves temporales.
-  - La bitácora de "quitar segundo factor" a otra persona no nombra al afectado;
-    `alternar_*`/`reordenar_area` auditan sin el nombre del área o cargo.
+  - `alternar_*`/`reordenar_area` auditan sin el nombre del área o cargo.
+  - En el lote, un cargo cuyo nombre solo choca con otro casi igual de la misma área
+    responde "existe en varias áreas" cuando se escribe sin área; con `Área > Cargo` el
+    mensaje es el correcto.
   - Un bloqueo causado por fallos del segundo factor queda como `factor_fallo`, sin fila
     `bloqueo` en accesos.
   - Sin `CONFIAR_PROXY`, un cliente puede agotar el balde compartido de ingreso (120/min):
