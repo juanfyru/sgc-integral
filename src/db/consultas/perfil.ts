@@ -1,4 +1,5 @@
 import { obtenerSql } from "@/db/cliente";
+import { supervisoresDe } from "@/db/consultas/estructura";
 import type { Rol } from "@/lib/roles";
 
 export type Perfil = {
@@ -11,7 +12,6 @@ export type Perfil = {
   area: string | null;
   totpActivo: boolean;
   procesos: Array<{ id: number; nombre: string; slug: string }>;
-  // Queda vacío hasta la Tarea 11, que lo conecta con supervisoresDe.
   supervisores: Array<{ nombre: string; cargo: string | null }>;
 };
 
@@ -39,6 +39,6 @@ export async function obtenerPerfil(usuarioId: number): Promise<Perfil | null> {
     area: f.area,
     totpActivo: f.totp_activo,
     procesos: procesos.map((p) => ({ id: Number(p.id), nombre: p.nombre, slug: p.slug })),
-    supervisores: [],
+    supervisores: (await supervisoresDe(usuarioId)).map((s) => ({ nombre: s.nombre, cargo: s.cargo })),
   };
 }

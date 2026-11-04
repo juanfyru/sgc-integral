@@ -17,7 +17,7 @@ let usuarioId: number;
 let procesoId: number;
 
 beforeAll(async () => {
-  await sql()`DELETE FROM usuarios WHERE usuario = 'zz_perfil'`;
+  await sql()`DELETE FROM usuarios WHERE usuario IN ('zz_perfil', 'zz_perfil_jefe')`;
   const [p] = await sql()`SELECT id FROM procesos ORDER BY id LIMIT 1`;
   procesoId = Number(p.id);
   const [u] = await sql()`INSERT INTO usuarios (usuario, nombre, hash_clave, rol)
@@ -37,5 +37,27 @@ describe("obtenerPerfil", () => {
     expect(p).toMatchObject({ usuario: "zz_perfil", rol: "lider_proceso", totpActivo: false, supervisores: [] });
     expect(p?.procesos.map((x) => x.id)).toEqual([procesoId]);
     expect(await obtenerPerfil(-1)).toBeNull();
+  });
+
+  it("con cargo y superior, el perfil lista al supervisor", async () => {
+    const sufijo = Date.now();
+    const [a] = await sql()`INSERT INTO areas (nombre) VALUES (${`ZZ Perfil ${sufijo}`}) RETURNING id`;
+    const [cJefe] = await sql()`INSERT INTO cargos (nombre, area_id) VALUES ('ZZ Jefe', ${a.id}) RETURNING id`;
+    const [cSub] = await sql()`INSERT INTO cargos (nombre, area_id, superior_id)
+      VALUES ('ZZ Sub', ${a.id}, ${cJefe.id}) RETURNING id`;
+    const [j] = await sql()`INSERT INTO usuarios (usuario, nombre, hash_clave, rol, cargo_id)
+      VALUES ('zz_perfil_jefe', 'Jefa de prueba', 'x', 'consulta', ${cJefe.id}) RETURNING id`;
+    try {
+      await sql()`UPDATE usuarios SET cargo_id = ${cSub.id} WHERE id = ${usuarioId}`;
+      const p = await obtenerPerfil(usuarioId);
+      expect(p?.cargo).toBe("ZZ Sub");
+      expect(p?.supervisores).toEqual([{ nombre: "Jefa de prueba", cargo: "ZZ Jefe" }]);
+    } finally {
+      await sql()`UPDATE usuarios SET cargo_id = NULL WHERE id = ${usuarioId}`;
+      await sql()`DELETE FROM usuarios WHERE id = ${j.id}`;
+      await sql()`DELETE FROM cargos WHERE id = ${cSub.id}`;
+      await sql()`DELETE FROM cargos WHERE id = ${cJefe.id}`;
+      await sql()`DELETE FROM areas WHERE id = ${a.id}`;
+    }
   });
 });

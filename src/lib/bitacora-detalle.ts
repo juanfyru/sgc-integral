@@ -12,6 +12,8 @@ const SINGULAR: Record<string, string> = {
   subprocesos: "subproceso",
   tipos_documento: "tipo de documento",
   elementos_perifericos: "elemento periférico",
+  areas: "área",
+  cargos: "cargo",
 };
 
 function texto(v: unknown): string | null {
