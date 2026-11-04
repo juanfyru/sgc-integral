@@ -1,8 +1,8 @@
 # CONTEXT.md — Estado vivo del proyecto
 
 > Se actualiza al cierre de cada fase. Última actualización: **2026-11-03**, cierre de la
-> **Fase 11 — Fundación de acceso** (rama `fase-11-fundacion-acceso`, todavía sin
-> fusionar en `main`). La variante nació el mismo día, bifurcada de `sgc-suaza` en
+> **Fase 11 — Fundación de acceso**, fusionada en `main` el 2026-11-04 tras la prueba
+> del usuario (sin publicar en `origin`). La variante nació el mismo día, bifurcada de `sgc-suaza` en
 > `9644ceb`; el diseño maestro de las fases 11–20
 > (`docs/superpowers/specs/2026-11-03-sgc-integral-plataforma-design.md`) está aprobado
 > y `AGENTS.md` ya describe el piso de despliegue nuevo.
@@ -28,11 +28,11 @@
    200); `sgc_app` recibe `permission denied` (42501) al intentar `DELETE` en
    `auditoria`. El recorrido de demostración en navegador se hizo contra la imagen de
    producción del compose dev (9081) y destapó los defectos que corrigen F11-D27 a
-   F11-D30; el usuario lo repite con la sección "Qué probar y cómo (Fase 11)". La revisión final de la rama dio «Con correcciones» y
-   la ola final de arreglos (F11-D31 a F11-D34 y los menores de "Hecho") ya está en la
-   rama. Pendiente: fusión en `main` y push. El repo `juanfyru/sgc-integral` ya existe en GitHub (`origin`); `main`
-   local va un commit (`755e8ca`, el diseño maestro) por delante de `origin/main` y la
-   rama de la fase no se ha publicado.
+   F11-D30; el usuario lo repitió con la sección "Qué probar y cómo (Fase 11)" el
+   2026-11-04. La revisión final de la rama dio «Con correcciones» y la ola final de
+   arreglos (F11-D31 a F11-D34 y los menores de "Hecho") entró antes de fusionar. La rama
+   se fusionó en `main` (avance rápido) y se borró. Pendiente: push de `main` a `origin`
+   (`juanfyru/sgc-integral`), que va por detrás desde `755e8ca`, el diseño maestro.
 2. **Lo que sigue:** escribir la spec y el plan de la **Fase 12 — Nueva estructura
    visual** (spec §8 Fase 12, §5.10 marca configurable, §5.11 sistema visual) y
    ejecutarla, con la metodología de `AGENTS.md`. La marca visible todavía dice "SGC
