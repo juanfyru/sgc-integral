@@ -19,4 +19,12 @@ describe("Inicio", () => {
     expect(h).toContain('data-variante="critico"');
     expect(h).toContain("bg-mod-documentos");
   });
+  it("las fechas se comparan en la zona de la instalación", () => {
+    const ahora = new Date("2026-11-04T03:00:00Z"); // 22:00 del día 3 en Bogotá
+    const base = { id: "doc:2", modulo: "documentos" as const, titulo: "T", detalle: null, enlace: "/" };
+    const hoy = renderToStaticMarkup(<MisTareas ahora={ahora} tareas={[{ ...base, vence: new Date("2026-11-03T20:00:00Z") }]} />);
+    expect(hoy).toContain("Vence hoy");
+    const ayer = renderToStaticMarkup(<MisTareas ahora={ahora} tareas={[{ ...base, vence: new Date("2026-11-02T20:00:00Z") }]} />);
+    expect(ayer).toContain("Vencida");
+  });
 });

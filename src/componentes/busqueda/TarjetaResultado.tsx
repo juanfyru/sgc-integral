@@ -43,7 +43,7 @@ export function TarjetaResultado({
           )}
         </div>
 
-        <p className="text-sm/snug font-semibold text-foreground group-hover:text-[color-mix(in_srgb,var(--color-banda)_80%,black)]">
+        <p className="text-sm/snug font-semibold text-foreground group-hover:banda-texto">
           <TextoResaltado
             texto={resultado.tituloResaltado ?? resultado.titulo}
           />
@@ -61,7 +61,7 @@ export function TarjetaResultado({
 
         <div className="mt-1 flex flex-wrap items-center gap-1.5">
           {resultado.propietario && (
-            <span className="inline-flex items-center gap-1.5 rounded-md bg-[color-mix(in_srgb,var(--color-banda)_12%,white)] px-1.5 py-0.5 text-[11px] font-medium text-[color-mix(in_srgb,var(--color-banda)_80%,black)]">
+            <span className="inline-flex items-center gap-1.5 rounded-md banda-tinte px-1.5 py-0.5 text-[11px] font-medium banda-texto">
               {resultado.propietario.nombre}
             </span>
           )}

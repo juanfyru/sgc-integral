@@ -204,7 +204,7 @@ export default async function FichaDocumento({
                         href={urlArchivo(archivo.id, archivo.nombreOriginal, true)}
                         download={archivo.nombreOriginal}
                         aria-label={`Descargar ${ETIQUETA_ROL[archivo.rol]} (${formato.etiqueta}, ${formatearTamano(archivo.tamanoBytes)})`}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-[color-mix(in_srgb,var(--color-banda)_80%,var(--background))] px-2.5 py-1.5 text-xs font-medium text-white hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-banda)]"
+                        className="inline-flex items-center gap-1.5 rounded-lg banda-solido px-2.5 py-1.5 text-xs font-medium text-white hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-banda)]"
                       >
                         <Download className="size-3.5" aria-hidden="true" />
                         Descargar
@@ -266,7 +266,7 @@ export default async function FichaDocumento({
                     href={u.url}
                     className={
                       u.esPrincipal
-                        ? "inline-flex items-center gap-1 rounded-full bg-[color-mix(in_srgb,var(--color-banda)_80%,var(--background))] px-3 py-1 text-xs font-medium text-white hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-banda)]"
+                        ? "inline-flex items-center gap-1 rounded-full banda-solido px-3 py-1 text-xs font-medium text-white hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-banda)]"
                         : "inline-flex items-center gap-1 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-foreground/85 hover:border-[var(--color-banda)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-banda)]"
                     }
                   >

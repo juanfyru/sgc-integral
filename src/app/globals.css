@@ -210,6 +210,9 @@
     color-mix(in srgb, var(--color-banda) 70%, white)
   );
 }
+@utility banda-solido {
+  background-color: color-mix(in srgb, var(--color-banda) 80%, black);
+}
 @utility banda-borde {
   border-color: color-mix(in srgb, var(--color-banda) 28%, var(--background));
 }

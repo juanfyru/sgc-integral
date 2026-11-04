@@ -26,7 +26,7 @@ export function MiniMapa({
             className={
               b === banda
                 ? "h-[5px] rounded-sm bg-[var(--color-banda)]"
-                : "h-[5px] rounded-sm bg-border transition-colors group-hover:bg-[color-mix(in_srgb,var(--color-banda)_25%,white)]"
+                : "h-[5px] rounded-sm bg-border transition-colors group-hover:banda-tinte"
             }
           />
         ))}

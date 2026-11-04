@@ -10,19 +10,33 @@ function archivos(dir: string): string[] {
     .map((e) => path.join(e.parentPath, e.name));
 }
 
-const DIRS = ["src/componentes/mapa", "src/app/(app)/procesos", "src/app/(app)/documentos"];
+const DIRS = [
+  "src/componentes/mapa",
+  "src/componentes/busqueda",
+  "src/componentes/documentos",
+  "src/componentes/navegacion",
+  "src/app/(app)/procesos",
+  "src/app/(app)/documentos",
+];
+
+// Única mezcla permitida: el fondo del 4 % de la banda.
+const FONDO_BANDA = /color-mix\(in srgb, var\(--color-banda\) 4%, var\(--background\)\)/g;
 
 describe("colores del mapa para el tema oscuro", () => {
   for (const dir of DIRS) {
     for (const f of archivos(dir)) {
-      it(`${path.relative(raiz, f)} no mezcla con blanco ni negro fijos`, () => {
-        const t = readFileSync(f, "utf8");
-        expect(t).not.toMatch(/color-mix\([^)]*(?:var\(--color-banda\)|var\(--acento\)|var\(--color-banda\)_)[^)]*(?:white|black)\)/);
-        expect(t).not.toMatch(/color-mix\(in_srgb,var\(--(?:color-banda|acento)\)_\d+%,(?:white|black)\)/);
+      it(`${path.relative(raiz, f)} usa las utilidades banda-*`, () => {
+        const t = readFileSync(f, "utf8").replace(FONDO_BANDA, "");
+        expect(t).not.toMatch(/color-mix\([^)]*--color-banda/);
+        expect(t).not.toMatch(/color-mix\([^)]*--acento/);
         expect(t).not.toContain("--acento");
       });
     }
   }
+  it("globals.css define banda-solido con negro", () => {
+    const css = readFileSync(path.join(raiz, "src/app/globals.css"), "utf8");
+    expect(css).toMatch(/@utility banda-solido \{[^}]*black[^}]*\}/);
+  });
   it("Inicio muestra Mis tareas y no define <main>", () => {
     const t = readFileSync(path.join(raiz, "src/app/(app)/page.tsx"), "utf8");
     expect(t).toContain("<MisTareas");

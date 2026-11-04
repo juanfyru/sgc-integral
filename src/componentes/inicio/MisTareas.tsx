@@ -3,6 +3,7 @@ import { ClipboardCheck } from "lucide-react";
 import { EstadoVacio } from "@/componentes/ui/EstadoVacio";
 import { Insignia } from "@/componentes/ui/Insignia";
 import type { Tarea } from "@/lib/tareas";
+import { fechaCompactaLocal, zonaHoraria } from "@/lib/zona-horaria";
 
 const MARCA_MODULO: Record<Tarea["modulo"], string> = {
   documentos: "bg-mod-documentos",
@@ -10,19 +11,16 @@ const MARCA_MODULO: Record<Tarea["modulo"], string> = {
   planes: "bg-mod-planes",
 };
 
-function mismoDia(a: Date, b: Date) {
-  return a.toDateString() === b.toDateString();
+function fechaCorta(d: Date) {
+  return d.toLocaleDateString("es-CO", { day: "numeric", month: "short", timeZone: zonaHoraria() });
 }
 
 function Vencimiento({ vence, ahora }: { vence: Date; ahora: Date }) {
-  if (vence < ahora && !mismoDia(vence, ahora))
-    return <Insignia variante="critico">Vencida</Insignia>;
-  if (mismoDia(vence, ahora)) return <Insignia variante="atencion">Vence hoy</Insignia>;
-  return (
-    <Insignia variante="neutra">
-      {vence.toLocaleDateString("es-CO", { day: "numeric", month: "short" })}
-    </Insignia>
-  );
+  const diaVence = fechaCompactaLocal(vence);
+  const diaHoy = fechaCompactaLocal(ahora);
+  if (diaVence < diaHoy) return <Insignia variante="critico">Vencida</Insignia>;
+  if (diaVence === diaHoy) return <Insignia variante="atencion">Vence hoy</Insignia>;
+  return <Insignia variante="neutra">{fechaCorta(vence)}</Insignia>;
 }
 
 export function MisTareas({ tareas, ahora = new Date() }: { tareas: Tarea[]; ahora?: Date }) {

@@ -32,7 +32,7 @@ export function TarjetaDocumento({
             <span className="text-xs text-muted-foreground">{contexto}</span>
           )}
         </div>
-        <p className="text-sm/snug font-semibold text-foreground group-hover:text-[color-mix(in_srgb,var(--color-banda)_80%,black)]">
+        <p className="text-sm/snug font-semibold text-foreground group-hover:banda-texto">
           {documento.titulo}
         </p>
         <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
@@ -44,7 +44,7 @@ export function TarjetaDocumento({
             />
           ))}
           {documento.tipo.esDiligenciable && (
-            <span className="inline-flex items-center gap-1 rounded-md bg-[color-mix(in_srgb,var(--color-banda)_12%,white)] px-1.5 py-0.5 text-[11px] font-medium text-[color-mix(in_srgb,var(--color-banda)_80%,black)]">
+            <span className="inline-flex items-center gap-1 rounded-md banda-tinte px-1.5 py-0.5 text-[11px] font-medium banda-texto">
               <PencilLine className="size-3" aria-hidden="true" />
               Diligenciable
             </span>
