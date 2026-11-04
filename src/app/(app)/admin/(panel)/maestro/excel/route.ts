@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { obtenerSql } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
+import { obtenerMarcaSegura } from "@/db/consultas/entidad";
 import { obtenerListadoMaestro } from "@/db/consultas/maestro";
 import { construirExcelMaestro } from "@/lib/maestro-excel";
 import { alcanceMaestro, puede } from "@/lib/permisos";
@@ -17,10 +18,10 @@ export async function GET(peticion: NextRequest): Promise<Response> {
   }
 
   const incluir = alcanceMaestro(sesion, peticion.nextUrl.searchParams.get("incluir"));
-  const filas = await obtenerListadoMaestro({ incluir });
+  const [filas, marca] = await Promise.all([obtenerListadoMaestro({ incluir }), obtenerMarcaSegura()]);
   const ahora = new Date();
   const buffer = await construirExcelMaestro(filas, {
-    hospital: "ESE Hospital Nuestra Señora de Fátima de Suaza",
+    hospital: marca.nombre,
     generadoEn: fechaHoraLocal(ahora),
     alcance: incluir === "todos" ? "Todos los documentos" : "Documentos vigentes",
     total: filas.length,

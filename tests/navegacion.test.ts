@@ -21,6 +21,12 @@ describe("navegación por módulos y rol", () => {
     expect(esActiva(por("/admin"), "/admin/usuarios")).toBe(false);
     expect(esActiva(por("/admin/usuarios"), "/admin/usuarios/5")).toBe(true);
   });
+  it("Gestión de documentos también se marca en /admin/documentos/*", () => {
+    const gestion = NAVEGACION.find((e) => e.href === "/admin")!;
+    expect(esActiva(gestion, "/admin/documentos/PR-CAL-001")).toBe(true);
+    expect(esActiva(gestion, "/admin/documentos/nuevo")).toBe(true);
+    expect(esActiva(gestion, "/admin/usuarios")).toBe(false);
+  });
 });
 
 describe("Entidad y marca", () => {

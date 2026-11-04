@@ -40,9 +40,10 @@ describe("estructura de accesibilidad (Fase 9)", () => {
     "src/app/(app)/admin/(panel)/bitacora/page.tsx",
   ])("la tabla desplazable de %s es enfocable por teclado con etiqueta", (ruta) => {
     const src = readFileSync(path.join(raiz, ruta), "utf8");
-    expect(src).toMatch(/overflow-x-auto/);
-    expect(src).toContain('role="region"');
-    expect(src).toContain("tabIndex={0}");
-    expect(src).toMatch(/aria-label=/);
+    expect(src).toContain("<TablaDatos");
+    const tabla = readFileSync(path.join(raiz, "src/componentes/ui/TablaDatos.tsx"), "utf8");
+    expect(tabla).toContain('role="region"');
+    expect(tabla).toContain("tabIndex={0}");
+    expect(tabla).toMatch(/aria-label=/);
   });
 });

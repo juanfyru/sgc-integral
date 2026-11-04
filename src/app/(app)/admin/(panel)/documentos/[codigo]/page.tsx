@@ -8,10 +8,10 @@ import {
   publicarAccion,
 } from "@/app/admin/acciones";
 import { EliminarArchivo } from "@/componentes/admin/EliminarArchivo";
-import { EstadoBadge } from "@/componentes/admin/EstadoBadge";
 import { FormAccion } from "@/componentes/admin/FormAccion";
 import { FormularioVersionCliente } from "@/componentes/admin/FormularioVersionCliente";
 import { ZonaCarga } from "@/componentes/admin/ZonaCarga";
+import { InsigniaEstadoDocumento } from "@/componentes/ui/Insignia";
 import { obtenerDocumentoAdmin, type VersionAdmin } from "@/db/consultas/admin";
 import { exigirPermiso } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
@@ -42,7 +42,7 @@ function SeccionVersion({
     >
       <header className="mb-3 flex items-center gap-3">
         <h3 className="font-display text-lg font-semibold">Versión {version.numero}</h3>
-        <EstadoBadge estado={version.estado} />
+        <InsigniaEstadoDocumento estado={version.estado} />
       </header>
 
       <ul className="mb-3 flex flex-col gap-1 text-sm">
@@ -111,7 +111,7 @@ export default async function PaginaDocumentoAdmin({
   const borrador = documento.versiones.find((v) => v.estado === "borrador");
 
   return (
-    <main className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <header>
         <p className="font-mono text-sm text-muted-foreground">{documento.codigo}</p>
         <div className="flex flex-wrap items-center gap-3">
@@ -170,6 +170,6 @@ export default async function PaginaDocumentoAdmin({
           />
         ))}
       </div>
-    </main>
+    </div>
   );
 }

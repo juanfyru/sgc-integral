@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { obtenerEstadisticas, type Rango } from "@/db/consultas/estadisticas";
+import { claseBoton } from "@/componentes/ui/Boton";
+import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
+import { TarjetaCifra } from "@/componentes/ui/TarjetaCifra";
 import { GraficoBarras } from "@/componentes/ui/GraficoBarras";
 import { exigirPermiso } from "@/lib/paginas";
 
@@ -24,37 +27,28 @@ export default async function PaginaEstadisticas({
   const e = await obtenerEstadisticas({ rango });
 
   return (
-    <main className="space-y-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-display text-2xl font-semibold">Estadísticas</h1>
-        <div className="flex gap-2 text-sm">
-          {RANGOS.map((r) => (
-            <Link
-              key={r.clave}
-              href={`/admin/estadisticas?rango=${r.clave}`}
-              className={`rounded-md border px-3 py-1 ${rango === r.clave ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
-            >
-              {r.etiqueta}
-            </Link>
-          ))}
-        </div>
-      </div>
+    <div className="space-y-8">
+      <EncabezadoPagina
+        titulo="Estadísticas"
+        acciones={
+          <div className="flex gap-2 text-sm">
+            {RANGOS.map((r) => (
+              <Link
+                key={r.clave}
+                href={`/admin/estadisticas?rango=${r.clave}`}
+                aria-current={rango === r.clave ? "true" : undefined}
+                className={claseBoton(rango === r.clave ? "primario" : "secundario", "sm")}
+              >
+                {r.etiqueta}
+              </Link>
+            ))}
+          </div>
+        }
+      />
 
       <div className="grid grid-cols-2 gap-4 sm:max-w-md">
-        <div
-          className="entrada rounded-lg border bg-card p-4 shadow-[var(--sombra-1)]"
-          style={{ "--indice": 0 } as React.CSSProperties}
-        >
-          <p className="text-sm text-muted-foreground">Vistas</p>
-          <p className="font-display text-3xl font-semibold">{e.totalVistas}</p>
-        </div>
-        <div
-          className="entrada rounded-lg border bg-card p-4 shadow-[var(--sombra-1)]"
-          style={{ "--indice": 1 } as React.CSSProperties}
-        >
-          <p className="text-sm text-muted-foreground">Descargas</p>
-          <p className="font-display text-3xl font-semibold">{e.totalDescargas}</p>
-        </div>
+        <TarjetaCifra etiqueta="Vistas" valor={e.totalVistas} />
+        <TarjetaCifra etiqueta="Descargas" valor={e.totalDescargas} />
       </div>
 
       <section>
@@ -81,7 +75,7 @@ export default async function PaginaEstadisticas({
           )}
         </section>
       </div>
-    </main>
+    </div>
   );
 }
 

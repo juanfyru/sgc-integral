@@ -24,6 +24,8 @@ export type EntradaNav = {
   grupo: GrupoNav;
   permiso?: Permiso;
   exacta?: boolean;
+  /** Rutas adicionales que también marcan la entrada como activa (igual al prefijo o debajo de él). */
+  prefijos?: readonly string[];
 };
 
 export const GRUPOS: Record<GrupoNav, { etiqueta: string | null; color: "marca" | "mod-documentos" }> = {
@@ -43,6 +45,7 @@ export const NAVEGACION: readonly EntradaNav[] = [
     grupo: "documentos",
     permiso: "documentos.ver_historial",
     exacta: true,
+    prefijos: ["/admin/documentos"],
   },
   { href: "/admin/maestro", etiqueta: "Listado Maestro", icono: "maestro", grupo: "documentos", permiso: "maestro.ver" },
   { href: "/admin/tipos", etiqueta: "Tipos de documento", icono: "tipos", grupo: "documentos", permiso: "mapa.administrar" },
@@ -81,6 +84,7 @@ export function entradasVisibles(sujeto: SujetoPermiso): EntradaNav[] {
 
 /** `/` y `/admin` se marcan solo en su ruta exacta; el resto también en sus subrutas. */
 export function esActiva(entrada: EntradaNav, ruta: string): boolean {
+  if (entrada.prefijos?.some((p) => ruta === p || ruta.startsWith(`${p}/`))) return true;
   if (entrada.exacta) return ruta === entrada.href;
   return ruta === entrada.href || ruta.startsWith(`${entrada.href}/`);
 }

@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { contarAdminsActivos, listarUsuarios, type FilaUsuario } from "@/db/consultas/usuarios";
+import { claseBoton } from "@/componentes/ui/Boton";
+import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
+import { Insignia } from "@/componentes/ui/Insignia";
+import { TablaDatos, celda, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
 import { exigirPermiso } from "@/lib/paginas";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { esRol, ETIQUETA_ROL, ROLES } from "@/lib/roles";
@@ -12,18 +16,22 @@ const claseCampo = "rounded-md border border-border bg-card px-3 py-2 text-sm";
 const hora = new Intl.DateTimeFormat("es-CO", { hour: "2-digit", minute: "2-digit", timeZone: zonaHoraria() });
 const fecha = new Intl.DateTimeFormat("es-CO", { dateStyle: "medium", timeStyle: "short", timeZone: zonaHoraria() });
 
-function Insignia({ fila }: { fila: FilaUsuario }) {
-  const estilo = "inline-block rounded-full border px-2 py-0.5 text-xs font-semibold";
-  if (!fila.activo) return <span className={`${estilo} border-gray-400 bg-gray-200 text-gray-700`}>Inactivo</span>;
+function EstadoUsuario({ fila }: { fila: FilaUsuario }) {
+  if (!fila.activo) return <Insignia variante="sin-dato">Inactivo</Insignia>;
   if (fila.bloqueadoHasta) {
-    return (
-      <span className={`${estilo} border-red-300 bg-red-100 text-red-900`}>
-        Bloqueado hasta {hora.format(new Date(fila.bloqueadoHasta))}
-      </span>
-    );
+    return <Insignia variante="critico">Bloqueado hasta {hora.format(new Date(fila.bloqueadoHasta))}</Insignia>;
   }
-  return <span className={`${estilo} border-green-300 bg-green-100 text-green-900`}>Activo</span>;
+  return <Insignia variante="bien">Activo</Insignia>;
 }
+
+const COLUMNAS: readonly ColumnaTabla[] = [
+  { clave: "usuario", etiqueta: "Usuario" },
+  { clave: "rol", etiqueta: "Rol" },
+  { clave: "cargo", etiqueta: "Cargo" },
+  { clave: "estado", etiqueta: "Estado" },
+  { clave: "2fa", etiqueta: "2FA" },
+  { clave: "ingreso", etiqueta: "Último ingreso" },
+];
 
 export default async function PaginaUsuarios({
   searchParams,
@@ -47,24 +55,20 @@ export default async function PaginaUsuarios({
   ]);
 
   return (
-    <main className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <h1 className="font-display text-2xl font-semibold">Usuarios</h1>
-        <div className="flex gap-3">
-          <Link
-            href="/admin/usuarios/lote"
-            className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
-          >
-            Alta por lote
-          </Link>
-          <Link
-            href="/admin/usuarios/nuevo"
-            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-          >
-            Nuevo usuario
-          </Link>
-        </div>
-      </div>
+    <div className="flex flex-col gap-6">
+      <EncabezadoPagina
+        titulo="Usuarios"
+        acciones={
+          <>
+            <Link href="/admin/usuarios/lote" className={claseBoton("secundario")}>
+              Alta por lote
+            </Link>
+            <Link href="/admin/usuarios/nuevo" className={claseBoton("primario")}>
+              Nuevo usuario
+            </Link>
+          </>
+        }
+      />
 
       {admins < 2 && (
         <p role="note" className="rounded-md border-2 border-amber-400 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-950">
@@ -99,49 +103,29 @@ export default async function PaginaUsuarios({
         </button>
       </form>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <caption className="sr-only">Usuarios del sistema</caption>
-          <thead>
-            <tr className="border-b text-xs uppercase text-muted-foreground">
-              <th scope="col" className="py-2 pr-3">Usuario</th>
-              <th scope="col" className="py-2 pr-3">Rol</th>
-              <th scope="col" className="py-2 pr-3">Cargo</th>
-              <th scope="col" className="py-2 pr-3">Estado</th>
-              <th scope="col" className="py-2 pr-3">2FA</th>
-              <th scope="col" className="py-2">Último ingreso</th>
-            </tr>
-          </thead>
-          <tbody>
-            {usuarios.map((u) => (
-              <tr key={u.id} className={`border-b ${u.activo ? "" : "opacity-70"}`}>
-                <td className="py-2 pr-3">
-                  <Link href={`/admin/usuarios/${u.id}`} className="font-medium hover:underline">
-                    {u.nombre}
-                  </Link>
-                  <div className="text-xs text-muted-foreground">{u.usuario}</div>
-                </td>
-                <td className="py-2 pr-3">{ETIQUETA_ROL[u.rol]}</td>
-                <td className="py-2 pr-3">
-                  {u.cargo ?? "—"}
-                  {u.area && <div className="text-xs text-muted-foreground">{u.area}</div>}
-                </td>
-                <td className="py-2 pr-3">
-                  <Insignia fila={u} />
-                  {u.debeCambiarClave && <div className="text-xs text-muted-foreground">Clave temporal</div>}
-                </td>
-                <td className="py-2 pr-3">{u.totpActivo ? "Activo" : "No"}</td>
-                <td className="py-2">{u.ultimoIngreso ? fecha.format(new Date(u.ultimoIngreso)) : "Nunca"}</td>
-              </tr>
-            ))}
-            {usuarios.length === 0 && (
-              <tr>
-                <td colSpan={6} className="py-4 text-muted-foreground">No hay usuarios con esos filtros.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </main>
+      <TablaDatos titulo="Usuarios del sistema" columnas={COLUMNAS} filas={usuarios.length} vacio="Sin usuarios que coincidan">
+        {usuarios.map((u) => (
+          <tr key={u.id} className={u.activo ? "" : "opacity-70"}>
+            <td className={celda}>
+              <Link href={`/admin/usuarios/${u.id}`} className="font-medium hover:underline">
+                {u.nombre}
+              </Link>
+              <div className="text-xs text-muted-foreground">{u.usuario}</div>
+            </td>
+            <td className={celda}>{ETIQUETA_ROL[u.rol]}</td>
+            <td className={celda}>
+              {u.cargo ?? "—"}
+              {u.area && <div className="text-xs text-muted-foreground">{u.area}</div>}
+            </td>
+            <td className={celda}>
+              <EstadoUsuario fila={u} />
+              {u.debeCambiarClave && <div className="text-xs text-muted-foreground">Clave temporal</div>}
+            </td>
+            <td className={celda}>{u.totpActivo ? "Activo" : "No"}</td>
+            <td className={celda}>{u.ultimoIngreso ? fecha.format(new Date(u.ultimoIngreso)) : "Nunca"}</td>
+          </tr>
+        ))}
+      </TablaDatos>
+    </div>
   );
 }

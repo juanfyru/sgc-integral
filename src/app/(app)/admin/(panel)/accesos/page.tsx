@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { obtenerAccesos, RESULTADOS_ACCESO } from "@/db/consultas/accesos";
 import type { ResultadoAcceso } from "@/db/consultas/autenticacion";
+import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
+import { TablaDatos, celda, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
 import { exigirPermiso } from "@/lib/paginas";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +19,14 @@ const ETIQUETA_RESULTADO: Record<ResultadoAcceso, string> = {
   factor_fallo: "Fallo del segundo factor",
   cierre_forzado: "Cierre forzado",
 };
+
+const COLUMNAS: readonly ColumnaTabla[] = [
+  { clave: "cuando", etiqueta: "Cuándo" },
+  { clave: "usuario", etiqueta: "Usuario" },
+  { clave: "resultado", etiqueta: "Resultado" },
+  { clave: "ip", etiqueta: "IP" },
+  { clave: "navegador", etiqueta: "Navegador" },
+];
 
 export default async function PaginaAccesos({
   searchParams,
@@ -43,8 +53,8 @@ export default async function PaginaAccesos({
   };
 
   return (
-    <main>
-      <h1 className="mb-4 font-display text-2xl font-semibold">Accesos</h1>
+    <div>
+      <EncabezadoPagina titulo="Accesos" />
 
       <form method="GET" className="mb-4 flex flex-wrap items-end gap-3 text-sm">
         <label className="flex flex-col gap-1">
@@ -72,43 +82,22 @@ export default async function PaginaAccesos({
         <Link href="/admin/accesos" className="px-2 py-1.5 text-muted-foreground hover:underline">Limpiar</Link>
       </form>
 
-      <div
-        role="region"
-        aria-label="Tabla de accesos (desplazable horizontalmente)"
-        tabIndex={0}
-        className="overflow-x-auto rounded-lg border outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca"
-      >
-        <table className="w-full text-sm">
-          <thead className="bg-muted text-left">
-            <tr>
-              <th className="px-3 py-2">Cuándo</th>
-              <th className="px-3 py-2">Usuario</th>
-              <th className="px-3 py-2">Resultado</th>
-              <th className="px-3 py-2">IP</th>
-              <th className="px-3 py-2">Navegador</th>
-            </tr>
-          </thead>
-          <tbody>
-            {r.filas.map((f) => (
-              <tr key={f.id} className="border-t align-top">
-                <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-muted-foreground">{f.creadoEn}</td>
-                <td className="px-3 py-2">
-                  {f.usuarioTexto}
-                  {f.nombre && <span className="block text-xs text-muted-foreground">{f.nombre}</span>}
-                </td>
-                <td className="px-3 py-2 font-medium">{ETIQUETA_RESULTADO[f.resultado]}</td>
-                <td className="whitespace-nowrap px-3 py-2 font-mono text-xs">{f.ip ?? "—"}</td>
-                <td className="max-w-64 px-3 py-2 text-xs text-muted-foreground">
-                  <span className="block truncate" title={f.userAgent ?? undefined}>{f.userAgent ?? "—"}</span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {r.filas.length === 0 && (
-          <p className="px-3 py-8 text-center text-muted-foreground">Sin registros para estos filtros.</p>
-        )}
-      </div>
+      <TablaDatos titulo="Accesos al sistema" columnas={COLUMNAS} filas={r.filas.length} vacio="Sin registros en el periodo">
+        {r.filas.map((f) => (
+          <tr key={f.id}>
+            <td className={`${celda} whitespace-nowrap font-mono text-xs text-muted-foreground`}>{f.creadoEn}</td>
+            <td className={celda}>
+              {f.usuarioTexto}
+              {f.nombre && <span className="block text-xs text-muted-foreground">{f.nombre}</span>}
+            </td>
+            <td className={`${celda} font-medium`}>{ETIQUETA_RESULTADO[f.resultado]}</td>
+            <td className={`${celda} whitespace-nowrap font-mono text-xs`}>{f.ip ?? "—"}</td>
+            <td className={`${celda} max-w-64 text-xs text-muted-foreground`}>
+              <span className="block truncate" title={f.userAgent ?? undefined}>{f.userAgent ?? "—"}</span>
+            </td>
+          </tr>
+        ))}
+      </TablaDatos>
 
       <div className="mt-4 flex items-center justify-between text-sm">
         <span className="text-muted-foreground">{r.total} registros · página {r.pagina} de {r.totalPaginas}</span>
@@ -117,6 +106,6 @@ export default async function PaginaAccesos({
           {r.pagina < r.totalPaginas && <Link href={conservar(r.pagina + 1)} className="rounded-md border px-3 py-2 hover:bg-muted">Siguiente</Link>}
         </div>
       </div>
-    </main>
+    </div>
   );
 }

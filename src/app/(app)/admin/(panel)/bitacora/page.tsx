@@ -2,9 +2,17 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { obtenerBitacora } from "@/db/consultas/bitacora";
 import { describirEvento } from "@/lib/bitacora-detalle";
+import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
+import { TablaDatos, celda, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
 import { exigirPermiso } from "@/lib/paginas";
 
 export const metadata: Metadata = { title: "Bitácora — Administración SGC" };
+
+const COLUMNAS: readonly ColumnaTabla[] = [
+  { clave: "cuando", etiqueta: "Cuándo" },
+  { clave: "quien", etiqueta: "Quién" },
+  { clave: "que", etiqueta: "Qué" },
+];
 
 export default async function PaginaBitacora({
   searchParams,
@@ -32,8 +40,8 @@ export default async function PaginaBitacora({
   };
 
   return (
-    <main>
-      <h1 className="mb-4 font-display text-2xl font-semibold">Bitácora</h1>
+    <div>
+      <EncabezadoPagina titulo="Bitácora" />
 
       <form method="GET" className="mb-4 flex flex-wrap items-end gap-3 text-sm">
         <label className="flex flex-col gap-1">
@@ -68,34 +76,15 @@ export default async function PaginaBitacora({
         <Link href="/admin/bitacora" className="px-2 py-1.5 text-muted-foreground hover:underline">Limpiar</Link>
       </form>
 
-      <div
-        role="region"
-        aria-label="Tabla de la bitácora (desplazable horizontalmente)"
-        tabIndex={0}
-        className="overflow-x-auto rounded-lg border outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca"
-      >
-        <table className="w-full text-sm">
-          <thead className="bg-muted text-left">
-            <tr>
-              <th className="px-3 py-2">Cuándo</th>
-              <th className="px-3 py-2">Quién</th>
-              <th className="px-3 py-2">Qué</th>
-            </tr>
-          </thead>
-          <tbody>
-            {r.filas.map((f) => (
-              <tr key={f.id} className="border-t align-top">
-                <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-muted-foreground">{f.creadoEn}</td>
-                <td className="px-3 py-2">{f.usuario}</td>
-                <td className="px-3 py-2">{describirEvento(f)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {r.filas.length === 0 && (
-          <p className="px-3 py-8 text-center text-muted-foreground">Sin registros para estos filtros.</p>
-        )}
-      </div>
+      <TablaDatos titulo="Bitácora de acciones" columnas={COLUMNAS} filas={r.filas.length} vacio="Sin movimientos registrados">
+        {r.filas.map((f) => (
+          <tr key={f.id}>
+            <td className={`${celda} whitespace-nowrap font-mono text-xs text-muted-foreground`}>{f.creadoEn}</td>
+            <td className={celda}>{f.usuario}</td>
+            <td className={celda}>{describirEvento(f)}</td>
+          </tr>
+        ))}
+      </TablaDatos>
 
       <div className="mt-4 flex items-center justify-between text-sm">
         <span className="text-muted-foreground">{r.total} registros · página {r.pagina} de {r.totalPaginas}</span>
@@ -104,6 +93,6 @@ export default async function PaginaBitacora({
           {r.pagina < r.totalPaginas && <Link href={conservar(r.pagina + 1)} className="rounded-md border px-3 py-2 hover:bg-muted">Siguiente</Link>}
         </div>
       </div>
-    </main>
+    </div>
   );
 }
