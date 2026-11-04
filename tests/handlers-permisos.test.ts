@@ -3,7 +3,7 @@
  * zz_consulta y zz_ci: el de control interno genera auditoría (exportar el
  * maestro), así que ambos llevan nombre único por corrida y no se borran.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -18,6 +18,7 @@ import { DELETE as quitarLogoRuta, POST as subirLogoRuta } from "@/app/admin/api
 import { GET as servirLogo } from "@/app/marca/logo/route";
 import { rutaBaseAlmacen } from "@/lib/almacen";
 import { pngDePrueba } from "./png-prueba";
+import { LOGO_MAX_BYTES } from "@/lib/logo";
 import { GET as buscarApi } from "@/app/api/buscar/route";
 import { GET as excelMaestro } from "@/app/(app)/admin/(panel)/maestro/excel/route";
 import { obtenerSql } from "@/db/cliente";
@@ -103,24 +104,29 @@ describe("GET /api/buscar", () => {
 describe("logo de la entidad: /admin/api/entidad/logo y /marca/logo", () => {
   const cabecerasAdmin = (token: string) => ({ ...cookie(token), origin: "http://x", host: "x" });
   const peticionLogo = (metodo: "POST" | "DELETE", cabeceras: Record<string, string>, bytes?: Uint8Array) => {
-    const init: { method: string; headers: Record<string, string>; body?: FormData } = { method: metodo, headers: cabeceras };
+    const init: { method: string; headers: Record<string, string>; body?: FormData } = { method: metodo, headers: { ...cabeceras } };
     if (bytes) {
       const cuerpo = new FormData();
       cuerpo.set("archivo", new File([bytes as BlobPart], "logo.png", { type: "image/png" }));
       init.body = cuerpo;
+      init.headers["content-length"] ??= String(bytes.byteLength + 512);
     }
     return new NextRequest("http://x/admin/api/entidad/logo", init);
   };
   let tokenAdmin: string;
+  let tokenAdmin2: string;
+  let tokenAdmin3: string;
   const png = pngDePrueba(64, 64, 0x33);
 
   beforeAll(async () => {
     tokenAdmin = await crearUsuario(`zz_admin_logo_${SUFIJO}`, "admin_sgc");
+    tokenAdmin2 = await crearUsuario(`zz_admin_logo2_${SUFIJO}`, "admin_sgc");
+    tokenAdmin3 = await crearUsuario(`zz_admin_logo3_${SUFIJO}`, "admin_sgc");
   });
   afterAll(async () => {
     // Restaura el logo de la demo (logo_version f0e59280).
     const original = readFileSync("src/db/semillas/recursos/logo-demo.png");
-    await subirLogo(new Uint8Array(original), cabecerasAdmin(tokenAdmin));
+    await subirLogo(new Uint8Array(original), cabecerasAdmin(tokenAdmin2));
   });
 
   async function subirLogo(bytes: Uint8Array, cabeceras: Record<string, string>) {
@@ -138,7 +144,7 @@ describe("logo de la entidad: /admin/api/entidad/logo y /marca/logo", () => {
     const grande = await subirLogoRuta(
       new NextRequest("http://x/admin/api/entidad/logo", {
         method: "POST",
-        headers: { ...cabecerasAdmin(tokenAdmin), "content-length": String(1_048_576 + 65_537) },
+        headers: { ...cabecerasAdmin(tokenAdmin), "content-length": String(LOGO_MAX_BYTES + 65_537) },
       }),
     );
     expect(grande.status).toBe(413);
@@ -152,7 +158,7 @@ describe("logo de la entidad: /admin/api/entidad/logo y /marca/logo", () => {
     expect(r.status).toBe(400);
     expect(await r.json()).toEqual({ error: "El logo debe ser PNG, JPG o WebP" });
     const sin = await subirLogoRuta(
-      new NextRequest("http://x/admin/api/entidad/logo", { method: "POST", headers: cabecerasAdmin(tokenAdmin), body: new FormData() }),
+      new NextRequest("http://x/admin/api/entidad/logo", { method: "POST", headers: { ...cabecerasAdmin(tokenAdmin), "content-length": "10" }, body: new FormData() }),
     );
     expect(sin.status).toBe(400);
     expect(await sin.json()).toEqual({ error: "Falta el archivo" });
@@ -171,6 +177,41 @@ describe("logo de la entidad: /admin/api/entidad/logo y /marca/logo", () => {
     await subirLogo(pngDePrueba(64, 64, 0x44), cabecerasAdmin(tokenAdmin));
     expect(existsSync(anterior)).toBe(false);
     expect(existsSync((await rutaDelLogo())!)).toBe(true);
+  });
+  it("POST logo sin Content-Length o con uno inválido: 411 antes de leer el cuerpo", async () => {
+    for (const valor of [undefined, "abc", "0", "-5"]) {
+      const cabeceras: Record<string, string> = { ...cabecerasAdmin(tokenAdmin2) };
+      if (valor !== undefined) cabeceras["content-length"] = valor;
+      const r = await subirLogoRuta(new NextRequest("http://x/admin/api/entidad/logo", { method: "POST", headers: cabeceras, body: new FormData() }));
+      expect(r.status).toBe(411);
+      expect(await r.json()).toEqual({ error: "Falta el tamaño del archivo" });
+    }
+  });
+  it("POST logo: el límite de ritmo responde 429 a la subida número 11 en un minuto", async () => {
+    const estados: number[] = [];
+    for (let n = 0; n < 11; n++) {
+      estados.push((await subirLogoRuta(new NextRequest("http://x/admin/api/entidad/logo", {
+        method: "POST", headers: { ...cabecerasAdmin(tokenAdmin3), "content-length": "10" }, body: new FormData(),
+      }))).status);
+    }
+    expect(estados.slice(0, 10).every((e) => e === 400)).toBe(true);
+    expect(estados[10]).toBe(429);
+  });
+  it("DELETE con logo_ruta alterada en BD no borra archivos fuera de marca/logo-<hex>", async () => {
+    const ajeno = path.join(rutaBaseAlmacen(), "zz_logo_ajeno.txt");
+    writeFileSync(ajeno, "no tocar");
+    await quitarLogoRuta(peticionLogo("DELETE", cabecerasAdmin(tokenAdmin2))); // no dejar huérfano el logo actual
+    try {
+      for (const [clave, valor] of [["logo_ruta", "zz_logo_ajeno.txt"], ["logo_mime", "image/png"], ["logo_version", "00000000"]]) {
+        await sql()`INSERT INTO configuracion (clave, valor) VALUES (${clave}, ${valor}) ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor`;
+      }
+      expect((await servirLogo()).status).toBe(404);
+      const d = await quitarLogoRuta(peticionLogo("DELETE", cabecerasAdmin(tokenAdmin2)));
+      expect(d.status).toBe(200);
+      expect(existsSync(ajeno)).toBe(true);
+    } finally {
+      rmSync(ajeno, { force: true });
+    }
   });
   it("GET /marca/logo sirve el logo con nosniff y 404 tras DELETE", async () => {
     await subirLogo(png, cabecerasAdmin(tokenAdmin));

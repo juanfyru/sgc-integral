@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { hexValido, normalizarHex } from "../../lib/color";
+import { LOGO_MIMES, rutaLogoValida, type MimeLogo } from "../../lib/logo";
 import { MARCA_DEFECTO, validarMarca, type Marca } from "../../lib/marca";
 import { obtenerSql } from "../cliente";
 import { registrarAuditoria } from "./admin";
@@ -153,4 +154,13 @@ export async function quitarLogo(actorId: number): Promise<{ rutaAnterior: strin
     });
     return { rutaAnterior: previo ? (previo.valor as string) : null };
   });
+}
+
+/** Ruta y MIME del logo tal como están en BD, o null si faltan o no tienen la forma que escribe el handler. */
+export async function obtenerLogoAlmacenado(): Promise<{ ruta: string; mime: MimeLogo } | null> {
+  const sql = obtenerSql();
+  const filas = await sql`SELECT clave, valor FROM configuracion WHERE clave IN ('logo_ruta', 'logo_mime')`;
+  const c = Object.fromEntries(filas.map((f) => [f.clave as string, f.valor as string]));
+  if (!rutaLogoValida(c.logo_ruta) || !Object.hasOwn(LOGO_MIMES, c.logo_mime ?? "")) return null;
+  return { ruta: c.logo_ruta, mime: c.logo_mime as MimeLogo };
 }

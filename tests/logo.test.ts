@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LOGO_MAX_BYTES, dimensionesImagen, validarLogo } from "@/lib/logo";
+import { LOGO_MAX_BYTES, dimensionesImagen, rutaLogoValida, validarLogo } from "@/lib/logo";
 import { pngDePrueba } from "./png-prueba";
 
 function jpegCabecera(ancho: number, alto: number): Uint8Array {
@@ -51,5 +51,63 @@ describe("validación del logo", () => {
     expect(dimensionesImagen(new Uint8Array(10), "image/png")).toBeNull();
     expect(dimensionesImagen(new Uint8Array([0xff, 0xd8, 0xff]), "image/jpeg")).toBeNull();
     expect(dimensionesImagen(new Uint8Array(20), "image/webp")).toBeNull();
+  });
+});
+
+describe("rutaLogoValida", () => {
+  it("acepta marca/logo-<8 hex>.<ext>", () => {
+    expect(rutaLogoValida("marca/logo-f0e59280.png")).toBe(true);
+    expect(rutaLogoValida("marca/logo-f0e59280.jpg")).toBe(true);
+    expect(rutaLogoValida("marca/logo-f0e59280.webp")).toBe(true);
+  });
+  it.each([
+    "documentos/PR-CAL-001/v1/x.png",
+    "marca/../documentos/x.png",
+    "marca/logo-F0E59280.png",
+    "marca/logo-f0e59280.svg",
+    "marca/logo-f0e5928.png",
+    "marca/logo-f0e59280.png\n",
+  ])("rechaza %j", (ruta) => expect(rutaLogoValida(ruta)).toBe(false));
+  it("rechaza lo que no es texto", () => {
+    expect(rutaLogoValida(null)).toBe(false);
+    expect(rutaLogoValida(undefined)).toBe(false);
+    expect(rutaLogoValida(5)).toBe(false);
+  });
+});
+
+describe("lector de cabeceras: regresiones", () => {
+  const jpeg = (...partes: number[][]) => new Uint8Array([0xff, 0xd8, ...partes.flat()]);
+  it("JPEG con un segmento de longitud 0 no lanza ni se cuelga", () => {
+    expect(dimensionesImagen(jpeg([0xff, 0xe0, 0x00, 0x00], [0xff, 0xe1, 0x00, 0x00]), "image/jpeg")).toBeNull();
+  });
+  it("JPEG con 1 000 bytes de relleno 0xFF devuelve null", () => {
+    expect(dimensionesImagen(jpeg(new Array(1000).fill(0xff)), "image/jpeg")).toBeNull();
+  });
+  it("JPEG con una longitud que apunta fuera del buffer devuelve null", () => {
+    expect(dimensionesImagen(jpeg([0xff, 0xe0, 0xff, 0xff], [0x00, 0x00]), "image/jpeg")).toBeNull();
+  });
+  it("WebP VP8 y VP8L válidos devuelven sus dimensiones", () => {
+    const vp8 = Buffer.alloc(30);
+    vp8.write("RIFF", 0, "ascii");
+    vp8.write("WEBP", 8, "ascii");
+    vp8.write("VP8 ", 12, "ascii");
+    vp8.writeUInt16LE(200, 26);
+    vp8.writeUInt16LE(100, 28);
+    expect(dimensionesImagen(new Uint8Array(vp8), "image/webp")).toEqual({ ancho: 200, alto: 100 });
+    const vp8l = Buffer.alloc(30);
+    vp8l.write("RIFF", 0, "ascii");
+    vp8l.write("WEBP", 8, "ascii");
+    vp8l.write("VP8L", 12, "ascii");
+    vp8l[20] = 0x2f;
+    vp8l.writeUInt32LE(((100 - 1) << 14) | (200 - 1), 21);
+    expect(dimensionesImagen(new Uint8Array(vp8l), "image/webp")).toEqual({ ancho: 200, alto: 100 });
+  });
+  it("PNG cuyo primer trozo no es IHDR (CgBI) devuelve null", () => {
+    const png = Buffer.from(pngDePrueba(64, 64));
+    png.write("CgBI", 12, "ascii");
+    expect(dimensionesImagen(new Uint8Array(png), "image/png")).toBeNull();
+  });
+  it("Object.prototype no cuenta como tipo de logo", async () => {
+    expect(await validarLogo(new Uint8Array([1, 2, 3]))).toEqual({ ok: false, error: "El logo debe ser PNG, JPG o WebP" });
   });
 });

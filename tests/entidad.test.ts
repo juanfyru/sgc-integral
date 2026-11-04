@@ -14,6 +14,7 @@ import {
   guardarEntidad,
   guardarLogo,
   obtenerEntidad,
+  obtenerLogoAlmacenado,
   obtenerMarca,
   quitarLogo,
 } from "@/db/consultas/entidad";
@@ -84,5 +85,41 @@ describe("entidad", () => {
         await sql()`INSERT INTO configuracion (clave, valor) VALUES (${f.clave}, ${f.valor})`;
       }
     }
+  });
+});
+
+describe("obtenerLogoAlmacenado", () => {
+  async function conClaves(ruta: string, mime: string, prueba: () => Promise<void>) {
+    const previas = await sql()`SELECT clave, valor FROM configuracion WHERE clave IN ('logo_ruta', 'logo_mime')`;
+    try {
+      for (const [clave, valor] of [["logo_ruta", ruta], ["logo_mime", mime]]) {
+        await sql()`INSERT INTO configuracion (clave, valor) VALUES (${clave}, ${valor})
+          ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor`;
+      }
+      await prueba();
+    } finally {
+      await sql()`DELETE FROM configuracion WHERE clave IN ('logo_ruta', 'logo_mime')`;
+      for (const f of previas) {
+        await sql()`INSERT INTO configuracion (clave, valor) VALUES (${f.clave}, ${f.valor})`;
+      }
+    }
+  }
+  it("devuelve la ruta y el MIME cuando son válidos", async () => {
+    await conClaves("marca/logo-f0e59280.png", "image/png", async () => {
+      expect(await obtenerLogoAlmacenado()).toEqual({ ruta: "marca/logo-f0e59280.png", mime: "image/png" });
+    });
+  });
+  it("devuelve null con una logo_ruta fuera de marca/logo-<hex>", async () => {
+    await conClaves("documentos/PR-CAL-001/v1/x.png", "image/png", async () => {
+      expect(await obtenerLogoAlmacenado()).toBeNull();
+    });
+  });
+  it("devuelve null con un logo_mime que no es propio de LOGO_MIMES", async () => {
+    await conClaves("marca/logo-f0e59280.png", "constructor", async () => {
+      expect(await obtenerLogoAlmacenado()).toBeNull();
+    });
+    await conClaves("marca/logo-f0e59280.png", "image/svg+xml", async () => {
+      expect(await obtenerLogoAlmacenado()).toBeNull();
+    });
   });
 });

@@ -14,7 +14,7 @@ const leer24le = (b: Uint8Array, i: number) => b[i] | (b[i + 1] << 8) | (b[i + 2
 const ascii = (b: Uint8Array, i: number, n: number) => String.fromCharCode(...b.subarray(i, i + n));
 
 function dimensionesPng(b: Uint8Array): Dimensiones | null {
-  if (b.length < 24) return null;
+  if (b.length < 24 || ascii(b, 12, 4) !== "IHDR") return null;
   const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
   return { ancho: v.getUint32(16), alto: v.getUint32(20) };
 }
@@ -65,7 +65,7 @@ export type ResultadoLogo =
 export async function validarLogo(bytes: Uint8Array): Promise<ResultadoLogo> {
   if (bytes.byteLength > LOGO_MAX_BYTES) return { ok: false, error: "El logo supera 1 MB" };
   const tipo = await fileTypeFromBuffer(bytes);
-  if (!tipo || !(tipo.mime in LOGO_MIMES)) return { ok: false, error: "El logo debe ser PNG, JPG o WebP" };
+  if (!tipo || !Object.hasOwn(LOGO_MIMES, tipo.mime)) return { ok: false, error: "El logo debe ser PNG, JPG o WebP" };
   const mime = tipo.mime as MimeLogo;
   const medidas = dimensionesImagen(bytes, mime);
   if (!medidas) return { ok: false, error: "No se pudo leer el tamaño de la imagen" };
@@ -78,4 +78,11 @@ export async function validarLogo(bytes: Uint8Array): Promise<ResultadoLogo> {
   }
   const version = createHash("sha256").update(bytes).digest("hex").slice(0, 8);
   return { ok: true, mime, extension: LOGO_MIMES[mime], ancho, alto, version };
+}
+
+/** Única forma que puede tener `logo_ruta`: el borrado y el servicio público nunca salen de aquí. */
+export const RUTA_LOGO = /^marca\/logo-[0-9a-f]{8}\.(png|jpg|webp)$/;
+
+export function rutaLogoValida(ruta: unknown): ruta is string {
+  return typeof ruta === "string" && RUTA_LOGO.test(ruta);
 }
