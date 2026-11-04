@@ -28,6 +28,8 @@ export async function asegurarAdmin(
       debe_cambiar_clave = true, intentos_fallidos = 0, bloqueos_consecutivos = 0,
       bloqueado_hasta = NULL, actualizado_en = now()
       WHERE id = ${existente.id}`;
+    // Restablecer la clave cierra las sesiones abiertas (diseño F11 §6).
+    await sql`DELETE FROM sesiones WHERE usuario_id = ${existente.id}`;
     return "clave_actualizada";
   }
   return "existente";

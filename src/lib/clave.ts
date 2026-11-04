@@ -1,7 +1,8 @@
 import { hash, verify } from "@node-rs/argon2";
 
 // Parámetros OWASP para Argon2id (19 MiB, t=2). Costo puntual por intento de
-// login — el rate limit de 5/min hace irrelevante el gasto en el NAS.
+// login — el bloqueo por cuenta (5 fallos) y el límite por IP (30/min, o 120/min
+// compartido si la IP es desconocida) acotan el gasto en el NAS.
 const OPCIONES = { memoryCost: 19456, timeCost: 2, parallelism: 1 };
 
 export function hashearClave(clave: string): Promise<string> {

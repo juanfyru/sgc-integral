@@ -135,23 +135,30 @@ llega en F13). Sin permiso para una página del panel, la app redirige a `/sin-a
 
 ## 6. Autenticación y cuenta
 
-**Ingreso (`/ingreso`).** Usuario y clave. Límite por IP de 30 intentos por minuto
-**solo cuando la IP es conocida** (con proxy de confianza); el control fino es por
-cuenta: al quinto fallo consecutivo la cuenta se bloquea 15 minutos; cada bloqueo
-siguiente duplica el tiempo (30, 60, 120 minutos…) hasta un máximo de 24 horas; un
-ingreso correcto reinicia ambos contadores. Mensajes: usuario inexistente, inactivo o
-clave incorrecta → "Usuario o clave incorrectos" (mismo costo de tiempo, sin
-enumeración); clave **correcta** con la cuenta bloqueada → "Cuenta bloqueada hasta las
-HH:MM por intentos fallidos; si no fue usted, avise al administrador" (quien demostró la
-clave merece saberlo). Cada intento queda en `accesos` con usuario tecleado, IP y
-user-agent. El parámetro `volver` solo acepta rutas internas (`/...`, no `//`).
+**Ingreso (`/ingreso`).** Usuario y clave. Límite por IP: 30 intentos por minuto con IP
+conocida (proxy de confianza) y un balde compartido de 120 por minuto cuando la IP es
+desconocida. El control fino es por cuenta: al quinto fallo consecutivo la cuenta se
+bloquea 15 minutos; cada bloqueo siguiente duplica el tiempo (30, 60, 120 minutos…) hasta
+un máximo de 24 horas; un ingreso completo (clave y, si hay, segundo factor) reinicia ambos
+contadores. Mensaje único para usuario inexistente, inactivo, clave incorrecta y cuenta
+bloqueada: "Usuario o clave incorrectos. Si falló varias veces, la cuenta se bloquea
+temporalmente; espere o pida al administrador que la desbloquee." Con la cuenta bloqueada
+la clave NO se verifica (se calcula el hash para igualar el costo): la respuesta es idéntica
+sea la clave correcta o no, sin oráculo, y esos intentos no suman ni prolongan el bloqueo.
+Buscar, verificar y escribir el estado de bloqueo van bajo un candado en memoria por cuenta,
+de modo que los intentos en paralelo se cuentan en serie. Cada intento queda en `accesos`
+con usuario tecleado, IP y user-agent. El parámetro `volver` solo acepta rutas internas
+(`/...`, no `//`).
 
 **Segundo factor.** Si la cuenta tiene TOTP activo, el ingreso crea la sesión con
 `factor_pendiente = true` y lleva a `/ingreso/verificar`: código de 6 dígitos (ventana
-de ±1 periodo de 30 s) o código de recuperación de un solo uso. Cinco fallos de factor
-cierran la sesión pendiente y obligan a ingresar de nuevo. Una sesión con factor
-pendiente no sirve para nada más (toda acción la rechaza). Al confirmar se registra
-`ingreso` en `accesos`.
+de ±1 periodo de 30 s) o código de recuperación de un solo uso. La clave correcta no
+reinicia los contadores de bloqueo; solo se reinician al confirmar el factor. Cada fallo de
+factor suma al mismo contador de la cuenta (umbral de 5 y mismo escalado): el fallo que deja
+la cuenta bloqueada cierra la sesión pendiente y obliga a ingresar de nuevo. Si la cuenta
+está bloqueada, la verificación no evalúa el código: cierra la sesión pendiente. Una sesión
+con factor pendiente no sirve para nada más (toda acción la rechaza). Al confirmar se
+registra `ingreso` en `accesos`.
 
 **Flujos obligatorios tras ingresar**, en este orden, antes de ver cualquier página:
 (1) factor pendiente → `/ingreso/verificar`; (2) `debe_cambiar_clave` →
@@ -246,7 +253,7 @@ y en bitácora (`aceptar_aviso_datos`). Si la entidad cambia el texto no se vuel
 - Handlers que escriben verifican `Origin` con `origenValido()` compartido (hoy solo lo
   hace la subida; el `DELETE` de archivos no).
 - Límites: búsqueda y archivos del portal pasan a limitarse **por usuario** (30 y 60
-  por minuto); el ingreso por IP (30 por minuto, solo IP conocida); mutaciones 60 por
+  por minuto); el ingreso por IP (30 por minuto con IP conocida; balde compartido de 120 por minuto si es desconocida); mutaciones 60 por
   minuto por usuario; subida 30 por minuto por usuario.
 - `eventos_consulta` registra `usuario_id` además de IP y user-agent (D8 ampliada).
 
@@ -271,12 +278,12 @@ y en bitácora (`aceptar_aviso_datos`). Si la entidad cambia el texto no se vuel
 |---|---|
 | Intentos antes del bloqueo | 5 |
 | Bloqueo inicial / factor / máximo | 15 min / ×2 / 24 h |
-| Fallos de segundo factor antes de cerrar la sesión pendiente | 5 |
+| Fallos de segundo factor: suman al contador de bloqueo de la cuenta (5); el que la bloquea cierra la sesión pendiente | 5 |
 | Ventana TOTP | ±1 periodo (30 s), 6 dígitos |
 | Códigos de recuperación | 8, formato `XXXXX-XXXXX`, un solo uso, guardados como SHA-256 |
 | Longitud de clave | 12 a 128 |
 | Inactividad de sesión | 60 min (env) |
-| Límite de ingreso por IP conocida | 30 por minuto |
+| Límite de ingreso por IP | 30 por minuto (IP conocida); 120 por minuto compartido (IP desconocida) |
 | Límite de mutaciones por usuario | 60 por minuto |
 | Límite de subida por usuario | 30 por minuto |
 | Filas máximas por lote | 500 |

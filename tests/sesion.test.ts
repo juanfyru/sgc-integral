@@ -167,5 +167,9 @@ describe("asegurarAdmin", () => {
     [u] = await sql()`SELECT debe_cambiar_clave, activo, intentos_fallidos, bloqueos_consecutivos, bloqueado_hasta
       FROM usuarios WHERE usuario = 'admin_prueba'`;
     expect(u).toEqual({ debe_cambiar_clave: true, activo: true, intentos_fallidos: 0, bloqueos_consecutivos: 0, bloqueado_hasta: null });
+    const [{ id }] = await sql()`SELECT id FROM usuarios WHERE usuario = 'admin_prueba'`;
+    const { token } = await crearSesion(Number(id), SIN_CONTEXTO);
+    await asegurarAdmin("admin_prueba", "Admin", "clave-cuatro", true);
+    expect(await validarSesion(token)).toBeNull(); // restablecer cierra sesiones
   });
 });

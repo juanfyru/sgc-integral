@@ -51,8 +51,9 @@ fase: columnas, flujos, variables, valores). Este plan cita el segundo como "dis
 
 ## Review Focus
 
-1. **Clave correcta con cuenta bloqueada.** Debe decir hasta qué hora está bloqueada;
-   con clave incorrecta, mensaje genérico. Test en Tarea 7 (`autenticacion.test.ts`).
+1. **Cuenta bloqueada sin oráculo.** Con la cuenta bloqueada la respuesta es idéntica
+   (mismo mensaje, mismo costo) sea la clave correcta o no, y el estado no cambia. Test
+   en `tests/ingreso.test.ts`.
 2. **El administrador se deja sin acceso a sí mismo.** Desactivar la propia cuenta o
    quitarse el rol `admin_sgc` debe rechazarse en el servidor. Test en Tarea 12.
 3. **Ciclo en el organigrama** (A superior de B y B superior de A). Rechazado con mensaje.
