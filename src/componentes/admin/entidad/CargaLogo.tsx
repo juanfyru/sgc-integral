@@ -4,8 +4,8 @@ import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { Boton } from "@/componentes/ui/Boton";
 import { claseControl } from "@/componentes/ui/Campo";
+import { LOGO_MAX_BYTES, LOGO_MAX_LADO, LOGO_MIN_LADO } from "@/lib/logo-limites";
 
-const MAX_BYTES = 1_048_576; // igual que LOGO_MAX_BYTES (src/lib/logo.ts, que no se importa en el cliente)
 
 type Mensaje = { tipo: "ok" | "error"; texto: string } | null;
 
@@ -22,15 +22,22 @@ export function CargaLogo({ logo }: { logo: { version: string; mime: string } | 
       const r = await fetch("/admin/api/entidad/logo", { method: metodo, body: cuerpo });
       const datos = (await r.json().catch(() => ({}))) as { error?: string };
       if (!r.ok) {
-        setMensaje({ tipo: "error", texto: datos.error ?? "No se pudo completar la operación" });
+        setMensaje({
+          tipo: "error",
+          texto:
+            r.status === 401
+              ? "Su sesión terminó; vuelva a ingresar"
+              : (datos.error ?? "No se pudo completar la operación"),
+        });
         return;
       }
       setMensaje({ tipo: "ok", texto: exito });
-      if (entrada.current) entrada.current.value = "";
       router.refresh();
     } catch {
       setMensaje({ tipo: "error", texto: "No se pudo conectar con el servidor" });
     } finally {
+      // También tras un error: así se puede reintentar con el mismo archivo.
+      if (entrada.current) entrada.current.value = "";
       setOcupado(false);
     }
   }
@@ -38,9 +45,10 @@ export function CargaLogo({ logo }: { logo: { version: string; mime: string } | 
   function alElegir(e: React.ChangeEvent<HTMLInputElement>) {
     const archivo = e.target.files?.[0];
     if (!archivo) return;
-    if (archivo.size > MAX_BYTES) {
+    if (archivo.size > LOGO_MAX_BYTES) {
       // Aviso previo; igualmente se envía para mostrar también el error del servidor.
-      const mb = (archivo.size / 1_048_576).toFixed(1).replace(".", ",");
+      // Redondeo hacia arriba: 1 MB + 1 byte se lee «1,1 MB», no «1,0 MB».
+      const mb = (Math.ceil(archivo.size / 104857.6) / 10).toFixed(1).replace(".", ",");
       setAviso(`El archivo pesa ${mb} MB; el máximo es 1 MB.`);
     } else {
       setAviso(null);
@@ -79,11 +87,11 @@ export function CargaLogo({ logo }: { logo: { version: string; mime: string } | 
           aria-describedby="ayuda-logo"
         />
         <p id="ayuda-logo" className="text-xs text-muted-foreground">
-          PNG, JPG o WebP, hasta 1 MB y entre 64 y 2048 píxeles por lado.
+          PNG, JPG o WebP, hasta 1 MB y entre {LOGO_MIN_LADO} y {LOGO_MAX_LADO} píxeles por lado.
         </p>
       </div>
       {logo ? (
-        <Boton variante="secundario" tamano="sm" pendiente={ocupado} onClick={() => void enviar("DELETE", undefined, "Logo quitado")}>
+        <Boton variante="secundario" tamano="sm" pendiente={ocupado} onClick={() => { setAviso(null); void enviar("DELETE", undefined, "Logo quitado"); }}>
           Quitar logo
         </Boton>
       ) : null}

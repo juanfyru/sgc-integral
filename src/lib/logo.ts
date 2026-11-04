@@ -1,11 +1,9 @@
 import { createHash } from "node:crypto";
 import { fileTypeFromBuffer } from "file-type";
 
-export const LOGO_MAX_BYTES = 1_048_576;
-export const LOGO_MIN_LADO = 64;
-export const LOGO_MAX_LADO = 2048;
-export const LOGO_MIMES = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" } as const;
-export type MimeLogo = keyof typeof LOGO_MIMES;
+import { LOGO_MAX_BYTES, LOGO_MAX_LADO, LOGO_MIMES, LOGO_MIN_LADO, type MimeLogo } from "./logo-limites";
+
+export { LOGO_MAX_BYTES, LOGO_MAX_LADO, LOGO_MIMES, LOGO_MIN_LADO, type MimeLogo };
 
 type Dimensiones = { ancho: number; alto: number };
 

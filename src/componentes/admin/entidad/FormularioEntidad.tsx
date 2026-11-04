@@ -11,32 +11,49 @@ import { VistaPreviaMarca } from "./VistaPreviaMarca";
 
 /** Selector de color y texto hex sincronizados; solo el texto lleva el `name` que se envía. */
 function EntradaColor({
+  etiqueta,
+  mensaje,
   valor,
   alCambiar,
   ...resto
 }: {
   valor: string;
   alCambiar: (v: string) => void;
+  etiqueta: string;
+  /** Aviso calculado en vivo: sin role="alert" para no producir ráfagas en el lector de pantalla. */
+  mensaje?: string;
 } & React.InputHTMLAttributes<HTMLInputElement>) {
   return (
+    <div className="flex flex-col gap-1">
     <div className="flex items-center gap-2">
       <input
         type="color"
-        aria-label="Elegir color"
+        aria-label={`Elegir ${etiqueta.toLowerCase()}`}
         value={hexValido(valor) ? valor.toLowerCase() : "#000000"}
         onChange={(e) => alCambiar(e.target.value)}
         className="h-10 w-12 shrink-0 cursor-pointer rounded-md border border-border bg-card p-1"
       />
       <input
         {...resto}
+        aria-describedby={mensaje ? `${resto.id}-vivo` : resto["aria-describedby"]}
+        aria-invalid={mensaje ? true : undefined}
         type="text"
         value={valor}
         onChange={(e) => alCambiar(e.target.value.trim())}
+        required
+        pattern="#[0-9a-fA-F]{6}"
+        title="Escriba un color como #1b4e8e"
         maxLength={7}
         spellCheck={false}
         autoComplete="off"
         className={`${claseControl} w-32 font-mono`}
       />
+    </div>
+    {mensaje ? (
+      <p id={`${resto.id}-vivo`} className="text-xs text-estado-critico-texto">
+        {mensaje}
+      </p>
+    ) : null}
     </div>
   );
 }
@@ -63,14 +80,18 @@ export function FormularioEntidad({
   const [primario, setPrimario] = useState(entidad.primario);
   const [secundario, setSecundario] = useState(entidad.secundario);
 
-  const errores =
-    hexValido(primario) && hexValido(secundario)
-      ? validarMarca({ primario: primario.toLowerCase(), secundario: secundario.toLowerCase() })
-      : [];
-  const errorDe = (campo: string) =>
-    hexValido(campo === "color_primario" ? primario : secundario)
-      ? errores.find((e) => e.campo === campo)?.mensaje
-      : "Use un color de seis dígitos, por ejemplo #1b4e8e.";
+  // Cada color se valida por su cuenta: un hex a medio escribir en uno no calla al otro.
+  // El otro color se sustituye por uno válido neutro solo para poder llamar a validarMarca.
+  const errores = [
+    ...(hexValido(primario)
+      ? validarMarca({ primario: primario.toLowerCase(), secundario: "#000000" }).filter((e) => e.campo === "color_primario")
+      : []),
+    ...(hexValido(secundario)
+      ? validarMarca({ primario: "#000000", secundario: secundario.toLowerCase() }).filter((e) => e.campo === "color_secundario")
+      : []),
+  ];
+  const errorDe = (campo: "color_primario" | "color_secundario", hex: string) =>
+    hexValido(hex) ? errores.find((e) => e.campo === campo)?.mensaje : "Use un color de seis dígitos, por ejemplo #1b4e8e.";
 
   return (
     <div className="contents">
@@ -105,17 +126,18 @@ export function FormularioEntidad({
             ayuda="Texto que cada persona acepta en su primer ingreso."
           >
             <textarea
+              required
               rows={6}
               maxLength={5000}
               defaultValue={valor("aviso_datos_personales", entidad.avisoDatosPersonales)}
               className={claseControl}
             />
           </Campo>
-          <Campo etiqueta="Color primario" nombre="color_primario" error={errorDe("color_primario")}>
-            <EntradaColor valor={primario} alCambiar={setPrimario} />
+          <Campo etiqueta="Color primario" nombre="color_primario">
+            <EntradaColor etiqueta="Color primario" mensaje={errorDe("color_primario", primario)} valor={primario} alCambiar={setPrimario} />
           </Campo>
-          <Campo etiqueta="Color secundario" nombre="color_secundario" error={errorDe("color_secundario")}>
-            <EntradaColor valor={secundario} alCambiar={setSecundario} />
+          <Campo etiqueta="Color secundario" nombre="color_secundario">
+            <EntradaColor etiqueta="Color secundario" mensaje={errorDe("color_secundario", secundario)} valor={secundario} alCambiar={setSecundario} />
           </Campo>
           {estado ? (
             <p role="alert" className="rounded-md bg-estado-critico-fondo px-3 py-2 text-sm text-estado-critico-texto">
@@ -133,7 +155,7 @@ export function FormularioEntidad({
         </form>
       </div>
       <div className="space-y-8">
-        <VistaPreviaMarca primario={primario} secundario={secundario} sigla={sigla} nombre={nombre} />
+        <VistaPreviaMarca primario={primario} secundario={secundario} sigla={sigla} nombre={nombre} errores={errores} />
         {children}
       </div>
     </div>

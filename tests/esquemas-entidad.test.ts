@@ -12,20 +12,26 @@ const base = {
 
 describe("EsquemaEntidad", () => {
   it("normaliza el hex a minúsculas y rechaza #fff", () => {
-    const ok = EsquemaEntidad.parse(base);
+    const ok = EsquemaEntidad.parse({ ...base, aviso_datos_personales: "Aviso" });
     expect(ok.color_primario).toBe("#1b4e8e");
     expect(ok.color_secundario).toBe("#2e9b47");
-    expect(() => EsquemaEntidad.parse({ ...base, color_primario: "#fff" })).toThrow(/Color inválido/);
-    expect(() => EsquemaEntidad.parse({ ...base, sigla_entidad: "H" })).toThrow();
-    expect(() => EsquemaEntidad.parse({ ...base, extra: "x" })).toThrow();
+    expect(() => EsquemaEntidad.parse({ ...base, aviso_datos_personales: "Aviso", color_primario: "#fff" })).toThrow(/Color inválido/);
+    expect(() => EsquemaEntidad.parse({ ...base, aviso_datos_personales: "Aviso", sigla_entidad: "H" })).toThrow();
+    expect(() => EsquemaEntidad.parse({ ...base, aviso_datos_personales: "Aviso", extra: "x" })).toThrow();
   });
 
-  it("lema y aviso vacíos (parsearFormulario omite los campos vacíos) quedan en cadena vacía", () => {
-    const sinOpcionales: Partial<typeof base> = { ...base };
-    delete sinOpcionales.lema;
-    delete sinOpcionales.aviso_datos_personales;
-    const ok = EsquemaEntidad.parse(sinOpcionales);
-    expect(ok.lema).toBe("");
-    expect(ok.aviso_datos_personales).toBe("");
+  it("el lema ausente (parsearFormulario omite los vacíos) queda en cadena vacía", () => {
+    const sinLema: Partial<typeof base> = { ...base, aviso_datos_personales: "Aviso" };
+    delete sinLema.lema;
+    expect(EsquemaEntidad.parse(sinLema).lema).toBe("");
+  });
+
+  it("el aviso de datos personales es obligatorio", () => {
+    const conAviso = { ...base, aviso_datos_personales: "Aviso" };
+    expect(EsquemaEntidad.parse(conAviso).aviso_datos_personales).toBe("Aviso");
+    expect(() => EsquemaEntidad.parse(base)).toThrow(/obligatorio \(Ley 1581 de 2012\)/);
+    const sinAviso: Partial<typeof base> = { ...base };
+    delete sinAviso.aviso_datos_personales;
+    expect(() => EsquemaEntidad.parse(sinAviso)).toThrow();
   });
 });
