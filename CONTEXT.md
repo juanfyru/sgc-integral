@@ -26,8 +26,9 @@
    (59 archivos; línea base de la fase: 205); build sin `.env.local`; compose de
    desarrollo (arranque con rol y migraciones, `/` → 307 a `/ingreso`, `/api/salud`
    200); `sgc_app` recibe `permission denied` (42501) al intentar `DELETE` en
-   `auditoria`. **El recorrido de demostración en navegador lo hace el usuario** (sección
-   "Qué probar y cómo (Fase 11)"). La revisión final de la rama dio «Con correcciones» y
+   `auditoria`. El recorrido de demostración en navegador se hizo contra la imagen de
+   producción del compose dev (9081) y destapó los defectos que corrigen F11-D27 a
+   F11-D30; el usuario lo repite con la sección "Qué probar y cómo (Fase 11)". La revisión final de la rama dio «Con correcciones» y
    la ola final de arreglos (F11-D31 a F11-D34 y los menores de "Hecho") ya está en la
    rama. Pendiente: fusión en `main` y push. El repo `juanfyru/sgc-integral` ya existe en GitHub (`origin`); `main`
    local va un commit (`755e8ca`, el diseño maestro) por delante de `origin/main` y la
