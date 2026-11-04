@@ -3,7 +3,7 @@
  * rectángulos SVG sin inventar datos ni salirse del lienzo.
  */
 import { describe, expect, it } from "vitest";
-import { calcularBarras } from "@/componentes/admin/estadisticas/geometria";
+import { calcularBarras } from "@/componentes/ui/geometria";
 
 describe("calcularBarras", () => {
   it("la barra de mayor conteo ocupa todo el alto y ninguna se sale", () => {

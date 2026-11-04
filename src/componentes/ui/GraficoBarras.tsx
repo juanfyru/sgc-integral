@@ -27,7 +27,7 @@ export function GraficoBarras({ serie }: { serie: PuntoSerie[] }) {
             y={b.y}
             width={b.ancho}
             height={b.alto}
-            className="fill-primary/70"
+            className="fill-mod-documentos"
           >
             <title>{`${b.fecha}: ${b.conteo}`}</title>
           </rect>

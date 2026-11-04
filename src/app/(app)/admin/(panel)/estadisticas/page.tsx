@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { obtenerEstadisticas, type Rango } from "@/db/consultas/estadisticas";
-import { GraficoBarras } from "@/componentes/admin/estadisticas/GraficoBarras";
+import { GraficoBarras } from "@/componentes/ui/GraficoBarras";
 import { exigirPermiso } from "@/lib/paginas";
 
 export const metadata: Metadata = { title: "Estadísticas — Administración SGC" };
