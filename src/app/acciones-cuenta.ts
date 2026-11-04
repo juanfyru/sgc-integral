@@ -1,6 +1,7 @@
 "use server";
 
 import { cookies, headers } from "next/headers";
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { EstadoAccion } from "@/app/admin/comun";
 import {
@@ -40,6 +41,10 @@ export type { EstadoFactor } from "@/lib/segundo-factor";
 // Instancia única en el NAS: los límites viven en memoria (sin Redis).
 const permitirIngresoPorIp = crearLimitador({ limite: 30, ventanaMs: 60_000 });
 const permitirIngresoIpDesconocida = crearLimitador({ limite: 120, ventanaMs: 60_000 });
+
+// Toda acción que cambia la sesión o el estado de la cuenta llama revalidatePath("/", "layout")
+// antes de redirigir: en producción el enrutador del cliente reutiliza entradas RSC prefetcheadas
+// (p. ej. `/` capturada antes de cambiar la clave) y el redirect entraría en bucle.
 
 async function contextoDePeticion() {
   const cabeceras = await headers();
@@ -82,6 +87,7 @@ export async function ingresar(
     maxAge: 60 * 60 * 24 * 7,
   });
   const destino = rutaInterna(datos.volver);
+  revalidatePath("/", "layout");
   if (r.factorPendiente) {
     redirect(`/ingreso/verificar?volver=${encodeURIComponent(destino)}`);
   }
@@ -106,8 +112,10 @@ export async function verificarFactor(
   if (r.tipo === "error") return { ok: false, error: r.mensaje };
   if (r.tipo === "cerrada") {
     (await cookies()).delete(COOKIE_SESION);
+    revalidatePath("/", "layout");
     redirect("/ingreso?motivo=factor");
   }
+  revalidatePath("/", "layout");
   redirect(rutaInterna(datos.volver));
 }
 
@@ -128,6 +136,7 @@ export async function salir(): Promise<void> {
       userAgent,
     });
   }
+  revalidatePath("/", "layout");
   redirect("/ingreso");
 }
 
@@ -149,6 +158,7 @@ export async function claveInicialAccion(
   if (motivo) return { ok: false, error: motivo };
 
   await cambiarClaveDeUsuario(sesion.usuarioId, await hashearClave(datos.claveNueva), sesion.sesionId);
+  revalidatePath("/", "layout");
   redirect("/");
 }
 
@@ -167,6 +177,7 @@ export async function aceptarAvisoAccion(
     return errorDeFormulario(err);
   }
   if (!sesion.aceptoDatos) await aceptarAvisoDatos(sesion.usuarioId);
+  revalidatePath("/", "layout");
   redirect(rutaInterna(datos.volver));
 }
 /** Cambio voluntario de clave: exige la actual y conserva solo esta sesión. */
@@ -190,6 +201,7 @@ export async function cambiarClaveAccion(
   if (motivo) return { ok: false, error: motivo };
 
   await cambiarClaveDeUsuario(sesion.usuarioId, await hashearClave(datos.claveNueva), sesion.sesionId);
+  revalidatePath("/", "layout");
   redirect("/cuenta?aviso=clave");
 }
 
@@ -209,6 +221,7 @@ export async function iniciarTotpAccion(): Promise<void> {
     // Con el factor activo no se pisa el secreto: primero hay que desactivarlo.
     if (!actual.activo) await guardarSecretoTotpPendiente(sesion.usuarioId, cifrar(generarSecretoTotp()));
   });
+  revalidatePath("/", "layout");
   redirect("/cuenta/segundo-factor");
 }
 
@@ -224,7 +237,9 @@ export async function confirmarTotpAccion(
   } catch (err) {
     return errorDeFormulario(err);
   }
-  return confirmarSegundoFactor({ usuarioId: sesion.usuarioId, clave: datos.clave, codigo: datos.codigo });
+  const r = await confirmarSegundoFactor({ usuarioId: sesion.usuarioId, clave: datos.clave, codigo: datos.codigo });
+  if (r?.ok) revalidatePath("/", "layout");
+  return r;
 }
 
 /** Quita el segundo factor tras confirmar la clave; los roles que lo exigen no pueden. */
@@ -241,5 +256,6 @@ export async function desactivarTotpAccion(
   }
   const r = await quitarSegundoFactor({ usuarioId: sesion.usuarioId, rol: sesion.rol, clave: datos.clave });
   if (r) return r;
+  revalidatePath("/", "layout");
   redirect("/cuenta?aviso=factor-desactivado");
 }
