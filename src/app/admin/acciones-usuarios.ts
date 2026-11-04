@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
-import { idNumerico, mutacion, valoresDeFormulario, type EstadoAccion } from "@/app/admin/comun";
+import { comprobarLimite, idNumerico, mutacion, valoresDeFormulario, type EstadoAccion } from "@/app/admin/comun";
 import {
   cambiarActivo,
   crearUsuario,
@@ -35,6 +35,8 @@ export async function crearUsuarioAccion(_prev: EstadoCreacion, formData: FormDa
     if (err instanceof ErrorPermiso) return { ok: false, error: err.message };
     throw err;
   }
+  const limitado = comprobarLimite(sesion, formData);
+  if (limitado) return limitado;
   try {
     const datos = parsearUsuario(formData);
     const claveTemporal = generarClaveTemporal();
@@ -93,6 +95,8 @@ export async function restablecerClaveAccion(
     if (err instanceof ErrorPermiso) return { ok: false, error: err.message };
     throw err;
   }
+  const limitado = comprobarLimite(sesion);
+  if (limitado) return limitado;
   try {
     const cabeceras = await headers();
     const { claveTemporal } = await restablecerClave(idNumerico(formData, "id"), sesion.usuarioId, {

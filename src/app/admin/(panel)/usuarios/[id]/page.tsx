@@ -84,7 +84,7 @@ export default async function PaginaUsuario({ params }: { params: Promise<{ id: 
         {u.bloqueadoHasta && (
           <FormAccion accion={desbloquearAccion} etiqueta="Desbloquear" campos={{ id: u.id }} />
         )}
-        {u.totpActivo && (
+        {u.totpActivo && !esYo && (
           <FormAccion
             accion={quitarFactorAccion}
             etiqueta="Quitar segundo factor"
@@ -93,7 +93,13 @@ export default async function PaginaUsuario({ params }: { params: Promise<{ id: 
             tono="peligro"
           />
         )}
-        <BotonRestablecer accion={restablecerClaveAccion} id={u.id} usuario={u.usuario} />
+        {esYo ? (
+          <p className="text-sm text-muted-foreground">
+            Para cambiar su clave o su segundo factor use Mi cuenta.
+          </p>
+        ) : (
+          <BotonRestablecer accion={restablecerClaveAccion} id={u.id} usuario={u.usuario} />
+        )}
       </section>
 
       <section aria-labelledby="titulo-editar">

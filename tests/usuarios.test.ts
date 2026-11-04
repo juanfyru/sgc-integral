@@ -174,6 +174,20 @@ describe("estado de la cuenta", () => {
   });
 });
 
+describe("el actor no se aplica estas acciones a sí mismo", () => {
+  it("restablecer clave y quitar segundo factor propios fallan sin escribir ni auditar", async () => {
+    const contar = async () =>
+      (await sql()`SELECT 1 FROM auditoria WHERE entidad_id = ${actorId} AND accion IN ('restablecer_clave', 'quitar_segundo_factor')`).length;
+    const [antes] = await sql()`SELECT hash_clave FROM usuarios WHERE id = ${actorId}`;
+    const n = await contar();
+    await expect(restablecerClave(actorId, actorId)).rejects.toThrow(/Mi cuenta/);
+    await expect(quitarSegundoFactor(actorId, actorId)).rejects.toThrow(/Mi cuenta/);
+    const [despues] = await sql()`SELECT hash_clave FROM usuarios WHERE id = ${actorId}`;
+    expect(despues.hash_clave).toBe(antes.hash_clave);
+    expect(await contar()).toBe(n);
+  });
+});
+
 describe("consultas", () => {
   it("listar filtra por texto, rol y estado; contarAdminsActivos cuenta", async () => {
     expect((await listarUsuarios({ texto: nombreU1 })).map((f) => f.usuario)).toEqual([nombreU1]);

@@ -48,6 +48,8 @@ export type UsuarioDetalle = DatosUsuario & {
   sesionesActivas: number;
 };
 
+const USAR_MI_CUENTA = "Use Mi cuenta para cambiar su clave o su segundo factor.";
+
 export type ContextoAcceso = { ip: string | null; userAgent: string | null };
 
 const iso = (v: unknown): string | null => (v ? new Date(v as string | Date).toISOString() : null);
@@ -250,6 +252,7 @@ export async function restablecerClave(
   actorId: number,
   contexto: ContextoAcceso = { ip: null, userAgent: null },
 ): Promise<{ claveTemporal: string }> {
+  if (actorId === id) throw new Error(USAR_MI_CUENTA);
   const claveTemporal = generarClaveTemporal();
   const hash = await hashearClave(claveTemporal);
   await conCandado(claveCandadoUsuario(id), () =>
@@ -297,6 +300,7 @@ export async function desbloquearUsuario(
 }
 
 export async function quitarSegundoFactor(id: number, actorId: number): Promise<void> {
+  if (actorId === id) throw new Error(USAR_MI_CUENTA);
   await conCandado(claveCandadoUsuario(id), async () => {
     if (!(await obtenerSecretoTotp(id)).activo) {
       throw new Error("El usuario no tiene segundo factor activo.");

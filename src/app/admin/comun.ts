@@ -41,6 +41,19 @@ export function valoresDeFormulario(
 // Tope por usuario para todas las mutaciones del panel (instancia única, en memoria).
 const permitirMutacion = crearLimitador({ limite: 60, ventanaMs: 60_000 });
 
+/** Mismo tope por usuario que `mutacion`, para acciones que no pasan por ella. null = permitido. */
+export function comprobarLimite(
+  sesion: { usuarioId: number },
+  formData?: FormData,
+): EstadoAccion {
+  if (permitirMutacion(String(sesion.usuarioId))) return null;
+  return {
+    ok: false,
+    error: "Demasiadas operaciones seguidas. Espere un minuto.",
+    ...(formData ? { valores: valoresDeFormulario(formData) } : {}),
+  };
+}
+
 // Envuelve la mutación: requerirSesion SIEMPRE primero, luego el permiso y el
 // límite por usuario; los errores de negocio vuelven al formulario como
 // { ok: false } sin perder lo escrito.
@@ -57,13 +70,8 @@ export async function mutacion(
     if (err instanceof ErrorPermiso) return { ok: false, error: err.message };
     throw err;
   }
-  if (!permitirMutacion(String(sesion.usuarioId))) {
-    return {
-      ok: false,
-      error: "Demasiadas operaciones seguidas. Espere un minuto.",
-      valores: valoresDeFormulario(formData),
-    };
-  }
+  const limitado = comprobarLimite(sesion, formData);
+  if (limitado) return limitado;
   let destino: string | void;
   try {
     destino = await fn(sesion.usuarioId, formData, sesion);
