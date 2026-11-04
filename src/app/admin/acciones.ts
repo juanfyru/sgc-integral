@@ -64,7 +64,10 @@ export async function ingresar(
   }
   if (!(await verificarClave(fila.hash_clave, clave))) return ERROR_CREDENCIALES;
 
-  const { token } = await crearSesion(fila.id);
+  const { token } = await crearSesion(fila.id, {
+    ip,
+    userAgent: (await headers()).get("user-agent"),
+  });
   (await cookies()).set(COOKIE_SESION, token, {
     httpOnly: true,
     sameSite: "lax",
