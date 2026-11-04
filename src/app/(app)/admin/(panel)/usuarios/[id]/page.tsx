@@ -34,7 +34,7 @@ export default async function PaginaUsuario({ params }: { params: Promise<{ id: 
   return (
     <main className="flex flex-col gap-8">
       <div>
-        <Link href="/admin/usuarios" className="text-sm text-azul underline">Usuarios</Link>
+        <Link href="/admin/usuarios" className="text-sm text-marca underline">Usuarios</Link>
         <h1 className="mt-1 font-display text-2xl font-semibold">{u.nombre}</h1>
         <p className="text-sm text-muted-foreground">
           {u.usuario} · {ETIQUETA_ROL[u.rol]} · {u.activo ? "Activo" : "Inactivo"}
@@ -51,7 +51,7 @@ export default async function PaginaUsuario({ params }: { params: Promise<{ id: 
           <div><dt className="inline font-medium">Aviso de datos aceptado: </dt><dd className="inline">{f(u.aceptoDatosEn)}</dd></div>
           <div><dt className="inline font-medium">Sesiones activas: </dt><dd className="inline">{u.sesionesActivas}</dd>
             {puede(sesion, "sesiones.administrar") && (
-              <> · <Link href="/admin/sesiones" className="text-azul underline">Ver sesiones</Link></>
+              <> · <Link href="/admin/sesiones" className="text-marca underline">Ver sesiones</Link></>
             )}
           </div>
           <div><dt className="inline font-medium">Cargo: </dt><dd className="inline">{u.cargoNombre ? `${u.cargoNombre} (${u.areaNombre})` : "—"}</dd></div>

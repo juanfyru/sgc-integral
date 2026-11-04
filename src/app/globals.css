@@ -2,7 +2,17 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+/* El tema lo fija el atributo data-tema de <html> (escrito por el servidor). */
+@custom-variant dark {
+  &:where([data-tema="oscuro"], [data-tema="oscuro"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where([data-tema="sistema"], [data-tema="sistema"] *) {
+      @slot;
+    }
+  }
+}
 
 @theme inline {
   --color-background: var(--background);
@@ -10,13 +20,47 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-geist-sans);
-  /* Identidad institucional (derivada del mapa de procesos oficial) */
-  --color-azul: #1b4e8e;
-  --color-azul-profundo: #123a6d;
-  --color-azul-tinta: #16233a;
-  --color-verde: #2e9b47;
-  --color-verde-texto: #1e7a35;
   --font-display: var(--font-archivo);
+
+  /* Capa 1: marca configurable */
+  --color-marca: var(--marca);
+  --color-marca-relleno: var(--marca-relleno);
+  --color-marca-oscurecida: var(--marca-oscurecida);
+  --color-marca-tinte: var(--marca-tinte);
+  --color-marca-2: var(--marca-2);
+  --color-marca-2-texto: var(--marca-2-texto);
+  --color-linea-suave: var(--linea-suave);
+  --color-texto-terciario: var(--texto-terciario);
+
+  /* Alias de las clases heredadas (identidad institucional) */
+  --color-azul: var(--marca-relleno);
+  --color-azul-profundo: var(--marca-oscurecida);
+  --color-azul-tinta: var(--foreground);
+  --color-verde: var(--marca-2);
+  --color-verde-texto: var(--marca-2-texto);
+
+  /* Capa 2: módulos */
+  --color-mod-documentos: var(--mod-documentos);
+  --color-mod-indicadores: var(--mod-indicadores);
+  --color-mod-planes: var(--mod-planes);
+
+  /* Capa 3: estados */
+  --color-estado-bien: var(--estado-bien);
+  --color-estado-bien-fondo: var(--estado-bien-fondo);
+  --color-estado-bien-texto: var(--estado-bien-texto);
+  --color-estado-atencion: var(--estado-atencion);
+  --color-estado-atencion-fondo: var(--estado-atencion-fondo);
+  --color-estado-atencion-texto: var(--estado-atencion-texto);
+  --color-estado-grave: var(--estado-grave);
+  --color-estado-grave-fondo: var(--estado-grave-fondo);
+  --color-estado-grave-texto: var(--estado-grave-texto);
+  --color-estado-critico: var(--estado-critico);
+  --color-estado-critico-fondo: var(--estado-critico-fondo);
+  --color-estado-critico-texto: var(--estado-critico-texto);
+  --color-estado-sin-dato: var(--estado-sin-dato);
+  --color-estado-sin-dato-fondo: var(--estado-sin-dato-fondo);
+  --color-estado-sin-dato-texto: var(--estado-sin-dato-texto);
+
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -55,74 +99,119 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-:root {
-  /* Lienzo frío gris-azulado: limpio, hospitalario, nada de blanco plano */
-  --background: #f6f8fb;
-  --foreground: #16233a;
-  --card: oklch(1 0 0);
-  --card-foreground: #16233a;
-  --popover: oklch(1 0 0);
-  --popover-foreground: #16233a;
-  --primary: #1b4e8e;
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: #eaeff6;
-  --secondary-foreground: #16233a;
-  --muted: #eef2f7;
-  --muted-foreground: #55677f;
-  --accent: #eaeff6;
-  --accent-foreground: #16233a;
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: #e0e7f0;
-  --input: #e0e7f0;
-  --ring: #1b4e8e;
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+/* El tema lo decide color-scheme; light-dark() elige el valor. */
+:root,
+[data-tema="claro"] {
+  color-scheme: light;
+}
+[data-tema="oscuro"] {
+  color-scheme: dark;
+}
+[data-tema="sistema"] {
+  color-scheme: light dark;
 }
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+:root {
+  /* Respaldo de la marca por defecto si falta el style inyectado en <html>
+     (el layout los sobrescribe con estiloMarca). */
+  --marca-c: #1b4e8e;
+  --marca-o: #5083c8;
+  --marca-relleno-c: #1b4e8e;
+  --marca-relleno-o: #1b4e8e;
+  --marca-oscurecida-c: #003775;
+  --marca-oscurecida-o: #003775;
+  --marca-2-c: #2e9b47;
+  --marca-2-o: #2e9b47;
+  --marca-2-relleno-c: #2e9b47;
+  --marca-2-relleno-o: #2e9b47;
+  --marca-2-contraste-c: #16181d;
+  --marca-2-contraste-o: #16181d;
+  --marca-2-texto-c: #00822f;
+  --marca-2-texto-o: #2e9b47;
+
+  --marca: light-dark(var(--marca-c), var(--marca-o));
+  --marca-relleno: light-dark(var(--marca-relleno-c), var(--marca-relleno-o));
+  --marca-oscurecida: light-dark(var(--marca-oscurecida-c), var(--marca-oscurecida-o));
+  --marca-2: light-dark(var(--marca-2-c), var(--marca-2-o));
+  --marca-2-relleno: light-dark(var(--marca-2-relleno-c), var(--marca-2-relleno-o));
+  --marca-2-contraste: light-dark(var(--marca-2-contraste-c), var(--marca-2-contraste-o));
+  --marca-2-texto: light-dark(var(--marca-2-texto-c), var(--marca-2-texto-o));
+  --marca-tinte: color-mix(in srgb, var(--marca) 10%, var(--background));
+
+  /* Superficies y texto */
+  --background: light-dark(#f4f6f9, #0f1216);
+  --foreground: light-dark(#16181d, #e7eaef);
+  --card: light-dark(#ffffff, #161a20);
+  --card-foreground: var(--foreground);
+  --popover: light-dark(#ffffff, #161a20);
+  --popover-foreground: var(--foreground);
+  --border: light-dark(#e2e6ec, #262c35);
+  --linea-suave: light-dark(#edf0f4, #1f242c);
+  --input: light-dark(#e2e6ec, #2f3640);
+  --muted-foreground: light-dark(#5b6472, #9aa3b0);
+  --texto-terciario: light-dark(#8b94a3, #6b7483);
+  --muted: light-dark(#eef1f5, #1c2128);
+  --secondary: light-dark(#eef1f5, #1c2128);
+  --secondary-foreground: var(--foreground);
+  --accent: light-dark(#eef1f5, #1c2128);
+  --accent-foreground: var(--foreground);
+  --destructive: light-dark(#d03b3b, #e05555);
+
+  --primary: var(--marca-relleno);
+  --primary-foreground: #ffffff;
+  --ring: var(--marca);
+  --radius: 0.5rem;
+
+  /* Módulos (capa 2) */
+  --mod-documentos: light-dark(#2a78d6, #3987e5);
+  --mod-indicadores: light-dark(#1baf7a, #199e70);
+  --mod-planes: light-dark(#eb6834, #d95926);
+
+  /* Estados (capa 3): color, fondo y texto de insignia */
+  --estado-bien: light-dark(#0ca30c, #2db52d);
+  --estado-bien-fondo: light-dark(#e7f6e7, #163a16);
+  --estado-bien-texto: light-dark(#0a6b0a, #5fd45f);
+  --estado-atencion: light-dark(#fab219, #fab219);
+  --estado-atencion-fondo: light-dark(#fff5db, #3d2f0a);
+  --estado-atencion-texto: light-dark(#7a5200, #f3c65a);
+  --estado-grave: light-dark(#ec835a, #ec835a);
+  --estado-grave-fondo: light-dark(#fdeee8, #3f2418);
+  --estado-grave-texto: light-dark(#8a3a1a, #f0a07e);
+  --estado-critico: light-dark(#d03b3b, #e05555);
+  --estado-critico-fondo: light-dark(#fbe7e7, #3f1a1a);
+  --estado-critico-texto: light-dark(#a82e2e, #f08080);
+  --estado-sin-dato: light-dark(#a3abb8, #6b7483);
+  --estado-sin-dato-fondo: light-dark(#eef0f3, #242a33);
+  --estado-sin-dato-texto: light-dark(#5b6472, #9aa3b0);
+
+  --chart-1: light-dark(#2a78d6, #3987e5);
+  --chart-2: light-dark(#1baf7a, #199e70);
+  --chart-3: light-dark(#eb6834, #d95926);
+  --chart-4: light-dark(#fab219, #fab219);
+  --chart-5: light-dark(#8b94a3, #6b7483);
+  --sidebar: var(--card);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--marca-relleno);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--marca-tinte);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--marca);
+}
+
+/* Colores de banda/proceso legibles en los dos temas.
+   Requieren --color-banda en el elemento o en un ancestro. */
+.banda-tinte {
+  background: color-mix(in srgb, var(--color-banda) 12%, var(--background));
+}
+.banda-texto {
+  color: light-dark(
+    color-mix(in srgb, var(--color-banda) 80%, black),
+    color-mix(in srgb, var(--color-banda) 70%, white)
+  );
+}
+.banda-borde {
+  border-color: color-mix(in srgb, var(--color-banda) 28%, var(--background));
 }
 
 @layer base {

@@ -24,7 +24,7 @@ export default async function PaginaLote() {
         <h2 id="instrucciones" className="font-display text-lg font-semibold">Instrucciones</h2>
         <ol className="list-decimal pl-5">
           <li>
-            <Link href="/admin/usuarios/lote/plantilla" prefetch={false} className="text-azul underline">Descargue la plantilla (CSV)</Link>{" "}
+            <Link href="/admin/usuarios/lote/plantilla" prefetch={false} className="text-marca underline">Descargue la plantilla (CSV)</Link>{" "}
             y complétela, una persona por fila (hasta {MAXIMO_FILAS_LOTE}).
           </li>
           <li>Guarde el archivo con codificación UTF-8: en Excel, «Guardar como» y elija «CSV UTF-8».</li>
@@ -43,7 +43,7 @@ export default async function PaginaLote() {
         <p>Cada cuenta nace con una clave temporal que deberá cambiar al ingresar.</p>
       </section>
       <FormularioLote accion={crearLoteAccion} />
-      <p className="text-sm"><Link href="/admin/usuarios" className="text-azul underline">Volver a la lista</Link></p>
+      <p className="text-sm"><Link href="/admin/usuarios" className="text-marca underline">Volver a la lista</Link></p>
     </main>
   );
 }

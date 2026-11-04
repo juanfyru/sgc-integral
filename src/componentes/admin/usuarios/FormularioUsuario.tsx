@@ -40,8 +40,8 @@ export function FormularioUsuario({ accion, id, valores, cargos, jefes, procesos
         </p>
         <ClaveTemporal clave={estado.claveTemporal} usuario={estado.usuario} />
         <p className="flex gap-4 text-sm">
-          <Link href={`/admin/usuarios/${estado.id}`} className="text-azul underline">Ver el usuario</Link>
-          <Link href="/admin/usuarios" className="text-azul underline">Volver a la lista</Link>
+          <Link href={`/admin/usuarios/${estado.id}`} className="text-marca underline">Ver el usuario</Link>
+          <Link href="/admin/usuarios" className="text-marca underline">Volver a la lista</Link>
         </p>
       </div>
     );

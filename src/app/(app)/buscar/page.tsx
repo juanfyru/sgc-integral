@@ -150,7 +150,7 @@ export default async function PaginaBuscar({
                     desde: null,
                     hasta: null,
                   })}
-                  className="text-xs font-medium text-azul underline-offset-2 hover:underline"
+                  className="text-xs font-medium text-marca underline-offset-2 hover:underline"
                 >
                   Limpiar todo
                 </Link>
@@ -245,7 +245,7 @@ export default async function PaginaBuscar({
                                       aria-current={subActivo ? "true" : undefined}
                                       className={`block rounded-md px-2 py-1 text-xs transition-colors ${
                                         subActivo
-                                          ? "bg-azul/10 font-medium text-azul"
+                                          ? "bg-azul/10 font-medium text-marca"
                                           : "text-muted-foreground hover:bg-muted hover:text-foreground"
                                       }`}
                                     >
@@ -310,7 +310,7 @@ export default async function PaginaBuscar({
                   {(parametros.desde || parametros.hasta) && (
                     <Link
                       href={urlBusqueda(parametros, { desde: null, hasta: null })}
-                      className="text-xs font-medium text-azul underline-offset-2 hover:underline"
+                      className="text-xs font-medium text-marca underline-offset-2 hover:underline"
                     >
                       Quitar fechas
                     </Link>
@@ -368,7 +368,7 @@ function EstadoInicial() {
           <li key={sugerencia}>
             <Link
               href={`/buscar?q=${encodeURIComponent(sugerencia)}`}
-              className="inline-block rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-azul hover:text-azul"
+              className="inline-block rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-azul hover:text-marca"
             >
               {sugerencia}
             </Link>
@@ -377,7 +377,7 @@ function EstadoInicial() {
       </ul>
       <p className="text-xs text-muted-foreground">
         También puede navegar desde el{" "}
-        <Link href="/" className="font-medium text-azul underline-offset-2 hover:underline">
+        <Link href="/" className="font-medium text-marca underline-offset-2 hover:underline">
           mapa de procesos
         </Link>
         .
@@ -415,7 +415,7 @@ function SinResultados({
               desde: null,
               hasta: null,
             })}
-            className="inline-block rounded-full border border-azul bg-azul/5 px-3 py-1.5 text-xs font-medium text-azul transition-colors hover:bg-azul/10"
+            className="inline-block rounded-full border border-azul bg-azul/5 px-3 py-1.5 text-xs font-medium text-marca transition-colors hover:bg-azul/10"
           >
             Quitar los filtros
           </Link>
@@ -424,7 +424,7 @@ function SinResultados({
           <Link
             key={sugerencia}
             href={`/buscar?q=${encodeURIComponent(sugerencia)}`}
-            className="inline-block rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-azul hover:text-azul"
+            className="inline-block rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-azul hover:text-marca"
           >
             {sugerencia}
           </Link>

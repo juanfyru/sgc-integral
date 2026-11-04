@@ -44,7 +44,7 @@ export function FormularioFactor({ volver = "/" }: { volver?: string }) {
       <button
         type="button"
         onClick={() => setRecuperacion((v) => !v)}
-        className="text-sm text-azul underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-azul/40"
+        className="text-sm text-marca underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-azul/40"
       >
         {recuperacion ? "Usar el código de la aplicación" : "Usar un código de recuperación"}
       </button>

@@ -122,7 +122,7 @@ export default async function PaginaSegundoFactor({
           </button>
         </form>
       ) : (
-        <Link href="/cuenta" className="text-sm text-azul underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-azul/40">
+        <Link href="/cuenta" className="text-sm text-marca underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-azul/40">
           Volver a Mi cuenta
         </Link>
       )}

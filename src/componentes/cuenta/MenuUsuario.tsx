@@ -20,14 +20,14 @@ export function MenuUsuario({ usuario }: { usuario: UsuarioMenu }) {
         {usuario.verPanel && (
           <Link
             href="/admin"
-            className="mb-2 block rounded-md px-2 py-1.5 text-sm text-azul hover:bg-muted focus-visible:outline-2 focus-visible:outline-azul"
+            className="mb-2 block rounded-md px-2 py-1.5 text-sm text-marca hover:bg-muted focus-visible:outline-2 focus-visible:outline-azul"
           >
             Administración
           </Link>
         )}
         <Link
           href="/cuenta"
-          className="mb-2 block rounded-md px-2 py-1.5 text-sm text-azul hover:bg-muted focus-visible:outline-2 focus-visible:outline-azul"
+          className="mb-2 block rounded-md px-2 py-1.5 text-sm text-marca hover:bg-muted focus-visible:outline-2 focus-visible:outline-azul"
         >
           Mi cuenta
         </Link>

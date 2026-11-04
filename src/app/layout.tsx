@@ -1,9 +1,13 @@
 import type { Metadata } from "next";
 import { Archivo, Geist, Geist_Mono } from "next/font/google";
+import { cookies } from "next/headers";
 import { EncabezadoSitio } from "@/componentes/EncabezadoSitio";
+import { obtenerMarca } from "@/db/consultas/entidad";
+import { derivarMarca, estiloMarca } from "@/lib/marca";
 import { puedeEntrarAlPanel } from "@/lib/permisos";
 import { ETIQUETA_ROL } from "@/lib/roles";
 import { sesionActual } from "@/lib/sesion-actual";
+import { COOKIE_TEMA, temaEfectivo } from "@/lib/tema";
 import "./globals.css";
 
 // next/font descarga y empaqueta las fuentes en build (CI con internet);
@@ -26,14 +30,13 @@ const archivo = Archivo({
   weight: ["600", "700", "800"],
 });
 
-export const metadata: Metadata = {
-  title: {
-    default: "SGC Documental — ESE Hospital Nuestra Señora de Fátima",
-    template: "%s · SGC Documental",
-  },
-  description:
-    "Sistema de gestión documental de calidad de la ESE Hospital Nuestra Señora de Fátima de Suaza — NTC ISO 9001:2015",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const m = await obtenerMarca();
+  return {
+    title: { default: `${m.nombre} · SGC`, template: `%s · ${m.sigla}` },
+    description: `Sistema de Gestión de Calidad de ${m.nombre}`,
+  };
+}
 
 // Lee la cookie de sesión en cada petición: nada del sitio se prerenderiza.
 export const dynamic = "force-dynamic";
@@ -45,6 +48,8 @@ export default async function RootLayout({
 }>) {
   // Sin cookie validarSesion devuelve null antes de tocar la BD (el build no la necesita).
   const sesion = await sesionActual();
+  const marca = await obtenerMarca();
+  const tema = temaEfectivo(sesion, (await cookies()).get(COOKIE_TEMA)?.value);
   const usuario =
     sesion && !sesion.factorPendiente
       ? {
@@ -56,6 +61,8 @@ export default async function RootLayout({
   return (
     <html
       lang="es"
+      data-tema={tema}
+      style={estiloMarca(derivarMarca(marca))}
       className={`${geistSans.variable} ${geistMono.variable} ${archivo.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">

@@ -65,7 +65,7 @@ function CodigosDeRecuperacion({ codigos }: { codigos: string[] }) {
       </p>
       <Link
         href="/cuenta"
-        className="text-sm text-azul underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-azul/40"
+        className="text-sm text-marca underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-azul/40"
       >
         Ya los guardé, continuar
       </Link>

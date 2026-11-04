@@ -23,7 +23,7 @@ export function Conector({ tipo }: { tipo: Tipo }) {
           </g>
         )}
         {tipo === "soporte" && (
-          <g className="text-azul" stroke="currentColor" fill="currentColor">
+          <g className="text-marca" stroke="currentColor" fill="currentColor">
             <line x1="10" y1="7" x2="10" y2="19" strokeWidth="2.5" />
             <path d="M10 1 L4.5 8.5 H15.5 Z" stroke="none" />
             <path d="M10 25 L4.5 17.5 H15.5 Z" stroke="none" />

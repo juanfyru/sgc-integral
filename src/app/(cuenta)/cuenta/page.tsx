@@ -16,7 +16,7 @@ const AVISOS: Record<string, string> = {
   "factor-desactivado": "El segundo factor se desactivó.",
 };
 
-const ENLACE = "text-sm text-azul underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-azul/40";
+const ENLACE = "text-sm text-marca underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-azul/40";
 
 export default async function PaginaMiCuenta({
   searchParams,
@@ -70,7 +70,7 @@ export default async function PaginaMiCuenta({
                 : perfil.procesos.map((p, i) => (
                     <span key={p.id}>
                       {i > 0 && ", "}
-                      <Link href={`/procesos/${p.slug}`} className="text-azul underline underline-offset-2">
+                      <Link href={`/procesos/${p.slug}`} className="text-marca underline underline-offset-2">
                         {p.nombre}
                       </Link>
                     </span>
