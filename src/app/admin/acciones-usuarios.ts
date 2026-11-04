@@ -6,12 +6,17 @@ import { comprobarLimite, idNumerico, mutacion, valoresDeFormulario, type Estado
 import {
   cambiarActivo,
   crearUsuario,
+  crearUsuariosEnLote,
+  type ResultadoLote,
   desbloquearUsuario,
   editarUsuario,
   obtenerUsuario,
   quitarSegundoFactor,
   restablecerClave,
 } from "@/db/consultas/usuarios";
+import { obtenerSql } from "@/db/cliente";
+import { listarCargos } from "@/db/consultas/estructura";
+import { normalizar, parsearLoteCsv, type Catalogo } from "@/lib/lote-usuarios";
 import { generarClaveTemporal } from "@/lib/clave-politica";
 import { parsearUsuario } from "@/lib/esquemas/usuarios";
 import { ipDePeticion } from "@/lib/ip";
@@ -105,6 +110,51 @@ export async function restablecerClaveAccion(
     });
     revalidatePath("/", "layout");
     return { ok: true, claveTemporal };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+export type EstadoLote = EstadoAccion | { ok: true; resultado: ResultadoLote };
+
+const TOPE_ARCHIVO_LOTE = 1024 * 1024;
+
+// El archivo no se guarda en ningún sitio. Las claves temporales viajan solo en el estado devuelto.
+export async function crearLoteAccion(_prev: EstadoLote, formData: FormData): Promise<EstadoLote> {
+  const sesion = await requerirSesion();
+  try {
+    requerirPermiso(sesion, "usuarios.administrar");
+  } catch (err) {
+    if (err instanceof ErrorPermiso) return { ok: false, error: err.message };
+    throw err;
+  }
+  const limitado = comprobarLimite(sesion);
+  if (limitado) return limitado;
+  try {
+    const archivo = formData.get("archivo");
+    if (!(archivo instanceof File) || archivo.size === 0) throw new Error("Seleccione un archivo CSV");
+    if (archivo.size > TOPE_ARCHIVO_LOTE) throw new Error("El archivo supera 1 MB");
+    const bytes = new Uint8Array(await archivo.arrayBuffer());
+    if (bytes.includes(0)) throw new Error("El archivo debe ser un CSV de texto");
+    let texto: string;
+    try {
+      texto = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch {
+      throw new Error('El archivo debe estar codificado en UTF-8 (en Excel: "CSV UTF-8")');
+    }
+    const [cargos, procesos] = await Promise.all([
+      listarCargos(),
+      obtenerSql()`SELECT id, sigla FROM procesos WHERE activo`,
+    ]);
+    const catalogo: Catalogo = {
+      cargos: new Map(cargos.filter((c) => c.activo).map((c) => [normalizar(c.nombre), c.id])),
+      procesos: new Map(procesos.map((p) => [String(p.sigla).toUpperCase(), Number(p.id)])),
+    };
+    const { validas, invalidas } = parsearLoteCsv(texto, catalogo);
+    const creacion = await crearUsuariosEnLote(validas, sesion.usuarioId);
+    revalidatePath("/", "layout");
+    const fallidos = [...invalidas, ...creacion.fallidos].sort((a, b) => a.linea - b.linea);
+    return { ok: true, resultado: { creados: creacion.creados, fallidos } };
   } catch (err) {
     return { ok: false, error: (err as Error).message };
   }

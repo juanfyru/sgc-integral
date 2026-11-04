@@ -73,6 +73,8 @@ export function describirEvento(e: EventoAuditoria): string {
       return `Restableció la clave de «${texto(d.usuario) ?? "?"}»`;
     case "desbloquear_usuario":
       return `Desbloqueó al usuario «${texto(d.usuario) ?? "?"}»`;
+    case "crear_usuarios_lote":
+      return `Creó ${d.creados ?? 0} usuarios por lote (${d.fallidos ?? 0} rechazados)`;
     case "editar_configuracion":
       return "Editó los textos institucionales";
   }

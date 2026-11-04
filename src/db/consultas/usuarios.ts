@@ -6,6 +6,7 @@ import { SIN_BLOQUEO } from "@/lib/bloqueo";
 import { claveCandadoUsuario, conCandado } from "@/lib/candado";
 import { hashearClave } from "@/lib/clave";
 import { generarClaveTemporal } from "@/lib/clave-politica";
+import type { FilaLoteInvalida, FilaLoteValida } from "@/lib/lote-usuarios";
 import type { Rol } from "@/lib/roles";
 
 export type DatosUsuario = {
@@ -337,4 +338,35 @@ export async function opcionesFormularioUsuario(
     jefes: jefes.map((j) => ({ id: Number(j.id), nombre: j.nombre, usuario: j.usuario })),
     procesos: procesos.map((p) => ({ id: Number(p.id), nombre: p.nombre, sigla: p.sigla })),
   };
+}
+
+export type ResultadoLote = {
+  creados: Array<{ linea: number; usuario: string; nombre: string; claveTemporal: string }>;
+  fallidos: FilaLoteInvalida[];
+};
+
+/**
+ * Cada fila va en su propia transacción: el error de una no detiene las demás.
+ * La auditoría del lote guarda conteos y nombres de usuario, jamás las claves.
+ */
+export async function crearUsuariosEnLote(filas: FilaLoteValida[], actorId: number): Promise<ResultadoLote> {
+  const resultado: ResultadoLote = { creados: [], fallidos: [] };
+  for (const { linea, datos } of filas) {
+    const claveTemporal = generarClaveTemporal();
+    try {
+      await crearUsuario(datos, claveTemporal, actorId);
+      resultado.creados.push({ linea, usuario: datos.usuario, nombre: datos.nombre, claveTemporal });
+    } catch (err) {
+      resultado.fallidos.push({ linea, usuario: datos.usuario, error: (err as Error).message });
+    }
+  }
+  await registrarAuditoria(obtenerSql(), {
+    usuarioId: actorId, accion: "crear_usuarios_lote", entidad: "usuario", entidadId: null,
+    detalle: {
+      creados: resultado.creados.length,
+      fallidos: resultado.fallidos.length,
+      usuarios: resultado.creados.map((c) => c.usuario),
+    },
+  });
+  return resultado;
 }

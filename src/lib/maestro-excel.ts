@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import type { FilaMaestro } from "@/db/consultas/maestro";
+import { neutralizarFormula } from "@/lib/celdas";
 
 export type MetaMaestro = {
   hospital: string;
@@ -35,7 +36,7 @@ const COLUMNAS: Array<{
  * se ejecutaría al abrir el archivo en el Excel del hospital.
  */
 function sanearCelda(v: string | number | null): string | number | null {
-  if (typeof v === "string" && /^[=+\-@\t\r]/.test(v)) return `'${v}`;
+  if (typeof v === "string") return neutralizarFormula(v);
   return v;
 }
 

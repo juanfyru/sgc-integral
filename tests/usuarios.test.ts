@@ -13,6 +13,7 @@ import { asegurarAdmin } from "@/db/consultas/admin";
 import {
   cambiarActivo,
   contarAdminsActivos,
+  crearUsuariosEnLote,
   crearUsuario,
   desbloquearUsuario,
   editarUsuario,
@@ -208,5 +209,21 @@ describe("consultas", () => {
     expect(d).toMatchObject({ id: u1, usuario: nombreU1, rol: "gerencia", activo: true, procesoIds: [] });
     expect(d?.sesionesActivas).toBe(0);
     expect(await obtenerUsuario(2_000_000_000)).toBeNull();
+  });
+});
+
+describe("crearUsuariosEnLote", () => {
+  it("crea las válidas, informa la repetida y audita sin claves", async () => {
+    const mk = (usuario: string, linea: number) => ({ linea, datos: { ...base, usuario } });
+    const a = `zz_lote_a_${ts}`;
+    const b = `zz_lote_b_${ts}`;
+    const r = await crearUsuariosEnLote([mk(a, 2), mk(b, 3), mk(a, 4)], actorId);
+    expect(r.creados.map((c) => c.usuario)).toEqual([a, b]);
+    expect(r.fallidos).toHaveLength(1);
+    expect(r.fallidos[0]).toMatchObject({ linea: 4, usuario: a });
+    expect(r.fallidos[0].error).toMatch(/nombre/);
+    const [fila] = await sql()`SELECT detalle FROM auditoria WHERE accion = 'crear_usuarios_lote' AND usuario_id = ${actorId} ORDER BY id DESC LIMIT 1`;
+    expect(fila.detalle).toMatchObject({ creados: 2, fallidos: 1, usuarios: [a, b] });
+    for (const c of r.creados) expect(JSON.stringify(fila.detalle)).not.toContain(c.claveTemporal);
   });
 });

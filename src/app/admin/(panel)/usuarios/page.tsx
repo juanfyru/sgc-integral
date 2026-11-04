@@ -49,12 +49,20 @@ export default async function PaginaUsuarios({
     <main className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <h1 className="font-display text-2xl font-semibold">Usuarios</h1>
-        <Link
-          href="/admin/usuarios/nuevo"
-          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-        >
-          Nuevo usuario
-        </Link>
+        <div className="flex gap-3">
+          <Link
+            href="/admin/usuarios/lote"
+            className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+          >
+            Alta por lote
+          </Link>
+          <Link
+            href="/admin/usuarios/nuevo"
+            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+          >
+            Nuevo usuario
+          </Link>
+        </div>
       </div>
 
       {admins < 2 && (
