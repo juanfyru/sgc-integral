@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { CalendarRange, FileSearch, Filter, SearchX, TimerOff } from "lucide-react";
 import { CampoBusqueda } from "@/componentes/busqueda/CampoBusqueda";
 import { TarjetaResultado } from "@/componentes/busqueda/TarjetaResultado";
+import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import {
   buscarDocumentos,
   hayCriterios,
@@ -106,16 +107,16 @@ export default async function PaginaBuscar({
   );
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:py-10">
-      <header className="mb-6">
-        <h1 className="font-display text-2xl font-extrabold tracking-tight text-azul-tinta sm:text-3xl">
-          Buscar documentos
-        </h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          Solo se muestran documentos <strong>vigentes</strong>. Puede buscar
-          por código (incluso parcial, como «GTH»), título o palabras clave.
-        </p>
-      </header>
+    <div className="max-w-5xl">
+      <EncabezadoPagina
+        titulo="Buscar documentos"
+        descripcion={
+          <>
+            Solo se muestran documentos <strong>vigentes</strong>. Puede buscar
+            por código (incluso parcial, como «GTH»), título o palabras clave.
+          </>
+        }
+      />
 
       <Suspense>
         <CampoBusqueda valorInicial={parametros.q ?? ""} />

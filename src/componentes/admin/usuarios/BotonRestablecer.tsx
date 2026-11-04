@@ -28,12 +28,12 @@ export function BotonRestablecer({ accion, id, usuario }: Props) {
           <button
             type="submit"
             disabled={pendiente}
-            className="rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-800 hover:bg-red-100 disabled:opacity-60"
+            className="rounded-md border border-estado-critico/40 bg-estado-critico-fondo px-3 py-1.5 text-sm font-medium text-estado-critico-texto hover:border-estado-critico disabled:opacity-60"
           >
             {pendiente ? "Procesando…" : "Restablecer clave"}
           </button>
           {estado && !estado.ok && (
-            <p role="alert" className="text-sm text-red-700">{estado.error}</p>
+            <p role="alert" className="text-sm text-estado-critico-texto">{estado.error}</p>
           )}
         </form>
       </div>

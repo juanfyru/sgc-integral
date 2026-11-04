@@ -23,6 +23,18 @@ describe("tokens globales", () => {
     },
   );
 
+  it.each(["pdf", "word", "excel", "imagen", "comprimido"])(
+    "texto del formato %s contrasta ≥ 4.5 con su fondo en ambos temas",
+    (f) => {
+      const fondo = valor(`--formato-${f}-fondo`);
+      const texto = valor(`--formato-${f}-texto`);
+      expect(contrasteWCAG(texto.claro, fondo.claro)).toBeGreaterThanOrEqual(4.5);
+      expect(contrasteWCAG(texto.oscuro, fondo.oscuro)).toBeGreaterThanOrEqual(4.5);
+      expect(css).toContain(`--color-formato-${f}-fondo: var(--formato-${f}-fondo);`);
+      expect(css).toContain(`--color-formato-${f}-texto: var(--formato-${f}-texto);`);
+    },
+  );
+
   it("los colores de módulo y las superficies son los del spec", () => {
     expect(valor("--mod-documentos")).toEqual({ claro: "#2a78d6", oscuro: "#3987e5" });
     expect(valor("--background")).toEqual({ claro: "#f4f6f9", oscuro: "#0f1216" });

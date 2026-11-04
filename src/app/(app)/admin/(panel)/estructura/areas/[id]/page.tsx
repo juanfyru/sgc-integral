@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { editarAreaAccion } from "@/app/admin/acciones-estructura";
 import { FormularioArea } from "@/componentes/admin/estructura/FormularioArea";
+import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { obtenerArea } from "@/db/consultas/estructura";
 import { exigirPermiso } from "@/lib/paginas";
 
@@ -13,9 +14,9 @@ export default async function PaginaEditarArea({ params }: { params: Promise<{ i
   const area = await obtenerArea(Number((await params).id));
   if (!area) notFound();
   return (
-    <main>
-      <h1 className="mb-6 font-display text-2xl font-semibold">Editar área</h1>
+    <div>
+      <EncabezadoPagina titulo="Editar área" />
       <FormularioArea accion={editarAreaAccion} id={area.id} nombre={area.nombre} />
-    </main>
+    </div>
   );
 }

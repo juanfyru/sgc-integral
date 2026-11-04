@@ -14,7 +14,7 @@ export function BotonBorrar({
 }) {
   return (
     <details className="inline-block">
-      <summary className="cursor-pointer rounded-md border border-red-200 px-2.5 py-1 text-xs text-red-700 hover:bg-red-50">
+      <summary className="cursor-pointer rounded-md border border-estado-critico/40 px-2.5 py-1 text-xs text-estado-critico-texto hover:bg-estado-critico-fondo">
         Borrar
       </summary>
       <form action={borrarAccion} className="mt-2 flex items-center gap-2">
@@ -24,7 +24,7 @@ export function BotonBorrar({
         <span className="text-xs text-muted-foreground">¿Seguro? Es permanente.</span>
         <button
           type="submit"
-          className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700"
+          className="rounded-md border border-estado-critico bg-estado-critico-fondo px-2.5 py-1 text-xs font-medium text-estado-critico-texto hover:bg-card"
         >
           Sí, borrar
         </button>

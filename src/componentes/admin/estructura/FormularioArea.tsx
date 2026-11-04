@@ -27,7 +27,7 @@ export function FormularioArea({
         <input name="nombre" required defaultValue={valor} className={claseCampo} />
       </label>
       {estado && (
-        <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800">
+        <p role="alert" className="rounded-md bg-estado-critico-fondo px-3 py-2 text-sm text-estado-critico-texto">
           {estado.error}
         </p>
       )}

@@ -3,6 +3,8 @@ import Link from "next/link";
 import { BotonBorrar } from "@/componentes/admin/mapa/BotonBorrar";
 import { BotonToggle } from "@/componentes/admin/mapa/BotonToggle";
 import { BotonesOrden } from "@/componentes/admin/mapa/BotonesOrden";
+import { claseBoton } from "@/componentes/ui/Boton";
+import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { listarTipos } from "@/db/consultas/mapa-admin";
 import { exigirPermiso } from "@/lib/paginas";
 
@@ -12,16 +14,15 @@ export default async function PaginaTipos() {
   await exigirPermiso("mapa.administrar");
   const tipos = await listarTipos();
   return (
-    <main>
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="font-display text-2xl font-semibold">Tipos de documento</h1>
-        <Link
-          href="/admin/tipos/nuevo"
-          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-        >
-          Nuevo tipo
-        </Link>
-      </div>
+    <div>
+      <EncabezadoPagina
+        titulo="Tipos de documento"
+        acciones={
+          <Link href="/admin/tipos/nuevo" className={claseBoton("primario")}>
+            Nuevo tipo
+          </Link>
+        }
+      />
       <ul className="flex flex-col gap-2">
         {tipos.map((t, i) => (
           <li
@@ -49,6 +50,6 @@ export default async function PaginaTipos() {
           </li>
         ))}
       </ul>
-    </main>
+    </div>
   );
 }

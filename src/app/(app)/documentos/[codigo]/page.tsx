@@ -16,6 +16,7 @@ import {
 import { VisorPdf } from "@/componentes/documentos/VisorPdf";
 import { Migas } from "@/componentes/navegacion/Migas";
 import { MiniMapa } from "@/componentes/navegacion/MiniMapa";
+import { Insignia } from "@/componentes/ui/Insignia";
 import {
   type ArchivoFicha,
   obtenerFichaDocumento,
@@ -81,7 +82,7 @@ export default async function FichaDocumento({
 
   return (
     <div
-      className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:py-10"
+      className="max-w-5xl"
       style={
         { "--color-banda": principal?.color ?? "#1B4E8E" } as React.CSSProperties
       }
@@ -118,10 +119,9 @@ export default async function FichaDocumento({
           <span className="rounded-full banda-tinte px-2.5 py-0.5 text-xs font-medium banda-texto">
             {ficha.tipo.nombre}
           </span>
-          <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-800">
-            <BadgeCheck className="size-3.5" aria-hidden="true" />
+          <Insignia variante="bien" icono={BadgeCheck}>
             Vigente · versión {ficha.version.numero}
-          </span>
+          </Insignia>
           {ficha.tipo.esDiligenciable && (
             <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
               <PencilLine className="size-3.5" aria-hidden="true" />

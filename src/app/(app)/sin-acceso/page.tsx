@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { exigirSesion } from "@/lib/paginas";
 
 export const metadata: Metadata = { title: "Sin acceso" };
@@ -7,14 +8,11 @@ export const metadata: Metadata = { title: "Sin acceso" };
 export default async function PaginaSinAcceso() {
   await exigirSesion();
   return (
-    <main className="mx-auto flex min-h-[60dvh] max-w-md flex-col items-center justify-center gap-4 px-4 text-center">
-      <h1 className="font-display text-2xl font-semibold">Sin acceso</h1>
-      <p className="text-sm text-muted-foreground">
-        Su cuenta no tiene permiso para ver esta sección.
-      </p>
+    <div className="max-w-md">
+      <EncabezadoPagina titulo="Sin acceso" descripcion="Su cuenta no tiene permiso para ver esta sección." />
       <Link href="/" className="text-sm text-marca underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-marca/40">
         Volver al inicio
       </Link>
-    </main>
+    </div>
   );
 }

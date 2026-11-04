@@ -61,6 +61,18 @@
   --color-estado-sin-dato-fondo: var(--estado-sin-dato-fondo);
   --color-estado-sin-dato-texto: var(--estado-sin-dato-texto);
 
+  /* Formatos de archivo: insignia de IconoFormato (Word azul, Excel verde, PDF rojo) */
+  --color-formato-pdf-fondo: var(--formato-pdf-fondo);
+  --color-formato-pdf-texto: var(--formato-pdf-texto);
+  --color-formato-word-fondo: var(--formato-word-fondo);
+  --color-formato-word-texto: var(--formato-word-texto);
+  --color-formato-excel-fondo: var(--formato-excel-fondo);
+  --color-formato-excel-texto: var(--formato-excel-texto);
+  --color-formato-imagen-fondo: var(--formato-imagen-fondo);
+  --color-formato-imagen-texto: var(--formato-imagen-texto);
+  --color-formato-comprimido-fondo: var(--formato-comprimido-fondo);
+  --color-formato-comprimido-texto: var(--formato-comprimido-texto);
+
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -183,6 +195,18 @@
   --estado-sin-dato: light-dark(#a3abb8, #6b7483);
   --estado-sin-dato-fondo: light-dark(#eef0f3, #242a33);
   --estado-sin-dato-texto: light-dark(#5b6472, #9aa3b0);
+
+  /* Formatos de archivo: colores convencionales, no de estado (la etiqueta siempre acompaña) */
+  --formato-pdf-fondo: light-dark(#fef2f2, #3f1a1a);
+  --formato-pdf-texto: light-dark(#991b1b, #fecaca);
+  --formato-word-fondo: light-dark(#eff6ff, #15263b);
+  --formato-word-texto: light-dark(#1e40af, #bfdbfe);
+  --formato-excel-fondo: light-dark(#f0fdf4, #163a16);
+  --formato-excel-texto: light-dark(#166534, #bbf7d0);
+  --formato-imagen-fondo: light-dark(#f5f3ff, #2a1e3b);
+  --formato-imagen-texto: light-dark(#5b21b6, #ddd6fe);
+  --formato-comprimido-fondo: light-dark(#fffbeb, #3d2f0a);
+  --formato-comprimido-texto: light-dark(#92400e, #fde68a);
 
   --chart-1: light-dark(#c3c8d1, #4a5260);
   --chart-2: light-dark(#9aa2af, #646d7b);

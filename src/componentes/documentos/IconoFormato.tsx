@@ -8,8 +8,8 @@ import {
 } from "lucide-react";
 
 // El formato se deriva SIEMPRE del MIME detectado por magic bytes y guardado
-// en BD (regla 6), nunca de la extensión del nombre. Colores convencionales:
-// Word azul, Excel verde, PDF rojo.
+// en BD (regla 6), nunca de la extensión del nombre. Colores convencionales
+// (Word azul, Excel verde, PDF rojo) con tokens --formato-* de claro y oscuro.
 type Formato = {
   etiqueta: string;
   Icono: LucideIcon;
@@ -19,18 +19,18 @@ type Formato = {
 const FORMATOS: [RegExp, Formato][] = [
   [
     /^application\/pdf$/,
-    { etiqueta: "PDF", Icono: FileText, clases: "bg-red-50 text-red-800" },
+    { etiqueta: "PDF", Icono: FileText, clases: "bg-formato-pdf-fondo text-formato-pdf-texto" },
   ],
   [
     /wordprocessingml|msword/,
-    { etiqueta: "Word", Icono: FileText, clases: "bg-blue-50 text-blue-800" },
+    { etiqueta: "Word", Icono: FileText, clases: "bg-formato-word-fondo text-formato-word-texto" },
   ],
   [
     /spreadsheetml|ms-excel/,
     {
       etiqueta: "Excel",
       Icono: FileSpreadsheet,
-      clases: "bg-green-50 text-green-800",
+      clases: "bg-formato-excel-fondo text-formato-excel-texto",
     },
   ],
   [
@@ -38,7 +38,7 @@ const FORMATOS: [RegExp, Formato][] = [
     {
       etiqueta: "Imagen",
       Icono: FileImage,
-      clases: "bg-violet-50 text-violet-800",
+      clases: "bg-formato-imagen-fondo text-formato-imagen-texto",
     },
   ],
   [
@@ -46,7 +46,7 @@ const FORMATOS: [RegExp, Formato][] = [
     {
       etiqueta: "Comprimido",
       Icono: FileArchive,
-      clases: "bg-amber-50 text-amber-800",
+      clases: "bg-formato-comprimido-fondo text-formato-comprimido-texto",
     },
   ],
 ];

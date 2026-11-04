@@ -2,7 +2,7 @@ import { Skeleton } from "@/componentes/Skeleton";
 
 export default function Cargando() {
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:py-10">
+    <div className="max-w-5xl">
       <Skeleton className="h-4 w-64" />
       <Skeleton className="mt-3 h-9 w-80 max-w-full" />
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_2fr]">

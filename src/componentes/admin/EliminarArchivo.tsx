@@ -14,10 +14,10 @@ export function EliminarArchivo({ archivoId }: { archivoId: number }) {
   return (
     <span className="flex items-center gap-2">
       <button type="button" onClick={eliminar}
-        className="text-xs text-red-700 underline-offset-2 hover:underline">
+        className="text-xs text-estado-critico-texto underline-offset-2 hover:underline">
         Quitar
       </button>
-      {error && <span role="alert" className="text-xs text-red-700">{error}</span>}
+      {error && <span role="alert" className="text-xs text-estado-critico-texto">{error}</span>}
     </span>
   );
 }

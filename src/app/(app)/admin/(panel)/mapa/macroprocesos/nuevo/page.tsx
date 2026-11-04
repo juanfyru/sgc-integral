@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { crearMacroprocesoAccion } from "@/app/admin/acciones-mapa";
 import { FormularioMacroproceso } from "@/componentes/admin/mapa/FormularioMacroproceso";
+import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { exigirPermiso } from "@/lib/paginas";
 
 export const metadata: Metadata = { title: "Nuevo macroproceso — Administración SGC" };
@@ -8,9 +9,9 @@ export const metadata: Metadata = { title: "Nuevo macroproceso — Administraci�
 export default async function PaginaNuevoMacroproceso() {
   await exigirPermiso("mapa.administrar");
   return (
-    <main>
-      <h1 className="mb-6 font-display text-2xl font-semibold">Nuevo macroproceso</h1>
+    <div>
+      <EncabezadoPagina titulo="Nuevo macroproceso" />
       <FormularioMacroproceso accion={crearMacroprocesoAccion} />
-    </main>
+    </div>
   );
 }

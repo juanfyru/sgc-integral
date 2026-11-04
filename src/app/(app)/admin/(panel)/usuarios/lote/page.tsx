@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { crearLoteAccion } from "@/app/admin/acciones-usuarios";
 import { FormularioLote } from "@/componentes/admin/usuarios/FormularioLote";
+import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { obtenerSql } from "@/db/cliente";
 import { listarCargos } from "@/db/consultas/estructura";
 import { MAXIMO_FILAS_LOTE } from "@/lib/lote-usuarios";
@@ -18,8 +19,8 @@ export default async function PaginaLote() {
     obtenerSql()`SELECT sigla FROM procesos WHERE activo ORDER BY orden, id`,
   ]);
   return (
-    <main className="flex flex-col gap-6">
-      <h1 className="font-display text-2xl font-semibold">Alta de usuarios por lote</h1>
+    <div className="flex flex-col gap-6">
+      <EncabezadoPagina titulo="Alta de usuarios por lote" />
       <section className="flex max-w-3xl flex-col gap-3 text-sm" aria-labelledby="instrucciones">
         <h2 id="instrucciones" className="font-display text-lg font-semibold">Instrucciones</h2>
         <ol className="list-decimal pl-5">
@@ -44,6 +45,6 @@ export default async function PaginaLote() {
       </section>
       <FormularioLote accion={crearLoteAccion} />
       <p className="text-sm"><Link href="/admin/usuarios" className="text-marca underline">Volver a la lista</Link></p>
-    </main>
+    </div>
   );
 }

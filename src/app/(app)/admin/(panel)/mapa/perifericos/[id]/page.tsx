@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { editarPerifericoAccion } from "@/app/admin/acciones-mapa";
 import { FormularioPeriferico } from "@/componentes/admin/mapa/FormularioPeriferico";
+import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { obtenerPeriferico } from "@/db/consultas/mapa-admin";
 import { exigirPermiso } from "@/lib/paginas";
 
@@ -16,9 +17,9 @@ export default async function PaginaEditarPeriferico({
   const p = await obtenerPeriferico(Number((await params).id));
   if (!p) notFound();
   return (
-    <main>
-      <h1 className="mb-6 font-display text-2xl font-semibold">Editar elemento periférico</h1>
+    <div>
+      <EncabezadoPagina titulo="Editar elemento periférico" />
       <FormularioPeriferico accion={editarPerifericoAccion} id={p.id} valores={p} />
-    </main>
+    </div>
   );
 }

@@ -4,6 +4,8 @@ import { BotonBorrar } from "@/componentes/admin/mapa/BotonBorrar";
 import { BotonToggle } from "@/componentes/admin/mapa/BotonToggle";
 import { BotonesOrden } from "@/componentes/admin/mapa/BotonesOrden";
 import { Icono } from "@/componentes/iconos";
+import { claseBoton } from "@/componentes/ui/Boton";
+import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { listarPerifericos } from "@/db/consultas/mapa-admin";
 import { exigirPermiso } from "@/lib/paginas";
 
@@ -19,16 +21,15 @@ export default async function PaginaPerifericos() {
   await exigirPermiso("mapa.administrar");
   const grupos = await listarPerifericos();
   return (
-    <main className="flex flex-col gap-8">
-      <div className="flex items-center justify-between">
-        <h1 className="font-display text-2xl font-semibold">Elementos periféricos</h1>
-        <Link
-          href="/admin/mapa/perifericos/nuevo"
-          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-        >
-          Nuevo elemento
-        </Link>
-      </div>
+    <div className="flex flex-col gap-8">
+      <EncabezadoPagina
+        titulo="Elementos periféricos"
+        acciones={
+          <Link href="/admin/mapa/perifericos/nuevo" className={claseBoton("primario")}>
+            Nuevo elemento
+          </Link>
+        }
+      />
       {(["entrada", "salida", "convencion"] as const).map((tipo) => (
         <section key={tipo}>
           <h2 className="mb-2 font-display text-lg font-semibold">{TITULOS[tipo]}</h2>
@@ -61,6 +62,6 @@ export default async function PaginaPerifericos() {
           </ul>
         </section>
       ))}
-    </main>
+    </div>
   );
 }

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { editarSubprocesoAccion } from "@/app/admin/acciones-mapa";
 import { FormularioSubproceso } from "@/componentes/admin/mapa/FormularioSubproceso";
+import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { obtenerSubproceso } from "@/db/consultas/mapa-admin";
 import { exigirPermiso } from "@/lib/paginas";
 
@@ -17,15 +18,15 @@ export default async function PaginaEditarSubproceso({
   const s = await obtenerSubproceso(Number((await params).id));
   if (!s) notFound();
   return (
-    <main>
+    <div>
       <Link
         href={`/admin/mapa/procesos/${s.procesoId}`}
         className="mb-4 inline-block text-sm text-muted-foreground hover:underline"
       >
         ← Volver al proceso
       </Link>
-      <h1 className="mb-6 font-display text-2xl font-semibold">Editar subproceso</h1>
+      <EncabezadoPagina titulo="Editar subproceso" />
       <FormularioSubproceso accion={editarSubprocesoAccion} procesoId={s.procesoId} id={s.id} valores={s} />
-    </main>
+    </div>
   );
 }

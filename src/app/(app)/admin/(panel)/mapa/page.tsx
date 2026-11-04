@@ -4,6 +4,8 @@ import { BotonBorrar } from "@/componentes/admin/mapa/BotonBorrar";
 import { BotonesOrden } from "@/componentes/admin/mapa/BotonesOrden";
 import { ConfirmarDesactivar } from "@/componentes/admin/mapa/ConfirmarDesactivar";
 import { Icono } from "@/componentes/iconos";
+import { claseBoton } from "@/componentes/ui/Boton";
+import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { listarMacroprocesos } from "@/db/consultas/mapa-admin";
 import { exigirPermiso } from "@/lib/paginas";
 
@@ -20,18 +22,20 @@ export default async function PaginaMapa() {
   await exigirPermiso("mapa.administrar");
   const macros = await listarMacroprocesos();
   return (
-    <main className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <h1 className="font-display text-2xl font-semibold">Editor del mapa</h1>
-        <div className="flex flex-wrap gap-2 text-sm">
-          <Link href="/admin/mapa/perifericos" className="rounded-md border px-3 py-2 hover:bg-muted">Periféricos</Link>
-          <Link href="/admin/mapa/textos" className="rounded-md border px-3 py-2 hover:bg-muted">Textos</Link>
-          <Link href="/admin/mapa/vista-previa" className="rounded-md border px-3 py-2 hover:bg-muted">Vista previa</Link>
-          <Link href="/admin/mapa/macroprocesos/nuevo" className="rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground">
-            Nuevo macroproceso
-          </Link>
-        </div>
-      </div>
+    <div className="flex flex-col gap-6">
+      <EncabezadoPagina
+        titulo="Editor del mapa"
+        acciones={
+          <>
+            <Link href="/admin/mapa/perifericos" className={claseBoton("secundario")}>Periféricos</Link>
+            <Link href="/admin/mapa/textos" className={claseBoton("secundario")}>Textos</Link>
+            <Link href="/admin/mapa/vista-previa" className={claseBoton("secundario")}>Vista previa</Link>
+            <Link href="/admin/mapa/macroprocesos/nuevo" className={claseBoton("primario")}>
+              Nuevo macroproceso
+            </Link>
+          </>
+        }
+      />
       {(["estrategicos", "misionales", "apoyo", "evaluacion"] as const).map((banda) => {
         const grupo = macros.filter((m) => m.banda === banda);
         return (
@@ -66,6 +70,6 @@ export default async function PaginaMapa() {
           </section>
         );
       })}
-    </main>
+    </div>
   );
 }

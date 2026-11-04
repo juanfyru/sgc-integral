@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { editarDocumentoAccion } from "@/app/admin/acciones";
 import { FormularioDocumento } from "@/componentes/admin/FormularioDocumento";
+import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import {
   listarMapaParaFormulario,
   listarTiposActivos,
@@ -26,10 +27,8 @@ export default async function PaginaEditarDocumento({
   if (!documento) notFound();
 
   return (
-    <main>
-      <h1 className="mb-6 font-display text-2xl font-semibold">
-        Editar {documento.codigo}
-      </h1>
+    <div>
+      <EncabezadoPagina titulo={`Editar ${documento.codigo}`} />
       <FormularioDocumento
         accion={editarDocumentoAccion}
         tipos={tipos}
@@ -45,6 +44,6 @@ export default async function PaginaEditarDocumento({
           asociaciones: documento.asociaciones,
         }}
       />
-    </main>
+    </div>
   );
 }

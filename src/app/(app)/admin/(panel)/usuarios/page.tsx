@@ -71,7 +71,7 @@ export default async function PaginaUsuarios({
       />
 
       {admins < 2 && (
-        <p role="note" className="rounded-md border-2 border-amber-400 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-950">
+        <p role="note" className="rounded-md border-2 border-estado-atencion bg-estado-atencion-fondo px-4 py-3 text-sm font-medium text-estado-atencion-texto">
           Hay un solo administrador del SGC activo. Cree un segundo para no depender de una sola persona.
         </p>
       )}

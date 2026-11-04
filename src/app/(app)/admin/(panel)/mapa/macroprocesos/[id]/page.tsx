@@ -4,6 +4,8 @@ import { notFound } from "next/navigation";
 import { editarMacroprocesoAccion } from "@/app/admin/acciones-mapa";
 import { FormularioMacroproceso } from "@/componentes/admin/mapa/FormularioMacroproceso";
 import { ListaProcesos } from "@/componentes/admin/mapa/ListaProcesos";
+import { claseBoton } from "@/componentes/ui/Boton";
+import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { listarProcesos, obtenerMacroproceso } from "@/db/consultas/mapa-admin";
 import { exigirPermiso } from "@/lib/paginas";
 
@@ -19,21 +21,20 @@ export default async function PaginaEditarMacroproceso({
   if (!m) notFound();
   const procesos = await listarProcesos(m.id);
   return (
-    <main>
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="font-display text-2xl font-semibold">Editar macroproceso</h1>
-        <Link
-          href={`/admin/mapa/procesos/nuevo?macro=${m.id}`}
-          className="rounded-md border px-3 py-2 text-sm hover:bg-muted"
-        >
-          + Proceso en este macroproceso
-        </Link>
-      </div>
+    <div>
+      <EncabezadoPagina
+        titulo="Editar macroproceso"
+        acciones={
+          <Link href={`/admin/mapa/procesos/nuevo?macro=${m.id}`} className={claseBoton("secundario")}>
+            + Proceso en este macroproceso
+          </Link>
+        }
+      />
       <FormularioMacroproceso accion={editarMacroprocesoAccion} id={m.id} valores={m} />
       <section className="mt-8">
         <h2 className="mb-2 font-display text-lg font-semibold">Procesos</h2>
         <ListaProcesos procesos={procesos} volverA={`/admin/mapa/macroprocesos/${m.id}`} />
       </section>
-    </main>
+    </div>
   );
 }

@@ -86,7 +86,11 @@ export default async function PaginaSegundoFactor({
     } else {
       const entidad = (await obtenerMarca()).nombre;
       // PNG en data: URL (la CSP permite img-src data:); nunca SVG inyectado.
-      const qr = await QRCode.toDataURL(uriTotp(secreto, sesion.usuario, entidad), { margin: 1, width: 224 });
+      const qr = await QRCode.toDataURL(uriTotp(secreto, sesion.usuario, entidad), {
+        margin: 1,
+        width: 224,
+        color: { dark: "#000000", light: "#ffffff" },
+      });
       contenido = (
         <PanelSegundoFactor confirmar>
           <ol className="list-decimal space-y-1 pl-5 text-sm text-foreground">
@@ -94,7 +98,7 @@ export default async function PaginaSegundoFactor({
             <li>Escriba el código de 6 dígitos que ella muestra.</li>
           </ol>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={qr} width={224} height={224} alt="Código QR para la app de autenticación" className="rounded-lg border border-border bg-white" />
+          <img src={qr} width={224} height={224} alt="Código QR para la app de autenticación" className="rounded-lg border border-border" />
           <p className="text-sm text-muted-foreground">
             ¿No puede escanear? Escriba esta clave en la aplicación:{" "}
             <code className="font-mono text-foreground">{enGrupos(secreto)}</code>

@@ -111,13 +111,13 @@ export function ZonaCarga({ versionId }: { versionId: number }) {
             <li key={c.nombre} className="text-sm">
               <span className="flex items-center justify-between gap-2">
                 <span className="truncate">{c.nombre}</span>
-                <span className={c.estado === "error" ? "text-red-700" : "text-muted-foreground"}>
+                <span className={c.estado === "error" ? "text-estado-critico-texto" : "text-muted-foreground"}>
                   {c.estado === "listo" ? "Listo" : c.estado === "error" ? c.mensaje : `${c.progreso}%`}
                 </span>
               </span>
               <span className="mt-1 block h-1.5 w-full overflow-hidden rounded bg-muted">
                 <span
-                  className={`block h-full transition-all ${c.estado === "error" ? "bg-red-500" : "bg-azul"}`}
+                  className={`block h-full transition-all ${c.estado === "error" ? "bg-estado-critico" : "bg-marca-relleno"}`}
                   style={{ width: `${c.progreso}%` }}
                 />
               </span>

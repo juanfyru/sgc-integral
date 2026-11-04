@@ -11,7 +11,9 @@ import { EliminarArchivo } from "@/componentes/admin/EliminarArchivo";
 import { FormAccion } from "@/componentes/admin/FormAccion";
 import { FormularioVersionCliente } from "@/componentes/admin/FormularioVersionCliente";
 import { ZonaCarga } from "@/componentes/admin/ZonaCarga";
+import { claseBoton } from "@/componentes/ui/Boton";
 import { InsigniaEstadoDocumento } from "@/componentes/ui/Insignia";
+import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { obtenerDocumentoAdmin, type VersionAdmin } from "@/db/consultas/admin";
 import { exigirPermiso } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
@@ -112,26 +114,20 @@ export default async function PaginaDocumentoAdmin({
 
   return (
     <div className="flex flex-col gap-6">
-      <header>
-        <p className="font-mono text-sm text-muted-foreground">{documento.codigo}</p>
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="font-display text-2xl font-semibold">{documento.titulo}</h1>
-          {puedeAdministrar && (
-            <Link
-              href={`/admin/documentos/${documento.codigo}/editar`}
-              className="rounded-md border px-3 py-1 text-sm hover:bg-muted"
-            >
+      <EncabezadoPagina
+        superior={documento.codigo}
+        titulo={documento.titulo}
+        descripcion={`${documento.tipoNombre} · Aplica en: ${documento.asociaciones
+          .map((a) => (a.esPrincipal ? `${a.nombre} (propietario)` : a.nombre))
+          .join(" · ")}`}
+        acciones={
+          puedeAdministrar ? (
+            <Link href={`/admin/documentos/${documento.codigo}/editar`} className={claseBoton("secundario")}>
               Editar metadatos
             </Link>
-          )}
-        </div>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {documento.tipoNombre} · Aplica en:{" "}
-          {documento.asociaciones
-            .map((a) => (a.esPrincipal ? `${a.nombre} (propietario)` : a.nombre))
-            .join(" · ")}
-        </p>
-      </header>
+          ) : undefined
+        }
+      />
 
       <div className="flex flex-wrap gap-3">
         {puedeAdministrar && !borrador && (

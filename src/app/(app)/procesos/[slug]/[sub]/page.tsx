@@ -31,7 +31,7 @@ export default async function VistaSubproceso({
 
   return (
     <div
-      className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 lg:py-10"
+      className="max-w-4xl"
       style={{ "--color-banda": subproceso.macro.color } as React.CSSProperties}
     >
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">

@@ -8,7 +8,7 @@ export function EncabezadoPagina({
   migas,
 }: {
   titulo: string;
-  descripcion?: string;
+  descripcion?: React.ReactNode;
   superior?: string;
   acciones?: React.ReactNode;
   migas?: Miga[];

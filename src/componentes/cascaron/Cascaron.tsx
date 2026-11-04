@@ -27,7 +27,7 @@ export async function Cascaron({ sesion, children }: { sesion: SesionValida; chi
   const marcaBarra = { nombre: marca.nombre, sigla: marca.sigla, logoUrl };
 
   return (
-    <div className="min-h-dvh lg:grid lg:grid-cols-[15rem_minmax(0,1fr)]">
+    <div className="min-h-dvh lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] print:block! print:min-h-0">
       <BarraLateral marca={marcaBarra} entradas={entradas} tareas={tareas.length} version={VERSION_APP} />
       <div className="min-w-0">
         <BarraSuperior
@@ -39,7 +39,7 @@ export async function Cascaron({ sesion, children }: { sesion: SesionValida; chi
           campana={<Campana noLeidas={noLeidas} recientes={recientes} />}
           menuUsuario={<MenuUsuario nombre={sesion.nombre} etiquetaRol={ETIQUETA_ROL[sesion.rol]} tema={sesion.tema} />}
         />
-        <main id="contenido" tabIndex={-1} className="mx-auto w-full max-w-[1400px] px-4 py-6 outline-none sm:px-6 lg:py-8">
+        <main id="contenido" tabIndex={-1} className="mx-auto w-full max-w-[1400px] px-4 py-6 outline-none sm:px-6 lg:py-8 print:max-w-none print:px-0! print:py-0!">
           {children}
         </main>
       </div>

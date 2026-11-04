@@ -19,7 +19,7 @@ export function FormAccion({ accion, etiqueta, confirmacion, campos, tono = "pri
   const [estado, enviar, pendiente] = useActionState(accion, null);
   const claseBoton =
     tono === "peligro"
-      ? "rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-800 hover:bg-red-100 disabled:opacity-60"
+      ? "rounded-md border border-estado-critico/40 bg-estado-critico-fondo px-3 py-1.5 text-sm font-medium text-estado-critico-texto hover:border-estado-critico disabled:opacity-60"
       : "rounded-md bg-azul px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-azul-profundo disabled:opacity-60";
 
   const formulario = (
@@ -31,7 +31,7 @@ export function FormAccion({ accion, etiqueta, confirmacion, campos, tono = "pri
         {pendiente ? "Procesando…" : etiqueta}
       </button>
       {estado && (
-        <p role="alert" className="text-sm text-red-700">{estado.error}</p>
+        <p role="alert" className="text-sm text-estado-critico-texto">{estado.error}</p>
       )}
     </form>
   );

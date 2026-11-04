@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { crearProcesoAccion } from "@/app/admin/acciones-mapa";
 import { FormularioProceso } from "@/componentes/admin/mapa/FormularioProceso";
+import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { obtenerMacroproceso } from "@/db/consultas/mapa-admin";
 import { exigirPermiso } from "@/lib/paginas";
 
@@ -18,10 +19,9 @@ export default async function PaginaNuevoProceso({
   const macro = await obtenerMacroproceso(macroId);
   if (!macro) notFound();
   return (
-    <main>
-      <h1 className="mb-2 font-display text-2xl font-semibold">Nuevo proceso</h1>
-      <p className="mb-6 text-sm text-muted-foreground">En {macro.nombre}</p>
+    <div>
+      <EncabezadoPagina titulo="Nuevo proceso" descripcion={`En ${macro.nombre}`} />
       <FormularioProceso accion={crearProcesoAccion} macroprocesoId={macro.id} />
-    </main>
+    </div>
   );
 }

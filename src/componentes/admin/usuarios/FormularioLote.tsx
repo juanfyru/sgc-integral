@@ -32,7 +32,7 @@ export function FormularioLote({
           <input type="file" name="archivo" accept=".csv,text/csv" required className="text-sm font-normal" />
         </label>
         {estado?.ok === false && (
-          <p role="alert" className="text-sm text-red-700">{estado.error}</p>
+          <p role="alert" className="text-sm text-estado-critico-texto">{estado.error}</p>
         )}
         <div>
           <button type="submit" disabled={pendiente} className={claseBoton}>
@@ -72,7 +72,7 @@ export function FormularioLote({
                 </tr>
               ))}
               {estado.resultado.fallidos.map((f) => (
-                <tr key={`f${f.linea}`} className="border-b border-border/60 text-red-800">
+                <tr key={`f${f.linea}`} className="border-b border-border/60 text-estado-critico-texto">
                   <td className="py-2 pr-3">{f.linea}</td>
                   <td className="py-2 pr-3">{f.usuario}</td>
                   <td className="py-2 pr-3">Rechazado</td>

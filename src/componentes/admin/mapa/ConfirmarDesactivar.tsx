@@ -41,22 +41,22 @@ export function ConfirmarDesactivar({
   }
   return (
     <details className="inline-block">
-      <summary className="cursor-pointer rounded-md border border-amber-300 px-2.5 py-1 text-xs text-amber-800 hover:bg-amber-50">
+      <summary className="cursor-pointer rounded-md border border-estado-atencion px-2.5 py-1 text-xs text-estado-atencion-texto hover:bg-estado-atencion-fondo">
         Desactivar…
       </summary>
-      <div className="mt-2 max-w-sm rounded-md border border-amber-300 bg-amber-50 p-3 text-xs">
-        <p className="mb-1 font-medium text-amber-900">
+      <div className="mt-2 max-w-sm rounded-md border border-estado-atencion bg-estado-atencion-fondo p-3 text-xs text-estado-atencion-texto">
+        <p className="mb-1 font-medium">
           ⚠ {afectados.length} documento(s) vigente(s) dejarán de aparecer en el mapa
           (seguirán vigentes y en el buscador):
         </p>
-        <p className="mb-2 font-mono text-amber-800">{afectados.join(" · ")}</p>
+        <p className="mb-2 font-mono">{afectados.join(" · ")}</p>
         <form action={alternarAccion}>
           <input type="hidden" name="tabla" value={tabla} />
           <input type="hidden" name="id" value={id} />
           <input type="hidden" name="activo" value="false" />
           <button
             type="submit"
-            className="rounded-md bg-amber-600 px-2.5 py-1 font-medium text-white hover:bg-amber-700"
+            className="rounded-md border border-estado-atencion-texto bg-card px-2.5 py-1 font-medium text-estado-atencion-texto hover:bg-muted"
           >
             Desactivar igual
           </button>

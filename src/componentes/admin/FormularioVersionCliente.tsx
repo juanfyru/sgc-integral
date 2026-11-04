@@ -43,7 +43,7 @@ export function FormularioVersionCliente({
       <label className="flex flex-col gap-1 text-sm sm:col-span-2">Resumen de cambios
         <textarea name="resumenCambios" rows={2} defaultValue={valores.resumenCambios ?? ""} className={claseCampo} />
       </label>
-      {estado && <p role="alert" className="text-sm text-red-700 sm:col-span-2">{estado.error}</p>}
+      {estado && <p role="alert" className="text-sm text-estado-critico-texto sm:col-span-2">{estado.error}</p>}
       <button type="submit" disabled={pendiente}
         className="justify-self-start rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-60 sm:col-span-2">
         {pendiente ? "Guardando…" : "Guardar control de versión"}

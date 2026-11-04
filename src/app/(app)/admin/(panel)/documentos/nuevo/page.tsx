@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { crearDocumentoAccion } from "@/app/admin/acciones";
 import { FormularioDocumento } from "@/componentes/admin/FormularioDocumento";
+import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { listarMapaParaFormulario, listarTiposActivos } from "@/db/consultas/admin";
 import { exigirPermiso } from "@/lib/paginas";
 
@@ -13,18 +14,17 @@ export default async function PaginaNuevoDocumento() {
     listarMapaParaFormulario(),
   ]);
   return (
-    <main>
-      <h1 className="mb-2 font-display text-2xl font-semibold">Nuevo documento</h1>
-      <p className="mb-6 text-sm text-muted-foreground">
-        Se crea con su versión 1 en borrador: nada será visible al público
-        hasta que la publique.
-      </p>
+    <div>
+      <EncabezadoPagina
+        titulo="Nuevo documento"
+        descripcion="Se crea con su versión 1 en borrador: nada será visible al público hasta que la publique."
+      />
       <FormularioDocumento
         accion={crearDocumentoAccion}
         tipos={tipos}
         procesos={procesos}
         codigoEditable
       />
-    </main>
+    </div>
   );
 }
