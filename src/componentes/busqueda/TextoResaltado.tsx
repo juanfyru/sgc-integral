@@ -1,4 +1,4 @@
-import { MARCA_FIN, MARCA_INICIO } from "@/db/consultas/busqueda";
+import { MARCA_FIN, MARCA_INICIO } from "@/lib/marcas-busqueda";
 
 // Los marcadores de ts_headline se parten en nodos de texto React (nunca
 // innerHTML): el contenido del documento jamás se interpreta como HTML.

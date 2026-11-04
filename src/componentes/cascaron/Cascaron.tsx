@@ -6,6 +6,7 @@ import { misTareas } from "@/lib/tareas";
 import { VERSION_APP } from "@/lib/version";
 import { BarraLateral } from "./BarraLateral";
 import { BarraSuperior } from "./BarraSuperior";
+import { Buscador } from "./Buscador";
 import { MenuUsuario } from "./MenuUsuario";
 import { entradasVisibles } from "./navegacion";
 
@@ -33,8 +34,8 @@ export async function Cascaron({ sesion, children }: { sesion: SesionValida; chi
           entradas={entradas}
           tareas={tareas.length}
           version={VERSION_APP}
-          // Marcadores: la Tarea 9 pone la búsqueda global y la 10 la campana (con estas cifras).
-          buscador={<div data-pendiente="buscador" />}
+          // Marcador: la Tarea 10 pone la campana (con estas cifras).
+          buscador={<Buscador entradas={entradas} />}
           campana={<div data-pendiente="campana" data-no-leidas={noLeidas} data-recientes={recientes.length} />}
           menuUsuario={<MenuUsuario nombre={sesion.nombre} etiquetaRol={ETIQUETA_ROL[sesion.rol]} tema={sesion.tema} />}
         />

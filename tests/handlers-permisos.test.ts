@@ -13,6 +13,7 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 
 import { DELETE as eliminarArchivo, GET as verArchivo } from "@/app/admin/api/archivos/[archivoId]/route";
 import { POST as subirArchivo } from "@/app/admin/api/archivos/route";
+import { GET as buscarApi } from "@/app/api/buscar/route";
 import { GET as excelMaestro } from "@/app/(app)/admin/(panel)/maestro/excel/route";
 import { obtenerSql } from "@/db/cliente";
 import { crearSesion } from "@/lib/sesion";
@@ -77,5 +78,19 @@ describe("handlers del panel por rol", () => {
     expect(res.status).toBe(403);
     const filas = await sql()`SELECT 1 FROM auditoria WHERE usuario_id = ${usuarioGerenciaId} AND accion = 'exporto_maestro'`;
     expect(filas.length).toBe(0);
+  });
+});
+
+describe("GET /api/buscar", () => {
+  it("401 sin sesión", async () => expect((await buscarApi(new NextRequest("http://x/api/buscar?q=acta"))).status).toBe(401));
+  it("devuelve hasta 8 vigentes con ruta a la ficha", async () => {
+    const r = await buscarApi(new NextRequest("http://x/api/buscar?q=acta", { headers: cookie(tokenConsulta) }));
+    const { resultados } = await r.json();
+    expect(resultados.length).toBeGreaterThan(0);
+    expect(resultados.length).toBeLessThanOrEqual(8);
+    expect(resultados[0].ruta).toMatch(/^\/documentos\/[a-z0-9-]+$/);
+  });
+  it("menos de dos caracteres: lista vacía", async () => {
+    expect((await (await buscarApi(new NextRequest("http://x/api/buscar?q=a", { headers: cookie(tokenConsulta) }))).json()).resultados).toEqual([]);
   });
 });

@@ -1,4 +1,5 @@
 import { obtenerSql } from "@/db/cliente";
+import { MARCA_FIN, MARCA_INICIO } from "@/lib/marcas-busqueda";
 import type { ArchivoResumen } from "@/db/consultas/procesos";
 
 /**
@@ -26,10 +27,8 @@ export type FiltrosBusqueda = {
   limite?: number;
 };
 
-// Marcadores de resaltado de ts_headline: se eligen caracteres que no
-// aparecen en texto documental para partirlos sin ambigüedad en el render.
-export const MARCA_INICIO = "⟦";
-export const MARCA_FIN = "⟧";
+// Marcadores de resaltado de ts_headline (definidos en un módulo sin BD para el cliente).
+export { MARCA_FIN, MARCA_INICIO };
 
 export type ResultadoBusqueda = {
   id: number;
