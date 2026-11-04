@@ -54,7 +54,7 @@ export default async function VistaProceso({
       </div>
 
       <header className="flex items-start gap-4">
-        <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-[color-mix(in_srgb,var(--color-banda)_12%,white)] text-[color-mix(in_srgb,var(--color-banda)_80%,black)]">
+        <span className="grid size-14 shrink-0 place-items-center rounded-2xl banda-tinte banda-texto">
           <Icono nombre={proceso.icono} className="size-7" />
         </span>
         <div>
@@ -93,7 +93,7 @@ export default async function VistaProceso({
                     {sub.nombre}
                   </span>
                   <span
-                    className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium tabular-nums text-muted-foreground transition-colors group-hover:bg-[color-mix(in_srgb,var(--color-banda)_12%,white)] group-hover:text-[color-mix(in_srgb,var(--color-banda)_80%,black)]"
+                    className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium tabular-nums text-muted-foreground transition-colors group-hover:banda-tinte group-hover:banda-texto"
                     aria-hidden="true"
                   >
                     <FileText className="size-3" />

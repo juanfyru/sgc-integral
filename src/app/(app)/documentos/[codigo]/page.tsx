@@ -115,7 +115,7 @@ export default async function FichaDocumento({
           <span className="font-mono text-sm tracking-wide text-muted-foreground">
             {ficha.codigo}
           </span>
-          <span className="rounded-full bg-[color-mix(in_srgb,var(--color-banda)_12%,white)] px-2.5 py-0.5 text-xs font-medium text-[color-mix(in_srgb,var(--color-banda)_80%,black)]">
+          <span className="rounded-full banda-tinte px-2.5 py-0.5 text-xs font-medium banda-texto">
             {ficha.tipo.nombre}
           </span>
           <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-800">
@@ -204,7 +204,7 @@ export default async function FichaDocumento({
                         href={urlArchivo(archivo.id, archivo.nombreOriginal, true)}
                         download={archivo.nombreOriginal}
                         aria-label={`Descargar ${ETIQUETA_ROL[archivo.rol]} (${formato.etiqueta}, ${formatearTamano(archivo.tamanoBytes)})`}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-[color-mix(in_srgb,var(--color-banda)_80%,black)] px-2.5 py-1.5 text-xs font-medium text-white hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-banda)]"
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-[color-mix(in_srgb,var(--color-banda)_80%,var(--background))] px-2.5 py-1.5 text-xs font-medium text-white hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-banda)]"
                       >
                         <Download className="size-3.5" aria-hidden="true" />
                         Descargar
@@ -266,7 +266,7 @@ export default async function FichaDocumento({
                     href={u.url}
                     className={
                       u.esPrincipal
-                        ? "inline-flex items-center gap-1 rounded-full bg-[color-mix(in_srgb,var(--color-banda)_80%,black)] px-3 py-1 text-xs font-medium text-white hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-banda)]"
+                        ? "inline-flex items-center gap-1 rounded-full bg-[color-mix(in_srgb,var(--color-banda)_80%,var(--background))] px-3 py-1 text-xs font-medium text-white hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-banda)]"
                         : "inline-flex items-center gap-1 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-foreground/85 hover:border-[var(--color-banda)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-banda)]"
                     }
                   >
@@ -299,7 +299,7 @@ export default async function FichaDocumento({
                       <span className="font-mono text-[11px] tracking-wide text-muted-foreground">
                         {rel.codigo} · {rel.tipo}
                       </span>
-                      <span className="text-sm/snug font-medium text-foreground group-hover:text-[color-mix(in_srgb,var(--color-banda)_80%,black)]">
+                      <span className="text-sm/snug font-medium text-foreground group-hover:banda-texto">
                         {rel.titulo}
                       </span>
                     </Link>

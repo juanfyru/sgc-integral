@@ -52,7 +52,7 @@ export default async function VistaSubproceso({
       </div>
 
       <header className="flex items-start gap-4">
-        <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-[color-mix(in_srgb,var(--color-banda)_12%,white)] text-[color-mix(in_srgb,var(--color-banda)_80%,black)]">
+        <span className="grid size-14 shrink-0 place-items-center rounded-2xl banda-tinte banda-texto">
           <Icono nombre={subproceso.proceso.icono} className="size-7" />
         </span>
         <div>

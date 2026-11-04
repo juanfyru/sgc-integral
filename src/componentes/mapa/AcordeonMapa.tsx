@@ -14,11 +14,10 @@ export function AcordeonMapa({ datos }: { datos: DatosMapa }) {
         <details
           key={macro.id}
           open={i === 0}
-          className="group overflow-hidden rounded-xl border bg-card shadow-xs"
+          className="group banda-borde overflow-hidden rounded-xl border bg-card shadow-xs"
           style={
             {
               "--color-banda": macro.color,
-              borderColor: "color-mix(in srgb, var(--color-banda) 30%, white)",
             } as React.CSSProperties
           }
         >
@@ -27,7 +26,7 @@ export function AcordeonMapa({ datos }: { datos: DatosMapa }) {
               <Icono nombre={macro.icono} className="size-4.5" />
             </span>
             <span className="flex-1">
-              <span className="block font-display text-sm font-bold text-[color-mix(in_srgb,var(--color-banda)_80%,black)]">
+              <span className="block font-display text-sm font-bold banda-texto">
                 {macro.letra}. {macro.nombre}
               </span>
               <span className="block text-xs text-muted-foreground">
@@ -47,7 +46,7 @@ export function AcordeonMapa({ datos }: { datos: DatosMapa }) {
                   className="flex items-center gap-3 px-3.5 py-3 transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--color-banda)]"
                   aria-label={`${p.nombre}: ${p.docsVigentes} documentos vigentes`}
                 >
-                  <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--color-banda)_12%,white)] text-[color-mix(in_srgb,var(--color-banda)_80%,black)]">
+                  <span className="grid size-8 shrink-0 place-items-center rounded-lg banda-tinte banda-texto">
                     <Icono nombre={p.icono} className="size-4" />
                   </span>
                   <span className="flex-1 text-sm font-medium">{p.nombre}</span>
@@ -101,17 +100,17 @@ function SeccionPeriferica({
   return (
     <details
       className="group overflow-hidden rounded-xl border border-border bg-card shadow-xs"
-      style={{ "--acento": acento } as React.CSSProperties}
+      style={{ "--color-banda": acento } as React.CSSProperties}
     >
-      <summary className="flex cursor-pointer list-none items-center gap-3 p-3.5 transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--acento)] [&::-webkit-details-marker]:hidden">
-        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[var(--acento)] text-white">
+      <summary className="flex cursor-pointer list-none items-center gap-3 p-3.5 transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--color-banda)] [&::-webkit-details-marker]:hidden">
+        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[var(--color-banda)] text-white">
           {tipo === "entrada" ? (
             <LogIn className="size-4.5" aria-hidden="true" />
           ) : (
             <LogOut className="size-4.5" aria-hidden="true" />
           )}
         </span>
-        <span className="flex-1 font-display text-sm font-bold text-[color-mix(in_srgb,var(--acento)_80%,black)]">
+        <span className="flex-1 font-display text-sm font-bold banda-texto">
           {titulo}
         </span>
         <ChevronDown
@@ -122,7 +121,7 @@ function SeccionPeriferica({
       <ul className="list-none divide-y divide-border/70 border-t border-border/70">
         {elementos.map((e) => (
           <li key={e.texto} className="flex items-start gap-2.5 px-3.5 py-2.5">
-            <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-md bg-[color-mix(in_srgb,var(--acento)_10%,white)] text-[color-mix(in_srgb,var(--acento)_80%,black)]">
+            <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-md banda-tinte banda-texto">
               <Icono nombre={e.icono} className="size-3.5" />
             </span>
             <span className="text-xs/relaxed text-foreground/85">{e.texto}</span>

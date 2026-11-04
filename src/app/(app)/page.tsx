@@ -1,9 +1,13 @@
 import { AcordeonMapa } from "@/componentes/mapa/AcordeonMapa";
 import { MapaProcesos } from "@/componentes/mapa/MapaProcesos";
+import { MisTareas } from "@/componentes/inicio/MisTareas";
+import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { obtenerDatosMapa } from "@/db/consultas/mapa";
+import { obtenerMarcaSegura } from "@/db/consultas/entidad";
 import { MisProcesos } from "@/componentes/MisProcesos";
 import { procesosAsignados } from "@/lib/alcance";
 import { exigirSesion } from "@/lib/paginas";
+import { misTareas } from "@/lib/tareas";
 
 // El mapa vive en BD: siempre se lee en el momento de la petición.
 export const dynamic = "force-dynamic";
@@ -11,35 +15,34 @@ export const dynamic = "force-dynamic";
 export default async function Inicio() {
   const sesion = await exigirSesion();
   const misProcesos = sesion.rol === "lider_proceso" ? await procesosAsignados(sesion.usuarioId) : null;
-  const datos = await obtenerDatosMapa();
+  const [datos, marca, tareas] = await Promise.all([
+    obtenerDatosMapa(),
+    obtenerMarcaSegura(),
+    misTareas(sesion),
+  ]);
   const { configuracion } = datos;
 
   return (
-    <div className="mx-auto w-full max-w-[1500px] px-4 py-6 sm:px-6 lg:py-8">
-      <header className="mb-6 lg:mb-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-verde-texto">
-          {configuracion.nombre_entidad ?? ""}
-        </p>
-        <h1 className="mt-1.5 font-display text-3xl font-extrabold tracking-tight text-azul-tinta sm:text-4xl">
-          Mapa de Procesos
-        </h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          {configuracion.subtitulo_mapa ?? ""} · Seleccione un proceso para
-          consultar sus documentos vigentes.
-        </p>
-      </header>
+    <>
+      <EncabezadoPagina
+        superior={marca.nombre}
+        titulo="Inicio"
+        descripcion={configuracion.subtitulo_mapa ?? undefined}
+      />
+
+      <MisTareas tareas={tareas} />
+      {misProcesos && <MisProcesos procesos={misProcesos} />}
 
       {/* Escritorio: el mapa completo por bandas. Mobile: acordeón (D9). */}
-      <main>
-        {misProcesos && <MisProcesos procesos={misProcesos} />}
-
+      <section aria-label="Mapa de procesos">
+        <h2 className="sr-only">Mapa de procesos</h2>
         <div className="hidden lg:block">
           <MapaProcesos datos={datos} />
         </div>
         <div className="lg:hidden">
           <AcordeonMapa datos={datos} />
         </div>
-      </main>
-    </div>
+      </section>
+    </>
   );
 }

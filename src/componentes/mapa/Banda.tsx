@@ -14,13 +14,12 @@ export function Banda({
   return (
     <section
       aria-labelledby={`banda-${macro.slug}`}
-      className={`banda-animada rounded-2xl border p-3 sm:p-4 ${macro.activo === false ? "opacity-50 grayscale" : ""}`}
+      className={`banda-animada banda-borde rounded-2xl border p-3 sm:p-4 ${macro.activo === false ? "opacity-50 grayscale" : ""}`}
       style={
         {
           "--color-banda": macro.color,
           "--indice-banda": indice,
-          borderColor: "color-mix(in srgb, var(--color-banda) 28%, white)",
-          background: "color-mix(in srgb, var(--color-banda) 4%, white)",
+          background: "color-mix(in srgb, var(--color-banda) 4%, var(--background))",
         } as React.CSSProperties
       }
     >
@@ -30,7 +29,7 @@ export function Banda({
         </span>
         <h2
           id={`banda-${macro.slug}`}
-          className="font-display text-sm font-bold uppercase tracking-[0.08em] text-[color-mix(in_srgb,var(--color-banda)_80%,black)]"
+          className="font-display text-sm font-bold uppercase tracking-[0.08em] banda-texto"
         >
           <span aria-hidden="true">{macro.letra}. </span>
           {macro.nombre}
