@@ -4,7 +4,7 @@ import { useActionState, useState } from "react";
 import { verificarFactor, type EstadoAccion } from "@/app/acciones-cuenta";
 
 const CLASE_CAMPO =
-  "rounded-xl border border-border bg-card px-3 py-2 text-base text-foreground shadow-xs outline-none transition-colors focus:border-azul focus:ring-2 focus:ring-azul/20";
+  "rounded-xl border border-border bg-card px-3 py-2 text-base text-foreground shadow-xs outline-none transition-colors focus:border-marca focus:ring-2 focus:ring-marca/20";
 
 export function FormularioFactor({ volver = "/" }: { volver?: string }) {
   const [estado, accion, pendiente] = useActionState<EstadoAccion, FormData>(
@@ -37,14 +37,14 @@ export function FormularioFactor({ volver = "/" }: { volver?: string }) {
       <button
         type="submit"
         disabled={pendiente}
-        className="rounded-xl bg-azul px-4 py-2 font-medium text-white transition-colors hover:bg-azul-profundo focus-visible:ring-2 focus-visible:ring-azul/40 disabled:opacity-60"
+        className="rounded-xl bg-azul px-4 py-2 font-medium text-white transition-colors hover:bg-azul-profundo focus-visible:ring-2 focus-visible:ring-marca/40 disabled:opacity-60"
       >
         {pendiente ? "Verificando…" : "Verificar"}
       </button>
       <button
         type="button"
         onClick={() => setRecuperacion((v) => !v)}
-        className="text-sm text-marca underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-azul/40"
+        className="text-sm text-marca underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-marca/40"
       >
         {recuperacion ? "Usar el código de la aplicación" : "Usar un código de recuperación"}
       </button>

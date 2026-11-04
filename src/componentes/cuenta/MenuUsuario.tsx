@@ -10,7 +10,7 @@ export type UsuarioMenu = { nombre: string; etiquetaRol: string; verPanel: boole
 export function MenuUsuario({ usuario }: { usuario: UsuarioMenu }) {
   return (
     <details className="relative shrink-0">
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-azul [&::-webkit-details-marker]:hidden">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca [&::-webkit-details-marker]:hidden">
         <span className="max-w-[10rem] truncate font-medium text-foreground">{usuario.nombre}</span>
         <ChevronDown className="size-4 text-muted-foreground" aria-hidden="true" />
       </summary>
@@ -20,21 +20,21 @@ export function MenuUsuario({ usuario }: { usuario: UsuarioMenu }) {
         {usuario.verPanel && (
           <Link
             href="/admin"
-            className="mb-2 block rounded-md px-2 py-1.5 text-sm text-marca hover:bg-muted focus-visible:outline-2 focus-visible:outline-azul"
+            className="mb-2 block rounded-md px-2 py-1.5 text-sm text-marca hover:bg-muted focus-visible:outline-2 focus-visible:outline-marca"
           >
             Administración
           </Link>
         )}
         <Link
           href="/cuenta"
-          className="mb-2 block rounded-md px-2 py-1.5 text-sm text-marca hover:bg-muted focus-visible:outline-2 focus-visible:outline-azul"
+          className="mb-2 block rounded-md px-2 py-1.5 text-sm text-marca hover:bg-muted focus-visible:outline-2 focus-visible:outline-marca"
         >
           Mi cuenta
         </Link>
         <form action={salir}>
           <button
             type="submit"
-            className="w-full rounded-md border border-border px-2 py-1.5 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-azul"
+            className="w-full rounded-md border border-border px-2 py-1.5 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-marca"
           >
             Salir
           </button>

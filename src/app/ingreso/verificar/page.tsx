@@ -28,7 +28,7 @@ export default async function PaginaVerificar({
       <form action={salir}>
         <button
           type="submit"
-          className="text-sm text-muted-foreground underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-azul/40"
+          className="text-sm text-muted-foreground underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-marca/40"
         >
           Cancelar y salir
         </button>

@@ -10,9 +10,9 @@ import {
 } from "@/app/acciones-cuenta";
 
 const CLASE_CAMPO =
-  "rounded-xl border border-border bg-card px-3 py-2 text-base text-foreground shadow-xs outline-none transition-colors focus:border-azul focus:ring-2 focus:ring-azul/20";
+  "rounded-xl border border-border bg-card px-3 py-2 text-base text-foreground shadow-xs outline-none transition-colors focus:border-marca focus:ring-2 focus:ring-marca/20";
 const CLASE_BOTON =
-  "rounded-xl bg-azul px-4 py-2 font-medium text-white transition-colors hover:bg-azul-profundo focus-visible:ring-2 focus-visible:ring-azul/40 disabled:opacity-60";
+  "rounded-xl bg-azul px-4 py-2 font-medium text-white transition-colors hover:bg-azul-profundo focus-visible:ring-2 focus-visible:ring-marca/40 disabled:opacity-60";
 
 function CodigosDeRecuperacion({ codigos }: { codigos: string[] }) {
   const [copiado, setCopiado] = useState<"si" | "no" | null>(null);
@@ -65,7 +65,7 @@ function CodigosDeRecuperacion({ codigos }: { codigos: string[] }) {
       </p>
       <Link
         href="/cuenta"
-        className="text-sm text-marca underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-azul/40"
+        className="text-sm text-marca underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-marca/40"
       >
         Ya los guardé, continuar
       </Link>

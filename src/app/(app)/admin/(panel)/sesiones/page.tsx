@@ -27,7 +27,7 @@ export default async function PaginaSesiones() {
         role="region"
         aria-label="Tabla de sesiones activas (desplazable horizontalmente)"
         tabIndex={0}
-        className="overflow-x-auto rounded-lg border outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-azul"
+        className="overflow-x-auto rounded-lg border outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca"
       >
         <table className="w-full text-sm">
           <thead className="bg-muted text-left">

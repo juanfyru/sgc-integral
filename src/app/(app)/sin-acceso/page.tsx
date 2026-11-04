@@ -12,7 +12,7 @@ export default async function PaginaSinAcceso() {
       <p className="text-sm text-muted-foreground">
         Su cuenta no tiene permiso para ver esta sección.
       </p>
-      <Link href="/" className="text-sm text-marca underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-azul/40">
+      <Link href="/" className="text-sm text-marca underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-marca/40">
         Volver al inicio
       </Link>
     </main>

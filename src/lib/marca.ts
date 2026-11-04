@@ -41,7 +41,8 @@ export type TokensMarca = { claro: Record<TokenMarca, string>; oscuro: Record<To
 const BLANCO = "#ffffff";
 const TINTA = "#16181d";
 const FONDO_CLARO = SUPERFICIES.claro.fondo;
-const PANEL_OSCURO = SUPERFICIES.oscuro.panel;
+/** La superficie oscura más clara donde puede ir texto de marca (--muted, tintes, barra lateral). */
+export const SUPERFICIE_TEXTO_OSCURA = "#1f242c";
 
 export function derivarMarca(colores: ColoresMarca): TokensMarca {
   // Estos valores terminan en el style de <html>: un hex inválido nunca pasa.
@@ -63,8 +64,8 @@ export function derivarMarca(colores: ColoresMarca): TokensMarca {
     claro: { ...comunes, marca: primario, "marca-2-texto": oscurecerHasta(secundario, FONDO_CLARO, 4.5) },
     oscuro: {
       ...comunes,
-      marca: aclararHasta(primario, PANEL_OSCURO, 4.5),
-      "marca-2-texto": aclararHasta(secundario, PANEL_OSCURO, 4.5),
+      marca: aclararHasta(primario, SUPERFICIE_TEXTO_OSCURA, 4.5),
+      "marca-2-texto": aclararHasta(secundario, SUPERFICIE_TEXTO_OSCURA, 4.5),
     },
   };
 }

@@ -23,7 +23,7 @@ export function FormularioAviso({ volver = "/" }: { volver?: string }) {
       <button
         type="submit"
         disabled={pendiente}
-        className="rounded-xl bg-azul px-4 py-2 font-medium text-white transition-colors hover:bg-azul-profundo focus-visible:ring-2 focus-visible:ring-azul/40 disabled:opacity-60"
+        className="rounded-xl bg-azul px-4 py-2 font-medium text-white transition-colors hover:bg-azul-profundo focus-visible:ring-2 focus-visible:ring-marca/40 disabled:opacity-60"
       >
         {pendiente ? "Guardando…" : "Aceptar y continuar"}
       </button>

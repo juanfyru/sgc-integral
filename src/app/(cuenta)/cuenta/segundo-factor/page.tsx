@@ -15,7 +15,7 @@ export const metadata: Metadata = { title: "Segundo factor — SGC Integral" };
 export const dynamic = "force-dynamic";
 
 const CLASE_BOTON =
-  "rounded-xl bg-azul px-4 py-2 font-medium text-white transition-colors hover:bg-azul-profundo focus-visible:ring-2 focus-visible:ring-azul/40";
+  "rounded-xl bg-azul px-4 py-2 font-medium text-white transition-colors hover:bg-azul-profundo focus-visible:ring-2 focus-visible:ring-marca/40";
 
 function enGrupos(secreto: string): string {
   return secreto.replace(/(.{4})/g, "$1 ").trim();
@@ -117,12 +117,12 @@ export default async function PaginaSegundoFactor({
       <div className="flex w-full flex-col gap-4">{contenido}</div>
       {exigido && !activo ? (
         <form action={salir}>
-          <button type="submit" className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-azul">
+          <button type="submit" className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-marca">
             Salir
           </button>
         </form>
       ) : (
-        <Link href="/cuenta" className="text-sm text-marca underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-azul/40">
+        <Link href="/cuenta" className="text-sm text-marca underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-marca/40">
           Volver a Mi cuenta
         </Link>
       )}

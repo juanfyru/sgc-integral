@@ -52,7 +52,7 @@ export function CampoBusqueda({ valorInicial }: { valorInicial: string }) {
         aria-label="Buscar documentos"
         autoFocus
         autoComplete="off"
-        className="h-13 w-full rounded-2xl border border-border bg-card pl-12 pr-12 text-base text-foreground shadow-xs outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-azul focus:ring-2 focus:ring-azul/20"
+        className="h-13 w-full rounded-2xl border border-border bg-card pl-12 pr-12 text-base text-foreground shadow-xs outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-marca focus:ring-2 focus:ring-marca/20"
       />
       <span
         className="absolute right-4 top-1/2 -translate-y-1/2"

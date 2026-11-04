@@ -29,7 +29,7 @@ type Props = {
 };
 
 const claseCampo =
-  "rounded-md border border-border bg-card px-3 py-2 text-foreground outline-none transition-colors focus:border-azul focus:ring-2 focus:ring-azul/20";
+  "rounded-md border border-border bg-card px-3 py-2 text-foreground outline-none transition-colors focus:border-marca focus:ring-2 focus:ring-marca/20";
 
 export function FormularioDocumento({
   accion, tipos, procesos, valores, documentoId, codigoEditable,

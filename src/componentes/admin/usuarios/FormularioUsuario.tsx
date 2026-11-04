@@ -7,7 +7,7 @@ import { ClaveTemporal } from "@/componentes/admin/usuarios/ClaveTemporal";
 import { ETIQUETA_ROL, ROLES } from "@/lib/roles";
 
 const claseCampo =
-  "rounded-md border border-border bg-card px-3 py-2 text-foreground outline-none transition-colors focus:border-azul focus:ring-2 focus:ring-azul/20 read-only:bg-muted";
+  "rounded-md border border-border bg-card px-3 py-2 text-foreground outline-none transition-colors focus:border-marca focus:ring-2 focus:ring-marca/20 read-only:bg-muted";
 
 type Valores = {
   usuario: string;

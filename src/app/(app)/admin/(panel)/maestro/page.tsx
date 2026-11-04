@@ -65,7 +65,7 @@ export default async function PaginaMaestro({
         role="region"
         aria-label="Tabla del Listado Maestro (desplazable horizontalmente)"
         tabIndex={0}
-        className="overflow-x-auto rounded-lg border outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-azul print:border-0"
+        className="overflow-x-auto rounded-lg border outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca print:border-0"
       >
         <table className="w-full text-sm">
           <thead className="bg-muted text-left print:bg-transparent">

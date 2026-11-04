@@ -115,7 +115,7 @@
   /* Respaldo de la marca por defecto si falta el style inyectado en <html>
      (el layout los sobrescribe con estiloMarca). */
   --marca-c: #1b4e8e;
-  --marca-o: #5083c8;
+  --marca-o: #5c90d5;
   --marca-relleno-c: #1b4e8e;
   --marca-relleno-o: #1b4e8e;
   --marca-oscurecida-c: #003775;
@@ -127,7 +127,7 @@
   --marca-2-contraste-c: #16181d;
   --marca-2-contraste-o: #16181d;
   --marca-2-texto-c: #00822f;
-  --marca-2-texto-o: #2e9b47;
+  --marca-2-texto-o: #36a14d;
 
   --marca: light-dark(var(--marca-c), var(--marca-o));
   --marca-relleno: light-dark(var(--marca-relleno-c), var(--marca-relleno-o));
@@ -149,13 +149,13 @@
   --linea-suave: light-dark(#edf0f4, #1f242c);
   --input: light-dark(#e2e6ec, #2f3640);
   --muted-foreground: light-dark(#5b6472, #9aa3b0);
-  --texto-terciario: light-dark(#8b94a3, #6b7483);
+  --texto-terciario: light-dark(#677080, #8b94a3);
   --muted: light-dark(#eef1f5, #1c2128);
   --secondary: light-dark(#eef1f5, #1c2128);
   --secondary-foreground: var(--foreground);
   --accent: light-dark(#eef1f5, #1c2128);
   --accent-foreground: var(--foreground);
-  --destructive: light-dark(#d03b3b, #e05555);
+  --destructive: light-dark(#b03535, #e05555);
 
   --primary: var(--marca-relleno);
   --primary-foreground: #ffffff;
@@ -184,11 +184,11 @@
   --estado-sin-dato-fondo: light-dark(#eef0f3, #242a33);
   --estado-sin-dato-texto: light-dark(#5b6472, #9aa3b0);
 
-  --chart-1: light-dark(#2a78d6, #3987e5);
-  --chart-2: light-dark(#1baf7a, #199e70);
-  --chart-3: light-dark(#eb6834, #d95926);
-  --chart-4: light-dark(#fab219, #fab219);
-  --chart-5: light-dark(#8b94a3, #6b7483);
+  --chart-1: light-dark(#c3c8d1, #4a5260);
+  --chart-2: light-dark(#9aa2af, #646d7b);
+  --chart-3: light-dark(#737c8a, #8b94a3);
+  --chart-4: light-dark(#515966, #b0b7c2);
+  --chart-5: light-dark(#363c46, #d3d8df);
   --sidebar: var(--card);
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--marca-relleno);
@@ -201,16 +201,16 @@
 
 /* Colores de banda/proceso legibles en los dos temas.
    Requieren --color-banda en el elemento o en un ancestro. */
-.banda-tinte {
+@utility banda-tinte {
   background: color-mix(in srgb, var(--color-banda) 12%, var(--background));
 }
-.banda-texto {
+@utility banda-texto {
   color: light-dark(
     color-mix(in srgb, var(--color-banda) 80%, black),
     color-mix(in srgb, var(--color-banda) 70%, white)
   );
 }
-.banda-borde {
+@utility banda-borde {
   border-color: color-mix(in srgb, var(--color-banda) 28%, var(--background));
 }
 
@@ -283,9 +283,9 @@
   --dur-media: 220ms;
   --ease-salida: cubic-bezier(0.22, 1, 0.36, 1);
   /* Sombras suaves derivadas de la tinta institucional (nada dramático). */
-  --sombra-1: 0 1px 2px 0 color-mix(in srgb, var(--foreground) 8%, transparent);
-  --sombra-2: 0 2px 10px -3px color-mix(in srgb, var(--foreground) 12%, transparent);
-  --sombra-3: 0 10px 30px -8px color-mix(in srgb, var(--foreground) 18%, transparent);
+  --sombra-1: 0 1px 2px 0 light-dark(color-mix(in srgb, #000 8%, transparent), color-mix(in srgb, #000 40%, transparent));
+  --sombra-2: 0 2px 10px -3px light-dark(color-mix(in srgb, #000 12%, transparent), color-mix(in srgb, #000 50%, transparent));
+  --sombra-3: 0 10px 30px -8px light-dark(color-mix(in srgb, #000 18%, transparent), color-mix(in srgb, #000 60%, transparent));
 }
 
 /* Anillo de foco global, especificidad 0 (:where) para que cualquier
@@ -354,4 +354,12 @@
 }
 .saltar-al-contenido:focus {
   transform: translateY(0);
+}
+
+/* El Listado Maestro impreso sale siempre en claro, aunque el usuario use el tema oscuro. */
+@media print {
+  :root,
+  [data-tema] {
+    color-scheme: light;
+  }
 }

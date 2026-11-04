@@ -16,7 +16,7 @@ const AVISOS: Record<string, string> = {
   "factor-desactivado": "El segundo factor se desactivó.",
 };
 
-const ENLACE = "text-sm text-marca underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-azul/40";
+const ENLACE = "text-sm text-marca underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-marca/40";
 
 export default async function PaginaMiCuenta({
   searchParams,

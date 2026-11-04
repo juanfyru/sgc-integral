@@ -17,7 +17,7 @@ export function FormularioIngreso({ volver = "/" }: { volver?: string }) {
           name="usuario"
           autoComplete="username"
           required
-          className="rounded-xl border border-border bg-card px-3 py-2 text-base text-foreground shadow-xs outline-none transition-colors focus:border-azul focus:ring-2 focus:ring-azul/20"
+          className="rounded-xl border border-border bg-card px-3 py-2 text-base text-foreground shadow-xs outline-none transition-colors focus:border-marca focus:ring-2 focus:ring-marca/20"
         />
       </label>
       <label className="flex flex-col gap-1 text-sm font-medium text-foreground">
@@ -27,7 +27,7 @@ export function FormularioIngreso({ volver = "/" }: { volver?: string }) {
           type="password"
           autoComplete="current-password"
           required
-          className="rounded-xl border border-border bg-card px-3 py-2 text-base text-foreground shadow-xs outline-none transition-colors focus:border-azul focus:ring-2 focus:ring-azul/20"
+          className="rounded-xl border border-border bg-card px-3 py-2 text-base text-foreground shadow-xs outline-none transition-colors focus:border-marca focus:ring-2 focus:ring-marca/20"
         />
       </label>
       {estado && (
@@ -38,7 +38,7 @@ export function FormularioIngreso({ volver = "/" }: { volver?: string }) {
       <button
         type="submit"
         disabled={pendiente}
-        className="rounded-xl bg-azul px-4 py-2 font-medium text-white transition-colors hover:bg-azul-profundo focus-visible:ring-2 focus-visible:ring-azul/40 disabled:opacity-60"
+        className="rounded-xl bg-azul px-4 py-2 font-medium text-white transition-colors hover:bg-azul-profundo focus-visible:ring-2 focus-visible:ring-marca/40 disabled:opacity-60"
       >
         {pendiente ? "Verificando…" : "Ingresar"}
       </button>

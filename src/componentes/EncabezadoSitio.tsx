@@ -19,7 +19,7 @@ export function EncabezadoSitio({ usuario }: { usuario: UsuarioMenu | null }) {
       <div className="mx-auto flex h-14 w-full max-w-[1500px] items-center gap-3 px-4 sm:px-6">
         <Link
           href="/"
-          className="flex min-w-0 items-center gap-2.5 rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-azul"
+          className="flex min-w-0 items-center gap-2.5 rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca"
         >
           <span
             className="grid size-8 shrink-0 place-items-center rounded-lg bg-azul font-display text-[11px] font-bold text-white"
@@ -53,7 +53,7 @@ export function EncabezadoSitio({ usuario }: { usuario: UsuarioMenu | null }) {
               placeholder="Buscar documentos…"
               aria-label="Buscar documentos"
               autoComplete="off"
-              className="h-9 w-full rounded-lg border border-border bg-card pl-9 pr-3 text-sm text-foreground shadow-xs transition-colors placeholder:text-muted-foreground/70 focus-visible:border-azul focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-azul"
+              className="h-9 w-full rounded-lg border border-border bg-card pl-9 pr-3 text-sm text-foreground shadow-xs transition-colors placeholder:text-muted-foreground/70 focus-visible:border-marca focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca"
             />
           </form>
         )}

@@ -91,7 +91,7 @@ export function ZonaCarga({ versionId }: { versionId: number }) {
         onDragLeave={() => setArrastrando(false)}
         onDrop={(e) => { e.preventDefault(); setArrastrando(false); recibir(e.dataTransfer.files); }}
         className={`flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed px-4 py-8 text-center text-sm transition-colors ${
-          arrastrando ? "border-azul bg-azul/5" : "border-border text-muted-foreground"
+          arrastrando ? "border-marca bg-azul/5" : "border-border text-muted-foreground"
         }`}
       >
         <span className="font-medium">Arrastre los archivos aquí</span>

@@ -69,8 +69,8 @@ describe("derivados sobre una malla de 12 tonos × 5 luminosidades × 3 cromas",
   casos.push("#0000ff", "#ff0000", "#ffd100", "#8000ff");
   it.each(casos)("%s", (hex) => {
     const t = derivarMarca({ primario: hex, secundario: hex });
-    expect(contrasteWCAG(t.oscuro.marca, "#161a20")).toBeGreaterThanOrEqual(4.5);
-    expect(contrasteWCAG(t.oscuro["marca-2-texto"], "#161a20")).toBeGreaterThanOrEqual(4.5);
+    expect(contrasteWCAG(t.oscuro.marca, "#1f242c")).toBeGreaterThanOrEqual(4.5);
+    expect(contrasteWCAG(t.oscuro["marca-2-texto"], "#1f242c")).toBeGreaterThanOrEqual(4.5);
     expect(contrasteWCAG(t.claro["marca-2-texto"], "#f4f6f9")).toBeGreaterThanOrEqual(4.5);
     expect(contrasteWCAG(t.claro["marca-2-contraste"], t.claro["marca-2-relleno"])).toBeGreaterThanOrEqual(4.5);
     if (validarMarca({ primario: hex, secundario: hex }).length === 0) {
@@ -90,7 +90,8 @@ it("los valores por defecto no cambian con el mapeo a gamut", () => {
   expect(sugerirPrimario("#9ecbff")).toBe("#4a74a3");
   const t = derivarMarca(MARCA_DEFECTO);
   expect(t.claro["marca-oscurecida"]).toBe("#003775");
-  expect(t.oscuro.marca).toBe("#5083c8");
+  expect(t.oscuro.marca).toBe("#5c90d5");
+  expect(t.oscuro["marca-2-texto"]).toBe("#36a14d");
   expect(t.claro["marca-2-texto"]).toBe("#00822f");
 });
 

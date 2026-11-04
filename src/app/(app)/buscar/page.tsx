@@ -288,7 +288,7 @@ export default async function PaginaBuscar({
                     type="date"
                     name="desde"
                     defaultValue={parametros.desde}
-                    className="mt-1 h-9 w-full rounded-lg border border-border bg-card px-2.5 text-sm text-foreground shadow-xs outline-none focus:border-azul focus:ring-2 focus:ring-azul/20"
+                    className="mt-1 h-9 w-full rounded-lg border border-border bg-card px-2.5 text-sm text-foreground shadow-xs outline-none focus:border-marca focus:ring-2 focus:ring-marca/20"
                   />
                 </label>
                 <label className="block text-xs text-muted-foreground">
@@ -297,13 +297,13 @@ export default async function PaginaBuscar({
                     type="date"
                     name="hasta"
                     defaultValue={parametros.hasta}
-                    className="mt-1 h-9 w-full rounded-lg border border-border bg-card px-2.5 text-sm text-foreground shadow-xs outline-none focus:border-azul focus:ring-2 focus:ring-azul/20"
+                    className="mt-1 h-9 w-full rounded-lg border border-border bg-card px-2.5 text-sm text-foreground shadow-xs outline-none focus:border-marca focus:ring-2 focus:ring-marca/20"
                   />
                 </label>
                 <div className="flex items-center gap-2">
                   <button
                     type="submit"
-                    className="h-8 rounded-lg bg-azul px-3 text-xs font-medium text-white transition-colors hover:bg-azul-profundo focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-azul"
+                    className="h-8 rounded-lg bg-azul px-3 text-xs font-medium text-white transition-colors hover:bg-azul-profundo focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca"
                   >
                     Aplicar
                   </button>
@@ -368,7 +368,7 @@ function EstadoInicial() {
           <li key={sugerencia}>
             <Link
               href={`/buscar?q=${encodeURIComponent(sugerencia)}`}
-              className="inline-block rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-azul hover:text-marca"
+              className="inline-block rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-marca hover:text-marca"
             >
               {sugerencia}
             </Link>
@@ -415,7 +415,7 @@ function SinResultados({
               desde: null,
               hasta: null,
             })}
-            className="inline-block rounded-full border border-azul bg-azul/5 px-3 py-1.5 text-xs font-medium text-marca transition-colors hover:bg-azul/10"
+            className="inline-block rounded-full border border-marca bg-azul/5 px-3 py-1.5 text-xs font-medium text-marca transition-colors hover:bg-azul/10"
           >
             Quitar los filtros
           </Link>
@@ -424,7 +424,7 @@ function SinResultados({
           <Link
             key={sugerencia}
             href={`/buscar?q=${encodeURIComponent(sugerencia)}`}
-            className="inline-block rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-azul hover:text-marca"
+            className="inline-block rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-marca hover:text-marca"
           >
             {sugerencia}
           </Link>

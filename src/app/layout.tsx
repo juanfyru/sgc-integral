@@ -3,7 +3,7 @@ import { Archivo, Geist, Geist_Mono } from "next/font/google";
 import { cookies } from "next/headers";
 import { EncabezadoSitio } from "@/componentes/EncabezadoSitio";
 import { obtenerMarca } from "@/db/consultas/entidad";
-import { derivarMarca, estiloMarca } from "@/lib/marca";
+import { MARCA_DEFECTO, derivarMarca, estiloMarca, type Marca } from "@/lib/marca";
 import { puedeEntrarAlPanel } from "@/lib/permisos";
 import { ETIQUETA_ROL } from "@/lib/roles";
 import { sesionActual } from "@/lib/sesion-actual";
@@ -30,8 +30,18 @@ const archivo = Archivo({
   weight: ["600", "700", "800"],
 });
 
+// Si la BD no responde, la marca por defecto evita tumbar /ingreso y las páginas de error.
+async function marcaSegura(): Promise<Marca> {
+  try {
+    return await obtenerMarca();
+  } catch (e) {
+    console.error("[marca] no se pudo leer la marca de la entidad:", e instanceof Error ? e.message : String(e));
+    return MARCA_DEFECTO;
+  }
+}
+
 export async function generateMetadata(): Promise<Metadata> {
-  const m = await obtenerMarca();
+  const m = await marcaSegura();
   return {
     title: { default: `${m.nombre} · SGC`, template: `%s · ${m.sigla}` },
     description: `Sistema de Gestión de Calidad de ${m.nombre}`,
@@ -46,9 +56,10 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // Sin cookie validarSesion devuelve null antes de tocar la BD (el build no la necesita).
+  // Sin cookie validarSesion devuelve null sin tocar la BD; la marca sí se lee en cada petición
+  // (nunca en el build: el layout es dinámico) y cae a la marca por defecto si la BD falla.
   const sesion = await sesionActual();
-  const marca = await obtenerMarca();
+  const marca = await marcaSegura();
   const tema = temaEfectivo(sesion, (await cookies()).get(COOKIE_TEMA)?.value);
   const usuario =
     sesion && !sesion.factorPendiente

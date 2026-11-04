@@ -20,7 +20,7 @@ export function SelectorIcono({
         name={nombre}
         defaultValue={actual ?? ""}
         required={requerido}
-        className="rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus:border-azul focus:ring-2 focus:ring-azul/20"
+        className="rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus:border-marca focus:ring-2 focus:ring-marca/20"
       >
         {!requerido && <option value="">(sin ícono)</option>}
         {NOMBRES_ICONO.map((n) => (
