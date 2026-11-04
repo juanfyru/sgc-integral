@@ -8,6 +8,8 @@ import { Dialogo } from "@/componentes/ui/Dialogo";
 import {
   LARGO_MAXIMO_CONSULTA,
   LARGO_MINIMO_CONSULTA,
+  estadoDeBusqueda,
+  type RespuestaRapida,
   type ResultadoRapido,
 } from "@/lib/busqueda-rapida";
 import { IconoNav } from "./IconoNav";
@@ -26,8 +28,6 @@ type Opcion =
   | { id: string; clase: "ir"; entrada: EntradaNav; ruta: string }
   | { id: string; clase: "documento"; resultado: ResultadoRapido; ruta: string }
   | { id: string; clase: "todos"; ruta: string };
-
-type Estado = "inactivo" | "cargando" | "listo" | "error";
 
 export function Buscador({ entradas }: { entradas: EntradaNav[] }) {
   const [abierto, setAbierto] = useState(false);
@@ -81,8 +81,7 @@ function Paleta({ entradas, cerrar }: { entradas: EntradaNav[]; cerrar: () => vo
   const idLista = `${idBase}-lista`;
   const campo = useRef<HTMLInputElement>(null);
   const [texto, setTexto] = useState("");
-  const [resultados, setResultados] = useState<ResultadoRapido[]>([]);
-  const [estado, setEstado] = useState<Estado>("inactivo");
+  const [respuesta, setRespuesta] = useState<RespuestaRapida | null>(null);
   const [activa, setActiva] = useState(0);
 
   useEffect(() => {
@@ -96,17 +95,14 @@ function Paleta({ entradas, cerrar }: { entradas: EntradaNav[]; cerrar: () => vo
     if (!buscaDocumentos) return;
     const control = new AbortController();
     const temporizador = setTimeout(async () => {
-      setEstado("cargando");
       try {
         const r = await fetch(`/api/buscar?q=${encodeURIComponent(consulta)}`, { signal: control.signal });
         if (!r.ok) throw new Error(String(r.status));
         const datos = (await r.json()) as { resultados: ResultadoRapido[] };
-        setResultados(datos.resultados);
-        setEstado("listo");
+        setRespuesta({ consulta, resultados: datos.resultados });
       } catch {
         if (control.signal.aborted) return;
-        setResultados([]);
-        setEstado("error");
+        setRespuesta({ consulta, resultados: null });
       }
     }, ESPERA_MS);
     return () => {
@@ -120,7 +116,9 @@ function Paleta({ entradas, cerrar }: { entradas: EntradaNav[]; cerrar: () => vo
     return entradas.filter((e) => sinAcentos(e.etiqueta).includes(norm));
   }, [entradas, consulta]);
 
-  const docsVisibles = buscaDocumentos && estado === "listo" ? resultados : [];
+  const estado = estadoDeBusqueda(consulta, respuesta);
+  const resultados = (estado === "listo" && respuesta?.resultados) || [];
+  const docsVisibles = resultados;
 
   const opciones: Opcion[] = [
     ...irA.map((entrada, i): Opcion => ({ id: `${idBase}-ir-${i}`, clase: "ir", entrada, ruta: entrada.href })),
@@ -199,7 +197,6 @@ function Paleta({ entradas, cerrar }: { entradas: EntradaNav[]; cerrar: () => vo
           onChange={(e) => {
             setTexto(e.target.value);
             setActiva(0);
-            setEstado("inactivo");
           }}
           onKeyDown={alTeclear}
           className="h-12 w-full bg-transparent text-sm text-foreground outline-none placeholder:text-texto-terciario"
