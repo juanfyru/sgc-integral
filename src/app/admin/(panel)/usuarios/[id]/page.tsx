@@ -13,6 +13,7 @@ import { BotonRestablecer } from "@/componentes/admin/usuarios/BotonRestablecer"
 import { FormularioUsuario } from "@/componentes/admin/usuarios/FormularioUsuario";
 import { obtenerUsuario, opcionesFormularioUsuario } from "@/db/consultas/usuarios";
 import { exigirPermiso } from "@/lib/paginas";
+import { puede } from "@/lib/permisos";
 import { ETIQUETA_ROL } from "@/lib/roles";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +48,11 @@ export default async function PaginaUsuario({ params }: { params: Promise<{ id: 
           <div><dt className="inline font-medium">Segundo factor: </dt><dd className="inline">{u.totpActivo ? "Activo" : "No activo"}</dd></div>
           <div><dt className="inline font-medium">Cambio de clave pendiente: </dt><dd className="inline">{u.debeCambiarClave ? "Sí" : "No"}</dd></div>
           <div><dt className="inline font-medium">Aviso de datos aceptado: </dt><dd className="inline">{f(u.aceptoDatosEn)}</dd></div>
-          <div><dt className="inline font-medium">Sesiones activas: </dt><dd className="inline">{u.sesionesActivas}</dd></div>
+          <div><dt className="inline font-medium">Sesiones activas: </dt><dd className="inline">{u.sesionesActivas}</dd>
+            {puede(sesion, "sesiones.administrar") && (
+              <> · <Link href="/admin/sesiones" className="text-azul underline">Ver sesiones</Link></>
+            )}
+          </div>
           <div><dt className="inline font-medium">Cargo: </dt><dd className="inline">{u.cargoNombre ? `${u.cargoNombre} (${u.areaNombre})` : "—"}</dd></div>
           <div className="sm:col-span-2">
             <dt className="inline font-medium">Supervisores: </dt>

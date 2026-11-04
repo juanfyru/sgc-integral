@@ -71,6 +71,8 @@ export function describirEvento(e: EventoAuditoria): string {
       return `Reactivó el usuario «${texto(d.usuario) ?? "?"}»`;
     case "restablecer_clave":
       return `Restableció la clave de «${texto(d.usuario) ?? "?"}»`;
+    case "cerrar_sesion_forzado":
+      return `Cerró la sesión de «${texto(d.usuario) ?? "?"}»`;
     case "desbloquear_usuario":
       return `Desbloqueó al usuario «${texto(d.usuario) ?? "?"}»`;
     case "crear_usuarios_lote":

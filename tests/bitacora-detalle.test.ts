@@ -68,6 +68,7 @@ describe("acciones de administración de usuarios", () => {
     ["reactivar_usuario", "Reactivó el usuario «maria»"],
     ["restablecer_clave", "Restableció la clave de «maria»"],
     ["desbloquear_usuario", "Desbloqueó al usuario «maria»"],
+    ["cerrar_sesion_forzado", "Cerró la sesión de «maria»"],
   ])("%s se describe como «%s»", (accion, texto) => {
     expect(describirEvento({ accion, entidad: "usuario", entidadId: 1, detalle: { usuario: "maria" } })).toBe(texto);
   });

@@ -17,6 +17,10 @@ import {
 import { obtenerSql } from "@/db/cliente";
 import { listarCargos } from "@/db/consultas/estructura";
 import { normalizar, parsearLoteCsv, type Catalogo } from "@/lib/lote-usuarios";
+import { registrarAcceso } from "@/db/consultas/autenticacion";
+import { registrarAuditoria } from "@/db/consultas/admin";
+import { cerrarSesionPorId } from "@/lib/sesion";
+import { z } from "zod";
 import { generarClaveTemporal } from "@/lib/clave-politica";
 import { parsearUsuario } from "@/lib/esquemas/usuarios";
 import { ipDePeticion } from "@/lib/ip";
@@ -158,4 +162,42 @@ export async function crearLoteAccion(_prev: EstadoLote, formData: FormData): Pr
   } catch (err) {
     return { ok: false, error: (err as Error).message };
   }
+}
+
+const esquemaSesionId = z.object({ sesionId: z.string().regex(/^[0-9a-f]{64}$/) }).strict();
+
+// Cierre forzado de la sesión de otra persona. No cierra la propia (para eso está "Cerrar sesión").
+export async function cerrarSesionAccion(formData: FormData): Promise<void> {
+  const sesion = await requerirSesion();
+  requerirPermiso(sesion, "sesiones.administrar");
+  const parsed = esquemaSesionId.safeParse({ sesionId: formData.get("sesionId") });
+  if (!parsed.success) throw new Error("Sesión no válida");
+  const { sesionId } = parsed.data;
+  if (sesionId === sesion.sesionId) throw new Error("No puede cerrar su propia sesión desde aquí");
+  if (comprobarLimite(sesion)) throw new Error("Demasiadas operaciones seguidas. Espere un minuto.");
+
+  const cerrado = await cerrarSesionPorId(sesionId);
+  if (!cerrado) {
+    revalidatePath("/admin/sesiones");
+    return;
+  }
+  const sql = obtenerSql();
+  const [persona] = await sql`SELECT usuario FROM usuarios WHERE id = ${cerrado.usuarioId}`;
+  const usuario = (persona?.usuario as string | undefined) ?? `#${cerrado.usuarioId}`;
+  const cabeceras = await headers();
+  await registrarAcceso({
+    usuarioId: cerrado.usuarioId,
+    usuarioTexto: usuario,
+    resultado: "cierre_forzado",
+    ip: ipDePeticion(cabeceras),
+    userAgent: cabeceras.get("user-agent"),
+  });
+  await registrarAuditoria(sql, {
+    usuarioId: sesion.usuarioId,
+    accion: "cerrar_sesion_forzado",
+    entidad: "usuario",
+    entidadId: cerrado.usuarioId,
+    detalle: { usuario },
+  });
+  revalidatePath("/admin/sesiones");
 }

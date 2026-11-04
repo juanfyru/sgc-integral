@@ -10,4 +10,6 @@ export const ENLACES_PANEL: ReadonlyArray<{ href: string; etiqueta: string; perm
   { href: "/admin/maestro", etiqueta: "Listado Maestro", permiso: "maestro.ver" },
   { href: "/admin/estadisticas", etiqueta: "Estadísticas", permiso: "estadisticas.ver" },
   { href: "/admin/bitacora", etiqueta: "Bitácora", permiso: "bitacora.ver" },
+  { href: "/admin/accesos", etiqueta: "Accesos", permiso: "accesos.ver" },
+  { href: "/admin/sesiones", etiqueta: "Sesiones", permiso: "sesiones.administrar" },
 ];
