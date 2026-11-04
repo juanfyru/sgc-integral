@@ -7,6 +7,7 @@ const ESPERADA: Record<Permiso, Rol[]> = {
   "documentos.administrar": ["admin_sgc"],
   "documentos.ver_historial": ["admin_sgc", "control_interno"],
   "mapa.administrar": ["admin_sgc"],
+  "entidad.administrar": ["admin_sgc"],
   "maestro.ver": ["admin_sgc", "gerencia", "control_interno"],
   "maestro.exportar": ["admin_sgc", "control_interno"],
   "estadisticas.ver": ["admin_sgc", "gerencia", "control_interno"],

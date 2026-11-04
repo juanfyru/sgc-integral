@@ -26,3 +26,15 @@ describe("matcher del proxy (comportamiento real de Next)", () => {
     (url) => expect(pasa(url)).toBe(false),
   );
 });
+
+describe("logo público", () => {
+  it("/marca/logo pasa por el proxy y es ruta pública", async () => {
+    const { RUTAS_PUBLICAS, proxy } = await import("@/proxy");
+    const { NextRequest } = await import("next/server");
+    expect(RUTAS_PUBLICAS).toContain("/marca/logo");
+    expect(pasa("/marca/logo")).toBe(true);
+    const r = proxy(new NextRequest("http://localhost:3002/marca/logo"));
+    expect(r.headers.get("location")).toBeNull();
+    expect(r.status).toBe(200);
+  });
+});

@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { CABECERA_RUTA, COOKIE_SESION } from "@/lib/sesion-constantes";
 
 /** Rutas alcanzables sin cookie de sesión. /api/salud lo usa el healthcheck del compose. */
-export const RUTAS_PUBLICAS = ["/ingreso", "/api/salud"] as const;
+export const RUTAS_PUBLICAS = ["/ingreso", "/api/salud", "/marca/logo"] as const;
 
 function esPublica(pathname: string): boolean {
   return RUTAS_PUBLICAS.some((r) => pathname === r || pathname.startsWith(`${r}/`));

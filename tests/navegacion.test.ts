@@ -22,3 +22,10 @@ describe("navegación por módulos y rol", () => {
     expect(esActiva(por("/admin/usuarios"), "/admin/usuarios/5")).toBe(true);
   });
 });
+
+describe("Entidad y marca", () => {
+  it("exige entidad.administrar: control interno no la ve", () => {
+    expect(NAVEGACION.find((e) => e.href === "/admin/entidad")?.permiso).toBe("entidad.administrar");
+    expect(entradasVisibles({ rol: "control_interno" }).map((e) => e.href)).not.toContain("/admin/entidad");
+  });
+});

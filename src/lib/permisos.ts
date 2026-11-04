@@ -5,6 +5,7 @@ export type Permiso =
   | "documentos.administrar"
   | "documentos.ver_historial"
   | "mapa.administrar"
+  | "entidad.administrar"
   | "maestro.ver"
   | "maestro.exportar"
   | "estadisticas.ver"
@@ -20,6 +21,7 @@ export const MATRIZ: Record<Permiso, readonly Rol[]> = {
   "documentos.administrar": ["admin_sgc"],
   "documentos.ver_historial": ["admin_sgc", "control_interno"],
   "mapa.administrar": ["admin_sgc"],
+  "entidad.administrar": ["admin_sgc"],
   "maestro.ver": ["admin_sgc", "gerencia", "control_interno"],
   "maestro.exportar": ["admin_sgc", "control_interno"],
   "estadisticas.ver": ["admin_sgc", "gerencia", "control_interno"],

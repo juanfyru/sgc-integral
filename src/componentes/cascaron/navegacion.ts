@@ -52,8 +52,7 @@ export const NAVEGACION: readonly EntradaNav[] = [
     etiqueta: "Entidad y marca",
     icono: "entidad",
     grupo: "administracion",
-    // TODO T11: pasa a "entidad.administrar" cuando el permiso exista en la matriz.
-    permiso: "mapa.administrar",
+    permiso: "entidad.administrar",
   },
   {
     href: "/admin/estructura",
