@@ -65,6 +65,7 @@ export async function obtenerEntidad(): Promise<DatosEntidad> {
 }
 
 export async function guardarEntidad(datos: DatosEntidad, actorId: number): Promise<void> {
+  if (!hexValido(datos.primario) || !hexValido(datos.secundario)) throw new Error("Color inválido");
   const errores = validarMarca({ primario: datos.primario, secundario: datos.secundario });
   if (errores.length > 0) throw new Error(errores[0].mensaje);
   const valores: Record<string, string> = {

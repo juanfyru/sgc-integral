@@ -1,4 +1,5 @@
 import { obtenerSql } from "../cliente";
+import type { Cliente } from "./mapa-admin";
 
 export type Notificacion = {
   id: number;
@@ -9,8 +10,6 @@ export type Notificacion = {
   leidaEn: Date | null;
   creadoEn: Date;
 };
-
-type Cliente = ReturnType<typeof obtenerSql>;
 
 export async function crearNotificacion(
   n: {

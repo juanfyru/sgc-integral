@@ -46,6 +46,12 @@ describe("notificaciones", () => {
     expect(await marcarTodasLeidas(a)).toBe(2);
   });
 
+  it("crearNotificacion acepta una transacción", async () => {
+    const id = await obtenerSql().begin((tx) => crearNotificacion({ usuarioId: a, tipo: "prueba", titulo: "En tx" }, tx));
+    expect((await listarRecientes(a))[0]).toMatchObject({ id, titulo: "En tx" });
+    await marcarTodasLeidas(a);
+  });
+
   it("listarRecientes devuelve como máximo el límite, más recientes primero", async () => {
     for (let i = 0; i < 12; i++) await crearNotificacion({ usuarioId: b, tipo: "prueba", titulo: `N${i}` });
     const lista = await listarRecientes(b);

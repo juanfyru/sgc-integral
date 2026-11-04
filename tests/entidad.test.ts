@@ -42,13 +42,29 @@ describe("entidad", () => {
     expect((await obtenerEntidad()).primario).toBe(antes.primario);
   });
 
+  it("guardarEntidad rechaza colores que no son hex y no escribe", async () => {
+    const antes = await obtenerEntidad();
+    try {
+      for (const malo of ["red", "#135", "#1b4e8e;}", "url(x)"]) {
+        await expect(guardarEntidad({ ...antes, primario: malo }, actorId)).rejects.toThrow("Color inválido");
+        await expect(guardarEntidad({ ...antes, secundario: malo }, actorId)).rejects.toThrow("Color inválido");
+      }
+      expect(await obtenerEntidad()).toEqual(antes);
+    } finally {
+      await guardarEntidad(antes, actorId);
+    }
+  });
+
   it("guardarEntidad escribe las seis claves y audita", async () => {
     const antes = await obtenerEntidad();
-    await guardarEntidad({ ...antes, sigla: "ZZS" }, actorId);
-    expect((await obtenerEntidad()).sigla).toBe("ZZS");
-    const [a] = await sql()`SELECT detalle FROM auditoria WHERE usuario_id = ${actorId} AND accion = 'editar_configuracion' ORDER BY id DESC LIMIT 1`;
-    expect(a.detalle.claves).toContain("sigla_entidad");
-    await guardarEntidad(antes, actorId);
+    try {
+      await guardarEntidad({ ...antes, sigla: "ZZS" }, actorId);
+      expect((await obtenerEntidad()).sigla).toBe("ZZS");
+      const [a] = await sql()`SELECT detalle FROM auditoria WHERE usuario_id = ${actorId} AND accion = 'editar_configuracion' ORDER BY id DESC LIMIT 1`;
+      expect(a.detalle.claves).toContain("sigla_entidad");
+    } finally {
+      await guardarEntidad(antes, actorId);
+    }
   });
 
   it("guardarLogo devuelve la ruta anterior solo si cambia, y quitarLogo la limpia", async () => {
