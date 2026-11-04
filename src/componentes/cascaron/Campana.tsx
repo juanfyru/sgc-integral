@@ -1,6 +1,7 @@
 import { Bell } from "lucide-react";
-import { marcarNotificacionLeidaAccion, marcarNotificacionesLeidasAccion } from "@/app/acciones-cuenta";
+import { marcarNotificacionLeidaAccion } from "@/app/acciones-cuenta";
 import type { Notificacion } from "@/db/consultas/notificaciones";
+import { MarcarTodasLeidas } from "./MarcarTodasLeidas";
 import { tiempoRelativo } from "@/lib/zona-horaria";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
@@ -51,16 +52,7 @@ export function Campana({ noLeidas, recientes }: { noLeidas: number; recientes: 
             ))}
           </ul>
         )}
-        {noLeidas > 0 && (
-          <form action={marcarNotificacionesLeidasAccion} className="mt-1 border-t border-linea-suave pt-2">
-            <button
-              type="submit"
-              className={`w-full rounded-md px-2 py-1.5 text-left text-sm text-marca hover:bg-muted ${FOCO}`}
-            >
-              Marcar todas como leídas
-            </button>
-          </form>
-        )}
+        {noLeidas > 0 && <MarcarTodasLeidas />}
       </div>
     </details>
   );

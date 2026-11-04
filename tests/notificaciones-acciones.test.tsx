@@ -24,6 +24,8 @@ describe("notificaciones", () => {
     expect(tiempoRelativo(new Date("2026-11-04T14:55:00Z"), ahora)).toBe("hace 5 min");
     expect(tiempoRelativo(new Date("2026-11-04T12:00:00Z"), ahora)).toBe("hace 3 h");
     expect(tiempoRelativo(new Date("2026-11-03T15:00:00Z"), ahora)).toBe("ayer");
+    // 22:00 del día 3 y 15:00 del día 3 en Bogotá: el mismo día local aunque en UTC sean días distintos.
+    expect(tiempoRelativo(new Date("2026-11-03T20:00:00Z"), new Date("2026-11-04T03:00:00Z"))).toBe("hace 7 h");
     expect(tiempoRelativo(new Date("2026-10-20T15:00:00Z"), ahora)).toBe("2026-10-20");
   });
   it("Campana vacía muestra el texto y sin contador", () => {
@@ -37,6 +39,7 @@ describe("notificaciones", () => {
     expect(h).toContain("9+");
     expect(h).toContain("Bienvenida");
     expect(h).toContain("Marcar todas como leídas");
+    expect(h).toContain('name="volver"');
   });
   it("el id de la notificación se valida", () => {
     const f = new FormData();
