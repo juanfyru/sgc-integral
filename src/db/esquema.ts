@@ -351,6 +351,7 @@ export const usuarios = pgTable(
     totpSecretoCifrado: text("totp_secreto_cifrado"),
     totpActivo: boolean("totp_activo").notNull().default(false),
     verHistorial: boolean("ver_historial").notNull().default(false),
+    tema: text("tema").notNull().default("claro"),
     aceptoDatosEn: timestamp("acepto_datos_en", { withTimezone: true }),
     actualizadoEn: timestamp("actualizado_en", { withTimezone: true })
       .notNull()
@@ -361,9 +362,32 @@ export const usuarios = pgTable(
       "usuarios_rol_valido",
       sql`${t.rol} IN ('admin_sgc', 'gerencia', 'control_interno', 'lider_proceso', 'consulta')`,
     ),
+    check("usuarios_tema_valido", sql`${t.tema} IN ('claro', 'oscuro', 'sistema')`),
+    uniqueIndex("usuarios_usuario_lower_unico").on(sql`lower(${t.usuario})`),
     uniqueIndex("usuarios_correo_idx")
       .on(sql`lower(${t.correo})`)
       .where(sql`${t.correo} IS NOT NULL`),
+  ],
+);
+
+export const notificaciones = pgTable(
+  "notificaciones",
+  {
+    id: id(),
+    usuarioId: bigint("usuario_id", { mode: "number" })
+      .notNull()
+      .references(() => usuarios.id, { onDelete: "restrict" }),
+    tipo: text("tipo").notNull(),
+    titulo: text("titulo").notNull(),
+    cuerpo: text("cuerpo"),
+    enlace: text("enlace"),
+    entidad: text("entidad"),
+    entidadId: bigint("entidad_id", { mode: "number" }),
+    leidaEn: timestamp("leida_en", { withTimezone: true }),
+    creadoEn: timestamp("creado_en", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("notificaciones_usuario_idx").on(t.usuarioId, t.leidaEn, t.creadoEn.desc()),
   ],
 );
 

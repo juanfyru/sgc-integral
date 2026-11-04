@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { obtenerSql } from "@/db/cliente";
 import type { Rol } from "@/lib/roles";
+import type { Tema } from "@/lib/tema";
 
 export { COOKIE_SESION } from "@/lib/sesion-constantes";
 
@@ -19,6 +20,7 @@ export type SesionValida = {
   factorPendiente: boolean;
   debeCambiarClave: boolean;
   aceptoDatos: boolean;
+  tema: Tema;
 };
 
 export type ContextoSesion = {
@@ -82,7 +84,8 @@ export async function validarSesion(
   const [fila] = await sql`
     SELECT s.id, s.expira_en, s.ultimo_uso_en, s.factor_pendiente,
       u.id AS usuario_id, u.usuario, u.nombre, u.rol, u.ver_historial,
-      u.totp_activo, u.debe_cambiar_clave, (u.acepto_datos_en IS NOT NULL) AS acepto_datos
+      u.totp_activo, u.debe_cambiar_clave, (u.acepto_datos_en IS NOT NULL) AS acepto_datos,
+      u.tema
     FROM sesiones s JOIN usuarios u ON u.id = s.usuario_id
     WHERE s.id = ${hashToken(token)} AND s.expira_en > ${ahora}
       AND s.ultimo_uso_en >= ${limiteInactividad} AND u.activo`;
@@ -108,6 +111,7 @@ export async function validarSesion(
     factorPendiente: fila.factor_pendiente,
     debeCambiarClave: fila.debe_cambiar_clave,
     aceptoDatos: fila.acepto_datos,
+    tema: fila.tema,
   };
 }
 

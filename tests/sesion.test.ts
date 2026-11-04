@@ -48,6 +48,7 @@ describe("sesiones", () => {
     const { token } = await crearSesion(usuarioId, SIN_CONTEXTO);
     const valida = await validarSesion(token);
     expect(valida?.usuario).toBe("prueba_sesion");
+    expect(valida?.tema).toBe("claro");
     const filas = await sql()`SELECT id FROM sesiones WHERE usuario_id = ${usuarioId}`;
     expect(filas.some((f) => f.id === token)).toBe(false); // solo el hash
   });

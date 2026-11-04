@@ -279,4 +279,16 @@ describe("Fase 11: roles, estructura y accesos en BD", () => {
     await sql`INSERT INTO accesos (usuario_id, usuario_texto, resultado) VALUES (${u.id}, ${nombre}, 'ingreso')`;
     expect(await codigoDeError(sql`DELETE FROM usuarios WHERE id = ${u.id}`)).toBe("23503");
   });
+  it("usuarios.tema solo admite claro, oscuro o sistema", async () => {
+    expect(await codigoDeError(sql`UPDATE usuarios SET tema = 'azul' WHERE usuario = 'consulta'`)).toBe(CHECK_VIOLATION);
+    const [u] = await sql`SELECT tema FROM usuarios WHERE usuario = 'consulta'`;
+    expect(u.tema).toBe("claro");
+  });
+  it("el nombre de usuario es único sin distinguir mayúsculas", async () => {
+    expect(await codigoDeError(sql`INSERT INTO usuarios (usuario, nombre, hash_clave) VALUES ('CONSULTA', 'x', 'h')`)).toBe(UNIQUE_VIOLATION);
+  });
+  it("notificaciones existe con FK RESTRICT a usuarios", async () => {
+    const [fk] = await sql`SELECT confdeltype FROM pg_constraint WHERE conname = 'notificaciones_usuario_id_usuarios_id_fk'`;
+    expect(fk.confdeltype).toBe("r");
+  });
 });

@@ -16,6 +16,7 @@ import {
 } from "@/lib/arranque";
 import { appSecretoValido } from "@/lib/cifrado";
 import { TIPOS_SQL } from "@/db/cliente";
+import { comprobarDuplicadosUsuario } from "@/db/duplicados-usuario";
 import { asegurarRolApp } from "@/db/roles-bd";
 import { zonaHoraria } from "@/lib/zona-horaria";
 
@@ -61,6 +62,13 @@ async function principal() {
     { intentos: 30, esperaMs: 2000 },
   );
   console.log(`[arranque] Base de datos lista (intento ${intento})`);
+
+  try {
+    await comprobarDuplicadosUsuario(sql);
+  } catch (error) {
+    console.error(`[arranque] ${(error as Error).message}`);
+    process.exit(1);
+  }
 
   console.log("[arranque] Aplicando migraciones…");
   await migrate(drizzle(sql), {
