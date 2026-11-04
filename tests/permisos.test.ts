@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PERMISOS, puede, puedeEntrarAlPanel, requerirPermiso, type Permiso } from "@/lib/permisos";
+import { PERMISOS, alcanceMaestro, puede, puedeEntrarAlPanel, requerirPermiso, type Permiso } from "@/lib/permisos";
 import { ROLES, type Rol } from "@/lib/roles";
 
 const ESPERADA: Record<Permiso, Rol[]> = {
@@ -43,5 +43,15 @@ describe("puedeEntrarAlPanel", () => {
     expect(puedeEntrarAlPanel({ rol: "consulta", verHistorial: true })).toBe(true);
     expect(puedeEntrarAlPanel({ rol: "lider_proceso", verHistorial: true })).toBe(true);
     expect(puedeEntrarAlPanel({ rol: "gerencia" })).toBe(true);
+  });
+});
+
+describe("alcanceMaestro", () => {
+  it("lo no vigente exige ver historial", () => {
+    expect(alcanceMaestro({ rol: "gerencia" }, "todos")).toBe("vigentes");
+    expect(alcanceMaestro({ rol: "control_interno" }, "todos")).toBe("todos");
+    expect(alcanceMaestro({ rol: "admin_sgc" }, "vigentes")).toBe("vigentes");
+    expect(alcanceMaestro({ rol: "admin_sgc" }, undefined)).toBe("vigentes");
+    expect(alcanceMaestro({ rol: "gerencia", verHistorial: true }, "todos")).toBe("todos");
   });
 });

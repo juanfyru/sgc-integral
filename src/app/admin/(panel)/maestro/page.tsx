@@ -3,7 +3,7 @@ import Link from "next/link";
 import { obtenerListadoMaestro } from "@/db/consultas/maestro";
 import { BotonImprimir } from "@/componentes/admin/maestro/BotonImprimir";
 import { exigirPermiso } from "@/lib/paginas";
-import { puede } from "@/lib/permisos";
+import { alcanceMaestro, puede } from "@/lib/permisos";
 
 export const metadata: Metadata = { title: "Listado Maestro — Administración SGC" };
 
@@ -14,7 +14,8 @@ export default async function PaginaMaestro({
 }) {
   const sesion = await exigirPermiso("maestro.ver");
   const { incluir: incluirParam } = await searchParams;
-  const incluir = incluirParam === "todos" ? "todos" : "vigentes";
+  const incluir = alcanceMaestro(sesion, incluirParam);
+  const veNoVigentes = puede(sesion, "documentos.ver_historial");
   const filas = await obtenerListadoMaestro({ incluir });
   const generadoEn = new Date().toISOString().slice(0, 16).replace("T", " ");
 
@@ -32,6 +33,7 @@ export default async function PaginaMaestro({
       </header>
 
       <div className="mb-4 flex flex-wrap items-center gap-3 print:hidden">
+        {veNoVigentes && (
         <div className="flex gap-2 text-sm">
           <Link
             href="/admin/maestro"
@@ -46,6 +48,7 @@ export default async function PaginaMaestro({
             Todos
           </Link>
         </div>
+        )}
         {puede(sesion, "maestro.exportar") && (
           <a
             href={`/admin/maestro/excel${incluir === "todos" ? "?incluir=todos" : ""}`}

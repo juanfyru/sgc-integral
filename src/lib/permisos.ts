@@ -63,3 +63,11 @@ export function permisosDe(sujeto: SujetoPermiso): Permiso[] {
 export function puedeEntrarAlPanel(sujeto: SujetoPermiso): boolean {
   return puede(sujeto, "panel.entrar") || puede(sujeto, "documentos.ver_historial");
 }
+
+/** Alcance efectivo del Listado Maestro: lo no vigente exige documentos.ver_historial. */
+export function alcanceMaestro(
+  sujeto: SujetoPermiso,
+  solicitado: string | null | undefined,
+): "vigentes" | "todos" {
+  return solicitado === "todos" && puede(sujeto, "documentos.ver_historial") ? "todos" : "vigentes";
+}

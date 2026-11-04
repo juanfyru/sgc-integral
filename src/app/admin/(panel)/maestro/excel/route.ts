@@ -3,7 +3,7 @@ import { obtenerSql } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { obtenerListadoMaestro } from "@/db/consultas/maestro";
 import { construirExcelMaestro } from "@/lib/maestro-excel";
-import { puede } from "@/lib/permisos";
+import { alcanceMaestro, puede } from "@/lib/permisos";
 import { sesionDePeticion } from "@/lib/sesion-actual";
 
 export const dynamic = "force-dynamic";
@@ -19,8 +19,7 @@ export async function GET(peticion: NextRequest): Promise<Response> {
     return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
   }
 
-  const incluir =
-    peticion.nextUrl.searchParams.get("incluir") === "todos" ? "todos" : "vigentes";
+  const incluir = alcanceMaestro(sesion, peticion.nextUrl.searchParams.get("incluir"));
   const filas = await obtenerListadoMaestro({ incluir });
   const ahora = new Date();
   const buffer = await construirExcelMaestro(filas, {
