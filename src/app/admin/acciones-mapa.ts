@@ -29,6 +29,7 @@ import {
   TABLAS_MAPA,
   type Tabla,
 } from "@/db/consultas/mapa-admin";
+import { requerirPermiso } from "@/lib/permisos";
 import { rutaInterna } from "@/lib/rutas";
 import { generarSlug } from "@/lib/slug";
 import { requerirSesion } from "@/lib/sesion-actual";
@@ -46,6 +47,7 @@ function tablaValida(v: FormDataEntryValue | null): Tabla {
 
 export async function moverAccion(formData: FormData): Promise<void> {
   const sesion = await requerirSesion();
+  requerirPermiso(sesion, "mapa.administrar");
   const dir = String(formData.get("direccion"));
   if (dir !== "arriba" && dir !== "abajo") throw new Error("Dirección inválida");
   await mover(tablaValida(formData.get("tabla")), idNumerico(formData, "id"), dir, sesion.usuarioId);
@@ -54,6 +56,7 @@ export async function moverAccion(formData: FormData): Promise<void> {
 
 export async function alternarAccion(formData: FormData): Promise<void> {
   const sesion = await requerirSesion();
+  requerirPermiso(sesion, "mapa.administrar");
   await alternarActivo(
     tablaValida(formData.get("tabla")),
     idNumerico(formData, "id"),
@@ -65,6 +68,7 @@ export async function alternarAccion(formData: FormData): Promise<void> {
 
 export async function borrarAccion(formData: FormData): Promise<void> {
   const sesion = await requerirSesion();
+  requerirPermiso(sesion, "mapa.administrar");
   await borrar(tablaValida(formData.get("tabla")), idNumerico(formData, "id"), sesion.usuarioId);
   revalidatePath("/", "layout");
   redirect(rutaInterna(formData.get("volverA"), "/admin/mapa"));
@@ -86,7 +90,7 @@ export async function crearTipoAccion(
   _prev: EstadoAccion,
   formData: FormData,
 ): Promise<EstadoAccion> {
-  return mutacion(formData, async (usuarioId) => {
+  return mutacion(formData, "mapa.administrar", async (usuarioId) => {
     await crearTipo(parsearTipo(formData), usuarioId);
     return "/admin/tipos";
   });
@@ -96,7 +100,7 @@ export async function editarTipoAccion(
   _prev: EstadoAccion,
   formData: FormData,
 ): Promise<EstadoAccion> {
-  return mutacion(formData, async (usuarioId) => {
+  return mutacion(formData, "mapa.administrar", async (usuarioId) => {
     await editarTipo(idNumerico(formData, "id"), parsearTipo(formData), usuarioId);
     return "/admin/tipos";
   });
@@ -108,7 +112,7 @@ export async function guardarTextosAccion(
   _prev: EstadoAccion,
   formData: FormData,
 ): Promise<EstadoAccion> {
-  return mutacion(formData, async (usuarioId) => {
+  return mutacion(formData, "mapa.administrar", async (usuarioId) => {
     const valores: Record<string, string> = {};
     for (const { clave } of CLAVES_TEXTO) valores[clave] = texto(formData, clave);
     await guardarTextos(valores, usuarioId);
@@ -131,7 +135,7 @@ export async function crearPerifericoAccion(
   _prev: EstadoAccion,
   formData: FormData,
 ): Promise<EstadoAccion> {
-  return mutacion(formData, async (usuarioId) => {
+  return mutacion(formData, "mapa.administrar", async (usuarioId) => {
     await crearPeriferico(parsearPeriferico(formData), usuarioId);
     return "/admin/mapa/perifericos";
   });
@@ -141,7 +145,7 @@ export async function editarPerifericoAccion(
   _prev: EstadoAccion,
   formData: FormData,
 ): Promise<EstadoAccion> {
-  return mutacion(formData, async (usuarioId) => {
+  return mutacion(formData, "mapa.administrar", async (usuarioId) => {
     await editarPeriferico(idNumerico(formData, "id"), parsearPeriferico(formData), usuarioId);
     return "/admin/mapa/perifericos";
   });
@@ -166,7 +170,7 @@ export async function crearMacroprocesoAccion(
   _prev: EstadoAccion,
   formData: FormData,
 ): Promise<EstadoAccion> {
-  return mutacion(formData, async (usuarioId) => {
+  return mutacion(formData, "mapa.administrar", async (usuarioId) => {
     await crearMacroproceso(parsearMacroproceso(formData), usuarioId);
     return "/admin/mapa";
   });
@@ -176,7 +180,7 @@ export async function editarMacroprocesoAccion(
   _prev: EstadoAccion,
   formData: FormData,
 ): Promise<EstadoAccion> {
-  return mutacion(formData, async (usuarioId) => {
+  return mutacion(formData, "mapa.administrar", async (usuarioId) => {
     await editarMacroproceso(idNumerico(formData, "id"), parsearMacroproceso(formData), usuarioId);
     return "/admin/mapa";
   });
@@ -201,7 +205,7 @@ export async function crearProcesoAccion(
   _prev: EstadoAccion,
   formData: FormData,
 ): Promise<EstadoAccion> {
-  return mutacion(formData, async (usuarioId) => {
+  return mutacion(formData, "mapa.administrar", async (usuarioId) => {
     await crearProceso(parsearProceso(formData), usuarioId);
     return `/admin/mapa/macroprocesos/${idNumerico(formData, "macroprocesoId")}`;
   });
@@ -211,7 +215,7 @@ export async function editarProcesoAccion(
   _prev: EstadoAccion,
   formData: FormData,
 ): Promise<EstadoAccion> {
-  return mutacion(formData, async (usuarioId) => {
+  return mutacion(formData, "mapa.administrar", async (usuarioId) => {
     await editarProceso(idNumerico(formData, "id"), parsearProceso(formData), usuarioId);
     return `/admin/mapa/macroprocesos/${idNumerico(formData, "macroprocesoId")}`;
   });
@@ -233,7 +237,7 @@ export async function crearSubprocesoAccion(
   _prev: EstadoAccion,
   formData: FormData,
 ): Promise<EstadoAccion> {
-  return mutacion(formData, async (usuarioId) => {
+  return mutacion(formData, "mapa.administrar", async (usuarioId) => {
     await crearSubproceso(parsearSubproceso(formData), usuarioId);
     return `/admin/mapa/procesos/${idNumerico(formData, "procesoId")}`;
   });
@@ -243,7 +247,7 @@ export async function editarSubprocesoAccion(
   _prev: EstadoAccion,
   formData: FormData,
 ): Promise<EstadoAccion> {
-  return mutacion(formData, async (usuarioId) => {
+  return mutacion(formData, "mapa.administrar", async (usuarioId) => {
     await editarSubproceso(idNumerico(formData, "id"), parsearSubproceso(formData), usuarioId);
     return `/admin/mapa/procesos/${idNumerico(formData, "procesoId")}`;
   });

@@ -5,6 +5,7 @@ import { BotonToggle } from "@/componentes/admin/mapa/BotonToggle";
 import { BotonesOrden } from "@/componentes/admin/mapa/BotonesOrden";
 import { Icono } from "@/componentes/iconos";
 import { listarPerifericos } from "@/db/consultas/mapa-admin";
+import { exigirPermiso } from "@/lib/paginas";
 
 export const metadata: Metadata = { title: "Periféricos — Administración SGC" };
 
@@ -15,6 +16,7 @@ const TITULOS = {
 } as const;
 
 export default async function PaginaPerifericos() {
+  await exigirPermiso("mapa.administrar");
   const grupos = await listarPerifericos();
   return (
     <main className="flex flex-col gap-8">

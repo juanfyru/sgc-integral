@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { editarPerifericoAccion } from "@/app/admin/acciones-mapa";
 import { FormularioPeriferico } from "@/componentes/admin/mapa/FormularioPeriferico";
 import { obtenerPeriferico } from "@/db/consultas/mapa-admin";
+import { exigirPermiso } from "@/lib/paginas";
 
 export const metadata: Metadata = { title: "Editar periférico — Administración SGC" };
 
@@ -11,6 +12,7 @@ export default async function PaginaEditarPeriferico({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await exigirPermiso("mapa.administrar");
   const p = await obtenerPeriferico(Number((await params).id));
   if (!p) notFound();
   return (

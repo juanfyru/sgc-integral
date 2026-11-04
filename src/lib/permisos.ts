@@ -54,3 +54,12 @@ export function requerirPermiso(sujeto: SujetoPermiso, permiso: Permiso): void {
 export function permisosDe(sujeto: SujetoPermiso): Permiso[] {
   return PERMISOS.filter((p) => puede(sujeto, p));
 }
+
+/**
+ * Entrada al panel: panel.entrar o la marca individual ver_historial (que
+ * concede documentos.ver_historial a cualquier rol). Quien solo tiene la marca
+ * ve únicamente la lista y el detalle de documentos, en solo lectura.
+ */
+export function puedeEntrarAlPanel(sujeto: SujetoPermiso): boolean {
+  return puede(sujeto, "panel.entrar") || puede(sujeto, "documentos.ver_historial");
+}

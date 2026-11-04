@@ -9,7 +9,9 @@ import {
 } from "@/db/consultas/admin";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { origenValido } from "@/lib/origen";
-import { requerirSesion } from "@/lib/sesion-actual";
+import { crearLimitador } from "@/lib/limite";
+import { puede } from "@/lib/permisos";
+import { sesionDePeticion } from "@/lib/sesion-actual";
 import {
   ROLES_ARCHIVO,
   sanearNombre,
@@ -20,6 +22,9 @@ import {
 } from "@/lib/subida";
 
 export const dynamic = "force-dynamic";
+
+// 30 subidas por minuto y usuario (instancia única, en memoria).
+const permitirSubida = crearLimitador({ limite: 30, ventanaMs: 60_000 });
 
 function error(estado: number, mensaje: string) {
   return NextResponse.json({ error: mensaje }, { status: estado });
@@ -46,13 +51,13 @@ async function rutaLibre(carpetaRelativa: string, nombre: string) {
 }
 
 export async function POST(peticion: NextRequest) {
-  let sesion;
-  try {
-    sesion = await requerirSesion();
-  } catch {
-    return error(401, "No autorizado");
-  }
+  const sesion = await sesionDePeticion(peticion);
+  if (!sesion) return error(401, "No autorizado");
+  if (!puede(sesion, "documentos.administrar")) return error(403, "Sin permiso");
   if (!origenValido(peticion.headers)) return error(403, "Origen no permitido");
+  if (!permitirSubida(String(sesion.usuarioId))) {
+    return error(429, "Demasiadas subidas seguidas. Espere un minuto.");
+  }
 
   const versionId = Number(peticion.nextUrl.searchParams.get("version"));
   const rol = peticion.nextUrl.searchParams.get("rol") as RolArchivo;

@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { obtenerListadoMaestro } from "@/db/consultas/maestro";
 import { BotonImprimir } from "@/componentes/admin/maestro/BotonImprimir";
+import { exigirPermiso } from "@/lib/paginas";
+import { puede } from "@/lib/permisos";
 
 export const metadata: Metadata = { title: "Listado Maestro — Administración SGC" };
 
@@ -10,6 +12,7 @@ export default async function PaginaMaestro({
 }: {
   searchParams: Promise<{ incluir?: string }>;
 }) {
+  const sesion = await exigirPermiso("maestro.ver");
   const { incluir: incluirParam } = await searchParams;
   const incluir = incluirParam === "todos" ? "todos" : "vigentes";
   const filas = await obtenerListadoMaestro({ incluir });
@@ -43,12 +46,14 @@ export default async function PaginaMaestro({
             Todos
           </Link>
         </div>
-        <a
-          href={`/admin/maestro/excel${incluir === "todos" ? "?incluir=todos" : ""}`}
-          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-        >
-          Descargar Excel
-        </a>
+        {puede(sesion, "maestro.exportar") && (
+          <a
+            href={`/admin/maestro/excel${incluir === "todos" ? "?incluir=todos" : ""}`}
+            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+          >
+            Descargar Excel
+          </a>
+        )}
         <BotonImprimir />
       </div>
 

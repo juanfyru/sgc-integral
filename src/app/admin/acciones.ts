@@ -78,7 +78,7 @@ export async function crearDocumentoAccion(
   _estadoPrevio: EstadoAccion,
   formData: FormData,
 ): Promise<EstadoAccion> {
-  return mutacion(formData, async (usuarioId) => {
+  return mutacion(formData, "documentos.administrar", async (usuarioId) => {
     const datos = await parsearDocumento(formData);
     await crearDocumento(datos, usuarioId);
     return `/admin/documentos/${datos.codigo}`;
@@ -89,7 +89,7 @@ export async function editarDocumentoAccion(
   _estadoPrevio: EstadoAccion,
   formData: FormData,
 ): Promise<EstadoAccion> {
-  return mutacion(formData, async (usuarioId) => {
+  return mutacion(formData, "documentos.administrar", async (usuarioId) => {
     const datos = await parsearDocumento(formData);
     await editarMetadatos(idNumerico(formData, "documentoId"), datos, usuarioId);
     return `/admin/documentos/${datos.codigo}`;
@@ -100,7 +100,7 @@ export async function crearVersionAccion(
   _estadoPrevio: EstadoAccion,
   formData: FormData,
 ): Promise<EstadoAccion> {
-  return mutacion(formData, async (usuarioId) => {
+  return mutacion(formData, "documentos.administrar", async (usuarioId) => {
     await crearVersionBorrador(idNumerico(formData, "documentoId"), usuarioId);
   });
 }
@@ -109,7 +109,7 @@ export async function editarVersionAccion(
   _estadoPrevio: EstadoAccion,
   formData: FormData,
 ): Promise<EstadoAccion> {
-  return mutacion(formData, async (usuarioId) => {
+  return mutacion(formData, "documentos.administrar", async (usuarioId) => {
     await editarVersionBorrador(
       idNumerico(formData, "versionId"),
       parsearVersion(formData),
@@ -122,7 +122,7 @@ export async function publicarAccion(
   _estadoPrevio: EstadoAccion,
   formData: FormData,
 ): Promise<EstadoAccion> {
-  return mutacion(formData, async (usuarioId) => {
+  return mutacion(formData, "documentos.administrar", async (usuarioId) => {
     await publicarVersion(idNumerico(formData, "versionId"), usuarioId);
   });
 }
@@ -131,7 +131,7 @@ export async function anularAccion(
   _estadoPrevio: EstadoAccion,
   formData: FormData,
 ): Promise<EstadoAccion> {
-  return mutacion(formData, async (usuarioId) => {
+  return mutacion(formData, "documentos.administrar", async (usuarioId) => {
     await anularVigente(idNumerico(formData, "documentoId"), usuarioId);
   });
 }

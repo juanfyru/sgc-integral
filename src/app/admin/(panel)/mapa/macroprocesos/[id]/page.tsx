@@ -5,6 +5,7 @@ import { editarMacroprocesoAccion } from "@/app/admin/acciones-mapa";
 import { FormularioMacroproceso } from "@/componentes/admin/mapa/FormularioMacroproceso";
 import { ListaProcesos } from "@/componentes/admin/mapa/ListaProcesos";
 import { listarProcesos, obtenerMacroproceso } from "@/db/consultas/mapa-admin";
+import { exigirPermiso } from "@/lib/paginas";
 
 export const metadata: Metadata = { title: "Editar macroproceso — Administración SGC" };
 
@@ -13,6 +14,7 @@ export default async function PaginaEditarMacroproceso({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await exigirPermiso("mapa.administrar");
   const m = await obtenerMacroproceso(Number((await params).id));
   if (!m) notFound();
   const procesos = await listarProcesos(m.id);

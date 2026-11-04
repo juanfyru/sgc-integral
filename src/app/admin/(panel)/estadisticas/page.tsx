@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { obtenerEstadisticas, type Rango } from "@/db/consultas/estadisticas";
 import { GraficoBarras } from "@/componentes/admin/estadisticas/GraficoBarras";
+import { exigirPermiso } from "@/lib/paginas";
 
 export const metadata: Metadata = { title: "Estadísticas — Administración SGC" };
 
@@ -17,6 +18,7 @@ export default async function PaginaEstadisticas({
 }: {
   searchParams: Promise<{ rango?: string }>;
 }) {
+  await exigirPermiso("estadisticas.ver");
   const { rango: rangoParam } = await searchParams;
   const rango = (["7", "30", "90", "todo"].includes(rangoParam ?? "") ? rangoParam : "30") as Rango;
   const e = await obtenerEstadisticas({ rango });

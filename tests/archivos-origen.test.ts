@@ -3,7 +3,7 @@ import { expect, it, vi } from "vitest";
 
 // Con sesion simulada: el DELETE debe rechazar un Origin ajeno ANTES de tocar la BD.
 vi.mock("@/lib/sesion-actual", () => ({
-  requerirSesion: async () => ({ usuarioId: 1 }),
+  sesionDePeticion: async () => ({ usuarioId: 1, rol: "admin_sgc" }),
 }));
 
 import { DELETE } from "@/app/admin/api/archivos/[archivoId]/route";

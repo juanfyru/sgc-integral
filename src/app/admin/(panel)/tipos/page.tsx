@@ -4,10 +4,12 @@ import { BotonBorrar } from "@/componentes/admin/mapa/BotonBorrar";
 import { BotonToggle } from "@/componentes/admin/mapa/BotonToggle";
 import { BotonesOrden } from "@/componentes/admin/mapa/BotonesOrden";
 import { listarTipos } from "@/db/consultas/mapa-admin";
+import { exigirPermiso } from "@/lib/paginas";
 
 export const metadata: Metadata = { title: "Tipos de documento — Administración SGC" };
 
 export default async function PaginaTipos() {
+  await exigirPermiso("mapa.administrar");
   const tipos = await listarTipos();
   return (
     <main>

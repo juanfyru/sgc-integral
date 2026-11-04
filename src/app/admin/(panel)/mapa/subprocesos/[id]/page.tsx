@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { editarSubprocesoAccion } from "@/app/admin/acciones-mapa";
 import { FormularioSubproceso } from "@/componentes/admin/mapa/FormularioSubproceso";
 import { obtenerSubproceso } from "@/db/consultas/mapa-admin";
+import { exigirPermiso } from "@/lib/paginas";
 
 export const metadata: Metadata = { title: "Editar subproceso — Administración SGC" };
 
@@ -12,6 +13,7 @@ export default async function PaginaEditarSubproceso({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await exigirPermiso("mapa.administrar");
   const s = await obtenerSubproceso(Number((await params).id));
   if (!s) notFound();
   return (

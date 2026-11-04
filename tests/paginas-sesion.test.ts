@@ -19,8 +19,12 @@ describe("cada página comprueba la sesión", () => {
   it.each(paginas("src/app/(cuenta)"))("cuenta: %s", (ruta) => {
     expect(readFileSync(ruta, "utf8")).toContain("exigirSesionConPendientes(");
   });
+  it.each(paginas("src/app/admin/(panel)"))("panel: %s", (ruta) => {
+    expect(readFileSync(ruta, "utf8")).toMatch(/(exigirPermiso|exigirEntradaPanel)\(/);
+  });
   it("hay páginas en ambos grupos", () => {
     expect(paginas("src/app/(portal)").length).toBeGreaterThan(3);
     expect(paginas("src/app/(cuenta)").length).toBeGreaterThan(0);
+    expect(paginas("src/app/admin/(panel)").length).toBeGreaterThan(15);
   });
 });

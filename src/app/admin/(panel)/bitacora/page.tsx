@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { obtenerBitacora } from "@/db/consultas/bitacora";
 import { describirEvento } from "@/lib/bitacora-detalle";
+import { exigirPermiso } from "@/lib/paginas";
 
 export const metadata: Metadata = { title: "Bitácora — Administración SGC" };
 
@@ -10,6 +11,7 @@ export default async function PaginaBitacora({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
+  await exigirPermiso("bitacora.ver");
   const sp = await searchParams;
   const pagina = Number(sp.pagina) > 0 ? Number(sp.pagina) : 1;
   const r = await obtenerBitacora({

@@ -2,10 +2,12 @@ import type { Metadata } from "next";
 import { crearDocumentoAccion } from "@/app/admin/acciones";
 import { FormularioDocumento } from "@/componentes/admin/FormularioDocumento";
 import { listarMapaParaFormulario, listarTiposActivos } from "@/db/consultas/admin";
+import { exigirPermiso } from "@/lib/paginas";
 
 export const metadata: Metadata = { title: "Nuevo documento — Administración SGC" };
 
 export default async function PaginaNuevoDocumento() {
+  await exigirPermiso("documentos.administrar");
   const [tipos, procesos] = await Promise.all([
     listarTiposActivos(),
     listarMapaParaFormulario(),

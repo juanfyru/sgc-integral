@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PERMISOS, puede, requerirPermiso, type Permiso } from "@/lib/permisos";
+import { PERMISOS, puede, puedeEntrarAlPanel, requerirPermiso, type Permiso } from "@/lib/permisos";
 import { ROLES, type Rol } from "@/lib/roles";
 
 const ESPERADA: Record<Permiso, Rol[]> = {
@@ -34,5 +34,14 @@ describe("matriz de permisos", () => {
   });
   it("PERMISOS cubre todas las claves de la matriz", () => {
     expect([...PERMISOS].sort()).toEqual(Object.keys(ESPERADA).sort());
+  });
+});
+
+describe("puedeEntrarAlPanel", () => {
+  it("consulta sin marca no entra; con marca sí; gerencia sí", () => {
+    expect(puedeEntrarAlPanel({ rol: "consulta" })).toBe(false);
+    expect(puedeEntrarAlPanel({ rol: "consulta", verHistorial: true })).toBe(true);
+    expect(puedeEntrarAlPanel({ rol: "lider_proceso", verHistorial: true })).toBe(true);
+    expect(puedeEntrarAlPanel({ rol: "gerencia" })).toBe(true);
   });
 });

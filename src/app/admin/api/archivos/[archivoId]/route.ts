@@ -7,7 +7,8 @@ import {
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { origenValido } from "@/lib/origen";
 import { respuesta404, respuestaArchivo } from "@/lib/servir-archivo";
-import { requerirSesion } from "@/lib/sesion-actual";
+import { puede } from "@/lib/permisos";
+import { sesionDePeticion } from "@/lib/sesion-actual";
 
 export const dynamic = "force-dynamic";
 
@@ -17,10 +18,10 @@ type Params = { params: Promise<{ archivoId: string }> };
 // revisar antes de publicar, obsoletos para consulta histórica). La ruta
 // pública sigue siendo la única para funcionarios y solo sirve vigentes.
 export async function GET(peticion: NextRequest, { params }: Params) {
-  try {
-    await requerirSesion();
-  } catch {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const sesion = await sesionDePeticion(peticion);
+  if (!sesion) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  if (!puede(sesion, "documentos.ver_historial")) {
+    return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
   }
   const id = Number((await params).archivoId);
   if (!Number.isInteger(id) || id <= 0) return respuesta404();
@@ -34,11 +35,10 @@ export async function DELETE(peticion: NextRequest, { params }: Params) {
   if (!origenValido(peticion.headers)) {
     return NextResponse.json({ error: "Origen no permitido" }, { status: 403 });
   }
-  let sesion;
-  try {
-    sesion = await requerirSesion();
-  } catch {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const sesion = await sesionDePeticion(peticion);
+  if (!sesion) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  if (!puede(sesion, "documentos.administrar")) {
+    return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
   }
   const id = Number((await params).archivoId);
   if (!Number.isInteger(id) || id <= 0) return respuesta404();

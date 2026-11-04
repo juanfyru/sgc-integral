@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Archivo, Geist, Geist_Mono } from "next/font/google";
 import { EncabezadoSitio } from "@/componentes/EncabezadoSitio";
-import { puede } from "@/lib/permisos";
+import { puedeEntrarAlPanel } from "@/lib/permisos";
 import { ETIQUETA_ROL } from "@/lib/roles";
 import { sesionActual } from "@/lib/sesion-actual";
 import "./globals.css";
@@ -50,7 +50,7 @@ export default async function RootLayout({
       ? {
           nombre: sesion.nombre,
           etiquetaRol: ETIQUETA_ROL[sesion.rol],
-          verPanel: puede(sesion, "panel.entrar"),
+          verPanel: puedeEntrarAlPanel(sesion),
         }
       : null;
   return (

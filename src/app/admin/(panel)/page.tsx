@@ -1,23 +1,31 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { listarDocumentosAdmin } from "@/db/consultas/admin";
 import { EstadoBadge } from "@/componentes/admin/EstadoBadge";
+import { exigirEntradaPanel } from "@/lib/paginas";
+import { puede } from "@/lib/permisos";
 
 export const metadata: Metadata = { title: "Documentos — Administración SGC" };
 
 export default async function PaginaDocumentosAdmin() {
+  const sesion = await exigirEntradaPanel();
+  // Gerencia entra al panel pero no ve el historial documental: aterriza en estadísticas.
+  if (!puede(sesion, "documentos.ver_historial")) redirect("/admin/estadisticas");
   const documentos = await listarDocumentosAdmin();
 
   return (
     <main>
       <div className="mb-6 flex items-center justify-between">
         <h1 className="font-display text-2xl font-semibold">Documentos</h1>
-        <Link
-          href="/admin/documentos/nuevo"
-          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-        >
-          Nuevo documento
-        </Link>
+        {puede(sesion, "documentos.administrar") && (
+          <Link
+            href="/admin/documentos/nuevo"
+            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+          >
+            Nuevo documento
+          </Link>
+        )}
       </div>
 
       <div className="overflow-x-auto rounded-lg border">
@@ -55,7 +63,8 @@ export default async function PaginaDocumentosAdmin() {
         </table>
         {documentos.length === 0 && (
           <p className="px-3 py-8 text-center text-muted-foreground">
-            Aún no hay documentos. Cree el primero con “Nuevo documento”.
+            Aún no hay documentos.
+            {puede(sesion, "documentos.administrar") && " Cree el primero con “Nuevo documento”."}
           </p>
         )}
       </div>

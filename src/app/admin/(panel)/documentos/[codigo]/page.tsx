@@ -13,6 +13,8 @@ import { FormAccion } from "@/componentes/admin/FormAccion";
 import { FormularioVersionCliente } from "@/componentes/admin/FormularioVersionCliente";
 import { ZonaCarga } from "@/componentes/admin/ZonaCarga";
 import { obtenerDocumentoAdmin, type VersionAdmin } from "@/db/consultas/admin";
+import { exigirPermiso } from "@/lib/paginas";
+import { puede } from "@/lib/permisos";
 
 export const metadata: Metadata = { title: "Documento — Administración SGC" };
 
@@ -22,7 +24,15 @@ function tamanoLegible(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function SeccionVersion({ version, vigenteExiste }: { version: VersionAdmin; vigenteExiste: boolean }) {
+function SeccionVersion({
+  version,
+  vigenteExiste,
+  puedeAdministrar,
+}: {
+  version: VersionAdmin;
+  vigenteExiste: boolean;
+  puedeAdministrar: boolean;
+}) {
   const fueraDeCirculacion = version.estado === "obsoleto" || version.estado === "anulado";
   return (
     <section
@@ -44,7 +54,7 @@ function SeccionVersion({ version, vigenteExiste }: { version: VersionAdmin; vig
             <span className="text-muted-foreground">
               {a.rol} · {a.mime} · {tamanoLegible(a.tamanoBytes)}
             </span>
-            {version.estado === "borrador" && <EliminarArchivo archivoId={a.id} />}
+            {puedeAdministrar && version.estado === "borrador" && <EliminarArchivo archivoId={a.id} />}
           </li>
         ))}
         {version.archivos.length === 0 && (
@@ -52,7 +62,7 @@ function SeccionVersion({ version, vigenteExiste }: { version: VersionAdmin; vig
         )}
       </ul>
 
-      {version.estado === "borrador" && (
+      {puedeAdministrar && version.estado === "borrador" && (
         <div className="flex flex-col gap-4">
           <ZonaCarga versionId={version.id} />
 
@@ -91,6 +101,8 @@ export default async function PaginaDocumentoAdmin({
 }: {
   params: Promise<{ codigo: string }>;
 }) {
+  const sesion = await exigirPermiso("documentos.ver_historial");
+  const puedeAdministrar = puede(sesion, "documentos.administrar");
   const { codigo } = await params;
   const documento = await obtenerDocumentoAdmin(decodeURIComponent(codigo));
   if (!documento) notFound();
@@ -104,12 +116,14 @@ export default async function PaginaDocumentoAdmin({
         <p className="font-mono text-sm text-muted-foreground">{documento.codigo}</p>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="font-display text-2xl font-semibold">{documento.titulo}</h1>
-          <Link
-            href={`/admin/documentos/${documento.codigo}/editar`}
-            className="rounded-md border px-3 py-1 text-sm hover:bg-muted"
-          >
-            Editar metadatos
-          </Link>
+          {puedeAdministrar && (
+            <Link
+              href={`/admin/documentos/${documento.codigo}/editar`}
+              className="rounded-md border px-3 py-1 text-sm hover:bg-muted"
+            >
+              Editar metadatos
+            </Link>
+          )}
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
           {documento.tipoNombre} · Aplica en:{" "}
@@ -120,14 +134,14 @@ export default async function PaginaDocumentoAdmin({
       </header>
 
       <div className="flex flex-wrap gap-3">
-        {!borrador && (
+        {puedeAdministrar && !borrador && (
           <FormAccion
             accion={crearVersionAccion}
             etiqueta="Nueva versión (borrador)"
             campos={{ documentoId: documento.id }}
           />
         )}
-        {vigente && (
+        {puedeAdministrar && vigente && (
           <FormAccion
             accion={anularAccion}
             etiqueta="Anular documento"
@@ -148,7 +162,12 @@ export default async function PaginaDocumentoAdmin({
 
       <div className="flex flex-col gap-4">
         {documento.versiones.map((v) => (
-          <SeccionVersion key={v.id} version={v} vigenteExiste={Boolean(vigente)} />
+          <SeccionVersion
+            key={v.id}
+            version={v}
+            vigenteExiste={Boolean(vigente)}
+            puedeAdministrar={puedeAdministrar}
+          />
         ))}
       </div>
     </main>

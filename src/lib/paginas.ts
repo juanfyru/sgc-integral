@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { pendienteDeCuenta, rutaDePendiente } from "@/lib/cuenta-estado";
 import { rutaInterna } from "@/lib/rutas";
 import { CABECERA_RUTA } from "@/lib/sesion-constantes";
-import { puede, type Permiso } from "@/lib/permisos";
+import { puede, puedeEntrarAlPanel, type Permiso } from "@/lib/permisos";
 import type { SesionValida } from "@/lib/sesion";
 import { sesionActual } from "@/lib/sesion-actual";
 
@@ -40,5 +40,12 @@ export async function exigirSesionConPendientes(): Promise<SesionValida> {
 export async function exigirPermiso(permiso: Permiso): Promise<SesionValida> {
   const sesion = await exigirSesion();
   if (!puede(sesion, permiso)) redirect("/sin-acceso");
+  return sesion;
+}
+
+/** Entrada al panel /admin (panel.entrar o la marca ver_historial). Sin ella → /sin-acceso. */
+export async function exigirEntradaPanel(): Promise<SesionValida> {
+  const sesion = await exigirSesion();
+  if (!puedeEntrarAlPanel(sesion)) redirect("/sin-acceso");
   return sesion;
 }

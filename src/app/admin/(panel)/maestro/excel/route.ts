@@ -3,7 +3,8 @@ import { obtenerSql } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { obtenerListadoMaestro } from "@/db/consultas/maestro";
 import { construirExcelMaestro } from "@/lib/maestro-excel";
-import { requerirSesion } from "@/lib/sesion-actual";
+import { puede } from "@/lib/permisos";
+import { sesionDePeticion } from "@/lib/sesion-actual";
 
 export const dynamic = "force-dynamic";
 
@@ -12,11 +13,10 @@ function formatoFecha(d: Date): string {
 }
 
 export async function GET(peticion: NextRequest): Promise<Response> {
-  let sesion;
-  try {
-    sesion = await requerirSesion();
-  } catch {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const sesion = await sesionDePeticion(peticion);
+  if (!sesion) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  if (!puede(sesion, "maestro.exportar")) {
+    return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
   }
 
   const incluir =

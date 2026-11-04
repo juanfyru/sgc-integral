@@ -1,5 +1,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { crearLimitador } from "@/lib/limite";
+import { ErrorPermiso, requerirPermiso, type Permiso } from "@/lib/permisos";
+import type { SesionValida } from "@/lib/sesion";
 import { requerirSesion } from "@/lib/sesion-actual";
 
 export type EstadoAccion =
@@ -35,17 +38,35 @@ export function valoresDeFormulario(
   return valores;
 }
 
-// Envuelve la mutación: requerirSesion SIEMPRE primero; los errores de
-// negocio vuelven al formulario como { ok: false } sin perder lo escrito.
+// Tope por usuario para todas las mutaciones del panel (instancia única, en memoria).
+const permitirMutacion = crearLimitador({ limite: 60, ventanaMs: 60_000 });
+
+// Envuelve la mutación: requerirSesion SIEMPRE primero, luego el permiso y el
+// límite por usuario; los errores de negocio vuelven al formulario como
+// { ok: false } sin perder lo escrito.
 // redirect lanza NEXT_REDIRECT a propósito — va FUERA del try.
 export async function mutacion(
   formData: FormData,
-  fn: (usuarioId: number, formData: FormData) => Promise<string | void>,
+  permiso: Permiso,
+  fn: (usuarioId: number, formData: FormData, sesion: SesionValida) => Promise<string | void>,
 ): Promise<EstadoAccion> {
   const sesion = await requerirSesion();
+  try {
+    requerirPermiso(sesion, permiso);
+  } catch (err) {
+    if (err instanceof ErrorPermiso) return { ok: false, error: err.message };
+    throw err;
+  }
+  if (!permitirMutacion(String(sesion.usuarioId))) {
+    return {
+      ok: false,
+      error: "Demasiadas operaciones seguidas. Espere un minuto.",
+      valores: valoresDeFormulario(formData),
+    };
+  }
   let destino: string | void;
   try {
-    destino = await fn(sesion.usuarioId, formData);
+    destino = await fn(sesion.usuarioId, formData, sesion);
   } catch (err) {
     return {
       ok: false,

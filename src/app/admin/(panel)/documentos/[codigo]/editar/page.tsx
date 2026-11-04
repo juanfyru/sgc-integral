@@ -7,6 +7,7 @@ import {
   listarTiposActivos,
   obtenerDocumentoAdmin,
 } from "@/db/consultas/admin";
+import { exigirPermiso } from "@/lib/paginas";
 
 export const metadata: Metadata = { title: "Editar documento — Administración SGC" };
 
@@ -15,6 +16,7 @@ export default async function PaginaEditarDocumento({
 }: {
   params: Promise<{ codigo: string }>;
 }) {
+  await exigirPermiso("documentos.administrar");
   const { codigo } = await params;
   const [documento, tipos, procesos] = await Promise.all([
     obtenerDocumentoAdmin(decodeURIComponent(codigo)),

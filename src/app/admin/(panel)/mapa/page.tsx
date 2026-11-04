@@ -5,6 +5,7 @@ import { BotonesOrden } from "@/componentes/admin/mapa/BotonesOrden";
 import { ConfirmarDesactivar } from "@/componentes/admin/mapa/ConfirmarDesactivar";
 import { Icono } from "@/componentes/iconos";
 import { listarMacroprocesos } from "@/db/consultas/mapa-admin";
+import { exigirPermiso } from "@/lib/paginas";
 
 export const metadata: Metadata = { title: "Editor del mapa — Administración SGC" };
 
@@ -16,6 +17,7 @@ const BANDAS: Record<string, string> = {
 };
 
 export default async function PaginaMapa() {
+  await exigirPermiso("mapa.administrar");
   const macros = await listarMacroprocesos();
   return (
     <main className="flex flex-col gap-6">

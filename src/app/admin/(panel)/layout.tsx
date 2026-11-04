@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { salir } from "@/app/acciones-cuenta";
-import { exigirPermiso } from "@/lib/paginas";
+import { ENLACES_PANEL } from "@/componentes/admin/enlaces-panel";
+import { exigirEntradaPanel } from "@/lib/paginas";
+import { puede } from "@/lib/permisos";
 
 // Todo el panel es autenticado y por-petición: nunca se prerenderiza en build.
 // Sin esto, los loading.tsx (Suspense) inducen a Next a generar el shell estático
@@ -14,7 +16,7 @@ export default async function LayoutPanel({
 }: {
   children: React.ReactNode;
 }) {
-  const sesion = await exigirPermiso("panel.entrar");
+  const sesion = await exigirEntradaPanel();
 
   return (
     <div className="mx-auto max-w-6xl px-4 pb-16">
@@ -24,12 +26,11 @@ export default async function LayoutPanel({
             Administración SGC
           </Link>
           <nav className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-            <Link href="/admin" className="hover:underline">Documentos</Link>
-            <Link href="/admin/mapa" className="hover:underline">Mapa</Link>
-            <Link href="/admin/tipos" className="hover:underline">Tipos de documento</Link>
-            <Link href="/admin/maestro" className="hover:underline">Listado Maestro</Link>
-            <Link href="/admin/estadisticas" className="hover:underline">Estadísticas</Link>
-            <Link href="/admin/bitacora" className="hover:underline">Bitácora</Link>
+            {ENLACES_PANEL.filter((e) => puede(sesion, e.permiso)).map((e) => (
+              <Link key={e.href} href={e.href} className="hover:underline">
+                {e.etiqueta}
+              </Link>
+            ))}
             <Link href="/" className="text-muted-foreground hover:underline">
               Ver portal público
             </Link>
