@@ -8,7 +8,7 @@
 import { existsSync } from "node:fs";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { GET } from "@/app/(portal)/documentos/[codigo]/archivos/[archivoId]/[[...nombre]]/route";
+import { GET } from "@/app/(app)/documentos/[codigo]/archivos/[archivoId]/[[...nombre]]/route";
 import { obtenerSql } from "@/db/cliente";
 import { crearSesion } from "@/lib/sesion";
 import { contenidoPorPagina, contieneTexto } from "./utiles/pdf";

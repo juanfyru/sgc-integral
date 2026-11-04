@@ -13,7 +13,7 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 
 import { DELETE as eliminarArchivo, GET as verArchivo } from "@/app/admin/api/archivos/[archivoId]/route";
 import { POST as subirArchivo } from "@/app/admin/api/archivos/route";
-import { GET as excelMaestro } from "@/app/admin/(panel)/maestro/excel/route";
+import { GET as excelMaestro } from "@/app/(app)/admin/(panel)/maestro/excel/route";
 import { obtenerSql } from "@/db/cliente";
 import { crearSesion } from "@/lib/sesion";
 

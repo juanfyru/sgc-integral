@@ -13,14 +13,14 @@ describe("estructura de accesibilidad (Fase 9)", () => {
   });
 
   const rutasConSkeleton = [
-    "src/app/(portal)/loading.tsx",
-    "src/app/(portal)/procesos/[slug]/loading.tsx",
-    "src/app/(portal)/procesos/[slug]/[sub]/loading.tsx",
-    "src/app/(portal)/documentos/[codigo]/loading.tsx",
-    "src/app/(portal)/buscar/loading.tsx",
-    "src/app/admin/(panel)/maestro/loading.tsx",
-    "src/app/admin/(panel)/estadisticas/loading.tsx",
-    "src/app/admin/(panel)/bitacora/loading.tsx",
+    "src/app/(app)/loading.tsx",
+    "src/app/(app)/procesos/[slug]/loading.tsx",
+    "src/app/(app)/procesos/[slug]/[sub]/loading.tsx",
+    "src/app/(app)/documentos/[codigo]/loading.tsx",
+    "src/app/(app)/buscar/loading.tsx",
+    "src/app/(app)/admin/(panel)/maestro/loading.tsx",
+    "src/app/(app)/admin/(panel)/estadisticas/loading.tsx",
+    "src/app/(app)/admin/(panel)/bitacora/loading.tsx",
   ];
 
   it.each(rutasConSkeleton)("existe el skeleton de carga %s", (ruta) => {
@@ -28,8 +28,8 @@ describe("estructura de accesibilidad (Fase 9)", () => {
   });
 
   it.each([
-    "src/app/admin/(panel)/maestro/page.tsx",
-    "src/app/admin/(panel)/bitacora/page.tsx",
+    "src/app/(app)/admin/(panel)/maestro/page.tsx",
+    "src/app/(app)/admin/(panel)/bitacora/page.tsx",
   ])("la tabla desplazable de %s es enfocable por teclado con etiqueta", (ruta) => {
     const src = readFileSync(path.join(raiz, ruta), "utf8");
     expect(src).toMatch(/overflow-x-auto/);

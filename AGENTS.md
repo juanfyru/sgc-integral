@@ -130,8 +130,10 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   (variables, funciones) en español consistente con el dominio: `documento`, `proceso`,
   `versionVigente`. Comentarios solo cuando el código no puede expresar la restricción.
 - **TypeScript estricto** (`strict: true`). Sin `any` salvo justificación puntual.
-- **Estructura:** App Router con el portal en `app/(portal)`, los pasos de la cuenta en
-  `app/(cuenta)`, el ingreso en `app/ingreso` y el panel en `app/admin/(panel)`. Lógica
+- **Estructura:** App Router con el portal y el panel en `app/(app)` (el panel en
+  `app/(app)/admin/(panel)`), las acciones y handlers del panel en
+  `app/admin/{acciones*.ts,comun.ts,api}`, los pasos de la cuenta en `app/(cuenta)` y el
+  ingreso en `app/ingreso`. Lógica
   de datos en `src/db` (schema Drizzle + queries), lógica de negocio en `src/lib`. Server
   Components por defecto; `'use client'` solo donde hay interactividad.
 - **Migraciones versionadas con Drizzle Kit**, ejecutadas en el arranque del contenedor.
@@ -139,7 +141,7 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   (drizzle-kit lo carga sin el alias): solo rutas relativas.
 - **Toda página autenticada lleva o hereda de su layout `force-dynamic`** (`export const
   dynamic = "force-dynamic"`; lo declaran `src/app/layout.tsx` y los layouts de
-  `(portal)`, `(cuenta)` y `admin/(panel)`): nunca se prerenderiza, y el build de CI no
+  `(app)`, `(cuenta)` y `(app)/admin/(panel)`): nunca se prerenderiza, y el build de CI no
   tiene `DATABASE_URL`.
 - **Toda consulta de los módulos nuevos pasa por `alcanceProcesos()`**
   (`src/lib/alcance.ts`): el líder de proceso solo alcanza sus procesos activos; el

@@ -12,19 +12,25 @@ function paginas(dir: string): string[] {
     .map((e) => path.join(e.parentPath, e.name));
 }
 
+// El portal y el panel cuelgan del mismo grupo (app); el panel vive en admin/(panel).
+const esDelPanel = (ruta: string) =>
+  ruta.split(path.sep).join("/").includes("/(app)/admin/(panel)/");
+const portal = paginas("src/app/(app)").filter((r) => !esDelPanel(r));
+const panel = paginas("src/app/(app)/admin/(panel)");
+
 describe("cada página comprueba la sesión", () => {
-  it.each(paginas("src/app/(portal)"))("portal: %s", (ruta) => {
+  it.each(portal)("portal: %s", (ruta) => {
     expect(readFileSync(ruta, "utf8")).toMatch(/exigir(Sesion|Permiso)\(/);
   });
   it.each(paginas("src/app/(cuenta)"))("cuenta: %s", (ruta) => {
     expect(readFileSync(ruta, "utf8")).toContain("exigirSesionConPendientes(");
   });
-  it.each(paginas("src/app/admin/(panel)"))("panel: %s", (ruta) => {
+  it.each(panel)("panel: %s", (ruta) => {
     expect(readFileSync(ruta, "utf8")).toMatch(/(exigirPermiso|exigirEntradaPanel)\(/);
   });
   it("hay páginas en ambos grupos", () => {
-    expect(paginas("src/app/(portal)").length).toBeGreaterThan(3);
+    expect(portal.length).toBeGreaterThan(3);
     expect(paginas("src/app/(cuenta)").length).toBeGreaterThan(0);
-    expect(paginas("src/app/admin/(panel)").length).toBeGreaterThan(15);
+    expect(panel.length).toBeGreaterThan(15);
   });
 });

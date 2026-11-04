@@ -36,8 +36,8 @@ import {
 } from "@/app/admin/acciones-mapa";
 import { DELETE as eliminarArchivo, GET as verArchivo } from "@/app/admin/api/archivos/[archivoId]/route";
 import { POST as subirArchivo } from "@/app/admin/api/archivos/route";
-import { GET as excelMaestro } from "@/app/admin/(panel)/maestro/excel/route";
-import { GET as archivoPortal } from "@/app/(portal)/documentos/[codigo]/archivos/[archivoId]/[[...nombre]]/route";
+import { GET as excelMaestro } from "@/app/(app)/admin/(panel)/maestro/excel/route";
+import { GET as archivoPortal } from "@/app/(app)/documentos/[codigo]/archivos/[archivoId]/[[...nombre]]/route";
 import { RUTAS_PUBLICAS, config, proxy } from "@/proxy";
 
 describe("proxy (guard optimista global)", () => {
