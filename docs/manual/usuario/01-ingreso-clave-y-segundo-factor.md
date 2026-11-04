@@ -106,7 +106,7 @@ mano, pulse **Salir** y vuelva cuando lo tenga: no podrá usar el SGC hasta acti
 
 ## 4. Mi cuenta
 
-En la parte superior derecha de cualquier página del portal está un botón con su nombre.
+En la parte superior derecha de cualquier página del portal hay un botón con su nombre.
 Al pulsarlo se abre un menú con:
 
 - **Administración** (solo si su rol tiene acceso al panel de administración).

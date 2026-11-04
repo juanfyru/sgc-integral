@@ -83,14 +83,15 @@
 
    Más `admin` / `cambiar-esta-clave` (admin_sgc) de `npm run admin:asegurar`, que pide
    cambiar la clave. La demo trae 5 áreas y 9 cargos con jerarquía; mapa y documentos
-   sin cambios (28 documentos: 26 vigentes, 1 obsoleto, 1 borrador, 1 anulado).
+   sin cambios (28 documentos con 29 versiones: 26 vigentes, 1 obsoleta, 1 borrador y
+   1 anulada).
    `npm run db:seed:minima` deja una instalación nueva: "Entidad sin configurar", aviso
    de datos de ejemplo, 9 tipos de documento y patrón de código; sin mapa, áreas,
    documentos ni usuarios (después hay que correr `admin:asegurar`).
 5. **Tests:** 547 en 54 archivos, en serie (`fileParallelism: false`), contra la BD de
    desarrollo sembrada y **conectados como `sgc_app`**, igual que la app; el test de
    privilegios usa además `DATABASE_URL_MIGRADOR`. Los usuarios de prueba con historia
-   (`zz_<algo>_<timestamp>`) se acumulan porque no se pueden borrar (R2); `db:seed` los
+   (`zz_<algo>_<timestamp>`) se acumulan porque no se pueden borrar (F11-D2); `db:seed` los
    limpia. Con la BD recién sembrada pasan todos: un rojo es una señal real (salvo el
    intermitente de la Deuda técnica).
 6. **CI (decisión de la bifurcación, tomada por Claude):** lint y build corren en cada
@@ -147,7 +148,7 @@ desarrollo en `http://localhost:3002`.
    - `consulta`: solo el portal (mapa, procesos, documentos vigentes, búsqueda).
 5. Con `consulta`, cinco claves erradas → la cuenta queda bloqueada: con la clave
    correcta sigue saliendo el mensaje general "Usuario o clave incorrectos. Si falló
-   varias veces…" (no se muestra la hora, a propósito: R19). Como `admin`, en
+   varias veces…" (no se muestra la hora, a propósito: F11-D13). Como `admin`, en
    **Usuarios** la fila dice "Bloqueado hasta HH:MM"; abrir la persona → **Desbloquear**
    → `consulta` vuelve a entrar.
 6. Con un usuario de prueba: menú → **Mi cuenta** → **Activar segundo factor** →
@@ -159,8 +160,10 @@ desarrollo en `http://localhost:3002`.
    **Quitar segundo factor…** → confirmar; el siguiente ingreso ya no lo pide.
 7. Como `admin`, **Sesiones**: **Cerrar** la sesión de otro usuario abierto en otra
    ventana; su siguiente clic va a `/ingreso`.
-8. **Accesos**: filtrar por resultado **Bloqueo** y por usuario (`consulta`): aparecen
-   los fallos, el bloqueo, el desbloqueo y el cierre forzado.
+8. **Accesos**, dos pruebas por separado (combinados, los filtros solo muestran
+   bloqueos): (a) filtrar por resultado **Bloqueo**: aparece el bloqueo de `consulta`;
+   (b) **Limpiar** y filtrar por usuario `consulta`: aparecen sus fallos, el bloqueo y
+   el desbloqueo (y el cierre forzado, si fue su sesión la que se cerró en el paso 7).
 9. **Bitácora**: las acciones sobre usuarios con texto legible ("Creó el usuario «…»",
    "Creó N usuarios por lote (M rechazados)", "Desbloqueó al usuario «…»", "Cerró la
    sesión de «…»", "Desactivó el segundo factor"…).
@@ -174,7 +177,7 @@ Plan: `docs/superpowers/plans/2026-11-03-fase11-fundacion-acceso.md`; diseño de
 `docs/superpowers/specs/2026-11-03-fase11-fundacion-acceso-design.md`.
 
 - **Dependencias:** Next 16.2.10 → **16.4.5** (y `eslint-config-next`); `zod` 4,
-  `otpauth`, `qrcode` (JS puro); `shadcn` pasa a `devDependencies` (R12).
+  `otpauth`, `qrcode` (JS puro); `shadcn` pasa a `devDependencies` (F11-D25).
 - **Esquema (`drizzle/0002_fase11-acceso.sql`, `src/db/esquema.ts`):** `usuarios` con
   rol (CHECK en los cinco roles), correo único sin distinguir mayúsculas, cargo, jefe
   inmediato, `debe_cambiar_clave`, contadores y fin de bloqueo, secreto TOTP cifrado,
@@ -623,8 +626,10 @@ Claude). Aquí solo el índice:
 ## Decisiones adicionales (Fase 11)
 
 F11-D1 a F11-D10 vienen del diseño de detalle de la fase. Las demás son resoluciones del
-controlador durante la ejecución (las "Rn" de la bitácora de la fase, que no se
-conserva); varias corrigen el diseño o el plan y mandan sobre ellos.
+controlador durante la ejecución; varias corrigen el diseño o el plan y mandan sobre
+ellos. La bitácora de la fase que las numeraba como "Rn" no se conserva: los "(Rn)" de
+esta tabla quedan solo como equivalencia, porque algunos tests los citan en sus nombres
+(`tests/bloqueo.test.ts`, `tests/ingreso.test.ts`, `tests/segundo-factor.test.ts`).
 
 | # | Decisión | Porqué | Fecha |
 |---|---|---|---|
@@ -654,6 +659,7 @@ conserva); varias corrigen el diseño o el plan y mandan sobre ellos.
 | F11-D24 | Áreas con funciones propias (`moverArea`, `alternarArea`) y no por el motor genérico del mapa (R4); `editarCargo` toma `LOCK TABLE cargos` contra ciclos concurrentes | El motor genérico saltaba la regla "área con cargos activos" y abría las áreas a las acciones genéricas por formulario manipulado | 2026-11-03 |
 | F11-D25 | `shadcn` pasa a `devDependencies` (R12); se aceptan 3 advertencias altas transitivas de `npm audit --omit=dev` sin `--force` (R13) | `shadcn` solo se usa como `@import` CSS en build y arrastraba express/undici a producción. Las altas restantes no se alcanzan con entrada del usuario (ver Deuda técnica) | 2026-11-03 |
 | F11-D26 | Extras de los implementadores aceptados en revisión: el proxy reenvía la ruta pedida en la cabecera `x-sgc-ruta` (siempre sobrescrita) para que el aviso de datos devuelva a ella; verificar la clave actual (cambio de clave, activar o desactivar el TOTP) tiene un límite de 10 intentos por 15 minutos por usuario; la clave nueva debe ser distinta de la actual | Conservar `volver` a través de los pasos obligatorios; con una sesión robada no se debe poder adivinar la clave actual desde Mi cuenta | 2026-11-03 |
+| F11-D27 | **Toda acción de `src/app/acciones-cuenta.ts` que cambia el estado de la sesión o de la cuenta llama `revalidatePath("/", "layout")` antes de `redirect`** (ingresar, verificar el factor, salir, clave inicial, aviso, cambio de clave, iniciar y desactivar el TOTP; confirmar el TOTP no redirige pero también revalida al activarse); lo exige `tests/acciones-cuenta-cache.test.ts` (R39, commit `d79e9d4`) | En producción la caché del enrutador del cliente reutilizaba la precarga de `/` hecha antes de cambiar la clave y causaba un bucle `/` ↔ `/cuenta/clave-inicial`. En desarrollo no se ve: solo aparece con la imagen de producción | 2026-11-03 |
 
 ## Deuda técnica conocida
 

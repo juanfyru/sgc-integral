@@ -86,8 +86,9 @@ El supervisor de una persona es, en este orden:
 2. Si no, **las personas activas que ocupan el cargo superior** de su cargo.
 
 El supervisor resultante se ve en el detalle del usuario (Supervisores) y en su **Mi
-cuenta**. Por organizar por cargo y no por persona, cuando alguien se retira el
-supervisor de sus subalternos no se rompe: basta con asignar el cargo a quien lo reemplaza.
+cuenta**. Como el supervisor sale del cargo y no de la persona, cuando alguien se retira
+sus subalternos no se quedan sin supervisor: basta con asignar el cargo a quien lo
+reemplaza.
 
 ## 3. Crear un usuario
 
@@ -180,8 +181,8 @@ Motivos de rechazo más comunes:
 | La fila tiene más columnas que la cabecera | Revise separadores `;` sobrantes en esa fila |
 
 Si el archivo entero se rechaza, el mensaje dice por qué: falta alguna columna de la
-cabecera, tiene más de 500 filas, pesa más de 1 MB o no está guardado en UTF-8 ("en
-Excel: «CSV UTF-8»").
+cabecera, tiene más de 500 filas, pesa más de 1 MB o no está guardado en UTF-8 («El
+archivo debe estar codificado en UTF-8 (en Excel: "CSV UTF-8")»).
 
 El jefe inmediato y la marca de historial no van en la plantilla: póngalos después en el
 detalle de cada usuario.
@@ -279,8 +280,9 @@ Cómo leerlo:
 ## 7. Sesiones activas
 
 Administración → **Sesiones**. Muestra quién tiene el SGC abierto en este momento:
-Usuario, Rol, IP, Navegador, Iniciada, Último uso y Acción. "Segundo factor pendiente"
-indica que la persona escribió su clave pero aún no el código.
+Usuario, Rol, IP, Navegador, Iniciada, Último uso y Acción. La marca « · segundo factor
+pendiente», junto al nombre de usuario, indica que la persona escribió su clave pero aún
+no el código.
 
 - **Cerrar** cierra esa sesión: la próxima vez que la persona haga clic, el SGC la lleva a
   la pantalla de ingreso. Queda en Accesos como **Cierre forzado** y en la Bitácora.

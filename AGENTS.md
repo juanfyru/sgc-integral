@@ -57,9 +57,11 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
 7. **TLS siempre.** Con dominio público, certificado automático (ACME) en Caddy; solo
    intranet, el certificado de la autoridad interna o el que Caddy genera. HSTS cuando
    hay TLS.
-8. **Zona horaria por instalación:** variable `ZONA_HORARIA`, por defecto
-   `America/Bogota`. Toda fecha de corte, periodo y resumen se calcula en esa zona; la BD
-   guarda `timestamptz`.
+8. **Zona horaria por instalación** (objetivo, **pendiente de cablear**): variable
+   `ZONA_HORARIA`, por defecto `America/Bogota`; toda fecha de corte, periodo y resumen
+   se calculará en esa zona y la BD guarda `timestamptz`. Hoy la variable no existe y
+   cuatro archivos fijan `America/Bogota` (ver "Deuda técnica" en `CONTEXT.md`); el
+   código nuevo no debe añadir más zonas fijas.
 9. **Una sola instancia de app.** Los límites de ritmo viven en memoria. La IP del
    cliente se toma de `X-Forwarded-For` (último elemento) o `X-Real-IP` **solo con
    `CONFIAR_PROXY=1`** (el único camino de entrada es el proxy); sin la variable la IP es
@@ -109,7 +111,7 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
 | UI | Tailwind CSS + shadcn/ui | Íconos: `lucide-react` (local) |
 | Animación | Motion (Framer Motion) | Respetar `prefers-reduced-motion` siempre |
 | Mapa | SVG/HTML generado desde datos, layout por bandas con CSS grid | Sin lib de diagramas |
-| BD | PostgreSQL 16 (`postgres:16-alpine`), roles `sgc_migrador` dueño y `sgc_app` de mínimo privilegio | Extensiones: `unaccent`, `pg_trgm`. En desarrollo el rol dueño se llama `sgc` |
+| BD | PostgreSQL 16 (`postgres:16-alpine`), roles `sgc_migrador` dueño y `sgc_app` de mínimo privilegio | Extensiones: `unaccent`, `pg_trgm`. `sgc_migrador` es el nombre del spec: hoy el dueño es el usuario de `POSTGRES_USER` (`sgc` en desarrollo) |
 | ORM | **Drizzle** | TS puro, sin engine binario (evita el riesgo ARM de Prisma), SQL-first para FTS |
 | Búsqueda | FTS nativo de Postgres: `to_tsvector('spanish', ...)` + `pg_trgm` + `unaccent` | Sin motores externos |
 | Auth | Sesión propia (cookie httpOnly + `sesiones` + Argon2id) con cinco roles fijos en código, bloqueo por cuenta y TOTP opcional (`otpauth`); sin OAuth | Argon2id con `@node-rs/argon2`. Roles en `src/lib/roles.ts`; el segundo factor se vuelve obligatorio por rol con `EXIGIR_2FA_ROLES` |
@@ -134,8 +136,10 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
 - **Migraciones versionadas con Drizzle Kit**, ejecutadas en el arranque del contenedor.
   Nunca `db push` contra producción. `src/db/esquema.ts` nunca importa con `@/`
   (drizzle-kit lo carga sin el alias): solo rutas relativas.
-- **Toda página autenticada lleva `force-dynamic`** (`export const dynamic =
-  "force-dynamic"`): nunca se prerenderiza, y el build de CI no tiene `DATABASE_URL`.
+- **Toda página autenticada lleva o hereda de su layout `force-dynamic`** (`export const
+  dynamic = "force-dynamic"`; lo declaran `src/app/layout.tsx` y los layouts de
+  `(portal)`, `(cuenta)` y `admin/(panel)`): nunca se prerenderiza, y el build de CI no
+  tiene `DATABASE_URL`.
 - **Toda consulta de los módulos nuevos pasa por `alcanceProcesos()`**
   (`src/lib/alcance.ts`): el líder de proceso solo alcanza sus procesos activos; el
   filtro por rol no se reimplementa en cada módulo.
@@ -153,8 +157,17 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
     `tests/paginas-sesion.test.ts`.
   - **Cada Server Action exportada** de `src/app/admin/acciones*.ts` pasa por
     `mutacion(formData, "<permiso>", fn)` o llama `requerirPermiso(sesion, permiso)`
-    después de `requerirSesion()`; las de `src/app/acciones-cuenta.ts` llaman
-    `requerirSesion()`. Lo exige `tests/acciones-permisos.test.ts`.
+    después de `requerirSesion()`. Las de `src/app/acciones-cuenta.ts` llaman
+    `requerirSesion()` (directamente o por `sesionParaInscribir()`), con tres
+    excepciones: `ingresar` no exige sesión (es el ingreso), y `verificarFactor` y
+    `salir` usan `sesionActual()` porque deben admitir la sesión con el segundo factor
+    pendiente, que `requerirSesion()` rechaza siempre. Lo exige
+    `tests/acciones-permisos.test.ts`.
+  - **Toda Server Action que cambia el estado de la sesión o de la cuenta y redirige**
+    llama `revalidatePath("/", "layout")` antes del `redirect`: en producción la caché
+    del enrutador del cliente reutiliza páginas precargadas (p. ej. `/` capturada antes
+    de cambiar la clave) y el redirect entra en bucle. En `src/app/acciones-cuenta.ts`
+    lo exige `tests/acciones-cuenta-cache.test.ts`.
   - **Los route handlers** usan `sesionDePeticion(peticion)` (rechaza sesiones con pasos
     pendientes) y `puede(sesion, permiso)`: 401 sin sesión, 403 sin permiso. Los que
     escriben verifican `Origin` con `origenValido()`.
