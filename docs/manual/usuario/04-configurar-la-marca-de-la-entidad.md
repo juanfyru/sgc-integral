@@ -180,8 +180,10 @@ Los colores de las bandas del mapa de procesos **no** son los de la marca: son d
 mapa y se cambian en el editor del mapa, en el campo **Color** de cada macroproceso.
 
 Los cambios de datos y colores, y cada logo que se sube o se quita, quedan en la
-**Bitácora** con su nombre y la fecha ("Editó los textos institucionales", "Cambió el logo
-de la entidad («…», … × …)", "Quitó el logo de la entidad").
+**Bitácora** con su nombre y la fecha: "Editó la entidad y la marca: nombre, sigla, lema,
+aviso de datos personales, color primario, color secundario" (cada **Guardar** registra
+los seis datos de la pantalla, aunque solo haya cambiado uno), "Cambió el logo de la
+entidad («…», … × …)" y "Quitó el logo de la entidad".
 
 ## 6. Textos del mapa y código de documentos
 
@@ -198,7 +200,8 @@ en Administración → Entidad y marca." y tiene estos campos:
   códigos nueva, y con ayuda de sistemas: un patrón errado puede hacer que el SGC rechace
   códigos correctos.
 
-Pulse **Guardar** para aplicar los cambios.
+Pulse **Guardar** para aplicar los cambios. En la **Bitácora** queda "Editó los textos del
+mapa y el código de documentos: subtítulo del mapa, título del ciclo PHVA, …".
 
 ## 7. Resumen de mensajes
 

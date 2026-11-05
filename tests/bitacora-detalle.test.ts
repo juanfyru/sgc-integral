@@ -95,3 +95,36 @@ describe("describirEvento — marca de la entidad", () => {
       .toBe("Quitó el logo de la entidad");
   });
 });
+
+describe("describirEvento — editar_configuracion dice qué se editó", () => {
+  const evento = (detalle: Record<string, unknown>) =>
+    describirEvento({ accion: "editar_configuracion", entidad: "configuracion", entidadId: null, detalle });
+
+  it("Entidad y marca: nombres legibles por clave, en el orden del detalle", () => {
+    expect(evento({ claves: ["nombre_entidad", "sigla_entidad", "color_primario"] }))
+      .toBe("Editó la entidad y la marca: nombre, sigla, color primario");
+  });
+  it("las seis claves que guarda la pantalla Entidad y marca", () => {
+    expect(evento({
+      claves: ["nombre_entidad", "sigla_entidad", "lema", "aviso_datos_personales", "color_primario", "color_secundario"],
+    })).toBe("Editó la entidad y la marca: nombre, sigla, lema, aviso de datos personales, color primario, color secundario");
+  });
+  it("Textos del mapa y código de documentos", () => {
+    expect(evento({ claves: ["subtitulo_mapa", "titulo_phva", "texto_phva", "patron_codigo"] }))
+      .toBe("Editó los textos del mapa y el código de documentos: subtítulo del mapa, título del ciclo PHVA, texto del ciclo PHVA, patrón del código");
+  });
+  it("toda clave de la pantalla Textos del mapa tiene nombre legible", async () => {
+    const { CLAVES_TEXTO } = await import("@/db/consultas/mapa-admin");
+    expect(evento({ claves: CLAVES_TEXTO.map((c) => c.clave) })).toMatch(/^Editó los textos del mapa y el código de documentos: [^_]+$/);
+  });
+  it("una clave desconocida se nombra tal cual, sin guiones bajos", () => {
+    expect(evento({ claves: ["lema", "zz_otra_clave"] })).toBe("Editó la configuración: lema, zz otra clave");
+    expect(evento({ claves: ["constructor", "__proto__"] })).toBe("Editó la configuración: constructor, proto");
+  });
+  it("sin claves legibles: frase genérica, sin volcar el detalle", () => {
+    expect(evento({})).toBe("Editó la configuración");
+    expect(evento({ claves: [] })).toBe("Editó la configuración");
+    expect(evento({ claves: "nombre_entidad" })).toBe("Editó la configuración");
+    expect(evento({ claves: [7, null, { a: 1 }] })).toBe("Editó la configuración");
+  });
+});

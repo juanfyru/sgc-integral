@@ -16,6 +16,37 @@ const SINGULAR: Record<string, string> = {
   cargos: "cargo",
 };
 
+/** Nombre legible de cada clave de `configuracion` que audita `editar_configuracion`. */
+const NOMBRE_CLAVE_ENTIDAD: Record<string, string> = {
+  nombre_entidad: "nombre",
+  sigla_entidad: "sigla",
+  lema: "lema",
+  aviso_datos_personales: "aviso de datos personales",
+  color_primario: "color primario",
+  color_secundario: "color secundario",
+};
+const NOMBRE_CLAVE_MAPA: Record<string, string> = {
+  subtitulo_mapa: "subtítulo del mapa",
+  titulo_phva: "título del ciclo PHVA",
+  texto_phva: "texto del ciclo PHVA",
+  patron_codigo: "patrón del código",
+};
+
+/** «Editó la entidad y la marca: nombre, sigla…» según las claves guardadas (Entidad y marca o Textos del mapa). */
+function describirConfiguracion(claves: unknown): string {
+  const lista = Array.isArray(claves) ? claves.filter((c): c is string => typeof c === "string" && c.length > 0) : [];
+  if (lista.length === 0) return "Editó la configuración";
+  // Object.hasOwn: una clave como «constructor» no debe leer el prototipo.
+  const nombre = (c: string) =>
+    Object.hasOwn(NOMBRE_CLAVE_ENTIDAD, c) ? NOMBRE_CLAVE_ENTIDAD[c]
+    : Object.hasOwn(NOMBRE_CLAVE_MAPA, c) ? NOMBRE_CLAVE_MAPA[c]
+    : c.replace(/_+/g, " ").trim();
+  const nombres = lista.map(nombre).join(", ");
+  if (lista.every((c) => Object.hasOwn(NOMBRE_CLAVE_ENTIDAD, c))) return `Editó la entidad y la marca: ${nombres}`;
+  if (lista.every((c) => Object.hasOwn(NOMBRE_CLAVE_MAPA, c))) return `Editó los textos del mapa y el código de documentos: ${nombres}`;
+  return `Editó la configuración: ${nombres}`;
+}
+
 function texto(v: unknown): string | null {
   return typeof v === "string" && v.length > 0 ? v : null;
 }
@@ -84,7 +115,7 @@ export function describirEvento(e: EventoAuditoria): string {
     case "crear_usuarios_lote":
       return `Creó ${d.creados ?? 0} usuarios por lote (${d.fallidos ?? 0} rechazados)`;
     case "editar_configuracion":
-      return "Editó los textos institucionales";
+      return describirConfiguracion(d.claves);
   }
 
   // Acciones de mapa dinámicas: <verbo>_<singular>.
