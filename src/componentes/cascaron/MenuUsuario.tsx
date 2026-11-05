@@ -2,9 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { ChevronDown, UserRound } from "lucide-react";
 import { cambiarTemaAccion, salir } from "@/app/acciones-cuenta";
 import type { Tema } from "@/lib/tema";
+import { Desplegable } from "./Desplegable";
+import { crearEnvioDiferido } from "./envio-diferido";
 
 const OPCIONES_TEMA: ReadonlyArray<{ valor: Tema; etiqueta: string }> = [
   { valor: "claro", etiqueta: "Claro" },
@@ -15,21 +18,27 @@ const OPCIONES_TEMA: ReadonlyArray<{ valor: Tema; etiqueta: string }> = [
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 
 /**
- * Menú de cuenta con <details> nativo: abre y cierra sin JavaScript propio. El tema se
- * envía al cambiar de opción; sin JavaScript, con el botón Aplicar.
+ * Menú de cuenta sobre un <details> (`Desplegable`): abre y cierra sin JavaScript. El tema se
+ * envía una sola vez, 400 ms después del último cambio de opción (recorrer el grupo con las flechas
+ * no envía cada opción), o en cuanto el foco sale del formulario; sin JavaScript, con Aplicar.
  */
 export function MenuUsuario({ nombre, etiquetaRol, tema }: { nombre: string; etiquetaRol: string; tema: Tema }) {
   const ruta = usePathname() ?? "/";
+  const [envioTema] = useState(() => crearEnvioDiferido());
+  useEffect(() => () => envioTema.cancelar(), [envioTema]);
+
   return (
-    <details className="relative shrink-0">
-      <summary
-        className={`flex cursor-pointer list-none items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-sm hover:bg-muted [&::-webkit-details-marker]:hidden ${FOCO}`}
-      >
-        <UserRound className="size-4 text-muted-foreground sm:hidden" aria-hidden="true" />
-        <span className="sr-only sm:hidden">{nombre}</span>
-        <span className="hidden max-w-[10rem] truncate font-medium text-foreground sm:block">{nombre}</span>
-        <ChevronDown className="size-4 text-muted-foreground" aria-hidden="true" />
-      </summary>
+    <Desplegable
+      claseResumen={`flex cursor-pointer list-none items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-sm hover:bg-muted [&::-webkit-details-marker]:hidden ${FOCO}`}
+      resumen={
+        <>
+          <UserRound className="size-4 text-muted-foreground sm:hidden" aria-hidden="true" />
+          <span className="sr-only sm:hidden">{nombre}</span>
+          <span className="hidden max-w-[10rem] truncate font-medium text-foreground sm:block">{nombre}</span>
+          <ChevronDown className="size-4 text-muted-foreground" aria-hidden="true" />
+        </>
+      }
+    >
       <div className="absolute right-0 z-50 mt-2 w-64 rounded-xl border border-border bg-card p-3 shadow-lg">
         <p className="truncate text-sm font-medium text-foreground">{nombre}</p>
         <p className="mb-3 text-xs text-muted-foreground">{etiquetaRol}</p>
@@ -41,13 +50,20 @@ export function MenuUsuario({ nombre, etiquetaRol, tema }: { nombre: string; eti
           action={cambiarTemaAccion}
           // Conserva la query string (filtros, búsqueda); sin JavaScript queda la ruta sola.
           onSubmit={(e) => {
+            envioTema.cancelar(); // Aplicar (o el envío diferido) ya lleva el valor final
             const volver = e.currentTarget.elements.namedItem("volver");
             if (volver instanceof HTMLInputElement) volver.value = location.pathname + location.search;
           }}
           className="mt-3 border-t border-linea-suave pt-3"
         >
           <input type="hidden" name="volver" value={ruta} />
-          <fieldset>
+          <fieldset
+            // El foco salió del formulario (Escape, clic fuera, Tab a Mi cuenta o Salir): se envía ya.
+            // Dentro (otro radio, Aplicar) la espera sigue y Aplicar la cancela.
+            onBlur={(e) => {
+              if (!e.currentTarget.form?.contains(e.relatedTarget)) envioTema.vaciar();
+            }}
+          >
             <legend className="mb-1 px-2 text-xs font-semibold text-muted-foreground">Tema</legend>
             {OPCIONES_TEMA.map((o) => (
               <label
@@ -59,7 +75,10 @@ export function MenuUsuario({ nombre, etiquetaRol, tema }: { nombre: string; eti
                   name="tema"
                   value={o.valor}
                   defaultChecked={o.valor === tema}
-                  onChange={(e) => e.currentTarget.form?.requestSubmit()}
+                  onChange={(e) => {
+                    const formulario = e.currentTarget.form;
+                    envioTema.cambio(() => formulario?.requestSubmit());
+                  }}
                   className="size-4 accent-marca-relleno"
                 />
                 {o.etiqueta}
@@ -83,6 +102,6 @@ export function MenuUsuario({ nombre, etiquetaRol, tema }: { nombre: string; eti
           </button>
         </form>
       </div>
-    </details>
+    </Desplegable>
   );
 }
