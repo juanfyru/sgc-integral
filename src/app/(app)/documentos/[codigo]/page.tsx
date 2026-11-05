@@ -6,6 +6,7 @@ import {
   Download,
   Eye,
   Link2,
+  Lock,
   MapPin,
   PencilLine,
 } from "lucide-react";
@@ -55,7 +56,7 @@ export default async function FichaDocumento({
   const sesion = await exigirSesion();
   const { codigo } = await params;
 
-  const ficha = await obtenerFichaDocumento(codigo);
+  const ficha = await obtenerFichaDocumento(codigo, sesion);
   if (!ficha) notFound();
 
   // Trazabilidad D8: la consulta de la ficha queda en la bitácora de
@@ -125,6 +126,11 @@ export default async function FichaDocumento({
             {ficha.tipo.esDiligenciable && (
               <Insignia variante="neutra" icono={PencilLine}>
                 Diligenciable
+              </Insignia>
+            )}
+            {ficha.nivelAcceso === "restringido" && (
+              <Insignia variante="atencion" icono={Lock}>
+                Acceso restringido
               </Insignia>
             )}
           </>

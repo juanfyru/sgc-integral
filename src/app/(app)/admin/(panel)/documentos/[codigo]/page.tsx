@@ -106,7 +106,7 @@ export default async function PaginaDocumentoAdmin({
   const sesion = await exigirPermiso("documentos.ver_historial");
   const puedeAdministrar = puede(sesion, "documentos.administrar");
   const { codigo } = await params;
-  const documento = await obtenerDocumentoAdmin(decodeURIComponent(codigo));
+  const documento = await obtenerDocumentoAdmin(decodeURIComponent(codigo), sesion);
   if (!documento) notFound();
 
   const vigente = documento.versiones.find((v) => v.estado === "vigente");

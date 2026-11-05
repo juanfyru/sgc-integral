@@ -22,7 +22,7 @@ export default async function PaginaDocumentosAdmin() {
   const sesion = await exigirEntradaPanel();
   // Gerencia entra al panel pero no ve el historial documental: aterriza en estadísticas.
   if (!puede(sesion, "documentos.ver_historial")) redirect("/admin/estadisticas");
-  const documentos = await listarDocumentosAdmin();
+  const documentos = await listarDocumentosAdmin(sesion);
 
   return (
     <div>

@@ -1,8 +1,9 @@
 /**
  * Cableado del route público de archivos con la marca de agua (reglas 3/6/7 +
- * ISO 7.5.3): TODO PDF vigente que sale por la ruta pública va estampado —
- * la descarga como adjunto y la vista previa inline (el visor del navegador
- * permite descargar/imprimir, así que una vista limpia sería un hueco).
+ * ISO 7.5.3): TODO PDF vigente que sale por la ruta pública va estampado con el
+ * nombre de quien lo pide — la descarga como adjunto y la vista previa inline
+ * (el visor del navegador permite descargar/imprimir, así que una vista limpia
+ * sería un hueco).
  * Requiere la BD dev migrada y sembrada (D19) y el ./almacen del seed.
  */
 import { existsSync } from "node:fs";
@@ -78,6 +79,7 @@ describe("route público de archivos — marca de agua", () => {
     expect(paginas.length).toBeGreaterThanOrEqual(1);
     for (const contenido of paginas) {
       expect(contieneTexto(contenido, "COPIA NO CONTROLADA")).toBe(true);
+      expect(contieneTexto(contenido, "Descargada por Prueba descarga el ")).toBe(true);
     }
   });
 
@@ -95,7 +97,25 @@ describe("route público de archivos — marca de agua", () => {
     expect(paginas.length).toBeGreaterThanOrEqual(1);
     for (const contenido of paginas) {
       expect(contieneTexto(contenido, "COPIA NO CONTROLADA")).toBe(true);
+      expect(contieneTexto(contenido, "Descargada por Prueba descarga el ")).toBe(true);
     }
+  });
+
+  it("un documento restringido responde 404 a quien no pertenece a sus procesos, sin registrar evento", async () => {
+    const sql = obtenerSql();
+    const [a] = await sql`
+      SELECT a.id FROM archivos a
+      JOIN documento_versiones v ON v.id = a.version_id
+      JOIN documentos d ON d.id = v.documento_id
+      WHERE d.codigo = 'GTH-FO-01' AND v.estado = 'vigente' LIMIT 1`;
+    const [antes] = await sql`SELECT count(*)::int AS n FROM eventos_consulta WHERE user_agent = ${UA}`;
+    const res = await GET(
+      peticion(`http://localhost:3000/documentos/gth-fo-01/archivos/${a.id}?descarga=1`),
+      { params: Promise.resolve({ codigo: "gth-fo-01", archivoId: String(a.id) }) },
+    );
+    expect(res.status).toBe(404);
+    const [despues] = await sql`SELECT count(*)::int AS n FROM eventos_consulta WHERE user_agent = ${UA}`;
+    expect(despues.n).toBe(antes.n);
   });
 
   it("sin cookie responde 401 y no registra evento", async () => {

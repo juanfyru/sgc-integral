@@ -1,4 +1,5 @@
 import { obtenerSql } from "@/db/cliente";
+import { filtroAcceso, type SujetoVisibilidad } from "@/lib/alcance";
 
 export type ArchivoFicha = {
   id: number;
@@ -33,6 +34,7 @@ export type FichaDocumento = {
   codigo: string;
   titulo: string;
   descripcion: string | null;
+  nivelAcceso: "general" | "restringido";
   tipo: { nombre: string; sigla: string; esDiligenciable: boolean };
   version: {
     id: number;
@@ -52,17 +54,18 @@ export type FichaDocumento = {
 };
 
 /**
- * Ficha pública del documento: SOLO si tiene versión vigente (regla 3).
- * Un documento en borrador, obsoleto o anulado devuelve null y la ruta
- * pública responde 404.
+ * Ficha pública del documento: SOLO si tiene versión vigente (regla 3) y el
+ * sujeto pasa la regla de acceso. Un documento en borrador, obsoleto, anulado
+ * o restringido para quien pregunta devuelve null y la ruta pública responde 404.
  */
 export async function obtenerFichaDocumento(
   codigo: string,
+  sujeto: SujetoVisibilidad,
 ): Promise<FichaDocumento | null> {
   const sql = obtenerSql();
 
   const [doc] = await sql`
-    SELECT d.id, d.codigo, d.titulo, d.descripcion,
+    SELECT d.id, d.codigo, d.titulo, d.descripcion, d.nivel_acceso,
            t.nombre AS tipo_nombre, t.sigla AS tipo_sigla, t.es_diligenciable,
            v.id AS version_id, v.numero, v.estado,
            v.fecha_elaboracion::text AS fecha_elaboracion,
@@ -72,7 +75,7 @@ export async function obtenerFichaDocumento(
     FROM documentos d
     JOIN tipos_documento t ON t.id = d.tipo_id
     JOIN documento_versiones v ON v.documento_id = d.id AND v.estado = 'vigente'
-    WHERE lower(d.codigo) = lower(${codigo})`;
+    WHERE lower(d.codigo) = lower(${codigo}) AND ${filtroAcceso(sql, sujeto)}`;
   if (!doc) return null;
 
   const [archivos, ubicaciones, relacionados] = await Promise.all([
@@ -100,18 +103,19 @@ export async function obtenerFichaDocumento(
         AND (p.id IS NOT NULL OR (s.id IS NOT NULL AND ps.id IS NOT NULL))
       ORDER BY dp.es_principal DESC, nombre`,
     sql`
-      SELECT d2.codigo, d2.titulo, t2.nombre AS tipo, t2.es_diligenciable
+      SELECT d.codigo, d.titulo, t2.nombre AS tipo, t2.es_diligenciable
       FROM documento_relaciones r
-      JOIN documentos d2
-        ON d2.id = CASE WHEN r.documento_id = ${doc.id}
-                        THEN r.relacionado_id ELSE r.documento_id END
-      JOIN tipos_documento t2 ON t2.id = d2.tipo_id
+      JOIN documentos d
+        ON d.id = CASE WHEN r.documento_id = ${doc.id}
+                       THEN r.relacionado_id ELSE r.documento_id END
+      JOIN tipos_documento t2 ON t2.id = d.tipo_id
       WHERE (r.documento_id = ${doc.id} OR r.relacionado_id = ${doc.id})
         AND EXISTS (
           SELECT 1 FROM documento_versiones vv
-          WHERE vv.documento_id = d2.id AND vv.estado = 'vigente'
+          WHERE vv.documento_id = d.id AND vv.estado = 'vigente'
         )
-      ORDER BY d2.codigo`,
+        AND ${filtroAcceso(sql, sujeto)}
+      ORDER BY d.codigo`,
   ]);
 
   return {
@@ -119,6 +123,7 @@ export async function obtenerFichaDocumento(
     codigo: doc.codigo as string,
     titulo: doc.titulo as string,
     descripcion: doc.descripcion as string | null,
+    nivelAcceso: doc.nivel_acceso as FichaDocumento["nivelAcceso"],
     tipo: {
       nombre: doc.tipo_nombre as string,
       sigla: doc.tipo_sigla as string,
@@ -175,12 +180,14 @@ export type ArchivoVigente = {
 /**
  * Archivo de la VERSIÓN VIGENTE del documento identificado por su código.
  * Regla de negocio 3: si la versión del archivo no está vigente (borrador,
- * obsoleto, anulado) o el código no corresponde, devuelve null — el endpoint
- * público responde 404 sin distinguir el motivo.
+ * obsoleto, anulado), el código no corresponde o el sujeto no pasa la regla de
+ * acceso, devuelve null — el endpoint público responde 404 sin distinguir el
+ * motivo.
  */
 export async function obtenerArchivoVigente(
   codigo: string,
   archivoId: number,
+  sujeto: SujetoVisibilidad,
 ): Promise<ArchivoVigente | null> {
   const sql = obtenerSql();
   const [fila] = await sql`
@@ -189,7 +196,8 @@ export async function obtenerArchivoVigente(
     FROM archivos a
     JOIN documento_versiones v ON v.id = a.version_id AND v.estado = 'vigente'
     JOIN documentos d ON d.id = v.documento_id
-    WHERE a.id = ${archivoId} AND lower(d.codigo) = lower(${codigo})`;
+    WHERE a.id = ${archivoId} AND lower(d.codigo) = lower(${codigo})
+      AND ${filtroAcceso(sql, sujeto)}`;
 
   if (!fila) return null;
   return {

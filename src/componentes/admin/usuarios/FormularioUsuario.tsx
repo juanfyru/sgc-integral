@@ -121,8 +121,10 @@ export function FormularioUsuario({ accion, id, valores, cargos, jefes, procesos
         </select>
       </label>
       <fieldset className="flex flex-col gap-2">
-        <legend className="text-sm font-medium">Procesos que lidera</legend>
-        <p className="text-xs text-muted-foreground">Obligatorio para el rol Líder de proceso.</p>
+        <legend className="text-sm font-medium">Procesos</legend>
+        <p className="text-xs text-muted-foreground">
+          Para un líder: los procesos que lidera. Para los demás: los procesos a los que pertenece; le dan acceso a sus documentos restringidos.
+        </p>
         <ul className="grid max-h-64 gap-1 overflow-y-auto rounded-md border p-2 sm:grid-cols-2">
           {procesos.map((p) => (
             <li key={p.id}>

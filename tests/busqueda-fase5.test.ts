@@ -14,6 +14,7 @@ import {
   registrarBusqueda,
 } from "@/db/consultas/busqueda";
 import { obtenerSql } from "@/db/cliente";
+import type { SujetoVisibilidad } from "@/lib/alcance";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
@@ -23,12 +24,15 @@ afterAll(async () => {
   await obtenerSql().end();
 });
 
+// Estos tests prueban otra cosa que la visibilidad: quien pregunta lo ve todo.
+const ADMIN: SujetoVisibilidad = { usuarioId: 0, rol: "admin_sgc", verHistorial: false };
+
 const codigosDe = (r: Awaited<ReturnType<typeof buscarDocumentos>>) =>
   r.resultados.map((d) => d.codigo);
 
 describe("buscarDocumentos — texto libre", () => {
   it("con código parcial 'GTH' trae todos los documentos de talento humano", async () => {
-    const r = await buscarDocumentos({ q: "GTH" });
+    const r = await buscarDocumentos({ q: "GTH" }, ADMIN);
     expect(codigosDe(r)).toEqual(
       expect.arrayContaining([
         "GTH-CA-01",
@@ -41,8 +45,8 @@ describe("buscarDocumentos — texto libre", () => {
   });
 
   it("es insensible a acentos: 'vacunación' y 'vacunacion' devuelven lo mismo", async () => {
-    const conAcento = await buscarDocumentos({ q: "vacunación" });
-    const sinAcento = await buscarDocumentos({ q: "vacunacion" });
+    const conAcento = await buscarDocumentos({ q: "vacunación" }, ADMIN);
+    const sinAcento = await buscarDocumentos({ q: "vacunacion" }, ADMIN);
     expect(codigosDe(conAcento).sort()).toEqual(codigosDe(sinAcento).sort());
     expect(codigosDe(conAcento)).toEqual(
       expect.arrayContaining(["PYM-PR-01", "PYM-FO-01"]),
@@ -50,28 +54,28 @@ describe("buscarDocumentos — texto libre", () => {
   });
 
   it("tolera errores de tipeo: 'vacunasion' encuentra los de vacunación", async () => {
-    const r = await buscarDocumentos({ q: "vacunasion" });
+    const r = await buscarDocumentos({ q: "vacunasion" }, ADMIN);
     expect(codigosDe(r)).toContain("PYM-PR-01");
   });
 
   it("jamás devuelve documentos sin versión vigente (regla 3)", async () => {
     // SGC-FO-03 (borrador) es el único "Listado Maestro" del seed.
-    const borrador = await buscarDocumentos({ q: "listado maestro" });
+    const borrador = await buscarDocumentos({ q: "listado maestro" }, ADMIN);
     expect(codigosDe(borrador)).not.toContain("SGC-FO-03");
     // GIC-IN-02 (anulado) es el único "fax".
-    const anulado = await buscarDocumentos({ q: "fax" });
+    const anulado = await buscarDocumentos({ q: "fax" }, ADMIN);
     expect(codigosDe(anulado)).not.toContain("GIC-IN-02");
   });
 
   it("resalta las coincidencias del término en el título", async () => {
-    const r = await buscarDocumentos({ q: "vacunacion" });
+    const r = await buscarDocumentos({ q: "vacunacion" }, ADMIN);
     const pr = r.resultados.find((d) => d.codigo === "PYM-PR-01");
     expect(pr?.tituloResaltado).toContain("⟦");
     expect(pr?.tituloResaltado).toContain("⟧");
   });
 
   it("sin ningún criterio devuelve vacío sin consultar", async () => {
-    const r = await buscarDocumentos({});
+    const r = await buscarDocumentos({}, ADMIN);
     expect(r.resultados).toEqual([]);
     expect(r.total).toBe(0);
   });
@@ -79,12 +83,12 @@ describe("buscarDocumentos — texto libre", () => {
 
 describe("buscarDocumentos — filtros combinables", () => {
   it("filtra por tipo: 'GTH' + tipo FO deja solo el formato", async () => {
-    const r = await buscarDocumentos({ q: "GTH", tipo: "FO" });
+    const r = await buscarDocumentos({ q: "GTH", tipo: "FO" }, ADMIN);
     expect(codigosDe(r)).toEqual(["GTH-FO-01"]);
   });
 
   it("filtra por proceso: incluye propios, de subprocesos y secundarios", async () => {
-    const r = await buscarDocumentos({ proceso: "gestion-del-talento-humano" });
+    const r = await buscarDocumentos({ proceso: "gestion-del-talento-humano" }, ADMIN);
     const codigos = codigosDe(r);
     // Propio directo, propios de subprocesos y secundario (SGC-FO-01).
     expect(codigos).toEqual(
@@ -102,14 +106,14 @@ describe("buscarDocumentos — filtros combinables", () => {
     const r = await buscarDocumentos({
       proceso: "gestion-del-talento-humano",
       subproceso: "ingreso",
-    });
+    }, ADMIN);
     expect(codigosDe(r).sort()).toEqual(["GTH-FO-01", "GTH-PR-01"]);
   });
 
   it("filtra por rango de fecha de aprobación", async () => {
-    const antiguos = await buscarDocumentos({ hasta: "2026-02-28" });
+    const antiguos = await buscarDocumentos({ hasta: "2026-02-28" }, ADMIN);
     expect(codigosDe(antiguos)).toEqual(["GTH-CA-01"]);
-    const recientes = await buscarDocumentos({ desde: "2026-03-01" });
+    const recientes = await buscarDocumentos({ desde: "2026-03-01" }, ADMIN);
     expect(codigosDe(recientes)).not.toContain("GTH-CA-01");
     expect(recientes.total).toBeGreaterThan(0);
   });
@@ -119,14 +123,14 @@ describe("buscarDocumentos — filtros combinables", () => {
       q: "formato",
       proceso: "sistema-de-gestion-de-calidad",
       tipo: "FO",
-    });
+    }, ADMIN);
     expect(codigosDe(r).sort()).toEqual(["SGC-FO-01", "SGC-FO-02"]);
   });
 });
 
 describe("buscarDocumentos — facetas", () => {
   it("cuenta por tipo sobre los resultados del término", async () => {
-    const r = await buscarDocumentos({ q: "GTH" });
+    const r = await buscarDocumentos({ q: "GTH" }, ADMIN);
     const porSigla = Object.fromEntries(
       r.facetas.tipos.map((f) => [f.clave, f.cantidad]),
     );
@@ -134,7 +138,7 @@ describe("buscarDocumentos — facetas", () => {
   });
 
   it("cuenta por proceso sobre los resultados del término", async () => {
-    const r = await buscarDocumentos({ q: "GTH" });
+    const r = await buscarDocumentos({ q: "GTH" }, ADMIN);
     const gth = r.facetas.procesos.find(
       (f) => f.clave === "gestion-del-talento-humano",
     );
@@ -142,7 +146,7 @@ describe("buscarDocumentos — facetas", () => {
   });
 
   it("la faceta de tipo no se filtra a sí misma (permite cambiar de tipo)", async () => {
-    const r = await buscarDocumentos({ q: "GTH", tipo: "FO" });
+    const r = await buscarDocumentos({ q: "GTH", tipo: "FO" }, ADMIN);
     const porSigla = Object.fromEntries(
       r.facetas.tipos.map((f) => [f.clave, f.cantidad]),
     );

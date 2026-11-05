@@ -17,8 +17,8 @@ export const dynamic = "force-dynamic";
 const permitirArchivo = crearLimitador({ limite: 60, ventanaMs: 60_000 });
 
 /**
- * Sirve un archivo de la versión VIGENTE de un documento, desde fuera del
- * webroot (reglas 3 y 7). Sin `?descarga=1` responde inline (vista previa);
+ * Sirve un archivo de la versión VIGENTE de un documento que el usuario puede
+ * ver, desde fuera del webroot (reglas 3 y 7). Sin `?descarga=1` responde inline (vista previa);
  * con él, como adjunto y registra el evento de descarga (D8). La vista de la
  * ficha ya registra el evento 'vista' — el servido inline no lo duplica.
  *
@@ -48,7 +48,7 @@ export async function GET(
   const id = Number(archivoId);
   if (!Number.isInteger(id) || id <= 0) return respuesta404();
 
-  const archivo = await obtenerArchivoVigente(codigo, id);
+  const archivo = await obtenerArchivoVigente(codigo, id, sesion);
   if (!archivo) return respuesta404();
 
   const esDescarga = peticion.nextUrl.searchParams.get("descarga") === "1";
@@ -69,7 +69,7 @@ export async function GET(
   // admin sirve el original por su propia ruta, y los formatos no-PDF bajan
   // tal cual (existen para diligenciarse).
   if (archivo.mime === "application/pdf") {
-    return respuestaArchivoEstampado(archivo, esDescarga);
+    return respuestaArchivoEstampado(archivo, esDescarga, sesion.nombre);
   }
   return respuestaArchivo(archivo, esDescarga);
 }

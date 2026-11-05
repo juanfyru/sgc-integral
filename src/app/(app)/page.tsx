@@ -16,7 +16,7 @@ export default async function Inicio() {
   const sesion = await exigirSesion();
   const misProcesos = sesion.rol === "lider_proceso" ? await procesosAsignados(sesion.usuarioId) : null;
   const [datos, marca, tareas] = await Promise.all([
-    obtenerDatosMapa(),
+    obtenerDatosMapa(sesion),
     obtenerMarcaSegura(),
     misTareas(sesion),
   ]);

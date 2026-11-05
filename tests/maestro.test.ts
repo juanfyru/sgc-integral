@@ -1,7 +1,8 @@
 /**
  * Listado Maestro (Fase 8) contra la BD dev sembrada: una fila por documento
  * por su asociación principal (D6), vigentes por defecto, propietario resuelto
- * desde proceso o subproceso, e `incluir:'todos'` que agrega los sin vigente.
+ * desde proceso o subproceso, e `incluir:'todos'` que agrega los sin vigente
+ * que tienen historial (un borrador o una versión descartada no lo son).
  */
 import { existsSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -47,6 +48,9 @@ beforeAll(async () => {
   await crearDoc("ZZ-MST-001", "vigente", "proceso");
   await crearDoc("ZZ-MST-002", "vigente", "subproceso");
   await crearDoc("ZZ-MST-003", "borrador", "proceso");
+  await crearDoc("ZZ-MST-004", "anulado", "proceso");
+  await crearDoc("ZZ-MST-005", "descartado", "proceso");
+  await crearDoc("ZZ-MST-006", "obsoleto", "subproceso");
 });
 afterAll(async () => {
   await limpiar();
@@ -69,11 +73,24 @@ describe("obtenerListadoMaestro", () => {
     expect(sub.aprobo).toBe("Dir. Calidad");
   });
 
-  it("incluir:'todos' agrega los que no tienen vigente", async () => {
+  it("incluir:'todos' agrega los que no tienen vigente pero sí historial", async () => {
     const filas = await obtenerListadoMaestro({ incluir: "todos" });
-    const codigos = filas.map((f) => f.codigo);
-    expect(codigos).toContain("ZZ-MST-003");
-    const borr = filas.find((f) => f.codigo === "ZZ-MST-003")!;
-    expect(borr.estado).toBe("borrador");
+    expect(filas.find((f) => f.codigo === "ZZ-MST-004")?.estado).toBe("anulado");
+    expect(filas.find((f) => f.codigo === "ZZ-MST-006")?.estado).toBe("obsoleto");
+  });
+
+  it("incluir:'todos' no lista el documento que solo tiene borrador o versión descartada", async () => {
+    const codigos = (await obtenerListadoMaestro({ incluir: "todos" })).map((f) => f.codigo);
+    expect(codigos).not.toContain("ZZ-MST-003");
+    expect(codigos).not.toContain("ZZ-MST-005");
+  });
+
+  it("un borrador nunca representa al documento, aunque sea la versión de mayor número", async () => {
+    const [{ id }] = await sql()`SELECT id FROM documentos WHERE codigo = 'ZZ-MST-004'`;
+    await sql()`INSERT INTO documento_versiones (documento_id, numero, estado, fecha_elaboracion)
+      VALUES (${id}, 2, 'borrador', '2026-02-01')`;
+    const fila = (await obtenerListadoMaestro({ incluir: "todos" })).find((f) => f.codigo === "ZZ-MST-004")!;
+    expect(fila.estado).toBe("anulado");
+    expect(fila.version).toBe(1);
   });
 });

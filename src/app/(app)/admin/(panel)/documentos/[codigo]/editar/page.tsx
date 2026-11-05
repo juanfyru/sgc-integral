@@ -17,10 +17,10 @@ export default async function PaginaEditarDocumento({
 }: {
   params: Promise<{ codigo: string }>;
 }) {
-  await exigirPermiso("documentos.administrar");
+  const sesion = await exigirPermiso("documentos.administrar");
   const { codigo } = await params;
   const [documento, tipos, procesos] = await Promise.all([
-    obtenerDocumentoAdmin(decodeURIComponent(codigo)),
+    obtenerDocumentoAdmin(decodeURIComponent(codigo), sesion),
     listarTiposActivos(),
     listarMapaParaFormulario(),
   ]);

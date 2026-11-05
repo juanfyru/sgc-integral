@@ -1,4 +1,5 @@
 import { obtenerSql } from "@/db/cliente";
+import { filtroAcceso, type SujetoVisibilidad } from "@/lib/alcance";
 
 export type ProcesoMapa = {
   id: number;
@@ -8,7 +9,8 @@ export type ProcesoMapa = {
   icono: string;
   descripcion: string | null;
   // D10: documentos vigentes que aplican al proceso (asociación principal o
-  // secundaria), incluyendo los de sus subprocesos.
+  // secundaria), incluyendo los de sus subprocesos. En el mapa del portal, solo
+  // los que el usuario puede ver.
   docsVigentes: number;
   numSubprocesos: number;
   // Solo lo pobla la vista de admin (obtenerDatosMapaAdmin); el mapa público
@@ -43,7 +45,7 @@ export type DatosMapa = {
   configuracion: Record<string, string>;
 };
 
-export async function obtenerDatosMapa(): Promise<DatosMapa> {
+export async function obtenerDatosMapa(sujeto: SujetoVisibilidad): Promise<DatosMapa> {
   const sql = obtenerSql();
 
   const [macros, procesos, elementos, config] = await Promise.all([
@@ -59,6 +61,7 @@ export async function obtenerDatosMapa(): Promise<DatosMapa> {
         (
           SELECT count(DISTINCT dp.documento_id)::int
           FROM documento_proceso dp
+          JOIN documentos d ON d.id = dp.documento_id
           WHERE (
             dp.proceso_id = p.id
             OR dp.subproceso_id IN (
@@ -70,6 +73,7 @@ export async function obtenerDatosMapa(): Promise<DatosMapa> {
             SELECT 1 FROM documento_versiones v
             WHERE v.documento_id = dp.documento_id AND v.estado = 'vigente'
           )
+          AND ${filtroAcceso(sql, sujeto)}
         ) AS docs_vigentes,
         (
           SELECT count(*)::int FROM subprocesos s

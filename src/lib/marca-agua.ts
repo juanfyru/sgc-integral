@@ -1,38 +1,56 @@
 import { PDFDocument, StandardFonts, radians, rgb } from "pdf-lib";
 
 /**
- * Estampa "COPIA NO CONTROLADA" + fecha de descarga en diagonal sobre CADA
- * página del PDF (ISO 9001 — 7.5.3: la copia que sale del sistema deja de
- * estar controlada). Lanza si el buffer no es un PDF procesable (corrupto o
- * cifrado): el llamador decide el fallback — la marca es una salvaguarda,
- * nunca un motivo para dejar inaccesible un documento vigente.
+ * Estampa "COPIA NO CONTROLADA" + nombre de quien descarga y fecha en diagonal
+ * sobre CADA página del PDF (ISO 9001 — 7.5.3: la copia que sale del sistema
+ * deja de estar controlada). Lanza si el buffer no es un PDF procesable
+ * (corrupto o cifrado): el llamador decide el fallback — la marca es una
+ * salvaguarda, nunca un motivo para dejar inaccesible un documento vigente.
  */
 
 const MARCA = "COPIA NO CONTROLADA";
+const LARGO_MAX_NOMBRE = 60;
 const GRIS = rgb(0.45, 0.45, 0.45);
 
-function fechaCorta(fecha: Date): string {
-  const dia = String(fecha.getDate()).padStart(2, "0");
-  const mes = String(fecha.getMonth() + 1).padStart(2, "0");
-  return `${dia}/${mes}/${fecha.getFullYear()}`;
+function fechaCorta(fecha: Date, zona: string): string {
+  const partes = new Intl.DateTimeFormat("es-CO", {
+    timeZone: zona,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).formatToParts(fecha);
+  const de = (tipo: Intl.DateTimeFormatPartTypes) => partes.find((p) => p.type === tipo)?.value ?? "";
+  return `${de("day")}/${de("month")}/${de("year")}`;
+}
+
+// Por puntos de código, no por unidades UTF-16: así el recorte no parte un
+// carácter en dos y cada carácter fuera de la fuente deja un solo «?».
+function nombreEstampable(nombre: string, codificables: ReadonlySet<number>): string {
+  return Array.from(nombre)
+    .slice(0, LARGO_MAX_NOMBRE)
+    .map((c) => (codificables.has(c.codePointAt(0) as number) ? c : "?"))
+    .join("");
 }
 
 export async function estamparCopiaNoControlada(
   pdf: Uint8Array,
-  fecha: Date,
+  datos: { fecha: Date; nombre: string; zona: string },
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.load(pdf);
   const fuente = await doc.embedFont(StandardFonts.HelveticaBold);
-  const leyenda = `Descargada el ${fechaCorta(fecha)} — verifique su vigencia en el SGC`;
+  const nombre = nombreEstampable(datos.nombre, new Set(fuente.getCharacterSet()));
+  const leyenda = `Descargada por ${nombre} el ${fechaCorta(datos.fecha, datos.zona)} — verifique su vigencia en el SGC`;
 
   for (const pagina of doc.getPages()) {
     const { width: ancho, height: alto } = pagina.getSize();
     const angulo = Math.atan2(alto, ancho);
     const [cos, sen] = [Math.cos(angulo), Math.sin(angulo)];
 
-    // La marca ocupa ~60% de la diagonal de la página, sea cual sea su tamaño.
-    const tam = (Math.hypot(ancho, alto) * 0.6) / fuente.widthOfTextAtSize(MARCA, 1);
-    const tamLeyenda = tam * 0.28;
+    // La marca ocupa ~60% de la diagonal de la página, sea cual sea su tamaño;
+    // la leyenda se encoge si el nombre la alargaría más allá del ~85%.
+    const diagonal = Math.hypot(ancho, alto);
+    const tam = (diagonal * 0.6) / fuente.widthOfTextAtSize(MARCA, 1);
+    const tamLeyenda = Math.min(tam * 0.28, (diagonal * 0.85) / fuente.widthOfTextAtSize(leyenda, 1));
 
     // Centrado geométrico del texto rotado: se retrocede desde el centro de la
     // página media longitud a lo largo de la diagonal y medio ojo tipográfico

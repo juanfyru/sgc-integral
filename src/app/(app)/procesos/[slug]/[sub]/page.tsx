@@ -20,13 +20,13 @@ export default async function VistaSubproceso({
 }: {
   params: Promise<{ slug: string; sub: string }>;
 }) {
-  await exigirSesion();
+  const sesion = await exigirSesion();
   const { slug, sub } = await params;
 
   const subproceso = await obtenerDetalleSubproceso(slug, sub);
   if (!subproceso) notFound();
 
-  const documentos = await obtenerDocumentosDeSubproceso(subproceso.id);
+  const documentos = await obtenerDocumentosDeSubproceso(subproceso.id, sesion);
   const propios = documentos.filter((d) => d.esPrincipal);
   const tambienAplican = documentos.filter((d) => !d.esPrincipal);
 

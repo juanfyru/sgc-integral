@@ -4,6 +4,7 @@ import {
   eliminarArchivoBorrador,
   obtenerArchivoAdmin,
 } from "@/db/consultas/admin";
+import { puedeAccederDocumento, type SujetoVisibilidad } from "@/lib/alcance";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { origenValido } from "@/lib/origen";
 import { respuesta404, respuestaArchivo } from "@/lib/servir-archivo";
@@ -14,19 +15,28 @@ export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ archivoId: string }> };
 
-// Vista previa del admin: sirve archivos de CUALQUIER estado (borradores para
-// revisar antes de publicar, obsoletos para consulta histórica). La ruta
-// pública sigue siendo la única para funcionarios y solo sirve vigentes.
+async function puedeVerArchivo(
+  archivo: { estadoVersion: string; documentoId: number },
+  sesion: SujetoVisibilidad,
+): Promise<boolean> {
+  if (archivo.estadoVersion === "borrador" || archivo.estadoVersion === "descartado") {
+    return puede(sesion, "documentos.administrar");
+  }
+  return puede(sesion, "documentos.ver_historial") && puedeAccederDocumento(archivo.documentoId, sesion);
+}
+
+// Vista previa del panel, autorizada por el estado de la versión (spec 13A §12):
+// borradores y descartadas para quien administra; vigentes, obsoletas y anuladas
+// con historial y la regla de acceso. Quien no puede ver el archivo recibe 404,
+// igual que si no existiera. La ruta pública sigue siendo la única para
+// funcionarios y solo sirve vigentes.
 export async function GET(peticion: NextRequest, { params }: Params) {
   const sesion = await sesionDePeticion(peticion);
   if (!sesion) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  if (!puede(sesion, "documentos.ver_historial")) {
-    return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
-  }
   const id = Number((await params).archivoId);
   if (!Number.isInteger(id) || id <= 0) return respuesta404();
   const archivo = await obtenerArchivoAdmin(id);
-  if (!archivo) return respuesta404();
+  if (!archivo || !(await puedeVerArchivo(archivo, sesion))) return respuesta404();
   const esDescarga = peticion.nextUrl.searchParams.get("descarga") === "1";
   return respuestaArchivo(archivo, esDescarga);
 }

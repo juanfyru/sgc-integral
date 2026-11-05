@@ -18,8 +18,9 @@ export type FilaMaestro = {
 /**
  * Listado Maestro (ISO 7.5): una fila por documento, contada UNA sola vez por
  * su asociación principal (D6). Por defecto solo documentos con versión
- * vigente; `incluir:'todos'` agrega los que no la tienen (borrador/anulado),
- * describiendo su versión de mayor número.
+ * vigente; `incluir:'todos'` agrega los que no la tienen (obsoleto/anulado),
+ * describiendo su versión de mayor número. Un borrador o una versión descartada
+ * nunca es la representativa: el documento que solo tiene esas no aparece.
  */
 export async function obtenerListadoMaestro(
   opciones: { incluir: "vigentes" | "todos" },
@@ -28,7 +29,7 @@ export async function obtenerListadoMaestro(
   const soloVigentes = opciones.incluir === "vigentes";
 
   // La versión "representativa": la vigente si existe; si no y se piden todos,
-  // la de mayor número.
+  // la de mayor número entre las que son historial.
   const filas = await sql`
     SELECT d.codigo, d.titulo, t.nombre AS tipo,
            v.numero AS version, v.estado,
@@ -45,7 +46,7 @@ export async function obtenerListadoMaestro(
     JOIN LATERAL (
       SELECT * FROM documento_versiones vv
       WHERE vv.documento_id = d.id
-        ${soloVigentes ? sql`AND vv.estado = 'vigente'` : sql``}
+        ${soloVigentes ? sql`AND vv.estado = 'vigente'` : sql`AND vv.estado NOT IN ('borrador', 'descartado')`}
       ORDER BY (vv.estado = 'vigente') DESC, vv.numero DESC
       LIMIT 1
     ) v ON true

@@ -1,4 +1,5 @@
 import { obtenerSql } from "@/db/cliente";
+import { filtroAcceso, type SujetoVisibilidad } from "@/lib/alcance";
 
 export type NodoHermano = { nombre: string; slug: string };
 
@@ -6,7 +7,7 @@ export type SubprocesoResumen = {
   id: number;
   nombre: string;
   slug: string;
-  // D10: documentos vigentes que aplican al subproceso.
+  // D10: documentos vigentes que aplican al subproceso y que el usuario puede ver.
   docsVigentes: number;
 };
 
@@ -55,6 +56,7 @@ export type DocumentoListado = {
 
 export async function obtenerDetalleProceso(
   slug: string,
+  sujeto: SujetoVisibilidad,
 ): Promise<DetalleProceso | null> {
   const sql = obtenerSql();
 
@@ -74,11 +76,13 @@ export async function obtenerDetalleProceso(
         (
           SELECT count(DISTINCT dp.documento_id)::int
           FROM documento_proceso dp
+          JOIN documentos d ON d.id = dp.documento_id
           WHERE dp.subproceso_id = s.id
             AND EXISTS (
               SELECT 1 FROM documento_versiones v
               WHERE v.documento_id = dp.documento_id AND v.estado = 'vigente'
             )
+            AND ${filtroAcceso(sql, sujeto)}
         ) AS docs_vigentes
       FROM subprocesos s
       WHERE s.proceso_id = ${proceso.id} AND s.activo
@@ -182,11 +186,12 @@ export async function obtenerDetalleSubproceso(
  * Documentos VIGENTES asociados al proceso (regla 3: nada de borradores,
  * obsoletos ni anulados en rutas públicas). Con `incluirSubprocesos` se suman
  * los asociados a sus subprocesos activos (la pregunta D10 del funcionario:
- * "¿qué hay aquí para mí?").
+ * "¿qué hay aquí para mí?"). Solo los que el sujeto puede ver.
  */
 export async function obtenerDocumentosDeProceso(
   procesoId: number,
   incluirSubprocesos: boolean,
+  sujeto: SujetoVisibilidad,
 ): Promise<DocumentoListado[]> {
   const sql = obtenerSql();
   const filas = await sql`
@@ -216,11 +221,12 @@ export async function obtenerDocumentosDeProceso(
     JOIN documento_versiones v ON v.documento_id = d.id AND v.estado = 'vigente'
     JOIN tipos_documento t ON t.id = d.tipo_id
     LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
-    WHERE dp.proceso_id = ${procesoId}
+    WHERE (dp.proceso_id = ${procesoId}
        OR (${incluirSubprocesos} AND dp.subproceso_id IN (
              SELECT id FROM subprocesos
              WHERE proceso_id = ${procesoId} AND activo
-           ))
+           )))
+      AND ${filtroAcceso(sql, sujeto)}
     ORDER BY t.orden, d.codigo`;
 
   return deduplicar(filas.map(aDocumentoListado));
@@ -228,6 +234,7 @@ export async function obtenerDocumentosDeProceso(
 
 export async function obtenerDocumentosDeSubproceso(
   subprocesoId: number,
+  sujeto: SujetoVisibilidad,
 ): Promise<DocumentoListado[]> {
   const sql = obtenerSql();
   const filas = await sql`
@@ -256,7 +263,7 @@ export async function obtenerDocumentosDeSubproceso(
     JOIN documentos d ON d.id = dp.documento_id
     JOIN documento_versiones v ON v.documento_id = d.id AND v.estado = 'vigente'
     JOIN tipos_documento t ON t.id = d.tipo_id
-    WHERE dp.subproceso_id = ${subprocesoId}
+    WHERE dp.subproceso_id = ${subprocesoId} AND ${filtroAcceso(sql, sujeto)}
     ORDER BY t.orden, d.codigo`;
 
   return deduplicar(filas.map(aDocumentoListado));

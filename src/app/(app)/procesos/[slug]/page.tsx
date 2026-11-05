@@ -23,13 +23,13 @@ export default async function VistaProceso({
   params: Promise<{ slug: string }>;
   searchParams: Promise<{ subprocesos?: string }>;
 }) {
-  await exigirSesion();
+  const sesion = await exigirSesion();
   const [{ slug }, { subprocesos: parametroSubprocesos }] = await Promise.all([
     params,
     searchParams,
   ]);
 
-  const proceso = await obtenerDetalleProceso(slug);
+  const proceso = await obtenerDetalleProceso(slug, sesion);
   if (!proceso) notFound();
 
   const tieneSubprocesos = proceso.subprocesos.length > 0;
@@ -37,6 +37,7 @@ export default async function VistaProceso({
   const documentos = await obtenerDocumentosDeProceso(
     proceso.id,
     incluirSubprocesos,
+    sesion,
   );
 
   const propios = documentos.filter((d) => d.esPrincipal);

@@ -1,4 +1,5 @@
 import { obtenerSql } from "@/db/cliente";
+import { filtroAcceso, type SujetoVisibilidad } from "@/lib/alcance";
 import { MARCA_FIN, MARCA_INICIO } from "@/lib/marcas-busqueda";
 import type { ArchivoResumen } from "@/db/consultas/procesos";
 
@@ -10,7 +11,8 @@ import type { ArchivoResumen } from "@/db/consultas/procesos";
  *  - `word_similarity` sobre el título para tolerar errores de tipeo
  *    ("vacunasion" → Vacunación); solo con términos de 4+ caracteres para no
  *    meter ruido en búsquedas cortas.
- * Toda query exige versión VIGENTE (regla de negocio 3).
+ * Toda query exige versión VIGENTE (regla de negocio 3) y aplica la regla de
+ * acceso del sujeto, también en las facetas: lo que no ve no se cuenta.
  */
 
 export type FiltrosBusqueda = {
@@ -73,6 +75,7 @@ export function hayCriterios(filtros: FiltrosBusqueda): boolean {
 
 export async function buscarDocumentos(
   filtros: FiltrosBusqueda,
+  sujeto: SujetoVisibilidad,
 ): Promise<RespuestaBusqueda> {
   if (!hayCriterios(filtros)) return RESPUESTA_VACIA;
 
@@ -170,7 +173,7 @@ export async function buscarDocumentos(
       FROM documentos d
       JOIN tipos_documento t ON t.id = d.tipo_id
       JOIN documento_versiones v ON v.documento_id = d.id AND v.estado = 'vigente'
-      WHERE true ${condTexto} ${condFechas} ${condTipo} ${condProceso}
+      WHERE ${filtroAcceso(sql, sujeto)} ${condTexto} ${condFechas} ${condTipo} ${condProceso}
       ORDER BY puntaje DESC, t.orden, d.codigo
       LIMIT ${limite}`,
     // Faceta de tipo: aplica todos los filtros MENOS el de tipo, para que
@@ -180,7 +183,7 @@ export async function buscarDocumentos(
       FROM documentos d
       JOIN tipos_documento t ON t.id = d.tipo_id
       JOIN documento_versiones v ON v.documento_id = d.id AND v.estado = 'vigente'
-      WHERE true ${condTexto} ${condFechas} ${condProceso}
+      WHERE ${filtroAcceso(sql, sujeto)} ${condTexto} ${condFechas} ${condProceso}
       GROUP BY t.sigla, t.nombre, t.orden
       ORDER BY t.orden`,
     // Faceta de proceso: todos los filtros MENOS proceso/subproceso.
@@ -192,7 +195,7 @@ export async function buscarDocumentos(
       JOIN documento_proceso dp ON dp.documento_id = d.id
       LEFT JOIN subprocesos s ON s.id = dp.subproceso_id AND s.activo
       JOIN procesos p ON p.id = COALESCE(dp.proceso_id, s.proceso_id) AND p.activo
-      WHERE true ${condTexto} ${condFechas} ${condTipo}
+      WHERE ${filtroAcceso(sql, sujeto)} ${condTexto} ${condFechas} ${condTipo}
       GROUP BY p.slug, p.nombre
       ORDER BY cantidad DESC, p.nombre`,
   ]);

@@ -4,6 +4,7 @@ import { Readable } from "node:stream";
 import { NextResponse } from "next/server";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { estamparCopiaNoControlada } from "@/lib/marca-agua";
+import { zonaHoraria } from "@/lib/zona-horaria";
 
 export type ArchivoServible = {
   ruta: string;
@@ -26,7 +27,7 @@ function contentDisposition(tipo: "inline" | "attachment", nombre: string) {
  * Respuesta de streaming para un archivo del almacén (reglas 3, 6 y 7):
  * MIME de BD, disposición correcta, no-store, y 404 ante ruta inválida o
  * archivo faltante. Compartida por la ruta pública (solo vigentes) y la del
- * admin (cualquier estado).
+ * panel; cada una autoriza antes de llamarla.
  */
 export async function respuestaArchivo(
   archivo: ArchivoServible,
@@ -68,10 +69,11 @@ export function respuesta404() {
 }
 
 /**
- * Salida pública de un PDF con la marca "COPIA NO CONTROLADA" estampada al
- * vuelo — tanto la descarga como la vista previa inline: el visor del
- * navegador permite descargar e imprimir, así que una vista limpia sería un
- * hueco. Si el estampado falla (PDF cifrado o corrupto), sirve el original:
+ * Salida pública de un PDF con la marca "COPIA NO CONTROLADA", el nombre de
+ * quien lo pide y la fecha en la zona de la instalación, estampados al vuelo —
+ * tanto la descarga como la vista previa inline: el visor del navegador
+ * permite descargar e imprimir, así que una vista limpia sería un hueco. Si el
+ * estampado falla (PDF cifrado o corrupto), sirve el original:
  * la marca es una salvaguarda, nunca un motivo para dejar inaccesible un
  * documento vigente — el error queda en el log para corregir el archivo.
  * A diferencia de respuestaArchivo, aquí no hay streaming: estampar exige el
@@ -80,6 +82,7 @@ export function respuesta404() {
 export async function respuestaArchivoEstampado(
   archivo: ArchivoServible,
   esDescarga: boolean,
+  nombre: string,
   fecha: Date = new Date(),
 ): Promise<NextResponse> {
   const rutaAbsoluta = resolverRutaAlmacen(archivo.ruta);
@@ -98,7 +101,7 @@ export async function respuestaArchivoEstampado(
 
   let cuerpo: Uint8Array = original;
   try {
-    cuerpo = await estamparCopiaNoControlada(original, fecha);
+    cuerpo = await estamparCopiaNoControlada(original, { fecha, nombre, zona: zonaHoraria() });
   } catch (err) {
     console.error(
       `No se pudo estampar ${archivo.ruta}; se sirve el original:`,

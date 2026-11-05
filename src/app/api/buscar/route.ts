@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 // Se consulta mientras se teclea (con espera de 200 ms): 60/min por usuario es holgado para una persona.
 const permitirBusqueda = crearLimitador({ limite: 60, ventanaMs: 60_000 });
 
-/** Búsqueda rápida de la paleta Ctrl K: solo documentos con versión vigente. */
+/** Búsqueda rápida de la paleta Ctrl K: solo documentos con versión vigente que el usuario puede ver. */
 export async function GET(peticion: NextRequest) {
   const sesion = await sesionDePeticion(peticion);
   if (!sesion) {
@@ -31,7 +31,7 @@ export async function GET(peticion: NextRequest) {
     return NextResponse.json({ resultados: [] satisfies ResultadoRapido[] });
   }
 
-  const { resultados } = await buscarDocumentos({ q, limite: 8 });
+  const { resultados } = await buscarDocumentos({ q, limite: 8 }, sesion);
   return NextResponse.json({
     resultados: resultados.map(
       (r): ResultadoRapido => ({

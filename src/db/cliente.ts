@@ -1,5 +1,8 @@
-import postgres from "postgres";
+import postgres, { type Sql, type TransactionSql } from "postgres";
 import { zonaHoraria } from "../lib/zona-horaria";
+
+/** La conexión o una transacción: lo que recibe una consulta que debe poder correr en ambas. */
+export type Cliente = Sql | TransactionSql;
 
 // Cliente único de postgres.js (el mismo driver que usará Drizzle en Fase 2).
 // Inicialización perezosa: Next evalúa los módulos durante `next build`,

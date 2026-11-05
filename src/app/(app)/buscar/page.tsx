@@ -88,7 +88,7 @@ export default async function PaginaBuscar({
     if (!permitirBusqueda(String(sesion.usuarioId))) {
       limitado = true;
     } else {
-      respuesta = await buscarDocumentos(filtros);
+      respuesta = await buscarDocumentos(filtros, sesion);
       if (filtros.q?.trim()) {
         await registrarBusqueda(filtros.q, respuesta.total).catch((err) =>
           console.error("No se pudo registrar la búsqueda:", err),
@@ -99,7 +99,7 @@ export default async function PaginaBuscar({
 
   // Subprocesos del proceso filtrado, para el tercer nivel de filtro.
   const detalleProceso = parametros.proceso
-    ? await obtenerDetalleProceso(parametros.proceso)
+    ? await obtenerDetalleProceso(parametros.proceso, sesion)
     : null;
 
   const hayFiltros = Boolean(

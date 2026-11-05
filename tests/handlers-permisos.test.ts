@@ -22,6 +22,7 @@ import { LOGO_MAX_BYTES } from "@/lib/logo";
 import { GET as buscarApi } from "@/app/api/buscar/route";
 import { GET as excelMaestro } from "@/app/(app)/admin/(panel)/maestro/excel/route";
 import { obtenerSql } from "@/db/cliente";
+import { listarDocumentosAdmin, obtenerDocumentoAdmin } from "@/db/consultas/admin";
 import { crearSesion } from "@/lib/sesion";
 
 const sql = () => obtenerSql();
@@ -29,6 +30,8 @@ const SUFIJO = Date.now();
 let tokenConsulta: string;
 let tokenCi: string;
 let tokenGerencia: string;
+let tokenAdmin: string;
+let tokenMarca: string;
 let usuarioGerenciaId: number;
 let archivoBorradorId: number;
 
@@ -50,6 +53,10 @@ async function crearUsuarioConId(nombre: string, rol: string) {
 beforeAll(async () => {
   tokenConsulta = await crearUsuario(`zz_consulta_${SUFIJO}`, "consulta");
   tokenCi = await crearUsuario(`zz_ci_${SUFIJO}`, "control_interno");
+  tokenAdmin = await crearUsuario(`zz_admin_archivos_${SUFIJO}`, "admin_sgc");
+  const marca = await crearUsuarioConId(`zz_marca_${SUFIJO}`, "consulta");
+  tokenMarca = marca.token;
+  await sql()`UPDATE usuarios SET ver_historial = true WHERE id = ${marca.id}`;
   const g = await crearUsuarioConId(`zz_gerencia_${SUFIJO}`, "gerencia");
   tokenGerencia = g.token;
   usuarioGerenciaId = g.id;
@@ -70,10 +77,97 @@ describe("handlers del panel por rol", () => {
     expect((await excelMaestro(new NextRequest("http://localhost:3002/admin/maestro/excel", { headers: cookie(tokenConsulta) }))).status).toBe(403);
     expect((await excelMaestro(new NextRequest("http://localhost:3002/admin/maestro/excel", { headers: cookie(tokenCi) }))).status).toBe(200);
   });
-  it("consulta no ve archivos de cualquier estado por la ruta del admin; control interno sí", async () => {
-    const params = { params: Promise.resolve({ archivoId: String(archivoBorradorId) }) };
-    expect((await verArchivo(new NextRequest("http://localhost:3002/admin/api/archivos/1", { headers: cookie(tokenConsulta) }), params)).status).toBe(403);
-    expect((await verArchivo(new NextRequest("http://localhost:3002/admin/api/archivos/1", { headers: cookie(tokenCi) }), params)).status).toBe(200);
+  describe("GET de archivos del panel: quien no puede ver el archivo recibe 404, nunca «sin permiso»", () => {
+    const pedir = async (token: string | null, archivoId: number) => {
+      const params = { params: Promise.resolve({ archivoId: String(archivoId) }) };
+      const res = await verArchivo(
+        new NextRequest("http://localhost:3002/admin/api/archivos/1", token ? { headers: cookie(token) } : undefined),
+        params,
+      );
+      return res.status;
+    };
+    const archivoDe = async (codigo: string, estado: string): Promise<number> => {
+      const [a] = await sql()`
+        SELECT a.id FROM archivos a
+        JOIN documento_versiones v ON v.id = a.version_id
+        JOIN documentos d ON d.id = v.documento_id
+        WHERE d.codigo = ${codigo} AND v.estado = ${estado} LIMIT 1`;
+      expect(a, `archivo ${estado} de ${codigo}`).toBeDefined();
+      return Number(a.id);
+    };
+
+    it("sin sesión responde 401", async () => {
+      expect(await pedir(null, archivoBorradorId)).toBe(401);
+    });
+    it("un borrador solo se sirve a quien administra", async () => {
+      expect(await pedir(tokenAdmin, archivoBorradorId)).toBe(200);
+      expect(await pedir(tokenCi, archivoBorradorId)).toBe(404);
+      expect(await pedir(tokenMarca, archivoBorradorId)).toBe(404);
+      expect(await pedir(tokenConsulta, archivoBorradorId)).toBe(404);
+    });
+    it("una versión obsoleta o anulada se sirve con historial; sin él, 404", async () => {
+      for (const id of [await archivoDe("GTH-CA-01", "obsoleto"), await archivoDe("GIC-IN-02", "anulado")]) {
+        expect(await pedir(tokenCi, id)).toBe(200);
+        expect(await pedir(tokenMarca, id)).toBe(200);
+        expect(await pedir(tokenConsulta, id)).toBe(404);
+      }
+    });
+    it("gerencia no tiene historial: tampoco por el panel", async () => {
+      expect(await pedir(tokenGerencia, await archivoDe("GTH-CA-01", "obsoleto"))).toBe(404);
+    });
+    it("un restringido exige además la regla de acceso: la marca individual no la da", async () => {
+      const id = await archivoDe("GTH-FO-01", "vigente");
+      expect(await pedir(tokenCi, id)).toBe(200);
+      expect(await pedir(tokenMarca, id)).toBe(404);
+    });
+
+    describe("versión descartada", () => {
+      const codigo = `ZZ-DESC-${SUFIJO}`;
+      const nombreArchivo = `zz_descartado_${SUFIJO}.pdf`;
+      let documentoId: number;
+      let versionId: number;
+      let archivoId: number;
+
+      // Documento propio: el almacén y la demo quedan como estaban.
+      beforeAll(async () => {
+        writeFileSync(path.join(rutaBaseAlmacen(), nombreArchivo), "%PDF-1.4 prueba");
+        const [{ id: tipoId }] = await sql()`SELECT id FROM tipos_documento WHERE activo LIMIT 1`;
+        const [{ id: procesoId }] = await sql()`SELECT id FROM procesos WHERE activo LIMIT 1`;
+        [{ id: documentoId }] = await sql()`INSERT INTO documentos (codigo, titulo, tipo_id)
+          VALUES (${codigo}, 'Carga deshecha', ${tipoId}) RETURNING id`;
+        [{ id: versionId }] = await sql()`INSERT INTO documento_versiones (documento_id, numero, estado, fecha_elaboracion)
+          VALUES (${documentoId}, 1, 'descartado', '2026-01-01') RETURNING id`;
+        await sql()`INSERT INTO documento_proceso (documento_id, proceso_id, es_principal)
+          VALUES (${documentoId}, ${procesoId}, true)`;
+        [{ id: archivoId }] = await sql()`INSERT INTO archivos
+            (version_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
+          VALUES (${versionId}, 'principal', ${nombreArchivo}, 'carga.pdf', 'pdf', 'application/pdf', 15, 'x')
+          RETURNING id`;
+      });
+
+      afterAll(async () => {
+        await sql()`DELETE FROM archivos WHERE id = ${archivoId}`;
+        await sql()`DELETE FROM documento_proceso WHERE documento_id = ${documentoId}`;
+        await sql()`DELETE FROM documento_versiones WHERE id = ${versionId}`;
+        await sql()`DELETE FROM documentos WHERE id = ${documentoId}`;
+        rmSync(path.join(rutaBaseAlmacen(), nombreArchivo), { force: true });
+      });
+
+      it("su archivo solo se sirve a quien administra", async () => {
+        expect(await pedir(tokenAdmin, archivoId)).toBe(200);
+        expect(await pedir(tokenCi, archivoId)).toBe(404);
+        expect(await pedir(tokenMarca, archivoId)).toBe(404);
+      });
+
+      it("el panel la reserva a quien administra", async () => {
+        const ci = { usuarioId: 0, rol: "control_interno", verHistorial: false } as const;
+        const admin = { usuarioId: 0, rol: "admin_sgc", verHistorial: false } as const;
+        expect(await obtenerDocumentoAdmin(codigo, ci)).toBeNull();
+        expect((await listarDocumentosAdmin(ci)).some((d) => d.codigo === codigo)).toBe(false);
+        expect((await obtenerDocumentoAdmin(codigo, admin))!.versiones.map((v) => v.estado)).toEqual(["descartado"]);
+        expect((await listarDocumentosAdmin(admin)).some((d) => d.codigo === codigo)).toBe(true);
+      });
+    });
   });
   it("control interno no puede subir ni borrar archivos (403)", async () => {
     expect((await subirArchivo(new NextRequest("http://localhost:3002/admin/api/archivos?version=1&rol=principal", { method: "POST", headers: cookie(tokenCi) }))).status).toBe(403);

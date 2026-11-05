@@ -1,6 +1,8 @@
 import type { Sql, TransactionSql } from "postgres";
 import { obtenerSql } from "@/db/cliente";
+import { filtroAcceso, type SujetoVisibilidad } from "@/lib/alcance";
 import { hashearClave } from "@/lib/clave";
+import { puede } from "@/lib/permisos";
 import { patronDeConfiguracion } from "@/lib/tramites/codigo";
 
 type Cliente = Sql | TransactionSql;
@@ -311,13 +313,14 @@ export async function registrarArchivo(
 
 export async function obtenerArchivoAdmin(archivoId: number) {
   const sql = obtenerSql();
-  const [a] = await sql`SELECT a.id, a.ruta, a.mime, a.nombre_original, a.version_id, v.estado
+  const [a] = await sql`SELECT a.id, a.ruta, a.mime, a.nombre_original, a.version_id,
+      v.estado, v.documento_id
     FROM archivos a JOIN documento_versiones v ON v.id = a.version_id
     WHERE a.id = ${archivoId}`;
   if (!a) return null;
   return {
     id: a.id, ruta: a.ruta, mime: a.mime, nombreOriginal: a.nombre_original,
-    versionId: a.version_id, estadoVersion: a.estado,
+    versionId: a.version_id, estadoVersion: a.estado, documentoId: a.documento_id,
   };
 }
 
@@ -350,15 +353,28 @@ export type FilaDocumentoAdmin = {
   anulado: boolean; actualizadoEn: string;
 };
 
-export async function listarDocumentosAdmin(): Promise<FilaDocumentoAdmin[]> {
+/**
+ * Lista del panel (spec 13A §12, F13A-DC13): solo lo que el sujeto puede ver. Quien
+ * no administra no recibe el número del borrador ni los documentos que únicamente
+ * tienen versiones en borrador o descartadas.
+ */
+export async function listarDocumentosAdmin(sujeto: SujetoVisibilidad): Promise<FilaDocumentoAdmin[]> {
   const sql = obtenerSql();
+  const administra = puede(sujeto, "documentos.administrar");
   const filas = await sql`
     SELECT d.id, d.codigo, d.titulo, t.nombre AS tipo_nombre, t.sigla AS tipo_sigla,
       d.actualizado_en,
       (SELECT numero FROM documento_versiones WHERE documento_id = d.id AND estado = 'vigente') AS vigente,
-      (SELECT numero FROM documento_versiones WHERE documento_id = d.id AND estado = 'borrador') AS borrador,
+      ${administra
+        ? sql`(SELECT numero FROM documento_versiones WHERE documento_id = d.id AND estado = 'borrador')`
+        : sql`NULL::integer`} AS borrador,
       EXISTS (SELECT 1 FROM documento_versiones WHERE documento_id = d.id AND estado = 'anulado') AS anulado
     FROM documentos d JOIN tipos_documento t ON t.id = d.tipo_id
+    WHERE ${filtroAcceso(sql, sujeto)}
+      ${administra
+        ? sql``
+        : sql`AND EXISTS (SELECT 1 FROM documento_versiones
+            WHERE documento_id = d.id AND estado NOT IN ('borrador', 'descartado'))`}
     ORDER BY d.actualizado_en DESC`;
   return filas.map((f) => ({
     id: f.id, codigo: f.codigo, titulo: f.titulo,
@@ -407,15 +423,22 @@ export type DocumentoAdmin = {
   versiones: VersionAdmin[];
 };
 
+/**
+ * Detalle del panel: null si el sujeto no pasa la regla de acceso. Las versiones
+ * en borrador o descartadas solo llegan a quien administra; a quien no le queda
+ * ninguna otra versión, el documento tampoco existe (F13A-DC13).
+ */
 export async function obtenerDocumentoAdmin(
   codigo: string,
+  sujeto: SujetoVisibilidad,
 ): Promise<DocumentoAdmin | null> {
   const sql = obtenerSql();
+  const administra = puede(sujeto, "documentos.administrar");
   const [doc] = await sql`SELECT d.id, d.codigo, d.titulo, d.tipo_id, t.nombre AS tipo_nombre,
       d.descripcion, d.palabras_clave,
       EXISTS (SELECT 1 FROM documento_versiones WHERE documento_id = d.id AND estado <> 'borrador') AS publicado
     FROM documentos d JOIN tipos_documento t ON t.id = d.tipo_id
-    WHERE d.codigo = ${codigo}`;
+    WHERE d.codigo = ${codigo} AND ${filtroAcceso(sql, sujeto)}`;
   if (!doc) return null;
 
   const asociaciones = await sql`
@@ -438,7 +461,9 @@ export async function obtenerDocumentoAdmin(
     FROM documento_versiones v
     LEFT JOIN archivos a ON a.version_id = v.id
     WHERE v.documento_id = ${doc.id}
+      ${administra ? sql`` : sql`AND v.estado NOT IN ('borrador', 'descartado')`}
     GROUP BY v.id ORDER BY v.numero DESC`;
+  if (!administra && versiones.length === 0) return null;
 
   return {
     id: doc.id, codigo: doc.codigo, titulo: doc.titulo, tipoId: doc.tipo_id,
