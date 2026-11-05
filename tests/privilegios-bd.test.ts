@@ -47,6 +47,10 @@ describe.skipIf(!process.env.DATABASE_URL_MIGRADOR)("rol sgc_app", () => {
     expect(await codigoDeError(app`DELETE FROM accesos WHERE id = ${a.id}`)).toBe("42501");
     expect(await codigoDeError(app`DELETE FROM auditoria WHERE id = -1`)).toBe("42501");
   });
+  it.each(["firmas", "tramite_eventos"])("no puede modificar ni borrar %s", async (tabla) => {
+    expect(await codigoDeError(app`UPDATE ${app(tabla)} SET ronda = ronda WHERE id = -1`)).toBe("42501");
+    expect(await codigoDeError(app`DELETE FROM ${app(tabla)} WHERE id = -1`)).toBe("42501");
+  });
   it("sí puede insertar, leer y borrar en tablas operativas", async () => {
     const [u] = await app`INSERT INTO usuarios (usuario, nombre, hash_clave) VALUES (${'zz_priv_u_' + Date.now()}, 'x', 'h') RETURNING id`;
     expect(u.id).toBeGreaterThan(0);
@@ -54,5 +58,28 @@ describe.skipIf(!process.env.DATABASE_URL_MIGRADOR)("rol sgc_app", () => {
   });
   it("el trigger frena también al dueño del esquema", async () => {
     expect(await codigoDeError(dueno`DELETE FROM accesos WHERE usuario_texto = 'zz_priv'`)).toBe("42501");
+    // Las filas no existen: el trigger de fila no se dispara, así que se prueba con una real.
+    await dueno.begin(async (tx) => {
+      const [u] = await tx`SELECT id FROM usuarios ORDER BY id LIMIT 1`;
+      const [p] = await tx`SELECT id FROM procesos ORDER BY id LIMIT 1`;
+      const [t] = await tx`INSERT INTO tramites (numero, anio, consecutivo, tipo, motivo, justificacion, solicitante_id, proceso_id, etapa)
+        VALUES ('SOL-9998-1', 9998, 1, 'crear', 'mejora', 'prueba', ${u.id}, ${p.id}, 'cancelado') RETURNING id`;
+      await tx`INSERT INTO tramite_eventos (tramite_id, tipo, ronda) VALUES (${t.id}, 'prueba', 0)`;
+      await tx`SAVEPOINT a`;
+      expect(await codigoDeError(tx`UPDATE tramite_eventos SET tipo = 'x'`)).toBe("42501");
+      await tx`ROLLBACK TO SAVEPOINT a`;
+      expect(await codigoDeError(tx`DELETE FROM tramite_eventos`)).toBe("42501");
+      await tx`ROLLBACK TO SAVEPOINT a`;
+      await tx`INSERT INTO firmas (tramite_id, usuario_id, firma, ronda, hash_sha256, nombre_firmante, metodo)
+        VALUES (${t.id}, ${u.id}, 'elaboro', 0, 'x', 'n', 'clave')`;
+      await tx`SAVEPOINT b`;
+      expect(await codigoDeError(tx`UPDATE firmas SET ronda = 1`)).toBe("42501");
+      await tx`ROLLBACK TO SAVEPOINT b`;
+      expect(await codigoDeError(tx`DELETE FROM firmas`)).toBe("42501");
+      await tx`ROLLBACK TO SAVEPOINT b`;
+      throw new Error("revertir");
+    }).catch((e: Error) => {
+      if (e.message !== "revertir") throw e;
+    });
   });
 });

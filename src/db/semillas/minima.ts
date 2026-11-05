@@ -32,7 +32,9 @@ export async function limpiarTodo(db: Db): Promise<void> {
       configuracion, tipos_documento, documentos, documento_versiones,
       archivos, documento_proceso, documento_relaciones, areas, cargos,
       usuarios, usuario_procesos, sesiones, accesos, codigos_recuperacion,
-      auditoria, eventos_consulta, busquedas, notificaciones
+      auditoria, eventos_consulta, busquedas, notificaciones,
+      tramites, tramite_eventos, firmas, tramite_observaciones,
+      tramite_verificaciones, lista_verificacion_items
     RESTART IDENTITY CASCADE
   `);
 }
