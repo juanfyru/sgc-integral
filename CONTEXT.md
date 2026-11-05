@@ -37,7 +37,10 @@
    `image/png`. El controlador hizo los recorridos en navegador (`next start` en 3010,
    mismo código): dos puntos de control durante la fase y el recorrido final de §14 del
    spec de la fase, en claro y oscuro, a 390 px e impreso, sin defectos que pidieran otra
-   ola. **Falta:** revisión final de la rama, la prueba del usuario con "Qué probar y cómo
+   ola. La **revisión final de la rama** dio «With fixes» (0 Critical, 3 Important y
+   menores): la ola final de arreglos (I1–I3 y M1–M11; F12-D47 a F12-D49) va en los
+   commits que siguen a `605ca69`, con lint limpio, **1662 tests** (85 archivos) y
+   el build simulado del CI. **Falta:** la prueba del usuario con "Qué probar y cómo
    (Fase 12)", fusión en `main` y publicación.
 2. **Lo que sigue:** tras fusionar, escribir la spec y el plan de la **Fase 13 —
    Documentación SGC** (spec maestro §6.1 y §8 Fase 13) y ejecutarla con la metodología
@@ -89,10 +92,12 @@
    portal. Las semillas vacían `usuarios`: tras cada `db:seed` hay que repetir
    `admin:asegurar` y cambiar la clave otra vez. El contenedor `app` del compose de
    desarrollo no trae `ADMIN_*`: su arranque omite el admin (lo dice en el log) y usa la
-   misma base que `npm run dev` y los tests. **Tampoco monta el almacén:** la imagen lleva
-   la copia de `almacen/` que había al construirla, así que un logo o un archivo subido en
-   9081 no existe para `npm run dev` (3002) ni al revés, aunque la base sea la misma (ver
-   Deuda técnica). Para reconstruir solo la app sin tocar la base:
+   misma base que `npm run dev` y los tests. **Tampoco monta el almacén:** una imagen
+   construida desde la ola final de la Fase 12 ya no lleva `almacen/` (`.dockerignore`):
+   arranca con el almacén vacío, así que en 9081 los documentos de la demo no tienen
+   archivo, y un logo o un archivo subido en 9081 no existe para `npm run dev` (3002) ni
+   al revés, aunque la base sea la misma (ver Deuda técnica). Para reconstruir solo la
+   app sin tocar la base:
    `docker compose -f docker-compose.dev.yml up -d --build --no-deps app`.
 4. **Usuarios demo** (tras `npm run db:seed`; **solo desarrollo**). Clave común
    `Demo-SGC-2026-clave`, sin cambio obligatorio y con el aviso aceptado:
@@ -122,7 +127,7 @@
    datos de la prueba manual de la Fase 11 (p. ej. el área "Tecnología Informática") y
    `admin` se recreó con la `ADMIN_CLAVE` de `.env.local` y cambio obligatorio. Después
    no se volvió a resembrar.
-5. **Tests:** 1481 en 83 archivos, en serie (`fileParallelism: false`), contra la BD de
+5. **Tests:** 1662 en 85 archivos, en serie (`fileParallelism: false`), contra la BD de
    desarrollo sembrada y **conectados como `sgc_app`**, igual que la app; el test de
    privilegios usa además `DATABASE_URL_MIGRADOR`. Los usuarios de prueba con historia
    (`zz_<algo>_<timestamp>`) se acumulan porque no se pueden borrar (F11-D2); `db:seed` los
@@ -191,8 +196,9 @@ de desarrollo **tal como está**: no hace falta resembrar y la 0003 ya está apl
    Pulse **Guardar**: el servidor rechaza con «El color primario #9ecbff no tiene
    contraste suficiente con el texto blanco (1,7:1; mínimo 4,5:1). Pruebe #4a74a3.», no
    guarda nada y lo escrito en los demás campos sigue ahí. Escriba `#4a74a3` → **Guardar**
-   → "Cambios guardados". Cambie el tema a oscuro (paso 4) y compruebe que el botón
-   **Guardar** y la página resaltada de la barra lateral siguen con letra blanca legible.
+   → "Cambios guardados". Cambie el tema a oscuro (menú con su nombre → **Tema** →
+   **Oscuro**) y compruebe que el botón **Guardar** y la página resaltada de la barra
+   lateral siguen con letra blanca legible.
    Opcional, con el secundario: `#fcd116` → «El color secundario #fcd116 no se distingue
    del fondo (1,4:1; mínimo 3:1). Pruebe #a48700.»
 3. **Logo.** En la sección **Logo** → **Subir logo**:
@@ -205,11 +211,15 @@ de desarrollo **tal como está**: no hace falta resembrar y la 0003 ya está apl
    - un PNG válido (por ejemplo `src/db/semillas/recursos/logo-demo.png`) → «Logo
      actualizado», y el logo aparece en la barra lateral y en el ingreso. **Quitar logo**
      → «Logo quitado» y vuelve el cuadro con la sigla.
-4. **Tema.** Menú con su nombre → **Tema** → **Oscuro**: cambia al momento. **Salir**: la
-   pantalla de ingreso sigue en oscuro; entrar otra vez: sigue en oscuro. Recargue (F5)
-   varias páginas: nunca aparece un destello claro antes del oscuro. Elija **Según el
-   sistema** y cambie el modo de Windows (Configuración → Personalización → Colores →
-   "Elegir el modo"): el SGC lo sigue en los dos sentidos, sin recargar.
+4. **Tema.** Menú con su nombre → **Tema** → **Oscuro**: cambia en menos de medio
+   segundo. Con el teclado: abra el menú, llegue con **Tab** a las opciones del tema y
+   recórralas con las flechas: el tema se aplica una sola vez, con la opción en la que se
+   detuvo (medio segundo después, o al salir con **Tab** o **Escape**), no una vez por
+   cada opción. **Salir**: la pantalla de ingreso sigue en oscuro; entrar otra vez: sigue
+   en oscuro. Recargue (F5) varias páginas: nunca aparece un destello claro antes del
+   oscuro. Elija **Según el sistema** y cambie el modo de Windows (Configuración →
+   Personalización → Colores → "Elegir el modo"): el SGC lo sigue en los dos sentidos,
+   sin recargar.
 5. **Barra lateral por rol** (ventanas privadas):
    - `gerente`: **Inicio**, **Buscar documentos**, **Listado Maestro** y, en
      Administración, **Estadísticas**;
@@ -225,12 +235,15 @@ de desarrollo **tal como está**: no hace falta resembrar y la 0003 ya está apl
    `PR-GTH-002`) con la palabra resaltada; flechas y **Enter** abren la ficha. Escriba
    «usuarios»: con `admin` aparece **Ir a → Usuarios**; con `consulta`, no. **Escape**
    cierra y el foco vuelve al botón **Buscar…**.
-7. **Campana.** Use `gerente` o `lider.cex` (la bienvenida de `consulta` ya se marcó como
-   leída en la verificación): la campana muestra **1**; ábrala → «Bienvenida al SGC
-   Integral»; pulsarla abre **Mi cuenta** (pantalla aparte, sin campana) → **Volver al
-   inicio** → la campana ya no tiene número. Con otro usuario, **Marcar todas como
-   leídas** deja el contador en 0 sin salir de la página. En esta fase nada crea
-   notificaciones nuevas: cada usuario demo sirve para esta prueba una sola vez.
+7. **Campana.** Use `lider.cex` (o, de alternativa, `lider.gth` o `control.interno`;
+   `gerente` y `consulta` ya tienen la bienvenida leída): la campana muestra **1**; si la
+   campana ya está en 0, use otro usuario demo. Ábrala y compruebe que se cierra con
+   **Escape** (el foco vuelve a la campana) y con un clic fuera, y que abrir el menú con
+   su nombre la cierra. Ábrala otra vez → «Bienvenida al SGC Integral»; pulsarla abre
+   **Mi cuenta** (pantalla aparte, sin campana) → **Volver al inicio** → la campana ya no
+   tiene número y llega cerrada. Con otro usuario, **Marcar todas como leídas** deja el
+   contador en 0 sin salir de la página. En esta fase nada crea notificaciones nuevas:
+   cada usuario demo sirve para esta prueba una sola vez.
 8. **Inicio y celular.** **Inicio** muestra «Mis tareas (0)» con «No tiene tareas
    pendientes. Cuando un documento necesite su revisión o aprobación, aparecerá aquí.» y
    el mapa debajo. Con el navegador a 390 px de ancho (F12 → modo dispositivo) o en el
@@ -390,7 +403,9 @@ Plan: `docs/superpowers/plans/2026-11-04-fase12-estructura-visual.md`; diseño d
   `ui-base`, `ui-dialogo`, `mapa-oscuro`, `migracion-listas`, `proxy-redirecciones`,
   `sin-main`, y los estructurales `textos-fijos` y `colores-fijos`; ajustados
   `paginas-sesion`, `handlers-permisos`, `proxy-matcher`, `permisos`, `esquema`,
-  `a11y-estructura`, `mapa-admin` y otros.
+  `a11y-estructura`, `mapa-admin` y otros. La ola final de arreglos la llevó a
+  **1662 (85)**: nuevos `cascaron-desplegables` y `dockerignore`; `duplicados-usuario`
+  pasa a probar la comprobación contra la BD y `colores-fijos` revisa el hex de la marca.
 - **Documentos:** manual de usuario, capítulos 3 y 4, y ajustes en el 1 y el 2;
   `AGENTS.md` (cascarón y componentes base, tema y tokens, la entidad como configuración,
   rutas públicas, excepción a la regla 5, tests que no dejan la base inservible);
@@ -966,6 +981,9 @@ los tests) no entran; la de los tests quedó como regla en `AGENTS.md`. Base: **
 | F12-D44 | Tokens `--formato-*` para el ícono de formato de archivo (identidad del formato, no estado; 6,81–8,19:1 en claro y 10,48–11,23:1 en oscuro, con test) y botones destructivos de confirmación en tinte con borde, iguales a `claseBoton("peligro")` (R34) | Se apartan del §6.1, que no listaba tokens de formato: sin ellos los íconos quedaban con colores fijos que el tema oscuro no cubre. Práctica (WCAG 1.4.3) | 2026-11-04 |
 | F12-D45 | Las pantallas centradas (cuenta e ingreso) conservan su `h1` propio, sin `EncabezadoPagina` (R35) | No tienen migas ni acciones; el componente es para las páginas del cascarón. Práctica | 2026-11-04 |
 | F12-D46 | Los títulos «… — Administración SGC» de las páginas del panel se quedan (R36) | F12-DC4 quita la barra "Administración SGC", no el `<title>`, que sigue distinguiendo la pestaña del panel. Práctica | 2026-11-04 |
+| F12-D47 | **La campana y el menú de usuario se cierran como un desplegable** (`Desplegable`, sobre el mismo `<details>`): al cambiar la ruta, con Escape (el foco vuelve al `<summary>`; con el foco en otro diálogo, como `Ctrl K`, el Escape es de ese diálogo) y al pulsar fuera; abrir uno cierra el otro (grupo en JS y `name` común para la exclusión nativa). El tema se envía una vez, 400 ms después del último cambio de radio, o en cuanto el foco sale del formulario; Aplicar cancela el pendiente (I2, I3 de la revisión final) | El layout de `(app)` persiste: un `<details>` suelto seguía abierto tras navegar, y recorrer el tema con las flechas lanzaba una acción, un redirect y una revalidación por opción. Sin JavaScript los dos siguen funcionando. Práctica (patrón de menú desplegable accesible) | 2026-11-04 |
+| F12-D48 | **La imagen no lleva el almacén ni los artefactos de trabajo** (`.dockerignore`: `almacen`, `respaldos`, `.superpowers`, `.playwright-mcp`, `coverage`) y crea `/app/almacen` vacío y del usuario `nextjs` (M8) | Los documentos y el logo de desarrollo no deben viajar dentro de una imagen. Sin la carpeta, `nextjs` no puede crearla en `/app` (de root): el compose de desarrollo, que no monta volumen, no podría subir archivos; un volumen nombrado nuevo hereda ese dueño. Práctica | 2026-11-04 |
+| F12-D49 | **Los componentes cliente del cascarón se prueban sin DOM:** la lógica (cierre del desplegable, envío diferido) vive en módulos sin React ni DOM y se prueba con objetos simples y temporizadores falsos; el cableado de eventos se comprueba en la fuente y en el navegador | Sin dependencias nuevas sin proponerlas (Metodología, punto 2); no hay `jsdom` ni `happy-dom`. Costo: ningún test monta el componente con eventos reales. Si los componentes cliente crecen, proponer `happy-dom` o `jsdom` como dependencia de desarrollo. Práctica | 2026-11-04 |
 
 ## Deuda técnica conocida
 
@@ -985,14 +1003,16 @@ los tests) no entran; la de los tests quedó como regla en `AGENTS.md`. Base: **
   propio: la pestaña dice «<nombre> · SGC» en todas (heredado de `sgc-suaza`).
 - Un `notFound()` bajo una ruta con `loading.tsx` responde 200 en vez de 404 (el
   streaming ya envió la cabecera); la página sí es «Página no encontrada» (heredado).
-- Archivos huérfanos del logo: si `guardarLogo` falla entre `writeFile` y la BD, o en
-  dos primeras subidas simultáneas (`FOR UPDATE` sin fila), queda un `logo-<hex>` sin
-  referencia en `almacen/marca`. Un SVG o un políglota con firma PNG válida llega a disco,
-  pero se sirve como `image/png` con `nosniff`.
-- Logo: un `Content-Length` como `"1e3"` pasa `Number.isInteger` (el tope real se
-  revalida en `validarLogo`); el limitador cubre solo el `POST`; `quitarLogo` audita
-  aunque no hubiera logo; `editar_configuracion` se lee «Editó los textos
-  institucionales» aunque también cubre la marca y los colores.
+- `/marca/logo` sin limitador ni `immutable`: el limitador cubre solo el `POST` del logo y
+  la respuesta lleva `Cache-Control: public, max-age=86400` aunque la URL cambia con
+  `logo_version`.
+- Un archivo huérfano en la primera subida concurrente del logo: en dos primeras subidas
+  simultáneas (`FOR UPDATE` sin fila), o si `guardarLogo` falla entre `writeFile` y la BD,
+  queda un `logo-<hex>` sin referencia en `almacen/marca`.
+- Un PNG políglota (firma PNG válida con otro contenido, p. ej. SVG) llega a disco y se
+  sirve como `image/png` con `nosniff`.
+- `Content-Length "1e3"` pasa `Number.isInteger` en el `POST` del logo (el tope real se
+  revalida en `validarLogo`).
 - Opacidad de los nodos inactivos en la vista previa del mapa (`Banda`,
   `RailPeriferico`, `TarjetaProceso`) sin medir contra AA.
 - Doble espacio bajo `EncabezadoPagina` en algunas páginas (mapa, periféricos, lote,
@@ -1001,18 +1021,15 @@ los tests) no entran; la de los tests quedó como regla en `AGENTS.md`. Base: **
 - **Lema:** con el lema vacío, la franja del pie del mapa se pinta vacía (solo el ícono),
   y si falta la clave `MapaProcesos` cae a un lema fijo de la demo («Comprometidos con la
   vida…») que el test de textos fijos no cubre. Ocultar la franja sin lema.
-- Pantalla de entidad: «Cambios guardados» sigue a la vista mientras la URL tenga
-  `?guardado=1`; el error del servidor sale bajo el formulario y no junto al campo
-  (§7.3; el aviso en vivo sí va junto al color); un `useState` con `valor()` muerto;
-  sangría irregular en `EntradaColor` y línea en blanco doble en `CargaLogo`.
-- Duplicados de usuario: `duplicadosSinMayusculas` agrupa con `toLowerCase()` de JS y el
-  índice usa `lower()` de Postgres (con nombres no ASCII heredados podrían diferir;
-  agrupar en SQL lo iguala); `comprobarDuplicadosUsuario` sin test propio (ramas sin
-  tabla y con duplicados); el mensaje pide renombrar cuando la app no arranca, lo que
-  solo se puede con `psql` (guía de la **Fase 20**); `db:migrate` y el arranque muestran
-  el `NOTICE` de Postgres de `__drizzle_migrations`.
-- Tema: al recorrer los radios con las flechas, `onChange` → `requestSubmit` envía cada
-  opción intermedia.
+- `?guardado=1` persiste en la URL: «Cambios guardados» sigue a la vista en la pantalla
+  Entidad y marca mientras la URL lo tenga.
+- El error del servidor de la pantalla Entidad sale bajo el formulario y no junto al
+  campo (§7.3; el aviso en vivo sí va junto al color).
+- Pantalla de entidad: un `useState` con `valor()` muerto; sangría irregular en
+  `EntradaColor` y línea en blanco doble en `CargaLogo`.
+- Duplicados de usuario: el mensaje pide renombrar cuando la app no arranca, lo que solo
+  se puede con `psql` (guía de la **Fase 20**); `db:migrate` y el arranque muestran el
+  `NOTICE` de Postgres de `__drizzle_migrations`.
 - Búsqueda `Ctrl K`: una consulta que falló no se reintenta mientras no cambie el texto.
 - `Boton` sobrescribe un `aria-busy` del llamador; `Dialogo` no limpia al desmontar y un
   clic en su propio relleno lo cierra (el relleno va en un hijo).
@@ -1022,8 +1039,11 @@ los tests) no entran; la de los tests quedó como regla en `AGENTS.md`. Base: **
   oscurecer (`admin/mapa/page.tsx` y los heredados de la Fase 9; `aria-hidden`).
 - `--chart-3` oscuro coincide con `--texto-terciario` oscuro (`#8b94a3`).
 - Textos vacíos genéricos de `TablaDatos` («Sin documentos» perdió la ayuda «Cree el
-  primero…»; «Sin registros en el periodo» en Accesos también con filtros de usuario);
-  Estadísticas perdió su animación de entrada.
+  primero…»; «Sin registros en el periodo» en Accesos también con filtros de usuario).
+- Estadísticas perdió su animación de entrada.
+- **R24 se revisa en la Fase 13:** marcar una notificación como leída no se audita
+  (F12-D35); cuando «marcar leída» pase a ser el acuse de una tarea (acuses de lectura),
+  esa acción sí es evidencia y debe quedar en la bitácora.
 - Cobertura: sin tests de `EstadoVacio`, `Insignia` de módulo, `TarjetaCifra` sin estado
   ni `Campo` sin ayuda o error; sin test de 429 ni de `q` con `⟦⟧` en `/api/buscar` (sus
   casos dependen de documentos de la demo con «acta»); sin test de
@@ -1034,9 +1054,8 @@ los tests) no entran; la de los tests quedó como regla en `AGENTS.md`. Base: **
   de la semilla mínima no tiene test propio; `tests/esquema.test.ts` (rol por defecto,
   correo único) limpia con `DELETE` después del `expect` y deja filas `zz_*` si falla;
   `tests/proxy-redirecciones.test.ts` repite un caso de `tests/guardia.test.ts`.
-- El emisor del TOTP cae a «Entidad sin configurar» y no recorta espacios
-  (`texto()` de `entidad.ts` comprueba con `trim` pero devuelve sin recortar);
-  `Math.abs` sin efecto en la rama gamma de `color.ts`.
+- El emisor del TOTP cae a «Entidad sin configurar» sin nombre de entidad; `Math.abs` sin
+  efecto en la rama gamma de `color.ts`.
 - Los usuarios `zz_*` y `admin_pub_*` de los tests aparecen en la lista de usuarios de la
   base de desarrollo (F11-D2; `db:seed` los limpia).
 - Un fallo intermitente de la suite se vio una vez en la Fase 12 (1479/1481) y no se
@@ -1069,11 +1088,12 @@ los tests) no entran; la de los tests quedó como regla en `AGENTS.md`. Base: **
   `Dockerfile` aún mencionan el NAS/ARM64 en comentarios. Los reemplaza la **Fase 20**.
 - `next build` avisa que `src/lib/almacen.ts` (`path.resolve(process.env.ALMACEN_RUTA …)`)
   hace trazar todo el proyecto en `.next/standalone` (heredado de la Fase 4; la imagen
-  no copia `.env*` por `.dockerignore`). Acotar la ruta en la Fase 19. Visto al cerrar
-  la Fase 12: como `.dockerignore` no excluye `almacen/`, la imagen local lleva los
-  archivos del almacén de desarrollo (documentos y logo demo); el compose de desarrollo
-  no monta un volumen de almacén. Excluir `almacen/` (y `.superpowers/`) en la Fase 20,
-  con el volumen nombrado.
+  no copia `.env*` por `.dockerignore`). Acotar la ruta en la Fase 19. Desde la ola final
+  de la Fase 12, `.dockerignore` excluye `almacen`, `respaldos`, `.superpowers`,
+  `.playwright-mcp` y `coverage`, y la imagen crea `/app/almacen` vacío y del usuario
+  `nextjs`. El compose de desarrollo sigue sin montar un volumen de almacén: lo que se
+  sube en 9081 vive dentro del contenedor y los documentos de la demo no tienen archivo
+  allí. El volumen nombrado llega en la **Fase 20**.
 - **Para la Fase 13 (tablas inmutables nuevas):** `asegurarRolApp` da a `sgc_app`, por
   `ALTER DEFAULT PRIVILEGES`, `UPDATE` y `DELETE` sobre toda tabla que se cree después.
   Toda tabla inmutable nueva (`firmas`, spec §5.9) debe entrar al `REVOKE UPDATE, DELETE`

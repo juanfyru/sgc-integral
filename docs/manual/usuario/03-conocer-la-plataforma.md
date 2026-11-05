@@ -130,6 +130,9 @@ fecha). Los que no ha leído aparecen en negrita.
 - **Pulse un aviso** para marcarlo como leído y abrir la página a la que se refiere.
 - **Marcar todas como leídas** pone el contador en cero sin abrir ninguno.
 
+La lista se cierra con **Escape**, al pulsar fuera de ella, al abrir el menú con su
+nombre o al ir a otra página.
+
 Si no tiene avisos, la campana dice "Sin notificaciones. Aquí verá los avisos del
 sistema y las tareas que le asignen."
 
@@ -146,6 +149,9 @@ nombre y su rol, y estas opciones:
 - **Tema**: cómo se ve el SGC (sección 6.1).
 - **Salir**: cierra la sesión (Capítulo 1, sección 7).
 
+El menú se cierra igual que la lista de la campana: con **Escape**, al pulsar fuera, al
+abrir la campana o al ir a otra página.
+
 ### 6.1 Tema claro, oscuro o según el sistema
 
 En **Tema** elija una de tres opciones:
@@ -155,9 +161,10 @@ En **Tema** elija una de tres opciones:
 - **Según el sistema**: el SGC sigue la configuración de modo oscuro de su computador o de
   su teléfono, y cambia cuando esa configuración cambia.
 
-El cambio se aplica al momento y queda guardado en su cuenta: lo verá igual en cualquier
-equipo donde ingrese. La pantalla de ingreso de cada equipo recuerda el último tema que
-se usó en él.
+El cambio se aplica en menos de medio segundo y queda guardado en su cuenta: lo verá igual
+en cualquier equipo donde ingrese. Si recorre las opciones con las flechas del teclado,
+se aplica solo la opción en la que se detiene. La pantalla de ingreso de cada equipo
+recuerda el último tema que se usó en él.
 
 Si el tema no cambia al elegirlo (pasa en navegadores con funciones bloqueadas), pulse
 **Aplicar**, debajo de las opciones.

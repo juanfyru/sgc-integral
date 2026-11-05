@@ -144,9 +144,10 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   campana y menú); los pasos de la cuenta y el ingreso usan `PantallaCentrada`. La
   navegación sale de `src/componentes/cascaron/navegacion.ts`, cada entrada con su
   permiso; un módulo aparece en ella solo cuando existe. Las pantallas nuevas usan los
-  componentes de `src/componentes/ui` (`EncabezadoPagina` para todo `h1` dentro del
-  cascarón, `TablaDatos`, `Insignia`, `TarjetaCifra`, `EstadoVacio`, `Boton`, `Campo`,
-  `Dialogo`, `GraficoBarras`).
+  componentes de `src/componentes/ui`: `EncabezadoPagina` para todo `h1` dentro del
+  cascarón, salvo las pantallas centradas (`PantallaCentrada`) de la cuenta y el ingreso,
+  que conservan su `h1` propio; y `TablaDatos`, `Insignia`, `TarjetaCifra`, `EstadoVacio`,
+  `Boton`, `Campo`, `Dialogo` y `GraficoBarras`.
 - **Tema y color:** el tema lo resuelve el servidor en `<html data-tema>` (`claro`,
   `oscuro` o `sistema`, desde el perfil o la cookie `sgc_tema`), sin script inline; los
   tokens de `src/app/globals.css` llevan su valor claro y oscuro con `light-dark()` y la
