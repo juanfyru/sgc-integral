@@ -32,6 +32,11 @@ que detalla y corrige al spec maestro
   `npm run admin:asegurar`): en la **Tarea 2** (la demo adopta la convención de códigos) y en
   la **Tarea 15** (trámites de demostración). El controlador avisa al usuario antes de la
   primera: ya perdió datos de prueba con la resiembra de la Fase 12.
+- **La demo gana un segundo Admin SGC en la Tarea 15:** `coordinadora.sgc`, con la clave
+  demo y sin cambio obligatorio, como los demás usuarios demo. Hasta ahora ningún Admin SGC
+  venía en la semilla (se crea con `admin:asegurar`); hace falta porque un trámite sembrado
+  como publicado necesita un Admin SGC que lo firme. La semilla demo es solo de desarrollo.
+  El controlador se lo dice al usuario al entregar el plan.
 - **Puntos de control en navegador del controlador:** después de las Tareas 7 (pedir y
   aceptar), 11 (trámite completo con acta) y 15 (demostración de §20 del spec).
 - **Hallazgo al planear:** el panel nunca tuvo cómo editar `documento_relaciones` (hoy solo
@@ -420,6 +425,12 @@ propios de los tests (`ZZ-TST-…`, `ZZ-MST-…`) no se tocan y siguen siendo v�
 patrón nuevo. Comprobar que no queda ninguno:
 
 Run: `grep -rnE "\b(MN|CA|PR|FT|PO|PL|GU|PT|IN)-(CAL|GTH|SOG|GBS|CEX|AIN|PYM|GDO|GIC|GES|GRF)-0[0-9]{2}\b" src tests docs/manual`
+Expected: sin resultados.
+
+La sigla del tipo también aparece sola, como filtro (`tipo: "FT"`, `?tipo=FT`) y en
+comentarios (`src/db/consultas/busqueda.ts:18`): pasa a `FO`.
+
+Run: `grep -rnE '"FT"|tipo=FT|\(FT,' src tests`
 Expected: sin resultados.
 
 - [ ] **Step 7: Resembrar y verificar** (el controlador ya avisó al usuario)
@@ -928,8 +939,8 @@ git commit -m "feat(f13a): firma con reingreso de clave - los fallos cuentan par
   `src/componentes/tramites/FormularioSolicitud.tsx`, `src/componentes/tramites/EncabezadoTramite.tsx`,
   `src/componentes/tramites/PasosTramite.tsx`, `src/componentes/tramites/BloqueSolicitud.tsx`,
   `src/componentes/tramites/HistorialTramite.tsx`, `src/componentes/tramites/AccionesSolicitud.tsx`,
-  `tests/tramites-solicitud.test.ts`, `tests/tramites-visibilidad.test.ts`,
-  `tests/tramites-ui.test.tsx`
+  `tests/utiles/tramites.ts`, `tests/tramites-solicitud.test.ts`,
+  `tests/tramites-visibilidad.test.ts`, `tests/tramites-ui.test.tsx`
 - Modify: `src/lib/alcance.ts` (`puedeVerTramite`), `src/componentes/cascaron/navegacion.ts`,
   `src/componentes/cascaron/IconoNav.tsx`, `src/componentes/cascaron/Cascaron.tsx`,
   `src/lib/bitacora-detalle.ts`, `src/app/(app)/documentos/[codigo]/page.tsx` (botón
@@ -1042,6 +1053,15 @@ git commit -m "feat(f13a): firma con reingreso de clave - los fallos cuentan par
   `Cascaron` calcula `participaEnTramites` y lo pasa a la barra y a la paleta `Ctrl K`.
 - Produces (`src/lib/bitacora-detalle.ts`): un caso para las acciones `tramite_*`, con el
   número de solicitud y el código en la frase.
+- Produces (`tests/utiles/tramites.ts`, ayudantes de todos los tests del flujo; las Tareas
+  7 y 8 lo amplían):
+  - `sesionDe(sql: Cliente, usuario: string): Promise<SesionFlujo>` (lee a un usuario que ya
+    existe, por ejemplo uno de la demo).
+  - `usuarioDePrueba(tx, { rol, procesos?, jefeId? }): Promise<SesionFlujo>` (crea un usuario
+    activo dentro de la transacción) y `sesionAdmin(tx): Promise<SesionFlujo>` (uno con rol
+    `admin_sgc`).
+  - `opc(tx, ahora = "2026-11-05T15:00:00Z"): OpcionesFlujo` con
+    `verificar: async () => ({ ok: true, metodo: "clave" })`.
 - Produces (pantallas, spec §15.1 a §15.3 y maquetas 1 y 3):
   - `/tramites`: `exigirSesion()`; pestañas con `?pestana=`; `TablaTramites` con las columnas
     solicitud, documento, qué pide, etapa (con la ronda si es mayor que 1), responsable y
@@ -1059,8 +1079,8 @@ git commit -m "feat(f13a): firma con reingreso de clave - los fallos cuentan par
 
 - [ ] **Step 1: Tests que fallan**
 
-`tests/tramites-solicitud.test.ts` (BD, todo dentro de `revertida`; `sesionDe(tx, usuario)`
-arma una `SesionFlujo` leyendo al usuario demo; `opc(tx)` es `{ sql: tx, ahora: new Date("2026-11-05T15:00:00Z") }`):
+`tests/tramites-solicitud.test.ts` (BD, todo dentro de `revertida`, con los ayudantes de
+`tests/utiles/tramites.ts`):
 
 ```ts
 it("el líder pide sobre su proceso y el visto bueno queda dado", () => revertida(sql, async (tx) => {
@@ -1165,7 +1185,8 @@ git commit -m "feat(f13a): solicitud con visto bueno del líder, punto único de
 - Modify: `src/db/consultas/admin.ts` (`crearDocumentoEn`, `crearVersionBorradorEn`),
   `src/db/consultas/tramites-flujo.ts` (registro de manejadores),
   `src/db/consultas/tramites.ts` (datos para el panel), `src/lib/esquemas/tramites.ts`,
-  `src/app/acciones-tramites.ts`, `src/app/(app)/tramites/[id]/page.tsx`
+  `src/app/acciones-tramites.ts`, `src/app/(app)/tramites/[id]/page.tsx`,
+  `tests/utiles/tramites.ts`
 
 **Interfaces:**
 - Consumes: `transicionar` y el contrato de manejadores (Tarea 6); `rolAprobador`,
@@ -1173,7 +1194,7 @@ git commit -m "feat(f13a): solicitud con visto bueno del líder, punto único de
   `patronDesdeFormato` (Tarea 2); `obtenerConfigDocumental`.
 - Produces (`src/db/consultas/admin.ts`): las dos transacciones existentes se parten en un
   núcleo que recibe la transacción y su envoltorio de siempre.
-  - `export async function crearDocumentoEn(tx: TransactionSql, datos: DatosDocumento & { nivelAcceso?: "general" | "restringido"; numeroInicial?: number }, usuarioId: number): Promise<{ documentoId: number; versionId: number }>`
+  - `export async function crearDocumentoEn(tx: TransactionSql, datos: DatosDocumento & { nivelAcceso?: "general" | "restringido"; numeroInicial?: number; relacionados?: number[] }, usuarioId: number): Promise<{ documentoId: number; versionId: number }>`
     (`crearDocumento` la llama dentro de su `sql.begin`).
   - `export async function crearVersionBorradorEn(tx: TransactionSql, documentoId: number, usuarioId: number): Promise<{ versionId: number; numero: number }>`
     — el número es el mayor entre las versiones **no descartadas**, más uno.
@@ -1288,10 +1309,10 @@ it("una modificación abre la versión siguiente, con el plazo elegido y el apro
 }));
 ```
 
-`solicitudDeCreacion(tx, …)` y `aceptarCreacion(parcial)` son ayudantes del propio test:
-el primero crea un `admin_sgc` en la transacción, arma las sesiones de `gerente` y
-`lider.cex`, y deja una solicitud de creación en `aceptacion`; el segundo completa los
-campos obligatorios de `EsquemaAceptarCreacion` con valores válidos. Añadir los casos de
+`solicitudDeCreacion(tx, …)` y `aceptarCreacion(parcial)` se añaden a
+`tests/utiles/tramites.ts`: el primero crea un `admin_sgc` en la transacción, arma las
+sesiones de `gerente` y `lider.cex`, y deja una solicitud de creación en `aceptacion`; el
+segundo completa los campos obligatorios de `EsquemaAceptarCreacion` con valores válidos. Añadir los casos de
 eliminación (`aceptar` lleva a `aprobacion`, `version_id` es la vigente, y con el
 solicitante `admin_sgc` exige un aprobador de Gerencia) y de `rechazar` (cierra con
 `motivo_cierre` y avisa al solicitante).
@@ -1330,9 +1351,8 @@ para `consulta` (ausente), el aviso en la campana y la página a 390 px y en osc
   `src/app/api/tramites/[id]/archivos/[archivoId]/route.ts`,
   `src/app/(app)/tramites/[id]/archivos/[archivoId]/[[...nombre]]/route.ts`,
   `src/componentes/tramites/PanelElaboracion.tsx`, `src/componentes/tramites/DialogoFirma.tsx`,
-  `tests/utiles/tramites.ts`, `tests/tramites-elaboracion.test.ts`,
-  `tests/tramites-archivos.test.ts`
-- Modify: `src/app/admin/api/archivos/route.ts` (usa el núcleo extraído),
+  `tests/tramites-elaboracion.test.ts`, `tests/tramites-archivos.test.ts`
+- Modify: `tests/utiles/tramites.ts`, `src/app/admin/api/archivos/route.ts` (usa el núcleo extraído),
   `src/componentes/admin/ZonaCarga.tsx` (la dirección de subida pasa a ser una prop),
   `src/db/consultas/tramites-flujo.ts`, `src/app/acciones-tramites.ts`,
   `src/app/(app)/tramites/[id]/page.tsx`, `tests/handlers-permisos.test.ts`
@@ -1393,10 +1413,7 @@ para `consulta` (ausente), el aviso en la campana y la página a 390 px y en osc
   `/api/tramites/<id>/archivos`; control de cambios; observaciones abiertas con su respuesta
   (el formulario llega en la Tarea 9); botón «Enviar a revisión», que abre `DialogoFirma`.
   Para quien no es el elaborador, el mismo bloque en solo lectura con la banda «EN TRÁMITE».
-- Produces (`tests/utiles/tramites.ts`, ayudantes de todos los tests del flujo):
-  - `sesionDe(tx, usuario: string): Promise<SesionFlujo>`, `sesionAdmin(tx): Promise<SesionFlujo>`
-    (crea un `admin_sgc` dentro de la transacción), `usuarioDePrueba(tx, { rol, procesos?, jefeId? }): Promise<SesionFlujo>`.
-  - `opc(tx, ahora = "2026-11-05T15:00:00Z"): OpcionesFlujo` con `verificar: async () => ({ ok: true, metodo: "clave" })`.
+- Produces (`tests/utiles/tramites.ts`, se amplía con dos ayudantes):
   - `archivoPrincipal(tx, versionId): Promise<{ archivoId: number; hash: string; limpiar: () => Promise<void> }>`
     (escribe un PDF pequeño real en `zz-pruebas/<marca de tiempo>/` del almacén y registra la
     fila con su SHA-256 verdadero).
@@ -1474,7 +1491,7 @@ sesión y 403 con un `Origin` ajeno, y el `GET` responde 401 sin sesión.
   Run: `npx vitest run tests/subida.test.ts tests/archivos-origen.test.ts tests/handlers-permisos.test.ts`
   — Expected: los casos heredados siguen pasando.
 
-- [ ] **Step 4: Implementar** `tests/utiles/tramites.ts`, `tramites-archivos.ts`, el manejador,
+- [ ] **Step 4: Implementar** los dos ayudantes de `tests/utiles/tramites.ts`, `tramites-archivos.ts`, el manejador,
   la regla de la huella en `transicionar`, los tres handlers y las acciones.
 
 - [ ] **Step 5: Implementar `DialogoFirma` y `PanelElaboracion`** y montarlos en la página.
@@ -2034,6 +2051,8 @@ it("avisa una vez al responsable y, pasados los días, una vez a su jefe, sin t�
   const jefe = await usuarioDePrueba(tx, { rol: "consulta" });
   const elaborador = await usuarioDePrueba(tx, { rol: "consulta", jefeId: jefe.usuarioId });
   const t = await tramiteEn(tx, "elaboracion", { elaborador });                // vence el 20/11 (15 días)
+  // La función recorre todos los trámites abiertos: se silencian los demás (la demo trae vencidos desde la Tarea 15).
+  await tx`UPDATE tramites SET aviso_vencido_en = now(), escalado_en = now() WHERE id <> ${t.tramiteId}`;
   const correr = (ahora: string) => revisarVencimientos({ sql: tx, ahora: new Date(ahora) });
   expect(await correr("2026-11-20T15:00:00Z")).toEqual({ avisados: 0, escalados: 0 });   // todavía a tiempo
   expect(await correr("2026-11-21T15:00:00Z")).toEqual({ avisados: 1, escalados: 0 });
