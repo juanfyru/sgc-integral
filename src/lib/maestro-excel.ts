@@ -55,7 +55,8 @@ export async function construirExcelMaestro(
 
   hoja.columns = COLUMNAS.map((c) => ({ width: c.ancho }));
 
-  const tituloFila = hoja.addRow([meta.hospital]);
+  // El nombre viene de la BD (Entidad y marca): pasa por el mismo saneo que las filas (D54).
+  const tituloFila = hoja.addRow([sanearCelda(meta.hospital)]);
   tituloFila.font = { bold: true, size: 14 };
   hoja.mergeCells(1, 1, 1, ultima);
   const sub = hoja.addRow(["Listado Maestro de Documentos"]);

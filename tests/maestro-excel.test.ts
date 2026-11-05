@@ -79,3 +79,18 @@ describe("construirExcelMaestro", () => {
       expect(encabezados).toContain(c);
   });
 });
+
+describe("construirExcelMaestro — encabezado institucional", () => {
+  it("neutraliza el nombre de la entidad (viene de la BD) en la primera fila", async () => {
+    const buf = await construirExcelMaestro([FILA], {
+      hospital: "=HYPERLINK(\"x\")",
+      generadoEn: "2026-11-04 10:00",
+      alcance: "Documentos vigentes",
+      total: 1,
+    });
+    const hoja = await abrir(buf);
+    const a1 = String(hoja.getCell("A1").value);
+    expect(a1).not.toMatch(/^=/);
+    expect(a1).toBe("'=HYPERLINK(\"x\")");
+  });
+});
