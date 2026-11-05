@@ -37,6 +37,7 @@ import {
   type SesionFlujo,
 } from "./flujo/contrato";
 import { MANEJADORES_ACEPTACION } from "./flujo/aceptacion";
+import { MANEJADORES_ELABORACION, VALIDADORES_ELABORACION } from "./flujo/elaboracion";
 import { MANEJADORES_SOLICITUD } from "./flujo/solicitud";
 import {
   ETAPAS_ABIERTAS,
@@ -62,10 +63,14 @@ export type {
 } from "./flujo/contrato";
 
 /** Una acción sin entrada aquí no está disponible. */
-export const MANEJADORES: RegistroManejadores = { ...MANEJADORES_SOLICITUD, ...MANEJADORES_ACEPTACION };
+export const MANEJADORES: RegistroManejadores = {
+  ...MANEJADORES_SOLICITUD,
+  ...MANEJADORES_ACEPTACION,
+  ...MANEJADORES_ELABORACION,
+};
 
 /** Comprobaciones de negocio de las acciones que firman, antes de pedir o gastar la firma. */
-export const VALIDADORES: RegistroValidadores = {};
+export const VALIDADORES: RegistroValidadores = { ...VALIDADORES_ELABORACION };
 
 /** La carrera entre una solicitud y una aceptación que convierte otro trámite en modificación. */
 function traducirChoqueDeAbierto(err: { constraint_name?: string }): never {
@@ -280,6 +285,14 @@ async function huellaPrincipal(tx: TransactionSql, versionId: number | null): Pr
   return archivo.hash_sha256;
 }
 
+/** Lo que se firma después de elaborar es lo que firmó quien elaboró en esta ronda (spec 13A §10.4). */
+async function exigirHuellaDelElaborador(tx: TransactionSql, tramite: FilaTramite, hashSha256: string): Promise<void> {
+  const [elaboro] = await tx`SELECT hash_sha256 FROM firmas
+    WHERE tramite_id = ${tramite.id} AND firma = 'elaboro' AND ronda = ${tramite.ronda}
+    ORDER BY id DESC LIMIT 1`;
+  if (elaboro?.hash_sha256 !== hashSha256) throw new ErrorTramite("El archivo cambió después de la firma de quien elaboró");
+}
+
 /**
  * Hace una transición. La firma se verifica fuera de la transacción: usa otras conexiones del
  * pool y Argon2 tarda, y no debe gastarse si la acción no procede. Por eso todo se comprueba
@@ -326,6 +339,9 @@ export async function transicionar(
 
     if (firmas.length > 0) {
       const hashSha256 = await huellaPrincipal(tx, t.versionId);
+      if (t.tipo !== "eliminar" && firmas.some((firma) => firma !== "elaboro")) {
+        await exigirHuellaDelElaborador(tx, t, hashSha256);
+      }
       for (const firma of firmas) {
         await registrarFirma(tx, {
           tramiteId: t.id,

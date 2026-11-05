@@ -5,18 +5,23 @@ vi.mock("@/app/acciones-tramites", () => ({
   aceptarSolicitudAccion: vi.fn(),
   crearSolicitudAccion: vi.fn(),
   darVistoBuenoAccion: vi.fn(),
+  enviarARevisionAccion: vi.fn(),
+  guardarControlCambiosAccion: vi.fn(),
   negarVistoBuenoAccion: vi.fn(),
   rechazarSolicitudAccion: vi.fn(),
   retirarSolicitudAccion: vi.fn(),
 }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 import { AccionesSolicitud } from "@/componentes/tramites/AccionesSolicitud";
 import { BloqueSolicitud } from "@/componentes/tramites/BloqueSolicitud";
+import { DialogoFirma, FormularioFirma } from "@/componentes/tramites/DialogoFirma";
 import { EncabezadoTramite } from "@/componentes/tramites/EncabezadoTramite";
 import { FormularioSolicitud } from "@/componentes/tramites/FormularioSolicitud";
 import { HistorialTramite } from "@/componentes/tramites/HistorialTramite";
 import { ayudaDelCodigo } from "@/componentes/tramites/ClasificacionNueva";
 import { PanelAceptacion, type TramiteParaAceptar } from "@/componentes/tramites/PanelAceptacion";
+import { PanelElaboracion } from "@/componentes/tramites/PanelElaboracion";
 import { PasosTramite } from "@/componentes/tramites/PasosTramite";
 import { TablaTramites } from "@/componentes/tramites/TablaTramites";
 import type {
@@ -26,10 +31,12 @@ import type {
   DetalleTramite,
   ResumenTramite,
 } from "@/db/consultas/tramites";
+import type { Borrador } from "@/db/consultas/tramites-archivos";
 import {
   EsquemaAceptarCreacion,
   EsquemaAceptarEliminacion,
   EsquemaAceptarModificacion,
+  EsquemaControlCambios,
   EsquemaFirma,
   EsquemaMotivoCierre,
   EsquemaSolicitud,
@@ -388,6 +395,128 @@ describe("PanelAceptacion", () => {
   });
 });
 
+describe("DialogoFirma", () => {
+  const HUELLA = `9f2c${"0".repeat(56)}a41b`;
+  const props: React.ComponentProps<typeof DialogoFirma> = {
+    titulo: "Firmar como «Elaboró»",
+    etiquetaBoton: "Enviar a revisión",
+    resumen: { documento: "GTH-PR-02 Inducción", version: 3, huella: HUELLA },
+    accion: vi.fn(),
+    ocultos: { id: "7", etapa: "elaboracion", ronda: "1" },
+    pideCodigo: false,
+  };
+  const formularioDe = (cambios: Partial<typeof props> = {}, hijos?: React.ReactNode) =>
+    renderToStaticMarkup(<FormularioFirma {...props} {...cambios} alCancelar={() => {}}>{hijos}</FormularioFirma>);
+
+  it("cerrado solo es un botón: la clave no está en la página", () => {
+    const html = renderToStaticMarkup(<DialogoFirma {...props} />);
+    expect(html).toContain("Enviar a revisión");
+    expect(html).toContain('aria-haspopup="dialog"');
+    expect(html).not.toContain('name="clave"');
+  });
+
+  it("dice qué se firma: documento, versión y huella abreviada", () => {
+    const html = formularioDe();
+    expect(html).toContain("GTH-PR-02 Inducción");
+    expect(html).toContain("<dd>3</dd>");
+    expect(html).toContain("9f2c…a41b");
+    expect(html).not.toContain(HUELLA);
+    expect(html).toContain("Firmar y enviar a revisión");
+    expect(html).toContain("Cancelar");
+  });
+
+  it("sin archivo principal lo dice en vez de una huella", () => {
+    expect(formularioDe({ resumen: { documento: "Doc", version: null, huella: null } })).toContain("Sin archivo principal");
+  });
+
+  it("la clave es de contraseña y lleva los campos ocultos", () => {
+    const html = formularioDe();
+    expect(html).toMatch(/<input[^>]*type="password"[^>]*autoComplete="current-password"|<input[^>]*autoComplete="current-password"[^>]*type="password"/);
+    expect(html).toContain('name="clave"');
+    expect(html).not.toContain('name="codigo"');
+    for (const [nombre, valor] of Object.entries(props.ocultos)) {
+      expect(html).toContain(`name="${nombre}" value="${valor}"`);
+    }
+  });
+
+  it("con segundo factor pide el código, con su ayuda", () => {
+    const html = formularioDe({ pideCodigo: true });
+    expect(html).toContain('name="codigo"');
+    expect(html).toContain('inputMode="numeric"');
+    expect(html).toContain('autoComplete="one-time-code"');
+    expect(html).toContain("Código de su aplicación de autenticación o un código de recuperación");
+  });
+
+  it("los campos propios de la acción van dentro del formulario", () => {
+    expect(formularioDe({}, <textarea name="concepto" />)).toMatch(/<form.*name="concepto".*<\/form>/);
+  });
+});
+
+describe("PanelElaboracion", () => {
+  const tramite = { id: 7, etapa: "elaboracion", ronda: 1, codigo: "GTH-PR-02", titulo: "Inducción", versionNumero: 3 } as const;
+  const borrador: Borrador = {
+    archivos: [
+      { id: 21, rol: "principal", nombreOriginal: "Inducción v3.pdf", mime: "application/pdf", tamanoBytes: 2048, hashSha256: `9f2c${"0".repeat(56)}a41b` },
+      { id: 22, rol: "editable", nombreOriginal: "fuente.docx", mime: "application/zip", tamanoBytes: 500, hashSha256: `abcd${"0".repeat(56)}ef01` },
+    ],
+    controlCambios: "Se añade la <b>inducción</b>.",
+    plantilla: { codigo: "SGC-FO-01", version: 2 },
+    observaciones: [{ numero: 1, texto: "Falta el <i>responsable</i>.", respuesta: null }],
+  };
+  const pintar = (editable: boolean, b: Borrador = borrador, pideCodigo = false) =>
+    renderToStaticMarkup(<PanelElaboracion tramite={tramite} borrador={b} editable={editable} pideCodigo={pideCodigo} />);
+
+  it("el elaborador carga en la ruta del trámite, quita archivos y envía a revisión", () => {
+    const html = pintar(true);
+    expect(html).toContain("Arrastre los archivos aquí");
+    expect(html).toContain("Quitar");
+    expect(html).toContain('name="resumenCambios"');
+    expect(html).toContain("Guardar el control de cambios");
+    expect(html).toContain("Enviar a revisión");
+    expect(html).toContain('data-marca="EN TRÁMITE"');
+  });
+
+  it("los demás ven el mismo bloque en solo lectura, con la banda", () => {
+    const html = pintar(false);
+    expect(html).toContain('data-marca="EN TRÁMITE"');
+    expect(html).toContain("Borrador de la versión 3");
+    expect(html).toContain("Inducción v3.pdf");
+    for (const editable of ["Arrastre los archivos aquí", "Quitar", 'name="resumenCambios"', "Guardar el control de cambios", "Enviar a revisión"]) {
+      expect(html).not.toContain(editable);
+    }
+  });
+
+  it("cada archivo dice su rol, su tamaño y su huella abreviada, y se abre por la ruta del trámite", () => {
+    const html = pintar(false);
+    expect(html).toContain('href="/tramites/7/archivos/21/Inducci%C3%B3n%20v3.pdf"');
+    expect(html).toContain("Principal · huella ");
+    expect(html).toContain("9f2c…a41b");
+    expect(html).toContain("Editable · huella ");
+    expect(html).toContain("2 KB");
+    expect(html).not.toContain("0".repeat(56));
+  });
+
+  it("enlaza a la plantilla vigente, si la hay", () => {
+    expect(pintar(false)).toContain('href="/documentos/SGC-FO-01"');
+    expect(pintar(false, { ...borrador, plantilla: null })).not.toContain("Plantilla vigente");
+  });
+
+  it("el control de cambios y las observaciones son texto plano", () => {
+    const html = pintar(false);
+    expect(html).toContain("Se añade la &lt;b&gt;inducción&lt;/b&gt;.");
+    expect(html).toContain("1. Falta el &lt;i&gt;responsable&lt;/i&gt;.");
+    expect(html).toContain("Sin respuesta");
+    expect(pintar(false, { ...borrador, observaciones: [{ numero: 2, texto: "Otra.", respuesta: "Hecho." }] })).toContain("Respuesta: Hecho.");
+  });
+
+  it("sin archivos ni control de cambios lo dice", () => {
+    const html = pintar(false, { archivos: [], controlCambios: null, plantilla: null, observaciones: [] });
+    expect(html).toContain("Todavía no hay archivos.");
+    expect(html).toContain("Todavía sin escribir.");
+    expect(html).not.toContain("Observaciones abiertas");
+  });
+});
+
 describe("esquemas del trámite", () => {
   const solicitud = { tipo: "crear", motivo: "mejora", justificacion: "Diez caracteres.", procesoId: "3", tipoDocumentoId: "2", tituloPropuesto: "Tres" };
 
@@ -473,6 +602,13 @@ describe("esquemas del trámite", () => {
     expect(EsquemaMotivoCierre.safeParse({ motivo: "x".repeat(1001) }).success).toBe(false);
     expect(EsquemaMotivoCierre.safeParse({ motivo: "12345", id: "1" }).success).toBe(false);
   });
+  it("EsquemaControlCambios recorta y pide de 5 a 2000 caracteres", () => {
+    expect(EsquemaControlCambios.parse({ resumenCambios: "  Cinco  " })).toEqual({ resumenCambios: "Cinco" });
+    expect(EsquemaControlCambios.safeParse({ resumenCambios: "Poco" }).success).toBe(false);
+    expect(EsquemaControlCambios.safeParse({ resumenCambios: "x".repeat(2001) }).success).toBe(false);
+    expect(EsquemaControlCambios.safeParse({ resumenCambios: "Cinco", sobra: "x" }).success).toBe(false);
+  });
+
   it("EsquemaFirma limita la clave y el código, sin recortar la clave", () => {
     expect(EsquemaFirma.parse({ clave: " con espacio " })).toEqual({ clave: " con espacio " });
     expect(EsquemaFirma.safeParse({ clave: "" }).success).toBe(false);

@@ -56,7 +56,7 @@ function SeccionVersion({
             <span className="text-muted-foreground">
               {a.rol} · {a.mime} · {tamanoLegible(a.tamanoBytes)}
             </span>
-            {puedeAdministrar && version.estado === "borrador" && <EliminarArchivo archivoId={a.id} />}
+            {puedeAdministrar && version.estado === "borrador" && <EliminarArchivo direccion={`/admin/api/archivos/${a.id}`} />}
           </li>
         ))}
         {version.archivos.length === 0 && (
@@ -66,7 +66,7 @@ function SeccionVersion({
 
       {puedeAdministrar && version.estado === "borrador" && (
         <div className="flex flex-col gap-4">
-          <ZonaCarga versionId={version.id} />
+          <ZonaCarga direccion={`/admin/api/archivos?version=${version.id}`} />
 
           <details className="rounded-md border p-3" open={!version.aprobo}>
             <summary className="cursor-pointer text-sm font-medium">

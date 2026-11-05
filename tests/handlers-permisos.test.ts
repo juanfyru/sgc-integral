@@ -21,6 +21,9 @@ import { pngDePrueba } from "./png-prueba";
 import { LOGO_MAX_BYTES } from "@/lib/logo";
 import { GET as buscarApi } from "@/app/api/buscar/route";
 import { GET as excelMaestro } from "@/app/(app)/admin/(panel)/maestro/excel/route";
+import { GET as verArchivoTramite } from "@/app/(app)/tramites/[id]/archivos/[archivoId]/[[...nombre]]/route";
+import { DELETE as quitarArchivoTramite } from "@/app/api/tramites/[id]/archivos/[archivoId]/route";
+import { POST as subirArchivoTramite } from "@/app/api/tramites/[id]/archivos/route";
 import { obtenerSql } from "@/db/cliente";
 import { listarDocumentosAdmin, obtenerDocumentoAdmin } from "@/db/consultas/admin";
 import { crearSesion } from "@/lib/sesion";
@@ -381,5 +384,60 @@ describe("logo de la entidad: /admin/api/entidad/logo y /marca/logo", () => {
       expect(await d.json()).toEqual({ ok: true });
       expect(await contar()).toBe(antes);
     });
+  });
+});
+
+describe("archivos del trámite", () => {
+  const TRAMITE = "999999999";
+  const peticion = (metodo: string, ruta: string, cabeceras: Record<string, string> = {}) =>
+    new NextRequest(`http://sgc.local${ruta}`, { method: metodo, headers: { host: "sgc.local", ...cabeceras } });
+  const subir = (cabeceras?: Record<string, string>, id = TRAMITE, rol = "principal") =>
+    subirArchivoTramite(peticion("POST", `/api/tramites/${id}/archivos?rol=${rol}`, cabeceras), { params: Promise.resolve({ id }) });
+  const quitar = (cabeceras?: Record<string, string>, id = TRAMITE) =>
+    quitarArchivoTramite(peticion("DELETE", `/api/tramites/${id}/archivos/1`, cabeceras), { params: Promise.resolve({ id, archivoId: "1" }) });
+  const ver = (cabeceras?: Record<string, string>, id = TRAMITE, archivoId = "1") =>
+    verArchivoTramite(peticion("GET", `/tramites/${id}/archivos/${archivoId}`, cabeceras), { params: Promise.resolve({ id, archivoId }) });
+
+  it("sin sesión responden 401", async () => {
+    expect((await subir()).status).toBe(401);
+    expect((await quitar()).status).toBe(401);
+    expect((await ver()).status).toBe(401);
+  });
+
+  it("los que escriben responden 403 con un Origin ajeno, aun con sesión", async () => {
+    const ajeno = { ...cookie(tokenConsulta), origin: "https://malo.com" };
+    const subida = await subir(ajeno);
+    expect(subida.status).toBe(403);
+    expect(await subida.json()).toEqual({ error: "Origen no permitido" });
+    expect((await quitar(ajeno)).status).toBe(403);
+  });
+
+  it("el rol de archivo se valida antes de mirar el trámite", async () => {
+    expect((await subir(cookie(tokenConsulta), TRAMITE, "acta_aprobacion")).status).toBe(400);
+  });
+
+  it("un trámite que no existe, o que no se puede ver, responde 404 y nunca «sin permiso»", async () => {
+    expect((await subir(cookie(tokenConsulta))).status).toBe(404);
+    expect((await quitar(cookie(tokenConsulta))).status).toBe(404);
+    expect((await ver(cookie(tokenConsulta))).status).toBe(404);
+  });
+
+  it("un id que no es un número responde 404", async () => {
+    expect((await subir(cookie(tokenConsulta), "abc")).status).toBe(404);
+    expect((await quitar(cookie(tokenConsulta), "abc")).status).toBe(404);
+    expect((await ver(cookie(tokenConsulta), "abc")).status).toBe(404);
+    expect((await ver(cookie(tokenConsulta), TRAMITE, "abc")).status).toBe(404);
+    expect((await ver(cookie(tokenConsulta), "99999999999999999999")).status).toBe(404);
+  });
+
+  it("el ritmo tiene tope por usuario: 30 escrituras y 60 lecturas por minuto", async () => {
+    const seguidas = async (n: number, pedir: () => Promise<Response>) => {
+      for (let i = 0; i < n; i++) expect((await pedir()).status).toBe(404);
+      expect((await pedir()).status).toBe(429);
+    };
+    const token = await crearUsuario(`zz_ritmo_tramite_${SUFIJO}`, "consulta");
+    await seguidas(30, () => subir(cookie(token)));
+    await seguidas(30, () => quitar(cookie(token)));
+    await seguidas(60, () => ver(cookie(token)));
   });
 });

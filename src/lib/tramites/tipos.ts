@@ -65,3 +65,8 @@ export const ETIQUETA_FIRMA: Record<Firma, string> = {
   aprobo: "Aprobó",
   publico: "Publicó",
 };
+
+/** Principio y fin de la huella: alcanza para comparar a simple vista. */
+export function huellaAbreviada(hash: string): string {
+  return `${hash.slice(0, 4)}…${hash.slice(-4)}`;
+}

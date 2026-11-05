@@ -3,11 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-export function EliminarArchivo({ archivoId }: { archivoId: number }) {
+export function EliminarArchivo({ direccion }: { direccion: string }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   async function eliminar() {
-    const res = await fetch(`/admin/api/archivos/${archivoId}`, { method: "DELETE" });
+    const res = await fetch(direccion, { method: "DELETE" });
     if (res.ok) router.refresh();
     else setError((await res.json()).error ?? "No se pudo eliminar");
   }

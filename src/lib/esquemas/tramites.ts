@@ -19,6 +19,8 @@ export const EsquemaSolicitud = z
 
 export const EsquemaMotivoCierre = z.object({ motivo: z.string().trim().min(5).max(1000) }).strict();
 
+export const EsquemaControlCambios = z.object({ resumenCambios: z.string().trim().min(5).max(2000) }).strict();
+
 /** La clave no se recorta: un espacio al final es parte de ella. */
 export const EsquemaFirma = z
   .object({

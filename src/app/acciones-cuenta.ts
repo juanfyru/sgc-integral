@@ -1,6 +1,6 @@
 "use server";
 
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { EstadoAccion } from "@/app/admin/comun";
@@ -18,6 +18,7 @@ import { hashearClave } from "@/lib/clave";
 import { fijarClaveInicial } from "@/lib/clave-inicial";
 import { validarClave } from "@/lib/clave-politica";
 import { cifrar } from "@/lib/cifrado";
+import { contextoDePeticion } from "@/lib/contexto-peticion";
 import { inscripcionBloqueada, pendienteDeCuenta } from "@/lib/cuenta-estado";
 import {
   EsquemaAviso,
@@ -32,7 +33,6 @@ import { EsquemaIdNotificacion, EsquemaTema } from "@/lib/esquemas/entidad";
 import { comprobarClaveActual, confirmarSegundoFactor, quitarSegundoFactor, type EstadoFactor } from "@/lib/segundo-factor";
 import { generarSecretoTotp } from "@/lib/totp";
 import { intentarFactor, intentarIngreso } from "@/lib/ingreso";
-import { ipDePeticion } from "@/lib/ip";
 import { crearLimitador } from "@/lib/limite";
 import { destinoNotificacion, rutaInterna } from "@/lib/rutas";
 import { cerrarSesion, COOKIE_SESION } from "@/lib/sesion";
@@ -50,11 +50,6 @@ const permitirIngresoIpDesconocida = crearLimitador({ limite: 120, ventanaMs: 60
 // Toda acción que cambia la sesión o el estado de la cuenta llama revalidatePath("/", "layout")
 // antes de redirigir: en producción el enrutador del cliente reutiliza entradas RSC prefetcheadas
 // (p. ej. `/` capturada antes de cambiar la clave) y el redirect entraría en bucle.
-
-async function contextoDePeticion() {
-  const cabeceras = await headers();
-  return { ip: ipDePeticion(cabeceras), userAgent: cabeceras.get("user-agent") };
-}
 
 function errorDeFormulario(err: unknown): EstadoAccion {
   if (err instanceof ErrorValidacion) return { ok: false, error: err.message };

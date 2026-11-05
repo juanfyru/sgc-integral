@@ -4,10 +4,12 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { transicionar, crearSolicitud, obtenerTramite, redirect, requerirSesion } = vi.hoisted(() => ({
+const { transicionar, crearSolicitud, obtenerTramite, guardarControlCambios, contextoDePeticion, redirect, requerirSesion } = vi.hoisted(() => ({
   transicionar: vi.fn(),
   crearSolicitud: vi.fn(),
   obtenerTramite: vi.fn(),
+  guardarControlCambios: vi.fn(),
+  contextoDePeticion: vi.fn(),
   redirect: vi.fn((destino: string) => {
     throw new Error(`REDIRECT:${destino}`);
   }),
@@ -23,11 +25,15 @@ vi.mock("@/db/consultas/tramites-flujo", async () => ({
   crearSolicitud,
 }));
 vi.mock("@/db/consultas/tramites", () => ({ obtenerTramite }));
+vi.mock("@/db/consultas/tramites-archivos", () => ({ guardarControlCambios }));
+vi.mock("@/lib/contexto-peticion", () => ({ contextoDePeticion }));
 
 import {
   aceptarSolicitudAccion,
   crearSolicitudAccion,
   darVistoBuenoAccion,
+  enviarARevisionAccion,
+  guardarControlCambiosAccion,
   negarVistoBuenoAccion,
   rechazarSolicitudAccion,
   retirarSolicitudAccion,
@@ -190,5 +196,92 @@ describe("aceptar y rechazar", () => {
     expect(await rechazarSolicitudAccion(null, formulario({ ...enAceptacion, motivo: "No procede." }))).toMatchObject({ ok: false });
     expect(obtenerTramite).not.toHaveBeenCalled();
     expect(transicionar).not.toHaveBeenCalled();
+  });
+});
+
+describe("elaboración", () => {
+  const enElaboracion = { id: "7", etapa: "elaboracion", ronda: "1" };
+  const elaborador = (usuarioId = 1) => ({ sesionId: "s", usuarioId, usuario: "c", nombre: "Elabora", rol: "consulta", verHistorial: false });
+
+  beforeEach(() => {
+    requerirSesion.mockResolvedValue(elaborador());
+    contextoDePeticion.mockResolvedValue({ ip: "10.0.0.5", userAgent: "Navegador" });
+    transicionar.mockResolvedValue({ etapa: "revision", ronda: 1 });
+  });
+
+  it("enviar a revisión lleva la clave sin recortar, el código y el contexto de la petición", async () => {
+    expect(await enviarARevisionAccion(null, formulario({ ...enElaboracion, clave: " con espacios ", codigo: " 123456 " }))).toBeNull();
+    const [, entrada, opciones] = transicionar.mock.calls[0];
+    expect(entrada).toEqual({
+      tramiteId: 7,
+      accion: "enviar_a_revision",
+      etapaEsperada: "elaboracion",
+      rondaEsperada: 1,
+      credenciales: { clave: " con espacios ", codigo: "123456" },
+    });
+    expect(opciones).toEqual({ contexto: { ip: "10.0.0.5", userAgent: "Navegador" } });
+  });
+
+  it("sin segundo factor no hay código", async () => {
+    await enviarARevisionAccion(null, formulario({ ...enElaboracion, clave: "secreta", codigo: "" }));
+    expect(transicionar.mock.calls[0][1].credenciales).toEqual({ clave: "secreta" });
+  });
+
+  it("sin clave, o con un campo de más, no llega a transicionar", async () => {
+    expect(await enviarARevisionAccion(null, formulario(enElaboracion))).toMatchObject({ ok: false });
+    expect(await enviarARevisionAccion(null, formulario({ ...enElaboracion, clave: "secreta", sobra: "x" }))).toMatchObject({ ok: false });
+    expect(transicionar).not.toHaveBeenCalled();
+  });
+
+  it("una firma que cierra la sesión lleva a /ingreso", async () => {
+    transicionar.mockRejectedValue(new ErrorFirma("Clave o código incorrectos", true));
+    await expect(enviarARevisionAccion(null, formulario({ ...enElaboracion, clave: "mala" }))).rejects.toThrow("REDIRECT:/ingreso");
+  });
+
+  describe("la clave y el código no vuelven al navegador", () => {
+    const campos = { ...enElaboracion, clave: "secreta-1", codigo: "998877" };
+    const sinSecretos = (estado: unknown) => {
+      expect(estado).toMatchObject({ ok: false });
+      expect(JSON.stringify(estado)).not.toMatch(/secreta-1|998877/);
+    };
+
+    it("ni tras una firma rechazada", async () => {
+      transicionar.mockRejectedValue(new ErrorFirma("Clave o código incorrectos", false));
+      const estado = await enviarARevisionAccion(null, formulario(campos));
+      sinSecretos(estado);
+      expect(estado).toMatchObject({ error: "Clave o código incorrectos", valores: { id: "7" } });
+    });
+
+    it("ni si el formulario no pasa el esquema", async () => {
+      sinSecretos(await enviarARevisionAccion(null, formulario({ ...campos, sobra: "x" })));
+      sinSecretos(await enviarARevisionAccion(null, formulario({ ...enElaboracion, clave: "secreta-1", codigo: "12" })));
+    });
+
+    it("ni si se pasó del límite de ritmo", async () => {
+      requerirSesion.mockResolvedValue(elaborador(4242));
+      for (let i = 0; i < 60; i++) await enviarARevisionAccion(null, formulario(campos));
+      const limitada = await enviarARevisionAccion(null, formulario(campos));
+      sinSecretos(limitada);
+      expect(limitada).toMatchObject({ error: expect.stringMatching(/Demasiadas operaciones/) });
+    });
+  });
+
+  it("solo pide el contexto de la petición quien firma", async () => {
+    await retirarSolicitudAccion(null, formulario({ id: "7", etapa: "aceptacion", ronda: "0" }));
+    expect(contextoDePeticion).not.toHaveBeenCalled();
+  });
+
+  it("guardar el control de cambios lee el texto con su esquema", async () => {
+    expect(await guardarControlCambiosAccion(null, formulario({ ...enElaboracion, resumenCambios: "  Se añade la inducción.  " }))).toBeNull();
+    expect(guardarControlCambios.mock.calls[0][0]).toBe(7);
+    expect(guardarControlCambios.mock.calls[0][1].usuarioId).toBe(1);
+    expect(guardarControlCambios.mock.calls[0][2]).toBe("Se añade la inducción.");
+  });
+
+  it("un control de cambios vacío o con campos de más vuelve con lo escrito", async () => {
+    expect(await guardarControlCambiosAccion(null, formulario({ ...enElaboracion, resumenCambios: "   " }))).toMatchObject({ ok: false });
+    expect(await guardarControlCambiosAccion(null, formulario({ ...enElaboracion, resumenCambios: "Corto" , sobra: "x" })))
+      .toMatchObject({ ok: false, valores: { resumenCambios: "Corto" } });
+    expect(guardarControlCambios).not.toHaveBeenCalled();
   });
 });

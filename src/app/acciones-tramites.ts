@@ -2,6 +2,7 @@
 
 import { idNumerico, mutacion, texto, type EstadoAccion } from "@/app/admin/comun";
 import { obtenerTramite } from "@/db/consultas/tramites";
+import { guardarControlCambios } from "@/db/consultas/tramites-archivos";
 import {
   CAMBIO_MIENTRAS,
   ErrorFirma,
@@ -11,10 +12,13 @@ import {
   type EntradaTransicion,
   type SesionFlujo,
 } from "@/db/consultas/tramites-flujo";
+import { contextoDePeticion } from "@/lib/contexto-peticion";
 import {
   EsquemaAceptarCreacion,
   EsquemaAceptarEliminacion,
   EsquemaAceptarModificacion,
+  EsquemaControlCambios,
+  EsquemaFirma,
   EsquemaMotivoCierre,
   EsquemaSolicitud,
 } from "@/lib/esquemas/tramites";
@@ -39,6 +43,18 @@ function referencia(formData: FormData): Pick<EntradaTransicion, "tramiteId" | "
 }
 
 /**
+ * Saca la clave y el código del formulario y los deja en una copia: `mutacion` le devuelve al
+ * navegador lo enviado cuando algo falla, y una clave no vuelve por ahí.
+ */
+function separarFirma(formData: FormData): FormData {
+  const firma = new FormData();
+  for (const [campo, valor] of formData) firma.append(campo, valor);
+  formData.delete("clave");
+  formData.delete("codigo");
+  return firma;
+}
+
+/**
  * Corre la transición que pide el formulario. `mutacion` vuelve mensaje todo lo que se lance:
  * una firma que cerró la sesión no es un error del formulario, sino el fin de esa sesión.
  */
@@ -49,7 +65,8 @@ async function ejecutar(
   extra?: Pick<EntradaTransicion, "datos" | "credenciales">,
 ): Promise<string | void> {
   try {
-    await transicionar(sesion, { ...referencia(formData), accion, ...extra });
+    const opciones = extra?.credenciales ? { contexto: await contextoDePeticion() } : undefined;
+    await transicionar(sesion, { ...referencia(formData), accion, ...extra }, opciones);
   } catch (err) {
     if (err instanceof ErrorFirma && err.sesionCerrada) return "/ingreso";
     throw err;
@@ -103,6 +120,22 @@ export async function rechazarSolicitudAccion(_prev: EstadoAccion, formData: For
   return mutacion(formData, "tramites.gestionar", (_usuarioId, _formData, sesion) =>
     ejecutar(formData, sesion, "rechazar", {
       datos: parsearFormulario(formData, EsquemaMotivoCierre, { omitir: OCULTOS }),
+    }),
+  );
+}
+
+export async function guardarControlCambiosAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "tramites.participar", async (_usuarioId, _formData, sesion) => {
+    const { resumenCambios } = parsearFormulario(formData, EsquemaControlCambios, { omitir: OCULTOS });
+    await guardarControlCambios(idNumerico(formData, "id"), sesion, resumenCambios);
+  });
+}
+
+export async function enviarARevisionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  const firma = separarFirma(formData);
+  return mutacion(formData, "tramites.participar", (_usuarioId, _formData, sesion) =>
+    ejecutar(formData, sesion, "enviar_a_revision", {
+      credenciales: parsearFormulario(firma, EsquemaFirma, { omitir: OCULTOS }),
     }),
   );
 }

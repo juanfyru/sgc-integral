@@ -21,7 +21,7 @@ const ETIQUETA_ROL: Record<RolArchivo, string> = {
   anexo: "Anexo",
 };
 
-export function ZonaCarga({ versionId }: { versionId: number }) {
+export function ZonaCarga({ direccion }: { direccion: string }) {
   const router = useRouter();
   const [rol, setRol] = useState<RolArchivo>("principal");
   const [cargas, setCargas] = useState<Carga[]>([]);
@@ -38,7 +38,7 @@ export function ZonaCarga({ versionId }: { versionId: number }) {
       { nombre: archivo.name, progreso: 0, estado: "subiendo" },
     ]);
     const xhr = new XMLHttpRequest();
-    const url = `/admin/api/archivos?version=${versionId}&rol=${rol}`;
+    const url = `${direccion}${direccion.includes("?") ? "&" : "?"}rol=${rol}`;
     xhr.open("POST", url);
     xhr.setRequestHeader("x-nombre-archivo", encodeURIComponent(archivo.name));
     xhr.upload.onprogress = (e) => {
