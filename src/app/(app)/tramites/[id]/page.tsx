@@ -26,7 +26,10 @@ export default async function PaginaTramite({ params }: { params: Promise<{ id: 
         <BloqueSolicitud tramite={tramite} />
         <div className="flex min-w-0 flex-col gap-6">
           <HistorialTramite tipo={tramite.tipo} eventos={tramite.eventos} />
-          <AccionesSolicitud tramite={tramite} acciones={tramite.acciones} />
+          <AccionesSolicitud
+            tramite={{ id: tramite.id, etapa: tramite.etapa, ronda: tramite.ronda }}
+            acciones={tramite.acciones}
+          />
         </div>
       </div>
     </div>

@@ -136,6 +136,13 @@ describe("obtenerTramite", () => {
     expect(await obtenerTramite(tramiteId, lider, { sql: tx })).toBeNull();
   }));
 
+  it("un líder sin procesos no ve nada, y no rompe la consulta", () => revertida(sql, async (tx) => {
+    const { tramiteId } = await tramiteGth(tx);
+    const sinProcesos = await usuarioDePrueba(tx, { rol: "lider_proceso" });
+    expect(await obtenerTramite(tramiteId, sinProcesos, { sql: tx })).toBeNull();
+    expect(await listarTramites(sinProcesos, "en_curso", { sql: tx })).toEqual([]);
+  }));
+
   it("lideresDeProceso devuelve solo líderes activos de procesos activos", () => revertida(sql, async (tx) => {
     const [gth] = await tx`SELECT id FROM procesos WHERE sigla = 'GTH'`;
     const lider = await sesionDe(tx, "lider.gth");

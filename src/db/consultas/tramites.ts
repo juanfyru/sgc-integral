@@ -112,6 +112,8 @@ async function tramitesVistos(
   condicion: ReturnType<typeof filtroAcceso>,
   bloquear = false,
 ): Promise<TramiteVisto[]> {
+  const alcance = await alcanceProcesos(sesion, { sql });
+  const liderados = alcance.todos ? [] : alcance.procesoIds;
   const filas = await sql`SELECT t.id, t.numero, t.tipo, t.motivo, t.justificacion, t.solicitante_id,
       t.proceso_id, t.subproceso_id, t.tipo_documento_id, t.titulo_propuesto, t.documento_id,
       t.version_id, t.etapa, t.ronda, t.elaborador_id, t.revisor_id, t.aprobador_id, t.vence_en,
@@ -133,21 +135,13 @@ async function tramitesVistos(
                 WHERE resp_up.usuario_id = u.id AND resp_up.proceso_id = t.proceso_id))
         ORDER BY u.nombre
       ) AS responsables,
-      EXISTS (
-        SELECT 1 FROM usuario_procesos up
-        JOIN procesos up_p ON up_p.id = up.proceso_id AND up_p.activo
-        WHERE up.usuario_id = ${sesion.usuarioId} AND up.proceso_id = t.proceso_id
-      ) AS lidera_propietario,
-      EXISTS (
-        SELECT 1 FROM usuario_procesos up
-        JOIN procesos up_p ON up_p.id = up.proceso_id AND up_p.activo
-        WHERE up.usuario_id = ${sesion.usuarioId}
-          AND (up.proceso_id = t.proceso_id OR EXISTS (
-            SELECT 1 FROM documento_proceso dp
-            LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
-            WHERE dp.documento_id = t.documento_id
-              AND COALESCE(dp.proceso_id, s.proceso_id) = up.proceso_id))
-      ) AS lidera_alguno,
+      (t.proceso_id = ANY(${liderados})) AS lidera_propietario,
+      (t.proceso_id = ANY(${liderados}) OR EXISTS (
+        SELECT 1 FROM documento_proceso dp
+        LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
+        WHERE dp.documento_id = t.documento_id
+          AND COALESCE(dp.proceso_id, s.proceso_id) = ANY(${liderados})
+      )) AS lidera_alguno,
       (t.documento_id IS NULL OR ${filtroAcceso(sql, sesion)}) AS pasa_nivel_acceso
     FROM tramites t
     JOIN procesos p ON p.id = t.proceso_id
@@ -174,7 +168,7 @@ async function tramitesVistos(
         verHistorial: sesion.verHistorial,
         pasaNivelAcceso: f.pasa_nivel_acceso,
       }),
-      lideraPropietario: sesion.rol === "lider_proceso" && f.lidera_propietario,
+      lideraPropietario: f.lidera_propietario,
       codigo: f.codigo,
       titulo: f.titulo,
       versionNumero: f.version_numero,

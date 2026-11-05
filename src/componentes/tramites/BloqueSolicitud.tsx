@@ -12,9 +12,9 @@ function textoVistoBueno(t: DetalleTramite): string {
   return t.etapa === "visto_bueno" ? "Pendiente" : "No se dio";
 }
 
-function Fila({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
+function Fila({ etiqueta, ancha, children }: { etiqueta: string; ancha?: boolean; children: React.ReactNode }) {
   return (
-    <div>
+    <div className={ancha ? "sm:col-span-2" : undefined}>
       <dt className="text-xs text-muted-foreground">{etiqueta}</dt>
       <dd className="whitespace-pre-wrap break-words text-sm">{children}</dd>
     </div>
@@ -36,13 +36,13 @@ export function BloqueSolicitud({ tramite: t }: { tramite: DetalleTramite }) {
         <Fila etiqueta="Motivo">{ETIQUETA_MOTIVO[t.motivo]}</Fila>
         <Fila etiqueta="Visto bueno">{textoVistoBueno(t)}</Fila>
         {t.tituloPropuesto ? <Fila etiqueta="Título propuesto">{t.tituloPropuesto}</Fila> : null}
-        <div className="sm:col-span-2">
-          <Fila etiqueta="Justificación">{t.justificacion}</Fila>
-        </div>
+        <Fila etiqueta="Justificación" ancha>
+          {t.justificacion}
+        </Fila>
         {t.motivoCierre ? (
-          <div className="sm:col-span-2">
-            <Fila etiqueta="Motivo de cierre">{t.motivoCierre}</Fila>
-          </div>
+          <Fila etiqueta="Motivo de cierre" ancha>
+            {t.motivoCierre}
+          </Fila>
         ) : null}
       </dl>
     </section>

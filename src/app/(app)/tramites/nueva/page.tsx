@@ -18,7 +18,8 @@ export default async function PaginaNuevaSolicitud({
   const { documento } = await searchParams;
   const datos = await datosParaSolicitar(sesion);
   const codigo = typeof documento === "string" ? documento.trim().toUpperCase() : "";
-  const elegido = datos.documentos.find((d) => d.codigo === codigo && !d.conTramite);
+  const pedido = datos.documentos.find((d) => d.codigo === codigo);
+  const elegido = pedido?.conTramite ? undefined : pedido;
   const sinProcesos = datos.procesos.length === 0 && datos.documentos.length === 0;
 
   return (
@@ -28,6 +29,11 @@ export default async function PaginaNuevaSolicitud({
         titulo="Nueva solicitud"
         descripcion="Pida crear, modificar o eliminar un documento del sistema"
       />
+      {pedido?.conTramite ? (
+        <p role="note" className="rounded-md border border-estado-atencion bg-estado-atencion-fondo px-4 py-3 text-sm text-estado-atencion-texto">
+          {`${pedido.codigo} ya tiene un trámite abierto: no admite otra solicitud hasta que ese se cierre.`}
+        </p>
+      ) : null}
       {sinProcesos ? (
         <EstadoVacio
           icono={ClipboardList}

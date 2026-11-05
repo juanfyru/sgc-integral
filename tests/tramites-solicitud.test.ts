@@ -61,6 +61,8 @@ describe("solicitud y visto bueno", () => {
     await expect(crearSolicitud(await sesionDe(tx, "lider.cex"), datos, opc(tx))).rejects.toThrow(/procesos que lidera/);
     await crearSolicitud(await sesionDe(tx, "lider.gth"), datos, opc(tx));
     await expect(crearSolicitud(await sesionDe(tx, "lider.gth"), datos, opc(tx))).rejects.toThrow(/Ya hay un trámite abierto/);
+    // Se detecta antes del INSERT: la transacción de quien llama sigue viva.
+    await expect(tx`SELECT 1`).resolves.toHaveLength(1);
   }));
 
   it("si pide el Admin SGC, el líder da o niega el visto bueno", () => revertida(sql, async (tx) => {
@@ -129,6 +131,20 @@ describe("solicitud y visto bueno", () => {
     expect(otros.every((a) => a.tipo === "tramite.paso")).toBe(true);
     const [{ vence_en }] = await tx`SELECT vence_en FROM tramites WHERE id = ${r.tramiteId}`;
     expect(vence_en.toISOString()).toBe("2026-11-09T04:59:59.999Z");
+  }));
+
+  it("nadie se avisa de lo que acaba de hacer", () => revertida(sql, async (tx) => {
+    const admin = await sesionAdmin(tx);
+    const otro = await sesionAdmin(tx);
+    const [p] = await tx`SELECT p.id FROM procesos p WHERE p.activo AND NOT EXISTS (
+      SELECT 1 FROM usuario_procesos up JOIN usuarios u ON u.id = up.usuario_id AND u.activo AND u.rol = 'lider_proceso' WHERE up.proceso_id = p.id) LIMIT 1`;
+    const [tipo] = await tx`SELECT id FROM tipos_documento WHERE sigla = 'FO'`;
+    const r = await crearSolicitud(admin, { tipo: "crear", motivo: "mejora", justificacion: JUSTIFICACION, procesoId: p.id, tipoDocumentoId: tipo.id, tituloPropuesto: "Formato de prueba" }, opc(tx));
+    const avisados = async () => (await tx`SELECT usuario_id FROM notificaciones WHERE entidad = 'tramite' AND entidad_id = ${r.tramiteId}`).map((n) => n.usuario_id);
+    expect(await avisados()).toContain(otro.usuarioId);
+    expect(await avisados()).not.toContain(admin.usuarioId);
+    await transicionar(admin, { tramiteId: r.tramiteId, accion: "retirar", etapaEsperada: "aceptacion", rondaEsperada: 0 }, opc(tx));
+    expect(await avisados()).not.toContain(admin.usuarioId);
   }));
 
   it("retirar exige ser el solicitante, y un rechazo no escribe nada", () => revertida(sql, async (tx) => {
@@ -215,9 +231,19 @@ describe("solicitud y visto bueno", () => {
       await pedir(tx);
       segundaTermino = true;
     });
-    await new Promise((r) => setTimeout(r, 200));
-    expect(segundaTermino).toBe(false);                                        // espera el candado de la primera
-    soltar();
+    // Sin el candado también esperaría, pero en el índice único y para fallar al confirmarse la primera.
+    try {
+      let esperaCandado = false;
+      for (let i = 0; i < 100 && !esperaCandado; i++) {
+        const [{ n }] = await sql`SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`;
+        esperaCandado = n > 0;
+        if (!esperaCandado) await new Promise((r) => setTimeout(r, 20));
+      }
+      expect(esperaCandado).toBe(true);
+      expect(segundaTermino).toBe(false);
+    } finally {
+      soltar();                                                                // con un fallo, tampoco deja la transacción abierta
+    }
     await Promise.all([primera, segunda]);
     expect(segundaTermino).toBe(true);
   });
