@@ -14,7 +14,8 @@ otra persona: todo lo que se hace en el SGC queda registrado a nombre de quien i
 2. Aparece la pantalla **Ingreso al SGC**. Escriba su **Usuario** y su **Clave**.
 3. Pulse **Ingresar**.
 
-Si escribió bien sus datos, entra al portal: el mapa de procesos de la entidad. Si había
+Si escribió bien sus datos, entra a **Inicio**: sus tareas y el mapa de procesos de la
+entidad (Capítulo 3). Si había
 abierto un enlace a una página concreta (por ejemplo, un documento), al ingresar el SGC lo
 lleva a esa página.
 
@@ -110,12 +111,15 @@ mano, pulse **Salir** y vuelva cuando lo tenga: no podrá usar el SGC hasta acti
 
 ## 4. Mi cuenta
 
-En la parte superior derecha de cualquier página del portal hay un botón con su nombre.
-Al pulsarlo se abre un menú con:
+En la parte superior derecha de cualquier página hay un botón con su nombre. Al pulsarlo
+se abre un menú con:
 
-- **Administración** (solo si su rol tiene acceso al panel de administración).
 - **Mi cuenta**.
+- **Tema** (claro, oscuro o según el sistema; Capítulo 3, sección 6.1).
 - **Salir**.
+
+Las páginas de administración, si su rol las tiene, están en la barra lateral (Capítulo 3,
+sección 2).
 
 En **Mi cuenta** ve **Mis datos** (nombre, usuario, correo, rol, cargo, área, los procesos
 que tiene asignados y sus supervisores) y las secciones **Cambiar clave** y **Segundo
@@ -216,8 +220,7 @@ factor y volver a activarlo: recibe 8 códigos nuevos y los anteriores dejan de 
 
 ## 7. Cerrar sesión
 
-- Desde el portal: menú con su nombre → **Salir**.
-- Desde el panel de administración: botón **Salir**, arriba a la derecha.
+Menú con su nombre (arriba a la derecha, en cualquier página) → **Salir**.
 
 **Salga siempre al terminar si el equipo es compartido** (puestos de enfermería,
 consultorios, salas de reunión). Si se aleja del equipo sin salir, cualquiera puede usar

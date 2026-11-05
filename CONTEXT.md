@@ -1,11 +1,13 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-11-03**, cierre de la
-> **Fase 11 — Fundación de acceso**, fusionada en `main` el 2026-11-04 tras la prueba
-> del usuario y publicada en `origin`. La variante nació el mismo día, bifurcada de `sgc-suaza` en
-> `9644ceb`; el diseño maestro de las fases 11–20
+> Se actualiza al cierre de cada fase. Última actualización: **2026-11-04**, cierre de la
+> **Fase 12 — Nueva estructura visual**, en la rama `fase-12-estructura-visual` (sin
+> fusionar: faltan la revisión final de la rama y la prueba del usuario). La Fase 11
+> (fundación de acceso) se fusionó en `main` el 2026-11-04 y está publicada en `origin`.
+> La variante nació el 2026-11-03, bifurcada de `sgc-suaza` en `9644ceb`; el diseño
+> maestro de las fases 11–20
 > (`docs/superpowers/specs/2026-11-03-sgc-integral-plataforma-design.md`) está aprobado
-> y `AGENTS.md` ya describe el piso de despliegue nuevo.
+> y `AGENTS.md` describe el piso de despliegue nuevo.
 
 ## ⏸ Punto de reanudación (próxima sesión)
 
@@ -14,35 +16,46 @@
    con sus funcionalidades, y construir aquí otra con **funcionalidades más completas**.
    La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
    proyecto**.
-1. **Dónde quedamos:** la **Fase 11 está hecha** en la rama `fase-11-fundacion-acceso`
-   (sale de `main` en `755e8ca`; spec y plan en `1f4562c`; 31 commits de código y este
-   de cierre). Toda la app exige sesión; cinco roles fijos con matriz de permisos;
-   áreas y cargos con jerarquía; usuarios uno a uno y por lote con clave temporal;
-   cambio de clave obligatorio y aviso de datos personales; bloqueo por cuenta; segundo
-   factor TOTP opcional y exigible por rol; registro de accesos; sesiones activas con
-   cierre forzado; rol de BD `sgc_app` de mínimo privilegio y bitácora inmutable;
-   semillas mínima y demo. **Verificado al cierre** (tras la ola final de arreglos de la
-   revisión de la rama): lint limpio; **586/586 tests**
-   (59 archivos; línea base de la fase: 205); build sin `.env.local`; compose de
-   desarrollo (arranque con rol y migraciones, `/` → 307 a `/ingreso`, `/api/salud`
-   200); `sgc_app` recibe `permission denied` (42501) al intentar `DELETE` en
-   `auditoria`. El recorrido de demostración en navegador se hizo contra la imagen de
-   producción del compose dev (9081) y destapó los defectos que corrigen F11-D27 a
-   F11-D30; el usuario lo repitió con la sección "Qué probar y cómo (Fase 11)" el
-   2026-11-04. La revisión final de la rama dio «Con correcciones» y la ola final de
-   arreglos (F11-D31 a F11-D34 y los menores de "Hecho") entró antes de fusionar. La rama
-   se fusionó en `main` (avance rápido), se borró y `main` se publicó en `origin`
-   (`juanfyru/sgc-integral`) el 2026-11-04. El test de la semilla demo ya no cuenta filas:
-   comprueba áreas y cargos por nombre, para que probar en la BD de desarrollo no lo rompa.
-2. **Lo que sigue:** escribir la spec y el plan de la **Fase 12 — Nueva estructura
-   visual** (spec §8 Fase 12, §5.10 marca configurable, §5.11 sistema visual) y
-   ejecutarla, con la metodología de `AGENTS.md`. Incluye además el índice único sobre
-   `lower(usuario)` (migración 0003, ver Deuda técnica), por decisión del usuario del
-   2026-11-04. La marca visible todavía dice "SGC
-   Documental" (`src/app/layout.tsx`, `src/componentes/EncabezadoSitio.tsx`): la Fase 12
-   la vuelve configuración por entidad. Insumos que dependen del usuario: spec §11
-   (SMTP, versión de Windows del servidor, planta de cargos real, plantilla del plan de
-   mejoramiento, total de cuentas, etc.).
+1. **Dónde quedamos:** la **Fase 12 está hecha** en la rama `fase-12-estructura-visual`
+   (sale de `main` en `cd181bf`; spec y plan en `a941dd9`, corregidos tras la revisión
+   previa en `409f5f5`; 27 commits de ejecución y este de cierre). Toda la app autenticada
+   vive en un solo cascarón (barra lateral por módulos y rol, barra superior con búsqueda
+   `Ctrl K`, campana y menú con tema); sistema de color de tres capas (marca
+   configurable, módulo, estado) con tema claro, oscuro y según el sistema; pantalla
+   **Entidad y marca** (nombre, sigla, lema, aviso, dos colores con validación AA y
+   sugerencia, logo PNG/JPG/WebP); componentes base en `src/componentes/ui`; las 46
+   páginas migradas, sin textos fijos de la entidad; migración 0003 (tema, notificaciones,
+   usuario único sin mayúsculas, con comprobación previa de duplicados). **Sin
+   dependencias npm nuevas.** **Verificado al cierre** sobre el código de `3cb6b1d`
+   (este commit solo cambia documentación): lint limpio; **1481/1481 tests** (83
+   archivos; línea base de la fase: 586 en 59); build de producción; compose de
+   desarrollo reconstruido (`up -d --build --no-deps app`, sin tocar `bd`): la imagen
+   arrancó sobre la base existente, la comprobación de duplicados pasó y `migrate()`
+   dejó «Migraciones al día» con las cuatro migraciones registradas (0000–0003; la 0003
+   ya estaba aplicada en esta base desde la Tarea 2), rol `sgc_app` sincronizado,
+   `/api/salud` 200 `{"estado":"ok"}`, `/` → 307 a `/ingreso`, `/marca/logo` 200
+   `image/png`. El controlador hizo los recorridos en navegador (`next start` en 3010,
+   mismo código): dos puntos de control durante la fase y el recorrido final de §14 del
+   spec de la fase, en claro y oscuro, a 390 px e impreso, sin defectos que pidieran otra
+   ola. **Falta:** revisión final de la rama, la prueba del usuario con "Qué probar y cómo
+   (Fase 12)", fusión en `main` y publicación.
+2. **Lo que sigue:** tras fusionar, escribir la spec y el plan de la **Fase 13 —
+   Documentación SGC** (spec maestro §6.1 y §8 Fase 13) y ejecutarla con la metodología
+   de `AGENTS.md`: solicitud de cambio; flujo elaboración → revisión → aprobación →
+   publicación con concepto y firma con reautenticación; acta PDF; caracterización
+   estructurada; obsoletos por permiso; listas de distribución y acuses de lectura;
+   copias controladas; normograma; documentos externos; nivel de acceso; baja con
+   aprobación; semáforo documental. Sin correo (Fase 16) ni "abrir acción" (Fase 15).
+   La Fase 12 dejó listos los enganches: `misTareas()` (`src/lib/tareas.ts`) ya tiene el
+   tipo definitivo y devuelve `[]` (la 13 añade fuentes: revisar, aprobar, acusar);
+   `crearNotificacion` (`src/db/consultas/notificaciones.ts`) acepta una transacción;
+   la paleta `Ctrl K` y `/api/buscar` muestran solo vigentes hasta que la 13 aplique la
+   visibilidad por rol (F12-DC14); la navegación añade el módulo cuando exista
+   (F12-DC5). Para las tablas inmutables nuevas (`firmas`), ver la Deuda técnica de la
+   Fase 11. Manual de la 13: "Documentos: solicitar, elaborar, revisar, aprobar y
+   publicar", "Normograma", "Copias controladas y acuses de lectura". Insumos que dependen
+   del usuario: spec §11 (SMTP, versión de Windows del servidor, planta de cargos real,
+   plantilla del plan de mejoramiento, total de cuentas, etc.).
 3. **Entorno de desarrollo** (convive con `sgc-suaza` en la misma máquina):
 
    | Pieza | SGC Integral (esta) | sgc-suaza (original) |
@@ -76,7 +89,11 @@
    portal. Las semillas vacían `usuarios`: tras cada `db:seed` hay que repetir
    `admin:asegurar` y cambiar la clave otra vez. El contenedor `app` del compose de
    desarrollo no trae `ADMIN_*`: su arranque omite el admin (lo dice en el log) y usa la
-   misma base que `npm run dev` y los tests.
+   misma base que `npm run dev` y los tests. **Tampoco monta el almacén:** la imagen lleva
+   la copia de `almacen/` que había al construirla, así que un logo o un archivo subido en
+   9081 no existe para `npm run dev` (3002) ni al revés, aunque la base sea la misma (ver
+   Deuda técnica). Para reconstruir solo la app sin tocar la base:
+   `docker compose -f docker-compose.dev.yml up -d --build --no-deps app`.
 4. **Usuarios demo** (tras `npm run db:seed`; **solo desarrollo**). Clave común
    `Demo-SGC-2026-clave`, sin cambio obligatorio y con el aviso aceptado:
 
@@ -91,11 +108,21 @@
    Más `admin` / `cambiar-esta-clave` (admin_sgc) de `npm run admin:asegurar`, que pide
    cambiar la clave. La demo trae 5 áreas y 9 cargos con jerarquía; mapa y documentos
    sin cambios (28 documentos con 29 versiones: 26 vigentes, 1 obsoleta, 1 borrador y
-   1 anulada).
-   `npm run db:seed:minima` deja una instalación nueva: "Entidad sin configurar", aviso
-   de datos de ejemplo, 9 tipos de documento y patrón de código; sin mapa, áreas,
-   documentos ni usuarios (después hay que correr `admin:asegurar`).
-5. **Tests:** 586 en 59 archivos, en serie (`fileParallelism: false`), contra la BD de
+   1 anulada). Desde la Fase 12 la demo trae además la marca de Suaza (sigla `HNSF`,
+   primario `#1b4e8e`, secundario `#2e9b47`, el lema actual y el logo demo
+   `src/db/semillas/recursos/logo-demo.png`, un monograma propio, no el escudo real) y una
+   notificación "Bienvenida al SGC Integral" sin leer por usuario demo; todas las cuentas
+   nacen con tema `claro`.
+   `npm run db:seed:minima` deja una instalación nueva: "Entidad sin configurar", sigla
+   `SGC`, los mismos dos colores, sin logo y lema vacío, aviso de datos de ejemplo, 9
+   tipos de documento y patrón de código; sin mapa, áreas, documentos ni usuarios
+   (después hay que correr `admin:asegurar`).
+   **La base de desarrollo se resembró en la Tarea 4 de la Fase 12** (`db:seed` +
+   `admin:asegurar`, para tener la marca, el logo y las bienvenidas): se perdieron los
+   datos de la prueba manual de la Fase 11 (p. ej. el área "Tecnología Informática") y
+   `admin` se recreó con la `ADMIN_CLAVE` de `.env.local` y cambio obligatorio. Después
+   no se volvió a resembrar.
+5. **Tests:** 1481 en 83 archivos, en serie (`fileParallelism: false`), contra la BD de
    desarrollo sembrada y **conectados como `sgc_app`**, igual que la app; el test de
    privilegios usa además `DATABASE_URL_MIGRADOR`. Los usuarios de prueba con historia
    (`zz_<algo>_<timestamp>`) se acumulan porque no se pueden borrar (F11-D2); `db:seed` los
@@ -106,8 +133,8 @@
    CI → Run workflow**. Motivos: la cuota de almacenamiento de Actions es de la cuenta y
    la comparte con `sgc-suaza` (se agotó el 2026-08-25) y cada build ARM64 por QEMU es
    lento. La imagen `amd64` del CI llega en la Fase 20. La Fase 11 añadió `otpauth`,
-   `qrcode` y `zod` (todos JS puro); no consta en la bitácora de la fase que el job
-   ARM64 se haya relanzado: lanzarlo a mano antes de la Fase 20.
+   `qrcode` y `zod` (todos JS puro); la Fase 12 no añadió dependencias. No consta que el
+   job ARM64 se haya relanzado desde la Fase 11: lanzarlo a mano antes de la Fase 20.
 7. **Despliegue: decidido en el spec §4 y escrito en `AGENTS.md` ("Piso de despliegue")**
    (contenedores portables, Windows con WSL2 o Linux, tres contenedores proxy + app +
    bd; se construye en la Fase 20). Los archivos de despliegue heredados del NAS
@@ -121,11 +148,113 @@
    la original.
 8. **Pendientes heredados del usuario** (siguen valiendo aquí): convención oficial de
    códigos (`patron_codigo` en `/admin/mapa/textos`), documentos reales aprobados, logo
-   institucional vectorial. La subida de Next quedó hecha en la Fase 11 (16.4.5).
-9. **Memoria de Claude Code:** es por carpeta, así que `F:\sgc-integral` arranca sin
-   memoria propia. Este archivo es el contexto durable de la variante.
+   institucional. Desde la Fase 12 el logo se sube en **Entidad y marca** y debe ser
+   PNG, JPG o WebP (SVG no, F12-DC9): pedirlo en PNG cuadrado de unos 512 px con fondo
+   transparente. La subida de Next quedó hecha en la Fase 11 (16.4.5).
+9. **Memoria de Claude Code:** es por carpeta; la de `F:\sgc-integral` solo guarda
+   preferencias de trabajo del usuario (decide por listas numeradas; recomendaciones con
+   base ISO, Regulación o Práctica). Este archivo es el contexto durable de la variante.
+
+## Qué probar y cómo (Fase 12)
+
+Recorrido de demostración de §14 del spec de la fase
+(`docs/superpowers/specs/2026-11-04-fase12-estructura-visual-design.md`), sobre la base
+de desarrollo **tal como está**: no hace falta resembrar y la 0003 ya está aplicada.
+
+0. **Preparar.** Servidor de desarrollo: `npm run dev` → `http://localhost:3002` (la base
+   en Docker debe estar arriba). Haga toda la prueba en el mismo servidor: el compose
+   (9081) guarda los archivos dentro del contenedor y un logo subido en uno no se ve en
+   el otro (Punto de reanudación, punto 3). Cuentas:
+   - `admin` con su clave. Si pide cambiarla es porque la Tarea 4 recreó la cuenta con la
+     `ADMIN_CLAVE` de `.env.local`; si no la recuerda, `npm run admin:asegurar --
+     --forzar-clave` le vuelve a poner esa clave (y pide cambiarla al entrar).
+   - Usuarios demo `gerente`, `control.interno`, `lider.gth`, `lider.cex` y `consulta`,
+     todos con la clave `Demo-SGC-2026-clave`. Úselos en ventanas privadas para tener
+     varias sesiones a la vez.
+1. **Marca de la entidad (admin).** Barra lateral → **Administración** → **Entidad y
+   marca**. Cambie **Nombre de la entidad** (por ejemplo "Hospital de Prueba"),
+   **Sigla** (`HSF`), **Lema**, y los colores: **Color primario** `#0f5e5a` y **Color
+   secundario** `#b45309` (los dos cumplen). Mientras escribe, la **Vista previa** cambia
+   en claro y en oscuro y las tres líneas dicen "cumple". Pulse **Guardar** → "Cambios
+   guardados". Debe verse:
+   - la barra lateral con el nombre y la sigla nuevos, la página activa y los botones en
+     el verde azulado, y la línea bajo la barra superior del mismo color;
+   - en la pestaña del navegador: en **Usuarios**, «Usuarios — Administración SGC · HSF»;
+     en **Inicio**, «Hospital de Prueba · SGC»;
+   - el lema nuevo en la franja al pie del mapa de **Inicio**;
+   - al **Salir**, la pantalla de ingreso con el logo, el nombre nuevo y la pestaña
+     «Ingreso · HSF»;
+   - **Listado Maestro** → **Descargar Excel**: la primera fila de la hoja trae el nombre
+     nuevo.
+2. **Color rechazado.** En **Color primario** escriba `#9ecbff`. Debajo del campo aparece
+   el mensaje en rojo y la vista previa dice "Primario, texto blanco: 1,7:1 · no cumple".
+   Pulse **Guardar**: el servidor rechaza con «El color primario #9ecbff no tiene
+   contraste suficiente con el texto blanco (1,7:1; mínimo 4,5:1). Pruebe #4a74a3.», no
+   guarda nada y lo escrito en los demás campos sigue ahí. Escriba `#4a74a3` → **Guardar**
+   → "Cambios guardados". Cambie el tema a oscuro (paso 4) y compruebe que el botón
+   **Guardar** y la página resaltada de la barra lateral siguen con letra blanca legible.
+   Opcional, con el secundario: `#fcd116` → «El color secundario #fcd116 no se distingue
+   del fondo (1,4:1; mínimo 3:1). Pruebe #a48700.»
+3. **Logo.** En la sección **Logo** → **Subir logo**:
+   - un **SVG renombrado**: en el Bloc de notas escriba
+     `<svg xmlns="http://www.w3.org/2000/svg"></svg>` y guárdelo como `prueba.png`
+     (tipo "Todos los archivos") → «El logo debe ser PNG, JPG o WebP»;
+   - un **PNG de más de 1 MB** (una foto o una captura de pantalla grande guardada como
+     PNG) → primero el aviso «El archivo pesa N MB; el máximo es 1 MB.» y luego «El logo
+     supera 1 MB»;
+   - un PNG válido (por ejemplo `src/db/semillas/recursos/logo-demo.png`) → «Logo
+     actualizado», y el logo aparece en la barra lateral y en el ingreso. **Quitar logo**
+     → «Logo quitado» y vuelve el cuadro con la sigla.
+4. **Tema.** Menú con su nombre → **Tema** → **Oscuro**: cambia al momento. **Salir**: la
+   pantalla de ingreso sigue en oscuro; entrar otra vez: sigue en oscuro. Recargue (F5)
+   varias páginas: nunca aparece un destello claro antes del oscuro. Elija **Según el
+   sistema** y cambie el modo de Windows (Configuración → Personalización → Colores →
+   "Elegir el modo"): el SGC lo sigue en los dos sentidos, sin recargar.
+5. **Barra lateral por rol** (ventanas privadas):
+   - `gerente`: **Inicio**, **Buscar documentos**, **Listado Maestro** y, en
+     Administración, **Estadísticas**;
+   - `control.interno`: **Inicio**, **Buscar documentos**, **Gestión de documentos**,
+     **Listado Maestro**, **Estadísticas**, **Bitácora** y **Accesos**; al abrir
+     `http://localhost:3002/admin/entidad` ve **Sin acceso** dentro del cascarón;
+   - `lider.gth`: **Inicio** y **Buscar documentos**, y en Inicio el bloque **Mis
+     procesos** con Gestión del Talento Humano;
+   - `consulta`: solo **Inicio** y **Buscar documentos**;
+   - `admin`: las 13 entradas (5 en Documentos, 7 en Administración, más Inicio).
+6. **Búsqueda `Ctrl K`.** Con cualquier usuario, `Ctrl K` (o el botón **Buscar…**) →
+   escriba «induc»: bajo **Documentos** aparecen los documentos de inducción (entre ellos
+   `PR-GTH-002`) con la palabra resaltada; flechas y **Enter** abren la ficha. Escriba
+   «usuarios»: con `admin` aparece **Ir a → Usuarios**; con `consulta`, no. **Escape**
+   cierra y el foco vuelve al botón **Buscar…**.
+7. **Campana.** Use `gerente` o `lider.cex` (la bienvenida de `consulta` ya se marcó como
+   leída en la verificación): la campana muestra **1**; ábrala → «Bienvenida al SGC
+   Integral»; pulsarla abre **Mi cuenta** (pantalla aparte, sin campana) → **Volver al
+   inicio** → la campana ya no tiene número. Con otro usuario, **Marcar todas como
+   leídas** deja el contador en 0 sin salir de la página. En esta fase nada crea
+   notificaciones nuevas: cada usuario demo sirve para esta prueba una sola vez.
+8. **Inicio y celular.** **Inicio** muestra «Mis tareas (0)» con «No tiene tareas
+   pendientes. Cuando un documento necesite su revisión o aprobación, aparecerá aquí.» y
+   el mapa debajo. Con el navegador a 390 px de ancho (F12 → modo dispositivo) o en el
+   celular: el mapa pasa a acordeón; el botón de tres líneas abre el menú lateral,
+   **Escape** o la **X** lo cierran.
+9. **Imprimir.** **Listado Maestro** → **Imprimir / Guardar PDF**: la vista de impresión
+   no trae barra lateral ni superior, usa todo el ancho y sale en claro aunque el tema
+   sea oscuro.
+10. **Al terminar**, deje la marca demo como estaba: nombre "ESE Hospital Nuestra Señora
+    de Fátima de Suaza", sigla `HNSF`, lema "Comprometidos con la vida y el bienestar de
+    nuestra comunidad", primario `#1b4e8e`, secundario `#2e9b47` y el logo
+    `src/db/semillas/recursos/logo-demo.png`. Lint, tests, build y compose ya pasaron al
+    cierre (Punto de reanudación, punto 1); el CI corre al publicar la rama.
+
+Manual de usuario de esta fase: `docs/manual/usuario/03-conocer-la-plataforma.md` y
+`docs/manual/usuario/04-configurar-la-marca-de-la-entidad.md`. Los capítulos 1 y 2 se
+ajustaron donde describían el menú "Administración" y la barra del panel, que la Fase 12
+retiró.
 
 ## Qué probar y cómo (Fase 11)
+
+> Ya la hizo el usuario el 2026-11-04; se conserva como registro. Desde la Fase 12 la
+> administración está en la barra lateral y no en el menú con su nombre, y la base de
+> desarrollo ya no se resiembra para probar.
 
 Recorrido de demostración del spec §8 Fase 11. Base recién sembrada y servidor de
 desarrollo en `http://localhost:3002`.
@@ -194,6 +323,78 @@ desarrollo en `http://localhost:3002`.
 
 Manual de usuario de esta fase: `docs/manual/usuario/01-ingreso-clave-y-segundo-factor.md`
 y `docs/manual/usuario/02-usuarios-cargos-y-procesos.md`.
+
+## Hecho (Fase 12)
+
+Plan: `docs/superpowers/plans/2026-11-04-fase12-estructura-visual.md`; diseño de detalle:
+`docs/superpowers/specs/2026-11-04-fase12-estructura-visual-design.md`.
+
+- **Rutas:** `(portal)` y `admin/(panel)` pasan a un solo grupo `src/app/(app)` (el panel
+  en `(app)/admin/(panel)`, con su layout de guard sin cromo); las URL no cambian; se
+  retira `admin/ingreso/page.tsx` (el proxy redirige); acciones y handlers del panel se
+  quedan en `src/app/admin/`. Rutas nuevas: `/api/buscar` (con sesión, 60/min por
+  usuario, 8 resultados vigentes), `/admin/api/entidad/logo` (`POST`/`DELETE`, permiso
+  `entidad.administrar`, `Origin`, `Content-Length` acotado, 10/min), `/marca/logo`
+  (pública, `nosniff`) y `/admin/entidad`. `src/app/(app)/not-found.tsx` y
+  `src/app/not-found.tsx` (404 dentro y fuera del cascarón).
+- **Esquema (`drizzle/0003_fase12-visual.sql`):** `usuarios.tema` con CHECK
+  (`claro`, `oscuro`, `sistema`; por defecto `claro`), tabla `notificaciones` (FK
+  RESTRICT a usuarios, índice por usuario, leída y fecha), índice único
+  `usuarios_usuario_lower_unico` sobre `lower(usuario)`; claves de configuración
+  `sigla_entidad`, `color_primario`, `color_secundario`, `logo_ruta`, `logo_mime`,
+  `logo_version`. Comprobación previa de duplicados (`src/db/duplicados-usuario.ts`) en
+  `scripts/arrancar.ts` y en `npm run db:migrate`, que ahora es `scripts/migrar.ts`.
+- **Color y marca (`src/lib`):** `color.ts` (hex, OKLCH en JS puro, ajustes de
+  luminosidad que conservan el tono), `marca.ts` (`derivarMarca` para los dos temas,
+  `validarMarca` con P1/P2, sugerencias, `formatearRazon`), `tema.ts` (`TEMAS`,
+  `COOKIE_TEMA`, `temaEfectivo`), `logo.ts` + `logo-limites.ts` (`validarLogo`: magic
+  bytes, 1 MB, 64–2048 px con lector propio de PNG, JPEG y WebP), `tareas.ts`
+  (`misTareas`, hoy `[]`), `busqueda-rapida.ts`, `marcas-busqueda.ts`, `version.ts`.
+- **Consultas:** `src/db/consultas/entidad.ts` (`obtenerMarca` cacheada por petición,
+  `obtenerMarcaSegura`, `obtenerEntidad`, `guardarEntidad`, `guardarLogo`, `quitarLogo`,
+  `obtenerLogoAlmacenado`) y `notificaciones.ts` (`crearNotificacion`, `contarNoLeidas`,
+  `listarRecientes`, `marcarLeida`, `marcarTodasLeidas`, solo filas propias).
+  `CLAVES_TEXTO` del mapa queda con subtítulo, PHVA y patrón de código.
+- **Estilos (`src/app/globals.css`):** tokens de tres capas con `light-dark()`
+  (superficies, texto, módulo, estado con fondo y texto AA en los dos temas), marca
+  inyectada como `style` en `<html>` desde el layout raíz con `data-tema`, variante
+  `dark:` sobre el atributo, alias heredados `azul`/`verde`, utilidades `banda-*` (con
+  `banda-solido`) y `--formato-*`, impresión siempre en claro. `--radius` 0,5 rem.
+- **Cascarón (`src/componentes/cascaron`):** `Cascaron`, `BarraLateral`,
+  `ContenidoBarra`, `BarraSuperior` (cajón móvil con `Dialogo`), `Buscador` (paleta
+  `combobox`/`listbox`), `Campana` y `MarcarTodasLeidas` (con `<details>`, sin JS
+  propio), `MenuUsuario` (Mi cuenta, tema con radios y Salir), `Monograma`,
+  `PantallaCentrada`, `navegacion.ts` (fuente única de la barra y de "Ir a"). Se retiran
+  `EncabezadoSitio`, la cabecera "Administración SGC" y `enlaces-panel.ts`.
+- **Componentes base (`src/componentes/ui`):** `EncabezadoPagina`, `TablaDatos`,
+  `Insignia` (reemplaza `EstadoBadge`), `TarjetaCifra`, `EstadoVacio`, `Boton`, `Campo`,
+  `Dialogo` y `GraficoBarras` (movido desde estadísticas).
+- **Pantallas:** Inicio con **Mis tareas** y el mapa; **Entidad y marca**
+  (`FormularioEntidad`, `VistaPreviaMarca`, `CargaLogo`, acción `guardarEntidadAccion`
+  en `src/app/admin/acciones-entidad.ts`); **Textos del mapa y código de documentos**;
+  las 46 páginas dentro del cascarón con `EncabezadoPagina`, listas del panel con
+  `TablaDatos`, estadísticas con `TarjetaCifra`, colores fijos de Tailwind cambiados por
+  tokens, ningún texto fijo de la entidad (el título, el ingreso, el Excel y la impresión
+  del Listado Maestro toman la marca). Acciones nuevas en `acciones-cuenta.ts`:
+  `cambiarTemaAccion`, `marcarNotificacionLeidaAccion`,
+  `marcarNotificacionesLeidasAccion`.
+- **Permisos:** `entidad.administrar` (solo `admin_sgc`) con su celda en
+  `tests/permisos.test.ts`.
+- **Semillas:** la mínima y la demo traen sigla y colores; la demo, el logo demo
+  (`src/db/semillas/recursos/logo-demo.png`, generado con `scripts/generar-logo-demo.mjs`)
+  y una bienvenida por usuario; `limpiarTodo` vacía `notificaciones`.
+- **Tests:** de 586 (59 archivos) a **1481 (83)**. Nuevos: `color`, `marca` (malla de
+  180 colores), `tokens`, `contraste-panel`, `tema`, `logo`, `entidad`,
+  `esquemas-entidad`, `notificaciones`, `notificaciones-acciones`, `tareas`,
+  `duplicados-usuario`, `buscador-rapido`, `navegacion`, `cascaron`, `inicio`,
+  `ui-base`, `ui-dialogo`, `mapa-oscuro`, `migracion-listas`, `proxy-redirecciones`,
+  `sin-main`, y los estructurales `textos-fijos` y `colores-fijos`; ajustados
+  `paginas-sesion`, `handlers-permisos`, `proxy-matcher`, `permisos`, `esquema`,
+  `a11y-estructura`, `mapa-admin` y otros.
+- **Documentos:** manual de usuario, capítulos 3 y 4, y ajustes en el 1 y el 2;
+  `AGENTS.md` (cascarón y componentes base, tema y tokens, la entidad como configuración,
+  rutas públicas, excepción a la regla 5, tests que no dejan la base inservible);
+  `README.md`.
 
 ## Hecho (Fase 11)
 
@@ -509,7 +710,9 @@ Plan: `docs/superpowers/plans/2026-11-03-fase11-fundacion-acceso.md`; diseño de
   solo el patrón general `^[A-Z]{2,4}-[A-Z]{2,4}-\d{3}$` de forma configurable.
 - [ ] **Documentos reales**: aún no están aprobados ni numerados. Hasta entonces, seed
   con documentos ficticios verosímiles. No hay migración en lote comprometida.
-- [ ] Logo institucional en mejor resolución/vectorial, si existe.
+- [ ] Logo institucional en mejor resolución, si existe. Desde la Fase 12 se sube en
+  Entidad y marca como PNG, JPG o WebP (no SVG): idealmente PNG cuadrado de unos 512 px
+  con fondo transparente.
 
 ## Dudas menores resueltas/abiertas sobre el mapa
 
@@ -704,7 +907,140 @@ esta tabla quedan solo como equivalencia, porque algunos tests los citan en sus 
 | F11-D33 | **El lote no asigna en silencio un cargo ambiguo:** `catalogoDeCargos` (`src/lib/lote-usuarios.ts`, lo usa `crearLoteAccion`) indexa cada cargo por nombre y por área + nombre, normalizados, y marca `ambiguo` la clave que se repite; la columna `cargo` acepta `Área > Cargo`; un nombre que existe en varias áreas se rechaza con «El cargo «X» existe en varias áreas; escríbalo como Área > Cargo». La página del lote lista los cargos como `Área > Cargo` | Los cargos son únicos por `(area_id, nombre)`, no por nombre: el `Map` por nombre se quedaba con el último y la fila nacía con el área y el supervisor equivocados, sin error. Revisión final, I3 | 2026-11-03 |
 | F11-D34 | **Nunca cero Admin SGC activos:** `editarUsuario` (si el rol nuevo no es `admin_sgc`) y `cambiarActivo` (al desactivar) llaman, dentro de su transacción, `exigirOtroAdminActivo(tx, id)`, que bloquea con `FOR UPDATE` y en orden de id las filas de los Admin SGC activos **antes** de bloquear la fila del usuario y rechaza con «Debe quedar al menos un Administrador del SGC activo.» si `id` es el último | Dos administradores que se bajaban mutuamente dejaban la instalación sin ninguno. Bloquear el conjunto antes que la fila propia evita que esos dos cambios simultáneos se interbloqueen. Con uno solo sigue el aviso, sin bloquear (spec). Revisión final, M10 | 2026-11-03 |
 
+## Decisiones adicionales (Fase 12)
+
+F12-DC1 a F12-DC24 vienen del diseño de detalle de la fase (§17), con su número de allí;
+el detalle está en ese documento. Desde F12-D25, las resoluciones de producto del
+controlador durante la ejecución; varias corrigen el diseño o el plan y mandan sobre
+ellos. La bitácora de la ejecución que las numeraba como "Rn" vive fuera del repositorio
+(`.superpowers/`): los "(Rn)" quedan solo como equivalencia. Las resoluciones de proceso
+(orden de las tareas, anidación interina de `<main>`, resiembra de la Tarea 4, higiene de
+los tests) no entran; la de los tests quedó como regla en `AGENTS.md`. Base: **ISO**
+(cláusula de 9001:2015), **Regulación** o **Práctica**.
+
+| # | Decisión | Porqué | Fecha |
+|---|---|---|---|
+| F12-DC1 | Un solo grupo `(app)` con el cascarón; `(portal)` desaparece y `admin/(panel)` se mueve dentro | Un layout compartido conserva la barra lateral al navegar; dos árboles la remontan. Práctica | 2026-11-04 |
+| F12-DC2 | `admin/ingreso/page.tsx` se elimina | El proxy ya redirige a `/ingreso`; la página era redundante. Práctica | 2026-11-04 |
+| F12-DC3 | Las migas se quedan en la página, no en la barra superior | Evita un canal página → layout en el cliente. Práctica | 2026-11-04 |
+| F12-DC4 | Barra lateral por módulos (Documentos, Administración); desaparecen la cabecera "Administración SGC" y "Ver portal público" | El color de módulo dice dónde está la persona (spec maestro §5.11); ya no hay portal público. Práctica | 2026-11-04 |
+| F12-DC5 | Los módulos de fases futuras no aparecen hasta existir | Un enlace muerto confunde a un funcionario. Práctica | 2026-11-04 |
+| F12-DC6 | Tema por defecto `claro`; `data-tema` escrito por el servidor; "sistema" por media query; sin script | La dirección C es clara; sin destello y sin `unsafe-inline` nuevo. Práctica | 2026-11-04 |
+| F12-DC7 | La variante oscura de la marca se deriva; el administrador no configura colores oscuros | Un administrador de hospital no debe calibrar ocho colores. Práctica | 2026-11-04 |
+| F12-DC8 | P1 (primario ≥ 4,5:1 con blanco) y P2 (secundario ≥ 3:1 sobre el fondo) al guardar, con sugerencia del tono más cercano que pasa | Spec maestro §5.10 pide rechazar; la sugerencia evita el ensayo y error; P1 deja seguros los `text-white` heredados sobre la marca. Práctica (WCAG 2.1 AA, 1.4.3 y 1.4.11) | 2026-11-04 |
+| F12-DC9 | Logo sin recodificar: magic bytes (PNG, JPEG, WebP; nunca SVG), 1 MB, 64–2048 px; `/marca/logo` público con `nosniff` | Sin `sharp`; una imagen servida con su MIME y `nosniff` no ejecuta nada (spec maestro DC19). Práctica (seguridad) | 2026-11-04 |
+| F12-DC10 | Alias `azul`/`verde` a los tokens de marca y `text-azul` → `text-marca` mecánico; el resto del renombrado en la Fase 19 | 45 archivos toman la marca con un solo cambio; los enlaces siguen legibles en oscuro. Práctica | 2026-11-04 |
+| F12-DC11 | Tintes del mapa mezclados con la superficie y clase `banda-texto` | Funcionan en oscuro y dejan de repetir el `color-mix`. Práctica | 2026-11-04 |
+| F12-DC12 | `notificaciones` nace ahora con `crearNotificacion`; la demo siembra una bienvenida | DC21 del spec maestro; la campana se demuestra con datos reales. Práctica | 2026-11-04 |
+| F12-DC13 | `misTareas` devuelve `[]` con el tipo definitivo | La Fase 13 solo añade fuentes. Práctica | 2026-11-04 |
+| F12-DC14 | `/api/buscar`: 8 resultados, 60/min por usuario, solo vigentes como `/buscar` | Reutiliza `buscarDocumentos`; la visibilidad de lo no vigente por rol es de la Fase 13. ISO 7.5.3 (solo la versión vigente en circulación) | 2026-11-04 |
+| F12-DC15 | "Textos institucionales" se parte en Entidad y marca / Textos del mapa | Nombre, lema y aviso son de la entidad, no del mapa. Práctica | 2026-11-04 |
+| F12-DC16 | Comprobación previa de duplicados antes de la migración 0003 | Una base heredada con `admin` y `Admin` no debe dejar el contenedor en bucle de arranque. Práctica | 2026-11-04 |
+| F12-DC17 | Componentes propios con HTML nativo y `<dialog>`; shadcn solo como hoja base | Menos capas; `<dialog>` resuelve foco y Escape. Práctica | 2026-11-04 |
+| F12-DC18 | Listas e insignias migran; los formularios conservan su marcado (Fase 19) | Donde más se ve el sistema con menos riesgo. Práctica | 2026-11-04 |
+| F12-DC19 | Pie de la barra lateral "SGC Integral · v<versión>" | Decisión 2 del usuario: el producto, solo en el pie y en el ingreso | 2026-11-04 |
+| F12-DC20 | Permiso nuevo `entidad.administrar` (solo `admin_sgc`) | La marca es de la entidad, no del mapa; mínimo privilegio. Práctica | 2026-11-04 |
+| F12-DC21 | Título «<nombre> · SGC», plantilla «%s · <sigla>» | La pestaña identifica a la entidad, como decidió el usuario | 2026-11-04 |
+| F12-DC22 | `--radius` baja a `0.5rem` | Dirección C: esquinas discretas, bordes en vez de cajas. Práctica | 2026-11-04 |
+| F12-DC23 | La marca tiene dos papeles con tokens distintos: `--marca-relleno` (fondo, siempre con texto blanco, igual en los dos temas) y `--marca` (texto e íconos, aclarada en oscuro) | Un relleno legible con blanco es oscuro y un texto legible sobre la superficie oscura es claro: ningún color cumple ambos. Práctica (WCAG 1.4.3) | 2026-11-04 |
+| F12-DC24 | El logo se sube y se quita por route handler (`/admin/api/entidad/logo`), no por Server Action | El tope de 1 MB de las acciones no se toca (Fase 6); el handler rechaza un archivo grande por `Content-Length` con mensaje claro. Práctica | 2026-11-04 |
+| F12-D25 | **El ejemplo del rechazo es el que calcula el algoritmo:** `#9ecbff` mide 1,69 con blanco y el mensaje dice «1,7:1»; la sugerencia es `#4a74a3` (4,86:1). El spec §7.1 se corrigió (R6, R13) | El plan decía 1,6 y el spec sugería `#2f6fbe`, que el algoritmo no produce: el manual y la demostración deben citar lo que el usuario verá. Práctica | 2026-11-04 |
+| F12-D26 | En un mensaje de rechazo, si el redondeo a un decimal alcanza el mínimo (4,49 → «4,5») la razón se muestra con dos decimales truncados («4,49:1») (R10) | Un mensaje no puede decir «4,5:1; mínimo 4,5:1». Práctica | 2026-11-04 |
+| F12-D27 | **Las sugerencias y los derivados conservan el tono:** los ajustes de luminosidad mapean al gamut bajando la croma por bisección con L y tono fijos (R11) | El recorte por canal cambiaba el tono de los colores saturados hasta 16° (`#fcd116` sugería un marrón); el spec pide "mismo tono". Costo: sugerencias algo menos saturadas. Práctica | 2026-11-04 |
+| F12-D28 | `derivarMarca` vuelve a los colores por defecto si el primario o el secundario no son hex válidos, además de la validación de `obtenerMarca` y de la acción (R12) | Defensa en profundidad: esos valores terminan en el `style` de `<html>` y un valor manipulado en la BD podría inyectar CSS. Práctica (seguridad) | 2026-11-04 |
+| F12-D29 | `--texto-terciario` pasa a `#677080` en claro y `#8b94a3` en oscuro (≥ 4,61:1 en todas sus superficies) (R16) | Los valores de la maqueta (§6.1) no llegaban a 4,5:1; AA prevalece sobre la maqueta. Práctica (WCAG 1.4.3) | 2026-11-04 |
+| F12-D30 | `border-azul`, `outline-azul` y `ring-azul/…` pasan a `*-marca` (70 usos, test que lo exige); `bg-azul` queda como único uso del alias (R17) | Corrige §6.3: las utilidades ganan al anillo global de foco, y con el alias el foco en oscuro quedaba a 2,1:1. Práctica (WCAG 1.4.11) | 2026-11-04 |
+| F12-D31 | La marca oscura (`--marca`, `--marca-2-texto`) se deriva contra `#1f242c`, la superficie oscura más clara donde se pinta texto de marca, y no contra `#161a20`; por defecto quedan `#5c90d5` (4,76:1) y `#36a14d` (4,72:1) (R18) | La barra lateral pinta texto de marca sobre `muted` y el tinte: contra `#161a20` quedaba en 4,18–4,38. Práctica (WCAG 1.4.3) | 2026-11-04 |
+| F12-D32 | Tema oscuro no invertido: sombras con base negra, series de gráficas en grises neutros (no reutilizan colores de estado) e impresión siempre en claro (`color-scheme: light` en `@media print`) (R19) | Defectos que aparecían al invertir los tokens; spec maestro §5.11 prohíbe reutilizar los estados en series. Práctica | 2026-11-04 |
+| F12-D33 | **Si la BD no responde, la página usa la marca por defecto:** el layout raíz envuelve `obtenerMarca` en `try/catch`, registra el error y usa `MARCA_DEFECTO` (R21) | Con la base caída, `/ingreso` y las páginas de error deben seguir pintándose. Costo: durante la caída se ve la marca genérica. Práctica (disponibilidad) | 2026-11-04 |
+| F12-D34 | **El código nuevo usa los nombres de token** (`bg-marca-relleno`, `hover:bg-marca-oscurecida`, `text-marca`, `border-marca`…); los alias `azul`/`verde` quedan solo para el código heredado hasta la Fase 19 (R22). Regla en `AGENTS.md` | Que el renombrado de la Fase 19 no crezca con cada pantalla nueva. Práctica | 2026-11-04 |
+| F12-D35 | **Excepción documentada a la regla 5 de trazabilidad:** cambiar el tema y marcar notificaciones como leídas no se audita (R24). Regla en `AGENTS.md` | Son preferencias de interfaz y lectura de avisos propios: no son evidencia de control documental y llenarían la bitácora. Costo: el cambio de tema no queda en la bitácora (auditarlo es una línea, `cambiar_tema`). Práctica; ISO 7.5 no lo pide (no es información documentada del SGC) | 2026-11-04 |
+| F12-D36 | **`banda-solido`** (`color-mix(in srgb, var(--color-banda) 80%, black)`) para todo relleno de banda con texto blanco; tarjetas de búsqueda y de documento y el mini mapa pasan a `banda-tinte`/`banda-texto`/`banda-borde`; un test prohíbe cualquier otro `color-mix` con `--color-banda` (R26) | Mezclar el relleno con la superficie dejó «Descargar» a 2,76:1 sobre el verde institucional y rompió F9-D5; los tintes salían blancuzcos en oscuro. Práctica (WCAG 1.4.3) | 2026-11-04 |
+| F12-D37 | **Defensas del logo:** la ruta guardada se confina a `marca/logo-<hex>.<ext>` (el `GET` público y el borrado no salen de ahí); sin `Content-Length` o no numérico, 411, y por encima de 1 MB más el sobre del formulario, 413, antes de leer el cuerpo; límite de 10 subidas por minuto; `Object.hasOwn` en la lista de MIME; `IHDR` obligatorio en PNG; nombre recortado a 255 caracteres antes de la auditoría inmutable; si el borrado del archivo anterior falla tras confirmar, no hay error 500 (R27) | Es una superficie pública y de escritura: una fila alterada no debe abrir todo el almacén, ni un cuerpo sin tamaño saltarse el tope. Práctica (seguridad, spec maestro §5.9) | 2026-11-04 |
+| F12-D38 | **El aviso de datos personales es obligatorio** al guardar la entidad (mínimo 1 carácter; el lema sí puede quedar vacío); se aparta del spec §7.1 («0–5000») (R28) | Vaciar el aviso borraba en silencio el texto que cada titular acepta al ingresar. Regulación: Ley 1581 de 2012, art. 12; Decreto 1377 de 2013 | 2026-11-04 |
+| F12-D39 | Pantalla de entidad: cada color se valida por su cuenta en vivo; hex con `required` y `pattern`; la validación en vivo sin `role="alert"` y las razones con `aria-live` 400 ms después del último cambio; la carga del logo limpia el campo tras un error, avisa el peso antes de enviar (1 MB + 1 byte = «1,1 MB») y ante un 401 pide volver a ingresar (R29) | Exactitud y accesibilidad de la pantalla del administrador: un lector de pantalla no debe recibir una ráfaga por tecla. Práctica (WCAG 4.1.3) | 2026-11-04 |
+| F12-D40 | El encabezado de `TablaDatos` no se fija con una altura máxima del contenedor (R30) | Las listas son cortas y una altura fija estorba al imprimir. Costo: en una lista larga el encabezado no queda pegado. Práctica | 2026-11-04 |
+| F12-D41 | **La banda OBSOLETO/ANULADO de la ficha del panel cumple AA:** se quita la opacidad del contenedor (5,72:1 obsoleto, 7,53:1 anulado) (R31) | Con `opacity-80` quedaba en ≈3,7:1, y la marca de obsoleto debe ser inequívoca. Práctica (WCAG 1.4.3) y regla de negocio 2 (ISO 7.5.3.2, control de versiones) | 2026-11-04 |
+| F12-D42 | **Las filas inactivas no usan opacidad** (estructura, mapa, periféricos, tipos, procesos, subprocesos y usuarios): el estado se expresa con texto secundario, borde punteado y la etiqueta «Inactivo» (R32) | `opacity-60` bajaba «Borrar» a ≈2,9:1, y el estado no puede ir solo por color o intensidad. Práctica (WCAG 1.4.3 y 1.4.1) | 2026-11-04 |
+| F12-D43 | **Un `notFound()` dentro de la app conserva el cascarón:** `src/app/(app)/not-found.tsx` («Página no encontrada»); la raíz queda para las URL sin ruta (R33) | Navegación consistente: la persona no pierde la barra lateral por un enlace roto. Práctica | 2026-11-04 |
+| F12-D44 | Tokens `--formato-*` para el ícono de formato de archivo (identidad del formato, no estado; 6,81–8,19:1 en claro y 10,48–11,23:1 en oscuro, con test) y botones destructivos de confirmación en tinte con borde, iguales a `claseBoton("peligro")` (R34) | Se apartan del §6.1, que no listaba tokens de formato: sin ellos los íconos quedaban con colores fijos que el tema oscuro no cubre. Práctica (WCAG 1.4.3) | 2026-11-04 |
+| F12-D45 | Las pantallas centradas (cuenta e ingreso) conservan su `h1` propio, sin `EncabezadoPagina` (R35) | No tienen migas ni acciones; el componente es para las páginas del cascarón. Práctica | 2026-11-04 |
+| F12-D46 | Los títulos «… — Administración SGC» de las páginas del panel se quedan (R36) | F12-DC4 quita la barra "Administración SGC", no el `<title>`, que sigue distinguiendo la pestaña del panel. Práctica | 2026-11-04 |
+
 ## Deuda técnica conocida
+
+**De la Fase 12:**
+
+- **Renombrar los alias `azul`/`verde`** (`bg-azul`, `text-azul-tinta`, `text-verde`,
+  `text-verde-texto`, `bg-verde/15` de `TextoResaltado`…) a los nombres de token y
+  retirarlos de `@theme inline`: **Fase 19** (F12-DC10, F12-D34).
+- **Piso de navegadores:** `light-dark()` exige Chrome ≥ 123, Safari ≥ 17.5 y
+  Firefox ≥ 120 (Edge sigue a Chrome); en uno más viejo los colores no cargan. Va como
+  requisito en la guía de instalación de la **Fase 20**.
+- **`Boton` y `Campo` en los formularios heredados**: siguen con su marcado y clases
+  propias (F12-DC18); las clases de peligro de `FormAccion`, `BotonRestablecer` y
+  `BotonBorrar` repiten a mano `claseBoton("peligro")`: **Fase 19**.
+- **Favicon desde el logo:** sigue el estático de la plataforma (spec §7.2): **Fase 19**.
+- Páginas del portal (Inicio, proceso, subproceso, ficha de documento) sin `<title>`
+  propio: la pestaña dice «<nombre> · SGC» en todas (heredado de `sgc-suaza`).
+- Un `notFound()` bajo una ruta con `loading.tsx` responde 200 en vez de 404 (el
+  streaming ya envió la cabecera); la página sí es «Página no encontrada» (heredado).
+- Archivos huérfanos del logo: si `guardarLogo` falla entre `writeFile` y la BD, o en
+  dos primeras subidas simultáneas (`FOR UPDATE` sin fila), queda un `logo-<hex>` sin
+  referencia en `almacen/marca`. Un SVG o un políglota con firma PNG válida llega a disco,
+  pero se sirve como `image/png` con `nosniff`.
+- Logo: un `Content-Length` como `"1e3"` pasa `Number.isInteger` (el tope real se
+  revalida en `validarLogo`); el limitador cubre solo el `POST`; `quitarLogo` audita
+  aunque no hubiera logo; `editar_configuracion` se lee «Editó los textos
+  institucionales» aunque también cubre la marca y los colores.
+- Opacidad de los nodos inactivos en la vista previa del mapa (`Banda`,
+  `RailPeriferico`, `TarjetaProceso`) sin medir contra AA.
+- Doble espacio bajo `EncabezadoPagina` en algunas páginas (mapa, periféricos, lote,
+  ficha del panel): su `mb-6` se suma al `gap` del contenedor. Los `h1` del portal bajaron
+  a 2xl seminegrita con el componente (antes eran más grandes).
+- **Lema:** con el lema vacío, la franja del pie del mapa se pinta vacía (solo el ícono),
+  y si falta la clave `MapaProcesos` cae a un lema fijo de la demo («Comprometidos con la
+  vida…») que el test de textos fijos no cubre. Ocultar la franja sin lema.
+- Pantalla de entidad: «Cambios guardados» sigue a la vista mientras la URL tenga
+  `?guardado=1`; el error del servidor sale bajo el formulario y no junto al campo
+  (§7.3; el aviso en vivo sí va junto al color); un `useState` con `valor()` muerto;
+  sangría irregular en `EntradaColor` y línea en blanco doble en `CargaLogo`.
+- Duplicados de usuario: `duplicadosSinMayusculas` agrupa con `toLowerCase()` de JS y el
+  índice usa `lower()` de Postgres (con nombres no ASCII heredados podrían diferir;
+  agrupar en SQL lo iguala); `comprobarDuplicadosUsuario` sin test propio (ramas sin
+  tabla y con duplicados); el mensaje pide renombrar cuando la app no arranca, lo que
+  solo se puede con `psql` (guía de la **Fase 20**); `db:migrate` y el arranque muestran
+  el `NOTICE` de Postgres de `__drizzle_migrations`.
+- Tema: al recorrer los radios con las flechas, `onChange` → `requestSubmit` envía cada
+  opción intermedia.
+- Búsqueda `Ctrl K`: una consulta que falló no se reintenta mientras no cambie el texto.
+- `Boton` sobrescribe un `aria-busy` del llamador; `Dialogo` no limpia al desmontar y un
+  clic en su propio relleno lo cierra (el relleno va en un hijo).
+- Fecha futura de una notificación → «ahora»; `FOCO` repetido en varios componentes del
+  cascarón.
+- Íconos decorativos con `text-white` sobre el color de la banda o del macroproceso sin
+  oscurecer (`admin/mapa/page.tsx` y los heredados de la Fase 9; `aria-hidden`).
+- `--chart-3` oscuro coincide con `--texto-terciario` oscuro (`#8b94a3`).
+- Textos vacíos genéricos de `TablaDatos` («Sin documentos» perdió la ayuda «Cree el
+  primero…»; «Sin registros en el periodo» en Accesos también con filtros de usuario);
+  Estadísticas perdió su animación de entrada.
+- Cobertura: sin tests de `EstadoVacio`, `Insignia` de módulo, `TarjetaCifra` sin estado
+  ni `Campo` sin ayuda o error; sin test de 429 ni de `q` con `⟦⟧` en `/api/buscar` (sus
+  casos dependen de documentos de la demo con «acta»); sin test de
+  `marcarNotificacionLeidaAccion` ni de `marcarTodasLeidas` con filas ajenas (lo cubre la
+  consulta); `fechaCorta` de `MisTareas` sin test y el caso de zona depende de que
+  `ZONA_HORARIA` falte o sea Bogotá; el test de `obtenerMarca` corre sobre la demo
+  completa (no prueba la caída por clave ausente ni por color inválido); la comprobación
+  de la semilla mínima no tiene test propio; `tests/esquema.test.ts` (rol por defecto,
+  correo único) limpia con `DELETE` después del `expect` y deja filas `zz_*` si falla;
+  `tests/proxy-redirecciones.test.ts` repite un caso de `tests/guardia.test.ts`.
+- El emisor del TOTP cae a «Entidad sin configurar» y no recorta espacios
+  (`texto()` de `entidad.ts` comprueba con `trim` pero devuelve sin recortar);
+  `Math.abs` sin efecto en la rama gamma de `color.ts`.
+- Los usuarios `zz_*` y `admin_pub_*` de los tests aparecen en la lista de usuarios de la
+  base de desarrollo (F11-D2; `db:seed` los limpia).
+- Un fallo intermitente de la suite se vio una vez en la Fase 12 (1479/1481) y no se
+  reprodujo: ver la entrada "Fallo intermitente" de la Fase 11, ampliada.
 
 **De la Fase 11:**
 
@@ -721,7 +1057,10 @@ esta tabla quedan solo como equivalencia, porque algunos tests los citan en sus 
 - **Fallo intermitente en la primera corrida** de la suite tras editar código: visto dos
   veces (un archivo entero en rojo, unos 14 tests) y no reproducido en las corridas
   siguientes. Sospecha: arranque en frío + Argon2 en `beforeAll` con el timeout por
-  defecto. Si reaparece, capturar la salida y revisar timeouts de esos `beforeAll`.
+  defecto. Si reaparece, capturar la salida y revisar timeouts de esos `beforeAll`. En
+  la Fase 12 se vio una vez otra forma (1479/1481 con un error, sin capturar ni
+  diagnosticar, tras la ronda de arreglos de la Tarea 15); no se reprodujo en las cuatro
+  corridas siguientes ni en la del cierre.
 - `tokens_un_uso` (activación y restablecimiento por enlace) pospuesta a la **Fase 16**
   (F11-D7).
 - Archivos de despliegue heredados: `docker-compose.nas.yml` y `.env.nas.example` solo
@@ -730,7 +1069,11 @@ esta tabla quedan solo como equivalencia, porque algunos tests los citan en sus 
   `Dockerfile` aún mencionan el NAS/ARM64 en comentarios. Los reemplaza la **Fase 20**.
 - `next build` avisa que `src/lib/almacen.ts` (`path.resolve(process.env.ALMACEN_RUTA …)`)
   hace trazar todo el proyecto en `.next/standalone` (heredado de la Fase 4; la imagen
-  no copia `.env*` por `.dockerignore`). Acotar la ruta en la Fase 19.
+  no copia `.env*` por `.dockerignore`). Acotar la ruta en la Fase 19. Visto al cerrar
+  la Fase 12: como `.dockerignore` no excluye `almacen/`, la imagen local lleva los
+  archivos del almacén de desarrollo (documentos y logo demo); el compose de desarrollo
+  no monta un volumen de almacén. Excluir `almacen/` (y `.superpowers/`) en la Fase 20,
+  con el volumen nombrado.
 - **Para la Fase 13 (tablas inmutables nuevas):** `asegurarRolApp` da a `sgc_app`, por
   `ALTER DEFAULT PRIVILEGES`, `UPDATE` y `DELETE` sobre toda tabla que se cree después.
   Toda tabla inmutable nueva (`firmas`, spec §5.9) debe entrar al `REVOKE UPDATE, DELETE`
@@ -742,12 +1085,6 @@ esta tabla quedan solo como equivalencia, porque algunos tests los citan en sus 
   bloqueando la cuenta). Entra con un código de recuperación, o el administrador le quita
   el segundo factor y lo vuelve a activar. Va al **manual técnico de la Fase 20**, junto
   con la generación de `APP_SECRETO` al instalar.
-- **Índice único sobre `lower(usuario)`: el usuario decidió (2026-11-04) hacerlo en la
-  Fase 12**, en la próxima migración (0003, solo añade). Hoy la unicidad sin distinguir mayúsculas es por convención: el patrón zod
-  fuerza minúsculas y `asegurarAdmin` busca con `lower()` y crea en minúsculas (F11-D32),
-  pero el `UNIQUE` de la columna distingue mayúsculas. No se hizo en la Fase 11 porque la
-  migración fallaría en el arranque sobre una base heredada que tenga `admin` y `Admin` a
-  la vez: antes hay que detectar y resolver esos duplicados.
 - La leyenda «Descargada el …» de la marca de agua de los PDF (`src/lib/marca-agua.ts`)
   toma el día con `getDate()`/`getMonth()`, en la zona del proceso (UTC en el
   contenedor), no en `ZONA_HORARIA`: entre las 19:00 y la medianoche de Bogotá sale el día

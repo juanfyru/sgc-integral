@@ -96,7 +96,10 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
    inmutable en BD, con quién, qué y cuándo. `auditoria` y `accesos` son de solo
    inserción (trigger que rechaza `UPDATE` y `DELETE` incluso al dueño del esquema, más
    los privilegios de `sgc_app`); los usuarios con historia se desactivan, nunca se
-   borran.
+   borran. **Única excepción documentada (F12-D35):** las preferencias de interfaz de
+   cada persona (el tema) y las marcas de notificación leída no se auditan: no son
+   evidencia de 7.5 y llenarían la bitácora de ruido. Cualquier otra acción sin auditar se
+   propone antes.
 6. **El MIME se detecta de los magic bytes en la carga** (no de la extensión del nombre)
    y se guarda en BD. El ícono de formato se deriva del MIME guardado.
 7. **Archivos fuera del webroot**, servidos por la app con `Content-Type` y
@@ -109,7 +112,7 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
 | Capa | Elección | Notas |
 |---|---|---|
 | Framework | Next.js (App Router) + TypeScript estricto, `output: 'standalone'` | Node 24 LTS en la imagen, CI y desarrollo (mismo major en los tres: npm 10 y 11 generan lockfiles incompatibles) |
-| UI | Tailwind CSS + shadcn/ui | Íconos: `lucide-react` (local) |
+| UI | Tailwind CSS + componentes propios en `src/componentes/ui` (shadcn/ui solo como hoja base) | Íconos: `lucide-react` (local). Tema claro y oscuro con tokens CSS (`light-dark()`) |
 | Animación | Motion (Framer Motion) | Respetar `prefers-reduced-motion` siempre |
 | Mapa | SVG/HTML generado desde datos, layout por bandas con CSS grid | Sin lib de diagramas |
 | BD | PostgreSQL 16 (`postgres:16-alpine`), roles `sgc_migrador` dueño y `sgc_app` de mínimo privilegio | Extensiones: `unaccent`, `pg_trgm`. `sgc_migrador` es el nombre del spec: hoy el dueño es el usuario de `POSTGRES_USER` (`sgc` en desarrollo) |
@@ -133,9 +136,31 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
 - **Estructura:** App Router con el portal y el panel en `app/(app)` (el panel en
   `app/(app)/admin/(panel)`), las acciones y handlers del panel en
   `app/admin/{acciones*.ts,comun.ts,api}`, los pasos de la cuenta en `app/(cuenta)` y el
-  ingreso en `app/ingreso`. Lógica
-  de datos en `src/db` (schema Drizzle + queries), lógica de negocio en `src/lib`. Server
-  Components por defecto; `'use client'` solo donde hay interactividad.
+  ingreso en `app/ingreso`. Lógica de datos en `src/db` (schema Drizzle + queries),
+  lógica de negocio en `src/lib`. Server Components por defecto; `'use client'` solo
+  donde hay interactividad.
+- **Cascarón y componentes base:** toda página autenticada vive dentro del cascarón del
+  layout de `(app)` (`src/componentes/cascaron`: barra lateral, barra superior, búsqueda,
+  campana y menú); los pasos de la cuenta y el ingreso usan `PantallaCentrada`. La
+  navegación sale de `src/componentes/cascaron/navegacion.ts`, cada entrada con su
+  permiso; un módulo aparece en ella solo cuando existe. Las pantallas nuevas usan los
+  componentes de `src/componentes/ui` (`EncabezadoPagina` para todo `h1` dentro del
+  cascarón, `TablaDatos`, `Insignia`, `TarjetaCifra`, `EstadoVacio`, `Boton`, `Campo`,
+  `Dialogo`, `GraficoBarras`).
+- **Tema y color:** el tema lo resuelve el servidor en `<html data-tema>` (`claro`,
+  `oscuro` o `sistema`, desde el perfil o la cookie `sgc_tema`), sin script inline; los
+  tokens de `src/app/globals.css` llevan su valor claro y oscuro con `light-dark()` y la
+  variante `dark:` de Tailwind apunta al atributo. El código nuevo usa los nombres de
+  token (`bg-marca-relleno`, `hover:bg-marca-oscurecida`, `text-marca`, `border-marca`,
+  `bg-estado-<x>-fondo`, `text-estado-<x>-texto`, `banda-*`; F12-D34), nunca los alias
+  heredados `azul`/`verde` ni colores fijos de Tailwind (`bg-white`, `text-gray-*`…: lo
+  exige `tests/colores-fijos.test.ts`). Texto blanco sobre el color de una banda del mapa
+  va sobre `banda-solido` (F12-D36).
+- **La entidad es configuración, no código:** nombre, sigla, lema, logo y colores salen
+  de `obtenerMarca()`/`obtenerMarcaSegura()` (`src/db/consultas/entidad.ts`). Ningún
+  nombre de entidad ni "SGC Documental" se escribe en `src/` fuera de la semilla demo (lo
+  exige `tests/textos-fijos.test.ts`). Un color del administrador llega al `style` de
+  `<html>` solo tras validar el hex estricto y el contraste P1/P2 (`src/lib/marca.ts`).
 - **Migraciones versionadas con Drizzle Kit**, ejecutadas en el arranque del contenedor.
   Nunca `db push` contra producción. `src/db/esquema.ts` nunca importa con `@/`
   (drizzle-kit lo carga sin el alias): solo rutas relativas.
@@ -148,7 +173,9 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   filtro por rol no se reimplementa en cada módulo.
 - **Accesibilidad no negociable:** navegable por teclado, foco visible, contraste AA,
   SVG del mapa con roles/etiquetas ARIA. El ícono de formato de archivo nunca es la
-  única señal (siempre etiqueta textual + tamaño, `aria-label`).
+  única señal (siempre etiqueta textual + tamaño, `aria-label`), ni el color de un
+  estado (la `Insignia` lleva texto siempre). Nada de `opacity` para atenuar texto o
+  controles (inactivos, obsoletos): baja el contraste por debajo de AA (F12-D41, F12-D42).
 - **Seguridad en cada PR que toque rutas:** verificar que ninguna ruta quede fuera del
   guard de sesión ni ninguna escritura fuera de su permiso. Cabeceras CSP,
   `X-Content-Type-Options`, `X-Frame-Options` en `next.config`/proxy. Reglas fijas:
@@ -182,10 +209,16 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   - Toda redirección con `volver` pasa por `rutaInterna()`. El matcher de
     `src/proxy.ts` escribe los puntos literales como `[.]` (Next no escapa el `.`, y
     `\.` coincide con cualquier carácter).
+  - **Rutas públicas:** solo `/ingreso`, `/api/salud` y `/marca/logo` (`RUTAS_PUBLICAS`
+    de `src/proxy.ts`). Una nueva se propone antes y entra con su caso en
+    `tests/proxy-matcher.test.ts`.
 - **Tests contra la BD de desarrollo:** todo usuario de prueba que genere filas en
   `auditoria` o `accesos` usa un nombre único por corrida (`zz_<algo>_${Date.now()}`) y
   no se borra (FK `RESTRICT` y trigger de solo inserción). Nunca `DELETE` ni `UPDATE`
-  sobre esas tablas en una limpieza.
+  sobre esas tablas en una limpieza. Un test que escribe datos capaces de bloquear la
+  migración o el arranque, o de romper otros tests (un usuario duplicado, la
+  configuración de la entidad), los escribe dentro de una transacción que se revierte o
+  los restaura en `finally`: un test que falla no debe dejar la base inservible.
 
 ## Comandos
 
@@ -195,7 +228,7 @@ npm run build           # build de producción (standalone)
 npm run lint            # ESLint + tsc --noEmit
 npm test                # tests (Vitest)
 npm run db:generate     # generar migración desde el schema Drizzle
-npm run db:migrate      # aplicar migraciones (con DATABASE_URL_MIGRADOR)
+npm run db:migrate      # aplicar migraciones (con DATABASE_URL_MIGRADOR); antes detiene si hay usuarios duplicados sin distinguir mayúsculas
 npm run db:roles        # crear o sincronizar el rol sgc_app y sus privilegios
 npm run db:preparar     # migraciones y luego rol de la app (db:migrate + db:roles)
 npm run db:seed         # semilla demo: mapa real, documentos ficticios, estructura y usuarios por rol

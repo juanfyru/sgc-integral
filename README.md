@@ -5,8 +5,10 @@ desde el commit `9644ceb`. Parte de las mismas funcionalidades y crece con
 funcionalidades nuevas; la app original sigue su propio camino en su repo.
 
 Portal de intranet para control de documentos del Sistema de Gestión de Calidad
-(NTC ISO 9001:2015, numeral 7.5). La página de inicio es el mapa de procesos
-institucional, interactivo y configurable.
+(NTC ISO 9001:2015, numeral 7.5). La página de inicio reúne las tareas de cada
+persona y el mapa de procesos institucional, interactivo y configurable. El
+nombre, la sigla, el logo y los colores de la entidad se configuran desde la app
+(Administración → Entidad y marca), con tema claro y oscuro.
 
 - **Reglas permanentes del proyecto:** [`CLAUDE.md`](CLAUDE.md) / [`AGENTS.md`](AGENTS.md)
 - **Estado vivo:** [`CONTEXT.md`](CONTEXT.md)
@@ -23,7 +25,7 @@ docker compose -f docker-compose.dev.yml up --build
 docker compose -f docker-compose.dev.yml up -d bd
 cp .env.example .env.local
 npm install
-npm run db:preparar     # migraciones + rol de BD de la app (sgc_app)
+npm run db:preparar     # migraciones (antes comprueba que no haya usuarios duplicados sin distinguir mayúsculas) + rol de BD de la app (sgc_app)
 npm run db:seed         # semilla demo: mapa, documentos, estructura y usuarios de ejemplo
 npm run admin:asegurar  # crea el admin (pide cambiar la clave al primer ingreso)
 npm run dev

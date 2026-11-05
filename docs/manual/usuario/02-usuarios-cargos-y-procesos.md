@@ -8,10 +8,11 @@ Capítulo 1.
 
 ## 1. Entrar al panel de administración
 
-Menú con su nombre (arriba a la derecha) → **Administración**. Se abre el panel
-**Administración SGC**, con una barra de enlaces: Documentos, Mapa, Tipos de documento,
-**Estructura**, **Usuarios**, Listado Maestro, Estadísticas, Bitácora, **Accesos**,
-**Sesiones** y **Ver portal público** (para volver al portal).
+Las páginas de administración están en la barra lateral (Capítulo 3, sección 2): en el
+grupo **Documentos**, Gestión de documentos, Listado Maestro, Tipos de documento y Mapa de
+procesos; en el grupo **Administración**, Entidad y marca, **Estructura**, **Usuarios**,
+Estadísticas, Bitácora, **Accesos** y **Sesiones**. En este capítulo, "Administración →
+**Usuarios**" quiere decir: barra lateral, grupo Administración, enlace Usuarios.
 
 Cada persona ve en esa barra solo lo que su rol permite. Si alguien abre una página que
 no le corresponde, el SGC le muestra **Sin acceso** ("Su cuenta no tiene permiso para ver
@@ -25,7 +26,7 @@ Cada cuenta tiene **un solo rol**. Los roles son fijos: no se crean ni se editan
 |---|---|---|
 | Administrador del SGC | Sí | Todo |
 | Gerencia | Sí | Listado Maestro (documentos vigentes) y Estadísticas |
-| Control Interno | Sí | Documentos (solo lectura, con historial), Listado Maestro con Excel, Estadísticas, Bitácora y Accesos |
+| Control Interno | Sí | Gestión de documentos (solo lectura, con historial), Listado Maestro con Excel, Estadísticas, Bitácora y Accesos |
 | Líder de proceso | Sí, con el bloque **Mis procesos** en la página de inicio | No |
 | Consulta | Sí | No |
 
@@ -33,7 +34,7 @@ En el portal todos ven solo las versiones **vigentes** de los documentos. Las ve
 obsoletas y anuladas las ven el Administrador del SGC, Control Interno y las personas a
 las que usted les marque **"Puede ver el historial de documentos (versiones obsoletas y
 anuladas)"** (sección 3.1). Con esa marca, un líder de proceso o un usuario de consulta
-entra al panel solo a **Documentos**, en solo lectura.
+entra al panel solo a **Gestión de documentos**, en solo lectura.
 
 ## 2. Estructura: áreas y cargos
 
@@ -335,7 +336,7 @@ en **Accesos** como restablecimiento.
 ## 10. Aviso de datos personales
 
 El texto que cada persona acepta en su primer ingreso se edita en Administración →
-**Mapa** → **Textos**, campo **Aviso de tratamiento de datos personales**. Mientras esté
-vacío, el SGC muestra un texto genérico. Si cambia el texto, a quienes ya lo aceptaron no
-se les vuelve a pedir. La fecha de aceptación de cada persona se ve en su detalle (Aviso
+**Entidad y marca**, campo **Aviso de datos personales** (Capítulo 4, sección 2). Es
+obligatorio: el SGC no deja guardarlo vacío. Si cambia el texto, a quienes ya lo
+aceptaron no se les vuelve a pedir. La fecha de aceptación de cada persona se ve en su detalle (Aviso
 de datos aceptado).
