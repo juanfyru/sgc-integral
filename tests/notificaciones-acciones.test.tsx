@@ -17,7 +17,7 @@ describe("notificaciones", () => {
     expect(destinoNotificacion("javascript:alert(1)")).toBe("/");
     expect(destinoNotificacion("//evil")).toBe("/");
     expect(destinoNotificacion(null)).toBe("/");
-    expect(destinoNotificacion("/documentos/pr-gth-001")).toBe("/documentos/pr-gth-001");
+    expect(destinoNotificacion("/documentos/gth-pr-01")).toBe("/documentos/gth-pr-01");
   });
   it("tiempoRelativo", () => {
     const ahora = new Date("2026-11-04T15:00:00Z");

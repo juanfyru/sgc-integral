@@ -47,7 +47,7 @@ async function parsearDocumento(formData: FormData): Promise<DatosDocumento> {
   const patron = await obtenerPatronCodigo();
   if (!patron.test(codigo)) {
     throw new Error(
-      "El código no cumple el formato TIPO-PROCESO-CONSECUTIVO (ej. PR-GTH-001)",
+      "El código no cumple el formato configurado (ej. SGC-FO-02)",
     );
   }
   const titulo = texto(formData, "titulo");

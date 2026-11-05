@@ -63,12 +63,12 @@ afterAll(async () => {
 
 describe("route público de archivos — marca de agua", () => {
   it("con ?descarga=1 un PDF vigente sale estampado como adjunto", async () => {
-    const { id } = await archivoPdfVigente("MN-CAL-001");
+    const { id } = await archivoPdfVigente("SGC-MN-01");
     const res = await GET(
       peticion(
-        `http://localhost:3000/documentos/mn-cal-001/archivos/${id}?descarga=1`,
+        `http://localhost:3000/documentos/sgc-mn-01/archivos/${id}?descarga=1`,
       ),
-      { params: Promise.resolve({ codigo: "mn-cal-001", archivoId: String(id) }) },
+      { params: Promise.resolve({ codigo: "sgc-mn-01", archivoId: String(id) }) },
     );
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Disposition")).toContain("attachment");
@@ -82,10 +82,10 @@ describe("route público de archivos — marca de agua", () => {
   });
 
   it("sin ?descarga=1 la vista previa también sale estampada, inline", async () => {
-    const { id } = await archivoPdfVigente("MN-CAL-001");
+    const { id } = await archivoPdfVigente("SGC-MN-01");
     const res = await GET(
-      peticion(`http://localhost:3000/documentos/mn-cal-001/archivos/${id}`),
-      { params: Promise.resolve({ codigo: "mn-cal-001", archivoId: String(id) }) },
+      peticion(`http://localhost:3000/documentos/sgc-mn-01/archivos/${id}`),
+      { params: Promise.resolve({ codigo: "sgc-mn-01", archivoId: String(id) }) },
     );
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Disposition")).toContain("inline");
@@ -99,10 +99,10 @@ describe("route público de archivos — marca de agua", () => {
   });
 
   it("sin cookie responde 401 y no registra evento", async () => {
-    const { id } = await archivoPdfVigente("MN-CAL-001");
+    const { id } = await archivoPdfVigente("SGC-MN-01");
     const res = await GET(
-      new NextRequest(`http://localhost:3002/documentos/mn-cal-001/archivos/${id}?descarga=1`),
-      { params: Promise.resolve({ codigo: "mn-cal-001", archivoId: String(id) }) },
+      new NextRequest(`http://localhost:3002/documentos/sgc-mn-01/archivos/${id}?descarga=1`),
+      { params: Promise.resolve({ codigo: "sgc-mn-01", archivoId: String(id) }) },
     );
     expect(res.status).toBe(401);
   });

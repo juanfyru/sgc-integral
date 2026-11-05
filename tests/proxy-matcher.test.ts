@@ -13,7 +13,7 @@ describe("matcher del proxy (comportamiento real de Next)", () => {
   it.each([
     "/",
     "/admin",
-    "/documentos/pr-cal-001",
+    "/documentos/sgc-pr-01",
     "/procesos/apoyo-diagnostico",
     "/procesos/apoyo-terapeutico",
     "/procesos/atencion-inmediata/transporte-asistencial-basico",

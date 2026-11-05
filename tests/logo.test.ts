@@ -61,7 +61,7 @@ describe("rutaLogoValida", () => {
     expect(rutaLogoValida("marca/logo-f0e59280.webp")).toBe(true);
   });
   it.each([
-    "documentos/PR-CAL-001/v1/x.png",
+    "documentos/SGC-PR-01/v1/x.png",
     "marca/../documentos/x.png",
     "marca/logo-F0E59280.png",
     "marca/logo-f0e59280.svg",

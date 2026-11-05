@@ -4,7 +4,6 @@ import { registrarAuditoria } from "@/db/consultas/admin";
 import {
   validarBanda,
   validarColor,
-  validarPatronCodigo,
   validarSigla,
   validarSlug,
 } from "@/lib/validaciones-mapa";
@@ -230,7 +229,6 @@ export const CLAVES_TEXTO: ReadonlyArray<{
   { clave: "subtitulo_mapa", etiqueta: "Subtítulo del mapa" },
   { clave: "titulo_phva", etiqueta: "Título del ciclo PHVA" },
   { clave: "texto_phva", etiqueta: "Texto del ciclo PHVA", textarea: true },
-  { clave: "patron_codigo", etiqueta: "Patrón del código (expresión regular)" },
 ];
 
 export async function obtenerTextos(): Promise<Record<string, string>> {
@@ -248,9 +246,6 @@ export async function guardarTextos(
   // Solo claves conocidas; ignora cualquier otra que llegue.
   const permitidas = new Set(CLAVES_TEXTO.map((c) => c.clave));
   const entradas = Object.entries(valores).filter(([k]) => permitidas.has(k));
-  if ("patron_codigo" in valores) {
-    validarPatronCodigo(valores.patron_codigo);
-  }
   const sql = obtenerSql();
   await sql.begin(async (tx) => {
     for (const [clave, valor] of entradas) {

@@ -7,11 +7,22 @@ import { rm } from "node:fs/promises";
 import { sql as dsql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { rutaBaseAlmacen } from "../../lib/almacen";
+import { FORMATO_CODIGO_DEFECTO } from "../../lib/tramites/codigo";
 import * as e from "../esquema";
 
 export type Db = PostgresJsDatabase;
 
-const PATRON_CODIGO_DEFECTO = "^[A-Z]{2,4}-[A-Z]{2,4}-\\d{3}$";
+/** Lista de verificación de la revisión (spec §5): los tres primeros son críticos. */
+const ITEMS_VERIFICACION: ReadonlyArray<readonly [string, boolean]> = [
+  ["Usa la plantilla vigente de su tipo", true],
+  ["Código, versión y fecha en el encabezado", true],
+  ["Tiene todas las secciones obligatorias", true],
+  ["Es coherente con los demás documentos del SGC", false],
+  ["Cumple los requisitos de ISO 9001:2015 que le aplican", false],
+  ["Es aplicable a una institución de primer nivel", false],
+  ["Cita la normativa vigente que le aplica", false],
+  ["Define los registros que genera y su archivo", false],
+];
 
 const AVISO_DATOS_PERSONALES = [
   "TEXTO DE EJEMPLO — la entidad debe reemplazarlo por su política de tratamiento de datos personales. Al ingresar a este sistema, la entidad registra su usuario, cargo, dirección IP y las acciones que realiza, con el único fin de garantizar el control, la trazabilidad y la seguridad de la información documentada del sistema de gestión.",
@@ -52,24 +63,39 @@ export async function sembrarBase(
     { clave: "lema", valor: "" },
     { clave: "titulo_phva", valor: "Mejora Continua" },
     { clave: "texto_phva", valor: "" },
-    { clave: "patron_codigo", valor: PATRON_CODIGO_DEFECTO },
+    { clave: "formato_codigo", valor: FORMATO_CODIGO_DEFECTO },
+    { clave: "plazo_visto_bueno_dias", valor: "3" },
+    { clave: "plazo_aceptacion_dias", valor: "3" },
+    { clave: "plazo_elaboracion_dias", valor: "15" },
+    { clave: "plazo_ajustes_dias", valor: "5" },
+    { clave: "plazo_revision_dias", valor: "5" },
+    { clave: "plazo_aprobacion_dias", valor: "5" },
+    { clave: "plazo_publicacion_dias", valor: "2" },
+    { clave: "escalamiento_dias", valor: "3" },
+    { clave: "publicacion_directa", valor: "1" },
     { clave: "aviso_datos_personales", valor: AVISO_DATOS_PERSONALES },
   ]);
 
   const tipos = await db
     .insert(e.tiposDocumento)
     .values([
-      { nombre: "Caracterización", sigla: "CA", orden: 1 },
-      { nombre: "Manual", sigla: "MN", orden: 2 },
-      { nombre: "Procedimiento", sigla: "PR", orden: 3 },
-      { nombre: "Instructivo", sigla: "IN", orden: 4 },
-      { nombre: "Formato", sigla: "FT", esDiligenciable: true, orden: 5 },
-      { nombre: "Guía", sigla: "GU", orden: 6 },
-      { nombre: "Protocolo", sigla: "PT", orden: 7 },
-      { nombre: "Plan", sigla: "PL", orden: 8 },
-      { nombre: "Política", sigla: "PO", orden: 9 },
+      { nombre: "Caracterización", sigla: "CA", autoridad: "estrategico", esDiligenciable: false, orden: 1 },
+      { nombre: "Manual", sigla: "MN", autoridad: "estrategico", esDiligenciable: false, orden: 2 },
+      { nombre: "Procedimiento", sigla: "PR", autoridad: "operativo", esDiligenciable: false, orden: 3 },
+      { nombre: "Instructivo", sigla: "IN", autoridad: "operativo", esDiligenciable: false, orden: 4 },
+      { nombre: "Formato", sigla: "FO", autoridad: "operativo", esDiligenciable: true, orden: 5 },
+      { nombre: "Guía", sigla: "GU", autoridad: "operativo", esDiligenciable: false, orden: 6 },
+      { nombre: "Protocolo", sigla: "PT", autoridad: "operativo", esDiligenciable: false, orden: 7 },
+      { nombre: "Plan", sigla: "PL", autoridad: "estrategico", esDiligenciable: false, orden: 8 },
+      { nombre: "Política", sigla: "PO", autoridad: "estrategico", esDiligenciable: false, orden: 9 },
+      { nombre: "Registro", sigla: "RG", autoridad: "operativo", esDiligenciable: true, orden: 10 },
+      { nombre: "Matriz", sigla: "MZ", autoridad: "operativo", esDiligenciable: true, orden: 11 },
     ])
     .returning();
+
+  await db.insert(e.listaVerificacionItems).values(
+    ITEMS_VERIFICACION.map(([texto, critico], i) => ({ texto, critico, orden: i + 1 })),
+  );
   return { tipoPorSigla: Object.fromEntries(tipos.map((t) => [t.sigla, t.id])) };
 }
 

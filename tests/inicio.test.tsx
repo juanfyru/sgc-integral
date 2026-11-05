@@ -12,7 +12,7 @@ describe("Inicio", () => {
     const h = renderToStaticMarkup(
       <MisTareas
         ahora={new Date("2026-11-04T12:00:00Z")}
-        tareas={[{ id: "doc:1", modulo: "documentos", titulo: "Aprobar PR-GTH-012 v3", detalle: null, vence: new Date("2026-11-01T00:00:00Z"), enlace: "/admin" }]}
+        tareas={[{ id: "doc:1", modulo: "documentos", titulo: "Aprobar GTH-PR-12 v3", detalle: null, vence: new Date("2026-11-01T00:00:00Z"), enlace: "/admin" }]}
       />,
     );
     expect(h).toContain("Vencida");

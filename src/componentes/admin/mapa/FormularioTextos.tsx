@@ -32,7 +32,7 @@ export function FormularioTextos({
             <input
               name={c.clave}
               defaultValue={val(c.clave)}
-              className={`${claseCampo} ${c.clave === "patron_codigo" ? "font-mono" : ""}`}
+              className={claseCampo}
             />
           )}
         </label>

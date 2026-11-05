@@ -39,7 +39,7 @@ afterAll(async () => {
 
 describe("regla central: una sola versión vigente por documento", () => {
   it("rechaza una segunda versión vigente del mismo documento", async () => {
-    const [doc] = await sql`SELECT id FROM documentos WHERE codigo = 'MN-CAL-001'`;
+    const [doc] = await sql`SELECT id FROM documentos WHERE codigo = 'SGC-MN-01'`;
     const codigo = await codigoDeError(
       sql`INSERT INTO documento_versiones
             (documento_id, numero, estado, aprobo, fecha_aprobacion)
@@ -49,7 +49,7 @@ describe("regla central: una sola versión vigente por documento", () => {
   });
 
   it("rechaza una versión vigente sin evidencia de aprobación", async () => {
-    const [doc] = await sql`SELECT id FROM documentos WHERE codigo = 'FT-CAL-003'`;
+    const [doc] = await sql`SELECT id FROM documentos WHERE codigo = 'SGC-FO-03'`;
     const codigo = await codigoDeError(
       sql`INSERT INTO documento_versiones (documento_id, numero, estado)
           VALUES (${doc.id}, 99, 'vigente')`,
@@ -58,7 +58,7 @@ describe("regla central: una sola versión vigente por documento", () => {
   });
 
   it("rechaza un estado inexistente", async () => {
-    const [doc] = await sql`SELECT id FROM documentos WHERE codigo = 'MN-CAL-001'`;
+    const [doc] = await sql`SELECT id FROM documentos WHERE codigo = 'SGC-MN-01'`;
     const codigo = await codigoDeError(
       sql`INSERT INTO documento_versiones (documento_id, numero, estado)
           VALUES (${doc.id}, 99, 'archivado')`,
@@ -69,7 +69,7 @@ describe("regla central: una sola versión vigente por documento", () => {
 
 describe("asociaciones documento ↔ mapa (M:N con principal única)", () => {
   it("rechaza una segunda asociación principal para el mismo documento", async () => {
-    const [doc] = await sql`SELECT id FROM documentos WHERE codigo = 'FT-CAL-001'`;
+    const [doc] = await sql`SELECT id FROM documentos WHERE codigo = 'SGC-FO-01'`;
     const [proceso] = await sql`SELECT id FROM procesos WHERE sigla = 'GJU'`;
     const codigo = await codigoDeError(
       sql`INSERT INTO documento_proceso (documento_id, proceso_id, es_principal)
@@ -79,7 +79,7 @@ describe("asociaciones documento ↔ mapa (M:N con principal única)", () => {
   });
 
   it("rechaza asociar a proceso y subproceso a la vez", async () => {
-    const [doc] = await sql`SELECT id FROM documentos WHERE codigo = 'FT-CAL-001'`;
+    const [doc] = await sql`SELECT id FROM documentos WHERE codigo = 'SGC-FO-01'`;
     const [proceso] = await sql`SELECT id FROM procesos WHERE sigla = 'GJU'`;
     const [sub] = await sql`SELECT id FROM subprocesos LIMIT 1`;
     const codigo = await codigoDeError(
@@ -90,7 +90,7 @@ describe("asociaciones documento ↔ mapa (M:N con principal única)", () => {
   });
 
   it("rechaza duplicar la misma asociación (NULLS NOT DISTINCT)", async () => {
-    const [doc] = await sql`SELECT id FROM documentos WHERE codigo = 'FT-CAL-001'`;
+    const [doc] = await sql`SELECT id FROM documentos WHERE codigo = 'SGC-FO-01'`;
     const [proceso] = await sql`SELECT id FROM procesos WHERE sigla = 'GES'`;
     const codigo = await codigoDeError(
       sql`INSERT INTO documento_proceso (documento_id, proceso_id, es_principal)
@@ -100,7 +100,7 @@ describe("asociaciones documento ↔ mapa (M:N con principal única)", () => {
   });
 
   it("rechaza que un documento se relacione consigo mismo", async () => {
-    const [doc] = await sql`SELECT id FROM documentos WHERE codigo = 'PR-CAL-001'`;
+    const [doc] = await sql`SELECT id FROM documentos WHERE codigo = 'SGC-PR-01'`;
     const codigo = await codigoDeError(
       sql`INSERT INTO documento_relaciones (documento_id, relacionado_id)
           VALUES (${doc.id}, ${doc.id})`,
@@ -130,25 +130,25 @@ describe("búsqueda en español (FTS + trigramas + unaccent)", () => {
       WHERE tsv @@ websearch_to_tsquery('espanol_unaccent', 'vacunacion')
       ORDER BY codigo`;
     const codigos = filas.map((f) => f.codigo);
-    expect(codigos).toContain("PR-PYM-001");
-    expect(codigos).toContain("FT-PYM-001");
+    expect(codigos).toContain("PYM-PR-01");
+    expect(codigos).toContain("PYM-FO-01");
   });
 
   it("encuentra por raíz en español: 'documentos' encuentra 'documento'", async () => {
     const filas = await sql`
       SELECT codigo FROM documentos
       WHERE tsv @@ websearch_to_tsquery('espanol_unaccent', 'control de documentos')`;
-    expect(filas.map((f) => f.codigo)).toContain("PR-CAL-001");
+    expect(filas.map((f) => f.codigo)).toContain("SGC-PR-01");
   });
 
   it("código parcial 'GTH' trae todo talento humano", async () => {
     const filas = await sql`
       SELECT codigo FROM documentos WHERE codigo ILIKE '%GTH%' ORDER BY codigo`;
     expect(filas.map((f) => f.codigo)).toEqual([
-      "CA-GTH-001",
-      "FT-GTH-001",
-      "PR-GTH-001",
-      "PR-GTH-002",
+      "GTH-CA-01",
+      "GTH-FO-01",
+      "GTH-PR-01",
+      "GTH-PR-02",
     ]);
   });
 
@@ -222,12 +222,12 @@ describe("estados del seed (datos de demostración)", () => {
     expect(porEstado["anulado"]).toBe(1);
   });
 
-  it("CA-GTH-001 retiene su versión obsoleta junto a la vigente", async () => {
+  it("GTH-CA-01 retiene su versión obsoleta junto a la vigente", async () => {
     const filas = await sql`
       SELECT v.numero, v.estado
       FROM documento_versiones v
       JOIN documentos d ON d.id = v.documento_id
-      WHERE d.codigo = 'CA-GTH-001' ORDER BY v.numero`;
+      WHERE d.codigo = 'GTH-CA-01' ORDER BY v.numero`;
     expect(filas).toEqual([
       { numero: 1, estado: "obsoleto" },
       { numero: 2, estado: "vigente" },
@@ -321,5 +321,42 @@ describe("marca y notificaciones de la semilla demo", () => {
       JOIN usuarios u ON u.id = nt.usuario_id
       WHERE u.usuario = 'gerente' AND nt.tipo = 'bienvenida'`;
     expect(n.n).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("semilla con la convención del hospital", () => {
+  it("trae once tipos con su autoridad y FO en lugar de FT", async () => {
+    const filas = await sql`SELECT sigla, autoridad, es_diligenciable FROM tipos_documento ORDER BY orden`;
+    expect(filas.map((f) => f.sigla)).toEqual(
+      ["CA", "MN", "PR", "IN", "FO", "GU", "PT", "PL", "PO", "RG", "MZ"],
+    );
+    expect(filas.filter((f) => f.autoridad === "estrategico").map((f) => f.sigla))
+      .toEqual(["CA", "MN", "PL", "PO"]);
+    expect(filas.filter((f) => f.es_diligenciable).map((f) => f.sigla))
+      .toEqual(["FO", "RG", "MZ"]);
+  });
+  it("trae el formato del código, los plazos y no la clave patron_codigo", async () => {
+    const filas = await sql`SELECT clave, valor FROM configuracion`;
+    const c = Object.fromEntries(filas.map((f) => [f.clave, f.valor]));
+    expect(c.formato_codigo).toBe("{PROCESO}-{TIPO}-{NN}");
+    expect(c.patron_codigo).toBeUndefined();
+    expect(c).toMatchObject({
+      plazo_visto_bueno_dias: "3", plazo_aceptacion_dias: "3", plazo_elaboracion_dias: "15",
+      plazo_ajustes_dias: "5", plazo_revision_dias: "5", plazo_aprobacion_dias: "5",
+      plazo_publicacion_dias: "2", escalamiento_dias: "3", publicacion_directa: "1",
+    });
+  });
+  it("trae la lista de verificación, con los tres primeros ítems críticos", async () => {
+    const filas = await sql`SELECT critico FROM lista_verificacion_items ORDER BY orden`;
+    expect(filas.map((f) => f.critico)).toEqual([true, true, true, false, false, false, false, false]);
+  });
+  it("la demo trae 28 documentos con códigos del hospital y GTH-FO-01 restringido", async () => {
+    const [{ n }] = await sql`SELECT count(*)::int AS n FROM documentos`;
+    expect(n).toBe(28);
+    const [{ malos }] = await sql`SELECT count(*)::int AS malos FROM documentos
+      WHERE codigo !~ '^[A-Z]{2,4}-[A-Z]{2,4}-[0-9]{2,}$'`;
+    expect(malos).toBe(0);
+    const restringidos = await sql`SELECT codigo FROM documentos WHERE nivel_acceso = 'restringido'`;
+    expect(restringidos.map((f) => f.codigo)).toEqual(["GTH-FO-01"]);
   });
 });

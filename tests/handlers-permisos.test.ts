@@ -57,7 +57,7 @@ beforeAll(async () => {
     SELECT a.id FROM archivos a
     JOIN documento_versiones v ON v.id = a.version_id
     JOIN documentos d ON d.id = v.documento_id
-    WHERE d.codigo = 'FT-CAL-003' AND a.rol = 'principal' LIMIT 1`;
+    WHERE d.codigo = 'SGC-FO-03' AND a.rol = 'principal' LIMIT 1`;
   archivoBorradorId = Number(a.id);
 });
 
@@ -97,25 +97,25 @@ describe("GET /api/buscar", () => {
     expect(resultados[0].ruta).toMatch(/^\/documentos\/[a-z0-9-]+$/);
   });
   it("un código con solo versiones no vigentes (borrador o anulada) no aparece", async () => {
-    // El caso se arma con la BD: FT-CAL-003 solo tiene un borrador e IN-GIC-002 solo una versión anulada.
+    // El caso se arma con la BD: SGC-FO-03 solo tiene un borrador e GIC-IN-02 solo una versión anulada.
     const sinVigente = await sql()`
       SELECT d.codigo FROM documentos d
-      WHERE d.codigo IN ('FT-CAL-003', 'IN-GIC-002')
+      WHERE d.codigo IN ('SGC-FO-03', 'GIC-IN-02')
         AND NOT EXISTS (SELECT 1 FROM documento_versiones v WHERE v.documento_id = d.id AND v.estado = 'vigente')
         AND EXISTS (SELECT 1 FROM documento_versiones v WHERE v.documento_id = d.id)`;
-    expect(sinVigente.map((f) => f.codigo).sort()).toEqual(["FT-CAL-003", "IN-GIC-002"]);
+    expect(sinVigente.map((f) => f.codigo).sort()).toEqual(["GIC-IN-02", "SGC-FO-03"]);
     const codigos = async (q: string): Promise<string[]> => {
       const r = await buscarApi(new NextRequest(`http://x/api/buscar?q=${encodeURIComponent(q)}`, { headers: cookie(tokenConsulta) }));
       return (await r.json()).resultados.map((f: { codigo: string }) => f.codigo);
     };
     // Control positivo: la misma búsqueda por código sí trae los vigentes de la serie.
-    const cal = await codigos("FT-CAL");
-    expect(cal).toContain("FT-CAL-001");
-    expect(cal).not.toContain("FT-CAL-003");
-    const gic = await codigos("IN-GIC");
-    expect(gic).toContain("IN-GIC-001");
-    expect(gic).not.toContain("IN-GIC-002");
-    expect(await codigos("fax")).not.toContain("IN-GIC-002");
+    const cal = await codigos("SGC-FO");
+    expect(cal).toContain("SGC-FO-01");
+    expect(cal).not.toContain("SGC-FO-03");
+    const gic = await codigos("GIC-IN");
+    expect(gic).toContain("GIC-IN-01");
+    expect(gic).not.toContain("GIC-IN-02");
+    expect(await codigos("fax")).not.toContain("GIC-IN-02");
   });
   it("menos de dos caracteres: lista vacía", async () => {
     expect((await (await buscarApi(new NextRequest("http://x/api/buscar?q=a", { headers: cookie(tokenConsulta) }))).json()).resultados).toEqual([]);

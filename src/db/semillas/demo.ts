@@ -43,6 +43,9 @@ async function sembrarLogoDemo(db: Db, almacen: string): Promise<void> {
   ]);
 }
 
+/** Documentos de la demo con acceso restringido (spec §5.3). */
+const CODIGOS_RESTRINGIDOS: ReadonlySet<string> = new Set(["GTH-FO-01"]);
+
 export async function sembrarDemo(db: Db): Promise<void> {
   await limpiarTodo(db);
   const { tipoPorSigla } = await sembrarBase(db);
@@ -92,7 +95,7 @@ export async function sembrarDemo(db: Db): Promise<void> {
   // de códigos (ver CONTEXT.md § Pendientes). Editables desde el admin.
   const defProcesos: DefProceso[] = [
     { letra: "A", sigla: "GES", nombre: "Gestión Estratégica", icono: "target", descripcion: "Direccionamiento estratégico y gerencial de la institución.", subprocesos: ["Gestión Directiva", "Gestión Gerencial"] },
-    { letra: "A", sigla: "CAL", nombre: "Sistema de Gestión de Calidad", icono: "award", descripcion: "Implementación y mantenimiento del SGC bajo NTC ISO 9001:2015.", subprocesos: [] },
+    { letra: "A", sigla: "SGC", nombre: "Sistema de Gestión de Calidad", icono: "award", descripcion: "Implementación y mantenimiento del SGC bajo NTC ISO 9001:2015.", subprocesos: [] },
     { letra: "A", sigla: "SOG", nombre: "SOGCS", icono: "shield-plus", descripcion: "Sistema Obligatorio de Garantía de Calidad en Salud.", subprocesos: ["Sistema Único de Habilitación", "PAMEC", "Seguridad del Paciente"] },
     { letra: "A", sigla: "RIE", nombre: "Gestión del Riesgo", icono: "shield-alert", descripcion: "Identificación, análisis y tratamiento de los riesgos institucionales.", subprocesos: [] },
     { letra: "B", sigla: "ATU", nombre: "Atención al Usuario", icono: "headset", descripcion: "Acceso, experiencia y participación de los usuarios y sus familias.", subprocesos: ["Acceso a los Servicios", "Gestión de la Experiencia y Satisfacción del Usuario", "Participación Ciudadana"] },
@@ -220,51 +223,51 @@ export async function sembrarDemo(db: Db): Promise<void> {
   });
 
   const defDocumentos: DefDocumento[] = [
-    // ── Calidad (CAL) ──
+    // ── Calidad (SGC) ──
     {
-      codigo: "MN-CAL-001", titulo: "Manual de Calidad", tipo: "MN",
+      codigo: "SGC-MN-01", titulo: "Manual de Calidad", tipo: "MN",
       descripcion: "Describe el Sistema de Gestión de Calidad de la ESE, su alcance, el mapa de procesos y las interacciones entre procesos.",
       palabrasClave: "manual calidad SGC ISO 9001 alcance exclusiones",
       versiones: [v1Vigente(CALIDAD)],
-      asociaciones: [{ proceso: "CAL", principal: true }],
+      asociaciones: [{ proceso: "SGC", principal: true }],
     },
     {
-      codigo: "CA-CAL-001", titulo: "Caracterización Sistema de Gestión de Calidad", tipo: "CA",
+      codigo: "SGC-CA-01", titulo: "Caracterización Sistema de Gestión de Calidad", tipo: "CA",
       descripcion: "Caracterización del proceso: objetivo, alcance, entradas, salidas, actividades PHVA, indicadores y riesgos.",
       palabrasClave: "caracterizacion calidad proceso PHVA indicadores",
       versiones: [v1Vigente(CALIDAD)],
-      asociaciones: [{ proceso: "CAL", principal: true }],
+      asociaciones: [{ proceso: "SGC", principal: true }],
     },
     {
-      codigo: "PR-CAL-001", titulo: "Procedimiento de Control de Documentos", tipo: "PR",
+      codigo: "SGC-PR-01", titulo: "Procedimiento de Control de Documentos", tipo: "PR",
       descripcion: "Define la elaboración, revisión, aprobación, distribución, actualización y control de los documentos del SGC (numeral 7.5).",
       palabrasClave: "control documentos informacion documentada versiones obsoletos",
       versiones: [v1Vigente(CALIDAD)],
-      asociaciones: [{ proceso: "CAL", principal: true }],
-      relaciones: ["FT-CAL-003"],
+      asociaciones: [{ proceso: "SGC", principal: true }],
+      relaciones: ["SGC-FO-03"],
     },
     {
-      codigo: "FT-CAL-001", titulo: "Formato de Acta de Reunión", tipo: "FT",
+      codigo: "SGC-FO-01", titulo: "Formato de Acta de Reunión", tipo: "FO",
       descripcion: "Formato institucional para registrar actas de reuniones, comités y socializaciones. De uso transversal.",
       palabrasClave: "acta reunion comite asistencia compromisos",
       versiones: [v1Vigente(CALIDAD, [{ rol: "principal", ext: "pdf" }, { rol: "editable", ext: "docx" }])],
       asociaciones: [
-        { proceso: "CAL", principal: true },
+        { proceso: "SGC", principal: true },
         { proceso: "GES" }, { proceso: "GTH" }, { proceso: "GBS" }, { proceso: "SCI" },
       ],
     },
     {
-      codigo: "FT-CAL-002", titulo: "Formato de Informe", tipo: "FT",
+      codigo: "SGC-FO-02", titulo: "Formato de Informe", tipo: "FO",
       descripcion: "Formato institucional para presentación de informes de gestión, seguimiento y resultados.",
       palabrasClave: "informe gestion seguimiento resultados",
       versiones: [v1Vigente(CALIDAD, [{ rol: "principal", ext: "pdf" }, { rol: "editable", ext: "docx" }])],
       asociaciones: [
-        { proceso: "CAL", principal: true },
+        { proceso: "SGC", principal: true },
         { proceso: "GES" }, { proceso: "GRF" }, { proceso: "AEV" },
       ],
     },
     {
-      codigo: "FT-CAL-003", titulo: "Formato Listado Maestro de Documentos", tipo: "FT",
+      codigo: "SGC-FO-03", titulo: "Formato Listado Maestro de Documentos", tipo: "FO",
       descripcion: "Consolida el inventario de documentos vigentes del SGC con su código, versión y fechas de control.",
       palabrasClave: "listado maestro documentos inventario control",
       versiones: [{
@@ -273,12 +276,12 @@ export async function sembrarDemo(db: Db): Promise<void> {
         cambios: "Borrador en elaboración — pendiente de aprobación.",
         archivos: [{ rol: "principal", ext: "xlsx" }],
       }],
-      asociaciones: [{ proceso: "CAL", principal: true }],
+      asociaciones: [{ proceso: "SGC", principal: true }],
     },
 
     // ── Talento Humano (GTH) ── incluye la demo de versión obsoleta retenida
     {
-      codigo: "CA-GTH-001", titulo: "Caracterización Gestión del Talento Humano", tipo: "CA",
+      codigo: "GTH-CA-01", titulo: "Caracterización Gestión del Talento Humano", tipo: "CA",
       descripcion: "Caracterización del proceso de talento humano: objetivo, alcance, actividades PHVA e indicadores.",
       palabrasClave: "caracterizacion talento humano personal PHVA",
       versiones: [
@@ -302,32 +305,32 @@ export async function sembrarDemo(db: Db): Promise<void> {
       asociaciones: [{ proceso: "GTH", principal: true }],
     },
     {
-      codigo: "PR-GTH-001", titulo: "Procedimiento de Ingreso de Personal", tipo: "PR",
+      codigo: "GTH-PR-01", titulo: "Procedimiento de Ingreso de Personal", tipo: "PR",
       descripcion: "Establece las actividades para la vinculación de personal de planta y contratistas: verificación de requisitos, afiliaciones y posesión.",
       palabrasClave: "ingreso vinculacion contratacion hoja de vida requisitos",
       versiones: [v1Vigente("Diana Patricia Losada — Coordinadora de Talento Humano")],
       asociaciones: [{ subproceso: "GTH/ingreso", principal: true }],
-      relaciones: ["FT-GTH-001"],
+      relaciones: ["GTH-FO-01"],
     },
     {
-      codigo: "FT-GTH-001", titulo: "Formato Lista de Chequeo Hoja de Vida", tipo: "FT",
+      codigo: "GTH-FO-01", titulo: "Formato Lista de Chequeo Hoja de Vida", tipo: "FO",
       descripcion: "Lista de verificación de los documentos exigidos para la vinculación de personal.",
       palabrasClave: "lista chequeo hoja de vida requisitos ingreso",
       versiones: [v1Vigente("Diana Patricia Losada — Coordinadora de Talento Humano", [{ rol: "principal", ext: "pdf" }, { rol: "editable", ext: "xlsx" }])],
       asociaciones: [{ subproceso: "GTH/ingreso", principal: true }],
     },
     {
-      codigo: "PR-GTH-002", titulo: "Procedimiento de Inducción y Reinducción", tipo: "PR",
+      codigo: "GTH-PR-02", titulo: "Procedimiento de Inducción y Reinducción", tipo: "PR",
       descripcion: "Define la inducción institucional y del puesto de trabajo para personal nuevo, y la reinducción periódica.",
       palabrasClave: "induccion reinduccion capacitacion personal nuevo",
       versiones: [v1Vigente("Diana Patricia Losada — Coordinadora de Talento Humano")],
       asociaciones: [{ subproceso: "GTH/desarrollo", principal: true }],
-      relaciones: ["FT-CAL-001"],
+      relaciones: ["SGC-FO-01"],
     },
 
     // ── SOGCS ── política transversal a todos los misionales
     {
-      codigo: "PO-SOG-001", titulo: "Política de Seguridad del Paciente", tipo: "PO",
+      codigo: "SOG-PO-01", titulo: "Política de Seguridad del Paciente", tipo: "PO",
       descripcion: "Declara el compromiso institucional con la atención segura: cultura del reporte, gestión de eventos adversos y buenas prácticas.",
       palabrasClave: "seguridad paciente eventos adversos cultura reporte",
       versiones: [v1Vigente(CALIDAD)],
@@ -338,7 +341,7 @@ export async function sembrarDemo(db: Db): Promise<void> {
       ],
     },
     {
-      codigo: "PL-SOG-001", titulo: "Programa de Auditoría para el Mejoramiento de la Calidad (PAMEC)", tipo: "PL",
+      codigo: "SOG-PL-01", titulo: "Programa de Auditoría para el Mejoramiento de la Calidad (PAMEC)", tipo: "PL",
       descripcion: "Ruta crítica del PAMEC: autoevaluación, selección de procesos prioritarios, calidad esperada y planes de mejoramiento.",
       palabrasClave: "PAMEC auditoria mejoramiento calidad esperada",
       versiones: [v1Vigente(CALIDAD)],
@@ -347,7 +350,7 @@ export async function sembrarDemo(db: Db): Promise<void> {
 
     // ── Bienes y Servicios (GBS) ── formato compartido con ADX e INT
     {
-      codigo: "FT-GBS-001", titulo: "Formato Solicitud de Mantenimiento", tipo: "FT",
+      codigo: "GBS-FO-01", titulo: "Formato Solicitud de Mantenimiento", tipo: "FO",
       descripcion: "Solicitud de mantenimiento correctivo o preventivo de equipos e infraestructura. Lo usan todos los servicios.",
       palabrasClave: "solicitud mantenimiento correctivo preventivo equipos",
       versiones: [v1Vigente("Jorge Eliécer Ramos — Técnico de Mantenimiento", [{ rol: "principal", ext: "pdf" }, { rol: "editable", ext: "xlsx" }])],
@@ -357,69 +360,69 @@ export async function sembrarDemo(db: Db): Promise<void> {
       ],
     },
     {
-      codigo: "PR-GBS-001", titulo: "Procedimiento de Mantenimiento Preventivo de Equipos Biomédicos", tipo: "PR",
+      codigo: "GBS-PR-01", titulo: "Procedimiento de Mantenimiento Preventivo de Equipos Biomédicos", tipo: "PR",
       descripcion: "Programación y ejecución del mantenimiento preventivo de equipos biomédicos según cronograma anual y hojas de vida de equipos.",
       palabrasClave: "mantenimiento preventivo equipos biomedicos cronograma",
       versiones: [v1Vigente("Jorge Eliécer Ramos — Técnico de Mantenimiento")],
       asociaciones: [{ subproceso: "GBS/mantenimiento", principal: true }],
-      relaciones: ["FT-GBS-001"],
+      relaciones: ["GBS-FO-01"],
     },
     {
-      codigo: "PR-GBS-002", titulo: "Procedimiento de Ingreso de Bienes a Almacén", tipo: "PR",
+      codigo: "GBS-PR-02", titulo: "Procedimiento de Ingreso de Bienes a Almacén", tipo: "PR",
       descripcion: "Recepción, verificación e ingreso de bienes al almacén general con su registro correspondiente.",
       palabrasClave: "almacen ingreso bienes inventario recepcion",
       versiones: [v1Vigente("Nubia Esperanza Quintero — Almacenista")],
       asociaciones: [{ subproceso: "GBS/almacen", principal: true }],
-      relaciones: ["FT-CAL-002"],
+      relaciones: ["SGC-FO-02"],
     },
 
     // ── Misionales ──
     {
-      codigo: "CA-CEX-001", titulo: "Caracterización Consulta Externa", tipo: "CA",
+      codigo: "CEX-CA-01", titulo: "Caracterización Consulta Externa", tipo: "CA",
       descripcion: "Caracterización del proceso de consulta externa: objetivo, alcance, actividades PHVA e indicadores.",
       palabrasClave: "caracterizacion consulta externa ambulatoria",
       versiones: [v1Vigente("Hernán Darío Ceballos — Médico Coordinador")],
       asociaciones: [{ proceso: "CEX", principal: true }],
     },
     {
-      codigo: "GU-CEX-001", titulo: "Guía de Atención de Hipertensión Arterial", tipo: "GU",
+      codigo: "CEX-GU-01", titulo: "Guía de Atención de Hipertensión Arterial", tipo: "GU",
       descripcion: "Guía de práctica clínica adoptada para el diagnóstico, tratamiento y seguimiento del paciente hipertenso.",
       palabrasClave: "hipertension arterial HTA guia clinica cronicos",
       versiones: [v1Vigente("Hernán Darío Ceballos — Médico Coordinador")],
       asociaciones: [{ subproceso: "CEX/medicina-general", principal: true }],
     },
     {
-      codigo: "PR-AIN-001", titulo: "Procedimiento de Referencia y Contrarreferencia", tipo: "PR",
+      codigo: "AIN-PR-01", titulo: "Procedimiento de Referencia y Contrarreferencia", tipo: "PR",
       descripcion: "Remisión de pacientes a mayor nivel de complejidad y recepción de contrarreferencias, incluyendo coordinación con el CRUE.",
       palabrasClave: "referencia contrarreferencia remision CRUE traslado",
       versiones: [v1Vigente("Sandra Milena Artunduaga — Enfermera Jefe de Urgencias")],
       asociaciones: [{ subproceso: "AIN/urgencias", principal: true }],
-      relaciones: ["FT-AIN-001"],
+      relaciones: ["AIN-FO-01"],
     },
     {
-      codigo: "FT-AIN-001", titulo: "Formato de Remisión de Pacientes", tipo: "FT",
+      codigo: "AIN-FO-01", titulo: "Formato de Remisión de Pacientes", tipo: "FO",
       descripcion: "Registro de la remisión de pacientes: datos clínicos, motivo de remisión y condiciones del traslado.",
       palabrasClave: "remision traslado paciente formato",
       versiones: [v1Vigente("Sandra Milena Artunduaga — Enfermera Jefe de Urgencias", [{ rol: "principal", ext: "pdf" }, { rol: "editable", ext: "docx" }])],
       asociaciones: [{ subproceso: "AIN/urgencias", principal: true }],
     },
     {
-      codigo: "PT-AIN-001", titulo: "Protocolo de Atención del Parto de Bajo Riesgo", tipo: "PT",
+      codigo: "AIN-PT-01", titulo: "Protocolo de Atención del Parto de Bajo Riesgo", tipo: "PT",
       descripcion: "Protocolo institucional para la atención del trabajo de parto, parto y posparto inmediato de bajo riesgo.",
       palabrasClave: "parto bajo riesgo protocolo materno perinatal",
       versiones: [v1Vigente("Sandra Milena Artunduaga — Enfermera Jefe de Urgencias")],
       asociaciones: [{ subproceso: "AIN/atencion-del-parto", principal: true }],
     },
     {
-      codigo: "PR-PYM-001", titulo: "Procedimiento de Vacunación", tipo: "PR",
+      codigo: "PYM-PR-01", titulo: "Procedimiento de Vacunación", tipo: "PR",
       descripcion: "Aplicación de biológicos del PAI: esquema, cadena de frío, registro nominal y manejo de reacciones postvacunales.",
       palabrasClave: "vacunacion PAI biologicos cadena frio esquema",
       versiones: [v1Vigente("Yolanda Trujillo — Auxiliar de Enfermería PAI")],
       asociaciones: [{ subproceso: "PYM/vacunacion", principal: true }],
-      relaciones: ["FT-PYM-001"],
+      relaciones: ["PYM-FO-01"],
     },
     {
-      codigo: "FT-PYM-001", titulo: "Formato Registro Diario de Vacunación", tipo: "FT",
+      codigo: "PYM-FO-01", titulo: "Formato Registro Diario de Vacunación", tipo: "FO",
       descripcion: "Registro diario de dosis aplicadas por biológico, grupo de edad y estrategia.",
       palabrasClave: "registro diario vacunacion dosis biologico",
       versiones: [v1Vigente("Yolanda Trujillo — Auxiliar de Enfermería PAI", [{ rol: "principal", ext: "pdf" }, { rol: "editable", ext: "xlsx" }])],
@@ -428,15 +431,15 @@ export async function sembrarDemo(db: Db): Promise<void> {
 
     // ── Gestión Documental (GDO) ──
     {
-      codigo: "PR-GDO-001", titulo: "Procedimiento de Organización de Archivos de Gestión", tipo: "PR",
+      codigo: "GDO-PR-01", titulo: "Procedimiento de Organización de Archivos de Gestión", tipo: "PR",
       descripcion: "Organización, foliación y transferencia de los archivos de gestión según las TRD institucionales.",
       palabrasClave: "archivo gestion TRD foliacion transferencia documental",
       versiones: [v1Vigente("Rosa Elena Manrique — Técnica de Archivo")],
       asociaciones: [{ subproceso: "GDO/gestion-de-archivo", principal: true }],
-      relaciones: ["FT-GDO-001"],
+      relaciones: ["GDO-FO-01"],
     },
     {
-      codigo: "FT-GDO-001", titulo: "Formato Único de Inventario Documental (FUID)", tipo: "FT",
+      codigo: "GDO-FO-01", titulo: "Formato Único de Inventario Documental (FUID)", tipo: "FO",
       descripcion: "Inventario documental para transferencias y entregas de archivo, según lineamientos del AGN.",
       palabrasClave: "FUID inventario documental transferencia AGN",
       versiones: [v1Vigente("Rosa Elena Manrique — Técnica de Archivo", [{ rol: "principal", ext: "pdf" }, { rol: "editable", ext: "xlsx" }])],
@@ -448,14 +451,14 @@ export async function sembrarDemo(db: Db): Promise<void> {
 
     // ── GIC ── incluye la demo de documento anulado
     {
-      codigo: "IN-GIC-001", titulo: "Instructivo de Copias de Seguridad", tipo: "IN",
+      codigo: "GIC-IN-01", titulo: "Instructivo de Copias de Seguridad", tipo: "IN",
       descripcion: "Ejecución y verificación de las copias de seguridad de los sistemas de información institucionales.",
       palabrasClave: "copias seguridad backup respaldo sistemas",
       versiones: [v1Vigente("Andrés Felipe Cardozo — Ingeniero de Sistemas")],
       asociaciones: [{ subproceso: "GIC/soporte-tecnico-e-infraestructura-ti", principal: true }],
     },
     {
-      codigo: "IN-GIC-002", titulo: "Instructivo de Uso del Fax Institucional", tipo: "IN",
+      codigo: "GIC-IN-02", titulo: "Instructivo de Uso del Fax Institucional", tipo: "IN",
       descripcion: "Instructivo para el envío y recepción de documentos por fax. Anulado: el equipo fue dado de baja y el canal reemplazado por correo institucional.",
       palabrasClave: "fax envio recepcion documentos",
       versiones: [{
@@ -471,14 +474,14 @@ export async function sembrarDemo(db: Db): Promise<void> {
 
     // ── Estratégicos y financieros ──
     {
-      codigo: "PL-GES-001", titulo: "Plan de Desarrollo Institucional 2024-2027", tipo: "PL",
+      codigo: "GES-PL-01", titulo: "Plan de Desarrollo Institucional 2024-2027", tipo: "PL",
       descripcion: "Plan de desarrollo de la ESE: ejes estratégicos, metas e indicadores del cuatrienio.",
       palabrasClave: "plan desarrollo institucional estrategia metas",
       versiones: [v1Vigente("Luz Dary Cabrera — Gerente")],
       asociaciones: [{ proceso: "GES", principal: true }],
     },
     {
-      codigo: "PR-GRF-001", titulo: "Procedimiento de Facturación de Servicios de Salud", tipo: "PR",
+      codigo: "GRF-PR-01", titulo: "Procedimiento de Facturación de Servicios de Salud", tipo: "PR",
       descripcion: "Facturación de los servicios prestados: admisión, liquidación, soportes y radicación ante las EPS.",
       palabrasClave: "facturacion servicios salud EPS radicacion RIPS",
       versiones: [v1Vigente("Mariela Fajardo — Técnica de Facturación")],
@@ -497,6 +500,7 @@ export async function sembrarDemo(db: Db): Promise<void> {
         tipoId: tipoPorSigla[def.tipo],
         descripcion: def.descripcion,
         palabrasClave: def.palabrasClave,
+        nivelAcceso: CODIGOS_RESTRINGIDOS.has(def.codigo) ? "restringido" : "general",
       })
       .returning();
     documentoPorCodigo[def.codigo] = doc.id;

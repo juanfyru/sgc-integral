@@ -1,9 +1,9 @@
 /**
  * Consultas de la navegación en profundidad (Fase 4), contra la BD dev
  * sembrada (D19). Casos de diseño del seed:
- *  - FT-CAL-001 (acta): principal en CAL + secundaria en GES/GTH/GBS/SCI.
- *  - FT-CAL-003: solo borrador → invisible al público.
- *  - PR-CAL-001 ↔ FT-CAL-003: relación cuyo destino no está vigente.
+ *  - SGC-FO-01 (acta): principal en SGC + secundaria en GES/GTH/GBS/SCI.
+ *  - SGC-FO-03: solo borrador → invisible al público.
+ *  - SGC-PR-01 ↔ SGC-FO-03: relación cuyo destino no está vigente.
  *  - GTH: documentos propios directos y en subprocesos (toggle D10).
  */
 import { existsSync } from "node:fs";
@@ -27,9 +27,9 @@ afterAll(async () => {
 
 describe("obtenerFichaDocumento", () => {
   it("trae la ficha completa del formato de acta con sus 5 ubicaciones", async () => {
-    const ficha = await obtenerFichaDocumento("ft-cal-001");
+    const ficha = await obtenerFichaDocumento("sgc-fo-01");
     expect(ficha).not.toBeNull();
-    expect(ficha!.codigo).toBe("FT-CAL-001");
+    expect(ficha!.codigo).toBe("SGC-FO-01");
     expect(ficha!.version.estado).toBe("vigente");
     expect(ficha!.ubicaciones).toHaveLength(5);
     const principales = ficha!.ubicaciones.filter((u) => u.esPrincipal);
@@ -43,49 +43,49 @@ describe("obtenerFichaDocumento", () => {
   });
 
   it("devuelve null para un documento sin versión vigente (borrador)", async () => {
-    expect(await obtenerFichaDocumento("ft-cal-003")).toBeNull();
+    expect(await obtenerFichaDocumento("sgc-fo-03")).toBeNull();
   });
 
   it("devuelve null para un documento anulado", async () => {
-    expect(await obtenerFichaDocumento("in-gic-002")).toBeNull();
+    expect(await obtenerFichaDocumento("gic-in-02")).toBeNull();
   });
 
   it("no lista documentos relacionados que no estén vigentes", async () => {
-    // PR-CAL-001 relaciona a FT-CAL-003 (borrador): no debe aparecer.
-    const ficha = await obtenerFichaDocumento("pr-cal-001");
+    // SGC-PR-01 relaciona a SGC-FO-03 (borrador): no debe aparecer.
+    const ficha = await obtenerFichaDocumento("sgc-pr-01");
     expect(ficha).not.toBeNull();
     expect(
       ficha!.relacionados.map((r) => r.codigo),
-    ).not.toContain("FT-CAL-003");
+    ).not.toContain("SGC-FO-03");
   });
 
   it("la relación procedimiento↔formato es navegable en ambas direcciones", async () => {
-    const procedimiento = await obtenerFichaDocumento("pr-gth-001");
+    const procedimiento = await obtenerFichaDocumento("gth-pr-01");
     expect(procedimiento!.relacionados.map((r) => r.codigo)).toContain(
-      "FT-GTH-001",
+      "GTH-FO-01",
     );
-    const formato = await obtenerFichaDocumento("ft-gth-001");
-    expect(formato!.relacionados.map((r) => r.codigo)).toContain("PR-GTH-001");
+    const formato = await obtenerFichaDocumento("gth-fo-01");
+    expect(formato!.relacionados.map((r) => r.codigo)).toContain("GTH-PR-01");
   });
 });
 
 describe("obtenerDocumentosDeProceso", () => {
-  it("CAL sin subprocesos: propios vigentes y ningún borrador", async () => {
+  it("SGC sin subprocesos: propios vigentes y ningún borrador", async () => {
     const proceso = await obtenerDetalleProceso("sistema-de-gestion-de-calidad");
     const docs = await obtenerDocumentosDeProceso(proceso!.id, false);
     const codigos = docs.map((d) => d.codigo);
-    expect(codigos).toContain("MN-CAL-001");
-    expect(codigos).toContain("FT-CAL-001");
-    expect(codigos).not.toContain("FT-CAL-003"); // borrador
+    expect(codigos).toContain("SGC-MN-01");
+    expect(codigos).toContain("SGC-FO-01");
+    expect(codigos).not.toContain("SGC-FO-03"); // borrador
   });
 
   it("GTH: el toggle de subprocesos agrega los documentos de Ingreso/Desarrollo", async () => {
     const proceso = await obtenerDetalleProceso("gestion-del-talento-humano");
     const directos = await obtenerDocumentosDeProceso(proceso!.id, false);
     const conSubs = await obtenerDocumentosDeProceso(proceso!.id, true);
-    expect(directos.map((d) => d.codigo)).not.toContain("PR-GTH-001");
-    expect(conSubs.map((d) => d.codigo)).toContain("PR-GTH-001");
-    const prGth = conSubs.find((d) => d.codigo === "PR-GTH-001");
+    expect(directos.map((d) => d.codigo)).not.toContain("GTH-PR-01");
+    expect(conSubs.map((d) => d.codigo)).toContain("GTH-PR-01");
+    const prGth = conSubs.find((d) => d.codigo === "GTH-PR-01");
     expect(prGth?.subproceso?.nombre).toBe("Ingreso");
     expect(conSubs.length).toBeGreaterThan(directos.length);
   });
@@ -93,10 +93,10 @@ describe("obtenerDocumentosDeProceso", () => {
   it("distingue el documento propio del que 'también aplica aquí'", async () => {
     const gth = await obtenerDetalleProceso("gestion-del-talento-humano");
     const docs = await obtenerDocumentosDeProceso(gth!.id, false);
-    const acta = docs.find((d) => d.codigo === "FT-CAL-001");
+    const acta = docs.find((d) => d.codigo === "SGC-FO-01");
     expect(acta).toBeDefined();
-    expect(acta!.esPrincipal).toBe(false); // su dueño es CAL
-    const caracterizacion = docs.find((d) => d.codigo === "CA-GTH-001");
+    expect(acta!.esPrincipal).toBe(false); // su dueño es SGC
+    const caracterizacion = docs.find((d) => d.codigo === "GTH-CA-01");
     expect(caracterizacion!.esPrincipal).toBe(true);
     expect(caracterizacion!.version).toBe(2); // la vigente, no la obsoleta
   });
@@ -118,8 +118,8 @@ describe("detalle de proceso y subproceso", () => {
     expect(sub!.proceso.nombre).toBe("Gestión del Talento Humano");
     const docs = await obtenerDocumentosDeSubproceso(sub!.id);
     expect(docs.map((d) => d.codigo).sort()).toEqual([
-      "FT-GTH-001",
-      "PR-GTH-001",
+      "GTH-FO-01",
+      "GTH-PR-01",
     ]);
     expect(sub!.anterior?.nombre).toBe("Planeación del TH");
     expect(sub!.siguiente?.nombre).toBe("Desarrollo");

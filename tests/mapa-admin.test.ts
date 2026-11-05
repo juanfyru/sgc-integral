@@ -197,9 +197,9 @@ describe("textos institucionales", () => {
     // restaurar
     await guardarTextos({ ...despues, titulo_phva: antes.titulo_phva ?? "" }, usuarioId);
 
-    await expect(
-      guardarTextos({ patron_codigo: "(sin cerrar" }, usuarioId),
-    ).rejects.toThrow(/regular/i);
+    // patron_codigo ya no es editable: se ignora y no queda guardada.
+    await guardarTextos({ patron_codigo: "(sin cerrar" }, usuarioId);
+    expect((await obtenerTextos()).patron_codigo).toBeUndefined();
   });
 });
 

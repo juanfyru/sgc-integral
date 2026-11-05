@@ -1,6 +1,7 @@
 import type { Sql, TransactionSql } from "postgres";
 import { obtenerSql } from "@/db/cliente";
 import { hashearClave } from "@/lib/clave";
+import { patronDesdeFormato, validarFormato } from "@/lib/tramites/codigo";
 
 type Cliente = Sql | TransactionSql;
 
@@ -76,13 +77,23 @@ export type DatosDocumento = {
   asociaciones: AsociacionEntrada[];
 };
 
-const PATRON_CODIGO_DEFECTO = "^[A-Z]{2,4}-[A-Z]{2,4}-\\d{3}$";
+const PATRON_CODIGO_DEFECTO = "^[A-Z]{2,4}-[A-Z]{2,4}-\\d{2,}$";
 
-/** Patrón del código, configurable sin migración (pendiente la convención oficial). */
+/**
+ * Patrón del código: sale de `formato_codigo` si es válido; si no, de la clave
+ * heredada `patron_codigo` y, a falta de esta, del patrón por defecto.
+ */
 export async function obtenerPatronCodigo(): Promise<RegExp> {
   const sql = obtenerSql();
-  const [fila] = await sql`SELECT valor FROM configuracion WHERE clave = 'patron_codigo'`;
-  return new RegExp(fila?.valor ?? PATRON_CODIGO_DEFECTO);
+  const filas = await sql`SELECT clave, valor FROM configuracion
+    WHERE clave IN ('formato_codigo', 'patron_codigo')`;
+  const valor = (clave: string) =>
+    filas.find((f) => f.clave === clave)?.valor as string | undefined;
+  const formato = valor("formato_codigo");
+  if (formato !== undefined && validarFormato(formato) === null) {
+    return patronDesdeFormato(formato);
+  }
+  return new RegExp(valor("patron_codigo") ?? PATRON_CODIGO_DEFECTO);
 }
 
 function validarAsociaciones(asociaciones: AsociacionEntrada[]) {

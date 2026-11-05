@@ -110,7 +110,7 @@ describe("obtenerLogoAlmacenado", () => {
     });
   });
   it("devuelve null con una logo_ruta fuera de marca/logo-<hex>", async () => {
-    await conClaves("documentos/PR-CAL-001/v1/x.png", "image/png", async () => {
+    await conClaves("documentos/SGC-PR-01/v1/x.png", "image/png", async () => {
       expect(await obtenerLogoAlmacenado()).toBeNull();
     });
   });

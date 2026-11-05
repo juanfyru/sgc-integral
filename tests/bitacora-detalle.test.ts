@@ -10,22 +10,22 @@ describe("describirEvento", () => {
   it("crear_documento usa código y título del detalle", () => {
     expect(describirEvento({
       accion: "crear_documento", entidad: "documento", entidadId: 5,
-      detalle: { codigo: "PR-GTH-001", titulo: "Ingreso" },
-    })).toBe("Creó el documento PR-GTH-001 — Ingreso");
+      detalle: { codigo: "GTH-PR-01", titulo: "Ingreso" },
+    })).toBe("Creó el documento GTH-PR-01 — Ingreso");
   });
 
   it("publicar_version usa el código resuelto y el número", () => {
     expect(describirEvento({
       accion: "publicar_version", entidad: "documento_version", entidadId: 9,
-      detalle: { documentoId: 5, numero: 2 }, codigoDocumento: "PR-GTH-001",
-    })).toBe("Publicó la versión 2 de PR-GTH-001");
+      detalle: { documentoId: 5, numero: 2 }, codigoDocumento: "GTH-PR-01",
+    })).toBe("Publicó la versión 2 de GTH-PR-01");
   });
 
   it("anular_documento describe la versión anulada", () => {
     expect(describirEvento({
       accion: "anular_documento", entidad: "documento", entidadId: 5,
-      detalle: { versionAnulada: 3 }, codigoDocumento: "PR-GTH-001",
-    })).toBe("Anuló PR-GTH-001 (versión vigente 3)");
+      detalle: { versionAnulada: 3 }, codigoDocumento: "GTH-PR-01",
+    })).toBe("Anuló GTH-PR-01 (versión vigente 3)");
   });
 
   it("desactivar de mapa usa el nombre", () => {

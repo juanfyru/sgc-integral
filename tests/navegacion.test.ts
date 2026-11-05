@@ -23,7 +23,7 @@ describe("navegación por módulos y rol", () => {
   });
   it("Gestión de documentos también se marca en /admin/documentos/*", () => {
     const gestion = NAVEGACION.find((e) => e.href === "/admin")!;
-    expect(esActiva(gestion, "/admin/documentos/PR-CAL-001")).toBe(true);
+    expect(esActiva(gestion, "/admin/documentos/SGC-PR-01")).toBe(true);
     expect(esActiva(gestion, "/admin/documentos/nuevo")).toBe(true);
     expect(esActiva(gestion, "/admin/usuarios")).toBe(false);
   });

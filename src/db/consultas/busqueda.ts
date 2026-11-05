@@ -15,7 +15,7 @@ import type { ArchivoResumen } from "@/db/consultas/procesos";
 
 export type FiltrosBusqueda = {
   q?: string;
-  /** Sigla del tipo de documento (FT, PR, …). */
+  /** Sigla del tipo de documento (FO, PR, …). */
   tipo?: string;
   /** Slug del proceso: cualquier asociación, directa o vía subproceso. */
   proceso?: string;

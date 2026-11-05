@@ -9,7 +9,7 @@ import { construirExcelMaestro } from "@/lib/maestro-excel";
 import type { FilaMaestro } from "@/db/consultas/maestro";
 
 const FILA: FilaMaestro = {
-  codigo: "PR-GTH-001",
+  codigo: "GTH-PR-01",
   titulo: "Procedimiento de Ingreso",
   tipo: "Procedimiento",
   version: 3,
@@ -42,7 +42,7 @@ describe("construirExcelMaestro", () => {
     expect(textoTodo).toContain("ESE Hospital Nuestra Señora de Fátima de Suaza");
     expect(textoTodo).toContain("Listado Maestro de Documentos");
     expect(textoTodo).toContain("2026-07-18 10:30");
-    expect(textoTodo).toContain("PR-GTH-001");
+    expect(textoTodo).toContain("GTH-PR-01");
     expect(textoTodo).toContain("Gestión del Talento Humano");
   });
 

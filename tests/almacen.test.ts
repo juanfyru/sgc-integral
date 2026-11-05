@@ -9,10 +9,10 @@ import { resolverRutaAlmacen, rutaBaseAlmacen } from "@/lib/almacen";
 
 describe("resolverRutaAlmacen — anti path traversal", () => {
   it("resuelve una ruta válida dentro del almacén", () => {
-    const resuelta = resolverRutaAlmacen("MN-CAL-001/v1/mn-cal-001-v1.pdf");
+    const resuelta = resolverRutaAlmacen("SGC-MN-01/v1/sgc-mn-01-v1.pdf");
     expect(resuelta).not.toBeNull();
     expect(resuelta).toBe(
-      path.join(rutaBaseAlmacen(), "MN-CAL-001", "v1", "mn-cal-001-v1.pdf"),
+      path.join(rutaBaseAlmacen(), "SGC-MN-01", "v1", "sgc-mn-01-v1.pdf"),
     );
   });
 
@@ -21,7 +21,7 @@ describe("resolverRutaAlmacen — anti path traversal", () => {
   });
 
   it("rechaza el ascenso con .. en el medio", () => {
-    expect(resolverRutaAlmacen("MN-CAL-001/../../../etc/passwd")).toBeNull();
+    expect(resolverRutaAlmacen("SGC-MN-01/../../../etc/passwd")).toBeNull();
   });
 
   it("rechaza rutas absolutas POSIX", () => {
@@ -34,12 +34,12 @@ describe("resolverRutaAlmacen — anti path traversal", () => {
   });
 
   it("rechaza separadores backslash (las rutas del almacén usan /)", () => {
-    expect(resolverRutaAlmacen("MN-CAL-001\\v1\\archivo.pdf")).toBeNull();
+    expect(resolverRutaAlmacen("SGC-MN-01\\v1\\archivo.pdf")).toBeNull();
   });
 
   it("rechaza segmentos . y vacíos", () => {
-    expect(resolverRutaAlmacen("MN-CAL-001/./archivo.pdf")).toBeNull();
-    expect(resolverRutaAlmacen("MN-CAL-001//archivo.pdf")).toBeNull();
+    expect(resolverRutaAlmacen("SGC-MN-01/./archivo.pdf")).toBeNull();
+    expect(resolverRutaAlmacen("SGC-MN-01//archivo.pdf")).toBeNull();
   });
 
   it("rechaza bytes nulos y caracteres de control", () => {

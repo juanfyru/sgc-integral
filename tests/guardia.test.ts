@@ -41,7 +41,7 @@ import { GET as archivoPortal } from "@/app/(app)/documentos/[codigo]/archivos/[
 import { RUTAS_PUBLICAS, config, proxy } from "@/proxy";
 
 describe("proxy (guard optimista global)", () => {
-  it.each(["/", "/procesos/calidad", "/documentos/pr-cal-001", "/buscar?q=acta", "/admin", "/cuenta"])(
+  it.each(["/", "/procesos/calidad", "/documentos/sgc-pr-01", "/buscar?q=acta", "/admin", "/cuenta"])(
     "sin cookie %s redirige a /ingreso", (ruta) => {
       const res = proxy(new NextRequest("http://localhost:3002" + ruta));
       expect(res.status).toBe(307);
@@ -99,8 +99,8 @@ describe("handlers de archivos sin sesión", () => {
 describe("archivos del portal sin sesión", () => {
   it("el GET de archivos del portal sin cookie responde 401", async () => {
     const res = await archivoPortal(
-      new NextRequest("http://localhost:3002/documentos/mn-cal-001/archivos/1"),
-      { params: Promise.resolve({ codigo: "mn-cal-001", archivoId: "1" }) },
+      new NextRequest("http://localhost:3002/documentos/sgc-mn-01/archivos/1"),
+      { params: Promise.resolve({ codigo: "sgc-mn-01", archivoId: "1" }) },
     );
     expect(res.status).toBe(401);
   });

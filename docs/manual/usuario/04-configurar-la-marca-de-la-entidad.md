@@ -195,10 +195,9 @@ en Administración → Entidad y marca." y tiene estos campos:
 - **Subtítulo del mapa**: la frase que aparece debajo del título de **Inicio**.
 - **Título del ciclo PHVA** y **Texto del ciclo PHVA**: el recuadro del ciclo Planear,
   Hacer, Verificar, Actuar que acompaña al mapa.
-- **Patrón del código (expresión regular)**: la regla que deben cumplir los códigos de
-  los documentos. Cámbiela solo cuando la Oficina de Calidad adopte una convención de
-  códigos nueva, y con ayuda de sistemas: un patrón errado puede hacer que el SGC rechace
-  códigos correctos.
+
+El formato del código de los documentos (por defecto `PROCESO-TIPO-NN`, por ejemplo
+`SGC-FO-02`) ya no se edita en esta página: lo fija la configuración de la instalación.
 
 Pulse **Guardar** para aplicar los cambios. En la **Bitácora** queda "Editó los textos del
 mapa y el código de documentos: subtítulo del mapa, título del ciclo PHVA, …".

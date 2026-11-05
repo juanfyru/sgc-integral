@@ -111,7 +111,7 @@ describe("crear y editar", () => {
 
   it("obtenerPatronCodigo valida el formato provisional", async () => {
     const patron = await obtenerPatronCodigo();
-    expect(patron.test("PR-GTH-001")).toBe(true);
+    expect(patron.test("GTH-PR-01")).toBe(true);
     expect(patron.test("basura")).toBe(false);
   });
 });

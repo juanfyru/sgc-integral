@@ -35,7 +35,7 @@ export function FormularioTipo({
         />
       </label>
       <label className="flex flex-col gap-1 text-sm font-medium">
-        Sigla (2–4 letras, para los códigos: PR, FT, MN…)
+        Sigla (2–4 letras, para los códigos: PR, FO, MN…)
         <input
           name="sigla"
           required

@@ -24,7 +24,7 @@ describe("generarPlaceholder — magic bytes correctos", () => {
   for (const caso of CASOS) {
     it(`genera un ${caso.ext} que file-type detecta como ${caso.mime}`, async () => {
       const buffer = await generarPlaceholder({
-        codigo: "PR-GTH-001",
+        codigo: "GTH-PR-01",
         titulo: "Procedimiento de Ingreso de Personal",
         numeroVersion: 1,
         ext: caso.ext,
@@ -38,14 +38,14 @@ describe("generarPlaceholder — magic bytes correctos", () => {
 
   it("dos documentos distintos producen contenidos distintos (hashes útiles)", async () => {
     const a = await generarPlaceholder({
-      codigo: "FT-CAL-001",
+      codigo: "SGC-FO-01",
       titulo: "Formato de Acta de Reunión",
       numeroVersion: 1,
       ext: "pdf",
       entidad: "Entidad de prueba",
     });
     const b = await generarPlaceholder({
-      codigo: "FT-CAL-002",
+      codigo: "SGC-FO-02",
       titulo: "Formato de Informe",
       numeroVersion: 1,
       ext: "pdf",

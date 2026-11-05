@@ -56,7 +56,7 @@ describe("componentes base de presentación", () => {
       <EncabezadoPagina
         titulo="Gestión del talento humano"
         icono={<span data-icono="si">I</span>}
-        codigo="PR-GTH-002"
+        codigo="GTH-PR-02"
         insignias={<span data-insignia="si">Vigente</span>}
         descripcion="Descripción"
       />,
@@ -66,11 +66,11 @@ describe("componentes base de presentación", () => {
     expect(h1).toBeGreaterThan(-1);
     expect(h.indexOf('data-icono="si"')).toBeGreaterThan(-1);
     expect(h.indexOf('data-icono="si"')).toBeLessThan(h1);
-    expect(h.indexOf("PR-GTH-002")).toBeLessThan(h.indexOf('data-insignia="si"'));
+    expect(h.indexOf("GTH-PR-02")).toBeLessThan(h.indexOf('data-insignia="si"'));
     expect(h.indexOf('data-insignia="si"')).toBeLessThan(h1);
     expect(contenidoH1).toBe('<h1 class="font-display text-2xl font-semibold tracking-tight">Gestión del talento humano</h1>');
-    expect(h).toMatch(/<span class="font-mono[^"]*">PR-GTH-002<\/span>/);
-    expect(h).not.toMatch(/uppercase[^"]*">PR-GTH-002/);
+    expect(h).toMatch(/<span class="font-mono[^"]*">GTH-PR-02<\/span>/);
+    expect(h).not.toMatch(/uppercase[^"]*">GTH-PR-02/);
     expect(h.indexOf("Descripción")).toBeGreaterThan(h1);
   });
   it("Campo enlaza etiqueta, ayuda y error al control", () => {

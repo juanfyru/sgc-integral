@@ -76,7 +76,7 @@ export function FormularioDocumento({
             defaultValue={campoEnviado("codigo") ?? valores?.codigo}
             required
             readOnly={!codigoEditable}
-            placeholder="PR-GTH-001"
+            placeholder="SGC-FO-02"
             className={`${claseCampo} font-mono uppercase ${codigoEditable ? "" : "bg-muted text-muted-foreground"}`}
           />
           {!codigoEditable && (

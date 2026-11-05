@@ -2,10 +2,10 @@
  * Búsqueda con filtros facetados (Fase 5), contra la BD dev sembrada (D19).
  * Casos de diseño del seed:
  *  - "GTH" como parcial de código debe traer todo talento humano.
- *  - PR-PYM-001 / FT-PYM-001 contienen "Vacunación" (acentos y tipeo).
- *  - FT-CAL-003 (borrador, "Listado Maestro") e IN-GIC-002 (anulado, "Fax")
+ *  - PYM-PR-01 / PYM-FO-01 contienen "Vacunación" (acentos y tipeo).
+ *  - SGC-FO-03 (borrador, "Listado Maestro") e GIC-IN-02 (anulado, "Fax")
  *    jamás aparecen en resultados públicos.
- *  - CA-GTH-001 es el único vigente aprobado antes de 2026-03 (filtro fechas).
+ *  - GTH-CA-01 es el único vigente aprobado antes de 2026-03 (filtro fechas).
  */
 import { existsSync } from "node:fs";
 import { afterAll, describe, expect, it } from "vitest";
@@ -31,10 +31,10 @@ describe("buscarDocumentos — texto libre", () => {
     const r = await buscarDocumentos({ q: "GTH" });
     expect(codigosDe(r)).toEqual(
       expect.arrayContaining([
-        "CA-GTH-001",
-        "FT-GTH-001",
-        "PR-GTH-001",
-        "PR-GTH-002",
+        "GTH-CA-01",
+        "GTH-FO-01",
+        "GTH-PR-01",
+        "GTH-PR-02",
       ]),
     );
     expect(r.total).toBe(r.resultados.length);
@@ -45,27 +45,27 @@ describe("buscarDocumentos — texto libre", () => {
     const sinAcento = await buscarDocumentos({ q: "vacunacion" });
     expect(codigosDe(conAcento).sort()).toEqual(codigosDe(sinAcento).sort());
     expect(codigosDe(conAcento)).toEqual(
-      expect.arrayContaining(["PR-PYM-001", "FT-PYM-001"]),
+      expect.arrayContaining(["PYM-PR-01", "PYM-FO-01"]),
     );
   });
 
   it("tolera errores de tipeo: 'vacunasion' encuentra los de vacunación", async () => {
     const r = await buscarDocumentos({ q: "vacunasion" });
-    expect(codigosDe(r)).toContain("PR-PYM-001");
+    expect(codigosDe(r)).toContain("PYM-PR-01");
   });
 
   it("jamás devuelve documentos sin versión vigente (regla 3)", async () => {
-    // FT-CAL-003 (borrador) es el único "Listado Maestro" del seed.
+    // SGC-FO-03 (borrador) es el único "Listado Maestro" del seed.
     const borrador = await buscarDocumentos({ q: "listado maestro" });
-    expect(codigosDe(borrador)).not.toContain("FT-CAL-003");
-    // IN-GIC-002 (anulado) es el único "fax".
+    expect(codigosDe(borrador)).not.toContain("SGC-FO-03");
+    // GIC-IN-02 (anulado) es el único "fax".
     const anulado = await buscarDocumentos({ q: "fax" });
-    expect(codigosDe(anulado)).not.toContain("IN-GIC-002");
+    expect(codigosDe(anulado)).not.toContain("GIC-IN-02");
   });
 
   it("resalta las coincidencias del término en el título", async () => {
     const r = await buscarDocumentos({ q: "vacunacion" });
-    const pr = r.resultados.find((d) => d.codigo === "PR-PYM-001");
+    const pr = r.resultados.find((d) => d.codigo === "PYM-PR-01");
     expect(pr?.tituloResaltado).toContain("⟦");
     expect(pr?.tituloResaltado).toContain("⟧");
   });
@@ -78,22 +78,22 @@ describe("buscarDocumentos — texto libre", () => {
 });
 
 describe("buscarDocumentos — filtros combinables", () => {
-  it("filtra por tipo: 'GTH' + tipo FT deja solo el formato", async () => {
-    const r = await buscarDocumentos({ q: "GTH", tipo: "FT" });
-    expect(codigosDe(r)).toEqual(["FT-GTH-001"]);
+  it("filtra por tipo: 'GTH' + tipo FO deja solo el formato", async () => {
+    const r = await buscarDocumentos({ q: "GTH", tipo: "FO" });
+    expect(codigosDe(r)).toEqual(["GTH-FO-01"]);
   });
 
   it("filtra por proceso: incluye propios, de subprocesos y secundarios", async () => {
     const r = await buscarDocumentos({ proceso: "gestion-del-talento-humano" });
     const codigos = codigosDe(r);
-    // Propio directo, propios de subprocesos y secundario (FT-CAL-001).
+    // Propio directo, propios de subprocesos y secundario (SGC-FO-01).
     expect(codigos).toEqual(
       expect.arrayContaining([
-        "CA-GTH-001",
-        "PR-GTH-001",
-        "PR-GTH-002",
-        "FT-GTH-001",
-        "FT-CAL-001",
+        "GTH-CA-01",
+        "GTH-PR-01",
+        "GTH-PR-02",
+        "GTH-FO-01",
+        "SGC-FO-01",
       ]),
     );
   });
@@ -103,14 +103,14 @@ describe("buscarDocumentos — filtros combinables", () => {
       proceso: "gestion-del-talento-humano",
       subproceso: "ingreso",
     });
-    expect(codigosDe(r).sort()).toEqual(["FT-GTH-001", "PR-GTH-001"]);
+    expect(codigosDe(r).sort()).toEqual(["GTH-FO-01", "GTH-PR-01"]);
   });
 
   it("filtra por rango de fecha de aprobación", async () => {
     const antiguos = await buscarDocumentos({ hasta: "2026-02-28" });
-    expect(codigosDe(antiguos)).toEqual(["CA-GTH-001"]);
+    expect(codigosDe(antiguos)).toEqual(["GTH-CA-01"]);
     const recientes = await buscarDocumentos({ desde: "2026-03-01" });
-    expect(codigosDe(recientes)).not.toContain("CA-GTH-001");
+    expect(codigosDe(recientes)).not.toContain("GTH-CA-01");
     expect(recientes.total).toBeGreaterThan(0);
   });
 
@@ -118,9 +118,9 @@ describe("buscarDocumentos — filtros combinables", () => {
     const r = await buscarDocumentos({
       q: "formato",
       proceso: "sistema-de-gestion-de-calidad",
-      tipo: "FT",
+      tipo: "FO",
     });
-    expect(codigosDe(r).sort()).toEqual(["FT-CAL-001", "FT-CAL-002"]);
+    expect(codigosDe(r).sort()).toEqual(["SGC-FO-01", "SGC-FO-02"]);
   });
 });
 
@@ -130,7 +130,7 @@ describe("buscarDocumentos — facetas", () => {
     const porSigla = Object.fromEntries(
       r.facetas.tipos.map((f) => [f.clave, f.cantidad]),
     );
-    expect(porSigla).toMatchObject({ CA: 1, FT: 1, PR: 2 });
+    expect(porSigla).toMatchObject({ CA: 1, FO: 1, PR: 2 });
   });
 
   it("cuenta por proceso sobre los resultados del término", async () => {
@@ -142,12 +142,12 @@ describe("buscarDocumentos — facetas", () => {
   });
 
   it("la faceta de tipo no se filtra a sí misma (permite cambiar de tipo)", async () => {
-    const r = await buscarDocumentos({ q: "GTH", tipo: "FT" });
+    const r = await buscarDocumentos({ q: "GTH", tipo: "FO" });
     const porSigla = Object.fromEntries(
       r.facetas.tipos.map((f) => [f.clave, f.cantidad]),
     );
-    // Aunque el listado está filtrado a FT, la faceta sigue mostrando CA y PR.
-    expect(porSigla).toMatchObject({ CA: 1, FT: 1, PR: 2 });
+    // Aunque el listado está filtrado a FO, la faceta sigue mostrando CA y PR.
+    expect(porSigla).toMatchObject({ CA: 1, FO: 1, PR: 2 });
   });
 });
 
