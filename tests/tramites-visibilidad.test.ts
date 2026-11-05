@@ -214,6 +214,15 @@ describe("listarTramites", () => {
     expect(cerrado).toMatchObject({ id: r.tramiteId, etapa: "cancelado", venceEn: null, responsables: [] });
   }));
 
+  it("en visto bueno, un proceso inactivo no tiene responsables", () => revertida(sql, async (tx) => {
+    const admin = await sesionAdmin(tx);
+    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-02'`;
+    await crearSolicitud(admin, { tipo: "modificar", motivo: "mejora", justificacion: "Justificación de prueba.", documentoId: doc.id }, opc(tx));
+    await tx`UPDATE procesos SET activo = false WHERE sigla = 'GTH'`;
+    const [fila] = await listarTramites(admin, "en_curso", { sql: tx });
+    expect(fila).toMatchObject({ etapa: "visto_bueno", responsables: [] });
+  }));
+
   it("un responsable desactivado sigue saliendo en la bandeja", () => revertida(sql, async (tx) => {
     const { tramiteId } = await tramiteGth(tx);
     const admin = await sesionAdmin(tx);

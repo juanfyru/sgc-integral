@@ -130,7 +130,7 @@ async function tramitesVistos(
            OR (t.etapa = 'revision' AND u.id = t.revisor_id)
            OR (t.etapa = 'aprobacion' AND u.id = t.aprobador_id)
            OR (t.etapa IN ('aceptacion', 'publicacion') AND u.rol = 'admin_sgc' AND u.activo)
-           OR (t.etapa = 'visto_bueno' AND u.rol = 'lider_proceso' AND u.activo AND EXISTS (
+           OR (t.etapa = 'visto_bueno' AND p.activo AND u.rol = 'lider_proceso' AND u.activo AND EXISTS (
                 SELECT 1 FROM usuario_procesos resp_up
                 WHERE resp_up.usuario_id = u.id AND resp_up.proceso_id = t.proceso_id))
         ORDER BY u.nombre

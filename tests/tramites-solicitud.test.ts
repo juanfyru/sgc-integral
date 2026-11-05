@@ -3,7 +3,7 @@
  * corre dentro de una transacción que se revierte: no deja filas.
  */
 import { existsSync } from "node:fs";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
@@ -266,15 +266,23 @@ describe("configuración documental", () => {
 });
 
 describe("transicionar", () => {
-  const registrados = new Set<Accion>();
+  // Estos casos prueban `transicionar`, no los manejadores reales que las tareas siguientes
+  // registran: cada uno cambia los registros a su medida y al final se dejan como estaban.
+  const reponer = <T extends object>(registro: T, respaldo: T) => {
+    for (const clave of Object.keys(registro)) delete registro[clave as keyof T];
+    Object.assign(registro, respaldo);
+  };
+  let respaldo = { manejadores: { ...MANEJADORES }, validadores: { ...VALIDADORES } };
   const registrar = (accion: Accion, manejador: Manejador) => {
     MANEJADORES[accion] = manejador;
-    registrados.add(accion);
+    delete VALIDADORES[accion];
   };
+  beforeEach(() => {
+    respaldo = { manejadores: { ...MANEJADORES }, validadores: { ...VALIDADORES } };
+  });
   afterEach(() => {
-    for (const accion of registrados) delete MANEJADORES[accion];
-    registrados.clear();
-    delete VALIDADORES.enviar_a_revision;
+    reponer(MANEJADORES, respaldo.manejadores);
+    reponer(VALIDADORES, respaldo.validadores);
   });
 
   /** Trámite en elaboración sobre la versión vigente de GTH-PR-02, que tiene archivo principal. */
@@ -314,6 +322,8 @@ describe("transicionar", () => {
 
   it("una acción sin manejador no está disponible y no llega a la firma", () => revertida(sql, async (tx) => {
     const t = await enElaboracion(tx);
+    delete MANEJADORES.enviar_a_revision;
+    delete VALIDADORES.enviar_a_revision;
     let llamadas = 0;
     const verificar: Verificador = async () => { llamadas++; return { ok: true, metodo: "clave" }; };
     await expect(transicionar(t.lider, t.entrada, { ...opc(tx), verificar })).rejects.toThrow("Acción no disponible");
