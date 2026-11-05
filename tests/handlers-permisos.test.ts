@@ -96,6 +96,27 @@ describe("GET /api/buscar", () => {
     expect(resultados.length).toBeLessThanOrEqual(8);
     expect(resultados[0].ruta).toMatch(/^\/documentos\/[a-z0-9-]+$/);
   });
+  it("un código con solo versiones no vigentes (borrador o anulada) no aparece", async () => {
+    // El caso se arma con la BD: FT-CAL-003 solo tiene un borrador e IN-GIC-002 solo una versión anulada.
+    const sinVigente = await sql()`
+      SELECT d.codigo FROM documentos d
+      WHERE d.codigo IN ('FT-CAL-003', 'IN-GIC-002')
+        AND NOT EXISTS (SELECT 1 FROM documento_versiones v WHERE v.documento_id = d.id AND v.estado = 'vigente')
+        AND EXISTS (SELECT 1 FROM documento_versiones v WHERE v.documento_id = d.id)`;
+    expect(sinVigente.map((f) => f.codigo).sort()).toEqual(["FT-CAL-003", "IN-GIC-002"]);
+    const codigos = async (q: string): Promise<string[]> => {
+      const r = await buscarApi(new NextRequest(`http://x/api/buscar?q=${encodeURIComponent(q)}`, { headers: cookie(tokenConsulta) }));
+      return (await r.json()).resultados.map((f: { codigo: string }) => f.codigo);
+    };
+    // Control positivo: la misma búsqueda por código sí trae los vigentes de la serie.
+    const cal = await codigos("FT-CAL");
+    expect(cal).toContain("FT-CAL-001");
+    expect(cal).not.toContain("FT-CAL-003");
+    const gic = await codigos("IN-GIC");
+    expect(gic).toContain("IN-GIC-001");
+    expect(gic).not.toContain("IN-GIC-002");
+    expect(await codigos("fax")).not.toContain("IN-GIC-002");
+  });
   it("menos de dos caracteres: lista vacía", async () => {
     expect((await (await buscarApi(new NextRequest("http://x/api/buscar?q=a", { headers: cookie(tokenConsulta) }))).json()).resultados).toEqual([]);
   });
@@ -113,21 +134,18 @@ describe("logo de la entidad: /admin/api/entidad/logo y /marca/logo", () => {
     }
     return new NextRequest("http://x/admin/api/entidad/logo", init);
   };
-  let tokenAdmin: string;
-  let tokenAdmin2: string;
-  let tokenAdmin3: string;
   const png = pngDePrueba(64, 64, 0x33);
 
-  beforeAll(async () => {
-    tokenAdmin = await crearUsuario(`zz_admin_logo_${SUFIJO}`, "admin_sgc");
-    tokenAdmin2 = await crearUsuario(`zz_admin_logo2_${SUFIJO}`, "admin_sgc");
-    tokenAdmin3 = await crearUsuario(`zz_admin_logo3_${SUFIJO}`, "admin_sgc");
-  });
-  afterAll(async () => {
-    // Restaura el logo de la demo (logo_version f0e59280).
-    const original = readFileSync("src/db/semillas/recursos/logo-demo.png");
-    await subirLogo(new Uint8Array(original), cabecerasAdmin(tokenAdmin2));
-  });
+  // El POST admite 10 subidas por minuto y usuario, y cuenta también las que rechaza después del
+  // permiso y del Origin: cada describe que sube usa su propio Admin SGC, así un test nuevo no da 429.
+  let nAdmins = 0;
+  function adminPropio(): { token: () => string; id: () => number } {
+    let usuario = { token: "", id: 0 };
+    beforeAll(async () => {
+      usuario = await crearUsuarioConId(`zz_admin_logo${++nAdmins}_${SUFIJO}`, "admin_sgc");
+    });
+    return { token: () => usuario.token, id: () => usuario.id };
+  }
 
   async function subirLogo(bytes: Uint8Array, cabeceras: Record<string, string>) {
     return subirLogoRuta(peticionLogo("POST", cabeceras, bytes));
@@ -137,99 +155,137 @@ describe("logo de la entidad: /admin/api/entidad/logo y /marca/logo", () => {
     return f ? path.join(rutaBaseAlmacen(), String(f.valor)) : null;
   };
 
-  it("POST logo: 401 sin sesión, 403 consulta, 403 con Origin ajeno, 413 por Content-Length, 200 admin", async () => {
-    expect((await subirLogo(png, { origin: "http://x", host: "x" })).status).toBe(401);
-    expect((await subirLogo(png, cabecerasAdmin(tokenConsulta))).status).toBe(403);
-    expect((await subirLogo(png, { ...cabecerasAdmin(tokenAdmin), origin: "http://otro" })).status).toBe(403);
-    const grande = await subirLogoRuta(
-      new NextRequest("http://x/admin/api/entidad/logo", {
-        method: "POST",
-        headers: { ...cabecerasAdmin(tokenAdmin), "content-length": String(LOGO_MAX_BYTES + 65_537) },
-      }),
-    );
-    expect(grande.status).toBe(413);
-    expect(await grande.json()).toEqual({ error: "El logo supera 1 MB" });
-    const ok = await subirLogo(png, cabecerasAdmin(tokenAdmin));
-    expect(ok.status).toBe(200);
-    expect(await ok.json()).toMatchObject({ ok: true, version: expect.stringMatching(/^[0-9a-f]{8}$/) });
+  const restaurador = adminPropio();
+  afterAll(async () => {
+    // Restaura el logo de la demo (logo_version f0e59280).
+    const original = readFileSync("src/db/semillas/recursos/logo-demo.png");
+    await subirLogo(new Uint8Array(original), cabecerasAdmin(restaurador.token()));
   });
-  it("rechaza un archivo que no es imagen soportada y un cuerpo sin archivo", async () => {
-    const r = await subirLogo(new TextEncoder().encode("<svg/>"), cabecerasAdmin(tokenAdmin));
-    expect(r.status).toBe(400);
-    expect(await r.json()).toEqual({ error: "El logo debe ser PNG, JPG o WebP" });
-    const sin = await subirLogoRuta(
-      new NextRequest("http://x/admin/api/entidad/logo", { method: "POST", headers: { ...cabecerasAdmin(tokenAdmin), "content-length": "10" }, body: new FormData() }),
-    );
-    expect(sin.status).toBe(400);
-    expect(await sin.json()).toEqual({ error: "Falta el archivo" });
-  });
-  it("subir dos veces el mismo PNG conserva el archivo y la versión", async () => {
-    const a = await (await subirLogo(png, cabecerasAdmin(tokenAdmin))).json();
-    const ruta = (await rutaDelLogo())!;
-    expect(existsSync(ruta)).toBe(true);
-    const b = await (await subirLogo(png, cabecerasAdmin(tokenAdmin))).json();
-    expect(b.version).toBe(a.version);
-    expect(existsSync(ruta)).toBe(true);
-  });
-  it("cambiar de logo borra el archivo anterior", async () => {
-    await subirLogo(png, cabecerasAdmin(tokenAdmin));
-    const anterior = (await rutaDelLogo())!;
-    await subirLogo(pngDePrueba(64, 64, 0x44), cabecerasAdmin(tokenAdmin));
-    expect(existsSync(anterior)).toBe(false);
-    expect(existsSync((await rutaDelLogo())!)).toBe(true);
-  });
-  it("POST logo sin Content-Length o con uno inválido: 411 antes de leer el cuerpo", async () => {
-    for (const valor of [undefined, "abc", "0", "-5"]) {
-      const cabeceras: Record<string, string> = { ...cabecerasAdmin(tokenAdmin2) };
-      if (valor !== undefined) cabeceras["content-length"] = valor;
-      const r = await subirLogoRuta(new NextRequest("http://x/admin/api/entidad/logo", { method: "POST", headers: cabeceras, body: new FormData() }));
-      expect(r.status).toBe(411);
-      expect(await r.json()).toEqual({ error: "Falta el tamaño del archivo" });
-    }
-  });
-  it("POST logo: el límite de ritmo responde 429 a la subida número 11 en un minuto", async () => {
-    const estados: number[] = [];
-    for (let n = 0; n < 11; n++) {
-      estados.push((await subirLogoRuta(new NextRequest("http://x/admin/api/entidad/logo", {
-        method: "POST", headers: { ...cabecerasAdmin(tokenAdmin3), "content-length": "10" }, body: new FormData(),
-      }))).status);
-    }
-    expect(estados.slice(0, 10).every((e) => e === 400)).toBe(true);
-    expect(estados[10]).toBe(429);
-  });
-  it("DELETE con logo_ruta alterada en BD no borra archivos fuera de marca/logo-<hex>", async () => {
-    const ajeno = path.join(rutaBaseAlmacen(), "zz_logo_ajeno.txt");
-    writeFileSync(ajeno, "no tocar");
-    await quitarLogoRuta(peticionLogo("DELETE", cabecerasAdmin(tokenAdmin2))); // no dejar huérfano el logo actual
-    try {
-      for (const [clave, valor] of [["logo_ruta", "zz_logo_ajeno.txt"], ["logo_mime", "image/png"], ["logo_version", "00000000"]]) {
-        await sql()`INSERT INTO configuracion (clave, valor) VALUES (${clave}, ${valor}) ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor`;
-      }
-      expect((await servirLogo()).status).toBe(404);
-      const d = await quitarLogoRuta(peticionLogo("DELETE", cabecerasAdmin(tokenAdmin2)));
-      expect(d.status).toBe(200);
-      expect(existsSync(ajeno)).toBe(true);
-    } finally {
-      rmSync(ajeno, { force: true });
-    }
-  });
-  it("GET /marca/logo sirve el logo con nosniff y 404 tras DELETE", async () => {
-    await subirLogo(png, cabecerasAdmin(tokenAdmin));
-    const g = await servirLogo();
-    expect(g.status).toBe(200);
-    expect(g.headers.get("content-type")).toBe("image/png");
-    expect(g.headers.get("x-content-type-options")).toBe("nosniff");
-    expect(g.headers.get("content-disposition")).toBe('inline; filename="logo.png"');
-    expect(g.headers.get("cache-control")).toBe("public, max-age=86400");
-    expect(Buffer.from(await g.arrayBuffer()).equals(Buffer.from(png))).toBe(true);
 
-    expect((await quitarLogoRuta(peticionLogo("DELETE", { origin: "http://x", host: "x" }))).status).toBe(401);
-    expect((await quitarLogoRuta(peticionLogo("DELETE", cabecerasAdmin(tokenConsulta)))).status).toBe(403);
-    const ruta = (await rutaDelLogo())!;
-    const d = await quitarLogoRuta(peticionLogo("DELETE", cabecerasAdmin(tokenAdmin)));
-    expect(d.status).toBe(200);
-    expect(await d.json()).toEqual({ ok: true });
-    expect(existsSync(ruta)).toBe(false);
-    expect((await servirLogo()).status).toBe(404);
+  describe("POST: permisos, tamaño y tipo", () => {
+    const admin = adminPropio();
+    it("POST logo: 401 sin sesión, 403 consulta, 403 con Origin ajeno, 413 por Content-Length, 200 admin", async () => {
+      expect((await subirLogo(png, { origin: "http://x", host: "x" })).status).toBe(401);
+      expect((await subirLogo(png, cabecerasAdmin(tokenConsulta))).status).toBe(403);
+      expect((await subirLogo(png, { ...cabecerasAdmin(admin.token()), origin: "http://otro" })).status).toBe(403);
+      const grande = await subirLogoRuta(
+        new NextRequest("http://x/admin/api/entidad/logo", {
+          method: "POST",
+          headers: { ...cabecerasAdmin(admin.token()), "content-length": String(LOGO_MAX_BYTES + 65_537) },
+        }),
+      );
+      expect(grande.status).toBe(413);
+      expect(await grande.json()).toEqual({ error: "El logo supera 1 MB" });
+      const ok = await subirLogo(png, cabecerasAdmin(admin.token()));
+      expect(ok.status).toBe(200);
+      expect(await ok.json()).toMatchObject({ ok: true, version: expect.stringMatching(/^[0-9a-f]{8}$/) });
+    });
+    it("rechaza un archivo que no es imagen soportada y un cuerpo sin archivo", async () => {
+      const r = await subirLogo(new TextEncoder().encode("<svg/>"), cabecerasAdmin(admin.token()));
+      expect(r.status).toBe(400);
+      expect(await r.json()).toEqual({ error: "El logo debe ser PNG, JPG o WebP" });
+      const sin = await subirLogoRuta(
+        new NextRequest("http://x/admin/api/entidad/logo", { method: "POST", headers: { ...cabecerasAdmin(admin.token()), "content-length": "10" }, body: new FormData() }),
+      );
+      expect(sin.status).toBe(400);
+      expect(await sin.json()).toEqual({ error: "Falta el archivo" });
+    });
+  });
+
+  describe("POST: archivos en el almacén", () => {
+    const admin = adminPropio();
+    it("subir dos veces el mismo PNG conserva el archivo y la versión", async () => {
+      const a = await (await subirLogo(png, cabecerasAdmin(admin.token()))).json();
+      const ruta = (await rutaDelLogo())!;
+      expect(existsSync(ruta)).toBe(true);
+      const b = await (await subirLogo(png, cabecerasAdmin(admin.token()))).json();
+      expect(b.version).toBe(a.version);
+      expect(existsSync(ruta)).toBe(true);
+    });
+    it("cambiar de logo borra el archivo anterior", async () => {
+      await subirLogo(png, cabecerasAdmin(admin.token()));
+      const anterior = (await rutaDelLogo())!;
+      await subirLogo(pngDePrueba(64, 64, 0x44), cabecerasAdmin(admin.token()));
+      expect(existsSync(anterior)).toBe(false);
+      expect(existsSync((await rutaDelLogo())!)).toBe(true);
+    });
+  });
+
+  describe("POST: Content-Length", () => {
+    const admin = adminPropio();
+    it("POST logo sin Content-Length o con uno inválido: 411 antes de leer el cuerpo", async () => {
+      for (const valor of [undefined, "abc", "0", "-5"]) {
+        const cabeceras: Record<string, string> = { ...cabecerasAdmin(admin.token()) };
+        if (valor !== undefined) cabeceras["content-length"] = valor;
+        const r = await subirLogoRuta(new NextRequest("http://x/admin/api/entidad/logo", { method: "POST", headers: cabeceras, body: new FormData() }));
+        expect(r.status).toBe(411);
+        expect(await r.json()).toEqual({ error: "Falta el tamaño del archivo" });
+      }
+    });
+  });
+
+  describe("POST: límite de ritmo", () => {
+    const admin = adminPropio();
+    it("POST logo: el límite de ritmo responde 429 a la subida número 11 en un minuto", async () => {
+      const estados: number[] = [];
+      for (let n = 0; n < 11; n++) {
+        estados.push((await subirLogoRuta(new NextRequest("http://x/admin/api/entidad/logo", {
+          method: "POST", headers: { ...cabecerasAdmin(admin.token()), "content-length": "10" }, body: new FormData(),
+        }))).status);
+      }
+      expect(estados.slice(0, 10).every((e) => e === 400)).toBe(true);
+      expect(estados[10]).toBe(429);
+    });
+  });
+
+  describe("DELETE y GET /marca/logo", () => {
+    const admin = adminPropio();
+    it("DELETE con logo_ruta alterada en BD no borra archivos fuera de marca/logo-<hex>", async () => {
+      const ajeno = path.join(rutaBaseAlmacen(), "zz_logo_ajeno.txt");
+      writeFileSync(ajeno, "no tocar");
+      await quitarLogoRuta(peticionLogo("DELETE", cabecerasAdmin(admin.token()))); // no dejar huérfano el logo actual
+      try {
+        for (const [clave, valor] of [["logo_ruta", "zz_logo_ajeno.txt"], ["logo_mime", "image/png"], ["logo_version", "00000000"]]) {
+          await sql()`INSERT INTO configuracion (clave, valor) VALUES (${clave}, ${valor}) ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor`;
+        }
+        expect((await servirLogo()).status).toBe(404);
+        const d = await quitarLogoRuta(peticionLogo("DELETE", cabecerasAdmin(admin.token())));
+        expect(d.status).toBe(200);
+        expect(existsSync(ajeno)).toBe(true);
+      } finally {
+        rmSync(ajeno, { force: true });
+      }
+    });
+    it("GET /marca/logo sirve el logo con nosniff y 404 tras DELETE", async () => {
+      await subirLogo(png, cabecerasAdmin(admin.token()));
+      const g = await servirLogo();
+      expect(g.status).toBe(200);
+      expect(g.headers.get("content-type")).toBe("image/png");
+      expect(g.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(g.headers.get("content-disposition")).toBe('inline; filename="logo.png"');
+      expect(g.headers.get("cache-control")).toBe("public, max-age=86400");
+      expect(Buffer.from(await g.arrayBuffer()).equals(Buffer.from(png))).toBe(true);
+
+      expect((await quitarLogoRuta(peticionLogo("DELETE", { origin: "http://x", host: "x" }))).status).toBe(401);
+      expect((await quitarLogoRuta(peticionLogo("DELETE", cabecerasAdmin(tokenConsulta)))).status).toBe(403);
+      const ruta = (await rutaDelLogo())!;
+      const d = await quitarLogoRuta(peticionLogo("DELETE", cabecerasAdmin(admin.token())));
+      expect(d.status).toBe(200);
+      expect(await d.json()).toEqual({ ok: true });
+      expect(existsSync(ruta)).toBe(false);
+      expect((await servirLogo()).status).toBe(404);
+    });
+    it("DELETE sin logo responde igual (200 { ok: true }) y no audita", async () => {
+      expect(await rutaDelLogo()).toBeNull(); // el test anterior lo quitó
+      const contar = async () => {
+        const [f] = await sql()`SELECT count(*)::int AS n FROM auditoria WHERE usuario_id = ${admin.id()} AND accion = 'quitar_logo'`;
+        return Number(f.n);
+      };
+      const antes = await contar();
+      const d = await quitarLogoRuta(peticionLogo("DELETE", cabecerasAdmin(admin.token())));
+      expect(d.status).toBe(200);
+      expect(await d.json()).toEqual({ ok: true });
+      expect(await contar()).toBe(antes);
+    });
   });
 });
