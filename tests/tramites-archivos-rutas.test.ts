@@ -9,21 +9,24 @@ import path from "node:path";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { autorizarArchivoDeTramite, archivoDeTramite, registrarArchivo, eliminarArchivoBorrador, sesionDePeticion } = vi.hoisted(() => ({
+const { autorizarArchivoDeTramite, archivoDeTramite, registrarArchivo, eliminarArchivoBorrador, obtenerArchivoAdmin, sesionDePeticion } = vi.hoisted(() => ({
   autorizarArchivoDeTramite: vi.fn(),
   archivoDeTramite: vi.fn(),
   registrarArchivo: vi.fn(),
   eliminarArchivoBorrador: vi.fn(),
+  obtenerArchivoAdmin: vi.fn(),
   sesionDePeticion: vi.fn(),
 }));
 
 vi.mock("@/db/consultas/tramites-archivos", () => ({ autorizarArchivoDeTramite, archivoDeTramite }));
-vi.mock("@/db/consultas/admin", () => ({ registrarArchivo, eliminarArchivoBorrador }));
+vi.mock("@/db/consultas/admin", () => ({ registrarArchivo, eliminarArchivoBorrador, obtenerArchivoAdmin }));
 vi.mock("@/lib/sesion-actual", () => ({ sesionDePeticion }));
 
 import { GET } from "@/app/(app)/tramites/[id]/archivos/[archivoId]/[[...nombre]]/route";
+import { DELETE as quitarDelPanel } from "@/app/admin/api/archivos/[archivoId]/route";
 import { DELETE } from "@/app/api/tramites/[id]/archivos/[archivoId]/route";
 import { POST } from "@/app/api/tramites/[id]/archivos/route";
+import { ErrorTramite } from "@/db/consultas/flujo/contrato";
 
 const PDF = new TextEncoder().encode("%PDF-1.4\n%borrador de prueba\n%%EOF");
 const SESION = { usuarioId: 5, rol: "consulta" };
@@ -75,6 +78,7 @@ describe("POST /api/tramites/[id]/archivos", () => {
     expect(autorizarArchivoDeTramite).toHaveBeenCalledWith(7, SESION, "escribir");
     expect(registrarArchivo.mock.calls[0][0]).toMatchObject({ versionId: 4, rol: "principal", ruta: RUTA });
     expect(registrarArchivo.mock.calls[0][1]).toBe(5);
+    expect(registrarArchivo.mock.calls[0][2]).toEqual({ tramiteId: 7 });
   });
 
   it.each([
@@ -103,7 +107,7 @@ describe("DELETE /api/tramites/[id]/archivos/[archivoId]", () => {
     expect(await res.json()).toEqual({ ok: true });
     expect(autorizarArchivoDeTramite).toHaveBeenCalledWith(7, SESION, "escribir");
     expect(archivoDeTramite).toHaveBeenCalledWith(7, 21);
-    expect(eliminarArchivoBorrador).toHaveBeenCalledWith(21, 5);
+    expect(eliminarArchivoBorrador).toHaveBeenCalledWith(21, 5, { tramiteId: 7 });
     expect(readdirSync(path.dirname(absoluta()))).toEqual([]);
   });
 
@@ -130,6 +134,22 @@ describe("DELETE /api/tramites/[id]/archivos/[archivoId]", () => {
     const res = await quitar();
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: "Solo se pueden eliminar archivos de una versión en borrador" });
+    expect(existsSync(absoluta())).toBe(true);
+  });
+});
+
+describe("DELETE del panel", () => {
+  it("la versión de un trámite abierto responde 409 y el archivo físico se queda", async () => {
+    escribirBorrador();
+    sesionDePeticion.mockResolvedValue({ usuarioId: 1, rol: "admin_sgc" });
+    const mensaje = "Esta versión está en un trámite: se trabaja desde el trámite";
+    eliminarArchivoBorrador.mockRejectedValue(new ErrorTramite(mensaje));
+    const res = await quitarDelPanel(new NextRequest("http://sgc.local/admin/api/archivos/21", { method: "DELETE" }), {
+      params: Promise.resolve({ archivoId: "21" }),
+    });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: mensaje });
+    expect(eliminarArchivoBorrador).toHaveBeenCalledWith(21, 1);
     expect(existsSync(absoluta())).toBe(true);
   });
 });

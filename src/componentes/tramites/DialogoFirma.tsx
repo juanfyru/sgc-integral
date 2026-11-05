@@ -88,7 +88,6 @@ export function FormularioFirma({
             required
             minLength={6}
             maxLength={20}
-            inputMode="numeric"
             autoComplete="one-time-code"
             className={claseControl}
           />

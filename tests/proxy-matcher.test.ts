@@ -27,6 +27,26 @@ describe("matcher del proxy (comportamiento real de Next)", () => {
   );
 });
 
+describe("rutas que reciben el cuerpo de una subida", () => {
+  // Con proxy, Next copia el cuerpo y pasados 10 MB entrega solo esa parte, sin error.
+  it.each([
+    "/admin/api/archivos",
+    "/admin/api/archivos?version=4&rol=principal",
+    "/api/tramites/5/archivos",
+    "/api/tramites/5/archivos?rol=principal",
+  ])("%s queda fuera del proxy", (url) => expect(pasa(url)).toBe(false));
+
+  it.each([
+    "/admin/api/archivos/5",
+    "/api/tramites/5/archivos/7",
+    "/api/tramites/5",
+    "/api/tramites/abc/archivos",
+    "/tramites/5",
+    "/tramites/5/archivos/7/borrador.pdf",
+    "/api/buscar",
+  ])("%s sigue pasando por el proxy", (url) => expect(pasa(url)).toBe(true));
+});
+
 describe("logo público", () => {
   it("/marca/logo pasa por el proxy y es ruta pública", async () => {
     const { RUTAS_PUBLICAS, proxy } = await import("@/proxy");

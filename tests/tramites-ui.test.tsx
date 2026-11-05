@@ -21,7 +21,7 @@ import { FormularioSolicitud } from "@/componentes/tramites/FormularioSolicitud"
 import { HistorialTramite } from "@/componentes/tramites/HistorialTramite";
 import { ayudaDelCodigo } from "@/componentes/tramites/ClasificacionNueva";
 import { PanelAceptacion, type TramiteParaAceptar } from "@/componentes/tramites/PanelAceptacion";
-import { PanelElaboracion } from "@/componentes/tramites/PanelElaboracion";
+import { EnvioARevision, PanelElaboracion, hayCambiosSinGuardar } from "@/componentes/tramites/PanelElaboracion";
 import { PasosTramite } from "@/componentes/tramites/PasosTramite";
 import { TablaTramites } from "@/componentes/tramites/TablaTramites";
 import type {
@@ -442,7 +442,7 @@ describe("DialogoFirma", () => {
   it("con segundo factor pide el código, con su ayuda", () => {
     const html = formularioDe({ pideCodigo: true });
     expect(html).toContain('name="codigo"');
-    expect(html).toContain('inputMode="numeric"');
+    expect(html).not.toContain("inputMode"); // Un código de recuperación lleva letras.
     expect(html).toContain('autoComplete="one-time-code"');
     expect(html).toContain("Código de su aplicación de autenticación o un código de recuperación");
   });
@@ -474,6 +474,33 @@ describe("PanelElaboracion", () => {
     expect(html).toContain("Guardar el control de cambios");
     expect(html).toContain("Enviar a revisión");
     expect(html).toContain('data-marca="EN TRÁMITE"');
+  });
+
+  it("con el control de cambios sin guardar no se puede firmar, y dice por qué", () => {
+    const pintarEnvio = (sinGuardar: boolean) =>
+      renderToStaticMarkup(<EnvioARevision tramite={tramite} huella={null} pideCodigo={false} sinGuardar={sinGuardar} />);
+    const bloqueado = pintarEnvio(true);
+    expect(bloqueado).toContain("Guarde el control de cambios antes de enviar");
+    expect(bloqueado).toMatch(/<button[^>]*disabled[^>]*>Enviar a revisión/);
+    expect(bloqueado).not.toContain("aria-haspopup");
+    const libre = pintarEnvio(false);
+    expect(libre).not.toContain("Guarde el control");
+    expect(libre).toContain('aria-haspopup="dialog"');
+  });
+
+  it("los cambios se comparan con lo guardado, sin contar los espacios de los extremos", () => {
+    expect(hayCambiosSinGuardar("", null)).toBe(false);
+    expect(hayCambiosSinGuardar("  Igual  ", "Igual")).toBe(false);
+    expect(hayCambiosSinGuardar("Otro", "Igual")).toBe(true);
+    expect(hayCambiosSinGuardar("Nuevo", null)).toBe(true);
+    expect(hayCambiosSinGuardar("", "Igual")).toBe(true);
+  });
+
+  it("al abrir, lo guardado está en el campo y nada pide guardar", () => {
+    const html = pintar(true);
+    expect(html).toContain("Se añade la &lt;b&gt;inducción&lt;/b&gt;.");
+    expect(html).not.toContain("Guarde el control");
+    expect(html).toContain('role="status"');
   });
 
   it("los demás ven el mismo bloque en solo lectura, con la banda", () => {

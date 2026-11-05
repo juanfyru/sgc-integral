@@ -33,7 +33,8 @@ export async function POST(peticion: NextRequest, { params }: Params) {
 
   const { id } = await params;
   if (!/^\d{1,15}$/.test(id)) return error(404, "El trámite no existe");
-  const permiso = await autorizarArchivoDeTramite(Number(id), sesion, "escribir");
+  const tramiteId = Number(id);
+  const permiso = await autorizarArchivoDeTramite(tramiteId, sesion, "escribir");
   if (!permiso.ok) {
     return permiso.estado === 409
       ? error(409, "Este trámite ya no está en elaboración")
@@ -41,5 +42,5 @@ export async function POST(peticion: NextRequest, { params }: Params) {
   }
 
   const { versionId, codigo, numero } = permiso;
-  return recibirArchivo(peticion, { versionId, codigo, numero, rol }, sesion.usuarioId);
+  return recibirArchivo(peticion, { versionId, codigo, numero, rol, tramiteId }, sesion.usuarioId);
 }

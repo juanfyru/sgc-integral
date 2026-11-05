@@ -4,8 +4,36 @@ import { filtroAcceso, type SujetoVisibilidad } from "@/lib/alcance";
 import { hashearClave } from "@/lib/clave";
 import { puede } from "@/lib/permisos";
 import { patronDeConfiguracion } from "@/lib/tramites/codigo";
+import { ErrorTramite, enTransaccion } from "./flujo/contrato";
+import { ETAPAS_ABIERTAS } from "./tramites";
 
 type Cliente = Sql | TransactionSql;
+
+/** Quién escribe en una versión: el panel no pasa `tramiteId`; el trámite pasa el suyo. */
+export type OpcionesEscritura = { tramiteId?: number; sql?: Cliente };
+
+/**
+ * Mientras una versión es de un trámite abierto, sus archivos y su control de cambios solo se
+ * tocan desde ese trámite, en elaboración (spec 13A §9.1). `FOR SHARE` choca con el `FOR UPDATE`
+ * de `transicionar`: lo que llega durante una firma espera a que termine, y entonces ve la etapa
+ * nueva. Por eso va antes de cualquier otro candado de la transacción.
+ */
+export async function exigirEscrituraEnVersion(
+  tx: Cliente,
+  versionId: number | null,
+  tramiteId?: number,
+): Promise<void> {
+  const [abierto] = await tx`SELECT id, etapa FROM tramites
+    WHERE version_id = ${versionId} AND etapa = ANY(${ETAPAS_ABIERTAS})
+    FOR SHARE`;
+  if (tramiteId === undefined) {
+    if (abierto) throw new ErrorTramite("Esta versión está en un trámite: se trabaja desde el trámite");
+    return;
+  }
+  if (Number(abierto?.id) !== tramiteId || abierto.etapa !== "elaboracion") {
+    throw new ErrorTramite("Este trámite ya no está en elaboración");
+  }
+}
 
 /**
  * Crea el usuario admin si no existe (idempotente: arranque del contenedor y
@@ -190,9 +218,10 @@ export async function editarVersionBorrador(
   versionId: number,
   datos: DatosVersion,
   usuarioId: number,
+  opciones?: OpcionesEscritura,
 ): Promise<void> {
-  const sql = obtenerSql();
-  await sql.begin(async (tx) => {
+  await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+    await exigirEscrituraEnVersion(tx, versionId, opciones?.tramiteId);
     const [actualizada] = await tx`UPDATE documento_versiones SET
         fecha_elaboracion = ${datos.fechaElaboracion},
         fecha_revision = ${datos.fechaRevision},
@@ -307,10 +336,11 @@ export async function registrarArchivo(
     extension: string; mime: string; tamanoBytes: number; hashSha256: string;
   },
   usuarioId: number,
+  opciones?: OpcionesEscritura,
 ): Promise<{ id: number }> {
-  const sql = obtenerSql();
   try {
-    return await sql.begin(async (tx) => {
+    return await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+      await exigirEscrituraEnVersion(tx, datos.versionId, opciones?.tramiteId);
       const [archivo] = await tx`INSERT INTO archivos
           (version_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
         VALUES (${datos.versionId}, ${datos.rol}, ${datos.ruta}, ${datos.nombreOriginal},
@@ -346,9 +376,12 @@ export async function obtenerArchivoAdmin(archivoId: number) {
 export async function eliminarArchivoBorrador(
   archivoId: number,
   usuarioId: number,
+  opciones?: OpcionesEscritura,
 ): Promise<{ ruta: string }> {
-  const sql = obtenerSql();
-  return await sql.begin(async (tx) => {
+  return await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+    const [destino] = await tx`SELECT version_id FROM archivos WHERE id = ${archivoId}`;
+    if (!destino) throw new Error("El archivo no existe");
+    await exigirEscrituraEnVersion(tx, destino.version_id, opciones?.tramiteId);
     const [archivo] = await tx`SELECT a.id, a.ruta, a.nombre_original, v.estado
       FROM archivos a JOIN documento_versiones v ON v.id = a.version_id
       WHERE a.id = ${archivoId} FOR UPDATE`;

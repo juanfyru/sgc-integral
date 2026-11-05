@@ -9,7 +9,14 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
 }
 
+// Una sola conexión no puede ver el candado de otra: se comprueba que se pide con el trámite correcto.
+vi.mock("@/db/consultas/admin", async (original) => {
+  const real = await original<typeof import("@/db/consultas/admin")>();
+  return { ...real, exigirEscrituraEnVersion: vi.fn(real.exigirEscrituraEnVersion) };
+});
+
 import { obtenerSql } from "@/db/cliente";
+import { exigirEscrituraEnVersion } from "@/db/consultas/admin";
 import { listarFirmas } from "@/db/consultas/firmas";
 import { guardarControlCambios } from "@/db/consultas/tramites-archivos";
 import {
@@ -135,6 +142,15 @@ describe("control de cambios", () => {
     await tx`UPDATE tramites SET etapa = 'revision' WHERE id = ${t.tramiteId}`;
     await expect(guardar(t.elaborador)).rejects.toBeInstanceOf(ErrorTramite);
     await expect(guardar(t.elaborador)).rejects.toThrow("Este trámite ya no está en esa etapa");
+  }));
+});
+
+describe("control de cambios y envío a la vez", () => {
+  it("guardar pasa por la regla de la versión, con su trámite", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "elaboracion");
+    vi.mocked(exigirEscrituraEnVersion).mockClear();
+    await guardarControlCambios(t.tramiteId, t.elaborador, "Se añade la inducción.", { sql: tx });
+    expect(exigirEscrituraEnVersion).toHaveBeenCalledExactlyOnceWith(expect.anything(), t.versionId, t.tramiteId);
   }));
 });
 

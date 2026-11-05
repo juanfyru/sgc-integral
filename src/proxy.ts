@@ -41,8 +41,10 @@ export function proxy(request: NextRequest) {
 // cualquier carácter (p. ej. /procesos/apoyo-diagnostico quedaba fuera del proxy).
 // Una URL de archivo del portal con nombre cosmético .png/.svg queda fuera del
 // proxy: la protege el 401 del handler.
+// Las dos rutas que reciben el cuerpo de una subida también van fuera: con proxy, Next copia el
+// cuerpo en memoria y pasados 10 MB entrega solo esa parte, sin error. Sus handlers responden 401.
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon[.]ico|.*[.](?:png|jpg|jpeg|webp|svg|ico|woff2?)$).*)",
+    "/((?!_next/static|_next/image|favicon[.]ico|admin/api/archivos$|api/tramites/[0-9]+/archivos$|.*[.](?:png|jpg|jpeg|webp|svg|ico|woff2?)$).*)",
   ],
 };

@@ -4,7 +4,7 @@
  * cada archivo se rige por el estado de su versión.
  */
 import { obtenerSql, type Cliente } from "@/db/cliente";
-import { registrarAuditoria } from "@/db/consultas/admin";
+import { exigirEscrituraEnVersion, registrarAuditoria } from "@/db/consultas/admin";
 import { tipoDeDocumento, tramiteVisto, type TipoDeDocumento } from "@/db/consultas/tramites";
 import type { ArchivoServible } from "@/lib/servir-archivo";
 import { ROLES_ARCHIVO, type RolArchivo } from "@/lib/subida";
@@ -78,13 +78,14 @@ export async function guardarControlCambios(
   opciones?: { sql?: Cliente },
 ): Promise<void> {
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
-    // Con la fila bloqueada, para que un envío a revisión en otra pestaña no quede con otro texto.
-    const visto = await tramiteVisto(tx, tramiteId, sesion, true);
+    const visto = await tramiteVisto(tx, tramiteId, sesion);
     if (!visto?.visible) throw new ErrorTramite("El trámite no existe");
     const { tramite, lideraPropietario } = visto;
     // Quien puede enviar a revisión es quien escribe el borrador: el elaborador, en elaboración.
     const veredicto = evaluarTransicion("enviar_a_revision", tramite, { usuarioId: sesion.usuarioId, rol: sesion.rol, lideraPropietario });
     if (!veredicto.ok) throw new ErrorTramite(veredicto.motivo);
+    // Espera a un envío a revisión en curso: lo que se firma no cambia mientras se firma.
+    await exigirEscrituraEnVersion(tx, tramite.versionId, tramiteId);
 
     const resumenCambios = texto.trim();
     const [version] = await tx`UPDATE documento_versiones SET resumen_cambios = ${resumenCambios}

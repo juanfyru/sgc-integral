@@ -19,6 +19,7 @@ vi.mock("@/db/consultas/admin", () => ({ registrarArchivo, obtenerVersionParaSub
 vi.mock("@/lib/sesion-actual", () => ({ sesionDePeticion }));
 
 import { POST as subirAlPanel } from "@/app/admin/api/archivos/route";
+import { ErrorTramite } from "@/db/consultas/flujo/contrato";
 import { recibirArchivo } from "@/lib/recepcion-archivo";
 import { TAMANO_MAXIMO_BYTES } from "@/lib/subida";
 
@@ -71,6 +72,7 @@ describe("recibirArchivo", () => {
         extension: "pdf", mime: "application/pdf", tamanoBytes: PDF.byteLength, hashSha256: huella,
       },
       3,
+      { tramiteId: undefined },
     );
     expect(readFileSync(path.join(almacen, ...CARPETA.split("/"), "informe-final.pdf"))).toEqual(Buffer.from(PDF));
   });
@@ -97,6 +99,32 @@ describe("recibirArchivo", () => {
   it("el tamaño declarado se rechaza antes de leer", async () => {
     const res = await recibirArchivo(peticion(PDF, { "content-length": String(TAMANO_MAXIMO_BYTES + 1) }), DESTINO, 3);
     expect(res.status).toBe(413);
+    expect(enAlmacen()).toEqual([]);
+  });
+
+  it("un cuerpo más corto que su content-length no se registra ni deja archivo", async () => {
+    const res = await recibirArchivo(peticion(PDF, { "content-length": String(PDF.byteLength + 1) }), DESTINO, 3);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "El archivo llegó incompleto. Vuelva a subirlo." });
+    expect(registrarArchivo).not.toHaveBeenCalled();
+    expect(enAlmacen()).toEqual([]);
+  });
+
+  it("con el content-length exacto se acepta, y sin él también", async () => {
+    expect((await recibirArchivo(peticion(PDF, { "content-length": String(PDF.byteLength) }), DESTINO, 3)).status).toBe(201);
+    expect((await recibirArchivo(peticion(PDF), DESTINO, 3)).status).toBe(201);
+  });
+
+  it("le pasa al registro el trámite por el que se sube", async () => {
+    await recibirArchivo(peticion(PDF), { ...DESTINO, tramiteId: 7 }, 3);
+    expect(registrarArchivo.mock.calls[0][2]).toEqual({ tramiteId: 7 });
+  });
+
+  it("si el trámite lo impide responde 409 con su mensaje y no deja archivo", async () => {
+    registrarArchivo.mockRejectedValue(new ErrorTramite("Este trámite ya no está en elaboración"));
+    const res = await recibirArchivo(peticion(PDF), { ...DESTINO, tramiteId: 7 }, 3);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "Este trámite ya no está en elaboración" });
     expect(enAlmacen()).toEqual([]);
   });
 
@@ -171,6 +199,15 @@ describe("POST del panel: el orden de siempre", () => {
     expect(vigente.status).toBe(409);
     expect(await vigente.json()).toEqual({ error: "Solo se pueden subir archivos a una versión en borrador" });
     expect(registrarArchivo).not.toHaveBeenCalled();
+  });
+
+  it("la versión de un trámite abierto responde 409 y no deja archivo", async () => {
+    const mensaje = "Esta versión está en un trámite: se trabaja desde el trámite";
+    registrarArchivo.mockRejectedValue(new ErrorTramite(mensaje));
+    const res = await subir();
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: mensaje });
+    expect(enAlmacen()).toEqual([]);
   });
 
   it("una subida válida llega con el código y el número de la versión, y a nombre de quien sube", async () => {

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { startTransition, useActionState, type FormEvent } from "react";
+import { startTransition, useActionState, useState, type FormEvent } from "react";
 import { enviarARevisionAccion, guardarControlCambiosAccion } from "@/app/acciones-tramites";
 import { EliminarArchivo } from "@/componentes/admin/EliminarArchivo";
 import { ZonaCarga } from "@/componentes/admin/ZonaCarga";
@@ -53,15 +53,32 @@ function FilaArchivo({ tramiteId, archivo: a, editable }: { tramiteId: number; a
   );
 }
 
-function FormularioControlCambios({ tramite, texto }: { tramite: TramiteParaElaborar; texto: string | null }) {
+/** Lo que se firma es lo guardado: con otro texto en pantalla, se firmaría sin darse cuenta. */
+export function hayCambiosSinGuardar(escrito: string, guardado: string | null): boolean {
+  return escrito.trim() !== (guardado ?? "").trim();
+}
+
+function FormularioControlCambios({
+  tramite,
+  guardado,
+  escrito,
+  alEscribir,
+}: {
+  tramite: TramiteParaElaborar;
+  guardado: string | null;
+  escrito: string;
+  alEscribir: (texto: string) => void;
+}) {
   const [estado, enviar, pendiente] = useActionState(guardarControlCambiosAccion, null);
-  const enviado = estado?.valores?.resumenCambios;
-  // Como en FormularioSolicitud: enviar desde una transición no borra lo escrito tras un rechazo.
+  const [intentado, setIntentado] = useState(false);
+  // Como en FormularioSolicitud: enviar desde una transición no reinicia el formulario.
   const alEnviar = (evento: FormEvent<HTMLFormElement>) => {
     evento.preventDefault();
     const datos = new FormData(evento.currentTarget);
+    setIntentado(true);
     startTransition(() => enviar(datos));
   };
+  const confirmado = intentado && !pendiente && !estado && !hayCambiosSinGuardar(escrito, guardado);
   return (
     <form action={enviar} onSubmit={alEnviar} className="flex flex-col gap-2">
       <Ocultos tramite={tramite} />
@@ -71,17 +88,60 @@ function FormularioControlCambios({ tramite, texto }: { tramite: TramiteParaElab
           minLength={5}
           maxLength={2000}
           rows={3}
-          defaultValue={typeof enviado === "string" ? enviado : (texto ?? "")}
+          value={escrito}
+          onChange={(evento) => alEscribir(evento.target.value)}
           className={claseControl}
         />
       </Campo>
       <ErrorAccion estado={estado} />
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-end gap-3">
+        <p role="status" className="text-sm text-estado-bien-texto">
+          {confirmado ? "Control de cambios guardado" : ""}
+        </p>
         <Boton type="submit" variante="secundario" pendiente={pendiente}>
           {pendiente ? "Guardando…" : "Guardar el control de cambios"}
         </Boton>
       </div>
     </form>
+  );
+}
+
+export function EnvioARevision({
+  tramite,
+  huella,
+  pideCodigo,
+  sinGuardar,
+}: {
+  tramite: TramiteParaElaborar;
+  huella: string | null;
+  pideCodigo: boolean;
+  sinGuardar: boolean;
+}) {
+  if (sinGuardar) {
+    return (
+      <div className="flex flex-col items-end gap-1">
+        <Boton disabled aria-describedby="envio-sin-guardar">
+          Enviar a revisión
+        </Boton>
+        <p id="envio-sin-guardar" className="text-sm text-muted-foreground">
+          Guarde el control de cambios antes de enviar
+        </p>
+      </div>
+    );
+  }
+  return (
+    <DialogoFirma
+      titulo="Firmar como «Elaboró»"
+      etiquetaBoton="Enviar a revisión"
+      resumen={{
+        documento: [tramite.codigo, tramite.titulo].filter(Boolean).join(" "),
+        version: tramite.versionNumero,
+        huella,
+      }}
+      accion={enviarARevisionAccion}
+      ocultos={{ id: String(tramite.id), etapa: tramite.etapa, ronda: String(tramite.ronda) }}
+      pideCodigo={pideCodigo}
+    />
   );
 }
 
@@ -102,6 +162,7 @@ export function PanelElaboracion({
 }) {
   const { archivos, controlCambios, plantilla, observaciones } = borrador;
   const principal = archivos.find((a) => a.rol === "principal");
+  const [escrito, setEscrito] = useState(controlCambios ?? "");
 
   return (
     <section
@@ -134,7 +195,7 @@ export function PanelElaboracion({
       {editable ? <ZonaCarga direccion={`/api/tramites/${tramite.id}/archivos`} /> : null}
 
       {editable ? (
-        <FormularioControlCambios tramite={tramite} texto={controlCambios} />
+        <FormularioControlCambios tramite={tramite} guardado={controlCambios} escrito={escrito} alEscribir={setEscrito} />
       ) : (
         <div>
           <h3 className="text-sm font-medium">Control de cambios</h3>
@@ -162,17 +223,11 @@ export function PanelElaboracion({
 
       {editable ? (
         <div className="flex justify-end">
-          <DialogoFirma
-            titulo="Firmar como «Elaboró»"
-            etiquetaBoton="Enviar a revisión"
-            resumen={{
-              documento: [tramite.codigo, tramite.titulo].filter(Boolean).join(" "),
-              version: tramite.versionNumero,
-              huella: principal?.hashSha256 ?? null,
-            }}
-            accion={enviarARevisionAccion}
-            ocultos={{ id: String(tramite.id), etapa: tramite.etapa, ronda: String(tramite.ronda) }}
+          <EnvioARevision
+            tramite={tramite}
+            huella={principal?.hashSha256 ?? null}
             pideCodigo={pideCodigo}
+            sinGuardar={hayCambiosSinGuardar(escrito, controlCambios)}
           />
         </div>
       ) : null}

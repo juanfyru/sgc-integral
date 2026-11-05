@@ -4,6 +4,7 @@ import { mkdir, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { type NextRequest, NextResponse } from "next/server";
 import { registrarArchivo } from "@/db/consultas/admin";
+import { ErrorTramite } from "@/db/consultas/flujo/contrato";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import {
   sanearNombre,
@@ -46,14 +47,15 @@ export function nombreDeArchivo(peticion: NextRequest): string {
  */
 export async function recibirArchivo(
   peticion: NextRequest,
-  destino: { versionId: number; codigo: string; numero: number; rol: RolArchivo },
+  destino: { versionId: number; codigo: string; numero: number; rol: RolArchivo; tramiteId?: number },
   usuarioId: number,
 ): Promise<NextResponse> {
   const nombreCrudo = nombreDeArchivo(peticion);
   if (!nombreCrudo) return error(400, "Falta el nombre del archivo");
 
-  const declarado = Number(peticion.headers.get("content-length"));
-  if (declarado > TAMANO_MAXIMO_BYTES) {
+  const cabeceraLargo = peticion.headers.get("content-length");
+  const declarado = cabeceraLargo === null ? null : Number(cabeceraLargo);
+  if (declarado !== null && declarado > TAMANO_MAXIMO_BYTES) {
     return error(413, "El archivo supera el máximo de 25 MB");
   }
   if (!peticion.body) return error(400, "Cuerpo vacío");
@@ -108,6 +110,8 @@ export async function recibirArchivo(
     await new Promise<void>((resolver, rechazar) =>
       salida.end((err?: Error | null) => (err ? rechazar(err) : resolver())),
     );
+    // Lo guardado se firma por su huella: un archivo cortado no debe llegar a tener una.
+    if (declarado !== null && total !== declarado) throw new Error("incompleto");
     if (total === 0) throw new Error("vacio");
 
     const { id } = await registrarArchivo(
@@ -117,6 +121,7 @@ export async function recibirArchivo(
         tamanoBytes: total, hashSha256: hash.digest("hex"),
       },
       usuarioId,
+      { tramiteId: destino.tramiteId },
     );
     return NextResponse.json(
       { id, nombre: nombreCrudo, mime: tipo.mime, tamanoBytes: total },
@@ -125,7 +130,9 @@ export async function recibirArchivo(
   } catch (err) {
     salida.destroy();
     await unlink(ruta.absoluta).catch(() => {});
+    if (err instanceof ErrorTramite) return error(409, err.message);
     const mensaje = (err as Error).message;
+    if (mensaje === "incompleto") return error(400, "El archivo llegó incompleto. Vuelva a subirlo.");
     if (mensaje === "tamano") return error(413, "El archivo supera el máximo de 25 MB");
     if (mensaje === "vacio") return error(400, "El archivo está vacío");
     if (mensaje.includes("principal")) return error(409, mensaje);
