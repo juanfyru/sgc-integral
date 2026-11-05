@@ -1,9 +1,12 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const ARCHIVOS_PANEL = readdirSync("src/app/admin")
-  .filter((n) => /^acciones.*.ts$/.test(n))
-  .map((n) => `src/app/admin/${n}`);
+const ARCHIVOS_PANEL = [
+  ...readdirSync("src/app/admin")
+    .filter((n) => /^acciones.*.ts$/.test(n))
+    .map((n) => `src/app/admin/${n}`),
+  "src/app/acciones-tramites.ts",
+];
 
 function exportadas(src: string) {
   const m = [...src.matchAll(/export async function (\w+)\(/g)];
@@ -12,7 +15,7 @@ function exportadas(src: string) {
 
 describe("toda acción del panel declara su permiso", () => {
   it("hay archivos de acciones", () => {
-    expect(ARCHIVOS_PANEL.length).toBeGreaterThanOrEqual(2);
+    expect(ARCHIVOS_PANEL.length).toBeGreaterThanOrEqual(3);
   });
   for (const archivo of ARCHIVOS_PANEL) {
     const src = readFileSync(archivo, "utf8");

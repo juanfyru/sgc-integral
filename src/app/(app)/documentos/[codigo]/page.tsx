@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import {
   BadgeCheck,
+  ClipboardList,
   Download,
   Eye,
   Link2,
@@ -17,6 +18,7 @@ import {
 import { VisorPdf } from "@/componentes/documentos/VisorPdf";
 import { Migas } from "@/componentes/navegacion/Migas";
 import { MiniMapa } from "@/componentes/navegacion/MiniMapa";
+import { claseBoton } from "@/componentes/ui/Boton";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import {
@@ -24,6 +26,7 @@ import {
   obtenerFichaDocumento,
 } from "@/db/consultas/documentos";
 import { registrarEventoConsulta } from "@/db/consultas/eventos";
+import { puedePedirSobreDocumento } from "@/db/consultas/tramites";
 import { ipDePeticion } from "@/lib/ip";
 import { exigirSesion } from "@/lib/paginas";
 
@@ -71,6 +74,7 @@ export default async function FichaDocumento({
     userAgent: cabeceras.get("user-agent"),
   }).catch((err) => console.error("No se pudo registrar la vista:", err));
 
+  const puedePedirCambio = await puedePedirSobreDocumento(sesion, ficha.id);
   const principal = ficha.ubicaciones.find((u) => u.esPrincipal);
   const pdf = ficha.archivos.find((a) => a.mime === "application/pdf");
   const rutaBase = `/documentos/${ficha.codigo.toLowerCase()}`;
@@ -137,6 +141,17 @@ export default async function FichaDocumento({
         }
         titulo={ficha.titulo}
         descripcion={ficha.descripcion || undefined}
+        acciones={
+          puedePedirCambio ? (
+            <Link
+              href={`/tramites/nueva?documento=${encodeURIComponent(ficha.codigo)}`}
+              className={`${claseBoton("secundario")} print:hidden`}
+            >
+              <ClipboardList className="size-4" aria-hidden="true" />
+              Solicitar cambio
+            </Link>
+          ) : undefined
+        }
       />
 
       <div className="mt-2 grid grid-cols-1 gap-8 lg:grid-cols-[1fr_minmax(280px,340px)]">

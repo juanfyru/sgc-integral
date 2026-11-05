@@ -3,6 +3,7 @@ import { puede, type Permiso, type SujetoPermiso } from "@/lib/permisos";
 export type IconoNav =
   | "inicio"
   | "buscar"
+  | "tramites"
   | "documentos"
   | "maestro"
   | "tipos"
@@ -23,6 +24,10 @@ export type EntradaNav = {
   icono: IconoNav;
   grupo: GrupoNav;
   permiso?: Permiso;
+  /** Se ve con cualquiera de estos permisos. */
+  algunPermiso?: readonly Permiso[];
+  /** Se ve también si la persona participa en algún trámite. */
+  siParticipa?: true;
   exacta?: boolean;
   /** Rutas adicionales que también marcan la entrada como activa (igual al prefijo o debajo de él). */
   prefijos?: readonly string[];
@@ -38,6 +43,14 @@ export const GRUPOS: Record<GrupoNav, { etiqueta: string | null; color: "marca" 
 export const NAVEGACION: readonly EntradaNav[] = [
   { href: "/", etiqueta: "Inicio", icono: "inicio", grupo: "inicio", exacta: true },
   { href: "/buscar", etiqueta: "Buscar documentos", icono: "buscar", grupo: "documentos" },
+  {
+    href: "/tramites",
+    etiqueta: "Trámites",
+    icono: "tramites",
+    grupo: "documentos",
+    algunPermiso: ["tramites.solicitar", "tramites.gestionar", "tramites.aprobar"],
+    siParticipa: true,
+  },
   {
     href: "/admin",
     etiqueta: "Gestión de documentos",
@@ -77,9 +90,14 @@ export const NAVEGACION: readonly EntradaNav[] = [
   { href: "/admin/sesiones", etiqueta: "Sesiones", icono: "sesiones", grupo: "administracion", permiso: "sesiones.administrar" },
 ];
 
-/** Entradas que el sujeto puede ver; una entrada sin permiso la ve todo usuario con sesión. */
-export function entradasVisibles(sujeto: SujetoPermiso): EntradaNav[] {
-  return NAVEGACION.filter((e) => !e.permiso || puede(sujeto, e.permiso));
+/** Entradas que el sujeto puede ver; una entrada sin condiciones la ve todo usuario con sesión. */
+export function entradasVisibles(sujeto: SujetoPermiso & { participaEnTramites?: boolean }): EntradaNav[] {
+  return NAVEGACION.filter((e) => {
+    if (!e.permiso && !e.algunPermiso && !e.siParticipa) return true;
+    if (e.permiso && puede(sujeto, e.permiso)) return true;
+    if (e.algunPermiso?.some((p) => puede(sujeto, p))) return true;
+    return e.siParticipa === true && sujeto.participaEnTramites === true;
+  });
 }
 
 /** `/` y `/admin` se marcan solo en su ruta exacta; el resto también en sus subrutas. */

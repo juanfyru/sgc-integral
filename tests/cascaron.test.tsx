@@ -20,6 +20,15 @@ describe("cascarón (render estático de los componentes cliente)", () => {
     expect(h).toContain("SGC Integral · v0.1.0");
     expect(h).toContain("HX"); // monograma sin logo
   });
+  it("Trámites sale en la barra con su ícono, en el grupo Documentos", () => {
+    const h = renderToStaticMarkup(
+      <ContenidoBarra marca={marca} entradas={entradasVisibles({ rol: "lider_proceso" })} tareas={0} version="0.1.0" />,
+    );
+    expect(h).toMatch(/href="\/tramites"[^]*lucide-clipboard-list[^]*Trámites/);
+    expect(
+      renderToStaticMarkup(<ContenidoBarra marca={marca} entradas={entradasVisibles({ rol: "consulta" })} tareas={0} version="0.1.0" />),
+    ).not.toContain('href="/tramites"');
+  });
   it("el nombre de la entidad se muestra completo y la letra baja con los nombres largos", () => {
     expect(claseNombreEntidad("Hospital X")).toBe("text-sm");
     expect(claseNombreEntidad("x".repeat(LARGO_NOMBRE_LETRA_NORMAL))).toBe("text-sm");

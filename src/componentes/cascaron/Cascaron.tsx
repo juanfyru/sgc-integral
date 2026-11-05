@@ -1,5 +1,6 @@
 import { obtenerMarcaSegura } from "@/db/consultas/entidad";
 import { contarNoLeidas, listarRecientes } from "@/db/consultas/notificaciones";
+import { participaEnTramites } from "@/db/consultas/tramites";
 import { ETIQUETA_ROL } from "@/lib/roles";
 import type { SesionValida } from "@/lib/sesion";
 import { misTareas } from "@/lib/tareas";
@@ -16,13 +17,14 @@ import { entradasVisibles } from "./navegacion";
  * no se vuelve a montar, así que la barra lateral no parpadea.
  */
 export async function Cascaron({ sesion, children }: { sesion: SesionValida; children: React.ReactNode }) {
-  const [marca, tareas, noLeidas, recientes] = await Promise.all([
+  const [marca, tareas, noLeidas, recientes, participa] = await Promise.all([
     obtenerMarcaSegura(),
     misTareas(sesion),
     contarNoLeidas(sesion.usuarioId),
     listarRecientes(sesion.usuarioId, 10),
+    participaEnTramites(sesion.usuarioId),
   ]);
-  const entradas = entradasVisibles(sesion);
+  const entradas = entradasVisibles({ ...sesion, participaEnTramites: participa });
   const logoUrl = marca.logo ? `/marca/logo?v=${marca.logo.version}` : null;
   const marcaBarra = { nombre: marca.nombre, sigla: marca.sigla, logoUrl };
 

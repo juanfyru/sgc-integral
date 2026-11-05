@@ -42,6 +42,21 @@ describe("describirEvento", () => {
     })).toBe("Emitió el Listado Maestro (excel, vigentes)");
   });
 
+  it("las acciones del trámite llevan el número de solicitud y el código", () => {
+    const evento = (accion: string, detalle: Record<string, unknown>) =>
+      describirEvento({ accion, entidad: "tramite", entidadId: 3, detalle });
+    expect(evento("tramite_solicitar", { numero: "SOL-2026-014", codigo: "GTH-PR-02" })).toBe("Registró la solicitud SOL-2026-014 sobre GTH-PR-02");
+    expect(evento("tramite_dar_visto_bueno", { numero: "SOL-2026-014", codigo: "GTH-PR-02" })).toBe("Dio el visto bueno a la solicitud SOL-2026-014 sobre GTH-PR-02");
+    expect(evento("tramite_negar_visto_bueno", { numero: "SOL-2026-014", codigo: null })).toBe("Negó el visto bueno a la solicitud SOL-2026-014");
+    expect(evento("tramite_retirar", { numero: "SOL-2026-014" })).toBe("Retiró la solicitud SOL-2026-014");
+    expect(evento("tramite_publicar", { numero: "SOL-2026-014", codigo: "GTH-PR-02" })).toBe("Publicó el resultado de la solicitud SOL-2026-014 sobre GTH-PR-02");
+  });
+
+  it("una acción de trámite que aún no se conoce sigue siendo inteligible", () => {
+    expect(describirEvento({ accion: "tramite_nuevo", entidad: "tramite", entidadId: 3, detalle: { numero: "SOL-2026-014" } }))
+      .toBe("Acción «tramite_nuevo» sobre la solicitud SOL-2026-014");
+  });
+
   it("acción desconocida no rompe: fallback genérico", () => {
     const frase = describirEvento({
       accion: "algo_raro", entidad: "cosa", entidadId: 1, detalle: { x: 1 },

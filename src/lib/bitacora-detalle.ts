@@ -1,3 +1,5 @@
+import type { Accion } from "@/lib/tramites/transiciones";
+
 export type EventoAuditoria = {
   accion: string;
   entidad: string;
@@ -45,6 +47,34 @@ function describirConfiguracion(claves: unknown): string {
   if (lista.every((c) => Object.hasOwn(NOMBRE_CLAVE_ENTIDAD, c))) return `Editó la entidad y la marca: ${nombres}`;
   if (lista.every((c) => Object.hasOwn(NOMBRE_CLAVE_MAPA, c))) return `Editó los textos del mapa y el código de documentos: ${nombres}`;
   return `Editó la configuración: ${nombres}`;
+}
+
+const ACCIONES_TRAMITE: Record<Accion | "solicitar", string> = {
+  solicitar: "Registró la solicitud",
+  dar_visto_bueno: "Dio el visto bueno a la solicitud",
+  negar_visto_bueno: "Negó el visto bueno a la solicitud",
+  retirar: "Retiró la solicitud",
+  aceptar: "Aceptó la solicitud",
+  rechazar: "Rechazó la solicitud",
+  enviar_a_revision: "Envió a revisión la solicitud",
+  devolver_revision: "Devolvió a elaboración la solicitud",
+  concepto_favorable: "Dio concepto favorable a la solicitud",
+  aprobar: "Aprobó la solicitud",
+  devolver_aprobacion: "Devolvió a elaboración la solicitud",
+  negar_eliminacion: "Negó la eliminación pedida en la solicitud",
+  publicar: "Publicó el resultado de la solicitud",
+  aprobar_y_publicar: "Aprobó y publicó el resultado de la solicitud",
+  cancelar: "Canceló la solicitud",
+  reasignar: "Reasignó la solicitud",
+};
+
+/** «Aprobó la solicitud SOL-2026-014 sobre GTH-PR-02». Una creación aún sin documento no lleva código. */
+function describirTramite(accion: string, numero: string, codigo: string | null): string {
+  const clave = accion.slice("tramite_".length);
+  const sobre = codigo ? ` sobre ${codigo}` : "";
+  return Object.hasOwn(ACCIONES_TRAMITE, clave)
+    ? `${ACCIONES_TRAMITE[clave as keyof typeof ACCIONES_TRAMITE]} ${numero}${sobre}`
+    : `Acción «${accion}» sobre la solicitud ${numero}${sobre}`;
 }
 
 function texto(v: unknown): string | null {
@@ -117,6 +147,8 @@ export function describirEvento(e: EventoAuditoria): string {
     case "editar_configuracion":
       return describirConfiguracion(d.claves);
   }
+
+  if (e.accion.startsWith("tramite_")) return describirTramite(e.accion, texto(d.numero) ?? "?", cod);
 
   // Acciones de mapa dinámicas: <verbo>_<singular>.
   const verbos: Record<string, string> = {

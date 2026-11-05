@@ -1,6 +1,7 @@
 import {
   Building2,
   ChartColumn,
+  ClipboardList,
   FileText,
   Home,
   KeyRound,
@@ -19,6 +20,7 @@ import type { IconoNav as NombreIcono } from "./navegacion";
 const ICONOS: Record<NombreIcono, LucideIcon> = {
   inicio: Home,
   buscar: Search,
+  tramites: ClipboardList,
   documentos: FileText,
   maestro: ListChecks,
   tipos: Tags,
