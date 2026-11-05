@@ -97,6 +97,16 @@ describe("separación de funciones", () => {
     expect(validarDesignacion({ ...d, revisor: null })).toBe("Falta designar quién revisa");
   });
 
+  it("solo exige estar activo a los designados que aplican", () => {
+    const d = { tipo: "modificar" as const, autoridad: "operativo" as const, solicitante: p(1, "lider_proceso", false), elaborador: p(2, "lider_proceso"), revisor: p(3, "admin_sgc"), aprobador: p(3, "admin_sgc") };
+    expect(validarDesignacion(d)).toBeNull();                                            // quien pidió ya no está: el trámite sigue
+    expect(validarDesignacion({ ...d, elaborador: p(2, "lider_proceso", false) })).toBe("El usuario designado no está activo");
+    expect(validarDesignacion({ ...d, revisor: p(5, "lider_proceso", false) })).toBe("El usuario designado no está activo");
+    const baja = { tipo: "eliminar" as const, autoridad: "operativo" as const, solicitante: p(1, "lider_proceso", false), elaborador: p(2, "lider_proceso", false), revisor: p(5, "lider_proceso", false), aprobador: p(3, "admin_sgc") };
+    expect(validarDesignacion(baja)).toBeNull();                                         // en eliminar solo cuenta el aprobador
+    expect(validarDesignacion({ ...baja, aprobador: p(3, "admin_sgc", false) })).toBe("El usuario designado no está activo");
+  });
+
   it("quien elabora no puede aprobar", () => {
     const d = { tipo: "modificar" as const, autoridad: "estrategico" as const, solicitante: p(4, "gerencia"), elaborador: p(4, "gerencia"), revisor: p(3, "admin_sgc"), aprobador: p(4, "gerencia") };
     expect(validarDesignacion(d)).toBe("Quien elabora no puede aprobar");

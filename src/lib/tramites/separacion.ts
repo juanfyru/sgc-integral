@@ -23,10 +23,11 @@ type Designacion = {
 
 /** Primer mensaje de separación de funciones que incumple la designación, o null. */
 export function validarDesignacion(d: Designacion): string | null {
-  const designados = [d.solicitante, d.elaborador, d.revisor, d.aprobador];
+  const elabora = d.tipo !== "eliminar";
+  // Quien pidió no es un designado: si ya no está activo, el trámite debe poder seguir.
+  const designados = elabora ? [d.elaborador, d.revisor, d.aprobador] : [d.aprobador];
   if (designados.some((x) => x !== null && !x.activo)) return "El usuario designado no está activo";
 
-  const elabora = d.tipo !== "eliminar";
   if (elabora) {
     if (!d.elaborador) return "Falta designar quién elabora";
     if (!d.revisor) return "Falta designar quién revisa";
