@@ -123,3 +123,43 @@ describe("obtenerLogoAlmacenado", () => {
     });
   });
 });
+
+describe("entidad: textos recortados y quitar sin logo", () => {
+  async function conClavesRestauradas(claves: string[], prueba: () => Promise<void>) {
+    const previas = await sql()`SELECT clave, valor FROM configuracion WHERE clave IN ${sql()(claves)}`;
+    try {
+      await prueba();
+    } finally {
+      await sql()`DELETE FROM configuracion WHERE clave IN ${sql()(claves)}`;
+      for (const f of previas) {
+        await sql()`INSERT INTO configuracion (clave, valor) VALUES (${f.clave}, ${f.valor})`;
+      }
+    }
+  }
+
+  it("obtenerMarca devuelve nombre, sigla y lema ya recortados", async () => {
+    await conClavesRestauradas(["nombre_entidad", "sigla_entidad", "lema"], async () => {
+      for (const [clave, valor] of [["nombre_entidad", "  Hospital ZZ  "], ["sigla_entidad", "\tZZS \n"], ["lema", "  Un lema  "]]) {
+        await sql()`INSERT INTO configuracion (clave, valor) VALUES (${clave}, ${valor})
+          ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor`;
+      }
+      const m = await obtenerMarca();
+      expect(m.nombre).toBe("Hospital ZZ");
+      expect(m.sigla).toBe("ZZS");
+      expect(m.lema).toBe("Un lema");
+    });
+  });
+
+  it("quitarLogo sin logo no audita y devuelve rutaAnterior null", async () => {
+    await conClavesRestauradas(["logo_ruta", "logo_mime", "logo_version"], async () => {
+      await sql()`DELETE FROM configuracion WHERE clave IN ('logo_ruta', 'logo_mime', 'logo_version')`;
+      const contar = async () => {
+        const [f] = await sql()`SELECT count(*)::int AS n FROM auditoria WHERE usuario_id = ${actorId} AND accion = 'quitar_logo'`;
+        return Number(f.n);
+      };
+      const antes = await contar();
+      expect(await quitarLogo(actorId)).toEqual({ rutaAnterior: null });
+      expect(await contar()).toBe(antes);
+    });
+  });
+});

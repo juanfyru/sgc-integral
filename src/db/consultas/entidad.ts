@@ -24,7 +24,8 @@ async function leerClaves(): Promise<Record<string, string>> {
   return Object.fromEntries(filas.map((f) => [f.clave as string, f.valor as string]));
 }
 
-const texto = (v: string | undefined, defecto: string) => (v && v.trim() ? v : defecto);
+/** El valor recortado, o el de defecto si queda vacío (nombre, sigla y lema se pintan en el cromo y el TOTP). */
+const texto = (v: string | undefined, defecto: string) => v?.trim() || defecto;
 const color = (v: string | undefined, defecto: string) =>
   v && hexValido(v.trim()) ? normalizarHex(v.trim()) : defecto;
 
@@ -144,7 +145,9 @@ export async function quitarLogo(actorId: number): Promise<{ rutaAnterior: strin
   const sql = obtenerSql();
   return sql.begin(async (tx) => {
     const [previo] = await tx`SELECT valor FROM configuracion WHERE clave = 'logo_ruta' FOR UPDATE`;
-    await tx`DELETE FROM configuracion WHERE clave IN ('logo_ruta', 'logo_mime', 'logo_version')`;
+    const borradas = await tx`DELETE FROM configuracion WHERE clave IN ('logo_ruta', 'logo_mime', 'logo_version') RETURNING clave`;
+    // Sin logo no hay nada que quitar: ni cambio ni evento en la bitácora (el handler responde igual).
+    if (borradas.length === 0) return { rutaAnterior: null };
     await registrarAuditoria(tx, {
       usuarioId: actorId,
       accion: "quitar_logo",
