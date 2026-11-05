@@ -24,3 +24,18 @@ describe("estadoDeBusqueda", () => {
     expect(estadoDeBusqueda("acta", { consulta: "acta", resultados: null })).toBe("error");
   });
 });
+
+describe("opción activa de la búsqueda Ctrl K", () => {
+  it("se marca con fondo neutro y un borde izquierdo de marca, sin texto de marca sobre el tinte", async () => {
+    const { claseOpcion } = await import("@/componentes/cascaron/Buscador");
+    const activa = claseOpcion(true).split(/\s+/);
+    expect(activa).toEqual(expect.arrayContaining(["bg-muted", "text-foreground", "border-l-2", "border-marca"]));
+    expect(activa).not.toContain("text-marca");
+    expect(activa).not.toContain("bg-marca-tinte");
+  });
+  it("la inactiva reserva el mismo borde (sin salto al moverse) y conserva el hover", async () => {
+    const { claseOpcion } = await import("@/componentes/cascaron/Buscador");
+    const inactiva = claseOpcion(false).split(/\s+/);
+    expect(inactiva).toEqual(expect.arrayContaining(["border-l-2", "border-transparent", "text-foreground", "hover:bg-muted"]));
+  });
+});

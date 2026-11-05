@@ -24,6 +24,17 @@ const sinAcentos = (t: string) =>
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase();
 
+/**
+ * Clases de una fila de la lista. La activa no lleva texto de marca sobre el tinte (su contraste
+ * depende del color que elija la entidad): fondo neutro y un borde izquierdo de marca, que la
+ * señala aunque el color se parezca al fondo. La inactiva reserva el borde para no saltar.
+ */
+export function claseOpcion(activa: boolean): string {
+  return `flex cursor-pointer items-center gap-3 rounded-md border-l-2 px-3 py-2 text-sm text-foreground ${
+    activa ? "border-marca bg-muted" : "border-transparent hover:bg-muted"
+  }`;
+}
+
 type Opcion =
   | { id: string; clase: "ir"; entrada: EntradaNav; ruta: string }
   | { id: string; clase: "documento"; resultado: ResultadoRapido; ruta: string }
@@ -162,17 +173,13 @@ function Paleta({ entradas, cerrar }: { entradas: EntradaNav[]; cerrar: () => vo
   const filasDocs = opciones.filter((o) => o.clase === "documento");
   const filaTodos = opciones.find((o) => o.clase === "todos");
 
-  const claseOpcion = (o: Opcion) =>
-    `flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm ${
-      o.id === idActiva ? "bg-marca-tinte text-marca" : "text-foreground hover:bg-muted"
-    }`;
   const propsOpcion = (o: Opcion) => ({
     id: o.id,
     role: "option" as const,
     "aria-selected": o.id === idActiva,
     onClick: () => elegir(o),
     onMouseMove: () => setActiva(opciones.indexOf(o)),
-    className: claseOpcion(o),
+    className: claseOpcion(o.id === idActiva),
   });
   const claseTitulo = "px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-texto-terciario";
 
