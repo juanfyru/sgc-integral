@@ -434,8 +434,10 @@ Una sola pantalla (maqueta 2) con cuatro bloques:
    - En una **creación:** tipo de documento, proceso o subproceso propietario, otros procesos
      donde aplica, título, descripción, palabras clave, documentos relacionados (los formatos
      que usa un procedimiento, `documento_relaciones`), nivel de acceso (general o
-     restringido, §12) y el **código** (§8.4). Son los mismos metadatos que hoy edita el
-     panel; la descripción y las palabras clave alimentan la búsqueda.
+     restringido, §12) y el **código** (§8.4). Son los metadatos que hoy edita el panel, más
+     los documentos relacionados, que hoy solo llena la semilla (el panel nunca tuvo ese
+     selector; se añade en esta entrega). La descripción y las palabras clave alimentan la
+     búsqueda.
    - En una **modificación:** el código, el tipo y el proceso propietario se muestran y no se
      editan; el único dato que el trámite puede cambiar es el **título**.
 
