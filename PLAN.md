@@ -265,11 +265,17 @@ ejecución → cierre con `CONTEXT.md` actualizado e instrucciones de prueba. La
 no es una fase: cada una trae sus criterios; la 19 es la auditoría final contra los 20
 riesgos del usuario.
 
+El usuario partió la Fase 13 en tres entregas el 2026-11-05 (13A, 13B y 13C), cada una con su
+spec, su plan, su prueba y su fusión; el reparto y los cambios al diseño maestro están en
+`docs/superpowers/specs/2026-11-05-fase13a-flujo-documental-design.md` (§2 y §5).
+
 | Fase | Nombre | Entrega demostrable |
 |---|---|---|
 | 11 | Fundación de acceso ✅ (2026-11-03) | Usuarios con cinco roles y procesos asignados (una por una y por lote desde plantilla), cargos con jerarquía, login en toda la app, clave temporal y cambio obligatorio, bloqueo, TOTP opcional, registro de accesos, roles de BD de mínimo privilegio y bitácora inmutable; Next actualizado; `AGENTS.md` reescrito para el nuevo piso |
 | 12 | Nueva estructura visual ✅ (2026-11-04) | Cascarón tipo Linear por rol (barra lateral por módulos, búsqueda `Ctrl K`, campana, tema claro/oscuro), marca configurable por entidad con validación AA, componentes base; pantallas existentes migradas |
-| 13 | Documentación SGC | Solicitud de cambio, flujo elaboración → revisión → aprobación → publicación con concepto y firma, acta PDF, caracterización estructurada, obsoletos por permiso, listas de distribución y acuses, copias controladas, normograma, documentos externos, nivel de acceso, baja con aprobación, semáforo documental |
+| 13A | Documentación SGC: flujo documental | Solicitud con visto bueno del líder, aceptación con duplicidad asistida, código correlativo y plantilla; elaboración; revisión con lista de verificación; aprobación por autoridad con firma por clave; publicación con acta PDF; eliminación por el mismo trámite; visibilidad por rol y nivel de acceso; tareas y avisos; carga de lo ya aprobado; marca de agua con el nombre de quien descarga |
+| 13B | Documentación SGC: distribución y puntos de uso | Listas de distribución y acuse de lectura con porcentaje, evidencia de capacitación; copias controladas con sello, recibido y recogida de las obsoletas; puntos de uso y su verificación con porcentaje de conformidad |
+| 13C | Documentación SGC: vigencia, externos y normograma | Plazo de revisión, semáforo documental y revisión anual con informe; documentos externos con verificación de vigencia; normograma institucional y por proceso; caracterización estructurada; indicadores del proceso documental |
 | 14 | Indicadores | Ficha técnica versionada, variables compartidas, fórmula con intérprete propio, metas y semáforo por periodo, mediciones con análisis y evidencias, gráficas, cierre de periodo, "sin dato", regulatorios ligados al normograma, permisos por indicador |
 | 15 | Planes de mejoramiento | Motor único de acciones: planes, hallazgos con máquina de estados, causa raíz, cuatro tipos de acción, actividades con evidencias, verificación de eficacia, reincidencia, formato Contraloría/Supersalud, objetivos institucionales; "abrir acción" desde documento, proceso e indicador |
 | 16 | Notificaciones y planificador | Planificador en la app, cola de correo con reintentos, resumen diario e inmediatas, escalamiento al supervisor, recordatorios, verificación de correo, "olvidé mi clave" |

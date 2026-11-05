@@ -1,9 +1,11 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-11-04**, cierre de la
-> **Fase 12 — Nueva estructura visual**, en la rama `fase-12-estructura-visual` (sin
-> fusionar: faltan la revisión final de la rama y la prueba del usuario). La Fase 11
-> (fundación de acceso) se fusionó en `main` el 2026-11-04 y está publicada en `origin`.
+> Se actualiza al cierre de cada fase. Última actualización: **2026-11-05**. La **Fase 12 —
+> Nueva estructura visual** se fusionó en `main` y se publicó en `origin` el 2026-11-05
+> (`7f79b04`, más el arreglo `b94032e`). Ese día el usuario partió la **Fase 13** en tres
+> entregas y se escribió el spec de la **13A — Flujo documental** (rama
+> `fase-13a-flujo-documental`; ver el punto 2). La Fase 11 (fundación de acceso) está en
+> `main` desde el 2026-11-04.
 > La variante nació el 2026-11-03, bifurcada de `sgc-suaza` en `9644ceb`; el diseño
 > maestro de las fases 11–20
 > (`docs/superpowers/specs/2026-11-03-sgc-integral-plataforma-design.md`) está aprobado
@@ -40,25 +42,28 @@
    ola. La **revisión final de la rama** dio «With fixes» (0 Critical, 3 Important y
    menores): la ola final de arreglos (I1–I3 y M1–M11; F12-D47 a F12-D49) va en los
    commits que siguen a `605ca69`, con lint limpio, **1662 tests** (85 archivos) y
-   el build simulado del CI. **Falta:** la prueba del usuario con "Qué probar y cómo
-   (Fase 12)", fusión en `main` y publicación.
-2. **Lo que sigue:** tras fusionar, escribir la spec y el plan de la **Fase 13 —
-   Documentación SGC** (spec maestro §6.1 y §8 Fase 13) y ejecutarla con la metodología
-   de `AGENTS.md`: solicitud de cambio; flujo elaboración → revisión → aprobación →
-   publicación con concepto y firma con reautenticación; acta PDF; caracterización
-   estructurada; obsoletos por permiso; listas de distribución y acuses de lectura;
-   copias controladas; normograma; documentos externos; nivel de acceso; baja con
-   aprobación; semáforo documental. Sin correo (Fase 16) ni "abrir acción" (Fase 15).
-   La Fase 12 dejó listos los enganches: `misTareas()` (`src/lib/tareas.ts`) ya tiene el
-   tipo definitivo y devuelve `[]` (la 13 añade fuentes: revisar, aprobar, acusar);
-   `crearNotificacion` (`src/db/consultas/notificaciones.ts`) acepta una transacción;
-   la paleta `Ctrl K` y `/api/buscar` muestran solo vigentes hasta que la 13 aplique la
-   visibilidad por rol (F12-DC14); la navegación añade el módulo cuando exista
-   (F12-DC5). Para las tablas inmutables nuevas (`firmas`), ver la Deuda técnica de la
-   Fase 11. Manual de la 13: "Documentos: solicitar, elaborar, revisar, aprobar y
-   publicar", "Normograma", "Copias controladas y acuses de lectura". Insumos que dependen
-   del usuario: spec §11 (SMTP, versión de Windows del servidor, planta de cargos real,
-   plantilla del plan de mejoramiento, total de cuentas, etc.).
+   el build simulado del CI. El usuario la probó; se fusionó en `main` (`7f79b04`) y se
+   publicó el 2026-11-05 con el CI en verde. Después se corrigió el nombre de la entidad,
+   que salía cortado en la barra lateral (`b94032e`, F12-D50).
+2. **Lo que sigue: Fase 13A — Flujo documental.** El 2026-11-05 el usuario contrastó el
+   diseño maestro con el procedimiento documentado de control de documentos del hospital
+   (13 actividades, puntos de control PC-01 a PC-13), aceptó 14 cambios al diseño y partió
+   la Fase 13 en tres entregas, cada una con su spec, su plan, su prueba y su fusión:
+   **13A** flujo documental; **13B** distribución y puntos de uso; **13C** vigencia,
+   externos y normograma. El spec de la 13A está en
+   `docs/superpowers/specs/2026-11-05-fase13a-flujo-documental-design.md`: §2 lista las
+   decisiones del usuario, §5 el reparto de las tres entregas, §23 las decisiones de Claude
+   y el Apéndice A el procedimiento con la evidencia de cada punto de control. **Sigue:** la
+   aprobación del spec por el usuario, el plan (`superpowers:writing-plans`) y la
+   ejecución. La 13A vuelve a sembrar la base de desarrollo, porque la demo adopta la
+   convención de códigos del hospital: avisar antes al usuario. Enganches que dejó la Fase
+   12: `misTareas()` (`src/lib/tareas.ts`), `crearNotificacion` con transacción
+   (`src/db/consultas/notificaciones.ts`), `/api/buscar` solo con vigentes (F12-DC14) y la
+   navegación por módulos (F12-DC5). Para las tablas de solo inserción nuevas (`firmas` y el
+   historial del trámite), ver la Deuda técnica de la Fase 11. Insumos que siguen
+   dependiendo del usuario: spec maestro §11 (SMTP, versión de Windows del servidor, planta
+   de cargos real, plantilla del plan de mejoramiento, total de cuentas) y, opcional, la
+   lista de verificación real del hospital (SGC-FO-03).
 3. **Entorno de desarrollo** (convive con `sgc-suaza` en la misma máquina):
 
    | Pieza | SGC Integral (esta) | sgc-suaza (original) |
@@ -151,9 +156,10 @@
    las variables nuevas. La Fase 20 los reemplaza. El ensayo local
    (`docker-compose.ensayo.yml`) publica 9080, que en esta máquina ocupa `sgc-app-1` de
    la original.
-8. **Pendientes heredados del usuario** (siguen valiendo aquí): convención oficial de
-   códigos (`patron_codigo` en `/admin/mapa/textos`), documentos reales aprobados, logo
-   institucional. Desde la Fase 12 el logo se sube en **Entidad y marca** y debe ser
+8. **Pendientes heredados del usuario** (siguen valiendo aquí): documentos reales
+   aprobados y logo institucional. La **convención oficial de códigos quedó resuelta el
+   2026-11-05**: sigla del proceso, sigla del tipo y consecutivo de dos dígitos contado por
+   proceso y tipo (`SGC-FO-02`); la implementa la 13A. Desde la Fase 12 el logo se sube en **Entidad y marca** y debe ser
    PNG, JPG o WebP (SVG no, F12-DC9): pedirlo en PNG cuadrado de unos 512 px con fondo
    transparente. La subida de Next quedó hecha en la Fase 11 (16.4.5).
 9. **Memoria de Claude Code:** es por carpeta; la de `F:\sgc-integral` solo guarda
