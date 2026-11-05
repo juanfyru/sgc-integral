@@ -561,6 +561,14 @@ referencia de la dirección C; la Fase 12 produce el sistema real.
 
 ### 6.1 Documentación SGC (Fase 13)
 
+> **Actualización del 2026-11-05.** El usuario contrastó esta sección con el procedimiento
+> documentado del hospital, aceptó 14 cambios y partió la Fase 13 en tres entregas (13A, 13B
+> y 13C). Donde difieran, manda el spec de cada entrega; el de la 13A
+> (`2026-11-05-fase13a-flujo-documental-design.md`, §2 y §5) lista los cambios y el reparto.
+> Lo más visible: aprueba Gerencia o el Coordinador SGC según el tipo (reemplaza la DC11), la
+> clave se pide en cuatro momentos, la revisión lleva lista de verificación y el plazo de
+> revisión por defecto pasa a 12 meses.
+
 **Descripción del usuario** [Usuario, textual]:
 
 > 1.1 Mapa y caracterización de procesos. Consultar el mapa de procesos y, desde él, la

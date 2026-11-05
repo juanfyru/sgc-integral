@@ -226,15 +226,21 @@ trámite y a nada más: no cambia el rol del usuario ni su alcance por procesos.
 
 | Permiso | Roles | Qué concede |
 |---|---|---|
-| `tramites.solicitar` | `admin_sgc`, `lider_proceso` | Crear solicitudes. El líder, solo de procesos dentro de su alcance (`alcanceProcesos`) |
+| `tramites.solicitar` | `admin_sgc`, `lider_proceso` | Crear y retirar solicitudes. El líder, solo de procesos dentro de su alcance (`alcanceProcesos`) |
+| `tramites.visto_bueno` | `lider_proceso` | Dar o negar el visto bueno de una solicitud de un proceso de su alcance |
+| `tramites.participar` | Los cinco roles | Actuar como **elaborador designado**: subir el borrador, escribir el control de cambios, responder observaciones y enviar a revisión |
+| `tramites.revisar` | `admin_sgc`, `lider_proceso` | Ser designado revisor y revisar |
+| `tramites.aprobar` | `admin_sgc`, `gerencia` | Ser designado aprobador y aprobar |
 | `tramites.gestionar` | `admin_sgc` | Aceptar o rechazar solicitudes, designar y reasignar responsables, cancelar, publicar, ejecutar la eliminación y editar la configuración documental (§15.4) |
-| `tramites.revisar` | `admin_sgc`, `lider_proceso` | Poder ser designado revisor |
-| `tramites.aprobar` | `admin_sgc`, `gerencia` | Poder ser designado aprobador |
 
-Cada celda lleva su test, como el resto de la matriz. Los dos últimos permisos son de
-**elegibilidad**: la acción de revisar o aprobar exige además ser la persona designada en ese
-trámite. Elaborar y dar el visto bueno no tienen permiso de matriz: elabora quien fue
-designado y da el visto bueno quien es líder del proceso propietario.
+Cada celda lleva su test, como el resto de la matriz. **Ninguna escritura queda sin permiso
+de matriz** (regla de negocio 4): toda acción del trámite exige su permiso **y además** la
+condición de persona que diga §7.2 (ser el elaborador, el revisor o el aprobador designado,
+o ser líder del proceso propietario). `tramites.participar` lo tienen los cinco roles porque
+el elaborador puede ser cualquier funcionario; existe para que la regla no tenga excepción y
+para que el test estructural pueda exigir un permiso en cada acción [Decisión de Claude]. El
+handler de subida acepta `documentos.administrar` (publicación directa) o
+`tramites.participar` más ser el elaborador de ese trámite en la etapa `elaboracion`.
 
 `documentos.administrar` sigue protegiendo la publicación directa (§13) y la edición de
 metadatos. `documentos.ver_historial` no cambia.
@@ -257,11 +263,16 @@ lo hace cualquier `admin_sgc`, también el que elaboró, revisó o aprobó (spec
 - **Revisor:** un usuario activo con `tramites.revisar`, distinto del elaborador (S2). Por
   defecto, el Coordinador SGC que acepta; si él es el elaborador, queda sin valor por defecto
   y debe elegir a otro.
-- **Aprobador:** depende de la **autoridad del tipo de documento** (`tipos_documento`):
+- **Aprobador:** depende de la **autoridad del tipo de documento** (`tipos_documento`) y de
+  quién origina el trámite:
   - tipo *estratégico*: un usuario activo con rol `gerencia`;
-  - tipo *operativo*: un usuario activo con rol `admin_sgc` que respete S1 (y S3 en una
-    eliminación). Si no queda ninguno, los candidatos son los de `gerencia`, con las mismas
-    reglas.
+  - tipo *operativo*: un usuario activo con rol `admin_sgc`;
+  - **excepción** [Usuario, punto 2]: si el elaborador tiene rol `admin_sgc`, aprueba un
+    usuario con rol `gerencia`, sea cual sea el tipo y aunque haya otro `admin_sgc`. Lo mismo
+    vale en una eliminación que pide un `admin_sgc` [Decisión de Claude, por S3].
+
+  En todos los casos el aprobador es una persona distinta del elaborador (S1) y, en una
+  eliminación, del solicitante (S3).
 
   Si hay un solo candidato, viene elegido. Si no hay ninguno, la solicitud no se puede aceptar
   y la pantalla dice qué falta (por ejemplo, «No hay ningún usuario activo con el rol
@@ -277,12 +288,26 @@ La página de un trámite y los archivos de su borrador los ven:
    propietario o cualquiera donde aplica); en una solicitud de creación, el proceso declarado.
 
 Cuando el trámite termina en publicación o en eliminación, lo ven además, en solo lectura,
-quienes tienen `documentos.ver_historial` (Control Interno y la marca individual): es la
-evidencia de cómo se aprobó cada versión. Un trámite rechazado o cancelado lo siguen viendo
-solo los de la lista de arriba.
+quienes tienen `documentos.ver_historial` (Control Interno y la marca individual) y, si el
+documento es restringido, cumplen también la regla de restringido de §12: es la evidencia de
+cómo se aprobó cada versión. Un trámite rechazado o cancelado lo siguen viendo solo los de
+la lista de arriba.
+
+**Los archivos del trámite solo se sirven por su ruta mientras el trámite está abierto.** Al
+cerrarse, la página conserva la solicitud, la lista de verificación, las observaciones, el
+historial y el acta, pero cada archivo pasa a regirse por el estado de su versión (§12): la
+versión publicada se consulta por la ficha, con su marca de agua; cuando quede obsoleta,
+solo con `documentos.ver_historial`; y los archivos de una versión descartada los ve solo
+quien tiene `tramites.gestionar`. Así un participante sin permiso de historial no conserva
+un camino a una versión que dejó de estar vigente (regla de negocio 3).
 
 Para cualquier otra persona el trámite no existe: la página responde como «no encontrada» y
 el archivo con 404, sin revelar que hay un borrador.
+
+La participación es la única excepción a «toda consulta pasa por `alcanceProcesos()`»
+(`AGENTS.md`). La decisión de quién ve un trámite vive en el mismo módulo que esa regla
+(`src/lib/alcance.ts`), no repartida en las consultas, y `AGENTS.md` la recoge al cerrar la
+entrega.
 
 ## 7. El trámite: etapas y transiciones
 
@@ -396,16 +421,27 @@ Una sola pantalla (maqueta 2) con cuatro bloques:
    salidas:
    - *No es un duplicado: es un documento nuevo.*
    - *Es una modificación de un documento que ya existe:* elige cuál, y el mismo trámite pasa
-     a ser de modificación de ese documento (que no debe tener otro trámite abierto).
+     a ser de modificación de ese documento. Solo vale si ese documento es **del mismo
+     proceso propietario** que la solicitud y no tiene otro trámite abierto: así el visto
+     bueno ya dado sigue siendo del líder correcto. Si el parecido es de otro proceso, la
+     solicitud se rechaza con el motivo y el código de ese documento, y el líder de ese
+     proceso pide la modificación.
 
    La lista que vio (aunque esté vacía) y su decisión quedan en el evento de aceptación: es la
    evidencia del PC-02. La búsqueda usa lo que ya hay (`pg_trgm` y la búsqueda de texto); los
    umbrales los fija el constructor.
-3. **Clasificación y código:** tipo de documento, proceso o subproceso propietario, otros
-   procesos donde aplica, título, nivel de acceso (general o restringido, §12) y el **código**
-   (§8.4). La versión se muestra y no se edita: 1 en una creación; la siguiente a la última
-   publicada en una modificación. El bloque muestra la **plantilla vigente** del tipo, si la
-   tiene (§8.5).
+3. **Clasificación y código** (qué datos cambia un trámite: §8.6).
+   - En una **creación:** tipo de documento, proceso o subproceso propietario, otros procesos
+     donde aplica, título, descripción, palabras clave, documentos relacionados (los formatos
+     que usa un procedimiento, `documento_relaciones`), nivel de acceso (general o
+     restringido, §12) y el **código** (§8.4). Son los mismos metadatos que hoy edita el
+     panel; la descripción y las palabras clave alimentan la búsqueda.
+   - En una **modificación:** el código, el tipo y el proceso propietario se muestran y no se
+     editan; el único dato que el trámite puede cambiar es el **título**.
+
+   La versión se muestra y no se edita: 1 en una creación; la siguiente a la última publicada
+   en una modificación. El bloque muestra la **plantilla vigente** del tipo, si la tiene
+   (§8.5).
 4. **Responsables y fechas:** elaborador, revisor y aprobador según §6.4, y la fecha límite
    de elaboración.
 
@@ -446,6 +482,31 @@ muestra el enlace a la versión vigente de esa plantilla, y el evento de aceptac
 cuál era (código y versión): es la evidencia de «plantilla vigente utilizada» del PC-03. Un
 tipo sin plantilla no muestra nada.
 
+### 8.6 Qué datos del documento cambia un trámite
+
+El título, los procesos y el nivel de acceso viven en el documento, no en la versión, y el
+portal los lee de ahí. Para que un trámite en curso no cambie lo que se ve de la versión
+vigente, los datos se tratan en dos grupos [Decisión de Claude]:
+
+- **Datos de control: código, tipo, proceso propietario y título.** Son parte de la
+  identidad del documento.
+  - En una **creación** se fijan al aceptar y el Coordinador SGC puede corregirlos mientras
+    el trámite esté en `elaboracion` o `revision` (nadie ve todavía el documento). Desde
+    `aprobacion` quedan fijos.
+  - En una **modificación**, el código, el tipo y el proceso propietario **no cambian**:
+    mover un documento a otro proceso es eliminarlo y crear otro. El **título** sí puede
+    cambiar: el título nuevo se guarda en el trámite, lo ven quienes ven el trámite, aparece
+    en el acta y **se aplica al documento en la transacción de publicar**. Hasta entonces el
+    portal sigue mostrando el título de la versión vigente.
+  - Fuera de un trámite, el título de un documento vigente no se edita. Única excepción: con
+    la carga abierta (§13.3), el Coordinador SGC corrige el título de un documento cuya
+    versión vigente se registró fuera de la plataforma, como corrección de digitación.
+- **Datos de catálogo: descripción, palabras clave, otros procesos donde aplica, documentos
+  relacionados y nivel de acceso.** No son parte del contenido aprobado. Quien tiene
+  `documentos.administrar` los edita desde el panel en cualquier momento, con trámite abierto
+  o sin él, y cada cambio queda en la bitácora. Un cambio de nivel de acceso rige de
+  inmediato.
+
 ## 9. Elaboración, revisión y observaciones (pasos 4 a 6)
 
 ### 9.1 Elaboración
@@ -463,9 +524,12 @@ todas las observaciones abiertas deben tener respuesta. El envío es la firma **
 
 **Archivo congelado** [Usuario, supuesto 4]: fuera de la etapa `elaboracion` nadie puede
 subir, reemplazar ni borrar archivos de la versión en trámite, ni cambiar el control de
-cambios. Los metadatos del documento (título, procesos, nivel de acceso) los puede corregir
-el Coordinador SGC mientras el trámite esté en `elaboracion` o `revision`; desde `aprobacion`
-quedan fijos [Decisión de Claude].
+cambios. Los datos de control del documento siguen §8.6: desde `aprobacion` quedan fijos.
+
+**Los borradores intermedios no se conservan** [Decisión de Claude]: si el elaborador
+reemplaza un archivo al ajustar, el anterior se borra, como hoy. De cada ronda quedan la
+huella que firmó el elaborador (`firmas`), las respuestas de la lista y las observaciones;
+el archivo que se conserva es el que se aprueba.
 
 ### 9.2 Revisión con lista de verificación
 
@@ -586,7 +650,8 @@ Es la transacción de siempre (regla de negocio 1), con estos añadidos, todos d
    `versiones_vigente_con_aprobacion`, la ficha y el Listado Maestro siguen funcionando sin
    distinguir cómo se aprobó cada versión.
 4. Marca la versión como **aprobada en la plataforma** y guarda el momento de la publicación,
-   que es la fecha de entrada en vigencia [Usuario: la vigencia futura es de la Fase 16].
+   que es la fecha de entrada en vigencia [Usuario: la vigencia futura es de la Fase 16]. Si
+   la modificación traía un título nuevo, lo aplica al documento (§8.6).
 5. Escribe la firma Publicó, el evento, la auditoría y los avisos (§14.2), y cierra el
    trámite como `publicado`.
 
@@ -627,7 +692,7 @@ se conserva con su banda «ANULADO» para quien tiene `documentos.ver_historial`
 negocio 2 y 3). Su código no se reutiliza. Este es el **evento de eliminación** al que la 13B
 enganchará el aviso a las listas y la recogida de copias.
 
-La anulación directa que hoy hace el Admin SGC desde el panel queda limitada según §13.3.
+La anulación directa que hoy hace el Admin SGC desde el panel desaparece (§13.1).
 
 ## 12. Visibilidad documental por rol
 
@@ -642,7 +707,7 @@ tiene `documentos.ver_historial`. Desde esta entrega:
 | **En trámite** (borrador de un trámite abierto) | Los de §6.5 | Solo la página del trámite y su ruta de archivos |
 | **Borrador de publicación directa** | Quien tiene `documentos.administrar` | Panel |
 | **Obsoleta o anulada** | Quien tiene `documentos.ver_historial` y, si el documento es restringido, además cumple la fila de restringido | Panel |
-| **Descartada** (de un trámite cancelado) | Los de §6.5 para ese trámite | Solo la página del trámite |
+| **Descartada** (de un trámite cancelado o de una carga deshecha) | Quien tiene `tramites.gestionar` | La página del trámite o el panel |
 
 Consecuencias que el constructor debe aplicar:
 
@@ -665,7 +730,8 @@ Consecuencias que el constructor debe aplicar:
   - la ruta del portal sirve archivos de la versión vigente, con la regla de nivel de acceso;
   - la ruta del panel sirve obsoletas y anuladas con `documentos.ver_historial` (más la regla
     de restringido) y borradores de publicación directa con `documentos.administrar`;
-  - una ruta nueva sirve los archivos de un trámite a quienes lo ven (§6.5).
+  - una ruta nueva sirve los archivos de un trámite a quienes lo ven, solo mientras está
+    abierto (§6.5).
 - **Marca de agua** (spec maestro, adición 8 y DC13):
   - Todo PDF que sale por la ruta del portal lleva «COPIA NO CONTROLADA» y la leyenda con el
     **nombre de quien lo descarga** y la fecha, en la zona de la instalación (hoy la fecha
@@ -674,6 +740,11 @@ Consecuencias que el constructor debe aplicar:
     banda «EN TRÁMITE».
   - El acta se sirve sin marca. La copia controlada numerada es de la 13B.
 - La banda «OBSOLETO» / «ANULADO» del panel no cambia (regla de negocio 2).
+- **Los procesos asignados valen para cualquier rol.** La regla de restringido se apoya en
+  `usuario_procesos`, que hoy el formulario de usuarios presenta como «Procesos que lidera»
+  y la demo solo llena para los líderes. El formulario pasa a decir «Procesos» y explica
+  qué significa según el rol: para un líder, los que lidera; para los demás, los procesos a
+  los que pertenece, que le dan acceso a sus documentos restringidos [Decisión de Claude].
 
 ## 13. Carga de los documentos ya aprobados (publicación directa)
 
@@ -682,6 +753,12 @@ Consecuencias que el constructor debe aplicar:
 El camino heredado del panel (crear documento, subir archivos, escribir quién elaboró, revisó
 y aprobó, y publicar) queda como **carga de documentos aprobados fuera de la plataforma**
 [Spec maestro, DC26]. Sigue exigiendo `documentos.administrar` y sigue auditado.
+
+**Solo da de alta.** Sirve para registrar un documento que no tiene versión vigente: uno
+nuevo en el sistema, o uno cuya carga se deshizo (§13.2). **Nunca publica una versión sobre
+un documento que ya tiene una vigente:** la siguiente versión de un documento cargado pasa
+por un trámite [Spec maestro, DC26]. La anulación directa desaparece: eliminar un documento
+es siempre un trámite (§11.3).
 
 ### 13.2 Qué se le añade
 
@@ -696,24 +773,27 @@ y aprobó, y publicar) queda como **carga de documentos aprobados fuera de la pl
 - **Descartar un borrador de carga** [Decisión de Claude]: hoy un borrador creado por error se
   queda para siempre. El Coordinador SGC puede descartarlo; pasa a `descartado` y conserva
   sus archivos.
+- **Deshacer una carga** [Decisión de Claude]: al digitar 200 documentos habrá errores (un
+  archivo equivocado, un número de versión o unos nombres mal escritos). Mientras la carga
+  esté abierta, el Coordinador SGC puede deshacer la publicación de una versión marcada
+  «fuera de la plataforma», con motivo: la versión pasa a `descartado`, conserva sus
+  archivos, queda en la bitácora y deja libre su número. El documento queda sin versión
+  vigente y **conserva su código**, listo para registrarlo de nuevo con los datos correctos.
+  No aplica a versiones aprobadas en la plataforma.
 
 ### 13.3 Cerrar la carga
 
 Una clave de configuración, **publicación directa**, activa por defecto. El Coordinador SGC
 la apaga en la configuración documental (§15.4) cuando termina la carga inicial; el cambio
-queda en la bitácora. Con la clave **apagada**, el servidor rechaza crear documentos, crear
-versiones, publicar y anular por el camino directo, y el panel no muestra esos botones: todo
-documento nuevo y todo cambio pasan por un trámite. Se puede volver a encender (por ejemplo,
-si aparece un documento antiguo sin cargar), también auditado.
+queda en la bitácora. Con la clave **apagada**, el servidor rechaza dar de alta, publicar y
+deshacer por el camino directo, y el panel no muestra esos botones: todo documento nuevo y
+todo cambio pasan por un trámite. Se puede volver a encender (por ejemplo, si aparece un
+documento antiguo sin cargar), también auditado.
 
-**Anulación directa:** con la clave encendida, el Coordinador SGC puede anular sin trámite
-solo documentos cuya versión vigente tiene la marca «fuera de la plataforma» (para corregir
-errores de carga). Un documento aprobado en la plataforma solo se elimina por trámite
-[Decisión de Claude].
-
-Un documento con un trámite abierto no admite publicación directa, y un documento con un
-borrador de carga pendiente no admite que se acepte una solicitud sobre él hasta que ese
-borrador se publique o se descarte.
+Un documento con un borrador de carga pendiente no admite que se acepte una solicitud sobre
+él hasta que ese borrador se publique o se descarte. Un borrador heredado que esté sobre un
+documento con versión vigente (posible en una base de `sgc-suaza`) no se puede publicar por
+este camino: se descarta, y el cambio se pide por trámite.
 
 ### 13.4 Lo que queda para la Fase 20
 
@@ -766,6 +846,13 @@ contenido del documento. Nadie se avisa a sí mismo de lo que acaba de hacer.
   responsable; por cada paso con más de **3 días** de vencido sin escalar, avisa a su jefe
   (`supervisoresDe`: el jefe inmediato si está, o el superior del cargo) [Usuario, supuesto
   6; spec maestro DC22]. Los días de escalamiento son configurables.
+- En los pasos que son de un grupo (visto bueno de los líderes; aceptación y publicación de
+  los `admin_sgc`) el aviso va a cada miembro y el escalamiento a los jefes de cada uno, sin
+  repetir destinatario. Si nadie tiene jefe, no se escala.
+- **El jefe no gana acceso al trámite** [Decisión de Claude]. Su aviso dice qué paso, de qué
+  solicitud, a cargo de quién y hace cuántos días venció, **sin el título del documento y
+  sin enlace**: le basta para hablar con su subalterno y no revela nada de un borrador ni de
+  un documento restringido.
 - Cada aviso sale **una sola vez** por paso: el trámite guarda cuándo avisó y cuándo escaló
   la etapa en curso, y esas marcas se limpian al cambiar de etapa.
 - La revisión nunca rompe la página que la disparó: si falla, lo deja en el registro del
@@ -836,12 +923,15 @@ operativo, §6.4) y la **plantilla** (un documento vigente, opcional, §8.5).
   la nota «Aprobación registrada fuera de la plataforma» si no; insignia «Acceso restringido»
   cuando aplica.
 - **Gestión de documentos (panel):** en el detalle, cada versión dice su origen y enlaza a su
-  acta y a su trámite; los botones del camino directo dependen de §13.3; aparece «Descartar
+  acta y a su trámite; los botones del camino directo dependen de §13; aparecen «Deshacer carga» y «Descartar
   borrador».
 - **Listado Maestro** (página y Excel): columna nueva **Aprobación**, con «En la plataforma»
   o «Fuera de la plataforma» [Usuario, decisión 7]. Las celdas del Excel siguen pasando por
   `neutralizarFormula`.
 - **Inicio:** «Mis tareas» empieza a mostrar tareas (el componente ya existe).
+- **Usuarios (panel):** el campo «Procesos que lidera» pasa a «Procesos» (§12).
+- **Editar documento (panel):** el formulario separa los datos de control de los de
+  catálogo según §8.6; el título solo se edita en los casos que esa sección permite.
 
 ## 16. Modelo de datos y migración 0004
 
@@ -872,7 +962,7 @@ se tocan. Los datos heredados cumplen las restricciones nuevas sin transformaci�
 
 | Tabla | Qué guarda |
 |---|---|
-| `tramites` | Una fila por solicitud: número, tipo, motivo, justificación, solicitante, proceso propietario (para el alcance), datos propuestos de una creación, documento y versión en trámite cuando existen, etapa, ronda, elaborador, revisor y aprobador, fecha límite de la etapa y sus marcas de aviso y escalamiento, y el motivo de cierre. **Índice único parcial: un solo trámite en etapa de trabajo por documento** |
+| `tramites` | Una fila por solicitud: número, tipo, motivo, justificación, solicitante, proceso propietario (para el alcance), datos propuestos de una creación y título propuesto de una modificación (§8.6), documento y versión en trámite cuando existen, etapa, ronda, elaborador, revisor y aprobador, fecha límite de la etapa y sus marcas de aviso y escalamiento, y el motivo de cierre. **Índice único parcial: un solo trámite en etapa de trabajo por documento** |
 | `tramite_eventos` | El historial: trámite, tipo de evento, persona, momento, ronda y un detalle (`jsonb`) con lo propio de cada evento (motivo, concepto, parecidos vistos, clasificación, plantilla, reasignación). **Solo inserción** |
 | `firmas` | §10.3. **Solo inserción** |
 | `tramite_observaciones` | §9.3: número dentro del trámite, ronda, origen (revisión o aprobación), texto, autor, respuesta, estado y quién y cuándo la respondió y la cerró |
@@ -921,7 +1011,8 @@ Además:
   esperadas; la unicidad del trámite abierto por documento, del código y de la versión
   vigente las garantiza la BD.
 - **Sin oráculos:** los errores de negocio no revelan si existe un documento restringido o
-  un borrador; los avisos solo llegan a quien puede ver el trámite.
+  un borrador. Los avisos con título y enlace solo llegan a quien puede ver el trámite; el
+  de escalamiento al jefe va sin título ni enlace (§14.3).
 - **Rutas:** toda página nueva llama su guard y todo handler nuevo usa `sesionDePeticion`,
   comprueba la autorización y, si escribe, `origenValido()`.
 - **Sin `sql.raw` con entrada del usuario**, sin `dangerouslySetInnerHTML`: los textos
@@ -1003,8 +1094,11 @@ Además:
     «plataforma», huella en disco distinta impide publicar;
   - cancelar libera el número de versión y la siguiente versión publicada es consecutiva;
   - un solo trámite abierto por documento; código único bajo aceptaciones simultáneas;
-  - publicación directa: número real de versión, marca de origen, y con la clave apagada el
-    servidor rechaza cada acción del camino directo;
+  - publicación directa: número real de versión y marca de origen; no publica sobre un
+    documento que ya tiene versión vigente; deshacer una carga libera el número y conserva el
+    código; y con la clave apagada el servidor rechaza cada acción del camino directo;
+  - datos del documento (§8.6): un título nuevo no se ve en el portal hasta publicar; en una
+    modificación no cambian el código, el tipo ni el proceso propietario;
   - `firmas` y el historial rechazan `UPDATE` y `DELETE`, también al dueño del esquema
     (`tests/privilegios-bd.test.ts`);
   - vencimientos con reloj inyectado: un aviso por paso, un escalamiento por paso, ninguno
@@ -1016,7 +1110,9 @@ Además:
 - **Estructurales:** `tests/paginas-sesion.test.ts` cubre las páginas nuevas;
   `tests/acciones-permisos.test.ts` se amplía para exigir que toda acción del trámite entre
   por el punto único de §7.2; los tests de colores fijos, textos fijos y `<main>` siguen
-  pasando. Los tests heredados que afirman que solo se sirven vigentes no se borran.
+  pasando. Los tests heredados que afirman que solo se sirven vigentes no se borran. Los que
+  hoy prueban la regla de negocio 1 publicando directamente sobre una versión vigente
+  pasan a probarla con la publicación por trámite: la garantía se conserva.
 - **Salidas:** el acta se genera y contiene el código, la versión, los cuatro nombres y las
   huellas; la marca de agua lleva el nombre de quien descarga y la fecha en la zona de la
   instalación; el Excel del Listado Maestro trae la columna nueva.
@@ -1045,6 +1141,8 @@ Con la demo sembrada y los usuarios `admin`, `gerente`, `control.interno`, `lide
    versión anterior queda obsoleta, el Listado Maestro muestra la nueva como aprobada en la
    plataforma y el acta en PDF trae las cuatro firmas con la misma huella.
 6. En un documento estratégico aprueba `gerente` con su clave y publica el Coordinador SGC.
+   Cuando el Coordinador SGC es quien elabora un documento operativo, el sistema exige otro
+   revisor y manda la aprobación a `gerente`.
 7. Cinco claves erradas al firmar bloquean la cuenta, cierran la sesión y quedan en el
    registro de accesos.
 8. `consulta` ve la versión nueva y no ve el trámite, el borrador ni la versión obsoleta;
@@ -1055,8 +1153,10 @@ Con la demo sembrada y los usuarios `admin`, `gerente`, `control.interno`, `lide
 10. Se elimina un documento por trámite, con aprobación y acta; desaparece del portal y queda
     anulado en el panel.
 11. El Coordinador SGC registra un documento aprobado en papel en su versión 4; entra vigente
-    y marcado «fuera de la plataforma». Apaga la publicación directa y los botones del camino
-    directo desaparecen.
+    y marcado «fuera de la plataforma». Registra otro con un archivo equivocado, deshace esa
+    carga y lo registra de nuevo con el mismo código. Intenta publicar directamente una
+    versión sobre un documento vigente y el sistema lo remite al trámite. Apaga la
+    publicación directa y los botones del camino directo desaparecen.
 12. La bandeja muestra un paso vencido; el responsable recibe el aviso en la campana y «Mis
     tareas» lista lo pendiente de cada usuario. Se cancela un trámite y se reasigna otro.
 13. `npm run lint`, `npm test`, `npm run build` y el CI en verde; la imagen del compose de
@@ -1090,12 +1190,12 @@ documental y los tipos. Se corrige en los capítulos existentes lo que esta entr
 
 | # | Decisión | Dónde | Por qué | Base |
 |---|---|---|---|---|
-| F13A-DC1 | En una eliminación, quien la pide no la aprueba (S3) | §6.3 | Sin elaborador, el Coordinador SGC podría pedir, aprobar y ejecutar solo una baja | Práctica (separación de funciones) |
+| F13A-DC1 | En una eliminación, quien la pide no la aprueba (S3); si la pide un `admin_sgc`, aprueba Gerencia | §6.3, §6.4 | Sin elaborador, el Coordinador SGC podría pedir, aprobar y ejecutar solo una baja. Sigue la misma idea del punto 2 del usuario: lo que nace del Coordinador SGC lo aprueba Gerencia | Práctica (separación de funciones) |
 | F13A-DC2 | El visto bueno se omite si el proceso no tiene líder | §8.2 | No trabar el trámite; queda escrito en el historial | Práctica |
 | F13A-DC3 | El solicitante puede retirar su solicitud antes de la aceptación | §7.2 | Corregir un error propio sin ocupar al Coordinador SGC | Práctica |
-| F13A-DC4 | Una creación duplicada se convierte en modificación dentro del mismo trámite | §8.3 | Es la «decisión de actualización del existente» del PC-02, sin pedir de nuevo | Procedimiento del hospital, PC-02 |
+| F13A-DC4 | Una creación duplicada se convierte en modificación dentro del mismo trámite, solo si el documento existente es del mismo proceso; si es de otro, se rechaza con la referencia | §8.3 | Es la «decisión de actualización del existente» del PC-02, sin pedir de nuevo y sin arrastrar el visto bueno de otro líder | Procedimiento del hospital, PC-02 |
 | F13A-DC5 | El plazo de ajustes tras una devolución es el de revisión (5 días) | §7.3 | Ajustar es más corto que elaborar; configurable | Práctica |
-| F13A-DC6 | Los metadatos quedan fijos desde la etapa de aprobación | §9.1 | Lo que se aprueba es lo que se publica | ISO 7.5.3.2 c) |
+| F13A-DC6 | El código, el tipo, el proceso propietario y el título son datos de control: cambian solo por trámite (el título se aplica al publicar) y quedan fijos desde la etapa de aprobación; en una modificación no cambian código, tipo ni propietario. La descripción, las palabras clave, los otros procesos, los relacionados y el nivel de acceso son datos de catálogo, editables siempre por quien administra | §8.6 | Un trámite en curso no debe cambiar lo que se ve de la versión vigente; lo que se aprueba es lo que se publica | ISO 7.5.3.2 c) |
 | F13A-DC7 | El aprobador puede negar una eliminación | §7.2 | Una eliminación no tiene nada que devolver a elaboración | Práctica |
 | F13A-DC8 | Los fallos de firma cuentan para el bloqueo de la cuenta, quedan en accesos como `firma_fallo` y cierran la sesión al bloquear | §10.2 | Impide adivinar la clave desde una sesión ajena abierta | Práctica (seguridad); spec maestro §5.1 |
 | F13A-DC9 | Un código de recuperación también sirve para firmar | §10.2 | Igual que en el ingreso; quien perdió el teléfono no queda sin firmar | Práctica |
@@ -1107,12 +1207,17 @@ documental y los tipos. Se corrige en los capítulos existentes lo que esta entr
 | F13A-DC15 | Control Interno y la marca individual ven en solo lectura los trámites cerrados por publicación o eliminación | §6.5 | Es el historial de cómo se aprobó cada versión | ISO 7.5.3.2 c) |
 | F13A-DC16 | Estado `descartado` y unicidad parcial del número de versión | §16.1 | Versiones publicadas siempre consecutivas, con lo cancelado conservado | ISO 7.5.3.2 c) |
 | F13A-DC17 | Descartar un borrador de carga | §13.2 | Hoy un borrador creado por error no tiene salida y bloquearía un trámite | Práctica |
-| F13A-DC18 | Anulación directa solo de lo cargado fuera de la plataforma y con la carga abierta | §13.3 | Corregir errores de carga sin dejar una puerta para saltarse el trámite | Spec maestro, adición 7 |
+| F13A-DC18 | El camino directo solo da de alta; la anulación directa desaparece; con la carga abierta se puede **deshacer una carga** (la versión pasa a descartada y el documento conserva su código para registrarlo bien) | §13.1, §13.2 | Corregir errores de digitación sin quemar el código oficial y sin dejar una puerta para saltarse el trámite | Spec maestro DC26 y adición 7 |
 | F13A-DC19 | La entrada «Trámites» se ve por permiso o por participación | §15.1 | Un elaborador con rol consulta debe llegar a su trámite | Práctica |
 | F13A-DC20 | `archivos` no se generaliza hasta la 13B | §16.2 | En la 13A todo archivo pertenece a una versión | Práctica |
 | F13A-DC21 | La demo adopta la convención del hospital (`CAL` → `SGC`, `FT` → `FO`, códigos recodificados) y la base de desarrollo se vuelve a sembrar | §18.2 | La demo debe verse como el hospital; el código sugerido necesita códigos del mismo formato | Práctica |
 | F13A-DC22 | Formato, Registro y Matriz nacen diligenciables | §18.1 | Son los tipos que se llenan; editable | Práctica |
 | F13A-DC23 | Los tests del flujo corren en transacciones que se revierten | §19 | No acumular trámites y firmas imborrables en la base de desarrollo | Práctica |
+| F13A-DC24 | `tramites.participar` para los cinco roles, y un permiso de matriz en cada acción del trámite | §6.2 | La regla de negocio 4 pide permiso de matriz en toda escritura; el elaborador puede ser cualquier funcionario | `AGENTS.md`, regla 4 |
+| F13A-DC25 | Los borradores intermedios no se conservan; de cada ronda quedan la huella firmada, la lista y las observaciones | §9.1 | El papel tampoco guarda los borradores; conservarlos obliga a cambiar el índice de un principal por versión | Práctica |
+| F13A-DC26 | Los archivos de un trámite solo se sirven por su ruta mientras está abierto; después rigen las reglas del estado de la versión | §6.5 | Un participante sin permiso de historial no debe conservar un camino a una versión que dejó de estar vigente | `AGENTS.md`, regla 3 |
+| F13A-DC27 | El aviso de escalamiento al jefe va sin título ni enlace, y el jefe no gana acceso al trámite | §14.3 | Avisar sin revelar un borrador ni un documento restringido | ISO 7.5.3.1 b) |
+| F13A-DC28 | En el formulario de usuarios, «Procesos que lidera» pasa a «Procesos» y vale para cualquier rol | §12 | Es el mecanismo del spec maestro para los documentos restringidos | Spec maestro §5.3 |
 
 ## 24. Riesgos
 
