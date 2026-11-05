@@ -13,7 +13,13 @@ export type Permiso =
   | "accesos.ver"
   | "usuarios.administrar"
   | "estructura.administrar"
-  | "sesiones.administrar";
+  | "sesiones.administrar"
+  | "tramites.solicitar"
+  | "tramites.visto_bueno"
+  | "tramites.participar"
+  | "tramites.revisar"
+  | "tramites.aprobar"
+  | "tramites.gestionar";
 
 /** Matriz fija rol -> permiso (diseño F11 §5). */
 export const MATRIZ: Record<Permiso, readonly Rol[]> = {
@@ -30,6 +36,12 @@ export const MATRIZ: Record<Permiso, readonly Rol[]> = {
   "usuarios.administrar": ["admin_sgc"],
   "estructura.administrar": ["admin_sgc"],
   "sesiones.administrar": ["admin_sgc"],
+  "tramites.solicitar": ["admin_sgc", "lider_proceso"],
+  "tramites.visto_bueno": ["lider_proceso"],
+  "tramites.participar": ["admin_sgc", "gerencia", "control_interno", "lider_proceso", "consulta"],
+  "tramites.revisar": ["admin_sgc", "lider_proceso"],
+  "tramites.aprobar": ["admin_sgc", "gerencia"],
+  "tramites.gestionar": ["admin_sgc"],
 };
 
 export const PERMISOS = Object.keys(MATRIZ) as readonly Permiso[];
