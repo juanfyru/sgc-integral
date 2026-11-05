@@ -85,7 +85,7 @@ export default async function FichaDocumento({
     <div
       className="max-w-5xl"
       style={
-        { "--color-banda": principal?.color ?? "#1B4E8E" } as React.CSSProperties
+        { "--color-banda": principal?.color ?? "var(--marca-relleno)" } as React.CSSProperties
       }
     >
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
