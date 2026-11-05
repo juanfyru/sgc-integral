@@ -111,6 +111,18 @@ describe("aceptar una creación", () => {
     expect(e.detalle.parecidos[0]).toEqual({ codigo: "CEX-GU-01", titulo: "Guía de Atención de Hipertensión Arterial", nivel: "muy_parecido" });
   }));
 
+  it("el tipo elegido al aceptar manda: su autoridad decide quién aprueba, y el trámite y el documento lo siguen", () => revertida(sql, async (tx) => {
+    const { admin, gerente, liderCex, tramiteId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "FO", titulo: "Lo pidieron como formato" });
+    const [ca] = await tx`SELECT id FROM tipos_documento WHERE sigla = 'CA'`;              // estratégico; FO es operativo
+    const aceptar = (aprobadorId: number) => transicionar(admin, { tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
+      datos: aceptarCreacion({ tipoDocumentoId: ca.id, codigo: "CEX-CA-77", elaboradorId: liderCex.usuarioId, revisorId: admin.usuarioId, aprobadorId }) }, opc(tx));
+    await expect(tx.savepoint(() => aceptar(admin.usuarioId))).rejects.toThrow("Quien aprueba debe tener el rol Gerencia");
+    await aceptar(gerente.usuarioId);
+    const [t] = await tx`SELECT t.tipo_documento_id, d.tipo_id FROM tramites t JOIN documentos d ON d.id = t.documento_id WHERE t.id = ${tramiteId}`;
+    expect(Number(t.tipo_documento_id)).toBe(Number(ca.id));
+    expect(Number(t.tipo_id)).toBe(Number(ca.id));
+  }));
+
   it("el código debe cumplir el formato y no estar usado, tampoco por un documento de otro proceso", () => revertida(sql, async (tx) => {
     const { admin, liderCex, tramiteId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "FO", titulo: "Formato con código" });
     const intento = (codigo: string) => transicionar(admin, { tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
@@ -371,6 +383,26 @@ describe("buscarParecidos", () => {
     expect(p.procesoId).toBe(Number(c.id));                              // aunque el documento cuelgue de un subproceso
   }));
 
+  async function vigente(tx: TransactionSql, codigo: string, titulo: string) {
+    const admin = await sesionAdmin(tx);
+    const [p] = await tx`SELECT id FROM procesos WHERE sigla = 'CEX'`;
+    const [t] = await tx`SELECT id FROM tipos_documento WHERE sigla = 'FO'`;
+    const { versionId } = await crearDocumentoEn(tx, { codigo, titulo, tipoId: t.id, descripcion: null, palabrasClave: null, asociaciones: [{ procesoId: p.id, esPrincipal: true }] }, admin.usuarioId);
+    await tx`UPDATE documento_versiones SET estado = 'vigente', aprobo = 'x', fecha_aprobacion = '2026-01-01' WHERE id = ${versionId}`;
+  }
+
+  it("las tildes de lo que se busca tampoco cuentan", () => revertida(sql, async (tx) => {
+    await vigente(tx, "CEX-FO-90", "Opalo indigo ambar");
+    const [p] = await buscarParecidos("Ópalo índigo ámbar", { sql: tx });
+    expect(p).toMatchObject({ codigo: "CEX-FO-90", nivel: "muy_parecido" });
+  }));
+
+  it("por debajo de 0,3 no es parecido", () => revertida(sql, async (tx) => {
+    await vigente(tx, "CEX-FO-90", "Limpieza");                          // similitud 0,19 con el título buscado
+    const lista = await buscarParecidos("Registro de limpieza general del área quirúrgica", { sql: tx });
+    expect(lista.map((l) => l.codigo)).not.toContain("CEX-FO-90");
+  }));
+
   it("da hasta cinco, del más parecido al menos, con los dos niveles", () => revertida(sql, async (tx) => {
     const admin = await sesionAdmin(tx);
     const [p] = await tx`SELECT id FROM procesos WHERE sigla = 'CEX'`;
@@ -389,9 +421,14 @@ describe("buscarParecidos", () => {
     }
     const lista = await buscarParecidos("Registro de limpieza general del área quirúrgica", { sql: tx });
     expect(lista).toHaveLength(5);
-    expect(lista[0]).toMatchObject({ codigo: "CEX-FO-90", nivel: "muy_parecido" });
-    expect(lista.map((l) => l.codigo)).not.toContain("CEX-FO-95");       // lo menos parecido queda fuera del tope
-    expect(new Set(lista.map((l) => l.nivel))).toEqual(new Set(["muy_parecido", "parecido"]));
+    // Similitudes de 1, 0,77, 0,62, 0,45 y 0,43: la frontera de «muy parecido» es 0,6.
+    expect(lista.map((l) => [l.codigo, l.nivel])).toEqual([
+      ["CEX-FO-90", "muy_parecido"],
+      ["CEX-FO-91", "muy_parecido"],
+      ["CEX-FO-92", "muy_parecido"],
+      ["CEX-FO-93", "parecido"],
+      ["CEX-FO-94", "parecido"],
+    ]);                                                                  // lo menos parecido queda fuera del tope
   }));
 
   it("solo cuenta los documentos con versión vigente, y nada parecido da una lista vacía", () => revertida(sql, async (tx) => {
