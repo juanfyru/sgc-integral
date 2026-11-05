@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useState, type FormEvent } from "react";
 import { crearSolicitudAccion } from "@/app/acciones-tramites";
 import { Boton, claseBoton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
@@ -22,16 +22,22 @@ export function FormularioSolicitud({ procesos, tipos, documentos, documentoInic
   const [procesoId, setProcesoId] = useState(procesos.length === 1 ? String(procesos[0].id) : "");
   const subprocesos = procesos.find((p) => String(p.id) === procesoId)?.subprocesos ?? [];
 
-  // React 19 resetea el formulario al terminar la action: con error, los valores por
-  // defecto salen de lo que la persona envió. Un <select> ya montado ignora un defaultValue
-  // nuevo: su `key` lo vuelve a montar con el valor enviado.
+  // React reinicia un <form action> al terminar la acción, y los controles controlados quedan
+  // distintos de su estado: el reenvío mandaría otro tipo de trámite. Enviar desde una transición
+  // no reinicia nada. `action` queda para cuando aún no hay JavaScript, y solo entonces hacen
+  // falta los valores por defecto con lo enviado.
+  const alEnviar = (evento: FormEvent<HTMLFormElement>) => {
+    evento.preventDefault();
+    const datos = new FormData(evento.currentTarget);
+    startTransition(() => enviar(datos));
+  };
   const enviado = (campo: string): string | undefined => {
     const v = estado?.valores?.[campo];
     return typeof v === "string" ? v : undefined;
   };
 
   return (
-    <form action={enviar} className="flex max-w-2xl flex-col gap-5">
+    <form action={enviar} onSubmit={alEnviar} className="flex max-w-2xl flex-col gap-5">
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-1 text-sm font-medium">Qué pide</legend>
         <div className="flex flex-wrap gap-x-5 gap-y-2">
@@ -59,7 +65,7 @@ export function FormularioSolicitud({ procesos, tipos, documentos, documentoInic
             </Campo>
             {subprocesos.length > 0 ? (
               <Campo etiqueta="Subproceso" nombre="subprocesoId" ayuda="Opcional.">
-                <select key={enviado("subprocesoId")} defaultValue={enviado("subprocesoId") ?? ""} className={claseControl}>
+                <select defaultValue={enviado("subprocesoId") ?? ""} className={claseControl}>
                   <option value="">El proceso completo</option>
                   {subprocesos.map((s) => (
                     <option key={s.id} value={s.id}>
@@ -71,7 +77,7 @@ export function FormularioSolicitud({ procesos, tipos, documentos, documentoInic
             ) : null}
           </div>
           <Campo etiqueta="Tipo de documento" nombre="tipoDocumentoId">
-            <select key={enviado("tipoDocumentoId")} required defaultValue={enviado("tipoDocumentoId") ?? ""} className={claseControl}>
+            <select required defaultValue={enviado("tipoDocumentoId") ?? ""} className={claseControl}>
               <option value="">Elija el tipo</option>
               {tipos.map((t) => (
                 <option key={t.id} value={t.id}>
@@ -86,12 +92,7 @@ export function FormularioSolicitud({ procesos, tipos, documentos, documentoInic
         </>
       ) : (
         <Campo etiqueta="Documento" nombre="documentoId" ayuda="Solo documentos con versión vigente.">
-          <select
-            key={enviado("documentoId")}
-            required
-            defaultValue={enviado("documentoId") ?? documentoInicialId ?? ""}
-            className={`${claseControl} max-w-full`}
-          >
+          <select required defaultValue={enviado("documentoId") ?? documentoInicialId ?? ""} className={`${claseControl} max-w-full`}>
             <option value="">Elija el documento</option>
             {documentos.map((d) => (
               <option key={d.id} value={d.id} disabled={d.conTramite}>
@@ -103,7 +104,7 @@ export function FormularioSolicitud({ procesos, tipos, documentos, documentoInic
       )}
 
       <Campo etiqueta="Motivo" nombre="motivo">
-        <select key={enviado("motivo")} required defaultValue={enviado("motivo") ?? ""} className={claseControl}>
+        <select required defaultValue={enviado("motivo") ?? ""} className={claseControl}>
           <option value="">Elija el motivo</option>
           {MOTIVOS.map((m) => (
             <option key={m} value={m}>

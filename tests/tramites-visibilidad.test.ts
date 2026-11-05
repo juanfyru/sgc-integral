@@ -14,6 +14,7 @@ import { obtenerSql } from "@/db/cliente";
 import { crearSolicitud, transicionar } from "@/db/consultas/tramites-flujo";
 import {
   lideresDeProceso,
+  lideresDeProcesosDelDocumento,
   listarTramites,
   obtenerTramite,
   participaEnTramites,
@@ -155,6 +156,33 @@ describe("obtenerTramite", () => {
     expect(lideres).not.toContain(inactivo.usuarioId);
     await tx`UPDATE procesos SET activo = false WHERE id = ${gth.id}`;
     expect(await lideresDeProceso(gth.id, { sql: tx })).toEqual([]);
+  }));
+});
+
+describe("lideresDeProcesosDelDocumento", () => {
+  it("cuenta el subproceso por su proceso, sin repetir, y solo líderes activos de procesos activos", () => revertida(sql, async (tx) => {
+    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-02'`;                     // asociado a un subproceso de GTH
+    const lideres = (o: { sql: TransactionSql }) => lideresDeProcesosDelDocumento(doc.id, o);
+    const gth = await sesionDe(tx, "lider.gth");
+    const cex = await sesionDe(tx, "lider.cex");
+    expect(await lideres({ sql: tx })).toContain(gth.usuarioId);
+    expect(await lideres({ sql: tx })).not.toContain(cex.usuarioId);
+
+    const [pGth] = await tx`SELECT id FROM procesos WHERE sigla = 'GTH'`;
+    const [pCex] = await tx`SELECT id FROM procesos WHERE sigla = 'CEX'`;
+    await tx`INSERT INTO documento_proceso (documento_id, proceso_id, es_principal) VALUES (${doc.id}, ${pCex.id}, false), (${doc.id}, ${pGth.id}, false)`;
+    const conCex = await lideres({ sql: tx });
+    expect(conCex).toContain(cex.usuarioId);
+    expect(new Set(conCex).size).toBe(conCex.length);
+
+    const consulta = await usuarioDePrueba(tx, { rol: "consulta", procesos: [pGth.id] });
+    const inactivo = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [pGth.id] });
+    await tx`UPDATE usuarios SET activo = false WHERE id = ${inactivo.usuarioId}`;
+    expect(await lideres({ sql: tx })).not.toContain(consulta.usuarioId);
+    expect(await lideres({ sql: tx })).not.toContain(inactivo.usuarioId);
+
+    await tx`UPDATE procesos SET activo = false WHERE id = ${pCex.id}`;
+    expect(await lideres({ sql: tx })).not.toContain(cex.usuarioId);
   }));
 });
 

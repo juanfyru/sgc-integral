@@ -1,5 +1,10 @@
 /** Manejadores de la solicitud: visto bueno del líder y retiro por quien pidió. */
-import { adminsActivos, lideresDeProceso, rotuloDeTramite } from "@/db/consultas/tramites";
+import {
+  adminsActivos,
+  lideresDeProceso,
+  lideresDeProcesosDelDocumento,
+  rotuloDeTramite,
+} from "@/db/consultas/tramites";
 import { motivoObligatorio, type Manejador, type RegistroManejadores } from "./contrato";
 
 const darVistoBueno: Manejador = async ({ tx, tramite }) => {
@@ -24,10 +29,13 @@ const negarVistoBueno: Manejador = async ({ tx, tramite, datos }) => {
   };
 };
 
-/** Avisa a quienes tenían el paso en sus tareas: los líderes y, en la aceptación, los administradores. */
+/** Avisa a los líderes de los procesos del documento y, en la aceptación, a los administradores. */
 const retirar: Manejador = async ({ tx, tramite }) => {
   const { texto } = await rotuloDeTramite(tx, tramite);
-  const interesados = await lideresDeProceso(tramite.procesoId, { sql: tx });
+  const interesados =
+    tramite.documentoId === null
+      ? await lideresDeProceso(tramite.procesoId, { sql: tx })
+      : await lideresDeProcesosDelDocumento(tramite.documentoId, { sql: tx });
   if (tramite.etapa === "aceptacion") interesados.push(...(await adminsActivos({ sql: tx })));
   return {
     avisos: [{ usuarioIds: interesados, tipo: "tramite.cerrado", titulo: `Solicitud ${tramite.numero} retirada`, cuerpo: texto }],

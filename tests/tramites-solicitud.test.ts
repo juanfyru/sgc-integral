@@ -165,6 +165,29 @@ describe("solicitud y visto bueno", () => {
     expect(lideres).toHaveLength(1);
   }));
 
+  it("retirar avisa a los líderes de todos los procesos del documento", () => revertida(sql, async (tx) => {
+    const admin = await sesionAdmin(tx);
+    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-02'`;
+    const [cex] = await tx`SELECT id FROM procesos WHERE sigla = 'CEX'`;
+    await tx`INSERT INTO documento_proceso (documento_id, proceso_id, es_principal) VALUES (${doc.id}, ${cex.id}, false)`;
+    const r = await crearSolicitud(admin, { tipo: "modificar", motivo: "mejora", justificacion: JUSTIFICACION, documentoId: doc.id }, opc(tx));
+    await transicionar(admin, { tramiteId: r.tramiteId, accion: "retirar", etapaEsperada: "visto_bueno", rondaEsperada: 0 }, opc(tx));
+    const avisados = await tx`SELECT u.usuario FROM notificaciones n JOIN usuarios u ON u.id = n.usuario_id
+      WHERE n.entidad = 'tramite' AND n.entidad_id = ${r.tramiteId} AND n.tipo = 'tramite.cerrado' ORDER BY u.usuario`;
+    expect(avisados.map((a) => a.usuario)).toEqual(["lider.cex", "lider.gth"]);
+  }));
+
+  it("en una creación sin documento, retirar avisa a los líderes del proceso declarado", () => revertida(sql, async (tx) => {
+    const admin = await sesionAdmin(tx);
+    const [cex] = await tx`SELECT id FROM procesos WHERE sigla = 'CEX'`;
+    const [tipo] = await tx`SELECT id FROM tipos_documento WHERE sigla = 'FO'`;
+    const r = await crearSolicitud(admin, { tipo: "crear", motivo: "mejora", justificacion: JUSTIFICACION, procesoId: cex.id, tipoDocumentoId: tipo.id, tituloPropuesto: "Formato de prueba" }, opc(tx));
+    await transicionar(admin, { tramiteId: r.tramiteId, accion: "retirar", etapaEsperada: "visto_bueno", rondaEsperada: 0 }, opc(tx));
+    const avisados = await tx`SELECT u.usuario FROM notificaciones n JOIN usuarios u ON u.id = n.usuario_id
+      WHERE n.entidad = 'tramite' AND n.entidad_id = ${r.tramiteId} AND n.tipo = 'tramite.cerrado'`;
+    expect(avisados.map((a) => a.usuario)).toEqual(["lider.cex"]);
+  }));
+
   it("reglas de crear: permiso, proceso activo, tipo activo, título y documento vigente", () => revertida(sql, async (tx) => {
     const admin = await sesionAdmin(tx);
     const base = { motivo: "mejora", justificacion: JUSTIFICACION } as const;
@@ -225,7 +248,7 @@ describe("solicitud y visto bueno", () => {
       avisarLista();
       await espera;
     });
-    await lista;
+    await Promise.race([lista, primera]);                                      // si la primera falla, el test acaba aquí
     let segundaTermino = false;
     const segunda = revertida(sql, async (tx) => {
       await pedir(tx);
@@ -433,10 +456,47 @@ describe("transicionar", () => {
     expect(c.vence_en.toISOString()).toBe(fijo.toISOString());
   }));
 
-  it("enTransaccion usa la transacción que le dan, o abre una", async () => {
+  it("enTransaccion abre una transacción, o un savepoint dentro de la que le dan", async () => {
     await revertida(sql, async (tx) => {
-      expect(await enTransaccion(tx, async (t) => t === tx)).toBe(true);
+      const [fuera] = await tx`SELECT txid_current() AS id`;
+      const dentro = await enTransaccion(tx, async (t) => (await t`SELECT txid_current() AS id`)[0].id);
+      expect(dentro).toBe(fuera.id);                                           // no abre otra
+      const orden = async () => (await tx`SELECT orden FROM tipos_documento WHERE sigla = 'FO'`)[0].orden;
+      const antes = await orden();
+      await expect(enTransaccion(tx, async (t) => {
+        await t`UPDATE tipos_documento SET orden = orden + 1000 WHERE sigla = 'FO'`;
+        throw new ErrorTramite("falla");
+      })).rejects.toThrow("falla");
+      expect(await orden()).toBe(antes);
     });
     expect(await enTransaccion(sql, async (t) => "savepoint" in t)).toBe(true);
   });
+
+  it("un fallo después del UPDATE no deja nada escrito, y la transacción sigue usable", () => revertida(sql, async (tx) => {
+    const t = await enElaboracion(tx);
+    const foto = async () => {
+      const [fila] = await tx`SELECT etapa, ronda, vence_en, actualizado_en FROM tramites WHERE id = ${t.tramiteId}`;
+      const [{ eventos }] = await tx`SELECT count(*)::int AS eventos FROM tramite_eventos WHERE tramite_id = ${t.tramiteId}`;
+      const [{ auditoria }] = await tx`SELECT count(*)::int AS auditoria FROM auditoria WHERE entidad = 'tramite' AND entidad_id = ${t.tramiteId}`;
+      const [{ avisos }] = await tx`SELECT count(*)::int AS avisos FROM notificaciones WHERE entidad = 'tramite' AND entidad_id = ${t.tramiteId}`;
+      return { ...fila, eventos, auditoria, avisos };
+    };
+    await tx`UPDATE tramites SET version_id = NULL WHERE id = ${t.tramiteId}`;     // la huella falla después del UPDATE
+    registrar("enviar_a_revision", async () => ({ avisos: [{ usuarioIds: [t.admin.usuarioId], tipo: "tramite.paso", titulo: "No debe salir" }] }));
+    const antes = await foto();
+    await expect(transicionar(t.lider, t.entrada, opc(tx, "2026-11-20T15:00:00Z"))).rejects.toThrow("Falta el archivo principal");
+    expect(await foto()).toEqual(antes);
+    // Un error SQL tampoco envenena la transacción de quien llama.
+    registrar("enviar_a_revision", async ({ tx: interior }) => { await interior`SELECT 1 / 0`; });
+    await expect(transicionar(t.lider, t.entrada, opc(tx))).rejects.toThrow(/division by zero/);
+    expect(await foto()).toEqual(antes);
+  }));
+
+  it("el detalle de un manejador no pisa de, hacia ni ronda en la auditoría", () => revertida(sql, async (tx) => {
+    const t = await enElaboracion(tx);
+    registrar("enviar_a_revision", async () => ({ detalle: { de: "otra", hacia: "otra", ronda: 99, nota: "lista" } }));
+    await transicionar(t.lider, t.entrada, opc(tx));
+    const [a] = await tx`SELECT detalle FROM auditoria WHERE accion = 'tramite_enviar_a_revision' AND entidad_id = ${t.tramiteId}`;
+    expect(a.detalle).toMatchObject({ de: "elaboracion", hacia: "revision", ronda: 1, nota: "lista" });
+  }));
 });

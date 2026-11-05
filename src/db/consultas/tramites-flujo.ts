@@ -14,7 +14,6 @@ import { puede } from "@/lib/permisos";
 import { fechaLimite } from "@/lib/tramites/plazos";
 import { evaluarTransicion, type Accion } from "@/lib/tramites/transiciones";
 import {
-  ETAPAS_TRABAJO,
   esEtapaDeTrabajo,
   type Etapa,
   type Firma,
@@ -37,6 +36,7 @@ import {
 } from "./flujo/contrato";
 import { MANEJADORES_SOLICITUD } from "./flujo/solicitud";
 import {
+  ETAPAS_ABIERTAS,
   adminsActivos,
   lideresDeProceso,
   propietarioDeDocumento,
@@ -65,7 +65,6 @@ export const MANEJADORES: RegistroManejadores = { ...MANEJADORES_SOLICITUD };
 export const VALIDADORES: RegistroValidadores = {};
 
 const YA_ABIERTO = "Ya hay un trámite abierto sobre este documento";
-const ETAPAS_ABIERTAS: string[] = [...ETAPAS_TRABAJO];
 
 export type DatosSolicitud = {
   tipo: TipoSolicitud;
@@ -345,7 +344,7 @@ export async function transicionar(
       accion: `tramite_${entrada.accion}`,
       entidad: "tramite",
       entidadId: t.id,
-      detalle: { numero: t.numero, codigo, documentoId: t.documentoId, de: previo.etapa, hacia, ronda: t.ronda, ...efecto.detalle },
+      detalle: { numero: t.numero, codigo, documentoId: t.documentoId, ...efecto.detalle, de: previo.etapa, hacia, ronda: t.ronda },
     });
     await enviarAvisos(tx, t.id, sesion.usuarioId, efecto.avisos ?? []);
     return { etapa: t.etapa, ronda: t.ronda };

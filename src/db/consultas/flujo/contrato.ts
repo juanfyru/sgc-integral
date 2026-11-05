@@ -112,9 +112,12 @@ export type Validador = (c: ContextoValidacion) => Promise<void>;
 export type RegistroManejadores = Partial<Record<Accion, Manejador>>;
 export type RegistroValidadores = Partial<Record<Accion, Validador>>;
 
-/** Corre `fn` en la transacción que le dan o, si `sql` es la conexión, en una nueva. */
+/**
+ * Corre `fn` de forma atómica: en una transacción nueva o, si `sql` ya es una, en un savepoint.
+ * Si `fn` falla no queda nada suyo escrito, y la transacción de quien llama sigue usable.
+ */
 export function enTransaccion<T>(sql: Cliente, fn: (tx: TransactionSql) => Promise<T>): Promise<T> {
-  return "savepoint" in sql ? fn(sql) : (sql.begin(fn) as Promise<T>);
+  return ("savepoint" in sql ? sql.savepoint(fn) : sql.begin(fn)) as Promise<T>;
 }
 
 /** El dato `motivo` de las acciones que cierran un trámite o niegan un paso. */

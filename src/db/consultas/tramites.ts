@@ -22,7 +22,7 @@ import {
 } from "@/lib/tramites/tipos";
 import type { FilaTramite, SesionFlujo } from "./flujo/contrato";
 
-const ETAPAS_ABIERTAS: string[] = [...ETAPAS_TRABAJO];
+export const ETAPAS_ABIERTAS: string[] = [...ETAPAS_TRABAJO];
 
 export type ResumenTramite = {
   id: number;
@@ -283,6 +283,23 @@ export async function lideresDeProceso(procesoId: number, opciones?: { sql?: Cli
     JOIN usuarios u ON u.id = up.usuario_id AND u.activo AND u.rol = 'lider_proceso'
     JOIN procesos p ON p.id = up.proceso_id AND p.activo
     WHERE up.proceso_id = ${procesoId}
+    ORDER BY u.id`;
+  return filas.map((f) => Number(f.id));
+}
+
+/** Los líderes de todos los procesos del documento; una asociación a un subproceso cuenta por su proceso. */
+export async function lideresDeProcesosDelDocumento(
+  documentoId: number,
+  opciones?: { sql?: Cliente },
+): Promise<number[]> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const filas = await sql`SELECT DISTINCT u.id
+    FROM documento_proceso dp
+    LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
+    JOIN procesos p ON p.id = COALESCE(dp.proceso_id, s.proceso_id) AND p.activo
+    JOIN usuario_procesos up ON up.proceso_id = p.id
+    JOIN usuarios u ON u.id = up.usuario_id AND u.activo AND u.rol = 'lider_proceso'
+    WHERE dp.documento_id = ${documentoId}
     ORDER BY u.id`;
   return filas.map((f) => Number(f.id));
 }
