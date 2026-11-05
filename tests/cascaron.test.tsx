@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ContenidoBarra } from "@/componentes/cascaron/ContenidoBarra";
+import { ContenidoBarra, LARGO_NOMBRE_LETRA_NORMAL, claseNombreEntidad } from "@/componentes/cascaron/ContenidoBarra";
 import { MenuUsuario } from "@/componentes/cascaron/MenuUsuario";
 import { entradasVisibles } from "@/componentes/cascaron/navegacion";
 
@@ -19,6 +19,20 @@ describe("cascarón (render estático de los componentes cliente)", () => {
     expect(h).toContain("Administración");
     expect(h).toContain("SGC Integral · v0.1.0");
     expect(h).toContain("HX"); // monograma sin logo
+  });
+  it("el nombre de la entidad se muestra completo y la letra baja con los nombres largos", () => {
+    expect(claseNombreEntidad("Hospital X")).toBe("text-sm");
+    expect(claseNombreEntidad("x".repeat(LARGO_NOMBRE_LETRA_NORMAL))).toBe("text-sm");
+    expect(claseNombreEntidad("x".repeat(LARGO_NOMBRE_LETRA_NORMAL + 1))).toBe("text-xs");
+    const largo = "ESE Hospital Nuestra Señora de Fátima de Suaza";
+    const h = renderToStaticMarkup(
+      <ContenidoBarra marca={{ ...marca, nombre: largo }} entradas={[]} tareas={0} version="0.1.0" />,
+    );
+    expect(h).toContain(largo);
+    expect(h).not.toContain("line-clamp");
+    expect(h).toMatch(/class="[^"]*text-xs[^"]*"[^>]*>ESE Hospital/);
+    const corto = renderToStaticMarkup(<ContenidoBarra marca={marca} entradas={[]} tareas={0} version="0.1.0" />);
+    expect(corto).toMatch(/class="[^"]*text-sm[^"]*"[^>]*>Hospital X/);
   });
   it("sin tareas no hay contador; con 3, lo muestra", () => {
     const entradas = entradasVisibles({ rol: "admin_sgc" });

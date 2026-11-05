@@ -7,6 +7,13 @@ import { IconoNav } from "./IconoNav";
 import { Monograma } from "./Monograma";
 import { GRUPOS, esActiva, type EntradaNav, type GrupoNav } from "./navegacion";
 
+/** Hasta este largo el nombre de la entidad va a 14 px; más largo, a 12 px. Nunca se recorta. */
+export const LARGO_NOMBRE_LETRA_NORMAL = 30;
+
+export function claseNombreEntidad(nombre: string): "text-sm" | "text-xs" {
+  return nombre.trim().length > LARGO_NOMBRE_LETRA_NORMAL ? "text-xs" : "text-sm";
+}
+
 export type MarcaBarra = { nombre: string; sigla: string; logoUrl: string | null };
 
 const ORDEN_GRUPOS: readonly GrupoNav[] = ["inicio", "documentos", "administracion"];
@@ -48,7 +55,9 @@ export function ContenidoBarra({
           <Monograma sigla={marca.sigla} className="size-10 rounded-lg text-xs" />
         )}
         <span className="min-w-0">
-          <span className="line-clamp-2 text-sm font-semibold leading-tight text-foreground">{marca.nombre}</span>
+          <span className={`block break-words ${claseNombreEntidad(marca.nombre)} font-semibold leading-tight text-foreground`}>
+            {marca.nombre}
+          </span>
           <span className="block text-xs text-muted-foreground">{marca.sigla}</span>
         </span>
       </Link>

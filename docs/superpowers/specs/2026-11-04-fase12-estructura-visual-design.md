@@ -152,7 +152,9 @@ el botón de menú de la barra superior como cajón (`<dialog>` nativo con foco 
 cierre con Escape y con el fondo). Contenido, de arriba abajo:
 
 1. **Marca**: logo (si hay) o monograma con la sigla sobre el color secundario; nombre de
-   la entidad en dos líneas máximo; sigla debajo en texto secundario. Enlaza a `/`.
+   la entidad completo, sin recorte (14 px hasta 30 caracteres y 12 px si es más largo;
+   F12-D50, cambio pedido por el usuario el 2026-11-05); sigla debajo en texto secundario.
+   Enlaza a `/`.
 2. **Inicio** (`/`), con el contador de "Mis tareas" cuando sea mayor que cero.
 3. **Documentos** (grupo con el color del módulo Documentos en su ícono y en el indicador
    del elemento activo):
