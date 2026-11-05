@@ -18,6 +18,7 @@ const ETIQUETA_RESULTADO: Record<ResultadoAcceso, string> = {
   restablecimiento: "Restablecimiento",
   factor_fallo: "Fallo del segundo factor",
   cierre_forzado: "Cierre forzado",
+  firma_fallo: "Firma fallida",
 };
 
 const COLUMNAS: readonly ColumnaTabla[] = [

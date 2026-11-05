@@ -83,6 +83,26 @@ export function intentarIngreso(
   }
 }
 
+/** Seis dígitos se verifican como TOTP; cualquier otra cosa se consume como código de recuperación. */
+export async function comprobarCodigoFactor(usuarioId: number, codigo: string): Promise<boolean> {
+  const limpio = codigo.replace(/[\s-]/g, "");
+  let correcto = false;
+  if (/^\d{6}$/.test(limpio)) {
+    const { secretoCifrado, activo } = await obtenerSecretoTotp(usuarioId);
+    if (activo && secretoCifrado) {
+      try {
+        correcto = verificarTotp(descifrar(secretoCifrado), limpio);
+      } catch (err) {
+        // Sin el secreto en el registro: solo el tipo de error.
+        console.error("[factor] no se pudo descifrar el secreto TOTP:", (err as Error).name);
+      }
+    }
+  } else {
+    correcto = await consumirCodigoRecuperacion(usuarioId, hashCodigoRecuperacion(limpio));
+  }
+  return correcto;
+}
+
 export type ResultadoFactor =
   | { tipo: "ok" }
   | { tipo: "error"; mensaje: string }
@@ -114,23 +134,7 @@ export function intentarFactor(
       return { tipo: "cerrada" };
     }
 
-    const codigo = datos.codigo.replace(/[\s-]/g, "");
-    let correcto = false;
-    if (/^\d{6}$/.test(codigo)) {
-      const { secretoCifrado, activo } = await obtenerSecretoTotp(sesion.usuarioId);
-      if (activo && secretoCifrado) {
-        try {
-          correcto = verificarTotp(descifrar(secretoCifrado), codigo);
-        } catch (err) {
-          // Sin el secreto en el registro: solo el tipo de error.
-          console.error("[factor] no se pudo descifrar el secreto TOTP:", (err as Error).name);
-        }
-      }
-    } else {
-      correcto = await consumirCodigoRecuperacion(sesion.usuarioId, hashCodigoRecuperacion(codigo));
-    }
-
-    if (!correcto) {
+    if (!(await comprobarCodigoFactor(sesion.usuarioId, datos.codigo))) {
       const nuevo = estadoTrasFallo(u, ahora);
       await guardarEstadoBloqueo(u.id, nuevo);
       await registrar("factor_fallo");

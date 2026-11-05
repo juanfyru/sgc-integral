@@ -66,7 +66,7 @@ export async function guardarEstadoBloqueo(
 
 export type ResultadoAcceso =
   | "ingreso" | "salida" | "fallo" | "bloqueo"
-  | "desbloqueo" | "restablecimiento" | "factor_fallo" | "cierre_forzado";
+  | "desbloqueo" | "restablecimiento" | "factor_fallo" | "cierre_forzado" | "firma_fallo";
 
 export type Acceso = {
   usuarioId: number | null;

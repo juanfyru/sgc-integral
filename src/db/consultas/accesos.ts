@@ -29,7 +29,7 @@ const PATRON_FECHA = /^\d{4}-\d{2}-\d{2}$/;
 
 export const RESULTADOS_ACCESO: ReadonlyArray<ResultadoAcceso> = [
   "ingreso", "salida", "fallo", "bloqueo",
-  "desbloqueo", "restablecimiento", "factor_fallo", "cierre_forzado",
+  "desbloqueo", "restablecimiento", "factor_fallo", "cierre_forzado", "firma_fallo",
 ];
 
 function escaparLike(texto: string): string {
