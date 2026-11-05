@@ -6,6 +6,7 @@ import { Icono } from "@/componentes/iconos";
 import { Migas } from "@/componentes/navegacion/Migas";
 import { MiniMapa } from "@/componentes/navegacion/MiniMapa";
 import { NavHermanos } from "@/componentes/navegacion/NavHermanos";
+import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import {
   obtenerDetalleSubproceso,
   obtenerDocumentosDeSubproceso,
@@ -51,24 +52,18 @@ export default async function VistaSubproceso({
         />
       </div>
 
-      <header className="flex items-start gap-4">
-        <span className="grid size-14 shrink-0 place-items-center rounded-2xl banda-tinte banda-texto">
-          <Icono nombre={subproceso.proceso.icono} className="size-7" />
-        </span>
-        <div>
-          <p className="font-mono text-xs tracking-wide text-muted-foreground">
-            {subproceso.proceso.sigla} · Subproceso
-          </p>
-          <h1 className="font-display text-2xl font-extrabold tracking-tight text-azul-tinta sm:text-3xl">
-            {subproceso.nombre}
-          </h1>
-          <p className="mt-2 text-sm/relaxed text-muted-foreground">
-            Subproceso de {subproceso.proceso.nombre}.
-          </p>
-        </div>
-      </header>
+      <EncabezadoPagina
+        icono={
+          <span className="grid size-14 shrink-0 place-items-center rounded-2xl banda-tinte banda-texto">
+            <Icono nombre={subproceso.proceso.icono} className="size-7" />
+          </span>
+        }
+        codigo={`${subproceso.proceso.sigla} · Subproceso`}
+        titulo={subproceso.nombre}
+        descripcion={`Subproceso de ${subproceso.proceso.nombre}.`}
+      />
 
-      <section className="mt-8" aria-labelledby="titulo-documentos">
+      <section className="mt-2" aria-labelledby="titulo-documentos">
         <h2
           id="titulo-documentos"
           className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground"

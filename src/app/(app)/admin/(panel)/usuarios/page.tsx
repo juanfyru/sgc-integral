@@ -105,7 +105,7 @@ export default async function PaginaUsuarios({
 
       <TablaDatos titulo="Usuarios del sistema" columnas={COLUMNAS} filas={usuarios.length} vacio="Sin usuarios que coincidan">
         {usuarios.map((u) => (
-          <tr key={u.id} className={u.activo ? "" : "opacity-70"}>
+          <tr key={u.id}>
             <td className={celda}>
               <Link href={`/admin/usuarios/${u.id}`} className="font-medium hover:underline">
                 {u.nombre}

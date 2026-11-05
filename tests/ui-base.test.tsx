@@ -51,6 +51,28 @@ describe("componentes base de presentación", () => {
     expect(h).toContain("Administración");
     expect(h).toContain('href="/x"');
   });
+  it("EncabezadoPagina pone código e insignias antes del h1 y el ícono fuera de él", () => {
+    const h = html(
+      <EncabezadoPagina
+        titulo="Gestión del talento humano"
+        icono={<span data-icono="si">I</span>}
+        codigo="PR-GTH-002"
+        insignias={<span data-insignia="si">Vigente</span>}
+        descripcion="Descripción"
+      />,
+    );
+    const h1 = h.indexOf("<h1");
+    const contenidoH1 = h.slice(h1, h.indexOf("</h1>") + 5);
+    expect(h1).toBeGreaterThan(-1);
+    expect(h.indexOf('data-icono="si"')).toBeGreaterThan(-1);
+    expect(h.indexOf('data-icono="si"')).toBeLessThan(h1);
+    expect(h.indexOf("PR-GTH-002")).toBeLessThan(h.indexOf('data-insignia="si"'));
+    expect(h.indexOf('data-insignia="si"')).toBeLessThan(h1);
+    expect(contenidoH1).toBe('<h1 class="font-display text-2xl font-semibold tracking-tight">Gestión del talento humano</h1>');
+    expect(h).toMatch(/<span class="font-mono[^"]*">PR-GTH-002<\/span>/);
+    expect(h).not.toMatch(/uppercase[^"]*">PR-GTH-002/);
+    expect(h.indexOf("Descripción")).toBeGreaterThan(h1);
+  });
   it("Campo enlaza etiqueta, ayuda y error al control", () => {
     const h = html(
       <Campo etiqueta="Sigla" nombre="sigla" ayuda="2 a 12 letras" error="Muy corta">

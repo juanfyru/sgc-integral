@@ -9,6 +9,7 @@ import {
 import { FormAccion } from "@/componentes/admin/FormAccion";
 import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
+import { Insignia } from "@/componentes/ui/Insignia";
 import { listarAreas, listarCargos } from "@/db/consultas/estructura";
 import { exigirPermiso } from "@/lib/paginas";
 
@@ -31,7 +32,7 @@ export default async function PaginaEstructura() {
             {areas.map((a, i) => (
               <li
                 key={a.id}
-                className={`flex flex-wrap items-center gap-3 rounded-lg border p-3 ${a.activo ? "" : "border-dashed opacity-60"}`}
+                className={`flex flex-wrap items-center gap-3 rounded-lg border p-3 ${a.activo ? "" : "border-dashed"}`}
               >
                 <span className="inline-flex gap-1">
                   {(["arriba", "abajo"] as const).map((direccion) => {
@@ -60,8 +61,9 @@ export default async function PaginaEstructura() {
                   {a.nombre}
                 </Link>
                 <span className="text-xs text-muted-foreground">
-                  {a.numCargos} cargos{a.activo ? "" : " · inactiva"}
+                  {a.numCargos} cargos
                 </span>
+                {!a.activo && <Insignia variante="sin-dato">Inactiva</Insignia>}
                 <FormAccion
                   accion={alternarAreaAccion}
                   etiqueta={a.activo ? "Desactivar" : "Activar"}
@@ -89,15 +91,16 @@ export default async function PaginaEstructura() {
                     {delArea.map((c) => (
                       <li
                         key={c.id}
-                        className={`flex flex-wrap items-center gap-3 rounded-lg border p-3 ${c.activo ? "" : "border-dashed opacity-60"}`}
+                        className={`flex flex-wrap items-center gap-3 rounded-lg border p-3 ${c.activo ? "" : "border-dashed"}`}
                       >
                         <Link href={`/admin/estructura/cargos/${c.id}`} className="flex-1 font-medium hover:underline">
                           {c.nombre}
                         </Link>
                         <span className="text-xs text-muted-foreground">
                           {c.superiorNombre ? `Reporta a ${c.superiorNombre}` : "Sin superior"} ·{" "}
-                          {c.numUsuarios} usuarios{c.activo ? "" : " · inactivo"}
+                          {c.numUsuarios} usuarios
                         </span>
+                        {!c.activo && <Insignia variante="sin-dato">Inactivo</Insignia>}
                         <FormAccion
                           accion={alternarCargoAccion}
                           etiqueta={c.activo ? "Desactivar" : "Activar"}

@@ -6,6 +6,7 @@ import { BotonesOrden } from "@/componentes/admin/mapa/BotonesOrden";
 import { Icono } from "@/componentes/iconos";
 import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
+import { Insignia } from "@/componentes/ui/Insignia";
 import { listarPerifericos } from "@/db/consultas/mapa-admin";
 import { exigirPermiso } from "@/lib/paginas";
 
@@ -37,7 +38,7 @@ export default async function PaginaPerifericos() {
             {grupos[tipo].map((e, i) => (
               <li
                 key={e.id}
-                className={`flex flex-wrap items-center gap-3 rounded-lg border p-3 ${e.activo ? "" : "border-dashed opacity-60"}`}
+                className={`flex flex-wrap items-center gap-3 rounded-lg border p-3 ${e.activo ? "" : "border-dashed"}`}
               >
                 <BotonesOrden
                   tabla="elementos_perifericos"
@@ -49,7 +50,7 @@ export default async function PaginaPerifericos() {
                 <Link href={`/admin/mapa/perifericos/${e.id}`} className="flex-1 hover:underline">
                   {e.texto}
                 </Link>
-                {!e.activo && <span className="text-xs text-muted-foreground">inactivo</span>}
+                {!e.activo && <Insignia variante="sin-dato">Inactivo</Insignia>}
                 <BotonToggle tabla="elementos_perifericos" id={e.id} activo={e.activo} />
                 <BotonBorrar tabla="elementos_perifericos" id={e.id} volverA="/admin/mapa/perifericos" />
               </li>

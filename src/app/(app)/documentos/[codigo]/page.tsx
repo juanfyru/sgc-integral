@@ -17,6 +17,7 @@ import { VisorPdf } from "@/componentes/documentos/VisorPdf";
 import { Migas } from "@/componentes/navegacion/Migas";
 import { MiniMapa } from "@/componentes/navegacion/MiniMapa";
 import { Insignia } from "@/componentes/ui/Insignia";
+import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import {
   type ArchivoFicha,
   obtenerFichaDocumento,
@@ -111,35 +112,28 @@ export default async function FichaDocumento({
         )}
       </div>
 
-      <header>
-        <div className="flex flex-wrap items-center gap-2.5">
-          <span className="font-mono text-sm tracking-wide text-muted-foreground">
-            {ficha.codigo}
-          </span>
-          <span className="rounded-full banda-tinte px-2.5 py-0.5 text-xs font-medium banda-texto">
-            {ficha.tipo.nombre}
-          </span>
-          <Insignia variante="bien" icono={BadgeCheck}>
-            Vigente · versión {ficha.version.numero}
-          </Insignia>
-          {ficha.tipo.esDiligenciable && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-              <PencilLine className="size-3.5" aria-hidden="true" />
-              Diligenciable
+      <EncabezadoPagina
+        codigo={ficha.codigo}
+        insignias={
+          <>
+            <span className="rounded-full banda-tinte px-2.5 py-0.5 text-xs font-medium banda-texto">
+              {ficha.tipo.nombre}
             </span>
-          )}
-        </div>
-        <h1 className="mt-2 font-display text-2xl font-extrabold tracking-tight text-azul-tinta sm:text-3xl">
-          {ficha.titulo}
-        </h1>
-        {ficha.descripcion && (
-          <p className="mt-2 max-w-3xl text-sm/relaxed text-muted-foreground">
-            {ficha.descripcion}
-          </p>
-        )}
-      </header>
+            <Insignia variante="bien" icono={BadgeCheck}>
+              Vigente · versión {ficha.version.numero}
+            </Insignia>
+            {ficha.tipo.esDiligenciable && (
+              <Insignia variante="neutra" icono={PencilLine}>
+                Diligenciable
+              </Insignia>
+            )}
+          </>
+        }
+        titulo={ficha.titulo}
+        descripcion={ficha.descripcion || undefined}
+      />
 
-      <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-[1fr_minmax(280px,340px)]">
+      <div className="mt-2 grid grid-cols-1 gap-8 lg:grid-cols-[1fr_minmax(280px,340px)]">
         {/* En pantallas angostas (una columna) la información va primero y la
             vista previa al final: entrar directo al documento muestra todo el
             contenido sin tener que pasar por encima del visor. */}

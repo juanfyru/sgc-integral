@@ -91,3 +91,30 @@ describe("tokens globales", () => {
     }
   });
 });
+
+// Regla de negocio 2: la banda OBSOLETO/ANULADO es opaca y no depende del tema, así que la misma
+// cifra vale en claro y en oscuro (el contenedor no lleva opacidad: lo exige contraste-panel.test.ts).
+describe("banda de versiones fuera de circulación", () => {
+  const conNegro = (hex: string, porcentaje: number) =>
+    "#" +
+    [1, 3, 5]
+      .map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * (porcentaje / 100)))
+      .map((v) => v.toString(16).padStart(2, "0"))
+      .join("");
+  const fondoDe = (selector: string) => {
+    const bloque = css.slice(css.indexOf(selector)).match(/\{([^}]*)\}/)?.[1] ?? "";
+    const m = bloque.match(/background:\s*color-mix\(in srgb,\s*(#[0-9a-f]{6})\s+(\d+)%,\s*black\)/);
+    if (!m) throw new Error(selector);
+    return { bloque, fondo: conNegro(m[1], Number(m[2])) };
+  };
+
+  it("OBSOLETO: texto blanco ≥ 4.5 sobre la banda", () => {
+    const { bloque, fondo } = fondoDe(".marca-estado::after {");
+    expect(bloque).toMatch(/color:\s*white/);
+    expect(contrasteWCAG("#ffffff", fondo)).toBeGreaterThanOrEqual(4.5);
+  });
+  it("ANULADO: texto blanco ≥ 4.5 sobre la banda", () => {
+    const { fondo } = fondoDe('.marca-estado[data-marca="ANULADO"]::after {');
+    expect(contrasteWCAG("#ffffff", fondo)).toBeGreaterThanOrEqual(4.5);
+  });
+});

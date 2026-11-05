@@ -3,6 +3,7 @@ import { BotonBorrar } from "@/componentes/admin/mapa/BotonBorrar";
 import { BotonesOrden } from "@/componentes/admin/mapa/BotonesOrden";
 import { ConfirmarDesactivar } from "@/componentes/admin/mapa/ConfirmarDesactivar";
 import { Icono } from "@/componentes/iconos";
+import { Insignia } from "@/componentes/ui/Insignia";
 import type { FilaProceso } from "@/db/consultas/mapa-admin";
 
 export function ListaProcesos({
@@ -17,7 +18,7 @@ export function ListaProcesos({
       {procesos.map((p, i) => (
         <li
           key={p.id}
-          className={`flex flex-wrap items-center gap-3 rounded-lg border p-3 ${p.activo ? "" : "border-dashed opacity-60"}`}
+          className={`flex flex-wrap items-center gap-3 rounded-lg border p-3 ${p.activo ? "" : "border-dashed"}`}
         >
           <BotonesOrden tabla="procesos" id={p.id} esPrimero={i === 0} esUltimo={i === procesos.length - 1} />
           <Icono nombre={p.icono} className="size-4 text-muted-foreground" />
@@ -26,8 +27,9 @@ export function ListaProcesos({
             {p.nombre}
           </Link>
           <span className="text-xs text-muted-foreground">
-            {p.numSubprocesos} subprocesos · {p.numDocs} docs{p.activo ? "" : " · inactivo"}
+            {p.numSubprocesos} subprocesos · {p.numDocs} docs
           </span>
+          {!p.activo && <Insignia variante="sin-dato">Inactivo</Insignia>}
           <ConfirmarDesactivar tabla="procesos" id={p.id} activo={p.activo} afectados={p.docsAfectados} />
           {p.numSubprocesos === 0 && p.numDocs === 0 && (
             <BotonBorrar tabla="procesos" id={p.id} volverA={volverA} />

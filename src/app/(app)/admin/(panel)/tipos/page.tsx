@@ -5,6 +5,7 @@ import { BotonToggle } from "@/componentes/admin/mapa/BotonToggle";
 import { BotonesOrden } from "@/componentes/admin/mapa/BotonesOrden";
 import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
+import { Insignia } from "@/componentes/ui/Insignia";
 import { listarTipos } from "@/db/consultas/mapa-admin";
 import { exigirPermiso } from "@/lib/paginas";
 
@@ -27,7 +28,7 @@ export default async function PaginaTipos() {
         {tipos.map((t, i) => (
           <li
             key={t.id}
-            className={`flex flex-wrap items-center gap-3 rounded-lg border p-3 ${t.activo ? "" : "border-dashed opacity-60"}`}
+            className={`flex flex-wrap items-center gap-3 rounded-lg border p-3 ${t.activo ? "" : "border-dashed"}`}
           >
             <BotonesOrden
               tabla="tipos_documento"
@@ -41,8 +42,8 @@ export default async function PaginaTipos() {
             </Link>
             <span className="text-xs text-muted-foreground">
               {t.numDocs} docs · {t.esDiligenciable ? "diligenciable" : "solo lectura"}
-              {t.activo ? "" : " · inactivo"}
             </span>
+            {!t.activo && <Insignia variante="sin-dato">Inactivo</Insignia>}
             <BotonToggle tabla="tipos_documento" id={t.id} activo={t.activo} />
             {t.numDocs === 0 && (
               <BotonBorrar tabla="tipos_documento" id={t.id} volverA="/admin/tipos" />

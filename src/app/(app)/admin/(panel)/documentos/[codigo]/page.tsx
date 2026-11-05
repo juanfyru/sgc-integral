@@ -38,7 +38,7 @@ function SeccionVersion({
   const fueraDeCirculacion = version.estado === "obsoleto" || version.estado === "anulado";
   return (
     <section
-      className={`rounded-lg border p-4 ${fueraDeCirculacion ? "marca-estado opacity-80" : ""}`}
+      className={`rounded-lg border p-4 ${fueraDeCirculacion ? "marca-estado" : ""}`}
       data-marca={fueraDeCirculacion ? version.estado.toUpperCase() : undefined}
       aria-label={`Versión ${version.numero}, ${version.estado}`}
     >
@@ -115,7 +115,7 @@ export default async function PaginaDocumentoAdmin({
   return (
     <div className="flex flex-col gap-6">
       <EncabezadoPagina
-        superior={documento.codigo}
+        codigo={documento.codigo}
         titulo={documento.titulo}
         descripcion={`${documento.tipoNombre} · Aplica en: ${documento.asociaciones
           .map((a) => (a.esPrincipal ? `${a.nombre} (propietario)` : a.nombre))

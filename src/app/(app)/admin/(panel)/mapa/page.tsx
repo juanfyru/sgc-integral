@@ -6,6 +6,7 @@ import { ConfirmarDesactivar } from "@/componentes/admin/mapa/ConfirmarDesactiva
 import { Icono } from "@/componentes/iconos";
 import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
+import { Insignia } from "@/componentes/ui/Insignia";
 import { listarMacroprocesos } from "@/db/consultas/mapa-admin";
 import { exigirPermiso } from "@/lib/paginas";
 
@@ -45,7 +46,7 @@ export default async function PaginaMapa() {
               {grupo.map((m, i) => (
                 <li
                   key={m.id}
-                  className={`flex flex-wrap items-center gap-3 rounded-lg border p-3 ${m.activo ? "" : "border-dashed opacity-60"}`}
+                  className={`flex flex-wrap items-center gap-3 rounded-lg border p-3 ${m.activo ? "" : "border-dashed"}`}
                 >
                   <BotonesOrden tabla="macroprocesos" id={m.id} esPrimero={i === 0} esUltimo={i === grupo.length - 1} />
                   <span className="grid size-7 place-items-center rounded-md text-white" style={{ background: m.color }}>
@@ -55,8 +56,9 @@ export default async function PaginaMapa() {
                     <span aria-hidden="true">{m.letra}. </span>{m.nombre}
                   </Link>
                   <span className="text-xs text-muted-foreground">
-                    {m.numProcesos} procesos{m.activo ? "" : " · inactivo"}
+                    {m.numProcesos} procesos
                   </span>
+                  {!m.activo && <Insignia variante="sin-dato">Inactivo</Insignia>}
                   <ConfirmarDesactivar tabla="macroprocesos" id={m.id} activo={m.activo} afectados={m.docsAfectados} />
                   {m.numProcesos === 0 && (
                     <BotonBorrar tabla="macroprocesos" id={m.id} volverA="/admin/mapa" />

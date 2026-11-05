@@ -7,6 +7,7 @@ import { Icono } from "@/componentes/iconos";
 import { Migas } from "@/componentes/navegacion/Migas";
 import { MiniMapa } from "@/componentes/navegacion/MiniMapa";
 import { NavHermanos } from "@/componentes/navegacion/NavHermanos";
+import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import {
   obtenerDetalleProceso,
   obtenerDocumentosDeProceso,
@@ -53,27 +54,19 @@ export default async function VistaProceso({
         <MiniMapa banda={proceso.macro.banda} nombreMacro={proceso.macro.nombre} />
       </div>
 
-      <header className="flex items-start gap-4">
-        <span className="grid size-14 shrink-0 place-items-center rounded-2xl banda-tinte banda-texto">
-          <Icono nombre={proceso.icono} className="size-7" />
-        </span>
-        <div>
-          <p className="font-mono text-xs tracking-wide text-muted-foreground">
-            {proceso.sigla}
-          </p>
-          <h1 className="font-display text-2xl font-extrabold tracking-tight text-azul-tinta sm:text-3xl">
-            {proceso.nombre}
-          </h1>
-          {proceso.descripcion && (
-            <p className="mt-2 max-w-2xl text-sm/relaxed text-muted-foreground">
-              {proceso.descripcion}
-            </p>
-          )}
-        </div>
-      </header>
+      <EncabezadoPagina
+        icono={
+          <span className="grid size-14 shrink-0 place-items-center rounded-2xl banda-tinte banda-texto">
+            <Icono nombre={proceso.icono} className="size-7" />
+          </span>
+        }
+        codigo={proceso.sigla}
+        titulo={proceso.nombre}
+        descripcion={proceso.descripcion || undefined}
+      />
 
       {tieneSubprocesos && (
-        <section className="mt-8" aria-labelledby="titulo-subprocesos">
+        <section className="mt-2" aria-labelledby="titulo-subprocesos">
           <h2
             id="titulo-subprocesos"
             className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground"
@@ -106,7 +99,7 @@ export default async function VistaProceso({
         </section>
       )}
 
-      <section className="mt-8" aria-labelledby="titulo-documentos">
+      <section className={tieneSubprocesos ? "mt-8" : "mt-2"} aria-labelledby="titulo-documentos">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <h2
             id="titulo-documentos"
