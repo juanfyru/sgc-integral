@@ -3,6 +3,7 @@ import {
   FORMATO_CODIGO_DEFECTO,
   consecutivoDe,
   generarCodigo,
+  patronDeConfiguracion,
   patronDesdeFormato,
   siguienteConsecutivo,
   validarFormato,
@@ -33,5 +34,58 @@ describe("formato del código", () => {
     expect(siguienteConsecutivo(F, codigos, { proceso: "SGC", tipo: "FO" })).toBe(4);
     expect(siguienteConsecutivo(F, [], { proceso: "SGC", tipo: "FO" })).toBe(1);
     expect(siguienteConsecutivo(F, ["SGC-FO-99"], { proceso: "SGC", tipo: "FO" })).toBe(100);
+  });
+  it("rechaza marcadores repetidos, minúsculas y símbolos fuera de los marcadores", () => {
+    expect(validarFormato("{PROCESO}-{PROCESO}-{TIPO}-{NN}")).not.toBeNull();
+    expect(validarFormato("{PROCESO}-{TIPO}-{NN}{NNN}")).not.toBeNull();
+    expect(validarFormato("{proceso}-{TIPO}-{NN}")).not.toBeNull();
+    expect(validarFormato("{PROCESO}.{TIPO}-{NN}")).not.toBeNull();
+    expect(validarFormato("{PROCESO}-{TIPO}-{NN}$")).not.toBeNull();
+  });
+  it("no confunde siglas que comparten prefijo", () => {
+    expect(consecutivoDe(F, "SGC-FO-02", { proceso: "SG", tipo: "FO" })).toBeNull();
+  });
+  it("con {NNN} rellena a tres dígitos y lo lee", () => {
+    const F3 = "{PROCESO}-{TIPO}-{NNN}";
+    expect(generarCodigo(F3, { proceso: "SGC", tipo: "FO", consecutivo: 2 })).toBe("SGC-FO-002");
+    expect(consecutivoDe(F3, "SGC-FO-002", { proceso: "SGC", tipo: "FO" })).toBe(2);
+    expect(consecutivoDe(F3, "SGC-FO-02", { proceso: "SGC", tipo: "FO" })).toBeNull();
+  });
+  it("patronDesdeFormato escapa lo literal aunque el formato no se haya validado", () => {
+    const p = patronDesdeFormato("{PROCESO}.{TIPO}-{NN}");
+    expect(p.test("SGC.FO-02")).toBe(true);
+    expect(p.test("SGCxFO-02")).toBe(false);
+  });
+});
+
+describe("patronDeConfiguracion", () => {
+  const heredado = "^[A-Z]{2}-[A-Z]{3}-\\d{3}$";
+  it("con formato válido gana el formato aunque haya patrón", () => {
+    const p = patronDeConfiguracion(F, heredado);
+    expect(p.test("SGC-FO-02")).toBe(true);
+    expect(p.test("PR-GTH-001")).toBe(true);
+    expect(patronDeConfiguracion("{PROCESO}-{TIPO}-{NNN}", heredado).test("SGC-FO-02")).toBe(false);
+  });
+  it("sin formato usa el patrón heredado", () => {
+    for (const formato of [undefined, null]) {
+      const p = patronDeConfiguracion(formato, heredado);
+      expect(p.test("PR-GTH-001")).toBe(true);
+      expect(p.test("SGC-FO-02")).toBe(false);
+    }
+  });
+  it("con formato inválido y patrón válido usa el patrón", () => {
+    const p = patronDeConfiguracion("{PROCESO}-{NN}", heredado);
+    expect(p.test("PR-GTH-001")).toBe(true);
+    expect(p.test("SGC-FO-02")).toBe(false);
+  });
+  it("con un patrón que no compila no lanza y usa el defecto", () => {
+    const p = patronDeConfiguracion(undefined, "[A-Z");
+    expect(p.test("SGC-FO-02")).toBe(true);
+  });
+  it("sin ninguno de los dos, el defecto acepta tres y dos dígitos", () => {
+    const p = patronDeConfiguracion(undefined, undefined);
+    expect(p.test("PR-GTH-001")).toBe(true);
+    expect(p.test("SGC-FO-02")).toBe(true);
+    expect(p.test("SGC-FO-2")).toBe(false);
   });
 });

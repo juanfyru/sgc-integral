@@ -35,10 +35,39 @@ function aRegExp(
   tipo: string,
   consecutivo: string,
 ): RegExp {
-  const cuerpo = formato.replace(MARCADORES, (_m, nombre: string) =>
-    nombre === "PROCESO" ? proceso : nombre === "TIPO" ? tipo : consecutivo,
-  );
+  // Lo que está fuera de los marcadores se escapa: el resultado no depende de
+  // que el llamador haya validado el formato.
+  const cuerpo = formato
+    .split(/(\{(?:PROCESO|TIPO|NNN|NN)\})/)
+    .map((parte, i) => {
+      if (i % 2 === 0) return parte.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return parte === "{PROCESO}" ? proceso : parte === "{TIPO}" ? tipo : consecutivo;
+    })
+    .join("");
   return new RegExp(`^${cuerpo}$`);
+}
+
+export const PATRON_CODIGO_DEFECTO = "^[A-Z]{2,4}-[A-Z]{2,4}-\\d{2,}$";
+
+/**
+ * Patrón de validación de los códigos según la configuración: el formato si es
+ * válido; si no, el patrón heredado si compila; si no, el defecto. Nunca lanza.
+ */
+export function patronDeConfiguracion(
+  formato: string | null | undefined,
+  patron: string | null | undefined,
+): RegExp {
+  if (formato != null && validarFormato(formato) === null) {
+    return patronDesdeFormato(formato);
+  }
+  if (patron != null) {
+    try {
+      return new RegExp(patron);
+    } catch {
+      // cae al defecto
+    }
+  }
+  return new RegExp(PATRON_CODIGO_DEFECTO);
 }
 
 function anchoMinimo(formato: string): number {

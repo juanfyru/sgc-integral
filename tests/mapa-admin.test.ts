@@ -189,7 +189,7 @@ describe("tipos_documento CRUD", () => {
 });
 
 describe("textos institucionales", () => {
-  it("guarda por UPSERT y valida el patrón de código", async () => {
+  it("guarda por UPSERT e ignora la clave patron_codigo", async () => {
     const antes = await obtenerTextos();
     await guardarTextos({ ...antes, titulo_phva: "ZZ título de prueba" }, usuarioId);
     const despues = await obtenerTextos();
@@ -199,7 +199,8 @@ describe("textos institucionales", () => {
 
     // patron_codigo ya no es editable: se ignora y no queda guardada.
     await guardarTextos({ patron_codigo: "(sin cerrar" }, usuarioId);
-    expect((await obtenerTextos()).patron_codigo).toBeUndefined();
+    const filas = await sql()`SELECT valor FROM configuracion WHERE clave = 'patron_codigo'`;
+    expect(filas).toHaveLength(0);
   });
 });
 
