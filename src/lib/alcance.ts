@@ -16,8 +16,10 @@
  *   activos ordenados por nombre.
  */
 import { obtenerSql, type Cliente } from "@/db/cliente";
+import { puede } from "@/lib/permisos";
 import type { Rol } from "@/lib/roles";
 import type { SesionValida } from "@/lib/sesion";
+import type { Etapa } from "@/lib/tramites/tipos";
 
 export type Alcance = { todos: true } | { todos: false; procesoIds: number[] };
 
@@ -28,9 +30,13 @@ export type SujetoVisibilidad = Pick<SesionValida, "usuarioId" | "rol" | "verHis
 /** Ven todo documento restringido. La marca `ver_historial` no da este acceso (F13A-DC14). */
 export const ROLES_VEN_RESTRINGIDO: readonly Rol[] = ["admin_sgc", "gerencia", "control_interno"];
 
-export async function alcanceProcesos(sesion: Pick<SesionValida, "usuarioId" | "rol">): Promise<Alcance> {
+export async function alcanceProcesos(
+  sesion: Pick<SesionValida, "usuarioId" | "rol">,
+  opciones?: { sql?: Cliente },
+): Promise<Alcance> {
   if (sesion.rol !== "lider_proceso") return { todos: true };
-  const filas = await obtenerSql()`
+  const sql = opciones?.sql ?? obtenerSql();
+  const filas = await sql`
     SELECT up.proceso_id AS id
     FROM usuario_procesos up
     JOIN procesos p ON p.id = up.proceso_id
@@ -73,6 +79,25 @@ export async function puedeAccederDocumento(
     SELECT 1 FROM documentos d
     WHERE d.id = ${documentoId} AND ${filtroAcceso(sql, sujeto)}`;
   return filas.length > 0;
+}
+
+/**
+ * Quién ve un trámite (spec 13A §6.5): la participación es la única excepción a
+ * `alcanceProcesos`. Un trámite publicado o eliminado es la evidencia de cómo se aprobó, y lo
+ * ven además quien tiene historial y pasa el nivel de acceso. Para los demás no existe.
+ */
+export function puedeVerTramite(v: {
+  etapa: Etapa;
+  esParticipante: boolean;
+  rol: Rol;
+  lideraAlgunProceso: boolean;
+  verHistorial: boolean;
+  pasaNivelAcceso: boolean;
+}): boolean {
+  if (v.esParticipante || v.rol === "admin_sgc") return true;
+  if (v.rol === "lider_proceso" && v.lideraAlgunProceso) return true;
+  const esEvidencia = v.etapa === "publicado" || v.etapa === "eliminado";
+  return esEvidencia && v.pasaNivelAcceso && puede({ rol: v.rol, verHistorial: v.verHistorial }, "documentos.ver_historial");
 }
 
 export async function procesosAsignados(usuarioId: number): Promise<ProcesoAsignado[]> {
