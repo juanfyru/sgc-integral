@@ -38,6 +38,9 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/arrancar.js ./arrancar.js
 COPY --from=builder --chown=nextjs:nodejs /app/drizzle ./drizzle
+# El almacén no viaja en la imagen (.dockerignore): se crea vacío y del usuario de la app, para
+# que la app escriba sin volumen (compose de desarrollo) y un volumen nombrado nuevo herede el dueño.
+RUN mkdir -p /app/almacen && chown nextjs:nodejs /app/almacen
 
 USER nextjs
 EXPOSE 3080

@@ -9,3 +9,9 @@ node_modules
 .claude
 Dockerfile
 docker-compose*.yml
+# Datos de desarrollo y artefactos de trabajo: nunca en la imagen
+almacen
+respaldos
+.superpowers
+.playwright-mcp
+coverage
