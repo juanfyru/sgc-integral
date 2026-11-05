@@ -24,6 +24,7 @@ import { zonaHoraria } from "@/lib/zona-horaria";
 import {
   ErrorFirma,
   ErrorTramite,
+  YA_ABIERTO,
   enTransaccion,
   type Aviso,
   type Efecto,
@@ -34,6 +35,7 @@ import {
   type RegistroValidadores,
   type SesionFlujo,
 } from "./flujo/contrato";
+import { MANEJADORES_ACEPTACION } from "./flujo/aceptacion";
 import { MANEJADORES_SOLICITUD } from "./flujo/solicitud";
 import {
   ETAPAS_ABIERTAS,
@@ -59,12 +61,16 @@ export type {
 } from "./flujo/contrato";
 
 /** Una acción sin entrada aquí no está disponible. */
-export const MANEJADORES: RegistroManejadores = { ...MANEJADORES_SOLICITUD };
+export const MANEJADORES: RegistroManejadores = { ...MANEJADORES_SOLICITUD, ...MANEJADORES_ACEPTACION };
 
 /** Comprobaciones de negocio de las acciones que firman, antes de pedir o gastar la firma. */
 export const VALIDADORES: RegistroValidadores = {};
 
-const YA_ABIERTO = "Ya hay un trámite abierto sobre este documento";
+/** La carrera entre una solicitud y una aceptación que convierte otro trámite en modificación. */
+function traducirChoqueDeAbierto(err: { constraint_name?: string }): never {
+  if (err.constraint_name === "tramites_uno_abierto_idx") throw new ErrorTramite(YA_ABIERTO);
+  throw err;
+}
 
 export type DatosSolicitud = {
   tipo: TipoSolicitud;
@@ -200,11 +206,7 @@ export async function crearSolicitud(
          ${sesion.usuarioId}, ${destino.procesoId}, ${destino.subprocesoId}, ${destino.tipoDocumentoId},
          ${destino.tituloPropuesto}, ${destino.documentoId}, ${etapa}, 0,
          ${fechaLimite(ahora, config.plazos[etapa], zona)}, ${ahora}, ${ahora})
-      RETURNING id`.catch((err: { constraint_name?: string }) => {
-      // Solo la carrera con una aceptación que convierte otro trámite en modificación.
-      if (err.constraint_name === "tramites_uno_abierto_idx") throw new ErrorTramite(YA_ABIERTO);
-      throw err;
-    });
+      RETURNING id`.catch(traducirChoqueDeAbierto);
     const tramiteId = Number(fila.id);
 
     const evento = { tramiteId, ronda: 0, ahora };
@@ -313,12 +315,13 @@ export async function transicionar(
     const t: FilaTramite = { ...previo, ...cambios, etapa: hacia, ronda: previo.ronda + (sumaRonda ? 1 : 0) };
     const venceEn = nuevoVencimiento(previo, cambios, t.etapa, t.ronda, ahora, config);
     await tx`UPDATE tramites SET
-        etapa = ${t.etapa}, ronda = ${t.ronda}, tipo = ${t.tipo}, documento_id = ${t.documentoId},
+        etapa = ${t.etapa}, ronda = ${t.ronda}, tipo = ${t.tipo}, proceso_id = ${t.procesoId},
+        subproceso_id = ${t.subprocesoId}, tipo_documento_id = ${t.tipoDocumentoId}, documento_id = ${t.documentoId},
         version_id = ${t.versionId}, titulo_propuesto = ${t.tituloPropuesto}, elaborador_id = ${t.elaboradorId},
         revisor_id = ${t.revisorId}, aprobador_id = ${t.aprobadorId}, motivo_cierre = ${t.motivoCierre},
         vence_en = ${venceEn}, aviso_vencido_en = NULL, escalado_en = NULL,
         cerrado_en = ${esEtapaDeTrabajo(t.etapa) ? null : ahora}, actualizado_en = ${ahora}
-      WHERE id = ${t.id}`;
+      WHERE id = ${t.id}`.catch(traducirChoqueDeAbierto);
 
     if (firmas.length > 0) {
       const hashSha256 = await huellaPrincipal(tx, t.versionId);

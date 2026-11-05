@@ -4,12 +4,43 @@ import { AccionesSolicitud } from "@/componentes/tramites/AccionesSolicitud";
 import { BloqueSolicitud } from "@/componentes/tramites/BloqueSolicitud";
 import { EncabezadoTramite } from "@/componentes/tramites/EncabezadoTramite";
 import { HistorialTramite } from "@/componentes/tramites/HistorialTramite";
+import { PanelAceptacion } from "@/componentes/tramites/PanelAceptacion";
 import { PasosTramite } from "@/componentes/tramites/PasosTramite";
-import { obtenerTramite } from "@/db/consultas/tramites";
+import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
+import {
+  contextoDeAceptacion,
+  datosParaAceptar,
+  obtenerTramite,
+  type DetalleTramite,
+} from "@/db/consultas/tramites";
 import { exigirSesion } from "@/lib/paginas";
+import { fechaEnZona, fechaLimite } from "@/lib/tramites/plazos";
+import { zonaHoraria } from "@/lib/zona-horaria";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Trámite" };
+
+async function Aceptacion({ tramite, usuarioId }: { tramite: DetalleTramite; usuarioId: number }) {
+  const [datos, contexto, { plazos }] = await Promise.all([
+    datosParaAceptar(tramite.id),
+    contextoDeAceptacion(tramite),
+    obtenerConfigDocumental(),
+  ]);
+  const ahora = new Date();
+  const zona = zonaHoraria();
+  const { id, etapa, ronda, tipo, solicitanteId, procesoId, subprocesoId, tipoDocumentoId, tituloPropuesto, codigo, titulo, procesoNombre } = tramite;
+  return (
+    <PanelAceptacion
+      tramite={{ id, etapa, ronda, tipo, solicitanteId, procesoId, subprocesoId, tipoDocumentoId, tituloPropuesto, codigo, titulo, procesoNombre }}
+      datos={datos}
+      contexto={contexto}
+      usuarioId={usuarioId}
+      plazos={{ revision: plazos.revision, aprobacion: plazos.aprobacion }}
+      hoy={fechaEnZona(ahora, zona)}
+      venceSugerida={fechaEnZona(fechaLimite(ahora, plazos.elaboracion, zona), zona)}
+    />
+  );
+}
 
 export default async function PaginaTramite({ params }: { params: Promise<{ id: string }> }) {
   const sesion = await exigirSesion();
@@ -32,6 +63,7 @@ export default async function PaginaTramite({ params }: { params: Promise<{ id: 
           />
         </div>
       </div>
+      {tramite.acciones.includes("aceptar") ? <Aceptacion tramite={tramite} usuarioId={sesion.usuarioId} /> : null}
     </div>
   );
 }

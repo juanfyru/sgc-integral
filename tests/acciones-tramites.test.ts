@@ -4,9 +4,10 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { transicionar, crearSolicitud, redirect, requerirSesion } = vi.hoisted(() => ({
+const { transicionar, crearSolicitud, obtenerTramite, redirect, requerirSesion } = vi.hoisted(() => ({
   transicionar: vi.fn(),
   crearSolicitud: vi.fn(),
+  obtenerTramite: vi.fn(),
   redirect: vi.fn((destino: string) => {
     throw new Error(`REDIRECT:${destino}`);
   }),
@@ -21,11 +22,14 @@ vi.mock("@/db/consultas/tramites-flujo", async () => ({
   transicionar,
   crearSolicitud,
 }));
+vi.mock("@/db/consultas/tramites", () => ({ obtenerTramite }));
 
 import {
+  aceptarSolicitudAccion,
   crearSolicitudAccion,
   darVistoBuenoAccion,
   negarVistoBuenoAccion,
+  rechazarSolicitudAccion,
   retirarSolicitudAccion,
 } from "@/app/acciones-tramites";
 import { ErrorFirma, ErrorTramite } from "@/db/consultas/flujo/contrato";
@@ -100,5 +104,74 @@ describe("acciones del trámite", () => {
     expect(await crearSolicitudAccion(null, formulario({ ...campos, justificacion: "corta" }))).toMatchObject({ ok: false });
     expect(await crearSolicitudAccion(null, formulario({ ...campos, sobra: "x" }))).toMatchObject({ ok: false });
     expect(crearSolicitud).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("aceptar y rechazar", () => {
+  const enAceptacion = { id: "7", etapa: "aceptacion", ronda: "0" };
+  const responsables = { elaboradorId: "2", revisorId: "3", aprobadorId: "4", venceElaboracion: "2026-11-20" };
+  const nuevo = { decision: "nuevo", tipoDocumentoId: "5", principal: "p:2", titulo: "Formato nuevo", nivelAcceso: "general", codigo: "cex-fo-01", ...responsables };
+
+  beforeEach(() => {
+    requerirSesion.mockResolvedValue({ sesionId: "s", usuarioId: 1, usuario: "admin", nombre: "Admin", rol: "admin_sgc", verHistorial: false });
+    transicionar.mockResolvedValue({ etapa: "elaboracion", ronda: 1 });
+  });
+
+  it("una creación llega a transicionar leída por su esquema", async () => {
+    obtenerTramite.mockResolvedValue({ tipo: "crear" });
+    const fd = formulario({ ...enAceptacion, ...nuevo });
+    fd.append("asociaciones", "s:9");
+    fd.append("asociaciones", "p:3");
+    fd.append("relacionados", "11");
+    expect(await aceptarSolicitudAccion(null, fd)).toBeNull();
+    const [, entrada] = transicionar.mock.calls[0];
+    expect(entrada).toMatchObject({ tramiteId: 7, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0 });
+    expect(entrada.datos).toEqual({
+      decision: "nuevo",
+      tipoDocumentoId: 5,
+      asociaciones: [{ procesoId: 2, esPrincipal: true }, { subprocesoId: 9, esPrincipal: false }, { procesoId: 3, esPrincipal: false }],
+      titulo: "Formato nuevo",
+      relacionados: [11],
+      nivelAcceso: "general",
+      codigo: "CEX-FO-01",
+      elaboradorId: 2,
+      revisorId: 3,
+      aprobadorId: 4,
+      venceElaboracion: "2026-11-20",
+    });
+  });
+
+  it("el esquema sale del tipo real del trámite, no de lo que diga el formulario", async () => {
+    obtenerTramite.mockResolvedValue({ tipo: "eliminar" });
+    expect(await aceptarSolicitudAccion(null, formulario({ ...enAceptacion, ...nuevo }))).toMatchObject({ ok: false });
+    expect(transicionar).not.toHaveBeenCalled();
+    expect(await aceptarSolicitudAccion(null, formulario({ ...enAceptacion, aprobadorId: "4" }))).toBeNull();
+    expect(transicionar.mock.calls[0][1].datos).toEqual({ aprobadorId: 4 });
+
+    transicionar.mockClear();
+    obtenerTramite.mockResolvedValue({ tipo: "modificar" });
+    expect(await aceptarSolicitudAccion(null, formulario({ ...enAceptacion, ...responsables, tituloNuevo: "  Otro título  " }))).toBeNull();
+    expect(transicionar.mock.calls[0][1].datos).toEqual({ tituloNuevo: "Otro título", elaboradorId: 2, revisorId: 3, aprobadorId: 4, venceElaboracion: "2026-11-20" });
+  });
+
+  it("un trámite que quien acepta no ve no llega a transicionar", async () => {
+    obtenerTramite.mockResolvedValue(null);
+    expect(await aceptarSolicitudAccion(null, formulario({ ...enAceptacion, ...nuevo }))).toMatchObject({ ok: false, error: "El trámite no existe" });
+    expect(transicionar).not.toHaveBeenCalled();
+  });
+
+  it("rechazar exige un motivo", async () => {
+    expect(await rechazarSolicitudAccion(null, formulario({ ...enAceptacion, motivo: "no" }))).toMatchObject({ ok: false, valores: { motivo: "no" } });
+    expect(transicionar).not.toHaveBeenCalled();
+    expect(await rechazarSolicitudAccion(null, formulario({ ...enAceptacion, motivo: "  Ya existe CEX-FO-02.  " }))).toBeNull();
+    expect(transicionar.mock.calls[0][1]).toMatchObject({ accion: "rechazar", datos: { motivo: "Ya existe CEX-FO-02." } });
+  });
+
+  it("sin tramites.gestionar no aceptan ni rechazan", async () => {
+    requerirSesion.mockResolvedValue({ sesionId: "s", usuarioId: 2, usuario: "l", nombre: "L", rol: "lider_proceso", verHistorial: false });
+    expect(await aceptarSolicitudAccion(null, formulario({ ...enAceptacion, ...nuevo }))).toMatchObject({ ok: false });
+    expect(await rechazarSolicitudAccion(null, formulario({ ...enAceptacion, motivo: "No procede." }))).toMatchObject({ ok: false });
+    expect(obtenerTramite).not.toHaveBeenCalled();
+    expect(transicionar).not.toHaveBeenCalled();
   });
 });

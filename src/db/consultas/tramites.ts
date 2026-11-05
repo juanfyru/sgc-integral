@@ -6,6 +6,9 @@
  */
 import type { Row } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
+import { sugerirCodigo, todosLosCodigos } from "@/db/consultas/codigos";
+import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
+import { buscarParecidos, type Parecido } from "@/db/consultas/parecidos";
 import {
   alcanceProcesos,
   enAlcance,
@@ -13,10 +16,12 @@ import {
   puedeVerTramite,
 } from "@/lib/alcance";
 import { puede } from "@/lib/permisos";
+import type { Rol } from "@/lib/roles";
 import { accionesDisponibles, type Accion } from "@/lib/tramites/transiciones";
 import {
   ETAPAS_TRABAJO,
   esEtapaDeTrabajo,
+  type Autoridad,
   type Etapa,
   type TipoSolicitud,
 } from "@/lib/tramites/tipos";
@@ -392,5 +397,179 @@ export async function datosParaSolicitar(
       proceso: d.proceso,
       conTramite: d.con_tramite,
     })),
+  };
+}
+
+export type TipoDeDocumento = {
+  id: number;
+  nombre: string;
+  sigla: string;
+  activo: boolean;
+  autoridad: Autoridad;
+  plantilla: { codigo: string; version: number } | null;
+};
+
+/** Tipos con su plantilla: la versión vigente del documento al que apuntan, si la tiene. */
+async function tiposDeDocumento(sql: Cliente, condicion: ReturnType<typeof filtroAcceso>): Promise<TipoDeDocumento[]> {
+  const filas = await sql`SELECT t.id, t.nombre, t.sigla, t.activo, t.autoridad,
+      d.codigo AS plantilla_codigo, v.numero AS plantilla_version
+    FROM tipos_documento t
+    LEFT JOIN documentos d ON d.id = t.plantilla_documento_id
+    LEFT JOIN documento_versiones v ON v.documento_id = d.id AND v.estado = 'vigente'
+    WHERE ${condicion}
+    ORDER BY t.orden`;
+  return filas.map((f) => ({
+    id: Number(f.id),
+    nombre: f.nombre,
+    sigla: f.sigla,
+    activo: f.activo,
+    autoridad: f.autoridad,
+    plantilla: f.plantilla_version === null ? null : { codigo: f.plantilla_codigo, version: f.plantilla_version },
+  }));
+}
+
+export async function tipoDeDocumento(id: number, opciones?: { sql?: Cliente }): Promise<TipoDeDocumento | null> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [tipo] = await tiposDeDocumento(sql, sql`t.id = ${id}`);
+  return tipo ?? null;
+}
+
+export type UsuarioDesignable = { id: number; nombre: string; cargo: string | null; rol: Rol };
+
+export type DatosParaAceptar = {
+  parecidos: Parecido[];
+  codigoSugerido: string | null;
+  plantilla: { codigo: string; version: number } | null;
+  autoridad: Autoridad;
+  usuarios: UsuarioDesignable[];
+};
+
+/** Lo que propone el sistema al aceptar. `usuarios` son los activos; el panel filtra con las reglas puras. */
+export async function datosParaAceptar(tramiteId: number, opciones?: { sql?: Cliente }): Promise<DatosParaAceptar> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [t] = await sql`SELECT t.tipo, t.proceso_id, t.titulo_propuesto,
+      COALESCE(t.tipo_documento_id, d.tipo_id) AS tipo_id
+    FROM tramites t LEFT JOIN documentos d ON d.id = t.documento_id
+    WHERE t.id = ${tramiteId}`;
+  if (!t) throw new Error("El trámite no existe");
+  const tipoId = Number(t.tipo_id);
+  const esCreacion = t.tipo === "crear";
+  const [tipo, parecidos, codigoSugerido, usuarios] = await Promise.all([
+    tipoDeDocumento(tipoId, { sql }),
+    esCreacion ? buscarParecidos(t.titulo_propuesto, { sql }) : [],
+    esCreacion ? sugerirCodigo({ procesoId: Number(t.proceso_id), tipoDocumentoId: tipoId }, { sql }) : null,
+    sql`SELECT u.id, u.nombre, c.nombre AS cargo, u.rol
+      FROM usuarios u LEFT JOIN cargos c ON c.id = u.cargo_id
+      WHERE u.activo ORDER BY u.nombre`,
+  ]);
+  if (!tipo) throw new Error("El tipo de documento no existe");
+  return {
+    parecidos,
+    codigoSugerido,
+    plantilla: tipo.plantilla,
+    autoridad: tipo.autoridad,
+    usuarios: usuarios.map((u) => ({ id: Number(u.id), nombre: u.nombre, cargo: u.cargo, rol: u.rol })),
+  };
+}
+
+export type DocumentoDeCatalogo = {
+  id: number;
+  codigo: string;
+  titulo: string;
+  version: number;
+  versionSiguiente: number;
+  procesoId: number;
+  proceso: string;
+  tipoId: number;
+  tipo: string;
+  autoridad: Autoridad;
+  conTramite: boolean;
+  conBorrador: boolean;
+};
+
+export type CatalogoClasificacion = {
+  tipos: TipoDeDocumento[];
+  procesos: DatosParaSolicitar["procesos"];
+  documentos: DocumentoDeCatalogo[];
+  formatoCodigo: string | null;
+  codigos: string[];
+};
+
+export type ContextoAceptacion = {
+  solicitanteRol: Rol;
+  /** En una modificación o eliminación: el tipo del documento y la versión que abriría. */
+  documento: { tipo: string; versionSiguiente: number } | null;
+  /** En una creación: lo que se puede elegir, porque el tipo y el proceso cambian autoridad y código. */
+  catalogo: CatalogoClasificacion | null;
+};
+
+async function catalogoDeClasificacion(sql: Cliente): Promise<CatalogoClasificacion> {
+  const [tipos, procesos, subprocesos, documentos, config, codigos] = await Promise.all([
+    tiposDeDocumento(sql, sql`t.activo`),
+    sql`SELECT id, nombre, sigla FROM procesos WHERE activo ORDER BY nombre`,
+    sql`SELECT id, proceso_id, nombre FROM subprocesos WHERE activo ORDER BY orden`,
+    sql`SELECT d.id, d.codigo, d.titulo, v.numero AS version,
+        (SELECT max(o.numero) + 1 FROM documento_versiones o
+          WHERE o.documento_id = d.id AND o.estado <> 'descartado') AS version_siguiente,
+        p.id AS proceso_id, p.nombre AS proceso, t.id AS tipo_id, t.nombre AS tipo, t.autoridad,
+        EXISTS (SELECT 1 FROM tramites a WHERE a.documento_id = d.id AND a.etapa = ANY(${ETAPAS_ABIERTAS})) AS con_tramite,
+        EXISTS (SELECT 1 FROM documento_versiones b WHERE b.documento_id = d.id AND b.estado = 'borrador') AS con_borrador
+      FROM documentos d
+      JOIN tipos_documento t ON t.id = d.tipo_id
+      JOIN documento_versiones v ON v.documento_id = d.id AND v.estado = 'vigente'
+      JOIN documento_proceso dp ON dp.documento_id = d.id AND dp.es_principal
+      LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
+      JOIN procesos p ON p.id = COALESCE(dp.proceso_id, s.proceso_id)
+      ORDER BY d.codigo`,
+    obtenerConfigDocumental({ sql }),
+    todosLosCodigos({ sql }),
+  ]);
+  return {
+    tipos,
+    procesos: procesos.map((p) => ({
+      id: Number(p.id),
+      nombre: p.nombre,
+      sigla: p.sigla,
+      subprocesos: subprocesos
+        .filter((s) => Number(s.proceso_id) === Number(p.id))
+        .map((s) => ({ id: Number(s.id), nombre: s.nombre })),
+    })),
+    documentos: documentos.map((d) => ({
+      id: Number(d.id),
+      codigo: d.codigo,
+      titulo: d.titulo,
+      version: d.version,
+      versionSiguiente: d.version_siguiente,
+      procesoId: Number(d.proceso_id),
+      proceso: d.proceso,
+      tipoId: Number(d.tipo_id),
+      tipo: d.tipo,
+      autoridad: d.autoridad,
+      conTramite: d.con_tramite,
+      conBorrador: d.con_borrador,
+    })),
+    formatoCodigo: config.formatoCodigo,
+    codigos,
+  };
+}
+
+/** Lo que la pantalla de aceptación necesita además de `datosParaAceptar` para armar sus selectores. */
+export async function contextoDeAceptacion(
+  t: Pick<FilaTramite, "tipo" | "documentoId" | "solicitanteId">,
+  opciones?: { sql?: Cliente },
+): Promise<ContextoAceptacion> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [solicitante] = await sql`SELECT rol FROM usuarios WHERE id = ${t.solicitanteId}`;
+  const [d] = t.documentoId === null
+    ? []
+    : await sql`SELECT tp.nombre AS tipo,
+          (SELECT max(v.numero) + 1 FROM documento_versiones v
+            WHERE v.documento_id = d.id AND v.estado <> 'descartado') AS version_siguiente
+        FROM documentos d JOIN tipos_documento tp ON tp.id = d.tipo_id
+        WHERE d.id = ${t.documentoId}`;
+  return {
+    solicitanteRol: solicitante.rol,
+    documento: d ? { tipo: d.tipo, versionSiguiente: d.version_siguiente } : null,
+    catalogo: t.tipo === "crear" ? await catalogoDeClasificacion(sql) : null,
   };
 }

@@ -3,6 +3,8 @@ import type { Autoridad, TipoSolicitud } from "./tipos";
 
 export type Persona = { id: number; rol: Rol; activo: boolean };
 
+const ROLES_REVISOR: readonly Rol[] = ["admin_sgc", "lider_proceso"];
+
 /**
  * Rol que aprueba: Gerencia si la autoridad es estratégica o si el originador es el
  * Administrador del SGC (nadie aprueba lo suyo); si no, el Administrador del SGC.
@@ -31,7 +33,7 @@ export function validarDesignacion(d: Designacion): string | null {
   if (elabora) {
     if (!d.elaborador) return "Falta designar quién elabora";
     if (!d.revisor) return "Falta designar quién revisa";
-    if (d.revisor.rol !== "admin_sgc" && d.revisor.rol !== "lider_proceso")
+    if (!ROLES_REVISOR.includes(d.revisor.rol))
       return "Quien revisa debe ser Administrador del SGC o Líder de proceso";
     if (d.elaborador.id === d.revisor.id) return "Quien elabora no puede revisar";
   }
@@ -46,4 +48,20 @@ export function validarDesignacion(d: Designacion): string | null {
   if (elabora && d.elaborador && d.elaborador.id === d.aprobador.id) return "Quien elabora no puede aprobar";
   if (!elabora && d.solicitante.id === d.aprobador.id) return "Quien pide la eliminación no puede aprobarla";
   return null;
+}
+
+type Candidato = { id: number; rol: Rol };
+
+/** Quienes pueden revisar, sin quien elabora (S2). */
+export function candidatosRevisor<T extends Candidato>(usuarios: readonly T[], elaboradorId: number | null): T[] {
+  return usuarios.filter((u) => ROLES_REVISOR.includes(u.rol) && u.id !== elaboradorId);
+}
+
+/** Quienes tienen el rol que aprueba, sin el originador (S1 y S3). */
+export function candidatosAprobador<T extends Candidato>(
+  usuarios: readonly T[],
+  rol: "gerencia" | "admin_sgc",
+  originadorId: number | null,
+): T[] {
+  return usuarios.filter((u) => u.rol === rol && u.id !== originadorId);
 }

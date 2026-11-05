@@ -83,8 +83,8 @@ export type DatosDocumento = {
  * Patrón del código: sale de `formato_codigo` si es válido; si no, de la clave
  * heredada `patron_codigo` y, a falta de esta, del patrón por defecto.
  */
-export async function obtenerPatronCodigo(): Promise<RegExp> {
-  const sql = obtenerSql();
+export async function obtenerPatronCodigo(opciones?: { sql?: Cliente }): Promise<RegExp> {
+  const sql = opciones?.sql ?? obtenerSql();
   const filas = await sql`SELECT clave, valor FROM configuracion
     WHERE clave IN ('formato_codigo', 'patron_codigo')`;
   const valor = (clave: string) =>
@@ -112,49 +112,68 @@ async function insertarAsociaciones(
   }
 }
 
+/** Crea el documento con su primera versión en borrador, dentro de la transacción dada. */
+export async function crearDocumentoEn(
+  tx: TransactionSql,
+  datos: DatosDocumento & {
+    nivelAcceso?: "general" | "restringido";
+    numeroInicial?: number;
+    relacionados?: number[];
+  },
+  usuarioId: number,
+): Promise<{ documentoId: number; versionId: number }> {
+  validarAsociaciones(datos.asociaciones);
+  const [doc] = await tx`INSERT INTO documentos (codigo, titulo, tipo_id, descripcion, palabras_clave, nivel_acceso)
+    VALUES (${datos.codigo}, ${datos.titulo}, ${datos.tipoId},
+            ${datos.descripcion}, ${datos.palabrasClave}, ${datos.nivelAcceso ?? "general"})
+    RETURNING id`;
+  const [version] = await tx`INSERT INTO documento_versiones (documento_id, numero, estado)
+    VALUES (${doc.id}, ${datos.numeroInicial ?? 1}, 'borrador') RETURNING id`;
+  await insertarAsociaciones(tx, doc.id, datos.asociaciones);
+  for (const relacionadoId of new Set(datos.relacionados)) {
+    await tx`INSERT INTO documento_relaciones (documento_id, relacionado_id) VALUES (${doc.id}, ${relacionadoId})`;
+  }
+  await registrarAuditoria(tx, {
+    usuarioId, accion: "crear_documento", entidad: "documento",
+    entidadId: doc.id, detalle: { codigo: datos.codigo, titulo: datos.titulo },
+  });
+  return { documentoId: doc.id, versionId: version.id };
+}
+
 export async function crearDocumento(
   datos: DatosDocumento,
   usuarioId: number,
 ): Promise<{ documentoId: number; versionId: number }> {
-  validarAsociaciones(datos.asociaciones);
-  const sql = obtenerSql();
-  return await sql.begin(async (tx) => {
-    const [doc] = await tx`INSERT INTO documentos (codigo, titulo, tipo_id, descripcion, palabras_clave)
-      VALUES (${datos.codigo}, ${datos.titulo}, ${datos.tipoId},
-              ${datos.descripcion}, ${datos.palabrasClave})
-      RETURNING id`;
-    const [version] = await tx`INSERT INTO documento_versiones (documento_id, numero, estado)
-      VALUES (${doc.id}, 1, 'borrador') RETURNING id`;
-    await insertarAsociaciones(tx, doc.id, datos.asociaciones);
-    await registrarAuditoria(tx, {
-      usuarioId, accion: "crear_documento", entidad: "documento",
-      entidadId: doc.id, detalle: { codigo: datos.codigo, titulo: datos.titulo },
-    });
-    return { documentoId: doc.id, versionId: version.id };
+  return await obtenerSql().begin((tx) => crearDocumentoEn(tx, datos, usuarioId));
+}
+
+/** Abre la versión siguiente en borrador. Una versión descartada libera su número. */
+export async function crearVersionBorradorEn(
+  tx: TransactionSql,
+  documentoId: number,
+  usuarioId: number,
+): Promise<{ versionId: number; numero: number }> {
+  const [borrador] = await tx`SELECT 1 FROM documento_versiones
+    WHERE documento_id = ${documentoId} AND estado = 'borrador'`;
+  if (borrador) {
+    throw new Error("Ya hay una versión en borrador: publíquela o edítela");
+  }
+  const [{ siguiente }] = await tx`SELECT coalesce(max(numero), 0) + 1 AS siguiente
+    FROM documento_versiones WHERE documento_id = ${documentoId} AND estado <> 'descartado'`;
+  const [version] = await tx`INSERT INTO documento_versiones (documento_id, numero, estado)
+    VALUES (${documentoId}, ${siguiente}, 'borrador') RETURNING id, numero`;
+  await registrarAuditoria(tx, {
+    usuarioId, accion: "crear_version", entidad: "documento_version",
+    entidadId: version.id, detalle: { documentoId, numero: version.numero },
   });
+  return { versionId: version.id, numero: version.numero };
 }
 
 export async function crearVersionBorrador(
   documentoId: number,
   usuarioId: number,
 ): Promise<{ versionId: number; numero: number }> {
-  const sql = obtenerSql();
-  return await sql.begin(async (tx) => {
-    const [borrador] = await tx`SELECT 1 FROM documento_versiones
-      WHERE documento_id = ${documentoId} AND estado = 'borrador'`;
-    if (borrador) {
-      throw new Error("Ya hay una versión en borrador: publíquela o edítela");
-    }
-    const [{ siguiente }] = await tx`SELECT coalesce(max(numero), 0) + 1 AS siguiente
-      FROM documento_versiones WHERE documento_id = ${documentoId}`;
-    const [version] = await tx`INSERT INTO documento_versiones (documento_id, numero, estado)
-      VALUES (${documentoId}, ${siguiente}, 'borrador') RETURNING id, numero`;
-    await registrarAuditoria(tx, {
-      usuarioId, accion: "crear_version", entidad: "documento_version",
-      entidadId: version.id, detalle: { documentoId, numero: version.numero },
-    });
-    return { versionId: version.id, numero: version.numero };
-  });
+  return await obtenerSql().begin((tx) => crearVersionBorradorEn(tx, documentoId, usuarioId));
 }
 
 export type DatosVersion = {

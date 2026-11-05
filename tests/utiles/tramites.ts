@@ -4,7 +4,7 @@
  */
 import type { Row, TransactionSql } from "postgres";
 import type { Cliente } from "@/db/cliente";
-import type { OpcionesFlujo, SesionFlujo } from "@/db/consultas/tramites-flujo";
+import { crearSolicitud, type OpcionesFlujo, type SesionFlujo } from "@/db/consultas/tramites-flujo";
 import type { Rol } from "@/lib/roles";
 
 function aSesion(u: Row): SesionFlujo {
@@ -50,4 +50,39 @@ export function sesionAdmin(tx: TransactionSql): Promise<SesionFlujo> {
 /** Opciones del flujo para un test: la transacción, una hora fija y una firma que siempre pasa. */
 export function opc(tx: TransactionSql, ahora = "2026-11-05T15:00:00Z"): OpcionesFlujo {
   return { sql: tx, ahora: new Date(ahora), verificar: async () => ({ ok: true, metodo: "clave" }) };
+}
+
+/** Lo que `aceptarCreacion`, que no consulta la BD, necesita de la última solicitud de creación. */
+let ultimaSolicitud: { procesoId: number; tipoDocumentoId: number; titulo: string } | null = null;
+
+/** Deja una creación en `aceptacion`: la pide el líder de CEX, así que el visto bueno queda dado. */
+export async function solicitudDeCreacion(tx: TransactionSql, d: { proceso: string; tipo: string; titulo: string }) {
+  const admin = await sesionAdmin(tx);
+  const gerente = await sesionDe(tx, "gerente");
+  const liderCex = await sesionDe(tx, "lider.cex");
+  const [{ id: procesoId }] = await tx`SELECT id FROM procesos WHERE sigla = ${d.proceso}`;
+  const [{ id: tipoDocumentoId }] = await tx`SELECT id FROM tipos_documento WHERE sigla = ${d.tipo}`;
+  const { tramiteId } = await crearSolicitud(
+    liderCex,
+    { tipo: "crear", motivo: "solicitud_personal", justificacion: "Se necesita para la atención.", procesoId, tipoDocumentoId, tituloPropuesto: d.titulo },
+    opc(tx),
+  );
+  ultimaSolicitud = { procesoId, tipoDocumentoId, titulo: d.titulo };
+  return { admin, gerente, liderCex, tramiteId, procesoId, tipoDocumentoId };
+}
+
+/** Los datos de `aceptar` en la última creación, como salen de `EsquemaAceptarCreacion`. */
+export function aceptarCreacion(parcial: Record<string, unknown>): Record<string, unknown> {
+  if (!ultimaSolicitud) throw new Error("aceptarCreacion va después de solicitudDeCreacion");
+  const { procesoId, tipoDocumentoId, titulo } = ultimaSolicitud;
+  return {
+    decision: "nuevo",
+    tipoDocumentoId,
+    asociaciones: [{ procesoId, esPrincipal: true }],
+    titulo,
+    relacionados: [],
+    nivelAcceso: "general",
+    venceElaboracion: "2026-11-20",
+    ...parcial,
+  };
 }

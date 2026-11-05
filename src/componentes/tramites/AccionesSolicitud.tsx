@@ -12,7 +12,7 @@ import type { Etapa } from "@/lib/tramites/tipos";
 type Referencia = { id: number; etapa: Etapa; ronda: number };
 type AccionServidor = (estado: EstadoAccion, formData: FormData) => Promise<EstadoAccion>;
 
-function Ocultos({ tramite }: { tramite: Referencia }) {
+export function Ocultos({ tramite }: { tramite: Referencia }) {
   return (
     <>
       <input type="hidden" name="id" value={tramite.id} />
@@ -22,7 +22,7 @@ function Ocultos({ tramite }: { tramite: Referencia }) {
   );
 }
 
-function ErrorAccion({ estado }: { estado: EstadoAccion }) {
+export function ErrorAccion({ estado }: { estado: EstadoAccion }) {
   return estado ? (
     <p role="alert" className="text-sm text-estado-critico-texto">
       {estado.error}
@@ -44,7 +44,7 @@ function DarVistoBueno({ tramite }: { tramite: Referencia }) {
 }
 
 /** Dos gestos para lo que cierra el trámite: abrir el diálogo y confirmar. */
-function AccionEnDialogo({
+export function AccionEnDialogo({
   tramite,
   accion,
   etiqueta,

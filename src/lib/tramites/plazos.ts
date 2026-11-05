@@ -12,13 +12,29 @@ function diaLocal(instante: Date, zona: string): number {
   return Date.UTC(de("year"), de("month") - 1, de("day")) / MS_DIA;
 }
 
+/** Fecha yyyy-mm-dd del instante en la zona. */
+export function fechaEnZona(instante: Date, zona: string): string {
+  return new Date(diaLocal(instante, zona) * MS_DIA).toISOString().slice(0, 10);
+}
+
+/** Último milisegundo del día `fecha` (yyyy-mm-dd) en la zona. */
+export function finDeFecha(fecha: string, zona: string): Date {
+  return ultimoInstanteDelDia(Date.parse(`${fecha}T00:00:00Z`) / MS_DIA, zona);
+}
+
 /**
  * Último milisegundo del día que resulta de sumar `dias` días calendario al día de
- * `desde`, ambos en `zona`. Busca el último instante cuyo día local no pasa del
- * objetivo, así que no depende del desfase ni de los cambios de hora de la zona.
+ * `desde`, ambos en `zona`.
  */
 export function fechaLimite(desde: Date, dias: number, zona: string): Date {
-  const objetivo = diaLocal(desde, zona) + dias;
+  return ultimoInstanteDelDia(diaLocal(desde, zona) + dias, zona);
+}
+
+/**
+ * Busca el último instante cuyo día local no pasa del objetivo, así que no depende del
+ * desfase ni de los cambios de hora de la zona.
+ */
+function ultimoInstanteDelDia(objetivo: number, zona: string): Date {
   // Los desfases reales van de -12 h a +14 h: a -15 h del 00:00 UTC del objetivo aún no
   // llegó su día local, y a +36 h ya pasó.
   let ultimoValido = objetivo * MS_DIA - 15 * 3_600_000;

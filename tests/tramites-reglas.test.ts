@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Rol } from "@/lib/roles";
 import { accionesDisponibles, evaluarTransicion, type ActorParaRegla, type TramiteParaRegla } from "@/lib/tramites/transiciones";
-import { rolAprobador, validarDesignacion, type Persona } from "@/lib/tramites/separacion";
+import { candidatosAprobador, candidatosRevisor, rolAprobador, validarDesignacion, type Persona } from "@/lib/tramites/separacion";
 
 const base: TramiteParaRegla = { tipo: "modificar", etapa: "revision", solicitanteId: 1, elaboradorId: 2, revisorId: 3, aprobadorId: 4 };
 const actor = (usuarioId: number, rol: Rol, lideraPropietario = false): ActorParaRegla => ({ usuarioId, rol, lideraPropietario });
@@ -105,6 +105,16 @@ describe("separación de funciones", () => {
     const baja = { tipo: "eliminar" as const, autoridad: "operativo" as const, solicitante: p(1, "lider_proceso", false), elaborador: p(2, "lider_proceso", false), revisor: p(5, "lider_proceso", false), aprobador: p(3, "admin_sgc") };
     expect(validarDesignacion(baja)).toBeNull();                                         // en eliminar solo cuenta el aprobador
     expect(validarDesignacion({ ...baja, aprobador: p(3, "admin_sgc", false) })).toBe("El usuario designado no está activo");
+  });
+
+  it("los candidatos que ofrece la pantalla son los que validarDesignacion acepta", () => {
+    const usuarios = [p(1, "admin_sgc"), p(2, "admin_sgc"), p(3, "lider_proceso"), p(4, "gerencia"), p(5, "consulta"), p(6, "control_interno")];
+    const ids = (lista: readonly { id: number }[]) => lista.map((u) => u.id);
+    expect(ids(candidatosRevisor(usuarios, null))).toEqual([1, 2, 3]);
+    expect(ids(candidatosRevisor(usuarios, 3))).toEqual([1, 2]);                         // S2
+    expect(ids(candidatosAprobador(usuarios, "admin_sgc", null))).toEqual([1, 2]);
+    expect(ids(candidatosAprobador(usuarios, "admin_sgc", 2))).toEqual([1]);             // S1 y S3
+    expect(ids(candidatosAprobador(usuarios, "gerencia", 4))).toEqual([]);
   });
 
   it("quien elabora no puede aprobar", () => {

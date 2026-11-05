@@ -111,6 +111,16 @@ export function consecutivoDe(
   return coincidencia ? Number(coincidencia[1]) : null;
 }
 
+/** El código que sigue para ese proceso y tipo; null sin formato válido. */
+export function codigoSiguiente(
+  formato: string | null,
+  codigos: readonly string[],
+  p: { proceso: string; tipo: string },
+): string | null {
+  if (!formato || validarFormato(formato) !== null) return null;
+  return generarCodigo(formato, { ...p, consecutivo: siguienteConsecutivo(formato, codigos, p) });
+}
+
 /** El mayor consecutivo existente de ese proceso y tipo, más uno (1 si no hay). */
 export function siguienteConsecutivo(
   formato: string,

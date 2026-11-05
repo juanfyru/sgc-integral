@@ -2,9 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 vi.mock("@/app/acciones-tramites", () => ({
+  aceptarSolicitudAccion: vi.fn(),
   crearSolicitudAccion: vi.fn(),
   darVistoBuenoAccion: vi.fn(),
   negarVistoBuenoAccion: vi.fn(),
+  rechazarSolicitudAccion: vi.fn(),
   retirarSolicitudAccion: vi.fn(),
 }));
 
@@ -13,10 +15,24 @@ import { BloqueSolicitud } from "@/componentes/tramites/BloqueSolicitud";
 import { EncabezadoTramite } from "@/componentes/tramites/EncabezadoTramite";
 import { FormularioSolicitud } from "@/componentes/tramites/FormularioSolicitud";
 import { HistorialTramite } from "@/componentes/tramites/HistorialTramite";
+import { PanelAceptacion, type TramiteParaAceptar } from "@/componentes/tramites/PanelAceptacion";
 import { PasosTramite } from "@/componentes/tramites/PasosTramite";
 import { TablaTramites } from "@/componentes/tramites/TablaTramites";
-import type { DetalleTramite, ResumenTramite } from "@/db/consultas/tramites";
-import { EsquemaFirma, EsquemaMotivoCierre, EsquemaSolicitud } from "@/lib/esquemas/tramites";
+import type {
+  CatalogoClasificacion,
+  ContextoAceptacion,
+  DatosParaAceptar,
+  DetalleTramite,
+  ResumenTramite,
+} from "@/db/consultas/tramites";
+import {
+  EsquemaAceptarCreacion,
+  EsquemaAceptarEliminacion,
+  EsquemaAceptarModificacion,
+  EsquemaFirma,
+  EsquemaMotivoCierre,
+  EsquemaSolicitud,
+} from "@/lib/esquemas/tramites";
 import type { Etapa } from "@/lib/tramites/tipos";
 
 const ahora = new Date("2026-11-05T15:00:00Z");
@@ -205,8 +221,213 @@ describe("FormularioSolicitud", () => {
   });
 });
 
+describe("PanelAceptacion", () => {
+  const ana = { id: 1, nombre: "Ana Admin", cargo: "Coordinadora de calidad", rol: "admin_sgc" as const };
+  const leo = { id: 2, nombre: "Leo Líder", cargo: null, rol: "lider_proceso" as const };
+  const gina = { id: 3, nombre: "Gina Gerente", cargo: "Gerente", rol: "gerencia" as const };
+  const carlos = { id: 4, nombre: "Carlos Consulta", cargo: null, rol: "consulta" as const };
+
+  const creacion: TramiteParaAceptar = {
+    id: 7, etapa: "aceptacion", ronda: 0, tipo: "crear", solicitanteId: 2, procesoId: 20, subprocesoId: null,
+    tipoDocumentoId: 50, tituloPropuesto: "Consentimiento de <b>menores</b>", codigo: null, titulo: "Consentimiento de <b>menores</b>", procesoNombre: "Consulta Externa",
+  };
+  const catalogo: CatalogoClasificacion = {
+    tipos: [
+      { id: 50, nombre: "Formato", sigla: "FO", activo: true, autoridad: "operativo", plantilla: { codigo: "SGC-FO-01", version: 3 } },
+      { id: 51, nombre: "Manual", sigla: "MN", activo: true, autoridad: "estrategico", plantilla: null },
+    ],
+    procesos: [{ id: 20, nombre: "Consulta Externa", sigla: "CEX", subprocesos: [{ id: 200, nombre: "Odontología" }] }],
+    documentos: [
+      { id: 90, codigo: "CEX-FO-03", titulo: "Consentimiento de odontología", version: 2, versionSiguiente: 3, procesoId: 20, proceso: "Consulta Externa", tipoId: 50, tipo: "Formato", autoridad: "operativo", conTramite: false, conBorrador: false },
+      { id: 91, codigo: "CEX-FO-04", titulo: "Con trámite", version: 1, versionSiguiente: 2, procesoId: 20, proceso: "Consulta Externa", tipoId: 50, tipo: "Formato", autoridad: "operativo", conTramite: true, conBorrador: false },
+      { id: 92, codigo: "AIN-FO-02", titulo: "De otro proceso", version: 1, versionSiguiente: 2, procesoId: 21, proceso: "Internación", tipoId: 50, tipo: "Formato", autoridad: "operativo", conTramite: false, conBorrador: false },
+    ],
+    formatoCodigo: "{PROCESO}-{TIPO}-{NN}",
+    codigos: ["CEX-FO-03", "CEX-FO-04"],
+  };
+  const datos: DatosParaAceptar = {
+    parecidos: [
+      { documentoId: 90, codigo: "CEX-FO-03", titulo: "Consentimiento de odontología", version: 2, procesoId: 20, nivel: "muy_parecido" },
+      { documentoId: 92, codigo: "AIN-FO-02", titulo: "De otro proceso", version: 1, procesoId: 21, nivel: "parecido" },
+    ],
+    codigoSugerido: "CEX-FO-05",
+    plantilla: { codigo: "SGC-FO-01", version: 3 },
+    autoridad: "operativo",
+    usuarios: [ana, leo, gina, carlos],
+  };
+  const contexto: ContextoAceptacion = { solicitanteRol: "lider_proceso", documento: null, catalogo };
+
+  const panel = (p: Partial<React.ComponentProps<typeof PanelAceptacion>> = {}) =>
+    renderToStaticMarkup(
+      <PanelAceptacion tramite={creacion} datos={datos} contexto={contexto} usuarioId={1} plazos={{ revision: 5, aprobacion: 7 }} hoy="2026-11-05" venceSugerida="2026-11-20" {...p} />,
+    );
+  /** El valor elegido y las opciones de un `<select>`, leídos del HTML. */
+  const selector = (html: string, nombre: string) => {
+    const bloque = new RegExp(`<select[^>]*name="${nombre}"[^>]*>(.*?)</select>`).exec(html)?.[1] ?? "";
+    const opciones = [...bloque.matchAll(/<option value="([^"]*)"( selected="")?/g)];
+    return { valores: opciones.map((o) => o[1]).filter(Boolean), elegido: opciones.find((o) => o[2])?.[1] ?? "" };
+  };
+
+  it("una creación muestra los parecidos, la clasificación, el código sugerido y los responsables", () => {
+    const html = panel();
+    expect(html).toContain("¿Ya existe un documento parecido?");
+    expect(html).toContain("Muy parecido");
+    expect(html).toContain("Parecido");
+    expect(html).toContain("de otro proceso");                           // el estado no es solo color
+    expect(html).toContain('name="codigo"');
+    expect(html).toContain('value="CEX-FO-05"');
+    expect(html).toContain("Sugerido: siguiente consecutivo de CEX-FO");
+    expect(html).toContain("SGC-FO-01, versión 3");
+    expect(html).toContain('min="2026-11-05"');
+    expect(html).toContain('value="2026-11-20"');
+    expect(html).toContain("Aceptar y abrir el trámite");
+    expect(html).toContain("Rechazar con motivo");
+    expect(html).toContain("&lt;b&gt;menores");                          // el título propuesto es texto plano
+  });
+
+  it("sin parecidos lo dice, y sin formato pide escribir el código", () => {
+    const html = panel({ datos: { ...datos, parecidos: [], codigoSugerido: null } });
+    expect(html).toContain("No hay documentos vigentes con un título parecido");
+    expect(html).toContain("No hay un formato de código configurado");
+  });
+
+  it("por defecto elabora quien pidió y revisa quien acepta; el revisor excluye al elaborador", () => {
+    const html = panel();
+    expect(selector(html, "elaboradorId")).toMatchObject({ elegido: "2", valores: ["1", "2", "3", "4"] });
+    expect(selector(html, "revisorId")).toEqual({ elegido: "1", valores: ["1"] });
+  });
+
+  it("si quien acepta es el elaborador, el revisor queda sin valor", () => {
+    const html = panel({ tramite: { ...creacion, solicitanteId: 1 } });
+    expect(selector(html, "revisorId")).toEqual({ elegido: "", valores: ["2"] });
+  });
+
+  it("un candidato único a aprobar viene elegido; el rol sale de la autoridad y de quien elabora", () => {
+    const operativo = panel();
+    expect(selector(operativo, "aprobadorId")).toEqual({ elegido: "1", valores: ["1"] });
+    expect(operativo).toContain("Formato es un tipo operativo: aprueba el Administrador del SGC");
+    const elaboraAdmin = panel({ tramite: { ...creacion, solicitanteId: 1 } });
+    expect(selector(elaboraAdmin, "aprobadorId")).toEqual({ elegido: "3", valores: ["3"] });
+    expect(elaboraAdmin).toContain("Elabora un Administrador del SGC: aprueba Gerencia");
+    const estrategico = panel({ tramite: { ...creacion, tipoDocumentoId: 51 } });
+    expect(selector(estrategico, "aprobadorId").valores).toEqual(["3"]);
+    expect(estrategico).toContain("Manual es un tipo estratégico: aprueba Gerencia");
+  });
+
+  it("sin candidatos dice qué falta y desactiva Aceptar", () => {
+    const html = panel({ tramite: { ...creacion, tipoDocumentoId: 51 }, datos: { ...datos, usuarios: [ana, leo, carlos] } });
+    expect(html).toContain("No hay ningún usuario activo con el rol Gerencia");
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Aceptar y abrir el trámite/);
+    const sinOtro = panel({ tramite: { ...creacion, solicitanteId: 3, tipoDocumentoId: 51 } });
+    expect(sinOtro).toContain("No hay otro usuario activo con el rol Gerencia: quien elabora no puede aprobar");
+    expect(panel({ datos: { ...datos, usuarios: [leo, gina] } })).toContain("No hay ningún usuario activo que pueda revisar");
+  });
+
+  it("si quien pidió ya no está activo, nadie elabora por defecto", () => {
+    const html = panel({ datos: { ...datos, usuarios: [ana, gina] } });
+    expect(selector(html, "elaboradorId").elegido).toBe("");
+  });
+
+  it("una modificación muestra los datos sin editarlos y el título actual", () => {
+    const tramite: TramiteParaAceptar = { ...creacion, tipo: "modificar", tipoDocumentoId: null, tituloPropuesto: null, codigo: "GTH-PR-02", titulo: "Inducción", procesoNombre: "Talento Humano" };
+    const html = panel({
+      tramite,
+      datos: { ...datos, parecidos: [], codigoSugerido: null },
+      contexto: { solicitanteRol: "lider_proceso", documento: { tipo: "Procedimiento", versionSiguiente: 4 }, catalogo: null },
+    });
+    expect(html).toContain("GTH-PR-02");
+    expect(html).toContain("Procedimiento");
+    expect(html).toContain("Talento Humano");
+    expect(html).toContain("Versión");
+    expect(html).toMatch(/<input[^>]*name="tituloNuevo"[^>]*value="Inducción"|<input[^>]*value="Inducción"[^>]*name="tituloNuevo"/);
+    for (const campo of ["codigo", "tipoDocumentoId", "principal", "decision", "titulo"]) expect(html).not.toContain(`name="${campo}"`);
+    expect(html).not.toContain("¿Ya existe un documento parecido?");
+    expect(html).toContain("Procedimiento es un tipo operativo");
+  });
+
+  it("una eliminación solo pide el aprobador", () => {
+    const tramite: TramiteParaAceptar = { ...creacion, tipo: "eliminar", tipoDocumentoId: null, tituloPropuesto: null, codigo: "GTH-PR-02", titulo: "Inducción" };
+    const eliminar = (solicitanteRol: "lider_proceso" | "admin_sgc", solicitanteId = 2) =>
+      panel({
+        tramite: { ...tramite, solicitanteId },
+        datos: { ...datos, parecidos: [], codigoSugerido: null },
+        contexto: { solicitanteRol, documento: { tipo: "Procedimiento", versionSiguiente: 4 }, catalogo: null },
+      });
+    const html = eliminar("lider_proceso");
+    expect(html).toContain('name="aprobadorId"');
+    for (const campo of ["elaboradorId", "revisorId", "venceElaboracion", "tituloNuevo", "codigo"]) expect(html).not.toContain(`name="${campo}"`);
+    expect(html).not.toContain("Clasificación y código");
+    expect(html).toContain("Aceptar y pasar a aprobación");
+    expect(selector(html, "aprobadorId").valores).toEqual(["1"]);
+    const pideAdmin = eliminar("admin_sgc", 99);                         // quien pidió ya no está activo, pero su rol cuenta
+    expect(selector(pideAdmin, "aprobadorId").valores).toEqual(["3"]);
+    expect(pideAdmin).toContain("La pide un Administrador del SGC: aprueba Gerencia");
+  });
+
+  it("ningún texto llama Coordinador SGC al rol", () => {
+    expect(panel()).not.toContain("Coordinador SGC");
+  });
+});
+
 describe("esquemas del trámite", () => {
   const solicitud = { tipo: "crear", motivo: "mejora", justificacion: "Diez caracteres.", procesoId: "3", tipoDocumentoId: "2", tituloPropuesto: "Tres" };
+
+  describe("aceptar", () => {
+    const responsables = { elaboradorId: "2", revisorId: "3", aprobadorId: "4", venceElaboracion: "2026-11-20" };
+    const nuevo = { decision: "nuevo", tipoDocumentoId: "5", principal: "s:7", titulo: "Formato nuevo", nivelAcceso: "general", codigo: " cex-fo-01 ", ...responsables };
+
+    it("una marca sola o varias dan listas, y los ids llegan como números", () => {
+      const uno = EsquemaAceptarCreacion.parse({ ...nuevo, asociaciones: "p:2", relacionados: "9" });
+      expect(uno.asociaciones).toEqual([{ subprocesoId: 7, esPrincipal: true }, { procesoId: 2, esPrincipal: false }]);
+      expect(uno.relacionados).toEqual([9]);
+      expect(uno.codigo).toBe("CEX-FO-01");
+      expect(uno).toMatchObject({ tipoDocumentoId: 5, elaboradorId: 2, revisorId: 3, aprobadorId: 4 });
+      const varios = EsquemaAceptarCreacion.parse({ ...nuevo, asociaciones: ["p:2", "s:7", "s:7"], relacionados: ["9", "10"] });
+      expect(varios.asociaciones).toEqual([{ subprocesoId: 7, esPrincipal: true }, { procesoId: 2, esPrincipal: false }]);
+      expect(varios.relacionados).toEqual([9, 10]);
+      expect(EsquemaAceptarCreacion.parse(nuevo)).toMatchObject({ relacionados: [], asociaciones: [{ subprocesoId: 7, esPrincipal: true }] });
+    });
+
+    it.each(["tipoDocumentoId", "principal", "titulo", "nivelAcceso", "codigo", "elaboradorId", "revisorId", "aprobadorId", "venceElaboracion"])(
+      "un documento nuevo exige %s",
+      (campo) => {
+        const incompleto: Record<string, string> = { ...nuevo };
+        delete incompleto[campo];
+        expect(EsquemaAceptarCreacion.safeParse(incompleto).success).toBe(false);
+      },
+    );
+
+    it("convertir en modificación exige el documento y no pide la clasificación", () => {
+      const convertir = { decision: "modificacion", ...responsables };
+      const sinDocumento = EsquemaAceptarCreacion.safeParse(convertir);
+      expect(sinDocumento.success ? null : sinDocumento.error.issues[0].path).toEqual(["documentoExistenteId"]);
+      expect(EsquemaAceptarCreacion.parse({ ...convertir, documentoExistenteId: "8" })).toMatchObject({ decision: "modificacion", documentoExistenteId: 8, asociaciones: [], relacionados: [] });
+      expect(EsquemaAceptarCreacion.safeParse({ ...nuevo, decision: "modificacion", documentoExistenteId: "8" }).success).toBe(true);
+    });
+
+    it.each([
+      ["una marca rara", { principal: "x:7" }],
+      ["una marca con id cero", { asociaciones: ["p:0"] }],
+      ["un relacionado que no es id", { relacionados: ["abc"] }],
+      ["un nivel inventado", { nivelAcceso: "secreto" }],
+      ["una decisión inventada", { decision: "quizas" }],
+      ["un título corto", { titulo: "ab" }],
+      ["una fecha que no existe", { venceElaboracion: "2026-02-31" }],
+      ["una fecha con otro formato", { venceElaboracion: "20/11/2026" }],
+      ["un campo de más", { sobra: "x" }],
+    ])("rechaza %s", (_nombre, cambio) => {
+      expect(EsquemaAceptarCreacion.safeParse({ ...nuevo, ...cambio }).success).toBe(false);
+    });
+
+    it("los esquemas de modificación y eliminación son estrictos", () => {
+      expect(EsquemaAceptarModificacion.parse({ ...responsables, tituloNuevo: " Otro " })).toEqual({ tituloNuevo: "Otro", elaboradorId: 2, revisorId: 3, aprobadorId: 4, venceElaboracion: "2026-11-20" });
+      expect(EsquemaAceptarModificacion.parse(responsables)).not.toHaveProperty("tituloNuevo");
+      expect(EsquemaAceptarModificacion.safeParse({ ...responsables, codigo: "X" }).success).toBe(false);
+      expect(EsquemaAceptarEliminacion.parse({ aprobadorId: "4" })).toEqual({ aprobadorId: 4 });
+      expect(EsquemaAceptarEliminacion.safeParse({ aprobadorId: "4", elaboradorId: "2" }).success).toBe(false);
+      expect(EsquemaAceptarEliminacion.safeParse({}).success).toBe(false);
+    });
+  });
 
   it("EsquemaSolicitud convierte los ids, recorta y es estricto", () => {
     expect(EsquemaSolicitud.parse({ ...solicitud, justificacion: "  Diez caracteres.  " })).toEqual({ ...solicitud, procesoId: 3, tipoDocumentoId: 2 });

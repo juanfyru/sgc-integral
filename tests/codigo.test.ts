@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   FORMATO_CODIGO_DEFECTO,
+  codigoSiguiente,
   consecutivoDe,
   generarCodigo,
   patronDeConfiguracion,
@@ -87,5 +88,19 @@ describe("patronDeConfiguracion", () => {
     expect(p.test("PR-GTH-001")).toBe(true);
     expect(p.test("SGC-FO-02")).toBe(true);
     expect(p.test("SGC-FO-2")).toBe(false);
+  });
+});
+
+describe("codigoSiguiente", () => {
+  const p = { proceso: "CEX", tipo: "FO" };
+
+  it("sigue al mayor consecutivo de ese proceso y tipo", () => {
+    expect(codigoSiguiente(F, ["CEX-FO-02", "CEX-FO-07", "CEX-PR-20", "GTH-FO-30"], p)).toBe("CEX-FO-08");
+    expect(codigoSiguiente(F, [], p)).toBe("CEX-FO-01");
+  });
+
+  it("sin formato, o con uno inválido, no sugiere nada", () => {
+    expect(codigoSiguiente(null, ["CEX-FO-02"], p)).toBeNull();
+    expect(codigoSiguiente("sin marcadores", ["CEX-FO-02"], p)).toBeNull();
   });
 });
