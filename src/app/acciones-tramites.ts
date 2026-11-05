@@ -3,6 +3,7 @@
 import { idNumerico, mutacion, texto, type EstadoAccion } from "@/app/admin/comun";
 import { obtenerTramite } from "@/db/consultas/tramites";
 import {
+  CAMBIO_MIENTRAS,
   ErrorFirma,
   ErrorTramite,
   crearSolicitud,
@@ -82,11 +83,16 @@ export async function retirarSolicitudAccion(_prev: EstadoAccion, formData: Form
   );
 }
 
-/** El esquema sale del tipo guardado: un formulario no decide qué clase de trámite es. */
+/**
+ * El esquema sale del tipo guardado: un formulario no decide qué clase de trámite es. Si el
+ * trámite cambió (otro administrador pudo convertirlo), este formulario ya no es su esquema.
+ */
 export async function aceptarSolicitudAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "tramites.gestionar", async (_usuarioId, _formData, sesion) => {
-    const tramite = await obtenerTramite(idNumerico(formData, "id"), sesion);
+    const { tramiteId, etapaEsperada, rondaEsperada } = referencia(formData);
+    const tramite = await obtenerTramite(tramiteId, sesion);
     if (!tramite) throw new ErrorTramite("El trámite no existe");
+    if (tramite.etapa !== etapaEsperada || tramite.ronda !== rondaEsperada) throw new ErrorTramite(CAMBIO_MIENTRAS);
     return ejecutar(formData, sesion, "aceptar", {
       datos: parsearFormulario<Record<string, unknown>>(formData, ESQUEMA_DE_ACEPTAR[tramite.tipo], { omitir: OCULTOS }),
     });

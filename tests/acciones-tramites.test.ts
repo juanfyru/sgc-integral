@@ -117,8 +117,10 @@ describe("aceptar y rechazar", () => {
     transicionar.mockResolvedValue({ etapa: "elaboracion", ronda: 1 });
   });
 
+  const tramiteDe = (tipo: string) => ({ tipo, etapa: "aceptacion", ronda: 0 });
+
   it("una creación llega a transicionar leída por su esquema", async () => {
-    obtenerTramite.mockResolvedValue({ tipo: "crear" });
+    obtenerTramite.mockResolvedValue(tramiteDe("crear"));
     const fd = formulario({ ...enAceptacion, ...nuevo });
     fd.append("asociaciones", "s:9");
     fd.append("asociaciones", "p:3");
@@ -142,16 +144,31 @@ describe("aceptar y rechazar", () => {
   });
 
   it("el esquema sale del tipo real del trámite, no de lo que diga el formulario", async () => {
-    obtenerTramite.mockResolvedValue({ tipo: "eliminar" });
+    obtenerTramite.mockResolvedValue(tramiteDe("eliminar"));
     expect(await aceptarSolicitudAccion(null, formulario({ ...enAceptacion, ...nuevo }))).toMatchObject({ ok: false });
     expect(transicionar).not.toHaveBeenCalled();
     expect(await aceptarSolicitudAccion(null, formulario({ ...enAceptacion, aprobadorId: "4" }))).toBeNull();
     expect(transicionar.mock.calls[0][1].datos).toEqual({ aprobadorId: 4 });
 
     transicionar.mockClear();
-    obtenerTramite.mockResolvedValue({ tipo: "modificar" });
+    obtenerTramite.mockResolvedValue(tramiteDe("modificar"));
     expect(await aceptarSolicitudAccion(null, formulario({ ...enAceptacion, ...responsables, tituloNuevo: "  Otro título  " }))).toBeNull();
     expect(transicionar.mock.calls[0][1].datos).toEqual({ tituloNuevo: "Otro título", elaboradorId: 2, revisorId: 3, aprobadorId: 4, venceElaboracion: "2026-11-20" });
+  });
+
+  it("si otro administrador ya lo convirtió, dice que cambió y no que sobran campos", async () => {
+    obtenerTramite.mockResolvedValue({ tipo: "modificar", etapa: "elaboracion", ronda: 1 });
+    expect(await aceptarSolicitudAccion(null, formulario({ ...enAceptacion, ...nuevo }))).toMatchObject({
+      ok: false,
+      error: "Este trámite cambió mientras lo tenía abierto. Recargue la página.",
+    });
+    expect(transicionar).not.toHaveBeenCalled();
+  });
+
+  it("el código que propuso el sistema viaja con el formulario", async () => {
+    obtenerTramite.mockResolvedValue(tramiteDe("crear"));
+    expect(await aceptarSolicitudAccion(null, formulario({ ...enAceptacion, ...nuevo, codigoSugerido: "cex-fo-01" }))).toBeNull();
+    expect(transicionar.mock.calls[0][1].datos).toMatchObject({ codigo: "CEX-FO-01", codigoSugerido: "CEX-FO-01" });
   });
 
   it("un trámite que quien acepta no ve no llega a transicionar", async () => {

@@ -22,6 +22,7 @@ import {
 } from "@/lib/tramites/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import {
+  CAMBIO_MIENTRAS,
   ErrorFirma,
   ErrorTramite,
   YA_ABIERTO,
@@ -46,7 +47,7 @@ import {
   tramiteVisto,
 } from "./tramites";
 
-export { ErrorFirma, ErrorTramite, enTransaccion, motivoObligatorio } from "./flujo/contrato";
+export { CAMBIO_MIENTRAS, ErrorFirma, ErrorTramite, enTransaccion, motivoObligatorio } from "./flujo/contrato";
 export type {
   Aviso,
   ContextoManejador,
@@ -245,7 +246,7 @@ async function comprobar(
   if (!visto?.visible) throw new ErrorTramite("El trámite no existe");
   const { tramite, lideraPropietario } = visto;
   if (tramite.etapa !== entrada.etapaEsperada || tramite.ronda !== entrada.rondaEsperada)
-    throw new ErrorTramite("Este trámite cambió mientras lo tenía abierto. Recargue la página.");
+    throw new ErrorTramite(CAMBIO_MIENTRAS);
 
   const veredicto = evaluarTransicion(entrada.accion, tramite, {
     usuarioId: sesion.usuarioId,

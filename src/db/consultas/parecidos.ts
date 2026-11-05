@@ -14,20 +14,27 @@ const UMBRAL_PARECIDO = 0.3;
 const MAXIMO = 5;
 
 /**
- * Documentos vigentes con un título parecido, para ver si una creación es un duplicado
- * (spec 13A §8.3). Lo consulta quien gestiona los trámites, que ve todos los documentos.
+ * Documentos vigentes cuyo título o palabras clave se parecen al título buscado, para ver si
+ * una creación es un duplicado (spec 13A §8.3). Las palabras clave son una lista: se busca el
+ * título en el tramo que más se le parece, y cuenta el mayor de los dos valores. Lo consulta
+ * quien gestiona los trámites, que ve todos los documentos.
  */
 export async function buscarParecidos(titulo: string, opciones?: { sql?: Cliente }): Promise<Parecido[]> {
   const sql = opciones?.sql ?? obtenerSql();
-  const filas = await sql`SELECT d.id, d.codigo, d.titulo, v.numero AS version,
-      COALESCE(dp.proceso_id, s.proceso_id) AS proceso_id,
-      similarity(lower(unaccent(d.titulo)), lower(unaccent(${titulo}))) AS similitud
-    FROM documentos d
-    JOIN documento_versiones v ON v.documento_id = d.id AND v.estado = 'vigente'
-    JOIN documento_proceso dp ON dp.documento_id = d.id AND dp.es_principal
-    LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
-    WHERE similarity(lower(unaccent(d.titulo)), lower(unaccent(${titulo}))) >= ${UMBRAL_PARECIDO}
-    ORDER BY similitud DESC, d.codigo
+  const filas = await sql`SELECT * FROM (
+      SELECT d.id, d.codigo, d.titulo, v.numero AS version,
+        COALESCE(dp.proceso_id, s.proceso_id) AS proceso_id,
+        GREATEST(
+          similarity(lower(unaccent(d.titulo)), lower(unaccent(${titulo}))),
+          word_similarity(lower(unaccent(${titulo})), lower(unaccent(COALESCE(d.palabras_clave, ''))))
+        ) AS similitud
+      FROM documentos d
+      JOIN documento_versiones v ON v.documento_id = d.id AND v.estado = 'vigente'
+      JOIN documento_proceso dp ON dp.documento_id = d.id AND dp.es_principal
+      LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
+    ) comparados
+    WHERE similitud >= ${UMBRAL_PARECIDO}
+    ORDER BY similitud DESC, codigo
     LIMIT ${MAXIMO}`;
   return filas.map((f) => ({
     documentoId: Number(f.id),

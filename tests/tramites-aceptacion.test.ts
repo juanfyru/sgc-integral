@@ -3,11 +3,21 @@
  * que se revierte: no deja filas.
  */
 import { existsSync } from "node:fs";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
 }
+
+// Reales salvo en los casos de carrera, que sin concurrencia necesitan forzar un choque.
+vi.mock("@/db/consultas/admin", async (original) => {
+  const real = await original<typeof import("@/db/consultas/admin")>();
+  return { ...real, crearVersionBorradorEn: vi.fn(real.crearVersionBorradorEn) };
+});
+vi.mock("@/db/consultas/codigos", async (original) => {
+  const real = await original<typeof import("@/db/consultas/codigos")>();
+  return { ...real, sugerirCodigo: vi.fn(real.sugerirCodigo) };
+});
 
 import type { TransactionSql } from "postgres";
 import { obtenerSql } from "@/db/cliente";
@@ -66,7 +76,9 @@ describe("aceptar una creación", () => {
   }));
 
   it("el evento guarda parecidos, clasificación, plantilla y responsables; el documento, lo elegido", () => revertida(sql, async (tx) => {
-    const { admin, liderCex, tramiteId, tipoDocumentoId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "FO", titulo: "Guía de Atención de Hipertensión Arterial" });
+    const titulo = "Guía de Atención de Hipertensión Arterial";
+    const { admin, liderCex, tramiteId, tipoDocumentoId, procesoId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "FO", titulo });
+    const vistos = await buscarParecidos(titulo, { sql: tx });
     const [plantilla] = await tx`SELECT d.id, d.codigo, v.numero FROM documentos d
       JOIN documento_versiones v ON v.documento_id = d.id AND v.estado = 'vigente' WHERE d.codigo = 'SGC-FO-01'`;
     await tx`UPDATE tipos_documento SET plantilla_documento_id = ${plantilla.id} WHERE id = ${tipoDocumentoId}`;
@@ -101,15 +113,88 @@ describe("aceptar una creación", () => {
       codigo: "GTH-FO-77",
       version: 1,
       plantilla: { codigo: "SGC-FO-01", version: plantilla.numero },
-      clasificacion: { tipoDocumentoId, titulo: "Título corregido al aceptar", nivelAcceso: "restringido", relacionados: [relacionado] },
+      clasificacion: {
+        tipoDocumentoId,
+        titulo: "Título corregido al aceptar",
+        nivelAcceso: "restringido",
+        relacionados: [relacionado],
+        asociaciones: [{ subprocesoId: sub.id, esPrincipal: true }, { procesoId: otroProceso.id, esPrincipal: false }],
+        solicitado: { procesoId, subprocesoId: null, tipoDocumentoId, titulo },   // lo corregido y lo anterior
+      },
       responsables: {
         elaborador: { id: liderCex.usuarioId, nombre: liderCex.nombre },
         revisor: { id: admin.usuarioId, nombre: admin.nombre },
         aprobador: { id: admin.usuarioId, nombre: admin.nombre },
       },
     });
-    expect(e.detalle.parecidos[0]).toEqual({ codigo: "CEX-GU-01", titulo: "Guía de Atención de Hipertensión Arterial", nivel: "muy_parecido" });
+    expect(e.detalle.parecidos).toEqual(vistos);                         // la lista completa, con ids, versión y proceso
+    expect(e.detalle.parecidos[0]).toMatchObject({ documentoId: await idDe(tx, "CEX-GU-01"), codigo: "CEX-GU-01", titulo, version: 1, procesoId, nivel: "muy_parecido" });
   }));
+
+  it("si algo falla después de crear el documento, no queda ni documento ni versión", () => revertida(sql, async (tx) => {
+    const { admin, liderCex, tramiteId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "FO", titulo: "Formato con un relacionado que no existe" });
+    const [antes] = await tx`SELECT count(*) AS versiones FROM documento_versiones`;
+    await expect(transicionar(admin, { tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
+      datos: aceptarCreacion({ codigo: "CEX-FO-01", relacionados: [999_999_999], elaboradorId: liderCex.usuarioId, revisorId: admin.usuarioId, aprobadorId: admin.usuarioId }) }, opc(tx)))
+      .rejects.toThrow();
+    const [despues] = await tx`SELECT count(*) AS versiones FROM documento_versiones`;
+    expect(despues.versiones).toBe(antes.versiones);
+    expect(await tx`SELECT 1 FROM documentos WHERE codigo = 'CEX-FO-01'`).toHaveLength(0);
+    const [t] = await tx`SELECT etapa, documento_id FROM tramites WHERE id = ${tramiteId}`;
+    expect({ ...t }).toEqual({ etapa: "aceptacion", documento_id: null });
+  }));
+
+  describe("el código ya se ocupó al aceptar", () => {
+    async function ocuparCodigo(tx: TransactionSql, codigo: string, usuarioId: number, procesoId: number, tipoId: number) {
+      await crearDocumentoEn(tx, { codigo, titulo: "Se adelantó otra aceptación", tipoId, descripcion: null, palabrasClave: null, asociaciones: [{ procesoId, esPrincipal: true }] }, usuarioId);
+    }
+
+    it("el sugerido toma el consecutivo siguiente, y el evento guarda el código final", () => revertida(sql, async (tx) => {
+      const { admin, liderCex, tramiteId, procesoId, tipoDocumentoId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "FO", titulo: "Formato en carrera" });
+      const { codigoSugerido } = await datosParaAceptar(tramiteId, { sql: tx });
+      expect(codigoSugerido).toBe("CEX-FO-01");
+      await ocuparCodigo(tx, "CEX-FO-01", admin.usuarioId, procesoId, tipoDocumentoId);
+      await transicionar(admin, { tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
+        datos: aceptarCreacion({ codigo: "CEX-FO-01", codigoSugerido, elaboradorId: liderCex.usuarioId, revisorId: admin.usuarioId, aprobadorId: admin.usuarioId }) }, opc(tx));
+      const [t] = await tx`SELECT d.codigo FROM tramites t JOIN documentos d ON d.id = t.documento_id WHERE t.id = ${tramiteId}`;
+      expect(t.codigo).toBe("CEX-FO-02");
+      const [e] = await tx`SELECT detalle FROM tramite_eventos WHERE tramite_id = ${tramiteId} AND tipo = 'aceptar'`;
+      expect(e.detalle.codigo).toBe("CEX-FO-02");
+    }));
+
+    it("escrito a mano no se cambia: el error nombra el siguiente disponible y la transacción sigue usable", () => revertida(sql, async (tx) => {
+      const { admin, liderCex, tramiteId, procesoId, tipoDocumentoId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "FO", titulo: "Formato escrito a mano" });
+      await ocuparCodigo(tx, "CEX-FO-09", admin.usuarioId, procesoId, tipoDocumentoId);
+      await expect(transicionar(admin, { tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
+        datos: aceptarCreacion({ codigo: "CEX-FO-09", codigoSugerido: "CEX-FO-10", elaboradorId: liderCex.usuarioId, revisorId: admin.usuarioId, aprobadorId: admin.usuarioId }) }, opc(tx)))
+        .rejects.toThrow("Ese código ya existe. El siguiente disponible es CEX-FO-10");
+      const [t] = await tx`SELECT etapa FROM tramites WHERE id = ${tramiteId}`;
+      expect(t.etapa).toBe("aceptacion");
+    }));
+
+    it("sin formato no hay siguiente que nombrar", () => revertida(sql, async (tx) => {
+      const { admin, liderCex, tramiteId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "FO", titulo: "Formato sin formato" });
+      await tx`DELETE FROM configuracion WHERE clave = 'formato_codigo'`;
+      await expect(transicionar(admin, { tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
+        datos: aceptarCreacion({ codigo: "GTH-PR-01", elaboradorId: liderCex.usuarioId, revisorId: admin.usuarioId, aprobadorId: admin.usuarioId }) }, opc(tx)))
+        .rejects.toThrow(/^Ese código ya existe$/);
+    }));
+
+    it("reintenta hasta tres veces; después se rinde con el error", () => revertida(sql, async (tx) => {
+      const { admin, liderCex, tramiteId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "FO", titulo: "Formato sin suerte" });
+      const sugerir = vi.mocked(sugerirCodigo);
+      sugerir.mockClear();
+      sugerir.mockResolvedValue("GTH-PR-01");                            // siempre uno ocupado
+      try {
+        await expect(transicionar(admin, { tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
+          datos: aceptarCreacion({ codigo: "GTH-PR-02", codigoSugerido: "GTH-PR-02", elaboradorId: liderCex.usuarioId, revisorId: admin.usuarioId, aprobadorId: admin.usuarioId }) }, opc(tx)))
+          .rejects.toThrow("Ese código ya existe. El siguiente disponible es GTH-PR-01");
+        expect(sugerir).toHaveBeenCalledTimes(4);                        // el intento inicial y tres más
+      } finally {
+        sugerir.mockReset();
+      }
+    }));
+  });
 
   it("el tipo elegido al aceptar manda: su autoridad decide quién aprueba, y el trámite y el documento lo siguen", () => revertida(sql, async (tx) => {
     const { admin, gerente, liderCex, tramiteId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "FO", titulo: "Lo pidieron como formato" });
@@ -127,7 +212,7 @@ describe("aceptar una creación", () => {
     const { admin, liderCex, tramiteId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "FO", titulo: "Formato con código" });
     const intento = (codigo: string) => transicionar(admin, { tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
       datos: aceptarCreacion({ codigo, elaboradorId: liderCex.usuarioId, revisorId: admin.usuarioId, aprobadorId: admin.usuarioId }) }, opc(tx));
-    await expect(tx.savepoint(() => intento("CEX-01"))).rejects.toThrow("El código no cumple el formato configurado");
+    await expect(tx.savepoint(() => intento("CEX-01"))).rejects.toThrow("El código no cumple el formato configurado (ej. CEX-FO-01)");
     await expect(tx.savepoint(() => intento("GTH-PR-01"))).rejects.toThrow("Ese código ya existe");
     await expect(intento("CEX-FO-01")).resolves.toEqual({ etapa: "elaboracion", ronda: 1 });
   }));
@@ -200,7 +285,7 @@ describe("una creación duplicada", () => {
 
   it("queda como una modificación común y el evento conserva lo que se pidió y lo que se vio", () => revertida(sql, async (tx) => {
     const titulo = "Guía de Atención de Hipertensión Arterial";
-    const { admin, liderCex, tramiteId, tipoDocumentoId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "GU", titulo });
+    const { admin, liderCex, tramiteId, tipoDocumentoId, procesoId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "GU", titulo });
     const documentoExistenteId = await idDe(tx, "CEX-GU-01");
     await transicionar(admin, { tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
       datos: aceptarCreacion({ decision: "modificacion", documentoExistenteId, elaboradorId: liderCex.usuarioId, revisorId: admin.usuarioId, aprobadorId: admin.usuarioId }) }, opc(tx));
@@ -211,8 +296,8 @@ describe("una creación duplicada", () => {
     expect(t.subproceso_id).toBe(propio.subproceso_id);
     expect(t.vence_en.toISOString()).toBe("2026-11-21T04:59:59.999Z");
     const [e] = await tx`SELECT detalle FROM tramite_eventos WHERE tramite_id = ${tramiteId} AND tipo = 'aceptar'`;
-    expect(e.detalle).toMatchObject({ decision: "modificacion", codigo: "CEX-GU-01", version: 2, clasificacion: { solicitado: { titulo, tipoDocumentoId } } });
-    expect(e.detalle.parecidos[0]).toEqual({ codigo: "CEX-GU-01", titulo, nivel: "muy_parecido" });
+    expect(e.detalle).toMatchObject({ decision: "modificacion", codigo: "CEX-GU-01", version: 2, clasificacion: { solicitado: { procesoId, subprocesoId: null, tipoDocumentoId, titulo } } });
+    expect(e.detalle.parecidos[0]).toMatchObject({ documentoId: documentoExistenteId, codigo: "CEX-GU-01", titulo, version: 1, procesoId, nivel: "muy_parecido" });
   }));
 
   it("usa la autoridad del tipo del documento existente, no la del tipo pedido", () => revertida(sql, async (tx) => {
@@ -231,6 +316,21 @@ describe("una creación duplicada", () => {
     await expect(transicionar(admin, { tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
       datos: aceptarCreacion({ decision: "modificacion", documentoExistenteId, elaboradorId: liderCex.usuarioId, revisorId: admin.usuarioId, aprobadorId: admin.usuarioId }) }, opc(tx)))
       .rejects.toThrow("Ya hay un trámite abierto sobre este documento");
+  }));
+
+  it("dos conversiones a la vez: el choque del número de versión sale como trámite abierto", () => revertida(sql, async (tx) => {
+    const { admin, liderCex, tramiteId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "GU", titulo: "Guía con dos conversiones" });
+    const documentoExistenteId = await idDe(tx, "CEX-GU-01");            // v1 vigente
+    // La otra conversión se adelantó: sin concurrencia, el núcleo inserta un número ya ocupado.
+    vi.mocked(crearVersionBorradorEn).mockImplementationOnce(async (t, documentoId) => {
+      await t`INSERT INTO documento_versiones (documento_id, numero, estado) VALUES (${documentoId}, 1, 'borrador')`;
+      return { versionId: 0, numero: 1 };
+    });
+    await expect(transicionar(admin, { tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
+      datos: aceptarCreacion({ decision: "modificacion", documentoExistenteId, elaboradorId: liderCex.usuarioId, revisorId: admin.usuarioId, aprobadorId: admin.usuarioId }) }, opc(tx)))
+      .rejects.toThrow("Ya hay un trámite abierto sobre este documento");
+    const [t] = await tx`SELECT etapa FROM tramites WHERE id = ${tramiteId}`;
+    expect(t.etapa).toBe("aceptacion");
   }));
 
   it("si aun así choca con tramites_uno_abierto_idx, sale el error de negocio y la transacción sigue viva", () => revertida(sql, async (tx) => {
@@ -383,6 +483,15 @@ describe("buscarParecidos", () => {
     expect(p.procesoId).toBe(Number(c.id));                              // aunque el documento cuelgue de un subproceso
   }));
 
+  it("también compara con las palabras clave: el título no se parece, pero ellas sí", () => revertida(sql, async (tx) => {
+    const [titulo] = await tx`SELECT similarity(lower(unaccent(titulo)), 'reporte de eventos adversos') AS s FROM documentos WHERE codigo = 'SOG-PO-01'`;
+    expect(titulo.s).toBeLessThan(0.3);                                  // por el título no saldría
+    const [muy] = await buscarParecidos("Reporte de eventos adversos", { sql: tx });
+    expect(muy).toMatchObject({ codigo: "SOG-PO-01", nivel: "muy_parecido" });
+    const [parecido] = await buscarParecidos("Control de la cadena de frío", { sql: tx });
+    expect(parecido).toMatchObject({ codigo: "PYM-PR-01", nivel: "parecido" });   // con tildes en lo buscado
+  }));
+
   async function vigente(tx: TransactionSql, codigo: string, titulo: string) {
     const admin = await sesionAdmin(tx);
     const [p] = await tx`SELECT id FROM procesos WHERE sigla = 'CEX'`;
@@ -395,6 +504,14 @@ describe("buscarParecidos", () => {
     await vigente(tx, "CEX-FO-90", "Opalo indigo ambar");
     const [p] = await buscarParecidos("Ópalo índigo ámbar", { sql: tx });
     expect(p).toMatchObject({ codigo: "CEX-FO-90", nivel: "muy_parecido" });
+  }));
+
+  it("en las palabras clave tampoco cuentan las tildes, ni en lo buscado ni en lo guardado", () => revertida(sql, async (tx) => {
+    await vigente(tx, "CEX-FO-90", "Formato distinto");
+    await tx`UPDATE documentos SET palabras_clave = 'opalo indigo ambar' WHERE codigo = 'CEX-FO-90'`;
+    expect((await buscarParecidos("Ópalo índigo ámbar", { sql: tx }))[0]).toMatchObject({ codigo: "CEX-FO-90", nivel: "muy_parecido" });
+    await tx`UPDATE documentos SET palabras_clave = 'ópalo índigo ámbar' WHERE codigo = 'CEX-FO-90'`;
+    expect((await buscarParecidos("Opalo indigo ambar", { sql: tx }))[0]).toMatchObject({ codigo: "CEX-FO-90", nivel: "muy_parecido" });
   }));
 
   it("por debajo de 0,3 no es parecido", () => revertida(sql, async (tx) => {

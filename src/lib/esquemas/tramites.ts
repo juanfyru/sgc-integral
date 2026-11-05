@@ -33,6 +33,7 @@ function lista<T extends z.ZodType>(elemento: T) {
 }
 
 const titulo = z.string().trim().min(3).max(200);
+const codigoDeDocumento = z.string().trim().toUpperCase().min(1).max(40);
 
 /** Proceso (`p:<id>`) o subproceso (`s:<id>`), como en el formulario del panel. */
 const marcaAsociacion = z.string().regex(/^[ps]:[1-9]\d*$/);
@@ -68,7 +69,9 @@ export const EsquemaAceptarCreacion = z
     palabrasClave: z.string().trim().max(500).optional(),
     relacionados: lista(id),
     nivelAcceso: z.enum(["general", "restringido"]).optional(),
-    codigo: z.string().trim().toUpperCase().min(1).max(40).optional(),
+    codigo: codigoDeDocumento.optional(),
+    /** Lo que propuso el sistema: si `codigo` es igual, no se escribió a mano. */
+    codigoSugerido: codigoDeDocumento.optional(),
     ...responsables,
   })
   .strict()

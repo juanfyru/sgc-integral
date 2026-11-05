@@ -14,6 +14,7 @@ import type { Etapa, Motivo, TipoSolicitud } from "@/lib/tramites/tipos";
 export type SesionFlujo = Pick<SesionValida, "sesionId" | "usuarioId" | "usuario" | "nombre" | "rol" | "verHistorial">;
 
 export const YA_ABIERTO = "Ya hay un trámite abierto sobre este documento";
+export const CAMBIO_MIENTRAS = "Este trámite cambió mientras lo tenía abierto. Recargue la página.";
 
 /** Error de negocio: su mensaje se le muestra al usuario. */
 export class ErrorTramite extends Error {

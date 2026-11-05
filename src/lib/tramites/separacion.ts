@@ -3,7 +3,7 @@ import type { Autoridad, TipoSolicitud } from "./tipos";
 
 export type Persona = { id: number; rol: Rol; activo: boolean };
 
-const ROLES_REVISOR: readonly Rol[] = ["admin_sgc", "lider_proceso"];
+export const ROLES_REVISOR: readonly Rol[] = ["admin_sgc", "lider_proceso"];
 
 /**
  * Rol que aprueba: Gerencia si la autoridad es estratégica o si el originador es el

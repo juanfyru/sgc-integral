@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Rol } from "@/lib/roles";
 import { accionesDisponibles, evaluarTransicion, type ActorParaRegla, type TramiteParaRegla } from "@/lib/tramites/transiciones";
-import { candidatosAprobador, candidatosRevisor, rolAprobador, validarDesignacion, type Persona } from "@/lib/tramites/separacion";
+import { MATRIZ } from "@/lib/permisos";
+import { ROLES_REVISOR, candidatosAprobador, candidatosRevisor, rolAprobador, validarDesignacion, type Persona } from "@/lib/tramites/separacion";
 
 const base: TramiteParaRegla = { tipo: "modificar", etapa: "revision", solicitanteId: 1, elaboradorId: 2, revisorId: 3, aprobadorId: 4 };
 const actor = (usuarioId: number, rol: Rol, lideraPropietario = false): ActorParaRegla => ({ usuarioId, rol, lideraPropietario });
@@ -105,6 +106,10 @@ describe("separación de funciones", () => {
     const baja = { tipo: "eliminar" as const, autoridad: "operativo" as const, solicitante: p(1, "lider_proceso", false), elaborador: p(2, "lider_proceso", false), revisor: p(5, "lider_proceso", false), aprobador: p(3, "admin_sgc") };
     expect(validarDesignacion(baja)).toBeNull();                                         // en eliminar solo cuenta el aprobador
     expect(validarDesignacion({ ...baja, aprobador: p(3, "admin_sgc", false) })).toBe("El usuario designado no está activo");
+  });
+
+  it("quien puede revisar es lo que la matriz llama tramites.revisar", () => {
+    expect([...ROLES_REVISOR].sort()).toEqual([...MATRIZ["tramites.revisar"]].sort());
   });
 
   it("los candidatos que ofrece la pantalla son los que validarDesignacion acepta", () => {

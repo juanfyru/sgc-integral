@@ -15,6 +15,7 @@ import { BloqueSolicitud } from "@/componentes/tramites/BloqueSolicitud";
 import { EncabezadoTramite } from "@/componentes/tramites/EncabezadoTramite";
 import { FormularioSolicitud } from "@/componentes/tramites/FormularioSolicitud";
 import { HistorialTramite } from "@/componentes/tramites/HistorialTramite";
+import { ayudaDelCodigo } from "@/componentes/tramites/ClasificacionNueva";
 import { PanelAceptacion, type TramiteParaAceptar } from "@/componentes/tramites/PanelAceptacion";
 import { PasosTramite } from "@/componentes/tramites/PasosTramite";
 import { TablaTramites } from "@/componentes/tramites/TablaTramites";
@@ -276,7 +277,8 @@ describe("PanelAceptacion", () => {
     expect(html).toContain("de otro proceso");                           // el estado no es solo color
     expect(html).toContain('name="codigo"');
     expect(html).toContain('value="CEX-FO-05"');
-    expect(html).toContain("Sugerido: siguiente consecutivo de CEX-FO");
+    expect(html).toContain("Sugerido: el siguiente consecutivo, con el formato {PROCESO}-{TIPO}-{NN}.");
+    expect(html).toMatch(/<input[^>]*type="hidden"[^>]*name="codigoSugerido"[^>]*value="CEX-FO-05"|<input[^>]*name="codigoSugerido"[^>]*value="CEX-FO-05"/);
     expect(html).toContain("SGC-FO-01, versión 3");
     expect(html).toContain('min="2026-11-05"');
     expect(html).toContain('value="2026-11-20"');
@@ -287,8 +289,25 @@ describe("PanelAceptacion", () => {
 
   it("sin parecidos lo dice, y sin formato pide escribir el código", () => {
     const html = panel({ datos: { ...datos, parecidos: [], codigoSugerido: null } });
-    expect(html).toContain("No hay documentos vigentes con un título parecido");
-    expect(html).toContain("No hay un formato de código configurado");
+    expect(html).toContain("No hay documentos vigentes con un título o palabras clave parecidos");
+    expect(html).not.toContain('name="codigoSugerido"');
+  });
+
+  it("sin un formato válido pide escribir el código", () => {
+    const sinFormato = { ...contexto, catalogo: { ...catalogo, formatoCodigo: null } };
+    expect(panel({ contexto: sinFormato, datos: { ...datos, codigoSugerido: null } })).toContain("No hay un formato de código configurado");
+    const invalido = { ...contexto, catalogo: { ...catalogo, formatoCodigo: "sin marcadores" } };
+    expect(panel({ contexto: invalido, datos: { ...datos, codigoSugerido: null } })).toContain("No hay un formato de código configurado");
+  });
+
+  it("la ayuda del código sale del formato y dice «Sugerido» solo mientras no se edite", () => {
+    const f = "HNSF-{PROCESO}{TIPO}-{NNN}";
+    expect(ayudaDelCodigo({ formato: f, sugerido: "HNSF-CEXFO-002", editado: false })).toBe(`Sugerido: el siguiente consecutivo, con el formato ${f}.`);
+    const editado = ayudaDelCodigo({ formato: f, sugerido: "HNSF-CEXFO-002", editado: true });
+    expect(editado).toBe(`Formato: ${f}. Vacíe el campo para volver a HNSF-CEXFO-002.`);
+    expect(editado).not.toContain("Sugerido");
+    expect(ayudaDelCodigo({ formato: f, sugerido: null, editado: false })).toBe(`Formato: ${f}.`);
+    expect(ayudaDelCodigo({ formato: null, sugerido: null, editado: true })).toBe("No hay un formato de código configurado: escríbalo.");
   });
 
   it("por defecto elabora quien pidió y revisa quien acepta; el revisor excluye al elaborador", () => {
@@ -381,6 +400,7 @@ describe("esquemas del trámite", () => {
       expect(uno.asociaciones).toEqual([{ subprocesoId: 7, esPrincipal: true }, { procesoId: 2, esPrincipal: false }]);
       expect(uno.relacionados).toEqual([9]);
       expect(uno.codigo).toBe("CEX-FO-01");
+      expect(EsquemaAceptarCreacion.parse({ ...nuevo, codigoSugerido: " cex-fo-01 " }).codigoSugerido).toBe("CEX-FO-01");
       expect(uno).toMatchObject({ tipoDocumentoId: 5, elaboradorId: 2, revisorId: 3, aprobadorId: 4 });
       const varios = EsquemaAceptarCreacion.parse({ ...nuevo, asociaciones: ["p:2", "s:7", "s:7"], relacionados: ["9", "10"] });
       expect(varios.asociaciones).toEqual([{ subprocesoId: 7, esPrincipal: true }, { procesoId: 2, esPrincipal: false }]);

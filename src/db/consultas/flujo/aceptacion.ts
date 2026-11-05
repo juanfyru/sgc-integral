@@ -1,6 +1,7 @@
 /** Manejadores de la aceptación: duplicidad, clasificación, código y responsables (spec 13A §8.3). */
 import type { TransactionSql } from "postgres";
 import { crearDocumentoEn, crearVersionBorradorEn, obtenerPatronCodigo, type AsociacionEntrada } from "@/db/consultas/admin";
+import { sugerirCodigo } from "@/db/consultas/codigos";
 import { buscarParecidos } from "@/db/consultas/parecidos";
 import {
   ETAPAS_ABIERTAS,
@@ -114,9 +115,13 @@ async function aceptarModificacion(c: ContextoManejador): Promise<Efecto> {
 }
 
 /** La lista que vio quien acepta: la misma consulta de la pantalla, sobre el título que se pidió. */
-async function parecidosVistos(tx: TransactionSql, tramite: FilaTramite) {
-  const parecidos = await buscarParecidos(tramite.tituloPropuesto ?? "", { sql: tx });
-  return parecidos.map(({ codigo, titulo, nivel }) => ({ codigo, titulo, nivel }));
+function parecidosVistos(tx: TransactionSql, tramite: FilaTramite) {
+  return buscarParecidos(tramite.tituloPropuesto ?? "", { sql: tx });
+}
+
+/** Lo que traía la solicitud: el evento lo conserva aunque al aceptar se corrija o se convierta. */
+function loSolicitado(t: FilaTramite) {
+  return { procesoId: t.procesoId, subprocesoId: t.subprocesoId, tipoDocumentoId: t.tipoDocumentoId, titulo: t.tituloPropuesto };
 }
 
 /** El mismo proceso y sin otro trámite: así el visto bueno ya dado sigue siendo del líder correcto. */
@@ -133,14 +138,18 @@ async function convertirEnModificacion(c: ContextoManejador): Promise<Efecto> {
   if (abierto) throw new ErrorTramite(YA_ABIERTO);
 
   const parecidos = await parecidosVistos(tx, tramite);
-  const { cambios, detalle } = await abrirVersion(c, documentoId, datos);
+  const { cambios, detalle } = await abrirVersion(c, documentoId, datos).catch((err: { constraint_name?: string }) => {
+    // Otra conversión sobre el mismo documento se adelantó y ya abrió esa versión.
+    if (err.constraint_name === "versiones_documento_numero_unico_idx") throw new ErrorTramite(YA_ABIERTO);
+    throw err;
+  });
   const { texto } = await rotuloDeTramite(tx, { tipo: "modificar", documentoId, tituloPropuesto: null });
   return {
     detalle: {
       ...detalle,
       parecidos,
       decision: "modificacion",
-      clasificacion: { solicitado: { titulo: tramite.tituloPropuesto, tipoDocumentoId: tramite.tipoDocumentoId } },
+      clasificacion: { solicitado: loSolicitado(tramite) },
     },
     cambios: {
       ...cambios,
@@ -166,6 +175,45 @@ async function propietarioElegido(tx: TransactionSql, principal: AsociacionEntra
   return { procesoId: Number(f.proceso_id), subprocesoId: subprocesoId ?? null };
 }
 
+const REINTENTOS_DE_CODIGO = 3;
+
+/**
+ * Crea el documento. Si el código sugerido ya lo tomó otra aceptación, sigue con el consecutivo
+ * siguiente (spec 13A §8.4); uno escrito a mano no se cambia sin que la persona lo decida. Va en
+ * un savepoint porque, tras un 23505, la transacción ya no admite más consultas.
+ */
+async function crearConCodigoLibre(
+  tx: TransactionSql,
+  d: DatosNuevo,
+  procesoId: number,
+  usuarioId: number,
+): Promise<{ documentoId: number; versionId: number; codigo: string }> {
+  const esElSugerido = d.codigo === d.codigoSugerido;
+  const datos = {
+    titulo: d.titulo,
+    tipoId: d.tipoDocumentoId,
+    descripcion: d.descripcion ?? null,
+    palabrasClave: d.palabrasClave ?? null,
+    asociaciones: d.asociaciones,
+    nivelAcceso: d.nivelAcceso,
+    relacionados: d.relacionados,
+  };
+  let codigo = d.codigo;
+  for (let intento = 0; ; intento += 1) {
+    try {
+      const creado = await tx.savepoint((s) => crearDocumentoEn(s, { ...datos, codigo }, usuarioId));
+      return { ...creado, codigo };
+    } catch (err) {
+      if ((err as { constraint_name?: string }).constraint_name !== "documentos_codigo_unique") throw err;
+      const siguiente = await sugerirCodigo({ procesoId, tipoDocumentoId: d.tipoDocumentoId }, { sql: tx });
+      if (!siguiente) throw new ErrorTramite("Ese código ya existe");
+      if (!esElSugerido || intento === REINTENTOS_DE_CODIGO)
+        throw new ErrorTramite(`Ese código ya existe. El siguiente disponible es ${siguiente}`);
+      codigo = siguiente;
+    }
+  }
+}
+
 async function aceptarNuevo(c: ContextoManejador): Promise<Efecto> {
   const { tx, tramite, sesion, ahora } = c;
   const d = c.datos as DatosNuevo;
@@ -174,35 +222,22 @@ async function aceptarNuevo(c: ContextoManejador): Promise<Efecto> {
   const propietario = await propietarioElegido(tx, d.asociaciones.find((a) => a.esPrincipal));
   const responsables = await exigirDesignacion(tx, tramite, "crear", tipo.autoridad, d);
   const venceEn = plazoDeElaboracion(d.venceElaboracion, ahora);
-  if (!(await obtenerPatronCodigo({ sql: tx })).test(d.codigo))
-    throw new ErrorTramite("El código no cumple el formato configurado (ej. SGC-FO-02)");
+  if (!(await obtenerPatronCodigo({ sql: tx })).test(d.codigo)) {
+    const ejemplo = await sugerirCodigo({ procesoId: propietario.procesoId, tipoDocumentoId: d.tipoDocumentoId }, { sql: tx });
+    throw new ErrorTramite(`El código no cumple el formato configurado${ejemplo ? ` (ej. ${ejemplo})` : ""}`);
+  }
 
   const parecidos = await parecidosVistos(tx, tramite);
-  const { documentoId, versionId } = await crearDocumentoEn(
-    tx,
-    {
-      codigo: d.codigo,
-      titulo: d.titulo,
-      tipoId: d.tipoDocumentoId,
-      descripcion: d.descripcion ?? null,
-      palabrasClave: d.palabrasClave ?? null,
-      asociaciones: d.asociaciones,
-      nivelAcceso: d.nivelAcceso,
-      relacionados: d.relacionados,
-    },
-    sesion.usuarioId,
-  ).catch((err: { constraint_name?: string }) => {
-    if (err.constraint_name === "documentos_codigo_unique") throw new ErrorTramite("Ese código ya existe");
-    throw err;
-  });
+  const { documentoId, versionId, codigo } = await crearConCodigoLibre(tx, d, propietario.procesoId, sesion.usuarioId);
   const { texto } = await rotuloDeTramite(tx, { ...tramite, documentoId });
   return {
     detalle: {
       parecidos,
       decision: "nuevo",
-      codigo: d.codigo,
+      codigo,
       version: 1,
       clasificacion: {
+        solicitado: loSolicitado(tramite),
         tipoDocumentoId: d.tipoDocumentoId,
         asociaciones: d.asociaciones,
         titulo: d.titulo,
