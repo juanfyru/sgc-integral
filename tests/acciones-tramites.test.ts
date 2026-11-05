@@ -267,7 +267,9 @@ describe("elaboración", () => {
   });
 
   it("solo pide el contexto de la petición quien firma", async () => {
+    requerirSesion.mockResolvedValue({ ...elaborador(), rol: "lider_proceso" });
     await retirarSolicitudAccion(null, formulario({ id: "7", etapa: "aceptacion", ronda: "0" }));
+    expect(transicionar).toHaveBeenCalledOnce();
     expect(contextoDePeticion).not.toHaveBeenCalled();
   });
 
