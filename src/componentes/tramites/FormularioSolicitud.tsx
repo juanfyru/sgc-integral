@@ -23,7 +23,8 @@ export function FormularioSolicitud({ procesos, tipos, documentos, documentoInic
   const subprocesos = procesos.find((p) => String(p.id) === procesoId)?.subprocesos ?? [];
 
   // React 19 resetea el formulario al terminar la action: con error, los valores por
-  // defecto salen de lo que la persona envió.
+  // defecto salen de lo que la persona envió. Un <select> ya montado ignora un defaultValue
+  // nuevo: su `key` lo vuelve a montar con el valor enviado.
   const enviado = (campo: string): string | undefined => {
     const v = estado?.valores?.[campo];
     return typeof v === "string" ? v : undefined;
@@ -58,7 +59,7 @@ export function FormularioSolicitud({ procesos, tipos, documentos, documentoInic
             </Campo>
             {subprocesos.length > 0 ? (
               <Campo etiqueta="Subproceso" nombre="subprocesoId" ayuda="Opcional.">
-                <select defaultValue={enviado("subprocesoId") ?? ""} className={claseControl}>
+                <select key={enviado("subprocesoId")} defaultValue={enviado("subprocesoId") ?? ""} className={claseControl}>
                   <option value="">El proceso completo</option>
                   {subprocesos.map((s) => (
                     <option key={s.id} value={s.id}>
@@ -70,7 +71,7 @@ export function FormularioSolicitud({ procesos, tipos, documentos, documentoInic
             ) : null}
           </div>
           <Campo etiqueta="Tipo de documento" nombre="tipoDocumentoId">
-            <select required defaultValue={enviado("tipoDocumentoId") ?? ""} className={claseControl}>
+            <select key={enviado("tipoDocumentoId")} required defaultValue={enviado("tipoDocumentoId") ?? ""} className={claseControl}>
               <option value="">Elija el tipo</option>
               {tipos.map((t) => (
                 <option key={t.id} value={t.id}>
@@ -85,7 +86,12 @@ export function FormularioSolicitud({ procesos, tipos, documentos, documentoInic
         </>
       ) : (
         <Campo etiqueta="Documento" nombre="documentoId" ayuda="Solo documentos con versión vigente.">
-          <select required defaultValue={enviado("documentoId") ?? documentoInicialId ?? ""} className={`${claseControl} max-w-full`}>
+          <select
+            key={enviado("documentoId")}
+            required
+            defaultValue={enviado("documentoId") ?? documentoInicialId ?? ""}
+            className={`${claseControl} max-w-full`}
+          >
             <option value="">Elija el documento</option>
             {documentos.map((d) => (
               <option key={d.id} value={d.id} disabled={d.conTramite}>
@@ -97,7 +103,7 @@ export function FormularioSolicitud({ procesos, tipos, documentos, documentoInic
       )}
 
       <Campo etiqueta="Motivo" nombre="motivo">
-        <select required defaultValue={enviado("motivo") ?? ""} className={claseControl}>
+        <select key={enviado("motivo")} required defaultValue={enviado("motivo") ?? ""} className={claseControl}>
           <option value="">Elija el motivo</option>
           {MOTIVOS.map((m) => (
             <option key={m} value={m}>
