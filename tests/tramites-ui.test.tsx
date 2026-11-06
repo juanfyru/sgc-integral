@@ -196,6 +196,11 @@ describe("página del trámite", () => {
     expect(h).toContain("&lt;i&gt;aquí&lt;/i&gt;");
     expect(h).toMatch(/3 de nov/);
   });
+  it("HistorialTramite muestra el concepto del revisor como texto plano", () => {
+    const evento = { tipo: "concepto_favorable", persona: "Rosa Gil", ronda: 1, detalle: { concepto: "Cumple <b>todo</b>." }, creadoEn: ahora };
+    const h = renderToStaticMarkup(<HistorialTramite tipo="modificar" eventos={[evento]} />);
+    expect(h).toContain("Concepto: Cumple &lt;b&gt;todo&lt;/b&gt;.");
+  });
   it("AccionesSolicitud pinta solo las acciones permitidas, con etapa y ronda ocultas", () => {
     const con = (acciones: DetalleTramite["acciones"]) =>
       renderToStaticMarkup(<AccionesSolicitud tramite={{ id: 7, etapa: "visto_bueno", ronda: 0 }} acciones={acciones} />);

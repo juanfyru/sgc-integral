@@ -53,7 +53,11 @@ async function Aceptacion({ tramite, usuarioId }: { tramite: DetalleTramite; usu
 /** El bloque del borrador, abierto solo para quien puede enviarlo a revisión. */
 async function Borrador({ tramite, pideCodigo }: { tramite: DetalleTramite; pideCodigo: boolean }) {
   const { id, etapa, ronda, codigo, titulo, versionNumero } = tramite;
-  const [borrador, observaciones] = await Promise.all([borradorDeTramite(id), listarObservaciones(id)]);
+  // Desde la revisión las observaciones las pinta el panel de revisión: una sola vez.
+  const [borrador, observaciones] = await Promise.all([
+    borradorDeTramite(id),
+    etapa === "elaboracion" ? listarObservaciones(id) : Promise.resolve([]),
+  ]);
   return (
     <PanelElaboracion
       tramite={{ id, etapa, ronda, codigo, titulo, versionNumero }}

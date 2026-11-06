@@ -8,7 +8,11 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { rotuloDeTramite, tramiteVisto } from "@/db/consultas/tramites";
 import { evaluarTransicion } from "@/lib/tramites/transiciones";
-import { ErrorTramite, enTransaccion, type FilaTramite, type SesionFlujo } from "./flujo/contrato";
+import { CAMBIO_MIENTRAS, ErrorTramite, enTransaccion, type FilaTramite, type SesionFlujo } from "./flujo/contrato";
+import type { Etapa } from "@/lib/tramites/tipos";
+
+/** Lo que la persona vio al abrir el formulario: si el trámite cambió, no se escribe. */
+export type Esperado = { etapa: Etapa; ronda: number };
 
 export type Resultado = "cumple" | "no_cumple" | "no_aplica";
 export const RESULTADOS: readonly Resultado[] = ["cumple", "no_cumple", "no_aplica"];
@@ -36,6 +40,8 @@ export type Observacion = {
   creadoEn: Date;
 };
 
+const NO_EXISTE = "El trámite no existe";
+
 export const LARGO_MIN_OBSERVACION = 5;
 export const LARGO_MAX_OBSERVACION = 2000;
 
@@ -60,6 +66,7 @@ export async function listarItemsVerificacion(opciones?: {
 /**
  * Los ítems activos con la respuesta de esa ronda. Si la ronda no tiene ninguna, propone las
  * de la última ronda anterior que sí tenga (sin guardarlas): la revisión siguiente parte de ahí.
+ * Una ronda con respuestas conserva las de un ítem desactivado después: es lo que se firma.
  * `sinPropuesta` es para quien solo mira: lo no respondido en la ronda se ve sin responder.
  */
 export async function obtenerVerificacion(
@@ -79,7 +86,7 @@ export async function obtenerVerificacion(
   const filas = await sql`SELECT i.id, i.texto, i.critico, r.texto_item, r.critico AS critico_guardado, r.resultado, r.nota
     FROM lista_verificacion_items i
     LEFT JOIN tramite_verificaciones r ON r.item_id = i.id AND r.tramite_id = ${tramiteId} AND r.ronda = ${deRonda}
-    WHERE i.activo
+    WHERE i.activo OR (${!propuesta} AND r.id IS NOT NULL)
     ORDER BY i.orden, i.id`;
   return filas.map((f) => ({
     itemId: Number(f.id),
@@ -97,9 +104,11 @@ async function bloquearComo(
   tramiteId: number,
   sesion: SesionFlujo,
   quien: "revisor" | "elaborador",
+  esperado: Esperado,
 ): Promise<FilaTramite> {
   const visto = await tramiteVisto(tx, tramiteId, sesion, true);
-  if (!visto?.visible) throw new ErrorTramite("El trámite no existe");
+  if (!visto?.visible) throw new ErrorTramite(NO_EXISTE);
+  if (visto.tramite.etapa !== esperado.etapa || visto.tramite.ronda !== esperado.ronda) throw new ErrorTramite(CAMBIO_MIENTRAS);
   const veredicto = evaluarTransicion(quien === "revisor" ? "devolver_revision" : "enviar_a_revision", visto.tramite, {
     usuarioId: sesion.usuarioId,
     rol: sesion.rol,
@@ -130,17 +139,21 @@ export async function guardarVerificacion(
   tramiteId: number,
   sesion: SesionFlujo,
   respuestas: { itemId: number; resultado: Resultado; nota?: string }[],
+  esperado: Esperado,
   opciones?: { sql?: Cliente },
 ): Promise<void> {
   if (respuestas.length === 0) throw new ErrorTramite("Marque al menos un ítem");
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
-    const tramite = await bloquearComo(tx, tramiteId, sesion, "revisor");
+    const tramite = await bloquearComo(tx, tramiteId, sesion, "revisor", esperado);
     for (const r of respuestas) {
       if (!RESULTADOS.includes(r.resultado)) throw new ErrorTramite("Resultado no válido");
       const nota = r.nota?.trim() || null;
       if (nota && nota.length > LARGO_MAX_OBSERVACION)
         throw new ErrorTramite(`La nota no puede pasar de ${LARGO_MAX_OBSERVACION} caracteres`);
-      const [item] = await tx`SELECT texto, critico FROM lista_verificacion_items WHERE id = ${r.itemId} AND activo`;
+      // Un ítem desactivado a mitad de la ronda se puede seguir actualizando si ya tenía respuesta en ella.
+      const [item] = await tx`SELECT i.texto, i.critico FROM lista_verificacion_items i
+        WHERE i.id = ${r.itemId} AND (i.activo OR EXISTS (
+          SELECT 1 FROM tramite_verificaciones v WHERE v.tramite_id = ${tramiteId} AND v.ronda = ${tramite.ronda} AND v.item_id = i.id))`;
       if (!item) throw new ErrorTramite("Un ítem de la lista no existe o está inactivo");
       await tx`INSERT INTO tramite_verificaciones (tramite_id, ronda, item_id, texto_item, critico, resultado, nota)
         VALUES (${tramiteId}, ${tramite.ronda}, ${r.itemId}, ${item.texto}, ${item.critico}, ${r.resultado}, ${nota})
@@ -193,10 +206,11 @@ export async function crearObservacion(
   tramiteId: number,
   sesion: SesionFlujo,
   texto: string,
+  esperado: Esperado,
   opciones?: { sql?: Cliente },
 ): Promise<number> {
   return enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
-    const tramite = await bloquearComo(tx, tramiteId, sesion, "revisor");
+    const tramite = await bloquearComo(tx, tramiteId, sesion, "revisor", esperado);
     const { id, numero } = await insertarObservacion(tx, tramite, sesion.usuarioId, "revision", textoValido(texto, "La observación"));
     await auditar(tx, tramite, sesion.usuarioId, "crear_observacion", { observacion: numero });
     return id;
@@ -224,10 +238,12 @@ async function observacionDelTurno(
   observacionId: number,
   sesion: SesionFlujo,
   quien: "revisor" | "elaborador",
+  esperado: Esperado,
 ): Promise<{ tramite: FilaTramite; observacion: FilaObservacion }> {
   const [previa] = await tx`SELECT tramite_id FROM tramite_observaciones WHERE id = ${observacionId}`;
-  if (!previa) throw new ErrorTramite("La observación no existe");
-  const tramite = await bloquearComo(tx, Number(previa.tramite_id), sesion, quien);
+  // El mismo mensaje que un trámite que no se ve: no revela si el id existe.
+  if (!previa) throw new ErrorTramite(NO_EXISTE);
+  const tramite = await bloquearComo(tx, Number(previa.tramite_id), sesion, quien, esperado);
   const [o] = await tx`SELECT id, numero, estado, respuesta FROM tramite_observaciones WHERE id = ${observacionId} FOR UPDATE`;
   return { tramite, observacion: { id: Number(o.id), numero: o.numero, estado: o.estado, respuesta: o.respuesta } };
 }
@@ -236,26 +252,31 @@ export async function responderObservacion(
   observacionId: number,
   sesion: SesionFlujo,
   respuesta: string,
+  esperado: Esperado,
   opciones?: { sql?: Cliente },
 ): Promise<void> {
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
-    const { tramite, observacion: o } = await observacionDelTurno(tx, observacionId, sesion, "elaborador");
+    const { tramite, observacion: o } = await observacionDelTurno(tx, observacionId, sesion, "elaborador", esperado);
     if (o.estado === "cerrada") throw new ErrorTramite("La observación ya está cerrada");
     const limpia = textoValido(respuesta, "La respuesta");
     await tx`UPDATE tramite_observaciones
       SET respuesta = ${limpia}, respondida_por = ${sesion.usuarioId}, respondida_en = now(), estado = 'atendida'
       WHERE id = ${o.id}`;
-    await auditar(tx, tramite, sesion.usuarioId, "responder_observacion", { observacion: o.numero });
+    await auditar(tx, tramite, sesion.usuarioId, "responder_observacion", {
+      observacion: o.numero,
+      ...(o.respuesta ? { respuestaAnterior: o.respuesta } : {}),
+    });
   });
 }
 
 export async function cerrarObservacion(
   observacionId: number,
   sesion: SesionFlujo,
+  esperado: Esperado,
   opciones?: { sql?: Cliente },
 ): Promise<void> {
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
-    const { tramite, observacion: o } = await observacionDelTurno(tx, observacionId, sesion, "revisor");
+    const { tramite, observacion: o } = await observacionDelTurno(tx, observacionId, sesion, "revisor", esperado);
     if (o.estado !== "atendida") throw new ErrorTramite("Solo se cierra una observación que ya fue respondida");
     await tx`UPDATE tramite_observaciones SET estado = 'cerrada', cerrada_por = ${sesion.usuarioId}, cerrada_en = now()
       WHERE id = ${o.id}`;
@@ -272,10 +293,11 @@ export async function reabrirObservacion(
   observacionId: number,
   sesion: SesionFlujo,
   nota: string,
+  esperado: Esperado,
   opciones?: { sql?: Cliente },
 ): Promise<void> {
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
-    const { tramite, observacion: o } = await observacionDelTurno(tx, observacionId, sesion, "revisor");
+    const { tramite, observacion: o } = await observacionDelTurno(tx, observacionId, sesion, "revisor", esperado);
     if (o.estado === "abierta") throw new ErrorTramite("La observación ya está abierta");
     const limpia = textoValido(nota, "La nota");
     await tx`UPDATE tramite_observaciones

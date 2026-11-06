@@ -211,7 +211,7 @@ export async function tramiteEn(
     );
     if (etapa === "aprobacion") {
       const items = await listarItemsVerificacion({ sql: tx, soloActivos: true });
-      await guardarVerificacion(tramiteId, revisor, items.map((i) => ({ itemId: i.id, resultado: "cumple" as const })), { sql: tx });
+      await guardarVerificacion(tramiteId, revisor, items.map((i) => ({ itemId: i.id, resultado: "cumple" as const })), { etapa: "revision", ronda: 1 }, { sql: tx });
       await transicionar(
         revisor,
         { tramiteId, accion: "concepto_favorable", etapaEsperada: "revision", rondaEsperada: 1, datos: { concepto: "Cumple; listo para aprobación." }, credenciales: { clave: "x" } },

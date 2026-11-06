@@ -154,34 +154,39 @@ export async function enviarARevisionAccion(_prev: EstadoAccion, formData: FormD
 
 export async function guardarVerificacionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "tramites.revisar", async (_usuarioId, _formData, sesion) => {
-    await guardarVerificacion(idNumerico(formData, "id"), sesion, leerVerificacion(formData, OCULTOS));
+    const { tramiteId, etapaEsperada: etapa, rondaEsperada: ronda } = referencia(formData);
+    await guardarVerificacion(tramiteId, sesion, leerVerificacion(formData, OCULTOS), { etapa, ronda });
   });
 }
 
 export async function crearObservacionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "tramites.revisar", async (_usuarioId, _formData, sesion) => {
     const { texto } = parsearFormulario(formData, EsquemaObservacion, { omitir: OCULTOS });
-    await crearObservacion(idNumerico(formData, "id"), sesion, texto);
+    const { tramiteId, etapaEsperada: etapa, rondaEsperada: ronda } = referencia(formData);
+    await crearObservacion(tramiteId, sesion, texto, { etapa, ronda });
   });
 }
 
 export async function cerrarObservacionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "tramites.revisar", async (_usuarioId, _formData, sesion) => {
-    await cerrarObservacion(idNumerico(formData, "observacionId"), sesion);
+    const { etapaEsperada: etapa, rondaEsperada: ronda } = referencia(formData);
+    await cerrarObservacion(idNumerico(formData, "observacionId"), sesion, { etapa, ronda });
   });
 }
 
 export async function reabrirObservacionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "tramites.revisar", async (_usuarioId, _formData, sesion) => {
     const { nota } = parsearFormulario(formData, EsquemaReaperturaObservacion, { omitir: [...OCULTOS, "observacionId"] });
-    await reabrirObservacion(idNumerico(formData, "observacionId"), sesion, nota);
+    const { etapaEsperada: etapa, rondaEsperada: ronda } = referencia(formData);
+    await reabrirObservacion(idNumerico(formData, "observacionId"), sesion, nota, { etapa, ronda });
   });
 }
 
 export async function responderObservacionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "tramites.participar", async (_usuarioId, _formData, sesion) => {
     const { respuesta } = parsearFormulario(formData, EsquemaRespuestaObservacion, { omitir: [...OCULTOS, "observacionId"] });
-    await responderObservacion(idNumerico(formData, "observacionId"), sesion, respuesta);
+    const { etapaEsperada: etapa, rondaEsperada: ronda } = referencia(formData);
+    await responderObservacion(idNumerico(formData, "observacionId"), sesion, respuesta, { etapa, ronda });
   });
 }
 

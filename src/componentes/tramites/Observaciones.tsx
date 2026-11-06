@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useActionState, type FormEvent } from "react";
+import { startTransition, useActionState, useRef, type FormEvent } from "react";
 import {
   cerrarObservacionAccion,
   crearObservacionAccion,
@@ -47,7 +47,13 @@ function FormularioDeObservacion({
   inicial?: string;
   variante?: "primario" | "secundario";
 }) {
-  const [estado, enviar, pendiente] = useActionState(accion, null);
+  const formulario = useRef<HTMLFormElement>(null);
+  // La observación nueva se vacía al guardarse: con el texto aún ahí, otro clic crearía un duplicado.
+  const [estado, enviar, pendiente] = useActionState(async (previo: EstadoAccion, datos: FormData) => {
+    const resultado = await accion(previo, datos);
+    if (!resultado && campo === "texto") formulario.current?.reset();
+    return resultado;
+  }, null);
   const idCampo = `${campo}-${observacionId ?? "nueva"}`;
   const alEnviar = (evento: FormEvent<HTMLFormElement>) => {
     evento.preventDefault();
@@ -56,7 +62,7 @@ function FormularioDeObservacion({
   };
   const escrito = campo ? estado?.valores?.[campo] : undefined;
   return (
-    <form action={enviar} onSubmit={alEnviar} className="flex flex-col gap-2">
+    <form ref={formulario} action={enviar} onSubmit={alEnviar} className="flex flex-col gap-2">
       <Ocultos tramite={tramite} />
       {observacionId !== undefined ? <input type="hidden" name="observacionId" value={observacionId} /> : null}
       {campo ? (

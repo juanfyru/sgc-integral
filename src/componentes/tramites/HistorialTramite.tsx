@@ -56,6 +56,11 @@ export function HistorialTramite({ tipo, eventos }: { tipo: TipoSolicitud; event
                 {`Motivo: ${e.detalle.motivo}`}
               </span>
             ) : null}
+            {typeof e.detalle.concepto === "string" ? (
+              <span className="block whitespace-pre-wrap break-words text-xs text-muted-foreground">
+                {`Concepto: ${e.detalle.concepto}`}
+              </span>
+            ) : null}
           </li>
         ))}
       </ol>

@@ -50,7 +50,11 @@ export function leerVerificacion(formData: FormData, omitir: readonly string[]):
     if (clave.startsWith("$ACTION_") || omitir.includes(clave)) continue;
     const m = /^(resultado|nota)_(\d+)$/.exec(clave);
     if (!m) throw new Error("Formulario inválido. Recargue la página.");
-    if (m[1] === "nota") continue;
+    if (m[1] === "nota") {
+      if (typeof formData.get(clave) === "string" && String(formData.get(clave)).trim() && !formData.get(`resultado_${m[2]}`))
+        throw new Error("Elija un resultado para guardar la nota");
+      continue;
+    }
     const nota = formData.get(`nota_${m[2]}`);
     respuestas.push({ itemId: m[2], resultado: String(formData.get(clave)), ...(typeof nota === "string" && nota.trim() ? { nota } : {}) });
   }

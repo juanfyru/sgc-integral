@@ -318,15 +318,23 @@ describe("elaboración", () => {
     const enRevision = { id: "7", etapa: "revision", ronda: "2" };
     const revisor = { sesionId: "s", usuarioId: 9, usuario: "r", nombre: "Revisa", rol: "lider_proceso", verHistorial: false };
 
-    it("guardar la lista lee un resultado por ítem, con su nota, y descarta lo demás", async () => {
+    it("guardar la lista lee un resultado por ítem, con su nota, y lleva la etapa y la ronda que vio la persona", async () => {
       requerirSesion.mockResolvedValue(revisor);
-      const campos = { ...enRevision, resultado_4: "cumple", resultado_5: "no_cumple", nota_5: "  Falta la fecha.  ", nota_6: "sin resultado" };
+      const campos = { ...enRevision, resultado_4: "cumple", resultado_5: "no_cumple", nota_5: "  Falta la fecha.  ", nota_6: "" };
       expect(await guardarVerificacionAccion(null, formulario(campos))).toBeNull();
       expect(revision.guardarVerificacion.mock.calls[0][0]).toBe(7);
       expect(revision.guardarVerificacion.mock.calls[0][2]).toEqual([
         { itemId: 4, resultado: "cumple" },
         { itemId: 5, resultado: "no_cumple", nota: "Falta la fecha." },
       ]);
+      expect(revision.guardarVerificacion.mock.calls[0][3]).toEqual({ etapa: "revision", ronda: 2 });
+    });
+
+    it("una nota sin resultado no se descarta en silencio", async () => {
+      requerirSesion.mockResolvedValue(revisor);
+      const estado = await guardarVerificacionAccion(null, formulario({ ...enRevision, resultado_4: "cumple", nota_6: "Una nota suelta." }));
+      expect(estado).toMatchObject({ ok: false, error: "Elija un resultado para guardar la nota" });
+      expect(revision.guardarVerificacion).not.toHaveBeenCalled();
     });
 
     it("una lista vacía, un resultado inventado o un campo ajeno no llegan a guardarse", async () => {
@@ -348,6 +356,7 @@ describe("elaboración", () => {
 
       expect(await responderObservacionAccion(null, formulario({ ...enRevision, observacionId: "3", respuesta: " Atendida en el texto. " }))).toBeNull();
       expect(revision.responderObservacion.mock.calls[0].slice(0, 3)).toEqual([3, expect.objectContaining({ usuarioId: 1 }), "Atendida en el texto."]);
+      expect(revision.responderObservacion.mock.calls[0][3]).toEqual({ etapa: "revision", ronda: 2 });
     });
 
     it("el revisor crea, cierra y reabre por el id de la observación", async () => {
@@ -357,6 +366,7 @@ describe("elaboración", () => {
       expect(revision.crearObservacion.mock.calls[0][2]).toBe("Falta el responsable.");
       expect(await cerrarObservacionAccion(null, formulario({ ...enRevision, observacionId: "3" }))).toBeNull();
       expect(revision.cerrarObservacion.mock.calls[0][0]).toBe(3);
+      expect(revision.cerrarObservacion.mock.calls[0][2]).toEqual({ etapa: "revision", ronda: 2 });
       expect(await reabrirObservacionAccion(null, formulario({ ...enRevision, observacionId: "3", nota: "Aún no aparece." }))).toBeNull();
       expect(revision.reabrirObservacion.mock.calls[0][0]).toBe(3);
       expect(revision.reabrirObservacion.mock.calls[0][2]).toBe("Aún no aparece.");
