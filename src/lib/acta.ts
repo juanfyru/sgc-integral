@@ -3,8 +3,22 @@
  * sale de datos que ya no cambian, y la fecha que imprime es la de la publicación: generarla otra vez
  * da el mismo texto. Solo fuentes estándar de `pdf-lib`: nada sale del servidor ni se descarga.
  */
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, type PDFEmbeddedPage, type PDFFont, type PDFPage } from "pdf-lib";
+import { motivoMembreteNoUtilizable } from "@/lib/membrete-acta";
+import { ETIQUETA_FIRMA } from "@/lib/tramites/tipos";
 import { pierdeCaracteres, textoParaFuente } from "@/lib/texto-pdf";
+
+export type CriterioActa = { texto: string; nota: string };
+
+/** El formato de la entidad sobre el que se dibuja el acta, con el espacio que su encabezado y su pie ocupan. */
+export type FormatoActa = {
+  archivoId: number;
+  hash: string;
+  codigo: string;
+  version: number;
+  margenSuperiorCm: number;
+  margenInferiorCm: number;
+};
 
 export type DatosActa = {
   clase: "aprobacion" | "eliminacion";
@@ -21,7 +35,16 @@ export type DatosActa = {
   versionObsoleta: number | null;
   publicadoEn: Date;
   zona: string;
+  /** Los tres siguientes son opcionales: un `detalle.acta` anterior no los trae. */
+  noCumple?: CriterioActa[];
+  formato?: FormatoActa | null;
+  ejemplo?: boolean;
 };
+
+const cm = (x: number) => (x * 72) / 2.54;
+
+/** Dónde empieza y termina el cuerpo de cada página, y el fondo que se dibuja bajo él. */
+type Geometria = { arriba: number; abajo: number; fondo: PDFEmbeddedPage | null; ejemplo: boolean };
 
 const ANCHO = 612;
 const ALTO = 792;
@@ -107,18 +130,24 @@ class Hoja {
   constructor(
     private doc: PDFDocument,
     private f: Fuentes,
+    private g: Geometria,
   ) {
     this.nueva();
   }
 
   nueva() {
     this.pagina = this.doc.addPage([ANCHO, ALTO]);
-    this.y = ALTO - MARGEN;
+    if (this.g.fondo) this.pagina.drawPage(this.g.fondo, { x: 0, y: 0, width: ANCHO, height: ALTO });
+    this.y = this.g.arriba;
+    if (this.g.ejemplo) {
+      this.texto("EJEMPLO, SIN VALOR", MARGEN, this.f.negrita, 10);
+      this.y -= 18;
+    }
   }
 
   /** Garantiza `alto` puntos libres; si no caben, sigue en otra página. */
   espacio(alto: number) {
-    if (this.y - alto < LIMITE_INFERIOR) this.nueva();
+    if (this.y - alto < this.g.abajo) this.nueva();
   }
 
   texto(t: string, x: number, fuente: PDFFont, tamano: number, color = TEXTO, abajo = 0) {
@@ -166,6 +195,27 @@ class Hoja {
     this.y -= 6;
   }
 
+  /** Un criterio que no cumple: su texto en negrita y, bajo él, la nota de quien dio el concepto. */
+  criterio(c: CriterioActa) {
+    const paso = 12;
+    const sangria = 10;
+    const ancho = ANCHO_UTIL - sangria;
+    const titulo = lineas(c.texto, this.f.negrita, 9.5, ancho);
+    const nota = c.nota.trim() ? lineas(c.nota, this.f.normal, 9, ancho) : [];
+    this.espacio(paso * (titulo.length + Math.min(nota.length, 2)));
+    for (const l of titulo) {
+      this.espacio(paso);
+      this.texto(l, MARGEN + sangria, this.f.negrita, 9.5);
+      this.y -= paso;
+    }
+    for (const l of nota) {
+      this.espacio(paso);
+      this.texto(l, MARGEN + sangria, this.f.normal, 9, SUAVE);
+      this.y -= paso;
+    }
+    this.y -= 4;
+  }
+
   firma(d: DatosActa["firmas"][number], zona: string) {
     const nombre = lineas(d.nombre, this.f.negrita, 9.5, COLUMNA_FECHA - COLUMNA_NOMBRE - 8);
     const cargo = d.cargo ? lineas(d.cargo, this.f.normal, 8.5, COLUMNA_FECHA - COLUMNA_NOMBRE - 8) : [];
@@ -191,8 +241,24 @@ class Hoja {
   }
 }
 
-export async function generarActa(d: DatosActa): Promise<Uint8Array> {
+export async function generarActa(d: DatosActa, membrete?: Uint8Array | null): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
+  // Un formato que falta o no sirve nunca impide el acta: sale con el diseño básico.
+  let utilizable = false;
+  if (d.formato) {
+    const motivo = membrete ? await motivoMembreteNoUtilizable(membrete) : "no se recibió el archivo";
+    utilizable = motivo === null;
+    if (!utilizable) console.error(`Acta ${d.documento.codigo}: el formato ${d.formato.codigo} no se usa (${motivo}).`);
+  }
+  const formato = utilizable ? d.formato : null;
+  const geometria: Geometria = formato
+    ? {
+        arriba: ALTO - cm(formato.margenSuperiorCm),
+        abajo: cm(formato.margenInferiorCm) + 40,
+        fondo: (await doc.embedPdf(membrete as Uint8Array, [0]))[0],
+        ejemplo: d.ejemplo === true,
+      }
+    : { arriba: ALTO - MARGEN, abajo: LIMITE_INFERIOR, fondo: null, ejemplo: d.ejemplo === true };
   const f: Fuentes = {
     normal: await doc.embedFont(StandardFonts.Helvetica),
     negrita: await doc.embedFont(StandardFonts.HelveticaBold),
@@ -205,13 +271,16 @@ export async function generarActa(d: DatosActa): Promise<Uint8Array> {
   doc.setCreationDate(d.publicadoEn);
   doc.setModificationDate(d.publicadoEn);
 
-  const h = new Hoja(doc, f);
+  const h = new Hoja(doc, f, geometria);
   const zona = d.zona;
   h.texto(nombreActa, MARGEN, f.negrita, 17);
   h.y -= 24;
-  for (const l of lineas(d.entidad, f.normal, 10.5, ANCHO_UTIL)) {
-    h.texto(l, MARGEN, f.normal, 10.5, SUAVE);
-    h.y -= 14;
+  // Con el formato, el nombre de la entidad ya está en su encabezado.
+  if (!formato) {
+    for (const l of lineas(d.entidad, f.normal, 10.5, ANCHO_UTIL)) {
+      h.texto(l, MARGEN, f.normal, 10.5, SUAVE);
+      h.y -= 14;
+    }
   }
 
   h.titulo("Documento");
@@ -232,6 +301,17 @@ export async function generarActa(d: DatosActa): Promise<Uint8Array> {
 
   h.titulo("Firmas");
   for (const firma of d.firmas) h.firma(firma, zona);
+
+  if (d.noCumple && d.noCumple.length > 0) {
+    h.titulo("Criterios que no cumplen, con concepto favorable");
+    for (const c of d.noCumple) h.criterio(c);
+    const quien = (firma: string) => d.firmas.find((x) => x.firma === firma)?.nombre;
+    const concepto = [
+      [ETIQUETA_FIRMA.reviso, quien(ETIQUETA_FIRMA.reviso)],
+      [ETIQUETA_FIRMA.aprobo, quien(ETIQUETA_FIRMA.aprobo)],
+    ].filter((par): par is [string, string] => par[1] !== undefined);
+    if (concepto.length > 0) h.fila("Concepto de", concepto.map(([e, n]) => `${e} ${n}`).join(" · "));
+  }
 
   h.titulo("Recorrido");
   if (d.clase === "aprobacion") {
@@ -254,11 +334,15 @@ export async function generarActa(d: DatosActa): Promise<Uint8Array> {
   paginas.forEach((pagina, i) => {
     const pie = (t: string, x: number, y: number) =>
       pagina.drawText(textoParaFuente(t, f.normal), { x, y, size: 8, font: f.normal, color: SUAVE });
-    pagina.drawLine({ start: { x: MARGEN, y: 48 }, end: { x: ANCHO - MARGEN, y: 48 }, thickness: 0.5, color: LINEA });
-    pie("Firmas electrónicas con reingreso de clave (Ley 527 de 1999)", MARGEN, 36);
+    // La línea del pie va a 48 puntos del borde (con formato, 24 sobre su margen inferior); el texto, 12 y 23 bajo ella.
+    const base = formato ? cm(formato.margenInferiorCm) + 24 : 48;
+    const b12 = base - 12;
+    const b1 = base - 23;
+    pagina.drawLine({ start: { x: MARGEN, y: base }, end: { x: ANCHO - MARGEN, y: base }, thickness: 0.5, color: LINEA });
+    pie("Firmas electrónicas con reingreso de clave (Ley 527 de 1999)", MARGEN, b12);
     const numero = `Página ${i + 1} de ${paginas.length}`;
-    pie(numero, ANCHO - MARGEN - f.normal.widthOfTextAtSize(numero, 8), 36);
-    pie(`Generada por SGC Integral el ${diaYHora(d.publicadoEn, zona)}`, MARGEN, 25);
+    pie(numero, ANCHO - MARGEN - f.normal.widthOfTextAtSize(numero, 8), b12);
+    pie(`Generada por SGC Integral el ${diaYHora(d.publicadoEn, zona)}`, MARGEN, b1);
   });
 
   return doc.save();

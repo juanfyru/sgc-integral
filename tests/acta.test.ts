@@ -3,10 +3,11 @@
  * no se mezcle con los archivos del documento corren contra la demo ya sembrada, en una transacción
  * que se revierte. El archivo del acta lo borra cada test.
  */
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { PDFDocument } from "pdf-lib";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
@@ -18,6 +19,7 @@ import { obtenerArchivoAdmin, obtenerDocumentoAdmin } from "@/db/consultas/admin
 import { obtenerArchivoVigente, obtenerFichaDocumento } from "@/db/consultas/documentos";
 import { transicionar } from "@/db/consultas/tramites-flujo";
 import { generarActa, type DatosActa } from "@/lib/acta";
+import { motivoMembreteNoUtilizable } from "@/lib/membrete-acta";
 import { puedeVerVersion } from "@/lib/alcance";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { contenidoPorPagina, contieneTexto } from "./utiles/pdf";
@@ -56,9 +58,79 @@ const datos: DatosActa = {
 
 const textoDe = async (pdf: Uint8Array) => (await contenidoPorPagina(pdf)).join("\n");
 
+const textoDelActa = textoDe;
+const FORMATO = { archivoId: 1, hash: "x", codigo: "SGC-FO-06", version: 1, margenSuperiorCm: 5.5, margenInferiorCm: 3.5 };
+
+async function formatoDePrueba(paginas = 1, tamano: [number, number] = [612, 792]): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  for (let i = 0; i < paginas; i++) doc.addPage(tamano).drawLine({ start: { x: 40, y: 700 }, end: { x: 570, y: 700 }, thickness: 1 });
+  return doc.save();
+}
+
 const AVISO = "Algunos caracteres no se pudieron imprimir";
 
 describe("generarActa", () => {
+  it("sin formato y sin criterios, el acta es idéntica a la de antes", async () => {
+    const bytes = await generarActa(datos);
+    expect(createHash("sha256").update(bytes).digest("hex")).toBe("b2435b847712fe21594517c1dab364a6cfc5c58aca62cb29e3041334fae30fac");
+  });
+
+  it("con formato, cada página lleva el fondo y el resultado es determinista", async () => {
+    const fondo = await formatoDePrueba();
+    const d = { ...datos, formato: FORMATO };
+    const a = await generarActa(d, fondo);
+    const b = await generarActa(d, fondo);
+    expect(Buffer.from(a).equals(Buffer.from(b))).toBe(true);
+    expect(Buffer.from(a).equals(Buffer.from(await generarActa(datos)))).toBe(false);
+    expect(contieneTexto(await textoDe(a), datos.entidad)).toBe(false);
+  });
+
+  it("el formato que no sirve deja el diseño básico, sin error", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const d = { ...datos, formato: FORMATO };
+      const basica = await generarActa({ ...d, formato: null });
+      for (const malo of [await formatoDePrueba(2), await formatoDePrueba(1, [595, 842]), new Uint8Array([1, 2, 3]), null]) {
+        expect(Buffer.from(await generarActa(d, malo)).equals(Buffer.from(basica))).toBe(true);
+      }
+      expect(error).toHaveBeenCalledTimes(4);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it("motivoMembreteNoUtilizable explica cada caso", async () => {
+    expect(await motivoMembreteNoUtilizable(await formatoDePrueba())).toBeNull();
+    expect(await motivoMembreteNoUtilizable(await formatoDePrueba(1, [613, 791]))).toBeNull();
+    expect(await motivoMembreteNoUtilizable(await formatoDePrueba(2))).toMatch(/una sola página/);
+    expect(await motivoMembreteNoUtilizable(await formatoDePrueba(1, [595, 842]))).toMatch(/tamaño carta/);
+    expect(await motivoMembreteNoUtilizable(new Uint8Array([1, 2, 3]))).toMatch(/no se puede leer/);
+  });
+
+  it("los criterios van en el acta, y sin ellos no aparece el bloque", async () => {
+    const noCumple = [{ texto: "Es coherente con los demás documentos", nota: "Se ajustará con la guía." }];
+    const con = await textoDelActa(await generarActa({ ...datos, noCumple }));
+    expect(contieneTexto(con, "Criterios que no cumplen, con concepto favorable")).toBe(true);
+    expect(contieneTexto(con, "Se ajustará con la guía.")).toBe(true);
+    expect(contieneTexto(con, "Revisó María Fernanda Perdomo · Aprobó Íñigo Nuñez Peñaloza")).toBe(true);
+    expect(contieneTexto(await textoDelActa(await generarActa({ ...datos, noCumple: [] })), "Criterios que no cumplen")).toBe(false);
+  });
+
+  it("cinco criterios con notas largas pasan de página dentro de los márgenes", async () => {
+    const noCumple = Array.from({ length: 5 }, (_, i) => ({ texto: `Criterio ${i + 1}`, nota: "nota ".repeat(400) }));
+    const d = { ...datos, noCumple, formato: { ...FORMATO, margenSuperiorCm: 8, margenInferiorCm: 6 } };
+    const doc = await PDFDocument.load(await generarActa(d, await formatoDePrueba()));
+    expect(doc.getPageCount()).toBeGreaterThan(1);
+  });
+
+  it("el ejemplo se distingue en cada página", async () => {
+    const bytes = await generarActa({ ...datos, ejemplo: true, controlCambios: "Cambio ".repeat(1500) });
+    const paginas = await contenidoPorPagina(bytes);
+    expect(paginas.length).toBeGreaterThan(1);
+    for (const p of paginas) expect(contieneTexto(p, "EJEMPLO, SIN VALOR")).toBe(true);
+    expect(contieneTexto(await textoDelActa(await generarActa(datos)), "EJEMPLO")).toBe(false);
+  });
+
   it("translitera lo común y, si no queda nada sustituido, no añade la nota", async () => {
     const texto = "Requisito ≥ 5 días → plazo ≠ anterior ✓ ← ≤ Ω μ β \u2126";
     const pdf = await textoDe(await generarActa({ ...datos, controlCambios: texto }));
