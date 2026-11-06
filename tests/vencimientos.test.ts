@@ -161,22 +161,42 @@ describe("revisarVencimientos", () => {
     expect(await correrEn(tx)("2026-12-30T15:00:00Z")).toEqual({ avisados: 0, escalados: 0 });
   }));
 
-  it("lo que otra pasada ya avisó no se repite: las marcas se vuelven a leer con la fila bloqueada", () => revertida(sql, async (tx) => {
-    const t = await tramiteEn(tx, "elaboracion");
-    await silenciarOtros(tx, t.tramiteId);
-    // La lista inicial ya salió cuando la otra pasada confirma sus marcas.
-    const conOtraPasada = new Proxy(tx, {
+  /** `tx`, con `entre` corriendo justo después de leer la lista de vencidos, antes de tomar cada candado. */
+  const conCambioTrasLaLista = (tx: TransactionSql, entre: () => Promise<unknown>) =>
+    new Proxy(tx, {
       apply(objetivo, propio, argumentos: [TemplateStringsArray, ...unknown[]]) {
         const consulta = Reflect.apply(objetivo, propio, argumentos);
         if (!argumentos[0].join("").includes("SELECT id, vence_en")) return consulta;
         return consulta.then(async (filas: unknown) => {
-          await tx`UPDATE tramites SET aviso_vencido_en = now(), escalado_en = now() WHERE id = ${t.tramiteId}`;
+          await entre();
           return filas;
         });
       },
-    });
-    expect(await revisarVencimientos({ sql: conOtraPasada as unknown as TransactionSql, ahora: new Date("2026-12-30T15:00:00Z") }))
-      .toEqual({ avisados: 0, escalados: 0 });
+    }) as unknown as TransactionSql;
+
+  it("lo que otra pasada ya avisó no se repite: las marcas se vuelven a leer con la fila bloqueada", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "elaboracion");
+    await silenciarOtros(tx, t.tramiteId);
+    const otraPasada = conCambioTrasLaLista(tx, () => tx`UPDATE tramites SET aviso_vencido_en = now(), escalado_en = now() WHERE id = ${t.tramiteId}`);
+    expect(await revisarVencimientos({ sql: otraPasada, ahora: new Date("2026-12-30T15:00:00Z") })).toEqual({ avisados: 0, escalados: 0 });
+  }));
+
+  it("un trámite que se cierra entre la lista y el candado no avisa", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "elaboracion");
+    await silenciarOtros(tx, t.tramiteId);
+    const seCierra = conCambioTrasLaLista(tx, () => tx`UPDATE tramites SET etapa = 'cancelado' WHERE id = ${t.tramiteId}`);
+    expect(await revisarVencimientos({ sql: seCierra, ahora: new Date("2026-12-30T15:00:00Z") })).toEqual({ avisados: 0, escalados: 0 });
+  }));
+
+  it("sin nadie a quien avisar no marca el aviso: sale cuando haya responsable", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "visto_bueno");
+    await silenciarOtros(tx, t.tramiteId);
+    await tx`UPDATE usuarios SET activo = false WHERE rol = 'lider_proceso'`;
+    expect(await correrEn(tx)("2026-12-30T15:00:00Z")).toEqual({ avisados: 0, escalados: 0 });
+    const [marcas] = await tx`SELECT aviso_vencido_en FROM tramites WHERE id = ${t.tramiteId}`;
+    expect(marcas.aviso_vencido_en).toBeNull();
+    await tx`UPDATE usuarios SET activo = true WHERE usuario = 'lider.gth'`;
+    expect((await correrEn(tx)("2026-12-30T16:00:00Z")).avisados).toBe(1);
   }));
 
   it("no espera a un trámite bloqueado y lo revisa en la pasada siguiente", async () => {
