@@ -22,6 +22,10 @@ import type { Etapa } from "@/lib/tramites/tipos";
 import { opc, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
+// Cada solicitud y cada aprobación avisan a todos los `admin_sgc` activos, y la BD de desarrollo
+// acumula los usuarios de prueba de cada corrida, que no se pueden borrar.
+vi.setConfig({ testTimeout: 30_000 });
+
 const sql = obtenerSql();
 
 afterAll(async () => {
