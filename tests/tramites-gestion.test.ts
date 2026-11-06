@@ -796,6 +796,13 @@ describe("corregirDatosDeControl", () => {
         expect((await avisosDe(tx, t.aprobador.usuarioId, t.tramiteId)).at(-1)).toMatchObject({ tipo: "tramite.reasignado", titulo: expect.stringMatching(/ya no le corresponde aprobar/) });
       }));
 
+      it("el aprobador que ya lo es no cambia", () => revertida(sql, async (tx) => {
+        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
+        const [tipo] = await tx`SELECT id FROM tipos_documento WHERE sigla = 'RG'`;
+        await expect(corregirDatosDeControl(t.tramiteId, t.admin, { tipoDocumentoId: Number(tipo.id), aprobadorId: t.aprobador.usuarioId }, enElaboracion, { sql: tx }))
+          .rejects.toThrow("Esa persona ya tiene ese papel");
+      }));
+
       it("sin cambiar el tipo, quien aprueba no cambia por aquí", () => revertida(sql, async (tx) => {
         const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
         const otroAdmin = await sesionAdmin(tx);
