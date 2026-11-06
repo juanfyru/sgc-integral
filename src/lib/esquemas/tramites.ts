@@ -42,7 +42,16 @@ const observacion = textoDeRevision("La observación");
 export const EsquemaObservacion = z.object({ texto: observacion }).strict();
 export const EsquemaRespuestaObservacion = z.object({ respuesta: textoDeRevision("La respuesta") }).strict();
 export const EsquemaReaperturaObservacion = z.object({ nota: textoDeRevision("La nota de reapertura") }).strict();
-export const EsquemaConcepto = z.object({ concepto: textoDeRevision("El concepto") }).strict();
+/** `confirmaNoCumple` es la huella de los criterios que la persona vio al confirmar. */
+export const EsquemaConcepto = z
+  .object({
+    concepto: textoDeRevision("El concepto"),
+    confirmaNoCumple: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .optional(),
+  })
+  .strict();
 
 export const EsquemaVerificacion = z
   .array(

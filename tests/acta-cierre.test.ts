@@ -18,6 +18,8 @@ import { asegurarActa, reunirDatosActa, versionDeActa } from "@/db/consultas/act
 import { obtenerDocumentoAdmin } from "@/db/consultas/admin";
 import {
   cerrarObservacion,
+  crearObservacion,
+  criteriosNoCumplen,
   guardarVerificacion,
   listarItemsVerificacion,
   listarObservaciones,
@@ -27,6 +29,7 @@ import { transicionar } from "@/db/consultas/tramites-flujo";
 import { generarActa, type DatosActa } from "@/lib/acta";
 import type { Verificador } from "@/lib/firma";
 import { resolverRutaAlmacen } from "@/lib/almacen";
+import { huellaDeCriterios } from "@/lib/tramites/criterios";
 import { contenidoPorPagina, contieneTexto } from "./utiles/pdf";
 import { documentoLibre, opc, sesionDe, tramiteEn } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
@@ -142,6 +145,95 @@ describe("el acta se congela al cerrar", () => {
       expect(d).toMatchObject({ rondas: nueva, observaciones: { total: 1, cerradas: 1 } });
       expect(d!.firmas.map((f) => f.firma)).toEqual(["Elaboró", "Revisó", "Aprobó", "Publicó"]);
     } finally { await t.limpiar(); }
+  }));
+});
+
+describe("los criterios que no cumplen en el acta", () => {
+  const NOTA = "Se ajustará con la guía de redacción.";
+  type Tx = Parameters<Parameters<typeof revertida>[1]>[0];
+
+  const firmado = (t: { tramiteId: number; ronda: number }, accion: "aprobar" | "aprobar_y_publicar", confirmaNoCumple: string) =>
+    ({ tramiteId: t.tramiteId, accion, etapaEsperada: "aprobacion", rondaEsperada: t.ronda, datos: { concepto: "Aprobado.", confirmaNoCumple }, credenciales: { clave: "x" } }) as const;
+
+  const actaDelEvento = async (tx: Tx, tramiteId: number) =>
+    (await tx`SELECT detalle -> 'acta' AS acta FROM tramite_eventos WHERE tramite_id = ${tramiteId} AND detalle ? 'acta'`)[0].acta;
+
+  /** Lleva a aprobación un trámite con un criterio aceptado. El ítem se edita antes de cerrar: el acta lleva lo guardado. */
+  async function aprobacionConCriterio(tx: Tx) {
+    const t = await tramiteEn(tx, "revision");
+    try {
+      const items = await listarItemsVerificacion({ sql: tx, soloActivos: true });
+      const criterio = items.find((i) => !i.critico)!;
+      await guardarVerificacion(t.tramiteId, t.revisor,
+        items.map((i) => (i.id === criterio.id ? { itemId: i.id, resultado: "no_cumple" as const, nota: NOTA } : { itemId: i.id, resultado: "cumple" as const })),
+        { etapa: "revision", ronda: t.ronda }, { sql: tx });
+      await tx`UPDATE lista_verificacion_items SET texto = 'Texto editado antes de cerrar' WHERE id = ${criterio.id}`;
+      const confirmaNoCumple = huellaDeCriterios(await criteriosNoCumplen(t.tramiteId, t.ronda, { sql: tx }));
+      await transicionar(t.revisor, { tramiteId: t.tramiteId, accion: "concepto_favorable", etapaEsperada: "revision", rondaEsperada: t.ronda,
+        datos: { concepto: "Cumple, con un criterio aceptado.", confirmaNoCumple }, credenciales: { clave: "x" } }, opc(tx));
+      return { t, criterio, confirmaNoCumple };
+    } catch (err) {
+      await t.limpiar();
+      throw err;
+    }
+  }
+
+  it("aprobar y publicar congela los criterios con el texto guardado, aunque el ítem se edite después", () => revertida(sql, async (tx) => {
+    const { t, criterio, confirmaNoCumple } = await aprobacionConCriterio(tx);
+    try {
+      await transicionar(t.aprobador, firmado(t, "aprobar_y_publicar", confirmaNoCumple), opc(tx));
+      await tx`UPDATE lista_verificacion_items SET texto = 'Texto editado después de cerrar' WHERE id = ${criterio.id}`;
+      const noCumple = [{ texto: criterio.texto, nota: NOTA }];
+      expect((await actaDelEvento(tx, t.tramiteId)).noCumple).toEqual(noCumple);
+      const datos = (await reunirDatosActa(t.tramiteId, { sql: tx }))!;
+      expect(datos.noCumple).toEqual(noCumple);
+      const pdf = await textoDe(await generarActa(datos));
+      expect(contieneTexto(pdf, "Criterios que no cumplen, con concepto favorable")).toBe(true);
+      expect(contieneTexto(pdf, NOTA)).toBe(true);
+    } finally { await t.limpiar(); }
+  }));
+
+  it("publicar aparte, después de aprobar, también los congela", () => revertida(sql, async (tx) => {
+    const { t, criterio, confirmaNoCumple } = await aprobacionConCriterio(tx);
+    try {
+      await transicionar(t.aprobador, firmado(t, "aprobar", confirmaNoCumple), opc(tx));
+      await transicionar(t.admin, publicar(t), opc(tx));
+      expect((await actaDelEvento(tx, t.tramiteId)).noCumple).toEqual([{ texto: criterio.texto, nota: NOTA }]);
+    } finally { await t.limpiar(); }
+  }));
+
+  it("solo cuenta la ronda aprobada: un criterio de una ronda devuelta no entra al acta", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "revision");
+    const estado = async () => {
+      const [x] = await tx`SELECT etapa, ronda FROM tramites WHERE id = ${t.tramiteId}`;
+      return { etapa: x.etapa, ronda: x.ronda };
+    };
+    try {
+      const items = await listarItemsVerificacion({ sql: tx, soloActivos: true });
+      const criterio = items.find((i) => !i.critico)!;
+      await guardarVerificacion(t.tramiteId, t.revisor, [{ itemId: criterio.id, resultado: "no_cumple", nota: NOTA }], await estado(), { sql: tx });
+      const n = await crearObservacion(t.tramiteId, t.revisor, "Falta el responsable en el numeral 5.2.", await estado(), { sql: tx });
+      await transicionar(t.revisor, { tramiteId: t.tramiteId, accion: "devolver_revision", etapaEsperada: "revision", rondaEsperada: t.ronda }, opc(tx));
+      const nueva = t.ronda + 1;
+      await responderObservacion(n, t.elaborador, "Se agregó al jefe inmediato.", await estado(), { sql: tx });
+      await transicionar(t.elaborador, { tramiteId: t.tramiteId, accion: "enviar_a_revision", etapaEsperada: "elaboracion", rondaEsperada: nueva, credenciales: { clave: "x" } }, opc(tx));
+      await guardarVerificacion(t.tramiteId, t.revisor, items.map((i) => ({ itemId: i.id, resultado: "cumple" as const })), await estado(), { sql: tx });
+      await cerrarObservacion(n, t.revisor, await estado(), { sql: tx });
+      await transicionar(t.revisor, { tramiteId: t.tramiteId, accion: "concepto_favorable", etapaEsperada: "revision", rondaEsperada: nueva, datos: { concepto: "Cumple." }, credenciales: { clave: "x" } }, opc(tx));
+      await transicionar(t.aprobador, { tramiteId: t.tramiteId, accion: "aprobar_y_publicar", etapaEsperada: "aprobacion", rondaEsperada: nueva, datos: { concepto: "Aprobado." }, credenciales: { clave: "x" } }, opc(tx));
+      expect((await actaDelEvento(tx, t.tramiteId)).noCumple).toEqual([]);
+    } finally { await t.limpiar(); }
+  }));
+
+  it("un cierre sin criterios deja la lista vacía, y una eliminación tampoco lleva", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "publicacion");
+    const e = await tramiteEn(tx, "aprobacion", { tipo: "eliminar" });
+    try {
+      await transicionar(t.admin, publicar(t), opc(tx));
+      expect((await actaDelEvento(tx, t.tramiteId)).noCumple).toEqual([]);
+      await transicionar(e.aprobador, { tramiteId: e.tramiteId, accion: "aprobar_y_publicar", etapaEsperada: "aprobacion", rondaEsperada: e.ronda, datos: { concepto: "Procede." }, credenciales: { clave: "x" } }, opc(tx));
+      expect((await actaDelEvento(tx, e.tramiteId)).noCumple).toEqual([]);
+    } finally { await t.limpiar(); await e.limpiar(); }
   }));
 });
 

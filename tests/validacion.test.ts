@@ -95,6 +95,16 @@ it.each<[string, z.ZodType<unknown>, string]>([
   expect(() => parsearFormulario(formulario({ [campo]: "x".repeat(maximo + 1) }), esquema)).toThrow(new RegExp(`^${nombre} no puede pasar de ${maximo} caracteres$`));
 });
 
+it("el concepto admite la huella de los criterios confirmados, y solo una huella", () => {
+  const concepto = "Cumple; listo para aprobación.";
+  const huella = "a1".repeat(32);
+  expect(parsearFormulario(formulario({ concepto }), EsquemaConcepto)).toEqual({ concepto });
+  expect(parsearFormulario(formulario({ concepto, confirmaNoCumple: huella }), EsquemaConcepto)).toEqual({ concepto, confirmaNoCumple: huella });
+  for (const mala of ["a1", "A1".repeat(32), "z".repeat(64), `${huella}0`]) {
+    expect(() => parsearFormulario(formulario({ concepto, confirmaNoCumple: mala }), EsquemaConcepto)).toThrow(/^confirmaNoCumple: /);
+  }
+});
+
 it("la firma sin clave y la devolución sin observaciones se dicen en palabras", () => {
   expect(() => parsearFormulario(formulario({}), EsquemaFirma)).toThrow(/^Escriba su clave$/);
   expect(() => parsearFormulario(formulario({}), EsquemaDevolucionAprobacion)).toThrow(/^Escriba al menos una observación$/);

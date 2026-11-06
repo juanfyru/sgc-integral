@@ -32,6 +32,8 @@ export type RespuestaGuardada = Omit<RespuestaItem, "resultado"> & { resultado: 
 
 export type RondaVerificacion = { ronda: number; respuestas: RespuestaGuardada[] };
 
+export type CriterioNoCumple = { itemId: number; texto: string; nota: string };
+
 /** Las fechas de responder y cerrar van como texto, en la zona de la instalación: las pinta un componente de cliente. */
 export type Observacion = {
   id: number;
@@ -106,6 +108,21 @@ export async function obtenerVerificacion(
     resultado: f.resultado,
     nota: f.nota,
   }));
+}
+
+/**
+ * Lo no crítico que no cumple en la ronda, tal como quedó guardado: una ronda sin respuestas no
+ * trae la propuesta de la anterior, y la marca que cuenta es la de la fila, para que un ítem vuelto
+ * crítico después del concepto siga a la vista de quien aprueba.
+ */
+export async function criteriosNoCumplen(tramiteId: number, ronda: number, opciones?: { sql?: Cliente }): Promise<CriterioNoCumple[]> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const filas = await sql`SELECT r.item_id, r.texto_item, r.nota
+    FROM tramite_verificaciones r
+    JOIN lista_verificacion_items i ON i.id = r.item_id
+    WHERE r.tramite_id = ${tramiteId} AND r.ronda = ${ronda} AND r.resultado = 'no_cumple' AND NOT r.critico
+    ORDER BY i.orden, i.id`;
+  return filas.map((f) => ({ itemId: Number(f.item_id), texto: f.texto_item, nota: f.nota ?? "" }));
 }
 
 /**

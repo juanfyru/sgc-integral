@@ -8,9 +8,10 @@ import { anularVigenteEn, aplicarPublicacion } from "@/db/consultas/admin";
 import { congelarDatosActa, nombreDeEntidadParaActa } from "@/db/consultas/actas";
 import { exigirDesignacion } from "./aceptacion";
 import { listarFirmas, type FirmaRegistrada } from "@/db/consultas/firmas";
-import { crearObservacionesDeAprobacion } from "@/db/consultas/revision";
+import { crearObservacionesDeAprobacion, criteriosNoCumplen } from "@/db/consultas/revision";
 import { adminsActivos, lideresDeProceso, lideresDeProcesosDelDocumento, rotuloDeTramite } from "@/db/consultas/tramites";
 import { huellaDeArchivo } from "@/lib/huella";
+import { constanciaDeCriterios } from "@/lib/tramites/criterios";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { MAX_OBSERVACIONES_APROBACION, type Firma } from "@/lib/tramites/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -26,7 +27,7 @@ import {
   type RegistroValidadores,
   type Validador,
 } from "./contrato";
-import { conceptoDe } from "./revision";
+import { conceptoDe, exigirConfirmacion } from "./revision";
 
 const NO_COINCIDE = "El archivo en el almacén no coincide con el aprobado. No se publicó.";
 
@@ -102,10 +103,17 @@ async function exigirAutoridadActual(sql: Cliente, tramite: FilaTramite, aprobad
   }
 }
 
+/** Quien aprueba confirma por su cuenta lo que aceptó el revisor. Una eliminación no tiene lista y no aplica. */
+async function exigirConfirmacionDelAprobador(sql: Cliente, tramite: FilaTramite, datos: Record<string, unknown>): Promise<void> {
+  const criterios = await criteriosNoCumplen(tramite.id, tramite.ronda, { sql });
+  if (criterios.length > 0) exigirConfirmacion(datos, criterios, "Confirme que aprueba a pesar de los criterios que no cumplen");
+}
+
 const validarAprobar: Validador = async ({ sql, tramite, sesion, datos }) => {
   conceptoDe(datos);
   await exigirAprobadorDistinto(sql, tramite, sesion.usuarioId);
   await exigirAutoridadActual(sql, tramite, sesion.usuarioId);
+  await exigirConfirmacionDelAprobador(sql, tramite, datos);
 };
 
 const validarPublicar: Validador = async ({ sql, tramite }) => {
@@ -123,6 +131,7 @@ const validarAprobarYPublicar: Validador = async ({ sql, tramite, sesion, datos 
   await nombreDeEntidadParaActa(sql);
   await exigirAprobadorDistinto(sql, tramite, sesion.usuarioId);
   await exigirAutoridadActual(sql, tramite, sesion.usuarioId);
+  await exigirConfirmacionDelAprobador(sql, tramite, datos);
   if (tramite.tipo === "eliminar") return exigirVersionVigente(sql, tramite);
   await exigirLoAprobado(sql, tramite, ["elaboro", "reviso"]);
 };
@@ -141,8 +150,9 @@ function observacionesDe(datos: Record<string, unknown>): string[] {
 const aprobar: Manejador = async ({ tx, tramite, datos }) => {
   const { texto } = await rotuloDeTramite(tx, tramite);
   const titulo = tramite.tipo === "eliminar" ? `Eliminación ${tramite.numero} por ejecutar` : `Solicitud ${tramite.numero} por publicar`;
+  const criterios = await criteriosNoCumplen(tramite.id, tramite.ronda, { sql: tx });
   return {
-    detalle: { concepto: conceptoDe(datos) },
+    detalle: { concepto: conceptoDe(datos), ...constanciaDeCriterios(criterios) },
     avisos: [{ usuarioIds: await adminsActivos({ sql: tx }), tipo: "tramite.paso", titulo, cuerpo: texto }],
   };
 };
@@ -249,8 +259,9 @@ const publicar: Manejador = (c) => (c.tramite.tipo === "eliminar" ? ejecutarElim
 /** De `aprobar` conserva el concepto y no su aviso: nadie queda esperando publicar lo ya publicado. */
 const aprobarYPublicar: Manejador = async (c) => {
   const concepto = conceptoDe(c.datos);
+  const criterios = await criteriosNoCumplen(c.tramite.id, c.tramite.ronda, { sql: c.tx });
   const efecto = c.tramite.tipo === "eliminar" ? await ejecutarEliminacion(c) : await publicarVersion(c, await quienActua(c));
-  return { ...efecto, detalle: { concepto, ...efecto.detalle } };
+  return { ...efecto, detalle: { concepto, ...constanciaDeCriterios(criterios), ...efecto.detalle } };
 };
 
 export const VALIDADORES_CIERRE: RegistroValidadores = {

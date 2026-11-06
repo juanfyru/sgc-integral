@@ -14,11 +14,19 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 import type { TransactionSql } from "postgres";
 import { obtenerSql } from "@/db/cliente";
 import { listarFirmas } from "@/db/consultas/firmas";
-import { cerrarObservacion, guardarVerificacion, listarItemsVerificacion, listarObservaciones, responderObservacion } from "@/db/consultas/revision";
+import {
+  cerrarObservacion,
+  criteriosNoCumplen,
+  guardarVerificacion,
+  listarItemsVerificacion,
+  listarObservaciones,
+  responderObservacion,
+} from "@/db/consultas/revision";
 import { lideresDeProcesosDelDocumento } from "@/db/consultas/tramites";
 import { ErrorTramite, MANEJADORES, VALIDADORES, transicionar, type OpcionesFlujo, type SesionFlujo } from "@/db/consultas/tramites-flujo";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import type { Verificador } from "@/lib/firma";
+import { huellaDeCriterios } from "@/lib/tramites/criterios";
 import type { Etapa } from "@/lib/tramites/tipos";
 import { opc, sesionAdmin, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
@@ -220,6 +228,116 @@ describe("aprobación", () => {
       await expect(tx.savepoint(() => transicionar(m.aprobador, { tramiteId: m.tramiteId, accion: "negar_eliminacion", etapaEsperada: "aprobacion", rondaEsperada: m.ronda, datos: { motivo: "Motivo suficiente." } }, opc(tx))))
         .rejects.toThrow("Esta acción no corresponde a este tipo de solicitud");
     } finally { await m.limpiar(); }
+  }));
+});
+
+describe("criterios que no cumplen en la aprobación", () => {
+  const NOTA = "Se ajustará con la guía de redacción.";
+  const FALTA_CONFIRMAR = "Confirme que aprueba a pesar de los criterios que no cumplen";
+  const LISTA_CAMBIO = "La lista cambió mientras tenía abierto el diálogo. Recargue la página.";
+
+  const concepto = (t: Trayecto, confirmaNoCumple: string) =>
+    ({ tramiteId: t.tramiteId, accion: "concepto_favorable", etapaEsperada: "revision", rondaEsperada: t.ronda,
+      datos: { concepto: "Cumple, con un criterio aceptado.", confirmaNoCumple }, credenciales: { clave: "x" } }) as const;
+
+  /** Responde la lista en revisión: cumple, salvo `itemId`, que no cumple con su nota. */
+  async function responderCon(tx: TransactionSql, t: Trayecto, itemId: number) {
+    const items = await listarItemsVerificacion({ sql: tx, soloActivos: true });
+    await guardarVerificacion(t.tramiteId, t.revisor,
+      items.map((i) => (i.id === itemId ? { itemId: i.id, resultado: "no_cumple" as const, nota: NOTA } : { itemId: i.id, resultado: "cumple" as const })),
+      { etapa: "revision", ronda: t.ronda }, { sql: tx });
+  }
+
+  /** Lleva a aprobación un trámite con un criterio en «No cumple» que el revisor aceptó. */
+  async function aprobacionConCriterio(tx: TransactionSql) {
+    const t = await tramiteEn(tx, "revision");
+    try {
+      const items = await listarItemsVerificacion({ sql: tx, soloActivos: true });
+      const criterio = items.find((i) => !i.critico)!;
+      await responderCon(tx, t, criterio.id);
+      const confirmaNoCumple = huellaDeCriterios(await criteriosNoCumplen(t.tramiteId, t.ronda, { sql: tx }));
+      await transicionar(t.revisor, concepto(t, confirmaNoCumple), opc(tx));
+      return { t, criterio, confirmaNoCumple };
+    } catch (err) {
+      await t.limpiar();
+      throw err;
+    }
+  }
+
+  const conHuella = (entrada: ReturnType<typeof firmando>, confirmaNoCumple: string) =>
+    ({ ...entrada, datos: { ...entrada.datos, confirmaNoCumple } });
+
+  it("aprobar exige confirmar los criterios, antes de la firma", () => revertida(sql, async (tx) => {
+    const { t, confirmaNoCumple } = await aprobacionConCriterio(tx);
+    try {
+      const entrada = firmando(t, "aprobar", "aprobacion");
+      await fallaSinGastarLaFirma(tx, t.aprobador, entrada, FALTA_CONFIRMAR);
+      await fallaSinGastarLaFirma(tx, t.aprobador, conHuella(entrada, "0".repeat(64)), LISTA_CAMBIO);
+      await expect(transicionar(t.aprobador, conHuella(entrada, confirmaNoCumple), opc(tx))).resolves.toEqual({ etapa: "publicacion", ronda: t.ronda });
+    } finally { await t.limpiar(); }
+  }));
+
+  it("aprobar y publicar también", () => revertida(sql, async (tx) => {
+    const { t, confirmaNoCumple } = await aprobacionConCriterio(tx);
+    try {
+      const entrada = firmando(t, "aprobar_y_publicar", "aprobacion");
+      await fallaSinGastarLaFirma(tx, t.aprobador, entrada, FALTA_CONFIRMAR);
+      await fallaSinGastarLaFirma(tx, t.aprobador, conHuella(entrada, "0".repeat(64)), LISTA_CAMBIO);
+      await expect(transicionar(t.aprobador, conHuella(entrada, confirmaNoCumple), opc(tx))).resolves.toEqual({ etapa: "publicado", ronda: t.ronda });
+    } finally { await t.limpiar(); }
+  }));
+
+  it("una eliminación no pide confirmación", () => revertida(sql, async (tx) => {
+    const aprobada = await tramiteEn(tx, "aprobacion", { tipo: "eliminar" });
+    await expect(transicionar(aprobada.aprobador, firmando(aprobada, "aprobar", "aprobacion"), opc(tx))).resolves.toMatchObject({ etapa: "publicacion" });
+    expect(await ultimoDetalle(tx, aprobada.tramiteId, "aprobar")).toEqual({ concepto: "Aprobado." });
+
+    const ejecutada = await tramiteEn(tx, "aprobacion", { tipo: "eliminar" });
+    await expect(transicionar(ejecutada.aprobador, firmando(ejecutada, "aprobar_y_publicar", "aprobacion"), opc(tx))).resolves.toMatchObject({ etapa: "eliminado" });
+  }));
+
+  it("la confirmación del aprobador queda en su evento", () => revertida(sql, async (tx) => {
+    const aprobada = await aprobacionConCriterio(tx);
+    const publicada = await aprobacionConCriterio(tx);
+    try {
+      const constancia = { noCumple: [{ texto: aprobada.criterio.texto, nota: NOTA }], confirmoNoCumple: true };
+      await transicionar(aprobada.t.aprobador, conHuella(firmando(aprobada.t, "aprobar", "aprobacion"), aprobada.confirmaNoCumple), opc(tx));
+      expect(await ultimoDetalle(tx, aprobada.t.tramiteId, "aprobar")).toEqual({ concepto: "Aprobado.", ...constancia });
+
+      await transicionar(publicada.t.aprobador, conHuella(firmando(publicada.t, "aprobar_y_publicar", "aprobacion"), publicada.confirmaNoCumple), opc(tx));
+      expect(await ultimoDetalle(tx, publicada.t.tramiteId, "aprobar_y_publicar")).toMatchObject({ concepto: "Aprobado.", ...constancia });
+    } finally { await aprobada.t.limpiar(); await publicada.t.limpiar(); }
+  }));
+
+  it("sin criterios, el evento del aprobador no lleva constancia", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "aprobacion");
+    try {
+      await transicionar(t.aprobador, firmando(t, "aprobar_y_publicar", "aprobacion"), opc(tx));
+      const detalle = await ultimoDetalle(tx, t.tramiteId, "aprobar_y_publicar");
+      expect(detalle).not.toHaveProperty("noCumple");
+      expect(detalle).not.toHaveProperty("confirmoNoCumple");
+    } finally { await t.limpiar(); }
+  }));
+
+  // Solo el concepto mira si el ítem es crítico (spec §5): ahí es donde una confirmación no debe bastar.
+  it("el crítico sigue bloqueando aunque se confirme", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "revision");
+    try {
+      const critico = (await listarItemsVerificacion({ sql: tx, soloActivos: true })).find((i) => i.critico)!;
+      await responderCon(tx, t, critico.id);
+      await fallaSinGastarLaFirma(tx, t.revisor, concepto(t, huellaDeCriterios([{ itemId: critico.id, nota: NOTA }])), "Hay un ítem crítico que no cumple");
+    } finally { await t.limpiar(); }
+  }));
+
+  it("un ítem vuelto crítico después del concepto sigue a la vista del aprobador: confirma, y no bloquea", () => revertida(sql, async (tx) => {
+    const { t, criterio, confirmaNoCumple } = await aprobacionConCriterio(tx);
+    try {
+      await tx`UPDATE lista_verificacion_items SET critico = true WHERE id = ${criterio.id}`;
+      const entrada = firmando(t, "aprobar", "aprobacion");
+      await fallaSinGastarLaFirma(tx, t.aprobador, entrada, FALTA_CONFIRMAR);
+      await transicionar(t.aprobador, conHuella(entrada, confirmaNoCumple), opc(tx));
+      expect(await ultimoDetalle(tx, t.tramiteId, "aprobar")).toMatchObject({ noCumple: [{ texto: criterio.texto, nota: NOTA }], confirmoNoCumple: true });
+    } finally { await t.limpiar(); }
   }));
 });
 

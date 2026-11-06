@@ -12,6 +12,7 @@ import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { listarFirmas } from "@/db/consultas/firmas";
+import { criteriosNoCumplen } from "@/db/consultas/revision";
 import { generarActa, diaYHora, type DatosActa } from "@/lib/acta";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import {
@@ -115,6 +116,7 @@ export async function congelarDatosActa(
     FROM tramite_observaciones WHERE tramite_id = ${tramite.id}`;
   const zona = zonaHoraria();
   const aceptar = eventos.find((e) => e.tipo === "aceptar");
+  const criterios = clase === "aprobacion" ? await criteriosNoCumplen(tramite.id, tramite.ronda, { sql: tx }) : [];
 
   return {
     clase,
@@ -138,6 +140,7 @@ export async function congelarDatosActa(
     versionObsoleta,
     publicadoEn: ahora,
     zona,
+    noCumple: criterios.map(({ texto, nota }) => ({ texto, nota })),
   };
 }
 

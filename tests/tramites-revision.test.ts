@@ -2,6 +2,7 @@
  * Revisión: lista de verificación, observaciones numeradas, devolución y concepto favorable.
  * Corre contra la demo ya sembrada, dentro de una transacción que se revierte.
  */
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
@@ -13,6 +14,7 @@ import { obtenerSql } from "@/db/cliente";
 import { listarFirmas } from "@/db/consultas/firmas";
 import type { TransactionSql } from "postgres";
 import {
+  criteriosNoCumplen,
   listarItemsVerificacion,
   listarObservaciones,
   listarRondasVerificacion,
@@ -23,6 +25,7 @@ import {
 import * as real from "@/db/consultas/revision";
 import { CAMBIO_MIENTRAS, ErrorTramite, transicionar } from "@/db/consultas/tramites-flujo";
 import type { Verificador } from "@/lib/firma";
+import { constanciaDeCriterios, huellaDeCriterios } from "@/lib/tramites/criterios";
 import { opc, tramiteEn } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -87,10 +90,11 @@ describe("revisión", () => {
       expect(ronda2.find((r) => r.itemId === items[3].id)!.resultado).toBe("no_cumple");   // parte de la ronda anterior
       // Quien mira no ve la propuesta como si fuera de la ronda 2: ve la ronda 1, con su número.
       expect((await listarRondasVerificacion(t.tramiteId, { sql: tx })).map((r) => r.ronda)).toEqual([1]);
-      await guardarVerificacion(t.tramiteId, t.revisor, ronda2.map((r) => ({ itemId: r.itemId, resultado: r.resultado! })), { sql: tx });
+      await guardarVerificacion(t.tramiteId, t.revisor, ronda2.map((r) => ({ itemId: r.itemId, resultado: r.resultado!, nota: r.resultado === "no_cumple" ? "Se acepta con ajuste." : undefined })), { sql: tx });
       await cerrarObservacion(n, t.revisor, { sql: tx });
+      const confirmaNoCumple = huellaDeCriterios(await criteriosNoCumplen(t.tramiteId, 2, { sql: tx }));
       const cierre = await transicionar(t.revisor, { tramiteId: t.tramiteId, accion: "concepto_favorable", etapaEsperada: "revision", rondaEsperada: 2,
-        datos: { concepto: "Observaciones atendidas." }, credenciales: { clave: "x" } }, opc(tx));
+        datos: { concepto: "Observaciones atendidas.", confirmaNoCumple }, credenciales: { clave: "x" } }, opc(tx));
       expect(cierre).toEqual({ etapa: "aprobacion", ronda: 2 });
       const firmas = await listarFirmas(t.tramiteId, { sql: tx });
       expect(firmas.map((f) => `${f.firma}:${f.ronda}`)).toEqual(["elaboro:1", "elaboro:2", "reviso:2"]);
@@ -420,6 +424,201 @@ describe("revisión", () => {
       expect(auds[1].detalle.respuestaAnterior).toBe("Primera respuesta.");
     } finally { await t.limpiar(); }
   }));
+});
+
+describe("criterios que no cumplen", () => {
+  const NOTA = "Se ajustará con la guía de redacción.";
+  const FALTA_NOTA = "Escriba una nota en cada criterio que no cumple";
+  const FALTA_CONFIRMAR = "Confirme que da concepto favorable a pesar de los criterios que no cumplen";
+  const LISTA_CAMBIO = "La lista cambió mientras tenía abierto el diálogo. Recargue la página.";
+  const CRITICO = "Hay un ítem crítico que no cumple";
+
+  const itemsActivos = (tx: TransactionSql) => listarItemsVerificacion({ sql: tx, soloActivos: true });
+
+  /** Responde toda la lista: cumple, salvo el primer ítem no crítico, que queda en `resultado` con `nota`. */
+  async function responderLista(tx: TransactionSql, t: Trayecto, nota?: string, resultado: Resultado = "no_cumple") {
+    const items = await itemsActivos(tx);
+    const criterio = items.find((i) => !i.critico)!;
+    await guardarVerificacion(t.tramiteId, t.revisor,
+      items.map((i) => (i.id === criterio.id ? { itemId: i.id, resultado, nota } : { itemId: i.id, resultado: "cumple" as const })), { sql: tx });
+    return criterio;
+  }
+
+  const huellaActual = async (tx: TransactionSql, t: Trayecto, ronda = t.ronda) =>
+    huellaDeCriterios(await criteriosNoCumplen(t.tramiteId, ronda, { sql: tx }));
+
+  const darConcepto = (tx: TransactionSql, t: Trayecto, extra: Record<string, unknown>, verificar: Verificador, ronda = t.ronda) =>
+    tx.savepoint(() => transicionar(t.revisor, { tramiteId: t.tramiteId, accion: "concepto_favorable", etapaEsperada: "revision", rondaEsperada: ronda,
+      datos: { concepto: "Cumple; listo para aprobación.", ...extra }, credenciales: { clave: "x" } }, { ...opc(tx), verificar }));
+
+  /** Lo rechazado no gasta la firma: el verificador espía no se llama. */
+  async function rechazaSinFirmar(tx: TransactionSql, t: Trayecto, extra: Record<string, unknown>, mensaje: string, ronda = t.ronda) {
+    const verificar = vi.fn<Verificador>(async () => ({ ok: true, metodo: "clave" }));
+    await expect(darConcepto(tx, t, extra, verificar, ronda)).rejects.toThrow(mensaje);
+    expect(verificar).not.toHaveBeenCalled();
+  }
+
+  const firmaSiempre: Verificador = async () => ({ ok: true, metodo: "clave" });
+
+  const detalleDelConcepto = async (tx: TransactionSql, t: Trayecto) =>
+    (await tx`SELECT detalle FROM tramite_eventos WHERE tramite_id = ${t.tramiteId} AND tipo = 'concepto_favorable' ORDER BY id DESC LIMIT 1`)[0].detalle;
+
+  it("sin nota en un criterio que no cumple no hay concepto, y un verificador espía no se llama", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "revision");
+    try {
+      await responderLista(tx, t);      // el avance se guarda sin nota
+      await rechazaSinFirmar(tx, t, {}, FALTA_NOTA);
+      await rechazaSinFirmar(tx, t, { confirmaNoCumple: await huellaActual(tx, t) }, FALTA_NOTA);   // confirmar no suple la nota
+    } finally { await t.limpiar(); }
+  }));
+
+  it("una nota de solo espacios no cuenta", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "revision");
+    try {
+      const criterio = await responderLista(tx, t, "        ");
+      await rechazaSinFirmar(tx, t, { confirmaNoCumple: await huellaActual(tx, t) }, FALTA_NOTA);
+      // Tampoco si llegó a la fila sin pasar por `guardarVerificacion`, que la recorta.
+      await tx`UPDATE tramite_verificaciones SET nota = ${"  \t   \n  "} WHERE tramite_id = ${t.tramiteId} AND item_id = ${criterio.id}`;
+      await rechazaSinFirmar(tx, t, { confirmaNoCumple: await huellaActual(tx, t) }, FALTA_NOTA);
+    } finally { await t.limpiar(); }
+  }));
+
+  it("la nota pide cinco caracteres, sin contar los espacios de los extremos", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "revision");
+    try {
+      await responderLista(tx, t, "  abcd  ");
+      await rechazaSinFirmar(tx, t, { confirmaNoCumple: await huellaActual(tx, t) }, FALTA_NOTA);
+      await responderLista(tx, t, "  abcde  ");
+      await rechazaSinFirmar(tx, t, {}, FALTA_CONFIRMAR);
+    } finally { await t.limpiar(); }
+  }));
+
+  it("sin confirmación no hay concepto", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "revision");
+    try {
+      await responderLista(tx, t, NOTA);
+      await rechazaSinFirmar(tx, t, {}, FALTA_CONFIRMAR);
+    } finally { await t.limpiar(); }
+  }));
+
+  it("si la lista cambió, la confirmación vieja no sirve", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "revision");
+    try {
+      await responderLista(tx, t, NOTA);
+      const vieja = await huellaActual(tx, t);
+      await responderLista(tx, t, "Otra nota, escrita en otra pestaña.");
+      await rechazaSinFirmar(tx, t, { confirmaNoCumple: vieja }, LISTA_CAMBIO);
+      await responderLista(tx, t, NOTA);
+      await expect(darConcepto(tx, t, { confirmaNoCumple: vieja }, firmaSiempre)).resolves.toMatchObject({ etapa: "aprobacion" });   // misma lista, misma huella
+    } finally { await t.limpiar(); }
+  }));
+
+  it("otro criterio en «No cumple» también invalida la confirmación vieja", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "revision");
+    try {
+      const criterio = await responderLista(tx, t, NOTA);
+      const vieja = await huellaActual(tx, t);
+      const otro = (await itemsActivos(tx)).find((i) => !i.critico && i.id !== criterio.id)!;
+      await guardarVerificacion(t.tramiteId, t.revisor, [{ itemId: otro.id, resultado: "no_cumple", nota: NOTA }], { sql: tx });
+      await rechazaSinFirmar(tx, t, { confirmaNoCumple: vieja }, LISTA_CAMBIO);
+    } finally { await t.limpiar(); }
+  }));
+
+  it("con nota y confirmación pasa, y el evento lleva los criterios", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "revision");
+    try {
+      const criterio = await responderLista(tx, t, NOTA);
+      const verificar = vi.fn<Verificador>(firmaSiempre);
+      await expect(darConcepto(tx, t, { confirmaNoCumple: await huellaActual(tx, t) }, verificar)).resolves.toEqual({ etapa: "aprobacion", ronda: t.ronda });
+      expect(verificar).toHaveBeenCalledOnce();
+      const detalle = await detalleDelConcepto(tx, t);
+      expect(detalle.noCumple).toEqual([{ texto: criterio.texto, nota: NOTA }]);
+      expect(detalle.confirmoNoCumple).toBe(true);
+      expect(detalle.lista.find((r: { itemId: number }) => r.itemId === criterio.id)).toMatchObject({ resultado: "no_cumple", nota: NOTA });
+    } finally { await t.limpiar(); }
+  }));
+
+  it("sin criterios no se pide nada y el evento no cambia", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "revision");
+    try {
+      await responderLista(tx, t, undefined, "no_aplica");    // no aplicar no es no cumplir
+      await darConcepto(tx, t, {}, firmaSiempre);
+      expect(Object.keys(await detalleDelConcepto(tx, t)).sort()).toEqual(["concepto", "lista", "observaciones"]);
+    } finally { await t.limpiar(); }
+  }));
+
+  it("un ítem vuelto crítico durante la ronda bloquea", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "revision");
+    try {
+      const criterio = await responderLista(tx, t, NOTA);
+      const confirmaNoCumple = await huellaActual(tx, t);
+      await tx`UPDATE lista_verificacion_items SET critico = true WHERE id = ${criterio.id}`;
+      await rechazaSinFirmar(tx, t, { confirmaNoCumple }, CRITICO);
+    } finally { await t.limpiar(); }
+  }));
+
+  it("la marca guardada también cuenta: un crítico que dejó de serlo bloquea hasta volver a guardar", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "revision");
+    try {
+      const items = await itemsActivos(tx);
+      const critico = items.find((i) => i.critico)!;
+      await guardarVerificacion(t.tramiteId, t.revisor,
+        items.map((i) => (i.id === critico.id ? { itemId: i.id, resultado: "no_cumple" as const, nota: NOTA } : { itemId: i.id, resultado: "cumple" as const })), { sql: tx });
+      await tx`UPDATE lista_verificacion_items SET critico = false WHERE id = ${critico.id}`;
+      await rechazaSinFirmar(tx, t, {}, CRITICO);
+      await guardarVerificacion(t.tramiteId, t.revisor, [{ itemId: critico.id, resultado: "no_cumple", nota: NOTA }], { sql: tx });
+      await rechazaSinFirmar(tx, t, {}, FALTA_CONFIRMAR);
+    } finally { await t.limpiar(); }
+  }));
+
+  it("una ronda nueva no arrastra la confirmación", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "revision");
+    try {
+      await responderLista(tx, t, NOTA);
+      const deLaRonda1 = await huellaActual(tx, t);
+      const n = await crearObservacion(t.tramiteId, t.revisor, "Falta el responsable en el numeral 5.2.", { sql: tx });
+      await transicionar(t.revisor, { tramiteId: t.tramiteId, accion: "devolver_revision", etapaEsperada: "revision", rondaEsperada: 1 }, opc(tx));
+      await responderObservacion(n, t.elaborador, "Se agregó al jefe inmediato.", { sql: tx });
+      await transicionar(t.elaborador, { tramiteId: t.tramiteId, accion: "enviar_a_revision", etapaEsperada: "elaboracion", rondaEsperada: 2, credenciales: { clave: "x" } }, opc(tx));
+      expect(await criteriosNoCumplen(t.tramiteId, 2, { sql: tx })).toEqual([]);   // la propuesta de la ronda anterior no cuenta
+
+      await responderLista(tx, t, "La nota de la segunda ronda.");
+      await cerrarObservacion(n, t.revisor, { sql: tx });
+      await rechazaSinFirmar(tx, t, { confirmaNoCumple: deLaRonda1 }, LISTA_CAMBIO, 2);
+      const nueva = await huellaActual(tx, t, 2);
+      await expect(darConcepto(tx, t, { confirmaNoCumple: nueva }, firmaSiempre, 2)).resolves.toEqual({ etapa: "aprobacion", ronda: 2 });
+    } finally { await t.limpiar(); }
+  }));
+
+  it("criteriosNoCumplen sigue el orden de la lista, con lo guardado y sin los críticos", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "revision");
+    try {
+      const items = await itemsActivos(tx);
+      const [primero, segundo] = items.filter((i) => !i.critico);
+      const critico = items.find((i) => i.critico)!;
+      await guardarVerificacion(t.tramiteId, t.revisor, [
+        { itemId: segundo.id, resultado: "no_cumple", nota: NOTA },
+        { itemId: critico.id, resultado: "no_cumple", nota: "No cuenta: es crítico." },
+        { itemId: primero.id, resultado: "no_cumple" },
+      ], { sql: tx });
+      await tx`UPDATE lista_verificacion_items SET texto = 'Texto editado después' WHERE id = ${primero.id}`;
+      const esperado = [
+        { itemId: primero.id, texto: primero.texto, nota: "" },
+        { itemId: segundo.id, texto: segundo.texto, nota: NOTA },
+      ];
+      expect(await criteriosNoCumplen(t.tramiteId, 1, { sql: tx })).toEqual(esperado);
+      // Filtra por la marca de la fila: el aprobador sigue viendo un ítem vuelto crítico después del concepto.
+      await tx`UPDATE lista_verificacion_items SET critico = true WHERE id = ${segundo.id}`;
+      expect(await criteriosNoCumplen(t.tramiteId, 1, { sql: tx })).toEqual(esperado);
+    } finally { await t.limpiar(); }
+  }));
+
+  it("la huella cubre el ítem y la nota, y la constancia guarda solo el texto y la nota", () => {
+    expect(huellaDeCriterios([{ itemId: 7, nota: "Sin el ñandú" }])).toBe(createHash("sha256").update('[[7,"Sin el ñandú"]]').digest("hex"));
+    expect(constanciaDeCriterios([])).toEqual({});
+    const criterio = { itemId: 7, texto: "Usa la plantilla", nota: NOTA };
+    expect(constanciaDeCriterios([criterio])).toEqual({ noCumple: [{ texto: "Usa la plantilla", nota: NOTA }], confirmoNoCumple: true });
+  });
 });
 
 /** Envía a revisión en la ronda 3 (el trámite fue devuelto por segunda vez). */
