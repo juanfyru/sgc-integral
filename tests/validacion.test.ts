@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import type { z } from "zod";
-import { EsquemaArea } from "@/lib/esquemas/estructura";
-import { EsquemaIngreso } from "@/lib/esquemas/cuenta";
+import { EsquemaArea, EsquemaCargo } from "@/lib/esquemas/estructura";
+import { EsquemaCambioClave, EsquemaClaveInicial, EsquemaCodigoFactor, EsquemaConfirmarTotp, EsquemaIngreso } from "@/lib/esquemas/cuenta";
 import {
   EsquemaAceptarCreacion,
   EsquemaConcepto,
@@ -22,7 +22,36 @@ it("convierte FormData y reporta el primer error en espanol con el campo", () =>
   expect(parsearFormulario(fd, EsquemaIngreso)).toEqual({ usuario: "Ana", clave: "x" });
   const malo = new FormData(); malo.set("usuario", "");
   expect(() => parsearFormulario(malo, EsquemaIngreso)).toThrow(ErrorValidacion);
-  expect(() => parsearFormulario(malo, EsquemaIngreso)).toThrow(/^usuario: /);
+  expect(() => parsearFormulario(malo, EsquemaIngreso)).toThrow(/^Escriba su usuario$/);
+});
+
+it("el texto genérico de zod, en un campo sin mensaje propio, lleva delante el campo", () => {
+  const fd = new FormData(); fd.set("nombre", "Urgencias"); fd.set("areaId", "abc");
+  expect(() => parsearFormulario(fd, EsquemaCargo)).toThrow(/^areaId: /);
+});
+
+it("la cuenta habla en español natural, también con un campo vacío", () => {
+  const con = (campos: Record<string, string>) => {
+    const fd = new FormData();
+    for (const [campo, valor] of Object.entries(campos)) fd.set(campo, valor);
+    return fd;
+  };
+  expect(() => parsearFormulario(con({ usuario: "ana" }), EsquemaIngreso)).toThrow(/^Escriba su clave$/);
+  expect(() => parsearFormulario(con({ usuario: "a".repeat(41), clave: "x" }), EsquemaIngreso)).toThrow(/^El usuario no puede pasar de 40 caracteres$/);
+  expect(() => parsearFormulario(con({ usuario: "ana", clave: "x".repeat(129) }), EsquemaIngreso)).toThrow(/^La clave no puede pasar de 128 caracteres$/);
+  expect(() => parsearFormulario(con({}), EsquemaClaveInicial)).toThrow(/^Escriba la clave nueva$/);
+  expect(() => parsearFormulario(con({ claveNueva: "x" }), EsquemaClaveInicial)).toThrow(/^Confirme la clave nueva$/);
+  expect(() => parsearFormulario(con({ claveNueva: "x", confirmacion: "x" }), EsquemaCambioClave)).toThrow(/^Escriba su clave actual$/);
+  expect(() => parsearFormulario(con({}), EsquemaCodigoFactor)).toThrow(/^Código no válido$/);
+  expect(() => parsearFormulario(con({ clave: "x" }), EsquemaConfirmarTotp)).toThrow(/^Código no válido$/);
+});
+
+it("un usuario nuevo con un correo mal escrito o sin usuario recibe una frase", () => {
+  const fd = new FormData();
+  fd.set("usuario", "ana.p"); fd.set("nombre", "Ana Pérez"); fd.set("correo", "no-es-un-correo"); fd.set("rol", "consulta");
+  expect(() => parsearFormulario(fd, EsquemaUsuario)).toThrow(/^Escriba un correo válido$/);
+  fd.delete("usuario");
+  expect(() => parsearFormulario(fd, EsquemaUsuario)).toThrow(/^Use 3 a 40 caracteres/);
 });
 
 it("un mensaje escrito en el esquema va tal cual, sin el nombre del campo", () => {

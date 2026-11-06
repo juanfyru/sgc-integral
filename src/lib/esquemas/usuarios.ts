@@ -14,11 +14,13 @@ const listaDeIds = (v: unknown): unknown => {
   return (Array.isArray(v) ? v : [v]).map((x) => (typeof x === "string" ? Number(x) : x));
 };
 
+const REGLA_DEL_USUARIO = "Use 3 a 40 caracteres: minúsculas, números, punto, guion o guion bajo";
+
 export const EsquemaUsuario = z
   .object({
-    usuario: z.string().regex(/^[a-z0-9._-]{3,40}$/, "Use 3 a 40 caracteres: minúsculas, números, punto, guion o guion bajo"),
+    usuario: z.string({ error: REGLA_DEL_USUARIO }).regex(/^[a-z0-9._-]{3,40}$/, REGLA_DEL_USUARIO),
     nombre: textoAcotado("El nombre", 3, 120),
-    correo: z.preprocess(vacioANulo, z.string().trim().email().nullable()),
+    correo: z.preprocess(vacioANulo, z.string().trim().email("Escriba un correo válido").nullable()),
     rol: z.enum(ROLES),
     cargoId: idOpcional,
     jefeInmediatoId: idOpcional,
