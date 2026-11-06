@@ -5,6 +5,7 @@
 import type { TransactionSql } from "postgres";
 import type { Cliente } from "@/db/cliente";
 import { anularVigenteEn, aplicarPublicacion } from "@/db/consultas/admin";
+import { congelarDatosActa } from "@/db/consultas/actas";
 import { listarFirmas, type FirmaRegistrada } from "@/db/consultas/firmas";
 import { crearObservacionesDeAprobacion } from "@/db/consultas/revision";
 import { adminsActivos, lideresDeProcesosDelDocumento, rotuloDeTramite } from "@/db/consultas/tramites";
@@ -185,17 +186,24 @@ async function publicarVersion(c: ContextoManejador, aprobador?: Firmante): Prom
     if (tituloAnterior !== tramite.tituloPropuesto) cambioDeTitulo = { tituloAnterior, titulo: tramite.tituloPropuesto };
   }
   return {
-    detalle: { version: numero, obsoletas, huella: elaboro.hashSha256, ...cambioDeTitulo },
+    // Se congela después de aplicar el título nuevo: el acta lleva el título con el que queda el documento.
+    detalle: {
+      version: numero,
+      obsoletas,
+      huella: elaboro.hashSha256,
+      ...cambioDeTitulo,
+      acta: await congelarDatosActa(tx, tramite, "aprobacion", ahora, obsoletas.length === 0 ? null : Math.max(...obsoletas)),
+    },
     avisos: await avisoDeCierre(tx, tramite, documentoId, `Solicitud ${tramite.numero}: documento publicado`),
   };
 }
 
-async function ejecutarEliminacion({ tx, tramite, sesion }: ContextoManejador): Promise<Efecto> {
+async function ejecutarEliminacion({ tx, tramite, sesion, ahora }: ContextoManejador): Promise<Efecto> {
   const documentoId = tramite.documentoId as number;
   const { versionId, numero } = await anularVigenteEn(tx, documentoId, sesion.usuarioId);
   if (versionId !== tramite.versionId) throw new ErrorTramite("La versión vigente cambió: revise el trámite");
   return {
-    detalle: { versionAnulada: numero },
+    detalle: { versionAnulada: numero, acta: await congelarDatosActa(tx, tramite, "eliminacion", ahora) },
     avisos: await avisoDeCierre(tx, tramite, documentoId, `Solicitud ${tramite.numero}: documento eliminado`),
   };
 }

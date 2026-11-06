@@ -366,12 +366,15 @@ export async function transicionar(
 
     await registrarEvento(tx, { tramiteId: t.id, tipo: entrada.accion, usuarioId: sesion.usuarioId, ronda: t.ronda, detalle: efecto.detalle, ahora });
     const { codigo } = await rotuloDeTramite(tx, t);
+    // El acta congelada ya está en el evento; la bitácora no la repite.
+    const detalleDeAuditoria: Record<string, unknown> = { ...efecto.detalle };
+    delete detalleDeAuditoria.acta;
     await registrarAuditoria(tx, {
       usuarioId: sesion.usuarioId,
       accion: `tramite_${entrada.accion}`,
       entidad: "tramite",
       entidadId: t.id,
-      detalle: { numero: t.numero, codigo, documentoId: t.documentoId, ...efecto.detalle, de: previo.etapa, hacia, ronda: t.ronda },
+      detalle: { numero: t.numero, codigo, documentoId: t.documentoId, ...detalleDeAuditoria, de: previo.etapa, hacia, ronda: t.ronda },
     });
     await enviarAvisos(tx, t.id, sesion.usuarioId, efecto.avisos ?? []);
     return { etapa: t.etapa, ronda: t.ronda };

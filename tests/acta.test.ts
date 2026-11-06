@@ -186,7 +186,7 @@ describe("el acta de un trámite", () => {
       const detalle = await obtenerDocumentoAdmin("GTH-PR-02", t.admin, { sql: tx });
       const version = detalle!.versiones.find((v) => v.id === t.versionId)!;
       expect(version.archivos.map((a) => a.rol)).toEqual(["principal"]);
-      expect(version.cierre).toEqual({ id: t.tramiteId, etapa: "publicado" });
+      expect(version.cierres).toEqual([{ id: t.tramiteId, etapa: "publicado" }]);
 
       // Ni por su id: las rutas de archivos no sirven un acta.
       expect(await obtenerArchivoVigente("GTH-PR-02", acta.archivoId, t.admin, { sql: tx })).toBeNull();

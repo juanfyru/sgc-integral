@@ -500,8 +500,11 @@ export type VersionAdmin = {
   archivos: Array<{ id: number; rol: string; nombreOriginal: string; mime: string; tamanoBytes: number }>;
   /** El trámite abierto al que pertenece la versión: mientras dure, se trabaja desde él. */
   tramite: { id: number; numero: string } | null;
-  /** El trámite que publicó la versión o que la anuló: su acta es la evidencia de cómo se aprobó. */
-  cierre: { id: number; etapa: "publicado" | "eliminado" } | null;
+  /**
+   * Los trámites que cerraron la versión: el que la publicó y, si después se eliminó el documento, el que
+   * la anuló. Cada uno tiene su acta, que es la evidencia de cómo se aprobó o retiró.
+   */
+  cierres: { id: number; etapa: "publicado" | "eliminado" }[];
 };
 
 export type DocumentoAdmin = {
@@ -549,8 +552,8 @@ export async function obtenerDocumentoAdmin(
         FILTER (WHERE a.id IS NOT NULL), '[]') AS archivos,
       (SELECT json_build_object('id', t.id, 'numero', t.numero) FROM tramites t
         WHERE t.version_id = v.id AND t.etapa = ANY(${ETAPAS_EN_CURSO})) AS tramite,
-      (SELECT json_build_object('id', t.id, 'etapa', t.etapa) FROM tramites t
-        WHERE t.version_id = v.id AND t.etapa IN ('publicado', 'eliminado')) AS cierre
+      (SELECT coalesce(json_agg(json_build_object('id', t.id, 'etapa', t.etapa) ORDER BY t.id), '[]') FROM tramites t
+        WHERE t.version_id = v.id AND t.etapa IN ('publicado', 'eliminado')) AS cierres
     FROM documento_versiones v
     LEFT JOIN archivos a ON a.version_id = v.id AND a.rol = ANY(${ROLES_ARCHIVO_LISTA})
     WHERE v.documento_id = ${doc.id}
@@ -573,7 +576,7 @@ export async function obtenerDocumentoAdmin(
       aprobo: v.aprobo, resumenCambios: v.resumen_cambios,
       archivos: v.archivos as VersionAdmin["archivos"],
       tramite: v.tramite as VersionAdmin["tramite"],
-      cierre: v.cierre as VersionAdmin["cierre"],
+      cierres: v.cierres as VersionAdmin["cierres"],
     })),
   };
 }

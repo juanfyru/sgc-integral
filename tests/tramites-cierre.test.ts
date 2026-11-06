@@ -66,8 +66,12 @@ async function fallaSinGastarLaFirma(
 const avisos = (tx: TransactionSql, tramiteId: number, tipo: string) =>
   tx`SELECT usuario_id, titulo FROM notificaciones WHERE entidad = 'tramite' AND entidad_id = ${tramiteId} AND tipo = ${tipo}`;
 
-const ultimoDetalle = async (tx: TransactionSql, tramiteId: number, tipo: string) =>
-  (await tx`SELECT detalle FROM tramite_eventos WHERE tramite_id = ${tramiteId} AND tipo = ${tipo} ORDER BY id DESC LIMIT 1`)[0].detalle;
+/** Sin `acta`: los datos congelados del acta se prueban en acta.test.ts. */
+const ultimoDetalle = async (tx: TransactionSql, tramiteId: number, tipo: string) => {
+  const detalle = (await tx`SELECT detalle FROM tramite_eventos WHERE tramite_id = ${tramiteId} AND tipo = ${tipo} ORDER BY id DESC LIMIT 1`)[0].detalle;
+  delete detalle.acta;
+  return detalle;
+};
 
 describe("aprobación", () => {
   it("aprobar lleva a publicación, guarda el concepto y avisa a los administradores", () => revertida(sql, async (tx) => {

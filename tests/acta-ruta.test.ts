@@ -47,8 +47,8 @@ beforeEach(() => {
   asegurarActa.mockResolvedValue({ archivoId: 31, ruta: "SOL-2026-014.pdf" });
 });
 
-const pedir = (id = "7", consulta = "") =>
-  GET(new NextRequest(`http://sgc.local/tramites/${id}/acta${consulta}`), { params: Promise.resolve({ id }) });
+const pedir = (id = "7") =>
+  GET(new NextRequest(`http://sgc.local/tramites/${id}/acta`), { params: Promise.resolve({ id }) });
 
 describe("GET /tramites/[id]/acta", () => {
   it("sin sesión responde 401 y no toca nada", async () => {
@@ -66,10 +66,6 @@ describe("GET /tramites/[id]/acta", () => {
     expect(Buffer.from(await res.arrayBuffer()).equals(Buffer.from(PDF))).toBe(true);
     expect(puedeVerVersion).toHaveBeenCalledWith(9, SESION);
     expect(asegurarActa).toHaveBeenCalledWith(7);
-  });
-
-  it("con ?descarga=1 la entrega como adjunto", async () => {
-    expect((await pedir("7", "?descarga=1")).headers.get("Content-Disposition")).toMatch(/^attachment;/);
   });
 
   it("un trámite sin acta (abierto, rechazado o cancelado) responde 404 sin generar nada", async () => {

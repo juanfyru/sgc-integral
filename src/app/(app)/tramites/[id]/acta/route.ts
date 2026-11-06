@@ -33,8 +33,5 @@ export async function GET(peticion: NextRequest, { params }: { params: Promise<{
 
   const acta = await asegurarActa(Number(id));
   if (!acta) return respuesta404();
-  return respuestaArchivo(
-    { ruta: acta.ruta, mime: "application/pdf", nombreOriginal: `Acta ${cierre.numero}.pdf` },
-    peticion.nextUrl.searchParams.get("descarga") === "1",
-  );
+  return respuestaArchivo({ ruta: acta.ruta, mime: "application/pdf", nombreOriginal: `Acta ${cierre.numero}.pdf` }, false);
 }

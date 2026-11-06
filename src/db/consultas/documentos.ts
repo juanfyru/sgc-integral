@@ -76,7 +76,7 @@ export async function obtenerFichaDocumento(
            v.fecha_revision::text AS fecha_revision,
            v.fecha_aprobacion::text AS fecha_aprobacion,
            v.elaboro, v.reviso, v.aprobo, v.resumen_cambios,
-           (SELECT t.id FROM tramites t WHERE t.version_id = v.id AND t.etapa = 'publicado') AS tramite_id
+           (SELECT t.id FROM tramites t WHERE t.version_id = v.id AND t.etapa = 'publicado' ORDER BY t.id DESC LIMIT 1) AS tramite_id
     FROM documentos d
     JOIN tipos_documento t ON t.id = d.tipo_id
     JOIN documento_versiones v ON v.documento_id = d.id AND v.estado = 'vigente'

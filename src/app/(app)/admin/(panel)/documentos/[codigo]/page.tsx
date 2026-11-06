@@ -69,10 +69,14 @@ function SeccionVersion({
         )}
       </ul>
 
-      {version.cierre && (
-        <p className="mb-2 text-sm">
-          <EnlaceActa tramiteId={version.cierre.id} clase={version.cierre.etapa === "eliminado" ? "eliminacion" : "aprobacion"} />
-        </p>
+      {version.cierres.length > 0 && (
+        <ul className="mb-2 flex list-none flex-wrap gap-x-4 gap-y-1 text-sm">
+          {version.cierres.map((c) => (
+            <li key={c.id}>
+              <EnlaceActa tramiteId={c.id} clase={c.etapa === "eliminado" ? "eliminacion" : "aprobacion"} />
+            </li>
+          ))}
+        </ul>
       )}
 
       {puedeAdministrar && tramite && (

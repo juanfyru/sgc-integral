@@ -1,13 +1,15 @@
 /**
- * El acta de aprobación o de eliminación de una versión (spec 13A §11.2 y §11.3). Se genera al
- * publicar y, si esa generación falla, a pedido: sus datos ya no cambian, así que el resultado es el
- * mismo en cualquier momento.
+ * El acta de aprobación o de eliminación de una versión (spec 13A §11.2 y §11.3). Sus datos se
+ * congelan en el evento de cierre, dentro de la misma transacción que publica o elimina: el acta se
+ * genera al publicar y, si esa generación falla, a pedido, y sale igual en cualquier momento aunque
+ * luego cambien títulos, procesos o nombres. Una versión puede llevar dos cierres (el trámite que la
+ * publicó y el que la eliminó), cada uno con su acta y su rol.
  */
-import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
-import { obtenerMarcaSegura } from "@/db/consultas/entidad";
 import { listarFirmas } from "@/db/consultas/firmas";
 import { generarActa, diaYHora, type DatosActa } from "@/lib/acta";
 import { resolverRutaAlmacen } from "@/lib/almacen";
@@ -19,9 +21,11 @@ import {
   type TipoSolicitud,
 } from "@/lib/tramites/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
+import { ErrorTramite, type FilaTramite } from "./flujo/contrato";
 
 type Opciones = { sql?: Cliente };
 type ClaseActa = DatosActa["clase"];
+type DatosCongelados = Omit<DatosActa, "firmas">;
 
 const ROL_DE_ACTA: Record<ClaseActa, string> = { aprobacion: "acta_aprobacion", eliminacion: "acta_eliminacion" };
 
@@ -58,71 +62,123 @@ function textoDeDuplicidad(aceptar: Evento | undefined): string | null {
   return `Se vieron ${parecidos.length} documento${parecidos.length === 1 ? "" : "s"}: ${lista}; ${decision}`;
 }
 
-/** `null` si el trámite no está `publicado` ni `eliminado`. Las firmas son las de la última ronda. */
-export async function reunirDatosActa(tramiteId: number, opciones?: Opciones): Promise<DatosActa | null> {
-  const sql = opciones?.sql ?? obtenerSql();
-  const cierre = await versionDeActa(tramiteId, { sql });
-  if (!cierre) return null;
+/**
+ * Lo que dice el acta, leído dentro de la transacción del cierre y después de aplicarlo (el título
+ * nuevo de una modificación ya está en el documento). Lo guardan los manejadores en `detalle.acta`
+ * del evento. La entidad se lee de `configuracion`: si falta, el cierre falla antes que escribir un
+ * registro legal con un nombre inventado.
+ */
+export async function congelarDatosActa(
+  tx: TransactionSql,
+  tramite: FilaTramite,
+  clase: ClaseActa,
+  ahora: Date,
+  versionObsoleta: number | null = null,
+): Promise<DatosCongelados> {
+  const [entidad] = await tx`SELECT valor FROM configuracion WHERE clave = 'nombre_entidad'`;
+  const nombreEntidad = typeof entidad?.valor === "string" ? entidad.valor.trim() : "";
+  if (!nombreEntidad) throw new ErrorTramite("Falta el nombre de la entidad en la configuración: no se puede dejar el acta");
 
-  const [t] = await sql`SELECT t.numero, t.tipo, t.motivo, t.justificacion, t.ronda, t.creado_en, t.cerrado_en,
-      d.codigo, d.titulo, td.nombre AS tipo_documento, p.nombre AS proceso, u.nombre AS solicitante,
-      v.numero AS version, v.resumen_cambios
-    FROM tramites t
-    JOIN documentos d ON d.id = t.documento_id
+  const [d] = await tx`SELECT d.codigo, d.titulo, td.nombre AS tipo_documento, p.nombre AS proceso,
+      u.nombre AS solicitante, v.numero AS version, v.resumen_cambios
+    FROM documentos d
     JOIN tipos_documento td ON td.id = d.tipo_id
-    JOIN procesos p ON p.id = t.proceso_id
-    JOIN usuarios u ON u.id = t.solicitante_id
-    JOIN documento_versiones v ON v.id = t.version_id
-    WHERE t.id = ${tramiteId}`;
-  const filasEventos = await sql`SELECT e.tipo, u.nombre AS persona, e.creado_en, e.detalle
+    JOIN procesos p ON p.id = ${tramite.procesoId}
+    JOIN usuarios u ON u.id = ${tramite.solicitanteId}
+    JOIN documento_versiones v ON v.id = ${tramite.versionId} AND v.documento_id = d.id
+    WHERE d.id = ${tramite.documentoId}`;
+  if (!d) throw new ErrorTramite("El trámite no tiene documento ni versión para dejar el acta");
+  const filas = await tx`SELECT e.tipo, u.nombre AS persona, e.creado_en, e.detalle
     FROM tramite_eventos e LEFT JOIN usuarios u ON u.id = e.usuario_id
-    WHERE e.tramite_id = ${tramiteId} ORDER BY e.id`;
-  const eventos: Evento[] = filasEventos.map((e) => ({ tipo: e.tipo, persona: e.persona, creadoEn: e.creado_en, detalle: e.detalle }));
-  const [{ total, cerradas }] = await sql`SELECT count(*)::int AS total, (count(*) FILTER (WHERE estado = 'cerrada'))::int AS cerradas
-    FROM tramite_observaciones WHERE tramite_id = ${tramiteId}`;
+    WHERE e.tramite_id = ${tramite.id} ORDER BY e.id`;
+  const eventos: Evento[] = filas.map((e) => ({ tipo: e.tipo, persona: e.persona, creadoEn: e.creado_en, detalle: e.detalle }));
+  const [{ total, cerradas }] = await tx`SELECT count(*)::int AS total, (count(*) FILTER (WHERE estado = 'cerrada'))::int AS cerradas
+    FROM tramite_observaciones WHERE tramite_id = ${tramite.id}`;
   const zona = zonaHoraria();
   const aceptar = eventos.find((e) => e.tipo === "aceptar");
-  const obsoletas = eventos
-    .filter((e) => e.tipo === "publicar" || e.tipo === "aprobar_y_publicar")
-    .flatMap((e) => (Array.isArray(e.detalle.obsoletas) ? (e.detalle.obsoletas as number[]) : []));
 
   return {
-    clase: cierre.clase,
-    entidad: (await obtenerMarcaSegura()).nombre,
-    documento: { codigo: t.codigo, titulo: t.titulo, tipo: t.tipo_documento, proceso: t.proceso },
-    version: t.version,
+    clase,
+    entidad: nombreEntidad,
+    documento: { codigo: d.codigo, titulo: d.titulo, tipo: d.tipo_documento, proceso: d.proceso },
+    version: d.version,
     solicitud: {
-      numero: t.numero,
-      tipo: ETIQUETA_TIPO_SOLICITUD[t.tipo as TipoSolicitud],
-      motivo: ETIQUETA_MOTIVO[t.motivo as Motivo],
-      justificacion: t.justificacion,
-      solicitante: t.solicitante,
-      fecha: t.creado_en,
+      numero: tramite.numero,
+      tipo: ETIQUETA_TIPO_SOLICITUD[tramite.tipo as TipoSolicitud],
+      motivo: ETIQUETA_MOTIVO[tramite.motivo as Motivo],
+      justificacion: tramite.justificacion,
+      solicitante: d.solicitante,
+      fecha: tramite.creadoEn,
     },
     vistoBueno: textoDeVistoBueno(eventos, zona),
-    aceptacion: { quien: aceptar?.persona ?? "—", fecha: aceptar?.creadoEn ?? t.creado_en, duplicidad: textoDeDuplicidad(aceptar) },
-    controlCambios: cierre.clase === "aprobacion" ? t.resumen_cambios : null, // el de la versión anulada es de cuando se emitió
-    firmas: (await listarFirmas(tramiteId, { sql }))
-      .filter((f) => f.ronda === t.ronda)
-      .map((f) => ({ firma: ETIQUETA_FIRMA[f.firma], nombre: f.nombre, cargo: f.cargo, fecha: f.creadoEn, huella: f.hashSha256 })),
-    rondas: t.ronda,
+    aceptacion: { quien: aceptar?.persona ?? "—", fecha: aceptar?.creadoEn ?? tramite.creadoEn, duplicidad: textoDeDuplicidad(aceptar) },
+    // El control de cambios de la versión anulada es de cuando se emitió, no de esta eliminación.
+    controlCambios: clase === "aprobacion" ? d.resumen_cambios : null,
+    rondas: tramite.ronda,
     observaciones: { total, cerradas },
-    versionObsoleta: obsoletas.length === 0 ? null : Math.max(...obsoletas),
-    publicadoEn: t.cerrado_en,
+    versionObsoleta,
+    publicadoEn: ahora,
     zona,
   };
 }
 
-async function actaRegistrada(sql: Cliente, versionId: number): Promise<{ archivoId: number; ruta: string } | null> {
-  const [a] = await sql`SELECT id, ruta FROM archivos
-    WHERE version_id = ${versionId} AND rol IN ('acta_aprobacion', 'acta_eliminacion')`;
+const comoFecha = (v: unknown) => new Date(v as string);
+
+/**
+ * Los datos congelados al cerrar el trámite más las firmas de esa ronda, que `firmas` ya guarda con
+ * nombre y cargo copiados. `null` si el trámite no está `publicado` ni `eliminado` o no tiene el evento.
+ */
+export async function reunirDatosActa(tramiteId: number, opciones?: Opciones): Promise<DatosActa | null> {
+  const sql = opciones?.sql ?? obtenerSql();
+  if (!(await versionDeActa(tramiteId, { sql }))) return null;
+  const [cierre] = await sql`SELECT detalle -> 'acta' AS acta FROM tramite_eventos
+    WHERE tramite_id = ${tramiteId} AND tipo IN ('publicar', 'aprobar_y_publicar') AND detalle ? 'acta'
+    ORDER BY id DESC LIMIT 1`;
+  if (!cierre?.acta) return null;
+  const congelado = cierre.acta as DatosCongelados;
+  const firmas = (await listarFirmas(tramiteId, { sql }))
+    .filter((f) => f.ronda === congelado.rondas)
+    .map((f) => ({ firma: ETIQUETA_FIRMA[f.firma], nombre: f.nombre, cargo: f.cargo, fecha: f.creadoEn, huella: f.hashSha256 }));
+  return {
+    ...congelado,
+    solicitud: { ...congelado.solicitud, fecha: comoFecha(congelado.solicitud.fecha) },
+    aceptacion: { ...congelado.aceptacion, fecha: comoFecha(congelado.aceptacion.fecha) },
+    publicadoEn: comoFecha(congelado.publicadoEn),
+    firmas,
+  };
+}
+
+async function actaRegistrada(sql: Cliente, versionId: number, clase: ClaseActa): Promise<{ archivoId: number; ruta: string } | null> {
+  const [a] = await sql`SELECT id, ruta FROM archivos WHERE version_id = ${versionId} AND rol = ${ROL_DE_ACTA[clase]}`;
   return a ? { archivoId: Number(a.id), ruta: a.ruta } : null;
 }
 
+async function existeEnDisco(absoluta: string): Promise<boolean> {
+  try {
+    await stat(absoluta);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Escribe en un archivo temporal y lo renombra: quien está sirviendo el acta nunca ve un archivo truncado. */
+async function escribirAtomico(absoluta: string, bytes: Uint8Array): Promise<void> {
+  await mkdir(path.dirname(absoluta), { recursive: true });
+  const temporal = `${absoluta}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporal, bytes);
+    await rename(temporal, absoluta);
+  } catch (err) {
+    await rm(temporal, { force: true });
+    throw err;
+  }
+}
+
 /**
- * Devuelve el acta de la versión y, si no existe, la genera y la registra. No usa `registrarArchivo`:
- * su traducción de errores es la del archivo principal. Si otra petición la registró entre tanto
- * (índice único), devuelve la que quedó.
+ * Devuelve el acta del cierre y, si no existe (o su fila no tiene archivo), la genera con los datos
+ * congelados y la registra. No usa `registrarArchivo`: su traducción de errores es la del archivo
+ * principal. Si otra petición la registró entre tanto (índice único), devuelve la que quedó.
  */
 export async function asegurarActa(
   tramiteId: number,
@@ -131,31 +187,31 @@ export async function asegurarActa(
   const sql = opciones?.sql ?? obtenerSql();
   const cierre = await versionDeActa(tramiteId, { sql });
   if (!cierre) return null;
-  const existente = await actaRegistrada(sql, cierre.versionId);
-  if (existente) return existente;
+  const existente = await actaRegistrada(sql, cierre.versionId, cierre.clase);
+  if (existente) {
+    const absoluta = resolverRutaAlmacen(existente.ruta);
+    if (absoluta && (await existeEnDisco(absoluta))) return existente;
+  }
 
   const datos = await reunirDatosActa(tramiteId, { sql });
   if (!datos) return null;
   const bytes = await (opciones?.generar ?? generarActa)(datos);
-  const ruta = `actas/${cierre.numero}.pdf`;
+  const ruta = existente?.ruta ?? `actas/${cierre.numero}.pdf`;
   const absoluta = resolverRutaAlmacen(ruta);
   if (!absoluta) throw new Error(`Ruta inválida en el almacén: ${ruta}`);
+  await escribirAtomico(absoluta, bytes);
+  const huella = createHash("sha256").update(bytes).digest("hex");
 
-  await mkdir(path.dirname(absoluta), { recursive: true });
-  try {
-    await writeFile(absoluta, bytes, { flag: "wx" });
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-    const otra = await actaRegistrada(sql, cierre.versionId);
-    if (otra) return otra;
-    await writeFile(absoluta, bytes); // quedó de un intento que no llegó a registrarse
+  if (existente) {
+    // El archivo se perdió y se regeneró de los mismos datos: la fila sigue siendo la del archivo.
+    await sql`UPDATE archivos SET tamano_bytes = ${bytes.byteLength}, hash_sha256 = ${huella} WHERE id = ${existente.archivoId}`;
+    return existente;
   }
-
   const [fila] = await sql`INSERT INTO archivos (version_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
     VALUES (${cierre.versionId}, ${ROL_DE_ACTA[cierre.clase]}, ${ruta}, ${`Acta ${cierre.numero}.pdf`}, 'pdf', 'application/pdf',
-      ${bytes.byteLength}, ${createHash("sha256").update(bytes).digest("hex")})
+      ${bytes.byteLength}, ${huella})
     ON CONFLICT DO NOTHING
     RETURNING id`;
   if (fila) return { archivoId: Number(fila.id), ruta };
-  return actaRegistrada(sql, cierre.versionId);
+  return actaRegistrada(sql, cierre.versionId, cierre.clase);
 }
