@@ -51,6 +51,11 @@ function DevolverConObservaciones({ tramite }: { tramite: TramiteParaAprobar }) 
     setFilas((actuales) => [...actuales, siguiente.current]);
     siguiente.current += 1;
   };
+  // El botón se va con su fila: el foco pasa antes a la vecina, o se perdería con él.
+  const quitar = (fila: number, posicion: number) => {
+    document.getElementById(`observacion-${filas[posicion === 0 ? 1 : posicion - 1]}`)?.focus();
+    setFilas((actuales) => actuales.filter((f) => f !== fila));
+  };
 
   return (
     <>
@@ -76,6 +81,7 @@ function DevolverConObservaciones({ tramite }: { tramite: TramiteParaAprobar }) 
               <textarea
                 id={`observacion-${fila}`}
                 name="observaciones"
+                autoFocus={fila > 0}
                 required
                 minLength={5}
                 maxLength={2000}
@@ -88,7 +94,7 @@ function DevolverConObservaciones({ tramite }: { tramite: TramiteParaAprobar }) 
                     variante="fantasma"
                     tamano="sm"
                     aria-label={`Quitar la observación ${i + 1}`}
-                    onClick={() => setFilas((actuales) => actuales.filter((f) => f !== fila))}
+                    onClick={() => quitar(fila, i)}
                   >
                     Quitar
                   </Boton>
