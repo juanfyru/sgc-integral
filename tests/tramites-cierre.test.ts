@@ -93,6 +93,54 @@ describe("aprobación", () => {
     } finally { await t.limpiar(); }
   }));
 
+  describe("si el rol del revisor cambió después de revisar", () => {
+    const cambiarRol = (tx: TransactionSql, persona: SesionFlujo) => tx`UPDATE usuarios SET rol = 'consulta' WHERE id = ${persona.usuarioId}`;
+
+    it("aprobar sigue firmando: su paso ya se dio", () => revertida(sql, async (tx) => {
+      const t = await tramiteEn(tx, "aprobacion");
+      try {
+        await cambiarRol(tx, t.revisor);
+        expect(await transicionar(t.aprobador, firmando(t, "aprobar", "aprobacion"), opc(tx))).toEqual({ etapa: "publicacion", ronda: t.ronda });
+      } finally { await t.limpiar(); }
+    }));
+
+    it("aprobar y publicar también", () => revertida(sql, async (tx) => {
+      const t = await tramiteEn(tx, "aprobacion");
+      try {
+        await cambiarRol(tx, t.revisor);
+        expect(await transicionar(t.aprobador, firmando(t, "aprobar_y_publicar", "aprobacion"), opc(tx))).toMatchObject({ etapa: "publicado" });
+      } finally { await t.limpiar(); }
+    }));
+
+    it("reasignar al aprobador también: se mira solo el rol de quien entra", () => revertida(sql, async (tx) => {
+      const t = await tramiteEn(tx, "aprobacion");
+      try {
+        await cambiarRol(tx, t.revisor);
+        const reasignar = (usuarioId: number) => transicionar(t.admin, { tramiteId: t.tramiteId, accion: "reasignar", etapaEsperada: "aprobacion", rondaEsperada: t.ronda,
+          datos: { motivo: "Se reorganiza el equipo.", papel: "aprobador", usuarioId } }, opc(tx));
+        const lider = await usuarioDePrueba(tx, { rol: "lider_proceso" });
+        await expect(tx.savepoint(() => reasignar(lider.usuarioId))).rejects.toThrow("Quien aprueba debe ser Administrador del SGC");
+        const otro = await sesionAdmin(tx);
+        await reasignar(otro.usuarioId);
+        expect(await transicionar(otro, firmando(t, "aprobar", "aprobacion"), opc(tx))).toEqual({ etapa: "publicacion", ronda: t.ronda });
+      } finally { await t.limpiar(); }
+    }));
+
+    it("en revisión el paso sigue pendiente: su rol sí cuenta, y se le reasigna", () => revertida(sql, async (tx) => {
+      const t = await tramiteEn(tx, "revision");
+      try {
+        await cambiarRol(tx, t.revisor);
+        const reasignar = (datos: Record<string, unknown>) => transicionar(t.admin, { tramiteId: t.tramiteId, accion: "reasignar", etapaEsperada: "revision", rondaEsperada: t.ronda,
+          datos: { motivo: "Se reorganiza el equipo.", ...datos } }, opc(tx));
+        const otro = await sesionAdmin(tx);
+        await expect(tx.savepoint(() => reasignar({ papel: "aprobador", usuarioId: otro.usuarioId })))
+          .rejects.toThrow("Quien revisa debe ser Administrador del SGC o Líder de proceso");
+        const relevo = await usuarioDePrueba(tx, { rol: "lider_proceso" });
+        expect(await reasignar({ papel: "revisor", usuarioId: relevo.usuarioId })).toEqual({ etapa: "revision", ronda: t.ronda });
+      } finally { await t.limpiar(); }
+    }));
+  });
+
   it("aprobar lleva a publicación, guarda el concepto y avisa a los administradores", () => revertida(sql, async (tx) => {
     const t = await tramiteEn(tx, "aprobacion");
     try {
@@ -183,6 +231,18 @@ describe("quien elabora no aprueba", () => {
       await tx`UPDATE tramites SET aprobador_id = ${elaborador.usuarioId} WHERE id = ${t.tramiteId}`;
       await fallaSinGastarLaFirma(tx, elaborador, firmando(t, "aprobar", "aprobacion"), "Quien elabora no puede aprobar");
       await fallaSinGastarLaFirma(tx, elaborador, firmando(t, "aprobar_y_publicar", "aprobacion"), "Quien elabora no puede aprobar");
+    } finally { await t.limpiar(); }
+  }));
+
+  it("si elabora un Admin SGC, otro Admin SGC tampoco firma: aprueba Gerencia, aunque el revisor haya cambiado de rol", () => revertida(sql, async (tx) => {
+    const elaborador = await sesionAdmin(tx);
+    const t = await tramiteEn(tx, "aprobacion", { elaborador, aprobador: await sesionDe(tx, "gerente") });
+    try {
+      await tx`UPDATE usuarios SET rol = 'consulta' WHERE id = ${t.revisor.usuarioId}`;
+      const otro = await sesionAdmin(tx);
+      await tx`UPDATE tramites SET aprobador_id = ${otro.usuarioId} WHERE id = ${t.tramiteId}`;
+      await fallaSinGastarLaFirma(tx, otro, firmando(t, "aprobar", "aprobacion"), "Quien aprueba debe tener el rol Gerencia. Pida reasignar al aprobador.");
+      await fallaSinGastarLaFirma(tx, otro, firmando(t, "aprobar_y_publicar", "aprobacion"), "Quien aprueba debe tener el rol Gerencia. Pida reasignar al aprobador.");
     } finally { await t.limpiar(); }
   }));
 });

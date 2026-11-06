@@ -79,7 +79,8 @@ async function exigirAprobadorDistinto(sql: Cliente, tramite: FilaTramite, usuar
 /**
  * La autoridad del tipo puede cambiar con el trámite abierto (spec §6.3: las reglas se comprueban
  * al designar, al reasignar y al firmar): quien firma debe tener el rol que exige la autoridad
- * actual, con la misma regla de la designación. El trámite no queda sin salida: se reasigna al aprobador.
+ * actual, con la misma regla de la designación. El trámite no queda sin salida: se reasigna al
+ * aprobador. Del revisor no se mira el rol: ya dio su paso, y S1 y S2 siguen valiendo.
  */
 async function exigirAutoridadActual(sql: Cliente, tramite: FilaTramite, aprobadorId: number): Promise<void> {
   const [tipo] = await sql`SELECT t.autoridad FROM documentos d JOIN tipos_documento t ON t.id = d.tipo_id WHERE d.id = ${tramite.documentoId}`;

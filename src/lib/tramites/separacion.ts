@@ -42,11 +42,17 @@ type Designacion = {
   elaborador: Persona | null;
   revisor: Persona | null;
   aprobador: Persona;
+  /**
+   * Los papeles cuyo rol se comprueba; sin decirlo, todos. El rol de quien ya hizo su paso no se
+   * mira: si cambió después, el trámite no tendría salida, porque ese papel ya no se reasigna.
+   */
+  pendientes?: readonly Papel[];
 };
 
-/** Primer mensaje de separación de funciones que incumple la designación, o null. */
+/** Primer mensaje de separación de funciones que incumple la designación, o null. S1, S2 y S3 valen siempre para todos. */
 export function validarDesignacion(d: Designacion): string | null {
   const elabora = d.tipo !== "eliminar";
+  const pendiente = (papel: Papel) => d.pendientes === undefined || d.pendientes.includes(papel);
   // Quien pidió no es un designado: si ya no está activo, el trámite debe poder seguir.
   const designados = elabora ? [d.elaborador, d.revisor, d.aprobador] : [d.aprobador];
   if (designados.some((x) => x !== null && !x.activo)) return "El usuario designado no está activo";
@@ -54,14 +60,14 @@ export function validarDesignacion(d: Designacion): string | null {
   if (elabora) {
     if (!d.elaborador) return "Falta designar quién elabora";
     if (!d.revisor) return "Falta designar quién revisa";
-    if (!ROLES_REVISOR.includes(d.revisor.rol))
+    if (pendiente("revisor") && !ROLES_REVISOR.includes(d.revisor.rol))
       return "Quien revisa debe ser Administrador del SGC o Líder de proceso";
     if (d.elaborador.id === d.revisor.id) return "Quien elabora no puede revisar";
   }
 
   const originador = elabora && d.elaborador ? d.elaborador : d.solicitante;
   const rolRequerido = rolAprobador(d.autoridad, originador.rol);
-  if (d.aprobador.rol !== rolRequerido)
+  if (pendiente("aprobador") && d.aprobador.rol !== rolRequerido)
     return rolRequerido === "gerencia"
       ? "Quien aprueba debe tener el rol Gerencia"
       : "Quien aprueba debe ser Administrador del SGC";

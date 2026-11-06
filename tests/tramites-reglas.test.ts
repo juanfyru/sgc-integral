@@ -92,6 +92,18 @@ describe("separación de funciones", () => {
     expect(validarDesignacion({ ...baja, autoridad: "estrategico", solicitante: p(4, "gerencia"), aprobador: p(4, "gerencia") })).toBe("Quien pide la eliminación no puede aprobarla");
   });
 
+  it("con `pendientes`, solo mira el rol de esos papeles; S1 y S2 valen para todos", () => {
+    const d = { tipo: "modificar" as const, autoridad: "operativo" as const, solicitante: p(1, "lider_proceso"), elaborador: p(1, "lider_proceso"), revisor: p(5, "consulta"), aprobador: p(3, "admin_sgc") };
+    const pendientes = ["aprobador"] as const;
+    expect(validarDesignacion({ ...d, pendientes })).toBeNull();                         // el revisor cambió de rol después de revisar
+    expect(validarDesignacion({ ...d, pendientes: ["revisor", "aprobador"] })).toMatch(/Administrador del SGC o Líder/);
+    expect(validarDesignacion({ ...d, aprobador: p(4, "gerencia"), pendientes })).toBe("Quien aprueba debe ser Administrador del SGC");
+    expect(validarDesignacion({ ...d, revisor: p(1, "lider_proceso"), pendientes })).toBe("Quien elabora no puede revisar");
+    expect(validarDesignacion({ ...d, elaborador: p(3, "admin_sgc"), aprobador: p(3, "gerencia"), pendientes })).toBe("Quien elabora no puede aprobar");
+    expect(validarDesignacion({ ...d, elaborador: p(3, "admin_sgc"), aprobador: p(7, "admin_sgc"), pendientes })).toBe("Quien aprueba debe tener el rol Gerencia");
+    expect(validarDesignacion({ tipo: "eliminar", autoridad: "estrategico", solicitante: p(4, "gerencia"), elaborador: null, revisor: null, aprobador: p(4, "gerencia"), pendientes })).toBe("Quien pide la eliminación no puede aprobarla");
+  });
+
   it("exige elaborador y revisor en crear y modificar, pero no en eliminar", () => {
     const d = { tipo: "crear" as const, autoridad: "operativo" as const, solicitante: p(1, "lider_proceso"), elaborador: p(1, "lider_proceso"), revisor: p(3, "admin_sgc"), aprobador: p(3, "admin_sgc") };
     expect(validarDesignacion({ ...d, elaborador: null })).toBe("Falta designar quién elabora");

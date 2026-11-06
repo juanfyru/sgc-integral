@@ -21,7 +21,7 @@ import type {
   DatosAceptarModificacion,
 } from "@/lib/esquemas/tramites";
 import { finDeFecha } from "@/lib/tramites/plazos";
-import { validarDesignacion } from "@/lib/tramites/separacion";
+import { papelesReasignables, validarDesignacion } from "@/lib/tramites/separacion";
 import type { Autoridad, TipoSolicitud } from "@/lib/tramites/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import {
@@ -42,9 +42,9 @@ type DatosNuevo = DatosAceptarCreacion &
 
 /**
  * Aplica las reglas de separación y devuelve, para la evidencia, a cada designado con su nombre.
- * `entran` es para un trámite ya aceptado: solo a esas personas se les exige estar activas. A quien
- * ya estaba se le cuentan rol y separación; si se le pidiera estar activa, dos designados
- * desactivados se bloquearían entre sí y el trámite no tendría salida.
+ * `entran` es para un trámite ya aceptado: solo a esas personas se les exige estar activas, y el rol
+ * solo a quien aún tiene su paso pendiente. A quien ya estaba se le cuenta la separación; si se le
+ * pidiera estar activa, o conservar el rol de un paso que ya dio, el trámite podría quedar sin salida.
  */
 export async function exigirDesignacion(
   tx: TransactionSql,
@@ -68,7 +68,8 @@ export async function exigirDesignacion(
   const aprobador = persona(ids.aprobadorId);
   if (!solicitante) throw new ErrorTramite("El trámite no tiene solicitante");
   if (!aprobador) throw new ErrorTramite("Falta designar quién aprueba");
-  const error = validarDesignacion({ tipo, autoridad, solicitante, elaborador, revisor, aprobador });
+  const pendientes = entran === undefined ? undefined : papelesReasignables(tramite.etapa);
+  const error = validarDesignacion({ tipo, autoridad, solicitante, elaborador, revisor, aprobador, pendientes });
   if (error) throw new ErrorTramite(error);
   const evidencia = (p: { id: number; nombre: string } | null) => p && { id: p.id, nombre: p.nombre };
   return { elaborador: evidencia(elaborador), revisor: evidencia(revisor), aprobador: evidencia(aprobador) };
