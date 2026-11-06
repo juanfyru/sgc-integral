@@ -258,7 +258,7 @@ describe("listarTramites", () => {
     await tx`UPDATE tramites SET etapa = 'elaboracion', ronda = 1, elaborador_id = ${elaborador.usuarioId} WHERE id = ${tramiteId}`;
     await tx`UPDATE usuarios SET activo = false WHERE id = ${elaborador.usuarioId}`;
     const [fila] = await listarTramites(admin, "en_curso", { sql: tx });
-    expect(fila.responsables).toEqual([elaborador.nombre]);
+    expect(fila.responsables).toEqual([`${elaborador.nombre} (inactivo)`]);
   }));
 });
 

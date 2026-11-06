@@ -58,7 +58,7 @@ const ACCIONES_REVISION = [
   "reabrir_observacion",
 ] as const;
 
-const ACCIONES_TRAMITE: Record<Accion | "solicitar" | (typeof ACCIONES_REVISION)[number], string> = {
+const ACCIONES_TRAMITE: Record<Accion | "solicitar" | "corregir_datos" | (typeof ACCIONES_REVISION)[number], string> = {
   solicitar: "Registró la solicitud",
   guardar_lista: "Guardó la lista de verificación de la solicitud",
   crear_observacion: "Escribió una observación en la solicitud",
@@ -80,6 +80,7 @@ const ACCIONES_TRAMITE: Record<Accion | "solicitar" | (typeof ACCIONES_REVISION)
   aprobar_y_publicar: "Aprobó y publicó el resultado de la solicitud",
   cancelar: "Canceló la solicitud",
   reasignar: "Reasignó la solicitud",
+  corregir_datos: "Corrigió los datos del documento de la solicitud",
 };
 
 /** «Aprobó la solicitud SOL-2026-014 sobre GTH-PR-02». Una creación aún sin documento no lleva código. */

@@ -73,6 +73,8 @@ export type Aviso = { usuarioIds: number[]; tipo: TipoAviso; titulo: string; cue
 
 export type Efecto = {
   detalle?: Record<string, unknown>;
+  /** Solo para la bitácora: lo que en `detalle` chocaría con los `de`, `hacia` y `ronda` que pone `transicionar`. */
+  auditoria?: Record<string, unknown>;
   cambios?: Partial<
     Pick<
       FilaTramite,

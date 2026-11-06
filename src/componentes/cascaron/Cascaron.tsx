@@ -4,6 +4,7 @@ import { participaEnTramites } from "@/db/consultas/tramites";
 import { ETIQUETA_ROL } from "@/lib/roles";
 import type { SesionValida } from "@/lib/sesion";
 import { misTareas } from "@/lib/tareas";
+import { dispararRevisionDeVencimientos } from "@/lib/vencimientos-disparo";
 import { VERSION_APP } from "@/lib/version";
 import { BarraLateral } from "./BarraLateral";
 import { BarraSuperior } from "./BarraSuperior";
@@ -17,6 +18,7 @@ import { entradasVisibles } from "./navegacion";
  * no se vuelve a montar, así que la barra lateral no parpadea.
  */
 export async function Cascaron({ sesion, children }: { sesion: SesionValida; children: React.ReactNode }) {
+  dispararRevisionDeVencimientos();
   const [marca, tareas, noLeidas, recientes, participa] = await Promise.all([
     obtenerMarcaSegura(),
     misTareas(sesion),

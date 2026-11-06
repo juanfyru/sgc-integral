@@ -8,7 +8,7 @@ import { anularVigenteEn, aplicarPublicacion } from "@/db/consultas/admin";
 import { congelarDatosActa } from "@/db/consultas/actas";
 import { listarFirmas, type FirmaRegistrada } from "@/db/consultas/firmas";
 import { crearObservacionesDeAprobacion } from "@/db/consultas/revision";
-import { adminsActivos, lideresDeProcesosDelDocumento, rotuloDeTramite } from "@/db/consultas/tramites";
+import { adminsActivos, lideresDeProceso, lideresDeProcesosDelDocumento, rotuloDeTramite } from "@/db/consultas/tramites";
 import { huellaDeArchivo } from "@/lib/huella";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { MAX_OBSERVACIONES_APROBACION, type Firma } from "@/lib/tramites/tipos";
@@ -136,11 +136,14 @@ const negarEliminacion: Manejador = async ({ tx, tramite, datos }) => {
   };
 };
 
-/** A los participantes y a los líderes de los procesos del documento (spec 13A §14.2). */
-async function avisoDeCierre(tx: TransactionSql, tramite: FilaTramite, documentoId: number, titulo: string): Promise<Efecto["avisos"]> {
+/** A los participantes y a los líderes de los procesos del documento; sin documento, a los del proceso (spec 13A §14.2). */
+export async function avisoDeCierre(tx: TransactionSql, tramite: FilaTramite, documentoId: number | null, titulo: string): Promise<Efecto["avisos"]> {
   const { texto } = await rotuloDeTramite(tx, tramite);
   const participantes = [tramite.solicitanteId, tramite.elaboradorId, tramite.revisorId, tramite.aprobadorId];
-  const lideres = await lideresDeProcesosDelDocumento(documentoId, { sql: tx });
+  const lideres =
+    documentoId === null
+      ? await lideresDeProceso(tramite.procesoId, { sql: tx })
+      : await lideresDeProcesosDelDocumento(documentoId, { sql: tx });
   return [
     {
       usuarioIds: [...participantes.filter((id) => id !== null), ...lideres],

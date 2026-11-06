@@ -39,6 +39,7 @@ import {
 import { MANEJADORES_ACEPTACION } from "./flujo/aceptacion";
 import { MANEJADORES_CIERRE, VALIDADORES_CIERRE } from "./flujo/cierre";
 import { MANEJADORES_ELABORACION, VALIDADORES_ELABORACION } from "./flujo/elaboracion";
+import { MANEJADORES_GESTION } from "./flujo/gestion";
 import { MANEJADORES_REVISION, VALIDADORES_REVISION } from "./flujo/revision";
 import { MANEJADORES_SOLICITUD } from "./flujo/solicitud";
 import {
@@ -71,6 +72,7 @@ export const MANEJADORES: RegistroManejadores = {
   ...MANEJADORES_ELABORACION,
   ...MANEJADORES_REVISION,
   ...MANEJADORES_CIERRE,
+  ...MANEJADORES_GESTION,
 };
 
 /** Comprobaciones de negocio de las acciones que firman, antes de pedir o gastar la firma. */
@@ -149,7 +151,7 @@ function anioEn(instante: Date, zona: string): number {
   return Number(new Intl.DateTimeFormat("en-US", { timeZone: zona, year: "numeric" }).format(instante));
 }
 
-async function registrarEvento(
+export async function registrarEvento(
   tx: TransactionSql,
   e: { tramiteId: number; tipo: string; usuarioId: number | null; ronda: number; detalle?: Record<string, unknown>; ahora: Date },
 ): Promise<void> {
@@ -374,7 +376,7 @@ export async function transicionar(
       accion: `tramite_${entrada.accion}`,
       entidad: "tramite",
       entidadId: t.id,
-      detalle: { numero: t.numero, codigo, documentoId: t.documentoId, ...detalleDeAuditoria, de: previo.etapa, hacia, ronda: t.ronda },
+      detalle: { numero: t.numero, codigo, documentoId: t.documentoId, ...detalleDeAuditoria, ...efecto.auditoria, de: previo.etapa, hacia, ronda: t.ronda },
     });
     await enviarAvisos(tx, t.id, sesion.usuarioId, efecto.avisos ?? []);
     return { etapa: t.etapa, ronda: t.ronda };

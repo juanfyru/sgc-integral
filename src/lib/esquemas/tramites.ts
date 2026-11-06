@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { AsociacionEntrada } from "@/db/consultas/admin";
+import { PAPELES } from "@/lib/tramites/separacion";
 import { MAX_OBSERVACIONES_APROBACION, MOTIVOS, TIPOS_SOLICITUD } from "@/lib/tramites/tipos";
 
 const id = z.coerce.number().int().positive();
@@ -17,7 +18,14 @@ export const EsquemaSolicitud = z
   })
   .strict();
 
-export const EsquemaMotivoCierre = z.object({ motivo: z.string().trim().min(5).max(1000) }).strict();
+const motivo = z.string().trim().min(5).max(1000);
+
+export const EsquemaMotivoCierre = z.object({ motivo }).strict();
+
+/** `papel` falta cuando solo cambia la fecha; lo que debe venir junto lo decide el manejador. */
+export const EsquemaReasignar = z
+  .object({ papel: z.enum(PAPELES).optional(), usuarioId: id.optional(), venceEn: z.iso.date().optional(), motivo })
+  .strict();
 
 export const EsquemaControlCambios = z.object({ resumenCambios: z.string().trim().min(5).max(2000) }).strict();
 
@@ -146,6 +154,12 @@ export const EsquemaAceptarModificacion = z.object({ tituloNuevo: titulo.optiona
 
 export const EsquemaAceptarEliminacion = z.object({ aprobadorId: id }).strict();
 
+export const EsquemaCorreccionDatos = z
+  .object({ titulo: titulo.optional(), codigo: codigoDeDocumento.optional(), tipoDocumentoId: id.optional() })
+  .strict();
+
 export type DatosAceptarCreacion = z.output<typeof EsquemaAceptarCreacion>;
 export type DatosAceptarModificacion = z.output<typeof EsquemaAceptarModificacion>;
 export type DatosAceptarEliminacion = z.output<typeof EsquemaAceptarEliminacion>;
+export type DatosReasignar = z.output<typeof EsquemaReasignar>;
+export type DatosCorreccion = z.output<typeof EsquemaCorreccionDatos>;

@@ -1,9 +1,30 @@
 import type { Rol } from "@/lib/roles";
-import type { Autoridad, TipoSolicitud } from "./tipos";
+import type { Autoridad, Etapa, TipoSolicitud } from "./tipos";
 
 export type Persona = { id: number; rol: Rol; activo: boolean };
 
 export const ROLES_REVISOR: readonly Rol[] = ["admin_sgc", "lider_proceso"];
+
+export const PAPELES = ["elaborador", "revisor", "aprobador"] as const;
+export type Papel = (typeof PAPELES)[number];
+
+export const ETIQUETA_PAPEL: Record<Papel, string> = {
+  elaborador: "Quien elabora",
+  revisor: "Quien revisa",
+  aprobador: "Quien aprueba",
+};
+
+/** Etapas en que el paso de cada papel sigue pendiente; antes de aceptar no hay designados (spec §7.2). */
+const ETAPAS_DEL_PAPEL: Record<Papel, readonly Etapa[]> = {
+  elaborador: ["elaboracion"],
+  revisor: ["elaboracion", "revision"],
+  aprobador: ["elaboracion", "revision", "aprobacion"],
+};
+
+/** Una eliminación solo llega a la aprobación: ahí no aparecen ni elaborador ni revisor. */
+export function papelesReasignables(etapa: Etapa): Papel[] {
+  return PAPELES.filter((p) => ETAPAS_DEL_PAPEL[p].includes(etapa));
+}
 
 /**
  * Rol que aprueba: Gerencia si la autoridad es estratégica o si el originador es el

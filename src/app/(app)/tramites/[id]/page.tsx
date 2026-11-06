@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { AccionesGestion } from "@/componentes/tramites/AccionesGestion";
 import { AccionesSolicitud } from "@/componentes/tramites/AccionesSolicitud";
 import { BloqueSolicitud } from "@/componentes/tramites/BloqueSolicitud";
 import { EnlaceActa } from "@/componentes/tramites/EnlaceActa";
@@ -15,6 +16,7 @@ import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import {
   contextoDeAceptacion,
   datosParaAceptar,
+  datosParaGestionar,
   obtenerTramite,
   type DetalleTramite,
 } from "@/db/consultas/tramites";
@@ -114,6 +116,32 @@ async function Cierre({ tramite, pideCodigo }: { tramite: DetalleTramite; pideCo
   );
 }
 
+/** Solo para quien gestiona: las listas de personas y tipos no se piden para nadie más. */
+async function Gestion({ tramite: t }: { tramite: DetalleTramite }) {
+  return (
+    <AccionesGestion
+      tramite={{
+        id: t.id,
+        etapa: t.etapa,
+        ronda: t.ronda,
+        tipo: t.tipo,
+        codigo: t.codigo,
+        titulo: t.titulo,
+        tipoDocumentoId: t.tipoDocumentoId,
+        solicitanteId: t.solicitanteId,
+        elaboradorId: t.elaboradorId,
+        revisorId: t.revisorId,
+        aprobadorId: t.aprobadorId,
+        elaborador: t.elaborador,
+        revisor: t.revisor,
+        aprobador: t.aprobador,
+      }}
+      datos={await datosParaGestionar(t.id)}
+      hoy={fechaEnZona(new Date(), zonaHoraria())}
+    />
+  );
+}
+
 export default async function PaginaTramite({ params }: { params: Promise<{ id: string }> }) {
   const sesion = await exigirSesion();
   const { id } = await params;
@@ -155,6 +183,7 @@ export default async function PaginaTramite({ params }: { params: Promise<{ id: 
             tramite={{ id: tramite.id, etapa: tramite.etapa, ronda: tramite.ronda }}
             acciones={tramite.acciones}
           />
+          {tramite.acciones.includes("cancelar") ? <Gestion tramite={tramite} /> : null}
         </div>
       </div>
       {tramite.acciones.includes("aceptar") ? <Aceptacion tramite={tramite} usuarioId={sesion.usuarioId} /> : null}

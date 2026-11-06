@@ -69,6 +69,12 @@ export const ETIQUETA_FIRMA: Record<Firma, string> = {
   publico: "Publicó",
 };
 
+/** Un grupo se resume: la bandeja, el encabezado y el aviso al jefe nombran solo al primero. */
+export function textoResponsables(nombres: readonly string[]): string {
+  if (nombres.length === 0) return "—";
+  return nombres.length === 1 ? nombres[0] : `${nombres[0]} y ${nombres.length - 1} más`;
+}
+
 /** Principio y fin de la huella: alcanza para comparar a simple vista. */
 export function huellaAbreviada(hash: string): string {
   return `${hash.slice(0, 4)}…${hash.slice(-4)}`;

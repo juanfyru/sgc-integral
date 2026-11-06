@@ -1,4 +1,5 @@
 import type { EventoTramite } from "@/db/consultas/tramites";
+import { ETIQUETA_PAPEL, PAPELES, type Papel } from "@/lib/tramites/separacion";
 import type { TipoSolicitud } from "@/lib/tramites/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 
@@ -26,7 +27,10 @@ const FRASES: Record<string, string> = {
   aprobar_y_publicar: "aprobó y publicó, con clave",
   cancelar: "canceló el trámite",
   reasignar: "reasignó un responsable",
+  corregir_datos: "corrigió los datos del documento",
 };
+
+const ETIQUETA_DATO: Record<string, string> = { titulo: "Título", codigo: "Código", tipo: "Tipo" };
 
 /** En una eliminación, la acción `publicar` no publica nada. */
 const FRASES_ELIMINACION: Record<string, string> = {
@@ -36,8 +40,29 @@ const FRASES_ELIMINACION: Record<string, string> = {
 
 function frase(e: EventoTramite, tipo: TipoSolicitud): string {
   const propia = tipo === "eliminar" ? FRASES_ELIMINACION[e.tipo] : undefined;
-  const hecho = e.tipo === "solicitar" ? QUE_PIDE[tipo] : (propia ?? FRASES[e.tipo] ?? e.tipo.replaceAll("_", " "));
+  const soloFecha = e.tipo === "reasignar" && !e.detalle.a;
+  const hecho = soloFecha
+    ? "cambió la fecha límite"
+    : e.tipo === "solicitar"
+      ? QUE_PIDE[tipo]
+      : (propia ?? FRASES[e.tipo] ?? e.tipo.replaceAll("_", " "));
   return e.persona ? `${e.persona} ${hecho}` : hecho.charAt(0).toUpperCase() + hecho.slice(1);
+}
+
+const nombreEn = (p: unknown) => (p as { nombre?: string } | null)?.nombre ?? "nadie";
+
+/** Qué cambió en una reasignación o una corrección, con el antes y el después. */
+function cambiosDe({ tipo, detalle: d }: EventoTramite): string[] {
+  if (tipo === "corregir_datos") {
+    const antes = (d.antes ?? {}) as Record<string, unknown>;
+    return Object.entries((d.despues ?? {}) as Record<string, unknown>).map(
+      ([dato, valor]) => `${ETIQUETA_DATO[dato] ?? dato}: ${String(antes[dato])} → ${String(valor)}`,
+    );
+  }
+  if (tipo !== "reasignar") return [];
+  const lineas = PAPELES.includes(d.papel as Papel) ? [`${ETIQUETA_PAPEL[d.papel as Papel]}: ${nombreEn(d.de)} → ${nombreEn(d.a)}`] : [];
+  if (typeof d.venceEn === "string") lineas.push(`Nueva fecha límite: ${d.venceEn}`);
+  return lineas;
 }
 
 export function HistorialTramite({ tipo, eventos }: { tipo: TipoSolicitud; eventos: EventoTramite[] }) {
@@ -58,6 +83,11 @@ export function HistorialTramite({ tipo, eventos }: { tipo: TipoSolicitud; event
           <li key={i} className="text-sm">
             <span className="block text-xs text-muted-foreground">{cuando.format(e.creadoEn)}</span>
             {frase(e, tipo)}
+            {cambiosDe(e).map((linea) => (
+              <span key={linea} className="block break-words text-xs text-muted-foreground">
+                {linea}
+              </span>
+            ))}
             {typeof e.detalle.motivo === "string" ? (
               <span className="block whitespace-pre-wrap break-words text-xs text-muted-foreground">
                 {`Motivo: ${e.detalle.motivo}`}

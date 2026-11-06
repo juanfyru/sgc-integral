@@ -60,6 +60,7 @@ export type DetalleTramite = FilaTramite & {
   elaborador: string | null;
   revisor: string | null;
   aprobador: string | null;
+  responsables: string[];
   acciones: Accion[];
   eventos: EventoTramite[];
 };
@@ -82,7 +83,7 @@ export type TramiteVisto = {
 
 const idONulo = (v: unknown): number | null => (v === null ? null : Number(v));
 
-function aFilaTramite(f: Row): FilaTramite {
+export function aFilaTramite(f: Row): FilaTramite {
   return {
     id: Number(f.id),
     numero: f.numero,
@@ -128,9 +129,12 @@ async function tramitesVistos(
            ELSE COALESCE(t.titulo_propuesto, d.titulo, '') END AS titulo,
       v.numero AS version_numero,
       p.nombre AS proceso_nombre,
-      us.nombre AS solicitante, ue.nombre AS elaborador, ur.nombre AS revisor, ua.nombre AS aprobador,
+      us.nombre AS solicitante,
+      ue.nombre || CASE WHEN ue.activo THEN '' ELSE ' (inactivo)' END AS elaborador,
+      ur.nombre || CASE WHEN ur.activo THEN '' ELSE ' (inactivo)' END AS revisor,
+      ua.nombre || CASE WHEN ua.activo THEN '' ELSE ' (inactivo)' END AS aprobador,
       ARRAY(
-        SELECT u.nombre FROM usuarios u
+        SELECT u.nombre || CASE WHEN u.activo THEN '' ELSE ' (inactivo)' END FROM usuarios u
         WHERE (t.etapa = 'elaboracion' AND u.id = t.elaborador_id)
            OR (t.etapa = 'revision' AND u.id = t.revisor_id)
            OR (t.etapa = 'aprobacion' AND u.id = t.aprobador_id)
@@ -259,6 +263,7 @@ export async function obtenerTramite(
     elaborador: visto.elaborador,
     revisor: visto.revisor,
     aprobador: visto.aprobador,
+    responsables: esEtapaDeTrabajo(visto.tramite.etapa) ? visto.responsables : [],
     acciones: accionesDe(visto, sesion),
     eventos: eventos.map((e) => ({
       tipo: e.tipo,
@@ -436,6 +441,13 @@ export async function tipoDeDocumento(id: number, opciones?: { sql?: Cliente }):
 
 export type UsuarioDesignable = { id: number; nombre: string; cargo: string | null; rol: Rol };
 
+async function usuariosDesignables(sql: Cliente): Promise<UsuarioDesignable[]> {
+  const filas = await sql`SELECT u.id, u.nombre, c.nombre AS cargo, u.rol
+    FROM usuarios u LEFT JOIN cargos c ON c.id = u.cargo_id
+    WHERE u.activo ORDER BY u.nombre`;
+  return filas.map((u) => ({ id: Number(u.id), nombre: u.nombre, cargo: u.cargo, rol: u.rol }));
+}
+
 export type DatosParaAceptar = {
   parecidos: Parecido[];
   codigoSugerido: string | null;
@@ -458,9 +470,7 @@ export async function datosParaAceptar(tramiteId: number, opciones?: { sql?: Cli
     tipoDeDocumento(tipoId, { sql }),
     esCreacion ? buscarParecidos(t.titulo_propuesto, { sql }) : [],
     esCreacion ? sugerirCodigo({ procesoId: Number(t.proceso_id), tipoDocumentoId: tipoId }, { sql }) : null,
-    sql`SELECT u.id, u.nombre, c.nombre AS cargo, u.rol
-      FROM usuarios u LEFT JOIN cargos c ON c.id = u.cargo_id
-      WHERE u.activo ORDER BY u.nombre`,
+    usuariosDesignables(sql),
   ]);
   if (!tipo) throw new Error("El tipo de documento no existe");
   return {
@@ -468,7 +478,37 @@ export async function datosParaAceptar(tramiteId: number, opciones?: { sql?: Cli
     codigoSugerido,
     plantilla: tipo.plantilla,
     autoridad: tipo.autoridad,
-    usuarios: usuarios.map((u) => ({ id: Number(u.id), nombre: u.nombre, cargo: u.cargo, rol: u.rol })),
+    usuarios,
+  };
+}
+
+export type DatosParaGestionar = {
+  usuarios: UsuarioDesignable[];
+  autoridad: Autoridad;
+  /** Quien origina el trámite decide qué rol aprueba: el elaborador, o quien pidió si aún no hay. */
+  rolOriginador: Rol;
+  tipos: Pick<TipoDeDocumento, "id" | "nombre">[];
+};
+
+/** Lo que eligen «Reasignar» y «Corregir datos». El tipo actual va en la lista aunque esté inactivo. */
+export async function datosParaGestionar(tramiteId: number, opciones?: { sql?: Cliente }): Promise<DatosParaGestionar> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [t] = await sql`SELECT tp.id AS tipo_id, tp.autoridad, o.rol AS rol_originador
+    FROM tramites t
+    LEFT JOIN documentos d ON d.id = t.documento_id
+    JOIN tipos_documento tp ON tp.id = COALESCE(d.tipo_id, t.tipo_documento_id)
+    JOIN usuarios o ON o.id = COALESCE(t.elaborador_id, t.solicitante_id)
+    WHERE t.id = ${tramiteId}`;
+  if (!t) throw new Error("El trámite no existe");
+  const [usuarios, tipos] = await Promise.all([
+    usuariosDesignables(sql),
+    tiposDeDocumento(sql, sql`t.activo OR t.id = ${t.tipo_id}`),
+  ]);
+  return {
+    usuarios,
+    autoridad: t.autoridad,
+    rolOriginador: t.rol_originador,
+    tipos: tipos.map(({ id, nombre }) => ({ id, nombre })),
   };
 }
 

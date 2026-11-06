@@ -11,6 +11,7 @@ import {
 import { asegurarActa } from "@/db/consultas/actas";
 import { obtenerTramite } from "@/db/consultas/tramites";
 import { guardarControlCambios } from "@/db/consultas/tramites-archivos";
+import { corregirDatosDeControl } from "@/db/consultas/tramites-gestion";
 import {
   CAMBIO_MIENTRAS,
   ErrorFirma,
@@ -27,11 +28,13 @@ import {
   EsquemaAceptarModificacion,
   EsquemaConcepto,
   EsquemaControlCambios,
+  EsquemaCorreccionDatos,
   EsquemaDevolucionAprobacion,
   EsquemaFirma,
   EsquemaMotivoCierre,
   EsquemaObservacion,
   EsquemaReaperturaObservacion,
+  EsquemaReasignar,
   EsquemaRespuestaObservacion,
   EsquemaSolicitud,
   leerVerificacion,
@@ -154,6 +157,30 @@ export async function rechazarSolicitudAccion(_prev: EstadoAccion, formData: For
       datos: parsearFormulario(formData, EsquemaMotivoCierre, { omitir: OCULTOS }),
     }),
   );
+}
+
+export async function cancelarTramiteAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "tramites.gestionar", (_usuarioId, _formData, sesion) =>
+    ejecutar(formData, sesion, "cancelar", {
+      datos: parsearFormulario(formData, EsquemaMotivoCierre, { omitir: OCULTOS }),
+    }),
+  );
+}
+
+export async function reasignarTramiteAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "tramites.gestionar", (_usuarioId, _formData, sesion) =>
+    ejecutar(formData, sesion, "reasignar", {
+      datos: parsearFormulario(formData, EsquemaReasignar, { omitir: OCULTOS }),
+    }),
+  );
+}
+
+export async function corregirDatosTramiteAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "tramites.gestionar", async (_usuarioId, _formData, sesion) => {
+    const datos = parsearFormulario(formData, EsquemaCorreccionDatos, { omitir: OCULTOS });
+    const { tramiteId, etapaEsperada: etapa, rondaEsperada: ronda } = referencia(formData);
+    await corregirDatosDeControl(tramiteId, sesion, datos, { etapa, ronda });
+  });
 }
 
 export async function guardarControlCambiosAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {

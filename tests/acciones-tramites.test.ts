@@ -4,8 +4,9 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { transicionar, crearSolicitud, obtenerTramite, guardarControlCambios, contextoDePeticion, redirect, requerirSesion } = vi.hoisted(() => ({
+const { transicionar, crearSolicitud, obtenerTramite, guardarControlCambios, corregirDatosDeControl, contextoDePeticion, redirect, requerirSesion } = vi.hoisted(() => ({
   transicionar: vi.fn(),
+  corregirDatosDeControl: vi.fn(),
   crearSolicitud: vi.fn(),
   obtenerTramite: vi.fn(),
   guardarControlCambios: vi.fn(),
@@ -35,14 +36,17 @@ vi.mock("@/db/consultas/tramites-flujo", async () => ({
 }));
 vi.mock("@/db/consultas/tramites", () => ({ obtenerTramite }));
 vi.mock("@/db/consultas/tramites-archivos", () => ({ guardarControlCambios }));
+vi.mock("@/db/consultas/tramites-gestion", () => ({ corregirDatosDeControl }));
 vi.mock("@/lib/contexto-peticion", () => ({ contextoDePeticion }));
 
 import {
   aceptarSolicitudAccion,
   aprobarAccion,
   aprobarYPublicarAccion,
+  cancelarTramiteAccion,
   cerrarObservacionAccion,
   conceptoFavorableAccion,
+  corregirDatosTramiteAccion,
   crearObservacionAccion,
   crearSolicitudAccion,
   devolverAprobacionAccion,
@@ -56,6 +60,7 @@ import {
   negarEliminacionAccion,
   negarVistoBuenoAccion,
   publicarTramiteAccion,
+  reasignarTramiteAccion,
   rechazarSolicitudAccion,
   retirarSolicitudAccion,
 } from "@/app/acciones-tramites";
@@ -132,6 +137,70 @@ describe("acciones del trámite", () => {
     expect(await crearSolicitudAccion(null, formulario({ ...campos, justificacion: "corta" }))).toMatchObject({ ok: false });
     expect(await crearSolicitudAccion(null, formulario({ ...campos, sobra: "x" }))).toMatchObject({ ok: false });
     expect(crearSolicitud).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("gestión del trámite", () => {
+  const enElaboracion = { id: "7", etapa: "elaboracion", ronda: "2" };
+  const admin = { sesionId: "s", usuarioId: 9, usuario: "admin", nombre: "Admin", rol: "admin_sgc", verHistorial: false };
+
+  beforeEach(() => {
+    requerirSesion.mockResolvedValue(admin);
+    corregirDatosDeControl.mockResolvedValue(undefined);
+  });
+
+  it("cancelar lee el motivo con su esquema", async () => {
+    expect(await cancelarTramiteAccion(null, formulario({ ...enElaboracion, motivo: "no" }))).toMatchObject({ ok: false });
+    expect(transicionar).not.toHaveBeenCalled();
+    expect(await cancelarTramiteAccion(null, formulario({ ...enElaboracion, motivo: "  Se pidió por error.  " }))).toBeNull();
+    expect(transicionar.mock.calls[0][1]).toEqual({
+      tramiteId: 7,
+      accion: "cancelar",
+      etapaEsperada: "elaboracion",
+      rondaEsperada: 2,
+      datos: { motivo: "Se pidió por error." },
+    });
+  });
+
+  it("reasignar envía el papel, la persona, la fecha y el motivo; lo vacío no viaja", async () => {
+    const campos = { ...enElaboracion, papel: "revisor", usuarioId: "5", venceEn: "", motivo: "Cambió de área." };
+    expect(await reasignarTramiteAccion(null, formulario(campos))).toBeNull();
+    expect(transicionar.mock.calls[0][1]).toMatchObject({
+      accion: "reasignar",
+      datos: { papel: "revisor", usuarioId: 5, motivo: "Cambió de área." },
+    });
+    expect(transicionar.mock.calls[0][1].datos).not.toHaveProperty("venceEn");
+    expect(await reasignarTramiteAccion(null, formulario({ ...enElaboracion, papel: "solicitante", usuarioId: "5", motivo: "Cambió de área." })))
+      .toMatchObject({ ok: false });
+    expect(await reasignarTramiteAccion(null, formulario({ ...enElaboracion, venceEn: "mañana", motivo: "Cambió de área." }))).toMatchObject({ ok: false });
+    expect(transicionar).toHaveBeenCalledTimes(1);
+  });
+
+  it("corregir pasa la etapa y la ronda que vio la persona, y solo los campos del esquema", async () => {
+    const campos = { ...enElaboracion, titulo: "  Inducción general  ", codigo: "cex-fo-01", tipoDocumentoId: "3" };
+    expect(await corregirDatosTramiteAccion(null, formulario(campos))).toBeNull();
+    const [tramiteId, sesion, datos, esperado] = corregirDatosDeControl.mock.calls[0];
+    expect([tramiteId, sesion.usuarioId]).toEqual([7, 9]);
+    expect(datos).toEqual({ titulo: "Inducción general", codigo: "CEX-FO-01", tipoDocumentoId: 3 });
+    expect(esperado).toEqual({ etapa: "elaboracion", ronda: 2 });
+    expect(await corregirDatosTramiteAccion(null, formulario({ ...campos, procesoId: "2" }))).toMatchObject({ ok: false });
+    expect(corregirDatosDeControl).toHaveBeenCalledTimes(1);
+  });
+
+  it("un error de negocio de la corrección vuelve al formulario", async () => {
+    corregirDatosDeControl.mockRejectedValue(new ErrorTramite("Ese código ya existe. El siguiente disponible es CEX-FO-02"));
+    expect(await corregirDatosTramiteAccion(null, formulario({ ...enElaboracion, codigo: "CEX-FO-01" })))
+      .toMatchObject({ ok: false, error: expect.stringMatching(/siguiente disponible/), valores: { codigo: "CEX-FO-01" } });
+  });
+
+  it("sin tramites.gestionar no llega al dominio", async () => {
+    requerirSesion.mockResolvedValue({ ...admin, rol: "lider_proceso" });
+    const campos = { ...enElaboracion, motivo: "Se pidió por error.", venceEn: "2026-12-01", titulo: "Otro título" };
+    expect(await cancelarTramiteAccion(null, formulario(campos))).toMatchObject({ ok: false, error: "Sin permiso para esta acción" });
+    expect(await reasignarTramiteAccion(null, formulario(campos))).toMatchObject({ ok: false, error: "Sin permiso para esta acción" });
+    expect(await corregirDatosTramiteAccion(null, formulario(campos))).toMatchObject({ ok: false, error: "Sin permiso para esta acción" });
+    expect(transicionar).not.toHaveBeenCalled();
+    expect(corregirDatosDeControl).not.toHaveBeenCalled();
   });
 });
 

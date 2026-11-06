@@ -7,6 +7,7 @@ import {
   ETIQUETA_ETAPA,
   ETIQUETA_TIPO_SOLICITUD,
   esEtapaDeTrabajo,
+  textoResponsables,
   type Etapa,
   type TipoSolicitud,
 } from "@/lib/tramites/tipos";
@@ -42,11 +43,6 @@ export function InsigniaPlazo({ vence, ahora }: { vence: Date | null; ahora: Dat
   if (estado === "vence_hoy") return <Insignia variante="atencion">Hoy</Insignia>;
   if (estado === "a_tiempo") return <Insignia variante="bien">{`En ${dias} ${unidad}`}</Insignia>;
   return <Insignia variante="critico">{`Vencido hace ${dias} ${unidad}`}</Insignia>;
-}
-
-function textoResponsables(nombres: string[]): string {
-  if (nombres.length === 0) return "—";
-  return nombres.length === 1 ? nombres[0] : `${nombres[0]} y ${nombres.length - 1} más`;
 }
 
 function Numero({ tramite }: { tramite: ResumenTramite }) {

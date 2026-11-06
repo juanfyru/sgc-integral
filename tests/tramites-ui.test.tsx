@@ -5,6 +5,8 @@ vi.mock("@/app/acciones-tramites", () => ({
   aceptarSolicitudAccion: vi.fn(),
   aprobarAccion: vi.fn(),
   aprobarYPublicarAccion: vi.fn(),
+  cancelarTramiteAccion: vi.fn(),
+  corregirDatosTramiteAccion: vi.fn(),
   crearSolicitudAccion: vi.fn(),
   darVistoBuenoAccion: vi.fn(),
   cerrarObservacionAccion: vi.fn(),
@@ -20,11 +22,13 @@ vi.mock("@/app/acciones-tramites", () => ({
   negarEliminacionAccion: vi.fn(),
   negarVistoBuenoAccion: vi.fn(),
   publicarTramiteAccion: vi.fn(),
+  reasignarTramiteAccion: vi.fn(),
   rechazarSolicitudAccion: vi.fn(),
   retirarSolicitudAccion: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
+import { AccionesGestion, candidatosDe, type TramiteParaGestionar } from "@/componentes/tramites/AccionesGestion";
 import { AccionesSolicitud } from "@/componentes/tramites/AccionesSolicitud";
 import { BloqueSolicitud } from "@/componentes/tramites/BloqueSolicitud";
 import { DialogoFirma, FormularioFirma } from "@/componentes/tramites/DialogoFirma";
@@ -46,6 +50,7 @@ import type {
   CatalogoClasificacion,
   ContextoAceptacion,
   DatosParaAceptar,
+  DatosParaGestionar,
   DetalleTramite,
   ResumenTramite,
 } from "@/db/consultas/tramites";
@@ -56,8 +61,10 @@ import {
   EsquemaAceptarEliminacion,
   EsquemaAceptarModificacion,
   EsquemaControlCambios,
+  EsquemaCorreccionDatos,
   EsquemaFirma,
   EsquemaMotivoCierre,
+  EsquemaReasignar,
   EsquemaSolicitud,
 } from "@/lib/esquemas/tramites";
 import type { Etapa } from "@/lib/tramites/tipos";
@@ -107,6 +114,7 @@ const detalle: DetalleTramite = {
   elaborador: "Ana Pérez",
   revisor: "Luis Díaz",
   aprobador: "Luis Díaz",
+  responsables: ["Luis Díaz"],
   acciones: [],
   eventos: [
     { tipo: "solicitar", persona: "Ana Pérez", ronda: 0, detalle: {}, creadoEn: new Date("2026-11-03T14:12:00Z") },
@@ -179,6 +187,9 @@ describe("TablaTramites", () => {
   it("varios responsables se resumen", () => {
     expect(pintar({ responsables: ["A", "B", "C"] })).toContain("A y 2 más");
   });
+  it("el responsable desactivado se ve como tal", () => {
+    expect(pintar({ responsables: ["Ana Pérez (inactivo)"] })).toContain("Ana Pérez (inactivo)");
+  });
 });
 
 describe("página del trámite", () => {
@@ -209,6 +220,53 @@ describe("página del trámite", () => {
     const h = renderToStaticMarkup(<HistorialTramite tipo="modificar" eventos={[evento]} />);
     expect(h).toContain("Concepto: Cumple &lt;b&gt;todo&lt;/b&gt;.");
   });
+  it("el encabezado nombra al responsable del paso y marca al inactivo", () => {
+    const h = renderToStaticMarkup(<EncabezadoTramite tramite={{ ...detalle, responsables: ["Ana Pérez (inactivo)"] }} ahora={ahora} />);
+    expect(h).toContain("Responsable: Ana Pérez (inactivo)");
+    expect(renderToStaticMarkup(<EncabezadoTramite tramite={{ ...detalle, etapa: "cancelado", responsables: [] }} ahora={ahora} />)).not.toContain("Responsable");
+  });
+  it("una reasignación o una corrección no cuentan como entrada a la etapa", () => {
+    const entrada = { tipo: "concepto_favorable", persona: "Rosa", ronda: 2, detalle: {}, creadoEn: new Date("2026-11-03T14:00:00Z") };
+    const base = { ...detalle, etapa: "aprobacion" as const, ronda: 2, venceEn: new Date("2026-11-08T04:59:59.999Z"), eventos: [entrada] };
+    const dia = (eventos: DetalleTramite["eventos"]) => renderToStaticMarkup(<EncabezadoTramite tramite={{ ...base, eventos }} ahora={ahora} />).match(/día \d+ de \d+/)?.[0];
+    const sinCambio = dia([entrada]);
+    expect(sinCambio).toBeDefined();
+    const despues = new Date("2026-11-05T14:00:00Z");
+    expect(dia([entrada, { tipo: "reasignar", persona: "Ana", ronda: 2, detalle: {}, creadoEn: despues }])).toBe(sinCambio);
+    expect(dia([entrada, { tipo: "corregir_datos", persona: "Ana", ronda: 2, detalle: {}, creadoEn: despues }])).toBe(sinCambio);
+  });
+  it("HistorialTramite cuenta la reasignación con quién sale, quién entra y el motivo", () => {
+    const reasignar = {
+      tipo: "reasignar",
+      persona: "Ana",
+      ronda: 1,
+      detalle: { papel: "elaborador", de: { id: 1, nombre: "Luis <b>Díaz</b>" }, a: { id: 2, nombre: "Rosa Gil" }, venceEn: "2026-12-01", motivo: "Cambió de área." },
+      creadoEn: ahora,
+    };
+    const h = renderToStaticMarkup(<HistorialTramite tipo="modificar" eventos={[reasignar]} />);
+    expect(h).toContain("Ana reasignó un responsable");
+    expect(h).toContain("Quien elabora: Luis &lt;b&gt;Díaz&lt;/b&gt; → Rosa Gil");
+    expect(h).toContain("Nueva fecha límite: 2026-12-01");
+    expect(h).toContain("Motivo: Cambió de área.");
+  });
+  it("una reasignación de solo la fecha lo dice así", () => {
+    const evento = { tipo: "reasignar", persona: "Ana", ronda: 1, detalle: { papel: null, de: null, a: null, venceEn: "2026-12-01", motivo: "Más plazo." }, creadoEn: ahora };
+    const h = renderToStaticMarkup(<HistorialTramite tipo="modificar" eventos={[evento]} />);
+    expect(h).toContain("Ana cambió la fecha límite");
+    expect(h).not.toContain("→");
+  });
+  it("HistorialTramite cuenta la corrección con el antes y el después", () => {
+    const evento = {
+      tipo: "corregir_datos",
+      persona: "Ana",
+      ronda: 1,
+      detalle: { antes: { titulo: "Viejo", codigo: "CEX-FO-01", tipo: "Formato" }, despues: { titulo: "Nuevo", codigo: "CEX-RG-01", tipo: "Registro" } },
+      creadoEn: ahora,
+    };
+    const h = renderToStaticMarkup(<HistorialTramite tipo="crear" eventos={[evento]} />);
+    expect(h).toContain("Ana corrigió los datos del documento");
+    for (const linea of ["Título: Viejo → Nuevo", "Código: CEX-FO-01 → CEX-RG-01", "Tipo: Formato → Registro"]) expect(h).toContain(linea);
+  });
   it("AccionesSolicitud pinta solo las acciones permitidas, con etapa y ronda ocultas", () => {
     const con = (acciones: DetalleTramite["acciones"]) =>
       renderToStaticMarkup(<AccionesSolicitud tramite={{ id: 7, etapa: "visto_bueno", ronda: 0 }} acciones={acciones} />);
@@ -222,6 +280,65 @@ describe("página del trámite", () => {
     const solicitante = con(["retirar"]);
     expect(solicitante).toContain("Retirar la solicitud");
     expect(solicitante).not.toContain("Dar visto bueno");
+  });
+});
+
+describe("AccionesGestion", () => {
+  const usuarios: DatosParaGestionar["usuarios"] = [
+    { id: 1, nombre: "Ana", cargo: null, rol: "consulta" },
+    { id: 2, nombre: "Beto", cargo: null, rol: "lider_proceso" },
+    { id: 3, nombre: "Carla", cargo: null, rol: "admin_sgc" },
+    { id: 4, nombre: "Dora", cargo: null, rol: "admin_sgc" },
+    { id: 5, nombre: "Elena", cargo: null, rol: "gerencia" },
+    { id: 6, nombre: "Fabio", cargo: null, rol: "lider_proceso" },
+  ];
+  const datos: DatosParaGestionar = { usuarios, autoridad: "operativo", rolOriginador: "consulta", tipos: [{ id: 1, nombre: "Formato" }] };
+  const tramite: TramiteParaGestionar = {
+    id: 7,
+    etapa: "elaboracion",
+    ronda: 1,
+    tipo: "crear",
+    codigo: "CEX-FO-01",
+    titulo: "Formato nuevo",
+    tipoDocumentoId: 1,
+    solicitanteId: 2,
+    elaboradorId: 1,
+    revisorId: 2,
+    aprobadorId: 3,
+    elaborador: "Ana",
+    revisor: "Beto",
+    aprobador: "Carla",
+  };
+  const pintar = (parcial: Partial<TramiteParaGestionar> = {}) =>
+    renderToStaticMarkup(<AccionesGestion tramite={{ ...tramite, ...parcial }} datos={datos} hoy="2026-11-05" />);
+  const ids = (lista: { id: number }[]) => lista.map((u) => u.id);
+
+  it("en elaboración y revisión ofrece corregir, reasignar y cancelar", () => {
+    for (const etapa of ["elaboracion", "revision"] as const) {
+      const h = pintar({ etapa });
+      for (const boton of ["Corregir datos del documento", "Reasignar", "Cancelar el trámite"]) expect(h).toContain(boton);
+    }
+  });
+  it("desde la aprobación los datos quedan fijos: no se ofrece corregir", () => {
+    for (const etapa of ["aprobacion", "publicacion", "aceptacion", "visto_bueno"] as const) {
+      const h = pintar({ etapa });
+      expect(h).not.toContain("Corregir datos");
+      expect(h).toContain("Reasignar");
+      expect(h).toContain("Cancelar el trámite");
+    }
+  });
+  it("los candidatos respetan la separación y excluyen a quien ya tiene el papel", () => {
+    expect(ids(candidatosDe("elaborador", tramite, datos))).toEqual([4, 5, 6]);
+    expect(ids(candidatosDe("revisor", tramite, datos))).toEqual([3, 4, 6]);
+    expect(ids(candidatosDe("aprobador", tramite, datos))).toEqual([4]);
+  });
+  it("un originador admin_sgc o un tipo estratégico piden Gerencia", () => {
+    expect(ids(candidatosDe("aprobador", tramite, { ...datos, rolOriginador: "admin_sgc" }))).toEqual([5]);
+    expect(ids(candidatosDe("aprobador", tramite, { ...datos, autoridad: "estrategico" }))).toEqual([5]);
+  });
+  it("en una eliminación el originador es quien pidió", () => {
+    const eliminar = { ...tramite, tipo: "eliminar" as const, solicitanteId: 4, elaboradorId: null, revisorId: null };
+    expect(ids(candidatosDe("aprobador", eliminar, { ...datos, rolOriginador: "lider_proceso" }))).toEqual([]);
   });
 });
 
@@ -703,6 +820,23 @@ describe("aprobación y publicación", () => {
     const evento = { tipo: "publicar", persona: "Ana", ronda: 0, detalle: {}, creadoEn: ahora };
     expect(renderToStaticMarkup(<HistorialTramite tipo="eliminar" eventos={[evento]} />)).toContain("Ana ejecutó la eliminación, con clave");
     expect(renderToStaticMarkup(<HistorialTramite tipo="modificar" eventos={[evento]} />)).toContain("Ana publicó, con clave");
+  });
+});
+
+describe("esquemas de gestión", () => {
+  it("EsquemaReasignar admite solo fecha o solo persona, y nada fuera de lista", () => {
+    expect(EsquemaReasignar.parse({ venceEn: "2026-12-01", motivo: "  Más plazo.  " })).toEqual({ venceEn: "2026-12-01", motivo: "Más plazo." });
+    expect(EsquemaReasignar.parse({ papel: "revisor", usuarioId: "4", motivo: "Cambió de área." })).toEqual({ papel: "revisor", usuarioId: 4, motivo: "Cambió de área." });
+    expect(EsquemaReasignar.safeParse({ papel: "solicitante", usuarioId: "4", motivo: "Cambió de área." }).success).toBe(false);
+    expect(EsquemaReasignar.safeParse({ venceEn: "01/12/2026", motivo: "Más plazo." }).success).toBe(false);
+    expect(EsquemaReasignar.safeParse({ venceEn: "2026-12-01", motivo: "no" }).success).toBe(false);
+    expect(EsquemaReasignar.safeParse({ venceEn: "2026-12-01", motivo: "Más plazo.", sobra: "x" }).success).toBe(false);
+  });
+  it("EsquemaCorreccionDatos normaliza y no admite otros campos", () => {
+    expect(EsquemaCorreccionDatos.parse({ titulo: " Otro ", codigo: " cex-fo-01 ", tipoDocumentoId: "2" })).toEqual({ titulo: "Otro", codigo: "CEX-FO-01", tipoDocumentoId: 2 });
+    expect(EsquemaCorreccionDatos.parse({ titulo: "Otro" })).toEqual({ titulo: "Otro" });
+    expect(EsquemaCorreccionDatos.safeParse({ titulo: "xx" }).success).toBe(false);
+    expect(EsquemaCorreccionDatos.safeParse({ titulo: "Otro", procesoId: "2" }).success).toBe(false);
   });
 });
 

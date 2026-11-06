@@ -1,4 +1,6 @@
-import type { SesionValida } from "./sesion";
+import type { Cliente } from "@/db/cliente";
+import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
+import { listarTramites, type ResumenTramite } from "@/db/consultas/tramites";
 
 export type Tarea = {
   id: string; // "<fuente>:<id>", estable
@@ -9,10 +11,37 @@ export type Tarea = {
   enlace: string; // ruta interna
 };
 
-export async function misTareas(
-  sesion: Pick<SesionValida, "usuarioId" | "rol">,
-): Promise<Tarea[]> {
-  void sesion;
-  // La Fase 13 añade las fuentes (flujo documental, indicadores, planes).
-  return [];
+export function tituloDeTarea(t: ResumenTramite): string {
+  const codigo = t.codigo ?? t.numero;
+  const documento = t.versionNumero === null ? codigo : `${codigo} v${t.versionNumero}`;
+  const elimina = t.tipo === "eliminar";
+  switch (t.etapa) {
+    case "visto_bueno":
+      return `Dar el visto bueno a ${t.numero}`;
+    case "aceptacion":
+      return `Aceptar ${t.numero}`;
+    case "elaboracion":
+      return `${t.ronda > 1 ? "Ajustar" : "Elaborar"} ${documento}`;
+    case "revision":
+      return `Revisar ${documento}`;
+    case "aprobacion":
+      return elimina ? `Aprobar la eliminación de ${codigo}` : `Aprobar ${documento}`;
+    case "publicacion":
+      return elimina ? `Eliminar ${codigo}` : `Publicar ${documento}`;
+    default:
+      return t.numero;
+  }
+}
+
+/** Los pasos que le tocan a la persona: la pestaña «Por hacer» de la bandeja, con otra forma (spec 13A §14.1). */
+export async function misTareas(sesion: SesionFlujo, opciones?: { sql?: Cliente }): Promise<Tarea[]> {
+  const tramites = await listarTramites(sesion, "por_hacer", opciones);
+  return tramites.map((t) => ({
+    id: `tramite:${t.id}`,
+    modulo: "documentos",
+    titulo: tituloDeTarea(t),
+    detalle: t.titulo,
+    vence: t.venceEn,
+    enlace: `/tramites/${t.id}`,
+  }));
 }

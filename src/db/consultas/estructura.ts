@@ -1,4 +1,4 @@
-import { obtenerSql } from "@/db/cliente";
+import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { traducirUnico } from "@/db/consultas/mapa-admin";
 
@@ -213,8 +213,9 @@ export async function alternarCargo(id: number, activo: boolean, actorId: number
 /** Jefe inmediato activo si existe; si no, usuarios activos con el cargo superior. */
 export async function supervisoresDe(
   usuarioId: number,
+  opciones?: { sql?: Cliente },
 ): Promise<Array<{ id: number; nombre: string; cargo: string | null }>> {
-  const sql = obtenerSql();
+  const sql = opciones?.sql ?? obtenerSql();
   const [u] = await sql`SELECT jefe_inmediato_id, cargo_id FROM usuarios WHERE id = ${usuarioId}`;
   if (!u) return [];
   if (u.jefe_inmediato_id !== null) {

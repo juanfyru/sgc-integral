@@ -34,19 +34,27 @@ type Designados = Pick<DatosAceptarModificacion, "elaboradorId" | "revisorId" | 
 type DatosNuevo = DatosAceptarCreacion &
   Required<Pick<DatosAceptarCreacion, "tipoDocumentoId" | "titulo" | "nivelAcceso" | "codigo">>;
 
-/** Aplica las reglas de separación y devuelve, para la evidencia, a cada designado con su nombre. */
-async function exigirDesignacion(
+/**
+ * Aplica las reglas de separación y devuelve, para la evidencia, a cada designado con su nombre.
+ * `entra` es para un trámite ya aceptado: solo a esa persona (a nadie, si es null) se le exige
+ * estar activa. A quien ya estaba se le cuentan rol y separación; si se le pidiera estar activa,
+ * dos designados desactivados se bloquearían entre sí y el trámite no tendría salida.
+ */
+export async function exigirDesignacion(
   tx: TransactionSql,
   tramite: FilaTramite,
   tipo: TipoSolicitud,
   autoridad: Autoridad,
-  ids: Partial<Designados> & Pick<Designados, "aprobadorId">,
+  ids: Partial<Designados>,
+  entra?: number | null,
 ) {
   const buscados = [tramite.solicitanteId, ids.elaboradorId, ids.revisorId, ids.aprobadorId].filter((i) => i !== undefined);
   const filas = await tx`SELECT id, nombre, rol, activo FROM usuarios WHERE id = ANY(${buscados})`;
   const persona = (id: number | undefined) => {
     const f = filas.find((u) => Number(u.id) === id);
-    return f ? { id: Number(f.id), nombre: f.nombre as string, rol: f.rol, activo: f.activo as boolean } : null;
+    if (!f) return null;
+    const exigeActivo = entra === undefined || entra === id;
+    return { id: Number(f.id), nombre: f.nombre as string, rol: f.rol, activo: (f.activo as boolean) || !exigeActivo };
   };
   const solicitante = persona(tramite.solicitanteId);
   const elaborador = persona(ids.elaboradorId);
@@ -60,10 +68,25 @@ async function exigirDesignacion(
   return { elaborador: evidencia(elaborador), revisor: evidencia(revisor), aprobador: evidencia(aprobador) };
 }
 
-function plazoDeElaboracion(fecha: string, ahora: Date): Date {
+/** Una fecha yyyy-mm-dd de la zona de la instalación vence al final de ese día. `que` nombra el plazo en el error. */
+export function plazoHasta(fecha: string, ahora: Date, que: string): Date {
   const venceEn = finDeFecha(fecha, zonaHoraria());
-  if (venceEn < ahora) throw new ErrorTramite("La fecha límite de elaboración no puede ser anterior a hoy");
+  if (venceEn < ahora) throw new ErrorTramite(`${que} no puede ser anterior a hoy`);
   return venceEn;
+}
+
+const plazoDeElaboracion = (fecha: string, ahora: Date) => plazoHasta(fecha, ahora, "La fecha límite de elaboración");
+
+type DestinoDeCodigo = { procesoId: number; tipoDocumentoId: number };
+
+export async function exigirFormatoDeCodigo(tx: TransactionSql, codigo: string, destino: DestinoDeCodigo): Promise<void> {
+  if ((await obtenerPatronCodigo({ sql: tx })).test(codigo)) return;
+  const ejemplo = await sugerirCodigo(destino, { sql: tx });
+  throw new ErrorTramite(`El código no cumple el formato configurado${ejemplo ? ` (ej. ${ejemplo})` : ""}`);
+}
+
+export function errorDeCodigoRepetido(siguiente: string | null): ErrorTramite {
+  return new ErrorTramite(siguiente ? `Ese código ya existe. El siguiente disponible es ${siguiente}` : "Ese código ya existe");
 }
 
 /** El paso va primero: si quien pidió también elabora, recibe el aviso que le dice qué hacer. */
@@ -206,9 +229,7 @@ async function crearConCodigoLibre(
     } catch (err) {
       if ((err as { constraint_name?: string }).constraint_name !== "documentos_codigo_unique") throw err;
       const siguiente = await sugerirCodigo({ procesoId, tipoDocumentoId: d.tipoDocumentoId }, { sql: tx });
-      if (!siguiente) throw new ErrorTramite("Ese código ya existe");
-      if (!esElSugerido || intento === REINTENTOS_DE_CODIGO)
-        throw new ErrorTramite(`Ese código ya existe. El siguiente disponible es ${siguiente}`);
+      if (!siguiente || !esElSugerido || intento === REINTENTOS_DE_CODIGO) throw errorDeCodigoRepetido(siguiente);
       codigo = siguiente;
     }
   }
@@ -222,10 +243,7 @@ async function aceptarNuevo(c: ContextoManejador): Promise<Efecto> {
   const propietario = await propietarioElegido(tx, d.asociaciones.find((a) => a.esPrincipal));
   const responsables = await exigirDesignacion(tx, tramite, "crear", tipo.autoridad, d);
   const venceEn = plazoDeElaboracion(d.venceElaboracion, ahora);
-  if (!(await obtenerPatronCodigo({ sql: tx })).test(d.codigo)) {
-    const ejemplo = await sugerirCodigo({ procesoId: propietario.procesoId, tipoDocumentoId: d.tipoDocumentoId }, { sql: tx });
-    throw new ErrorTramite(`El código no cumple el formato configurado${ejemplo ? ` (ej. ${ejemplo})` : ""}`);
-  }
+  await exigirFormatoDeCodigo(tx, d.codigo, { procesoId: propietario.procesoId, tipoDocumentoId: d.tipoDocumentoId });
 
   const parecidos = await parecidosVistos(tx, tramite);
   const { documentoId, versionId, codigo } = await crearConCodigoLibre(tx, d, propietario.procesoId, sesion.usuarioId);

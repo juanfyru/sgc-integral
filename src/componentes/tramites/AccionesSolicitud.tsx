@@ -75,31 +75,34 @@ export function AccionEnDialogo({
         className="m-auto w-full max-w-md rounded-lg border border-border bg-card p-0 text-foreground shadow-xl backdrop:bg-black/40"
       >
         {/* El relleno va en este hijo: un clic sobre el propio <dialog> es un clic en el fondo y lo cierra. */}
-        <form action={enviar} className="flex flex-col gap-4 p-5">
-          <Ocultos tramite={tramite} />
-          <p className="text-sm text-muted-foreground">{texto}</p>
-          {pideMotivo ? (
-            <Campo etiqueta="Motivo" nombre="motivo" ayuda="Entre 5 y 1000 caracteres. Lo verá quien pidió.">
-              <textarea
-                required
-                minLength={5}
-                maxLength={1000}
-                rows={4}
-                defaultValue={typeof motivo === "string" ? motivo : ""}
-                className={claseControl}
-              />
-            </Campo>
-          ) : null}
-          <ErrorAccion estado={estado} />
-          <div className="flex flex-wrap justify-end gap-2">
-            <Boton variante="secundario" onClick={() => setAbierto(false)}>
-              Volver
-            </Boton>
-            <Boton type="submit" variante="peligro" pendiente={pendiente}>
-              {pendiente ? "Procesando…" : confirmar}
-            </Boton>
-          </div>
-        </form>
+        {/* Solo abierto: dos diálogos con motivo en una página no repiten el id del campo. */}
+        {abierto ? (
+          <form action={enviar} className="flex flex-col gap-4 p-5">
+            <Ocultos tramite={tramite} />
+            <p className="text-sm text-muted-foreground">{texto}</p>
+            {pideMotivo ? (
+              <Campo etiqueta="Motivo" nombre="motivo" ayuda="Entre 5 y 1000 caracteres. Lo verá quien pidió.">
+                <textarea
+                  required
+                  minLength={5}
+                  maxLength={1000}
+                  rows={4}
+                  defaultValue={typeof motivo === "string" ? motivo : ""}
+                  className={claseControl}
+                />
+              </Campo>
+            ) : null}
+            <ErrorAccion estado={estado} />
+            <div className="flex flex-wrap justify-end gap-2">
+              <Boton variante="secundario" onClick={() => setAbierto(false)}>
+                Volver
+              </Boton>
+              <Boton type="submit" variante="peligro" pendiente={pendiente}>
+                {pendiente ? "Procesando…" : confirmar}
+              </Boton>
+            </div>
+          </form>
+        ) : null}
       </Dialogo>
     </>
   );

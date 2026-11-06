@@ -6,6 +6,7 @@ import {
   ETIQUETA_MOTIVO,
   ETIQUETA_TIPO_SOLICITUD,
   esEtapaDeTrabajo,
+  textoResponsables,
   type Etapa,
 } from "@/lib/tramites/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -18,11 +19,14 @@ const VARIANTE_FINAL: Partial<Record<Etapa, VarianteInsignia>> = {
   cancelado: "sin-dato",
 };
 
+/** Lo que queda en el historial sin mover el trámite de etapa. */
+const EVENTOS_SIN_CAMBIO_DE_ETAPA = ["reasignar", "corregir_datos"];
+
 /** «día 2 de 5» de la etapa en curso; la entrada a la etapa es el último evento que la cambió. */
 function diaDeEtapa(t: DetalleTramite, ahora: Date): string | null {
   if (!t.venceEn || !esEtapaDeTrabajo(t.etapa)) return null;
   const zona = zonaHoraria();
-  const entrada = t.eventos.filter((e) => e.tipo !== "reasignar").at(-1)?.creadoEn ?? t.creadoEn;
+  const entrada = t.eventos.filter((e) => !EVENTOS_SIN_CAMBIO_DE_ETAPA.includes(e.tipo)).at(-1)?.creadoEn ?? t.creadoEn;
   const total = Math.max(estadoPlazo(t.venceEn, entrada, zona).dias, 1);
   const { estado, dias } = estadoPlazo(t.venceEn, ahora, zona);
   const dia = estado === "a_tiempo" ? total - dias : estado === "vence_hoy" ? total : total + dias;
@@ -35,6 +39,7 @@ export function EncabezadoTramite({ tramite: t, ahora }: { tramite: DetalleTrami
     `Solicitud ${t.numero}`,
     ETIQUETA_TIPO_SOLICITUD[t.tipo],
     `Motivo: ${ETIQUETA_MOTIVO[t.motivo].toLowerCase()}`,
+    t.responsables.length > 0 ? `Responsable: ${textoResponsables(t.responsables)}` : null,
   ]
     .filter(Boolean)
     .join(" · ");

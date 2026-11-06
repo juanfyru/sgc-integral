@@ -52,6 +52,9 @@ describe("describirEvento", () => {
     expect(evento("tramite_crear_observacion", { numero: "SOL-2026-014", codigo: "GTH-PR-02", observacion: 3 })).toBe("Escribió una observación en la solicitud SOL-2026-014 sobre GTH-PR-02 (observación 3)");
     expect(evento("tramite_guardar_lista", { numero: "SOL-2026-014", codigo: "GTH-PR-02", respondidos: 8 })).toBe("Guardó la lista de verificación de la solicitud SOL-2026-014 sobre GTH-PR-02");
     expect(evento("tramite_publicar", { numero: "SOL-2026-014", codigo: "GTH-PR-02" })).toBe("Publicó el resultado de la solicitud SOL-2026-014 sobre GTH-PR-02");
+    expect(evento("tramite_cancelar", { numero: "SOL-2026-014", codigo: "GTH-PR-02" })).toBe("Canceló la solicitud SOL-2026-014 sobre GTH-PR-02");
+    expect(evento("tramite_reasignar", { numero: "SOL-2026-014", codigo: "GTH-PR-02" })).toBe("Reasignó la solicitud SOL-2026-014 sobre GTH-PR-02");
+    expect(evento("tramite_corregir_datos", { numero: "SOL-2026-014", codigo: "GTH-PR-02" })).toBe("Corrigió los datos del documento de la solicitud SOL-2026-014 sobre GTH-PR-02");
   });
 
   it("una acción de trámite que aún no se conoce sigue siendo inteligible", () => {
