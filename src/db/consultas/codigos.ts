@@ -1,6 +1,6 @@
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
-import { codigoSiguiente, patronDeConfiguracion } from "@/lib/tramites/codigo";
+import { codigoSiguiente, consecutivoDe, motivoDeSiglas, patronDeConfiguracion, validarFormato } from "@/lib/tramites/codigo";
 import { ErrorTramite } from "./flujo/contrato";
 
 /** La acción de la bitácora con que el panel corrige los datos de control: guarda `antes` y `despues`. */
@@ -64,26 +64,41 @@ export async function obtenerPatronCodigo(opciones?: { sql?: Cliente }): Promise
   return patronDeConfiguracion(valor("formato_codigo"), valor("patron_codigo"));
 }
 
-/** El siguiente código de ese proceso y tipo; null si no hay un `formato_codigo` válido. */
-export async function sugerirCodigo(
-  p: { procesoId: number; tipoDocumentoId: number },
-  opciones?: { sql?: Cliente },
-): Promise<string | null> {
-  const sql = opciones?.sql ?? obtenerSql();
-  const { formatoCodigo } = await obtenerConfigDocumental({ sql });
+export type DestinoDeCodigo = { procesoId: number; tipoDocumentoId: number };
+
+/** La sigla del proceso propietario (en un subproceso, la de su proceso) y la del tipo; null si falta alguna. */
+async function siglasDe(sql: Cliente, p: DestinoDeCodigo): Promise<{ proceso: string; tipo: string } | null> {
   const [siglas] = await sql`SELECT
       (SELECT sigla FROM procesos WHERE id = ${p.procesoId}) AS proceso,
       (SELECT sigla FROM tipos_documento WHERE id = ${p.tipoDocumentoId}) AS tipo`;
-  if (!siglas.proceso || !siglas.tipo) return null;
-  return codigoSiguiente(formatoCodigo, await todosLosCodigos({ sql }), { proceso: siglas.proceso, tipo: siglas.tipo });
+  return siglas.proceso && siglas.tipo ? { proceso: siglas.proceso, tipo: siglas.tipo } : null;
 }
 
-export type DestinoDeCodigo = { procesoId: number; tipoDocumentoId: number };
+/** El siguiente código de ese proceso y tipo; null si no hay un `formato_codigo` válido. */
+export async function sugerirCodigo(p: DestinoDeCodigo, opciones?: { sql?: Cliente }): Promise<string | null> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const { formatoCodigo } = await obtenerConfigDocumental({ sql });
+  const siglas = await siglasDe(sql, p);
+  if (!siglas) return null;
+  return codigoSiguiente(formatoCodigo, await todosLosCodigos({ sql }), siglas);
+}
 
 export async function exigirFormatoDeCodigo(sql: Cliente, codigo: string, destino: DestinoDeCodigo): Promise<void> {
   if ((await obtenerPatronCodigo({ sql })).test(codigo)) return;
   const ejemplo = await sugerirCodigo(destino, { sql });
   throw new ErrorTramite(`El código no cumple el formato configurado${ejemplo ? ` (ej. ${ejemplo})` : ""}`);
+}
+
+/**
+ * El código de un documento que nace en un trámite lleva las siglas de su proceso y su tipo: es su
+ * identidad (spec 13A §8.4 y §8.6, R32). Sin un formato válido solo aplica `exigirFormatoDeCodigo`,
+ * y la carga directa del panel no pasa por aquí: esos documentos ya existen y llegan con su código.
+ */
+export async function exigirSiglasDelCodigo(sql: Cliente, codigo: string, destino: DestinoDeCodigo): Promise<void> {
+  const { formatoCodigo: formato } = await obtenerConfigDocumental({ sql });
+  if (!formato || validarFormato(formato) !== null) return;
+  const siglas = await siglasDe(sql, destino);
+  if (siglas && consecutivoDe(formato, codigo, siglas) === null) throw new ErrorTramite(motivoDeSiglas(formato, siglas));
 }
 
 export function errorDeCodigoRepetido(siguiente: string | null): ErrorTramite {

@@ -4,6 +4,7 @@ import {
   codigoSiguiente,
   consecutivoDe,
   generarCodigo,
+  motivoDeSiglas,
   patronDeConfiguracion,
   patronDesdeFormato,
   siguienteConsecutivo,
@@ -23,6 +24,13 @@ describe("formato del código", () => {
     const p = patronDesdeFormato(F);
     expect(["SGC-FO-02", "GTH-PR-100", "ZZ-TST-001"].every((c) => p.test(c))).toBe(true);
     expect(["SGC-FO-2", "sgc-fo-02", "SGC-FO-02 ", "SGCXX-FO-02"].some((c) => p.test(c))).toBe(false);
+  });
+  it("dice con qué debe empezar un código, o da un ejemplo si el consecutivo va antes de las siglas", () => {
+    const p = { proceso: "CEX", tipo: "FO" };
+    expect(motivoDeSiglas(F, p)).toBe("El código debe empezar por CEX-FO-");
+    expect(motivoDeSiglas("HNSF-{TIPO}-{PROCESO}-{NNN}", p)).toBe("El código debe empezar por HNSF-FO-CEX-");
+    expect(motivoDeSiglas("{NN}-{PROCESO}-{TIPO}", p)).toBe("El código debe tener la forma 01-CEX-FO");
+    expect(motivoDeSiglas("{PROCESO}-{NN}-{TIPO}", p)).toBe("El código debe tener la forma CEX-01-FO");
   });
   it("genera y lee consecutivos", () => {
     expect(generarCodigo(F, { proceso: "SGC", tipo: "FO", consecutivo: 2 })).toBe("SGC-FO-02");

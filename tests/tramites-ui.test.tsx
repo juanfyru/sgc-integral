@@ -504,9 +504,9 @@ describe("PanelAceptacion", () => {
     const f = "HNSF-{PROCESO}{TIPO}-{NNN}";
     expect(ayudaDelCodigo({ formato: f, sugerido: "HNSF-CEXFO-002", editado: false })).toBe(`Sugerido: el siguiente consecutivo, con el formato ${f}.`);
     const editado = ayudaDelCodigo({ formato: f, sugerido: "HNSF-CEXFO-002", editado: true });
-    expect(editado).toBe(`Formato: ${f}. Vacíe el campo para volver a HNSF-CEXFO-002.`);
+    expect(editado).toBe(`Debe llevar las siglas del proceso y del tipo. Formato: ${f}. Vacíe el campo para volver a HNSF-CEXFO-002.`);
     expect(editado).not.toContain("Sugerido");
-    expect(ayudaDelCodigo({ formato: f, sugerido: null, editado: false })).toBe(`Formato: ${f}.`);
+    expect(ayudaDelCodigo({ formato: f, sugerido: null, editado: false })).toBe(`Debe llevar las siglas del proceso y del tipo. Formato: ${f}.`);
     expect(ayudaDelCodigo({ formato: null, sugerido: null, editado: true })).toBe("No hay un formato de código configurado: escríbalo.");
   });
 

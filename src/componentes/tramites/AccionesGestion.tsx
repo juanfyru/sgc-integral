@@ -259,7 +259,7 @@ function FormularioCorreccion({
               ))}
             </select>
           </Campo>
-          <Campo etiqueta="Código" nombre="codigo" ayuda="Debe cumplir el formato configurado y no repetirse. Si cambia el proceso o el tipo, revíselo.">
+          <Campo etiqueta="Código" nombre="codigo" ayuda="Debe llevar las siglas del proceso y del tipo, cumplir el formato configurado y no repetirse. Si corrige el proceso o el tipo, corrija también el código.">
             <input required maxLength={40} defaultValue={tramite.codigo ?? ""} className={`${anchoCompleto} font-mono`} />
           </Campo>
           <Campo etiqueta="Tipo de documento" nombre="tipoDocumentoId">

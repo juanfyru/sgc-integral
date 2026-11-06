@@ -128,6 +128,18 @@ export function consecutivoDe(
   return coincidencia ? Number(coincidencia[1]) : null;
 }
 
+/**
+ * Qué le falta a un código que no lleva las siglas de su proceso y su tipo. Si el consecutivo va
+ * antes que alguna de las dos, no hay un inicio que nombrar y se muestra un ejemplo.
+ */
+export function motivoDeSiglas(formato: string, p: { proceso: string; tipo: string }): string {
+  const inicio = formato.slice(0, formato.search(/\{NNN?\}/));
+  if (!inicio.includes("{PROCESO}") || !inicio.includes("{TIPO}")) {
+    return `El código debe tener la forma ${generarCodigo(formato, { ...p, consecutivo: 1 })}`;
+  }
+  return `El código debe empezar por ${inicio.replace("{PROCESO}", p.proceso).replace("{TIPO}", p.tipo)}`;
+}
+
 /** El código que sigue para ese proceso y tipo; null sin formato válido. */
 export function codigoSiguiente(
   formato: string | null,

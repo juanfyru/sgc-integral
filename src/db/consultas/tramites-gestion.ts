@@ -7,7 +7,13 @@
 import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
-import { codigoAbandonado, errorDeCodigoRepetido, exigirFormatoDeCodigo, sugerirCodigo } from "@/db/consultas/codigos";
+import {
+  codigoAbandonado,
+  errorDeCodigoRepetido,
+  exigirFormatoDeCodigo,
+  exigirSiglasDelCodigo,
+  sugerirCodigo,
+} from "@/db/consultas/codigos";
 import { rotuloDeTramite, tipoDeDocumento, tramiteVisto } from "@/db/consultas/tramites";
 import { enviarAvisos, registrarEvento } from "@/db/consultas/tramites-flujo";
 import type { DatosCorreccion } from "@/lib/esquemas/tramites";
@@ -109,10 +115,10 @@ async function corregirCreacion(tx: TransactionSql, tramite: FilaTramite, datos:
 
   const tipoNuevo = tipoId === null ? null : await exigirTipo(tx, tramite, tipoId, aprobadorId);
   const destino = { procesoId: propietario?.procesoId ?? tramite.procesoId, tipoDocumentoId: tipoId ?? Number(documento.tipo_id) };
-  if (codigo !== null) {
-    await exigirFormatoDeCodigo(tx, codigo, destino);
-    if (await codigoAbandonado(codigo, tramite.id, { sql: tx })) throw errorDeCodigoRepetido(await sugerirCodigo(destino, { sql: tx }));
-  }
+  if (codigo !== null) await exigirFormatoDeCodigo(tx, codigo, destino);
+  // Corregir el tipo o el propietario también puede dejar el código sin sus siglas: se cambian juntos.
+  if (codigo !== null || tipoId !== null || propietario !== null) await exigirSiglasDelCodigo(tx, codigo ?? documento.codigo, destino);
+  if (codigo !== null && (await codigoAbandonado(codigo, tramite.id, { sql: tx }))) throw errorDeCodigoRepetido(await sugerirCodigo(destino, { sql: tx }));
 
   const repetido = await tx
     .savepoint((s) => s`UPDATE documentos SET

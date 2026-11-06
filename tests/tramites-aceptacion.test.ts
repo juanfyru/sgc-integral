@@ -93,7 +93,7 @@ describe("aceptar una creación", () => {
 
     await transicionar(admin, { tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
       datos: aceptarCreacion({
-        codigo: "GTH-FO-77", titulo: "Título corregido al aceptar", descripcion: "Para qué sirve.", palabrasClave: "uno, dos",
+        codigo: "GTH-ZP-77", titulo: "Título corregido al aceptar", descripcion: "Para qué sirve.", palabrasClave: "uno, dos",
         asociaciones: [{ subprocesoId: sub.id, esPrincipal: true }, { procesoId: otroProceso.id, esPrincipal: false }],
         relacionados: [relacionado], nivelAcceso: "restringido",
         elaboradorId: liderCex.usuarioId, revisorId: admin.usuarioId, aprobadorId: admin.usuarioId,
@@ -115,7 +115,7 @@ describe("aceptar una creación", () => {
     const [e] = await tx`SELECT detalle FROM tramite_eventos WHERE tramite_id = ${tramiteId} AND tipo = 'aceptar'`;
     expect(e.detalle).toMatchObject({
       decision: "nuevo",
-      codigo: "GTH-FO-77",
+      codigo: "GTH-ZP-77",
       version: 1,
       plantilla: { codigo: plantilla.codigo, version: 1 },
       clasificacion: {
@@ -187,13 +187,15 @@ describe("aceptar una creación", () => {
 
     it("reintenta hasta tres veces; después se rinde con el error", () => revertida(sql, async (tx) => {
       const { admin, liderCex, tramiteId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "ZP", titulo: "Formato sin suerte" });
+      await tx`INSERT INTO documentos (codigo, titulo, tipo_id)
+        SELECT c, 'Ocupado', id FROM tipos_documento, unnest(ARRAY['CEX-ZP-01', 'CEX-ZP-02']) AS c WHERE sigla = 'ZP'`;
       const sugerir = vi.mocked(sugerirCodigo);
       sugerir.mockClear();
-      sugerir.mockResolvedValue("GTH-PR-01");                            // siempre uno ocupado
+      sugerir.mockResolvedValue("CEX-ZP-01");                            // siempre uno ocupado
       try {
         await expect(transicionar(admin, { tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
-          datos: aceptarCreacion({ codigo: "GTH-PR-02", codigoSugerido: "GTH-PR-02", elaboradorId: liderCex.usuarioId, revisorId: admin.usuarioId, aprobadorId: admin.usuarioId }) }, opc(tx)))
-          .rejects.toThrow("Ese código ya existe. El siguiente disponible es GTH-PR-01");
+          datos: aceptarCreacion({ codigo: "CEX-ZP-02", codigoSugerido: "CEX-ZP-02", elaboradorId: liderCex.usuarioId, revisorId: admin.usuarioId, aprobadorId: admin.usuarioId }) }, opc(tx)))
+          .rejects.toThrow("Ese código ya existe. El siguiente disponible es CEX-ZP-01");
         expect(sugerir).toHaveBeenCalledTimes(4);                        // el intento inicial y tres más
       } finally {
         sugerir.mockReset();
@@ -218,9 +220,46 @@ describe("aceptar una creación", () => {
     const intento = (codigo: string) => transicionar(admin, { tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
       datos: aceptarCreacion({ codigo, elaboradorId: liderCex.usuarioId, revisorId: admin.usuarioId, aprobadorId: admin.usuarioId }) }, opc(tx));
     await expect(tx.savepoint(() => intento("CEX-01"))).rejects.toThrow("El código no cumple el formato configurado (ej. CEX-ZP-01)");
-    await expect(tx.savepoint(() => intento("GTH-PR-01"))).rejects.toThrow("Ese código ya existe");
+    // Una carga heredada pudo dejar ese código en otro proceso: sigue ocupado.
+    const [{ id: heredado }] = await tx`INSERT INTO documentos (codigo, titulo, tipo_id)
+      SELECT 'CEX-ZP-50', 'Heredado', id FROM tipos_documento WHERE sigla = 'ZP' RETURNING id`;
+    await tx`INSERT INTO documento_proceso (documento_id, proceso_id, es_principal)
+      SELECT ${heredado}, id, true FROM procesos WHERE sigla = 'GTH'`;
+    await expect(tx.savepoint(() => intento("CEX-ZP-50"))).rejects.toThrow("Ese código ya existe");
     await expect(intento("CEX-ZP-01")).resolves.toEqual({ etapa: "elaboracion", ronda: 1 });
   }));
+
+  describe("el código lleva las siglas de su proceso y su tipo (R32)", () => {
+    const aceptando = async (tx: TransactionSql, codigo: string, parcial: Record<string, unknown> = {}) => {
+      const { admin, liderCex, tramiteId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "ZP", titulo: "Formato con siglas" });
+      return transicionar(admin, { tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
+        datos: aceptarCreacion({ codigo, elaboradorId: liderCex.usuarioId, revisorId: admin.usuarioId, aprobadorId: admin.usuarioId, ...parcial }) }, opc(tx));
+    };
+
+    it("un código de otro proceso se rechaza, aunque cumpla el formato y esté libre", () => revertida(sql, async (tx) => {
+      await expect(aceptando(tx, "GTH-ZP-77")).rejects.toThrow("El código debe empezar por CEX-ZP-");
+    }));
+
+    it("un código de otro tipo se rechaza", () => revertida(sql, async (tx) => {
+      await expect(aceptando(tx, "CEX-PR-55")).rejects.toThrow("El código debe empezar por CEX-ZP-");
+    }));
+
+    it("vale el propietario y el tipo que se eligen al aceptar, no los que traía la solicitud", () => revertida(sql, async (tx) => {
+      const [pr] = await tx`SELECT id FROM tipos_documento WHERE sigla = 'PR'`;
+      await expect(aceptando(tx, "CEX-PR-55", { tipoDocumentoId: Number(pr.id) })).resolves.toEqual({ etapa: "elaboracion", ronda: 1 });
+    }));
+
+    it("en un subproceso, la sigla es la de su proceso", () => revertida(sql, async (tx) => {
+      const [sub] = await tx`SELECT s.id FROM subprocesos s JOIN procesos p ON p.id = s.proceso_id WHERE p.sigla = 'GTH' ORDER BY s.orden LIMIT 1`;
+      await expect(aceptando(tx, "GTH-ZP-40", { asociaciones: [{ subprocesoId: Number(sub.id), esPrincipal: true }] }))
+        .resolves.toEqual({ etapa: "elaboracion", ronda: 1 });
+    }));
+
+    it("sin formato guardado solo aplica el patrón heredado", () => revertida(sql, async (tx) => {
+      await tx`DELETE FROM configuracion WHERE clave = 'formato_codigo'`;
+      await expect(aceptando(tx, "GTH-ZP-77")).resolves.toEqual({ etapa: "elaboracion", ronda: 1 });
+    }));
+  });
 
   it("la fecha límite es de hoy en adelante, en la zona de la instalación", () => revertida(sql, async (tx) => {
     const { admin, liderCex, tramiteId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "ZP", titulo: "Formato con fecha" });

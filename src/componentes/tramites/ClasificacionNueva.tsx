@@ -19,7 +19,7 @@ function ListaDeCasillas({ titulo, children }: { titulo: string; children: React
 export function ayudaDelCodigo(p: { formato: string | null; sugerido: string | null; editado: boolean }): string {
   if (!p.formato) return "No hay un formato de código configurado: escríbalo.";
   if (p.sugerido && !p.editado) return `Sugerido: el siguiente consecutivo, con el formato ${p.formato}.`;
-  return `Formato: ${p.formato}.${p.sugerido ? ` Vacíe el campo para volver a ${p.sugerido}.` : ""}`;
+  return `Debe llevar las siglas del proceso y del tipo. Formato: ${p.formato}.${p.sugerido ? ` Vacíe el campo para volver a ${p.sugerido}.` : ""}`;
 }
 
 export function ClasificacionNueva({

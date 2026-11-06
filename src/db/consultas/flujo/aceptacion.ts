@@ -1,7 +1,13 @@
 /** Manejadores de la aceptación: duplicidad, clasificación, código y responsables (spec 13A §8.3). */
 import type { TransactionSql } from "postgres";
 import { crearDocumentoEn, crearVersionBorradorEn, type AsociacionEntrada } from "@/db/consultas/admin";
-import { codigoAbandonado, errorDeCodigoRepetido, exigirFormatoDeCodigo, sugerirCodigo } from "@/db/consultas/codigos";
+import {
+  codigoAbandonado,
+  errorDeCodigoRepetido,
+  exigirFormatoDeCodigo,
+  exigirSiglasDelCodigo,
+  sugerirCodigo,
+} from "@/db/consultas/codigos";
 import { buscarParecidos } from "@/db/consultas/parecidos";
 import {
   ETAPAS_ABIERTAS,
@@ -238,7 +244,9 @@ async function aceptarNuevo(c: ContextoManejador): Promise<Efecto> {
   const propietario = await propietarioElegido(tx, d.asociaciones.find((a) => a.esPrincipal));
   const responsables = await exigirDesignacion(tx, tramite, "crear", tipo.autoridad, d);
   const venceEn = plazoDeElaboracion(d.venceElaboracion, ahora);
-  await exigirFormatoDeCodigo(tx, d.codigo, { procesoId: propietario.procesoId, tipoDocumentoId: d.tipoDocumentoId });
+  const destino = { procesoId: propietario.procesoId, tipoDocumentoId: d.tipoDocumentoId };
+  await exigirFormatoDeCodigo(tx, d.codigo, destino);
+  await exigirSiglasDelCodigo(tx, d.codigo, destino);
 
   const parecidos = await parecidosVistos(tx, tramite);
   const { documentoId, versionId, codigo } = await crearConCodigoLibre(tx, d, propietario.procesoId, sesion.usuarioId, tramite.id);
