@@ -6,6 +6,7 @@ import type { EstadoAccion } from "@/app/admin/comun";
 import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import { Dialogo } from "@/componentes/ui/Dialogo";
+import { useTituloAlDesaparecer } from "@/componentes/ui/foco";
 import type { Accion } from "@/lib/tramites/transiciones";
 import type { Etapa } from "@/lib/tramites/tipos";
 
@@ -62,6 +63,8 @@ export function AccionEnDialogo({
   const [abierto, setAbierto] = useState(false);
   const [estado, enviar, pendiente] = useActionState(accion, null);
   const motivo = estado?.valores?.motivo;
+  // Cerrar o devolver el trámite se lleva el botón que abrió el diálogo, y con él el foco.
+  useTituloAlDesaparecer(abierto);
 
   return (
     <>

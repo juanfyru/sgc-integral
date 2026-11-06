@@ -6,6 +6,7 @@ import { ErrorAccion } from "@/componentes/tramites/AccionesSolicitud";
 import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import { Dialogo } from "@/componentes/ui/Dialogo";
+import { useTituloAlDesaparecer } from "@/componentes/ui/foco";
 import { huellaAbreviada } from "@/lib/tramites/tipos";
 
 type Props = {
@@ -112,25 +113,11 @@ export function FormularioFirma({
   );
 }
 
-/** La firma suele llevarse el botón que abrió el diálogo, y con él el foco: lo recibe el título de la página. */
-function enfocarTitulo() {
-  if (document.activeElement && document.activeElement !== document.body) return;
-  document.querySelector<HTMLElement>('h1[tabindex="-1"]')?.focus();
-}
-
 /** Las acciones que firman: muestran qué se firma y piden la clave en el mismo envío (spec 13A §10.2). */
 export function DialogoFirma(props: Props) {
   const [abierto, setAbierto] = useState(false);
-  const abiertoAlDesmontar = useRef(false);
-  useEffect(() => {
-    abiertoAlDesmontar.current = abierto;
-  }, [abierto]);
-  useEffect(
-    () => () => {
-      if (abiertoAlDesmontar.current) enfocarTitulo();
-    },
-    [],
-  );
+  // La firma suele llevarse el botón que abrió el diálogo, y con él el foco.
+  useTituloAlDesaparecer(abierto);
   return (
     <>
       <Boton onClick={() => setAbierto(true)} aria-haspopup="dialog">

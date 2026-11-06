@@ -206,6 +206,7 @@ export default async function PaginaDocumentoAdmin({
       <EncabezadoPagina
         codigo={documento.codigo}
         titulo={documento.titulo}
+        tituloEnfocable
         descripcion={`${documento.tipoNombre} · Aplica en: ${documento.asociaciones
           .map((a) => (a.esPrincipal ? `${a.nombre} (propietario)` : a.nombre))
           .join(" · ")}`}

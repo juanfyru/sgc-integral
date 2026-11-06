@@ -4,20 +4,44 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Boton } from "@/componentes/ui/Boton";
 import { Dialogo } from "@/componentes/ui/Dialogo";
+import { useTituloAlDesaparecer } from "@/componentes/ui/foco";
+
+const NO_SE_PUDO = "No se pudo quitar el archivo. Intente de nuevo.";
+
+/** null si se quitó; si no, el mensaje para la persona. Sin red, o con una respuesta que no es JSON, tampoco lanza. */
+export async function pedirQuitar(direccion: string): Promise<string | null> {
+  try {
+    const res = await fetch(direccion, { method: "DELETE" });
+    return res.ok ? null : ((await res.json()).error ?? NO_SE_PUDO);
+  } catch {
+    return NO_SE_PUDO;
+  }
+}
 
 export function EliminarArchivo({ direccion, nombre }: { direccion: string; nombre: string }) {
   const router = useRouter();
   const [abierto, setAbierto] = useState(false);
   const [pendiente, setPendiente] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [quitado, setQuitado] = useState(false);
+  // La fila del archivo se va cuando llega la página nueva, y con ella este botón y el foco.
+  useTituloAlDesaparecer(quitado);
+
   async function eliminar() {
     setPendiente(true);
-    const res = await fetch(direccion, { method: "DELETE" });
-    setPendiente(false);
-    setAbierto(false);
-    if (res.ok) router.refresh();
-    else setError((await res.json()).error ?? "No se pudo eliminar");
+    try {
+      const fallo = await pedirQuitar(direccion);
+      setError(fallo);
+      if (fallo === null) {
+        setQuitado(true);
+        router.refresh();
+      }
+    } finally {
+      setPendiente(false);
+      setAbierto(false);
+    }
   }
+
   return (
     <div className="flex items-center gap-2">
       <button
