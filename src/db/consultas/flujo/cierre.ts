@@ -112,7 +112,9 @@ const validarPublicar: Validador = async ({ sql, tramite }) => {
   await nombreDeEntidadParaActa(sql);
   if (tramite.tipo !== "eliminar") return exigirLoAprobado(sql, tramite, ["elaboro", "reviso", "aprobo"]);
   await exigirVersionVigente(sql, tramite);
-  laFirma(await firmasDeLaRonda(sql, tramite), "aprobo");
+  const aprobo = laFirma(await firmasDeLaRonda(sql, tramite), "aprobo");
+  const [principal] = await sql`SELECT hash_sha256 FROM archivos WHERE version_id = ${tramite.versionId} AND rol = 'principal'`;
+  if (principal?.hash_sha256 !== aprobo.hashSha256) throw new ErrorTramite("El archivo cambió después de la firma de quien aprobó");
 };
 
 /** La firma `aprobo` se escribe en esta misma transición: todavía no se exige. */

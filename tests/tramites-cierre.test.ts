@@ -504,6 +504,12 @@ describe("eliminación", () => {
     await fallaSinGastarLaFirma(tx, t.admin, publicar(t), "La versión de este trámite ya no está vigente");
   }));
 
+  it("no se ejecuta si el principal de la vigente no es el que se aprobó retirar: no gasta la firma", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "publicacion", { tipo: "eliminar" });
+    await tx`UPDATE archivos SET hash_sha256 = ${"f".repeat(64)} WHERE version_id = ${t.versionId} AND rol = 'principal'`;
+    await fallaSinGastarLaFirma(tx, t.admin, publicar(t), "El archivo cambió después de la firma de quien aprobó");
+  }));
+
   it("la eliminación solo anula la versión que se aprobó retirar", () => revertida(sql, async (tx) => {
     const t = await tramiteEn(tx, "publicacion", { tipo: "eliminar" });
     // Otra versión pasó a ser la vigente (y la del trámite quedó obsoleta) sin que el trámite lo supiera.
