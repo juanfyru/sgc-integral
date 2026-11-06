@@ -161,55 +161,62 @@ describe("revisarVencimientos", () => {
     expect(await correrEn(tx)("2026-12-30T15:00:00Z")).toEqual({ avisados: 0, escalados: 0 });
   }));
 
-  describe("entre conexiones", () => {
-    const ahora = new Date("2030-06-01T15:00:00Z");
+  it("lo que otra pasada ya avisó no se repite: las marcas se vuelven a leer con la fila bloqueada", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "elaboracion");
+    await silenciarOtros(tx, t.tramiteId);
+    // La lista inicial ya salió cuando la otra pasada confirma sus marcas.
+    const conOtraPasada = new Proxy(tx, {
+      apply(objetivo, propio, argumentos: [TemplateStringsArray, ...unknown[]]) {
+        const consulta = Reflect.apply(objetivo, propio, argumentos);
+        if (!argumentos[0].join("").includes("SELECT id, vence_en")) return consulta;
+        return consulta.then(async (filas: unknown) => {
+          await tx`UPDATE tramites SET aviso_vencido_en = now(), escalado_en = now() WHERE id = ${t.tramiteId}`;
+          return filas;
+        });
+      },
+    });
+    expect(await revisarVencimientos({ sql: conOtraPasada as unknown as TransactionSql, ahora: new Date("2026-12-30T15:00:00Z") }))
+      .toEqual({ avisados: 0, escalados: 0 });
+  }));
 
-    /** Confirmado, para que otra conexión lo vea. Es un trámite suelto, sin eventos: se puede borrar. */
-    async function conTramiteVencido(fn: (tramiteId: number, liderId: number) => Promise<void>) {
-      const lider = await sesionDe(sql, "lider.cex");
-      const [{ id: procesoId }] = await sql`SELECT id FROM procesos WHERE sigla = 'CEX'`;
-      const consecutivo = Date.now() % 1_000_000;
-      const [{ id }] = await sql`INSERT INTO tramites
-          (numero, anio, consecutivo, tipo, motivo, justificacion, solicitante_id, proceso_id, tipo_documento_id, titulo_propuesto, etapa, ronda, vence_en)
-        SELECT ${`SOL-1999-${consecutivo}`}, 1999, ${consecutivo}, 'crear', 'mejora', 'Prueba de vencimiento.', ${lider.usuarioId}, ${procesoId},
-          t.id, 'Prueba', 'visto_bueno', 0, ${new Date("2030-05-30T15:00:00Z")}
-        FROM tipos_documento t WHERE t.sigla = 'FO'
-        RETURNING id`;
-      const tramiteId = Number(id);
-      try {
-        await fn(tramiteId, lider.usuarioId);
-      } finally {
-        await sql`DELETE FROM notificaciones WHERE entidad = 'tramite' AND entidad_id = ${tramiteId}`;
-        await sql`DELETE FROM tramites WHERE id = ${tramiteId}`;
-      }
-    }
+  it("no espera a un trámite bloqueado y lo revisa en la pasada siguiente", async () => {
+    // Confirmado, para que la otra conexión lo vea. Es un trámite suelto, sin eventos: se puede borrar.
+    const lider = await sesionDe(sql, "lider.cex");
+    const [{ id: procesoId }] = await sql`SELECT id FROM procesos WHERE sigla = 'CEX'`;
+    const consecutivo = Date.now() % 1_000_000;
+    const [{ id }] = await sql`INSERT INTO tramites
+        (numero, anio, consecutivo, tipo, motivo, justificacion, solicitante_id, proceso_id, tipo_documento_id, titulo_propuesto, etapa, ronda, vence_en)
+      SELECT ${`SOL-1999-${consecutivo}`}, 1999, ${consecutivo}, 'crear', 'mejora', 'Prueba de vencimiento.', ${lider.usuarioId}, ${procesoId},
+        t.id, 'Prueba', 'visto_bueno', 0, ${new Date("2030-05-30T15:00:00Z")}
+      FROM tipos_documento t WHERE t.sigla = 'FO'
+      RETURNING id`;
+    const tramiteId = Number(id);
+    // Cada revisión va en su transacción revertida: ni sus avisos ni sus marcas se quedan en la BD.
+    const revisar = () => revertida(sql, async (tx) => {
+      await silenciarOtros(tx, tramiteId);
+      return correrEn(tx)("2030-06-01T15:00:00Z");
+    });
 
-    it("no espera a un trámite bloqueado y lo revisa en la pasada siguiente", () => conTramiteVencido(async (tramiteId) => {
-      let soltar = () => {};
-      const espera = new Promise<void>((r) => { soltar = r; });
-      let avisarBloqueo = () => {};
-      const bloqueado = new Promise<void>((r) => { avisarBloqueo = r; });
-      const transicion = revertida(sql, async (tx) => {
-        await tx`SELECT 1 FROM tramites WHERE id = ${tramiteId} FOR UPDATE`;
-        avisarBloqueo();
-        await espera;
-      });
+    let soltar = () => {};
+    const espera = new Promise<void>((r) => { soltar = r; });
+    let avisarBloqueo = () => {};
+    const bloqueado = new Promise<void>((r) => { avisarBloqueo = r; });
+    const transicion = revertida(sql, async (tx) => {
+      await tx`SELECT 1 FROM tramites WHERE id = ${tramiteId} FOR UPDATE`;
+      avisarBloqueo();
+      await espera;
+    });
+    try {
       await bloqueado;
-      try {
-        expect(await revisarVencimientos({ ahora })).toEqual({ avisados: 0, escalados: 0 });
-      } finally {
-        soltar();
-      }
+      expect(await revisar()).toEqual({ avisados: 0, escalados: 0 });
+      soltar();
       await transicion;
-      expect((await revisarVencimientos({ ahora })).avisados).toBe(1);
-    }));
-
-    it("dos revisiones a la vez no avisan dos veces", () => conTramiteVencido(async (tramiteId, liderId) => {
-      const [a, b] = await Promise.all([revisarVencimientos({ ahora }), revisarVencimientos({ ahora })]);
-      expect(a.avisados + b.avisados).toBe(1);
-      const avisos = await sql`SELECT 1 FROM notificaciones WHERE usuario_id = ${liderId} AND tipo = 'tramite.vencido' AND entidad_id = ${tramiteId}`;
-      expect(avisos).toHaveLength(1);
-    }));
+      expect((await revisar()).avisados).toBe(1);
+    } finally {
+      soltar();
+      await transicion;
+      await sql`DELETE FROM tramites WHERE id = ${tramiteId}`;
+    }
   });
 });
 

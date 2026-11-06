@@ -38,12 +38,14 @@ const COLUMNA_DEL_PAPEL = { elaborador: "elaboradorId", revisor: "revisorId", ap
 
 const VERBO_DEL_PAPEL: Record<Papel, string> = { elaborador: "elaborar", revisor: "revisar", aprobador: "aprobar" };
 
+type Persona = { id: number; nombre: string };
+
 async function cambioDeResponsable(
   tx: TransactionSql,
   tramite: FilaTramite,
   papel: Papel | undefined,
   usuarioId: number,
-): Promise<{ de: { id: number; nombre: string } | null; a: unknown; cambios: Efecto["cambios"]; avisos: Aviso[] }> {
+): Promise<{ de: Persona | null; a: Persona | null; cambios: Efecto["cambios"]; avisos: Aviso[] }> {
   if (!papel) throw new ErrorTramite("Elija el papel");
   // Un valor fuera de la lista (el solicitante, por ejemplo) tampoco está entre los reasignables.
   if (!papelesReasignables(tramite.etapa).includes(papel)) throw new ErrorTramite("Ese papel no se puede reasignar en esta etapa");

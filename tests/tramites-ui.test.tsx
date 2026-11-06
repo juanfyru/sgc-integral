@@ -28,7 +28,7 @@ vi.mock("@/app/acciones-tramites", () => ({
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
-import { AccionesGestion, candidatosDe, type TramiteParaGestionar } from "@/componentes/tramites/AccionesGestion";
+import { AccionesGestion, candidatosDe, efectoDeCancelar, type TramiteParaGestionar } from "@/componentes/tramites/AccionesGestion";
 import { AccionesSolicitud } from "@/componentes/tramites/AccionesSolicitud";
 import { BloqueSolicitud } from "@/componentes/tramites/BloqueSolicitud";
 import { DialogoFirma, FormularioFirma } from "@/componentes/tramites/DialogoFirma";
@@ -326,6 +326,12 @@ describe("AccionesGestion", () => {
       expect(h).toContain("Reasignar");
       expect(h).toContain("Cancelar el trámite");
     }
+  });
+  it("cancelar dice qué pasa con la versión según la solicitud", () => {
+    expect(efectoDeCancelar(tramite)).toContain("El código no se reutiliza");
+    expect(efectoDeCancelar({ ...tramite, tipo: "modificar" })).toContain("El documento vigente no cambia");
+    expect(efectoDeCancelar({ ...tramite, tipo: "eliminar" })).toContain("sigue vigente");
+    expect(efectoDeCancelar({ ...tramite, elaboradorId: null })).not.toContain("versión");
   });
   it("los candidatos respetan la separación y excluyen a quien ya tiene el papel", () => {
     expect(ids(candidatosDe("elaborador", tramite, datos))).toEqual([4, 5, 6]);

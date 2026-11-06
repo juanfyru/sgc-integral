@@ -12,12 +12,10 @@ import { rotuloDeTramite, tipoDeDocumento, tramiteVisto } from "@/db/consultas/t
 import { registrarEvento } from "@/db/consultas/tramites-flujo";
 import type { DatosCorreccion } from "@/lib/esquemas/tramites";
 import { puede } from "@/lib/permisos";
-import type { Etapa } from "@/lib/tramites/tipos";
+import { ETAPAS_CON_CORRECCION } from "@/lib/tramites/tipos";
 import { errorDeCodigoRepetido, exigirDesignacion, exigirFormatoDeCodigo } from "./flujo/aceptacion";
 import { CAMBIO_MIENTRAS, ErrorTramite, enTransaccion, type FilaTramite, type SesionFlujo } from "./flujo/contrato";
 import type { Esperado } from "./revision";
-
-const ETAPAS_CORREGIBLES: readonly Etapa[] = ["elaboracion", "revision"];
 
 /** Solo lo que cambió, para la evidencia. null si nada cambió. */
 type Correccion = { antes: Record<string, unknown>; despues: Record<string, unknown> } | null;
@@ -106,7 +104,7 @@ export async function corregirDatosDeControl(
     if (!visto?.visible) throw new ErrorTramite("El trámite no existe");
     const { tramite } = visto;
     if (tramite.etapa !== esperado.etapa || tramite.ronda !== esperado.ronda) throw new ErrorTramite(CAMBIO_MIENTRAS);
-    if (!ETAPAS_CORREGIBLES.includes(tramite.etapa)) throw new ErrorTramite("Desde la aprobación los datos del documento quedan fijos");
+    if (!ETAPAS_CON_CORRECCION.includes(tramite.etapa)) throw new ErrorTramite("Desde la aprobación los datos del documento quedan fijos");
 
     const correccion =
       tramite.tipo === "crear" ? await corregirCreacion(tx, tramite, datos, ahora) : await corregirModificacion(tx, tramite, datos, ahora);

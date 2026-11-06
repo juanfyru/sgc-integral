@@ -22,6 +22,9 @@ export const ETAPAS_FINALES = ["publicado", "eliminado", "rechazado", "cancelado
 export type EtapaTrabajo = (typeof ETAPAS_TRABAJO)[number];
 export type Etapa = EtapaTrabajo | (typeof ETAPAS_FINALES)[number];
 
+/** Hasta aquí se corrigen los datos de control; desde la aprobación quedan fijos (spec 13A §8.6). */
+export const ETAPAS_CON_CORRECCION: readonly Etapa[] = ["elaboracion", "revision"];
+
 export function esEtapaDeTrabajo(e: Etapa): e is EtapaTrabajo {
   return (ETAPAS_TRABAJO as readonly string[]).includes(e);
 }

@@ -15,7 +15,7 @@ import {
   rolAprobador,
   type Papel,
 } from "@/lib/tramites/separacion";
-import type { Etapa } from "@/lib/tramites/tipos";
+import { ETAPAS_CON_CORRECCION } from "@/lib/tramites/tipos";
 import { AccionEnDialogo, ErrorAccion, Ocultos } from "./AccionesSolicitud";
 import { anchoCompleto } from "./PiezasAceptacion";
 
@@ -38,8 +38,6 @@ export type TramiteParaGestionar = Pick<
 >;
 
 type AccionServidor = (estado: EstadoAccion, formData: FormData) => Promise<EstadoAccion>;
-
-const ETAPAS_CON_CORRECCION: readonly Etapa[] = ["elaboracion", "revision"];
 
 /** Sin un rechazo del servidor, el diálogo se cierra. Enviar desde una transición conserva lo escrito si rechaza. */
 function useEnvio(accion: AccionServidor, cerrar: () => void) {
@@ -98,8 +96,6 @@ export function candidatosDe(papel: Papel, t: TramiteParaGestionar, d: DatosPara
   return candidatosAprobador(d.usuarios, rolAprobador(d.autoridad, d.rolOriginador), originadorId).filter((u) => u.id !== t.aprobadorId);
 }
 
-const NOMBRE_ACTUAL = { elaborador: "elaborador", revisor: "revisor", aprobador: "aprobador" } as const;
-
 function FormularioReasignar({
   tramite,
   datos,
@@ -114,7 +110,7 @@ function FormularioReasignar({
   const { estado, enviar, pendiente, alEnviar } = useEnvio(reasignarTramiteAccion, cerrar);
   const papeles = papelesReasignables(tramite.etapa);
   const [papel, setPapel] = useState<Papel | "">("");
-  const actual = papel ? tramite[NOMBRE_ACTUAL[papel]] : null;
+  const actual = papel ? tramite[papel] : null;
   return (
     <form action={enviar} onSubmit={alEnviar} className="flex flex-col gap-4 p-5">
       <Ocultos tramite={tramite} />
@@ -208,6 +204,14 @@ function FormularioCorreccion({
   );
 }
 
+/** Dice qué pasa con la versión: según la solicitud, no hay ninguna o es la vigente. */
+export function efectoDeCancelar(t: TramiteParaGestionar): string {
+  if (t.tipo === "eliminar") return "La solicitud se cierra y el documento sigue vigente. Queda en el historial.";
+  if (t.elaboradorId === null) return "La solicitud se cierra. Queda en el historial.";
+  const consecuencia = t.tipo === "crear" ? "El código no se reutiliza." : "El documento vigente no cambia.";
+  return `La solicitud se cierra y la versión en trámite se descarta; sus archivos se conservan. ${consecuencia}`;
+}
+
 /** Lo que hace quien gestiona con un trámite abierto, sea quien sea el responsable del paso. */
 export function AccionesGestion({
   tramite,
@@ -218,10 +222,6 @@ export function AccionesGestion({
   datos: DatosParaGestionar;
   hoy: string;
 }) {
-  const textoCancelar =
-    tramite.tipo === "eliminar"
-      ? "La solicitud se cierra y el documento sigue vigente. Queda en el historial."
-      : "La solicitud se cierra. La versión en trámite se descarta; sus archivos se conservan y el documento vigente no cambia.";
   return (
     <section aria-label="Gestión del trámite" className="flex flex-wrap items-start justify-end gap-2">
       {ETAPAS_CON_CORRECCION.includes(tramite.etapa) ? (
@@ -236,7 +236,7 @@ export function AccionesGestion({
         tramite={tramite}
         accion={cancelarTramiteAccion}
         etiqueta="Cancelar el trámite"
-        texto={textoCancelar}
+        texto={efectoDeCancelar(tramite)}
         confirmar="Cancelar el trámite"
         pideMotivo
       />
