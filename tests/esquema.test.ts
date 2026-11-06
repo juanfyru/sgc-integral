@@ -163,7 +163,7 @@ describe("búsqueda en español (FTS + trigramas + unaccent)", () => {
 describe("estados del seed (datos de demostración)", () => {
   // Por nombre y no por conteo: la BD de desarrollo es también la de las pruebas manuales,
   // y un área o cargo creado al probar no debe romper esta verificación de la semilla.
-  it("la demo trae sus cinco áreas, sus nueve cargos y cinco usuarios de ejemplo con sus roles", async () => {
+  it("la demo trae sus cinco áreas, sus nueve cargos y seis usuarios de ejemplo con sus roles", async () => {
     const AREAS_DEMO = ["Gerencia", "Subgerencia Científica", "Subgerencia Administrativa", "Oficina de Calidad", "Control Interno"];
     const areas = await sql`SELECT nombre FROM areas WHERE nombre = ANY(${AREAS_DEMO})`;
     expect(areas.map((a) => a.nombre).sort()).toEqual([...AREAS_DEMO].sort());
@@ -182,10 +182,11 @@ describe("estados del seed (datos de demostración)", () => {
       WHERE a.nombre = ANY(${AREAS_DEMO}) AND c.nombre = ANY(${CARGOS_DEMO.map(([, c]) => c)})`;
     const comoTexto = (pares: string[][]) => pares.map(([a, c]) => `${a} > ${c}`).sort();
     expect(comoTexto(cargos.map((c) => [c.area, c.nombre]))).toEqual(comoTexto(CARGOS_DEMO));
-    const usuarios = await sql`SELECT usuario, rol FROM usuarios WHERE usuario IN ('gerente','control.interno','lider.gth','lider.cex','consulta') ORDER BY usuario`;
+    const usuarios = await sql`SELECT usuario, rol FROM usuarios WHERE usuario IN ('coordinadora.sgc','gerente','control.interno','lider.gth','lider.cex','consulta') ORDER BY usuario`;
     expect(usuarios.map((u) => ({ usuario: u.usuario, rol: u.rol }))).toEqual([
       { usuario: "consulta", rol: "consulta" },
       { usuario: "control.interno", rol: "control_interno" },
+      { usuario: "coordinadora.sgc", rol: "admin_sgc" },
       { usuario: "gerente", rol: "gerencia" },
       { usuario: "lider.cex", rol: "lider_proceso" },
       { usuario: "lider.gth", rol: "lider_proceso" },
@@ -194,15 +195,17 @@ describe("estados del seed (datos de demostración)", () => {
     expect(gth.sigla).toBe("GTH");
     const [cex] = await sql`SELECT p.sigla FROM usuario_procesos up JOIN procesos p ON p.id = up.proceso_id JOIN usuarios u ON u.id = up.usuario_id WHERE u.usuario = 'lider.cex'`;
     expect(cex.sigla).toBe("CEX");
+    const [coordinadora] = await sql`SELECT u.nombre, c.nombre AS cargo FROM usuarios u JOIN cargos c ON c.id = u.cargo_id WHERE u.usuario = 'coordinadora.sgc'`;
+    expect(coordinadora).toEqual({ nombre: "María Fernanda Perdomo", cargo: "Líder de Calidad" });
   });
 
   it("la clave demo cumple la política de claves y los usuarios demo la verifican", async () => {
     const { CLAVE_DEMO } = await import("../src/db/semillas/demo");
     const { validarClave } = await import("@/lib/clave-politica");
     const { verificarClave } = await import("@/lib/clave");
-    const nombres = ["gerente", "control.interno", "lider.gth", "lider.cex", "consulta"];
+    const nombres = ["coordinadora.sgc", "gerente", "control.interno", "lider.gth", "lider.cex", "consulta"];
     const filas = await sql`SELECT usuario, hash_clave, debe_cambiar_clave, acepto_datos_en FROM usuarios WHERE usuario = ANY(${nombres})`;
-    expect(filas).toHaveLength(5);
+    expect(filas).toHaveLength(6);
     for (const f of filas) {
       expect(validarClave(CLAVE_DEMO, { usuario: f.usuario })).toBeNull();
       expect(await verificarClave(f.hash_clave, CLAVE_DEMO)).toBe(true);
@@ -216,13 +219,13 @@ describe("estados del seed (datos de demostración)", () => {
       SELECT estado, count(*)::int AS cantidad
       FROM documento_versiones GROUP BY estado ORDER BY estado`;
     const porEstado = Object.fromEntries(filas.map((f) => [f.estado, f.cantidad]));
-    expect(porEstado["vigente"]).toBe(26);
-    expect(porEstado["obsoleto"]).toBe(1);
-    expect(porEstado["borrador"]).toBe(1);
+    expect(porEstado["vigente"]).toBe(28);
+    expect(porEstado["obsoleto"]).toBe(2);
+    expect(porEstado["borrador"]).toBe(3);
     expect(porEstado["anulado"]).toBe(1);
   });
 
-  it("GTH-CA-01 retiene su versión obsoleta junto a la vigente", async () => {
+  it("GTH-CA-01 retiene sus versiones obsoletas junto a la vigente", async () => {
     const filas = await sql`
       SELECT v.numero, v.estado
       FROM documento_versiones v
@@ -230,7 +233,8 @@ describe("estados del seed (datos de demostración)", () => {
       WHERE d.codigo = 'GTH-CA-01' ORDER BY v.numero`;
     expect(filas).toEqual([
       { numero: 1, estado: "obsoleto" },
-      { numero: 2, estado: "vigente" },
+      { numero: 2, estado: "obsoleto" },
+      { numero: 3, estado: "vigente" },
     ]);
   });
 });
@@ -350,9 +354,9 @@ describe("semilla con la convención del hospital", () => {
     const filas = await sql`SELECT critico FROM lista_verificacion_items ORDER BY orden`;
     expect(filas.map((f) => f.critico)).toEqual([true, true, true, false, false, false, false, false]);
   });
-  it("la demo trae 28 documentos con códigos del hospital y GTH-FO-01 restringido", async () => {
+  it("la demo trae 30 documentos con códigos del hospital y GTH-FO-01 restringido", async () => {
     const [{ n }] = await sql`SELECT count(*)::int AS n FROM documentos`;
-    expect(n).toBe(28);
+    expect(n).toBe(30);
     const [{ malos }] = await sql`SELECT count(*)::int AS malos FROM documentos
       WHERE codigo !~ '^[A-Z]{2,4}-[A-Z]{2,4}-[0-9]{2,}$'`;
     expect(malos).toBe(0);

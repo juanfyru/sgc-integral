@@ -16,15 +16,18 @@ async function main() {
   const { sembrarMinima } = await import("./semillas/minima");
   const { sembrarDemo } = await import("./semillas/demo");
 
-  const cliente = postgres(
-    (process.env.DATABASE_URL_MIGRADOR ?? process.env.DATABASE_URL)!,
-    { max: 1, types: TIPOS_SQL },
-  );
+  const conectar = () =>
+    postgres((process.env.DATABASE_URL_MIGRADOR ?? process.env.DATABASE_URL)!, {
+      max: 1,
+      types: TIPOS_SQL,
+    });
+  const cliente = conectar();
+  const sql = conectar();
   const db = drizzle(cliente);
 
   try {
     if (process.argv.includes("--minima")) await sembrarMinima(db);
-    else await sembrarDemo(db);
+    else await sembrarDemo(db, sql);
 
     const resumen = await db.execute(dsql`
       SELECT
@@ -45,7 +48,7 @@ async function main() {
     `);
     console.log("Semilla completada:", resumen[0]);
   } finally {
-    await cliente.end();
+    await Promise.all([cliente.end(), sql.end()]);
   }
 }
 

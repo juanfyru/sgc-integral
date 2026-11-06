@@ -58,11 +58,11 @@ describe("obtenerArchivoVigente — solo versiones vigentes al público", () => 
     expect(await obtenerArchivoVigente("gth-ca-01", id, ADMIN)).toBeNull();
   });
 
-  it("sí devuelve la versión vigente del mismo documento (GTH-CA-01 v2)", async () => {
-    const id = await idArchivo("GTH-CA-01", 2);
+  it("sí devuelve la versión vigente del mismo documento (GTH-CA-01 v3)", async () => {
+    const id = await idArchivo("GTH-CA-01", 3);
     const archivo = await obtenerArchivoVigente("gth-ca-01", id, ADMIN);
     expect(archivo).not.toBeNull();
-    expect(archivo?.ruta).toContain("/v2/");
+    expect(archivo?.ruta).toContain("/v3/");
   });
 
   it("NO devuelve un archivo si el código del documento no corresponde", async () => {

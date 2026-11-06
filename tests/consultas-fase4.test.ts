@@ -102,7 +102,7 @@ describe("obtenerDocumentosDeProceso", () => {
     expect(acta!.esPrincipal).toBe(false); // su dueño es SGC
     const caracterizacion = docs.find((d) => d.codigo === "GTH-CA-01");
     expect(caracterizacion!.esPrincipal).toBe(true);
-    expect(caracterizacion!.version).toBe(2); // la vigente, no la obsoleta
+    expect(caracterizacion!.version).toBe(3); // la vigente, no las obsoletas
   });
 });
 

@@ -274,7 +274,7 @@ async function comprobar(
   return { tramite, hacia: veredicto.hacia, firmas: veredicto.firmas, sumaRonda: veredicto.sumaRonda, manejador };
 }
 
-function nuevoVencimiento(
+export function nuevoVencimiento(
   previo: FilaTramite,
   cambios: NonNullable<Efecto["cambios"]>,
   etapa: Etapa,

@@ -35,6 +35,24 @@ export async function sesionDe(sql: Cliente, usuario: string): Promise<SesionFlu
 
 let consecutivo = 0;
 
+/**
+ * Crea dentro de la transacción un documento vigente, sin trámites: la demo trae abiertos unos
+ * cuantos de los suyos y a algunos casos no les alcanzan los que quedan libres.
+ */
+export async function documentoLibre(
+  tx: TransactionSql,
+  d: { codigo: string; proceso: string; tipo: string; titulo?: string },
+): Promise<number> {
+  const [{ id }] = await tx`INSERT INTO documentos (codigo, titulo, tipo_id)
+    SELECT ${d.codigo}, ${d.titulo ?? `Documento de prueba ${d.codigo}`}, id FROM tipos_documento WHERE sigla = ${d.tipo}
+    RETURNING id`;
+  await tx`INSERT INTO documento_versiones (documento_id, numero, estado, aprobo, fecha_aprobacion)
+    VALUES (${id}, 1, 'vigente', 'Prueba', '2026-01-01')`;
+  await tx`INSERT INTO documento_proceso (documento_id, proceso_id, es_principal)
+    SELECT ${id}, id, true FROM procesos WHERE sigla = ${d.proceso}`;
+  return Number(id);
+}
+
 /** Crea un usuario activo dentro de la transacción; `procesos` son ids de `procesos`. */
 export async function usuarioDePrueba(
   tx: TransactionSql,
@@ -141,7 +159,7 @@ type Trayecto = {
 
 /**
  * Lleva un trámite hasta `etapa` con las funciones reales. Por defecto, una modificación de
- * GTH-PR-02 pedida por `lider.gth`, que también elabora. Una creación es un formato nuevo de CEX
+ * GTH-PR-01 pedida por `lider.gth`, que también elabora. Una creación es un formato nuevo de CEX
  * pedido por `lider.cex`, y `codigo` es el del documento que nace. Si el trámite ya tiene archivo,
  * el test llama `limpiar` en un `finally`. Quien aprueba por defecto es un `admin_sgc`: un
  * documento estratégico, o uno que elabora un `admin_sgc`, necesita que le pasen `aprobador`.
@@ -169,7 +187,7 @@ export async function tramiteEn(
   const revisor = o.revisor ?? (await usuarioDePrueba(tx, { rol: "lider_proceso" }));
   const aprobador = o.aprobador ?? (await sesionAdmin(tx));
   const pedirSobreDocumento = async () => {
-    const [{ id: documentoId }] = await tx`SELECT id FROM documentos WHERE codigo = ${o.codigo ?? "GTH-PR-02"}`;
+    const [{ id: documentoId }] = await tx`SELECT id FROM documentos WHERE codigo = ${o.codigo ?? "GTH-PR-01"}`;
     // Si pide un administrador, el visto bueno queda pendiente; si pide el líder, queda dado.
     return crearSolicitud(
       etapa === "visto_bueno" ? admin : lider,

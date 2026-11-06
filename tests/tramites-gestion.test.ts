@@ -527,7 +527,7 @@ describe("corregirDatosDeControl", () => {
     const [auditoria] = await tx`SELECT usuario_id, detalle FROM auditoria WHERE accion = 'tramite_corregir_datos' AND entidad_id = ${t.tramiteId}`;
     expect(auditoria).toMatchObject({
       usuario_id: t.admin.usuarioId,
-      detalle: { numero: expect.any(String), codigo: "GTH-PR-02", ronda: 1, antes: { titulo }, despues: { titulo: "Inducción general" } },
+      detalle: { numero: expect.any(String), codigo: "GTH-PR-01", ronda: 1, antes: { titulo }, despues: { titulo: "Inducción general" } },
     });
   }));
 

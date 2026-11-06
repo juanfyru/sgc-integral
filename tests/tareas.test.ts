@@ -65,7 +65,7 @@ describe("misTareas", () => {
       expect(tareas.find((x) => x.enlace === enlaceDe(t.tramiteId))).toEqual({
         id: `tramite:${t.tramiteId}`,
         modulo: "documentos",
-        titulo: `Revisar GTH-PR-02 v${v.numero}`,
+        titulo: `Revisar GTH-PR-01 v${v.numero}`,
         detalle: doc.titulo,
         vence: fila.vence_en,
         enlace: enlaceDe(t.tramiteId),

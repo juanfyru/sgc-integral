@@ -40,7 +40,7 @@ const JUSTIFICACION = "Justificación de prueba.";
 describe("solicitud y visto bueno", () => {
   it("el líder pide sobre su proceso y el visto bueno queda dado", () => revertida(sql, async (tx) => {
     const lider = await sesionDe(tx, "lider.gth");
-    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-02'`;
+    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-01'`;
     const r = await crearSolicitud(lider, { tipo: "modificar", motivo: "mejora", justificacion: "Se añade la inducción por servicio.", documentoId: doc.id }, opc(tx));
     expect(r.numero).toMatch(/^SOL-2026-\d{3,}$/);
     expect(r.etapa).toBe("aceptacion");
@@ -56,7 +56,7 @@ describe("solicitud y visto bueno", () => {
   }));
 
   it("un líder no pide sobre un proceso ajeno, ni dos veces sobre el mismo documento", () => revertida(sql, async (tx) => {
-    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-02'`;
+    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-01'`;
     const datos = { tipo: "modificar", motivo: "mejora", justificacion: JUSTIFICACION, documentoId: doc.id } as const;
     await expect(crearSolicitud(await sesionDe(tx, "lider.cex"), datos, opc(tx))).rejects.toThrow(/procesos que lidera/);
     await crearSolicitud(await sesionDe(tx, "lider.gth"), datos, opc(tx));
@@ -67,7 +67,7 @@ describe("solicitud y visto bueno", () => {
 
   it("si pide el Admin SGC, el líder da o niega el visto bueno", () => revertida(sql, async (tx) => {
     const admin = await sesionAdmin(tx);                                       // crea un admin_sgc dentro de la transacción
-    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-02'`;
+    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-01'`;
     const r = await crearSolicitud(admin, { tipo: "eliminar", motivo: "mejora", justificacion: "Ya no se usa en el proceso.", documentoId: doc.id }, opc(tx));
     expect(r.etapa).toBe("visto_bueno");
     const entrada = { tramiteId: r.tramiteId, accion: "dar_visto_bueno", etapaEsperada: "visto_bueno", rondaEsperada: 0 } as const;
@@ -94,7 +94,7 @@ describe("solicitud y visto bueno", () => {
   it("negar el visto bueno exige motivo, cierra el trámite y avisa al solicitante", () => revertida(sql, async (tx) => {
     const admin = await sesionAdmin(tx);
     const lider = await sesionDe(tx, "lider.gth");
-    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-02'`;
+    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-01'`;
     const r = await crearSolicitud(admin, { tipo: "modificar", motivo: "mejora", justificacion: JUSTIFICACION, documentoId: doc.id }, opc(tx));
     const entrada = { tramiteId: r.tramiteId, accion: "negar_visto_bueno", etapaEsperada: "visto_bueno", rondaEsperada: 0 } as const;
     await expect(transicionar(lider, entrada, opc(tx))).rejects.toThrow(/motivo/);
@@ -115,7 +115,7 @@ describe("solicitud y visto bueno", () => {
   it("dar el visto bueno avisa a cada administrador una vez y a quien actúa ninguna", () => revertida(sql, async (tx) => {
     const admin = await sesionAdmin(tx);
     const lider = await sesionDe(tx, "lider.gth");
-    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-02'`;
+    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-01'`;
     const r = await crearSolicitud(admin, { tipo: "modificar", motivo: "mejora", justificacion: JUSTIFICACION, documentoId: doc.id }, opc(tx));
     const [pedido] = await tx`SELECT count(*)::int AS n FROM notificaciones WHERE entidad = 'tramite' AND entidad_id = ${r.tramiteId}`;
     expect(pedido.n).toBeGreaterThan(0);                                       // los líderes de GTH
@@ -150,7 +150,7 @@ describe("solicitud y visto bueno", () => {
   it("retirar exige ser el solicitante, y un rechazo no escribe nada", () => revertida(sql, async (tx) => {
     const admin = await sesionAdmin(tx);
     const otro = await sesionAdmin(tx);
-    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-02'`;
+    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-01'`;
     const r = await crearSolicitud(admin, { tipo: "modificar", motivo: "mejora", justificacion: JUSTIFICACION, documentoId: doc.id }, opc(tx));
     const entrada = { tramiteId: r.tramiteId, accion: "retirar", etapaEsperada: "visto_bueno", rondaEsperada: 0 } as const;
     await expect(transicionar(otro, entrada, opc(tx))).rejects.toThrow(/persona designada/);
@@ -159,7 +159,7 @@ describe("solicitud y visto bueno", () => {
     await transicionar(admin, entrada, opc(tx));
     const a = await ultimaAuditoria();
     expect(a.accion).toBe("tramite_retirar");
-    expect(a.detalle).toMatchObject({ codigo: "GTH-PR-02", documentoId: doc.id, de: "visto_bueno", hacia: "cancelado", ronda: 0 });
+    expect(a.detalle).toMatchObject({ codigo: "GTH-PR-01", documentoId: doc.id, de: "visto_bueno", hacia: "cancelado", ronda: 0 });
     const lideres = await tx`SELECT n.tipo FROM notificaciones n JOIN usuarios u ON u.id = n.usuario_id
       WHERE n.entidad = 'tramite' AND n.entidad_id = ${r.tramiteId} AND n.tipo = 'tramite.cerrado' AND u.usuario = 'lider.gth'`;
     expect(lideres).toHaveLength(1);
@@ -167,7 +167,7 @@ describe("solicitud y visto bueno", () => {
 
   it("retirar avisa a los líderes de todos los procesos del documento", () => revertida(sql, async (tx) => {
     const admin = await sesionAdmin(tx);
-    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-02'`;
+    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-01'`;
     const [cex] = await tx`SELECT id FROM procesos WHERE sigla = 'CEX'`;
     await tx`INSERT INTO documento_proceso (documento_id, proceso_id, es_principal) VALUES (${doc.id}, ${cex.id}, false)`;
     const r = await crearSolicitud(admin, { tipo: "modificar", motivo: "mejora", justificacion: JUSTIFICACION, documentoId: doc.id }, opc(tx));
@@ -192,7 +192,7 @@ describe("solicitud y visto bueno", () => {
     const admin = await sesionAdmin(tx);
     const base = { motivo: "mejora", justificacion: JUSTIFICACION } as const;
     const consulta = await sesionDe(tx, "consulta");
-    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-02'`;
+    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-01'`;
     await expect(crearSolicitud(consulta, { ...base, tipo: "modificar", documentoId: doc.id }, opc(tx))).rejects.toBeInstanceOf(ErrorTramite);
 
     const [gth] = await tx`SELECT id FROM procesos WHERE sigla = 'GTH'`;
@@ -308,14 +308,14 @@ describe("transicionar", () => {
     reponer(VALIDADORES, respaldo.validadores);
   });
 
-  /** Trámite en elaboración sobre la versión vigente de GTH-PR-02, que tiene archivo principal. */
+  /** Trámite en elaboración sobre la versión vigente de GTH-PR-01, que tiene archivo principal. */
   async function enElaboracion(tx: TransactionSql) {
     const lider = await sesionDe(tx, "lider.gth");
     const admin = await sesionAdmin(tx);
     const [doc] = await tx`SELECT d.id, v.id AS version_id, a.hash_sha256 FROM documentos d
       JOIN documento_versiones v ON v.documento_id = d.id AND v.estado = 'vigente'
       JOIN archivos a ON a.version_id = v.id AND a.rol = 'principal'
-      WHERE d.codigo = 'GTH-PR-02'`;
+      WHERE d.codigo = 'GTH-PR-01'`;
     const r = await crearSolicitud(lider, { tipo: "modificar", motivo: "mejora", justificacion: JUSTIFICACION, documentoId: doc.id }, opc(tx));
     await tx`UPDATE tramites SET etapa = 'elaboracion', ronda = 1, elaborador_id = ${lider.usuarioId},
       revisor_id = ${admin.usuarioId}, aprobador_id = ${admin.usuarioId}, version_id = ${doc.version_id} WHERE id = ${r.tramiteId}`;
@@ -325,7 +325,7 @@ describe("transicionar", () => {
 
   it("no llama al verificador si la acción no procede", () => revertida(sql, async (tx) => {
     const lider = await sesionDe(tx, "lider.gth");
-    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-02'`;
+    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-01'`;
     const r = await crearSolicitud(lider, { tipo: "modificar", motivo: "mejora", justificacion: "Justificación de prueba.", documentoId: doc.id }, opc(tx));
     let llamadas = 0;
     const verificar: Verificador = async () => { llamadas++; return { ok: true, metodo: "clave" }; };
@@ -336,7 +336,7 @@ describe("transicionar", () => {
 
   it("el trámite que no se puede ver y el que no existe responden igual", () => revertida(sql, async (tx) => {
     const lider = await sesionDe(tx, "lider.gth");
-    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-02'`;
+    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-01'`;
     const r = await crearSolicitud(lider, { tipo: "modificar", motivo: "mejora", justificacion: JUSTIFICACION, documentoId: doc.id }, opc(tx));
     const entrada = { tramiteId: r.tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0 } as const;
     await expect(transicionar(await sesionDe(tx, "gerente"), entrada, opc(tx))).rejects.toThrow("El trámite no existe");
@@ -373,7 +373,7 @@ describe("transicionar", () => {
     expect(fila.aviso_vencido_en).toBeNull();
     expect(fila.escalado_en).toBeNull();
     const [a] = await tx`SELECT detalle FROM auditoria WHERE accion = 'tramite_enviar_a_revision' AND entidad_id = ${t.tramiteId}`;
-    expect(a.detalle).toMatchObject({ codigo: "GTH-PR-02", de: "elaboracion", hacia: "revision", ronda: 1, nota: "lista" });
+    expect(a.detalle).toMatchObject({ codigo: "GTH-PR-01", de: "elaboracion", hacia: "revision", ronda: 1, nota: "lista" });
   }));
 
   it("sin credenciales o con una firma fallida no hay transición, y `sesionCerrada` viaja en el error", () => revertida(sql, async (tx) => {

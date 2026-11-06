@@ -5,7 +5,8 @@
  *  - PYM-PR-01 / PYM-FO-01 contienen "Vacunación" (acentos y tipeo).
  *  - SGC-FO-03 (borrador, "Listado Maestro") e GIC-IN-02 (anulado, "Fax")
  *    jamás aparecen en resultados públicos.
- *  - GTH-CA-01 es el único vigente aprobado antes de 2026-03 (filtro fechas).
+ *  - GTH-CA-01 es el único vigente aprobado después de 2026-03-12: su versión 3 se
+ *    aprobó en la plataforma, días antes de sembrar (filtro fechas).
  */
 import { existsSync } from "node:fs";
 import { afterAll, describe, expect, it } from "vitest";
@@ -111,11 +112,11 @@ describe("buscarDocumentos — filtros combinables", () => {
   });
 
   it("filtra por rango de fecha de aprobación", async () => {
-    const antiguos = await buscarDocumentos({ hasta: "2026-02-28" }, ADMIN);
-    expect(codigosDe(antiguos)).toEqual(["GTH-CA-01"]);
-    const recientes = await buscarDocumentos({ desde: "2026-03-01" }, ADMIN);
-    expect(codigosDe(recientes)).not.toContain("GTH-CA-01");
-    expect(recientes.total).toBeGreaterThan(0);
+    const recientes = await buscarDocumentos({ desde: "2026-03-13" }, ADMIN);
+    expect(codigosDe(recientes)).toEqual(["GTH-CA-01"]);
+    const antiguos = await buscarDocumentos({ hasta: "2026-03-12" }, ADMIN);
+    expect(codigosDe(antiguos)).not.toContain("GTH-CA-01");
+    expect(antiguos.total).toBeGreaterThan(0);
   });
 
   it("combina texto + proceso + tipo", async () => {
@@ -124,7 +125,7 @@ describe("buscarDocumentos — filtros combinables", () => {
       proceso: "sistema-de-gestion-de-calidad",
       tipo: "FO",
     }, ADMIN);
-    expect(codigosDe(r).sort()).toEqual(["SGC-FO-01", "SGC-FO-02"]);
+    expect(codigosDe(r).sort()).toEqual(["SGC-FO-01", "SGC-FO-02", "SGC-FO-05"]);
   });
 });
 

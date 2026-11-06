@@ -26,7 +26,7 @@ import { sugerirCodigo } from "@/db/consultas/codigos";
 import { buscarParecidos } from "@/db/consultas/parecidos";
 import { contextoDeAceptacion, datosParaAceptar } from "@/db/consultas/tramites";
 import { MANEJADORES, crearSolicitud, transicionar } from "@/db/consultas/tramites-flujo";
-import { aceptarCreacion, opc, sesionAdmin, sesionDe, solicitudDeCreacion, usuarioDePrueba } from "./utiles/tramites";
+import { aceptarCreacion, documentoLibre, opc, sesionAdmin, sesionDe, solicitudDeCreacion, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
 const sql = obtenerSql();
@@ -37,6 +37,10 @@ afterAll(async () => {
 });
 
 const JUSTIFICACION = "Justificación de prueba.";
+
+/** Una guía de CEX sin trámites: la de la demo, CEX-GU-01, tiene abierta su eliminación. */
+const GUIA_LIBRE = "Guía de Atención de Diabetes Mellitus";
+const guiaLibre = (tx: TransactionSql) => documentoLibre(tx, { codigo: "CEX-GU-02", proceso: "CEX", tipo: "GU", titulo: GUIA_LIBRE });
 
 async function idDe(tx: TransactionSql, codigo: string): Promise<number> {
   const [d] = await tx`SELECT id FROM documentos WHERE codigo = ${codigo}`;
@@ -270,13 +274,14 @@ describe("aceptar una creación", () => {
 
 describe("una creación duplicada", () => {
   it("una creación duplicada pasa a modificación solo dentro del mismo proceso", () => revertida(sql, async (tx) => {
-    const { admin, liderCex, tramiteId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "GU", titulo: "Guía de Atención de Hipertensión Arterial" });
-    const parecidos = await buscarParecidos("Guía de Atención de Hipertensión Arterial", { sql: tx });
-    expect(parecidos[0]).toMatchObject({ codigo: "CEX-GU-01", nivel: "muy_parecido" });
+    await guiaLibre(tx);
+    const { admin, liderCex, tramiteId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "GU", titulo: GUIA_LIBRE });
+    const parecidos = await buscarParecidos(GUIA_LIBRE, { sql: tx });
+    expect(parecidos[0]).toMatchObject({ codigo: "CEX-GU-02", nivel: "muy_parecido" });
     const [otro] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-01'`;
     const base = { elaboradorId: liderCex.usuarioId, revisorId: admin.usuarioId, aprobadorId: admin.usuarioId };
     const convertir = (documentoExistenteId: number) => transicionar(admin, { tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
-      datos: aceptarCreacion({ ...base, decision: "modificacion", documentoExistenteId, codigo: "CEX-GU-02" }) }, opc(tx));
+      datos: aceptarCreacion({ ...base, decision: "modificacion", documentoExistenteId, codigo: "CEX-GU-03" }) }, opc(tx));
     await expect(tx.savepoint(() => convertir(otro.id))).rejects.toThrow(/otro proceso/);
     await convertir(parecidos[0].documentoId);
     const [t] = await tx`SELECT t.tipo, v.numero FROM tramites t JOIN documento_versiones v ON v.id = t.version_id WHERE t.id = ${tramiteId}`;
@@ -284,9 +289,9 @@ describe("una creación duplicada", () => {
   }));
 
   it("queda como una modificación común y el evento conserva lo que se pidió y lo que se vio", () => revertida(sql, async (tx) => {
-    const titulo = "Guía de Atención de Hipertensión Arterial";
+    const titulo = GUIA_LIBRE;
+    const documentoExistenteId = await guiaLibre(tx);
     const { admin, liderCex, tramiteId, tipoDocumentoId, procesoId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "GU", titulo });
-    const documentoExistenteId = await idDe(tx, "CEX-GU-01");
     await transicionar(admin, { tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
       datos: aceptarCreacion({ decision: "modificacion", documentoExistenteId, elaboradorId: liderCex.usuarioId, revisorId: admin.usuarioId, aprobadorId: admin.usuarioId }) }, opc(tx));
     const [t] = await tx`SELECT titulo_propuesto, documento_id, tipo_documento_id, subproceso_id, vence_en FROM tramites WHERE id = ${tramiteId}`;
@@ -296,8 +301,8 @@ describe("una creación duplicada", () => {
     expect(t.subproceso_id).toBe(propio.subproceso_id);
     expect(t.vence_en.toISOString()).toBe("2026-11-21T04:59:59.999Z");
     const [e] = await tx`SELECT detalle FROM tramite_eventos WHERE tramite_id = ${tramiteId} AND tipo = 'aceptar'`;
-    expect(e.detalle).toMatchObject({ decision: "modificacion", codigo: "CEX-GU-01", version: 2, clasificacion: { solicitado: { procesoId, subprocesoId: null, tipoDocumentoId, titulo } } });
-    expect(e.detalle.parecidos[0]).toMatchObject({ documentoId: documentoExistenteId, codigo: "CEX-GU-01", titulo, version: 1, procesoId, nivel: "muy_parecido" });
+    expect(e.detalle).toMatchObject({ decision: "modificacion", codigo: "CEX-GU-02", version: 2, clasificacion: { solicitado: { procesoId, subprocesoId: null, tipoDocumentoId, titulo } } });
+    expect(e.detalle.parecidos[0]).toMatchObject({ documentoId: documentoExistenteId, codigo: "CEX-GU-02", titulo, version: 1, procesoId, nivel: "muy_parecido" });
   }));
 
   it("usa la autoridad del tipo del documento existente, no la del tipo pedido", () => revertida(sql, async (tx) => {
@@ -310,8 +315,8 @@ describe("una creación duplicada", () => {
   }));
 
   it("no se convierte si el documento ya tiene otro trámite abierto", () => revertida(sql, async (tx) => {
-    const { admin, liderCex, tramiteId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "GU", titulo: "Guía de Atención de Hipertensión Arterial" });
-    const documentoExistenteId = await idDe(tx, "CEX-GU-01");
+    const { admin, liderCex, tramiteId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "GU", titulo: GUIA_LIBRE });
+    const documentoExistenteId = await guiaLibre(tx);
     await crearSolicitud(liderCex, { tipo: "modificar", motivo: "mejora", justificacion: JUSTIFICACION, documentoId: documentoExistenteId }, opc(tx));
     await expect(transicionar(admin, { tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
       datos: aceptarCreacion({ decision: "modificacion", documentoExistenteId, elaboradorId: liderCex.usuarioId, revisorId: admin.usuarioId, aprobadorId: admin.usuarioId }) }, opc(tx)))
@@ -320,7 +325,7 @@ describe("una creación duplicada", () => {
 
   it("dos conversiones a la vez: el choque del número de versión sale como trámite abierto", () => revertida(sql, async (tx) => {
     const { admin, liderCex, tramiteId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "GU", titulo: "Guía con dos conversiones" });
-    const documentoExistenteId = await idDe(tx, "CEX-GU-01");            // v1 vigente
+    const documentoExistenteId = await guiaLibre(tx);                    // v1 vigente
     // La otra conversión se adelantó: sin concurrencia, el núcleo inserta un número ya ocupado.
     vi.mocked(crearVersionBorradorEn).mockImplementationOnce(async (t, documentoId) => {
       await t`INSERT INTO documento_versiones (documento_id, numero, estado) VALUES (${documentoId}, 1, 'borrador')`;
@@ -335,7 +340,7 @@ describe("una creación duplicada", () => {
 
   it("si aun así choca con tramites_uno_abierto_idx, sale el error de negocio y la transacción sigue viva", () => revertida(sql, async (tx) => {
     const { admin, liderCex, tramiteId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "GU", titulo: "Guía con carrera" });
-    const documentoId = await idDe(tx, "CEX-GU-01");
+    const documentoId = await guiaLibre(tx);
     await crearSolicitud(liderCex, { tipo: "modificar", motivo: "mejora", justificacion: JUSTIFICACION, documentoId }, opc(tx));
     // Sin concurrencia, la única forma de llegar al UPDATE es un manejador que no precomprueba.
     const real = MANEJADORES.aceptar;
@@ -361,7 +366,7 @@ describe("aceptar una modificación", () => {
     await transicionar(admin, { tramiteId: m.tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
       datos: { elaboradorId: lider.usuarioId, revisorId: admin.usuarioId, aprobadorId: gerente.usuarioId, venceElaboracion: "2026-11-20" } }, opc(tx));
     const [v] = await tx`SELECT v.numero, t.vence_en FROM tramites t JOIN documento_versiones v ON v.id = t.version_id WHERE t.id = ${m.tramiteId}`;
-    expect(v.numero).toBe(3);                                                              // CA es estratégico: aprueba Gerencia
+    expect(v.numero).toBe(4);                                                              // CA es estratégico: aprueba Gerencia
     expect(v.vence_en.toISOString()).toBe("2026-11-21T04:59:59.999Z");
   }));
 
@@ -381,12 +386,13 @@ describe("aceptar una modificación", () => {
     const [a] = await tx`SELECT titulo_propuesto FROM tramites WHERE id = ${sinCambio}`;
     expect(a.titulo_propuesto).toBeNull();
 
-    const conCambio = await aceptarModificacion(tx, "GTH-PR-02", "Título nuevo del procedimiento");
+    await documentoLibre(tx, { codigo: "GTH-PR-08", proceso: "GTH", tipo: "PR" });
+    const conCambio = await aceptarModificacion(tx, "GTH-PR-08", "Título nuevo del procedimiento");
     const [b] = await tx`SELECT t.titulo_propuesto, d.titulo FROM tramites t JOIN documentos d ON d.id = t.documento_id WHERE t.id = ${conCambio}`;
     expect(b.titulo_propuesto).toBe("Título nuevo del procedimiento");
     expect(b.titulo).not.toBe("Título nuevo del procedimiento");
     const [e] = await tx`SELECT detalle FROM tramite_eventos WHERE tramite_id = ${conCambio} AND tipo = 'aceptar'`;
-    expect(e.detalle).toMatchObject({ tituloNuevo: "Título nuevo del procedimiento", codigo: "GTH-PR-02" });
+    expect(e.detalle).toMatchObject({ tituloNuevo: "Título nuevo del procedimiento", codigo: "GTH-PR-08" });
     expect(e.detalle).not.toHaveProperty("parecidos");
   }));
 
@@ -417,9 +423,9 @@ describe("aceptar una modificación", () => {
 
   it("el número siguiente ignora las versiones descartadas", () => revertida(sql, async (tx) => {
     const usuario = await sesionAdmin(tx);
-    const documentoId = await idDe(tx, "GTH-CA-01");                     // v2 vigente
-    await tx`INSERT INTO documento_versiones (documento_id, numero, estado) VALUES (${documentoId}, 3, 'descartado')`;
-    expect(await crearVersionBorradorEn(tx, documentoId, usuario.usuarioId)).toMatchObject({ numero: 3 });
+    const documentoId = await idDe(tx, "GTH-CA-01");                     // v3 vigente
+    await tx`INSERT INTO documento_versiones (documento_id, numero, estado) VALUES (${documentoId}, 4, 'descartado')`;
+    expect(await crearVersionBorradorEn(tx, documentoId, usuario.usuarioId)).toMatchObject({ numero: 4 });
   }));
 });
 
@@ -658,7 +664,7 @@ describe("datos para la pantalla", () => {
     await crearSolicitud(lider, { tipo: "eliminar", motivo: "mejora", justificacion: JUSTIFICACION, documentoId }, opc(tx));
     await tx`UPDATE usuarios SET activo = false WHERE id = ${lider.usuarioId}`;
     const contexto = await contextoDeAceptacion({ tipo: "eliminar", documentoId, solicitanteId: lider.usuarioId }, { sql: tx });
-    expect(contexto).toMatchObject({ solicitanteRol: "lider_proceso", documento: { tipo: "Caracterización", versionSiguiente: 3 }, catalogo: null });
+    expect(contexto).toMatchObject({ solicitanteRol: "lider_proceso", documento: { tipo: "Caracterización", versionSiguiente: 4 }, catalogo: null });
   }));
 
   it("en una creación el contexto trae el catálogo para clasificar y para elegir el documento existente", () => revertida(sql, async (tx) => {
@@ -671,7 +677,7 @@ describe("datos para la pantalla", () => {
     expect(catalogo.procesos.find((p) => p.sigla === "CEX")?.subprocesos.length).toBeGreaterThan(0);
     expect(catalogo.codigos).toContain("CEX-GU-01");
     expect(catalogo.documentos.find((d) => d.codigo === "CEX-GU-01")).toMatchObject({
-      procesoId, tipo: "Guía", autoridad: "operativo", versionSiguiente: 2, conTramite: false, conBorrador: false,
+      procesoId, tipo: "Guía", autoridad: "operativo", versionSiguiente: 2, conTramite: true, conBorrador: false,   // la demo pide eliminarla
     });
   }));
 });

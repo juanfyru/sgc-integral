@@ -3,7 +3,8 @@
  * PLAN.md Apéndice A) + documentos ficticios pero verosímiles que cubren
  * todos los casos del modelo (asociaciones M:N con principal, relaciones
  * procedimiento↔formato, archivos multi-rol y los cuatro estados), más una
- * estructura organizacional y un usuario de ejemplo por rol.
+ * estructura organizacional, un usuario de ejemplo por rol y trámites en cada
+ * etapa (ver `sembrarTramites`).
  *
  * Ejecutar: npm run db:seed   (borra y recarga TODO — solo desarrollo/demo)
  */
@@ -11,8 +12,34 @@ import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { eq } from "drizzle-orm";
+import type { Sql, TransactionSql } from "postgres";
 import { rutaBaseAlmacen } from "../../lib/almacen";
 import { hashearClave } from "../../lib/clave";
+import type { Rol } from "../../lib/roles";
+import { fechaEnZona, fechaLimite } from "../../lib/tramites/plazos";
+import { esEtapaDeTrabajo, type Motivo, type TipoSolicitud } from "../../lib/tramites/tipos";
+import { evaluarTransicion, type Accion } from "../../lib/tramites/transiciones";
+import { zonaHoraria } from "../../lib/zona-horaria";
+import { congelarDatosActa } from "../consultas/actas";
+import { obtenerConfigDocumental, type ConfigDocumental } from "../consultas/config-documental";
+import { listarFirmas, registrarFirma, type FirmaRegistrada } from "../consultas/firmas";
+import { exigirDesignacion } from "../consultas/flujo/aceptacion";
+import { listarItemsVerificacion, obtenerVerificacion } from "../consultas/revision";
+import {
+  aFilaTramite,
+  adminsActivos,
+  lideresDeProceso,
+  propietarioDeDocumento,
+  rotuloDeTramite,
+  tipoDeDocumento,
+} from "../consultas/tramites";
+import {
+  enviarAvisos,
+  nuevoVencimiento,
+  registrarEvento,
+  type Efecto,
+  type FilaTramite,
+} from "../consultas/tramites-flujo";
 import * as e from "../esquema";
 import { generarPlaceholder } from "../placeholders";
 import { limpiarTodo, sembrarBase, type Db } from "./minima";
@@ -20,6 +47,12 @@ import { limpiarTodo, sembrarBase, type Db } from "./minima";
 export const CLAVE_DEMO = "Demo-SGC-2026-clave";
 const NOMBRE_ENTIDAD = "ESE Hospital Nuestra Señora de Fátima de Suaza";
 const LOGO_DEMO = path.join("src", "db", "semillas", "recursos", "logo-demo.png");
+
+const MIMES: Record<string, string> = {
+  pdf: "application/pdf",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+};
 
 const slug = (texto: string) =>
   texto
@@ -43,13 +76,57 @@ async function sembrarLogoDemo(db: Db, almacen: string): Promise<void> {
   ]);
 }
 
+type DefArchivo = { rol: "principal" | "editable" | "anexo"; ext: "pdf" | "docx" | "xlsx" };
+
+/**
+ * Deja un placeholder en el almacén y devuelve los datos de su fila en `archivos`. `nota` cambia
+ * su contenido, y con él su huella, sin cambiar su nombre: es un archivo que reemplaza a otro.
+ */
+async function archivoDemo(
+  { codigo, titulo }: { codigo: string; titulo: string },
+  numero: number,
+  { rol, ext }: DefArchivo,
+  nota = "",
+) {
+  // El rol distingue archivos de la misma versión y extensión (p. ej.
+  // principal PDF + anexo PDF) sin colisión de ruta.
+  const nombreArchivo =
+    rol === "principal"
+      ? `${codigo.toLowerCase()}-v${numero}.${ext}`
+      : `${codigo.toLowerCase()}-v${numero}-${rol}.${ext}`;
+  const ruta = `${codigo}/v${numero}/${nombreArchivo}`;
+
+  const contenido = await generarPlaceholder({
+    codigo,
+    titulo: `${titulo}${nota}`,
+    numeroVersion: numero,
+    ext,
+    entidad: NOMBRE_ENTIDAD,
+  });
+  const destino = path.join(rutaBaseAlmacen(), ...ruta.split("/"));
+  await mkdir(path.dirname(destino), { recursive: true });
+  await writeFile(destino, contenido);
+
+  return {
+    ruta,
+    nombreOriginal: `${codigo} ${titulo} v${numero}.${ext}`,
+    extension: ext,
+    mime: MIMES[ext],
+    tamanoBytes: contenido.length,
+    hashSha256: createHash("sha256").update(contenido).digest("hex"),
+  };
+}
+
 /** Documentos de la demo con acceso restringido (spec §5.3). */
 const CODIGOS_RESTRINGIDOS: ReadonlySet<string> = new Set(["GTH-FO-01"]);
 
-export async function sembrarDemo(db: Db): Promise<void> {
+/**
+ * `sql` es una conexión sin drizzle, para reutilizar `src/db/consultas`: `drizzle()` les quita a las
+ * fechas y al JSON de su cliente la conversión con que esas consultas leen y escriben.
+ */
+export async function sembrarDemo(db: Db, sql: Sql): Promise<void> {
   await limpiarTodo(db);
   const { tipoPorSigla } = await sembrarBase(db);
-  const almacen = rutaBaseAlmacen();
 
   await db
     .update(e.configuracion)
@@ -59,7 +136,7 @@ export async function sembrarDemo(db: Db): Promise<void> {
     .update(e.configuracion)
     .set({ valor: "HNSF" })
     .where(eq(e.configuracion.clave, "sigla_entidad"));
-  await sembrarLogoDemo(db, almacen);
+  await sembrarLogoDemo(db, rutaBaseAlmacen());
   await db
     .update(e.configuracion)
     .set({ valor: "Comprometidos con la vida y el bienestar de nuestra comunidad" })
@@ -172,12 +249,6 @@ export async function sembrarDemo(db: Db): Promise<void> {
   const GERENTE = "Luz Dary Cabrera — Gerente";
   const CALIDAD = "María Fernanda Perdomo — Líder de Calidad";
 
-  const MIMES: Record<string, string> = {
-    pdf: "application/pdf",
-    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  };
-
   type DefVersion = {
     numero: number;
     estado: "borrador" | "vigente" | "obsoleto" | "anulado";
@@ -188,7 +259,7 @@ export async function sembrarDemo(db: Db): Promise<void> {
     reviso?: string;
     aprobo?: string;
     cambios?: string;
-    archivos: { rol: "principal" | "editable" | "anexo"; ext: "pdf" | "docx" | "xlsx" }[];
+    archivos: DefArchivo[];
   };
 
   type DefAsociacion =
@@ -276,6 +347,20 @@ export async function sembrarDemo(db: Db): Promise<void> {
         cambios: "Borrador en elaboración — pendiente de aprobación.",
         archivos: [{ rol: "principal", ext: "xlsx" }],
       }],
+      asociaciones: [{ proceso: "SGC", principal: true }],
+    },
+    {
+      codigo: "SGC-FO-04", titulo: "Plantilla para procedimientos", tipo: "FO",
+      descripcion: "Plantilla institucional para elaborar procedimientos: encabezado de control, objetivo, alcance, actividades y registros.",
+      palabrasClave: "plantilla procedimiento encabezado estructura",
+      versiones: [v1Vigente(CALIDAD, [{ rol: "principal", ext: "pdf" }, { rol: "editable", ext: "docx" }])],
+      asociaciones: [{ proceso: "SGC", principal: true }],
+    },
+    {
+      codigo: "SGC-FO-05", titulo: "Plantilla para formatos", tipo: "FO",
+      descripcion: "Plantilla institucional para elaborar formatos: encabezado de control, campos y espacio de firmas.",
+      palabrasClave: "plantilla formato encabezado estructura",
+      versiones: [v1Vigente(CALIDAD, [{ rol: "principal", ext: "pdf" }, { rol: "editable", ext: "docx" }])],
       asociaciones: [{ proceso: "SGC", principal: true }],
     },
 
@@ -523,35 +608,8 @@ export async function sembrarDemo(db: Db): Promise<void> {
         .returning();
 
       for (const a of v.archivos) {
-        // El rol distingue archivos de la misma versión y extensión (p. ej.
-        // principal PDF + anexo PDF) sin colisión de ruta.
-        const nombreArchivo =
-          a.rol === "principal"
-            ? `${def.codigo.toLowerCase()}-v${v.numero}.${a.ext}`
-            : `${def.codigo.toLowerCase()}-v${v.numero}-${a.rol}.${a.ext}`;
-        const ruta = `${def.codigo}/v${v.numero}/${nombreArchivo}`;
-
-        const contenido = await generarPlaceholder({
-          codigo: def.codigo,
-          titulo: def.titulo,
-          numeroVersion: v.numero,
-          ext: a.ext,
-          entidad: NOMBRE_ENTIDAD,
-        });
-        const destino = path.join(almacen, ...ruta.split("/"));
-        await mkdir(path.dirname(destino), { recursive: true });
-        await writeFile(destino, contenido);
-
-        await db.insert(e.archivos).values({
-          versionId: version.id,
-          rol: a.rol,
-          ruta,
-          nombreOriginal: `${def.codigo} ${def.titulo} v${v.numero}.${a.ext}`,
-          extension: a.ext,
-          mime: MIMES[a.ext],
-          tamanoBytes: contenido.length,
-          hashSha256: createHash("sha256").update(contenido).digest("hex"),
-        });
+        const archivo = await archivoDemo(def, v.numero, a);
+        await db.insert(e.archivos).values({ versionId: version.id, rol: a.rol, ...archivo });
       }
     }
 
@@ -585,12 +643,22 @@ export async function sembrarDemo(db: Db): Promise<void> {
       });
     }
   }
-
+  // Los tipos apuntan a la plantilla con que se elaboran sus documentos.
+  for (const [sigla, plantilla] of [["PR", "SGC-FO-04"], ["FO", "SGC-FO-05"]]) {
+    await db
+      .update(e.tiposDocumento)
+      .set({ plantillaDocumentoId: documentoPorCodigo[plantilla] })
+      .where(eq(e.tiposDocumento.id, tipoPorSigla[sigla]));
+  }
 
   await sembrarEstructuraYUsuarios(db, procesoPorSigla);
+  await sembrarTramites(sql, { tipoPorSigla, procesoPorSigla, documentoPorCodigo });
 }
 
-/** Áreas, cargos con su jerarquía y un usuario de ejemplo por rol (el admin no se siembra). */
+/**
+ * Áreas, cargos con su jerarquía y un usuario de ejemplo por rol. `admin` no se siembra: lo crea
+ * `admin:asegurar`. `coordinadora.sgc` es la otra Admin SGC, la que revisa en la demo.
+ */
 async function sembrarEstructuraYUsuarios(
   db: Db,
   procesoPorSigla: Record<string, number>,
@@ -644,6 +712,7 @@ async function sembrarEstructuraYUsuarios(
     cargo: string;
     proceso?: string;
   }[] = [
+    { usuario: "coordinadora.sgc", nombre: "María Fernanda Perdomo", rol: "admin_sgc", cargo: "Líder de Calidad" },
     { usuario: "gerente", nombre: "Gerente de ejemplo", rol: "gerencia", cargo: "Gerente" },
     { usuario: "control.interno", nombre: "Control Interno de ejemplo", rol: "control_interno", cargo: "Jefe de Control Interno" },
     { usuario: "lider.gth", nombre: "Líder de Talento Humano de ejemplo", rol: "lider_proceso", cargo: "Coordinadora de Talento Humano", proceso: "GTH" },
@@ -676,4 +745,411 @@ async function sembrarEstructuraYUsuarios(
         .values({ usuarioId: fila.id, procesoId: procesoPorSigla[u.proceso] });
     }
   }
+}
+
+// ── Trámites ────────────────────────────────────────────────────────────────
+// Se escriben por inserción directa, sin `transicionar`, porque cada paso lleva la hora en que
+// ocurrió, días atrás. Las filas son las que deja el flujo real; `tests/semilla-tramites.test.ts`
+// compara la forma de los detalles y sigue cada trámite con las funciones reales.
+
+type Persona = { id: number; rol: Rol };
+
+/** Quién hizo un paso y cuándo. */
+type Autor = { quien: Persona; momento: Date };
+
+type Contexto = { tx: TransactionSql; config: ConfigDocumental; zona: string; anio: number };
+
+/** `registrarAuditoria` con la hora del paso, que el flujo real no necesita: ahí siempre es ahora. */
+async function auditar(
+  { tx }: Contexto,
+  { quien, momento }: Autor,
+  fila: { accion: string; entidad: string; entidadId: number; detalle: Record<string, unknown> },
+): Promise<void> {
+  await tx`INSERT INTO auditoria (usuario_id, accion, entidad, entidad_id, detalle, creado_en)
+    VALUES (${quien.id}, ${fila.accion}, ${fila.entidad}, ${fila.entidadId}, ${tx.json(fila.detalle as never)}, ${momento})`;
+}
+
+async function auditarTramite(c: Contexto, t: FilaTramite, autor: Autor, accion: string, detalle: Record<string, unknown>): Promise<void> {
+  const { codigo } = await rotuloDeTramite(c.tx, t);
+  await auditar(c, autor, {
+    accion: `tramite_${accion}`,
+    entidad: "tramite",
+    entidadId: t.id,
+    detalle: { numero: t.numero, codigo, documentoId: t.documentoId, ...detalle },
+  });
+}
+
+type Solicitud = Autor & {
+  consecutivo: number;
+  tipo: TipoSolicitud;
+  motivo: Motivo;
+  justificacion: string;
+} & ({ documentoId: number } | { procesoId: number; tipoDocumentoId: number; tituloPropuesto: string });
+
+/** Lo que escribe `crearSolicitud`: el visto bueno queda dado si pide el líder y omitido si el proceso no tiene. */
+async function solicitar(c: Contexto, s: Solicitud): Promise<FilaTramite> {
+  const { tx, config, zona, anio } = c;
+  const { quien, momento, consecutivo, tipo, motivo, justificacion } = s;
+  const destino =
+    "documentoId" in s
+      ? { ...(await propietarioDeDocumento(s.documentoId, { sql: tx }))!, tipoDocumentoId: null, tituloPropuesto: null, documentoId: s.documentoId }
+      : { procesoId: s.procesoId, subprocesoId: null, tipoDocumentoId: s.tipoDocumentoId, tituloPropuesto: s.tituloPropuesto, documentoId: null };
+  const lideres = await lideresDeProceso(destino.procesoId, { sql: tx });
+  const pideElLider = lideres.includes(quien.id);
+  const etapa = pideElLider || lideres.length === 0 ? "aceptacion" : "visto_bueno";
+  const numero = `SOL-${anio}-${String(consecutivo).padStart(3, "0")}`;
+
+  const [fila] = await tx`INSERT INTO tramites
+      (numero, anio, consecutivo, tipo, motivo, justificacion, solicitante_id, proceso_id, subproceso_id,
+       tipo_documento_id, titulo_propuesto, documento_id, etapa, ronda, vence_en, creado_en, actualizado_en)
+    VALUES
+      (${numero}, ${anio}, ${consecutivo}, ${tipo}, ${motivo}, ${justificacion}, ${quien.id}, ${destino.procesoId},
+       ${destino.subprocesoId}, ${destino.tipoDocumentoId}, ${destino.tituloPropuesto}, ${destino.documentoId}, ${etapa}, 0,
+       ${fechaLimite(momento, config.plazos[etapa], zona)}, ${momento}, ${momento})
+    RETURNING *`;
+  const t = aFilaTramite(fila);
+
+  const evento = { tramiteId: t.id, ronda: 0, ahora: momento };
+  await registrarEvento(tx, { ...evento, tipo: "solicitar", usuarioId: quien.id });
+  if (pideElLider) await registrarEvento(tx, { ...evento, tipo: "visto_bueno_automatico", usuarioId: quien.id });
+  else if (lideres.length === 0) await registrarEvento(tx, { ...evento, tipo: "visto_bueno_omitido", usuarioId: null });
+  await auditarTramite(c, t, s, "solicitar", { de: null, hacia: etapa, ronda: 0, tipo, motivo });
+  return t;
+}
+
+type Paso = Autor & {
+  accion: Accion;
+  /** El `detalle` del evento, como lo escribe el manejador de la acción. */
+  detalle?: Record<string, unknown>;
+  cambios?: NonNullable<Efecto["cambios"]>;
+};
+
+/**
+ * Lo que escribe `transicionar` en un paso: el trámite, las firmas, el evento y su bitácora. Etapa,
+ * ronda, firmas y plazo salen de las reglas reales, y un paso que ellas no admiten rompe la semilla.
+ * Un `detalle` que dependa de lo anterior se calcula antes de llamar, en el orden del manejador.
+ */
+async function paso(c: Contexto, previo: FilaTramite, p: Paso): Promise<FilaTramite> {
+  const { tx, config } = c;
+  const { accion, quien, momento, detalle = {}, cambios = {} } = p;
+  const veredicto = evaluarTransicion(accion, previo, { usuarioId: quien.id, rol: quien.rol, lideraPropietario: false });
+  if (!veredicto.ok) throw new Error(`${previo.numero}, ${accion}: ${veredicto.motivo}`);
+  const { hacia, sumaRonda, firmas } = veredicto;
+
+  const t: FilaTramite = { ...previo, ...cambios, etapa: hacia, ronda: previo.ronda + (sumaRonda ? 1 : 0) };
+  t.venceEn = nuevoVencimiento(previo, cambios, t.etapa, t.ronda, momento, config);
+  await tx`UPDATE tramites SET
+      etapa = ${t.etapa}, ronda = ${t.ronda}, version_id = ${t.versionId}, elaborador_id = ${t.elaboradorId},
+      revisor_id = ${t.revisorId}, aprobador_id = ${t.aprobadorId}, vence_en = ${t.venceEn},
+      cerrado_en = ${esEtapaDeTrabajo(t.etapa) ? null : momento}, actualizado_en = ${momento}
+    WHERE id = ${t.id}`;
+
+  for (const firma of firmas) {
+    const [{ hash_sha256: hashSha256 }] = await tx`SELECT hash_sha256 FROM archivos WHERE version_id = ${t.versionId} AND rol = 'principal'`;
+    await registrarFirma(tx, {
+      tramiteId: t.id,
+      versionId: t.versionId,
+      usuarioId: quien.id,
+      firma,
+      ronda: t.ronda,
+      hashSha256,
+      metodo: "clave",
+      contexto: { ip: null, userAgent: null },
+      ahora: momento,
+    });
+  }
+
+  await registrarEvento(tx, { tramiteId: t.id, tipo: accion, usuarioId: quien.id, ronda: t.ronda, detalle, ahora: momento });
+  // El acta congelada ya está en el evento; la bitácora no la repite.
+  const detalleDeAuditoria = { ...detalle };
+  delete detalleDeAuditoria.acta;
+  await auditarTramite(c, t, p, accion, { ...detalleDeAuditoria, de: previo.etapa, hacia, ronda: t.ronda });
+  return t;
+}
+
+/** Acepta una modificación: abre la versión siguiente, con las reglas reales de designación. */
+async function aceptar(
+  c: Contexto,
+  t: FilaTramite,
+  autor: Autor,
+  { elaborador, revisor, aprobador }: { elaborador: Persona; revisor: Persona; aprobador: Persona },
+): Promise<FilaTramite> {
+  const { tx, config, zona } = c;
+  const documentoId = t.documentoId as number;
+  const ids = { elaboradorId: elaborador.id, revisorId: revisor.id, aprobadorId: aprobador.id };
+  const [doc] = await tx`SELECT codigo, tipo_id FROM documentos WHERE id = ${documentoId}`;
+  const tipo = (await tipoDeDocumento(Number(doc.tipo_id), { sql: tx }))!;
+  const responsables = await exigirDesignacion(tx, t, "modificar", tipo.autoridad, ids);
+
+  const [version] = await tx`INSERT INTO documento_versiones (documento_id, numero, estado, creado_en)
+    SELECT ${documentoId}, max(numero) + 1, 'borrador', ${autor.momento} FROM documento_versiones WHERE documento_id = ${documentoId}
+    RETURNING id, numero`;
+  const versionId = Number(version.id);
+  await auditar(c, autor, {
+    accion: "crear_version",
+    entidad: "documento_version",
+    entidadId: versionId,
+    detalle: { documentoId, numero: version.numero },
+  });
+  return paso(c, t, {
+    ...autor,
+    accion: "aceptar",
+    detalle: { codigo: doc.codigo, version: version.numero, plantilla: tipo.plantilla, responsables },
+    cambios: { ...ids, versionId, venceEn: fechaLimite(autor.momento, config.plazos.elaboracion, zona) },
+  });
+}
+
+/** Escribe el control de cambios, sube el archivo principal (reemplaza el de la ronda anterior) y envía a revisión. */
+async function elaborar(
+  c: Contexto,
+  t: FilaTramite,
+  autor: Autor,
+  { controlCambios, nota }: { controlCambios: string; nota?: string },
+): Promise<FilaTramite> {
+  const { tx } = c;
+  const versionId = t.versionId as number;
+  const [v] = await tx`UPDATE documento_versiones v SET resumen_cambios = ${controlCambios}
+    FROM documentos d WHERE v.id = ${versionId} AND d.id = v.documento_id
+    RETURNING v.numero, d.codigo, d.titulo`;
+  await auditar(c, autor, {
+    accion: "editar_version",
+    entidad: "documento_version",
+    entidadId: versionId,
+    detalle: { documentoId: t.documentoId, numero: v.numero, tramite: t.numero, resumenCambios: controlCambios },
+  });
+
+  const [anterior] = await tx`DELETE FROM archivos WHERE version_id = ${versionId} AND rol = 'principal' RETURNING id, nombre_original`;
+  if (anterior) {
+    await auditar(c, autor, {
+      accion: "eliminar_archivo",
+      entidad: "archivo",
+      entidadId: Number(anterior.id),
+      detalle: { nombre: anterior.nombre_original },
+    });
+  }
+  const a = await archivoDemo({ codigo: v.codigo, titulo: v.titulo }, v.numero, { rol: "principal", ext: "pdf" }, nota);
+  const [archivo] = await tx`INSERT INTO archivos (version_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256, creado_en)
+    VALUES (${versionId}, 'principal', ${a.ruta}, ${a.nombreOriginal}, ${a.extension}, ${a.mime}, ${a.tamanoBytes}, ${a.hashSha256}, ${autor.momento})
+    RETURNING id`;
+  await auditar(c, autor, {
+    accion: "subir_archivo",
+    entidad: "archivo",
+    entidadId: Number(archivo.id),
+    detalle: { versionId, rol: "principal", nombre: a.nombreOriginal },
+  });
+  return paso(c, t, { ...autor, accion: "enviar_a_revision" });
+}
+
+/** La lista de la ronda: todo cumple, salvo los ítems de `fallas`, por su orden y con su nota. */
+async function responderLista(c: Contexto, t: FilaTramite, autor: Autor, fallas: Record<number, string> = {}): Promise<void> {
+  const { tx } = c;
+  const items = await listarItemsVerificacion({ sql: tx, soloActivos: true });
+  for (const i of items) {
+    const nota = fallas[i.orden] ?? null;
+    await tx`INSERT INTO tramite_verificaciones (tramite_id, ronda, item_id, texto_item, critico, resultado, nota)
+      VALUES (${t.id}, ${t.ronda}, ${i.id}, ${i.texto}, ${i.critico}, ${nota ? "no_cumple" : "cumple"}, ${nota})`;
+  }
+  await auditarTramite(c, t, autor, "guardar_lista", { ronda: t.ronda, respondidos: items.length });
+}
+
+/** Solo sin observaciones: los dos trámites de la demo que llegan aquí no tuvieron ninguna. */
+async function darConcepto(c: Contexto, t: FilaTramite, autor: Autor, concepto: string): Promise<FilaTramite> {
+  const lista = await obtenerVerificacion(t.id, t.ronda, { sql: c.tx });
+  return paso(c, t, { ...autor, accion: "concepto_favorable", detalle: { concepto, lista, observaciones: { total: 0, cerradas: 0 } } });
+}
+
+const aprobar = (c: Contexto, t: FilaTramite, autor: Autor, concepto: string) =>
+  paso(c, t, { ...autor, accion: "aprobar", detalle: { concepto } });
+
+/** Lo que hace `publicarVersion` (flujo/cierre.ts): copia la evidencia a la versión, la publica y congela el acta. */
+async function publicar(c: Contexto, t: FilaTramite, autor: Autor): Promise<FilaTramite> {
+  const { tx, zona } = c;
+  const { momento } = autor;
+  const firmas = (await listarFirmas(t.id, { sql: tx })).filter((f) => f.ronda === t.ronda);
+  const [elaboro, reviso, aprobo] = (["elaboro", "reviso", "aprobo"] as const).map((firma) => firmas.find((f) => f.firma === firma)!);
+  const nombreYCargo = (f: FirmaRegistrada) => `${f.nombre} — ${f.cargo}`;
+  const dia = (f: FirmaRegistrada) => fechaEnZona(f.creadoEn, zona);
+
+  const anteriores = await tx`UPDATE documento_versiones SET estado = 'obsoleto'
+    WHERE documento_id = ${t.documentoId} AND estado = 'vigente'
+    RETURNING numero`;
+  const [version] = await tx`UPDATE documento_versiones SET
+      estado = 'vigente', origen_aprobacion = 'plataforma', publicado_en = ${momento},
+      elaboro = ${nombreYCargo(elaboro)}, reviso = ${nombreYCargo(reviso)}, aprobo = ${nombreYCargo(aprobo)},
+      fecha_elaboracion = ${dia(elaboro)}, fecha_revision = ${dia(reviso)}, fecha_aprobacion = ${dia(aprobo)}
+    WHERE id = ${t.versionId}
+    RETURNING numero`;
+  await tx`UPDATE documentos SET actualizado_en = ${momento} WHERE id = ${t.documentoId}`;
+  const obsoletas = anteriores.map((a) => a.numero as number);
+  await auditar(c, autor, {
+    accion: "publicar_version",
+    entidad: "documento_version",
+    entidadId: t.versionId as number,
+    detalle: { documentoId: t.documentoId, numero: version.numero, obsoletas },
+  });
+  return paso(c, t, {
+    ...autor,
+    accion: "publicar",
+    detalle: {
+      version: version.numero,
+      obsoletas,
+      huella: elaboro.hashSha256,
+      acta: await congelarDatosActa(tx, t, "aprobacion", momento, Math.max(...obsoletas)),
+    },
+  });
+}
+
+/** Los avisos del paso en que quedó el trámite; los de los pasos ya hechos no le dicen nada a nadie. */
+async function avisar(
+  { tx }: Contexto,
+  t: FilaTramite,
+  actor: Persona,
+  usuarioIds: number[],
+  titulo: string,
+): Promise<void> {
+  const { texto } = await rotuloDeTramite(tx, t);
+  await enviarAvisos(tx, t.id, actor.id, [{ usuarioIds, tipo: "tramite.paso", titulo, cuerpo: texto }]);
+}
+
+/** Cinco trámites, uno por etapa de la demostración (spec 13A §18.2 y §20), con fechas relativas al momento de sembrar. */
+async function sembrarTramites(
+  sql: Sql,
+  { tipoPorSigla, procesoPorSigla, documentoPorCodigo }: {
+    tipoPorSigla: Record<string, number>;
+    procesoPorSigla: Record<string, number>;
+    documentoPorCodigo: Record<string, number>;
+  },
+): Promise<void> {
+  console.log("Sembrando trámites…");
+  const ahora = new Date();
+  const zona = zonaHoraria();
+  /** Un instante de hace `dias` días en la zona: ocho horas antes de que acabara ese día, siempre en el pasado. */
+  const hace = (dias: number) => new Date(fechaLimite(ahora, -dias, zona).getTime() - 8 * 3_600_000);
+
+  await sql.begin(async (tx) => {
+    const config = await obtenerConfigDocumental({ sql: tx });
+    const c: Contexto = { tx, config, zona, anio: Number(fechaEnZona(ahora, zona).slice(0, 4)) };
+    const usuarios = await tx`SELECT id, usuario, rol FROM usuarios`;
+    const persona = (usuario: string): Persona => {
+      const u = usuarios.find((f) => f.usuario === usuario);
+      if (!u) throw new Error(`Usuario demo no encontrado: ${usuario}`);
+      return { id: Number(u.id), rol: u.rol };
+    };
+    const coordinadora = persona("coordinadora.sgc");
+    const gerente = persona("gerente");
+    const liderGth = persona("lider.gth");
+    const liderCex = persona("lider.cex");
+    const consulta = persona("consulta");
+
+    // Publicado por trámite, con sus cuatro firmas: la caracterización es estratégica, aprueba Gerencia.
+    let t = await solicitar(c, {
+      quien: liderGth,
+      momento: hace(20),
+      consecutivo: 1,
+      tipo: "modificar",
+      motivo: "revision_anual",
+      justificacion: "Revisión anual: los indicadores y las actividades del proceso ya no corresponden a la operación actual.",
+      documentoId: documentoPorCodigo["GTH-CA-01"],
+    });
+    t = await aceptar(c, t, { quien: coordinadora, momento: hace(19) }, { elaborador: liderGth, revisor: coordinadora, aprobador: gerente });
+    t = await elaborar(c, t, { quien: liderGth, momento: hace(15) }, {
+      controlCambios: "Se actualizan los indicadores del proceso y las actividades del ciclo PHVA.",
+    });
+    await responderLista(c, t, { quien: coordinadora, momento: hace(13) });
+    t = await darConcepto(c, t, { quien: coordinadora, momento: hace(12) }, "Cumple la lista de verificación; listo para aprobación.");
+    t = await aprobar(c, t, { quien: gerente, momento: hace(10) }, "Aprobada: los indicadores responden a la planeación institucional.");
+    await publicar(c, t, { quien: coordinadora, momento: hace(9) });
+
+    // En revisión, ronda 2: la revisora devolvió con dos observaciones y quien elabora ya las atendió.
+    t = await solicitar(c, {
+      quien: liderGth,
+      momento: hace(12),
+      consecutivo: 2,
+      tipo: "modificar",
+      motivo: "mejora",
+      justificacion: "El personal asistencial pide una inducción propia de cada servicio, además de la institucional.",
+      documentoId: documentoPorCodigo["GTH-PR-02"],
+    });
+    t = await aceptar(c, t, { quien: coordinadora, momento: hace(11) }, { elaborador: liderGth, revisor: coordinadora, aprobador: coordinadora });
+    t = await elaborar(c, t, { quien: liderGth, momento: hace(8) }, {
+      controlCambios: "Se añade la inducción específica por servicio.",
+      nota: " (primer borrador)",
+    });
+    const revisora: Autor = { quien: coordinadora, momento: hace(7) };
+    const observacion1 = "Cita la Resolución 2003 de 2014, que ya fue derogada: actualice la referencia de habilitación.";
+    const observacion2 = "No dice quién conserva el registro de asistencia a la inducción ni por cuánto tiempo.";
+    await responderLista(c, t, revisora, { 7: observacion1, 8: observacion2 });
+    for (const [i, texto] of [observacion1, observacion2].entries()) {
+      await tx`INSERT INTO tramite_observaciones (tramite_id, numero, ronda, origen, texto, autor_id, creado_en)
+        VALUES (${t.id}, ${i + 1}, ${t.ronda}, 'revision', ${texto}, ${coordinadora.id}, ${revisora.momento})`;
+      await auditarTramite(c, t, revisora, "crear_observacion", { ronda: t.ronda, observacion: i + 1 });
+    }
+    t = await paso(c, t, { quien: coordinadora, momento: hace(6), accion: "devolver_revision", detalle: { observaciones: [1, 2] } });
+
+    const respuestas = [
+      "Se cambió la referencia por la Resolución 3100 de 2019.",
+      "Se añadió la sección de registros: los conserva Talento Humano en la historia laboral.",
+    ];
+    const elabora: Autor = { quien: liderGth, momento: hace(3) };
+    for (const [i, respuesta] of respuestas.entries()) {
+      await tx`UPDATE tramite_observaciones
+        SET respuesta = ${respuesta}, respondida_por = ${liderGth.id}, respondida_en = ${elabora.momento}, estado = 'atendida'
+        WHERE tramite_id = ${t.id} AND numero = ${i + 1}`;
+      await auditarTramite(c, t, elabora, "responder_observacion", { ronda: t.ronda, observacion: i + 1 });
+    }
+    t = await elaborar(c, t, { quien: liderGth, momento: hace(2) }, {
+      controlCambios: "Se añade la inducción específica por servicio y se define quién conserva el registro de asistencia.",
+      nota: " (segundo borrador)",
+    });
+    const cierra: Autor = { quien: coordinadora, momento: hace(1) };
+    await tx`UPDATE tramite_observaciones SET estado = 'cerrada', cerrada_por = ${coordinadora.id}, cerrada_en = ${cierra.momento}
+      WHERE tramite_id = ${t.id} AND numero = 1`;
+    await auditarTramite(c, t, cierra, "cerrar_observacion", { ronda: t.ronda, observacion: 1 });
+    await avisar(c, t, liderGth, [coordinadora.id], `Solicitud ${t.numero}: le toca revisar`);
+
+    // Espera «Publicar» con el plazo vencido hace dos días. GBS no tiene líder: el visto bueno se omitió.
+    t = await solicitar(c, {
+      quien: coordinadora,
+      momento: hace(14),
+      consecutivo: 3,
+      tipo: "modificar",
+      motivo: "cambio_normativo",
+      justificacion: "La normativa de equipos biomédicos cambió la periodicidad del mantenimiento preventivo.",
+      documentoId: documentoPorCodigo["GBS-PR-01"],
+    });
+    t = await aceptar(c, t, { quien: coordinadora, momento: hace(13) }, { elaborador: consulta, revisor: liderGth, aprobador: coordinadora });
+    t = await elaborar(c, t, { quien: consulta, momento: hace(10) }, {
+      controlCambios: "Se ajusta la periodicidad del mantenimiento preventivo y las hojas de vida de los equipos.",
+    });
+    await responderLista(c, t, { quien: liderGth, momento: hace(8) });
+    t = await darConcepto(c, t, { quien: liderGth, momento: hace(7) }, "Cumple la lista de verificación; listo para aprobación.");
+    // El plazo de la publicación corre desde que se aprueba: la demostración necesita el aviso de vencido.
+    await aprobar(c, t, { quien: coordinadora, momento: hace(config.plazos.publicacion + 2) }, "Aprobada: se publica con la nueva periodicidad.");
+
+    // Por aceptar y vence hoy: la pide el líder, así que el visto bueno quedó dado.
+    t = await solicitar(c, {
+      quien: liderCex,
+      momento: hace(config.plazos.aceptacion),
+      consecutivo: 4,
+      tipo: "crear",
+      motivo: "solicitud_personal",
+      justificacion: "Consulta Externa no tiene dónde dejar constancia del consentimiento en los procedimientos menores.",
+      procesoId: procesoPorSigla.CEX,
+      tipoDocumentoId: tipoPorSigla.FO,
+      tituloPropuesto: "Consentimiento informado de procedimientos menores",
+    });
+    await avisar(c, t, liderCex, await adminsActivos({ sql: tx }), `Solicitud ${t.numero} por aceptar`);
+
+    // Espera el visto bueno del líder de Consulta Externa.
+    t = await solicitar(c, {
+      quien: coordinadora,
+      momento: hace(1),
+      consecutivo: 5,
+      tipo: "eliminar",
+      motivo: "cambio_normativo",
+      justificacion: "La institución adoptó la guía de práctica clínica nacional: esta guía propia ya no se usa.",
+      documentoId: documentoPorCodigo["CEX-GU-01"],
+    });
+    await avisar(c, t, coordinadora, [liderCex.id], `Solicitud ${t.numero} espera su visto bueno`);
+  });
 }

@@ -77,7 +77,7 @@ describe("aprobación", () => {
   it("si la autoridad del tipo cambió con el trámite abierto, quien ya no corresponde no firma; se reasigna y el nuevo aprueba", () => revertida(sql, async (tx) => {
     const t = await tramiteEn(tx, "aprobacion");
     try {
-      await tx`UPDATE tipos_documento SET autoridad = 'estrategico' WHERE id = (SELECT tipo_id FROM documentos WHERE codigo = 'GTH-PR-02')`;
+      await tx`UPDATE tipos_documento SET autoridad = 'estrategico' WHERE id = (SELECT tipo_id FROM documentos WHERE codigo = 'GTH-PR-01')`;
       const mensaje = "Quien aprueba debe tener el rol Gerencia. Pida reasignar al aprobador.";
       await fallaSinGastarLaFirma(tx, t.aprobador, firmando(t, "aprobar", "aprobacion"), mensaje);
       await fallaSinGastarLaFirma(tx, t.aprobador, firmando(t, "aprobar_y_publicar", "aprobacion"), mensaje);
@@ -88,7 +88,7 @@ describe("aprobación", () => {
       expect(await transicionar(gerente, firmando(t, "aprobar", "aprobacion"), opc(tx))).toEqual({ etapa: "publicacion", ronda: t.ronda });
 
       // Aprobada con la autoridad vigente entonces: publicar no la vuelve a exigir.
-      await tx`UPDATE tipos_documento SET autoridad = 'operativo' WHERE id = (SELECT tipo_id FROM documentos WHERE codigo = 'GTH-PR-02')`;
+      await tx`UPDATE tipos_documento SET autoridad = 'operativo' WHERE id = (SELECT tipo_id FROM documentos WHERE codigo = 'GTH-PR-01')`;
       expect(await transicionar(t.admin, publicar(t), opc(tx))).toMatchObject({ etapa: "publicado" });
     } finally { await t.limpiar(); }
   }));
@@ -164,7 +164,7 @@ describe("aprobación", () => {
   }));
 
   it("devolver no aplica a una eliminación ni negar a una modificación", () => revertida(sql, async (tx) => {
-    const e = await tramiteEn(tx, "aprobacion", { codigo: "GTH-PR-01", tipo: "eliminar" });
+    const e = await tramiteEn(tx, "aprobacion", { codigo: "GTH-FO-01", tipo: "eliminar" });
     await expect(tx.savepoint(() => transicionar(e.aprobador, { tramiteId: e.tramiteId, accion: "devolver_aprobacion", etapaEsperada: "aprobacion", rondaEsperada: 0, datos: { observaciones: ["Observación válida."] } }, opc(tx))))
       .rejects.toThrow("Esta acción no corresponde a este tipo de solicitud");
     const m = await tramiteEn(tx, "aprobacion");
@@ -189,10 +189,10 @@ describe("quien elabora no aprueba", () => {
 
 describe("publicación", () => {
   it("aprobar y publicar en un solo acto deja la versión vigente con sus datos de control", () => revertida(sql, async (tx) => {
-    const t = await tramiteEn(tx, "aprobacion");                         // GTH-PR-02 es operativo: aprueba un admin_sgc
+    const t = await tramiteEn(tx, "aprobacion");                         // GTH-PR-01 es operativo: aprueba un admin_sgc
     try {
       const [antes] = await tx`SELECT v.id, v.numero FROM documento_versiones v JOIN documentos d ON d.id = v.documento_id
-        WHERE d.codigo = 'GTH-PR-02' AND v.estado = 'vigente'`;
+        WHERE d.codigo = 'GTH-PR-01' AND v.estado = 'vigente'`;
       const r = await transicionar(t.aprobador, { tramiteId: t.tramiteId, accion: "aprobar_y_publicar", etapaEsperada: "aprobacion", rondaEsperada: t.ronda,
         datos: { concepto: "Aprobado." }, credenciales: { clave: "x" } }, opc(tx));
       expect(r.etapa).toBe("publicado");
@@ -204,7 +204,7 @@ describe("publicación", () => {
       const [anterior] = await tx`SELECT estado FROM documento_versiones WHERE id = ${antes.id}`;
       expect(anterior.estado).toBe("obsoleto");
       const [{ vigentes }] = await tx`SELECT count(*)::int AS vigentes FROM documento_versiones v JOIN documentos d ON d.id = v.documento_id
-        WHERE d.codigo = 'GTH-PR-02' AND v.estado = 'vigente'`;
+        WHERE d.codigo = 'GTH-PR-01' AND v.estado = 'vigente'`;
       expect(vigentes).toBe(1);
       const firmas = (await listarFirmas(t.tramiteId, { sql: tx })).filter((f) => f.ronda === t.ronda);
       expect(firmas.map((f) => f.firma)).toEqual(["elaboro", "reviso", "aprobo", "publico"]);
@@ -280,12 +280,12 @@ describe("publicación", () => {
     const nuevo = "Inducción y reinducción de todo el personal";
     const t = await tramiteEn(tx, "publicacion", { tituloNuevo: nuevo });
     try {
-      const titulo = async () => (await tx`SELECT titulo FROM documentos WHERE codigo = 'GTH-PR-02'`)[0].titulo;
-      expect(await titulo()).toBe("Procedimiento de Inducción y Reinducción");
+      const titulo = async () => (await tx`SELECT titulo FROM documentos WHERE codigo = 'GTH-PR-01'`)[0].titulo;
+      expect(await titulo()).toBe("Procedimiento de Ingreso de Personal");
       await transicionar(t.admin, publicar(t), opc(tx));
       expect(await titulo()).toBe(nuevo);
       expect(await ultimoDetalle(tx, t.tramiteId, "publicar")).toMatchObject({
-        tituloAnterior: "Procedimiento de Inducción y Reinducción", titulo: nuevo,
+        tituloAnterior: "Procedimiento de Ingreso de Personal", titulo: nuevo,
       });
     } finally { await t.limpiar(); }
   }));
@@ -392,7 +392,7 @@ describe("publicación", () => {
       const [v] = await tx`SELECT estado, elaboro, publicado_en FROM documento_versiones WHERE id = ${t.versionId}`;
       expect(v).toMatchObject({ estado: "borrador", elaboro: null, publicado_en: null });
       const [{ vigentes }] = await tx`SELECT count(*)::int AS vigentes FROM documento_versiones v JOIN documentos d ON d.id = v.documento_id
-        WHERE d.codigo = 'GTH-PR-02' AND v.estado = 'vigente'`;
+        WHERE d.codigo = 'GTH-PR-01' AND v.estado = 'vigente'`;
       expect(vigentes).toBe(1);
       const [{ etapa }] = await tx`SELECT etapa FROM tramites WHERE id = ${t.tramiteId}`;
       expect(etapa).toBe("publicacion");
