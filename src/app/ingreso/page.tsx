@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 const MENSAJES: Record<string, string> = {
   factor: "Se agotaron los intentos del segundo factor. Ingrese de nuevo.",
-  bloqueo: "Su cuenta quedó bloqueada 15 minutos por claves erradas",
+  bloqueo: "Su cuenta quedó bloqueada al menos 15 minutos por claves erradas",
 };
 
 export default async function PaginaIngreso({

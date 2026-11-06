@@ -38,7 +38,7 @@ describe("/ingreso", () => {
   beforeEach(() => sesionActual.mockResolvedValue(null));
 
   it("explica el bloqueo con un mensaje fijo", async () => {
-    expect(await pagina("bloqueo")).toContain("Su cuenta quedó bloqueada 15 minutos por claves erradas");
+    expect(await pagina("bloqueo")).toContain("Su cuenta quedó bloqueada al menos 15 minutos por claves erradas");
   });
 
   it("sin motivo, o con uno que no existe, no dice nada de ninguna cuenta", async () => {
