@@ -9,8 +9,8 @@ Capítulo 1.
 ## 1. Entrar al panel de administración
 
 Las páginas de administración están en la barra lateral (Capítulo 3, sección 2): en el
-grupo **Documentos**, Gestión de documentos, Listado Maestro, Tipos de documento y Mapa de
-procesos; en el grupo **Administración**, Entidad y marca, **Estructura**, **Usuarios**,
+grupo **Documentos**, Gestión de documentos, Listado Maestro, Tipos de documento,
+Configuración documental y Mapa de procesos; en el grupo **Administración**, Entidad y marca, **Estructura**, **Usuarios**,
 Estadísticas, Bitácora, **Accesos** y **Sesiones**. En este capítulo, "Administración →
 **Usuarios**" quiere decir: barra lateral, grupo Administración, enlace Usuarios.
 
@@ -30,11 +30,16 @@ Cada cuenta tiene **un solo rol**. Los roles son fijos: no se crean ni se editan
 | Líder de proceso | Sí, con el bloque **Mis procesos** en la página de inicio | No |
 | Consulta | Sí | No |
 
-En el portal todos ven solo las versiones **vigentes** de los documentos. Las versiones
-obsoletas y anuladas las ven el Administrador del SGC, Control Interno y las personas a
-las que usted les marque **"Puede ver el historial de documentos (versiones obsoletas y
-anuladas)"** (sección 3.1). Con esa marca, un líder de proceso o un usuario de consulta
-entra al panel solo a **Gestión de documentos**, en solo lectura.
+En el portal todos ven solo las versiones **vigentes** de los documentos. Un documento
+**restringido** lo ven solo el Administrador del SGC, Gerencia, Control Interno y las
+personas asignadas a alguno de sus procesos. Las versiones obsoletas y anuladas las ven el
+Administrador del SGC, Control Interno y las personas a las que usted les marque **"Puede
+ver el historial de documentos (versiones obsoletas y anuladas)"** (sección 3.1). Con esa
+marca, un líder de proceso o un usuario de consulta entra al panel solo a **Gestión de
+documentos**, en solo lectura. El detalle está en el Capítulo 5, sección 15.
+
+Los trámites de documentos no dependen solo del rol: quien elabora, revisa o aprueba un
+trámite lo ve aunque su rol sea Consulta (Capítulo 5).
 
 ## 2. Estructura: áreas y cargos
 
@@ -107,8 +112,10 @@ Administración → **Usuarios** → **Nuevo usuario**.
 - **Cargo (opcional):** de la lista de cargos activos ("Sin cargo" si aún no lo tiene).
 - **Jefe inmediato (opcional):** déjelo en "Según el organigrama" salvo que la persona
   le reporte a alguien distinto del cargo superior (sección 2.3).
-- **Procesos que lidera:** marque los procesos. Es **obligatorio para el rol Líder de
-  proceso** (al menos uno). Para los demás roles es opcional y por ahora solo informativo.
+- **Procesos:** marque los procesos. Para un líder, son los que lidera, y es
+  **obligatorio** marcar al menos uno. Para los demás roles es opcional: son los procesos a
+  los que la persona pertenece, y le dan acceso a sus documentos restringidos (Capítulo 5,
+  sección 15).
 - **Puede ver el historial de documentos (versiones obsoletas y anuladas):** márquela
   solo a quien lo necesite (sección 1).
 
@@ -214,7 +221,7 @@ rol, cargo, procesos o permisos queda en la **Bitácora** ("Editó el usuario «
 registro guarda el valor anterior y el nuevo de cada campo que cambió.
 
 **Asignar procesos a un líder:** ponga el rol **Líder de proceso**, marque sus procesos en
-**Procesos que lidera** y guarde. La próxima vez que esa persona abra el portal verá el
+**Procesos** y guarde. La próxima vez que esa persona abra el portal verá el
 bloque **Mis procesos** con accesos directos a sus procesos. Si un proceso se desactiva en
 el mapa, deja de aparecerle.
 
@@ -270,7 +277,7 @@ borrarlo.
   existe), Resultado, IP y Navegador. Se muestran 50 registros por página, con
   **Anterior** y **Siguiente**.
 - **Resultados posibles:** Ingreso, Salida, Fallo, Bloqueo, Desbloqueo, Restablecimiento,
-  Fallo del segundo factor y Cierre forzado.
+  Fallo del segundo factor, Cierre forzado y Firma fallida.
 
 Cómo leerlo:
 
@@ -278,6 +285,9 @@ Cómo leerlo:
   cinco veces, o alguien intentó adivinarla. Pregúntele antes de desbloquear.
 - **Fallo** con un usuario que no existe: alguien probó un nombre de usuario equivocado
   o inventado.
+- **Firma fallida**: la persona escribió mal su clave o su código al firmar un documento
+  (Capítulo 5, sección 7). Cuenta para el bloqueo igual que un **Fallo**. Si se repite y no
+  fue ella, alguien pudo usar una sesión abierta en su nombre: ciérrela en **Sesiones**.
 - Muchos fallos de distintas cuentas en poco tiempo: avise al área de sistemas.
 - La columna **IP** aparece con "—" mientras la instalación no tenga configurado el
   proxy de entrada; el resto del registro es igual de válido.

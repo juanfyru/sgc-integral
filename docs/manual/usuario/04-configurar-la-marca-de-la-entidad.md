@@ -196,8 +196,9 @@ en Administración → Entidad y marca." y tiene estos campos:
 - **Título del ciclo PHVA** y **Texto del ciclo PHVA**: el recuadro del ciclo Planear,
   Hacer, Verificar, Actuar que acompaña al mapa.
 
-El formato del código de los documentos (por defecto `PROCESO-TIPO-NN`, por ejemplo
-`SGC-FO-02`) ya no se edita en esta página: lo fija la configuración de la instalación.
+El formato del código de los documentos (por defecto `{PROCESO}-{TIPO}-{NN}`, por ejemplo
+`SGC-FO-02`) ya no se edita en esta página: se edita en **Configuración documental**
+(Capítulo 5, sección 14.1).
 
 Pulse **Guardar** para aplicar los cambios. En la **Bitácora** queda "Editó los textos del
 mapa y el código de documentos: subtítulo del mapa, título del ciclo PHVA, …".

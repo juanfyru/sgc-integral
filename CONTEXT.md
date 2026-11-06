@@ -1,11 +1,9 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-11-05**. La **Fase 12 —
-> Nueva estructura visual** se fusionó en `main` y se publicó en `origin` el 2026-11-05
-> (`7f79b04`, más el arreglo `b94032e`). Ese día el usuario partió la **Fase 13** en tres
-> entregas y se escribió el spec de la **13A — Flujo documental** (rama
-> `fase-13a-flujo-documental`; ver el punto 2). La Fase 11 (fundación de acceso) está en
-> `main` desde el 2026-11-04.
+> Se actualiza al cierre de cada fase. Última actualización: **2026-11-06**. La **Fase 13A —
+> Flujo documental** está hecha en la rama `fase-13a-flujo-documental` (64 commits de ejecución
+> y este de cierre) y espera la revisión final de la rama, la prueba del usuario y la fusión. La
+> Fase 12 (nueva estructura visual) y la Fase 11 (fundación de acceso) están en `main`.
 > La variante nació el 2026-11-03, bifurcada de `sgc-suaza` en `9644ceb`; el diseño
 > maestro de las fases 11–20
 > (`docs/superpowers/specs/2026-11-03-sgc-integral-plataforma-design.md`) está aprobado
@@ -18,52 +16,36 @@
    con sus funcionalidades, y construir aquí otra con **funcionalidades más completas**.
    La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
    proyecto**.
-1. **Dónde quedamos:** la **Fase 12 está hecha** en la rama `fase-12-estructura-visual`
-   (sale de `main` en `cd181bf`; spec y plan en `a941dd9`, corregidos tras la revisión
-   previa en `409f5f5`; 27 commits de ejecución y este de cierre). Toda la app autenticada
-   vive en un solo cascarón (barra lateral por módulos y rol, barra superior con búsqueda
-   `Ctrl K`, campana y menú con tema); sistema de color de tres capas (marca
-   configurable, módulo, estado) con tema claro, oscuro y según el sistema; pantalla
-   **Entidad y marca** (nombre, sigla, lema, aviso, dos colores con validación AA y
-   sugerencia, logo PNG/JPG/WebP); componentes base en `src/componentes/ui`; las 46
-   páginas migradas, sin textos fijos de la entidad; migración 0003 (tema, notificaciones,
-   usuario único sin mayúsculas, con comprobación previa de duplicados). **Sin
-   dependencias npm nuevas.** **Verificado al cierre** sobre el código de `3cb6b1d`
-   (este commit solo cambia documentación): lint limpio; **1481/1481 tests** (83
-   archivos; línea base de la fase: 586 en 59); build de producción; compose de
-   desarrollo reconstruido (`up -d --build --no-deps app`, sin tocar `bd`): la imagen
-   arrancó sobre la base existente, la comprobación de duplicados pasó y `migrate()`
-   dejó «Migraciones al día» con las cuatro migraciones registradas (0000–0003; la 0003
-   ya estaba aplicada en esta base desde la Tarea 2), rol `sgc_app` sincronizado,
-   `/api/salud` 200 `{"estado":"ok"}`, `/` → 307 a `/ingreso`, `/marca/logo` 200
-   `image/png`. El controlador hizo los recorridos en navegador (`next start` en 3010,
-   mismo código): dos puntos de control durante la fase y el recorrido final de §14 del
-   spec de la fase, en claro y oscuro, a 390 px e impreso, sin defectos que pidieran otra
-   ola. La **revisión final de la rama** dio «With fixes» (0 Critical, 3 Important y
-   menores): la ola final de arreglos (I1–I3 y M1–M11; F12-D47 a F12-D49) va en los
-   commits que siguen a `605ca69`, con lint limpio, **1662 tests** (85 archivos) y
-   el build simulado del CI. El usuario la probó; se fusionó en `main` (`7f79b04`) y se
-   publicó el 2026-11-05 con el CI en verde. Después se corrigió el nombre de la entidad,
-   que salía cortado en la barra lateral (`b94032e`, F12-D50).
-2. **Lo que sigue: Fase 13A — Flujo documental.** El 2026-11-05 el usuario contrastó el
-   diseño maestro con el procedimiento documentado de control de documentos del hospital
-   (13 actividades, puntos de control PC-01 a PC-13), aceptó 14 cambios al diseño y partió
-   la Fase 13 en tres entregas, cada una con su spec, su plan, su prueba y su fusión:
-   **13A** flujo documental; **13B** distribución y puntos de uso; **13C** vigencia,
-   externos y normograma. El spec de la 13A está en
-   `docs/superpowers/specs/2026-11-05-fase13a-flujo-documental-design.md`: §2 lista las
-   decisiones del usuario, §5 el reparto de las tres entregas, §23 las decisiones de Claude
-   y el Apéndice A el procedimiento con la evidencia de cada punto de control. **Sigue:** la
-   aprobación del spec por el usuario, el plan (`superpowers:writing-plans`) y la
-   ejecución. La 13A vuelve a sembrar la base de desarrollo, porque la demo adopta la
-   convención de códigos del hospital: avisar antes al usuario. Enganches que dejó la Fase
-   12: `misTareas()` (`src/lib/tareas.ts`), `crearNotificacion` con transacción
-   (`src/db/consultas/notificaciones.ts`), `/api/buscar` solo con vigentes (F12-DC14) y la
-   navegación por módulos (F12-DC5). Para las tablas de solo inserción nuevas (`firmas` y el
-   historial del trámite), ver la Deuda técnica de la Fase 11. Insumos que siguen
-   dependiendo del usuario: spec maestro §11 (SMTP, versión de Windows del servidor, planta
-   de cargos real, plantilla del plan de mejoramiento, total de cuentas) y, opcional, la
-   lista de verificación real del hospital (SGC-FO-03).
+1. **Dónde quedamos:** la **Fase 13A está hecha** en la rama `fase-13a-flujo-documental` (sale de
+   `main` en `b94032e`). Un documento nuevo, un cambio o una eliminación recorren ahora un trámite
+   dentro del sistema: solicitud con visto bueno, aceptación con duplicidad asistida, código
+   correlativo y plantilla, elaboración, revisión con lista de verificación y observaciones,
+   aprobación por autoridad, publicación y acta en PDF, con firma por clave en cuatro momentos.
+   Además: visibilidad por rol, nivel de acceso y participación; tareas, avisos y vencimientos;
+   carga de lo ya aprobado; marca de agua con el nombre de quien descarga. **Sin dependencias npm
+   nuevas.** Detalle en «Hecho (Fase 13A)». **Verificado al cierre:** lint limpio; **2805/2805 tests** (118 archivos,
+   con `SEMILLA_RECIEN=1`; línea base de la fase: 1662 en 85); build de producción sin URL de base,
+   como el CI; compose de desarrollo reconstruido (`up -d --build --no-deps app`, sin tocar `bd`):
+   «Migraciones al día» con las cinco migraciones, `/api/salud` 200 `{"estado":"ok"}`, `/` → 307 a
+   `/ingreso`. La 0004 se aplicó además sobre una copia con el esquema y la demo de `main`. Hubo tres
+   puntos de control en navegador; el tercero recorrió los pasos 1 a 12 de §20, y sus arreglos
+   están en los últimos 15 commits. El CI todavía no ha corrido sobre esta rama: no se ha publicado.
+   **Falta:** la revisión final de la rama, su ola de arreglos, la prueba del usuario («Qué probar
+   y cómo (Fase 13A)») y la fusión en `main`. El usuario decide F13A-R35 (404 real en páginas).
+2. **Lo que sigue: Fase 13B — Distribución y puntos de uso** (pasos 9 y 10 del procedimiento del
+   hospital): listas de distribución y acuse de lectura con porcentaje, evidencia de capacitación,
+   copias controladas con sello, recibido y recogida de las obsoletas, puntos de uso y su
+   verificación con porcentaje de conformidad. Sigue el mismo camino de la 13A: spec aprobado,
+   plan, ejecución, prueba y fusión; el reparto está en el spec de la 13A, §5. Enganches que deja la
+   13A: el **evento de publicación y el de eliminación** (`src/db/consultas/flujo/cierre.ts`), donde
+   la 13B cuelga la distribución y el aviso a las listas; `archivos` sin generalizar, porque el
+   primer dueño distinto de una versión es la evidencia de capacitación; **marcar leída una
+   notificación** no se audita (F12-D35) y, si pasa a ser acuse de una tarea, sí debe quedar en la
+   bitácora; el motivo «revisión anual» de la solicitud lo usa la 13C. Insumos que dependen del
+   usuario: spec maestro §11 (SMTP, versión de Windows del servidor, planta de cargos real,
+   plantilla del plan de mejoramiento, total de cuentas), la lista de verificación real
+   (SGC-FO-03) y el ajuste del texto de su procedimiento (el listado maestro aparece con dos
+   códigos y la «carpeta oficial» pasa a ser la plataforma).
 3. **Entorno de desarrollo** (convive con `sgc-suaza` en la misma máquina):
 
    | Pieza | SGC Integral (esta) | sgc-suaza (original) |
@@ -109,6 +91,7 @@
 
    | Usuario | Rol | Cargo | Procesos |
    |---|---|---|---|
+   | `coordinadora.sgc` | admin_sgc | Líder de Calidad | — |
    | `gerente` | gerencia | Gerente | — |
    | `control.interno` | control_interno | Jefe de Control Interno | — |
    | `lider.gth` | lider_proceso | Coordinadora de Talento Humano | GTH |
@@ -116,34 +99,39 @@
    | `consulta` | consulta | Auxiliar de Enfermería | — |
 
    Más `admin` / `cambiar-esta-clave` (admin_sgc) de `npm run admin:asegurar`, que pide
-   cambiar la clave. La demo trae 5 áreas y 9 cargos con jerarquía; mapa y documentos
-   sin cambios (28 documentos con 29 versiones: 26 vigentes, 1 obsoleta, 1 borrador y
-   1 anulada). Desde la Fase 12 la demo trae además la marca de Suaza (sigla `HNSF`,
-   primario `#1b4e8e`, secundario `#2e9b47`, el lema actual y el logo demo
-   `src/db/semillas/recursos/logo-demo.png`, un monograma propio, no el escudo real) y una
+   cambiar la clave. La demo trae 5 áreas y 9 cargos con jerarquía, y **30 documentos con 34
+   versiones** (28 vigentes, 2 obsoletas, 3 en borrador y 1 anulada), con la convención del hospital
+   (`PROCESO-TIPO-NN`), dos plantillas (`SGC-FO-04` y `SGC-FO-05`), un restringido (`GTH-FO-01`) y
+   **cinco trámites** en distintas etapas, de `SOL-…-001` a `SOL-…-005`. Desde la Fase 12 trae además
+   la marca de Suaza (sigla `HNSF`, primario `#1b4e8e`, secundario `#2e9b47`, el lema actual y el logo
+   demo `src/db/semillas/recursos/logo-demo.png`, un monograma propio, no el escudo real) y una
    notificación "Bienvenida al SGC Integral" sin leer por usuario demo; todas las cuentas
    nacen con tema `claro`.
    `npm run db:seed:minima` deja una instalación nueva: "Entidad sin configurar", sigla
-   `SGC`, los mismos dos colores, sin logo y lema vacío, aviso de datos de ejemplo, 9
-   tipos de documento y patrón de código; sin mapa, áreas, documentos ni usuarios
-   (después hay que correr `admin:asegurar`).
-   **La base de desarrollo se resembró en la Tarea 4 de la Fase 12** (`db:seed` +
-   `admin:asegurar`, para tener la marca, el logo y las bienvenidas): se perdieron los
-   datos de la prueba manual de la Fase 11 (p. ej. el área "Tecnología Informática") y
-   `admin` se recreó con la `ADMIN_CLAVE` de `.env.local` y cambio obligatorio. Después
-   no se volvió a resembrar.
-5. **Tests:** 1662 en 85 archivos, en serie (`fileParallelism: false`), contra la BD de
+   `SGC`, los mismos dos colores, sin logo y lema vacío, aviso de datos de ejemplo, 11
+   tipos de documento con su autoridad, formato del código, plazos y ocho ítems de lista; sin
+   mapa, áreas, documentos ni usuarios (después hay que correr `admin:asegurar`). Una base
+   heredada de `sgc-suaza` entra sin formato (sigue validando con su `patron_codigo` y no propone
+   código), con todos los tipos operativos y **sin ítems en la lista de verificación**: el
+   Administrador del SGC los fija en **Configuración documental** y **Tipos de documento**.
+   **La base de desarrollo se resembró varias veces en la 13A** (Tareas 2 y 15, sus arreglos y el
+   cierre): cada vez se pierden los datos de prueba manual y `admin` se recrea con la `ADMIN_CLAVE`
+   de `.env.local` y cambio obligatorio.
+5. **Tests:** 2805 en 118 archivos, en serie (`fileParallelism: false`), contra la BD de
    desarrollo sembrada y **conectados como `sgc_app`**, igual que la app; el test de
    privilegios usa además `DATABASE_URL_MIGRADOR`. Los usuarios de prueba con historia
    (`zz_<algo>_<timestamp>`) se acumulan porque no se pueden borrar (F11-D2); `db:seed` los
-   limpia. Con la BD recién sembrada pasan todos: un rojo es una señal real (salvo el
+   limpia. `tests/semilla-tramites.test.ts` lee el estado de la demo: si ya se usó, salta lo que
+   dependa de ella con un aviso. `SEMILLA_RECIEN=1 npm test`, con la base recién sembrada, convierte
+   esos saltos en fallos. Tras correr la suite conviene resembrar: deja usuarios `zz_*` y `admin_sgc`
+   de prueba que inflan los selectores de designación. Un rojo es una señal real (salvo el
    intermitente de la Deuda técnica).
 6. **CI (decisión de la bifurcación, tomada por Claude):** lint y build corren en cada
    push; el job de imagen ARM64 (GHCR + artefacto `.tar`) solo corre con **Actions →
    CI → Run workflow**. Motivos: la cuota de almacenamiento de Actions es de la cuenta y
    la comparte con `sgc-suaza` (se agotó el 2026-08-25) y cada build ARM64 por QEMU es
    lento. La imagen `amd64` del CI llega en la Fase 20. La Fase 11 añadió `otpauth`,
-   `qrcode` y `zod` (todos JS puro); la Fase 12 no añadió dependencias. No consta que el
+   `qrcode` y `zod` (todos JS puro); las Fases 12 y 13A no añadieron dependencias. No consta que el
    job ARM64 se haya relanzado desde la Fase 11: lanzarlo a mano antes de la Fase 20.
 7. **Despliegue: decidido en el spec §4 y escrito en `AGENTS.md` ("Piso de despliegue")**
    (contenedores portables, Windows con WSL2 o Linux, tres contenedores proxy + app +
@@ -159,12 +147,142 @@
 8. **Pendientes heredados del usuario** (siguen valiendo aquí): documentos reales
    aprobados y logo institucional. La **convención oficial de códigos quedó resuelta el
    2026-11-05**: sigla del proceso, sigla del tipo y consecutivo de dos dígitos contado por
-   proceso y tipo (`SGC-FO-02`); la implementa la 13A. Desde la Fase 12 el logo se sube en **Entidad y marca** y debe ser
+   proceso y tipo (`SGC-FO-02`); la implementó la 13A. Desde la Fase 12 el logo se sube en **Entidad y marca** y debe ser
    PNG, JPG o WebP (SVG no, F12-DC9): pedirlo en PNG cuadrado de unos 512 px con fondo
    transparente. La subida de Next quedó hecha en la Fase 11 (16.4.5).
 9. **Memoria de Claude Code:** es por carpeta; la de `F:\sgc-integral` solo guarda
    preferencias de trabajo del usuario (decide por listas numeradas; recomendaciones con
    base ISO, Regulación o Práctica). Este archivo es el contexto durable de la variante.
+
+## Qué probar y cómo (Fase 13A)
+
+Recorrido de §20 del spec de la fase
+(`docs/superpowers/specs/2026-11-05-fase13a-flujo-documental-design.md`). El capítulo 5 del
+manual (`docs/manual/usuario/05-documentos-solicitar-elaborar-revisar-aprobar-y-publicar.md`)
+explica cada pantalla.
+
+0. **Preparar.** Base arriba y `npm run dev` → `http://localhost:3002`. **No use 9081:** el
+   compose no monta el almacén, así que allí no existen los archivos de la demo y fallan la
+   plantilla, las descargas y la marca de agua. La base quedó recién sembrada; para empezar
+   de cero: `npm run db:seed && npm run admin:asegurar` (vacía la base y `./almacen`).
+   Use ventanas privadas para tener varias sesiones.
+
+   | Usuario | Clave | Papel en el recorrido |
+   |---|---|---|
+   | `coordinadora.sgc` | `Demo-SGC-2026-clave` | **Hace de Coordinador SGC** (rol Administrador del SGC) |
+   | `gerente` | `Demo-SGC-2026-clave` | Aprueba lo estratégico y las eliminaciones que pide un Admin SGC |
+   | `control.interno` | `Demo-SGC-2026-clave` | Ve obsoletas y trámites cerrados, en solo lectura |
+   | `lider.gth`, `lider.cex` | `Demo-SGC-2026-clave` | Líderes de GTH y de CEX |
+   | `consulta` | `Demo-SGC-2026-clave` | Sin permisos; elabora SOL-2026-003 |
+   | `admin` | La `ADMIN_CLAVE` de `.env.local` | Segundo Admin SGC. **Pide cambiar la clave al primer ingreso.** No hace falta para el recorrido |
+
+   Los trámites sembrados sirven de atajo:
+
+   | Número | Etapa | Documento | Quién sigue |
+   |---|---|---|---|
+   | SOL-2026-001 | Publicado | `GTH-CA-01` v3, con cuatro firmas; v2 obsoleta | Nadie. Su acta se genera al primer clic |
+   | SOL-2026-002 | Revisión, ronda 2 | `GTH-PR-02` v2 | `coordinadora.sgc` revisa y aprueba. Observación 1 cerrada, 2 atendida |
+   | SOL-2026-003 | Publicación, vencido hace 2 días | `GBS-PR-01` v2 | Publica un Admin SGC. Elaboró `consulta`, revisó `lider.gth` |
+   | SOL-2026-004 | Aceptación, vence hoy | Crear «Consentimiento informado de procedimientos menores» (CEX, Formato) | `coordinadora.sgc` acepta |
+   | SOL-2026-005 | Visto bueno | Eliminar `CEX-GU-01` | `lider.cex` da el visto bueno |
+
+1. **Pedir (`lider.gth`).** **Trámites** → **Nueva solicitud** → **Modificar** `GTH-PR-01`,
+   con motivo y justificación → **Enviar solicitud**. Debe verse la etapa Aceptación y
+   «Dado: quien pide es el líder del proceso». Otro proceso: la ficha de `CEX-CA-01` no trae
+   **Solicitar cambio** y `CEX-CA-01` no sale en su lista. `/tramites/nueva?documento=CEX-CA-01`
+   avisa que no puede pedir sobre ese documento.
+2. **Aceptar una creación (`coordinadora.sgc`).** Use SOL-2026-004, o pídala como `lider.cex`.
+   Debe verse **¿Ya existe un documento parecido?** con `AIN-FO-01` «Muy parecido», de otro
+   proceso. Elija «No es un duplicado: es un documento nuevo». El código sugerido es
+   `CEX-FO-01`. Escriba `GTH-FO-77` y acepte: «El código debe empezar por CEX-FO-». Vuelva al
+   sugerido. **Elabora** `lider.cex`, **Revisa** usted, **Aprueba** viene elegido o se elige
+   entre los Admin SGC. **Aceptar y abrir el trámite**: etapa Elaboración, día 1 de 15.
+3. **Elaborar (`lider.cex`).** Pulse **Plantilla vigente** (`SGC-FO-05`) y descárguela. Suba
+   un PDF como **Principal (lectura)**. Escriba el **Control de cambios**: con el texto sin
+   guardar, **Enviar a revisión** queda desactivado. Guárdelo, envíe y firme con la clave. Una
+   clave errada dice «Clave o código incorrectos» y conserva lo demás.
+4. **Revisar (`coordinadora.sgc`).** Responda toda la lista con un ítem crítico en **No
+   cumple**, pulse **Guardar avance** y firme **Dar concepto favorable**: «Hay un ítem crítico
+   que no cumple». Deje dos observaciones y **Devolver a elaboración**. Como `lider.cex`: vea la lista de la ronda 1,
+   responda las dos y reenvíe. Como revisora: en la ronda 2 la lista llega propuesta y el
+   botón queda desactivado hasta **Guardar avance**. Cierre las observaciones y dé el concepto
+   con su clave. Atajo: SOL-2026-002 ya está en la ronda 2.
+5. **Aprobar y publicar en un acto (`coordinadora.sgc`).** En un operativo, por ejemplo
+   SOL-2026-002: **Aprobar y publicar** → **Firmar, aprobar y publicar**. Debe verse: Publicado,
+   versión 1 obsoleta y versión 2 vigente; **Listado Maestro** con «En la plataforma» en
+   **Aprobación**; **Acta de aprobación** con cuatro firmas y una sola huella.
+6. **Estratégico y Coordinador que elabora.** `lider.cex` pide modificar `CEX-CA-01`; al
+   aceptar, **Aprueba** trae a `gerente`. Tras elaborar y revisar, `gerente` pulsa **Aprobar**
+   con su clave y `coordinadora.sgc` pulsa **Publicar**. Después, `coordinadora.sgc` pide
+   modificar `SGC-PR-01` y se elige en **Elabora**: desaparece de **Revisa** (elija a
+   `lider.gth`) y **Aprueba** dice «Elabora un Administrador del SGC: aprueba Gerencia.».
+7. **Bloqueo por firma (`lider.gth`).** En un trámite donde él elabora, con archivo y control
+   de cambios listos, firme cinco veces con clave errada. Debe verse: cuatro veces «Clave o
+   código incorrectos»; a la quinta, la pantalla de ingreso con «Su cuenta quedó bloqueada al
+   menos 15 minutos por claves erradas». **Accesos**: cuatro **Firma fallida** y un **Bloqueo**.
+   Levántelo como `coordinadora.sgc` en **Usuarios** → `lider.gth` → **Desbloquear**.
+8. **Lo que cada quien ve.** Tras el paso 5, `consulta` abre la ficha de `GTH-PR-02` y ve la
+   versión nueva; su PDF lleva «COPIA NO CONTROLADA» y «Descargada por Usuario de consulta de
+   ejemplo el …»; `/tramites/2` dice «Página no encontrada». `consulta` ve **Trámites** en la
+   barra porque elabora SOL-2026-003: es lo esperado. `control.interno`: **Gestión de
+   documentos** → `GTH-PR-02`: versión 1 con banda OBSOLETO; el enlace **Trámite de aprobación**
+   abre el trámite cerrado con la lista de cada ronda y las observaciones, sin un solo botón.
+9. **Restringido: `GTH-FO-01`.** `consulta` no lo encuentra en el proceso GTH, en **Buscar
+   documentos**, con `Ctrl K` ni en `/documentos/gth-fo-01`, y una dirección de archivo copiada
+   de `lider.gth` da 404. `lider.gth` sí lo ve, con la insignia «Acceso restringido».
+10. **Eliminar (SOL-2026-005).** `lider.cex`: **Dar visto bueno**. `coordinadora.sgc`: **Aceptar
+    y pasar a aprobación**, con `gerente` como único candidato porque la pidió un Admin SGC.
+    `gerente`: **Aprobar**. `coordinadora.sgc`: **Eliminar el documento**. Debe verse: `CEX-GU-01`
+    fuera del portal y de la búsqueda; en **Gestión de documentos**, Anulado con banda y
+    **Acta de eliminación**; la siguiente Guía de CEX propone `CEX-GU-02`.
+11. **Carga directa (`coordinadora.sgc`).** **Gestión de documentos** → **Registrar documento ya
+    aprobado**, con **Versión con la que entra** 4. Suba el archivo, llene **Control de la
+    versión** y publique: Vigente, «Aprobación registrada fuera de la plataforma» y «Fuera de la
+    plataforma» en el Maestro. Registre otro, **Deshacer carga** con motivo y vuelva a
+    registrarlo desde su página con **Nueva versión (borrador)**: conserva el código. Sobre un
+    vigente, **Nueva versión (borrador)** ya no aparece: el cambio va por **Solicitar cambio**.
+    Apague **Publicación directa** en **Configuración documental**: desaparecen **Registrar
+    documento ya aprobado** y los botones del camino directo; queda **Descartar borrador**.
+    Enciéndala si va a seguir probando.
+12. **Vencidos, tareas, cancelar y reasignar.** La bandeja muestra SOL-2026-003 «Vencido hace 2
+    días». El aviso «Solicitud SOL-2026-003: venció el plazo de publicación» llega a los Admin
+    SGC con la primera página que alguien cargue (la revisión corre como mucho cada diez
+    minutos). **Mis tareas** de cada usuario lista lo suyo. Para ver el escalamiento sin tocar
+    la base, baje **Días para avisar al jefe** a 1: en la siguiente revisión `gerente` recibe
+    «… el paso de publicación sigue vencido», sin título y sin enlace. Devuélvalo a 3. Reasigne
+    y cancele un trámite abierto: quien entra y quien sale reciben aviso, y la versión cancelada
+    queda Descartado.
+13. **Verificación técnica:** hecha al cierre. `npm run lint`, `npm test` (2805/2805 en 118 archivos) y
+    `npm run build` en verde; la imagen del compose arranca, dice «Migraciones al día» y
+    `/api/salud` responde `{"estado":"ok"}`. La 0004 se aplicó sobre una copia con el esquema y la
+    demo de `main`. Falta el CI: corre al publicar la rama. En 9081 `/marca/logo` da 404 porque la
+    imagen no trae el almacén.
+
+**Segundo factor (no hay usuario demo con él).** Como `lider.cex`, active el segundo factor en
+**Mi cuenta** y firme: el diálogo pide además el **Código**. Pruebe también un código de
+recuperación: se gasta al usarlo.
+
+**Al terminar:** el recorrido avanza la demo, y `npm test` salta los casos que dependen de ella,
+con un aviso en la salida. `npm run db:seed && npm run admin:asegurar` la deja como nueva.
+
+### Avisos para el usuario
+
+1. **`sgc-suaza` (`F:\sgc`) puede tener el mismo truncamiento de subidas.** En la Tarea 8 se vio
+   que el proxy de Next guardaba completa solo la parte de un archivo de más de 10 MB y
+   respondía 201. Aquí se corrigió (F13A-R10). `sgc-suaza` no se tocó y conviene revisarlo.
+   Base: ISO 7.5.3.2.
+2. **TOTP sin antirreplay.** Un código del segundo factor se puede reutilizar dentro de su
+   ventana, al ingresar y al firmar (heredado). Si se quiere endurecer, es una decisión suya.
+   Base: Práctica (RFC 6238 §5.2).
+3. **Una página que no se puede ver responde 200 con «Página no encontrada»,** no 404 (F13A-R35).
+   No hay fuga: ajeno, inexistente y no numérico responden igual, y los archivos sí dan 404.
+   Un 404 real exige reorganizar rutas. Queda para su decisión.
+4. **La insignia de la campana cambió también en tema claro:** de rojo sólido a fondo pálido con
+   borde, para cumplir AA en oscuro. Conservar el rojo sólido en claro exige un token nuevo.
+5. **En el Listado Maestro** la columna de fecha pasó a llamarse «Fecha de aprobación», porque
+   la nueva se llama «Aprobación» (F13A-R25).
+6. **`revisarVencimientos` no deja fila en `auditoria`:** lo hace el sistema, no una persona. Su
+   rastro son los avisos y las marcas del trámite (F13A-R22).
 
 ## Qué probar y cómo (Fase 12)
 
@@ -342,6 +460,59 @@ desarrollo en `http://localhost:3002`.
 
 Manual de usuario de esta fase: `docs/manual/usuario/01-ingreso-clave-y-segundo-factor.md`
 y `docs/manual/usuario/02-usuarios-cargos-y-procesos.md`.
+
+## Hecho (Fase 13A)
+
+Plan: `docs/superpowers/plans/2026-11-05-fase13a-flujo-documental.md`; diseño:
+`docs/superpowers/specs/2026-11-05-fase13a-flujo-documental-design.md`. Los pasos 1 a 8 del
+procedimiento de control de documentos del hospital quedan dentro del sistema, con la evidencia
+de los puntos de control PC-01 a PC-08 (spec, Apéndice A.2).
+
+- **Rutas nuevas:** `/tramites` (bandeja con **Por hacer**, **En curso** y **Cerrados**),
+  `/tramites/nueva`, `/tramites/[id]`, `/tramites/[id]/acta`,
+  `/tramites/[id]/archivos/[archivoId]/[[...nombre]]`, `POST /api/tramites/[id]/archivos`,
+  `DELETE /api/tramites/[id]/archivos/[archivoId]` y `/admin/configuracion-documental`. Las URL
+  existentes se conservan.
+- **Esquema (`drizzle/0004_fase13a-flujo.sql`):** tablas `tramites`, `tramite_eventos`, `firmas`,
+  `tramite_observaciones`, `tramite_verificaciones` y `lista_verificacion_items`;
+  `tipos_documento.autoridad` y `plantilla_documento_id`; `documentos.nivel_acceso`;
+  `documento_versiones.origen_aprobacion` y `publicado_en`; estado `descartado` con unicidad
+  parcial del número de versión; roles de acta en `archivos`; `firma_fallo` en `accesos`. `firmas`
+  y `tramite_eventos` son de solo inserción (trigger y `REVOKE` de `sgc_app`). Los datos heredados
+  entran como tipos operativos, documentos generales y versiones aprobadas fuera de la plataforma.
+- **Reglas puras (`src/lib/tramites/`):** `transiciones.ts` (tabla de §7.2 y
+  `PERMISO_DE_ACCION`), `separacion.ts` (S1 a S3, candidatos, `rolAprobador`), `plazos.ts`,
+  `codigo.ts` (formato, validación, consecutivo) y `tipos.ts`.
+- **Flujo (`src/db/consultas/`):** `tramites-flujo.ts` (`crearSolicitud`, `transicionar`),
+  `flujo/` (manejadores y validadores por etapa, `contrato.ts`), `tramites.ts` (lecturas, bandeja,
+  visibilidad), `revision.ts`, `tramites-archivos.ts`, `tramites-gestion.ts`
+  (`corregirDatosDeControl`), `actas.ts`, `firmas.ts`, `codigos.ts`, `parecidos.ts`,
+  `config-documental.ts` y `vencimientos.ts`.
+- **Firma y actas (`src/lib/`):** `firma.ts` (`verificarParaFirmar`, con el bloqueo del ingreso),
+  `acta.ts` (PDF con `pdf-lib`), `texto-pdf.ts` (transliteración y aviso), `huella.ts`,
+  `recepcion-archivo.ts` (recepción común de subidas), `vencimientos-disparo.ts`.
+- **Visibilidad (`src/lib/alcance.ts`):** `filtroAcceso`, `puedeAccederDocumento`,
+  `puedeVerVersion` y `puedeVerTramite`, usadas en ficha, procesos, búsqueda, `/api/buscar`,
+  conteos del mapa, panel, Maestro y rutas de archivos. El PDF del portal lleva el nombre de quien
+  descarga y la fecha en la zona de la instalación.
+- **Panel:** el camino directo queda como carga de lo ya aprobado (número real de versión, marca de
+  origen, descartar borrador, deshacer carga, clave `publicacion_directa`); la anulación directa
+  desaparece; **Configuración documental**; autoridad y plantilla en **Tipos de documento**;
+  **Procesos** vale para cualquier rol; datos de control y de catálogo separados; **Aprobación** en
+  el Listado Maestro y su Excel; las acciones heredadas que se tocaron pasan a esquemas `zod`.
+- **Cascarón:** entrada **Trámites**, `misTareas()` real, avisos por transición y revisión de
+  vencimientos cada diez minutos como mucho, disparada por el cascarón.
+- **Semillas:** la demo adopta la convención del hospital (`CAL` → `SGC`, `FT` → `FO`, códigos
+  `PROCESO-TIPO-NN`), añade `coordinadora.sgc`, dos plantillas, un restringido y cinco trámites
+  sembrados con las reglas reales; la mínima trae 11 tipos con su autoridad, formato, plazos y
+  ocho ítems de lista. Se resembró en las Tareas 2 y 15, en los arreglos y al cierre.
+- **Manual:** capítulo 5 nuevo; capítulos 1 a 4 corregidos donde esta entrega los dejó falsos.
+- **Verificación al cierre:** lint limpio; 2805/2805 tests en 118 archivos; build como el CI; compose con
+  «Migraciones al día» y `/api/salud` `{"estado":"ok"}`. Sobre una copia con la demo de `main`
+  (28 documentos y 29 versiones) la 0004 dejó 5 migraciones y los datos intactos: todas las
+  versiones con origen `fuera`, documentos generales, tipos operativos, `patron_codigo` conservado,
+  y triggers y privilegios de `sgc_app` correctos en `firmas` y `tramite_eventos`. La segunda corrida
+  no cambió nada.
 
 ## Hecho (Fase 12)
 
@@ -725,10 +896,8 @@ Plan: `docs/superpowers/plans/2026-11-03-fase11-fundacion-acceso.md`; diseño de
 
 ## Pendientes que dependen del usuario
 
-- [ ] **Convención de códigos**: siglas de tipos de documento y de procesos, y alcance
-  del consecutivo (formato confirmado: `TIPO-PROCESO-CONSECUTIVO`, ej. `PR-GTH-001`).
-  Bloquea la validación fuerte del código en el admin (Fase 6); mientras tanto se valida
-  solo el patrón general `^[A-Z]{2,4}-[A-Z]{2,4}-\d{3}$` de forma configurable.
+- [x] **Convención de códigos**: resuelta el 2026-11-05: sigla del proceso, sigla del tipo y
+  consecutivo de dos dígitos contado por proceso y tipo (`SGC-FO-02`). La implementó la 13A.
 - [ ] **Documentos reales**: aún no están aprobados ni numerados. Hasta entonces, seed
   con documentos ficticios verosímiles. No hay migración en lote comprometida.
 - [ ] Logo institucional en mejor resolución, si existe. Desde la Fase 12 se sube en
@@ -992,7 +1161,141 @@ los tests) no entran; la de los tests quedó como regla en `AGENTS.md`. Base: **
 | F12-D49 | **Los componentes cliente del cascarón se prueban sin DOM:** la lógica (cierre del desplegable, envío diferido) vive en módulos sin React ni DOM y se prueba con objetos simples y temporizadores falsos; el cableado de eventos se comprueba en la fuente y en el navegador | Sin dependencias nuevas sin proponerlas (Metodología, punto 2); no hay `jsdom` ni `happy-dom`. Costo: ningún test monta el componente con eventos reales. Si los componentes cliente crecen, proponer `happy-dom` o `jsdom` como dependencia de desarrollo. Práctica | 2026-11-04 |
 | F12-D50 | **El nombre de la entidad se muestra completo en la barra lateral y en el cajón**, sin el recorte a dos líneas del spec §5.2: 14 px hasta 30 caracteres y 12 px si es más largo, con `break-words` (`claseNombreEntidad` en `ContenidoBarra.tsx`) | El usuario vio cortado «ESE Hospital Nuestra Señora de Fátima de Suaza». El nombre es la identidad de la entidad y un texto cortado sin forma de verlo completo es una barrera de accesibilidad. Práctica | 2026-11-05 |
 
+## Decisiones adicionales (Fase 13A)
+
+F13A-DC1 a F13A-DC28 vienen del spec de la fase (§23), del 2026-11-05. F13A-P1 a P5 son
+resoluciones previas a la ejecución y F13A-R1 a R35 las resoluciones del controlador durante la
+ejecución, del 2026-11-05 y el 2026-11-06: varias corrigen el plan y mandan sobre él. Son los
+mismos números que citan los comentarios del código (`R24`, `R26`, `R32`, `R33`). Base: **ISO**
+(cláusula de 9001:2015), **Regulación** o **Práctica**.
+
+| # | Decisión y porqué | Base | Si es incorrecta |
+|---|---|---|---|
+| F13A-DC1 | En una eliminación, quien la pide no la aprueba (S3); si la pide un `admin_sgc`, aprueba Gerencia. Sin elaborador, el Coordinador SGC podría pedir, aprobar y ejecutar solo una baja | Práctica (separación de funciones) | Una regla en `validarDesignacion` y en los candidatos |
+| F13A-DC2 | El visto bueno se omite si el proceso no tiene líder, y queda escrito en el historial, para no trabar el trámite | Práctica | Un documento sin visto bueno; se corrige asignando líder |
+| F13A-DC3 | El solicitante puede retirar su solicitud antes de la aceptación | Práctica | Una acción de más en la tabla de transiciones |
+| F13A-DC4 | Una creación duplicada se convierte en modificación dentro del mismo trámite, solo si el documento existente es del mismo proceso; si es de otro, se rechaza con la referencia | Práctica (procedimiento del hospital, PC-02) | Se retira la rama de conversión y se pide de nuevo |
+| F13A-DC5 | El plazo de ajustes tras una devolución es el de revisión (5 días): ajustar es más corto que elaborar | Práctica | Un valor configurable |
+| F13A-DC6 | Código, tipo, proceso propietario y título son datos de control: cambian solo por trámite (el título se aplica al publicar) y quedan fijos desde la aprobación; en una modificación no cambian código, tipo ni propietario. Descripción, palabras clave, otros procesos, relacionados y nivel de acceso son de catálogo, editables siempre | ISO 7.5.3.2 c) | Mover un dato de grupo toca el panel y la corrección |
+| F13A-DC7 | El aprobador puede negar una eliminación: no hay nada que devolver a elaboración | Práctica | Una acción menos |
+| F13A-DC8 | Los fallos de firma cuentan para el bloqueo, quedan en accesos como `firma_fallo` y cierran la sesión al bloquear: impide adivinar la clave desde una sesión ajena | Práctica (seguridad); spec maestro §5.1 | Un firmante distraído se bloquea y el Admin SGC lo levanta |
+| F13A-DC9 | Un código de recuperación también sirve para firmar | Práctica | Quien perdió el teléfono pide quitar el factor |
+| F13A-DC10 | El historial del trámite es de solo inserción, como `firmas` | ISO 7.5.3.1 b) | Un error se corrige con un evento nuevo |
+| F13A-DC11 | Al publicar se vuelve a calcular la huella del archivo en disco. Es una comprobación única, no la verificación periódica rechazada | ISO 7.5.3.1 b) | Una lectura de archivo de más al publicar |
+| F13A-DC12 | El acta la ve quien ve la versión, sale sin marca de agua y se genera si falta | ISO 7.5.3.1 a) | Una regla en la ruta del acta |
+| F13A-DC13 | El panel deja de mostrar borradores a Control Interno y a la marca individual; el Maestro «todos» deja de listar documentos que solo tienen borrador | Práctica (spec maestro §5.3) | Se amplía `puedeVerVersion` |
+| F13A-DC14 | La regla de restringido vale también para quien tiene la marca de historial: da historial, no acceso a lo restringido | ISO 7.5.3.1 b) | Quien tenga la marca necesita sus procesos asignados |
+| F13A-DC15 | Control Interno y la marca individual ven en solo lectura los trámites cerrados por publicación o eliminación | ISO 7.5.3.2 c) | Una condición en `puedeVerTramite` |
+| F13A-DC16 | Estado `descartado` y unicidad parcial del número de versión: versiones publicadas consecutivas, con lo cancelado conservado | ISO 7.5.3.2 c) | Otra migración |
+| F13A-DC17 | Descartar un borrador de carga: hoy uno creado por error no tiene salida y bloquearía un trámite | Práctica | Un botón de más |
+| F13A-DC18 | El camino directo solo da de alta; la anulación directa desaparece; con la carga abierta se puede deshacer una carga, conservando el código | Práctica (spec maestro DC26 y adición 7) | Corregir un dato cargado exigiría un trámite |
+| F13A-DC19 | La entrada **Trámites** se ve por permiso o por participación: un elaborador con rol consulta debe llegar a su trámite | Práctica | Un enlace de más o de menos |
+| F13A-DC20 | `archivos` no se generaliza hasta la 13B: en la 13A todo archivo pertenece a una versión | Práctica | La 13B decide la forma |
+| F13A-DC21 | La demo adopta la convención del hospital y la base de desarrollo se vuelve a sembrar | Práctica | Se pierde lo probado a mano en esa base |
+| F13A-DC22 | Formato, Registro y Matriz nacen diligenciables | Práctica | Un dato editable |
+| F13A-DC23 | Los tests del flujo corren en transacciones que se revierten: no acumulan trámites y firmas imborrables | Práctica | Parámetros `sql` de más |
+| F13A-DC24 | `tramites.participar` para los cinco roles y un permiso de matriz en cada acción: el elaborador puede ser cualquier funcionario | Práctica (`AGENTS.md`, regla 4) | Una fila de la matriz |
+| F13A-DC25 | Los borradores intermedios no se conservan; de cada ronda quedan la huella firmada, la lista y las observaciones | Práctica | Conservarlos exige cambiar el índice de un principal por versión |
+| F13A-DC26 | Los archivos de un trámite solo se sirven por su ruta mientras está abierto; después rige el estado de la versión | Práctica (`AGENTS.md`, regla 3) | Se amplía `archivoDeTramite` |
+| F13A-DC27 | El aviso de escalamiento al jefe va sin título ni enlace, y el jefe no gana acceso al trámite | ISO 7.5.3.1 b) | El jefe le pregunta a su subalterno |
+| F13A-DC28 | «Procesos que lidera» pasa a «Procesos» y vale para cualquier rol: es el mecanismo de los documentos restringidos | Práctica (spec maestro §5.3) | Cambia el sentido de un campo |
+| F13A-P1 | Todo lo que una transición escribe con fecha usa `opciones.ahora`; `registrarFirma` recibe `ahora?` y lo guarda. Las fechas de un mismo acto no pueden diferir | Práctica | Un parámetro opcional de más |
+| F13A-P2 | «La conexión como última opción» vale para las consultas que corren solas. Las que solo tienen sentido dentro de una transacción reciben `tx` primero, y el camino directo y la configuración conservan su estilo heredado | Práctica | Esos tests dejan datos `ZZ-*` si fallan a mitad |
+| F13A-P3 | Se trabaja en la rama, en el mismo directorio y sin worktree: la BD, `.env.local`, `almacen/` y el compose viven aquí | Práctica | Ninguno: `main` queda intacto hasta el cierre |
+| F13A-P4 | Los puntos de control en navegador los hace el controlador, no el implementador de la tarea | Práctica | Ninguno |
+| F13A-P5 | El punto de control 3 lo hace un agente verificador, y el controlador revisa su informe y una muestra de capturas | Práctica | Una falsa confianza, que acotan la muestra y la prueba del usuario |
+| F13A-R1 | `patronDesdeFormato` escapa lo literal y un `patron_codigo` heredado que no compila cae al valor por defecto sin lanzar (`patronDeConfiguracion`, función pura) | Práctica | Unas líneas de más |
+| F13A-R2 | `obtenerDetalleSubproceso` no recibe sujeto: no trae conteos y el parámetro quedaría muerto. Se aparta del encargo | Práctica | Una firma por ampliar |
+| F13A-R3 | El GET de archivos del panel responde 404, no 403, a quien no puede ver ese archivo. Cambia `AGENTS.md` («403 sin permiso») con esta excepción | Práctica (spec 13A §12) | Un código de estado |
+| F13A-R4 | `transicionar` comprueba sin bloquear, verifica la firma fuera de la transacción y repite lo mismo dentro con `FOR UPDATE`; las acciones que firman tienen un validador de solo lectura. El plan verificaba con la fila bloqueada: cinco firmas simultáneas colgarían el pool, y un código de recuperación se gastaría aunque faltara un dato | Práctica | Una segunda lectura por firma, y un código de recuperación se gasta si otra pestaña se adelanta |
+| F13A-R5 | Retirar avisa a los líderes de todos los procesos del documento, el detalle del efecto no pisa `de`, `hacia` ni `ronda`, y hay una sola `ETAPAS_ABIERTAS` | Práctica (spec 13A §14.2) | Unas líneas de más |
+| F13A-R6 | `tramite.resuelto` gana sobre `tramite.paso` para un mismo destinatario: un solo aviso por persona | Práctica | Un aviso menos claro para un Admin SGC único que pidió la solicitud |
+| F13A-R7 | Al aceptar una creación se puede corregir tipo, proceso y título. Si cambia el propietario, el visto bueno anterior queda en el historial y el cambio en el evento; no se vuelve a pedir | Práctica (procedimiento, paso 3) | Un documento entra a un proceso cuyo líder no dio visto bueno |
+| F13A-R8 | Parecidos por título o palabras clave. Ante un choque de código, si no se editó a mano se toma el siguiente; si se editó, el error nombra el disponible. Mandan §8.3 y §8.4 sobre el encargo | Práctica | Un código final distinto del que se vio en el formulario |
+| F13A-R9 | En `DialogoFirma` la clave y el código no se conservan tras un rechazo; los demás campos, como el concepto, sí | Práctica | Reescribir la clave tras cada fallo, que es lo esperado |
+| F13A-R10 | Las dos rutas de subida salen del `matcher` y `recibirArchivo` compara `content-length`: el proxy truncaba lo que pasaba de 10 MB y respondía 201 | ISO 7.5.3.2 | El `matcher` queda algo más difícil de leer |
+| F13A-R11 | Mientras una versión pertenezca a un trámite abierto, sus archivos y su control de cambios solo se tocan desde el trámite (`FOR SHARE`), lo que cierra la carrera entre subir y enviar | Práctica (spec 13A §9.1) | Un Admin SGC no corrige un archivo desde el panel: lo hace quien elabora o se reasigna |
+| F13A-R12 | `DialogoFirma` sin `inputMode numeric`, porque los códigos de recuperación llevan letras, y **Enviar a revisión** desactivado con el control de cambios sin guardar. Se aparta del encargo en lo primero | Práctica | Un teclado menos cómodo |
+| F13A-R13 | Menores de la subida y la firma: `valoresDeFormulario` no devuelve la clave, 409 antes de recibir el archivo, zona de carga oculta en una versión en trámite, y el candado revisa que quien escribe siga siendo el elaborador | Práctica | Unas líneas de más |
+| F13A-R14 | `valoresDeFormulario` excluye la clave siempre y `codigo` solo si viaja con clave: el formulario de documentos usa un campo `codigo` que debe volver tras un rechazo. Se aparta de R13 | Práctica | Un código TOTP enviado sin clave volvería al navegador, cosa que ninguna acción hace |
+| F13A-R15 | La página pide la lista y las observaciones aparte de `obtenerTramite`: solo pagan esas consultas quienes las pintan. Se aparta del encargo | Práctica | Una consulta más |
+| F13A-R16 | La eliminación solo anula la versión aprobada, los avisos van en una sola inserción, el título anterior queda en el registro y S1 se comprueba también al firmar | Práctica | Unas líneas de más |
+| F13A-R17 | El acta se congela en el cierre: los datos salen a `detalle.acta` del evento y solo las firmas se leen aparte. Se escribe por archivo temporal y `rename`; una fila sin archivo se regenera solo si la huella coincide | Regulación (Ley 527 de 1999, registro inalterable) y spec 13A §11.2 | Un detalle más grande en el evento |
+| F13A-R18 | Reasignar y corregir admiten `aprobadorId` junto al cambio y validan el conjunto completo: cancelar perdería el trabajo y gastaría el código | Práctica | Un campo opcional más |
+| F13A-R19 | La corrección admite el proceso propietario en una creación. **Se apartó del encargo, que lo omitía: manda el spec §8.6** | Práctica | Unas líneas y un campo |
+| F13A-R20 | S1 y S2 miran las firmas `elaboro` de todas las rondas al reasignar | Práctica (spec 13A §6.3) | Una consulta y un rechazo de más |
+| F13A-R21 | Las marcas de aviso se conservan si no cambia el paso, la fecha ni su responsable. **Se apartó del ajuste de la Tarea 12: manda el spec §14.3** | Práctica | Un aviso menos tras una reasignación |
+| F13A-R22 | Se aceptan: un cambio de solo fecha no avisa, quien sale conserva el enlace, y `revisarVencimientos` no deja fila en `auditoria` porque no es acción de una persona. El punto «corregir el tipo no exige la sigla» lo reemplazó R32 | Práctica | Mejoras pequeñas posteriores |
+| F13A-R23 | Se aceptan: sin candado asesor para dos correcciones simultáneas del mismo código y sin aviso a los líderes del proceso nuevo al corregir | Práctica | Un código abandonado repetido en un caso rarísimo, y un aviso menos |
+| F13A-R24 | `descartarBorrador` funciona con la carga cerrada: un borrador pendiente bloquearía la aceptación. **Se apartó del encargo: manda el spec §13.3** | Práctica | Un botón de más con la carga cerrada |
+| F13A-R25 | La columna de fecha del Maestro pasa a «Fecha de aprobación» para no repetir «Aprobación». Se aceptan también la cifra propia del encabezado del panel, `sin-reiniciar.ts` y mover ayudantes a `codigos.ts` | Práctica | Una etiqueta |
+| F13A-R26 | Deshacer una carga se bloquea con una versión anulada: el dato no distingue ese caso de un documento eliminado, y un trámite de modificación sigue siendo salida | Práctica | Esa corrección va por trámite |
+| F13A-R27 | La relación entre documentos es simétrica: el portal la lee en las dos direcciones desde la herencia | Práctica | Habría que distinguir «relacionado con» de «relacionado por» |
+| F13A-R28 | La autoridad se valida al firmar **Aprobar** con la del tipo actual; el Coordinador reasigna; publicar no la vuelve a exigir. **Se apartó de lo construido en la Tarea 14: manda el spec §6.3** («al designar, al reasignar y al firmar») | ISO 7.5.2 c) y PC-07 | Tras cambiar la autoridad, el aprobador de un trámite abierto debe reasignarse |
+| F13A-R29 | El consecutivo cuenta dígitos de cualquier ancho; reordenar marcadores se admite con advertencia en la ayuda | Práctica (spec 13A §8.4) | Tras reordenar, el Coordinador corrige el sugerido |
+| F13A-R30 | `Boton` y `BotonesOrden` dejan `opacity`; los demás botones heredados quedan como deuda: no se refactoriza sin avisar | Práctica (`AGENTS.md`) | Unos botones con otro aspecto |
+| F13A-R31 | `npm test` no depende del uso de la demo: `tramiteEn` crea su documento y `semilla-tramites.test.ts` filtra lo sembrado y salta lo actual con mensaje | Práctica | Unos casos saltados tras usar la demo |
+| F13A-R32 | El código de un trámite debe coincidir con las siglas del propietario y del tipo; se comprueba si cambian código, tipo o propietario. No aplica a la carga directa ni a las modificaciones | ISO 7.5.2 a); spec 13A §8.4 | Un código especial exige ajustar el formato |
+| F13A-R33 | El acta translitera símbolos comunes y avisa al final si quedó algún «?», sin fuentes ni dependencias nuevas | Regulación (Ley 527 de 1999, integridad del mensaje) | Un símbolo se ve distinto en el acta; el texto íntegro sigue en el historial |
+| F13A-R34 | De los 17 menores del punto de control 3 no se hace M12 (aviso al recargar); lo demás entra en la ola, con los nombres cortados de la barra y el rol solo del paso pendiente | Práctica | Más líneas que revisar |
+| F13A-R35 | Se acepta el 200 con «Página no encontrada» en páginas de `(app)`: un 404 real exige reorganizar rutas o usar el proxy. No hay fuga, y los archivos sí dan 404. **Pendiente de la decisión del usuario** | Práctica (spec 13A §6.5) | Un código HTTP en páginas, no en archivos |
+
 ## Deuda técnica conocida
+
+**De la Fase 13A:**
+
+- **Botones con `disabled:opacity-*`** (F13A-R30): `estructura/page.tsx`, `FormAccion`,
+  `FormularioVersionCliente`, `BotonRestablecer`, formularios de estructura, mapa, usuarios, lote
+  y cuenta, y `components/ui/button.tsx`. `AGENTS.md` prohíbe `opacity` para atenuar controles:
+  **Fase 19**.
+- **Lista de verificación vacía en una base heredada:** la 0004 crea la tabla sin filas y, sin
+  ítems activos, `validarConcepto` deja pasar el concepto favorable sin lista, con lo que el PC-05
+  queda sin evidencia. Se vio aplicando la 0004 sobre la demo de `main`; el manual lo advierte. El
+  ensayo de la **Fase 20** debe sembrar los ocho ítems o exigir al menos uno activo.
+- **Sin prueba de concurrencia real** en aceptación y firma: `revertida` usa una sola transacción.
+  Doble clic y dos aceptaciones simultáneas están razonados sobre los candados, no ejercitados.
+- **Dos reasignaciones en la misma etapa y ronda** no se detectan como pestaña vieja: gana la
+  última y las dos quedan en el historial.
+- **`misTareas` corre dos veces en `/`** (cascarón y página), hasta cuatro consultas.
+- **`src/db/semillas/demo.ts` tiene unas 1150 líneas:** los trámites sembrados se pueden separar.
+- **Relaciones `(A,B)` y `(B,A)` heredadas** no se unen (F13A-R27).
+- M12 no se hizo (F13A-R34): recargar a mitad de un formulario pierde lo escrito sin avisar.
+- Al firmar con una cuenta ya bloqueada o inactiva, la sesión se cierra y `/ingreso` no dice por
+  qué: el mensaje fijo solo sale cuando ese intento bloquea la cuenta.
+- **Actas ya emitidas:** R33 y la redacción de observaciones cambian los bytes del PDF. Si en una
+  instalación real se pierde un acta generada antes de esos cambios, no se regenera idéntica y
+  queda `acta_no_regenerable` en la bitácora.
+- Sin aviso a los líderes del proceso nuevo si el propietario cambia al aceptar o al corregir
+  (F13A-R7, R23). Carrera posible en `codigoAbandonado` (F13A-R23).
+- La huella que muestra el diálogo de firma puede ser vieja con dos pestañas; la firma guarda la
+  actual. `candidatosDe` ofrece a quien ya firmó `elaboro` y el servidor lo rechaza con mensaje.
+- El crítico se evalúa con la marca copiada al guardar: un ítem vuelto crítico después no bloquea
+  hasta guardar de nuevo. Devolver con marcas sin guardar las pierde. `bloquearComo` usa las
+  reglas de devolver y enviar como sustituto de persona y etapa.
+- Un `consulta` designado elaborador puede subir `.zip` y `.rar` (lista blanca heredada; no son
+  ejecutables). Un `%` inválido en `x-nombre-archivo` da 500 e `includes("principal")` sigue en el
+  `catch` de `recepcion-archivo.ts` (heredados). `descartarResto` no tiene tiempo límite propio
+  (lo cubre el `requestTimeout` de Node) y el 413 sin `content-length` no drena.
+- El respaldo sin JavaScript de un formulario cliente es débil: `action` espera a la hidratación
+  (heredado). Estadísticas enlaza a 404 un documento sin vigente (heredado).
+- El filtro «Entidad» de la Bitácora sigue técnico. Descartar usa `documentos.administrar` y el
+  spec dice `tramites.gestionar` (hoy el mismo rol). La rama de historial de la ruta de archivos
+  del panel es por exclusión.
+- `PanelPublicacion` repite el tipo de `PanelAprobacion`; `publicarVersion` existe en `cierre.ts` y
+  en `admin.ts`. `tramites.documento_id` no tiene índice propio. `diaLocal` crea un
+  `Intl.DateTimeFormat` por llamada. Un `patron_codigo` vacío compila a `RegExp("")` y acepta todo
+  (heredado). `firmas.ts` con un `usuarioId` inexistente da `TypeError` (falla cerrado).
+- Cobertura: `esquema-fase13a` y privilegios dependen de una base sembrada; sin test de que
+  `maestro.ver`, `maestro.exportar`, `estadisticas.ver` y `bitacora.ver` sean subconjunto de
+  `ROLES_VEN_RESTRINGIDO`; sin casos con ids nulos en las reglas de cancelar, reasignar y publicar;
+  sin `estadoPlazo` cerca de la medianoche; firma sin el secreto ilegible por `verificarParaFirmar`
+  ni `bloqueos_consecutivos`; sin subida frente a cancelación; sin regeneración del acta tras un
+  fallo real en navegador. Un test de candado confirma una fila y la borra en `finally`, y el del
+  envoltorio de configuración escribe las diez claves en `finally`. `tests/mapa-admin` depende de
+  que no exista la fila `patron_codigo`. Sin `SEMILLA_RECIEN`, una base recién sembrada salta casos
+  en vez de fallar; `sembradaEn` no controla si falta `gerente`, y `exigirDemoIntacta` fija 30
+  documentos. Tres aserciones quedaron más flojas a propósito por el uso de la demo (`esquema:148`,
+  `visibilidad:200`, `consultas-fase4:105`).
 
 **De la Fase 12:**
 
@@ -1009,7 +1312,8 @@ los tests) no entran; la de los tests quedó como regla en `AGENTS.md`. Base: **
 - Páginas del portal (Inicio, proceso, subproceso, ficha de documento) sin `<title>`
   propio: la pestaña dice «<nombre> · SGC» en todas (heredado de `sgc-suaza`).
 - Un `notFound()` bajo una ruta con `loading.tsx` responde 200 en vez de 404 (el
-  streaming ya envió la cabecera); la página sí es «Página no encontrada» (heredado).
+  streaming ya envió la cabecera); la página sí es «Página no encontrada» (heredado). Afecta a
+  toda página de `(app)`, también a `/tramites/[id]`: ver F13A-R35.
 - `/marca/logo` sin limitador ni `immutable`: el limitador cubre solo el `POST` del logo y
   la respuesta lleva `Cache-Control: public, max-age=86400` aunque la URL cambia con
   `logo_version`.
@@ -1048,9 +1352,9 @@ los tests) no entran; la de los tests quedó como regla en `AGENTS.md`. Base: **
 - Textos vacíos genéricos de `TablaDatos` («Sin documentos» perdió la ayuda «Cree el
   primero…»; «Sin registros en el periodo» en Accesos también con filtros de usuario).
 - Estadísticas perdió su animación de entrada.
-- **R24 se revisa en la Fase 13:** marcar una notificación como leída no se audita
-  (F12-D35); cuando «marcar leída» pase a ser el acuse de una tarea (acuses de lectura),
-  esa acción sí es evidencia y debe quedar en la bitácora.
+- **F12-D35 se revisa en la 13B:** marcar una notificación como leída no se audita;
+  cuando «marcar leída» pase a ser el acuse de una tarea (acuses de lectura), esa acción sí
+  es evidencia y debe quedar en la bitácora.
 - Cobertura: sin tests de `EstadoVacio`, `Insignia` de módulo, `TarjetaCifra` sin estado
   ni `Campo` sin ayuda o error; sin test de 429 ni de `q` con `⟦⟧` en `/api/buscar` (sus
   casos dependen de documentos de la demo con «acta»); sin test de
@@ -1101,25 +1405,14 @@ los tests) no entran; la de los tests quedó como regla en `AGENTS.md`. Base: **
   `nextjs`. El compose de desarrollo sigue sin montar un volumen de almacén: lo que se
   sube en 9081 vive dentro del contenedor y los documentos de la demo no tienen archivo
   allí. El volumen nombrado llega en la **Fase 20**.
-- **Para la Fase 13 (tablas inmutables nuevas):** `asegurarRolApp` da a `sgc_app`, por
-  `ALTER DEFAULT PRIVILEGES`, `UPDATE` y `DELETE` sobre toda tabla que se cree después.
-  Toda tabla inmutable nueva (`firmas`, spec §5.9) debe entrar al `REVOKE UPDATE, DELETE`
-  de `src/db/roles-bd.ts` (junto a `auditoria` y `accesos`) y llevar en su migración el
-  trigger `BEFORE UPDATE OR DELETE` con `sgc_impedir_modificacion()`, más un caso en
-  `tests/privilegios-bd.test.ts`.
 - **Rotar `APP_SECRETO` invalida los secretos TOTP:** quien tiene segundo factor ya no
   puede validar el código de su aplicación (cada intento cuenta como fallo y termina
   bloqueando la cuenta). Entra con un código de recuperación, o el administrador le quita
   el segundo factor y lo vuelve a activar. Va al **manual técnico de la Fase 20**, junto
   con la generación de `APP_SECRETO` al instalar.
-- La leyenda «Descargada el …» de la marca de agua de los PDF (`src/lib/marca-agua.ts`)
-  toma el día con `getDate()`/`getMonth()`, en la zona del proceso (UTC en el
-  contenedor), no en `ZONA_HORARIA`: entre las 19:00 y la medianoche de Bogotá sale el día
-  siguiente. No es un `toISOString()` y quedó fuera de la ola final; al corregirlo hay que
-  pasar `tests/marca-agua.test.ts` a un instante fijo en UTC.
 - Menores diferidos de las revisiones (para F12/F19 o al tocar el archivo):
-  - Los mensajes de validación muestran el nombre interno del campo delante
-    (`confirmacion: …`, `procesoIds: …`).
+  - Los mensajes genéricos de `zod` (ids, enums, fechas) siguen mostrando el nombre interno del
+    campo delante; los de texto ya dan un mensaje propio desde la 13A.
   - Tras activar el segundo factor, el foco no se mueve al título de los códigos de
     recuperación.
   - `cerrarSesionAccion` lanza (pantalla de error de Next) al superar el límite de ritmo.

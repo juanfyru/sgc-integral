@@ -69,10 +69,10 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
    desconocida y esas cabeceras se ignoran.
 10. **Dos conexiones de BD:** `DATABASE_URL_MIGRADOR` (dueño del esquema: migraciones,
     semillas y creación del rol de la app) y `DATABASE_URL` (rol `sgc_app`, solo DML,
-    sin `UPDATE` ni `DELETE` en `auditoria` y `accesos`). `asegurarRolApp`
-    (`src/db/roles-bd.ts`) crea el rol y aplica sus privilegios en cada arranque,
-    después de las migraciones. Los secretos (`APP_SECRETO`, `BD_APP_CLAVE`) se generan
-    al instalar; sin un `APP_SECRETO` válido el arranque de producción falla.
+    sin `UPDATE` ni `DELETE` en `auditoria`, `accesos`, `firmas` y `tramite_eventos`).
+    `asegurarRolApp` (`src/db/roles-bd.ts`) crea el rol y aplica sus privilegios en cada
+    arranque, después de las migraciones. Los secretos (`APP_SECRETO`, `BD_APP_CLAVE`) se
+    generan al instalar; sin un `APP_SECRETO` válido el arranque de producción falla.
 11. **Migraciones en el arranque y continuidad con `sgc-suaza`:** las migraciones corren
     al iniciar el contenedor (`arrancar.js`) y deben poder aplicarse sobre una base de
     `sgc-suaza`: nunca se renombra ni se borra una tabla o columna heredada, solo se
@@ -85,19 +85,23 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
    índice único parcial en BD (`WHERE estado = 'vigente'`), no solo en código.
 2. **Las versiones obsoletas se retienen, nunca se borran.** El admin las ve marcadas con
    evidencia visual inequívoca (banda/watermark "OBSOLETO").
-3. **Visibilidad por rol** (spec §5.3): vigentes para todo usuario con sesión; en trámite
-   para participantes, Admin SGC y líder; obsoletos y anulados para Admin SGC, Control
-   Interno y la marca individual `ver_historial`. Ninguna versión no vigente se sirve sin
-   ese permiso.
+3. **Visibilidad por rol, nivel de acceso y participación** (spec §5.3; spec 13A §6.5 y
+   §12): vigentes para todo usuario con sesión, salvo los documentos restringidos, que solo
+   ven Admin SGC, Gerencia, Control Interno y los asignados a sus procesos; en trámite para
+   los participantes de ese trámite, Admin SGC y líder; obsoletos y anulados para Admin SGC,
+   Control Interno y la marca individual `ver_historial`, que no abre lo restringido;
+   descartados para `tramites.gestionar`. Ninguna versión no vigente se sirve sin ese
+   permiso, y quien no puede ver algo recibe «no encontrado», nunca «sin permiso».
 4. **Toda ruta exige sesión; toda escritura exige el permiso de la matriz
    `src/lib/permisos.ts`** y pasa por `mutacion()` o `requerirPermiso()`; los handlers
-   que escriben verifican `Origin`.
+   que escriben verifican `Origin`. Toda acción del trámite lleva su permiso de matriz
+   (`PERMISO_DE_ACCION`), además de la condición de persona de la tabla de transiciones.
 5. **Trazabilidad completa:** toda acción de cualquier usuario queda en bitácora,
-   inmutable en BD, con quién, qué y cuándo. `auditoria` y `accesos` son de solo
-   inserción (trigger que rechaza `UPDATE` y `DELETE` incluso al dueño del esquema, más
-   los privilegios de `sgc_app`); los usuarios con historia se desactivan, nunca se
-   borran. **Única excepción documentada (F12-D35):** las preferencias de interfaz de
-   cada persona (el tema) y las marcas de notificación leída no se auditan: no son
+   inmutable en BD, con quién, qué y cuándo. `auditoria`, `accesos`, `firmas` y
+   `tramite_eventos` son de solo inserción (trigger que rechaza `UPDATE` y `DELETE` incluso
+   al dueño del esquema, más los privilegios de `sgc_app`); los usuarios con historia se
+   desactivan, nunca se borran. **Única excepción documentada (F12-D35):** las preferencias
+   de interfaz de cada persona (el tema) y las marcas de notificación leída no se auditan: no son
    evidencia de 7.5 y llenarían la bitácora de ruido. Cualquier otra acción sin auditar se
    propone antes.
 6. **El MIME se detecta de los magic bytes en la carga** (no de la extensión del nombre)
@@ -106,6 +110,15 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
    `Content-Disposition` correctos. Nombres saneados (path traversal). Nunca ejecutables.
 8. **El mapa de procesos NO se hardcodea.** Vive en BD y se edita desde el admin. El
    render es 100% data-driven. Layout por bandas fijas (ver `PLAN.md` §Layout).
+9. **Toda transición de un trámite entra por `transicionar`**
+   (`src/db/consultas/tramites-flujo.ts`); ningún otro código cambia `tramites.etapa`. La
+   firma se verifica fuera de la transacción y lo que puede fallar va antes, en un validador
+   de solo lectura (F13A-R4); `opciones.ahora` es la hora de todo lo escrito (F13A-P1).
+10. **El camino directo del panel solo da de alta documentos ya aprobados:** nunca publica
+    sobre una versión vigente y se cierra con `publicacion_directa`. Eliminar un documento
+    es siempre un trámite.
+11. **El acta se congela al cierre** en `detalle.acta` del evento y solo se regenera si
+    coincide con la huella guardada (F13A-R17).
 
 ## Stack (decidido — no cambiar sin proponerlo antes)
 
@@ -137,8 +150,9 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   `app/(app)/admin/(panel)`), las acciones y handlers del panel en
   `app/admin/{acciones*.ts,comun.ts,api}`, los pasos de la cuenta en `app/(cuenta)` y el
   ingreso en `app/ingreso`. Lógica de datos en `src/db` (schema Drizzle + queries),
-  lógica de negocio en `src/lib`. Server Components por defecto; `'use client'` solo
-  donde hay interactividad.
+  lógica de negocio en `src/lib`. El trámite documental vive en `app/(app)/tramites`,
+  `app/acciones-tramites.ts`, `src/db/consultas/flujo/` y `src/lib/tramites/` (reglas puras).
+  Server Components por defecto; `'use client'` solo donde hay interactividad.
 - **Cascarón y componentes base:** toda página autenticada vive dentro del cascarón del
   layout de `(app)` (`src/componentes/cascaron`: barra lateral, barra superior, búsqueda,
   campana y menú); los pasos de la cuenta y el ingreso usan `PantallaCentrada`. La
@@ -171,7 +185,9 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   tiene `DATABASE_URL`.
 - **Toda consulta de los módulos nuevos pasa por `alcanceProcesos()`**
   (`src/lib/alcance.ts`): el líder de proceso solo alcanza sus procesos activos; el
-  filtro por rol no se reimplementa en cada módulo.
+  filtro por rol no se reimplementa en cada módulo. La visibilidad de documentos y de
+  trámites se decide en ese mismo archivo; la participación designada en un trámite es la
+  única excepción a `alcanceProcesos()`.
 - **Accesibilidad no negociable:** navegable por teclado, foco visible, contraste AA,
   SVG del mapa con roles/etiquetas ARIA. El ícono de formato de archivo nunca es la
   única señal (siempre etiqueta textual + tamaño, `aria-label`), ni el color de un
@@ -186,9 +202,9 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
     impide que la página entre en el payload RSC. El layout del panel usa además
     `exigirEntradaPanel()` (`panel.entrar` o la marca `ver_historial`). Lo exige
     `tests/paginas-sesion.test.ts`.
-  - **Cada Server Action exportada** de `src/app/admin/acciones*.ts` pasa por
-    `mutacion(formData, "<permiso>", fn)` o llama `requerirPermiso(sesion, permiso)`
-    después de `requerirSesion()`. Las de `src/app/acciones-cuenta.ts` llaman
+  - **Cada Server Action exportada** de `src/app/admin/acciones*.ts` y de
+    `src/app/acciones-tramites.ts` pasa por `mutacion(formData, "<permiso>", fn)` o llama
+    `requerirPermiso(sesion, permiso)` después de `requerirSesion()`. Las de `src/app/acciones-cuenta.ts` llaman
     `requerirSesion()` (directamente o por `sesionParaInscribir()`), con tres
     excepciones: `ingresar` no exige sesión (es el ingreso), y `verificarFactor` y
     `salir` usan `sesionActual()` porque deben admitir la sesión con el segundo factor
@@ -201,7 +217,12 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
     lo exige `tests/acciones-cuenta-cache.test.ts`.
   - **Los route handlers** usan `sesionDePeticion(peticion)` (rechaza sesiones con pasos
     pendientes) y `puede(sesion, permiso)`: 401 sin sesión, 403 sin permiso. Los que
-    escriben verifican `Origin` con `origenValido()`.
+    escriben verifican `Origin` con `origenValido()`. Excepción: el GET de un archivo
+    responde 404 a quien no puede verlo (F13A-R3, spec 13A §12).
+  - **Las rutas que reciben una subida van fuera del `matcher` de `src/proxy.ts`**
+    (`admin/api/archivos` y `api/tramites/[id]/archivos`), usan `recibirArchivo` y comparan
+    `content-length`: el búfer del proxy truncaba las subidas de más de 10 MB y respondía
+    201 (F13A-R10).
   - **Los formularios que envían un `id` de ruta** se leen con
     `parsearFormulario(formData, Esquema, { omitir: ["id"] })` y el id con
     `idNumerico()`, porque los esquemas son estrictos.
@@ -214,12 +235,15 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
     de `src/proxy.ts`). Una nueva se propone antes y entra con su caso en
     `tests/proxy-matcher.test.ts`.
 - **Tests contra la BD de desarrollo:** todo usuario de prueba que genere filas en
-  `auditoria` o `accesos` usa un nombre único por corrida (`zz_<algo>_${Date.now()}`) y
-  no se borra (FK `RESTRICT` y trigger de solo inserción). Nunca `DELETE` ni `UPDATE`
-  sobre esas tablas en una limpieza. Un test que escribe datos capaces de bloquear la
-  migración o el arranque, o de romper otros tests (un usuario duplicado, la
+  `auditoria`, `accesos`, `firmas` o `tramite_eventos` usa un nombre único por corrida
+  (`zz_<algo>_${Date.now()}`) y no se borra (FK `RESTRICT` y trigger de solo inserción).
+  Nunca `DELETE` ni `UPDATE` sobre esas tablas en una limpieza. Un test que escribe datos
+  capaces de bloquear la migración o el arranque, o de romper otros tests (un usuario duplicado, la
   configuración de la entidad), los escribe dentro de una transacción que se revierte o
   los restaura en `finally`: un test que falla no debe dejar la base inservible.
+- **Tests y demo:** `tramiteEn` crea su documento: ningún test abre un trámite sobre uno de
+  la demo. `tests/semilla-tramites.test.ts` lee el estado de la demo y salta con mensaje si
+  ya avanzó; `SEMILLA_RECIEN=1 npm test` exige la demo recién sembrada.
 
 ## Comandos
 
@@ -228,11 +252,12 @@ npm run dev             # desarrollo local en :3002 (requiere Postgres: docker c
 npm run build           # build de producción (standalone)
 npm run lint            # ESLint + tsc --noEmit
 npm test                # tests (Vitest)
+SEMILLA_RECIEN=1 npm test  # lo mismo, exigiendo la demo recién sembrada: un caso saltado falla
 npm run db:generate     # generar migración desde el schema Drizzle
 npm run db:migrate      # aplicar migraciones (con DATABASE_URL_MIGRADOR); antes detiene si hay usuarios duplicados sin distinguir mayúsculas
 npm run db:roles        # crear o sincronizar el rol sgc_app y sus privilegios
 npm run db:preparar     # migraciones y luego rol de la app (db:migrate + db:roles)
-npm run db:seed         # semilla demo: mapa real, documentos ficticios, estructura y usuarios por rol
+npm run db:seed         # semilla demo: mapa real, documentos ficticios, estructura, usuarios por rol y trámites
 npm run db:seed:minima  # semilla mínima de una instalación nueva (tipos de documento y configuración)
 npm run admin:asegurar  # primer Admin SGC desde ADMIN_* (pide cambiar la clave al primer ingreso)
 ```

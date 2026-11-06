@@ -45,6 +45,9 @@ Para proteger su cuenta de quien intente adivinar la clave:
   doble (30 minutos, luego 60, 120…), hasta un máximo de **24 horas**.
 - Los códigos equivocados del segundo factor (sección 6) también cuentan como intentos
   fallidos.
+- Las claves equivocadas al firmar un documento (Capítulo 5, sección 7) también cuentan.
+  Si la cuenta se bloquea al firmar, la sesión se cierra y la pantalla de ingreso dice
+  «Su cuenta quedó bloqueada al menos 15 minutos por claves erradas».
 - Un ingreso completo y correcto pone los contadores en cero.
 
 Mientras la cuenta está bloqueada, **ni siquiera la clave correcta deja entrar**, y la

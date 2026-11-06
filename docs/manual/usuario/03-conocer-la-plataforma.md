@@ -27,15 +27,16 @@ De arriba abajo:
 1. **La entidad**: su logo (o, si no tiene, un cuadro con la sigla) y su nombre. Al
    pulsarlo vuelve a **Inicio**.
 2. **Inicio**.
-3. El grupo **Documentos**: **Buscar documentos**, **Gestión de documentos**,
-   **Listado Maestro**, **Tipos de documento** y **Mapa de procesos**.
+3. El grupo **Documentos**: **Buscar documentos**, **Trámites**, **Gestión de documentos**,
+   **Listado Maestro**, **Tipos de documento**, **Configuración documental** y **Mapa de
+   procesos**.
 4. El grupo **Administración**: **Entidad y marca**, **Estructura**, **Usuarios**,
    **Estadísticas**, **Bitácora**, **Accesos** y **Sesiones**.
 5. Al pie, **SGC Integral · v** seguido del número de versión. Es el nombre de la
    plataforma; si reporta un problema a sistemas, indique ese número.
 
-La página en la que está aparece resaltada con el color de la entidad. Cuando lleguen
-tareas para usted, junto a **Inicio** aparecerá un número con cuántas tiene pendientes.
+La página en la que está aparece resaltada con el color de la entidad. Junto a **Inicio**
+aparece un número con cuántas tareas tiene pendientes.
 
 ### Qué ve cada rol
 
@@ -43,13 +44,14 @@ Cada persona ve solo los enlaces que su rol permite. Un grupo sin enlaces no apa
 
 | Rol | Documentos | Administración |
 |---|---|---|
-| Administrador del SGC | Buscar documentos, Gestión de documentos, Listado Maestro, Tipos de documento, Mapa de procesos | Entidad y marca, Estructura, Usuarios, Estadísticas, Bitácora, Accesos, Sesiones |
-| Gerencia | Buscar documentos, Listado Maestro (solo vigentes, sin Excel) | Estadísticas |
+| Administrador del SGC | Buscar documentos, Trámites, Gestión de documentos, Listado Maestro, Tipos de documento, Configuración documental, Mapa de procesos | Entidad y marca, Estructura, Usuarios, Estadísticas, Bitácora, Accesos, Sesiones |
+| Gerencia | Buscar documentos, Trámites, Listado Maestro (solo vigentes, sin Excel) | Estadísticas |
 | Control Interno | Buscar documentos, Gestión de documentos (solo lectura), Listado Maestro | Estadísticas, Bitácora, Accesos |
-| Líder de proceso | Buscar documentos | — |
+| Líder de proceso | Buscar documentos, Trámites | — |
 | Consulta | Buscar documentos | — |
 
-Todos ven además **Inicio**. Si el administrador le marcó **"Puede ver el historial de
+Todos ven además **Inicio**. **Trámites** también le aparece a cualquier persona que
+participe en un trámite, sea cual sea su rol (Capítulo 5). Si el administrador le marcó **"Puede ver el historial de
 documentos (versiones obsoletas y anuladas)"**, verá también **Gestión de documentos**,
 en solo lectura (Capítulo 2, sección 1).
 
@@ -72,9 +74,9 @@ entre paréntesis. Cuando no tiene nada pendiente dice:
 > No tiene tareas pendientes. Cuando un documento necesite su revisión o aprobación,
 > aparecerá aquí.
 
-En esta versión el bloque está siempre vacío: las tareas llegan con los flujos de
-revisión y aprobación de documentos, la siguiente etapa del SGC. Cada tarea mostrará de
-qué se trata y, si tiene fecha límite, la marca **Vence hoy** o **Vencida**.
+Cada tarea sale de un trámite de documentos, por ejemplo «Aceptar SOL-2026-014» o «Revisar
+GTH-PR-02 v2». Muestra de qué documento se trata y su fecha límite, o la marca **Vence
+hoy** o **Vencida**. Pulse una tarea para abrir el trámite (Capítulo 5, sección 12).
 
 ### 3.2 Mis procesos (solo líderes de proceso)
 
@@ -101,7 +103,8 @@ Debajo aparecen dos grupos:
   esa sección no aparece.
 - **Documentos**: desde la segunda letra, hasta 8 documentos **vigentes** con su código,
   su título (con las palabras encontradas resaltadas) y su tipo. Por ejemplo, "induc"
-  encuentra los documentos de inducción.
+  encuentra los documentos de inducción. Un documento restringido solo aparece a quien lo
+  puede ver.
 
 La última fila, **Ver todos los resultados de “…”**, abre la página **Buscar documentos**
 con la lista completa y sus filtros.
@@ -122,7 +125,7 @@ La búsqueda rápida y la página **Buscar documentos** muestran solo versiones 
 
 ## 5. La campana
 
-La campana de la barra superior muestra un número rojo con los avisos que no ha leído
+La campana de la barra superior muestra un número con los avisos que no ha leído
 (**9+** si son más de nueve). Al pulsarla se abre la lista de sus 10 avisos más recientes,
 con el título, un detalle y cuándo llegó ("ahora", "hace 5 min", "hace 2 h", "ayer" o la
 fecha). Los que no ha leído aparecen en negrita.
@@ -136,8 +139,9 @@ nombre o al ir a otra página.
 Si no tiene avisos, la campana dice "Sin notificaciones. Aquí verá los avisos del
 sistema y las tareas que le asignen."
 
-En esta versión el SGC todavía no genera avisos por su cuenta: la campana queda lista
-para los avisos de los flujos de documentos y de las tareas que le asignen.
+Los avisos salen de los trámites de documentos: cuando le toca un paso, cuando le devuelven
+un documento, cuando se publica o se elimina uno en el que usted participa, o cuando un paso
+se vence (Capítulo 5, sección 12). Un aviso nunca trae el contenido del documento.
 
 ## 6. El menú con su nombre: Mi cuenta, tema y salir
 

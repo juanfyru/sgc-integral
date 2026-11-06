@@ -36,7 +36,7 @@ npm run dev
 npm run db:seed:minima
 
 # Usuarios demo (clave común: Demo-SGC-2026-clave):
-#   gerente (gerencia), control.interno (control_interno),
+#   coordinadora.sgc (admin_sgc), gerente (gerencia), control.interno (control_interno),
 #   lider.gth y lider.cex (lider_proceso, de GTH y CEX), consulta (consulta).
 
 # Puertos elegidos para convivir con sgc-suaza en la misma máquina:
