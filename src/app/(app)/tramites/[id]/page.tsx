@@ -5,6 +5,7 @@ import { AccionesSolicitud } from "@/componentes/tramites/AccionesSolicitud";
 import { BloqueSolicitud } from "@/componentes/tramites/BloqueSolicitud";
 import { EnlaceActa } from "@/componentes/tramites/EnlaceActa";
 import { EncabezadoTramite } from "@/componentes/tramites/EncabezadoTramite";
+import { EvidenciaRevision } from "@/componentes/tramites/EvidenciaRevision";
 import { HistorialTramite } from "@/componentes/tramites/HistorialTramite";
 import { PanelAceptacion } from "@/componentes/tramites/PanelAceptacion";
 import { PanelAprobacion } from "@/componentes/tramites/PanelAprobacion";
@@ -20,7 +21,7 @@ import {
   obtenerTramite,
   type DetalleTramite,
 } from "@/db/consultas/tramites";
-import { listarObservaciones, obtenerVerificacion } from "@/db/consultas/revision";
+import { listarObservaciones, listarRondasVerificacion, obtenerVerificacion } from "@/db/consultas/revision";
 import { borradorDeTramite } from "@/db/consultas/tramites-archivos";
 import { puedeVerVersion } from "@/lib/alcance";
 import { exigirSesion } from "@/lib/paginas";
@@ -29,7 +30,7 @@ import { esEtapaDeTrabajo, type Etapa } from "@/lib/tramites/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 
 export const dynamic = "force-dynamic";
-/** Desde la revisión, la lista y las observaciones se consultan; solo en `revision` se editan. */
+/** Desde la revisión, la lista y las observaciones se consultan; solo el revisor, en `revision`, las edita. */
 const ETAPAS_CON_REVISION: Etapa[] = ["revision", "aprobacion", "publicacion"];
 
 export const metadata: Metadata = { title: "Trámite" };
@@ -59,28 +60,32 @@ async function Aceptacion({ tramite, usuarioId }: { tramite: DetalleTramite; usu
 /** El bloque del borrador, abierto solo para quien puede enviarlo a revisión. */
 async function Borrador({ tramite, pideCodigo }: { tramite: DetalleTramite; pideCodigo: boolean }) {
   const { id, etapa, ronda, codigo, titulo, versionNumero } = tramite;
-  // Desde la revisión las observaciones las pinta el panel de revisión: una sola vez.
-  const [borrador, observaciones] = await Promise.all([
+  // Desde la revisión, la lista y las observaciones las pinta el panel de revisión: una sola vez.
+  const [borrador, observaciones, rondas] = await Promise.all([
     borradorDeTramite(id),
     etapa === "elaboracion" ? listarObservaciones(id) : Promise.resolve([]),
+    etapa === "elaboracion" && ronda > 1 ? listarRondasVerificacion(id) : Promise.resolve([]),
   ]);
   return (
     <PanelElaboracion
       tramite={{ id, etapa, ronda, codigo, titulo, versionNumero }}
       borrador={borrador}
       observaciones={observaciones}
+      rondaAnterior={rondas[0] ?? null}
       editable={tramite.acciones.includes("enviar_a_revision")}
       pideCodigo={pideCodigo}
     />
   );
 }
 
-/** La revisión: editable para el revisor en revisión; después, y para los demás, solo lectura. */
+/** La revisión: editable para el revisor en revisión; después, y para los demás, se consulta. */
 async function Revision({ tramite, pideCodigo }: { tramite: DetalleTramite; pideCodigo: boolean }) {
   const { id, etapa, ronda, codigo, titulo, versionNumero } = tramite;
-  const puedeRevisar = tramite.acciones.includes("concepto_favorable");
+  if (!tramite.acciones.includes("concepto_favorable")) {
+    return <Evidencia tramite={tramite} rondaEnCurso={etapa === "revision" ? ronda : null} />;
+  }
   const [respuestas, observaciones, borrador] = await Promise.all([
-    obtenerVerificacion(id, ronda, { sinPropuesta: !puedeRevisar }),
+    obtenerVerificacion(id, ronda),
     listarObservaciones(id),
     borradorDeTramite(id),
   ]);
@@ -90,10 +95,15 @@ async function Revision({ tramite, pideCodigo }: { tramite: DetalleTramite; pide
       respuestas={respuestas}
       observaciones={observaciones}
       huella={borrador.archivos.find((a) => a.rol === "principal")?.hashSha256 ?? null}
-      puedeRevisar={puedeRevisar}
       pideCodigo={pideCodigo}
     />
   );
+}
+
+/** Lo que se respondió y se observó, en solo lectura. Sigue en la página cuando el trámite se cierra (spec 13A §6.5). */
+async function Evidencia({ tramite: { id, etapa, ronda }, rondaEnCurso = null }: { tramite: DetalleTramite; rondaEnCurso?: number | null }) {
+  const [rondas, observaciones] = await Promise.all([listarRondasVerificacion(id), listarObservaciones(id)]);
+  return <EvidenciaRevision tramite={{ id, etapa, ronda }} rondas={rondas} observaciones={observaciones} rondaEnCurso={rondaEnCurso} />;
 }
 
 /** Aprobar o publicar. En una eliminación la huella es la de la versión vigente que se retira. */
@@ -178,6 +188,7 @@ export default async function PaginaTramite({ params }: { params: Promise<{ id: 
           {conBorrador ? <Borrador tramite={tramite} pideCodigo={sesion.totpActivo} /> : null}
           {conRevision ? <Revision tramite={tramite} pideCodigo={sesion.totpActivo} /> : null}
           {cierra ? <Cierre tramite={tramite} pideCodigo={sesion.totpActivo} /> : null}
+          {esEtapaDeTrabajo(tramite.etapa) ? null : <Evidencia tramite={tramite} />}
         </div>
         <div className="flex min-w-0 flex-col gap-6">
           <HistorialTramite tipo={tramite.tipo} eventos={tramite.eventos} />

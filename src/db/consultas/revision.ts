@@ -27,6 +27,12 @@ export type RespuestaItem = {
   nota: string | null;
 };
 
+/** Lo que quedó guardado en una ronda: conserva el texto y la marca de crítico con que se respondió. */
+export type RespuestaGuardada = Omit<RespuestaItem, "resultado"> & { resultado: Resultado };
+
+export type RondaVerificacion = { ronda: number; respuestas: RespuestaGuardada[] };
+
+/** Las fechas de responder y cerrar van como texto, en la zona de la instalación: las pinta un componente de cliente. */
 export type Observacion = {
   id: number;
   numero: number;
@@ -35,8 +41,12 @@ export type Observacion = {
   texto: string;
   autor: string;
   respuesta: string | null;
+  respondidaPor: string | null;
+  respondidaEn: string | null;
   estado: "abierta" | "atendida" | "cerrada";
   notaReapertura: string | null;
+  cerradaPor: string | null;
+  cerradaEn: string | null;
   creadoEn: Date;
 };
 
@@ -67,29 +77,26 @@ export async function listarItemsVerificacion(opciones?: {
  * Los ítems activos con la respuesta de esa ronda. Si la ronda no tiene ninguna, propone las
  * de la última ronda anterior que sí tenga (sin guardarlas): la revisión siguiente parte de ahí.
  * Una ronda con respuestas conserva las de un ítem desactivado después: es lo que se firma.
- * `sinPropuesta` es para quien solo mira: sin respuestas en la ronda, lo no respondido se ve sin responder; con
- * respuestas propias, solo las filas respondidas (un ítem creado después no aparece como «Sin responder»).
+ * Es la vista de quien responde: para consultar, `listarRondasVerificacion`.
  */
 export async function obtenerVerificacion(
   tramiteId: number,
   ronda: number,
-  opciones?: { sql?: Cliente; sinPropuesta?: boolean },
+  opciones?: { sql?: Cliente },
 ): Promise<RespuestaItem[]> {
   const sql = opciones?.sql ?? obtenerSql();
   const [propia] = await sql`SELECT 1 FROM tramite_verificaciones WHERE tramite_id = ${tramiteId} AND ronda = ${ronda} LIMIT 1`;
   let deRonda = ronda;
-  if (!propia && !opciones?.sinPropuesta) {
+  if (!propia) {
     const [previa] = await sql`SELECT max(ronda) AS ronda FROM tramite_verificaciones
       WHERE tramite_id = ${tramiteId} AND ronda < ${ronda}`;
     if (previa?.ronda !== null && previa?.ronda !== undefined) deRonda = previa.ronda;
   }
   const propuesta = deRonda !== ronda;
-  // Quien solo mira una ronda con respuestas propias ve lo que se respondió, no ítems creados después.
-  const soloRespondidas = Boolean(propia) && opciones?.sinPropuesta === true;
   const filas = await sql`SELECT i.id, i.texto, i.critico, r.texto_item, r.critico AS critico_guardado, r.resultado, r.nota
     FROM lista_verificacion_items i
     LEFT JOIN tramite_verificaciones r ON r.item_id = i.id AND r.tramite_id = ${tramiteId} AND r.ronda = ${deRonda}
-    WHERE ${soloRespondidas ? sql`r.id IS NOT NULL` : sql`i.activo OR (${!propuesta} AND r.id IS NOT NULL)`}
+    WHERE i.activo OR (${!propuesta} AND r.id IS NOT NULL)
     ORDER BY i.orden, i.id`;
   return filas.map((f) => ({
     itemId: Number(f.id),
@@ -99,6 +106,26 @@ export async function obtenerVerificacion(
     resultado: f.resultado,
     nota: f.nota,
   }));
+}
+
+/**
+ * Lo respondido en cada ronda, de la más reciente a la primera, para quien consulta. Solo rondas con
+ * respuestas guardadas y solo lo guardado: un ítem creado después no aparece como pendiente, y el
+ * texto es el de ese momento (spec 13A §9.2). `lista_verificacion_items` solo pone el orden.
+ */
+export async function listarRondasVerificacion(tramiteId: number, opciones?: { sql?: Cliente }): Promise<RondaVerificacion[]> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const filas = await sql`SELECT r.ronda, r.item_id, r.texto_item, r.critico, r.resultado, r.nota
+    FROM tramite_verificaciones r JOIN lista_verificacion_items i ON i.id = r.item_id
+    WHERE r.tramite_id = ${tramiteId}
+    ORDER BY r.ronda DESC, i.orden, i.id`;
+  const rondas: RondaVerificacion[] = [];
+  for (const f of filas) {
+    const respuesta = { itemId: Number(f.item_id), texto: f.texto_item, critico: f.critico, resultado: f.resultado, nota: f.nota };
+    if (rondas.at(-1)?.ronda === f.ronda) rondas.at(-1)?.respuestas.push(respuesta);
+    else rondas.push({ ronda: f.ronda, respuestas: [respuesta] });
+  }
+  return rondas;
 }
 
 /** Bloquea el trámite y comprueba que `sesion` tiene el turno (revisor en revisión o elaborador en elaboración). */
@@ -171,8 +198,13 @@ export async function guardarVerificacion(
 export async function listarObservaciones(tramiteId: number, opciones?: { sql?: Cliente }): Promise<Observacion[]> {
   const sql = opciones?.sql ?? obtenerSql();
   const filas = await sql`SELECT o.id, o.numero, o.ronda, o.origen, o.texto, u.nombre AS autor, o.respuesta,
-      o.estado, o.nota_reapertura, o.creado_en
-    FROM tramite_observaciones o JOIN usuarios u ON u.id = o.autor_id
+      responde.nombre AS respondida_por, to_char(o.respondida_en, 'DD/MM/YYYY HH24:MI') AS respondida_en,
+      o.estado, o.nota_reapertura, cierra.nombre AS cerrada_por, to_char(o.cerrada_en, 'DD/MM/YYYY HH24:MI') AS cerrada_en,
+      o.creado_en
+    FROM tramite_observaciones o
+    JOIN usuarios u ON u.id = o.autor_id
+    LEFT JOIN usuarios responde ON responde.id = o.respondida_por
+    LEFT JOIN usuarios cierra ON cierra.id = o.cerrada_por
     WHERE o.tramite_id = ${tramiteId}
     ORDER BY o.numero`;
   return filas.map((o) => ({
@@ -183,8 +215,12 @@ export async function listarObservaciones(tramiteId: number, opciones?: { sql?: 
     texto: o.texto,
     autor: o.autor,
     respuesta: o.respuesta,
+    respondidaPor: o.respondida_por,
+    respondidaEn: o.respondida_en,
     estado: o.estado,
     notaReapertura: o.nota_reapertura,
+    cerradaPor: o.cerrada_por,
+    cerradaEn: o.cerrada_en,
     creadoEn: o.creado_en,
   }));
 }

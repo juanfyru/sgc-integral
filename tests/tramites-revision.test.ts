@@ -15,6 +15,7 @@ import type { TransactionSql } from "postgres";
 import {
   listarItemsVerificacion,
   listarObservaciones,
+  listarRondasVerificacion,
   obtenerVerificacion,
   type Esperado,
   type Resultado,
@@ -84,8 +85,8 @@ describe("revisión", () => {
 
       const ronda2 = await obtenerVerificacion(t.tramiteId, 2, { sql: tx });
       expect(ronda2.find((r) => r.itemId === items[3].id)!.resultado).toBe("no_cumple");   // parte de la ronda anterior
-      const soloMirando = await obtenerVerificacion(t.tramiteId, 2, { sql: tx, sinPropuesta: true });
-      expect(soloMirando.every((r) => r.resultado === null)).toBe(true);                     // quien mira no ve propuestas
+      // Quien mira no ve la propuesta como si fuera de la ronda 2: ve la ronda 1, con su número.
+      expect((await listarRondasVerificacion(t.tramiteId, { sql: tx })).map((r) => r.ronda)).toEqual([1]);
       await guardarVerificacion(t.tramiteId, t.revisor, ronda2.map((r) => ({ itemId: r.itemId, resultado: r.resultado! })), { sql: tx });
       await cerrarObservacion(n, t.revisor, { sql: tx });
       const cierre = await transicionar(t.revisor, { tramiteId: t.tramiteId, accion: "concepto_favorable", etapaEsperada: "revision", rondaEsperada: 2,
@@ -100,14 +101,59 @@ describe("revisión", () => {
   it("quien solo mira una ronda respondida no ve un ítem creado después como «Sin responder»", () => revertida(sql, async (tx) => {
     const t = await tramiteEn(tx, "aprobacion");
     try {
-      const antes = await obtenerVerificacion(t.tramiteId, t.ronda, { sql: tx, sinPropuesta: true });
+      const [antes] = await listarRondasVerificacion(t.tramiteId, { sql: tx });
       await tx`INSERT INTO lista_verificacion_items (texto, critico, orden) VALUES ('Ítem creado después de la revisión', false, 9999)`;
-      const mirando = await obtenerVerificacion(t.tramiteId, t.ronda, { sql: tx, sinPropuesta: true });
-      expect(mirando.map((r) => r.itemId)).toEqual(antes.map((r) => r.itemId));
-      expect(mirando.every((r) => r.resultado !== null)).toBe(true);
+      const [mirando] = await listarRondasVerificacion(t.tramiteId, { sql: tx });
+      expect(mirando.respuestas.map((r) => r.itemId)).toEqual(antes.respuestas.map((r) => r.itemId));
       // Quien revisa sí lo ve, para responderlo.
       const revisando = await obtenerVerificacion(t.tramiteId, t.ronda, { sql: tx });
-      expect(revisando).toHaveLength(antes.length + 1);
+      expect(revisando).toHaveLength(antes.respuestas.length + 1);
+    } finally { await t.limpiar(); }
+  }));
+
+  it("las rondas van de la más reciente a la primera, cada una como se respondió", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "revision");
+    try {
+      expect(await listarRondasVerificacion(t.tramiteId, { sql: tx })).toEqual([]);
+      const items = await listarItemsVerificacion({ sql: tx, soloActivos: true });
+      const [primero, segundo] = items;
+      await guardarVerificacion(t.tramiteId, t.revisor, [
+        { itemId: segundo.id, resultado: "no_aplica" },
+        { itemId: primero.id, resultado: "no_cumple", nota: "Falta el numeral 5." },
+      ], { sql: tx });
+      await crearObservacion(t.tramiteId, t.revisor, "Falta el numeral 5.", { sql: tx });
+      await transicionar(t.revisor, { tramiteId: t.tramiteId, accion: "devolver_revision", etapaEsperada: "revision", rondaEsperada: 1 }, opc(tx));
+      await tx`UPDATE lista_verificacion_items SET texto = 'Texto de hoy', critico = NOT critico WHERE id = ${primero.id}`;
+
+      const [ronda1] = await listarRondasVerificacion(t.tramiteId, { sql: tx });
+      expect(ronda1.ronda).toBe(1);
+      expect(ronda1.respuestas.map((r) => r.itemId)).toEqual([primero.id, segundo.id]);    // en el orden de la lista
+      // Conserva el texto y la marca de crítico con que se respondió, y la nota.
+      expect(ronda1.respuestas[0]).toEqual({ itemId: primero.id, texto: primero.texto, critico: primero.critico, resultado: "no_cumple", nota: "Falta el numeral 5." });
+
+      await responderObservacion((await listarObservaciones(t.tramiteId, { sql: tx }))[0].id, t.elaborador, "Se añadió el numeral.", { sql: tx });
+      await transicionar(t.elaborador, { tramiteId: t.tramiteId, accion: "enviar_a_revision", etapaEsperada: "elaboracion", rondaEsperada: 2, credenciales: { clave: "x" } }, opc(tx));
+      await guardarVerificacion(t.tramiteId, t.revisor, [{ itemId: primero.id, resultado: "cumple" }], { sql: tx });
+
+      const rondas = await listarRondasVerificacion(t.tramiteId, { sql: tx });
+      expect(rondas.map((r) => r.ronda)).toEqual([2, 1]);
+      expect(rondas[0].respuestas).toEqual([{ itemId: primero.id, texto: "Texto de hoy", critico: !primero.critico, resultado: "cumple", nota: null }]);
+    } finally { await t.limpiar(); }
+  }));
+
+  it("las observaciones dicen quién respondió y quién cerró, y cuándo", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "revision");
+    try {
+      const n = await crearObservacion(t.tramiteId, t.revisor, "Falta el responsable.", { sql: tx });
+      expect((await listarObservaciones(t.tramiteId, { sql: tx }))[0]).toMatchObject({ respondidaPor: null, cerradaPor: null, cerradaEn: null });
+      await transicionar(t.revisor, { tramiteId: t.tramiteId, accion: "devolver_revision", etapaEsperada: "revision", rondaEsperada: 1 }, opc(tx));
+      await responderObservacion(n, t.elaborador, "Se añadió.", { sql: tx });
+      await transicionar(t.elaborador, { tramiteId: t.tramiteId, accion: "enviar_a_revision", etapaEsperada: "elaboracion", rondaEsperada: 2, credenciales: { clave: "x" } }, opc(tx));
+      await cerrarObservacion(n, t.revisor, { sql: tx });
+      const [o] = await listarObservaciones(t.tramiteId, { sql: tx });
+      expect(o).toMatchObject({ respondidaPor: t.elaborador.nombre, cerradaPor: t.revisor.nombre, estado: "cerrada" });
+      expect(o.respondidaEn).toMatch(/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}$/);
+      expect(o.cerradaEn).toMatch(/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}$/);
     } finally { await t.limpiar(); }
   }));
 

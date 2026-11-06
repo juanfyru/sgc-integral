@@ -5,7 +5,7 @@ import type { EstadoAccion } from "@/app/admin/comun";
 import { ErrorAccion, Ocultos } from "@/componentes/tramites/AccionesSolicitud";
 import { Boton } from "@/componentes/ui/Boton";
 import { claseControl } from "@/componentes/ui/Campo";
-import type { RespuestaItem, Resultado } from "@/db/consultas/revision";
+import type { RespuestaGuardada, RespuestaItem, Resultado } from "@/db/consultas/revision";
 import type { Etapa } from "@/lib/tramites/tipos";
 
 export const ETIQUETA_RESULTADO: Record<Resultado, string> = {
@@ -35,14 +35,14 @@ function Critico() {
   );
 }
 
-function ItemSoloLectura({ r }: { r: RespuestaItem }) {
+function ItemSoloLectura({ r }: { r: RespuestaGuardada }) {
   return (
     <li className="flex flex-col gap-0.5 border-b border-border pb-2 text-sm last:border-b-0 last:pb-0">
       <span className="flex flex-wrap items-center gap-2">
         <span className="break-words">{r.texto}</span>
         {r.critico ? <Critico /> : null}
       </span>
-      <span className="font-medium">{r.resultado ? ETIQUETA_RESULTADO[r.resultado] : "Sin responder"}</span>
+      <span className="font-medium">{ETIQUETA_RESULTADO[r.resultado]}</span>
       {r.nota ? <span className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{`Nota: ${r.nota}`}</span> : null}
     </li>
   );
@@ -77,10 +77,18 @@ function ItemEditable({ r, alCambiar }: { r: RespuestaItem; alCambiar: () => voi
   );
 }
 
-/**
- * La lista de verificación de la ronda en curso (spec 13A §9.2). Sin `edicion` es solo lectura:
- * el resultado va como texto. Con ella, cada ítem es un grupo de tres opciones.
- */
+/** Lo que se respondió en una ronda, para consultarlo: el resultado va como texto. */
+export function ListaSoloLectura({ respuestas, etiqueta }: { respuestas: RespuestaGuardada[]; etiqueta: string }) {
+  return (
+    <ul className="flex list-none flex-col gap-2" aria-label={etiqueta}>
+      {respuestas.map((r) => (
+        <ItemSoloLectura key={r.itemId} r={r} />
+      ))}
+    </ul>
+  );
+}
+
+/** La lista de verificación de quien revisa, en la ronda en curso (spec 13A §9.2): cada ítem es un grupo de tres opciones. */
 export function ListaVerificacion({
   tramite,
   respuestas,
@@ -88,17 +96,8 @@ export function ListaVerificacion({
 }: {
   tramite: Referencia;
   respuestas: RespuestaItem[];
-  edicion?: EdicionLista;
+  edicion: EdicionLista;
 }) {
-  if (!edicion) {
-    return (
-      <ul className="flex list-none flex-col gap-2" aria-label="Lista de verificación">
-        {respuestas.map((r) => (
-          <ItemSoloLectura key={r.itemId} r={r} />
-        ))}
-      </ul>
-    );
-  }
   // Como en FormularioSolicitud: enviar desde una transición no reinicia lo marcado tras un rechazo.
   const alEnviar = (evento: FormEvent<HTMLFormElement>) => {
     evento.preventDefault();

@@ -38,8 +38,9 @@ import { HistorialTramite } from "@/componentes/tramites/HistorialTramite";
 import { ayudaDelCodigo } from "@/componentes/tramites/ClasificacionNueva";
 import { PanelAceptacion, type TramiteParaAceptar } from "@/componentes/tramites/PanelAceptacion";
 import { PanelAprobacion, type TramiteParaAprobar } from "@/componentes/tramites/PanelAprobacion";
+import { EvidenciaRevision } from "@/componentes/tramites/EvidenciaRevision";
 import { EnvioARevision, PanelElaboracion, hayCambiosSinGuardar } from "@/componentes/tramites/PanelElaboracion";
-import { ListaVerificacion } from "@/componentes/tramites/ListaVerificacion";
+import { ListaSoloLectura, ListaVerificacion } from "@/componentes/tramites/ListaVerificacion";
 import { Observaciones } from "@/componentes/tramites/Observaciones";
 import { PanelPublicacion } from "@/componentes/tramites/PanelPublicacion";
 import { PanelRevision } from "@/componentes/tramites/PanelRevision";
@@ -54,7 +55,7 @@ import type {
   DetalleTramite,
   ResumenTramite,
 } from "@/db/consultas/tramites";
-import type { Observacion, RespuestaItem } from "@/db/consultas/revision";
+import type { Observacion, RespuestaGuardada, RespuestaItem, RondaVerificacion } from "@/db/consultas/revision";
 import type { Borrador } from "@/db/consultas/tramites-archivos";
 import {
   EsquemaAceptarCreacion,
@@ -656,7 +657,8 @@ describe("PanelElaboracion", () => {
   };
   const observacion = (parcial: Partial<Observacion>): Observacion => ({
     id: 5, numero: 1, ronda: 1, origen: "revision", texto: "Falta el <i>responsable</i>.", autor: "Ana Pérez",
-    respuesta: null, estado: "abierta", notaReapertura: null, creadoEn: ahora, ...parcial,
+    respuesta: null, respondidaPor: null, respondidaEn: null, estado: "abierta", notaReapertura: null,
+    cerradaPor: null, cerradaEn: null, creadoEn: ahora, ...parcial,
   });
   const pintar = (editable: boolean, b: Borrador = borrador, pideCodigo = false, observaciones: Observacion[] = [observacion({})]) =>
     renderToStaticMarkup(<PanelElaboracion tramite={tramite} borrador={b} observaciones={observaciones} editable={editable} pideCodigo={pideCodigo} />);
@@ -753,10 +755,15 @@ describe("revisión", () => {
     { itemId: 2, texto: "Redacción <b>clara</b>", critico: false, resultado: "no_aplica", nota: "No <i>aplica</i>." },
     { itemId: 3, texto: "Sin responder aún", critico: false, resultado: null, nota: null },
   ];
+  const guardadas: RespuestaGuardada[] = [
+    { itemId: 1, texto: "Usa la plantilla vigente", critico: true, resultado: "cumple", nota: null },
+    { itemId: 2, texto: "Redacción <b>clara</b>", critico: false, resultado: "no_aplica", nota: "No <i>aplica</i>." },
+  ];
   const edicion = { estado: null, enviar: () => {}, pendiente: false, guardado: false, alCambiar: () => {}, alEnviar: () => {} };
   const obs = (parcial: Partial<Observacion>): Observacion => ({
     id: 5, numero: 1, ronda: 1, origen: "revision", texto: "Falta el responsable.", autor: "Ana Pérez",
-    respuesta: null, estado: "abierta", notaReapertura: null, creadoEn: ahora, ...parcial,
+    respuesta: null, respondidaPor: null, respondidaEn: null, estado: "abierta", notaReapertura: null,
+    cerradaPor: null, cerradaEn: null, creadoEn: ahora, ...parcial,
   });
 
   it("cada ítem es un fieldset con su legend, tres opciones, y el crítico lleva el texto", () => {
@@ -772,12 +779,13 @@ describe("revisión", () => {
   });
 
   it("en solo lectura el resultado va como texto y no hay formulario", () => {
-    const html = renderToStaticMarkup(<ListaVerificacion tramite={tramite} respuestas={respuestas} />);
+    const html = renderToStaticMarkup(<ListaSoloLectura respuestas={guardadas} etiqueta="Respuestas de la ronda 1" />);
     expect(html).not.toContain("<form");
     expect(html).not.toContain("<fieldset");
+    expect(html).toContain('aria-label="Respuestas de la ronda 1"');
     expect(html).toContain("Cumple");
     expect(html).toContain("No aplica");
-    expect(html).toContain("Sin responder");
+    expect(html).toContain("Crítico");
     expect(html).toContain("Nota: No &lt;i&gt;aplica&lt;/i&gt;.");
   });
 
@@ -807,20 +815,111 @@ describe("revisión", () => {
     expect(elaborador).not.toContain('name="texto"');
   });
 
-  it("el panel ofrece las dos salidas al revisor y, a los demás, solo lectura", () => {
-    const pintar = (puedeRevisar: boolean) =>
-      renderToStaticMarkup(
-        <PanelRevision tramite={tramite} respuestas={respuestas} observaciones={[obs({})]} huella={`9f2c${"0".repeat(56)}a41b`} puedeRevisar={puedeRevisar} pideCodigo={false} />,
-      );
-    const revisor = pintar(true);
+  it("el panel ofrece las dos salidas al revisor", () => {
+    const revisor = renderToStaticMarkup(
+      <PanelRevision tramite={tramite} respuestas={respuestas} observaciones={[obs({})]} huella={`9f2c${"0".repeat(56)}a41b`} pideCodigo={false} />,
+    );
     expect(revisor).toContain("Devolver a elaboración");
     expect(revisor).toContain("Dar concepto favorable");
     expect(revisor).toContain("Guardar avance");
-    const lector = pintar(false);
-    expect(lector).not.toContain("Devolver a elaboración");
-    expect(lector).not.toContain("Dar concepto favorable");
-    expect(lector).not.toContain("Guardar avance");
-    expect(lector).not.toContain("<form");
+  });
+
+  describe("evidencia de la revisión, para consultar", () => {
+    const publicado = { id: 7, etapa: "publicado", ronda: 2 } as const;
+    const rondas: RondaVerificacion[] = [
+      { ronda: 2, respuestas: guardadas },
+      { ronda: 1, respuestas: [{ itemId: 1, texto: "Usa la plantilla de entonces", critico: true, resultado: "no_cumple", nota: "Falta el numeral 5." }] },
+    ];
+    const cerrada = obs({ estado: "cerrada", respuesta: "Se añadió.", respondidaPor: "Luis Gómez", respondidaEn: "05/11/2026 09:10", notaReapertura: "Revisar de nuevo.", cerradaPor: "Ana Pérez", cerradaEn: "05/11/2026 10:20" });
+
+    it("un trámite cerrado conserva cada ronda y cada observación, sin un solo control", () => {
+      const html = renderToStaticMarkup(<EvidenciaRevision tramite={publicado} rondas={rondas} observaciones={[cerrada]} />);
+      expect(html).toContain("Ronda 2");
+      expect(html).toContain("Usa la plantilla vigente");
+      expect(html).toContain("Falta el responsable.");
+      expect(html).toContain("Ana Pérez · revisión, ronda 1");
+      expect(html).toContain("Respuesta: Se añadió.");
+      expect(html).toContain("Respondió Luis Gómez, 05/11/2026 09:10");
+      expect(html).toContain("Nota de reapertura: Revisar de nuevo.");
+      expect(html).toContain("Cerrada");
+      expect(html).toContain("Cerró Ana Pérez, 05/11/2026 10:20");
+      for (const control of ["<form", "<button", "<input", "<textarea"]) expect(html).not.toContain(control);
+    });
+
+    it("la ronda más reciente va abierta y las anteriores en un details, con su texto y su nota", () => {
+      const html = renderToStaticMarkup(<EvidenciaRevision tramite={publicado} rondas={rondas} observaciones={[]} />);
+      expect(html.match(/<details/g)).toHaveLength(1);
+      expect(html).not.toContain("<details open");
+      const [abierta, anterior] = html.split("<details");
+      expect(abierta).toContain("Ronda 2");
+      expect(abierta).toContain("Usa la plantilla vigente");
+      expect(anterior).toContain("Ronda 1");
+      expect(anterior).toContain("Usa la plantilla de entonces");
+      expect(anterior).toContain("No cumple");
+      expect(anterior).toContain("Nota: Falta el numeral 5.");
+    });
+
+    it("cerrado con lista y sin observaciones lo dice, sin hablar de un futuro que no llegará", () => {
+      const html = renderToStaticMarkup(<EvidenciaRevision tramite={publicado} rondas={rondas} observaciones={[]} />);
+      expect(html).toContain("No hubo observaciones.");
+      expect(html).not.toContain("Todavía");
+    });
+
+    it("cancelado con observaciones y sin lista guardada conserva las observaciones", () => {
+      const html = renderToStaticMarkup(<EvidenciaRevision tramite={{ id: 7, etapa: "cancelado", ronda: 1 }} rondas={[]} observaciones={[obs({})]} />);
+      expect(html).toContain("No se guardaron respuestas.");
+      expect(html).toContain("Falta el responsable.");
+      expect(html).not.toContain("<form");
+    });
+
+    it("un trámite que nunca llegó a revisión no pinta ningún bloque", () => {
+      expect(renderToStaticMarkup(<EvidenciaRevision tramite={{ id: 7, etapa: "cancelado", ronda: 0 }} rondas={[]} observaciones={[]} />)).toBe("");
+    });
+
+    it("en revisión, quien solo mira ve la ronda de lo respondido y que la ronda en curso aún no tiene respuestas", () => {
+      const html = renderToStaticMarkup(
+        <EvidenciaRevision tramite={{ id: 7, etapa: "revision", ronda: 3 }} rondas={rondas} observaciones={[]} rondaEnCurso={3} />,
+      );
+      expect(html).toContain("Ronda 3, en curso: todavía sin respuestas guardadas.");
+      expect(html).toContain("Ronda 2");
+      expect(html).toContain("Cumple");
+      expect(html).not.toContain("Sin responder");
+      expect(html).toContain("Todavía no hay observaciones.");
+    });
+
+    it("con respuestas en la ronda en curso, esa va abierta y la anterior en un details", () => {
+      const html = renderToStaticMarkup(
+        <EvidenciaRevision tramite={{ id: 7, etapa: "revision", ronda: 2 }} rondas={rondas} observaciones={[]} rondaEnCurso={2} />,
+      );
+      expect(html).toContain("Ronda 2, en curso");
+      expect(html).not.toContain("todavía sin respuestas");
+      expect(html.match(/<details/g)).toHaveLength(1);
+    });
+
+    it("la primera ronda en curso, sin nada guardado, no pinta ítems sin responder", () => {
+      const html = renderToStaticMarkup(<EvidenciaRevision tramite={{ id: 7, etapa: "revision", ronda: 1 }} rondas={[]} observaciones={[]} rondaEnCurso={1} />);
+      expect(html).toContain("Ronda 1, en curso: todavía sin respuestas guardadas.");
+      expect(html).not.toContain("<ul");
+    });
+  });
+
+  it("en ajustes, quien elabora ve la lista de la ronda anterior con sus notas y nada que marcar", () => {
+    const panel = (rondaAnterior: RondaVerificacion | null) =>
+      renderToStaticMarkup(
+        <PanelElaboracion
+          tramite={{ ...tramite, etapa: "elaboracion" }}
+          borrador={{ archivos: [], controlCambios: null, plantilla: null }}
+          observaciones={[]}
+          rondaAnterior={rondaAnterior}
+          editable
+          pideCodigo={false}
+        />,
+      );
+    const html = panel({ ronda: 1, respuestas: guardadas });
+    expect(html).toContain("Lista de verificación de la ronda 1");
+    expect(html).toContain("Nota: No &lt;i&gt;aplica&lt;/i&gt;.");
+    expect(html).not.toContain('name="resultado_');
+    expect(panel(null)).not.toContain("Lista de verificación");
   });
 });
 

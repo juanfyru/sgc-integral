@@ -8,10 +8,11 @@ import { ZonaCarga } from "@/componentes/admin/ZonaCarga";
 import { IconoFormato } from "@/componentes/documentos/IconoFormato";
 import { ErrorAccion, Ocultos } from "@/componentes/tramites/AccionesSolicitud";
 import { DialogoFirma } from "@/componentes/tramites/DialogoFirma";
+import { ListaSoloLectura } from "@/componentes/tramites/ListaVerificacion";
 import { Observaciones } from "@/componentes/tramites/Observaciones";
 import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
-import type { Observacion } from "@/db/consultas/revision";
+import type { Observacion, RondaVerificacion } from "@/db/consultas/revision";
 import type { ArchivoDeBorrador, Borrador } from "@/db/consultas/tramites-archivos";
 import { huellaAbreviada, type Etapa } from "@/lib/tramites/tipos";
 
@@ -150,17 +151,20 @@ export function EnvioARevision({
 /**
  * El borrador de la versión en trámite (spec 13A §9.1). `editable` es para el elaborador en
  * elaboración, que además responde las observaciones; los demás, y él mismo después de enviar, lo ven en solo lectura.
+ * `rondaAnterior` es la lista que dejó la revisión cuando el trámite vuelve a ajustes: sus notas también le hablan a quien elabora.
  */
 export function PanelElaboracion({
   tramite,
   borrador,
   observaciones,
+  rondaAnterior = null,
   editable,
   pideCodigo,
 }: {
   tramite: TramiteParaElaborar;
   borrador: Borrador;
   observaciones: Observacion[];
+  rondaAnterior?: RondaVerificacion | null;
   editable: boolean;
   pideCodigo: boolean;
 }) {
@@ -208,6 +212,13 @@ export function PanelElaboracion({
           </p>
         </div>
       )}
+
+      {rondaAnterior ? (
+        <div className="flex flex-col gap-2">
+          <h3 className="text-sm font-medium">{`Lista de verificación de la ronda ${rondaAnterior.ronda}`}</h3>
+          <ListaSoloLectura respuestas={rondaAnterior.respuestas} etiqueta={`Respuestas de la ronda ${rondaAnterior.ronda}`} />
+        </div>
+      ) : null}
 
       {observaciones.length > 0 ? (
         <div className="flex flex-col gap-2">

@@ -139,6 +139,12 @@ function Fila({
       {o.respuesta ? (
         <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{`Respuesta: ${o.respuesta}`}</p>
       ) : null}
+      {o.respondidaPor ? (
+        <p className="break-words text-xs text-muted-foreground">{`Respondió ${o.respondidaPor}, ${o.respondidaEn}`}</p>
+      ) : null}
+      {o.cerradaPor ? (
+        <p className="break-words text-xs text-muted-foreground">{`Cerró ${o.cerradaPor}, ${o.cerradaEn}`}</p>
+      ) : null}
       {puedeResponder && o.estado !== "cerrada" ? (
         <FormularioDeObservacion
           accion={responderObservacionAccion}
