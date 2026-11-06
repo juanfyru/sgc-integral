@@ -396,6 +396,16 @@ describe("reasignar", () => {
       expect(avisos.map((a) => a.titulo)).toEqual([expect.stringMatching(/ahora le corresponde elaborar/)]);
     }));
 
+    it("quien elaboraba puede pasar a aprobar si no firmó: recibe el aviso de lo que le toca", () => revertida(sql, async (tx) => {
+      const elaborador = await sesionAdmin(tx);
+      const gerente = await sesionDe(tx, "gerente");
+      const t = await tramiteEn(tx, "elaboracion", { elaborador, aprobador: gerente });
+      const nuevo = await usuarioDePrueba(tx, { rol: "consulta" });
+      await reasignarEn(tx, t.admin, t.tramiteId, "elaboracion", 1, { papel: "elaborador", usuarioId: nuevo.usuarioId, aprobadorId: elaborador.usuarioId });
+      const avisos = (await avisosDe(tx, elaborador.usuarioId, t.tramiteId)).filter((a) => a.tipo === "tramite.reasignado");
+      expect(avisos.map((a) => a.titulo)).toEqual([expect.stringMatching(/ahora le corresponde aprobar/)]);
+    }));
+
     it("se valida el conjunto: el aprobador debe tener el rol que pide el elaborador nuevo", () => revertida(sql, async (tx) => {
       const elaborador = await usuarioDePrueba(tx, { rol: "consulta" });
       const t = await tramiteEn(tx, "elaboracion", { elaborador });
