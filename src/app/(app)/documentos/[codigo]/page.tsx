@@ -15,7 +15,7 @@ import {
   formatearTamano,
   formatoDesdeMime,
 } from "@/componentes/documentos/IconoFormato";
-import { EnlaceActa } from "@/componentes/tramites/EnlaceActa";
+import { DatosDeAprobacion } from "@/componentes/documentos/DatosDeAprobacion";
 import { VisorPdf } from "@/componentes/documentos/VisorPdf";
 import { Migas } from "@/componentes/navegacion/Migas";
 import { MiniMapa } from "@/componentes/navegacion/MiniMapa";
@@ -264,16 +264,7 @@ export default async function FichaDocumento({
                   valor={ficha.version.resumenCambios}
                 />
               )}
-              <div>
-                <dt className="text-xs text-muted-foreground">Acta de aprobación</dt>
-                <dd className="text-sm text-foreground">
-                  {ficha.version.tramiteId !== null ? (
-                    <EnlaceActa tramiteId={ficha.version.tramiteId} clase="aprobacion" />
-                  ) : (
-                    "Aprobación registrada fuera de la plataforma"
-                  )}
-                </dd>
-              </div>
+              <DatosDeAprobacion origen={ficha.version.origenAprobacion} tramiteId={ficha.version.tramiteId} />
             </dl>
           </section>
 

@@ -1,6 +1,7 @@
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { filtroAcceso, type SujetoVisibilidad } from "@/lib/alcance";
 import { ROLES_ARCHIVO_LISTA } from "@/lib/subida";
+import type { OrigenAprobacion } from "@/lib/tramites/tipos";
 
 export type ArchivoFicha = {
   id: number;
@@ -48,6 +49,7 @@ export type FichaDocumento = {
     reviso: string | null;
     aprobo: string | null;
     resumenCambios: string | null;
+    origenAprobacion: OrigenAprobacion;
     /** El trámite que publicó esta versión; `null` si se aprobó fuera de la plataforma. */
     tramiteId: number | null;
   };
@@ -75,7 +77,7 @@ export async function obtenerFichaDocumento(
            v.fecha_elaboracion::text AS fecha_elaboracion,
            v.fecha_revision::text AS fecha_revision,
            v.fecha_aprobacion::text AS fecha_aprobacion,
-           v.elaboro, v.reviso, v.aprobo, v.resumen_cambios,
+           v.elaboro, v.reviso, v.aprobo, v.resumen_cambios, v.origen_aprobacion,
            (SELECT t.id FROM tramites t WHERE t.version_id = v.id AND t.etapa = 'publicado' ORDER BY t.id DESC LIMIT 1) AS tramite_id
     FROM documentos d
     JOIN tipos_documento t ON t.id = d.tipo_id
@@ -145,6 +147,7 @@ export async function obtenerFichaDocumento(
       reviso: doc.reviso as string | null,
       aprobo: doc.aprobo as string | null,
       resumenCambios: doc.resumen_cambios as string | null,
+      origenAprobacion: doc.origen_aprobacion as OrigenAprobacion,
       tramiteId: doc.tramite_id === null ? null : Number(doc.tramite_id),
     },
     archivos: archivos.map((a) => ({
