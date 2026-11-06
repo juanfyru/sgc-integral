@@ -19,15 +19,13 @@ import { puede } from "@/lib/permisos";
 import type { Rol } from "@/lib/roles";
 import { accionesDisponibles, type Accion } from "@/lib/tramites/transiciones";
 import {
-  ETAPAS_TRABAJO,
+  ETAPAS_ABIERTAS,
   esEtapaDeTrabajo,
   type Autoridad,
   type Etapa,
   type TipoSolicitud,
 } from "@/lib/tramites/tipos";
 import type { FilaTramite, SesionFlujo } from "./flujo/contrato";
-
-export const ETAPAS_ABIERTAS: string[] = [...ETAPAS_TRABAJO];
 
 export type ResumenTramite = {
   id: number;

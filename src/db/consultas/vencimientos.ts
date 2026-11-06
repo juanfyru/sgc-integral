@@ -8,9 +8,9 @@ import type { Row, TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { supervisoresDe } from "@/db/consultas/estructura";
-import { ETAPAS_ABIERTAS, aFilaTramite, adminsActivos, lideresDeProceso, rotuloDeTramite } from "@/db/consultas/tramites";
+import { aFilaTramite, adminsActivos, lideresDeProceso, rotuloDeTramite } from "@/db/consultas/tramites";
 import { estadoPlazo } from "@/lib/tramites/plazos";
-import { ETIQUETA_ETAPA, textoResponsables } from "@/lib/tramites/tipos";
+import { ETAPAS_ABIERTAS, ETIQUETA_ETAPA, textoResponsables } from "@/lib/tramites/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { enTransaccion, type FilaTramite, type TipoAviso } from "./flujo/contrato";
 

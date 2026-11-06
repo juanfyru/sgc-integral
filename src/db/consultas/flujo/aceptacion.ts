@@ -1,5 +1,6 @@
 /** Manejadores de la aceptación: duplicidad, clasificación, código y responsables (spec 13A §8.3). */
 import type { TransactionSql } from "postgres";
+import type { Cliente } from "@/db/cliente";
 import { crearDocumentoEn, crearVersionBorradorEn, type AsociacionEntrada } from "@/db/consultas/admin";
 import {
   codigoAbandonado,
@@ -10,7 +11,6 @@ import {
 } from "@/db/consultas/codigos";
 import { buscarParecidos } from "@/db/consultas/parecidos";
 import {
-  ETAPAS_ABIERTAS,
   propietarioDeDocumento,
   rotuloDeTramite,
   tipoDeDocumento,
@@ -22,7 +22,7 @@ import type {
 } from "@/lib/esquemas/tramites";
 import { finDeFecha } from "@/lib/tramites/plazos";
 import { papelesReasignables, validarDesignacion } from "@/lib/tramites/separacion";
-import type { Autoridad, TipoSolicitud } from "@/lib/tramites/tipos";
+import { ETAPAS_ABIERTAS, type Autoridad, type TipoSolicitud } from "@/lib/tramites/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import {
   ErrorTramite,
@@ -47,7 +47,7 @@ type DatosNuevo = DatosAceptarCreacion &
  * pidiera estar activa, o conservar el rol de un paso que ya dio, el trámite podría quedar sin salida.
  */
 export async function exigirDesignacion(
-  tx: TransactionSql,
+  sql: Cliente,
   tramite: FilaTramite,
   tipo: TipoSolicitud,
   autoridad: Autoridad,
@@ -55,7 +55,7 @@ export async function exigirDesignacion(
   entran?: readonly number[],
 ) {
   const buscados = [tramite.solicitanteId, ids.elaboradorId, ids.revisorId, ids.aprobadorId].filter((i) => typeof i === "number");
-  const filas = await tx`SELECT id, nombre, rol, activo FROM usuarios WHERE id = ANY(${buscados})`;
+  const filas = await sql`SELECT id, nombre, rol, activo FROM usuarios WHERE id = ANY(${buscados})`;
   const persona = (id: number | null | undefined) => {
     const f = filas.find((u) => Number(u.id) === id);
     if (!f) return null;

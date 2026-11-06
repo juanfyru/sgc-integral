@@ -87,7 +87,7 @@ async function exigirAutoridadActual(sql: Cliente, tramite: FilaTramite, aprobad
   if (!tipo) throw new ErrorTramite("El tipo de documento no existe");
   try {
     await exigirDesignacion(
-      sql as TransactionSql,
+      sql,
       tramite,
       tramite.tipo,
       tipo.autoridad,

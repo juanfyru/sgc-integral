@@ -13,6 +13,7 @@ import { puede } from "@/lib/permisos";
 import { fechaLimite } from "@/lib/tramites/plazos";
 import { evaluarTransicion, type Accion } from "@/lib/tramites/transiciones";
 import {
+  ETAPAS_ABIERTAS,
   esEtapaDeTrabajo,
   type Etapa,
   type Firma,
@@ -43,7 +44,6 @@ import { MANEJADORES_GESTION } from "./flujo/gestion";
 import { MANEJADORES_REVISION, VALIDADORES_REVISION } from "./flujo/revision";
 import { MANEJADORES_SOLICITUD } from "./flujo/solicitud";
 import {
-  ETAPAS_ABIERTAS,
   adminsActivos,
   lideresDeProceso,
   propietarioDeDocumento,

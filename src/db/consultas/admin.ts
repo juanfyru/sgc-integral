@@ -4,7 +4,7 @@ import { filtroAcceso, type SujetoVisibilidad } from "@/lib/alcance";
 import { ROLES_ARCHIVO_LISTA } from "@/lib/subida";
 import { hashearClave } from "@/lib/clave";
 import { puede } from "@/lib/permisos";
-import { ETAPAS_TRABAJO, NUMERO_MAXIMO_DE_VERSION, type OrigenAprobacion } from "@/lib/tramites/tipos";
+import { ETAPAS_ABIERTAS, NUMERO_MAXIMO_DE_VERSION, type OrigenAprobacion } from "@/lib/tramites/tipos";
 import {
   ACCION_EDITAR_CONTROL,
   codigoAbandonado,
@@ -27,7 +27,6 @@ function desdeTramite(opciones: OpcionesEscritura | undefined, usuarioId: number
   return opciones?.tramiteId === undefined ? undefined : { tramiteId: opciones.tramiteId, usuarioId };
 }
 
-const ETAPAS_EN_CURSO: string[] = [...ETAPAS_TRABAJO];
 const VERSION_EN_TRAMITE = "Esta versión está en un trámite: se trabaja desde el trámite";
 
 /**
@@ -43,7 +42,7 @@ export async function exigirEscrituraEnVersion(
   desde?: EscrituraDesdeTramite,
 ): Promise<void> {
   const [abierto] = await tx`SELECT id, etapa, elaborador_id FROM tramites
-    WHERE version_id = ${versionId} AND etapa = ANY(${ETAPAS_EN_CURSO})
+    WHERE version_id = ${versionId} AND etapa = ANY(${ETAPAS_ABIERTAS})
     FOR SHARE`;
   if (!desde) {
     if (abierto) throw new ErrorTramite(VERSION_EN_TRAMITE);
@@ -239,7 +238,7 @@ async function leerSituacion(sql: Cliente, documentoId: number): Promise<Situaci
       (SELECT origen_aprobacion FROM documento_versiones WHERE documento_id = ${documentoId} AND estado = 'vigente') AS origen_vigente,
       EXISTS (SELECT 1 FROM tramites WHERE documento_id = ${documentoId} AND tipo = 'crear' AND etapa = 'cancelado') AS creacion_cancelada,
       (SELECT json_build_object('id', id, 'numero', numero) FROM tramites
-        WHERE documento_id = ${documentoId} AND etapa = ANY(${ETAPAS_EN_CURSO})) AS tramite_abierto`;
+        WHERE documento_id = ${documentoId} AND etapa = ANY(${ETAPAS_ABIERTAS})) AS tramite_abierto`;
   return {
     publicado: s.publicado,
     anulado: s.anulado,
@@ -685,7 +684,7 @@ export async function descartarBorrador(versionId: number, usuarioId: number): P
   await obtenerSql().begin(async (tx) => {
     const documentoId = await documentoDeVersion(tx, versionId);
     await bloquearDocumento(tx, documentoId);
-    const [abierto] = await tx`SELECT 1 FROM tramites WHERE version_id = ${versionId} AND etapa = ANY(${ETAPAS_EN_CURSO})`;
+    const [abierto] = await tx`SELECT 1 FROM tramites WHERE version_id = ${versionId} AND etapa = ANY(${ETAPAS_ABIERTAS})`;
     if (abierto) throw new ErrorTramite(VERSION_EN_TRAMITE);
     const [version] = await tx`UPDATE documento_versiones SET estado = 'descartado'
       WHERE id = ${versionId} AND estado = 'borrador'
@@ -937,7 +936,7 @@ export async function obtenerDocumentoAdmin(
           'mime', a.mime, 'tamanoBytes', a.tamano_bytes) ORDER BY a.rol)
         FILTER (WHERE a.id IS NOT NULL), '[]') AS archivos,
       (SELECT json_build_object('id', t.id, 'numero', t.numero) FROM tramites t
-        WHERE t.version_id = v.id AND t.etapa = ANY(${ETAPAS_EN_CURSO})) AS tramite,
+        WHERE t.version_id = v.id AND t.etapa = ANY(${ETAPAS_ABIERTAS})) AS tramite,
       (SELECT coalesce(json_agg(json_build_object('id', t.id, 'etapa', t.etapa) ORDER BY t.id), '[]') FROM tramites t
         WHERE t.version_id = v.id AND (t.etapa IN ('publicado', 'eliminado') OR (t.etapa = 'cancelado' AND v.estado = 'descartado'))) AS cierres
     FROM documento_versiones v

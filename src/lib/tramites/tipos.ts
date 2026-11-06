@@ -19,6 +19,8 @@ export const ETAPAS_TRABAJO = [
   "publicacion",
 ] as const;
 export const ETAPAS_FINALES = ["publicado", "eliminado", "rechazado", "cancelado"] as const;
+/** Las de trabajo, para `etapa = ANY(...)`: postgres.js no acepta un arreglo de solo lectura. */
+export const ETAPAS_ABIERTAS: string[] = [...ETAPAS_TRABAJO];
 export type EtapaTrabajo = (typeof ETAPAS_TRABAJO)[number];
 export type Etapa = EtapaTrabajo | (typeof ETAPAS_FINALES)[number];
 
