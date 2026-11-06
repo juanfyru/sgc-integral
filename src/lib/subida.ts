@@ -12,7 +12,8 @@ export type RolArchivo = (typeof ROLES_ARCHIVO)[number];
 // Los Office legados comparten contenedor OLE (application/x-cfb). Los OOXML
 // aceptan también application/zip: file-type no siempre alcanza a distinguir
 // el subtipo con la muestra — el riesgo residual (un zip renombrado) es
-// aceptable en una intranet con un único admin autenticado.
+// aceptable: solo suben quien administra documentos y el elaborador designado
+// de un trámite, y el archivo se sirve siempre con su MIME y `nosniff`.
 const PERMITIDOS: Record<string, string[]> = {
   pdf: ["application/pdf"],
   docx: [

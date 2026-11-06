@@ -1,5 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { obtenerVersionParaSubida } from "@/db/consultas/admin";
+import { obtenerSql } from "@/db/cliente";
+import { exigirEscrituraEnVersion, obtenerVersionParaSubida } from "@/db/consultas/admin";
+import { ErrorTramite } from "@/db/consultas/flujo/contrato";
 import { origenValido } from "@/lib/origen";
 import { crearLimitador } from "@/lib/limite";
 import { puede } from "@/lib/permisos";
@@ -37,6 +39,13 @@ export async function POST(peticion: NextRequest) {
   if (!version) return error(404, "La versión no existe");
   if (version.estado !== "borrador") {
     return error(409, "Solo se pueden subir archivos a una versión en borrador");
+  }
+  // Aquí, para responder sin recibir el archivo; registrarlo lo comprueba otra vez bajo su transacción.
+  try {
+    await exigirEscrituraEnVersion(obtenerSql(), versionId);
+  } catch (err) {
+    if (err instanceof ErrorTramite) return error(409, err.message);
+    throw err;
   }
 
   return recibirArchivo(

@@ -38,6 +38,7 @@ import {
   rechazarSolicitudAccion,
   retirarSolicitudAccion,
 } from "@/app/acciones-tramites";
+import { valoresDeFormulario } from "@/app/admin/comun";
 import { ErrorFirma, ErrorTramite } from "@/db/consultas/flujo/contrato";
 
 const formulario = (campos: Record<string, string>) => {
@@ -250,6 +251,16 @@ describe("elaboración", () => {
       const estado = await enviarARevisionAccion(null, formulario(campos));
       sinSecretos(estado);
       expect(estado).toMatchObject({ error: "Clave o código incorrectos", valores: { id: "7" } });
+    });
+
+    it("ni aunque una acción se olvide de separarlos", async () => {
+      expect(valoresDeFormulario(formulario(campos))).toEqual({ id: "7", etapa: "elaboracion", ronda: "1" });
+      sinSecretos(await negarVistoBuenoAccion(null, formulario({ ...ocultos, ...campos, motivo: "No corresponde." })));
+    });
+
+    it("el código de un documento, sin clave al lado, sí vuelve: no es una credencial", () => {
+      expect(valoresDeFormulario(formulario({ codigo: "GTH-PR-09", titulo: "Procedimiento" })))
+        .toEqual({ codigo: "GTH-PR-09", titulo: "Procedimiento" });
     });
 
     it("ni si el formulario no pasa el esquema", async () => {

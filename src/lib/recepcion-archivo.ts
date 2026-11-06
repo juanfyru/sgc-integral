@@ -37,6 +37,25 @@ async function rutaLibre(carpetaRelativa: string, nombre: string) {
   return null;
 }
 
+/**
+ * Lee lo que falta del cuerpo y lo descarta. Estas rutas van fuera del proxy, y un cuerpo a medio
+ * leer deja al navegador sin respuesta: tras unos segundos ve un error de red. Cancelar el flujo
+ * tampoco sirve, porque corta la conexión. Sin tamaño declarado, el tope evita leer sin fin.
+ */
+async function descartarResto(lector: ReadableStreamDefaultReader<Uint8Array>, leidos: number): Promise<void> {
+  try {
+    let total = leidos;
+    while (total <= TAMANO_MAXIMO_BYTES) {
+      const { done, value } = await lector.read();
+      if (done) return;
+      total += value.byteLength;
+    }
+    await lector.cancel();
+  } catch {
+    // El cliente se fue: no hay a quién esperar, y la respuesta no cambia.
+  }
+}
+
 export function nombreDeArchivo(peticion: NextRequest): string {
   return decodeURIComponent(peticion.headers.get("x-nombre-archivo") ?? "");
 }
@@ -76,13 +95,19 @@ export async function recibirArchivo(
   for (const p of previos) { muestra.set(p, despl); despl += p.byteLength; }
 
   const tipo = await validarTipo(nombreCrudo, muestra);
-  if (!tipo.ok) return error(415, tipo.error);
+  if (!tipo.ok) {
+    await descartarResto(lector, acumulado);
+    return error(415, tipo.error);
+  }
 
   // ── Destino en el almacén ──
   const nombre = sanearNombre(nombreCrudo);
   const carpeta = `documentos/${destino.codigo}/v${destino.numero}`;
   const ruta = await rutaLibre(carpeta, nombre);
-  if (!ruta) return error(400, "No se pudo resolver un destino seguro");
+  if (!ruta) {
+    await descartarResto(lector, acumulado);
+    return error(400, "No se pudo resolver un destino seguro");
+  }
   await mkdir(path.dirname(ruta.absoluta), { recursive: true });
 
   // ── Streaming a disco con hash y tope de tamaño (nunca 25 MB en RAM) ──

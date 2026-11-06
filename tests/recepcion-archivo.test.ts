@@ -9,13 +9,15 @@ import path from "node:path";
 import { NextRequest } from "next/server";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { registrarArchivo, obtenerVersionParaSubida, sesionDePeticion } = vi.hoisted(() => ({
+const { registrarArchivo, obtenerVersionParaSubida, exigirEscrituraEnVersion, sesionDePeticion } = vi.hoisted(() => ({
   registrarArchivo: vi.fn(),
   obtenerVersionParaSubida: vi.fn(),
+  exigirEscrituraEnVersion: vi.fn(),
   sesionDePeticion: vi.fn(),
 }));
 
-vi.mock("@/db/consultas/admin", () => ({ registrarArchivo, obtenerVersionParaSubida }));
+vi.mock("@/db/cliente", () => ({ obtenerSql: () => "conexión" }));
+vi.mock("@/db/consultas/admin", () => ({ registrarArchivo, obtenerVersionParaSubida, exigirEscrituraEnVersion }));
 vi.mock("@/lib/sesion-actual", () => ({ sesionDePeticion }));
 
 import { POST as subirAlPanel } from "@/app/admin/api/archivos/route";
@@ -52,8 +54,9 @@ afterAll(() => {
 });
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   registrarArchivo.mockResolvedValue({ id: 91 });
+  exigirEscrituraEnVersion.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -152,6 +155,55 @@ describe("recibirArchivo", () => {
     expect(enAlmacen()).toEqual([]);
   });
 
+  describe("un rechazo a medio leer", () => {
+    const FALSO = new TextEncoder().encode("MZ esto no es un PDF");
+    const flujoDe = (trozos: number) => {
+      const vista = { entregados: 0, cancelado: false };
+      const trozo = new Uint8Array(1024 * 1024);
+      trozo.set(FALSO);
+      const flujo = new ReadableStream<Uint8Array>({
+        pull(control) {
+          if (vista.entregados >= trozos) return control.close();
+          vista.entregados++;
+          control.enqueue(trozo);
+        },
+        cancel() {
+          vista.cancelado = true;
+        },
+      }, { highWaterMark: 0 });
+      return { flujo, vista };
+    };
+
+    it("lee el resto del cuerpo antes de responder: si no, el navegador ve un error de red", async () => {
+      const { flujo, vista } = flujoDe(5);
+      const res = await recibirArchivo(peticion(flujo), DESTINO, 3);
+      expect(res.status).toBe(415);
+      expect(vista).toEqual({ entregados: 5, cancelado: false });
+      expect(enAlmacen()).toEqual([]);
+    });
+
+    it("no lee sin fin: un cuerpo sin tamaño declarado se corta en el tope", async () => {
+      const { flujo, vista } = flujoDe(Number.POSITIVE_INFINITY);
+      const res = await recibirArchivo(peticion(flujo), DESTINO, 3);
+      expect(res.status).toBe(415);
+      expect(vista.cancelado).toBe(true);
+      expect(vista.entregados).toBeLessThanOrEqual(TAMANO_MAXIMO_BYTES / (1024 * 1024) + 2);
+    });
+
+    it("si el cliente se cae a medio descartar, responde igual", async () => {
+      let entregados = 0;
+      const trozo = new Uint8Array(1024 * 1024);
+      trozo.set(FALSO);
+      const flujo = new ReadableStream<Uint8Array>({
+        pull(control) {
+          if (++entregados > 1) return control.error(new Error("aborted"));
+          control.enqueue(trozo);
+        },
+      }, { highWaterMark: 0 });
+      expect((await recibirArchivo(peticion(flujo), DESTINO, 3)).status).toBe(415);
+    });
+  });
+
   it("un segundo principal responde 409 con su mensaje y no deja archivo", async () => {
     registrarArchivo.mockRejectedValue(new Error("Ya hay un archivo principal en esta versión"));
     const res = await recibirArchivo(peticion(PDF), DESTINO, 3);
@@ -201,13 +253,30 @@ describe("POST del panel: el orden de siempre", () => {
     expect(registrarArchivo).not.toHaveBeenCalled();
   });
 
-  it("la versión de un trámite abierto responde 409 y no deja archivo", async () => {
-    const mensaje = "Esta versión está en un trámite: se trabaja desde el trámite";
-    registrarArchivo.mockRejectedValue(new ErrorTramite(mensaje));
+  const EN_TRAMITE = "Esta versión está en un trámite: se trabaja desde el trámite";
+
+  it("la versión de un trámite abierto responde 409 sin recibir el archivo", async () => {
+    exigirEscrituraEnVersion.mockRejectedValue(new ErrorTramite(EN_TRAMITE));
+    const pedida = peticion(PDF, {}, URL_PANEL);
+    const res = await subirAlPanel(pedida);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: EN_TRAMITE });
+    expect(exigirEscrituraEnVersion).toHaveBeenCalledExactlyOnceWith("conexión", 4);
+    expect(pedida.bodyUsed).toBe(false);
+    expect(registrarArchivo).not.toHaveBeenCalled();
+    expect(enAlmacen()).toEqual([]);
+  });
+
+  it("si el trámite se abre mientras llega el archivo, el registro también lo rechaza", async () => {
+    registrarArchivo.mockRejectedValue(new ErrorTramite(EN_TRAMITE));
     const res = await subir();
     expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ error: mensaje });
     expect(enAlmacen()).toEqual([]);
+  });
+
+  it("un fallo de la BD al mirar el trámite no se disfraza de 409", async () => {
+    exigirEscrituraEnVersion.mockRejectedValue(new Error("se cayó la conexión"));
+    await expect(subir()).rejects.toThrow("se cayó la conexión");
   });
 
   it("una subida válida llega con el código y el número de la versión, y a nombre de quien sube", async () => {

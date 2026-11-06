@@ -128,13 +128,26 @@ describe("DELETE /api/tramites/[id]/archivos/[archivoId]", () => {
     expect(eliminarArchivoBorrador).not.toHaveBeenCalled();
   });
 
-  it("si la BD lo rechaza responde 409 con su mensaje y el archivo físico se queda", async () => {
+  it("un rechazo de negocio responde 409 con su mensaje y el archivo físico se queda", async () => {
     escribirBorrador();
-    eliminarArchivoBorrador.mockRejectedValue(new Error("Solo se pueden eliminar archivos de una versión en borrador"));
+    eliminarArchivoBorrador.mockRejectedValue(new ErrorTramite("Solo se pueden eliminar archivos de una versión en borrador"));
     const res = await quitar();
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: "Solo se pueden eliminar archivos de una versión en borrador" });
     expect(existsSync(absoluta())).toBe(true);
+  });
+
+  it("un fallo inesperado responde 500 sin su texto, queda en el registro y el archivo físico se queda", async () => {
+    escribirBorrador();
+    const registro = vi.spyOn(console, "error").mockImplementation(() => {});
+    const fallo = new Error("connect ECONNREFUSED 10.0.0.5:5432");
+    eliminarArchivoBorrador.mockRejectedValue(fallo);
+    const res = await quitar();
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: "No se pudo quitar el archivo" });
+    expect(registro).toHaveBeenCalledExactlyOnceWith(expect.any(String), fallo);
+    expect(existsSync(absoluta())).toBe(true);
+    registro.mockRestore();
   });
 });
 

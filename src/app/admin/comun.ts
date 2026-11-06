@@ -25,11 +25,15 @@ export function idNumerico(formData: FormData, campo: string): number {
 
 // React 19 resetea los campos no controlados al completar la action: los
 // valores enviados vuelven en el estado para repoblarlos como defaultValue.
+// Una clave no vuelve nunca, y el código del segundo factor tampoco. Junto a una clave, `codigo` es
+// ese código; sin ella es el de un documento, y su formulario lo repuebla como cualquier otro campo.
 export function valoresDeFormulario(
   formData: FormData,
 ): Record<string, string | string[]> {
+  const secretos = formData.has("clave") ? ["clave", "codigo"] : [];
   const valores: Record<string, string | string[]> = {};
   for (const clave of new Set(formData.keys())) {
+    if (secretos.includes(clave)) continue;
     const todos = formData
       .getAll(clave)
       .filter((v): v is string => typeof v === "string");

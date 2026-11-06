@@ -4,34 +4,46 @@ import { filtroAcceso, type SujetoVisibilidad } from "@/lib/alcance";
 import { hashearClave } from "@/lib/clave";
 import { puede } from "@/lib/permisos";
 import { patronDeConfiguracion } from "@/lib/tramites/codigo";
+import { ETAPAS_TRABAJO } from "@/lib/tramites/tipos";
 import { ErrorTramite, enTransaccion } from "./flujo/contrato";
-import { ETAPAS_ABIERTAS } from "./tramites";
 
 type Cliente = Sql | TransactionSql;
 
 /** Quién escribe en una versión: el panel no pasa `tramiteId`; el trámite pasa el suyo. */
 export type OpcionesEscritura = { tramiteId?: number; sql?: Cliente };
 
+type EscrituraDesdeTramite = { tramiteId: number; usuarioId: number };
+
+function desdeTramite(opciones: OpcionesEscritura | undefined, usuarioId: number): EscrituraDesdeTramite | undefined {
+  return opciones?.tramiteId === undefined ? undefined : { tramiteId: opciones.tramiteId, usuarioId };
+}
+
+const ETAPAS_EN_CURSO: string[] = [...ETAPAS_TRABAJO];
+
 /**
  * Mientras una versión es de un trámite abierto, sus archivos y su control de cambios solo se
- * tocan desde ese trámite, en elaboración (spec 13A §9.1). `FOR SHARE` choca con el `FOR UPDATE`
- * de `transicionar`: lo que llega durante una firma espera a que termine, y entonces ve la etapa
- * nueva. Por eso va antes de cualquier otro candado de la transacción.
+ * tocan desde ese trámite, por su elaborador, en elaboración (spec 13A §9.1). `FOR SHARE` choca
+ * con el `FOR UPDATE` de `transicionar`: lo que llega durante una firma o una reasignación espera
+ * a que termine, y entonces ve el trámite nuevo. Por eso va antes de cualquier otro candado de la
+ * transacción.
  */
 export async function exigirEscrituraEnVersion(
   tx: Cliente,
   versionId: number | null,
-  tramiteId?: number,
+  desde?: EscrituraDesdeTramite,
 ): Promise<void> {
-  const [abierto] = await tx`SELECT id, etapa FROM tramites
-    WHERE version_id = ${versionId} AND etapa = ANY(${ETAPAS_ABIERTAS})
+  const [abierto] = await tx`SELECT id, etapa, elaborador_id FROM tramites
+    WHERE version_id = ${versionId} AND etapa = ANY(${ETAPAS_EN_CURSO})
     FOR SHARE`;
-  if (tramiteId === undefined) {
+  if (!desde) {
     if (abierto) throw new ErrorTramite("Esta versión está en un trámite: se trabaja desde el trámite");
     return;
   }
-  if (Number(abierto?.id) !== tramiteId || abierto.etapa !== "elaboracion") {
+  if (Number(abierto?.id) !== desde.tramiteId || abierto.etapa !== "elaboracion") {
     throw new ErrorTramite("Este trámite ya no está en elaboración");
+  }
+  if (Number(abierto.elaborador_id) !== desde.usuarioId) {
+    throw new ErrorTramite("Ya no es quien elabora este trámite");
   }
 }
 
@@ -218,10 +230,10 @@ export async function editarVersionBorrador(
   versionId: number,
   datos: DatosVersion,
   usuarioId: number,
-  opciones?: OpcionesEscritura,
+  opciones?: { sql?: Cliente },
 ): Promise<void> {
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
-    await exigirEscrituraEnVersion(tx, versionId, opciones?.tramiteId);
+    await exigirEscrituraEnVersion(tx, versionId);
     const [actualizada] = await tx`UPDATE documento_versiones SET
         fecha_elaboracion = ${datos.fechaElaboracion},
         fecha_revision = ${datos.fechaRevision},
@@ -340,7 +352,7 @@ export async function registrarArchivo(
 ): Promise<{ id: number }> {
   try {
     return await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
-      await exigirEscrituraEnVersion(tx, datos.versionId, opciones?.tramiteId);
+      await exigirEscrituraEnVersion(tx, datos.versionId, desdeTramite(opciones, usuarioId));
       const [archivo] = await tx`INSERT INTO archivos
           (version_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
         VALUES (${datos.versionId}, ${datos.rol}, ${datos.ruta}, ${datos.nombreOriginal},
@@ -380,14 +392,14 @@ export async function eliminarArchivoBorrador(
 ): Promise<{ ruta: string }> {
   return await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
     const [destino] = await tx`SELECT version_id FROM archivos WHERE id = ${archivoId}`;
-    if (!destino) throw new Error("El archivo no existe");
-    await exigirEscrituraEnVersion(tx, destino.version_id, opciones?.tramiteId);
+    if (!destino) throw new ErrorTramite("El archivo no existe");
+    await exigirEscrituraEnVersion(tx, destino.version_id, desdeTramite(opciones, usuarioId));
     const [archivo] = await tx`SELECT a.id, a.ruta, a.nombre_original, v.estado
       FROM archivos a JOIN documento_versiones v ON v.id = a.version_id
       WHERE a.id = ${archivoId} FOR UPDATE`;
-    if (!archivo) throw new Error("El archivo no existe");
+    if (!archivo) throw new ErrorTramite("El archivo no existe");
     if (archivo.estado !== "borrador") {
-      throw new Error("Solo se pueden eliminar archivos de una versión en borrador");
+      throw new ErrorTramite("Solo se pueden eliminar archivos de una versión en borrador");
     }
     await tx`DELETE FROM archivos WHERE id = ${archivoId}`;
     await registrarAuditoria(tx, {
@@ -466,6 +478,8 @@ export type VersionAdmin = {
   fechaAprobacion: string | null; elaboro: string | null;
   reviso: string | null; aprobo: string | null; resumenCambios: string | null;
   archivos: Array<{ id: number; rol: string; nombreOriginal: string; mime: string; tamanoBytes: number }>;
+  /** El trámite abierto al que pertenece la versión: mientras dure, se trabaja desde él. */
+  tramite: { id: number; numero: string } | null;
 };
 
 export type DocumentoAdmin = {
@@ -483,8 +497,9 @@ export type DocumentoAdmin = {
 export async function obtenerDocumentoAdmin(
   codigo: string,
   sujeto: SujetoVisibilidad,
+  opciones?: { sql?: Cliente },
 ): Promise<DocumentoAdmin | null> {
-  const sql = obtenerSql();
+  const sql = opciones?.sql ?? obtenerSql();
   const administra = puede(sujeto, "documentos.administrar");
   const [doc] = await sql`SELECT d.id, d.codigo, d.titulo, d.tipo_id, t.nombre AS tipo_nombre,
       d.descripcion, d.palabras_clave,
@@ -509,7 +524,9 @@ export async function obtenerDocumentoAdmin(
       coalesce(json_agg(json_build_object(
           'id', a.id, 'rol', a.rol, 'nombreOriginal', a.nombre_original,
           'mime', a.mime, 'tamanoBytes', a.tamano_bytes) ORDER BY a.rol)
-        FILTER (WHERE a.id IS NOT NULL), '[]') AS archivos
+        FILTER (WHERE a.id IS NOT NULL), '[]') AS archivos,
+      (SELECT json_build_object('id', t.id, 'numero', t.numero) FROM tramites t
+        WHERE t.version_id = v.id AND t.etapa = ANY(${ETAPAS_EN_CURSO})) AS tramite
     FROM documento_versiones v
     LEFT JOIN archivos a ON a.version_id = v.id
     WHERE v.documento_id = ${doc.id}
@@ -531,6 +548,7 @@ export async function obtenerDocumentoAdmin(
       fechaAprobacion: v.fecha_aprobacion, elaboro: v.elaboro, reviso: v.reviso,
       aprobo: v.aprobo, resumenCambios: v.resumen_cambios,
       archivos: v.archivos as VersionAdmin["archivos"],
+      tramite: v.tramite as VersionAdmin["tramite"],
     })),
   };
 }

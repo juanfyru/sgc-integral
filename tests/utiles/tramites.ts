@@ -140,9 +140,10 @@ type Trayecto = {
 
 /**
  * Lleva un trámite hasta `etapa` con las funciones reales. Por defecto, una modificación de
- * GTH-PR-02 pedida por `lider.gth`, que también elabora. Si el trámite ya tiene archivo, el test
- * llama `limpiar` en un `finally`. Quien aprueba por defecto es un `admin_sgc`: un documento
- * estratégico, o uno que elabora un `admin_sgc`, necesita que le pasen `aprobador`.
+ * GTH-PR-02 pedida por `lider.gth`, que también elabora. Una creación es un formato nuevo de CEX
+ * pedido por `lider.cex`, y `codigo` es el del documento que nace. Si el trámite ya tiene archivo,
+ * el test llama `limpiar` en un `finally`. Quien aprueba por defecto es un `admin_sgc`: un
+ * documento estratégico, o uno que elabora un `admin_sgc`, necesita que le pasen `aprobador`.
  */
 export async function tramiteEn(
   tx: TransactionSql,
@@ -150,21 +151,26 @@ export async function tramiteEn(
   o: { codigo?: string; tipo?: TipoSolicitud; elaborador?: SesionFlujo; revisor?: SesionFlujo; aprobador?: SesionFlujo } = {},
 ): Promise<Trayecto> {
   const tipo = o.tipo ?? "modificar";
-  if (tipo === "crear") throw new Error("tramiteEn no cubre creaciones: use solicitudDeCreacion");
+  const crea = tipo === "crear";
+  if (crea && etapa === "visto_bueno") throw new Error("La creación de prueba la pide el líder: ya trae el visto bueno");
 
   const admin = await sesionAdmin(tx);
-  const lider = await sesionDe(tx, "lider.gth");
+  const lider = await sesionDe(tx, crea ? "lider.cex" : "lider.gth");
   const elaborador = o.elaborador ?? lider;
   const revisor = o.revisor ?? (await usuarioDePrueba(tx, { rol: "lider_proceso" }));
   const aprobador = o.aprobador ?? (await sesionAdmin(tx));
-  const [{ id: documentoId }] = await tx`SELECT id FROM documentos WHERE codigo = ${o.codigo ?? "GTH-PR-02"}`;
-
-  // Si pide un administrador, el visto bueno queda pendiente; si pide el líder, queda dado.
-  const { tramiteId } = await crearSolicitud(
-    etapa === "visto_bueno" ? admin : lider,
-    { tipo, motivo: "mejora", justificacion: "Se ajusta el documento al proceso actual.", documentoId },
-    opc(tx),
-  );
+  const pedirSobreDocumento = async () => {
+    const [{ id: documentoId }] = await tx`SELECT id FROM documentos WHERE codigo = ${o.codigo ?? "GTH-PR-02"}`;
+    // Si pide un administrador, el visto bueno queda pendiente; si pide el líder, queda dado.
+    return crearSolicitud(
+      etapa === "visto_bueno" ? admin : lider,
+      { tipo, motivo: "mejora", justificacion: "Se ajusta el documento al proceso actual.", documentoId },
+      opc(tx),
+    );
+  };
+  const { tramiteId } = crea
+    ? await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "FO", titulo: "Formato de prueba del flujo" })
+    : await pedirSobreDocumento();
   const trayecto = async (limpiar = async () => {}): Promise<Trayecto> => {
     const [t] = await tx`SELECT version_id, ronda FROM tramites WHERE id = ${tramiteId}`;
     const versionId = t.version_id === null ? null : Number(t.version_id);
@@ -172,6 +178,13 @@ export async function tramiteEn(
   };
   if (etapa === "visto_bueno" || etapa === "aceptacion") return trayecto();
 
+  const datosDeAceptar = () => {
+    if (tipo === "eliminar") return { aprobadorId: aprobador.usuarioId };
+    const responsables = { elaboradorId: elaborador.usuarioId, revisorId: revisor.usuarioId, aprobadorId: aprobador.usuarioId };
+    return crea
+      ? aceptarCreacion({ codigo: o.codigo ?? "CEX-FO-01", ...responsables })
+      : { ...responsables, venceElaboracion: "2026-11-20" };
+  };
   await transicionar(
     admin,
     {
@@ -179,9 +192,7 @@ export async function tramiteEn(
       accion: "aceptar",
       etapaEsperada: "aceptacion",
       rondaEsperada: 0,
-      datos: tipo === "eliminar"
-        ? { aprobadorId: aprobador.usuarioId }
-        : { elaboradorId: elaborador.usuarioId, revisorId: revisor.usuarioId, aprobadorId: aprobador.usuarioId, venceElaboracion: "2026-11-20" },
+      datos: datosDeAceptar(),
     },
     opc(tx),
   );

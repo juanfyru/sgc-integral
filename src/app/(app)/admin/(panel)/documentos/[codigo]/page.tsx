@@ -36,6 +36,10 @@ function SeccionVersion({
   puedeAdministrar: boolean;
 }) {
   const fueraDeCirculacion = version.estado === "obsoleto" || version.estado === "anulado";
+  const borrador = version.estado === "borrador";
+  // El borrador de un trámite se trabaja desde el trámite (spec 13A §9.1).
+  const tramite = borrador ? version.tramite : null;
+  const editable = puedeAdministrar && borrador && !tramite;
   return (
     <section
       className={`rounded-lg border p-4 ${fueraDeCirculacion ? "marca-estado" : ""}`}
@@ -56,7 +60,7 @@ function SeccionVersion({
             <span className="text-muted-foreground">
               {a.rol} · {a.mime} · {tamanoLegible(a.tamanoBytes)}
             </span>
-            {puedeAdministrar && version.estado === "borrador" && <EliminarArchivo direccion={`/admin/api/archivos/${a.id}`} />}
+            {editable && <EliminarArchivo direccion={`/admin/api/archivos/${a.id}`} />}
           </li>
         ))}
         {version.archivos.length === 0 && (
@@ -64,7 +68,16 @@ function SeccionVersion({
         )}
       </ul>
 
-      {puedeAdministrar && version.estado === "borrador" && (
+      {puedeAdministrar && tramite && (
+        <p className="text-sm text-muted-foreground">
+          {"Esta versión está en un trámite: "}
+          <Link href={`/tramites/${tramite.id}`} className="font-medium underline-offset-2 hover:underline">
+            {tramite.numero}
+          </Link>
+        </p>
+      )}
+
+      {editable && (
         <div className="flex flex-col gap-4">
           <ZonaCarga direccion={`/admin/api/archivos?version=${version.id}`} />
 

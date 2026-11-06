@@ -85,7 +85,7 @@ export async function guardarControlCambios(
     const veredicto = evaluarTransicion("enviar_a_revision", tramite, { usuarioId: sesion.usuarioId, rol: sesion.rol, lideraPropietario });
     if (!veredicto.ok) throw new ErrorTramite(veredicto.motivo);
     // Espera a un envío a revisión en curso: lo que se firma no cambia mientras se firma.
-    await exigirEscrituraEnVersion(tx, tramite.versionId, tramiteId);
+    await exigirEscrituraEnVersion(tx, tramite.versionId, { tramiteId, usuarioId: sesion.usuarioId });
 
     const resumenCambios = texto.trim();
     const [version] = await tx`UPDATE documento_versiones SET resumen_cambios = ${resumenCambios}

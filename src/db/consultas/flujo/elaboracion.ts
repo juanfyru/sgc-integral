@@ -9,6 +9,7 @@ import {
 } from "./contrato";
 
 const validarEnvio: Validador = async ({ sql, tramite }) => {
+  if (tramite.revisorId === null) throw new ErrorTramite("El trámite no tiene revisor");
   const [v] = await sql`SELECT
       EXISTS (SELECT 1 FROM archivos a WHERE a.version_id = v.id AND a.rol = 'principal') AS con_principal,
       COALESCE(btrim(v.resumen_cambios), '') <> '' AS con_control
@@ -22,10 +23,10 @@ const validarEnvio: Validador = async ({ sql, tramite }) => {
 };
 
 const enviarARevision: Manejador = async ({ tx, tramite }) => {
-  if (tramite.revisorId === null) throw new ErrorTramite("El trámite no tiene revisor");
   const { texto } = await rotuloDeTramite(tx, tramite);
   return {
-    avisos: [{ usuarioIds: [tramite.revisorId], tipo: "tramite.paso", titulo: `Solicitud ${tramite.numero}: le toca revisar`, cuerpo: texto }],
+    // El validador corre antes, con la fila bloqueada: aquí ya hay revisor.
+    avisos: [{ usuarioIds: [tramite.revisorId as number], tipo: "tramite.paso", titulo: `Solicitud ${tramite.numero}: le toca revisar`, cuerpo: texto }],
   };
 };
 

@@ -1,6 +1,7 @@
 import { unlink } from "node:fs/promises";
 import { type NextRequest, NextResponse } from "next/server";
 import { eliminarArchivoBorrador } from "@/db/consultas/admin";
+import { ErrorTramite } from "@/db/consultas/flujo/contrato";
 import { archivoDeTramite, autorizarArchivoDeTramite } from "@/db/consultas/tramites-archivos";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { crearLimitador } from "@/lib/limite";
@@ -45,6 +46,8 @@ export async function DELETE(peticion: NextRequest, { params }: Params) {
     if (absoluta) await unlink(absoluta).catch(() => {});
     return NextResponse.json({ ok: true });
   } catch (err) {
-    return error(409, (err as Error).message);
+    if (err instanceof ErrorTramite) return error(409, err.message);
+    console.error("Fallo al quitar un archivo del trámite:", err);
+    return error(500, "No se pudo quitar el archivo");
   }
 }

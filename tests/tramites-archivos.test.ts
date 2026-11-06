@@ -12,13 +12,19 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 }
 
 import { obtenerSql } from "@/db/cliente";
-import { editarVersionBorrador, eliminarArchivoBorrador, exigirEscrituraEnVersion, registrarArchivo } from "@/db/consultas/admin";
+import {
+  editarVersionBorrador,
+  eliminarArchivoBorrador,
+  exigirEscrituraEnVersion,
+  obtenerDocumentoAdmin,
+  registrarArchivo,
+} from "@/db/consultas/admin";
 import {
   archivoDeTramite,
   autorizarArchivoDeTramite,
   borradorDeTramite,
 } from "@/db/consultas/tramites-archivos";
-import type { SesionFlujo } from "@/db/consultas/tramites-flujo";
+import { ErrorTramite, type SesionFlujo } from "@/db/consultas/tramites-flujo";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { archivoPrincipal, sesionDe, tramiteEn } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
@@ -125,9 +131,29 @@ describe("una versión en trámite solo se toca desde el trámite", () => {
     const opciones = { tramiteId: t.tramiteId, sql: tx };
     const { id } = await registrarArchivo(anexo(t.versionId!), t.elaborador.usuarioId, opciones);
     await eliminarArchivoBorrador(id, t.elaborador.usuarioId, opciones);
-    await editarVersionBorrador(t.versionId!, version, t.elaborador.usuarioId, opciones);
-    const [v] = await tx`SELECT resumen_cambios FROM documento_versiones WHERE id = ${t.versionId}`;
-    expect(v.resumen_cambios).toBe("Texto del panel");
+    const [{ archivos }] = await tx`SELECT count(*)::int AS archivos FROM archivos WHERE version_id = ${t.versionId}`;
+    expect(archivos).toBe(0);
+  }));
+
+  it("el trámite no edita los datos de la versión: `editarVersionBorrador` es solo del panel", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "elaboracion");
+    const opciones = { tramiteId: t.tramiteId, sql: tx } as Parameters<typeof editarVersionBorrador>[3];
+    await expect(editarVersionBorrador(t.versionId!, version, t.elaborador.usuarioId, opciones)).rejects.toThrow(EN_TRAMITE);
+  }));
+
+  it("una reasignación deja fuera al elaborador anterior, aunque su subida ya estuviera en curso", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "elaboracion");
+    const a = await archivoPrincipal(tx, t.versionId!);
+    try {
+      const nuevo = await sesionDe(tx, "consulta");
+      await tx`UPDATE tramites SET elaborador_id = ${nuevo.usuarioId} WHERE id = ${t.tramiteId}`;
+      const opciones = { tramiteId: t.tramiteId, sql: tx };
+      const ANTERIOR = "Ya no es quien elabora este trámite";
+      await expect(registrarArchivo(anexo(t.versionId!), t.elaborador.usuarioId, opciones)).rejects.toThrow(ANTERIOR);
+      await expect(eliminarArchivoBorrador(a.archivoId, t.elaborador.usuarioId, opciones)).rejects.toThrow(ANTERIOR);
+      await expect(registrarArchivo(anexo(t.versionId!), t.elaborador.usuarioId, opciones)).rejects.toBeInstanceOf(ErrorTramite);
+      await expect(registrarArchivo(anexo(t.versionId!), nuevo.usuarioId, opciones)).resolves.toMatchObject({ id: expect.anything() });
+    } finally { await a.limpiar(); }
   }));
 
   it("con el trámite en revisión tampoco se puede desde el trámite, y el panel sigue fuera", () => revertida(sql, async (tx) => {
@@ -138,7 +164,6 @@ describe("una versión en trámite solo se toca desde el trámite", () => {
       const opciones = { tramiteId: t.tramiteId, sql: tx };
       await expect(registrarArchivo(anexo(t.versionId!), actor, opciones)).rejects.toThrow(FUERA);
       await expect(eliminarArchivoBorrador(Number(a.id), actor, opciones)).rejects.toThrow(FUERA);
-      await expect(editarVersionBorrador(t.versionId!, version, actor, opciones)).rejects.toThrow(FUERA);
       await expect(registrarArchivo(anexo(t.versionId!), actor, { sql: tx })).rejects.toThrow(EN_TRAMITE);
     } finally { await t.limpiar(); }
   }));
@@ -167,9 +192,29 @@ describe("una versión en trámite solo se toca desde el trámite", () => {
     expect(consultas[0]).toContain("FOR SHARE");
   });
 
-  it("un archivo que no existe se dice, antes de mirar ningún trámite", () => revertida(sql, async (tx) => {
+  it("los rechazos de quitar un archivo son de negocio: un archivo que no existe y una versión que no es borrador", () => revertida(sql, async (tx) => {
     const t = await tramiteEn(tx, "elaboracion");
-    await expect(eliminarArchivoBorrador(999_999_999, t.admin.usuarioId, { sql: tx })).rejects.toThrow("El archivo no existe");
+    const quitar = (id: number) => eliminarArchivoBorrador(id, t.admin.usuarioId, { sql: tx });
+    await expect(quitar(999_999_999)).rejects.toThrow("El archivo no existe");
+    await expect(quitar(999_999_999)).rejects.toBeInstanceOf(ErrorTramite);
+    const [vigente] = await tx`SELECT a.id FROM archivos a
+      JOIN documento_versiones v ON v.id = a.version_id AND v.estado = 'vigente'
+      JOIN documentos d ON d.id = v.documento_id AND d.codigo = 'GTH-PR-01'
+      LIMIT 1`;
+    await expect(quitar(Number(vigente.id))).rejects.toThrow("Solo se pueden eliminar archivos de una versión en borrador");
+    await expect(quitar(Number(vigente.id))).rejects.toBeInstanceOf(ErrorTramite);
+  }));
+
+  it("el panel sabe qué trámite tiene cada versión, y nada más que los abiertos", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "elaboracion");
+    const [{ numero }] = await tx`SELECT numero FROM tramites WHERE id = ${t.tramiteId}`;
+    const version = async () => {
+      const doc = await obtenerDocumentoAdmin("GTH-PR-02", t.admin, { sql: tx });
+      return doc?.versiones.find((v) => Number(v.id) === t.versionId);
+    };
+    expect((await version())?.tramite).toEqual({ id: t.tramiteId, numero });
+    await tx`UPDATE tramites SET etapa = 'cancelado' WHERE id = ${t.tramiteId}`;
+    expect((await version())?.tramite).toBeNull();
   }));
 });
 

@@ -79,6 +79,32 @@ describe("enviar a revisión", () => {
     expect(verificar).not.toHaveBeenCalled();
   }));
 
+  it("sin revisor no se pide la firma", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "elaboracion");
+    const a = await archivoPrincipal(tx, t.versionId!);
+    try {
+      await guardarControlCambios(t.tramiteId, t.elaborador, "Cambios de prueba.", { sql: tx });
+      await tx`UPDATE tramites SET revisor_id = NULL WHERE id = ${t.tramiteId}`;
+      const verificar = vi.fn<Verificador>(async () => ({ ok: true, metodo: "clave" }));
+      await expect(tx.savepoint(() => transicionar(t.elaborador, { tramiteId: t.tramiteId, accion: "enviar_a_revision",
+        etapaEsperada: "elaboracion", rondaEsperada: 1, credenciales: { clave: "x" } }, { ...opc(tx), verificar })))
+        .rejects.toThrow("El trámite no tiene revisor");
+      expect(verificar).not.toHaveBeenCalled();
+    } finally { await a.limpiar(); }
+  }));
+
+  it("también se elabora sobre una creación: la versión 1 del documento nuevo", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "revision", { tipo: "crear" });
+    try {
+      expect(t.ronda).toBe(1);
+      const [v] = await tx`SELECT v.numero, v.estado, d.codigo, v.resumen_cambios FROM documento_versiones v
+        JOIN documentos d ON d.id = v.documento_id WHERE v.id = ${t.versionId}`;
+      expect(v).toMatchObject({ numero: 1, estado: "borrador", codigo: "CEX-FO-01", resumen_cambios: "Se añade la inducción por servicio." });
+      const [firma] = await listarFirmas(t.tramiteId, { sql: tx });
+      expect(firma).toMatchObject({ firma: "elaboro", ronda: 1, usuarioId: t.elaborador.usuarioId });
+    } finally { await t.limpiar(); }
+  }));
+
   it("un control de cambios en blanco no cuenta", () => revertida(sql, async (tx) => {
     const t = await tramiteEn(tx, "elaboracion");
     const a = await archivoPrincipal(tx, t.versionId!);
@@ -150,7 +176,10 @@ describe("control de cambios y envío a la vez", () => {
     const t = await tramiteEn(tx, "elaboracion");
     vi.mocked(exigirEscrituraEnVersion).mockClear();
     await guardarControlCambios(t.tramiteId, t.elaborador, "Se añade la inducción.", { sql: tx });
-    expect(exigirEscrituraEnVersion).toHaveBeenCalledExactlyOnceWith(expect.anything(), t.versionId, t.tramiteId);
+    expect(exigirEscrituraEnVersion).toHaveBeenCalledExactlyOnceWith(expect.anything(), t.versionId, {
+      tramiteId: t.tramiteId,
+      usuarioId: t.elaborador.usuarioId,
+    });
   }));
 });
 
