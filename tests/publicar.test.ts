@@ -1,7 +1,9 @@
 /**
  * Consultas de escritura del admin contra la BD de desarrollo (migrada y
  * sembrada): crear documento/versión, editar, publicar con obsolescencia
- * automática (regla ISO 1) y anular.
+ * automática (regla ISO 1) y anular. El camino directo solo da de alta: la segunda
+ * versión la abre `crearVersionBorradorEn` y la publica `aplicarPublicacion`, como
+ * hace un trámite (ver tests/camino-directo.test.ts).
  */
 import { existsSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -14,16 +16,18 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 
 import { obtenerSql } from "@/db/cliente";
 import {
-  anularVigente,
+  anularVigenteEn,
   aplicarPublicacion,
   asegurarAdmin,
   crearDocumento,
   crearVersionBorrador,
-  editarMetadatos,
+  crearVersionBorradorEn,
+  editarCatalogo,
+  editarControl,
   editarVersionBorrador,
-  obtenerPatronCodigo,
   publicarVersion,
 } from "@/db/consultas/admin";
+import { obtenerPatronCodigo } from "@/db/consultas/codigos";
 
 const sql = () => obtenerSql();
 let usuarioId: number;
@@ -87,7 +91,7 @@ describe("crear y editar", () => {
 
   it("rechaza un segundo borrador simultaneo", async () => {
     const [d] = await sql()`SELECT id FROM documentos WHERE codigo = ${CODIGO}`;
-    await expect(crearVersionBorrador(d.id, usuarioId)).rejects.toThrow(/borrador/);
+    await expect(crearVersionBorrador(d.id, usuarioId)).rejects.toThrow(/en borrador/);
   });
 
   it("editarVersionBorrador guarda la evidencia de aprobacion", async () => {
@@ -103,11 +107,16 @@ describe("crear y editar", () => {
     expect(v2.aprobo).toBe("Gerente");
   });
 
-  it("editarMetadatos cambia titulo; el codigo sigue editable antes de publicar", async () => {
+  it("editarControl cambia el titulo y editarCatalogo la descripcion antes de publicar", async () => {
     const [d] = await sql()`SELECT id FROM documentos WHERE codigo = ${CODIGO}`;
-    await editarMetadatos(d.id, { ...datosBase(), titulo: "Titulo editado" }, usuarioId);
-    const [d2] = await sql()`SELECT titulo FROM documentos WHERE id = ${d.id}`;
-    expect(d2.titulo).toBe("Titulo editado");
+    await editarControl(d.id, { codigo: CODIGO, titulo: "Titulo editado", tipoId }, usuarioId);
+    await editarCatalogo(
+      d.id,
+      { descripcion: "Descripcion editada", palabrasClave: null, asociaciones: datosBase().asociaciones, relacionados: [], nivelAcceso: "general" },
+      usuarioId,
+    );
+    const [d2] = await sql()`SELECT titulo, descripcion FROM documentos WHERE id = ${d.id}`;
+    expect(d2).toMatchObject({ titulo: "Titulo editado", descripcion: "Descripcion editada" });
   });
 
   it("obtenerPatronCodigo valida el formato provisional", async () => {
@@ -150,7 +159,7 @@ describe("publicar y anular", () => {
 
   it("publicar v2 vuelve obsoleta a v1 en la misma transaccion", async () => {
     const [d] = await sql()`SELECT id FROM documentos WHERE codigo = ${CODIGO}`;
-    const { versionId } = await crearVersionBorrador(d.id, usuarioId);
+    const { versionId } = await sql().begin((tx) => crearVersionBorradorEn(tx, d.id, usuarioId));
     await editarVersionBorrador(versionId, {
       fechaElaboracion: null, fechaRevision: null, fechaAprobacion: "2026-07-15",
       elaboro: null, reviso: null, aprobo: "Gerente", resumenCambios: "Cambio",
@@ -187,43 +196,35 @@ describe("publicar y anular", () => {
     expect(vigentes).toMatchObject([{ numero: 2 }]);
   });
 
-  it("publicarVersion, el camino directo, publica con origen fuera y vuelve obsoleta la anterior", async () => {
+  it("publicarVersion, el camino directo, publica con origen fuera", async () => {
     const { documentoId, versionId } = await crearDocumento({ ...datosBase(), codigo: "ZZ-TST-903" }, usuarioId);
-    const evidencia = {
+    await editarVersionBorrador(versionId, {
       fechaElaboracion: null, fechaRevision: null, fechaAprobacion: "2026-07-15",
       elaboro: null, reviso: null, aprobo: "Gerente", resumenCambios: "Cambio",
-    };
-    await editarVersionBorrador(versionId, evidencia, usuarioId);
+    }, usuarioId);
     await archivoFalso(versionId, "d1");
     expect(await publicarVersion(versionId, usuarioId)).toEqual({ documentoId, obsoletas: 0 });
-    const siguiente = await crearVersionBorrador(documentoId, usuarioId);
-    await editarVersionBorrador(siguiente.versionId, evidencia, usuarioId);
-    await archivoFalso(siguiente.versionId, "d2");
-    expect(await publicarVersion(siguiente.versionId, usuarioId)).toEqual({ documentoId, obsoletas: 1 });
     const filas = await sql()`SELECT numero, estado, origen_aprobacion FROM documento_versiones
       WHERE documento_id = ${documentoId} ORDER BY numero`;
-    expect(filas).toMatchObject([
-      { numero: 1, estado: "obsoleto", origen_aprobacion: "fuera" },
-      { numero: 2, estado: "vigente", origen_aprobacion: "fuera" },
-    ]);
+    expect(filas).toMatchObject([{ numero: 1, estado: "vigente", origen_aprobacion: "fuera" }]);
   });
 
   it("no publica un borrador sin evidencia de aprobacion", async () => {
-    const [d] = await sql()`SELECT id FROM documentos WHERE codigo = ${CODIGO}`;
-    const { versionId } = await crearVersionBorrador(d.id, usuarioId);
+    const { versionId } = await crearDocumento({ ...datosBase(), codigo: "ZZ-TST-904" }, usuarioId);
     await archivoFalso(versionId, "v3");
     await expect(publicarVersion(versionId, usuarioId)).rejects.toThrow(/aprobaci/);
   });
 
-  it("anularVigente saca el documento de circulacion", async () => {
+  it("anularVigenteEn saca el documento de circulacion", async () => {
     const [d] = await sql()`SELECT id FROM documentos WHERE codigo = ${CODIGO}`;
-    await anularVigente(d.id, usuarioId);
+    const anular = () => sql().begin((tx) => anularVigenteEn(tx, d.id, usuarioId));
+    await anular();
     const vigentes = await sql()`SELECT 1 FROM documento_versiones
       WHERE documento_id = ${d.id} AND estado = 'vigente'`;
     expect(vigentes.length).toBe(0);
     const [anulada] = await sql()`SELECT 1 FROM documento_versiones
       WHERE documento_id = ${d.id} AND estado = 'anulado'`;
     expect(anulada).toBeTruthy();
-    await expect(anularVigente(d.id, usuarioId)).rejects.toThrow(/vigente/);
+    await expect(anular()).rejects.toThrow(/vigente/);
   });
 });

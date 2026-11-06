@@ -9,6 +9,7 @@ import { TablaDatos, celda, type ColumnaTabla } from "@/componentes/ui/TablaDato
 import { obtenerMarcaSegura } from "@/db/consultas/entidad";
 import { exigirPermiso } from "@/lib/paginas";
 import { alcanceMaestro, puede } from "@/lib/permisos";
+import { APROBACION_EN_LISTADO } from "@/lib/tramites/tipos";
 import { fechaHoraLocal } from "@/lib/zona-horaria";
 
 export const metadata: Metadata = { title: "Listado Maestro — Administración SGC" };
@@ -19,10 +20,11 @@ const COLUMNAS: readonly ColumnaTabla[] = [
   { clave: "tipo", etiqueta: "Tipo" },
   { clave: "version", etiqueta: "Ver." },
   { clave: "estado", etiqueta: "Estado" },
-  { clave: "aprobacion", etiqueta: "Aprobación" },
+  { clave: "fechaAprobacion", etiqueta: "Fecha de aprobación" },
   { clave: "elaboro", etiqueta: "Elaboró" },
   { clave: "reviso", etiqueta: "Revisó" },
   { clave: "aprobo", etiqueta: "Aprobó" },
+  { clave: "origenAprobacion", etiqueta: "Aprobación" },
   { clave: "propietario", etiqueta: "Proceso propietario" },
 ];
 
@@ -86,6 +88,7 @@ export default async function PaginaMaestro({
             <td className={celda}>{f.elaboro ?? "—"}</td>
             <td className={celda}>{f.reviso ?? "—"}</td>
             <td className={celda}>{f.aprobo ?? "—"}</td>
+            <td className={celda}>{f.origenAprobacion ? APROBACION_EN_LISTADO[f.origenAprobacion] : "—"}</td>
             <td className={celda}>{f.propietario}</td>
           </tr>
         ))}

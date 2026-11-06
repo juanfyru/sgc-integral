@@ -282,6 +282,17 @@ describe("página del trámite", () => {
     expect(h).toContain("Ana corrigió los datos del documento");
     for (const linea of ["Título: Viejo → Nuevo", "Código: CEX-FO-01 → CEX-RG-01", "Tipo: Formato → Registro"]) expect(h).toContain(linea);
   });
+  it("HistorialTramite dice qué asociación secundaria retiró la corrección", () => {
+    const evento = {
+      tipo: "corregir_datos",
+      persona: "Ana",
+      ronda: 1,
+      detalle: { antes: { proceso: "CEX" }, despues: { proceso: "GTH" }, secundariaRetirada: "Gestión del Talento" },
+      creadoEn: ahora,
+    };
+    const h = renderToStaticMarkup(<HistorialTramite tipo="crear" eventos={[evento]} />);
+    expect(h).toContain("Deja de figurar como proceso donde aplica: Gestión del Talento");
+  });
   it("AccionesSolicitud pinta solo las acciones permitidas, con etapa y ronda ocultas", () => {
     const con = (acciones: DetalleTramite["acciones"]) =>
       renderToStaticMarkup(<AccionesSolicitud tramite={{ id: 7, etapa: "visto_bueno", ronda: 0 }} acciones={acciones} />);

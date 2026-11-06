@@ -1,98 +1,61 @@
 "use server";
 
+import { idNumerico, mutacion, texto, type EstadoAccion } from "@/app/admin/comun";
 import {
-  idNumerico,
-  mutacion,
-  texto,
-  textoONulo,
-  type EstadoAccion,
-} from "@/app/admin/comun";
-import {
-  anularVigente,
   crearDocumento,
   crearVersionBorrador,
-  editarMetadatos,
+  deshacerCarga,
+  descartarBorrador,
+  editarCatalogo,
+  editarControl,
   editarVersionBorrador,
-  obtenerPatronCodigo,
   publicarVersion,
-  type AsociacionEntrada,
-  type DatosDocumento,
-  type DatosVersion,
 } from "@/db/consultas/admin";
+import {
+  EsquemaCatalogo,
+  EsquemaControl,
+  EsquemaDatosVersion,
+  EsquemaDeshacerCarga,
+  EsquemaDocumentoNuevo,
+  EsquemaNuevaVersion,
+  EsquemaVersionId,
+} from "@/lib/esquemas/documentos";
+import { parsearFormulario } from "@/lib/validacion";
 
 export type { EstadoAccion } from "@/app/admin/comun";
 
-// ── Parseo de formularios ──
-
-// Checkboxes "asociaciones" (p:<id> | s:<id>) + radio "principal".
-function parsearAsociaciones(formData: FormData): AsociacionEntrada[] {
-  const principal = String(formData.get("principal") ?? "");
-  const marcadas = new Set(formData.getAll("asociaciones").map(String));
-  if (principal) marcadas.add(principal);
-  const asociaciones: AsociacionEntrada[] = [];
-  for (const marca of marcadas) {
-    const [tipo, id] = marca.split(":");
-    const numero = Number(id);
-    if (!Number.isInteger(numero) || numero <= 0) continue;
-    asociaciones.push({
-      ...(tipo === "p" ? { procesoId: numero } : { subprocesoId: numero }),
-      esPrincipal: marca === principal,
-    });
-  }
-  return asociaciones;
-}
-
-async function parsearDocumento(formData: FormData): Promise<DatosDocumento> {
-  const codigo = texto(formData, "codigo").toUpperCase();
-  const patron = await obtenerPatronCodigo();
-  if (!patron.test(codigo)) {
-    throw new Error(
-      "El código no cumple el formato configurado (ej. SGC-FO-02)",
-    );
-  }
-  const titulo = texto(formData, "titulo");
-  if (!titulo) throw new Error("El título es obligatorio");
-  return {
-    codigo,
-    titulo,
-    tipoId: idNumerico(formData, "tipoId"),
-    descripcion: textoONulo(formData, "descripcion"),
-    palabrasClave: textoONulo(formData, "palabrasClave"),
-    asociaciones: parsearAsociaciones(formData),
-  };
-}
-
-function parsearVersion(formData: FormData): DatosVersion {
-  return {
-    fechaElaboracion: textoONulo(formData, "fechaElaboracion"),
-    fechaRevision: textoONulo(formData, "fechaRevision"),
-    fechaAprobacion: textoONulo(formData, "fechaAprobacion"),
-    elaboro: textoONulo(formData, "elaboro"),
-    reviso: textoONulo(formData, "reviso"),
-    aprobo: textoONulo(formData, "aprobo"),
-    resumenCambios: textoONulo(formData, "resumenCambios"),
-  };
-}
+const rutaDe = (codigo: string) => `/admin/documentos/${encodeURIComponent(codigo)}`;
 
 export async function crearDocumentoAccion(
   _estadoPrevio: EstadoAccion,
   formData: FormData,
 ): Promise<EstadoAccion> {
   return mutacion(formData, "documentos.administrar", async (usuarioId) => {
-    const datos = await parsearDocumento(formData);
+    const datos = parsearFormulario(formData, EsquemaDocumentoNuevo);
     await crearDocumento(datos, usuarioId);
-    return `/admin/documentos/${datos.codigo}`;
+    return rutaDe(datos.codigo);
   });
 }
 
-export async function editarDocumentoAccion(
+export async function editarControlAccion(
   _estadoPrevio: EstadoAccion,
   formData: FormData,
 ): Promise<EstadoAccion> {
   return mutacion(formData, "documentos.administrar", async (usuarioId) => {
-    const datos = await parsearDocumento(formData);
-    await editarMetadatos(idNumerico(formData, "documentoId"), datos, usuarioId);
-    return `/admin/documentos/${datos.codigo}`;
+    const datos = parsearFormulario(formData, EsquemaControl, { omitir: ["documentoId"] });
+    await editarControl(idNumerico(formData, "documentoId"), datos, usuarioId);
+    return rutaDe(datos.codigo);
+  });
+}
+
+export async function editarCatalogoAccion(
+  _estadoPrevio: EstadoAccion,
+  formData: FormData,
+): Promise<EstadoAccion> {
+  return mutacion(formData, "documentos.administrar", async (usuarioId) => {
+    const datos = parsearFormulario(formData, EsquemaCatalogo, { omitir: ["documentoId", "codigo"] });
+    await editarCatalogo(idNumerico(formData, "documentoId"), datos, usuarioId);
+    return rutaDe(texto(formData, "codigo"));
   });
 }
 
@@ -101,7 +64,8 @@ export async function crearVersionAccion(
   formData: FormData,
 ): Promise<EstadoAccion> {
   return mutacion(formData, "documentos.administrar", async (usuarioId) => {
-    await crearVersionBorrador(idNumerico(formData, "documentoId"), usuarioId);
+    const { numero } = parsearFormulario(formData, EsquemaNuevaVersion, { omitir: ["documentoId"] });
+    await crearVersionBorrador(idNumerico(formData, "documentoId"), usuarioId, numero);
   });
 }
 
@@ -110,11 +74,8 @@ export async function editarVersionAccion(
   formData: FormData,
 ): Promise<EstadoAccion> {
   return mutacion(formData, "documentos.administrar", async (usuarioId) => {
-    await editarVersionBorrador(
-      idNumerico(formData, "versionId"),
-      parsearVersion(formData),
-      usuarioId,
-    );
+    const datos = parsearFormulario(formData, EsquemaDatosVersion, { omitir: ["versionId"] });
+    await editarVersionBorrador(idNumerico(formData, "versionId"), datos, usuarioId);
   });
 }
 
@@ -123,15 +84,27 @@ export async function publicarAccion(
   formData: FormData,
 ): Promise<EstadoAccion> {
   return mutacion(formData, "documentos.administrar", async (usuarioId) => {
-    await publicarVersion(idNumerico(formData, "versionId"), usuarioId);
+    const { versionId } = parsearFormulario(formData, EsquemaVersionId);
+    await publicarVersion(versionId, usuarioId);
   });
 }
 
-export async function anularAccion(
+export async function deshacerCargaAccion(
   _estadoPrevio: EstadoAccion,
   formData: FormData,
 ): Promise<EstadoAccion> {
   return mutacion(formData, "documentos.administrar", async (usuarioId) => {
-    await anularVigente(idNumerico(formData, "documentoId"), usuarioId);
+    const { motivo } = parsearFormulario(formData, EsquemaDeshacerCarga, { omitir: ["documentoId"] });
+    await deshacerCarga(idNumerico(formData, "documentoId"), motivo, usuarioId);
+  });
+}
+
+export async function descartarBorradorAccion(
+  _estadoPrevio: EstadoAccion,
+  formData: FormData,
+): Promise<EstadoAccion> {
+  return mutacion(formData, "documentos.administrar", async (usuarioId) => {
+    const { versionId } = parsearFormulario(formData, EsquemaVersionId);
+    await descartarBorrador(versionId, usuarioId);
   });
 }

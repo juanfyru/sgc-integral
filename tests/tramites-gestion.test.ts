@@ -15,7 +15,7 @@ import { sugerirCodigo, todosLosCodigos } from "@/db/consultas/codigos";
 import { crearObservacion } from "@/db/consultas/revision";
 import { datosParaGestionar, listarTramites, propietarioDeDocumento } from "@/db/consultas/tramites";
 import { guardarControlCambios } from "@/db/consultas/tramites-archivos";
-import { ErrorTramite, transicionar, type SesionFlujo } from "@/db/consultas/tramites-flujo";
+import { ErrorTramite, MANEJADORES, conservaMarcas, transicionar, type SesionFlujo } from "@/db/consultas/tramites-flujo";
 import { corregirDatosDeControl } from "@/db/consultas/tramites-gestion";
 import { finDeFecha } from "@/lib/tramites/plazos";
 import type { EtapaTrabajo } from "@/lib/tramites/tipos";
@@ -736,6 +736,16 @@ describe("corregirDatosDeControl", () => {
         await corregirDatosDeControl(t.tramiteId, t.admin, { procesoId: gth.id }, enElaboracion, { sql: tx });
         const filas = await tx`SELECT proceso_id, es_principal FROM documento_proceso WHERE documento_id = ${documentoId}`;
         expect(filas).toEqual([{ proceso_id: gth.id, es_principal: true }]);
+        const [evento] = await eventosDe(tx, t.tramiteId, "corregir_datos");
+        expect(evento.detalle.secundariaRetirada).toBe(gth.nombre);
+      }));
+
+      it("si no había asociación secundaria, el evento no dice que retiró una", () => revertida(sql, async (tx) => {
+        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
+        const gth = await procesoPorSigla(tx, "GTH");
+        await corregirDatosDeControl(t.tramiteId, t.admin, { procesoId: gth.id }, enElaboracion, { sql: tx });
+        const [evento] = await eventosDe(tx, t.tramiteId, "corregir_datos");
+        expect(evento.detalle).not.toHaveProperty("secundariaRetirada");
       }));
 
       it("un subproceso de otro proceso se rechaza", () => revertida(sql, async (tx) => {
@@ -861,4 +871,30 @@ describe("corregirDatosDeControl", () => {
       expect((await documentoDe(tx, t.tramiteId)).tipo_id).toBe(tipo.id);
     }));
   });
+});
+
+describe("las marcas de aviso son de la etapa", () => {
+  it("solo sobreviven si el manejador lo pide y la etapa no cambia", () => {
+    expect(conservaMarcas({ conservarAvisos: true }, "revision", "revision")).toBe(true);
+    expect(conservaMarcas({ conservarAvisos: true }, "elaboracion", "revision")).toBe(false);
+    expect(conservaMarcas({}, "revision", "revision")).toBe(false);
+  });
+
+  it("un manejador que pide conservarlas no las salva de un cambio de etapa", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
+    await tx`UPDATE tramites SET aviso_vencido_en = now(), escalado_en = now() WHERE id = ${t.tramiteId}`;
+    const real = MANEJADORES.cancelar!;
+    MANEJADORES.cancelar = async (c) => ({ ...(await real(c)), conservarAvisos: true });
+    try {
+      await transicionar(
+        t.admin,
+        { tramiteId: t.tramiteId, accion: "cancelar", etapaEsperada: "elaboracion", rondaEsperada: 1, datos: { motivo: "Ya no hace falta." } },
+        opc(tx),
+      );
+    } finally {
+      MANEJADORES.cancelar = real;
+    }
+    const [marcas] = await tx`SELECT etapa, aviso_vencido_en, escalado_en FROM tramites WHERE id = ${t.tramiteId}`;
+    expect(marcas).toEqual({ etapa: "cancelado", aviso_vencido_en: null, escalado_en: null });
+  }));
 });

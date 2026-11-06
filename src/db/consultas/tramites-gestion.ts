@@ -7,18 +7,13 @@
 import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
-import { codigoAbandonado, sugerirCodigo } from "@/db/consultas/codigos";
+import { codigoAbandonado, errorDeCodigoRepetido, exigirFormatoDeCodigo, sugerirCodigo } from "@/db/consultas/codigos";
 import { rotuloDeTramite, tipoDeDocumento, tramiteVisto } from "@/db/consultas/tramites";
 import { enviarAvisos, registrarEvento } from "@/db/consultas/tramites-flujo";
 import type { DatosCorreccion } from "@/lib/esquemas/tramites";
 import { puede } from "@/lib/permisos";
 import { ETAPAS_CON_CORRECCION } from "@/lib/tramites/tipos";
-import {
-  errorDeCodigoRepetido,
-  exigirDesignacion,
-  exigirFormatoDeCodigo,
-  propietarioElegido,
-} from "./flujo/aceptacion";
+import { exigirDesignacion, propietarioElegido } from "./flujo/aceptacion";
 import { CAMBIO_MIENTRAS, ErrorTramite, enTransaccion, type Aviso, type FilaTramite, type SesionFlujo } from "./flujo/contrato";
 import { exigirQueNoElaboro, relevoDe } from "./flujo/gestion";
 import type { Esperado } from "./revision";
@@ -70,13 +65,15 @@ async function nombreDelPropietario(tx: TransactionSql, { procesoId, subprocesoI
   return p.subproceso ? `${p.proceso} › ${p.subproceso}` : p.proceso;
 }
 
-/** Una asociación secundaria al mismo destino sobraría: la principal ocupa su lugar. */
-async function moverAsociacionPrincipal(tx: TransactionSql, documentoId: number | null, { procesoId, subprocesoId }: Propietario): Promise<void> {
+/** Una asociación secundaria al mismo destino sobraría: la principal ocupa su lugar. Dice si retiró una. */
+async function moverAsociacionPrincipal(tx: TransactionSql, documentoId: number | null, { procesoId, subprocesoId }: Propietario): Promise<boolean> {
   const proceso = subprocesoId === null ? procesoId : null;
-  await tx`DELETE FROM documento_proceso WHERE documento_id = ${documentoId} AND NOT es_principal
-    AND proceso_id IS NOT DISTINCT FROM ${proceso} AND subproceso_id IS NOT DISTINCT FROM ${subprocesoId}`;
+  const retiradas = await tx`DELETE FROM documento_proceso WHERE documento_id = ${documentoId} AND NOT es_principal
+    AND proceso_id IS NOT DISTINCT FROM ${proceso} AND subproceso_id IS NOT DISTINCT FROM ${subprocesoId}
+    RETURNING id`;
   await tx`UPDATE documento_proceso SET proceso_id = ${proceso}, subproceso_id = ${subprocesoId}
     WHERE documento_id = ${documentoId} AND es_principal`;
+  return retiradas.length > 0;
 }
 
 /** Otro tipo puede pedir otro aprobador: se valida el conjunto completo con la autoridad nueva. */
@@ -129,7 +126,7 @@ async function corregirCreacion(tx: TransactionSql, tramite: FilaTramite, datos:
       },
     );
   if (repetido) throw errorDeCodigoRepetido(await sugerirCodigo(destino, { sql: tx }));
-  if (propietario) await moverAsociacionPrincipal(tx, tramite.documentoId, propietario);
+  const secundariaRetirada = propietario ? await moverAsociacionPrincipal(tx, tramite.documentoId, propietario) : false;
   await tx`UPDATE tramites SET
       tipo_documento_id = ${destino.tipoDocumentoId}, proceso_id = ${destino.procesoId},
       subproceso_id = ${propietario ? propietario.subprocesoId : tramite.subprocesoId},
@@ -146,12 +143,17 @@ async function corregirCreacion(tx: TransactionSql, tramite: FilaTramite, datos:
   if (codigo !== null) anotar("codigo", documento.codigo, codigo);
   if (tipoNuevo) anotar("tipo", documento.tipo, tipoNuevo.nombre);
   if (propietario) anotar("proceso", await nombreDelPropietario(tx, tramite), await nombreDelPropietario(tx, propietario));
-  if (aprobadorId === undefined) return { detalle: { antes, despues } };
+  const evidencia = {
+    antes,
+    despues,
+    ...(propietario && secundariaRetirada ? { secundariaRetirada: await nombreDelPropietario(tx, propietario) } : {}),
+  };
+  if (aprobadorId === undefined) return { detalle: evidencia };
 
   const { texto } = await rotuloDeTramite(tx, tramite);
   const relevo = await relevoDe(tx, tramite, "aprobador", aprobadorId, texto);
   return {
-    detalle: { antes, despues, aprobador: { de: relevo.de, a: tipoNuevo?.aprobador } },
+    detalle: { ...evidencia, aprobador: { de: relevo.de, a: tipoNuevo?.aprobador } },
     avisos: [relevo.entra, relevo.sale],
   };
 }

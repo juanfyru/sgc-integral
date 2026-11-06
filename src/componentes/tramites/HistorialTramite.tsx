@@ -60,7 +60,8 @@ function cambiosDe({ tipo, detalle: d }: EventoTramite): string[] {
     const datos = Object.entries((d.despues ?? {}) as Record<string, unknown>).map(
       ([dato, valor]) => `${ETIQUETA_DATO[dato] ?? dato}: ${String(antes[dato])} → ${String(valor)}`,
     );
-    return [...datos, ...delAprobador];
+    const retirada = typeof d.secundariaRetirada === "string" ? [`Deja de figurar como proceso donde aplica: ${d.secundariaRetirada}`] : [];
+    return [...datos, ...retirada, ...delAprobador];
   }
   if (tipo !== "reasignar") return [];
   const lineas = PAPELES.includes(d.papel as Papel) ? [`${ETIQUETA_PAPEL[d.papel as Papel]}: ${nombreEn(d.de)} → ${nombreEn(d.a)}`] : [];

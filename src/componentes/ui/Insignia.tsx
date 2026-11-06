@@ -65,6 +65,7 @@ export const ESTADO_DOCUMENTO: Record<
   borrador: { variante: "atencion", etiqueta: "Borrador" },
   obsoleto: { variante: "sin-dato", etiqueta: "Obsoleto" },
   anulado: { variante: "critico", etiqueta: "Anulado" },
+  descartado: { variante: "neutra", etiqueta: "Descartado" },
 };
 
 export function InsigniaEstadoDocumento({ estado }: { estado: string }) {

@@ -1,7 +1,7 @@
 /** Manejadores de la aceptación: duplicidad, clasificación, código y responsables (spec 13A §8.3). */
 import type { TransactionSql } from "postgres";
-import { crearDocumentoEn, crearVersionBorradorEn, obtenerPatronCodigo, type AsociacionEntrada } from "@/db/consultas/admin";
-import { codigoAbandonado, sugerirCodigo } from "@/db/consultas/codigos";
+import { crearDocumentoEn, crearVersionBorradorEn, type AsociacionEntrada } from "@/db/consultas/admin";
+import { codigoAbandonado, errorDeCodigoRepetido, exigirFormatoDeCodigo, sugerirCodigo } from "@/db/consultas/codigos";
 import { buscarParecidos } from "@/db/consultas/parecidos";
 import {
   ETAPAS_ABIERTAS,
@@ -75,19 +75,9 @@ export function plazoHasta(fecha: string, ahora: Date, que: string): Date {
   return venceEn;
 }
 
+const BORRADOR_PENDIENTE = "El documento tiene un borrador de carga pendiente: publíquelo o descártelo";
+
 const plazoDeElaboracion = (fecha: string, ahora: Date) => plazoHasta(fecha, ahora, "La fecha límite de elaboración");
-
-type DestinoDeCodigo = { procesoId: number; tipoDocumentoId: number };
-
-export async function exigirFormatoDeCodigo(tx: TransactionSql, codigo: string, destino: DestinoDeCodigo): Promise<void> {
-  if ((await obtenerPatronCodigo({ sql: tx })).test(codigo)) return;
-  const ejemplo = await sugerirCodigo(destino, { sql: tx });
-  throw new ErrorTramite(`El código no cumple el formato configurado${ejemplo ? ` (ej. ${ejemplo})` : ""}`);
-}
-
-export function errorDeCodigoRepetido(siguiente: string | null): ErrorTramite {
-  return new ErrorTramite(siguiente ? `Ese código ya existe. El siguiente disponible es ${siguiente}` : "Ese código ya existe");
-}
 
 /** El paso va primero: si quien pidió también elabora, recibe el aviso que le dice qué hacer. */
 function avisosDeElaboracion(tramite: FilaTramite, elaboradorId: number, texto: string): Aviso[] {
@@ -109,7 +99,7 @@ async function abrirVersion(
       EXISTS (SELECT 1 FROM documento_versiones v WHERE v.documento_id = d.id AND v.estado = 'borrador') AS borrador
     FROM documentos d WHERE d.id = ${documentoId}`;
   if (!doc?.vigente) throw new ErrorTramite("El documento ya no tiene versión vigente");
-  if (doc.borrador) throw new ErrorTramite("El documento tiene un borrador de carga pendiente: publíquelo o descártelo");
+  if (doc.borrador) throw new ErrorTramite(BORRADOR_PENDIENTE);
 
   const tipo = await tipoDeDocumento(Number(doc.tipo_id), { sql: tx });
   if (!tipo) throw new ErrorTramite("El tipo de documento no existe o está inactivo");
@@ -287,10 +277,12 @@ async function aceptarNuevo(c: ContextoManejador): Promise<Efecto> {
 
 async function aceptarEliminacion({ tx, tramite, datos }: ContextoManejador): Promise<Efecto> {
   const { aprobadorId } = datos as DatosAceptarEliminacion;
-  const [vigente] = await tx`SELECT v.id, v.numero, d.codigo, d.tipo_id
+  const [vigente] = await tx`SELECT v.id, v.numero, d.codigo, d.tipo_id,
+      EXISTS (SELECT 1 FROM documento_versiones o WHERE o.documento_id = d.id AND o.estado = 'borrador') AS borrador
     FROM documento_versiones v JOIN documentos d ON d.id = v.documento_id
     WHERE v.documento_id = ${tramite.documentoId ?? 0} AND v.estado = 'vigente'`;
   if (!vigente) throw new ErrorTramite("El documento ya no tiene versión vigente");
+  if (vigente.borrador) throw new ErrorTramite(BORRADOR_PENDIENTE);
   const tipo = await tipoDeDocumento(Number(vigente.tipo_id), { sql: tx });
   if (!tipo) throw new ErrorTramite("El tipo de documento no existe o está inactivo");
   const responsables = await exigirDesignacion(tx, tramite, "eliminar", tipo.autoridad, { aprobadorId });

@@ -65,6 +65,16 @@ describe("obtenerListadoMaestro", () => {
     expect(mios.filter((f) => f.codigo === "ZZ-MST-001")).toHaveLength(1);
   });
 
+  it("trae el origen de la aprobación de la versión que representa al documento", async () => {
+    await sql()`UPDATE documento_versiones SET origen_aprobacion = 'plataforma'
+      WHERE documento_id = (SELECT id FROM documentos WHERE codigo = 'ZZ-MST-002')`;
+    const filas = await obtenerListadoMaestro({ incluir: "todos" });
+    const origen = (codigo: string) => filas.find((f) => f.codigo === codigo)?.origenAprobacion;
+    expect(origen("ZZ-MST-001")).toBe("fuera");
+    expect(origen("ZZ-MST-002")).toBe("plataforma");
+    expect(origen("ZZ-MST-004")).toBe("fuera");
+  });
+
   it("resuelve el propietario desde subproceso", async () => {
     const filas = await obtenerListadoMaestro({ incluir: "vigentes" });
     const sub = filas.find((f) => f.codigo === "ZZ-MST-002")!;

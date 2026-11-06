@@ -1,4 +1,5 @@
 import { obtenerSql } from "@/db/cliente";
+import type { OrigenAprobacion } from "@/lib/tramites/tipos";
 
 export type FilaMaestro = {
   codigo: string;
@@ -12,6 +13,7 @@ export type FilaMaestro = {
   elaboro: string | null;
   reviso: string | null;
   aprobo: string | null;
+  origenAprobacion: OrigenAprobacion | null;
   propietario: string;
 };
 
@@ -36,7 +38,7 @@ export async function obtenerListadoMaestro(
            v.fecha_elaboracion::text AS fecha_elaboracion,
            v.fecha_revision::text AS fecha_revision,
            v.fecha_aprobacion::text AS fecha_aprobacion,
-           v.elaboro, v.reviso, v.aprobo,
+           v.elaboro, v.reviso, v.aprobo, v.origen_aprobacion,
            COALESCE(
              pd.nombre,
              ps.nombre || ' › ' || sp.nombre
@@ -68,6 +70,7 @@ export async function obtenerListadoMaestro(
     elaboro: (f.elaboro as string | null) ?? null,
     reviso: (f.reviso as string | null) ?? null,
     aprobo: (f.aprobo as string | null) ?? null,
+    origenAprobacion: (f.origen_aprobacion as OrigenAprobacion | null) ?? null,
     propietario: f.propietario as string,
   }));
 }

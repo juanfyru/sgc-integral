@@ -97,6 +97,24 @@ function texto(v: unknown): string | null {
   return typeof v === "string" && v.length > 0 ? v : null;
 }
 
+const NOMBRE_DATO_DOCUMENTO: Record<string, string> = {
+  codigo: "código",
+  titulo: "título",
+  tipo: "tipo",
+  descripcion: "descripción",
+  palabrasClave: "palabras clave",
+  nivelAcceso: "nivel de acceso",
+  asociaciones: "procesos donde aplica",
+  relacionados: "documentos relacionados",
+};
+
+/** «: título, nivel de acceso», según lo que cambió; vacío en una fila anterior a la Fase 13A. */
+function datosCambiados(despues: unknown): string {
+  if (typeof despues !== "object" || despues === null) return "";
+  const nombres = Object.keys(despues).map((d) => (Object.hasOwn(NOMBRE_DATO_DOCUMENTO, d) ? NOMBRE_DATO_DOCUMENTO[d] : d));
+  return nombres.length > 0 ? `: ${nombres.join(", ")}` : "";
+}
+
 /**
  * Traduce un evento de auditoría a una frase en español legible. Función pura;
  * nunca vuelca JSON crudo ni interpreta el detalle como HTML. Fallback seguro
@@ -115,7 +133,13 @@ export function describirEvento(e: EventoAuditoria): string {
     case "crear_documento":
       return `Creó el documento ${cod ?? "?"} — ${texto(d.titulo) ?? ""}`.trimEnd();
     case "editar_documento":
-      return `Editó el documento ${cod ?? "?"}`;
+      return `Editó el documento ${cod ?? "?"}${datosCambiados(d.despues)}`;
+    case "editar_control":
+      return `Corrigió los datos de control de ${cod ?? "un documento"}${datosCambiados(d.despues)}`;
+    case "deshacer_carga":
+      return `Deshizo la carga de la versión ${d.numero ?? "?"} de ${cod ?? "un documento"}: ${texto(d.motivo) ?? "sin motivo"}`;
+    case "descartar_borrador":
+      return `Descartó el borrador de la versión ${d.numero ?? "?"} de ${cod ?? "un documento"}`;
     case "crear_version":
       return `Creó la versión ${d.numero ?? "?"} de ${cod ?? "un documento"}`;
     case "publicar_version":

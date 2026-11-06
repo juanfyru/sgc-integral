@@ -28,6 +28,36 @@ describe("describirEvento", () => {
     })).toBe("Anuló GTH-PR-01 (versión vigente 3)");
   });
 
+  it("editar_documento dice qué datos de catálogo cambiaron; una fila antigua, solo el código", () => {
+    const evento = (detalle: Record<string, unknown>) =>
+      describirEvento({ accion: "editar_documento", entidad: "documento", entidadId: 5, detalle, codigoDocumento: "GTH-PR-01" });
+    expect(evento({ antes: { nivelAcceso: "general" }, despues: { nivelAcceso: "restringido", relacionados: [] } })).toBe(
+      "Editó el documento GTH-PR-01: nivel de acceso, documentos relacionados",
+    );
+    expect(evento({ codigoAnterior: "GTH-PR-09", codigo: "GTH-PR-01", titulo: "Ingreso" })).toBe("Editó el documento GTH-PR-01");
+  });
+
+  it("editar_control dice qué datos de control se corrigieron", () => {
+    expect(describirEvento({
+      accion: "editar_control", entidad: "documento", entidadId: 5,
+      detalle: { antes: { titulo: "Viejo" }, despues: { titulo: "Nuevo" } }, codigoDocumento: "GTH-PR-01",
+    })).toBe("Corrigió los datos de control de GTH-PR-01: título");
+  });
+
+  it("deshacer_carga lleva la versión y el motivo", () => {
+    expect(describirEvento({
+      accion: "deshacer_carga", entidad: "documento", entidadId: 5,
+      detalle: { numero: 4, motivo: "Se subió el archivo equivocado." }, codigoDocumento: "GTH-PR-01",
+    })).toBe("Deshizo la carga de la versión 4 de GTH-PR-01: Se subió el archivo equivocado.");
+  });
+
+  it("descartar_borrador lleva la versión", () => {
+    expect(describirEvento({
+      accion: "descartar_borrador", entidad: "documento_version", entidadId: 9,
+      detalle: { documentoId: 5, numero: 2 }, codigoDocumento: "GTH-PR-01",
+    })).toBe("Descartó el borrador de la versión 2 de GTH-PR-01");
+  });
+
   it("desactivar de mapa usa el nombre", () => {
     expect(describirEvento({
       accion: "desactivar_proceso", entidad: "procesos", entidadId: 7,

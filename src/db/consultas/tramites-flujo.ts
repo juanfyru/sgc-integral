@@ -302,6 +302,11 @@ async function exigirHuellaDelElaborador(tx: TransactionSql, tramite: FilaTramit
   if (elaboro?.hash_sha256 !== hashSha256) throw new ErrorTramite(ARCHIVO_CAMBIADO);
 }
 
+/** Las marcas de aviso son de la etapa: al cambiar de etapa se limpian, diga lo que diga el manejador. */
+export function conservaMarcas(efecto: Efecto, hacia: Etapa, etapaPrevia: Etapa): boolean {
+  return efecto.conservarAvisos === true && hacia === etapaPrevia;
+}
+
 /**
  * Hace una transición. La firma se verifica fuera de la transacción: usa otras conexiones del
  * pool y Argon2 tarda, y no debe gastarse si la acción no procede. Por eso todo se comprueba
@@ -342,7 +347,7 @@ export async function transicionar(
         subproceso_id = ${t.subprocesoId}, tipo_documento_id = ${t.tipoDocumentoId}, documento_id = ${t.documentoId},
         version_id = ${t.versionId}, titulo_propuesto = ${t.tituloPropuesto}, elaborador_id = ${t.elaboradorId},
         revisor_id = ${t.revisorId}, aprobador_id = ${t.aprobadorId}, motivo_cierre = ${t.motivoCierre},
-        vence_en = ${venceEn}, ${efecto.conservarAvisos ? tx`` : tx`aviso_vencido_en = NULL, escalado_en = NULL,`}
+        vence_en = ${venceEn}, ${conservaMarcas(efecto, hacia, previo.etapa) ? tx`` : tx`aviso_vencido_en = NULL, escalado_en = NULL,`}
         cerrado_en = ${esEtapaDeTrabajo(t.etapa) ? null : ahora}, actualizado_en = ${ahora}
       WHERE id = ${t.id}`.catch(traducirChoqueDeAbierto);
 

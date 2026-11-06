@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useActionState } from "react";
 import type { EstadoCreacion } from "@/app/admin/acciones-usuarios";
+import { enviarSinReiniciar } from "@/componentes/admin/sin-reiniciar";
 import { ClaveTemporal } from "@/componentes/admin/usuarios/ClaveTemporal";
 import { ETIQUETA_ROL, ROLES } from "@/lib/roles";
 
@@ -59,7 +60,7 @@ export function FormularioUsuario({ accion, id, valores, cargos, jefes, procesos
   const edicion = id !== undefined;
 
   return (
-    <form action={enviar} className="flex max-w-xl flex-col gap-5">
+    <form action={enviar} onSubmit={enviarSinReiniciar(enviar)} className="flex max-w-xl flex-col gap-5">
       {edicion && <input type="hidden" name="id" value={id} />}
       <label className="flex flex-col gap-1 text-sm font-medium">
         Nombre de usuario

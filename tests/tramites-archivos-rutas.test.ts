@@ -165,6 +165,20 @@ describe("DELETE del panel", () => {
     expect(eliminarArchivoBorrador).toHaveBeenCalledWith(21, 1);
     expect(existsSync(absoluta())).toBe(true);
   });
+
+  it("un fallo inesperado responde 500 sin su mensaje y queda en el registro", async () => {
+    sesionDePeticion.mockResolvedValue({ usuarioId: 1, rol: "admin_sgc" });
+    const fallo = new Error("connection terminated: detalle interno");
+    eliminarArchivoBorrador.mockRejectedValue(fallo);
+    const registro = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await quitarDelPanel(new NextRequest("http://sgc.local/admin/api/archivos/21", { method: "DELETE" }), {
+      params: Promise.resolve({ archivoId: "21" }),
+    });
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: "No se pudo quitar el archivo" });
+    expect(registro).toHaveBeenCalledWith(expect.any(String), fallo);
+    registro.mockRestore();
+  });
 });
 
 describe("GET /tramites/[id]/archivos/[archivoId]", () => {

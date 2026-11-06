@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import type { FilaMaestro } from "@/db/consultas/maestro";
 import { neutralizarFormula } from "@/lib/celdas";
+import { APROBACION_EN_LISTADO } from "@/lib/tramites/tipos";
 
 export type MetaMaestro = {
   hospital: string;
@@ -21,10 +22,11 @@ const COLUMNAS: Array<{
   { cab: "Estado", ancho: 12, valor: (f) => f.estado },
   { cab: "Elaboración", ancho: 14, valor: (f) => f.fechaElaboracion },
   { cab: "Revisión", ancho: 14, valor: (f) => f.fechaRevision },
-  { cab: "Aprobación", ancho: 14, valor: (f) => f.fechaAprobacion },
+  { cab: "Fecha de aprobación", ancho: 19, valor: (f) => f.fechaAprobacion },
   { cab: "Elaboró", ancho: 20, valor: (f) => f.elaboro },
   { cab: "Revisó", ancho: 20, valor: (f) => f.reviso },
   { cab: "Aprobó", ancho: 20, valor: (f) => f.aprobo },
+  { cab: "Aprobación", ancho: 22, valor: (f) => (f.origenAprobacion ? APROBACION_EN_LISTADO[f.origenAprobacion] : null) },
   { cab: "Proceso propietario", ancho: 32, valor: (f) => f.propietario },
 ];
 

@@ -441,6 +441,12 @@ describe("aceptar una eliminación", () => {
     expect((await avisosDe(tx, gerente.usuarioId, tramiteId)).map((a) => a.tipo)).toEqual(["tramite.paso"]);
   }));
 
+  it("no acepta si el documento tiene un borrador de carga pendiente (spec 13A §13.3)", () => revertida(sql, async (tx) => {
+    const { gerente, doc, aceptar } = await bajaDe(tx, "SGC-PR-01");
+    await tx`INSERT INTO documento_versiones (documento_id, numero, estado) VALUES (${doc.id}, 90, 'borrador')`;
+    await expect(aceptar(gerente.usuarioId)).rejects.toThrow("El documento tiene un borrador de carga pendiente: publíquelo o descártelo");
+  }));
+
   it("avisa también a quien pidió, y el evento guarda la versión y el aprobador", () => revertida(sql, async (tx) => {
     const { admin, gerente, tramiteId, aceptar } = await bajaDe(tx, "SGC-PR-01");
     await aceptar(gerente.usuarioId);

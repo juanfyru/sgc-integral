@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import type { EstadoAccion } from "@/app/admin/acciones";
+import { enviarSinReiniciar } from "./sin-reiniciar";
 
 type Valores = {
   fechaElaboracion: string | null; fechaRevision: string | null;
@@ -20,7 +21,7 @@ export function FormularioVersionCliente({
 }) {
   const [estado, enviar, pendiente] = useActionState(accion, null);
   return (
-    <form action={enviar} className="mt-3 grid gap-3 sm:grid-cols-2">
+    <form action={enviar} onSubmit={enviarSinReiniciar(enviar)} className="mt-3 grid gap-3 sm:grid-cols-2">
       <input type="hidden" name="versionId" value={versionId} />
       <label className="flex flex-col gap-1 text-sm">Elaboró
         <input name="elaboro" defaultValue={valores.elaboro ?? ""} className={claseCampo} />

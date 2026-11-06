@@ -1,10 +1,12 @@
 import { NextRequest } from "next/server";
 import { describe, expect, it } from "vitest";
 import {
-  anularAccion,
   crearDocumentoAccion,
   crearVersionAccion,
-  editarDocumentoAccion,
+  descartarBorradorAccion,
+  deshacerCargaAccion,
+  editarCatalogoAccion,
+  editarControlAccion,
   editarVersionAccion,
   publicarAccion,
 } from "@/app/admin/acciones";
@@ -121,11 +123,13 @@ describe("actions de mutación sin sesión", () => {
   const fd = new FormData();
   const casos: Array<[string, () => Promise<unknown>]> = [
     ["crearDocumentoAccion", () => crearDocumentoAccion(null, fd)],
-    ["editarDocumentoAccion", () => editarDocumentoAccion(null, fd)],
+    ["editarControlAccion", () => editarControlAccion(null, fd)],
+    ["editarCatalogoAccion", () => editarCatalogoAccion(null, fd)],
     ["crearVersionAccion", () => crearVersionAccion(null, fd)],
     ["editarVersionAccion", () => editarVersionAccion(null, fd)],
     ["publicarAccion", () => publicarAccion(null, fd)],
-    ["anularAccion", () => anularAccion(null, fd)],
+    ["deshacerCargaAccion", () => deshacerCargaAccion(null, fd)],
+    ["descartarBorradorAccion", () => descartarBorradorAccion(null, fd)],
     ["crearTipoAccion", () => crearTipoAccion(null, fd)],
     ["editarTipoAccion", () => editarTipoAccion(null, fd)],
     ["moverAccion", () => moverAccion(fd)],

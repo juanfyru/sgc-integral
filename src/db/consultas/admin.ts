@@ -4,8 +4,16 @@ import { filtroAcceso, type SujetoVisibilidad } from "@/lib/alcance";
 import { ROLES_ARCHIVO_LISTA } from "@/lib/subida";
 import { hashearClave } from "@/lib/clave";
 import { puede } from "@/lib/permisos";
-import { patronDeConfiguracion } from "@/lib/tramites/codigo";
-import { ETAPAS_TRABAJO } from "@/lib/tramites/tipos";
+import { ETAPAS_TRABAJO, NUMERO_MAXIMO_DE_VERSION, type OrigenAprobacion } from "@/lib/tramites/tipos";
+import {
+  ACCION_EDITAR_CONTROL,
+  codigoAbandonado,
+  errorDeCodigoRepetido,
+  exigirFormatoDeCodigo,
+  sugerirCodigo,
+  type DestinoDeCodigo,
+} from "./codigos";
+import { obtenerConfigDocumental } from "./config-documental";
 import { ErrorTramite, enTransaccion } from "./flujo/contrato";
 
 type Cliente = Sql | TransactionSql;
@@ -120,18 +128,12 @@ export type DatosDocumento = {
   asociaciones: AsociacionEntrada[];
 };
 
-/**
- * Patrón del código: sale de `formato_codigo` si es válido; si no, de la clave
- * heredada `patron_codigo` y, a falta de esta, del patrón por defecto.
- */
-export async function obtenerPatronCodigo(opciones?: { sql?: Cliente }): Promise<RegExp> {
-  const sql = opciones?.sql ?? obtenerSql();
-  const filas = await sql`SELECT clave, valor FROM configuracion
-    WHERE clave IN ('formato_codigo', 'patron_codigo')`;
-  const valor = (clave: string) =>
-    filas.find((f) => f.clave === clave)?.valor as string | undefined;
-  return patronDeConfiguracion(valor("formato_codigo"), valor("patron_codigo"));
-}
+/** Lo que además se fija al dar de alta un documento. */
+export type DatosAlta = DatosDocumento & {
+  numeroInicial?: number;
+  nivelAcceso?: "general" | "restringido";
+  relacionados?: number[];
+};
 
 function validarAsociaciones(asociaciones: AsociacionEntrada[]) {
   const principales = asociaciones.filter((a) => a.esPrincipal).length;
@@ -153,14 +155,16 @@ async function insertarAsociaciones(
   }
 }
 
+async function insertarRelacionados(tx: Cliente, documentoId: number, relacionados: number[] = []) {
+  for (const relacionadoId of new Set(relacionados)) {
+    await tx`INSERT INTO documento_relaciones (documento_id, relacionado_id) VALUES (${documentoId}, ${relacionadoId})`;
+  }
+}
+
 /** Crea el documento con su primera versión en borrador, dentro de la transacción dada. */
 export async function crearDocumentoEn(
   tx: TransactionSql,
-  datos: DatosDocumento & {
-    nivelAcceso?: "general" | "restringido";
-    numeroInicial?: number;
-    relacionados?: number[];
-  },
+  datos: DatosAlta,
   usuarioId: number,
 ): Promise<{ documentoId: number; versionId: number }> {
   validarAsociaciones(datos.asociaciones);
@@ -171,9 +175,7 @@ export async function crearDocumentoEn(
   const [version] = await tx`INSERT INTO documento_versiones (documento_id, numero, estado)
     VALUES (${doc.id}, ${datos.numeroInicial ?? 1}, 'borrador') RETURNING id`;
   await insertarAsociaciones(tx, doc.id, datos.asociaciones);
-  for (const relacionadoId of new Set(datos.relacionados)) {
-    await tx`INSERT INTO documento_relaciones (documento_id, relacionado_id) VALUES (${doc.id}, ${relacionadoId})`;
-  }
+  await insertarRelacionados(tx, doc.id, datos.relacionados);
   await registrarAuditoria(tx, {
     usuarioId, accion: "crear_documento", entidad: "documento",
     entidadId: doc.id, detalle: { codigo: datos.codigo, titulo: datos.titulo },
@@ -181,18 +183,131 @@ export async function crearDocumentoEn(
   return { documentoId: doc.id, versionId: version.id };
 }
 
-export async function crearDocumento(
-  datos: DatosDocumento,
-  usuarioId: number,
-): Promise<{ documentoId: number; versionId: number }> {
-  return await obtenerSql().begin((tx) => crearDocumentoEn(tx, datos, usuarioId));
+const CARGA_CERRADA = "La carga de documentos ya aprobados está cerrada: use un trámite";
+const YA_VIGENTE = "Este documento ya tiene una versión vigente: el cambio se pide por trámite";
+const TRAMITE_ABIERTO = "Este documento tiene un trámite abierto";
+const CONTROL_EN_TRAMITE = `${TRAMITE_ABIERTO}: sus datos de control se corrigen desde el trámite`;
+
+async function exigirCargaAbierta(tx: Cliente): Promise<void> {
+  const { publicacionDirecta } = await obtenerConfigDocumental({ sql: tx });
+  if (!publicacionDirecta) throw new Error(CARGA_CERRADA);
 }
 
-/** Abre la versión siguiente en borrador. Una versión descartada libera su número. */
+function exigirNumeroDeVersion(numero: number): void {
+  if (!Number.isInteger(numero) || numero < 1 || numero > NUMERO_MAXIMO_DE_VERSION) {
+    throw new Error(`La versión debe ser un entero de 1 a ${NUMERO_MAXIMO_DE_VERSION}`);
+  }
+}
+
+/** En qué punto está un documento: de esto depende lo que el panel le permite (spec 13A §8.6 y §13). */
+export type SituacionDocumento = {
+  /** Tuvo una versión aprobada: `vigente`, `obsoleto` o `anulado`. Una descartada no cuenta. */
+  publicado: boolean;
+  anulado: boolean;
+  origenVigente: OrigenAprobacion | null;
+  /** Su trámite `crear` terminó en `cancelado` sin publicar nada: se pide otro trámite. */
+  creacionCancelada: boolean;
+  tramiteAbierto: { id: number; numero: string } | null;
+};
+
+async function leerSituacion(sql: Cliente, documentoId: number): Promise<SituacionDocumento> {
+  const [s] = await sql`SELECT
+      EXISTS (SELECT 1 FROM documento_versiones WHERE documento_id = ${documentoId} AND estado IN ('vigente', 'obsoleto', 'anulado')) AS publicado,
+      EXISTS (SELECT 1 FROM documento_versiones WHERE documento_id = ${documentoId} AND estado = 'anulado') AS anulado,
+      (SELECT origen_aprobacion FROM documento_versiones WHERE documento_id = ${documentoId} AND estado = 'vigente') AS origen_vigente,
+      EXISTS (SELECT 1 FROM tramites WHERE documento_id = ${documentoId} AND tipo = 'crear' AND etapa = 'cancelado') AS creacion_cancelada,
+      (SELECT json_build_object('id', id, 'numero', numero) FROM tramites
+        WHERE documento_id = ${documentoId} AND etapa = ANY(${ETAPAS_EN_CURSO})) AS tramite_abierto`;
+  return {
+    publicado: s.publicado,
+    anulado: s.anulado,
+    origenVigente: s.origen_vigente,
+    creacionCancelada: s.creacion_cancelada && !s.publicado,
+    tramiteAbierto: s.tramite_abierto,
+  };
+}
+
+/**
+ * Bloquea el documento y lee su situación. El `FOR UPDATE` detiene a otra acción del panel y también a
+ * quien abra un trámite sobre él, porque la llave foránea de `tramites` espera este candado. La situación
+ * va en otra sentencia para que su foto sea posterior a quien tenía el candado. `tramites` se lee sin
+ * bloquear: `transicionar` toma el trámite antes que el documento, y al revés habría un interbloqueo.
+ */
+async function situacionBloqueada(tx: TransactionSql, documentoId: number): Promise<SituacionDocumento> {
+  const [documento] = await tx`SELECT id FROM documentos WHERE id = ${documentoId} FOR UPDATE`;
+  if (!documento) throw new Error("El documento no existe");
+  return leerSituacion(tx, documentoId);
+}
+
+/** El camino directo solo da de alta (spec 13A §13.1), y no revive lo que un trámite cerró (§11.3). */
+export async function exigirDocumentoRegistrable(tx: TransactionSql, documentoId: number): Promise<void> {
+  const situacion = await situacionBloqueada(tx, documentoId);
+  if (situacion.anulado) throw new Error("Este documento fue eliminado: su código no se reutiliza");
+  if (situacion.creacionCancelada) throw new Error("Esta creación se canceló: pida un trámite nuevo");
+  if (situacion.origenVigente) throw new Error(YA_VIGENTE);
+  if (situacion.tramiteAbierto) throw new Error(TRAMITE_ABIERTO);
+}
+
+/** Por qué no se edita cada grupo de datos de control; null si se puede (spec 13A §8.6). */
+export type EdicionDeControl = { codigoYTipo: string | null; titulo: string | null };
+
+export function edicionDeControl(situacion: SituacionDocumento, cargaAbierta: boolean): EdicionDeControl {
+  if (situacion.tramiteAbierto) return { codigoYTipo: CONTROL_EN_TRAMITE, titulo: CONTROL_EN_TRAMITE };
+  if (!situacion.publicado) return { codigoYTipo: null, titulo: null };
+  return {
+    codigoYTipo: "El código y el tipo no cambian: el documento ya fue publicado",
+    titulo:
+      cargaAbierta && situacion.origenVigente === "fuera" ? null : "El título de un documento vigente se cambia con un trámite",
+  };
+}
+
+async function procesoDeAsociacion(tx: Cliente, { procesoId, subprocesoId }: AsociacionEntrada): Promise<number> {
+  if (procesoId !== undefined) return procesoId;
+  const [subproceso] = await tx`SELECT proceso_id FROM subprocesos WHERE id = ${subprocesoId ?? 0}`;
+  return Number(subproceso?.proceso_id ?? 0);
+}
+
+/** El código que el panel quiere usar: con el formato configurado y sin que otro lo haya dejado. */
+async function exigirCodigoDisponible(tx: Cliente, codigo: string, destino: DestinoDeCodigo, documentoId?: number): Promise<void> {
+  await exigirFormatoDeCodigo(tx, codigo, destino);
+  if (await codigoAbandonado(codigo, null, { sql: tx, documentoId })) throw errorDeCodigoRepetido(await sugerirCodigo(destino, { sql: tx }));
+}
+
+/** Si el código ya existe lo dice en palabras. Va en un savepoint: tras un 23505 la transacción no admite más consultas. */
+async function conCodigoUnico<T>(tx: TransactionSql, destino: DestinoDeCodigo, fn: (s: TransactionSql) => Promise<T>): Promise<T> {
+  try {
+    return (await tx.savepoint(fn)) as T;
+  } catch (err) {
+    if ((err as { constraint_name?: string }).constraint_name !== "documentos_codigo_unique") throw err;
+    throw errorDeCodigoRepetido(await sugerirCodigo(destino, { sql: tx }));
+  }
+}
+
+/** Registra un documento aprobado fuera de la plataforma: entra en borrador, con su número real de versión. */
+export async function crearDocumento(
+  datos: DatosAlta,
+  usuarioId: number,
+): Promise<{ documentoId: number; versionId: number }> {
+  validarAsociaciones(datos.asociaciones);
+  exigirNumeroDeVersion(datos.numeroInicial ?? 1);
+  return await obtenerSql().begin(async (tx) => {
+    await exigirCargaAbierta(tx);
+    const principal = datos.asociaciones.find((a) => a.esPrincipal) as AsociacionEntrada;
+    const destino = { procesoId: await procesoDeAsociacion(tx, principal), tipoDocumentoId: datos.tipoId };
+    await exigirCodigoDisponible(tx, datos.codigo, destino);
+    return conCodigoUnico(tx, destino, (s) => crearDocumentoEn(s, datos, usuarioId));
+  });
+}
+
+/**
+ * Abre un borrador en la versión siguiente, o en `numero` si no choca con lo ya publicado. Una versión
+ * descartada libera su número.
+ */
 export async function crearVersionBorradorEn(
   tx: TransactionSql,
   documentoId: number,
   usuarioId: number,
+  numero?: number,
 ): Promise<{ versionId: number; numero: number }> {
   const [borrador] = await tx`SELECT 1 FROM documento_versiones
     WHERE documento_id = ${documentoId} AND estado = 'borrador'`;
@@ -201,8 +316,9 @@ export async function crearVersionBorradorEn(
   }
   const [{ siguiente }] = await tx`SELECT coalesce(max(numero), 0) + 1 AS siguiente
     FROM documento_versiones WHERE documento_id = ${documentoId} AND estado <> 'descartado'`;
+  if (numero !== undefined && numero < siguiente) throw new Error(`La versión debe ser ${siguiente} o mayor`);
   const [version] = await tx`INSERT INTO documento_versiones (documento_id, numero, estado)
-    VALUES (${documentoId}, ${siguiente}, 'borrador') RETURNING id, numero`;
+    VALUES (${documentoId}, ${numero ?? siguiente}, 'borrador') RETURNING id, numero`;
   await registrarAuditoria(tx, {
     usuarioId, accion: "crear_version", entidad: "documento_version",
     entidadId: version.id, detalle: { documentoId, numero: version.numero },
@@ -210,11 +326,18 @@ export async function crearVersionBorradorEn(
   return { versionId: version.id, numero: version.numero };
 }
 
+/** Registra de nuevo un documento sin versión vigente: el que se cargó mal y se deshizo. */
 export async function crearVersionBorrador(
   documentoId: number,
   usuarioId: number,
+  numero?: number,
 ): Promise<{ versionId: number; numero: number }> {
-  return await obtenerSql().begin((tx) => crearVersionBorradorEn(tx, documentoId, usuarioId));
+  if (numero !== undefined) exigirNumeroDeVersion(numero);
+  return await obtenerSql().begin(async (tx) => {
+    await exigirCargaAbierta(tx);
+    await exigirDocumentoRegistrable(tx, documentoId);
+    return crearVersionBorradorEn(tx, documentoId, usuarioId, numero);
+  });
 }
 
 export type DatosVersion = {
@@ -253,33 +376,130 @@ export async function editarVersionBorrador(
   });
 }
 
-export async function editarMetadatos(
+export type DatosCatalogo = {
+  descripcion: string | null;
+  palabrasClave: string | null;
+  asociaciones: AsociacionEntrada[];
+  relacionados: number[];
+  nivelAcceso: "general" | "restringido";
+};
+
+/** Los datos de catálogo con nombres y códigos, que es lo que la bitácora debe decir. */
+async function leerCatalogo(tx: Cliente, documentoId: number) {
+  const [d] = await tx`SELECT d.descripcion, d.palabras_clave, d.nivel_acceso,
+      (SELECT coalesce(json_agg(r.codigo ORDER BY r.codigo), '[]') FROM documento_relaciones dr
+        JOIN documentos r ON r.id = dr.relacionado_id WHERE dr.documento_id = d.id) AS relacionados,
+      (SELECT coalesce(json_agg(a.nombre ORDER BY a.nombre), '[]') FROM (
+        SELECT coalesce(p.nombre, ps.nombre || ' › ' || s.nombre) || CASE WHEN dp.es_principal THEN ' (propietario)' ELSE '' END AS nombre
+        FROM documento_proceso dp
+        LEFT JOIN procesos p ON p.id = dp.proceso_id
+        LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
+        LEFT JOIN procesos ps ON ps.id = s.proceso_id
+        WHERE dp.documento_id = d.id) a) AS asociaciones
+    FROM documentos d WHERE d.id = ${documentoId}`;
+  return {
+    descripcion: d.descripcion as string | null,
+    palabrasClave: d.palabras_clave as string | null,
+    nivelAcceso: d.nivel_acceso as string,
+    asociaciones: d.asociaciones as string[],
+    relacionados: d.relacionados as string[],
+  };
+}
+
+/** El propietario es parte del código; en una creación en curso lo sigue `tramites.proceso_id`. */
+async function exigirPropietarioIntacto(
+  tx: TransactionSql,
   documentoId: number,
-  datos: DatosDocumento,
-  usuarioId: number,
+  principal: AsociacionEntrada | undefined,
+  situacion: SituacionDocumento,
 ): Promise<void> {
+  const [actual] = await tx`SELECT proceso_id, subproceso_id FROM documento_proceso
+    WHERE documento_id = ${documentoId} AND es_principal`;
+  const mismo =
+    Number(actual?.proceso_id ?? 0) === (principal?.procesoId ?? 0) &&
+    Number(actual?.subproceso_id ?? 0) === (principal?.subprocesoId ?? 0);
+  if (mismo) return;
+  if (situacion.publicado) throw new Error("El proceso propietario no cambia: es parte del código");
+  if (situacion.tramiteAbierto) throw new Error("El proceso propietario de esta creación se corrige desde el trámite");
+}
+
+/** Lo que no es parte del contenido aprobado: se edita siempre, con trámite abierto o sin él (spec 13A §8.6). */
+export async function editarCatalogo(documentoId: number, datos: DatosCatalogo, usuarioId: number): Promise<void> {
   validarAsociaciones(datos.asociaciones);
-  const sql = obtenerSql();
-  await sql.begin(async (tx) => {
-    const [actual] = await tx`SELECT codigo FROM documentos WHERE id = ${documentoId}`;
-    if (!actual) throw new Error("El documento no existe");
-    if (datos.codigo !== actual.codigo) {
-      const [publicada] = await tx`SELECT 1 FROM documento_versiones
-        WHERE documento_id = ${documentoId} AND estado <> 'borrador' LIMIT 1`;
-      if (publicada) {
-        throw new Error("El código es inmutable: el documento ya fue publicado");
-      }
-    }
-    await tx`UPDATE documentos SET codigo = ${datos.codigo}, titulo = ${datos.titulo},
-        tipo_id = ${datos.tipoId}, descripcion = ${datos.descripcion},
-        palabras_clave = ${datos.palabrasClave}, actualizado_en = now()
+  await obtenerSql().begin(async (tx) => {
+    const situacion = await situacionBloqueada(tx, documentoId);
+    await exigirPropietarioIntacto(tx, documentoId, datos.asociaciones.find((a) => a.esPrincipal), situacion);
+    const antes = await leerCatalogo(tx, documentoId);
+    await tx`UPDATE documentos SET descripcion = ${datos.descripcion}, palabras_clave = ${datos.palabrasClave},
+        nivel_acceso = ${datos.nivelAcceso}
       WHERE id = ${documentoId}`;
     await tx`DELETE FROM documento_proceso WHERE documento_id = ${documentoId}`;
     await insertarAsociaciones(tx, documentoId, datos.asociaciones);
+    await tx`DELETE FROM documento_relaciones WHERE documento_id = ${documentoId}`;
+    await insertarRelacionados(tx, documentoId, datos.relacionados);
+    const despues = await leerCatalogo(tx, documentoId);
+
+    const cambiaron = (Object.keys(antes) as (keyof typeof antes)[]).filter(
+      (dato) => JSON.stringify(antes[dato]) !== JSON.stringify(despues[dato]),
+    );
+    if (cambiaron.length === 0) return;
+    const solo = (catalogo: typeof antes) => Object.fromEntries(cambiaron.map((dato) => [dato, catalogo[dato]]));
+    await tx`UPDATE documentos SET actualizado_en = now() WHERE id = ${documentoId}`;
     await registrarAuditoria(tx, {
-      usuarioId, accion: "editar_documento", entidad: "documento",
-      entidadId: documentoId,
-      detalle: { codigoAnterior: actual.codigo, codigo: datos.codigo, titulo: datos.titulo },
+      usuarioId, accion: "editar_documento", entidad: "documento", entidadId: documentoId,
+      detalle: { antes: solo(antes), despues: solo(despues) },
+    });
+  });
+}
+
+/**
+ * Lo que identifica al documento (spec 13A §8.6). Sin versión publicada se corrige todo; después, solo
+ * el título de lo cargado mientras la carga esté abierta. El código anterior queda en `detalle.antes`:
+ * de ahí lo leen `codigoAbandonado` y `todosLosCodigos`, para que nadie más lo use.
+ */
+export async function editarControl(
+  documentoId: number,
+  datos: { codigo: string; titulo: string; tipoId: number },
+  usuarioId: number,
+): Promise<void> {
+  await obtenerSql().begin(async (tx) => {
+    const { publicacionDirecta } = await obtenerConfigDocumental({ sql: tx });
+    const situacion = await situacionBloqueada(tx, documentoId);
+    if (situacion.tramiteAbierto) throw new Error(CONTROL_EN_TRAMITE);
+    const [actual] = await tx`SELECT d.codigo, d.titulo, d.tipo_id, t.nombre AS tipo
+      FROM documentos d JOIN tipos_documento t ON t.id = d.tipo_id WHERE d.id = ${documentoId}`;
+    const cambiaCodigo = datos.codigo !== actual.codigo;
+    const cambiaTipo = datos.tipoId !== Number(actual.tipo_id);
+    const cambiaTitulo = datos.titulo !== actual.titulo;
+    if (!cambiaCodigo && !cambiaTipo && !cambiaTitulo) return;
+
+    const permitido = edicionDeControl(situacion, publicacionDirecta);
+    if ((cambiaCodigo || cambiaTipo) && permitido.codigoYTipo) throw new Error(permitido.codigoYTipo);
+    if (cambiaTitulo && permitido.titulo) throw new Error(permitido.titulo);
+
+    const [tipo] = await tx`SELECT nombre, activo FROM tipos_documento WHERE id = ${datos.tipoId}`;
+    if (cambiaTipo && !tipo?.activo) throw new Error("El tipo de documento no existe o está inactivo");
+    const [propietario] = await tx`SELECT coalesce(dp.proceso_id, s.proceso_id) AS proceso_id FROM documento_proceso dp
+      LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
+      WHERE dp.documento_id = ${documentoId} AND dp.es_principal`;
+    const destino = { procesoId: Number(propietario?.proceso_id ?? 0), tipoDocumentoId: datos.tipoId };
+    if (cambiaCodigo) await exigirCodigoDisponible(tx, datos.codigo, destino, documentoId);
+    await conCodigoUnico(tx, destino, (s) => s`UPDATE documentos SET codigo = ${datos.codigo}, titulo = ${datos.titulo},
+        tipo_id = ${datos.tipoId}, actualizado_en = now()
+      WHERE id = ${documentoId}`);
+
+    const antes: Record<string, unknown> = {};
+    const despues: Record<string, unknown> = {};
+    const anotar = (dato: string, de: unknown, a: unknown) => {
+      antes[dato] = de;
+      despues[dato] = a;
+    };
+    if (cambiaCodigo) anotar("codigo", actual.codigo, datos.codigo);
+    if (cambiaTitulo) anotar("titulo", actual.titulo, datos.titulo);
+    if (cambiaTipo) anotar("tipo", actual.tipo, tipo.nombre);
+    await registrarAuditoria(tx, {
+      usuarioId, accion: ACCION_EDITAR_CONTROL, entidad: "documento", entidadId: documentoId,
+      detalle: { antes, despues },
     });
   });
 }
@@ -321,19 +541,27 @@ export async function aplicarPublicacion(
   return { documentoId, numero: version.numero, obsoletas };
 }
 
-/** El camino directo del panel: evidencia escrita a mano, aprobada fuera de la plataforma. */
+/**
+ * El camino directo del panel: evidencia escrita a mano, aprobada fuera de la plataforma. Solo da de
+ * alta: nunca publica sobre una versión vigente, y una versión de un trámite se publica desde él.
+ */
 export async function publicarVersion(
   versionId: number,
   usuarioId: number,
 ): Promise<{ documentoId: number; obsoletas: number }> {
   const sql = obtenerSql();
   return await sql.begin(async (tx) => {
-    const [version] = await tx`SELECT id, documento_id, numero, estado, aprobo, fecha_aprobacion
+    await exigirCargaAbierta(tx);
+    const [destino] = await tx`SELECT documento_id FROM documento_versiones WHERE id = ${versionId}`;
+    if (!destino) throw new Error("La versión no existe");
+    await exigirDocumentoRegistrable(tx, Number(destino.documento_id));
+    const [version] = await tx`SELECT estado, aprobo, fecha_aprobacion
       FROM documento_versiones WHERE id = ${versionId} FOR UPDATE`;
-    if (!version) throw new Error("La versión no existe");
     if (version.estado !== "borrador") {
       throw new Error("Solo se puede publicar una versión en borrador");
     }
+    const [deTramite] = await tx`SELECT 1 FROM tramites WHERE version_id = ${versionId} LIMIT 1`;
+    if (deTramite) throw new Error("Esta versión es de un trámite: se publica desde el trámite");
     if (!version.aprobo || !version.fecha_aprobacion) {
       throw new Error(
         "Falta la evidencia de aprobación (quién aprobó y en qué fecha)",
@@ -347,6 +575,48 @@ export async function publicarVersion(
 
     const { documentoId, obsoletas } = await aplicarPublicacion(tx, versionId, "fuera", usuarioId);
     return { documentoId, obsoletas: obsoletas.length };
+  });
+}
+
+/**
+ * Devuelve a `descartado` una versión cargada por error: conserva sus archivos, queda en la bitácora y
+ * libera su número. El documento conserva su código y queda listo para registrarse de nuevo (spec 13A §13.2).
+ */
+export async function deshacerCarga(documentoId: number, motivo: string, usuarioId: number): Promise<void> {
+  const razon = motivo.trim();
+  if (!razon) throw new Error("Escriba el motivo");
+  await obtenerSql().begin(async (tx) => {
+    await exigirCargaAbierta(tx);
+    const situacion = await situacionBloqueada(tx, documentoId);
+    if (situacion.origenVigente !== "fuera") throw new Error("Solo se deshace una carga registrada fuera de la plataforma");
+    if (situacion.tramiteAbierto) throw new Error(TRAMITE_ABIERTO);
+    const [version] = await tx`UPDATE documento_versiones SET estado = 'descartado'
+      WHERE documento_id = ${documentoId} AND estado = 'vigente'
+      RETURNING id, numero`;
+    await tx`UPDATE documentos SET actualizado_en = now() WHERE id = ${documentoId}`;
+    await registrarAuditoria(tx, {
+      usuarioId, accion: "deshacer_carga", entidad: "documento", entidadId: documentoId,
+      detalle: { versionId: version.id, numero: version.numero, motivo: razon },
+    });
+  });
+}
+
+/**
+ * Con la carga cerrada también se puede: un borrador pendiente impide aceptar una solicitud sobre su
+ * documento, y sin esta salida el documento quedaría bloqueado (R24).
+ */
+export async function descartarBorrador(versionId: number, usuarioId: number): Promise<void> {
+  await obtenerSql().begin(async (tx) => {
+    await exigirEscrituraEnVersion(tx, versionId);
+    const [version] = await tx`UPDATE documento_versiones SET estado = 'descartado'
+      WHERE id = ${versionId} AND estado = 'borrador'
+      RETURNING documento_id, numero`;
+    if (!version) throw new Error("Solo se descarta una versión en borrador");
+    await tx`UPDATE documentos SET actualizado_en = now() WHERE id = ${version.documento_id}`;
+    await registrarAuditoria(tx, {
+      usuarioId, accion: "descartar_borrador", entidad: "documento_version", entidadId: versionId,
+      detalle: { documentoId: version.documento_id, numero: version.numero },
+    });
   });
 }
 
@@ -373,6 +643,9 @@ export async function registrarArchivo(
   try {
     return await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
       await exigirEscrituraEnVersion(tx, datos.versionId, desdeTramite(opciones, usuarioId));
+      // Choca con el `FOR UPDATE` de publicar: lo que esperaba el candado ve la versión ya publicada.
+      const [version] = await tx`SELECT estado FROM documento_versiones WHERE id = ${datos.versionId} FOR SHARE`;
+      if (version?.estado !== "borrador") throw new ErrorTramite("Solo se pueden subir archivos a una versión en borrador");
       const [archivo] = await tx`INSERT INTO archivos
           (version_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
         VALUES (${datos.versionId}, ${datos.rol}, ${datos.ruta}, ${datos.nombreOriginal},
@@ -434,7 +707,10 @@ export type FilaDocumentoAdmin = {
   id: number; codigo: string; titulo: string;
   tipoNombre: string; tipoSigla: string;
   versionVigente: number | null; versionBorrador: number | null;
-  anulado: boolean; actualizadoEn: string;
+  anulado: boolean;
+  /** Todas sus versiones están descartadas: una creación cancelada, o una carga deshecha o descartada. */
+  descartado: boolean;
+  actualizadoEn: string;
 };
 
 /**
@@ -452,7 +728,8 @@ export async function listarDocumentosAdmin(sujeto: SujetoVisibilidad): Promise<
       ${administra
         ? sql`(SELECT numero FROM documento_versiones WHERE documento_id = d.id AND estado = 'borrador')`
         : sql`NULL::integer`} AS borrador,
-      EXISTS (SELECT 1 FROM documento_versiones WHERE documento_id = d.id AND estado = 'anulado') AS anulado
+      EXISTS (SELECT 1 FROM documento_versiones WHERE documento_id = d.id AND estado = 'anulado') AS anulado,
+      NOT EXISTS (SELECT 1 FROM documento_versiones WHERE documento_id = d.id AND estado <> 'descartado') AS descartado
     FROM documentos d JOIN tipos_documento t ON t.id = d.tipo_id
     WHERE ${filtroAcceso(sql, sujeto)}
       ${administra
@@ -464,8 +741,21 @@ export async function listarDocumentosAdmin(sujeto: SujetoVisibilidad): Promise<
     id: f.id, codigo: f.codigo, titulo: f.titulo,
     tipoNombre: f.tipo_nombre, tipoSigla: f.tipo_sigla,
     versionVigente: f.vigente, versionBorrador: f.borrador,
-    anulado: f.anulado, actualizadoEn: String(f.actualizado_en),
+    anulado: f.anulado, descartado: f.descartado, actualizadoEn: String(f.actualizado_en),
   }));
+}
+
+export type OpcionDocumento = { id: number; codigo: string; titulo: string };
+
+/** Lo que se puede relacionar: los documentos vigentes y lo que ya lo estaba, nunca el propio documento. */
+export function documentosRelacionables(
+  filas: FilaDocumentoAdmin[],
+  documento?: { id: number; relacionados: number[] },
+): OpcionDocumento[] {
+  return filas
+    .filter((f) => f.id !== documento?.id && (f.versionVigente !== null || documento?.relacionados.includes(f.id)))
+    .map(({ id, codigo, titulo }) => ({ id, codigo, titulo }))
+    .sort((a, b) => a.codigo.localeCompare(b.codigo));
 }
 
 export async function listarTiposActivos() {
@@ -494,6 +784,8 @@ export async function listarMapaParaFormulario() {
 
 export type VersionAdmin = {
   id: number; numero: number; estado: string;
+  /** null en lo que nunca se publicó: un borrador, o uno que se descartó sin publicarse. */
+  origenAprobacion: OrigenAprobacion | null;
   fechaElaboracion: string | null; fechaRevision: string | null;
   fechaAprobacion: string | null; elaboro: string | null;
   reviso: string | null; aprobo: string | null; resumenCambios: string | null;
@@ -509,9 +801,12 @@ export type VersionAdmin = {
 
 export type DocumentoAdmin = {
   id: number; codigo: string; titulo: string; tipoId: number; tipoNombre: string;
-  descripcion: string | null; palabrasClave: string | null; publicado: boolean;
+  descripcion: string | null; palabrasClave: string | null;
+  nivelAcceso: "general" | "restringido";
   asociaciones: Array<{ procesoId: number | null; subprocesoId: number | null; nombre: string; esPrincipal: boolean }>;
+  relacionados: number[];
   versiones: VersionAdmin[];
+  situacion: SituacionDocumento;
 };
 
 /**
@@ -527,8 +822,7 @@ export async function obtenerDocumentoAdmin(
   const sql = opciones?.sql ?? obtenerSql();
   const administra = puede(sujeto, "documentos.administrar");
   const [doc] = await sql`SELECT d.id, d.codigo, d.titulo, d.tipo_id, t.nombre AS tipo_nombre,
-      d.descripcion, d.palabras_clave,
-      EXISTS (SELECT 1 FROM documento_versiones WHERE documento_id = d.id AND estado <> 'borrador') AS publicado
+      d.descripcion, d.palabras_clave, d.nivel_acceso
     FROM documentos d JOIN tipos_documento t ON t.id = d.tipo_id
     WHERE d.codigo = ${codigo} AND ${filtroAcceso(sql, sujeto)}`;
   if (!doc) return null;
@@ -544,8 +838,11 @@ export async function obtenerDocumentoAdmin(
     ORDER BY dp.es_principal DESC, nombre`;
 
   const versiones = await sql`
-    SELECT v.id, v.numero, v.estado, v.fecha_elaboracion, v.fecha_revision,
-      v.fecha_aprobacion, v.elaboro, v.reviso, v.aprobo, v.resumen_cambios,
+    SELECT v.id, v.numero, v.estado, v.fecha_elaboracion::text AS fecha_elaboracion,
+      v.fecha_revision::text AS fecha_revision, v.fecha_aprobacion::text AS fecha_aprobacion,
+      v.elaboro, v.reviso, v.aprobo, v.resumen_cambios,
+      CASE WHEN v.estado IN ('vigente', 'obsoleto', 'anulado') OR v.publicado_en IS NOT NULL
+        THEN v.origen_aprobacion END AS origen_aprobacion,
       coalesce(json_agg(json_build_object(
           'id', a.id, 'rol', a.rol, 'nombreOriginal', a.nombre_original,
           'mime', a.mime, 'tamanoBytes', a.tamano_bytes) ORDER BY a.rol)
@@ -558,19 +855,27 @@ export async function obtenerDocumentoAdmin(
     LEFT JOIN archivos a ON a.version_id = v.id AND a.rol = ANY(${ROLES_ARCHIVO_LISTA})
     WHERE v.documento_id = ${doc.id}
       ${administra ? sql`` : sql`AND v.estado NOT IN ('borrador', 'descartado')`}
-    GROUP BY v.id ORDER BY v.numero DESC`;
+    GROUP BY v.id ORDER BY v.numero DESC, v.id DESC`;
   if (!administra && versiones.length === 0) return null;
+
+  const [relacionados, situacion] = await Promise.all([
+    sql`SELECT relacionado_id FROM documento_relaciones WHERE documento_id = ${doc.id}`,
+    leerSituacion(sql, doc.id),
+  ]);
 
   return {
     id: doc.id, codigo: doc.codigo, titulo: doc.titulo, tipoId: doc.tipo_id,
     tipoNombre: doc.tipo_nombre, descripcion: doc.descripcion,
-    palabrasClave: doc.palabras_clave, publicado: doc.publicado,
+    palabrasClave: doc.palabras_clave, nivelAcceso: doc.nivel_acceso,
+    relacionados: relacionados.map((r) => Number(r.relacionado_id)),
+    situacion,
     asociaciones: asociaciones.map((a) => ({
       procesoId: a.proceso_id, subprocesoId: a.subproceso_id,
       nombre: a.nombre, esPrincipal: a.es_principal,
     })),
     versiones: versiones.map((v) => ({
       id: v.id, numero: v.numero, estado: v.estado,
+      origenAprobacion: v.origen_aprobacion,
       fechaElaboracion: v.fecha_elaboracion, fechaRevision: v.fecha_revision,
       fechaAprobacion: v.fecha_aprobacion, elaboro: v.elaboro, reviso: v.reviso,
       aprobo: v.aprobo, resumenCambios: v.resumen_cambios,
@@ -597,11 +902,4 @@ export async function anularVigenteEn(
     entidadId: documentoId, detalle: { versionAnulada: anulada.numero },
   });
   return { versionId: Number(anulada.id), numero: anulada.numero };
-}
-
-export async function anularVigente(
-  documentoId: number,
-  usuarioId: number,
-): Promise<void> {
-  await obtenerSql().begin((tx) => anularVigenteEn(tx, documentoId, usuarioId));
 }

@@ -1,178 +1,368 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import type { EstadoAccion } from "@/app/admin/comun";
+import { Boton } from "@/componentes/ui/Boton";
+import { Campo, claseControl } from "@/componentes/ui/Campo";
+import type { EdicionDeControl, OpcionDocumento } from "@/db/consultas/admin";
+import { NUMERO_MAXIMO_DE_VERSION } from "@/lib/tramites/tipos";
+import { enviarSinReiniciar } from "./sin-reiniciar";
 
+type Accion = (estado: EstadoAccion, formData: FormData) => Promise<EstadoAccion>;
 type Tipo = { id: number; nombre: string; sigla: string };
 type ProcesoConSub = {
   id: number;
   nombre: string;
   subprocesos: Array<{ id: number; nombre: string }>;
 };
+type Asociacion = { procesoId: number | null; subprocesoId: number | null; esPrincipal: boolean };
 
-export type ValoresDocumento = {
-  codigo: string;
-  titulo: string;
-  tipoId: number;
-  descripcion: string | null;
-  palabrasClave: string | null;
-  asociaciones: Array<{ procesoId: number | null; subprocesoId: number | null; esPrincipal: boolean }>;
-};
+const anchoCompleto = `${claseControl} w-full disabled:bg-muted read-only:bg-muted`;
 
-type Props = {
-  accion: (estado: EstadoAccion, formData: FormData) => Promise<EstadoAccion>;
-  tipos: Tipo[];
-  procesos: ProcesoConSub[];
-  valores?: ValoresDocumento;
-  documentoId?: number;
-  codigoEditable: boolean;
-};
+const marcaDe = ({ procesoId, subprocesoId }: Pick<Asociacion, "procesoId" | "subprocesoId">) =>
+  procesoId !== null ? `p:${procesoId}` : `s:${subprocesoId}`;
 
-const claseCampo =
-  "rounded-md border border-border bg-card px-3 py-2 text-foreground outline-none transition-colors focus:border-marca focus:ring-2 focus:ring-marca/20";
-
-export function FormularioDocumento({
-  accion, tipos, procesos, valores, documentoId, codigoEditable,
-}: Props) {
+/** Lo enviado, para repoblar el formulario cuando llega sin JavaScript y la acción lo rechaza. */
+function useFormulario(accion: Accion) {
   const [estado, enviar, pendiente] = useActionState(accion, null);
-
-  const marca = (procesoId: number | null, subprocesoId: number | null) =>
-    procesoId !== null ? `p:${procesoId}` : `s:${subprocesoId}`;
-
-  // React 19 resetea el formulario al terminar la action: si la action
-  // devolvió error, los defaults salen de lo que el usuario envió
-  // (estado.valores) y no de los valores originales.
   const enviados = estado?.valores;
-  const campoEnviado = (campo: string): string | undefined => {
-    const v = enviados?.[campo];
+  const campo = (nombre: string): string | undefined => {
+    const v = enviados?.[nombre];
     return typeof v === "string" ? v : Array.isArray(v) ? v[0] : undefined;
   };
-  const listaEnviada = (campo: string): string[] => {
-    const v = enviados?.[campo];
+  const lista = (nombre: string): string[] | undefined => {
+    if (!enviados) return undefined;
+    const v = enviados[nombre];
     return v === undefined ? [] : Array.isArray(v) ? v : [v];
   };
+  return { estado, enviar, pendiente, campo, lista, alEnviar: enviarSinReiniciar(enviar) };
+}
 
-  const principal = (valores?.asociaciones ?? []).find((a) => a.esPrincipal);
-  const marcadas = enviados
-    ? new Set(listaEnviada("asociaciones"))
-    : new Set(
-        (valores?.asociaciones ?? []).map((a) => marca(a.procesoId, a.subprocesoId)),
-      );
-  const marcaPrincipal = enviados
-    ? (campoEnviado("principal") ?? "")
-    : principal
-      ? marca(principal.procesoId, principal.subprocesoId)
-      : "";
-
+function Rechazo({ estado }: { estado: EstadoAccion }) {
+  if (!estado) return null;
   return (
-    <form action={enviar} className="flex max-w-2xl flex-col gap-5">
-      {documentoId && <input type="hidden" name="documentoId" value={documentoId} />}
+    <p role="alert" className="rounded-md bg-estado-critico-fondo px-3 py-2 text-sm text-estado-critico-texto">
+      {estado.error}
+    </p>
+  );
+}
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <label className="flex flex-col gap-1 text-sm font-medium">
-          Código
-          <input
-            name="codigo"
-            defaultValue={campoEnviado("codigo") ?? valores?.codigo}
-            required
-            readOnly={!codigoEditable}
-            placeholder="SGC-FO-02"
-            className={`${claseCampo} font-mono uppercase ${codigoEditable ? "" : "bg-muted text-muted-foreground"}`}
-          />
-          {!codigoEditable && (
-            <span className="text-xs text-muted-foreground">
-              Inmutable: el documento ya fue publicado
+function CampoNivelAcceso({ valor }: { valor: string }) {
+  return (
+    <Campo etiqueta="Nivel de acceso" nombre="nivelAcceso">
+      <select required defaultValue={valor} className={anchoCompleto}>
+        <option value="general">General</option>
+        <option value="restringido">Restringido</option>
+      </select>
+    </Campo>
+  );
+}
+
+function CamposDescriptivos({ descripcion, palabrasClave }: { descripcion: string; palabrasClave: string }) {
+  return (
+    <>
+      <Campo etiqueta="Descripción" nombre="descripcion" ayuda="Opcional. Alimenta la búsqueda.">
+        <textarea rows={3} maxLength={2000} defaultValue={descripcion} className={anchoCompleto} />
+      </Campo>
+      <Campo etiqueta="Palabras clave" nombre="palabrasClave" ayuda="Opcional. Separadas por coma. Alimentan la búsqueda.">
+        <input maxLength={500} defaultValue={palabrasClave} className={anchoCompleto} />
+      </Campo>
+    </>
+  );
+}
+
+const normalizar = (texto: string) => texto.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+
+function DocumentosRelacionados({ documentos, marcados }: { documentos: OpcionDocumento[]; marcados: Set<string> }) {
+  const [filtro, setFiltro] = useState("");
+  const buscado = normalizar(filtro.trim());
+  const coincide = (d: OpcionDocumento) => normalizar(`${d.codigo} ${d.titulo}`).includes(buscado);
+  return (
+    <fieldset className="flex min-w-0 flex-col gap-2">
+      <legend className="mb-1 text-sm font-medium">Documentos relacionados</legend>
+      <input
+        type="search"
+        value={filtro}
+        onChange={(e) => setFiltro(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.preventDefault(); // Enter filtra; no debe enviar el formulario
+        }}
+        placeholder="Filtrar por código o título"
+        aria-label="Filtrar documentos relacionados"
+        className={anchoCompleto}
+      />
+      <div className="flex max-h-56 flex-col gap-1 overflow-y-auto rounded-md border border-border p-3">
+        {documentos.map((d) => (
+          // El que no coincide se oculta sin desmontarse: si estaba marcado, sigue viajando.
+          <label key={d.id} className={coincide(d) ? "flex items-start gap-2 text-sm" : "hidden"}>
+            <input type="checkbox" name="relacionados" value={d.id} defaultChecked={marcados.has(String(d.id))} className="mt-0.5" />
+            <span className="min-w-0 break-words">
+              <span className="font-mono">{d.codigo}</span>
+              {` — ${d.titulo}`}
             </span>
-          )}
-        </label>
-        <label className="flex flex-col gap-1 text-sm font-medium">
-          Tipo
-          <select name="tipoId" defaultValue={campoEnviado("tipoId") ?? valores?.tipoId} required className={claseCampo}>
+          </label>
+        ))}
+        {documentos.some(coincide) ? null : (
+          <p className="text-sm text-muted-foreground">
+            {documentos.length === 0 ? "Aún no hay documentos vigentes." : "Ningún documento coincide."}
+          </p>
+        )}
+      </div>
+    </fieldset>
+  );
+}
+
+type PropietarioFijo = { nombre: string; razon: string };
+
+function Asociaciones({
+  procesos,
+  marcadas,
+  principal,
+  propietarioFijo,
+}: {
+  procesos: ProcesoConSub[];
+  marcadas: Set<string>;
+  principal: string;
+  propietarioFijo?: PropietarioFijo;
+}) {
+  const casillas = (marca: string, nombre: string) => (
+    <>
+      {propietarioFijo && marca === principal ? (
+        <input type="checkbox" checked disabled readOnly aria-label={`${nombre} es el propietario`} />
+      ) : (
+        <input type="checkbox" name="asociaciones" value={marca} defaultChecked={marcadas.has(marca)} aria-label={`Aplica a ${nombre}`} />
+      )}
+      {propietarioFijo ? null : (
+        <input
+          type="radio"
+          name="principal"
+          value={marca}
+          defaultChecked={principal === marca}
+          aria-label={`${nombre} es el propietario`}
+        />
+      )}
+    </>
+  );
+  const enLaLista = new Set(procesos.flatMap((p) => [`p:${p.id}`, ...p.subprocesos.map((s) => `s:${s.id}`)]));
+  return (
+    <fieldset className="flex min-w-0 flex-col gap-2">
+      <legend className="mb-1 text-sm font-medium">
+        {propietarioFijo ? "Otros procesos donde aplica" : "Dónde aplica (marque los procesos o subprocesos; el círculo define el propietario)"}
+      </legend>
+      {propietarioFijo ? (
+        <p className="text-sm text-muted-foreground">
+          {"Proceso propietario: "}
+          <span className="font-medium text-foreground">{propietarioFijo.nombre}</span>
+          {`. ${propietarioFijo.razon}`}
+          <input type="hidden" name="principal" value={principal} />
+        </p>
+      ) : null}
+      {/* Lo que ya no se ofrece, por un proceso desactivado, no se pierde al guardar otra cosa. */}
+      {[...marcadas]
+        .filter((marca) => !enLaLista.has(marca) && marca !== principal)
+        .map((marca) => (
+          <input key={marca} type="hidden" name="asociaciones" value={marca} />
+        ))}
+      <div className="max-h-80 overflow-y-auto rounded-md border p-3">
+        {procesos.map((p) => (
+          <details key={p.id} open={marcadas.has(`p:${p.id}`) || p.subprocesos.some((s) => marcadas.has(`s:${s.id}`))}>
+            <summary className="flex cursor-pointer items-center gap-2 py-1 text-sm">
+              {casillas(`p:${p.id}`, p.nombre)}
+              <span className="font-medium">{p.nombre}</span>
+            </summary>
+            <div className="ml-8 flex flex-col gap-1 pb-2">
+              {p.subprocesos.map((s) => (
+                <span key={s.id} className="flex items-center gap-2 text-sm">
+                  {casillas(`s:${s.id}`, s.nombre)}
+                  {s.nombre}
+                </span>
+              ))}
+            </div>
+          </details>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+/** El alta: un documento aprobado fuera de la plataforma, con todos sus datos de una vez. */
+export function FormularioDocumento({
+  accion,
+  tipos,
+  procesos,
+  documentos,
+  formatoCodigo,
+}: {
+  accion: Accion;
+  tipos: Tipo[];
+  procesos: ProcesoConSub[];
+  documentos: OpcionDocumento[];
+  formatoCodigo: string | null;
+}) {
+  const { estado, enviar, pendiente, campo, lista, alEnviar } = useFormulario(accion);
+  return (
+    <form action={enviar} onSubmit={alEnviar} className="flex max-w-2xl flex-col gap-5">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Campo etiqueta="Código" nombre="codigo" ayuda={formatoCodigo ? `Formato: ${formatoCodigo}.` : undefined}>
+          <input required maxLength={40} defaultValue={campo("codigo")} className={`${anchoCompleto} font-mono uppercase`} />
+        </Campo>
+        <Campo etiqueta="Tipo" nombre="tipoId">
+          <select required defaultValue={campo("tipoId")} className={anchoCompleto}>
             {tipos.map((t) => (
-              <option key={t.id} value={t.id}>{t.nombre} ({t.sigla})</option>
+              <option key={t.id} value={t.id}>{`${t.nombre} (${t.sigla})`}</option>
             ))}
           </select>
-        </label>
+        </Campo>
       </div>
+      <Campo etiqueta="Título" nombre="titulo">
+        <input required minLength={3} maxLength={200} defaultValue={campo("titulo")} className={anchoCompleto} />
+      </Campo>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Campo etiqueta="Versión con la que entra" nombre="numeroInicial" ayuda="El número real del documento.">
+          <input
+            type="number"
+            required
+            min={1}
+            max={NUMERO_MAXIMO_DE_VERSION}
+            step={1}
+            defaultValue={campo("numeroInicial") ?? 1}
+            className={anchoCompleto}
+          />
+        </Campo>
+        <CampoNivelAcceso valor={campo("nivelAcceso") ?? "general"} />
+      </div>
+      <CamposDescriptivos descripcion={campo("descripcion") ?? ""} palabrasClave={campo("palabrasClave") ?? ""} />
+      <Asociaciones procesos={procesos} marcadas={new Set(lista("asociaciones"))} principal={campo("principal") ?? ""} />
+      <DocumentosRelacionados documentos={documentos} marcados={new Set(lista("relacionados"))} />
+      <Rechazo estado={estado} />
+      <Boton type="submit" pendiente={pendiente} className="self-start">
+        {pendiente ? "Registrando…" : "Registrar documento"}
+      </Boton>
+    </form>
+  );
+}
 
-      <label className="flex flex-col gap-1 text-sm font-medium">
-        Título
-        <input name="titulo" defaultValue={campoEnviado("titulo") ?? valores?.titulo} required className={claseCampo} />
-      </label>
-
-      <label className="flex flex-col gap-1 text-sm font-medium">
-        Descripción
-        <textarea name="descripcion" defaultValue={campoEnviado("descripcion") ?? valores?.descripcion ?? ""} rows={3} className={claseCampo} />
-      </label>
-
-      <label className="flex flex-col gap-1 text-sm font-medium">
-        Palabras clave (separadas por coma — alimentan la búsqueda)
-        <input name="palabrasClave" defaultValue={campoEnviado("palabrasClave") ?? valores?.palabrasClave ?? ""} className={claseCampo} />
-      </label>
-
-      <fieldset className="flex flex-col gap-2">
-        <legend className="mb-1 text-sm font-medium">
-          Dónde aplica (marque los procesos/subprocesos; el radio ● define el propietario)
-        </legend>
-        <div className="max-h-80 overflow-y-auto rounded-md border p-3">
-          {procesos.map((p) => (
-            <details key={p.id} open={marcadas.has(`p:${p.id}`) || p.subprocesos.some((s) => marcadas.has(`s:${s.id}`))}>
-              <summary className="flex cursor-pointer items-center gap-2 py-1 text-sm">
-                <input
-                  type="checkbox"
-                  name="asociaciones"
-                  value={`p:${p.id}`}
-                  defaultChecked={marcadas.has(`p:${p.id}`)}
-                  aria-label={`Aplica a ${p.nombre}`}
-                />
-                <input
-                  type="radio"
-                  name="principal"
-                  value={`p:${p.id}`}
-                  defaultChecked={marcaPrincipal === `p:${p.id}`}
-                  aria-label={`${p.nombre} es el propietario`}
-                />
-                <span className="font-medium">{p.nombre}</span>
-              </summary>
-              <div className="ml-8 flex flex-col gap-1 pb-2">
-                {p.subprocesos.map((s) => (
-                  <span key={s.id} className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      name="asociaciones"
-                      value={`s:${s.id}`}
-                      defaultChecked={marcadas.has(`s:${s.id}`)}
-                      aria-label={`Aplica a ${s.nombre}`}
-                    />
-                    <input
-                      type="radio"
-                      name="principal"
-                      value={`s:${s.id}`}
-                      defaultChecked={marcaPrincipal === `s:${s.id}`}
-                      aria-label={`${s.nombre} es el propietario`}
-                    />
-                    {s.nombre}
-                  </span>
-                ))}
-              </div>
-            </details>
+/** Código, tipo y título. Lo que §8.6 no deja cambiar aparece deshabilitado, con la razón escrita. */
+export function FormularioControl({
+  accion,
+  tipos,
+  documentoId,
+  valores,
+  edicion,
+}: {
+  accion: Accion;
+  tipos: Tipo[];
+  documentoId: number;
+  valores: { codigo: string; titulo: string; tipoId: number; tipoNombre: string };
+  edicion: EdicionDeControl;
+}) {
+  const { estado, enviar, pendiente, campo, alEnviar } = useFormulario(accion);
+  const codigoFijo = edicion.codigoYTipo !== null;
+  const tituloFijo = edicion.titulo !== null;
+  const razones = [...new Set([edicion.codigoYTipo, edicion.titulo])].filter((r) => r !== null);
+  // Un tipo desactivado sigue siendo el del documento: el <select> debe poder mostrarlo.
+  const opciones = tipos.some((t) => t.id === valores.tipoId)
+    ? tipos
+    : [{ id: valores.tipoId, nombre: valores.tipoNombre, sigla: "inactivo" }, ...tipos];
+  return (
+    <form action={enviar} onSubmit={alEnviar} className="flex max-w-2xl flex-col gap-4">
+      <input type="hidden" name="documentoId" value={documentoId} />
+      {razones.length > 0 ? (
+        <div className="rounded-md bg-muted px-3 py-2 text-sm">
+          {razones.map((razon) => (
+            <p key={razon}>{razon}.</p>
           ))}
         </div>
+      ) : null}
+      <fieldset disabled={codigoFijo && tituloFijo} className="flex min-w-0 flex-col gap-4">
+        <legend className="sr-only">Datos de control</legend>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Campo etiqueta="Código" nombre="codigo">
+            <input
+              required
+              maxLength={40}
+              readOnly={codigoFijo}
+              defaultValue={campo("codigo") ?? valores.codigo}
+              className={`${anchoCompleto} font-mono uppercase`}
+            />
+          </Campo>
+          <Campo etiqueta="Tipo" nombre="tipoId">
+            <select required disabled={codigoFijo} defaultValue={campo("tipoId") ?? valores.tipoId} className={anchoCompleto}>
+              {opciones.map((t) => (
+                <option key={t.id} value={t.id}>{`${t.nombre} (${t.sigla})`}</option>
+              ))}
+            </select>
+          </Campo>
+          {/* Un <select> deshabilitado no viaja, y la acción valida el formulario completo. */}
+          {codigoFijo ? <input type="hidden" name="tipoId" value={valores.tipoId} /> : null}
+        </div>
+        <Campo etiqueta="Título" nombre="titulo">
+          <input
+            required
+            minLength={3}
+            maxLength={200}
+            readOnly={tituloFijo}
+            defaultValue={campo("titulo") ?? valores.titulo}
+            className={anchoCompleto}
+          />
+        </Campo>
       </fieldset>
-
-      {estado && (
-        <p role="alert" className="rounded-md bg-estado-critico-fondo px-3 py-2 text-sm text-estado-critico-texto">
-          {estado.error}
-        </p>
+      <Rechazo estado={estado} />
+      {codigoFijo && tituloFijo ? null : (
+        <Boton type="submit" pendiente={pendiente} className="self-start">
+          {pendiente ? "Guardando…" : "Guardar datos de control"}
+        </Boton>
       )}
+    </form>
+  );
+}
 
-      <button
-        type="submit"
-        disabled={pendiente}
-        className="self-start rounded-md bg-azul px-5 py-2 font-medium text-white transition-colors hover:bg-azul-profundo disabled:opacity-60"
-      >
-        {pendiente ? "Guardando…" : "Guardar"}
-      </button>
+/** Lo que no es parte del contenido aprobado: se edita siempre (spec 13A §8.6). */
+export function FormularioCatalogo({
+  accion,
+  procesos,
+  documentos,
+  documentoId,
+  codigo,
+  valores,
+  propietarioFijo,
+}: {
+  accion: Accion;
+  procesos: ProcesoConSub[];
+  documentos: OpcionDocumento[];
+  documentoId: number;
+  codigo: string;
+  valores: {
+    descripcion: string | null;
+    palabrasClave: string | null;
+    nivelAcceso: string;
+    asociaciones: Asociacion[];
+    relacionados: number[];
+  };
+  propietarioFijo?: PropietarioFijo;
+}) {
+  const { estado, enviar, pendiente, campo, lista, alEnviar } = useFormulario(accion);
+  const principal = valores.asociaciones.find((a) => a.esPrincipal);
+  return (
+    <form action={enviar} onSubmit={alEnviar} className="flex max-w-2xl flex-col gap-5">
+      <input type="hidden" name="documentoId" value={documentoId} />
+      <input type="hidden" name="codigo" value={codigo} />
+      <CampoNivelAcceso valor={campo("nivelAcceso") ?? valores.nivelAcceso} />
+      <CamposDescriptivos
+        descripcion={campo("descripcion") ?? valores.descripcion ?? ""}
+        palabrasClave={campo("palabrasClave") ?? valores.palabrasClave ?? ""}
+      />
+      <Asociaciones
+        procesos={procesos}
+        marcadas={new Set(lista("asociaciones") ?? valores.asociaciones.map(marcaDe))}
+        principal={campo("principal") ?? (principal ? marcaDe(principal) : "")}
+        propietarioFijo={propietarioFijo}
+      />
+      <DocumentosRelacionados documentos={documentos} marcados={new Set(lista("relacionados") ?? valores.relacionados.map(String))} />
+      <Rechazo estado={estado} />
+      <Boton type="submit" pendiente={pendiente} className="self-start">
+        {pendiente ? "Guardando…" : "Guardar datos de catálogo"}
+      </Boton>
     </form>
   );
 }

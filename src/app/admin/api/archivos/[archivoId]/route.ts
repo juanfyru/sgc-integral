@@ -4,6 +4,7 @@ import {
   eliminarArchivoBorrador,
   obtenerArchivoAdmin,
 } from "@/db/consultas/admin";
+import { ErrorTramite } from "@/db/consultas/flujo/contrato";
 import { puedeAccederDocumento, type SujetoVisibilidad } from "@/lib/alcance";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { origenValido } from "@/lib/origen";
@@ -58,6 +59,8 @@ export async function DELETE(peticion: NextRequest, { params }: Params) {
     if (absoluta) await unlink(absoluta).catch(() => {});
     return NextResponse.json({ ok: true });
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 409 });
+    if (err instanceof ErrorTramite) return NextResponse.json({ error: err.message }, { status: 409 });
+    console.error("Fallo al quitar un archivo del panel:", err);
+    return NextResponse.json({ error: "No se pudo quitar el archivo" }, { status: 500 });
   }
 }

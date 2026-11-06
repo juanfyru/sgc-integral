@@ -20,6 +20,7 @@ const FILA: FilaMaestro = {
   elaboro: "Ana",
   reviso: "Beto",
   aprobo: "Carla",
+  origenAprobacion: "fuera",
   propietario: "Gestión del Talento Humano",
 };
 
@@ -77,6 +78,30 @@ describe("construirExcelMaestro", () => {
     const encabezados = JSON.stringify(hoja.getSheetValues());
     for (const c of ["Código", "Título", "Tipo", "Versión", "Estado", "Elaboró", "Revisó", "Aprobó", "Proceso propietario"])
       expect(encabezados).toContain(c);
+  });
+});
+
+describe("construirExcelMaestro — origen de la aprobación", () => {
+  const META = { hospital: "H", generadoEn: "x", alcance: "Documentos vigentes", total: 3 };
+
+  it("son trece columnas, con «Aprobación» justo después de «Aprobó»", async () => {
+    const hoja = await abrir(await construirExcelMaestro([FILA], META));
+    const encabezados = (hoja.getRow(6).values as unknown[]).slice(1);
+    expect(encabezados).toHaveLength(13);
+    expect(encabezados.filter((c) => c === "Aprobación")).toHaveLength(1);
+    expect(encabezados.indexOf("Aprobación")).toBe(encabezados.indexOf("Aprobó") + 1);
+  });
+
+  it("dice dónde se aprobó cada versión", async () => {
+    const filas: FilaMaestro[] = [
+      { ...FILA, codigo: "A-FUERA", origenAprobacion: "fuera" },
+      { ...FILA, codigo: "B-PLATAFORMA", origenAprobacion: "plataforma" },
+      { ...FILA, codigo: "C-SIN", origenAprobacion: null },
+    ];
+    const hoja = await abrir(await construirExcelMaestro(filas, META));
+    expect(hoja.getCell(7, 12).value).toBe("Fuera de la plataforma");
+    expect(hoja.getCell(8, 12).value).toBe("En la plataforma");
+    expect(hoja.getCell(9, 12).value).toBeNull();
   });
 });
 

@@ -90,7 +90,7 @@ function aLista(v: unknown): unknown[] {
   return v === undefined ? [] : Array.isArray(v) ? v : [v];
 }
 
-function lista<T extends z.ZodType>(elemento: T) {
+export function lista<T extends z.ZodType>(elemento: T) {
   return z.preprocess(aLista, z.array(elemento));
 }
 
@@ -98,13 +98,13 @@ export const EsquemaDevolucionAprobacion = z
   .object({ observaciones: z.preprocess(aLista, z.array(textoDeRevision).min(1).max(MAX_OBSERVACIONES_APROBACION)) })
   .strict();
 
-const titulo = z.string().trim().min(3).max(200);
-const codigoDeDocumento = z.string().trim().toUpperCase().min(1).max(40);
+export const titulo = z.string().trim().min(3).max(200);
+export const codigoDeDocumento = z.string().trim().toUpperCase().min(1).max(40);
 
 /** Proceso (`p:<id>`) o subproceso (`s:<id>`), como en el formulario del panel. */
-const marcaAsociacion = z.string().regex(/^[ps]:[1-9]\d*$/);
+export const marcaAsociacion = z.string().regex(/^[ps]:[1-9]\d*$/);
 
-function aAsociaciones(principal: string | undefined, otras: string[]): AsociacionEntrada[] {
+export function aAsociaciones(principal: string | undefined, otras: string[]): AsociacionEntrada[] {
   const marcas = new Set(principal ? [principal, ...otras] : otras);
   return [...marcas].map((marca) => {
     const numero = Number(marca.slice(2));
