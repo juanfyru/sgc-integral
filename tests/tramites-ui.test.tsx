@@ -28,7 +28,7 @@ vi.mock("@/app/acciones-tramites", () => ({
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
-import { AccionesGestion, candidatosDe, efectoDeCancelar, type TramiteParaGestionar } from "@/componentes/tramites/AccionesGestion";
+import { AccionesGestion, aprobadoresPara, candidatosDe, efectoDeCancelar, opcionesDePropietario, type TramiteParaGestionar } from "@/componentes/tramites/AccionesGestion";
 import { AccionesSolicitud } from "@/componentes/tramites/AccionesSolicitud";
 import { BloqueSolicitud } from "@/componentes/tramites/BloqueSolicitud";
 import { DialogoFirma, FormularioFirma } from "@/componentes/tramites/DialogoFirma";
@@ -255,6 +255,21 @@ describe("página del trámite", () => {
     expect(h).toContain("Ana cambió la fecha límite");
     expect(h).not.toContain("→");
   });
+  it("HistorialTramite dice también quién deja de aprobar y quién entra", () => {
+    const aprobador = { de: { id: 3, nombre: "Carla" }, a: { id: 5, nombre: "Elena" } };
+    const reasignar = {
+      tipo: "reasignar",
+      persona: "Ana",
+      ronda: 1,
+      detalle: { papel: "elaborador", de: { id: 1, nombre: "Luis" }, a: { id: 3, nombre: "Carla" }, venceEn: null, motivo: "Lo asume el SGC.", aprobador },
+      creadoEn: ahora,
+    };
+    const corregir = { tipo: "corregir_datos", persona: "Ana", ronda: 1, detalle: { antes: { proceso: "CEX" }, despues: { proceso: "GTH" }, aprobador }, creadoEn: ahora };
+    const h = renderToStaticMarkup(<HistorialTramite tipo="crear" eventos={[reasignar, corregir]} />);
+    expect(h.match(/Quien aprueba: Carla → Elena/g)).toHaveLength(2);
+    expect(h).toContain("Quien elabora: Luis → Carla");
+    expect(h).toContain("Proceso: CEX → GTH");
+  });
   it("HistorialTramite cuenta la corrección con el antes y el después", () => {
     const evento = {
       tipo: "corregir_datos",
@@ -292,7 +307,13 @@ describe("AccionesGestion", () => {
     { id: 5, nombre: "Elena", cargo: null, rol: "gerencia" },
     { id: 6, nombre: "Fabio", cargo: null, rol: "lider_proceso" },
   ];
-  const datos: DatosParaGestionar = { usuarios, autoridad: "operativo", rolOriginador: "consulta", tipos: [{ id: 1, nombre: "Formato" }] };
+  const datos: DatosParaGestionar = {
+    usuarios,
+    autoridad: "operativo",
+    rolOriginador: "consulta",
+    tipos: [{ id: 1, nombre: "Formato", autoridad: "operativo" }],
+    procesos: [{ id: 6, nombre: "Consulta Externa", sigla: "CEX", subprocesos: [{ id: 9, nombre: "Medicina General" }] }],
+  };
   const tramite: TramiteParaGestionar = {
     id: 7,
     etapa: "elaboracion",
@@ -301,6 +322,8 @@ describe("AccionesGestion", () => {
     codigo: "CEX-FO-01",
     titulo: "Formato nuevo",
     tipoDocumentoId: 1,
+    procesoId: 6,
+    subprocesoId: null,
     solicitanteId: 2,
     elaboradorId: 1,
     revisorId: 2,
@@ -334,13 +357,24 @@ describe("AccionesGestion", () => {
     expect(efectoDeCancelar({ ...tramite, elaboradorId: null })).not.toContain("versión");
   });
   it("los candidatos respetan la separación y excluyen a quien ya tiene el papel", () => {
-    expect(ids(candidatosDe("elaborador", tramite, datos))).toEqual([4, 5, 6]);
+    expect(ids(candidatosDe("elaborador", tramite, datos))).toEqual([3, 4, 5, 6]);   // quien aprueba puede pasar a elaborar
     expect(ids(candidatosDe("revisor", tramite, datos))).toEqual([3, 4, 6]);
     expect(ids(candidatosDe("aprobador", tramite, datos))).toEqual([4]);
   });
   it("un originador admin_sgc o un tipo estratégico piden Gerencia", () => {
     expect(ids(candidatosDe("aprobador", tramite, { ...datos, rolOriginador: "admin_sgc" }))).toEqual([5]);
     expect(ids(candidatosDe("aprobador", tramite, { ...datos, autoridad: "estrategico" }))).toEqual([5]);
+  });
+  it("quien aprueba, si cambia, sigue al elaborador elegido y a la autoridad del tipo", () => {
+    expect(ids(aprobadoresPara(tramite, datos, "operativo", { id: 1, rol: "consulta" }))).toEqual([4]);
+    expect(ids(aprobadoresPara(tramite, datos, "operativo", { id: 4, rol: "admin_sgc" }))).toEqual([5]);
+    expect(ids(aprobadoresPara(tramite, datos, "estrategico", { id: 1, rol: "consulta" }))).toEqual([5]);
+  });
+  it("el propietario se elige como en la aceptación, por proceso o subproceso", () => {
+    expect(opcionesDePropietario(datos.procesos)).toEqual([
+      { marca: "p:6", nombre: "Consulta Externa (CEX)" },
+      { marca: "s:9", nombre: "Consulta Externa › Medicina General" },
+    ]);
   });
   it("en una eliminación el originador es quien pidió", () => {
     const eliminar = { ...tramite, tipo: "eliminar" as const, solicitanteId: 4, elaboradorId: null, revisorId: null };
@@ -833,6 +867,7 @@ describe("esquemas de gestión", () => {
   it("EsquemaReasignar admite solo fecha o solo persona, y nada fuera de lista", () => {
     expect(EsquemaReasignar.parse({ venceEn: "2026-12-01", motivo: "  Más plazo.  " })).toEqual({ venceEn: "2026-12-01", motivo: "Más plazo." });
     expect(EsquemaReasignar.parse({ papel: "revisor", usuarioId: "4", motivo: "Cambió de área." })).toEqual({ papel: "revisor", usuarioId: 4, motivo: "Cambió de área." });
+    expect(EsquemaReasignar.parse({ papel: "elaborador", usuarioId: "4", aprobadorId: "5", motivo: "Cambió de área." })).toMatchObject({ aprobadorId: 5 });
     expect(EsquemaReasignar.safeParse({ papel: "solicitante", usuarioId: "4", motivo: "Cambió de área." }).success).toBe(false);
     expect(EsquemaReasignar.safeParse({ venceEn: "01/12/2026", motivo: "Más plazo." }).success).toBe(false);
     expect(EsquemaReasignar.safeParse({ venceEn: "2026-12-01", motivo: "no" }).success).toBe(false);
@@ -842,7 +877,12 @@ describe("esquemas de gestión", () => {
     expect(EsquemaCorreccionDatos.parse({ titulo: " Otro ", codigo: " cex-fo-01 ", tipoDocumentoId: "2" })).toEqual({ titulo: "Otro", codigo: "CEX-FO-01", tipoDocumentoId: 2 });
     expect(EsquemaCorreccionDatos.parse({ titulo: "Otro" })).toEqual({ titulo: "Otro" });
     expect(EsquemaCorreccionDatos.safeParse({ titulo: "xx" }).success).toBe(false);
-    expect(EsquemaCorreccionDatos.safeParse({ titulo: "Otro", procesoId: "2" }).success).toBe(false);
+    expect(EsquemaCorreccionDatos.safeParse({ titulo: "Otro", sobra: "2" }).success).toBe(false);
+  });
+  it("EsquemaCorreccionDatos traduce el propietario y admite a quien aprueba", () => {
+    expect(EsquemaCorreccionDatos.parse({ principal: "p:6", aprobadorId: "5" })).toEqual({ procesoId: 6, aprobadorId: 5 });
+    expect(EsquemaCorreccionDatos.parse({ principal: "s:9" })).toEqual({ subprocesoId: 9 });
+    expect(EsquemaCorreccionDatos.safeParse({ principal: "9" }).success).toBe(false);
   });
 });
 

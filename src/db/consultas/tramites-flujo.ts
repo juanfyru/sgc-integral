@@ -160,7 +160,7 @@ export async function registrarEvento(
 }
 
 /** Sin repetir destinatario entre avisos: gana el primero. Nadie se avisa de lo que acaba de hacer. Una sola inserción. */
-async function enviarAvisos(tx: TransactionSql, tramiteId: number, actorId: number, avisos: Aviso[]): Promise<void> {
+export async function enviarAvisos(tx: TransactionSql, tramiteId: number, actorId: number, avisos: Aviso[]): Promise<void> {
   const avisados = new Set([actorId]);
   const filas: { usuarioId: number; aviso: Aviso }[] = [];
   for (const aviso of avisos) {
@@ -342,7 +342,7 @@ export async function transicionar(
         subproceso_id = ${t.subprocesoId}, tipo_documento_id = ${t.tipoDocumentoId}, documento_id = ${t.documentoId},
         version_id = ${t.versionId}, titulo_propuesto = ${t.tituloPropuesto}, elaborador_id = ${t.elaboradorId},
         revisor_id = ${t.revisorId}, aprobador_id = ${t.aprobadorId}, motivo_cierre = ${t.motivoCierre},
-        vence_en = ${venceEn}, aviso_vencido_en = NULL, escalado_en = NULL,
+        vence_en = ${venceEn}, ${efecto.conservarAvisos ? tx`` : tx`aviso_vencido_en = NULL, escalado_en = NULL,`}
         cerrado_en = ${esEtapaDeTrabajo(t.etapa) ? null : ahora}, actualizado_en = ${ahora}
       WHERE id = ${t.id}`.catch(traducirChoqueDeAbierto);
 

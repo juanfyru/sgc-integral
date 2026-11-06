@@ -24,7 +24,13 @@ export const EsquemaMotivoCierre = z.object({ motivo }).strict();
 
 /** `papel` falta cuando solo cambia la fecha; lo que debe venir junto lo decide el manejador. */
 export const EsquemaReasignar = z
-  .object({ papel: z.enum(PAPELES).optional(), usuarioId: id.optional(), venceEn: z.iso.date().optional(), motivo })
+  .object({
+    papel: z.enum(PAPELES).optional(),
+    usuarioId: id.optional(),
+    aprobadorId: id.optional(),
+    venceEn: z.iso.date().optional(),
+    motivo,
+  })
   .strict();
 
 export const EsquemaControlCambios = z.object({ resumenCambios: z.string().trim().min(5).max(2000) }).strict();
@@ -154,12 +160,23 @@ export const EsquemaAceptarModificacion = z.object({ tituloNuevo: titulo.optiona
 
 export const EsquemaAceptarEliminacion = z.object({ aprobadorId: id }).strict();
 
+/** El propietario viaja como en la aceptación, en un solo campo; el dominio lo recibe separado. */
 export const EsquemaCorreccionDatos = z
-  .object({ titulo: titulo.optional(), codigo: codigoDeDocumento.optional(), tipoDocumentoId: id.optional() })
-  .strict();
+  .object({
+    titulo: titulo.optional(),
+    codigo: codigoDeDocumento.optional(),
+    tipoDocumentoId: id.optional(),
+    principal: marcaAsociacion.optional(),
+    aprobadorId: id.optional(),
+  })
+  .strict()
+  .transform(({ principal, ...resto }) => {
+    const [propietario] = aAsociaciones(principal, []);
+    return { ...resto, procesoId: propietario?.procesoId, subprocesoId: propietario?.subprocesoId };
+  });
 
 export type DatosAceptarCreacion = z.output<typeof EsquemaAceptarCreacion>;
 export type DatosAceptarModificacion = z.output<typeof EsquemaAceptarModificacion>;
 export type DatosAceptarEliminacion = z.output<typeof EsquemaAceptarEliminacion>;
 export type DatosReasignar = z.output<typeof EsquemaReasignar>;
-export type DatosCorreccion = z.output<typeof EsquemaCorreccionDatos>;
+export type DatosCorreccion = Partial<z.output<typeof EsquemaCorreccionDatos>>;

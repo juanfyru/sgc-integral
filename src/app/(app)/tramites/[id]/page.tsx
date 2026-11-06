@@ -128,6 +128,8 @@ async function Gestion({ tramite: t }: { tramite: DetalleTramite }) {
         codigo: t.codigo,
         titulo: t.titulo,
         tipoDocumentoId: t.tipoDocumentoId,
+        procesoId: t.procesoId,
+        subprocesoId: t.subprocesoId,
         solicitanteId: t.solicitanteId,
         elaboradorId: t.elaboradorId,
         revisorId: t.revisorId,

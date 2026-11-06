@@ -75,6 +75,8 @@ export type Efecto = {
   detalle?: Record<string, unknown>;
   /** Solo para la bitácora: lo que en `detalle` chocaría con los `de`, `hacia` y `ronda` que pone `transicionar`. */
   auditoria?: Record<string, unknown>;
+  /** El paso sigue siendo el mismo: no se limpian las marcas, y nadie recibe otra vez el aviso (spec 13A §14.3). */
+  conservarAvisos?: boolean;
   cambios?: Partial<
     Pick<
       FilaTramite,

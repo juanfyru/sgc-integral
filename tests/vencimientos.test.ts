@@ -9,12 +9,21 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
 }
 
+// Real salvo en el caso de un trámite que falla a mitad de la pasada.
+vi.mock("@/db/consultas/estructura", async (original) => {
+  const real = await original<typeof import("@/db/consultas/estructura")>();
+  return { ...real, supervisoresDe: vi.fn(real.supervisoresDe) };
+});
+
 import type { TransactionSql } from "postgres";
 import { obtenerSql } from "@/db/cliente";
+import { supervisoresDe } from "@/db/consultas/estructura";
+import { crearObservacion } from "@/db/consultas/revision";
 import { aFilaTramite } from "@/db/consultas/tramites";
 import { transicionar } from "@/db/consultas/tramites-flujo";
 import { responsablesDe, revisarVencimientos } from "@/db/consultas/vencimientos";
-import { opc, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
+import { finDeFecha } from "@/lib/tramites/plazos";
+import { opc, sesionAdmin, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
 const sql = obtenerSql();
@@ -149,9 +158,110 @@ describe("revisarVencimientos", () => {
     const [antes] = await tx`SELECT aviso_vencido_en FROM tramites WHERE id = ${t.tramiteId}`;
     expect(antes.aviso_vencido_en).not.toBeNull();
     await transicionar(t.admin, { tramiteId: t.tramiteId, accion: "reasignar", etapaEsperada: "elaboracion", rondaEsperada: 1,
-      datos: { papel: "elaborador", venceEn: "2027-01-15", motivo: "Se amplía el plazo." } }, opc(tx));
+      datos: { venceEn: "2027-01-15", motivo: "Se amplía el plazo." } }, opc(tx));
     const [despues] = await tx`SELECT aviso_vencido_en, escalado_en FROM tramites WHERE id = ${t.tramiteId}`;
     expect([despues.aviso_vencido_en, despues.escalado_en]).toEqual([null, null]);
+  }));
+
+  describe("un aviso por paso", () => {
+    const hora = "2026-12-30T15:00:00Z";
+
+    async function pasoVencidoYEscalado(tx: TransactionSql) {
+      const jefe = await usuarioDePrueba(tx, { rol: "consulta" });
+      const elaborador = await usuarioDePrueba(tx, { rol: "consulta", jefeId: jefe.usuarioId });
+      const t = await tramiteEn(tx, "elaboracion", { elaborador });
+      await silenciarOtros(tx, t.tramiteId);
+      expect(await correrEn(tx)(hora)).toEqual({ avisados: 1, escalados: 1 });
+      return t;
+    }
+    const reasignar = (tx: TransactionSql, t: Awaited<ReturnType<typeof tramiteEn>>, datos: Record<string, unknown>) =>
+      transicionar(t.admin, { tramiteId: t.tramiteId, accion: "reasignar", etapaEsperada: "elaboracion", rondaEsperada: 1, datos: { motivo: "Se reorganiza el equipo.", ...datos } }, opc(tx));
+    const marcas = async (tx: TransactionSql, tramiteId: number) => {
+      const [f] = await tx`SELECT aviso_vencido_en, escalado_en FROM tramites WHERE id = ${tramiteId}`;
+      return [f.aviso_vencido_en, f.escalado_en];
+    };
+
+    it("cambiar a quien no tiene el paso conserva las marcas y no vuelve a avisar", () => revertida(sql, async (tx) => {
+      const t = await pasoVencidoYEscalado(tx);
+      const otroAdmin = await sesionAdmin(tx);
+      await reasignar(tx, t, { papel: "aprobador", usuarioId: otroAdmin.usuarioId });
+      expect(await marcas(tx, t.tramiteId)).toEqual([new Date(hora), new Date(hora)]);
+      expect(await correrEn(tx)("2026-12-31T15:00:00Z")).toEqual({ avisados: 0, escalados: 0 });
+    }));
+
+    it("repetir la misma fecha tampoco cambia el paso", () => revertida(sql, async (tx) => {
+      const t = await pasoVencidoYEscalado(tx);
+      const otroAdmin = await sesionAdmin(tx);
+      await tx`UPDATE tramites SET vence_en = ${finDeFecha("2027-01-15", "America/Bogota")} WHERE id = ${t.tramiteId}`;
+      await reasignar(tx, t, { papel: "aprobador", usuarioId: otroAdmin.usuarioId, venceEn: "2027-01-15" });
+      expect(await marcas(tx, t.tramiteId)).toEqual([new Date(hora), new Date(hora)]);
+    }));
+
+    it("en un paso de grupo, repetir la misma fecha tampoco vuelve a avisar", () => revertida(sql, async (tx) => {
+      const t = await tramiteEn(tx, "aceptacion", { tipo: "crear" });
+      await silenciarOtros(tx, t.tramiteId);
+      await tx`UPDATE tramites SET vence_en = ${finDeFecha("2027-01-15", "America/Bogota")}, aviso_vencido_en = ${new Date(hora)} WHERE id = ${t.tramiteId}`;
+      await transicionar(t.admin, { tramiteId: t.tramiteId, accion: "reasignar", etapaEsperada: "aceptacion", rondaEsperada: 0,
+        datos: { venceEn: "2027-01-15", motivo: "Se confirma el plazo." } }, opc(tx));
+      const [f] = await tx`SELECT aviso_vencido_en FROM tramites WHERE id = ${t.tramiteId}`;
+      expect(f.aviso_vencido_en).toEqual(new Date(hora));
+    }));
+
+    it("cambiar a quien tiene el paso limpia las marcas: el nuevo recibe su aviso", () => revertida(sql, async (tx) => {
+      const t = await pasoVencidoYEscalado(tx);
+      const nuevo = await usuarioDePrueba(tx, { rol: "consulta" });
+      await reasignar(tx, t, { papel: "elaborador", usuarioId: nuevo.usuarioId });
+      expect(await marcas(tx, t.tramiteId)).toEqual([null, null]);
+      expect((await correrEn(tx)("2026-12-31T15:00:00Z")).avisados).toBe(1);
+    }));
+
+    it("con otro paso a su cargo, el revisor que cambia en revisión también limpia", () => revertida(sql, async (tx) => {
+      const t = await tramiteEn(tx, "revision");
+      try {
+        await silenciarOtros(tx, t.tramiteId);
+        await tx`UPDATE tramites SET aviso_vencido_en = now(), escalado_en = now() WHERE id = ${t.tramiteId}`;
+        const nuevo = await usuarioDePrueba(tx, { rol: "lider_proceso" });
+        await transicionar(t.admin, { tramiteId: t.tramiteId, accion: "reasignar", etapaEsperada: "revision", rondaEsperada: 1,
+          datos: { papel: "revisor", usuarioId: nuevo.usuarioId, motivo: "Se reorganiza el equipo." } }, opc(tx));
+        expect(await marcas(tx, t.tramiteId)).toEqual([null, null]);
+      } finally {
+        await t.limpiar();
+      }
+    }));
+
+    it("cualquier otra transición sigue limpiando", () => revertida(sql, async (tx) => {
+      const t = await tramiteEn(tx, "revision");
+      try {
+        await silenciarOtros(tx, t.tramiteId);
+        await tx`UPDATE tramites SET aviso_vencido_en = now(), escalado_en = now() WHERE id = ${t.tramiteId}`;
+        await crearObservacion(t.tramiteId, t.revisor, "Falta la sección dos.", { etapa: "revision", ronda: 1 }, { sql: tx });
+        await transicionar(t.revisor, { tramiteId: t.tramiteId, accion: "devolver_revision", etapaEsperada: "revision", rondaEsperada: 1 }, opc(tx));
+        expect(await marcas(tx, t.tramiteId)).toEqual([null, null]);
+      } finally {
+        await t.limpiar();
+      }
+    }));
+  });
+
+  it("un trámite que falla no corta la pasada: va al registro y sigue con el siguiente", () => revertida(sql, async (tx) => {
+    const jefe = await usuarioDePrueba(tx, { rol: "consulta" });
+    const uno = await usuarioDePrueba(tx, { rol: "consulta", jefeId: jefe.usuarioId });
+    const dos = await usuarioDePrueba(tx, { rol: "consulta", jefeId: jefe.usuarioId });
+    const primero = await tramiteEn(tx, "elaboracion", { elaborador: uno });
+    const segundo = await tramiteEn(tx, "elaboracion", { tipo: "crear", elaborador: dos });
+    await tx`UPDATE tramites SET aviso_vencido_en = now(), escalado_en = now() WHERE id <> ALL(${[primero.tramiteId, segundo.tramiteId]})`;
+    const registro = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(supervisoresDe).mockRejectedValueOnce(new Error("sin conexión"));
+    try {
+      expect(await correrEn(tx)("2026-12-30T15:00:00Z")).toEqual({ avisados: 1, escalados: 1 });
+      expect(registro).toHaveBeenCalledOnce();
+      // Lo de ese trámite se deshace entero: en la pasada siguiente se intenta de nuevo.
+      const [fila] = await tx`SELECT aviso_vencido_en FROM tramites WHERE id = ${primero.tramiteId}`;
+      expect(fila.aviso_vencido_en).toBeNull();
+      expect(await correrEn(tx)("2026-12-30T16:00:00Z")).toEqual({ avisados: 1, escalados: 1 });
+    } finally {
+      registro.mockRestore();
+    }
   }));
 
   it("no avisa de etapas finales", () => revertida(sql, async (tx) => {

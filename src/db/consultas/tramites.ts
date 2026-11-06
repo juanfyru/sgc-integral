@@ -487,28 +487,39 @@ export type DatosParaGestionar = {
   autoridad: Autoridad;
   /** Quien origina el trámite decide qué rol aprueba: el elaborador, o quien pidió si aún no hay. */
   rolOriginador: Rol;
-  tipos: Pick<TipoDeDocumento, "id" | "nombre">[];
+  tipos: Pick<TipoDeDocumento, "id" | "nombre" | "autoridad">[];
+  procesos: DatosParaSolicitar["procesos"];
 };
 
-/** Lo que eligen «Reasignar» y «Corregir datos». El tipo actual va en la lista aunque esté inactivo. */
+/** Lo que eligen «Reasignar» y «Corregir datos». El tipo y el propietario actuales van aunque estén inactivos. */
 export async function datosParaGestionar(tramiteId: number, opciones?: { sql?: Cliente }): Promise<DatosParaGestionar> {
   const sql = opciones?.sql ?? obtenerSql();
-  const [t] = await sql`SELECT tp.id AS tipo_id, tp.autoridad, o.rol AS rol_originador
+  const [t] = await sql`SELECT tp.id AS tipo_id, tp.autoridad, o.rol AS rol_originador, t.proceso_id, t.subproceso_id
     FROM tramites t
     LEFT JOIN documentos d ON d.id = t.documento_id
     JOIN tipos_documento tp ON tp.id = COALESCE(d.tipo_id, t.tipo_documento_id)
     JOIN usuarios o ON o.id = COALESCE(t.elaborador_id, t.solicitante_id)
     WHERE t.id = ${tramiteId}`;
   if (!t) throw new Error("El trámite no existe");
-  const [usuarios, tipos] = await Promise.all([
+  const [usuarios, tipos, procesos, subprocesos] = await Promise.all([
     usuariosDesignables(sql),
     tiposDeDocumento(sql, sql`t.activo OR t.id = ${t.tipo_id}`),
+    sql`SELECT id, nombre, sigla FROM procesos WHERE activo OR id = ${t.proceso_id} ORDER BY nombre`,
+    sql`SELECT id, proceso_id, nombre FROM subprocesos WHERE activo OR id = ${t.subproceso_id} ORDER BY orden`,
   ]);
   return {
     usuarios,
     autoridad: t.autoridad,
     rolOriginador: t.rol_originador,
-    tipos: tipos.map(({ id, nombre }) => ({ id, nombre })),
+    tipos: tipos.map(({ id, nombre, autoridad }) => ({ id, nombre, autoridad })),
+    procesos: procesos.map((p) => ({
+      id: Number(p.id),
+      nombre: p.nombre,
+      sigla: p.sigla,
+      subprocesos: subprocesos
+        .filter((s) => Number(s.proceso_id) === Number(p.id))
+        .map((s) => ({ id: Number(s.id), nombre: s.nombre })),
+    })),
   };
 }
 

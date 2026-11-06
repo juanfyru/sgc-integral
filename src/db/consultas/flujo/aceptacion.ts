@@ -1,7 +1,7 @@
 /** Manejadores de la aceptación: duplicidad, clasificación, código y responsables (spec 13A §8.3). */
 import type { TransactionSql } from "postgres";
 import { crearDocumentoEn, crearVersionBorradorEn, obtenerPatronCodigo, type AsociacionEntrada } from "@/db/consultas/admin";
-import { sugerirCodigo } from "@/db/consultas/codigos";
+import { codigoAbandonado, sugerirCodigo } from "@/db/consultas/codigos";
 import { buscarParecidos } from "@/db/consultas/parecidos";
 import {
   ETAPAS_ABIERTAS,
@@ -36,24 +36,24 @@ type DatosNuevo = DatosAceptarCreacion &
 
 /**
  * Aplica las reglas de separación y devuelve, para la evidencia, a cada designado con su nombre.
- * `entra` es para un trámite ya aceptado: solo a esa persona (a nadie, si es null) se le exige
- * estar activa. A quien ya estaba se le cuentan rol y separación; si se le pidiera estar activa,
- * dos designados desactivados se bloquearían entre sí y el trámite no tendría salida.
+ * `entran` es para un trámite ya aceptado: solo a esas personas se les exige estar activas. A quien
+ * ya estaba se le cuentan rol y separación; si se le pidiera estar activa, dos designados
+ * desactivados se bloquearían entre sí y el trámite no tendría salida.
  */
 export async function exigirDesignacion(
   tx: TransactionSql,
   tramite: FilaTramite,
   tipo: TipoSolicitud,
   autoridad: Autoridad,
-  ids: Partial<Designados>,
-  entra?: number | null,
+  ids: { [papel in keyof Designados]?: number | null },
+  entran?: readonly number[],
 ) {
-  const buscados = [tramite.solicitanteId, ids.elaboradorId, ids.revisorId, ids.aprobadorId].filter((i) => i !== undefined);
+  const buscados = [tramite.solicitanteId, ids.elaboradorId, ids.revisorId, ids.aprobadorId].filter((i) => typeof i === "number");
   const filas = await tx`SELECT id, nombre, rol, activo FROM usuarios WHERE id = ANY(${buscados})`;
-  const persona = (id: number | undefined) => {
+  const persona = (id: number | null | undefined) => {
     const f = filas.find((u) => Number(u.id) === id);
     if (!f) return null;
-    const exigeActivo = entra === undefined || entra === id;
+    const exigeActivo = entran === undefined || entran.includes(Number(f.id));
     return { id: Number(f.id), nombre: f.nombre as string, rol: f.rol, activo: (f.activo as boolean) || !exigeActivo };
   };
   const solicitante = persona(tramite.solicitanteId);
@@ -187,7 +187,7 @@ async function convertirEnModificacion(c: ContextoManejador): Promise<Efecto> {
 }
 
 /** El proceso propietario que se eligió, con el trámite siguiéndolo a él. */
-async function propietarioElegido(tx: TransactionSql, principal: AsociacionEntrada | undefined) {
+export async function propietarioElegido(tx: TransactionSql, principal: AsociacionEntrada | undefined) {
   if (!principal) throw new ErrorTramite("Elija el proceso propietario");
   const { procesoId, subprocesoId } = principal;
   const [f] = subprocesoId
@@ -201,15 +201,17 @@ async function propietarioElegido(tx: TransactionSql, principal: AsociacionEntra
 const REINTENTOS_DE_CODIGO = 3;
 
 /**
- * Crea el documento. Si el código sugerido ya lo tomó otra aceptación, sigue con el consecutivo
- * siguiente (spec 13A §8.4); uno escrito a mano no se cambia sin que la persona lo decida. Va en
- * un savepoint porque, tras un 23505, la transacción ya no admite más consultas.
+ * Crea el documento. Si el código sugerido ya lo tomó otra aceptación, o lo abandonó otro trámite,
+ * sigue con el consecutivo siguiente (spec 13A §8.4); uno escrito a mano no se cambia sin que la
+ * persona lo decida. Va en un savepoint porque, tras un 23505, la transacción ya no admite más
+ * consultas.
  */
 async function crearConCodigoLibre(
   tx: TransactionSql,
   d: DatosNuevo,
   procesoId: number,
   usuarioId: number,
+  tramiteId: number,
 ): Promise<{ documentoId: number; versionId: number; codigo: string }> {
   const esElSugerido = d.codigo === d.codigoSugerido;
   const datos = {
@@ -223,15 +225,17 @@ async function crearConCodigoLibre(
   };
   let codigo = d.codigo;
   for (let intento = 0; ; intento += 1) {
-    try {
-      const creado = await tx.savepoint((s) => crearDocumentoEn(s, { ...datos, codigo }, usuarioId));
-      return { ...creado, codigo };
-    } catch (err) {
-      if ((err as { constraint_name?: string }).constraint_name !== "documentos_codigo_unique") throw err;
-      const siguiente = await sugerirCodigo({ procesoId, tipoDocumentoId: d.tipoDocumentoId }, { sql: tx });
-      if (!siguiente || !esElSugerido || intento === REINTENTOS_DE_CODIGO) throw errorDeCodigoRepetido(siguiente);
-      codigo = siguiente;
+    if (!(await codigoAbandonado(codigo, tramiteId, { sql: tx }))) {
+      try {
+        const creado = await tx.savepoint((s) => crearDocumentoEn(s, { ...datos, codigo }, usuarioId));
+        return { ...creado, codigo };
+      } catch (err) {
+        if ((err as { constraint_name?: string }).constraint_name !== "documentos_codigo_unique") throw err;
+      }
     }
+    const siguiente = await sugerirCodigo({ procesoId, tipoDocumentoId: d.tipoDocumentoId }, { sql: tx });
+    if (!siguiente || !esElSugerido || intento === REINTENTOS_DE_CODIGO) throw errorDeCodigoRepetido(siguiente);
+    codigo = siguiente;
   }
 }
 
@@ -246,7 +250,7 @@ async function aceptarNuevo(c: ContextoManejador): Promise<Efecto> {
   await exigirFormatoDeCodigo(tx, d.codigo, { procesoId: propietario.procesoId, tipoDocumentoId: d.tipoDocumentoId });
 
   const parecidos = await parecidosVistos(tx, tramite);
-  const { documentoId, versionId, codigo } = await crearConCodigoLibre(tx, d, propietario.procesoId, sesion.usuarioId);
+  const { documentoId, versionId, codigo } = await crearConCodigoLibre(tx, d, propietario.procesoId, sesion.usuarioId, tramite.id);
   const { texto } = await rotuloDeTramite(tx, { ...tramite, documentoId });
   return {
     detalle: {

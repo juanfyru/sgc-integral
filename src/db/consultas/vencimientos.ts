@@ -128,9 +128,13 @@ export async function revisarVencimientos(opciones?: { sql?: Cliente; ahora?: Da
   for (const fila of vencidos) {
     const { avisar: conAviso, escalar } = queFalta(fila, ahora, escalamientoDias, zona);
     if (!conAviso && !escalar) continue;
-    const { avisado, escalado } = await enTransaccion(sql, (tx) => revisarTramite(tx, Number(fila.id), ahora, escalamientoDias, zona));
-    if (avisado) resultado.avisados += 1;
-    if (escalado) resultado.escalados += 1;
+    try {
+      const { avisado, escalado } = await enTransaccion(sql, (tx) => revisarTramite(tx, Number(fila.id), ahora, escalamientoDias, zona));
+      if (avisado) resultado.avisados += 1;
+      if (escalado) resultado.escalados += 1;
+    } catch (err) {
+      console.error(`No se pudo revisar el vencimiento del trámite ${fila.id}:`, err);
+    }
   }
   return resultado;
 }

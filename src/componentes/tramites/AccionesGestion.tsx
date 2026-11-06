@@ -7,6 +7,7 @@ import { Boton } from "@/componentes/ui/Boton";
 import { Campo } from "@/componentes/ui/Campo";
 import { Dialogo } from "@/componentes/ui/Dialogo";
 import type { DatosParaGestionar, DetalleTramite, UsuarioDesignable } from "@/db/consultas/tramites";
+import type { Rol } from "@/lib/roles";
 import {
   ETIQUETA_PAPEL,
   candidatosAprobador,
@@ -15,7 +16,7 @@ import {
   rolAprobador,
   type Papel,
 } from "@/lib/tramites/separacion";
-import { ETAPAS_CON_CORRECCION } from "@/lib/tramites/tipos";
+import { ETAPAS_CON_CORRECCION, type Autoridad } from "@/lib/tramites/tipos";
 import { AccionEnDialogo, ErrorAccion, Ocultos } from "./AccionesSolicitud";
 import { anchoCompleto } from "./PiezasAceptacion";
 
@@ -28,6 +29,8 @@ export type TramiteParaGestionar = Pick<
   | "codigo"
   | "titulo"
   | "tipoDocumentoId"
+  | "procesoId"
+  | "subprocesoId"
   | "solicitanteId"
   | "elaboradorId"
   | "revisorId"
@@ -88,12 +91,54 @@ function PieDelDialogo({ cerrar, pendiente, confirmar }: { cerrar: () => void; p
   );
 }
 
-/** Quienes pueden entrar a ese papel, sin quien ya lo tiene. Las reglas se vuelven a comprobar en el servidor. */
+const nombreConCargo = (u: UsuarioDesignable) => (u.cargo ? `${u.nombre} — ${u.cargo}` : u.nombre);
+
+/** Quienes pueden aprobar con esa autoridad y ese originador, sin quien ya aprueba. */
+export function aprobadoresPara(
+  t: Pick<TramiteParaGestionar, "aprobadorId">,
+  d: Pick<DatosParaGestionar, "usuarios">,
+  autoridad: Autoridad,
+  originador: { id: number | null; rol: Rol },
+): UsuarioDesignable[] {
+  return candidatosAprobador(d.usuarios, rolAprobador(autoridad, originador.rol), originador.id).filter((u) => u.id !== t.aprobadorId);
+}
+
+/**
+ * Quienes pueden entrar a ese papel, sin quien ya lo tiene. Las reglas se vuelven a comprobar en
+ * el servidor. Quien aprueba puede pasar a elaborar si en el mismo envío entra otro aprobador.
+ */
 export function candidatosDe(papel: Papel, t: TramiteParaGestionar, d: DatosParaGestionar): UsuarioDesignable[] {
-  if (papel === "elaborador") return d.usuarios.filter((u) => ![t.elaboradorId, t.revisorId, t.aprobadorId].includes(u.id));
+  if (papel === "elaborador") return d.usuarios.filter((u) => u.id !== t.elaboradorId && u.id !== t.revisorId);
   if (papel === "revisor") return candidatosRevisor(d.usuarios, t.elaboradorId).filter((u) => u.id !== t.revisorId);
   const originadorId = t.tipo === "eliminar" ? t.solicitanteId : t.elaboradorId;
-  return candidatosAprobador(d.usuarios, rolAprobador(d.autoridad, d.rolOriginador), originadorId).filter((u) => u.id !== t.aprobadorId);
+  return aprobadoresPara(t, d, d.autoridad, { id: originadorId, rol: d.rolOriginador });
+}
+
+/** Proceso (`p:<id>`) o subproceso (`s:<id>`), como en la aceptación. */
+export function opcionesDePropietario(procesos: DatosParaGestionar["procesos"]) {
+  return procesos.flatMap((p) => [
+    { marca: `p:${p.id}`, nombre: `${p.nombre} (${p.sigla})` },
+    ...p.subprocesos.map((s) => ({ marca: `s:${s.id}`, nombre: `${p.nombre} › ${s.nombre}` })),
+  ]);
+}
+
+function CampoAprobador({ candidatos }: { candidatos: UsuarioDesignable[] }) {
+  return (
+    <Campo
+      etiqueta="Quien aprueba, si cambia"
+      nombre="aprobadorId"
+      ayuda="El rol que aprueba depende de quien elabora y del tipo de documento."
+    >
+      <select defaultValue="" className={anchoCompleto}>
+        <option value="">Sin cambiar</option>
+        {candidatos.map((u) => (
+          <option key={u.id} value={u.id}>
+            {nombreConCargo(u)}
+          </option>
+        ))}
+      </select>
+    </Campo>
+  );
 }
 
 function FormularioReasignar({
@@ -110,7 +155,9 @@ function FormularioReasignar({
   const { estado, enviar, pendiente, alEnviar } = useEnvio(reasignarTramiteAccion, cerrar);
   const papeles = papelesReasignables(tramite.etapa);
   const [papel, setPapel] = useState<Papel | "">("");
+  const [persona, setPersona] = useState("");
   const actual = papel ? tramite[papel] : null;
+  const elegida = datos.usuarios.find((u) => String(u.id) === persona);
   return (
     <form action={enviar} onSubmit={alEnviar} className="flex flex-col gap-4 p-5">
       <Ocultos tramite={tramite} />
@@ -122,8 +169,15 @@ function FormularioReasignar({
       ) : (
         <>
           <Campo etiqueta="Papel" nombre="papel" ayuda="Solo los pasos que siguen pendientes.">
-            <select value={papel} onChange={(e) => setPapel(e.target.value as Papel | "")} className={anchoCompleto}>
-              <option value="">Sin cambiar a nadie</option>
+            <select
+              value={papel}
+              onChange={(e) => {
+                setPapel(e.target.value as Papel | "");
+                setPersona("");
+              }}
+              className={anchoCompleto}
+            >
+              <option value="">Solo cambiar la fecha</option>
               {papeles.map((p) => (
                 <option key={p} value={p}>
                   {ETIQUETA_PAPEL[p]}
@@ -133,20 +187,25 @@ function FormularioReasignar({
           </Campo>
           {papel ? (
             <Campo etiqueta="Persona" nombre="usuarioId" ayuda={actual ? `Hoy lo tiene ${actual}.` : undefined}>
-              <select key={papel} defaultValue="" className={anchoCompleto}>
+              <select required value={persona} onChange={(e) => setPersona(e.target.value)} className={anchoCompleto}>
                 <option value="">Elija a una persona</option>
                 {candidatosDe(papel, tramite, datos).map((u) => (
                   <option key={u.id} value={u.id}>
-                    {u.cargo ? `${u.nombre} — ${u.cargo}` : u.nombre}
+                    {nombreConCargo(u)}
                   </option>
                 ))}
               </select>
             </Campo>
           ) : null}
+          {papel === "elaborador" ? (
+            <CampoAprobador
+              candidatos={aprobadoresPara(tramite, datos, datos.autoridad, elegida ?? { id: tramite.elaboradorId, rol: datos.rolOriginador })}
+            />
+          ) : null}
         </>
       )}
       <Campo etiqueta="Fecha límite de la etapa" nombre="venceEn" ayuda="Vacía, conserva la que tiene. Vence al final de ese día.">
-        <input type="date" min={hoy} className={anchoCompleto} />
+        <input type="date" required={!papel} min={hoy} className={anchoCompleto} />
       </Campo>
       <Campo etiqueta="Motivo" nombre="motivo" ayuda="Entre 5 y 1000 caracteres. Queda en el historial.">
         <textarea required minLength={5} maxLength={1000} rows={3} className={anchoCompleto} />
@@ -159,15 +218,18 @@ function FormularioReasignar({
 
 function FormularioCorreccion({
   tramite,
-  tipos,
+  datos,
   cerrar,
 }: {
   tramite: TramiteParaGestionar;
-  tipos: DatosParaGestionar["tipos"];
+  datos: DatosParaGestionar;
   cerrar: () => void;
 }) {
   const { estado, enviar, pendiente, alEnviar } = useEnvio(corregirDatosTramiteAccion, cerrar);
   const crea = tramite.tipo === "crear";
+  const tipoActual = String(tramite.tipoDocumentoId ?? "");
+  const [tipo, setTipo] = useState(tipoActual);
+  const elegido = datos.tipos.find((t) => String(t.id) === tipo);
   return (
     <form action={enviar} onSubmit={alEnviar} className="flex flex-col gap-4 p-5">
       <Ocultos tramite={tramite} />
@@ -184,18 +246,34 @@ function FormularioCorreccion({
       </Campo>
       {crea ? (
         <>
-          <Campo etiqueta="Código" nombre="codigo" ayuda="Debe cumplir el formato configurado y no repetirse. Si cambia el tipo, revíselo.">
+          <Campo etiqueta="Proceso o subproceso propietario" nombre="principal">
+            <select
+              required
+              defaultValue={tramite.subprocesoId ? `s:${tramite.subprocesoId}` : `p:${tramite.procesoId}`}
+              className={anchoCompleto}
+            >
+              {opcionesDePropietario(datos.procesos).map((o) => (
+                <option key={o.marca} value={o.marca}>
+                  {o.nombre}
+                </option>
+              ))}
+            </select>
+          </Campo>
+          <Campo etiqueta="Código" nombre="codigo" ayuda="Debe cumplir el formato configurado y no repetirse. Si cambia el proceso o el tipo, revíselo.">
             <input required maxLength={40} defaultValue={tramite.codigo ?? ""} className={`${anchoCompleto} font-mono`} />
           </Campo>
           <Campo etiqueta="Tipo de documento" nombre="tipoDocumentoId">
-            <select required defaultValue={tramite.tipoDocumentoId ?? ""} className={anchoCompleto}>
-              {tipos.map((t) => (
+            <select required value={tipo} onChange={(e) => setTipo(e.target.value)} className={anchoCompleto}>
+              {datos.tipos.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.nombre}
                 </option>
               ))}
             </select>
           </Campo>
+          {elegido && tipo !== tipoActual ? (
+            <CampoAprobador candidatos={aprobadoresPara(tramite, datos, elegido.autoridad, { id: tramite.elaboradorId, rol: datos.rolOriginador })} />
+          ) : null}
         </>
       ) : null}
       <ErrorAccion estado={estado} />
@@ -226,7 +304,7 @@ export function AccionesGestion({
     <section aria-label="Gestión del trámite" className="flex flex-wrap items-start justify-end gap-2">
       {ETAPAS_CON_CORRECCION.includes(tramite.etapa) ? (
         <DialogoDeGestion etiqueta="Corregir datos del documento">
-          {(cerrar) => <FormularioCorreccion tramite={tramite} tipos={datos.tipos} cerrar={cerrar} />}
+          {(cerrar) => <FormularioCorreccion tramite={tramite} datos={datos} cerrar={cerrar} />}
         </DialogoDeGestion>
       ) : null}
       <DialogoDeGestion etiqueta="Reasignar">

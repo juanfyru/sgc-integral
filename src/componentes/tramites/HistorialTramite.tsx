@@ -30,7 +30,7 @@ const FRASES: Record<string, string> = {
   corregir_datos: "corrigió los datos del documento",
 };
 
-const ETIQUETA_DATO: Record<string, string> = { titulo: "Título", codigo: "Código", tipo: "Tipo" };
+const ETIQUETA_DATO: Record<string, string> = { titulo: "Título", codigo: "Código", tipo: "Tipo", proceso: "Proceso" };
 
 /** En una eliminación, la acción `publicar` no publica nada. */
 const FRASES_ELIMINACION: Record<string, string> = {
@@ -53,16 +53,19 @@ const nombreEn = (p: unknown) => (p as { nombre?: string } | null)?.nombre ?? "n
 
 /** Qué cambió en una reasignación o una corrección, con el antes y el después. */
 function cambiosDe({ tipo, detalle: d }: EventoTramite): string[] {
+  const aprobador = d.aprobador as { de: unknown; a: unknown } | undefined;
+  const delAprobador = aprobador ? [`${ETIQUETA_PAPEL.aprobador}: ${nombreEn(aprobador.de)} → ${nombreEn(aprobador.a)}`] : [];
   if (tipo === "corregir_datos") {
     const antes = (d.antes ?? {}) as Record<string, unknown>;
-    return Object.entries((d.despues ?? {}) as Record<string, unknown>).map(
+    const datos = Object.entries((d.despues ?? {}) as Record<string, unknown>).map(
       ([dato, valor]) => `${ETIQUETA_DATO[dato] ?? dato}: ${String(antes[dato])} → ${String(valor)}`,
     );
+    return [...datos, ...delAprobador];
   }
   if (tipo !== "reasignar") return [];
   const lineas = PAPELES.includes(d.papel as Papel) ? [`${ETIQUETA_PAPEL[d.papel as Papel]}: ${nombreEn(d.de)} → ${nombreEn(d.a)}`] : [];
   if (typeof d.venceEn === "string") lineas.push(`Nueva fecha límite: ${d.venceEn}`);
-  return lineas;
+  return [...lineas, ...delAprobador];
 }
 
 export function HistorialTramite({ tipo, eventos }: { tipo: TipoSolicitud; eventos: EventoTramite[] }) {

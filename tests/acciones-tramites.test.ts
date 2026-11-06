@@ -176,6 +176,13 @@ describe("gestión del trámite", () => {
     expect(transicionar).toHaveBeenCalledTimes(1);
   });
 
+  it("reasignar lleva al aprobador cuando viene, y lo vacío no viaja", async () => {
+    await reasignarTramiteAccion(null, formulario({ ...enElaboracion, papel: "elaborador", usuarioId: "5", aprobadorId: "6", motivo: "Lo asume el SGC." }));
+    expect(transicionar.mock.calls[0][1].datos).toEqual({ papel: "elaborador", usuarioId: 5, aprobadorId: 6, motivo: "Lo asume el SGC." });
+    await reasignarTramiteAccion(null, formulario({ ...enElaboracion, papel: "elaborador", usuarioId: "5", aprobadorId: "", motivo: "Lo asume el SGC." }));
+    expect(transicionar.mock.calls[1][1].datos).not.toHaveProperty("aprobadorId");
+  });
+
   it("corregir pasa la etapa y la ronda que vio la persona, y solo los campos del esquema", async () => {
     const campos = { ...enElaboracion, titulo: "  Inducción general  ", codigo: "cex-fo-01", tipoDocumentoId: "3" };
     expect(await corregirDatosTramiteAccion(null, formulario(campos))).toBeNull();
@@ -183,8 +190,21 @@ describe("gestión del trámite", () => {
     expect([tramiteId, sesion.usuarioId]).toEqual([7, 9]);
     expect(datos).toEqual({ titulo: "Inducción general", codigo: "CEX-FO-01", tipoDocumentoId: 3 });
     expect(esperado).toEqual({ etapa: "elaboracion", ronda: 2 });
-    expect(await corregirDatosTramiteAccion(null, formulario({ ...campos, procesoId: "2" }))).toMatchObject({ ok: false });
+    expect(await corregirDatosTramiteAccion(null, formulario({ ...campos, sobra: "x" }))).toMatchObject({ ok: false });
     expect(corregirDatosDeControl).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["un proceso", "p:2", { procesoId: 2 }],
+    ["un subproceso", "s:9", { subprocesoId: 9 }],
+  ])("corregir traduce el propietario elegido: %s", async (_nombre, principal, esperado) => {
+    await corregirDatosTramiteAccion(null, formulario({ ...enElaboracion, principal, aprobadorId: "6" }));
+    expect(corregirDatosDeControl.mock.calls[0][2]).toEqual({ ...esperado, aprobadorId: 6 });
+  });
+
+  it("corregir rechaza un propietario mal formado", async () => {
+    expect(await corregirDatosTramiteAccion(null, formulario({ ...enElaboracion, principal: "x:2" }))).toMatchObject({ ok: false });
+    expect(corregirDatosDeControl).not.toHaveBeenCalled();
   });
 
   it("un error de negocio de la corrección vuelve al formulario", async () => {
