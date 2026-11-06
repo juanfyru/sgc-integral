@@ -259,6 +259,19 @@ describe("aceptar una creación", () => {
       await tx`DELETE FROM configuracion WHERE clave = 'formato_codigo'`;
       await expect(aceptando(tx, "GTH-ZP-77")).resolves.toEqual({ etapa: "elaboracion", ronda: 1 });
     }));
+
+    it("con {NNN}, un código nuevo necesita tres cifras y sus siglas", () => revertida(sql, async (tx) => {
+      await tx`UPDATE configuracion SET valor = '{PROCESO}-{TIPO}-{NNN}' WHERE clave = 'formato_codigo'`;
+      await expect(tx.savepoint(() => aceptando(tx, "CEX-ZP-07"))).rejects.toThrow("El código no cumple el formato configurado");
+      await expect(tx.savepoint(() => aceptando(tx, "GTH-ZP-007"))).rejects.toThrow("El código debe empezar por CEX-ZP-");
+      await expect(aceptando(tx, "CEX-ZP-007")).resolves.toEqual({ etapa: "elaboracion", ronda: 1 });
+    }));
+
+    it("con los marcadores reordenados, las siglas van en ese orden", () => revertida(sql, async (tx) => {
+      await tx`UPDATE configuracion SET valor = '{TIPO}-{PROCESO}-{NN}' WHERE clave = 'formato_codigo'`;
+      await expect(tx.savepoint(() => aceptando(tx, "CEX-ZP-07"))).rejects.toThrow("El código debe empezar por ZP-CEX-");
+      await expect(aceptando(tx, "ZP-CEX-07")).resolves.toEqual({ etapa: "elaboracion", ronda: 1 });
+    }));
   });
 
   it("la fecha límite es de hoy en adelante, en la zona de la instalación", () => revertida(sql, async (tx) => {

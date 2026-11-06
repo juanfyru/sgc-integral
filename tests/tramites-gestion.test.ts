@@ -702,6 +702,55 @@ describe("corregirDatosDeControl", () => {
         await corregirDatosDeControl(t.tramiteId, t.admin, { codigo: "GTH-ZP-77" }, enElaboracion, { sql: tx });
         expect((await documentoDe(tx, t.tramiteId)).codigo).toBe("GTH-ZP-77");
       }));
+
+      describe("con otro formato configurado", () => {
+        const usarFormato = (tx: TransactionSql, formato: string) => tx`UPDATE configuracion SET valor = ${formato} WHERE clave = 'formato_codigo'`;
+        type Trayecto = Awaited<ReturnType<typeof tramiteEn>>;
+        const corregir = (tx: TransactionSql, t: Trayecto, datos: Datos) =>
+          corregirDatosDeControl(t.tramiteId, t.admin, datos, enElaboracion, { sql: tx });
+        const rechaza = (tx: TransactionSql, t: Trayecto, datos: Datos, mensaje: string) =>
+          expect(tx.savepoint(() => corregir(tx, t, datos))).rejects.toThrow(mensaje);
+
+        it("un código anterior al cambio de formato sigue valiendo: el ancho solo se le exige a uno nuevo", () => revertida(sql, async (tx) => {
+          const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-07" });
+          await usarFormato(tx, "{PROCESO}-{TIPO}-{NNN}");
+          const sub = await subprocesoDe(tx, (await procesoPorSigla(tx, "CEX")).id);
+          await corregir(tx, t, { subprocesoId: sub.id });
+          expect((await documentoDe(tx, t.tramiteId)).codigo).toBe("CEX-ZP-07");
+
+          await rechaza(tx, t, { tipoDocumentoId: await tipoRg(tx) }, "El código debe empezar por CEX-RG-");
+          await rechaza(tx, t, { codigo: "CEX-ZP-08" }, "El código no cumple el formato configurado");
+          await corregir(tx, t, { codigo: "CEX-ZP-008" });
+          expect((await documentoDe(tx, t.tramiteId)).codigo).toBe("CEX-ZP-008");
+        }));
+
+        it("con {NNN} acepta y corrige con tres cifras, y sigue exigiendo las siglas", () => revertida(sql, async (tx) => {
+          await usarFormato(tx, "{PROCESO}-{TIPO}-{NNN}");
+          const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-001" });
+          expect((await documentoDe(tx, t.tramiteId)).codigo).toBe("CEX-ZP-001");
+          await rechaza(tx, t, { codigo: "GTH-ZP-002" }, "El código debe empezar por CEX-ZP-");
+          await corregir(tx, t, { tipoDocumentoId: await tipoRg(tx), codigo: "CEX-RG-002" });
+          expect((await documentoDe(tx, t.tramiteId)).codigo).toBe("CEX-RG-002");
+        }));
+
+        it("con los marcadores reordenados acepta y corrige en ese orden", () => revertida(sql, async (tx) => {
+          await usarFormato(tx, "{TIPO}-{PROCESO}-{NN}");
+          const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "ZP-CEX-01" });
+          expect((await documentoDe(tx, t.tramiteId)).codigo).toBe("ZP-CEX-01");
+          await rechaza(tx, t, { codigo: "CEX-ZP-02" }, "El código debe empezar por ZP-CEX-");
+          await rechaza(tx, t, { tipoDocumentoId: await tipoRg(tx) }, "El código debe empezar por RG-CEX-");
+          await corregir(tx, t, { tipoDocumentoId: await tipoRg(tx), codigo: "RG-CEX-02" });
+          expect((await documentoDe(tx, t.tramiteId)).codigo).toBe("RG-CEX-02");
+        }));
+
+        it("con el consecutivo primero no hay un inicio que nombrar: da un ejemplo", () => revertida(sql, async (tx) => {
+          await usarFormato(tx, "{NN}-{PROCESO}-{TIPO}");
+          const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "01-CEX-ZP" });
+          await rechaza(tx, t, { codigo: "02-GTH-ZP" }, "El código debe tener la forma 01-CEX-ZP");
+          await corregir(tx, t, { codigo: "02-CEX-ZP" });
+          expect((await documentoDe(tx, t.tramiteId)).codigo).toBe("02-CEX-ZP");
+        }));
+      });
     });
 
     it("el código debe cumplir el formato", () => revertida(sql, async (tx) => {

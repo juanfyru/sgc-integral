@@ -93,12 +93,14 @@ export async function exigirFormatoDeCodigo(sql: Cliente, codigo: string, destin
  * El código de un documento que nace en un trámite lleva las siglas de su proceso y su tipo: es su
  * identidad (spec 13A §8.4 y §8.6, R32). Sin un formato válido solo aplica `exigirFormatoDeCodigo`,
  * y la carga directa del panel no pasa por aquí: esos documentos ya existen y llegan con su código.
+ * Solo mira las siglas: el ancho de un código nuevo lo exige `exigirFormatoDeCodigo`, y uno anterior a
+ * un cambio de formato conserva el suyo.
  */
 export async function exigirSiglasDelCodigo(sql: Cliente, codigo: string, destino: DestinoDeCodigo): Promise<void> {
   const { formatoCodigo: formato } = await obtenerConfigDocumental({ sql });
   if (!formato || validarFormato(formato) !== null) return;
   const siglas = await siglasDe(sql, destino);
-  if (siglas && consecutivoDe(formato, codigo, siglas) === null) throw new ErrorTramite(motivoDeSiglas(formato, siglas));
+  if (siglas && consecutivoDe(formato, codigo, siglas, true) === null) throw new ErrorTramite(motivoDeSiglas(formato, siglas));
 }
 
 export function errorDeCodigoRepetido(siguiente: string | null): ErrorTramite {
