@@ -478,6 +478,10 @@ export const auditoria = pgTable(
   (t) => [
     index("auditoria_entidad_idx").on(t.entidad, t.entidadId),
     index("auditoria_creado_idx").on(t.creadoEn),
+    // Los códigos que dejó el panel al corregirlos (`todosLosCodigos`, `codigoAbandonado`).
+    index("auditoria_cambios_codigo_idx")
+      .on(t.entidad, t.accion)
+      .where(sql`accion IN ('editar_control', 'editar_documento')`),
   ],
 );
 
@@ -667,7 +671,13 @@ export const tramiteEventos = pgTable(
     detalle: jsonb("detalle").notNull().default(sql`'{}'::jsonb`),
     creadoEn: timestamp("creado_en", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("tramite_eventos_tramite_idx").on(t.tramiteId, t.creadoEn)],
+  (t) => [
+    index("tramite_eventos_tramite_idx").on(t.tramiteId, t.creadoEn),
+    // Los códigos que dejó un trámite al corregirlos (`todosLosCodigos`, `codigoAbandonado`).
+    index("tramite_eventos_codigo_corregido_idx")
+      .on(sql`(detalle -> 'antes' ->> 'codigo')`)
+      .where(sql`tipo = 'corregir_datos'`),
+  ],
 );
 
 // Solo-inserción (trigger en la migración).

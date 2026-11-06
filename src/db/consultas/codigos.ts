@@ -6,12 +6,12 @@ import { ErrorTramite } from "./flujo/contrato";
 /** La acción de la bitácora con que el panel corrige los datos de control: guarda `antes` y `despues`. */
 export const ACCION_EDITAR_CONTROL = "editar_control";
 
-/** Cada fila de edición del panel heredado guardaba `codigoAnterior`, también si el código no cambió. */
-const ACCION_HEREDADA = "editar_documento";
-
 /**
  * Cuentan todos los documentos, también los que nunca se publicaron, y los códigos que un trámite
- * o el panel dejaron al corregirlos: un código no se reutiliza (spec 13A §8.4).
+ * o el panel dejaron al corregirlos: un código no se reutiliza (spec 13A §8.4). Las acciones van
+ * escritas en el SQL y no como parámetros: sin verlas, el planificador no usa el índice parcial de
+ * `auditoria`. `editar_documento` es el panel heredado: guardaba `codigoAnterior` aunque el código
+ * no cambiara.
  */
 export async function todosLosCodigos(opciones?: { sql?: Cliente }): Promise<string[]> {
   const sql = opciones?.sql ?? obtenerSql();
@@ -21,10 +21,10 @@ export async function todosLosCodigos(opciones?: { sql?: Cliente }): Promise<str
     WHERE tipo = 'corregir_datos' AND detalle -> 'antes' ->> 'codigo' IS NOT NULL
     UNION
     SELECT detalle -> 'antes' ->> 'codigo' AS codigo FROM auditoria
-    WHERE entidad = 'documento' AND accion = ${ACCION_EDITAR_CONTROL} AND detalle -> 'antes' ->> 'codigo' IS NOT NULL
+    WHERE entidad = 'documento' AND accion = 'editar_control' AND detalle -> 'antes' ->> 'codigo' IS NOT NULL
     UNION
     SELECT detalle ->> 'codigoAnterior' AS codigo FROM auditoria
-    WHERE entidad = 'documento' AND accion = ${ACCION_HEREDADA}
+    WHERE entidad = 'documento' AND accion = 'editar_documento'
       AND detalle ->> 'codigoAnterior' IS DISTINCT FROM detalle ->> 'codigo' AND detalle ->> 'codigoAnterior' IS NOT NULL`;
   return filas.map((f) => f.codigo);
 }
@@ -45,8 +45,8 @@ export async function codigoAbandonado(
     UNION ALL
     SELECT 1 FROM auditoria
     WHERE entidad = 'documento' AND entidad_id IS DISTINCT FROM ${opciones?.documentoId ?? null}
-      AND ((accion = ${ACCION_EDITAR_CONTROL} AND detalle -> 'antes' ->> 'codigo' = ${codigo})
-        OR (accion = ${ACCION_HEREDADA} AND detalle ->> 'codigoAnterior' = ${codigo} AND detalle ->> 'codigo' IS DISTINCT FROM ${codigo}))
+      AND ((accion = 'editar_control' AND detalle -> 'antes' ->> 'codigo' = ${codigo})
+        OR (accion = 'editar_documento' AND detalle ->> 'codigoAnterior' = ${codigo} AND detalle ->> 'codigo' IS DISTINCT FROM ${codigo}))
     LIMIT 1`;
   return Boolean(abandonado);
 }

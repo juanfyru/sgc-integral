@@ -12,8 +12,8 @@ import * as e from "../esquema";
 
 export type Db = PostgresJsDatabase;
 
-/** Lista de verificación de la revisión (spec §5): los tres primeros son críticos. */
-const ITEMS_VERIFICACION: ReadonlyArray<readonly [string, boolean]> = [
+/** Lista de verificación de la revisión (spec §5): los tres primeros son críticos. La migración 0005 repite estos textos. */
+export const ITEMS_VERIFICACION: ReadonlyArray<readonly [string, boolean]> = [
   ["Usa la plantilla vigente de su tipo", true],
   ["Código, versión y fecha en el encabezado", true],
   ["Tiene todas las secciones obligatorias", true],
