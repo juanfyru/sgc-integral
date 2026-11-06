@@ -185,7 +185,7 @@ export function PanelElaboracion({
       {plantilla ? (
         <p className="text-sm">
           {"Plantilla vigente: "}
-          <Link href={`/documentos/${plantilla.codigo}`} className="font-medium underline-offset-2 hover:underline">
+          <Link href={`/documentos/${plantilla.codigo}`} className="font-medium underline underline-offset-2">
             {`${plantilla.codigo}, versión ${plantilla.version}`}
           </Link>
         </p>

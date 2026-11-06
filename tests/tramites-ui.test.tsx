@@ -755,6 +755,11 @@ describe("PanelElaboracion", () => {
     expect(pintar(false, { ...borrador, plantilla: null })).not.toContain("Plantilla vigente");
   });
 
+  it("el enlace a la plantilla se ve como enlace sin pasar el mouse", () => {
+    const enlace = pintar(false).match(/<a [^>]*href="\/documentos\/SGC-FO-01"[^>]*>/)?.[0] ?? "";
+    expect(enlace.match(/class="([^"]*)"/)?.[1].split(" ")).toContain("underline");
+  });
+
   it("el control de cambios y las observaciones son texto plano", () => {
     const html = pintar(false);
     expect(html).toContain("Se añade la &lt;b&gt;inducción&lt;/b&gt;.");
