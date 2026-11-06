@@ -18,7 +18,7 @@ import {
   EsquemaDeshacerCarga,
   EsquemaDocumentoNuevo,
   EsquemaNuevaVersion,
-  EsquemaVersionId,
+  EsquemaSinDatos,
 } from "@/lib/esquemas/documentos";
 import { parsearFormulario } from "@/lib/validacion";
 
@@ -84,8 +84,8 @@ export async function publicarAccion(
   formData: FormData,
 ): Promise<EstadoAccion> {
   return mutacion(formData, "documentos.administrar", async (usuarioId) => {
-    const { versionId } = parsearFormulario(formData, EsquemaVersionId);
-    await publicarVersion(versionId, usuarioId);
+    parsearFormulario(formData, EsquemaSinDatos, { omitir: ["versionId"] });
+    await publicarVersion(idNumerico(formData, "versionId"), usuarioId);
   });
 }
 
@@ -104,7 +104,7 @@ export async function descartarBorradorAccion(
   formData: FormData,
 ): Promise<EstadoAccion> {
   return mutacion(formData, "documentos.administrar", async (usuarioId) => {
-    const { versionId } = parsearFormulario(formData, EsquemaVersionId);
-    await descartarBorrador(versionId, usuarioId);
+    parsearFormulario(formData, EsquemaSinDatos, { omitir: ["versionId"] });
+    await descartarBorrador(idNumerico(formData, "versionId"), usuarioId);
   });
 }

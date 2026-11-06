@@ -108,7 +108,7 @@ export async function obtenerFichaDocumento(
         AND (p.id IS NOT NULL OR (s.id IS NOT NULL AND ps.id IS NOT NULL))
       ORDER BY dp.es_principal DESC, nombre`,
     sql`
-      SELECT d.codigo, d.titulo, t2.nombre AS tipo, t2.es_diligenciable
+      SELECT DISTINCT d.codigo, d.titulo, t2.nombre AS tipo, t2.es_diligenciable
       FROM documento_relaciones r
       JOIN documentos d
         ON d.id = CASE WHEN r.documento_id = ${doc.id}

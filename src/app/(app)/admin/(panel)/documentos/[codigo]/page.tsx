@@ -17,7 +17,7 @@ import { claseBoton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import { InsigniaEstadoDocumento } from "@/componentes/ui/Insignia";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
-import { obtenerDocumentoAdmin, type VersionAdmin } from "@/db/consultas/admin";
+import { avisoDePublicar, caminoDirecto, obtenerDocumentoAdmin, type VersionAdmin } from "@/db/consultas/admin";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { puedePedirSobreDocumento } from "@/db/consultas/tramites";
 import { exigirPermiso } from "@/lib/paginas";
@@ -42,12 +42,14 @@ function numeroParaRegistrar(versiones: VersionAdmin[]): number {
 function SeccionVersion({
   version,
   documentoId,
+  nivelAcceso,
   puedeAdministrar,
   registrable,
   deshacible,
 }: {
   version: VersionAdmin;
   documentoId: number;
+  nivelAcceso: "general" | "restringido";
   puedeAdministrar: boolean;
   /** El camino directo puede dar de alta este documento (spec 13A §13.1). */
   registrable: boolean;
@@ -133,7 +135,7 @@ function SeccionVersion({
           <FormAccion
             accion={publicarAccion}
             etiqueta={`Publicar versión ${version.numero}`}
-            confirmacion="Quedará vigente, con la aprobación registrada fuera de la plataforma, y visible para todo el hospital."
+            confirmacion={avisoDePublicar(nivelAcceso)}
             campos={{ versionId: version.id }}
           />
         </div>
@@ -188,10 +190,7 @@ export default async function PaginaDocumentoAdmin({
   const vigente = documento.versiones.find((v) => v.estado === "vigente");
   const borrador = documento.versiones.find((v) => v.estado === "borrador");
   const puedePedirCambio = vigente ? await puedePedirSobreDocumento(sesion, documento.id) : false;
-  const registrable =
-    config.publicacionDirecta && !vigente && !situacion.anulado && !situacion.creacionCancelada && !situacion.tramiteAbierto;
-  const deshacible =
-    puedeAdministrar && config.publicacionDirecta && situacion.origenVigente === "fuera" && !situacion.tramiteAbierto;
+  const { registrable, deshacible } = caminoDirecto(situacion, config.publicacionDirecta);
 
   return (
     <div className="flex flex-col gap-6">
@@ -247,9 +246,10 @@ export default async function PaginaDocumentoAdmin({
             key={v.id}
             version={v}
             documentoId={documento.id}
+            nivelAcceso={documento.nivelAcceso}
             puedeAdministrar={puedeAdministrar}
             registrable={registrable}
-            deshacible={deshacible}
+            deshacible={puedeAdministrar && deshacible}
           />
         ))}
       </div>

@@ -17,7 +17,9 @@ type ProcesoConSub = {
 };
 type Asociacion = { procesoId: number | null; subprocesoId: number | null; esPrincipal: boolean };
 
-const anchoCompleto = `${claseControl} w-full disabled:bg-muted read-only:bg-muted`;
+const claseCampo = `${claseControl} w-full disabled:bg-muted`;
+/** `read-only:` también alcanza a un <select>, que nunca se edita como texto: lo pintaría deshabilitado. */
+const claseTexto = `${claseCampo} read-only:bg-muted`;
 
 const marcaDe = ({ procesoId, subprocesoId }: Pick<Asociacion, "procesoId" | "subprocesoId">) =>
   procesoId !== null ? `p:${procesoId}` : `s:${subprocesoId}`;
@@ -50,7 +52,7 @@ function Rechazo({ estado }: { estado: EstadoAccion }) {
 function CampoNivelAcceso({ valor }: { valor: string }) {
   return (
     <Campo etiqueta="Nivel de acceso" nombre="nivelAcceso">
-      <select required defaultValue={valor} className={anchoCompleto}>
+      <select required defaultValue={valor} className={claseCampo}>
         <option value="general">General</option>
         <option value="restringido">Restringido</option>
       </select>
@@ -62,10 +64,10 @@ function CamposDescriptivos({ descripcion, palabrasClave }: { descripcion: strin
   return (
     <>
       <Campo etiqueta="Descripción" nombre="descripcion" ayuda="Opcional. Alimenta la búsqueda.">
-        <textarea rows={3} maxLength={2000} defaultValue={descripcion} className={anchoCompleto} />
+        <textarea rows={3} maxLength={2000} defaultValue={descripcion} className={claseTexto} />
       </Campo>
       <Campo etiqueta="Palabras clave" nombre="palabrasClave" ayuda="Opcional. Separadas por coma. Alimentan la búsqueda.">
-        <input maxLength={500} defaultValue={palabrasClave} className={anchoCompleto} />
+        <input maxLength={500} defaultValue={palabrasClave} className={claseTexto} />
       </Campo>
     </>
   );
@@ -89,7 +91,7 @@ function DocumentosRelacionados({ documentos, marcados }: { documentos: OpcionDo
         }}
         placeholder="Filtrar por código o título"
         aria-label="Filtrar documentos relacionados"
-        className={anchoCompleto}
+        className={claseTexto}
       />
       <div className="flex max-h-56 flex-col gap-1 overflow-y-auto rounded-md border border-border p-3">
         {documentos.map((d) => (
@@ -204,10 +206,10 @@ export function FormularioDocumento({
     <form action={enviar} onSubmit={alEnviar} className="flex max-w-2xl flex-col gap-5">
       <div className="grid gap-4 sm:grid-cols-2">
         <Campo etiqueta="Código" nombre="codigo" ayuda={formatoCodigo ? `Formato: ${formatoCodigo}.` : undefined}>
-          <input required maxLength={40} defaultValue={campo("codigo")} className={`${anchoCompleto} font-mono uppercase`} />
+          <input required maxLength={40} defaultValue={campo("codigo")} className={`${claseTexto} font-mono uppercase`} />
         </Campo>
         <Campo etiqueta="Tipo" nombre="tipoId">
-          <select required defaultValue={campo("tipoId")} className={anchoCompleto}>
+          <select required defaultValue={campo("tipoId")} className={claseCampo}>
             {tipos.map((t) => (
               <option key={t.id} value={t.id}>{`${t.nombre} (${t.sigla})`}</option>
             ))}
@@ -215,7 +217,7 @@ export function FormularioDocumento({
         </Campo>
       </div>
       <Campo etiqueta="Título" nombre="titulo">
-        <input required minLength={3} maxLength={200} defaultValue={campo("titulo")} className={anchoCompleto} />
+        <input required minLength={3} maxLength={200} defaultValue={campo("titulo")} className={claseTexto} />
       </Campo>
       <div className="grid gap-4 sm:grid-cols-2">
         <Campo etiqueta="Versión con la que entra" nombre="numeroInicial" ayuda="El número real del documento.">
@@ -226,7 +228,7 @@ export function FormularioDocumento({
             max={NUMERO_MAXIMO_DE_VERSION}
             step={1}
             defaultValue={campo("numeroInicial") ?? 1}
-            className={anchoCompleto}
+            className={claseTexto}
           />
         </Campo>
         <CampoNivelAcceso valor={campo("nivelAcceso") ?? "general"} />
@@ -283,11 +285,11 @@ export function FormularioControl({
               maxLength={40}
               readOnly={codigoFijo}
               defaultValue={campo("codigo") ?? valores.codigo}
-              className={`${anchoCompleto} font-mono uppercase`}
+              className={`${claseTexto} font-mono uppercase`}
             />
           </Campo>
           <Campo etiqueta="Tipo" nombre="tipoId">
-            <select required disabled={codigoFijo} defaultValue={campo("tipoId") ?? valores.tipoId} className={anchoCompleto}>
+            <select required disabled={codigoFijo} defaultValue={campo("tipoId") ?? valores.tipoId} className={claseCampo}>
               {opciones.map((t) => (
                 <option key={t.id} value={t.id}>{`${t.nombre} (${t.sigla})`}</option>
               ))}
@@ -303,7 +305,7 @@ export function FormularioControl({
             maxLength={200}
             readOnly={tituloFijo}
             defaultValue={campo("titulo") ?? valores.titulo}
-            className={anchoCompleto}
+            className={claseTexto}
           />
         </Campo>
       </fieldset>

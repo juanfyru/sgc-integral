@@ -393,7 +393,15 @@ describe("aceptar una modificación", () => {
   it("no acepta si el documento tiene un borrador de carga pendiente", () => revertida(sql, async (tx) => {
     const documentoId = await idDe(tx, "GTH-PR-01");
     await tx`INSERT INTO documento_versiones (documento_id, numero, estado) VALUES (${documentoId}, 9, 'borrador')`;
-    await expect(aceptarModificacion(tx, "GTH-PR-01")).rejects.toThrow("El documento tiene un borrador de carga pendiente: publíquelo o descártelo");
+    await expect(aceptarModificacion(tx, "GTH-PR-01")).rejects.toThrow("El documento tiene un borrador de carga pendiente: descártelo");
+  }));
+
+  it("un documento heredado con una versión anulada sale por aquí: la modificación abre la siguiente", () => revertida(sql, async (tx) => {
+    const documentoId = await idDe(tx, "GTH-PR-01");
+    await tx`INSERT INTO documento_versiones (documento_id, numero, estado) VALUES (${documentoId}, 90, 'anulado')`;
+    const tramiteId = await aceptarModificacion(tx, "GTH-PR-01");
+    const [v] = await tx`SELECT v.numero, v.estado FROM tramites t JOIN documento_versiones v ON v.id = t.version_id WHERE t.id = ${tramiteId}`;
+    expect({ ...v }).toEqual({ numero: 91, estado: "borrador" });
   }));
 
   it("no acepta si el documento perdió su versión vigente", () => revertida(sql, async (tx) => {
@@ -444,7 +452,7 @@ describe("aceptar una eliminación", () => {
   it("no acepta si el documento tiene un borrador de carga pendiente (spec 13A §13.3)", () => revertida(sql, async (tx) => {
     const { gerente, doc, aceptar } = await bajaDe(tx, "SGC-PR-01");
     await tx`INSERT INTO documento_versiones (documento_id, numero, estado) VALUES (${doc.id}, 90, 'borrador')`;
-    await expect(aceptar(gerente.usuarioId)).rejects.toThrow("El documento tiene un borrador de carga pendiente: publíquelo o descártelo");
+    await expect(aceptar(gerente.usuarioId)).rejects.toThrow("El documento tiene un borrador de carga pendiente: descártelo");
   }));
 
   it("avisa también a quien pidió, y el evento guarda la versión y el aprobador", () => revertida(sql, async (tx) => {

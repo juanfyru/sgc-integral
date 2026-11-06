@@ -15,6 +15,7 @@ import { obtenerSql } from "@/db/cliente";
 import {
   anularVigenteEn,
   asegurarAdmin,
+  caminoDirecto,
   crearDocumento,
   crearVersionBorrador,
   deshacerCarga,
@@ -29,7 +30,9 @@ import {
   registrarArchivo,
 } from "@/db/consultas/admin";
 import { codigoAbandonado, todosLosCodigos } from "@/db/consultas/codigos";
-import { sesionDe } from "./utiles/tramites";
+import { obtenerFichaDocumento } from "@/db/consultas/documentos";
+import { transicionar } from "@/db/consultas/tramites-flujo";
+import { opc, sesionDe, tramiteEn } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
 const sql = obtenerSql();
@@ -40,6 +43,8 @@ let otroProcesoId: number;
 let tipoId: number;
 let otroTipoId: number;
 let consecutivo = Date.now() % 1_000_000;
+/** Lo que había en la base antes de esta corrida: nada de lo que hace un test debe cambiarlo. */
+let cargaPrevia: string | undefined;
 /** Un número nuevo en cada corrida: un código que se abandona no vuelve a estar libre. */
 let unico = Date.now();
 const codigoUnico = () => `ZZ-CD-${(unico += 1)}`;
@@ -52,8 +57,15 @@ async function limpiar() {
   await sql`DELETE FROM documentos WHERE codigo LIKE 'ZZ-CD-%'`;
 }
 
+async function restaurarCarga(valor: string | undefined) {
+  if (valor === undefined) await sql`DELETE FROM configuracion WHERE clave = 'publicacion_directa'`;
+  else await sql`UPDATE configuracion SET valor = ${valor} WHERE clave = 'publicacion_directa'`;
+}
+
 beforeAll(async () => {
   await limpiar();
+  const [previa] = await sql`SELECT valor FROM configuracion WHERE clave = 'publicacion_directa'`;
+  cargaPrevia = previa?.valor;
   await sql`UPDATE configuracion SET valor = '1' WHERE clave = 'publicacion_directa'`;
   await asegurarAdmin(ACTOR, "Actor de la carga", "x");
   [{ id: actorId }] = await sql`SELECT id FROM usuarios WHERE usuario = ${ACTOR}`;
@@ -65,6 +77,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await limpiar();
+  await restaurarCarga(cargaPrevia);
   await sql.end();
   globalThis.__sql = undefined;
 });
@@ -113,8 +126,7 @@ async function conCargaCerrada(fn: () => Promise<void>) {
   try {
     await fn();
   } finally {
-    if (previa) await sql`UPDATE configuracion SET valor = ${previa.valor} WHERE clave = 'publicacion_directa'`;
-    else await sql`DELETE FROM configuracion WHERE clave = 'publicacion_directa'`;
+    await restaurarCarga(previa?.valor);
   }
 }
 
@@ -193,6 +205,18 @@ describe("registrar y deshacer", () => {
     expect(v.estado).toBe("vigente");
   });
 
+  it("no deja sin salida un documento heredado con una versión anulada", async () => {
+    const { documentoId, versionId } = await registrado("ZZ-CD-18", 2);
+    await sql`INSERT INTO documento_versiones (documento_id, numero, estado) VALUES (${documentoId}, 1, 'anulado')`; // como lo dejaría una base de sgc-suaza
+    await expect(deshacerCarga(documentoId, "Motivo de prueba.", actorId)).rejects.toThrow(
+      "Este documento tiene una versión anulada: la corrección se pide por trámite",
+    );
+    const [v] = await sql`SELECT estado FROM documento_versiones WHERE id = ${versionId}`;
+    expect(v.estado).toBe("vigente");
+    const documento = await obtenerDocumentoAdmin("ZZ-CD-18", await sesionDe(sql, ACTOR));
+    expect(caminoDirecto(documento!.situacion, true).deshacible).toBe(false);
+  });
+
   it("no acepta un número por debajo de las versiones ya publicadas", async () => {
     const { documentoId, versionId } = await registrado("ZZ-CD-13", 2);
     await sql`UPDATE documento_versiones SET estado = 'obsoleto' WHERE id = ${versionId}`; // como lo dejaría una base de sgc-suaza
@@ -210,6 +234,41 @@ describe("registrar y deshacer", () => {
     expect(v.estado).toBe("descartado");
     const [aud] = await auditoriaDe("descartar_borrador", heredado);
     expect(aud.detalle).toMatchObject({ documentoId, numero: 2 });
+  });
+
+  it("publicar dos veces a la vez el mismo borrador: una gana y la otra se rechaza", async () => {
+    const { documentoId, versionId } = await crearDocumento(base("ZZ-CD-19"), actorId);
+    await prepararBorrador(versionId);
+    const resultados = await Promise.allSettled([publicarVersion(versionId, actorId), publicarVersion(versionId, actorId)]);
+    expect(resultados.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const [rechazo] = resultados.filter((r) => r.status === "rejected");
+    expect(String(rechazo.reason)).toMatch(/ya tiene una versión vigente/);
+    expect(await sql`SELECT numero FROM documento_versiones WHERE documento_id = ${documentoId} AND estado = 'vigente'`).toEqual([{ numero: 1 }]);
+    expect(await auditoriaDe("publicar_version", versionId)).toHaveLength(1);
+  });
+
+  it("descartar toma el candado del documento antes que el de la versión, como publicar", async () => {
+    const { documentoId, versionId } = await crearDocumento(base("ZZ-CD-27"), actorId);
+    let soltar = () => {};
+    const espera = new Promise<void>((r) => { soltar = r; });
+    let avisar = () => {};
+    const conCandado = new Promise<void>((r) => { avisar = r; });
+    let descarte: Promise<void> = Promise.resolve();
+    const retenido = sql.begin(async (tx) => {
+      await tx`SELECT 1 FROM documentos WHERE id = ${documentoId} FOR UPDATE`;
+      avisar();
+      await espera;
+      // Si descartar hubiera tomado ya la versión, esto fallaría en vez de esperar.
+      return tx`SELECT estado FROM documento_versiones WHERE id = ${versionId} FOR UPDATE NOWAIT`;
+    });
+    await conCandado;
+    descarte = descartarBorrador(versionId, actorId);
+    await new Promise((r) => setTimeout(r, 150));
+    soltar();
+    expect(await retenido).toEqual([{ estado: "borrador" }]);
+    await descarte;
+    const [v] = await sql`SELECT estado FROM documento_versiones WHERE id = ${versionId}`;
+    expect(v.estado).toBe("descartado");
   });
 
   it("descartar solo vale para un borrador que no está en un trámite abierto", async () => {
@@ -260,6 +319,21 @@ describe("ningún camino directo revive lo que un trámite cerró", () => {
     const heredado = await borradorHeredado(documentoId, 1);
     await expect(publicarVersion(heredado, actorId)).rejects.toThrow("Esta creación se canceló: pida un trámite nuevo");
   });
+
+  it("una creación cancelada por el trámite real tampoco se reactiva", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
+    await transicionar(
+      t.admin,
+      { tramiteId: t.tramiteId, accion: "cancelar", etapaEsperada: "elaboracion", rondaEsperada: 1, datos: { motivo: "Ya no hace falta." } },
+      opc(tx),
+    );
+    const [{ codigo, id }] = await tx`SELECT d.codigo, d.id FROM documentos d JOIN tramites t ON t.documento_id = d.id WHERE t.id = ${t.tramiteId}`;
+    const documento = await obtenerDocumentoAdmin(codigo, t.admin, { sql: tx });
+    expect(documento?.versiones.map((v) => v.estado)).toEqual(["descartado"]);
+    expect(documento?.situacion).toMatchObject({ creacionCancelada: true, publicado: false, tramiteAbierto: null });
+    expect(caminoDirecto(documento!.situacion, true).registrable).toBe(false);
+    await expect(tx.savepoint((s) => exigirDocumentoRegistrable(s, id))).rejects.toThrow("Esta creación se canceló: pida un trámite nuevo");
+  }));
 
   it("una carga deshecha también deja solo versiones descartadas, y sí se registra de nuevo", async () => {
     const { documentoId } = await registrado("ZZ-CD-22");
@@ -407,6 +481,66 @@ describe("datos de control y de catálogo", () => {
   });
 });
 
+describe("la relación entre documentos es simétrica", () => {
+  const catalogo = () => ({ descripcion: null, palabrasClave: null, asociaciones: asociacionesDe(), nivelAcceso: "general" as const });
+  const filas = (a: number, b: number) =>
+    sql`SELECT documento_id, relacionado_id FROM documento_relaciones
+      WHERE documento_id IN (${a}, ${b}) AND relacionado_id IN (${a}, ${b}) ORDER BY id`;
+  const conFila = async (codigoA: string, codigoB: string) => {
+    const a = await registrado(codigoA);
+    const b = await registrado(codigoB);
+    await sql`INSERT INTO documento_relaciones (documento_id, relacionado_id) VALUES (${a.documentoId}, ${b.documentoId})`;
+    return { a: a.documentoId, b: b.documentoId };
+  };
+
+  it("desde B se ve marcado A, aunque la fila sea (A,B)", async () => {
+    const { a } = await conFila("ZZ-CD-71", "ZZ-CD-72");
+    const documento = await obtenerDocumentoAdmin("ZZ-CD-72", await sesionDe(sql, ACTOR));
+    expect(documento?.relacionados).toEqual([a]);
+  });
+
+  it("marcar desde B lo que ya existe como (A,B) no crea otra fila", async () => {
+    const { a, b } = await conFila("ZZ-CD-73", "ZZ-CD-74");
+    await editarCatalogo(b, { ...catalogo(), relacionados: [a] }, actorId);
+    expect(await filas(a, b)).toEqual([{ documento_id: a, relacionado_id: b }]);
+    expect(await auditoriaDe("editar_documento", b)).toEqual([]);
+  });
+
+  it("desmarcar desde B borra la fila (A,B), y la bitácora dice el antes y el después", async () => {
+    const { a, b } = await conFila("ZZ-CD-75", "ZZ-CD-76");
+    await editarCatalogo(b, { ...catalogo(), relacionados: [] }, actorId);
+    expect(await filas(a, b)).toEqual([]);
+    const [aud] = await auditoriaDe("editar_documento", b);
+    expect(aud.detalle).toEqual({ antes: { relacionados: ["ZZ-CD-75"] }, despues: { relacionados: [] } });
+  });
+
+  it("guardar sin tocar conserva (A,B) y (B,A) de una base heredada, y la ficha no repite el documento", async () => {
+    const { a, b } = await conFila("ZZ-CD-77", "ZZ-CD-78");
+    await sql`INSERT INTO documento_relaciones (documento_id, relacionado_id) VALUES (${b}, ${a})`;
+    const admin = await sesionDe(sql, ACTOR);
+    const ficha = await obtenerFichaDocumento("ZZ-CD-77", admin);
+    expect(ficha?.relacionados.map((r) => r.codigo)).toEqual(["ZZ-CD-78"]);
+    expect((await obtenerDocumentoAdmin("ZZ-CD-77", admin))?.relacionados).toEqual([b]);
+    await editarCatalogo(a, { ...catalogo(), relacionados: [b] }, actorId);
+    expect(await auditoriaDe("editar_documento", a)).toEqual([]);
+  });
+
+  it("rechaza con un mensaje de negocio el propio documento o uno que no existe", async () => {
+    const { documentoId } = await registrado("ZZ-CD-79");
+    await expect(editarCatalogo(documentoId, { ...catalogo(), relacionados: [documentoId] }, actorId)).rejects.toThrow(
+      "Un documento no se relaciona consigo mismo",
+    );
+    await expect(editarCatalogo(documentoId, { ...catalogo(), relacionados: [2_000_000_000] }, actorId)).rejects.toThrow(
+      "Un documento relacionado no existe",
+    );
+    await expect(crearDocumento({ ...base("ZZ-CD-80"), relacionados: [2_000_000_000] }, actorId)).rejects.toThrow(
+      "Un documento relacionado no existe",
+    );
+    const [{ n }] = await sql`SELECT count(*)::int AS n FROM documentos WHERE codigo = 'ZZ-CD-80'`;
+    expect(n).toBe(0);
+  });
+});
+
 describe("un código abandonado no se reutiliza desde el panel", () => {
   it("el código que dejó editarControl no lo usa otro documento, y sí quien lo dejó", async () => {
     const dejado = codigoUnico();
@@ -427,6 +561,20 @@ describe("un código abandonado no se reutiliza desde el panel", () => {
     const [d] = await sql`SELECT codigo FROM documentos WHERE id = ${documentoId}`;
     expect(d.codigo).toBe(dejado);
   });
+
+  it("cuenta el código que dejó una edición heredada de sgc-suaza, no el que siguió igual", () => revertida(sql, async (tx) => {
+    const fila = (detalle: Record<string, string>) =>
+      tx`INSERT INTO auditoria (usuario_id, accion, entidad, entidad_id, detalle)
+        VALUES (${actorId}, 'editar_documento', 'documento', 2000000000, ${tx.json(detalle)})`;
+    await fila({ codigoAnterior: "ZZ-CD-43", codigo: "ZZ-CD-44", titulo: "Heredado" });
+    await fila({ codigoAnterior: "ZZ-CD-45", codigo: "ZZ-CD-45", titulo: "Sin cambio de código" });
+    expect(await codigoAbandonado("ZZ-CD-43", null, { sql: tx })).toBe(true);
+    expect(await codigoAbandonado("ZZ-CD-43", null, { sql: tx, documentoId: 2_000_000_000 })).toBe(false);
+    expect(await codigoAbandonado("ZZ-CD-45", null, { sql: tx })).toBe(false);
+    const codigos = await todosLosCodigos({ sql: tx });
+    expect(codigos).toContain("ZZ-CD-43");
+    expect(codigos).not.toContain("ZZ-CD-45");
+  }));
 
   it("desde el panel cuenta lo que dejó cualquier trámite", () => revertida(sql, async (tx) => {
     const [{ id }] = await tx`INSERT INTO tramites (numero, anio, consecutivo, tipo, motivo, justificacion, solicitante_id, proceso_id, etapa)

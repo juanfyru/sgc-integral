@@ -75,7 +75,8 @@ export function plazoHasta(fecha: string, ahora: Date, que: string): Date {
   return venceEn;
 }
 
-const BORRADOR_PENDIENTE = "El documento tiene un borrador de carga pendiente: publíquelo o descártelo";
+/** Solo descartarlo: ya hay una versión vigente, y sobre ella el camino directo no publica. */
+const BORRADOR_PENDIENTE = "El documento tiene un borrador de carga pendiente: descártelo";
 
 const plazoDeElaboracion = (fecha: string, ahora: Date) => plazoHasta(fecha, ahora, "La fecha límite de elaboración");
 

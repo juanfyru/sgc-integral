@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { listarDocumentosAdmin, type FilaDocumentoAdmin } from "@/db/consultas/admin";
+import { documentosEnElSgc, estadoSinVersionActiva, listarDocumentosAdmin } from "@/db/consultas/admin";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { claseBoton } from "@/componentes/ui/Boton";
@@ -19,16 +19,12 @@ const COLUMNAS: readonly ColumnaTabla[] = [
   { clave: "estado", etiqueta: "Estado" },
 ];
 
-/** Sin versión vigente ni borrador, el estado del documento es el de lo que queda de él. */
-const estadoSinVersionActiva = (d: FilaDocumentoAdmin) => (d.anulado ? "anulado" : d.descartado ? "descartado" : "obsoleto");
-
 export default async function PaginaDocumentosAdmin() {
   const sesion = await exigirEntradaPanel();
   // Gerencia entra al panel pero no ve el historial documental: aterriza en estadísticas.
   if (!puede(sesion, "documentos.ver_historial")) redirect("/admin/estadisticas");
   const [documentos, config] = await Promise.all([listarDocumentosAdmin(sesion), obtenerConfigDocumental()]);
-  // Uno con todas sus versiones descartadas se lista para poder revisarlo, pero no es un documento del SGC.
-  const enElSgc = documentos.filter((d) => !d.descartado).length;
+  const enElSgc = documentosEnElSgc(documentos);
 
   return (
     <div>

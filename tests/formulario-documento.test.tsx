@@ -6,13 +6,26 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { FormularioCatalogo, FormularioControl, FormularioDocumento } from "@/componentes/admin/FormularioDocumento";
-import { documentosRelacionables, edicionDeControl, type FilaDocumentoAdmin, type SituacionDocumento } from "@/db/consultas/admin";
+import { InsigniaEstadoDocumento } from "@/componentes/ui/Insignia";
+import {
+  avisoDePublicar,
+  caminoDirecto,
+  documentosEnElSgc,
+  documentosRelacionables,
+  edicionDeControl,
+  estadoSinVersionActiva,
+  impedimentoDeDeshacer,
+  impedimentoDeRegistro,
+  type FilaDocumentoAdmin,
+  type SituacionDocumento,
+} from "@/db/consultas/admin";
 import {
   EsquemaCatalogo,
   EsquemaDatosVersion,
   EsquemaDeshacerCarga,
   EsquemaDocumentoNuevo,
   EsquemaNuevaVersion,
+  EsquemaSinDatos,
 } from "@/lib/esquemas/documentos";
 import { parsearFormulario } from "@/lib/validacion";
 
@@ -66,6 +79,61 @@ describe("edicionDeControl (spec 13A §8.6)", () => {
   });
 });
 
+describe("caminoDirecto (spec 13A §13)", () => {
+  const TRAMITE = { id: 1, numero: "SOL-2026-001" };
+
+  it("un documento sin nada que lo impida se registra, con la carga abierta", () => {
+    expect(caminoDirecto(LIBRE, true)).toEqual({ registrable: true, deshacible: false });
+    expect(caminoDirecto(LIBRE, false)).toEqual({ registrable: false, deshacible: false });
+  });
+
+  it("una creación cancelada o un documento eliminado no ofrecen «Nueva versión»", () => {
+    expect(caminoDirecto({ ...LIBRE, creacionCancelada: true }, true).registrable).toBe(false);
+    expect(caminoDirecto({ ...LIBRE, publicado: true, anulado: true }, true).registrable).toBe(false);
+    expect(impedimentoDeRegistro({ ...LIBRE, creacionCancelada: true })).toBe("Esta creación se canceló: pida un trámite nuevo");
+  });
+
+  it("con una vigente, o con un trámite abierto, no se registra", () => {
+    expect(impedimentoDeRegistro({ ...LIBRE, publicado: true, origenVigente: "fuera" })).toMatch(/se pide por trámite/);
+    expect(impedimentoDeRegistro({ ...LIBRE, tramiteAbierto: TRAMITE })).toBe("Este documento tiene un trámite abierto");
+  });
+
+  it("solo se deshace lo cargado fuera, con la carga abierta, sin trámite y sin versión anulada", () => {
+    const cargado = { ...LIBRE, publicado: true, origenVigente: "fuera" as const };
+    expect(caminoDirecto(cargado, true).deshacible).toBe(true);
+    expect(caminoDirecto(cargado, false).deshacible).toBe(false);
+    expect(impedimentoDeDeshacer({ ...cargado, origenVigente: "plataforma" })).toMatch(/fuera de la plataforma/);
+    expect(impedimentoDeDeshacer({ ...cargado, tramiteAbierto: TRAMITE })).toBe("Este documento tiene un trámite abierto");
+    expect(impedimentoDeDeshacer({ ...cargado, anulado: true })).toBe("Este documento tiene una versión anulada: la corrección se pide por trámite");
+  });
+});
+
+describe("avisoDePublicar", () => {
+  it("un documento general lo ve todo el hospital; uno restringido, no", () => {
+    expect(avisoDePublicar("general")).toContain("visible para todo el hospital");
+    expect(avisoDePublicar("restringido")).not.toContain("todo el hospital");
+    expect(avisoDePublicar("restringido")).toContain("Solo lo verán");
+  });
+});
+
+describe("la lista del panel y lo descartado", () => {
+  const fila = (d: Partial<FilaDocumentoAdmin>) => ({ anulado: false, descartado: false, ...d }) as FilaDocumentoAdmin;
+
+  it("la insignia dice «Descartado» con texto", () => {
+    expect(estadoSinVersionActiva(fila({ descartado: true }))).toBe("descartado");
+    expect(renderToStaticMarkup(<InsigniaEstadoDocumento estado="descartado" />)).toContain("Descartado");
+  });
+
+  it("sin vigente ni borrador, dice lo que queda del documento", () => {
+    expect(estadoSinVersionActiva(fila({ anulado: true }))).toBe("anulado");
+    expect(estadoSinVersionActiva(fila({}))).toBe("obsoleto");
+  });
+
+  it("la cifra no cuenta lo descartado", () => {
+    expect(documentosEnElSgc([fila({}), fila({ descartado: true }), fila({ anulado: true })])).toBe(2);
+  });
+});
+
 describe("FormularioControl", () => {
   it("sin restricciones ofrece los tres campos y no dice nada de más", () => {
     const html = renderToStaticMarkup(<FormularioControl {...CONTROL} edicion={{ codigoYTipo: null, titulo: null }} />);
@@ -90,6 +158,12 @@ describe("FormularioControl", () => {
     expect(html).toMatch(/<select[^>]*disabled/);
     expect(html).toMatch(/<input type="hidden" name="tipoId" value="1"/);
     expect(html).not.toMatch(/<fieldset[^>]* disabled/);
+  });
+
+  it("un <select> activo no se pinta como deshabilitado", () => {
+    const html = renderToStaticMarkup(<FormularioControl {...CONTROL} edicion={{ codigoYTipo: null, titulo: null }} />);
+    expect(html).toMatch(/<input[^>]*read-only:bg-muted/);
+    expect(html).not.toMatch(/<select[^>]*read-only:bg-muted/);
   });
 
   it("el tipo inactivo del documento se sigue mostrando", () => {
@@ -220,6 +294,12 @@ describe("esquemas del camino directo", () => {
       resumenCambios: null,
     });
     expect(() => parsearFormulario(formulario([["fechaAprobacion", "ayer"]]), EsquemaDatosVersion)).toThrow(/fechaAprobacion/);
+  });
+
+  it("una acción que solo lleva su id rechaza cualquier otro campo", () => {
+    const id = { omitir: ["versionId"] };
+    expect(parsearFormulario(formulario([["versionId", "9"]]), EsquemaSinDatos, id)).toEqual({});
+    expect(() => parsearFormulario(formulario([["versionId", "9"], ["estado", "vigente"]]), EsquemaSinDatos, id)).toThrow();
   });
 
   it("deshacer exige un motivo de verdad", () => {

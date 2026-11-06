@@ -62,5 +62,5 @@ export const EsquemaDatosVersion = z
 
 export const EsquemaDeshacerCarga = z.object({ motivo: z.string().trim().min(5).max(1000) }).strict();
 
-/** Las acciones que solo llevan la versión sobre la que actúan. */
-export const EsquemaVersionId = z.object({ versionId: id }).strict();
+/** Las acciones que solo llevan el id de su ruta: cualquier otro campo se rechaza. */
+export const EsquemaSinDatos = z.object({}).strict();
