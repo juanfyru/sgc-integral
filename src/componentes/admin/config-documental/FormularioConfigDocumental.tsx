@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { guardarConfigDocumentalAccion } from "@/app/admin/acciones-config-documental";
 import { enviarSinReiniciar } from "@/componentes/admin/sin-reiniciar";
 import { Boton } from "@/componentes/ui/Boton";
@@ -37,9 +37,23 @@ export function FormularioConfigDocumental({ config }: { config: ConfigDocumenta
   const [formato, setFormato] = useState(val("formatoCodigo") ?? config.formatoCodigo ?? FORMATO_CODIGO_DEFECTO);
   const motivo = validarFormato(formato.trim());
   const ejemplo = motivo ? null : generarCodigo(formato.trim(), { proceso: "SGC", tipo: "FO", consecutivo: 2 });
+  const [enviado, setEnviado] = useState(false);
+  const confirmacion = useRef<HTMLParagraphElement>(null);
+  const guardado = enviado && !pendiente && !estado;
+  useEffect(() => {
+    if (guardado) confirmacion.current?.focus();
+  }, [guardado]);
 
   return (
-    <form action={enviar} onSubmit={enviarSinReiniciar(enviar)} className="flex max-w-3xl flex-col gap-6">
+    <form
+      action={enviar}
+      onSubmit={(evento) => {
+        setEnviado(true);
+        enviarSinReiniciar(enviar)(evento);
+      }}
+      onChange={() => setEnviado(false)}
+      className="flex max-w-3xl flex-col gap-6"
+    >
       <Seccion titulo="Formato del código">
         <Campo
           etiqueta="Formato"
@@ -127,9 +141,14 @@ export function FormularioConfigDocumental({ config }: { config: ConfigDocumenta
           {estado.error}
         </p>
       )}
-      <Boton type="submit" pendiente={pendiente} className="self-start">
-        {pendiente ? "Guardando…" : "Guardar configuración"}
-      </Boton>
+      <div className="flex flex-wrap items-center gap-3">
+        <Boton type="submit" pendiente={pendiente}>
+          {pendiente ? "Guardando…" : "Guardar configuración"}
+        </Boton>
+        <p ref={confirmacion} role="status" tabIndex={-1} className="text-sm text-estado-bien-texto">
+          {guardado ? "Configuración guardada" : ""}
+        </p>
+      </div>
     </form>
   );
 }

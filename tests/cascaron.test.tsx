@@ -10,6 +10,14 @@ vi.mock("next/navigation", () => ({ usePathname: () => "/admin/usuarios/5" }));
 const marca = { nombre: "Hospital X", sigla: "HX", logoUrl: null };
 
 describe("cascarón (render estático de los componentes cliente)", () => {
+  it("una etiqueta larga de la navegación baja de línea: no se corta", () => {
+    const h = renderToStaticMarkup(
+      <ContenidoBarra marca={marca} entradas={entradasVisibles({ rol: "admin_sgc" })} tareas={0} version="0.1.0" />,
+    );
+    expect(h).toContain("Configuración documental");
+    expect(h).not.toContain("truncate");
+  });
+
   it("ContenidoBarra marca la ruta activa, agrupa y pinta el pie con la versión", () => {
     const h = renderToStaticMarkup(
       <ContenidoBarra marca={marca} entradas={entradasVisibles({ rol: "admin_sgc" })} tareas={0} version="0.1.0" />,

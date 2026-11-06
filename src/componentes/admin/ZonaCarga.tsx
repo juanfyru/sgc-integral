@@ -109,8 +109,8 @@ export function ZonaCarga({ direccion }: { direccion: string }) {
         <ul className="flex flex-col gap-2" aria-live="polite">
           {cargas.map((c) => (
             <li key={c.nombre} className="text-sm">
-              <span className="flex items-center justify-between gap-2">
-                <span className="truncate">{c.nombre}</span>
+              <span className="flex flex-wrap items-baseline justify-between gap-x-2">
+                <span className="min-w-0 break-words">{c.nombre}</span>
                 <span className={c.estado === "error" ? "text-estado-critico-texto" : "text-muted-foreground"}>
                   {c.estado === "listo" ? "Listo" : c.estado === "error" ? c.mensaje : `${c.progreso}%`}
                 </span>

@@ -20,7 +20,7 @@ export function Campana({ noLeidas, recientes }: { noLeidas: number; recientes: 
           {noLeidas > 0 && (
             <span
               aria-hidden="true"
-              className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-estado-critico px-1 text-center text-[10px] font-semibold leading-4 text-white"
+              className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-estado-critico-fondo px-1 text-center text-[10px] font-semibold leading-4 text-estado-critico-texto ring-1 ring-estado-critico"
             >
               {noLeidas > 9 ? "9+" : noLeidas}
             </span>
@@ -28,7 +28,8 @@ export function Campana({ noLeidas, recientes }: { noLeidas: number; recientes: 
         </>
       }
     >
-      <div className="absolute right-0 z-50 mt-2 w-80 max-w-[90vw] rounded-xl border border-border bg-card p-2 shadow-lg">
+      {/* A 390 px la campana no está en el borde de la barra: anclado a ella, el panel se saldría por la izquierda. */}
+      <div className="fixed inset-x-4 top-16 z-50 rounded-xl border border-border bg-card p-2 shadow-lg sm:absolute sm:inset-x-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-80">
         {recientes.length === 0 ? (
           <p className="px-2 py-3 text-sm text-muted-foreground">
             Sin notificaciones. Aquí verá los avisos del sistema y las tareas que le asignen.

@@ -101,7 +101,7 @@ export function ContenidoBarra({
                           nombre={e.icono}
                           className={`size-4 shrink-0 ${activa ? "text-white" : COLOR_ICONO[color]}`}
                         />
-                        <span className="min-w-0 flex-1 truncate">{e.etiqueta}</span>
+                        <span className="min-w-0 flex-1 break-words leading-tight">{e.etiqueta}</span>
                         {e.href === "/" && tareas > 0 && (
                           <span
                             data-contador={tareas}

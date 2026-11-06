@@ -41,6 +41,16 @@ describe("notificaciones", () => {
     expect(h).toContain("Marcar todas como leídas");
     expect(h).toContain('name="volver"');
   });
+  it("el contador usa la pareja de tokens que cumple AA en los dos temas", () => {
+    const h = renderToStaticMarkup(<Campana noLeidas={12} recientes={[]} />);
+    expect(h).toContain("bg-estado-critico-fondo");
+    expect(h).toContain("text-estado-critico-texto");
+    expect(h).not.toContain("text-white");
+  });
+  it("a 390 px el panel se ancla a la pantalla, no a la campana", () => {
+    const h = renderToStaticMarkup(<Campana noLeidas={1} recientes={[nota()]} />);
+    expect(h).toMatch(/class="fixed inset-x-4 top-16 [^"]*sm:absolute[^"]*sm:w-80/);
+  });
   it("el id de la notificación se valida", () => {
     const f = new FormData();
     f.set("id", "abc");
