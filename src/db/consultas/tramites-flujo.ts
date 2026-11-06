@@ -7,7 +7,6 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { obtenerConfigDocumental, type ConfigDocumental } from "@/db/consultas/config-documental";
 import { registrarFirma } from "@/db/consultas/firmas";
-import { crearNotificacion } from "@/db/consultas/notificaciones";
 import { alcanceProcesos, enAlcance } from "@/lib/alcance";
 import { verificarParaFirmar, type CredencialesFirma } from "@/lib/firma";
 import { puede } from "@/lib/permisos";
@@ -158,27 +157,26 @@ async function registrarEvento(
     VALUES (${e.tramiteId}, ${e.tipo}, ${e.usuarioId}, ${e.ronda}, ${tx.json((e.detalle ?? {}) as never)}, ${e.ahora})`;
 }
 
-/** Sin repetir destinatario entre avisos: gana el primero. Nadie se avisa de lo que acaba de hacer. */
+/** Sin repetir destinatario entre avisos: gana el primero. Nadie se avisa de lo que acaba de hacer. Una sola inserción. */
 async function enviarAvisos(tx: TransactionSql, tramiteId: number, actorId: number, avisos: Aviso[]): Promise<void> {
   const avisados = new Set([actorId]);
+  const filas: { usuarioId: number; aviso: Aviso }[] = [];
   for (const aviso of avisos) {
     for (const usuarioId of aviso.usuarioIds) {
       if (avisados.has(usuarioId)) continue;
       avisados.add(usuarioId);
-      await crearNotificacion(
-        {
-          usuarioId,
-          tipo: aviso.tipo,
-          titulo: aviso.titulo,
-          cuerpo: aviso.cuerpo,
-          enlace: `/tramites/${tramiteId}`,
-          entidad: "tramite",
-          entidadId: tramiteId,
-        },
-        tx,
-      );
+      filas.push({ usuarioId, aviso });
     }
   }
+  if (filas.length === 0) return;
+  await tx`INSERT INTO notificaciones (usuario_id, tipo, titulo, cuerpo, enlace, entidad, entidad_id)
+    SELECT u, t, ti, nullif(c, ''), ${`/tramites/${tramiteId}`}, 'tramite', ${tramiteId}
+    FROM unnest(
+      ${tx.array(filas.map((f) => f.usuarioId))}::int[],
+      ${tx.array(filas.map((f) => f.aviso.tipo))}::text[],
+      ${tx.array(filas.map((f) => f.aviso.titulo))}::text[],
+      ${tx.array(filas.map((f) => f.aviso.cuerpo ?? ""))}::text[]
+    ) AS a(u, t, ti, c)`;
 }
 
 export async function crearSolicitud(

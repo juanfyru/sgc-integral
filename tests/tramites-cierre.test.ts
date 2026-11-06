@@ -14,17 +14,14 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 import type { TransactionSql } from "postgres";
 import { obtenerSql } from "@/db/cliente";
 import { listarFirmas } from "@/db/consultas/firmas";
+import { cerrarObservacion, guardarVerificacion, listarItemsVerificacion, listarObservaciones, responderObservacion } from "@/db/consultas/revision";
 import { lideresDeProcesosDelDocumento } from "@/db/consultas/tramites";
-import { ErrorTramite, MANEJADORES, transicionar, type OpcionesFlujo, type SesionFlujo } from "@/db/consultas/tramites-flujo";
+import { ErrorTramite, MANEJADORES, VALIDADORES, transicionar, type OpcionesFlujo, type SesionFlujo } from "@/db/consultas/tramites-flujo";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import type { Verificador } from "@/lib/firma";
 import type { Etapa } from "@/lib/tramites/tipos";
-import { opc, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
+import { opc, sesionAdmin, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
-
-// Cada solicitud y cada aprobación avisan a todos los `admin_sgc` activos, y la BD de desarrollo
-// acumula los usuarios de prueba de cada corrida, que no se pueden borrar.
-vi.setConfig({ testTimeout: 30_000 });
 
 const sql = obtenerSql();
 
@@ -155,6 +152,18 @@ describe("aprobación", () => {
   }));
 });
 
+describe("quien elabora no aprueba", () => {
+  it("si el aprobador resulta ser quien firmó «elaboró», ni aprobar ni aprobar y publicar piden la firma", () => revertida(sql, async (tx) => {
+    const elaborador = await sesionAdmin(tx);
+    const t = await tramiteEn(tx, "aprobacion", { elaborador, aprobador: await sesionDe(tx, "gerente") }); // un admin_sgc que elabora aprueba Gerencia
+    try {
+      await tx`UPDATE tramites SET aprobador_id = ${elaborador.usuarioId} WHERE id = ${t.tramiteId}`;
+      await fallaSinGastarLaFirma(tx, elaborador, firmando(t, "aprobar", "aprobacion"), "Quien elabora no puede aprobar");
+      await fallaSinGastarLaFirma(tx, elaborador, firmando(t, "aprobar_y_publicar", "aprobacion"), "Quien elabora no puede aprobar");
+    } finally { await t.limpiar(); }
+  }));
+});
+
 describe("publicación", () => {
   it("aprobar y publicar en un solo acto deja la versión vigente con sus datos de control", () => revertida(sql, async (tx) => {
     const t = await tramiteEn(tx, "aprobacion");                         // GTH-PR-02 es operativo: aprueba un admin_sgc
@@ -252,6 +261,9 @@ describe("publicación", () => {
       expect(await titulo()).toBe("Procedimiento de Inducción y Reinducción");
       await transicionar(t.admin, publicar(t), opc(tx));
       expect(await titulo()).toBe(nuevo);
+      expect(await ultimoDetalle(tx, t.tramiteId, "publicar")).toMatchObject({
+        tituloAnterior: "Procedimiento de Inducción y Reinducción", titulo: nuevo,
+      });
     } finally { await t.limpiar(); }
   }));
 
@@ -407,5 +419,64 @@ describe("eliminación", () => {
     const t = await tramiteEn(tx, "publicacion", { codigo: "GTH-PR-01", tipo: "eliminar" });
     await tx`UPDATE documento_versiones SET estado = 'obsoleto' WHERE id = ${t.versionId}`;
     await fallaSinGastarLaFirma(tx, t.admin, publicar(t), "La versión de este trámite ya no está vigente");
+  }));
+
+  it("la eliminación solo anula la versión que se aprobó retirar", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "publicacion", { codigo: "GTH-PR-01", tipo: "eliminar" });
+    // Otra versión pasó a ser la vigente (y la del trámite quedó obsoleta) sin que el trámite lo supiera.
+    await tx`UPDATE documento_versiones SET estado = 'obsoleto' WHERE id = ${t.versionId}`;
+    const [{ documento_id: documentoId }] = await tx`SELECT documento_id FROM documento_versiones WHERE id = ${t.versionId}`;
+    const [otra] = await tx`INSERT INTO documento_versiones (documento_id, numero, estado, origen_aprobacion, publicado_en, elaboro, reviso, aprobo, fecha_elaboracion, fecha_revision, fecha_aprobacion)
+      VALUES (${documentoId}, 99, 'vigente', 'plataforma', now(), 'x', 'x', 'x', current_date, current_date, current_date) RETURNING id`;
+    await tx`UPDATE tramites SET version_id = ${t.versionId} WHERE id = ${t.tramiteId}`;
+    // `validarPublicar` ya lo ve; se salta para probar el manejador por sí solo.
+    const validador = VALIDADORES.publicar;
+    delete VALIDADORES.publicar;
+    try {
+      await expect(tx.savepoint(() => transicionar(t.admin, publicar(t, 0), opc(tx)))).rejects.toThrow("La versión vigente cambió: revise el trámite");
+      const [v] = await tx`SELECT estado FROM documento_versiones WHERE id = ${otra.id}`;
+      expect(v.estado).toBe("vigente");
+    } finally { VALIDADORES.publicar = validador; }
+  }));
+});
+
+describe("ciclo completo", () => {
+  const ahoraDe = (tx: TransactionSql, id: number) =>
+    tx`SELECT etapa, ronda FROM tramites WHERE id = ${id}`.then(([x]) => ({ etapa: x.etapa, ronda: x.ronda }));
+
+  it("tras una devolución del aprobador: responder, revisar, aprobar y publicar en la ronda nueva", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "aprobacion");
+    try {
+      const nueva = t.ronda + 1;
+      expect(await transicionar(t.aprobador, { tramiteId: t.tramiteId, accion: "devolver_aprobacion", etapaEsperada: "aprobacion", rondaEsperada: t.ronda,
+        datos: { observaciones: ["Falta citar la resolución vigente."] } }, opc(tx))).toEqual({ etapa: "elaboracion", ronda: nueva });
+      const [o] = await listarObservaciones(t.tramiteId, { sql: tx });
+      await responderObservacion(o.id, t.elaborador, "Se citó la resolución.", await ahoraDe(tx, t.tramiteId), { sql: tx });
+      await transicionar(t.elaborador, { tramiteId: t.tramiteId, accion: "enviar_a_revision", etapaEsperada: "elaboracion", rondaEsperada: nueva, credenciales: { clave: "x" } }, opc(tx));
+      const items = await listarItemsVerificacion({ sql: tx, soloActivos: true });
+      await guardarVerificacion(t.tramiteId, t.revisor, items.map((i) => ({ itemId: i.id, resultado: "cumple" as const })), await ahoraDe(tx, t.tramiteId), { sql: tx });
+      await cerrarObservacion(o.id, t.revisor, await ahoraDe(tx, t.tramiteId), { sql: tx });
+      await transicionar(t.revisor, { tramiteId: t.tramiteId, accion: "concepto_favorable", etapaEsperada: "revision", rondaEsperada: nueva, datos: { concepto: "Cumple." }, credenciales: { clave: "x" } }, opc(tx));
+      expect((await transicionar(t.aprobador, firmando(t, "aprobar_y_publicar", "aprobacion", nueva), opc(tx))).etapa).toBe("publicado");
+      const deLaRonda = (await listarFirmas(t.tramiteId, { sql: tx })).filter((f) => f.ronda === nueva);
+      expect(deLaRonda.map((f) => f.firma)).toEqual(["elaboro", "reviso", "aprobo", "publico"]);
+      const [v] = await tx`SELECT estado FROM documento_versiones WHERE id = ${t.versionId}`;
+      expect(v.estado).toBe("vigente");
+    } finally { await t.limpiar(); }
+  }));
+
+  it("un admin_sgc que elaboró también publica; aprueba Gerencia", () => revertida(sql, async (tx) => {
+    const elaborador = await sesionAdmin(tx);
+    const gerente = await sesionDe(tx, "gerente");
+    const t = await tramiteEn(tx, "aprobacion", { elaborador, aprobador: gerente });
+    try {
+      const entrada = { tramiteId: t.tramiteId, etapaEsperada: "aprobacion", rondaEsperada: t.ronda, datos: { concepto: "Aprobado." }, credenciales: { clave: "x" } } as const;
+      await transicionar(gerente, { ...entrada, accion: "aprobar" }, opc(tx));
+      expect((await transicionar(elaborador, { tramiteId: t.tramiteId, accion: "publicar", etapaEsperada: "publicacion", rondaEsperada: t.ronda, credenciales: { clave: "x" } }, opc(tx))).etapa).toBe("publicado");
+      const firmas = await listarFirmas(t.tramiteId, { sql: tx });
+      expect(firmas.map((f) => [f.firma, f.usuarioId])).toEqual([
+        ["elaboro", elaborador.usuarioId], ["reviso", t.revisor.usuarioId], ["aprobo", gerente.usuarioId], ["publico", elaborador.usuarioId],
+      ]);
+    } finally { await t.limpiar(); }
   }));
 });

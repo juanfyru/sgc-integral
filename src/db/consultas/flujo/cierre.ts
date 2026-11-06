@@ -68,8 +68,15 @@ async function exigirVersionVigente(sql: Cliente, tramite: FilaTramite): Promise
   if (version?.estado !== "vigente") throw new ErrorTramite("La versión de este trámite ya no está vigente");
 }
 
-const validarAprobar: Validador = async ({ datos }) => {
+/** Quien elabora no aprueba (spec §6.3): también al firmar, porque el aprobador puede reasignarse. */
+async function exigirAprobadorDistinto(sql: Cliente, tramite: FilaTramite, usuarioId: number): Promise<void> {
+  const elaboro = (await firmasDeLaRonda(sql, tramite)).find((f) => f.firma === "elaboro");
+  if (elaboro?.usuarioId === usuarioId) throw new ErrorTramite("Quien elabora no puede aprobar");
+}
+
+const validarAprobar: Validador = async ({ sql, tramite, sesion, datos }) => {
   conceptoDe(datos);
+  await exigirAprobadorDistinto(sql, tramite, sesion.usuarioId);
 };
 
 const validarPublicar: Validador = async ({ sql, tramite }) => {
@@ -79,8 +86,9 @@ const validarPublicar: Validador = async ({ sql, tramite }) => {
 };
 
 /** La firma `aprobo` se escribe en esta misma transición: todavía no se exige. */
-const validarAprobarYPublicar: Validador = async ({ sql, tramite, datos }) => {
+const validarAprobarYPublicar: Validador = async ({ sql, tramite, sesion, datos }) => {
   conceptoDe(datos);
+  await exigirAprobadorDistinto(sql, tramite, sesion.usuarioId);
   if (tramite.tipo === "eliminar") return exigirVersionVigente(sql, tramite);
   await exigirLoAprobado(sql, tramite, ["elaboro", "reviso"]);
 };
@@ -170,18 +178,22 @@ async function publicarVersion(c: ContextoManejador, aprobador?: Firmante): Prom
     WHERE id = ${versionId}`;
   const { documentoId, numero, obsoletas } = await aplicarPublicacion(tx, versionId, "plataforma", sesion.usuarioId, ahora);
   // Solo una modificación: en una creación, `titulo_propuesto` es lo pedido y el título es el que quedó al aceptar.
+  let cambioDeTitulo: { tituloAnterior: string; titulo: string } | null = null;
   if (tramite.tipo === "modificar" && tramite.tituloPropuesto) {
+    const [{ titulo: tituloAnterior }] = await tx`SELECT titulo FROM documentos WHERE id = ${documentoId}`;
     await tx`UPDATE documentos SET titulo = ${tramite.tituloPropuesto} WHERE id = ${documentoId}`;
+    if (tituloAnterior !== tramite.tituloPropuesto) cambioDeTitulo = { tituloAnterior, titulo: tramite.tituloPropuesto };
   }
   return {
-    detalle: { version: numero, obsoletas, huella: elaboro.hashSha256 },
+    detalle: { version: numero, obsoletas, huella: elaboro.hashSha256, ...cambioDeTitulo },
     avisos: await avisoDeCierre(tx, tramite, documentoId, `Solicitud ${tramite.numero}: documento publicado`),
   };
 }
 
 async function ejecutarEliminacion({ tx, tramite, sesion }: ContextoManejador): Promise<Efecto> {
   const documentoId = tramite.documentoId as number;
-  const { numero } = await anularVigenteEn(tx, documentoId, sesion.usuarioId);
+  const { versionId, numero } = await anularVigenteEn(tx, documentoId, sesion.usuarioId);
+  if (versionId !== tramite.versionId) throw new ErrorTramite("La versión vigente cambió: revise el trámite");
   return {
     detalle: { versionAnulada: numero },
     avisos: await avisoDeCierre(tx, tramite, documentoId, `Solicitud ${tramite.numero}: documento eliminado`),
