@@ -3,10 +3,16 @@
  * contra la demo en transacciones que se revierten; los PDF van a un almacén temporal.
  */
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+// Espías sobre las funciones reales: cuentan lecturas y simulan un fallo igual en Windows y en Linux.
+vi.mock("node:fs/promises", async (original) => {
+  const real = await original<typeof import("node:fs/promises")>();
+  return { ...real, readFile: vi.fn(real.readFile), stat: vi.fn(real.stat) };
+});
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
@@ -79,11 +85,16 @@ describe("revisarFormatoActa", () => {
     expect(await motivoDe((await documentoConArchivo(tx, new Uint8Array([1, 2, 3]))).id)).toMatch(NO_LEGIBLE);
   }));
 
-  it("un PDF protegido con clave, vacío o sin páginas se rechaza con un motivo", () => revertida(sql, async (tx) => {
-    for (const bytes of [await pdfProtegido(), new Uint8Array(0), await pdfSinPaginas()]) {
+  it("un PDF protegido con clave o sin páginas se rechaza con un motivo", () => revertida(sql, async (tx) => {
+    for (const bytes of [await pdfProtegido(), await pdfSinPaginas()]) {
       const doc = await documentoConArchivo(tx, bytes);
       expect(await revisarFormatoActa(doc.id, { sql: tx })).toEqual({ estado: "no_sirve", motivo: expect.stringMatching(NO_LEGIBLE) });
     }
+  }));
+
+  it("un archivo vaciado es perdido: la base no registra archivos de cero bytes", () => revertida(sql, async (tx) => {
+    const doc = await documentoConArchivo(tx, new Uint8Array(0));
+    expect(await revisarFormatoActa(doc.id, { sql: tx })).toEqual({ estado: "perdido" });
   }));
 
   it("un PDF que abre pero no se puede incrustar no está listo, y no entrega membrete", () => revertida(sql, async (tx) => {
@@ -110,14 +121,36 @@ describe("revisarFormatoActa", () => {
     expect(await revisarFormatoActa(fueraDelAlmacen.id, { sql: tx })).toEqual({ estado: "perdido" });
   }));
 
+  it("un archivo de otro tamaño es perdido, sin cargarlo en memoria", () => revertida(sql, async (tx) => {
+    const doc = await documentoConArchivo(tx);
+    await writeFile(doc.absoluta, await pdfDeFormato(2));
+    vi.mocked(readFile).mockClear();
+    expect(await revisarFormatoActa(doc.id, { sql: tx })).toEqual({ estado: "perdido" });
+    expect(readFile).not.toHaveBeenCalled();
+  }));
+
+  it("del mismo tamaño pero con otra huella también es perdido", () => revertida(sql, async (tx) => {
+    const bytes = await pdfDeFormato();
+    const doc = await documentoConArchivo(tx, bytes);
+    const cambiado = Uint8Array.from(bytes);
+    cambiado[cambiado.length - 1] ^= 1;
+    await writeFile(doc.absoluta, cambiado);
+    vi.mocked(readFile).mockClear();
+    expect(await revisarFormatoActa(doc.id, { sql: tx })).toEqual({ estado: "perdido" });
+    expect(readFile).toHaveBeenCalledOnce();
+  }));
+
   it("una lectura que falla por otra causa también es perdido, y queda en el registro", () => revertida(sql, async (tx) => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const doc = await documentoConArchivo(tx);
-      await rm(doc.absoluta);
-      await mkdir(doc.absoluta); // Leer una carpeta falla con EISDIR, no con ENOENT.
+      const sinPermiso = Object.assign(new Error("sin permiso"), { code: "EACCES" });
+      vi.mocked(stat).mockRejectedValueOnce(sinPermiso);
       expect(await revisarFormatoActa(doc.id, { sql: tx })).toEqual({ estado: "perdido" });
       expect(error).toHaveBeenCalledOnce();
+      vi.mocked(readFile).mockRejectedValueOnce(sinPermiso);
+      expect(await revisarFormatoActa(doc.id, { sql: tx })).toEqual({ estado: "perdido" });
+      expect(error).toHaveBeenCalledTimes(2);
     } finally {
       error.mockRestore();
     }

@@ -5,7 +5,7 @@
  * un formato que no sirve el acta sale con el diseño básico; con uno perdido no se puede generar.
  */
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { motivoMembreteNoUtilizable } from "@/lib/membrete-acta";
@@ -22,9 +22,11 @@ export type EstadoFormato =
 
 export type MembreteListo = ArchivoDeFormato & { bytes: Uint8Array };
 
+type ArchivoRegistrado = { archivo: ArchivoDeFormato; tamanoBytes: number };
+
 /** El archivo que el documento puede aportar como formato, o el motivo por el que no puede. */
-async function archivoOMotivo(documentoId: number, sql: Cliente): Promise<ArchivoDeFormato | string> {
-  const [f] = await sql`SELECT d.codigo, d.nivel_acceso, v.numero, a.id AS archivo_id, a.ruta, a.mime, a.hash_sha256
+async function archivoOMotivo(documentoId: number, sql: Cliente): Promise<ArchivoRegistrado | string> {
+  const [f] = await sql`SELECT d.codigo, d.nivel_acceso, v.numero, a.id AS archivo_id, a.ruta, a.mime, a.hash_sha256, a.tamano_bytes
     FROM documentos d
     LEFT JOIN documento_versiones v ON v.documento_id = d.id AND v.estado = 'vigente'
     LEFT JOIN archivos a ON a.version_id = v.id AND a.rol = 'principal'
@@ -32,20 +34,25 @@ async function archivoOMotivo(documentoId: number, sql: Cliente): Promise<Archiv
   if (!f || f.numero === null) return "El documento del formato no tiene versión vigente";
   if (f.nivel_acceso !== "general") return "El documento del formato es restringido, y el acta la ven personas sin acceso a él";
   if (f.mime !== "application/pdf") return "El archivo principal del formato debe ser PDF";
-  return { archivoId: Number(f.archivo_id), ruta: f.ruta, hash: f.hash_sha256, codigo: f.codigo, version: Number(f.numero) };
+  return {
+    archivo: { archivoId: Number(f.archivo_id), ruta: f.ruta, hash: f.hash_sha256, codigo: f.codigo, version: Number(f.numero) },
+    tamanoBytes: Number(f.tamano_bytes),
+  };
 }
 
 /** La versión vigente, de acceso general, con principal PDF; sin mirar si su archivo está en el almacén. */
 export async function archivoDeFormato(documentoId: number, opciones?: Opciones): Promise<ArchivoDeFormato | null> {
-  const archivo = await archivoOMotivo(documentoId, opciones?.sql ?? obtenerSql());
-  return typeof archivo === "string" ? null : archivo;
+  const registrado = await archivoOMotivo(documentoId, opciones?.sql ?? obtenerSql());
+  return typeof registrado === "string" ? null : registrado.archivo;
 }
 
-/** Los bytes del archivo, si está en el almacén y su huella es la registrada. */
-async function leerArchivo({ ruta, hash }: ArchivoDeFormato): Promise<Uint8Array | null> {
+/** Los bytes del archivo, si está en el almacén y su tamaño y su huella son los registrados. */
+async function leerArchivo({ archivo: { ruta, hash }, tamanoBytes }: ArchivoRegistrado): Promise<Uint8Array | null> {
   const absoluta = resolverRutaAlmacen(ruta);
   if (!absoluta) return null;
   try {
+    // El tamaño va primero: un archivo cambiado no se carga entero en memoria.
+    if ((await stat(absoluta)).size !== tamanoBytes) return null;
     const bytes = await readFile(absoluta);
     return createHash("sha256").update(bytes).digest("hex") === hash ? bytes : null;
   } catch (err) {
@@ -55,12 +62,13 @@ async function leerArchivo({ ruta, hash }: ArchivoDeFormato): Promise<Uint8Array
 }
 
 async function revisar(documentoId: number, sql: Cliente): Promise<{ estado: EstadoFormato; membrete?: MembreteListo }> {
-  const archivo = await archivoOMotivo(documentoId, sql);
-  if (typeof archivo === "string") return { estado: { estado: "no_sirve", motivo: archivo } };
-  const bytes = await leerArchivo(archivo);
+  const registrado = await archivoOMotivo(documentoId, sql);
+  if (typeof registrado === "string") return { estado: { estado: "no_sirve", motivo: registrado } };
+  const bytes = await leerArchivo(registrado);
   if (!bytes) return { estado: { estado: "perdido" } };
   const motivo = await motivoMembreteNoUtilizable(bytes);
   if (motivo) return { estado: { estado: "no_sirve", motivo } };
+  const { archivo } = registrado;
   return { estado: { estado: "listo", codigo: archivo.codigo, version: archivo.version }, membrete: { ...archivo, bytes } };
 }
 
@@ -78,7 +86,8 @@ export async function membreteListo(documentoId: number | null, opciones?: Opcio
 /**
  * Los documentos que pueden ser formato: vigentes, de acceso general y con principal PDF. `incluir`
  * añade el ya elegido aunque haya dejado de cumplirlo: si desapareciera de la lista, guardar cualquier
- * otra sección lo quitaría sin que nadie lo pidiera.
+ * otra sección lo quitaría sin que nadie lo pidiera. Quien la llame debe exigir `tramites.gestionar`:
+ * con `incluir` puede mostrar el título de un documento restringido.
  */
 export async function documentosParaFormato(
   opciones?: Opciones & { incluir?: number | null },

@@ -38,6 +38,7 @@ describe("rutas que reciben el cuerpo de una subida", () => {
 
   it.each([
     "/admin/api/archivos/5",
+    "/admin/api/acta-ejemplo",
     "/api/tramites/5/archivos/7",
     "/api/tramites/5",
     "/api/tramites/abc/archivos",
