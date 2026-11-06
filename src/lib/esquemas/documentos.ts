@@ -1,12 +1,13 @@
 import { z } from "zod";
 import { NUMERO_MAXIMO_DE_VERSION } from "@/lib/tramites/tipos";
+import { textoAcotado } from "@/lib/validacion";
 import { aAsociaciones, codigoDeDocumento, lista, marcaAsociacion, titulo } from "./tramites";
 
 const id = z.coerce.number().int().positive();
 
 /** `parsearFormulario` omite los campos vacíos y uno de solo espacios queda vacío al recortarlo. */
-const opcional = (maximo: number) =>
-  z.string().trim().max(maximo).optional().transform((v) => v || null);
+const opcional = (nombre: string, maximo: number) =>
+  textoAcotado(nombre, 0, maximo).optional().transform((v) => v || null);
 
 const fecha = z.iso.date().optional().transform((v) => v ?? null);
 
@@ -19,8 +20,8 @@ const numeroDeVersion = z.coerce
 const control = { codigo: codigoDeDocumento, titulo, tipoId: id };
 
 const catalogo = {
-  descripcion: opcional(2000),
-  palabrasClave: opcional(500),
+  descripcion: opcional("La descripción", 2000),
+  palabrasClave: z.string().trim().max(500, "Las palabras clave no pueden pasar de 500 caracteres").optional().transform((v) => v || null),
   nivelAcceso: z.enum(["general", "restringido"]),
   /** Sin él, la asociación principal falta y lo dice el dominio. */
   principal: marcaAsociacion.optional(),
@@ -53,14 +54,14 @@ export const EsquemaDatosVersion = z
     fechaElaboracion: fecha,
     fechaRevision: fecha,
     fechaAprobacion: fecha,
-    elaboro: opcional(200),
-    reviso: opcional(200),
-    aprobo: opcional(200),
-    resumenCambios: opcional(2000),
+    elaboro: opcional("El campo «Elaboró»", 200),
+    reviso: opcional("El campo «Revisó»", 200),
+    aprobo: opcional("El campo «Aprobó»", 200),
+    resumenCambios: opcional("El resumen de cambios", 2000),
   })
   .strict();
 
-export const EsquemaDeshacerCarga = z.object({ motivo: z.string().trim().min(5).max(1000) }).strict();
+export const EsquemaDeshacerCarga = z.object({ motivo: textoAcotado("El motivo", 5, 1000) }).strict();
 
 /** Las acciones que solo llevan el id de su ruta: cualquier otro campo se rechaza. */
 export const EsquemaSinDatos = z.object({}).strict();

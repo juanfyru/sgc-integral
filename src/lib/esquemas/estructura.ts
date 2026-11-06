@@ -1,13 +1,14 @@
 import { z } from "zod";
-import { parsearFormulario } from "@/lib/validacion";
+import { parsearFormulario, textoAcotado } from "@/lib/validacion";
 
 const entero = z.coerce.number().int();
+const nombre = textoAcotado("El nombre", 2, 80);
 
-export const EsquemaArea = z.object({ nombre: z.string().trim().min(2).max(80) }).strict();
+export const EsquemaArea = z.object({ nombre }).strict();
 
 export const EsquemaCargo = z
   .object({
-    nombre: z.string().trim().min(2).max(80),
+    nombre,
     areaId: entero,
     superiorId: entero.optional(),
   })

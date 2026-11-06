@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { AsociacionEntrada } from "@/db/consultas/admin";
 import { PAPELES } from "@/lib/tramites/separacion";
 import { MAX_OBSERVACIONES_APROBACION, MOTIVOS, TIPOS_SOLICITUD } from "@/lib/tramites/tipos";
+import { textoAcotado } from "@/lib/validacion";
 
 const id = z.coerce.number().int().positive();
 
@@ -9,16 +10,16 @@ export const EsquemaSolicitud = z
   .object({
     tipo: z.enum(TIPOS_SOLICITUD),
     motivo: z.enum(MOTIVOS),
-    justificacion: z.string().trim().min(10).max(2000),
+    justificacion: textoAcotado("La justificación", 10, 2000),
     procesoId: id.optional(),
     subprocesoId: id.optional(),
     tipoDocumentoId: id.optional(),
-    tituloPropuesto: z.string().trim().min(3).max(200).optional(),
+    tituloPropuesto: textoAcotado("El título propuesto", 3, 200).optional(),
     documentoId: id.optional(),
   })
   .strict();
 
-const motivo = z.string().trim().min(5).max(1000);
+const motivo = textoAcotado("El motivo", 5, 1000);
 
 export const EsquemaMotivoCierre = z.object({ motivo }).strict();
 
@@ -33,14 +34,15 @@ export const EsquemaReasignar = z
   })
   .strict();
 
-export const EsquemaControlCambios = z.object({ resumenCambios: z.string().trim().min(5).max(2000) }).strict();
+export const EsquemaControlCambios = z.object({ resumenCambios: textoAcotado("El control de cambios", 5, 2000) }).strict();
 
-const textoDeRevision = z.string().trim().min(5).max(2000);
+const textoDeRevision = (nombre: string) => textoAcotado(nombre, 5, 2000);
+const observacion = textoDeRevision("La observación");
 
-export const EsquemaObservacion = z.object({ texto: textoDeRevision }).strict();
-export const EsquemaRespuestaObservacion = z.object({ respuesta: textoDeRevision }).strict();
-export const EsquemaReaperturaObservacion = z.object({ nota: textoDeRevision }).strict();
-export const EsquemaConcepto = z.object({ concepto: textoDeRevision }).strict();
+export const EsquemaObservacion = z.object({ texto: observacion }).strict();
+export const EsquemaRespuestaObservacion = z.object({ respuesta: textoDeRevision("La respuesta") }).strict();
+export const EsquemaReaperturaObservacion = z.object({ nota: textoDeRevision("La nota de reapertura") }).strict();
+export const EsquemaConcepto = z.object({ concepto: textoDeRevision("El concepto") }).strict();
 
 export const EsquemaVerificacion = z
   .array(
@@ -48,7 +50,7 @@ export const EsquemaVerificacion = z
       .object({
         itemId: id,
         resultado: z.enum(["cumple", "no_cumple", "no_aplica"]),
-        nota: z.string().trim().max(2000).optional(),
+        nota: textoAcotado("La nota", 0, 2000).optional(),
       })
       .strict(),
   )
@@ -80,8 +82,8 @@ export function leerVerificacion(formData: FormData, omitir: readonly string[]):
 /** La clave no se recorta: un espacio al final es parte de ella. */
 export const EsquemaFirma = z
   .object({
-    clave: z.string().min(1).max(128),
-    codigo: z.string().trim().min(6).max(20).optional(),
+    clave: z.string({ error: "Escriba su clave" }).min(1, "Escriba su clave").max(128, "La clave no puede pasar de 128 caracteres"),
+    codigo: textoAcotado("El código", 6, 20).optional(),
   })
   .strict();
 
@@ -95,11 +97,19 @@ export function lista<T extends z.ZodType>(elemento: T) {
 }
 
 export const EsquemaDevolucionAprobacion = z
-  .object({ observaciones: z.preprocess(aLista, z.array(textoDeRevision).min(1).max(MAX_OBSERVACIONES_APROBACION)) })
+  .object({
+    observaciones: z.preprocess(
+      aLista,
+      z
+        .array(observacion)
+        .min(1, "Escriba al menos una observación")
+        .max(MAX_OBSERVACIONES_APROBACION, `No se pueden enviar más de ${MAX_OBSERVACIONES_APROBACION} observaciones`),
+    ),
+  })
   .strict();
 
-export const titulo = z.string().trim().min(3).max(200);
-export const codigoDeDocumento = z.string().trim().toUpperCase().min(1).max(40);
+export const titulo = textoAcotado("El título", 3, 200);
+export const codigoDeDocumento = textoAcotado("El código", 1, 40).toUpperCase();
 
 /** Proceso (`p:<id>`) o subproceso (`s:<id>`), como en el formulario del panel. */
 export const marcaAsociacion = z.string().regex(/^[ps]:[1-9]\d*$/);
@@ -120,7 +130,13 @@ const responsables = {
   venceElaboracion: z.iso.date(),
 };
 
-const OBLIGATORIOS_SI_ES_NUEVO = ["tipoDocumentoId", "principal", "titulo", "nivelAcceso", "codigo"] as const;
+const OBLIGATORIOS_SI_ES_NUEVO = {
+  tipoDocumentoId: "Elija el tipo de documento",
+  principal: "Elija el proceso propietario",
+  titulo: "Escriba el título",
+  nivelAcceso: "Elija el nivel de acceso",
+  codigo: "Escriba el código",
+} as const;
 
 /** Si el documento ya existía, la clasificación es la suya: el formulario no la envía. */
 export const EsquemaAceptarCreacion = z
@@ -131,8 +147,8 @@ export const EsquemaAceptarCreacion = z
     principal: marcaAsociacion.optional(),
     asociaciones: lista(marcaAsociacion),
     titulo: titulo.optional(),
-    descripcion: z.string().trim().max(2000).optional(),
-    palabrasClave: z.string().trim().max(500).optional(),
+    descripcion: textoAcotado("La descripción", 0, 2000).optional(),
+    palabrasClave: z.string().trim().max(500, "Las palabras clave no pueden pasar de 500 caracteres").optional(),
     relacionados: lista(id),
     nivelAcceso: z.enum(["general", "restringido"]).optional(),
     codigo: codigoDeDocumento.optional(),
@@ -147,8 +163,8 @@ export const EsquemaAceptarCreacion = z
         ctx.addIssue({ code: "custom", path: ["documentoExistenteId"], message: "Elija el documento que ya existe" });
       return;
     }
-    for (const campo of OBLIGATORIOS_SI_ES_NUEVO) {
-      if (d[campo] === undefined) ctx.addIssue({ code: "custom", path: [campo], message: "Es obligatorio" });
+    for (const [campo, message] of Object.entries(OBLIGATORIOS_SI_ES_NUEVO)) {
+      if (d[campo as keyof typeof OBLIGATORIOS_SI_ES_NUEVO] === undefined) ctx.addIssue({ code: "custom", path: [campo], message });
     }
   })
   .transform(({ principal, asociaciones, ...resto }) => ({

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ROLES } from "../roles";
-import { parsearFormulario } from "../validacion";
+import { parsearFormulario, textoAcotado } from "../validacion";
 
 const vacioANulo = (v: unknown) => (v === "" || v === undefined ? null : v);
 
@@ -17,7 +17,7 @@ const listaDeIds = (v: unknown): unknown => {
 export const EsquemaUsuario = z
   .object({
     usuario: z.string().regex(/^[a-z0-9._-]{3,40}$/, "Use 3 a 40 caracteres: minúsculas, números, punto, guion o guion bajo"),
-    nombre: z.string().trim().min(3).max(120),
+    nombre: textoAcotado("El nombre", 3, 120),
     correo: z.preprocess(vacioANulo, z.string().trim().email().nullable()),
     rol: z.enum(ROLES),
     cargoId: idOpcional,

@@ -26,15 +26,33 @@ function formDataAObjeto(
   return objeto;
 }
 
+/**
+ * Texto recortado, de largo acotado, con mensajes para la persona. `nombre` lleva su artículo: «La
+ * justificación». Un campo vacío ni siquiera llega (`formDataAObjeto`): también es demasiado corto.
+ */
+export function textoAcotado(nombre: string, minimo: number, maximo: number) {
+  const corto = `${nombre} debe tener al menos ${minimo} ${minimo === 1 ? "carácter" : "caracteres"}`;
+  return z.string({ error: corto }).trim().min(minimo, corto).max(maximo, `${nombre} no puede pasar de ${maximo} caracteres`);
+}
+
+/**
+ * Para lo que el esquema no dice con sus palabras: el texto de `zod` con el campo delante, para
+ * saber de cuál habla. Un mensaje escrito en el esquema ya es una frase y no pasa por aquí.
+ */
+const conElCampo: z.core.$ZodErrorMap = (problema) => {
+  const mensaje = z.config().localeError?.(problema);
+  const texto = typeof mensaje === "string" ? mensaje : mensaje?.message;
+  const campo = problema.path?.join(".");
+  return campo && texto ? `${campo}: ${texto}` : texto;
+};
+
 /** `omitir`: claves de ruta (p. ej. "id") que viajan en el formulario pero no son del esquema estricto. */
 export function parsearFormulario<T>(
   formData: FormData,
   esquema: z.ZodType<T>,
   opciones?: { omitir?: string[] },
 ): T {
-  const resultado = esquema.safeParse(formDataAObjeto(formData, new Set(opciones?.omitir ?? [])));
+  const resultado = esquema.safeParse(formDataAObjeto(formData, new Set(opciones?.omitir ?? [])), { error: conElCampo });
   if (resultado.success) return resultado.data;
-  const problema = resultado.error.issues[0];
-  const campo = problema.path.join(".");
-  throw new ErrorValidacion(campo ? `${campo}: ${problema.message}` : problema.message);
+  throw new ErrorValidacion(resultado.error.issues[0].message);
 }
