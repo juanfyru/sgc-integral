@@ -15,10 +15,12 @@ export async function motivoMembreteNoUtilizable(bytes: Uint8Array): Promise<str
   let doc: PDFDocument;
   try {
     doc = await PDFDocument.load(bytes);
-    // Una página sin contenido tampoco se puede incrustar como fondo.
-    await (await PDFDocument.create()).embedPdf(doc, [0]);
+    // `embedPdf` es perezoso: una página sin `/Contents` o con el flujo dañado solo falla al incrustarla.
+    const [pagina] = await (await PDFDocument.create()).embedPdf(doc, [0]);
+    await pagina.embed();
   } catch {
-    return "El archivo del formato no se puede leer";
+    // `load` tampoco abre un PDF cifrado que solo restringe permisos, sin pedir clave.
+    return "El archivo del formato no se puede leer: puede estar protegido con clave o dañado";
   }
   if (doc.getPageCount() !== 1) return "El formato debe tener una sola página";
   const { width, height } = doc.getPage(0).getSize();
