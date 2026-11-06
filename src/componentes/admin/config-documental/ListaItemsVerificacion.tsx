@@ -10,7 +10,7 @@ import {
 import type { EstadoAccion } from "@/app/admin/comun";
 import { enviarSinReiniciar } from "@/componentes/admin/sin-reiniciar";
 import { Boton } from "@/componentes/ui/Boton";
-import { Campo, claseControl } from "@/componentes/ui/Campo";
+import { claseControl } from "@/componentes/ui/Campo";
 import { Insignia } from "@/componentes/ui/Insignia";
 import type { ItemVerificacion } from "@/db/consultas/revision";
 
@@ -70,9 +70,24 @@ function FormularioItem({
   return (
     <form action={enviar} onSubmit={enviarSinReiniciar(enviar)} className="flex flex-col gap-3">
       {id && <input type="hidden" name="id" value={id} />}
-      <Campo etiqueta="Texto del ítem" nombre={`texto-${sufijo}`} ayuda="De 5 a 300 caracteres.">
-        <input name="texto" required minLength={5} maxLength={300} defaultValue={texto ?? inicial?.texto} className={claseControl} />
-      </Campo>
+      <div className="flex flex-col gap-1">
+        <label htmlFor={`texto-${sufijo}`} className="text-sm font-medium">
+          Texto del ítem
+        </label>
+        <input
+          id={`texto-${sufijo}`}
+          name="texto"
+          required
+          minLength={5}
+          maxLength={300}
+          aria-describedby={`texto-${sufijo}-ayuda`}
+          defaultValue={texto ?? inicial?.texto}
+          className={claseControl}
+        />
+        <p id={`texto-${sufijo}-ayuda`} className="text-xs text-muted-foreground">
+          De 5 a 300 caracteres.
+        </p>
+      </div>
       <label className="flex items-center gap-2 text-sm font-medium">
         <input type="checkbox" name="critico" defaultChecked={v ? v.critico === "on" : inicial?.critico} />
         Crítico

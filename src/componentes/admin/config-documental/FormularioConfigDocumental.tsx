@@ -117,7 +117,7 @@ export function FormularioConfigDocumental({ config }: { config: ConfigDocumenta
         </p>
       </Seccion>
 
-      {estado && (
+      {estado && estado.error !== motivo && (
         <p role="alert" className="rounded-md bg-estado-critico-fondo px-3 py-2 text-sm text-estado-critico-texto">
           {estado.error}
         </p>
