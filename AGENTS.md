@@ -86,12 +86,13 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
 2. **Las versiones obsoletas se retienen, nunca se borran.** El admin las ve marcadas con
    evidencia visual inequívoca (banda/watermark "OBSOLETO").
 3. **Visibilidad por rol, nivel de acceso y participación** (spec §5.3; spec 13A §6.5 y
-   §12): vigentes para todo usuario con sesión, salvo los documentos restringidos, que solo
-   ven Admin SGC, Gerencia, Control Interno y los asignados a sus procesos; en trámite para
-   los participantes de ese trámite, Admin SGC y líder; obsoletos y anulados para Admin SGC,
-   Control Interno y la marca individual `ver_historial`, que no abre lo restringido;
-   descartados para `tramites.gestionar`. Ninguna versión no vigente se sirve sin ese
-   permiso, y quien no puede ver algo recibe «no encontrado», nunca «sin permiso».
+   §12): la vigente para todo usuario con sesión, salvo los documentos restringidos, que solo
+   ven Admin SGC, Gerencia, Control Interno y los asignados a sus procesos. Cada estado no
+   vigente tiene su criterio y ninguna versión se sirve sin él: obsoleta y anulada exigen
+   `documentos.ver_historial` (Admin SGC, Control Interno y la marca individual
+   `ver_historial`, que no abre lo restringido); en trámite, ser participante de ese trámite,
+   Admin SGC o líder; descartada, `documentos.administrar`. Quien no puede ver algo recibe
+   «no encontrado», nunca «sin permiso».
 4. **Toda ruta exige sesión; toda escritura exige el permiso de la matriz
    `src/lib/permisos.ts`** y pasa por `mutacion()` o `requerirPermiso()`; los handlers
    que escriben verifican `Origin`. Toda acción del trámite lleva su permiso de matriz
@@ -111,9 +112,7 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
 8. **El mapa de procesos NO se hardcodea.** Vive en BD y se edita desde el admin. El
    render es 100% data-driven. Layout por bandas fijas (ver `PLAN.md` §Layout).
 9. **Toda transición de un trámite entra por `transicionar`**
-   (`src/db/consultas/tramites-flujo.ts`); ningún otro código cambia `tramites.etapa`. La
-   firma se verifica fuera de la transacción y lo que puede fallar va antes, en un validador
-   de solo lectura (F13A-R4); `opciones.ahora` es la hora de todo lo escrito (F13A-P1).
+   (`src/db/consultas/tramites-flujo.ts`); ningún otro código cambia `tramites.etapa`.
 10. **El camino directo del panel solo da de alta documentos ya aprobados:** nunca publica
     sobre una versión vigente y se cierra con `publicacion_directa`. Eliminar un documento
     es siempre un trámite.
@@ -241,6 +240,9 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   capaces de bloquear la migración o el arranque, o de romper otros tests (un usuario duplicado, la
   configuración de la entidad), los escribe dentro de una transacción que se revierte o
   los restaura en `finally`: un test que falla no debe dejar la base inservible.
+- **Transiciones del trámite:** la firma se verifica fuera de la transacción y lo que puede
+  fallar va antes, en un validador de solo lectura (F13A-R4); `opciones.ahora` es la hora de
+  todo lo escrito (F13A-P1).
 - **Tests y demo:** `tramiteEn` crea su documento: ningún test abre un trámite sobre uno de
   la demo. `tests/semilla-tramites.test.ts` lee el estado de la demo y salta con mensaje si
   ya avanzó; `SEMILLA_RECIEN=1 npm test` exige la demo recién sembrada.
@@ -253,6 +255,7 @@ npm run build           # build de producción (standalone)
 npm run lint            # ESLint + tsc --noEmit
 npm test                # tests (Vitest)
 SEMILLA_RECIEN=1 npm test  # lo mismo, exigiendo la demo recién sembrada: un caso saltado falla
+$env:SEMILLA_RECIEN=1; npm test  # lo mismo en PowerShell
 npm run db:generate     # generar migración desde el schema Drizzle
 npm run db:migrate      # aplicar migraciones (con DATABASE_URL_MIGRADOR); antes detiene si hay usuarios duplicados sin distinguir mayúsculas
 npm run db:roles        # crear o sincronizar el rol sgc_app y sus privilegios

@@ -274,10 +274,11 @@ pulse **Reabrir la observación**.
 - **Dar concepto favorable:** escriba el **Concepto** y firme con su clave (sección 7). El
   documento pasa a aprobación.
 
-Para dar el concepto favorable se deben cumplir tres condiciones. El SGC dice cuál falta:
+Para dar el concepto favorable se deben cumplir cuatro condiciones. El SGC dice cuál falta:
 
 | Condición | Si falta |
 |---|---|
+| La lista tiene al menos un ítem activo | No hay ítems activos en la lista de verificación. Pida al Administrador del SGC que los active. |
 | Todos los ítems activos tienen respuesta | Faltan ítems de la lista por responder |
 | Ningún ítem crítico está en **No cumple** | Hay un ítem crítico que no cumple |
 | Todas las observaciones están cerradas | Hay observaciones sin cerrar |
@@ -375,7 +376,9 @@ Por cada versión publicada por trámite, el SGC genera un **Acta de aprobación
 cada eliminación, un **Acta de eliminación**. El acta trae:
 
 - la entidad, el documento, su versión, su tipo y su proceso;
-- la solicitud, el visto bueno y la aceptación, con la decisión sobre duplicidad;
+- la solicitud, el visto bueno y la aceptación, con cuántos documentos parecidos se vieron,
+  de qué nivel, y la decisión sobre duplicidad. Sus códigos no salen en el acta: quedan en el
+  historial del trámite;
 - el control de cambios;
 - las firmas, con nombre, cargo, fecha, hora y huella;
 - el número de rondas y de observaciones, y la versión anterior.
@@ -386,9 +389,14 @@ cada eliminación, un **Acta de eliminación**. El acta trae:
 - en la ficha del documento, en **Control del documento**;
 - en **Gestión de documentos**, en cada versión.
 
-La ve quien puede ver esa versión, y sale sin marca de agua. Sus datos se fijan al cerrar
-el trámite y no cambian después. Si la generación falla, la publicación no se deshace: el
-acta se crea la primera vez que alguien abre el enlace.
+**Quién la ve:** el acta sigue a su versión. Quien ve la versión ve el acta. Cuando la
+versión deja de estar vigente, solo la ve quien tiene permiso de historial, aunque haya
+firmado. Quien firmó y necesita el acta se la pide al Administrador del SGC, o la descarga
+mientras la versión esté vigente.
+
+Sale sin marca de agua. Sus datos se fijan al cerrar el trámite y no cambian después. Si la
+generación falla, la publicación no se deshace: el acta se crea la primera vez que alguien
+abre el enlace.
 
 Si un texto trae símbolos que la fuente del PDF no tiene, el SGC los cambia por uno
 parecido (`≥` sale como `>=`). Si aun así no puede, sale un «?» y el acta termina con esta
@@ -434,6 +442,10 @@ Sirve cuando alguien se ausenta o cambia de cargo. Pulse **Reasignar**:
 
 Lo ya firmado no se borra. Se avisa a quien entra y a quien sale, y queda en el historial.
 A quien pidió no se le cambia.
+
+En **Visto bueno**, **Aceptación** y **Publicación** no queda ningún papel por cambiar:
+**Reasignar** solo cambia la fecha. Si un líder se ausenta en el visto bueno, la salida es
+cancelar el trámite (sección 11.2), o que quien pidió lo retire, y pedir de nuevo.
 
 ### 11.2 Cancelar
 
@@ -611,10 +623,13 @@ Cero quiere decir que la etapa vence el mismo día en que empieza.
 **Bajar**, **Desactivar** y **Editar ítem**. Para crear uno, use **Añadir un ítem**: escriba
 el **Texto del ítem**, marque **Crítico** si no puede quedar sin cumplir y pulse **Añadir
 ítem**. Un ítem nunca se borra: se desactiva, y las rondas ya respondidas conservan su texto.
+Debe quedar al menos un ítem activo: sin ninguno, la pantalla lo avisa y nadie puede dar el
+concepto favorable (sección 6.3).
 
-**Si la instalación viene de la versión anterior del SGC,** arranca sin formato del código,
-sin lista de verificación y con todos los tipos como operativos. Antes del primer trámite,
-guarde el formato, cree los ítems de la lista y marque los tipos que aprueba Gerencia.
+**Si la instalación viene de la versión anterior del SGC,** arranca sin formato del código y
+con todos los tipos como operativos. La lista de verificación llega con los ocho ítems por
+defecto. Antes del primer trámite, guarde el formato, revise la lista y marque los tipos que
+aprueba Gerencia.
 
 ### 14.2 Tipos de documento
 
@@ -649,8 +664,8 @@ Reglas que conviene conocer:
 - **Los procesos de un usuario valen para cualquier rol.** Se asignan en el campo **Procesos**
   de cada usuario (Capítulo 2, sección 3.1). Son los que le abren los documentos restringidos.
 - **Un trámite cerrado conserva su evidencia.** La página sigue mostrando la solicitud, la
-  lista de verificación de cada ronda, las observaciones, el historial y el acta, en solo
-  lectura. Lo mismo vale para un trámite cancelado o rechazado, para quienes lo pueden ver.
+  lista de verificación de cada ronda, las observaciones y el historial, en solo lectura, y
+  el acta a quien puede ver esa versión (sección 9). Lo mismo vale para un trámite cancelado o rechazado, para quienes lo pueden ver.
 - **Los archivos del trámite solo se abren mientras está abierto.** Después, cada archivo se
   consulta según el estado de su versión: la vigente por la ficha; una obsoleta, con el
   permiso de historial.
@@ -678,6 +693,7 @@ El acta sale sin marca: es un registro, no una copia del documento.
 | Ya hay un archivo principal en esta versión | Cada versión admite un solo archivo principal | Quite el actual y suba el nuevo |
 | Hay observaciones sin responder | Quedan observaciones abiertas | Responda todas (sección 5.1) |
 | Para devolver, escriba al menos una observación | Se intentó devolver sin observaciones abiertas | Añada una observación |
+| No hay ítems activos en la lista de verificación. Pida al Administrador del SGC que los active. | Todos los ítems de la lista están desactivados | El Administrador del SGC activa al menos uno (sección 14.1) |
 | Faltan ítems de la lista por responder | Hay ítems sin respuesta guardada | Responda y pulse **Guardar avance** |
 | Hay un ítem crítico que no cumple | Un ítem crítico está en **No cumple** | Devuelva el documento con una observación |
 | Hay observaciones sin cerrar | Quedan observaciones abiertas o atendidas | Ciérrelas o devuelva el documento |
@@ -686,6 +702,7 @@ El acta sale sin marca: es un registro, no una copia del documento.
 | Quien aprueba debe tener el rol Gerencia. Pida reasignar al aprobador. | Cambió la regla del tipo después de designar | El Administrador del SGC reasigna (sección 11.1) |
 | Quien elabora no puede revisar / Quien elabora no puede aprobar | Se intentó romper la separación de funciones | Elija a otra persona |
 | El archivo cambió después de la firma de quien elaboró | El archivo no es el que se firmó | Avise al Administrador del SGC y al área de sistemas |
+| El archivo cambió después de la firma de quien aprobó | El archivo no es el que se aprobó eliminar | Avise al Administrador del SGC y al área de sistemas |
 | El archivo en el almacén no coincide con el aprobado. No se publicó. | El archivo guardado no es el aprobado | Avise al área de sistemas |
 | Configure el nombre de la entidad antes de publicar | La instalación aún no tiene nombre de entidad | Configúrelo en **Entidad y marca** (Capítulo 4) |
 | Este trámite cambió mientras lo tenía abierto. Recargue la página. | Otra persona u otra pestaña avanzó el trámite | Recargue la página y mire en qué va |

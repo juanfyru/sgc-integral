@@ -1,8 +1,8 @@
 # CONTEXT.md — Estado vivo del proyecto
 
 > Se actualiza al cierre de cada fase. Última actualización: **2026-11-06**. La **Fase 13A —
-> Flujo documental** está hecha en la rama `fase-13a-flujo-documental` (64 commits de ejecución
-> y este de cierre) y espera la revisión final de la rama, la prueba del usuario y la fusión. La
+> Flujo documental** está hecha en la rama `fase-13a-flujo-documental`, con la revisión final de
+> la rama y su ola de arreglos, y espera la prueba del usuario y la fusión. La
 > Fase 12 (nueva estructura visual) y la Fase 11 (fundación de acceso) están en `main`.
 > La variante nació el 2026-11-03, bifurcada de `sgc-suaza` en `9644ceb`; el diseño
 > maestro de las fases 11–20
@@ -23,15 +23,16 @@
    aprobación por autoridad, publicación y acta en PDF, con firma por clave en cuatro momentos.
    Además: visibilidad por rol, nivel de acceso y participación; tareas, avisos y vencimientos;
    carga de lo ya aprobado; marca de agua con el nombre de quien descarga. **Sin dependencias npm
-   nuevas.** Detalle en «Hecho (Fase 13A)». **Verificado al cierre:** lint limpio; **2805/2805 tests** (118 archivos,
+   nuevas.** Detalle en «Hecho (Fase 13A)». **Verificado al cierre:** lint limpio; **2824/2824 tests** (121 archivos,
    con `SEMILLA_RECIEN=1`; línea base de la fase: 1662 en 85); build de producción sin URL de base,
    como el CI; compose de desarrollo reconstruido (`up -d --build --no-deps app`, sin tocar `bd`):
-   «Migraciones al día» con las cinco migraciones, `/api/salud` 200 `{"estado":"ok"}`, `/` → 307 a
-   `/ingreso`. La 0004 se aplicó además sobre una copia con el esquema y la demo de `main`. Hubo tres
-   puntos de control en navegador; el tercero recorrió los pasos 1 a 12 de §20, y sus arreglos
-   están en los últimos 15 commits. El CI todavía no ha corrido sobre esta rama: no se ha publicado.
-   **Falta:** la revisión final de la rama, su ola de arreglos, la prueba del usuario («Qué probar
-   y cómo (Fase 13A)») y la fusión en `main`. El usuario decide F13A-R35 (404 real en páginas).
+   «Migraciones al día» con las seis migraciones, `/api/salud` 200 `{"estado":"ok"}`, `/` → 307 a
+   `/ingreso`. La 0004 y la 0005 se aplicaron además sobre una copia con el esquema y la demo de
+   `main`. Hubo tres puntos de control en navegador y una revisión final de toda la rama, con su ola
+   de arreglos. El CI todavía no ha corrido sobre esta rama: no se ha publicado.
+   **Falta:** la prueba del usuario («Qué probar y cómo (Fase 13A)») y la fusión en `main`. El usuario
+   decide F13A-R35 (404 real en páginas) y F13A-R36 (quién ve el acta de una versión que ya no está
+   vigente).
 2. **Lo que sigue: Fase 13B — Distribución y puntos de uso** (pasos 9 y 10 del procedimiento del
    hospital): listas de distribución y acuse de lectura con porcentaje, evidencia de capacitación,
    copias controladas con sello, recibido y recogida de las obsoletas, puntos de uso y su
@@ -74,7 +75,7 @@
 
    **BD nueva desde cero:** `docker compose -f docker-compose.dev.yml up -d bd` →
    `npm run db:preparar` (migraciones y luego rol `sgc_app`) → `npm run db:seed` (demo)
-   → **`npm run admin:asegurar`** (crea `admin` / `cambiar-esta-clave`) → `npm run dev`
+   → **`npm run admin:asegurar`** (crea `admin` con la `ADMIN_CLAVE` de `.env.local`) → `npm run dev`
    → primer ingreso de `admin` con cambio de clave obligatorio → aviso de datos →
    portal. Las semillas vacían `usuarios`: tras cada `db:seed` hay que repetir
    `admin:asegurar` y cambiar la clave otra vez. El contenedor `app` del compose de
@@ -98,8 +99,8 @@
    | `lider.cex` | lider_proceso | Médico Coordinador | CEX |
    | `consulta` | consulta | Auxiliar de Enfermería | — |
 
-   Más `admin` / `cambiar-esta-clave` (admin_sgc) de `npm run admin:asegurar`, que pide
-   cambiar la clave. La demo trae 5 áreas y 9 cargos con jerarquía, y **30 documentos con 34
+   Más `admin` (admin_sgc), con la `ADMIN_CLAVE` de `.env.local`, de `npm run admin:asegurar`,
+   que pide cambiar la clave. La demo trae 5 áreas y 9 cargos con jerarquía, y **30 documentos con 34
    versiones** (28 vigentes, 2 obsoletas, 3 en borrador y 1 anulada), con la convención del hospital
    (`PROCESO-TIPO-NN`), dos plantillas (`SGC-FO-04` y `SGC-FO-05`), un restringido (`GTH-FO-01`) y
    **cinco trámites** en distintas etapas, de `SOL-…-001` a `SOL-…-005`. Desde la Fase 12 trae además
@@ -112,18 +113,19 @@
    tipos de documento con su autoridad, formato del código, plazos y ocho ítems de lista; sin
    mapa, áreas, documentos ni usuarios (después hay que correr `admin:asegurar`). Una base
    heredada de `sgc-suaza` entra sin formato (sigue validando con su `patron_codigo` y no propone
-   código), con todos los tipos operativos y **sin ítems en la lista de verificación**: el
-   Administrador del SGC los fija en **Configuración documental** y **Tipos de documento**.
+   código), con todos los tipos operativos y los ocho ítems de la lista, que añade la migración 0005
+   si la tabla está vacía: el Administrador del SGC fija el formato en **Configuración documental**
+   y la autoridad en **Tipos de documento**.
    **La base de desarrollo se resembró varias veces en la 13A** (Tareas 2 y 15, sus arreglos y el
    cierre): cada vez se pierden los datos de prueba manual y `admin` se recrea con la `ADMIN_CLAVE`
    de `.env.local` y cambio obligatorio.
-5. **Tests:** 2805 en 118 archivos, en serie (`fileParallelism: false`), contra la BD de
+5. **Tests:** 2824 en 121 archivos, en serie (`fileParallelism: false`), contra la BD de
    desarrollo sembrada y **conectados como `sgc_app`**, igual que la app; el test de
    privilegios usa además `DATABASE_URL_MIGRADOR`. Los usuarios de prueba con historia
    (`zz_<algo>_<timestamp>`) se acumulan porque no se pueden borrar (F11-D2); `db:seed` los
    limpia. `tests/semilla-tramites.test.ts` lee el estado de la demo: si ya se usó, salta lo que
-   dependa de ella con un aviso. `SEMILLA_RECIEN=1 npm test`, con la base recién sembrada, convierte
-   esos saltos en fallos. Tras correr la suite conviene resembrar: deja usuarios `zz_*` y `admin_sgc`
+   dependa de ella con un aviso. `SEMILLA_RECIEN=1 npm test` (en PowerShell, `$env:SEMILLA_RECIEN=1; npm test`), con la base
+   recién sembrada, convierte esos saltos en fallos. Tras correr la suite conviene resembrar: deja usuarios `zz_*` y `admin_sgc`
    de prueba que inflan los selectores de designación. Un rojo es una señal real (salvo el
    intermitente de la Deuda técnica).
 6. **CI (decisión de la bifurcación, tomada por Claude):** lint y build corren en cada
@@ -244,7 +246,11 @@ explica cada pantalla.
     Apague **Publicación directa** en **Configuración documental**: desaparecen **Registrar
     documento ya aprobado** y los botones del camino directo; queda **Descartar borrador**.
     Enciéndala si va a seguir probando.
-12. **Vencidos, tareas, cancelar y reasignar.** La bandeja muestra SOL-2026-003 «Vencido hace 2
+12. **Lista de verificación sin activos (`coordinadora.sgc`).** En **Configuración documental**,
+    desactive todos los ítems: la lista avisa «No hay ítems activos…». En un trámite en revisión,
+    **Dar concepto favorable** queda desactivado y dice «No hay ítems activos en la lista de
+    verificación. Pida al Administrador del SGC que los active.». Actívelos de nuevo.
+13. **Vencidos, tareas, cancelar y reasignar.** La bandeja muestra SOL-2026-003 «Vencido hace 2
     días». El aviso «Solicitud SOL-2026-003: venció el plazo de publicación» llega a los Admin
     SGC con la primera página que alguien cargue (la revisión corre como mucho cada diez
     minutos). **Mis tareas** de cada usuario lista lo suyo. Para ver el escalamiento sin tocar
@@ -252,10 +258,10 @@ explica cada pantalla.
     «… el paso de publicación sigue vencido», sin título y sin enlace. Devuélvalo a 3. Reasigne
     y cancele un trámite abierto: quien entra y quien sale reciben aviso, y la versión cancelada
     queda Descartado.
-13. **Verificación técnica:** hecha al cierre. `npm run lint`, `npm test` (2805/2805 en 118 archivos) y
+14. **Verificación técnica:** hecha al cierre. `npm run lint`, `npm test` (2824/2824 en 121 archivos) y
     `npm run build` en verde; la imagen del compose arranca, dice «Migraciones al día» y
-    `/api/salud` responde `{"estado":"ok"}`. La 0004 se aplicó sobre una copia con el esquema y la
-    demo de `main`. Falta el CI: corre al publicar la rama. En 9081 `/marca/logo` da 404 porque la
+    `/api/salud` responde `{"estado":"ok"}`. La 0004 y la 0005 se aplicaron sobre una copia con el
+    esquema y la demo de `main`. Falta el CI: corre al publicar la rama. En 9081 `/marca/logo` da 404 porque la
     imagen no trae el almacén.
 
 **Segundo factor (no hay usuario demo con él).** Como `lider.cex`, active el segundo factor en
@@ -283,6 +289,12 @@ con un aviso en la salida. `npm run db:seed && npm run admin:asegurar` la deja c
    la nueva se llama «Aprobación» (F13A-R25).
 6. **`revisarVencimientos` no deja fila en `auditoria`:** lo hace el sistema, no una persona. Su
    rastro son los avisos y las marcas del trámite (F13A-R22).
+7. **El acta sigue a su versión, y eso necesita su decisión antes de fusionar (F13A-R36).** Quien
+   firmó pierde el acta cuando la versión deja de estar vigente: `gerente` aprueba `CEX-CA-01` v2,
+   se publica la v3 y el bloque «Acta» desaparece de su trámite; en una eliminación, desde el
+   primer día. Se mantuvo lo que aprobó (F13A-DC12) y el manual lo explica. **Recomendación:** abrir
+   el acta a quien ve el trámite cerrado, porque no lleva contenido del documento. Base: ISO 7.5.3.1
+   a). Cambiarlo es un `if` en dos sitios: `tramites/[id]/page.tsx` y la ruta del acta.
 
 ## Qué probar y cómo (Fase 12)
 
@@ -398,7 +410,7 @@ desarrollo en `http://localhost:3002`.
 
 1. Preparar: `npm run db:preparar && npm run db:seed && npm run admin:asegurar && npm
    run dev`.
-2. Entrar como `admin` / `cambiar-esta-clave` → **Cambie su clave inicial** (12 a 128
+2. Entrar como `admin` con la `ADMIN_CLAVE` de `.env.local` → **Cambie su clave inicial** (12 a 128
    caracteres, no común, sin el usuario) → **Aviso de datos personales** → portal. El
    cambio obligatorio aparece porque el paso 1 resembró la base y `admin:asegurar`
    recreó la cuenta; sobre una base no resembrada el admin existente solo ve el aviso.
@@ -480,6 +492,10 @@ de los puntos de control PC-01 a PC-08 (spec, Apéndice A.2).
   parcial del número de versión; roles de acta en `archivos`; `firma_fallo` en `accesos`. `firmas`
   y `tramite_eventos` son de solo inserción (trigger y `REVOKE` de `sgc_app`). Los datos heredados
   entran como tipos operativos, documentos generales y versiones aprobadas fuera de la plataforma.
+- **Migración `drizzle/0005_fase13a-lista-e-indices.sql`:** los ocho ítems de la lista si la tabla
+  está vacía (F13A-R37) e índices parciales en `auditoria` y `tramite_eventos` para
+  `todosLosCodigos` y `codigoAbandonado`; esas consultas escriben las acciones en el SQL para que
+  el plan genérico pueda usarlos.
 - **Reglas puras (`src/lib/tramites/`):** `transiciones.ts` (tabla de §7.2 y
   `PERMISO_DE_ACCION`), `separacion.ts` (S1 a S3, candidatos, `rolAprobador`), `plazos.ts`,
   `codigo.ts` (formato, validación, consecutivo) y `tipos.ts`.
@@ -501,15 +517,24 @@ de los puntos de control PC-01 a PC-08 (spec, Apéndice A.2).
   **Procesos** vale para cualquier rol; datos de control y de catálogo separados; **Aprobación** en
   el Listado Maestro y su Excel; las acciones heredadas que se tocaron pasan a esquemas `zod`.
 - **Cascarón:** entrada **Trámites**, `misTareas()` real, avisos por transición y revisión de
-  vencimientos cada diez minutos como mucho, disparada por el cascarón.
+  vencimientos cada diez minutos como mucho, que el cascarón lanza con `after()`.
 - **Semillas:** la demo adopta la convención del hospital (`CAL` → `SGC`, `FT` → `FO`, códigos
   `PROCESO-TIPO-NN`), añade `coordinadora.sgc`, dos plantillas, un restringido y cinco trámites
   sembrados con las reglas reales; la mínima trae 11 tipos con su autoridad, formato, plazos y
   ocho ítems de lista. Se resembró en las Tareas 2 y 15, en los arreglos y al cierre.
 - **Manual:** capítulo 5 nuevo; capítulos 1 a 4 corregidos donde esta entrega los dejó falsos.
-- **Verificación al cierre:** lint limpio; 2805/2805 tests en 118 archivos; build como el CI; compose con
-  «Migraciones al día» y `/api/salud` `{"estado":"ok"}`. Sobre una copia con la demo de `main`
-  (28 documentos y 29 versiones) la 0004 dejó 5 migraciones y los datos intactos: todas las
+- **Revisión final y su ola:** la lista de verificación no puede faltar (F13A-R37); `acta_generada`
+  en la bitácora; el acta dice el conteo y el nivel de los parecidos, sin códigos, también si el dato
+  congelado los trae; `after()` en el cascarón; `exigirDesignacion` recibe `Cliente`;
+  `ETAPAS_ABIERTAS` es una sola lista; ejecutar una eliminación compara la huella de `aprobo` con el
+  principal de la vigente.
+- **Verificación al cierre:** lint limpio; 2824/2824 tests en 121 archivos; build como el CI; compose con
+  «Migraciones al día» y `/api/salud` `{"estado":"ok"}`. Sobre una copia con la demo de `main`, la
+  0005 pasa la lista de 0 a 8 ítems (3 críticos), conserva una lista ya ajustada y no cambia datos en
+  `sgc`; aplicadas en una sola corrida, la 0004 y la 0005 dejan 6 migraciones. Con 300 000 filas en
+  `auditoria`, `todosLosCodigos` usa el índice sin apagar `seqscan`: 3,3 ms frente a 44,9 ms sin él.
+  Antes, sobre la misma demo (28 documentos y 29 versiones), la 0004 dejó 5 migraciones y los datos
+  intactos: todas las
   versiones con origen `fuera`, documentos generales, tipos operativos, `patron_codigo` conservado,
   y triggers y privilegios de `sgc_app` correctos en `firmas` y `tramite_eventos`. La segunda corrida
   no cambió nada.
@@ -1239,6 +1264,9 @@ mismos números que citan los comentarios del código (`R24`, `R26`, `R32`, `R33
 | F13A-R33 | El acta translitera símbolos comunes y avisa al final si quedó algún «?», sin fuentes ni dependencias nuevas | Regulación (Ley 527 de 1999, integridad del mensaje) | Un símbolo se ve distinto en el acta; el texto íntegro sigue en el historial |
 | F13A-R34 | De los 17 menores del punto de control 3 no se hace M12 (aviso al recargar); lo demás entra en la ola, con los nombres cortados de la barra y el rol solo del paso pendiente | Práctica | Más líneas que revisar |
 | F13A-R35 | Se acepta el 200 con «Página no encontrada» en páginas de `(app)`: un 404 real exige reorganizar rutas o usar el proxy. No hay fuga, y los archivos sí dan 404. **Pendiente de la decisión del usuario** | Práctica (spec 13A §6.5) | Un código HTTP en páginas, no en archivos |
+| F13A-R36 | Se mantiene F13A-DC12: el acta sigue a la versión; el manual lo dice y se le pregunta al usuario antes de fusionar, con la recomendación de abrirla a quien ve el trámite cerrado. **Pendiente de la decisión del usuario** | ISO 7.5.3.1 a) | Si es incorrecto: un `if` en dos sitios |
+| F13A-R37 | Lista de verificación: migración 0005 con los ocho ítems si la tabla está vacía, más al menos un ítem activo para dar el concepto. Sin ellos, el PC-05 queda sin evidencia | ISO 9001 7.5.2 c) | Si es incorrecto: el Coordinador ajusta la lista y un concepto se bloquea hasta que active un ítem |
+| F13A-R38 | Los Declined 1 a 6 y 8 a 12 de la revisión final se aceptan como están (GET del panel heredado; cancelar en publicación; corregir en revisión; R7; R22; R35; revisor reemplazado que elabora; lista durante revisión; limpieza de tests; TOTP sigue como decisión del usuario). De los Minor entran 1, 3, 4, 5, 6, 7 y 9, con el Minor 3 omitiendo los códigos de parecidos en el acta; los Minor 2 y 8 y la reimplementación de `demo.ts` pasan a deuda | Práctica: son pequeños o exigen diseño | Si es incorrecto: deuda registrada en `CONTEXT.md` |
 
 ## Deuda técnica conocida
 
@@ -1248,21 +1276,32 @@ mismos números que citan los comentarios del código (`R24`, `R26`, `R32`, `R33
   `FormularioVersionCliente`, `BotonRestablecer`, formularios de estructura, mapa, usuarios, lote
   y cuenta, y `components/ui/button.tsx`. `AGENTS.md` prohíbe `opacity` para atenuar controles:
   **Fase 19**.
-- **Lista de verificación vacía en una base heredada:** la 0004 crea la tabla sin filas y, sin
-  ítems activos, `validarConcepto` deja pasar el concepto favorable sin lista, con lo que el PC-05
-  queda sin evidencia. Se vio aplicando la 0004 sobre la demo de `main`; el manual lo advierte. El
-  ensayo de la **Fase 20** debe sembrar los ocho ítems o exigir al menos uno activo.
 - **Sin prueba de concurrencia real** en aceptación y firma: `revertida` usa una sola transacción.
   Doble clic y dos aceptaciones simultáneas están razonados sobre los candados, no ejercitados.
+  Lo mismo el código único bajo aceptaciones simultáneas (spec 13A §19): probarlo de verdad
+  confirmaría filas imborrables en `auditoria`, `firmas` y `tramite_eventos`.
+- **Un acta perdida tras un cambio del generador queda en 404, sin camino de reemisión.** Los datos
+  siguen en `detalle.acta` y en `firmas`, pero la regeneración no coincide con la huella. Falta un
+  camino del Administrador del SGC para reemitirla, con su nota y su auditoría.
+- **`lideresDeProcesosDelDocumento` excluye procesos inactivos** (la misma regla de
+  `lideresDeProceso`): el líder de un proceso desactivado no recibe el aviso de cierre.
+- **`dias` no entero da una fecha inválida** en `src/lib/tramites/plazos.ts`: hoy lo valida quien
+  llama.
+- **La etiqueta `patron_codigo`** sigue en `bitacora-detalle.ts` por los eventos históricos, aunque
+  la clave ya no se siembra.
 - **Dos reasignaciones en la misma etapa y ronda** no se detectan como pestaña vieja: gana la
   última y las dos quedan en el historial.
 - **`misTareas` corre dos veces en `/`** (cascarón y página), hasta cuatro consultas.
 - **`src/db/semillas/demo.ts` tiene unas 1150 líneas:** los trámites sembrados se pueden separar.
+  Además reimplementa `transicionar`, `publicarVersion` y la auditoría, aunque `transicionar` ya
+  acepta `opciones.ahora` y `opciones.verificar`: sus ~300 líneas pueden desviarse. Hoy `paso()` no
+  limpia `aviso_vencido_en` ni escribe `motivo_cierre`; no afecta a la demo actual.
 - **Relaciones `(A,B)` y `(B,A)` heredadas** no se unen (F13A-R27).
 - M12 no se hizo (F13A-R34): recargar a mitad de un formulario pierde lo escrito sin avisar.
 - Al firmar con una cuenta ya bloqueada o inactiva, la sesión se cierra y `/ingreso` no dice por
   qué: el mensaje fijo solo sale cuando ese intento bloquea la cuenta.
-- **Actas ya emitidas:** R33 y la redacción de observaciones cambian los bytes del PDF. Si en una
+- **Actas ya emitidas:** R33, la redacción de observaciones y quitar los códigos de los parecidos
+  (F13A-R38) cambian los bytes del PDF. Si en una
   instalación real se pierde un acta generada antes de esos cambios, no se regenera idéntica y
   queda `acta_no_regenerable` en la bitácora.
 - Sin aviso a los líderes del proceso nuevo si el propietario cambia al aceptar o al corregir
