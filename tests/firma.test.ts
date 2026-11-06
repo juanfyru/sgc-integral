@@ -76,7 +76,7 @@ describe("verificarParaFirmar", () => {
     const { sesion, id, token } = await usuarioConSesion("bloqueo");
     let r: ResultadoVerificacion = { ok: true, metodo: "clave" };
     for (let i = 0; i < 5; i++) r = await verificarParaFirmar(sesion, { clave: "otra-clave-larga-1" }, ctx);
-    expect(r).toMatchObject({ ok: false, sesionCerrada: true });
+    expect(r).toMatchObject({ ok: false, sesionCerrada: true, bloqueada: true });
     expect(await validarSesion(token)).toBeNull();
     const [a] = await sql`SELECT resultado FROM accesos WHERE usuario_id = ${id} ORDER BY id DESC LIMIT 1`;
     expect(a.resultado).toBe("bloqueo");

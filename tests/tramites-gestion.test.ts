@@ -11,6 +11,7 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 
 import type { TransactionSql } from "postgres";
 import { obtenerSql } from "@/db/cliente";
+import { obtenerDocumentoAdmin } from "@/db/consultas/admin";
 import { sugerirCodigo, todosLosCodigos } from "@/db/consultas/codigos";
 import { crearObservacion } from "@/db/consultas/revision";
 import { datosParaGestionar, listarTramites, propietarioDeDocumento } from "@/db/consultas/tramites";
@@ -48,6 +49,24 @@ async function devolverARondaDos(tx: TransactionSql, t: Awaited<ReturnType<typeo
 }
 
 describe("cancelar", () => {
+  it("la versión descartada conserva en el panel el enlace a su trámite, sin acta (spec 13A §15.5)", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "revision");
+    try {
+      await transicionar(t.admin, { tramiteId: t.tramiteId, accion: "cancelar", etapaEsperada: "revision", rondaEsperada: 1, datos: { motivo: "Se pidió por error." } }, opc(tx));
+      const documento = await obtenerDocumentoAdmin(t.codigo, t.admin, { sql: tx });
+      const [descartada, vigente] = documento!.versiones;
+      expect(descartada).toMatchObject({ estado: "descartado", cierres: [{ id: t.tramiteId, etapa: "cancelado" }] });
+      expect(vigente).toMatchObject({ estado: "vigente", cierres: [] });
+    } finally { await t.limpiar(); }
+  }));
+
+  it("cancelar una eliminación no cuelga el trámite de la versión vigente, que sigue su vida", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "aprobacion", { tipo: "eliminar" });
+    await transicionar(t.admin, { tramiteId: t.tramiteId, accion: "cancelar", etapaEsperada: "aprobacion", rondaEsperada: 0, datos: { motivo: "Sigue en uso." } }, opc(tx));
+    const documento = await obtenerDocumentoAdmin(t.codigo, t.admin, { sql: tx });
+    expect(documento!.versiones[0]).toMatchObject({ estado: "vigente", cierres: [] });
+  }));
+
   it("cancelar descarta la versión y libera su número", () => revertida(sql, async (tx) => {
     const t = await tramiteEn(tx, "elaboracion");
     const [v] = await tx`SELECT numero FROM documento_versiones WHERE id = ${t.versionId}`;

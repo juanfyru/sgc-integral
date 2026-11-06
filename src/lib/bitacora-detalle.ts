@@ -108,6 +108,12 @@ const ACCIONES_TRAMITE: Record<Accion | "solicitar" | "corregir_datos" | (typeof
   corregir_datos: "Corrigió los datos del documento de la solicitud",
 };
 
+/** Las dos devoluciones dicen lo mismo en la bitácora; en el filtro hay que poder elegir cuál. */
+const ACCIONES_TRAMITE_EN_FILTRO: Partial<Record<keyof typeof ACCIONES_TRAMITE, string>> = {
+  devolver_revision: "Devolvió a elaboración la solicitud, desde la revisión",
+  devolver_aprobacion: "Devolvió a elaboración la solicitud, desde la aprobación",
+};
+
 /** «Aprobó la solicitud SOL-2026-014 sobre GTH-PR-02». Una creación aún sin documento no lleva código. */
 function describirTramite(accion: string, numero: string, codigo: string | null, observacion?: unknown): string {
   const clave = accion.slice("tramite_".length);
@@ -139,6 +145,17 @@ function datosCambiados(despues: unknown): string {
   const nombres = Object.keys(despues).map((d) => (Object.hasOwn(NOMBRE_DATO_DOCUMENTO, d) ? NOMBRE_DATO_DOCUMENTO[d] : d));
   return nombres.length > 0 ? `: ${nombres.join(", ")}` : "";
 }
+
+/** Acciones de mapa dinámicas: <verbo>_<singular>. */
+const ACCION_DE_MAPA = /^(reordenar|activar|desactivar|borrar|crear|editar)_(.+)$/;
+const VERBOS_DE_MAPA: Record<string, string> = {
+  reordenar: "Reordenó",
+  activar: "Activó",
+  desactivar: "Desactivó",
+  borrar: "Borró",
+  crear: "Creó",
+  editar: "Editó",
+};
 
 /**
  * Traduce un evento de auditoría a una frase en español legible. Función pura;
@@ -227,21 +244,63 @@ export function describirEvento(e: EventoAuditoria): string {
 
   if (e.accion.startsWith("tramite_")) return describirTramite(e.accion, texto(d.numero) ?? "?", cod, d.observacion);
 
-  // Acciones de mapa dinámicas: <verbo>_<singular>.
-  const verbos: Record<string, string> = {
-    reordenar: "Reordenó",
-    activar: "Activó",
-    desactivar: "Desactivó",
-    borrar: "Borró",
-    crear: "Creó",
-    editar: "Editó",
-  };
-  const m = /^(reordenar|activar|desactivar|borrar|crear|editar)_(.+)$/.exec(e.accion);
+  const m = ACCION_DE_MAPA.exec(e.accion);
   if (m) {
     const tipo = SINGULAR[e.entidad] ?? m[2].replace(/_/g, " ");
     const suf = nombre ? ` «${nombre}»` : "";
-    return `${verbos[m[1]]} el ${tipo}${suf}`;
+    return `${VERBOS_DE_MAPA[m[1]]} el ${tipo}${suf}`;
   }
 
   return `Acción «${e.accion}» sobre ${e.entidad}${e.entidadId ? ` #${e.entidadId}` : ""}`;
+}
+
+/** El nombre de cada acción en el filtro de la bitácora: sin datos de ningún evento en particular. */
+const NOMBRE_DE_ACCION: Record<string, string> = {
+  ingreso: "Inició sesión",
+  salida: "Cerró sesión",
+  crear_documento: "Creó un documento",
+  editar_documento: "Editó un documento",
+  editar_control: "Corrigió los datos de control de un documento",
+  deshacer_carga: "Deshizo una carga",
+  descartar_borrador: "Descartó un borrador",
+  crear_version: "Creó una versión",
+  publicar_version: "Publicó una versión",
+  editar_version: "Editó una versión",
+  subir_archivo: "Subió un archivo",
+  eliminar_archivo: "Eliminó un archivo",
+  anular_documento: "Anuló un documento",
+  exporto_maestro: "Emitió el Listado Maestro",
+  subir_logo: "Cambió el logo de la entidad",
+  quitar_logo: "Quitó el logo de la entidad",
+  cambiar_clave: "Cambió su clave",
+  aceptar_aviso_datos: "Aceptó el aviso de tratamiento de datos personales",
+  activar_segundo_factor: "Activó el segundo factor",
+  quitar_segundo_factor: "Quitó el segundo factor",
+  crear_usuario: "Creó un usuario",
+  editar_usuario: "Editó un usuario",
+  desactivar_usuario: "Desactivó un usuario",
+  reactivar_usuario: "Reactivó un usuario",
+  restablecer_clave: "Restableció una clave",
+  cerrar_sesion_forzado: "Cerró la sesión de otra persona",
+  desbloquear_usuario: "Desbloqueó a un usuario",
+  crear_usuarios_lote: "Creó usuarios por lote",
+  editar_configuracion: "Editó la configuración",
+  editar_config_documental: "Editó la configuración documental",
+  acta_no_regenerable: "No se pudo regenerar un acta",
+  crear_item_verificacion: "Añadió un ítem a la lista de verificación",
+  editar_item_verificacion: "Editó un ítem de la lista de verificación",
+  mover_item_verificacion: "Movió un ítem de la lista de verificación",
+  alternar_item_verificacion: "Activó o desactivó un ítem de la lista de verificación",
+};
+
+/** La frase legible de una acción de la bitácora. Una que no se conoce sale con su nombre, sin guiones. */
+export function nombreDeAccion(accion: string): string {
+  if (Object.hasOwn(NOMBRE_DE_ACCION, accion)) return NOMBRE_DE_ACCION[accion];
+  if (accion.startsWith("tramite_")) {
+    const clave = accion.slice("tramite_".length) as keyof typeof ACCIONES_TRAMITE;
+    if (Object.hasOwn(ACCIONES_TRAMITE, clave)) return ACCIONES_TRAMITE_EN_FILTRO[clave] ?? ACCIONES_TRAMITE[clave];
+  }
+  const m = ACCION_DE_MAPA.exec(accion);
+  if (m) return `${VERBOS_DE_MAPA[m[1]]} el ${m[2].replace(/_/g, " ")}`;
+  return accion.replace(/_+/g, " ");
 }

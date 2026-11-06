@@ -18,6 +18,12 @@ type Props = {
   children?: React.ReactNode;
 };
 
+/** «Firmar y publicar»; con una etiqueta que ya lleva «y», «Firmar, aprobar y publicar». */
+export function textoDeFirmar(etiqueta: string): string {
+  const accion = `${etiqueta.charAt(0).toLowerCase()}${etiqueta.slice(1)}`;
+  return accion.includes(" y ") ? `Firmar, ${accion}` : `Firmar y ${accion}`;
+}
+
 /** Vive solo mientras el diálogo está abierto: al cerrarlo no quedan ni la clave ni el error. */
 export function FormularioFirma({
   titulo,
@@ -99,16 +105,32 @@ export function FormularioFirma({
           Cancelar
         </Boton>
         <Boton type="submit" pendiente={pendiente}>
-          {pendiente ? "Firmando…" : `Firmar y ${etiquetaBoton.charAt(0).toLowerCase()}${etiquetaBoton.slice(1)}`}
+          {pendiente ? "Firmando…" : textoDeFirmar(etiquetaBoton)}
         </Boton>
       </div>
     </form>
   );
 }
 
+/** La firma suele llevarse el botón que abrió el diálogo, y con él el foco: lo recibe el título de la página. */
+function enfocarTitulo() {
+  if (document.activeElement && document.activeElement !== document.body) return;
+  document.querySelector<HTMLElement>('h1[tabindex="-1"]')?.focus();
+}
+
 /** Las acciones que firman: muestran qué se firma y piden la clave en el mismo envío (spec 13A §10.2). */
 export function DialogoFirma(props: Props) {
   const [abierto, setAbierto] = useState(false);
+  const abiertoAlDesmontar = useRef(false);
+  useEffect(() => {
+    abiertoAlDesmontar.current = abierto;
+  }, [abierto]);
+  useEffect(
+    () => () => {
+      if (abiertoAlDesmontar.current) enfocarTitulo();
+    },
+    [],
+  );
   return (
     <>
       <Boton onClick={() => setAbierto(true)} aria-haspopup="dialog">

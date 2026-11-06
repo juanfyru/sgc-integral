@@ -9,6 +9,7 @@ export function EncabezadoPagina({
   icono,
   acciones,
   migas,
+  tituloEnfocable,
 }: {
   titulo: string;
   descripcion?: React.ReactNode;
@@ -18,6 +19,8 @@ export function EncabezadoPagina({
   icono?: React.ReactNode;
   acciones?: React.ReactNode;
   migas?: Miga[];
+  /** El foco puede llegar al título desde el código, cuando el control que lo tenía desaparece. */
+  tituloEnfocable?: boolean;
 }) {
   return (
     <header className="mb-6 space-y-3">
@@ -41,7 +44,7 @@ export function EncabezadoPagina({
                 {insignias}
               </div>
             ) : null}
-            <h1 className="font-display text-2xl font-semibold tracking-tight">
+            <h1 tabIndex={tituloEnfocable ? -1 : undefined} className="font-display text-2xl font-semibold tracking-tight">
               {titulo}
             </h1>
             {descripcion ? (

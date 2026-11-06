@@ -19,6 +19,7 @@ import {
   caminoDirecto,
   crearDocumento,
   crearVersionBorrador,
+  claveDePublicar,
   deshacerCarga,
   descartarBorrador,
   editarCatalogo,
@@ -195,6 +196,22 @@ describe("registrar y deshacer", () => {
     expect(d).toMatchObject({ codigo: "ZZ-CD-02", numero: 3 });
     const documento = await obtenerDocumentoAdmin("ZZ-CD-02", await sesionDe(sql, ACTOR));
     expect(documento?.versiones.map((v) => v.estado)).toEqual(["vigente", "descartado"]); // el mismo número: la vigente primero
+  });
+
+  it("registrar otra vez el código de una carga deshecha dice que se reactiva desde su página", async () => {
+    const { documentoId } = await registrado("ZZ-CD-90", 1);
+    await expect(crearDocumento(base("ZZ-CD-90"), actorId)).rejects.toThrow("Ese código ya existe");
+    await deshacerCarga(documentoId, "Se subió el archivo equivocado.", actorId);
+    await expect(crearDocumento(base("ZZ-CD-90"), actorId)).rejects.toThrow("ZZ-CD-90 ya existe y su carga se deshizo: se reactiva desde la página del documento");
+  });
+
+  it("la clave de publicar cambia con lo que publicar exige, y solo con eso", () => {
+    const base = { aprobo: null, fechaAprobacion: null, archivos: [{ id: 1, rol: "anexo", nombreOriginal: "a.pdf", mime: "application/pdf", tamanoBytes: 1 }] };
+    const inicial = claveDePublicar(base);
+    expect(claveDePublicar({ ...base, aprobo: "Gerencia" })).not.toBe(inicial);
+    expect(claveDePublicar({ ...base, fechaAprobacion: "2026-11-01" })).not.toBe(inicial);
+    expect(claveDePublicar({ ...base, archivos: [{ ...base.archivos[0], rol: "principal" }] })).not.toBe(inicial);
+    expect(claveDePublicar({ ...base, archivos: [...base.archivos, { ...base.archivos[0], id: 2 }] })).toBe(inicial);
   });
 
   it("deshacer pide el motivo y no toca un documento con un trámite abierto", async () => {

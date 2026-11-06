@@ -79,7 +79,7 @@ export default async function PaginaMaestro({
       <TablaDatos titulo="Listado Maestro de Documentos" columnas={COLUMNAS} filas={filas.length} vacio="Sin documentos en el listado">
         {filas.map((f) => (
           <tr key={f.codigo}>
-            <td className={`${celda} font-mono`}>{f.codigo}</td>
+            <td className={`${celda} whitespace-nowrap font-mono`}>{f.codigo}</td>
             <td className={celda}>{f.titulo}</td>
             <td className={celda}>{f.tipo}</td>
             <td className={celda}>{f.version ?? "—"}</td>

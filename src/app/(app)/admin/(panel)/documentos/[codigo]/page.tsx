@@ -17,7 +17,7 @@ import { claseBoton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import { InsigniaEstadoDocumento } from "@/componentes/ui/Insignia";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
-import { avisoDePublicar, caminoDirecto, obtenerDocumentoAdmin, type VersionAdmin } from "@/db/consultas/admin";
+import { avisoDePublicar, caminoDirecto, claveDePublicar, obtenerDocumentoAdmin, type VersionAdmin } from "@/db/consultas/admin";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { puedePedirSobreDocumento } from "@/db/consultas/tramites";
 import { exigirPermiso } from "@/lib/paginas";
@@ -25,6 +25,12 @@ import { puede } from "@/lib/permisos";
 import { APROBACION_DE_VERSION, NUMERO_MAXIMO_DE_VERSION } from "@/lib/tramites/tipos";
 
 export const metadata: Metadata = { title: "Documento — Administración SGC" };
+
+const TRAMITE_DE_CIERRE: Record<VersionAdmin["cierres"][number]["etapa"], string> = {
+  publicado: "Trámite de aprobación",
+  eliminado: "Trámite de eliminación",
+  cancelado: "Trámite cancelado",
+};
 
 function tamanoLegible(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -87,7 +93,7 @@ function SeccionVersion({
             <span className="text-muted-foreground">
               {a.rol} · {a.mime} · {tamanoLegible(a.tamanoBytes)}
             </span>
-            {editable && <EliminarArchivo direccion={`/admin/api/archivos/${a.id}`} />}
+            {editable && <EliminarArchivo direccion={`/admin/api/archivos/${a.id}`} nombre={a.nombreOriginal} />}
           </li>
         ))}
         {version.archivos.length === 0 && (
@@ -99,9 +105,11 @@ function SeccionVersion({
         <ul className="mb-2 flex list-none flex-wrap gap-x-4 gap-y-1 text-sm">
           {version.cierres.map((c) => (
             <li key={c.id} className="flex flex-wrap gap-x-4 gap-y-1">
-              <EnlaceActa tramiteId={c.id} clase={c.etapa === "eliminado" ? "eliminacion" : "aprobacion"} />
+              {c.etapa === "cancelado" ? null : (
+                <EnlaceActa tramiteId={c.id} clase={c.etapa === "eliminado" ? "eliminacion" : "aprobacion"} />
+              )}
               <Link href={`/tramites/${c.id}`} className="underline underline-offset-2">
-                {c.etapa === "eliminado" ? "Trámite de eliminación" : "Trámite de aprobación"}
+                {TRAMITE_DE_CIERRE[c.etapa]}
               </Link>
             </li>
           ))}
@@ -133,6 +141,7 @@ function SeccionVersion({
           </details>
 
           <FormAccion
+            key={claveDePublicar(version)}
             accion={publicarAccion}
             etiqueta={`Publicar versión ${version.numero}`}
             confirmacion={avisoDePublicar(nivelAcceso)}

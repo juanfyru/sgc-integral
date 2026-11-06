@@ -4,7 +4,28 @@
  * seguro para acciones no mapeadas y sin volcar JSON crudo.
  */
 import { describe, expect, it } from "vitest";
-import { describirEvento } from "@/lib/bitacora-detalle";
+import { describirEvento, nombreDeAccion } from "@/lib/bitacora-detalle";
+
+describe("nombreDeAccion", () => {
+  it.each([
+    ["tramite_aceptar", "Aceptó la solicitud"],
+    ["tramite_guardar_lista", "Guardó la lista de verificación de la solicitud"],
+    ["crear_documento", "Creó un documento"],
+    ["exporto_maestro", "Emitió el Listado Maestro"],
+    ["editar_config_documental", "Editó la configuración documental"],
+    ["crear_cargo", "Creó el cargo"],
+    ["reordenar_area", "Reordenó el area"],
+    ["accion_futura", "accion futura"],
+    ["tramite_futura", "tramite futura"],
+    ["constructor", "constructor"],
+  ])("%s dice «%s»", (accion, frase) => {
+    expect(nombreDeAccion(accion)).toBe(frase);
+  });
+
+  it("las dos devoluciones se distinguen en el filtro", () => {
+    expect(nombreDeAccion("tramite_devolver_revision")).not.toBe(nombreDeAccion("tramite_devolver_aprobacion"));
+  });
+});
 
 describe("describirEvento", () => {
   it("crear_documento usa código y título del detalle", () => {

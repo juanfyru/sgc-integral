@@ -390,7 +390,10 @@ describe("transicionar", () => {
     expect((abierta as ErrorFirma).message).toBe("Clave o código incorrectos");
     const cerrada = await transicionar(t.lider, t.entrada, { ...opc(tx), verificar: rechaza(true) }).catch((e: unknown) => e);
     expect((cerrada as ErrorFirma).sesionCerrada).toBe(true);
+    expect((cerrada as ErrorFirma).bloqueada).toBe(false);
     expect(cerrada).toBeInstanceOf(ErrorTramite);
+    const bloquea: Verificador = async () => ({ ok: false, mensaje: "Clave o código incorrectos", sesionCerrada: true, bloqueada: true });
+    expect(((await transicionar(t.lider, t.entrada, { ...opc(tx), verificar: bloquea }).catch((e: unknown) => e)) as ErrorFirma).bloqueada).toBe(true);
     expect(manejado).toBe(0);
     expect(await listarFirmas(t.tramiteId, { sql: tx })).toEqual([]);
   }));

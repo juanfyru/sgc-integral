@@ -34,6 +34,12 @@ export default async function PaginaNuevaSolicitud({
           {`${pedido.codigo} ya tiene un trámite abierto: no admite otra solicitud hasta que ese se cierre.`}
         </p>
       ) : null}
+      {/* El mismo aviso si no existe, si no se ve o si es de otro proceso: la dirección no revela cuál de las tres es. */}
+      {codigo && !pedido ? (
+        <p role="note" className="rounded-md border border-estado-atencion bg-estado-atencion-fondo px-4 py-3 text-sm text-estado-atencion-texto">
+          No puede pedir un cambio sobre ese documento: solo sobre los documentos vigentes de sus procesos.
+        </p>
+      ) : null}
       {sinProcesos ? (
         <EstadoVacio
           icono={ClipboardList}

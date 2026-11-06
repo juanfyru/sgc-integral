@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { obtenerBitacora } from "@/db/consultas/bitacora";
-import { describirEvento } from "@/lib/bitacora-detalle";
+import { describirEvento, nombreDeAccion } from "@/lib/bitacora-detalle";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { TablaDatos, celda, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
 import { exigirPermiso } from "@/lib/paginas";
@@ -48,7 +48,10 @@ export default async function PaginaBitacora({
           <span className="text-muted-foreground">Acción</span>
           <select name="accion" defaultValue={sp.accion ?? ""} className="rounded-md border px-2 py-1">
             <option value="">Todas</option>
-            {r.acciones.map((a) => <option key={a} value={a}>{a}</option>)}
+            {r.acciones
+              .map((a) => ({ valor: a, nombre: nombreDeAccion(a) }))
+              .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"))
+              .map((a) => <option key={a.valor} value={a.valor}>{a.nombre}</option>)}
           </select>
         </label>
         <label className="flex flex-col gap-1">

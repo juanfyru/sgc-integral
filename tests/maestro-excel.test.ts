@@ -99,6 +99,7 @@ describe("construirExcelMaestro — origen de la aprobación", () => {
       { ...FILA, codigo: "C-SIN", origenAprobacion: null },
     ];
     const hoja = await abrir(await construirExcelMaestro(filas, META));
+    expect(hoja.getCell(7, 5).value).toBe("Vigente");                            // como en pantalla
     expect(hoja.getCell(7, 12).value).toBe("Fuera de la plataforma");
     expect(hoja.getCell(8, 12).value).toBe("En la plataforma");
     expect(hoja.getCell(9, 12).value).toBeNull();

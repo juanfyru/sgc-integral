@@ -117,7 +117,14 @@ describe("acciones del trámite", () => {
     expect(await darVistoBuenoAccion(null, formulario(ocultos))).toMatchObject({ ok: false, error: "Clave o código incorrectos" });
     expect(redirect).not.toHaveBeenCalled();
     transicionar.mockRejectedValue(new ErrorFirma("Clave o código incorrectos", true));
-    await expect(darVistoBuenoAccion(null, formulario(ocultos))).rejects.toThrow("REDIRECT:/ingreso");
+    await expect(darVistoBuenoAccion(null, formulario(ocultos))).rejects.toThrow(/^REDIRECT:\/ingreso$/);
+  });
+
+  it("si la firma bloqueó la cuenta, /ingreso lo dice; un cierre por otra causa no", async () => {
+    transicionar.mockRejectedValue(new ErrorFirma("Clave o código incorrectos", true, true));
+    await expect(darVistoBuenoAccion(null, formulario(ocultos))).rejects.toThrow(/^REDIRECT:\/ingreso\?motivo=bloqueo$/);
+    transicionar.mockRejectedValue(new ErrorFirma("Clave o código incorrectos", true));
+    await expect(darVistoBuenoAccion(null, formulario(ocultos))).rejects.toThrow(/^REDIRECT:\/ingreso$/);
   });
 
   it("sin el permiso no llega a transicionar", async () => {

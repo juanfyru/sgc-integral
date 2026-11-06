@@ -328,7 +328,7 @@ export async function transicionar(
     if (!entrada.credenciales) throw new ErrorFirma("Escriba su clave para firmar", false);
     const verificar = opciones.verificar ?? verificarParaFirmar;
     const r = await verificar(sesion, entrada.credenciales, contexto, ahora);
-    if (!r.ok) throw new ErrorFirma(r.mensaje, r.sesionCerrada);
+    if (!r.ok) throw new ErrorFirma(r.mensaje, r.sesionCerrada, r.bloqueada);
     metodo = r.metodo;
   }
 

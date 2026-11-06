@@ -50,7 +50,7 @@ function FilaArchivo({ tramiteId, archivo: a, editable }: { tramiteId: number; a
       </div>
       <div className="flex shrink-0 items-center gap-3">
         <IconoFormato mime={a.mime} tamanoBytes={a.tamanoBytes} />
-        {editable ? <EliminarArchivo direccion={`/api/tramites/${tramiteId}/archivos/${a.id}`} /> : null}
+        {editable ? <EliminarArchivo direccion={`/api/tramites/${tramiteId}/archivos/${a.id}`} nombre={a.nombreOriginal} /> : null}
       </div>
     </li>
   );

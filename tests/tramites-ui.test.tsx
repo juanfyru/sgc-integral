@@ -31,7 +31,8 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 import { AccionesGestion, aprobadoresPara, candidatosDe, efectoDeCancelar, opcionesDePropietario, type TramiteParaGestionar } from "@/componentes/tramites/AccionesGestion";
 import { AccionesSolicitud } from "@/componentes/tramites/AccionesSolicitud";
 import { BloqueSolicitud } from "@/componentes/tramites/BloqueSolicitud";
-import { DialogoFirma, FormularioFirma } from "@/componentes/tramites/DialogoFirma";
+import { DialogoFirma, FormularioFirma, textoDeFirmar } from "@/componentes/tramites/DialogoFirma";
+import { EliminarArchivo } from "@/componentes/admin/EliminarArchivo";
 import { EncabezadoTramite } from "@/componentes/tramites/EncabezadoTramite";
 import { FormularioSolicitud } from "@/componentes/tramites/FormularioSolicitud";
 import { HistorialTramite } from "@/componentes/tramites/HistorialTramite";
@@ -645,6 +646,30 @@ describe("DialogoFirma", () => {
   });
 });
 
+describe("firmar", () => {
+  it("el botón se lee bien con una acción o con dos", () => {
+    expect(textoDeFirmar("Publicar")).toBe("Firmar y publicar");
+    expect(textoDeFirmar("Enviar a revisión")).toBe("Firmar y enviar a revisión");
+    expect(textoDeFirmar("Aprobar y publicar")).toBe("Firmar, aprobar y publicar");
+    expect(textoDeFirmar("Aprobar y eliminar")).toBe("Firmar, aprobar y eliminar");
+  });
+
+  it("el encabezado del trámite deja que el foco llegue al título", () => {
+    const html = renderToStaticMarkup(<EncabezadoTramite tramite={detalle} ahora={ahora} />);
+    expect(html).toMatch(/<h1 tabindex="-1"/);
+  });
+});
+
+describe("quitar un archivo", () => {
+  it("pide confirmación en un diálogo que dice qué archivo se va", () => {
+    const html = renderToStaticMarkup(<EliminarArchivo direccion="/api/tramites/1/archivos/2" nombre="Inducción <v3>.pdf" />);
+    expect(html).toContain("<dialog");
+    expect(html).toContain('aria-haspopup="dialog"');
+    expect(html).toContain("Se quitará «Inducción &lt;v3&gt;.pdf» del borrador");
+    expect(html).toContain("Cancelar");
+  });
+});
+
 describe("PanelElaboracion", () => {
   const tramite = { id: 7, etapa: "elaboracion", ronda: 1, codigo: "GTH-PR-02", titulo: "Inducción", versionNumero: 3 } as const;
   const borrador: Borrador = {
@@ -662,6 +687,11 @@ describe("PanelElaboracion", () => {
   });
   const pintar = (editable: boolean, b: Borrador = borrador, pideCodigo = false, observaciones: Observacion[] = [observacion({})]) =>
     renderToStaticMarkup(<PanelElaboracion tramite={tramite} borrador={b} observaciones={observaciones} editable={editable} pideCodigo={pideCodigo} />);
+
+  it("a 390 px los dos primeros campos de la solicitud van en una columna que no los ensancha", () => {
+    const html = renderToStaticMarkup(<FormularioSolicitud procesos={[{ id: 1, nombre: "Un proceso con un nombre muy largo", sigla: "CEX", subprocesos: [] }]} tipos={[]} documentos={[]} />);
+    expect(html).toContain("grid grid-cols-1 gap-4 sm:grid-cols-2");
+  });
 
   it("el elaborador carga en la ruta del trámite, quita archivos y envía a revisión", () => {
     const html = pintar(true);

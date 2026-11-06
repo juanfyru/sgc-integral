@@ -316,6 +316,11 @@ export function avisoDePublicar(nivelAcceso: "general" | "restringido"): string 
 /** Por qué no se edita cada grupo de datos de control; null si se puede (spec 13A §8.6). */
 export type EdicionDeControl = { codigoYTipo: string | null; titulo: string | null };
 
+/** Lo que publicar exige: al cambiar, el formulario empieza de nuevo y no queda en pantalla un error ya resuelto. */
+export function claveDePublicar({ aprobo, fechaAprobacion, archivos }: Pick<VersionAdmin, "aprobo" | "fechaAprobacion" | "archivos">): string {
+  return JSON.stringify([aprobo, fechaAprobacion, archivos.some((a) => a.rol === "principal")]);
+}
+
 export function edicionDeControl(situacion: SituacionDocumento, cargaAbierta: boolean): EdicionDeControl {
   if (situacion.tramiteAbierto) return { codigoYTipo: CONTROL_EN_TRAMITE, titulo: CONTROL_EN_TRAMITE };
   if (!situacion.publicado) return { codigoYTipo: null, titulo: null };
@@ -336,6 +341,14 @@ async function procesoDeAsociacion(tx: Cliente, { procesoId, subprocesoId }: Aso
 async function exigirCodigoDisponible(tx: Cliente, codigo: string, destino: DestinoDeCodigo, documentoId?: number): Promise<void> {
   await exigirFormatoDeCodigo(tx, codigo, destino);
   if (await codigoAbandonado(codigo, null, { sql: tx, documentoId })) throw errorDeCodigoRepetido(await sugerirCodigo(destino, { sql: tx }));
+}
+
+/** Una carga deshecha conserva su código: no se registra con otro, se reactiva desde su página (spec 13A §13.2). */
+async function exigirQueNoSeaCargaDeshecha(tx: TransactionSql, codigo: string): Promise<void> {
+  const [documento] = await tx`SELECT d.id FROM documentos d WHERE d.codigo = ${codigo}
+    AND EXISTS (SELECT 1 FROM documento_versiones v WHERE v.documento_id = d.id AND v.estado = 'descartado')`;
+  if (!documento || impedimentoDeRegistro(await leerSituacion(tx, Number(documento.id))) !== null) return;
+  throw new Error(`${codigo} ya existe y su carga se deshizo: se reactiva desde la página del documento`);
 }
 
 /** Si el código ya existe lo dice en palabras. Va en un savepoint: tras un 23505 la transacción no admite más consultas. */
@@ -360,6 +373,7 @@ export async function crearDocumento(
     const principal = datos.asociaciones.find((a) => a.esPrincipal) as AsociacionEntrada;
     const destino = { procesoId: await procesoDeAsociacion(tx, principal), tipoDocumentoId: datos.tipoId };
     await exigirCodigoDisponible(tx, datos.codigo, destino);
+    await exigirQueNoSeaCargaDeshecha(tx, datos.codigo);
     return conCodigoUnico(tx, destino, (s) => crearDocumentoEn(s, datos, usuarioId));
   });
 }
@@ -869,9 +883,9 @@ export type VersionAdmin = {
   tramite: { id: number; numero: string } | null;
   /**
    * Los trámites que cerraron la versión: el que la publicó y, si después se eliminó el documento, el que
-   * la anuló. Cada uno tiene su acta, que es la evidencia de cómo se aprobó o retiró.
+   * la anuló, cada uno con su acta; o el que se canceló y la dejó descartada, que no tiene acta.
    */
-  cierres: { id: number; etapa: "publicado" | "eliminado" }[];
+  cierres: { id: number; etapa: "publicado" | "eliminado" | "cancelado" }[];
 };
 
 export type DocumentoAdmin = {
@@ -925,7 +939,7 @@ export async function obtenerDocumentoAdmin(
       (SELECT json_build_object('id', t.id, 'numero', t.numero) FROM tramites t
         WHERE t.version_id = v.id AND t.etapa = ANY(${ETAPAS_EN_CURSO})) AS tramite,
       (SELECT coalesce(json_agg(json_build_object('id', t.id, 'etapa', t.etapa) ORDER BY t.id), '[]') FROM tramites t
-        WHERE t.version_id = v.id AND t.etapa IN ('publicado', 'eliminado')) AS cierres
+        WHERE t.version_id = v.id AND (t.etapa IN ('publicado', 'eliminado') OR (t.etapa = 'cancelado' AND v.estado = 'descartado'))) AS cierres
     FROM documento_versiones v
     LEFT JOIN archivos a ON a.version_id = v.id AND a.rol = ANY(${ROLES_ARCHIVO_LISTA})
     WHERE v.documento_id = ${doc.id}

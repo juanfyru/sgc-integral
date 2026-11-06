@@ -19,7 +19,7 @@ const COLUMNAS: Array<{
   { cab: "Título", ancho: 42, valor: (f) => f.titulo },
   { cab: "Tipo", ancho: 18, valor: (f) => f.tipo },
   { cab: "Versión", ancho: 9, valor: (f) => f.version },
-  { cab: "Estado", ancho: 12, valor: (f) => f.estado },
+  { cab: "Estado", ancho: 12, valor: (f) => `${f.estado.charAt(0).toUpperCase()}${f.estado.slice(1)}` },
   { cab: "Elaboración", ancho: 14, valor: (f) => f.fechaElaboracion },
   { cab: "Revisión", ancho: 14, valor: (f) => f.fechaRevision },
   { cab: "Fecha de aprobación", ancho: 19, valor: (f) => f.fechaAprobacion },

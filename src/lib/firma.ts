@@ -21,7 +21,7 @@ export type CredencialesFirma = { clave: string; codigo?: string };
 export type ContextoFirma = { ip: string | null; userAgent: string | null };
 export type ResultadoVerificacion =
   | { ok: true; metodo: "clave" | "clave_totp" }
-  | { ok: false; mensaje: string; sesionCerrada: boolean };
+  | { ok: false; mensaje: string; sesionCerrada: boolean; bloqueada?: true };
 export type SesionFirma = Pick<SesionValida, "sesionId" | "usuarioId" | "usuario">;
 export type Verificador = (
   sesion: SesionFirma,
@@ -62,7 +62,7 @@ export const verificarParaFirmar: Verificador = (sesion, credenciales, contexto,
       const bloqueada = estaBloqueado(nuevo, ahora);
       await registrar(u.id, bloqueada ? "bloqueo" : "firma_fallo");
       if (bloqueada) await cerrarSesionPorId(sesion.sesionId);
-      return { ok: false, mensaje: MENSAJE_FALLO, sesionCerrada: bloqueada };
+      return { ok: false, mensaje: MENSAJE_FALLO, sesionCerrada: bloqueada, ...(bloqueada ? { bloqueada } : {}) };
     }
 
     await guardarEstadoBloqueo(u.id, SIN_BLOQUEO);

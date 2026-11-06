@@ -85,7 +85,7 @@ async function ejecutar(
     const opciones = extra?.credenciales ? { contexto: await contextoDePeticion() } : undefined;
     await transicionar(sesion, { ...referencia(formData), accion, ...extra }, opciones);
   } catch (err) {
-    if (err instanceof ErrorFirma && err.sesionCerrada) return "/ingreso";
+    if (err instanceof ErrorFirma && err.sesionCerrada) return err.bloqueada ? "/ingreso?motivo=bloqueo" : "/ingreso";
     throw err;
   }
 }

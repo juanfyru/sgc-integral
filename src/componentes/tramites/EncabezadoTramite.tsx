@@ -58,6 +58,7 @@ export function EncabezadoTramite({ tramite: t, ahora }: { tramite: DetalleTrami
         </>
       }
       titulo={t.titulo}
+      tituloEnfocable
       descripcion={descripcion}
     />
   );

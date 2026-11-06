@@ -29,6 +29,8 @@ export class ErrorFirma extends ErrorTramite {
   constructor(
     mensaje: string,
     public readonly sesionCerrada: boolean,
+    /** Este intento bloqueó la cuenta: la sesión se cerró por eso. */
+    public readonly bloqueada = false,
   ) {
     super(mensaje);
     this.name = "ErrorFirma";
