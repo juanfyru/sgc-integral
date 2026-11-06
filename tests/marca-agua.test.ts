@@ -85,6 +85,13 @@ describe("estamparCopiaNoControlada", () => {
     expect(contieneTexto(contenido, "Descargada por ???? ? Ruiz??Ñ el 24/08/2026")).toBe(true);
   });
 
+  it("un nombre con la ñ o la tilde en forma descompuesta (NFD) sale igual que en NFC", async () => {
+    const original = await pdfDePrueba([[612, 792]]);
+    const estampado = await estamparCopiaNoControlada(original, { ...DATOS, nombre: "María Nuñez".normalize("NFD") });
+    const [contenido] = await contenidoPorPagina(estampado);
+    expect(contieneTexto(contenido, "Descargada por María Nuñez el 24/08/2026")).toBe(true);
+  });
+
   it("recorta el nombre a 60 caracteres, sin partir un carácter de dos unidades", async () => {
     const original = await pdfDePrueba([[612, 792]]);
     const conNombre = async (nombre: string) => {

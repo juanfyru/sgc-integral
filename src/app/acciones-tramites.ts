@@ -8,6 +8,7 @@ import {
   reabrirObservacion,
   responderObservacion,
 } from "@/db/consultas/revision";
+import { asegurarActa } from "@/db/consultas/actas";
 import { obtenerTramite } from "@/db/consultas/tramites";
 import { guardarControlCambios } from "@/db/consultas/tramites-archivos";
 import {
@@ -84,6 +85,24 @@ async function ejecutar(
     if (err instanceof ErrorFirma && err.sesionCerrada) return "/ingreso";
     throw err;
   }
+}
+
+/**
+ * Publicar o ejecutar la eliminación y, ya confirmada la transición, dejar el acta. Un fallo del acta
+ * solo se registra: no deshace la publicación, y el enlace del acta la genera a pedido (spec 13A §11.2).
+ */
+async function ejecutarCierre(
+  formData: FormData,
+  sesion: SesionFlujo,
+  accion: "publicar" | "aprobar_y_publicar",
+  extra: Pick<EntradaTransicion, "datos" | "credenciales">,
+): Promise<string | void> {
+  const redireccion = await ejecutar(formData, sesion, accion, extra);
+  if (redireccion === undefined) {
+    const { tramiteId } = referencia(formData);
+    await asegurarActa(tramiteId).catch((err) => console.error(`No se pudo generar el acta del trámite ${tramiteId}:`, err));
+  }
+  return redireccion;
 }
 
 export async function crearSolicitudAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
@@ -236,7 +255,7 @@ export async function negarEliminacionAccion(_prev: EstadoAccion, formData: Form
 export async function publicarTramiteAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   const firma = separarFirma(formData);
   return mutacion(formData, "tramites.gestionar", (_usuarioId, _formData, sesion) =>
-    ejecutar(formData, sesion, "publicar", {
+    ejecutarCierre(formData, sesion, "publicar", {
       credenciales: parsearFormulario(firma, EsquemaFirma, { omitir: OCULTOS }),
     }),
   );
@@ -245,7 +264,7 @@ export async function publicarTramiteAccion(_prev: EstadoAccion, formData: FormD
 export async function aprobarYPublicarAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   const firma = separarFirma(formData);
   return mutacion(formData, "tramites.gestionar", (_usuarioId, _formData, sesion) =>
-    ejecutar(formData, sesion, "aprobar_y_publicar", {
+    ejecutarCierre(formData, sesion, "aprobar_y_publicar", {
       datos: parsearFormulario(formData, EsquemaConcepto, { omitir: OCULTOS }),
       credenciales: parsearFormulario(firma, EsquemaFirma, { omitir: [...OCULTOS, "concepto"] }),
     }),

@@ -1,5 +1,6 @@
 import { obtenerSql } from "@/db/cliente";
 import { filtroAcceso, type SujetoVisibilidad } from "@/lib/alcance";
+import { ROLES_ARCHIVO_LISTA } from "@/lib/subida";
 import { MARCA_FIN, MARCA_INICIO } from "@/lib/marcas-busqueda";
 import type { ArchivoResumen } from "@/db/consultas/procesos";
 
@@ -168,7 +169,7 @@ export async function buscarDocumentos(
                                    'tamanoBytes', a.tamano_bytes)
                  ORDER BY CASE a.rol WHEN 'principal' THEN 0 WHEN 'editable' THEN 1 ELSE 2 END
                )
-               FROM archivos a WHERE a.version_id = v.id
+               FROM archivos a WHERE a.version_id = v.id AND a.rol = ANY(${ROLES_ARCHIVO_LISTA})
              ) AS archivos
       FROM documentos d
       JOIN tipos_documento t ON t.id = d.tipo_id

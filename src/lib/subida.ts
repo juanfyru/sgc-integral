@@ -7,6 +7,8 @@ export const TAMANO_MUESTRA_BYTES = 16384;
 
 export const ROLES_ARCHIVO = ["principal", "editable", "anexo"] as const;
 export type RolArchivo = (typeof ROLES_ARCHIVO)[number];
+/** Los roles que las listas y las rutas de archivos de un documento ofrecen: las actas quedan fuera. */
+export const ROLES_ARCHIVO_LISTA: string[] = [...ROLES_ARCHIVO];
 
 // Allowlist extensión → MIMEs aceptados según magic bytes (regla ISO 6).
 // Los Office legados comparten contenedor OLE (application/x-cfb). Los OOXML

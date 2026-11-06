@@ -1,4 +1,5 @@
-import { PDFDocument, StandardFonts, radians, rgb } from "pdf-lib";
+import { PDFDocument, StandardFonts, radians, rgb, type PDFFont } from "pdf-lib";
+import { textoParaFuente } from "@/lib/texto-pdf";
 
 /**
  * Estampa "COPIA NO CONTROLADA" + nombre de quien descarga y fecha en diagonal
@@ -23,13 +24,9 @@ function fechaCorta(fecha: Date, zona: string): string {
   return `${de("day")}/${de("month")}/${de("year")}`;
 }
 
-// Por puntos de código, no por unidades UTF-16: así el recorte no parte un
-// carácter en dos y cada carácter fuera de la fuente deja un solo «?».
-function nombreEstampable(nombre: string, codificables: ReadonlySet<number>): string {
-  return Array.from(nombre)
-    .slice(0, LARGO_MAX_NOMBRE)
-    .map((c) => (codificables.has(c.codePointAt(0) as number) ? c : "?"))
-    .join("");
+// Por puntos de código, no por unidades UTF-16: así el recorte no parte un carácter en dos.
+function nombreEstampable(nombre: string, fuente: PDFFont): string {
+  return textoParaFuente(Array.from(nombre.normalize("NFC")).slice(0, LARGO_MAX_NOMBRE).join(""), fuente);
 }
 
 export async function estamparCopiaNoControlada(
@@ -38,7 +35,7 @@ export async function estamparCopiaNoControlada(
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.load(pdf);
   const fuente = await doc.embedFont(StandardFonts.HelveticaBold);
-  const nombre = nombreEstampable(datos.nombre, new Set(fuente.getCharacterSet()));
+  const nombre = nombreEstampable(datos.nombre, fuente);
   const leyenda = `Descargada por ${nombre} el ${fechaCorta(datos.fecha, datos.zona)} — verifique su vigencia en el SGC`;
 
   for (const pagina of doc.getPages()) {

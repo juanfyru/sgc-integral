@@ -1,5 +1,6 @@
-import { obtenerSql } from "@/db/cliente";
+import { obtenerSql, type Cliente } from "@/db/cliente";
 import { filtroAcceso, type SujetoVisibilidad } from "@/lib/alcance";
+import { ROLES_ARCHIVO_LISTA } from "@/lib/subida";
 
 export type ArchivoFicha = {
   id: number;
@@ -47,6 +48,8 @@ export type FichaDocumento = {
     reviso: string | null;
     aprobo: string | null;
     resumenCambios: string | null;
+    /** El trámite que publicó esta versión; `null` si se aprobó fuera de la plataforma. */
+    tramiteId: number | null;
   };
   archivos: ArchivoFicha[];
   ubicaciones: UbicacionDocumento[];
@@ -61,8 +64,9 @@ export type FichaDocumento = {
 export async function obtenerFichaDocumento(
   codigo: string,
   sujeto: SujetoVisibilidad,
+  opciones?: { sql?: Cliente },
 ): Promise<FichaDocumento | null> {
-  const sql = obtenerSql();
+  const sql = opciones?.sql ?? obtenerSql();
 
   const [doc] = await sql`
     SELECT d.id, d.codigo, d.titulo, d.descripcion, d.nivel_acceso,
@@ -71,7 +75,8 @@ export async function obtenerFichaDocumento(
            v.fecha_elaboracion::text AS fecha_elaboracion,
            v.fecha_revision::text AS fecha_revision,
            v.fecha_aprobacion::text AS fecha_aprobacion,
-           v.elaboro, v.reviso, v.aprobo, v.resumen_cambios
+           v.elaboro, v.reviso, v.aprobo, v.resumen_cambios,
+           (SELECT t.id FROM tramites t WHERE t.version_id = v.id AND t.etapa = 'publicado') AS tramite_id
     FROM documentos d
     JOIN tipos_documento t ON t.id = d.tipo_id
     JOIN documento_versiones v ON v.documento_id = d.id AND v.estado = 'vigente'
@@ -82,7 +87,7 @@ export async function obtenerFichaDocumento(
     sql`
       SELECT id, rol, nombre_original, extension, mime, tamano_bytes
       FROM archivos
-      WHERE version_id = ${doc.version_id}
+      WHERE version_id = ${doc.version_id} AND rol = ANY(${ROLES_ARCHIVO_LISTA})
       ORDER BY CASE rol WHEN 'principal' THEN 0 WHEN 'editable' THEN 1 ELSE 2 END, id`,
     sql`
       SELECT dp.es_principal,
@@ -140,6 +145,7 @@ export async function obtenerFichaDocumento(
       reviso: doc.reviso as string | null,
       aprobo: doc.aprobo as string | null,
       resumenCambios: doc.resumen_cambios as string | null,
+      tramiteId: doc.tramite_id === null ? null : Number(doc.tramite_id),
     },
     archivos: archivos.map((a) => ({
       id: a.id as number,
@@ -188,15 +194,16 @@ export async function obtenerArchivoVigente(
   codigo: string,
   archivoId: number,
   sujeto: SujetoVisibilidad,
+  opciones?: { sql?: Cliente },
 ): Promise<ArchivoVigente | null> {
-  const sql = obtenerSql();
+  const sql = opciones?.sql ?? obtenerSql();
   const [fila] = await sql`
     SELECT a.id, a.ruta, a.nombre_original, a.mime, a.tamano_bytes,
            d.id AS documento_id, v.id AS version_id
     FROM archivos a
     JOIN documento_versiones v ON v.id = a.version_id AND v.estado = 'vigente'
     JOIN documentos d ON d.id = v.documento_id
-    WHERE a.id = ${archivoId} AND lower(d.codigo) = lower(${codigo})
+    WHERE a.id = ${archivoId} AND a.rol = ANY(${ROLES_ARCHIVO_LISTA}) AND lower(d.codigo) = lower(${codigo})
       AND ${filtroAcceso(sql, sujeto)}`;
 
   if (!fila) return null;

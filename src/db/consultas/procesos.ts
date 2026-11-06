@@ -1,5 +1,6 @@
 import { obtenerSql } from "@/db/cliente";
 import { filtroAcceso, type SujetoVisibilidad } from "@/lib/alcance";
+import { ROLES_ARCHIVO_LISTA } from "@/lib/subida";
 
 export type NodoHermano = { nombre: string; slug: string };
 
@@ -214,7 +215,7 @@ export async function obtenerDocumentosDeProceso(
                                  'tamanoBytes', a.tamano_bytes)
                ORDER BY CASE a.rol WHEN 'principal' THEN 0 WHEN 'editable' THEN 1 ELSE 2 END
              )
-             FROM archivos a WHERE a.version_id = v.id
+             FROM archivos a WHERE a.version_id = v.id AND a.rol = ANY(${ROLES_ARCHIVO_LISTA})
            ) AS archivos
     FROM documento_proceso dp
     JOIN documentos d ON d.id = dp.documento_id
@@ -257,7 +258,7 @@ export async function obtenerDocumentosDeSubproceso(
                                  'tamanoBytes', a.tamano_bytes)
                ORDER BY CASE a.rol WHEN 'principal' THEN 0 WHEN 'editable' THEN 1 ELSE 2 END
              )
-             FROM archivos a WHERE a.version_id = v.id
+             FROM archivos a WHERE a.version_id = v.id AND a.rol = ANY(${ROLES_ARCHIVO_LISTA})
            ) AS archivos
     FROM documento_proceso dp
     JOIN documentos d ON d.id = dp.documento_id

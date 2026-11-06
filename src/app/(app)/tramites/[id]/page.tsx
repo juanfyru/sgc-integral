@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { AccionesSolicitud } from "@/componentes/tramites/AccionesSolicitud";
 import { BloqueSolicitud } from "@/componentes/tramites/BloqueSolicitud";
+import { EnlaceActa } from "@/componentes/tramites/EnlaceActa";
 import { EncabezadoTramite } from "@/componentes/tramites/EncabezadoTramite";
 import { HistorialTramite } from "@/componentes/tramites/HistorialTramite";
 import { PanelAceptacion } from "@/componentes/tramites/PanelAceptacion";
@@ -19,6 +20,7 @@ import {
 } from "@/db/consultas/tramites";
 import { listarObservaciones, obtenerVerificacion } from "@/db/consultas/revision";
 import { borradorDeTramite } from "@/db/consultas/tramites-archivos";
+import { puedeVerVersion } from "@/lib/alcance";
 import { exigirSesion } from "@/lib/paginas";
 import { fechaEnZona, fechaLimite } from "@/lib/tramites/plazos";
 import { esEtapaDeTrabajo, type Etapa } from "@/lib/tramites/tipos";
@@ -124,6 +126,9 @@ export default async function PaginaTramite({ params }: { params: Promise<{ id: 
 
   const conRevision = conBorrador && ETAPAS_CON_REVISION.includes(tramite.etapa);
   const cierra = tramite.acciones.includes("aprobar") || tramite.acciones.includes("publicar");
+  // El acta es de la versión: se ofrece a quien puede verla, que no siempre es quien ve el trámite.
+  const claseActa = tramite.etapa === "publicado" ? "aprobacion" : tramite.etapa === "eliminado" ? "eliminacion" : null;
+  const verActa = claseActa !== null && tramite.versionId !== null && (await puedeVerVersion(tramite.versionId, sesion));
 
   return (
     <div className="flex flex-col gap-6">
@@ -132,6 +137,14 @@ export default async function PaginaTramite({ params }: { params: Promise<{ id: 
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
         <div className="flex min-w-0 flex-col gap-6">
           <BloqueSolicitud tramite={tramite} />
+          {verActa && claseActa ? (
+            <section aria-label="Acta" className="rounded-xl border border-border bg-card p-4 text-sm shadow-xs">
+              <EnlaceActa tramiteId={tramite.id} clase={claseActa} />
+              <p className="mt-1 text-xs text-muted-foreground">
+                El registro de quién firmó, cuándo y sobre qué archivo (huella). Se guarda con la versión.
+              </p>
+            </section>
+          ) : null}
           {conBorrador ? <Borrador tramite={tramite} pideCodigo={sesion.totpActivo} /> : null}
           {conRevision ? <Revision tramite={tramite} pideCodigo={sesion.totpActivo} /> : null}
           {cierra ? <Cierre tramite={tramite} pideCodigo={sesion.totpActivo} /> : null}

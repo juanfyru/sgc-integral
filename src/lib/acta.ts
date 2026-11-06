@@ -1,0 +1,236 @@
+/**
+ * Acta de aprobación o de eliminación documental en PDF (spec 13A §11.2 y §11.3). Todo su contenido
+ * sale de datos que ya no cambian, y la fecha que imprime es la de la publicación: generarla otra vez
+ * da el mismo texto. Solo fuentes estándar de `pdf-lib`: nada sale del servidor ni se descarga.
+ */
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import { textoParaFuente } from "@/lib/texto-pdf";
+
+export type DatosActa = {
+  clase: "aprobacion" | "eliminacion";
+  entidad: string;
+  documento: { codigo: string; titulo: string; tipo: string; proceso: string };
+  version: number;
+  solicitud: { numero: string; tipo: string; motivo: string; justificacion: string; solicitante: string; fecha: Date };
+  vistoBueno: string;
+  aceptacion: { quien: string; fecha: Date; duplicidad: string | null };
+  controlCambios: string | null;
+  firmas: { firma: string; nombre: string; cargo: string | null; fecha: Date; huella: string }[];
+  rondas: number;
+  observaciones: { total: number; cerradas: number };
+  versionObsoleta: number | null;
+  publicadoEn: Date;
+  zona: string;
+};
+
+const ANCHO = 612;
+const ALTO = 792;
+const MARGEN = 48;
+const LIMITE_INFERIOR = 64;
+const ANCHO_UTIL = ANCHO - 2 * MARGEN;
+const ANCHO_ETIQUETA = 104;
+const COLUMNA_NOMBRE = 62;
+const COLUMNA_FECHA = 296;
+const TEXTO = rgb(0.1, 0.1, 0.1);
+const SUAVE = rgb(0.38, 0.38, 0.38);
+const LINEA = rgb(0.78, 0.78, 0.78);
+
+function partes(fecha: Date, zona: string): Record<"day" | "month" | "year" | "hour" | "minute", string> {
+  const p = new Intl.DateTimeFormat("es-CO", {
+    timeZone: zona, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(fecha);
+  const de = (t: Intl.DateTimeFormatPartTypes) => p.find((x) => x.type === t)?.value ?? "";
+  return { day: de("day"), month: de("month"), year: de("year"), hour: de("hour"), minute: de("minute") };
+}
+
+function dia(fecha: Date, zona: string): string {
+  const p = partes(fecha, zona);
+  return `${p.day}/${p.month}/${p.year}`;
+}
+
+export function diaYHora(fecha: Date, zona: string): string {
+  const p = partes(fecha, zona);
+  return `${p.day}/${p.month}/${p.year} ${p.hour}:${p.minute}`;
+}
+
+type Fuentes = { normal: PDFFont; negrita: PDFFont; mono: PDFFont };
+
+/**
+ * Parte el texto en líneas que caben en `ancho`. Respeta los saltos de línea; una palabra más larga
+ * que la línea se corta por letras. Lo que la fuente no codifica ya sale como «?».
+ */
+function lineas(texto: string, fuente: PDFFont, tamano: number, ancho: number): string[] {
+  const medida = (t: string) => fuente.widthOfTextAtSize(t, tamano);
+  const salida: string[] = [];
+  for (const parrafo of texto.split(/\r?\n/)) {
+    let actual = "";
+    for (const palabra of textoParaFuente(parrafo.replace(/\t/g, " "), fuente).split(/ +/).filter(Boolean)) {
+      if (!actual && medida(palabra) <= ancho) {
+        actual = palabra;
+      } else if (actual && medida(`${actual} ${palabra}`) <= ancho) {
+        actual = `${actual} ${palabra}`;
+      } else {
+        if (actual) salida.push(actual);
+        let resto = palabra;
+        while (medida(resto) > ancho) {
+          const letras = Array.from(resto);
+          let n = letras.length - 1;
+          while (n > 1 && medida(letras.slice(0, n).join("")) > ancho) n -= 1;
+          salida.push(letras.slice(0, n).join(""));
+          resto = letras.slice(n).join("");
+        }
+        actual = resto;
+      }
+    }
+    salida.push(actual);
+  }
+  return salida;
+}
+
+class Hoja {
+  pagina!: PDFPage;
+  y = 0;
+
+  constructor(
+    private doc: PDFDocument,
+    private f: Fuentes,
+  ) {
+    this.nueva();
+  }
+
+  nueva() {
+    this.pagina = this.doc.addPage([ANCHO, ALTO]);
+    this.y = ALTO - MARGEN;
+  }
+
+  /** Garantiza `alto` puntos libres; si no caben, sigue en otra página. */
+  espacio(alto: number) {
+    if (this.y - alto < LIMITE_INFERIOR) this.nueva();
+  }
+
+  texto(t: string, x: number, fuente: PDFFont, tamano: number, color = TEXTO, abajo = 0) {
+    this.pagina.drawText(textoParaFuente(t, fuente), { x, y: this.y - tamano - abajo, size: tamano, font: fuente, color });
+  }
+
+  regla() {
+    this.pagina.drawLine({ start: { x: MARGEN, y: this.y }, end: { x: ANCHO - MARGEN, y: this.y }, thickness: 0.5, color: LINEA });
+  }
+
+  /** Una fila «etiqueta: valor»; el valor puede seguir en la página siguiente. */
+  fila(etiqueta: string, valor: string) {
+    const tamano = 9.5;
+    const paso = 13;
+    const ls = lineas(valor, this.f.normal, tamano, ANCHO_UTIL - ANCHO_ETIQUETA);
+    this.espacio(paso * Math.min(ls.length, 2));
+    ls.forEach((l, i) => {
+      this.espacio(paso);
+      if (i === 0) this.texto(etiqueta, MARGEN, this.f.negrita, tamano, SUAVE);
+      this.texto(l, MARGEN + ANCHO_ETIQUETA, this.f.normal, tamano);
+      this.y -= paso;
+    });
+    this.y -= 4;
+  }
+
+  titulo(t: string) {
+    this.espacio(50);
+    this.y -= 8;
+    this.texto(t, MARGEN, this.f.negrita, 11);
+    this.y -= 15;
+    this.regla();
+    this.y -= 6;
+  }
+
+  firma(d: DatosActa["firmas"][number], zona: string) {
+    const nombre = lineas(d.nombre, this.f.negrita, 9.5, COLUMNA_FECHA - COLUMNA_NOMBRE - 8);
+    const cargo = d.cargo ? lineas(d.cargo, this.f.normal, 8.5, COLUMNA_FECHA - COLUMNA_NOMBRE - 8) : [];
+    this.espacio(nombre.length * 12 + cargo.length * 11 + 28);
+    this.texto(d.firma, MARGEN, this.f.negrita, 9.5);
+    this.texto(diaYHora(d.fecha, zona), MARGEN + COLUMNA_FECHA, this.f.normal, 9.5);
+    for (const l of nombre) {
+      this.texto(l, MARGEN + COLUMNA_NOMBRE, this.f.negrita, 9.5);
+      this.y -= 12;
+    }
+    for (const l of cargo) {
+      this.texto(l, MARGEN + COLUMNA_NOMBRE, this.f.normal, 8.5, SUAVE);
+      this.y -= 11;
+    }
+    this.y -= 2;
+    // La huella completa va en una sola línea; si fuera más larga de lo previsto, la letra se achica.
+    const huella = textoParaFuente(`Huella SHA-256: ${d.huella}`, this.f.mono);
+    const tamano = Math.min(7.5, (ANCHO_UTIL - COLUMNA_NOMBRE) / this.f.mono.widthOfTextAtSize(huella, 1));
+    this.texto(huella, MARGEN + COLUMNA_NOMBRE, this.f.mono, tamano, SUAVE);
+    this.y -= 14;
+    this.regla();
+    this.y -= 5;
+  }
+}
+
+export async function generarActa(d: DatosActa): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  const f: Fuentes = {
+    normal: await doc.embedFont(StandardFonts.Helvetica),
+    negrita: await doc.embedFont(StandardFonts.HelveticaBold),
+    mono: await doc.embedFont(StandardFonts.Courier),
+  };
+  const nombreActa = d.clase === "aprobacion" ? "Acta de aprobación documental" : "Acta de eliminación documental";
+  doc.setTitle(textoParaFuente(`${nombreActa} ${d.documento.codigo} versión ${d.version}`, f.normal));
+  doc.setCreator("SGC Integral");
+  doc.setProducer("SGC Integral");
+  doc.setCreationDate(d.publicadoEn);
+  doc.setModificationDate(d.publicadoEn);
+
+  const h = new Hoja(doc, f);
+  const zona = d.zona;
+  h.texto(nombreActa, MARGEN, f.negrita, 17);
+  h.y -= 24;
+  for (const l of lineas(d.entidad, f.normal, 10.5, ANCHO_UTIL)) {
+    h.texto(l, MARGEN, f.normal, 10.5, SUAVE);
+    h.y -= 14;
+  }
+
+  h.titulo("Documento");
+  h.fila("Documento", `${d.documento.codigo} — ${d.documento.titulo}`);
+  h.fila("Versión", String(d.version));
+  h.fila("Tipo", d.documento.tipo);
+  h.fila("Proceso", d.documento.proceso);
+
+  h.titulo("Solicitud");
+  h.fila("Solicitud", `${d.solicitud.numero} · ${d.solicitud.tipo}`);
+  h.fila("Motivo", d.solicitud.motivo);
+  h.fila("Justificación", d.solicitud.justificacion);
+  h.fila("Solicitante", `${d.solicitud.solicitante}, ${diaYHora(d.solicitud.fecha, zona)}`);
+  h.fila("Visto bueno", d.vistoBueno);
+  h.fila("Aceptación", `${d.aceptacion.quien}, ${diaYHora(d.aceptacion.fecha, zona)}`);
+  if (d.aceptacion.duplicidad) h.fila("Duplicidad", d.aceptacion.duplicidad);
+  if (d.controlCambios) h.fila("Control de cambios", d.controlCambios);
+
+  h.titulo("Firmas");
+  for (const firma of d.firmas) h.firma(firma, zona);
+
+  h.titulo("Recorrido");
+  if (d.clase === "aprobacion") {
+    h.fila("Rondas", String(d.rondas));
+    h.fila("Observaciones", `${d.observaciones.total}, de las cuales ${d.observaciones.cerradas} cerradas`);
+    h.fila(
+      "Versión anterior",
+      d.versionObsoleta === null
+        ? "No había versión anterior vigente"
+        : `${d.versionObsoleta}, obsoleta desde el ${dia(d.publicadoEn, zona)}`,
+    );
+  } else {
+    h.fila("Versión anulada", `${d.version}, anulada el ${dia(d.publicadoEn, zona)}`);
+  }
+
+  const paginas = doc.getPages();
+  paginas.forEach((pagina, i) => {
+    const pie = (t: string, x: number, y: number) =>
+      pagina.drawText(textoParaFuente(t, f.normal), { x, y, size: 8, font: f.normal, color: SUAVE });
+    pagina.drawLine({ start: { x: MARGEN, y: 48 }, end: { x: ANCHO - MARGEN, y: 48 }, thickness: 0.5, color: LINEA });
+    pie("Firmas electrónicas con reingreso de clave (Ley 527 de 1999)", MARGEN, 36);
+    const numero = `Página ${i + 1} de ${paginas.length}`;
+    pie(numero, ANCHO - MARGEN - f.normal.widthOfTextAtSize(numero, 8), 36);
+    pie(`Generada por SGC Integral el ${diaYHora(d.publicadoEn, zona)}`, MARGEN, 25);
+  });
+
+  return doc.save();
+}

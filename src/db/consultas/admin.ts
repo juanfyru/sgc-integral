@@ -1,6 +1,7 @@
 import type { Sql, TransactionSql } from "postgres";
 import { obtenerSql } from "@/db/cliente";
 import { filtroAcceso, type SujetoVisibilidad } from "@/lib/alcance";
+import { ROLES_ARCHIVO_LISTA } from "@/lib/subida";
 import { hashearClave } from "@/lib/clave";
 import { puede } from "@/lib/permisos";
 import { patronDeConfiguracion } from "@/lib/tramites/codigo";
@@ -391,12 +392,12 @@ export async function registrarArchivo(
   }
 }
 
-export async function obtenerArchivoAdmin(archivoId: number) {
-  const sql = obtenerSql();
+export async function obtenerArchivoAdmin(archivoId: number, opciones?: { sql?: Cliente }) {
+  const sql = opciones?.sql ?? obtenerSql();
   const [a] = await sql`SELECT a.id, a.ruta, a.mime, a.nombre_original, a.version_id,
       v.estado, v.documento_id
     FROM archivos a JOIN documento_versiones v ON v.id = a.version_id
-    WHERE a.id = ${archivoId}`;
+    WHERE a.id = ${archivoId} AND a.rol = ANY(${ROLES_ARCHIVO_LISTA})`;
   if (!a) return null;
   return {
     id: a.id, ruta: a.ruta, mime: a.mime, nombreOriginal: a.nombre_original,
@@ -499,6 +500,8 @@ export type VersionAdmin = {
   archivos: Array<{ id: number; rol: string; nombreOriginal: string; mime: string; tamanoBytes: number }>;
   /** El trámite abierto al que pertenece la versión: mientras dure, se trabaja desde él. */
   tramite: { id: number; numero: string } | null;
+  /** El trámite que publicó la versión o que la anuló: su acta es la evidencia de cómo se aprobó. */
+  cierre: { id: number; etapa: "publicado" | "eliminado" } | null;
 };
 
 export type DocumentoAdmin = {
@@ -545,9 +548,11 @@ export async function obtenerDocumentoAdmin(
           'mime', a.mime, 'tamanoBytes', a.tamano_bytes) ORDER BY a.rol)
         FILTER (WHERE a.id IS NOT NULL), '[]') AS archivos,
       (SELECT json_build_object('id', t.id, 'numero', t.numero) FROM tramites t
-        WHERE t.version_id = v.id AND t.etapa = ANY(${ETAPAS_EN_CURSO})) AS tramite
+        WHERE t.version_id = v.id AND t.etapa = ANY(${ETAPAS_EN_CURSO})) AS tramite,
+      (SELECT json_build_object('id', t.id, 'etapa', t.etapa) FROM tramites t
+        WHERE t.version_id = v.id AND t.etapa IN ('publicado', 'eliminado')) AS cierre
     FROM documento_versiones v
-    LEFT JOIN archivos a ON a.version_id = v.id
+    LEFT JOIN archivos a ON a.version_id = v.id AND a.rol = ANY(${ROLES_ARCHIVO_LISTA})
     WHERE v.documento_id = ${doc.id}
       ${administra ? sql`` : sql`AND v.estado NOT IN ('borrador', 'descartado')`}
     GROUP BY v.id ORDER BY v.numero DESC`;
@@ -568,6 +573,7 @@ export async function obtenerDocumentoAdmin(
       aprobo: v.aprobo, resumenCambios: v.resumen_cambios,
       archivos: v.archivos as VersionAdmin["archivos"],
       tramite: v.tramite as VersionAdmin["tramite"],
+      cierre: v.cierre as VersionAdmin["cierre"],
     })),
   };
 }

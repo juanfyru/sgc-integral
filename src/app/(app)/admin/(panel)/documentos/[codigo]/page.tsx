@@ -11,6 +11,7 @@ import { EliminarArchivo } from "@/componentes/admin/EliminarArchivo";
 import { FormAccion } from "@/componentes/admin/FormAccion";
 import { FormularioVersionCliente } from "@/componentes/admin/FormularioVersionCliente";
 import { ZonaCarga } from "@/componentes/admin/ZonaCarga";
+import { EnlaceActa } from "@/componentes/tramites/EnlaceActa";
 import { claseBoton } from "@/componentes/ui/Boton";
 import { InsigniaEstadoDocumento } from "@/componentes/ui/Insignia";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
@@ -67,6 +68,12 @@ function SeccionVersion({
           <li className="text-muted-foreground">Sin archivos todavía.</li>
         )}
       </ul>
+
+      {version.cierre && (
+        <p className="mb-2 text-sm">
+          <EnlaceActa tramiteId={version.cierre.id} clase={version.cierre.etapa === "eliminado" ? "eliminacion" : "aprobacion"} />
+        </p>
+      )}
 
       {puedeAdministrar && tramite && (
         <p className="text-sm text-muted-foreground">

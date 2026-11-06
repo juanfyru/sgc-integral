@@ -82,6 +82,27 @@ export async function puedeAccederDocumento(
 }
 
 /**
+ * Quién ve una versión ya publicada (spec 13A §12): la vigente, todo el que pasa el nivel de acceso del
+ * documento; la obsoleta y la anulada, además, quien tiene `documentos.ver_historial`. Un borrador o una
+ * versión descartada no se sirve por aquí. El acta de la versión se rige por la misma regla.
+ */
+export async function puedeVerVersion(
+  versionId: number,
+  sujeto: SujetoVisibilidad,
+  opciones?: { sql?: Cliente },
+): Promise<boolean> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [v] = await sql`
+    SELECT v.estado FROM documento_versiones v
+    JOIN documentos d ON d.id = v.documento_id
+    WHERE v.id = ${versionId} AND ${filtroAcceso(sql, sujeto)}`;
+  if (!v) return false;
+  if (v.estado === "vigente") return true;
+  if (v.estado === "obsoleto" || v.estado === "anulado") return puede(sujeto, "documentos.ver_historial");
+  return false;
+}
+
+/**
  * Quién ve un trámite (spec 13A §6.5): la participación es la única excepción a
  * `alcanceProcesos`. Un trámite publicado o eliminado es la evidencia de cómo se aprobó, y lo
  * ven además quien tiene historial y pasa el nivel de acceso. Para los demás no existe.
