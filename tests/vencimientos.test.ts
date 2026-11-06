@@ -228,9 +228,12 @@ describe("revisarVencimientos", () => {
     });
     try {
       await bloqueado;
-      expect(await revisar()).toEqual({ avisados: 0, escalados: 0 });
+      // Con un tope: si la revisión esperara al candado, el test debe fallar y aun así limpiar.
+      const pasada = revisar();
+      const resultado = await Promise.race([pasada, new Promise((r) => setTimeout(r, 3000, "esperó al candado"))]);
       soltar();
-      await transicion;
+      await Promise.all([transicion, pasada]);
+      expect(resultado).toEqual({ avisados: 0, escalados: 0 });
       expect((await revisar()).avisados).toBe(1);
     } finally {
       soltar();
