@@ -6,6 +6,7 @@ import { EncabezadoTramite } from "@/componentes/tramites/EncabezadoTramite";
 import { HistorialTramite } from "@/componentes/tramites/HistorialTramite";
 import { PanelAceptacion } from "@/componentes/tramites/PanelAceptacion";
 import { PanelElaboracion } from "@/componentes/tramites/PanelElaboracion";
+import { PanelRevision } from "@/componentes/tramites/PanelRevision";
 import { PasosTramite } from "@/componentes/tramites/PasosTramite";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import {
@@ -14,13 +15,17 @@ import {
   obtenerTramite,
   type DetalleTramite,
 } from "@/db/consultas/tramites";
+import { listarObservaciones, obtenerVerificacion } from "@/db/consultas/revision";
 import { borradorDeTramite } from "@/db/consultas/tramites-archivos";
 import { exigirSesion } from "@/lib/paginas";
 import { fechaEnZona, fechaLimite } from "@/lib/tramites/plazos";
-import { esEtapaDeTrabajo } from "@/lib/tramites/tipos";
+import { esEtapaDeTrabajo, type Etapa } from "@/lib/tramites/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 
 export const dynamic = "force-dynamic";
+/** Desde la revisión, la lista y las observaciones se consultan; solo en `revision` se editan. */
+const ETAPAS_CON_REVISION: Etapa[] = ["revision", "aprobacion", "publicacion"];
+
 export const metadata: Metadata = { title: "Trámite" };
 
 async function Aceptacion({ tramite, usuarioId }: { tramite: DetalleTramite; usuarioId: number }) {
@@ -48,11 +53,34 @@ async function Aceptacion({ tramite, usuarioId }: { tramite: DetalleTramite; usu
 /** El bloque del borrador, abierto solo para quien puede enviarlo a revisión. */
 async function Borrador({ tramite, pideCodigo }: { tramite: DetalleTramite; pideCodigo: boolean }) {
   const { id, etapa, ronda, codigo, titulo, versionNumero } = tramite;
+  const [borrador, observaciones] = await Promise.all([borradorDeTramite(id), listarObservaciones(id)]);
   return (
     <PanelElaboracion
       tramite={{ id, etapa, ronda, codigo, titulo, versionNumero }}
-      borrador={await borradorDeTramite(id)}
+      borrador={borrador}
+      observaciones={observaciones}
       editable={tramite.acciones.includes("enviar_a_revision")}
+      pideCodigo={pideCodigo}
+    />
+  );
+}
+
+/** La revisión: editable para el revisor en revisión; después, y para los demás, solo lectura. */
+async function Revision({ tramite, pideCodigo }: { tramite: DetalleTramite; pideCodigo: boolean }) {
+  const { id, etapa, ronda, codigo, titulo, versionNumero } = tramite;
+  const puedeRevisar = tramite.acciones.includes("concepto_favorable");
+  const [respuestas, observaciones, borrador] = await Promise.all([
+    obtenerVerificacion(id, ronda, { sinPropuesta: !puedeRevisar }),
+    listarObservaciones(id),
+    borradorDeTramite(id),
+  ]);
+  return (
+    <PanelRevision
+      tramite={{ id, etapa, ronda, codigo, titulo, versionNumero }}
+      respuestas={respuestas}
+      observaciones={observaciones}
+      huella={borrador.archivos.find((a) => a.rol === "principal")?.hashSha256 ?? null}
+      puedeRevisar={puedeRevisar}
       pideCodigo={pideCodigo}
     />
   );
@@ -68,6 +96,8 @@ export default async function PaginaTramite({ params }: { params: Promise<{ id: 
   // consultan por la ficha o por el panel, según el estado de su versión (spec 13A §6.5).
   const conBorrador = tramite.versionId !== null && tramite.tipo !== "eliminar" && esEtapaDeTrabajo(tramite.etapa);
 
+  const conRevision = conBorrador && ETAPAS_CON_REVISION.includes(tramite.etapa);
+
   return (
     <div className="flex flex-col gap-6">
       <EncabezadoTramite tramite={tramite} ahora={new Date()} />
@@ -76,6 +106,7 @@ export default async function PaginaTramite({ params }: { params: Promise<{ id: 
         <div className="flex min-w-0 flex-col gap-6">
           <BloqueSolicitud tramite={tramite} />
           {conBorrador ? <Borrador tramite={tramite} pideCodigo={sesion.totpActivo} /> : null}
+          {conRevision ? <Revision tramite={tramite} pideCodigo={sesion.totpActivo} /> : null}
         </div>
         <div className="flex min-w-0 flex-col gap-6">
           <HistorialTramite tipo={tramite.tipo} eventos={tramite.eventos} />

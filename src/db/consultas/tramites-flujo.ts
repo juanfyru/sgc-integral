@@ -38,6 +38,7 @@ import {
 } from "./flujo/contrato";
 import { MANEJADORES_ACEPTACION } from "./flujo/aceptacion";
 import { MANEJADORES_ELABORACION, VALIDADORES_ELABORACION } from "./flujo/elaboracion";
+import { MANEJADORES_REVISION, VALIDADORES_REVISION } from "./flujo/revision";
 import { MANEJADORES_SOLICITUD } from "./flujo/solicitud";
 import {
   ETAPAS_ABIERTAS,
@@ -67,10 +68,11 @@ export const MANEJADORES: RegistroManejadores = {
   ...MANEJADORES_SOLICITUD,
   ...MANEJADORES_ACEPTACION,
   ...MANEJADORES_ELABORACION,
+  ...MANEJADORES_REVISION,
 };
 
 /** Comprobaciones de negocio de las acciones que firman, antes de pedir o gastar la firma. */
-export const VALIDADORES: RegistroValidadores = { ...VALIDADORES_ELABORACION };
+export const VALIDADORES: RegistroValidadores = { ...VALIDADORES_ELABORACION, ...VALIDADORES_REVISION };
 
 /** La carrera entre una solicitud y una aceptación que convierte otro trámite en modificación. */
 function traducirChoqueDeAbierto(err: { constraint_name?: string }): never {

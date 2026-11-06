@@ -16,6 +16,15 @@ const { transicionar, crearSolicitud, obtenerTramite, guardarControlCambios, con
   requerirSesion: vi.fn(),
 }));
 
+const revision = vi.hoisted(() => ({
+  guardarVerificacion: vi.fn(),
+  crearObservacion: vi.fn(),
+  cerrarObservacion: vi.fn(),
+  reabrirObservacion: vi.fn(),
+  responderObservacion: vi.fn(),
+}));
+vi.mock("@/db/consultas/revision", () => revision);
+
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect }));
 vi.mock("@/lib/sesion-actual", () => ({ requerirSesion }));
@@ -30,7 +39,14 @@ vi.mock("@/lib/contexto-peticion", () => ({ contextoDePeticion }));
 
 import {
   aceptarSolicitudAccion,
+  cerrarObservacionAccion,
+  conceptoFavorableAccion,
+  crearObservacionAccion,
   crearSolicitudAccion,
+  devolverRevisionAccion,
+  guardarVerificacionAccion,
+  reabrirObservacionAccion,
+  responderObservacionAccion,
   darVistoBuenoAccion,
   enviarARevisionAccion,
   guardarControlCambiosAccion,
@@ -296,5 +312,87 @@ describe("elaboración", () => {
     expect(await guardarControlCambiosAccion(null, formulario({ ...enElaboracion, resumenCambios: "Corto" , sobra: "x" })))
       .toMatchObject({ ok: false, valores: { resumenCambios: "Corto" } });
     expect(guardarControlCambios).not.toHaveBeenCalled();
+  });
+
+  describe("revisión", () => {
+    const enRevision = { id: "7", etapa: "revision", ronda: "2" };
+    const revisor = { sesionId: "s", usuarioId: 9, usuario: "r", nombre: "Revisa", rol: "lider_proceso", verHistorial: false };
+
+    it("guardar la lista lee un resultado por ítem, con su nota, y descarta lo demás", async () => {
+      requerirSesion.mockResolvedValue(revisor);
+      const campos = { ...enRevision, resultado_4: "cumple", resultado_5: "no_cumple", nota_5: "  Falta la fecha.  ", nota_6: "sin resultado" };
+      expect(await guardarVerificacionAccion(null, formulario(campos))).toBeNull();
+      expect(revision.guardarVerificacion.mock.calls[0][0]).toBe(7);
+      expect(revision.guardarVerificacion.mock.calls[0][2]).toEqual([
+        { itemId: 4, resultado: "cumple" },
+        { itemId: 5, resultado: "no_cumple", nota: "Falta la fecha." },
+      ]);
+    });
+
+    it("una lista vacía, un resultado inventado o un campo ajeno no llegan a guardarse", async () => {
+      requerirSesion.mockResolvedValue(revisor);
+      expect(await guardarVerificacionAccion(null, formulario(enRevision))).toMatchObject({ ok: false });
+      expect(await guardarVerificacionAccion(null, formulario({ ...enRevision, resultado_4: "tal vez" }))).toMatchObject({ ok: false });
+      expect(await guardarVerificacionAccion(null, formulario({ ...enRevision, resultado_4: "cumple", sobra: "x" }))).toMatchObject({ ok: false });
+      expect(revision.guardarVerificacion).not.toHaveBeenCalled();
+    });
+
+    it("crear, cerrar, reabrir y responder piden el permiso de su paso", async () => {
+      requerirSesion.mockResolvedValue({ ...elaborador(), rol: "consulta" });
+      for (const accion of [crearObservacionAccion, cerrarObservacionAccion, reabrirObservacionAccion, devolverRevisionAccion])
+        expect(await accion(null, formulario({ ...enRevision, observacionId: "3", texto: "Una observación.", nota: "Una nota." }))).toMatchObject({ ok: false });
+      expect(revision.crearObservacion).not.toHaveBeenCalled();
+      expect(revision.cerrarObservacion).not.toHaveBeenCalled();
+      expect(revision.reabrirObservacion).not.toHaveBeenCalled();
+      expect(transicionar).not.toHaveBeenCalled();
+
+      expect(await responderObservacionAccion(null, formulario({ ...enRevision, observacionId: "3", respuesta: " Atendida en el texto. " }))).toBeNull();
+      expect(revision.responderObservacion.mock.calls[0].slice(0, 3)).toEqual([3, expect.objectContaining({ usuarioId: 1 }), "Atendida en el texto."]);
+    });
+
+    it("el revisor crea, cierra y reabre por el id de la observación", async () => {
+      requerirSesion.mockResolvedValue(revisor);
+      expect(await crearObservacionAccion(null, formulario({ ...enRevision, texto: "  Falta el responsable.  " }))).toBeNull();
+      expect(revision.crearObservacion.mock.calls[0].slice(0, 1)).toEqual([7]);
+      expect(revision.crearObservacion.mock.calls[0][2]).toBe("Falta el responsable.");
+      expect(await cerrarObservacionAccion(null, formulario({ ...enRevision, observacionId: "3" }))).toBeNull();
+      expect(revision.cerrarObservacion.mock.calls[0][0]).toBe(3);
+      expect(await reabrirObservacionAccion(null, formulario({ ...enRevision, observacionId: "3", nota: "Aún no aparece." }))).toBeNull();
+      expect(revision.reabrirObservacion.mock.calls[0][0]).toBe(3);
+      expect(revision.reabrirObservacion.mock.calls[0][2]).toBe("Aún no aparece.");
+      expect(await crearObservacionAccion(null, formulario({ ...enRevision, texto: "no" }))).toMatchObject({ ok: false, valores: { texto: "no" } });
+    });
+
+    it("devolver no firma ni pide el contexto de la petición", async () => {
+      requerirSesion.mockResolvedValue(revisor);
+      await devolverRevisionAccion(null, formulario(enRevision));
+      expect(transicionar.mock.calls[0][1]).toEqual({ tramiteId: 7, accion: "devolver_revision", etapaEsperada: "revision", rondaEsperada: 2 });
+      expect(contextoDePeticion).not.toHaveBeenCalled();
+    });
+
+    it("el concepto favorable lleva el concepto como dato, la clave sin recortar y el contexto", async () => {
+      requerirSesion.mockResolvedValue(revisor);
+      expect(await conceptoFavorableAccion(null, formulario({ ...enRevision, concepto: "  Cumple.  Listo.  ", clave: " con espacios ", codigo: " 123456 " }))).toBeNull();
+      const [, entrada, opciones] = transicionar.mock.calls[0];
+      expect(entrada).toEqual({
+        tramiteId: 7,
+        accion: "concepto_favorable",
+        etapaEsperada: "revision",
+        rondaEsperada: 2,
+        datos: { concepto: "Cumple.  Listo." },
+        credenciales: { clave: " con espacios ", codigo: "123456" },
+      });
+      expect(opciones).toEqual({ contexto: { ip: "10.0.0.5", userAgent: "Navegador" } });
+    });
+
+    it("el concepto favorable devuelve lo escrito pero nunca la clave ni el código", async () => {
+      requerirSesion.mockResolvedValue(revisor);
+      transicionar.mockRejectedValue(new ErrorFirma("Clave o código incorrectos", false));
+      const estado = await conceptoFavorableAccion(null, formulario({ ...enRevision, concepto: "Cumple; listo para aprobación.", clave: "secreta-2", codigo: "554433" }));
+      expect(estado).toMatchObject({ ok: false, valores: { concepto: "Cumple; listo para aprobación." } });
+      expect(JSON.stringify(estado)).not.toMatch(/secreta-2|554433/);
+      expect(await conceptoFavorableAccion(null, formulario({ ...enRevision, concepto: "ok", clave: "secreta-2" }))).toMatchObject({ ok: false });
+      expect(await conceptoFavorableAccion(null, formulario({ ...enRevision, concepto: "Cumple; listo." }))).toMatchObject({ ok: false });
+    });
   });
 });

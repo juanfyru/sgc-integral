@@ -49,6 +49,8 @@ describe("describirEvento", () => {
     expect(evento("tramite_dar_visto_bueno", { numero: "SOL-2026-014", codigo: "GTH-PR-02" })).toBe("Dio el visto bueno a la solicitud SOL-2026-014 sobre GTH-PR-02");
     expect(evento("tramite_negar_visto_bueno", { numero: "SOL-2026-014", codigo: null })).toBe("Negó el visto bueno a la solicitud SOL-2026-014");
     expect(evento("tramite_retirar", { numero: "SOL-2026-014" })).toBe("Retiró la solicitud SOL-2026-014");
+    expect(evento("tramite_crear_observacion", { numero: "SOL-2026-014", codigo: "GTH-PR-02", observacion: 3 })).toBe("Escribió una observación en la solicitud SOL-2026-014 sobre GTH-PR-02 (observación 3)");
+    expect(evento("tramite_guardar_lista", { numero: "SOL-2026-014", codigo: "GTH-PR-02", respondidos: 8 })).toBe("Guardó la lista de verificación de la solicitud SOL-2026-014 sobre GTH-PR-02");
     expect(evento("tramite_publicar", { numero: "SOL-2026-014", codigo: "GTH-PR-02" })).toBe("Publicó el resultado de la solicitud SOL-2026-014 sobre GTH-PR-02");
   });
 

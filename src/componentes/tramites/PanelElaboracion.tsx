@@ -8,8 +8,10 @@ import { ZonaCarga } from "@/componentes/admin/ZonaCarga";
 import { IconoFormato } from "@/componentes/documentos/IconoFormato";
 import { ErrorAccion, Ocultos } from "@/componentes/tramites/AccionesSolicitud";
 import { DialogoFirma } from "@/componentes/tramites/DialogoFirma";
+import { Observaciones } from "@/componentes/tramites/Observaciones";
 import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
+import type { Observacion } from "@/db/consultas/revision";
 import type { ArchivoDeBorrador, Borrador } from "@/db/consultas/tramites-archivos";
 import { huellaAbreviada, type Etapa } from "@/lib/tramites/tipos";
 
@@ -147,20 +149,22 @@ export function EnvioARevision({
 
 /**
  * El borrador de la versión en trámite (spec 13A §9.1). `editable` es para el elaborador en
- * elaboración; los demás, y él mismo después de enviar, lo ven en solo lectura.
+ * elaboración, que además responde las observaciones; los demás, y él mismo después de enviar, lo ven en solo lectura.
  */
 export function PanelElaboracion({
   tramite,
   borrador,
+  observaciones,
   editable,
   pideCodigo,
 }: {
   tramite: TramiteParaElaborar;
   borrador: Borrador;
+  observaciones: Observacion[];
   editable: boolean;
   pideCodigo: boolean;
 }) {
-  const { archivos, controlCambios, plantilla, observaciones } = borrador;
+  const { archivos, controlCambios, plantilla } = borrador;
   const principal = archivos.find((a) => a.rol === "principal");
   const [escrito, setEscrito] = useState(controlCambios ?? "");
 
@@ -206,18 +210,9 @@ export function PanelElaboracion({
       )}
 
       {observaciones.length > 0 ? (
-        <div>
-          <h3 className="mb-1 text-sm font-medium">Observaciones abiertas</h3>
-          <ol className="flex list-none flex-col gap-2">
-            {observaciones.map((o) => (
-              <li key={o.numero} className="text-sm">
-                <span className="whitespace-pre-wrap break-words">{`${o.numero}. ${o.texto}`}</span>
-                <span className="block whitespace-pre-wrap break-words text-xs text-muted-foreground">
-                  {o.respuesta ? `Respuesta: ${o.respuesta}` : "Sin respuesta"}
-                </span>
-              </li>
-            ))}
-          </ol>
+        <div className="flex flex-col gap-2">
+          <h3 className="text-sm font-medium">Observaciones</h3>
+          <Observaciones tramite={tramite} observaciones={observaciones} puedeRevisar={false} puedeResponder={editable} />
         </div>
       ) : null}
 

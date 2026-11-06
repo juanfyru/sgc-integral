@@ -1,6 +1,13 @@
 "use server";
 
 import { idNumerico, mutacion, texto, type EstadoAccion } from "@/app/admin/comun";
+import {
+  cerrarObservacion,
+  crearObservacion,
+  guardarVerificacion,
+  reabrirObservacion,
+  responderObservacion,
+} from "@/db/consultas/revision";
 import { obtenerTramite } from "@/db/consultas/tramites";
 import { guardarControlCambios } from "@/db/consultas/tramites-archivos";
 import {
@@ -17,10 +24,15 @@ import {
   EsquemaAceptarCreacion,
   EsquemaAceptarEliminacion,
   EsquemaAceptarModificacion,
+  EsquemaConcepto,
   EsquemaControlCambios,
   EsquemaFirma,
   EsquemaMotivoCierre,
+  EsquemaObservacion,
+  EsquemaReaperturaObservacion,
+  EsquemaRespuestaObservacion,
   EsquemaSolicitud,
+  leerVerificacion,
 } from "@/lib/esquemas/tramites";
 import { ETAPAS_FINALES, ETAPAS_TRABAJO, type Etapa } from "@/lib/tramites/tipos";
 import { parsearFormulario } from "@/lib/validacion";
@@ -136,6 +148,55 @@ export async function enviarARevisionAccion(_prev: EstadoAccion, formData: FormD
   return mutacion(formData, "tramites.participar", (_usuarioId, _formData, sesion) =>
     ejecutar(formData, sesion, "enviar_a_revision", {
       credenciales: parsearFormulario(firma, EsquemaFirma, { omitir: OCULTOS }),
+    }),
+  );
+}
+
+export async function guardarVerificacionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "tramites.revisar", async (_usuarioId, _formData, sesion) => {
+    await guardarVerificacion(idNumerico(formData, "id"), sesion, leerVerificacion(formData, OCULTOS));
+  });
+}
+
+export async function crearObservacionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "tramites.revisar", async (_usuarioId, _formData, sesion) => {
+    const { texto } = parsearFormulario(formData, EsquemaObservacion, { omitir: OCULTOS });
+    await crearObservacion(idNumerico(formData, "id"), sesion, texto);
+  });
+}
+
+export async function cerrarObservacionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "tramites.revisar", async (_usuarioId, _formData, sesion) => {
+    await cerrarObservacion(idNumerico(formData, "observacionId"), sesion);
+  });
+}
+
+export async function reabrirObservacionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "tramites.revisar", async (_usuarioId, _formData, sesion) => {
+    const { nota } = parsearFormulario(formData, EsquemaReaperturaObservacion, { omitir: [...OCULTOS, "observacionId"] });
+    await reabrirObservacion(idNumerico(formData, "observacionId"), sesion, nota);
+  });
+}
+
+export async function responderObservacionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "tramites.participar", async (_usuarioId, _formData, sesion) => {
+    const { respuesta } = parsearFormulario(formData, EsquemaRespuestaObservacion, { omitir: [...OCULTOS, "observacionId"] });
+    await responderObservacion(idNumerico(formData, "observacionId"), sesion, respuesta);
+  });
+}
+
+export async function devolverRevisionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "tramites.revisar", (_usuarioId, _formData, sesion) =>
+    ejecutar(formData, sesion, "devolver_revision"),
+  );
+}
+
+export async function conceptoFavorableAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  const firma = separarFirma(formData);
+  return mutacion(formData, "tramites.revisar", (_usuarioId, _formData, sesion) =>
+    ejecutar(formData, sesion, "concepto_favorable", {
+      datos: parsearFormulario(formData, EsquemaConcepto, { omitir: OCULTOS }),
+      credenciales: parsearFormulario(firma, EsquemaFirma, { omitir: [...OCULTOS, "concepto"] }),
     }),
   );
 }

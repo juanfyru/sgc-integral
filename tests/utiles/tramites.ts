@@ -7,6 +7,7 @@ import { mkdir, rm, rmdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Row, TransactionSql } from "postgres";
 import type { Cliente } from "@/db/cliente";
+import { guardarVerificacion, listarItemsVerificacion } from "@/db/consultas/revision";
 import { guardarControlCambios } from "@/db/consultas/tramites-archivos";
 import { crearSolicitud, transicionar, type OpcionesFlujo, type SesionFlujo } from "@/db/consultas/tramites-flujo";
 import { resolverRutaAlmacen } from "@/lib/almacen";
@@ -197,7 +198,7 @@ export async function tramiteEn(
     opc(tx),
   );
   if (etapa === (tipo === "eliminar" ? "aprobacion" : "elaboracion")) return trayecto();
-  if (etapa !== "revision" || tipo === "eliminar") throw new Error(`tramiteEn todavía no llega a ${etapa} en ${tipo}`);
+  if (!["revision", "aprobacion"].includes(etapa) || tipo === "eliminar") throw new Error(`tramiteEn todavía no llega a ${etapa} en ${tipo}`);
 
   const { versionId } = await trayecto();
   const archivo = await archivoPrincipal(tx, versionId!);
@@ -208,6 +209,15 @@ export async function tramiteEn(
       { tramiteId, accion: "enviar_a_revision", etapaEsperada: "elaboracion", rondaEsperada: 1, credenciales: { clave: "x" } },
       opc(tx),
     );
+    if (etapa === "aprobacion") {
+      const items = await listarItemsVerificacion({ sql: tx, soloActivos: true });
+      await guardarVerificacion(tramiteId, revisor, items.map((i) => ({ itemId: i.id, resultado: "cumple" as const })), { sql: tx });
+      await transicionar(
+        revisor,
+        { tramiteId, accion: "concepto_favorable", etapaEsperada: "revision", rondaEsperada: 1, datos: { concepto: "Cumple; listo para aprobación." }, credenciales: { clave: "x" } },
+        opc(tx),
+      );
+    }
     return await trayecto(archivo.limpiar);
   } catch (err) {
     await archivo.limpiar();

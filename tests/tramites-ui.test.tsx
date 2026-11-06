@@ -5,7 +5,14 @@ vi.mock("@/app/acciones-tramites", () => ({
   aceptarSolicitudAccion: vi.fn(),
   crearSolicitudAccion: vi.fn(),
   darVistoBuenoAccion: vi.fn(),
+  cerrarObservacionAccion: vi.fn(),
+  conceptoFavorableAccion: vi.fn(),
+  crearObservacionAccion: vi.fn(),
+  devolverRevisionAccion: vi.fn(),
   enviarARevisionAccion: vi.fn(),
+  guardarVerificacionAccion: vi.fn(),
+  reabrirObservacionAccion: vi.fn(),
+  responderObservacionAccion: vi.fn(),
   guardarControlCambiosAccion: vi.fn(),
   negarVistoBuenoAccion: vi.fn(),
   rechazarSolicitudAccion: vi.fn(),
@@ -22,6 +29,9 @@ import { HistorialTramite } from "@/componentes/tramites/HistorialTramite";
 import { ayudaDelCodigo } from "@/componentes/tramites/ClasificacionNueva";
 import { PanelAceptacion, type TramiteParaAceptar } from "@/componentes/tramites/PanelAceptacion";
 import { EnvioARevision, PanelElaboracion, hayCambiosSinGuardar } from "@/componentes/tramites/PanelElaboracion";
+import { ListaVerificacion } from "@/componentes/tramites/ListaVerificacion";
+import { Observaciones } from "@/componentes/tramites/Observaciones";
+import { PanelRevision } from "@/componentes/tramites/PanelRevision";
 import { PasosTramite } from "@/componentes/tramites/PasosTramite";
 import { TablaTramites } from "@/componentes/tramites/TablaTramites";
 import type {
@@ -31,6 +41,7 @@ import type {
   DetalleTramite,
   ResumenTramite,
 } from "@/db/consultas/tramites";
+import type { Observacion, RespuestaItem } from "@/db/consultas/revision";
 import type { Borrador } from "@/db/consultas/tramites-archivos";
 import {
   EsquemaAceptarCreacion,
@@ -461,10 +472,13 @@ describe("PanelElaboracion", () => {
     ],
     controlCambios: "Se añade la <b>inducción</b>.",
     plantilla: { codigo: "SGC-FO-01", version: 2 },
-    observaciones: [{ numero: 1, texto: "Falta el <i>responsable</i>.", respuesta: null }],
   };
-  const pintar = (editable: boolean, b: Borrador = borrador, pideCodigo = false) =>
-    renderToStaticMarkup(<PanelElaboracion tramite={tramite} borrador={b} editable={editable} pideCodigo={pideCodigo} />);
+  const observacion = (parcial: Partial<Observacion>): Observacion => ({
+    id: 5, numero: 1, ronda: 1, origen: "revision", texto: "Falta el <i>responsable</i>.", autor: "Ana Pérez",
+    respuesta: null, estado: "abierta", notaReapertura: null, creadoEn: ahora, ...parcial,
+  });
+  const pintar = (editable: boolean, b: Borrador = borrador, pideCodigo = false, observaciones: Observacion[] = [observacion({})]) =>
+    renderToStaticMarkup(<PanelElaboracion tramite={tramite} borrador={b} observaciones={observaciones} editable={editable} pideCodigo={pideCodigo} />);
 
   it("el elaborador carga en la ruta del trámite, quita archivos y envía a revisión", () => {
     const html = pintar(true);
@@ -531,16 +545,101 @@ describe("PanelElaboracion", () => {
   it("el control de cambios y las observaciones son texto plano", () => {
     const html = pintar(false);
     expect(html).toContain("Se añade la &lt;b&gt;inducción&lt;/b&gt;.");
-    expect(html).toContain("1. Falta el &lt;i&gt;responsable&lt;/i&gt;.");
-    expect(html).toContain("Sin respuesta");
-    expect(pintar(false, { ...borrador, observaciones: [{ numero: 2, texto: "Otra.", respuesta: "Hecho." }] })).toContain("Respuesta: Hecho.");
+    expect(html).toContain("Observación 1");
+    expect(html).toContain("Falta el &lt;i&gt;responsable&lt;/i&gt;.");
+    expect(html).toContain("Abierta");
+    expect(pintar(false, borrador, false, [observacion({ numero: 2, texto: "Otra.", respuesta: "Hecho.", estado: "atendida" })])).toContain("Respuesta: Hecho.");
+  });
+
+  it("solo el elaborador ve el formulario para responder, y no en una observación cerrada", () => {
+    expect(pintar(true)).toContain('name="respuesta"');
+    expect(pintar(false)).not.toContain('name="respuesta"');
+    expect(pintar(true, borrador, false, [observacion({ estado: "cerrada" })])).not.toContain('name="respuesta"');
   });
 
   it("sin archivos ni control de cambios lo dice", () => {
-    const html = pintar(false, { archivos: [], controlCambios: null, plantilla: null, observaciones: [] });
+    const html = pintar(false, { archivos: [], controlCambios: null, plantilla: null }, false, []);
     expect(html).toContain("Todavía no hay archivos.");
     expect(html).toContain("Todavía sin escribir.");
-    expect(html).not.toContain("Observaciones abiertas");
+    expect(html).not.toContain("Observación 1");
+  });
+});
+
+describe("revisión", () => {
+  const tramite = { id: 7, etapa: "revision", ronda: 2, codigo: "GTH-PR-02", titulo: "Inducción", versionNumero: 3 } as const;
+  const respuestas: RespuestaItem[] = [
+    { itemId: 1, texto: "Usa la plantilla vigente", critico: true, resultado: "cumple", nota: null },
+    { itemId: 2, texto: "Redacción <b>clara</b>", critico: false, resultado: "no_aplica", nota: "No <i>aplica</i>." },
+    { itemId: 3, texto: "Sin responder aún", critico: false, resultado: null, nota: null },
+  ];
+  const edicion = { estado: null, enviar: () => {}, pendiente: false, guardado: false, alCambiar: () => {}, alEnviar: () => {} };
+  const obs = (parcial: Partial<Observacion>): Observacion => ({
+    id: 5, numero: 1, ronda: 1, origen: "revision", texto: "Falta el responsable.", autor: "Ana Pérez",
+    respuesta: null, estado: "abierta", notaReapertura: null, creadoEn: ahora, ...parcial,
+  });
+
+  it("cada ítem es un fieldset con su legend, tres opciones, y el crítico lleva el texto", () => {
+    const html = renderToStaticMarkup(<ListaVerificacion tramite={tramite} respuestas={respuestas} edicion={edicion} />);
+    expect(html.match(/<fieldset/g)).toHaveLength(3);
+    expect(html.match(/<legend/g)).toHaveLength(3);
+    expect(html.match(/type="radio"/g)).toHaveLength(9);
+    expect(html.match(/Crítico/g)).toHaveLength(1);
+    expect(html).toMatch(/<legend[^>]*>.*Usa la plantilla vigente.*Crítico.*<\/legend>/);
+    expect(html).toContain("Guardar avance");
+    expect(html).toMatch(/checked="" value="cumple"/);
+    expect(html).toContain("Redacción &lt;b&gt;clara&lt;/b&gt;");
+  });
+
+  it("en solo lectura el resultado va como texto y no hay formulario", () => {
+    const html = renderToStaticMarkup(<ListaVerificacion tramite={tramite} respuestas={respuestas} />);
+    expect(html).not.toContain("<form");
+    expect(html).not.toContain("<fieldset");
+    expect(html).toContain("Cumple");
+    expect(html).toContain("No aplica");
+    expect(html).toContain("Sin responder");
+    expect(html).toContain("Nota: No &lt;i&gt;aplica&lt;/i&gt;.");
+  });
+
+  it("las observaciones muestran número, autor y estado con texto, y cada formulario solo a quien corresponde", () => {
+    const lista = [
+      obs({}),
+      obs({ id: 6, numero: 2, estado: "atendida", respuesta: "Hecho." }),
+      obs({ id: 7, numero: 3, estado: "cerrada", respuesta: "Listo.", notaReapertura: "Revisar de nuevo." }),
+    ];
+    const revisor = renderToStaticMarkup(<Observaciones tramite={tramite} observaciones={lista} puedeRevisar puedeResponder={false} />);
+    expect(revisor).toContain("Observación 2");
+    expect(revisor).toContain("Ana Pérez");
+    for (const estado of ["Abierta", "Atendida", "Cerrada"]) expect(revisor).toContain(estado);
+    expect(revisor).toContain("Respuesta: Hecho.");
+    expect(revisor).toContain("Nota de reapertura: Revisar de nuevo.");
+    expect(revisor).toContain('name="texto"');
+    expect(revisor.match(/Cerrar la observación/g)).toHaveLength(1); // solo la atendida
+    expect(revisor.match(/Reabrir con una nota/g)).toHaveLength(2); // la atendida y la cerrada
+    expect(revisor).not.toContain('name="respuesta"');
+
+    const lector = renderToStaticMarkup(<Observaciones tramite={tramite} observaciones={lista} puedeRevisar={false} puedeResponder={false} />);
+    expect(lector).not.toContain("<form");
+    expect(lector).toContain("Observación 3");
+
+    const elaborador = renderToStaticMarkup(<Observaciones tramite={tramite} observaciones={lista} puedeRevisar={false} puedeResponder />);
+    expect(elaborador.match(/name="respuesta"/g)).toHaveLength(2); // la abierta y la atendida
+    expect(elaborador).not.toContain('name="texto"');
+  });
+
+  it("el panel ofrece las dos salidas al revisor y, a los demás, solo lectura", () => {
+    const pintar = (puedeRevisar: boolean) =>
+      renderToStaticMarkup(
+        <PanelRevision tramite={tramite} respuestas={respuestas} observaciones={[obs({})]} huella={`9f2c${"0".repeat(56)}a41b`} puedeRevisar={puedeRevisar} pideCodigo={false} />,
+      );
+    const revisor = pintar(true);
+    expect(revisor).toContain("Devolver a elaboración");
+    expect(revisor).toContain("Dar concepto favorable");
+    expect(revisor).toContain("Guardar avance");
+    const lector = pintar(false);
+    expect(lector).not.toContain("Devolver a elaboración");
+    expect(lector).not.toContain("Dar concepto favorable");
+    expect(lector).not.toContain("Guardar avance");
+    expect(lector).not.toContain("<form");
   });
 });
 

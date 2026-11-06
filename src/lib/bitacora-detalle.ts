@@ -49,8 +49,22 @@ function describirConfiguracion(claves: unknown): string {
   return `Editó la configuración: ${nombres}`;
 }
 
-const ACCIONES_TRAMITE: Record<Accion | "solicitar", string> = {
+/** Lo que se hace dentro de la revisión sin mover el trámite de etapa: no pasa por `transicionar`. */
+const ACCIONES_REVISION = [
+  "guardar_lista",
+  "crear_observacion",
+  "responder_observacion",
+  "cerrar_observacion",
+  "reabrir_observacion",
+] as const;
+
+const ACCIONES_TRAMITE: Record<Accion | "solicitar" | (typeof ACCIONES_REVISION)[number], string> = {
   solicitar: "Registró la solicitud",
+  guardar_lista: "Guardó la lista de verificación de la solicitud",
+  crear_observacion: "Escribió una observación en la solicitud",
+  responder_observacion: "Respondió una observación de la solicitud",
+  cerrar_observacion: "Cerró una observación de la solicitud",
+  reabrir_observacion: "Reabrió una observación de la solicitud",
   dar_visto_bueno: "Dio el visto bueno a la solicitud",
   negar_visto_bueno: "Negó el visto bueno a la solicitud",
   retirar: "Retiró la solicitud",
@@ -69,11 +83,12 @@ const ACCIONES_TRAMITE: Record<Accion | "solicitar", string> = {
 };
 
 /** «Aprobó la solicitud SOL-2026-014 sobre GTH-PR-02». Una creación aún sin documento no lleva código. */
-function describirTramite(accion: string, numero: string, codigo: string | null): string {
+function describirTramite(accion: string, numero: string, codigo: string | null, observacion?: unknown): string {
   const clave = accion.slice("tramite_".length);
   const sobre = codigo ? ` sobre ${codigo}` : "";
+  const cual = (ACCIONES_REVISION as readonly string[]).includes(clave) && typeof observacion === "number" ? ` (observación ${observacion})` : "";
   return Object.hasOwn(ACCIONES_TRAMITE, clave)
-    ? `${ACCIONES_TRAMITE[clave as keyof typeof ACCIONES_TRAMITE]} ${numero}${sobre}`
+    ? `${ACCIONES_TRAMITE[clave as keyof typeof ACCIONES_TRAMITE]} ${numero}${sobre}${cual}`
     : `Acción «${accion}» sobre la solicitud ${numero}${sobre}`;
 }
 
@@ -148,7 +163,7 @@ export function describirEvento(e: EventoAuditoria): string {
       return describirConfiguracion(d.claves);
   }
 
-  if (e.accion.startsWith("tramite_")) return describirTramite(e.accion, texto(d.numero) ?? "?", cod);
+  if (e.accion.startsWith("tramite_")) return describirTramite(e.accion, texto(d.numero) ?? "?", cod, d.observacion);
 
   // Acciones de mapa dinámicas: <verbo>_<singular>.
   const verbos: Record<string, string> = {

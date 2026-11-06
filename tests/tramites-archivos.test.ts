@@ -235,19 +235,14 @@ describe("archivoPrincipal", () => {
 });
 
 describe("borradorDeTramite", () => {
-  it("trae los archivos, el control de cambios, las observaciones abiertas y la plantilla", () => revertida(sql, async (tx) => {
+  it("trae los archivos, el control de cambios y la plantilla", () => revertida(sql, async (tx) => {
     const t = await tramiteEn(tx, "revision");
     try {
-      await tx`INSERT INTO tramite_observaciones (tramite_id, numero, ronda, origen, texto, autor_id, respuesta)
-        VALUES (${t.tramiteId}, 1, 1, 'revision', 'Falta el responsable.', ${t.revisor.usuarioId}, 'Se agregó.'),
-               (${t.tramiteId}, 2, 1, 'revision', 'Ya cerrada.', ${t.revisor.usuarioId}, NULL)`;
-      await tx`UPDATE tramite_observaciones SET estado = 'cerrada' WHERE tramite_id = ${t.tramiteId} AND numero = 2`;
       const b = await borradorDeTramite(t.tramiteId, { sql: tx });
       expect(b.archivos).toHaveLength(1);
       expect(b.archivos[0]).toMatchObject({ rol: "principal", mime: "application/pdf" });
       expect(b.archivos[0].hashSha256).toMatch(/^[0-9a-f]{64}$/);
       expect(b.controlCambios).toBeTruthy();
-      expect(b.observaciones).toEqual([{ numero: 1, texto: "Falta el responsable.", respuesta: "Se agregó." }]);
 
       const [plantilla] = await tx`SELECT d.id, d.codigo, v.numero FROM documentos d
         JOIN documento_versiones v ON v.documento_id = d.id AND v.estado = 'vigente' WHERE d.codigo = 'GTH-PR-01'`;

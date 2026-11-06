@@ -21,6 +21,44 @@ export const EsquemaMotivoCierre = z.object({ motivo: z.string().trim().min(5).m
 
 export const EsquemaControlCambios = z.object({ resumenCambios: z.string().trim().min(5).max(2000) }).strict();
 
+const textoDeRevision = z.string().trim().min(5).max(2000);
+
+export const EsquemaObservacion = z.object({ texto: textoDeRevision }).strict();
+export const EsquemaRespuestaObservacion = z.object({ respuesta: textoDeRevision }).strict();
+export const EsquemaReaperturaObservacion = z.object({ nota: textoDeRevision }).strict();
+export const EsquemaConcepto = z.object({ concepto: textoDeRevision }).strict();
+
+export const EsquemaVerificacion = z
+  .array(
+    z
+      .object({
+        itemId: id,
+        resultado: z.enum(["cumple", "no_cumple", "no_aplica"]),
+        nota: z.string().trim().max(2000).optional(),
+      })
+      .strict(),
+  )
+  .min(1, "Marque al menos un ítem");
+
+/**
+ * La lista viaja como `resultado_<id>` (un radio por ítem) y `nota_<id>`: los campos dependen de
+ * los ítems, así que no caben en un esquema estricto de claves fijas. Un ítem sin marcar no se envía.
+ */
+export function leerVerificacion(formData: FormData, omitir: readonly string[]): z.output<typeof EsquemaVerificacion> {
+  const respuestas: { itemId: string; resultado: string; nota?: string }[] = [];
+  for (const clave of new Set(formData.keys())) {
+    if (clave.startsWith("$ACTION_") || omitir.includes(clave)) continue;
+    const m = /^(resultado|nota)_(\d+)$/.exec(clave);
+    if (!m) throw new Error("Formulario inválido. Recargue la página.");
+    if (m[1] === "nota") continue;
+    const nota = formData.get(`nota_${m[2]}`);
+    respuestas.push({ itemId: m[2], resultado: String(formData.get(clave)), ...(typeof nota === "string" && nota.trim() ? { nota } : {}) });
+  }
+  const resultado = EsquemaVerificacion.safeParse(respuestas);
+  if (!resultado.success) throw new Error(resultado.error.issues[0].message);
+  return resultado.data;
+}
+
 /** La clave no se recorta: un espacio al final es parte de ella. */
 export const EsquemaFirma = z
   .object({

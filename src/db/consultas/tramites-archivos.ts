@@ -25,13 +25,10 @@ export type ArchivoDeBorrador = {
   hashSha256: string;
 };
 
-export type ObservacionAbierta = { numero: number; texto: string; respuesta: string | null };
-
 export type Borrador = {
   archivos: ArchivoDeBorrador[];
   controlCambios: string | null;
   plantilla: TipoDeDocumento["plantilla"];
-  observaciones: ObservacionAbierta[];
 };
 
 const NO_ENCONTRADO: AutorizacionArchivo = { ok: false, estado: 404 };
@@ -111,14 +108,11 @@ export async function borradorDeTramite(tramiteId: number, opciones?: { sql?: Cl
     LEFT JOIN documentos d ON d.id = t.documento_id
     WHERE t.id = ${tramiteId}`;
   if (!t) throw new Error("El trámite no tiene versión");
-  const [archivos, observaciones, tipo] = await Promise.all([
+  const [archivos, tipo] = await Promise.all([
     sql`SELECT a.id, a.rol, a.nombre_original, a.mime, a.tamano_bytes, a.hash_sha256
       FROM archivos a JOIN tramites t ON t.version_id = a.version_id
       WHERE t.id = ${tramiteId} AND a.rol = ANY(${ROLES_DEL_BORRADOR})
       ORDER BY array_position(${ROLES_DEL_BORRADOR}::text[], a.rol), a.id`,
-    sql`SELECT numero, texto, respuesta FROM tramite_observaciones
-      WHERE tramite_id = ${tramiteId} AND estado = 'abierta'
-      ORDER BY numero`,
     t.tipo_id === null ? null : tipoDeDocumento(Number(t.tipo_id), { sql }),
   ]);
   return {
@@ -132,6 +126,5 @@ export async function borradorDeTramite(tramiteId: number, opciones?: { sql?: Cl
     })),
     controlCambios: t.resumen_cambios,
     plantilla: tipo?.plantilla ?? null,
-    observaciones: observaciones.map((o) => ({ numero: o.numero, texto: o.texto, respuesta: o.respuesta })),
   };
 }
