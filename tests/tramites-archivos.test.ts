@@ -12,7 +12,7 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 }
 
 import { obtenerSql } from "@/db/cliente";
-import { editarVersionBorrador, eliminarArchivoBorrador, registrarArchivo } from "@/db/consultas/admin";
+import { editarVersionBorrador, eliminarArchivoBorrador, exigirEscrituraEnVersion, registrarArchivo } from "@/db/consultas/admin";
 import {
   archivoDeTramite,
   autorizarArchivoDeTramite,
@@ -154,6 +154,18 @@ describe("una versión en trámite solo se toca desde el trámite", () => {
     await tx`UPDATE tramites SET etapa = 'cancelado' WHERE id = ${t.tramiteId}`;
     await expect(registrarArchivo(anexo(t.versionId!), t.admin.usuarioId, { sql: tx })).resolves.toMatchObject({ id: expect.anything() });
   }));
+
+  it("el trámite se lee con FOR SHARE, para esperar a una firma en curso", async () => {
+    // Un test no puede dejar un trámite confirmado en `sgc`, y sin eso una segunda conexión no lo ve.
+    const consultas: string[] = [];
+    const tx = (cadenas: TemplateStringsArray) => {
+      consultas.push(cadenas.join("?"));
+      return Promise.resolve([]);
+    };
+    await exigirEscrituraEnVersion(tx as unknown as Parameters<typeof exigirEscrituraEnVersion>[0], 1);
+    expect(consultas).toHaveLength(1);
+    expect(consultas[0]).toContain("FOR SHARE");
+  });
 
   it("un archivo que no existe se dice, antes de mirar ningún trámite", () => revertida(sql, async (tx) => {
     const t = await tramiteEn(tx, "elaboracion");

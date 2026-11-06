@@ -481,7 +481,7 @@ describe("PanelElaboracion", () => {
       renderToStaticMarkup(<EnvioARevision tramite={tramite} huella={null} pideCodigo={false} sinGuardar={sinGuardar} />);
     const bloqueado = pintarEnvio(true);
     expect(bloqueado).toContain("Guarde el control de cambios antes de enviar");
-    expect(bloqueado).toMatch(/<button[^>]*disabled[^>]*>Enviar a revisión/);
+    expect(bloqueado).toMatch(/<button[^>]* disabled=""[^>]*>Enviar a revisión/); // La clase también dice «disabled:».
     expect(bloqueado).not.toContain("aria-haspopup");
     const libre = pintarEnvio(false);
     expect(libre).not.toContain("Guarde el control");
