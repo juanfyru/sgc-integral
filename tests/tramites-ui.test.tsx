@@ -847,7 +847,7 @@ describe("revisión", () => {
 
   it("el panel ofrece las dos salidas al revisor", () => {
     const revisor = renderToStaticMarkup(
-      <PanelRevision tramite={tramite} respuestas={respuestas} propuesta={false} observaciones={[obs({})]} huella={`9f2c${"0".repeat(56)}a41b`} pideCodigo={false} />,
+      <PanelRevision tramite={tramite} respuestas={respuestas} hayItemsActivos propuesta={false} observaciones={[obs({})]} huella={`9f2c${"0".repeat(56)}a41b`} pideCodigo={false} />,
     );
     expect(revisor).toContain("Devolver a elaboración");
     expect(revisor).toContain("Dar concepto favorable");
@@ -858,14 +858,24 @@ describe("revisión", () => {
 
   it("el aviso de guardar vive en una región que ya existe, para que se anuncie al aparecer", () => {
     const panel = (propuesta: boolean) =>
-      renderToStaticMarkup(<PanelRevision tramite={tramite} respuestas={respuestas} propuesta={propuesta} observaciones={[]} huella={null} pideCodigo={false} />);
+      renderToStaticMarkup(<PanelRevision tramite={tramite} respuestas={respuestas} hayItemsActivos propuesta={propuesta} observaciones={[]} huella={null} pideCodigo={false} />);
     expect(panel(false)).toMatch(/<p id="concepto-sin-guardar" role="status"[^>]*><\/p>/);
     expect(panel(true)).toMatch(/<p id="concepto-sin-guardar" role="status"[^>]*>Guarde el avance de la lista antes de dar el concepto<\/p>/);
   });
 
+  it("sin ítems activos el concepto no se ofrece y el aviso va en la misma región", () => {
+    const aviso = "No hay ítems activos en la lista de verificación. Pida al Administrador del SGC que los active.";
+    const html = renderToStaticMarkup(
+      <PanelRevision tramite={tramite} respuestas={[]} hayItemsActivos={false} propuesta={false} observaciones={[]} huella={null} pideCodigo={false} />,
+    );
+    expect(html).toContain(`role="status" class="text-sm text-muted-foreground">${aviso}</p>`);
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*aria-describedby="concepto-sin-guardar"[^>]*>Dar concepto favorable|<button[^>]*aria-describedby="concepto-sin-guardar"[^>]*disabled=""[^>]*>Dar concepto favorable/);
+    expect(html).toContain("Devolver a elaboración");
+  });
+
   it("la lista propuesta cuenta como sin guardar: el concepto espera a que el revisor la confirme", () => {
     const html = renderToStaticMarkup(
-      <PanelRevision tramite={tramite} respuestas={respuestas} propuesta observaciones={[]} huella={null} pideCodigo={false} />,
+      <PanelRevision tramite={tramite} respuestas={respuestas} hayItemsActivos propuesta observaciones={[]} huella={null} pideCodigo={false} />,
     );
     expect(html).toContain("Se propone lo respondido en la ronda anterior.");
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*aria-describedby="concepto-sin-guardar"[^>]*>Dar concepto favorable|<button[^>]*aria-describedby="concepto-sin-guardar"[^>]*disabled=""[^>]*>Dar concepto favorable/);

@@ -9,7 +9,7 @@ import { Observaciones } from "@/componentes/tramites/Observaciones";
 import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import type { Observacion, RespuestaItem } from "@/db/consultas/revision";
-import type { Etapa } from "@/lib/tramites/tipos";
+import { SIN_ITEMS_ACTIVOS, type Etapa } from "@/lib/tramites/tipos";
 
 export type TramiteParaRevisar = {
   id: number;
@@ -24,10 +24,12 @@ export type TramiteParaRevisar = {
  * La revisión del documento para el revisor designado, en revisión (spec 13A §9.2): lista de
  * verificación, observaciones y las dos salidas. Los demás la consultan con `EvidenciaRevision`.
  * `propuesta` dice que lo marcado viene de una ronda anterior y esta ronda aún no guarda nada.
+ * `hayItemsActivos` no se deduce de `respuestas`: lo guardado en la ronda conserva ítems desactivados.
  */
 export function PanelRevision({
   tramite,
   respuestas,
+  hayItemsActivos,
   propuesta,
   observaciones,
   huella,
@@ -35,6 +37,7 @@ export function PanelRevision({
 }: {
   tramite: TramiteParaRevisar;
   respuestas: RespuestaItem[];
+  hayItemsActivos: boolean;
   propuesta: boolean;
   observaciones: Observacion[];
   huella: string | null;
@@ -47,6 +50,7 @@ export function PanelRevision({
   // propuesto también es eso, aunque nadie lo haya tocado: el revisor lo confirma guardando.
   const guardado = enviadoCon !== null && enviadoCon === cambios && !pendiente && !estado;
   const sinGuardar = (cambios > 0 || propuesta) && !guardado;
+  const impedimento = !hayItemsActivos ? SIN_ITEMS_ACTIVOS : sinGuardar ? "Guarde el avance de la lista antes de dar el concepto" : "";
 
   return (
     <section
@@ -92,7 +96,7 @@ export function PanelRevision({
           confirmar="Devolver"
         />
         <div className="flex flex-col items-end gap-1">
-          {sinGuardar ? (
+          {impedimento ? (
             <Boton disabled aria-describedby="concepto-sin-guardar">
               Dar concepto favorable
             </Boton>
@@ -116,7 +120,7 @@ export function PanelRevision({
           )}
           {/* Siempre montado: un lector de pantalla solo anuncia lo que cambia dentro de una región que ya existía. */}
           <p id="concepto-sin-guardar" role="status" className="text-sm text-muted-foreground">
-            {sinGuardar ? "Guarde el avance de la lista antes de dar el concepto" : ""}
+            {impedimento}
           </p>
         </div>
       </div>

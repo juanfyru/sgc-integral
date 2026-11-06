@@ -1,6 +1,7 @@
 /** Devolución y concepto favorable de la revisión: lo que exigen y a quién le toca después (spec 13A §9.2). */
 import { obtenerVerificacion } from "@/db/consultas/revision";
 import { rotuloDeTramite } from "@/db/consultas/tramites";
+import { SIN_ITEMS_ACTIVOS } from "@/lib/tramites/tipos";
 import {
   ErrorTramite,
   type Manejador,
@@ -24,10 +25,12 @@ const validarConcepto: Validador = async ({ sql, tramite, datos }) => {
   conceptoDe(datos);
   // Lo firmado es lo guardado en la ronda: un crítico que no cumple cuenta aunque el ítem se desactivara después.
   const [lista] = await sql`SELECT
+      (SELECT count(*) FROM lista_verificacion_items WHERE activo) AS activos,
       (SELECT count(*) FROM lista_verificacion_items i WHERE i.activo AND NOT EXISTS (
         SELECT 1 FROM tramite_verificaciones r WHERE r.item_id = i.id AND r.tramite_id = ${tramite.id} AND r.ronda = ${tramite.ronda})) AS sin_responder,
       (SELECT count(*) FROM tramite_verificaciones r
         WHERE r.tramite_id = ${tramite.id} AND r.ronda = ${tramite.ronda} AND r.critico AND r.resultado = 'no_cumple') AS criticos_sin_cumplir`;
+  if (Number(lista.activos) === 0) throw new ErrorTramite(SIN_ITEMS_ACTIVOS);
   if (Number(lista.sin_responder) > 0) throw new ErrorTramite("Faltan ítems de la lista por responder");
   if (Number(lista.criticos_sin_cumplir) > 0) throw new ErrorTramite("Hay un ítem crítico que no cumple");
   const [abiertas] = await sql`SELECT 1 FROM tramite_observaciones WHERE tramite_id = ${tramite.id} AND estado <> 'cerrada' LIMIT 1`;

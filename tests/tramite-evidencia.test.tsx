@@ -134,7 +134,7 @@ describe("la página del trámite cerrado", () => {
 });
 
 describe("la ronda 2 con la lista desactivada", () => {
-  it("sin ítems activos no hay nada que confirmar: el concepto no espera un guardado imposible", () => revertida(sql, async (tx) => {
+  it("sin ítems activos no hay concepto: el panel lo dice y el servidor lo rechaza con el mismo mensaje", () => revertida(sql, async (tx) => {
     const t = await tramiteEn(tx, "revision");
     try {
       const items = await listarItemsVerificacion({ sql: tx, soloActivos: true });
@@ -149,8 +149,9 @@ describe("la ronda 2 con la lista desactivada", () => {
       const html = await pagina(tx, t.tramiteId, t.revisor);
       expect(html).not.toContain("Se propone lo respondido");
       expect(html).not.toContain("Guarde el avance de la lista");
-      expect(await transicionar(t.revisor, { tramiteId: t.tramiteId, accion: "concepto_favorable", etapaEsperada: "revision", rondaEsperada: 2, datos: { concepto: "Atendido." }, ...firma }, opc(tx)))
-        .toEqual({ etapa: "aprobacion", ronda: 2 });
+      expect(html).toContain("No hay ítems activos en la lista de verificación. Pida al Administrador del SGC que los active.");
+      await expect(tx.savepoint(() => transicionar(t.revisor, { tramiteId: t.tramiteId, accion: "concepto_favorable", etapaEsperada: "revision", rondaEsperada: 2, datos: { concepto: "Atendido." }, ...firma }, opc(tx))))
+        .rejects.toThrow("No hay ítems activos en la lista de verificación. Pida al Administrador del SGC que los active.");
     } finally {
       await t.limpiar();
     }

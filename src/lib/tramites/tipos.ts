@@ -29,6 +29,9 @@ export function esEtapaDeTrabajo(e: Etapa): e is EtapaTrabajo {
   return (ETAPAS_TRABAJO as readonly string[]).includes(e);
 }
 
+/** Sin ítems activos no hay evidencia del PC-05: lo rechaza `validarConcepto` y lo avisa el panel de revisión (F13A-R37). */
+export const SIN_ITEMS_ACTIVOS = "No hay ítems activos en la lista de verificación. Pida al Administrador del SGC que los active.";
+
 export const FIRMAS = ["elaboro", "reviso", "aprobo", "publico"] as const;
 export type Firma = (typeof FIRMAS)[number];
 

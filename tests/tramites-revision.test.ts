@@ -360,6 +360,20 @@ describe("revisión", () => {
     } finally { await t.limpiar(); }
   }));
 
+  it("sin ítems activos no hay concepto, aunque la ronda ya tenga sus respuestas guardadas", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "revision");
+    try {
+      const items = await listarItemsVerificacion({ sql: tx, soloActivos: true });
+      await guardarVerificacion(t.tramiteId, t.revisor, items.map((i) => ({ itemId: i.id, resultado: "cumple" as const })), { sql: tx });
+      await tx`UPDATE lista_verificacion_items SET activo = false`;
+      const verificar = vi.fn<Verificador>(async () => ({ ok: true, metodo: "clave" }));
+      await expect(tx.savepoint(() => transicionar(t.revisor, { tramiteId: t.tramiteId, accion: "concepto_favorable", etapaEsperada: "revision", rondaEsperada: 1,
+        datos: { concepto: "Cumple; listo para aprobación." }, credenciales: { clave: "x" } }, { ...opc(tx), verificar })))
+        .rejects.toThrow("No hay ítems activos en la lista de verificación. Pida al Administrador del SGC que los active.");
+      expect(verificar).not.toHaveBeenCalled();
+    } finally { await t.limpiar(); }
+  }));
+
   it("la respuesta de un ítem desactivado antes de firmar sigue en el evento, y un crítico que no cumple sigue impidiendo el concepto", () => revertida(sql, async (tx) => {
     const t = await tramiteEn(tx, "revision");
     try {

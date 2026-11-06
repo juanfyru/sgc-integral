@@ -154,6 +154,12 @@ export function ListaItemsVerificacion({ items }: { items: ItemVerificacion[] })
       <p role="status" aria-live="polite" className="sr-only">
         {anuncio}
       </p>
+      {/* Siempre montado: un lector de pantalla solo anuncia lo que cambia dentro de una región que ya existía. */}
+      <p id="sin-items-activos" role="status" className="text-sm font-medium text-estado-critico-texto">
+        {items.some((item) => item.activo)
+          ? ""
+          : "No hay ítems activos: ningún revisor puede dar el concepto favorable hasta que active al menos uno."}
+      </p>
       <ol className="flex flex-col gap-2">
         {items.map((item, i) => (
           <li key={item.id} className={`flex flex-col gap-3 rounded-lg border p-3 ${item.activo ? "" : "border-dashed"}`}>

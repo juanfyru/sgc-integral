@@ -22,7 +22,7 @@ import {
   obtenerTramite,
   type DetalleTramite,
 } from "@/db/consultas/tramites";
-import { listarObservaciones, listarRondasVerificacion, obtenerVerificacion } from "@/db/consultas/revision";
+import { listarItemsVerificacion, listarObservaciones, listarRondasVerificacion, obtenerVerificacion } from "@/db/consultas/revision";
 import { borradorDeTramite } from "@/db/consultas/tramites-archivos";
 import { puedeVerVersion } from "@/lib/alcance";
 import { exigirSesion } from "@/lib/paginas";
@@ -101,8 +101,9 @@ async function Revision({ tramite, pideCodigo }: { tramite: DetalleTramite; pide
   if (!tramite.acciones.includes("concepto_favorable")) {
     return <Evidencia tramite={tramite} rondaEnCurso={etapa === "revision" ? ronda : null} />;
   }
-  const [respuestas, rondas, observaciones, borrador] = await Promise.all([
+  const [respuestas, activos, rondas, observaciones, borrador] = await Promise.all([
     obtenerVerificacion(id, ronda),
+    listarItemsVerificacion({ soloActivos: true }),
     listarRondasVerificacion(id),
     listarObservaciones(id),
     borradorDeTramite(id),
@@ -111,6 +112,7 @@ async function Revision({ tramite, pideCodigo }: { tramite: DetalleTramite; pide
     <PanelRevision
       tramite={{ id, etapa, ronda, codigo, titulo, versionNumero }}
       respuestas={respuestas}
+      hayItemsActivos={activos.length > 0}
       propuesta={respuestas.length > 0 && rondas.length > 0 && rondas[0].ronda !== ronda}
       observaciones={observaciones}
       huella={borrador.archivos.find((a) => a.rol === "principal")?.hashSha256 ?? null}
