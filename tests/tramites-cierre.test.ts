@@ -325,7 +325,7 @@ describe("criterios que no cumplen en la aprobación", () => {
     try {
       const critico = (await listarItemsVerificacion({ sql: tx, soloActivos: true })).find((i) => i.critico)!;
       await responderCon(tx, t, critico.id);
-      await fallaSinGastarLaFirma(tx, t.revisor, concepto(t, huellaDeCriterios([{ itemId: critico.id, nota: NOTA }])), "Hay un ítem crítico que no cumple");
+      await fallaSinGastarLaFirma(tx, t.revisor, concepto(t, huellaDeCriterios([{ itemId: critico.id, texto: critico.texto, nota: NOTA }])), "Hay un ítem crítico que no cumple");
     } finally { await t.limpiar(); }
   }));
 

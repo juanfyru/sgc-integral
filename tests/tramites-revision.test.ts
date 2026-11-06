@@ -513,6 +513,16 @@ describe("criterios que no cumplen", () => {
     } finally { await t.limpiar(); }
   }));
 
+  it("si cambió el texto guardado del criterio, la confirmación vieja no sirve aunque la nota sea la misma", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "revision");
+    try {
+      const criterio = await responderLista(tx, t, NOTA);
+      const vieja = await huellaActual(tx, t);
+      await tx`UPDATE tramite_verificaciones SET texto_item = texto_item || ' (ajustado)' WHERE tramite_id = ${t.tramiteId} AND ronda = ${t.ronda} AND item_id = ${criterio.id}`;
+      await rechazaSinFirmar(tx, t, { confirmaNoCumple: vieja }, LISTA_CAMBIO);
+    } finally { await t.limpiar(); }
+  }));
+
   it("otro criterio en «No cumple» también invalida la confirmación vieja", () => revertida(sql, async (tx) => {
     const t = await tramiteEn(tx, "revision");
     try {
@@ -614,7 +624,7 @@ describe("criterios que no cumplen", () => {
   }));
 
   it("la huella cubre el ítem y la nota, y la constancia guarda solo el texto y la nota", () => {
-    expect(huellaDeCriterios([{ itemId: 7, nota: "Sin el ñandú" }])).toBe(createHash("sha256").update('[[7,"Sin el ñandú"]]').digest("hex"));
+    expect(huellaDeCriterios([{ itemId: 7, texto: "Usa la plantilla", nota: "Sin el ñandú" }])).toBe(createHash("sha256").update('[[7,"Usa la plantilla","Sin el ñandú"]]').digest("hex"));
     expect(constanciaDeCriterios([])).toEqual({});
     const criterio = { itemId: 7, texto: "Usa la plantilla", nota: NOTA };
     expect(constanciaDeCriterios([criterio])).toEqual({ noCumple: [{ texto: "Usa la plantilla", nota: NOTA }], confirmoNoCumple: true });

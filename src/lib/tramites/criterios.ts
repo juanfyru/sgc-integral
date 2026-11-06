@@ -2,9 +2,9 @@
 import { createHash } from "node:crypto";
 
 /** Lo que se confirmó: si un criterio o su nota cambian, la huella deja de coincidir. */
-export function huellaDeCriterios(criterios: { itemId: number; nota: string }[]): string {
+export function huellaDeCriterios(criterios: { itemId: number; texto: string; nota: string }[]): string {
   return createHash("sha256")
-    .update(JSON.stringify(criterios.map((c) => [c.itemId, c.nota])))
+    .update(JSON.stringify(criterios.map((c) => [c.itemId, c.texto, c.nota])))
     .digest("hex");
 }
 
