@@ -28,8 +28,15 @@ const FRASES: Record<string, string> = {
   reasignar: "reasignó un responsable",
 };
 
+/** En una eliminación, la acción `publicar` no publica nada. */
+const FRASES_ELIMINACION: Record<string, string> = {
+  publicar: "ejecutó la eliminación, con clave",
+  aprobar_y_publicar: "aprobó y ejecutó la eliminación, con clave",
+};
+
 function frase(e: EventoTramite, tipo: TipoSolicitud): string {
-  const hecho = e.tipo === "solicitar" ? QUE_PIDE[tipo] : (FRASES[e.tipo] ?? e.tipo.replaceAll("_", " "));
+  const propia = tipo === "eliminar" ? FRASES_ELIMINACION[e.tipo] : undefined;
+  const hecho = e.tipo === "solicitar" ? QUE_PIDE[tipo] : (propia ?? FRASES[e.tipo] ?? e.tipo.replaceAll("_", " "));
   return e.persona ? `${e.persona} ${hecho}` : hecho.charAt(0).toUpperCase() + hecho.slice(1);
 }
 

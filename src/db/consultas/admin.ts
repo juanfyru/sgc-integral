@@ -287,8 +287,40 @@ export async function editarMetadatos(
  * LA transacción del sistema (regla ISO 1): publicar una versión nueva vuelve
  * obsoleta la anterior en el mismo commit. El índice único parcial
  * versiones_una_vigente_idx la respalda en BD; el orden de los UPDATE importa
- * (primero obsoleto, luego vigente) para no chocar con el índice.
+ * (primero obsoleto, luego vigente) para no chocar con el índice. La evidencia
+ * de aprobación ya debe estar en la versión: la exige
+ * versiones_vigente_con_aprobacion.
  */
+export async function aplicarPublicacion(
+  tx: TransactionSql,
+  versionId: number,
+  origen: "plataforma" | "fuera",
+  usuarioId: number,
+  ahora: Date = new Date(),
+): Promise<{ documentoId: number; numero: number; obsoletas: number[] }> {
+  const [version] = await tx`SELECT documento_id, numero, estado
+    FROM documento_versiones WHERE id = ${versionId} FOR UPDATE`;
+  if (version?.estado !== "borrador") {
+    throw new Error("Solo se puede publicar una versión en borrador");
+  }
+  const documentoId = Number(version.documento_id);
+  const anteriores = await tx`UPDATE documento_versiones SET estado = 'obsoleto'
+    WHERE documento_id = ${documentoId} AND estado = 'vigente'
+    RETURNING numero`;
+  await tx`UPDATE documento_versiones
+    SET estado = 'vigente', origen_aprobacion = ${origen}, publicado_en = ${ahora}
+    WHERE id = ${versionId}`;
+  await tx`UPDATE documentos SET actualizado_en = ${ahora} WHERE id = ${documentoId}`;
+  const obsoletas = anteriores.map((a) => a.numero as number);
+  await registrarAuditoria(tx, {
+    usuarioId, accion: "publicar_version", entidad: "documento_version",
+    entidadId: versionId,
+    detalle: { documentoId, numero: version.numero, obsoletas },
+  });
+  return { documentoId, numero: version.numero, obsoletas };
+}
+
+/** El camino directo del panel: evidencia escrita a mano, aprobada fuera de la plataforma. */
 export async function publicarVersion(
   versionId: number,
   usuarioId: number,
@@ -312,21 +344,8 @@ export async function publicarVersion(
       throw new Error("El borrador no tiene archivo principal");
     }
 
-    const anteriores = await tx`UPDATE documento_versiones SET estado = 'obsoleto'
-      WHERE documento_id = ${version.documento_id} AND estado = 'vigente'
-      RETURNING numero`;
-    await tx`UPDATE documento_versiones SET estado = 'vigente' WHERE id = ${versionId}`;
-    await tx`UPDATE documentos SET actualizado_en = now() WHERE id = ${version.documento_id}`;
-    await registrarAuditoria(tx, {
-      usuarioId, accion: "publicar_version", entidad: "documento_version",
-      entidadId: versionId,
-      detalle: {
-        documentoId: version.documento_id,
-        numero: version.numero,
-        obsoletas: anteriores.map((a) => a.numero),
-      },
-    });
-    return { documentoId: version.documento_id, obsoletas: anteriores.length };
+    const { documentoId, obsoletas } = await aplicarPublicacion(tx, versionId, "fuera", usuarioId);
+    return { documentoId, obsoletas: obsoletas.length };
   });
 }
 
@@ -553,21 +572,27 @@ export async function obtenerDocumentoAdmin(
   };
 }
 
+export async function anularVigenteEn(
+  tx: TransactionSql,
+  documentoId: number,
+  usuarioId: number,
+): Promise<{ versionId: number; numero: number }> {
+  const [anulada] = await tx`UPDATE documento_versiones SET estado = 'anulado'
+    WHERE documento_id = ${documentoId} AND estado = 'vigente'
+    RETURNING id, numero`;
+  if (!anulada) {
+    throw new Error("El documento no tiene versión vigente que anular");
+  }
+  await registrarAuditoria(tx, {
+    usuarioId, accion: "anular_documento", entidad: "documento",
+    entidadId: documentoId, detalle: { versionAnulada: anulada.numero },
+  });
+  return { versionId: Number(anulada.id), numero: anulada.numero };
+}
+
 export async function anularVigente(
   documentoId: number,
   usuarioId: number,
 ): Promise<void> {
-  const sql = obtenerSql();
-  await sql.begin(async (tx) => {
-    const [anulada] = await tx`UPDATE documento_versiones SET estado = 'anulado'
-      WHERE documento_id = ${documentoId} AND estado = 'vigente'
-      RETURNING id, numero`;
-    if (!anulada) {
-      throw new Error("El documento no tiene versión vigente que anular");
-    }
-    await registrarAuditoria(tx, {
-      usuarioId, accion: "anular_documento", entidad: "documento",
-      entidadId: documentoId, detalle: { versionAnulada: anulada.numero },
-    });
-  });
+  await obtenerSql().begin((tx) => anularVigenteEn(tx, documentoId, usuarioId));
 }

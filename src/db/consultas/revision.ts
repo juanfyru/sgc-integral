@@ -217,17 +217,20 @@ export async function crearObservacion(
   });
 }
 
-/** Para el manejador `devolver_aprobacion`: el trámite ya viene bloqueado por `transicionar`. */
+/** Para el manejador `devolver_aprobacion`: el trámite ya viene bloqueado por `transicionar`. Devuelve los números. */
 export async function crearObservacionesDeAprobacion(
   tx: TransactionSql,
   tramite: FilaTramite,
   autorId: number,
   textos: string[],
-): Promise<void> {
+): Promise<number[]> {
+  const numeros: number[] = [];
   for (const texto of textos) {
     const { numero } = await insertarObservacion(tx, tramite, autorId, "aprobacion", textoValido(texto, "La observación"));
     await auditar(tx, tramite, autorId, "crear_observacion", { observacion: numero, origen: "aprobacion" });
+    numeros.push(numero);
   }
+  return numeros;
 }
 
 type FilaObservacion = { id: number; numero: number; estado: Observacion["estado"]; respuesta: string | null };

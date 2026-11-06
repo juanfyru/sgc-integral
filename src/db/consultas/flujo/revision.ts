@@ -12,7 +12,7 @@ import {
 const LARGO_MIN_CONCEPTO = 5;
 const LARGO_MAX_CONCEPTO = 2000;
 
-function conceptoDe(datos: Record<string, unknown>): string {
+export function conceptoDe(datos: Record<string, unknown>): string {
   const concepto = typeof datos.concepto === "string" ? datos.concepto.trim() : "";
   if (concepto.length < LARGO_MIN_CONCEPTO || concepto.length > LARGO_MAX_CONCEPTO)
     throw new ErrorTramite(`El concepto debe tener entre ${LARGO_MIN_CONCEPTO} y ${LARGO_MAX_CONCEPTO} caracteres`);

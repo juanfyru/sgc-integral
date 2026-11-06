@@ -26,6 +26,7 @@ import {
   EsquemaAceptarModificacion,
   EsquemaConcepto,
   EsquemaControlCambios,
+  EsquemaDevolucionAprobacion,
   EsquemaFirma,
   EsquemaMotivoCierre,
   EsquemaObservacion,
@@ -200,6 +201,51 @@ export async function conceptoFavorableAccion(_prev: EstadoAccion, formData: For
   const firma = separarFirma(formData);
   return mutacion(formData, "tramites.revisar", (_usuarioId, _formData, sesion) =>
     ejecutar(formData, sesion, "concepto_favorable", {
+      datos: parsearFormulario(formData, EsquemaConcepto, { omitir: OCULTOS }),
+      credenciales: parsearFormulario(firma, EsquemaFirma, { omitir: [...OCULTOS, "concepto"] }),
+    }),
+  );
+}
+
+export async function aprobarAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  const firma = separarFirma(formData);
+  return mutacion(formData, "tramites.aprobar", (_usuarioId, _formData, sesion) =>
+    ejecutar(formData, sesion, "aprobar", {
+      datos: parsearFormulario(formData, EsquemaConcepto, { omitir: OCULTOS }),
+      credenciales: parsearFormulario(firma, EsquemaFirma, { omitir: [...OCULTOS, "concepto"] }),
+    }),
+  );
+}
+
+export async function devolverAprobacionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "tramites.aprobar", (_usuarioId, _formData, sesion) =>
+    ejecutar(formData, sesion, "devolver_aprobacion", {
+      datos: parsearFormulario(formData, EsquemaDevolucionAprobacion, { omitir: OCULTOS }),
+    }),
+  );
+}
+
+export async function negarEliminacionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "tramites.aprobar", (_usuarioId, _formData, sesion) =>
+    ejecutar(formData, sesion, "negar_eliminacion", {
+      datos: parsearFormulario(formData, EsquemaMotivoCierre, { omitir: OCULTOS }),
+    }),
+  );
+}
+
+export async function publicarTramiteAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  const firma = separarFirma(formData);
+  return mutacion(formData, "tramites.gestionar", (_usuarioId, _formData, sesion) =>
+    ejecutar(formData, sesion, "publicar", {
+      credenciales: parsearFormulario(firma, EsquemaFirma, { omitir: OCULTOS }),
+    }),
+  );
+}
+
+export async function aprobarYPublicarAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  const firma = separarFirma(formData);
+  return mutacion(formData, "tramites.gestionar", (_usuarioId, _formData, sesion) =>
+    ejecutar(formData, sesion, "aprobar_y_publicar", {
       datos: parsearFormulario(formData, EsquemaConcepto, { omitir: OCULTOS }),
       credenciales: parsearFormulario(firma, EsquemaFirma, { omitir: [...OCULTOS, "concepto"] }),
     }),

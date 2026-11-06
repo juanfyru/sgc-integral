@@ -39,10 +39,13 @@ vi.mock("@/lib/contexto-peticion", () => ({ contextoDePeticion }));
 
 import {
   aceptarSolicitudAccion,
+  aprobarAccion,
+  aprobarYPublicarAccion,
   cerrarObservacionAccion,
   conceptoFavorableAccion,
   crearObservacionAccion,
   crearSolicitudAccion,
+  devolverAprobacionAccion,
   devolverRevisionAccion,
   guardarVerificacionAccion,
   reabrirObservacionAccion,
@@ -50,7 +53,9 @@ import {
   darVistoBuenoAccion,
   enviarARevisionAccion,
   guardarControlCambiosAccion,
+  negarEliminacionAccion,
   negarVistoBuenoAccion,
+  publicarTramiteAccion,
   rechazarSolicitudAccion,
   retirarSolicitudAccion,
 } from "@/app/acciones-tramites";
@@ -403,6 +408,118 @@ describe("elaboración", () => {
       expect(JSON.stringify(estado)).not.toMatch(/secreta-2|554433/);
       expect(await conceptoFavorableAccion(null, formulario({ ...enRevision, concepto: "ok", clave: "secreta-2" }))).toMatchObject({ ok: false });
       expect(await conceptoFavorableAccion(null, formulario({ ...enRevision, concepto: "Cumple; listo." }))).toMatchObject({ ok: false });
+    });
+  });
+
+  describe("aprobación y publicación", () => {
+    const aprobador = { sesionId: "s", usuarioId: 8, usuario: "gerente", nombre: "Gerente", rol: "gerencia", verHistorial: false };
+    const admin = { sesionId: "s", usuarioId: 9, usuario: "admin", nombre: "Admin", rol: "admin_sgc", verHistorial: false };
+    const enAprobacion = { id: "7", etapa: "aprobacion", ronda: "2" };
+    const enPublicacion = { id: "7", etapa: "publicacion", ronda: "2" };
+
+    beforeEach(() => {
+      contextoDePeticion.mockResolvedValue({ ip: "10.0.0.5", userAgent: "Navegador" });
+    });
+
+    it.each([
+      ["aprobar", aprobarAccion, aprobador],
+      ["aprobar_y_publicar", aprobarYPublicarAccion, admin],
+    ])("%s lleva el concepto como dato, la clave sin recortar y el contexto", async (accion, ejecutar, sesion) => {
+      requerirSesion.mockResolvedValue(sesion);
+      expect(await ejecutar(null, formulario({ ...enAprobacion, concepto: "  Procede.  ", clave: " con espacios ", codigo: " 123456 " }))).toBeNull();
+      const [, entrada, opciones] = transicionar.mock.calls[0];
+      expect(entrada).toEqual({
+        tramiteId: 7,
+        accion,
+        etapaEsperada: "aprobacion",
+        rondaEsperada: 2,
+        datos: { concepto: "Procede." },
+        credenciales: { clave: " con espacios ", codigo: "123456" },
+      });
+      expect(opciones).toEqual({ contexto: { ip: "10.0.0.5", userAgent: "Navegador" } });
+    });
+
+    it("publicar firma sin más datos", async () => {
+      requerirSesion.mockResolvedValue(admin);
+      expect(await publicarTramiteAccion(null, formulario({ ...enPublicacion, clave: "secreta" }))).toBeNull();
+      const [, entrada, opciones] = transicionar.mock.calls[0];
+      expect(entrada).toEqual({ tramiteId: 7, accion: "publicar", etapaEsperada: "publicacion", rondaEsperada: 2, credenciales: { clave: "secreta" } });
+      expect(opciones).toEqual({ contexto: { ip: "10.0.0.5", userAgent: "Navegador" } });
+    });
+
+    it.each([
+      ["aprobar", aprobarAccion, aprobador, enAprobacion],
+      ["aprobar y publicar", aprobarYPublicarAccion, admin, enAprobacion],
+    ])("%s devuelve lo escrito pero nunca la clave ni el código", async (_nombre, ejecutar, sesion, ocultosDeLaEtapa) => {
+      requerirSesion.mockResolvedValue(sesion);
+      transicionar.mockRejectedValue(new ErrorFirma("Clave o código incorrectos", false));
+      const estado = await ejecutar(null, formulario({ ...ocultosDeLaEtapa, concepto: "Procede sin ajustes.", clave: "secreta-2", codigo: "554433" }));
+      expect(estado).toMatchObject({ ok: false, valores: { concepto: "Procede sin ajustes." } });
+      expect(JSON.stringify(estado)).not.toMatch(/secreta-2|554433/);
+      expect(await ejecutar(null, formulario({ ...ocultosDeLaEtapa, concepto: "ok", clave: "secreta-2" }))).toMatchObject({ ok: false });
+      expect(await ejecutar(null, formulario({ ...ocultosDeLaEtapa, concepto: "Procede sin ajustes." }))).toMatchObject({ ok: false });
+    });
+
+    it("publicar no devuelve la clave si la firma falla, y una sesión cerrada va al ingreso", async () => {
+      requerirSesion.mockResolvedValue(admin);
+      transicionar.mockRejectedValue(new ErrorFirma("Clave o código incorrectos", false));
+      expect(JSON.stringify(await publicarTramiteAccion(null, formulario({ ...enPublicacion, clave: "secreta-3" })))).not.toContain("secreta-3");
+      transicionar.mockRejectedValue(new ErrorFirma("Cuenta bloqueada", true));
+      await expect(publicarTramiteAccion(null, formulario({ ...enPublicacion, clave: "mala" }))).rejects.toThrow("REDIRECT:/ingreso");
+    });
+
+    it("devolver lleva las observaciones como lista, sin firma ni contexto", async () => {
+      requerirSesion.mockResolvedValue(aprobador);
+      const fd = formulario(enAprobacion);
+      fd.append("observaciones", "  Falta citar la resolución.  ");
+      fd.append("observaciones", "El alcance no incluye urgencias.");
+      expect(await devolverAprobacionAccion(null, fd)).toBeNull();
+      expect(transicionar.mock.calls[0][1]).toEqual({
+        tramiteId: 7,
+        accion: "devolver_aprobacion",
+        etapaEsperada: "aprobacion",
+        rondaEsperada: 2,
+        datos: { observaciones: ["Falta citar la resolución.", "El alcance no incluye urgencias."] },
+      });
+      expect(contextoDePeticion).not.toHaveBeenCalled();
+    });
+
+    it("una sola observación también es una lista, y exige de 1 a 10", async () => {
+      requerirSesion.mockResolvedValue(aprobador);
+      await devolverAprobacionAccion(null, formulario({ ...enAprobacion, observaciones: "Falta citar la resolución." }));
+      expect(transicionar.mock.calls[0][1].datos).toEqual({ observaciones: ["Falta citar la resolución."] });
+      transicionar.mockClear();
+      expect(await devolverAprobacionAccion(null, formulario(enAprobacion))).toMatchObject({ ok: false });
+      const muchas = formulario(enAprobacion);
+      for (let i = 0; i < 11; i++) muchas.append("observaciones", `Observación número ${i}`);
+      expect(await devolverAprobacionAccion(null, muchas)).toMatchObject({ ok: false });
+      expect(transicionar).not.toHaveBeenCalled();
+    });
+
+    it("negar la eliminación lleva el motivo", async () => {
+      requerirSesion.mockResolvedValue(aprobador);
+      expect(await negarEliminacionAccion(null, formulario({ ...enAprobacion, motivo: "  Sigue en uso.  " }))).toBeNull();
+      expect(transicionar.mock.calls[0][1]).toEqual({
+        tramiteId: 7,
+        accion: "negar_eliminacion",
+        etapaEsperada: "aprobacion",
+        rondaEsperada: 2,
+        datos: { motivo: "Sigue en uso." },
+      });
+    });
+
+    it("sin el permiso de la acción no llega a transicionar", async () => {
+      const lider = { sesionId: "s", usuarioId: 1, usuario: "lider", nombre: "Líder", rol: "lider_proceso", verHistorial: false };
+      requerirSesion.mockResolvedValue(lider);
+      for (const accion of [aprobarAccion, aprobarYPublicarAccion, publicarTramiteAccion, devolverAprobacionAccion, negarEliminacionAccion]) {
+        expect(await accion(null, formulario({ ...enAprobacion, concepto: "Procede.", clave: "x", motivo: "Motivo largo.", observaciones: "Observación." })))
+          .toMatchObject({ ok: false });
+      }
+      requerirSesion.mockResolvedValue(aprobador);
+      for (const accion of [aprobarYPublicarAccion, publicarTramiteAccion]) {
+        expect(await accion(null, formulario({ ...enAprobacion, concepto: "Procede.", clave: "x" }))).toMatchObject({ ok: false });
+      }
+      expect(transicionar).not.toHaveBeenCalled();
     });
   });
 });

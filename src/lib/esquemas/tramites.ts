@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { AsociacionEntrada } from "@/db/consultas/admin";
-import { MOTIVOS, TIPOS_SOLICITUD } from "@/lib/tramites/tipos";
+import { MAX_OBSERVACIONES_APROBACION, MOTIVOS, TIPOS_SOLICITUD } from "@/lib/tramites/tipos";
 
 const id = z.coerce.number().int().positive();
 
@@ -72,9 +72,17 @@ export const EsquemaFirma = z
   .strict();
 
 /** Un campo marcado varias veces llega como lista; una sola, como texto; ninguna, ausente. */
-function lista<T extends z.ZodType>(elemento: T) {
-  return z.preprocess((v) => (v === undefined ? [] : Array.isArray(v) ? v : [v]), z.array(elemento));
+function aLista(v: unknown): unknown[] {
+  return v === undefined ? [] : Array.isArray(v) ? v : [v];
 }
+
+function lista<T extends z.ZodType>(elemento: T) {
+  return z.preprocess(aLista, z.array(elemento));
+}
+
+export const EsquemaDevolucionAprobacion = z
+  .object({ observaciones: z.preprocess(aLista, z.array(textoDeRevision).min(1).max(MAX_OBSERVACIONES_APROBACION)) })
+  .strict();
 
 const titulo = z.string().trim().min(3).max(200);
 const codigoDeDocumento = z.string().trim().toUpperCase().min(1).max(40);

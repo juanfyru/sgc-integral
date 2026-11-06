@@ -15,6 +15,7 @@ export type SesionFlujo = Pick<SesionValida, "sesionId" | "usuarioId" | "usuario
 
 export const YA_ABIERTO = "Ya hay un trámite abierto sobre este documento";
 export const CAMBIO_MIENTRAS = "Este trámite cambió mientras lo tenía abierto. Recargue la página.";
+export const ARCHIVO_CAMBIADO = "El archivo cambió después de la firma de quien elaboró";
 
 /** Error de negocio: su mensaje se le muestra al usuario. */
 export class ErrorTramite extends Error {

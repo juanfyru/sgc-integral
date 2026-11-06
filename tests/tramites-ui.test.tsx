@@ -3,18 +3,23 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 vi.mock("@/app/acciones-tramites", () => ({
   aceptarSolicitudAccion: vi.fn(),
+  aprobarAccion: vi.fn(),
+  aprobarYPublicarAccion: vi.fn(),
   crearSolicitudAccion: vi.fn(),
   darVistoBuenoAccion: vi.fn(),
   cerrarObservacionAccion: vi.fn(),
   conceptoFavorableAccion: vi.fn(),
   crearObservacionAccion: vi.fn(),
+  devolverAprobacionAccion: vi.fn(),
   devolverRevisionAccion: vi.fn(),
   enviarARevisionAccion: vi.fn(),
   guardarVerificacionAccion: vi.fn(),
   reabrirObservacionAccion: vi.fn(),
   responderObservacionAccion: vi.fn(),
   guardarControlCambiosAccion: vi.fn(),
+  negarEliminacionAccion: vi.fn(),
   negarVistoBuenoAccion: vi.fn(),
+  publicarTramiteAccion: vi.fn(),
   rechazarSolicitudAccion: vi.fn(),
   retirarSolicitudAccion: vi.fn(),
 }));
@@ -28,12 +33,15 @@ import { FormularioSolicitud } from "@/componentes/tramites/FormularioSolicitud"
 import { HistorialTramite } from "@/componentes/tramites/HistorialTramite";
 import { ayudaDelCodigo } from "@/componentes/tramites/ClasificacionNueva";
 import { PanelAceptacion, type TramiteParaAceptar } from "@/componentes/tramites/PanelAceptacion";
+import { PanelAprobacion, type TramiteParaAprobar } from "@/componentes/tramites/PanelAprobacion";
 import { EnvioARevision, PanelElaboracion, hayCambiosSinGuardar } from "@/componentes/tramites/PanelElaboracion";
 import { ListaVerificacion } from "@/componentes/tramites/ListaVerificacion";
 import { Observaciones } from "@/componentes/tramites/Observaciones";
+import { PanelPublicacion } from "@/componentes/tramites/PanelPublicacion";
 import { PanelRevision } from "@/componentes/tramites/PanelRevision";
 import { PasosTramite } from "@/componentes/tramites/PasosTramite";
 import { TablaTramites } from "@/componentes/tramites/TablaTramites";
+import type { Accion } from "@/lib/tramites/transiciones";
 import type {
   CatalogoClasificacion,
   ContextoAceptacion,
@@ -645,6 +653,56 @@ describe("revisión", () => {
     expect(lector).not.toContain("Dar concepto favorable");
     expect(lector).not.toContain("Guardar avance");
     expect(lector).not.toContain("<form");
+  });
+});
+
+describe("aprobación y publicación", () => {
+  const modificacion: TramiteParaAprobar = { id: 7, etapa: "aprobacion", ronda: 2, tipo: "modificar", codigo: "GTH-PR-02", titulo: "Inducción", versionNumero: 3 };
+  const eliminacion: TramiteParaAprobar = { ...modificacion, ronda: 0, tipo: "eliminar", versionNumero: 2 };
+  const pintar = (t: TramiteParaAprobar, acciones: Accion[]) =>
+    renderToStaticMarkup(
+      <PanelAprobacion tramite={t} acciones={acciones} revisado={{ persona: "Ana <b>Pérez</b>", concepto: "Cumple <i>todo</i>." }} huella={"a".repeat(64)} pideCodigo={false} />,
+    );
+
+  it("el aprobador sin gestión ve aprobar y devolver, no aprobar y publicar", () => {
+    const html = pintar(modificacion, ["aprobar", "devolver_aprobacion"]);
+    expect(html).toContain("Devolver con observaciones");
+    expect(html).toContain(">Aprobar<");
+    expect(html).not.toContain("Aprobar y publicar");
+    expect(html).not.toContain("Negar la eliminación");
+  });
+
+  it("con gestión, ofrece además aprobar y publicar en un solo acto", () => {
+    expect(pintar(modificacion, ["aprobar", "devolver_aprobacion", "aprobar_y_publicar"])).toContain("Aprobar y publicar");
+  });
+
+  it("en una eliminación se niega en vez de devolver", () => {
+    const html = pintar(eliminacion, ["aprobar", "negar_eliminacion", "aprobar_y_publicar"]);
+    expect(html).toContain("Negar la eliminación");
+    expect(html).toContain("Aprobar y eliminar");
+    expect(html).not.toContain("Aprobar y publicar");
+    expect(html).not.toContain("Devolver con observaciones");
+  });
+
+  it("lo revisado se muestra como texto plano", () => {
+    const html = pintar(modificacion, ["aprobar"]);
+    expect(html).toContain("Concepto de Ana &lt;b&gt;Pérez&lt;/b&gt;");
+    expect(html).toContain("Cumple &lt;i&gt;todo&lt;/i&gt;.");
+  });
+
+  it("publicar y eliminar se distinguen, y eliminar lo advierte", () => {
+    const panel = (t: TramiteParaAprobar) =>
+      renderToStaticMarkup(<PanelPublicacion tramite={{ ...t, etapa: "publicacion" }} huella={"a".repeat(64)} pideCodigo={false} />);
+    expect(panel(modificacion)).toContain(">Publicar<");
+    expect(panel(modificacion)).not.toContain("Eliminar el documento");
+    expect(panel(eliminacion)).toContain(">Eliminar el documento<");
+    expect(panel(eliminacion)).not.toContain(">Publicar<");
+  });
+
+  it("el historial no dice que una eliminación se publicó", () => {
+    const evento = { tipo: "publicar", persona: "Ana", ronda: 0, detalle: {}, creadoEn: ahora };
+    expect(renderToStaticMarkup(<HistorialTramite tipo="eliminar" eventos={[evento]} />)).toContain("Ana ejecutó la eliminación, con clave");
+    expect(renderToStaticMarkup(<HistorialTramite tipo="modificar" eventos={[evento]} />)).toContain("Ana publicó, con clave");
   });
 });
 

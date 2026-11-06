@@ -145,11 +145,19 @@ type Trayecto = {
  * pedido por `lider.cex`, y `codigo` es el del documento que nace. Si el trámite ya tiene archivo,
  * el test llama `limpiar` en un `finally`. Quien aprueba por defecto es un `admin_sgc`: un
  * documento estratégico, o uno que elabora un `admin_sgc`, necesita que le pasen `aprobador`.
+ * `tituloNuevo` es el título propuesto de una modificación, el que se decide al aceptar.
  */
 export async function tramiteEn(
   tx: TransactionSql,
   etapa: EtapaTrabajo,
-  o: { codigo?: string; tipo?: TipoSolicitud; elaborador?: SesionFlujo; revisor?: SesionFlujo; aprobador?: SesionFlujo } = {},
+  o: {
+    codigo?: string;
+    tipo?: TipoSolicitud;
+    elaborador?: SesionFlujo;
+    revisor?: SesionFlujo;
+    aprobador?: SesionFlujo;
+    tituloNuevo?: string;
+  } = {},
 ): Promise<Trayecto> {
   const tipo = o.tipo ?? "modificar";
   const crea = tipo === "crear";
@@ -184,7 +192,7 @@ export async function tramiteEn(
     const responsables = { elaboradorId: elaborador.usuarioId, revisorId: revisor.usuarioId, aprobadorId: aprobador.usuarioId };
     return crea
       ? aceptarCreacion({ codigo: o.codigo ?? "CEX-FO-01", ...responsables })
-      : { ...responsables, venceElaboracion: "2026-11-20" };
+      : { ...responsables, venceElaboracion: "2026-11-20", tituloNuevo: o.tituloNuevo };
   };
   await transicionar(
     admin,
@@ -198,7 +206,18 @@ export async function tramiteEn(
     opc(tx),
   );
   if (etapa === (tipo === "eliminar" ? "aprobacion" : "elaboracion")) return trayecto();
-  if (!["revision", "aprobacion"].includes(etapa) || tipo === "eliminar") throw new Error(`tramiteEn todavía no llega a ${etapa} en ${tipo}`);
+  const aprobar = (rondaEsperada: number) =>
+    transicionar(
+      aprobador,
+      { tramiteId, accion: "aprobar", etapaEsperada: "aprobacion", rondaEsperada, datos: { concepto: "Aprobado." }, credenciales: { clave: "x" } },
+      opc(tx),
+    );
+  if (tipo === "eliminar") {
+    if (etapa !== "publicacion") throw new Error(`tramiteEn no llega a ${etapa} en una eliminación`);
+    await aprobar(0);
+    return trayecto();
+  }
+  if (!["revision", "aprobacion", "publicacion"].includes(etapa)) throw new Error(`tramiteEn no llega a ${etapa} en ${tipo}`);
 
   const { versionId } = await trayecto();
   const archivo = await archivoPrincipal(tx, versionId!);
@@ -209,7 +228,7 @@ export async function tramiteEn(
       { tramiteId, accion: "enviar_a_revision", etapaEsperada: "elaboracion", rondaEsperada: 1, credenciales: { clave: "x" } },
       opc(tx),
     );
-    if (etapa === "aprobacion") {
+    if (etapa !== "revision") {
       const items = await listarItemsVerificacion({ sql: tx, soloActivos: true });
       await guardarVerificacion(tramiteId, revisor, items.map((i) => ({ itemId: i.id, resultado: "cumple" as const })), { etapa: "revision", ronda: 1 }, { sql: tx });
       await transicionar(
@@ -218,6 +237,7 @@ export async function tramiteEn(
         opc(tx),
       );
     }
+    if (etapa === "publicacion") await aprobar(1);
     return await trayecto(archivo.limpiar);
   } catch (err) {
     await archivo.limpiar();

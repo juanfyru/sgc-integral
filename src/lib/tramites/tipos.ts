@@ -29,6 +29,9 @@ export function esEtapaDeTrabajo(e: Etapa): e is EtapaTrabajo {
 export const FIRMAS = ["elaboro", "reviso", "aprobo", "publico"] as const;
 export type Firma = (typeof FIRMAS)[number];
 
+/** Las que puede escribir quien aprueba al devolver el documento. */
+export const MAX_OBSERVACIONES_APROBACION = 10;
+
 /** Quién aprueba lo que nace de un documento: la alta dirección o el Administrador del SGC. */
 export type Autoridad = "estrategico" | "operativo";
 

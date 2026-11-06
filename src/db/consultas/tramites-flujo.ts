@@ -22,6 +22,7 @@ import {
 } from "@/lib/tramites/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import {
+  ARCHIVO_CAMBIADO,
   CAMBIO_MIENTRAS,
   ErrorFirma,
   ErrorTramite,
@@ -37,6 +38,7 @@ import {
   type SesionFlujo,
 } from "./flujo/contrato";
 import { MANEJADORES_ACEPTACION } from "./flujo/aceptacion";
+import { MANEJADORES_CIERRE, VALIDADORES_CIERRE } from "./flujo/cierre";
 import { MANEJADORES_ELABORACION, VALIDADORES_ELABORACION } from "./flujo/elaboracion";
 import { MANEJADORES_REVISION, VALIDADORES_REVISION } from "./flujo/revision";
 import { MANEJADORES_SOLICITUD } from "./flujo/solicitud";
@@ -69,10 +71,15 @@ export const MANEJADORES: RegistroManejadores = {
   ...MANEJADORES_ACEPTACION,
   ...MANEJADORES_ELABORACION,
   ...MANEJADORES_REVISION,
+  ...MANEJADORES_CIERRE,
 };
 
 /** Comprobaciones de negocio de las acciones que firman, antes de pedir o gastar la firma. */
-export const VALIDADORES: RegistroValidadores = { ...VALIDADORES_ELABORACION, ...VALIDADORES_REVISION };
+export const VALIDADORES: RegistroValidadores = {
+  ...VALIDADORES_ELABORACION,
+  ...VALIDADORES_REVISION,
+  ...VALIDADORES_CIERRE,
+};
 
 /** La carrera entre una solicitud y una aceptación que convierte otro trámite en modificación. */
 function traducirChoqueDeAbierto(err: { constraint_name?: string }): never {
@@ -292,7 +299,7 @@ async function exigirHuellaDelElaborador(tx: TransactionSql, tramite: FilaTramit
   const [elaboro] = await tx`SELECT hash_sha256 FROM firmas
     WHERE tramite_id = ${tramite.id} AND firma = 'elaboro' AND ronda = ${tramite.ronda}
     ORDER BY id DESC LIMIT 1`;
-  if (elaboro?.hash_sha256 !== hashSha256) throw new ErrorTramite("El archivo cambió después de la firma de quien elaboró");
+  if (elaboro?.hash_sha256 !== hashSha256) throw new ErrorTramite(ARCHIVO_CAMBIADO);
 }
 
 /**

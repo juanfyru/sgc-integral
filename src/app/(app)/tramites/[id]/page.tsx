@@ -5,7 +5,9 @@ import { BloqueSolicitud } from "@/componentes/tramites/BloqueSolicitud";
 import { EncabezadoTramite } from "@/componentes/tramites/EncabezadoTramite";
 import { HistorialTramite } from "@/componentes/tramites/HistorialTramite";
 import { PanelAceptacion } from "@/componentes/tramites/PanelAceptacion";
+import { PanelAprobacion } from "@/componentes/tramites/PanelAprobacion";
 import { PanelElaboracion } from "@/componentes/tramites/PanelElaboracion";
+import { PanelPublicacion } from "@/componentes/tramites/PanelPublicacion";
 import { PanelRevision } from "@/componentes/tramites/PanelRevision";
 import { PasosTramite } from "@/componentes/tramites/PasosTramite";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
@@ -90,6 +92,26 @@ async function Revision({ tramite, pideCodigo }: { tramite: DetalleTramite; pide
   );
 }
 
+/** Aprobar o publicar. En una eliminación la huella es la de la versión vigente que se retira. */
+async function Cierre({ tramite, pideCodigo }: { tramite: DetalleTramite; pideCodigo: boolean }) {
+  const { id, etapa, ronda, tipo, codigo, titulo, versionNumero, acciones, eventos } = tramite;
+  const datos = { id, etapa, ronda, tipo, codigo, titulo, versionNumero };
+  const { archivos } = await borradorDeTramite(id);
+  const huella = archivos.find((a) => a.rol === "principal")?.hashSha256 ?? null;
+  if (acciones.includes("publicar")) return <PanelPublicacion tramite={datos} huella={huella} pideCodigo={pideCodigo} />;
+  const favorable = eventos.filter((e) => e.tipo === "concepto_favorable" && e.ronda === ronda).at(-1);
+  const concepto = favorable?.detalle.concepto;
+  return (
+    <PanelAprobacion
+      tramite={datos}
+      acciones={acciones}
+      revisado={typeof concepto === "string" ? { persona: favorable?.persona ?? null, concepto } : null}
+      huella={huella}
+      pideCodigo={pideCodigo}
+    />
+  );
+}
+
 export default async function PaginaTramite({ params }: { params: Promise<{ id: string }> }) {
   const sesion = await exigirSesion();
   const { id } = await params;
@@ -101,6 +123,7 @@ export default async function PaginaTramite({ params }: { params: Promise<{ id: 
   const conBorrador = tramite.versionId !== null && tramite.tipo !== "eliminar" && esEtapaDeTrabajo(tramite.etapa);
 
   const conRevision = conBorrador && ETAPAS_CON_REVISION.includes(tramite.etapa);
+  const cierra = tramite.acciones.includes("aprobar") || tramite.acciones.includes("publicar");
 
   return (
     <div className="flex flex-col gap-6">
@@ -111,6 +134,7 @@ export default async function PaginaTramite({ params }: { params: Promise<{ id: 
           <BloqueSolicitud tramite={tramite} />
           {conBorrador ? <Borrador tramite={tramite} pideCodigo={sesion.totpActivo} /> : null}
           {conRevision ? <Revision tramite={tramite} pideCodigo={sesion.totpActivo} /> : null}
+          {cierra ? <Cierre tramite={tramite} pideCodigo={sesion.totpActivo} /> : null}
         </div>
         <div className="flex min-w-0 flex-col gap-6">
           <HistorialTramite tipo={tramite.tipo} eventos={tramite.eventos} />

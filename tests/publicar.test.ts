@@ -15,6 +15,7 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 import { obtenerSql } from "@/db/cliente";
 import {
   anularVigente,
+  aplicarPublicacion,
   asegurarAdmin,
   crearDocumento,
   crearVersionBorrador,
@@ -137,10 +138,14 @@ describe("publicar y anular", () => {
       JOIN documentos d ON d.id = v.documento_id
       WHERE d.codigo = ${CODIGO} AND v.estado = 'borrador'`;
     await archivoFalso(v.id, "v1");
-    const r = await publicarVersion(v.id, usuarioId);
-    expect(r.obsoletas).toBe(0);
-    const [v2] = await sql()`SELECT estado FROM documento_versiones WHERE id = ${v.id}`;
-    expect(v2.estado).toBe("vigente");
+    const r = await sql().begin((tx) => aplicarPublicacion(tx, v.id, "fuera", usuarioId));
+    expect(r).toMatchObject({ numero: 1, obsoletas: [] });
+    const [v2] = await sql()`SELECT estado, origen_aprobacion, publicado_en FROM documento_versiones WHERE id = ${v.id}`;
+    expect(v2).toMatchObject({ estado: "vigente", origen_aprobacion: "fuera" });
+    expect(v2.publicado_en).not.toBeNull();
+    const [aud] = await sql()`SELECT detalle FROM auditoria
+      WHERE accion = 'publicar_version' AND entidad_id = ${v.id}`;
+    expect(aud.detalle).toMatchObject({ numero: 1, obsoletas: [] });
   });
 
   it("publicar v2 vuelve obsoleta a v1 en la misma transaccion", async () => {
@@ -151,8 +156,12 @@ describe("publicar y anular", () => {
       elaboro: null, reviso: null, aprobo: "Gerente", resumenCambios: "Cambio",
     }, usuarioId);
     await archivoFalso(versionId, "v2");
-    const r = await publicarVersion(versionId, usuarioId);
-    expect(r.obsoletas).toBe(1);
+    const ahora = new Date("2026-11-05T15:00:00Z");
+    const r = await sql().begin((tx) => aplicarPublicacion(tx, versionId, "plataforma", usuarioId, ahora));
+    expect(r).toEqual({ documentoId: Number(d.id), numero: 2, obsoletas: [1] });
+    const [v2] = await sql()`SELECT origen_aprobacion, publicado_en FROM documento_versiones WHERE id = ${versionId}`;
+    expect(v2.origen_aprobacion).toBe("plataforma");
+    expect(new Date(v2.publicado_en).getTime()).toBe(ahora.getTime());
 
     const estados = await sql()`SELECT numero, estado FROM documento_versiones
       WHERE documento_id = ${d.id} ORDER BY numero`;
@@ -164,6 +173,39 @@ describe("publicar y anular", () => {
     const vigentes = await sql()`SELECT 1 FROM documento_versiones
       WHERE documento_id = ${d.id} AND estado = 'vigente'`;
     expect(vigentes.length).toBe(1);
+  });
+
+  it("aplicarPublicacion rechaza lo que no es borrador y no toca la vigente", async () => {
+    const [v] = await sql()`SELECT v.id FROM documento_versiones v
+      JOIN documentos d ON d.id = v.documento_id
+      WHERE d.codigo = ${CODIGO} AND v.estado = 'obsoleto'`;
+    await expect(sql().begin((tx) => aplicarPublicacion(tx, v.id, "fuera", usuarioId))).rejects.toThrow(/borrador/);
+    const [{ estado }] = await sql()`SELECT estado FROM documento_versiones WHERE id = ${v.id}`;
+    expect(estado).toBe("obsoleto");
+    const vigentes = await sql()`SELECT numero FROM documento_versiones v JOIN documentos d ON d.id = v.documento_id
+      WHERE d.codigo = ${CODIGO} AND v.estado = 'vigente'`;
+    expect(vigentes).toMatchObject([{ numero: 2 }]);
+  });
+
+  it("publicarVersion, el camino directo, publica con origen fuera y vuelve obsoleta la anterior", async () => {
+    const { documentoId, versionId } = await crearDocumento({ ...datosBase(), codigo: "ZZ-TST-903" }, usuarioId);
+    const evidencia = {
+      fechaElaboracion: null, fechaRevision: null, fechaAprobacion: "2026-07-15",
+      elaboro: null, reviso: null, aprobo: "Gerente", resumenCambios: "Cambio",
+    };
+    await editarVersionBorrador(versionId, evidencia, usuarioId);
+    await archivoFalso(versionId, "d1");
+    expect(await publicarVersion(versionId, usuarioId)).toEqual({ documentoId, obsoletas: 0 });
+    const siguiente = await crearVersionBorrador(documentoId, usuarioId);
+    await editarVersionBorrador(siguiente.versionId, evidencia, usuarioId);
+    await archivoFalso(siguiente.versionId, "d2");
+    expect(await publicarVersion(siguiente.versionId, usuarioId)).toEqual({ documentoId, obsoletas: 1 });
+    const filas = await sql()`SELECT numero, estado, origen_aprobacion FROM documento_versiones
+      WHERE documento_id = ${documentoId} ORDER BY numero`;
+    expect(filas).toMatchObject([
+      { numero: 1, estado: "obsoleto", origen_aprobacion: "fuera" },
+      { numero: 2, estado: "vigente", origen_aprobacion: "fuera" },
+    ]);
   });
 
   it("no publica un borrador sin evidencia de aprobacion", async () => {
