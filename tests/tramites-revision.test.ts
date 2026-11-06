@@ -97,6 +97,20 @@ describe("revisión", () => {
     } finally { await t.limpiar(); }
   }));
 
+  it("quien solo mira una ronda respondida no ve un ítem creado después como «Sin responder»", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "aprobacion");
+    try {
+      const antes = await obtenerVerificacion(t.tramiteId, t.ronda, { sql: tx, sinPropuesta: true });
+      await tx`INSERT INTO lista_verificacion_items (texto, critico, orden) VALUES ('Ítem creado después de la revisión', false, 9999)`;
+      const mirando = await obtenerVerificacion(t.tramiteId, t.ronda, { sql: tx, sinPropuesta: true });
+      expect(mirando.map((r) => r.itemId)).toEqual(antes.map((r) => r.itemId));
+      expect(mirando.every((r) => r.resultado !== null)).toBe(true);
+      // Quien revisa sí lo ve, para responderlo.
+      const revisando = await obtenerVerificacion(t.tramiteId, t.ronda, { sql: tx });
+      expect(revisando).toHaveLength(antes.length + 1);
+    } finally { await t.limpiar(); }
+  }));
+
   it("cada quien solo hace lo suyo, y una ronda cerrada no se edita", () => revertida(sql, async (tx) => {
     const t = await tramiteEn(tx, "revision");
     try {

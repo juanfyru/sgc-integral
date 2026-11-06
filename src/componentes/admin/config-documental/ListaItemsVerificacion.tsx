@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import {
   alternarItemVerificacionAccion,
   crearItemVerificacionAccion,
@@ -24,27 +24,50 @@ function Rechazo({ estado }: { estado: EstadoAccion }) {
   ) : null;
 }
 
-/** Un botón que envía su propia acción con campos ocultos. */
+type Tipo = "arriba" | "abajo" | "alternar";
+
+/** Un botón que envía su propia acción con campos ocultos y avisa al terminar (para devolverle el foco). */
 function BotonAccion({
   accion,
   campos,
   etiqueta,
   descripcion,
   deshabilitado,
+  clave,
+  alTerminar,
 }: {
   accion: Accion;
   campos: Record<string, string | number>;
   etiqueta: string;
   descripcion: string;
   deshabilitado?: boolean;
+  clave: string;
+  alTerminar: (clave: string, exito: boolean) => void;
 }) {
   const [estado, enviar, pendiente] = useActionState(accion, null);
+  const estabaPendiente = useRef(false);
+  useEffect(() => {
+    if (pendiente) {
+      estabaPendiente.current = true;
+    } else if (estabaPendiente.current) {
+      estabaPendiente.current = false;
+      alTerminar(clave, estado === null);
+    }
+  });
   return (
     <form action={enviar} onSubmit={enviarSinReiniciar(enviar)} className="flex flex-col gap-1">
       {Object.entries(campos).map(([nombre, valor]) => (
         <input key={nombre} type="hidden" name={nombre} value={valor} />
       ))}
-      <Boton type="submit" variante="secundario" tamano="sm" pendiente={pendiente} disabled={deshabilitado} aria-label={descripcion}>
+      <Boton
+        type="submit"
+        variante="secundario"
+        tamano="sm"
+        pendiente={pendiente}
+        disabled={deshabilitado}
+        aria-label={descripcion}
+        data-clave={clave}
+      >
         {etiqueta}
       </Boton>
       <Rechazo estado={estado} />
@@ -101,8 +124,36 @@ function FormularioItem({
 }
 
 export function ListaItemsVerificacion({ items }: { items: ItemVerificacion[] }) {
+  const contenedor = useRef<HTMLDivElement>(null);
+  const [anuncio, setAnuncio] = useState("");
+
+  // Mover o alternar vuelve a pintar la lista y, mientras se envía, el botón queda deshabilitado:
+  // sin esto quien usa teclado perdería el foco en cada gesto. Si el ítem llegó a un extremo y su
+  // botón quedó deshabilitado, el foco pasa al opuesto.
+  const alTerminar = (clave: string, exito: boolean) => {
+    const [idTexto, tipo] = clave.split(":") as [string, Tipo];
+    const botones = contenedor.current;
+    const buscar = (t: Tipo) => botones?.querySelector<HTMLButtonElement>(`[data-clave="${idTexto}:${t}"]`);
+    let objetivo = buscar(tipo);
+    if (objetivo?.disabled && tipo !== "alternar") objetivo = buscar(tipo === "arriba" ? "abajo" : "arriba");
+    objetivo?.focus();
+    if (!exito) return;
+    const lista = items;
+    const posicion = lista.findIndex((i) => String(i.id) === idTexto);
+    const item = lista[posicion];
+    if (!item) return;
+    setAnuncio(
+      tipo === "alternar"
+        ? `Ítem ${posicion + 1} ${item.activo ? "activado" : "desactivado"}`
+        : `Ítem movido a la posición ${posicion + 1} de ${lista.length}`,
+    );
+  };
+
   return (
-    <div className="flex flex-col gap-4">
+    <div ref={contenedor} className="flex flex-col gap-4">
+      <p role="status" aria-live="polite" className="sr-only">
+        {anuncio}
+      </p>
       <ol className="flex flex-col gap-2">
         {items.map((item, i) => (
           <li key={item.id} className={`flex flex-col gap-3 rounded-lg border p-3 ${item.activo ? "" : "border-dashed"}`}>
@@ -119,6 +170,8 @@ export function ListaItemsVerificacion({ items }: { items: ItemVerificacion[] })
                 etiqueta="Subir"
                 descripcion={`Subir el ítem ${i + 1}`}
                 deshabilitado={i === 0}
+                clave={`${item.id}:arriba`}
+                alTerminar={alTerminar}
               />
               <BotonAccion
                 accion={moverItemVerificacionAccion}
@@ -126,12 +179,16 @@ export function ListaItemsVerificacion({ items }: { items: ItemVerificacion[] })
                 etiqueta="Bajar"
                 descripcion={`Bajar el ítem ${i + 1}`}
                 deshabilitado={i === items.length - 1}
+                clave={`${item.id}:abajo`}
+                alTerminar={alTerminar}
               />
               <BotonAccion
                 accion={alternarItemVerificacionAccion}
                 campos={{ id: item.id, activo: String(!item.activo) }}
                 etiqueta={item.activo ? "Desactivar" : "Activar"}
                 descripcion={`${item.activo ? "Desactivar" : "Activar"} el ítem ${i + 1}`}
+                clave={`${item.id}:alternar`}
+                alTerminar={alTerminar}
               />
             </div>
             <details className="rounded-md border p-2">

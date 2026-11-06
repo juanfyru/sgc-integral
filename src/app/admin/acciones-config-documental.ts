@@ -82,7 +82,6 @@ export async function moverItemVerificacionAccion(_prev: EstadoAccion, formData:
   return mutacion(formData, "tramites.gestionar", async (usuarioId) => {
     const d = parsearFormulario(formData, EsquemaMover, { omitir: ["id"] });
     await moverItemVerificacion(idNumerico(formData, "id"), d.direccion, usuarioId);
-    return DESTINO;
   });
 }
 
@@ -90,6 +89,5 @@ export async function alternarItemVerificacionAccion(_prev: EstadoAccion, formDa
   return mutacion(formData, "tramites.gestionar", async (usuarioId) => {
     const d = parsearFormulario(formData, EsquemaAlternar, { omitir: ["id"] });
     await alternarItemVerificacion(idNumerico(formData, "id"), d.activo === "true", usuarioId);
-    return DESTINO;
   });
 }

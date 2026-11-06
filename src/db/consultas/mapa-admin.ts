@@ -154,7 +154,7 @@ export const AUTORIDADES_TIPO: readonly AutoridadTipo[] = ["estrategico", "opera
 export type FilaTipo = {
   id: number; nombre: string; sigla: string;
   esDiligenciable: boolean; orden: number; activo: boolean; numDocs: number;
-  autoridad: AutoridadTipo; plantillaDocumentoId: number | null; plantillaCodigo: string | null;
+  autoridad: AutoridadTipo; plantillaDocumentoId: number | null; plantillaCodigo: string | null; plantillaVigente: boolean;
 };
 
 export async function listarTipos(): Promise<FilaTipo[]> {
@@ -162,6 +162,7 @@ export async function listarTipos(): Promise<FilaTipo[]> {
   const filas = await sql`
     SELECT t.id, t.nombre, t.sigla, t.es_diligenciable, t.orden, t.activo, t.autoridad,
       t.plantilla_documento_id, p.codigo AS plantilla_codigo,
+      EXISTS (SELECT 1 FROM documento_versiones v WHERE v.documento_id = t.plantilla_documento_id AND v.estado = 'vigente') AS plantilla_vigente,
       (SELECT count(*)::int FROM documentos d WHERE d.tipo_id = t.id) AS num_docs
     FROM tipos_documento t LEFT JOIN documentos p ON p.id = t.plantilla_documento_id
     ORDER BY t.orden`;
@@ -171,6 +172,7 @@ export async function listarTipos(): Promise<FilaTipo[]> {
     activo: f.activo, numDocs: f.num_docs, autoridad: f.autoridad,
     plantillaDocumentoId: f.plantilla_documento_id === null ? null : Number(f.plantilla_documento_id),
     plantillaCodigo: f.plantilla_codigo,
+    plantillaVigente: f.plantilla_vigente,
   }));
 }
 
@@ -243,14 +245,20 @@ export async function editarTipo(
   try {
     await sql.begin(async (tx) => {
       await validarAutoridadYPlantilla(tx, d);
-      const [t] = await tx`UPDATE tipos_documento SET nombre = ${d.nombre},
+      const [antes] = await tx`SELECT autoridad, plantilla_documento_id FROM tipos_documento WHERE id = ${id} FOR UPDATE`;
+      if (!antes) throw new Error("El tipo no existe");
+      await tx`UPDATE tipos_documento SET nombre = ${d.nombre},
           sigla = ${d.sigla}, es_diligenciable = ${d.esDiligenciable},
           autoridad = ${d.autoridad}, plantilla_documento_id = ${d.plantillaDocumentoId}
-        WHERE id = ${id} RETURNING id`;
-      if (!t) throw new Error("El tipo no existe");
+        WHERE id = ${id}`;
       await registrarAuditoria(tx, {
         usuarioId, accion: "editar_tipo_documento", entidad: "tipos_documento",
-        entidadId: id, detalle: d,
+        entidadId: id,
+        detalle: {
+          ...d,
+          autoridadAnterior: antes.autoridad,
+          plantillaDocumentoIdAnterior: antes.plantilla_documento_id === null ? null : Number(antes.plantilla_documento_id),
+        },
       });
     });
   } catch (err) {

@@ -28,7 +28,7 @@ export function BotonesOrden({
               type="submit"
               disabled={deshabilitado}
               aria-label={direccion === "arriba" ? "Subir" : "Bajar"}
-              className="grid size-7 place-items-center rounded-md border hover:bg-muted disabled:opacity-30"
+              className="grid size-7 place-items-center rounded-md border hover:bg-muted disabled:cursor-not-allowed disabled:border-dashed disabled:bg-muted disabled:text-muted-foreground"
             >
               {direccion === "arriba" ? (
                 <ChevronUp className="size-4" aria-hidden="true" />

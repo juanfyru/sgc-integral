@@ -14,7 +14,7 @@ export function claseBoton(
   variante: VarianteBoton = "primario",
   tamano: "sm" | "md" = "md",
 ): string {
-  return `inline-flex items-center justify-center gap-2 rounded-md font-medium disabled:opacity-60 ${TAMANOS[tamano]} ${VARIANTES[variante]}`;
+  return `inline-flex items-center justify-center gap-2 rounded-md font-medium disabled:cursor-not-allowed disabled:border disabled:border-dashed disabled:border-border disabled:bg-muted disabled:text-muted-foreground ${TAMANOS[tamano]} ${VARIANTES[variante]}`;
 }
 
 export function Boton({

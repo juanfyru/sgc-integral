@@ -45,7 +45,7 @@ export function FormularioConfigDocumental({ config }: { config: ConfigDocumenta
           etiqueta="Formato"
           nombre="formatoCodigo"
           error={motivo ?? undefined}
-          ayuda="Marcadores: {PROCESO} (sigla del proceso), {TIPO} (sigla del tipo) y {NN} o {NNN} (consecutivo de 2 o de 3 cifras como mínimo). Separe los marcadores con guiones. Cambiar el formato no cambia ningún código que ya exista."
+          ayuda="Marcadores: {PROCESO} (sigla del proceso), {TIPO} (sigla del tipo) y {NN} o {NNN} (consecutivo de 2 o de 3 cifras como mínimo). Separe los marcadores con guiones. Cambiar el formato no cambia ningún código que ya exista. Si cambia el orden de los marcadores, revise el consecutivo sugerido antes de aceptar."
         >
           <input
             required
@@ -56,6 +56,11 @@ export function FormularioConfigDocumental({ config }: { config: ConfigDocumenta
             spellCheck={false}
           />
         </Campo>
+        {config.formatoCodigo === null && (
+          <p className="rounded-md bg-estado-atencion-fondo px-3 py-2 text-sm text-estado-atencion-texto">
+            Todavía no hay un formato guardado: el valor mostrado es el sugerido y no se aplica hasta que guarde.
+          </p>
+        )}
         <p className="text-sm" aria-live="polite">
           Ejemplo:{" "}
           {ejemplo ? (
@@ -67,7 +72,7 @@ export function FormularioConfigDocumental({ config }: { config: ConfigDocumenta
       </Seccion>
 
       <Seccion titulo="Plazos y escalamiento">
-        <p className="text-sm text-muted-foreground">Plazos en días. Cero significa sin plazo para esa etapa.</p>
+        <p className="text-sm text-muted-foreground">Plazos en días. Cero: la etapa vence el mismo día en que empieza.</p>
         <div className="grid gap-4 sm:grid-cols-2">
           {PLAZOS.map((p) => (
             <Campo key={p.campo} etiqueta={p.etiqueta} nombre={p.campo}>
@@ -86,7 +91,7 @@ export function FormularioConfigDocumental({ config }: { config: ConfigDocumenta
           <Campo
             etiqueta="Días para avisar al jefe"
             nombre="escalamientoDias"
-            ayuda="Días de retraso a partir de los cuales se avisa al jefe de quien tiene el trámite."
+            ayuda="Se avisa al jefe de quien tiene el trámite cuando el paso lleva más de estos días de vencido."
           >
             <input
               type="number"

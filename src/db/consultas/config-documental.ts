@@ -99,7 +99,12 @@ const NOMBRE_PLAZO: Record<keyof ConfigDocumental["plazos"], string> = {
  * (comparadas por su valor efectivo: una clave ausente vale lo que vale por defecto). Cerrar la
  * publicación directa no toca nada más: `descartarBorrador` sigue disponible con la carga cerrada.
  */
-export async function guardarConfigDocumental(datos: DatosConfigDocumental, actorId: number): Promise<void> {
+export function guardarConfigDocumental(datos: DatosConfigDocumental, actorId: number): Promise<void> {
+  return obtenerSql().begin((tx) => guardarConfigDocumentalEn(tx, datos, actorId));
+}
+
+/** El cuerpo de `guardarConfigDocumental` sobre una transacción ya abierta (los tests la revierten). */
+export async function guardarConfigDocumentalEn(tx: TransactionSql, datos: DatosConfigDocumental, actorId: number): Promise<void> {
   const formato = typeof datos.formatoCodigo === "string" ? datos.formatoCodigo.trim() : "";
   const motivo = validarFormato(formato);
   if (motivo) throw new Error(motivo);
@@ -110,7 +115,7 @@ export async function guardarConfigDocumental(datos: DatosConfigDocumental, acto
   nuevos.escalamiento_dias = String(enteroEntre(datos.escalamientoDias, 1, 60, "Los días para avisar al jefe"));
   nuevos.publicacion_directa = datos.publicacionDirecta === true ? "1" : "0";
 
-  await obtenerSql().begin(async (tx) => {
+  {
     const actual = await obtenerConfigDocumental({ sql: tx });
     const antes: Record<string, string | null> = { formato_codigo: actual.formatoCodigo };
     for (const nombre of Object.keys(NOMBRE_PLAZO) as (keyof ConfigDocumental["plazos"])[]) {
@@ -128,7 +133,7 @@ export async function guardarConfigDocumental(datos: DatosConfigDocumental, acto
     await registrarAuditoria(tx, {
       usuarioId: actorId, accion: "editar_config_documental", entidad: "configuracion", entidadId: null, detalle: { cambios },
     });
-  });
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -155,55 +160,62 @@ async function itemBloqueado(tx: TransactionSql, id: number) {
 const auditarItem = (tx: TransactionSql, actorId: number, accion: string, id: number, detalle: Record<string, unknown>) =>
   registrarAuditoria(tx, { usuarioId: actorId, accion, entidad: "lista_verificacion_items", entidadId: id, detalle });
 
-export async function crearItemVerificacion(datos: { texto: string; critico: boolean }, actorId: number): Promise<number> {
+type DatosItem = { texto: string; critico: boolean };
+
+/** Todas las que cambian la lista toman el mismo candado: así el orden se calcula sobre una sola vista. */
+const bloquear = (tx: TransactionSql) => tx`LOCK TABLE lista_verificacion_items IN SHARE ROW EXCLUSIVE MODE`;
+
+export const crearItemVerificacion = (datos: DatosItem, actorId: number): Promise<number> =>
+  obtenerSql().begin((tx) => crearItemVerificacionEn(tx, datos, actorId));
+
+export async function crearItemVerificacionEn(tx: TransactionSql, datos: DatosItem, actorId: number): Promise<number> {
   const texto = textoDeItem(datos.texto);
-  return obtenerSql().begin(async (tx) => {
-    await tx`LOCK TABLE lista_verificacion_items IN SHARE ROW EXCLUSIVE MODE`;
-    const [item] = await tx`INSERT INTO lista_verificacion_items (texto, critico, orden)
-      VALUES (${texto}, ${datos.critico === true}, (SELECT coalesce(max(orden), 0) + 1 FROM lista_verificacion_items))
-      RETURNING id`;
-    await auditarItem(tx, actorId, "crear_item_verificacion", Number(item.id), { texto, critico: datos.critico === true });
-    return Number(item.id);
+  await bloquear(tx);
+  const [item] = await tx`INSERT INTO lista_verificacion_items (texto, critico, orden)
+    VALUES (${texto}, ${datos.critico === true}, (SELECT coalesce(max(orden), 0) + 1 FROM lista_verificacion_items))
+    RETURNING id`;
+  await auditarItem(tx, actorId, "crear_item_verificacion", Number(item.id), { texto, critico: datos.critico === true });
+  return Number(item.id);
+}
+
+export const editarItemVerificacion = (id: number, datos: DatosItem, actorId: number): Promise<void> =>
+  obtenerSql().begin((tx) => editarItemVerificacionEn(tx, id, datos, actorId));
+
+export async function editarItemVerificacionEn(tx: TransactionSql, id: number, datos: DatosItem, actorId: number): Promise<void> {
+  const texto = textoDeItem(datos.texto);
+  await bloquear(tx);
+  const anterior = await itemBloqueado(tx, id);
+  await tx`UPDATE lista_verificacion_items SET texto = ${texto}, critico = ${datos.critico === true} WHERE id = ${id}`;
+  await auditarItem(tx, actorId, "editar_item_verificacion", id, {
+    texto, critico: datos.critico === true, textoAnterior: anterior.texto,
   });
 }
 
-export async function editarItemVerificacion(
-  id: number,
-  datos: { texto: string; critico: boolean },
-  actorId: number,
-): Promise<void> {
-  const texto = textoDeItem(datos.texto);
-  await obtenerSql().begin(async (tx) => {
-    const anterior = await itemBloqueado(tx, id);
-    await tx`UPDATE lista_verificacion_items SET texto = ${texto}, critico = ${datos.critico === true} WHERE id = ${id}`;
-    await auditarItem(tx, actorId, "editar_item_verificacion", id, {
-      texto, critico: datos.critico === true, textoAnterior: anterior.texto,
-    });
-  });
-}
+export const moverItemVerificacion = (id: number, direccion: "arriba" | "abajo", actorId: number): Promise<void> =>
+  obtenerSql().begin((tx) => moverItemVerificacionEn(tx, id, direccion, actorId));
 
 /** Intercambia el orden con el ítem vecino (activo o no: la pantalla los muestra todos). */
-export async function moverItemVerificacion(id: number, direccion: "arriba" | "abajo", actorId: number): Promise<void> {
+export async function moverItemVerificacionEn(tx: TransactionSql, id: number, direccion: "arriba" | "abajo", actorId: number): Promise<void> {
   if (direccion !== "arriba" && direccion !== "abajo") throw new Error("Dirección inválida");
-  await obtenerSql().begin(async (tx) => {
-    await tx`LOCK TABLE lista_verificacion_items IN SHARE ROW EXCLUSIVE MODE`;
-    const item = await itemBloqueado(tx, id);
-    const [vecino] = direccion === "arriba"
-      ? await tx`SELECT id, orden FROM lista_verificacion_items
-          WHERE (orden, id) < (${item.orden}, ${id}) ORDER BY orden DESC, id DESC LIMIT 1`
-      : await tx`SELECT id, orden FROM lista_verificacion_items
-          WHERE (orden, id) > (${item.orden}, ${id}) ORDER BY orden, id LIMIT 1`;
-    if (!vecino) return;
-    await tx`UPDATE lista_verificacion_items SET orden = ${vecino.orden} WHERE id = ${id}`;
-    await tx`UPDATE lista_verificacion_items SET orden = ${item.orden} WHERE id = ${vecino.id}`;
-    await auditarItem(tx, actorId, "mover_item_verificacion", id, { texto: item.texto, direccion });
-  });
+  await bloquear(tx);
+  const item = await itemBloqueado(tx, id);
+  const [vecino] = direccion === "arriba"
+    ? await tx`SELECT id, orden FROM lista_verificacion_items
+        WHERE (orden, id) < (${item.orden}, ${id}) ORDER BY orden DESC, id DESC LIMIT 1`
+    : await tx`SELECT id, orden FROM lista_verificacion_items
+        WHERE (orden, id) > (${item.orden}, ${id}) ORDER BY orden, id LIMIT 1`;
+  if (!vecino) return;
+  await tx`UPDATE lista_verificacion_items SET orden = ${vecino.orden} WHERE id = ${id}`;
+  await tx`UPDATE lista_verificacion_items SET orden = ${item.orden} WHERE id = ${vecino.id}`;
+  await auditarItem(tx, actorId, "mover_item_verificacion", id, { texto: item.texto, direccion });
 }
 
-export async function alternarItemVerificacion(id: number, activo: boolean, actorId: number): Promise<void> {
-  await obtenerSql().begin(async (tx) => {
-    const item = await itemBloqueado(tx, id);
-    await tx`UPDATE lista_verificacion_items SET activo = ${activo === true} WHERE id = ${id}`;
-    await auditarItem(tx, actorId, "alternar_item_verificacion", id, { texto: item.texto, activo: activo === true });
-  });
+export const alternarItemVerificacion = (id: number, activo: boolean, actorId: number): Promise<void> =>
+  obtenerSql().begin((tx) => alternarItemVerificacionEn(tx, id, activo, actorId));
+
+export async function alternarItemVerificacionEn(tx: TransactionSql, id: number, activo: boolean, actorId: number): Promise<void> {
+  await bloquear(tx);
+  const item = await itemBloqueado(tx, id);
+  await tx`UPDATE lista_verificacion_items SET activo = ${activo === true} WHERE id = ${id}`;
+  await auditarItem(tx, actorId, "alternar_item_verificacion", id, { texto: item.texto, activo: activo === true });
 }

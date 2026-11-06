@@ -37,8 +37,8 @@ export function FormularioTipo({
   const plantillaVigente = plantillas.some((p) => String(p.id) === plantillaActual);
   const aviso =
     valores?.plantillaDocumentoId != null && !plantillaVigente
-      ? `La plantilla actual (${valores.plantillaCodigo ?? "sin código"}) ya no está vigente; las solicitudes de este tipo salen sin plantilla. Elija otra o déjelo sin plantilla.`
-      : "El documento que se ofrece como punto de partida al solicitar uno de este tipo.";
+      ? `La plantilla actual (${valores.plantillaCodigo ?? "sin código"}) ya no está vigente; las solicitudes de este tipo se aceptan y elaboran sin plantilla. Elija otra o déjelo sin plantilla.`
+      : "El documento que se muestra como punto de partida al aceptar la solicitud y al elaborar un documento de este tipo.";
 
   return (
     <form action={enviar} onSubmit={enviarSinReiniciar(enviar)} className="flex max-w-lg flex-col gap-5">

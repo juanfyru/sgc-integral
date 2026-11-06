@@ -189,11 +189,16 @@ describe("tipos_documento CRUD", () => {
     const base = { nombre: "ZZ Tipo Plantilla", sigla: "ZZP", esDiligenciable: false };
     const { id } = await crearTipo({ ...base, autoridad: "estrategico", plantillaDocumentoId: Number(vigente.id) }, usuarioId);
     expect(await obtenerTipo(id)).toMatchObject({ autoridad: "estrategico", plantillaDocumentoId: Number(vigente.id), plantillaCodigo: vigente.codigo });
-    expect((await listarTipos()).find((t) => t.id === id)).toMatchObject({ autoridad: "estrategico", plantillaCodigo: vigente.codigo });
+    expect((await listarTipos()).find((t) => t.id === id)).toMatchObject({ autoridad: "estrategico", plantillaCodigo: vigente.codigo, plantillaVigente: true });
     expect((await listarPlantillasPosibles()).some((p) => p.id === Number(vigente.id))).toBe(true);
 
     await editarTipo(id, { ...base, autoridad: "operativo", plantillaDocumentoId: null }, usuarioId);
     expect(await obtenerTipo(id)).toMatchObject({ autoridad: "operativo", plantillaDocumentoId: null });
+    const [aud] = await sql()`SELECT detalle FROM auditoria WHERE accion = 'editar_tipo_documento' AND entidad_id = ${id} ORDER BY id DESC LIMIT 1`;
+    expect(aud.detalle).toMatchObject({
+      autoridad: "operativo", plantillaDocumentoId: null,
+      autoridadAnterior: "estrategico", plantillaDocumentoIdAnterior: Number(vigente.id),
+    });
     expect(sinVigente).toBeTruthy();
     const mensaje = /La plantilla debe ser un documento vigente/;
     await expect(editarTipo(id, { ...base, autoridad: "operativo", plantillaDocumentoId: Number(sinVigente.id) }, usuarioId)).rejects.toThrow(mensaje);

@@ -67,7 +67,8 @@ export async function listarItemsVerificacion(opciones?: {
  * Los ítems activos con la respuesta de esa ronda. Si la ronda no tiene ninguna, propone las
  * de la última ronda anterior que sí tenga (sin guardarlas): la revisión siguiente parte de ahí.
  * Una ronda con respuestas conserva las de un ítem desactivado después: es lo que se firma.
- * `sinPropuesta` es para quien solo mira: lo no respondido en la ronda se ve sin responder.
+ * `sinPropuesta` es para quien solo mira: sin respuestas en la ronda, lo no respondido se ve sin responder; con
+ * respuestas propias, solo las filas respondidas (un ítem creado después no aparece como «Sin responder»).
  */
 export async function obtenerVerificacion(
   tramiteId: number,
@@ -83,10 +84,12 @@ export async function obtenerVerificacion(
     if (previa?.ronda !== null && previa?.ronda !== undefined) deRonda = previa.ronda;
   }
   const propuesta = deRonda !== ronda;
+  // Quien solo mira una ronda con respuestas propias ve lo que se respondió, no ítems creados después.
+  const soloRespondidas = Boolean(propia) && opciones?.sinPropuesta === true;
   const filas = await sql`SELECT i.id, i.texto, i.critico, r.texto_item, r.critico AS critico_guardado, r.resultado, r.nota
     FROM lista_verificacion_items i
     LEFT JOIN tramite_verificaciones r ON r.item_id = i.id AND r.tramite_id = ${tramiteId} AND r.ronda = ${deRonda}
-    WHERE i.activo OR (${!propuesta} AND r.id IS NOT NULL)
+    WHERE ${soloRespondidas ? sql`r.id IS NOT NULL` : sql`i.activo OR (${!propuesta} AND r.id IS NOT NULL)`}
     ORDER BY i.orden, i.id`;
   return filas.map((f) => ({
     itemId: Number(f.id),

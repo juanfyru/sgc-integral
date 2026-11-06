@@ -190,6 +190,9 @@ describe("configuración documental", () => {
       .toBe("Editó la configuración documental: publicación directa (encendida)");
     expect(e("editar_config_documental", { cambios: {} })).toBe("Guardó la configuración documental sin cambios");
   });
+  it("un acta que no se pudo regenerar idéntica", () => {
+    expect(e("acta_no_regenerable", { tramiteId: 12 })).toBe("No se pudo regenerar idéntica el acta del trámite 12: no se entregó");
+  });
   it("los ítems de la lista de verificación", () => {
     expect(e("crear_item_verificacion", { texto: "Cita la norma" })).toBe("Añadió un ítem a la lista de verificación: «Cita la norma»");
     expect(e("alternar_item_verificacion", { texto: "Cita la norma", activo: false })).toBe("Desactivó un ítem de la lista de verificación: «Cita la norma»");

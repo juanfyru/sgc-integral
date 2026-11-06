@@ -28,7 +28,7 @@ import { generarActa, type DatosActa } from "@/lib/acta";
 import type { Verificador } from "@/lib/firma";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { contenidoPorPagina, contieneTexto } from "./utiles/pdf";
-import { opc, tramiteEn } from "./utiles/tramites";
+import { opc, sesionDe, tramiteEn } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
 const sql = obtenerSql();
@@ -84,23 +84,41 @@ describe("el acta se congela al cerrar", () => {
   }));
 
   it("sin el nombre de la entidad, o con el de la instalación sin configurar, no se pide la firma y no queda nada", () => revertida(sql, async (tx) => {
-    const t = await tramiteEn(tx, "publicacion");
+    const mensaje = "Configure el nombre de la entidad antes de publicar";
+    const ponerNombre = (valor: string) => tx`INSERT INTO configuracion (clave, valor) VALUES ('nombre_entidad', ${valor})
+      ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor`;
+    const casos: { etiqueta: string; preparar: () => PromiseLike<unknown> }[] = [
+      { etiqueta: "vacío", preparar: () => ponerNombre("   ") },
+      { etiqueta: "sin configurar", preparar: () => ponerNombre("Entidad sin configurar") },
+      { etiqueta: "sin fila", preparar: () => tx`DELETE FROM configuracion WHERE clave = 'nombre_entidad'` },
+    ];
+    const espia = () => vi.fn<Verificador>(async () => ({ ok: true, metodo: "clave" }));
+    const intentar = async (sesion: Parameters<typeof transicionar>[0], entrada: Parameters<typeof transicionar>[1], opciones = opc(tx)) => {
+      const verificar = espia();
+      await expect(tx.savepoint(() => transicionar(sesion, entrada, { ...opciones, verificar }))).rejects.toThrow(mensaje);
+      expect(verificar).not.toHaveBeenCalled();
+    };
+
+    const publicacion = await tramiteEn(tx, "publicacion");
+    const aprobacion = await tramiteEn(tx, "aprobacion", { codigo: "GTH-PR-01" });
+    const eliminacion = await tramiteEn(tx, "aprobacion", { tipo: "eliminar", codigo: "GTH-FO-01" });
+    const eliminacionAprobada = await tramiteEn(tx, "publicacion", { tipo: "eliminar", codigo: "GTH-CA-01", aprobador: await sesionDe(tx, "gerente") });
+    const aprobar = (t: typeof aprobacion) =>
+      ({ tramiteId: t.tramiteId, accion: "aprobar_y_publicar", etapaEsperada: "aprobacion", rondaEsperada: t.ronda, datos: { concepto: "Aprobado." }, credenciales: { clave: "x" } }) as const;
     try {
-      for (const preparar of [
-        () => tx`DELETE FROM configuracion WHERE clave = 'nombre_entidad'`,
-        () => tx`UPDATE configuracion SET valor = '   ' WHERE clave = 'nombre_entidad'`,
-        () => tx`UPDATE configuracion SET valor = 'Entidad sin configurar' WHERE clave = 'nombre_entidad'`,
-      ]) {
-        await preparar();
-        const verificar = vi.fn<Verificador>(async () => ({ ok: true, metodo: "clave" }));
-        await expect(tx.savepoint(() => transicionar(t.admin, publicar(t), { ...opc(tx), verificar }))).rejects.toThrow(
-          "Configure el nombre de la entidad antes de publicar",
-        );
-        expect(verificar).not.toHaveBeenCalled();
-        const [{ etapa }] = await tx`SELECT etapa FROM tramites WHERE id = ${t.tramiteId}`;
-        expect(etapa).toBe("publicacion");
+      for (const caso of casos) {
+        await caso.preparar();
+        await intentar(publicacion.admin, publicar(publicacion));
+        await intentar(aprobacion.aprobador, aprobar(aprobacion));
+        await intentar(eliminacion.aprobador, aprobar(eliminacion));
+        await intentar(eliminacionAprobada.admin, publicar(eliminacionAprobada));
+        const [{ etapa }] = await tx`SELECT etapa FROM tramites WHERE id = ${publicacion.tramiteId}`;
+        expect(etapa, caso.etiqueta).toBe("publicacion");
       }
-    } finally { await t.limpiar(); }
+      // Con nombre, la misma publicación sí pasa: el rechazo era por la entidad.
+      await ponerNombre("Hospital de prueba");
+      await expect(transicionar(publicacion.admin, publicar(publicacion), opc(tx))).resolves.toMatchObject({ etapa: "publicado" });
+    } finally { await publicacion.limpiar(); await aprobacion.limpiar(); await eliminacion.limpiar(); await eliminacionAprobada.limpiar(); }
   }));
 
   it("el acta guarda las observaciones y las rondas de una devolución del aprobador", () => revertida(sql, async (tx) => {

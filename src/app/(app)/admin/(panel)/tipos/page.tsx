@@ -45,7 +45,7 @@ export default async function PaginaTipos() {
             </span>
             <span className="text-xs text-muted-foreground">
               Aprueba: {t.autoridad === "estrategico" ? "Gerencia" : "Administrador del SGC"} · Plantilla:{" "}
-              {t.plantillaCodigo ?? "ninguna"}
+              {t.plantillaCodigo ? `${t.plantillaCodigo}${t.plantillaVigente ? "" : " (ya no vigente)"}` : "ninguna"}
             </span>
             {!t.activo && <Insignia variante="sin-dato">Inactivo</Insignia>}
             <BotonToggle tabla="tipos_documento" id={t.id} activo={t.activo} />

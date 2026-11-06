@@ -6,6 +6,7 @@ import type { TransactionSql } from "postgres";
 import type { Cliente } from "@/db/cliente";
 import { anularVigenteEn, aplicarPublicacion } from "@/db/consultas/admin";
 import { congelarDatosActa, nombreDeEntidadParaActa } from "@/db/consultas/actas";
+import { exigirDesignacion } from "./aceptacion";
 import { listarFirmas, type FirmaRegistrada } from "@/db/consultas/firmas";
 import { crearObservacionesDeAprobacion } from "@/db/consultas/revision";
 import { adminsActivos, lideresDeProceso, lideresDeProcesosDelDocumento, rotuloDeTramite } from "@/db/consultas/tramites";
@@ -75,9 +76,35 @@ async function exigirAprobadorDistinto(sql: Cliente, tramite: FilaTramite, usuar
   if (elaboro?.usuarioId === usuarioId) throw new ErrorTramite("Quien elabora no puede aprobar");
 }
 
+/**
+ * La autoridad del tipo puede cambiar con el trámite abierto (spec §6.3: las reglas se comprueban
+ * al designar, al reasignar y al firmar): quien firma debe tener el rol que exige la autoridad
+ * actual, con la misma regla de la designación. El trámite no queda sin salida: se reasigna al aprobador.
+ */
+async function exigirAutoridadActual(sql: Cliente, tramite: FilaTramite, aprobadorId: number): Promise<void> {
+  const [tipo] = await sql`SELECT t.autoridad FROM documentos d JOIN tipos_documento t ON t.id = d.tipo_id WHERE d.id = ${tramite.documentoId}`;
+  if (!tipo) throw new ErrorTramite("El tipo de documento no existe");
+  try {
+    await exigirDesignacion(
+      sql as TransactionSql,
+      tramite,
+      tramite.tipo,
+      tipo.autoridad,
+      { elaboradorId: tramite.elaboradorId, revisorId: tramite.revisorId, aprobadorId },
+      [],
+    );
+  } catch (err) {
+    if (err instanceof ErrorTramite && err.message.startsWith("Quien aprueba debe")) {
+      throw new ErrorTramite(`${err.message}. Pida reasignar al aprobador.`);
+    }
+    throw err;
+  }
+}
+
 const validarAprobar: Validador = async ({ sql, tramite, sesion, datos }) => {
   conceptoDe(datos);
   await exigirAprobadorDistinto(sql, tramite, sesion.usuarioId);
+  await exigirAutoridadActual(sql, tramite, sesion.usuarioId);
 };
 
 const validarPublicar: Validador = async ({ sql, tramite }) => {
@@ -92,6 +119,7 @@ const validarAprobarYPublicar: Validador = async ({ sql, tramite, sesion, datos 
   conceptoDe(datos);
   await nombreDeEntidadParaActa(sql);
   await exigirAprobadorDistinto(sql, tramite, sesion.usuarioId);
+  await exigirAutoridadActual(sql, tramite, sesion.usuarioId);
   if (tramite.tipo === "eliminar") return exigirVersionVigente(sql, tramite);
   await exigirLoAprobado(sql, tramite, ["elaboro", "reviso"]);
 };

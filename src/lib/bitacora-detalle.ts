@@ -211,6 +211,8 @@ export function describirEvento(e: EventoAuditoria): string {
       return `Creó ${d.creados ?? 0} usuarios por lote (${d.fallidos ?? 0} rechazados)`;
     case "editar_configuracion":
       return describirConfiguracion(d.claves);
+    case "acta_no_regenerable":
+      return `No se pudo regenerar idéntica el acta del trámite ${d.tramiteId ?? "?"}: no se entregó`;
     case "editar_config_documental":
       return describirConfigDocumental(d.cambios);
     case "crear_item_verificacion":

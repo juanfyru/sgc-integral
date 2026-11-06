@@ -74,6 +74,25 @@ const ultimoDetalle = async (tx: TransactionSql, tramiteId: number, tipo: string
 };
 
 describe("aprobación", () => {
+  it("si la autoridad del tipo cambió con el trámite abierto, quien ya no corresponde no firma; se reasigna y el nuevo aprueba", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "aprobacion");
+    try {
+      await tx`UPDATE tipos_documento SET autoridad = 'estrategico' WHERE id = (SELECT tipo_id FROM documentos WHERE codigo = 'GTH-PR-02')`;
+      const mensaje = "Quien aprueba debe tener el rol Gerencia. Pida reasignar al aprobador.";
+      await fallaSinGastarLaFirma(tx, t.aprobador, firmando(t, "aprobar", "aprobacion"), mensaje);
+      await fallaSinGastarLaFirma(tx, t.aprobador, firmando(t, "aprobar_y_publicar", "aprobacion"), mensaje);
+
+      const gerente = await sesionDe(tx, "gerente");
+      await transicionar(t.admin, { tramiteId: t.tramiteId, accion: "reasignar", etapaEsperada: "aprobacion", rondaEsperada: t.ronda,
+        datos: { motivo: "Cambió la autoridad del tipo.", papel: "aprobador", usuarioId: gerente.usuarioId } }, opc(tx));
+      expect(await transicionar(gerente, firmando(t, "aprobar", "aprobacion"), opc(tx))).toEqual({ etapa: "publicacion", ronda: t.ronda });
+
+      // Aprobada con la autoridad vigente entonces: publicar no la vuelve a exigir.
+      await tx`UPDATE tipos_documento SET autoridad = 'operativo' WHERE id = (SELECT tipo_id FROM documentos WHERE codigo = 'GTH-PR-02')`;
+      expect(await transicionar(t.admin, publicar(t), opc(tx))).toMatchObject({ etapa: "publicado" });
+    } finally { await t.limpiar(); }
+  }));
+
   it("aprobar lleva a publicación, guarda el concepto y avisa a los administradores", () => revertida(sql, async (tx) => {
     const t = await tramiteEn(tx, "aprobacion");
     try {

@@ -42,6 +42,12 @@ describe("formato del código", () => {
     expect(validarFormato("{proceso}-{TIPO}-{NN}")).not.toBeNull();
     expect(validarFormato("{PROCESO}.{TIPO}-{NN}")).not.toBeNull();
     expect(validarFormato("{PROCESO}{TIPO}-{NN}")).toMatch(/Separe/);
+    expect(validarFormato("{PROCESO}A{TIPO}-{NN}")).toMatch(/Entre \{PROCESO\} y \{TIPO\}/);
+    expect(validarFormato("{TIPO}B{PROCESO}-{NN}")).toMatch(/Entre/);
+    expect(validarFormato("{PROCESO}9{TIPO}-{NN}")).toBeNull();
+    expect(validarFormato("{PROCESO}-{NN}-{TIPO}")).toBeNull();
+    expect(validarFormato(`${"A".repeat(32)}-{PROCESO}-{TIPO}-{NN}`)).toMatch(/supera los 40/);
+    expect(validarFormato(`${"A".repeat(25)}-{PROCESO}-{TIPO}-{NN}`)).toBeNull();
     expect(validarFormato("{PROCESO}-{TIPO}{NN}")).toMatch(/Separe/);
     expect(validarFormato("{PROCESO}-{TIPO}-{NN}$")).not.toBeNull();
   });
@@ -104,5 +110,12 @@ describe("codigoSiguiente", () => {
   it("sin formato, o con uno inválido, no sugiere nada", () => {
     expect(codigoSiguiente(null, ["CEX-FO-02"], p)).toBeNull();
     expect(codigoSiguiente("sin marcadores", ["CEX-FO-02"], p)).toBeNull();
+  });
+  it("al contar, un formato nuevo con {NNN} reconoce los códigos de dos dígitos que ya existen", () => {
+    const F3 = "{PROCESO}-{TIPO}-{NNN}";
+    const p = { proceso: "SGC", tipo: "FO" };
+    expect(siguienteConsecutivo(F3, ["SGC-FO-05", "SGC-FO-002"], p)).toBe(6);
+    expect(codigoSiguiente(F3, ["SGC-FO-05"], p)).toBe("SGC-FO-006");
+    expect(consecutivoDe(F3, "SGC-FO-05", p)).toBeNull();
   });
 });

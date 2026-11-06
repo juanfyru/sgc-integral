@@ -6,6 +6,9 @@
  */
 export const FORMATO_CODIGO_DEFECTO = "{PROCESO}-{TIPO}-{NN}";
 
+/** El tope de `codigoDeDocumento` (src/lib/esquemas/tramites.ts). */
+export const LARGO_MAX_CODIGO = 40;
+
 const MARCADORES = /\{(PROCESO|TIPO|NNN|NN)\}/g;
 
 function contar(formato: string, marcador: string): number {
@@ -26,8 +29,17 @@ export function validarFormato(formato: string): string | null {
   if (formato.includes("}{")) {
     return "Separe con un guion los marcadores contiguos: {PROCESO}{TIPO} no se puede leer de vuelta";
   }
+  const iProceso = formato.indexOf("{PROCESO}");
+  const iTipo = formato.indexOf("{TIPO}");
+  const entre = formato.slice(Math.min(iProceso + 9, iTipo + 6), Math.max(iProceso, iTipo));
+  if (!/[^A-Za-z]/.test(entre)) {
+    return "Entre {PROCESO} y {TIPO} ponga al menos un guion o un dígito: dos letras seguidas no se pueden separar";
+  }
   if (/[^A-Z0-9-]/.test(formato.replace(MARCADORES, ""))) {
     return "Fuera de los marcadores solo se admiten letras mayúsculas, dígitos y guiones";
+  }
+  if (generarCodigo(formato, { proceso: "SGC", tipo: "FO", consecutivo: 2 }).length > LARGO_MAX_CODIGO) {
+    return `El código resultante supera los ${LARGO_MAX_CODIGO} caracteres que admite un documento`;
   }
   return null;
 }
@@ -102,6 +114,8 @@ export function consecutivoDe(
   formato: string,
   codigo: string,
   p: { proceso: string; tipo: string },
+  /** Para contar (no para validar un código nuevo): dos o más dígitos, también con `{NNN}`. */
+  contando = false,
 ): number | null {
   // Los valores van escapados: no son expresiones regulares.
   const literal = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -109,7 +123,7 @@ export function consecutivoDe(
     formato,
     literal(p.proceso),
     literal(p.tipo),
-    `(\\d{${anchoMinimo(formato)},})`,
+    `(\\d{${contando ? 2 : anchoMinimo(formato)},})`,
   ).exec(codigo);
   return coincidencia ? Number(coincidencia[1]) : null;
 }
@@ -132,7 +146,7 @@ export function siguienteConsecutivo(
 ): number {
   let mayor = 0;
   for (const codigo of codigos) {
-    const n = consecutivoDe(formato, codigo, p);
+    const n = consecutivoDe(formato, codigo, p, true);
     if (n !== null && n > mayor) mayor = n;
   }
   return mayor + 1;
