@@ -34,6 +34,7 @@ export function esEtapaDeTrabajo(e: Etapa): e is EtapaTrabajo {
 /** Sin ítems activos no hay evidencia del PC-05: lo rechaza `validarConcepto` y lo avisa el panel de revisión (F13A-R37). */
 export const SIN_ITEMS_ACTIVOS = "No hay ítems activos en la lista de verificación. Pida al Administrador del SGC que los active.";
 
+export const CRITICO_NO_CUMPLE = "Hay un ítem crítico que no cumple";
 export const LARGO_MIN_NOTA_CRITERIO = 5;
 export const FALTA_NOTA_CRITERIO = "Escriba una nota en cada criterio que no cumple";
 

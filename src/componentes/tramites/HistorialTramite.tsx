@@ -52,7 +52,14 @@ function frase(e: EventoTramite, tipo: TipoSolicitud): string {
 const nombreEn = (p: unknown) => (p as { nombre?: string } | null)?.nombre ?? "nadie";
 
 /** Qué cambió en una reasignación o una corrección, con el antes y el después. */
-function cambiosDe({ tipo, detalle: d }: EventoTramite): string[] {
+function cambiosDe(evento: EventoTramite): string[] {
+  const aceptados = Array.isArray(evento.detalle.noCumple) ? evento.detalle.noCumple.length : 0;
+  const criterios =
+    aceptados === 0 ? [] : [aceptados === 1 ? "con 1 criterio que no cumple, aceptado" : `con ${aceptados} criterios que no cumplen, aceptados`];
+  return [...criterios, ...cambiosDeDatos(evento)];
+}
+
+function cambiosDeDatos({ tipo, detalle: d }: EventoTramite): string[] {
   const aprobador = d.aprobador as { de: unknown; a: unknown } | undefined;
   const delAprobador = aprobador ? [`${ETIQUETA_PAPEL.aprobador}: ${nombreEn(aprobador.de)} → ${nombreEn(aprobador.a)}`] : [];
   if (tipo === "corregir_datos") {

@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { conceptoFavorableAccion, devolverRevisionAccion, guardarVerificacionAccion } from "@/app/acciones-tramites";
+import { AvisoCriterios, cuantosCriterios, notaSuficiente, type CriterioVisible } from "@/componentes/tramites/AvisoCriterios";
 import { AccionEnDialogo } from "@/componentes/tramites/AccionesSolicitud";
 import { DialogoFirma } from "@/componentes/tramites/DialogoFirma";
 import { ListaVerificacion } from "@/componentes/tramites/ListaVerificacion";
@@ -9,7 +10,7 @@ import { Observaciones } from "@/componentes/tramites/Observaciones";
 import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import type { Observacion, RespuestaItem } from "@/db/consultas/revision";
-import { SIN_ITEMS_ACTIVOS, type Etapa } from "@/lib/tramites/tipos";
+import { CRITICO_NO_CUMPLE, FALTA_NOTA_CRITERIO, SIN_ITEMS_ACTIVOS, type Etapa } from "@/lib/tramites/tipos";
 
 export type TramiteParaRevisar = {
   id: number;
@@ -25,6 +26,8 @@ export type TramiteParaRevisar = {
  * verificación, observaciones y las dos salidas. Los demás la consultan con `EvidenciaRevision`.
  * `propuesta` dice que lo marcado viene de una ronda anterior y esta ronda aún no guarda nada.
  * `hayItemsActivos` no se deduce de `respuestas`: lo guardado en la ronda conserva ítems desactivados.
+ * `criterios` son los que no cumplen según lo guardado, y `huellaCriterios` la huella que se confirma al firmar.
+ * `criticosActuales` son los ítems activos que hoy son críticos, aunque la ronda los guardara sin esa marca.
  */
 export function PanelRevision({
   tramite,
@@ -34,6 +37,9 @@ export function PanelRevision({
   observaciones,
   huella,
   pideCodigo,
+  criterios,
+  huellaCriterios,
+  criticosActuales,
 }: {
   tramite: TramiteParaRevisar;
   respuestas: RespuestaItem[];
@@ -42,6 +48,9 @@ export function PanelRevision({
   observaciones: Observacion[];
   huella: string | null;
   pideCodigo: boolean;
+  criterios: CriterioVisible[];
+  huellaCriterios: string;
+  criticosActuales: number[];
 }) {
   const [estado, enviar, pendiente] = useActionState(guardarVerificacionAccion, null);
   const [cambios, setCambios] = useState(0);
@@ -50,7 +59,17 @@ export function PanelRevision({
   // propuesto también es eso, aunque nadie lo haya tocado: el revisor lo confirma guardando.
   const guardado = enviadoCon !== null && enviadoCon === cambios && !pendiente && !estado;
   const sinGuardar = (cambios > 0 || propuesta) && !guardado;
-  const impedimento = !hayItemsActivos ? SIN_ITEMS_ACTIVOS : sinGuardar ? "Guarde el avance de la lista antes de dar el concepto" : "";
+  // Un crítico que no cumple bloquea aunque el ítem se volviera crítico durante la ronda: el servidor lo rechaza igual.
+  const criticoSinCumplir = respuestas.some((r) => r.resultado === "no_cumple" && (r.critico || criticosActuales.includes(r.itemId)));
+  const impedimento = !hayItemsActivos
+    ? SIN_ITEMS_ACTIVOS
+    : sinGuardar
+      ? "Guarde el avance de la lista antes de dar el concepto"
+      : criticoSinCumplir
+        ? CRITICO_NO_CUMPLE
+        : criterios.some((c) => !notaSuficiente(c.nota))
+          ? FALTA_NOTA_CRITERIO
+          : "";
 
   return (
     <section
@@ -71,6 +90,7 @@ export function PanelRevision({
         <ListaVerificacion
           tramite={tramite}
           respuestas={respuestas}
+          criticosActuales={criticosActuales}
           edicion={{
             estado,
             enviar,
@@ -113,6 +133,12 @@ export function PanelRevision({
               ocultos={{ id: String(tramite.id), etapa: tramite.etapa, ronda: String(tramite.ronda) }}
               pideCodigo={pideCodigo}
             >
+              <AvisoCriterios
+                criterios={criterios}
+                huella={huellaCriterios}
+                titulo={`Esta revisión tiene ${cuantosCriterios(criterios.length)}`}
+                confirmacion={`Doy concepto favorable a pesar de ${criterios.length === 1 ? "este criterio" : "estos criterios"}`}
+              />
               <Campo etiqueta="Concepto" nombre="concepto" ayuda="Su concepto sobre el documento. Entre 5 y 2000 caracteres.">
                 <textarea required minLength={5} maxLength={2000} rows={3} className={claseControl} />
               </Campo>

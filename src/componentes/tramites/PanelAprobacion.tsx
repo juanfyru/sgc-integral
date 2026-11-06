@@ -8,6 +8,7 @@ import {
   negarEliminacionAccion,
 } from "@/app/acciones-tramites";
 import { AccionEnDialogo, ErrorAccion, Ocultos } from "@/componentes/tramites/AccionesSolicitud";
+import { AvisoCriterios, ResumenCriterios, cuantosCriterios, type CriterioVisible } from "@/componentes/tramites/AvisoCriterios";
 import { DialogoFirma } from "@/componentes/tramites/DialogoFirma";
 import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
@@ -135,12 +136,16 @@ export function PanelAprobacion({
   revisado,
   huella,
   pideCodigo,
+  criterios,
+  huellaCriterios,
 }: {
   tramite: TramiteParaAprobar;
   acciones: Accion[];
   revisado: ConceptoRevisado | null;
   huella: string | null;
   pideCodigo: boolean;
+  criterios: CriterioVisible[];
+  huellaCriterios: string;
 }) {
   const eliminacion = tramite.tipo === "eliminar";
   const firma = {
@@ -153,6 +158,16 @@ export function PanelAprobacion({
     pideCodigo,
   };
 
+  const tituloCriterios = `El revisor dio concepto favorable con ${cuantosCriterios(criterios.length)}`;
+  const aviso = (
+    <AvisoCriterios
+      criterios={criterios}
+      huella={huellaCriterios}
+      titulo={tituloCriterios}
+      confirmacion={`Apruebo a pesar de ${criterios.length === 1 ? "este criterio" : "estos criterios"}`}
+    />
+  );
+
   return (
     <section
       aria-labelledby="titulo-aprobacion"
@@ -161,6 +176,7 @@ export function PanelAprobacion({
       <h2 id="titulo-aprobacion" className="text-sm font-semibold">
         {eliminacion ? "Aprobar la eliminación" : "Aprobación"}
       </h2>
+      <ResumenCriterios criterios={criterios} titulo={tituloCriterios} />
       {revisado ? (
         <div className="flex flex-col gap-1">
           <h3 className="text-sm font-medium">{`Concepto de ${revisado.persona ?? "quien revisó"}`}</h3>
@@ -186,6 +202,7 @@ export function PanelAprobacion({
         {acciones.includes("devolver_aprobacion") ? <DevolverConObservaciones tramite={tramite} /> : null}
         {acciones.includes("aprobar") ? (
           <DialogoFirma titulo="Firmar como «Aprobó»" etiquetaBoton="Aprobar" accion={aprobarAccion} {...firma}>
+            {aviso}
             <CampoConcepto />
           </DialogoFirma>
         ) : null}
@@ -197,6 +214,7 @@ export function PanelAprobacion({
             {...firma}
           >
             {eliminacion ? <p className="text-sm text-estado-critico-texto">Esta acción retira el documento de circulación</p> : null}
+            {aviso}
             <CampoConcepto />
           </DialogoFirma>
         ) : null}

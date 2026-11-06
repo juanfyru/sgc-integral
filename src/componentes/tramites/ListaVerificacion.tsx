@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, type FormEvent } from "react";
+import { startTransition, useState, type FormEvent } from "react";
 import type { EstadoAccion } from "@/app/admin/comun";
 import { ErrorAccion, Ocultos } from "@/componentes/tramites/AccionesSolicitud";
 import { Boton } from "@/componentes/ui/Boton";
@@ -48,31 +48,44 @@ function ItemSoloLectura({ r }: { r: RespuestaGuardada }) {
   );
 }
 
-function ItemEditable({ r, alCambiar }: { r: RespuestaItem; alCambiar: () => void }) {
+function ItemEditable({ r, critico, alCambiar }: { r: RespuestaItem; critico: boolean; alCambiar: () => void }) {
+  const [resultado, setResultado] = useState(r.resultado);
+  const idAviso = `aviso-nota-${r.itemId}`;
   return (
     <fieldset className="flex min-w-0 flex-col gap-2 border-b border-border pb-3 last:border-b-0">
       <legend className="flex flex-wrap items-center gap-2 text-sm font-medium">
         <span className="break-words">{r.texto}</span>
-        {r.critico ? <Critico /> : null}
+        {critico ? <Critico /> : null}
       </legend>
       <div className="flex flex-wrap gap-x-4 gap-y-1">
         {RESULTADOS.map((valor) => (
           <label key={valor} className="inline-flex items-center gap-1.5 text-sm">
-            <input type="radio" name={`resultado_${r.itemId}`} value={valor} defaultChecked={r.resultado === valor} onChange={alCambiar} />
+            <input type="radio" name={`resultado_${r.itemId}`} value={valor} defaultChecked={r.resultado === valor}
+              onChange={() => {
+                setResultado(valor);
+                alCambiar();
+              }}
+            />
             {ETIQUETA_RESULTADO[valor]}
           </label>
         ))}
       </div>
       <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-        Nota (opcional)
+        Nota (obligatoria si no cumple)
         <input
           name={`nota_${r.itemId}`}
+          aria-describedby={resultado === "no_cumple" ? idAviso : undefined}
           maxLength={2000}
           defaultValue={r.nota ?? ""}
           onChange={alCambiar}
           className={`${claseControl} text-sm text-foreground`}
         />
       </label>
+      {resultado === "no_cumple" ? (
+        <p id={idAviso} className="text-xs text-estado-atencion-texto">
+          Esta nota saldrá en el acta, visible para toda la entidad.
+        </p>
+      ) : null}
     </fieldset>
   );
 }
@@ -92,10 +105,13 @@ export function ListaSoloLectura({ respuestas, etiqueta }: { respuestas: Respues
 export function ListaVerificacion({
   tramite,
   respuestas,
+  criticosActuales,
   edicion,
 }: {
   tramite: Referencia;
   respuestas: RespuestaItem[];
+  /** Los ítems activos que hoy son críticos: la marca guardada en la ronda puede ser anterior. */
+  criticosActuales: number[];
   edicion: EdicionLista;
 }) {
   // Como en FormularioSolicitud: enviar desde una transición no reinicia lo marcado tras un rechazo.
@@ -109,7 +125,7 @@ export function ListaVerificacion({
     <form action={edicion.enviar} onSubmit={alEnviar} className="flex flex-col gap-3" aria-label="Lista de verificación">
       <Ocultos tramite={tramite} />
       {respuestas.map((r) => (
-        <ItemEditable key={r.itemId} r={r} alCambiar={edicion.alCambiar} />
+        <ItemEditable key={r.itemId} r={r} critico={r.critico || criticosActuales.includes(r.itemId)} alCambiar={edicion.alCambiar} />
       ))}
       <ErrorAccion estado={edicion.estado} />
       <div className="flex flex-wrap items-center justify-end gap-3">

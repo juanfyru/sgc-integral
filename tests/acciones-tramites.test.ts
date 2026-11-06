@@ -499,6 +499,26 @@ describe("elaboración", () => {
       expect(opciones).toEqual({ contexto: { ip: "10.0.0.5", userAgent: "Navegador" } });
     });
 
+    it.each([
+      ["el concepto favorable", conceptoFavorableAccion, revisor, { id: "7", etapa: "revision", ronda: "2" }, "revision"],
+      ["aprobar", aprobarAccion, { sesionId: "s", usuarioId: 8, usuario: "gerente", nombre: "Gerente", rol: "gerencia", verHistorial: false }, { id: "7", etapa: "aprobacion", ronda: "2" }, "aprobacion"],
+      ["aprobar y publicar", aprobarYPublicarAccion, { sesionId: "s", usuarioId: 9, usuario: "admin", nombre: "Admin", rol: "admin_sgc", verHistorial: false }, { id: "7", etapa: "aprobacion", ronda: "2" }, "aprobacion"],
+    ])("%s lleva la confirmación de los criterios como dato y no la manda a la firma", async (_nombre, ejecutar, sesion, campos, etapa) => {
+      requerirSesion.mockResolvedValue(sesion);
+      const huella = "ab12".repeat(16);
+      expect(await ejecutar(null, formulario({ ...campos, concepto: "Procede.", confirmaNoCumple: huella, clave: "x" }))).toBeNull();
+      const [, entrada] = transicionar.mock.calls[0];
+      expect(entrada.etapaEsperada).toBe(etapa);
+      expect(entrada.datos).toEqual({ concepto: "Procede.", confirmaNoCumple: huella });
+      expect(entrada.credenciales).toEqual({ clave: "x" });
+    });
+
+    it("una confirmación que no es una huella vuelve al formulario sin transicionar", async () => {
+      requerirSesion.mockResolvedValue(revisor);
+      expect(await conceptoFavorableAccion(null, formulario({ ...enRevision, concepto: "Procede.", confirmaNoCumple: "on", clave: "x" }))).toMatchObject({ ok: false });
+      expect(transicionar).not.toHaveBeenCalled();
+    });
+
     it("el concepto favorable devuelve lo escrito pero nunca la clave ni el código", async () => {
       requerirSesion.mockResolvedValue(revisor);
       transicionar.mockRejectedValue(new ErrorFirma("Clave o código incorrectos", false));

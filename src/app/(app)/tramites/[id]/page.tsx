@@ -22,9 +22,10 @@ import {
   obtenerTramite,
   type DetalleTramite,
 } from "@/db/consultas/tramites";
-import { listarItemsVerificacion, listarObservaciones, listarRondasVerificacion, obtenerVerificacion } from "@/db/consultas/revision";
+import { criteriosNoCumplen, listarItemsVerificacion, listarObservaciones, listarRondasVerificacion, obtenerVerificacion } from "@/db/consultas/revision";
 import { borradorDeTramite } from "@/db/consultas/tramites-archivos";
 import { puedeVerVersion } from "@/lib/alcance";
+import { huellaDeCriterios } from "@/lib/tramites/criterios";
 import { exigirSesion } from "@/lib/paginas";
 import { fechaEnZona, fechaLimite } from "@/lib/tramites/plazos";
 import { esEtapaDeTrabajo, type Etapa } from "@/lib/tramites/tipos";
@@ -101,12 +102,13 @@ async function Revision({ tramite, pideCodigo }: { tramite: DetalleTramite; pide
   if (!tramite.acciones.includes("concepto_favorable")) {
     return <Evidencia tramite={tramite} rondaEnCurso={etapa === "revision" ? ronda : null} />;
   }
-  const [respuestas, activos, rondas, observaciones, borrador] = await Promise.all([
+  const [respuestas, activos, rondas, observaciones, borrador, criterios] = await Promise.all([
     obtenerVerificacion(id, ronda),
     listarItemsVerificacion({ soloActivos: true }),
     listarRondasVerificacion(id),
     listarObservaciones(id),
     borradorDeTramite(id),
+    criteriosNoCumplen(id, ronda),
   ]);
   return (
     <PanelRevision
@@ -117,6 +119,9 @@ async function Revision({ tramite, pideCodigo }: { tramite: DetalleTramite; pide
       observaciones={observaciones}
       huella={borrador.archivos.find((a) => a.rol === "principal")?.hashSha256 ?? null}
       pideCodigo={pideCodigo}
+      criterios={criterios}
+      huellaCriterios={huellaDeCriterios(criterios)}
+      criticosActuales={activos.filter((i) => i.critico).map((i) => i.id)}
     />
   );
 }
@@ -131,7 +136,11 @@ async function Evidencia({ tramite: { id, etapa, ronda }, rondaEnCurso = null }:
 async function Cierre({ tramite, pideCodigo }: { tramite: DetalleTramite; pideCodigo: boolean }) {
   const { id, etapa, ronda, tipo, codigo, titulo, versionNumero, acciones, eventos } = tramite;
   const datos = { id, etapa, ronda, tipo, codigo, titulo, versionNumero };
-  const { archivos } = await borradorDeTramite(id);
+  // Una eliminación no pasa por la lista de verificación: no hay criterios que confirmar.
+  const [{ archivos }, criterios] = await Promise.all([
+    borradorDeTramite(id),
+    tipo === "eliminar" ? Promise.resolve([]) : criteriosNoCumplen(id, ronda),
+  ]);
   const huella = archivos.find((a) => a.rol === "principal")?.hashSha256 ?? null;
   if (acciones.includes("publicar")) return <PanelPublicacion tramite={datos} huella={huella} pideCodigo={pideCodigo} />;
   const favorable = eventos.filter((e) => e.tipo === "concepto_favorable" && e.ronda === ronda).at(-1);
@@ -143,6 +152,8 @@ async function Cierre({ tramite, pideCodigo }: { tramite: DetalleTramite; pideCo
       revisado={typeof concepto === "string" ? { persona: favorable?.persona ?? null, concepto } : null}
       huella={huella}
       pideCodigo={pideCodigo}
+      criterios={criterios}
+      huellaCriterios={huellaDeCriterios(criterios)}
     />
   );
 }

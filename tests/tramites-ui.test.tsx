@@ -28,6 +28,19 @@ vi.mock("@/app/acciones-tramites", () => ({
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
+const dialogos = vi.hoisted(() => ({ llamadas: [] as { children?: React.ReactNode }[] }));
+// Registra lo que cada diálogo de firma recibe: cerrado, no pinta su formulario.
+vi.mock("@/componentes/tramites/DialogoFirma", async (importar) => {
+  const real = await importar<typeof import("@/componentes/tramites/DialogoFirma")>();
+  return {
+    ...real,
+    DialogoFirma: (props: Parameters<typeof real.DialogoFirma>[0]) => {
+      dialogos.llamadas.push(props);
+      return real.DialogoFirma(props);
+    },
+  };
+});
+
 import { AccionesGestion, aprobadoresPara, candidatosDe, efectoDeCancelar, opcionesDePropietario, type TramiteParaGestionar } from "@/componentes/tramites/AccionesGestion";
 import { AccionesSolicitud } from "@/componentes/tramites/AccionesSolicitud";
 import { BloqueSolicitud } from "@/componentes/tramites/BloqueSolicitud";
@@ -38,6 +51,7 @@ import { FormularioSolicitud } from "@/componentes/tramites/FormularioSolicitud"
 import { HistorialTramite } from "@/componentes/tramites/HistorialTramite";
 import { ayudaDelCodigo } from "@/componentes/tramites/ClasificacionNueva";
 import { PanelAceptacion, type TramiteParaAceptar } from "@/componentes/tramites/PanelAceptacion";
+import { AvisoCriterios, ResumenCriterios, cuantosCriterios } from "@/componentes/tramites/AvisoCriterios";
 import { PanelAprobacion, type TramiteParaAprobar } from "@/componentes/tramites/PanelAprobacion";
 import { EvidenciaRevision } from "@/componentes/tramites/EvidenciaRevision";
 import { EnvioARevision, PanelElaboracion, hayCambiosSinGuardar } from "@/componentes/tramites/PanelElaboracion";
@@ -794,6 +808,7 @@ describe("revisión", () => {
     { itemId: 1, texto: "Usa la plantilla vigente", critico: true, resultado: "cumple", nota: null },
     { itemId: 2, texto: "Redacción <b>clara</b>", critico: false, resultado: "no_aplica", nota: "No <i>aplica</i>." },
   ];
+  const sinCriterios = { criterios: [], huellaCriterios: "", criticosActuales: [] };
   const edicion = { estado: null, enviar: () => {}, pendiente: false, guardado: false, alCambiar: () => {}, alEnviar: () => {} };
   const obs = (parcial: Partial<Observacion>): Observacion => ({
     id: 5, numero: 1, ronda: 1, origen: "revision", texto: "Falta el responsable.", autor: "Ana Pérez",
@@ -802,7 +817,7 @@ describe("revisión", () => {
   });
 
   it("cada ítem es un fieldset con su legend, tres opciones, y el crítico lleva el texto", () => {
-    const html = renderToStaticMarkup(<ListaVerificacion tramite={tramite} respuestas={respuestas} edicion={edicion} />);
+    const html = renderToStaticMarkup(<ListaVerificacion tramite={tramite} respuestas={respuestas} criticosActuales={[]} edicion={edicion} />);
     expect(html.match(/<fieldset/g)).toHaveLength(3);
     expect(html.match(/<legend/g)).toHaveLength(3);
     expect(html.match(/type="radio"/g)).toHaveLength(9);
@@ -852,7 +867,7 @@ describe("revisión", () => {
 
   it("el panel ofrece las dos salidas al revisor", () => {
     const revisor = renderToStaticMarkup(
-      <PanelRevision tramite={tramite} respuestas={respuestas} hayItemsActivos propuesta={false} observaciones={[obs({})]} huella={`9f2c${"0".repeat(56)}a41b`} pideCodigo={false} />,
+      <PanelRevision tramite={tramite} respuestas={respuestas} hayItemsActivos propuesta={false} observaciones={[obs({})]} huella={`9f2c${"0".repeat(56)}a41b`} pideCodigo={false} {...sinCriterios} />,
     );
     expect(revisor).toContain("Devolver a elaboración");
     expect(revisor).toContain("Dar concepto favorable");
@@ -863,7 +878,7 @@ describe("revisión", () => {
 
   it("el aviso de guardar vive en una región que ya existe, para que se anuncie al aparecer", () => {
     const panel = (propuesta: boolean) =>
-      renderToStaticMarkup(<PanelRevision tramite={tramite} respuestas={respuestas} hayItemsActivos propuesta={propuesta} observaciones={[]} huella={null} pideCodigo={false} />);
+      renderToStaticMarkup(<PanelRevision tramite={tramite} respuestas={respuestas} hayItemsActivos propuesta={propuesta} observaciones={[]} huella={null} pideCodigo={false} {...sinCriterios} />);
     expect(panel(false)).toMatch(/<p id="concepto-sin-guardar" role="status"[^>]*><\/p>/);
     expect(panel(true)).toMatch(/<p id="concepto-sin-guardar" role="status"[^>]*>Guarde el avance de la lista antes de dar el concepto<\/p>/);
   });
@@ -871,7 +886,7 @@ describe("revisión", () => {
   it("sin ítems activos el concepto no se ofrece y el aviso va en la misma región", () => {
     const aviso = "No hay ítems activos en la lista de verificación. Pida al Administrador del SGC que los active.";
     const html = renderToStaticMarkup(
-      <PanelRevision tramite={tramite} respuestas={[]} hayItemsActivos={false} propuesta={false} observaciones={[]} huella={null} pideCodigo={false} />,
+      <PanelRevision tramite={tramite} respuestas={[]} hayItemsActivos={false} propuesta={false} observaciones={[]} huella={null} pideCodigo={false} {...sinCriterios} />,
     );
     expect(html).toContain(`role="status" class="text-sm text-muted-foreground">${aviso}</p>`);
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*aria-describedby="concepto-sin-guardar"[^>]*>Dar concepto favorable|<button[^>]*aria-describedby="concepto-sin-guardar"[^>]*disabled=""[^>]*>Dar concepto favorable/);
@@ -880,7 +895,7 @@ describe("revisión", () => {
 
   it("la lista propuesta cuenta como sin guardar: el concepto espera a que el revisor la confirme", () => {
     const html = renderToStaticMarkup(
-      <PanelRevision tramite={tramite} respuestas={respuestas} hayItemsActivos propuesta observaciones={[]} huella={null} pideCodigo={false} />,
+      <PanelRevision tramite={tramite} respuestas={respuestas} hayItemsActivos propuesta observaciones={[]} huella={null} pideCodigo={false} {...sinCriterios} />,
     );
     expect(html).toContain("Se propone lo respondido en la ronda anterior.");
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*aria-describedby="concepto-sin-guardar"[^>]*>Dar concepto favorable|<button[^>]*aria-describedby="concepto-sin-guardar"[^>]*disabled=""[^>]*>Dar concepto favorable/);
@@ -988,12 +1003,170 @@ describe("revisión", () => {
   });
 });
 
+const HUELLA_CRITERIOS = "c0ffee".repeat(10) + "abcd";
+const CASILLA = new RegExp(`<input type="checkbox"(?=[^>]*required="")(?=[^>]*name="confirmaNoCumple")(?=[^>]*value="${HUELLA_CRITERIOS}")`);
+
+/** Lo que cada DialogoFirma recibió como hijos: el diálogo cerrado no pinta su formulario. */
+const hijosDeDialogos = (): string[] => dialogos.llamadas.map((l) => renderToStaticMarkup(<>{l.children}</>));
+
+describe("criterios que no cumplen en pantalla", () => {
+  const tramite = { id: 7, etapa: "revision", ronda: 2, codigo: "GTH-PR-02", titulo: "Inducción", versionNumero: 3 } as const;
+  const respuestas: RespuestaItem[] = [
+    { itemId: 1, texto: "Usa la plantilla vigente", critico: false, resultado: "cumple", nota: null },
+    { itemId: 2, texto: "Redacción <b>clara</b>", critico: false, resultado: "no_cumple", nota: "Se ajustará con la guía." },
+  ];
+  const criterio = { texto: "Redacción <b>clara</b>", nota: "Se ajustará con la guía." };
+  const edicion = { estado: null, enviar: () => {}, pendiente: false, guardado: false, alCambiar: () => {}, alEnviar: () => {} };
+  const propsRevision = {
+    tramite, respuestas, hayItemsActivos: true, propuesta: false, observaciones: [], huella: null, pideCodigo: false,
+    criterios: [criterio], huellaCriterios: HUELLA_CRITERIOS, criticosActuales: [] as number[],
+  };
+  const panel = (extra: Partial<typeof propsRevision> = {}) => renderToStaticMarkup(<PanelRevision {...propsRevision} {...extra} />);
+  const BLOQUEADO = /<button[^>]*disabled=""[^>]*aria-describedby="concepto-sin-guardar"[^>]*>Dar concepto favorable|<button[^>]*aria-describedby="concepto-sin-guardar"[^>]*disabled=""[^>]*>Dar concepto favorable/;
+  const estadoDelConcepto = (html: string) => /<p id="concepto-sin-guardar" role="status"[^>]*>([^<]*)<\/p>/.exec(html)?.[1];
+  const avisoDe = (n: number) =>
+    renderToStaticMarkup(
+      <AvisoCriterios
+        criterios={Array.from({ length: n }, (_, i) => ({ texto: `Criterio ${i + 1}`, nota: `Nota del criterio ${i + 1}.` }))}
+        huella={HUELLA_CRITERIOS}
+        titulo="Hay criterios"
+        confirmacion="Confirmo"
+      />,
+    );
+
+  it("la nota dice que es obligatoria si no cumple y, al elegir «No cumple», que saldrá en el acta", () => {
+    const html = renderToStaticMarkup(<ListaVerificacion tramite={tramite} respuestas={respuestas} criticosActuales={[]} edicion={edicion} />);
+    expect(html).toContain("Nota (obligatoria si no cumple)");
+    expect(html.match(/Esta nota saldrá en el acta, visible para toda la entidad\./g)).toHaveLength(1); // solo el ítem en «No cumple»
+    expect(html).toContain('aria-describedby="aviso-nota-2"');
+    expect(html).not.toContain("Nota (opcional)");
+  });
+
+  it("un ítem vuelto crítico durante la ronda se pinta como crítico", () => {
+    const html = renderToStaticMarkup(<ListaVerificacion tramite={tramite} respuestas={respuestas} criticosActuales={[2]} edicion={edicion} />);
+    expect(html.match(/Crítico/g)).toHaveLength(1);
+    expect(html).toMatch(/<legend[^>]*>.*Redacción &lt;b&gt;clara&lt;\/b&gt;.*Crítico.*<\/legend>/);
+  });
+
+  it("la casilla lleva la huella, es obligatoria y el texto sale escapado", () => {
+    const html = avisoDe(1);
+    expect(html).toMatch(CASILLA);
+    expect(html).toContain(`value="${HUELLA_CRITERIOS}"`);
+    expect(html).toContain("Nota: Nota del criterio 1.");
+    expect(renderToStaticMarkup(<AvisoCriterios criterios={[criterio]} huella="h" titulo="t" confirmacion="c" />)).toContain("Redacción &lt;b&gt;clara&lt;/b&gt;");
+    expect(avisoDe(2).match(/<li/g)).toHaveLength(2);
+  });
+
+  it("sin criterios no hay aviso ni casilla, y el diálogo de firma no cambia", () => {
+    expect(renderToStaticMarkup(<AvisoCriterios criterios={[]} huella="h" titulo="t" confirmacion="c" />)).toBe("");
+    expect(renderToStaticMarkup(<ResumenCriterios criterios={[]} titulo="t" />)).toBe("");
+    const abierto = (hijos: React.ReactNode) =>
+      renderToStaticMarkup(
+        <FormularioFirma titulo="Firmar" etiquetaBoton="Dar concepto favorable" resumen={{ documento: "Doc", version: 1, huella: null }} accion={vi.fn()} ocultos={{}} pideCodigo={false} alCancelar={() => {}}>
+          {hijos}
+        </FormularioFirma>,
+      );
+    expect(abierto(<AvisoCriterios criterios={[]} huella="h" titulo="t" confirmacion="c" />)).toBe(abierto(null));
+    expect(estadoDelConcepto(panel({ criterios: [] }))).toBe("");
+  });
+
+  it("con criterios, el diálogo del revisor lleva la lista y la casilla en singular y en plural", () => {
+    dialogos.llamadas.length = 0;
+    expect(panel()).not.toMatch(/disabled=""/);
+    expect(estadoDelConcepto(panel())).toBe("");
+    const [uno] = hijosDeDialogos();
+    expect(uno).toContain("Esta revisión tiene 1 criterio que no cumple");
+    expect(uno).toContain("Redacción &lt;b&gt;clara&lt;/b&gt;");
+    expect(uno).toContain("Doy concepto favorable a pesar de este criterio");
+    expect(uno).toMatch(CASILLA);
+    expect(uno.indexOf("confirmaNoCumple")).toBeLessThan(uno.indexOf('name="concepto"'));
+    dialogos.llamadas.length = 0;
+    panel({ criterios: [criterio, { texto: "Otro", nota: "Otra nota." }] });
+    const [varios] = hijosDeDialogos();
+    expect(varios).toContain("Esta revisión tiene 2 criterios que no cumplen");
+    expect(varios).toContain("Doy concepto favorable a pesar de estos criterios");
+  });
+
+  it("con una nota faltante el concepto queda desactivado y lo dice", () => {
+    const html = panel({ criterios: [criterio, { texto: "Redacción", nota: "   ab " }] });
+    expect(estadoDelConcepto(html)).toBe("Escriba una nota en cada criterio que no cumple");
+    expect(html).toMatch(BLOQUEADO);
+  });
+
+  it("un ítem crítico en «No cumple» bloquea con su propio mensaje, antes que el de la nota", () => {
+    const mensaje = "Hay un ítem crítico que no cumple";
+    expect(estadoDelConcepto(panel({ respuestas: [{ ...respuestas[1], critico: true }], criterios: [] }))).toBe(mensaje);
+    // Marcado crítico después de guardar la ronda: lo dice criticosActuales.
+    const html = panel({ criticosActuales: [2], criterios: [{ texto: "x", nota: "" }] });
+    expect(estadoDelConcepto(html)).toBe(mensaje);
+    expect(html).toMatch(BLOQUEADO);
+    // Crítico, pero respondido «Cumple»: no bloquea.
+    expect(estadoDelConcepto(panel({ criticosActuales: [1] }))).toBe("");
+  });
+
+  it("guardar el avance tiene prioridad sobre los demás avisos", () => {
+    expect(estadoDelConcepto(panel({ propuesta: true, criterios: [{ texto: "x", nota: "" }] }))).toBe("Guarde el avance de la lista antes de dar el concepto");
+  });
+
+  describe("aprobación", () => {
+    const modificacion: TramiteParaAprobar = { id: 7, etapa: "aprobacion", ronda: 2, tipo: "modificar", codigo: "GTH-PR-02", titulo: "Inducción", versionNumero: 3 };
+    const propsAprobacion = (t: TramiteParaAprobar, acciones: Accion[], criterios = [criterio]) => ({
+      tramite: t, acciones, revisado: { persona: "Ana", concepto: "Cumple." }, huella: "a".repeat(64), pideCodigo: false, criterios, huellaCriterios: HUELLA_CRITERIOS,
+    });
+    const pintar = (...args: Parameters<typeof propsAprobacion>) => renderToStaticMarkup(<PanelAprobacion {...propsAprobacion(...args)} />);
+
+    it("el aprobador ve el aviso antes de abrir el diálogo, encima del concepto del revisor", () => {
+      const html = pintar(modificacion, ["aprobar", "aprobar_y_publicar"]);
+      expect(html).toContain("El revisor dio concepto favorable con 1 criterio que no cumple");
+      expect(html.indexOf("El revisor dio concepto")).toBeLessThan(html.indexOf("Concepto de Ana"));
+      expect(html).toContain("Nota: Se ajustará con la guía.");
+      expect(html).not.toContain("confirmaNoCumple"); // la casilla solo va dentro del diálogo
+    });
+
+    it("en plural dice cuántos", () => {
+      expect(pintar(modificacion, ["aprobar"], [criterio, { texto: "Otro", nota: "Otra nota." }])).toContain("con 2 criterios que no cumplen");
+    });
+
+    it("Aprobar y Aprobar y publicar llevan cada uno la casilla en su diálogo", () => {
+      dialogos.llamadas.length = 0;
+      pintar(modificacion, ["aprobar", "aprobar_y_publicar"]);
+      const hijos = hijosDeDialogos();
+      expect(hijos).toHaveLength(2);
+      for (const h of hijos) {
+        expect(h).toContain("El revisor dio concepto favorable con 1 criterio que no cumple");
+        expect(h).toContain("Apruebo a pesar de este criterio");
+        expect(h).toMatch(CASILLA);
+      }
+    });
+
+    it("en una eliminación no hay aviso ni casilla", () => {
+      const eliminacion: TramiteParaAprobar = { ...modificacion, ronda: 0, tipo: "eliminar", versionNumero: 2 };
+      dialogos.llamadas.length = 0;
+      expect(pintar(eliminacion, ["aprobar", "aprobar_y_publicar"], [])).not.toContain("El revisor dio concepto favorable");
+      expect(hijosDeDialogos().join("")).not.toContain("confirmaNoCumple");
+    });
+  });
+
+  it("el historial dice cuántos criterios se aceptaron", () => {
+    const evento = (n: number) => ({ tipo: "concepto_favorable", persona: "Ana", ronda: 2, detalle: { concepto: "Cumple.", noCumple: Array.from({ length: n }, () => ({ texto: "t", nota: "n" })), confirmoNoCumple: true }, creadoEn: ahora });
+    expect(renderToStaticMarkup(<HistorialTramite tipo="modificar" eventos={[evento(1)]} />)).toContain("con 1 criterio que no cumple, aceptado");
+    expect(renderToStaticMarkup(<HistorialTramite tipo="modificar" eventos={[evento(3)]} />)).toContain("con 3 criterios que no cumplen, aceptados");
+    expect(renderToStaticMarkup(<HistorialTramite tipo="modificar" eventos={[evento(0)]} />)).not.toContain("criterio");
+  });
+
+  it("cuantosCriterios concuerda en número", () => {
+    expect(cuantosCriterios(1)).toBe("1 criterio que no cumple");
+    expect(cuantosCriterios(2)).toBe("2 criterios que no cumplen");
+  });
+});
+
+
 describe("aprobación y publicación", () => {
   const modificacion: TramiteParaAprobar = { id: 7, etapa: "aprobacion", ronda: 2, tipo: "modificar", codigo: "GTH-PR-02", titulo: "Inducción", versionNumero: 3 };
   const eliminacion: TramiteParaAprobar = { ...modificacion, ronda: 0, tipo: "eliminar", versionNumero: 2 };
   const pintar = (t: TramiteParaAprobar, acciones: Accion[]) =>
     renderToStaticMarkup(
-      <PanelAprobacion tramite={t} acciones={acciones} revisado={{ persona: "Ana <b>Pérez</b>", concepto: "Cumple <i>todo</i>." }} huella={"a".repeat(64)} pideCodigo={false} />,
+      <PanelAprobacion tramite={t} acciones={acciones} revisado={{ persona: "Ana <b>Pérez</b>", concepto: "Cumple <i>todo</i>." }} huella={"a".repeat(64)} pideCodigo={false} criterios={[]} huellaCriterios={HUELLA_CRITERIOS} />,
     );
 
   it("el aprobador sin gestión ve aprobar y devolver, no aprobar y publicar", () => {

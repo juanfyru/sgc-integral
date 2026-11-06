@@ -3,7 +3,7 @@
  * §9.3). Pinta la página real sobre un trámite de verdad, dentro de una transacción que se revierte.
  */
 import { existsSync } from "node:fs";
-import { renderToReadableStream } from "react-dom/server";
+import { renderToReadableStream, renderToStaticMarkup } from "react-dom/server";
 import type { TransactionSql } from "postgres";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
@@ -12,6 +12,19 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 }
 
 const contexto = vi.hoisted(() => ({ tx: null as unknown, sesion: null as unknown }));
+const dialogos = vi.hoisted(() => ({ llamadas: [] as { children?: React.ReactNode }[] }));
+
+// Registra lo que recibe cada diálogo de firma: cerrado, no pinta su formulario.
+vi.mock("@/componentes/tramites/DialogoFirma", async (importar) => {
+  const real = await importar<typeof import("@/componentes/tramites/DialogoFirma")>();
+  return {
+    ...real,
+    DialogoFirma: (props: Parameters<typeof real.DialogoFirma>[0]) => {
+      dialogos.llamadas.push(props);
+      return real.DialogoFirma(props);
+    },
+  };
+});
 
 vi.mock("@/db/cliente", async (importar) => {
   const real = await importar<typeof import("@/db/cliente")>();
@@ -27,6 +40,8 @@ vi.mock("next/navigation", () => ({
 
 import PaginaTramite, { generateMetadata } from "@/app/(app)/tramites/[id]/page";
 import { obtenerSql } from "@/db/cliente";
+import { criteriosNoCumplen } from "@/db/consultas/revision";
+import { huellaDeCriterios } from "@/lib/tramites/criterios";
 import {
   cerrarObservacion,
   crearObservacion,
@@ -155,6 +170,60 @@ describe("la ronda 2 con la lista desactivada", () => {
     } finally {
       await t.limpiar();
     }
+  }));
+});
+
+describe("los criterios que no cumplen en la página", () => {
+  const NOTA = "Se ajustará con la guía de redacción.";
+  const hijosDeDialogos = () => dialogos.llamadas.map((l) => renderToStaticMarkup(<>{l.children}</>));
+
+  async function conUnCriterio(tx: TransactionSql, t: Awaited<ReturnType<typeof tramiteEn>>) {
+    const items = await listarItemsVerificacion({ sql: tx, soloActivos: true });
+    const criterio = items.find((i) => !i.critico)!;
+    await guardarVerificacion(t.tramiteId, t.revisor,
+      items.map((i) => (i.id === criterio.id ? { itemId: i.id, resultado: "no_cumple" as const, nota: NOTA } : { itemId: i.id, resultado: "cumple" as const })), { etapa: "revision", ronda: t.ronda }, { sql: tx });
+    return { criterio, huella: huellaDeCriterios(await criteriosNoCumplen(t.tramiteId, t.ronda, { sql: tx })) };
+  }
+
+  it("en revisión, el diálogo del revisor lleva la casilla con la huella de lo guardado", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "revision");
+    try {
+      const { huella } = await conUnCriterio(tx, t);
+      dialogos.llamadas.length = 0;
+      const html = await pagina(tx, t.tramiteId, t.revisor);
+      expect(html).toContain("Nota (obligatoria si no cumple)");
+      const hijos = hijosDeDialogos().join("");
+      expect(hijos).toContain("Doy concepto favorable a pesar de este criterio");
+      expect(hijos).toContain(`value="${huella}"`);
+      expect(hijos).toContain(NOTA);
+    } finally { await t.limpiar(); }
+  }));
+
+  it("en aprobación, el aprobador ve el aviso, y el historial dice que se aceptó", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "revision");
+    try {
+      const { huella } = await conUnCriterio(tx, t);
+      await transicionar(t.revisor, { tramiteId: t.tramiteId, accion: "concepto_favorable", etapaEsperada: "revision", rondaEsperada: 1,
+        datos: { concepto: "Cumple con un ajuste.", confirmaNoCumple: huella }, ...firma }, opc(tx));
+      dialogos.llamadas.length = 0;
+      const html = await pagina(tx, t.tramiteId, t.aprobador);
+      expect(html).toContain("El revisor dio concepto favorable con 1 criterio que no cumple");
+      expect(html).toContain(`Nota: ${NOTA}`);
+      expect(html).toContain("con 1 criterio que no cumple, aceptado");
+      const hijos = hijosDeDialogos().join("");
+      expect(hijos).toContain("Apruebo a pesar de este criterio");
+      expect(hijos).toContain(`value="${huella}"`);
+    } finally { await t.limpiar(); }
+  }));
+
+  it("sin criterios no hay aviso ni casilla", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "aprobacion");
+    try {
+      dialogos.llamadas.length = 0;
+      const html = await pagina(tx, t.tramiteId, t.aprobador);
+      expect(html).not.toContain("El revisor dio concepto favorable con");
+      expect(hijosDeDialogos().join("")).not.toContain("confirmaNoCumple");
+    } finally { await t.limpiar(); }
   }));
 });
 

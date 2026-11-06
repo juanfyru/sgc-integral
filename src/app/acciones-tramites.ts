@@ -248,7 +248,7 @@ export async function conceptoFavorableAccion(_prev: EstadoAccion, formData: For
   return mutacion(formData, "tramites.revisar", (_usuarioId, _formData, sesion) =>
     ejecutar(formData, sesion, "concepto_favorable", {
       datos: parsearFormulario(formData, EsquemaConcepto, { omitir: OCULTOS }),
-      credenciales: parsearFormulario(firma, EsquemaFirma, { omitir: [...OCULTOS, "concepto"] }),
+      credenciales: parsearFormulario(firma, EsquemaFirma, { omitir: [...OCULTOS, "concepto", "confirmaNoCumple"] }),
     }),
   );
 }
@@ -258,7 +258,7 @@ export async function aprobarAccion(_prev: EstadoAccion, formData: FormData): Pr
   return mutacion(formData, "tramites.aprobar", (_usuarioId, _formData, sesion) =>
     ejecutar(formData, sesion, "aprobar", {
       datos: parsearFormulario(formData, EsquemaConcepto, { omitir: OCULTOS }),
-      credenciales: parsearFormulario(firma, EsquemaFirma, { omitir: [...OCULTOS, "concepto"] }),
+      credenciales: parsearFormulario(firma, EsquemaFirma, { omitir: [...OCULTOS, "concepto", "confirmaNoCumple"] }),
     }),
   );
 }
@@ -293,7 +293,7 @@ export async function aprobarYPublicarAccion(_prev: EstadoAccion, formData: Form
   return mutacion(formData, "tramites.gestionar", (_usuarioId, _formData, sesion) =>
     ejecutarCierre(formData, sesion, "aprobar_y_publicar", {
       datos: parsearFormulario(formData, EsquemaConcepto, { omitir: OCULTOS }),
-      credenciales: parsearFormulario(firma, EsquemaFirma, { omitir: [...OCULTOS, "concepto"] }),
+      credenciales: parsearFormulario(firma, EsquemaFirma, { omitir: [...OCULTOS, "concepto", "confirmaNoCumple"] }),
     }),
   );
 }

@@ -2,7 +2,7 @@
 import { criteriosNoCumplen, obtenerVerificacion, type CriterioNoCumple } from "@/db/consultas/revision";
 import { rotuloDeTramite } from "@/db/consultas/tramites";
 import { constanciaDeCriterios, huellaDeCriterios } from "@/lib/tramites/criterios";
-import { FALTA_NOTA_CRITERIO, LARGO_MIN_NOTA_CRITERIO, SIN_ITEMS_ACTIVOS } from "@/lib/tramites/tipos";
+import { CRITICO_NO_CUMPLE, FALTA_NOTA_CRITERIO, LARGO_MIN_NOTA_CRITERIO, SIN_ITEMS_ACTIVOS } from "@/lib/tramites/tipos";
 import {
   ErrorTramite,
   type Manejador,
@@ -40,7 +40,7 @@ const validarConcepto: Validador = async ({ sql, tramite, datos }) => {
         WHERE r.tramite_id = ${tramite.id} AND r.ronda = ${tramite.ronda} AND r.resultado = 'no_cumple' AND (r.critico OR i.critico)) AS criticos_sin_cumplir`;
   if (Number(lista.activos) === 0) throw new ErrorTramite(SIN_ITEMS_ACTIVOS);
   if (Number(lista.sin_responder) > 0) throw new ErrorTramite("Faltan ítems de la lista por responder");
-  if (Number(lista.criticos_sin_cumplir) > 0) throw new ErrorTramite("Hay un ítem crítico que no cumple");
+  if (Number(lista.criticos_sin_cumplir) > 0) throw new ErrorTramite(CRITICO_NO_CUMPLE);
   const [abiertas] = await sql`SELECT 1 FROM tramite_observaciones WHERE tramite_id = ${tramite.id} AND estado <> 'cerrada' LIMIT 1`;
   if (abiertas) throw new ErrorTramite("Hay observaciones sin cerrar");
   const criterios = await criteriosNoCumplen(tramite.id, tramite.ronda, { sql });
