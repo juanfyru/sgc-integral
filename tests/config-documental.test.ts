@@ -29,7 +29,7 @@ import {
 } from "@/db/consultas/config-documental";
 import { listarItemsVerificacion } from "@/db/consultas/revision";
 import { FORMATO_CODIGO_DEFECTO } from "@/lib/tramites/codigo";
-import { documentoConArchivo, pdfDeFormato, pdfProtegido } from "./utiles/formato";
+import { documentoConArchivo, pdfContenidoCorrupto, pdfDeFormato, pdfProtegido, pdfSinContenido } from "./utiles/formato";
 import { sesionAdmin } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -180,6 +180,8 @@ describe("formato del acta", () => {
     await rechaza((await documentoConArchivo(tx, await pdfDeFormato(1, [595, 842]))).id, /tamaño carta/);
     await rechaza((await documentoConArchivo(tx, new Uint8Array([1, 2, 3]))).id, /no se puede leer/);
     await rechaza((await documentoConArchivo(tx, await pdfProtegido())).id, /no se puede leer/);
+    await rechaza((await documentoConArchivo(tx, await pdfSinContenido())).id, /no se puede leer/);
+    await rechaza((await documentoConArchivo(tx, await pdfContenidoCorrupto())).id, /no se puede leer/);
     const restringido = await documentoConArchivo(tx);
     await tx`UPDATE documentos SET nivel_acceso = 'restringido' WHERE id = ${restringido.id}`;
     await rechaza(restringido.id, /restringido/);

@@ -22,7 +22,7 @@ import { generarActa, type DatosActa } from "@/lib/acta";
 import { motivoMembreteNoUtilizable } from "@/lib/membrete-acta";
 import { puedeVerVersion } from "@/lib/alcance";
 import { resolverRutaAlmacen } from "@/lib/almacen";
-import { pdfProtegido, pdfSinPaginas } from "./utiles/formato";
+import { pdfContenidoCorrupto, pdfContenidoVacio, pdfProtegido, pdfSinContenido, pdfSinPaginas } from "./utiles/formato";
 import { contenidoPorPagina, contieneTexto } from "./utiles/pdf";
 import { opc, tramiteEn } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
@@ -114,6 +114,35 @@ describe("generarActa", () => {
     expect(await motivoMembreteNoUtilizable(new Uint8Array(0))).toMatch(/no se puede leer/);
     expect((await PDFDocument.load(await pdfSinPaginas())).getPageCount()).toBe(0);
     expect(await motivoMembreteNoUtilizable(await pdfSinPaginas())).toMatch(/no se puede leer/);
+  });
+
+  it("dice que puede estar protegido o dañado: también se rechaza uno que solo restringe permisos", async () => {
+    expect(await motivoMembreteNoUtilizable(await pdfProtegido()))
+      .toBe("El archivo del formato no se puede leer: puede estar protegido con clave o dañado");
+  });
+
+  it("un PDF que abre pero no se puede incrustar no sirve, y el acta sale con el diseño básico", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const d = { ...datos, formato: FORMATO };
+      const basica = await generarActa({ ...d, formato: null });
+      for (const malo of [await pdfSinContenido(), await pdfContenidoCorrupto()]) {
+        await expect(PDFDocument.load(malo)).resolves.toBeDefined();
+        expect(await motivoMembreteNoUtilizable(malo)).toMatch(/no se puede leer/);
+        expect(Buffer.from(await generarActa(d, malo)).equals(Buffer.from(basica))).toBe(true);
+      }
+      expect(error).toHaveBeenCalledTimes(2);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it("una página con el contenido vacío sí sirve de fondo", async () => {
+    const vacio = await pdfContenidoVacio();
+    expect(await motivoMembreteNoUtilizable(vacio)).toBeNull();
+    const conFondo = await generarActa({ ...datos, formato: FORMATO }, vacio);
+    expect(Buffer.from(conFondo).equals(Buffer.from(await generarActa(datos)))).toBe(false);
+    expect((await PDFDocument.load(conFondo)).getPageCount()).toBeGreaterThan(0);
   });
 
   it("los criterios van en el acta, y sin ellos no aparece el bloque", async () => {

@@ -6,7 +6,7 @@
 import { NextRequest } from "next/server";
 import { PDFDict, PDFDocument, PDFName } from "pdf-lib";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { pdfDeFormato } from "./utiles/formato";
+import { pdfContenidoCorrupto, pdfDeFormato, pdfSinContenido } from "./utiles/formato";
 import { contenidoPorPagina, contieneTexto } from "./utiles/pdf";
 
 const { sesionDePeticion, obtenerConfigDocumental, obtenerMarca, membreteListo } = vi.hoisted(() => ({
@@ -79,6 +79,22 @@ describe("GET /admin/api/acta-ejemplo", () => {
     const res = await pedir();
     expect(res.status).toBe(200);
     expect(await conFondo(new Uint8Array(await res.arrayBuffer()))).not.toContain(true);
+  });
+
+  it.each([
+    ["sin contenido", pdfSinContenido],
+    ["con el flujo dañado", pdfContenidoCorrupto],
+  ])("un membrete %s tampoco tumba el ejemplo: sale con el diseño básico", async (_caso, fabricar) => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      obtenerConfigDocumental.mockResolvedValue({ formatoActa: { documentoId: 31, margenSuperiorCm: 7, margenInferiorCm: 4 } });
+      membreteListo.mockResolvedValue({ archivoId: 8, ruta: "x.pdf", hash: "abc", codigo: "SGC-FO-06", version: 2, bytes: await fabricar() });
+      const res = await pedir();
+      expect(res.status).toBe(200);
+      expect(await conFondo(new Uint8Array(await res.arrayBuffer()))).not.toContain(true);
+    } finally {
+      error.mockRestore();
+    }
   });
 
   it("el ritmo tiene tope por usuario: 60 por minuto", async () => {

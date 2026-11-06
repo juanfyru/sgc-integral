@@ -14,7 +14,16 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 
 import { obtenerSql } from "@/db/cliente";
 import { archivoDeFormato, documentosParaFormato, membreteListo, revisarFormatoActa } from "@/db/consultas/formato-acta";
-import { documentoConArchivo, huella, pdfDeFormato, pdfProtegido, pdfSinPaginas } from "./utiles/formato";
+import {
+  documentoConArchivo,
+  huella,
+  pdfContenidoCorrupto,
+  pdfContenidoVacio,
+  pdfDeFormato,
+  pdfProtegido,
+  pdfSinContenido,
+  pdfSinPaginas,
+} from "./utiles/formato";
 import { revertida } from "./utiles/transaccion";
 
 const sql = obtenerSql();
@@ -75,6 +84,16 @@ describe("revisarFormatoActa", () => {
       const doc = await documentoConArchivo(tx, bytes);
       expect(await revisarFormatoActa(doc.id, { sql: tx })).toEqual({ estado: "no_sirve", motivo: expect.stringMatching(NO_LEGIBLE) });
     }
+  }));
+
+  it("un PDF que abre pero no se puede incrustar no está listo, y no entrega membrete", () => revertida(sql, async (tx) => {
+    for (const bytes of [await pdfSinContenido(), await pdfContenidoCorrupto()]) {
+      const doc = await documentoConArchivo(tx, bytes);
+      expect(await revisarFormatoActa(doc.id, { sql: tx })).toEqual({ estado: "no_sirve", motivo: expect.stringMatching(NO_LEGIBLE) });
+      expect(await membreteListo(doc.id, { sql: tx })).toBeNull();
+    }
+    const vacio = await documentoConArchivo(tx, await pdfContenidoVacio());
+    expect(await revisarFormatoActa(vacio.id, { sql: tx })).toMatchObject({ estado: "listo" });
   }));
 
   it("el archivo perdido o cambiado no es lo mismo que uno que no sirve", () => revertida(sql, async (tx) => {

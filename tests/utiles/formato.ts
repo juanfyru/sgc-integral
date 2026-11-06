@@ -6,12 +6,12 @@
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, PDFName } from "pdf-lib";
 import type { TransactionSql } from "postgres";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { documentoLibre, type DocumentoLibre } from "./tramites";
 
-/** Con una línea dibujada: una página sin contenido no se puede incrustar como fondo. */
+/** Con una línea dibujada: sin ella, `pdf-lib` guarda la página sin `/Contents`, y esa no se puede incrustar. */
 export async function pdfDeFormato(paginas = 1, tamano: [number, number] = [612, 792]): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   for (let i = 0; i < paginas; i++) doc.addPage(tamano).drawLine({ start: { x: 40, y: 700 }, end: { x: 570, y: 700 }, thickness: 1 });
@@ -28,6 +28,26 @@ export async function pdfProtegido(): Promise<Uint8Array> {
 }
 
 export const pdfSinPaginas = async () => (await PDFDocument.create()).save({ addDefaultPage: false });
+
+/** Una página carta sin `/Contents`: abre bien y solo falla al incrustarla. */
+export async function pdfSinContenido(): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  doc.addPage([612, 792]);
+  return doc.save();
+}
+
+async function pdfConFlujo(contenido: Uint8Array, filtro: Record<string, string>): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  const flujo = doc.context.register(doc.context.stream(contenido, filtro));
+  doc.addPage([612, 792]).node.set(PDFName.of("Contents"), flujo);
+  return doc.save();
+}
+
+/** El flujo dice estar comprimido y no lo está: `pdf-lib` carga el PDF y falla al descomprimirlo. */
+export const pdfContenidoCorrupto = () => pdfConFlujo(new Uint8Array([1, 2, 3, 4]), { Filter: "FlateDecode" });
+
+/** Tiene `/Contents`, sin nada dentro: esa página en blanco sí se puede incrustar. */
+export const pdfContenidoVacio = () => pdfConFlujo(new Uint8Array(0), {});
 
 export const huella = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 
