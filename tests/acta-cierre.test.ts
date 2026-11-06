@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
@@ -25,6 +25,7 @@ import {
 } from "@/db/consultas/revision";
 import { transicionar } from "@/db/consultas/tramites-flujo";
 import { generarActa, type DatosActa } from "@/lib/acta";
+import type { Verificador } from "@/lib/firma";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { contenidoPorPagina, contieneTexto } from "./utiles/pdf";
 import { opc, tramiteEn } from "./utiles/tramites";
@@ -82,13 +83,23 @@ describe("el acta se congela al cerrar", () => {
     } finally { await t.limpiar(); }
   }));
 
-  it("sin el nombre de la entidad en la configuración el cierre falla y no queda nada", () => revertida(sql, async (tx) => {
+  it("sin el nombre de la entidad, o con el de la instalación sin configurar, no se pide la firma y no queda nada", () => revertida(sql, async (tx) => {
     const t = await tramiteEn(tx, "publicacion");
     try {
-      await tx`DELETE FROM configuracion WHERE clave = 'nombre_entidad'`;
-      await expect(tx.savepoint(() => transicionar(t.admin, publicar(t), opc(tx)))).rejects.toThrow("Falta el nombre de la entidad");
-      const [{ etapa }] = await tx`SELECT etapa FROM tramites WHERE id = ${t.tramiteId}`;
-      expect(etapa).toBe("publicacion");
+      for (const preparar of [
+        () => tx`DELETE FROM configuracion WHERE clave = 'nombre_entidad'`,
+        () => tx`UPDATE configuracion SET valor = '   ' WHERE clave = 'nombre_entidad'`,
+        () => tx`UPDATE configuracion SET valor = 'Entidad sin configurar' WHERE clave = 'nombre_entidad'`,
+      ]) {
+        await preparar();
+        const verificar = vi.fn<Verificador>(async () => ({ ok: true, metodo: "clave" }));
+        await expect(tx.savepoint(() => transicionar(t.admin, publicar(t), { ...opc(tx), verificar }))).rejects.toThrow(
+          "Configure el nombre de la entidad antes de publicar",
+        );
+        expect(verificar).not.toHaveBeenCalled();
+        const [{ etapa }] = await tx`SELECT etapa FROM tramites WHERE id = ${t.tramiteId}`;
+        expect(etapa).toBe("publicacion");
+      }
     } finally { await t.limpiar(); }
   }));
 
@@ -196,6 +207,30 @@ describe("escribir el acta", () => {
       const segunda = (await asegurarActa(t.tramiteId, { sql: tx }))!;
       expect(segunda).toEqual(primera);
       expect(contieneTexto(await textoDe(new Uint8Array(await readFile(absoluta))), "Procedimiento de Inducción y Reinducción")).toBe(true);
+    } finally { await borrarActas(rutas); await t.limpiar(); }
+  }));
+  it("si el acta regenerada no es idéntica a la registrada, no se sirve ni se pisa la fila", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "publicacion");
+    const rutas: string[] = [];
+    try {
+      await transicionar(t.admin, publicar(t), opc(tx));
+      const primera = (await asegurarActa(t.tramiteId, { sql: tx }))!;
+      rutas.push(primera.ruta);
+      const absoluta = resolverRutaAlmacen(primera.ruta)!;
+      const [{ hash_sha256: original, tamano_bytes: tamano }] = await tx`SELECT hash_sha256, tamano_bytes FROM archivos WHERE id = ${primera.archivoId}`;
+      await tx`UPDATE archivos SET hash_sha256 = ${"b".repeat(64)} WHERE id = ${primera.archivoId}`;
+      await rm(absoluta);
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        expect(await asegurarActa(t.tramiteId, { sql: tx, usuarioId: t.admin.usuarioId })).toBeNull();
+        expect(error).toHaveBeenCalled();
+      } finally { error.mockRestore(); }
+      const [fila] = await tx`SELECT hash_sha256, tamano_bytes FROM archivos WHERE id = ${primera.archivoId}`;
+      expect(fila.hash_sha256).toBe("b".repeat(64));
+      expect(fila.tamano_bytes).toBe(tamano);
+      await expect(readFile(absoluta)).rejects.toThrow();
+      const [a] = await tx`SELECT detalle FROM auditoria WHERE usuario_id = ${t.admin.usuarioId} AND accion = 'acta_no_regenerable' ORDER BY id DESC LIMIT 1`;
+      expect(a.detalle).toMatchObject({ huellaRegistrada: "b".repeat(64), huellaRegenerada: original });
     } finally { await borrarActas(rutas); await t.limpiar(); }
   }));
 });

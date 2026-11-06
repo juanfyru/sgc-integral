@@ -33,15 +33,6 @@ export function validarBanda(v: string): string {
   return v;
 }
 
-export function validarPatronCodigo(v: string): string {
-  try {
-    new RegExp(v);
-  } catch {
-    throw new Error("El patrón no es una expresión regular válida");
-  }
-  return v;
-}
-
 export function validarIcono(v: string, validos: readonly string[]): string {
   const i = v.trim();
   if (!validos.includes(i)) {

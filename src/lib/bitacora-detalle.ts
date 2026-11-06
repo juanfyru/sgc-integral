@@ -49,6 +49,31 @@ function describirConfiguracion(claves: unknown): string {
   return `Editó la configuración: ${nombres}`;
 }
 
+const NOMBRE_CLAVE_DOCUMENTAL: Record<string, string> = {
+  formato_codigo: "formato del código",
+  plazo_visto_bueno_dias: "plazo del visto bueno",
+  plazo_aceptacion_dias: "plazo de aceptación",
+  plazo_elaboracion_dias: "plazo de elaboración",
+  plazo_ajustes_dias: "plazo de ajustes",
+  plazo_revision_dias: "plazo de revisión",
+  plazo_aprobacion_dias: "plazo de aprobación",
+  plazo_publicacion_dias: "plazo de publicación",
+  escalamiento_dias: "días para avisar al jefe",
+  publicacion_directa: "publicación directa",
+};
+
+function describirConfigDocumental(cambios: unknown): string {
+  const claves = cambios && typeof cambios === "object" ? Object.keys(cambios) : [];
+  if (claves.length === 0) return "Guardó la configuración documental sin cambios";
+  const partes = claves.map((c) => {
+    const nombre = Object.hasOwn(NOMBRE_CLAVE_DOCUMENTAL, c) ? NOMBRE_CLAVE_DOCUMENTAL[c] : c.replace(/_+/g, " ").trim();
+    if (c !== "publicacion_directa") return nombre;
+    const despues = (cambios as Record<string, { despues?: unknown }>)[c]?.despues;
+    return `${nombre} (${despues === "1" || despues === true ? "encendida" : "apagada"})`;
+  });
+  return `Editó la configuración documental: ${partes.join(", ")}`;
+}
+
 /** Lo que se hace dentro de la revisión sin mover el trámite de etapa: no pasa por `transicionar`. */
 const ACCIONES_REVISION = [
   "guardar_lista",
@@ -186,6 +211,16 @@ export function describirEvento(e: EventoAuditoria): string {
       return `Creó ${d.creados ?? 0} usuarios por lote (${d.fallidos ?? 0} rechazados)`;
     case "editar_configuracion":
       return describirConfiguracion(d.claves);
+    case "editar_config_documental":
+      return describirConfigDocumental(d.cambios);
+    case "crear_item_verificacion":
+      return `Añadió un ítem a la lista de verificación: «${texto(d.texto) ?? "?"}»`;
+    case "editar_item_verificacion":
+      return `Editó un ítem de la lista de verificación: «${texto(d.texto) ?? "?"}»`;
+    case "mover_item_verificacion":
+      return `Movió un ítem de la lista de verificación ${d.direccion === "arriba" ? "hacia arriba" : "hacia abajo"}: «${texto(d.texto) ?? "?"}»`;
+    case "alternar_item_verificacion":
+      return `${d.activo === true ? "Activó" : "Desactivó"} un ítem de la lista de verificación: «${texto(d.texto) ?? "?"}»`;
   }
 
   if (e.accion.startsWith("tramite_")) return describirTramite(e.accion, texto(d.numero) ?? "?", cod, d.observacion);

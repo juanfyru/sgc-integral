@@ -10,6 +10,7 @@ import { mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
+import { registrarAuditoria } from "@/db/consultas/admin";
 import { listarFirmas } from "@/db/consultas/firmas";
 import { generarActa, diaYHora, type DatosActa } from "@/lib/acta";
 import { resolverRutaAlmacen } from "@/lib/almacen";
@@ -20,6 +21,7 @@ import {
   type Motivo,
   type TipoSolicitud,
 } from "@/lib/tramites/tipos";
+import { MARCA_DEFECTO } from "@/lib/marca";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { ErrorTramite, type FilaTramite } from "./flujo/contrato";
 
@@ -62,6 +64,20 @@ function textoDeDuplicidad(aceptar: Evento | undefined): string | null {
   return `Se vieron ${parecidos.length} documento${parecidos.length === 1 ? "" : "s"}: ${lista}; ${decision}`;
 }
 
+export const FALTA_ENTIDAD = "Configure el nombre de la entidad antes de publicar";
+
+/**
+ * El nombre de la entidad que irá en el acta. Vacío o el de la instalación sin configurar
+ * (`MARCA_DEFECTO.nombre`, lo que siembra `db:seed:minima`) se rechaza: quedaría congelado en un
+ * registro legal. Lo usan los validadores del cierre, antes de pedir la firma, y el congelado.
+ */
+export async function nombreDeEntidadParaActa(sql: Cliente): Promise<string> {
+  const [entidad] = await sql`SELECT valor FROM configuracion WHERE clave = 'nombre_entidad'`;
+  const nombre = typeof entidad?.valor === "string" ? entidad.valor.trim() : "";
+  if (!nombre || nombre === MARCA_DEFECTO.nombre) throw new ErrorTramite(FALTA_ENTIDAD);
+  return nombre;
+}
+
 /**
  * Lo que dice el acta, leído dentro de la transacción del cierre y después de aplicarlo (el título
  * nuevo de una modificación ya está en el documento). Lo guardan los manejadores en `detalle.acta`
@@ -75,9 +91,7 @@ export async function congelarDatosActa(
   ahora: Date,
   versionObsoleta: number | null = null,
 ): Promise<DatosCongelados> {
-  const [entidad] = await tx`SELECT valor FROM configuracion WHERE clave = 'nombre_entidad'`;
-  const nombreEntidad = typeof entidad?.valor === "string" ? entidad.valor.trim() : "";
-  if (!nombreEntidad) throw new ErrorTramite("Falta el nombre de la entidad en la configuración: no se puede dejar el acta");
+  const nombreEntidad = await nombreDeEntidadParaActa(tx);
 
   const [d] = await tx`SELECT d.codigo, d.titulo, td.nombre AS tipo_documento, p.nombre AS proceso,
       u.nombre AS solicitante, v.numero AS version, v.resumen_cambios
@@ -182,7 +196,7 @@ async function escribirAtomico(absoluta: string, bytes: Uint8Array): Promise<voi
  */
 export async function asegurarActa(
   tramiteId: number,
-  opciones?: { sql?: Cliente; generar?: (d: DatosActa) => Promise<Uint8Array> },
+  opciones?: { sql?: Cliente; generar?: (d: DatosActa) => Promise<Uint8Array>; usuarioId?: number | null },
 ): Promise<{ archivoId: number; ruta: string } | null> {
   const sql = opciones?.sql ?? obtenerSql();
   const cierre = await versionDeActa(tramiteId, { sql });
@@ -199,14 +213,31 @@ export async function asegurarActa(
   const ruta = existente?.ruta ?? `actas/${cierre.numero}.pdf`;
   const absoluta = resolverRutaAlmacen(ruta);
   if (!absoluta) throw new Error(`Ruta inválida en el almacén: ${ruta}`);
-  await escribirAtomico(absoluta, bytes);
   const huella = createHash("sha256").update(bytes).digest("hex");
 
   if (existente) {
-    // El archivo se perdió y se regeneró de los mismos datos: la fila sigue siendo la del archivo.
-    await sql`UPDATE archivos SET tamano_bytes = ${bytes.byteLength}, hash_sha256 = ${huella} WHERE id = ${existente.archivoId}`;
+    // El archivo se perdió: solo se sirve el regenerado si es idéntico al que se registró. Si no,
+    // la fila (huella y tamaño del acta original) no se pisa y el acta se trata como perdida.
+    const [registrada] = await sql`SELECT hash_sha256 FROM archivos WHERE id = ${existente.archivoId}`;
+    if (registrada?.hash_sha256 !== huella) {
+      console.error(
+        `El acta del trámite ${tramiteId} no se pudo regenerar idéntica (huella registrada ${registrada?.hash_sha256}, regenerada ${huella}); no se sirve.`,
+      );
+      if (opciones?.usuarioId) {
+        await registrarAuditoria(sql, {
+          usuarioId: opciones.usuarioId,
+          accion: "acta_no_regenerable",
+          entidad: "archivos",
+          entidadId: existente.archivoId,
+          detalle: { tramiteId, huellaRegistrada: registrada?.hash_sha256 ?? null, huellaRegenerada: huella },
+        });
+      }
+      return null;
+    }
+    await escribirAtomico(absoluta, bytes);
     return existente;
   }
+  await escribirAtomico(absoluta, bytes);
   const [fila] = await sql`INSERT INTO archivos (version_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
     VALUES (${cierre.versionId}, ${ROL_DE_ACTA[cierre.clase]}, ${ruta}, ${`Acta ${cierre.numero}.pdf`}, 'pdf', 'application/pdf',
       ${bytes.byteLength}, ${huella})

@@ -7,6 +7,7 @@ export type IconoNav =
   | "documentos"
   | "maestro"
   | "tipos"
+  | "configuracion"
   | "mapa"
   | "entidad"
   | "estructura"
@@ -62,6 +63,13 @@ export const NAVEGACION: readonly EntradaNav[] = [
   },
   { href: "/admin/maestro", etiqueta: "Listado Maestro", icono: "maestro", grupo: "documentos", permiso: "maestro.ver" },
   { href: "/admin/tipos", etiqueta: "Tipos de documento", icono: "tipos", grupo: "documentos", permiso: "mapa.administrar" },
+  {
+    href: "/admin/configuracion-documental",
+    etiqueta: "Configuración documental",
+    icono: "configuracion",
+    grupo: "documentos",
+    permiso: "tramites.gestionar",
+  },
   { href: "/admin/mapa", etiqueta: "Mapa de procesos", icono: "mapa", grupo: "documentos", permiso: "mapa.administrar" },
   {
     href: "/admin/entidad",

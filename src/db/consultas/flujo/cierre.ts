@@ -5,7 +5,7 @@
 import type { TransactionSql } from "postgres";
 import type { Cliente } from "@/db/cliente";
 import { anularVigenteEn, aplicarPublicacion } from "@/db/consultas/admin";
-import { congelarDatosActa } from "@/db/consultas/actas";
+import { congelarDatosActa, nombreDeEntidadParaActa } from "@/db/consultas/actas";
 import { listarFirmas, type FirmaRegistrada } from "@/db/consultas/firmas";
 import { crearObservacionesDeAprobacion } from "@/db/consultas/revision";
 import { adminsActivos, lideresDeProceso, lideresDeProcesosDelDocumento, rotuloDeTramite } from "@/db/consultas/tramites";
@@ -81,6 +81,7 @@ const validarAprobar: Validador = async ({ sql, tramite, sesion, datos }) => {
 };
 
 const validarPublicar: Validador = async ({ sql, tramite }) => {
+  await nombreDeEntidadParaActa(sql);
   if (tramite.tipo !== "eliminar") return exigirLoAprobado(sql, tramite, ["elaboro", "reviso", "aprobo"]);
   await exigirVersionVigente(sql, tramite);
   laFirma(await firmasDeLaRonda(sql, tramite), "aprobo");
@@ -89,6 +90,7 @@ const validarPublicar: Validador = async ({ sql, tramite }) => {
 /** La firma `aprobo` se escribe en esta misma transición: todavía no se exige. */
 const validarAprobarYPublicar: Validador = async ({ sql, tramite, sesion, datos }) => {
   conceptoDe(datos);
+  await nombreDeEntidadParaActa(sql);
   await exigirAprobadorDistinto(sql, tramite, sesion.usuarioId);
   if (tramite.tipo === "eliminar") return exigirVersionVigente(sql, tramite);
   await exigirLoAprobado(sql, tramite, ["elaboro", "reviso"]);

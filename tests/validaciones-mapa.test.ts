@@ -4,7 +4,6 @@ import {
   validarBanda,
   validarColor,
   validarIcono,
-  validarPatronCodigo,
   validarSigla,
   validarSlug,
 } from "@/lib/validaciones-mapa";
@@ -35,10 +34,6 @@ describe("validadores", () => {
   it("banda solo admite las cuatro válidas", () => {
     expect(validarBanda("misionales")).toBe("misionales");
     expect(() => validarBanda("otra")).toThrow(/banda/i);
-  });
-  it("patrón exige una expresión regular válida", () => {
-    expect(validarPatronCodigo("^[A-Z]{2}-\\d{3}$")).toBe("^[A-Z]{2}-\\d{3}$");
-    expect(() => validarPatronCodigo("(sin cerrar")).toThrow(/regular/i);
   });
   it("ícono debe estar en la lista registrada", () => {
     expect(validarIcono("target", ["target", "users"])).toBe("target");

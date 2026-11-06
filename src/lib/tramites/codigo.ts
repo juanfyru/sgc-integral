@@ -23,6 +23,9 @@ export function validarFormato(formato: string): string | null {
   if (contar(formato, "NN") + contar(formato, "NNN") !== 1) {
     return "El formato debe llevar exactamente un consecutivo ({NN} o {NNN})";
   }
+  if (formato.includes("}{")) {
+    return "Separe con un guion los marcadores contiguos: {PROCESO}{TIPO} no se puede leer de vuelta";
+  }
   if (/[^A-Z0-9-]/.test(formato.replace(MARCADORES, ""))) {
     return "Fuera de los marcadores solo se admiten letras mayúsculas, dígitos y guiones";
   }

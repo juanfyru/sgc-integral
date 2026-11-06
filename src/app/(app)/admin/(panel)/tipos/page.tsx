@@ -43,6 +43,10 @@ export default async function PaginaTipos() {
             <span className="text-xs text-muted-foreground">
               {t.numDocs} docs · {t.esDiligenciable ? "diligenciable" : "solo lectura"}
             </span>
+            <span className="text-xs text-muted-foreground">
+              Aprueba: {t.autoridad === "estrategico" ? "Gerencia" : "Administrador del SGC"} · Plantilla:{" "}
+              {t.plantillaCodigo ?? "ninguna"}
+            </span>
             {!t.activo && <Insignia variante="sin-dato">Inactivo</Insignia>}
             <BotonToggle tabla="tipos_documento" id={t.id} activo={t.activo} />
             {t.numDocs === 0 && (

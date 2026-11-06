@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { NAVEGACION, entradasVisibles, esActiva } from "@/componentes/cascaron/navegacion";
 
 describe("navegación por módulos y rol", () => {
-  it("consulta ve Inicio y Buscar; admin ve las catorce", () => {
+  it("consulta ve Inicio y Buscar; admin ve las quince", () => {
     expect(entradasVisibles({ rol: "consulta" }).map((e) => e.href)).toEqual(["/", "/buscar"]);
-    expect(entradasVisibles({ rol: "admin_sgc" })).toHaveLength(14);
+    expect(entradasVisibles({ rol: "admin_sgc" })).toHaveLength(15);
   });
   it("Trámites: consulta solo si participa; gerencia y líder siempre; va después de Buscar", () => {
     const hrefs = (s: Parameters<typeof entradasVisibles>[0]) => entradasVisibles(s).map((e) => e.href);
@@ -40,6 +40,17 @@ describe("navegación por módulos y rol", () => {
     expect(esActiva(gestion, "/admin/documentos/SGC-PR-01")).toBe(true);
     expect(esActiva(gestion, "/admin/documentos/nuevo")).toBe(true);
     expect(esActiva(gestion, "/admin/usuarios")).toBe(false);
+  });
+});
+
+describe("Configuración documental", () => {
+  const hrefs = (rol: Parameters<typeof entradasVisibles>[0]["rol"]) => entradasVisibles({ rol }).map((e) => e.href);
+  it("solo admin_sgc la ve, justo después de Tipos de documento", () => {
+    for (const rol of ["gerencia", "lider_proceso", "control_interno", "consulta"] as const) {
+      expect(hrefs(rol)).not.toContain("/admin/configuracion-documental");
+    }
+    const admin = hrefs("admin_sgc");
+    expect(admin.indexOf("/admin/configuracion-documental")).toBe(admin.indexOf("/admin/tipos") + 1);
   });
 });
 

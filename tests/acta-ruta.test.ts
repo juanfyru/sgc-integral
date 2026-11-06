@@ -65,7 +65,7 @@ describe("GET /tramites/[id]/acta", () => {
     expect(res.headers.get("Cache-Control")).toBe("no-store");
     expect(Buffer.from(await res.arrayBuffer()).equals(Buffer.from(PDF))).toBe(true);
     expect(puedeVerVersion).toHaveBeenCalledWith(9, SESION);
-    expect(asegurarActa).toHaveBeenCalledWith(7);
+    expect(asegurarActa).toHaveBeenCalledWith(7, { usuarioId: SESION.usuarioId });
   });
 
   it("un trámite sin acta (abierto, rechazado o cancelado) responde 404 sin generar nada", async () => {

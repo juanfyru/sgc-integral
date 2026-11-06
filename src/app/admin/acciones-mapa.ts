@@ -11,6 +11,7 @@ import {
 } from "@/app/admin/comun";
 import { NOMBRES_ICONO } from "@/componentes/iconos";
 import {
+  type AutoridadTipo,
   alternarActivo,
   borrar,
   CLAVES_TEXTO,
@@ -83,7 +84,21 @@ function parsearTipo(formData: FormData) {
     nombre,
     sigla: validarSigla(texto(formData, "sigla")),
     esDiligenciable: formData.get("esDiligenciable") === "on",
+    autoridad: validarAutoridad(texto(formData, "autoridad")),
+    plantillaDocumentoId: plantillaDe(texto(formData, "plantillaDocumentoId")),
   };
+}
+
+function validarAutoridad(v: string): AutoridadTipo {
+  if (v !== "estrategico" && v !== "operativo") throw new Error("Elija quién aprueba los documentos de este tipo");
+  return v;
+}
+
+function plantillaDe(v: string): number | null {
+  if (v === "") return null;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n <= 0) throw new Error("La plantilla elegida no es válida");
+  return n;
 }
 
 export async function crearTipoAccion(

@@ -31,7 +31,7 @@ export async function GET(peticion: NextRequest, { params }: { params: Promise<{
   const cierre = await versionDeActa(Number(id));
   if (!cierre || !(await puedeVerVersion(cierre.versionId, sesion))) return respuesta404();
 
-  const acta = await asegurarActa(Number(id));
+  const acta = await asegurarActa(Number(id), { usuarioId: sesion.usuarioId });
   if (!acta) return respuesta404();
   return respuestaArchivo({ ruta: acta.ruta, mime: "application/pdf", nombreOriginal: `Acta ${cierre.numero}.pdf` }, false);
 }

@@ -41,6 +41,8 @@ describe("formato del código", () => {
     expect(validarFormato("{PROCESO}-{TIPO}-{NN}{NNN}")).not.toBeNull();
     expect(validarFormato("{proceso}-{TIPO}-{NN}")).not.toBeNull();
     expect(validarFormato("{PROCESO}.{TIPO}-{NN}")).not.toBeNull();
+    expect(validarFormato("{PROCESO}{TIPO}-{NN}")).toMatch(/Separe/);
+    expect(validarFormato("{PROCESO}-{TIPO}{NN}")).toMatch(/Separe/);
     expect(validarFormato("{PROCESO}-{TIPO}-{NN}$")).not.toBeNull();
   });
   it("no confunde siglas que comparten prefijo", () => {

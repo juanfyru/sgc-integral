@@ -178,3 +178,22 @@ describe("describirEvento — editar_configuracion dice qué se editó", () => {
     expect(evento({ claves: [7, null, { a: 1 }] })).toBe("Editó la configuración");
   });
 });
+
+describe("configuración documental", () => {
+  const e = (accion: string, detalle: Record<string, unknown>) =>
+    describirEvento({ accion, entidad: "configuracion", entidadId: null, detalle, codigoDocumento: null });
+  it("dice qué claves cambiaron y si la publicación directa quedó encendida o apagada", () => {
+    expect(e("editar_config_documental", {
+      cambios: { plazo_revision_dias: { antes: "5", despues: "7" }, publicacion_directa: { antes: "1", despues: "0" } },
+    })).toBe("Editó la configuración documental: plazo de revisión, publicación directa (apagada)");
+    expect(e("editar_config_documental", { cambios: { publicacion_directa: { antes: "0", despues: "1" } } }))
+      .toBe("Editó la configuración documental: publicación directa (encendida)");
+    expect(e("editar_config_documental", { cambios: {} })).toBe("Guardó la configuración documental sin cambios");
+  });
+  it("los ítems de la lista de verificación", () => {
+    expect(e("crear_item_verificacion", { texto: "Cita la norma" })).toBe("Añadió un ítem a la lista de verificación: «Cita la norma»");
+    expect(e("alternar_item_verificacion", { texto: "Cita la norma", activo: false })).toBe("Desactivó un ítem de la lista de verificación: «Cita la norma»");
+    expect(e("mover_item_verificacion", { texto: "Cita la norma", direccion: "arriba" })).toBe("Movió un ítem de la lista de verificación hacia arriba: «Cita la norma»");
+  });
+});
+
