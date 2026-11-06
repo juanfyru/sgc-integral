@@ -25,7 +25,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
 }));
 
-import PaginaTramite from "@/app/(app)/tramites/[id]/page";
+import PaginaTramite, { generateMetadata } from "@/app/(app)/tramites/[id]/page";
 import { obtenerSql } from "@/db/cliente";
 import {
   cerrarObservacion,
@@ -130,6 +130,24 @@ describe("la página del trámite cerrado", () => {
     expect(html).toContain("La solicitud");
     expect(html).not.toContain("Lista de verificación");
     expect(html).not.toContain("Observaciones");
+  }));
+});
+
+describe("el título de la pestaña", () => {
+  it("no delata nada: ajeno, inexistente o no numérico dicen lo mismo", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "aceptacion");
+    contexto.tx = tx;
+    try {
+      const titulo = async (id: string) => (await generateMetadata({ params: Promise.resolve({ id }) })).title;
+      contexto.sesion = await sesionDe(tx, "lider.gth");
+      expect(await titulo(String(t.tramiteId))).toBe("Trámite");
+      expect(await titulo("999999999")).toBe("Página no encontrada");
+      expect(await titulo("abc")).toBe("Página no encontrada");
+      contexto.sesion = await sesionDe(tx, "lider.cex");
+      expect(await titulo(String(t.tramiteId))).toBe("Página no encontrada");
+    } finally {
+      contexto.tx = null;
+    }
   }));
 });
 

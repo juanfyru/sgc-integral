@@ -5,9 +5,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { datosParaSolicitar, sesionActual } = vi.hoisted(() => ({
+const { datosParaSolicitar, sesionActual, guardarConfigDocumental } = vi.hoisted(() => ({
   datosParaSolicitar: vi.fn(),
   sesionActual: vi.fn(),
+  guardarConfigDocumental: vi.fn(),
 }));
 
 vi.mock("@/app/acciones-cuenta", () => ({ ingresar: vi.fn() }));
@@ -19,8 +20,15 @@ vi.mock("@/componentes/cascaron/PantallaCentrada", () => ({
   PantallaCentrada: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
+vi.mock("@/app/admin/comun", () => ({
+  idNumerico: vi.fn(),
+  mutacion: (formData: FormData, _permiso: string, fn: (usuarioId: number, datos: FormData) => Promise<string | void>) => fn(1, formData),
+}));
+vi.mock("@/db/consultas/config-documental", () => ({ guardarConfigDocumental }));
+vi.mock("@/db/consultas/revision", () => ({}));
 
 import PaginaNuevaSolicitud from "@/app/(app)/tramites/nueva/page";
+import { guardarConfigDocumentalAccion } from "@/app/admin/acciones-config-documental";
 import PaginaIngreso from "@/app/ingreso/page";
 
 describe("/ingreso", () => {
@@ -36,6 +44,16 @@ describe("/ingreso", () => {
   it("sin motivo, o con uno que no existe, no dice nada de ninguna cuenta", async () => {
     expect(await pagina()).not.toContain("bloqueada");
     expect(await pagina("cualquiera")).not.toContain("bloqueada");
+  });
+});
+
+describe("guardar la configuración documental", () => {
+  it("no redirige: el formulario debe seguir montado para confirmar en pantalla", async () => {
+    const f = new FormData();
+    f.set("formatoCodigo", "{PROCESO}-{TIPO}-{NN}");
+    for (const campo of ["plazoVistoBueno", "plazoAceptacion", "plazoElaboracion", "plazoAjustes", "plazoRevision", "plazoAprobacion", "plazoPublicacion", "escalamientoDias"]) f.set(campo, "3");
+    expect(await guardarConfigDocumentalAccion(null, f)).toBeUndefined();
+    expect(guardarConfigDocumental).toHaveBeenCalledOnce();
   });
 });
 

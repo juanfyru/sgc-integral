@@ -254,6 +254,13 @@ export function describirEvento(e: EventoAuditoria): string {
   return `Acción «${e.accion}» sobre ${e.entidad}${e.entidadId ? ` #${e.entidadId}` : ""}`;
 }
 
+/** Lo que la acción de mapa escribe sin tilde o abreviado. */
+const OBJETO_DE_MAPA: Record<string, string> = {
+  area: "área",
+  tipo_documento: "tipo de documento",
+  periferico: "elemento periférico",
+};
+
 /** El nombre de cada acción en el filtro de la bitácora: sin datos de ningún evento en particular. */
 const NOMBRE_DE_ACCION: Record<string, string> = {
   ingreso: "Inició sesión",
@@ -301,6 +308,6 @@ export function nombreDeAccion(accion: string): string {
     if (Object.hasOwn(ACCIONES_TRAMITE, clave)) return ACCIONES_TRAMITE_EN_FILTRO[clave] ?? ACCIONES_TRAMITE[clave];
   }
   const m = ACCION_DE_MAPA.exec(accion);
-  if (m) return `${VERBOS_DE_MAPA[m[1]]} el ${m[2].replace(/_/g, " ")}`;
+  if (m) return `${VERBOS_DE_MAPA[m[1]]} el ${Object.hasOwn(OBJETO_DE_MAPA, m[2]) ? OBJETO_DE_MAPA[m[2]] : m[2].replace(/_/g, " ")}`;
   return accion.replace(/_+/g, " ");
 }

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 import { AccionesGestion } from "@/componentes/tramites/AccionesGestion";
 import { AccionesSolicitud } from "@/componentes/tramites/AccionesSolicitud";
 import { BloqueSolicitud } from "@/componentes/tramites/BloqueSolicitud";
@@ -33,7 +34,23 @@ export const dynamic = "force-dynamic";
 /** Desde la revisión, la lista y las observaciones se consultan; solo el revisor, en `revision`, las edita. */
 const ETAPAS_CON_REVISION: Etapa[] = ["revision", "aprobacion", "publicacion"];
 
-export const metadata: Metadata = { title: "Trámite" };
+/**
+ * Quien no puede ver el trámite recibe lo mismo que si no existiera. La piden el título y la página:
+ * una sola lectura por petición.
+ */
+const tramiteVisible = cache(async (id: string) => {
+  const sesion = await exigirSesion();
+  return /^\d{1,15}$/.test(id) ? obtenerTramite(Number(id), sesion) : null;
+});
+
+/**
+ * El HTTP de un `notFound()` aquí es 200: el `loading.tsx` de `(app)` ya empezó a transmitir. Lo que
+ * sí se controla es lo que se lee: ni el contenido ni el título dicen si el trámite existe.
+ */
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const tramite = await tramiteVisible((await params).id);
+  return { title: tramite ? "Trámite" : "Página no encontrada" };
+}
 
 async function Aceptacion({ tramite, usuarioId }: { tramite: DetalleTramite; usuarioId: number }) {
   const [datos, contexto, { plazos }] = await Promise.all([
@@ -159,8 +176,7 @@ async function Gestion({ tramite: t }: { tramite: DetalleTramite }) {
 export default async function PaginaTramite({ params }: { params: Promise<{ id: string }> }) {
   const sesion = await exigirSesion();
   const { id } = await params;
-  // Quien no puede ver el trámite recibe lo mismo que si no existiera.
-  const tramite = /^\d{1,15}$/.test(id) ? await obtenerTramite(Number(id), sesion) : null;
+  const tramite = await tramiteVisible(id);
   if (!tramite) notFound();
   // Una eliminación tiene por versión la vigente: no hay borrador. Al cerrarse, los archivos se
   // consultan por la ficha o por el panel, según el estado de su versión (spec 13A §6.5).

@@ -58,7 +58,7 @@ export async function guardarConfigDocumentalAccion(_prev: EstadoAccion, formDat
       },
       usuarioId,
     );
-    return DESTINO;
+    // Sin redirigir: el formulario sigue montado y confirma en pantalla; `mutacion` ya revalida.
   });
 }
 

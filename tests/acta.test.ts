@@ -60,9 +60,9 @@ const AVISO = "Algunos caracteres no se pudieron imprimir";
 
 describe("generarActa", () => {
   it("translitera lo común y, si no queda nada sustituido, no añade la nota", async () => {
-    const texto = "Requisito ≥ 5 días → plazo ≠ anterior ✓ ← ≤ Ω μ β";
+    const texto = "Requisito ≥ 5 días → plazo ≠ anterior ✓ ← ≤ Ω μ β 2126";
     const pdf = await textoDe(await generarActa({ ...datos, controlCambios: texto }));
-    expect(contieneTexto(pdf, "Requisito >= 5 días -> plazo <> anterior [x] <- <= Ohm µ beta")).toBe(true);
+    expect(contieneTexto(pdf, "Requisito >= 5 días -> plazo <> anterior [x] <- <= Ohm µ beta Ohm")).toBe(true);
     expect(contieneTexto(pdf, AVISO)).toBe(false);
   });
 
