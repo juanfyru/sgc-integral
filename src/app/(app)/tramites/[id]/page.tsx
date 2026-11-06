@@ -84,8 +84,9 @@ async function Revision({ tramite, pideCodigo }: { tramite: DetalleTramite; pide
   if (!tramite.acciones.includes("concepto_favorable")) {
     return <Evidencia tramite={tramite} rondaEnCurso={etapa === "revision" ? ronda : null} />;
   }
-  const [respuestas, observaciones, borrador] = await Promise.all([
+  const [respuestas, rondas, observaciones, borrador] = await Promise.all([
     obtenerVerificacion(id, ronda),
+    listarRondasVerificacion(id),
     listarObservaciones(id),
     borradorDeTramite(id),
   ]);
@@ -93,6 +94,7 @@ async function Revision({ tramite, pideCodigo }: { tramite: DetalleTramite; pide
     <PanelRevision
       tramite={{ id, etapa, ronda, codigo, titulo, versionNumero }}
       respuestas={respuestas}
+      propuesta={rondas.length > 0 && rondas[0].ronda !== ronda}
       observaciones={observaciones}
       huella={borrador.archivos.find((a) => a.rol === "principal")?.hashSha256 ?? null}
       pideCodigo={pideCodigo}

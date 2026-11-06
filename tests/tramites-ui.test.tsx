@@ -817,11 +817,24 @@ describe("revisión", () => {
 
   it("el panel ofrece las dos salidas al revisor", () => {
     const revisor = renderToStaticMarkup(
-      <PanelRevision tramite={tramite} respuestas={respuestas} observaciones={[obs({})]} huella={`9f2c${"0".repeat(56)}a41b`} pideCodigo={false} />,
+      <PanelRevision tramite={tramite} respuestas={respuestas} propuesta={false} observaciones={[obs({})]} huella={`9f2c${"0".repeat(56)}a41b`} pideCodigo={false} />,
     );
     expect(revisor).toContain("Devolver a elaboración");
     expect(revisor).toContain("Dar concepto favorable");
     expect(revisor).toContain("Guardar avance");
+    expect(revisor).not.toContain("concepto-sin-guardar");
+    expect(revisor).not.toContain("Se propone lo respondido");
+  });
+
+  it("la lista propuesta cuenta como sin guardar: el concepto espera a que el revisor la confirme", () => {
+    const html = renderToStaticMarkup(
+      <PanelRevision tramite={tramite} respuestas={respuestas} propuesta observaciones={[]} huella={null} pideCodigo={false} />,
+    );
+    expect(html).toContain("Se propone lo respondido en la ronda anterior.");
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*aria-describedby="concepto-sin-guardar"[^>]*>Dar concepto favorable|<button[^>]*aria-describedby="concepto-sin-guardar"[^>]*disabled=""[^>]*>Dar concepto favorable/);
+    expect(html).toContain("Guarde el avance de la lista antes de dar el concepto");
+    expect(html).toContain("Guardar avance");
+    expect(html).toContain("Devolver a elaboración");
   });
 
   describe("evidencia de la revisión, para consultar", () => {

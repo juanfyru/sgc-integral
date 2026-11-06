@@ -23,16 +23,19 @@ export type TramiteParaRevisar = {
 /**
  * La revisión del documento para el revisor designado, en revisión (spec 13A §9.2): lista de
  * verificación, observaciones y las dos salidas. Los demás la consultan con `EvidenciaRevision`.
+ * `propuesta` dice que lo marcado viene de una ronda anterior y esta ronda aún no guarda nada.
  */
 export function PanelRevision({
   tramite,
   respuestas,
+  propuesta,
   observaciones,
   huella,
   pideCodigo,
 }: {
   tramite: TramiteParaRevisar;
   respuestas: RespuestaItem[];
+  propuesta: boolean;
   observaciones: Observacion[];
   huella: string | null;
   pideCodigo: boolean;
@@ -40,9 +43,10 @@ export function PanelRevision({
   const [estado, enviar, pendiente] = useActionState(guardarVerificacionAccion, null);
   const [cambios, setCambios] = useState(0);
   const [enviadoCon, setEnviadoCon] = useState<number | null>(null);
-  // Lo que se firma es lo guardado: con marcas sin guardar en pantalla, se firmaría otra lista.
+  // Lo que se firma es lo guardado: con marcas sin guardar en pantalla, se firmaría otra lista. Lo
+  // propuesto también es eso, aunque nadie lo haya tocado: el revisor lo confirma guardando.
   const guardado = enviadoCon !== null && enviadoCon === cambios && !pendiente && !estado;
-  const sinGuardar = cambios > 0 && !guardado;
+  const sinGuardar = (cambios > 0 || propuesta) && !guardado;
 
   return (
     <section
@@ -55,7 +59,7 @@ export function PanelRevision({
 
       <div className="flex flex-col gap-2">
         <h3 className="text-sm font-medium">Lista de verificación</h3>
-        {tramite.ronda > 1 ? (
+        {propuesta ? (
           <p className="text-xs text-muted-foreground">
             Se propone lo respondido en la ronda anterior. Revíselo y guarde el avance para confirmarlo.
           </p>
