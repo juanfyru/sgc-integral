@@ -28,7 +28,7 @@ import { generarActa, type DatosActa } from "@/lib/acta";
 import type { Verificador } from "@/lib/firma";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { contenidoPorPagina, contieneTexto } from "./utiles/pdf";
-import { opc, sesionDe, tramiteEn } from "./utiles/tramites";
+import { documentoLibre, opc, sesionDe, tramiteEn } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
 const sql = obtenerSql();
@@ -175,6 +175,46 @@ describe("cada cierre tiene su acta", () => {
   }));
 });
 
+describe("los parecidos en el acta", () => {
+  const SIGUIO = "se siguió como documento nuevo";
+
+  it("dice el conteo y el nivel, sin códigos, también si el dato congelado los trae; el evento los conserva", () => revertida(sql, async (tx) => {
+    const parecido = await documentoLibre(tx, { proceso: "CEX", tipo: "PR", titulo: "Formato de prueba del flujo" });
+    const t = await tramiteEn(tx, "publicacion", { tipo: "crear" });
+    try {
+      await transicionar(t.admin, publicar(t), opc(tx));
+      const [aceptar] = await tx`SELECT detalle FROM tramite_eventos WHERE tramite_id = ${t.tramiteId} AND tipo = 'aceptar'`;
+      const vistos: { codigo: string; nivel: string }[] = aceptar.detalle.parecidos;
+      expect(vistos.map((p) => p.codigo)).toContain(parecido.codigo);     // el historial no cambia
+      const muy = vistos.filter((p) => p.nivel === "muy_parecido").length;
+      const otros = vistos.length - muy;
+      const nivel = (n: number, nombre: string) => (n === 0 ? [] : [`${n} ${nombre}${n === 1 ? "" : "s"}`]);
+      const esperado = `Se vieron ${vistos.length} documento${vistos.length === 1 ? "" : "s"}: ${[...nivel(muy, "muy parecido"), ...nivel(otros, "parecido")].join(" y ")}; ${SIGUIO}`;
+
+      const [cierre] = await tx`SELECT detalle -> 'acta' AS acta FROM tramite_eventos WHERE tramite_id = ${t.tramiteId} AND tipo = 'publicar'`;
+      expect(cierre.acta.aceptacion.duplicidad).toBe(esperado);
+
+      // Un acta congelada antes de esta regla: el texto trae el código y solo se puede insertar otro cierre.
+      const conCodigos = `Se vieron 1 documento: ${parecido.codigo} (muy parecido); ${SIGUIO}`;
+      const acta = { ...cierre.acta, aceptacion: { ...cierre.acta.aceptacion, duplicidad: conCodigos } };
+      await tx`INSERT INTO tramite_eventos (tramite_id, tipo, ronda, detalle) VALUES (${t.tramiteId}, 'publicar', ${t.ronda}, ${tx.json({ acta })})`;
+      const datos = (await reunirDatosActa(t.tramiteId, { sql: tx }))!;
+      expect(datos.aceptacion.duplicidad).toBe(esperado);
+      const pdf = await textoDe(await generarActa(datos));
+      expect(contieneTexto(pdf, parecido.codigo)).toBe(false);
+      expect(contieneTexto(pdf, "Duplicidad")).toBe(true);
+    } finally { await t.limpiar(); }
+  }));
+
+  it("una modificación no vio parecidos: el acta no lleva la fila", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "publicacion");
+    try {
+      await transicionar(t.admin, publicar(t), opc(tx));
+      expect((await reunirDatosActa(t.tramiteId, { sql: tx }))!.aceptacion.duplicidad).toBeNull();
+    } finally { await t.limpiar(); }
+  }));
+});
+
 describe("escribir el acta", () => {
   it("un archivo huérfano en la ruta se reemplaza y la huella de la fila es la del archivo", () => revertida(sql, async (tx) => {
     const t = await tramiteEn(tx, "publicacion");
@@ -209,6 +249,38 @@ describe("escribir el acta", () => {
       expect(acta.archivoId).toBe(ganadora);
       const [{ n }] = await tx`SELECT count(*)::int AS n FROM archivos WHERE version_id = ${t.versionId} AND rol = 'acta_aprobacion'`;
       expect(n).toBe(1);
+      const auditadas = await tx`SELECT 1 FROM auditoria WHERE accion = 'acta_generada' AND entidad_id = ${ganadora}`;
+      expect(auditadas).toHaveLength(0);                                  // la registró la otra petición
+    } finally { await borrarActas(rutas); await t.limpiar(); }
+  }));
+
+  it("registrar el acta deja una fila en la bitácora con el trámite, la huella y quien la pidió; una sola vez", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "publicacion");
+    const rutas: string[] = [];
+    try {
+      await transicionar(t.admin, publicar(t), opc(tx));
+      const acta = (await asegurarActa(t.tramiteId, { sql: tx, usuarioId: t.aprobador.usuarioId }))!;
+      rutas.push(acta.ruta);
+      await asegurarActa(t.tramiteId, { sql: tx, usuarioId: t.admin.usuarioId });
+      const [archivo] = await tx`SELECT hash_sha256 FROM archivos WHERE id = ${acta.archivoId}`;
+      const filas = await tx`SELECT usuario_id, entidad, detalle FROM auditoria WHERE accion = 'acta_generada' AND entidad_id = ${acta.archivoId}`;
+      expect(filas).toHaveLength(1);
+      expect(Number(filas[0].usuario_id)).toBe(t.aprobador.usuarioId);
+      expect(filas[0].entidad).toBe("archivos");
+      expect(filas[0].detalle).toMatchObject({ tramiteId: t.tramiteId, huella: archivo.hash_sha256 });
+      expect(filas[0].detalle.numero).toBe((await versionDeActa(t.tramiteId, { sql: tx }))!.numero);
+    } finally { await borrarActas(rutas); await t.limpiar(); }
+  }));
+
+  it("sin usuario el acta se registra igual, y la fila queda sin autor", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "publicacion");
+    const rutas: string[] = [];
+    try {
+      await transicionar(t.admin, publicar(t), opc(tx));
+      const acta = (await asegurarActa(t.tramiteId, { sql: tx }))!;
+      rutas.push(acta.ruta);
+      const filas = await tx`SELECT usuario_id FROM auditoria WHERE accion = 'acta_generada' AND entidad_id = ${acta.archivoId}`;
+      expect(filas.map((f) => f.usuario_id)).toEqual([null]);
     } finally { await borrarActas(rutas); await t.limpiar(); }
   }));
 

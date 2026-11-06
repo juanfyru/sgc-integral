@@ -103,7 +103,7 @@ async function ejecutarCierre(
   const redireccion = await ejecutar(formData, sesion, accion, extra);
   if (redireccion === undefined) {
     const { tramiteId } = referencia(formData);
-    await asegurarActa(tramiteId).catch((err) => console.error(`No se pudo generar el acta del trámite ${tramiteId}:`, err));
+    await asegurarActa(tramiteId, { usuarioId: sesion.usuarioId }).catch((err) => console.error(`No se pudo generar el acta del trámite ${tramiteId}:`, err));
   }
   return redireccion;
 }

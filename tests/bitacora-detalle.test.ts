@@ -11,6 +11,7 @@ describe("nombreDeAccion", () => {
     ["tramite_aceptar", "Aceptó la solicitud"],
     ["tramite_guardar_lista", "Guardó la lista de verificación de la solicitud"],
     ["crear_documento", "Creó un documento"],
+    ["acta_generada", "Generó un acta"],
     ["exporto_maestro", "Emitió el Listado Maestro"],
     ["editar_config_documental", "Editó la configuración documental"],
     ["crear_cargo", "Creó el cargo"],
@@ -213,6 +214,9 @@ describe("configuración documental", () => {
     expect(e("editar_config_documental", { cambios: { publicacion_directa: { antes: "0", despues: "1" } } }))
       .toBe("Editó la configuración documental: publicación directa (encendida)");
     expect(e("editar_config_documental", { cambios: {} })).toBe("Guardó la configuración documental sin cambios");
+  });
+  it("un acta generada", () => {
+    expect(e("acta_generada", { tramiteId: 12, numero: "SOL-2026-014" })).toBe("Generó el acta del trámite SOL-2026-014");
   });
   it("un acta que no se pudo regenerar idéntica", () => {
     expect(e("acta_no_regenerable", { tramiteId: 12 })).toBe("No se pudo regenerar idéntica el acta del trámite 12: no se entregó");

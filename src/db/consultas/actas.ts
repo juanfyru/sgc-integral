@@ -23,7 +23,7 @@ import {
 } from "@/lib/tramites/tipos";
 import { MARCA_DEFECTO } from "@/lib/marca";
 import { zonaHoraria } from "@/lib/zona-horaria";
-import { ErrorTramite, type FilaTramite } from "./flujo/contrato";
+import { ErrorTramite, enTransaccion, type FilaTramite } from "./flujo/contrato";
 
 type Opciones = { sql?: Cliente };
 type ClaseActa = DatosActa["clase"];
@@ -53,15 +53,20 @@ function textoDeVistoBueno(eventos: Evento[], zona: string): string {
   return `Dado por ${e.persona ?? "—"}, ${diaYHora(e.creadoEn, zona)}`;
 }
 
-function textoDeDuplicidad(aceptar: Evento | undefined): string | null {
-  const parecidos = aceptar?.detalle.parecidos;
+const conteoDeNivel = (n: number, nivel: string) => (n === 0 ? [] : [`${n} ${nivel}${n === 1 ? "" : "s"}`]);
+
+/**
+ * Solo el conteo y el nivel: quien lee el acta tal vez no puede ver un parecido restringido, y su
+ * código no se le dice (F13A-R38). Los códigos quedan en el evento `aceptar`, para el historial.
+ */
+function textoDeDuplicidad(aceptar: Record<string, unknown> | undefined): string | null {
+  const parecidos = aceptar?.parecidos;
   if (!Array.isArray(parecidos)) return null;
-  const decision = aceptar?.detalle.decision === "modificacion" ? "se convirtió en modificación de un documento existente" : "se siguió como documento nuevo";
+  const decision = aceptar?.decision === "modificacion" ? "se convirtió en modificación de un documento existente" : "se siguió como documento nuevo";
   if (parecidos.length === 0) return `No había documentos parecidos; ${decision}`;
-  const lista = parecidos
-    .map((p: { codigo?: string; nivel?: string }) => `${p.codigo ?? "?"} (${p.nivel === "muy_parecido" ? "muy parecido" : "parecido"})`)
-    .join(", ");
-  return `Se vieron ${parecidos.length} documento${parecidos.length === 1 ? "" : "s"}: ${lista}; ${decision}`;
+  const muyParecidos = parecidos.filter((p: { nivel?: string }) => p.nivel === "muy_parecido").length;
+  const niveles = [...conteoDeNivel(muyParecidos, "muy parecido"), ...conteoDeNivel(parecidos.length - muyParecidos, "parecido")];
+  return `Se vieron ${parecidos.length} documento${parecidos.length === 1 ? "" : "s"}: ${niveles.join(" y ")}; ${decision}`;
 }
 
 export const FALTA_ENTIDAD = "Configure el nombre de la entidad antes de publicar";
@@ -125,7 +130,7 @@ export async function congelarDatosActa(
       fecha: tramite.creadoEn,
     },
     vistoBueno: textoDeVistoBueno(eventos, zona),
-    aceptacion: { quien: aceptar?.persona ?? "—", fecha: aceptar?.creadoEn ?? tramite.creadoEn, duplicidad: textoDeDuplicidad(aceptar) },
+    aceptacion: { quien: aceptar?.persona ?? "—", fecha: aceptar?.creadoEn ?? tramite.creadoEn, duplicidad: textoDeDuplicidad(aceptar?.detalle) },
     // El control de cambios de la versión anulada es de cuando se emitió, no de esta eliminación.
     controlCambios: clase === "aprobacion" ? d.resumen_cambios : null,
     rondas: tramite.ronda,
@@ -150,13 +155,15 @@ export async function reunirDatosActa(tramiteId: number, opciones?: Opciones): P
     ORDER BY id DESC LIMIT 1`;
   if (!cierre?.acta) return null;
   const congelado = cierre.acta as DatosCongelados;
+  // Un acta congelada antes de F13A-R38 trae en este texto los códigos de los parecidos: no se imprime tal cual.
+  const [aceptar] = await sql`SELECT detalle FROM tramite_eventos WHERE tramite_id = ${tramiteId} AND tipo = 'aceptar' ORDER BY id LIMIT 1`;
   const firmas = (await listarFirmas(tramiteId, { sql }))
     .filter((f) => f.ronda === congelado.rondas)
     .map((f) => ({ firma: ETIQUETA_FIRMA[f.firma], nombre: f.nombre, cargo: f.cargo, fecha: f.creadoEn, huella: f.hashSha256 }));
   return {
     ...congelado,
     solicitud: { ...congelado.solicitud, fecha: comoFecha(congelado.solicitud.fecha) },
-    aceptacion: { ...congelado.aceptacion, fecha: comoFecha(congelado.aceptacion.fecha) },
+    aceptacion: { ...congelado.aceptacion, fecha: comoFecha(congelado.aceptacion.fecha), duplicidad: textoDeDuplicidad(aceptar?.detalle) },
     publicadoEn: comoFecha(congelado.publicadoEn),
     firmas,
   };
@@ -192,7 +199,9 @@ async function escribirAtomico(absoluta: string, bytes: Uint8Array): Promise<voi
 /**
  * Devuelve el acta del cierre y, si no existe (o su fila no tiene archivo), la genera con los datos
  * congelados y la registra. No usa `registrarArchivo`: su traducción de errores es la del archivo
- * principal. Si otra petición la registró entre tanto (índice único), devuelve la que quedó.
+ * principal. Si otra petición la registró entre tanto (índice único), devuelve la que quedó. Quien
+ * la registra deja su fila en la bitácora: `usuarioId` es quien la pidió, y sin él la fila sale del
+ * sistema.
  */
 export async function asegurarActa(
   tramiteId: number,
@@ -238,11 +247,21 @@ export async function asegurarActa(
     return existente;
   }
   await escribirAtomico(absoluta, bytes);
-  const [fila] = await sql`INSERT INTO archivos (version_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
-    VALUES (${cierre.versionId}, ${ROL_DE_ACTA[cierre.clase]}, ${ruta}, ${`Acta ${cierre.numero}.pdf`}, 'pdf', 'application/pdf',
-      ${bytes.byteLength}, ${huella})
-    ON CONFLICT DO NOTHING
-    RETURNING id`;
-  if (fila) return { archivoId: Number(fila.id), ruta };
-  return actaRegistrada(sql, cierre.versionId, cierre.clase);
+  return enTransaccion(sql, async (tx) => {
+    const [fila] = await tx`INSERT INTO archivos (version_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
+      VALUES (${cierre.versionId}, ${ROL_DE_ACTA[cierre.clase]}, ${ruta}, ${`Acta ${cierre.numero}.pdf`}, 'pdf', 'application/pdf',
+        ${bytes.byteLength}, ${huella})
+      ON CONFLICT DO NOTHING
+      RETURNING id`;
+    if (!fila) return actaRegistrada(tx, cierre.versionId, cierre.clase);
+    const archivoId = Number(fila.id);
+    await registrarAuditoria(tx, {
+      usuarioId: opciones?.usuarioId ?? null,
+      accion: "acta_generada",
+      entidad: "archivos",
+      entidadId: archivoId,
+      detalle: { tramiteId, numero: cierre.numero, huella },
+    });
+    return { archivoId, ruta };
+  });
 }

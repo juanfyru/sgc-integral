@@ -4,7 +4,8 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { transicionar, crearSolicitud, obtenerTramite, guardarControlCambios, corregirDatosDeControl, contextoDePeticion, redirect, requerirSesion } = vi.hoisted(() => ({
+const { transicionar, crearSolicitud, obtenerTramite, guardarControlCambios, corregirDatosDeControl, contextoDePeticion, redirect, requerirSesion, asegurarActa } = vi.hoisted(() => ({
+  asegurarActa: vi.fn(),
   transicionar: vi.fn(),
   corregirDatosDeControl: vi.fn(),
   crearSolicitud: vi.fn(),
@@ -34,6 +35,7 @@ vi.mock("@/db/consultas/tramites-flujo", async () => ({
   transicionar,
   crearSolicitud,
 }));
+vi.mock("@/db/consultas/actas", () => ({ asegurarActa }));
 vi.mock("@/db/consultas/tramites", () => ({ obtenerTramite }));
 vi.mock("@/db/consultas/tramites-archivos", () => ({ guardarControlCambios }));
 vi.mock("@/db/consultas/tramites-gestion", () => ({ corregirDatosDeControl }));
@@ -78,6 +80,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   requerirSesion.mockResolvedValue({ sesionId: "s", usuarioId: 1, usuario: "lider", nombre: "Líder", rol: "lider_proceso", verHistorial: false });
   transicionar.mockResolvedValue({ etapa: "aceptacion", ronda: 0 });
+  asegurarActa.mockResolvedValue(null);
 });
 
 describe("acciones del trámite", () => {
@@ -541,6 +544,15 @@ describe("elaboración", () => {
       const [, entrada, opciones] = transicionar.mock.calls[0];
       expect(entrada).toEqual({ tramiteId: 7, accion: "publicar", etapaEsperada: "publicacion", rondaEsperada: 2, credenciales: { clave: "secreta" } });
       expect(opciones).toEqual({ contexto: { ip: "10.0.0.5", userAgent: "Navegador" } });
+    });
+
+    it.each([
+      ["publicar", publicarTramiteAccion, { ...enPublicacion, clave: "secreta" }],
+      ["aprobar y publicar", aprobarYPublicarAccion, { ...enAprobacion, concepto: "Procede.", clave: "secreta" }],
+    ])("%s deja el acta a nombre de quien cierra", async (_nombre, ejecutar, campos) => {
+      requerirSesion.mockResolvedValue(admin);
+      await ejecutar(null, formulario(campos));
+      expect(asegurarActa).toHaveBeenCalledWith(7, { usuarioId: admin.usuarioId });
     });
 
     it.each([

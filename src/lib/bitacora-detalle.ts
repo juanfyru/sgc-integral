@@ -228,6 +228,8 @@ export function describirEvento(e: EventoAuditoria): string {
       return `Creó ${d.creados ?? 0} usuarios por lote (${d.fallidos ?? 0} rechazados)`;
     case "editar_configuracion":
       return describirConfiguracion(d.claves);
+    case "acta_generada":
+      return `Generó el acta del trámite ${texto(d.numero) ?? "?"}`;
     case "acta_no_regenerable":
       return `No se pudo regenerar idéntica el acta del trámite ${d.tramiteId ?? "?"}: no se entregó`;
     case "editar_config_documental":
@@ -293,6 +295,7 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   crear_usuarios_lote: "Creó usuarios por lote",
   editar_configuracion: "Editó la configuración",
   editar_config_documental: "Editó la configuración documental",
+  acta_generada: "Generó un acta",
   acta_no_regenerable: "No se pudo regenerar un acta",
   crear_item_verificacion: "Añadió un ítem a la lista de verificación",
   editar_item_verificacion: "Editó un ítem de la lista de verificación",
