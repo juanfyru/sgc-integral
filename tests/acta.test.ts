@@ -56,7 +56,47 @@ const datos: DatosActa = {
 
 const textoDe = async (pdf: Uint8Array) => (await contenidoPorPagina(pdf)).join("\n");
 
+const AVISO = "Algunos caracteres no se pudieron imprimir";
+
 describe("generarActa", () => {
+  it("translitera lo común y, si no queda nada sustituido, no añade la nota", async () => {
+    const texto = "Requisito ≥ 5 días → plazo ≠ anterior ✓ ← ≤ Ω μ β";
+    const pdf = await textoDe(await generarActa({ ...datos, controlCambios: texto }));
+    expect(contieneTexto(pdf, "Requisito >= 5 días -> plazo <> anterior [x] <- <= Ohm µ beta")).toBe(true);
+    expect(contieneTexto(pdf, AVISO)).toBe(false);
+  });
+
+  it("el texto del informe: lo que no se puede imprimir sale como «?» y el acta lo dice", async () => {
+    const pdf = await textoDe(await generarActa({ ...datos, solicitud: { ...datos.solicitud, justificacion: "Requisito ≥ 5 días → plazo ≠ anterior ✓ 😀 Ω" } }));
+    expect(contieneTexto(pdf, "Requisito >= 5 días -> plazo <> anterior [x] ? Ohm")).toBe(true);
+    expect(contieneTexto(pdf, `${AVISO} y se muestran como «?». El texto íntegro consta en el historial del trámite.`)).toBe(true);
+  });
+
+  it("un emoji en cualquier dato, por dentro que esté, añade la nota", async () => {
+    const firmas = datos.firmas.map((f, i) => (i === 1 ? { ...f, cargo: "Calidad 😀" } : f));
+    expect(contieneTexto(await textoDe(await generarActa({ ...datos, firmas })), AVISO)).toBe(true);
+  });
+
+  it("un «?» escrito por la persona no es un carácter perdido, ni lo es un salto de línea", async () => {
+    const pdf = await textoDe(await generarActa({ ...datos, controlCambios: "¿Cumple?\nSí, con «comillas», €, — y ñ.\tFin." }));
+    expect(contieneTexto(pdf, "¿Cumple?")).toBe(true);
+    expect(contieneTexto(pdf, AVISO)).toBe(false);
+  });
+
+  it("con la nota, generarla otra vez da los mismos bytes", async () => {
+    const d = { ...datos, controlCambios: "Con 😀" };
+    expect(Buffer.from(await generarActa(d)).equals(Buffer.from(await generarActa(d)))).toBe(true);
+  });
+
+  it("las observaciones se cuentan en singular y en plural", async () => {
+    const con = async (total: number, cerradas: number) => textoDe(await generarActa({ ...datos, observaciones: { total, cerradas } }));
+    expect(contieneTexto(await con(1, 1), "1 de 1 cerrada")).toBe(true);
+    expect(contieneTexto(await con(1, 1), "cerradas")).toBe(false);
+    expect(contieneTexto(await con(3, 3), "3 de 3 cerradas")).toBe(true);
+    expect(contieneTexto(await con(2, 1), "1 de 2 cerrada")).toBe(true);
+    expect(contieneTexto(await con(0, 0), "Ninguna")).toBe(true);
+  });
+
   it("el acta trae documento, versión, firmantes con tildes y eñes, y huellas", async () => {
     const pdf = await textoDe(await generarActa(datos));
     for (const texto of [
@@ -69,7 +109,7 @@ describe("generarActa", () => {
   });
 
   it("un texto muy largo o con un carácter fuera de la fuente no rompe el acta y sigue en otra página", async () => {
-    const bytes = await generarActa({ ...datos, controlCambios: "Cambio ✓ ".repeat(600), clase: "eliminacion" });
+    const bytes = await generarActa({ ...datos, controlCambios: "Cambio 😀 ".repeat(600), clase: "eliminacion" });
     const paginas = await contenidoPorPagina(bytes);
     expect(paginas.length).toBeGreaterThan(1);
     expect(contieneTexto(paginas[0], "Acta de eliminación documental")).toBe(true);

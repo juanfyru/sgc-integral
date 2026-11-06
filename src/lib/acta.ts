@@ -4,7 +4,7 @@
  * da el mismo texto. Solo fuentes estándar de `pdf-lib`: nada sale del servidor ni se descarga.
  */
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
-import { textoParaFuente } from "@/lib/texto-pdf";
+import { pierdeCaracteres, textoParaFuente } from "@/lib/texto-pdf";
 
 export type DatosActa = {
   clase: "aprobacion" | "eliminacion";
@@ -34,6 +34,8 @@ const COLUMNA_FECHA = 296;
 const TEXTO = rgb(0.1, 0.1, 0.1);
 const SUAVE = rgb(0.38, 0.38, 0.38);
 const LINEA = rgb(0.78, 0.78, 0.78);
+const AVISO_CARACTERES =
+  "Algunos caracteres no se pudieron imprimir y se muestran como «?». El texto íntegro consta en el historial del trámite.";
 
 function partes(fecha: Date, zona: string): Record<"day" | "month" | "year" | "hour" | "minute", string> {
   const p = new Intl.DateTimeFormat("es-CO", {
@@ -51,6 +53,17 @@ function dia(fecha: Date, zona: string): string {
 export function diaYHora(fecha: Date, zona: string): string {
   const p = partes(fecha, zona);
   return `${p.day}/${p.month}/${p.year} ${p.hour}:${p.minute}`;
+}
+
+function textoObservaciones({ total, cerradas }: DatosActa["observaciones"]): string {
+  if (total === 0) return "Ninguna";
+  return `${cerradas} de ${total} ${cerradas === 1 ? "cerrada" : "cerradas"}`;
+}
+
+/** Todos los textos de los datos, a cualquier profundidad: lo que escribió alguien está en ellos. */
+function textosDe(valor: unknown): string[] {
+  if (typeof valor === "string") return [valor];
+  return typeof valor === "object" && valor !== null ? Object.values(valor).flatMap(textosDe) : [];
 }
 
 type Fuentes = { normal: PDFFont; negrita: PDFFont; mono: PDFFont };
@@ -129,6 +142,19 @@ class Hoja {
       this.y -= paso;
     });
     this.y -= 4;
+  }
+
+  /** Un párrafo a todo el ancho, en letra menor. */
+  nota(t: string) {
+    const tamano = 8.5;
+    const paso = 11;
+    const ls = lineas(t, this.f.normal, tamano, ANCHO_UTIL);
+    this.espacio(paso * ls.length + 8);
+    this.y -= 8;
+    for (const l of ls) {
+      this.texto(l, MARGEN, this.f.normal, tamano, SUAVE);
+      this.y -= paso;
+    }
   }
 
   titulo(t: string) {
@@ -210,7 +236,7 @@ export async function generarActa(d: DatosActa): Promise<Uint8Array> {
   h.titulo("Recorrido");
   if (d.clase === "aprobacion") {
     h.fila("Rondas", String(d.rondas));
-    h.fila("Observaciones", `${d.observaciones.total}, de las cuales ${d.observaciones.cerradas} cerradas`);
+    h.fila("Observaciones", textoObservaciones(d.observaciones));
     h.fila(
       "Versión anterior",
       d.versionObsoleta === null
@@ -220,6 +246,9 @@ export async function generarActa(d: DatosActa): Promise<Uint8Array> {
   } else {
     h.fila("Versión anulada", `${d.version}, anulada el ${dia(d.publicadoEn, zona)}`);
   }
+
+  // Los saltos de línea y las tabulaciones no se pierden: `lineas` los resuelve antes de dibujar.
+  if (textosDe(d).some((t) => pierdeCaracteres(t.replace(/\r?\n|\t/g, " "), f.normal))) h.nota(AVISO_CARACTERES);
 
   const paginas = doc.getPages();
   paginas.forEach((pagina, i) => {

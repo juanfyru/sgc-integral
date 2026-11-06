@@ -74,6 +74,14 @@ describe("estamparCopiaNoControlada", () => {
     }
   });
 
+  it("usa la misma transliteración del acta y no añade ninguna nota", async () => {
+    const original = await pdfDePrueba([[612, 792]]);
+    const estampado = await estamparCopiaNoControlada(original, { ...DATOS, nombre: "Ana ≥ β" });
+    const [contenido] = await contenidoPorPagina(estampado);
+    expect(contieneTexto(contenido, "Descargada por Ana >= beta el 24/08/2026")).toBe(true);
+    expect(contieneTexto(contenido, "Algunos caracteres")).toBe(false);
+  });
+
   it("un nombre con caracteres fuera de la fuente no hace fallar el estampado: cada uno pasa a ?", async () => {
     const original = await pdfDePrueba([[612, 792]]);
     const estampado = await estamparCopiaNoControlada(original, {
