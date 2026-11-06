@@ -133,6 +133,30 @@ describe("la página del trámite cerrado", () => {
   }));
 });
 
+describe("la ronda 2 con la lista desactivada", () => {
+  it("sin ítems activos no hay nada que confirmar: el concepto no espera un guardado imposible", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "revision");
+    try {
+      const items = await listarItemsVerificacion({ sql: tx, soloActivos: true });
+      await guardarVerificacion(t.tramiteId, t.revisor, items.map((i) => ({ itemId: i.id, resultado: "cumple" as const })), { etapa: "revision", ronda: 1 }, { sql: tx });
+      const observacion = await crearObservacion(t.tramiteId, t.revisor, "Falta el responsable.", { etapa: "revision", ronda: 1 }, { sql: tx });
+      await transicionar(t.revisor, { tramiteId: t.tramiteId, accion: "devolver_revision", etapaEsperada: "revision", rondaEsperada: 1 }, opc(tx));
+      await responderObservacion(observacion, t.elaborador, "Se añadió.", { etapa: "elaboracion", ronda: 2 }, { sql: tx });
+      await transicionar(t.elaborador, { tramiteId: t.tramiteId, accion: "enviar_a_revision", etapaEsperada: "elaboracion", rondaEsperada: 2, ...firma }, opc(tx));
+      await cerrarObservacion(observacion, t.revisor, { etapa: "revision", ronda: 2 }, { sql: tx });
+      await tx`UPDATE lista_verificacion_items SET activo = false`;
+
+      const html = await pagina(tx, t.tramiteId, t.revisor);
+      expect(html).not.toContain("Se propone lo respondido");
+      expect(html).not.toContain("Guarde el avance de la lista");
+      expect(await transicionar(t.revisor, { tramiteId: t.tramiteId, accion: "concepto_favorable", etapaEsperada: "revision", rondaEsperada: 2, datos: { concepto: "Atendido." }, ...firma }, opc(tx)))
+        .toEqual({ etapa: "aprobacion", ronda: 2 });
+    } finally {
+      await t.limpiar();
+    }
+  }));
+});
+
 describe("el título de la pestaña", () => {
   it("no delata nada: ajeno, inexistente o no numérico dicen lo mismo", () => revertida(sql, async (tx) => {
     const t = await tramiteEn(tx, "aceptacion");

@@ -91,33 +91,34 @@ export function PanelRevision({
           texto="Las observaciones abiertas pasan a quien elabora, que las responde y vuelve a enviar el documento."
           confirmar="Devolver"
         />
-        {sinGuardar ? (
-          <div className="flex flex-col items-end gap-1">
+        <div className="flex flex-col items-end gap-1">
+          {sinGuardar ? (
             <Boton disabled aria-describedby="concepto-sin-guardar">
               Dar concepto favorable
             </Boton>
-            <p id="concepto-sin-guardar" className="text-sm text-muted-foreground">
-              Guarde el avance de la lista antes de dar el concepto
-            </p>
-          </div>
-        ) : (
-          <DialogoFirma
-            titulo="Firmar como «Revisó»"
-            etiquetaBoton="Dar concepto favorable"
-            resumen={{
-              documento: [tramite.codigo, tramite.titulo].filter(Boolean).join(" "),
-              version: tramite.versionNumero,
-              huella,
-            }}
-            accion={conceptoFavorableAccion}
-            ocultos={{ id: String(tramite.id), etapa: tramite.etapa, ronda: String(tramite.ronda) }}
-            pideCodigo={pideCodigo}
-          >
-            <Campo etiqueta="Concepto" nombre="concepto" ayuda="Su concepto sobre el documento. Entre 5 y 2000 caracteres.">
-              <textarea required minLength={5} maxLength={2000} rows={3} className={claseControl} />
-            </Campo>
-          </DialogoFirma>
-        )}
+          ) : (
+            <DialogoFirma
+              titulo="Firmar como «Revisó»"
+              etiquetaBoton="Dar concepto favorable"
+              resumen={{
+                documento: [tramite.codigo, tramite.titulo].filter(Boolean).join(" "),
+                version: tramite.versionNumero,
+                huella,
+              }}
+              accion={conceptoFavorableAccion}
+              ocultos={{ id: String(tramite.id), etapa: tramite.etapa, ronda: String(tramite.ronda) }}
+              pideCodigo={pideCodigo}
+            >
+              <Campo etiqueta="Concepto" nombre="concepto" ayuda="Su concepto sobre el documento. Entre 5 y 2000 caracteres.">
+                <textarea required minLength={5} maxLength={2000} rows={3} className={claseControl} />
+              </Campo>
+            </DialogoFirma>
+          )}
+          {/* Siempre montado: un lector de pantalla solo anuncia lo que cambia dentro de una región que ya existía. */}
+          <p id="concepto-sin-guardar" role="status" className="text-sm text-muted-foreground">
+            {sinGuardar ? "Guarde el avance de la lista antes de dar el concepto" : ""}
+          </p>
+        </div>
       </div>
     </section>
   );

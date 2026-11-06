@@ -111,7 +111,7 @@ async function Revision({ tramite, pideCodigo }: { tramite: DetalleTramite; pide
     <PanelRevision
       tramite={{ id, etapa, ronda, codigo, titulo, versionNumero }}
       respuestas={respuestas}
-      propuesta={rondas.length > 0 && rondas[0].ronda !== ronda}
+      propuesta={respuestas.length > 0 && rondas.length > 0 && rondas[0].ronda !== ronda}
       observaciones={observaciones}
       huella={borrador.archivos.find((a) => a.rol === "principal")?.hashSha256 ?? null}
       pideCodigo={pideCodigo}

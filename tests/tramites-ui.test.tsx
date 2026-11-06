@@ -852,8 +852,15 @@ describe("revisión", () => {
     expect(revisor).toContain("Devolver a elaboración");
     expect(revisor).toContain("Dar concepto favorable");
     expect(revisor).toContain("Guardar avance");
-    expect(revisor).not.toContain("concepto-sin-guardar");
+    expect(revisor).not.toContain("Guarde el avance de la lista");
     expect(revisor).not.toContain("Se propone lo respondido");
+  });
+
+  it("el aviso de guardar vive en una región que ya existe, para que se anuncie al aparecer", () => {
+    const panel = (propuesta: boolean) =>
+      renderToStaticMarkup(<PanelRevision tramite={tramite} respuestas={respuestas} propuesta={propuesta} observaciones={[]} huella={null} pideCodigo={false} />);
+    expect(panel(false)).toMatch(/<p id="concepto-sin-guardar" role="status"[^>]*><\/p>/);
+    expect(panel(true)).toMatch(/<p id="concepto-sin-guardar" role="status"[^>]*>Guarde el avance de la lista antes de dar el concepto<\/p>/);
   });
 
   it("la lista propuesta cuenta como sin guardar: el concepto espera a que el revisor la confirme", () => {
