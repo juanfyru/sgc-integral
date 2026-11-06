@@ -59,10 +59,10 @@ describe("revisarVencimientos", () => {
     expect(avisosDelJefe).toHaveLength(1);
     const [delJefe] = avisosDelJefe;
     expect(delJefe).toMatchObject({ tipo: "tramite.escalado", enlace: null });
-    expect(`${delJefe.titulo} ${delJefe.cuerpo ?? ""}`).not.toMatch(/Ingreso de Personal/);   // sin el título del documento
+    expect(`${delJefe.titulo} ${delJefe.cuerpo ?? ""}`).not.toContain(t.titulo);              // sin el título del documento
     const [delElaborador] = await tx`SELECT tipo, enlace, cuerpo FROM notificaciones WHERE usuario_id = ${elaborador.usuarioId} AND tipo = 'tramite.vencido'`;
     expect(delElaborador.enlace).toBe(`/tramites/${t.tramiteId}`);
-    expect(delElaborador.cuerpo).toContain("GTH-PR-01");
+    expect(delElaborador.cuerpo).toContain(t.codigo);
   }));
 
   it("el aviso al jefe dice el paso, la solicitud, a cargo de quién y los días, sin el código", () => revertida(sql, async (tx) => {
@@ -78,7 +78,7 @@ describe("revisarVencimientos", () => {
     expect(texto).toContain(numero);
     expect(texto).toContain(elaborador.nombre);
     expect(texto).toContain("5 días");
-    expect(texto).not.toContain("GTH-PR-01");
+    expect(texto).not.toContain(t.codigo);
   }));
 
   it("un paso muy vencido y sin avisar avisa y escala en la misma pasada", () => revertida(sql, async (tx) => {

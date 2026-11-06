@@ -21,7 +21,7 @@ import {
   puedePedirSobreDocumento,
 } from "@/db/consultas/tramites";
 import { puedeVerTramite } from "@/lib/alcance";
-import { opc, sesionAdmin, sesionDe, usuarioDePrueba } from "./utiles/tramites";
+import { documentoLibre, opc, sesionAdmin, sesionDe, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
 const sql = obtenerSql();
@@ -33,9 +33,9 @@ afterAll(async () => {
 
 async function tramiteGth(tx: TransactionSql) {
   const lider = await sesionDe(tx, "lider.gth");
-  const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-01'`;
+  const doc = await documentoLibre(tx, { proceso: "GTH", tipo: "PR" });
   const r = await crearSolicitud(lider, { tipo: "modificar", motivo: "mejora", justificacion: "Se añade la inducción por servicio.", documentoId: doc.id }, opc(tx));
-  return { lider, tramiteId: r.tramiteId, numero: r.numero, documentoId: Number(doc.id) };
+  return { lider, tramiteId: r.tramiteId, numero: r.numero, documentoId: doc.id, codigo: doc.codigo };
 }
 
 const visto = async (tx: TransactionSql, id: number, usuario: string) =>
@@ -43,13 +43,13 @@ const visto = async (tx: TransactionSql, id: number, usuario: string) =>
 
 describe("obtenerTramite", () => {
   it("lo ven el participante, el administrador y otro líder del proceso; nadie más", () => revertida(sql, async (tx) => {
-    const { lider, tramiteId, numero } = await tramiteGth(tx);
+    const { lider, tramiteId, numero, codigo } = await tramiteGth(tx);
     const detalle = await obtenerTramite(tramiteId, lider, { sql: tx });
     expect(detalle).toMatchObject({
       numero,
       tipo: "modificar",
       etapa: "aceptacion",
-      codigo: "GTH-PR-01",
+      codigo,
       solicitante: lider.nombre,
       elaborador: null,
       acciones: ["retirar"],
@@ -87,7 +87,7 @@ describe("obtenerTramite", () => {
 
   it("el líder de un proceso donde el documento también aplica lo ve, sin el visto bueno", () => revertida(sql, async (tx) => {
     const admin = await sesionAdmin(tx);
-    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-01'`;
+    const doc = await documentoLibre(tx, { proceso: "GTH", tipo: "PR" });
     const r = await crearSolicitud(admin, { tipo: "modificar", motivo: "mejora", justificacion: "Justificación de prueba.", documentoId: doc.id }, opc(tx));
     expect(await visto(tx, r.tramiteId, "lider.cex")).toBe(false);
     const [cex] = await tx`SELECT id FROM procesos WHERE sigla = 'CEX'`;
@@ -161,7 +161,7 @@ describe("obtenerTramite", () => {
 
 describe("lideresDeProcesosDelDocumento", () => {
   it("cuenta el subproceso por su proceso, sin repetir, y solo líderes activos de procesos activos", () => revertida(sql, async (tx) => {
-    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-01'`;                     // asociado a un subproceso de GTH
+    const doc = await documentoLibre(tx, { proceso: "GTH", subproceso: "ingreso", tipo: "PR" });
     const lideres = (o: { sql: TransactionSql }) => lideresDeProcesosDelDocumento(doc.id, o);
     const gth = await sesionDe(tx, "lider.gth");
     const cex = await sesionDe(tx, "lider.cex");
@@ -222,12 +222,12 @@ describe("listarTramites", () => {
 
   it("«por hacer» es lo que le toca; quien solo puede retirar lo ve en curso", () => revertida(sql, async (tx) => {
     const bandeja = await soloDelCaso(tx);
-    const { lider, tramiteId } = await tramiteGth(tx);
+    const { lider, tramiteId, codigo } = await tramiteGth(tx);
     const admin = await sesionAdmin(tx);
     expect(await bandeja("por_hacer", lider)).toEqual([]);
     const enCurso = await bandeja("en_curso", lider);
     expect(enCurso.map((t) => t.id)).toEqual([tramiteId]);
-    expect(enCurso[0]).toMatchObject({ tipo: "modificar", etapa: "aceptacion", ronda: 0, codigo: "GTH-PR-01", versionNumero: null });
+    expect(enCurso[0]).toMatchObject({ tipo: "modificar", etapa: "aceptacion", ronda: 0, codigo, versionNumero: null });
     expect(enCurso[0].responsables).toContain(admin.nombre);
     expect((await bandeja("por_hacer", admin)).map((t) => t.id)).toEqual([tramiteId]);
     expect(await bandeja("en_curso", await sesionDe(tx, "lider.cex"))).toEqual([]);
@@ -239,7 +239,7 @@ describe("listarTramites", () => {
     const bandeja = await soloDelCaso(tx);
     const admin = await sesionAdmin(tx);
     const lider = await sesionDe(tx, "lider.gth");
-    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-01'`;
+    const doc = await documentoLibre(tx, { proceso: "GTH", tipo: "PR" });
     const r = await crearSolicitud(admin, { tipo: "modificar", motivo: "mejora", justificacion: "Justificación de prueba.", documentoId: doc.id }, opc(tx));
     const [fila] = await bandeja("por_hacer", lider);
     expect(fila).toMatchObject({ id: r.tramiteId, etapa: "visto_bueno" });
@@ -254,7 +254,7 @@ describe("listarTramites", () => {
   it("en visto bueno, un proceso inactivo no tiene responsables", () => revertida(sql, async (tx) => {
     const bandeja = await soloDelCaso(tx);
     const admin = await sesionAdmin(tx);
-    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-01'`;
+    const doc = await documentoLibre(tx, { proceso: "GTH", tipo: "PR" });
     await crearSolicitud(admin, { tipo: "modificar", motivo: "mejora", justificacion: "Justificación de prueba.", documentoId: doc.id }, opc(tx));
     await tx`UPDATE procesos SET activo = false WHERE sigla = 'GTH'`;
     const [fila] = await bandeja("en_curso", admin);
@@ -275,7 +275,7 @@ describe("listarTramites", () => {
 
 describe("puedePedirSobreDocumento", () => {
   it("el administrador sobre cualquiera; el líder sobre los suyos; los demás sobre ninguno", () => revertida(sql, async (tx) => {
-    const [doc] = await tx`SELECT id FROM documentos WHERE codigo = 'GTH-PR-01'`;
+    const doc = await documentoLibre(tx, { proceso: "GTH", tipo: "PR" });
     const pide = async (s: Awaited<ReturnType<typeof sesionDe>>) => puedePedirSobreDocumento(s, doc.id, { sql: tx });
     expect(await pide(await sesionAdmin(tx))).toBe(true);
     expect(await pide(await sesionDe(tx, "lider.gth"))).toBe(true);

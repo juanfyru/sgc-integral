@@ -28,6 +28,7 @@ import {
   publicarVersion,
 } from "@/db/consultas/admin";
 import { obtenerPatronCodigo } from "@/db/consultas/codigos";
+import { abrirCarga } from "./utiles/demo";
 
 const sql = () => obtenerSql();
 let usuarioId: number;
@@ -37,6 +38,7 @@ let tipoId: number;
 const CODIGO = "ZZ-TST-901";
 // Con historial en auditoria el usuario no se borra (FK restrict + trigger): nombre único por corrida.
 const USUARIO = `admin_pub_${Date.now()}`;
+let restaurarCarga: () => Promise<void>;
 
 async function limpiar() {
   await sql()`DELETE FROM archivos WHERE version_id IN (
@@ -53,10 +55,12 @@ beforeAll(async () => {
   [{ id: usuarioId }] = await sql()`SELECT id FROM usuarios WHERE usuario = ${USUARIO}`;
   [{ id: procesoId }] = await sql()`SELECT id FROM procesos WHERE activo LIMIT 1`;
   [{ id: tipoId }] = await sql()`SELECT id FROM tipos_documento WHERE activo LIMIT 1`;
+  restaurarCarga = await abrirCarga(sql());
 });
 
 afterAll(async () => {
   await limpiar();
+  await restaurarCarga();
   await sql().end();
 });
 

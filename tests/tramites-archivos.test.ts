@@ -26,7 +26,7 @@ import {
 } from "@/db/consultas/tramites-archivos";
 import { ErrorTramite, type SesionFlujo } from "@/db/consultas/tramites-flujo";
 import { resolverRutaAlmacen } from "@/lib/almacen";
-import { archivoPrincipal, documentoLibre, sesionDe, tramiteEn } from "./utiles/tramites";
+import { archivoPrincipal, sesionDe, tramiteEn } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
 const sql = obtenerSql();
@@ -40,8 +40,7 @@ describe("autorizarArchivoDeTramite", () => {
   it("solo el elaborador escribe, y solo en elaboración", () => revertida(sql, async (tx) => {
     const consulta = await sesionDe(tx, "consulta");
     const t = await tramiteEn(tx, "elaboracion", { elaborador: consulta });
-    await documentoLibre(tx, { codigo: "GTH-PR-08", proceso: "GTH", tipo: "PR" });
-    const otro = await tramiteEn(tx, "elaboracion", { codigo: "GTH-PR-08" });
+    const otro = await tramiteEn(tx, "elaboracion");
     const puede = (id: number, s: SesionFlujo, op: "leer" | "escribir") => autorizarArchivoDeTramite(id, s, op, { sql: tx });
     expect((await puede(t.tramiteId, consulta, "escribir")).ok).toBe(true);
     expect(await puede(otro.tramiteId, consulta, "escribir")).toEqual({ ok: false, estado: 404 });   // trámite ajeno
@@ -57,7 +56,7 @@ describe("autorizarArchivoDeTramite", () => {
   it("da el destino de la ruta física: el código y el número de la versión en trámite", () => revertida(sql, async (tx) => {
     const t = await tramiteEn(tx, "elaboracion");
     expect(await autorizarArchivoDeTramite(t.tramiteId, t.elaborador, "escribir", { sql: tx }))
-      .toEqual({ ok: true, versionId: t.versionId, codigo: "GTH-PR-01", numero: 2 });
+      .toEqual({ ok: true, versionId: t.versionId, codigo: t.codigo, numero: 2 });
   }));
 
   it("un trámite que no existe, o que aún no tiene versión, da 404", () => revertida(sql, async (tx) => {
@@ -70,8 +69,7 @@ describe("autorizarArchivoDeTramite", () => {
 describe("archivoDeTramite", () => {
   it("solo sirve archivos de la versión del trámite, y nunca un acta", () => revertida(sql, async (tx) => {
     const t = await tramiteEn(tx, "elaboracion");
-    await documentoLibre(tx, { codigo: "GTH-PR-08", proceso: "GTH", tipo: "PR" });
-    const otro = await tramiteEn(tx, "elaboracion", { codigo: "GTH-PR-08" });
+    const otro = await tramiteEn(tx, "elaboracion");
     const propio = await archivoPrincipal(tx, t.versionId!);
     const ajeno = await archivoPrincipal(tx, otro.versionId!);
     try {
@@ -88,7 +86,7 @@ describe("archivoDeTramite", () => {
   }));
 
   it("en una eliminación no hay borrador: la versión vigente no sale sin marca por esta ruta", () => revertida(sql, async (tx) => {
-    const t = await tramiteEn(tx, "aprobacion", { codigo: "GTH-PR-01", tipo: "eliminar" });
+    const t = await tramiteEn(tx, "aprobacion", { tipo: "eliminar" });
     const [vigente] = await tx`SELECT id FROM archivos WHERE version_id = ${t.versionId} AND rol = 'principal'`;
     expect(await archivoDeTramite(t.tramiteId, Number(vigente.id), { sql: tx })).toBeNull();
   }));
@@ -172,8 +170,7 @@ describe("una versión en trámite solo se toca desde el trámite", () => {
 
   it("otro trámite no da permiso sobre esta versión", () => revertida(sql, async (tx) => {
     const t = await tramiteEn(tx, "elaboracion");
-    await documentoLibre(tx, { codigo: "GTH-PR-08", proceso: "GTH", tipo: "PR" });
-    const otro = await tramiteEn(tx, "elaboracion", { codigo: "GTH-PR-08" });
+    const otro = await tramiteEn(tx, "elaboracion");
     await expect(registrarArchivo(anexo(t.versionId!), t.elaborador.usuarioId, { tramiteId: otro.tramiteId, sql: tx })).rejects.toThrow(FUERA);
   }));
 
@@ -202,7 +199,7 @@ describe("una versión en trámite solo se toca desde el trámite", () => {
     await expect(quitar(999_999_999)).rejects.toBeInstanceOf(ErrorTramite);
     const [vigente] = await tx`SELECT a.id FROM archivos a
       JOIN documento_versiones v ON v.id = a.version_id AND v.estado = 'vigente'
-      JOIN documentos d ON d.id = v.documento_id AND d.codigo = 'GTH-PR-01'
+      JOIN documentos d ON d.id = v.documento_id AND d.codigo = ${t.codigo}
       LIMIT 1`;
     await expect(quitar(Number(vigente.id))).rejects.toThrow("Solo se pueden eliminar archivos de una versión en borrador");
     await expect(quitar(Number(vigente.id))).rejects.toBeInstanceOf(ErrorTramite);
@@ -212,7 +209,7 @@ describe("una versión en trámite solo se toca desde el trámite", () => {
     const t = await tramiteEn(tx, "elaboracion");
     const [{ numero }] = await tx`SELECT numero FROM tramites WHERE id = ${t.tramiteId}`;
     const version = async () => {
-      const doc = await obtenerDocumentoAdmin("GTH-PR-01", t.admin, { sql: tx });
+      const doc = await obtenerDocumentoAdmin(t.codigo, t.admin, { sql: tx });
       return doc?.versiones.find((v) => Number(v.id) === t.versionId);
     };
     expect((await version())?.tramite).toEqual({ id: t.tramiteId, numero });
@@ -248,10 +245,10 @@ describe("borradorDeTramite", () => {
       expect(b.controlCambios).toBeTruthy();
 
       const [plantilla] = await tx`SELECT d.id, d.codigo, v.numero FROM documentos d
-        JOIN documento_versiones v ON v.documento_id = d.id AND v.estado = 'vigente' WHERE d.codigo = 'GTH-PR-01'`;
+        JOIN documento_versiones v ON v.documento_id = d.id AND v.estado = 'vigente' WHERE d.codigo = ${t.codigo}`;
       await tx`UPDATE tipos_documento SET plantilla_documento_id = ${plantilla.id}
-        WHERE id = (SELECT tipo_id FROM documentos WHERE codigo = 'GTH-PR-01')`;
-      expect((await borradorDeTramite(t.tramiteId, { sql: tx })).plantilla).toEqual({ codigo: "GTH-PR-01", version: plantilla.numero });
+        WHERE id = (SELECT tipo_id FROM documentos WHERE codigo = ${t.codigo})`;
+      expect((await borradorDeTramite(t.tramiteId, { sql: tx })).plantilla).toEqual({ codigo: t.codigo, version: plantilla.numero });
     } finally { await t.limpiar(); }
   }));
 });

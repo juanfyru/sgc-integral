@@ -28,7 +28,7 @@ import { generarActa, type DatosActa } from "@/lib/acta";
 import type { Verificador } from "@/lib/firma";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { contenidoPorPagina, contieneTexto } from "./utiles/pdf";
-import { documentoLibre, opc, sesionDe, tramiteEn } from "./utiles/tramites";
+import { opc, sesionDe, tramiteEn } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
 const sql = obtenerSql();
@@ -67,11 +67,11 @@ describe("el acta se congela al cerrar", () => {
     try {
       await transicionar(t.admin, publicar(t), opc(tx));
       const antes = await reunirDatosActa(t.tramiteId, { sql: tx });
-      await tx`UPDATE documentos SET titulo = 'Otro título' WHERE codigo = 'GTH-PR-01'`;
+      await tx`UPDATE documentos SET titulo = 'Otro título' WHERE codigo = ${t.codigo}`;
       await tx`UPDATE procesos SET nombre = 'Otro proceso' WHERE id = (SELECT proceso_id FROM tramites WHERE id = ${t.tramiteId})`;
       await tx`UPDATE usuarios SET nombre = 'Otro nombre' WHERE id = ${t.elaborador.usuarioId}`;
       expect(await reunirDatosActa(t.tramiteId, { sql: tx })).toEqual(antes);
-      expect(antes!.documento.titulo).toBe("Procedimiento de Ingreso de Personal");
+      expect(antes!.documento.titulo).toBe(t.titulo);
     } finally { await t.limpiar(); }
   }));
 
@@ -100,10 +100,9 @@ describe("el acta se congela al cerrar", () => {
     };
 
     const publicacion = await tramiteEn(tx, "publicacion");
-    await documentoLibre(tx, { codigo: "GTH-PR-08", proceso: "GTH", tipo: "PR" });
-    const aprobacion = await tramiteEn(tx, "aprobacion", { codigo: "GTH-PR-08" });
-    const eliminacion = await tramiteEn(tx, "aprobacion", { tipo: "eliminar", codigo: "GTH-FO-01" });
-    const eliminacionAprobada = await tramiteEn(tx, "publicacion", { tipo: "eliminar", codigo: "GTH-CA-01", aprobador: await sesionDe(tx, "gerente") });
+    const aprobacion = await tramiteEn(tx, "aprobacion");
+    const eliminacion = await tramiteEn(tx, "aprobacion", { tipo: "eliminar" });
+    const eliminacionAprobada = await tramiteEn(tx, "publicacion", { tipo: "eliminar", tipoDocumento: "CA", aprobador: await sesionDe(tx, "gerente") });
     const aprobar = (t: typeof aprobacion) =>
       ({ tramiteId: t.tramiteId, accion: "aprobar_y_publicar", etapaEsperada: "aprobacion", rondaEsperada: t.ronda, datos: { concepto: "Aprobado." }, credenciales: { clave: "x" } }) as const;
     try {
@@ -152,7 +151,7 @@ describe("cada cierre tiene su acta", () => {
     const rutas: string[] = [];
     try {
       await transicionar(t.admin, publicar(t), opc(tx));
-      const e = await tramiteEn(tx, "aprobacion", { codigo: "GTH-PR-01", tipo: "eliminar" });
+      const e = await tramiteEn(tx, "aprobacion", { codigo: t.codigo, tipo: "eliminar" });
       expect(e.versionId).toBe(t.versionId);                              // la eliminación usa la versión vigente
       await transicionar(e.aprobador, { tramiteId: e.tramiteId, accion: "aprobar_y_publicar", etapaEsperada: "aprobacion", rondaEsperada: 0, datos: { concepto: "Procede." }, credenciales: { clave: "x" } }, opc(tx));
 
@@ -165,7 +164,7 @@ describe("cada cierre tiene su acta", () => {
       expect(filas.map((f) => f.rol)).toEqual(["acta_aprobacion", "acta_eliminacion"]);
       expect((await reunirDatosActa(e.tramiteId, { sql: tx }))!.clase).toBe("eliminacion");
 
-      const detalle = await obtenerDocumentoAdmin("GTH-PR-01", e.admin, { sql: tx });
+      const detalle = await obtenerDocumentoAdmin(t.codigo, e.admin, { sql: tx });
       const version = detalle!.versiones.find((v) => v.id === t.versionId)!;
       expect(version.estado).toBe("anulado");
       expect(version.cierres).toEqual([{ id: t.tramiteId, etapa: "publicado" }, { id: e.tramiteId, etapa: "eliminado" }]);
@@ -222,10 +221,10 @@ describe("escribir el acta", () => {
       rutas.push(primera.ruta);
       const absoluta = resolverRutaAlmacen(primera.ruta)!;
       await rm(absoluta);
-      await tx`UPDATE documentos SET titulo = 'Cambió después' WHERE codigo = 'GTH-PR-01'`;
+      await tx`UPDATE documentos SET titulo = 'Cambió después' WHERE codigo = ${t.codigo}`;
       const segunda = (await asegurarActa(t.tramiteId, { sql: tx }))!;
       expect(segunda).toEqual(primera);
-      expect(contieneTexto(await textoDe(new Uint8Array(await readFile(absoluta))), "Procedimiento de Ingreso de Personal")).toBe(true);
+      expect(contieneTexto(await textoDe(new Uint8Array(await readFile(absoluta))), t.titulo)).toBe(true);
     } finally { await borrarActas(rutas); await t.limpiar(); }
   }));
   it("si el acta regenerada no es idéntica a la registrada, no se sirve ni se pisa la fila", () => revertida(sql, async (tx) => {

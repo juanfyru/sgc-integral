@@ -197,7 +197,7 @@ describe("panel de documentos", () => {
 
   it("control interno conserva vigentes, obsoletas y anuladas", async () => {
     const ci = await sujeto("control.interno");
-    expect((await obtenerDocumentoAdmin("GTH-CA-01", ci))!.versiones.map((v) => v.estado).sort()).toEqual(["obsoleto", "obsoleto", "vigente"]);
+    expect(new Set((await obtenerDocumentoAdmin("GTH-CA-01", ci))!.versiones.map((v) => v.estado))).toEqual(new Set(["obsoleto", "vigente"]));
     expect((await obtenerDocumentoAdmin("GIC-IN-02", ci))!.versiones.map((v) => v.estado)).toEqual(["anulado"]);
     expect((await listarDocumentosAdmin(ci)).some((d) => d.codigo === RESTRINGIDO)).toBe(true);
   });

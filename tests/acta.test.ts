@@ -140,7 +140,7 @@ describe("el acta de un trámite", () => {
       const [v] = await tx`SELECT numero FROM documento_versiones WHERE id = ${t.versionId}`;
       expect(d).toMatchObject({
         clase: "aprobacion",
-        documento: { codigo: "GTH-PR-01", titulo: "Procedimiento de Ingreso de Personal" },
+        documento: { codigo: t.codigo, titulo: t.titulo },
         version: v.numero,
         solicitud: { tipo: "Modificar", motivo: "Mejora del proceso" },
         vistoBueno: "Dado: quien pide es líder del proceso",
@@ -179,17 +179,17 @@ describe("el acta de un trámite", () => {
       const acta = (await asegurarActa(t.tramiteId, { sql: tx }))!;
       rutas.push(acta.ruta);
 
-      const ficha = await obtenerFichaDocumento("GTH-PR-01", t.admin, { sql: tx });
+      const ficha = await obtenerFichaDocumento(t.codigo, t.admin, { sql: tx });
       expect(ficha!.archivos.map((a) => a.rol)).toEqual(["principal"]);
       expect(ficha!.version.tramiteId).toBe(t.tramiteId);
 
-      const detalle = await obtenerDocumentoAdmin("GTH-PR-01", t.admin, { sql: tx });
+      const detalle = await obtenerDocumentoAdmin(t.codigo, t.admin, { sql: tx });
       const version = detalle!.versiones.find((v) => v.id === t.versionId)!;
       expect(version.archivos.map((a) => a.rol)).toEqual(["principal"]);
       expect(version.cierres).toEqual([{ id: t.tramiteId, etapa: "publicado" }]);
 
       // Ni por su id: las rutas de archivos no sirven un acta.
-      expect(await obtenerArchivoVigente("GTH-PR-01", acta.archivoId, t.admin, { sql: tx })).toBeNull();
+      expect(await obtenerArchivoVigente(t.codigo, acta.archivoId, t.admin, { sql: tx })).toBeNull();
       expect(await obtenerArchivoAdmin(acta.archivoId, { sql: tx })).toBeNull();
       const [principal] = await tx`SELECT id FROM archivos WHERE version_id = ${t.versionId} AND rol = 'principal'`;
       expect(await obtenerArchivoAdmin(Number(principal.id), { sql: tx })).not.toBeNull();
@@ -200,7 +200,7 @@ describe("el acta de un trámite", () => {
   }));
 
   it("la eliminación deja su acta en la versión anulada", () => revertida(sql, async (tx) => {
-    const t = await tramiteEn(tx, "aprobacion", { codigo: "GTH-PR-01", tipo: "eliminar" });
+    const t = await tramiteEn(tx, "aprobacion", { tipo: "eliminar" });
     const rutas: string[] = [];
     try {
       const r = await transicionar(t.aprobador, { tramiteId: t.tramiteId, accion: "aprobar_y_publicar", etapaEsperada: "aprobacion", rondaEsperada: 0, datos: { concepto: "Procede." }, credenciales: { clave: "x" } }, opc(tx));

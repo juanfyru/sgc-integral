@@ -59,13 +59,14 @@ describe("guardarConfigDocumental", () => {
   it("guarda la configuración, valida y audita", () => revertida(sql, async (tx) => {
     const { usuarioId } = await sesionAdmin(tx);
     const antes = await obtenerConfigDocumental({ sql: tx });
-    await guardarConfigDocumentalEn(tx, { ...aGuardar(antes), plazos: { ...antes.plazos, revision: 7 }, publicacionDirecta: false }, usuarioId);
+    const publicacionDirecta = !antes.publicacionDirecta;                // la demostración la apaga
+    await guardarConfigDocumentalEn(tx, { ...aGuardar(antes), plazos: { ...antes.plazos, revision: 7 }, publicacionDirecta }, usuarioId);
     const despues = await obtenerConfigDocumental({ sql: tx });
     expect(despues.plazos.revision).toBe(7);
-    expect(despues.publicacionDirecta).toBe(false);
+    expect(despues.publicacionDirecta).toBe(publicacionDirecta);
     const detalle = await ultimaAuditoria(tx, usuarioId);
     expect(Object.keys(detalle.cambios).sort()).toEqual(["plazo_revision_dias", "publicacion_directa"]);
-    expect(detalle.cambios.publicacion_directa).toEqual({ antes: antes.publicacionDirecta ? "1" : "0", despues: "0" });
+    expect(detalle.cambios.publicacion_directa).toEqual({ antes: antes.publicacionDirecta ? "1" : "0", despues: publicacionDirecta ? "1" : "0" });
 
     const rechaza = (cambio: Partial<ReturnType<typeof aGuardar>>, mensaje?: RegExp) =>
       expect(tx.savepoint(() => guardarConfigDocumentalEn(tx, { ...aGuardar(antes), ...cambio }, usuarioId))).rejects.toThrow(mensaje);

@@ -65,7 +65,7 @@ describe("misTareas", () => {
       expect(tareas.find((x) => x.enlace === enlaceDe(t.tramiteId))).toEqual({
         id: `tramite:${t.tramiteId}`,
         modulo: "documentos",
-        titulo: `Revisar GTH-PR-01 v${v.numero}`,
+        titulo: `Revisar ${t.codigo} v${v.numero}`,
         detalle: doc.titulo,
         vence: fila.vence_en,
         enlace: enlaceDe(t.tramiteId),
@@ -112,7 +112,7 @@ describe("misTareas", () => {
     };
     const conUno = await contar();
     await tramiteEn(tx, "elaboracion", { tipo: "crear", revisor: t1.revisor });
-    await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-02", revisor: t1.revisor });
+    await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-02", revisor: t1.revisor });
     expect(await contar()).toBe(conUno);
   }));
 });

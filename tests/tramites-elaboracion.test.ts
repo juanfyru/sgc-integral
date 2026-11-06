@@ -99,7 +99,7 @@ describe("enviar a revisión", () => {
       expect(t.ronda).toBe(1);
       const [v] = await tx`SELECT v.numero, v.estado, d.codigo, v.resumen_cambios FROM documento_versiones v
         JOIN documentos d ON d.id = v.documento_id WHERE v.id = ${t.versionId}`;
-      expect(v).toMatchObject({ numero: 1, estado: "borrador", codigo: "CEX-FO-01", resumen_cambios: "Se añade la inducción por servicio." });
+      expect(v).toMatchObject({ numero: 1, estado: "borrador", codigo: "CEX-ZP-01", resumen_cambios: "Se añade la inducción por servicio." });
       const [firma] = await listarFirmas(t.tramiteId, { sql: tx });
       expect(firma).toMatchObject({ firma: "elaboro", ronda: 1, usuarioId: t.elaborador.usuarioId });
     } finally { await t.limpiar(); }
@@ -233,7 +233,7 @@ describe("huella de las firmas siguientes", () => {
   }));
 
   it("en una eliminación nadie elabora, y la firma lleva la huella de lo que se retira", () => revertida(sql, async (tx) => {
-    const t = await tramiteEn(tx, "aprobacion", { codigo: "GTH-PR-01", tipo: "eliminar" });
+    const t = await tramiteEn(tx, "aprobacion", { tipo: "eliminar" });
     sinNegocio("aprobar");
     expect(await transicionar(t.aprobador, { tramiteId: t.tramiteId, accion: "aprobar", etapaEsperada: "aprobacion",
       rondaEsperada: t.ronda, credenciales: { clave: "x" } }, opc(tx))).toEqual({ etapa: "publicacion", ronda: t.ronda });

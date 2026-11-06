@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Sql } from "postgres";
 import postgres from "postgres";
 import { TIPOS_SQL } from "@/db/cliente";
+import { documentoLibre } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
@@ -55,13 +56,12 @@ describe("esquema de la Fase 13A", () => {
   it("un solo trámite abierto por documento", () =>
     revertida(sql, async (tx) => {
       const [u] = await tx`SELECT id FROM usuarios ORDER BY id LIMIT 1`;
-      const [d] = await tx`SELECT d.id, COALESCE(dp.proceso_id, s.proceso_id) AS proceso_id FROM documentos d
-        JOIN documento_proceso dp ON dp.documento_id = d.id AND dp.es_principal
-        LEFT JOIN subprocesos s ON s.id = dp.subproceso_id LIMIT 1`;
+      const d = await documentoLibre(tx, { proceso: "SGC", tipo: "PR" });
+      const [p] = await tx`SELECT id FROM procesos WHERE sigla = 'SGC'`;
       const crear = (consecutivo: number, etapa: string) =>
         tx.savepoint(
           (s) => s`INSERT INTO tramites (numero, anio, consecutivo, tipo, motivo, justificacion, solicitante_id, proceso_id, documento_id, etapa)
-            VALUES (${`SOL-9999-${consecutivo}`}, 9999, ${consecutivo}, 'modificar', 'mejora', 'prueba', ${u.id}, ${d.proceso_id}, ${d.id}, ${etapa})`,
+            VALUES (${`SOL-9999-${consecutivo}`}, 9999, ${consecutivo}, 'modificar', 'mejora', 'prueba', ${u.id}, ${p.id}, ${d.id}, ${etapa})`,
         );
       await crear(1, "publicado");
       await crear(2, "elaboracion");
@@ -70,7 +70,8 @@ describe("esquema de la Fase 13A", () => {
 
   it("los CHECK nuevos aceptan y rechazan lo debido", () =>
     revertida(sql, async (tx) => {
-      const [v] = await tx`SELECT id FROM documento_versiones LIMIT 1`;
+      const { id } = await documentoLibre(tx, { proceso: "SGC", tipo: "PR" });
+      const [v] = await tx`SELECT id FROM documento_versiones WHERE documento_id = ${id}`;
       const acta = (rol: string, ruta: string) =>
         tx.savepoint(
           (s) => s`INSERT INTO archivos (version_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)

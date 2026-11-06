@@ -35,21 +35,54 @@ export async function sesionDe(sql: Cliente, usuario: string): Promise<SesionFlu
 
 let consecutivo = 0;
 
+/** Un número que no se repite: lo que crea un test no choca con lo que se acumule en la demo. */
+function unico(): string {
+  consecutivo += 1;
+  return `${Date.now() % 100_000_000}${consecutivo}`;
+}
+
+export type DocumentoLibre = { id: number; codigo: string; titulo: string };
+
 /**
- * Crea dentro de la transacción un documento vigente, sin trámites: la demo trae abiertos unos
- * cuantos de los suyos y a algunos casos no les alcanzan los que quedan libres.
+ * Crea dentro de la transacción un documento vigente en su versión 1, sin trámites y con archivo
+ * principal (solo la fila: no hay archivo en disco). Los tests no dependen de cómo esté un documento
+ * de la demo: la misma base se usa a mano, y ahí cualquiera puede tener un trámite o una versión más.
  */
 export async function documentoLibre(
   tx: TransactionSql,
-  d: { codigo: string; proceso: string; tipo: string; titulo?: string },
-): Promise<number> {
+  d: { proceso: string; tipo: string; titulo?: string; subproceso?: string },
+): Promise<DocumentoLibre> {
+  const codigo = `${d.proceso}-${d.tipo}-${unico()}`;
+  const titulo = d.titulo ?? `Documento de prueba ${codigo}`;
   const [{ id }] = await tx`INSERT INTO documentos (codigo, titulo, tipo_id)
-    SELECT ${d.codigo}, ${d.titulo ?? `Documento de prueba ${d.codigo}`}, id FROM tipos_documento WHERE sigla = ${d.tipo}
+    SELECT ${codigo}, ${titulo}, id FROM tipos_documento WHERE sigla = ${d.tipo}
     RETURNING id`;
-  await tx`INSERT INTO documento_versiones (documento_id, numero, estado, aprobo, fecha_aprobacion)
-    VALUES (${id}, 1, 'vigente', 'Prueba', '2026-01-01')`;
-  await tx`INSERT INTO documento_proceso (documento_id, proceso_id, es_principal)
-    SELECT ${id}, id, true FROM procesos WHERE sigla = ${d.proceso}`;
+  const [version] = await tx`INSERT INTO documento_versiones (documento_id, numero, estado, aprobo, fecha_aprobacion)
+    VALUES (${id}, 1, 'vigente', 'Prueba', '2026-01-01') RETURNING id`;
+  await tx`INSERT INTO archivos (version_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
+    VALUES (${version.id}, 'principal', ${`zz-pruebas/${codigo}/principal.pdf`}, 'principal.pdf', 'pdf', 'application/pdf', 1, ${"0".repeat(64)})`;
+  if (d.subproceso) {
+    await tx`INSERT INTO documento_proceso (documento_id, subproceso_id, es_principal)
+      SELECT ${id}, s.id, true FROM subprocesos s JOIN procesos p ON p.id = s.proceso_id
+      WHERE p.sigla = ${d.proceso} AND s.slug = ${d.subproceso}`;
+  } else {
+    await tx`INSERT INTO documento_proceso (documento_id, proceso_id, es_principal)
+      SELECT ${id}, id, true FROM procesos WHERE sigla = ${d.proceso}`;
+  }
+  return { id: Number(id), codigo, titulo };
+}
+
+/**
+ * La sigla de un tipo que solo existe en la transacción: como no tiene documentos, sus códigos y
+ * su consecutivo son los del test (`CEX-ZP-01`), aunque en la demo ya se hayan creado formatos.
+ */
+export const TIPO_LIBRE = "ZP";
+
+export async function tipoLibre(tx: TransactionSql): Promise<number> {
+  await tx`INSERT INTO tipos_documento (nombre, sigla, orden, autoridad, es_diligenciable)
+    VALUES ('Tipo de prueba', ${TIPO_LIBRE}, 99, 'operativo', true)
+    ON CONFLICT (sigla) DO NOTHING`;
+  const [{ id }] = await tx`SELECT id FROM tipos_documento WHERE sigla = ${TIPO_LIBRE}`;
   return Number(id);
 }
 
@@ -86,6 +119,7 @@ export async function solicitudDeCreacion(tx: TransactionSql, d: { proceso: stri
   const admin = await sesionAdmin(tx);
   const gerente = await sesionDe(tx, "gerente");
   const liderCex = await sesionDe(tx, "lider.cex");
+  await tipoLibre(tx);
   const [{ id: procesoId }] = await tx`SELECT id FROM procesos WHERE sigla = ${d.proceso}`;
   const [{ id: tipoDocumentoId }] = await tx`SELECT id FROM tipos_documento WHERE sigla = ${d.tipo}`;
   const { tramiteId } = await crearSolicitud(
@@ -148,6 +182,9 @@ export async function archivoPrincipal(
 
 type Trayecto = {
   tramiteId: number;
+  /** El documento del trámite; en una creación, el que nace al aceptar. */
+  codigo: string;
+  titulo: string;
   versionId: number | null;
   ronda: number;
   admin: SesionFlujo;
@@ -158,12 +195,14 @@ type Trayecto = {
 };
 
 /**
- * Lleva un trámite hasta `etapa` con las funciones reales. Por defecto, una modificación de
- * GTH-PR-01 pedida por `lider.gth`, que también elabora. Una creación es un formato nuevo de CEX
- * pedido por `lider.cex`, y `codigo` es el del documento que nace. Si el trámite ya tiene archivo,
- * el test llama `limpiar` en un `finally`. Quien aprueba por defecto es un `admin_sgc`: un
- * documento estratégico, o uno que elabora un `admin_sgc`, necesita que le pasen `aprobador`.
- * `tituloNuevo` es el título propuesto de una modificación, el que se decide al aceptar.
+ * Lleva un trámite hasta `etapa` con las funciones reales. Por defecto, una modificación pedida
+ * por `lider.gth`, que también elabora, sobre un documento de GTH que nace aquí (`documentoLibre`),
+ * del tipo `tipoDocumento`: procedimiento si no se dice. `codigo` escoge otro que ya exista, como
+ * el que dejó un trámite anterior del mismo test. Una creación es un documento nuevo de CEX, de
+ * `TIPO_LIBRE`, pedido por `lider.cex`, y `codigo` es el del documento que nace. Si el trámite ya
+ * tiene archivo, el test llama `limpiar` en un `finally`. Quien aprueba por defecto es un
+ * `admin_sgc`: un documento estratégico, o uno que elabora un `admin_sgc`, necesita que le pasen
+ * `aprobador`. `tituloNuevo` es el título propuesto de una modificación, el que se decide al aceptar.
  */
 export async function tramiteEn(
   tx: TransactionSql,
@@ -171,6 +210,7 @@ export async function tramiteEn(
   o: {
     codigo?: string;
     tipo?: TipoSolicitud;
+    tipoDocumento?: string;
     elaborador?: SesionFlujo;
     revisor?: SesionFlujo;
     aprobador?: SesionFlujo;
@@ -186,22 +226,29 @@ export async function tramiteEn(
   const elaborador = o.elaborador ?? lider;
   const revisor = o.revisor ?? (await usuarioDePrueba(tx, { rol: "lider_proceso" }));
   const aprobador = o.aprobador ?? (await sesionAdmin(tx));
-  const pedirSobreDocumento = async () => {
-    const [{ id: documentoId }] = await tx`SELECT id FROM documentos WHERE codigo = ${o.codigo ?? "GTH-PR-01"}`;
+  const documentoDelTramite = async (): Promise<DocumentoLibre> => {
+    if (o.codigo === undefined) return documentoLibre(tx, { proceso: "GTH", tipo: o.tipoDocumento ?? "PR" });
+    const [d] = await tx`SELECT id, codigo, titulo FROM documentos WHERE codigo = ${o.codigo}`;
+    return { id: Number(d.id), codigo: d.codigo, titulo: d.titulo };
+  };
+  const pedirSobre = async ({ id: documentoId }: DocumentoLibre) =>
     // Si pide un administrador, el visto bueno queda pendiente; si pide el líder, queda dado.
-    return crearSolicitud(
+    crearSolicitud(
       etapa === "visto_bueno" ? admin : lider,
       { tipo, motivo: "mejora", justificacion: "Se ajusta el documento al proceso actual.", documentoId },
       opc(tx),
     );
-  };
-  const { tramiteId } = crea
-    ? await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "FO", titulo: "Formato de prueba del flujo" })
-    : await pedirSobreDocumento();
+  const creado = { codigo: o.codigo ?? `CEX-${TIPO_LIBRE}-01`, titulo: "Formato de prueba del flujo" };
+  const documento = crea ? null : await documentoDelTramite();
+  const { tramiteId } =
+    documento === null
+      ? await solicitudDeCreacion(tx, { proceso: "CEX", tipo: TIPO_LIBRE, titulo: creado.titulo })
+      : await pedirSobre(documento);
+  const { codigo, titulo } = documento ?? creado;
   const trayecto = async (limpiar = async () => {}): Promise<Trayecto> => {
     const [t] = await tx`SELECT version_id, ronda FROM tramites WHERE id = ${tramiteId}`;
     const versionId = t.version_id === null ? null : Number(t.version_id);
-    return { tramiteId, versionId, ronda: t.ronda, admin, elaborador, revisor, aprobador, limpiar };
+    return { tramiteId, codigo, titulo, versionId, ronda: t.ronda, admin, elaborador, revisor, aprobador, limpiar };
   };
   if (etapa === "visto_bueno" || etapa === "aceptacion") return trayecto();
 
@@ -209,7 +256,7 @@ export async function tramiteEn(
     if (tipo === "eliminar") return { aprobadorId: aprobador.usuarioId };
     const responsables = { elaboradorId: elaborador.usuarioId, revisorId: revisor.usuarioId, aprobadorId: aprobador.usuarioId };
     return crea
-      ? aceptarCreacion({ codigo: o.codigo ?? "CEX-FO-01", ...responsables })
+      ? aceptarCreacion({ codigo, ...responsables })
       : { ...responsables, venceElaboracion: "2026-11-20", tituloNuevo: o.tituloNuevo };
   };
   await transicionar(

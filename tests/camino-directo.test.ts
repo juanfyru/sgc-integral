@@ -322,7 +322,7 @@ describe("ningún camino directo revive lo que un trámite cerró", () => {
   });
 
   it("una creación cancelada por el trámite real tampoco se reactiva", () => revertida(sql, async (tx) => {
-    const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
+    const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-07" });
     await transicionar(
       t.admin,
       { tramiteId: t.tramiteId, accion: "cancelar", etapaEsperada: "elaboracion", rondaEsperada: 1, datos: { motivo: "Ya no hace falta." } },

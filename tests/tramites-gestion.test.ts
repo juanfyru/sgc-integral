@@ -138,14 +138,14 @@ describe("cancelar", () => {
   }));
 
   it("una creación cancelada no libera su código: el sugerido es el consecutivo siguiente", () => revertida(sql, async (tx) => {
-    const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
+    const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-07" });
     const [{ id: procesoId }] = await tx`SELECT id FROM procesos WHERE sigla = 'CEX'`;
-    const [{ id: tipoDocumentoId }] = await tx`SELECT id FROM tipos_documento WHERE sigla = 'FO'`;
+    const [{ id: tipoDocumentoId }] = await tx`SELECT id FROM tipos_documento WHERE sigla = 'ZP'`;
     const [{ documento_id: documentoId }] = await tx`SELECT documento_id FROM tramites WHERE id = ${t.tramiteId}`;
     await transicionar(t.admin, { tramiteId: t.tramiteId, accion: "cancelar", etapaEsperada: "elaboracion", rondaEsperada: 1, datos: { motivo: "Se pidió por error." } }, opc(tx));
     const versiones = await tx`SELECT estado FROM documento_versiones WHERE documento_id = ${documentoId}`;
     expect(versiones.map((v) => v.estado)).toEqual(["descartado"]);
-    expect(await sugerirCodigo({ procesoId: Number(procesoId), tipoDocumentoId: Number(tipoDocumentoId) }, { sql: tx })).toBe("CEX-FO-08");
+    expect(await sugerirCodigo({ procesoId: Number(procesoId), tipoDocumentoId: Number(tipoDocumentoId) }, { sql: tx })).toBe("CEX-ZP-08");
   }));
 });
 
@@ -486,7 +486,7 @@ describe("reasignar", () => {
 
 describe("datosParaGestionar", () => {
   it("el tipo y el propietario actuales salen aunque estén inactivos: el formulario no debe cambiarlos solo", () => revertida(sql, async (tx) => {
-    const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
+    const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-07" });
     const [fila] = await tx`SELECT proceso_id, tipo_documento_id FROM tramites WHERE id = ${t.tramiteId}`;
     await tx`UPDATE procesos SET activo = false WHERE id = ${fila.proceso_id}`;
     await tx`UPDATE tipos_documento SET activo = false WHERE id = ${fila.tipo_documento_id}`;
@@ -527,7 +527,7 @@ describe("corregirDatosDeControl", () => {
     const [auditoria] = await tx`SELECT usuario_id, detalle FROM auditoria WHERE accion = 'tramite_corregir_datos' AND entidad_id = ${t.tramiteId}`;
     expect(auditoria).toMatchObject({
       usuario_id: t.admin.usuarioId,
-      detalle: { numero: expect.any(String), codigo: "GTH-PR-01", ronda: 1, antes: { titulo }, despues: { titulo: "Inducción general" } },
+      detalle: { numero: expect.any(String), codigo: t.codigo, ronda: 1, antes: { titulo }, despues: { titulo: "Inducción general" } },
     });
   }));
 
@@ -602,37 +602,37 @@ describe("corregirDatosDeControl", () => {
     };
 
     it("cambia título, código y tipo del documento, con el antes y el después", () => revertida(sql, async (tx) => {
-      const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
+      const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-07" });
       const [tipo] = await tx`SELECT id, nombre FROM tipos_documento WHERE sigla = 'RG'`;
       await corregirDatosDeControl(t.tramiteId, t.admin, { titulo: "Registro de quejas", codigo: "CEX-RG-07", tipoDocumentoId: Number(tipo.id) }, enElaboracion, { sql: tx });
       expect(await documentoDe(tx, t.tramiteId)).toMatchObject({ titulo: "Registro de quejas", codigo: "CEX-RG-07", tipo_id: tipo.id, tipo_documento_id: tipo.id });
       const [evento] = await eventosDe(tx, t.tramiteId, "corregir_datos");
       expect(evento.detalle).toEqual({
-        antes: { titulo: "Formato de prueba del flujo", codigo: "CEX-FO-07", tipo: "Formato" },
+        antes: { titulo: "Formato de prueba del flujo", codigo: "CEX-ZP-07", tipo: "Tipo de prueba" },
         despues: { titulo: "Registro de quejas", codigo: "CEX-RG-07", tipo: tipo.nombre },
       });
     }));
 
     it("el evento solo lleva lo que cambió", () => revertida(sql, async (tx) => {
-      const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
-      await corregirDatosDeControl(t.tramiteId, t.admin, { titulo: "Formato nuevo", codigo: "CEX-FO-07" }, enElaboracion, { sql: tx });
+      const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-07" });
+      await corregirDatosDeControl(t.tramiteId, t.admin, { titulo: "Formato nuevo", codigo: "CEX-ZP-07" }, enElaboracion, { sql: tx });
       const [evento] = await eventosDe(tx, t.tramiteId, "corregir_datos");
       expect(evento.detalle).toEqual({ antes: { titulo: "Formato de prueba del flujo" }, despues: { titulo: "Formato nuevo" } });
     }));
 
     it("el código debe cumplir el formato", () => revertida(sql, async (tx) => {
-      const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
+      const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-07" });
       await expect(corregirDatosDeControl(t.tramiteId, t.admin, { codigo: "NO SIRVE" }, enElaboracion, { sql: tx }))
-        .rejects.toThrow("El código no cumple el formato configurado (ej. CEX-FO-08)");
+        .rejects.toThrow("El código no cumple el formato configurado (ej. CEX-ZP-08)");
     }));
 
     it("un código repetido dice cuál sigue, y la transacción sigue viva", () => revertida(sql, async (tx) => {
-      const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
+      const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-07" });
       await tx`INSERT INTO documentos (codigo, titulo, tipo_id)
-        SELECT 'CEX-FO-09', 'Otro', id FROM tipos_documento WHERE sigla = 'FO'`;
-      await expect(corregirDatosDeControl(t.tramiteId, t.admin, { codigo: "CEX-FO-09" }, enElaboracion, { sql: tx }))
-        .rejects.toThrow("Ese código ya existe. El siguiente disponible es CEX-FO-10");
-      expect((await documentoDe(tx, t.tramiteId)).codigo).toBe("CEX-FO-07");
+        SELECT 'CEX-ZP-09', 'Otro', id FROM tipos_documento WHERE sigla = 'ZP'`;
+      await expect(corregirDatosDeControl(t.tramiteId, t.admin, { codigo: "CEX-ZP-09" }, enElaboracion, { sql: tx }))
+        .rejects.toThrow("Ese código ya existe. El siguiente disponible es CEX-ZP-10");
+      expect((await documentoDe(tx, t.tramiteId)).codigo).toBe("CEX-ZP-07");
     }));
 
     describe("un código abandonado no se reutiliza", () => {
@@ -640,50 +640,50 @@ describe("corregirDatosDeControl", () => {
         corregirDatosDeControl(t.tramiteId, t.admin, { codigo }, enElaboracion, { sql: tx });
       const destinoCex = async (tx: TransactionSql) => {
         const [{ id: procesoId }] = await tx`SELECT id FROM procesos WHERE sigla = 'CEX'`;
-        const [{ id: tipoDocumentoId }] = await tx`SELECT id FROM tipos_documento WHERE sigla = 'FO'`;
+        const [{ id: tipoDocumentoId }] = await tx`SELECT id FROM tipos_documento WHERE sigla = 'ZP'`;
         return { procesoId: Number(procesoId), tipoDocumentoId: Number(tipoDocumentoId) };
       };
 
       it("el sugerido no vuelve a proponerlo", () => revertida(sql, async (tx) => {
-        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-03" });
-        await corregirA(tx, t, "CEX-FO-02");
-        expect(await todosLosCodigos({ sql: tx })).toEqual(expect.arrayContaining(["CEX-FO-02", "CEX-FO-03"]));
-        expect(await sugerirCodigo(await destinoCex(tx), { sql: tx })).toBe("CEX-FO-04");
+        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-03" });
+        await corregirA(tx, t, "CEX-ZP-02");
+        expect(await todosLosCodigos({ sql: tx })).toEqual(expect.arrayContaining(["CEX-ZP-02", "CEX-ZP-03"]));
+        expect(await sugerirCodigo(await destinoCex(tx), { sql: tx })).toBe("CEX-ZP-04");
       }));
 
       it("otro documento no lo toma al corregir", () => revertida(sql, async (tx) => {
-        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-03" });
-        await corregirA(tx, t, "CEX-FO-02");
-        const otro = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-05" });
-        await expect(corregirA(tx, otro, "CEX-FO-03")).rejects.toThrow("Ese código ya existe. El siguiente disponible es CEX-FO-06");
+        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-03" });
+        await corregirA(tx, t, "CEX-ZP-02");
+        const otro = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-05" });
+        await expect(corregirA(tx, otro, "CEX-ZP-03")).rejects.toThrow("Ese código ya existe. El siguiente disponible es CEX-ZP-06");
       }));
 
       it("otro documento no lo toma al aceptar, escrito a mano", () => revertida(sql, async (tx) => {
-        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-03" });
-        await corregirA(tx, t, "CEX-FO-02");
-        const s = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "FO", titulo: "Otro formato" });
+        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-03" });
+        await corregirA(tx, t, "CEX-ZP-02");
+        const s = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "ZP", titulo: "Otro formato" });
         const responsables = { elaboradorId: s.liderCex.usuarioId, revisorId: t.revisor.usuarioId, aprobadorId: s.admin.usuarioId };
         await expect(transicionar(s.admin, { tramiteId: s.tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
-          datos: aceptarCreacion({ codigo: "CEX-FO-03", ...responsables }) }, opc(tx)))
-          .rejects.toThrow("Ese código ya existe. El siguiente disponible es CEX-FO-04");
+          datos: aceptarCreacion({ codigo: "CEX-ZP-03", ...responsables }) }, opc(tx)))
+          .rejects.toThrow("Ese código ya existe. El siguiente disponible es CEX-ZP-04");
       }));
 
       it("si era el sugerido que quedó viejo, la aceptación toma el siguiente", () => revertida(sql, async (tx) => {
-        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-03" });
-        await corregirA(tx, t, "CEX-FO-02");
-        const s = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "FO", titulo: "Otro formato" });
+        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-03" });
+        await corregirA(tx, t, "CEX-ZP-02");
+        const s = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "ZP", titulo: "Otro formato" });
         const responsables = { elaboradorId: s.liderCex.usuarioId, revisorId: t.revisor.usuarioId, aprobadorId: s.admin.usuarioId };
         await transicionar(s.admin, { tramiteId: s.tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
-          datos: aceptarCreacion({ codigo: "CEX-FO-03", codigoSugerido: "CEX-FO-03", ...responsables }) }, opc(tx));
+          datos: aceptarCreacion({ codigo: "CEX-ZP-03", codigoSugerido: "CEX-ZP-03", ...responsables }) }, opc(tx));
         const [{ codigo }] = await tx`SELECT d.codigo FROM documentos d JOIN tramites t ON t.documento_id = d.id WHERE t.id = ${s.tramiteId}`;
-        expect(codigo).toBe("CEX-FO-04");
+        expect(codigo).toBe("CEX-ZP-04");
       }));
 
       it("el trámite dueño puede volver al código que tenía", () => revertida(sql, async (tx) => {
-        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-03" });
-        await corregirA(tx, t, "CEX-FO-02");
-        await corregirA(tx, t, "CEX-FO-03");
-        expect((await documentoDe(tx, t.tramiteId)).codigo).toBe("CEX-FO-03");
+        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-03" });
+        await corregirA(tx, t, "CEX-ZP-02");
+        await corregirA(tx, t, "CEX-ZP-03");
+        expect((await documentoDe(tx, t.tramiteId)).codigo).toBe("CEX-ZP-03");
       }));
     });
 
@@ -703,7 +703,7 @@ describe("corregirDatosDeControl", () => {
       };
 
       it("pasa a otro proceso: el trámite y la asociación principal van juntos, y el evento lo cuenta", () => revertida(sql, async (tx) => {
-        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
+        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-07" });
         const cex = await procesoPorSigla(tx, "CEX");
         const gth = await procesoPorSigla(tx, "GTH");
         await corregirDatosDeControl(t.tramiteId, t.admin, { procesoId: gth.id }, enElaboracion, { sql: tx });
@@ -717,7 +717,7 @@ describe("corregirDatosDeControl", () => {
       }));
 
       it("a un subproceso: el trámite lleva su proceso y la asociación solo el subproceso", () => revertida(sql, async (tx) => {
-        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
+        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-07" });
         const cex = await procesoPorSigla(tx, "CEX");
         const sub = await subprocesoDe(tx, cex.id);
         await corregirDatosDeControl(t.tramiteId, t.admin, { subprocesoId: sub.id }, enElaboracion, { sql: tx });
@@ -729,7 +729,7 @@ describe("corregirDatosDeControl", () => {
       }));
 
       it("si ya aplicaba a ese proceso, la asociación secundaria no se duplica", () => revertida(sql, async (tx) => {
-        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
+        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-07" });
         const gth = await procesoPorSigla(tx, "GTH");
         const { id: documentoId } = await documentoDe(tx, t.tramiteId);
         await tx`INSERT INTO documento_proceso (documento_id, proceso_id, es_principal) VALUES (${documentoId}, ${gth.id}, false)`;
@@ -741,7 +741,7 @@ describe("corregirDatosDeControl", () => {
       }));
 
       it("si no había asociación secundaria, el evento no dice que retiró una", () => revertida(sql, async (tx) => {
-        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
+        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-07" });
         const gth = await procesoPorSigla(tx, "GTH");
         await corregirDatosDeControl(t.tramiteId, t.admin, { procesoId: gth.id }, enElaboracion, { sql: tx });
         const [evento] = await eventosDe(tx, t.tramiteId, "corregir_datos");
@@ -749,7 +749,7 @@ describe("corregirDatosDeControl", () => {
       }));
 
       it("un subproceso de otro proceso se rechaza", () => revertida(sql, async (tx) => {
-        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
+        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-07" });
         const cex = await procesoPorSigla(tx, "CEX");
         const gth = await procesoPorSigla(tx, "GTH");
         const sub = await subprocesoDe(tx, cex.id);
@@ -758,7 +758,7 @@ describe("corregirDatosDeControl", () => {
       }));
 
       it("un proceso inactivo no se elige", () => revertida(sql, async (tx) => {
-        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
+        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-07" });
         const gth = await procesoPorSigla(tx, "GTH");
         await tx`UPDATE procesos SET activo = false WHERE id = ${gth.id}`;
         await expect(corregirDatosDeControl(t.tramiteId, t.admin, { procesoId: gth.id }, enElaboracion, { sql: tx }))
@@ -766,7 +766,7 @@ describe("corregirDatosDeControl", () => {
       }));
 
       it("el propietario actual, aunque se haya desactivado, no impide corregir otro dato", () => revertida(sql, async (tx) => {
-        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
+        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-07" });
         const cex = await procesoPorSigla(tx, "CEX");
         await tx`UPDATE procesos SET activo = false WHERE id = ${cex.id}`;
         await corregirDatosDeControl(t.tramiteId, t.admin, { titulo: "Formato corregido", procesoId: cex.id }, enElaboracion, { sql: tx });
@@ -776,10 +776,10 @@ describe("corregirDatosDeControl", () => {
       }));
 
       it("el código se valida con el proceso nuevo", () => revertida(sql, async (tx) => {
-        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
+        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-07" });
         const gth = await procesoPorSigla(tx, "GTH");
         await expect(corregirDatosDeControl(t.tramiteId, t.admin, { codigo: "NO SIRVE", procesoId: gth.id }, enElaboracion, { sql: tx }))
-          .rejects.toThrow(/formato configurado \(ej\. GTH-FO-/);
+          .rejects.toThrow(/formato configurado \(ej. GTH-ZP-/);
       }));
     });
 
@@ -787,7 +787,7 @@ describe("corregirDatosDeControl", () => {
       const politica = async (tx: TransactionSql) => Number((await tx`SELECT id FROM tipos_documento WHERE sigla = 'PO'`)[0].id);
 
       it("un tipo de otra autoridad pasa con el aprobador que le corresponde", () => revertida(sql, async (tx) => {
-        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
+        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-07" });
         const gerente = await sesionDe(tx, "gerente");
         const tipoDocumentoId = await politica(tx);
         await corregirDatosDeControl(t.tramiteId, t.admin, { tipoDocumentoId, aprobadorId: gerente.usuarioId }, enElaboracion, { sql: tx });
@@ -795,7 +795,7 @@ describe("corregirDatosDeControl", () => {
         expect(fila).toMatchObject({ aprobador_id: gerente.usuarioId, tipo_documento_id: tipoDocumentoId });
         const [evento] = await eventosDe(tx, t.tramiteId, "corregir_datos");
         expect(evento.detalle).toEqual({
-          antes: { tipo: "Formato" },
+          antes: { tipo: "Tipo de prueba" },
           despues: { tipo: "Política" },
           aprobador: {
             de: { id: t.aprobador.usuarioId, nombre: t.aprobador.nombre },
@@ -807,21 +807,21 @@ describe("corregirDatosDeControl", () => {
       }));
 
       it("el aprobador que ya lo es no cambia", () => revertida(sql, async (tx) => {
-        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
+        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-07" });
         const [tipo] = await tx`SELECT id FROM tipos_documento WHERE sigla = 'RG'`;
         await expect(corregirDatosDeControl(t.tramiteId, t.admin, { tipoDocumentoId: Number(tipo.id), aprobadorId: t.aprobador.usuarioId }, enElaboracion, { sql: tx }))
           .rejects.toThrow("Esa persona ya tiene ese papel");
       }));
 
       it("sin cambiar el tipo, quien aprueba no cambia por aquí", () => revertida(sql, async (tx) => {
-        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
+        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-07" });
         const otroAdmin = await sesionAdmin(tx);
         await expect(corregirDatosDeControl(t.tramiteId, t.admin, { titulo: "Otro título", aprobadorId: otroAdmin.usuarioId }, enElaboracion, { sql: tx }))
           .rejects.toThrow("Quien aprueba solo cambia junto al tipo");
       }));
 
       it("quien entra debe estar activo y tener el rol", () => revertida(sql, async (tx) => {
-        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
+        const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-07" });
         const tipoDocumentoId = await politica(tx);
         const otroAdmin = await sesionAdmin(tx);
         await expect(tx.savepoint(() => corregirDatosDeControl(t.tramiteId, t.admin, { tipoDocumentoId, aprobadorId: otroAdmin.usuarioId }, enElaboracion, { sql: tx })))
@@ -834,7 +834,7 @@ describe("corregirDatosDeControl", () => {
 
       it("quien firmó como elaborador no entra como aprobador", () => revertida(sql, async (tx) => {
         const anterior = await usuarioDePrueba(tx, { rol: "lider_proceso" });
-        const t = await tramiteEn(tx, "revision", { tipo: "crear", codigo: "CEX-FO-07", elaborador: anterior });
+        const t = await tramiteEn(tx, "revision", { tipo: "crear", codigo: "CEX-ZP-07", elaborador: anterior });
         try {
           await devolverARondaDos(tx, t);
           const nuevo = await usuarioDePrueba(tx, { rol: "consulta" });
@@ -848,14 +848,14 @@ describe("corregirDatosDeControl", () => {
     });
 
     it("un tipo inactivo no se elige", () => revertida(sql, async (tx) => {
-      const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
+      const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-07" });
       const [tipo] = await tx`UPDATE tipos_documento SET activo = false WHERE sigla = 'RG' RETURNING id`;
       await expect(corregirDatosDeControl(t.tramiteId, t.admin, { tipoDocumentoId: Number(tipo.id) }, enElaboracion, { sql: tx }))
         .rejects.toThrow("El tipo de documento no existe o está inactivo");
     }));
 
     it("un tipo de otra autoridad exige a quien corresponde aprobar", () => revertida(sql, async (tx) => {
-      const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
+      const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-07" });
       const [tipo] = await tx`SELECT id FROM tipos_documento WHERE sigla = 'PO'`;
       await expect(corregirDatosDeControl(t.tramiteId, t.admin, { tipoDocumentoId: Number(tipo.id) }, enElaboracion, { sql: tx }))
         .rejects.toThrow("Quien aprueba debe tener el rol Gerencia");
@@ -864,7 +864,7 @@ describe("corregirDatosDeControl", () => {
 
     it("un designado desactivado no impide corregir el tipo", () => revertida(sql, async (tx) => {
       const elaborador = await usuarioDePrueba(tx, { rol: "consulta" });
-      const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07", elaborador });
+      const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-07", elaborador });
       await tx`UPDATE usuarios SET activo = false WHERE id = ${elaborador.usuarioId}`;
       const [tipo] = await tx`SELECT id FROM tipos_documento WHERE sigla = 'RG'`;
       await corregirDatosDeControl(t.tramiteId, t.admin, { tipoDocumentoId: Number(tipo.id) }, enElaboracion, { sql: tx });
@@ -881,7 +881,7 @@ describe("las marcas de aviso son de la etapa", () => {
   });
 
   it("un manejador que pide conservarlas no las salva de un cambio de etapa", () => revertida(sql, async (tx) => {
-    const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-FO-07" });
+    const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-07" });
     await tx`UPDATE tramites SET aviso_vencido_en = now(), escalado_en = now() WHERE id = ${t.tramiteId}`;
     const real = MANEJADORES.cancelar!;
     MANEJADORES.cancelar = async (c) => ({ ...(await real(c)), conservarAvisos: true });

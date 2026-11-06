@@ -58,11 +58,13 @@ describe("obtenerArchivoVigente — solo versiones vigentes al público", () => 
     expect(await obtenerArchivoVigente("gth-ca-01", id, ADMIN)).toBeNull();
   });
 
-  it("sí devuelve la versión vigente del mismo documento (GTH-CA-01 v3)", async () => {
-    const id = await idArchivo("GTH-CA-01", 3);
+  it("sí devuelve la versión vigente del mismo documento", async () => {
+    const [{ numero }] = await obtenerSql()`SELECT v.numero FROM documento_versiones v JOIN documentos d ON d.id = v.documento_id
+      WHERE d.codigo = 'GTH-CA-01' AND v.estado = 'vigente'`;
+    const id = await idArchivo("GTH-CA-01", numero);
     const archivo = await obtenerArchivoVigente("gth-ca-01", id, ADMIN);
     expect(archivo).not.toBeNull();
-    expect(archivo?.ruta).toContain("/v3/");
+    expect(archivo?.ruta).toContain(`/v${numero}/`);
   });
 
   it("NO devuelve un archivo si el código del documento no corresponde", async () => {

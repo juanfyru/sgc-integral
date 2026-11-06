@@ -5,8 +5,8 @@
  *  - PYM-PR-01 / PYM-FO-01 contienen "Vacunación" (acentos y tipeo).
  *  - SGC-FO-03 (borrador, "Listado Maestro") e GIC-IN-02 (anulado, "Fax")
  *    jamás aparecen en resultados públicos.
- *  - GTH-CA-01 es el único vigente aprobado después de 2026-03-12: su versión 3 se
- *    aprobó en la plataforma, días antes de sembrar (filtro fechas).
+ *  - Las versiones heredadas se aprobaron hasta el 2026-03-12; lo publicado por trámite, después
+ *    (filtro fechas).
  */
 import { existsSync } from "node:fs";
 import { afterAll, describe, expect, it } from "vitest";
@@ -112,11 +112,16 @@ describe("buscarDocumentos — filtros combinables", () => {
   });
 
   it("filtra por rango de fecha de aprobación", async () => {
+    const vigentes = await obtenerSql()`SELECT d.codigo, v.fecha_aprobacion::text AS fecha
+      FROM documentos d JOIN documento_versiones v ON v.documento_id = d.id AND v.estado = 'vigente'`;
+    const deFechas = (cumple: (fecha: string) => boolean) =>
+      vigentes.filter((v) => cumple(v.fecha)).map((v) => v.codigo as string).sort();
     const recientes = await buscarDocumentos({ desde: "2026-03-13" }, ADMIN);
-    expect(codigosDe(recientes)).toEqual(["GTH-CA-01"]);
+    expect(recientes.total).toBeGreaterThan(0);
+    expect(codigosDe(recientes).sort()).toEqual(deFechas((f) => f >= "2026-03-13"));
     const antiguos = await buscarDocumentos({ hasta: "2026-03-12" }, ADMIN);
-    expect(codigosDe(antiguos)).not.toContain("GTH-CA-01");
     expect(antiguos.total).toBeGreaterThan(0);
+    expect(codigosDe(antiguos).sort()).toEqual(deFechas((f) => f <= "2026-03-12"));
   });
 
   it("combina texto + proceso + tipo", async () => {
