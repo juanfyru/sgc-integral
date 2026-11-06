@@ -2,7 +2,8 @@
  * Camino directo del panel (spec 13A §8.6 y §13): la carga de documentos ya aprobados fuera de la
  * plataforma. Estas funciones abren sus propias transacciones, así que los casos confirman filas:
  * documentos `ZZ-CD-*` y trámites sueltos, sin eventos ni firmas, que `limpiar` borra. Los códigos que
- * un caso abandona quedan en la bitácora para siempre: llevan un número único por corrida.
+ * un caso abandona, o podría abandonar si falla lo que prueba, quedan en la bitácora para siempre:
+ * llevan un número único por corrida, para que un fallo no deje el test roto de por vida.
  */
 import { existsSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -400,15 +401,17 @@ describe("datos de control y de catálogo", () => {
   });
 
   it("el código y el tipo solo cambian sin versión publicada; una descartada no cuenta", async () => {
-    const { documentoId, versionId } = await registrado("ZZ-CD-31");
-    const titulo = "Documento ZZ-CD-31";
-    await expect(editarControl(documentoId, { codigo: "ZZ-CD-32", titulo, tipoId }, actorId)).rejects.toThrow(/no cambian/);
-    await expect(editarControl(documentoId, { codigo: "ZZ-CD-31", titulo, tipoId: otroTipoId }, actorId)).rejects.toThrow(/no cambian/);
+    const codigo = codigoUnico();
+    const otroCodigo = codigoUnico();
+    const { documentoId, versionId } = await registrado(codigo);
+    const titulo = `Documento ${codigo}`;
+    await expect(editarControl(documentoId, { codigo: otroCodigo, titulo, tipoId }, actorId)).rejects.toThrow(/no cambian/);
+    await expect(editarControl(documentoId, { codigo, titulo, tipoId: otroTipoId }, actorId)).rejects.toThrow(/no cambian/);
     await sql`UPDATE documento_versiones SET estado = 'obsoleto' WHERE id = ${versionId}`;
-    await expect(editarControl(documentoId, { codigo: "ZZ-CD-32", titulo, tipoId }, actorId)).rejects.toThrow(/no cambian/);
-    await expect(editarControl(documentoId, { codigo: "ZZ-CD-31", titulo: "Otro", tipoId }, actorId)).rejects.toThrow(/se cambia con un trámite/);
+    await expect(editarControl(documentoId, { codigo: otroCodigo, titulo, tipoId }, actorId)).rejects.toThrow(/no cambian/);
+    await expect(editarControl(documentoId, { codigo, titulo: "Otro", tipoId }, actorId)).rejects.toThrow(/se cambia con un trámite/);
     await sql`UPDATE documento_versiones SET estado = 'descartado' WHERE id = ${versionId}`;
-    await editarControl(documentoId, { codigo: "ZZ-CD-31", titulo, tipoId: otroTipoId }, actorId);
+    await editarControl(documentoId, { codigo, titulo, tipoId: otroTipoId }, actorId);
     const [d] = await sql`SELECT tipo_id FROM documentos WHERE id = ${documentoId}`;
     expect(d.tipo_id).toBe(otroTipoId);
   });
@@ -420,13 +423,14 @@ describe("datos de control y de catálogo", () => {
   });
 
   it("editarControl valida el formato y el código repetido, y solo audita lo que cambió", async () => {
-    const { documentoId } = await crearDocumento(base("ZZ-CD-34"), actorId);
-    const titulo = "Documento ZZ-CD-34";
-    await expect(editarControl(documentoId, { codigo: "basura", titulo, tipoId }, actorId)).rejects.toThrow(/no cumple el formato/);
+    const codigo = codigoUnico();
+    const { documentoId } = await crearDocumento(base(codigo), actorId);
+    const titulo = `Documento ${codigo}`;
+    await expect(editarControl(documentoId, { codigo: "ZZ-CD-MALO", titulo, tipoId }, actorId)).rejects.toThrow(/no cumple el formato/);
     await expect(editarControl(documentoId, { codigo: "ZZ-CD-01", titulo, tipoId }, actorId)).rejects.toThrow(/ya existe/);
-    await editarControl(documentoId, { codigo: "ZZ-CD-34", titulo, tipoId }, actorId);
+    await editarControl(documentoId, { codigo, titulo, tipoId }, actorId);
     expect(await auditoriaDe("editar_control", documentoId)).toEqual([]);
-    await editarControl(documentoId, { codigo: "ZZ-CD-34", titulo: "Título nuevo", tipoId }, actorId);
+    await editarControl(documentoId, { codigo, titulo: "Título nuevo", tipoId }, actorId);
     const [aud] = await auditoriaDe("editar_control", documentoId);
     expect(aud.detalle).toMatchObject({ antes: { titulo }, despues: { titulo: "Título nuevo" } });
     expect(aud.detalle.antes).not.toHaveProperty("codigo");
