@@ -6,9 +6,9 @@ const INTERVALO_MS = 10 * 60_000;
 let ultima: number | null = null;
 
 /**
- * Lo llama el cascarón en cada render, y no debe demorarlo ni romperlo: no espera la revisión y
- * un fallo solo va al registro. La marca se pone antes de lanzarla: dos renders simultáneos no
- * deben lanzar dos.
+ * Lo llama el cascarón con `after()`, ya enviada la respuesta: no compite con el render por las
+ * conexiones del pool. No espera la revisión y un fallo solo va al registro. La marca se pone antes
+ * de lanzarla: dos respuestas simultáneas no deben lanzar dos.
  */
 export function dispararRevisionDeVencimientos(ahoraMs = Date.now()): void {
   if (ultima !== null && ahoraMs - ultima < INTERVALO_MS) return;

@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { obtenerMarcaSegura } from "@/db/consultas/entidad";
 import { contarNoLeidas, listarRecientes } from "@/db/consultas/notificaciones";
 import { participaEnTramites } from "@/db/consultas/tramites";
@@ -18,7 +19,7 @@ import { entradasVisibles } from "./navegacion";
  * no se vuelve a montar, así que la barra lateral no parpadea.
  */
 export async function Cascaron({ sesion, children }: { sesion: SesionValida; children: React.ReactNode }) {
-  dispararRevisionDeVencimientos();
+  after(() => dispararRevisionDeVencimientos());
   const [marca, tareas, noLeidas, recientes, participa] = await Promise.all([
     obtenerMarcaSegura(),
     misTareas(sesion),
