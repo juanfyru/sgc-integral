@@ -6,6 +6,7 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { NextRequest } from "next/server";
+import { PDFDocument } from "pdf-lib";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
@@ -15,9 +16,11 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 import { DELETE as eliminarArchivo, GET as verArchivo } from "@/app/admin/api/archivos/[archivoId]/route";
 import { POST as subirArchivo } from "@/app/admin/api/archivos/route";
 import { DELETE as quitarLogoRuta, POST as subirLogoRuta } from "@/app/admin/api/entidad/logo/route";
+import { GET as actaEjemplo } from "@/app/admin/api/acta-ejemplo/route";
 import { GET as servirLogo } from "@/app/marca/logo/route";
 import { rutaBaseAlmacen } from "@/lib/almacen";
 import { pngDePrueba } from "./png-prueba";
+import { contenidoPorPagina, contieneTexto } from "./utiles/pdf";
 import { LOGO_MAX_BYTES } from "@/lib/logo";
 import { GET as buscarApi } from "@/app/api/buscar/route";
 import { GET as excelMaestro } from "@/app/(app)/admin/(panel)/maestro/excel/route";
@@ -73,6 +76,38 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await sql().end();
+});
+
+describe("GET /admin/api/acta-ejemplo", () => {
+  const pedir = (token?: string) =>
+    actaEjemplo(new NextRequest("http://localhost:3002/admin/api/acta-ejemplo", token ? { headers: cookie(token) } : undefined));
+
+  it("sin sesión responde 401", async () => {
+    expect((await pedir()).status).toBe(401);
+  });
+
+  it("sin el permiso de gestionar trámites responde 403", async () => {
+    for (const token of [tokenConsulta, tokenCi, tokenGerencia]) expect((await pedir(token)).status).toBe(403);
+  });
+
+  it("con el permiso entrega un PDF en línea, de dos páginas marcadas, y no escribe nada", async () => {
+    const conteo = () => sql()`SELECT (SELECT count(*)::int FROM archivos) AS archivos, (SELECT count(*)::int FROM auditoria) AS auditoria`;
+    const [antes] = await conteo();
+    const res = await pedir(tokenAdmin);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("application/pdf");
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(res.headers.get("Content-Disposition")).toMatch(/^inline/);
+    expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    expect((await PDFDocument.load(bytes)).getPageCount()).toBeGreaterThanOrEqual(2);
+    const paginas = await contenidoPorPagina(bytes);
+    for (const pagina of paginas) expect(contieneTexto(pagina, "EJEMPLO, SIN VALOR")).toBe(true);
+    expect(contieneTexto(paginas.join("\n"), "Criterios que no cumplen, con concepto favorable")).toBe(true);
+    const [despues] = await conteo();
+    expect({ ...despues }).toEqual({ ...antes });
+  });
 });
 
 describe("handlers del panel por rol", () => {

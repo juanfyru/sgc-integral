@@ -60,6 +60,9 @@ const NOMBRE_CLAVE_DOCUMENTAL: Record<string, string> = {
   plazo_publicacion_dias: "plazo de publicación",
   escalamiento_dias: "días para avisar al jefe",
   publicacion_directa: "publicación directa",
+  formato_acta_documento_id: "documento del formato del acta",
+  formato_acta_margen_superior_cm: "espacio del encabezado del acta",
+  formato_acta_margen_inferior_cm: "espacio del pie del acta",
 };
 
 function describirConfigDocumental(cambios: unknown): string {

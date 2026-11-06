@@ -22,6 +22,7 @@ import { generarActa, type DatosActa } from "@/lib/acta";
 import { motivoMembreteNoUtilizable } from "@/lib/membrete-acta";
 import { puedeVerVersion } from "@/lib/alcance";
 import { resolverRutaAlmacen } from "@/lib/almacen";
+import { pdfProtegido, pdfSinPaginas } from "./utiles/formato";
 import { contenidoPorPagina, contieneTexto } from "./utiles/pdf";
 import { opc, tramiteEn } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
@@ -105,6 +106,14 @@ describe("generarActa", () => {
     expect(await motivoMembreteNoUtilizable(await formatoDePrueba(2))).toMatch(/una sola página/);
     expect(await motivoMembreteNoUtilizable(await formatoDePrueba(1, [595, 842]))).toMatch(/tamaño carta/);
     expect(await motivoMembreteNoUtilizable(new Uint8Array([1, 2, 3]))).toMatch(/no se puede leer/);
+  });
+
+  it("un PDF protegido con clave, vacío o sin páginas tampoco sirve, y no sale un error crudo", async () => {
+    await expect(PDFDocument.load(await pdfProtegido())).rejects.toThrow(/encrypted/);
+    expect(await motivoMembreteNoUtilizable(await pdfProtegido())).toMatch(/no se puede leer/);
+    expect(await motivoMembreteNoUtilizable(new Uint8Array(0))).toMatch(/no se puede leer/);
+    expect((await PDFDocument.load(await pdfSinPaginas())).getPageCount()).toBe(0);
+    expect(await motivoMembreteNoUtilizable(await pdfSinPaginas())).toMatch(/no se puede leer/);
   });
 
   it("los criterios van en el acta, y sin ellos no aparece el bloque", async () => {

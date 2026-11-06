@@ -14,6 +14,13 @@ import { parsearFormulario } from "@/lib/validacion";
 const entero = (que: string) =>
   z.string({ error: `${que} es obligatorio` }).regex(/^\d{1,3}$/, `${que} debe ser un número entero`).transform(Number);
 
+/** Un decimal como máximo, con punto o con coma. El rango lo decide `guardarConfigDocumental`. */
+const centimetros = (que: string) =>
+  z
+    .string({ error: `${que} es obligatorio` })
+    .regex(/^\d{1,2}([.,]\d)?$/, `${que} debe ser un número con un decimal como máximo`)
+    .transform((valor) => Number(valor.replace(",", ".")));
+
 const EsquemaConfigDocumental = z
   .object({
     formatoCodigo: z.string().min(1, "El formato del código es obligatorio"),
@@ -26,6 +33,9 @@ const EsquemaConfigDocumental = z
     plazoPublicacion: entero("El plazo de publicación"),
     escalamientoDias: entero("Los días para avisar al jefe"),
     publicacionDirecta: z.literal("on").optional(),
+    formatoActaDocumentoId: z.string().regex(/^\d{1,15}$/, "El documento del formato no es válido").transform(Number).optional(),
+    margenSuperiorCm: centimetros("El espacio del encabezado"),
+    margenInferiorCm: centimetros("El espacio del pie"),
   })
   .strict();
 
@@ -55,6 +65,11 @@ export async function guardarConfigDocumentalAccion(_prev: EstadoAccion, formDat
         },
         escalamientoDias: d.escalamientoDias,
         publicacionDirecta: d.publicacionDirecta === "on",
+        formatoActa: {
+          documentoId: d.formatoActaDocumentoId ?? null,
+          margenSuperiorCm: d.margenSuperiorCm,
+          margenInferiorCm: d.margenInferiorCm,
+        },
       },
       usuarioId,
     );

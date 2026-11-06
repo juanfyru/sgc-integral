@@ -1,11 +1,13 @@
 "use client";
 
+import { CircleCheck, FileText, TriangleAlert } from "lucide-react";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { guardarConfigDocumentalAccion } from "@/app/admin/acciones-config-documental";
 import { enviarSinReiniciar } from "@/componentes/admin/sin-reiniciar";
 import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import type { ConfigDocumental } from "@/db/consultas/config-documental";
+import type { EstadoFormato } from "@/db/consultas/formato-acta";
 import { FORMATO_CODIGO_DEFECTO, generarCodigo, validarFormato } from "@/lib/tramites/codigo";
 
 const PLAZOS: { campo: string; clave: keyof ConfigDocumental["plazos"]; etiqueta: string }[] = [
@@ -27,7 +29,51 @@ function Seccion({ titulo, children }: { titulo: string; children: React.ReactNo
   );
 }
 
-export function FormularioConfigDocumental({ config }: { config: ConfigDocumental }) {
+/** Sobre el formato guardado, no sobre lo que esté elegido en la lista sin guardar. */
+function AvisoFormato({ estado }: { estado: EstadoFormato }) {
+  if (estado.estado === "sin_formato") return null;
+  if (estado.estado === "listo") {
+    return (
+      <div role="status" className="flex items-start gap-2 text-sm text-estado-bien-texto">
+        <CircleCheck className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+        <p>
+          Las actas nuevas usarán{" "}
+          <span className="font-mono font-semibold">
+            {estado.codigo}, versión {estado.version}
+          </span>
+          .
+        </p>
+      </div>
+    );
+  }
+  const perdido = estado.estado === "perdido";
+  const color = perdido ? "bg-estado-critico-fondo text-estado-critico-texto" : "bg-estado-atencion-fondo text-estado-atencion-texto";
+  return (
+    <div role="status" className={`flex items-start gap-2 rounded-md px-3 py-2 text-sm ${color}`}>
+      <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+      <p>
+        {perdido ? (
+          <span className="font-semibold">No se podrán generar actas hasta restaurar el archivo del formato.</span>
+        ) : (
+          <>
+            <span className="font-semibold">Las actas saldrán con el diseño básico.</span> {estado.motivo}.
+          </>
+        )}
+      </p>
+    </div>
+  );
+}
+
+export function FormularioConfigDocumental({
+  config,
+  documentosFormato,
+  estadoFormato,
+}: {
+  config: ConfigDocumental;
+  /** Trae el documento guardado aunque ya no sirva: así sigue elegido y guardar otra sección no lo quita. */
+  documentosFormato: { id: number; codigo: string; titulo: string }[];
+  estadoFormato: EstadoFormato;
+}) {
   const [estado, enviar, pendiente] = useActionState(guardarConfigDocumentalAccion, null);
   const v = estado?.valores;
   const val = (campo: string): string | undefined => {
@@ -134,6 +180,63 @@ export function FormularioConfigDocumental({ config }: { config: ConfigDocumenta
         <p className="text-sm text-muted-foreground">
           Apáguela cuando termine la carga inicial. Desde ese momento todo documento nuevo y todo cambio pasan por un trámite.
         </p>
+      </Seccion>
+
+      <Seccion titulo="Formato del acta">
+        <Campo
+          etiqueta="Documento del formato"
+          nombre="formatoActaDocumentoId"
+          ayuda="Un PDF de una página, tamaño carta, con el cuerpo en blanco. Guarde y use Ver acta de ejemplo para comprobar los espacios."
+        >
+          <select
+            defaultValue={val("formatoActaDocumentoId") ?? String(config.formatoActa.documentoId ?? "")}
+            className={`${claseControl} w-full min-w-0`}
+          >
+            <option value="">Sin formato: diseño básico</option>
+            {documentosFormato.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.codigo} — {d.titulo}
+              </option>
+            ))}
+          </select>
+        </Campo>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Campo etiqueta="Espacio del encabezado (cm)" nombre="margenSuperiorCm">
+            <input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              max={12}
+              step="0.1"
+              required
+              defaultValue={val("margenSuperiorCm") ?? config.formatoActa.margenSuperiorCm}
+              className={claseControl}
+            />
+          </Campo>
+          <Campo etiqueta="Espacio del pie (cm)" nombre="margenInferiorCm">
+            <input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              max={12}
+              step="0.1"
+              required
+              defaultValue={val("margenInferiorCm") ?? config.formatoActa.margenInferiorCm}
+              className={claseControl}
+            />
+          </Campo>
+        </div>
+        <a
+          href="/admin/api/acta-ejemplo"
+          target="_blank"
+          rel="noopener"
+          aria-label="Ver acta de ejemplo (PDF), se abre en una pestaña nueva"
+          className="inline-flex items-center gap-1.5 self-start text-sm font-medium text-foreground underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          Ver acta de ejemplo
+        </a>
+        <AvisoFormato estado={estadoFormato} />
       </Seccion>
 
       {estado && estado.error !== motivo && (

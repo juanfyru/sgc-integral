@@ -215,6 +215,15 @@ describe("configuración documental", () => {
       .toBe("Editó la configuración documental: publicación directa (encendida)");
     expect(e("editar_config_documental", { cambios: {} })).toBe("Guardó la configuración documental sin cambios");
   });
+  it("nombra el formato del acta y sus dos espacios", () => {
+    expect(e("editar_config_documental", {
+      cambios: {
+        formato_acta_documento_id: { antes: "", despues: "31" },
+        formato_acta_margen_superior_cm: { antes: "5.5", despues: "6" },
+        formato_acta_margen_inferior_cm: { antes: "3.5", despues: "3" },
+      },
+    })).toBe("Editó la configuración documental: documento del formato del acta, espacio del encabezado del acta, espacio del pie del acta");
+  });
   it("un acta generada", () => {
     expect(e("acta_generada", { tramiteId: 12, numero: "SOL-2026-014" })).toBe("Generó el acta del trámite SOL-2026-014");
   });

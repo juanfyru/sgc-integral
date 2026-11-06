@@ -1,6 +1,7 @@
 import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
+import { revisarFormatoActa } from "@/db/consultas/formato-acta";
 import { validarFormato } from "@/lib/tramites/codigo";
 
 export type ConfigDocumental = {
@@ -16,6 +17,7 @@ export type ConfigDocumental = {
   };
   escalamientoDias: number;
   publicacionDirecta: boolean;
+  formatoActa: { documentoId: number | null; margenSuperiorCm: number; margenInferiorCm: number };
 };
 
 export const CONFIG_DOCUMENTAL_DEFECTO: ConfigDocumental = {
@@ -23,6 +25,7 @@ export const CONFIG_DOCUMENTAL_DEFECTO: ConfigDocumental = {
   plazos: { visto_bueno: 3, aceptacion: 3, elaboracion: 15, ajustes: 5, revision: 5, aprobacion: 5, publicacion: 2 },
   escalamientoDias: 3,
   publicacionDirecta: true,
+  formatoActa: { documentoId: null, margenSuperiorCm: 5.5, margenInferiorCm: 3.5 },
 };
 
 const CLAVES = [
@@ -36,13 +39,31 @@ const CLAVES = [
   "plazo_publicacion_dias",
   "escalamiento_dias",
   "publicacion_directa",
+  "formato_acta_documento_id",
+  "formato_acta_margen_superior_cm",
+  "formato_acta_margen_inferior_cm",
 ];
+
+const MARGEN_MAXIMO_CM = 12;
+const SUMA_MARGENES_MAXIMA_CM = 16;
 
 function dias(valor: string | undefined, defecto: number): number {
   const limpio = valor?.trim() ?? "";
   if (!/^\d{1,3}$/.test(limpio)) return defecto;
   const n = Number(limpio);
   return n <= 365 ? n : defecto;
+}
+
+function centimetros(valor: string | undefined, defecto: number): number {
+  const limpio = valor?.trim() ?? "";
+  if (!/^\d{1,2}(\.\d+)?$/.test(limpio)) return defecto;
+  const n = Number(limpio);
+  return n <= MARGEN_MAXIMO_CM ? n : defecto;
+}
+
+function idDeDocumento(valor: string | undefined): number | null {
+  const limpio = valor?.trim() ?? "";
+  return /^[1-9]\d{0,14}$/.test(limpio) ? Number(limpio) : null;
 }
 
 export async function obtenerConfigDocumental(opciones?: { sql?: Cliente }): Promise<ConfigDocumental> {
@@ -67,6 +88,11 @@ export async function obtenerConfigDocumental(opciones?: { sql?: Cliente }): Pro
     escalamientoDias: dias(valores.get("escalamiento_dias"), CONFIG_DOCUMENTAL_DEFECTO.escalamientoDias),
     publicacionDirecta:
       directa === "0" ? false : directa === "1" ? true : CONFIG_DOCUMENTAL_DEFECTO.publicacionDirecta,
+    formatoActa: {
+      documentoId: idDeDocumento(valores.get("formato_acta_documento_id")),
+      margenSuperiorCm: centimetros(valores.get("formato_acta_margen_superior_cm"), CONFIG_DOCUMENTAL_DEFECTO.formatoActa.margenSuperiorCm),
+      margenInferiorCm: centimetros(valores.get("formato_acta_margen_inferior_cm"), CONFIG_DOCUMENTAL_DEFECTO.formatoActa.margenInferiorCm),
+    },
   };
 }
 
@@ -75,11 +101,19 @@ export type DatosConfigDocumental = {
   plazos: ConfigDocumental["plazos"];
   escalamientoDias: number;
   publicacionDirecta: boolean;
+  formatoActa: ConfigDocumental["formatoActa"];
 };
 
 function enteroEntre(valor: unknown, minimo: number, maximo: number, que: string): number {
   if (typeof valor !== "number" || !Number.isInteger(valor) || valor < minimo || valor > maximo) {
     throw new Error(`${que} debe ser un número entero de ${minimo} a ${maximo}`);
+  }
+  return valor;
+}
+
+function margenEntre(valor: unknown, que: string): number {
+  if (typeof valor !== "number" || !Number.isFinite(valor) || valor < 0 || valor > MARGEN_MAXIMO_CM) {
+    throw new Error(`${que} debe estar entre 0 y ${MARGEN_MAXIMO_CM} cm`);
   }
   return valor;
 }
@@ -95,9 +129,11 @@ const NOMBRE_PLAZO: Record<keyof ConfigDocumental["plazos"], string> = {
 };
 
 /**
- * Guarda las diez claves en una transacción y audita el antes y el después de las que cambiaron
+ * Guarda las trece claves en una transacción y audita el antes y el después de las que cambiaron
  * (comparadas por su valor efectivo: una clave ausente vale lo que vale por defecto). Cerrar la
  * publicación directa no toca nada más: `descartarBorrador` sigue disponible con la carga cerrada.
+ * El formato del acta solo se revisa si cambió: uno que dejó de servir, y que la pantalla ya avisa,
+ * no impide guardar un plazo.
  */
 export function guardarConfigDocumental(datos: DatosConfigDocumental, actorId: number): Promise<void> {
   return obtenerSql().begin((tx) => guardarConfigDocumentalEn(tx, datos, actorId));
@@ -114,15 +150,32 @@ export async function guardarConfigDocumentalEn(tx: TransactionSql, datos: Datos
   }
   nuevos.escalamiento_dias = String(enteroEntre(datos.escalamientoDias, 1, 60, "Los días para avisar al jefe"));
   nuevos.publicacion_directa = datos.publicacionDirecta === true ? "1" : "0";
+  const margenSuperiorCm = margenEntre(datos.formatoActa?.margenSuperiorCm, "El espacio del encabezado");
+  const margenInferiorCm = margenEntre(datos.formatoActa?.margenInferiorCm, "El espacio del pie");
+  if (margenSuperiorCm + margenInferiorCm > SUMA_MARGENES_MAXIMA_CM) {
+    throw new Error(`Entre los dos no pueden pasar de ${SUMA_MARGENES_MAXIMA_CM} cm`);
+  }
+  const documentoFormato = datos.formatoActa.documentoId;
+  nuevos.formato_acta_documento_id = documentoFormato === null ? "" : String(documentoFormato);
+  nuevos.formato_acta_margen_superior_cm = String(margenSuperiorCm);
+  nuevos.formato_acta_margen_inferior_cm = String(margenInferiorCm);
 
   {
     const actual = await obtenerConfigDocumental({ sql: tx });
+    if (documentoFormato !== null && documentoFormato !== actual.formatoActa.documentoId) {
+      const revision = await revisarFormatoActa(documentoFormato, { sql: tx });
+      if (revision.estado === "no_sirve") throw new Error(revision.motivo);
+      if (revision.estado === "perdido") throw new Error("El archivo del formato no se encuentra o cambió");
+    }
     const antes: Record<string, string | null> = { formato_codigo: actual.formatoCodigo };
     for (const nombre of Object.keys(NOMBRE_PLAZO) as (keyof ConfigDocumental["plazos"])[]) {
       antes[`plazo_${nombre}_dias`] = String(actual.plazos[nombre]);
     }
     antes.escalamiento_dias = String(actual.escalamientoDias);
     antes.publicacion_directa = actual.publicacionDirecta ? "1" : "0";
+    antes.formato_acta_documento_id = actual.formatoActa.documentoId === null ? "" : String(actual.formatoActa.documentoId);
+    antes.formato_acta_margen_superior_cm = String(actual.formatoActa.margenSuperiorCm);
+    antes.formato_acta_margen_inferior_cm = String(actual.formatoActa.margenInferiorCm);
 
     const cambios: Record<string, { antes: string | null; despues: string }> = {};
     for (const [clave, valor] of Object.entries(nuevos)) {

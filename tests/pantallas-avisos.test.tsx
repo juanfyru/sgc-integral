@@ -48,12 +48,55 @@ describe("/ingreso", () => {
 });
 
 describe("guardar la configuración documental", () => {
-  it("no redirige: el formulario debe seguir montado para confirmar en pantalla", async () => {
+  const formulario = (campos: Record<string, string> = {}) => {
     const f = new FormData();
     f.set("formatoCodigo", "{PROCESO}-{TIPO}-{NN}");
     for (const campo of ["plazoVistoBueno", "plazoAceptacion", "plazoElaboracion", "plazoAjustes", "plazoRevision", "plazoAprobacion", "plazoPublicacion", "escalamientoDias"]) f.set(campo, "3");
-    expect(await guardarConfigDocumentalAccion(null, f)).toBeUndefined();
+    f.set("formatoActaDocumentoId", "");
+    f.set("margenSuperiorCm", "5.5");
+    f.set("margenInferiorCm", "3.5");
+    for (const [campo, valor] of Object.entries(campos)) f.set(campo, valor);
+    return f;
+  };
+  const formatoGuardado = () => guardarConfigDocumental.mock.lastCall?.[0].formatoActa;
+
+  beforeEach(() => guardarConfigDocumental.mockClear());
+
+  it("no redirige: el formulario debe seguir montado para confirmar en pantalla", async () => {
+    expect(await guardarConfigDocumentalAccion(null, formulario())).toBeUndefined();
     expect(guardarConfigDocumental).toHaveBeenCalledOnce();
+  });
+
+  it("sin documento elegido no hay formato; con uno, llega su id", async () => {
+    await guardarConfigDocumentalAccion(null, formulario());
+    expect(formatoGuardado()).toEqual({ documentoId: null, margenSuperiorCm: 5.5, margenInferiorCm: 3.5 });
+    await guardarConfigDocumentalAccion(null, formulario({ formatoActaDocumentoId: "31" }));
+    expect(formatoGuardado()).toMatchObject({ documentoId: 31 });
+  });
+
+  it.each(["5,5", "5.5"])("el margen «%s» vale 5,5", async (margen) => {
+    await guardarConfigDocumentalAccion(null, formulario({ margenSuperiorCm: margen, margenInferiorCm: margen }));
+    expect(formatoGuardado()).toMatchObject({ margenSuperiorCm: 5.5, margenInferiorCm: 5.5 });
+  });
+
+  it("acepta un margen entero o de cero", async () => {
+    await guardarConfigDocumentalAccion(null, formulario({ margenSuperiorCm: "12", margenInferiorCm: "0" }));
+    expect(formatoGuardado()).toMatchObject({ margenSuperiorCm: 12, margenInferiorCm: 0 });
+  });
+
+  it.each([["margenSuperiorCm", "El espacio del encabezado"], ["margenInferiorCm", "El espacio del pie"]])(
+    "%s: más de un decimal, un negativo, un texto o nada se rechazan con mensaje",
+    async (campo, nombre) => {
+      for (const valor of ["5,55", "5.55", "-1", "abc", "5,", ""]) {
+        await expect(guardarConfigDocumentalAccion(null, formulario({ [campo]: valor }))).rejects.toThrow(nombre);
+      }
+      expect(guardarConfigDocumental).not.toHaveBeenCalled();
+    },
+  );
+
+  it("un documento que no es un número se rechaza", async () => {
+    await expect(guardarConfigDocumentalAccion(null, formulario({ formatoActaDocumentoId: "abc" }))).rejects.toThrow(/documento del formato/i);
+    expect(guardarConfigDocumental).not.toHaveBeenCalled();
   });
 });
 
