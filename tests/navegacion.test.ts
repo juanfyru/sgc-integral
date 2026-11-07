@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { NAVEGACION, entradasVisibles, esActiva } from "@/componentes/cascaron/navegacion";
 
 describe("navegación por módulos y rol", () => {
-  it("consulta ve Inicio y Buscar; admin ve las quince", () => {
+  it("consulta ve Inicio y Buscar; admin ve las diecisiete", () => {
     expect(entradasVisibles({ rol: "consulta" }).map((e) => e.href)).toEqual(["/", "/buscar"]);
-    expect(entradasVisibles({ rol: "admin_sgc" })).toHaveLength(15);
+    expect(entradasVisibles({ rol: "admin_sgc" })).toHaveLength(17);
   });
   it("Trámites: consulta solo si participa; gerencia y líder siempre; va después de Buscar", () => {
     const hrefs = (s: Parameters<typeof entradasVisibles>[0]) => entradasVisibles(s).map((e) => e.href);
@@ -58,5 +58,21 @@ describe("Entidad y marca", () => {
   it("exige entidad.administrar: control interno no la ve", () => {
     expect(NAVEGACION.find((e) => e.href === "/admin/entidad")?.permiso).toBe("entidad.administrar");
     expect(entradasVisibles({ rol: "control_interno" }).map((e) => e.href)).not.toContain("/admin/entidad");
+  });
+});
+
+describe("Distribución en Administración", () => {
+  const hrefs = (rol: Parameters<typeof entradasVisibles>[0]["rol"]) => entradasVisibles({ rol }).map((e) => e.href);
+  it("Puntos de uso y Listas de distribución: solo admin_sgc, después de Estructura", () => {
+    for (const rol of ["gerencia", "lider_proceso", "control_interno", "consulta"] as const) {
+      expect(hrefs(rol)).not.toContain("/admin/puntos-uso");
+      expect(hrefs(rol)).not.toContain("/admin/listas-distribucion");
+    }
+    const admin = hrefs("admin_sgc");
+    expect(admin.indexOf("/admin/puntos-uso")).toBe(admin.indexOf("/admin/estructura") + 1);
+    expect(admin.indexOf("/admin/listas-distribucion")).toBe(admin.indexOf("/admin/estructura") + 2);
+    for (const href of ["/admin/puntos-uso", "/admin/listas-distribucion"]) {
+      expect(NAVEGACION.find((e) => e.href === href)).toMatchObject({ grupo: "administracion", permiso: "distribucion.gestionar" });
+    }
   });
 });

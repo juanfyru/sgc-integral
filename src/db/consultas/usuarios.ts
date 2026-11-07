@@ -1,5 +1,7 @@
 import type { TransactionSql } from "postgres";
-import { obtenerSql } from "@/db/cliente";
+import { obtenerSql, type Cliente } from "@/db/cliente";
+import { puntosDeResponsable } from "@/db/consultas/distribucion/puntos-uso";
+import { enTransaccion } from "@/db/consultas/flujo/contrato";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { desactivarTotp, obtenerSecretoTotp } from "@/db/consultas/autenticacion";
 import { supervisoresDe } from "@/db/consultas/estructura";
@@ -248,14 +250,23 @@ export async function editarUsuario(
   }
 }
 
-export async function cambiarActivo(id: number, activo: boolean, actorId: number): Promise<void> {
+export async function cambiarActivo(
+  id: number,
+  activo: boolean,
+  actorId: number,
+  opciones?: { sql?: Cliente },
+): Promise<void> {
   if (!activo && actorId === id) throw new Error("No puede desactivar su propia cuenta");
   await conCandado(claveCandadoUsuario(id), () =>
-    obtenerSql().begin(async (tx) => {
+    enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
       if (!activo) await exigirOtroAdminActivo(tx, id);
       const [f] = await tx`SELECT usuario, activo FROM usuarios WHERE id = ${id} FOR UPDATE`;
       if (!f) throw new Error("El usuario no existe");
       if (f.activo === activo) return;
+      if (!activo) {
+        const n = (await puntosDeResponsable(id, { sql: tx })).length;
+        if (n > 0) throw new Error(`La persona es responsable de ${n} puntos de uso activos: reasígnelos antes de desactivarla`);
+      }
       await tx`UPDATE usuarios SET activo = ${activo}, actualizado_en = now() WHERE id = ${id}`;
       if (!activo) await tx`DELETE FROM sesiones WHERE usuario_id = ${id}`;
       await registrarAuditoria(tx, {

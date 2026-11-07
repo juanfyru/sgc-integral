@@ -11,6 +11,8 @@ export type IconoNav =
   | "mapa"
   | "entidad"
   | "estructura"
+  | "puntos"
+  | "listas"
   | "usuarios"
   | "estadisticas"
   | "bitacora"
@@ -84,6 +86,20 @@ export const NAVEGACION: readonly EntradaNav[] = [
     icono: "estructura",
     grupo: "administracion",
     permiso: "estructura.administrar",
+  },
+  {
+    href: "/admin/puntos-uso",
+    etiqueta: "Puntos de uso",
+    icono: "puntos",
+    grupo: "administracion",
+    permiso: "distribucion.gestionar",
+  },
+  {
+    href: "/admin/listas-distribucion",
+    etiqueta: "Listas de distribución",
+    icono: "listas",
+    grupo: "administracion",
+    permiso: "distribucion.gestionar",
   },
   { href: "/admin/usuarios", etiqueta: "Usuarios", icono: "usuarios", grupo: "administracion", permiso: "usuarios.administrar" },
   {

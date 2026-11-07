@@ -130,3 +130,26 @@ export async function procesosAsignados(usuarioId: number): Promise<ProcesoAsign
     ORDER BY p.nombre`;
   return filas.map((f) => ({ id: f.id as number, nombre: f.nombre as string, sigla: f.sigla as string, slug: f.slug as string }));
 }
+
+/** Quién ve el módulo de distribución: quien tiene `distribucion.ver` o responde por algún punto activo. */
+export function puedeVerDistribucion(sesion: SujetoVisibilidad & { responsableDePuntos?: boolean }): boolean {
+  return puede(sesion, "distribucion.ver") || sesion.responsableDePuntos === true;
+}
+
+/**
+ * Qué puntos de uso ve una persona, para un `WHERE` sobre `puntos_uso pu`: los roles que ven todo, todos;
+ * el líder, los de sus procesos activos y los suyos; el resto, solo aquellos de los que es responsable.
+ */
+export function filtroPuntos(sql: Cliente, sujeto: SujetoVisibilidad) {
+  if (sujeto.rol === "admin_sgc" || sujeto.rol === "gerencia" || sujeto.rol === "control_interno") return sql`true`;
+  if (sujeto.rol === "lider_proceso") {
+    return sql`(pu.responsable_id = ${sujeto.usuarioId} OR EXISTS (
+      SELECT 1
+      FROM punto_uso_procesos puntos_pp
+      JOIN procesos puntos_p ON puntos_p.id = puntos_pp.proceso_id AND puntos_p.activo
+      JOIN usuario_procesos puntos_up ON puntos_up.proceso_id = puntos_p.id AND puntos_up.usuario_id = ${sujeto.usuarioId}
+      WHERE puntos_pp.punto_uso_id = pu.id
+    ))`;
+  }
+  return sql`pu.responsable_id = ${sujeto.usuarioId}`;
+}

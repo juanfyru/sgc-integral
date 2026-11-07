@@ -12,6 +12,7 @@ import { FormAccion } from "@/componentes/admin/FormAccion";
 import { BotonRestablecer } from "@/componentes/admin/usuarios/BotonRestablecer";
 import { FormularioUsuario } from "@/componentes/admin/usuarios/FormularioUsuario";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
+import { puntosDeResponsable } from "@/db/consultas/distribucion/puntos-uso";
 import { obtenerUsuario, opcionesFormularioUsuario } from "@/db/consultas/usuarios";
 import { exigirPermiso } from "@/lib/paginas";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -29,7 +30,7 @@ export default async function PaginaUsuario({ params }: { params: Promise<{ id: 
   const id = Number((await params).id);
   const u = Number.isInteger(id) && id > 0 ? await obtenerUsuario(id) : null;
   if (!u) notFound();
-  const opciones = await opcionesFormularioUsuario(u);
+  const [opciones, puntos] = await Promise.all([opcionesFormularioUsuario(u), puntosDeResponsable(u.id)]);
   const esYo = u.id === sesion.usuarioId;
 
   return (
@@ -55,6 +56,20 @@ export default async function PaginaUsuario({ params }: { params: Promise<{ id: 
               )}
             </div>
             <div><dt className="inline font-medium">Cargo: </dt><dd className="inline">{u.cargoNombre ? `${u.cargoNombre} (${u.areaNombre})` : "—"}</dd></div>
+            {puntos.length > 0 && (
+              <div className="sm:col-span-2">
+                <dt className="inline font-medium">Responsable de los puntos de uso: </dt>
+                <dd className="inline">
+                  {puntos.map((p, i) => (
+                    <span key={p.id}>
+                      {i > 0 && ", "}
+                      <Link href={`/admin/puntos-uso/${p.id}`} className="text-marca underline">{p.nombre}</Link>
+                    </span>
+                  ))}
+                  . Reasígnelos antes de desactivar a la persona.
+                </dd>
+              </div>
+            )}
             <div className="sm:col-span-2">
               <dt className="inline font-medium">Supervisores: </dt>
               <dd className="inline">
