@@ -58,3 +58,18 @@ export function verificacionVencida(ultimaCerrada: Date | null, cadaDias: number
   if (!ultimaCerrada) return true;
   return ahora.getTime() - ultimaCerrada.getTime() >= cadaDias * 86_400_000;
 }
+
+/** El resumen que muestra la lista mientras se llena y el cierre: los «no aplica» no cuentan en el total. */
+export function resumenDeChequeo(items: { respuesta: RespuestaItem | null }[]): {
+  conformes: number;
+  total: number;
+  sinResponder: number;
+  conforme: boolean;
+} {
+  return {
+    conformes: items.filter((i) => i.respuesta === "conforme").length,
+    total: items.filter((i) => i.respuesta !== "no_aplica").length,
+    sinResponder: items.filter((i) => i.respuesta === null).length,
+    conforme: esConforme(items),
+  };
+}

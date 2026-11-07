@@ -35,6 +35,7 @@ describe("rutas que reciben el cuerpo de una subida", () => {
     "/api/tramites/5/archivos",
     "/api/tramites/5/archivos?rol=principal",
     "/api/socializaciones/5/archivos",
+    "/api/verificaciones/5/items/9/archivos",
   ])("%s queda fuera del proxy", (url) => expect(pasa(url)).toBe(false));
 
   it.each([
@@ -51,6 +52,9 @@ describe("rutas que reciben el cuerpo de una subida", () => {
     "/api/socializaciones/5/archivos/7",
     "/api/socializaciones/abc/archivos",
     "/distribucion/socializaciones/5/archivos/7/acta.pdf",
+    "/api/verificaciones/5/items/9/archivos/3",
+    "/api/verificaciones/5/items/abc/archivos",
+    "/distribucion/verificaciones/5/archivos/3/foto.pdf",
   ])("%s sigue pasando por el proxy", (url) => expect(pasa(url)).toBe(true));
 });
 

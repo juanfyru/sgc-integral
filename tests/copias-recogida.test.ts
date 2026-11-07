@@ -20,6 +20,7 @@ import {
   obtenerCopia,
   reemplazarCopias,
 } from "@/db/consultas/distribucion/copias";
+import { abrirHallazgoDeRecogida } from "@/db/consultas/distribucion/hallazgos";
 import { tareasDeCopias } from "@/db/consultas/distribucion/tareas";
 import { alDejarDeSerVigente } from "@/db/consultas/distribucion/version-vigencia";
 import { transicionar } from "@/db/consultas/tramites-flujo";
@@ -234,6 +235,26 @@ describe("recibido y recogida", () => {
         });
         expect([Number(h.punto_uso_id), Number(h.responsable_id), Number(h.documento_id)]).toEqual([punto.id, resp.usuarioId, v.documento.id]);
         expect(h.vence_en).toEqual(fechaLimite(T1, (await obtenerConfigDocumental({ sql: tx })).distribucion.plazoCorreccionDias, zonaHoraria()));
+        expect(await ultimoAviso(tx, resp.usuarioId)).toMatchObject({ tipo: "distribucion.hallazgo", enlace: `/distribucion/copias/${copiaId}` });
+      } finally {
+        await v.limpiar();
+      }
+    }));
+});
+
+describe("hallazgo de recogida", () => {
+  it("abrirHallazgoDeRecogida abre el hallazgo de origen recogida y avisa al responsable actual", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const resp = await usuarioDePrueba(tx, { rol: "consulta" });
+      const punto = await puntoDePrueba(tx, { responsable: resp, procesos: ["GTH"] });
+      const v = await vigenteConPdf(tx, { proceso: "GTH", tipo: "PR" });
+      try {
+        const { copiaId } = await copiaDePrueba(tx, { emisor: admin, documento: v.documento, punto, ahora: T0 });
+        const copia = (await obtenerCopia(copiaId, admin, { sql: tx }))!;
+        await abrirHallazgoDeRecogida(tx, copia, T1, 5);
+        const [h] = await tx`SELECT origen, estado, copia_id, vence_en, creado_en FROM hallazgos WHERE copia_id = ${copiaId}`;
+        expect(h).toMatchObject({ origen: "recogida", estado: "abierto", vence_en: fechaLimite(T1, 5, zonaHoraria()), creado_en: T1 });
         expect(await ultimoAviso(tx, resp.usuarioId)).toMatchObject({ tipo: "distribucion.hallazgo", enlace: `/distribucion/copias/${copiaId}` });
       } finally {
         await v.limpiar();

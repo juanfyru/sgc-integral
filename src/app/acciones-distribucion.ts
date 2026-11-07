@@ -2,7 +2,15 @@
 
 import { idNumerico, mutacion, type EstadoAccion } from "@/app/admin/comun";
 import { confirmarLectura, pedirAcuses } from "@/db/consultas/distribucion/acuses";
+import { cerrarHallazgo } from "@/db/consultas/distribucion/hallazgos";
 import { anularJornada, registrarJornada } from "@/db/consultas/distribucion/jornadas";
+import {
+  abrirVerificacion,
+  agregarItemLibre,
+  cerrarVerificacion,
+  descartarVerificacion,
+  guardarAvance,
+} from "@/db/consultas/distribucion/verificaciones";
 import {
   anularCopia,
   confirmarRecibido,
@@ -14,11 +22,15 @@ import {
 import {
   EsquemaAnulacion,
   EsquemaConfirmarLectura,
+  EsquemaAbrirVerificacion,
   EsquemaEmitirCopia,
+  EsquemaItemLibre,
+  EsquemaNotaHallazgo,
   EsquemaPedirAcuses,
   EsquemaRecogida,
   EsquemaReemplazarCopias,
   EsquemaReemplazo,
+  leerChequeo,
   parsearJornada,
 } from "@/lib/esquemas/distribucion";
 import { EsquemaMotivoCierre } from "@/lib/esquemas/tramites";
@@ -111,5 +123,75 @@ export async function anularJornadaAccion(_prev: EstadoAccion, formData: FormDat
     const id = idNumerico(formData, "id");
     await anularJornada(id, sesion, motivo);
     return `/distribucion/socializaciones/${id}`;
+  });
+}
+
+const rutaDeVerificacion = (id: number) => `/distribucion/verificaciones/${id}`;
+
+export async function abrirVerificacionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "verificaciones.realizar", async (_usuarioId, _formData, sesion) => {
+    const { puntoId } = parsearFormulario(formData, EsquemaAbrirVerificacion);
+    const { verificacionId } = await abrirVerificacion(sesion, puntoId);
+    return rutaDeVerificacion(verificacionId);
+  });
+}
+
+/** Lo que la pantalla tiene sin guardar viaja con cada envío, para que ninguna acción lo pierda. */
+async function guardarLoEscrito(id: number, formData: FormData, sesion: Parameters<typeof guardarAvance>[1]) {
+  const filas = leerChequeo(formData, ["id", "texto"]);
+  await guardarAvance(
+    id,
+    sesion,
+    filas.map(({ itemId, respuesta, nota }) => ({ itemId, respuesta, nota })),
+  );
+  return filas;
+}
+
+export async function guardarAvanceAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "verificaciones.realizar", async (_usuarioId, _formData, sesion) => {
+    const id = idNumerico(formData, "id");
+    await guardarLoEscrito(id, formData, sesion);
+    return rutaDeVerificacion(id);
+  });
+}
+
+export async function agregarItemLibreAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "verificaciones.realizar", async (_usuarioId, _formData, sesion) => {
+    const { texto } = parsearFormulario(
+      formData,
+      EsquemaItemLibre,
+      { omitir: ["id", ...[...formData.keys()].filter((k) => /^(respuesta|nota|retirado)_\d+$/.test(k))] },
+    );
+    const id = idNumerico(formData, "id");
+    await guardarLoEscrito(id, formData, sesion);
+    await agregarItemLibre(id, sesion, texto);
+    return rutaDeVerificacion(id);
+  });
+}
+
+export async function cerrarVerificacionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "verificaciones.realizar", async (_usuarioId, _formData, sesion) => {
+    const id = idNumerico(formData, "id");
+    const filas = await guardarLoEscrito(id, formData, sesion);
+    const retirados = filas.filter((f) => f.retirado && f.respuesta === "no_conforme").map((f) => f.itemId);
+    await cerrarVerificacion(id, sesion, { retirados });
+    return rutaDeVerificacion(id);
+  });
+}
+
+export async function descartarVerificacionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "verificaciones.realizar", async (_usuarioId, _formData, sesion) => {
+    const { motivo } = parsearFormulario(formData, EsquemaMotivoCierre, { omitir: ["id"] });
+    await descartarVerificacion(idNumerico(formData, "id"), sesion, motivo);
+    return "/distribucion/verificaciones";
+  });
+}
+
+export async function cerrarHallazgoAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "distribucion.responder", async (_usuarioId, _formData, sesion) => {
+    const { nota } = parsearFormulario(formData, EsquemaNotaHallazgo, { omitir: ["id", "verificacion"] });
+    await cerrarHallazgo(idNumerico(formData, "id"), sesion, nota);
+    const verificacion = Number(formData.get("verificacion"));
+    return Number.isInteger(verificacion) && verificacion > 0 ? rutaDeVerificacion(verificacion) : "/distribucion/verificaciones";
   });
 }

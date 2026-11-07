@@ -8,6 +8,7 @@ import { obtenerMarcaSegura, obtenerUrlPublica } from "@/db/consultas/entidad";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { crearNotificacion } from "@/db/consultas/notificaciones";
 import { evento } from "./eventos-copia";
+import { abrirHallazgoDeRecogida } from "./hallazgos";
 import { listarPuntosUso } from "./puntos-uso";
 import { filtroPuntos, procesosAsignados, puedeAccederDocumento } from "@/lib/alcance";
 import { resolverRutaAlmacen } from "@/lib/almacen";
@@ -542,8 +543,6 @@ export async function conteosPorPunto(
 const DESTINOS_DE_PERSONA = ["devuelta", "destruida", "no_encontrada"] as const;
 type DestinoDePersona = (typeof DESTINOS_DE_PERSONA)[number];
 
-const nombreDeCopia = (c: Copia) => `la copia N.º ${numeroDeCopia(c.numero)} de ${c.codigo} v${c.version}`;
-
 async function bloquear(tx: Cliente, id: number): Promise<void> {
   await tx`SELECT id FROM copias_controladas WHERE id = ${id} FOR UPDATE`;
 }
@@ -567,28 +566,6 @@ async function recibirEn(tx: Cliente, sesion: SesionFlujo, id: number, ahora: Da
     entidadId: id,
     detalle: { codigo: copia.codigo, version: copia.version, numero: copia.numero, punto: copia.punto.nombre },
   });
-}
-
-/** Se abre en la misma transacción de la recogida; la Tarea 12 la mueve a `hallazgos.ts` sin cambiar el comportamiento. */
-async function abrirHallazgoDeRecogida(tx: Cliente, copia: Copia, ahora: Date, plazoDias: number): Promise<void> {
-  const [hallazgo] = await tx`
-    INSERT INTO hallazgos
-      (punto_uso_id, origen, copia_id, documento_id, descripcion, retirado_en_el_acto, responsable_id, estado, vence_en)
-    VALUES (${copia.punto.id}, 'recogida', ${copia.id}, ${copia.documentoId},
-            ${`La copia N.º ${numeroDeCopia(copia.numero)} de ${copia.codigo} v${copia.version} no se encontró al recogerla`},
-            false, ${copia.responsableActual.id}, 'abierto', ${fechaLimite(ahora, plazoDias, zonaHoraria())})
-    RETURNING id`;
-  await crearNotificacion(
-    {
-      usuarioId: copia.responsableActual.id,
-      tipo: "distribucion.hallazgo",
-      titulo: `Hallazgo abierto: ${nombreDeCopia(copia)} no se encontró en ${copia.punto.nombre}`,
-      enlace: `/distribucion/copias/${copia.id}`,
-      entidad: "hallazgo",
-      entidadId: Number(hallazgo.id),
-    },
-    tx,
-  );
 }
 
 async function recogerEn(
@@ -622,6 +599,43 @@ async function recogerEn(
     const { plazoCorreccionDias } = (await obtenerConfigDocumental({ sql: tx })).distribucion;
     await abrirHallazgoDeRecogida(tx, copia, ahora, plazoCorreccionDias);
   }
+}
+
+/**
+ * Al cerrar una verificación: la copia obsoleta que ya no está en el punto pasa a recogida, sin hallazgo.
+ * Devuelve false si ya no estaba por recoger (alguien la recogió mientras se verificaba).
+ */
+export async function recogerEnVerificacion(
+  tx: Cliente,
+  copiaId: number,
+  verificacionId: number,
+  usuarioId: number,
+  ahora: Date,
+): Promise<boolean> {
+  await bloquear(tx, copiaId);
+  const [c] = await tx`
+    SELECT cc.estado, cc.numero, d.codigo, v.numero AS version_numero, pu.nombre AS punto
+    FROM copias_controladas cc
+    JOIN documento_versiones v ON v.id = cc.version_id
+    JOIN documentos d ON d.id = v.documento_id
+    JOIN puntos_uso pu ON pu.id = cc.punto_uso_id
+    WHERE cc.id = ${copiaId}`;
+  if (!c || c.estado !== "por_recoger" || !puedePasar(c.estado, "recogida")) return false;
+  const destino: DestinoRecogida = "retirada_en_verificacion";
+  await tx`UPDATE copias_controladas
+    SET estado = 'recogida', recogida_en = ${ahora}, destino_recogida = ${destino}, vence_en = NULL
+    WHERE id = ${copiaId}`;
+  await evento(tx, copiaId, "recogida", usuarioId, { usuarioId, destino, verificacionId }, ahora);
+  await registrarAuditoria(tx, {
+    usuarioId,
+    accion: "copia_recogida",
+    entidad: "copia",
+    entidadId: copiaId,
+    detalle: {
+      codigo: c.codigo, version: Number(c.version_numero), numero: Number(c.numero), punto: c.punto, destino, verificacionId,
+    },
+  });
+  return true;
 }
 
 export async function confirmarRecibido(id: number, sesion: SesionFlujo, opciones?: Opciones): Promise<void> {

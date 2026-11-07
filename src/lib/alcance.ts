@@ -195,3 +195,19 @@ export async function puedeVerJornada(
   }
   return { ve: false, evidencia: false };
 }
+
+/**
+ * Quién ve una verificación de un punto de uso (spec 13B §6.3): Admin SGC, Gerencia y Control Interno; el líder
+ * de alguno de los procesos del punto; y quien es hoy el responsable del punto. `procesoIds` son los del punto.
+ */
+export async function puedeVerVerificacion(
+  sesion: SujetoVisibilidad,
+  v: { puntoId: number; responsableId: number; procesoIds: number[] },
+  opciones?: { sql?: Cliente },
+): Promise<boolean> {
+  if (sesion.rol === "admin_sgc" || sesion.rol === "gerencia" || sesion.rol === "control_interno") return true;
+  if (v.responsableId === sesion.usuarioId) return true;
+  if (sesion.rol !== "lider_proceso") return false;
+  const alcance = await alcanceProcesos(sesion, opciones);
+  return v.procesoIds.some((p) => enAlcance(alcance, p));
+}
