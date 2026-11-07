@@ -10,7 +10,10 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 }
 
 import { obtenerSql } from "@/db/cliente";
+import { registrarArchivo } from "@/db/consultas/admin";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
+import { eliminarEvidencia, evidenciasDe } from "@/db/consultas/distribucion/evidencias";
+import { ErrorTramite } from "@/db/consultas/flujo/contrato";
 import { obtenerCopia } from "@/db/consultas/distribucion/copias";
 import { cerrarHallazgo, hallazgosAbiertosDe, hallazgosDe } from "@/db/consultas/distribucion/hallazgos";
 import {
@@ -283,6 +286,56 @@ describe("cerrar", () => {
     }));
 });
 
+describe("propio punto al cerrar", () => {
+  it("si el responsable de hoy cierra, rige la regla de la apertura: con otro admin activo lanza; sin otro, queda la marca", () =>
+    revertida(sql, async (tx) => {
+      const abre = await sesionAdmin(tx);
+      const cierra = await sesionAdmin(tx);
+      const resp = await usuarioDePrueba(tx, { rol: "consulta" });
+      const punto = await puntoDePrueba(tx, { responsable: resp });
+      const { verificacionId } = await abrirVerificacion(abre, punto.id, { sql: tx, ahora: T0 });
+      const v = (await obtenerVerificacion(verificacionId, abre, { sql: tx }))!;
+      expect(v.propioPunto).toBe(false);
+      await guardarAvance(verificacionId, abre, v.items.map((i) => ({ itemId: i.id, respuesta: "conforme", nota: null })), { sql: tx });
+
+      // El punto cambia de responsable mientras la verificación está abierta: ahora responde quien va a cerrarla.
+      await tx`UPDATE puntos_uso SET responsable_id = ${cierra.usuarioId} WHERE id = ${punto.id}`;
+      await rechaza(
+        cerrarVerificacion(verificacionId, cierra, { sql: tx, ahora: T1 }),
+        "Otro Administrador del SGC debe verificar este punto: usted es su responsable",
+      );
+      await tx`UPDATE usuarios SET activo = false WHERE rol = 'admin_sgc' AND id <> ${cierra.usuarioId}`;
+      await cerrarVerificacion(verificacionId, cierra, { sql: tx, ahora: T1 });
+      expect(await obtenerVerificacion(verificacionId, cierra, { sql: tx })).toMatchObject({ estado: "cerrada", propioPunto: true });
+    }));
+});
+
+describe("fotos de una verificación cerrada", () => {
+  it("ni se suben ni se quitan: 409 y nada cambia", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const resp = await usuarioDePrueba(tx, { rol: "consulta" });
+      const punto = await puntoDePrueba(tx, { responsable: resp });
+      const { verificacionId } = await abrirVerificacion(admin, punto.id, { sql: tx, ahora: T0 });
+      const v = (await obtenerVerificacion(verificacionId, admin, { sql: tx }))!;
+      const item = v.items[0].id;
+      const foto = (ruta: string) => ({
+        versionId: null, contexto: "verificacion_item", contextoId: item, rol: "evidencia", ruta, nombreOriginal: "foto.png",
+        extension: "png", mime: "image/png", tamanoBytes: 10, hashSha256: "b".repeat(64),
+      });
+      const { id: fotoId } = await registrarArchivo(foto(`verificaciones/${verificacionId}/items/${item}/a`), admin.usuarioId, { sql: tx });
+      await guardarAvance(verificacionId, admin, v.items.map((i) => ({ itemId: i.id, respuesta: "conforme", nota: null })), { sql: tx });
+      await cerrarVerificacion(verificacionId, admin, { sql: tx, ahora: T0 });
+
+      const cerrada = (e: unknown) => e instanceof ErrorTramite && e.message === "La verificación ya está cerrada";
+      await expect(
+        registrarArchivo(foto(`verificaciones/${verificacionId}/items/${item}/b`), admin.usuarioId, { sql: tx }),
+      ).rejects.toSatisfy(cerrada);
+      await expect(eliminarEvidencia("verificacion_item", item, fotoId, admin.usuarioId, { sql: tx })).rejects.toSatisfy(cerrada);
+      expect((await evidenciasDe("verificacion_item", item, { sql: tx })).map((e) => e.id)).toEqual([fotoId]);
+    }));
+});
+
 describe("descartar", () => {
   it("libera el punto y no deja efectos", () =>
     revertida(sql, async (tx) => {
@@ -366,7 +419,11 @@ describe("hallazgos", () => {
       expect((await obtenerVerificacion(verificacionId, admin, { sql: tx }))!.hallazgos[0].puedeCerrar).toBe(true);
       await tx`UPDATE puntos_uso SET responsable_id = ${nuevo.usuarioId} WHERE id = ${punto.id}`;
       expect((await obtenerVerificacion(verificacionId, resp, { sql: tx }))).toBeNull();
-      expect((await obtenerVerificacion(verificacionId, nuevo, { sql: tx }))!.hallazgos[0].puedeCerrar).toBe(true);
+      const delNuevo = (await obtenerVerificacion(verificacionId, nuevo, { sql: tx }))!.hallazgos[0];
+      expect(delNuevo.puedeCerrar).toBe(true);
+      // La tarjeta nombra al responsable de hoy, el mismo de la tarea y del cierre.
+      expect(delNuevo.responsable).toEqual({ id: nuevo.usuarioId, nombre: nuevo.nombre });
+      expect((await hallazgosDe({ estado: "abierto" }, admin, { sql: tx })).find((h) => h.id === abierto.id)?.responsable.id).toBe(nuevo.usuarioId);
       await rechaza(cerrarHallazgo(abierto.id, resp, "Ya se corrigió todo", { sql: tx }), "El hallazgo no existe");
       await tx`UPDATE puntos_uso SET responsable_id = ${resp.usuarioId} WHERE id = ${punto.id}`;
 

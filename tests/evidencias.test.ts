@@ -33,8 +33,9 @@ const datos = (ruta: string, contexto: string, contextoId: number) => ({
   extension: "png", mime: "image/png", tamanoBytes: 10, hashSha256: "a".repeat(64),
 });
 
-/** Un id que la demo no usa: la jornada sembrada tiene su propia evidencia. */
+/** Ids que la demo no usa: la jornada sembrada tiene su propia evidencia, y las verificaciones sus fotos. */
 const JORNADA = 910_001;
+const ITEM = 910_101;
 
 describe("evidencias", () => {
   it("evidenciasDe lista solo las de ese contexto e id", async () => {
@@ -42,13 +43,13 @@ describe("evidencias", () => {
       const admin = await sesionAdmin(tx);
       const a = await registrarArchivo(datos("jornadas/1/a", "jornada", JORNADA), admin.usuarioId, { sql: tx });
       await registrarArchivo(datos("jornadas/2/b", "jornada", JORNADA + 1), admin.usuarioId, { sql: tx });
-      await registrarArchivo(datos("verificaciones/1/items/1/c", "verificacion_item", 1), admin.usuarioId, { sql: tx });
+      await registrarArchivo(datos("verificaciones/1/items/1/c", "verificacion_item", ITEM), admin.usuarioId, { sql: tx });
 
       const lista = await evidenciasDe("jornada", JORNADA, { sql: tx });
       expect(lista.map((e) => e.id)).toEqual([a.id]);
       expect(lista[0]).toMatchObject({ nombreOriginal: "jornadas/1/a.png", mime: "image/png", tamanoBytes: 10 });
       expect(await evidenciasDe("jornada", JORNADA + 2, { sql: tx })).toEqual([]);
-      expect((await evidenciasDe("verificacion_item", 1, { sql: tx })).length).toBe(1);
+      expect((await evidenciasDe("verificacion_item", ITEM, { sql: tx })).length).toBe(1);
     });
   });
 
@@ -71,7 +72,7 @@ describe("evidencias", () => {
       expect(await evidenciaServible("jornada", JORNADA, id, { sql: tx })).toEqual({
         ruta: "jornadas/1/a", mime: "image/png", nombreOriginal: "jornadas/1/a.png",
       });
-      expect(await evidenciaServible("verificacion_item", 1, id, { sql: tx })).toBeNull();
+      expect(await evidenciaServible("verificacion_item", ITEM, id, { sql: tx })).toBeNull();
       expect(await evidenciaServible("jornada", 2, id, { sql: tx })).toBeNull();
     });
   });
@@ -84,7 +85,7 @@ describe("evidencias", () => {
       writeFileSync(fisico, "x");
       const { id } = await registrarArchivo(datos("jornadas/9/a.png", "jornada", 9), admin.usuarioId, { sql: tx });
 
-      await expect(eliminarEvidencia("verificacion_item", 9, id, admin.usuarioId, { sql: tx })).rejects.toThrow();
+      await expect(eliminarEvidencia("verificacion_item", ITEM, id, admin.usuarioId, { sql: tx })).rejects.toThrow();
       expect(existsSync(fisico)).toBe(true);
 
       await eliminarEvidencia("jornada", 9, id, admin.usuarioId, { sql: tx });

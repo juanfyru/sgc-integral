@@ -92,16 +92,19 @@ export async function abrirHallazgoDeRecogida(tx: Cliente, copia: Copia, ahora: 
   });
 }
 
-/** Sin filtro de visibilidad: quien llama ya decidió que la persona ve esos hallazgos. */
+/**
+ * Sin filtro de visibilidad: quien llama ya decidió que la persona ve esos hallazgos. El responsable es el actual
+ * del punto, el mismo de la tarea, el cierre y los vencimientos.
+ */
 export async function leerHallazgos(sql: Cliente, condicion: ReturnType<Cliente>): Promise<Hallazgo[]> {
   const filas = await sql`
     SELECT h.id, h.punto_uso_id, pu.nombre AS punto_nombre, h.origen, h.verificacion_id, h.item_id, h.copia_id,
-           h.descripcion, h.retirado_en_el_acto, h.responsable_id, ur.nombre AS responsable_nombre, h.estado,
+           h.descripcion, h.retirado_en_el_acto, pu.responsable_id, ur.nombre AS responsable_nombre, h.estado,
            h.vence_en, h.creado_en, h.cerrado_en, uc.nombre AS cerrado_por_nombre, h.nota_cierre,
            d.codigo AS copia_codigo, v.numero AS copia_version, cc.numero AS copia_numero
     FROM hallazgos h
     JOIN puntos_uso pu ON pu.id = h.punto_uso_id
-    JOIN usuarios ur ON ur.id = h.responsable_id
+    JOIN usuarios ur ON ur.id = pu.responsable_id
     LEFT JOIN usuarios uc ON uc.id = h.cerrado_por
     LEFT JOIN copias_controladas cc ON cc.id = h.copia_id
     LEFT JOIN documento_versiones v ON v.id = cc.version_id

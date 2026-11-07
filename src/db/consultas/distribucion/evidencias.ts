@@ -5,6 +5,7 @@ import { enTransaccion } from "@/db/consultas/flujo/contrato";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import type { ArchivoServible } from "@/lib/servir-archivo";
 import type { ContextoEvidencia } from "@/lib/subida";
+import { exigirVerificacionAbierta } from "./verificacion-abierta";
 
 type Opciones = { sql?: Cliente };
 
@@ -57,6 +58,7 @@ export async function eliminarEvidencia(
   opciones?: Opciones,
 ): Promise<void> {
   const ruta = await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+    if (contexto === "verificacion_item") await exigirVerificacionAbierta(tx, contextoId);
     const [f] = await tx`SELECT ruta, nombre_original FROM archivos
       WHERE id = ${archivoId} AND contexto = ${contexto} AND contexto_id = ${contextoId} AND rol = 'evidencia'
       FOR UPDATE`;

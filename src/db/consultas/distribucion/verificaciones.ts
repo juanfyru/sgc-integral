@@ -76,6 +76,14 @@ function exigirAbierta(v: Row): Row {
   return v;
 }
 
+/** Quien responde por el punto solo lo verifica si no hay otro Administrador del SGC activo (spec 13B §6.3). */
+async function exigirSinOtroAdmin(tx: Cliente, usuarioId: number): Promise<void> {
+  const otros = (await adminsActivos({ sql: tx })).filter((id) => id !== usuarioId);
+  if (otros.length > 0) {
+    throw new ErrorDistribucion("Otro Administrador del SGC debe verificar este punto: usted es su responsable");
+  }
+}
+
 /**
  * Abre la verificación de un punto, o devuelve la que ya está abierta. Quien es el responsable del punto no
  * lo verifica si hay otro Administrador del SGC activo; si no lo hay, se abre marcada como «propio punto».
@@ -98,12 +106,7 @@ export async function abrirVerificacion(
     if (abierta) return { verificacionId: Number(abierta.id) };
 
     const propioPunto = Number(p.responsable_id) === sesion.usuarioId;
-    if (propioPunto) {
-      const otros = (await adminsActivos({ sql: tx })).filter((id) => id !== sesion.usuarioId);
-      if (otros.length > 0) {
-        throw new ErrorDistribucion("Otro Administrador del SGC debe verificar este punto: usted es su responsable");
-      }
-    }
+    if (propioPunto) await exigirSinOtroAdmin(tx, sesion.usuarioId);
 
     const [v] = await tx`
       INSERT INTO verificaciones
@@ -213,11 +216,16 @@ export async function cerrarVerificacion(
 
     const conforme = esConforme(items.map((i) => ({ respuesta: i.respuesta as RespuestaItem })));
     const [punto] = await tx`SELECT responsable_id FROM puntos_uso WHERE id = ${v.punto_uso_id}`;
+    // La misma regla de la apertura, con quien cierra: el responsable de hoy no cierra la verificación de su
+    // punto si hay otro Admin SGC activo; si no lo hay, la cierra y queda la marca «propio punto».
+    const cierraSuPunto = Number(punto.responsable_id) === sesion.usuarioId;
+    if (cierraSuPunto) await exigirSinOtroAdmin(tx, sesion.usuarioId);
     const { plazoCorreccionDias } = (await obtenerConfigDocumental({ sql: tx })).distribucion;
 
     // Una sola sentencia: el trigger rechaza cualquier cambio posterior a la verificación cerrada.
     await tx`UPDATE verificaciones
-      SET estado = 'cerrada', conforme = ${conforme}, cerrada_por = ${sesion.usuarioId}, cerrada_en = ${ahora}
+      SET estado = 'cerrada', conforme = ${conforme}, cerrada_por = ${sesion.usuarioId}, cerrada_en = ${ahora},
+          propio_punto = propio_punto OR ${cierraSuPunto}
       WHERE id = ${id}`;
 
     let hallazgos = 0;

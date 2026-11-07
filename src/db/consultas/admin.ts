@@ -14,6 +14,7 @@ import {
   sugerirCodigo,
   type DestinoDeCodigo,
 } from "./codigos";
+import { exigirVerificacionAbierta } from "./distribucion/verificacion-abierta";
 import { alDejarDeSerVigente } from "./distribucion/version-vigencia";
 import { obtenerConfigDocumental } from "./config-documental";
 import { ErrorTramite, enTransaccion } from "./flujo/contrato";
@@ -747,6 +748,7 @@ export async function registrarArchivo(
         if (!datos.contexto || datos.contexto === "version" || datos.contextoId == null) {
           throw new Error("Una evidencia necesita su contexto");
         }
+        if (datos.contexto === "verificacion_item") await exigirVerificacionAbierta(tx, datos.contextoId);
         const [evidencia] = await tx`INSERT INTO archivos
             (version_id, contexto, contexto_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
           VALUES (NULL, ${datos.contexto}, ${datos.contextoId}, ${datos.rol}, ${datos.ruta}, ${datos.nombreOriginal},
