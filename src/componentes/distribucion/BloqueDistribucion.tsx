@@ -3,7 +3,7 @@ import { FormAccion } from "@/componentes/admin/FormAccion";
 import { pedirAcusesAccion, reemplazarCopiasAccion } from "@/app/acciones-distribucion";
 import { QuienFalta } from "@/componentes/distribucion/acuses/QuienFalta";
 import { textoPorcentaje } from "@/componentes/distribucion/acuses/TablaAcuses";
-import { claseBoton } from "@/componentes/ui/Boton";
+import { Boton, claseBoton } from "@/componentes/ui/Boton";
 import { DialogoEmitir } from "@/componentes/distribucion/copias/DialogoEmitir";
 import { fechaCorta, InsigniaCopia } from "@/componentes/distribucion/copias/TablaCopias";
 import { fechaDeJornada } from "@/componentes/distribucion/socializaciones/TablaJornadas";
@@ -13,9 +13,11 @@ import {
   puntosParaEmitir,
   type Copia,
 } from "@/db/consultas/distribucion/copias";
-import { socializacionDeVersion } from "@/db/consultas/distribucion/jornadas";
+import { socializacionDeFicha, type Jornada } from "@/db/consultas/distribucion/jornadas";
+import { obtenerUrlPublica } from "@/db/consultas/entidad";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { numeroDeCopia } from "@/lib/distribucion/copias";
+import { cuenta } from "@/lib/plural";
 import { ETIQUETA_MODALIDAD } from "@/lib/distribucion/tipos";
 import { puede } from "@/lib/permisos";
 
@@ -41,7 +43,39 @@ function ListaCopias({ titulo, copias, ahora }: { titulo: string; copias: Copia[
   );
 }
 
-/** «Copias controladas» de la ficha del documento: lo vigente, lo que falta recoger y desde dónde emitir o reemplazar. */
+/** Una línea por jornada: fecha, modalidad, asistentes y si tiene acta; el acta se enlaza solo a quien puede verla. */
+function LineasJornadas({ jornadas }: { jornadas: Jornada[] }) {
+  if (jornadas.length === 0) return null;
+  return (
+    <ul className="flex list-none flex-col gap-1">
+      {jornadas.map((j) => {
+        const acta = j.evidenciasCantidad > 0 ? "acta adjunta" : "sin acta adjunta";
+        return (
+          <li key={j.id} className="text-sm">
+            {`Jornada del ${fechaDeJornada(j.fecha)} · ${ETIQUETA_MODALIDAD[j.modalidad].toLowerCase()} · ${cuenta(j.asistentesCantidad, "asistente", "asistentes")} · `}
+            {j.puedeVerEvidencia ? (
+              <Link
+                href={`/distribucion/socializaciones/${j.id}`}
+                className="rounded underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca"
+              >
+                {acta}
+              </Link>
+            ) : (
+              acta
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+const SIN_PDF = "Para emitir copias controladas el archivo principal debe ser PDF";
+
+/**
+ * «Copias controladas» de la ficha del documento: lo vigente, lo que falta recoger y desde dónde emitir o reemplazar,
+ * para quien ve la distribución o emite. Quien no, ve solo las jornadas de la vigente, si las hubo (spec 13B §13.3).
+ */
 export async function BloqueDistribucion({
   documento,
   sesion,
@@ -50,22 +84,39 @@ export async function BloqueDistribucion({
   sesion: SesionFlujo;
 }) {
   const puedeEmitir = puede(sesion, "copias.emitir");
-  if (!puedeEmitir && !puede(sesion, "distribucion.ver")) return null;
+  const veDistribucion = puede(sesion, "distribucion.ver");
+  const conCopias = puedeEmitir || veDistribucion;
 
-  const [copias, puntos, resumenAcuses] = await Promise.all([
-    copiasDeDocumento(documento.id, sesion),
+  const [copias, puntos, resumenAcuses, social, urlPublica] = await Promise.all([
+    conCopias ? copiasDeDocumento(documento.id, sesion) : Promise.resolve(null),
     puedeEmitir ? puntosParaEmitir(sesion) : Promise.resolve([]),
-    resumenAcusesDeDocumento(documento.id, sesion),
+    veDistribucion ? resumenAcusesDeDocumento(documento.id, sesion) : Promise.resolve(null),
+    socializacionDeFicha(documento.id, sesion),
+    puedeEmitir ? obtenerUrlPublica() : Promise.resolve(null),
   ]);
+  const jornadas = social?.jornadas ?? [];
+
+  if (!copias) {
+    if (jornadas.length === 0) return null;
+    return (
+      <section aria-labelledby="titulo-socializacion" className="rounded-xl border border-border bg-card p-4 shadow-xs">
+        <h2 id="titulo-socializacion" className="mb-3 text-sm font-semibold text-foreground">
+          Socialización
+        </h2>
+        <LineasJornadas jornadas={jornadas} />
+      </section>
+    );
+  }
+
   const ahora = new Date();
-  const socializacion = resumenAcuses ? await socializacionDeVersion(resumenAcuses.versionId) : null;
+  const socializacion = social?.socializacion ?? null;
   const puedeSocializar = puede(sesion, "socializaciones.registrar");
-  const vigenteId = resumenAcuses?.versionId ?? null;
+  const vigenteId = social?.versionId ?? null;
   const versionVigente = resumenAcuses?.version ?? null;
   const acuses = resumenAcuses?.cifras ?? null;
   const faltan = resumenAcuses?.faltan ?? null;
   const versionAnterior = Math.max(0, ...copias.porRecoger.map((c) => c.version));
-  const puedeEmitirAqui = puedeEmitir && copias.versionVigenteId !== null;
+  const avisoSinQr = urlPublica ? null : { enlace: puede(sesion, "entidad.administrar") };
 
   return (
     <section aria-labelledby="titulo-copias" className="rounded-xl border border-border bg-card p-4 shadow-xs">
@@ -78,13 +129,29 @@ export async function BloqueDistribucion({
         ) : null}
         <ListaCopias titulo="De la versión vigente" copias={copias.vigentes} ahora={ahora} />
         <ListaCopias titulo="Por recoger" copias={copias.porRecoger} ahora={ahora} />
-        {puedeEmitirAqui || copias.puedeReemplazar ? (
+        {copias.emision !== null || copias.puedeReemplazar ? (
           <div className="flex flex-wrap items-start gap-2">
-            {puedeEmitirAqui ? <DialogoEmitir documentos={[documento]} puntos={puntos} variante="secundario" /> : null}
+            {copias.emision === "pdf" ? (
+              <DialogoEmitir
+                documentos={[{ ...documento, procesoIds: copias.procesoIds }]}
+                puntos={puntos}
+                avisoSinQr={avisoSinQr}
+                variante="secundario"
+              />
+            ) : copias.emision === "sin_pdf" ? (
+              <div className="flex flex-col gap-1">
+                <Boton variante="secundario" disabled aria-describedby="emitir-sin-pdf">
+                  Emitir copia controlada
+                </Boton>
+                <p id="emitir-sin-pdf" className="text-xs text-muted-foreground">
+                  {SIN_PDF}
+                </p>
+              </div>
+            ) : null}
             {copias.puedeReemplazar && copias.versionVigenteId !== null ? (
               <FormAccion
                 accion={reemplazarCopiasAccion}
-                etiqueta={`Reemplazar las copias de la v${versionAnterior} (${copias.porRecoger.length})`}
+                etiqueta={`Reemplazar las copias de la v${versionAnterior} (${copias.reemplazables})`}
                 confirmacion="Emite una copia de la versión vigente por cada punto que tenía la anterior; cada responsable confirma en una sola tarea que recibió la nueva y retiró la vieja."
                 campos={{ versionId: copias.versionVigenteId }}
               />
@@ -115,7 +182,7 @@ export async function BloqueDistribucion({
           </div>
         </div>
       ) : null}
-      {socializacion?.requerida || (puedeSocializar && vigenteId !== null) ? (
+      {socializacion?.requerida || jornadas.length > 0 || (puedeSocializar && vigenteId !== null) ? (
         <div className="mt-4 flex flex-col gap-2 border-t border-border pt-3">
           <h3 className="text-xs font-semibold text-muted-foreground">Socialización</h3>
           {socializacion?.requerida ? (
@@ -129,6 +196,7 @@ export async function BloqueDistribucion({
           ) : (
             <p className="text-sm text-muted-foreground">Esta versión no se marcó para socializar.</p>
           )}
+          <LineasJornadas jornadas={jornadas} />
           {puedeSocializar && vigenteId !== null ? (
             <div>
               <Link

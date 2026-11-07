@@ -29,7 +29,7 @@ import { fechaLimite } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { copiaDePrueba, copiaSobreVigente, puntoDePrueba, vigenteConPdf } from "./utiles/distribucion";
 import { pdfDePrueba } from "./utiles/pdf";
-import { opc, sesionAdmin, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
+import { archivoPrincipal, opc, sesionAdmin, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
 const sql = obtenerSql();
@@ -303,6 +303,49 @@ describe("reemplazo", () => {
         await rechaza(confirmarReemplazo(Number(nueva.id), resp, "devuelta", { sql: tx }), "La copia ya no está en ese estado");
       } finally {
         await t.limpiar();
+      }
+    }));
+
+  it("el líder reemplaza también las copias repartidas en puntos de otros procesos, y el botón cuenta lo que emite", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const [gth] = await tx`SELECT id FROM procesos WHERE sigla = 'GTH'`;
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [Number(gth.id)] });
+      const resp = await usuarioDePrueba(tx, { rol: "consulta" });
+      const deOtro = await puntoDePrueba(tx, { responsable: resp, procesos: ["ATE"] });
+      const suyo = await puntoDePrueba(tx, { responsable: resp, procesos: ["GTH"] });
+      const v1 = await vigenteConPdf(tx, { proceso: "GTH", tipo: "PR" });
+      let limpiarV2 = async () => {};
+      try {
+        await copiaDePrueba(tx, { emisor: admin, documento: v1.documento, punto: deOtro, ahora: T0 });
+        await copiaDePrueba(tx, { emisor: admin, documento: v1.documento, punto: deOtro, ahora: T0 });
+        await copiaDePrueba(tx, { emisor: admin, documento: v1.documento, punto: suyo, ahora: T0 });
+        await tx`UPDATE documento_versiones SET estado = 'obsoleto' WHERE id = ${v1.versionId}`;
+        const [v2] = await tx`INSERT INTO documento_versiones (documento_id, numero, estado, aprobo, fecha_aprobacion)
+          VALUES (${v1.documento.id}, 2, 'vigente', 'Prueba', '2026-02-01') RETURNING id`;
+        const v2Id = Number(v2.id);
+        ({ limpiar: limpiarV2 } = await archivoPrincipal(tx, v2Id, await pdfDePrueba([[612, 792]])));
+        await alDejarDeSerVigente(tx, v1.versionId, "nueva_version", T1, { nuevaVersionId: v2Id, actorId: admin.usuarioId });
+
+        // Tres copias por recoger en dos puntos: el reemplazo emite una por punto.
+        expect(await copiasDeDocumento(v1.documento.id, lider, { sql: tx })).toMatchObject({
+          reemplazables: 2,
+          puedeReemplazar: true,
+          versionVigenteId: v2Id,
+        });
+        await copiaDePrueba(tx, { emisor: admin, documento: v1.documento, punto: suyo, ahora: T1 });
+        const antes = await copiasDeDocumento(v1.documento.id, lider, { sql: tx });
+        expect(antes.porRecoger).toHaveLength(3);
+        expect(antes.reemplazables).toBe(1);
+
+        expect(await reemplazarCopias(lider, v2Id, { sql: tx, ahora: T1 })).toEqual({ emitidas: 1 });
+        const [nueva] = await tx`SELECT punto_uso_id, emitida_por FROM copias_controladas
+          WHERE version_id = ${v2Id} AND reemplaza_copia_id IS NOT NULL`;
+        expect([Number(nueva.punto_uso_id), Number(nueva.emitida_por)]).toEqual([deOtro.id, lider.usuarioId]);
+        expect(await copiasDeDocumento(v1.documento.id, lider, { sql: tx })).toMatchObject({ reemplazables: 0, puedeReemplazar: false });
+      } finally {
+        await limpiarV2();
+        await v1.limpiar();
       }
     }));
 

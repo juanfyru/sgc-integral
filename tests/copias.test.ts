@@ -14,9 +14,11 @@ import {
   anularCopia,
   conteosPorPunto,
   copiaParaPdf,
+  documentosParaEmitir,
   emitirCopia,
   listarCopias,
   obtenerCopia,
+  puntosParaEmitir,
   reimprimirCopia,
 } from "@/db/consultas/distribucion/copias";
 import { ErrorDistribucion } from "@/lib/distribucion/tipos";
@@ -170,6 +172,54 @@ describe("emitirCopia", () => {
       } finally {
         await propio.limpiar();
         await ajeno.limpiar();
+      }
+    }));
+
+  it("el líder emite un documento de su alcance a cualquier punto activo, también de otros procesos (spec §8.1)", () =>
+    revertida(sql, async (tx) => {
+      const resp = await usuarioDePrueba(tx, { rol: "consulta" });
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: await idsProcesos(tx, ["GTH"]) });
+      const deOtro = await puntoDePrueba(tx, { responsable: resp, procesos: ["ATE"] });
+      const propio = await vigenteConPdf(tx, { proceso: "GTH", tipo: "PR" });
+      try {
+        const { copiaId } = await copiaDePrueba(tx, { emisor: lider, documento: propio.documento, punto: deOtro, ahora: T0 });
+        expect(await obtenerCopia(copiaId, lider, { sql: tx })).toMatchObject({ estado: "emitida", punto: { id: deOtro.id } });
+        await tx`UPDATE puntos_uso SET activo = false WHERE id = ${deOtro.id}`;
+        await rechaza(
+          copiaDePrueba(tx, { emisor: lider, documento: propio.documento, punto: deOtro, ahora: T0 }),
+          "El punto de uso no existe o está inactivo",
+        );
+      } finally {
+        await propio.limpiar();
+      }
+    }));
+
+  it("el diálogo ofrece todos los puntos activos con sus procesos, y el documento trae los suyos", () =>
+    revertida(sql, async (tx) => {
+      const resp = await usuarioDePrueba(tx, { rol: "consulta" });
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: await idsProcesos(tx, ["GTH"]) });
+      const [ate] = await idsProcesos(tx, ["ATE"]);
+      const [gth] = await idsProcesos(tx, ["GTH"]);
+      const deOtro = await puntoDePrueba(tx, { responsable: resp, procesos: ["ATE"] });
+      const suyo = await puntoDePrueba(tx, { responsable: resp, procesos: ["GTH"] });
+      const inactivo = await puntoDePrueba(tx, { responsable: resp, procesos: ["GTH"] });
+      await tx`UPDATE puntos_uso SET activo = false WHERE id = ${inactivo.id}`;
+      const { documento, limpiar } = await vigenteConPdf(tx, { proceso: "GTH", tipo: "PR" });
+      try {
+        const ids = [deOtro.id, suyo.id, inactivo.id];
+        const puntos = (await puntosParaEmitir(lider, { sql: tx })).filter((p) => ids.includes(p.id));
+        expect(puntos.map((p) => [p.id, p.procesoIds])).toEqual(
+          expect.arrayContaining([
+            [deOtro.id, [ate]],
+            [suyo.id, [gth]],
+          ]),
+        );
+        expect(puntos).toHaveLength(2);
+        expect(await puntosParaEmitir(resp, { sql: tx })).toEqual([]);
+        const doc = (await documentosParaEmitir(lider, { sql: tx })).find((d) => d.id === documento.id);
+        expect(doc?.procesoIds).toEqual([gth]);
+      } finally {
+        await limpiar();
       }
     }));
 });

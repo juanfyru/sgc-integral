@@ -9,8 +9,7 @@ import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { crearNotificacion } from "@/db/consultas/notificaciones";
 import { evento } from "./eventos-copia";
 import { abrirHallazgoDeRecogida } from "./hallazgos";
-import { listarPuntosUso } from "./puntos-uso";
-import { filtroPuntos, procesosAsignados, puedeAccederDocumento } from "@/lib/alcance";
+import { filtroPuntos, puedeAccederDocumento } from "@/lib/alcance";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { enVentanaDeImpresion, numeroDeCopia, puedePasar, textoSello, urlDeQr } from "@/lib/distribucion/copias";
 import { estamparCopiaControlada } from "@/lib/distribucion/sello-pdf";
@@ -217,7 +216,7 @@ export async function emitirCopia(
       FROM puntos_uso pu
       JOIN usuarios u ON u.id = pu.responsable_id
       LEFT JOIN cargos c ON c.id = u.cargo_id
-      WHERE pu.id = ${d.puntoUsoId} AND ${filtroPuntos(tx, sesion)}`;
+      WHERE pu.id = ${d.puntoUsoId}`;
     if (!punto || !punto.activo) throw new ErrorDistribucion("El punto de uso no existe o está inactivo");
 
     if (doc.nivel_acceso === "restringido") {
@@ -706,8 +705,7 @@ export async function reemplazarCopias(
     const viejas = await leerCopias(
       tx,
       sesion,
-      tx`d.id = ${documentoId} AND cc.estado = 'por_recoger' AND cc.version_id <> ${versionNuevaId}
-        AND pu.activo AND ${filtroPuntos(tx, sesion)}`,
+      tx`d.id = ${documentoId} AND cc.estado = 'por_recoger' AND cc.version_id <> ${versionNuevaId} AND pu.activo`,
       tx`cc.id`,
     );
     let emitidas = 0;
@@ -730,9 +728,18 @@ export async function reemplazarCopias(
 export type CopiasDeDocumento = {
   vigentes: Copia[];
   porRecoger: Copia[];
+  /**
+   * Para quien emite sobre el documento (`copias.emitir` y alcance): `pdf` si la vigente tiene PDF principal,
+   * `sin_pdf` si no lo tiene; `null` sin vigente o sin poder emitir.
+   */
+  emision: "pdf" | "sin_pdf" | null;
+  /** Los puntos activos con copias por recoger y sin copia viva de la vigente: las que emite «Reemplazar». */
+  reemplazables: number;
   puedeReemplazar: boolean;
   /** La versión vigente, destino de «Reemplazar»; null si el documento no tiene vigente con PDF. */
   versionVigenteId: number | null;
+  /** Los procesos del documento: el diálogo de emisión pone primero sus puntos. */
+  procesoIds: number[];
 };
 
 /** Lo que muestra el bloque «Copias controladas» de las fichas. */
@@ -753,48 +760,77 @@ export async function copiasDeDocumento(
   const porRecoger = copias.filter((c) => c.estado === "por_recoger");
 
   const [vigente] = await sql`
-    SELECT v.id, ${documentoEnAlcance(sql, sesion)} AS en_alcance,
+    SELECT v.id, ${documentoEnAlcance(sql, sesion)} AS en_alcance, ${procesosDelDocumento(sql)} AS procesos,
            EXISTS (SELECT 1 FROM archivos a WHERE a.version_id = v.id AND a.rol = 'principal' AND a.mime = 'application/pdf') AS con_pdf
     FROM documento_versiones v JOIN documentos d ON d.id = v.documento_id
     WHERE v.documento_id = ${documentoId} AND v.estado = 'vigente'`;
   const versionVigenteId = vigente && vigente.con_pdf ? Number(vigente.id) : null;
-  const sinReemplazo = porRecoger.some((c) => !vigentes.some((v) => v.punto.id === c.punto.id));
+  const emite = vigente !== undefined && vigente.en_alcance === true && puede(sesion, "copias.emitir");
+  // La misma cuenta que `reemplazarCopias`: una copia nueva por punto, y no donde ya hay una viva de la vigente.
+  const reemplazables = new Set(
+    porRecoger
+      .filter((c) => c.versionId !== versionVigenteId && !vigentes.some((v) => v.punto.id === c.punto.id))
+      .map((c) => c.punto.id),
+  ).size;
   return {
     vigentes,
     porRecoger,
+    emision: emite ? (vigente.con_pdf ? "pdf" : "sin_pdf") : null,
+    reemplazables,
     versionVigenteId,
-    puedeReemplazar:
-      versionVigenteId !== null && vigente.en_alcance === true && puede(sesion, "copias.emitir") && sinReemplazo,
+    puedeReemplazar: versionVigenteId !== null && emite && reemplazables > 0,
+    procesoIds: vigente ? (vigente.procesos as (string | number)[]).map(Number) : [],
   };
 }
 
+export type DocumentoParaEmitir = { id: number; codigo: string; titulo: string; procesoIds: number[] };
+
 /** Los documentos vigentes con PDF principal que la persona puede emitir (el buscador del diálogo de emisión). */
-export async function documentosParaEmitir(
-  sesion: SesionFlujo,
-  opciones?: Opciones,
-): Promise<{ id: number; codigo: string; titulo: string }[]> {
+export async function documentosParaEmitir(sesion: SesionFlujo, opciones?: Opciones): Promise<DocumentoParaEmitir[]> {
   const sql = opciones?.sql ?? obtenerSql();
   const filas = await sql`
-    SELECT d.id, d.codigo, d.titulo
+    SELECT d.id, d.codigo, d.titulo, ${procesosDelDocumento(sql)} AS procesos
     FROM documentos d
     JOIN documento_versiones v ON v.documento_id = d.id AND v.estado = 'vigente'
     WHERE EXISTS (SELECT 1 FROM archivos a WHERE a.version_id = v.id AND a.rol = 'principal' AND a.mime = 'application/pdf')
       AND ${documentoEnAlcance(sql, sesion)}
     ORDER BY d.codigo`;
-  return filas.map((f) => ({ id: Number(f.id), codigo: f.codigo as string, titulo: f.titulo as string }));
+  return filas.map((f) => ({
+    id: Number(f.id),
+    codigo: f.codigo as string,
+    titulo: f.titulo as string,
+    procesoIds: (f.procesos as (string | number)[]).map(Number),
+  }));
 }
 
-/** Los puntos activos que la persona puede elegir al emitir; los de sus procesos van primero. */
-export async function puntosParaEmitir(
-  sesion: SesionFlujo,
-  opciones?: Opciones,
-): Promise<{ id: number; nombre: string; sede: string | null; deSusProcesos: boolean }[]> {
-  const [puntos, propios] = await Promise.all([
-    listarPuntosUso(sesion, { sql: opciones?.sql, soloActivos: true }),
-    sesion.rol === "lider_proceso" ? procesosAsignados(sesion.usuarioId) : Promise.resolve([]),
-  ]);
-  const ids = new Set(propios.map((p) => p.id));
-  return puntos
-    .map((p) => ({ id: p.id, nombre: p.nombre, sede: p.sede, deSusProcesos: p.procesos.some((x) => ids.has(x.id)) }))
-    .sort((a, b) => Number(b.deSusProcesos) - Number(a.deSusProcesos));
+/** Los procesos del documento `d` (el propietario y «donde aplica»; un subproceso cuenta por su proceso). */
+function procesosDelDocumento(sql: Cliente) {
+  return sql`COALESCE((
+    SELECT array_agg(DISTINCT COALESCE(pd_dp.proceso_id, pd_s.proceso_id))
+    FROM documento_proceso pd_dp LEFT JOIN subprocesos pd_s ON pd_s.id = pd_dp.subproceso_id
+    WHERE pd_dp.documento_id = d.id), '{}')`;
+}
+
+export type PuntoParaEmitir = { id: number; nombre: string; sede: string | null; procesoIds: number[] };
+
+/**
+ * Todos los puntos activos (spec 13B §8.1): la restricción del líder es el documento, no el punto. El diálogo
+ * pone primero los de los procesos del documento elegido (`agruparPuntos`).
+ */
+export async function puntosParaEmitir(sesion: SesionFlujo, opciones?: Opciones): Promise<PuntoParaEmitir[]> {
+  if (!puede(sesion, "copias.emitir")) return [];
+  const sql = opciones?.sql ?? obtenerSql();
+  const filas = await sql`
+    SELECT pu.id, pu.nombre, pu.sede,
+           COALESCE((SELECT array_agg(pp.proceso_id ORDER BY pp.proceso_id)
+             FROM punto_uso_procesos pp WHERE pp.punto_uso_id = pu.id), '{}') AS procesos
+    FROM puntos_uso pu
+    WHERE pu.activo
+    ORDER BY pu.orden, lower(coalesce(pu.sede, '')), lower(pu.nombre), pu.id`;
+  return filas.map((f) => ({
+    id: Number(f.id),
+    nombre: f.nombre as string,
+    sede: (f.sede as string | null) ?? null,
+    procesoIds: (f.procesos as (string | number)[]).map(Number),
+  }));
 }

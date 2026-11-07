@@ -1,6 +1,6 @@
 "use server";
 
-import { idNumerico, mutacion, type EstadoAccion } from "@/app/admin/comun";
+import { idNumerico, mutacion, type EstadoAccion, type EstadoConAviso } from "@/app/admin/comun";
 import { confirmarLectura, pedirAcuses } from "@/db/consultas/distribucion/acuses";
 import { cerrarHallazgo } from "@/db/consultas/distribucion/hallazgos";
 import { anularJornada, registrarJornada } from "@/db/consultas/distribucion/jornadas";
@@ -34,6 +34,7 @@ import {
   parsearJornada,
 } from "@/lib/esquemas/distribucion";
 import { EsquemaMotivoCierre } from "@/lib/esquemas/tramites";
+import { cuenta } from "@/lib/plural";
 import { parsearFormulario } from "@/lib/validacion";
 
 const rutaDeCopia = (id: number) => `/distribucion/copias/${id}`;
@@ -87,11 +88,21 @@ export async function anularCopiaAccion(_prev: EstadoAccion, formData: FormData)
   });
 }
 
-export async function reemplazarCopiasAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
-  return mutacion(formData, "copias.emitir", async (_usuarioId, _formData, sesion) => {
+/** El reemplazo no navega: devuelve cuántas copias emitió para decirlo junto al botón. */
+export async function reemplazarCopiasAccion(_prev: EstadoConAviso, formData: FormData): Promise<EstadoConAviso> {
+  let emitidas = 0;
+  const estado = await mutacion(formData, "copias.emitir", async (_usuarioId, _formData, sesion) => {
     const { versionId } = parsearFormulario(formData, EsquemaReemplazarCopias);
-    await reemplazarCopias(sesion, versionId);
+    ({ emitidas } = await reemplazarCopias(sesion, versionId));
   });
+  if (estado) return estado;
+  return {
+    ok: true,
+    aviso:
+      emitidas === 0
+        ? "No había copias por reemplazar"
+        : `${emitidas === 1 ? "Se emitió" : "Se emitieron"} ${cuenta(emitidas, "copia", "copias")} de la versión vigente`,
+  };
 }
 
 export async function confirmarLecturaAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {

@@ -15,6 +15,7 @@ import {
   puntosParaEmitir,
   type FiltroCopias,
 } from "@/db/consultas/distribucion/copias";
+import { obtenerUrlPublica } from "@/db/consultas/entidad";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
 import { exigirDistribucion } from "../_comun";
@@ -48,12 +49,14 @@ export default async function PaginaCopias({
   const documentoId = entero(pedidos.documento);
   const puedeEmitir = puede(sesion, "copias.emitir");
 
-  const [puntos, copias, documentos, puntosEmitibles] = await Promise.all([
+  const [puntos, copias, documentos, puntosEmitibles, urlPublica] = await Promise.all([
     conteosPorPunto(sesion),
     listarCopias(sesion, { estado: filtro.clave, puntoId, documentoId }),
     puedeEmitir ? documentosParaEmitir(sesion) : Promise.resolve([]),
     puedeEmitir ? puntosParaEmitir(sesion) : Promise.resolve([]),
+    puedeEmitir ? obtenerUrlPublica() : Promise.resolve(null),
   ]);
+  const avisoSinQr = urlPublica ? null : { enlace: puede(sesion, "entidad.administrar") };
   const cuantos = {
     vivas: puntos.reduce((n, p) => n + p.vivas, 0),
     por_recoger: puntos.reduce((n, p) => n + p.porRecoger, 0),
@@ -76,7 +79,7 @@ export default async function PaginaCopias({
         titulo="Distribución"
         descripcion="Copias controladas, acuses de lectura, socializaciones y verificaciones"
         acciones={
-          puedeEmitir ? <DialogoEmitir documentos={documentos} puntos={puntosEmitibles} /> : undefined
+          puedeEmitir ? <DialogoEmitir documentos={documentos} puntos={puntosEmitibles} avisoSinQr={avisoSinQr} /> : undefined
         }
       />
       <PestanasDistribucion activa="copias" />

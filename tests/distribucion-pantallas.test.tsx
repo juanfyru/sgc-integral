@@ -11,6 +11,7 @@ vi.mock("@/app/acciones-distribucion", () => ({
 }));
 
 import { AccionesCopia } from "@/componentes/distribucion/copias/AccionesCopia";
+import { FormularioEmitir, type PuntoEmitible } from "@/componentes/distribucion/copias/DialogoEmitir";
 import { ListaPuntos } from "@/componentes/distribucion/copias/ListaPuntos";
 import { TablaCopias } from "@/componentes/distribucion/copias/TablaCopias";
 import { PestanasDistribucion } from "@/componentes/distribucion/PestanasDistribucion";
@@ -148,5 +149,39 @@ describe("ListaPuntos y pestañas", () => {
     }
     expect(html.match(/aria-current="page"/g)).toHaveLength(1);
     expect(html).toMatch(/aria-current="page"[^>]*>Acuses de lectura/);
+  });
+});
+
+describe("FormularioEmitir", () => {
+  const documento = { id: 7, codigo: "GTH-PR-02", titulo: "Inducción y reinducción", procesoIds: [10] };
+  const puntos: PuntoEmitible[] = [
+    { id: 1, nombre: "Urgencias", sede: null, procesoIds: [20] },
+    { id: 2, nombre: "Talento Humano", sede: "Sede principal", procesoIds: [10, 20] },
+  ];
+  const render = (extra: Partial<Parameters<typeof FormularioEmitir>[0]> = {}) =>
+    renderToStaticMarkup(
+      <FormularioEmitir documentos={[documento]} puntos={puntos} avisoSinQr={null} alCancelar={() => {}} {...extra} />,
+    );
+
+  it("los puntos de los procesos del documento van primero y los demás activos después", () => {
+    const html = render();
+    expect(html).toMatch(/<optgroup label="De los procesos del documento"><option value="2">Talento Humano · Sede principal<\/option><\/optgroup><optgroup label="Otros puntos activos"><option value="1">Urgencias<\/option>/);
+  });
+
+  it("sin documento elegido, todos los puntos van en un solo grupo", () => {
+    const html = render({ documentos: [documento, { ...documento, id: 8, codigo: "GTH-PR-03" }] });
+    expect(html).not.toContain("De los procesos del documento");
+    expect(html).toContain('<optgroup label="Puntos de uso activos">');
+  });
+
+  it("sin dirección de la plataforma avisa que el sello sale sin QR; el enlace, solo a quien edita la entidad", () => {
+    const aviso = "Sin dirección de la plataforma configurada, el sello saldrá sin código QR.";
+    expect(render()).not.toContain(aviso);
+    const conEnlace = render({ avisoSinQr: { enlace: true } });
+    expect(conEnlace).toContain(aviso);
+    expect(conEnlace).toContain('href="/admin/entidad"');
+    const sinEnlace = render({ avisoSinQr: { enlace: false } });
+    expect(sinEnlace).toContain(aviso);
+    expect(sinEnlace).not.toContain('href="/admin/entidad"');
   });
 });

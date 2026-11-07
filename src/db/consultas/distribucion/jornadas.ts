@@ -355,6 +355,26 @@ export async function socializacionDeVersion(versionId: number, opciones?: Opcio
   return { requerida: true, venceEn: cumplida || superada ? null : (r.vence_en as Date), cumplida, superada };
 }
 
+/**
+ * Lo que la ficha del documento muestra de la socialización de la vigente (spec 13B §10.4 y §13.3): su estado y
+ * las jornadas no anuladas que la persona ve; `null` si el documento no tiene vigente.
+ */
+export async function socializacionDeFicha(
+  documentoId: number,
+  sesion: SesionFlujo,
+  opciones?: Opciones,
+): Promise<{ versionId: number; socializacion: SocializacionDeVersion; jornadas: Jornada[] } | null> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [v] = await sql`SELECT id FROM documento_versiones WHERE documento_id = ${documentoId} AND estado = 'vigente'`;
+  if (!v) return null;
+  const versionId = Number(v.id);
+  const [socializacion, jornadas] = await Promise.all([
+    socializacionDeVersion(versionId, { sql }),
+    jornadasDeVersion(versionId, sesion, { sql }),
+  ]);
+  return { versionId, socializacion, jornadas: jornadas.filter((j) => j.anulada === null) };
+}
+
 export type OpcionesDeJornada = {
   /** La vigente de cada documento y sus versiones obsoletas (`vigente: false`), de la más nueva a la más vieja. */
   documentos: { versionId: number; codigo: string; titulo: string; version: number; vigente: boolean }[];

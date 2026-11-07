@@ -53,3 +53,17 @@ export function enVentanaDeImpresion(abiertaEn: Date | null, ahora: Date): boole
   if (!abiertaEn) return false;
   return ahora.getTime() - abiertaEn.getTime() < VENTANA_IMPRESION_MS;
 }
+
+/**
+ * El orden del diálogo de emisión (spec 13B §8.1): primero los puntos que sirven a algún proceso del documento,
+ * luego los demás activos. Sin documento elegido (`null`), todos van en `otros`.
+ */
+export function agruparPuntos<P extends { procesoIds: number[] }>(
+  puntos: P[],
+  procesosDelDocumento: number[] | null,
+): { delDocumento: P[]; otros: P[] } {
+  if (!procesosDelDocumento) return { delDocumento: [], otros: puntos };
+  const delDoc = new Set(procesosDelDocumento);
+  const sirve = (p: P) => p.procesoIds.some((id) => delDoc.has(id));
+  return { delDocumento: puntos.filter(sirve), otros: puntos.filter((p) => !sirve(p)) };
+}

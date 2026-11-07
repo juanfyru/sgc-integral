@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ESTADOS_COPIA, ErrorDistribucion, VENTANA_IMPRESION_MS } from "@/lib/distribucion/tipos";
-import { enVentanaDeImpresion, numeroDeCopia, puedePasar, textoSello, urlDeQr } from "@/lib/distribucion/copias";
+import { agruparPuntos, enVentanaDeImpresion, numeroDeCopia, puedePasar, textoSello, urlDeQr } from "@/lib/distribucion/copias";
+import { cuenta } from "@/lib/plural";
 import { acusadosPorFirma, porcentaje } from "@/lib/distribucion/acuses";
 import {
   ITEMS_FIJOS,
@@ -61,6 +62,25 @@ describe("copias", () => {
   });
   it("ErrorDistribucion es un ErrorTramite", () => {
     expect(new ErrorDistribucion("x")).toBeInstanceOf(ErrorTramite);
+  });
+});
+
+describe("puntos para emitir y plurales", () => {
+  it("agruparPuntos pone primero los de los procesos del documento; sin documento, todos en otros", () => {
+    const puntos = [
+      { id: 1, procesoIds: [3] },
+      { id: 2, procesoIds: [] },
+      { id: 3, procesoIds: [5, 9] },
+    ];
+    expect(agruparPuntos(puntos, [9])).toEqual({ delDocumento: [puntos[2]], otros: [puntos[0], puntos[1]] });
+    expect(agruparPuntos(puntos, [])).toEqual({ delDocumento: [], otros: puntos });
+    expect(agruparPuntos(puntos, null)).toEqual({ delDocumento: [], otros: puntos });
+  });
+
+  it("cuenta escribe el sustantivo en singular solo para uno", () => {
+    expect(cuenta(1, "copia", "copias")).toBe("1 copia");
+    expect(cuenta(0, "copia", "copias")).toBe("0 copias");
+    expect(cuenta(3, "punto de uso activo", "puntos de uso activos")).toBe("3 puntos de uso activos");
   });
 });
 
