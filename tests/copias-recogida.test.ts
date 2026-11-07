@@ -90,6 +90,30 @@ describe("al dejar de ser vigente", () => {
       }
     }));
 
+  it("quien deja de vigente la versión y responde por un punto no se avisa a sí mismo; la tarea sí queda", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const otro = await usuarioDePrueba(tx, { rol: "consulta" });
+      const suyo = await puntoDePrueba(tx, { responsable: admin, procesos: ["GTH"] });
+      const ajeno = await puntoDePrueba(tx, { responsable: otro, procesos: ["GTH"] });
+      const v = await vigenteConPdf(tx, { proceso: "GTH", tipo: "PR" });
+      try {
+        const propia = await copiaDePrueba(tx, { emisor: admin, documento: v.documento, punto: suyo, ahora: T0 });
+        const deOtro = await copiaDePrueba(tx, { emisor: admin, documento: v.documento, punto: ajeno, ahora: T0 });
+        await tx`UPDATE documento_versiones SET estado = 'obsoleto' WHERE id = ${v.versionId}`;
+        await alDejarDeSerVigente(tx, v.versionId, "carga_deshecha", T1, { actorId: admin.usuarioId });
+
+        const recoger = async (usuarioId: number) =>
+          (await tx`SELECT entidad_id FROM notificaciones WHERE usuario_id = ${usuarioId} AND tipo = 'distribucion.recoger'`).map((f) => Number(f.entidad_id));
+        expect(await recoger(admin.usuarioId)).toEqual([]);
+        expect(await recoger(otro.usuarioId)).toEqual([deOtro.copiaId]);
+        expect(await obtenerCopia(propia.copiaId, admin, { sql: tx })).toMatchObject({ estado: "por_recoger" });
+        expect((await tareasDeCopias(admin, { sql: tx })).map((x) => x.id)).toEqual([`copia:${propia.copiaId}`]);
+      } finally {
+        await v.limpiar();
+      }
+    }));
+
   it("lo mismo al ejecutar una eliminación y al deshacer una carga", () =>
     revertida(sql, async (tx) => {
       const admin = await sesionAdmin(tx);

@@ -68,6 +68,8 @@ async function recogerCopias(
           aviso_vencido_en = NULL, escalado_en = NULL
       WHERE id = ${id}`;
     await evento(tx, id, "por_recoger", opciones?.actorId ?? null, { motivo, nuevaVersionId: opciones?.nuevaVersionId ?? null }, ahora);
+    // Nadie se avisa a sí mismo (spec 13B §12.2): si quien publica responde por el punto, la tarea basta.
+    if (Number(c.responsable_actual) === opciones?.actorId) continue;
     await crearNotificacion(
       {
         usuarioId: Number(c.responsable_actual),

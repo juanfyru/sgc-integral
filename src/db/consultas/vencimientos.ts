@@ -7,10 +7,10 @@
 import type { Row, TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
-import { supervisoresDe } from "@/db/consultas/estructura";
 import { aFilaTramite, adminsActivos, lideresDeProceso, rotuloDeTramite } from "@/db/consultas/tramites";
 import { estadoPlazo } from "@/lib/tramites/plazos";
 import { ETAPAS_ABIERTAS, ETIQUETA_ETAPA, textoResponsables } from "@/lib/tramites/tipos";
+import { avisarA, jefesDe, type Destinatario } from "@/db/consultas/avisos-vencimiento";
 import { revisarVencimientosDeDistribucion } from "@/db/consultas/distribucion/vencimientos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { enTransaccion, type FilaTramite, type TipoAviso } from "./flujo/contrato";
@@ -44,22 +44,6 @@ function queFalta(f: Row, ahora: Date, escalamientoDias: number, zona: string) {
   };
 }
 
-export type Destinatario = { usuarioId: number; cuerpo: string };
-
-/** Una sola inserción: una por destinatario. Sin enlace, el aviso no abre la entidad. */
-export async function avisarA(
-  tx: TransactionSql,
-  aviso: { tipo: string; titulo: string; enlace: string | null; entidad: string; entidadId: number },
-  destinatarios: Destinatario[],
-): Promise<void> {
-  await tx`INSERT INTO notificaciones (usuario_id, tipo, titulo, cuerpo, enlace, entidad, entidad_id)
-    SELECT u, ${aviso.tipo}, ${aviso.titulo}, c, ${aviso.enlace}, ${aviso.entidad}, ${aviso.entidadId}
-    FROM unnest(
-      ${tx.array(destinatarios.map((d) => d.usuarioId))}::int[],
-      ${tx.array(destinatarios.map((d) => d.cuerpo))}::text[]
-    ) AS a(u, c)`;
-}
-
 function avisar(
   tx: TransactionSql,
   tramiteId: number,
@@ -67,18 +51,6 @@ function avisar(
   destinatarios: Destinatario[],
 ): Promise<void> {
   return avisarA(tx, { ...aviso, entidad: "tramite", entidadId: tramiteId }, destinatarios);
-}
-
-/** Cada jefe, sin repetir, con los subalternos suyos que tienen el paso. */
-export async function jefesDe(tx: TransactionSql, responsables: number[]): Promise<Map<number, string[]>> {
-  const filas = await tx`SELECT id, nombre FROM usuarios WHERE id = ANY(${responsables}) ORDER BY nombre, id`;
-  const jefes = new Map<number, string[]>();
-  for (const { id, nombre } of filas) {
-    for (const jefe of await supervisoresDe(Number(id), { sql: tx })) {
-      jefes.set(jefe.id, [...(jefes.get(jefe.id) ?? []), nombre]);
-    }
-  }
-  return jefes;
 }
 
 const NADA = { avisado: false, escalado: false };

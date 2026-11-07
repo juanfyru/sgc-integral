@@ -260,7 +260,7 @@ async function ejecutarEliminacion({ tx, tramite, sesion, ahora }: ContextoManej
   const { versionId, numero } = await anularVigenteEn(tx, documentoId, sesion.usuarioId, ahora);
   if (versionId !== tramite.versionId) throw new ErrorTramite("La versión vigente cambió: revise el trámite");
   const [doc] = await tx`SELECT codigo, titulo FROM documentos WHERE id = ${documentoId}`;
-  await avisarEliminacion(tx, documentoId, doc.codigo as string, doc.titulo as string, ahora);
+  await avisarEliminacion(tx, documentoId, doc.codigo as string, doc.titulo as string, ahora, sesion.usuarioId);
   return {
     detalle: { versionAnulada: numero, acta: await congelarDatosActa(tx, tramite, "eliminacion", ahora) },
     avisos: await avisoDeCierre(tx, tramite, documentoId, `Solicitud ${tramite.numero}: documento eliminado`),

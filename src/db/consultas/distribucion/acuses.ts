@@ -306,7 +306,10 @@ export async function confirmarLectura(id: number, sesion: SesionFlujo, opciones
   });
 }
 
-/** Una fila `pendiente` con su evento y su aviso; `false` si la persona ya tiene un acuse vivo de la versión. */
+/**
+ * Una fila `pendiente` con su evento y su aviso; `false` si la persona ya tiene un acuse vivo de la versión. Quien
+ * pide los acuses (`actorId`) recibe el suyo, pero no un aviso: nadie se avisa a sí mismo (spec 13B §12.2).
+ */
 async function abrirAcuse(
   tx: TransactionSql,
   v: { id: number; numero: number; codigo: string; titulo: string },
@@ -314,6 +317,7 @@ async function abrirAcuse(
   origen: "solicitud_manual" | "ingreso_proceso",
   venceEn: Date,
   ahora: Date,
+  actorId?: number,
 ): Promise<boolean> {
   const [fila] = await tx`INSERT INTO acuses (version_id, usuario_id, origen, estado, creado_en, vence_en)
     VALUES (${v.id}, ${usuarioId}, ${origen}, 'pendiente', ${ahora}, ${venceEn})
@@ -322,6 +326,7 @@ async function abrirAcuse(
   if (!fila) return false;
   const id = Number(fila.id);
   await eventoAcuse(tx, id, "creado", null, { origen }, ahora);
+  if (usuarioId === actorId) return true;
   await crearNotificacion(
     {
       usuarioId,
@@ -359,7 +364,7 @@ export async function pedirAcuses(
     const venceEn = await venceDesde(tx, ahora);
     let creados = 0;
     for (const usuarioId of await audienciaDeDocumento(tx, documentoId)) {
-      if (await abrirAcuse(tx, version, usuarioId, "solicitud_manual", venceEn, ahora)) creados += 1;
+      if (await abrirAcuse(tx, version, usuarioId, "solicitud_manual", venceEn, ahora, sesion.usuarioId)) creados += 1;
     }
     await registrarAuditoria(tx, {
       usuarioId: sesion.usuarioId,
@@ -463,16 +468,18 @@ export async function retirarAcusesDeLista(tx: TransactionSql, listaId: number, 
   return n;
 }
 
-/** Avisa a quienes recibían el documento que dejó de aplicar; no abre tarea. */
+/** Avisa a quienes recibían el documento que dejó de aplicar, salvo a quien lo eliminó; no abre tarea. */
 export async function avisarEliminacion(
   tx: TransactionSql,
   documentoId: number,
   codigo: string,
   titulo: string,
   ahora: Date,
+  actorId: number,
 ): Promise<void> {
   const fecha = new Intl.DateTimeFormat("es-CO", { dateStyle: "long", timeZone: zonaHoraria() }).format(ahora);
   for (const usuarioId of await audienciaDeDocumento(tx, documentoId)) {
+    if (usuarioId === actorId) continue;
     await crearNotificacion(
       {
         usuarioId,

@@ -91,6 +91,20 @@ describe("pedir acuse", () => {
       expect((await delDocumento(tx, doc.codigo, tardia.usuarioId)).length).toBe(1);
     }));
 
+  it("quien pide los acuses y está en la audiencia recibe el suyo, pero no se avisa a sí mismo", () =>
+    revertida(sql, async (tx) => {
+      const gth = await idDe(tx, "GTH");
+      const admin = await usuarioDePrueba(tx, { rol: "admin_sgc", procesos: [gth] });
+      const doc = await documentoLibre(tx, { proceso: "GTH", tipo: "PR" });
+      const otra = await usuarioDePrueba(tx, { rol: "consulta", procesos: [gth] });
+      await pedirAcuses(admin, doc.id, { sql: tx, ahora: T1 });
+      expect((await delDocumento(tx, doc.codigo, admin.usuarioId)).length).toBe(1);
+      const avisos = async (usuarioId: number) =>
+        (await tx`SELECT 1 FROM notificaciones WHERE usuario_id = ${usuarioId} AND tipo = 'distribucion.acuse'`).length;
+      expect(await avisos(admin.usuarioId)).toBe(0);
+      expect(await avisos(otra.usuarioId)).toBe(1);
+    }));
+
   it("exige distribucion.gestionar", () =>
     revertida(sql, async (tx) => {
       const doc = await documentoLibre(tx, { proceso: "GTH", tipo: "PR" });
@@ -283,6 +297,8 @@ describe("al eliminar el documento", () => {
     revertida(sql, async (tx) => {
       const persona = await usuarioDePrueba(tx, { rol: "consulta", procesos: [await idDe(tx, "GTH")] });
       const t = await tramiteEn(tx, "aprobacion", { tipo: "eliminar" });
+      // Quien elimina también está en la audiencia: no se avisa a sí mismo.
+      await tx`INSERT INTO usuario_procesos (usuario_id, proceso_id) VALUES (${t.aprobador.usuarioId}, ${await idDe(tx, "GTH")})`;
       await transicionar(
         t.aprobador,
         { tramiteId: t.tramiteId, accion: "aprobar_y_publicar", etapaEsperada: "aprobacion", rondaEsperada: t.ronda, datos: { concepto: "Aprobado." }, credenciales: { clave: "x" } },
@@ -291,6 +307,7 @@ describe("al eliminar el documento", () => {
       const [aviso] = await tx`SELECT titulo, enlace FROM notificaciones WHERE usuario_id = ${persona.usuarioId} AND tipo = 'distribucion.eliminado'`;
       expect(aviso.titulo).toMatch(new RegExp(`^${t.codigo} ${t.titulo} dejó de aplicar: fue eliminado el .+2026`));
       expect(aviso.enlace).toBeNull();
+      expect(await tx`SELECT 1 FROM notificaciones WHERE usuario_id = ${t.aprobador.usuarioId} AND tipo = 'distribucion.eliminado'`).toHaveLength(0);
       expect(await acusesPendientesDe(persona.usuarioId, { sql: tx })).toEqual([]);
       expect((await delDocumento(tx, t.codigo, persona.usuarioId)).length).toBe(0);
     }));

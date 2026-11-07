@@ -10,7 +10,7 @@ import type { Cliente } from "@/db/cliente";
 import type { ConfigDocumental } from "@/db/consultas/config-documental";
 import { enTransaccion } from "@/db/consultas/flujo/contrato";
 import { adminsActivos, lideresDeProceso, propietarioDeDocumento } from "@/db/consultas/tramites";
-import { avisarA, jefesDe } from "@/db/consultas/vencimientos";
+import { avisarA, jefesDe } from "@/db/consultas/avisos-vencimiento";
 import { numeroDeCopia } from "@/lib/distribucion/copias";
 import { estadoPlazo } from "@/lib/tramites/plazos";
 import { textoResponsables } from "@/lib/tramites/tipos";
