@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Printer } from "lucide-react";
+import { Download, Printer } from "lucide-react";
 import { PestanasDistribucion } from "@/componentes/distribucion/PestanasDistribucion";
 import { DialogoEmitir } from "@/componentes/distribucion/copias/DialogoEmitir";
 import { ListaPuntos } from "@/componentes/distribucion/copias/ListaPuntos";
 import { TablaCopias } from "@/componentes/distribucion/copias/TablaCopias";
+import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { EstadoVacio } from "@/componentes/ui/EstadoVacio";
 import {
@@ -65,6 +66,10 @@ export default async function PaginaCopias({
     return `/distribucion/copias?${q.toString()}`;
   };
 
+  const consultaExcel = new URLSearchParams({ estado: filtro.clave });
+  if (puntoId !== undefined) consultaExcel.set("punto", String(puntoId));
+  if (documentoId !== undefined) consultaExcel.set("documento", String(documentoId));
+
   return (
     <div className="flex flex-col gap-6">
       <EncabezadoPagina
@@ -104,6 +109,14 @@ export default async function PaginaCopias({
               })}
             </ul>
           </nav>
+          {puede(sesion, "distribucion.ver") ? (
+            <div>
+              <a href={`/distribucion/copias/excel?${consultaExcel}`} className={claseBoton("secundario")}>
+                <Download aria-hidden="true" className="size-4" />
+                Descargar Excel
+              </a>
+            </div>
+          ) : null}
           {copias.length === 0 ? (
             <EstadoVacio
               icono={Printer}

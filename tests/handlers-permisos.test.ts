@@ -28,6 +28,8 @@ import { GET as verArchivoTramite } from "@/app/(app)/tramites/[id]/archivos/[ar
 import { DELETE as quitarArchivoTramite } from "@/app/api/tramites/[id]/archivos/[archivoId]/route";
 import { POST as subirArchivoTramite } from "@/app/api/tramites/[id]/archivos/route";
 import { GET as excelAcuses } from "@/app/(app)/distribucion/acuses/excel/route";
+import { GET as excelCopias } from "@/app/(app)/distribucion/copias/excel/route";
+import { GET as excelVerificaciones } from "@/app/(app)/distribucion/verificaciones/excel/route";
 import { GET as pdfCopia } from "@/app/(app)/distribucion/copias/[id]/pdf/route";
 import { POST as reimprimirCopiaRuta } from "@/app/(app)/distribucion/copias/[id]/reimprimir/route";
 import { obtenerSql } from "@/db/cliente";
@@ -130,6 +132,30 @@ describe("GET /distribucion/acuses/excel", () => {
     const [u] = await sql()`SELECT id FROM usuarios WHERE usuario = ${`zz_ci_${SUFIJO}`}`;
     const filas = await sql()`SELECT 1 FROM auditoria WHERE usuario_id = ${u.id} AND accion = 'exporto_acuses'`;
     expect(filas.length).toBe(1);
+  });
+});
+
+describe.each([
+  { nombre: "copias", accion: "exporto_copias", ruta: excelCopias, prefijo: "copias" },
+  { nombre: "verificaciones", accion: "exporto_verificaciones", ruta: excelVerificaciones, prefijo: "verificaciones" },
+])("GET /distribucion/$nombre/excel", ({ accion, ruta, nombre, prefijo }) => {
+  const pedir = (token?: string) =>
+    ruta(new NextRequest(`http://localhost:3002/distribucion/${nombre}/excel`, token ? { headers: cookie(token) } : undefined));
+
+  it("401 sin sesion y 403 a quien no ve la distribucion", async () => {
+    expect((await pedir()).status).toBe(401);
+    expect((await pedir(tokenConsulta)).status).toBe(403);
+  });
+
+  it("control interno recibe el Excel sin cache y queda auditado", async () => {
+    const [u] = await sql()`SELECT id FROM usuarios WHERE usuario = ${`zz_ci_${SUFIJO}`}`;
+    const antes = (await sql()`SELECT 1 FROM auditoria WHERE usuario_id = ${u.id} AND accion = ${accion}`).length;
+    const res = await pedir(tokenCi);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(res.headers.get("Content-Disposition")).toMatch(new RegExp(String.raw`^attachment; filename="${prefijo}-\d{8}\.xlsx"$`));
+    const filas = await sql()`SELECT 1 FROM auditoria WHERE usuario_id = ${u.id} AND accion = ${accion}`;
+    expect(filas.length).toBe(antes + 1);
   });
 });
 

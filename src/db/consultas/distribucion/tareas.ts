@@ -1,6 +1,11 @@
 import { obtenerSql, type Cliente } from "@/db/cliente";
+import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
+import { filtroPuntos } from "@/lib/alcance";
 import { numeroDeCopia } from "@/lib/distribucion/copias";
+import { verificacionVencida } from "@/lib/distribucion/verificacion";
+import { puede } from "@/lib/permisos";
+import { hallazgosAbiertosDe } from "./hallazgos";
 import type { Tarea } from "@/lib/tareas";
 
 /**
@@ -114,4 +119,59 @@ export async function tareasDeSocializacion(sesion: SesionFlujo, opciones?: { sq
       vence: f.vence_en as Date,
       enlace: `/distribucion/socializaciones/nueva?version=${f.version_id}`,
     }));
+}
+
+/**
+ * Cada punto activo cuya última verificación cerrada pasó de `verificacionCadaDias` (o que nunca se verificó) es una
+ * tarea de quien realiza verificaciones; no distingue por punto: quien puede verificar ve los que su alcance cubre.
+ */
+export async function tareasDeVerificacion(
+  sesion: SesionFlujo,
+  opciones?: { sql?: Cliente; ahora?: Date },
+): Promise<Tarea[]> {
+  if (!puede(sesion, "verificaciones.realizar")) return [];
+  const sql = opciones?.sql ?? obtenerSql();
+  const ahora = opciones?.ahora ?? new Date();
+  const { distribucion } = await obtenerConfigDocumental({ sql });
+  const filas = await sql`
+    SELECT pu.id, pu.nombre,
+      (SELECT max(ve.cerrada_en) FROM verificaciones ve WHERE ve.punto_uso_id = pu.id AND ve.estado = 'cerrada') AS ultima
+    FROM puntos_uso pu
+    WHERE pu.activo AND ${filtroPuntos(sql, sesion)}
+    ORDER BY pu.orden, pu.nombre, pu.id`;
+  const tareas: Tarea[] = [];
+  for (const f of filas) {
+    const ultima = (f.ultima as Date | null) ?? null;
+    if (!verificacionVencida(ultima, distribucion.verificacionCadaDias, ahora)) continue;
+    const hace = ultima ? Math.floor((ahora.getTime() - ultima.getTime()) / 86_400_000) : 0;
+    tareas.push({
+      id: `verificacion:${f.id}`,
+      modulo: "documentos",
+      titulo: ultima
+        ? `Verificar ${f.nombre}: última hace ${hace} ${hace === 1 ? "día" : "días"}`
+        : `Verificar ${f.nombre}: nunca verificado`,
+      detalle: null,
+      vence: ultima ? new Date(ultima.getTime() + distribucion.verificacionCadaDias * 86_400_000) : null,
+      enlace: `/distribucion/verificaciones/nueva?punto=${f.id}`,
+    });
+  }
+  return tareas;
+}
+
+/** Cada hallazgo abierto es una tarea del responsable actual de su punto; vence con el plazo de corrección. */
+export async function tareasDeHallazgos(sesion: SesionFlujo, opciones?: { sql?: Cliente; ahora?: Date }): Promise<Tarea[]> {
+  const hallazgos = await hallazgosAbiertosDe(sesion.usuarioId, opciones);
+  return hallazgos.map((h) => ({
+    id: `hallazgo:${h.id}`,
+    modulo: "documentos" as const,
+    titulo: `Corregir hallazgo en ${h.punto.nombre}: ${h.descripcion.length > 80 ? `${h.descripcion.slice(0, 79).trimEnd()}…` : h.descripcion}`,
+    detalle: null,
+    vence: h.venceEn,
+    enlace:
+      h.origen === "verificacion" && h.verificacionId !== null
+        ? `/distribucion/verificaciones/${h.verificacionId}`
+        : h.copia
+          ? `/distribucion/copias/${h.copia.id}`
+          : "/distribucion/verificaciones",
+  }));
 }

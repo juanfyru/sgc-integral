@@ -23,6 +23,7 @@ import { aFilaTramite } from "@/db/consultas/tramites";
 import { transicionar } from "@/db/consultas/tramites-flujo";
 import { responsablesDe, revisarVencimientos } from "@/db/consultas/vencimientos";
 import { finDeFecha } from "@/lib/tramites/plazos";
+import { silenciarDistribucion } from "./utiles/distribucion";
 import { opc, sesionAdmin, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -33,8 +34,10 @@ afterAll(async () => {
   globalThis.__sql = undefined;
 });
 
-const silenciarOtros = (tx: TransactionSql, tramiteId: number) =>
-  tx`UPDATE tramites SET aviso_vencido_en = now(), escalado_en = now() WHERE id <> ${tramiteId}`;
+const silenciarOtros = async (tx: TransactionSql, tramiteId: number) => {
+  await tx`UPDATE tramites SET aviso_vencido_en = now(), escalado_en = now() WHERE id <> ${tramiteId}`;
+  await silenciarDistribucion(tx);
+};
 
 const correrEn = (tx: TransactionSql) => (ahora: string) => revisarVencimientos({ sql: tx, ahora: new Date(ahora) });
 

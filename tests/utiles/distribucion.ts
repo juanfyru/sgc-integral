@@ -2,6 +2,7 @@
 import { NextRequest } from "next/server";
 import type { TransactionSql } from "postgres";
 import { emitirCopia } from "@/db/consultas/distribucion/copias";
+import { abrirVerificacion, cerrarVerificacion, guardarAvance, obtenerVerificacion } from "@/db/consultas/distribucion/verificaciones";
 import type { SesionFlujo } from "@/db/consultas/tramites-flujo";
 import type { DatosUsuario } from "@/db/consultas/usuarios";
 import { documentoLibre, archivoPrincipal, type DocumentoLibre } from "./tramites";
@@ -102,4 +103,27 @@ export function peticionDeSubida(nombre: string, bytes: Uint8Array, cabeceras: R
       ...cabeceras,
     },
   } as ConstructorParameters<typeof NextRequest>[1]);
+}
+
+/**
+ * Marca como ya avisado y escalado todo lo vencible de la distribucion que existe en la base (la demo trae
+ * filas): `revisarVencimientos` las recorre todas y un test cuenta solo lo suyo. Se llama antes de crear los datos del test.
+ */
+export async function silenciarDistribucion(tx: TransactionSql): Promise<void> {
+  await tx`UPDATE copias_controladas SET aviso_vencido_en = now(), escalado_en = now() WHERE estado IN ('emitida', 'por_recoger')`;
+  await tx`UPDATE acuses SET aviso_vencido_en = now(), escalado_en = now() WHERE estado = 'pendiente'`;
+  await tx`UPDATE socializaciones_requeridas SET aviso_vencido_en = now(), escalado_en = now() WHERE cumplida_en IS NULL AND superada_en IS NULL`;
+  await tx`UPDATE hallazgos SET aviso_vencido_en = now(), escalado_en = now() WHERE estado = 'abierto'`;
+}
+
+/** Abre y cierra la verificacion de un punto con la funcion real; todos los items con la misma respuesta. */
+export async function verificarPunto(
+  tx: TransactionSql,
+  d: { verificador: SesionFlujo; punto: { id: number }; ahora: Date; respuesta?: "conforme" | "no_conforme" },
+): Promise<{ verificacionId: number }> {
+  const { verificacionId } = await abrirVerificacion(d.verificador, d.punto.id, { sql: tx, ahora: d.ahora });
+  const v = (await obtenerVerificacion(verificacionId, d.verificador, { sql: tx }))!;
+  await guardarAvance(verificacionId, d.verificador, v.items.map((i) => ({ itemId: i.id, respuesta: d.respuesta ?? "conforme", nota: null })), { sql: tx });
+  await cerrarVerificacion(verificacionId, d.verificador, { sql: tx, ahora: d.ahora });
+  return { verificacionId };
 }
