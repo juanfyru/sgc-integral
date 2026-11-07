@@ -537,3 +537,22 @@ export async function quienFalta(
     desdeHace: Math.max(0, Math.floor((ahora.getTime() - (f.creado_en as Date).getTime()) / 86_400_000)),
   }));
 }
+
+/** Lo que la ficha del documento muestra de los acuses: la vigente, sus cifras y quién falta (`null` si no se puede ver). */
+export async function resumenAcusesDeDocumento(
+  documentoId: number,
+  sesion: SesionFlujo,
+  opciones?: Opciones,
+): Promise<{
+  versionId: number;
+  version: number;
+  cifras: Awaited<ReturnType<typeof acusesDeVersion>>;
+  faltan: Awaited<ReturnType<typeof quienFalta>>;
+} | null> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [v] = await sql`SELECT id, numero FROM documento_versiones WHERE documento_id = ${documentoId} AND estado = 'vigente'`;
+  if (!v) return null;
+  const versionId = Number(v.id);
+  const [cifras, faltan] = await Promise.all([acusesDeVersion(versionId, opciones), quienFalta(versionId, sesion, opciones)]);
+  return { versionId, version: Number(v.numero), cifras, faltan };
+}

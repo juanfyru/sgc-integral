@@ -1,11 +1,12 @@
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
+import { retirarAcusesFueraDeAudiencia } from "@/db/consultas/distribucion/acuses";
 import { enTransaccion } from "@/db/consultas/flujo/contrato";
 import { usuariosDeListas } from "@/db/consultas/distribucion/listas";
 import { filtroAccesoDe } from "@/lib/alcance";
 import { ErrorDistribucion } from "@/lib/distribucion/tipos";
 
-type Opciones = { sql?: Cliente };
+type Opciones = { sql?: Cliente; ahora?: Date };
 
 /**
  * A quién debe llegar el documento: las personas activas con alguno de sus procesos (el propietario y
@@ -86,6 +87,7 @@ export async function guardarAudiencia(
     for (const listaId of listaIds) {
       await tx`INSERT INTO documento_listas (documento_id, lista_id) VALUES (${documentoId}, ${listaId})`;
     }
+    await retirarAcusesFueraDeAudiencia(tx, documentoId, opciones?.ahora ?? new Date(), "salio_de_audiencia");
     await tx`UPDATE documentos SET lectura_obligatoria_ingreso = ${d.lecturaObligatoriaIngreso}, actualizado_en = now()
       WHERE id = ${documentoId}`;
     await registrarAuditoria(tx, {

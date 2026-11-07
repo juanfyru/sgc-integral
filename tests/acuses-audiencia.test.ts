@@ -223,6 +223,32 @@ describe("lectura obligatoria al ingresar y salida de la audiencia", () => {
     }));
 });
 
+describe("quitar la lista del documento", () => {
+  it("retira el acuse de quien estaba solo por la lista y conserva el de quien es del proceso", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const doc = await documentoLibre(tx, { proceso: "GTH", tipo: "PR" });
+      const porLista = await usuarioDePrueba(tx, { rol: "consulta" });
+      const porProceso = await usuarioDePrueba(tx, { rol: "consulta", procesos: [await idDe(tx, "GTH")] });
+      const { id: listaId } = await crearLista(
+        { nombre: `zz_lista_${Date.now()}q`, descripcion: null, miembros: [{ tipo: "usuario", referenciaId: porLista.usuarioId }, { tipo: "usuario", referenciaId: porProceso.usuarioId }] },
+        admin.usuarioId,
+        { sql: tx },
+      );
+      await guardarAudiencia(doc.id, { listaIds: [listaId], lecturaObligatoriaIngreso: false }, admin.usuarioId, { sql: tx });
+      await pedirAcuses(admin, doc.id, { sql: tx, ahora: T1 });
+      expect((await acusesPendientesDe(porLista.usuarioId, { sql: tx })).length).toBe(1);
+
+      await guardarAudiencia(doc.id, { listaIds: [], lecturaObligatoriaIngreso: false }, admin.usuarioId, { sql: tx, ahora: T2 });
+      expect(await acusesPendientesDe(porLista.usuarioId, { sql: tx })).toEqual([]);
+      const [fila] = await delDocumento(tx, doc.codigo, porLista.usuarioId);
+      expect(fila).toMatchObject({ estado: "retirado", motivo_cierre: "salio_de_audiencia" });
+      const eventos = await tx`SELECT tipo FROM acuse_eventos WHERE acuse_id = ${fila.id} ORDER BY id`;
+      expect(eventos.map((e) => e.tipo)).toEqual(["creado", "retirado"]);
+      expect((await acusesPendientesDe(porProceso.usuarioId, { sql: tx })).length).toBe(1);
+    }));
+});
+
 describe("lote de usuarios", () => {
   it("suma las tareas de lectura de las personas creadas en procesos con documentos marcados", () =>
     revertida(sql, async (tx) => {

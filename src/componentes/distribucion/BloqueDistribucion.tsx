@@ -5,8 +5,7 @@ import { QuienFalta } from "@/componentes/distribucion/acuses/QuienFalta";
 import { textoPorcentaje } from "@/componentes/distribucion/acuses/TablaAcuses";
 import { DialogoEmitir } from "@/componentes/distribucion/copias/DialogoEmitir";
 import { fechaCorta, InsigniaCopia } from "@/componentes/distribucion/copias/TablaCopias";
-import { obtenerSql } from "@/db/cliente";
-import { acusesDeVersion, quienFalta } from "@/db/consultas/distribucion/acuses";
+import { resumenAcusesDeDocumento } from "@/db/consultas/distribucion/acuses";
 import {
   copiasDeDocumento,
   puntosParaEmitir,
@@ -49,17 +48,16 @@ export async function BloqueDistribucion({
   const puedeEmitir = puede(sesion, "copias.emitir");
   if (!puedeEmitir && !puede(sesion, "distribucion.ver")) return null;
 
-  const [copias, puntos] = await Promise.all([
+  const [copias, puntos, resumenAcuses] = await Promise.all([
     copiasDeDocumento(documento.id, sesion),
     puedeEmitir ? puntosParaEmitir(sesion) : Promise.resolve([]),
+    resumenAcusesDeDocumento(documento.id, sesion),
   ]);
   const ahora = new Date();
-  const [vigente] = await obtenerSql()`SELECT id, numero FROM documento_versiones
-    WHERE documento_id = ${documento.id} AND estado = 'vigente'`;
-  const vigenteId = vigente ? Number(vigente.id) : null;
-  const versionVigente = vigente ? Number(vigente.numero) : null;
-  const acuses = vigenteId === null ? null : await acusesDeVersion(vigenteId);
-  const faltan = vigenteId === null ? null : await quienFalta(vigenteId, sesion);
+  const vigenteId = resumenAcuses?.versionId ?? null;
+  const versionVigente = resumenAcuses?.version ?? null;
+  const acuses = resumenAcuses?.cifras ?? null;
+  const faltan = resumenAcuses?.faltan ?? null;
   const versionAnterior = Math.max(0, ...copias.porRecoger.map((c) => c.version));
   const puedeEmitirAqui = puedeEmitir && copias.versionVigenteId !== null;
 
