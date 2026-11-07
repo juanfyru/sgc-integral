@@ -84,7 +84,15 @@ function campoCsv(valor: string | number): string {
   return /[;,"\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
 }
 
-export function resultadosCsv(resultado: ResultadoLote): string {
+/** La frase del resumen del lote; las tareas de lectura solo se nombran cuando se abrieron. */
+export function resumenLote(r: Pick<ResultadoLote, "creados" | "fallidos"> & Partial<Pick<ResultadoLote, "tareasDeLectura">>): string {
+  const tareas = r.tareasDeLectura ?? 0;
+  const partes = [`${r.creados.length} creados, ${r.fallidos.length} rechazados.`];
+  if (tareas > 0) partes.push(`Se crearon ${tareas} ${tareas === 1 ? "tarea" : "tareas"} de lectura.`);
+  return partes.join(" ");
+}
+
+export function resultadosCsv(resultado: Pick<ResultadoLote, "creados" | "fallidos">): string {
   const filas = [
     ...resultado.creados.map((c) => [c.linea, c.usuario, c.nombre, "creado", c.claveTemporal]),
     ...resultado.fallidos.map((f) => [f.linea, f.usuario, "", "error", f.error]),

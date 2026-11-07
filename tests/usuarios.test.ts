@@ -270,6 +270,7 @@ describe("crearUsuariosEnLote", () => {
     expect(r.fallidos).toHaveLength(1);
     expect(r.fallidos[0]).toMatchObject({ linea: 4, usuario: a });
     expect(r.fallidos[0].error).toMatch(/nombre/);
+    expect(r.tareasDeLectura).toBe(0);
     const [fila] = await sql()`SELECT detalle FROM auditoria WHERE accion = 'crear_usuarios_lote' AND usuario_id = ${actorId} ORDER BY id DESC LIMIT 1`;
     expect(fila.detalle).toMatchObject({ creados: 2, fallidos: 1, usuarios: [a, b] });
     for (const c of r.creados) expect(JSON.stringify(fila.detalle)).not.toContain(c.claveTemporal);

@@ -2,6 +2,7 @@
 import type { TransactionSql } from "postgres";
 import { emitirCopia } from "@/db/consultas/distribucion/copias";
 import type { SesionFlujo } from "@/db/consultas/tramites-flujo";
+import type { DatosUsuario } from "@/db/consultas/usuarios";
 import { documentoLibre, archivoPrincipal, type DocumentoLibre } from "./tramites";
 import { pdfDePrueba } from "./pdf";
 
@@ -68,4 +69,21 @@ export async function copiaSobreVigente(
     { sql: tx, ahora: d.ahora },
   );
   return { copiaId, numero, limpiar };
+}
+
+/** La fila de la persona y sus procesos con la forma que recibe `editarUsuario`, para cambiar un solo campo. */
+export async function datosDeUsuario(tx: TransactionSql, usuarioId: number): Promise<DatosUsuario> {
+  const [u] = await tx`SELECT usuario, nombre, correo, rol, cargo_id, jefe_inmediato_id, ver_historial
+    FROM usuarios WHERE id = ${usuarioId}`;
+  const procesos = await tx`SELECT proceso_id FROM usuario_procesos WHERE usuario_id = ${usuarioId} ORDER BY proceso_id`;
+  return {
+    usuario: u.usuario,
+    nombre: u.nombre,
+    correo: u.correo,
+    rol: u.rol,
+    cargoId: u.cargo_id === null ? null : Number(u.cargo_id),
+    jefeInmediatoId: u.jefe_inmediato_id === null ? null : Number(u.jefe_inmediato_id),
+    procesoIds: procesos.map((p) => Number(p.proceso_id)),
+    verHistorial: u.ver_historial,
+  };
 }

@@ -1,5 +1,6 @@
 import type { Sql, TransactionSql } from "postgres";
 import { obtenerSql } from "@/db/cliente";
+import { retirarAcusesFueraDeAudiencia } from "@/db/consultas/distribucion/acuses";
 import { filtroAcceso, type SujetoVisibilidad } from "@/lib/alcance";
 import { ROLES_ARCHIVO_LISTA } from "@/lib/subida";
 import { hashearClave } from "@/lib/clave";
@@ -504,9 +505,14 @@ async function exigirPropietarioIntacto(
 }
 
 /** Lo que no es parte del contenido aprobado: se edita siempre, con trámite abierto o sin él (spec 13A §8.6). */
-export async function editarCatalogo(documentoId: number, datos: DatosCatalogo, usuarioId: number): Promise<void> {
+export async function editarCatalogo(
+  documentoId: number,
+  datos: DatosCatalogo,
+  usuarioId: number,
+  opciones?: { sql?: Cliente; ahora?: Date },
+): Promise<void> {
   validarAsociaciones(datos.asociaciones);
-  await obtenerSql().begin(async (tx) => {
+  await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
     const situacion = await situacionBloqueada(tx, documentoId);
     await exigirPropietarioIntacto(tx, documentoId, datos.asociaciones.find((a) => a.esPrincipal), situacion);
     const antes = await leerCatalogo(tx, documentoId);
@@ -516,6 +522,8 @@ export async function editarCatalogo(documentoId: number, datos: DatosCatalogo, 
     await tx`DELETE FROM documento_proceso WHERE documento_id = ${documentoId}`;
     await insertarAsociaciones(tx, documentoId, datos.asociaciones);
     await reemplazarRelacionados(tx, documentoId, datos.relacionados);
+    // Lo restringido o un cambio de procesos puede dejar fuera de la audiencia a quien ya tenía la tarea.
+    await retirarAcusesFueraDeAudiencia(tx, documentoId, opciones?.ahora ?? new Date(), "salio_de_audiencia");
     const despues = await leerCatalogo(tx, documentoId);
 
     const cambiaron = (Object.keys(antes) as (keyof typeof antes)[]).filter(

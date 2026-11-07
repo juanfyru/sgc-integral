@@ -6,7 +6,7 @@ import type { TransactionSql } from "postgres";
 import type { Cliente } from "@/db/cliente";
 import { anularVigenteEn, aplicarPublicacion } from "@/db/consultas/admin";
 import { congelarDatosActa, nombreDeEntidadParaActa } from "@/db/consultas/actas";
-import { crearAcusesAlPublicar } from "@/db/consultas/distribucion/acuses";
+import { avisarEliminacion, crearAcusesAlPublicar } from "@/db/consultas/distribucion/acuses";
 import { exigirDesignacion } from "./aceptacion";
 import { listarFirmas, type FirmaRegistrada } from "@/db/consultas/firmas";
 import { crearObservacionesDeAprobacion, criteriosNoCumplen } from "@/db/consultas/revision";
@@ -254,6 +254,8 @@ async function ejecutarEliminacion({ tx, tramite, sesion, ahora }: ContextoManej
   const documentoId = tramite.documentoId as number;
   const { versionId, numero } = await anularVigenteEn(tx, documentoId, sesion.usuarioId, ahora);
   if (versionId !== tramite.versionId) throw new ErrorTramite("La versión vigente cambió: revise el trámite");
+  const [doc] = await tx`SELECT codigo, titulo FROM documentos WHERE id = ${documentoId}`;
+  await avisarEliminacion(tx, documentoId, doc.codigo as string, doc.titulo as string, ahora);
   return {
     detalle: { versionAnulada: numero, acta: await congelarDatosActa(tx, tramite, "eliminacion", ahora) },
     avisos: await avisoDeCierre(tx, tramite, documentoId, `Solicitud ${tramite.numero}: documento eliminado`),

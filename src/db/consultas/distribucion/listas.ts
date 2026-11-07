@@ -1,5 +1,6 @@
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
+import { retirarAcusesDeLista } from "@/db/consultas/distribucion/acuses";
 import { enTransaccion } from "@/db/consultas/flujo/contrato";
 import { traducirUnico } from "@/db/consultas/mapa-admin";
 import { ErrorDistribucion } from "@/lib/distribucion/tipos";
@@ -17,7 +18,7 @@ export type Lista = {
 };
 export type DatosLista = { nombre: string; descripcion: string | null; miembros: Omit<Miembro, "nombre">[] };
 
-type Opciones = { sql?: Cliente };
+type Opciones = { sql?: Cliente; ahora?: Date };
 
 const NOMBRE_REPETIDO = "Ya existe una lista con ese nombre";
 const ORDEN_TIPO: Record<TipoMiembro, number> = { area: 0, cargo: 1, proceso: 2, usuario: 3 };
@@ -182,6 +183,7 @@ export async function editarLista(id: number, datos: DatosLista, actorId: number
       await exigirReferencias(tx, miembros, new Set(previos));
       await tx`UPDATE listas_distribucion SET nombre = ${datos.nombre}, descripcion = ${datos.descripcion} WHERE id = ${id}`;
       await guardarMiembros(tx, id, miembros);
+      await retirarAcusesDeLista(tx, id, opciones?.ahora ?? new Date(), "salio_de_audiencia");
       const previo = {
         nombre: antes.nombre as string,
         descripcion: (antes.descripcion as string | null) ?? null,
@@ -212,6 +214,7 @@ export async function alternarLista(id: number, activa: boolean, actorId: number
     if (!l) throw new ErrorDistribucion("La lista no existe");
     if (l.activa === activa) return;
     await tx`UPDATE listas_distribucion SET activa = ${activa} WHERE id = ${id}`;
+    if (!activa) await retirarAcusesDeLista(tx, id, opciones?.ahora ?? new Date(), "salio_de_audiencia");
     await registrarAuditoria(tx, {
       usuarioId: actorId, accion: `${activa ? "activar" : "desactivar"}_lista`,
       entidad: "listas_distribucion", entidadId: id, detalle: {},

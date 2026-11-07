@@ -76,6 +76,8 @@ export function parsearLista(formData: FormData): DatosLista {
   };
 }
 
+export const EsquemaPedirAcuses = z.object({ documentoId: id }).strict();
+
 export const EsquemaConfirmarLectura = z
   .object({ confirmo: z.literal("on", { error: "Marque la casilla para confirmar" }) })
   .strict();

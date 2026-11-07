@@ -199,6 +199,10 @@ export function describirEvento(e: EventoAuditoria): string {
       return `Anuló ${cod ?? "un documento"} (versión vigente ${d.versionAnulada ?? "?"})`;
     case "exporto_maestro":
       return `Emitió el Listado Maestro (${texto(d.formato) ?? "?"}, ${texto(d.incluir) ?? "?"})`;
+    case "exporto_acuses":
+      return `Emitió el cumplimiento de lectura (${texto(d.formato) ?? "?"}, ${texto(d.desde) ?? "?"} a ${texto(d.hasta) ?? "?"})`;
+    case "acuses_pedidos":
+      return `Pidió el acuse de lectura de ${cod ?? "un documento"} (${d.creados ?? 0} nuevos)`;
     case "subir_logo":
       return `Cambió el logo de la entidad («${texto(d.nombre) ?? "?"}», ${d.ancho ?? "?"} × ${d.alto ?? "?"})`;
     case "quitar_logo":
@@ -284,6 +288,8 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   eliminar_archivo: "Eliminó un archivo",
   anular_documento: "Anuló un documento",
   exporto_maestro: "Emitió el Listado Maestro",
+  exporto_acuses: "Emitió el cumplimiento de lectura",
+  acuses_pedidos: "Pidió acuses de lectura",
   subir_logo: "Cambió el logo de la entidad",
   quitar_logo: "Quitó el logo de la entidad",
   cambiar_clave: "Cambió su clave",

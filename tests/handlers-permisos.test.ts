@@ -27,6 +27,7 @@ import { GET as excelMaestro } from "@/app/(app)/admin/(panel)/maestro/excel/rou
 import { GET as verArchivoTramite } from "@/app/(app)/tramites/[id]/archivos/[archivoId]/[[...nombre]]/route";
 import { DELETE as quitarArchivoTramite } from "@/app/api/tramites/[id]/archivos/[archivoId]/route";
 import { POST as subirArchivoTramite } from "@/app/api/tramites/[id]/archivos/route";
+import { GET as excelAcuses } from "@/app/(app)/distribucion/acuses/excel/route";
 import { GET as pdfCopia } from "@/app/(app)/distribucion/copias/[id]/pdf/route";
 import { POST as reimprimirCopiaRuta } from "@/app/(app)/distribucion/copias/[id]/reimprimir/route";
 import { obtenerSql } from "@/db/cliente";
@@ -109,6 +110,26 @@ describe("GET /admin/api/acta-ejemplo", () => {
     expect(contieneTexto(paginas.join("\n"), "Criterios que no cumplen, con concepto favorable")).toBe(true);
     const [despues] = await conteo();
     expect({ ...despues }).toEqual({ ...antes });
+  });
+});
+
+describe("GET /distribucion/acuses/excel", () => {
+  const pedir = (token?: string) =>
+    excelAcuses(new NextRequest("http://localhost:3002/distribucion/acuses/excel", token ? { headers: cookie(token) } : undefined));
+
+  it("401 sin sesión y 403 a quien no ve la distribución", async () => {
+    expect((await pedir()).status).toBe(401);
+    expect((await pedir(tokenConsulta)).status).toBe(403);
+  });
+
+  it("control interno recibe el Excel sin caché y queda auditado", async () => {
+    const res = await pedir(tokenCi);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(res.headers.get("Content-Disposition")).toMatch(/^attachment; filename="acuses-\d{8}\.xlsx"$/);
+    const [u] = await sql()`SELECT id FROM usuarios WHERE usuario = ${`zz_ci_${SUFIJO}`}`;
+    const filas = await sql()`SELECT 1 FROM auditoria WHERE usuario_id = ${u.id} AND accion = 'exporto_acuses'`;
+    expect(filas.length).toBe(1);
   });
 });
 

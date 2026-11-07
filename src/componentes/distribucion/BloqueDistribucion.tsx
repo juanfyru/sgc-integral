@@ -1,8 +1,12 @@
 import Link from "next/link";
 import { FormAccion } from "@/componentes/admin/FormAccion";
-import { reemplazarCopiasAccion } from "@/app/acciones-distribucion";
+import { pedirAcusesAccion, reemplazarCopiasAccion } from "@/app/acciones-distribucion";
+import { QuienFalta } from "@/componentes/distribucion/acuses/QuienFalta";
+import { textoPorcentaje } from "@/componentes/distribucion/acuses/TablaAcuses";
 import { DialogoEmitir } from "@/componentes/distribucion/copias/DialogoEmitir";
-import { InsigniaCopia } from "@/componentes/distribucion/copias/TablaCopias";
+import { fechaCorta, InsigniaCopia } from "@/componentes/distribucion/copias/TablaCopias";
+import { obtenerSql } from "@/db/cliente";
+import { acusesDeVersion, quienFalta } from "@/db/consultas/distribucion/acuses";
 import {
   copiasDeDocumento,
   puntosParaEmitir,
@@ -50,6 +54,12 @@ export async function BloqueDistribucion({
     puedeEmitir ? puntosParaEmitir(sesion) : Promise.resolve([]),
   ]);
   const ahora = new Date();
+  const [vigente] = await obtenerSql()`SELECT id, numero FROM documento_versiones
+    WHERE documento_id = ${documento.id} AND estado = 'vigente'`;
+  const vigenteId = vigente ? Number(vigente.id) : null;
+  const versionVigente = vigente ? Number(vigente.numero) : null;
+  const acuses = vigenteId === null ? null : await acusesDeVersion(vigenteId);
+  const faltan = vigenteId === null ? null : await quienFalta(vigenteId, sesion);
   const versionAnterior = Math.max(0, ...copias.porRecoger.map((c) => c.version));
   const puedeEmitirAqui = puedeEmitir && copias.versionVigenteId !== null;
 
@@ -78,6 +88,29 @@ export async function BloqueDistribucion({
           </div>
         ) : null}
       </div>
+      {acuses && (acuses.confirmados + acuses.pendientes > 0 || puede(sesion, "distribucion.gestionar")) ? (
+        <div className="mt-4 flex flex-col gap-2 border-t border-border pt-3">
+          <h3 className="text-xs font-semibold text-muted-foreground">Acuses de lectura</h3>
+          <p className="text-sm">
+            {acuses.confirmados + acuses.pendientes === 0
+              ? "Nadie tiene este documento por leer."
+              : `Acuses v${versionVigente}: ${acuses.confirmados} de ${acuses.confirmados + acuses.pendientes} (${textoPorcentaje(acuses.porcentaje)})${
+                  acuses.venceEn ? ` · vencen el ${fechaCorta(acuses.venceEn)}` : ""
+                }${acuses.porAsistencia > 0 ? ` · ${acuses.porAsistencia} por asistencia` : ""}`}
+          </p>
+          <div className="flex flex-wrap items-start gap-2">
+            {faltan && faltan.length > 0 ? <QuienFalta titulo={`${documento.codigo} v${versionVigente}`} personas={faltan} /> : null}
+            {puede(sesion, "distribucion.gestionar") && vigenteId !== null ? (
+              <FormAccion
+                accion={pedirAcusesAccion}
+                etiqueta="Pedir acuse de lectura"
+                confirmacion="Crea la tarea de confirmar la lectura de la versión vigente a quienes aún no la tienen. A quien ya la tiene no se le repite."
+                campos={{ documentoId: documento.id }}
+              />
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
