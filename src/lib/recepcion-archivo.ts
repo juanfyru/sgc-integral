@@ -11,6 +11,8 @@ import {
   TAMANO_MAXIMO_BYTES,
   TAMANO_MUESTRA_BYTES,
   validarTipo,
+  validarTipoEvidencia,
+  type ContextoEvidencia,
   type RolArchivo,
 } from "@/lib/subida";
 
@@ -56,6 +58,21 @@ async function descartarResto(lector: ReadableStreamDefaultReader<Uint8Array>, l
   }
 }
 
+export type DestinoVersion = {
+  contexto?: "version";
+  versionId: number;
+  codigo: string;
+  numero: number;
+  rol: RolArchivo;
+  tramiteId?: number;
+};
+/** `carpeta` es relativa al almacén: `jornadas/<id>` o `verificaciones/<verificacionId>/items/<itemId>`. */
+export type DestinoEvidencia = { contexto: ContextoEvidencia; contextoId: number; carpeta: string };
+
+function esEvidencia(destino: DestinoVersion | DestinoEvidencia): destino is DestinoEvidencia {
+  return destino.contexto !== undefined && destino.contexto !== "version";
+}
+
 export function nombreDeArchivo(peticion: NextRequest): string {
   return decodeURIComponent(peticion.headers.get("x-nombre-archivo") ?? "");
 }
@@ -66,7 +83,7 @@ export function nombreDeArchivo(peticion: NextRequest): string {
  */
 export async function recibirArchivo(
   peticion: NextRequest,
-  destino: { versionId: number; codigo: string; numero: number; rol: RolArchivo; tramiteId?: number },
+  destino: DestinoVersion | DestinoEvidencia,
   usuarioId: number,
 ): Promise<NextResponse> {
   const nombreCrudo = nombreDeArchivo(peticion);
@@ -94,7 +111,9 @@ export async function recibirArchivo(
   let despl = 0;
   for (const p of previos) { muestra.set(p, despl); despl += p.byteLength; }
 
-  const tipo = await validarTipo(nombreCrudo, muestra);
+  const tipo = esEvidencia(destino)
+    ? await validarTipoEvidencia(nombreCrudo, muestra)
+    : await validarTipo(nombreCrudo, muestra);
   if (!tipo.ok) {
     await descartarResto(lector, acumulado);
     return error(415, tipo.error);
@@ -102,7 +121,9 @@ export async function recibirArchivo(
 
   // ── Destino en el almacén ──
   const nombre = sanearNombre(nombreCrudo);
-  const carpeta = `documentos/${destino.codigo}/v${destino.numero}`;
+  const carpeta = esEvidencia(destino)
+    ? destino.carpeta
+    : `documentos/${destino.codigo}/v${destino.numero}`;
   const ruta = await rutaLibre(carpeta, nombre);
   if (!ruta) {
     await descartarResto(lector, acumulado);
@@ -139,15 +160,18 @@ export async function recibirArchivo(
     if (declarado !== null && total !== declarado) throw new Error("incompleto");
     if (total === 0) throw new Error("vacio");
 
-    const { id } = await registrarArchivo(
-      {
-        versionId: destino.versionId, rol: destino.rol, ruta: ruta.relativa,
-        nombreOriginal: nombreCrudo, extension: tipo.extension, mime: tipo.mime,
-        tamanoBytes: total, hashSha256: hash.digest("hex"),
-      },
-      usuarioId,
-      { tramiteId: destino.tramiteId },
-    );
+    const comunes = {
+      ruta: ruta.relativa, nombreOriginal: nombreCrudo, extension: tipo.extension, mime: tipo.mime,
+      tamanoBytes: total, hashSha256: hash.digest("hex"),
+    };
+    const { id } = esEvidencia(destino)
+      ? await registrarArchivo(
+          { versionId: null, rol: "evidencia", contexto: destino.contexto, contextoId: destino.contextoId, ...comunes },
+          usuarioId,
+        )
+      : await registrarArchivo({ versionId: destino.versionId, rol: destino.rol, ...comunes }, usuarioId, {
+          tramiteId: destino.tramiteId,
+        });
     return NextResponse.json(
       { id, nombre: nombreCrudo, mime: tipo.mime, tamanoBytes: total },
       { status: 201 },

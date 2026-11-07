@@ -733,14 +733,33 @@ export async function obtenerVersionParaSubida(versionId: number) {
 
 export async function registrarArchivo(
   datos: {
-    versionId: number; rol: string; ruta: string; nombreOriginal: string;
+    versionId: number | null; rol: string; ruta: string; nombreOriginal: string;
     extension: string; mime: string; tamanoBytes: number; hashSha256: string;
+    /** Solo las evidencias: `versionId` es nulo y el contexto dice a qué cuelgan. */
+    contexto?: string; contextoId?: number | null;
   },
   usuarioId: number,
   opciones?: OpcionesEscritura,
 ): Promise<{ id: number }> {
   try {
     return await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+      if (datos.versionId === null) {
+        if (!datos.contexto || datos.contexto === "version" || datos.contextoId == null) {
+          throw new Error("Una evidencia necesita su contexto");
+        }
+        const [evidencia] = await tx`INSERT INTO archivos
+            (version_id, contexto, contexto_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
+          VALUES (NULL, ${datos.contexto}, ${datos.contextoId}, ${datos.rol}, ${datos.ruta}, ${datos.nombreOriginal},
+                  ${datos.extension}, ${datos.mime}, ${datos.tamanoBytes}, ${datos.hashSha256})
+          RETURNING id`;
+        await registrarAuditoria(tx, {
+          usuarioId, accion: "subir_archivo", entidad: "archivo", entidadId: evidencia.id,
+          detalle: {
+            contexto: datos.contexto, contextoId: datos.contextoId, rol: datos.rol, nombre: datos.nombreOriginal,
+          },
+        });
+        return { id: evidencia.id };
+      }
       await exigirEscrituraEnVersion(tx, datos.versionId, desdeTramite(opciones, usuarioId));
       // Choca con el `FOR UPDATE` de publicar: lo que esperaba el candado ve la versión ya publicada.
       const [version] = await tx`SELECT estado FROM documento_versiones WHERE id = ${datos.versionId} FOR SHARE`;

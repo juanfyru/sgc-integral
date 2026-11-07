@@ -1,4 +1,5 @@
 /** Ayudantes de los tests de la distribución: todo corre dentro de una transacción que se revierte. */
+import { NextRequest } from "next/server";
 import type { TransactionSql } from "postgres";
 import { emitirCopia } from "@/db/consultas/distribucion/copias";
 import type { SesionFlujo } from "@/db/consultas/tramites-flujo";
@@ -86,4 +87,19 @@ export async function datosDeUsuario(tx: TransactionSql, usuarioId: number): Pro
     procesoIds: procesos.map((p) => Number(p.proceso_id)),
     verHistorial: u.ver_historial,
   };
+}
+
+/** Una subida de cuerpo crudo como la que reciben las rutas de archivos, lista para llamarlas directo. */
+export function peticionDeSubida(nombre: string, bytes: Uint8Array, cabeceras: Record<string, string> = {}): NextRequest {
+  return new NextRequest("http://localhost:3002/api/subida", {
+    method: "POST",
+    body: bytes as BodyInit,
+    duplex: "half",
+    headers: {
+      origin: "http://localhost:3002",
+      "x-nombre-archivo": encodeURIComponent(nombre),
+      "content-length": String(bytes.byteLength),
+      ...cabeceras,
+    },
+  } as ConstructorParameters<typeof NextRequest>[1]);
 }

@@ -24,6 +24,7 @@ import { POST as subirAlPanel } from "@/app/admin/api/archivos/route";
 import { ErrorTramite } from "@/db/consultas/flujo/contrato";
 import { recibirArchivo } from "@/lib/recepcion-archivo";
 import { TAMANO_MAXIMO_BYTES } from "@/lib/subida";
+import { pngDePrueba } from "./png-prueba";
 
 const PDF = new TextEncoder().encode("%PDF-1.4\n%contenido de prueba\n%%EOF");
 const DESTINO = { versionId: 4, codigo: "GTH-PR-02", numero: 2, rol: "principal" } as const;
@@ -61,6 +62,7 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(path.join(almacen, "documentos"), { recursive: true, force: true });
+  rmSync(path.join(almacen, "jornadas"), { recursive: true, force: true });
 });
 
 describe("recibirArchivo", () => {
@@ -283,5 +285,38 @@ describe("POST del panel: el orden de siempre", () => {
     expect((await subir()).status).toBe(201);
     expect(registrarArchivo.mock.calls[0][0]).toMatchObject({ versionId: 4, rol: "principal", ruta: `${CARPETA}/informe-final.pdf` });
     expect(registrarArchivo.mock.calls[0][1]).toBe(1);
+  });
+});
+
+describe("recibirArchivo de una evidencia", () => {
+  const EVIDENCIA = { contexto: "jornada", contextoId: 5, carpeta: "jornadas/5" } as const;
+
+  it("guarda en almacen/<carpeta>/<nombre> y registra sin versión, con contexto y rol evidencia", async () => {
+    const png = pngDePrueba(8, 8);
+    const res = await recibirArchivo(peticion(png as BodyInit, { "x-nombre-archivo": encodeURIComponent("Foto Sala.png") }), EVIDENCIA, 3);
+    expect(res.status).toBe(201);
+    expect(registrarArchivo).toHaveBeenCalledWith(
+      {
+        versionId: null, contexto: "jornada", contextoId: 5, rol: "evidencia", ruta: "jornadas/5/foto-sala.png",
+        nombreOriginal: "Foto Sala.png", extension: "png", mime: "image/png", tamanoBytes: png.byteLength,
+        hashSha256: createHash("sha256").update(png).digest("hex"),
+      },
+      3,
+    );
+    expect(readFileSync(path.join(almacen, "jornadas", "5", "foto-sala.png"))).toEqual(Buffer.from(png));
+  });
+
+  it("solo admite PDF o imagen: un docx responde 415 y no deja archivo", async () => {
+    const res = await recibirArchivo(peticion(PDF, { "x-nombre-archivo": "lista.docx" }), EVIDENCIA, 3);
+    expect(res.status).toBe(415);
+    expect(await res.json()).toEqual({ error: "La evidencia debe ser PDF o imagen (PNG, JPG, WebP)" });
+    expect(registrarArchivo).not.toHaveBeenCalled();
+    expect(existsSync(path.join(almacen, "jornadas"))).toBe(false);
+  });
+
+  it("el destino de versión conserva su carpeta, aunque declare su contexto", async () => {
+    await recibirArchivo(peticion(PDF), { ...DESTINO, contexto: "version" }, 3);
+    expect(registrarArchivo.mock.calls[0][0].ruta).toBe(`${CARPETA}/informe-final.pdf`);
+    expect(registrarArchivo.mock.calls[0][0].versionId).toBe(4);
   });
 });
