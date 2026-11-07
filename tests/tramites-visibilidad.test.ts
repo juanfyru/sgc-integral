@@ -225,6 +225,8 @@ describe("el acta de un trámite cerrado (acta con formato, §6)", () => {
 
   it("un trámite cancelado o rechazado no tiene acta", () => revertida(sql, async (tx) => {
     const t = await tramiteGth(tx);
+    await cerrar(tx, t, "publicado", "vigente");      // con la versión fijada, solo la etapa decide
+    expect(await versionDeActa(t.tramiteId, { sql: tx })).not.toBeNull();
     for (const etapa of ["cancelado", "rechazado"]) {
       await tx`UPDATE tramites SET etapa = ${etapa} WHERE id = ${t.tramiteId}`;
       expect(await versionDeActa(t.tramiteId, { sql: tx })).toBeNull();

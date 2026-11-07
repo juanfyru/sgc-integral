@@ -1070,6 +1070,19 @@ describe("criterios que no cumplen en pantalla", () => {
     expect(estadoDelConcepto(panel({ criterios: [] }))).toBe("");
   });
 
+  it("con el diálogo abierto, la casilla obligatoria queda dentro del formulario, antes de la clave", () => {
+    const html = renderToStaticMarkup(
+      <FormularioFirma titulo="Firmar" etiquetaBoton="Dar concepto favorable" resumen={{ documento: "Doc", version: 1, huella: null }} accion={vi.fn()} ocultos={{}} pideCodigo={false} alCancelar={() => {}}>
+        <AvisoCriterios criterios={[criterio]} huella={HUELLA_CRITERIOS} titulo="Hay criterios" confirmacion="Confirmo" />
+      </FormularioFirma>,
+    );
+    const formulario = html.slice(html.indexOf("<form"), html.indexOf("</form>"));
+    const casilla = formulario.search(CASILLA);
+    expect(casilla).toBeGreaterThan(0);
+    expect(formulario.indexOf('name="clave"')).toBeGreaterThan(casilla);
+    expect(html.indexOf("</form>")).toBeGreaterThan(html.search(CASILLA));
+  });
+
   it("con criterios, el diálogo del revisor lleva la lista y la casilla en singular y en plural", () => {
     dialogos.llamadas.length = 0;
     expect(panel()).not.toMatch(/disabled=""/);

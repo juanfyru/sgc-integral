@@ -7,7 +7,7 @@
  */
 import { existsSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
-import { afterAll, describe, expect, it, type TestContext } from "vitest";
+import { afterAll, describe, expect, it, vi, type TestContext } from "vitest";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
@@ -163,7 +163,14 @@ describe("la historia sembrada", () => {
     const t = await tramiteDe(1);
     const datos = await reunirDatosActa(t.id);
     expect(datos?.firmas.map((f) => f.firma)).toEqual(["Elaboró", "Revisó", "Aprobó", "Publicó"]);
-    expect(Buffer.from(await generarActa(datos!)).subarray(0, 5).toString()).toBe("%PDF-");
+    // Sin membrete, el formato congelado no llega: el aviso de «no se recibió el archivo» es lo esperado.
+    const aviso = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(Buffer.from(await generarActa(datos!)).subarray(0, 5).toString()).toBe("%PDF-");
+      expect(aviso).toHaveBeenCalled();
+    } finally {
+      aviso.mockRestore();
+    }
   });
 
   it("en la segunda ronda firmó quien elabora, con la huella del archivo de cada ronda", async () => {
@@ -286,9 +293,15 @@ describe("el formato de acta de la demo", () => {
     await exigirDemoIntacta(ctx, sql);
     const { formatoActa } = await obtenerConfigDocumental();
     const [d] = await sql`SELECT id FROM documentos WHERE codigo = 'SGC-FO-06'`;
-    exigirDemo(ctx, formatoActa.documentoId === Number(d?.id), "se eligió otro formato del acta");
+    const revision = formatoActa.documentoId ? await revisarFormatoActa(formatoActa.documentoId) : null;
+    exigirDemo(
+      ctx,
+      formatoActa.documentoId === Number(d?.id) && formatoActa.margenSuperiorCm === 4.2 && formatoActa.margenInferiorCm === 3.2 &&
+        revision?.estado === "listo" && revision.version === 1,
+      "se eligió otro formato del acta, otros márgenes u otra versión",
+    );
     expect(formatoActa).toMatchObject({ margenSuperiorCm: 4.2, margenInferiorCm: 3.2 });
-    expect(await revisarFormatoActa(formatoActa.documentoId)).toMatchObject({ estado: "listo", codigo: "SGC-FO-06", version: 1 });
+    expect(revision).toMatchObject({ estado: "listo", codigo: "SGC-FO-06", version: 1 });
     // Es el formato de la demo, y no un placeholder que también serviría.
     const [{ ruta }] = await sql`SELECT a.ruta FROM archivos a JOIN documento_versiones v ON v.id = a.version_id
       WHERE v.documento_id = ${d.id} AND a.rol = 'principal'`;
