@@ -47,3 +47,25 @@ export function copiaDePrueba(
 ): Promise<{ copiaId: number; numero: number }> {
   return emitirCopia(d.emisor, { documentoId: d.documento.id, puntoUsoId: d.punto.id, nota: null }, { sql: tx, ahora: d.ahora });
 }
+
+/**
+ * Para los documentos que `tramiteEn` crea con `documentoLibre`: cambia la fila falsa del principal de
+ * la versión vigente de `codigo` por un PDF real (`ALMACEN_RUTA` debe ser una carpeta temporal) y
+ * emite una copia con la función real.
+ */
+export async function copiaSobreVigente(
+  tx: TransactionSql,
+  d: { emisor: SesionFlujo; codigo: string; punto: { id: number }; ahora?: Date },
+): Promise<{ copiaId: number; numero: number; limpiar: () => Promise<void> }> {
+  const [v] = await tx`SELECT v.id, v.documento_id FROM documento_versiones v
+    JOIN documentos doc ON doc.id = v.documento_id
+    WHERE doc.codigo = ${d.codigo} AND v.estado = 'vigente'`;
+  await tx`DELETE FROM archivos WHERE version_id = ${v.id} AND rol = 'principal'`;
+  const { limpiar } = await archivoPrincipal(tx, Number(v.id), await pdfDePrueba([[612, 792]]));
+  const { copiaId, numero } = await emitirCopia(
+    d.emisor,
+    { documentoId: Number(v.documento_id), puntoUsoId: d.punto.id, nota: null },
+    { sql: tx, ahora: d.ahora },
+  );
+  return { copiaId, numero, limpiar };
+}

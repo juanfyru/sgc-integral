@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 export default async function Inicio() {
   const sesion = await exigirSesion();
   const misProcesos = sesion.rol === "lider_proceso" ? await procesosAsignados(sesion.usuarioId) : null;
-  const [datos, marca, tareas] = await Promise.all([
+  const [datos, marca, { tareas }] = await Promise.all([
     obtenerDatosMapa(sesion),
     obtenerMarcaSegura(),
     misTareas(sesion),

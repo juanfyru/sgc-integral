@@ -13,6 +13,7 @@ import {
   sugerirCodigo,
   type DestinoDeCodigo,
 } from "./codigos";
+import { alDejarDeSerVigente } from "./distribucion/version-vigencia";
 import { obtenerConfigDocumental } from "./config-documental";
 import { ErrorTramite, enTransaccion } from "./flujo/contrato";
 
@@ -605,7 +606,10 @@ export async function aplicarPublicacion(
   const documentoId = Number(version.documento_id);
   const anteriores = await tx`UPDATE documento_versiones SET estado = 'obsoleto'
     WHERE documento_id = ${documentoId} AND estado = 'vigente'
-    RETURNING numero`;
+    RETURNING id, numero`;
+  for (const anterior of anteriores) {
+    await alDejarDeSerVigente(tx, Number(anterior.id), "nueva_version", ahora, { nuevaVersionId: versionId, actorId: usuarioId });
+  }
   await tx`UPDATE documento_versiones
     SET estado = 'vigente', origen_aprobacion = ${origen}, publicado_en = ${ahora}
     WHERE id = ${versionId}`;
@@ -658,21 +662,30 @@ export async function publicarVersion(
  * Devuelve a `descartado` una versión cargada por error: conserva sus archivos, queda en la bitácora y
  * libera su número. El documento conserva su código y queda listo para registrarse de nuevo (spec 13A §13.2).
  */
-export async function deshacerCarga(documentoId: number, motivo: string, usuarioId: number): Promise<void> {
+export function deshacerCarga(documentoId: number, motivo: string, usuarioId: number, ahora: Date = new Date()): Promise<void> {
+  return obtenerSql().begin((tx) => deshacerCargaEn(tx, documentoId, motivo, usuarioId, ahora)) as Promise<void>;
+}
+
+export async function deshacerCargaEn(
+  tx: TransactionSql,
+  documentoId: number,
+  motivo: string,
+  usuarioId: number,
+  ahora: Date = new Date(),
+): Promise<void> {
   const razon = motivo.trim();
   if (!razon) throw new Error("Escriba el motivo");
-  await obtenerSql().begin(async (tx) => {
-    await exigirCargaAbierta(tx);
-    const impedimento = impedimentoDeDeshacer(await situacionBloqueada(tx, documentoId));
-    if (impedimento) throw new Error(impedimento);
-    const [version] = await tx`UPDATE documento_versiones SET estado = 'descartado'
-      WHERE documento_id = ${documentoId} AND estado = 'vigente'
-      RETURNING id, numero`;
-    await tx`UPDATE documentos SET actualizado_en = now() WHERE id = ${documentoId}`;
-    await registrarAuditoria(tx, {
-      usuarioId, accion: "deshacer_carga", entidad: "documento", entidadId: documentoId,
-      detalle: { versionId: version.id, numero: version.numero, motivo: razon },
-    });
+  await exigirCargaAbierta(tx);
+  const impedimento = impedimentoDeDeshacer(await situacionBloqueada(tx, documentoId));
+  if (impedimento) throw new Error(impedimento);
+  const [version] = await tx`UPDATE documento_versiones SET estado = 'descartado'
+    WHERE documento_id = ${documentoId} AND estado = 'vigente'
+    RETURNING id, numero`;
+  await alDejarDeSerVigente(tx, Number(version.id), "carga_deshecha", ahora, { actorId: usuarioId });
+  await tx`UPDATE documentos SET actualizado_en = now() WHERE id = ${documentoId}`;
+  await registrarAuditoria(tx, {
+    usuarioId, accion: "deshacer_carga", entidad: "documento", entidadId: documentoId,
+    detalle: { versionId: version.id, numero: version.numero, motivo: razon },
   });
 }
 
@@ -978,6 +991,7 @@ export async function anularVigenteEn(
   tx: TransactionSql,
   documentoId: number,
   usuarioId: number,
+  ahora: Date = new Date(),
 ): Promise<{ versionId: number; numero: number }> {
   const [anulada] = await tx`UPDATE documento_versiones SET estado = 'anulado'
     WHERE documento_id = ${documentoId} AND estado = 'vigente'
@@ -985,6 +999,7 @@ export async function anularVigenteEn(
   if (!anulada) {
     throw new Error("El documento no tiene versión vigente que anular");
   }
+  await alDejarDeSerVigente(tx, Number(anulada.id), "eliminado", ahora, { actorId: usuarioId });
   await registrarAuditoria(tx, {
     usuarioId, accion: "anular_documento", entidad: "documento",
     entidadId: documentoId, detalle: { versionAnulada: anulada.numero },

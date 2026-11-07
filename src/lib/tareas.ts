@@ -1,4 +1,5 @@
 import type { Cliente } from "@/db/cliente";
+import { tareasDeCopias } from "@/db/consultas/distribucion/tareas";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { listarTramites, type ResumenTramite } from "@/db/consultas/tramites";
 
@@ -33,15 +34,22 @@ export function tituloDeTarea(t: ResumenTramite): string {
   }
 }
 
-/** Los pasos que le tocan a la persona: la pestaña «Por hacer» de la bandeja, con otra forma (spec 13A §14.1). */
-export async function misTareas(sesion: SesionFlujo, opciones?: { sql?: Cliente }): Promise<Tarea[]> {
-  const tramites = await listarTramites(sesion, "por_hacer", opciones);
-  return tramites.map((t) => ({
-    id: `tramite:${t.id}`,
-    modulo: "documentos",
-    titulo: tituloDeTarea(t),
-    detalle: t.titulo,
-    vence: t.venceEn,
-    enlace: `/tramites/${t.id}`,
-  }));
+/** Los pasos que le tocan a la persona: los trámites (la pestaña «Por hacer» de la bandeja, spec 13A §14.1) y las copias. */
+export async function misTareas(
+  sesion: SesionFlujo,
+  opciones?: { sql?: Cliente },
+): Promise<{ tareas: Tarea[]; total: number }> {
+  const [tramites, copias] = await Promise.all([listarTramites(sesion, "por_hacer", opciones), tareasDeCopias(sesion, opciones)]);
+  const tareas: Tarea[] = [
+    ...tramites.map((t) => ({
+      id: `tramite:${t.id}`,
+      modulo: "documentos" as const,
+      titulo: tituloDeTarea(t),
+      detalle: t.titulo,
+      vence: t.venceEn,
+      enlace: `/tramites/${t.id}`,
+    })),
+    ...copias,
+  ];
+  return { tareas, total: tareas.length };
 }

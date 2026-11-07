@@ -53,7 +53,7 @@ describe("tituloDeTarea", () => {
 describe("misTareas", () => {
   const enlaceDe = (tramiteId: number) => `/tramites/${tramiteId}`;
   const tiene = async (sesion: SesionFlujo, tx: TransactionSql, tramiteId: number) =>
-    (await misTareas(sesion, { sql: tx })).some((t) => t.enlace === enlaceDe(tramiteId));
+    (await misTareas(sesion, { sql: tx })).tareas.some((t) => t.enlace === enlaceDe(tramiteId));
 
   it("en revisión la tarea es del revisor, con su enlace y su vencimiento", () => revertida(sql, async (tx) => {
     const t = await tramiteEn(tx, "revision");
@@ -61,7 +61,7 @@ describe("misTareas", () => {
       const [v] = await tx`SELECT numero FROM documento_versiones WHERE id = ${t.versionId}`;
       const [fila] = await tx`SELECT vence_en FROM tramites WHERE id = ${t.tramiteId}`;
       const [doc] = await tx`SELECT d.titulo FROM documentos d JOIN tramites t ON t.documento_id = d.id WHERE t.id = ${t.tramiteId}`;
-      const tareas = await misTareas(t.revisor, { sql: tx });
+      const { tareas } = await misTareas(t.revisor, { sql: tx });
       expect(tareas.find((x) => x.enlace === enlaceDe(t.tramiteId))).toEqual({
         id: `tramite:${t.tramiteId}`,
         modulo: "documentos",
@@ -93,7 +93,7 @@ describe("misTareas", () => {
   it("el visto bueno es de los líderes del proceso, y la solicitud no es tarea de quien la retiraría", () => revertida(sql, async (tx) => {
     const t = await tramiteEn(tx, "visto_bueno");
     const lider = await sesionDe(tx, "lider.gth");
-    expect((await misTareas(lider, { sql: tx })).find((x) => x.enlace === enlaceDe(t.tramiteId))?.titulo).toMatch(/^Dar el visto bueno a SOL-/);
+    expect((await misTareas(lider, { sql: tx })).tareas.find((x) => x.enlace === enlaceDe(t.tramiteId))?.titulo).toMatch(/^Dar el visto bueno a SOL-/);
     expect(await tiene(t.admin, tx, t.tramiteId)).toBe(false);
   }));
 

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MOTIVOS_ANULACION } from "@/lib/distribucion/tipos";
 import type { DatosPuntoUso } from "@/db/consultas/distribucion/puntos-uso";
 import { lista } from "@/lib/esquemas/tramites";
 import { parsearFormulario, textoAcotado } from "@/lib/validacion";
@@ -28,3 +29,25 @@ export function parsearPuntoUso(formData: FormData): DatosPuntoUso {
     procesoIds: d.procesoIds,
   };
 }
+
+export const EsquemaEmitirCopia = z
+  .object({
+    documentoId: id,
+    puntoUsoId: id,
+    nota: textoAcotado("La nota", 0, 200).optional(),
+    reemplazaCopiaId: id.optional(),
+  })
+  .strict();
+
+export const EsquemaRecogida = z.object({ destino: z.enum(["devuelta", "destruida", "no_encontrada"]) }).strict();
+
+export const EsquemaReemplazo = z.object({ destino: z.enum(["devuelta", "destruida"]) }).strict();
+
+export const EsquemaAnulacion = z
+  .object({
+    motivo: z.enum(MOTIVOS_ANULACION, { error: "Elija el motivo de la anulación" }),
+    texto: textoAcotado("La explicación", 0, 300).optional(),
+  })
+  .strict();
+
+export const EsquemaReemplazarCopias = z.object({ versionId: id }).strict();

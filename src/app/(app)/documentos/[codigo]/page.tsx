@@ -15,6 +15,7 @@ import {
   formatearTamano,
   formatoDesdeMime,
 } from "@/componentes/documentos/IconoFormato";
+import { BloqueDistribucion } from "@/componentes/distribucion/BloqueDistribucion";
 import { DatosDeAprobacion } from "@/componentes/documentos/DatosDeAprobacion";
 import { VisorPdf } from "@/componentes/documentos/VisorPdf";
 import { Migas } from "@/componentes/navegacion/Migas";
@@ -267,6 +268,8 @@ export default async function FichaDocumento({
               <DatosDeAprobacion origen={ficha.version.origenAprobacion} tramiteId={ficha.version.tramiteId} />
             </dl>
           </section>
+
+          <BloqueDistribucion documento={{ id: ficha.id, codigo: ficha.codigo, titulo: ficha.titulo }} sesion={sesion} />
 
           <section aria-labelledby="titulo-ubicaciones">
             <h2

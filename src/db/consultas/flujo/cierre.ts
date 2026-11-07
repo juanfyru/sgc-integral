@@ -246,7 +246,7 @@ async function publicarVersion(c: ContextoManejador, aprobador?: Firmante): Prom
 
 async function ejecutarEliminacion({ tx, tramite, sesion, ahora }: ContextoManejador): Promise<Efecto> {
   const documentoId = tramite.documentoId as number;
-  const { versionId, numero } = await anularVigenteEn(tx, documentoId, sesion.usuarioId);
+  const { versionId, numero } = await anularVigenteEn(tx, documentoId, sesion.usuarioId, ahora);
   if (versionId !== tramite.versionId) throw new ErrorTramite("La versión vigente cambió: revise el trámite");
   return {
     detalle: { versionAnulada: numero, acta: await congelarDatosActa(tx, tramite, "eliminacion", ahora) },

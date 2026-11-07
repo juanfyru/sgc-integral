@@ -90,3 +90,22 @@ export class ErrorDistribucion extends ErrorTramite {
     this.name = "ErrorDistribucion";
   }
 }
+
+export const ETIQUETA_MOTIVO_ANULACION: Record<MotivoAnulacion, string> = {
+  error: "Error al emitirla",
+  extraviada: "Se extravió",
+  deteriorada: "Se deterioró",
+};
+
+export const ETIQUETA_MOTIVO_REIMPRESION: Record<MotivoReimpresion, string> = {
+  deteriorada: "Se deterioró",
+  ilegible: "Salió ilegible",
+  extraviada_sin_entregar: "Se extravió antes de entregarla",
+  otro: "Otro motivo",
+};
+
+export const ETIQUETA_MOTIVO_POR_RECOGER: Record<MotivoPorRecoger, string> = {
+  nueva_version: "Hay una versión nueva vigente",
+  eliminado: "El documento fue eliminado",
+  carga_deshecha: "Se deshizo la carga",
+};

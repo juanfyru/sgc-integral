@@ -7,7 +7,9 @@ import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { obtenerMarcaSegura, obtenerUrlPublica } from "@/db/consultas/entidad";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { crearNotificacion } from "@/db/consultas/notificaciones";
-import { filtroPuntos, puedeAccederDocumento } from "@/lib/alcance";
+import { evento } from "./eventos-copia";
+import { listarPuntosUso } from "./puntos-uso";
+import { filtroPuntos, procesosAsignados, puedeAccederDocumento } from "@/lib/alcance";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { enVentanaDeImpresion, numeroDeCopia, puedePasar, textoSello, urlDeQr } from "@/lib/distribucion/copias";
 import { estamparCopiaControlada } from "@/lib/distribucion/sello-pdf";
@@ -72,19 +74,6 @@ export type AccionCopia = "recibir" | "recoger" | "anular" | "reimprimir" | "pdf
 
 const ESTADOS_VIVOS = ["emitida", "recibida", "por_recoger"];
 const YA_NO_ESTA = "La copia ya no está en ese estado";
-
-/** Una sola puerta para escribir en `copia_eventos`; `creado_en` es la hora de la operación. */
-async function evento(
-  sql: Cliente,
-  copiaId: number,
-  tipo: TipoEventoCopia,
-  usuarioId: number | null,
-  detalle: Record<string, unknown>,
-  ahora: Date,
-): Promise<void> {
-  await sql`INSERT INTO copia_eventos (copia_id, tipo, usuario_id, detalle, creado_en)
-    VALUES (${copiaId}, ${tipo}, ${usuarioId}, ${sql.json(detalle as never)}, ${ahora})`;
-}
 
 /** Si el documento `d` está en el alcance del líder (cualquier otro rol: siempre). */
 function documentoEnAlcance(sql: Cliente, sesion: SesionFlujo) {
@@ -185,9 +174,10 @@ function accionesDe(sesion: SesionFlujo, fila: FilaCopia): AccionCopia[] {
   const acciones: AccionCopia[] = [];
   const viva = copia.estado === "emitida" || copia.estado === "recibida";
   const emite = puedeEmitirSobre(sesion, fila);
-  const esResponsable = sesion.usuarioId === copia.responsableActual.id || sesion.usuarioId === copia.responsable.id;
-  if (copia.estado === "emitida" && esResponsable) acciones.push("recibir");
-  if (copia.estado === "por_recoger" && emite) acciones.push("recoger");
+  const responde = puede(sesion, "distribucion.responder");
+  const esResponsable = sesion.usuarioId === copia.responsableActual.id;
+  if (copia.estado === "emitida" && esResponsable && responde) acciones.push("recibir");
+  if (copia.estado === "por_recoger" && responde && (esResponsable || puede(sesion, "distribucion.gestionar"))) acciones.push("recoger");
   if (viva && (sesion.usuarioId === copia.emitidaPor.id || puede(sesion, "distribucion.gestionar"))) acciones.push("anular");
   if (viva && copia.versionVigente && emite) acciones.push("reimprimir");
   if (viva && copia.versionVigente && (emite || puede(sesion, "distribucion.ver"))) acciones.push("pdf");
@@ -547,4 +537,250 @@ export async function conteosPorPunto(
     porRecoger: Number(f.por_recoger),
     sinRecibido: Number(f.sin_recibido),
   }));
+}
+
+const DESTINOS_DE_PERSONA = ["devuelta", "destruida", "no_encontrada"] as const;
+type DestinoDePersona = (typeof DESTINOS_DE_PERSONA)[number];
+
+const nombreDeCopia = (c: Copia) => `la copia N.º ${numeroDeCopia(c.numero)} de ${c.codigo} v${c.version}`;
+
+async function bloquear(tx: Cliente, id: number): Promise<void> {
+  await tx`SELECT id FROM copias_controladas WHERE id = ${id} FOR UPDATE`;
+}
+
+async function recibirEn(tx: Cliente, sesion: SesionFlujo, id: number, ahora: Date): Promise<void> {
+  await bloquear(tx, id);
+  const fila = await leerUna(tx, sesion, id);
+  if (!fila) throw new CopiaNoVisible();
+  const { copia } = fila;
+  if (copia.responsableActual.id !== sesion.usuarioId) {
+    throw new ErrorDistribucion("Solo el responsable actual del punto confirma el recibido");
+  }
+  if (copia.estado !== "emitida" || !puedePasar(copia.estado, "recibida")) throw new ErrorDistribucion(YA_NO_ESTA);
+
+  await tx`UPDATE copias_controladas SET estado = 'recibida', recibida_en = ${ahora}, vence_en = NULL WHERE id = ${id}`;
+  await evento(tx, id, "recibida", sesion.usuarioId, { usuarioId: sesion.usuarioId }, ahora);
+  await registrarAuditoria(tx, {
+    usuarioId: sesion.usuarioId,
+    accion: "copia_recibida",
+    entidad: "copia",
+    entidadId: id,
+    detalle: { codigo: copia.codigo, version: copia.version, numero: copia.numero, punto: copia.punto.nombre },
+  });
+}
+
+/** Se abre en la misma transacción de la recogida; la Tarea 12 la mueve a `hallazgos.ts` sin cambiar el comportamiento. */
+async function abrirHallazgoDeRecogida(tx: Cliente, copia: Copia, ahora: Date, plazoDias: number): Promise<void> {
+  const [hallazgo] = await tx`
+    INSERT INTO hallazgos
+      (punto_uso_id, origen, copia_id, documento_id, descripcion, retirado_en_el_acto, responsable_id, estado, vence_en)
+    VALUES (${copia.punto.id}, 'recogida', ${copia.id}, ${copia.documentoId},
+            ${`La copia N.º ${numeroDeCopia(copia.numero)} de ${copia.codigo} v${copia.version} no se encontró al recogerla`},
+            false, ${copia.responsableActual.id}, 'abierto', ${fechaLimite(ahora, plazoDias, zonaHoraria())})
+    RETURNING id`;
+  await crearNotificacion(
+    {
+      usuarioId: copia.responsableActual.id,
+      tipo: "distribucion.hallazgo",
+      titulo: `Hallazgo abierto: ${nombreDeCopia(copia)} no se encontró en ${copia.punto.nombre}`,
+      enlace: `/distribucion/copias/${copia.id}`,
+      entidad: "hallazgo",
+      entidadId: Number(hallazgo.id),
+    },
+    tx,
+  );
+}
+
+async function recogerEn(
+  tx: Cliente,
+  sesion: SesionFlujo,
+  id: number,
+  destino: DestinoDePersona,
+  ahora: Date,
+): Promise<void> {
+  await bloquear(tx, id);
+  const fila = await leerUna(tx, sesion, id);
+  if (!fila) throw new CopiaNoVisible();
+  const { copia } = fila;
+  if (copia.responsableActual.id !== sesion.usuarioId && !puede(sesion, "distribucion.gestionar")) {
+    throw new ErrorDistribucion("Solo el responsable actual del punto confirma la recogida");
+  }
+  if (!puedePasar(copia.estado, "recogida")) throw new ErrorDistribucion(YA_NO_ESTA);
+
+  await tx`UPDATE copias_controladas
+    SET estado = 'recogida', recogida_en = ${ahora}, destino_recogida = ${destino}, vence_en = NULL
+    WHERE id = ${id}`;
+  await evento(tx, id, "recogida", sesion.usuarioId, { usuarioId: sesion.usuarioId, destino }, ahora);
+  await registrarAuditoria(tx, {
+    usuarioId: sesion.usuarioId,
+    accion: "copia_recogida",
+    entidad: "copia",
+    entidadId: id,
+    detalle: { codigo: copia.codigo, version: copia.version, numero: copia.numero, punto: copia.punto.nombre, destino },
+  });
+  if (destino === "no_encontrada") {
+    const { plazoCorreccionDias } = (await obtenerConfigDocumental({ sql: tx })).distribucion;
+    await abrirHallazgoDeRecogida(tx, copia, ahora, plazoCorreccionDias);
+  }
+}
+
+export async function confirmarRecibido(id: number, sesion: SesionFlujo, opciones?: Opciones): Promise<void> {
+  if (!puede(sesion, "distribucion.responder")) throw new ErrorPermiso();
+  const sql = opciones?.sql ?? obtenerSql();
+  const ahora = opciones?.ahora ?? new Date();
+  await enTransaccion(sql, (tx) => recibirEn(tx, sesion, id, ahora));
+}
+
+export async function confirmarRecogida(
+  id: number,
+  sesion: SesionFlujo,
+  destino: DestinoDePersona,
+  opciones?: Opciones,
+): Promise<void> {
+  if (!puede(sesion, "distribucion.responder")) throw new ErrorPermiso();
+  if (!DESTINOS_DE_PERSONA.includes(destino)) throw new ErrorDistribucion("Elija qué se hizo con la copia");
+  const sql = opciones?.sql ?? obtenerSql();
+  const ahora = opciones?.ahora ?? new Date();
+  await enTransaccion(sql, (tx) => recogerEn(tx, sesion, id, destino, ahora));
+}
+
+/** Una sola confirmación: recibe la copia nueva y recoge la anterior que reemplaza. */
+export async function confirmarReemplazo(
+  idNueva: number,
+  sesion: SesionFlujo,
+  destino: "devuelta" | "destruida",
+  opciones?: Opciones,
+): Promise<void> {
+  if (!puede(sesion, "distribucion.responder")) throw new ErrorPermiso();
+  if (destino !== "devuelta" && destino !== "destruida") {
+    throw new ErrorDistribucion("Elija qué se hizo con la copia anterior");
+  }
+  const sql = opciones?.sql ?? obtenerSql();
+  const ahora = opciones?.ahora ?? new Date();
+  await enTransaccion(sql, async (tx) => {
+    await bloquear(tx, idNueva);
+    const fila = await leerUna(tx, sesion, idNueva);
+    if (!fila) throw new CopiaNoVisible();
+    const { copia } = fila;
+    if (copia.reemplazaCopiaId === null) throw new ErrorDistribucion("Esta copia no reemplaza a otra");
+    if (copia.estado === "emitida") await recibirEn(tx, sesion, idNueva, ahora);
+    else if (copia.estado !== "recibida") throw new ErrorDistribucion(YA_NO_ESTA);
+    await recogerEn(tx, sesion, copia.reemplazaCopiaId, destino, ahora);
+  });
+}
+
+/** Emite una copia de la versión vigente por cada punto que tenía copias por recoger de versiones anteriores. */
+export async function reemplazarCopias(
+  sesion: SesionFlujo,
+  versionNuevaId: number,
+  opciones?: Opciones,
+): Promise<{ emitidas: number }> {
+  if (!puede(sesion, "copias.emitir")) throw new ErrorPermiso();
+  const sql = opciones?.sql ?? obtenerSql();
+  const ahora = opciones?.ahora ?? new Date();
+
+  return enTransaccion(sql, async (tx) => {
+    const [nueva] = await tx`
+      SELECT id, documento_id, estado FROM documento_versiones WHERE id = ${versionNuevaId} FOR UPDATE`;
+    if (!nueva || nueva.estado !== "vigente") throw new ErrorDistribucion("La versión indicada no es la vigente del documento");
+    const documentoId = Number(nueva.documento_id);
+    const [principal] = await tx`SELECT mime FROM archivos WHERE version_id = ${versionNuevaId} AND rol = 'principal'`;
+    if (!principal || principal.mime !== "application/pdf") {
+      throw new ErrorDistribucion("La versión nueva no tiene PDF: las copias anteriores se recogen sin reemplazo");
+    }
+
+    const viejas = await leerCopias(
+      tx,
+      sesion,
+      tx`d.id = ${documentoId} AND cc.estado = 'por_recoger' AND cc.version_id <> ${versionNuevaId}
+        AND pu.activo AND ${filtroPuntos(tx, sesion)}`,
+      tx`cc.id`,
+    );
+    let emitidas = 0;
+    for (const { copia } of viejas) {
+      const [viva] = await tx`
+        SELECT 1 FROM copias_controladas
+        WHERE version_id = ${versionNuevaId} AND punto_uso_id = ${copia.punto.id} AND estado IN ${tx(["emitida", "recibida"])}`;
+      if (viva) continue;
+      await emitirCopia(
+        sesion,
+        { documentoId, puntoUsoId: copia.punto.id, nota: null, reemplazaCopiaId: copia.id },
+        { sql: tx, ahora },
+      );
+      emitidas += 1;
+    }
+    return { emitidas };
+  });
+}
+
+export type CopiasDeDocumento = {
+  vigentes: Copia[];
+  porRecoger: Copia[];
+  puedeReemplazar: boolean;
+  /** La versión vigente, destino de «Reemplazar»; null si el documento no tiene vigente con PDF. */
+  versionVigenteId: number | null;
+};
+
+/** Lo que muestra el bloque «Copias controladas» de las fichas. */
+export async function copiasDeDocumento(
+  documentoId: number,
+  sesion: SesionFlujo,
+  opciones?: Opciones,
+): Promise<CopiasDeDocumento> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const filas = await leerCopias(
+    sql,
+    sesion,
+    sql`d.id = ${documentoId} AND cc.estado IN ${sql(ESTADOS_VIVOS)}`,
+    sql`lower(pu.nombre), cc.version_id, cc.numero`,
+  );
+  const copias = filas.map((f) => f.copia);
+  const vigentes = copias.filter((c) => c.estado !== "por_recoger");
+  const porRecoger = copias.filter((c) => c.estado === "por_recoger");
+
+  const [vigente] = await sql`
+    SELECT v.id, ${documentoEnAlcance(sql, sesion)} AS en_alcance,
+           EXISTS (SELECT 1 FROM archivos a WHERE a.version_id = v.id AND a.rol = 'principal' AND a.mime = 'application/pdf') AS con_pdf
+    FROM documento_versiones v JOIN documentos d ON d.id = v.documento_id
+    WHERE v.documento_id = ${documentoId} AND v.estado = 'vigente'`;
+  const versionVigenteId = vigente && vigente.con_pdf ? Number(vigente.id) : null;
+  const sinReemplazo = porRecoger.some((c) => !vigentes.some((v) => v.punto.id === c.punto.id));
+  return {
+    vigentes,
+    porRecoger,
+    versionVigenteId,
+    puedeReemplazar:
+      versionVigenteId !== null && vigente.en_alcance === true && puede(sesion, "copias.emitir") && sinReemplazo,
+  };
+}
+
+/** Los documentos vigentes con PDF principal que la persona puede emitir (el buscador del diálogo de emisión). */
+export async function documentosParaEmitir(
+  sesion: SesionFlujo,
+  opciones?: Opciones,
+): Promise<{ id: number; codigo: string; titulo: string }[]> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const filas = await sql`
+    SELECT d.id, d.codigo, d.titulo
+    FROM documentos d
+    JOIN documento_versiones v ON v.documento_id = d.id AND v.estado = 'vigente'
+    WHERE EXISTS (SELECT 1 FROM archivos a WHERE a.version_id = v.id AND a.rol = 'principal' AND a.mime = 'application/pdf')
+      AND ${documentoEnAlcance(sql, sesion)}
+    ORDER BY d.codigo`;
+  return filas.map((f) => ({ id: Number(f.id), codigo: f.codigo as string, titulo: f.titulo as string }));
+}
+
+/** Los puntos activos que la persona puede elegir al emitir; los de sus procesos van primero. */
+export async function puntosParaEmitir(
+  sesion: SesionFlujo,
+  opciones?: Opciones,
+): Promise<{ id: number; nombre: string; sede: string | null; deSusProcesos: boolean }[]> {
+  const [puntos, propios] = await Promise.all([
+    listarPuntosUso(sesion, { sql: opciones?.sql, soloActivos: true }),
+    sesion.rol === "lider_proceso" ? procesosAsignados(sesion.usuarioId) : Promise.resolve([]),
+  ]);
+  const ids = new Set(propios.map((p) => p.id));
+  return puntos
+    .map((p) => ({ id: p.id, nombre: p.nombre, sede: p.sede, deSusProcesos: p.procesos.some((x) => ids.has(x.id)) }))
+    .sort((a, b) => Number(b.deSusProcesos) - Number(a.deSusProcesos));
 }

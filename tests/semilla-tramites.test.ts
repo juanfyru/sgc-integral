@@ -404,7 +404,7 @@ describe("cada trámite se sigue con las funciones reales", () => {
     const pub = await comoSeSembro(ctx, 3);
     expect((await obtenerTramite(pub.id, admin))!.acciones).toContain("publicar");
     const visto = await comoSeSembro(ctx, 5);
-    const tareas = await misTareas(await sesionDe(sql, "lider.cex"));
+    const { tareas } = await misTareas(await sesionDe(sql, "lider.cex"));
     expect(tareas.some((x) => x.titulo === `Dar el visto bueno a ${visto.numero}`)).toBe(true);
   });
 

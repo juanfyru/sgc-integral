@@ -8,6 +8,7 @@ import {
   editarVersionAccion,
   publicarAccion,
 } from "@/app/admin/acciones";
+import { BloqueDistribucion } from "@/componentes/distribucion/BloqueDistribucion";
 import { EliminarArchivo } from "@/componentes/admin/EliminarArchivo";
 import { FormAccion } from "@/componentes/admin/FormAccion";
 import { FormularioVersionCliente } from "@/componentes/admin/FormularioVersionCliente";
@@ -249,6 +250,10 @@ export default async function PaginaDocumentoAdmin({
           </Link>
         )}
       </div>
+
+      {vigente ? (
+        <BloqueDistribucion documento={{ id: documento.id, codigo: documento.codigo, titulo: documento.titulo }} sesion={sesion} />
+      ) : null}
 
       <div className="flex flex-col gap-4">
         {documento.versiones.map((v) => (
