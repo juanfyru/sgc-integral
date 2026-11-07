@@ -7,6 +7,7 @@
 import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { obtenerSql, type Cliente } from "@/db/cliente";
+import type { FormatoActa } from "@/lib/acta";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { motivoMembreteNoUtilizable } from "@/lib/membrete-acta";
 
@@ -46,8 +47,8 @@ export async function archivoDeFormato(documentoId: number, opciones?: Opciones)
   return typeof registrado === "string" ? null : registrado.archivo;
 }
 
-/** Los bytes del archivo, si está en el almacén y su tamaño y su huella son los registrados. */
-async function leerArchivo({ archivo: { ruta, hash }, tamanoBytes }: ArchivoRegistrado): Promise<Uint8Array | null> {
+/** Los bytes del archivo, si está en el almacén y su tamaño y su huella son los esperados. */
+async function leerArchivo({ ruta, hash, tamanoBytes }: { ruta: string; hash: string; tamanoBytes: number }): Promise<Uint8Array | null> {
   const absoluta = resolverRutaAlmacen(ruta);
   if (!absoluta) return null;
   try {
@@ -61,14 +62,27 @@ async function leerArchivo({ archivo: { ruta, hash }, tamanoBytes }: ArchivoRegi
   }
 }
 
+/**
+ * Los bytes de la versión que un acta congeló, siga o no vigente o elegida. Cuenta la huella congelada:
+ * si el archivo falta o es otro da `null`, y quien llama no busca otro.
+ */
+export async function leerFormatoCongelado(
+  { archivoId, hash }: Pick<FormatoActa, "archivoId" | "hash">,
+  opciones?: Opciones,
+): Promise<Uint8Array | null> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [a] = await sql`SELECT ruta, tamano_bytes FROM archivos WHERE id = ${archivoId}`;
+  return a ? leerArchivo({ ruta: a.ruta, hash, tamanoBytes: Number(a.tamano_bytes) }) : null;
+}
+
 async function revisar(documentoId: number, sql: Cliente): Promise<{ estado: EstadoFormato; membrete?: MembreteListo }> {
   const registrado = await archivoOMotivo(documentoId, sql);
   if (typeof registrado === "string") return { estado: { estado: "no_sirve", motivo: registrado } };
-  const bytes = await leerArchivo(registrado);
+  const { archivo, tamanoBytes } = registrado;
+  const bytes = await leerArchivo({ ruta: archivo.ruta, hash: archivo.hash, tamanoBytes });
   if (!bytes) return { estado: { estado: "perdido" } };
   const motivo = await motivoMembreteNoUtilizable(bytes);
   if (motivo) return { estado: { estado: "no_sirve", motivo } };
-  const { archivo } = registrado;
   return { estado: { estado: "listo", codigo: archivo.codigo, version: archivo.version }, membrete: { ...archivo, bytes } };
 }
 

@@ -11,9 +11,11 @@ import path from "node:path";
 import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
+import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { listarFirmas } from "@/db/consultas/firmas";
+import { archivoDeFormato, leerFormatoCongelado } from "@/db/consultas/formato-acta";
 import { criteriosNoCumplen } from "@/db/consultas/revision";
-import { generarActa, diaYHora, type DatosActa } from "@/lib/acta";
+import { generarActa, diaYHora, type DatosActa, type FormatoActa } from "@/lib/acta";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import {
   ETIQUETA_FIRMA,
@@ -85,6 +87,20 @@ export async function nombreDeEntidadParaActa(sql: Cliente): Promise<string> {
 }
 
 /**
+ * La versión del formato que lleva esta acta y los márgenes de hoy. Se lee después de aplicar el
+ * cierre: la versión recién publicada ya es la vigente, y la recién eliminada ya no. Sin versión
+ * utilizable es `null` y el acta sale con el diseño básico. El archivo no se lee aquí: la transacción
+ * queda corta, y uno perdido no impide publicar.
+ */
+async function formatoDelCierre(tx: TransactionSql): Promise<FormatoActa | null> {
+  const { documentoId, margenSuperiorCm, margenInferiorCm } = (await obtenerConfigDocumental({ sql: tx })).formatoActa;
+  const archivo = documentoId === null ? null : await archivoDeFormato(documentoId, { sql: tx });
+  if (!archivo) return null;
+  const { archivoId, hash, codigo, version } = archivo;
+  return { archivoId, hash, codigo, version, margenSuperiorCm, margenInferiorCm };
+}
+
+/**
  * Lo que dice el acta, leído dentro de la transacción del cierre y después de aplicarlo (el título
  * nuevo de una modificación ya está en el documento). Lo guardan los manejadores en `detalle.acta`
  * del evento. La entidad se lee de `configuracion`: si falta, el cierre falla antes que escribir un
@@ -141,6 +157,7 @@ export async function congelarDatosActa(
     publicadoEn: ahora,
     zona,
     noCumple: criterios.map(({ texto, nota }) => ({ texto, nota })),
+    formato: await formatoDelCierre(tx),
   };
 }
 
@@ -199,16 +216,27 @@ async function escribirAtomico(absoluta: string, bytes: Uint8Array): Promise<voi
   }
 }
 
+/** Sin quien pida el acta no hay fila: solo queda el `console.error`. */
+async function auditarNoRegenerable(sql: Cliente, usuarioId: number | null | undefined, archivoId: number, detalle: Record<string, unknown>) {
+  if (!usuarioId) return;
+  await registrarAuditoria(sql, { usuarioId, accion: "acta_no_regenerable", entidad: "archivos", entidadId: archivoId, detalle });
+}
+
 /**
  * Devuelve el acta del cierre y, si no existe (o su fila no tiene archivo), la genera con los datos
  * congelados y la registra. No usa `registrarArchivo`: su traducción de errores es la del archivo
  * principal. Si otra petición la registró entre tanto (índice único), devuelve la que quedó. Quien
  * la registra deja su fila en la bitácora: `usuarioId` es quien la pidió, y sin él la fila sale del
- * sistema.
+ * sistema. Solo al generar se lee el formato congelado: si falta o es otro archivo no hay acta, y el
+ * pedido siguiente lo reintenta.
  */
 export async function asegurarActa(
   tramiteId: number,
-  opciones?: { sql?: Cliente; generar?: (d: DatosActa) => Promise<Uint8Array>; usuarioId?: number | null },
+  opciones?: {
+    sql?: Cliente;
+    generar?: (d: DatosActa, membrete: Uint8Array | null) => Promise<Uint8Array>;
+    usuarioId?: number | null;
+  },
 ): Promise<{ archivoId: number; ruta: string } | null> {
   const sql = opciones?.sql ?? obtenerSql();
   const cierre = await versionDeActa(tramiteId, { sql });
@@ -221,7 +249,14 @@ export async function asegurarActa(
 
   const datos = await reunirDatosActa(tramiteId, { sql });
   if (!datos) return null;
-  const bytes = await (opciones?.generar ?? generarActa)(datos);
+  const { formato } = datos;
+  const membrete = formato ? await leerFormatoCongelado(formato, { sql }) : null;
+  if (formato && !membrete) {
+    console.error(`El acta del trámite ${tramiteId} no se generó: el archivo ${formato.archivoId} del formato ${formato.codigo} falta o cambió.`);
+    await auditarNoRegenerable(sql, opciones?.usuarioId, formato.archivoId, { tramiteId, motivo: "formato", archivoId: formato.archivoId });
+    return null;
+  }
+  const bytes = await (opciones?.generar ?? generarActa)(datos, membrete);
   const ruta = existente?.ruta ?? `actas/${cierre.numero}.pdf`;
   const absoluta = resolverRutaAlmacen(ruta);
   if (!absoluta) throw new Error(`Ruta inválida en el almacén: ${ruta}`);
@@ -235,15 +270,11 @@ export async function asegurarActa(
       console.error(
         `El acta del trámite ${tramiteId} no se pudo regenerar idéntica (huella registrada ${registrada?.hash_sha256}, regenerada ${huella}); no se sirve.`,
       );
-      if (opciones?.usuarioId) {
-        await registrarAuditoria(sql, {
-          usuarioId: opciones.usuarioId,
-          accion: "acta_no_regenerable",
-          entidad: "archivos",
-          entidadId: existente.archivoId,
-          detalle: { tramiteId, huellaRegistrada: registrada?.hash_sha256 ?? null, huellaRegenerada: huella },
-        });
-      }
+      await auditarNoRegenerable(sql, opciones?.usuarioId, existente.archivoId, {
+        tramiteId,
+        huellaRegistrada: registrada?.hash_sha256 ?? null,
+        huellaRegenerada: huella,
+      });
       return null;
     }
     await escribirAtomico(absoluta, bytes);

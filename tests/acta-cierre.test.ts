@@ -1,7 +1,7 @@
 /**
  * El acta se congela al cerrar el trámite, cada cierre tiene la suya y escribirla es atómico y
- * repetible. Corre contra la demo ya sembrada, en una transacción que se revierte; los archivos van a
- * un almacén temporal y el del acta lo borra cada test.
+ * repetible. Corre contra la demo ya sembrada, en una transacción que se revierte; el archivo del acta
+ * lo borra cada test, y los del formato van a un almacén temporal.
  */
 import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
@@ -31,23 +31,14 @@ import { generarActa, type DatosActa } from "@/lib/acta";
 import type { Verificador } from "@/lib/firma";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { huellaDeCriterios } from "@/lib/tramites/criterios";
+import { documentoConArchivo, huella, pdfDeFormato } from "./utiles/formato";
 import { contenidoPorPagina, contieneTexto } from "./utiles/pdf";
 import { NOTA, aprobacionConCriterio, documentoLibre, opc, sesionDe, tramiteEn } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
 const sql = obtenerSql();
-let almacen: string;
-const almacenPrevio = process.env.ALMACEN_RUTA;
-
-beforeAll(() => {
-  almacen = mkdtempSync(path.join(tmpdir(), "sgc-acta-"));
-  process.env.ALMACEN_RUTA = almacen;
-});
 
 afterAll(async () => {
-  if (almacenPrevio === undefined) delete process.env.ALMACEN_RUTA;
-  else process.env.ALMACEN_RUTA = almacenPrevio;
-  rmSync(almacen, { recursive: true, force: true });
   await sql.end();
   globalThis.__sql = undefined;
 });
@@ -60,6 +51,11 @@ const publicar = (t: { tramiteId: number; ronda: number }) =>
 async function borrarActas(rutas: string[]) {
   for (const r of rutas) await rm(resolverRutaAlmacen(r)!, { force: true });
 }
+
+type Tx = Parameters<Parameters<typeof revertida>[1]>[0];
+
+const actaDelEvento = async (tx: Tx, tramiteId: number) =>
+  (await tx`SELECT detalle -> 'acta' AS acta FROM tramite_eventos WHERE tramite_id = ${tramiteId} AND detalle ? 'acta' ORDER BY id DESC LIMIT 1`)[0].acta;
 
 describe("una justificación con saltos de línea", () => {
   it("sale en líneas separadas, sin «?» en su lugar", async () => {
@@ -160,13 +156,8 @@ describe("el acta se congela al cerrar", () => {
 });
 
 describe("los criterios que no cumplen en el acta", () => {
-  type Tx = Parameters<Parameters<typeof revertida>[1]>[0];
-
   const firmado = (t: { tramiteId: number; ronda: number }, accion: "aprobar" | "aprobar_y_publicar", confirmaNoCumple: string) =>
     ({ tramiteId: t.tramiteId, accion, etapaEsperada: "aprobacion", rondaEsperada: t.ronda, datos: { concepto: "Aprobado.", confirmaNoCumple }, credenciales: { clave: "x" } }) as const;
-
-  const actaDelEvento = async (tx: Tx, tramiteId: number) =>
-    (await tx`SELECT detalle -> 'acta' AS acta FROM tramite_eventos WHERE tramite_id = ${tramiteId} AND detalle ? 'acta'`)[0].acta;
 
   /** El ítem se edita antes de cerrar: el acta lleva lo guardado. */
   const conItemEditado = (tx: Tx) => aprobacionConCriterio(tx, {
@@ -291,6 +282,297 @@ describe("los criterios que no cumplen en el acta", () => {
       await transicionar(e.aprobador, { tramiteId: e.tramiteId, accion: "aprobar_y_publicar", etapaEsperada: "aprobacion", rondaEsperada: e.ronda, datos: { concepto: "Procede." }, credenciales: { clave: "x" } }, opc(tx));
       expect((await actaDelEvento(tx, e.tramiteId)).noCumple).toEqual([]);
     } finally { await t.limpiar(); await e.limpiar(); }
+  }));
+});
+
+describe("el formato del acta", () => {
+  let almacen: string;
+  const almacenPrevio = process.env.ALMACEN_RUTA;
+
+  beforeAll(() => {
+    almacen = mkdtempSync(path.join(tmpdir(), "sgc-acta-"));
+    process.env.ALMACEN_RUTA = almacen;
+  });
+
+  afterAll(() => {
+    if (almacenPrevio === undefined) delete process.env.ALMACEN_RUTA;
+    else process.env.ALMACEN_RUTA = almacenPrevio;
+    rmSync(almacen, { recursive: true, force: true });
+  });
+
+  const ponerClave = (tx: Tx, clave: string, valor: string) =>
+    tx`INSERT INTO configuracion (clave, valor) VALUES (${clave}, ${valor}) ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor`;
+
+  /** Elige un documento como formato, con márgenes que no son los de por defecto. */
+  async function formatoElegido(tx: Tx, bytes?: Uint8Array) {
+    const formato = await documentoConArchivo(tx, bytes);
+    await ponerClave(tx, "formato_acta_documento_id", String(formato.id));
+    await ponerClave(tx, "formato_acta_margen_superior_cm", "6");
+    await ponerClave(tx, "formato_acta_margen_inferior_cm", "3");
+    return formato;
+  }
+
+  /** Dentro de la tolerancia de una carta, y otro archivo: `pdfDeFormato` solo cambia con la fecha. */
+  const otraVersion = () => pdfDeFormato(1, [611, 791]);
+
+  const aprobarYPublicar = (t: { tramiteId: number; ronda: number }) =>
+    ({ tramiteId: t.tramiteId, accion: "aprobar_y_publicar", etapaEsperada: "aprobacion", rondaEsperada: t.ronda, datos: { concepto: "Procede." }, credenciales: { clave: "x" } }) as const;
+
+  const noRegenerables = (tx: Tx, tramiteId: number) =>
+    tx`SELECT usuario_id, entidad, entidad_id, detalle FROM auditoria
+      WHERE accion = 'acta_no_regenerable' AND (detalle ->> 'tramiteId')::bigint = ${tramiteId} ORDER BY id`;
+
+  const actasDe = async (tx: Tx, versionId: number | null) =>
+    (await tx`SELECT count(*)::int AS n FROM archivos WHERE version_id = ${versionId} AND rol LIKE 'acta_%'`)[0].n;
+
+  const leerActa = async (ruta: string) => new Uint8Array(await readFile(resolverRutaAlmacen(ruta)!));
+
+  /** Sin formato, el nombre de la entidad va en el cuerpo; con él, ya está en su encabezado. */
+  const conDisenoBasico = async (pdf: Uint8Array, entidad: string) => contieneTexto(await textoDe(pdf), entidad);
+
+  /** Calla el `console.error` esperado y devuelve el espía, para contar sus llamadas. */
+  async function conErrorEsperado<T>(fn: () => Promise<T>): Promise<{ resultado: T; llamadas: number }> {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const resultado = await fn();
+      return { resultado, llamadas: error.mock.calls.length };
+    } finally { error.mockRestore(); }
+  }
+
+  it("el cierre congela la versión vigente del formato y sus márgenes", () => revertida(sql, async (tx) => {
+    const bytes = await pdfDeFormato();
+    const f = await formatoElegido(tx, bytes);
+    const t = await tramiteEn(tx, "publicacion");
+    const e = await tramiteEn(tx, "aprobacion", { tipo: "eliminar" });
+    const rutas: string[] = [];
+    try {
+      await transicionar(t.admin, publicar(t), opc(tx));
+      await transicionar(e.aprobador, aprobarYPublicar(e), opc(tx));
+      const esperado = { archivoId: f.archivoId, hash: huella(bytes), codigo: f.codigo, version: 1, margenSuperiorCm: 6, margenInferiorCm: 3 };
+      expect((await actaDelEvento(tx, t.tramiteId)).formato).toEqual(esperado);
+      expect((await actaDelEvento(tx, e.tramiteId)).formato).toEqual(esperado);     // un solo formato para las dos actas
+
+      const datos = (await reunirDatosActa(t.tramiteId, { sql: tx }))!;
+      expect(datos.formato).toEqual(esperado);
+      const acta = (await asegurarActa(t.tramiteId, { sql: tx }))!;
+      rutas.push(acta.ruta);
+      const pdf = await leerActa(acta.ruta);
+      expect(huella(pdf)).toBe(huella(await generarActa(datos, bytes)));
+      expect(await conDisenoBasico(pdf, datos.entidad)).toBe(false);
+    } finally { await borrarActas(rutas); await t.limpiar(); await e.limpiar(); }
+  }));
+
+  it("una versión nueva del formato no cambia un acta ya cerrada", () => revertida(sql, async (tx) => {
+    const v1 = await pdfDeFormato();
+    const f = await formatoElegido(tx, v1);
+    const cerrada = await tramiteEn(tx, "publicacion");
+    const nueva = await tramiteEn(tx, "publicacion", { codigo: f.codigo, principal: await otraVersion() });
+    const rutas: string[] = [];
+    try {
+      await transicionar(cerrada.admin, publicar(cerrada), opc(tx));
+      const congelado = (await actaDelEvento(tx, cerrada.tramiteId)).formato;
+      await transicionar(nueva.admin, publicar(nueva), opc(tx));
+
+      expect((await reunirDatosActa(cerrada.tramiteId, { sql: tx }))!.formato).toEqual(congelado);
+      const generar = vi.fn(generarActa);
+      const acta = (await asegurarActa(cerrada.tramiteId, { sql: tx, generar }))!;
+      rutas.push(acta.ruta);
+      expect(huella(generar.mock.calls[0][1]!)).toBe(huella(v1));
+    } finally { await borrarActas(rutas); await cerrada.limpiar(); await nueva.limpiar(); }
+  }));
+
+  it("sin formato, restringido o sin versión vigente, se congela null", () => revertida(sql, async (tx) => {
+    const casos: { etiqueta: string; preparar: (f: { id: number }) => PromiseLike<unknown> }[] = [
+      { etiqueta: "sin formato", preparar: () => ponerClave(tx, "formato_acta_documento_id", "") },
+      { etiqueta: "restringido", preparar: (f) => tx`UPDATE documentos SET nivel_acceso = 'restringido' WHERE id = ${f.id}` },
+      { etiqueta: "sin versión vigente", preparar: (f) => tx`UPDATE documento_versiones SET estado = 'obsoleto' WHERE documento_id = ${f.id}` },
+    ];
+    for (const caso of casos) {
+      await caso.preparar(await formatoElegido(tx));
+      const t = await tramiteEn(tx, "publicacion");
+      const rutas: string[] = [];
+      try {
+        await transicionar(t.admin, publicar(t), opc(tx));
+        expect(await actaDelEvento(tx, t.tramiteId), caso.etiqueta).toHaveProperty("formato", null);
+        const generar = vi.fn(generarActa);
+        const acta = (await asegurarActa(t.tramiteId, { sql: tx, generar }))!;
+        rutas.push(acta.ruta);
+        expect(generar.mock.calls[0][1], caso.etiqueta).toBeNull();
+      } finally { await borrarActas(rutas); await t.limpiar(); }
+    }
+  }));
+
+  it("publicar una versión nueva del propio formato usa esa versión", () => revertida(sql, async (tx) => {
+    const f = await formatoElegido(tx);
+    const v2 = await otraVersion();
+    const t = await tramiteEn(tx, "publicacion", { codigo: f.codigo, principal: v2 });
+    const rutas: string[] = [];
+    try {
+      await transicionar(t.admin, publicar(t), opc(tx));
+      const [principal] = await tx`SELECT id FROM archivos WHERE version_id = ${t.versionId} AND rol = 'principal'`;
+      expect(Number(principal.id)).not.toBe(f.archivoId);
+      expect((await actaDelEvento(tx, t.tramiteId)).formato).toMatchObject({ archivoId: Number(principal.id), hash: huella(v2), version: 2 });
+
+      const generar = vi.fn(generarActa);
+      const acta = (await asegurarActa(t.tramiteId, { sql: tx, generar }))!;
+      rutas.push(acta.ruta);
+      expect(huella(generar.mock.calls[0][1]!)).toBe(huella(v2));
+      expect(await conDisenoBasico(await leerActa(acta.ruta), (await reunirDatosActa(t.tramiteId, { sql: tx }))!.entidad)).toBe(false);
+    } finally { await borrarActas(rutas); await t.limpiar(); }
+  }));
+
+  it("el acta de la eliminación del propio formato sale con el diseño básico", () => revertida(sql, async (tx) => {
+    const f = await formatoElegido(tx);
+    const e = await tramiteEn(tx, "aprobacion", { codigo: f.codigo, tipo: "eliminar" });
+    const rutas: string[] = [];
+    try {
+      await transicionar(e.aprobador, aprobarYPublicar(e), opc(tx));
+      expect(await actaDelEvento(tx, e.tramiteId)).toHaveProperty("formato", null);
+      const acta = (await asegurarActa(e.tramiteId, { sql: tx }))!;
+      rutas.push(acta.ruta);
+      expect(await conDisenoBasico(await leerActa(acta.ruta), (await reunirDatosActa(e.tramiteId, { sql: tx }))!.entidad)).toBe(true);
+    } finally { await borrarActas(rutas); await e.limpiar(); }
+  }));
+
+  it("el formato perdido no deshace la publicación: no hay acta, queda en la bitácora y reintenta", () => revertida(sql, async (tx) => {
+    const bytes = await pdfDeFormato();
+    const f = await formatoElegido(tx, bytes);
+    const t = await tramiteEn(tx, "publicacion");
+    const rutas: string[] = [];
+    try {
+      await rm(f.absoluta);
+      await expect(transicionar(t.admin, publicar(t), opc(tx))).resolves.toMatchObject({ etapa: "publicado" });
+
+      // Sin quien la pida no hay autor para la fila: no se escribe, pero sí queda en el registro del servidor.
+      const sinUsuario = await conErrorEsperado(() => asegurarActa(t.tramiteId, { sql: tx }));
+      expect(sinUsuario).toEqual({ resultado: null, llamadas: 1 });
+      expect(await noRegenerables(tx, t.tramiteId)).toHaveLength(0);
+
+      const conUsuario = await conErrorEsperado(() => asegurarActa(t.tramiteId, { sql: tx, usuarioId: t.admin.usuarioId }));
+      expect(conUsuario).toEqual({ resultado: null, llamadas: 1 });
+      const filas = await noRegenerables(tx, t.tramiteId);
+      expect(filas).toHaveLength(1);
+      expect(Number(filas[0].usuario_id)).toBe(t.admin.usuarioId);
+      expect(filas[0].entidad).toBe("archivos");
+      expect(Number(filas[0].entidad_id)).toBe(f.archivoId);
+      expect(filas[0].detalle).toEqual({ tramiteId: t.tramiteId, motivo: "formato", archivoId: f.archivoId });
+      expect(await actasDe(tx, t.versionId)).toBe(0);
+      const [version] = await tx`SELECT estado FROM documento_versiones WHERE id = ${t.versionId}`;
+      expect(version.estado).toBe("vigente");
+
+      await writeFile(f.absoluta, bytes);
+      const acta = (await asegurarActa(t.tramiteId, { sql: tx, usuarioId: t.admin.usuarioId }))!;
+      rutas.push(acta.ruta);
+      expect(await actasDe(tx, t.versionId)).toBe(1);
+      expect(await noRegenerables(tx, t.tramiteId)).toHaveLength(1);
+    } finally { await borrarActas(rutas); await t.limpiar(); }
+  }));
+
+  it("con huella distinta no se usa otro archivo", () => revertida(sql, async (tx) => {
+    const bytes = await pdfDeFormato();
+    const f = await formatoElegido(tx, bytes);
+    const t = await tramiteEn(tx, "publicacion");
+    try {
+      await transicionar(t.admin, publicar(t), opc(tx));
+      await formatoElegido(tx);     // un formato sano elegido después: caer en él daría un acta
+
+      const igualDeLargo = Uint8Array.from(bytes);
+      igualDeLargo[igualDeLargo.length - 1] ^= 1;
+      for (const cambiado of [igualDeLargo, await pdfDeFormato(2)]) {
+        await writeFile(f.absoluta, cambiado);
+        const generar = vi.fn(generarActa);
+        const { resultado } = await conErrorEsperado(() => asegurarActa(t.tramiteId, { sql: tx, generar, usuarioId: t.admin.usuarioId }));
+        expect(resultado).toBeNull();
+        expect(generar).not.toHaveBeenCalled();
+      }
+
+      // Tampoco si alguien igualó la fila al archivo nuevo: cuenta la huella congelada.
+      const otro = await pdfDeFormato(1, [612, 790]);
+      await writeFile(f.absoluta, otro);
+      await tx`UPDATE archivos SET hash_sha256 = ${huella(otro)}, tamano_bytes = ${otro.byteLength} WHERE id = ${f.archivoId}`;
+      expect((await conErrorEsperado(() => asegurarActa(t.tramiteId, { sql: tx, usuarioId: t.admin.usuarioId }))).resultado).toBeNull();
+
+      expect(await actasDe(tx, t.versionId)).toBe(0);
+      expect(await noRegenerables(tx, t.tramiteId)).toHaveLength(3);
+    } finally { await t.limpiar(); }
+  }));
+
+  it("un acta congelada antes de este cambio sigue saliendo", () => revertida(sql, async (tx) => {
+    await formatoElegido(tx);       // hoy hay formato: un acta antigua no lo toma
+    const t = await tramiteEn(tx, "publicacion");
+    const rutas: string[] = [];
+    try {
+      await transicionar(t.admin, publicar(t), opc(tx));
+      const antigua = await actaDelEvento(tx, t.tramiteId);
+      delete antigua.formato;
+      delete antigua.noCumple;
+      await tx`INSERT INTO tramite_eventos (tramite_id, tipo, ronda, detalle) VALUES (${t.tramiteId}, 'publicar', ${t.ronda}, ${tx.json({ acta: antigua })})`;
+
+      const datos = (await reunirDatosActa(t.tramiteId, { sql: tx }))!;
+      expect(datos).not.toHaveProperty("formato");
+      expect(datos).not.toHaveProperty("noCumple");
+      const generar = vi.fn(generarActa);
+      const acta = (await asegurarActa(t.tramiteId, { sql: tx, generar }))!;
+      rutas.push(acta.ruta);
+      expect(generar.mock.calls[0][1]).toBeNull();
+      expect(huella(await leerActa(acta.ruta))).toBe(huella(await generarActa(datos)));
+    } finally { await borrarActas(rutas); await t.limpiar(); }
+  }));
+
+  it("regenerar un acta con formato da los mismos bytes, aunque ya sea otro el elegido", () => revertida(sql, async (tx) => {
+    const f = await formatoElegido(tx);
+    const t = await tramiteEn(tx, "publicacion");
+    const rutas: string[] = [];
+    try {
+      await transicionar(t.admin, publicar(t), opc(tx));
+      const primera = (await asegurarActa(t.tramiteId, { sql: tx }))!;
+      rutas.push(primera.ruta);
+      const original = await leerActa(primera.ruta);
+      expect(await conDisenoBasico(original, (await reunirDatosActa(t.tramiteId, { sql: tx }))!.entidad)).toBe(false);
+
+      await tx`UPDATE documentos SET nivel_acceso = 'restringido' WHERE id = ${f.id}`;
+      await formatoElegido(tx);
+      await ponerClave(tx, "formato_acta_margen_superior_cm", "2");
+      await rm(resolverRutaAlmacen(primera.ruta)!);
+      expect(await asegurarActa(t.tramiteId, { sql: tx })).toEqual(primera);
+      expect(huella(await leerActa(primera.ruta))).toBe(huella(original));
+    } finally { await borrarActas(rutas); await t.limpiar(); }
+  }));
+
+  it("si el acta ya está en disco, el formato no se toca", () => revertida(sql, async (tx) => {
+    const f = await formatoElegido(tx);
+    const t = await tramiteEn(tx, "publicacion");
+    const rutas: string[] = [];
+    try {
+      await transicionar(t.admin, publicar(t), opc(tx));
+      const acta = (await asegurarActa(t.tramiteId, { sql: tx }))!;
+      rutas.push(acta.ruta);
+      await rm(f.absoluta);
+      const generar = vi.fn(generarActa);
+      expect(await asegurarActa(t.tramiteId, { sql: tx, generar, usuarioId: t.admin.usuarioId })).toEqual(acta);
+      expect(generar).not.toHaveBeenCalled();
+      expect(await noRegenerables(tx, t.tramiteId)).toHaveLength(0);
+    } finally { await borrarActas(rutas); await t.limpiar(); }
+  }));
+
+  it("un formato bien guardado que no sirve da el diseño básico, sin fila en la bitácora, y se regenera igual", () => revertida(sql, async (tx) => {
+    await formatoElegido(tx, await pdfDeFormato(2));
+    const t = await tramiteEn(tx, "publicacion");
+    const rutas: string[] = [];
+    try {
+      await transicionar(t.admin, publicar(t), opc(tx));
+      const { resultado: acta, llamadas } = await conErrorEsperado(() => asegurarActa(t.tramiteId, { sql: tx, usuarioId: t.admin.usuarioId }));
+      rutas.push(acta!.ruta);
+      expect(llamadas).toBe(1);
+      expect(await noRegenerables(tx, t.tramiteId)).toHaveLength(0);
+      const original = await leerActa(acta!.ruta);
+      expect(await conDisenoBasico(original, (await reunirDatosActa(t.tramiteId, { sql: tx }))!.entidad)).toBe(true);
+
+      await rm(resolverRutaAlmacen(acta!.ruta)!);
+      const otra = await conErrorEsperado(() => asegurarActa(t.tramiteId, { sql: tx }));
+      expect(otra.resultado).toEqual(acta);
+      expect(huella(await leerActa(acta!.ruta))).toBe(huella(original));
+    } finally { await borrarActas(rutas); await t.limpiar(); }
   }));
 });
 

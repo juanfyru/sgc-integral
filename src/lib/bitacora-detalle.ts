@@ -234,7 +234,9 @@ export function describirEvento(e: EventoAuditoria): string {
     case "acta_generada":
       return `Generó el acta del trámite ${texto(d.numero) ?? "?"}`;
     case "acta_no_regenerable":
-      return `No se pudo regenerar idéntica el acta del trámite ${d.tramiteId ?? "?"}: no se entregó`;
+      return d.motivo === "formato"
+        ? `No se pudo generar el acta del trámite ${d.tramiteId ?? "?"}: el archivo del formato falta o cambió`
+        : `No se pudo regenerar idéntica el acta del trámite ${d.tramiteId ?? "?"}: no se entregó`;
     case "editar_config_documental":
       return describirConfigDocumental(d.cambios);
     case "crear_item_verificacion":

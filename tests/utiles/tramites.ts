@@ -155,6 +155,7 @@ export function aceptarCreacion(parcial: Record<string, unknown>): Record<string
 export async function archivoPrincipal(
   tx: TransactionSql,
   versionId: number,
+  contenido?: Uint8Array,
 ): Promise<{ archivoId: number; hash: string; limpiar: () => Promise<void> }> {
   consecutivo += 1;
   const ruta = `zz-pruebas/${Date.now()}-${consecutivo}/principal.pdf`;
@@ -166,7 +167,7 @@ export async function archivoPrincipal(
     await rmdir(path.dirname(carpeta)).catch(() => {}); // Solo se borra si quedó vacía.
   };
 
-  const bytes = await pdfDePrueba([[200, 200]]);
+  const bytes = contenido ?? (await pdfDePrueba([[200, 200]]));
   const hash = createHash("sha256").update(bytes).digest("hex");
   try {
     await mkdir(carpeta, { recursive: true });
@@ -204,6 +205,7 @@ type Trayecto = {
  * tiene archivo, el test llama `limpiar` en un `finally`. Quien aprueba por defecto es un
  * `admin_sgc`: un documento estratégico, o uno que elabora un `admin_sgc`, necesita que le pasen
  * `aprobador`. `tituloNuevo` es el título propuesto de una modificación, el que se decide al aceptar.
+ * `principal` son los bytes del archivo: debe ir desde aquí, porque las firmas fijan su huella.
  */
 export async function tramiteEn(
   tx: TransactionSql,
@@ -216,6 +218,7 @@ export async function tramiteEn(
     revisor?: SesionFlujo;
     aprobador?: SesionFlujo;
     tituloNuevo?: string;
+    principal?: Uint8Array;
   } = {},
 ): Promise<Trayecto> {
   const tipo = o.tipo ?? "modificar";
@@ -286,7 +289,7 @@ export async function tramiteEn(
   if (!["revision", "aprobacion", "publicacion"].includes(etapa)) throw new Error(`tramiteEn no llega a ${etapa} en ${tipo}`);
 
   const { versionId } = await trayecto();
-  const archivo = await archivoPrincipal(tx, versionId!);
+  const archivo = await archivoPrincipal(tx, versionId!, o.principal);
   try {
     await guardarControlCambios(tramiteId, elaborador, "Se añade la inducción por servicio.", { sql: tx });
     await transicionar(
