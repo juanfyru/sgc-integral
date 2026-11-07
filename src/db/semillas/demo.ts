@@ -22,6 +22,7 @@ import { esEtapaDeTrabajo, type Motivo, type TipoSolicitud } from "../../lib/tra
 import { evaluarTransicion, type Accion } from "../../lib/tramites/transiciones";
 import { zonaHoraria } from "../../lib/zona-horaria";
 import { congelarDatosActa } from "../consultas/actas";
+import { crearAcusesAlPublicar } from "../consultas/distribucion/acuses";
 import { obtenerConfigDocumental, type ConfigDocumental } from "../consultas/config-documental";
 import { listarFirmas, registrarFirma, type FirmaRegistrada } from "../consultas/firmas";
 import { exigirDesignacion } from "../consultas/flujo/aceptacion";
@@ -1016,6 +1017,7 @@ async function publicar(c: Contexto, t: FilaTramite, autor: Autor): Promise<Fila
     entidadId: t.versionId as number,
     detalle: { documentoId: t.documentoId, numero: version.numero, obsoletas },
   });
+  const acuses = await crearAcusesAlPublicar(tx, t.versionId as number, momento, [elaboro.usuarioId, reviso.usuarioId, aprobo.usuarioId, autor.quien.id]);
   return paso(c, t, {
     ...autor,
     accion: "publicar",
@@ -1023,6 +1025,7 @@ async function publicar(c: Contexto, t: FilaTramite, autor: Autor): Promise<Fila
       version: version.numero,
       obsoletas,
       huella: elaboro.hashSha256,
+      acuses,
       acta: await congelarDatosActa(tx, t, "aprobacion", momento, Math.max(...obsoletas)),
     },
   });

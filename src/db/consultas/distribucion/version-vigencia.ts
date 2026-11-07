@@ -5,6 +5,7 @@ import { numeroDeCopia } from "@/lib/distribucion/copias";
 import type { MotivoPorRecoger } from "@/lib/distribucion/tipos";
 import { fechaLimite } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
+import { superarAcuses } from "./acuses";
 import { evento } from "./eventos-copia";
 
 const CIERRE_DEL_AVISO: Record<MotivoPorRecoger, (nuevaVersion: number | null) => string> = {
@@ -16,9 +17,21 @@ const CIERRE_DEL_AVISO: Record<MotivoPorRecoger, (nuevaVersion: number | null) =
 /**
  * El único punto de enganche de lo que depende de que una versión deje de estar vigente (publicar una nueva,
  * eliminar el documento, deshacer la carga). Corre dentro de la misma transacción que cambia la versión.
- * Hoy recoge las copias controladas vivas; no hace nada si la versión no tiene copias.
+ * Recoge las copias controladas vivas y supera los acuses pendientes.
  */
 export async function alDejarDeSerVigente(
+  tx: TransactionSql,
+  versionId: number,
+  motivo: MotivoPorRecoger,
+  ahora: Date,
+  opciones?: { nuevaVersionId?: number; actorId?: number },
+): Promise<{ copiasPorRecoger: number }> {
+  const { copiasPorRecoger } = await recogerCopias(tx, versionId, motivo, ahora, opciones);
+  await superarAcuses(tx, versionId, ahora, motivo);
+  return { copiasPorRecoger };
+}
+
+async function recogerCopias(
   tx: TransactionSql,
   versionId: number,
   motivo: MotivoPorRecoger,

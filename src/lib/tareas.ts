@@ -1,5 +1,5 @@
 import type { Cliente } from "@/db/cliente";
-import { tareasDeCopias } from "@/db/consultas/distribucion/tareas";
+import { tareasDeAcuses, tareasDeCopias } from "@/db/consultas/distribucion/tareas";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { listarTramites, type ResumenTramite } from "@/db/consultas/tramites";
 
@@ -34,12 +34,16 @@ export function tituloDeTarea(t: ResumenTramite): string {
   }
 }
 
-/** Los pasos que le tocan a la persona: los trámites (la pestaña «Por hacer» de la bandeja, spec 13A §14.1) y las copias. */
+/** Los pasos que le tocan a la persona: los trámites (la pestaña «Por hacer» de la bandeja, spec 13A §14.1), las copias y las lecturas por confirmar. */
 export async function misTareas(
   sesion: SesionFlujo,
   opciones?: { sql?: Cliente },
 ): Promise<{ tareas: Tarea[]; total: number }> {
-  const [tramites, copias] = await Promise.all([listarTramites(sesion, "por_hacer", opciones), tareasDeCopias(sesion, opciones)]);
+  const [tramites, copias, acuses] = await Promise.all([
+    listarTramites(sesion, "por_hacer", opciones),
+    tareasDeCopias(sesion, opciones),
+    tareasDeAcuses(sesion, opciones),
+  ]);
   const tareas: Tarea[] = [
     ...tramites.map((t) => ({
       id: `tramite:${t.id}`,
@@ -50,6 +54,7 @@ export async function misTareas(
       enlace: `/tramites/${t.id}`,
     })),
     ...copias,
+    ...acuses,
   ];
   return { tareas, total: tareas.length };
 }

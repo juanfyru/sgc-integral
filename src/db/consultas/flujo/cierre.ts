@@ -6,6 +6,7 @@ import type { TransactionSql } from "postgres";
 import type { Cliente } from "@/db/cliente";
 import { anularVigenteEn, aplicarPublicacion } from "@/db/consultas/admin";
 import { congelarDatosActa, nombreDeEntidadParaActa } from "@/db/consultas/actas";
+import { crearAcusesAlPublicar } from "@/db/consultas/distribucion/acuses";
 import { exigirDesignacion } from "./aceptacion";
 import { listarFirmas, type FirmaRegistrada } from "@/db/consultas/firmas";
 import { crearObservacionesDeAprobacion, criteriosNoCumplen } from "@/db/consultas/revision";
@@ -224,6 +225,10 @@ async function publicarVersion(c: ContextoManejador, aprobador?: Firmante): Prom
       fecha_elaboracion = ${diaDe(elaboro)}, fecha_revision = ${diaDe(reviso)}, fecha_aprobacion = ${diaDe(aprobo)}
     WHERE id = ${versionId}`;
   const { documentoId, numero, obsoletas } = await aplicarPublicacion(tx, versionId, "plataforma", sesion.usuarioId, ahora);
+  // En `aprobar_y_publicar` quien aprueba es quien publica: su firma aún no está en `firmas`.
+  const firmantes = [elaboro.usuarioId, reviso.usuarioId, sesion.usuarioId];
+  if (!aprobador) firmantes.push(laFirma(firmas, "aprobo").usuarioId);
+  const acuses = await crearAcusesAlPublicar(tx, versionId, ahora, firmantes);
   // Solo una modificación: en una creación, `titulo_propuesto` es lo pedido y el título es el que quedó al aceptar.
   let cambioDeTitulo: { tituloAnterior: string; titulo: string } | null = null;
   if (tramite.tipo === "modificar" && tramite.tituloPropuesto) {
@@ -237,6 +242,7 @@ async function publicarVersion(c: ContextoManejador, aprobador?: Firmante): Prom
       version: numero,
       obsoletas,
       huella: elaboro.hashSha256,
+      acuses,
       ...cambioDeTitulo,
       acta: await congelarDatosActa(tx, tramite, "aprobacion", ahora, obsoletas.length === 0 ? null : Math.max(...obsoletas)),
     },

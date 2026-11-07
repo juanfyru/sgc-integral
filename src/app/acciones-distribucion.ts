@@ -1,6 +1,7 @@
 "use server";
 
 import { idNumerico, mutacion, type EstadoAccion } from "@/app/admin/comun";
+import { confirmarLectura } from "@/db/consultas/distribucion/acuses";
 import {
   anularCopia,
   confirmarRecibido,
@@ -11,6 +12,7 @@ import {
 } from "@/db/consultas/distribucion/copias";
 import {
   EsquemaAnulacion,
+  EsquemaConfirmarLectura,
   EsquemaEmitirCopia,
   EsquemaRecogida,
   EsquemaReemplazarCopias,
@@ -73,5 +75,13 @@ export async function reemplazarCopiasAccion(_prev: EstadoAccion, formData: Form
   return mutacion(formData, "copias.emitir", async (_usuarioId, _formData, sesion) => {
     const { versionId } = parsearFormulario(formData, EsquemaReemplazarCopias);
     await reemplazarCopias(sesion, versionId);
+  });
+}
+
+export async function confirmarLecturaAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "acuses.confirmar", async (_usuarioId, _formData, sesion) => {
+    parsearFormulario(formData, EsquemaConfirmarLectura, { omitir: ["id"] });
+    await confirmarLectura(idNumerico(formData, "id"), sesion);
+    return "/";
   });
 }

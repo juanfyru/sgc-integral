@@ -54,3 +54,23 @@ export async function tareasDeCopias(sesion: SesionFlujo, opciones?: { sql?: Cli
   }
   return tareas;
 }
+
+/** Cada lectura pendiente es una tarea de la persona; vence con el plazo del acuse. */
+export async function tareasDeAcuses(sesion: SesionFlujo, opciones?: { sql?: Cliente }): Promise<Tarea[]> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const filas = await sql`
+    SELECT a.id, a.vence_en, v.numero AS version, d.codigo, d.titulo
+    FROM acuses a
+    JOIN documento_versiones v ON v.id = a.version_id
+    JOIN documentos d ON d.id = v.documento_id
+    WHERE a.usuario_id = ${sesion.usuarioId} AND a.estado = 'pendiente'
+    ORDER BY a.vence_en, a.id`;
+  return filas.map((f) => ({
+    id: `acuse:${f.id}`,
+    modulo: "documentos" as const,
+    titulo: `Confirmar lectura de ${f.codigo} v${f.version}`,
+    detalle: f.titulo as string,
+    vence: f.vence_en as Date,
+    enlace: `/acuses/${f.id}`,
+  }));
+}

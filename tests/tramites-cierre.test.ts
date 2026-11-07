@@ -379,7 +379,7 @@ describe("publicación", () => {
       expect(firmas.map((f) => f.firma)).toEqual(["elaboro", "reviso", "aprobo", "publico"]);
       expect(new Set(firmas.map((f) => f.hashSha256)).size).toBe(1);
       expect(await ultimoDetalle(tx, t.tramiteId, "aprobar_y_publicar")).toEqual({
-        concepto: "Aprobado.", version: antes.numero + 1, obsoletas: [antes.numero], huella: firmas[0].hashSha256,
+        concepto: "Aprobado.", version: antes.numero + 1, obsoletas: [antes.numero], huella: firmas[0].hashSha256, acuses: expect.any(Object),
       });
       // Nadie queda esperando publicar lo que ya se publicó.
       expect((await avisos(tx, t.tramiteId, "tramite.paso")).filter((a) => /publicar/.test(a.titulo))).toHaveLength(0);
@@ -404,7 +404,7 @@ describe("publicación", () => {
       await transicionar(t.admin, publicar(t), opc(tx));
       const [{ hash_sha256: huella }] = await tx`SELECT hash_sha256 FROM archivos WHERE version_id = ${t.versionId} AND rol = 'principal'`;
       const [v] = await tx`SELECT numero, documento_id FROM documento_versiones WHERE id = ${t.versionId}`;
-      expect(await ultimoDetalle(tx, t.tramiteId, "publicar")).toEqual({ version: v.numero, obsoletas: [v.numero - 1], huella });
+      expect(await ultimoDetalle(tx, t.tramiteId, "publicar")).toEqual({ version: v.numero, obsoletas: [v.numero - 1], huella, acuses: expect.any(Object) });
       const acciones = await tx`SELECT accion FROM auditoria WHERE entidad = 'documento_version' AND entidad_id = ${t.versionId}`;
       expect(acciones.map((a) => a.accion)).toContain("publicar_version");
       const lideres = await lideresDeProcesosDelDocumento(Number(v.documento_id), { sql: tx });
