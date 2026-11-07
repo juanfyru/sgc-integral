@@ -68,6 +68,26 @@ export function filtroAcceso(sql: Cliente, sujeto: SujetoVisibilidad) {
   ))`;
 }
 
+/**
+ * La misma regla de `filtroAcceso` evaluada por fila: `columnaUsuario` es la columna que trae el id de la
+ * persona (por ejemplo, un fragmento `u.id`) y la consulta llama `d` a `documentos`. El rol sale de `usuarios`.
+ */
+export function filtroAccesoDe(sql: Cliente, columnaUsuario: ReturnType<Cliente>) {
+  return sql`(d.nivel_acceso = 'general'
+    OR EXISTS (SELECT 1 FROM usuarios acceso_u
+      WHERE acceso_u.id = ${columnaUsuario} AND acceso_u.rol IN ${sql([...ROLES_VEN_RESTRINGIDO])})
+    OR EXISTS (
+      SELECT 1
+      FROM documento_proceso acceso_dp
+      LEFT JOIN subprocesos acceso_s ON acceso_s.id = acceso_dp.subproceso_id
+      JOIN procesos acceso_p
+        ON acceso_p.id = COALESCE(acceso_dp.proceso_id, acceso_s.proceso_id) AND acceso_p.activo
+      JOIN usuario_procesos acceso_up
+        ON acceso_up.proceso_id = acceso_p.id AND acceso_up.usuario_id = ${columnaUsuario}
+      WHERE acceso_dp.documento_id = d.id
+    ))`;
+}
+
 /** La misma regla para un documento suelto; `false` si el documento no existe. */
 export async function puedeAccederDocumento(
   documentoId: number,

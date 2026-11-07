@@ -184,6 +184,23 @@ describe("FormularioCatalogo", () => {
     expect(html).toContain('<option value="restringido" selected="">');
   });
 
+  it("con distribución trae las listas y la lectura obligatoria al ingresar", () => {
+    const distribucion = {
+      listas: [{ id: 3, nombre: "Jefes de área", activa: true }, { id: 4, nombre: "Antigua", activa: false }],
+      listaIds: [4],
+      lecturaObligatoriaIngreso: true,
+    };
+    const html = renderToStaticMarkup(<FormularioCatalogo {...CATALOGO} distribucion={distribucion} />);
+    expect(html).toContain("Distribución");
+    expect(html).toContain('name="listaIds" value="3"');
+    expect(html).toContain('name="listaIds" checked="" value="4"');
+    expect(html).toContain("Jefes de área");
+    expect(html).toContain("Lectura obligatoria al ingresar al proceso");
+    expect(html).toContain('name="lecturaObligatoriaIngreso" checked=""');
+    expect(html).toContain('name="distribucion" value="1"');
+    expect(renderToStaticMarkup(<FormularioCatalogo {...CATALOGO} />)).not.toContain("listaIds");
+  });
+
   it("con el propietario fijo lo dice, lo envía y no deja elegir otro", () => {
     const html = renderToStaticMarkup(
       <FormularioCatalogo {...CATALOGO} propietarioFijo={{ nombre: "Calidad", razon: "No cambia: es parte del código." }} />,
@@ -281,6 +298,18 @@ describe("esquemas del camino directo", () => {
       relacionados: [],
       asociaciones: [{ procesoId: 7, esPrincipal: true }],
     });
+  });
+
+  it("el catálogo lee la distribución solo si el formulario la envía", () => {
+    const base: [string, string][] = [["nivelAcceso", "general"], ["principal", "p:7"]];
+    const con = parsearFormulario(
+      formulario([...base, ["distribucion", "1"], ["listaIds", "3"], ["listaIds", "4"], ["lecturaObligatoriaIngreso", "on"]]),
+      EsquemaCatalogo,
+    );
+    expect(con.audiencia).toEqual({ listaIds: [3, 4], lecturaObligatoriaIngreso: true });
+    const sinMarcar = parsearFormulario(formulario([...base, ["distribucion", "1"]]), EsquemaCatalogo);
+    expect(sinMarcar.audiencia).toEqual({ listaIds: [], lecturaObligatoriaIngreso: false });
+    expect(parsearFormulario(formulario(base), EsquemaCatalogo).audiencia).toBeUndefined();
   });
 
   it("los datos de la versión vacíos quedan en null, y una fecha mala se rechaza", () => {

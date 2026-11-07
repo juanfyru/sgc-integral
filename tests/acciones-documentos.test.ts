@@ -14,6 +14,7 @@ const dominio = vi.hoisted(() => ({
   editarVersionBorrador: vi.fn(),
   publicarVersion: vi.fn(),
 }));
+const guardarAudiencia = vi.hoisted(() => vi.fn());
 const { redirect, requerirSesion } = vi.hoisted(() => ({
   redirect: vi.fn((destino: string) => {
     throw new Error(`REDIRECT:${destino}`);
@@ -25,6 +26,7 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect }));
 vi.mock("@/lib/sesion-actual", () => ({ requerirSesion }));
 vi.mock("@/db/consultas/admin", () => dominio);
+vi.mock("@/db/consultas/distribucion/audiencia", () => ({ guardarAudiencia }));
 
 import {
   crearVersionAccion,
@@ -81,5 +83,16 @@ describe("las acciones con datos y el id del documento", () => {
       { descripcion: null, palabrasClave: null, nivelAcceso: "general", relacionados: [], asociaciones: [{ procesoId: 7, esPrincipal: true }] },
       7,
     );
+  });
+
+  it("editarCatalogoAccion guarda la audiencia solo si el formulario la trae", async () => {
+    const datos = new FormData();
+    for (const [c, v] of [["documentoId", "5"], ["codigo", "GTH-PR-01"], ["nivelAcceso", "general"], ["principal", "p:7"], ["distribucion", "1"], ["listaIds", "3"], ["listaIds", "4"], ["lecturaObligatoriaIngreso", "on"]]) datos.append(c, v);
+    await expect(editarCatalogoAccion(null, datos)).rejects.toThrow("REDIRECT:/admin/documentos/GTH-PR-01");
+    expect(dominio.editarCatalogo).toHaveBeenCalledWith(5, expect.not.objectContaining({ audiencia: expect.anything() }), 7);
+    expect(guardarAudiencia).toHaveBeenCalledWith(5, { listaIds: [3, 4], lecturaObligatoriaIngreso: true }, 7);
+    guardarAudiencia.mockClear();
+    await expect(editarCatalogoAccion(null, formulario({ documentoId: "5", codigo: "GTH-PR-01", nivelAcceso: "general", principal: "p:7" }))).rejects.toThrow("REDIRECT");
+    expect(guardarAudiencia).not.toHaveBeenCalled();
   });
 });

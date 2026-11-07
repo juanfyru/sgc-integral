@@ -11,6 +11,7 @@ import {
   editarVersionBorrador,
   publicarVersion,
 } from "@/db/consultas/admin";
+import { guardarAudiencia } from "@/db/consultas/distribucion/audiencia";
 import {
   EsquemaCatalogo,
   EsquemaControl,
@@ -53,8 +54,10 @@ export async function editarCatalogoAccion(
   formData: FormData,
 ): Promise<EstadoAccion> {
   return mutacion(formData, "documentos.administrar", async (usuarioId) => {
-    const datos = parsearFormulario(formData, EsquemaCatalogo, { omitir: ["documentoId", "codigo"] });
-    await editarCatalogo(idNumerico(formData, "documentoId"), datos, usuarioId);
+    const { audiencia, ...datos } = parsearFormulario(formData, EsquemaCatalogo, { omitir: ["documentoId", "codigo"] });
+    const documentoId = idNumerico(formData, "documentoId");
+    await editarCatalogo(documentoId, datos, usuarioId);
+    if (audiencia) await guardarAudiencia(documentoId, audiencia, usuarioId);
     return rutaDe(texto(formData, "codigo"));
   });
 }

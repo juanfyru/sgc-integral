@@ -11,6 +11,9 @@ import {
   listarTiposActivos,
   obtenerDocumentoAdmin,
 } from "@/db/consultas/admin";
+import { leerAudiencia } from "@/db/consultas/distribucion/audiencia";
+import { listarListas } from "@/db/consultas/distribucion/listas";
+import { obtenerSql } from "@/db/cliente";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { exigirPermiso } from "@/lib/paginas";
 
@@ -33,6 +36,11 @@ export default async function PaginaEditarDocumento({
     obtenerConfigDocumental(),
   ]);
   if (!documento) notFound();
+  const [audiencia, listasActivas] = await Promise.all([leerAudiencia(obtenerSql(), documento.id), listarListas({ soloActivas: true })]);
+  const listas = [
+    ...listasActivas.map((l) => ({ id: l.id, nombre: l.nombre, activa: true })),
+    ...audiencia.listas.filter((l) => !l.activa),
+  ].sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
 
   const { situacion } = documento;
   const propietario = documento.asociaciones.find((a) => a.esPrincipal);
@@ -79,6 +87,7 @@ export default async function PaginaEditarDocumento({
           documentos={documentosRelacionables(documentos, documento)}
           documentoId={documento.id}
           codigo={documento.codigo}
+          distribucion={{ listas, listaIds: audiencia.listas.map((l) => l.id), lecturaObligatoriaIngreso: audiencia.lecturaObligatoriaIngreso }}
           valores={{
             descripcion: documento.descripcion,
             palabrasClave: documento.palabrasClave,
