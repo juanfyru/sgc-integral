@@ -33,18 +33,21 @@ const datos = (ruta: string, contexto: string, contextoId: number) => ({
   extension: "png", mime: "image/png", tamanoBytes: 10, hashSha256: "a".repeat(64),
 });
 
+/** Un id que la demo no usa: la jornada sembrada tiene su propia evidencia. */
+const JORNADA = 910_001;
+
 describe("evidencias", () => {
   it("evidenciasDe lista solo las de ese contexto e id", async () => {
     await revertida(sql, async (tx) => {
       const admin = await sesionAdmin(tx);
-      const a = await registrarArchivo(datos("jornadas/1/a", "jornada", 1), admin.usuarioId, { sql: tx });
-      await registrarArchivo(datos("jornadas/2/b", "jornada", 2), admin.usuarioId, { sql: tx });
+      const a = await registrarArchivo(datos("jornadas/1/a", "jornada", JORNADA), admin.usuarioId, { sql: tx });
+      await registrarArchivo(datos("jornadas/2/b", "jornada", JORNADA + 1), admin.usuarioId, { sql: tx });
       await registrarArchivo(datos("verificaciones/1/items/1/c", "verificacion_item", 1), admin.usuarioId, { sql: tx });
 
-      const lista = await evidenciasDe("jornada", 1, { sql: tx });
+      const lista = await evidenciasDe("jornada", JORNADA, { sql: tx });
       expect(lista.map((e) => e.id)).toEqual([a.id]);
       expect(lista[0]).toMatchObject({ nombreOriginal: "jornadas/1/a.png", mime: "image/png", tamanoBytes: 10 });
-      expect(await evidenciasDe("jornada", 3, { sql: tx })).toEqual([]);
+      expect(await evidenciasDe("jornada", JORNADA + 2, { sql: tx })).toEqual([]);
       expect((await evidenciasDe("verificacion_item", 1, { sql: tx })).length).toBe(1);
     });
   });
@@ -64,8 +67,8 @@ describe("evidencias", () => {
   it("evidenciaServible devuelve null para un archivo de otro contexto o de otro id", async () => {
     await revertida(sql, async (tx) => {
       const admin = await sesionAdmin(tx);
-      const { id } = await registrarArchivo(datos("jornadas/1/a", "jornada", 1), admin.usuarioId, { sql: tx });
-      expect(await evidenciaServible("jornada", 1, id, { sql: tx })).toEqual({
+      const { id } = await registrarArchivo(datos("jornadas/1/a", "jornada", JORNADA), admin.usuarioId, { sql: tx });
+      expect(await evidenciaServible("jornada", JORNADA, id, { sql: tx })).toEqual({
         ruta: "jornadas/1/a", mime: "image/png", nombreOriginal: "jornadas/1/a.png",
       });
       expect(await evidenciaServible("verificacion_item", 1, id, { sql: tx })).toBeNull();

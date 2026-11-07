@@ -37,11 +37,17 @@ export async function abrirCarga(sql: Cliente): Promise<() => Promise<void>> {
 
 const ETAPAS_SEMBRADAS = ["publicado", "revision", "publicacion", "aceptacion", "visto_bueno"];
 
-/** Los totales de la demo solo valen si nadie creó documentos ni trámites ni avanzó los sembrados. */
+/** Los totales de la demo solo valen si nadie creó documentos, trámites ni puntos de uso, ni avanzó los sembrados. */
 export async function exigirDemoIntacta(ctx: TestContext, sql: Cliente): Promise<void> {
   const [{ documentos }] = await sql`SELECT count(*)::int AS documentos FROM documentos`;
+  const [{ puntos }] = await sql`SELECT count(*)::int AS puntos FROM puntos_uso`;
+  const [{ verificaciones }] = await sql`SELECT count(*)::int AS verificaciones FROM verificaciones WHERE estado = 'cerrada'`;
   const tramites = await sql`SELECT etapa FROM tramites ORDER BY id`;
   const etapas = tramites.map((t) => t.etapa as string);
   const iguales = etapas.length === ETAPAS_SEMBRADAS.length && etapas.every((e, i) => e === ETAPAS_SEMBRADAS[i]);
-  exigirDemo(ctx, documentos === 31 && iguales, `hay ${documentos} documentos y ${etapas.length} trámites, o los sembrados avanzaron`);
+  exigirDemo(
+    ctx,
+    documentos === 31 && iguales && puntos === 7 && verificaciones === 2,
+    `hay ${documentos} documentos, ${etapas.length} trámites, ${puntos} puntos de uso y ${verificaciones} verificaciones cerradas, o los sembrados avanzaron`,
+  );
 }

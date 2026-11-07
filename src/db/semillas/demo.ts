@@ -44,6 +44,7 @@ import {
 } from "../consultas/tramites-flujo";
 import * as e from "../esquema";
 import { generarPlaceholder } from "../placeholders";
+import { sembrarDistribucion, sembrarDistribucionPrevia } from "./distribucion-demo";
 import { CODIGO_FORMATO_ACTA, generarFormatoActaDemo } from "./formato-acta-demo";
 import { limpiarTodo, sembrarBase, type Db } from "./minima";
 
@@ -670,14 +671,18 @@ export async function sembrarDemo(db: Db, sql: Sql): Promise<void> {
       .where(eq(e.tiposDocumento.id, tipoPorSigla[sigla]));
   }
 
-  await sembrarEstructuraYUsuarios(db, procesoPorSigla);
+  const usuarioPorNombre = await sembrarEstructuraYUsuarios(db, procesoPorSigla);
   // Antes de los trámites: el acta de cada cierre congela el formato elegido.
   await db.insert(e.configuracion).values([
     { clave: "formato_acta_documento_id", valor: String(documentoPorCodigo[CODIGO_FORMATO_ACTA]) },
     { clave: "formato_acta_margen_superior_cm", valor: "4.2" },
     { clave: "formato_acta_margen_inferior_cm", valor: "3.2" },
   ]);
+  // La copia de la v2 de GTH-CA-01 se emite antes de que los trámites publiquen la v3.
+  const distribucion = { usuarioPorNombre, documentoPorCodigo, procesoPorSigla };
+  await sembrarDistribucionPrevia(sql, distribucion);
   await sembrarTramites(sql, { tipoPorSigla, procesoPorSigla, documentoPorCodigo });
+  await sembrarDistribucion(sql, distribucion);
 }
 
 /**
@@ -687,7 +692,7 @@ export async function sembrarDemo(db: Db, sql: Sql): Promise<void> {
 async function sembrarEstructuraYUsuarios(
   db: Db,
   procesoPorSigla: Record<string, number>,
-): Promise<void> {
+): Promise<Record<string, number>> {
   console.log("Sembrando estructura organizacional y usuarios demo…");
 
   const areas = await db
@@ -715,6 +720,7 @@ async function sembrarEstructuraYUsuarios(
     { nombre: "Enfermera Jefe", area: "Subgerencia Científica", superior: "Médico Coordinador" },
     { nombre: "Auxiliar de Enfermería", area: "Subgerencia Científica", superior: "Enfermera Jefe" },
     { nombre: "Coordinadora de Talento Humano", area: "Subgerencia Administrativa", superior: "Subgerente Administrativo" },
+    { nombre: "Regente de Farmacia", area: "Subgerencia Científica", superior: "Subgerente Científico" },
   ];
   const cargo: Record<string, number> = {};
   for (const c of defCargos) {
@@ -735,15 +741,18 @@ async function sembrarEstructuraYUsuarios(
     nombre: string;
     rol: string;
     cargo: string;
-    proceso?: string;
+    procesos?: string[];
   }[] = [
-    { usuario: "coordinadora.sgc", nombre: "María Fernanda Perdomo", rol: "admin_sgc", cargo: "Líder de Calidad" },
+    { usuario: "coordinadora.sgc", nombre: "María Fernanda Perdomo", rol: "admin_sgc", cargo: "Líder de Calidad", procesos: ["SGC"] },
     { usuario: "gerente", nombre: "Gerente de ejemplo", rol: "gerencia", cargo: "Gerente" },
     { usuario: "control.interno", nombre: "Control Interno de ejemplo", rol: "control_interno", cargo: "Jefe de Control Interno" },
-    { usuario: "lider.gth", nombre: "Líder de Talento Humano de ejemplo", rol: "lider_proceso", cargo: "Coordinadora de Talento Humano", proceso: "GTH" },
-    { usuario: "lider.cex", nombre: "Líder de Consulta Externa de ejemplo", rol: "lider_proceso", cargo: "Médico Coordinador", proceso: "CEX" },
-    { usuario: "consulta", nombre: "Usuario de consulta de ejemplo", rol: "consulta", cargo: "Auxiliar de Enfermería" },
+    { usuario: "lider.gth", nombre: "Líder de Talento Humano de ejemplo", rol: "lider_proceso", cargo: "Coordinadora de Talento Humano", procesos: ["GTH"] },
+    { usuario: "lider.cex", nombre: "Líder de Consulta Externa de ejemplo", rol: "lider_proceso", cargo: "Médico Coordinador", procesos: ["CEX"] },
+    { usuario: "consulta", nombre: "Usuario de consulta de ejemplo", rol: "consulta", cargo: "Auxiliar de Enfermería", procesos: ["AIN", "CEX"] },
+    { usuario: "jefe.urgencias", nombre: "Luz Dary Ortiz", rol: "consulta", cargo: "Enfermera Jefe", procesos: ["AIN"] },
+    { usuario: "regente.farmacia", nombre: "Carlos Andrés Rojas", rol: "consulta", cargo: "Regente de Farmacia", procesos: ["ATE"] },
   ];
+  const usuarioPorNombre: Record<string, number> = {};
   for (const u of defUsuarios) {
     const [fila] = await db
       .insert(e.usuarios)
@@ -764,12 +773,14 @@ async function sembrarEstructuraYUsuarios(
       cuerpo: "Explore el mapa de procesos y revise su cuenta en Mi cuenta.",
       enlace: "/cuenta",
     });
-    if (u.proceso) {
+    usuarioPorNombre[u.usuario] = fila.id;
+    for (const sigla of u.procesos ?? []) {
       await db
         .insert(e.usuarioProcesos)
-        .values({ usuarioId: fila.id, procesoId: procesoPorSigla[u.proceso] });
+        .values({ usuarioId: fila.id, procesoId: procesoPorSigla[sigla] });
     }
   }
+  return usuarioPorNombre;
 }
 
 // ── Trámites ────────────────────────────────────────────────────────────────

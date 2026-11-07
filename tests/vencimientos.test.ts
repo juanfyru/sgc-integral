@@ -253,6 +253,7 @@ describe("revisarVencimientos", () => {
     const primero = await tramiteEn(tx, "elaboracion", { elaborador: uno });
     const segundo = await tramiteEn(tx, "elaboracion", { tipo: "crear", elaborador: dos });
     await tx`UPDATE tramites SET aviso_vencido_en = now(), escalado_en = now() WHERE id <> ALL(${[primero.tramiteId, segundo.tramiteId]})`;
+    await silenciarDistribucion(tx);
     const registro = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.mocked(supervisoresDe).mockRejectedValueOnce(new Error("sin conexión"));
     try {

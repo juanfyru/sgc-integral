@@ -258,15 +258,12 @@ describe("la historia sembrada", () => {
       await transicionar(t.admin, { tramiteId: t.tramiteId, accion: "publicar", etapaEsperada: "publicacion", rondaEsperada: 1, credenciales: FIRMA }, opc(tx));
       const claves = async (tramiteId: number) => {
         const eventos = await tx`SELECT tipo, detalle FROM tramite_eventos WHERE tramite_id = ${tramiteId} ORDER BY id`;
-        // `acuses` (13B) puede faltar en una semilla anterior a la entrega: se valida aparte.
-        return eventos.map((e) => [e.tipo, Object.keys(e.detalle).filter((k) => k !== "acuses").sort(), Object.keys(e.detalle.acta ?? {}).sort()]);
+        return eventos.map((e) => [e.tipo, Object.keys(e.detalle).sort(), Object.keys(e.detalle.acta ?? {}).sort()]);
       };
       const sembrado = await tramiteDe(1, tx);
       expect(await claves(sembrado.id)).toEqual(await claves(t.tramiteId));
       const publicar = (await tx`SELECT detalle FROM tramite_eventos WHERE tramite_id = ${sembrado.id} AND tipo = 'publicar'`)[0];
-      if (publicar?.detalle.acuses !== undefined) {
-        expect(publicar.detalle.acuses).toEqual({ creados: expect.any(Number), porFirma: expect.any(Number) });
-      }
+      expect(publicar.detalle.acuses).toEqual({ creados: expect.any(Number), porFirma: expect.any(Number) });
     } finally {
       await t.limpiar();
     }
