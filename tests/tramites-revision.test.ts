@@ -26,7 +26,7 @@ import * as real from "@/db/consultas/revision";
 import { CAMBIO_MIENTRAS, ErrorTramite, transicionar } from "@/db/consultas/tramites-flujo";
 import type { Verificador } from "@/lib/firma";
 import { constanciaDeCriterios, huellaDeCriterios } from "@/lib/tramites/criterios";
-import { opc, tramiteEn } from "./utiles/tramites";
+import { NOTA, opc, tramiteEn } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
 const sql = obtenerSql();
@@ -427,7 +427,6 @@ describe("revisión", () => {
 });
 
 describe("criterios que no cumplen", () => {
-  const NOTA = "Se ajustará con la guía de redacción.";
   const FALTA_NOTA = "Escriba una nota en cada criterio que no cumple";
   const FALTA_CONFIRMAR = "Confirme que da concepto favorable a pesar de los criterios que no cumplen";
   const LISTA_CAMBIO = "La lista cambió mientras tenía abierto el diálogo. Recargue la página.";

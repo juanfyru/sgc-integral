@@ -16,7 +16,6 @@ import { obtenerSql } from "@/db/cliente";
 import { listarFirmas } from "@/db/consultas/firmas";
 import {
   cerrarObservacion,
-  criteriosNoCumplen,
   guardarVerificacion,
   listarItemsVerificacion,
   listarObservaciones,
@@ -28,7 +27,7 @@ import { resolverRutaAlmacen } from "@/lib/almacen";
 import type { Verificador } from "@/lib/firma";
 import { huellaDeCriterios } from "@/lib/tramites/criterios";
 import type { Etapa } from "@/lib/tramites/tipos";
-import { opc, sesionAdmin, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
+import { NOTA, aprobacionConCriterio, opc, sesionAdmin, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
 const sql = obtenerSql();
@@ -232,7 +231,6 @@ describe("aprobación", () => {
 });
 
 describe("criterios que no cumplen en la aprobación", () => {
-  const NOTA = "Se ajustará con la guía de redacción.";
   const FALTA_CONFIRMAR = "Confirme que aprueba a pesar de los criterios que no cumplen";
   const LISTA_CAMBIO = "La lista cambió mientras tenía abierto el diálogo. Recargue la página.";
 
@@ -246,22 +244,6 @@ describe("criterios que no cumplen en la aprobación", () => {
     await guardarVerificacion(t.tramiteId, t.revisor,
       items.map((i) => (i.id === itemId ? { itemId: i.id, resultado: "no_cumple" as const, nota: NOTA } : { itemId: i.id, resultado: "cumple" as const })),
       { etapa: "revision", ronda: t.ronda }, { sql: tx });
-  }
-
-  /** Lleva a aprobación un trámite con un criterio en «No cumple» que el revisor aceptó. */
-  async function aprobacionConCriterio(tx: TransactionSql) {
-    const t = await tramiteEn(tx, "revision");
-    try {
-      const items = await listarItemsVerificacion({ sql: tx, soloActivos: true });
-      const criterio = items.find((i) => !i.critico)!;
-      await responderCon(tx, t, criterio.id);
-      const confirmaNoCumple = huellaDeCriterios(await criteriosNoCumplen(t.tramiteId, t.ronda, { sql: tx }));
-      await transicionar(t.revisor, concepto(t, confirmaNoCumple), opc(tx));
-      return { t, criterio, confirmaNoCumple };
-    } catch (err) {
-      await t.limpiar();
-      throw err;
-    }
   }
 
   const conHuella = (entrada: ReturnType<typeof firmando>, confirmaNoCumple: string) =>
@@ -326,6 +308,15 @@ describe("criterios que no cumplen en la aprobación", () => {
       const critico = (await listarItemsVerificacion({ sql: tx, soloActivos: true })).find((i) => i.critico)!;
       await responderCon(tx, t, critico.id);
       await fallaSinGastarLaFirma(tx, t.revisor, concepto(t, huellaDeCriterios([{ itemId: critico.id, texto: critico.texto, nota: NOTA }])), "Hay un ítem crítico que no cumple");
+    } finally { await t.limpiar(); }
+  }));
+
+  it("la bitácora del concepto lleva los criterios", () => revertida(sql, async (tx) => {
+    const { t, criterio } = await aprobacionConCriterio(tx);
+    try {
+      const [a] = await tx`SELECT detalle FROM auditoria
+        WHERE accion = 'tramite_concepto_favorable' AND entidad = 'tramite' AND entidad_id = ${t.tramiteId}`;
+      expect(a.detalle.noCumple).toEqual([{ texto: criterio.texto, nota: NOTA }]);
     } finally { await t.limpiar(); }
   }));
 

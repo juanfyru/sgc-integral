@@ -7,11 +7,12 @@ import { mkdir, rm, rmdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Row, TransactionSql } from "postgres";
 import type { Cliente } from "@/db/cliente";
-import { guardarVerificacion, listarItemsVerificacion } from "@/db/consultas/revision";
+import { criteriosNoCumplen, guardarVerificacion, listarItemsVerificacion } from "@/db/consultas/revision";
 import { guardarControlCambios } from "@/db/consultas/tramites-archivos";
 import { crearSolicitud, transicionar, type OpcionesFlujo, type SesionFlujo } from "@/db/consultas/tramites-flujo";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import type { Rol } from "@/lib/roles";
+import { huellaDeCriterios } from "@/lib/tramites/criterios";
 import type { EtapaTrabajo, TipoSolicitud } from "@/lib/tramites/tipos";
 import { pdfDePrueba } from "./pdf";
 
@@ -306,6 +307,35 @@ export async function tramiteEn(
     return await trayecto(archivo.limpiar);
   } catch (err) {
     await archivo.limpiar();
+    throw err;
+  }
+}
+
+export const NOTA = "Se ajustará con la guía de redacción.";
+
+/**
+ * Lleva a aprobación un trámite con un criterio que no cumple y que el revisor aceptó. La lista ya
+ * está guardada cuando corre `antesDelConcepto`: lo que le haga al ítem no cambia lo respondido.
+ * El test llama `t.limpiar` en un `finally`.
+ */
+export async function aprobacionConCriterio(
+  tx: TransactionSql,
+  o: { antesDelConcepto?: (itemId: number) => PromiseLike<unknown> } = {},
+) {
+  const t = await tramiteEn(tx, "revision");
+  try {
+    const items = await listarItemsVerificacion({ sql: tx, soloActivos: true });
+    const criterio = items.find((i) => !i.critico)!;
+    await guardarVerificacion(t.tramiteId, t.revisor,
+      items.map((i) => (i.id === criterio.id ? { itemId: i.id, resultado: "no_cumple" as const, nota: NOTA } : { itemId: i.id, resultado: "cumple" as const })),
+      { etapa: "revision", ronda: t.ronda }, { sql: tx });
+    await o.antesDelConcepto?.(criterio.id);
+    const confirmaNoCumple = huellaDeCriterios(await criteriosNoCumplen(t.tramiteId, t.ronda, { sql: tx }));
+    await transicionar(t.revisor, { tramiteId: t.tramiteId, accion: "concepto_favorable", etapaEsperada: "revision", rondaEsperada: t.ronda,
+      datos: { concepto: "Cumple, con un criterio aceptado.", confirmaNoCumple }, credenciales: { clave: "x" } }, opc(tx));
+    return { t, criterio, confirmaNoCumple };
+  } catch (err) {
+    await t.limpiar();
     throw err;
   }
 }
