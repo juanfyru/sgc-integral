@@ -69,7 +69,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
    desconocida y esas cabeceras se ignoran.
 10. **Dos conexiones de BD:** `DATABASE_URL_MIGRADOR` (dueño del esquema: migraciones,
     semillas y creación del rol de la app) y `DATABASE_URL` (rol `sgc_app`, solo DML,
-    sin `UPDATE` ni `DELETE` en `auditoria`, `accesos`, `firmas` y `tramite_eventos`).
+    sin `UPDATE` ni `DELETE` en `auditoria`, `accesos`, `firmas`, `tramite_eventos`,
+    `copia_eventos` y `acuse_eventos`).
     `asegurarRolApp` (`src/db/roles-bd.ts`) crea el rol y aplica sus privilegios en cada
     arranque, después de las migraciones. Los secretos (`APP_SECRETO`, `BD_APP_CLAVE`) se
     generan al instalar; sin un `APP_SECRETO` válido el arranque de producción falla.
@@ -99,13 +100,15 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
    que escriben verifican `Origin`. Toda acción del trámite lleva su permiso de matriz
    (`PERMISO_DE_ACCION`), además de la condición de persona de la tabla de transiciones.
 5. **Trazabilidad completa:** toda acción de cualquier usuario queda en bitácora,
-   inmutable en BD, con quién, qué y cuándo. `auditoria`, `accesos`, `firmas` y
-   `tramite_eventos` son de solo inserción (trigger que rechaza `UPDATE` y `DELETE` incluso
-   al dueño del esquema, más los privilegios de `sgc_app`); los usuarios con historia se
-   desactivan, nunca se borran. **Única excepción documentada (F12-D35):** las preferencias
-   de interfaz de cada persona (el tema) y las marcas de notificación leída no se auditan: no son
-   evidencia de 7.5 y llenarían la bitácora de ruido. Cualquier otra acción sin auditar se
-   propone antes.
+   inmutable en BD, con quién, qué y cuándo. `auditoria`, `accesos`, `firmas`,
+   `tramite_eventos`, `copia_eventos` y `acuse_eventos` son de solo inserción (trigger que
+   rechaza `UPDATE` y `DELETE` incluso al dueño del esquema, más los privilegios de `sgc_app`);
+   los usuarios con historia se desactivan, nunca se borran, y una verificación cerrada no se
+   modifica. **Única excepción documentada (F12-D35):** las preferencias de interfaz de cada
+   persona (el tema) y las marcas de notificación leída no se auditan: no son evidencia de 7.5
+   y llenarían la bitácora de ruido. El acuse de lectura, que F12-D35 dejó pendiente, sí se
+   audita (`acuse_lectura`) y tiene su historial inmutable en `acuse_eventos`. Cualquier otra
+   acción sin auditar se propone antes.
 6. **El MIME se detecta de los magic bytes en la carga** (no de la extensión del nombre)
    y se guarda en BD. El ícono de formato se deriva del MIME guardado.
 7. **Archivos fuera del webroot**, servidos por la app con `Content-Type` y
@@ -221,7 +224,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
     escriben verifican `Origin` con `origenValido()`. Excepción: el GET de un archivo
     responde 404 a quien no puede verlo (F13A-R3, spec 13A §12).
   - **Las rutas que reciben una subida van fuera del `matcher` de `src/proxy.ts`**
-    (`admin/api/archivos` y `api/tramites/[id]/archivos`), usan `recibirArchivo` y comparan
+    (`admin/api/archivos`, `api/tramites/[id]/archivos`, `api/socializaciones/[id]/archivos` y
+    `api/verificaciones/[id]/items/[itemId]/archivos`), usan `recibirArchivo` y comparan
     `content-length`: el búfer del proxy truncaba las subidas de más de 10 MB y respondía
     201 (F13A-R10).
   - **Los formularios que envían un `id` de ruta** se leen con
@@ -235,8 +239,20 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   - **Rutas públicas:** solo `/ingreso`, `/api/salud` y `/marca/logo` (`RUTAS_PUBLICAS`
     de `src/proxy.ts`). Una nueva se propone antes y entra con su caso en
     `tests/proxy-matcher.test.ts`.
+- **Toda escritura de la distribución** (`src/app/acciones-distribucion.ts`, los handlers de
+  `distribucion/copias`, `api/socializaciones` y `api/verificaciones`) exige su permiso de matriz
+  **más** la condición de persona: ser el responsable del punto (recibir, recoger, corregir un
+  hallazgo) o el destinatario del acuse (confirmarlo). El permiso solo no basta: lo tienen los
+  cinco roles (`distribucion.responder`, `acuses.confirmar`).
+- **`archivos` admite dueños distintos de una versión** (`contexto`: `version`, `jornada`,
+  `verificacion_item`; con `contexto_id`): el control de acceso de un archivo es el de su
+  dueño, y las consultas heredadas siguen filtrando por `version_id`.
+- **Una versión deja de ser vigente solo por `aplicarPublicacion`, `anularVigenteEn` o
+  `deshacerCarga`**, y los tres llaman `alDejarDeSerVigente`: marca sus copias controladas
+  como «por recoger», supera sus acuses pendientes y su socialización requerida. Ninguna otra
+  ruta cambia ese estado.
 - **Tests contra la BD de desarrollo:** todo usuario de prueba que genere filas en
-  `auditoria`, `accesos`, `firmas` o `tramite_eventos` usa un nombre único por corrida
+  `auditoria`, `accesos`, `firmas`, `tramite_eventos`, `copia_eventos` o `acuse_eventos` usa un nombre único por corrida
   (`zz_<algo>_${Date.now()}`) y no se borra (FK `RESTRICT` y trigger de solo inserción).
   Nunca `DELETE` ni `UPDATE` sobre esas tablas en una limpieza. Un test que escribe datos
   capaces de bloquear la migración o el arranque, o de romper otros tests (un usuario duplicado, la

@@ -37,7 +37,9 @@ npm run db:seed:minima
 
 # Usuarios demo (clave común: Demo-SGC-2026-clave):
 #   coordinadora.sgc (admin_sgc), gerente (gerencia), control.interno (control_interno),
-#   lider.gth y lider.cex (lider_proceso, de GTH y CEX), consulta (consulta).
+#   lider.gth y lider.cex (lider_proceso, de GTH y CEX), consulta (consulta),
+#   jefe.urgencias y regente.farmacia (consulta; responsables de los puntos de uso
+#   Urgencias y Farmacia).
 
 # Puertos elegidos para convivir con sgc-suaza en la misma máquina:
 # Postgres 5435, app en Docker 9081, next dev 3002.

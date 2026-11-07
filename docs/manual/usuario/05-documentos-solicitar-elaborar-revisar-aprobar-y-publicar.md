@@ -70,6 +70,11 @@ los pasos: los hechos llevan una marca y el actual va resaltado. Después vienen
 solicitud**, lo propio de la etapa y el **Historial**, con cada acción, su fecha, su hora y
 la persona.
 
+Cuando el trámite ya se publicó, la página trae además el bloque **Distribución**, con el estado
+de la versión publicada, en una línea como «Distribución de la versión 2: acuses 14 de 18 (78 %)
+· socialización registrada el 14 oct · copias: 1 emitida sin recibir, 2 recibidas». Junto a ella
+está el enlace **Ver la ficha del documento**, donde sigue el detalle (Capítulo 6).
+
 Solo ve los botones que le tocan a usted en esa etapa. Si otra persona avanzó el trámite
 mientras usted lo tenía abierto, el SGC no guarda nada y dice «Este trámite cambió mientras
 lo tenía abierto. Recargue la página.».
@@ -187,6 +192,13 @@ registrada en el trámite.
 
   Si hay un solo candidato, viene elegido. Si no hay ninguno, la pantalla dice qué falta,
   por ejemplo «No hay ningún usuario activo con el rol Gerencia», y no deja aceptar.
+
+- **Requiere socialización (capacitar al personal al publicar):** casilla que aparece en las
+  creaciones y las modificaciones (no en las eliminaciones). Márquela si el cambio exige
+  capacitar a quienes aplican el documento. Al publicar, el SGC creará la tarea de registrar
+  la jornada de socialización (Capítulo 6, sección 4.5). Mientras el trámite no se
+  publique, un Administrador puede cambiarla desde la página del trámite con **Marca de
+  socialización**.
 
 Pulse **Aceptar y abrir el trámite**. Nace la versión en trámite y, si es una creación, el
 documento con su código. Quien elabora recibe el aviso.
@@ -389,7 +401,12 @@ Al publicar, en un solo acto:
 - si la modificación traía un título nuevo, se aplica al documento;
 - los nombres, cargos y fechas de las firmas pasan a la ficha y al **Listado Maestro**;
 - se genera el acta (sección 9) y se avisa a los participantes y a los líderes de los
-  procesos del documento.
+  procesos del documento;
+- **empieza la distribución** (Capítulo 6): las copias controladas impresas de la versión
+  anterior pasan a **Por recoger** y sus responsables reciben la tarea de retirarlas; cada
+  persona de la audiencia del documento recibe la tarea **Confirmar lectura**, y quienes
+  firmaron el trámite quedan con la lectura confirmada por firma; y, si la solicitud tenía
+  la marca de socialización, los líderes reciben la tarea de registrar la jornada.
 
 Antes de publicar, el SGC vuelve a calcular la huella del archivo guardado. Si no coincide,
 dice «El archivo en el almacén no coincide con el aprobado. No se publicó.». Avise al área
@@ -517,6 +534,10 @@ documento**:
 
 Pulse **Guardar la corrección**. Desde la aprobación estos datos quedan fijos.
 
+La **marca de socialización** es la excepción: el Administrador del SGC puede cambiarla con
+**Marca de socialización** hasta que se publique (Capítulo 6, sección 5.5). Queda en el
+historial del trámite.
+
 ## 12. Mis tareas, avisos y vencimientos
 
 ### 12.1 Mis tareas
@@ -531,6 +552,7 @@ El bloque **Mis tareas** de **Inicio** lista lo que el SGC espera de usted:
 | Revisar GTH-PR-02 v2 | Quien revisa |
 | Aprobar GTH-PR-02 v2, o Aprobar la eliminación de CEX-GU-01 | Quien aprueba |
 | Publicar GTH-PR-02 v2, o Eliminar CEX-GU-01 | Todo Administrador del SGC |
+| Las tareas de la distribución: recibir o recoger una copia, confirmar una lectura, registrar una socialización, verificar un punto, corregir un hallazgo | Se explican en el Capítulo 6 |
 
 Cada tarea lleva su fecha límite, o la marca **Vence hoy** o **Vencida**. Pulse la tarea
 para abrir el trámite. El número junto a **Inicio**, en la barra lateral, dice cuántas
@@ -646,8 +668,8 @@ En la página del documento, **Editar datos** separa dos grupos:
 ### 14.1 Configuración documental
 
 Barra lateral → grupo **Documentos** → **Configuración documental**. Solo la ve el
-Administrador del SGC. Pulse **Guardar configuración** para aplicar las cuatro primeras
-partes (formato del código, plazos, publicación directa y formato del acta): aparece
+Administrador del SGC. Pulse **Guardar configuración** para aplicar las cinco primeras
+partes (formato del código, plazos, publicación directa, formato del acta y distribución): aparece
 «Configuración guardada». La lista de verificación se guarda ítem por ítem.
 
 **Formato del código.** Use estos marcadores, separados con guiones:
@@ -669,6 +691,10 @@ cuenta los códigos con el formato nuevo y la sugerencia puede necesitar correcc
 Cero quiere decir que la etapa vence el mismo día en que empieza.
 
 **Publicación directa.** Abre o cierra la carga (sección 13.4).
+
+**Distribución.** Una sección más de esta pantalla, con los plazos de la distribución, el
+umbral de conformidad y las medidas del sello de las copias controladas. Se explica en el
+Capítulo 6, sección 5.8.
 
 **Lista de verificación.** Es una sola para todos los tipos. Cada ítem tiene **Subir**,
 **Bajar**, **Desactivar** y **Editar ítem**. Para crear uno, use **Añadir un ítem**: escriba
