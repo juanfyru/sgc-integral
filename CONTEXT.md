@@ -1,9 +1,9 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-11-07**. La **Fase 13A —
-> Flujo documental** está hecha en la rama `fase-13a-flujo-documental`, con la revisión final de
-> la rama y su ola de arreglos, y espera la prueba del usuario y la fusión. La
-> Fase 12 (nueva estructura visual) y la Fase 11 (fundación de acceso) están en `main`.
+> Se actualiza al cierre de cada fase. Última actualización: **2026-11-07**, al fusionar la 13A. La **Fase 13A —
+> Flujo documental** y sus adiciones están fusionadas en `main` (`d0c6a42`, 2026-11-07), con el CI
+> en verde. Lo siguiente es la Fase 13B. La
+> Fase 12 (nueva estructura visual) y la Fase 11 (fundación de acceso) también están en `main`.
 > La variante nació el 2026-11-03, bifurcada de `sgc-suaza` en `9644ceb`; el diseño
 > maestro de las fases 11–20
 > (`docs/superpowers/specs/2026-11-03-sgc-integral-plataforma-design.md`) está aprobado
@@ -16,8 +16,8 @@
    con sus funcionalidades, y construir aquí otra con **funcionalidades más completas**.
    La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
    proyecto**.
-1. **Dónde quedamos:** la **Fase 13A está hecha** en la rama `fase-13a-flujo-documental` (sale de
-   `main` en `b94032e`). Un documento nuevo, un cambio o una eliminación recorren ahora un trámite
+1. **Dónde quedamos:** la **Fase 13A está en `main`** (`d0c6a42`, publicada el 2026-11-07, 93 commits
+   sobre `b94032e`; la rama `fase-13a-flujo-documental` ya se borró). Un documento nuevo, un cambio o una eliminación recorren ahora un trámite
    dentro del sistema: solicitud con visto bueno, aceptación con duplicidad asistida, código
    correlativo y plantilla, elaboración, revisión con lista de verificación y observaciones,
    aprobación por autoridad, publicación y acta en PDF, con firma por clave en cuatro momentos.
@@ -29,19 +29,22 @@
    «Migraciones al día» con las seis migraciones, `/api/salud` 200 `{"estado":"ok"}`, `/` → 307 a
    `/ingreso`. La 0004 y la 0005 se aplicaron además sobre una copia con el esquema y la demo de
    `main`. Hubo tres puntos de control en navegador y una revisión final de toda la rama, con su ola
-   de arreglos. El CI todavía no ha corrido sobre esta rama: no se ha publicado.
-   **Adición del 2026-11-06 (acta con formato del hospital y criterios que no cumplen), también hecha
-   en esta rama:** el acta se imprime sobre un PDF institucional que el Administrador del SGC elige
+   de arreglos. El CI de `main` pasó sobre `d0c6a42`: lint y build; la imagen `arm64` es manual.
+   **Adición del 2026-11-06 (acta con formato del hospital y criterios que no cumplen), también en
+   `main`:** el acta se imprime sobre un PDF institucional que el Administrador del SGC elige
    en **Configuración documental**; un criterio no crítico en «No cumple» ya no pasa en silencio
    (nota obligatoria, confirmación de quien revisa y de quien aprueba, constancia en el acta); y el
    acta la ve quien ve el trámite cerrado, sin abrir el archivo de una versión obsoleta. Spec:
    `docs/superpowers/specs/2026-11-06-fase13a-acta-con-formato-y-criterios-design.md`. **Verificado
-   al cierre de la adición:** lint limpio; **2969/2969 tests** (124 archivos, con `SEMILLA_RECIEN=1`);
+   al cierre de la adición:** lint limpio; **2971/2971 tests** (124 archivos, con `SEMILLA_RECIEN=1`);
    build sin URL de base, como el CI; compose reconstruido (`/api/salud` `{"estado":"ok"}`);
    recorrido en navegador sobre una copia con el formato real del hospital (claro, oscuro y 390 px).
-   **Falta:** la prueba del usuario («Qué probar y cómo (Fase 13A)», pasos 14 a 16 nuevos) y la
-   fusión en `main`. El usuario decide F13A-R35 (404 real en páginas). F13A-R36 ya está resuelta
-   (F13A-AU6).
+   **Pendiente del usuario, sin bloquear la 13B:** poner el código y la fecha de emisión en su Word
+   del formato del acta, guardarlo como PDF, registrarlo y elegirlo en **Configuración documental**
+   con 5,5 y 3,5 cm; recorrer los pasos 14 a 16 de «Qué probar y cómo (Fase 13A)»; y decidir
+   F13A-R35 (404 real en páginas). F13A-R36 ya está resuelta (F13A-AU6). Los archivos reales del
+   hospital están en la raíz, sin seguimiento y excluidos en `.git/info/exclude`: nunca entran a un
+   commit.
 2. **Lo que sigue: Fase 13B — Distribución y puntos de uso** (pasos 9 y 10 del procedimiento del
    hospital): listas de distribución y acuse de lectura con porcentaje, evidencia de capacitación,
    copias controladas con sello, recibido y recogida de las obsoletas, puntos de uso y su
@@ -130,7 +133,7 @@
    **La base de desarrollo se resembró varias veces en la 13A** (Tareas 2 y 15, sus arreglos y el
    cierre): cada vez se pierden los datos de prueba manual y `admin` se recrea con la `ADMIN_CLAVE`
    de `.env.local` y cambio obligatorio.
-5. **Tests:** 2969 en 124 archivos, en serie (`fileParallelism: false`), contra la BD de
+5. **Tests:** 2971 en 124 archivos, en serie (`fileParallelism: false`), contra la BD de
    desarrollo sembrada y **conectados como `sgc_app`**, igual que la app; el test de
    privilegios usa además `DATABASE_URL_MIGRADOR`. Los usuarios de prueba con historia
    (`zz_<algo>_<timestamp>`) se acumulan porque no se pueden borrar (F11-D2); `db:seed` los
@@ -300,10 +303,10 @@ explica cada pantalla.
     Tras el paso 10 (eliminar `CEX-GU-01`), `gerente`, que aprobó la eliminación, abre el trámite y
     su **Acta de eliminación**, y el archivo de la versión anulada da 404 (no tiene permiso de
     historial). Lo mismo le pasa con una versión obsoleta que aprobó: ve el acta, no el archivo.
-17. **Verificación técnica:** hecha al cierre. `npm run lint`, `npm test` (2969/2969 en 124 archivos) y
+17. **Verificación técnica:** hecha al cierre. `npm run lint`, `npm test` (2971/2971 en 124 archivos) y
     `npm run build` en verde; la imagen del compose arranca, dice «Migraciones al día» y
     `/api/salud` responde `{"estado":"ok"}`. La 0004 y la 0005 se aplicaron sobre una copia con el
-    esquema y la demo de `main`. Falta el CI: corre al publicar la rama. En 9081 `/marca/logo` da 404 porque la
+    esquema y la demo de `main`. El CI de `main` pasó sobre `d0c6a42`. En 9081 `/marca/logo` da 404 porque la
     imagen no trae el almacén.
 
 **Segundo factor (no hay usuario demo con él).** Como `lider.cex`, active el segundo factor en
@@ -435,7 +438,7 @@ de desarrollo **tal como está**: no hace falta resembrar y la 0003 ya está apl
     de Fátima de Suaza", sigla `HNSF`, lema "Comprometidos con la vida y el bienestar de
     nuestra comunidad", primario `#1b4e8e`, secundario `#2e9b47` y el logo
     `src/db/semillas/recursos/logo-demo.png`. Lint, tests, build y compose ya pasaron al
-    cierre (Punto de reanudación, punto 1); el CI corre al publicar la rama.
+    cierre (Punto de reanudación, punto 1); el CI de `main` pasó sobre `d0c6a42`.
 
 Manual de usuario de esta fase: `docs/manual/usuario/03-conocer-la-plataforma.md` y
 `docs/manual/usuario/04-configurar-la-marca-de-la-entidad.md`. Los capítulos 1 y 2 se
