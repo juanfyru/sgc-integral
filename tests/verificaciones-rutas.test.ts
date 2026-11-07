@@ -162,7 +162,7 @@ describe("subir una foto", () => {
       expect((await subir(c.verificacionId, c.itemAjeno.itemId)).status).toBe(404);
       expect((await subir(c.verificacionId, 987_654_321)).status).toBe(404);
       expect((await subir(987_654_321, c.itemId)).status).toBe(404);
-      expect(await c.tx`SELECT 1 FROM archivos WHERE contexto = 'verificacion_item'`).toHaveLength(0);
+      expect(await c.tx`SELECT 1 FROM archivos WHERE contexto = 'verificacion_item' AND contexto_id IN (${c.itemId}, ${c.itemAjeno.itemId}, 987654321)`).toHaveLength(0);
     }));
 
   it("a una verificación cerrada: 409 y no deja nada", () =>

@@ -32,7 +32,8 @@ describe("esquema de la Fase 13B", () => {
 
   it("archivos: las filas heredadas son de versión y un contexto nuevo exige contexto_id", () =>
     revertida(sql, async (tx) => {
-      const [{ n }] = await tx`SELECT count(*)::int AS n FROM archivos WHERE contexto <> 'version' OR version_id IS NULL`;
+      const [{ n }] = await tx`SELECT count(*)::int AS n FROM archivos
+        WHERE (contexto = 'version' AND version_id IS NULL) OR (contexto <> 'version' AND contexto_id IS NULL)`;
       expect(n).toBe(0);
       const insertar = (contexto: string, versionId: number | null, contextoId: number | null, ruta: string) =>
         tx.savepoint(

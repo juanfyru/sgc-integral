@@ -41,3 +41,15 @@ describe("Inicio con lecturas agrupadas", () => {
     expect(h).toContain("La más próxima vence el 9 de noviembre de 2026");
   });
 });
+
+describe("Inicio, conteo del encabezado", () => {
+  it("muestra el total real, no las filas agrupadas", () => {
+    const h = renderToStaticMarkup(
+      <MisTareas
+        total={12}
+        tareas={[{ id: "acuses", modulo: "documentos", titulo: "12 lecturas por confirmar", detalle: null, vence: null, enlace: "/acuses" }]}
+      />,
+    );
+    expect(h).toContain("(12)");
+  });
+});
