@@ -120,6 +120,14 @@ describe("obtenerTramite", () => {
     expect(await visto(tx, tramiteId, "consulta")).toBe(false);
   }));
 
+  it("eliminado lo ve quien tiene historial; consulta sin la marca y un líder sin alcance no", () => revertida(sql, async (tx) => {
+    const { tramiteId } = await tramiteGth(tx);
+    await tx`UPDATE tramites SET etapa = 'eliminado' WHERE id = ${tramiteId}`;
+    expect(await visto(tx, tramiteId, "control.interno")).toBe(true);
+    expect(await visto(tx, tramiteId, "consulta")).toBe(false);
+    expect(await visto(tx, tramiteId, "lider.cex")).toBe(false);
+  }));
+
   it("un documento restringido exige además el nivel de acceso a quien entra por historial", () => revertida(sql, async (tx) => {
     const { tramiteId, documentoId } = await tramiteGth(tx);
     await tx`UPDATE documentos SET nivel_acceso = 'restringido' WHERE id = ${documentoId}`;

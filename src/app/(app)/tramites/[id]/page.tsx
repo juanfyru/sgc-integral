@@ -24,7 +24,6 @@ import {
 } from "@/db/consultas/tramites";
 import { criteriosNoCumplen, listarItemsVerificacion, listarObservaciones, listarRondasVerificacion, obtenerVerificacion } from "@/db/consultas/revision";
 import { borradorDeTramite } from "@/db/consultas/tramites-archivos";
-import { puedeVerVersion } from "@/lib/alcance";
 import { huellaDeCriterios } from "@/lib/tramites/criterios";
 import { exigirSesion } from "@/lib/paginas";
 import { fechaEnZona, fechaLimite } from "@/lib/tramites/plazos";
@@ -197,9 +196,9 @@ export default async function PaginaTramite({ params }: { params: Promise<{ id: 
 
   const conRevision = conBorrador && ETAPAS_CON_REVISION.includes(tramite.etapa);
   const cierra = tramite.acciones.includes("aprobar") || tramite.acciones.includes("publicar");
-  // El acta es de la versión: se ofrece a quien puede verla, que no siempre es quien ve el trámite.
+  // El acta es del trámite cerrado: quien llegó hasta aquí ya lo ve, aunque no vea la versión.
   const claseActa = tramite.etapa === "publicado" ? "aprobacion" : tramite.etapa === "eliminado" ? "eliminacion" : null;
-  const verActa = claseActa !== null && tramite.versionId !== null && (await puedeVerVersion(tramite.versionId, sesion));
+  const verActa = claseActa !== null && tramite.versionId !== null;
 
   return (
     <div className="flex flex-col gap-6">

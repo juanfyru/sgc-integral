@@ -8,7 +8,8 @@ import path from "node:path";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { asegurarActa, versionDeActa, puedeVerVersion, sesionDePeticion } = vi.hoisted(() => ({
+const { asegurarActa, versionDeActa, puedeVerVersion, sesionDePeticion, obtenerTramite } = vi.hoisted(() => ({
+  obtenerTramite: vi.fn(),
   asegurarActa: vi.fn(),
   versionDeActa: vi.fn(),
   puedeVerVersion: vi.fn(),
@@ -16,6 +17,7 @@ const { asegurarActa, versionDeActa, puedeVerVersion, sesionDePeticion } = vi.ho
 }));
 
 vi.mock("@/db/consultas/actas", () => ({ asegurarActa, versionDeActa }));
+vi.mock("@/db/consultas/tramites", () => ({ obtenerTramite }));
 vi.mock("@/lib/alcance", () => ({ puedeVerVersion }));
 vi.mock("@/lib/sesion-actual", () => ({ sesionDePeticion }));
 
@@ -44,6 +46,7 @@ beforeEach(() => {
   sesionDePeticion.mockResolvedValue(SESION);
   versionDeActa.mockResolvedValue({ versionId: 9, numero: "SOL-2026-014", clase: "aprobacion" });
   puedeVerVersion.mockResolvedValue(true);
+  obtenerTramite.mockResolvedValue(null);
   asegurarActa.mockResolvedValue({ archivoId: 31, ruta: "SOL-2026-014.pdf" });
 });
 
@@ -74,8 +77,32 @@ describe("GET /tramites/[id]/acta", () => {
     expect(asegurarActa).not.toHaveBeenCalled();
   });
 
-  it("quien no puede ver la versión recibe 404, no 403, y no se genera nada", async () => {
+  it("quien no ve la versión ni el trámite recibe 404, no 403, y no se genera nada", async () => {
     puedeVerVersion.mockResolvedValue(false);
+    obtenerTramite.mockResolvedValue(null);
+    expect((await pedir()).status).toBe(404);
+    expect(obtenerTramite).toHaveBeenCalledWith(7, SESION);
+    expect(asegurarActa).not.toHaveBeenCalled();
+  });
+
+  it("quien aprobó una versión ya obsoleta, o una eliminación, ve el acta aunque no vea la versión", async () => {
+    puedeVerVersion.mockResolvedValue(false);
+    obtenerTramite.mockResolvedValue({ id: 7 });
+    const res = await pedir();
+    expect(res.status).toBe(200);
+    expect(Buffer.from(await res.arrayBuffer()).equals(Buffer.from(PDF))).toBe(true);
+    expect(asegurarActa).toHaveBeenCalledWith(7, { usuarioId: SESION.usuarioId });
+  });
+
+  it("quien ve la versión no consulta el trámite", async () => {
+    expect((await pedir()).status).toBe(200);
+    expect(obtenerTramite).not.toHaveBeenCalled();
+  });
+
+  it("un trámite cancelado no tiene acta aunque se vea", async () => {
+    versionDeActa.mockResolvedValue(null);
+    puedeVerVersion.mockResolvedValue(false);
+    obtenerTramite.mockResolvedValue({ id: 7 });
     expect((await pedir()).status).toBe(404);
     expect(asegurarActa).not.toHaveBeenCalled();
   });
