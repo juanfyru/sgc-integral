@@ -95,7 +95,7 @@ La lista ofrece los documentos vigentes de acceso general con principal PDF. El 
 
 **Sin membrete:** para los mismos datos, el PDF debe salir **idéntico byte a byte** al de hoy. Es la garantía de `asegurarActa` al regenerar.
 
-**Si algo falla con el formato**, `reunirDatosActa` lee el archivo por `archivoId` y compara `hash`:
+**Si algo falla con el formato**, `asegurarActa` lee el archivo por `archivoId` y compara `hash`:
 
 | Situación | Qué pasa |
 |---|---|

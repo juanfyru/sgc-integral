@@ -301,7 +301,7 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   editar_configuracion: "Editó la configuración",
   editar_config_documental: "Editó la configuración documental",
   acta_generada: "Generó un acta",
-  acta_no_regenerable: "No se pudo regenerar un acta",
+  acta_no_regenerable: "No se pudo generar un acta",
   crear_item_verificacion: "Añadió un ítem a la lista de verificación",
   editar_item_verificacion: "Editó un ítem de la lista de verificación",
   mover_item_verificacion: "Movió un ítem de la lista de verificación",

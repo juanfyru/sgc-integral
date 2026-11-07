@@ -239,9 +239,28 @@ marca de agua. El bloque **Revisión · ronda 1** tiene la lista y las observaci
 
 ### 6.1 La lista de verificación
 
-Responda cada ítem con **Cumple**, **No cumple** o **No aplica**. Puede añadir una **Nota
-(opcional)**. Los ítems con la marca **Crítico** no pueden quedar en **No cumple** para
-pasar a aprobación.
+Responda cada ítem con **Cumple**, **No cumple** o **No aplica**. Cada ítem tiene una
+**Nota (obligatoria si no cumple)**. Los ítems con la marca **Crítico** no pueden quedar en
+**No cumple** para pasar a aprobación.
+
+**Un ítem que no cumple y no es crítico no bloquea el concepto favorable, pero no pasa en
+silencio.** En ese caso:
+
+- Debe escribir una nota de al menos 5 caracteres. Debajo del campo aparece el aviso «Esta
+  nota saldrá en el acta, visible para toda la entidad.». Escríbala pensando en que la leerá
+  cualquier persona con cuenta. Si falta, **Dar concepto favorable** queda desactivado y dice
+  «Escriba una nota en cada criterio que no cumple».
+- Al dar el concepto, la ventana de firma trae un recuadro «Esta revisión tiene 2 criterios
+  que no cumplen» (o «1 criterio que no cumple»), con cada ítem y su nota, y una casilla:
+  **Doy concepto favorable a pesar de estos criterios** (o «de este criterio»). Debe marcarla
+  para firmar. Es su constancia de que los vio.
+- Los criterios, con sus notas, y quiénes los aceptaron (quien revisó y quien aprobó) quedan
+  en el acta (sección 9).
+
+Si guarda el avance de la lista con la ventana de firma cerrada, al abrirla verá los criterios
+nuevos sin recargar la página. Si otra persona cambió la lista mientras usted tenía la ventana
+abierta, el SGC dice «La lista cambió mientras tenía abierto el diálogo. Recargue la página.».
+Recargue y firme otra vez.
 
 Pulse **Guardar avance** cuando quiera y vuelva después: lo guardado se conserva. Las
 respuestas se guardan por ronda, con el texto del ítem tal como estaba ese día.
@@ -274,14 +293,18 @@ pulse **Reabrir la observación**.
 - **Dar concepto favorable:** escriba el **Concepto** y firme con su clave (sección 7). El
   documento pasa a aprobación.
 
-Para dar el concepto favorable se deben cumplir cuatro condiciones. El SGC dice cuál falta:
+Para dar el concepto favorable se deben cumplir cinco condiciones. El SGC dice cuál falta:
 
 | Condición | Si falta |
 |---|---|
 | La lista tiene al menos un ítem activo | No hay ítems activos en la lista de verificación. Pida al Administrador del SGC que los active. |
 | Todos los ítems activos tienen respuesta | Faltan ítems de la lista por responder |
 | Ningún ítem crítico está en **No cumple** | Hay un ítem crítico que no cumple |
+| Cada ítem que no cumple tiene su nota | Escriba una nota en cada criterio que no cumple |
 | Todas las observaciones están cerradas | Hay observaciones sin cerrar |
+
+Además, si hay criterios que no cumplen, debe marcar la casilla de la ventana de firma. Sin
+ella, el SGC dice «Confirme que da concepto favorable a pesar de los criterios que no cumplen».
 
 ## 7. Firmar
 
@@ -299,14 +322,17 @@ Al pulsar el botón se abre una ventana con el título de la firma, por ejemplo 
 cifra calculada del contenido del archivo: si cambia una sola letra, cambia la huella. Por
 eso lo firmado se puede comprobar después.
 
-1. Escriba **Su clave**: la misma con la que ingresa.
-2. Si tiene activo el segundo factor (Capítulo 1, sección 6), escriba el **Código** de su
+1. Si aparece un recuadro de criterios que no cumplen (secciones 6.1 y 8.1), léalo y marque
+   su casilla de confirmación.
+2. Escriba **Su clave**: la misma con la que ingresa.
+3. Si tiene activo el segundo factor (Capítulo 1, sección 6), escriba el **Código** de su
    aplicación de autenticación o un código de recuperación. Un código de recuperación se
    gasta al usarlo.
-3. Pulse el botón de firmar, por ejemplo **Firmar y enviar a revisión**.
+4. Pulse el botón de firmar, por ejemplo **Firmar y enviar a revisión**.
 
 Si la clave o el código no son correctos, el SGC dice «Clave o código incorrectos», no
-hace nada, vacía la clave y conserva lo demás que escribió.
+hace nada, vacía la clave y conserva lo demás que escribió, incluidos el concepto y la casilla
+marcada.
 
 **Cada intento fallido cuenta como en el ingreso.** Al quinto fallo seguido la cuenta se
 bloquea, la sesión se cierra y la pantalla de ingreso dice «Su cuenta quedó bloqueada al
@@ -326,6 +352,13 @@ de quien revisó. Más arriba, en la misma página, están el borrador, la lista
 observaciones.
 
 - **Aprobar:** escriba el **Concepto** y firme. El documento pasa a publicación.
+
+  Si quien revisó dio el concepto con criterios que no cumplen, el bloque **Aprobación**
+  muestra «El revisor dio concepto favorable con 2 criterios que no cumplen», con cada
+  criterio y su nota. La ventana de firma lo repite y trae la casilla **Apruebo a pesar de
+  estos criterios** (o «de este criterio»). Quien aprueba debe marcarla: no basta con que
+  quien revisó los haya aceptado. Sin ella, el SGC dice «Confirme que aprueba a pesar de los
+  criterios que no cumplen». Lo mismo vale para **Aprobar y publicar** (sección 8.2).
 - **Devolver con observaciones:** escriba cada una en **Observación 1**, use **Añadir otra
   observación** si son varias (hasta diez) y confirme con **Devolver**. El documento vuelve
   a elaboración y después pasa otra vez por revisión y por aprobación.
@@ -381,7 +414,16 @@ cada eliminación, un **Acta de eliminación**. El acta trae:
   historial del trámite;
 - el control de cambios;
 - las firmas, con nombre, cargo, fecha, hora y huella;
+- si la revisión aceptó criterios que no cumplen, la sección **Criterios que no cumplen, con
+  concepto favorable**: cada criterio con su nota, tal como se escribió, y la línea
+  **Concepto de**, con quién revisó y quién aprobó;
 - el número de rondas y de observaciones, y la versión anterior.
+
+**El formato del hospital.** Si el Administrador del SGC eligió un formato (sección 14.3), cada
+hoja del acta lleva su encabezado y su pie, y el texto va en el espacio que queda. Si el acta
+no cabe en una hoja, sigue en otra con el mismo encabezado y pie. Sin formato, el acta sale
+con el diseño básico. Cada acta guarda el formato que tenía cuando se cerró su trámite: elegir
+otro después no cambia las actas ya hechas.
 
 **Dónde está:**
 
@@ -389,14 +431,22 @@ cada eliminación, un **Acta de eliminación**. El acta trae:
 - en la ficha del documento, en **Control del documento**;
 - en **Gestión de documentos**, en cada versión.
 
-**Quién la ve:** el acta sigue a su versión. Quien ve la versión ve el acta. Cuando la
-versión deja de estar vigente, solo la ve quien tiene permiso de historial, aunque haya
-firmado. Quien firmó y necesita el acta se la pide al Administrador del SGC, o la descarga
-mientras la versión esté vigente.
+**Quién la ve:** quien puede ver la versión y quien puede ver el trámite cerrado (sección 15).
+Así, quien pidió, elaboró, revisó o aprobó un trámite conserva su acta cuando la versión deja
+de estar vigente, y también la de un documento eliminado. Lo mismo vale para los
+Administradores del SGC, los líderes de los procesos del documento, Control Interno y las
+personas con la marca de historial. **Ver el acta no abre el archivo del documento:** una
+versión obsoleta sigue pidiendo el permiso de historial.
 
 Sale sin marca de agua. Sus datos se fijan al cerrar el trámite y no cambian después. Si la
 generación falla, la publicación no se deshace: el acta se crea la primera vez que alguien
 abre el enlace.
+
+**Si el archivo del formato desapareció o cambió,** el acta no se entrega: el enlace dice
+«Archivo no encontrado» y el intento queda en la **Bitácora** como «No se pudo generar un
+acta». Avise al área de sistemas para restaurar el archivo. La publicación no se deshace. Si
+el formato existe pero ya no sirve (por ejemplo, porque tiene dos páginas), el acta sale con
+el diseño básico.
 
 Si un texto trae símbolos que la fuente del PDF no tiene, el SGC los cambia por uno
 parecido (`≥` sale como `>=`). Si aun así no puede, sale un «?» y el acta termina con esta
@@ -596,8 +646,9 @@ En la página del documento, **Editar datos** separa dos grupos:
 ### 14.1 Configuración documental
 
 Barra lateral → grupo **Documentos** → **Configuración documental**. Solo la ve el
-Administrador del SGC. Pulse **Guardar configuración** para aplicar las tres primeras
-partes: aparece «Configuración guardada». La lista de verificación se guarda ítem por ítem.
+Administrador del SGC. Pulse **Guardar configuración** para aplicar las cuatro primeras
+partes (formato del código, plazos, publicación directa y formato del acta): aparece
+«Configuración guardada». La lista de verificación se guarda ítem por ítem.
 
 **Formato del código.** Use estos marcadores, separados con guiones:
 
@@ -643,6 +694,58 @@ cada tipo tiene:
   documento más: tiene su código, sus versiones y su propio trámite. Si deja de estar
   vigente, el tipo lo advierte y las solicitudes siguen sin plantilla.
 
+### 14.3 El formato del acta
+
+En **Configuración documental**, la sección **Formato del acta** le dice al SGC sobre qué hoja
+imprimir las actas. Es opcional: sin formato, las actas salen con el diseño básico.
+
+**Cómo preparar el formato.**
+
+1. En Word, tome el formato institucional (con el logo, la tabla del encabezado y el pie) y
+   déjelo con el cuerpo en blanco: el SGC escribe el acta en ese espacio. Cambie el título y el
+   código por los del acta de control documental.
+2. Guárdelo como PDF. Debe ser **de una sola página, tamaño carta y de acceso general** (sin
+   clave y sin daño). Un archivo con varias páginas, de otro tamaño, protegido o dañado no
+   sirve.
+3. Regístrelo como un documento más del SGC, por el camino de la sección 13 (**Registrar
+   documento ya aprobado**), con su código, su versión y el PDF como archivo principal. Su
+   **Nivel de acceso** debe ser **General**: el acta la ven personas que no tendrían acceso a
+   un documento restringido.
+
+**Cómo elegirlo.**
+
+1. Abra **Configuración documental** y vaya a **Formato del acta**.
+2. En **Documento del formato** elija el documento. La lista trae solo documentos vigentes, de
+   acceso general y con PDF principal. **Sin formato: diseño básico** lo quita.
+3. Escriba el **Espacio del encabezado (cm)** y el **Espacio del pie (cm)**: lo que ocupan el
+   encabezado y el pie del formato, para que el texto no los pise. Valen entre 0 y 12 cm, y
+   entre los dos no pueden pasar de 16 cm. Puede escribir la coma («5,5») o el punto. Si no
+   los toca, el SGC propone 5,5 y 3,5.
+4. Pulse **Guardar configuración**.
+
+**Cómo comprobarlo.** Pulse **Ver acta de ejemplo**: se abre en una pestaña nueva un PDF de
+dos hojas con datos inventados y la marca «EJEMPLO, SIN VALOR», impreso sobre el formato
+guardado y con sus espacios. Compruebe que el texto no toque el encabezado ni el pie. Si los
+pisa, aumente el espacio; si queda un hueco grande, redúzcalo. Cambie, guarde y mire otra
+vez: el ejemplo usa lo último que guardó, no lo que está escrito sin guardar.
+
+**Los avisos.** Debajo de la sección, el SGC revisa el formato guardado cada vez que abre la
+pantalla:
+
+| Aviso | Qué significa | Qué hacer |
+|---|---|---|
+| Las actas nuevas usarán SGC-FO-07, versión 1. | El formato sirve | Nada |
+| **Las actas saldrán con el diseño básico.** Seguido del motivo | El formato ya no sirve: por ejemplo, el documento no tiene versión vigente, pasó a restringido, su archivo principal no es PDF, tiene más de una página, no es tamaño carta, o está protegido o dañado | Publique una versión que sirva, o quite el formato |
+| **No se podrán generar actas hasta restaurar el archivo del formato.** | El archivo no está en el almacén o cambió | Avise al área de sistemas |
+
+Al guardar, el SGC rechaza un formato que no sirve con el mismo motivo, por ejemplo «El
+formato debe tener una sola página» o «El formato debe ser tamaño carta». Un espacio fuera de
+rango dice «El espacio del encabezado debe estar entre 0 y 12 cm». Si el formato guardado deja
+de servir y usted solo cambia un plazo, el SGC guarda el plazo igual.
+
+Cuando publica una versión nueva del documento del formato, las actas siguientes la usan. Las
+ya hechas conservan la que tenían.
+
 ## 15. Quién ve cada cosa
 
 | Qué | Quién lo ve | Dónde |
@@ -655,7 +758,7 @@ cada tipo tiene:
 | Versión descartada | Administrador del SGC | El trámite o **Gestión de documentos** |
 | Trámite abierto, rechazado o cancelado | Los mismos del borrador en trámite | **Trámites** |
 | Trámite publicado o eliminado | Los mismos y, en solo lectura, Control Interno y las personas con la marca de historial | **Trámites**, o el enlace del trámite en **Gestión de documentos** |
-| Acta | Quien puede ver esa versión | Sección 9 |
+| Acta | Quien puede ver esa versión o el trámite cerrado | Sección 9 |
 
 Reglas que conviene conocer:
 
@@ -665,7 +768,7 @@ Reglas que conviene conocer:
   de cada usuario (Capítulo 2, sección 3.1). Son los que le abren los documentos restringidos.
 - **Un trámite cerrado conserva su evidencia.** La página sigue mostrando la solicitud, la
   lista de verificación de cada ronda, las observaciones y el historial, en solo lectura, y
-  el acta a quien puede ver esa versión (sección 9). Lo mismo vale para un trámite cancelado o rechazado, para quienes lo pueden ver.
+  el acta (sección 9). Lo mismo vale para un trámite cancelado o rechazado, para quienes lo pueden ver.
 - **Los archivos del trámite solo se abren mientras está abierto.** Después, cada archivo se
   consulta según el estado de su versión: la vigente por la ficha; una obsoleta, con el
   permiso de historial.
@@ -697,6 +800,10 @@ El acta sale sin marca: es un registro, no una copia del documento.
 | Faltan ítems de la lista por responder | Hay ítems sin respuesta guardada | Responda y pulse **Guardar avance** |
 | Hay un ítem crítico que no cumple | Un ítem crítico está en **No cumple** | Devuelva el documento con una observación |
 | Hay observaciones sin cerrar | Quedan observaciones abiertas o atendidas | Ciérrelas o devuelva el documento |
+| Escriba una nota en cada criterio que no cumple | Un ítem que no cumple no tiene nota, o la nota tiene menos de 5 caracteres | Escriba la nota (sección 6.1) |
+| Confirme que da concepto favorable a pesar de los criterios que no cumplen | Quien revisa no marcó la casilla de confirmación | Márquela en la ventana de firma |
+| Confirme que aprueba a pesar de los criterios que no cumplen | Quien aprueba no marcó la casilla de confirmación | Márquela en la ventana de firma |
+| La lista cambió mientras tenía abierto el diálogo. Recargue la página. | Los criterios cambiaron después de abrir la ventana de firma | Recargue la página y firme otra vez |
 | Clave o código incorrectos | La firma no se hizo | Escriba bien su clave y su código. Al quinto fallo la cuenta se bloquea |
 | Su cuenta quedó bloqueada al menos 15 minutos por claves erradas | Falló la firma cinco veces | Espere, o pida al Administrador del SGC que la desbloquee |
 | Quien aprueba debe tener el rol Gerencia. Pida reasignar al aprobador. | Cambió la regla del tipo después de designar | El Administrador del SGC reasigna (sección 11.1) |
@@ -711,4 +818,8 @@ El acta sale sin marca: es un registro, no una copia del documento.
 | Este documento fue eliminado: su código no se reutiliza | El código pertenece a un documento eliminado | Pida un documento nuevo por trámite |
 | La carga de documentos ya aprobados está cerrada: use un trámite | La publicación directa está apagada | Pida una solicitud, o abra la carga (sección 13.4) |
 | Falta la evidencia de aprobación (quién aprobó y en qué fecha) | No se llenó **Control de la versión** | Llene quién aprobó y la fecha, y guarde |
+| El archivo del formato no se puede leer: puede estar protegido con clave o dañado | El PDF elegido como formato del acta no sirve | Suba una versión sin clave y sin daño (sección 14.3) |
+| El formato debe tener una sola página / El formato debe ser tamaño carta | El PDF no cumple lo pedido | Corríjalo y publique una versión nueva (sección 14.3) |
+| El documento del formato no tiene versión vigente / El documento del formato es restringido, y el acta la ven personas sin acceso a él | El documento elegido no puede servir de formato | Elija otro o corríjalo (sección 14.3) |
+| El espacio del encabezado debe estar entre 0 y 12 cm / Entre los dos no pueden pasar de 16 cm | Los espacios del formato no son válidos | Corríjalos (sección 14.3) |
 | Demasiadas operaciones seguidas. Espere un minuto. | Se hicieron muchas acciones en poco tiempo | Espere un minuto |

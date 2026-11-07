@@ -92,7 +92,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
    `documentos.ver_historial` (Admin SGC, Control Interno y la marca individual
    `ver_historial`, que no abre lo restringido); en trámite, ser participante de ese trámite,
    Admin SGC o líder; descartada, `documentos.administrar`. Quien no puede ver algo recibe
-   «no encontrado», nunca «sin permiso».
+   «no encontrado», nunca «sin permiso». El acta se sirve a quien ve su versión o ve el
+   trámite cerrado.
 4. **Toda ruta exige sesión; toda escritura exige el permiso de la matriz
    `src/lib/permisos.ts`** y pasa por `mutacion()` o `requerirPermiso()`; los handlers
    que escriben verifican `Origin`. Toda acción del trámite lleva su permiso de matriz
@@ -117,7 +118,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
     sobre una versión vigente y se cierra con `publicacion_directa`. Eliminar un documento
     es siempre un trámite.
 11. **El acta se congela al cierre** en `detalle.acta` del evento y solo se regenera si
-    coincide con la huella guardada (F13A-R17).
+    coincide con la huella guardada (F13A-R17). El formato elegido se congela también en
+    `detalle.acta` (archivo y huella); `generarActa` no cambia un solo byte sin formato.
 
 ## Stack (decidido — no cambiar sin proponerlo antes)
 

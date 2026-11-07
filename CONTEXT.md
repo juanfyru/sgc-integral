@@ -1,6 +1,6 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-11-06**. La **Fase 13A —
+> Se actualiza al cierre de cada fase. Última actualización: **2026-11-07**. La **Fase 13A —
 > Flujo documental** está hecha en la rama `fase-13a-flujo-documental`, con la revisión final de
 > la rama y su ola de arreglos, y espera la prueba del usuario y la fusión. La
 > Fase 12 (nueva estructura visual) y la Fase 11 (fundación de acceso) están en `main`.
@@ -30,9 +30,18 @@
    `/ingreso`. La 0004 y la 0005 se aplicaron además sobre una copia con el esquema y la demo de
    `main`. Hubo tres puntos de control en navegador y una revisión final de toda la rama, con su ola
    de arreglos. El CI todavía no ha corrido sobre esta rama: no se ha publicado.
-   **Falta:** la prueba del usuario («Qué probar y cómo (Fase 13A)») y la fusión en `main`. El usuario
-   decide F13A-R35 (404 real en páginas) y F13A-R36 (quién ve el acta de una versión que ya no está
-   vigente).
+   **Adición del 2026-11-06 (acta con formato del hospital y criterios que no cumplen), también hecha
+   en esta rama:** el acta se imprime sobre un PDF institucional que el Administrador del SGC elige
+   en **Configuración documental**; un criterio no crítico en «No cumple» ya no pasa en silencio
+   (nota obligatoria, confirmación de quien revisa y de quien aprueba, constancia en el acta); y el
+   acta la ve quien ve el trámite cerrado, sin abrir el archivo de una versión obsoleta. Spec:
+   `docs/superpowers/specs/2026-11-06-fase13a-acta-con-formato-y-criterios-design.md`. **Verificado
+   al cierre de la adición:** lint limpio; **2969/2969 tests** (124 archivos, con `SEMILLA_RECIEN=1`);
+   build sin URL de base, como el CI; compose reconstruido (`/api/salud` `{"estado":"ok"}`);
+   recorrido en navegador sobre una copia con el formato real del hospital (claro, oscuro y 390 px).
+   **Falta:** la prueba del usuario («Qué probar y cómo (Fase 13A)», pasos 14 a 16 nuevos) y la
+   fusión en `main`. El usuario decide F13A-R35 (404 real en páginas). F13A-R36 ya está resuelta
+   (F13A-AU6).
 2. **Lo que sigue: Fase 13B — Distribución y puntos de uso** (pasos 9 y 10 del procedimiento del
    hospital): listas de distribución y acuse de lectura con porcentaje, evidencia de capacitación,
    copias controladas con sello, recibido y recogida de las obsoletas, puntos de uso y su
@@ -100,9 +109,11 @@
    | `consulta` | consulta | Auxiliar de Enfermería | — |
 
    Más `admin` (admin_sgc), con la `ADMIN_CLAVE` de `.env.local`, de `npm run admin:asegurar`,
-   que pide cambiar la clave. La demo trae 5 áreas y 9 cargos con jerarquía, y **30 documentos con 34
-   versiones** (28 vigentes, 2 obsoletas, 3 en borrador y 1 anulada), con la convención del hospital
-   (`PROCESO-TIPO-NN`), dos plantillas (`SGC-FO-04` y `SGC-FO-05`), un restringido (`GTH-FO-01`) y
+   que pide cambiar la clave. La demo trae 5 áreas y 9 cargos con jerarquía, y **31 documentos con 35
+   versiones** (29 vigentes, 2 obsoletas, 3 en borrador y 1 anulada), con la convención del hospital
+   (`PROCESO-TIPO-NN`), dos plantillas (`SGC-FO-04` y `SGC-FO-05`), un restringido (`GTH-FO-01`), un
+   formato de acta ficticio ya elegido (`SGC-FO-06`, con 4,2 y 3,2 cm; lo genera la semilla, no es el
+   del hospital), siete usuarios (seis demo más `admin`) y
    **cinco trámites** en distintas etapas, de `SOL-…-001` a `SOL-…-005`. Desde la Fase 12 trae además
    la marca de Suaza (sigla `HNSF`, primario `#1b4e8e`, secundario `#2e9b47`, el lema actual y el logo
    demo `src/db/semillas/recursos/logo-demo.png`, un monograma propio, no el escudo real) y una
@@ -119,7 +130,7 @@
    **La base de desarrollo se resembró varias veces en la 13A** (Tareas 2 y 15, sus arreglos y el
    cierre): cada vez se pierden los datos de prueba manual y `admin` se recrea con la `ADMIN_CLAVE`
    de `.env.local` y cambio obligatorio.
-5. **Tests:** 2824 en 121 archivos, en serie (`fileParallelism: false`), contra la BD de
+5. **Tests:** 2969 en 124 archivos, en serie (`fileParallelism: false`), contra la BD de
    desarrollo sembrada y **conectados como `sgc_app`**, igual que la app; el test de
    privilegios usa además `DATABASE_URL_MIGRADOR`. Los usuarios de prueba con historia
    (`zz_<algo>_<timestamp>`) se acumulan porque no se pueden borrar (F11-D2); `db:seed` los
@@ -199,8 +210,9 @@ explica cada pantalla.
    `CEX-FO-01`. Escriba `GTH-FO-77` y acepte: «El código debe empezar por CEX-FO-». Vuelva al
    sugerido. **Elabora** `lider.cex`, **Revisa** usted, **Aprueba** viene elegido o se elige
    entre los Admin SGC. **Aceptar y abrir el trámite**: etapa Elaboración, día 1 de 15.
-3. **Elaborar (`lider.cex`).** Pulse **Plantilla vigente** (`SGC-FO-05`) y descárguela. Suba
-   un PDF como **Principal (lectura)**. Escriba el **Control de cambios**: con el texto sin
+3. **Elaborar (`lider.cex`).** En el bloque del borrador, haga clic en el enlace `SGC-FO-05,
+   versión 1` (junto a «Plantilla vigente»): abre la ficha de la plantilla, y desde ahí se
+   descarga. Suba un PDF como **Principal (lectura)**. Escriba el **Control de cambios**: con el texto sin
    guardar, **Enviar a revisión** queda desactivado. Guárdelo, envíe y firme con la clave. Una
    clave errada dice «Clave o código incorrectos» y conserva lo demás.
 4. **Revisar (`coordinadora.sgc`).** Responda toda la lista con un ítem crítico en **No
@@ -208,11 +220,13 @@ explica cada pantalla.
    que no cumple». Deje dos observaciones y **Devolver a elaboración**. Como `lider.cex`: vea la lista de la ronda 1,
    responda las dos y reenvíe. Como revisora: en la ronda 2 la lista llega propuesta y el
    botón queda desactivado hasta **Guardar avance**. Cierre las observaciones y dé el concepto
-   con su clave. Atajo: SOL-2026-002 ya está en la ronda 2.
+   con su clave. Atajo: SOL-2026-002 ya está en la ronda 2, con dos criterios no críticos propuestos
+   en **No cumple**: para dar el concepto hay que marcar la casilla de confirmación (paso 15).
 5. **Aprobar y publicar en un acto (`coordinadora.sgc`).** En un operativo, por ejemplo
    SOL-2026-002: **Aprobar y publicar** → **Firmar, aprobar y publicar**. Debe verse: Publicado,
    versión 1 obsoleta y versión 2 vigente; **Listado Maestro** con «En la plataforma» en
-   **Aprobación**; **Acta de aprobación** con cuatro firmas y una sola huella.
+   **Aprobación**; **Acta de aprobación** con cuatro firmas y una sola huella. Si trae criterios que
+   no cumplen, quien aprueba también marca su casilla (paso 15).
 6. **Estratégico y Coordinador que elabora.** `lider.cex` pide modificar `CEX-CA-01`; al
    aceptar, **Aprueba** trae a `gerente`. Tras elaborar y revisar, `gerente` pulsa **Aprobar**
    con su clave y `coordinadora.sgc` pulsa **Publicar**. Después, `coordinadora.sgc` pide
@@ -258,7 +272,33 @@ explica cada pantalla.
     «… el paso de publicación sigue vencido», sin título y sin enlace. Devuélvalo a 3. Reasigne
     y cancele un trámite abierto: quien entra y quien sale reciben aviso, y la versión cancelada
     queda Descartado.
-14. **Verificación técnica:** hecha al cierre. `npm run lint`, `npm test` (2824/2824 en 121 archivos) y
+14. **Formato del acta (`coordinadora.sgc`).** La demo ya trae `SGC-FO-06` elegido con 4,2 y 3,2
+    cm. En **Configuración documental** → **Formato del acta** debe verse «Las actas nuevas usarán
+    SGC-FO-06, versión 1». Pulse **Ver acta de ejemplo**: se abre un PDF de dos hojas con la marca
+    «EJEMPLO, SIN VALOR», con el encabezado y el pie del formato en cada hoja y el texto entre los
+    dos. Para probar con el formato del hospital, copie su PDF a una carpeta temporal, regístrelo
+    como documento (**Registrar documento ya aprobado**, acceso **General**) y elíjalo con 5,5 y 3,5
+    cm: el texto no debe tocar el encabezado ni el pie. Registre y elija un PDF de dos páginas:
+    **Guardar configuración** dice «El formato debe tener una sola página». Escriba los espacios con
+    coma («5,5») y con punto: valen igual.
+15. **Criterios que no cumplen (`coordinadora.sgc`).** En SOL-2026-002 (revisión, ronda 2), responda
+    **Guardar avance** y cierre la observación atendida. Con la lista tal como llega, **Dar concepto
+    favorable** abre la ventana con «Esta revisión tiene 2 criterios que no cumplen», cada uno con su
+    nota, y la casilla **Doy concepto favorable a pesar de estos criterios**. Sin marcarla no firma.
+    Con la casilla marcada y una clave errada, la ventana conserva la casilla y el concepto.
+    Quite la nota de un criterio y guarde: **Dar concepto favorable** queda desactivado con «Escriba
+    una nota en cada criterio que no cumple». Ponga un ítem **Crítico** en **No cumple**: dice «Hay
+    un ítem crítico que no cumple». A 390 px, con notas largas, la ventana se desplaza y el botón
+    queda al alcance. Firme el concepto: el bloque **Aprobación** dice «El revisor dio concepto
+    favorable con 2 criterios que no cumplen», y **Aprobar y publicar** pide además **Apruebo a
+    pesar de estos criterios**. Publique.
+16. **El acta con criterios y quién la ve.** El acta de SOL-2026-002 trae la sección **Criterios que
+    no cumplen, con concepto favorable**, con cada nota, y «Concepto de Revisó … · Aprobó …». Si no
+    cabe en una hoja, sigue en otra con el mismo membrete. SOL-2026-001 ya trae un criterio aceptado.
+    Tras el paso 10 (eliminar `CEX-GU-01`), `gerente`, que aprobó la eliminación, abre el trámite y
+    su **Acta de eliminación**, y el archivo de la versión anulada da 404 (no tiene permiso de
+    historial). Lo mismo le pasa con una versión obsoleta que aprobó: ve el acta, no el archivo.
+17. **Verificación técnica:** hecha al cierre. `npm run lint`, `npm test` (2969/2969 en 124 archivos) y
     `npm run build` en verde; la imagen del compose arranca, dice «Migraciones al día» y
     `/api/salud` responde `{"estado":"ok"}`. La 0004 y la 0005 se aplicaron sobre una copia con el
     esquema y la demo de `main`. Falta el CI: corre al publicar la rama. En 9081 `/marca/logo` da 404 porque la
@@ -289,12 +329,13 @@ con un aviso en la salida. `npm run db:seed && npm run admin:asegurar` la deja c
    la nueva se llama «Aprobación» (F13A-R25).
 6. **`revisarVencimientos` no deja fila en `auditoria`:** lo hace el sistema, no una persona. Su
    rastro son los avisos y las marcas del trámite (F13A-R22).
-7. **El acta sigue a su versión, y eso necesita su decisión antes de fusionar (F13A-R36).** Quien
-   firmó pierde el acta cuando la versión deja de estar vigente: `gerente` aprueba `CEX-CA-01` v2,
-   se publica la v3 y el bloque «Acta» desaparece de su trámite; en una eliminación, desde el
-   primer día. Se mantuvo lo que aprobó (F13A-DC12) y el manual lo explica. **Recomendación:** abrir
-   el acta a quien ve el trámite cerrado, porque no lleva contenido del documento. Base: ISO 7.5.3.1
-   a). Cambiarlo es un `if` en dos sitios: `tramites/[id]/page.tsx` y la ruta del acta.
+7. **El formato real del hospital trae textos fijos.** Su PDF dice «Código: SGC-FO-0XX» y «Fecha de
+   emisión: dd/mm/aaaa» dentro del encabezado: el SGC los imprime tal cual en cada hoja del acta.
+   Antes de usarlo en producción, el hospital debe poner su código y su fecha en el Word, volver a
+   guardarlo como PDF y publicar una versión nueva (las actas siguientes la usan; las hechas
+   conservan la suya). El archivo y el Word del hospital no están en git (`.git/info/exclude`). En
+   la prueba con ese formato, 5,5 y 3,5 cm alcanzan: el encabezado ocupa unos 4,8 cm y el pie unos
+   3,2 cm, así que el mínimo sin pisarlos está cerca de 5,0 y 3,3 cm.
 
 ## Qué probar y cómo (Fase 12)
 
@@ -528,6 +569,36 @@ de los puntos de control PC-01 a PC-08 (spec, Apéndice A.2).
   congelado los trae; `after()` en el cascarón; `exigirDesignacion` recibe `Cliente`;
   `ETAPAS_ABIERTAS` es una sola lista; ejecutar una eliminación compara la huella de `aprobo` con el
   principal de la vigente.
+- **Adición del 2026-11-06: acta con formato y criterios que no cumplen** (spec
+  `2026-11-06-fase13a-acta-con-formato-y-criterios-design.md`, plan del mismo nombre). Sin migración
+  ni dependencias nuevas.
+  - **Formato del acta:** `src/lib/membrete-acta.ts` (¿sirve el PDF?), `src/db/consultas/formato-acta.ts`
+    (documento elegido, estado `sin_formato`, `listo`, `no_sirve` o `perdido`, lectura con huella) y
+    `generarActa(datos, membrete)` en `src/lib/acta.ts`: dibuja cada hoja sobre el PDF y respeta los
+    espacios. Sin formato, los mismos bytes de antes. Claves de `configuracion`:
+    `formato_acta_documento_id`, `formato_acta_margen_superior_cm` y `formato_acta_margen_inferior_cm`
+    (5,5 y 3,5 por defecto). El formato se congela en `detalle.acta.formato` al cerrar el trámite y
+    `asegurarActa` regenera sobre ese archivo y esa huella; si falta, `acta_no_regenerable` con
+    `motivo: formato` y el enlace reintenta. **Ver acta de ejemplo:** `GET /admin/api/acta-ejemplo`
+    (`tramites.gestionar`, con límite de ritmo).
+  - **Criterios que no cumplen:** `criteriosNoCumplen` y `huellaDeCriterios`
+    (`src/db/consultas/revision.ts`, `src/lib/tramites/criterios.ts`). Un no crítico en «No cumple»
+    exige nota de al menos 5 caracteres (sin contar espacios) y la confirmación con huella de quien
+    revisa y de quien aprueba (`confirmaNoCumple`); un crítico bloquea también si se volvió crítico
+    durante la ronda. La constancia queda en `detalle` de `concepto_favorable` y `aprobar`, y el acta
+    la imprime. `AvisoCriterios` pinta el recuadro y la casilla en los dos diálogos.
+  - **Quién ve el acta:** quien ve la versión o ve el trámite cerrado (`/tramites/[id]/acta` y la
+    página del trámite); el archivo de una versión obsoleta sigue pidiendo el permiso de historial.
+  - **Demo:** `SGC-FO-06` (PDF ficticio de la semilla, `formato-acta-demo.ts`) elegido con 4,2 y 3,2
+    cm antes de los trámites; SOL-2026-001 acepta un criterio con su nota.
+  - **Bitácora:** `acta_no_regenerable` se rotula «No se pudo generar un acta» (cubre también la
+    primera generación).
+  - **Navegador, sobre una copia con el formato real del hospital:** formato registrado y elegido
+    con 5,5 y 3,5 cm; acta de ejemplo de dos hojas sin que el texto pise el encabezado ni el pie;
+    trámite con dos y con tres criterios (notas de 1900 caracteres) publicado con las dos
+    confirmaciones, y acta de tres hojas legible; diálogo de 390 px que se desplaza; clave errada que
+    conserva la casilla y el concepto; quien aprobó una versión obsoleta abre el acta y el archivo da
+    404. Copia de la base y del almacén borradas.
 - **Verificación al cierre:** lint limpio; 2824/2824 tests en 121 archivos; build como el CI; compose con
   «Migraciones al día» y `/api/salud` `{"estado":"ok"}`. Sobre una copia con la demo de `main`, la
   0005 pasa la lista de 0 a 8 ítems (3 críticos), conserva una lista ya ajustada y no cambia datos en
@@ -1188,6 +1259,11 @@ los tests) no entran; la de los tests quedó como regla en `AGENTS.md`. Base: **
 
 ## Decisiones adicionales (Fase 13A)
 
+**Adición del 2026-11-06 (acta con formato y criterios):** F13A-AU1 a AU7 son las decisiones del
+usuario, AC1 a AC6 las de Claude, AP1 a AP4 las previas a la ejecución y AR1 a AR6 las del
+controlador (con otro prefijo para no chocar con R1 a R38). F13A-AU6 sustituye a F13A-DC12 y
+resuelve F13A-R36. F13A-R35 sigue como decisión del usuario.
+
 F13A-DC1 a F13A-DC28 vienen del spec de la fase (§23), del 2026-11-05. F13A-P1 a P5 son
 resoluciones previas a la ejecución y F13A-R1 a R35 las resoluciones del controlador durante la
 ejecución, del 2026-11-05 y el 2026-11-06: varias corrigen el plan y mandan sobre él. Son los
@@ -1207,7 +1283,7 @@ mismos números que citan los comentarios del código (`R24`, `R26`, `R32`, `R33
 | F13A-DC9 | Un código de recuperación también sirve para firmar | Práctica | Quien perdió el teléfono pide quitar el factor |
 | F13A-DC10 | El historial del trámite es de solo inserción, como `firmas` | ISO 7.5.3.1 b) | Un error se corrige con un evento nuevo |
 | F13A-DC11 | Al publicar se vuelve a calcular la huella del archivo en disco. Es una comprobación única, no la verificación periódica rechazada | ISO 7.5.3.1 b) | Una lectura de archivo de más al publicar |
-| F13A-DC12 | El acta la ve quien ve la versión, sale sin marca de agua y se genera si falta | ISO 7.5.3.1 a) | Una regla en la ruta del acta |
+| F13A-DC12 | **Sustituida por F13A-AU6.** Se mantiene que el acta sale sin marca de agua y se genera si falta. Antes: el acta la ve quien ve la versión | ISO 7.5.3.1 a) | Una regla en la ruta del acta |
 | F13A-DC13 | El panel deja de mostrar borradores a Control Interno y a la marca individual; el Maestro «todos» deja de listar documentos que solo tienen borrador | Práctica (spec maestro §5.3) | Se amplía `puedeVerVersion` |
 | F13A-DC14 | La regla de restringido vale también para quien tiene la marca de historial: da historial, no acceso a lo restringido | ISO 7.5.3.1 b) | Quien tenga la marca necesita sus procesos asignados |
 | F13A-DC15 | Control Interno y la marca individual ven en solo lectura los trámites cerrados por publicación o eliminación | ISO 7.5.3.2 c) | Una condición en `puedeVerTramite` |
@@ -1264,9 +1340,32 @@ mismos números que citan los comentarios del código (`R24`, `R26`, `R32`, `R33
 | F13A-R33 | El acta translitera símbolos comunes y avisa al final si quedó algún «?», sin fuentes ni dependencias nuevas | Regulación (Ley 527 de 1999, integridad del mensaje) | Un símbolo se ve distinto en el acta; el texto íntegro sigue en el historial |
 | F13A-R34 | De los 17 menores del punto de control 3 no se hace M12 (aviso al recargar); lo demás entra en la ola, con los nombres cortados de la barra y el rol solo del paso pendiente | Práctica | Más líneas que revisar |
 | F13A-R35 | Se acepta el 200 con «Página no encontrada» en páginas de `(app)`: un 404 real exige reorganizar rutas o usar el proxy. No hay fuga, y los archivos sí dan 404. **Pendiente de la decisión del usuario** | Práctica (spec 13A §6.5) | Un código HTTP en páginas, no en archivos |
-| F13A-R36 | Se mantiene F13A-DC12: el acta sigue a la versión; el manual lo dice y se le pregunta al usuario antes de fusionar, con la recomendación de abrirla a quien ve el trámite cerrado. **Pendiente de la decisión del usuario** | ISO 7.5.3.1 a) | Si es incorrecto: un `if` en dos sitios |
+| F13A-R36 | **Resuelta por F13A-AU6:** el usuario decidió abrir el acta a quien ve el trámite cerrado. Antes: se mantenía F13A-DC12 (el acta sigue a la versión) y se le preguntaba antes de fusionar | ISO 7.5.3.1 a) | Si es incorrecto: un `if` en dos sitios |
 | F13A-R37 | Lista de verificación: migración 0005 con los ocho ítems si la tabla está vacía, más al menos un ítem activo para dar el concepto. Sin ellos, el PC-05 queda sin evidencia | ISO 9001 7.5.2 c) | Si es incorrecto: el Coordinador ajusta la lista y un concepto se bloquea hasta que active un ítem |
 | F13A-R38 | Los Declined 1 a 6 y 8 a 12 de la revisión final se aceptan como están (GET del panel heredado; cancelar en publicación; corregir en revisión; R7; R22; R35; revisor reemplazado que elabora; lista durante revisión; limpieza de tests; TOTP sigue como decisión del usuario). De los Minor entran 1, 3, 4, 5, 6, 7 y 9, con el Minor 3 omitiendo los códigos de parecidos en el acta; los Minor 2 y 8 y la reimplementación de `demo.ts` pasan a deuda | Práctica: son pequeños o exigen diseño | Si es incorrecto: deuda registrada en `CONTEXT.md` |
+| F13A-AU1 | Usuario: el formato se usa como **membrete PDF** de un documento controlado del SGC; el sistema imprime el acta en su espacio libre | ISO 7.5.2 y 7.5.3.1; el hospital ya tiene su formato | Los espacios del encabezado y del pie se miden a mano y se comprueban con **Ver acta de ejemplo** |
+| F13A-AU2 | Usuario: no se llena el SGC-FO-015; se crea un formato propio con el mismo encabezado y pie, otro título y otro código | Práctica: el 015 es de actas de reunión | Alguien debe preparar el formato en Word y guardarlo como PDF |
+| F13A-AU3 | Usuario: un solo formato, con título neutro, para el acta de aprobación y la de eliminación | Práctica: un solo documento que mantener | El título del formato no distingue las dos actas; lo dice el título que imprime el SGC |
+| F13A-AU4 | Usuario: un criterio no crítico en «No cumple» no bloquea, pero se advierte, exige nota y deja constancia; el crítico bloquea sin excepción | ISO 9001 7.5.2 c) y 7.5.3.2 c); PC-05 y PC-07 | Más fricción al revisar; un concepto con criterios necesita notas |
+| F13A-AU5 | Usuario: el aprobador también confirma expresamente | ISO 7.5.2 c): la aprobación es una decisión informada | Un diálogo más largo para quien aprueba |
+| F13A-AU6 | Usuario: el acta se abre a quien ve el trámite cerrado. **Sustituye F13A-DC12 y resuelve F13A-R36** | ISO 7.5.3.1 a): quien participó no debe perder su registro | El acta no lleva el contenido del documento; ver el acta no abre el archivo |
+| F13A-AU7 | Usuario: el acta imprime cada criterio con su nota, y el campo advierte que será visible para toda la entidad | ISO 7.5.3.1 a) y Regulación (Ley 527 de 1999, integridad) | Quien escribe la nota debe saber que la leerá toda la entidad |
+| F13A-AC1 | Claude: los archivos reales del hospital (Word y PDF) se excluyen de git con `.git/info/exclude`, no con `.gitignore` | Práctica: llevan nombres, firmas y NIT de la entidad | Cada copia de trabajo necesita su exclusión |
+| F13A-AC2 | Claude: si al cerrar el trámite el documento del formato no tiene versión vigente o ya no es general, se congela `formato: null` y el acta sale con el diseño básico; `editarCatalogo` no se bloquea | Práctica: así el acta sigue siendo determinista | Un acta puede salir con el diseño básico aunque haya un formato elegido |
+| F13A-AC3 | Claude: la pantalla de configuración revisa el formato al cargarse, con su archivo y su huella, y avisa «Las actas saldrán con el diseño básico» o «No se podrán generar actas hasta restaurar el archivo del formato» | Práctica: una versión nueva del formato puede dejar de servir sin que nadie lo note | Una lectura de archivo cada vez que se abre la pantalla |
+| F13A-AC4 | Claude: un ítem cuenta como crítico si lo marca la fila guardada **o** el ítem actual; retira de la deuda «un ítem vuelto crítico después no bloquea» | ISO 7.5.2 c) | Un ítem vuelto crítico a mitad de ronda bloquea aunque se haya guardado sin esa marca |
+| F13A-AC5 | Claude: quien solo firmó «Publicó» no cuenta como participante del trámite | Práctica: incluirlo abriría también la página del trámite | Quien publica sin ser Administrador del SGC no ve el acta |
+| F13A-AC6 | Claude: la confirmación lleva una huella de los criterios mostrados, y el servidor rechaza una vieja con «La lista cambió mientras tenía abierto el diálogo. Recargue la página.» | ISO 7.5.2 c): nadie acepta un criterio que no vio | Con dos pestañas hay que recargar y firmar de nuevo |
+| F13A-AP1 | `criteriosNoCumplen` filtra por la marca guardada en la fila (`NOT r.critico`), no por la actual: un ítem vuelto crítico después del concepto sigue visible para quien aprueba | Práctica: el spec limita la marca actual a `validarConcepto` | El aprobador vería un criterio que hoy es crítico, con su nota |
+| F13A-AP2 | El aprobador usa la misma confirmación con huella que el revisor: un solo esquema y una sola comprobación; manda sobre el spec, que decía que no la necesitaba | Práctica (ya se le dijo al usuario; F13A-AU5) | Un campo con más texto en el diálogo del aprobador |
+| F13A-AP3 | `tests/utiles/demo.ts` y los tests que dependían del consecutivo de formatos en SGC se actualizan, sin debilitarlos, por sembrar `SGC-FO-06` | Práctica | Unas líneas de test |
+| F13A-AP4 | La adición va en la misma rama, sin worktree | Práctica: va antes de fusionar y el usuario la pidió ahí | Ninguno: `main` sigue intacto |
+| F13A-AR1 | La huella cubre también el texto del criterio | Spec §5.2 («criterios mostrados») manda sobre el plan | Una línea y dos tests |
+| F13A-AR2 | Un ítem vuelto crítico se pinta como crítico y bloquea en pantalla, con `criticosActuales` aparte para no tocar la forma de `detalle.lista` | Práctica: el revisor no veía cuál bloqueaba | Una prop de más |
+| F13A-AR3 | El commit `ad130c8` (solo tests, en rojo por sí solo) se deja como está, sin reescribir la historia | Práctica: el arreglo está en el commit siguiente | Un commit rojo en la historia: afecta solo a `git bisect` |
+| F13A-AR4 | Un formato con `/Contents` vacío da «listo», sin aviso propio | Práctica: para eso existe **Ver acta de ejemplo**, y no lanza | Un acta sin encabezado hasta que alguien lo note |
+| F13A-AR5 | Se acepta una fila `acta_no_regenerable` por reintento, sin limitador | ISO 7.5.3.1 a) y regla 5: deja constancia de a quién se le negó el acta | Unas filas de más en un caso raro |
+| F13A-AR6 | El formato se lee en `asegurarActa` y no en `reunirDatosActa` | Práctica: evita leerlo con el acta ya en disco | Ninguno: es dónde vive la lectura |
 
 ## Deuda técnica conocida
 
@@ -1308,9 +1407,24 @@ mismos números que citan los comentarios del código (`R24`, `R26`, `R32`, `R33
   (F13A-R7, R23). Carrera posible en `codigoAbandonado` (F13A-R23).
 - La huella que muestra el diálogo de firma puede ser vieja con dos pestañas; la firma guarda la
   actual. `candidatosDe` ofrece a quien ya firmó `elaboro` y el servidor lo rechaza con mensaje.
-- El crítico se evalúa con la marca copiada al guardar: un ítem vuelto crítico después no bloquea
-  hasta guardar de nuevo. Devolver con marcas sin guardar las pierde. `bloquearComo` usa las
+- Devolver con marcas sin guardar las pierde. `bloquearComo` usa las
   reglas de devolver y enviar como sustituto de persona y etapa.
+- **De la adición del acta con formato** (todos menores, aceptados en la revisión de cada tarea):
+  - La fila «Concepto de» puede quedar sola en otra hoja, separada de sus criterios: se vio en la
+    prueba con el formato real (SOL-2026-001, el encabezado «Criterios que no cumplen» queda al pie
+    de la hoja 1 y «Concepto de» abre la hoja 2).
+  - Sin bloqueo al guardar la configuración (heredado): con dos sesiones simultáneas la bitácora
+    puede omitir un cambio. `config-documental` arrastra `pdf-lib` a sus importadores. La coma en
+    `type=number` solo se probó en Chromium.
+  - El 404 de un trámite oculto cuesta más consultas que el de uno inexistente (tiempo, sin fuga);
+    `obtenerTramite` carga todos los eventos para un booleano; sin test del bloque del acta en la
+    página del trámite.
+  - Sin test de posiciones contra los márgenes; faltan bytes vacíos y PDF sin páginas en el test del
+    motivo; una página con `/Rotate` se juzga por su `MediaBox`.
+  - `criterios` no excluye ítems vueltos críticos (inocuo: el diálogo no se monta); el aviso de la
+    nota no es región viva; hay dos `role=group` con el mismo nombre en el diálogo.
+  - `acta_no_regenerable` apunta a dos entidades distintas según el motivo; falta cubrir con test
+    un `archivoId` inexistente y la regeneración con el formato obsoleto.
 - Un `consulta` designado elaborador puede subir `.zip` y `.rar` (lista blanca heredada; no son
   ejecutables). Un `%` inválido en `x-nombre-archivo` da 500 e `includes("principal")` sigue en el
   `catch` de `recepcion-archivo.ts` (heredados). `descartarResto` no tiene tiempo límite propio
