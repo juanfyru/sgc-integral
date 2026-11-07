@@ -58,7 +58,7 @@ import { EnvioARevision, PanelElaboracion, hayCambiosSinGuardar } from "@/compon
 import { ListaSoloLectura, ListaVerificacion } from "@/componentes/tramites/ListaVerificacion";
 import { Observaciones } from "@/componentes/tramites/Observaciones";
 import { PanelPublicacion } from "@/componentes/tramites/PanelPublicacion";
-import { ResumenDistribucion } from "@/componentes/tramites/ResumenDistribucion";
+import { hayDistribucion, ResumenDistribucion } from "@/componentes/tramites/ResumenDistribucion";
 import { PanelRevision } from "@/componentes/tramites/PanelRevision";
 import { PasosTramite } from "@/componentes/tramites/PasosTramite";
 import { TablaTramites } from "@/componentes/tramites/TablaTramites";
@@ -1363,46 +1363,48 @@ describe("esquemas del trámite", () => {
 });
 
 describe("distribución del trámite publicado", () => {
-  const sin = { confirmados: 0, pendientes: 0, porcentaje: null };
-  const noRequerida = { requerida: false, venceEn: null, cumplida: null, superada: false };
-
-  it("pinta acuses, socialización registrada y copias con enlace a la ficha", () => {
+  it("pinta acuses y copias con enlace a la ficha, sin socialización si no se pasa", () => {
     const h = renderToStaticMarkup(
       <ResumenDistribucion
         version={3}
         enlace="/documentos/gth-pr-02"
         acuses={{ confirmados: 23, pendientes: 11, porcentaje: 68 }}
-        socializacion={{ requerida: true, venceEn: null, cumplida: { jornadaId: 1, fecha: "2026-11-05", modalidad: "presencial", asistentes: 18, evidencias: 1 }, superada: false }}
-        copias={{ recibidas: 3, porRecoger: 2 }}
+        copias={{ sinRecibir: 1, recibidas: 3, porRecoger: 2 }}
       />,
     );
     expect(h).toContain("Distribución de la versión 3");
     expect(h).toContain("acuses 23 de 34 (68 %)");
-    expect(h).toContain("socialización registrada el 5 nov 2026");
-    expect(h).toContain("copias: 3 recibidas, 2 por recoger");
+    expect(h).toContain("copias: 1 emitida sin recibir, 3 recibidas, 2 de versiones anteriores por recoger");
+    expect(h).not.toContain("socialización");
     expect(h).toContain('href="/documentos/gth-pr-02"');
   });
-  it("una socialización pendiente dice cuándo vence", () => {
+  it("omite los segmentos de copias en cero y toda la parte si no hay nada", () => {
+    const parcial = renderToStaticMarkup(<ResumenDistribucion version={1} enlace="/d" acuses={null} copias={{ sinRecibir: 0, recibidas: 2, porRecoger: 0 }} />);
+    expect(parcial).toContain("acuses: sin destinatarios · copias: 2 recibidas");
+    expect(parcial).not.toMatch(/sin recibir|por recoger|undefined|null/);
+    const vacio = renderToStaticMarkup(<ResumenDistribucion version={1} enlace="/d" acuses={null} copias={{ sinRecibir: 0, recibidas: 0, porRecoger: 0 }} />);
+    expect(vacio).not.toContain("copias:");
+    const sinPermiso = renderToStaticMarkup(<ResumenDistribucion version={1} enlace="/d" acuses={null} copias={null} />);
+    expect(sinPermiso).not.toContain("copias:");
+  });
+  it("si se pasa la socialización, la dice", () => {
     const h = renderToStaticMarkup(
       <ResumenDistribucion
         version={2}
-        enlace="/documentos/x"
-        acuses={sin}
+        enlace="/d"
+        acuses={null}
         socializacion={{ requerida: true, venceEn: new Date("2026-11-20T17:00:00Z"), cumplida: null, superada: false }}
         copias={null}
       />,
     );
-    expect(h).toContain("acuses: sin destinatarios");
     expect(h).toContain("socialización requerida, vence el 20 de noviembre de 2026");
-    expect(h).not.toContain("copias:");
   });
-  it("omite lo que no tiene datos y no imprime undefined", () => {
-    const h = renderToStaticMarkup(
-      <ResumenDistribucion version={1} enlace="/documentos/x" acuses={null} socializacion={noRequerida} copias={{ recibidas: 0, porRecoger: 0 }} />,
-    );
-    expect(h).toContain("acuses: sin destinatarios");
-    expect(h).toContain("socialización no requerida");
-    expect(h).toContain("copias: 0 recibidas, 0 por recoger");
-    expect(h).not.toMatch(/undefined|null/);
+  it("solo un trámite publicado con versión muestra la distribución, nunca una eliminación", () => {
+    const t = { etapa: "publicado", tipo: "modificar", versionId: 4, versionNumero: 3 };
+    expect(hayDistribucion(t)).toBe(true);
+    expect(hayDistribucion({ ...t, tipo: "eliminar" })).toBe(false);
+    expect(hayDistribucion({ ...t, etapa: "eliminado", tipo: "eliminar" })).toBe(false);
+    expect(hayDistribucion({ ...t, etapa: "aprobacion" })).toBe(false);
+    expect(hayDistribucion({ ...t, versionId: null })).toBe(false);
   });
 });

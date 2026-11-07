@@ -6,14 +6,12 @@ export function versionDeQr(valor: string | string[] | undefined): number | null
 }
 
 /** Dice a quien escaneó el sello si su copia es de la versión vigente. El estado va siempre en texto. */
-export function AvisoVersionQr({ solicitada, vigente }: { solicitada: number | null; vigente: number | null }) {
+export function AvisoVersionQr({ solicitada, vigente }: { solicitada: number | null; vigente: number }) {
   if (solicitada === null) return null;
-  const vigenteIgual = vigente !== null && solicitada === vigente;
+  const vigenteIgual = solicitada === vigente;
   const texto = vigenteIgual
     ? "Esta copia corresponde a la versión vigente"
-    : vigente === null
-      ? `Esta copia es de la versión ${solicitada}; el documento no tiene versión vigente`
-      : `Esta copia es de la versión ${solicitada}; la vigente es la ${vigente}`;
+    : `Esta copia es de la versión ${solicitada}; la vigente es la ${vigente}`;
   const Icono = vigenteIgual ? BadgeCheck : TriangleAlert;
   return (
     <p

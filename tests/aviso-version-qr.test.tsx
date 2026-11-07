@@ -33,8 +33,4 @@ describe("AvisoVersionQr", () => {
     expect(h).toContain("Esta copia es de la versión 2; la vigente es la 3");
     expect(h).toContain("bg-estado-atencion-fondo");
   });
-  it("sin versión vigente lo dice", () => {
-    const h = renderToStaticMarkup(<AvisoVersionQr solicitada={2} vigente={null} />);
-    expect(h).toContain("Esta copia es de la versión 2; el documento no tiene versión vigente");
-  });
 });

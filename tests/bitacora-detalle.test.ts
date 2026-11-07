@@ -300,3 +300,15 @@ describe("distribución de la 13B", () => {
     expect(nombreDeAccion("crear_punto_uso")).toBe("Creó un punto de uso");
   });
 });
+
+describe("frases con el detalle real", () => {
+  const e = (accion: string, detalle: Record<string, unknown>) =>
+    describirEvento({ accion, entidad: "x", entidadId: 1, detalle });
+  it("exporto_acuses con lo que guarda la ruta", () => {
+    expect(e("exporto_acuses", { formato: "excel", desde: "2026-10-01", hasta: "2026-10-31", procesoId: null, total: 5 }))
+      .toBe("Emitió el cumplimiento de lectura (excel, 2026-10-01 a 2026-10-31)");
+  });
+  it("verificacion_abierta con el punto", () => {
+    expect(e("verificacion_abierta", { puntoId: 3, punto: "Farmacia", items: 8, propioPunto: false })).toBe("Abrió la verificación de Farmacia");
+  });
+});
