@@ -1,7 +1,7 @@
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { filtroPuntos } from "@/lib/alcance";
+import { filtroAcceso, filtroPuntos } from "@/lib/alcance";
 import { numeroDeCopia } from "@/lib/distribucion/copias";
 import { verificacionVencida } from "@/lib/distribucion/verificacion";
 import { puede } from "@/lib/permisos";
@@ -60,7 +60,7 @@ export async function tareasDeCopias(sesion: SesionFlujo, opciones?: { sql?: Cli
   return tareas;
 }
 
-/** Cada lectura pendiente es una tarea de la persona; vence con el plazo del acuse. */
+/** Cada lectura pendiente de un documento que la persona aún puede ver es una tarea suya; vence con el plazo del acuse. */
 export async function tareasDeAcuses(sesion: SesionFlujo, opciones?: { sql?: Cliente }): Promise<Tarea[]> {
   const sql = opciones?.sql ?? obtenerSql();
   const filas = await sql`
@@ -68,7 +68,7 @@ export async function tareasDeAcuses(sesion: SesionFlujo, opciones?: { sql?: Cli
     FROM acuses a
     JOIN documento_versiones v ON v.id = a.version_id
     JOIN documentos d ON d.id = v.documento_id
-    WHERE a.usuario_id = ${sesion.usuarioId} AND a.estado = 'pendiente'
+    WHERE a.usuario_id = ${sesion.usuarioId} AND a.estado = 'pendiente' AND ${filtroAcceso(sql, sesion)}
     ORDER BY a.vence_en, a.id`;
   return filas.map((f) => ({
     id: `acuse:${f.id}`,

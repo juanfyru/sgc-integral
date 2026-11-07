@@ -258,6 +258,8 @@ export async function editarUsuario(
       for (const documentoId of await documentosDeProcesos(tx, quitados)) {
         await retirarAcusesFueraDeAudiencia(tx, documentoId, ahora, "salio_de_audiencia");
       }
+      // Con otro rol puede dejar de ver documentos restringidos: lo que debía leer de ellos ya no se le pide.
+      if (antesCompleto.rol !== datos.rol) await retirarAcusesDe(tx, id, ahora, "perdio_acceso", { soloSinAcceso: true });
       await registrarAuditoria(tx, {
         usuarioId: actorId, accion: "editar_usuario", entidad: "usuario", entidadId: id,
         detalle: { usuario: f.usuario, antes, despues },

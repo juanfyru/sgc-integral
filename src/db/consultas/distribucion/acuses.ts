@@ -193,7 +193,7 @@ function leerAcuse(sql: Cliente, condicion: ReturnType<Cliente>) {
     FROM acuses a
     JOIN documento_versiones v ON v.id = a.version_id
     JOIN documentos d ON d.id = v.documento_id
-    WHERE ${condicion}`;
+    WHERE ${condicion} AND ${filtroAccesoDe(sql, sql`a.usuario_id`)}`;
 }
 
 function aAcuse(f: Record<string, unknown>): Acuse {
@@ -223,7 +223,10 @@ function aAcuse(f: Record<string, unknown>): Acuse {
   };
 }
 
-/** Solo el destinatario ve su acuse; para cualquier otra persona es como si no existiera. */
+/**
+ * Solo el destinatario ve su acuse, y solo mientras puede ver el documento (`leerAcuse` aplica el nivel de acceso
+ * de la persona): para cualquier otra persona, o tras perder el acceso, es como si no existiera.
+ */
 export async function obtenerAcuse(id: number, sesion: SesionFlujo, opciones?: Opciones): Promise<Acuse | null> {
   const sql = opciones?.sql ?? obtenerSql();
   const [fila] = await leerAcuse(sql, sql`a.id = ${id} AND a.usuario_id = ${sesion.usuarioId}`);
@@ -283,7 +286,7 @@ export async function confirmarLectura(id: number, sesion: SesionFlujo, opciones
   await enTransaccion(sql, async (tx) => {
     const [a] = await tx`SELECT a.id, a.version_id, a.estado, v.numero, d.codigo
       FROM acuses a JOIN documento_versiones v ON v.id = a.version_id JOIN documentos d ON d.id = v.documento_id
-      WHERE a.id = ${id} AND a.usuario_id = ${sesion.usuarioId} FOR UPDATE OF a`;
+      WHERE a.id = ${id} AND a.usuario_id = ${sesion.usuarioId} AND ${filtroAcceso(tx, sesion)} FOR UPDATE OF a`;
     if (!a) throw new ErrorDistribucion("La tarea no existe");
     if (a.estado !== "pendiente") throw new ErrorDistribucion("Esta lectura ya no está pendiente");
     const [abierto] = await tx`SELECT 1 AS ok FROM eventos_consulta
@@ -424,14 +427,22 @@ export async function retirarAcusesFueraDeAudiencia(
   return retirar(tx, pendientes.filter((p) => !dentro.has(Number(p.usuario_id))).map((p) => Number(p.id)), ahora, motivo);
 }
 
-/** Todo lo que la persona debía leer queda retirado (al desactivarla). */
+/**
+ * Todo lo que la persona debía leer queda retirado (al desactivarla) o, con `soloSinAcceso`, solo lo de los
+ * documentos que ya no puede ver (al cambiarle el rol; se llama después de guardar el rol nuevo).
+ */
 export async function retirarAcusesDe(
   tx: TransactionSql,
   usuarioId: number,
   ahora: Date,
   motivo: string,
+  opciones?: { soloSinAcceso?: boolean },
 ): Promise<number> {
-  const pendientes = await tx`SELECT id FROM acuses WHERE usuario_id = ${usuarioId} AND estado = 'pendiente' ORDER BY id FOR UPDATE`;
+  const pendientes = await tx`SELECT a.id FROM acuses a
+    JOIN documento_versiones v ON v.id = a.version_id JOIN documentos d ON d.id = v.documento_id
+    WHERE a.usuario_id = ${usuarioId} AND a.estado = 'pendiente'
+      AND ${opciones?.soloSinAcceso ? tx`NOT ${filtroAccesoDe(tx, tx`a.usuario_id`)}` : tx`true`}
+    ORDER BY a.id FOR UPDATE OF a`;
   return retirar(tx, pendientes.map((p) => Number(p.id)), ahora, motivo);
 }
 
