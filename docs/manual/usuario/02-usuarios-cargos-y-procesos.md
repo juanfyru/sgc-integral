@@ -10,8 +10,8 @@ Capítulo 1.
 
 Las páginas de administración están en la barra lateral (Capítulo 3, sección 2): en el
 grupo **Documentos**, Gestión de documentos, Listado Maestro, Tipos de documento,
-Configuración documental y Mapa de procesos; en el grupo **Administración**, Entidad y marca, **Estructura**, **Usuarios**,
-**Puntos de uso**, **Listas de distribución**, Estadísticas, Bitácora, **Accesos** y **Sesiones**. En este capítulo, "Administración →
+Configuración documental y Mapa de procesos; en el grupo **Administración**, Entidad y marca, **Estructura**, **Puntos de uso**,
+**Listas de distribución**, **Usuarios**, Estadísticas, Bitácora, **Accesos** y **Sesiones**. En este capítulo, "Administración →
 **Usuarios**" quiere decir: barra lateral, grupo Administración, enlace Usuarios.
 
 Cada persona ve en esa barra solo lo que su rol permite. Si alguien abre una página que

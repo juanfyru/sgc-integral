@@ -1,7 +1,7 @@
 # CONTEXT.md — Estado vivo del proyecto
 
 > Se actualiza al cierre de cada fase. Última actualización: **2026-11-07**, al cerrar la 13B. La **Fase 13B —
-> Distribución y puntos de uso** está terminada en la rama `fase-13b-distribucion-puntos-de-uso` (28 commits
+> Distribución y puntos de uso** está terminada en la rama `fase-13b-distribucion-puntos-de-uso` (unos 30 commits
 > sobre `main`), **sin fusionar** a la espera de la palabra del usuario. La **Fase 13A —
 > Flujo documental** y sus adiciones están fusionadas en `main` (`d0c6a42`, 2026-11-07), con el CI
 > en verde. Lo siguiente, tras fusionar la 13B, es la Fase 13C. La
@@ -19,7 +19,7 @@
    La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
    proyecto**.
 1. **Dónde quedamos:** la **Fase 13B está terminada en su rama** (`fase-13b-distribucion-puntos-de-uso`,
-   28 commits sobre `main`, `f08f01d`; **no se ha fusionado ni publicado**: no hay `push` ni `merge` sin la palabra del
+   unos 30 commits sobre `main`, `f08f01d`; **no se ha fusionado ni publicado**: no hay `push` ni `merge` sin la palabra del
    usuario). Lo que el papel y las personas hacen después de publicar queda dentro del sistema: puntos de uso con
    responsable; copias controladas numeradas con sello (franja y QR a la ficha) y su recibido, reimpresión con
    motivo, anulación, recogida automática cuando la versión deja de ser vigente y reemplazo en un acto; listas
@@ -227,17 +227,19 @@ recorre en el navegador tras el commit de cierre y deja sus capturas en la bitá
    «Sala de partos», con `jefe.urgencias` de responsable y el proceso AIN. Debe verse en la lista.
    Abra **Urgencias** y desactívelo: lo impide por sus copias vivas y dice cuáles. En **Usuarios**, abra
    `jefe.urgencias`: **Desactivar usuario** lo impide mientras tenga puntos activos, con enlace a ellos.
-2. **Emitir (`lider.gth`).** Abra `GTH-PR-01` → **Emitir copia controlada** → Talento Humano: se abre el
-   PDF con la franja «COPIA CONTROLADA N.º 01 · GTH-PR-01 v1 · Talento Humano · Entregada a …» en cada
-   página y el QR; la copia nace **Recibida** porque el líder es el responsable. Emita otra para Urgencias
-   (N.º 02): queda «Sin recibido». Recargue el PDF: no genera una impresión nueva. Pasados 15 minutos, en
+2. **Emitir (`lider.gth`).** Abra `GTH-PR-01` → **Emitir copia controlada** → Talento Humano (el diálogo
+   solo ofrece los puntos de los procesos del líder). La app lleva a la página de la copia con «La copia está lista
+   para imprimir»; pulse **Abrir el PDF para imprimir** (pestaña nueva): franja «COPIA CONTROLADA N.º 01 ·
+   GTH-PR-01 v1 · Talento Humano · Entregada a …» en cada página y el QR. La copia nace **Recibida** porque el
+   líder es el responsable. La copia para Urgencias (N.º 02, queda «Sin recibido») la emite `coordinadora.sgc`
+   (o cualquier Admin SGC): el líder no ve ese punto. Recargue el PDF: no genera una impresión nueva. Pasados 15 minutos, en
    la página de la copia el botón es **Reimprimir** y pide motivo. En `GTH-FO-01` (restringido),
    emitir para Farmacia es rechazado: su responsable no lo ve. **La demo no trae ningún vigente con
    principal en Word:** para ver «Para emitir copias controladas el archivo principal debe ser PDF»
    registre uno (**Registrar documento ya aprobado**, principal `.docx`).
-3. **Recibido (`jefe.urgencias`).** **Mis tareas** → «Recibir la copia N.º 02 de GTH-PR-01 v1 en
-   Urgencias» (junto a la que ya traía de `GTH-CA-01` v3, vencida) → **Confirmar el recibido**. La copia
-   queda **Recibida**; en la página de la copia el historial dice quién y cuándo.
+3. **Recibido (`jefe.urgencias`).** **Mis tareas** → «Recibir la copia N.º 02 de GTH-CA-01 v3 en
+   Urgencias» (la copia de la demo, emitida hace 4 días y vencida; si hizo el paso 2, también tiene la de
+   `GTH-PR-01` v1) → **Confirmar el recibido**. La copia queda **Recibida**; en la página de la copia el historial dice quién y cuándo.
 4. **Publicar y recoger.** Atajo con la demo: como `coordinadora.sgc`, emita copias de `GBS-PR-01` v1 para
    Urgencias y Farmacia y luego publique SOL-2026-003 (`GBS-PR-01` v2: **Publicar**, con clave). Debe verse:
    las dos copias de la v1 en **Por recoger**, la tarea «Recoger la copia …» para `jefe.urgencias` y
@@ -264,9 +266,11 @@ recorre en el navegador tras el commit de cierre y deja sus capturas en la bitá
    tres asistentes y un PDF de acta: sus acuses quedan «Por asistencia». `consulta` ve la frase de la jornada
    pero no el acta; `control.interno` sí. **Anular la jornada**, con motivo: los acuses vuelven a pendiente.
 9. **Verificación (`coordinadora.sgc`, a 390 px o en el celular).** **Distribución** → **Verificaciones** →
-   «Toca verificar» en Farmacia → **Verificar**: responda la lista, un **No conforme** con **Foto**, **Cerrar la
+   «Toca verificar» en Farmacia → **Verificar** (lleva a una pantalla de confirmación; el botón **Verificar
+   Farmacia** abre la verificación, y esa apertura queda en la bitácora): responda la lista, un **No conforme** con **Foto**, **Cerrar la
    verificación**: «Punto no conforme», hallazgo para `regente.farmacia` con fecha; la **Conformidad actual**
-   baja del 95 % y la insignia lo dice. `regente.farmacia` lo cierra desde **Mis tareas** («Corregir hallazgo en
+   pasa de 50 % (Farmacia conforme, Urgencias no conforme) a 0 %, por debajo del umbral en ambos casos, y la
+   insignia lo dice. `regente.farmacia` lo cierra desde **Mis tareas** («Corregir hallazgo en
    Farmacia: …») con **Cerrar hallazgo**. La verificación cerrada no ofrece edición, y el trigger lo impide.
 10. **Eliminación.** Emita una copia de `CEX-GU-01` para Odontología (`lider.cex`) y ejecute la eliminación
     (SOL-2026-005, paso 10 de la 13A): la copia queda **Por recoger** y la audiencia recibe «dejó de aplicar»,
@@ -291,8 +295,11 @@ la salida. `npm run db:seed && npm run admin:asegurar` la deja como nueva.
    Base: Práctica (la cabecera `Host` la controla el cliente).
 2. **El formato PDF real del hospital trae un pie que ocupa el borde inferior (1,15 cm).** El alto por defecto
    de la franja del sello es 1,0 cm y la taparía: en **Configuración documental** → **Distribución** ponga
-   **Alto de la franja del sello** en **0,6** cm (el sello sigue legible: con menos de 0,8 cm pinta título y detalle
-   en una sola línea). Pruébelo con un documento real antes de imprimir en serie. Base: Práctica.
+   **Alto de la franja del sello** en **0,6** cm (a 0,6 cm el sello todavía se pinta en dos líneas con letra de 6 puntos, el límite; por debajo de 0,6 cm pasa a
+   una sola línea). **El QR no baja con la franja:** mide 1,5 cm más 0,15 cm de margen blanco por lado y se dibuja en
+   la esquina inferior derecha, así que seguirá cubriendo esa esquina del pie del hospital; baje también el **Tamaño
+   del código QR** en la misma sección (sin perder el escaneo) o acepte que la esquina quede cubierta. Pruébelo con
+   un documento real antes de imprimir en serie. Base: Práctica.
 3. **El QR abre la ficha del documento en la intranet desde el celular.** `?v=` le dice a la ficha qué versión
    se imprimió y ella avisa «Esta copia es de la versión N; la vigente es la M». Exige que el celular alcance
    la intranet y que la persona ingrese con su cuenta. Base: ISO 7.5.3.2 c).
@@ -663,7 +670,7 @@ Plan: `docs/superpowers/plans/2026-11-07-fase13b-distribucion-puntos-de-uso.md`;
 `docs/superpowers/specs/2026-11-07-fase13b-distribucion-puntos-de-uso-design.md`. Los pasos 9 y 10 del
 procedimiento de control de documentos del hospital quedan dentro del sistema, con la evidencia de PC-08 (parte
 física), PC-09 y PC-10 (spec, Apéndice A). **Sin dependencias npm nuevas** (`pdf-lib`, `qrcode` y `exceljs`
-ya estaban). La rama `fase-13b-distribucion-puntos-de-uso` lleva 28 commits sobre `main` (`f08f01d`) y **no está
+ya estaban). La rama `fase-13b-distribucion-puntos-de-uso` lleva unos 30 commits sobre `main` (`f08f01d`) y **no está
 fusionada**.
 
 - **Rutas nuevas:** `/distribucion` y sus cuatro pestañas (`/distribucion/{copias,acuses,socializaciones,verificaciones}`),
@@ -1580,7 +1587,7 @@ mismos números que citan los comentarios del código (`R24`, `R26`, `R32`, `R33
 ## Decisiones adicionales (Fase 13B)
 
 F13B-DC1 a F13B-DC27 vienen del spec de la fase (§22), del 2026-11-07; DC24 a DC27 salieron de la
-revisión del constructor, antes de la aprobación. F13B-R1 a R16 son las resoluciones del controlador durante la
+revisión del constructor, antes de la aprobación. F13B-R1 a R17 son las resoluciones del controlador durante la
 ejecución (mandan sobre el plan). Base: **ISO** (cláusula de 9001:2015), **Regulación** o **Práctica**.
 
 | # | Decisión y porqué | Base | Si es incorrecta |
@@ -1615,7 +1622,7 @@ ejecución (mandan sobre el plan). Base: **ISO** (cláusula de 9001:2015), **Reg
 | F13B-R1 | Se trabajó en la rama de la fase en el directorio principal, sin worktree: `.env.local`, `./almacen` y la BD de desarrollo (5435) están atados a esta carpeta, como en la 13A | Práctica | Solo convención |
 | F13B-R2 | `crearAcusesAlPublicar(tx, versionId, ahora, firmantes)` recibe los ids de los firmantes desde el manejador (`elaboro`, `reviso`, `aprobo` más quien publica = `sesion.usuarioId`): dentro del manejador la firma `publico` todavía no está en `firmas` | Práctica | Un parámetro de más |
 | F13B-R3 | Un punto de uso puede tener cero procesos: el campo solo sirve al alcance del líder y a la sugerencia, y Archivo no tiene proceso propio (el spec decía «uno o varios») | Práctica | Una validación de una línea |
-| F13B-R4 | Los defectos del sello se quedan en 1,0 y 1,5 cm (sirven a otras entidades). El hospital fija 0,6 cm en Configuración documental y bajo 0,8 cm la franja pinta título y detalle en una sola línea | Práctica | Cambiar el valor por defecto |
+| F13B-R4 | Los defectos del sello se quedan en 1,0 y 1,5 cm (sirven a otras entidades). El hospital fija 0,6 cm en Configuración documental y la franja pinta dos líneas mientras mida 0,6 cm o más (`(alto − 2 pt) / 2,5 ≥ 6 pt`) y una sola por debajo; el QR no depende de la franja | Práctica | Cambiar el valor por defecto |
 | F13B-R5 | Reimprimir y obtener el PDF de una copia que la persona no ve responde 404, no 409 (regla global del 404); la ventana vencida, la versión no vigente y la huella distinta tienen mensaje propio | Spec 13A §12 | Dos líneas de ruta |
 | F13B-R6 | El periodo de los acuses se calcula con `COALESCE(publicado_en, primer acuse)`: las versiones cargadas fuera de la plataforma (toda la carga inicial) no tienen `publicado_en` y la pantalla quedaba vacía | Práctica | Una expresión SQL |
 | F13B-R7 | Quitar una lista del documento retira los acuses de quienes solo pertenecían por esa lista (spec §9.3); los componentes no consultan la BD | ISO 7.5.3.2 a) | Dos cambios pequeños |
@@ -1628,6 +1635,7 @@ ejecución (mandan sobre el plan). Base: **ISO** (cláusula de 9001:2015), **Reg
 | F13B-R14 | Los avisos de vencimiento no se recorren en navegador: los plazos tienen piso de 1 día y toda la demo es de hoy; la cobertura queda en `tests/distribucion-vencimientos.test.ts`. La demo trae, además, vencidos sembrados con fechas relativas | Práctica | Un aviso mal pintado en la campana |
 | F13B-R15 | La semilla se parte en dos llamadas (`sembrarDistribucionPrevia` antes y `sembrarDistribucion` después de los trámites): `emitirCopia` solo emite la vigente y la v3 de `GTH-CA-01` ya está publicada al terminar los trámites. No se llama `pedirAcuses`: la publicación de la v3 crea los acuses de «Todo el hospital» con origen `publicacion`; la jornada es de hace 5 días (relativa), no del 14 de octubre | Práctica | La demo cuenta la historia con otro origen, sin efecto funcional |
 | F13B-R16 | Los tests que dependen de filas de la BD de desarrollo se reescriben para no depender de datos preexistentes (conteo de archivos con `contexto <> 'version'`, fotos de ítems, notificaciones de un usuario), porque las acumulan los puntos de control manuales | Regla de tests contra la BD de desarrollo | — |
+| F13B-R17 | Abrir una verificación es un POST con pantalla de confirmación («Verificar <punto>»), auditado como `verificacion_abierta`: un `GET` no debe crear filas ni dejar verificaciones abiertas por una precarga | Práctica | Abrir con un enlace `GET` |
 
 ## Deuda técnica conocida
 

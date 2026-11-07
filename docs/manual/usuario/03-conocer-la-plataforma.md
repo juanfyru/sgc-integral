@@ -30,8 +30,8 @@ De arriba abajo:
 3. El grupo **Documentos**: **Buscar documentos**, **Trámites**, **Distribución**, **Gestión de
    documentos**, **Listado Maestro**, **Tipos de documento**, **Configuración documental** y
    **Mapa de procesos**.
-4. El grupo **Administración**: **Entidad y marca**, **Estructura**, **Usuarios**, **Puntos de
-   uso**, **Listas de distribución**, **Estadísticas**, **Bitácora**, **Accesos** y **Sesiones**.
+4. El grupo **Administración**: **Entidad y marca**, **Estructura**, **Puntos de
+   uso**, **Listas de distribución**, **Usuarios**, **Estadísticas**, **Bitácora**, **Accesos** y **Sesiones**.
 5. Al pie, **SGC Integral · v** seguido del número de versión. Es el nombre de la
    plataforma; si reporta un problema a sistemas, indique ese número.
 
@@ -44,7 +44,7 @@ Cada persona ve solo los enlaces que su rol permite. Un grupo sin enlaces no apa
 
 | Rol | Documentos | Administración |
 |---|---|---|
-| Administrador del SGC | Buscar documentos, Trámites, Distribución, Gestión de documentos, Listado Maestro, Tipos de documento, Configuración documental, Mapa de procesos | Entidad y marca, Estructura, Usuarios, Puntos de uso, Listas de distribución, Estadísticas, Bitácora, Accesos, Sesiones |
+| Administrador del SGC | Buscar documentos, Trámites, Distribución, Gestión de documentos, Listado Maestro, Tipos de documento, Configuración documental, Mapa de procesos | Entidad y marca, Estructura, Puntos de uso, Listas de distribución, Usuarios, Estadísticas, Bitácora, Accesos, Sesiones |
 | Gerencia | Buscar documentos, Trámites, Distribución (solo lectura), Listado Maestro (solo vigentes, sin Excel) | Estadísticas |
 | Control Interno | Buscar documentos, Distribución (solo lectura), Gestión de documentos (solo lectura), Listado Maestro | Estadísticas, Bitácora, Accesos |
 | Líder de proceso | Buscar documentos, Trámites, Distribución (la de sus procesos) | — |

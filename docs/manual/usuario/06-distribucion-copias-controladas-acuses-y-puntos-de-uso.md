@@ -49,9 +49,10 @@ ve las copias y verificaciones de **sus** puntos.
 
 ### 2.1 Recibir una copia
 
-Cuando alguien emite una copia para su punto, le llega un aviso en la campana («Le entregarán
-la copia N.º 02 de GTH-PR-01 v1 en Urgencias») y, cuando el papel está en sus manos, la tarea
-**Recibir la copia N.º 02 de GTH-PR-01 v1 en Urgencias**.
+Cuando alguien emite una copia para su punto, le llega al mismo tiempo un aviso en la campana
+(«Le entregarán la copia N.º 02 de GTH-PR-01 v1 en Urgencias») y la tarea **Recibir la copia N.º 02
+de GTH-PR-01 v1 en Urgencias**. La tarea aparece al emitirse la copia, aunque el papel todavía no
+haya llegado: confírmela cuando lo tenga en sus manos.
 
 1. Pulse la tarea. Se abre la página de la copia, con su historial.
 2. Compruebe que el papel que tiene coincide con lo que dice la página: documento, versión y
@@ -95,8 +96,8 @@ del papel viejo (**Devuelta al SGC** o **Destruida en el punto**).
 ### 2.4 Corregir un hallazgo
 
 Cuando una verificación encuentra algo mal en su punto, le llega la tarea **Corregir hallazgo en
-Farmacia: …** con la descripción, lo que se hizo en el acto y la **fecha de corrección** (5 días
-por defecto). Corríjalo (retire la copia no controlada, cambie la versión, etc.), abra el
+Farmacia: …** con la descripción, lo que se hizo en el acto y la fecha límite («Vence el …», 5 días
+por defecto desde que se cierra la verificación). Corríjalo (retire la copia no controlada, cambie la versión, etc.), abra el
 hallazgo en **Mis tareas** y pulse **Cerrar hallazgo**, con una nota que diga qué hizo. El
 Administrador del SGC también puede cerrarlo.
 
@@ -156,12 +157,14 @@ Hay dos caminos:
 - Desde **Distribución** → **Copias controladas**, el botón **Emitir copia controlada** (aquí
   elige primero el documento).
 
-En el diálogo elija el **Punto de uso** (los puntos de los procesos del documento aparecen
-primero) y, si quiere, una **Nota** («para la carpeta del consultorio 2»). Al confirmar, el SGC:
+En el diálogo elija el **Punto de uso**. Un líder solo puede emitir a los puntos de uso de sus
+procesos; para un punto de otro proceso, la emisión la hace el Administrador del SGC. (Al Administrador le
+aparecen primero los puntos de los procesos del documento) y, si quiere, una **Nota** («para la carpeta del consultorio 2»). Al confirmar, el SGC:
 
 1. Numera la copia (el siguiente número de esa versión: N.º 01, N.º 02…).
 2. Avisa al responsable del punto.
-3. Abre en otra pestaña el **PDF sellado** para imprimir.
+3. Lo lleva a la página de la copia, que dice «La copia está lista para imprimir». Pulse **Abrir el PDF
+   para imprimir**: el PDF sellado se abre en otra pestaña.
 
 Condiciones: solo se emite la versión **vigente**, y su archivo principal debe ser **PDF**. Si el
 principal es un Word, el botón explica «Para emitir copias controladas el archivo principal
@@ -293,7 +296,9 @@ La verificación se hace de pie en el servicio, con el celular: la pantalla est�
 1. **Distribución** → **Verificaciones**. En «Estado de verificación por punto» cada punto muestra su
    última verificación, y los vencidos llevan **Toca verificar** (también le llega la tarea
    **Verificar Farmacia: última hace 95 días**). Por defecto se verifica cada 90 días.
-2. Pulse **Verificar** junto al punto. El SGC arma la lista:
+2. Pulse **Verificar** junto al punto. Se abre una pantalla de confirmación; pulse el botón
+   **Verificar Farmacia** (con el nombre del punto) para abrirla. Abrirla queda en la bitácora. El
+   SGC arma la lista:
    - por cada copia del punto: **está**, **es legible** y **es la versión vigente**;
    - por cada copia por recoger: **ya no está**;
    - tres ítems fijos: sin documentos obsoletos a la vista, sin copias no controladas, y el
@@ -307,7 +312,7 @@ La verificación se hace de pie en el servicio, con el celular: la pantalla est�
    **Descartar la verificación** (pide un motivo y queda registrada, sin efectos).
 
 El resultado es **Punto conforme** o **Punto no conforme**. Cada ítem no conforme abre un
-**hallazgo** para el responsable del punto, con fecha de corrección. Las copias que usted
+**hallazgo** para el responsable del punto, con su fecha límite. Las copias que usted
 confirmó como retiradas pasan a **Recogida**. **Una verificación cerrada no se edita**, ni
 usted ni nadie: se corrigen los hallazgos, no la verificación. Si usted es además responsable
 del punto y no hay otro Administrador activo, la verificación queda marcada «la verificó quien
@@ -342,8 +347,13 @@ cada persona.
 | Tamaño del código QR (cm) | De 1,0 a 3,0 | 1,5 |
 
 Si su formato PDF trae un pie que ocupa el borde de la hoja (el del hospital ocupa 1,15 cm),
-baje el **alto de la franja a 0,6 cm**: la franja sigue legible y no tapa el pie del formato.
-Pruebe con un documento real antes de imprimir en serie.
+baje el **alto de la franja a 0,6 cm**: la franja sigue legible (a 0,6 cm el SGC todavía la pinta en
+dos líneas, con letra de 6 puntos, que es el límite; por debajo de 0,6 cm pasa a una sola línea).
+**El código QR no baja con la franja:** mide 1,5 cm más un margen blanco de 0,15 cm por lado y se dibuja
+siempre en la esquina inferior derecha, así que seguirá cubriendo esa esquina del pie del formato. Si
+esa esquina del pie tiene texto que importa, baje también el **Tamaño del código QR** (sin que
+deje de poder escanearse: pruebe con el celular) o acepte que la esquina quede cubierta. Pruebe con un
+documento real antes de imprimir en serie.
 
 **Entidad y marca** → **Dirección de la plataforma** (por ejemplo `https://sgc.hospital.gov.co` o
 `http://192.168.1.20:8443`, sin ruta). **Sin ella, el sello sale sin código QR.**
@@ -354,7 +364,7 @@ copias.
 
 Con su permiso puede cerrar cualquier hallazgo, anular cualquier copia, cerrar o recoger
 por quien no está, y descartar verificaciones. Todo queda en la **Bitácora** con frases
-legibles, y puede descargar el Excel de copias, acuses, socializaciones y verificaciones
+legibles, y puede descargar el Excel de copias, acuses y verificaciones
 (queda registrado quién y cuándo).
 
 ## 6. El QR y el celular
