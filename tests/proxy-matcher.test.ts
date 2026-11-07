@@ -45,6 +45,8 @@ describe("rutas que reciben el cuerpo de una subida", () => {
     "/tramites/5",
     "/tramites/5/archivos/7/borrador.pdf",
     "/api/buscar",
+    "/distribucion/copias/5/pdf",
+    "/distribucion/copias/5/reimprimir",
   ])("%s sigue pasando por el proxy", (url) => expect(pasa(url)).toBe(true));
 });
 

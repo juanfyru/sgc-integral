@@ -27,6 +27,8 @@ import { GET as excelMaestro } from "@/app/(app)/admin/(panel)/maestro/excel/rou
 import { GET as verArchivoTramite } from "@/app/(app)/tramites/[id]/archivos/[archivoId]/[[...nombre]]/route";
 import { DELETE as quitarArchivoTramite } from "@/app/api/tramites/[id]/archivos/[archivoId]/route";
 import { POST as subirArchivoTramite } from "@/app/api/tramites/[id]/archivos/route";
+import { GET as pdfCopia } from "@/app/(app)/distribucion/copias/[id]/pdf/route";
+import { POST as reimprimirCopiaRuta } from "@/app/(app)/distribucion/copias/[id]/reimprimir/route";
 import { obtenerSql } from "@/db/cliente";
 import { listarDocumentosAdmin, obtenerDocumentoAdmin } from "@/db/consultas/admin";
 import { crearSesion } from "@/lib/sesion";
@@ -474,5 +476,42 @@ describe("archivos del trámite", () => {
     await seguidas(30, () => subir(cookie(token)));
     await seguidas(30, () => quitar(cookie(token)));
     await seguidas(60, () => ver(cookie(token)));
+  });
+});
+
+describe("copias controladas: /distribucion/copias/[id]/pdf y /reimprimir", () => {
+  const COPIA = "999999999";
+  const parametros = { params: Promise.resolve({ id: COPIA }) };
+  const ver = (cabeceras: Record<string, string>) =>
+    pdfCopia(new NextRequest(`http://sgc.local/distribucion/copias/${COPIA}/pdf`, { headers: cabeceras }), parametros);
+  const reimprimir = (cabeceras: Record<string, string>) =>
+    reimprimirCopiaRuta(
+      new NextRequest(`http://sgc.local/distribucion/copias/${COPIA}/reimprimir`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", host: "sgc.local", ...cabeceras },
+        body: "motivo=ilegible",
+      }),
+      parametros,
+    );
+
+  it("sin sesión responden 401", async () => {
+    expect((await ver({})).status).toBe(401);
+    expect((await reimprimir({})).status).toBe(401);
+  });
+
+  it("una copia que no existe, o que no se puede ver, responde 404 y nunca «sin permiso»", async () => {
+    expect((await ver(cookie(tokenConsulta))).status).toBe(404);
+    expect((await ver(cookie(tokenAdmin))).status).toBe(404);
+  });
+
+  it("reimprimir sin el permiso de emitir responde 403; con un Origin ajeno, también", async () => {
+    expect((await reimprimir(cookie(tokenConsulta))).status).toBe(403);
+    expect((await reimprimir({ ...cookie(tokenAdmin), origin: "http://otro.local" })).status).toBe(403);
+  });
+
+  it("reimprimir una copia que no existe responde 409 con el mensaje", async () => {
+    const res = await reimprimir({ ...cookie(tokenAdmin), origin: "http://sgc.local" });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "La copia no existe" });
   });
 });
