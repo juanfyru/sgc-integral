@@ -315,7 +315,7 @@ export async function generarActa(d: DatosActa, membrete?: Uint8Array | null): P
       [ETIQUETA_FIRMA.aprobo, quien(ETIQUETA_FIRMA.aprobo)],
     ].filter((par): par is [string, string] => par[1] !== undefined);
     const textoConcepto = concepto.map(([e, n]) => `${e} ${n}`).join(" · ");
-    // El último criterio reserva el sitio de «Concepto de», para que la fila no quede sola en otra hoja.
+    // El último criterio reserva el sitio de «Concepto de», para evitar, en la mayoría de los casos, que la fila quede sola en otra hoja.
     const reserva = concepto.length > 0 ? h.altoDeFila(textoConcepto) : 0;
     d.noCumple.forEach((c, i) => h.criterio(c, i === d.noCumple!.length - 1 ? reserva : 0));
     if (concepto.length > 0) h.fila("Concepto de", textoConcepto);
