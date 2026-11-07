@@ -191,7 +191,7 @@ describe("ventana de impresión", () => {
         expect((await pedir(admin, min(2))).ok).toBe(true);
         expect(await tipos(tx, copiaId)).toEqual(["emitida", "impresa"]);
 
-        expect(await pedir(admin, min(16))).toEqual({ ok: false, estado: 409 });
+        expect(await pedir(admin, min(16))).toEqual({ ok: false, estado: 409, motivo: "ventana" });
 
         await reimprimirCopia(copiaId, admin, "deteriorada", null, { sql: tx, ahora: min(20) });
         expect((await pedir(admin, min(21))).ok).toBe(true);
@@ -226,7 +226,7 @@ describe("ventana de impresión", () => {
         expect(detalle).toMatchObject({ motivo: "otro", texto: "Se mojó" });
         await anularCopia(copiaId, admin, "error", null, { sql: tx, ahora: min(21) });
         await rechaza(reimprimirCopia(copiaId, admin, "ilegible", null, { sql: tx, ahora: min(22) }), "La copia ya no está en ese estado");
-        expect(await copiaParaPdf(copiaId, admin, { sql: tx, ahora: min(22) })).toEqual({ ok: false, estado: 409 });
+        expect(await copiaParaPdf(copiaId, admin, { sql: tx, ahora: min(22) })).toEqual({ ok: false, estado: 409, motivo: "no_disponible" });
       } finally {
         await limpiar();
       }
@@ -241,7 +241,7 @@ describe("ventana de impresión", () => {
       try {
         const { copiaId } = await copiaDePrueba(tx, { emisor: admin, documento, punto, ahora: T0 });
         await tx`UPDATE copias_controladas SET hash_principal = ${"f".repeat(64)} WHERE id = ${copiaId}`;
-        expect(await copiaParaPdf(copiaId, admin, { sql: tx, ahora: min(1) })).toEqual({ ok: false, estado: 409 });
+        expect(await copiaParaPdf(copiaId, admin, { sql: tx, ahora: min(1) })).toEqual({ ok: false, estado: 409, motivo: "no_disponible" });
       } finally {
         await limpiar();
       }

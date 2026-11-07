@@ -1,5 +1,13 @@
 import QRCode from "qrcode";
-import { PDFDocument, StandardFonts, rgb, type PDFFont } from "pdf-lib";
+import {
+  PDFDocument,
+  StandardFonts,
+  concatTransformationMatrix,
+  popGraphicsState,
+  pushGraphicsState,
+  rgb,
+  type PDFFont,
+} from "pdf-lib";
 import { textoParaFuente } from "@/lib/texto-pdf";
 
 const PT_POR_CM = 72 / 2.54;
@@ -41,10 +49,33 @@ function recortar(texto: string, fuente: PDFFont, tamano: number, ancho: number)
   return ELIPSIS;
 }
 
+/** Holgura vertical total (pt) que se deja dentro de la franja. */
+const HOLGURA_PT = 2;
+
+/**
+ * Matriz que lleva coordenadas «visuales» (origen en la esquina inferior izquierda de lo que se ve, ya
+ * rotado) a las del espacio de la página, a partir de la caja visible y de la rotación `/Rotate`.
+ */
+function matrizVisual(caja: { x: number; y: number; width: number; height: number }, grados: number) {
+  const { x, y, width: w, height: h } = caja;
+  switch (((grados % 360) + 360) % 360) {
+    case 90:
+      return { ancho: h, alto: w, m: [0, 1, -1, 0, x + w, y] as const };
+    case 180:
+      return { ancho: w, alto: h, m: [-1, 0, 0, -1, x + w, y + h] as const };
+    case 270:
+      return { ancho: h, alto: w, m: [0, -1, 1, 0, x, y + h] as const };
+    default:
+      return { ancho: w, alto: h, m: [1, 0, 0, 1, x, y] as const };
+  }
+}
+
 /**
  * Sello de copia controlada (ISO 9001 — 7.5.3) en cada página: franja de color pegada al borde inferior
- * con el título y el detalle en blanco, y, si hay dirección pública, el QR que lleva al documento vigente.
- * Lanza si el PDF no se puede abrir (cifrado o dañado): una copia controlada sin sello no se entrega.
+ * VISUAL con el título y el detalle en blanco, y, si hay dirección pública, el QR que lleva al documento
+ * vigente. El tamaño de letra depende del ancho y del alto de la franja; si no caben dos líneas, el título
+ * y el detalle van seguidos en una. Lanza si el PDF no se puede abrir (cifrado o dañado): una copia
+ * controlada sin sello no se entrega.
  */
 export async function estamparCopiaControlada(pdf: Uint8Array, d: DatosSello): Promise<Uint8Array> {
   const doc = await PDFDocument.load(pdf);
@@ -60,33 +91,46 @@ export async function estamparCopiaControlada(pdf: Uint8Array, d: DatosSello): P
   const lado = d.qrCm * PT_POR_CM;
   const fondo = FONDO_QR_CM * PT_POR_CM;
   const reservaQr = qr ? lado + 2 * fondo : 0;
+  const util = Math.max(alto - HOLGURA_PT, 1);
+
+  // Dos líneas (alto del bloque ≈ 2,18 em) si caben al tamaño mínimo; si no, una sola (≈ 0,93 em).
+  const dosLineas = util / 2.5 >= TAMANO_MIN;
+  const tamanoMax = Math.min(TAMANO_MAX, dosLineas ? util / 2.5 : util / 1.1);
+  const tamanoMin = Math.min(TAMANO_MIN, tamanoMax);
 
   for (const pagina of doc.getPages()) {
-    const { width: ancho } = pagina.getSize();
+    const { ancho, m } = matrizVisual(pagina.getCropBox(), pagina.getRotation().angle);
+    pagina.pushOperators(pushGraphicsState(), concatTransformationMatrix(m[0], m[1], m[2], m[3], m[4], m[5]));
+
     pagina.drawRectangle({ x: 0, y: 0, width: ancho, height: alto, color });
 
     const disponible = Math.max(ancho - 2 * margen - reservaQr, 1);
-    let tamano = TAMANO_MAX;
-    while (
-      tamano > TAMANO_MIN &&
-      (negrita.widthOfTextAtSize(titulo, tamano) > disponible || normal.widthOfTextAtSize(detalle, tamano) > disponible)
-    ) {
-      tamano -= 0.5;
-    }
-    const lineaTitulo = recortar(titulo, negrita, tamano, disponible);
-    const lineaDetalle = recortar(detalle, normal, tamano, disponible);
+    const lineas = dosLineas ? [titulo, detalle] : [`${titulo} · ${detalle}`];
+    const anchoMax = (tamano: number) =>
+      dosLineas
+        ? Math.max(negrita.widthOfTextAtSize(titulo, tamano), normal.widthOfTextAtSize(detalle, tamano))
+        : negrita.widthOfTextAtSize(lineas[0], tamano);
+    let tamano = tamanoMax;
+    while (tamano > tamanoMin && anchoMax(tamano) > disponible) tamano = Math.max(tamano - 0.5, tamanoMin);
 
-    // Dos líneas centradas en la franja.
-    const interlinea = tamano * 1.25;
-    const base = alto / 2 - interlinea / 2 - tamano * 0.3;
-    pagina.drawText(lineaTitulo, { x: margen, y: base + interlinea, size: tamano, font: negrita, color: rgb(1, 1, 1) });
-    pagina.drawText(lineaDetalle, { x: margen, y: base, size: tamano, font: normal, color: rgb(1, 1, 1) });
+    const blanco = rgb(1, 1, 1);
+    if (dosLineas) {
+      const interlinea = tamano * 1.25;
+      const bloque = interlinea + tamano * 0.93;
+      const base = (alto - bloque) / 2 + tamano * 0.21;
+      pagina.drawText(recortar(titulo, negrita, tamano, disponible), { x: margen, y: base + interlinea, size: tamano, font: negrita, color: blanco });
+      pagina.drawText(recortar(detalle, normal, tamano, disponible), { x: margen, y: base, size: tamano, font: normal, color: blanco });
+    } else {
+      const base = (alto - tamano * 0.93) / 2 + tamano * 0.21;
+      pagina.drawText(recortar(lineas[0], negrita, tamano, disponible), { x: margen, y: base, size: tamano, font: negrita, color: blanco });
+    }
 
     if (qr) {
       const lado2 = lado + 2 * fondo;
-      pagina.drawRectangle({ x: ancho - lado2, y: 0, width: lado2, height: lado2, color: rgb(1, 1, 1) });
+      pagina.drawRectangle({ x: ancho - lado2, y: 0, width: lado2, height: lado2, color: blanco });
       pagina.drawImage(qr, { x: ancho - lado2 + fondo, y: fondo, width: lado, height: lado });
     }
+    pagina.pushOperators(popGraphicsState());
   }
   return doc.save();
 }

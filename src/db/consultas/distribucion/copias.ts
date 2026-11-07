@@ -28,6 +28,14 @@ import { zonaHoraria } from "@/lib/zona-horaria";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
+/** La copia no existe o quien la pide no la ve: el llamador responde «no encontrado», nunca «sin permiso». */
+export class CopiaNoVisible extends ErrorDistribucion {
+  constructor() {
+    super("La copia no existe");
+    this.name = "CopiaNoVisible";
+  }
+}
+
 export type Copia = {
   id: number;
   versionId: number;
@@ -63,7 +71,6 @@ export type EventoCopia = {
 export type AccionCopia = "recibir" | "recoger" | "anular" | "reimprimir" | "pdf";
 
 const ESTADOS_VIVOS = ["emitida", "recibida", "por_recoger"];
-const NO_EXISTE = "La copia no existe";
 const YA_NO_ESTA = "La copia ya no está en ese estado";
 
 /** Una sola puerta para escribir en `copia_eventos`; `creado_en` es la hora de la operación. */
@@ -317,7 +324,14 @@ export async function obtenerCopia(
   };
 }
 
-export type ResultadoPdf = { ok: true; bytes: Uint8Array; nombre: string } | { ok: false; estado: 404 | 409 };
+/** 409 por `ventana` (terminó el plazo de impresión) o por `no_disponible` (versión no vigente, estado, archivo o huella). */
+export type ResultadoPdf =
+  | { ok: true; bytes: Uint8Array; nombre: string }
+  | { ok: false; estado: 404 }
+  | { ok: false; estado: 409; motivo: "ventana" | "no_disponible" };
+
+const NO_DISPONIBLE = { ok: false, estado: 409, motivo: "no_disponible" } as const;
+const FUERA_DE_VENTANA = { ok: false, estado: 409, motivo: "ventana" } as const;
 
 export async function copiaParaPdf(id: number, sesion: SesionFlujo, opciones?: Opciones): Promise<ResultadoPdf> {
   const sql = opciones?.sql ?? obtenerSql();
@@ -327,23 +341,23 @@ export async function copiaParaPdf(id: number, sesion: SesionFlujo, opciones?: O
   const { copia } = fila;
   const emite = puedeEmitirSobre(sesion, fila);
   if (!emite && !puede(sesion, "distribucion.ver")) return { ok: false, estado: 404 };
-  if (!copia.versionVigente || (copia.estado !== "emitida" && copia.estado !== "recibida")) return { ok: false, estado: 409 };
-  if (emite && !enVentanaDeImpresion(fila.ultimaAperturaEn, ahora)) return { ok: false, estado: 409 };
+  if (!copia.versionVigente || (copia.estado !== "emitida" && copia.estado !== "recibida")) return NO_DISPONIBLE;
+  if (emite && !enVentanaDeImpresion(fila.ultimaAperturaEn, ahora)) return FUERA_DE_VENTANA;
 
   // Se lee una sola vez: lo que se compara con la huella guardada es lo mismo que se sella.
   const [principal] = await sql`SELECT ruta FROM archivos WHERE version_id = ${copia.versionId} AND rol = 'principal'`;
   const ruta = principal ? resolverRutaAlmacen(principal.ruta as string) : null;
-  if (!ruta) return { ok: false, estado: 409 };
+  if (!ruta) return NO_DISPONIBLE;
   let original: Buffer;
   try {
     original = await readFile(ruta);
   } catch {
     console.error(`Archivo faltante en el almacén para la copia ${id}`);
-    return { ok: false, estado: 409 };
+    return NO_DISPONIBLE;
   }
   if (createHash("sha256").update(original).digest("hex") !== copia.hashPrincipal) {
     console.error(`La huella del archivo principal no coincide con la de la copia ${id}`);
-    return { ok: false, estado: 409 };
+    return NO_DISPONIBLE;
   }
 
   const [config, marca, urlPublica] = await Promise.all([
@@ -370,22 +384,23 @@ export async function copiaParaPdf(id: number, sesion: SesionFlujo, opciones?: O
     qrCm: config.distribucion.selloQrCm,
   });
 
-  const registrado = await enTransaccion(sql, async (tx) => {
+  const registrado = await enTransaccion(sql, async (tx): Promise<"ok" | "ventana" | "no_disponible"> => {
     const [vivo] = await tx`SELECT estado, ultima_apertura_en FROM copias_controladas WHERE id = ${id} FOR UPDATE`;
-    if (!vivo || (vivo.estado !== "emitida" && vivo.estado !== "recibida")) return false;
+    if (!vivo || (vivo.estado !== "emitida" && vivo.estado !== "recibida")) return "no_disponible";
     if (!emite) {
       await evento(tx, id, "consultada", sesion.usuarioId, { usuarioId: sesion.usuarioId }, ahora);
-      return true;
+      return "ok";
     }
     const apertura = vivo.ultima_apertura_en as Date | null;
-    if (!apertura || !enVentanaDeImpresion(apertura, ahora)) return false;
+    if (!apertura || !enVentanaDeImpresion(apertura, ahora)) return "ventana";
     const [{ n }] = await tx`
       SELECT count(*)::int AS n FROM copia_eventos
       WHERE copia_id = ${id} AND tipo = 'impresa' AND creado_en >= ${apertura}`;
     if (n === 0) await evento(tx, id, "impresa", sesion.usuarioId, { usuarioId: sesion.usuarioId }, ahora);
-    return true;
+    return "ok";
   });
-  if (!registrado) return { ok: false, estado: 409 };
+  if (registrado === "ventana") return FUERA_DE_VENTANA;
+  if (registrado === "no_disponible") return NO_DISPONIBLE;
   return { ok: true, bytes, nombre: `${copia.codigo}-v${copia.version}-copia-${numeroDeCopia(copia.numero)}.pdf` };
 }
 
@@ -406,7 +421,7 @@ export async function reimprimirCopia(
   await enTransaccion(sql, async (tx) => {
     await tx`SELECT id FROM copias_controladas WHERE id = ${id} FOR UPDATE`;
     const fila = await leerUna(tx, sesion, id);
-    if (!fila || !puedeEmitirSobre(sesion, fila)) throw new ErrorDistribucion(NO_EXISTE);
+    if (!fila || !puedeEmitirSobre(sesion, fila)) throw new CopiaNoVisible();
     const { copia } = fila;
     if (copia.estado !== "emitida" && copia.estado !== "recibida") throw new ErrorDistribucion(YA_NO_ESTA);
     if (!copia.versionVigente) throw new ErrorDistribucion("La versión de esta copia ya no está vigente");
@@ -445,7 +460,7 @@ export async function anularCopia(
     await tx`SELECT id FROM copias_controladas WHERE id = ${id} FOR UPDATE`;
     const fila = await leerUna(tx, sesion, id);
     if (!fila || (fila.copia.emitidaPor.id !== sesion.usuarioId && !puede(sesion, "distribucion.gestionar"))) {
-      throw new ErrorDistribucion(NO_EXISTE);
+      throw new CopiaNoVisible();
     }
     const { copia } = fila;
     if (!puedePasar(copia.estado, "anulada")) throw new ErrorDistribucion(YA_NO_ESTA);

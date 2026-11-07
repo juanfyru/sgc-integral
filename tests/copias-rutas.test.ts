@@ -11,17 +11,24 @@ const { copiaParaPdf, reimprimirCopia, sesionDePeticion } = vi.hoisted(() => ({
   sesionDePeticion: vi.fn(),
 }));
 
-vi.mock("@/db/consultas/distribucion/copias", () => ({ copiaParaPdf, reimprimirCopia }));
+vi.mock("@/db/consultas/distribucion/copias", () => {
+  class CopiaNoVisible extends Error {}
+  return { copiaParaPdf, reimprimirCopia, CopiaNoVisible };
+});
 vi.mock("@/lib/sesion-actual", () => ({ sesionDePeticion }));
 
 import { GET } from "@/app/(app)/distribucion/copias/[id]/pdf/route";
 import { POST } from "@/app/(app)/distribucion/copias/[id]/reimprimir/route";
+import { CopiaNoVisible } from "@/db/consultas/distribucion/copias";
 import { ErrorDistribucion } from "@/lib/distribucion/tipos";
 
 const EMISOR = { usuarioId: 5, rol: "admin_sgc", verHistorial: false };
 const CONSULTA = { usuarioId: 9, rol: "consulta", verHistorial: false };
 const PDF = new TextEncoder().encode("%PDF-1.4\n%copia\n%%EOF");
 const AVISO_VENTANA = "La ventana de impresión terminó. Use «Reimprimir» para volver a imprimir esta copia.";
+
+const AVISO_NO_DISPONIBLE =
+  "Esta copia ya no se puede imprimir: su versión dejó de estar vigente o el archivo cambió.";
 
 const parametros = (id: string) => ({ params: Promise.resolve({ id }) });
 const pedirPdf = (id = "7") => GET(new NextRequest(`http://sgc.local/distribucion/copias/${id}/pdf`), parametros(id));
@@ -68,10 +75,17 @@ describe("GET /distribucion/copias/[id]/pdf", () => {
   });
 
   it("fuera de la ventana responde 409 con el aviso", async () => {
-    copiaParaPdf.mockResolvedValue({ ok: false, estado: 409 });
+    copiaParaPdf.mockResolvedValue({ ok: false, estado: 409, motivo: "ventana" });
     const res = await pedirPdf();
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: AVISO_VENTANA });
+  });
+
+  it("si la versión dejó de estar vigente o el archivo cambió, el 409 no habla de la ventana", async () => {
+    copiaParaPdf.mockResolvedValue({ ok: false, estado: 409, motivo: "no_disponible" });
+    const res = await pedirPdf();
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: AVISO_NO_DISPONIBLE });
   });
 
   it("un id que no es un número responde 404 sin consultar", async () => {
@@ -111,6 +125,13 @@ describe("POST /distribucion/copias/[id]/reimprimir", () => {
   it("un motivo desconocido responde 400", async () => {
     expect((await reimprimir({ motivo: "porque sí" })).status).toBe(400);
     expect(reimprimirCopia).not.toHaveBeenCalled();
+  });
+
+  it("una copia que la persona no ve responde 404, nunca 409 ni 403", async () => {
+    reimprimirCopia.mockRejectedValue(new CopiaNoVisible());
+    const res = await reimprimir({ motivo: "ilegible" });
+    expect(res.status).toBe(404);
+    expect(copiaParaPdf).not.toHaveBeenCalled();
   });
 
   it("un error de negocio responde 409 con su mensaje", async () => {

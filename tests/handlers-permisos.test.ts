@@ -509,9 +509,8 @@ describe("copias controladas: /distribucion/copias/[id]/pdf y /reimprimir", () =
     expect((await reimprimir({ ...cookie(tokenAdmin), origin: "http://otro.local" })).status).toBe(403);
   });
 
-  it("reimprimir una copia que no existe responde 409 con el mensaje", async () => {
+  it("reimprimir una copia que no existe, o que no se ve, responde 404", async () => {
     const res = await reimprimir({ ...cookie(tokenAdmin), origin: "http://sgc.local" });
-    expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ error: "La copia no existe" });
+    expect(res.status).toBe(404);
   });
 });

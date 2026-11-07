@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { copiaParaPdf, reimprimirCopia } from "@/db/consultas/distribucion/copias";
+import { CopiaNoVisible, copiaParaPdf, reimprimirCopia } from "@/db/consultas/distribucion/copias";
 import { respuestaDeCopia, respuestaDemasiadas } from "@/lib/distribucion/respuesta-copia";
 import { ErrorDistribucion, MOTIVOS_REIMPRESION, type MotivoReimpresion } from "@/lib/distribucion/tipos";
 import { crearLimitador } from "@/lib/limite";
@@ -32,6 +32,7 @@ export async function POST(peticion: NextRequest, { params }: { params: Promise<
   try {
     await reimprimirCopia(Number(id), sesion, motivo as MotivoReimpresion, typeof texto === "string" ? texto : null);
   } catch (err) {
+    if (err instanceof CopiaNoVisible) return respuesta404();
     if (err instanceof ErrorDistribucion) return NextResponse.json({ error: err.message }, { status: 409 });
     if (err instanceof ErrorPermiso) return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
     throw err;
