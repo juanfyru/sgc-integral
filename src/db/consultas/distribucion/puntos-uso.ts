@@ -87,19 +87,32 @@ export async function obtenerPuntoUso(id: number, sesion: SujetoVisibilidad, opc
   return (await leerPuntos(sql, sesion, sql`pu.id = ${id}`))[0] ?? null;
 }
 
-/** Las copias que aún están en poder del punto o por devolverse. */
-export async function copiasVivasDePunto(
-  sql: Cliente,
-  puntoId: number,
-): Promise<{ id: number; codigo: string; documentoId: number }[]> {
+export type CopiaVivaDePunto = {
+  id: number;
+  codigo: string;
+  documentoId: number;
+  version: number;
+  numero: number;
+  estado: "emitida" | "recibida" | "por_recoger";
+};
+
+/** Las copias que aún están en poder del punto o por devolverse (las que impiden desactivarlo). */
+export async function copiasVivasDePunto(sql: Cliente, puntoId: number): Promise<CopiaVivaDePunto[]> {
   const filas = await sql`
-    SELECT cc.id, d.codigo, d.id AS documento_id
+    SELECT cc.id, cc.numero, cc.estado, d.codigo, d.id AS documento_id, v.numero AS version
     FROM copias_controladas cc
     JOIN documento_versiones v ON v.id = cc.version_id
     JOIN documentos d ON d.id = v.documento_id
     WHERE cc.punto_uso_id = ${puntoId} AND cc.estado IN ${sql(ESTADOS_VIVOS)}
-    ORDER BY cc.id`;
-  return filas.map((f) => ({ id: Number(f.id), codigo: f.codigo as string, documentoId: Number(f.documento_id) }));
+    ORDER BY d.codigo, v.numero, cc.numero, cc.id`;
+  return filas.map((f) => ({
+    id: Number(f.id),
+    codigo: f.codigo as string,
+    documentoId: Number(f.documento_id),
+    version: Number(f.version),
+    numero: Number(f.numero),
+    estado: f.estado as CopiaVivaDePunto["estado"],
+  }));
 }
 
 async function exigirResponsableActivo(sql: Cliente, responsableId: number): Promise<{ rol: Rol; verHistorial: boolean }> {
@@ -204,7 +217,9 @@ export async function alternarPuntoUso(id: number, activo: boolean, actorId: num
       const vivas = await copiasVivasDePunto(tx, id);
       if (vivas.length > 0) {
         throw new ErrorDistribucion(
-          `El punto tiene ${vivas.length} copias por recibir o por recoger: recójalas o anúlelas antes`,
+          vivas.length === 1
+            ? "El punto tiene 1 copia por recibir o por recoger: recójala o anúlela antes"
+            : `El punto tiene ${vivas.length} copias por recibir o por recoger: recójalas o anúlelas antes`,
         );
       }
     }

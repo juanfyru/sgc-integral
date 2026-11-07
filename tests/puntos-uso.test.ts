@@ -93,14 +93,14 @@ describe("puntos de uso", () => {
       expect(await esResponsableDePuntos(resp.usuarioId, { sql: tx })).toBe(true);
       expect(await puntosDeResponsable(resp.usuarioId, { sql: tx })).toEqual([{ id: punto.id, nombre: punto.nombre }]);
       await expect(cambiarActivo(resp.usuarioId, false, admin.usuarioId, { sql: tx })).rejects.toThrow(
-        /responsable de 1 puntos de uso activos/,
+        "La persona es responsable de 1 punto de uso activo: reasígnelo antes de desactivarla",
       );
       const doc = await documentoLibre(tx, { proceso: "ATE", tipo: "PR" });
       const [v] = await tx`SELECT id FROM documento_versiones WHERE documento_id = ${doc.id}`;
       await tx`INSERT INTO copias_controladas (version_id, numero, punto_uso_id, responsable_id, responsable_nombre, emitida_por, hash_principal, emitida_en)
         VALUES (${v.id}, 1, ${punto.id}, ${resp.usuarioId}, 'Prueba', ${admin.usuarioId}, 'x', now())`;
       await expect(alternarPuntoUso(punto.id, false, admin.usuarioId, { sql: tx })).rejects.toThrow(
-        /1 copias por recibir o por recoger/,
+        "El punto tiene 1 copia por recibir o por recoger: recójala o anúlela antes",
       );
     }));
 

@@ -285,7 +285,13 @@ export async function cambiarActivo(
       if (f.activo === activo) return;
       if (!activo) {
         const n = (await puntosDeResponsable(id, { sql: tx })).length;
-        if (n > 0) throw new Error(`La persona es responsable de ${n} puntos de uso activos: reasígnelos antes de desactivarla`);
+        if (n > 0) {
+          throw new Error(
+            n === 1
+              ? "La persona es responsable de 1 punto de uso activo: reasígnelo antes de desactivarla"
+              : `La persona es responsable de ${n} puntos de uso activos: reasígnelos antes de desactivarla`,
+          );
+        }
       }
       await tx`UPDATE usuarios SET activo = ${activo}, actualizado_en = now() WHERE id = ${id}`;
       if (!activo) await tx`DELETE FROM sesiones WHERE usuario_id = ${id}`;
