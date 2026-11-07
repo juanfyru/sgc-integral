@@ -6,6 +6,7 @@ const ARCHIVOS_PANEL = [
     .filter((n) => /^acciones.*.ts$/.test(n))
     .map((n) => `src/app/admin/${n}`),
   "src/app/acciones-tramites.ts",
+  "src/app/acciones-distribucion.ts",
 ];
 
 function exportadas(src: string) {

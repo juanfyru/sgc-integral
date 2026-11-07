@@ -20,6 +20,27 @@ const PLAZOS: { campo: string; clave: keyof ConfigDocumental["plazos"]; etiqueta
   { campo: "plazoPublicacion", clave: "publicacion", etiqueta: "Publicación" },
 ];
 
+const DIAS_DISTRIBUCION: {
+  clave: keyof ConfigDocumental["distribucion"];
+  etiqueta: string;
+  ayuda: string;
+  minimo: number;
+  maximo: number;
+}[] = [
+  { clave: "plazoRecibidoDias", etiqueta: "Confirmar el recibido (días)", ayuda: "Días que tiene un punto de uso para confirmar que recibió la copia.", minimo: 1, maximo: 365 },
+  { clave: "plazoRecogidaDias", etiqueta: "Recoger copias obsoletas (días)", ayuda: "Días para retirar la copia anterior cuando sale una versión nueva.", minimo: 1, maximo: 365 },
+  { clave: "plazoAcuseDias", etiqueta: "Acuse de lectura (días)", ayuda: "Días que tiene cada persona para confirmar que leyó la versión nueva.", minimo: 1, maximo: 365 },
+  { clave: "plazoSocializacionDias", etiqueta: "Socialización (días)", ayuda: "Días para socializar un documento nuevo con quienes lo aplican.", minimo: 1, maximo: 365 },
+  { clave: "plazoCorreccionDias", etiqueta: "Corregir una no conformidad (días)", ayuda: "Días para corregir lo que una verificación encuentre mal.", minimo: 1, maximo: 365 },
+  { clave: "verificacionCadaDias", etiqueta: "Verificar cada (días)", ayuda: "Cada cuántos días se verifica que los puntos de uso tengan la versión vigente.", minimo: 1, maximo: 365 },
+  { clave: "umbralConformidadPct", etiqueta: "Umbral de conformidad (%)", ayuda: "Porcentaje mínimo de conformidad para dar por buena una verificación (50 a 100).", minimo: 50, maximo: 100 },
+];
+
+const CM_DISTRIBUCION: { clave: keyof ConfigDocumental["distribucion"]; etiqueta: string; ayuda: string }[] = [
+  { clave: "selloFranjaCm", etiqueta: "Alto de la franja del sello (cm)", ayuda: "De 0,5 a 3,0 cm. Se acepta coma o punto." },
+  { clave: "selloQrCm", etiqueta: "Tamaño del código QR (cm)", ayuda: "De 1,0 a 3,0 cm. Se acepta coma o punto." },
+];
+
 function Seccion({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
     <section className="flex flex-col gap-4 rounded-lg border border-border p-4">
@@ -237,6 +258,37 @@ export function FormularioConfigDocumental({
           Ver acta de ejemplo
         </a>
         <AvisoFormato estado={estadoFormato} />
+      </Seccion>
+
+      <Seccion titulo="Distribución">
+        <div className="grid gap-4 sm:grid-cols-2">
+          {DIAS_DISTRIBUCION.map((d) => (
+            <Campo key={d.clave} etiqueta={d.etiqueta} nombre={d.clave} ayuda={d.ayuda}>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={d.minimo}
+                max={d.maximo}
+                step={1}
+                required
+                defaultValue={val(d.clave) ?? config.distribucion[d.clave]}
+                className={claseControl}
+              />
+            </Campo>
+          ))}
+          {CM_DISTRIBUCION.map((d) => (
+            <Campo key={d.clave} etiqueta={d.etiqueta} nombre={d.clave} ayuda={d.ayuda}>
+              <input
+                type="text"
+                inputMode="decimal"
+                pattern="[0-9]{1,2}([.,][0-9])?"
+                required
+                defaultValue={val(d.clave) ?? String(config.distribucion[d.clave]).replace(".", ",")}
+                className={claseControl}
+              />
+            </Campo>
+          ))}
+        </div>
       </Seccion>
 
       {estado && estado.error !== motivo && (

@@ -32,6 +32,10 @@ const config = (documentoId: number | null = null) => ({
   escalamientoDias: 3,
   publicacionDirecta: true,
   formatoActa: { documentoId, margenSuperiorCm: 5.5, margenInferiorCm: 3.5 },
+  distribucion: {
+    plazoRecibidoDias: 3, plazoRecogidaDias: 5, plazoAcuseDias: 15, plazoSocializacionDias: 30, plazoCorreccionDias: 5,
+    verificacionCadaDias: 90, umbralConformidadPct: 95, selloFranjaCm: 1, selloQrCm: 1.5,
+  },
 });
 
 const pagina = async () => renderToStaticMarkup(await PaginaConfiguracionDocumental());
@@ -44,6 +48,18 @@ beforeEach(() => {
   documentosParaFormato.mockResolvedValue([{ id: 31, codigo: "SGC-FO-06", titulo: "Acta de control documental" }]);
   revisarFormatoActa.mockResolvedValue({ estado: "sin_formato" });
   listarItemsVerificacion.mockResolvedValue([]);
+});
+
+describe("Distribución", () => {
+  it("va después del formato del acta, con los nueve campos y sus valores", async () => {
+    const html = await pagina();
+    expect(html.indexOf(">Distribución<")).toBeGreaterThan(html.indexOf("Formato del acta"));
+    expect(entrada(html, "plazoAcuseDias")).toMatch(/value="15"/);
+    expect(entrada(html, "umbralConformidadPct")).toMatch(/value="95"/);
+    expect(entrada(html, "selloFranjaCm")).toMatch(/value="1"/);
+    expect(entrada(html, "selloQrCm")).toMatch(/value="1,5"/);
+    expect(html).toContain("Tamaño del código QR (cm)");
+  });
 });
 
 describe("Formato del acta", () => {

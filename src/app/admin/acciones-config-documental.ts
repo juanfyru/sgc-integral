@@ -36,6 +36,15 @@ const EsquemaConfigDocumental = z
     formatoActaDocumentoId: z.string().regex(/^\d{1,15}$/, "El documento del formato no es válido").transform(Number).optional(),
     margenSuperiorCm: centimetros("El espacio del encabezado"),
     margenInferiorCm: centimetros("El espacio del pie"),
+    plazoRecibidoDias: entero("El plazo para confirmar el recibido"),
+    plazoRecogidaDias: entero("El plazo de recogida de copias"),
+    plazoAcuseDias: entero("El plazo del acuse de lectura"),
+    plazoSocializacionDias: entero("El plazo de socialización"),
+    plazoCorreccionDias: entero("El plazo de corrección"),
+    verificacionCadaDias: entero("Los días entre verificaciones"),
+    umbralConformidadPct: entero("El umbral de conformidad"),
+    selloFranjaCm: centimetros("El alto de la franja del sello"),
+    selloQrCm: centimetros("El tamaño del código QR"),
   })
   .strict();
 
@@ -69,6 +78,17 @@ export async function guardarConfigDocumentalAccion(_prev: EstadoAccion, formDat
           documentoId: d.formatoActaDocumentoId ?? null,
           margenSuperiorCm: d.margenSuperiorCm,
           margenInferiorCm: d.margenInferiorCm,
+        },
+        distribucion: {
+          plazoRecibidoDias: d.plazoRecibidoDias,
+          plazoRecogidaDias: d.plazoRecogidaDias,
+          plazoAcuseDias: d.plazoAcuseDias,
+          plazoSocializacionDias: d.plazoSocializacionDias,
+          plazoCorreccionDias: d.plazoCorreccionDias,
+          verificacionCadaDias: d.verificacionCadaDias,
+          umbralConformidadPct: d.umbralConformidadPct,
+          selloFranjaCm: d.selloFranjaCm,
+          selloQrCm: d.selloQrCm,
         },
       },
       usuarioId,

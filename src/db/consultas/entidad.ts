@@ -2,7 +2,8 @@ import { cache } from "react";
 import { hexValido, normalizarHex } from "../../lib/color";
 import { LOGO_MIMES, rutaLogoValida, type MimeLogo } from "../../lib/logo";
 import { MARCA_DEFECTO, validarMarca, type Marca } from "../../lib/marca";
-import { obtenerSql } from "../cliente";
+import { validarUrlPublica } from "../../lib/url-publica";
+import { obtenerSql, type Cliente } from "../cliente";
 import { registrarAuditoria } from "./admin";
 
 export const CLAVES_ENTIDAD = [
@@ -15,6 +16,7 @@ export const CLAVES_ENTIDAD = [
   "logo_ruta",
   "logo_mime",
   "logo_version",
+  "url_publica",
 ] as const;
 
 async function leerClaves(): Promise<Record<string, string>> {
@@ -65,6 +67,7 @@ export type DatosEntidad = {
   avisoDatosPersonales: string;
   primario: string;
   secundario: string;
+  urlPublica: string;
 };
 
 export async function obtenerEntidad(): Promise<DatosEntidad> {
@@ -76,13 +79,23 @@ export async function obtenerEntidad(): Promise<DatosEntidad> {
     avisoDatosPersonales: c.aviso_datos_personales ?? "",
     primario: color(c.color_primario, MARCA_DEFECTO.primario),
     secundario: color(c.color_secundario, MARCA_DEFECTO.secundario),
+    urlPublica: c.url_publica?.trim() ?? "",
   };
+}
+
+/** La dirección pública de la plataforma (la del QR de las copias), o null si no se ha fijado. */
+export async function obtenerUrlPublica(opciones?: { sql?: Cliente }): Promise<string | null> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [fila] = await sql`SELECT valor FROM configuracion WHERE clave = 'url_publica'`;
+  return (fila?.valor as string | undefined)?.trim() || null;
 }
 
 export async function guardarEntidad(datos: DatosEntidad, actorId: number): Promise<void> {
   if (!hexValido(datos.primario) || !hexValido(datos.secundario)) throw new Error("Color inválido");
   const errores = validarMarca({ primario: datos.primario, secundario: datos.secundario });
   if (errores.length > 0) throw new Error(errores[0].mensaje);
+  const url = validarUrlPublica(datos.urlPublica ?? "");
+  if (!url.ok) throw new Error(url.error);
   const valores: Record<string, string> = {
     nombre_entidad: datos.nombre,
     sigla_entidad: datos.sigla,
@@ -90,6 +103,7 @@ export async function guardarEntidad(datos: DatosEntidad, actorId: number): Prom
     aviso_datos_personales: datos.avisoDatosPersonales,
     color_primario: normalizarHex(datos.primario),
     color_secundario: normalizarHex(datos.secundario),
+    url_publica: url.url,
   };
   const sql = obtenerSql();
   await sql.begin(async (tx) => {

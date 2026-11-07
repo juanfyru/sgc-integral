@@ -19,6 +19,7 @@ export async function guardarEntidadAccion(
         avisoDatosPersonales: d.aviso_datos_personales,
         primario: d.color_primario,
         secundario: d.color_secundario,
+        urlPublica: d.url_publica,
       },
       usuarioId,
     );

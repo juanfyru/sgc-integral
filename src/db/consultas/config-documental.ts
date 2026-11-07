@@ -18,6 +18,19 @@ export type ConfigDocumental = {
   escalamientoDias: number;
   publicacionDirecta: boolean;
   formatoActa: { documentoId: number | null; margenSuperiorCm: number; margenInferiorCm: number };
+  distribucion: Distribucion;
+};
+
+export type Distribucion = {
+  plazoRecibidoDias: number;
+  plazoRecogidaDias: number;
+  plazoAcuseDias: number;
+  plazoSocializacionDias: number;
+  plazoCorreccionDias: number;
+  verificacionCadaDias: number;
+  umbralConformidadPct: number;
+  selloFranjaCm: number;
+  selloQrCm: number;
 };
 
 export const CONFIG_DOCUMENTAL_DEFECTO: ConfigDocumental = {
@@ -26,7 +39,31 @@ export const CONFIG_DOCUMENTAL_DEFECTO: ConfigDocumental = {
   escalamientoDias: 3,
   publicacionDirecta: true,
   formatoActa: { documentoId: null, margenSuperiorCm: 5.5, margenInferiorCm: 3.5 },
+  distribucion: {
+    plazoRecibidoDias: 3,
+    plazoRecogidaDias: 5,
+    plazoAcuseDias: 15,
+    plazoSocializacionDias: 30,
+    plazoCorreccionDias: 5,
+    verificacionCadaDias: 90,
+    umbralConformidadPct: 95,
+    selloFranjaCm: 1.0,
+    selloQrCm: 1.5,
+  },
 };
+
+/** Campo de `Distribucion`, su clave en `configuracion`, cómo se nombra en los errores y su rango. */
+const CAMPOS_DISTRIBUCION: { campo: keyof Distribucion; clave: string; que: string; minimo: number; maximo: number; decimal?: true }[] = [
+  { campo: "plazoRecibidoDias", clave: "plazo_recibido_dias", que: "El plazo para confirmar el recibido", minimo: 1, maximo: 365 },
+  { campo: "plazoRecogidaDias", clave: "plazo_recogida_dias", que: "El plazo de recogida de copias", minimo: 1, maximo: 365 },
+  { campo: "plazoAcuseDias", clave: "plazo_acuse_dias", que: "El plazo del acuse de lectura", minimo: 1, maximo: 365 },
+  { campo: "plazoSocializacionDias", clave: "plazo_socializacion_dias", que: "El plazo de socialización", minimo: 1, maximo: 365 },
+  { campo: "plazoCorreccionDias", clave: "plazo_correccion_dias", que: "El plazo de corrección", minimo: 1, maximo: 365 },
+  { campo: "verificacionCadaDias", clave: "verificacion_cada_dias", que: "Los días entre verificaciones", minimo: 1, maximo: 365 },
+  { campo: "umbralConformidadPct", clave: "umbral_conformidad_pct", que: "El umbral de conformidad", minimo: 50, maximo: 100 },
+  { campo: "selloFranjaCm", clave: "sello_franja_cm", que: "El alto de la franja del sello", minimo: 0.5, maximo: 3, decimal: true },
+  { campo: "selloQrCm", clave: "sello_qr_cm", que: "El tamaño del código QR", minimo: 1, maximo: 3, decimal: true },
+];
 
 const CLAVES = [
   "formato_codigo",
@@ -42,6 +79,7 @@ const CLAVES = [
   "formato_acta_documento_id",
   "formato_acta_margen_superior_cm",
   "formato_acta_margen_inferior_cm",
+  ...CAMPOS_DISTRIBUCION.map((c) => c.clave),
 ];
 
 const MARGEN_MAXIMO_CM = 12;
@@ -61,6 +99,13 @@ function centimetros(valor: string | undefined, defecto: number): number {
   return n <= MARGEN_MAXIMO_CM ? n : defecto;
 }
 
+function numeroEntre(valor: string | undefined, defecto: number, minimo: number, maximo: number, decimal: boolean): number {
+  const limpio = valor?.trim() ?? "";
+  if (!(decimal ? /^\d{1,3}(\.\d+)?$/ : /^\d{1,3}$/).test(limpio)) return defecto;
+  const n = Number(limpio);
+  return n >= minimo && n <= maximo ? n : defecto;
+}
+
 function idDeDocumento(valor: string | undefined): number | null {
   const limpio = valor?.trim() ?? "";
   return /^[1-9]\d{0,14}$/.test(limpio) ? Number(limpio) : null;
@@ -73,6 +118,10 @@ export async function obtenerConfigDocumental(opciones?: { sql?: Cliente }): Pro
   const plazo = (nombre: keyof ConfigDocumental["plazos"]) =>
     dias(valores.get(`plazo_${nombre}_dias`), CONFIG_DOCUMENTAL_DEFECTO.plazos[nombre]);
   const directa = valores.get("publicacion_directa")?.trim();
+  const distribucion = { ...CONFIG_DOCUMENTAL_DEFECTO.distribucion };
+  for (const c of CAMPOS_DISTRIBUCION) {
+    distribucion[c.campo] = numeroEntre(valores.get(c.clave), CONFIG_DOCUMENTAL_DEFECTO.distribucion[c.campo], c.minimo, c.maximo, c.decimal === true);
+  }
 
   return {
     formatoCodigo: valores.get("formato_codigo")?.trim() || null,
@@ -93,6 +142,7 @@ export async function obtenerConfigDocumental(opciones?: { sql?: Cliente }): Pro
       margenSuperiorCm: centimetros(valores.get("formato_acta_margen_superior_cm"), CONFIG_DOCUMENTAL_DEFECTO.formatoActa.margenSuperiorCm),
       margenInferiorCm: centimetros(valores.get("formato_acta_margen_inferior_cm"), CONFIG_DOCUMENTAL_DEFECTO.formatoActa.margenInferiorCm),
     },
+    distribucion,
   };
 }
 
@@ -102,6 +152,7 @@ export type DatosConfigDocumental = {
   escalamientoDias: number;
   publicacionDirecta: boolean;
   formatoActa: ConfigDocumental["formatoActa"];
+  distribucion: Distribucion;
 };
 
 function enteroEntre(valor: unknown, minimo: number, maximo: number, que: string): number {
@@ -118,6 +169,16 @@ function margenEntre(valor: unknown, que: string): number {
   return valor;
 }
 
+function numeroDeDistribucion(valor: unknown, c: (typeof CAMPOS_DISTRIBUCION)[number]): number {
+  if (c.decimal) {
+    if (typeof valor !== "number" || !Number.isFinite(valor) || valor < c.minimo || valor > c.maximo) {
+      throw new Error(`${c.que} debe estar entre ${String(c.minimo).replace(".", ",")} y ${String(c.maximo).replace(".", ",")} cm`);
+    }
+    return valor;
+  }
+  return enteroEntre(valor, c.minimo, c.maximo, c.que);
+}
+
 const NOMBRE_PLAZO: Record<keyof ConfigDocumental["plazos"], string> = {
   visto_bueno: "El plazo del visto bueno",
   aceptacion: "El plazo de aceptación",
@@ -129,7 +190,7 @@ const NOMBRE_PLAZO: Record<keyof ConfigDocumental["plazos"], string> = {
 };
 
 /**
- * Guarda las trece claves en una transacción y audita el antes y el después de las que cambiaron
+ * Guarda las veintidós claves en una transacción y audita el antes y el después de las que cambiaron
  * (comparadas por su valor efectivo: una clave ausente vale lo que vale por defecto). Cerrar la
  * publicación directa no toca nada más: `descartarBorrador` sigue disponible con la carga cerrada.
  * El formato del acta solo se revisa si cambió: uno que dejó de servir, y que la pantalla ya avisa,
@@ -159,6 +220,7 @@ export async function guardarConfigDocumentalEn(tx: TransactionSql, datos: Datos
   nuevos.formato_acta_documento_id = documentoFormato === null ? "" : String(documentoFormato);
   nuevos.formato_acta_margen_superior_cm = String(margenSuperiorCm);
   nuevos.formato_acta_margen_inferior_cm = String(margenInferiorCm);
+  for (const c of CAMPOS_DISTRIBUCION) nuevos[c.clave] = String(numeroDeDistribucion(datos.distribucion?.[c.campo], c));
 
   {
     const actual = await obtenerConfigDocumental({ sql: tx });
@@ -176,6 +238,7 @@ export async function guardarConfigDocumentalEn(tx: TransactionSql, datos: Datos
     antes.formato_acta_documento_id = actual.formatoActa.documentoId === null ? "" : String(actual.formatoActa.documentoId);
     antes.formato_acta_margen_superior_cm = String(actual.formatoActa.margenSuperiorCm);
     antes.formato_acta_margen_inferior_cm = String(actual.formatoActa.margenInferiorCm);
+    for (const c of CAMPOS_DISTRIBUCION) antes[c.clave] = String(actual.distribucion[c.campo]);
 
     const cambios: Record<string, { antes: string | null; despues: string }> = {};
     for (const [clave, valor] of Object.entries(nuevos)) {
