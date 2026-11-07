@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { MOTIVOS_ANULACION } from "@/lib/distribucion/tipos";
+import { MODALIDADES_JORNADA, MOTIVOS_ANULACION } from "@/lib/distribucion/tipos";
 import type { DatosLista, TipoMiembro } from "@/db/consultas/distribucion/listas";
+import type { DatosJornada } from "@/db/consultas/distribucion/jornadas";
 import type { DatosPuntoUso } from "@/db/consultas/distribucion/puntos-uso";
 import { lista } from "@/lib/esquemas/tramites";
 import { parsearFormulario, textoAcotado } from "@/lib/validacion";
@@ -81,3 +82,29 @@ export const EsquemaPedirAcuses = z.object({ documentoId: id }).strict();
 export const EsquemaConfirmarLectura = z
   .object({ confirmo: z.literal("on", { error: "Marque la casilla para confirmar" }) })
   .strict();
+
+export const EsquemaJornada = z
+  .object({
+    fecha: z.iso.date({ error: "Escriba la fecha de la jornada" }),
+    modalidad: z.enum(MODALIDADES_JORNADA, { error: "Elija la modalidad" }),
+    facilitadorId: id,
+    versionIds: lista(id).pipe(z.array(z.number()).min(1, "Elija al menos un documento")),
+    asistenteIds: lista(id).optional(),
+    asistentesExternos: textoAcotado("Los asistentes externos", 0, 1000).optional(),
+    observaciones: textoAcotado("Las observaciones", 0, 2000).optional(),
+  })
+  .strict();
+
+/** Pura y fuera de "use server": lo que valida el formulario, con la forma que recibe `registrarJornada`. */
+export function parsearJornada(formData: FormData): DatosJornada {
+  const d = parsearFormulario(formData, EsquemaJornada);
+  return {
+    fecha: d.fecha,
+    modalidad: d.modalidad,
+    facilitadorId: d.facilitadorId,
+    versionIds: d.versionIds,
+    asistenteIds: d.asistenteIds ?? [],
+    asistentesExternos: d.asistentesExternos || null,
+    observaciones: d.observaciones || null,
+  };
+}

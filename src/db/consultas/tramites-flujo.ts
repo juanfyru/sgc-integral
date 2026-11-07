@@ -347,6 +347,7 @@ export async function transicionar(
         subproceso_id = ${t.subprocesoId}, tipo_documento_id = ${t.tipoDocumentoId}, documento_id = ${t.documentoId},
         version_id = ${t.versionId}, titulo_propuesto = ${t.tituloPropuesto}, elaborador_id = ${t.elaboradorId},
         revisor_id = ${t.revisorId}, aprobador_id = ${t.aprobadorId}, motivo_cierre = ${t.motivoCierre},
+        requiere_socializacion = ${t.requiereSocializacion},
         vence_en = ${venceEn}, ${conservaMarcas(efecto, hacia, previo.etapa) ? tx`` : tx`aviso_vencido_en = NULL, escalado_en = NULL,`}
         cerrado_en = ${esEtapaDeTrabajo(t.etapa) ? null : ahora}, actualizado_en = ${ahora}
       WHERE id = ${t.id}`.catch(traducirChoqueDeAbierto);

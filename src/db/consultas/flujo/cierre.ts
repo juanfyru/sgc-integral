@@ -7,6 +7,7 @@ import type { Cliente } from "@/db/cliente";
 import { anularVigenteEn, aplicarPublicacion } from "@/db/consultas/admin";
 import { congelarDatosActa, nombreDeEntidadParaActa } from "@/db/consultas/actas";
 import { avisarEliminacion, crearAcusesAlPublicar } from "@/db/consultas/distribucion/acuses";
+import { pedirSocializacion } from "@/db/consultas/distribucion/jornadas";
 import { exigirDesignacion } from "./aceptacion";
 import { listarFirmas, type FirmaRegistrada } from "@/db/consultas/firmas";
 import { crearObservacionesDeAprobacion, criteriosNoCumplen } from "@/db/consultas/revision";
@@ -229,6 +230,9 @@ async function publicarVersion(c: ContextoManejador, aprobador?: Firmante): Prom
   const firmantes = [elaboro.usuarioId, reviso.usuarioId, sesion.usuarioId];
   if (!aprobador) firmantes.push(laFirma(firmas, "aprobo").usuarioId);
   const acuses = await crearAcusesAlPublicar(tx, versionId, ahora, firmantes);
+  const socializacion = tramite.requiereSocializacion
+    ? await pedirSocializacion(tx, { versionId, procesoId: tramite.procesoId, plazoDias: c.config.distribucion.plazoSocializacionDias, ahora })
+    : null;
   // Solo una modificación: en una creación, `titulo_propuesto` es lo pedido y el título es el que quedó al aceptar.
   let cambioDeTitulo: { tituloAnterior: string; titulo: string } | null = null;
   if (tramite.tipo === "modificar" && tramite.tituloPropuesto) {
@@ -243,6 +247,7 @@ async function publicarVersion(c: ContextoManejador, aprobador?: Firmante): Prom
       obsoletas,
       huella: elaboro.hashSha256,
       acuses,
+      ...(socializacion ? { socializacion } : {}),
       ...cambioDeTitulo,
       acta: await congelarDatosActa(tx, tramite, "aprobacion", ahora, obsoletas.length === 0 ? null : Math.max(...obsoletas)),
     },

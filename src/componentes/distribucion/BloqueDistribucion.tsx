@@ -3,16 +3,20 @@ import { FormAccion } from "@/componentes/admin/FormAccion";
 import { pedirAcusesAccion, reemplazarCopiasAccion } from "@/app/acciones-distribucion";
 import { QuienFalta } from "@/componentes/distribucion/acuses/QuienFalta";
 import { textoPorcentaje } from "@/componentes/distribucion/acuses/TablaAcuses";
+import { claseBoton } from "@/componentes/ui/Boton";
 import { DialogoEmitir } from "@/componentes/distribucion/copias/DialogoEmitir";
 import { fechaCorta, InsigniaCopia } from "@/componentes/distribucion/copias/TablaCopias";
+import { fechaDeJornada } from "@/componentes/distribucion/socializaciones/TablaJornadas";
 import { resumenAcusesDeDocumento } from "@/db/consultas/distribucion/acuses";
 import {
   copiasDeDocumento,
   puntosParaEmitir,
   type Copia,
 } from "@/db/consultas/distribucion/copias";
+import { socializacionDeVersion } from "@/db/consultas/distribucion/jornadas";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { numeroDeCopia } from "@/lib/distribucion/copias";
+import { ETIQUETA_MODALIDAD } from "@/lib/distribucion/tipos";
 import { puede } from "@/lib/permisos";
 
 function ListaCopias({ titulo, copias, ahora }: { titulo: string; copias: Copia[]; ahora: Date }) {
@@ -54,6 +58,8 @@ export async function BloqueDistribucion({
     resumenAcusesDeDocumento(documento.id, sesion),
   ]);
   const ahora = new Date();
+  const socializacion = resumenAcuses ? await socializacionDeVersion(resumenAcuses.versionId) : null;
+  const puedeSocializar = puede(sesion, "socializaciones.registrar");
   const vigenteId = resumenAcuses?.versionId ?? null;
   const versionVigente = resumenAcuses?.version ?? null;
   const acuses = resumenAcuses?.cifras ?? null;
@@ -107,6 +113,32 @@ export async function BloqueDistribucion({
               />
             ) : null}
           </div>
+        </div>
+      ) : null}
+      {socializacion?.requerida || (puedeSocializar && vigenteId !== null) ? (
+        <div className="mt-4 flex flex-col gap-2 border-t border-border pt-3">
+          <h3 className="text-xs font-semibold text-muted-foreground">Socialización</h3>
+          {socializacion?.requerida ? (
+            <p className="text-sm">
+              {socializacion.cumplida
+                ? `Socialización: requerida · jornada del ${fechaDeJornada(socializacion.cumplida.fecha)}, ${ETIQUETA_MODALIDAD[socializacion.cumplida.modalidad].toLowerCase()}, ${socializacion.cumplida.asistentes === 1 ? "1 asistente" : `${socializacion.cumplida.asistentes} asistentes`}, ${socializacion.cumplida.evidencias > 0 ? "acta adjunta" : "sin acta adjunta"}`
+                : socializacion.superada
+                  ? "Socialización: requerida · llegó una versión nueva antes de registrarla"
+                  : `Socialización: requerida · pendiente${socializacion.venceEn ? `, vence el ${fechaCorta(socializacion.venceEn)}` : ""}`}
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">Esta versión no se marcó para socializar.</p>
+          )}
+          {puedeSocializar && vigenteId !== null ? (
+            <div>
+              <Link
+                href={`/distribucion/socializaciones/nueva?version=${vigenteId}`}
+                className={`${claseBoton("secundario")} focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca`}
+              >
+                Registrar socialización
+              </Link>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </section>

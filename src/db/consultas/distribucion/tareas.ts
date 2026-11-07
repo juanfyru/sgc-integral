@@ -74,3 +74,44 @@ export async function tareasDeAcuses(sesion: SesionFlujo, opciones?: { sql?: Cli
     enlace: `/acuses/${f.id}`,
   }));
 }
+
+/**
+ * Cada socialización requerida y sin registrar es una tarea de los líderes del proceso propietario del documento o,
+ * si no tiene líder activo, de los Admin SGC; vence con el plazo de la socialización.
+ */
+export async function tareasDeSocializacion(sesion: SesionFlujo, opciones?: { sql?: Cliente }): Promise<Tarea[]> {
+  if (sesion.rol !== "lider_proceso" && sesion.rol !== "admin_sgc") return [];
+  const sql = opciones?.sql ?? obtenerSql();
+  const filas = await sql`
+    SELECT r.version_id, r.vence_en, v.numero AS version, d.codigo, d.titulo,
+      EXISTS (
+        SELECT 1 FROM documento_proceso dp
+        LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
+        JOIN usuario_procesos up ON up.proceso_id = COALESCE(dp.proceso_id, s.proceso_id) AND up.usuario_id = ${sesion.usuarioId}
+        JOIN procesos p ON p.id = up.proceso_id AND p.activo
+        WHERE dp.documento_id = d.id AND dp.es_principal
+      ) AS es_lider_propietario,
+      EXISTS (
+        SELECT 1 FROM documento_proceso dp
+        LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
+        JOIN usuario_procesos up ON up.proceso_id = COALESCE(dp.proceso_id, s.proceso_id)
+        JOIN usuarios ul ON ul.id = up.usuario_id AND ul.activo AND ul.rol = 'lider_proceso'
+        JOIN procesos p ON p.id = up.proceso_id AND p.activo
+        WHERE dp.documento_id = d.id AND dp.es_principal
+      ) AS hay_lider
+    FROM socializaciones_requeridas r
+    JOIN documento_versiones v ON v.id = r.version_id
+    JOIN documentos d ON d.id = v.documento_id
+    WHERE r.cumplida_en IS NULL AND r.superada_en IS NULL
+    ORDER BY r.vence_en, r.id`;
+  return filas
+    .filter((f) => (sesion.rol === "lider_proceso" ? f.es_lider_propietario : !f.hay_lider))
+    .map((f) => ({
+      id: `socializacion:${f.version_id}`,
+      modulo: "documentos" as const,
+      titulo: `Registrar la socialización de ${f.codigo} v${f.version}`,
+      detalle: f.titulo as string,
+      vence: f.vence_en as Date,
+      enlace: `/distribucion/socializaciones/nueva?version=${f.version_id}`,
+    }));
+}

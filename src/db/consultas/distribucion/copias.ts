@@ -76,7 +76,7 @@ const ESTADOS_VIVOS = ["emitida", "recibida", "por_recoger"];
 const YA_NO_ESTA = "La copia ya no está en ese estado";
 
 /** Si el documento `d` está en el alcance del líder (cualquier otro rol: siempre). */
-function documentoEnAlcance(sql: Cliente, sesion: SesionFlujo) {
+export function documentoEnAlcance(sql: Cliente, sesion: SesionFlujo) {
   if (sesion.rol !== "lider_proceso") return sql`true`;
   return sql`EXISTS (
     SELECT 1

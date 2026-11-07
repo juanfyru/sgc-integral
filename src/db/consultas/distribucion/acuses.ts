@@ -113,6 +113,66 @@ export async function superarAcuses(
   return filas.length;
 }
 
+/**
+ * Quien asistió a la jornada ya leyó lo que se socializó: sus acuses pendientes de esas versiones pasan a
+ * `confirmado` por asistencia. Dentro de la transacción de la jornada; devuelve cuántos se confirmaron.
+ */
+export async function confirmarPorAsistencia(
+  tx: TransactionSql,
+  d: { versionIds: number[]; asistenteIds: number[]; jornadaId: number; ahora: Date },
+): Promise<number> {
+  if (d.versionIds.length === 0 || d.asistenteIds.length === 0) return 0;
+  const filas = await tx`UPDATE acuses SET estado = 'confirmado', modo = 'asistencia', jornada_id = ${d.jornadaId},
+      confirmado_en = ${d.ahora}
+    WHERE version_id IN ${tx(d.versionIds)} AND usuario_id IN ${tx(d.asistenteIds)} AND estado = 'pendiente'
+    RETURNING id, usuario_id`;
+  for (const f of filas) {
+    await eventoAcuse(tx, Number(f.id), "confirmado", Number(f.usuario_id), { modo: "asistencia", jornadaId: d.jornadaId }, d.ahora);
+  }
+  return filas.length;
+}
+
+const MOTIVO_SEGUN_ESTADO: Record<string, MotivoPorRecoger> = {
+  obsoleto: "nueva_version",
+  anulado: "eliminado",
+};
+
+/**
+ * Anular una jornada deshace lo que confirmó: el acuse vuelve a pendiente con un plazo nuevo si su versión
+ * sigue vigente, y si no, queda superado. El acuse no se borra: el evento `revertido` deja constancia.
+ */
+export async function revertirAsistencia(
+  tx: TransactionSql,
+  jornadaId: number,
+  ahora: Date,
+  plazoAcuseDias: number,
+  actorId: number | null = null,
+): Promise<number> {
+  const acuses = await tx`SELECT a.id, a.usuario_id, v.estado AS version_estado
+    FROM acuses a JOIN documento_versiones v ON v.id = a.version_id
+    WHERE a.jornada_id = ${jornadaId} AND a.modo = 'asistencia' AND a.estado = 'confirmado'
+    ORDER BY a.id FOR UPDATE OF a`;
+  const venceEn = fechaLimite(ahora, plazoAcuseDias, zonaHoraria());
+  for (const a of acuses) {
+    const id = Number(a.id);
+    if (a.version_estado === "vigente") {
+      await tx`UPDATE acuses SET estado = 'pendiente', modo = NULL, jornada_id = NULL, confirmado_en = NULL,
+          vence_en = ${venceEn}, aviso_vencido_en = NULL, escalado_en = NULL
+        WHERE id = ${id}`;
+    } else {
+      await tx`UPDATE acuses SET estado = 'superado', modo = NULL, jornada_id = NULL, confirmado_en = NULL,
+          cerrado_en = ${ahora}, motivo_cierre = ${MOTIVO_SEGUN_ESTADO[a.version_estado as string] ?? "carga_deshecha"}
+        WHERE id = ${id}`;
+    }
+    await eventoAcuse(
+      tx, id, "revertido", actorId,
+      { jornadaId, a: a.version_estado === "vigente" ? "pendiente" : "superado" },
+      ahora,
+    );
+  }
+  return acuses.length;
+}
+
 function leerAcuse(sql: Cliente, condicion: ReturnType<Cliente>) {
   return sql`
     SELECT a.id, a.version_id, a.usuario_id, a.origen, a.estado, a.modo, a.jornada_id, a.creado_en, a.vence_en,

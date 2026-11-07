@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
+import { fechaDeJornada } from "@/componentes/distribucion/socializaciones/TablaJornadas";
+import { claseBoton } from "@/componentes/ui/Boton";
 import { AccionesGestion } from "@/componentes/tramites/AccionesGestion";
 import { AccionesSolicitud } from "@/componentes/tramites/AccionesSolicitud";
 import { BloqueSolicitud } from "@/componentes/tramites/BloqueSolicitud";
@@ -15,6 +18,7 @@ import { PanelPublicacion } from "@/componentes/tramites/PanelPublicacion";
 import { PanelRevision } from "@/componentes/tramites/PanelRevision";
 import { PasosTramite } from "@/componentes/tramites/PasosTramite";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
+import { socializacionDeVersion } from "@/db/consultas/distribucion/jornadas";
 import {
   contextoDeAceptacion,
   datosParaAceptar,
@@ -26,6 +30,7 @@ import { criteriosNoCumplen, listarItemsVerificacion, listarObservaciones, lista
 import { borradorDeTramite } from "@/db/consultas/tramites-archivos";
 import { huellaDeCriterios } from "@/lib/tramites/criterios";
 import { exigirSesion } from "@/lib/paginas";
+import { puede } from "@/lib/permisos";
 import { fechaEnZona, fechaLimite } from "@/lib/tramites/plazos";
 import { esEtapaDeTrabajo, type Etapa } from "@/lib/tramites/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -157,8 +162,30 @@ async function Cierre({ tramite, pideCodigo }: { tramite: DetalleTramite; pideCo
   );
 }
 
+/** Lo que pasó con la socialización que el trámite pidió al publicar: pendiente, cumplida por una jornada o superada. */
+async function Socializacion({ versionId, puedeRegistrar }: { versionId: number; puedeRegistrar: boolean }) {
+  const s = await socializacionDeVersion(versionId);
+  if (!s.requerida) return null;
+  const estado = s.cumplida
+    ? `Cumplida: jornada del ${fechaDeJornada(s.cumplida.fecha)}, ${s.cumplida.asistentes === 1 ? "1 asistente" : `${s.cumplida.asistentes} asistentes`}.`
+    : s.superada
+      ? "No se registró antes de que llegara una versión nueva."
+      : `Pendiente${s.venceEn ? `: vence el ${new Intl.DateTimeFormat("es-CO", { dateStyle: "long", timeZone: zonaHoraria() }).format(s.venceEn)}` : ""}.`;
+  return (
+    <section aria-label="Socialización" className="rounded-xl border border-border bg-card p-4 text-sm shadow-xs">
+      <h2 className="mb-1 text-sm font-semibold">Socialización</h2>
+      <p>{estado}</p>
+      {!s.cumplida && !s.superada && puedeRegistrar ? (
+        <Link href={`/distribucion/socializaciones/nueva?version=${versionId}`} className={`${claseBoton("secundario")} mt-2`}>
+          Registrar socialización
+        </Link>
+      ) : null}
+    </section>
+  );
+}
+
 /** Solo para quien gestiona: las listas de personas y tipos no se piden para nadie más. */
-async function Gestion({ tramite: t }: { tramite: DetalleTramite }) {
+async function Gestion({ tramite: t, puedeMarcar }: { tramite: DetalleTramite; puedeMarcar: boolean }) {
   return (
     <AccionesGestion
       tramite={{
@@ -178,9 +205,11 @@ async function Gestion({ tramite: t }: { tramite: DetalleTramite }) {
         elaborador: t.elaborador,
         revisor: t.revisor,
         aprobador: t.aprobador,
+        requiereSocializacion: t.requiereSocializacion,
       }}
       datos={await datosParaGestionar(t.id)}
       hoy={fechaEnZona(new Date(), zonaHoraria())}
+      puedeMarcar={puedeMarcar}
     />
   );
 }
@@ -215,6 +244,9 @@ export default async function PaginaTramite({ params }: { params: Promise<{ id: 
               </p>
             </section>
           ) : null}
+          {tramite.etapa === "publicado" && tramite.requiereSocializacion && tramite.versionId !== null ? (
+            <Socializacion versionId={tramite.versionId} puedeRegistrar={puede(sesion, "socializaciones.registrar")} />
+          ) : null}
           {conBorrador ? <Borrador tramite={tramite} pideCodigo={sesion.totpActivo} /> : null}
           {conRevision ? <Revision tramite={tramite} pideCodigo={sesion.totpActivo} /> : null}
           {cierra ? <Cierre tramite={tramite} pideCodigo={sesion.totpActivo} /> : null}
@@ -226,7 +258,7 @@ export default async function PaginaTramite({ params }: { params: Promise<{ id: 
             tramite={{ id: tramite.id, etapa: tramite.etapa, ronda: tramite.ronda }}
             acciones={tramite.acciones}
           />
-          {tramite.acciones.includes("cancelar") ? <Gestion tramite={tramite} /> : null}
+          {tramite.acciones.includes("cancelar") ? <Gestion tramite={tramite} puedeMarcar={puede(sesion, "distribucion.gestionar")} /> : null}
         </div>
       </div>
       {tramite.acciones.includes("aceptar") ? <Aceptacion tramite={tramite} usuarioId={sesion.usuarioId} /> : null}

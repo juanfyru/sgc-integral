@@ -173,3 +173,25 @@ export function filtroPuntos(sql: Cliente, sujeto: SujetoVisibilidad) {
   }
   return sql`pu.responsable_id = ${sujeto.usuarioId}`;
 }
+
+/**
+ * Quién ve una jornada de socialización (spec 13B §6.4): el resumen, quien ve alguno de los documentos
+ * socializados; la evidencia (lista de asistentes y actas), Admin SGC, Gerencia, Control Interno y el
+ * líder de alguno de los procesos de esos documentos. `procesoIds` son todos los procesos de los documentos.
+ */
+export async function puedeVerJornada(
+  sesion: SujetoVisibilidad,
+  jornada: { procesoIds: number[]; documentoIds?: number[] },
+  opciones?: { sql?: Cliente },
+): Promise<{ ve: boolean; evidencia: boolean }> {
+  let evidencia = sesion.rol === "admin_sgc" || sesion.rol === "gerencia" || sesion.rol === "control_interno";
+  if (!evidencia && sesion.rol === "lider_proceso") {
+    const alcance = await alcanceProcesos(sesion, opciones);
+    evidencia = jornada.procesoIds.some((p) => enAlcance(alcance, p));
+  }
+  if (evidencia) return { ve: true, evidencia };
+  for (const documentoId of jornada.documentoIds ?? []) {
+    if (await puedeAccederDocumento(documentoId, sesion, opciones)) return { ve: true, evidencia: false };
+  }
+  return { ve: false, evidencia: false };
+}

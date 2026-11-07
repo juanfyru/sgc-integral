@@ -121,6 +121,7 @@ const detalle: DetalleTramite = {
   aprobadorId: 5,
   venceEn: new Date("2026-11-08T04:59:59.999Z"),
   motivoCierre: null,
+  requiereSocializacion: false,
   creadoEn: new Date("2026-11-03T14:00:00Z"),
   codigo: "GTH-PR-02",
   titulo: "Inducción y reinducción",
@@ -358,6 +359,7 @@ describe("AccionesGestion", () => {
     elaborador: "Ana",
     revisor: "Beto",
     aprobador: "Carla",
+    requiereSocializacion: false,
   };
   const pintar = (parcial: Partial<TramiteParaGestionar> = {}) =>
     renderToStaticMarkup(<AccionesGestion tramite={{ ...tramite, ...parcial }} datos={datos} hoy="2026-11-05" />);
@@ -368,6 +370,15 @@ describe("AccionesGestion", () => {
       const h = pintar({ etapa });
       for (const boton of ["Corregir datos del documento", "Reasignar", "Cancelar el trámite"]) expect(h).toContain(boton);
     }
+  });
+  it("la marca de socialización se corrige en toda etapa de trabajo, y solo si se puede gestionar la distribución", () => {
+    const conMarca = (parcial: Partial<TramiteParaGestionar>, puedeMarcar: boolean) =>
+      renderToStaticMarkup(<AccionesGestion tramite={{ ...tramite, ...parcial }} datos={datos} hoy="2026-11-05" puedeMarcar={puedeMarcar} />);
+    for (const etapa of ["aceptacion", "elaboracion", "aprobacion", "publicacion"] as const) {
+      expect(conMarca({ etapa }, true)).toContain("Marca de socialización");
+      expect(conMarca({ etapa }, false)).not.toContain("Marca de socialización");
+    }
+    expect(conMarca({ etapa: "aprobacion", tipo: "eliminar" }, true)).not.toContain("Marca de socialización");
   });
   it("desde la aprobación los datos quedan fijos: no se ofrece corregir", () => {
     for (const etapa of ["aprobacion", "publicacion", "aceptacion", "visto_bueno"] as const) {

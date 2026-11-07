@@ -2,6 +2,7 @@
 
 import { idNumerico, mutacion, type EstadoAccion } from "@/app/admin/comun";
 import { confirmarLectura, pedirAcuses } from "@/db/consultas/distribucion/acuses";
+import { anularJornada, registrarJornada } from "@/db/consultas/distribucion/jornadas";
 import {
   anularCopia,
   confirmarRecibido,
@@ -18,7 +19,9 @@ import {
   EsquemaRecogida,
   EsquemaReemplazarCopias,
   EsquemaReemplazo,
+  parsearJornada,
 } from "@/lib/esquemas/distribucion";
+import { EsquemaMotivoCierre } from "@/lib/esquemas/tramites";
 import { parsearFormulario } from "@/lib/validacion";
 
 const rutaDeCopia = (id: number) => `/distribucion/copias/${id}`;
@@ -91,5 +94,22 @@ export async function pedirAcusesAccion(_prev: EstadoAccion, formData: FormData)
   return mutacion(formData, "distribucion.gestionar", async (_usuarioId, _formData, sesion) => {
     const { documentoId } = parsearFormulario(formData, EsquemaPedirAcuses);
     await pedirAcuses(sesion, documentoId);
+  });
+}
+
+/** La jornada se registra primero; la evidencia se adjunta en su detalle durante las 24 horas siguientes. */
+export async function registrarJornadaAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "socializaciones.registrar", async (_usuarioId, _formData, sesion) => {
+    const { jornadaId } = await registrarJornada(sesion, parsearJornada(formData));
+    return `/distribucion/socializaciones/${jornadaId}?evidencia=1`;
+  });
+}
+
+export async function anularJornadaAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "socializaciones.registrar", async (_usuarioId, _formData, sesion) => {
+    const { motivo } = parsearFormulario(formData, EsquemaMotivoCierre, { omitir: ["id"] });
+    const id = idNumerico(formData, "id");
+    await anularJornada(id, sesion, motivo);
+    return `/distribucion/socializaciones/${id}`;
   });
 }

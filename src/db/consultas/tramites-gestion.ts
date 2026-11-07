@@ -18,7 +18,7 @@ import { rotuloDeTramite, tipoDeDocumento, tramiteVisto } from "@/db/consultas/t
 import { enviarAvisos, registrarEvento } from "@/db/consultas/tramites-flujo";
 import type { DatosCorreccion } from "@/lib/esquemas/tramites";
 import { puede } from "@/lib/permisos";
-import { ETAPAS_CON_CORRECCION } from "@/lib/tramites/tipos";
+import { ETAPAS_CON_CORRECCION, esEtapaDeTrabajo } from "@/lib/tramites/tipos";
 import { exigirDesignacion, propietarioElegido } from "./flujo/aceptacion";
 import { CAMBIO_MIENTRAS, ErrorTramite, enTransaccion, type Aviso, type FilaTramite, type SesionFlujo } from "./flujo/contrato";
 import { exigirQueNoElaboro, relevoDe } from "./flujo/gestion";
@@ -164,6 +164,13 @@ async function corregirCreacion(tx: TransactionSql, tramite: FilaTramite, datos:
   };
 }
 
+/** La marca de socialización: «sí» pide una jornada al publicar. Nada más cambia. */
+async function corregirMarca(tx: TransactionSql, tramite: FilaTramite, marca: boolean, ahora: Date) {
+  await tx`UPDATE tramites SET requiere_socializacion = ${marca}, actualizado_en = ${ahora} WHERE id = ${tramite.id}`;
+  const texto = (v: boolean) => (v ? "sí" : "no");
+  return { antes: { socializacion: texto(tramite.requiereSocializacion) }, despues: { socializacion: texto(marca) } };
+}
+
 /** Corrige los datos de control. `esperado` es lo que vio la persona: si el trámite cambió, no se escribe. */
 export async function corregirDatosDeControl(
   tramiteId: number,
@@ -173,17 +180,38 @@ export async function corregirDatosDeControl(
   opciones?: { sql?: Cliente; ahora?: Date },
 ): Promise<void> {
   if (!puede(sesion, "tramites.gestionar")) throw new ErrorTramite("Sin permiso para esta acción");
+  const { requiereSocializacion: marca, ...datosDelDocumento } = datos;
+  const cambiaDocumento = Object.values(datosDelDocumento).some((v) => v !== undefined);
+  if (marca !== undefined && !puede(sesion, "distribucion.gestionar")) throw new ErrorTramite("Sin permiso para esta acción");
   const ahora = opciones?.ahora ?? new Date();
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
     const visto = await tramiteVisto(tx, tramiteId, sesion, true);
     if (!visto?.visible) throw new ErrorTramite("El trámite no existe");
     const { tramite } = visto;
     if (tramite.etapa !== esperado.etapa || tramite.ronda !== esperado.ronda) throw new ErrorTramite(CAMBIO_MIENTRAS);
-    if (!ETAPAS_CON_CORRECCION.includes(tramite.etapa)) throw new ErrorTramite("Desde la aprobación los datos del documento quedan fijos");
+    // La marca de socialización se corrige en toda etapa de trabajo; los datos del documento, solo hasta la revisión.
+    if (cambiaDocumento && !ETAPAS_CON_CORRECCION.includes(tramite.etapa)) throw new ErrorTramite("Desde la aprobación los datos del documento quedan fijos");
+    if (!esEtapaDeTrabajo(tramite.etapa)) throw new ErrorTramite("El trámite ya está cerrado");
 
-    const correccion =
-      tramite.tipo === "crear" ? await corregirCreacion(tx, tramite, datos, ahora) : await corregirModificacion(tx, tramite, datos, ahora);
-    if (!correccion) throw new ErrorTramite("No hay cambios que guardar");
+    const delDocumento = cambiaDocumento
+      ? tramite.tipo === "crear"
+        ? await corregirCreacion(tx, tramite, datosDelDocumento, ahora)
+        : await corregirModificacion(tx, tramite, datosDelDocumento, ahora)
+      : null;
+    const delaMarca = marca !== undefined && marca !== tramite.requiereSocializacion ? await corregirMarca(tx, tramite, marca, ahora) : null;
+    if (!delDocumento && !delaMarca) throw new ErrorTramite("No hay cambios que guardar");
+    const correccion: NonNullable<Correccion> = {
+      detalle: {
+        ...delDocumento?.detalle,
+        ...(delaMarca
+          ? {
+              antes: { ...(delDocumento?.detalle.antes as object), ...delaMarca.antes },
+              despues: { ...(delDocumento?.detalle.despues as object), ...delaMarca.despues },
+            }
+          : {}),
+      },
+      avisos: delDocumento?.avisos,
+    };
 
     const { detalle } = correccion;
     await registrarEvento(tx, { tramiteId, tipo: "corregir_datos", usuarioId: sesion.usuarioId, ronda: tramite.ronda, detalle, ahora });

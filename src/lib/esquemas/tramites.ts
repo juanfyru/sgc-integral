@@ -163,6 +163,7 @@ export const EsquemaAceptarCreacion = z
     codigo: codigoDeDocumento.optional(),
     /** Lo que propuso el sistema: si `codigo` es igual, no se escribió a mano. */
     codigoSugerido: codigoDeDocumento.optional(),
+    requiereSocializacion: z.literal("on").optional(),
     ...responsables,
   })
   .strict()
@@ -181,7 +182,9 @@ export const EsquemaAceptarCreacion = z
     asociaciones: aAsociaciones(principal, asociaciones),
   }));
 
-export const EsquemaAceptarModificacion = z.object({ tituloNuevo: titulo.optional(), ...responsables }).strict();
+export const EsquemaAceptarModificacion = z
+  .object({ tituloNuevo: titulo.optional(), requiereSocializacion: z.literal("on").optional(), ...responsables })
+  .strict();
 
 export const EsquemaAceptarEliminacion = z.object({ aprobadorId: id }).strict();
 
@@ -193,11 +196,18 @@ export const EsquemaCorreccionDatos = z
     tipoDocumentoId: id.optional(),
     principal: marcaAsociacion.optional(),
     aprobadorId: id.optional(),
+    /** La marca de socialización viaja como «si»/«no»: una casilla sin marcar no se envía y no distinguiría «no tocar». */
+    requiereSocializacion: z.enum(["si", "no"]).optional(),
   })
   .strict()
-  .transform(({ principal, ...resto }) => {
+  .transform(({ principal, requiereSocializacion, ...resto }) => {
     const [propietario] = aAsociaciones(principal, []);
-    return { ...resto, procesoId: propietario?.procesoId, subprocesoId: propietario?.subprocesoId };
+    return {
+      ...resto,
+      procesoId: propietario?.procesoId,
+      subprocesoId: propietario?.subprocesoId,
+      requiereSocializacion: requiereSocializacion === undefined ? undefined : requiereSocializacion === "si",
+    };
   });
 
 export type DatosAceptarCreacion = z.output<typeof EsquemaAceptarCreacion>;

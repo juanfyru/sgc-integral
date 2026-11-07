@@ -17,7 +17,7 @@ const CIERRE_DEL_AVISO: Record<MotivoPorRecoger, (nuevaVersion: number | null) =
 /**
  * El único punto de enganche de lo que depende de que una versión deje de estar vigente (publicar una nueva,
  * eliminar el documento, deshacer la carga). Corre dentro de la misma transacción que cambia la versión.
- * Recoge las copias controladas vivas y supera los acuses pendientes.
+ * Recoge las copias controladas vivas y supera los acuses y la socialización pendientes.
  */
 export async function alDejarDeSerVigente(
   tx: TransactionSql,
@@ -28,6 +28,9 @@ export async function alDejarDeSerVigente(
 ): Promise<{ copiasPorRecoger: number }> {
   const { copiasPorRecoger } = await recogerCopias(tx, versionId, motivo, ahora, opciones);
   await superarAcuses(tx, versionId, ahora, motivo);
+  // Una socialización que nadie registró antes de que llegara otra versión ya no se pide.
+  await tx`UPDATE socializaciones_requeridas SET superada_en = ${ahora}
+    WHERE version_id = ${versionId} AND cumplida_en IS NULL AND superada_en IS NULL`;
   return { copiasPorRecoger };
 }
 
