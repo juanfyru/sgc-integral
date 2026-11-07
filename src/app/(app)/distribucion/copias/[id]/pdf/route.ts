@@ -12,7 +12,7 @@ const permitirPdf = crearLimitador({ limite: 60, ventanaMs: 60_000 });
 /**
  * El PDF sellado de una copia controlada. Imprimirlo es una acción de quien emite y solo cabe en la
  * ventana que abre la emisión o una reimpresión; quien solo consulta lo ve siempre. Quien no ve la
- * copia recibe 404, no 403.
+ * copia recibe 404, no 403; fuera de la ventana, vuelve a la copia con el aviso y «Reimprimir».
  */
 export async function GET(peticion: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const sesion = await sesionDePeticion(peticion);
@@ -21,5 +21,5 @@ export async function GET(peticion: NextRequest, { params }: { params: Promise<{
 
   const { id } = await params;
   if (!/^\d{1,15}$/.test(id)) return respuesta404();
-  return respuestaDeCopia(await copiaParaPdf(Number(id), sesion));
+  return respuestaDeCopia(peticion, Number(id), await copiaParaPdf(Number(id), sesion));
 }

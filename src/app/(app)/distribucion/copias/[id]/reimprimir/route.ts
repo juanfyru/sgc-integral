@@ -1,6 +1,11 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { CopiaNoVisible, copiaParaPdf, reimprimirCopia } from "@/db/consultas/distribucion/copias";
-import { respuestaDeCopia, respuestaDemasiadas } from "@/lib/distribucion/respuesta-copia";
+import {
+  avisoDeReimpresion,
+  redirigirACopia,
+  respuestaDeCopia,
+  respuestaDemasiadas,
+} from "@/lib/distribucion/respuesta-copia";
 import { ErrorDistribucion, MOTIVOS_REIMPRESION, type MotivoReimpresion } from "@/lib/distribucion/tipos";
 import { crearLimitador } from "@/lib/limite";
 import { origenValido } from "@/lib/origen";
@@ -12,7 +17,10 @@ export const dynamic = "force-dynamic";
 
 const permitirReimpresion = crearLimitador({ limite: 60, ventanaMs: 60_000 });
 
-/** Reimprime una copia: abre una ventana nueva de impresión y responde con el PDF sellado. */
+/**
+ * Reimprime una copia: abre una ventana nueva de impresión y responde con el PDF sellado. Lo que impide
+ * reimprimir vuelve a la página de la copia con su aviso (la respuesta se abre en otra pestaña: no un JSON).
+ */
 export async function POST(peticion: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const sesion = await sesionDePeticion(peticion);
   if (!sesion) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -27,15 +35,15 @@ export async function POST(peticion: NextRequest, { params }: { params: Promise<
   const motivo = formulario?.get("motivo");
   const texto = formulario?.get("texto");
   if (typeof motivo !== "string" || !MOTIVOS_REIMPRESION.includes(motivo as MotivoReimpresion)) {
-    return NextResponse.json({ error: "Elija el motivo de la reimpresión" }, { status: 400 });
+    return redirigirACopia(peticion, Number(id), "aviso=motivo");
   }
   try {
     await reimprimirCopia(Number(id), sesion, motivo as MotivoReimpresion, typeof texto === "string" ? texto : null);
   } catch (err) {
     if (err instanceof CopiaNoVisible) return respuesta404();
-    if (err instanceof ErrorDistribucion) return NextResponse.json({ error: err.message }, { status: 409 });
+    if (err instanceof ErrorDistribucion) return redirigirACopia(peticion, Number(id), `aviso=${avisoDeReimpresion(err.message)}`);
     if (err instanceof ErrorPermiso) return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
     throw err;
   }
-  return respuestaDeCopia(await copiaParaPdf(Number(id), sesion));
+  return respuestaDeCopia(peticion, Number(id), await copiaParaPdf(Number(id), sesion));
 }

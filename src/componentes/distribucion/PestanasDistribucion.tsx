@@ -9,11 +9,15 @@ const PESTANAS = [
 
 export type PestanaDistribucion = (typeof PESTANAS)[number]["clave"];
 
-export function PestanasDistribucion({ activa }: { activa: PestanaDistribucion }) {
+/**
+ * `conAcuses` en falso quita «Acuses de lectura»: los porcentajes son de quien tiene `distribucion.ver`, no del
+ * responsable de un punto que solo responde por sus copias (spec 13B §6.4).
+ */
+export function PestanasDistribucion({ activa, conAcuses = true }: { activa: PestanaDistribucion; conAcuses?: boolean }) {
   return (
     <nav aria-label="Secciones de Distribución">
       <ul className="flex list-none flex-wrap gap-1 border-b border-border">
-        {PESTANAS.map((p) => {
+        {PESTANAS.filter((p) => conAcuses || p.clave !== "acuses").map((p) => {
           const esActiva = p.clave === activa;
           return (
             <li key={p.clave} className="-mb-px">

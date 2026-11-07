@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { TriangleAlert } from "lucide-react";
 import { AccionesCopia } from "@/componentes/distribucion/copias/AccionesCopia";
 import { HistorialCopia } from "@/componentes/distribucion/copias/HistorialCopia";
 import { InsigniaCopia, fechaCorta } from "@/componentes/distribucion/copias/TablaCopias";
@@ -8,6 +9,7 @@ import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { obtenerCopia } from "@/db/consultas/distribucion/copias";
 import { numeroDeCopia } from "@/lib/distribucion/copias";
+import { AVISOS_COPIA, MENSAJE_VENTANA, type AvisoCopia } from "@/lib/distribucion/respuesta-copia";
 import { ETIQUETA_MOTIVO_ANULACION, ETIQUETA_MOTIVO_POR_RECOGER } from "@/lib/distribucion/tipos";
 import { exigirSesion } from "@/lib/paginas";
 
@@ -36,7 +38,13 @@ export default async function PaginaCopia({
   // Quien no la ve (la consulta decide: alcance, responsable del punto o quien la emitió) recibe «no encontrado».
   const copia = await obtenerCopia(Number(id), sesion);
   if (!copia) notFound();
-  const { imprimir } = await searchParams;
+  const { imprimir, ventana, aviso: clave } = await searchParams;
+  const aviso =
+    ventana === "1"
+      ? MENSAJE_VENTANA
+      : typeof clave === "string" && Object.hasOwn(AVISOS_COPIA, clave)
+        ? AVISOS_COPIA[clave as AvisoCopia]
+        : null;
   const ahora = new Date();
   const reemplazada = copia.reemplazaCopiaId === null ? null : await obtenerCopia(copia.reemplazaCopiaId, sesion);
   const reemplazo = reemplazada && reemplazada.estado === "por_recoger"
@@ -54,6 +62,16 @@ export default async function PaginaCopia({
         migas={[{ nombre: "Distribución", href: "/distribucion/copias" }, { nombre: `Copia N.º ${numero}` }]}
         tituloEnfocable
       />
+
+      {aviso ? (
+        <p
+          role="status"
+          className="flex items-start gap-2 rounded-lg bg-estado-atencion-fondo px-3 py-2 text-sm font-medium text-estado-atencion-texto"
+        >
+          <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+          {aviso}
+        </p>
+      ) : null}
 
       {imprimir === "1" && copia.acciones.includes("pdf") ? (
         <section aria-labelledby="titulo-imprimir" className="rounded-xl border border-marca bg-card p-4">

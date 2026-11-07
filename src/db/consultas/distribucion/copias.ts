@@ -169,7 +169,8 @@ const leerUna = async (sql: Cliente, sesion: SesionFlujo, id: number) =>
 
 const puedeEmitirSobre = (sesion: SesionFlujo, fila: FilaCopia) => puede(sesion, "copias.emitir") && fila.enAlcance;
 
-function accionesDe(sesion: SesionFlujo, fila: FilaCopia): AccionCopia[] {
+/** `pdf` para quien emite solo dentro de la ventana de impresión; fuera de ella, «Reimprimir» (spec 13B §8.2). */
+function accionesDe(sesion: SesionFlujo, fila: FilaCopia, ahora: Date): AccionCopia[] {
   const { copia } = fila;
   const acciones: AccionCopia[] = [];
   const viva = copia.estado === "emitida" || copia.estado === "recibida";
@@ -180,7 +181,8 @@ function accionesDe(sesion: SesionFlujo, fila: FilaCopia): AccionCopia[] {
   if (copia.estado === "por_recoger" && responde && (esResponsable || puede(sesion, "distribucion.gestionar"))) acciones.push("recoger");
   if (viva && (sesion.usuarioId === copia.emitidaPor.id || puede(sesion, "distribucion.gestionar"))) acciones.push("anular");
   if (viva && copia.versionVigente && emite) acciones.push("reimprimir");
-  if (viva && copia.versionVigente && (emite || puede(sesion, "distribucion.ver"))) acciones.push("pdf");
+  const pdf = emite ? enVentanaDeImpresion(fila.ultimaAperturaEn, ahora) : puede(sesion, "distribucion.ver");
+  if (viva && copia.versionVigente && pdf) acciones.push("pdf");
   return acciones;
 }
 
@@ -310,7 +312,7 @@ export async function obtenerCopia(
       creadoEn: e.creado_en as Date,
       detalle: e.detalle as Record<string, unknown>,
     })),
-    acciones: accionesDe(sesion, fila),
+    acciones: accionesDe(sesion, fila, opciones?.ahora ?? new Date()),
   };
 }
 

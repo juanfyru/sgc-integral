@@ -46,7 +46,7 @@ export default async function PaginaSocializaciones({
           ) : undefined
         }
       />
-      <PestanasDistribucion activa="socializaciones" />
+      <PestanasDistribucion activa="socializaciones" conAcuses={puede(sesion, "distribucion.ver")} />
 
       <form method="get" className="flex flex-wrap items-end gap-3" aria-label="Filtros de socializaciones">
         <label className="flex flex-col gap-1 text-sm font-medium">

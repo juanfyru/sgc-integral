@@ -506,6 +506,10 @@ export async function resumenAcuses(
   porProceso: (Cifras & { procesoId: number; nombre: string })[];
   entidad: Cifras;
 }> {
+  // Los porcentajes son de quien ve la distribución (spec 13B §6.4); el responsable de un punto no los ve.
+  if (!puede(sesion, "distribucion.ver")) {
+    return { versiones: [], porProceso: [], entidad: { confirmados: 0, pendientes: 0, porcentaje: porcentaje(0, 0) } };
+  }
   const sql = opciones?.sql ?? obtenerSql();
   const alcance = await alcanceProcesos(sesion, { sql });
   const verNoVigentes = puede(sesion, "documentos.ver_historial");

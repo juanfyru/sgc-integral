@@ -262,6 +262,29 @@ describe("ventana de impresión", () => {
       }
     }));
 
+  it("quien emite ve «Abrir el PDF» solo dentro de la ventana; fuera, «Reimprimir»; quien solo ve, siempre el PDF", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const ci = await usuarioDePrueba(tx, { rol: "control_interno" });
+      const resp = await usuarioDePrueba(tx, { rol: "consulta" });
+      const punto = await puntoDePrueba(tx, { responsable: resp, procesos: ["GTH"] });
+      const { documento, limpiar } = await vigenteConPdf(tx, { proceso: "GTH", tipo: "PR" });
+      try {
+        const { copiaId } = await copiaDePrueba(tx, { emisor: admin, documento, punto, ahora: T0 });
+        const acciones = async (sesion: typeof admin, ahora: Date) =>
+          (await obtenerCopia(copiaId, sesion, { sql: tx, ahora }))?.acciones;
+
+        expect(await acciones(admin, min(14))).toEqual(["anular", "reimprimir", "pdf"]);
+        expect(await acciones(admin, min(16))).toEqual(["anular", "reimprimir"]);
+        expect(await acciones(ci, min(300))).toEqual(["pdf"]);
+
+        await reimprimirCopia(copiaId, admin, "deteriorada", null, { sql: tx, ahora: min(20) });
+        expect(await acciones(admin, min(21))).toEqual(["anular", "reimprimir", "pdf"]);
+      } finally {
+        await limpiar();
+      }
+    }));
+
   it("reimprimir con «otro» exige texto y solo vale en estado vivo", () =>
     revertida(sql, async (tx) => {
       const admin = await sesionAdmin(tx);

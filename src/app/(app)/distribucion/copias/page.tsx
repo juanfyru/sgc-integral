@@ -82,7 +82,7 @@ export default async function PaginaCopias({
           puedeEmitir ? <DialogoEmitir documentos={documentos} puntos={puntosEmitibles} avisoSinQr={avisoSinQr} /> : undefined
         }
       />
-      <PestanasDistribucion activa="copias" />
+      <PestanasDistribucion activa="copias" conAcuses={puede(sesion, "distribucion.ver")} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[14rem_minmax(0,1fr)]">
         <aside>

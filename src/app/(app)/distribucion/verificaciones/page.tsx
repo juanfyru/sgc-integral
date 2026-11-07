@@ -39,7 +39,7 @@ export default async function PaginaVerificaciones({
   return (
     <div className="flex flex-col gap-8">
       <EncabezadoPagina titulo="Distribución" descripcion="Copias controladas, acuses de lectura, socializaciones y verificaciones" />
-      <PestanasDistribucion activa="verificaciones" />
+      <PestanasDistribucion activa="verificaciones" conAcuses={puede(sesion, "distribucion.ver")} />
       <EstadoPuntos puntos={estado.puntos} conformidad={estado.conformidad} puedeVerificar={puede(sesion, "verificaciones.realizar")} />
       <HistorialVerificaciones
         filas={historial.filas}

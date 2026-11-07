@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { Download } from "lucide-react";
 import { PestanasDistribucion } from "@/componentes/distribucion/PestanasDistribucion";
 import { TablaAcuses, textoPorcentaje } from "@/componentes/distribucion/acuses/TablaAcuses";
@@ -12,6 +13,7 @@ import { quienFalta, resumenAcuses } from "@/db/consultas/distribucion/acuses";
 import { alcanceProcesos } from "@/lib/alcance";
 import { periodoDeAcuses } from "@/lib/distribucion/periodo-acuses";
 import { exigirSesion } from "@/lib/paginas";
+import { puede } from "@/lib/permisos";
 import { exigirDistribucion } from "../_comun";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +28,8 @@ export default async function PaginaAcuses({
 }) {
   const sesion = await exigirSesion();
   await exigirDistribucion(sesion);
+  // El responsable de un punto entra a «Distribución» por sus copias; los porcentajes no son suyos.
+  if (!puede(sesion, "distribucion.ver")) notFound();
   const q = await searchParams;
   const periodo = periodoDeAcuses({ desde: texto(q.desde), hasta: texto(q.hasta), proceso: texto(q.proceso) });
   const sql = obtenerSql();
