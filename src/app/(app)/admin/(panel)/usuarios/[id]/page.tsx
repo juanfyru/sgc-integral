@@ -63,7 +63,11 @@ export default async function PaginaUsuario({ params }: { params: Promise<{ id: 
                   {puntos.map((p, i) => (
                     <span key={p.id}>
                       {i > 0 && ", "}
-                      <Link href={`/admin/puntos-uso/${p.id}`} className="text-marca underline">{p.nombre}</Link>
+                      {puede(sesion, "distribucion.gestionar") ? (
+                        <Link href={`/admin/puntos-uso/${p.id}`} className="text-marca underline">{p.nombre}</Link>
+                      ) : (
+                        p.nombre
+                      )}
                     </span>
                   ))}
                   . Reasígnelos antes de desactivar a la persona.
