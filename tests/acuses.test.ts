@@ -89,7 +89,8 @@ describe("al publicar", () => {
         const [aviso] = await tx`SELECT tipo, titulo, enlace FROM notificaciones WHERE usuario_id = ${lectora.usuarioId} AND tipo = 'distribucion.acuse'`;
         expect(aviso).toEqual({ tipo: "distribucion.acuse", titulo: `${t.codigo} v2 ${t.titulo}: confirme su lectura`, enlace: `/acuses/${acuse.id}` });
         // Quien firmó no recibe aviso de lo que ya leyó.
-        const [{ n }] = await tx`SELECT count(*)::int AS n FROM notificaciones WHERE usuario_id = ${t.elaborador.usuarioId} AND tipo = 'distribucion.acuse'`;
+        const [{ n }] = await tx`SELECT count(*)::int AS n FROM notificaciones WHERE usuario_id = ${t.elaborador.usuarioId} AND tipo = 'distribucion.acuse'
+          AND entidad = 'acuse' AND entidad_id IN (SELECT id FROM acuses WHERE version_id = ${t.versionId})`;
         expect(n).toBe(0);
 
         const eventos = await tx`SELECT e.tipo FROM acuse_eventos e JOIN acuses a ON a.id = e.acuse_id
