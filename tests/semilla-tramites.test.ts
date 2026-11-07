@@ -6,7 +6,7 @@
  * corre en una transacción que se revierte.
  */
 import { existsSync } from "node:fs";
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { afterAll, describe, expect, it, type TestContext } from "vitest";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
@@ -16,19 +16,26 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { asegurarActa, reunirDatosActa } from "@/db/consultas/actas";
+import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { listarFirmas } from "@/db/consultas/firmas";
-import { cerrarObservacion, guardarVerificacion, listarItemsVerificacion, listarObservaciones } from "@/db/consultas/revision";
+import { leerFormatoCongelado, revisarFormatoActa } from "@/db/consultas/formato-acta";
+import { cerrarObservacion, criteriosNoCumplen, guardarVerificacion, listarItemsVerificacion, listarObservaciones } from "@/db/consultas/revision";
 import { datosParaAceptar, obtenerTramite } from "@/db/consultas/tramites";
 import { transicionar } from "@/db/consultas/tramites-flujo";
 import { revisarVencimientos } from "@/db/consultas/vencimientos";
+import { generarFormatoActaDemo } from "@/db/semillas/formato-acta-demo";
 import { generarActa } from "@/lib/acta";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { huellaDeArchivo } from "@/lib/huella";
+import { motivoMembreteNoUtilizable } from "@/lib/membrete-acta";
 import { misTareas } from "@/lib/tareas";
 import { estadoPlazo, fechaEnZona, fechaLimite } from "@/lib/tramites/plazos";
+import { LARGO_MIN_NOTA_CRITERIO } from "@/lib/tramites/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { exigirDemo, exigirDemoIntacta, sembradaEn } from "./utiles/demo";
-import { opc, sesionDe, tramiteEn } from "./utiles/tramites";
+import { huella } from "./utiles/formato";
+import { contenidoPorPagina, contieneTexto } from "./utiles/pdf";
+import { aprobacionConCriterio, opc, sesionDe } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
 const sql = obtenerSql();
@@ -120,6 +127,38 @@ describe("la historia sembrada", () => {
     expect(e.detalle).toMatchObject({ version: 3, obsoletas: [2], huella, acta: { clase: "aprobacion", versionObsoleta: 2, rondas: 1 } });
   });
 
+  it("el trámite publicado trae un criterio aceptado y el formato congelado", async () => {
+    const t = await tramiteDe(1);
+    const criterios = await criteriosNoCumplen(t.id, t.ronda);
+    expect(criterios).toHaveLength(1);
+    const [{ texto, nota }] = criterios;
+    expect(nota.trim().length).toBeGreaterThanOrEqual(LARGO_MIN_NOTA_CRITERIO);
+
+    const eventos = await sql`SELECT tipo, detalle FROM tramite_eventos WHERE tramite_id = ${t.id}`;
+    const detalle = (tipo: string) => eventos.find((e) => e.tipo === tipo)!.detalle;
+    const constancia = { noCumple: [{ texto, nota }], confirmoNoCumple: true };
+    expect(detalle("concepto_favorable")).toMatchObject(constancia);
+    expect(detalle("aprobar")).toMatchObject(constancia);
+
+    const [formato] = await sql`SELECT a.id, a.hash_sha256 FROM archivos a
+      JOIN documento_versiones v ON v.id = a.version_id JOIN documentos d ON d.id = v.documento_id
+      WHERE d.codigo = 'SGC-FO-06' AND v.numero = 1 AND a.rol = 'principal'`;
+    expect(detalle("publicar").acta).toMatchObject({
+      noCumple: [{ texto, nota }],
+      formato: { archivoId: Number(formato.id), hash: formato.hash_sha256, codigo: "SGC-FO-06", version: 1, margenSuperiorCm: 4.2, margenInferiorCm: 3.2 },
+    });
+  });
+
+  it("el trámite de GBS, sin criterios, no deja constancia en sus eventos", async () => {
+    const eventos = await sql`SELECT detalle FROM tramite_eventos
+      WHERE tramite_id = ${(await tramiteDe(3)).id} AND tipo IN ('concepto_favorable', 'aprobar')`;
+    expect(eventos).toHaveLength(2);
+    for (const { detalle } of eventos) {
+      expect(detalle).not.toHaveProperty("noCumple");
+      expect(detalle).not.toHaveProperty("confirmoNoCumple");
+    }
+  });
+
   it("los datos congelados generan el acta en PDF, con las cuatro firmas", async () => {
     const t = await tramiteDe(1);
     const datos = await reunirDatosActa(t.id);
@@ -206,8 +245,9 @@ describe("la historia sembrada", () => {
 
   it("los detalles sembrados tienen la forma de los que escribe el flujo real", () => revertida(sql, async (tx) => {
     const gerente = await sesionDe(tx, "gerente");
-    const t = await tramiteEn(tx, "publicacion", { tipoDocumento: "CA", aprobador: gerente });
+    const { t, confirmaNoCumple } = await aprobacionConCriterio(tx, { tipoDocumento: "CA", aprobador: gerente });
     try {
+      await transicionar(gerente, { tramiteId: t.tramiteId, accion: "aprobar", etapaEsperada: "aprobacion", rondaEsperada: 1, datos: { concepto: "Aprobado.", confirmaNoCumple }, credenciales: FIRMA }, opc(tx));
       await transicionar(t.admin, { tramiteId: t.tramiteId, accion: "publicar", etapaEsperada: "publicacion", rondaEsperada: 1, credenciales: FIRMA }, opc(tx));
       const claves = async (tramiteId: number) => {
         const eventos = await tx`SELECT tipo, detalle FROM tramite_eventos WHERE tramite_id = ${tramiteId} ORDER BY id`;
@@ -219,6 +259,42 @@ describe("la historia sembrada", () => {
       await t.limpiar();
     }
   }));
+});
+
+describe("el formato de acta de la demo", () => {
+  const cm = (x: number) => (x * 72) / 2.54;
+
+  it("sirve como formato, con el nombre que recibe, su título, su código y su versión", async () => {
+    const bytes = await generarFormatoActaDemo("Entidad de prueba");
+    expect(await motivoMembreteNoUtilizable(bytes)).toBeNull();
+    const paginas = await contenidoPorPagina(bytes);
+    expect(paginas).toHaveLength(1);
+    for (const texto of ["Entidad de prueba", "ACTA DE CONTROL DOCUMENTAL", "SGC-FO-06", "Versión: 1"]) {
+      expect(contieneTexto(paginas[0], texto), texto).toBe(true);
+    }
+  });
+
+  it("deja el cuerpo en blanco: el encabezado llega hasta 4 cm y el pie empieza a 3 cm", async () => {
+    const [pagina] = await contenidoPorPagina(await generarFormatoActaDemo("Una entidad con un nombre bastante largo para partirse en varias líneas"));
+    const alturas = [...pagina.matchAll(/(-?[\d.]+) (-?[\d.]+) (?:Tm|m|l)\s/g)].map((m) => Number(m[2]));
+    expect(alturas.length).toBeGreaterThan(10);
+    expect(alturas.filter((y) => y < 792 - cm(4) && y > cm(3))).toEqual([]);
+    expect(Math.max(...alturas.filter((y) => y <= cm(3)))).toBeGreaterThan(cm(2.5));
+  });
+
+  it("la demo lo trae elegido, con márgenes coherentes, y sirve", async (ctx) => {
+    await exigirDemoIntacta(ctx, sql);
+    const { formatoActa } = await obtenerConfigDocumental();
+    const [d] = await sql`SELECT id FROM documentos WHERE codigo = 'SGC-FO-06'`;
+    exigirDemo(ctx, formatoActa.documentoId === Number(d?.id), "se eligió otro formato del acta");
+    expect(formatoActa).toMatchObject({ margenSuperiorCm: 4.2, margenInferiorCm: 3.2 });
+    expect(await revisarFormatoActa(formatoActa.documentoId)).toMatchObject({ estado: "listo", codigo: "SGC-FO-06", version: 1 });
+    // Es el formato de la demo, y no un placeholder que también serviría.
+    const [{ ruta }] = await sql`SELECT a.ruta FROM archivos a JOIN documento_versiones v ON v.id = a.version_id
+      WHERE v.documento_id = ${d.id} AND a.rol = 'principal'`;
+    const [pagina] = await contenidoPorPagina(await readFile(resolverRutaAlmacen(ruta)!));
+    expect(contieneTexto(pagina, "Formato ficticio de la demostración")).toBe(true);
+  });
 });
 
 describe("cómo está la demo", () => {
@@ -257,6 +333,11 @@ describe("cómo está la demo", () => {
       const acta = await asegurarActa(t.id, { sql: tx });
       try {
         expect(acta?.ruta).toMatch(/^actas\/SOL-\d{4}-001\.pdf$/);
+        // Sobre el formato sembrado: son los bytes de generarla con ese fondo.
+        const datos = (await reunirDatosActa(t.id, { sql: tx }))!;
+        const formato = await leerFormatoCongelado(datos.formato!, { sql: tx });
+        expect(formato).not.toBeNull();
+        expect(huella(await readFile(resolverRutaAlmacen(acta!.ruta)!))).toBe(huella(await generarActa(datos, formato)));
       } finally {
         // La fila se revierte con el test; el archivo se borra aquí.
         await rm(resolverRutaAlmacen(`actas/${t.numero}.pdf`)!, { force: true });

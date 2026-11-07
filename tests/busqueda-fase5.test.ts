@@ -130,7 +130,7 @@ describe("buscarDocumentos — filtros combinables", () => {
       proceso: "sistema-de-gestion-de-calidad",
       tipo: "FO",
     }, ADMIN);
-    expect(codigosDe(r).sort()).toEqual(["SGC-FO-01", "SGC-FO-02", "SGC-FO-05"]);
+    expect(codigosDe(r).sort()).toEqual(["SGC-FO-01", "SGC-FO-02", "SGC-FO-05", "SGC-FO-06"]);
   });
 });
 

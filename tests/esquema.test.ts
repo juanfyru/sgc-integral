@@ -221,10 +221,11 @@ describe("estados del seed (datos de demostración)", () => {
       SELECT estado, count(*)::int AS cantidad
       FROM documento_versiones GROUP BY estado ORDER BY estado`;
     const porEstado = Object.fromEntries(filas.map((f) => [f.estado, f.cantidad]));
-    expect(porEstado["vigente"]).toBe(28);
+    expect(porEstado["vigente"]).toBe(29);
     expect(porEstado["obsoleto"]).toBe(2);
     expect(porEstado["borrador"]).toBe(3);
     expect(porEstado["anulado"]).toBe(1);
+    expect(filas.reduce((total, f) => total + f.cantidad, 0)).toBe(35);
   });
 
   it("GTH-CA-01 retiene sus versiones obsoletas junto a la vigente", async () => {
@@ -359,10 +360,10 @@ describe("semilla con la convención del hospital", () => {
     const filas = await sql`SELECT critico FROM lista_verificacion_items ORDER BY orden`;
     expect(filas.map((f) => f.critico)).toEqual([true, true, true, false, false, false, false, false]);
   });
-  it("la demo trae 30 documentos con códigos del hospital y GTH-FO-01 restringido", async (ctx) => {
+  it("la demo trae 31 documentos con códigos del hospital y GTH-FO-01 restringido", async (ctx) => {
     await exigirDemoIntacta(ctx, sql);
     const [{ n }] = await sql`SELECT count(*)::int AS n FROM documentos`;
-    expect(n).toBe(30);
+    expect(n).toBe(31);
     const [{ malos }] = await sql`SELECT count(*)::int AS malos FROM documentos
       WHERE codigo !~ '^[A-Z]{2,4}-[A-Z]{2,4}-[0-9]{2,}$'`;
     expect(malos).toBe(0);

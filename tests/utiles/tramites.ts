@@ -323,9 +323,9 @@ export const NOTA = "Se ajustará con la guía de redacción.";
  */
 export async function aprobacionConCriterio(
   tx: TransactionSql,
-  o: { antesDelConcepto?: (itemId: number) => PromiseLike<unknown> } = {},
+  o: { antesDelConcepto?: (itemId: number) => PromiseLike<unknown>; tipoDocumento?: string; aprobador?: SesionFlujo } = {},
 ) {
-  const t = await tramiteEn(tx, "revision");
+  const t = await tramiteEn(tx, "revision", { tipoDocumento: o.tipoDocumento, aprobador: o.aprobador });
   try {
     const items = await listarItemsVerificacion({ sql: tx, soloActivos: true });
     const criterio = items.find((i) => !i.critico)!;

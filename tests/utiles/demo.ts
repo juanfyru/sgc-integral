@@ -43,5 +43,5 @@ export async function exigirDemoIntacta(ctx: TestContext, sql: Cliente): Promise
   const tramites = await sql`SELECT etapa FROM tramites ORDER BY id`;
   const etapas = tramites.map((t) => t.etapa as string);
   const iguales = etapas.length === ETAPAS_SEMBRADAS.length && etapas.every((e, i) => e === ETAPAS_SEMBRADAS[i]);
-  exigirDemo(ctx, documentos === 30 && iguales, `hay ${documentos} documentos y ${etapas.length} trámites, o los sembrados avanzaron`);
+  exigirDemo(ctx, documentos === 31 && iguales, `hay ${documentos} documentos y ${etapas.length} trámites, o los sembrados avanzaron`);
 }

@@ -3,8 +3,8 @@
  * PLAN.md Apéndice A) + documentos ficticios pero verosímiles que cubren
  * todos los casos del modelo (asociaciones M:N con principal, relaciones
  * procedimiento↔formato, archivos multi-rol y los cuatro estados), más una
- * estructura organizacional, un usuario de ejemplo por rol y trámites en cada
- * etapa (ver `sembrarTramites`).
+ * estructura organizacional, un usuario de ejemplo por rol, un formato de acta
+ * ficticio ya elegido y trámites en cada etapa (ver `sembrarTramites`).
  *
  * Ejecutar: npm run db:seed   (borra y recarga TODO — solo desarrollo/demo)
  */
@@ -16,6 +16,7 @@ import type { Sql, TransactionSql } from "postgres";
 import { rutaBaseAlmacen } from "../../lib/almacen";
 import { hashearClave } from "../../lib/clave";
 import type { Rol } from "../../lib/roles";
+import { constanciaDeCriterios } from "../../lib/tramites/criterios";
 import { fechaEnZona, fechaLimite } from "../../lib/tramites/plazos";
 import { esEtapaDeTrabajo, type Motivo, type TipoSolicitud } from "../../lib/tramites/tipos";
 import { evaluarTransicion, type Accion } from "../../lib/tramites/transiciones";
@@ -24,7 +25,7 @@ import { congelarDatosActa } from "../consultas/actas";
 import { obtenerConfigDocumental, type ConfigDocumental } from "../consultas/config-documental";
 import { listarFirmas, registrarFirma, type FirmaRegistrada } from "../consultas/firmas";
 import { exigirDesignacion } from "../consultas/flujo/aceptacion";
-import { listarItemsVerificacion, obtenerVerificacion } from "../consultas/revision";
+import { criteriosNoCumplen, listarItemsVerificacion, obtenerVerificacion } from "../consultas/revision";
 import {
   aFilaTramite,
   adminsActivos,
@@ -42,6 +43,7 @@ import {
 } from "../consultas/tramites-flujo";
 import * as e from "../esquema";
 import { generarPlaceholder } from "../placeholders";
+import { CODIGO_FORMATO_ACTA, generarFormatoActaDemo } from "./formato-acta-demo";
 import { limpiarTodo, sembrarBase, type Db } from "./minima";
 
 export const CLAVE_DEMO = "Demo-SGC-2026-clave";
@@ -76,17 +78,24 @@ async function sembrarLogoDemo(db: Db, almacen: string): Promise<void> {
   ]);
 }
 
-type DefArchivo = { rol: "principal" | "editable" | "anexo"; ext: "pdf" | "docx" | "xlsx" };
+type DefArchivo = {
+  rol: "principal" | "editable" | "anexo";
+  ext: "pdf" | "docx" | "xlsx";
+  /** El contenido de un archivo que no es un placeholder. */
+  contenido?: () => Promise<Uint8Array>;
+};
 
 /**
- * Deja un placeholder en el almacén y devuelve los datos de su fila en `archivos`. `nota` cambia
- * su contenido, y con él su huella, sin cambiar su nombre: es un archivo que reemplaza a otro.
+ * Deja en el almacén `bytes`, o sin ellos un placeholder, y devuelve los datos de su fila en
+ * `archivos`. `nota` cambia el contenido del placeholder, y con él su huella, sin cambiar su
+ * nombre: es un archivo que reemplaza a otro.
  */
 async function archivoDemo(
   { codigo, titulo }: { codigo: string; titulo: string },
   numero: number,
   { rol, ext }: DefArchivo,
   nota = "",
+  bytes?: Uint8Array,
 ) {
   // El rol distingue archivos de la misma versión y extensión (p. ej.
   // principal PDF + anexo PDF) sin colisión de ruta.
@@ -96,13 +105,15 @@ async function archivoDemo(
       : `${codigo.toLowerCase()}-v${numero}-${rol}.${ext}`;
   const ruta = `${codigo}/v${numero}/${nombreArchivo}`;
 
-  const contenido = await generarPlaceholder({
-    codigo,
-    titulo: `${titulo}${nota}`,
-    numeroVersion: numero,
-    ext,
-    entidad: NOMBRE_ENTIDAD,
-  });
+  const contenido =
+    bytes ??
+    (await generarPlaceholder({
+      codigo,
+      titulo: `${titulo}${nota}`,
+      numeroVersion: numero,
+      ext,
+      entidad: NOMBRE_ENTIDAD,
+    }));
   const destino = path.join(rutaBaseAlmacen(), ...ruta.split("/"));
   await mkdir(path.dirname(destino), { recursive: true });
   await writeFile(destino, contenido);
@@ -363,6 +374,13 @@ export async function sembrarDemo(db: Db, sql: Sql): Promise<void> {
       versiones: [v1Vigente(CALIDAD, [{ rol: "principal", ext: "pdf" }, { rol: "editable", ext: "docx" }])],
       asociaciones: [{ proceso: "SGC", principal: true }],
     },
+    {
+      codigo: CODIGO_FORMATO_ACTA, titulo: "Acta de control documental", tipo: "FO",
+      descripcion: "Formato institucional sobre el que la plataforma genera las actas de aprobación y de eliminación de documentos.",
+      palabrasClave: "acta aprobacion eliminacion control documental formato",
+      versiones: [v1Vigente(CALIDAD, [{ rol: "principal", ext: "pdf", contenido: () => generarFormatoActaDemo(NOMBRE_ENTIDAD) }])],
+      asociaciones: [{ proceso: "SGC", principal: true }],
+    },
 
     // ── Talento Humano (GTH) ── incluye la demo de versión obsoleta retenida
     {
@@ -608,7 +626,7 @@ export async function sembrarDemo(db: Db, sql: Sql): Promise<void> {
         .returning();
 
       for (const a of v.archivos) {
-        const archivo = await archivoDemo(def, v.numero, a);
+        const archivo = await archivoDemo(def, v.numero, a, "", await a.contenido?.());
         await db.insert(e.archivos).values({ versionId: version.id, rol: a.rol, ...archivo });
       }
     }
@@ -652,6 +670,12 @@ export async function sembrarDemo(db: Db, sql: Sql): Promise<void> {
   }
 
   await sembrarEstructuraYUsuarios(db, procesoPorSigla);
+  // Antes de los trámites: el acta de cada cierre congela el formato elegido.
+  await db.insert(e.configuracion).values([
+    { clave: "formato_acta_documento_id", valor: String(documentoPorCodigo[CODIGO_FORMATO_ACTA]) },
+    { clave: "formato_acta_margen_superior_cm", valor: "4.2" },
+    { clave: "formato_acta_margen_inferior_cm", valor: "3.2" },
+  ]);
   await sembrarTramites(sql, { tipoPorSigla, procesoPorSigla, documentoPorCodigo });
 }
 
@@ -952,14 +976,19 @@ async function responderLista(c: Contexto, t: FilaTramite, autor: Autor, fallas:
   await auditarTramite(c, t, autor, "guardar_lista", { ronda: t.ronda, respondidos: items.length });
 }
 
+/** La constancia de los criterios de la ronda, como la deja el manejador: sin criterios no añade claves. */
+const constanciaDeLaRonda = async ({ tx }: Contexto, t: FilaTramite) =>
+  constanciaDeCriterios(await criteriosNoCumplen(t.id, t.ronda, { sql: tx }));
+
 /** Solo sin observaciones: los dos trámites de la demo que llegan aquí no tuvieron ninguna. */
 async function darConcepto(c: Contexto, t: FilaTramite, autor: Autor, concepto: string): Promise<FilaTramite> {
   const lista = await obtenerVerificacion(t.id, t.ronda, { sql: c.tx });
-  return paso(c, t, { ...autor, accion: "concepto_favorable", detalle: { concepto, lista, observaciones: { total: 0, cerradas: 0 } } });
+  const constancia = await constanciaDeLaRonda(c, t);
+  return paso(c, t, { ...autor, accion: "concepto_favorable", detalle: { concepto, lista, observaciones: { total: 0, cerradas: 0 }, ...constancia } });
 }
 
-const aprobar = (c: Contexto, t: FilaTramite, autor: Autor, concepto: string) =>
-  paso(c, t, { ...autor, accion: "aprobar", detalle: { concepto } });
+const aprobar = async (c: Contexto, t: FilaTramite, autor: Autor, concepto: string) =>
+  paso(c, t, { ...autor, accion: "aprobar", detalle: { concepto, ...(await constanciaDeLaRonda(c, t)) } });
 
 /** Lo que hace `publicarVersion` (flujo/cierre.ts): copia la evidencia a la versión, la publica y congela el acta. */
 async function publicar(c: Contexto, t: FilaTramite, autor: Autor): Promise<FilaTramite> {
@@ -1055,8 +1084,10 @@ async function sembrarTramites(
     t = await elaborar(c, t, { quien: liderGth, momento: hace(15) }, {
       controlCambios: "Se actualizan los indicadores del proceso y las actividades del ciclo PHVA.",
     });
-    await responderLista(c, t, { quien: coordinadora, momento: hace(13) });
-    t = await darConcepto(c, t, { quien: coordinadora, momento: hace(12) }, "Cumple la lista de verificación; listo para aprobación.");
+    await responderLista(c, t, { quien: coordinadora, momento: hace(13) }, {
+      8: "Nombra los registros del proceso, pero aún no dice dónde se archivan: se completará en la próxima revisión anual.",
+    });
+    t = await darConcepto(c, t, { quien: coordinadora, momento: hace(12) }, "Favorable, con un criterio aceptado que no afecta la operación del proceso; listo para aprobación.");
     t = await aprobar(c, t, { quien: gerente, momento: hace(10) }, "Aprobada: los indicadores responden a la planeación institucional.");
     await publicar(c, t, { quien: coordinadora, momento: hace(9) });
 
