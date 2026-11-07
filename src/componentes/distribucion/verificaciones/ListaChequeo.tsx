@@ -21,7 +21,7 @@ import { textoResumen } from "./ResumenCierre";
 const CLASE_DIALOGO = "m-auto w-full max-w-md rounded-lg border border-border bg-card p-0 text-foreground shadow-xl backdrop:bg-black/40";
 const ID_FORMULARIO = "chequeo";
 
-const valorInicial = (i: ItemVerificacion): ValorItem => ({ respuesta: i.respuesta, nota: i.nota ?? "", retirado: false });
+const valorInicial = (i: ItemVerificacion): ValorItem => ({ respuesta: i.respuesta, nota: i.nota ?? "", retirado: i.retirado });
 
 function Descartar({ id, abierto, alCerrar }: { id: number; abierto: boolean; alCerrar: () => void }) {
   const [estado, enviar, pendiente] = useActionState<EstadoAccion, FormData>(descartarVerificacionAccion, null);

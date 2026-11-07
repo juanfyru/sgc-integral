@@ -85,7 +85,12 @@ describe("abrir", () => {
           responsable: { id: resp.usuarioId },
           abiertaEn: T0,
         });
-        expect(v?.items.every((i) => i.respuesta === null && i.fotos.length === 0)).toBe(true);
+        expect(v?.items.every((i) => i.respuesta === null && !i.retirado && i.fotos.length === 0)).toBe(true);
+        const [auditoria] = await tx`SELECT usuario_id, detalle FROM auditoria WHERE accion = 'verificacion_abierta' AND entidad_id = ${verificacionId}`;
+        expect(Number(auditoria.usuario_id)).toBe(admin.usuarioId);
+        expect(auditoria.detalle).toMatchObject({ puntoId: punto.id, punto: punto.nombre, items: 6 });
+        // Abrir de nuevo devuelve la misma y no vuelve a auditar.
+        expect(await tx`SELECT 1 FROM auditoria WHERE accion = 'verificacion_abierta' AND entidad_id = ${verificacionId}`).toHaveLength(1);
       } finally {
         await limpiar();
       }
@@ -133,7 +138,12 @@ describe("llenar", () => {
 
       const primero = v!.items[0].id;
       await guardarAvance(verificacionId, admin, [{ itemId: primero, respuesta: "no_conforme", nota: "  Hay una copia sin sello " }], { sql: tx });
-      expect((await obtenerVerificacion(verificacionId, admin, { sql: tx }))?.items[0]).toMatchObject({ respuesta: "no_conforme", nota: "Hay una copia sin sello" });
+      expect((await obtenerVerificacion(verificacionId, admin, { sql: tx }))?.items[0]).toMatchObject({ respuesta: "no_conforme", nota: "Hay una copia sin sello", retirado: false });
+      await guardarAvance(verificacionId, admin, [{ itemId: primero, respuesta: "no_conforme", nota: "x", retirado: true }], { sql: tx });
+      expect((await obtenerVerificacion(verificacionId, admin, { sql: tx }))?.items[0].retirado).toBe(true);
+      // La marca solo vale en un ítem no conforme.
+      await guardarAvance(verificacionId, admin, [{ itemId: primero, respuesta: "conforme", nota: null, retirado: true }], { sql: tx });
+      expect((await obtenerVerificacion(verificacionId, admin, { sql: tx }))?.items[0].retirado).toBe(false);
       await guardarAvance(verificacionId, admin, [{ itemId: primero, respuesta: null, nota: null }], { sql: tx });
       expect((await obtenerVerificacion(verificacionId, admin, { sql: tx }))?.items[0]).toMatchObject({ respuesta: null, nota: null });
 
@@ -162,7 +172,7 @@ describe("cerrar", () => {
         const v = (await obtenerVerificacion(verificacionId, admin, { sql: tx }))!;
         expect(v.items.map((i) => i.origen)).toEqual(["copia", "copia", "copia", "copia_por_recoger", "fijo", "fijo", "fijo"]);
 
-        await rechaza(cerrarVerificacion(verificacionId, admin, { retirados: [] }, { sql: tx, ahora: T1 }), "Responda todos los ítems antes de cerrar");
+        await rechaza(cerrarVerificacion(verificacionId, admin, { sql: tx, ahora: T1 }), "Responda todos los ítems antes de cerrar");
 
         const [esta, legible, vigente, porRecoger, obsoletos, sinSello, plataforma] = v.items;
         await guardarAvance(
@@ -173,13 +183,13 @@ describe("cerrar", () => {
             { itemId: legible.id, respuesta: "no_aplica", nota: null },
             { itemId: vigente.id, respuesta: "no_conforme", nota: null },
             { itemId: porRecoger.id, respuesta: "conforme", nota: null },
-            { itemId: obsoletos.id, respuesta: "no_conforme", nota: "Había una guía vieja" },
+            { itemId: obsoletos.id, respuesta: "no_conforme", nota: "Había una guía vieja", retirado: true },
             { itemId: sinSello.id, respuesta: "conforme", nota: null },
             { itemId: plataforma.id, respuesta: "conforme", nota: null },
           ],
           { sql: tx },
         );
-        const resultado = await cerrarVerificacion(verificacionId, admin, { retirados: [obsoletos.id] }, { sql: tx, ahora: T1 });
+        const resultado = await cerrarVerificacion(verificacionId, admin, { sql: tx, ahora: T1 });
         expect(resultado).toEqual({ conforme: false, hallazgos: 2 });
 
         const cerrada = (await obtenerVerificacion(verificacionId, admin, { sql: tx }))!;
@@ -218,7 +228,7 @@ describe("cerrar", () => {
         // Cerrada, nada cambia: ni por la función ni por SQL directo (el trigger vale incluso para el dueño).
         await rechaza(guardarAvance(verificacionId, admin, [], { sql: tx }), "La verificación ya está cerrada");
         await rechaza(agregarItemLibre(verificacionId, admin, "Un ítem tardío", { sql: tx }), "La verificación ya está cerrada");
-        await rechaza(cerrarVerificacion(verificacionId, admin, { retirados: [] }, { sql: tx }), "La verificación ya está cerrada");
+        await rechaza(cerrarVerificacion(verificacionId, admin, { sql: tx }), "La verificación ya está cerrada");
         await expect(
           tx.savepoint((sp) => sp`UPDATE verificaciones SET conforme = true WHERE id = ${verificacionId}`),
         ).rejects.toMatchObject({ code: "42501" });
@@ -253,7 +263,7 @@ describe("cerrar", () => {
           v.items.map((i) => ({ itemId: i.id, respuesta: i.origen === "copia_por_recoger" ? "no_conforme" : "no_aplica", nota: null })),
           { sql: tx },
         );
-        expect(await cerrarVerificacion(verificacionId, admin, { retirados: [] }, { sql: tx, ahora: T1 })).toEqual({ conforme: false, hallazgos: 1 });
+        expect(await cerrarVerificacion(verificacionId, admin, { sql: tx, ahora: T1 })).toEqual({ conforme: false, hallazgos: 1 });
         expect((await obtenerCopia(copiaId, admin, { sql: tx }))?.estado).toBe("por_recoger");
       } finally {
         await vieja.limpiar();
@@ -268,7 +278,7 @@ describe("cerrar", () => {
       const { verificacionId } = await abrirVerificacion(admin, punto.id, { sql: tx, ahora: T0 });
       const v = (await obtenerVerificacion(verificacionId, admin, { sql: tx }))!;
       await guardarAvance(verificacionId, admin, v.items.map((i) => ({ itemId: i.id, respuesta: "conforme", nota: null })), { sql: tx });
-      expect(await cerrarVerificacion(verificacionId, admin, { retirados: [] }, { sql: tx, ahora: T1 })).toEqual({ conforme: true, hallazgos: 0 });
+      expect(await cerrarVerificacion(verificacionId, admin, { sql: tx, ahora: T1 })).toEqual({ conforme: true, hallazgos: 0 });
       expect(await hallazgosDe({ puntoId: punto.id }, admin, { sql: tx })).toEqual([]);
     }));
 });
@@ -311,6 +321,21 @@ describe("descartar", () => {
     }));
 });
 
+describe("quien no puede descartar no sabe el estado", () => {
+  it("sin permiso sobre la verificación: «no existe», aunque ya esté cerrada", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const resp = await usuarioDePrueba(tx, { rol: "consulta" });
+      const punto = await puntoDePrueba(tx, { responsable: resp });
+      const { verificacionId } = await abrirVerificacion(admin, punto.id, { sql: tx });
+      const v = (await obtenerVerificacion(verificacionId, admin, { sql: tx }))!;
+      await guardarAvance(verificacionId, admin, v.items.map((i) => ({ itemId: i.id, respuesta: "conforme", nota: null })), { sql: tx });
+      await cerrarVerificacion(verificacionId, admin, { sql: tx });
+      await rechaza(descartarVerificacion(verificacionId, resp, "Quiero descartarla", { sql: tx }), "La verificación no existe");
+      await rechaza(descartarVerificacion(verificacionId, admin, "Quiero descartarla", { sql: tx }), "La verificación ya está cerrada");
+    }));
+});
+
 describe("hallazgos", () => {
   it("el responsable cierra su hallazgo con nota; otro consulta recibe «no existe»", () =>
     revertida(sql, async (tx) => {
@@ -326,13 +351,24 @@ describe("hallazgos", () => {
         v.items.map((i, n) => ({ itemId: i.id, respuesta: n === 0 ? "no_conforme" : "conforme", nota: null })),
         { sql: tx },
       );
-      await cerrarVerificacion(verificacionId, admin, { retirados: [] }, { sql: tx, ahora: T0 });
+      await cerrarVerificacion(verificacionId, admin, { sql: tx, ahora: T0 });
 
       const [abierto] = await hallazgosAbiertosDe(resp.usuarioId, { sql: tx });
       expect(abierto).toMatchObject({ estado: "abierto", verificacionId, responsable: { id: resp.usuarioId } });
       expect(await hallazgosAbiertosDe(ajeno.usuarioId, { sql: tx })).toEqual([]);
       expect(await hallazgosDe({}, ajeno, { sql: tx })).toEqual([]);
       expect((await hallazgosDe({ estado: "abierto" }, resp, { sql: tx })).map((h) => h.id)).toEqual([abierto.id]);
+
+      // El botón sigue al responsable ACTUAL del punto, como cerrarHallazgo.
+      const nuevo = await usuarioDePrueba(tx, { rol: "consulta" });
+      const antes = (await obtenerVerificacion(verificacionId, resp, { sql: tx }))!;
+      expect(antes.hallazgos.map((h) => h.puedeCerrar)).toEqual([true]);
+      expect((await obtenerVerificacion(verificacionId, admin, { sql: tx }))!.hallazgos[0].puedeCerrar).toBe(true);
+      await tx`UPDATE puntos_uso SET responsable_id = ${nuevo.usuarioId} WHERE id = ${punto.id}`;
+      expect((await obtenerVerificacion(verificacionId, resp, { sql: tx }))).toBeNull();
+      expect((await obtenerVerificacion(verificacionId, nuevo, { sql: tx }))!.hallazgos[0].puedeCerrar).toBe(true);
+      await rechaza(cerrarHallazgo(abierto.id, resp, "Ya se corrigió todo", { sql: tx }), "El hallazgo no existe");
+      await tx`UPDATE puntos_uso SET responsable_id = ${resp.usuarioId} WHERE id = ${punto.id}`;
 
       await rechaza(cerrarHallazgo(abierto.id, ajeno, "Ya se corrigió todo", { sql: tx }), "El hallazgo no existe");
       await rechaza(cerrarHallazgo(abierto.id, resp, "abc", { sql: tx }), "Escriba qué se hizo para corregirlo (mínimo 5 caracteres)");

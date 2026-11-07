@@ -26,6 +26,7 @@ const item = (id: number, respuesta: ItemVerificacion["respuesta"], p: Partial<I
   texto: `Ítem ${id}`,
   respuesta,
   nota: null,
+  retirado: false,
   fotos: [],
   ...p,
 });
@@ -60,6 +61,15 @@ describe("ItemChequeo", () => {
     expect(html).toContain("Retirado en el acto");
     expect(html).toContain("Zona de carga");
     expect(html).toContain("Hay otra");
+  });
+
+  it("pinta la casilla «Retirado en el acto» desde el valor guardado", () => {
+    const marcado = renderToStaticMarkup(
+      <ItemChequeo verificacionId={4} item={item(7, "no_conforme", { retirado: true })} valor={{ respuesta: "no_conforme", nota: "", retirado: true }} editable />,
+    );
+    expect(marcado).toMatch(/name="retirado_7"[^>]*checked|checked[^>]*name="retirado_7"/);
+    const lista = renderToStaticMarkup(<ListaChequeo verificacion={verificacion([item(7, "no_conforme", { retirado: true })])} />);
+    expect(lista).toMatch(/name="retirado_7"[^>]*checked|checked[^>]*name="retirado_7"/);
   });
 
   it("conforme o sin responder no muestra la nota ni la foto; las tres respuestas llevan su texto", () => {

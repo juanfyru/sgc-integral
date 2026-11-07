@@ -8,7 +8,6 @@ import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { obtenerVerificacion, ultimaVerificacionDe } from "@/db/consultas/distribucion/verificaciones";
 import { exigirSesion } from "@/lib/paginas";
-import { puede } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +28,7 @@ const DIA_MS = 86_400_000;
 
 export default async function PaginaVerificacion({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { sesion, verificacion: v } = await verificacionVisible(id);
+  const { verificacion: v } = await verificacionVisible(id);
   if (!v) notFound();
 
   // En una cerrada, la última es ella misma: el resumen ya lo dice.
@@ -37,10 +36,7 @@ export default async function PaginaVerificacion({ params }: { params: Promise<{
   const fecha = new Intl.DateTimeFormat("es-CO", { dateStyle: "medium", timeZone: zonaHoraria() });
   const cuando = new Intl.DateTimeFormat("es-CO", { dateStyle: "medium", timeStyle: "short", timeZone: zonaHoraria() });
   const hace = ultima ? Math.floor((new Date().getTime() - ultima.cerradaEn.getTime()) / DIA_MS) : null;
-  const gestiona = puede(sesion, "distribucion.gestionar");
-  const cerrables = v.hallazgos
-    .filter((h) => h.estado === "abierto" && puede(sesion, "distribucion.responder") && (gestiona || h.responsable.id === sesion.usuarioId))
-    .map((h) => h.id);
+  const cerrables = v.hallazgos.filter((h) => h.puedeCerrar).map((h) => h.id);
 
   return (
     <div className="flex flex-col gap-4">

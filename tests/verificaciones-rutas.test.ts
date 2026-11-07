@@ -105,7 +105,7 @@ async function conVerificacion(prueba: (c: Contexto) => Promise<void>) {
 async function cerrar(c: Contexto) {
   const v = (await obtenerVerificacion(c.verificacionId, c.admin, { sql: c.tx }))!;
   await guardarAvance(c.verificacionId, c.admin, v.items.map((i) => ({ itemId: i.id, respuesta: "conforme", nota: null })), { sql: c.tx });
-  await cerrarVerificacion(c.verificacionId, c.admin, { retirados: [] }, { sql: c.tx });
+  await cerrarVerificacion(c.verificacionId, c.admin, { sql: c.tx });
 }
 
 const ruta = (verificacionId: number, itemId: number, archivoId?: number) =>

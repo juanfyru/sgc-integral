@@ -142,7 +142,7 @@ async function guardarLoEscrito(id: number, formData: FormData, sesion: Paramete
   await guardarAvance(
     id,
     sesion,
-    filas.map(({ itemId, respuesta, nota }) => ({ itemId, respuesta, nota })),
+    filas.map(({ itemId, respuesta, nota, retirado }) => ({ itemId, respuesta, nota, retirado })),
   );
   return filas;
 }
@@ -172,9 +172,8 @@ export async function agregarItemLibreAccion(_prev: EstadoAccion, formData: Form
 export async function cerrarVerificacionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "verificaciones.realizar", async (_usuarioId, _formData, sesion) => {
     const id = idNumerico(formData, "id");
-    const filas = await guardarLoEscrito(id, formData, sesion);
-    const retirados = filas.filter((f) => f.retirado && f.respuesta === "no_conforme").map((f) => f.itemId);
-    await cerrarVerificacion(id, sesion, { retirados });
+    await guardarLoEscrito(id, formData, sesion);
+    await cerrarVerificacion(id, sesion);
     return rutaDeVerificacion(id);
   });
 }

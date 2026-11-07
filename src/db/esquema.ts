@@ -1080,6 +1080,7 @@ export const verificacionItems = pgTable(
     texto: text("texto").notNull(),
     respuesta: text("respuesta"),
     nota: text("nota"),
+    retirado: boolean("retirado").notNull().default(false),
   },
   (t) => [
     check(

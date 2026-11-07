@@ -1,3 +1,4 @@
+import type { Row } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
@@ -26,8 +27,13 @@ export type ItemVerificacion = {
   texto: string;
   respuesta: RespuestaItem | null;
   nota: string | null;
+  /** Solo cuenta en un ítem no conforme: la copia se retiró en el acto. */
+  retirado: boolean;
   fotos: Evidencia[];
 };
+
+/** `puedeCerrar` sigue la regla de `cerrarHallazgo`: responsable actual del punto con `distribucion.responder`, o `distribucion.gestionar`. */
+export type HallazgoDeVerificacion = Hallazgo & { puedeCerrar: boolean };
 
 export type Verificacion = {
   id: number;
@@ -42,21 +48,29 @@ export type Verificacion = {
   propioPunto: boolean;
   motivoDescarte: string | null;
   items: ItemVerificacion[];
-  hallazgos: Hallazgo[];
+  hallazgos: HallazgoDeVerificacion[];
   puedeEditar: boolean;
 };
 
-export type RespuestaDeItem = { itemId: number; respuesta: RespuestaItem | null; nota: string | null };
+export type RespuestaDeItem = { itemId: number; respuesta: RespuestaItem | null; nota: string | null; retirado?: boolean };
 
 const YA_CERRADA = "La verificación ya está cerrada";
 const NO_EXISTE = "La verificación no existe";
 const TOPE_NOTA = 1000;
 
-/** Bloquea la verificación y exige que siga abierta; el trigger de la BD lo vuelve a exigir. */
-async function bloquearAbierta(tx: Cliente, id: number) {
+async function bloquear(tx: Cliente, id: number) {
   const [v] = await tx`SELECT id, estado, punto_uso_id, abierta_por, punto_nombre, responsable_id
     FROM verificaciones WHERE id = ${id} FOR UPDATE`;
   if (!v) throw new ErrorDistribucion(NO_EXISTE);
+  return v;
+}
+
+/** Bloquea la verificación y exige que siga abierta; el trigger de la BD lo vuelve a exigir. */
+async function bloquearAbierta(tx: Cliente, id: number) {
+  return exigirAbierta(await bloquear(tx, id));
+}
+
+function exigirAbierta(v: Row): Row {
   if (v.estado === "descartada") throw new ErrorDistribucion("La verificación fue descartada");
   if (v.estado !== "abierta") throw new ErrorDistribucion(YA_CERRADA);
   return v;
@@ -120,6 +134,13 @@ export async function abrirVerificacion(
       await tx`INSERT INTO verificacion_items (verificacion_id, orden, origen, copia_id, texto)
         VALUES (${verificacionId}, ${orden}, ${fila.origen}, ${fila.copiaId}, ${fila.texto})`;
     }
+    await registrarAuditoria(tx, {
+      usuarioId: sesion.usuarioId,
+      accion: "verificacion_abierta",
+      entidad: "verificacion",
+      entidadId: verificacionId,
+      detalle: { puntoId, punto: p.nombre, items: filas.length, propioPunto },
+    });
     return { verificacionId };
   });
 }
@@ -143,7 +164,9 @@ export async function guardarAvance(
     );
     for (const r of respuestas) {
       if (!propios.has(r.itemId)) throw new ErrorDistribucion("Un ítem no pertenece a esta verificación");
-      await tx`UPDATE verificacion_items SET respuesta = ${r.respuesta}, nota = ${r.nota?.trim() || null}
+      await tx`UPDATE verificacion_items
+        SET respuesta = ${r.respuesta}, nota = ${r.nota?.trim() || null},
+            retirado = ${r.respuesta === "no_conforme" && r.retirado === true}
         WHERE id = ${r.itemId} AND verificacion_id = ${id}`;
     }
   });
@@ -169,13 +192,11 @@ export async function agregarItemLibre(
 
 /**
  * Cierra la verificación. Todo ocurre en una transacción: el cierre, un hallazgo por cada ítem no conforme y la
- * recogida de las copias obsoletas que ya no estaban. `retirados` son los ítems no conformes cuyo hallazgo se
- * resolvió retirando la copia en el acto; el dato va al hallazgo, no al ítem (que queda inmutable).
+ * recogida de las copias obsoletas que ya no estaban. La marca «retirado en el acto» de cada ítem no conforme pasa a su hallazgo.
  */
 export async function cerrarVerificacion(
   id: number,
   sesion: SesionFlujo,
-  datos: { retirados: number[] },
   opciones?: Opciones,
 ): Promise<{ conforme: boolean; hallazgos: number }> {
   if (!puede(sesion, "verificaciones.realizar")) throw new ErrorPermiso();
@@ -183,7 +204,7 @@ export async function cerrarVerificacion(
   return enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
     const v = await bloquearAbierta(tx, id);
     const items = await tx`
-      SELECT i.id, i.origen, i.copia_id, i.texto, i.respuesta, i.nota, ver.documento_id
+      SELECT i.id, i.origen, i.copia_id, i.texto, i.respuesta, i.nota, i.retirado, ver.documento_id
       FROM verificacion_items i
       LEFT JOIN copias_controladas cc ON cc.id = i.copia_id
       LEFT JOIN documento_versiones ver ON ver.id = cc.version_id
@@ -203,7 +224,7 @@ export async function cerrarVerificacion(
     let recogidas = 0;
     for (const item of items) {
       const itemId = Number(item.id);
-      const retirado = item.respuesta === "no_conforme" && datos.retirados.includes(itemId);
+      const retirado = item.respuesta === "no_conforme" && item.retirado === true;
       if (item.respuesta === "no_conforme") {
         await abrirHallazgo(tx, {
           puntoId: Number(v.punto_uso_id),
@@ -252,9 +273,11 @@ export async function descartarVerificacion(
   const texto = motivo.trim();
   if (texto.length < 5) throw new ErrorDistribucion("Escriba el motivo (mínimo 5 caracteres)");
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
-    const v = await bloquearAbierta(tx, id);
+    const v = await bloquear(tx, id);
+    // Quien no puede descartarla no debe saber en qué estado está: «no existe».
     const propia = Number(v.abierta_por) === sesion.usuarioId && puede(sesion, "verificaciones.realizar");
-    if (!propia && !puede(sesion, "distribucion.gestionar")) throw new ErrorPermiso();
+    if (!propia && !puede(sesion, "distribucion.gestionar")) throw new ErrorDistribucion(NO_EXISTE);
+    exigirAbierta(v);
     await tx`UPDATE verificaciones SET estado = 'descartada', motivo_descarte = ${texto} WHERE id = ${id}`;
     await registrarAuditoria(tx, {
       usuarioId: sesion.usuarioId,
@@ -295,7 +318,7 @@ export async function obtenerVerificacion(
   );
   if (!ve) return null;
 
-  const filas = await sql`SELECT id, orden, origen, copia_id, texto, respuesta, nota
+  const filas = await sql`SELECT id, orden, origen, copia_id, texto, respuesta, nota, retirado
     FROM verificacion_items WHERE verificacion_id = ${id} ORDER BY orden, id`;
   const items: ItemVerificacion[] = [];
   for (const i of filas) {
@@ -307,6 +330,7 @@ export async function obtenerVerificacion(
       texto: i.texto as string,
       respuesta: (i.respuesta as RespuestaItem | null) ?? null,
       nota: (i.nota as string | null) ?? null,
+      retirado: i.retirado as boolean,
       fotos: await evidenciasDe("verificacion_item", Number(i.id), { sql }),
     });
   }
@@ -324,7 +348,12 @@ export async function obtenerVerificacion(
     propioPunto: f.propio_punto as boolean,
     motivoDescarte: (f.motivo_descarte as string | null) ?? null,
     items,
-    hallazgos: await leerHallazgos(sql, sql`h.verificacion_id = ${id}`),
+    hallazgos: (await leerHallazgos(sql, sql`h.verificacion_id = ${id}`)).map((h) => ({
+      ...h,
+      puedeCerrar:
+        h.estado === "abierto" &&
+        ((Number(f.actual_id) === sesion.usuarioId && puede(sesion, "distribucion.responder")) || puede(sesion, "distribucion.gestionar")),
+    })),
     puedeEditar: estado === "abierta" && puede(sesion, "verificaciones.realizar"),
   };
 }
@@ -337,6 +366,13 @@ export async function ultimaVerificacionDe(
   const [f] = await sql`SELECT cerrada_en, conforme FROM verificaciones
     WHERE punto_uso_id = ${puntoId} AND estado = 'cerrada' ORDER BY cerrada_en DESC, id DESC LIMIT 1`;
   return f ? { cerradaEn: f.cerrada_en as Date, conforme: f.conforme as boolean } : null;
+}
+
+/** La verificación abierta de un punto, si la hay: una lectura. */
+export async function verificacionAbiertaDe(puntoId: number, opciones?: Opciones): Promise<number | null> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [f] = await sql`SELECT id FROM verificaciones WHERE punto_uso_id = ${puntoId} AND estado = 'abierta'`;
+  return f ? Number(f.id) : null;
 }
 
 /**

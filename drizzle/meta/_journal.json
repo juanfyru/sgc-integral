@@ -50,6 +50,13 @@
       "when": 1794072498523,
       "tag": "0006_fase13b-distribucion",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794085443391,
+      "tag": "0007_fase13b-item-retirado",
+      "breakpoints": true
     }
   ]
 }
