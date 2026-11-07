@@ -297,7 +297,7 @@ mano al final, separados por `--> statement-breakpoint`: la función
 - [ ] **Step 4: Roles y limpieza**
 
 `src/db/roles-bd.ts:46`: `REVOKE UPDATE, DELETE ON auditoria, accesos, firmas, tramite_eventos, copia_eventos, acuse_eventos FROM ${r}`.
-`limpiarTodo` (`src/db/semillas/minima.ts`): añadir al `TRUNCATE` las trece tablas nuevas.
+`limpiarTodo` (`src/db/semillas/minima.ts`): añadir al `TRUNCATE` las dieciséis tablas nuevas.
 
 - [ ] **Step 5: Aplicar y verificar**
 
@@ -846,6 +846,8 @@ git commit -m "feat(f13b): emisión de copias controladas con sello y QR, ventan
   `tests/utiles/distribucion.ts`, `src/db/consultas/admin.ts` (`aplicarPublicacion`, `anularVigenteEn`, `deshacerCarga`),
   `src/db/consultas/flujo/cierre.ts` (pasa `nuevaVersionId`), `src/lib/tareas.ts`,
   `src/componentes/cascaron/navegacion.ts`, `src/componentes/cascaron/Cascaron.tsx`,
+  `src/componentes/cascaron/BarraLateral.tsx`, `src/app/(app)/page.tsx`, `tests/tareas.test.ts`,
+  `tests/cascaron.test.tsx`, `tests/inicio.test.tsx`,
   `src/app/(app)/documentos/[codigo]/page.tsx`, `src/app/(app)/admin/(panel)/documentos/[codigo]/page.tsx`,
   `src/lib/esquemas/distribucion.ts`, `tests/navegacion.test.ts`, `tests/publicar.test.ts`,
   `tests/tramites-cierre.test.ts`, `tests/camino-directo.test.ts`
@@ -898,10 +900,17 @@ git commit -m "feat(f13b): emisión de copias controladas con sello y QR, ventan
     «Recoger la copia N.º 03 de GBS-PR-01 v1 en Urgencias» (`por_recoger` sin reemplazo vivo) o
     «Recibir la copia N.º 01 de la v2 y retirar la N.º 03 de la v1 en Urgencias» (nueva `emitida`
     con `reemplaza_copia_id` a una `por_recoger`); `vence` = `vence_en`; `enlace`
-    `/distribucion/copias/<id>`. `misTareas()` concatena `tareasDeCopias` tras las de trámites.
+    `/distribucion/copias/<id>`. `misTareas()` concatena `tareasDeCopias` tras las de trámites y
+    **desde esta tarea devuelve `{ tareas: Tarea[]; total: number }`** (`total = tareas.length`
+    hasta que la Tarea 14 añada la agrupación): `Cascaron.tsx`, la barra lateral
+    (`tareas={total}`), `src/app/(app)/page.tsx` y los tests `tareas`, `cascaron` e `inicio` se
+    ajustan aquí, una sola vez.
 - Produces (`acciones-distribucion.ts`, `"use server"`): `emitirCopiaAccion`
   (`copias.emitir`; `EsquemaEmitirCopia`: `documentoId`, `puntoUsoId`, `nota` 0–200 opcional,
-  `reemplazaCopiaId` opcional; redirige a `/distribucion/copias/<id>/pdf`),
+  `reemplazaCopiaId` opcional; redirige a `/distribucion/copias/<id>?imprimir=1`: una Server
+  Action envía por `fetch` e ignora `target`, así que el PDF no puede abrirse en otra pestaña
+  desde la acción; la página de la copia, con `?imprimir=1`, destaca el enlace «Abrir el PDF para
+  imprimir» (`<a target="_blank">` a la ruta del PDF) y explica la ventana de 15 minutos),
   `confirmarRecibidoAccion` (`distribucion.responder`), `confirmarRecogidaAccion`
   (`distribucion.responder`; `EsquemaRecogida`: `destino`), `confirmarReemplazoAccion`,
   `anularCopiaAccion` (`copias.emitir`; `EsquemaAnulacion`: `motivo`, `texto` opcional),
@@ -972,7 +981,7 @@ reemplazo y tareas, acciones. Los tests heredados `publicar`, `tramites-cierre` 
 `camino-directo` deben seguir en verde: la función no hace nada si la versión no tiene copias.
 
 - [ ] **Step 4: Pantallas y navegación**, con la maqueta 4 como contenido. El `DialogoEmitir`
-redirige al PDF en una pestaña nueva (`target="_blank"` en el formulario) y recarga la lista. El
+envía la acción y aterriza en la página de la copia con el enlace al PDF (ver **Produces**). El
 diálogo de recogida de una copia que nunca se recibió preselecciona «devuelta al SGC» y lo explica
 (spec §8.4), para que «no se encontró» no abra hallazgos falsos.
 
@@ -1365,9 +1374,9 @@ de un vigente; asignar un proceso a un usuario con la marca de ingreso y ver su 
   - `evidenciaServible(contexto, contextoId, archivoId, opciones?): Promise<ArchivoServible | null>`
     (solo filas con ese contexto e id: una evidencia no se sirve por la ruta de otra).
   - `eliminarEvidencia(contexto, contextoId, archivoId, usuarioId, opciones?): Promise<void>`
-    (borra fila y archivo; auditoría `eliminar_archivo`; quien llama ya autorizó: solo mientras la
-    jornada no está registrada… las jornadas se registran en un acto (Tarea 11), así que la
-    eliminación solo aplica a fotos de una verificación **abierta**).
+    (borra fila y archivo; auditoría `eliminar_archivo`). Quien llama ya autorizó: la Tarea 11 lo
+    permite sobre una jornada durante las 24 horas siguientes a su registro, por quien la
+    registró; la Tarea 12, sobre una verificación **abierta**.
   - **La autorización es del dueño**: `evidencias.ts` no decide quién ve; cada ruta (Tareas 11 y
     12) llama a `puedeVerJornada`/`puedeVerVerificacion` antes.
 - Produces (`tests/utiles/distribucion.ts`): `peticionDeSubida(nombre: string, bytes: Uint8Array, cabeceras?: Record<string, string>): NextRequest`
@@ -1468,12 +1477,13 @@ git commit -m "feat(f13b): archivos con contexto - subida y servido de evidencia
   propietario (o Admin SGC si no hay), `vence` = `vence_en`, enlace a `/distribucion/socializaciones/nueva?version=<id>`.
 - Produces (`version-vigencia.ts`): `alDejarDeSerVigente` marca `superada_en` en la
   `socializaciones_requeridas` pendiente de la versión.
-- Produces (rutas): `POST /api/socializaciones/[id]/archivos` → hmm: la jornada se registra en un
-  acto con sus evidencias, así que el flujo es **subir primero a un borrador**: la página
-  `/nueva` crea la jornada con `registrarJornada` y **después** sube los archivos al id devuelto
-  (la ruta exige `socializaciones.registrar`, ser quien la registró, jornada no anulada y menos de
-  24 horas desde `creado_en`); `DELETE …/[archivoId]` con las mismas condiciones. Las dos van fuera
-  del `matcher`: `api/socializaciones/[0-9]+/archivos$`.
+- Produces (rutas): la jornada se registra primero y la evidencia se adjunta después. La página
+  `/nueva` crea la jornada con `registrarJornada` y redirige a su detalle, que ofrece la zona de
+  carga durante **24 horas** desde `creado_en`. `POST /api/socializaciones/[id]/archivos` exige
+  `socializaciones.registrar`, ser quien la registró, jornada no anulada y menos de 24 horas
+  desde `creado_en` (si no, 409 «La evidencia de esta jornada ya no se puede cambiar»);
+  `DELETE …/[archivoId]` con las mismas condiciones (`eliminarEvidencia`). La ruta de subida va
+  fuera del `matcher`: `api/socializaciones/[0-9]+/archivos$`.
   `GET /distribucion/socializaciones/[id]/archivos/[archivoId]/[[...nombre]]` →
   `puedeVerJornada(...).evidencia` o 404; `evidenciaServible("jornada", id, archivoId)`; sin marca de agua.
 - Produces (acciones): `registrarJornadaAccion` (`socializaciones.registrar`; `EsquemaJornada`:
@@ -1814,9 +1824,7 @@ avisos de vencimiento tras la revisión (adelantar `vence_en` con `psql` si hace
 
 **Files:**
 - Modify: `src/lib/bitacora-detalle.ts`, `tests/bitacora-detalle.test.ts`, `src/lib/tareas.ts`
-  (`agruparTareas`), `src/componentes/inicio/MisTareas.tsx`, `src/componentes/cascaron/Cascaron.tsx`,
-  `src/app/(app)/page.tsx`, `tests/tareas.test.ts`, `tests/distribucion-tareas.test.ts`,
-  `tests/cascaron.test.tsx`, `tests/inicio.test.tsx`,
+  (`agruparTareas`), `src/componentes/inicio/MisTareas.tsx`, `tests/tareas.test.ts`, `tests/inicio.test.tsx`,
   `src/app/(app)/tramites/[id]/page.tsx`, `src/componentes/tramites/PanelPublicacion.tsx` (o el
   bloque del trámite cerrado), `src/app/(app)/documentos/[codigo]/page.tsx` (aviso `?v=`),
   `src/app/(app)/admin/(panel)/usuarios/page.tsx` (nota de procesos), `tests/tramites-ui.test.tsx`
@@ -1834,11 +1842,9 @@ avisos de vencimiento tras la revisión (adelantar `vence_en` con `psql` si hace
 - Produces (`tareas.ts`): `agruparTareas(tareas: Tarea[], umbral = 5): Tarea[]` → si hay más de
   `umbral` tareas con prefijo `acuse:`, las reemplaza por una sola
   `{ id: "acuses", modulo: "documentos", titulo: "12 lecturas por confirmar", detalle: "La más próxima vence el <fecha>", vence: <la más próxima>, enlace: "/acuses" }`
-  en la posición de la primera. `misTareas(sesion)` pasa a devolver
-  `{ tareas: Tarea[]; total: number }` (`tareas` ya agrupadas, `total` el conteo real antes de
-  agrupar); `Cascaron.tsx`, la barra lateral (`tareas={total}`) y `src/app/(app)/page.tsx` se
-  ajustan a la nueva forma, y `tests/tareas.test.ts`, `tests/cascaron.test.tsx` e
-  `tests/inicio.test.tsx` también.
+  en la posición de la primera. `misTareas(sesion)` (que desde la Tarea 6 devuelve
+  `{ tareas, total }`) aplica `agruparTareas` a `tareas` y deja en `total` el conteo real antes de
+  agrupar; la barra lateral sigue mostrando `total`.
 - Produces (trámite): con el trámite `publicado`, el bloque de publicación muestra «Distribución de
   la versión N: acuses 23 de 34 (68 %) · socialización registrada el … / requerida, vence el … ·
   copias: 3 recibidas, 2 por recoger» con enlace a la ficha (consultas de las Tareas 6, 9 y 11).
@@ -1920,10 +1926,11 @@ git commit -m "feat(f13b): frases de bitácora, agrupación de lecturas en Mis t
   - Jornada del 14 de octubre de 2026, «reunión de servicio», facilitó `lider.gth`, versión
     `GTH-CA-01` v3, asistentes `regente.farmacia`, `lider.cex`, `jefe.urgencias` y `consulta`, con
     un PDF de acta generado por `archivoDemo` como evidencia (contexto `jornada`).
-  - Verificaciones: Farmacia **cerrada y conforme** hace 95 días (sus ítems: la copia que entonces
-    tenía… la semilla la abre sin copias: solo los tres fijos conformes); Urgencias **cerrada** hace
-    20 días con «Sin copias no controladas» no conforme y un **hallazgo abierto** («Copia no
-    controlada de AIN-FO-01») para `jefe.urgencias`, vence en 5 días desde entonces (vencido).
+  - Verificaciones: Farmacia **cerrada y conforme** hace 95 días, abierta cuando el punto aún no
+    tenía copias (solo los tres ítems fijos, conformes); Urgencias **cerrada** hace 20 días, antes
+    de emitir sus copias, con «Sin copias no controladas» no conforme y un **hallazgo abierto**
+    («Copia no controlada de AIN-FO-01») para `jefe.urgencias`, con fecha de corrección a 5 días
+    de entonces (vencido).
   - `notificaciones` y `auditoria` con lo que esas funciones escriban (es la demo).
 - Produces (`tests/semilla-distribucion.test.ts`): comprueba los estados de arriba con
   `exigirDemo` y los conteos (7 puntos, 4 copias de `GTH-CA-01`, estados, porcentaje de la v3,
