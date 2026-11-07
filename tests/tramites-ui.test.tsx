@@ -58,6 +58,7 @@ import { EnvioARevision, PanelElaboracion, hayCambiosSinGuardar } from "@/compon
 import { ListaSoloLectura, ListaVerificacion } from "@/componentes/tramites/ListaVerificacion";
 import { Observaciones } from "@/componentes/tramites/Observaciones";
 import { PanelPublicacion } from "@/componentes/tramites/PanelPublicacion";
+import { ResumenDistribucion } from "@/componentes/tramites/ResumenDistribucion";
 import { PanelRevision } from "@/componentes/tramites/PanelRevision";
 import { PasosTramite } from "@/componentes/tramites/PasosTramite";
 import { TablaTramites } from "@/componentes/tramites/TablaTramites";
@@ -1358,5 +1359,50 @@ describe("esquemas del trámite", () => {
     expect(EsquemaFirma.safeParse({ clave: "x", codigo: "123456" }).success).toBe(true);
     expect(EsquemaFirma.safeParse({ clave: "x", codigo: "x".repeat(21) }).success).toBe(false);
     expect(EsquemaFirma.safeParse({ clave: "x", otro: "y" }).success).toBe(false);
+  });
+});
+
+describe("distribución del trámite publicado", () => {
+  const sin = { confirmados: 0, pendientes: 0, porcentaje: null };
+  const noRequerida = { requerida: false, venceEn: null, cumplida: null, superada: false };
+
+  it("pinta acuses, socialización registrada y copias con enlace a la ficha", () => {
+    const h = renderToStaticMarkup(
+      <ResumenDistribucion
+        version={3}
+        enlace="/documentos/gth-pr-02"
+        acuses={{ confirmados: 23, pendientes: 11, porcentaje: 68 }}
+        socializacion={{ requerida: true, venceEn: null, cumplida: { jornadaId: 1, fecha: "2026-11-05", modalidad: "presencial", asistentes: 18, evidencias: 1 }, superada: false }}
+        copias={{ recibidas: 3, porRecoger: 2 }}
+      />,
+    );
+    expect(h).toContain("Distribución de la versión 3");
+    expect(h).toContain("acuses 23 de 34 (68 %)");
+    expect(h).toContain("socialización registrada el 5 nov 2026");
+    expect(h).toContain("copias: 3 recibidas, 2 por recoger");
+    expect(h).toContain('href="/documentos/gth-pr-02"');
+  });
+  it("una socialización pendiente dice cuándo vence", () => {
+    const h = renderToStaticMarkup(
+      <ResumenDistribucion
+        version={2}
+        enlace="/documentos/x"
+        acuses={sin}
+        socializacion={{ requerida: true, venceEn: new Date("2026-11-20T17:00:00Z"), cumplida: null, superada: false }}
+        copias={null}
+      />,
+    );
+    expect(h).toContain("acuses: sin destinatarios");
+    expect(h).toContain("socialización requerida, vence el 20 de noviembre de 2026");
+    expect(h).not.toContain("copias:");
+  });
+  it("omite lo que no tiene datos y no imprime undefined", () => {
+    const h = renderToStaticMarkup(
+      <ResumenDistribucion version={1} enlace="/documentos/x" acuses={null} socializacion={noRequerida} copias={{ recibidas: 0, porRecoger: 0 }} />,
+    );
+    expect(h).toContain("acuses: sin destinatarios");
+    expect(h).toContain("socialización no requerida");
+    expect(h).toContain("copias: 0 recibidas, 0 por recoger");
+    expect(h).not.toMatch(/undefined|null/);
   });
 });

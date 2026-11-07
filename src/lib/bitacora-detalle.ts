@@ -131,6 +131,77 @@ function texto(v: unknown): string | null {
   return typeof v === "string" && v.length > 0 ? v : null;
 }
 
+const DESTINO_DE_COPIA: Record<string, string> = {
+  devuelta: "devuelta al SGC",
+  destruida: "destruida",
+  no_encontrada: "no se encontró",
+};
+const CAMPOS_DE_PUNTO: Record<string, string> = {
+  nombre: "nombre",
+  sede: "sede",
+  ubicacion: "ubicación",
+  responsableId: "responsable",
+  procesoIds: "procesos",
+};
+const CAMPOS_DE_LISTA: Record<string, string> = {
+  nombre: "nombre",
+  descripcion: "descripción",
+  miembros: "miembros",
+};
+
+function documentoYVersion(codigo: string | null, version: unknown): string {
+  return `${codigo ?? "un documento"}${typeof version === "number" ? ` v${version}` : ""}`;
+}
+
+/** «la copia controlada N.º 02 de GTH-PR-02 v2» */
+function copiaControlada(d: Record<string, unknown>, codigo: string | null): string {
+  const numero = typeof d.numero === "number" ? ` N.º ${String(d.numero).padStart(2, "0")}` : "";
+  return `la copia controlada${numero} de ${documentoYVersion(codigo, d.version)}`;
+}
+
+/** «: motivo», o nada si no se guardó. */
+function conMotivo(v: unknown): string {
+  const t = texto(v);
+  return t ? `: ${t}` : "";
+}
+
+function versionesDeJornada(v: unknown): string {
+  const lista = Array.isArray(v)
+    ? v.flatMap((x) => (x && typeof x === "object" ? [documentoYVersion(texto((x as Record<string, unknown>).codigo), (x as Record<string, unknown>).version)] : []))
+    : [];
+  if (lista.length === 0) return "un documento";
+  return lista.length === 1 ? lista[0] : `${lista.slice(0, -1).join(", ")} y ${lista[lista.length - 1]}`;
+}
+
+function asistentesDeJornada(v: unknown): string {
+  const n = Array.isArray(v) ? v.length : typeof v === "number" ? v : null;
+  return n === null ? "" : ` con ${n === 1 ? "1 asistente" : `${n} asistentes`}`;
+}
+
+function resultadoDeVerificacion(d: Record<string, unknown>): string {
+  if (d.conforme === true) return "conforme";
+  const n = typeof d.hallazgos === "number" ? d.hallazgos : 0;
+  return d.conforme === false ? `no conforme${n > 0 ? `, ${n === 1 ? "1 hallazgo" : `${n} hallazgos`}` : ""}` : "sin resultado";
+}
+
+function nombreDespues(d: Record<string, unknown>): string | null {
+  const despues = d.despues;
+  return despues && typeof despues === "object" ? texto((despues as Record<string, unknown>).nombre) : null;
+}
+
+/** «: nombre, sede» según las claves de `despues`. */
+function camposEditados(d: Record<string, unknown>, nombres: Record<string, string>): string {
+  const despues = d.despues;
+  if (!despues || typeof despues !== "object") return "";
+  const lista = Object.keys(despues).map((k) => (Object.hasOwn(nombres, k) ? nombres[k] : k.replace(/_+/g, " ")));
+  return lista.length > 0 ? `: ${lista.join(", ")}` : "";
+}
+
+function formatoYFilas(d: Record<string, unknown>): string {
+  const partes = [texto(d.formato), typeof d.total === "number" ? `${d.total} ${d.total === 1 ? "fila" : "filas"}` : null].filter((p): p is string => p !== null);
+  return partes.length > 0 ? ` (${partes.join(", ")})` : "";
+}
+
 const NOMBRE_DATO_DOCUMENTO: Record<string, string> = {
   codigo: "código",
   titulo: "título",
@@ -203,6 +274,50 @@ export function describirEvento(e: EventoAuditoria): string {
       return `Emitió el cumplimiento de lectura (${texto(d.formato) ?? "?"}, ${texto(d.desde) ?? "?"} a ${texto(d.hasta) ?? "?"})`;
     case "acuses_pedidos":
       return `Pidió el acuse de lectura de ${cod ?? "un documento"} (${d.creados ?? 0} nuevos)`;
+    case "copia_emitida":
+      return `Emitió ${copiaControlada(d, cod)} para ${texto(d.punto) ?? "un punto de uso"}`;
+    case "copia_reimpresa":
+      return `Reimprimió ${copiaControlada(d, cod)} de ${texto(d.punto) ?? "un punto de uso"}${conMotivo(d.motivo)}`;
+    case "copia_recibida":
+      return `Confirmó el recibo de ${copiaControlada(d, cod)} en ${texto(d.punto) ?? "un punto de uso"}`;
+    case "copia_recogida":
+      return `Recogió ${copiaControlada(d, cod)} de ${texto(d.punto) ?? "un punto de uso"}: ${DESTINO_DE_COPIA[texto(d.destino) ?? ""] ?? "recogida"}`;
+    case "copia_anulada":
+      return `Anuló ${copiaControlada(d, cod)} de ${texto(d.punto) ?? "un punto de uso"}${conMotivo(d.motivo)}`;
+    case "acuse_lectura":
+      return `Confirmó la lectura de ${documentoYVersion(cod, d.version)}`;
+    case "jornada_registrada":
+      return `Registró una socialización de ${versionesDeJornada(d.versiones)}${asistentesDeJornada(d.asistentes)}`;
+    case "jornada_anulada":
+      return `Anuló una socialización${conMotivo(d.motivo)}`;
+    case "verificacion_abierta":
+      return `Abrió la verificación de ${texto(d.punto) ?? "un punto de uso"}`;
+    case "verificacion_cerrada":
+      return `Cerró la verificación de ${texto(d.punto) ?? "un punto de uso"}: ${resultadoDeVerificacion(d)}`;
+    case "verificacion_descartada":
+      return `Descartó la verificación de ${texto(d.punto) ?? "un punto de uso"}${conMotivo(d.motivo)}`;
+    case "hallazgo_cerrado":
+      return `Cerró un hallazgo${d.origen === "recogida" ? " de recogida" : d.origen === "verificacion" ? " de verificación" : ""}${conMotivo(d.nota)}`;
+    case "crear_punto_uso":
+      return `Creó el punto de uso${nombre ? ` «${nombre}»` : ""}`;
+    case "editar_punto_uso":
+      return `Editó el punto de uso${nombreDespues(d) ? ` «${nombreDespues(d)}»` : ""}${camposEditados(d, CAMPOS_DE_PUNTO)}`;
+    case "activar_punto_uso":
+      return "Activó un punto de uso";
+    case "desactivar_punto_uso":
+      return "Desactivó un punto de uso";
+    case "crear_lista":
+      return `Creó la lista de distribución${nombre ? ` «${nombre}»` : ""}`;
+    case "editar_lista":
+      return `Editó ${nombreDespues(d) ? `la lista de distribución «${nombreDespues(d)}»` : "una lista de distribución"}${camposEditados(d, CAMPOS_DE_LISTA)}`;
+    case "activar_lista":
+      return "Activó una lista de distribución";
+    case "desactivar_lista":
+      return "Desactivó una lista de distribución";
+    case "exporto_copias":
+      return `Emitió el listado de copias controladas${formatoYFilas(d)}`;
+    case "exporto_verificaciones":
+      return `Emitió el listado de verificaciones${formatoYFilas(d)}`;
     case "subir_logo":
       return `Cambió el logo de la entidad («${texto(d.nombre) ?? "?"}», ${d.ancho ?? "?"} × ${d.alto ?? "?"})`;
     case "quitar_logo":
@@ -290,6 +405,28 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   exporto_maestro: "Emitió el Listado Maestro",
   exporto_acuses: "Emitió el cumplimiento de lectura",
   acuses_pedidos: "Pidió acuses de lectura",
+  copia_emitida: "Emitió una copia controlada",
+  copia_reimpresa: "Reimprimió una copia controlada",
+  copia_recibida: "Confirmó el recibo de una copia controlada",
+  copia_recogida: "Recogió una copia controlada",
+  copia_anulada: "Anuló una copia controlada",
+  acuse_lectura: "Confirmó una lectura",
+  jornada_registrada: "Registró una socialización",
+  jornada_anulada: "Anuló una socialización",
+  verificacion_abierta: "Abrió una verificación de punto de uso",
+  verificacion_cerrada: "Cerró una verificación de punto de uso",
+  verificacion_descartada: "Descartó una verificación de punto de uso",
+  hallazgo_cerrado: "Cerró un hallazgo",
+  crear_punto_uso: "Creó un punto de uso",
+  editar_punto_uso: "Editó un punto de uso",
+  activar_punto_uso: "Activó un punto de uso",
+  desactivar_punto_uso: "Desactivó un punto de uso",
+  crear_lista: "Creó una lista de distribución",
+  editar_lista: "Editó una lista de distribución",
+  activar_lista: "Activó una lista de distribución",
+  desactivar_lista: "Desactivó una lista de distribución",
+  exporto_copias: "Emitió el listado de copias controladas",
+  exporto_verificaciones: "Emitió el listado de verificaciones",
   subir_logo: "Cambió el logo de la entidad",
   quitar_logo: "Quitó el logo de la entidad",
   cambiar_clave: "Cambió su clave",

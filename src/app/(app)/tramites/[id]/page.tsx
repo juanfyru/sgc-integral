@@ -18,7 +18,10 @@ import { PanelPublicacion } from "@/componentes/tramites/PanelPublicacion";
 import { PanelRevision } from "@/componentes/tramites/PanelRevision";
 import { PasosTramite } from "@/componentes/tramites/PasosTramite";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
+import { acusesDeVersion } from "@/db/consultas/distribucion/acuses";
+import { copiasDeDocumento } from "@/db/consultas/distribucion/copias";
 import { socializacionDeVersion } from "@/db/consultas/distribucion/jornadas";
+import { ResumenDistribucion } from "@/componentes/tramites/ResumenDistribucion";
 import {
   contextoDeAceptacion,
   datosParaAceptar,
@@ -33,6 +36,7 @@ import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
 import { fechaEnZona, fechaLimite } from "@/lib/tramites/plazos";
 import { esEtapaDeTrabajo, type Etapa } from "@/lib/tramites/tipos";
+import type { SesionValida } from "@/lib/sesion";
 import { zonaHoraria } from "@/lib/zona-horaria";
 
 export const dynamic = "force-dynamic";
@@ -184,6 +188,31 @@ async function Socializacion({ versionId, puedeRegistrar }: { versionId: number;
   );
 }
 
+/** Cómo va la distribución de la versión publicada por el trámite; las copias solo si la persona ve la distribución. */
+async function DistribucionDelTramite({ tramite, sesion }: { tramite: DetalleTramite; sesion: SesionValida }) {
+  if (tramite.versionId === null || tramite.versionNumero === null || tramite.documentoId === null || tramite.codigo === null) return null;
+  const verCopias = puede(sesion, "distribucion.ver") || puede(sesion, "copias.emitir");
+  const [acuses, socializacion, copias] = await Promise.all([
+    acusesDeVersion(tramite.versionId),
+    socializacionDeVersion(tramite.versionId),
+    verCopias ? copiasDeDocumento(tramite.documentoId, sesion) : Promise.resolve(null),
+  ]);
+  const deLaVersion = copias ? copias.vigentes.filter((c) => c.versionId === tramite.versionId) : [];
+  return (
+    <ResumenDistribucion
+      version={tramite.versionNumero}
+      enlace={
+        puede(sesion, "documentos.administrar")
+          ? `/admin/documentos/${tramite.codigo.toLowerCase()}`
+          : `/documentos/${tramite.codigo.toLowerCase()}`
+      }
+      acuses={acuses}
+      socializacion={socializacion}
+      copias={copias ? { recibidas: deLaVersion.filter((c) => c.estado === "recibida").length, porRecoger: copias.porRecoger.length } : null}
+    />
+  );
+}
+
 /** Solo para quien gestiona: las listas de personas y tipos no se piden para nadie más. */
 async function Gestion({ tramite: t, puedeMarcar }: { tramite: DetalleTramite; puedeMarcar: boolean }) {
   return (
@@ -247,6 +276,7 @@ export default async function PaginaTramite({ params }: { params: Promise<{ id: 
           {tramite.etapa === "publicado" && tramite.requiereSocializacion && tramite.versionId !== null ? (
             <Socializacion versionId={tramite.versionId} puedeRegistrar={puede(sesion, "socializaciones.registrar")} />
           ) : null}
+          {tramite.etapa === "publicado" ? <DistribucionDelTramite tramite={tramite} sesion={sesion} /> : null}
           {conBorrador ? <Borrador tramite={tramite} pideCodigo={sesion.totpActivo} /> : null}
           {conRevision ? <Revision tramite={tramite} pideCodigo={sesion.totpActivo} /> : null}
           {cierra ? <Cierre tramite={tramite} pideCodigo={sesion.totpActivo} /> : null}
