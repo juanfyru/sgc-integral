@@ -296,6 +296,29 @@ describe("al eliminar el documento", () => {
     }));
 });
 
+describe("resumenAcuses con versiones cargadas fuera de la plataforma", () => {
+  it("sin publicado_en, la versión cae en el periodo de su primer acuse", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const doc = await documentoLibre(tx, { proceso: "GTH", tipo: "PR" });
+      await tx`UPDATE documento_versiones SET publicado_en = NULL WHERE documento_id = ${doc.id}`;
+      await tx`INSERT INTO usuario_procesos (usuario_id, proceso_id) SELECT ${admin.usuarioId}, ${await idDe(tx, "GTH")}`;
+      await pedirAcuses(admin, doc.id, { sql: tx, ahora: T1 });
+      const [v] = await tx`SELECT id FROM documento_versiones WHERE documento_id = ${doc.id}`;
+
+      const r = await resumenAcuses(admin, PERIODO, { sql: tx });
+      const fila = r.versiones.find((x) => x.versionId === Number(v.id))!;
+      const [{ n }] = await tx`SELECT count(*)::int AS n FROM acuses WHERE version_id = ${v.id} AND estado = 'pendiente'`;
+      expect(n).toBeGreaterThanOrEqual(1);
+      expect(fila).toMatchObject({ pendientes: n, confirmados: 0, publicadoEn: null, porcentaje: 0 });
+      expect(r.entidad.pendientes).toBeGreaterThanOrEqual(1);
+      expect(r.entidad.pendientes).toBe(r.porProceso.reduce((s, p) => s + p.pendientes, 0));
+
+      const antes = await resumenAcuses(admin, { desde: PERIODO.desde, hasta: new Date("2026-11-01T05:00:00Z") }, { sql: tx });
+      expect(antes.versiones.some((x) => x.versionId === Number(v.id))).toBe(false);
+    }));
+});
+
 describe("resumenAcuses y quienFalta", () => {
   it("porcentaje por versión, proceso y entidad; el líder solo ve sus procesos; los superados no cuentan", () =>
     revertida(sql, async (tx) => {

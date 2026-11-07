@@ -434,7 +434,8 @@ type Cifras = { confirmados: number; pendientes: number; porcentaje: number | nu
 
 /**
  * Cumplimiento de lectura por versión, proceso y entidad. Cuenta `pendiente` y `confirmado`: lo superado y lo
- * retirado ya no se pide. El periodo se mide sobre la fecha de publicación de la versión.
+ * retirado ya no se pide. El periodo se mide sobre la publicación de la versión o, si se cargó fuera de la plataforma
+ * (sin `publicado_en`), sobre su primer acuse.
  */
 export async function resumenAcuses(
   sesion: SesionFlujo,
@@ -466,7 +467,8 @@ export async function resumenAcuses(
       WHERE dp.documento_id = d.id AND dp.es_principal LIMIT 1
     ) prop ON true
     WHERE a.estado IN ('pendiente', 'confirmado')
-      AND v.publicado_en >= ${filtro.desde} AND v.publicado_en < ${filtro.hasta}
+      AND ${sql`COALESCE(v.publicado_en, (SELECT min(p1.creado_en) FROM acuses p1 WHERE p1.version_id = v.id))`} >= ${filtro.desde}
+      AND ${sql`COALESCE(v.publicado_en, (SELECT min(p2.creado_en) FROM acuses p2 WHERE p2.version_id = v.id))`} < ${filtro.hasta}
       AND ${filtroAcceso(sql, sesion)}
       AND ${verNoVigentes ? sql`true` : sql`v.estado = 'vigente'`}
       AND ${filtro.procesoId === undefined ? sql`true` : sql`prop.proceso_id = ${filtro.procesoId}`}
