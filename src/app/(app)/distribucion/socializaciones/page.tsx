@@ -7,9 +7,7 @@ import { claseBoton } from "@/componentes/ui/Boton";
 import { claseControl } from "@/componentes/ui/Campo";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { EstadoVacio } from "@/componentes/ui/EstadoVacio";
-import { obtenerSql } from "@/db/cliente";
-import { listarJornadas } from "@/db/consultas/distribucion/jornadas";
-import { alcanceProcesos } from "@/lib/alcance";
+import { listarJornadas, procesosParaFiltro } from "@/db/consultas/distribucion/jornadas";
 import { periodoDeAcuses } from "@/lib/distribucion/periodo-acuses";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
@@ -29,12 +27,10 @@ export default async function PaginaSocializaciones({
   await exigirDistribucion(sesion);
   const q = await searchParams;
   const periodo = periodoDeAcuses({ desde: texto(q.desde), hasta: texto(q.hasta), proceso: texto(q.proceso) });
-  const alcance = await alcanceProcesos(sesion);
-  const [jornadas, procesos] = await Promise.all([
+  const [jornadas, opciones] = await Promise.all([
     listarJornadas(sesion, { desde: periodo.desde, hasta: periodo.hasta, procesoId: periodo.procesoId }),
-    obtenerSql()`SELECT id, nombre FROM procesos WHERE activo ORDER BY orden, id`,
+    procesosParaFiltro(sesion),
   ]);
-  const opciones = procesos.filter((p) => alcance.todos || alcance.procesoIds.includes(Number(p.id)));
   const puedeRegistrar = puede(sesion, "socializaciones.registrar");
 
   return (
@@ -66,7 +62,7 @@ export default async function PaginaSocializaciones({
           <select name="proceso" defaultValue={periodo.procesoId ?? ""} className={claseControl}>
             <option value="">Todos</option>
             {opciones.map((p) => (
-              <option key={Number(p.id)} value={Number(p.id)}>
+              <option key={p.id} value={p.id}>
                 {p.nombre}
               </option>
             ))}

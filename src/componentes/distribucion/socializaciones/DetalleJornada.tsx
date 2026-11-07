@@ -18,6 +18,21 @@ function Fila({ etiqueta, ancha, children }: { etiqueta: string; ancha?: boolean
   );
 }
 
+/** Lo que la anulación hace depende de la vigencia de cada versión: si ya no es vigente, nada se reabre. */
+function efectoDeAnular(versiones: Jornada["versiones"], pasado: boolean): string {
+  const vigentes = versiones.filter((v) => v.vigente).length;
+  const verbo = (reabre: string, reabrio: string) => (pasado ? reabrio : reabre);
+  if (vigentes === 0) {
+    return pasado
+      ? "Ninguna de sus versiones sigue vigente: los acuses que confirmó quedaron superados y la socialización requerida, superada."
+      : "Ninguna de sus versiones sigue vigente: los acuses que confirmó quedarán superados y la socialización requerida, superada.";
+  }
+  const base = `Los acuses que confirmó por asistencia ${verbo("vuelven", "volvieron")} a pendientes y la socialización requerida ${verbo("se reabre", "se reabrió")}`;
+  return vigentes === versiones.length
+    ? `${base}.`
+    : `${base} en las versiones que siguen vigentes; en las que ya no lo son, ${verbo("quedan", "quedaron")} superados.`;
+}
+
 const tamano = (bytes: number) => (bytes >= 1_048_576 ? `${(bytes / 1_048_576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
 
 export function DetalleJornada({
@@ -37,7 +52,7 @@ export function DetalleJornada({
     <div className="flex flex-col gap-6">
       {j.anulada ? (
         <p role="status" className="rounded-lg border border-estado-critico/40 bg-estado-critico-fondo p-3 text-sm text-estado-critico-texto">
-          {`Jornada anulada el ${cuando.format(j.anulada.en)} por ${j.anulada.por}: ${j.anulada.motivo}. Los acuses que confirmó volvieron a pendientes.`}
+          {`Jornada anulada el ${cuando.format(j.anulada.en)} por ${j.anulada.por}: ${j.anulada.motivo}. ${efectoDeAnular(j.versiones, true)}`}
         </p>
       ) : null}
 
@@ -56,8 +71,14 @@ export function DetalleJornada({
               {j.versiones.map((v) => (
                 <li key={v.versionId}>
                   <span className="font-mono text-xs">{`${v.codigo} v${v.version}`}</span> {v.titulo}
+                  {v.vigente ? "" : " (versión obsoleta)"}
                 </li>
               ))}
+              {j.versionesOcultas > 0 ? (
+                <li className="text-muted-foreground">
+                  {j.versionesOcultas === 1 ? "y 1 documento más que no puede ver" : `y ${j.versionesOcultas} documentos más que no puede ver`}
+                </li>
+              ) : null}
             </ul>
           </Fila>
           {j.observaciones ? (
@@ -144,7 +165,7 @@ export function DetalleJornada({
             accion={anularJornadaAccion}
             etiqueta="Anular"
             tono="peligro"
-            confirmacion="Una jornada no se edita. Al anularla, los acuses que confirmó por asistencia vuelven a pendientes y la socialización requerida se reabre. Queda en la bitácora."
+            confirmacion={`Una jornada no se edita. ${efectoDeAnular(j.versiones, false)} Queda en la bitácora.`}
             campos={{ id: j.id }}
           >
             <label className="flex flex-col gap-1 text-sm font-medium">

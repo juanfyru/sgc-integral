@@ -47,6 +47,11 @@ export function TablaJornadas({ jornadas }: { jornadas: Jornada[] }) {
                   <span className="font-mono text-xs">{`${v.codigo} v${v.version}`}</span> {v.titulo}
                 </li>
               ))}
+              {j.versionesOcultas > 0 ? (
+                <li className="text-muted-foreground">
+                  {j.versionesOcultas === 1 ? "y 1 documento más que no puede ver" : `y ${j.versionesOcultas} documentos más que no puede ver`}
+                </li>
+              ) : null}
             </ul>
           </td>
           <td className={celdaNumerica}>{j.asistentesCantidad}</td>

@@ -33,7 +33,7 @@ import { misTareas } from "@/lib/tareas";
 import { fechaLimite } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { pdfDePrueba } from "./utiles/pdf";
-import { opc, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
+import { documentoLibre, opc, sesionAdmin, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
 const sql = obtenerSql();
@@ -361,5 +361,67 @@ describe("quién ve la jornada y su evidencia", () => {
       } finally {
         await t.limpiar();
       }
+    }));
+});
+
+describe("versiones admitidas y documentos que no se ven", () => {
+  const versionDe = async (tx: TransactionSql, documentoId: number) =>
+    Number((await tx`SELECT id FROM documento_versiones WHERE documento_id = ${documentoId} ORDER BY numero DESC LIMIT 1`)[0].id);
+
+  it("una jornada sobre una versión obsoleta se registra y no cambia acuses ni requeridas", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const asistente = await usuarioDePrueba(tx, { rol: "consulta", procesos: [await gth(tx)] });
+      const documento = await documentoLibre(tx, { proceso: "GTH", tipo: "PR" });
+      const versionId = await versionDe(tx, documento.id);
+      await tx`UPDATE documento_versiones SET estado = 'obsoleto' WHERE id = ${versionId}`;
+      const [acuse] = await tx`INSERT INTO acuses (version_id, usuario_id, origen, estado, motivo_cierre, cerrado_en, vence_en)
+        VALUES (${versionId}, ${asistente.usuarioId}, 'publicacion', 'superado', 'nueva_version', now(), now()) RETURNING id`;
+      const [req] = await tx`INSERT INTO socializaciones_requeridas (version_id, vence_en, superada_en)
+        VALUES (${versionId}, now(), now()) RETURNING id`;
+
+      const { jornadaId, acusesPorAsistencia } = await registrarJornada(admin, datosDe(versionId, admin.usuarioId, [asistente.usuarioId]), { sql: tx, ahora: REGISTRA });
+      expect(acusesPorAsistencia).toBe(0);
+      expect(await tx`SELECT estado, modo, jornada_id FROM acuses WHERE id = ${acuse.id}`).toEqual([{ estado: "superado", modo: null, jornada_id: null }]);
+      expect(await tx`SELECT cumplida_en, jornada_id FROM socializaciones_requeridas WHERE id = ${req.id}`).toEqual([{ cumplida_en: null, jornada_id: null }]);
+      expect((await obtenerJornada(jornadaId, admin, { sql: tx }))?.versiones).toMatchObject([{ versionId, vigente: false }]);
+    }));
+
+  it("un borrador no se socializa", () =>
+    revertida(sql, async (tx) => {
+      const t = await tramiteEn(tx, "elaboracion");
+      try {
+        await rechaza(
+          registrarJornada(t.admin, datosDe(t.versionId as number, t.admin.usuarioId, [t.admin.usuarioId]), { sql: tx, ahora: REGISTRA }),
+          `Solo se socializa una versión vigente u obsoleta: ${t.codigo} v2 no lo es`,
+        );
+      } finally {
+        await t.limpiar();
+      }
+    }));
+
+  it("quien solo ve uno de los documentos de la jornada no ve el código ni el título del restringido", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const visible = await documentoLibre(tx, { proceso: "GTH", tipo: "PR", titulo: "Documento visible de la jornada" });
+      const reservado = await documentoLibre(tx, { proceso: "GTH", tipo: "PR", titulo: "Documento reservado de la jornada" });
+      await tx`UPDATE documentos SET nivel_acceso = 'restringido' WHERE id = ${reservado.id}`;
+      const { jornadaId } = await registrarJornada(
+        admin,
+        datosDe(await versionDe(tx, visible.id), admin.usuarioId, [admin.usuarioId], { versionIds: [await versionDe(tx, visible.id), await versionDe(tx, reservado.id)] }),
+        { sql: tx, ahora: REGISTRA },
+      );
+
+      const consulta = await usuarioDePrueba(tx, { rol: "consulta" });
+      const vista = await obtenerJornada(jornadaId, consulta, { sql: tx });
+      expect(vista?.versiones.map((v) => v.codigo)).toEqual([visible.codigo]);
+      expect(vista?.versionesOcultas).toBe(1);
+      expect(JSON.stringify(vista)).not.toContain(reservado.codigo);
+      expect(JSON.stringify(vista)).not.toContain("reservado");
+      expect((await listarJornadas(consulta, {}, { sql: tx })).find((j) => j.id === jornadaId)?.versiones).toHaveLength(1);
+
+      // La administración ve los dos.
+      expect((await obtenerJornada(jornadaId, admin, { sql: tx }))?.versiones).toHaveLength(2);
+      expect((await obtenerJornada(jornadaId, admin, { sql: tx }))?.versionesOcultas).toBe(0);
     }));
 });

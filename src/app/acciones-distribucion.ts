@@ -101,7 +101,7 @@ export async function pedirAcusesAccion(_prev: EstadoAccion, formData: FormData)
 export async function registrarJornadaAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "socializaciones.registrar", async (_usuarioId, _formData, sesion) => {
     const { jornadaId } = await registrarJornada(sesion, parsearJornada(formData));
-    return `/distribucion/socializaciones/${jornadaId}?evidencia=1`;
+    return `/distribucion/socializaciones/${jornadaId}`;
   });
 }
 

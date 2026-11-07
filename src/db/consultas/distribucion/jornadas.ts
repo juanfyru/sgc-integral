@@ -5,7 +5,7 @@ import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { crearNotificacion } from "@/db/consultas/notificaciones";
 import { adminsActivos, lideresDeProceso } from "@/db/consultas/tramites";
-import { puedeVerJornada } from "@/lib/alcance";
+import { alcanceProcesos, puedeAccederDocumento, puedeVerJornada } from "@/lib/alcance";
 import { ErrorDistribucion, type ModalidadJornada } from "@/lib/distribucion/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
 import { fechaEnZona, fechaLimite } from "@/lib/tramites/plazos";
@@ -32,7 +32,9 @@ export type Jornada = {
   registradaPor: { id: number; nombre: string };
   creadoEn: Date;
   anulada: { en: Date; por: string; motivo: string } | null;
-  versiones: { versionId: number; codigo: string; titulo: string; version: number }[];
+  /** Quien no ve la evidencia solo ve los documentos que puede ver; `versionesOcultas` cuenta los demás. */
+  versiones: { versionId: number; codigo: string; titulo: string; version: number; vigente: boolean }[];
+  versionesOcultas: number;
   /** Solo con `puedeVerEvidencia`; si no, vacía y `asistentesCantidad` dice cuántos fueron. */
   asistentes: { id: number; nombre: string; cargo: string | null }[];
   asistentesCantidad: number;
@@ -110,7 +112,9 @@ export async function registrarJornada(
     if (versiones.length !== versionIds.length) throw new ErrorDistribucion("Uno de los documentos no existe");
     for (const v of versiones) {
       if (!v.en_alcance) throw new ErrorDistribucion(`El documento ${v.codigo} no es de sus procesos`);
-      if (v.estado !== "vigente") throw new ErrorDistribucion(`Solo se socializa la versión vigente: ${v.codigo} v${v.numero} no lo es`);
+      if (v.estado !== "vigente" && v.estado !== "obsoleto") {
+        throw new ErrorDistribucion(`Solo se socializa una versión vigente u obsoleta: ${v.codigo} v${v.numero} no lo es`);
+      }
     }
     const personas = await tx`SELECT id FROM usuarios WHERE activo AND id IN ${tx(sinRepetir([...asistenteIds, d.facilitadorId]))}`;
     const activas = new Set(personas.map((p) => Number(p.id)));
@@ -224,7 +228,7 @@ async function cargarJornadas(sql: Cliente, sesion: SesionFlujo, condicion: Retu
   if (filas.length === 0) return [];
   const ids = filas.map((f) => Number(f.id));
   const [versiones, asistentes, procesos] = await Promise.all([
-    sql`SELECT jv.jornada_id, v.id AS version_id, v.numero, v.documento_id, d.codigo, d.titulo
+    sql`SELECT jv.jornada_id, v.id AS version_id, v.numero, v.estado, v.documento_id, d.codigo, d.titulo
       FROM jornada_versiones jv JOIN documento_versiones v ON v.id = jv.version_id JOIN documentos d ON d.id = v.documento_id
       WHERE jv.jornada_id IN ${sql(ids)} ORDER BY d.codigo, v.numero`,
     sql`SELECT ja.jornada_id, u.id, u.nombre, c.nombre AS cargo
@@ -250,6 +254,11 @@ async function cargarJornadas(sql: Cliente, sesion: SesionFlujo, condicion: Retu
       { sql },
     );
     if (!ve) continue;
+    // Sin evidencia, solo se nombran los documentos que la persona puede ver.
+    const visibles: typeof susVersiones = [];
+    for (const v of susVersiones) {
+      if (evidencia || (await puedeAccederDocumento(Number(v.documento_id), sesion, { sql }))) visibles.push(v);
+    }
     const susAsistentes = asistentes.filter((a) => Number(a.jornada_id) === id);
     const [{ n }] = await sql`SELECT count(*)::int AS n FROM archivos WHERE contexto = 'jornada' AND contexto_id = ${id} AND rol = 'evidencia'`;
     jornadas.push({
@@ -264,12 +273,14 @@ async function cargarJornadas(sql: Cliente, sesion: SesionFlujo, condicion: Retu
       anulada: f.anulada_en
         ? { en: f.anulada_en as Date, por: f.anulada_por_nombre as string, motivo: f.motivo_anulacion as string }
         : null,
-      versiones: susVersiones.map((v) => ({
+      versiones: visibles.map((v) => ({
         versionId: Number(v.version_id),
         codigo: v.codigo as string,
         titulo: v.titulo as string,
         version: Number(v.numero),
+        vigente: v.estado === "vigente",
       })),
+      versionesOcultas: susVersiones.length - visibles.length,
       asistentes: evidencia
         ? susAsistentes.map((a) => ({ id: Number(a.id), nombre: a.nombre as string, cargo: (a.cargo as string | null) ?? null }))
         : [],
@@ -345,7 +356,8 @@ export async function socializacionDeVersion(versionId: number, opciones?: Opcio
 }
 
 export type OpcionesDeJornada = {
-  documentos: { versionId: number; codigo: string; titulo: string; version: number }[];
+  /** La vigente de cada documento y sus versiones obsoletas (`vigente: false`), de la más nueva a la más vieja. */
+  documentos: { versionId: number; codigo: string; titulo: string; version: number; vigente: boolean }[];
   personas: { id: number; nombre: string; cargo: string | null }[];
 };
 
@@ -353,15 +365,25 @@ export type OpcionesDeJornada = {
 export async function opcionesDeJornada(sesion: SesionFlujo, opciones?: Opciones): Promise<OpcionesDeJornada> {
   const sql = opciones?.sql ?? obtenerSql();
   const [documentos, personas] = await Promise.all([
-    sql`SELECT v.id, v.numero, d.codigo, d.titulo
-      FROM documentos d JOIN documento_versiones v ON v.documento_id = d.id AND v.estado = 'vigente'
+    sql`SELECT v.id, v.numero, v.estado, d.codigo, d.titulo
+      FROM documentos d JOIN documento_versiones v ON v.documento_id = d.id AND v.estado IN ('vigente', 'obsoleto')
       WHERE ${documentoEnAlcance(sql, sesion)}
-      ORDER BY d.codigo`,
+      ORDER BY d.codigo, v.numero DESC`,
     sql`SELECT u.id, u.nombre, c.nombre AS cargo FROM usuarios u LEFT JOIN cargos c ON c.id = u.cargo_id
       WHERE u.activo ORDER BY lower(u.nombre), u.id`,
   ]);
   return {
-    documentos: documentos.map((f) => ({ versionId: Number(f.id), codigo: f.codigo as string, titulo: f.titulo as string, version: Number(f.numero) })),
+    documentos: documentos.map((f) => ({ versionId: Number(f.id), codigo: f.codigo as string, titulo: f.titulo as string, version: Number(f.numero), vigente: f.estado === "vigente" })),
     personas: personas.map((f) => ({ id: Number(f.id), nombre: f.nombre as string, cargo: (f.cargo as string | null) ?? null })),
   };
+}
+
+/** Los procesos del filtro del listado: los activos que la persona alcanza. */
+export async function procesosParaFiltro(sesion: SesionFlujo, opciones?: Opciones): Promise<{ id: number; nombre: string }[]> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const alcance = await alcanceProcesos(sesion, { sql });
+  const filas = await sql`SELECT id, nombre FROM procesos WHERE activo ORDER BY orden, id`;
+  return filas
+    .filter((p) => alcance.todos || alcance.procesoIds.includes(Number(p.id)))
+    .map((p) => ({ id: Number(p.id), nombre: p.nombre as string }));
 }

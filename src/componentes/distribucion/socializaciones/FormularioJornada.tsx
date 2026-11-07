@@ -86,6 +86,10 @@ export function FormularioJornada({
     () => new Set(versionInicial !== null && opciones.documentos.some((d) => d.versionId === versionInicial) ? [versionInicial] : []),
   );
   const [asistentes, setAsistentes] = useState<Set<number>>(() => new Set());
+  const [conAnteriores, setConAnteriores] = useState(false);
+  const hayAnteriores = opciones.documentos.some((d) => !d.vigente);
+  // La vigente va por defecto; las obsoletas solo si se piden (o ya están marcadas).
+  const documentos = opciones.documentos.filter((d) => d.vigente || conAnteriores || versiones.has(d.versionId));
 
   return (
     <form action={enviar} onSubmit={enviarSinReiniciar(enviar)} className="flex flex-col gap-6">
@@ -113,14 +117,29 @@ export function FormularioJornada({
         </Campo>
       </div>
 
+      {hayAnteriores ? (
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" checked={conAnteriores} onChange={(e) => setConAnteriores(e.target.checked)} className="mt-0.5 size-4" />
+          <span>
+            Incluir versiones anteriores (obsoletas)
+            <span className="block text-xs text-muted-foreground">
+              Para registrar tarde una capacitación hecha cuando regía esa versión. La vigente va por defecto.
+            </span>
+          </span>
+        </label>
+      ) : null}
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <ListaMarcable
           titulo="Documentos socializados"
           nombre="versionIds"
-          elementos={opciones.documentos.map((d) => ({ clave: d.versionId, texto: `${d.codigo} v${d.version} · ${d.titulo}` }))}
+          elementos={documentos.map((d) => ({
+            clave: d.versionId,
+            texto: `${d.codigo} v${d.version}${d.vigente ? "" : " (obsoleta)"} · ${d.titulo}`,
+          }))}
           marcados={versiones}
           alMarcar={(k, m) => setVersiones((p) => conMarca(p, k, m))}
-          vacio="No hay documentos vigentes en sus procesos."
+          vacio="No hay documentos en sus procesos."
         />
         <ListaMarcable
           titulo="Asistentes"
