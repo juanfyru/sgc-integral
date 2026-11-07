@@ -158,6 +158,11 @@ class Hoja {
     this.pagina.drawLine({ start: { x: MARGEN, y: this.y }, end: { x: ANCHO - MARGEN, y: this.y }, thickness: 0.5, color: LINEA });
   }
 
+  /** Lo que `fila` exige libre antes de empezar. */
+  altoDeFila(valor: string): number {
+    return 13 * Math.min(lineas(valor, this.f.normal, 9.5, ANCHO_UTIL - ANCHO_ETIQUETA).length, 2);
+  }
+
   /** Una fila «etiqueta: valor»; el valor puede seguir en la página siguiente. */
   fila(etiqueta: string, valor: string) {
     const tamano = 9.5;
@@ -196,13 +201,13 @@ class Hoja {
   }
 
   /** Un criterio que no cumple: su texto en negrita y, bajo él, la nota de quien dio el concepto. */
-  criterio(c: CriterioActa) {
+  criterio(c: CriterioActa, reserva = 0) {
     const paso = 12;
     const sangria = 10;
     const ancho = ANCHO_UTIL - sangria;
     const titulo = lineas(c.texto, this.f.negrita, 9.5, ancho);
     const nota = c.nota.trim() ? lineas(c.nota, this.f.normal, 9, ancho) : [];
-    this.espacio(paso * (titulo.length + Math.min(nota.length, 2)));
+    this.espacio(paso * (titulo.length + Math.min(nota.length, 2)) + reserva);
     for (const l of titulo) {
       this.espacio(paso);
       this.texto(l, MARGEN + sangria, this.f.negrita, 9.5);
@@ -304,13 +309,16 @@ export async function generarActa(d: DatosActa, membrete?: Uint8Array | null): P
 
   if (d.noCumple && d.noCumple.length > 0) {
     h.titulo("Criterios que no cumplen, con concepto favorable");
-    for (const c of d.noCumple) h.criterio(c);
     const quien = (firma: string) => d.firmas.find((x) => x.firma === firma)?.nombre;
     const concepto = [
       [ETIQUETA_FIRMA.reviso, quien(ETIQUETA_FIRMA.reviso)],
       [ETIQUETA_FIRMA.aprobo, quien(ETIQUETA_FIRMA.aprobo)],
     ].filter((par): par is [string, string] => par[1] !== undefined);
-    if (concepto.length > 0) h.fila("Concepto de", concepto.map(([e, n]) => `${e} ${n}`).join(" · "));
+    const textoConcepto = concepto.map(([e, n]) => `${e} ${n}`).join(" · ");
+    // El último criterio reserva el sitio de «Concepto de», para que la fila no quede sola en otra hoja.
+    const reserva = concepto.length > 0 ? h.altoDeFila(textoConcepto) : 0;
+    d.noCumple.forEach((c, i) => h.criterio(c, i === d.noCumple!.length - 1 ? reserva : 0));
+    if (concepto.length > 0) h.fila("Concepto de", textoConcepto);
   }
 
   h.titulo("Recorrido");

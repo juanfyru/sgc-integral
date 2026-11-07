@@ -161,6 +161,21 @@ describe("generarActa", () => {
     expect(doc.getPageCount()).toBeGreaterThan(1);
   });
 
+  it("«Concepto de» nunca queda sola en otra hoja: va con el último criterio", async () => {
+    let cambiosDeHoja = 0;
+    for (let n = 1; n <= 14; n++) {
+      for (const lineasDeNota of [1, 2, 3]) {
+        const noCumple = Array.from({ length: n }, (_, i) => ({ texto: `Criterio-${i + 1}-fin`, nota: `${"nota ".repeat(14 * lineasDeNota)}` }));
+        const paginas = await contenidoPorPagina(await generarActa({ ...datos, noCumple }));
+        const conConcepto = paginas.findIndex((p) => contieneTexto(p, "Concepto de"));
+        expect(conConcepto, `${n} criterios, nota de ~${lineasDeNota} líneas`).toBeGreaterThanOrEqual(0);
+        expect(contieneTexto(paginas[conConcepto], `Criterio-${n}-fin`), `${n} criterios, nota de ~${lineasDeNota} líneas`).toBe(true);
+        if (paginas.length > 1) cambiosDeHoja++;
+      }
+    }
+    expect(cambiosDeHoja).toBeGreaterThan(0);
+  });
+
   it("el ejemplo se distingue en cada página", async () => {
     const bytes = await generarActa({ ...datos, ejemplo: true, controlCambios: "Cambio ".repeat(1500) });
     const paginas = await contenidoPorPagina(bytes);
