@@ -277,7 +277,9 @@ explica cada pantalla.
     SGC-FO-06, versión 1». Pulse **Ver acta de ejemplo**: se abre un PDF de dos hojas con la marca
     «EJEMPLO, SIN VALOR», con el encabezado y el pie del formato en cada hoja y el texto entre los
     dos. Para probar con el formato del hospital, copie su PDF a una carpeta temporal, regístrelo
-    como documento (**Registrar documento ya aprobado**, acceso **General**) y elíjalo con 5,5 y 3,5
+    como documento (**Registrar documento ya aprobado**, acceso **General**; vuelva a encender
+    **Publicación directa** si el paso 11 la apagó, y publique la versión: sin versión vigente el
+    formato no sale en la lista) y elíjalo con 5,5 y 3,5
     cm: el texto no debe tocar el encabezado ni el pie. Registre y elija un PDF de dos páginas:
     **Guardar configuración** dice «El formato debe tener una sola página». Escriba los espacios con
     coma («5,5») y con punto: valen igual.
@@ -1366,6 +1368,8 @@ mismos números que citan los comentarios del código (`R24`, `R26`, `R32`, `R33
 | F13A-AR4 | Un formato con `/Contents` vacío da «listo», sin aviso propio | Práctica: para eso existe **Ver acta de ejemplo**, y no lanza | Un acta sin encabezado hasta que alguien lo note |
 | F13A-AR5 | Se acepta una fila `acta_no_regenerable` por reintento, sin limitador | ISO 7.5.3.1 a) y regla 5: deja constancia de a quién se le negó el acta | Unas filas de más en un caso raro |
 | F13A-AR6 | El formato se lee en `asegurarActa` y no en `reunirDatosActa` | Práctica: evita leerlo con el acta ya en disco | Ninguno: es dónde vive la lectura |
+| F13A-AR7 | El manual (§14.3) y el paso 14 de «Qué probar» dicen que el formato debe quedar con versión vigente publicada (carga abierta o trámite), y que el elegido sigue en la lista aunque ya no sirva. Ruling R7 de la revisión de T8 | Práctica: sin versión vigente el formato no aparece y la persona no sabe por qué | Una frase más en dos documentos |
+| F13A-AR8 | `huellaDeCriterios` ordena por `itemId`, y el último criterio del acta reserva el sitio de «Concepto de» para que no quede sola en otra hoja | Práctica: reordenar ítems no cambia lo confirmado; la fila separada de sus criterios se vio con el formato real | La hoja puede dejar un hueco de una o dos líneas al pie antes de pasar de página |
 
 ## Deuda técnica conocida
 
@@ -1410,9 +1414,6 @@ mismos números que citan los comentarios del código (`R24`, `R26`, `R32`, `R33
 - Devolver con marcas sin guardar las pierde. `bloquearComo` usa las
   reglas de devolver y enviar como sustituto de persona y etapa.
 - **De la adición del acta con formato** (todos menores, aceptados en la revisión de cada tarea):
-  - La fila «Concepto de» puede quedar sola en otra hoja, separada de sus criterios: se vio en la
-    prueba con el formato real (SOL-2026-001, el encabezado «Criterios que no cumplen» queda al pie
-    de la hoja 1 y «Concepto de» abre la hoja 2).
   - Sin bloqueo al guardar la configuración (heredado): con dos sesiones simultáneas la bitácora
     puede omitir un cambio. `config-documental` arrastra `pdf-lib` a sus importadores. La coma en
     `type=number` solo se probó en Chromium.

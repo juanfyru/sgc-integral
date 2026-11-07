@@ -710,13 +710,16 @@ imprimir las actas. Es opcional: sin formato, las actas salen con el diseño bá
 3. Regístrelo como un documento más del SGC, por el camino de la sección 13 (**Registrar
    documento ya aprobado**), con su código, su versión y el PDF como archivo principal. Su
    **Nivel de acceso** debe ser **General**: el acta la ven personas que no tendrían acceso a
-   un documento restringido.
+   un documento restringido. Siga los pasos de la sección 13.1 hasta **publicar la versión**:
+   mientras no tenga versión vigente, el formato no aparece en la lista para elegirlo. Si la
+   carga está cerrada, ábrala (sección 13.4) o lleve el documento por un trámite.
 
 **Cómo elegirlo.**
 
 1. Abra **Configuración documental** y vaya a **Formato del acta**.
 2. En **Documento del formato** elija el documento. La lista trae solo documentos vigentes, de
-   acceso general y con PDF principal. **Sin formato: diseño básico** lo quita.
+   acceso general y con PDF principal; el que ya está elegido sigue en ella aunque haya dejado
+   de cumplirlo, para que no se pierda al guardar otra sección. **Sin formato: diseño básico** lo quita.
 3. Escriba el **Espacio del encabezado (cm)** y el **Espacio del pie (cm)**: lo que ocupan el
    encabezado y el pie del formato, para que el texto no los pise. Valen entre 0 y 12 cm, y
    entre los dos no pueden pasar de 16 cm. Puede escribir la coma («5,5») o el punto. Si no
@@ -734,7 +737,7 @@ pantalla:
 
 | Aviso | Qué significa | Qué hacer |
 |---|---|---|
-| Las actas nuevas usarán SGC-FO-07, versión 1. | El formato sirve | Nada |
+| Las actas nuevas usarán SGC-FO-06, versión 1. | El formato sirve | Nada |
 | **Las actas saldrán con el diseño básico.** Seguido del motivo | El formato ya no sirve: por ejemplo, el documento no tiene versión vigente, pasó a restringido, su archivo principal no es PDF, tiene más de una página, no es tamaño carta, o está protegido o dañado | Publique una versión que sirva, o quite el formato |
 | **No se podrán generar actas hasta restaurar el archivo del formato.** | El archivo no está en el almacén o cambió | Avise al área de sistemas |
 
