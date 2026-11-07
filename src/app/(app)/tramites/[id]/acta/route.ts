@@ -12,9 +12,10 @@ export const dynamic = "force-dynamic";
 const permitirActa = crearLimitador({ limite: 60, ventanaMs: 60_000 });
 
 /**
- * Sirve el acta de un trámite publicado o eliminado a quien puede ver su versión o el trámite cerrado
- * (spec 13A §11.2 y §12; acta con formato, §6). Va sin marca de agua: es el registro de la aprobación, no una copia del documento. Si no se
- * generó al publicar, se genera aquí. Quien no ve ni la versión ni el trámite, o un trámite sin acta, recibe 404.
+ * Sirve el acta de un trámite publicado o eliminado a quien puede ver su versión o el trámite
+ * cerrado (spec 13A §11.2 y §12; acta con formato, §6). Va sin marca de agua: es el registro de la
+ * aprobación, no una copia del documento. Si no se generó al publicar, se genera aquí. Quien no ve
+ * ni la versión ni el trámite, o un trámite sin acta, recibe 404.
  */
 export async function GET(peticion: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const sesion = await sesionDePeticion(peticion);

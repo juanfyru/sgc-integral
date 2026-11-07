@@ -20,7 +20,8 @@ import {
   participaEnTramites,
   puedePedirSobreDocumento,
 } from "@/db/consultas/tramites";
-import { puedeVerTramite } from "@/lib/alcance";
+import { versionDeActa } from "@/db/consultas/actas";
+import { puedeVerTramite, puedeVerVersion } from "@/lib/alcance";
 import { documentoLibre, opc, sesionAdmin, sesionDe, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -164,6 +165,71 @@ describe("obtenerTramite", () => {
     expect(lideres).not.toContain(inactivo.usuarioId);
     await tx`UPDATE procesos SET activo = false WHERE id = ${gth.id}`;
     expect(await lideresDeProceso(gth.id, { sql: tx })).toEqual([]);
+  }));
+});
+
+/** Quién ve el acta: la regla de la ruta `/tramites/[id]/acta`, con las consultas reales. */
+async function veActa(tx: TransactionSql, tramiteId: number, usuario: string) {
+  const sesion = await sesionDe(tx, usuario);
+  const cierre = await versionDeActa(tramiteId, { sql: tx });
+  if (!cierre) return { acta: false, archivo: false };
+  const archivo = await puedeVerVersion(cierre.versionId, sesion, { sql: tx });
+  const acta = archivo || (await obtenerTramite(tramiteId, sesion, { sql: tx })) !== null;
+  return { acta, archivo };
+}
+
+/** Deja el trámite cerrado sobre la versión del documento, con la versión en el estado dado. */
+async function cerrar(tx: TransactionSql, t: { tramiteId: number; documentoId: number }, etapa: string, estadoVersion: string) {
+  const [v] = await tx`SELECT id FROM documento_versiones WHERE documento_id = ${t.documentoId} ORDER BY numero DESC LIMIT 1`;
+  await tx`UPDATE documento_versiones SET estado = ${estadoVersion} WHERE id = ${v.id}`;
+  await tx`UPDATE tramites SET etapa = ${etapa}, version_id = ${v.id} WHERE id = ${t.tramiteId}`;
+}
+
+describe("el acta de un trámite cerrado (acta con formato, §6)", () => {
+  it("el elaborador de una versión ya obsoleta ve el acta y no el archivo", () => revertida(sql, async (tx) => {
+    const t = await tramiteGth(tx);
+    const [{ id }] = await tx`SELECT id FROM usuarios WHERE usuario = 'consulta'`;
+    await tx`UPDATE tramites SET elaborador_id = ${id} WHERE id = ${t.tramiteId}`;
+    await cerrar(tx, t, "publicado", "obsoleto");
+    expect(await veActa(tx, t.tramiteId, "consulta")).toEqual({ acta: true, archivo: false });
+  }));
+
+  it("el aprobador de una eliminación ve el acta y no el archivo anulado", () => revertida(sql, async (tx) => {
+    const t = await tramiteGth(tx);
+    const [{ id }] = await tx`SELECT id FROM usuarios WHERE usuario = 'consulta'`;
+    await tx`UPDATE tramites SET aprobador_id = ${id} WHERE id = ${t.tramiteId}`;
+    await cerrar(tx, t, "eliminado", "anulado");
+    expect(await veActa(tx, t.tramiteId, "consulta")).toEqual({ acta: true, archivo: false });
+  }));
+
+  it("consulta ajeno, o un líder sin alcance, no ve el acta de una versión obsoleta", () => revertida(sql, async (tx) => {
+    const t = await tramiteGth(tx);
+    await cerrar(tx, t, "publicado", "obsoleto");
+    expect(await veActa(tx, t.tramiteId, "consulta")).toEqual({ acta: false, archivo: false });
+    expect(await veActa(tx, t.tramiteId, "lider.cex")).toEqual({ acta: false, archivo: false });
+  }));
+
+  it("en un restringido, quien tiene historial sin nivel de acceso no ve el acta", () => revertida(sql, async (tx) => {
+    const t = await tramiteGth(tx);
+    await tx`UPDATE documentos SET nivel_acceso = 'restringido' WHERE id = ${t.documentoId}`;
+    await tx`UPDATE usuarios SET ver_historial = true WHERE usuario = 'consulta'`;
+    await cerrar(tx, t, "publicado", "obsoleto");
+    expect(await veActa(tx, t.tramiteId, "consulta")).toEqual({ acta: false, archivo: false });
+  }));
+
+  it("quien ve la versión vigente ve el acta aunque no vea el trámite", () => revertida(sql, async (tx) => {
+    const t = await tramiteGth(tx);
+    await cerrar(tx, t, "publicado", "vigente");
+    expect(await veActa(tx, t.tramiteId, "consulta")).toEqual({ acta: true, archivo: true });
+  }));
+
+  it("un trámite cancelado o rechazado no tiene acta", () => revertida(sql, async (tx) => {
+    const t = await tramiteGth(tx);
+    for (const etapa of ["cancelado", "rechazado"]) {
+      await tx`UPDATE tramites SET etapa = ${etapa} WHERE id = ${t.tramiteId}`;
+      expect(await versionDeActa(t.tramiteId, { sql: tx })).toBeNull();
+      expect(await veActa(tx, t.tramiteId, "admin")).toEqual({ acta: false, archivo: false });
+    }
   }));
 });
 
