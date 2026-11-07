@@ -147,6 +147,7 @@ export const documentos = pgTable(
     descripcion: text("descripcion"),
     palabrasClave: text("palabras_clave"),
     nivelAcceso: text("nivel_acceso").notNull().default("general"),
+    lecturaObligatoriaIngreso: boolean("lectura_obligatoria_ingreso").notNull().default(false),
     tsv: tsvector("tsv").generatedAlwaysAs(
       (): SQL =>
         sql`setweight(to_tsvector('espanol_unaccent', coalesce(codigo, '') || ' ' || coalesce(titulo, '')), 'A') || setweight(to_tsvector('espanol_unaccent', coalesce(palabras_clave, '')), 'B') || setweight(to_tsvector('espanol_unaccent', coalesce(descripcion, '')), 'C')`,
@@ -228,9 +229,13 @@ export const archivos = pgTable(
   "archivos",
   {
     id: id(),
-    versionId: bigint("version_id", { mode: "number" })
-      .notNull()
-      .references(() => documentoVersiones.id, { onDelete: "restrict" }),
+    // Nulo cuando el archivo es evidencia de una jornada o de un ítem de verificación.
+    versionId: bigint("version_id", { mode: "number" }).references(
+      () => documentoVersiones.id,
+      { onDelete: "restrict" },
+    ),
+    contexto: text("contexto").notNull().default("version"),
+    contextoId: bigint("contexto_id", { mode: "number" }),
     rol: text("rol").notNull().default("principal"),
     ruta: text("ruta").notNull().unique(),
     nombreOriginal: text("nombre_original").notNull(),
@@ -250,8 +255,17 @@ export const archivos = pgTable(
       .where(sql`rol = 'principal'`),
     check(
       "archivos_rol_valido",
-      sql`${t.rol} IN ('principal', 'editable', 'anexo', 'acta_aprobacion', 'acta_eliminacion')`,
+      sql`${t.rol} IN ('principal', 'editable', 'anexo', 'acta_aprobacion', 'acta_eliminacion', 'evidencia')`,
     ),
+    check(
+      "archivos_contexto_valido",
+      sql`${t.contexto} IN ('version', 'jornada', 'verificacion_item')`,
+    ),
+    check(
+      "archivos_contexto_coherente",
+      sql`(${t.contexto} = 'version' AND ${t.versionId} IS NOT NULL AND ${t.contextoId} IS NULL) OR (${t.contexto} <> 'version' AND ${t.versionId} IS NULL AND ${t.contextoId} IS NOT NULL)`,
+    ),
+    index("archivos_contexto_idx").on(t.contexto, t.contextoId),
     uniqueIndex("archivos_un_acta_idx")
       .on(t.versionId, t.rol)
       .where(sql`rol IN ('acta_aprobacion', 'acta_eliminacion')`),
@@ -630,6 +644,7 @@ export const tramites = pgTable(
     escaladoEn: timestamp("escalado_en", { withTimezone: true }),
     cerradoEn: timestamp("cerrado_en", { withTimezone: true }),
     motivoCierre: text("motivo_cierre"),
+    requiereSocializacion: boolean("requiere_socializacion").notNull().default(false),
     creadoEn: timestamp("creado_en", { withTimezone: true }).notNull().defaultNow(),
     actualizadoEn: timestamp("actualizado_en", { withTimezone: true })
       .notNull()
@@ -764,5 +779,347 @@ export const tramiteVerificaciones = pgTable(
       "tramite_verificaciones_resultado_valido",
       sql`${t.resultado} IN ('cumple', 'no_cumple', 'no_aplica')`,
     ),
+  ],
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fase 13B: distribución, puntos de uso, acuses, jornadas y verificaciones
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ref = (nombre: string, tabla: () => AnyPgColumn) =>
+  bigint(nombre, { mode: "number" }).references(tabla, { onDelete: "restrict" });
+const marca = (nombre: string) => timestamp(nombre, { withTimezone: true });
+const creado = () => marca("creado_en").notNull().defaultNow();
+
+export const puntosUso = pgTable(
+  "puntos_uso",
+  {
+    id: id(),
+    nombre: text("nombre").notNull(),
+    sede: text("sede"),
+    ubicacion: text("ubicacion"),
+    responsableId: refUsuario("responsable_id").notNull(),
+    activo: boolean("activo").notNull().default(true),
+    orden: integer("orden").notNull().default(0),
+    creadoEn: creado(),
+    actualizadoEn: marca("actualizado_en").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("puntos_uso_sede_nombre_unico").on(
+      sql`lower(coalesce(${t.sede}, ''))`,
+      sql`lower(${t.nombre})`,
+    ),
+  ],
+);
+
+export const puntoUsoProcesos = pgTable(
+  "punto_uso_procesos",
+  {
+    puntoUsoId: ref("punto_uso_id", () => puntosUso.id).notNull(),
+    procesoId: ref("proceso_id", () => procesos.id).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.puntoUsoId, t.procesoId] }),
+    index("punto_uso_procesos_proceso_idx").on(t.procesoId),
+  ],
+);
+
+export const copiasControladas = pgTable(
+  "copias_controladas",
+  {
+    id: id(),
+    versionId: ref("version_id", () => documentoVersiones.id).notNull(),
+    numero: integer("numero").notNull(),
+    puntoUsoId: ref("punto_uso_id", () => puntosUso.id).notNull(),
+    responsableId: refUsuario("responsable_id").notNull(),
+    responsableNombre: text("responsable_nombre").notNull(),
+    responsableCargo: text("responsable_cargo"),
+    emitidaPor: refUsuario("emitida_por").notNull(),
+    hashPrincipal: text("hash_principal").notNull(),
+    nota: text("nota"),
+    estado: text("estado").notNull().default("emitida"),
+    emitidaEn: marca("emitida_en").notNull(),
+    recibidaEn: marca("recibida_en"),
+    porRecogerEn: marca("por_recoger_en"),
+    recogidaEn: marca("recogida_en"),
+    anuladaEn: marca("anulada_en"),
+    motivoPorRecoger: text("motivo_por_recoger"),
+    destinoRecogida: text("destino_recogida"),
+    motivoAnulacion: text("motivo_anulacion"),
+    reemplazaCopiaId: ref("reemplaza_copia_id", (): AnyPgColumn => copiasControladas.id),
+    // Inicio de la ventana de impresión.
+    ultimaAperturaEn: marca("ultima_apertura_en"),
+    venceEn: marca("vence_en"),
+    avisoVencidoEn: marca("aviso_vencido_en"),
+    escaladoEn: marca("escalado_en"),
+  },
+  (t) => [
+    unique("copias_version_numero_unico").on(t.versionId, t.numero),
+    check(
+      "copias_estado_valido",
+      sql`${t.estado} IN ('emitida', 'recibida', 'por_recoger', 'recogida', 'anulada')`,
+    ),
+    check(
+      "copias_motivo_por_recoger_valido",
+      sql`${t.motivoPorRecoger} IN ('nueva_version', 'eliminado', 'carga_deshecha')`,
+    ),
+    check(
+      "copias_destino_recogida_valido",
+      sql`${t.destinoRecogida} IN ('devuelta', 'destruida', 'no_encontrada', 'retirada_en_verificacion')`,
+    ),
+    index("copias_punto_uso_idx").on(t.puntoUsoId),
+    index("copias_estado_idx").on(t.estado),
+  ],
+);
+
+// Solo-inserción (trigger en la migración).
+export const copiaEventos = pgTable(
+  "copia_eventos",
+  {
+    id: id(),
+    copiaId: ref("copia_id", () => copiasControladas.id).notNull(),
+    tipo: text("tipo").notNull(),
+    usuarioId: refUsuario("usuario_id"),
+    detalle: jsonb("detalle").notNull().default(sql`'{}'::jsonb`),
+    creadoEn: creado(),
+  },
+  (t) => [
+    check(
+      "copia_eventos_tipo_valido",
+      sql`${t.tipo} IN ('emitida', 'impresa', 'consultada', 'reimpresa', 'recibida', 'por_recoger', 'recogida', 'anulada')`,
+    ),
+    index("copia_eventos_copia_idx").on(t.copiaId, t.creadoEn),
+  ],
+);
+
+export const listasDistribucion = pgTable(
+  "listas_distribucion",
+  {
+    id: id(),
+    nombre: text("nombre").notNull(),
+    descripcion: text("descripcion"),
+    activa: boolean("activa").notNull().default(true),
+    creadoEn: creado(),
+  },
+  (t) => [uniqueIndex("listas_distribucion_nombre_unico").on(sql`lower(${t.nombre})`)],
+);
+
+export const listaMiembros = pgTable(
+  "lista_miembros",
+  {
+    id: id(),
+    listaId: ref("lista_id", () => listasDistribucion.id).notNull(),
+    tipo: text("tipo").notNull(),
+    // Polimórfica: la referencia se valida en la aplicación.
+    referenciaId: bigint("referencia_id", { mode: "number" }).notNull(),
+  },
+  (t) => [
+    unique("lista_miembros_unico").on(t.listaId, t.tipo, t.referenciaId),
+    check("lista_miembros_tipo_valido", sql`${t.tipo} IN ('area', 'cargo', 'proceso', 'usuario')`),
+  ],
+);
+
+export const documentoListas = pgTable(
+  "documento_listas",
+  {
+    documentoId: ref("documento_id", () => documentos.id).notNull(),
+    listaId: ref("lista_id", () => listasDistribucion.id).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.documentoId, t.listaId] })],
+);
+
+export const jornadas = pgTable(
+  "jornadas",
+  {
+    id: id(),
+    fecha: date("fecha").notNull(),
+    modalidad: text("modalidad").notNull(),
+    facilitadorId: refUsuario("facilitador_id").notNull(),
+    observaciones: text("observaciones"),
+    asistentesExternos: text("asistentes_externos"),
+    registradaPor: refUsuario("registrada_por").notNull(),
+    creadoEn: creado(),
+    anuladaEn: marca("anulada_en"),
+    anuladaPor: refUsuario("anulada_por"),
+    motivoAnulacion: text("motivo_anulacion"),
+  },
+  (t) => [
+    check(
+      "jornadas_modalidad_valida",
+      sql`${t.modalidad} IN ('presencial', 'virtual', 'reunion_servicio', 'otra')`,
+    ),
+  ],
+);
+
+export const jornadaVersiones = pgTable(
+  "jornada_versiones",
+  {
+    jornadaId: ref("jornada_id", () => jornadas.id).notNull(),
+    versionId: ref("version_id", () => documentoVersiones.id).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.jornadaId, t.versionId] }),
+    index("jornada_versiones_version_idx").on(t.versionId),
+  ],
+);
+
+export const jornadaAsistentes = pgTable(
+  "jornada_asistentes",
+  {
+    jornadaId: ref("jornada_id", () => jornadas.id).notNull(),
+    usuarioId: refUsuario("usuario_id").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.jornadaId, t.usuarioId] })],
+);
+
+export const acuses = pgTable(
+  "acuses",
+  {
+    id: id(),
+    versionId: ref("version_id", () => documentoVersiones.id).notNull(),
+    usuarioId: refUsuario("usuario_id").notNull(),
+    origen: text("origen").notNull(),
+    estado: text("estado").notNull().default("pendiente"),
+    modo: text("modo"),
+    jornadaId: ref("jornada_id", () => jornadas.id),
+    creadoEn: creado(),
+    confirmadoEn: marca("confirmado_en"),
+    venceEn: marca("vence_en").notNull(),
+    avisoVencidoEn: marca("aviso_vencido_en"),
+    escaladoEn: marca("escalado_en"),
+    cerradoEn: marca("cerrado_en"),
+    motivoCierre: text("motivo_cierre"),
+  },
+  (t) => [
+    uniqueIndex("acuses_vivo_unico")
+      .on(t.versionId, t.usuarioId)
+      .where(sql`estado IN ('pendiente', 'confirmado')`),
+    check(
+      "acuses_origen_valido",
+      sql`${t.origen} IN ('publicacion', 'solicitud_manual', 'ingreso_proceso')`,
+    ),
+    check(
+      "acuses_estado_valido",
+      sql`${t.estado} IN ('pendiente', 'confirmado', 'superado', 'retirado')`,
+    ),
+    check("acuses_modo_valido", sql`${t.modo} IN ('individual', 'asistencia', 'firma')`),
+    index("acuses_usuario_estado_idx").on(t.usuarioId, t.estado),
+    index("acuses_version_idx").on(t.versionId),
+  ],
+);
+
+// Solo-inserción (trigger en la migración).
+export const acuseEventos = pgTable(
+  "acuse_eventos",
+  {
+    id: id(),
+    acuseId: ref("acuse_id", () => acuses.id).notNull(),
+    tipo: text("tipo").notNull(),
+    usuarioId: refUsuario("usuario_id"),
+    detalle: jsonb("detalle").notNull().default(sql`'{}'::jsonb`),
+    creadoEn: creado(),
+  },
+  (t) => [
+    check(
+      "acuse_eventos_tipo_valido",
+      sql`${t.tipo} IN ('creado', 'confirmado', 'superado', 'retirado', 'revertido')`,
+    ),
+    index("acuse_eventos_acuse_idx").on(t.acuseId, t.creadoEn),
+  ],
+);
+
+export const socializacionesRequeridas = pgTable("socializaciones_requeridas", {
+  id: id(),
+  versionId: ref("version_id", () => documentoVersiones.id).notNull().unique(),
+  creadoEn: creado(),
+  venceEn: marca("vence_en").notNull(),
+  avisoVencidoEn: marca("aviso_vencido_en"),
+  escaladoEn: marca("escalado_en"),
+  cumplidaEn: marca("cumplida_en"),
+  jornadaId: ref("jornada_id", () => jornadas.id),
+  superadaEn: marca("superada_en"),
+});
+
+export const verificaciones = pgTable(
+  "verificaciones",
+  {
+    id: id(),
+    puntoUsoId: ref("punto_uso_id", () => puntosUso.id).notNull(),
+    estado: text("estado").notNull().default("abierta"),
+    abiertaPor: refUsuario("abierta_por").notNull(),
+    abiertaEn: marca("abierta_en").notNull(),
+    cerradaPor: refUsuario("cerrada_por"),
+    cerradaEn: marca("cerrada_en"),
+    conforme: boolean("conforme"),
+    propioPunto: boolean("propio_punto").notNull().default(false),
+    motivoDescarte: text("motivo_descarte"),
+    puntoNombre: text("punto_nombre").notNull(),
+    responsableId: refUsuario("responsable_id").notNull(),
+    responsableNombre: text("responsable_nombre").notNull(),
+  },
+  (t) => [
+    check(
+      "verificaciones_estado_valido",
+      sql`${t.estado} IN ('abierta', 'cerrada', 'descartada')`,
+    ),
+    uniqueIndex("verificaciones_una_abierta_idx")
+      .on(t.puntoUsoId)
+      .where(sql`estado = 'abierta'`),
+    index("verificaciones_punto_cerrada_idx").on(t.puntoUsoId, t.cerradaEn),
+  ],
+);
+
+export const verificacionItems = pgTable(
+  "verificacion_items",
+  {
+    id: id(),
+    verificacionId: ref("verificacion_id", () => verificaciones.id).notNull(),
+    orden: integer("orden").notNull(),
+    origen: text("origen").notNull(),
+    copiaId: ref("copia_id", () => copiasControladas.id),
+    texto: text("texto").notNull(),
+    respuesta: text("respuesta"),
+    nota: text("nota"),
+  },
+  (t) => [
+    check(
+      "verificacion_items_origen_valido",
+      sql`${t.origen} IN ('copia', 'copia_por_recoger', 'fijo', 'libre')`,
+    ),
+    check(
+      "verificacion_items_respuesta_valida",
+      sql`${t.respuesta} IN ('conforme', 'no_conforme', 'no_aplica')`,
+    ),
+    index("verificacion_items_verificacion_idx").on(t.verificacionId),
+  ],
+);
+
+export const hallazgos = pgTable(
+  "hallazgos",
+  {
+    id: id(),
+    puntoUsoId: ref("punto_uso_id", () => puntosUso.id).notNull(),
+    origen: text("origen").notNull(),
+    verificacionId: ref("verificacion_id", () => verificaciones.id),
+    itemId: ref("item_id", () => verificacionItems.id),
+    copiaId: ref("copia_id", () => copiasControladas.id),
+    documentoId: ref("documento_id", () => documentos.id),
+    descripcion: text("descripcion").notNull(),
+    retiradoEnElActo: boolean("retirado_en_el_acto").notNull().default(false),
+    responsableId: refUsuario("responsable_id").notNull(),
+    estado: text("estado").notNull().default("abierto"),
+    venceEn: marca("vence_en").notNull(),
+    avisoVencidoEn: marca("aviso_vencido_en"),
+    escaladoEn: marca("escalado_en"),
+    creadoEn: creado(),
+    cerradoEn: marca("cerrado_en"),
+    cerradoPor: refUsuario("cerrado_por"),
+    notaCierre: text("nota_cierre"),
+  },
+  (t) => [
+    check("hallazgos_origen_valido", sql`${t.origen} IN ('verificacion', 'recogida')`),
+    check("hallazgos_estado_valido", sql`${t.estado} IN ('abierto', 'cerrado')`),
+    index("hallazgos_punto_estado_idx").on(t.puntoUsoId, t.estado),
+    index("hallazgos_responsable_idx").on(t.responsableId),
   ],
 );

@@ -43,6 +43,13 @@
       "when": 1793973342249,
       "tag": "0005_fase13a-lista-e-indices",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794072498523,
+      "tag": "0006_fase13b-distribucion",
+      "breakpoints": true
     }
   ]
 }

@@ -47,8 +47,8 @@ describe.skipIf(!process.env.DATABASE_URL_MIGRADOR)("rol sgc_app", () => {
     expect(await codigoDeError(app`DELETE FROM accesos WHERE id = ${a.id}`)).toBe("42501");
     expect(await codigoDeError(app`DELETE FROM auditoria WHERE id = -1`)).toBe("42501");
   });
-  it.each(["firmas", "tramite_eventos"])("no puede modificar ni borrar %s", async (tabla) => {
-    expect(await codigoDeError(app`UPDATE ${app(tabla)} SET ronda = ronda WHERE id = -1`)).toBe("42501");
+  it.each(["firmas", "tramite_eventos", "copia_eventos", "acuse_eventos"])("no puede modificar ni borrar %s", async (tabla) => {
+    expect(await codigoDeError(app`UPDATE ${app(tabla)} SET creado_en = creado_en WHERE id = -1`)).toBe("42501");
     expect(await codigoDeError(app`DELETE FROM ${app(tabla)} WHERE id = -1`)).toBe("42501");
   });
   it("sí puede insertar, leer y borrar en tablas operativas", async () => {
@@ -77,6 +77,16 @@ describe.skipIf(!process.env.DATABASE_URL_MIGRADOR)("rol sgc_app", () => {
       await tx`ROLLBACK TO SAVEPOINT b`;
       expect(await codigoDeError(tx`DELETE FROM firmas`)).toBe("42501");
       await tx`ROLLBACK TO SAVEPOINT b`;
+      const [pu] = await tx`INSERT INTO puntos_uso (nombre, responsable_id) VALUES (${"zz_priv_pu_" + Date.now()}, ${u.id}) RETURNING id`;
+      const [v] = await tx`SELECT id FROM documento_versiones ORDER BY id LIMIT 1`;
+      const [c] = await tx`INSERT INTO copias_controladas (version_id, numero, punto_uso_id, responsable_id, responsable_nombre, emitida_por, hash_principal, emitida_en)
+        VALUES (${v.id}, 99999, ${pu.id}, ${u.id}, 'n', ${u.id}, 'x', now()) RETURNING id`;
+      await tx`INSERT INTO copia_eventos (copia_id, tipo) VALUES (${c.id}, 'emitida')`;
+      await tx`SAVEPOINT c`;
+      expect(await codigoDeError(tx`UPDATE copia_eventos SET tipo = 'x'`)).toBe("42501");
+      await tx`ROLLBACK TO SAVEPOINT c`;
+      expect(await codigoDeError(tx`DELETE FROM copia_eventos`)).toBe("42501");
+      await tx`ROLLBACK TO SAVEPOINT c`;
       throw new Error("revertir");
     }).catch((e: Error) => {
       if (e.message !== "revertir") throw e;
