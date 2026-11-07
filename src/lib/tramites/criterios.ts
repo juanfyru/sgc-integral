@@ -1,10 +1,10 @@
 /** Los criterios que no cumplen: su huella y su constancia. Solo servidor: usa `node:crypto`. */
 import { createHash } from "node:crypto";
 
-/** Lo que se confirmó: si un criterio o su nota cambian, la huella deja de coincidir. */
+/** Lo que se confirmó, en orden de ítem (reordenar la lista no la cambia): si un criterio o su nota cambian, la huella deja de coincidir. */
 export function huellaDeCriterios(criterios: { itemId: number; texto: string; nota: string }[]): string {
   return createHash("sha256")
-    .update(JSON.stringify(criterios.map((c) => [c.itemId, c.texto, c.nota])))
+    .update(JSON.stringify([...criterios].sort((a, b) => a.itemId - b.itemId).map((c) => [c.itemId, c.texto, c.nota])))
     .digest("hex");
 }
 

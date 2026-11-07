@@ -624,6 +624,10 @@ describe("criterios que no cumplen", () => {
 
   it("la huella cubre el ítem y la nota, y la constancia guarda solo el texto y la nota", () => {
     expect(huellaDeCriterios([{ itemId: 7, texto: "Usa la plantilla", nota: "Sin el ñandú" }])).toBe(createHash("sha256").update('[[7,"Usa la plantilla","Sin el ñandú"]]').digest("hex"));
+    // El orden de la lista no cuenta: reordenar ítems no cambia lo confirmado.
+    const [uno, dos] = [{ itemId: 3, texto: "A", nota: "a" }, { itemId: 9, texto: "B", nota: "b" }];
+    expect(huellaDeCriterios([dos, uno])).toBe(huellaDeCriterios([uno, dos]));
+    expect(huellaDeCriterios([uno, { ...dos, nota: "otra" }])).not.toBe(huellaDeCriterios([uno, dos]));
     expect(constanciaDeCriterios([])).toEqual({});
     const criterio = { itemId: 7, texto: "Usa la plantilla", nota: NOTA };
     expect(constanciaDeCriterios([criterio])).toEqual({ noCumple: [{ texto: "Usa la plantilla", nota: NOTA }], confirmoNoCumple: true });
