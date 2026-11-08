@@ -7,6 +7,9 @@ export const TAMANO_MUESTRA_BYTES = 16384;
 
 export const ROLES_ARCHIVO = ["principal", "editable", "anexo"] as const;
 export type RolArchivo = (typeof ROLES_ARCHIVO)[number];
+/** Dónde cuelga una evidencia: una jornada de socialización o un ítem de verificación. */
+export const CONTEXTOS_EVIDENCIA = ["jornada", "verificacion_item"] as const;
+export type ContextoEvidencia = (typeof CONTEXTOS_EVIDENCIA)[number];
 /** Los roles que las listas y las rutas de archivos de un documento ofrecen: las actas quedan fuera. */
 export const ROLES_ARCHIVO_LISTA: string[] = [...ROLES_ARCHIVO];
 
@@ -97,4 +100,23 @@ export async function validarTipo(
     };
   }
   return { ok: true, extension, mime: detectado.mime };
+}
+
+const EXTENSIONES_EVIDENCIA = ["pdf", "png", "jpg", "jpeg", "webp"];
+
+const ERROR_EVIDENCIA = "La evidencia debe ser PDF o imagen (PNG, JPG, WebP)";
+
+/**
+ * Como `validarTipo`, pero una evidencia solo es un PDF o una imagen (nunca SVG, HTML ni Office):
+ * una extensión fuera de la lista o un contenido que no la respalda dan el mismo mensaje.
+ */
+export async function validarTipoEvidencia(
+  nombre: string,
+  muestra: Uint8Array,
+): Promise<ResultadoTipo> {
+  const punto = nombre.lastIndexOf(".");
+  const extension = punto > 0 ? nombre.slice(punto + 1).toLowerCase() : "";
+  if (!EXTENSIONES_EVIDENCIA.includes(extension)) return { ok: false, error: ERROR_EVIDENCIA };
+  const tipo = await validarTipo(nombre, muestra);
+  return tipo.ok ? tipo : { ok: false, error: ERROR_EVIDENCIA };
 }

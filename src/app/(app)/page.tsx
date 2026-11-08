@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 export default async function Inicio() {
   const sesion = await exigirSesion();
   const misProcesos = sesion.rol === "lider_proceso" ? await procesosAsignados(sesion.usuarioId) : null;
-  const [datos, marca, tareas] = await Promise.all([
+  const [datos, marca, { tareas, total }] = await Promise.all([
     obtenerDatosMapa(sesion),
     obtenerMarcaSegura(),
     misTareas(sesion),
@@ -30,7 +30,7 @@ export default async function Inicio() {
         descripcion={configuracion.subtitulo_mapa ?? undefined}
       />
 
-      <MisTareas tareas={tareas} />
+      <MisTareas tareas={tareas} total={total} />
       {misProcesos && <MisProcesos procesos={misProcesos} />}
 
       {/* Escritorio: el mapa completo por bandas. Mobile: acordeón (D9). */}

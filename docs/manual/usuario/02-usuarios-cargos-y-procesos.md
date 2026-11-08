@@ -10,8 +10,8 @@ Capítulo 1.
 
 Las páginas de administración están en la barra lateral (Capítulo 3, sección 2): en el
 grupo **Documentos**, Gestión de documentos, Listado Maestro, Tipos de documento,
-Configuración documental y Mapa de procesos; en el grupo **Administración**, Entidad y marca, **Estructura**, **Usuarios**,
-Estadísticas, Bitácora, **Accesos** y **Sesiones**. En este capítulo, "Administración →
+Configuración documental y Mapa de procesos; en el grupo **Administración**, Entidad y marca, **Estructura**, **Puntos de uso**,
+**Listas de distribución**, **Usuarios**, Estadísticas, Bitácora, **Accesos** y **Sesiones**. En este capítulo, "Administración →
 **Usuarios**" quiere decir: barra lateral, grupo Administración, enlace Usuarios.
 
 Cada persona ve en esa barra solo lo que su rol permite. Si alguien abre una página que
@@ -115,7 +115,11 @@ Administración → **Usuarios** → **Nuevo usuario**.
 - **Procesos:** marque los procesos. Para un líder, son los que lidera, y es
   **obligatorio** marcar al menos uno. Para los demás roles es opcional: son los procesos a
   los que la persona pertenece, y le dan acceso a sus documentos restringidos (Capítulo 5,
-  sección 15).
+  sección 15). **Asigne a cada persona los procesos en los que trabaja:** además de definir
+  qué restringidos ve, los procesos definen **a quién le llega la tarea de confirmar la
+  lectura** de cada versión que se publica (la audiencia del documento, Capítulo 6, sección 5.3).
+  Si solo los líderes tienen procesos, cada documento llegará a muy pocas personas. Para
+  cubrir al resto también puede usar las listas de distribución (Capítulo 6, sección 5.2).
 - **Puede ver el historial de documentos (versiones obsoletas y anuladas):** márquela
   solo a quien lo necesite (sección 1).
 
@@ -225,6 +229,12 @@ registro guarda el valor anterior y el nuevo de cada campo que cambió.
 bloque **Mis procesos** con accesos directos a sus procesos. Si un proceso se desactiva en
 el mapa, deja de aparecerle.
 
+**Cambiar los procesos de cualquier persona tiene efecto en sus lecturas.** Si le agrega un
+proceso, y sus documentos tienen la marca **Lectura obligatoria al ingresar al proceso**, le
+nacen las tareas de lectura de las versiones vigentes (el alta por lote lo dice en su
+resumen: «Se crearon N tareas de lectura»). Si le quita un proceso, sus lecturas pendientes
+de los documentos que ya no le corresponden se retiran y dejan de contar en el porcentaje.
+
 ### 5.2 Desactivar o reactivar
 
 **Desactivar usuario…** → **Desactivar usuario**: la persona no podrá ingresar y se
@@ -233,6 +243,11 @@ nunca, porque lo que hicieron debe seguir en la bitácora. Úselo cuando alguien
 o cambia de entidad. **Reactivar usuario** la habilita de nuevo.
 
 Nadie puede desactivarse a sí mismo ("No puede desactivar su propia cuenta.").
+
+**Responsables de puntos de uso.** Una persona que es responsable de algún punto de uso activo
+no se puede desactivar: la pantalla lista sus puntos con un enlace para reasignarlos primero
+(Capítulo 6, sección 5.1). Una tarea de recoger papel sin dueño rompería el control de las
+copias.
 
 ### 5.3 Restablecer la clave (clave olvidada)
 

@@ -1,8 +1,10 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-11-07**, al fusionar la 13A. La **Fase 13A —
+> Se actualiza al cierre de cada fase. Última actualización: **2026-11-07**, al cerrar la 13B. La **Fase 13B —
+> Distribución y puntos de uso** está terminada en la rama `fase-13b-distribucion-puntos-de-uso` (unos 40 commits
+> sobre `main`), **sin fusionar** a la espera de la palabra del usuario. La **Fase 13A —
 > Flujo documental** y sus adiciones están fusionadas en `main` (`d0c6a42`, 2026-11-07), con el CI
-> en verde. Lo siguiente es la Fase 13B. La
+> en verde. Lo siguiente, tras fusionar la 13B, es la Fase 13C. La
 > Fase 12 (nueva estructura visual) y la Fase 11 (fundación de acceso) también están en `main`.
 > La variante nació el 2026-11-03, bifurcada de `sgc-suaza` en `9644ceb`; el diseño
 > maestro de las fases 11–20
@@ -16,7 +18,25 @@
    con sus funcionalidades, y construir aquí otra con **funcionalidades más completas**.
    La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
    proyecto**.
-1. **Dónde quedamos:** la **Fase 13A está en `main`** (`d0c6a42`, publicada el 2026-11-07, 93 commits
+1. **Dónde quedamos:** la **Fase 13B está terminada en su rama** (`fase-13b-distribucion-puntos-de-uso`,
+   unos 40 commits sobre `main`, `f08f01d`; **no se ha fusionado ni publicado**: no hay `push` ni `merge` sin la palabra del
+   usuario). Lo que el papel y las personas hacen después de publicar queda dentro del sistema: puntos de uso con
+   responsable; copias controladas numeradas con sello (franja y QR a la ficha) y su recibido, reimpresión con
+   motivo, anulación, recogida automática cuando la versión deja de ser vigente y reemplazo en un acto; listas
+   de distribución y audiencia de cada documento; acuses de lectura con «qué cambió», porcentaje y Excel;
+   jornadas de socialización con evidencia, cuya asistencia vale como acuse; verificaciones en los puntos de
+   uso con lista armada por el sistema, hallazgos y porcentaje de conformidad; todo en «Mis tareas», la campana
+   y la revisión de vencimientos. **Sin dependencias npm nuevas.** Detalle en «Hecho (Fase 13B)»; el recorrido,
+   en «Qué probar y cómo (Fase 13B)»; el manual, en el capítulo 6. **Verificado al cierre:** lint limpio;
+   **3593/3593 tests** (155 archivos, `SEMILLA_RECIEN=1`, sin saltos, tras la ola final y con la demo recién
+   sembrada); **tras los ajustes de la revisión del usuario del 2026-11-08** (filtro de Gestión de documentos y
+   `DEV_ORIGENES`): lint limpio, **3588 tests en verde y 16 saltados** (156 archivos, demo ya avanzada por el
+   recorrido manual, sin `SEMILLA_RECIEN`) y build en verde; build de producción sin URL de base; compose
+   reconstruido con «Migraciones al día» (ocho migraciones) y `/api/salud` en verde; la 0006 y la 0007
+   aplicadas sobre una copia de la demo de `main`; el recorrido de §18 en navegador (claro, oscuro y 390 px) hecho
+   por el controlador, con la ola final de correcciones de la revisión de la rama (F13B-R18 a R22) y la demo
+   resembrada al final. **Pendiente:** el recorrido del usuario y su decisión de fusionar.
+   **Antes, la Fase 13A:** estaba en `main` (`d0c6a42`, publicada el 2026-11-07, 93 commits
    sobre `b94032e`; la rama `fase-13a-flujo-documental` ya se borró). Un documento nuevo, un cambio o una eliminación recorren ahora un trámite
    dentro del sistema: solicitud con visto bueno, aceptación con duplicidad asistida, código
    correlativo y plantilla, elaboración, revisión con lista de verificación y observaciones,
@@ -45,16 +65,15 @@
    F13A-R35 (404 real en páginas). F13A-R36 ya está resuelta (F13A-AU6). Los archivos reales del
    hospital están en la raíz, sin seguimiento y excluidos en `.git/info/exclude`: nunca entran a un
    commit.
-2. **Lo que sigue: Fase 13B — Distribución y puntos de uso** (pasos 9 y 10 del procedimiento del
-   hospital): listas de distribución y acuse de lectura con porcentaje, evidencia de capacitación,
-   copias controladas con sello, recibido y recogida de las obsoletas, puntos de uso y su
-   verificación con porcentaje de conformidad. Sigue el mismo camino de la 13A: spec aprobado,
-   plan, ejecución, prueba y fusión; el reparto está en el spec de la 13A, §5. Enganches que deja la
-   13A: el **evento de publicación y el de eliminación** (`src/db/consultas/flujo/cierre.ts`), donde
-   la 13B cuelga la distribución y el aviso a las listas; `archivos` sin generalizar, porque el
-   primer dueño distinto de una versión es la evidencia de capacitación; **marcar leída una
-   notificación** no se audita (F12-D35) y, si pasa a ser acuse de una tarea, sí debe quedar en la
-   bitácora; el motivo «revisión anual» de la solicitud lo usa la 13C. Insumos que dependen del
+2. **Lo que sigue: Fase 13C — Vigencia, externos y normograma** (spec de la 13A, §5): plazo de revisión
+   (12 meses por defecto), semáforo documental y revisión anual con su informe; documentos externos con
+   verificación de vigencia y su matriz; normograma institucional y por proceso; caracterización estructurada;
+   indicadores del proceso documental (que usan los porcentajes de acuses y de conformidad de la 13B). Sigue el
+   mismo camino: spec aprobado, plan, ejecución, prueba y fusión. Enganches que deja la 13B: los porcentajes de
+   acuses y de conformidad (`src/db/consultas/distribucion/`), `archivos` generalizado para las evidencias de
+   mediciones (Fase 14), los hallazgos que la Fase 15 convertirá en acciones correctivas y las tareas y avisos que
+   la Fase 16 llevará al correo; el motivo «revisión anual» de la solicitud lo usa la 13C. Antes de la 13C hay que
+   fusionar la 13B. Insumos que dependen del
    usuario: spec maestro §11 (SMTP, versión de Windows del servidor, planta de cargos real,
    plantilla del plan de mejoramiento, total de cuentas), la lista de verificación real
    (SGC-FO-03) y el ajuste del texto de su procedimiento (el listado maestro aparece con dos
@@ -104,19 +123,21 @@
 
    | Usuario | Rol | Cargo | Procesos |
    |---|---|---|---|
-   | `coordinadora.sgc` | admin_sgc | Líder de Calidad | — |
+   | `coordinadora.sgc` | admin_sgc | Líder de Calidad | SGC |
    | `gerente` | gerencia | Gerente | — |
    | `control.interno` | control_interno | Jefe de Control Interno | — |
    | `lider.gth` | lider_proceso | Coordinadora de Talento Humano | GTH |
    | `lider.cex` | lider_proceso | Médico Coordinador | CEX |
-   | `consulta` | consulta | Auxiliar de Enfermería | — |
+   | `consulta` | consulta | Auxiliar de Enfermería | AIN, CEX |
+   | `jefe.urgencias` | consulta | Enfermera Jefe | AIN |
+   | `regente.farmacia` | consulta | Regente de Farmacia | ATE |
 
    Más `admin` (admin_sgc), con la `ADMIN_CLAVE` de `.env.local`, de `npm run admin:asegurar`,
    que pide cambiar la clave. La demo trae 5 áreas y 9 cargos con jerarquía, y **31 documentos con 35
    versiones** (29 vigentes, 2 obsoletas, 3 en borrador y 1 anulada), con la convención del hospital
    (`PROCESO-TIPO-NN`), dos plantillas (`SGC-FO-04` y `SGC-FO-05`), un restringido (`GTH-FO-01`), un
    formato de acta ficticio ya elegido (`SGC-FO-06`, con 4,2 y 3,2 cm; lo genera la semilla, no es el
-   del hospital), siete usuarios (seis demo más `admin`) y
+   del hospital), nueve usuarios (ocho demo más `admin`), siete puntos de uso y dos listas de distribución y
    **cinco trámites** en distintas etapas, de `SOL-…-001` a `SOL-…-005`. Desde la Fase 12 trae además
    la marca de Suaza (sigla `HNSF`, primario `#1b4e8e`, secundario `#2e9b47`, el lema actual y el logo
    demo `src/db/semillas/recursos/logo-demo.png`, un monograma propio, no el escudo real) y una
@@ -130,10 +151,11 @@
    código), con todos los tipos operativos y los ocho ítems de la lista, que añade la migración 0005
    si la tabla está vacía: el Administrador del SGC fija el formato en **Configuración documental**
    y la autoridad en **Tipos de documento**.
-   **La base de desarrollo se resembró varias veces en la 13A** (Tareas 2 y 15, sus arreglos y el
+   **La base de desarrollo se resembró en la 13B** (Tarea 15, con la demo de distribución; el recorrido de §18 la
+   avanza otra vez). **También se resembró varias veces en la 13A** (Tareas 2 y 15, sus arreglos y el
    cierre): cada vez se pierden los datos de prueba manual y `admin` se recrea con la `ADMIN_CLAVE`
    de `.env.local` y cambio obligatorio.
-5. **Tests:** 2971 en 124 archivos, en serie (`fileParallelism: false`), contra la BD de
+5. **Tests:** 3568 en 151 archivos, en serie (`fileParallelism: false`), contra la BD de
    desarrollo sembrada y **conectados como `sgc_app`**, igual que la app; el test de
    privilegios usa además `DATABASE_URL_MIGRADOR`. Los usuarios de prueba con historia
    (`zz_<algo>_<timestamp>`) se acumulan porque no se pueden borrar (F11-D2); `db:seed` los
@@ -169,6 +191,156 @@
 9. **Memoria de Claude Code:** es por carpeta; la de `F:\sgc-integral` solo guarda
    preferencias de trabajo del usuario (decide por listas numeradas; recomendaciones con
    base ISO, Regulación o Práctica). Este archivo es el contexto durable de la variante.
+
+## Qué probar y cómo (Fase 13B)
+
+Recorrido de §18 del spec de la fase
+(`docs/superpowers/specs/2026-11-07-fase13b-distribucion-puntos-de-uso-design.md`). El capítulo 6 del
+manual (`docs/manual/usuario/06-distribucion-copias-controladas-acuses-y-puntos-de-uso.md`)
+explica cada pantalla por actor. **No lo ha recorrido todavía el usuario**; el controlador lo
+recorre en el navegador tras el commit de cierre y deja sus capturas en la bitácora de la sesión.
+
+0. **Preparar.** Base arriba y `npm run dev` → `http://localhost:3002` (**no use 9081**: el compose no monta el
+   almacén y los PDF de la demo no existen allí; las copias controladas se generan desde el
+   principal). La base quedó recién sembrada en la Tarea 15 de la fase; para empezar de cero:
+   `npm run db:seed && npm run admin:asegurar`. Use ventanas privadas para tener varias sesiones.
+   Antes de emitir, en **Entidad y marca** escriba **Dirección de la plataforma**
+   (`http://localhost:3002` en desarrollo): sin ella el sello sale sin QR (paso 5).
+   **Desde el celular:** `next dev` solo atiende bien a `localhost`; desde otro equipo la página carga con
+   estilo pero el menú, la búsqueda y todo lo interactivo quedan muertos (el cliente de desarrollo no logra su
+   WebSocket y recarga la página sin parar). Ponga en `.env.local` la IP del PC, `DEV_ORIGENES=192.168.20.104`
+   (la que muestre `ipconfig`), reinicie `npm run dev` y abra `http://192.168.20.104:3002` en el celular; la
+   **Dirección de la plataforma** debe ser esa misma, no `localhost`, para que el QR abra en el celular.
+
+   | Usuario | Clave | Papel en el recorrido |
+   |---|---|---|
+   | `coordinadora.sgc` | `Demo-SGC-2026-clave` | Administrador del SGC; responsable del punto Archivo |
+   | `lider.gth` | ídem | Líder de GTH; responsable del punto Talento Humano |
+   | `jefe.urgencias` | ídem | **Nuevo.** Luz Dary Ortiz, Enfermera Jefe (rol Consulta, proceso AIN); responsable del punto Urgencias |
+   | `regente.farmacia` | ídem | **Nuevo.** Carlos Andrés Rojas, Regente de Farmacia (rol Consulta, proceso ATE); responsable del punto Farmacia |
+   | `consulta` | ídem | Procesos AIN y CEX (ahora tiene procesos); responsable de Laboratorio y Vacunación |
+   | `gerente`, `control.interno` | ídem | Ven todo en solo lectura; `control.interno` tiene pendiente la lectura de `GTH-CA-01` v3 |
+   | `lider.cex` | ídem | Líder de CEX; responsable de Odontología |
+
+   Lo que la demo trae sembrado (spec §16): siete puntos de uso (Urgencias, Farmacia, Laboratorio,
+   Vacunación, Odontología, Talento Humano, Archivo) y dos listas («Todo el hospital» y «Personal
+   asistencial»); `GTH-CA-01` con la lista «Todo el hospital» y lectura obligatoria al ingresar;
+   copias de `GTH-CA-01` v3 (Talento Humano recibida, Urgencias emitida hace 4 días y sin recibir,
+   Vacunación anulada por error) y una copia de la v2 en Archivo **por recoger**; los acuses de la
+   v3 (3 por firma, 2 individuales, 2 por asistencia y 1 pendiente vencido: `control.interno`); una
+   jornada hace 5 días con cuatro asistentes y un acta PDF; Farmacia verificada y conforme hace 95
+   días («Toca verificar») y Urgencias verificada hace 20 días con un hallazgo abierto y vencido
+   («copia no controlada de AIN-FO-01»).
+
+1. **Puntos de uso (`coordinadora.sgc`).** **Mapa de procesos** → proceso AIN → subproceso «Atención del Parto»
+   → **Nuevo punto de uso para este subproceso**: el formulario llega con el nombre y el proceso AIN; cámbielo a
+   «Sala de partos», con `jefe.urgencias` de responsable (también se crea desde **Administración** → **Puntos de
+   uso** → **Nuevo punto de uso**). Debe verse en la lista. Abra **Urgencias** y desactívelo: lo impide, y la
+   página lista las copias vivas que lo impiden (documento, número y estado) con enlace a cada una. En
+   **Usuarios**, abra `jefe.urgencias`: **Desactivar usuario** lo impide mientras tenga puntos activos, con enlace
+   a ellos.
+2. **Emitir (`lider.gth`).** Abra `GTH-PR-01` → **Emitir copia controlada**: el diálogo pone primero los puntos de
+   los procesos del documento (Talento Humano) y luego los demás activos. Elija Talento Humano. La app lleva a la
+   página de la copia con «La copia está lista para imprimir»; pulse **Abrir el PDF para imprimir** (pestaña
+   nueva): franja «COPIA CONTROLADA N.º 01 · GTH-PR-01 v1 · Talento Humano · Entregada a …» en cada página y el
+   QR. La copia nace **Recibida** porque el líder es el responsable. Emita otra para **Urgencias** (N.º 02, queda
+   «Sin recibido»): el líder emite los documentos de sus procesos a cualquier punto activo. Recargue el PDF: no
+   genera una impresión nueva. Pasados 15 minutos, la página de la copia ya no ofrece **Abrir el PDF**, sino
+   **Reimprimir** (pide motivo); el enlace viejo del PDF vuelve a la copia con «La ventana de impresión
+   terminó…». En `GTH-FO-01` (restringido), emitir para Farmacia es rechazado: su responsable no lo ve. **La
+   demo no trae ningún vigente con principal en Word:** registre uno (**Registrar documento ya aprobado**,
+   principal `.docx`) y su ficha muestra **Emitir copia controlada** deshabilitado con «Para emitir copias
+   controladas el archivo principal debe ser PDF».
+3. **Recibido (`jefe.urgencias`).** **Mis tareas** → «Recibir la copia N.º 02 de GTH-CA-01 v3 en
+   Urgencias» (la copia de la demo, emitida hace 4 días y vencida; si hizo el paso 2, también tiene la de
+   `GTH-PR-01` v1) → **Confirmar el recibido**. La copia queda **Recibida**; en la página de la copia el historial dice quién y cuándo.
+4. **Publicar y recoger.** Atajo con la demo: como `coordinadora.sgc`, emita copias de `GBS-PR-01` v1 para
+   Urgencias y Farmacia y luego publique SOL-2026-003 (`GBS-PR-01` v2: **Publicar**, con clave). Debe verse:
+   las dos copias de la v1 en **Por recoger**, la tarea «Recoger la copia …» para `jefe.urgencias` y
+   `regente.farmacia`, y el botón **Reemplazar las copias de la v1 (2)** en la ficha. Púlselo: nacen dos
+   copias de la v2; cada responsable confirma **Recibí esta y retiré la v1** con destino **Devuelta al
+   SGC**. (El camino largo, con `GTH-PR-01`: pasos 1 a 5 de «Qué probar y cómo (Fase 13A)»; ahí marque
+   **Requiere socialización** al aceptar, para el paso 8.)
+5. **QR.** Abra `http://localhost:3002/documentos/GBS-PR-01?v=1` (lo que codifica el QR de la copia de la
+   v1): la ficha dice «Esta copia es de la versión 1; la vigente es la 2». Con el celular en la red del
+   hospital, el QR real abre lo mismo. Vacíe **Dirección de la plataforma**: el diálogo de emisión avisa «Sin
+   dirección de la plataforma configurada, el sello saldrá sin código QR» (con enlace a **Entidad y marca**
+   para el Admin SGC) y el sello sale sin QR. Como `consulta`, la ficha de `GTH-CA-01` muestra el bloque
+   **Socialización** con la jornada de la demo («Jornada del … · reunión de servicio · … asistentes · acta
+   adjunta»), sin enlace al acta.
+6. **Acuse.** Como `control.interno`: **Mis tareas** → «Confirmar lectura de GTH-CA-01 v3» (vencida): trae
+   «Qué cambió», «Le llega porque…»; el botón dice «Abra el documento para habilitar la confirmación» hasta
+   abrir el documento; después marque la casilla y **Confirmar lectura**. Como `lider.gth`, la ficha de
+   `GTH-CA-01` muestra «Acuses v3: … de …» y **Ver quién falta**. `gerente` ve el porcentaje de la entidad
+   en **Distribución** → **Acuses de lectura**.
+7. **Lista y pedido manual (`coordinadora.sgc`).** En **Gestión de documentos** → `SGC-PR-01` → **Editar
+   datos** → **Distribución**, marque «Todo el hospital» y guarde; en la ficha despliegue **Pedir acuse de
+   lectura…** y pulse el botón que aparece dentro (es un pliegue de dos gestos: solo desplegarlo no envía nada;
+   al enviarlo sale bajo el botón cuántos acuses creó): cada persona de la audiencia recibe la tarea (`consulta`
+   ahora tiene «Confirmar lectura de SGC-PR-01 v1»); repetirlo no duplica. «Todo el hospital» en la demo está
+   armada por áreas, así que llega a quien tiene cargo con área: `admin`, sin cargo, queda fuera; y quien pide
+   los acuses recibe su tarea en **Inicio** pero no el aviso de la campana. Marque **Lectura obligatoria al ingresar al proceso**, cree un usuario nuevo con el
+   proceso SGC: nace su acuse.
+8. **Socialización (`lider.gth`).** Si marcó la casilla en el paso 4 (camino largo), la tarea «Registrar la
+   socialización de GTH-PR-01 v2»; si no, **Registrar socialización** desde la ficha. Registre la jornada con
+   tres asistentes y un PDF de acta: sus acuses quedan «Por asistencia». En la ficha, `consulta` ve la frase de
+   la jornada pero no el acta; `control.interno` ve además el enlace a la jornada con su acta. **Anular la
+   jornada**, con motivo: los acuses vuelven a pendiente y la frase sale de la ficha.
+9. **Verificación (`coordinadora.sgc`, a 390 px o en el celular).** **Distribución** → **Verificaciones** →
+   «Toca verificar» en Farmacia → **Verificar** (lleva a una pantalla de confirmación; el botón **Verificar
+   Farmacia** abre la verificación, y esa apertura queda en la bitácora): responda la lista, un **No conforme** con **Foto**, **Cerrar la
+   verificación**: «Punto no conforme», hallazgo para `regente.farmacia` con fecha; la **Conformidad actual**
+   pasa de 50 % (Farmacia conforme, Urgencias no conforme) a 0 %, por debajo del umbral en ambos casos, y la
+   insignia lo dice. `regente.farmacia` lo cierra desde **Mis tareas** («Corregir hallazgo en
+   Farmacia: …») con **Cerrar hallazgo**. La verificación cerrada no ofrece edición, y el trigger lo impide.
+10. **Eliminación.** Emita una copia de `CEX-GU-01` para Odontología (`lider.cex`) y ejecute la eliminación
+    (SOL-2026-005, paso 10 de la 13A): la copia queda **Por recoger** y la audiencia recibe «dejó de aplicar»,
+    sin tarea de acuse.
+11. **Vencimientos.** La demo ya trae vencidos (copia de Urgencias, acuse de `control.interno`, hallazgo de
+    Urgencias, Farmacia): la revisión (cada diez minutos como mucho) avisa a los responsables. Para ver el
+    escalamiento, baje los plazos a 1 día en **Configuración documental** → **Distribución** y los días para
+    avisar al jefe a 1 (**Plazos y escalamiento**): el jefe recibe un aviso sin títulos. Devuélvalos.
+12. **Excel.** **Descargar Excel** en **Copias controladas**, **Acuses de lectura** y **Verificaciones**:
+    encabezado institucional, celdas neutralizadas, fila en la **Bitácora**. (**Socializaciones** no tiene
+    Excel: el spec lo mencionaba y no se construyó; ver Deuda técnica.)
+13. **Verificación técnica:** hecha al cierre (ver «Hecho (Fase 13B)»).
+
+**Al terminar:** el recorrido avanza la demo, y `npm test` salta los casos que dependen de ella, con un aviso en
+la salida. `npm run db:seed && npm run admin:asegurar` la deja como nueva.
+
+### Avisos para el usuario (Fase 13B)
+
+1. **Escriba la «Dirección de la plataforma» (`url_publica`) en Entidad y marca antes de imprimir copias.**
+   Sin ella el sello sale **sin código QR** (el diálogo de emisión lo avisa). Es la dirección que el
+   celular alcanza en la intranet (`https://sgc.hospital.gov.co` o `http://192.168.1.20:8443`), sin ruta.
+   Base: Práctica (la cabecera `Host` la controla el cliente).
+2. **El formato PDF real del hospital trae un pie que ocupa el borde inferior (1,15 cm).** El alto por defecto
+   de la franja del sello es 1,0 cm y la taparía: en **Configuración documental** → **Distribución** ponga
+   **Alto de la franja del sello** en **0,6** cm (a 0,6 cm el sello todavía se pinta en dos líneas con letra de 6 puntos, el límite; por debajo de 0,6 cm pasa a
+   una sola línea). **El QR no baja con la franja:** mide 1,5 cm más 0,15 cm de margen blanco por lado y se dibuja en
+   la esquina inferior derecha, así que seguirá cubriendo esa esquina del pie del hospital; baje también el **Tamaño
+   del código QR** en la misma sección (sin perder el escaneo) o acepte que la esquina quede cubierta. Pruébelo con
+   un documento real antes de imprimir en serie. Base: Práctica.
+3. **El QR abre la ficha del documento en la intranet desde el celular.** `?v=` le dice a la ficha qué versión
+   se imprimió y ella avisa «Esta copia es de la versión N; la vigente es la M». Exige que el celular alcance
+   la intranet y que la persona ingrese con su cuenta. Base: ISO 7.5.3.2 c).
+4. **Dos usuarios demo nuevos** (`jefe.urgencias` y `regente.farmacia`) y **la base de desarrollo se resembró**
+   en la Tarea 15 de la fase (y los datos de prueba manual se perdieron). `admin` se recreó con la
+   `ADMIN_CLAVE` de `.env.local`.
+5. **Asigne procesos a todo el personal.** La audiencia de lectura de cada documento sale de los procesos de cada
+   persona (y de las listas de distribución), y los procesos también definen qué restringidos ve. Con procesos
+   solo para los líderes, cada documento llega a dos personas. La demo asigna procesos a todos. Base: Práctica.
+6. **Dos textos del procedimiento del hospital que debe ajustar usted** (spec §5): el SGC-RG-02 «Registro de
+   distribución» pasa a ser el registro de copias del sistema, y las «evidencias de socialización y capacitación»
+   pasan a ser las jornadas registradas. Están dichos en el capítulo 6, sección 7.
+7. **El PDF sellado no se guarda:** se regenera cada vez desde el principal. Si una copia impresa debe
+   rehacerse, use **Reimprimir** con motivo (15 minutos de ventana) o anule y emita otra. Base: decisión del usuario.
+8. **Para probar desde el celular contra `npm run dev`** hace falta `DEV_ORIGENES=<IP del PC>` en `.env.local` y
+   reiniciar el servidor (paso 0 de «Qué probar y cómo (Fase 13B)»). Sin la variable, la página carga con estilo
+   pero nada interactivo responde. Solo afecta al desarrollo; la imagen del compose y producción no la necesitan.
+9. **Una lista de distribución armada por áreas no alcanza a quien no tiene cargo.** «Todo el hospital» de la demo
+   es por áreas; si en el hospital habrá cuentas sin cargo, decida si una lista debe poder incluir «todos los
+   usuarios activos» (hoy no existe ese tipo de miembro). Base: spec §6.
 
 ## Qué probar y cómo (Fase 13A)
 
@@ -518,6 +690,77 @@ desarrollo en `http://localhost:3002`.
 
 Manual de usuario de esta fase: `docs/manual/usuario/01-ingreso-clave-y-segundo-factor.md`
 y `docs/manual/usuario/02-usuarios-cargos-y-procesos.md`.
+
+## Hecho (Fase 13B)
+
+Plan: `docs/superpowers/plans/2026-11-07-fase13b-distribucion-puntos-de-uso.md`; diseño:
+`docs/superpowers/specs/2026-11-07-fase13b-distribucion-puntos-de-uso-design.md`. Los pasos 9 y 10 del
+procedimiento de control de documentos del hospital quedan dentro del sistema, con la evidencia de PC-08 (parte
+física), PC-09 y PC-10 (spec, Apéndice A). **Sin dependencias npm nuevas** (`pdf-lib`, `qrcode` y `exceljs`
+ya estaban). La rama `fase-13b-distribucion-puntos-de-uso` lleva unos 40 commits sobre `main` (`f08f01d`) y **no está
+fusionada**.
+
+- **Tras la revisión del usuario (2026-11-08):** **Gestión de documentos** filtra al escribir, sobre la lista ya
+  cargada y sin tocar la dirección: texto sobre código y título (sin tildes ni mayúsculas, todas las palabras),
+  y tipo, proceso y estado exactos; las opciones salen de las filas y una fila con vigente y borrador responde a
+  los dos estados (`src/lib/filtro-documentos-admin.ts`, `TablaDocumentosAdmin`, columna **Procesos** nueva;
+  `listarDocumentosAdmin` devuelve `procesos`). Y `DEV_ORIGENES` en `next.config.ts` (`allowedDevOrigins`)
+  para abrir `next dev` desde el celular: sin la variable, desde otro origen la página no hidrata.
+- **Rutas nuevas:** `/distribucion` y sus cuatro pestañas (`/distribucion/{copias,acuses,socializaciones,verificaciones}`),
+  `/distribucion/copias/[id]`, `/distribucion/copias/[id]/pdf`, `POST /distribucion/copias/[id]/reimprimir`,
+  `/distribucion/socializaciones/{nueva,[id]}` y `…/[id]/archivos/[archivoId]/[[...nombre]]`,
+  `/distribucion/verificaciones/{nueva,[id]}` y `…/[id]/archivos/[archivoId]/[[...nombre]]`,
+  `/distribucion/{copias,acuses,verificaciones}/excel`, `/acuses` y `/acuses/[id]`,
+  `/admin/puntos-uso`, `/admin/puntos-uso/{nuevo,[id]}`, `/admin/listas-distribucion`,
+  `/admin/listas-distribucion/{nueva,[id]}`, y las subidas `POST /api/socializaciones/[id]/archivos`,
+  `POST /api/verificaciones/[id]/items/[itemId]/archivos` con sus `DELETE …/[archivoId]` (las dos, fuera del
+  `matcher` del proxy). Las URL existentes se conservan.
+- **Esquema (`drizzle/0006_fase13b-distribucion.sql`):** tablas `puntos_uso`, `punto_uso_procesos`,
+  `copias_controladas`, `copia_eventos`, `listas_distribucion`, `lista_miembros`, `documento_listas`, `acuses`,
+  `acuse_eventos`, `jornadas`, `jornada_versiones`, `jornada_asistentes`, `socializaciones_requeridas`,
+  `verificaciones`, `verificacion_items` y `hallazgos`; `documentos.lectura_obligatoria_ingreso`,
+  `tramites.requiere_socializacion`; `archivos` con `contexto` (`version`, `jornada`, `verificacion_item`) y
+  `contexto_id`, `version_id` opcional y `CHECK`; unicidad parcial de acuses (`pendiente`, `confirmado`) y de
+  verificación abierta por punto, y número de copia único por versión. `copia_eventos` y `acuse_eventos` son de solo
+  inserción (trigger y `REVOKE` de `sgc_app`); un trigger nuevo protege las verificaciones cerradas y sus
+  ítems. **`0007_fase13b-item-retirado.sql`:** `verificacion_items.retirado` (la marca «Retirado en el acto» se
+  persiste antes de cerrar). **Ocho migraciones en total (0000 a 0007).** Aditivas: sobre una base de la 13A o de
+  `sgc-suaza` no hay datos que transformar.
+- **Permisos (`src/lib/permisos.ts`):** `distribucion.ver` (admin_sgc, gerencia, control_interno, lider_proceso),
+  `distribucion.gestionar` (admin_sgc), `copias.emitir` (admin_sgc, lider_proceso), `distribucion.responder` y
+  `acuses.confirmar` (los cinco roles; la condición de persona se comprueba en el servidor),
+  `socializaciones.registrar` (admin_sgc, lider_proceso) y `verificaciones.realizar` (admin_sgc).
+- **Reglas puras (`src/lib/distribucion/`):** `tipos.ts` (estados, etiquetas, motivos), `copias.ts`, `acuses.ts`,
+  `verificacion.ts` (lista de chequeo y porcentaje), `sello-pdf.ts` (franja y QR con `pdf-lib`), `respuesta-copia.ts`,
+  `periodo-acuses.ts`, `filtro-verificaciones.ts`, `hoja-excel.ts` y los tres constructores de Excel;
+  `src/lib/tareas.ts` (`misTareas`, `agruparTareas`) y `src/lib/url-publica.ts`.
+- **Consultas (`src/db/consultas/distribucion/`):** `puntos-uso`, `listas`, `audiencia`, `copias`,
+  `eventos-copia`, `version-vigencia` (`alDejarDeSerVigente`: el único enganche de lo que depende de que una versión
+  deje de ser vigente), `acuses`, `jornadas`, `evidencias`, `verificaciones`, `verificaciones-resumen`, `hallazgos`,
+  `tareas` y `vencimientos`. Acciones en `src/app/acciones-distribucion.ts`, `src/app/admin/acciones-puntos-uso.ts`
+  y `acciones-listas.ts`. Componentes en `src/componentes/distribucion/`.
+- **Alcance de la ficha y del trámite:** el bloque **Copias controladas** (con acuses y socialización) en las fichas
+  del portal y del panel; la casilla «Requiere socialización» en la aceptación (y **Marca de socialización** para
+  corregirla); el bloque **Distribución** del trámite publicado; el aviso de versión de `?v=`; la audiencia
+  (listas y **Lectura obligatoria al ingresar al proceso**) en **Editar datos**; **Distribución** y la dirección
+  pública en **Configuración documental** y **Entidad y marca**; la nota de procesos y el bloqueo al desactivar a un
+  responsable en **Usuarios**.
+- **Tareas, avisos y vencimientos:** `misTareas` suma recibir, recoger y reemplazar copias, confirmar lectura (agrupadas
+  desde la sexta), registrar socialización, verificar y corregir hallazgo; avisos `distribucion.copia`, `.recoger`,
+  `.acuse`, `.eliminado`, `.socializar`, `.hallazgo`, `.vencido` y `.escalado`; `revisarVencimientos` gana copias, acuses
+  (por versión), socializaciones y hallazgos, con un aviso por jefe y sin títulos.
+- **Bitácora:** 22 acciones nuevas con frase y filtro propios (`bitacora-detalle.ts`), entre ellas `copia_emitida`,
+  `copia_recibida`, `acuse_lectura`, `jornada_registrada`, `jornada_anulada` y `exporto_copias`, `exporto_acuses` y
+  `exporto_verificaciones`.
+- **Semilla:** `src/db/semillas/distribucion-demo.ts` (dos llamadas, antes y después de los trámites), dos usuarios nuevos y
+  `usuario_procesos` para todos. La mínima añade las claves de configuración con `url_publica` vacía.
+- **Verificado al cierre:** `npm run lint` limpio; **3568/3568 tests** (151 archivos, con `SEMILLA_RECIEN=1`; línea base
+  de la 13A: 2971 en 124); `npm run build` sin URL de base, como el CI, con toda ruta autenticada dinámica (ƒ); compose de
+  desarrollo reconstruido (`up -d --build --no-deps app`) con «Migraciones al día» y `/api/salud` `{"estado":"ok"}`; la 0006 y la
+  0007 aplicadas sobre una copia de la demo de `main` (`sgc_copia`, ya borrada) sin errores, con todo `archivos` en
+  `contexto = 'version'` y los tests de esquema en verde contra ella. La revisión de cada tarea (especificación y calidad) quedó
+  asentada en la bitácora de ejecución. Hubo puntos de control en navegador a mitad de la fase (Tareas 6, 9 y 13, entre otras); el
+  recorrido completo de §18 lo hace el controlador tras este commit.
 
 ## Hecho (Fase 13A)
 
@@ -1374,7 +1617,124 @@ mismos números que citan los comentarios del código (`R24`, `R26`, `R32`, `R33
 | F13A-AR7 | El manual (§14.3) y el paso 14 de «Qué probar» dicen que el formato debe quedar con versión vigente publicada (carga abierta o trámite), y que el elegido sigue en la lista aunque ya no sirva. Es el R7 de la revisión de T8 de estas adiciones (no la decisión F13A-R7 de la 13A) | Práctica: sin versión vigente el formato no aparece y la persona no sabe por qué | Una frase más en dos documentos |
 | F13A-AR8 | `huellaDeCriterios` ordena por `itemId`, y el último criterio del acta reserva el sitio de «Concepto de» para que no quede sola en otra hoja. La reserva reduce el caso, pero no lo elimina del todo (ver la deuda) | Práctica: reordenar ítems no cambia lo confirmado; la fila separada de sus criterios se vio con el formato real | La hoja puede dejar un hueco de una o dos líneas al pie antes de pasar de página |
 
+## Decisiones adicionales (Fase 13B)
+
+F13B-DC1 a F13B-DC27 vienen del spec de la fase (§22), del 2026-11-07; DC24 a DC27 salieron de la
+revisión del constructor, antes de la aprobación. F13B-R1 a R17 son las resoluciones del controlador durante la
+ejecución y R18 a R22, las de la ola final tras la revisión de toda la rama (mandan sobre el plan). Base: **ISO**
+(cláusula de 9001:2015), **Regulación** o **Práctica**.
+
+| # | Decisión y porqué | Base | Si es incorrecta |
+|---|---|---|---|
+| F13B-DC1 | Sello en franja al pie de cada página (no cuño en la esquina) y una sola entrada «Distribución» con cuatro pestañas: eran las recomendadas y el usuario no hizo clic. La franja no tapa el encabezado; la barra ya tenía trece entradas | Práctica | Cambiar la geometría del sello y repartir la entrada en la barra |
+| F13B-DC2 | Una copia de un documento restringido solo se emite a un punto cuyo responsable puede verlo: la copia daría acceso a quien no lo tiene | ISO 7.5.3.1 b) | Quitar la comprobación en `emitirCopia` |
+| F13B-DC3 | `url_publica` en Entidad y marca; sin ella el sello sale sin QR. La cabecera `Host` la controla el cliente y cambia en la Fase 20: el papel debe sobrevivir | Práctica (seguridad) | Tomar la dirección de la petición |
+| F13B-DC4 | El QR lleva la versión (`?v=`) y la ficha avisa si no es la vigente: convierte el QR en verificación de vigencia frente al papel | ISO 7.5.3.2 c) | QR sin `v`; la ficha deja de comparar |
+| F13B-DC5 | Medidas del sello configurables, con valores por defecto (franja 1,0 cm, QR 1,5 cm): el pie de los formatos del hospital puede acercarse al borde | Práctica | Valores fijos |
+| F13B-DC6 | `copia_eventos` y `acuse_eventos` de solo inserción; `acuses` guarda el estado actual con unicidad parcial; la verificación cerrada es inmutable: son la evidencia de PC-09 y PC-10, y una fila inmutable no admite la reversión ni el regreso a la audiencia | ISO 7.5.3.1 b) | Una tabla de estado mutable y sin historial |
+| F13B-DC7 | Una copia recogida con destino «no se encontró» abre un hallazgo: es la «pérdida de registros» que el procedimiento trata como no conformidad | PC-12 del procedimiento | Cerrar la copia sin hallazgo |
+| F13B-DC8 | Una sola función (`alDejarDeSerVigente`) marca las copias por recoger en los tres lugares donde una versión deja de ser vigente (`aplicarPublicacion`, `anularVigenteEn`, `deshacerCarga`): una regla, tres llamadas; el tercero es fácil de olvidar | Reglas de negocio 1 y 2 | Lógica repetida en tres sitios |
+| F13B-DC9 | Los firmantes (elaboró, revisó, aprobó) y quien publicó nacen acusados por firma solo si están en la audiencia: manejaron el documento, y un aprobador sin procesos no recibe fila | Práctica | Acuse para todos los firmantes, estén o no en la audiencia |
+| F13B-DC10 | Los acuses pendientes pasan a `superado` cuando la versión deja de estar vigente y a `retirado` cuando la persona se desactiva o pierde la visibilidad; ninguno cuenta en el porcentaje: lo que hay que leer es la vigente y un inactivo no debe hundir el porcentaje | Práctica | Contarlos como pendientes |
+| F13B-DC11 | «Lectura obligatoria al ingresar» apagada por defecto: encendida en todo, cada persona nueva recibiría decenas de tareas | Práctica | Encendida por defecto |
+| F13B-DC12 | La tarea de acuse de una versión sin control de cambios muestra «Versión N, vigente desde…»: las versiones cargadas o heredadas no lo tienen | Práctica | Texto vacío |
+| F13B-DC13 | La evidencia de la jornada es recomendada, no obligatoria; la pantalla marca «Sin acta adjunta»: el registro con asistentes ya es evidencia y exigir el archivo haría que no se registre | ISO 7.2 d) | Obligar el archivo |
+| F13B-DC14 | Anular una jornada revierte los acuses que concedió: un acuse no puede apoyarse en una jornada anulada | ISO 7.5.3.1 b) | Dejar los acuses confirmados |
+| F13B-DC15 | Sin entidad «ronda»: el porcentaje actual sale de la última verificación de cada punto activo; el histórico se filtra por fechas. Más simple y siempre al día | Práctica | Una tabla de rondas |
+| F13B-DC16 | El Admin SGC único puede verificar su propio punto, con marca visible («la verificó quien responde por el punto»): no trabar una instalación con un solo Admin SGC | Práctica (spec maestro DC9) | Que verifique Control Interno (sin migración) |
+| F13B-DC17 | Un punto con copias vivas no se desactiva; un usuario responsable de puntos activos no se desactiva hasta reasignarlos: una tarea de recogida sin dueño rompe la cadena del PC-08 | Práctica | Permitirlo y dejar tareas huérfanas |
+| F13B-DC18 | Crear un punto desde un subproceso del mapa, como atajo sin vínculo permanente: los servicios ya están escritos en el mapa | Práctica | Quitar el atajo |
+| F13B-DC19 | «Distribución» visible también al responsable de un punto, limitada a sus puntos (`siResponsable`): un responsable con rol consulta debe llegar a sus copias | Práctica (F13A-DC19) | Solo por permiso |
+| F13B-DC20 | `archivos` con `contexto` y `contexto_id`, `version_id` opcional y `CHECK`; filas heredadas intactas: una sola tabla y un solo flujo de subida | Spec maestro §5.5 | Una tabla por dueño |
+| F13B-DC21 | Revisión de vencimientos por versión para los acuses y un aviso por jefe: una publicación a 40 personas no debe ser 40 transacciones ni 40 avisos al mismo jefe | Práctica | Fila a fila |
+| F13B-DC22 | «Mis tareas» agrupa por tipo cuando hay muchas (más de cinco lecturas): una publicación masiva no entierra las demás tareas | Práctica | Lista plana |
+| F13B-DC23 | La verificación abierta se puede descartar con motivo, sin cerrarla: una abierta por punto no debe trabar la siguiente | Práctica | Obligar a cerrarla |
+| F13B-DC24 | Ventana de impresión de 15 minutos tras emitir o reimprimir, con un solo evento `impresa` por ventana; las descargas de quien solo ve quedan como `consultada`: la emisión redirige a un `GET` que el navegador repite, y «reimprimir exige motivo» debe cumplirse en el servidor | Práctica | Un evento por descarga |
+| F13B-DC25 | Los hallazgos y la recogida en verificación ocurren al cerrar; la foto se adjunta al ítem: un ítem corregido antes de cerrar no deja hallazgos huérfanos y la evidencia se escribe una vez | ISO 7.5.3.1 b) | Hallazgo por ítem al responderlo |
+| F13B-DC26 | Un acuse pendiente se retira al salir de la audiencia, evaluado por diferencia al editar la persona, la lista o el documento: la audiencia es quién debe conocer el documento hoy | ISO 7.5.3.2 a) | Dejarlo pendiente |
+| F13B-DC27 | El responsable nuevo de un punto con copias vivas de un restringido debe poder verlo; anular una copia lo hace quien la emitió o quien gestiona: misma regla de la emisión, permiso de matriz más condición de persona | ISO 7.5.3.1 b) | Anulación solo por quien gestiona |
+| F13B-R1 | Se trabajó en la rama de la fase en el directorio principal, sin worktree: `.env.local`, `./almacen` y la BD de desarrollo (5435) están atados a esta carpeta, como en la 13A | Práctica | Solo convención |
+| F13B-R2 | `crearAcusesAlPublicar(tx, versionId, ahora, firmantes)` recibe los ids de los firmantes desde el manejador (`elaboro`, `reviso`, `aprobo` más quien publica = `sesion.usuarioId`): dentro del manejador la firma `publico` todavía no está en `firmas` | Práctica | Un parámetro de más |
+| F13B-R3 | Un punto de uso puede tener cero procesos: el campo solo sirve al alcance del líder y a la sugerencia, y Archivo no tiene proceso propio (el spec decía «uno o varios») | Práctica | Una validación de una línea |
+| F13B-R4 | Los defectos del sello se quedan en 1,0 y 1,5 cm (sirven a otras entidades). El hospital fija 0,6 cm en Configuración documental y la franja pinta dos líneas mientras mida 0,6 cm o más (`(alto − 2 pt) / 2,5 ≥ 6 pt`) y una sola por debajo; el QR no depende de la franja | Práctica | Cambiar el valor por defecto |
+| F13B-R5 | Reimprimir y obtener el PDF de una copia que la persona no ve responde 404, no 409 (regla global del 404); la ventana vencida, la versión no vigente y la huella distinta tienen mensaje propio | Spec 13A §12 | Dos líneas de ruta |
+| F13B-R6 | El periodo de los acuses se calcula con `COALESCE(publicado_en, primer acuse)`: las versiones cargadas fuera de la plataforma (toda la carga inicial) no tienen `publicado_en` y la pantalla quedaba vacía | Práctica | Una expresión SQL |
+| F13B-R7 | Quitar una lista del documento retira los acuses de quienes solo pertenecían por esa lista (spec §9.3); los componentes no consultan la BD | ISO 7.5.3.2 a) | Dos cambios pequeños |
+| F13B-R8 | Las jornadas admiten versiones vigentes y obsoletas (registrar tarde la capacitación sobre la versión anterior), con selector de versión; en jornadas de varios documentos no se filtra el código ni el título de un restringido que quien mira no ve | ISO 7.5.3.2 | Quitar el selector |
+| F13B-R9 | Quien registró una jornada puede adjuntar o quitar evidencia durante 24 horas; después queda inmutable. Anularla la hace quien la registró o `distribucion.gestionar` | ISO 7.5.3.1 b) | Ajustar `VENTANA_EVIDENCIA_MS` |
+| F13B-R10 | El permiso `distribucion.gestionar` es solo de `admin_sgc`: no existe «líder con gestionar fuera de su alcance» | Práctica | — |
+| F13B-R11 | Activar y desactivar un punto o una lista llevan frase y nombre de filtro propios en la bitácora (se escriben con nombre armado por plantilla); `exporto_socializaciones` queda fuera porque no hay ruta de Excel | Práctica | Sumar la ruta y la frase |
+| F13B-R12 | «Mis tareas (N)» muestra el total real de tareas (el mismo número de la barra lateral) y no el de filas agrupadas | Práctica | Dos números distintos |
+| F13B-R13 | La compuerta de copias de la página del trámite (`distribucion.ver` o `copias.emitir`) es la misma de `BloqueDistribucion`; los conteos de acuses se muestran a quien ve el trámite sin compuerta: son cifras agregadas, no personas | Práctica | Un participante ve «acuses 3 de 10» de una versión que no le toca |
+| F13B-R14 | Los avisos de vencimiento no se recorren en navegador: los plazos tienen piso de 1 día y toda la demo es de hoy; la cobertura queda en `tests/distribucion-vencimientos.test.ts`. La demo trae, además, vencidos sembrados con fechas relativas | Práctica | Un aviso mal pintado en la campana |
+| F13B-R15 | La semilla se parte en dos llamadas (`sembrarDistribucionPrevia` antes y `sembrarDistribucion` después de los trámites): `emitirCopia` solo emite la vigente y la v3 de `GTH-CA-01` ya está publicada al terminar los trámites. No se llama `pedirAcuses`: la publicación de la v3 crea los acuses de «Todo el hospital» con origen `publicacion`; la jornada es de hace 5 días (relativa), no del 14 de octubre | Práctica | La demo cuenta la historia con otro origen, sin efecto funcional |
+| F13B-R16 | Los tests que dependen de filas de la BD de desarrollo se reescriben para no depender de datos preexistentes (conteo de archivos con `contexto <> 'version'`, fotos de ítems, notificaciones de un usuario), porque las acumulan los puntos de control manuales | Regla de tests contra la BD de desarrollo | — |
+| F13B-R17 | Abrir una verificación es un POST con pantalla de confirmación («Verificar <punto>»), auditado como `verificacion_abierta`: un `GET` no debe crear filas ni dejar verificaciones abiertas por una precarga | Práctica | Abrir con un enlace `GET` |
+| F13B-R18 | El líder emite y reemplaza copias de los documentos de su alcance hacia **cualquier punto de uso activo**: la restricción es el documento (`documentoEnAlcance`), no el punto. El diálogo pone primero los puntos de los procesos del documento y luego los demás activos, para todos los roles; «Reemplazar (k)» cuenta los puntos donde emite; las copias nuevas aparecen en «De la versión vigente» (el aviso con el conteo no llega a verse: la ficha se vuelve a pintar y desmonta el formulario; está en la deuda) | Spec §8.1; la restricción por proceso dejaba sin reemplazar copias que el Admin repartió en otros servicios | Un líder ve los nombres de todos los puntos activos en el diálogo |
+| F13B-R19 | Fuera de la ventana de impresión, quien emite ve **Reimprimir** y no **Abrir el PDF**; el PDF fuera de la ventana o ya no disponible, y los errores de la reimpresión, vuelven a la página de la copia con su aviso en texto (`?ventana=1`, `?aviso=<clave>`) en vez de un 409 en JSON en otra pestaña. Ajusta F13B-R5 y la línea 1 del Review Focus del plan; el 404 de quien no ve la copia no cambia | Práctica | Un JSON en una pestaña nueva |
+| F13B-R20 | El responsable de un punto sin `distribucion.ver` (rol Consulta) no ve la pestaña ni la página de **Acuses de lectura**, y `resumenAcuses` le devuelve vacío; sigue viendo Copias y Verificaciones de sus puntos. Precisa F13B-DC19 | Spec §6.4 | El responsable ve los porcentajes de toda la entidad |
+| F13B-R21 | Al cerrar una verificación rige la regla de la apertura con quien cierra: si es el responsable actual del punto y hay otro Admin SGC activo, se rechaza; si no lo hay, cierra y `propio_punto` queda marcado en el mismo `UPDATE`. Extiende F13B-DC16 al cierre (el responsable puede cambiar con la verificación abierta) | Práctica (spec maestro DC9) | La marca solo dice quién abrió |
+| F13B-R22 | «Nadie se avisa a sí mismo» (spec §12.2) quita el aviso, no la tarea: quien publica y responde por un punto no recibe «Recoja…» pero tiene la tarea; quien pide acuses y está en la audiencia recibe su acuse sin aviso; quien elimina no recibe «dejó de aplicar» | Práctica | Avisos de más a quien hizo el cambio |
+
 ## Deuda técnica conocida
+
+**De la Fase 13B** (todos menores, aceptados en la revisión de cada tarea o aplazados en la ola final, salvo el
+primero):
+
+- **No hay Excel de socializaciones** (spec §10.4 lo mencionaba; no existe la ruta ni la acción `exporto_socializaciones`;
+  fuera del plan, queda a decisión del usuario). `acuses-excel.ts` tampoco se migró a `hoja-excel.ts` (tercer constructor).
+- **Aplazado en la ola final:**
+  - Reemplazo individual desde el diálogo de emisión (spec §8.5): `reemplazaCopiaId` existe en la acción, sin interfaz.
+  - Fecha de corrección ajustable al cerrar la verificación (spec §11.4; omisión del plan, Tarea 12): rige el plazo configurado.
+  - «Verificaciones en que apareció» en la página de la copia y la vista por documento (spec §8.6).
+  - El modo del acuse (individual, por asistencia, por firma) no se muestra en «Mis lecturas» (spec §10.3).
+  - Gerencia y Control Interno no leen el catálogo de puntos y listas (spec §6.4): las páginas del panel son formularios de
+    edición y sus entradas de la barra piden `distribucion.gestionar`; falta una vista de solo lectura.
+  - El vencimiento de las verificaciones se mide en milisegundos (`verificacionCadaDias × 86 400 000`) y no con
+    `fechaLimite` y la zona de la instalación: cambiarlo mueve el borde un día y `tests/distribucion-reglas.test.ts` lo fija.
+  - La semilla mínima no escribe las claves de distribución (las cubren los valores por defecto del código).
+  - Reimprimir no sugiere «anule y emita otra» (spec §8.5).
+  - Cobertura: la matriz de visibilidad de §17 por pestaña y rol, `a11y-estructura` en las páginas nuevas y el guard del test
+    de hallazgos en `semilla-distribucion`.
+  - Pasar un documento a restringido con copias vivas en puntos cuyo responsable no lo ve no se bloquea ni se avisa.
+  - Rendimiento: `misTareas` consulta seis fuentes en cada render y lee fotos de hallazgos que no usa; los acuses sin jefe se
+    revisan en cada pasada.
+  - El aviso «Se emitieron N copias» de **Reemplazar** no llega a verse: `revalidatePath` vuelve a pintar la ficha y el
+    formulario se desmonta con su `role="status"` (re-revisión de la ola final). Las copias nuevas sí aparecen en la ficha.
+  - Los conteos de `/distribucion/copias` del líder (`conteosPorPunto`, con `filtroPuntos`) no incluyen las copias que emitió en
+    puntos de otros procesos, aunque la tabla sí las muestra (`documentoEnAlcance`); F13B-R18 lo hace frecuente.
+  - Al salir de un proceso, el acuse pendiente de un restringido queda oculto (tareas y `/acuses/[id]`) pero no retirado; solo
+    el cambio de rol lo retira (`soloSinAcceso`).
+  - `acusesDeIngreso` no recibe `actorId`: un Admin SGC que se añade un proceso a sí mismo se avisa a sí mismo.
+  - Menores de las tareas sin línea propia: sin test de inmutabilidad de `acuse_eventos` con el dueño del esquema ni del
+    estado `descartada`; `copias/[id]` y el detalle de una jornada sin `exigirDistribucion` explícito (la consulta da 404);
+    `CLASE_DIALOGO` repetida en `AccionesCopia` y `DialogoEmitir`; la recogida automática no audita (ruling de la Tarea 6);
+    `corregirMarca` no rechaza trámites de eliminación en el dominio; `/verificaciones/nueva` redirige a la abierta sin
+    comprobar visibilidad (el destino la aplica); casilla del acuse sin `required`.
+- **Catálogos:** sin test de `parsearPuntoUso` ni de las acciones; `alternarPuntoUso(true)` no valida procesos activos;
+  `editarCatalogo` y `guardarAudiencia` corren en dos transacciones; `guardarAudiencia` no exige listas activas (solo la
+  interfaz); el retiro de acuses no cubre cambios de cargo, área o rol de los miembros de una lista; `N+1` de `quienFalta`
+  en la página del documento.
+- **Sello y copias:** `validarUrlPublica` admite IPv6 y `\`, y faltan casos de test (mayúsculas, `localhost:3000`, credenciales,
+  `?`/`#` finales); el mensaje de cm dice «entre 0,5 y 3» sin «3,0» y el `pattern` admite un solo decimal; las heurísticas del
+  sello (`HOLGURA_PT`, factores) no usan métricas reales de la fuente y un QR mayor que una franja muy baja sobresale;
+  `copiaParaPdf` no reconfirma la vigencia dentro de su transacción final; `anularCopia` no valida el motivo contra
+  `MOTIVOS_ANULACION`; `reemplazaCopiaId` no bloquea la copia reemplazada; limitador de ritmo duplicado en las dos rutas
+  del PDF; `AccionesCopia` pasa de 280 líneas.
+- **Acuses y jornadas:** la conformidad puede mostrar 95 % redondeado con `cumple = false`; `localeCompare` sin locale en
+  `armarListaDeChequeo`; «Porcentaje» como texto en el Excel de acuses; `pedirAcusesAccion` sin mensaje de conteo; los
+  motivos de cierre de acuses sin `CHECK`; `unlink` de evidencias traga todo error (solo ENOENT debería); el detalle de
+  `aceptar` en la bitácora lleva la clave solo cuando es `true`; anular una jornada reabre la requerida aunque exista otra
+  jornada válida; `efectoDeAnular` cuenta solo versiones visibles para quien anula.
+- **Verificaciones:** el trigger no bloquea `INSERT` de ítems en una verificación cerrada (lo cubre la aplicación); el `GET`
+  de fotos carga toda la verificación para autorizar; `N+1` de `evidenciasDe` en `leerHallazgos`; sin test de
+  `cerrarHallazgo` por `distribucion.gestionar`.
+- **Vencimientos:** `acusesVencidos` lee `jefesDe` por versión (N+1 dentro de la transacción); los contadores «avisados» y
+  «escalados» no tienen JSDoc.
+- **Pruebas:** muchas consultas por jornada en `cargarJornadas` y `LIMIT` antes del filtro de visibilidad; sin test de render de
+  la página del trámite con el bloque de distribución; `total = tareas.length` por defecto en `MisTareas` oculta un olvido
+  del llamador; no se recorrieron en navegador la lectura obligatoria al ingresar, las listas completas ni la recogida
+  automática en los tres lugares (los cubren los tests).
 
 **De la Fase 13A:**
 

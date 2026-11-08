@@ -1,6 +1,7 @@
 import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
-import { sanearNombre, validarTipo } from "@/lib/subida";
+import { sanearNombre, validarTipo, validarTipoEvidencia } from "@/lib/subida";
+import { pdfDePrueba } from "./utiles/pdf";
 
 // Cabeceras mínimas reales por formato para probar magic bytes.
 const PDF = new TextEncoder().encode("%PDF-1.4\n%fin");
@@ -68,5 +69,25 @@ describe("validarTipo", () => {
   it("acepta un PNG con su extensión", async () => {
     const r = await validarTipo("logo.png", PNG);
     expect(r).toMatchObject({ ok: true, mime: "image/png" });
+  });
+});
+
+describe("validarTipoEvidencia", () => {
+  const MENSAJE = "La evidencia debe ser PDF o imagen (PNG, JPG, WebP)";
+
+  it("acepta un PNG y un PDF por su contenido", async () => {
+    expect(await validarTipoEvidencia("foto.png", PNG)).toEqual({ ok: true, extension: "png", mime: "image/png" });
+    const pdf = await validarTipoEvidencia("acta.pdf", await pdfDePrueba([[612, 792]]));
+    expect(pdf).toEqual({ ok: true, extension: "pdf", mime: "application/pdf" });
+  });
+
+  it("rechaza un docx con el mensaje de la evidencia", async () => {
+    expect(await validarTipoEvidencia("lista.docx", await docxMinimo())).toEqual({ ok: false, error: MENSAJE });
+  });
+
+  it("rechaza un SVG renombrado a .png y un .svg", async () => {
+    const svg = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+    expect(await validarTipoEvidencia("foto.png", svg)).toEqual({ ok: false, error: MENSAJE });
+    expect(await validarTipoEvidencia("foto.svg", svg)).toEqual({ ok: false, error: MENSAJE });
   });
 });

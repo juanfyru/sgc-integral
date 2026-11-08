@@ -45,7 +45,11 @@ export async function limpiarTodo(db: Db): Promise<void> {
       usuarios, usuario_procesos, sesiones, accesos, codigos_recuperacion,
       auditoria, eventos_consulta, busquedas, notificaciones,
       tramites, tramite_eventos, firmas, tramite_observaciones,
-      tramite_verificaciones, lista_verificacion_items
+      tramite_verificaciones, lista_verificacion_items,
+      puntos_uso, punto_uso_procesos, copias_controladas, copia_eventos,
+      listas_distribucion, lista_miembros, documento_listas, acuses, acuse_eventos,
+      jornadas, jornada_versiones, jornada_asistentes, socializaciones_requeridas,
+      verificaciones, verificacion_items, hallazgos
     RESTART IDENTITY CASCADE
   `);
 }

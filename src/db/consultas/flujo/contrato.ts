@@ -59,6 +59,8 @@ export type FilaTramite = {
   aprobadorId: number | null;
   venceEn: Date | null;
   motivoCierre: string | null;
+  /** Marca de la aceptación (13B): al publicar, la versión pide una jornada de socialización. */
+  requiereSocializacion: boolean;
   creadoEn: Date;
 };
 
@@ -94,6 +96,7 @@ export type Efecto = {
       | "aprobadorId"
       | "venceEn"
       | "motivoCierre"
+      | "requiereSocializacion"
     >
   >;
   avisos?: Aviso[];

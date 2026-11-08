@@ -20,6 +20,11 @@ describe("EsquemaEntidad", () => {
     expect(() => EsquemaEntidad.parse({ ...base, aviso_datos_personales: "Aviso", extra: "x" })).toThrow();
   });
 
+  it("la dirección pública ausente queda vacía y se recorta", () => {
+    expect(EsquemaEntidad.parse({ ...base, aviso_datos_personales: "Aviso" }).url_publica).toBe("");
+    expect(EsquemaEntidad.parse({ ...base, aviso_datos_personales: "Aviso", url_publica: " https://x.co " }).url_publica).toBe("https://x.co");
+    expect(() => EsquemaEntidad.parse({ ...base, aviso_datos_personales: "Aviso", url_publica: "x".repeat(201) })).toThrow();
+  });
   it("el lema ausente (parsearFormulario omite los vacíos) queda en cadena vacía", () => {
     const sinLema: Partial<typeof base> = { ...base, aviso_datos_personales: "Aviso" };
     delete sinLema.lema;

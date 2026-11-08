@@ -36,6 +36,9 @@ export function BloqueSolicitud({ tramite: t }: { tramite: DetalleTramite }) {
         <Fila etiqueta="Motivo">{ETIQUETA_MOTIVO[t.motivo]}</Fila>
         <Fila etiqueta="Visto bueno">{textoVistoBueno(t)}</Fila>
         {t.tituloPropuesto ? <Fila etiqueta="Título propuesto">{t.tituloPropuesto}</Fila> : null}
+        {t.tipo !== "eliminar" && t.etapa !== "visto_bueno" && t.etapa !== "aceptacion" ? (
+          <Fila etiqueta="Socialización">{t.requiereSocializacion ? "Requerida al publicar" : "No requerida"}</Fila>
+        ) : null}
         <Fila etiqueta="Justificación" ancha>
           {t.justificacion}
         </Fila>

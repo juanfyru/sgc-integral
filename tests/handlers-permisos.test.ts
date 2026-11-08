@@ -27,6 +27,11 @@ import { GET as excelMaestro } from "@/app/(app)/admin/(panel)/maestro/excel/rou
 import { GET as verArchivoTramite } from "@/app/(app)/tramites/[id]/archivos/[archivoId]/[[...nombre]]/route";
 import { DELETE as quitarArchivoTramite } from "@/app/api/tramites/[id]/archivos/[archivoId]/route";
 import { POST as subirArchivoTramite } from "@/app/api/tramites/[id]/archivos/route";
+import { GET as excelAcuses } from "@/app/(app)/distribucion/acuses/excel/route";
+import { GET as excelCopias } from "@/app/(app)/distribucion/copias/excel/route";
+import { GET as excelVerificaciones } from "@/app/(app)/distribucion/verificaciones/excel/route";
+import { GET as pdfCopia } from "@/app/(app)/distribucion/copias/[id]/pdf/route";
+import { POST as reimprimirCopiaRuta } from "@/app/(app)/distribucion/copias/[id]/reimprimir/route";
 import { obtenerSql } from "@/db/cliente";
 import { listarDocumentosAdmin, obtenerDocumentoAdmin } from "@/db/consultas/admin";
 import { crearSesion } from "@/lib/sesion";
@@ -107,6 +112,50 @@ describe("GET /admin/api/acta-ejemplo", () => {
     expect(contieneTexto(paginas.join("\n"), "Criterios que no cumplen, con concepto favorable")).toBe(true);
     const [despues] = await conteo();
     expect({ ...despues }).toEqual({ ...antes });
+  });
+});
+
+describe("GET /distribucion/acuses/excel", () => {
+  const pedir = (token?: string) =>
+    excelAcuses(new NextRequest("http://localhost:3002/distribucion/acuses/excel", token ? { headers: cookie(token) } : undefined));
+
+  it("401 sin sesión y 403 a quien no ve la distribución", async () => {
+    expect((await pedir()).status).toBe(401);
+    expect((await pedir(tokenConsulta)).status).toBe(403);
+  });
+
+  it("control interno recibe el Excel sin caché y queda auditado", async () => {
+    const res = await pedir(tokenCi);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(res.headers.get("Content-Disposition")).toMatch(/^attachment; filename="acuses-\d{8}\.xlsx"$/);
+    const [u] = await sql()`SELECT id FROM usuarios WHERE usuario = ${`zz_ci_${SUFIJO}`}`;
+    const filas = await sql()`SELECT 1 FROM auditoria WHERE usuario_id = ${u.id} AND accion = 'exporto_acuses'`;
+    expect(filas.length).toBe(1);
+  });
+});
+
+describe.each([
+  { nombre: "copias", accion: "exporto_copias", ruta: excelCopias, prefijo: "copias" },
+  { nombre: "verificaciones", accion: "exporto_verificaciones", ruta: excelVerificaciones, prefijo: "verificaciones" },
+])("GET /distribucion/$nombre/excel", ({ accion, ruta, nombre, prefijo }) => {
+  const pedir = (token?: string) =>
+    ruta(new NextRequest(`http://localhost:3002/distribucion/${nombre}/excel`, token ? { headers: cookie(token) } : undefined));
+
+  it("401 sin sesion y 403 a quien no ve la distribucion", async () => {
+    expect((await pedir()).status).toBe(401);
+    expect((await pedir(tokenConsulta)).status).toBe(403);
+  });
+
+  it("control interno recibe el Excel sin cache y queda auditado", async () => {
+    const [u] = await sql()`SELECT id FROM usuarios WHERE usuario = ${`zz_ci_${SUFIJO}`}`;
+    const antes = (await sql()`SELECT 1 FROM auditoria WHERE usuario_id = ${u.id} AND accion = ${accion}`).length;
+    const res = await pedir(tokenCi);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(res.headers.get("Content-Disposition")).toMatch(new RegExp(String.raw`^attachment; filename="${prefijo}-\d{8}\.xlsx"$`));
+    const filas = await sql()`SELECT 1 FROM auditoria WHERE usuario_id = ${u.id} AND accion = ${accion}`;
+    expect(filas.length).toBe(antes + 1);
   });
 });
 
@@ -474,5 +523,41 @@ describe("archivos del trámite", () => {
     await seguidas(30, () => subir(cookie(token)));
     await seguidas(30, () => quitar(cookie(token)));
     await seguidas(60, () => ver(cookie(token)));
+  });
+});
+
+describe("copias controladas: /distribucion/copias/[id]/pdf y /reimprimir", () => {
+  const COPIA = "999999999";
+  const parametros = { params: Promise.resolve({ id: COPIA }) };
+  const ver = (cabeceras: Record<string, string>) =>
+    pdfCopia(new NextRequest(`http://sgc.local/distribucion/copias/${COPIA}/pdf`, { headers: cabeceras }), parametros);
+  const reimprimir = (cabeceras: Record<string, string>) =>
+    reimprimirCopiaRuta(
+      new NextRequest(`http://sgc.local/distribucion/copias/${COPIA}/reimprimir`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", host: "sgc.local", ...cabeceras },
+        body: "motivo=ilegible",
+      }),
+      parametros,
+    );
+
+  it("sin sesión responden 401", async () => {
+    expect((await ver({})).status).toBe(401);
+    expect((await reimprimir({})).status).toBe(401);
+  });
+
+  it("una copia que no existe, o que no se puede ver, responde 404 y nunca «sin permiso»", async () => {
+    expect((await ver(cookie(tokenConsulta))).status).toBe(404);
+    expect((await ver(cookie(tokenAdmin))).status).toBe(404);
+  });
+
+  it("reimprimir sin el permiso de emitir responde 403; con un Origin ajeno, también", async () => {
+    expect((await reimprimir(cookie(tokenConsulta))).status).toBe(403);
+    expect((await reimprimir({ ...cookie(tokenAdmin), origin: "http://otro.local" })).status).toBe(403);
+  });
+
+  it("reimprimir una copia que no existe, o que no se ve, responde 404", async () => {
+    const res = await reimprimir({ ...cookie(tokenAdmin), origin: "http://sgc.local" });
+    expect(res.status).toBe(404);
   });
 });

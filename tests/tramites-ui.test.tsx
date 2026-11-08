@@ -58,6 +58,7 @@ import { EnvioARevision, PanelElaboracion, hayCambiosSinGuardar } from "@/compon
 import { ListaSoloLectura, ListaVerificacion } from "@/componentes/tramites/ListaVerificacion";
 import { Observaciones } from "@/componentes/tramites/Observaciones";
 import { PanelPublicacion } from "@/componentes/tramites/PanelPublicacion";
+import { hayDistribucion, ResumenDistribucion } from "@/componentes/tramites/ResumenDistribucion";
 import { PanelRevision } from "@/componentes/tramites/PanelRevision";
 import { PasosTramite } from "@/componentes/tramites/PasosTramite";
 import { TablaTramites } from "@/componentes/tramites/TablaTramites";
@@ -121,6 +122,7 @@ const detalle: DetalleTramite = {
   aprobadorId: 5,
   venceEn: new Date("2026-11-08T04:59:59.999Z"),
   motivoCierre: null,
+  requiereSocializacion: false,
   creadoEn: new Date("2026-11-03T14:00:00Z"),
   codigo: "GTH-PR-02",
   titulo: "Inducción y reinducción",
@@ -358,6 +360,7 @@ describe("AccionesGestion", () => {
     elaborador: "Ana",
     revisor: "Beto",
     aprobador: "Carla",
+    requiereSocializacion: false,
   };
   const pintar = (parcial: Partial<TramiteParaGestionar> = {}) =>
     renderToStaticMarkup(<AccionesGestion tramite={{ ...tramite, ...parcial }} datos={datos} hoy="2026-11-05" />);
@@ -368,6 +371,15 @@ describe("AccionesGestion", () => {
       const h = pintar({ etapa });
       for (const boton of ["Corregir datos del documento", "Reasignar", "Cancelar el trámite"]) expect(h).toContain(boton);
     }
+  });
+  it("la marca de socialización se corrige en toda etapa de trabajo, y solo si se puede gestionar la distribución", () => {
+    const conMarca = (parcial: Partial<TramiteParaGestionar>, puedeMarcar: boolean) =>
+      renderToStaticMarkup(<AccionesGestion tramite={{ ...tramite, ...parcial }} datos={datos} hoy="2026-11-05" puedeMarcar={puedeMarcar} />);
+    for (const etapa of ["aceptacion", "elaboracion", "aprobacion", "publicacion"] as const) {
+      expect(conMarca({ etapa }, true)).toContain("Marca de socialización");
+      expect(conMarca({ etapa }, false)).not.toContain("Marca de socialización");
+    }
+    expect(conMarca({ etapa: "aprobacion", tipo: "eliminar" }, true)).not.toContain("Marca de socialización");
   });
   it("desde la aprobación los datos quedan fijos: no se ofrece corregir", () => {
     for (const etapa of ["aprobacion", "publicacion", "aceptacion", "visto_bueno"] as const) {
@@ -1347,5 +1359,52 @@ describe("esquemas del trámite", () => {
     expect(EsquemaFirma.safeParse({ clave: "x", codigo: "123456" }).success).toBe(true);
     expect(EsquemaFirma.safeParse({ clave: "x", codigo: "x".repeat(21) }).success).toBe(false);
     expect(EsquemaFirma.safeParse({ clave: "x", otro: "y" }).success).toBe(false);
+  });
+});
+
+describe("distribución del trámite publicado", () => {
+  it("pinta acuses y copias con enlace a la ficha, sin socialización si no se pasa", () => {
+    const h = renderToStaticMarkup(
+      <ResumenDistribucion
+        version={3}
+        enlace="/documentos/gth-pr-02"
+        acuses={{ confirmados: 23, pendientes: 11, porcentaje: 68 }}
+        copias={{ sinRecibir: 1, recibidas: 3, porRecoger: 2 }}
+      />,
+    );
+    expect(h).toContain("Distribución de la versión 3");
+    expect(h).toContain("acuses 23 de 34 (68 %)");
+    expect(h).toContain("copias: 1 emitida sin recibir, 3 recibidas, 2 de versiones anteriores por recoger");
+    expect(h).not.toContain("socialización");
+    expect(h).toContain('href="/documentos/gth-pr-02"');
+  });
+  it("omite los segmentos de copias en cero y toda la parte si no hay nada", () => {
+    const parcial = renderToStaticMarkup(<ResumenDistribucion version={1} enlace="/d" acuses={null} copias={{ sinRecibir: 0, recibidas: 2, porRecoger: 0 }} />);
+    expect(parcial).toContain("acuses: sin destinatarios · copias: 2 recibidas");
+    expect(parcial).not.toMatch(/sin recibir|por recoger|undefined|null/);
+    const vacio = renderToStaticMarkup(<ResumenDistribucion version={1} enlace="/d" acuses={null} copias={{ sinRecibir: 0, recibidas: 0, porRecoger: 0 }} />);
+    expect(vacio).not.toContain("copias:");
+    const sinPermiso = renderToStaticMarkup(<ResumenDistribucion version={1} enlace="/d" acuses={null} copias={null} />);
+    expect(sinPermiso).not.toContain("copias:");
+  });
+  it("si se pasa la socialización, la dice", () => {
+    const h = renderToStaticMarkup(
+      <ResumenDistribucion
+        version={2}
+        enlace="/d"
+        acuses={null}
+        socializacion={{ requerida: true, venceEn: new Date("2026-11-20T17:00:00Z"), cumplida: null, superada: false }}
+        copias={null}
+      />,
+    );
+    expect(h).toContain("socialización requerida, vence el 20 de noviembre de 2026");
+  });
+  it("solo un trámite publicado con versión muestra la distribución, nunca una eliminación", () => {
+    const t = { etapa: "publicado", tipo: "modificar", versionId: 4, versionNumero: 3 };
+    expect(hayDistribucion(t)).toBe(true);
+    expect(hayDistribucion({ ...t, tipo: "eliminar" })).toBe(false);
+    expect(hayDistribucion({ ...t, etapa: "eliminado", tipo: "eliminar" })).toBe(false);
+    expect(hayDistribucion({ ...t, etapa: "aprobacion" })).toBe(false);
+    expect(hayDistribucion({ ...t, versionId: null })).toBe(false);
   });
 });

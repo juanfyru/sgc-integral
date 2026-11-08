@@ -219,6 +219,8 @@ export async function tramiteEn(
     aprobador?: SesionFlujo;
     tituloNuevo?: string;
     principal?: Uint8Array;
+    /** Datos que se mezclan en los de `aceptar` (por ejemplo `requiereSocializacion`). */
+    aceptar?: Record<string, unknown>;
   } = {},
 ): Promise<Trayecto> {
   const tipo = o.tipo ?? "modificar";
@@ -260,8 +262,8 @@ export async function tramiteEn(
     if (tipo === "eliminar") return { aprobadorId: aprobador.usuarioId };
     const responsables = { elaboradorId: elaborador.usuarioId, revisorId: revisor.usuarioId, aprobadorId: aprobador.usuarioId };
     return crea
-      ? aceptarCreacion({ codigo, ...responsables })
-      : { ...responsables, venceElaboracion: "2026-11-20", tituloNuevo: o.tituloNuevo };
+      ? aceptarCreacion({ codigo, ...responsables, ...o.aceptar })
+      : { ...responsables, venceElaboracion: "2026-11-20", tituloNuevo: o.tituloNuevo, ...o.aceptar };
   };
   await transicionar(
     admin,

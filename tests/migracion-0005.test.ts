@@ -58,7 +58,7 @@ describe("el diario de migraciones", () => {
     const { entries } = JSON.parse(readFileSync(path.join(drizzle, "meta/_journal.json"), "utf8")) as {
       entries: { tag: string; when: number }[];
     };
-    expect(entries.at(-1)?.tag).toBe("0005_fase13a-lista-e-indices");
+    expect(entries.map((e) => e.tag)).toContain("0005_fase13a-lista-e-indices");
     for (const [i, entrada] of entries.entries()) {
       if (i > 0) expect(entrada.when).toBeGreaterThan(entries[i - 1].when);
     }

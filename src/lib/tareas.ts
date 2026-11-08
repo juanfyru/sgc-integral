@@ -1,6 +1,14 @@
 import type { Cliente } from "@/db/cliente";
+import {
+  tareasDeAcuses,
+  tareasDeCopias,
+  tareasDeHallazgos,
+  tareasDeSocializacion,
+  tareasDeVerificacion,
+} from "@/db/consultas/distribucion/tareas";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { listarTramites, type ResumenTramite } from "@/db/consultas/tramites";
+import { zonaHoraria } from "@/lib/zona-horaria";
 
 export type Tarea = {
   id: string; // "<fuente>:<id>", estable
@@ -33,15 +41,56 @@ export function tituloDeTarea(t: ResumenTramite): string {
   }
 }
 
-/** Los pasos que le tocan a la persona: la pestaña «Por hacer» de la bandeja, con otra forma (spec 13A §14.1). */
-export async function misTareas(sesion: SesionFlujo, opciones?: { sql?: Cliente }): Promise<Tarea[]> {
-  const tramites = await listarTramites(sesion, "por_hacer", opciones);
-  return tramites.map((t) => ({
-    id: `tramite:${t.id}`,
+/** Más de `umbral` lecturas por confirmar se muestran como una sola tarea, en el lugar de la primera. */
+export function agruparTareas(tareas: Tarea[], umbral = 5): Tarea[] {
+  const acuses = tareas.filter((t) => t.id.startsWith("acuse:"));
+  if (acuses.length <= umbral) return tareas;
+  const fechas = acuses.flatMap((t) => (t.vence ? [t.vence] : []));
+  const vence = fechas.length > 0 ? new Date(Math.min(...fechas.map((f) => f.getTime()))) : null;
+  const agrupada: Tarea = {
+    id: "acuses",
     modulo: "documentos",
-    titulo: tituloDeTarea(t),
-    detalle: t.titulo,
-    vence: t.venceEn,
-    enlace: `/tramites/${t.id}`,
-  }));
+    titulo: `${acuses.length} lecturas por confirmar`,
+    detalle: vence ? `La más próxima vence el ${new Intl.DateTimeFormat("es-CO", { dateStyle: "long", timeZone: zonaHoraria() }).format(vence)}` : null,
+    vence,
+    enlace: "/acuses",
+  };
+  let puesta = false;
+  return tareas.flatMap((t) => {
+    if (!t.id.startsWith("acuse:")) return [t];
+    if (puesta) return [];
+    puesta = true;
+    return [agrupada];
+  });
+}
+
+/** Los pasos que le tocan a la persona: los trámites (la pestaña «Por hacer» de la bandeja, spec 13A §14.1), las copias, las lecturas por confirmar y las socializaciones por registrar. */
+export async function misTareas(
+  sesion: SesionFlujo,
+  opciones?: { sql?: Cliente; ahora?: Date },
+): Promise<{ tareas: Tarea[]; total: number }> {
+  const [tramites, copias, acuses, socializacion, verificacion, hallazgos] = await Promise.all([
+    listarTramites(sesion, "por_hacer", opciones),
+    tareasDeCopias(sesion, opciones),
+    tareasDeAcuses(sesion, opciones),
+    tareasDeSocializacion(sesion, opciones),
+    tareasDeVerificacion(sesion, opciones),
+    tareasDeHallazgos(sesion, opciones),
+  ]);
+  const tareas: Tarea[] = [
+    ...tramites.map((t) => ({
+      id: `tramite:${t.id}`,
+      modulo: "documentos" as const,
+      titulo: tituloDeTarea(t),
+      detalle: t.titulo,
+      vence: t.venceEn,
+      enlace: `/tramites/${t.id}`,
+    })),
+    ...copias,
+    ...acuses,
+    ...socializacion,
+    ...verificacion,
+    ...hallazgos,
+  ];
+  return { tareas: agruparTareas(tareas), total: tareas.length };
 }

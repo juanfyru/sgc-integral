@@ -55,6 +55,9 @@ describe("guardar la configuración documental", () => {
     f.set("formatoActaDocumentoId", "");
     f.set("margenSuperiorCm", "5.5");
     f.set("margenInferiorCm", "3.5");
+    for (const campo of ["plazoRecibidoDias", "plazoRecogidaDias", "plazoAcuseDias", "plazoSocializacionDias", "plazoCorreccionDias", "verificacionCadaDias", "umbralConformidadPct"]) f.set(campo, "10");
+    f.set("selloFranjaCm", "1,0");
+    f.set("selloQrCm", "1.5");
     for (const [campo, valor] of Object.entries(campos)) f.set(campo, valor);
     return f;
   };
@@ -77,6 +80,14 @@ describe("guardar la configuración documental", () => {
   it.each(["5,5", "5.5"])("el margen «%s» vale 5,5", async (margen) => {
     await guardarConfigDocumentalAccion(null, formulario({ margenSuperiorCm: margen, margenInferiorCm: margen }));
     expect(formatoGuardado()).toMatchObject({ margenSuperiorCm: 5.5, margenInferiorCm: 5.5 });
+  });
+
+  it("la distribución llega con sus nueve valores, la coma como punto", async () => {
+    await guardarConfigDocumentalAccion(null, formulario({ selloFranjaCm: "0,5", umbralConformidadPct: "80" }));
+    expect(guardarConfigDocumental.mock.lastCall?.[0].distribucion).toEqual({
+      plazoRecibidoDias: 10, plazoRecogidaDias: 10, plazoAcuseDias: 10, plazoSocializacionDias: 10, plazoCorreccionDias: 10,
+      verificacionCadaDias: 10, umbralConformidadPct: 80, selloFranjaCm: 0.5, selloQrCm: 1.5,
+    });
   });
 
   it("acepta un margen entero o de cero", async () => {

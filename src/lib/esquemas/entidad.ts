@@ -25,5 +25,6 @@ export const EsquemaEntidad = z
       .max(5000, "El aviso de datos personales no puede pasar de 5000 caracteres"),
     color_primario: ColorHex,
     color_secundario: ColorHex,
+    url_publica: z.string().trim().max(200).default(""),
   })
   .strict();

@@ -1,0 +1,1 @@
+ALTER TABLE "verificacion_items" ADD COLUMN "retirado" boolean DEFAULT false NOT NULL;

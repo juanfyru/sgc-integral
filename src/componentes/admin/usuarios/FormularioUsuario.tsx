@@ -126,6 +126,9 @@ export function FormularioUsuario({ accion, id, valores, cargos, jefes, procesos
         <p className="text-xs text-muted-foreground">
           Para un líder: los procesos que lidera. Para los demás: los procesos a los que pertenece; le dan acceso a sus documentos restringidos.
         </p>
+        <p className="text-xs text-muted-foreground">
+          Los procesos definen qué documentos restringidos ve la persona y de cuáles recibe tareas de lectura. Asigne a cada persona los procesos en los que trabaja, o use listas de distribución.
+        </p>
         <ul className="grid max-h-64 gap-1 overflow-y-auto rounded-md border p-2 sm:grid-cols-2">
           {procesos.map((p) => (
             <li key={p.id}>

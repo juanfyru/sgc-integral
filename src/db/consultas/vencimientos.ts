@@ -7,10 +7,11 @@
 import type { Row, TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
-import { supervisoresDe } from "@/db/consultas/estructura";
 import { aFilaTramite, adminsActivos, lideresDeProceso, rotuloDeTramite } from "@/db/consultas/tramites";
 import { estadoPlazo } from "@/lib/tramites/plazos";
 import { ETAPAS_ABIERTAS, ETIQUETA_ETAPA, textoResponsables } from "@/lib/tramites/tipos";
+import { avisarA, jefesDe, type Destinatario } from "@/db/consultas/avisos-vencimiento";
+import { revisarVencimientosDeDistribucion } from "@/db/consultas/distribucion/vencimientos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { enTransaccion, type FilaTramite, type TipoAviso } from "./flujo/contrato";
 
@@ -43,33 +44,13 @@ function queFalta(f: Row, ahora: Date, escalamientoDias: number, zona: string) {
   };
 }
 
-type Destinatario = { usuarioId: number; cuerpo: string };
-
-/** Una sola inserción: una por destinatario. Sin enlace, el aviso no abre el trámite. */
-async function avisar(
+function avisar(
   tx: TransactionSql,
   tramiteId: number,
   aviso: { tipo: TipoAviso; titulo: string; enlace: string | null },
   destinatarios: Destinatario[],
 ): Promise<void> {
-  await tx`INSERT INTO notificaciones (usuario_id, tipo, titulo, cuerpo, enlace, entidad, entidad_id)
-    SELECT u, ${aviso.tipo}, ${aviso.titulo}, c, ${aviso.enlace}, 'tramite', ${tramiteId}
-    FROM unnest(
-      ${tx.array(destinatarios.map((d) => d.usuarioId))}::int[],
-      ${tx.array(destinatarios.map((d) => d.cuerpo))}::text[]
-    ) AS a(u, c)`;
-}
-
-/** Cada jefe, sin repetir, con los subalternos suyos que tienen el paso. */
-async function jefesDe(tx: TransactionSql, responsables: number[]): Promise<Map<number, string[]>> {
-  const filas = await tx`SELECT id, nombre FROM usuarios WHERE id = ANY(${responsables}) ORDER BY nombre, id`;
-  const jefes = new Map<number, string[]>();
-  for (const { id, nombre } of filas) {
-    for (const jefe of await supervisoresDe(Number(id), { sql: tx })) {
-      jefes.set(jefe.id, [...(jefes.get(jefe.id) ?? []), nombre]);
-    }
-  }
-  return jefes;
+  return avisarA(tx, { ...aviso, entidad: "tramite", entidadId: tramiteId }, destinatarios);
 }
 
 const NADA = { avisado: false, escalado: false };
@@ -119,7 +100,8 @@ export async function revisarVencimientos(opciones?: { sql?: Cliente; ahora?: Da
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
   const zona = zonaHoraria();
-  const { escalamientoDias } = await obtenerConfigDocumental({ sql });
+  const config = await obtenerConfigDocumental({ sql });
+  const { escalamientoDias } = config;
   const vencidos = await sql`SELECT id, vence_en, aviso_vencido_en, escalado_en FROM tramites
     WHERE etapa = ANY(${ETAPAS_ABIERTAS}) AND vence_en < ${ahora} AND (aviso_vencido_en IS NULL OR escalado_en IS NULL)
     ORDER BY id`;
@@ -136,5 +118,8 @@ export async function revisarVencimientos(opciones?: { sql?: Cliente; ahora?: Da
       console.error(`No se pudo revisar el vencimiento del trámite ${fila.id}:`, err);
     }
   }
+  const distribucion = await revisarVencimientosDeDistribucion({ sql, ahora, config });
+  resultado.avisados += distribucion.avisados;
+  resultado.escalados += distribucion.escalados;
   return resultado;
 }

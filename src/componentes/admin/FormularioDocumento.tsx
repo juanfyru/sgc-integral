@@ -319,6 +319,51 @@ export function FormularioControl({
   );
 }
 
+export type DistribucionDelDocumento = {
+  /** Las listas activas y, aunque estén desactivadas, las que el documento ya tiene. */
+  listas: Array<{ id: number; nombre: string; activa: boolean }>;
+  listaIds: number[];
+  lecturaObligatoriaIngreso: boolean;
+};
+
+function BloqueDistribucion({
+  distribucion,
+  marcadas,
+  lecturaObligatoria,
+}: {
+  distribucion: DistribucionDelDocumento;
+  marcadas: Set<string>;
+  lecturaObligatoria: boolean;
+}) {
+  return (
+    <fieldset className="flex min-w-0 flex-col gap-2">
+      <legend className="mb-1 text-sm font-medium">Distribución</legend>
+      <input type="hidden" name="distribucion" value="1" />
+      <p className="text-xs text-muted-foreground">
+        Además de las personas de sus procesos, el documento llega a quienes estén en las listas elegidas (si es restringido,
+        solo a quien puede verlo).
+      </p>
+      {distribucion.listas.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Aún no hay listas de distribución.</p>
+      ) : (
+        <div className="flex max-h-48 flex-col gap-1 overflow-y-auto rounded-md border border-border p-3">
+          {distribucion.listas.map((l) => (
+            <label key={l.id} className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="listaIds" value={l.id} defaultChecked={marcadas.has(String(l.id))} className="size-4" />
+              {l.nombre}
+              {l.activa ? null : <span className="text-xs text-muted-foreground">(lista desactivada)</span>}
+            </label>
+          ))}
+        </div>
+      )}
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" name="lecturaObligatoriaIngreso" defaultChecked={lecturaObligatoria} className="size-4" />
+        Lectura obligatoria al ingresar al proceso
+      </label>
+    </fieldset>
+  );
+}
+
 /** Lo que no es parte del contenido aprobado: se edita siempre (spec 13A §8.6). */
 export function FormularioCatalogo({
   accion,
@@ -328,10 +373,12 @@ export function FormularioCatalogo({
   codigo,
   valores,
   propietarioFijo,
+  distribucion,
 }: {
   accion: Accion;
   procesos: ProcesoConSub[];
   documentos: OpcionDocumento[];
+  distribucion?: DistribucionDelDocumento;
   documentoId: number;
   codigo: string;
   valores: {
@@ -361,6 +408,13 @@ export function FormularioCatalogo({
         propietarioFijo={propietarioFijo}
       />
       <DocumentosRelacionados documentos={documentos} marcados={new Set(lista("relacionados") ?? valores.relacionados.map(String))} />
+      {distribucion ? (
+        <BloqueDistribucion
+          distribucion={distribucion}
+          marcadas={new Set(lista("listaIds") ?? distribucion.listaIds.map(String))}
+          lecturaObligatoria={estado?.valores ? lista("lecturaObligatoriaIngreso")?.length === 1 : distribucion.lecturaObligatoriaIngreso}
+        />
+      ) : null}
       <Rechazo estado={estado} />
       <Boton type="submit" pendiente={pendiente} className="self-start">
         {pendiente ? "Guardando…" : "Guardar datos de catálogo"}

@@ -8,7 +8,8 @@ vi.mock("@/lib/vencimientos-disparo", () => ({ dispararRevisionDeVencimientos: d
 vi.mock("@/db/consultas/entidad", () => ({ obtenerMarcaSegura: async () => ({ nombre: "Entidad", sigla: "E", logo: null }) }));
 vi.mock("@/db/consultas/notificaciones", () => ({ contarNoLeidas: async () => 0, listarRecientes: async () => [] }));
 vi.mock("@/db/consultas/tramites", () => ({ participaEnTramites: async () => false }));
-vi.mock("@/lib/tareas", () => ({ misTareas: async () => [] }));
+vi.mock("@/db/consultas/distribucion/puntos-uso", () => ({ esResponsableDePuntos: async () => false }));
+vi.mock("@/lib/tareas", () => ({ misTareas: async () => ({ tareas: [], total: 0 }) }));
 
 import { Cascaron } from "@/componentes/cascaron/Cascaron";
 import type { SesionValida } from "@/lib/sesion";

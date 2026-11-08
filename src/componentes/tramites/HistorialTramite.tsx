@@ -64,8 +64,10 @@ function cambiosDeDatos({ tipo, detalle: d }: EventoTramite): string[] {
   const delAprobador = aprobador ? [`${ETIQUETA_PAPEL.aprobador}: ${nombreEn(aprobador.de)} → ${nombreEn(aprobador.a)}`] : [];
   if (tipo === "corregir_datos") {
     const antes = (d.antes ?? {}) as Record<string, unknown>;
-    const datos = Object.entries((d.despues ?? {}) as Record<string, unknown>).map(
-      ([dato, valor]) => `${ETIQUETA_DATO[dato] ?? dato}: ${String(antes[dato])} → ${String(valor)}`,
+    const datos = Object.entries((d.despues ?? {}) as Record<string, unknown>).map(([dato, valor]) =>
+      dato === "socializacion"
+        ? `Cambió la marca de socialización a ${String(valor)}`
+        : `${ETIQUETA_DATO[dato] ?? dato}: ${String(antes[dato])} → ${String(valor)}`,
     );
     const retirada = typeof d.secundariaRetirada === "string" ? [`Deja de figurar como proceso donde aplica: ${d.secundariaRetirada}`] : [];
     return [...datos, ...retirada, ...delAprobador];

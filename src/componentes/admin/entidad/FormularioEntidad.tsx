@@ -121,6 +121,20 @@ export function FormularioEntidad({
             <input maxLength={200} defaultValue={valor("lema", entidad.lema)} className={claseControl} />
           </Campo>
           <Campo
+            etiqueta="Dirección de la plataforma"
+            nombre="url_publica"
+            ayuda="Se imprime en el código QR de las copias controladas. Sin ella, el sello sale sin QR."
+          >
+            <input
+              type="url"
+              inputMode="url"
+              maxLength={200}
+              placeholder="https://sgc.hospital.gov.co"
+              defaultValue={valor("url_publica", entidad.urlPublica)}
+              className={claseControl}
+            />
+          </Campo>
+          <Campo
             etiqueta="Aviso de datos personales"
             nombre="aviso_datos_personales"
             ayuda="Texto que cada persona acepta en su primer ingreso."

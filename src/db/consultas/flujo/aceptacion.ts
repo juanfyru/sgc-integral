@@ -82,6 +82,11 @@ export function plazoHasta(fecha: string, ahora: Date, que: string): Date {
   return venceEn;
 }
 
+/** La casilla de la aceptación (en el evento solo consta cuando se marcó) («on» en el formulario); los tests pasan `true`. */
+function marcaDeSocializacion(datos: Record<string, unknown>): boolean {
+  return datos.requiereSocializacion === "on" || datos.requiereSocializacion === true;
+}
+
 /** Solo descartarlo: ya hay una versión vigente, y sobre ella el camino directo no publica. */
 const BORRADOR_PENDIENTE = "El documento tiene un borrador de carga pendiente: descártelo";
 
@@ -128,9 +133,10 @@ async function aceptarModificacion(c: ContextoManejador): Promise<Efecto> {
   const { titulo, cambios, detalle } = await abrirVersion(c, tramite.documentoId, datos);
   const tituloPropuesto = datos.tituloNuevo && datos.tituloNuevo !== titulo ? datos.tituloNuevo : null;
   const { texto } = await rotuloDeTramite(tx, { ...tramite, tituloPropuesto });
+  const requiereSocializacion = marcaDeSocializacion(c.datos);
   return {
-    detalle: { ...detalle, ...(tituloPropuesto ? { tituloNuevo: tituloPropuesto } : {}) },
-    cambios: { ...cambios, tituloPropuesto },
+    detalle: { ...detalle, ...(requiereSocializacion ? { requiereSocializacion } : {}), ...(tituloPropuesto ? { tituloNuevo: tituloPropuesto } : {}) },
+    cambios: { ...cambios, tituloPropuesto, requiereSocializacion },
     avisos: avisosDeElaboracion(tramite, datos.elaboradorId, texto),
   };
 }
@@ -165,9 +171,11 @@ async function convertirEnModificacion(c: ContextoManejador): Promise<Efecto> {
     throw err;
   });
   const { texto } = await rotuloDeTramite(tx, { tipo: "modificar", documentoId, tituloPropuesto: null });
+  const requiereSocializacion = marcaDeSocializacion(c.datos);
   return {
     detalle: {
       ...detalle,
+      ...(requiereSocializacion ? { requiereSocializacion } : {}),
       parecidos,
       decision: "modificacion",
       clasificacion: { solicitado: loSolicitado(tramite) },
@@ -179,6 +187,7 @@ async function convertirEnModificacion(c: ContextoManejador): Promise<Efecto> {
       subprocesoId: propietario.subprocesoId,
       tipoDocumentoId: null,
       tituloPropuesto: null,
+      requiereSocializacion,
     },
     avisos: avisosDeElaboracion(tramite, datos.elaboradorId, texto),
   };
@@ -252,9 +261,11 @@ async function aceptarNuevo(c: ContextoManejador): Promise<Efecto> {
   const parecidos = await parecidosVistos(tx, tramite);
   const { documentoId, versionId, codigo } = await crearConCodigoLibre(tx, d, propietario.procesoId, sesion.usuarioId, tramite.id);
   const { texto } = await rotuloDeTramite(tx, { ...tramite, documentoId });
+  const requiereSocializacion = marcaDeSocializacion(c.datos);
   return {
     detalle: {
       parecidos,
+      ...(requiereSocializacion ? { requiereSocializacion } : {}),
       decision: "nuevo",
       codigo,
       version: 1,
@@ -280,6 +291,7 @@ async function aceptarNuevo(c: ContextoManejador): Promise<Efecto> {
       revisorId: d.revisorId,
       aprobadorId: d.aprobadorId,
       venceEn,
+      requiereSocializacion,
     },
     avisos: avisosDeElaboracion(tramite, d.elaboradorId, texto),
   };

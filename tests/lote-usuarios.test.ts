@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { neutralizarFormula } from "@/lib/celdas";
-import { catalogoDeCargos, parsearLoteCsv, plantillaCsv, resultadosCsv } from "@/lib/lote-usuarios";
+import { catalogoDeCargos, parsearLoteCsv, plantillaCsv, resultadosCsv, resumenLote } from "@/lib/lote-usuarios";
 
 const catalogo = { cargos: new Map([["enfermera jefe", 7]]), procesos: new Map([["GTH", 3], ["CEX", 4]]) };
 
@@ -93,6 +93,16 @@ describe("cargos con el mismo nombre en varias áreas", () => {
     expect(r.invalidas[0].error).toBe(
       "El cargo «Urgencias > Camillero» está repetido en esa área con nombres casi iguales; corríjalo en Estructura",
     );
+  });
+});
+
+describe("resumen del lote", () => {
+  const base = { creados: [{ linea: 2, usuario: "a", nombre: "A", claveTemporal: "X" }], fallidos: [] };
+
+  it("nombra las tareas de lectura solo cuando se abrieron", () => {
+    expect(resumenLote({ ...base, tareasDeLectura: 0 })).toBe("1 creados, 0 rechazados.");
+    expect(resumenLote({ ...base, tareasDeLectura: 1 })).toBe("1 creados, 0 rechazados. Se crearon 1 tarea de lectura.");
+    expect(resumenLote({ ...base, tareasDeLectura: 6 })).toBe("1 creados, 0 rechazados. Se crearon 6 tareas de lectura.");
   });
 });
 

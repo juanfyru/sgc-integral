@@ -68,6 +68,26 @@ export function filtroAcceso(sql: Cliente, sujeto: SujetoVisibilidad) {
   ))`;
 }
 
+/**
+ * La misma regla de `filtroAcceso` evaluada por fila: `columnaUsuario` es la columna que trae el id de la
+ * persona (por ejemplo, un fragmento `u.id`) y la consulta llama `d` a `documentos`. El rol sale de `usuarios`.
+ */
+export function filtroAccesoDe(sql: Cliente, columnaUsuario: ReturnType<Cliente>) {
+  return sql`(d.nivel_acceso = 'general'
+    OR EXISTS (SELECT 1 FROM usuarios acceso_u
+      WHERE acceso_u.id = ${columnaUsuario} AND acceso_u.rol IN ${sql([...ROLES_VEN_RESTRINGIDO])})
+    OR EXISTS (
+      SELECT 1
+      FROM documento_proceso acceso_dp
+      LEFT JOIN subprocesos acceso_s ON acceso_s.id = acceso_dp.subproceso_id
+      JOIN procesos acceso_p
+        ON acceso_p.id = COALESCE(acceso_dp.proceso_id, acceso_s.proceso_id) AND acceso_p.activo
+      JOIN usuario_procesos acceso_up
+        ON acceso_up.proceso_id = acceso_p.id AND acceso_up.usuario_id = ${columnaUsuario}
+      WHERE acceso_dp.documento_id = d.id
+    ))`;
+}
+
 /** La misma regla para un documento suelto; `false` si el documento no existe. */
 export async function puedeAccederDocumento(
   documentoId: number,
@@ -129,4 +149,65 @@ export async function procesosAsignados(usuarioId: number): Promise<ProcesoAsign
     WHERE up.usuario_id = ${usuarioId} AND p.activo
     ORDER BY p.nombre`;
   return filas.map((f) => ({ id: f.id as number, nombre: f.nombre as string, sigla: f.sigla as string, slug: f.slug as string }));
+}
+
+/** Quién ve el módulo de distribución: quien tiene `distribucion.ver` o responde por algún punto activo. */
+export function puedeVerDistribucion(sesion: SujetoVisibilidad & { responsableDePuntos?: boolean }): boolean {
+  return puede(sesion, "distribucion.ver") || sesion.responsableDePuntos === true;
+}
+
+/**
+ * Qué puntos de uso ve una persona, para un `WHERE` sobre `puntos_uso pu`: los roles que ven todo, todos;
+ * el líder, los de sus procesos activos y los suyos; el resto, solo aquellos de los que es responsable.
+ */
+export function filtroPuntos(sql: Cliente, sujeto: SujetoVisibilidad) {
+  if (sujeto.rol === "admin_sgc" || sujeto.rol === "gerencia" || sujeto.rol === "control_interno") return sql`true`;
+  if (sujeto.rol === "lider_proceso") {
+    return sql`(pu.responsable_id = ${sujeto.usuarioId} OR EXISTS (
+      SELECT 1
+      FROM punto_uso_procesos puntos_pp
+      JOIN procesos puntos_p ON puntos_p.id = puntos_pp.proceso_id AND puntos_p.activo
+      JOIN usuario_procesos puntos_up ON puntos_up.proceso_id = puntos_p.id AND puntos_up.usuario_id = ${sujeto.usuarioId}
+      WHERE puntos_pp.punto_uso_id = pu.id
+    ))`;
+  }
+  return sql`pu.responsable_id = ${sujeto.usuarioId}`;
+}
+
+/**
+ * Quién ve una jornada de socialización (spec 13B §6.4): el resumen, quien ve alguno de los documentos
+ * socializados; la evidencia (lista de asistentes y actas), Admin SGC, Gerencia, Control Interno y el
+ * líder de alguno de los procesos de esos documentos. `procesoIds` son todos los procesos de los documentos.
+ */
+export async function puedeVerJornada(
+  sesion: SujetoVisibilidad,
+  jornada: { procesoIds: number[]; documentoIds?: number[] },
+  opciones?: { sql?: Cliente },
+): Promise<{ ve: boolean; evidencia: boolean }> {
+  let evidencia = sesion.rol === "admin_sgc" || sesion.rol === "gerencia" || sesion.rol === "control_interno";
+  if (!evidencia && sesion.rol === "lider_proceso") {
+    const alcance = await alcanceProcesos(sesion, opciones);
+    evidencia = jornada.procesoIds.some((p) => enAlcance(alcance, p));
+  }
+  if (evidencia) return { ve: true, evidencia };
+  for (const documentoId of jornada.documentoIds ?? []) {
+    if (await puedeAccederDocumento(documentoId, sesion, opciones)) return { ve: true, evidencia: false };
+  }
+  return { ve: false, evidencia: false };
+}
+
+/**
+ * Quién ve una verificación de un punto de uso (spec 13B §6.3): Admin SGC, Gerencia y Control Interno; el líder
+ * de alguno de los procesos del punto; y quien es hoy el responsable del punto. `procesoIds` son los del punto.
+ */
+export async function puedeVerVerificacion(
+  sesion: SujetoVisibilidad,
+  v: { puntoId: number; responsableId: number; procesoIds: number[] },
+  opciones?: { sql?: Cliente },
+): Promise<boolean> {
+  if (sesion.rol === "admin_sgc" || sesion.rol === "gerencia" || sesion.rol === "control_interno") return true;
+  if (v.responsableId === sesion.usuarioId) return true;
+  if (sesion.rol !== "lider_proceso") return false;
+  const alcance = await alcanceProcesos(sesion, opciones);
+  return v.procesoIds.some((p) => enAlcance(alcance, p));
 }

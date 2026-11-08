@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 import type { EstadoLote } from "@/app/admin/acciones-usuarios";
-import { resultadosCsv } from "@/lib/lote-usuarios";
+import { resultadosCsv, resumenLote } from "@/lib/lote-usuarios";
 
 const claseBoton = "rounded-md bg-azul px-4 py-2 text-sm font-medium text-white hover:bg-azul-profundo disabled:opacity-60";
 
@@ -45,7 +45,7 @@ export function FormularioLote({
         <section aria-labelledby="titulo-resultados" className="flex flex-col gap-4">
           <h2 id="titulo-resultados" className="font-display text-lg font-semibold">Resultados</h2>
           <p role="status" className="text-sm">
-            {estado.resultado.creados.length} creados, {estado.resultado.fallidos.length} rechazados.{" "}
+            {resumenLote(estado.resultado)}{" "}
             <strong>Las claves temporales no se volverán a mostrar:</strong> descargue el CSV y entréguelas por un
             medio seguro.
           </p>

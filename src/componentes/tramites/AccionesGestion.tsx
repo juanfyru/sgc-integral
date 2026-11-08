@@ -38,6 +38,7 @@ export type TramiteParaGestionar = Pick<
   | "elaborador"
   | "revisor"
   | "aprobador"
+  | "requiereSocializacion"
 >;
 
 type AccionServidor = (estado: EstadoAccion, formData: FormData) => Promise<EstadoAccion>;
@@ -282,6 +283,30 @@ function FormularioCorreccion({
   );
 }
 
+/** La marca de socialización se corrige en toda etapa de trabajo, también desde la aprobación. */
+function FormularioMarca({ tramite, cerrar }: { tramite: TramiteParaGestionar; cerrar: () => void }) {
+  const { estado, enviar, pendiente, alEnviar } = useEnvio(corregirDatosTramiteAccion, cerrar);
+  return (
+    <form action={enviar} onSubmit={alEnviar} className="flex flex-col gap-4 p-5">
+      <Ocultos tramite={tramite} />
+      <p aria-hidden="true" className="font-semibold">
+        Marca de socialización
+      </p>
+      <p className="text-sm text-muted-foreground">
+        Si está marcada, al publicar el sistema pide registrar la jornada con quienes aplican el documento. Si ya se publicó, no tiene efecto.
+      </p>
+      <Campo etiqueta="¿Requiere socialización?" nombre="requiereSocializacion">
+        <select defaultValue={tramite.requiereSocializacion ? "si" : "no"} className={anchoCompleto}>
+          <option value="si">Sí, requiere socialización</option>
+          <option value="no">No la requiere</option>
+        </select>
+      </Campo>
+      <ErrorAccion estado={estado} />
+      <PieDelDialogo cerrar={cerrar} pendiente={pendiente} confirmar="Guardar la marca" />
+    </form>
+  );
+}
+
 /** Dice qué pasa con la versión: según la solicitud, no hay ninguna o es la vigente. */
 export function efectoDeCancelar(t: TramiteParaGestionar): string {
   if (t.tipo === "eliminar") return "La solicitud se cierra y el documento sigue vigente. Queda en el historial.";
@@ -295,16 +320,24 @@ export function AccionesGestion({
   tramite,
   datos,
   hoy,
+  puedeMarcar = false,
 }: {
   tramite: TramiteParaGestionar;
   datos: DatosParaGestionar;
   hoy: string;
+  /** `distribucion.gestionar`: quien además de gestionar el trámite puede cambiar la marca de socialización. */
+  puedeMarcar?: boolean;
 }) {
   return (
     <section aria-label="Gestión del trámite" className="flex flex-wrap items-start justify-end gap-2">
       {ETAPAS_CON_CORRECCION.includes(tramite.etapa) ? (
         <DialogoDeGestion etiqueta="Corregir datos del documento">
           {(cerrar) => <FormularioCorreccion tramite={tramite} datos={datos} cerrar={cerrar} />}
+        </DialogoDeGestion>
+      ) : null}
+      {puedeMarcar && tramite.tipo !== "eliminar" ? (
+        <DialogoDeGestion etiqueta="Marca de socialización">
+          {(cerrar) => <FormularioMarca tramite={tramite} cerrar={cerrar} />}
         </DialogoDeGestion>
       ) : null}
       <DialogoDeGestion etiqueta="Reasignar">

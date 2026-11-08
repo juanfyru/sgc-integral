@@ -1,6 +1,7 @@
 import { after } from "next/server";
 import { obtenerMarcaSegura } from "@/db/consultas/entidad";
 import { contarNoLeidas, listarRecientes } from "@/db/consultas/notificaciones";
+import { esResponsableDePuntos } from "@/db/consultas/distribucion/puntos-uso";
 import { participaEnTramites } from "@/db/consultas/tramites";
 import { ETIQUETA_ROL } from "@/lib/roles";
 import type { SesionValida } from "@/lib/sesion";
@@ -20,25 +21,26 @@ import { entradasVisibles } from "./navegacion";
  */
 export async function Cascaron({ sesion, children }: { sesion: SesionValida; children: React.ReactNode }) {
   after(() => dispararRevisionDeVencimientos());
-  const [marca, tareas, noLeidas, recientes, participa] = await Promise.all([
+  const [marca, { total: tareas }, noLeidas, recientes, participa, responsable] = await Promise.all([
     obtenerMarcaSegura(),
     misTareas(sesion),
     contarNoLeidas(sesion.usuarioId),
     listarRecientes(sesion.usuarioId, 10),
     participaEnTramites(sesion.usuarioId),
+    esResponsableDePuntos(sesion.usuarioId),
   ]);
-  const entradas = entradasVisibles({ ...sesion, participaEnTramites: participa });
+  const entradas = entradasVisibles({ ...sesion, participaEnTramites: participa, responsableDePuntos: responsable });
   const logoUrl = marca.logo ? `/marca/logo?v=${marca.logo.version}` : null;
   const marcaBarra = { nombre: marca.nombre, sigla: marca.sigla, logoUrl };
 
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] print:block! print:min-h-0">
-      <BarraLateral marca={marcaBarra} entradas={entradas} tareas={tareas.length} version={VERSION_APP} />
+      <BarraLateral marca={marcaBarra} entradas={entradas} tareas={tareas} version={VERSION_APP} />
       <div className="min-w-0">
         <BarraSuperior
           marca={marcaBarra}
           entradas={entradas}
-          tareas={tareas.length}
+          tareas={tareas}
           version={VERSION_APP}
           buscador={<Buscador entradas={entradas} />}
           campana={<Campana noLeidas={noLeidas} recientes={recientes} />}

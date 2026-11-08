@@ -31,12 +31,22 @@ const catalogo = {
 
 export const EsquemaControl = z.object(control).strict();
 
+/**
+ * La distribución viaja con un marcador `distribucion=1`: una casilla sin marcar no se envía, y sin el
+ * marcador no se sabría si el formulario la trae. Sin él, la audiencia del documento no se toca.
+ */
 export const EsquemaCatalogo = z
-  .object(catalogo)
+  .object({
+    ...catalogo,
+    distribucion: z.literal("1").optional(),
+    listaIds: lista(id),
+    lecturaObligatoriaIngreso: z.literal("on").optional(),
+  })
   .strict()
-  .transform(({ principal, asociaciones, ...resto }) => ({
+  .transform(({ principal, asociaciones, distribucion, listaIds, lecturaObligatoriaIngreso, ...resto }) => ({
     ...resto,
     asociaciones: aAsociaciones(principal, asociaciones),
+    ...(distribucion ? { audiencia: { listaIds, lecturaObligatoriaIngreso: lecturaObligatoriaIngreso === "on" } } : {}),
   }));
 
 export const EsquemaDocumentoNuevo = z

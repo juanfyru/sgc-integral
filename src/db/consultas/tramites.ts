@@ -102,6 +102,7 @@ export function aFilaTramite(f: Row): FilaTramite {
     aprobadorId: idONulo(f.aprobador_id),
     venceEn: f.vence_en,
     motivoCierre: f.motivo_cierre,
+    requiereSocializacion: f.requiere_socializacion === true,
     creadoEn: f.creado_en,
   };
 }
@@ -121,7 +122,7 @@ async function tramitesVistos(
   const filas = await sql`SELECT t.id, t.numero, t.tipo, t.motivo, t.justificacion, t.solicitante_id,
       t.proceso_id, t.subproceso_id, t.tipo_documento_id, t.titulo_propuesto, t.documento_id,
       t.version_id, t.etapa, t.ronda, t.elaborador_id, t.revisor_id, t.aprobador_id, t.vence_en,
-      t.motivo_cierre, t.creado_en,
+      t.motivo_cierre, t.requiere_socializacion, t.creado_en,
       d.codigo,
       CASE WHEN t.tipo = 'crear' THEN COALESCE(d.titulo, t.titulo_propuesto, '')
            ELSE COALESCE(t.titulo_propuesto, d.titulo, '') END AS titulo,

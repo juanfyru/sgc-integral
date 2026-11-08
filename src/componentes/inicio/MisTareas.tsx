@@ -23,12 +23,12 @@ function Vencimiento({ vence, ahora }: { vence: Date; ahora: Date }) {
   return <Insignia variante="neutra">{fechaCorta(vence)}</Insignia>;
 }
 
-export function MisTareas({ tareas, ahora = new Date() }: { tareas: Tarea[]; ahora?: Date }) {
+export function MisTareas({ tareas, total = tareas.length, ahora = new Date() }: { tareas: Tarea[]; total?: number; ahora?: Date }) {
   return (
     <section aria-labelledby="mis-tareas-titulo" className="mb-8">
       <h2 id="mis-tareas-titulo" className="mb-3 font-display text-lg font-semibold">
         Mis tareas{" "}
-        <span className="text-sm font-normal text-muted-foreground">({tareas.length})</span>
+        <span className="text-sm font-normal text-muted-foreground">({total})</span>
       </h2>
       {tareas.length === 0 ? (
         <EstadoVacio

@@ -9,7 +9,7 @@ import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import type { ResumenTramite } from "@/db/consultas/tramites";
 import type { SesionFlujo } from "@/db/consultas/tramites-flujo";
-import { misTareas, tituloDeTarea } from "@/lib/tareas";
+import { agruparTareas, misTareas, tituloDeTarea } from "@/lib/tareas";
 import { sesionAdmin, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -53,7 +53,7 @@ describe("tituloDeTarea", () => {
 describe("misTareas", () => {
   const enlaceDe = (tramiteId: number) => `/tramites/${tramiteId}`;
   const tiene = async (sesion: SesionFlujo, tx: TransactionSql, tramiteId: number) =>
-    (await misTareas(sesion, { sql: tx })).some((t) => t.enlace === enlaceDe(tramiteId));
+    (await misTareas(sesion, { sql: tx })).tareas.some((t) => t.enlace === enlaceDe(tramiteId));
 
   it("en revisión la tarea es del revisor, con su enlace y su vencimiento", () => revertida(sql, async (tx) => {
     const t = await tramiteEn(tx, "revision");
@@ -61,7 +61,7 @@ describe("misTareas", () => {
       const [v] = await tx`SELECT numero FROM documento_versiones WHERE id = ${t.versionId}`;
       const [fila] = await tx`SELECT vence_en FROM tramites WHERE id = ${t.tramiteId}`;
       const [doc] = await tx`SELECT d.titulo FROM documentos d JOIN tramites t ON t.documento_id = d.id WHERE t.id = ${t.tramiteId}`;
-      const tareas = await misTareas(t.revisor, { sql: tx });
+      const { tareas } = await misTareas(t.revisor, { sql: tx });
       expect(tareas.find((x) => x.enlace === enlaceDe(t.tramiteId))).toEqual({
         id: `tramite:${t.tramiteId}`,
         modulo: "documentos",
@@ -93,7 +93,7 @@ describe("misTareas", () => {
   it("el visto bueno es de los líderes del proceso, y la solicitud no es tarea de quien la retiraría", () => revertida(sql, async (tx) => {
     const t = await tramiteEn(tx, "visto_bueno");
     const lider = await sesionDe(tx, "lider.gth");
-    expect((await misTareas(lider, { sql: tx })).find((x) => x.enlace === enlaceDe(t.tramiteId))?.titulo).toMatch(/^Dar el visto bueno a SOL-/);
+    expect((await misTareas(lider, { sql: tx })).tareas.find((x) => x.enlace === enlaceDe(t.tramiteId))?.titulo).toMatch(/^Dar el visto bueno a SOL-/);
     expect(await tiene(t.admin, tx, t.tramiteId)).toBe(false);
   }));
 
@@ -115,4 +115,27 @@ describe("misTareas", () => {
     await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-02", revisor: t1.revisor });
     expect(await contar()).toBe(conUno);
   }));
+});
+
+describe("agruparTareas", () => {
+  const base = { modulo: "documentos" as const, detalle: null, vence: null };
+  const acuse = (n: number, vence: Date | null = null) => ({ ...base, id: `acuse:${n}`, titulo: `Confirmar ${n}`, enlace: `/acuses/${n}`, vence });
+  const tramite = (n: number) => ({ ...base, id: `tramite:${n}`, titulo: `Tramite ${n}`, enlace: `/tramites/${n}` });
+
+  it("con 7 acuses y 2 trámites devuelve 3 tareas, la agrupada en la posición del primer acuse", () => {
+    const tareas = [tramite(1), ...[1, 2, 3, 4, 5, 6, 7].map((n) => acuse(n)), tramite(2)];
+    const r = agruparTareas(tareas);
+    expect(r.map((t) => t.id)).toEqual(["tramite:1", "acuses", "tramite:2"]);
+    expect(r[1]).toMatchObject({ modulo: "documentos", titulo: "7 lecturas por confirmar", detalle: null, vence: null, enlace: "/acuses" });
+  });
+  it("con 5 acuses no agrupa", () => {
+    const tareas = [1, 2, 3, 4, 5].map((n) => acuse(n));
+    expect(agruparTareas(tareas)).toEqual(tareas);
+  });
+  it("vence como la más próxima y lo dice en la zona de la instalación", () => {
+    const tareas = [1, 2, 3, 4, 5, 6].map((n) => acuse(n, n === 4 ? new Date("2026-11-10T03:00:00Z") : new Date("2026-12-01T12:00:00Z")));
+    const g = agruparTareas(tareas)[0];
+    expect(g.vence).toEqual(new Date("2026-11-10T03:00:00Z"));
+    expect(g.detalle).toBe("La más próxima vence el 9 de noviembre de 2026");
+  });
 });

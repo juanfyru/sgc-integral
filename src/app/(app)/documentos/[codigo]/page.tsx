@@ -15,6 +15,8 @@ import {
   formatearTamano,
   formatoDesdeMime,
 } from "@/componentes/documentos/IconoFormato";
+import { BloqueDistribucion } from "@/componentes/distribucion/BloqueDistribucion";
+import { AvisoVersionQr, versionDeQr } from "@/componentes/documentos/AvisoVersionQr";
 import { DatosDeAprobacion } from "@/componentes/documentos/DatosDeAprobacion";
 import { VisorPdf } from "@/componentes/documentos/VisorPdf";
 import { Migas } from "@/componentes/navegacion/Migas";
@@ -54,11 +56,14 @@ const ETIQUETA_ROL: Record<ArchivoFicha["rol"], string> = {
 
 export default async function FichaDocumento({
   params,
+  searchParams,
 }: {
   params: Promise<{ codigo: string }>;
+  searchParams: Promise<{ v?: string | string[] }>;
 }) {
   const sesion = await exigirSesion();
   const { codigo } = await params;
+  const versionDeCopia = versionDeQr((await searchParams).v);
 
   const ficha = await obtenerFichaDocumento(codigo, sesion);
   if (!ficha) notFound();
@@ -117,6 +122,8 @@ export default async function FichaDocumento({
           <MiniMapa banda={principal.banda} nombreMacro={principal.macroNombre} />
         )}
       </div>
+
+      <AvisoVersionQr solicitada={versionDeCopia} vigente={ficha.version.numero} />
 
       <EncabezadoPagina
         codigo={ficha.codigo}
@@ -267,6 +274,8 @@ export default async function FichaDocumento({
               <DatosDeAprobacion origen={ficha.version.origenAprobacion} tramiteId={ficha.version.tramiteId} />
             </dl>
           </section>
+
+          <BloqueDistribucion documento={{ id: ficha.id, codigo: ficha.codigo, titulo: ficha.titulo }} sesion={sesion} />
 
           <section aria-labelledby="titulo-ubicaciones">
             <h2

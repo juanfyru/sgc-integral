@@ -736,3 +736,41 @@ describe("datos para la pantalla", () => {
     });
   }));
 });
+
+describe("la marca de socialización", () => {
+  const marcaDe = async (tx: TransactionSql, tramiteId: number) => {
+    const [t] = await tx`SELECT requiere_socializacion FROM tramites WHERE id = ${tramiteId}`;
+    const [e] = await tx`SELECT detalle FROM tramite_eventos WHERE tramite_id = ${tramiteId} AND tipo = 'aceptar'`;
+    return { fila: t.requiere_socializacion, evento: e.detalle.requiereSocializacion ?? false };
+  };
+
+  it("una creación nueva la guarda en la fila y en el evento; sin casilla queda en falso", () => revertida(sql, async (tx) => {
+    const { admin, liderCex, tramiteId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "ZP", titulo: "Formato con jornada de socialización" });
+    await transicionar(admin, { tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
+      datos: aceptarCreacion({ codigo: "CEX-ZP-01", elaboradorId: liderCex.usuarioId, revisorId: admin.usuarioId, aprobadorId: admin.usuarioId, requiereSocializacion: "on" }) }, opc(tx));
+    expect(await marcaDe(tx, tramiteId)).toEqual({ fila: true, evento: true });
+
+    const otra = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "ZP", titulo: "Formato sin jornada" });
+    await transicionar(otra.admin, { tramiteId: otra.tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
+      datos: aceptarCreacion({ codigo: "CEX-ZP-02", elaboradorId: otra.liderCex.usuarioId, revisorId: otra.admin.usuarioId, aprobadorId: otra.admin.usuarioId }) }, opc(tx));
+    expect(await marcaDe(tx, otra.tramiteId)).toEqual({ fila: false, evento: false });
+  }));
+
+  it("una creación convertida en modificación la conserva", () => revertida(sql, async (tx) => {
+    const { id: documentoExistenteId } = await guiaLibre(tx);
+    const { admin, liderCex, tramiteId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "GU", titulo: GUIA_LIBRE });
+    await transicionar(admin, { tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
+      datos: aceptarCreacion({ decision: "modificacion", documentoExistenteId, elaboradorId: liderCex.usuarioId, revisorId: admin.usuarioId, aprobadorId: admin.usuarioId, requiereSocializacion: "on" }) }, opc(tx));
+    expect(await marcaDe(tx, tramiteId)).toEqual({ fila: true, evento: true });
+  }));
+
+  it("una modificación la guarda", () => revertida(sql, async (tx) => {
+    const admin = await sesionAdmin(tx);
+    const lider = await sesionDe(tx, "lider.gth");
+    const doc = await documentoLibre(tx, { proceso: "GTH", tipo: "PR" });
+    const m = await crearSolicitud(lider, { tipo: "modificar", motivo: "mejora", justificacion: JUSTIFICACION, documentoId: doc.id }, opc(tx));
+    await transicionar(admin, { tramiteId: m.tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
+      datos: { elaboradorId: lider.usuarioId, revisorId: admin.usuarioId, aprobadorId: admin.usuarioId, venceElaboracion: "2026-11-20", requiereSocializacion: "on" } }, opc(tx));
+    expect(await marcaDe(tx, m.tramiteId)).toEqual({ fila: true, evento: true });
+  }));
+});

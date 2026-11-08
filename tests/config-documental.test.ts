@@ -60,6 +60,7 @@ const aGuardar = (c: ConfigDocumental) => ({
   escalamientoDias: c.escalamientoDias,
   publicacionDirecta: c.publicacionDirecta,
   formatoActa: c.formatoActa,
+  distribucion: c.distribucion,
 });
 
 const ultimaAuditoria = async (tx: TransactionSql, actorId: number) => {
@@ -243,6 +244,51 @@ describe("formato del acta", () => {
     expect((await ultimaAuditoria(tx, usuarioId)).cambios).toEqual({
       formato_acta_documento_id: { antes: String(doc.id), despues: "" },
     });
+  }));
+});
+
+describe("distribución", () => {
+  const CLAVES = [
+    "plazo_recibido_dias", "plazo_recogida_dias", "plazo_acuse_dias", "plazo_socializacion_dias", "plazo_correccion_dias",
+    "verificacion_cada_dias", "umbral_conformidad_pct", "sello_franja_cm", "sello_qr_cm",
+  ];
+
+  const valorDe = async (tx: TransactionSql, clave: string) =>
+    (await tx`SELECT valor FROM configuracion WHERE clave = ${clave}`)[0]?.valor;
+
+  it("trae los nueve defectos cuando las claves no existen", () => revertida(sql, async (tx) => {
+    await tx`DELETE FROM configuracion WHERE clave = ANY(${CLAVES})`;
+    expect((await obtenerConfigDocumental({ sql: tx })).distribucion).toEqual({
+      plazoRecibidoDias: 3, plazoRecogidaDias: 5, plazoAcuseDias: 15, plazoSocializacionDias: 30, plazoCorreccionDias: 5,
+      verificacionCadaDias: 90, umbralConformidadPct: 95, selloFranjaCm: 1, selloQrCm: 1.5,
+    });
+  }));
+
+  it("guarda, valida y audita el antes y el después", () => revertida(sql, async (tx) => {
+    const { usuarioId } = await sesionAdmin(tx);
+    await tx`DELETE FROM configuracion WHERE clave = ANY(${CLAVES})`;
+    const antes = await obtenerConfigDocumental({ sql: tx });
+    const distribucion = { ...antes.distribucion, plazoAcuseDias: 20, selloQrCm: 2 };
+    await guardarConfigDocumentalEn(tx, { ...aGuardar(antes), distribucion }, usuarioId);
+    expect((await obtenerConfigDocumental({ sql: tx })).distribucion).toEqual(distribucion);
+    expect(await valorDe(tx, "plazo_acuse_dias")).toBe("20");
+    const { cambios } = await ultimaAuditoria(tx, usuarioId);
+    expect(cambios.plazo_acuse_dias).toEqual({ antes: "15", despues: "20" });
+    expect(cambios.sello_qr_cm).toEqual({ antes: "1.5", despues: "2" });
+    expect(Object.keys(cambios).sort()).toEqual(["plazo_acuse_dias", "sello_qr_cm"]);
+
+    const rechaza = (cambio: Partial<typeof distribucion>, mensaje: RegExp) =>
+      expect(tx.savepoint(() => guardarConfigDocumentalEn(tx, { ...aGuardar(antes), distribucion: { ...distribucion, ...cambio } }, usuarioId)))
+        .rejects.toThrow(mensaje);
+    await rechaza({ umbralConformidadPct: 49 }, /El umbral de conformidad debe ser un número entero de 50 a 100/);
+    await rechaza({ umbralConformidadPct: 101 }, /umbral/);
+    await rechaza({ selloQrCm: 0.5 }, /QR/);
+    await rechaza({ selloQrCm: 3.1 }, /QR/);
+    await rechaza({ selloFranjaCm: 0.4 }, /franja/);
+    await rechaza({ selloFranjaCm: 3.1 }, /franja/);
+    await rechaza({ plazoRecibidoDias: 0 }, /recibido/);
+    await rechaza({ verificacionCadaDias: 366 }, /verificaciones/);
+    await rechaza({ plazoCorreccionDias: 1.5 }, /corrección/);
   }));
 });
 

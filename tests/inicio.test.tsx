@@ -28,3 +28,28 @@ describe("Inicio", () => {
     expect(ayer).toContain("Vencida");
   });
 });
+
+describe("Inicio con lecturas agrupadas", () => {
+  it("la tarea agrupada enlaza a /acuses y dice cuántas son", () => {
+    const h = renderToStaticMarkup(
+      <MisTareas
+        tareas={[{ id: "acuses", modulo: "documentos", titulo: "12 lecturas por confirmar", detalle: "La más próxima vence el 9 de noviembre de 2026", vence: null, enlace: "/acuses" }]}
+      />,
+    );
+    expect(h).toContain('href="/acuses"');
+    expect(h).toContain("12 lecturas por confirmar");
+    expect(h).toContain("La más próxima vence el 9 de noviembre de 2026");
+  });
+});
+
+describe("Inicio, conteo del encabezado", () => {
+  it("muestra el total real, no las filas agrupadas", () => {
+    const h = renderToStaticMarkup(
+      <MisTareas
+        total={12}
+        tareas={[{ id: "acuses", modulo: "documentos", titulo: "12 lecturas por confirmar", detalle: null, vence: null, enlace: "/acuses" }]}
+      />,
+    );
+    expect(h).toContain("(12)");
+  });
+});

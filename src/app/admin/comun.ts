@@ -9,6 +9,9 @@ export type EstadoAccion =
   | { ok: false; error: string; valores?: Record<string, string | string[]> }
   | null;
 
+/** Una acción que no navega y dice lo que hizo (`FormAccion` lo pinta como estado). */
+export type EstadoConAviso = EstadoAccion | { ok: true; aviso: string };
+
 export function texto(formData: FormData, campo: string): string {
   return String(formData.get(campo) ?? "").trim();
 }

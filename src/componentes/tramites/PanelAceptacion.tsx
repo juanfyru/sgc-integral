@@ -218,6 +218,17 @@ export function PanelAceptacion({ tramite, datos, contexto, usuarioId, plazos, h
               valor={aprobador}
               alCambiar={setAprobadorId}
             />
+            {!elimina ? (
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" name="requiereSocializacion" className="mt-0.5 size-4" />
+                <span>
+                  Requiere socialización (capacitar al personal al publicar)
+                  <span className="block text-xs text-muted-foreground">
+                    Al publicar, el sistema pide registrar la jornada con quienes lo aplican.
+                  </span>
+                </span>
+              </label>
+            ) : null}
           </div>
         </Bloque>
       </form>

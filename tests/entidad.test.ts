@@ -16,6 +16,7 @@ import {
   obtenerEntidad,
   obtenerLogoAlmacenado,
   obtenerMarca,
+  obtenerUrlPublica,
   quitarLogo,
 } from "@/db/consultas/entidad";
 
@@ -63,6 +64,21 @@ describe("entidad", () => {
       expect((await obtenerEntidad()).sigla).toBe("ZZS");
       const [a] = await sql()`SELECT detalle FROM auditoria WHERE usuario_id = ${actorId} AND accion = 'editar_configuracion' ORDER BY id DESC LIMIT 1`;
       expect(a.detalle.claves).toContain("sigla_entidad");
+    } finally {
+      await guardarEntidad(antes, actorId);
+    }
+  });
+
+  it("la dirección pública se valida, se guarda sin barra final y vacía es null", async () => {
+    const antes = await obtenerEntidad();
+    try {
+      await expect(guardarEntidad({ ...antes, urlPublica: "javascript:alert(1)" }, actorId)).rejects.toThrow(/http/);
+      expect((await obtenerEntidad()).urlPublica).toBe(antes.urlPublica);
+      await guardarEntidad({ ...antes, urlPublica: "https://sgc.hospital.gov.co/" }, actorId);
+      expect(await obtenerUrlPublica()).toBe("https://sgc.hospital.gov.co");
+      expect((await obtenerEntidad()).urlPublica).toBe("https://sgc.hospital.gov.co");
+      await guardarEntidad({ ...antes, urlPublica: "" }, actorId);
+      expect(await obtenerUrlPublica()).toBeNull();
     } finally {
       await guardarEntidad(antes, actorId);
     }

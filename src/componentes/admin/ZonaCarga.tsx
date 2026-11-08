@@ -21,7 +21,13 @@ const ETIQUETA_ROL: Record<RolArchivo, string> = {
   anexo: "Anexo",
 };
 
-export function ZonaCarga({ direccion }: { direccion: string }) {
+// Aviso previo de la evidencia (PDF o imagen): el servidor valida el contenido con `validarTipoEvidencia`,
+// que no se puede importar aquí por el mismo motivo.
+const EXTENSIONES_EVIDENCIA = ["pdf", "png", "jpg", "jpeg", "webp"];
+const ERROR_EVIDENCIA = "La evidencia debe ser PDF o imagen (PNG, JPG, WebP)";
+
+/** `evidencia`: archivos de respaldo de una jornada, sin rol de archivo y limitados a PDF e imágenes. */
+export function ZonaCarga({ direccion, evidencia = false }: { direccion: string; evidencia?: boolean }) {
   const router = useRouter();
   const [rol, setRol] = useState<RolArchivo>("principal");
   const [cargas, setCargas] = useState<Carga[]>([]);
@@ -33,12 +39,20 @@ export function ZonaCarga({ direccion }: { direccion: string }) {
   }
 
   function subir(archivo: File) {
+    const extension = archivo.name.slice(archivo.name.lastIndexOf(".") + 1).toLowerCase();
+    if (evidencia && !EXTENSIONES_EVIDENCIA.includes(extension)) {
+      setCargas((prev) => [
+        ...prev.filter((c) => c.nombre !== archivo.name),
+        { nombre: archivo.name, progreso: 0, estado: "error", mensaje: ERROR_EVIDENCIA },
+      ]);
+      return;
+    }
     setCargas((prev) => [
       ...prev.filter((c) => c.nombre !== archivo.name),
       { nombre: archivo.name, progreso: 0, estado: "subiendo" },
     ]);
     const xhr = new XMLHttpRequest();
-    const url = `${direccion}${direccion.includes("?") ? "&" : "?"}rol=${rol}`;
+    const url = evidencia ? direccion : `${direccion}${direccion.includes("?") ? "&" : "?"}rol=${rol}`;
     xhr.open("POST", url);
     xhr.setRequestHeader("x-nombre-archivo", encodeURIComponent(archivo.name));
     xhr.upload.onprogress = (e) => {
@@ -68,18 +82,20 @@ export function ZonaCarga({ direccion }: { direccion: string }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <label className="flex items-center gap-2 text-sm font-medium">
-        Rol de los archivos a subir
-        <select
-          value={rol}
-          onChange={(e) => setRol(e.target.value as RolArchivo)}
-          className="rounded-md border border-border bg-card px-2 py-1"
-        >
-          {ROLES.map((r) => (
-            <option key={r} value={r}>{ETIQUETA_ROL[r]}</option>
-          ))}
-        </select>
-      </label>
+      {evidencia ? null : (
+        <label className="flex items-center gap-2 text-sm font-medium">
+          Rol de los archivos a subir
+          <select
+            value={rol}
+            onChange={(e) => setRol(e.target.value as RolArchivo)}
+            className="rounded-md border border-border bg-card px-2 py-1"
+          >
+            {ROLES.map((r) => (
+              <option key={r} value={r}>{ETIQUETA_ROL[r]}</option>
+            ))}
+          </select>
+        </label>
+      )}
 
       <div
         role="button"
@@ -95,7 +111,9 @@ export function ZonaCarga({ direccion }: { direccion: string }) {
         }`}
       >
         <span className="font-medium">Arrastre los archivos aquí</span>
-        <span>o haga clic para elegirlos (máx. 25 MB c/u)</span>
+        <span>
+          {evidencia ? "o haga clic para elegirlos (PDF o imagen, máx. 25 MB c/u)" : "o haga clic para elegirlos (máx. 25 MB c/u)"}
+        </span>
         <input
           ref={entradaRef}
           type="file"

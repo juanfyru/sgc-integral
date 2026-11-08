@@ -27,11 +27,11 @@ De arriba abajo:
 1. **La entidad**: su logo (o, si no tiene, un cuadro con la sigla) y su nombre. Al
    pulsarlo vuelve a **Inicio**.
 2. **Inicio**.
-3. El grupo **Documentos**: **Buscar documentos**, **Trámites**, **Gestión de documentos**,
-   **Listado Maestro**, **Tipos de documento**, **Configuración documental** y **Mapa de
-   procesos**.
-4. El grupo **Administración**: **Entidad y marca**, **Estructura**, **Usuarios**,
-   **Estadísticas**, **Bitácora**, **Accesos** y **Sesiones**.
+3. El grupo **Documentos**: **Buscar documentos**, **Trámites**, **Distribución**, **Gestión de
+   documentos**, **Listado Maestro**, **Tipos de documento**, **Configuración documental** y
+   **Mapa de procesos**.
+4. El grupo **Administración**: **Entidad y marca**, **Estructura**, **Puntos de
+   uso**, **Listas de distribución**, **Usuarios**, **Estadísticas**, **Bitácora**, **Accesos** y **Sesiones**.
 5. Al pie, **SGC Integral · v** seguido del número de versión. Es el nombre de la
    plataforma; si reporta un problema a sistemas, indique ese número.
 
@@ -44,14 +44,15 @@ Cada persona ve solo los enlaces que su rol permite. Un grupo sin enlaces no apa
 
 | Rol | Documentos | Administración |
 |---|---|---|
-| Administrador del SGC | Buscar documentos, Trámites, Gestión de documentos, Listado Maestro, Tipos de documento, Configuración documental, Mapa de procesos | Entidad y marca, Estructura, Usuarios, Estadísticas, Bitácora, Accesos, Sesiones |
-| Gerencia | Buscar documentos, Trámites, Listado Maestro (solo vigentes, sin Excel) | Estadísticas |
-| Control Interno | Buscar documentos, Gestión de documentos (solo lectura), Listado Maestro | Estadísticas, Bitácora, Accesos |
-| Líder de proceso | Buscar documentos, Trámites | — |
+| Administrador del SGC | Buscar documentos, Trámites, Distribución, Gestión de documentos, Listado Maestro, Tipos de documento, Configuración documental, Mapa de procesos | Entidad y marca, Estructura, Puntos de uso, Listas de distribución, Usuarios, Estadísticas, Bitácora, Accesos, Sesiones |
+| Gerencia | Buscar documentos, Trámites, Distribución (solo lectura), Listado Maestro (solo vigentes, sin Excel) | Estadísticas |
+| Control Interno | Buscar documentos, Distribución (solo lectura), Gestión de documentos (solo lectura), Listado Maestro | Estadísticas, Bitácora, Accesos |
+| Líder de proceso | Buscar documentos, Trámites, Distribución (la de sus procesos) | — |
 | Consulta | Buscar documentos | — |
 
 Todos ven además **Inicio**. **Trámites** también le aparece a cualquier persona que
-participe en un trámite, sea cual sea su rol (Capítulo 5). Si el administrador le marcó **"Puede ver el historial de
+participe en un trámite, sea cual sea su rol (Capítulo 5), y **Distribución** a cualquier
+persona que sea responsable de un punto de uso activo, con solo sus puntos (Capítulo 6). Si el administrador le marcó **"Puede ver el historial de
 documentos (versiones obsoletas y anuladas)"**, verá también **Gestión de documentos**,
 en solo lectura (Capítulo 2, sección 1).
 
@@ -75,8 +76,14 @@ entre paréntesis. Cuando no tiene nada pendiente dice:
 > aparecerá aquí.
 
 Cada tarea sale de un trámite de documentos, por ejemplo «Aceptar SOL-2026-014» o «Revisar
-GTH-PR-02 v2». Muestra de qué documento se trata y su fecha límite, o la marca **Vence
-hoy** o **Vencida**. Pulse una tarea para abrir el trámite (Capítulo 5, sección 12).
+GTH-PR-02 v2», o de la distribución de un documento publicado: «Recibir la copia N.º 02 de
+GTH-PR-01 v1 en Urgencias», «Recoger la copia N.º 03 de GBS-PR-01 v1 en Urgencias»,
+«Confirmar lectura de GTH-PR-01 v2», «Registrar la socialización de GTH-PR-02 v2», «Verificar
+Farmacia: última hace 95 días» o «Corregir hallazgo en Farmacia: …». Muestra de qué documento
+se trata y su fecha límite, o la marca **Vence hoy** o **Vencida**. Pulse una tarea para abrir el
+trámite, la copia, la lectura o la verificación (Capítulo 5, sección 12; Capítulo 6). Cuando
+tiene más de cinco lecturas por confirmar, **Mis tareas** las junta en una sola línea («12
+lecturas por confirmar»), para que no tapen las demás.
 
 ### 3.2 Mis procesos (solo líderes de proceso)
 
@@ -141,7 +148,9 @@ sistema y las tareas que le asignen."
 
 Los avisos salen de los trámites de documentos: cuando le toca un paso, cuando le devuelven
 un documento, cuando se publica o se elimina uno en el que usted participa, o cuando un paso
-se vence (Capítulo 5, sección 12). Un aviso nunca trae el contenido del documento.
+se vence (Capítulo 5, sección 12). También salen de la distribución: una copia que le entregan
+o que debe recoger, una lectura que debe confirmar, un documento que dejó de aplicar, un
+hallazgo que debe corregir (Capítulo 6). Un aviso nunca trae el contenido del documento.
 
 ## 6. El menú con su nombre: Mi cuenta, tema y salir
 

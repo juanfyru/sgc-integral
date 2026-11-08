@@ -1,5 +1,13 @@
 import type { TransactionSql } from "postgres";
-import { obtenerSql } from "@/db/cliente";
+import { obtenerSql, type Cliente } from "@/db/cliente";
+import {
+  acusesDeIngreso,
+  documentosDeProcesos,
+  retirarAcusesDe,
+  retirarAcusesFueraDeAudiencia,
+} from "@/db/consultas/distribucion/acuses";
+import { puntosDeResponsable } from "@/db/consultas/distribucion/puntos-uso";
+import { enTransaccion } from "@/db/consultas/flujo/contrato";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { desactivarTotp, obtenerSecretoTotp } from "@/db/consultas/autenticacion";
 import { supervisoresDe } from "@/db/consultas/estructura";
@@ -163,16 +171,19 @@ function exigirProcesosDeLider(rol: Rol, procesoIds: number[]): void {
   }
 }
 
+type OpcionesUsuario = { sql?: Cliente; ahora?: Date };
+
 export async function crearUsuario(
   datos: DatosUsuario,
   claveTemporal: string,
   actorId: number,
-): Promise<{ id: number }> {
+  opciones?: OpcionesUsuario,
+): Promise<{ id: number; tareasDeLectura: number }> {
   const procesoIds = sinRepetidos(datos.procesoIds);
   exigirProcesosDeLider(datos.rol, procesoIds);
   const hash = await hashearClave(claveTemporal);
   try {
-    return await obtenerSql().begin(async (tx) => {
+    return await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
       const [u] = await tx`INSERT INTO usuarios
           (usuario, nombre, correo, hash_clave, rol, cargo_id, jefe_inmediato_id, ver_historial, debe_cambiar_clave)
         VALUES (${datos.usuario}, ${datos.nombre}, ${datos.correo}, ${hash}, ${datos.rol},
@@ -182,11 +193,12 @@ export async function crearUsuario(
       for (const procesoId of procesoIds) {
         await tx`INSERT INTO usuario_procesos (usuario_id, proceso_id) VALUES (${id}, ${procesoId})`;
       }
+      const tareasDeLectura = await acusesDeIngreso(tx, id, procesoIds, opciones?.ahora ?? new Date());
       await registrarAuditoria(tx, {
         usuarioId: actorId, accion: "crear_usuario", entidad: "usuario", entidadId: id,
         detalle: { usuario: datos.usuario, rol: datos.rol },
       });
-      return { id };
+      return { id, tareasDeLectura };
     });
   } catch (err) {
     throw traducirErrorUsuario(err);
@@ -202,6 +214,7 @@ export async function editarUsuario(
   id: number,
   datos: Editable,
   actorId: number,
+  opciones?: OpcionesUsuario,
 ): Promise<void> {
   if (actorId === id && datos.rol !== "admin_sgc") {
     throw new Error("No puede quitarse a sí mismo el rol de administrador");
@@ -211,7 +224,7 @@ export async function editarUsuario(
   exigirProcesosDeLider(datos.rol, procesoIds);
   const despuesCompleto: Editable = { ...datos, procesoIds };
   try {
-    await obtenerSql().begin(async (tx) => {
+    await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
       if (datos.rol !== "admin_sgc") await exigirOtroAdminActivo(tx, id);
       const [f] = await tx`SELECT usuario, nombre, correo, rol, cargo_id, jefe_inmediato_id, ver_historial
         FROM usuarios WHERE id = ${id} FOR UPDATE`;
@@ -238,6 +251,15 @@ export async function editarUsuario(
       for (const procesoId of procesoIds) {
         await tx`INSERT INTO usuario_procesos (usuario_id, proceso_id) VALUES (${id}, ${procesoId})`;
       }
+      const ahora = opciones?.ahora ?? new Date();
+      const nuevos = procesoIds.filter((p) => !antesCompleto.procesoIds.includes(p));
+      const quitados = antesCompleto.procesoIds.filter((p) => !procesoIds.includes(p));
+      await acusesDeIngreso(tx, id, nuevos, ahora);
+      for (const documentoId of await documentosDeProcesos(tx, quitados)) {
+        await retirarAcusesFueraDeAudiencia(tx, documentoId, ahora, "salio_de_audiencia");
+      }
+      // Con otro rol puede dejar de ver documentos restringidos: lo que debía leer de ellos ya no se le pide.
+      if (antesCompleto.rol !== datos.rol) await retirarAcusesDe(tx, id, ahora, "perdio_acceso", { soloSinAcceso: true });
       await registrarAuditoria(tx, {
         usuarioId: actorId, accion: "editar_usuario", entidad: "usuario", entidadId: id,
         detalle: { usuario: f.usuario, antes, despues },
@@ -248,16 +270,32 @@ export async function editarUsuario(
   }
 }
 
-export async function cambiarActivo(id: number, activo: boolean, actorId: number): Promise<void> {
+export async function cambiarActivo(
+  id: number,
+  activo: boolean,
+  actorId: number,
+  opciones?: OpcionesUsuario,
+): Promise<void> {
   if (!activo && actorId === id) throw new Error("No puede desactivar su propia cuenta");
   await conCandado(claveCandadoUsuario(id), () =>
-    obtenerSql().begin(async (tx) => {
+    enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
       if (!activo) await exigirOtroAdminActivo(tx, id);
       const [f] = await tx`SELECT usuario, activo FROM usuarios WHERE id = ${id} FOR UPDATE`;
       if (!f) throw new Error("El usuario no existe");
       if (f.activo === activo) return;
+      if (!activo) {
+        const n = (await puntosDeResponsable(id, { sql: tx })).length;
+        if (n > 0) {
+          throw new Error(
+            n === 1
+              ? "La persona es responsable de 1 punto de uso activo: reasígnelo antes de desactivarla"
+              : `La persona es responsable de ${n} puntos de uso activos: reasígnelos antes de desactivarla`,
+          );
+        }
+      }
       await tx`UPDATE usuarios SET activo = ${activo}, actualizado_en = now() WHERE id = ${id}`;
       if (!activo) await tx`DELETE FROM sesiones WHERE usuario_id = ${id}`;
+      if (!activo) await retirarAcusesDe(tx, id, opciones?.ahora ?? new Date(), "cuenta_desactivada");
       await registrarAuditoria(tx, {
         usuarioId: actorId, accion: activo ? "reactivar_usuario" : "desactivar_usuario",
         entidad: "usuario", entidadId: id, detalle: { usuario: f.usuario },
@@ -362,6 +400,8 @@ export async function opcionesFormularioUsuario(
 export type ResultadoLote = {
   creados: Array<{ linea: number; usuario: string; nombre: string; claveTemporal: string }>;
   fallidos: FilaLoteInvalida[];
+  /** Acuses que la lectura obligatoria al ingresar abrió a las personas creadas. */
+  tareasDeLectura: number;
 };
 
 /**
@@ -372,23 +412,26 @@ export async function crearUsuariosEnLote(
   filas: FilaLoteValida[],
   actorId: number,
   rechazadasAntes: FilaLoteInvalida[] = [],
+  opciones?: OpcionesUsuario,
 ): Promise<ResultadoLote> {
-  const resultado: ResultadoLote = { creados: [], fallidos: [...rechazadasAntes] };
+  const resultado: ResultadoLote = { creados: [], fallidos: [...rechazadasAntes], tareasDeLectura: 0 };
   for (const { linea, datos } of filas) {
     const claveTemporal = generarClaveTemporal();
     try {
-      await crearUsuario(datos, claveTemporal, actorId);
+      const { tareasDeLectura } = await crearUsuario(datos, claveTemporal, actorId, opciones);
+      resultado.tareasDeLectura += tareasDeLectura;
       resultado.creados.push({ linea, usuario: datos.usuario, nombre: datos.nombre, claveTemporal });
     } catch (err) {
       resultado.fallidos.push({ linea, usuario: datos.usuario, error: (err as Error).message });
     }
   }
   resultado.fallidos.sort((a, b) => a.linea - b.linea);
-  await registrarAuditoria(obtenerSql(), {
+  await registrarAuditoria(opciones?.sql ?? obtenerSql(), {
     usuarioId: actorId, accion: "crear_usuarios_lote", entidad: "usuario", entidadId: null,
     detalle: {
       creados: resultado.creados.length,
       fallidos: resultado.fallidos.length,
+      tareasDeLectura: resultado.tareasDeLectura,
       usuarios: resultado.creados.map((c) => c.usuario),
     },
   });
