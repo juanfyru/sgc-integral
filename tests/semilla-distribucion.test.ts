@@ -89,7 +89,9 @@ describe("distribución sembrada", () => {
       JOIN documento_versiones v ON v.id = cc.version_id JOIN documentos d ON d.id = v.documento_id
       JOIN puntos_uso pu ON pu.id = cc.punto_uso_id JOIN usuarios ue ON ue.id = cc.emitida_por
       WHERE d.codigo = ${CODIGO} ORDER BY pu.nombre`;
-    exigirDemo(ctx, copias.length === 4, `GTH-CA-01 tiene ${copias.length} copias`);
+    // El recorrido manual confirma el recibido de Urgencias: entonces la demo ya avanzó.
+    const urgenciasSembrada = copias.some((c) => c.punto === "Urgencias" && c.estado === "emitida");
+    exigirDemo(ctx, copias.length === 4 && urgenciasSembrada, `GTH-CA-01 tiene ${copias.length} copias o la de Urgencias ya se recibió`);
     const por = Object.fromEntries(copias.map((c) => [c.punto, c]));
     expect(Object.keys(por).sort()).toEqual(["Archivo", "Talento Humano", "Urgencias", "Vacunación"]);
 
@@ -111,7 +113,12 @@ describe("distribución sembrada", () => {
     const acuses = await sql`SELECT u.usuario, a.origen, a.estado, a.modo, a.vence_en < now() AS vencido
       FROM acuses a JOIN usuarios u ON u.id = a.usuario_id WHERE a.version_id = ${v3.id} ORDER BY u.usuario`;
     const [{ audiencia }] = await sql`SELECT count(*)::int AS audiencia FROM usuarios WHERE activo AND cargo_id IS NOT NULL`;
-    exigirDemo(ctx, acuses.length === audiencia && v3.estado === "vigente", "los acuses de la v3 ya no son los sembrados");
+    const pendienteSembrado = acuses.some((a) => a.usuario === "control.interno" && a.estado === "pendiente");
+    exigirDemo(
+      ctx,
+      acuses.length === audiencia && v3.estado === "vigente" && pendienteSembrado,
+      "los acuses de la v3 ya no son los sembrados",
+    );
     expect(acuses.every((a) => a.origen === "publicacion")).toBe(true);
 
     const [publicar] = await sql`SELECT e.detalle FROM tramite_eventos e JOIN tramites t ON t.id = e.tramite_id
