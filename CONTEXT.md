@@ -73,7 +73,15 @@
    mismo camino: spec aprobado, plan, ejecución, prueba y fusión. Enganches que deja la 13B: los porcentajes de
    acuses y de conformidad (`src/db/consultas/distribucion/`), `archivos` generalizado para las evidencias de
    mediciones (Fase 14), los hallazgos que la Fase 15 convertirá en acciones correctivas y las tareas y avisos que
-   la Fase 16 llevará al correo; el motivo «revisión anual» de la solicitud lo usa la 13C. Insumos que dependen del
+   la Fase 16 llevará al correo; el motivo «revisión anual» de la solicitud lo usa la 13C. **La 13C hereda de la
+   13B, por decisión del usuario (2026-11-08):** cinco preguntas de diseño para su spec: (1) Excel de socializaciones
+   (spec 13B §10.4); (2) fecha de corrección ajustable al cerrar una verificación (spec 13B §11.4); (3) vista de solo
+   lectura de puntos de uso y listas para Gerencia y Control Interno (spec 13B §6.4); (4) un tipo de miembro «todos
+   los usuarios activos» en las listas de distribución, porque «Todo el hospital» por áreas deja fuera a quien no tiene
+   cargo; (5) si el cierre de hallazgos pasa a dos pasos, corrección del responsable y validación del Admin SGC. Y dos
+   tareas pequeñas para su plan: el aviso «Se emitieron N copias» de **Reemplazar**, que no llega a verse, y los
+   conteos de `/distribucion/copias` del líder, que no incluyen las copias que emitió en puntos de otros procesos.
+   Insumos que dependen del
    usuario: spec maestro §11 (SMTP, versión de Windows del servidor, planta de cargos real,
    plantilla del plan de mejoramiento, total de cuentas), la lista de verificación real
    (SGC-FO-03) y el ajuste del texto de su procedimiento (el listado maestro aparece con dos
