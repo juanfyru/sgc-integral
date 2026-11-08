@@ -24,6 +24,19 @@ export const ITEMS_VERIFICACION: ReadonlyArray<readonly [string, boolean]> = [
   ["Define los registros que genera y su archivo", false],
 ];
 
+/** Maestro editable de tipos de norma del normograma (spec 13C §10.1). */
+export const TIPOS_NORMA: ReadonlyArray<string> = [
+  "Ley",
+  "Decreto",
+  "Resolución",
+  "Circular",
+  "Acuerdo",
+  "Norma técnica",
+  "Sentencia",
+  "Directiva",
+  "Otro",
+];
+
 const AVISO_DATOS_PERSONALES = [
   "TEXTO DE EJEMPLO — la entidad debe reemplazarlo por su política de tratamiento de datos personales. Al ingresar a este sistema, la entidad registra su usuario, cargo, dirección IP y las acciones que realiza, con el único fin de garantizar el control, la trazabilidad y la seguridad de la información documentada del sistema de gestión.",
   "Los datos se tratan conforme a la Ley 1581 de 2012 y se conservan mientras dure su vinculación. Puede ejercer sus derechos de conocer, actualizar y rectificar sus datos solicitándolo al administrador del sistema.",
@@ -49,12 +62,15 @@ export async function limpiarTodo(db: Db): Promise<void> {
       puntos_uso, punto_uso_procesos, copias_controladas, copia_eventos,
       listas_distribucion, lista_miembros, documento_listas, acuses, acuse_eventos,
       jornadas, jornada_versiones, jornada_asistentes, socializaciones_requeridas,
-      verificaciones, verificacion_items, hallazgos
+      verificaciones, verificacion_items, hallazgos,
+      ratificaciones, externos, externo_verificaciones, revisiones_anuales,
+      revision_anual_procesos, revision_anual_decisiones, tipos_norma, normas,
+      norma_relaciones, norma_cambios, norma_procesos, norma_documentos, impactos_normativos
     RESTART IDENTITY CASCADE
   `);
 }
 
-/** Tipos de documento genéricos y configuración mínima. Idempotente sobre tablas vacías. */
+/** Tipos de documento genéricos, tipos de norma y configuración mínima. Idempotente sobre tablas vacías. */
 export async function sembrarBase(
   db: Db,
 ): Promise<{ tipoPorSigla: Record<string, number> }> {
@@ -94,12 +110,14 @@ export async function sembrarBase(
       { nombre: "Política", sigla: "PO", autoridad: "estrategico", esDiligenciable: false, orden: 9 },
       { nombre: "Registro", sigla: "RG", autoridad: "operativo", esDiligenciable: true, orden: 10 },
       { nombre: "Matriz", sigla: "MZ", autoridad: "operativo", esDiligenciable: true, orden: 11 },
+      { nombre: "Documento externo", sigla: "DE", autoridad: "operativo", esDiligenciable: false, orden: 12 },
     ])
     .returning();
 
   await db.insert(e.listaVerificacionItems).values(
     ITEMS_VERIFICACION.map(([texto, critico], i) => ({ texto, critico, orden: i + 1 })),
   );
+  await db.insert(e.tiposNorma).values(TIPOS_NORMA.map((nombre, i) => ({ nombre, orden: i + 1 })));
   return { tipoPorSigla: Object.fromEntries(tipos.map((t) => [t.sigla, t.id])) };
 }
 

@@ -57,6 +57,13 @@
       "when": 1794085443391,
       "tag": "0007_fase13b-item-retirado",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794180999998,
+      "tag": "0008_fase13c-vigencia-externos-normograma",
+      "breakpoints": true
     }
   ]
 }

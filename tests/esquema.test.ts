@@ -332,10 +332,10 @@ describe("marca y notificaciones de la semilla demo", () => {
 });
 
 describe("semilla con la convención del hospital", () => {
-  it("trae once tipos con su autoridad y FO en lugar de FT", async () => {
+  it("trae doce tipos con su autoridad, FO en lugar de FT y el externo DE al final", async () => {
     const filas = await sql`SELECT sigla, autoridad, es_diligenciable FROM tipos_documento ORDER BY orden`;
     expect(filas.map((f) => f.sigla)).toEqual(
-      ["CA", "MN", "PR", "IN", "FO", "GU", "PT", "PL", "PO", "RG", "MZ"],
+      ["CA", "MN", "PR", "IN", "FO", "GU", "PT", "PL", "PO", "RG", "MZ", "DE"],
     );
     expect(filas.filter((f) => f.autoridad === "estrategico").map((f) => f.sigla))
       .toEqual(["CA", "MN", "PL", "PO"]);

@@ -128,9 +128,12 @@ export const tiposDocumento = pgTable(
     plantillaDocumentoId: bigint("plantilla_documento_id", {
       mode: "number",
     }).references((): AnyPgColumn => documentos.id, { onDelete: "restrict" }),
+    // Plazo de revisión de los documentos del tipo, en meses calendario.
+    mesesRevision: integer("meses_revision").notNull().default(12),
   },
   (t) => [
     check("tipos_documento_autoridad_valida", sql`${t.autoridad} IN ('estrategico', 'operativo')`),
+    check("tipos_documento_meses_revision_valido", sql`${t.mesesRevision} BETWEEN 1 AND 120`),
   ],
 );
 
@@ -148,6 +151,18 @@ export const documentos = pgTable(
     palabrasClave: text("palabras_clave"),
     nivelAcceso: text("nivel_acceso").notNull().default("general"),
     lecturaObligatoriaIngreso: boolean("lectura_obligatoria_ingreso").notNull().default(false),
+    origen: text("origen").notNull().default("interno"),
+    // Plazo propio; nulo: el del tipo.
+    mesesRevision: integer("meses_revision"),
+    proximaRevisionFijada: date("proxima_revision_fijada"),
+    fijadaPor: bigint("fijada_por", { mode: "number" }).references(
+      (): AnyPgColumn => usuarios.id,
+      { onDelete: "restrict" },
+    ),
+    fijadaEn: timestamp("fijada_en", { withTimezone: true }),
+    fijadaNota: text("fijada_nota"),
+    revisionAvisoEn: timestamp("revision_aviso_en", { withTimezone: true }),
+    revisionEscaladoEn: timestamp("revision_escalado_en", { withTimezone: true }),
     tsv: tsvector("tsv").generatedAlwaysAs(
       (): SQL =>
         sql`setweight(to_tsvector('espanol_unaccent', coalesce(codigo, '') || ' ' || coalesce(titulo, '')), 'A') || setweight(to_tsvector('espanol_unaccent', coalesce(palabras_clave, '')), 'B') || setweight(to_tsvector('espanol_unaccent', coalesce(descripcion, '')), 'C')`,
@@ -171,6 +186,13 @@ export const documentos = pgTable(
     ),
     index("documentos_tipo_idx").on(t.tipoId),
     check("documentos_nivel_acceso_valido", sql`${t.nivelAcceso} IN ('general', 'restringido')`),
+    check("documentos_origen_valido", sql`${t.origen} IN ('interno', 'externo')`),
+    check("documentos_meses_revision_valido", sql`${t.mesesRevision} BETWEEN 1 AND 120`),
+    // Una fecha fijada a mano siempre dice quién la fijó.
+    check(
+      "documentos_fijada_coherente",
+      sql`(${t.proximaRevisionFijada} IS NULL) = (${t.fijadaPor} IS NULL)`,
+    ),
   ],
 );
 
@@ -190,8 +212,11 @@ export const documentoVersiones = pgTable(
     reviso: text("reviso"),
     aprobo: text("aprobo"),
     resumenCambios: text("resumen_cambios"),
-    // 'plataforma': aprobada con las firmas del trámite; 'fuera': aprobada fuera de la plataforma.
+    // 'plataforma': aprobada con las firmas del trámite; 'fuera': aprobada fuera de la plataforma;
+    // 'externo': edición de un documento externo adoptada con la firma «Adoptó».
     origenAprobacion: text("origen_aprobacion").notNull().default("fuera"),
+    edicionExterna: text("edicion_externa"),
+    fechaEdicionExterna: date("fecha_edicion_externa"),
     publicadoEn: timestamp("publicado_en", { withTimezone: true }),
     creadoEn: timestamp("creado_en", { withTimezone: true })
       .notNull()
@@ -213,7 +238,7 @@ export const documentoVersiones = pgTable(
     ),
     check(
       "versiones_origen_aprobacion_valido",
-      sql`${t.origenAprobacion} IN ('plataforma', 'fuera')`,
+      sql`${t.origenAprobacion} IN ('plataforma', 'fuera', 'externo')`,
     ),
     check("versiones_numero_positivo", sql`${t.numero} > 0`),
     // Un documento no puede estar vigente sin evidencia de aprobación.
@@ -229,7 +254,8 @@ export const archivos = pgTable(
   "archivos",
   {
     id: id(),
-    // Nulo cuando el archivo es evidencia de una jornada o de un ítem de verificación.
+    // Nulo cuando el archivo es de otro dueño (`contexto`): jornada, ítem de verificación,
+    // norma, revisión anual o hallazgo.
     versionId: bigint("version_id", { mode: "number" }).references(
       () => documentoVersiones.id,
       { onDelete: "restrict" },
@@ -259,7 +285,7 @@ export const archivos = pgTable(
     ),
     check(
       "archivos_contexto_valido",
-      sql`${t.contexto} IN ('version', 'jornada', 'verificacion_item')`,
+      sql`${t.contexto} IN ('version', 'jornada', 'verificacion_item', 'norma', 'revision_anual', 'hallazgo')`,
     ),
     check(
       "archivos_contexto_coherente",
@@ -645,6 +671,15 @@ export const tramites = pgTable(
     cerradoEn: timestamp("cerrado_en", { withTimezone: true }),
     motivoCierre: text("motivo_cierre"),
     requiereSocializacion: boolean("requiere_socializacion").notNull().default(false),
+    // La solicitud nació de una decisión de la revisión anual o de un impacto normativo.
+    revisionAnualId: bigint("revision_anual_id", { mode: "number" }).references(
+      (): AnyPgColumn => revisionesAnuales.id,
+      { onDelete: "restrict" },
+    ),
+    impactoId: bigint("impacto_id", { mode: "number" }).references(
+      (): AnyPgColumn => impactosNormativos.id,
+      { onDelete: "restrict" },
+    ),
     creadoEn: timestamp("creado_en", { withTimezone: true }).notNull().defaultNow(),
     actualizadoEn: timestamp("actualizado_en", { withTimezone: true })
       .notNull()
@@ -652,6 +687,8 @@ export const tramites = pgTable(
   },
   (t) => [
     unique("tramites_anio_consecutivo_unico").on(t.anio, t.consecutivo),
+    index("tramites_revision_anual_idx").on(t.revisionAnualId),
+    index("tramites_impacto_idx").on(t.impactoId),
     check("tramites_tipo_valido", sql`${t.tipo} IN ('crear', 'modificar', 'eliminar')`),
     check(
       "tramites_motivo_valido",
@@ -695,14 +732,14 @@ export const tramiteEventos = pgTable(
   ],
 );
 
-// Solo-inserción (trigger en la migración).
+// Solo-inserción (trigger en la migración). «Ratificó» y «Adoptó» se firman sin trámite.
 export const firmas = pgTable(
   "firmas",
   {
     id: id(),
-    tramiteId: bigint("tramite_id", { mode: "number" })
-      .notNull()
-      .references(() => tramites.id, { onDelete: "restrict" }),
+    tramiteId: bigint("tramite_id", { mode: "number" }).references(() => tramites.id, {
+      onDelete: "restrict",
+    }),
     versionId: bigint("version_id", { mode: "number" }).references(
       () => documentoVersiones.id,
       { onDelete: "restrict" },
@@ -719,7 +756,14 @@ export const firmas = pgTable(
     creadoEn: timestamp("creado_en", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    check("firmas_firma_valida", sql`${t.firma} IN ('elaboro', 'reviso', 'aprobo', 'publico')`),
+    check(
+      "firmas_firma_valida",
+      sql`${t.firma} IN ('elaboro', 'reviso', 'aprobo', 'publico', 'ratifico', 'adopto')`,
+    ),
+    check(
+      "firmas_tramite_coherente",
+      sql`${t.tramiteId} IS NOT NULL OR ${t.firma} IN ('ratifico', 'adopto')`,
+    ),
     check("firmas_metodo_valido", sql`${t.metodo} IN ('clave', 'clave_totp')`),
     index("firmas_tramite_idx").on(t.tramiteId),
     index("firmas_version_idx").on(t.versionId),
@@ -861,7 +905,7 @@ export const copiasControladas = pgTable(
     ),
     check(
       "copias_motivo_por_recoger_valido",
-      sql`${t.motivoPorRecoger} IN ('nueva_version', 'eliminado', 'carga_deshecha')`,
+      sql`${t.motivoPorRecoger} IN ('nueva_version', 'eliminado', 'carga_deshecha', 'retirado')`,
     ),
     check(
       "copias_destino_recogida_valido",
@@ -910,12 +954,21 @@ export const listaMiembros = pgTable(
     id: id(),
     listaId: ref("lista_id", () => listasDistribucion.id).notNull(),
     tipo: text("tipo").notNull(),
-    // Polimórfica: la referencia se valida en la aplicación.
-    referenciaId: bigint("referencia_id", { mode: "number" }).notNull(),
+    // Polimórfica: la referencia se valida en la aplicación. Nula solo en «todos».
+    referenciaId: bigint("referencia_id", { mode: "number" }),
   },
   (t) => [
-    unique("lista_miembros_unico").on(t.listaId, t.tipo, t.referenciaId),
-    check("lista_miembros_tipo_valido", sql`${t.tipo} IN ('area', 'cargo', 'proceso', 'usuario')`),
+    // La migración 0008 lo crea con NULLS NOT DISTINCT (Drizzle no lo expresa en un índice):
+    // un solo miembro «todos» por lista.
+    uniqueIndex("lista_miembros_unico_idx").on(t.listaId, t.tipo, t.referenciaId),
+    check(
+      "lista_miembros_tipo_valido",
+      sql`${t.tipo} IN ('area', 'cargo', 'proceso', 'usuario', 'todos')`,
+    ),
+    check(
+      "lista_miembros_referencia_coherente",
+      sql`(${t.tipo} = 'todos') = (${t.referenciaId} IS NULL)`,
+    ),
   ],
 );
 
@@ -1116,11 +1169,321 @@ export const hallazgos = pgTable(
     cerradoEn: marca("cerrado_en"),
     cerradoPor: refUsuario("cerrado_por"),
     notaCierre: text("nota_cierre"),
+    // Cierre en dos pasos: el responsable corrige y el Admin SGC o una verificación valida.
+    corregidoEn: marca("corregido_en"),
+    corregidoPor: refUsuario("corregido_por"),
+    notaCorreccion: text("nota_correccion"),
+    validacion: text("validacion"),
+    validacionVerificacionId: ref("validacion_verificacion_id", () => verificaciones.id),
+    reaperturas: integer("reaperturas").notNull().default(0),
   },
   (t) => [
     check("hallazgos_origen_valido", sql`${t.origen} IN ('verificacion', 'recogida')`),
-    check("hallazgos_estado_valido", sql`${t.estado} IN ('abierto', 'cerrado')`),
+    check(
+      "hallazgos_estado_valido",
+      sql`${t.estado} IN ('abierto', 'por_validar', 'cerrado')`,
+    ),
+    check("hallazgos_validacion_valida", sql`${t.validacion} IN ('admin', 'verificacion')`),
     index("hallazgos_punto_estado_idx").on(t.puntoUsoId, t.estado),
     index("hallazgos_responsable_idx").on(t.responsableId),
+  ],
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fase 13C: vigencia, documentos externos, revisión anual y normograma
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const tiposNorma = pgTable(
+  "tipos_norma",
+  {
+    id: id(),
+    nombre: text("nombre").notNull(),
+    orden: integer("orden").notNull(),
+    activo: boolean("activo").notNull().default(true),
+  },
+  (t) => [uniqueIndex("tipos_norma_nombre_unico").on(sql`lower(${t.nombre})`)],
+);
+
+export const normas = pgTable(
+  "normas",
+  {
+    id: id(),
+    tipoNormaId: ref("tipo_norma_id", () => tiposNorma.id).notNull(),
+    numero: text("numero").notNull(),
+    anio: integer("anio").notNull(),
+    fechaExpedicion: date("fecha_expedicion"),
+    entidadEmisora: text("entidad_emisora").notNull(),
+    titulo: text("titulo").notNull(),
+    tema: text("tema"),
+    estado: text("estado").notNull().default("vigente"),
+    estadoEn: date("estado_en"),
+    enlaceOficial: text("enlace_oficial"),
+    notas: text("notas"),
+    creadoPor: refUsuario("creado_por").notNull(),
+    creadoEn: creado(),
+    actualizadoEn: marca("actualizado_en").notNull().defaultNow(),
+    tsv: tsvector("tsv").generatedAlwaysAs(
+      (): SQL =>
+        sql`setweight(to_tsvector('espanol_unaccent', coalesce(numero, '') || ' ' || anio::text || ' ' || coalesce(titulo, '')), 'A') || setweight(to_tsvector('espanol_unaccent', coalesce(tema, '')), 'B') || setweight(to_tsvector('espanol_unaccent', coalesce(entidad_emisora, '')), 'C')`,
+    ),
+  },
+  (t) => [
+    check(
+      "normas_estado_valido",
+      sql`${t.estado} IN ('vigente', 'modificada', 'derogada', 'retirada')`,
+    ),
+    index("normas_tsv_idx").using("gin", t.tsv),
+    uniqueIndex("normas_tipo_numero_anio_unico").on(
+      t.tipoNormaId,
+      sql`lower(${t.numero})`,
+      t.anio,
+    ),
+  ],
+);
+
+export const normaRelaciones = pgTable(
+  "norma_relaciones",
+  {
+    id: id(),
+    normaId: ref("norma_id", () => normas.id).notNull(),
+    afectadaId: ref("afectada_id", () => normas.id).notNull(),
+    tipo: text("tipo").notNull(),
+    detalle: text("detalle"),
+    creadoPor: refUsuario("creado_por").notNull(),
+    creadoEn: creado(),
+  },
+  (t) => [
+    unique("norma_relaciones_unica").on(t.normaId, t.afectadaId, t.tipo),
+    check(
+      "norma_relaciones_tipo_valido",
+      sql`${t.tipo} IN ('modifica', 'deroga', 'reglamenta')`,
+    ),
+    check("norma_relaciones_distintas", sql`${t.normaId} <> ${t.afectadaId}`),
+  ],
+);
+
+// Solo-inserción (trigger en la migración).
+export const normaCambios = pgTable(
+  "norma_cambios",
+  {
+    id: id(),
+    normaId: ref("norma_id", () => normas.id).notNull(),
+    estadoAnterior: text("estado_anterior").notNull(),
+    estadoNuevo: text("estado_nuevo").notNull(),
+    fecha: date("fecha").notNull(),
+    relacionId: ref("relacion_id", () => normaRelaciones.id),
+    usuarioId: refUsuario("usuario_id").notNull(),
+    nota: text("nota"),
+    creadoEn: creado(),
+  },
+  (t) => [index("norma_cambios_norma_idx").on(t.normaId, t.creadoEn)],
+);
+
+export const normaProcesos = pgTable(
+  "norma_procesos",
+  {
+    id: id(),
+    normaId: ref("norma_id", () => normas.id).notNull(),
+    procesoId: ref("proceso_id", () => procesos.id).notNull(),
+    requisito: text("requisito"),
+    creadoPor: refUsuario("creado_por").notNull(),
+    creadoEn: creado(),
+    actualizadoPor: refUsuario("actualizado_por"),
+    actualizadoEn: marca("actualizado_en"),
+  },
+  (t) => [
+    unique("norma_procesos_unica").on(t.normaId, t.procesoId),
+    index("norma_procesos_proceso_idx").on(t.procesoId),
+  ],
+);
+
+export const normaDocumentos = pgTable(
+  "norma_documentos",
+  {
+    id: id(),
+    normaId: ref("norma_id", () => normas.id).notNull(),
+    documentoId: ref("documento_id", () => documentos.id).notNull(),
+    creadoPor: refUsuario("creado_por").notNull(),
+    creadoEn: creado(),
+  },
+  (t) => [
+    unique("norma_documentos_unica").on(t.normaId, t.documentoId),
+    index("norma_documentos_documento_idx").on(t.documentoId),
+  ],
+);
+
+// Cerrada, ni ella ni sus procesos ni sus decisiones se modifican (trigger en la migración).
+export const revisionesAnuales = pgTable(
+  "revisiones_anuales",
+  {
+    id: id(),
+    anio: integer("anio").notNull().unique(),
+    estado: text("estado").notNull().default("abierta"),
+    plazoDias: integer("plazo_dias").notNull(),
+    ventanaMeses: integer("ventana_meses").notNull(),
+    abiertaPor: refUsuario("abierta_por").notNull(),
+    abiertaEn: marca("abierta_en").notNull(),
+    venceEn: marca("vence_en").notNull(),
+    prorrogas: jsonb("prorrogas").notNull().default(sql`'[]'::jsonb`),
+    cerradaPor: refUsuario("cerrada_por"),
+    cerradaEn: marca("cerrada_en"),
+    metodoCierre: text("metodo_cierre"),
+    // El informe congelado al cierre, con el formato usado.
+    informe: jsonb("informe"),
+  },
+  (t) => [
+    check("revisiones_anuales_estado_valido", sql`${t.estado} IN ('abierta', 'cerrada')`),
+    check(
+      "revisiones_anuales_metodo_cierre_valido",
+      sql`${t.metodoCierre} IN ('clave', 'clave_totp')`,
+    ),
+    uniqueIndex("revisiones_una_abierta_idx").on(t.estado).where(sql`estado = 'abierta'`),
+  ],
+);
+
+export const revisionAnualProcesos = pgTable(
+  "revision_anual_procesos",
+  {
+    id: id(),
+    revisionId: ref("revision_id", () => revisionesAnuales.id).notNull(),
+    procesoId: ref("proceso_id", () => procesos.id).notNull(),
+    // Documentos del proceso al abrir la revisión.
+    documentos: integer("documentos").notNull(),
+    normogramaResultado: text("normograma_resultado"),
+    normogramaNota: text("normograma_nota"),
+    normogramaPor: refUsuario("normograma_por"),
+    normogramaEn: marca("normograma_en"),
+    avisoVencidoEn: marca("aviso_vencido_en"),
+    escaladoEn: marca("escalado_en"),
+  },
+  (t) => [
+    unique("revision_anual_procesos_unica").on(t.revisionId, t.procesoId),
+    check(
+      "revision_anual_procesos_normograma_valido",
+      sql`${t.normogramaResultado} IN ('sin_novedad', 'cambios')`,
+    ),
+  ],
+);
+
+// Solo-inserción (trigger en la migración).
+export const ratificaciones = pgTable(
+  "ratificaciones",
+  {
+    id: id(),
+    versionId: ref("version_id", () => documentoVersiones.id).notNull(),
+    firmaId: ref("firma_id", () => firmas.id).notNull().unique(),
+    nota: text("nota"),
+    proximaRevision: date("proxima_revision").notNull(),
+    revisionAnualId: ref("revision_anual_id", () => revisionesAnuales.id),
+    creadoEn: creado(),
+  },
+  (t) => [index("ratificaciones_version_idx").on(t.versionId, t.creadoEn)],
+);
+
+// Control propio de un documento con `origen = 'externo'`.
+export const externos = pgTable(
+  "externos",
+  {
+    id: id(),
+    documentoId: ref("documento_id", () => documentos.id).notNull().unique(),
+    entidadEmisora: text("entidad_emisora").notNull(),
+    tituloOriginal: text("titulo_original"),
+    fuenteOficial: text("fuente_oficial"),
+    // Responsable técnico de verificar su vigencia.
+    responsableId: refUsuario("responsable_id").notNull(),
+    verificacionMeses: integer("verificacion_meses").notNull().default(12),
+    edicionNuevaPendienteDesde: marca("edicion_nueva_pendiente_desde"),
+    avisoVencidoEn: marca("aviso_vencido_en"),
+    escaladoEn: marca("escalado_en"),
+    creadoEn: creado(),
+    actualizadoEn: marca("actualizado_en").notNull().defaultNow(),
+  },
+  (t) => [
+    check("externos_verificacion_meses_valido", sql`${t.verificacionMeses} BETWEEN 1 AND 60`),
+    index("externos_responsable_idx").on(t.responsableId),
+  ],
+);
+
+// Solo-inserción (trigger en la migración).
+export const externoVerificaciones = pgTable(
+  "externo_verificaciones",
+  {
+    id: id(),
+    documentoId: ref("documento_id", () => documentos.id).notNull(),
+    versionId: ref("version_id", () => documentoVersiones.id).notNull(),
+    usuarioId: refUsuario("usuario_id").notNull(),
+    resultado: text("resultado").notNull(),
+    fuenteConsultada: text("fuente_consultada").notNull(),
+    nota: text("nota"),
+    revisionAnualId: ref("revision_anual_id", () => revisionesAnuales.id),
+    impactoId: ref("impacto_id", (): AnyPgColumn => impactosNormativos.id),
+    creadoEn: creado(),
+  },
+  (t) => [
+    check(
+      "externo_verificaciones_resultado_valido",
+      sql`${t.resultado} IN ('vigente', 'edicion_nueva', 'retirado')`,
+    ),
+    index("externo_verificaciones_documento_idx").on(t.documentoId, t.creadoEn),
+  ],
+);
+
+// Una tarea por cambio normativo y proceso (o documento del proceso).
+export const impactosNormativos = pgTable(
+  "impactos_normativos",
+  {
+    id: id(),
+    cambioId: ref("cambio_id", () => normaCambios.id).notNull(),
+    normaId: ref("norma_id", () => normas.id).notNull(),
+    documentoId: ref("documento_id", () => documentos.id),
+    procesoId: ref("proceso_id", () => procesos.id).notNull(),
+    estado: text("estado").notNull().default("pendiente"),
+    venceEn: marca("vence_en").notNull(),
+    avisoVencidoEn: marca("aviso_vencido_en"),
+    escaladoEn: marca("escalado_en"),
+    resolucion: text("resolucion"),
+    tramiteId: ref("tramite_id", (): AnyPgColumn => tramites.id),
+    verificacionId: ref("verificacion_id", (): AnyPgColumn => externoVerificaciones.id),
+    nota: text("nota"),
+    resueltoPor: refUsuario("resuelto_por"),
+    resueltoEn: marca("resuelto_en"),
+    creadoEn: creado(),
+  },
+  (t) => [
+    check("impactos_normativos_estado_valido", sql`${t.estado} IN ('pendiente', 'resuelto')`),
+    check(
+      "impactos_normativos_resolucion_valida",
+      sql`${t.resolucion} IN ('solicitud', 'no_afecta', 'verificacion')`,
+    ),
+    index("impactos_normativos_documento_idx").on(t.documentoId, t.estado),
+    index("impactos_normativos_proceso_idx").on(t.procesoId, t.estado),
+  ],
+);
+
+export const revisionAnualDecisiones = pgTable(
+  "revision_anual_decisiones",
+  {
+    id: id(),
+    revisionId: ref("revision_id", () => revisionesAnuales.id).notNull(),
+    documentoId: ref("documento_id", () => documentos.id).notNull(),
+    // La versión vigente al abrir la revisión.
+    versionId: ref("version_id", () => documentoVersiones.id).notNull(),
+    decision: text("decision").notNull(),
+    // Nulo cuando la registra el sistema.
+    usuarioId: refUsuario("usuario_id"),
+    ratificacionId: ref("ratificacion_id", () => ratificaciones.id),
+    verificacionId: ref("verificacion_id", () => externoVerificaciones.id),
+    tramiteId: ref("tramite_id", () => tramites.id),
+    insumos: jsonb("insumos").notNull().default(sql`'{}'::jsonb`),
+    creadoEn: creado(),
+    actualizadoEn: marca("actualizado_en").notNull().defaultNow(),
+  },
+  (t) => [
+    unique("revision_anual_decisiones_unica").on(t.revisionId, t.documentoId),
+    check(
+      "revision_anual_decisiones_decision_valida",
+      sql`${t.decision} IN ('ratificar', 'actualizar', 'eliminar', 'reciente', 'en_tramite', 'sin_revisar')`,
+    ),
+    index("revision_anual_decisiones_tramite_idx").on(t.tramiteId),
   ],
 );
