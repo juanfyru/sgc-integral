@@ -1,10 +1,10 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-11-07**, al cerrar la 13B. La **Fase 13B —
-> Distribución y puntos de uso** está terminada en la rama `fase-13b-distribucion-puntos-de-uso` (unos 40 commits
-> sobre `main`), **sin fusionar** a la espera de la palabra del usuario. La **Fase 13A —
+> Se actualiza al cierre de cada fase. Última actualización: **2026-11-08**, al fusionar la 13B. La **Fase 13B —
+> Distribución y puntos de uso** está fusionada en `main` (`2e321b6`, PR #2, 2026-11-08, 42 commits sobre
+> `f08f01d`; la rama `fase-13b-distribucion-puntos-de-uso` ya se borró), con el CI en verde. La **Fase 13A —
 > Flujo documental** y sus adiciones están fusionadas en `main` (`d0c6a42`, 2026-11-07), con el CI
-> en verde. Lo siguiente, tras fusionar la 13B, es la Fase 13C. La
+> en verde. Lo siguiente es la Fase 13C. La
 > Fase 12 (nueva estructura visual) y la Fase 11 (fundación de acceso) también están en `main`.
 > La variante nació el 2026-11-03, bifurcada de `sgc-suaza` en `9644ceb`; el diseño
 > maestro de las fases 11–20
@@ -18,9 +18,9 @@
    con sus funcionalidades, y construir aquí otra con **funcionalidades más completas**.
    La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
    proyecto**.
-1. **Dónde quedamos:** la **Fase 13B está terminada en su rama** (`fase-13b-distribucion-puntos-de-uso`,
-   unos 40 commits sobre `main`, `f08f01d`; **no se ha fusionado ni publicado**: no hay `push` ni `merge` sin la palabra del
-   usuario). Lo que el papel y las personas hacen después de publicar queda dentro del sistema: puntos de uso con
+1. **Dónde quedamos:** la **Fase 13B está en `main`** (`2e321b6`, PR #2 fusionado el 2026-11-08 por decisión del
+   usuario tras su recorrido manual, 42 commits sobre `f08f01d`; la rama `fase-13b-distribucion-puntos-de-uso` ya se
+   borró). Lo que el papel y las personas hacen después de publicar queda dentro del sistema: puntos de uso con
    responsable; copias controladas numeradas con sello (franja y QR a la ficha) y su recibido, reimpresión con
    motivo, anulación, recogida automática cuando la versión deja de ser vigente y reemplazo en un acto; listas
    de distribución y audiencia de cada documento; acuses de lectura con «qué cambió», porcentaje y Excel;
@@ -35,7 +35,8 @@
    reconstruido con «Migraciones al día» (ocho migraciones) y `/api/salud` en verde; la 0006 y la 0007
    aplicadas sobre una copia de la demo de `main`; el recorrido de §18 en navegador (claro, oscuro y 390 px) hecho
    por el controlador, con la ola final de correcciones de la revisión de la rama (F13B-R18 a R22) y la demo
-   resembrada al final. **Pendiente:** el recorrido del usuario y su decisión de fusionar.
+   resembrada al final. El usuario hizo su recorrido el 2026-11-08, pidió el filtro de Gestión de documentos y
+   `DEV_ORIGENES`, y decidió fusionar.
    **Antes, la Fase 13A:** estaba en `main` (`d0c6a42`, publicada el 2026-11-07, 93 commits
    sobre `b94032e`; la rama `fase-13a-flujo-documental` ya se borró). Un documento nuevo, un cambio o una eliminación recorren ahora un trámite
    dentro del sistema: solicitud con visto bueno, aceptación con duplicidad asistida, código
@@ -72,8 +73,7 @@
    mismo camino: spec aprobado, plan, ejecución, prueba y fusión. Enganches que deja la 13B: los porcentajes de
    acuses y de conformidad (`src/db/consultas/distribucion/`), `archivos` generalizado para las evidencias de
    mediciones (Fase 14), los hallazgos que la Fase 15 convertirá en acciones correctivas y las tareas y avisos que
-   la Fase 16 llevará al correo; el motivo «revisión anual» de la solicitud lo usa la 13C. Antes de la 13C hay que
-   fusionar la 13B. Insumos que dependen del
+   la Fase 16 llevará al correo; el motivo «revisión anual» de la solicitud lo usa la 13C. Insumos que dependen del
    usuario: spec maestro §11 (SMTP, versión de Windows del servidor, planta de cargos real,
    plantilla del plan de mejoramiento, total de cuentas), la lista de verificación real
    (SGC-FO-03) y el ajuste del texto de su procedimiento (el listado maestro aparece con dos
@@ -697,8 +697,8 @@ Plan: `docs/superpowers/plans/2026-11-07-fase13b-distribucion-puntos-de-uso.md`;
 `docs/superpowers/specs/2026-11-07-fase13b-distribucion-puntos-de-uso-design.md`. Los pasos 9 y 10 del
 procedimiento de control de documentos del hospital quedan dentro del sistema, con la evidencia de PC-08 (parte
 física), PC-09 y PC-10 (spec, Apéndice A). **Sin dependencias npm nuevas** (`pdf-lib`, `qrcode` y `exceljs`
-ya estaban). La rama `fase-13b-distribucion-puntos-de-uso` lleva unos 40 commits sobre `main` (`f08f01d`) y **no está
-fusionada**.
+ya estaban). La rama `fase-13b-distribucion-puntos-de-uso` (42 commits sobre `f08f01d`) se fusionó en `main` el
+2026-11-08 (`2e321b6`, PR #2) y se borró.
 
 - **Tras la revisión del usuario (2026-11-08):** **Gestión de documentos** filtra al escribir, sobre la lista ya
   cargada y sin tocar la dirección: texto sobre código y título (sin tildes ni mayúsculas, todas las palabras),
