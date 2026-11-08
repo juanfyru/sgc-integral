@@ -830,6 +830,8 @@ export type FilaDocumentoAdmin = {
   anulado: boolean;
   /** Todas sus versiones están descartadas: una creación cancelada, o una carga deshecha o descartada. */
   descartado: boolean;
+  /** Siglas de sus procesos (el propietario y «donde aplica»; un subproceso cuenta por su proceso), ordenadas. */
+  procesos: string[];
   actualizadoEn: string;
 };
 
@@ -849,7 +851,12 @@ export async function listarDocumentosAdmin(sujeto: SujetoVisibilidad): Promise<
         ? sql`(SELECT numero FROM documento_versiones WHERE documento_id = d.id AND estado = 'borrador')`
         : sql`NULL::integer`} AS borrador,
       EXISTS (SELECT 1 FROM documento_versiones WHERE documento_id = d.id AND estado = 'anulado') AS anulado,
-      NOT EXISTS (SELECT 1 FROM documento_versiones WHERE documento_id = d.id AND estado <> 'descartado') AS descartado
+      NOT EXISTS (SELECT 1 FROM documento_versiones WHERE documento_id = d.id AND estado <> 'descartado') AS descartado,
+      (SELECT COALESCE(array_agg(DISTINCT p.sigla ORDER BY p.sigla), '{}')
+         FROM documento_proceso dp
+         LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
+         JOIN procesos p ON p.id = COALESCE(dp.proceso_id, s.proceso_id)
+        WHERE dp.documento_id = d.id) AS procesos
     FROM documentos d JOIN tipos_documento t ON t.id = d.tipo_id
     WHERE ${filtroAcceso(sql, sujeto)}
       ${administra
@@ -861,8 +868,17 @@ export async function listarDocumentosAdmin(sujeto: SujetoVisibilidad): Promise<
     id: f.id, codigo: f.codigo, titulo: f.titulo,
     tipoNombre: f.tipo_nombre, tipoSigla: f.tipo_sigla,
     versionVigente: f.vigente, versionBorrador: f.borrador,
-    anulado: f.anulado, descartado: f.descartado, actualizadoEn: String(f.actualizado_en),
+    anulado: f.anulado, descartado: f.descartado, procesos: f.procesos as string[],
+    actualizadoEn: String(f.actualizado_en),
   }));
+}
+
+/** Los estados que la tabla del panel muestra de un documento: vigente y borrador pueden convivir; si no hay ninguno, el que queda. */
+export function estadosDeDocumento(fila: FilaDocumentoAdmin): string[] {
+  const estados: string[] = [];
+  if (fila.versionVigente !== null) estados.push("vigente");
+  if (fila.versionBorrador !== null) estados.push("borrador");
+  return estados.length > 0 ? estados : [estadoSinVersionActiva(fila)];
 }
 
 /** Uno con todas sus versiones descartadas se lista para poder revisarlo, pero no es un documento del SGC. */
