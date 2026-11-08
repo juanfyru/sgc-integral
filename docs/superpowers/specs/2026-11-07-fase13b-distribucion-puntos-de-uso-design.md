@@ -1012,6 +1012,9 @@ Con la base recién sembrada y `npm run dev`:
     `/api/salud` en verde; la 0006 aplicada sobre una copia con la demo de `main` y sobre una
     con el esquema de `sgc-suaza`.
 
+    *Nota del cierre:* son ocho migraciones desde la 0007 (`0007_fase13b-item-retirado.sql`, la marca
+    «Retirado en el acto» de los ítems de la verificación).
+
 ## 19. Manual de usuario
 
 Capítulo 6, «Distribución: copias controladas, acuses de lectura y puntos de uso», escrito con

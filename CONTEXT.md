@@ -223,20 +223,25 @@ recorre en el navegador tras el commit de cierre y deja sus capturas en la bitá
    días («Toca verificar») y Urgencias verificada hace 20 días con un hallazgo abierto y vencido
    («copia no controlada de AIN-FO-01»).
 
-1. **Puntos de uso (`coordinadora.sgc`).** **Administración** → **Puntos de uso** → **Nuevo punto de uso**:
-   «Sala de partos», con `jefe.urgencias` de responsable y el proceso AIN. Debe verse en la lista.
-   Abra **Urgencias** y desactívelo: lo impide por sus copias vivas y dice cuáles. En **Usuarios**, abra
-   `jefe.urgencias`: **Desactivar usuario** lo impide mientras tenga puntos activos, con enlace a ellos.
-2. **Emitir (`lider.gth`).** Abra `GTH-PR-01` → **Emitir copia controlada** → Talento Humano (el diálogo
-   solo ofrece los puntos de los procesos del líder). La app lleva a la página de la copia con «La copia está lista
-   para imprimir»; pulse **Abrir el PDF para imprimir** (pestaña nueva): franja «COPIA CONTROLADA N.º 01 ·
-   GTH-PR-01 v1 · Talento Humano · Entregada a …» en cada página y el QR. La copia nace **Recibida** porque el
-   líder es el responsable. La copia para Urgencias (N.º 02, queda «Sin recibido») la emite `coordinadora.sgc`
-   (o cualquier Admin SGC): el líder no ve ese punto. Recargue el PDF: no genera una impresión nueva. Pasados 15 minutos, en
-   la página de la copia el botón es **Reimprimir** y pide motivo. En `GTH-FO-01` (restringido),
-   emitir para Farmacia es rechazado: su responsable no lo ve. **La demo no trae ningún vigente con
-   principal en Word:** para ver «Para emitir copias controladas el archivo principal debe ser PDF»
-   registre uno (**Registrar documento ya aprobado**, principal `.docx`).
+1. **Puntos de uso (`coordinadora.sgc`).** **Mapa de procesos** → proceso AIN → subproceso «Atención del Parto»
+   → **Nuevo punto de uso para este subproceso**: el formulario llega con el nombre y el proceso AIN; cámbielo a
+   «Sala de partos», con `jefe.urgencias` de responsable (también se crea desde **Administración** → **Puntos de
+   uso** → **Nuevo punto de uso**). Debe verse en la lista. Abra **Urgencias** y desactívelo: lo impide, y la
+   página lista las copias vivas que lo impiden (documento, número y estado) con enlace a cada una. En
+   **Usuarios**, abra `jefe.urgencias`: **Desactivar usuario** lo impide mientras tenga puntos activos, con enlace
+   a ellos.
+2. **Emitir (`lider.gth`).** Abra `GTH-PR-01` → **Emitir copia controlada**: el diálogo pone primero los puntos de
+   los procesos del documento (Talento Humano) y luego los demás activos. Elija Talento Humano. La app lleva a la
+   página de la copia con «La copia está lista para imprimir»; pulse **Abrir el PDF para imprimir** (pestaña
+   nueva): franja «COPIA CONTROLADA N.º 01 · GTH-PR-01 v1 · Talento Humano · Entregada a …» en cada página y el
+   QR. La copia nace **Recibida** porque el líder es el responsable. Emita otra para **Urgencias** (N.º 02, queda
+   «Sin recibido»): el líder emite los documentos de sus procesos a cualquier punto activo. Recargue el PDF: no
+   genera una impresión nueva. Pasados 15 minutos, la página de la copia ya no ofrece **Abrir el PDF**, sino
+   **Reimprimir** (pide motivo); el enlace viejo del PDF vuelve a la copia con «La ventana de impresión
+   terminó…». En `GTH-FO-01` (restringido), emitir para Farmacia es rechazado: su responsable no lo ve. **La
+   demo no trae ningún vigente con principal en Word:** registre uno (**Registrar documento ya aprobado**,
+   principal `.docx`) y su ficha muestra **Emitir copia controlada** deshabilitado con «Para emitir copias
+   controladas el archivo principal debe ser PDF».
 3. **Recibido (`jefe.urgencias`).** **Mis tareas** → «Recibir la copia N.º 02 de GTH-CA-01 v3 en
    Urgencias» (la copia de la demo, emitida hace 4 días y vencida; si hizo el paso 2, también tiene la de
    `GTH-PR-01` v1) → **Confirmar el recibido**. La copia queda **Recibida**; en la página de la copia el historial dice quién y cuándo.
@@ -249,8 +254,11 @@ recorre en el navegador tras el commit de cierre y deja sus capturas en la bitá
    **Requiere socialización** al aceptar, para el paso 8.)
 5. **QR.** Abra `http://localhost:3002/documentos/GBS-PR-01?v=1` (lo que codifica el QR de la copia de la
    v1): la ficha dice «Esta copia es de la versión 1; la vigente es la 2». Con el celular en la red del
-   hospital, el QR real abre lo mismo. Vacíe **Dirección de la plataforma** y emita otra copia: el
-   sello sale sin QR (el diálogo de emisión **no** lo avisa: es una desviación del spec, ver Deuda técnica).
+   hospital, el QR real abre lo mismo. Vacíe **Dirección de la plataforma**: el diálogo de emisión avisa «Sin
+   dirección de la plataforma configurada, el sello saldrá sin código QR» (con enlace a **Entidad y marca**
+   para el Admin SGC) y el sello sale sin QR. Como `consulta`, la ficha de `GTH-CA-01` muestra el bloque
+   **Socialización** con la jornada de la demo («Jornada del … · reunión de servicio · … asistentes · acta
+   adjunta»), sin enlace al acta.
 6. **Acuse.** Como `control.interno`: **Mis tareas** → «Confirmar lectura de GTH-CA-01 v3» (vencida): trae
    «Qué cambió», «Le llega porque…»; el botón dice «Abra el documento para habilitar la confirmación» hasta
    abrir el documento; después marque la casilla y **Confirmar lectura**. Como `lider.gth`, la ficha de
@@ -263,8 +271,9 @@ recorre en el navegador tras el commit de cierre y deja sus capturas en la bitá
    proceso SGC: nace su acuse.
 8. **Socialización (`lider.gth`).** Si marcó la casilla en el paso 4 (camino largo), la tarea «Registrar la
    socialización de GTH-PR-01 v2»; si no, **Registrar socialización** desde la ficha. Registre la jornada con
-   tres asistentes y un PDF de acta: sus acuses quedan «Por asistencia». `consulta` ve la frase de la jornada
-   pero no el acta; `control.interno` sí. **Anular la jornada**, con motivo: los acuses vuelven a pendiente.
+   tres asistentes y un PDF de acta: sus acuses quedan «Por asistencia». En la ficha, `consulta` ve la frase de
+   la jornada pero no el acta; `control.interno` ve además el enlace a la jornada con su acta. **Anular la
+   jornada**, con motivo: los acuses vuelven a pendiente y la frase sale de la ficha.
 9. **Verificación (`coordinadora.sgc`, a 390 px o en el celular).** **Distribución** → **Verificaciones** →
    «Toca verificar» en Farmacia → **Verificar** (lleva a una pantalla de confirmación; el botón **Verificar
    Farmacia** abre la verificación, y esa apertura queda en la bitácora): responda la lista, un **No conforme** con **Foto**, **Cerrar la
@@ -290,7 +299,7 @@ la salida. `npm run db:seed && npm run admin:asegurar` la deja como nueva.
 ### Avisos para el usuario (Fase 13B)
 
 1. **Escriba la «Dirección de la plataforma» (`url_publica`) en Entidad y marca antes de imprimir copias.**
-   Sin ella el sello sale **sin código QR** y el diálogo de emisión no lo avisa. Es la dirección que el
+   Sin ella el sello sale **sin código QR** (el diálogo de emisión lo avisa). Es la dirección que el
    celular alcanza en la intranet (`https://sgc.hospital.gov.co` o `http://192.168.1.20:8443`), sin ruta.
    Base: Práctica (la cabecera `Host` la controla el cliente).
 2. **El formato PDF real del hospital trae un pie que ocupa el borde inferior (1,15 cm).** El alto por defecto
@@ -1588,7 +1597,8 @@ mismos números que citan los comentarios del código (`R24`, `R26`, `R32`, `R33
 
 F13B-DC1 a F13B-DC27 vienen del spec de la fase (§22), del 2026-11-07; DC24 a DC27 salieron de la
 revisión del constructor, antes de la aprobación. F13B-R1 a R17 son las resoluciones del controlador durante la
-ejecución (mandan sobre el plan). Base: **ISO** (cláusula de 9001:2015), **Regulación** o **Práctica**.
+ejecución y R18 a R22, las de la ola final tras la revisión de toda la rama (mandan sobre el plan). Base: **ISO**
+(cláusula de 9001:2015), **Regulación** o **Práctica**.
 
 | # | Decisión y porqué | Base | Si es incorrecta |
 |---|---|---|---|
@@ -1636,15 +1646,40 @@ ejecución (mandan sobre el plan). Base: **ISO** (cláusula de 9001:2015), **Reg
 | F13B-R15 | La semilla se parte en dos llamadas (`sembrarDistribucionPrevia` antes y `sembrarDistribucion` después de los trámites): `emitirCopia` solo emite la vigente y la v3 de `GTH-CA-01` ya está publicada al terminar los trámites. No se llama `pedirAcuses`: la publicación de la v3 crea los acuses de «Todo el hospital» con origen `publicacion`; la jornada es de hace 5 días (relativa), no del 14 de octubre | Práctica | La demo cuenta la historia con otro origen, sin efecto funcional |
 | F13B-R16 | Los tests que dependen de filas de la BD de desarrollo se reescriben para no depender de datos preexistentes (conteo de archivos con `contexto <> 'version'`, fotos de ítems, notificaciones de un usuario), porque las acumulan los puntos de control manuales | Regla de tests contra la BD de desarrollo | — |
 | F13B-R17 | Abrir una verificación es un POST con pantalla de confirmación («Verificar <punto>»), auditado como `verificacion_abierta`: un `GET` no debe crear filas ni dejar verificaciones abiertas por una precarga | Práctica | Abrir con un enlace `GET` |
+| F13B-R18 | El líder emite y reemplaza copias de los documentos de su alcance hacia **cualquier punto de uso activo**: la restricción es el documento (`documentoEnAlcance`), no el punto. El diálogo pone primero los puntos de los procesos del documento y luego los demás activos, para todos los roles; «Reemplazar (k)» cuenta los puntos donde emite y la acción dice cuántas emitió | Spec §8.1; la restricción por proceso dejaba sin reemplazar copias que el Admin repartió en otros servicios | Un líder ve los nombres de todos los puntos activos en el diálogo |
+| F13B-R19 | Fuera de la ventana de impresión, quien emite ve **Reimprimir** y no **Abrir el PDF**; el PDF fuera de la ventana o ya no disponible, y los errores de la reimpresión, vuelven a la página de la copia con su aviso en texto (`?ventana=1`, `?aviso=<clave>`) en vez de un 409 en JSON en otra pestaña. Ajusta F13B-R5 y la línea 1 del Review Focus del plan; el 404 de quien no ve la copia no cambia | Práctica | Un JSON en una pestaña nueva |
+| F13B-R20 | El responsable de un punto sin `distribucion.ver` (rol Consulta) no ve la pestaña ni la página de **Acuses de lectura**, y `resumenAcuses` le devuelve vacío; sigue viendo Copias y Verificaciones de sus puntos. Precisa F13B-DC19 | Spec §6.4 | El responsable ve los porcentajes de toda la entidad |
+| F13B-R21 | Al cerrar una verificación rige la regla de la apertura con quien cierra: si es el responsable actual del punto y hay otro Admin SGC activo, se rechaza; si no lo hay, cierra y `propio_punto` queda marcado en el mismo `UPDATE`. Extiende F13B-DC16 al cierre (el responsable puede cambiar con la verificación abierta) | Práctica (spec maestro DC9) | La marca solo dice quién abrió |
+| F13B-R22 | «Nadie se avisa a sí mismo» (spec §12.2) quita el aviso, no la tarea: quien publica y responde por un punto no recibe «Recoja…» pero tiene la tarea; quien pide acuses y está en la audiencia recibe su acuse sin aviso; quien elimina no recibe «dejó de aplicar» | Práctica | Avisos de más a quien hizo el cambio |
 
 ## Deuda técnica conocida
 
-**De la Fase 13B** (todos menores, aceptados en la revisión de cada tarea, salvo los dos primeros):
+**De la Fase 13B** (todos menores, aceptados en la revisión de cada tarea o aplazados en la ola final, salvo el
+primero):
 
-- **El diálogo «Emitir copia controlada» no avisa que falta `url_publica`** (spec §8.2 y §18.5 lo pedían): el sello sale sin QR y
-  solo el campo de **Entidad y marca** lo dice. Un aviso en el diálogo es una línea.
-- **No hay Excel de socializaciones** (spec §10.4 lo mencionaba; no existe la ruta ni la acción `exporto_socializaciones`).
-  `acuses-excel.ts` tampoco se migró a `hoja-excel.ts` (tercer constructor).
+- **No hay Excel de socializaciones** (spec §10.4 lo mencionaba; no existe la ruta ni la acción `exporto_socializaciones`;
+  fuera del plan, queda a decisión del usuario). `acuses-excel.ts` tampoco se migró a `hoja-excel.ts` (tercer constructor).
+- **Aplazado en la ola final:**
+  - Reemplazo individual desde el diálogo de emisión (spec §8.5): `reemplazaCopiaId` existe en la acción, sin interfaz.
+  - Fecha de corrección ajustable al cerrar la verificación (spec §11.4; omisión del plan, Tarea 12): rige el plazo configurado.
+  - «Verificaciones en que apareció» en la página de la copia y la vista por documento (spec §8.6).
+  - El modo del acuse (individual, por asistencia, por firma) no se muestra en «Mis lecturas» (spec §10.3).
+  - Gerencia y Control Interno no leen el catálogo de puntos y listas (spec §6.4): las páginas del panel son formularios de
+    edición y sus entradas de la barra piden `distribucion.gestionar`; falta una vista de solo lectura.
+  - El vencimiento de las verificaciones se mide en milisegundos (`verificacionCadaDias × 86 400 000`) y no con
+    `fechaLimite` y la zona de la instalación: cambiarlo mueve el borde un día y `tests/distribucion-reglas.test.ts` lo fija.
+  - La semilla mínima no escribe las claves de distribución (las cubren los valores por defecto del código).
+  - Reimprimir no sugiere «anule y emita otra» (spec §8.5).
+  - Cobertura: la matriz de visibilidad de §17 por pestaña y rol, `a11y-estructura` en las páginas nuevas y el guard del test
+    de hallazgos en `semilla-distribucion`.
+  - Pasar un documento a restringido con copias vivas en puntos cuyo responsable no lo ve no se bloquea ni se avisa.
+  - Rendimiento: `misTareas` consulta seis fuentes en cada render y lee fotos de hallazgos que no usa; los acuses sin jefe se
+    revisan en cada pasada.
+  - Menores de las tareas sin línea propia: sin test de inmutabilidad de `acuse_eventos` con el dueño del esquema ni del
+    estado `descartada`; `copias/[id]` y el detalle de una jornada sin `exigirDistribucion` explícito (la consulta da 404);
+    `CLASE_DIALOGO` repetida en `AccionesCopia` y `DialogoEmitir`; la recogida automática no audita (ruling de la Tarea 6);
+    `corregirMarca` no rechaza trámites de eliminación en el dominio; `/verificaciones/nueva` redirige a la abierta sin
+    comprobar visibilidad (el destino la aplica); casilla del acuse sin `required`.
 - **Catálogos:** sin test de `parsearPuntoUso` ni de las acciones; `alternarPuntoUso(true)` no valida procesos activos;
   `editarCatalogo` y `guardarAudiencia` corren en dos transacciones; `guardarAudiencia` no exige listas activas (solo la
   interfaz); el retiro de acuses no cubre cambios de cargo, área o rol de los miembros de una lista; `N+1` de `quienFalta`
@@ -1654,17 +1689,16 @@ ejecución (mandan sobre el plan). Base: **ISO** (cláusula de 9001:2015), **Reg
   sello (`HOLGURA_PT`, factores) no usan métricas reales de la fuente y un QR mayor que una franja muy baja sobresale;
   `copiaParaPdf` no reconfirma la vigencia dentro de su transacción final; `anularCopia` no valida el motivo contra
   `MOTIVOS_ANULACION`; `reemplazaCopiaId` no bloquea la copia reemplazada; limitador de ritmo duplicado en las dos rutas
-  del PDF; `BloqueDistribucion` ofrece «Emitir» sin comprobar el alcance del líder; `AccionesCopia` pasa de 280 líneas.
+  del PDF; `AccionesCopia` pasa de 280 líneas.
 - **Acuses y jornadas:** la conformidad puede mostrar 95 % redondeado con `cumple = false`; `localeCompare` sin locale en
   `armarListaDeChequeo`; «Porcentaje» como texto en el Excel de acuses; `pedirAcusesAccion` sin mensaje de conteo; los
   motivos de cierre de acuses sin `CHECK`; `unlink` de evidencias traga todo error (solo ENOENT debería); el detalle de
   `aceptar` en la bitácora lleva la clave solo cuando es `true`; anular una jornada reabre la requerida aunque exista otra
   jornada válida; `efectoDeAnular` cuenta solo versiones visibles para quien anula.
-- **Verificaciones:** el trigger no bloquea `INSERT` de ítems en una verificación cerrada (lo cubre la aplicación); una foto
-  subida a la vez que se cierra la verificación puede quedar huérfana; el `GET` de fotos carga toda la verificación para
-  autorizar; `N+1` de `evidenciasDe` en `leerHallazgos`; sin test de `cerrarHallazgo` por `distribucion.gestionar`.
-- **Vencimientos:** `acusesVencidos` lee `jefesDe` por versión (N+1 dentro de la transacción) y hay una dependencia circular
-  inofensiva entre `vencimientos.ts` y `distribucion/vencimientos.ts` por `avisarA` y `jefesDe`; los contadores «avisados» y
+- **Verificaciones:** el trigger no bloquea `INSERT` de ítems en una verificación cerrada (lo cubre la aplicación); el `GET`
+  de fotos carga toda la verificación para autorizar; `N+1` de `evidenciasDe` en `leerHallazgos`; sin test de
+  `cerrarHallazgo` por `distribucion.gestionar`.
+- **Vencimientos:** `acusesVencidos` lee `jefesDe` por versión (N+1 dentro de la transacción); los contadores «avisados» y
   «escalados» no tienen JSDoc.
 - **Pruebas:** muchas consultas por jornada en `cargarJornadas` y `LIMIT` antes del filtro de visibilidad; sin test de render de
   la página del trámite con el bloque de distribución; `total = tareas.length` por defecto en `MisTareas` oculta un olvido

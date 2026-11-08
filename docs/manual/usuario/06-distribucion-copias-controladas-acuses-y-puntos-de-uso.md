@@ -157,9 +157,12 @@ Hay dos caminos:
 - Desde **Distribución** → **Copias controladas**, el botón **Emitir copia controlada** (aquí
   elige primero el documento).
 
-En el diálogo elija el **Punto de uso**. Un líder solo puede emitir a los puntos de uso de sus
-procesos; para un punto de otro proceso, la emisión la hace el Administrador del SGC. (Al Administrador le
-aparecen primero los puntos de los procesos del documento) y, si quiere, una **Nota** («para la carpeta del consultorio 2»). Al confirmar, el SGC:
+En el diálogo elija el **Punto de uso**: primero aparecen los puntos que sirven a los procesos del
+documento (**De los procesos del documento**) y después los demás puntos activos (**Otros puntos
+activos**); desde **Distribución**, ese orden se arma al elegir el documento. Un líder emite los
+documentos de sus procesos a cualquier punto activo, también a los de otros servicios. Si quiere,
+escriba una **Nota** («para la carpeta del consultorio 2»). Si falta la **Dirección de la
+plataforma**, el diálogo avisa que el sello saldrá sin código QR (sección 5.8). Al confirmar, el SGC:
 
 1. Numera la copia (el siguiente número de esa versión: N.º 01, N.º 02…).
 2. Avisa al responsable del punto.
@@ -167,10 +170,10 @@ aparecen primero los puntos de los procesos del documento) y, si quiere, una **N
    para imprimir**: el PDF sellado se abre en otra pestaña.
 
 Condiciones: solo se emite la versión **vigente**, y su archivo principal debe ser **PDF**. Si el
-principal es un Word, el botón explica «Para emitir copias controladas el archivo principal
-debe ser PDF». Un documento **restringido** solo se emite a un punto cuyo responsable pueda
-verlo; si no, el SGC lo dice. Una copia, un papel: si necesita otro ejemplar, emita otra
-copia.
+principal es un Word, el botón **Emitir copia controlada** aparece deshabilitado y debajo dice
+«Para emitir copias controladas el archivo principal debe ser PDF». Un documento **restringido**
+solo se emite a un punto cuyo responsable pueda verlo; si no, el SGC lo dice. Una copia, un
+papel: si necesita otro ejemplar, emita otra copia.
 
 **El sello.** Cada página lleva al pie una franja de color con «COPIA CONTROLADA N.º 02»,
 el código y la versión, el punto, a quién se entregó y la fecha de emisión, y un código QR en
@@ -179,10 +182,11 @@ la esquina (sección 6). El PDF sellado no se guarda: el SGC lo vuelve a generar
 ### 4.2 Imprimir y reimprimir
 
 Después de emitir, tiene **15 minutos** para abrir e imprimir el PDF las veces que necesite
-(recargar la página no cuenta como una impresión nueva). Pasado ese tiempo, en la página de la
-copia pulse **Reimprimir**: el SGC pide el **Motivo** (se deterioró, salió ilegible, se
-extravió antes de entregarla u otro) y abre otra ventana de 15 minutos. Queda en el historial
-y en la bitácora. El papel sale idéntico: mismo número, misma fecha de emisión.
+(recargar la página no cuenta como una impresión nueva). Pasado ese tiempo, la página de la copia
+ya no ofrece **Abrir el PDF** (un enlace viejo al PDF lo devuelve a la copia con el aviso «La
+ventana de impresión terminó…»): pulse **Reimprimir**. El SGC pide el **Motivo** (se deterioró,
+salió ilegible, se extravió antes de entregarla u otro) y abre otra ventana de 15 minutos. Queda
+en el historial y en la bitácora. El papel sale idéntico: mismo número, misma fecha de emisión.
 
 Si la copia se perdió **después** de recibida, no la reimprima: **anúlela** y emita otra.
 
@@ -195,10 +199,10 @@ deshace. Una copia **Por recoger** no se anula: se recoge (sección 2.2).
 ### 4.4 Cuando sale una versión nueva
 
 Al publicarse la versión 2, las copias de la versión 1 quedan **Por recoger**, y en la ficha del
-documento aparece **Reemplazar las copias de la v1 (2)**. Púlselo: el SGC emite una copia de
-la versión nueva por cada punto que tenía la anterior, con su propio número, y cada
-responsable recibe **una sola tarea** (sección 2.3). Tiene que imprimir cada copia nueva desde
-su página. Si la versión nueva no tiene PDF, no hay reemplazo: las copias viejas se recogen y la
+documento aparece **Reemplazar las copias de la v1 (2)**; el número es cuántas va a emitir.
+Púlselo: el SGC emite una copia de la versión nueva por cada punto que tenía la anterior y aún no
+tiene la nueva, con su propio número, le dice cuántas emitió, y cada responsable recibe **una sola
+tarea** (sección 2.3). Tiene que imprimir cada copia nueva desde su página. Si la versión nueva no tiene PDF, no hay reemplazo: las copias viejas se recogen y la
 pantalla lo explica.
 
 ### 4.5 Registrar una socialización
@@ -248,13 +252,15 @@ Usted arma los catálogos, pide los acuses, verifica los puntos y ajusta los pla
 **Administración → Puntos de uso** → **Nuevo punto de uso**. Campos: **Nombre del punto de uso**
 (único dentro de la sede), **Sede (opcional)**, **Ubicación (opcional)**, **Procesos que usan este
 punto**, **Responsable del punto** (obligatorio, una persona activa) y si está activo. Los
-procesos dan el alcance del líder y ordenan las sugerencias al emitir; un punto puede quedar
-sin procesos.
+procesos le dan al líder la vista del punto (sus copias, verificaciones y hallazgos) y ordenan los
+puntos al emitir; un punto puede quedar sin procesos. También puede crearlo desde el mapa: en
+**Mapa de procesos** (grupo **Documentos**), la pantalla de un subproceso ofrece **Nuevo punto de uso para este
+subproceso**, que llena el nombre y el proceso (no queda ningún vínculo con el subproceso).
 
-Reglas: un punto no se desactiva con copias emitidas, recibidas o por recoger (la pantalla dice
-cuáles); una persona responsable de puntos activos no se desactiva en **Usuarios** hasta que los
-reasigne; y el responsable nuevo de un punto con copias de un documento restringido debe poder
-verlo.
+Reglas: un punto no se desactiva con copias emitidas, recibidas o por recoger: la página del punto
+las lista (documento, número y estado) con enlace a cada una, para recogerlas o anularlas; una
+persona responsable de puntos activos no se desactiva en **Usuarios** hasta que los reasigne; y el
+responsable nuevo de un punto con copias de un documento restringido debe poder verlo.
 
 ### 5.2 Listas de distribución
 
@@ -356,7 +362,8 @@ deje de poder escanearse: pruebe con el celular) o acepte que la esquina quede c
 documento real antes de imprimir en serie.
 
 **Entidad y marca** → **Dirección de la plataforma** (por ejemplo `https://sgc.hospital.gov.co` o
-`http://192.168.1.20:8443`, sin ruta). **Sin ella, el sello sale sin código QR.**
+`http://192.168.1.20:8443`, sin ruta). **Sin ella, el sello sale sin código QR**, y el diálogo de
+emisión lo avisa.
 El QR es lo que permite comprobar la versión desde el celular, así que llénela antes de emitir
 copias.
 
