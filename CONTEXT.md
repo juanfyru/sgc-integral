@@ -29,7 +29,9 @@
    y la revisión de vencimientos. **Sin dependencias npm nuevas.** Detalle en «Hecho (Fase 13B)»; el recorrido,
    en «Qué probar y cómo (Fase 13B)»; el manual, en el capítulo 6. **Verificado al cierre:** lint limpio;
    **3593/3593 tests** (155 archivos, `SEMILLA_RECIEN=1`, sin saltos, tras la ola final y con la demo recién
-   sembrada); build de producción sin URL de base; compose
+   sembrada); **tras los ajustes de la revisión del usuario del 2026-11-08** (filtro de Gestión de documentos y
+   `DEV_ORIGENES`): lint limpio, **3588 tests en verde y 16 saltados** (156 archivos, demo ya avanzada por el
+   recorrido manual, sin `SEMILLA_RECIEN`) y build en verde; build de producción sin URL de base; compose
    reconstruido con «Migraciones al día» (ocho migraciones) y `/api/salud` en verde; la 0006 y la 0007
    aplicadas sobre una copia de la demo de `main`; el recorrido de §18 en navegador (claro, oscuro y 390 px) hecho
    por el controlador, con la ola final de correcciones de la revisión de la rama (F13B-R18 a R22) y la demo

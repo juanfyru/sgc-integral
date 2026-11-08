@@ -18,10 +18,18 @@ const listas = [
 describe("migración de listas a los componentes base (Fase 12, T14)", () => {
   it.each(listas)("%s usa TablaDatos y no una tabla propia", (ruta) => {
     const src = leer(ruta);
-    expect(src).toContain("<TablaDatos");
+    // La lista de documentos del panel delega en TablaDocumentosAdmin (su filtro corre en el navegador), que
+    // a su vez pinta TablaDatos: se comprueba abajo.
+    expect(src).toMatch(/<TablaDatos|<TablaDocumentosAdmin/);
     expect(src).not.toContain("<table");
     expect(src).not.toContain("EstadoBadge");
     expect(src).not.toContain("<main");
+  });
+
+  it("TablaDocumentosAdmin pinta TablaDatos y no una tabla propia", () => {
+    const src = leer("src/componentes/admin/TablaDocumentosAdmin.tsx");
+    expect(src).toContain("<TablaDatos");
+    expect(src).not.toContain("<table");
   });
 
   it("EstadoBadge ya no existe", () => {
