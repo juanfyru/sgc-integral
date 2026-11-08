@@ -293,7 +293,7 @@ ALTER TABLE "lista_miembros" ADD CONSTRAINT "lista_miembros_tipo_valido" CHECK (
 ALTER TABLE "tipos_documento" ADD CONSTRAINT "tipos_documento_meses_revision_valido" CHECK ("tipos_documento"."meses_revision" BETWEEN 1 AND 120);--> statement-breakpoint
 INSERT INTO "tipos_documento" ("nombre", "sigla", "autoridad", "es_diligenciable", "orden")
 SELECT 'Documento externo', 'DE', 'operativo', false, coalesce(max("orden"), 0) + 1 FROM "tipos_documento"
-WHERE NOT EXISTS (SELECT 1 FROM "tipos_documento" WHERE "sigla" = 'DE' OR "nombre" = 'Documento externo');--> statement-breakpoint
+HAVING NOT EXISTS (SELECT 1 FROM "tipos_documento" WHERE "sigla" = 'DE' OR "nombre" = 'Documento externo');--> statement-breakpoint
 CREATE FUNCTION sgc_impedir_si_revision_cerrada() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
   estado_revision text;

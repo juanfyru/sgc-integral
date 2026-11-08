@@ -3,7 +3,7 @@
  * normograma y lo heredado de la 13B. Requiere la BD de desarrollo migrada
  * (npm run db:preparar); no exige la demo recién sembrada.
  */
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Sql, TransactionSql } from "postgres";
 import postgres from "postgres";
@@ -77,6 +77,31 @@ describe("esquema de la Fase 13C", () => {
       expect(n).toBe(0);
       const [de] = await tx`SELECT nombre, autoridad, es_diligenciable FROM tipos_documento WHERE sigla = 'DE'`;
       expect(de).toMatchObject({ nombre: "Documento externo", autoridad: "operativo", es_diligenciable: false });
+    }));
+
+  it("el alta del tipo DE de la migración es idempotente y no choca con un «Documento externo» de otra sigla", () =>
+    revertida(sql, async (tx) => {
+      const migracion = readFileSync("drizzle/0008_fase13c-vigencia-externos-normograma.sql", "utf8");
+      const alta = migracion
+        .split("--> statement-breakpoint")
+        .map((s) => s.trim())
+        .find((s) => s.startsWith(`INSERT INTO "tipos_documento"`));
+      expect(alta).toBeTruthy();
+      const contar = async () =>
+        (await tx`SELECT count(*)::int AS n FROM tipos_documento WHERE sigla = 'DE'`)[0].n as number;
+      // Ya existe DE: no inserta ni falla.
+      await tx.unsafe(alta!);
+      expect(await contar()).toBe(1);
+      // Sin DE: lo crea al final.
+      await tx`UPDATE tipos_documento SET sigla = 'ZQ', nombre = 'zz Externo renombrado' WHERE sigla = 'DE'`;
+      await tx.unsafe(alta!);
+      const [de] = await tx`SELECT orden, orden = (SELECT max(orden) FROM tipos_documento) AS al_final FROM tipos_documento WHERE sigla = 'DE'`;
+      expect(de.al_final).toBe(true);
+      // Un «Documento externo» con otra sigla: no se crea DE y la migración no falla.
+      await tx`DELETE FROM tipos_documento WHERE sigla = 'DE'`;
+      await tx`UPDATE tipos_documento SET nombre = 'Documento externo' WHERE sigla = 'ZQ'`;
+      await tx.unsafe(alta!);
+      expect(await contar()).toBe(0);
     }));
 
   it("versiones admiten la aprobación externa con su edición y copias el motivo retirado", () =>
