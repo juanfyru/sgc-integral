@@ -201,8 +201,8 @@ deshace. Una copia **Por recoger** no se anula: se recoge (sección 2.2).
 Al publicarse la versión 2, las copias de la versión 1 quedan **Por recoger**, y en la ficha del
 documento aparece **Reemplazar las copias de la v1 (2)**; el número es cuántas va a emitir.
 Púlselo: el SGC emite una copia de la versión nueva por cada punto que tenía la anterior y aún no
-tiene la nueva, con su propio número, le dice cuántas emitió, y cada responsable recibe **una sola
-tarea** (sección 2.3). Tiene que imprimir cada copia nueva desde su página. Si la versión nueva no tiene PDF, no hay reemplazo: las copias viejas se recogen y la
+tiene la nueva, con su propio número; las copias nuevas aparecen en la ficha, en **De la versión
+vigente**, y cada responsable recibe **una sola tarea** (sección 2.3). Tiene que imprimir cada copia nueva desde su página. Si la versión nueva no tiene PDF, no hay reemplazo: las copias viejas se recogen y la
 pantalla lo explica.
 
 ### 4.5 Registrar una socialización

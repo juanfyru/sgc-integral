@@ -1,7 +1,7 @@
 # CONTEXT.md — Estado vivo del proyecto
 
 > Se actualiza al cierre de cada fase. Última actualización: **2026-11-07**, al cerrar la 13B. La **Fase 13B —
-> Distribución y puntos de uso** está terminada en la rama `fase-13b-distribucion-puntos-de-uso` (unos 30 commits
+> Distribución y puntos de uso** está terminada en la rama `fase-13b-distribucion-puntos-de-uso` (unos 40 commits
 > sobre `main`), **sin fusionar** a la espera de la palabra del usuario. La **Fase 13A —
 > Flujo documental** y sus adiciones están fusionadas en `main` (`d0c6a42`, 2026-11-07), con el CI
 > en verde. Lo siguiente, tras fusionar la 13B, es la Fase 13C. La
@@ -19,7 +19,7 @@
    La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
    proyecto**.
 1. **Dónde quedamos:** la **Fase 13B está terminada en su rama** (`fase-13b-distribucion-puntos-de-uso`,
-   unos 30 commits sobre `main`, `f08f01d`; **no se ha fusionado ni publicado**: no hay `push` ni `merge` sin la palabra del
+   unos 40 commits sobre `main`, `f08f01d`; **no se ha fusionado ni publicado**: no hay `push` ni `merge` sin la palabra del
    usuario). Lo que el papel y las personas hacen después de publicar queda dentro del sistema: puntos de uso con
    responsable; copias controladas numeradas con sello (franja y QR a la ficha) y su recibido, reimpresión con
    motivo, anulación, recogida automática cuando la versión deja de ser vigente y reemplazo en un acto; listas
@@ -28,10 +28,12 @@
    uso con lista armada por el sistema, hallazgos y porcentaje de conformidad; todo en «Mis tareas», la campana
    y la revisión de vencimientos. **Sin dependencias npm nuevas.** Detalle en «Hecho (Fase 13B)»; el recorrido,
    en «Qué probar y cómo (Fase 13B)»; el manual, en el capítulo 6. **Verificado al cierre:** lint limpio;
-   **3568/3568 tests** (151 archivos, `SEMILLA_RECIEN=1`); build de producción sin URL de base; compose
+   **3593/3593 tests** (155 archivos, `SEMILLA_RECIEN=1`, sin saltos, tras la ola final y con la demo recién
+   sembrada); build de producción sin URL de base; compose
    reconstruido con «Migraciones al día» (ocho migraciones) y `/api/salud` en verde; la 0006 y la 0007
-   aplicadas sobre una copia de la demo de `main`. **Pendiente:** el recorrido de §18 en navegador (claro, oscuro y
-   390 px) por el controlador, el recorrido del usuario y su decisión de fusionar.
+   aplicadas sobre una copia de la demo de `main`; el recorrido de §18 en navegador (claro, oscuro y 390 px) hecho
+   por el controlador, con la ola final de correcciones de la revisión de la rama (F13B-R18 a R22) y la demo
+   resembrada al final. **Pendiente:** el recorrido del usuario y su decisión de fusionar.
    **Antes, la Fase 13A:** estaba en `main` (`d0c6a42`, publicada el 2026-11-07, 93 commits
    sobre `b94032e`; la rama `fase-13a-flujo-documental` ya se borró). Un documento nuevo, un cambio o una eliminación recorren ahora un trámite
    dentro del sistema: solicitud con visto bueno, aceptación con duplicidad asistida, código
@@ -679,7 +681,7 @@ Plan: `docs/superpowers/plans/2026-11-07-fase13b-distribucion-puntos-de-uso.md`;
 `docs/superpowers/specs/2026-11-07-fase13b-distribucion-puntos-de-uso-design.md`. Los pasos 9 y 10 del
 procedimiento de control de documentos del hospital quedan dentro del sistema, con la evidencia de PC-08 (parte
 física), PC-09 y PC-10 (spec, Apéndice A). **Sin dependencias npm nuevas** (`pdf-lib`, `qrcode` y `exceljs`
-ya estaban). La rama `fase-13b-distribucion-puntos-de-uso` lleva unos 30 commits sobre `main` (`f08f01d`) y **no está
+ya estaban). La rama `fase-13b-distribucion-puntos-de-uso` lleva unos 40 commits sobre `main` (`f08f01d`) y **no está
 fusionada**.
 
 - **Rutas nuevas:** `/distribucion` y sus cuatro pestañas (`/distribucion/{copias,acuses,socializaciones,verificaciones}`),
@@ -1646,7 +1648,7 @@ ejecución y R18 a R22, las de la ola final tras la revisión de toda la rama (m
 | F13B-R15 | La semilla se parte en dos llamadas (`sembrarDistribucionPrevia` antes y `sembrarDistribucion` después de los trámites): `emitirCopia` solo emite la vigente y la v3 de `GTH-CA-01` ya está publicada al terminar los trámites. No se llama `pedirAcuses`: la publicación de la v3 crea los acuses de «Todo el hospital» con origen `publicacion`; la jornada es de hace 5 días (relativa), no del 14 de octubre | Práctica | La demo cuenta la historia con otro origen, sin efecto funcional |
 | F13B-R16 | Los tests que dependen de filas de la BD de desarrollo se reescriben para no depender de datos preexistentes (conteo de archivos con `contexto <> 'version'`, fotos de ítems, notificaciones de un usuario), porque las acumulan los puntos de control manuales | Regla de tests contra la BD de desarrollo | — |
 | F13B-R17 | Abrir una verificación es un POST con pantalla de confirmación («Verificar <punto>»), auditado como `verificacion_abierta`: un `GET` no debe crear filas ni dejar verificaciones abiertas por una precarga | Práctica | Abrir con un enlace `GET` |
-| F13B-R18 | El líder emite y reemplaza copias de los documentos de su alcance hacia **cualquier punto de uso activo**: la restricción es el documento (`documentoEnAlcance`), no el punto. El diálogo pone primero los puntos de los procesos del documento y luego los demás activos, para todos los roles; «Reemplazar (k)» cuenta los puntos donde emite y la acción dice cuántas emitió | Spec §8.1; la restricción por proceso dejaba sin reemplazar copias que el Admin repartió en otros servicios | Un líder ve los nombres de todos los puntos activos en el diálogo |
+| F13B-R18 | El líder emite y reemplaza copias de los documentos de su alcance hacia **cualquier punto de uso activo**: la restricción es el documento (`documentoEnAlcance`), no el punto. El diálogo pone primero los puntos de los procesos del documento y luego los demás activos, para todos los roles; «Reemplazar (k)» cuenta los puntos donde emite; las copias nuevas aparecen en «De la versión vigente» (el aviso con el conteo no llega a verse: la ficha se vuelve a pintar y desmonta el formulario; está en la deuda) | Spec §8.1; la restricción por proceso dejaba sin reemplazar copias que el Admin repartió en otros servicios | Un líder ve los nombres de todos los puntos activos en el diálogo |
 | F13B-R19 | Fuera de la ventana de impresión, quien emite ve **Reimprimir** y no **Abrir el PDF**; el PDF fuera de la ventana o ya no disponible, y los errores de la reimpresión, vuelven a la página de la copia con su aviso en texto (`?ventana=1`, `?aviso=<clave>`) en vez de un 409 en JSON en otra pestaña. Ajusta F13B-R5 y la línea 1 del Review Focus del plan; el 404 de quien no ve la copia no cambia | Práctica | Un JSON en una pestaña nueva |
 | F13B-R20 | El responsable de un punto sin `distribucion.ver` (rol Consulta) no ve la pestaña ni la página de **Acuses de lectura**, y `resumenAcuses` le devuelve vacío; sigue viendo Copias y Verificaciones de sus puntos. Precisa F13B-DC19 | Spec §6.4 | El responsable ve los porcentajes de toda la entidad |
 | F13B-R21 | Al cerrar una verificación rige la regla de la apertura con quien cierra: si es el responsable actual del punto y hay otro Admin SGC activo, se rechaza; si no lo hay, cierra y `propio_punto` queda marcado en el mismo `UPDATE`. Extiende F13B-DC16 al cierre (el responsable puede cambiar con la verificación abierta) | Práctica (spec maestro DC9) | La marca solo dice quién abrió |
@@ -1675,6 +1677,13 @@ primero):
   - Pasar un documento a restringido con copias vivas en puntos cuyo responsable no lo ve no se bloquea ni se avisa.
   - Rendimiento: `misTareas` consulta seis fuentes en cada render y lee fotos de hallazgos que no usa; los acuses sin jefe se
     revisan en cada pasada.
+  - El aviso «Se emitieron N copias» de **Reemplazar** no llega a verse: `revalidatePath` vuelve a pintar la ficha y el
+    formulario se desmonta con su `role="status"` (re-revisión de la ola final). Las copias nuevas sí aparecen en la ficha.
+  - Los conteos de `/distribucion/copias` del líder (`conteosPorPunto`, con `filtroPuntos`) no incluyen las copias que emitió en
+    puntos de otros procesos, aunque la tabla sí las muestra (`documentoEnAlcance`); F13B-R18 lo hace frecuente.
+  - Al salir de un proceso, el acuse pendiente de un restringido queda oculto (tareas y `/acuses/[id]`) pero no retirado; solo
+    el cambio de rol lo retira (`soloSinAcceso`).
+  - `acusesDeIngreso` no recibe `actorId`: un Admin SGC que se añade un proceso a sí mismo se avisa a sí mismo.
   - Menores de las tareas sin línea propia: sin test de inmutabilidad de `acuse_eventos` con el dueño del esquema ni del
     estado `descartada`; `copias/[id]` y el detalle de una jornada sin `exigirDistribucion` explícito (la consulta da 404);
     `CLASE_DIALOGO` repetida en `AccionesCopia` y `DialogoEmitir`; la recogida automática no audita (ruling de la Tarea 6);
