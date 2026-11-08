@@ -159,6 +159,28 @@ describe("emitirCopia", () => {
       }
     }));
 
+  it("una copia de un restringido en un punto de otro proceso no se ve ni se sirve a quien no ve el documento", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      // El responsable del punto de CEX está asignado a GTH: la emisión del restringido de GTH es válida.
+      const resp = await usuarioDePrueba(tx, { rol: "consulta", procesos: await idsProcesos(tx, ["GTH", "CEX"]) });
+      const liderCex = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: await idsProcesos(tx, ["CEX"]) });
+      const punto = await puntoDePrueba(tx, { responsable: resp, procesos: ["CEX"] });
+      const { documento, limpiar } = await vigenteConPdf(tx, { proceso: "GTH", tipo: "PR", restringido: true });
+      try {
+        const { copiaId } = await copiaDePrueba(tx, { emisor: admin, documento, punto, ahora: T0 });
+        // El líder de CEX ve las copias de sus puntos, pero no un documento restringido de GTH.
+        expect((await listarCopias(liderCex, { estado: "todas" }, { sql: tx })).some((c) => c.id === copiaId)).toBe(false);
+        expect(await obtenerCopia(copiaId, liderCex, { sql: tx })).toBeNull();
+        expect(await copiaParaPdf(copiaId, liderCex, { sql: tx, ahora: T0 })).toEqual({ ok: false, estado: 404 });
+        // El responsable la ve (es suya) y el administrador también.
+        expect(await obtenerCopia(copiaId, resp, { sql: tx })).not.toBeNull();
+        expect(await obtenerCopia(copiaId, admin, { sql: tx })).not.toBeNull();
+      } finally {
+        await limpiar();
+      }
+    }));
+
   it("el líder emite solo sobre documentos de su alcance", () =>
     revertida(sql, async (tx) => {
       const resp = await usuarioDePrueba(tx, { rol: "consulta" });

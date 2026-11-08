@@ -706,6 +706,11 @@ ya estaban). La rama `fase-13b-distribucion-puntos-de-uso` (42 commits sobre `f0
   los dos estados (`src/lib/filtro-documentos-admin.ts`, `TablaDocumentosAdmin`, columna **Procesos** nueva;
   `listarDocumentosAdmin` devuelve `procesos`). Y `DEV_ORIGENES` en `next.config.ts` (`allowedDevOrigins`)
   para abrir `next dev` desde el celular: sin la variable, desde otro origen la página no hidrata.
+- **Corrección de seguridad tras la fusión (revisión automática del push):** el líder de proceso veía, en la
+  lista y la página de copias y en su PDF, las copias de un documento **restringido** de otro proceso entregadas en
+  un punto suyo (el responsable del punto sí lo ve, por eso la emisión era válida). `condicionVista` exige ahora el
+  nivel de acceso sobre las copias de sus puntos y `copiaParaPdf` comprueba `puedeAccederDocumento` siempre: el
+  PDF es el documento entero. Prueba en `tests/copias.test.ts`.
 - **Rutas nuevas:** `/distribucion` y sus cuatro pestañas (`/distribucion/{copias,acuses,socializaciones,verificaciones}`),
   `/distribucion/copias/[id]`, `/distribucion/copias/[id]/pdf`, `POST /distribucion/copias/[id]/reimprimir`,
   `/distribucion/socializaciones/{nueva,[id]}` y `…/[id]/archivos/[archivoId]/[[...nombre]]`,

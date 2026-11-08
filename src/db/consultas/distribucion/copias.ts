@@ -9,7 +9,7 @@ import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { crearNotificacion } from "@/db/consultas/notificaciones";
 import { evento } from "./eventos-copia";
 import { abrirHallazgoDeRecogida } from "./hallazgos";
-import { filtroPuntos, puedeAccederDocumento } from "@/lib/alcance";
+import { filtroAcceso, filtroPuntos, puedeAccederDocumento } from "@/lib/alcance";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { enVentanaDeImpresion, numeroDeCopia, puedePasar, textoSello, urlDeQr } from "@/lib/distribucion/copias";
 import { estamparCopiaControlada } from "@/lib/distribucion/sello-pdf";
@@ -93,7 +93,9 @@ function condicionVista(sql: Cliente, sesion: SesionFlujo) {
   const propias = sql`(cc.emitida_por = ${sesion.usuarioId} OR cc.responsable_id = ${sesion.usuarioId} OR pu.responsable_id = ${sesion.usuarioId})`;
   if (!puede(sesion, "distribucion.ver")) return propias;
   if (sesion.rol === "lider_proceso") {
-    return sql`(${propias} OR ${filtroPuntos(sql, sesion)} OR ${documentoEnAlcance(sql, sesion)})`;
+    // Las copias de sus puntos, pero nunca de un restringido que no ve (regla 3): un documento de otro proceso
+    // entregado en un punto suyo solo aparece si su nivel de acceso lo permite.
+    return sql`(${propias} OR (${filtroPuntos(sql, sesion)} AND ${filtroAcceso(sql, sesion)}) OR ${documentoEnAlcance(sql, sesion)})`;
   }
   return sql`true`;
 }
@@ -333,6 +335,8 @@ export async function copiaParaPdf(id: number, sesion: SesionFlujo, opciones?: O
   const { copia } = fila;
   const emite = puedeEmitirSobre(sesion, fila);
   if (!emite && !puede(sesion, "distribucion.ver")) return { ok: false, estado: 404 };
+  // El PDF es el documento entero: solo a quien puede ver el documento (regla 3), aunque la copia sea suya.
+  if (!(await puedeAccederDocumento(copia.documentoId, sesion, { sql }))) return { ok: false, estado: 404 };
   if (!copia.versionVigente || (copia.estado !== "emitida" && copia.estado !== "recibida")) return NO_DISPONIBLE;
   if (emite && !enVentanaDeImpresion(fila.ultimaAperturaEn, ahora)) return FUERA_DE_VENTANA;
 
