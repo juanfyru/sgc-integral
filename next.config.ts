@@ -20,8 +20,18 @@ const csp = [
   "form-action 'self'",
 ].join("; ");
 
+// Otros equipos de la red (un celular) que pueden abrir `next dev`: solo nombres de host o IP, sin esquema ni
+// puerto, separados por coma (`DEV_ORIGENES=192.168.20.104`). Sin la variable, el cliente de desarrollo no logra
+// conectar su WebSocket desde otro origen, recarga la página sin parar y nada interactivo funciona. No afecta a
+// producción: la opción solo existe en desarrollo.
+const origenesDev = (process.env.DEV_ORIGENES ?? "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 const nextConfig: NextConfig = {
   output: "standalone",
+  ...(origenesDev.length > 0 ? { allowedDevOrigins: origenesDev } : {}),
   async headers() {
     return [
       {

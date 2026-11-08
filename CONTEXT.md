@@ -204,6 +204,11 @@ recorre en el navegador tras el commit de cierre y deja sus capturas en la bitá
    `npm run db:seed && npm run admin:asegurar`. Use ventanas privadas para tener varias sesiones.
    Antes de emitir, en **Entidad y marca** escriba **Dirección de la plataforma**
    (`http://localhost:3002` en desarrollo): sin ella el sello sale sin QR (paso 5).
+   **Desde el celular:** `next dev` solo atiende bien a `localhost`; desde otro equipo la página carga con
+   estilo pero el menú, la búsqueda y todo lo interactivo quedan muertos (el cliente de desarrollo no logra su
+   WebSocket y recarga la página sin parar). Ponga en `.env.local` la IP del PC, `DEV_ORIGENES=192.168.20.104`
+   (la que muestre `ipconfig`), reinicie `npm run dev` y abra `http://192.168.20.104:3002` en el celular; la
+   **Dirección de la plataforma** debe ser esa misma, no `localhost`, para que el QR abra en el celular.
 
    | Usuario | Clave | Papel en el recorrido |
    |---|---|---|
@@ -267,9 +272,12 @@ recorre en el navegador tras el commit de cierre y deja sus capturas en la bitá
    `GTH-CA-01` muestra «Acuses v3: … de …» y **Ver quién falta**. `gerente` ve el porcentaje de la entidad
    en **Distribución** → **Acuses de lectura**.
 7. **Lista y pedido manual (`coordinadora.sgc`).** En **Gestión de documentos** → `SGC-PR-01` → **Editar
-   datos** → **Distribución**, marque «Todo el hospital» y guarde; en la ficha pulse **Pedir acuse de
-   lectura**: cada usuario activo recibe la tarea (`consulta` ahora tiene «Confirmar lectura de SGC-PR-01 v1»);
-   repetirlo no duplica. Marque **Lectura obligatoria al ingresar al proceso**, cree un usuario nuevo con el
+   datos** → **Distribución**, marque «Todo el hospital» y guarde; en la ficha despliegue **Pedir acuse de
+   lectura…** y pulse el botón que aparece dentro (es un pliegue de dos gestos: solo desplegarlo no envía nada;
+   al enviarlo sale bajo el botón cuántos acuses creó): cada persona de la audiencia recibe la tarea (`consulta`
+   ahora tiene «Confirmar lectura de SGC-PR-01 v1»); repetirlo no duplica. «Todo el hospital» en la demo está
+   armada por áreas, así que llega a quien tiene cargo con área: `admin`, sin cargo, queda fuera; y quien pide
+   los acuses recibe su tarea en **Inicio** pero no el aviso de la campana. Marque **Lectura obligatoria al ingresar al proceso**, cree un usuario nuevo con el
    proceso SGC: nace su acuse.
 8. **Socialización (`lider.gth`).** Si marcó la casilla en el paso 4 (camino largo), la tarea «Registrar la
    socialización de GTH-PR-01 v2»; si no, **Registrar socialización** desde la ficha. Registre la jornada con
@@ -325,6 +333,12 @@ la salida. `npm run db:seed && npm run admin:asegurar` la deja como nueva.
    pasan a ser las jornadas registradas. Están dichos en el capítulo 6, sección 7.
 7. **El PDF sellado no se guarda:** se regenera cada vez desde el principal. Si una copia impresa debe
    rehacerse, use **Reimprimir** con motivo (15 minutos de ventana) o anule y emita otra. Base: decisión del usuario.
+8. **Para probar desde el celular contra `npm run dev`** hace falta `DEV_ORIGENES=<IP del PC>` en `.env.local` y
+   reiniciar el servidor (paso 0 de «Qué probar y cómo (Fase 13B)»). Sin la variable, la página carga con estilo
+   pero nada interactivo responde. Solo afecta al desarrollo; la imagen del compose y producción no la necesitan.
+9. **Una lista de distribución armada por áreas no alcanza a quien no tiene cargo.** «Todo el hospital» de la demo
+   es por áreas; si en el hospital habrá cuentas sin cargo, decida si una lista debe poder incluir «todos los
+   usuarios activos» (hoy no existe ese tipo de miembro). Base: spec §6.
 
 ## Qué probar y cómo (Fase 13A)
 
@@ -684,6 +698,12 @@ física), PC-09 y PC-10 (spec, Apéndice A). **Sin dependencias npm nuevas** (`p
 ya estaban). La rama `fase-13b-distribucion-puntos-de-uso` lleva unos 40 commits sobre `main` (`f08f01d`) y **no está
 fusionada**.
 
+- **Tras la revisión del usuario (2026-11-08):** **Gestión de documentos** filtra al escribir, sobre la lista ya
+  cargada y sin tocar la dirección: texto sobre código y título (sin tildes ni mayúsculas, todas las palabras),
+  y tipo, proceso y estado exactos; las opciones salen de las filas y una fila con vigente y borrador responde a
+  los dos estados (`src/lib/filtro-documentos-admin.ts`, `TablaDocumentosAdmin`, columna **Procesos** nueva;
+  `listarDocumentosAdmin` devuelve `procesos`). Y `DEV_ORIGENES` en `next.config.ts` (`allowedDevOrigins`)
+  para abrir `next dev` desde el celular: sin la variable, desde otro origen la página no hidrata.
 - **Rutas nuevas:** `/distribucion` y sus cuatro pestañas (`/distribucion/{copias,acuses,socializaciones,verificaciones}`),
   `/distribucion/copias/[id]`, `/distribucion/copias/[id]/pdf`, `POST /distribucion/copias/[id]/reimprimir`,
   `/distribucion/socializaciones/{nueva,[id]}` y `…/[id]/archivos/[archivoId]/[[...nombre]]`,
