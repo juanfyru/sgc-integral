@@ -4,7 +4,23 @@ import { calcularBarras } from "./geometria";
 const ANCHO = 640;
 const ALTO = 140;
 
-export function GraficoBarras({ serie }: { serie: PuntoSerie[] }) {
+/**
+ * Barras de una serie con su tabla equivalente. Los textos por omisión son los de las consultas por día; otra serie
+ * (por ejemplo, una barra por proceso) da los suyos.
+ */
+export function GraficoBarras({
+  serie,
+  descripcion,
+  titulo = "Consultas por día",
+  columnas = ["Fecha", "Consultas"],
+}: {
+  serie: PuntoSerie[];
+  /** El `aria-label` del gráfico. */
+  descripcion?: string;
+  /** El título de la tabla equivalente. */
+  titulo?: string;
+  columnas?: readonly [string, string];
+}) {
   const barras = calcularBarras(serie, { ancho: ANCHO, alto: ALTO, separacion: 3 });
   const total = serie.reduce((s, p) => s + p.conteo, 0);
 
@@ -17,7 +33,7 @@ export function GraficoBarras({ serie }: { serie: PuntoSerie[] }) {
         viewBox={`0 0 ${ANCHO} ${ALTO}`}
         className="h-36 w-full"
         role="img"
-        aria-label={`Consultas por día en el periodo: ${total} en total, ${serie.length} días con actividad.`}
+        aria-label={descripcion ?? `Consultas por día en el periodo: ${total} en total, ${serie.length} días con actividad.`}
         preserveAspectRatio="none"
       >
         {barras.map((b) => (
@@ -35,11 +51,11 @@ export function GraficoBarras({ serie }: { serie: PuntoSerie[] }) {
       </svg>
       <figcaption className="sr-only">
         <table>
-          <caption>Consultas por día</caption>
+          <caption>{titulo}</caption>
           <thead>
             <tr>
-              <th>Fecha</th>
-              <th>Consultas</th>
+              <th>{columnas[0]}</th>
+              <th>{columnas[1]}</th>
             </tr>
           </thead>
           <tbody>

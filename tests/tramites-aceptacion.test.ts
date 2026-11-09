@@ -539,7 +539,8 @@ describe("rechazar", () => {
     expect(avisos.map((a) => a.tipo)).toEqual(["tramite.resuelto"]);
     expect(avisos[0].titulo).toMatch(/rechazada/);
     const [e] = await tx`SELECT detalle FROM tramite_eventos WHERE tramite_id = ${tramiteId} AND tipo = 'rechazar'`;
-    expect(e.detalle).toEqual({ motivo: "Ya existe CEX-ZP-02 en otro proceso." });
+    // `venceEn`: la fecha límite de la etapa que cierra (indicador de etapas en plazo).
+    expect(e.detalle).toEqual({ motivo: "Ya existe CEX-ZP-02 en otro proceso.", venceEn: expect.any(String) });
   }));
 
   it("quien no gestiona no rechaza", () => revertida(sql, async (tx) => {

@@ -109,7 +109,7 @@ describe("solicitud y visto bueno", () => {
     expect(t.vence_en).toBeNull();
     expect(t.cerrado_en).not.toBeNull();
     const [e] = await tx`SELECT detalle, usuario_id FROM tramite_eventos WHERE tramite_id = ${r.tramiteId} AND tipo = 'negar_visto_bueno'`;
-    expect(e.detalle).toEqual({ motivo: "No corresponde al proceso." });
+    expect(e.detalle).toEqual({ motivo: "No corresponde al proceso.", venceEn: expect.any(String) });
     expect(e.usuario_id).toBe(lider.usuarioId);
     const avisos = await tx`SELECT usuario_id, enlace FROM notificaciones WHERE entidad = 'tramite' AND entidad_id = ${r.tramiteId} AND tipo = 'tramite.resuelto'`;
     expect(avisos.map((a) => a.usuario_id)).toEqual([admin.usuarioId]);

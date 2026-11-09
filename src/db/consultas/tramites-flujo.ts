@@ -408,7 +408,10 @@ export async function transicionar(
       }
     }
 
-    await registrarEvento(tx, { tramiteId: t.id, tipo: entrada.accion, usuarioId: sesion.usuarioId, ronda: t.ronda, detalle: efecto.detalle, ahora });
+    // La fecha límite de la etapa que cierra no queda en otro sitio (el trámite guarda solo la de la actual): la mide el
+    // indicador de etapas en plazo (spec 13C §11.1). `reasignar` no cierra etapa y su `venceEn` es la fecha nueva.
+    const detalle = hacia === previo.etapa ? efecto.detalle : { ...efecto.detalle, venceEn: previo.venceEn?.toISOString() ?? null };
+    await registrarEvento(tx, { tramiteId: t.id, tipo: entrada.accion, usuarioId: sesion.usuarioId, ronda: t.ronda, detalle, ahora });
     const { codigo } = await rotuloDeTramite(tx, t);
     // El acta congelada ya está en el evento; la bitácora no la repite.
     const detalleDeAuditoria: Record<string, unknown> = { ...efecto.detalle };

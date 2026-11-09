@@ -188,9 +188,9 @@ describe("páginas de Vigencia", () => {
       expect(html).toMatch(/Fijar próxima revisión (a los \d+ documentos filtrados|al documento filtrado)/);
       expect(html).toMatch(/Vencida hace \d+ días/);
       expect(html).toContain(`/tramites/nueva?documento=${d.codigo}&amp;motivo=revision_anual`);
-      // La pestaña de externos existe; las que aún no existen no se pintan.
+      // Las cuatro pestañas existen para el Admin SGC.
       expect(html).toContain('href="/vigencia/externos"');
-      expect(html).not.toContain("/vigencia/indicadores");
+      expect(html).toContain('href="/vigencia/indicadores"');
       // A 390 px el selector de proceso, con nombres largos, no desborda la página: cede al ancho disponible.
       const clases = (patron: RegExp) => (html.match(patron)?.[1] ?? "").split(/\s+/);
       expect(clases(/<select[^>]*id="filtro-proceso"[^>]*class="([^"]*)"/)).toEqual(expect.arrayContaining(["w-full", "max-w-full"]));

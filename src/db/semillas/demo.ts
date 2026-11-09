@@ -895,7 +895,9 @@ async function paso(c: Contexto, previo: FilaTramite, p: Paso): Promise<FilaTram
     });
   }
 
-  await registrarEvento(tx, { tramiteId: t.id, tipo: accion, usuarioId: quien.id, ronda: t.ronda, detalle, ahora: momento });
+  // Como `transicionar`: el paso que cierra una etapa guarda la fecha límite que tenía (indicador de etapas en plazo).
+  const delEvento = hacia === previo.etapa ? detalle : { ...detalle, venceEn: previo.venceEn?.toISOString() ?? null };
+  await registrarEvento(tx, { tramiteId: t.id, tipo: accion, usuarioId: quien.id, ronda: t.ronda, detalle: delEvento, ahora: momento });
   // El acta congelada ya está en el evento; la bitácora no la repite.
   const detalleDeAuditoria = { ...detalle };
   delete detalleDeAuditoria.acta;

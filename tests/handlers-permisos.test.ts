@@ -47,6 +47,7 @@ import { GET as excelCopias } from "@/app/(app)/distribucion/copias/excel/route"
 import { GET as excelVerificaciones } from "@/app/(app)/distribucion/verificaciones/excel/route";
 import { GET as excelSemaforo } from "@/app/(app)/vigencia/semaforo/excel/route";
 import { GET as excelExternos } from "@/app/(app)/vigencia/externos/excel/route";
+import { GET as excelIndicadores } from "@/app/(app)/vigencia/indicadores/excel/route";
 import { GET as archivoDeEdicionExterna } from "@/app/(app)/vigencia/externos/[id]/archivos/[archivoId]/[[...nombre]]/route";
 import { GET as excelNormograma } from "@/app/(app)/normograma/excel/route";
 import { GET as pdfDeNorma } from "@/app/(app)/normograma/[id]/archivos/[archivoId]/[[...nombre]]/route";
@@ -292,6 +293,73 @@ describe("GET /vigencia/externos/excel", () => {
           await suyo.limpiar();
           await ajeno.limpiar();
         }
+      } finally {
+        enCurso.sql = null;
+      }
+    }));
+});
+
+describe("GET /vigencia/indicadores/excel", () => {
+  const pedir = (token?: string, consulta = "") =>
+    excelIndicadores(new NextRequest(`http://localhost:3002/vigencia/indicadores/excel${consulta}`, token ? { headers: cookie(token) } : undefined));
+
+  async function hojasDelExcel(res: Response): Promise<Record<string, string>> {
+    const libro = new ExcelJS.Workbook();
+    await libro.xlsx.load(await res.arrayBuffer());
+    const hojas: Record<string, string> = {};
+    for (const hoja of libro.worksheets) {
+      const filas: string[] = [];
+      hoja.eachRow((fila) => filas.push((fila.values as unknown[]).slice(1).map((v) => (v === null || v === undefined ? "" : String(v))).join(" | ")));
+      hojas[hoja.name] = filas.join("\n");
+    }
+    return hojas;
+  }
+
+  it("401 sin sesión y 404 a Consulta, que no tiene los indicadores", async () => {
+    expect((await pedir()).status).toBe(401);
+    expect((await pedir(tokenConsulta)).status).toBe(404);
+  });
+
+  it("el líder recibe las tres hojas de sus procesos, sin caché, y queda auditado con el periodo y el proceso; un proceso ajeno es 404", () =>
+    revertida(sql(), async (tx) => {
+      enCurso.sql = tx;
+      try {
+        const [gth] = await tx`SELECT id FROM procesos WHERE sigla = 'GTH'`;
+        const [cex] = await tx`SELECT id FROM procesos WHERE sigla = 'CEX'`;
+        const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [Number(gth.id)] });
+        const { token } = await crearSesion(lider.usuarioId, { ip: null, userAgent: null });
+        await tx`UPDATE usuarios SET acepto_datos_en = now(), totp_activo = true WHERE id = ${lider.usuarioId}`;
+
+        expect((await pedir(token, `?proceso=${cex.id}`)).status).toBe(404);
+        const res = await pedir(token, `?periodo=2026-T4&proceso=${gth.id}`);
+        expect(res.status).toBe(200);
+        expect(res.headers.get("Content-Type")).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        expect(res.headers.get("Cache-Control")).toBe("no-store");
+        expect(res.headers.get("Content-Disposition")).toMatch(/^attachment; filename="indicadores-\d{8}\.xlsx"$/);
+        const hojas = await hojasDelExcel(res);
+        expect(Object.keys(hojas)).toEqual(["Indicadores", "Por proceso", "Vencidos"]);
+        expect(hojas.Indicadores).toContain("Documentos dentro de su plazo de revisión");
+        expect(hojas.Indicadores).toContain("Periodo: cuarto trimestre de 2026 · Proceso: Gestión del Talento Humano");
+        expect(hojas["Por proceso"]).not.toMatch(/^CEX \|/m);
+        const auditoria = await tx`SELECT detalle FROM auditoria WHERE usuario_id = ${lider.usuarioId} AND accion = 'exporto_indicadores'`;
+        expect(auditoria).toHaveLength(1);
+        expect(auditoria[0].detalle).toEqual({ formato: "excel", periodo: "2026-T4", procesoId: Number(gth.id) });
+      } finally {
+        enCurso.sql = null;
+      }
+    }));
+
+  it("limita a diez descargas por minuto por persona", () =>
+    revertida(sql(), async (tx) => {
+      enCurso.sql = tx;
+      try {
+        const lider = await usuarioDePrueba(tx, { rol: "lider_proceso" });
+        const { token } = await crearSesion(lider.usuarioId, { ip: null, userAgent: null });
+        await tx`UPDATE usuarios SET acepto_datos_en = now(), totp_activo = true WHERE id = ${lider.usuarioId}`;
+        for (let i = 0; i < 10; i++) expect((await pedir(token)).status).toBe(200);
+        const res = await pedir(token);
+        expect(res.status).toBe(429);
+        expect(res.headers.get("Retry-After")).toBe("60");
       } finally {
         enCurso.sql = null;
       }

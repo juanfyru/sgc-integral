@@ -12,16 +12,20 @@ export type PestanaVigencia = (typeof PESTANAS)[number]["clave"];
 
 /**
  * Las pestañas que existen para la persona: con `vigencia.ver`, el semáforo, la revisión anual y los externos; al
- * responsable técnico sin ese permiso, solo los externos (los suyos).
+ * responsable técnico sin ese permiso, solo los externos (los suyos); con `documentos.indicadores`, los indicadores.
  */
 export function pestanasVisibles(sujeto: SujetoPermiso, responsableTecnico: boolean): PestanaVigencia[] {
-  if (puede(sujeto, "vigencia.ver")) return ["semaforo", "revision-anual", "externos"];
-  return responsableTecnico ? ["externos"] : [];
+  const visibles: PestanaVigencia[] = puede(sujeto, "vigencia.ver")
+    ? ["semaforo", "revision-anual", "externos"]
+    : responsableTecnico
+      ? ["externos"]
+      : [];
+  return puede(sujeto, "documentos.indicadores") ? [...visibles, "indicadores"] : visibles;
 }
 
 /**
  * Las cuatro pestañas de «Vigencia»; `visibles` dice cuáles pinta, porque cada una tiene su regla (spec 13C
- * §14.2) y las Tareas 7, 11 y 12 las encienden cuando existen.
+ * §14.2).
  */
 export function PestanasVigencia({ activa, visibles }: { activa: PestanaVigencia; visibles: readonly PestanaVigencia[] }) {
   return (

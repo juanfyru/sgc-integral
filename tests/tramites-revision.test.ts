@@ -265,7 +265,8 @@ describe("revisión", () => {
       expect((await listarObservaciones(t.tramiteId, { sql: tx })).map((x) => x.numero)).toEqual([1, 2]);
       await devolver();
       const [e] = await tx`SELECT detalle FROM tramite_eventos WHERE tramite_id = ${t.tramiteId} AND tipo = 'devolver_revision'`;
-      expect(e.detalle).toEqual({ observaciones: [1, 2] });
+      // `venceEn`: la fecha límite de la etapa que cierra (indicador de etapas en plazo).
+      expect(e.detalle).toEqual({ observaciones: [1, 2], venceEn: expect.any(String) });
       const avisos = await tx`SELECT usuario_id FROM notificaciones WHERE entidad = 'tramite' AND entidad_id = ${t.tramiteId} AND tipo = 'tramite.devuelto'`;
       expect(avisos.map((a) => Number(a.usuario_id))).toEqual([t.elaborador.usuarioId]);
     } finally { await t.limpiar(); }
@@ -552,7 +553,7 @@ describe("criterios que no cumplen", () => {
     try {
       await responderLista(tx, t, undefined, "no_aplica");    // no aplicar no es no cumplir
       await darConcepto(tx, t, {}, firmaSiempre);
-      expect(Object.keys(await detalleDelConcepto(tx, t)).sort()).toEqual(["concepto", "lista", "observaciones"]);
+      expect(Object.keys(await detalleDelConcepto(tx, t)).sort()).toEqual(["concepto", "lista", "observaciones", "venceEn"]);
     } finally { await t.limpiar(); }
   }));
 

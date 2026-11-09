@@ -191,7 +191,11 @@ describe("la historia sembrada", () => {
     expect(eventos.map((e) => `${e.tipo}:${e.ronda}`)).toEqual([
       "solicitar:0", "visto_bueno_automatico:0", "aceptar:1", "enviar_a_revision:1", "devolver_revision:2", "enviar_a_revision:2",
     ]);
-    expect(eventos[4].detalle).toEqual({ observaciones: [1, 2] });
+    // `venceEn` (la fecha límite de la etapa que cierra) lo trae la demo sembrada desde la Tarea 12; su forma la prueba
+    // «los detalles sembrados tienen la forma de los que escribe el flujo real».
+    const { venceEn, ...devolucion } = eventos[4].detalle;
+    expect(devolucion).toEqual({ observaciones: [1, 2] });
+    expect(venceEn === undefined || typeof venceEn === "string").toBe(true);
   });
 
   it("el trámite de GBS omitió el visto bueno y llegó a publicación con tres firmas de una huella", async () => {
@@ -250,7 +254,10 @@ describe("la historia sembrada", () => {
     ]);
   });
 
-  it("los detalles sembrados tienen la forma de los que escribe el flujo real", () => revertida(sql, async (tx) => {
+  it("los detalles sembrados tienen la forma de los que escribe el flujo real", (ctx) => revertida(sql, async (tx) => {
+    // Desde la Tarea 12 el paso que cierra una etapa guarda su fecha límite; una demo sembrada antes no la trae.
+    const [conLimite] = await tx`SELECT 1 FROM tramite_eventos WHERE tramite_id = ${(await tramiteDe(1, tx)).id} AND detalle ? 'venceEn' LIMIT 1`;
+    exigirDemo(ctx, conLimite !== undefined, "los eventos sembrados no guardan la fecha límite de su etapa (venceEn), la demo es anterior a la Tarea 12");
     const gerente = await sesionDe(tx, "gerente");
     const { t, confirmaNoCumple } = await aprobacionConCriterio(tx, { tipoDocumento: "CA", aprobador: gerente });
     try {

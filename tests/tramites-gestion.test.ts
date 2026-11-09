@@ -90,7 +90,7 @@ describe("cancelar", () => {
       expect(fila.vence_en).toBeNull();
       const [v] = await tx`SELECT numero FROM documento_versiones WHERE id = ${t.versionId}`;
       const [evento] = await eventosDe(tx, t.tramiteId, "cancelar");
-      expect(evento.detalle).toEqual({ motivo: "Ya no se necesita.", versionDescartada: v.numero });
+      expect(evento.detalle).toEqual({ motivo: "Ya no se necesita.", versionDescartada: v.numero, venceEn: expect.any(String) });
       const [{ n: despues }] = await tx`SELECT count(*)::int AS n FROM archivos WHERE version_id = ${t.versionId}`;
       expect(despues).toBe(antes);
     } finally {
@@ -121,7 +121,7 @@ describe("cancelar", () => {
     const [v] = await tx`SELECT estado FROM documento_versiones WHERE id = ${t.versionId}`;
     expect(v.estado).toBe("vigente");
     const [evento] = await eventosDe(tx, t.tramiteId, "cancelar");
-    expect(evento.detalle).toEqual({ motivo: "Sigue en uso." });
+    expect(evento.detalle).toEqual({ motivo: "Sigue en uso.", venceEn: expect.any(String) });
   }));
 
   it("una solicitud sin aceptar se cancela: no hay versión y avisa a los líderes del proceso", () => revertida(sql, async (tx) => {

@@ -109,8 +109,9 @@ describe("PestanasVigencia", () => {
     expect(html).toContain("Semáforo");
     expect(html).toContain('aria-current="page"');
     for (const otra of ["Revisión anual", "Externos", "Indicadores"]) expect(html).not.toContain(otra);
-    // Quien ve el semáforo ve también la revisión anual y los externos; el responsable técnico sin `vigencia.ver`, solo los externos.
-    expect(pestanasVisibles({ rol: "lider_proceso" }, false)).toEqual(["semaforo", "revision-anual", "externos"]);
+    // Quien ve el semáforo ve también la revisión anual y los externos (y los indicadores, con `documentos.indicadores`); el
+    // responsable técnico sin `vigencia.ver`, solo los externos.
+    expect(pestanasVisibles({ rol: "lider_proceso" }, false)).toEqual(["semaforo", "revision-anual", "externos", "indicadores"]);
     expect(pestanasVisibles({ rol: "consulta" }, true)).toEqual(["externos"]);
     expect(pestanasVisibles({ rol: "consulta" }, false)).toEqual([]);
     const todas = renderToStaticMarkup(<PestanasVigencia activa="semaforo" visibles={["semaforo", "revision-anual", "externos", "indicadores"]} />);
