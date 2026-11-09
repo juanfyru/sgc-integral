@@ -20,12 +20,21 @@ import { tareasDeAdopcion, tareasDeExternos, tareasDeVigencia } from "@/db/consu
 import { asociarProceso } from "@/db/consultas/normograma/asociaciones";
 import { resolverImpacto } from "@/db/consultas/normograma/impactos";
 import { cambiarEstadoNorma } from "@/db/consultas/normograma/normas";
+import { confirmarNormograma, registrarDecision, tareasDeRevision } from "@/db/consultas/vigencia/revision-anual";
 import { misTareas } from "@/lib/tareas";
 import { fechaLimite, finDeFecha } from "@/lib/tramites/plazos";
 import { sesionAdmin, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { normaDePrueba } from "./utiles/normograma";
 import { revertida } from "./utiles/transaccion";
-import { enRevisionAbierta, externoDePrueba, procesoSinLider, sinFechaDeRevision, sinRevisionAbierta, vigenteFuera } from "./utiles/vigencia";
+import {
+  enRevisionAbierta,
+  externoDePrueba,
+  procesoSinLider,
+  revisionDePrueba,
+  sinFechaDeRevision,
+  sinRevisionAbierta,
+  vigenteFuera,
+} from "./utiles/vigencia";
 
 const sql = obtenerSql();
 const ahora = new Date("2026-11-08T15:00:00Z");
@@ -309,6 +318,63 @@ describe("tareasDeAdopcion", () => {
       } finally {
         await e.limpiar();
       }
+    }));
+});
+
+describe("tareasDeRevision", () => {
+  const enCampana = new Date("2090-03-10T15:00:00Z");
+
+  it("el líder tiene la de cada proceso suyo con el conteo real; el Admin SGC, la de un proceso sin líder; Gerencia y Consulta, ninguna", () =>
+    revertida(sql, async (tx) => {
+      await sinRevisionAbierta(tx);
+      const admin = await sesionAdmin(tx);
+      const lider = await sesionDe(tx, "lider.gth");
+      const sinLider = await procesoSinLider(tx);
+      const [gth] = await tx`SELECT id, nombre FROM procesos WHERE sigla = 'GTH'`;
+      const doc = await vigenteFuera(tx, { fechaAprobacion: "2025-01-10", proceso: "GTH" });
+      await vigenteFuera(tx, { fechaAprobacion: "2025-01-10", proceso: sinLider.sigla });
+      const { revisionId } = await revisionDePrueba(tx, admin, { ahora: enCampana });
+      const pendientes = async (procesoId: number) =>
+        Number(
+          (
+            await tx`SELECT count(*)::int AS n FROM revision_anual_decisiones rad
+              JOIN documento_proceso dp ON dp.documento_id = rad.documento_id AND dp.es_principal
+              LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
+              WHERE rad.revision_id = ${revisionId} AND rad.decision = 'sin_revisar' AND COALESCE(dp.proceso_id, s.proceso_id) = ${procesoId}`
+          )[0].n,
+        );
+      const deGth = `revision:${revisionId}:${gth.id}`;
+      const deSinLider = `revision:${revisionId}:${sinLider.id}`;
+
+      const delLider = await tareasDeRevision(lider, { sql: tx, ahora: enCampana });
+      expect(delLider.find((t) => t.id === deGth)).toEqual({
+        id: deGth,
+        modulo: "documentos",
+        titulo: `Revisar los documentos de ${gth.nombre} (${(await pendientes(gth.id)) + 1} pendientes)`,
+        detalle: "Revisión anual 2090",
+        vence: fechaLimite(enCampana, 60, ZONA),
+        enlace: `/vigencia/revision-anual?proceso=${gth.id}`,
+      });
+      expect(ids(delLider)).not.toContain(deSinLider);
+      const delAdmin = ids(await tareasDeRevision(admin, { sql: tx, ahora: enCampana }));
+      expect(delAdmin).toContain(deSinLider);
+      // GTH tiene líder: su tarea no es del Admin SGC (F13A-DC2).
+      expect(delAdmin).not.toContain(deGth);
+      expect(await tareasDeRevision(await sesionDe(tx, "gerente"), { sql: tx, ahora: enCampana })).toEqual([]);
+      expect(await tareasDeRevision(await usuarioDePrueba(tx, { rol: "consulta", procesos: [Number(gth.id)] }), { sql: tx, ahora: enCampana })).toEqual([]);
+
+      // Decidir un documento y confirmar el normograma bajan el conteo; sin pendientes no hay tarea.
+      const antes = (await pendientes(gth.id)) + 1;
+      await registrarDecision(tx, { documentoId: doc.id, versionId: doc.versionId, decision: "ratificar", usuarioId: lider.usuarioId, ahora: enCampana });
+      await confirmarNormograma(lider, { revisionId, procesoId: Number(gth.id), resultado: "sin_novedad", nota: null }, { sql: tx, ahora: enCampana });
+      const tarea = (await tareasDeRevision(lider, { sql: tx, ahora: enCampana })).find((t) => t.id === deGth);
+      if (antes - 2 === 0) expect(tarea).toBeUndefined();
+      else expect(tarea?.titulo).toBe(`Revisar los documentos de ${gth.nombre} (${antes - 2} ${antes - 2 === 1 ? "pendiente" : "pendientes"})`);
+      await tx`UPDATE revision_anual_decisiones SET decision = 'reciente' WHERE revision_id = ${revisionId} AND decision = 'sin_revisar'`;
+      expect(ids(await tareasDeRevision(lider, { sql: tx, ahora: enCampana }))).not.toContain(deGth);
+      // Sin revisión abierta no hay tareas de la campaña.
+      await sinRevisionAbierta(tx);
+      expect(ids(await tareasDeRevision(admin, { sql: tx, ahora: enCampana }))).not.toContain(deSinLider);
     }));
 });
 

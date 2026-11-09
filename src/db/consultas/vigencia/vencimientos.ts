@@ -15,7 +15,8 @@
  * dejó de ver un restringido, no se le avisa), uno por proceso a los Admin SGC con el conteo y sin códigos, y el
  * escalamiento al jefe del responsable sin código, título ni enlace.
  *
- * Impactos normativos pendientes vencidos: la pasada vive en `normograma/vencidos.ts` y se suma aquí.
+ * Impactos normativos pendientes vencidos: la pasada vive en `normograma/vencidos.ts` y se suma aquí. La de la revisión
+ * anual vencida, en `revision-anual/vencidos.ts`.
  */
 import type { PendingQuery, Row, TransactionSql } from "postgres";
 import type { Cliente } from "@/db/cliente";
@@ -29,6 +30,7 @@ import { estadoPlazo } from "@/lib/tramites/plazos";
 import { textoResponsables } from "@/lib/tramites/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { columnasDeVigencia, enRevisionAnualAbierta, type FilaSemaforo } from "./fragmentos";
+import { revisionVencida } from "./revision-anual/vencidos";
 
 type Contexto = { sql: Cliente; ahora: Date; escalamientoDias: number };
 type Resultado = { avisados: number; escalados: number };
@@ -268,8 +270,9 @@ async function revisarExternosVencidos(c: Contexto): Promise<Resultado> {
 }
 
 /**
- * Los internos con la revisión vencida, los externos con la verificación vencida y los impactos normativos pendientes
- * vencidos (`impactosVencidos`, spec 13C §13.3); cuentan documentos e impactos, no avisos.
+ * Los internos con la revisión vencida, los externos con la verificación vencida, los impactos normativos pendientes
+ * vencidos (`impactosVencidos`) y los procesos de la revisión anual vencida con pendientes (`revisionVencida`), spec 13C
+ * §13.3; cuentan documentos, impactos y procesos, no avisos.
  */
 export async function revisarVencimientosDeVigencia(opciones: {
   sql: Cliente;
@@ -280,8 +283,9 @@ export async function revisarVencimientosDeVigencia(opciones: {
   const internos = await revisarInternosVencidos(c);
   const deExternos = await revisarExternosVencidos(c);
   const deImpactos = await impactosVencidos(c);
+  const deLaRevision = await revisionVencida(c);
   return {
-    avisados: internos.avisados + deExternos.avisados + deImpactos.avisados,
-    escalados: internos.escalados + deExternos.escalados + deImpactos.escalados,
+    avisados: internos.avisados + deExternos.avisados + deImpactos.avisados + deLaRevision.avisados,
+    escalados: internos.escalados + deExternos.escalados + deImpactos.escalados + deLaRevision.escalados,
   };
 }

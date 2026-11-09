@@ -19,6 +19,7 @@ import { aplicarPublicacion } from "@/db/consultas/admin";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { revisarVencimientos } from "@/db/consultas/vencimientos";
 import { registrarVerificacion } from "@/db/consultas/vigencia/externos";
+import { prorrogarRevision } from "@/db/consultas/vigencia/revision-anual";
 import { revisarVencimientosDeVigencia } from "@/db/consultas/vigencia/vencimientos";
 import { asociarProceso, enlazarDocumento } from "@/db/consultas/normograma/asociaciones";
 import { cambiarEstadoNorma } from "@/db/consultas/normograma/normas";
@@ -31,6 +32,8 @@ import {
   enRevisionAbierta,
   externoDePrueba,
   procesoSinLider,
+  revisionDePrueba,
+  silenciarRevisionAnual,
   silenciarVigencia,
   sinFechaDeRevision,
   sinRevisionAbierta,
@@ -62,6 +65,7 @@ async function preparar(tx: TransactionSql): Promise<number> {
   await sinRevisionAbierta(tx);
   await silenciarVigencia(tx);
   await silenciarImpactos(tx);
+  await silenciarRevisionAnual(tx);
   const [{ id }] = await tx`SELECT COALESCE(max(id), 0) AS id FROM notificaciones`;
   return Number(id);
 }
@@ -505,4 +509,75 @@ describe("impactos normativos vencidos", () => {
         `Venció la revisión del impacto de ${n.nombre} en ${proceso.nombre}`,
       ]);
     }));
+});
+
+describe("revisión anual vencida", () => {
+  const avisosRevision = async (tx: TransactionSql, usuarioId: number, desde: number) => [
+    ...(await tx`SELECT tipo, titulo, cuerpo, enlace, entidad, entidad_id FROM notificaciones
+      WHERE usuario_id = ${usuarioId} AND id > ${desde} AND tipo IN ('revision.vencida', 'revision.escalado') ORDER BY id`),
+  ];
+
+  it("por proceso con pendientes, un aviso a su líder con el conteo y sin nombrar documentos; a los días configurados, el escalamiento al jefe sin enlace; prorrogar reinicia las marcas", () =>
+    revertida(sql, async (tx) => {
+      const desde = await preparar(tx);
+      const config = { ...(await obtenerConfigDocumental({ sql: tx })), escalamientoDias: 3 };
+      const admin = await sesionAdmin(tx);
+      const proceso = await procesoSinLider(tx);
+      const jefe = await usuarioDePrueba(tx, { rol: "consulta" });
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [proceso.id], jefeId: jefe.usuarioId });
+      const doc = await vigenteFuera(tx, { fechaAprobacion: "2025-01-10", proceso: proceso.sigla });
+      // Abierta el 10 de enero con siete días de plazo: vence al terminar el 17.
+      const { revisionId } = await revisionDePrueba(tx, admin, { ahora: new Date("2090-01-10T15:00:00Z"), plazoDias: 7 });
+      const el = (dia: number) => new Date(`2090-01-${String(dia).padStart(2, "0")}T15:00:00Z`);
+      const pasada = (dia: number) => revisarVencimientosDeVigencia({ sql: tx, ahora: el(dia), config });
+      const marcas = async () =>
+        (await tx`SELECT aviso_vencido_en, escalado_en FROM revision_anual_procesos WHERE revision_id = ${revisionId} AND proceso_id = ${proceso.id}`)[0];
+      const [{ n }] = await tx`SELECT count(*)::int AS n FROM revision_anual_decisiones rad
+        JOIN documento_proceso dp ON dp.documento_id = rad.documento_id AND dp.es_principal
+        LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
+        WHERE rad.revision_id = ${revisionId} AND rad.decision = 'sin_revisar' AND COALESCE(dp.proceso_id, s.proceso_id) = ${proceso.id}`;
+      try {
+        await pasada(17);
+        expect(await avisosRevision(tx, lider.usuarioId, desde)).toEqual([]);
+
+        // Vencida: los documentos sin decisión y el normograma por confirmar.
+        await pasada(18);
+        const [aviso, ...otros] = await avisosRevision(tx, lider.usuarioId, desde);
+        expect(otros).toEqual([]);
+        expect(aviso).toEqual({
+          tipo: "revision.vencida",
+          titulo: `La revisión anual 2090 venció con ${n + 1} pendientes en ${proceso.nombre}`,
+          cuerpo: "Decida sobre los documentos que faltan y confirme el normograma del proceso.",
+          enlace: `/vigencia/revision-anual?proceso=${proceso.id}`,
+          entidad: "proceso",
+          entidad_id: proceso.id,
+        });
+        expect(`${aviso.titulo} ${aviso.cuerpo}`).not.toContain(doc.codigo);
+        expect(`${aviso.titulo} ${aviso.cuerpo}`).not.toContain(doc.titulo);
+        expect(await marcas()).toEqual({ aviso_vencido_en: el(18), escalado_en: null });
+        expect(await avisosRevision(tx, jefe.usuarioId, desde)).toEqual([]);
+
+        // No se repite, y a los tres días de vencida todavía no escala; a los cuatro (más de tres) escala al jefe, sin enlace.
+        await pasada(20);
+        expect(await avisosRevision(tx, lider.usuarioId, desde)).toHaveLength(1);
+        expect(await avisosRevision(tx, jefe.usuarioId, desde)).toEqual([]);
+        await pasada(21);
+        const delJefe = await avisosRevision(tx, jefe.usuarioId, desde);
+        expect(delJefe).toHaveLength(1);
+        expect(delJefe[0]).toMatchObject({ tipo: "revision.escalado", titulo: `Revisión anual 2090 vencida en ${proceso.nombre}`, enlace: null });
+        expect(delJefe[0].cuerpo).toContain(lider.nombre);
+        expect(`${delJefe[0].titulo} ${delJefe[0].cuerpo}`).not.toContain(doc.codigo);
+        expect((await marcas()).escalado_en).toEqual(el(21));
+
+        // Prorrogar reinicia las marcas: vencida otra vez, avisa otra vez.
+        await prorrogarRevision(admin, { revisionId, dias: 10, motivo: "Se amplía por la auditoría" }, { sql: tx, ahora: el(22) });
+        expect(await marcas()).toEqual({ aviso_vencido_en: null, escalado_en: null });
+        await pasada(28);
+        expect(await avisosRevision(tx, lider.usuarioId, desde)).toHaveLength(2);
+      } finally {
+        await doc.limpiar();
+      }
+    }),
+  // Cada pasada recorre la vigencia de toda la base de desarrollo.
+  30_000);
 });

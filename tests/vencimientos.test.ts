@@ -28,7 +28,7 @@ import { silenciarDistribucion } from "./utiles/distribucion";
 import { opc, sesionAdmin, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 import { silenciarImpactos } from "./utiles/normograma";
-import { silenciarVigencia } from "./utiles/vigencia";
+import { silenciarRevisionAnual, silenciarVigencia } from "./utiles/vigencia";
 
 const sql = obtenerSql();
 
@@ -42,6 +42,7 @@ const silenciarOtros = async (tx: TransactionSql, tramiteId: number) => {
   await silenciarDistribucion(tx);
   await silenciarVigencia(tx);
   await silenciarImpactos(tx);
+  await silenciarRevisionAnual(tx);
 };
 
 const correrEn = (tx: TransactionSql) => (ahora: string) => revisarVencimientos({ sql: tx, ahora: new Date(ahora) });
@@ -261,6 +262,7 @@ describe("revisarVencimientos", () => {
     await silenciarDistribucion(tx);
     await silenciarVigencia(tx);
     await silenciarImpactos(tx);
+    await silenciarRevisionAnual(tx);
     const registro = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.mocked(supervisoresDe).mockRejectedValueOnce(new Error("sin conexión"));
     try {

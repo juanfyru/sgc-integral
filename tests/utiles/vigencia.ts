@@ -5,9 +5,12 @@
 import type { TransactionSql } from "postgres";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { adoptarEdicion, registrarExterno, type DatosExterno } from "@/db/consultas/vigencia/externos";
+import { abrirRevision } from "@/db/consultas/vigencia/revision-anual";
 import type { Verificador } from "@/lib/firma";
 import { resolverRutaAlmacen } from "@/lib/almacen";
+import { fechaEnZona } from "@/lib/tramites/plazos";
 import type { Autoridad } from "@/lib/tramites/tipos";
+import { zonaHoraria } from "@/lib/zona-horaria";
 import { archivoPrincipal, documentoLibre, type DocumentoLibre } from "./tramites";
 
 export type DocumentoVigente = DocumentoLibre & {
@@ -81,6 +84,36 @@ export async function enRevisionAbierta(tx: TransactionSql, d: { id: number; ver
   await tx`INSERT INTO revision_anual_decisiones (revision_id, documento_id, version_id, decision)
     VALUES (${r.id}, ${d.id}, ${d.versionId}, 'sin_revisar')`;
   return Number(r.id);
+}
+
+/**
+ * Abre con `abrirRevision`, dentro de la transacción revertida, la revisión anual del año de `ahora` (plazo 60 días y
+ * ventana de 6 meses si no se dice). Antes cierra la que estuviera abierta: solo puede haber una. El año es el de
+ * `ahora`: los tests usan uno lejano (2090) para no chocar con el de una revisión de la demo, único por año.
+ */
+export async function revisionDePrueba(
+  tx: TransactionSql,
+  admin: SesionFlujo,
+  d: { ahora: Date; plazoDias?: number; ventanaMeses?: number },
+): Promise<{ revisionId: number; anio: number }> {
+  await sinRevisionAbierta(tx);
+  const anio = Number(fechaEnZona(d.ahora, zonaHoraria()).slice(0, 4));
+  const { revisionId } = await abrirRevision(
+    admin,
+    { anio, plazoDias: d.plazoDias ?? 60, ventanaMeses: d.ventanaMeses ?? 6 },
+    { sql: tx, ahora: d.ahora },
+  );
+  return { revisionId, anio };
+}
+
+/**
+ * Marca como avisados y escalados los procesos de la revisión anual abierta que ya hay en la base: la pasada de
+ * vencimientos los recorre y el test cuenta solo lo suyo. Se llama antes de abrir la revisión del test.
+ */
+export async function silenciarRevisionAnual(tx: TransactionSql): Promise<void> {
+  await tx`UPDATE revision_anual_procesos SET aviso_vencido_en = now(), escalado_en = now()
+    WHERE (aviso_vencido_en IS NULL OR escalado_en IS NULL)
+      AND revision_id IN (SELECT id FROM revisiones_anuales WHERE estado = 'abierta')`;
 }
 
 /** El primer proceso activo sin líder activo: sus tareas y avisos de vigencia van a los Admin SGC. */

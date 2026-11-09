@@ -11,6 +11,7 @@ import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { tareasDeImpactos } from "@/db/consultas/normograma/impactos";
 import { listarTramites, type ResumenTramite } from "@/db/consultas/tramites";
 import { esResponsableTecnico } from "@/db/consultas/vigencia/externos";
+import { tareasDeRevision } from "@/db/consultas/vigencia/revision-anual";
 import { vigenciaDePersona, type VigenciaDePersona } from "@/db/consultas/vigencia/tareas";
 import { puede } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -74,8 +75,9 @@ const SIN_VIGENCIA: VigenciaDePersona = { tareas: [], vencidos: 0 };
 /**
  * Los pasos que le tocan a la persona: los trámites (la pestaña «Por hacer» de la bandeja, spec 13A §14.1), las
  * copias, las lecturas por confirmar, las socializaciones por registrar, las verificaciones, los hallazgos, de la
- * vigencia, la adopción de las ediciones nuevas, la verificación de sus externos y la revisión de sus documentos, y los
- * impactos normativos de sus procesos (una consulta acotada, nada para quien no lidera ni es Admin SGC). Con ellas,
+ * vigencia, la adopción de las ediciones nuevas, la verificación de sus externos y la revisión de sus documentos, la de
+ * cada proceso suyo en la revisión anual abierta y los impactos normativos de sus procesos (estas dos, una consulta
+ * acotada cada una, nada para quien no lidera ni es Admin SGC). Con ellas,
  * `vencidos`: la insignia de «Vigencia». La configuración documental se lee una sola vez, y solo si alguna
  * fuente la usa. `responsableTecnico`, si quien llama ya lo sabe (el cascarón).
  */
@@ -90,7 +92,7 @@ export async function misTareas(
   const config = usaConfig ? obtenerConfigDocumental({ sql: opciones?.sql }) : undefined;
   // Quien la espera recibe su rechazo; este `catch` solo evita uno sin atender si ninguna fuente llega a esperarla.
   config?.catch(() => {});
-  const [tramites, copias, acuses, socializacion, verificacion, hallazgos, vigencia, impactos] = await Promise.all([
+  const [tramites, copias, acuses, socializacion, verificacion, hallazgos, vigencia, revision, impactos] = await Promise.all([
     listarTramites(sesion, "por_hacer", fuentes),
     tareasDeCopias(sesion, fuentes),
     tareasDeAcuses(sesion, fuentes),
@@ -102,6 +104,7 @@ export async function misTareas(
       console.error("No se pudo calcular la vigencia de «Mis tareas» y de la insignia:", err);
       return SIN_VIGENCIA;
     }),
+    tareasDeRevision(sesion, fuentes),
     tareasDeImpactos(sesion, fuentes),
   ]);
   const tareas: Tarea[] = [
@@ -119,6 +122,7 @@ export async function misTareas(
     ...verificacion,
     ...hallazgos,
     ...vigencia.tareas,
+    ...revision,
     ...impactos,
   ];
   return { tareas: agruparTareas(tareas), total: tareas.length, vencidos: vigencia.vencidos };

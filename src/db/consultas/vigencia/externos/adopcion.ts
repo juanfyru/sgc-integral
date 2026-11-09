@@ -25,6 +25,7 @@ import {
   type AdopcionValidada,
 } from "./comun";
 import { NO_EXISTE, conRechazoPorHuella, exigirHuellaRegistrada } from "../comun";
+import { registrarDecision } from "../revision-anual/registro";
 
 /**
  * Lo que debe cumplirse para adoptar una edición, sin escribir nada (F13A-R4): un borrador de un externo que la
@@ -59,16 +60,23 @@ export async function validarAdopcion(sql: Cliente, sesion: SesionFlujo, version
 }
 
 /**
- * Lo que la revisión anual hace con una adopción hecha durante su campaña. La llama `adoptarEdicion` dentro de su
- * transacción, después de publicar; la Tarea 10 la llena con la decisión de la campaña.
+ * Lo que la revisión anual hace con una adopción hecha durante su campaña (spec 13C §9.3): «actualizar» con la
+ * verificación «hay una edición nueva» que la pidió, o «revisado recientemente» si no venía de una. La llama
+ * `adoptarEdicion` dentro de su transacción, después de publicar: un externo que entró a la foto con esa publicación ya
+ * tiene su «revisado recientemente» (`alPublicarDuranteRevision`) y aquí no cambia. Sin revisión abierta no hace nada.
  */
 export async function alAdoptar(
   tx: TransactionSql,
   d: { documentoId: number; versionId: number; usuarioId: number; verificacionId: number | null; ahora: Date },
 ): Promise<void> {
-  // Sin campaña que registrar todavía: la decisión automática llega con la revisión anual.
-  void tx;
-  void d;
+  await registrarDecision(tx, {
+    documentoId: d.documentoId,
+    versionId: d.versionId,
+    decision: d.verificacionId === null ? "reciente" : "actualizar",
+    usuarioId: d.usuarioId,
+    verificacionId: d.verificacionId ?? undefined,
+    ahora: d.ahora,
+  });
 }
 
 /**

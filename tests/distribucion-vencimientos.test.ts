@@ -16,7 +16,7 @@ import { revisarVencimientos } from "@/db/consultas/vencimientos";
 import { pdfDePrueba } from "./utiles/pdf";
 import { copiaSobreVigente, puntoDePrueba, silenciarDistribucion } from "./utiles/distribucion";
 import { silenciarImpactos } from "./utiles/normograma";
-import { silenciarVigencia } from "./utiles/vigencia";
+import { silenciarRevisionAnual, silenciarVigencia } from "./utiles/vigencia";
 import { opc, sesionAdmin, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -44,6 +44,7 @@ async function silenciar(tx: TransactionSql) {
   await silenciarDistribucion(tx);
   await silenciarVigencia(tx);
   await silenciarImpactos(tx);
+  await silenciarRevisionAnual(tx);
 }
 
 const correr = (tx: TransactionSql, ahora: string) => revisarVencimientos({ sql: tx, ahora: new Date(ahora) });

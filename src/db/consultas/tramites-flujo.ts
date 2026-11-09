@@ -7,6 +7,8 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { obtenerConfigDocumental, type ConfigDocumental } from "@/db/consultas/config-documental";
 import { registrarFirma } from "@/db/consultas/firmas";
+import { resolverImpacto } from "@/db/consultas/normograma/impactos";
+import { alSolicitar } from "@/db/consultas/vigencia/revision-anual/registro";
 import { alcanceProcesos, enAlcance } from "@/lib/alcance";
 import { verificarParaFirmar, type CredencialesFirma } from "@/lib/firma";
 import { puede } from "@/lib/permisos";
@@ -98,6 +100,10 @@ export type DatosSolicitud = {
   tipoDocumentoId?: number;
   tituloPropuesto?: string;
   documentoId?: number;
+  /** La solicitud nace de una decisión de la revisión anual abierta (spec 13C §9.3). */
+  revisionAnualId?: number;
+  /** La solicitud atiende un impacto normativo, que queda resuelto con ella (spec 13C §10.5). */
+  impactoId?: number;
 };
 
 export type EntradaTransicion = {
@@ -200,6 +206,11 @@ export async function crearSolicitud(
       datos.tipo === "crear" ? await destinoDeCreacion(tx, datos) : await destinoDeDocumento(tx, datos.documentoId);
     if (!enAlcance(await alcanceProcesos(sesion, { sql: tx }), destino.procesoId))
       throw new ErrorTramite("Solo puede pedir sobre los procesos que lidera");
+    // Un formulario viejo no enlaza la solicitud a una revisión ya cerrada.
+    if (datos.revisionAnualId !== undefined) {
+      const [revision] = await tx`SELECT 1 FROM revisiones_anuales WHERE id = ${datos.revisionAnualId} AND estado = 'abierta'`;
+      if (!revision) throw new ErrorTramite("La revisión anual no está abierta");
+    }
 
     // Bajo el candado, dos solicitudes simultáneas no leen el mismo consecutivo.
     await tx`SELECT pg_advisory_xact_lock(hashtext('tramites_numero'))`;
@@ -218,12 +229,14 @@ export async function crearSolicitud(
 
     const [fila] = await tx`INSERT INTO tramites
         (numero, anio, consecutivo, tipo, motivo, justificacion, solicitante_id, proceso_id, subproceso_id,
-         tipo_documento_id, titulo_propuesto, documento_id, etapa, ronda, vence_en, creado_en, actualizado_en)
+         tipo_documento_id, titulo_propuesto, documento_id, etapa, ronda, vence_en, revision_anual_id, impacto_id,
+         creado_en, actualizado_en)
       VALUES
         (${numero}, ${anio}, ${consecutivo}, ${datos.tipo}, ${datos.motivo}, ${datos.justificacion.trim()},
          ${sesion.usuarioId}, ${destino.procesoId}, ${destino.subprocesoId}, ${destino.tipoDocumentoId},
          ${destino.tituloPropuesto}, ${destino.documentoId}, ${etapa}, 0,
-         ${fechaLimite(ahora, config.plazos[etapa], zona)}, ${ahora}, ${ahora})
+         ${fechaLimite(ahora, config.plazos[etapa], zona)}, ${datos.revisionAnualId ?? null}, ${datos.impactoId ?? null},
+         ${ahora}, ${ahora})
       RETURNING id`.catch(traducirChoqueDeAbierto);
     const tramiteId = Number(fila.id);
 
@@ -231,6 +244,14 @@ export async function crearSolicitud(
     await registrarEvento(tx, { ...evento, tipo: "solicitar", usuarioId: sesion.usuarioId });
     if (pideElLider) await registrarEvento(tx, { ...evento, tipo: "visto_bueno_automatico", usuarioId: sesion.usuarioId });
     else if (lideres.length === 0) await registrarEvento(tx, { ...evento, tipo: "visto_bueno_omitido", usuarioId: null });
+    // Con la revisión anual abierta, pedir el cambio o la eliminación de un documento de su foto es su decisión, venga
+    // o no de la página de la campaña; con un impacto, la solicitud lo resuelve (con el permiso de quien pide).
+    if (destino.documentoId !== null) {
+      await alSolicitar(tx, { tipo: datos.tipo, documentoId: destino.documentoId, tramiteId, usuarioId: sesion.usuarioId, ahora });
+    }
+    if (datos.impactoId !== undefined) {
+      await resolverImpacto(sesion, { impactoId: datos.impactoId, resolucion: "solicitud", tramiteId }, { sql: tx, ahora });
+    }
 
     const { codigo, texto } = await rotuloDeTramite(tx, { tipo: datos.tipo, ...destino });
     await registrarAuditoria(tx, {
@@ -238,7 +259,18 @@ export async function crearSolicitud(
       accion: "tramite_solicitar",
       entidad: "tramite",
       entidadId: tramiteId,
-      detalle: { numero, codigo, documentoId: destino.documentoId, de: null, hacia: etapa, ronda: 0, tipo: datos.tipo, motivo: datos.motivo },
+      detalle: {
+        numero,
+        codigo,
+        documentoId: destino.documentoId,
+        de: null,
+        hacia: etapa,
+        ronda: 0,
+        tipo: datos.tipo,
+        motivo: datos.motivo,
+        ...(datos.revisionAnualId === undefined ? {} : { revisionAnualId: datos.revisionAnualId }),
+        ...(datos.impactoId === undefined ? {} : { impactoId: datos.impactoId }),
+      },
     });
     await enviarAvisos(tx, tramiteId, sesion.usuarioId, [
       etapa === "aceptacion"

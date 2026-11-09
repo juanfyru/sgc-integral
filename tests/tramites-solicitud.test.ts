@@ -23,10 +23,14 @@ import {
   transicionar,
   type Manejador,
 } from "@/db/consultas/tramites-flujo";
+import { enlazarDocumento } from "@/db/consultas/normograma/asociaciones";
+import { cambiarEstadoNorma } from "@/db/consultas/normograma/normas";
 import type { Verificador } from "@/lib/firma";
 import type { Accion } from "@/lib/tramites/transiciones";
+import { normaDePrueba } from "./utiles/normograma";
 import { documentoLibre, opc, sesionAdmin, sesionDe, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
+import { revisionDePrueba } from "./utiles/vigencia";
 
 const sql = obtenerSql();
 
@@ -271,6 +275,46 @@ describe("solicitud y visto bueno", () => {
     await Promise.all([primera, segunda]);
     expect(segundaTermino).toBe(true);
   });
+});
+
+describe("la solicitud que nace de un impacto normativo o de la revisión anual", () => {
+  it("con impactoId resuelve el impacto con la solicitud y guarda tramites.impacto_id; uno de otro documento no deja nada", () => revertida(sql, async (tx) => {
+    const admin = await sesionAdmin(tx);
+    const lider = await sesionDe(tx, "lider.gth");
+    const doc = await documentoLibre(tx, { proceso: "GTH", tipo: "PR" });
+    const otro = await documentoLibre(tx, { proceso: "GTH", tipo: "PR" });
+    const n = await normaDePrueba(tx, admin);
+    await enlazarDocumento(admin, { normaId: n.id, documentoId: doc.id }, { sql: tx });
+    const { cambioId } = await cambiarEstadoNorma(admin, { normaId: n.id, estado: "derogada", fecha: "2026-11-01", nota: null }, opc(tx));
+    const [impacto] = await tx`SELECT id FROM impactos_normativos WHERE cambio_id = ${cambioId} AND documento_id = ${doc.id}`;
+    const impactoId = Number(impacto.id);
+    const base = { tipo: "modificar", motivo: "cambio_normativo", justificacion: JUSTIFICACION, impactoId } as const;
+
+    // El impacto es de otro documento: la solicitud no nace.
+    await expect(crearSolicitud(lider, { ...base, documentoId: otro.id }, opc(tx))).rejects.toThrow("La solicitud no es de este documento");
+    expect(await tx`SELECT 1 FROM tramites WHERE documento_id = ${otro.id}`).toHaveLength(0);
+
+    const { tramiteId } = await crearSolicitud(lider, { ...base, documentoId: doc.id }, opc(tx));
+    const [t] = await tx`SELECT impacto_id, revision_anual_id FROM tramites WHERE id = ${tramiteId}`;
+    expect(t).toEqual({ impacto_id: impactoId, revision_anual_id: null });
+    const [i] = await tx`SELECT estado, resolucion, tramite_id, resuelto_por FROM impactos_normativos WHERE id = ${impactoId}`;
+    expect(i).toEqual({ estado: "resuelto", resolucion: "solicitud", tramite_id: tramiteId, resuelto_por: lider.usuarioId });
+  }));
+
+  it("con revisionAnualId exige que esa revisión esté abierta y la guarda", () => revertida(sql, async (tx) => {
+    const admin = await sesionAdmin(tx);
+    const lider = await sesionDe(tx, "lider.gth");
+    const doc = await documentoLibre(tx, { proceso: "GTH", tipo: "PR" });
+    const ahora = new Date("2090-03-10T15:00:00Z");
+    const { revisionId } = await revisionDePrueba(tx, admin, { ahora });
+    const datos = { tipo: "modificar", motivo: "revision_anual", justificacion: JUSTIFICACION, documentoId: doc.id, revisionAnualId: revisionId } as const;
+    await expect(crearSolicitud(lider, { ...datos, revisionAnualId: revisionId + 100_000 }, { sql: tx, ahora })).rejects.toThrow(
+      "La revisión anual no está abierta",
+    );
+    const { tramiteId } = await crearSolicitud(lider, datos, { sql: tx, ahora });
+    const [t] = await tx`SELECT revision_anual_id, impacto_id FROM tramites WHERE id = ${tramiteId}`;
+    expect(t).toEqual({ revision_anual_id: revisionId, impacto_id: null });
+  }));
 });
 
 describe("configuración documental", () => {

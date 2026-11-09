@@ -292,3 +292,21 @@ export function puedeAsociarNorma(sujeto: SujetoVisibilidad, procesoId: number, 
 export function puedeVerImpacto(sujeto: SujetoVisibilidad, procesoId: number, alcance: Alcance): boolean {
   return sujeto.rol === "admin_sgc" || puedeAsociarNorma(sujeto, procesoId, alcance);
 }
+
+/**
+ * Quién ve la revisión anual (spec 13C §9.7): quien tiene `vigencia.ver`. El líder ve solo sus procesos (lo recorta
+ * `alcanceProcesos`); el Admin SGC, Gerencia y Control Interno, toda la campaña.
+ */
+export function puedeVerRevisionAnual(sujeto: SujetoVisibilidad): boolean {
+  return puede(sujeto, "vigencia.ver");
+}
+
+/** Quién decide en la revisión anual sobre los documentos de un proceso y confirma su normograma (spec 13C §9.3 y §9.4). */
+export function puedeDecidirEn(sujeto: SujetoVisibilidad, procesoId: number, alcance: Alcance): boolean {
+  return puede(sujeto, "revision_anual.decidir") && enAlcance(alcance, procesoId);
+}
+
+/** El informe institucional de la revisión anual nombra documentos restringidos: lo ven los roles que los ven. */
+export function puedeVerInformeAnual(sujeto: SujetoVisibilidad): boolean {
+  return ROLES_VEN_RESTRINGIDO.includes(sujeto.rol);
+}

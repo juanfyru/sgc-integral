@@ -23,6 +23,7 @@ import {
   type Situacion,
 } from "./comun";
 import { NO_EXISTE } from "../comun";
+import { registrarDecision, revisionQueIncluye } from "../revision-anual/registro";
 
 /**
  * El retiro dentro de una transacción ya abierta, con el externo bloqueado. Quien llama ya decidió quién puede:
@@ -37,6 +38,15 @@ async function retirarEn(
 ): Promise<void> {
   if (s.retirado) throw new ErrorVigencia(RETIRADO);
   if (!s.vigente) throw new ErrorVigencia(SIN_VIGENTE);
+  // En la revisión anual, retirar un externo es su decisión «eliminar», con la verificación que lo constató si la hay.
+  await registrarDecision(tx, {
+    documentoId: s.documentoId,
+    versionId: s.vigente.id,
+    decision: "eliminar",
+    usuarioId: sesion.usuarioId,
+    verificacionId: d.verificacionId ?? undefined,
+    ahora,
+  });
   if (s.borrador) await tx`UPDATE documento_versiones SET estado = 'descartado' WHERE id = ${s.borrador.id} AND estado = 'borrador'`;
   const { numero } = await anularVigenteEn(tx, s.documentoId, sesion.usuarioId, ahora, "retirado");
   await tx`UPDATE externos SET edicion_nueva_pendiente_desde = NULL, aviso_vencido_en = NULL, escalado_en = NULL
@@ -89,13 +99,27 @@ export async function registrarVerificacion(
       const [revision] = await tx`SELECT 1 FROM revisiones_anuales WHERE id = ${d.revisionAnualId} AND estado = 'abierta'`;
       if (!revision) throw new ErrorVigencia("La revisión anual no está abierta");
     }
+    // Hecha durante la revisión anual que incluye al externo, desde su página o desde la campaña, queda enlazada a ella.
+    const revisionAnualId = d.revisionAnualId ?? (await revisionQueIncluye(tx, s.documentoId));
 
     const [fila] = await tx`INSERT INTO externo_verificaciones
         (documento_id, version_id, usuario_id, resultado, fuente_consultada, nota, revision_anual_id, impacto_id, creado_en)
       VALUES (${s.documentoId}, ${s.vigente.id}, ${sesion.usuarioId}, ${d.resultado}, ${fuente}, ${nota},
-              ${d.revisionAnualId ?? null}, ${d.impactoId ?? null}, ${ahora})
+              ${revisionAnualId}, ${d.impactoId ?? null}, ${ahora})
       RETURNING id`;
     const verificacionId = Number(fila.id);
+    // Su decisión en la revisión anual (spec 13C §9.3): «sigue vigente» es ratificar y «hay una edición nueva», actualizar;
+    // «fue retirado» es eliminar, y la registra el retiro.
+    if (d.resultado !== "retirado") {
+      await registrarDecision(tx, {
+        documentoId: s.documentoId,
+        versionId: s.vigente.id,
+        decision: d.resultado === "vigente" ? "ratificar" : "actualizar",
+        usuarioId: sesion.usuarioId,
+        verificacionId,
+        ahora,
+      });
+    }
     // La verificación pedida desde un impacto normativo lo resuelve en esta misma transacción (spec 13C §10.5).
     if (d.impactoId !== undefined) {
       await resolverImpactoPorVerificacion(tx, sesion.usuarioId, { impactoId: d.impactoId, verificacionId }, ahora);
@@ -143,7 +167,7 @@ export async function registrarVerificacion(
         resultado: d.resultado,
         fuente,
         nota,
-        revisionAnualId: d.revisionAnualId ?? null,
+        revisionAnualId,
         impactoId: d.impactoId ?? null,
       },
     });

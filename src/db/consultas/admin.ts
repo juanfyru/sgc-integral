@@ -21,6 +21,7 @@ import { obtenerConfigDocumental } from "./config-documental";
 import { ErrorTramite, enTransaccion } from "./flujo/contrato";
 import { EXTERNO_CONSERVA_TIPO, exigirInterno, exigirQueElResponsableTecnicoLoVea, exigirTipoDeInterno } from "./origen";
 import { vigenciaEnLista, vigenciaPorDocumento, type VigenciaEnLista } from "./vigencia/fragmentos";
+import { alPublicarDuranteRevision } from "./vigencia/revision-anual/registro";
 
 type Cliente = Sql | TransactionSql;
 
@@ -641,6 +642,8 @@ export async function aplicarPublicacion(
   await tx`UPDATE documentos SET actualizado_en = ${ahora}, proxima_revision_fijada = NULL, fijada_por = NULL, fijada_en = NULL,
       fijada_nota = NULL, revision_aviso_en = NULL, revision_escalado_en = NULL
     WHERE id = ${documentoId}`;
+  // Con la revisión anual abierta, lo que entra a la foto al publicarse queda «revisado recientemente» (spec 13C §9.1).
+  await alPublicarDuranteRevision(tx, documentoId, versionId, ahora);
   const obsoletas = anteriores.map((a) => a.numero as number);
   await registrarAuditoria(tx, {
     usuarioId, accion: "publicar_version", entidad: "documento_version",

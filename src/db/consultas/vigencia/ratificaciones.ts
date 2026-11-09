@@ -16,6 +16,7 @@ import { sumarMeses } from "@/lib/vigencia/plazo";
 import { ErrorVigencia } from "@/lib/vigencia/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { NO_COINCIDE, NO_EXISTE, conRechazoPorHuella, exigirHuellaRegistrada } from "./comun";
+import { registrarDecision, revisionQueIncluye } from "./revision-anual/registro";
 
 export type Ratificacion = {
   id: number;
@@ -81,16 +82,22 @@ export async function validarRatificacion(sql: Cliente, sesion: SesionFlujo, doc
 }
 
 /**
- * Lo que la revisión anual hace con una ratificación hecha durante su campaña. La llama `ratificar` dentro de
- * su transacción, después de insertar la fila; la Tarea 10 la llena con `registrarDecision`.
+ * Lo que la revisión anual hace con una ratificación hecha durante su campaña, desde su página, la ficha o el Semáforo:
+ * la decisión «ratificar» a nombre de quien firmó, aunque no tenga `revision_anual.decidir` (spec 13C §9.3). La llama
+ * `ratificar` dentro de su transacción, después de insertar la fila. Sin revisión abierta no hace nada.
  */
 export async function alRatificar(
   tx: TransactionSql,
   d: { documentoId: number; versionId: number; ratificacionId: number; usuarioId: number; ahora: Date },
 ): Promise<void> {
-  // Sin campaña que registrar todavía: la decisión automática llega con la revisión anual.
-  void tx;
-  void d;
+  await registrarDecision(tx, {
+    documentoId: d.documentoId,
+    versionId: d.versionId,
+    decision: "ratificar",
+    usuarioId: d.usuarioId,
+    ratificacionId: d.ratificacionId,
+    ahora: d.ahora,
+  });
 }
 
 /**
@@ -137,8 +144,10 @@ export async function ratificar(
         contexto,
         ahora,
       });
+      // Hecha durante la revisión anual que incluye al documento, la ratificación queda enlazada a ella.
+      const revisionAnualId = await revisionQueIncluye(tx, d.documentoId);
       const [fila] = await tx`INSERT INTO ratificaciones (version_id, firma_id, nota, proxima_revision, revision_anual_id, creado_en)
-        VALUES (${v.versionId}, ${firmaId}, ${nota}, ${proxima}, NULL, ${ahora})
+        VALUES (${v.versionId}, ${firmaId}, ${nota}, ${proxima}, ${revisionAnualId}, ${ahora})
         RETURNING id`;
       const ratificacionId = Number(fila.id);
       await alRatificar(tx, { documentoId: d.documentoId, versionId: v.versionId, ratificacionId, usuarioId: sesion.usuarioId, ahora });
