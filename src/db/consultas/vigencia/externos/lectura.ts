@@ -1,21 +1,25 @@
 /** La lectura de los externos: su página de control, la matriz y los archivos de la edición (spec 13C §8.6 y §8.8). */
 import { obtenerSql, type Cliente } from "@/db/cliente";
+import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import type { ArchivoFicha } from "@/db/consultas/documentos";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { alcanceProcesos, filtroAcceso, filtroAccesoDe, puedeGestionarExterno, puedeVerExterno } from "@/lib/alcance";
+import { alcanceProcesos, enAlcance, filtroAcceso, filtroAccesoDe, puedeGestionarExterno, puedeVerExterno } from "@/lib/alcance";
 import { puede } from "@/lib/permisos";
 import { ROLES_ARCHIVO_LISTA } from "@/lib/subida";
+import { SIN_EDICION_ADOPTADA } from "@/lib/vigencia/semaforo";
 import type { ResultadoVerificacion } from "@/lib/vigencia/tipos";
 import {
   leerSituacion,
   normaEnlazada,
   type DestinoDeEdicion,
   type Externo,
+  type FichaExterno,
   type FilaExterno,
   type FiltroExternos,
+  type OpcionesDeExterno,
   type Opciones,
 } from "./comun";
-import { vigenciaPorDocumento } from "../fragmentos";
+import { vigenciaEnLista, vigenciaPorDocumento } from "../fragmentos";
 
 const SIN_VIGENCIA: Externo["vigencia"] = { estado: "atencion", dias: null, proxima: null };
 const ESTADOS_COPIA_VIVA = ["emitida", "recibida", "por_recoger"];
@@ -60,7 +64,7 @@ export async function obtenerExterno(documentoId: number, sesion: SesionFlujo, o
   const borrador = versiones.find((v) => v.estado === "borrador");
   const activo = !versiones.some((v) => v.estado === "anulado");
   const archivos = gestiona && borrador
-    ? await sql`SELECT id, rol, nombre_original, extension, mime, tamano_bytes FROM archivos
+    ? await sql`SELECT id, rol, nombre_original, extension, mime, tamano_bytes, hash_sha256 FROM archivos
         WHERE version_id = ${borrador.id} AND rol = ANY(${ROLES_ARCHIVO_LISTA}) ORDER BY id`
     : [];
   const fila = vigente ? (await vigenciaPorDocumento(sql, [documentoId], ahora)).get(documentoId) : undefined;
@@ -98,6 +102,7 @@ export async function obtenerExterno(documentoId: number, sesion: SesionFlujo, o
           edicion: (borrador.edicion_externa as string | null) ?? "",
           fechaEdicion: (borrador.fecha_edicion as string | null) ?? null,
           resumenCambios: (borrador.resumen_cambios as string | null) ?? null,
+          huella: (archivos.find((a) => a.rol === "principal")?.hash_sha256 as string | null | undefined) ?? null,
           archivos: archivos.map((a) => ({
             id: Number(a.id),
             rol: a.rol as ArchivoFicha["rol"],
@@ -126,6 +131,8 @@ export async function obtenerExterno(documentoId: number, sesion: SesionFlujo, o
       version: v.numero as number,
     })),
     vigencia: fila ? { ...fila.vigencia, proxima: fila.proximaRevision } : SIN_VIGENCIA,
+    impacto: fila?.impacto ? { norma: fila.impacto.norma } : null,
+    retirado: !activo,
     acciones: {
       editar: gestiona && activo,
       abrirEdicion: gestiona && activo && !borrador,
@@ -158,8 +165,12 @@ export async function listarExternos(sesion: SesionFlujo, filtro: FiltroExternos
   const patron = q ? `%${escaparLike(q)}%` : null;
   const filas = await sql`
     SELECT d.id, d.codigo, d.titulo, p.id AS proceso_id, p.nombre AS proceso_nombre, p.sigla AS proceso_sigla,
-      ex.entidad_emisora, ru.nombre AS responsable, v.id AS version_id, v.edicion_externa, v.publicado_en,
+      ex.entidad_emisora, ex.titulo_original, ex.fuente_oficial, ru.nombre AS responsable,
+      v.id AS version_id, v.edicion_externa, v.publicado_en,
       uv.creado_en AS verificado_en, uv.resultado, uv.nombre AS verifico,
+      (SELECT concat_ws(' ', tn.nombre, n.numero, 'de', n.anio::text)
+        FROM norma_documentos nd JOIN normas n ON n.id = nd.norma_id JOIN tipos_norma tn ON tn.id = n.tipo_norma_id
+        WHERE nd.documento_id = d.id ORDER BY nd.id LIMIT 1) AS norma,
       (SELECT count(*)::int FROM copias_controladas cc JOIN documento_versiones cv ON cv.id = cc.version_id
         WHERE cv.documento_id = d.id AND cc.estado IN ${sql(ESTADOS_COPIA_VIVA)}) AS copias_vivas
     FROM documentos d
@@ -197,6 +208,8 @@ export async function listarExternos(sesion: SesionFlujo, filtro: FiltroExternos
       titulo: f.titulo as string,
       proceso: { id: Number(f.proceso_id), nombre: f.proceso_nombre as string, sigla: f.proceso_sigla as string },
       vigencia: v ? { ...v.vigencia, proxima: v.proximaRevision } : SIN_VIGENCIA,
+      impacto: v?.impacto ? { norma: v.impacto.norma } : null,
+      tituloOriginal: (f.titulo_original as string | null) ?? null,
       emisor: f.entidad_emisora as string,
       edicion: (f.edicion_externa as string | null) ?? null,
       adoptadaEn: f.publicado_en === null ? null : new Date(f.publicado_en as string),
@@ -206,7 +219,10 @@ export async function listarExternos(sesion: SesionFlujo, filtro: FiltroExternos
           : { fecha: new Date(f.verificado_en as string), resultado: f.resultado as ResultadoVerificacion, nombre: f.verifico as string },
       proximaVerificacion: v?.proximaRevision ?? null,
       responsable: f.responsable as string,
+      fuenteOficial: (f.fuente_oficial as string | null) ?? null,
+      norma: (f.norma as string | null) ?? null,
       copiasVivas: Number(f.copias_vivas),
+      edicionPendiente: v?.edicionPendiente ?? null,
     };
   });
   const estado = filtro.estado ?? "todos";
@@ -225,6 +241,105 @@ export async function esResponsableTecnico(usuarioId: number, opciones?: { sql?:
         AND NOT EXISTS (SELECT 1 FROM documento_versiones x WHERE x.documento_id = d.id AND x.estado = 'anulado')
     ) AS es`;
   return f.es as boolean;
+}
+
+/**
+ * El bloque «Documento externo» de la ficha (spec 13C §14.4), para quien ve el documento (`filtroAcceso`): sus datos de
+ * control, la edición adoptada y su verificación. Uno sin edición adoptada solo existe para quien llega a su página de
+ * control: la ficha de lectura no existe sin vigente. null si no es un externo o la persona no lo ve.
+ */
+export async function fichaDeExterno(documentoId: number, sesion: SesionFlujo, opciones?: Opciones): Promise<FichaExterno | null> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const ahora = opciones?.ahora ?? new Date();
+  const [f] = await sql`
+    SELECT d.id, d.codigo, ex.entidad_emisora, ex.titulo_original, ex.fuente_oficial, ex.verificacion_meses, ru.nombre AS responsable,
+      v.id AS version_id, v.numero, v.edicion_externa, v.fecha_edicion_externa::text AS fecha_edicion, v.publicado_en, v.aprobo,
+      (SELECT fi.nombre_firmante FROM firmas fi WHERE fi.version_id = v.id AND fi.firma = 'adopto' ORDER BY fi.id DESC LIMIT 1) AS adopto,
+      uv.creado_en AS verificado_en, uv.resultado, uv.nombre AS verifico
+    FROM documentos d
+    JOIN externos ex ON ex.documento_id = d.id
+    JOIN usuarios ru ON ru.id = ex.responsable_id
+    LEFT JOIN documento_versiones v ON v.documento_id = d.id AND v.estado = 'vigente'
+    LEFT JOIN LATERAL (
+      SELECT ev.creado_en, ev.resultado, u.nombre
+      FROM externo_verificaciones ev JOIN usuarios u ON u.id = ev.usuario_id
+      WHERE ev.version_id = v.id
+      ORDER BY ev.creado_en DESC, ev.id DESC LIMIT 1
+    ) uv ON true
+    WHERE d.id = ${documentoId} AND d.origen = 'externo' AND ${filtroAcceso(sql, sesion)}`;
+  if (!f) return null;
+  const gestionable = await puedeVerExterno(documentoId, sesion, { sql });
+  if (f.version_id === null && !gestionable) return null;
+
+  const fila = f.version_id === null ? undefined : (await vigenciaPorDocumento(sql, [documentoId], ahora)).get(documentoId);
+  const norma = await normaEnlazada(sql, documentoId);
+  return {
+    documentoId,
+    codigo: f.codigo as string,
+    emisor: f.entidad_emisora as string,
+    tituloOriginal: (f.titulo_original as string | null) ?? null,
+    fuenteOficial: (f.fuente_oficial as string | null) ?? null,
+    responsable: f.responsable as string,
+    verificacionMeses: Number(f.verificacion_meses),
+    norma: norma?.nombre ?? null,
+    vigente:
+      f.version_id === null
+        ? null
+        : {
+            numero: f.numero as number,
+            edicion: (f.edicion_externa as string | null) ?? "",
+            fechaEdicion: (f.fecha_edicion as string | null) ?? null,
+            adoptadaEn: new Date(f.publicado_en as string),
+            adoptoPor: ((f.adopto ?? f.aprobo) as string | null) ?? "",
+          },
+    ultimaVerificacion:
+      f.verificado_en === null
+        ? null
+        : { fecha: new Date(f.verificado_en as string), resultado: f.resultado as ResultadoVerificacion, nombre: f.verifico as string },
+    vigencia: fila
+      ? { ...vigenciaEnLista(fila), proxima: fila.proximaRevision }
+      : { estado: "atencion", dias: null, texto: SIN_EDICION_ADOPTADA, proxima: null },
+    gestionable,
+  };
+}
+
+/**
+ * Lo que el alta de un externo y la edición de sus datos de control ofrecen (spec 13C §8.2): los procesos del alcance
+ * de quien registra con su líder (el responsable técnico por defecto), todos los procesos activos para «también
+ * aplica en», las personas activas y las normas. Un responsable que no ve un restringido lo rechaza el dominio.
+ */
+export async function opcionesDeExterno(sesion: SesionFlujo, opciones?: { sql?: Cliente }): Promise<OpcionesDeExterno> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [procesos, personas, normas, alcance, config] = await Promise.all([
+    sql`
+      SELECT p.id, p.nombre, p.sigla,
+        coalesce((SELECT json_agg(json_build_object('id', s.id, 'nombre', s.nombre) ORDER BY s.orden, s.id)
+          FROM subprocesos s WHERE s.proceso_id = p.id AND s.activo), '[]') AS subprocesos,
+        (SELECT u.id FROM usuario_procesos up JOIN usuarios u ON u.id = up.usuario_id AND u.activo AND u.rol = 'lider_proceso'
+          WHERE up.proceso_id = p.id ORDER BY u.nombre, u.id LIMIT 1) AS lider_id
+      FROM procesos p WHERE p.activo ORDER BY p.nombre`,
+    sql`SELECT u.id, u.nombre, c.nombre AS cargo FROM usuarios u LEFT JOIN cargos c ON c.id = u.cargo_id
+      WHERE u.activo ORDER BY u.nombre, u.id`,
+    sql`SELECT n.id, concat_ws(' ', tn.nombre, n.numero, 'de', n.anio::text) AS nombre
+      FROM normas n JOIN tipos_norma tn ON tn.id = n.tipo_norma_id
+      ORDER BY n.anio DESC, tn.orden, n.numero`,
+    alcanceProcesos(sesion, { sql }),
+    obtenerConfigDocumental({ sql }),
+  ]);
+  const todos = procesos.map((p) => ({
+    id: Number(p.id),
+    nombre: p.nombre as string,
+    sigla: p.sigla as string,
+    subprocesos: (p.subprocesos as { id: number; nombre: string }[]).map((s) => ({ id: Number(s.id), nombre: s.nombre })),
+    liderId: p.lider_id === null ? null : Number(p.lider_id),
+  }));
+  return {
+    procesos: todos.filter((p) => enAlcance(alcance, p.id)),
+    todos: todos.map(({ id, nombre, subprocesos }) => ({ id, nombre, subprocesos })),
+    personas: personas.map((u) => ({ id: Number(u.id), nombre: u.nombre as string, cargo: (u.cargo as string | null) ?? null })),
+    normas: normas.map((n) => ({ id: Number(n.id), nombre: n.nombre as string })),
+    verificacionMeses: config.vigencia.externosVerificacionMeses,
+  };
 }
 
 // ── Archivos de la edición en borrador ──

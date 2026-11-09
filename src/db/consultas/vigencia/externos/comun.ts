@@ -71,6 +71,8 @@ export type Externo = {
     edicion: string;
     fechaEdicion: string | null;
     resumenCambios: string | null;
+    /** La huella del principal, la que firma la adopción; sin principal, la firma lleva la de los datos. */
+    huella: string | null;
     archivos: ArchivoFicha[];
   } | null;
   /** Las ediciones adoptadas, de la más reciente a la más antigua: la vigente, las obsoletas y la retirada. */
@@ -78,17 +80,59 @@ export type Externo = {
   verificaciones: Verificacion[];
   /** Sin edición adoptada no hay fecha de verificación: atención, sin días (resolución 7). */
   vigencia: { estado: EstadoVigencia; dias: number | null; proxima: Date | null };
+  /** El impacto normativo pendiente sobre la edición vigente: también lo pone en atención. */
+  impacto: { norma: string } | null;
+  /** Salió por retiro (una versión anulada): no vuelve, y no admite más acciones (spec 13C §8.5). */
+  retirado: boolean;
   acciones: { editar: boolean; abrirEdicion: boolean; adoptar: boolean; verificar: boolean; retirar: boolean };
 };
 
-export type FilaExterno = Pick<Externo, "documentoId" | "codigo" | "titulo" | "proceso" | "vigencia"> & {
+/** Una fila de la matriz SGC-MZ-03 (spec 13C §8.6): lo que pinta la pantalla y lo que lleva el Excel. */
+export type FilaExterno = Pick<Externo, "documentoId" | "codigo" | "titulo" | "proceso" | "vigencia" | "impacto"> & {
+  tituloOriginal: string | null;
   emisor: string;
   edicion: string | null;
   adoptadaEn: Date | null;
   ultimaVerificacion: { fecha: Date; resultado: ResultadoVerificacion; nombre: string } | null;
   proximaVerificacion: Date | null;
   responsable: string;
+  fuenteOficial: string | null;
+  /** La norma enlazada (la primera de `norma_documentos`). */
+  norma: string | null;
   copiasVivas: number;
+  /** Una verificación «hay una edición nueva» aún sin adoptar: sale en atención con su leyenda. */
+  edicionPendiente: { desde: Date } | null;
+};
+
+/**
+ * El bloque «Documento externo» de la ficha (spec 13C §14.4): lo ve quien ve el documento. `gestionable` dice si la
+ * persona llega a su página de control (`puedeVerExterno`).
+ */
+export type FichaExterno = {
+  documentoId: number;
+  codigo: string;
+  emisor: string;
+  tituloOriginal: string | null;
+  fuenteOficial: string | null;
+  responsable: string;
+  verificacionMeses: number;
+  norma: string | null;
+  vigente: { numero: number; edicion: string; fechaEdicion: string | null; adoptadaEn: Date; adoptoPor: string } | null;
+  ultimaVerificacion: { fecha: Date; resultado: ResultadoVerificacion; nombre: string } | null;
+  vigencia: { estado: EstadoVigencia; dias: number | null; texto: string; proxima: Date | null };
+  gestionable: boolean;
+};
+
+/** Lo que el alta y la edición de los datos de control ofrecen para elegir. */
+export type OpcionesDeExterno = {
+  /** Los procesos donde la persona puede registrar (su alcance), con su líder: el responsable técnico por defecto. */
+  procesos: { id: number; nombre: string; sigla: string; subprocesos: { id: number; nombre: string }[]; liderId: number | null }[];
+  /** Todos los procesos activos, para «también aplica en». */
+  todos: { id: number; nombre: string; subprocesos: { id: number; nombre: string }[] }[];
+  personas: { id: number; nombre: string; cargo: string | null }[];
+  normas: { id: number; nombre: string }[];
+  /** La periodicidad de verificación por defecto de la configuración documental. */
+  verificacionMeses: number;
 };
 
 export type FiltroExternos = { estado?: EstadoVigencia | "todos"; procesoId?: number; responsableId?: number; q?: string };

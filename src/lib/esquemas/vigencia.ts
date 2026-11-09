@@ -95,10 +95,16 @@ export const EsquemaControlExterno = z
 
 /**
  * Abrir o corregir una edición; el `id` de la ruta (documento o versión) se lee aparte con `idNumerico`. «Qué cambió»
- * puede faltar: el dominio lo exige cuando ya hay una edición vigente.
+ * puede faltar, y uno de solo espacios es vacío: el dominio lo exige cuando ya hay una edición vigente.
  */
 export const EsquemaEdicion = z
-  .object({ ...edicion, resumenCambios: textoAcotado("Qué cambió", 5, 2000).optional().transform((v) => v ?? null) })
+  .object({
+    ...edicion,
+    resumenCambios: opcional("Qué cambió", 2000).refine(
+      (v) => v === null || v.length >= 5,
+      "Qué cambió debe tener al menos 5 caracteres",
+    ),
+  })
   .strict();
 
 export const EsquemaAdoptar = z

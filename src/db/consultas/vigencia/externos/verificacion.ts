@@ -55,9 +55,9 @@ async function retirarEn(
 
 /**
  * Registra la verificación de vigencia (spec 13C §8.4), sin clave: la hace el responsable técnico o quien gestiona
- * el externo. Sigue vigente: la próxima verificación cuenta desde hoy. Edición nueva: queda la marca pendiente y, si
- * quien verifica no gestiona, se avisa a quienes pueden adoptarla. Retirado: el externo se retira en la misma
- * transacción.
+ * el externo. Sigue vigente: la próxima verificación cuenta desde hoy y se borra la marca de edición nueva pendiente.
+ * Edición nueva: queda la marca pendiente y, si quien verifica no gestiona, se avisa a quienes pueden adoptarla.
+ * Retirado: el externo se retira en la misma transacción.
  */
 export async function registrarVerificacion(
   sesion: SesionFlujo,
@@ -97,9 +97,13 @@ export async function registrarVerificacion(
 
     if (d.resultado !== "retirado") {
       // Toda verificación reinicia el reloj (la fecha base es la última): los avisos vuelven a empezar (spec 13C §13.3).
-      // La edición nueva pendiente conserva desde cuándo lo está: de ahí cuenta la tarea de adoptarla.
-      await tx`UPDATE externos SET aviso_vencido_en = NULL, escalado_en = NULL
-          ${d.resultado === "edicion_nueva" ? tx`, edicion_nueva_pendiente_desde = COALESCE(edicion_nueva_pendiente_desde, ${ahora})` : tx``}
+      // La edición nueva pendiente conserva desde cuándo lo está: de ahí cuenta la tarea de adoptarla. Una «sigue
+      // vigente» posterior la borra: manda la evidencia más reciente, y una falsa alarma no deja al externo en atención.
+      const pendiente =
+        d.resultado === "edicion_nueva"
+          ? tx`COALESCE(edicion_nueva_pendiente_desde, ${ahora})`
+          : tx`NULL`;
+      await tx`UPDATE externos SET aviso_vencido_en = NULL, escalado_en = NULL, edicion_nueva_pendiente_desde = ${pendiente}
         WHERE documento_id = ${s.documentoId}`;
     }
     if (d.resultado === "edicion_nueva") {

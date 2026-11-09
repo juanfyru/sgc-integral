@@ -95,12 +95,14 @@ export async function procesoSinLider(tx: TransactionSql): Promise<{ id: number;
 }
 
 /**
- * Marca como avisados y escalados los documentos que ya hay en la base: la pasada de vencimientos los recorre
- * todos y el test cuenta solo los suyos. Se llama antes de crear los documentos del test.
+ * Marca como avisados y escalados los documentos y los externos que ya hay en la base: la pasada de vencimientos
+ * los recorre todos y el test cuenta solo los suyos. Se llama antes de crear los documentos del test.
  */
 export async function silenciarVigencia(tx: TransactionSql): Promise<void> {
   await tx`UPDATE documentos SET revision_aviso_en = now(), revision_escalado_en = now()
     WHERE revision_aviso_en IS NULL OR revision_escalado_en IS NULL`;
+  await tx`UPDATE externos SET aviso_vencido_en = now(), escalado_en = now()
+    WHERE aviso_vencido_en IS NULL OR escalado_en IS NULL`;
 }
 
 /**

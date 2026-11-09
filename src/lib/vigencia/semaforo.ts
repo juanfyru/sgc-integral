@@ -81,3 +81,17 @@ export function textoVigenciaDeFila(f: {
     edicionPendiente: f.edicionPendiente != null,
   });
 }
+
+/** El chip de un externo que aún no tiene una edición adoptada: no hay desde cuándo contar su verificación. */
+export const SIN_EDICION_ADOPTADA = `${ETIQUETA_VIGENCIA.atencion} · sin edición adoptada`;
+
+/** El texto del chip de un externo en la matriz y en su página: el del semáforo, o «sin edición adoptada». */
+export function textoVigenciaDeExterno(f: {
+  adoptado: boolean;
+  vigencia: { estado: EstadoVigencia; dias: number | null };
+  impacto: { norma: string } | null;
+  edicionPendiente: { desde: Date } | null;
+}): string {
+  if (!f.adoptado) return SIN_EDICION_ADOPTADA;
+  return textoVigenciaDeFila({ vigencia: f.vigencia, tramite: null, impacto: f.impacto, edicionPendiente: f.edicionPendiente });
+}

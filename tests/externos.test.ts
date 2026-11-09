@@ -958,6 +958,12 @@ describe("esquemas de los externos", () => {
     expect(() => parsearFormulario(formulario([["edicion", "2017"], ["resumenCambios", "poco"]]), EsquemaEdicion)).toThrow(
       "Qué cambió debe tener al menos 5 caracteres",
     );
+    // Un «qué cambió» de solo espacios es vacío: la primera edición no lo exige (resolución 15 de la Tarea 7).
+    expect(parsearFormulario(formulario([["edicion", "2017"], ["resumenCambios", "   "]]), EsquemaEdicion)).toEqual({
+      edicion: "2017",
+      fechaEdicion: null,
+      resumenCambios: null,
+    });
     expect(parsearFormulario(formulario([["versionId", "5"], ["pedirAcuses", "on"], ["clave", " ok "]]), EsquemaAdoptar)).toEqual({
       versionId: 5,
       pedirAcuses: "on",

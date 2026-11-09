@@ -8,7 +8,7 @@ import {
 } from "@/db/consultas/distribucion/tareas";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { listarTramites, type ResumenTramite } from "@/db/consultas/tramites";
-import { tareasDeVigencia } from "@/db/consultas/vigencia/tareas";
+import { tareasDeAdopcion, tareasDeExternos, tareasDeVigencia } from "@/db/consultas/vigencia/tareas";
 import { zonaHoraria } from "@/lib/zona-horaria";
 
 export type Tarea = {
@@ -67,14 +67,14 @@ export function agruparTareas(tareas: Tarea[], umbral = 5): Tarea[] {
 
 /**
  * Los pasos que le tocan a la persona: los trámites (la pestaña «Por hacer» de la bandeja, spec 13A §14.1), las
- * copias, las lecturas por confirmar, las socializaciones por registrar, las verificaciones, los hallazgos y la
- * revisión de la vigencia de sus documentos.
+ * copias, las lecturas por confirmar, las socializaciones por registrar, las verificaciones, los hallazgos, la
+ * revisión de la vigencia de sus documentos, la verificación de sus externos y la adopción de sus ediciones nuevas.
  */
 export async function misTareas(
   sesion: SesionFlujo,
   opciones?: { sql?: Cliente; ahora?: Date },
 ): Promise<{ tareas: Tarea[]; total: number }> {
-  const [tramites, copias, acuses, socializacion, verificacion, hallazgos, vigencia] = await Promise.all([
+  const [tramites, copias, acuses, socializacion, verificacion, hallazgos, vigencia, externos, adopcion] = await Promise.all([
     listarTramites(sesion, "por_hacer", opciones),
     tareasDeCopias(sesion, opciones),
     tareasDeAcuses(sesion, opciones),
@@ -82,6 +82,8 @@ export async function misTareas(
     tareasDeVerificacion(sesion, opciones),
     tareasDeHallazgos(sesion, opciones),
     tareasDeVigencia(sesion, opciones),
+    tareasDeExternos(sesion, opciones),
+    tareasDeAdopcion(sesion, opciones),
   ]);
   const tareas: Tarea[] = [
     ...tramites.map((t) => ({
@@ -98,6 +100,8 @@ export async function misTareas(
     ...verificacion,
     ...hallazgos,
     ...vigencia,
+    ...externos,
+    ...adopcion,
   ];
   return { tareas: agruparTareas(tareas), total: tareas.length };
 }

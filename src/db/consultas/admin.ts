@@ -982,6 +982,8 @@ export type VersionAdmin = {
 
 export type DocumentoAdmin = {
   id: number; codigo: string; titulo: string; tipoId: number; tipoNombre: string;
+  /** Un externo se gestiona desde Vigencia → Externos: el panel no le ofrece los caminos de versión (spec 13C §8.1). */
+  origen: "interno" | "externo";
   descripcion: string | null; palabrasClave: string | null;
   nivelAcceso: "general" | "restringido";
   asociaciones: Array<{ procesoId: number | null; subprocesoId: number | null; nombre: string; esPrincipal: boolean }>;
@@ -1003,7 +1005,7 @@ export async function obtenerDocumentoAdmin(
   const sql = opciones?.sql ?? obtenerSql();
   const administra = puede(sujeto, "documentos.administrar");
   const [doc] = await sql`SELECT d.id, d.codigo, d.titulo, d.tipo_id, t.nombre AS tipo_nombre,
-      d.descripcion, d.palabras_clave, d.nivel_acceso
+      d.descripcion, d.palabras_clave, d.nivel_acceso, d.origen
     FROM documentos d JOIN tipos_documento t ON t.id = d.tipo_id
     WHERE d.codigo = ${codigo} AND ${filtroAcceso(sql, sujeto)}`;
   if (!doc) return null;
@@ -1046,7 +1048,7 @@ export async function obtenerDocumentoAdmin(
 
   return {
     id: doc.id, codigo: doc.codigo, titulo: doc.titulo, tipoId: doc.tipo_id,
-    tipoNombre: doc.tipo_nombre, descripcion: doc.descripcion,
+    tipoNombre: doc.tipo_nombre, origen: doc.origen, descripcion: doc.descripcion,
     palabrasClave: doc.palabras_clave, nivelAcceso: doc.nivel_acceso,
     relacionados,
     situacion,

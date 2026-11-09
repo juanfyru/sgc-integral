@@ -1,7 +1,7 @@
 /**
  * La pasada de documentos con revisión vencida (spec 13C §7.5 y §13.3): un aviso por persona y proceso con el
- * conteo, el escalamiento al jefe y la exclusión de la revisión anual abierta. Cada caso silencia los
- * documentos que ya hay en la base y cuenta solo los suyos.
+ * conteo, el escalamiento al jefe y la exclusión de la revisión anual abierta; y la de los externos con la verificación
+ * vencida. Cada caso silencia los documentos y los externos que ya hay en la base y cuenta solo los suyos.
  */
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,11 +17,20 @@ import { obtenerSql } from "@/db/cliente";
 import { aplicarPublicacion } from "@/db/consultas/admin";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { revisarVencimientos } from "@/db/consultas/vencimientos";
+import { registrarVerificacion } from "@/db/consultas/vigencia/externos";
 import { revisarVencimientosDeVigencia } from "@/db/consultas/vigencia/vencimientos";
 import { silenciarDistribucion } from "./utiles/distribucion";
 import { sesionAdmin, sesionDe, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
-import { enRevisionAbierta, procesoSinLider, silenciarVigencia, sinFechaDeRevision, sinRevisionAbierta, vigenteFuera } from "./utiles/vigencia";
+import {
+  enRevisionAbierta,
+  externoDePrueba,
+  procesoSinLider,
+  silenciarVigencia,
+  sinFechaDeRevision,
+  sinRevisionAbierta,
+  vigenteFuera,
+} from "./utiles/vigencia";
 
 const sql = obtenerSql();
 const ahora = new Date("2026-11-08T15:00:00Z");
@@ -274,5 +283,130 @@ describe("revisarVencimientos con la vigencia", () => {
       expect(await avisosDe(tx, liderGth.usuarioId, desde)).toMatchObject([
         { tipo: "vigencia.vencida", titulo: "1 documento con revisión vencida en Gestión del Talento Humano" },
       ]);
+    }));
+});
+
+describe("externos con la verificación vencida", () => {
+  const avisosExternos = async (tx: TransactionSql, usuarioId: number, desde: number) => [
+    ...(await tx`SELECT tipo, titulo, cuerpo, enlace, entidad, entidad_id FROM notificaciones
+      WHERE usuario_id = ${usuarioId} AND id > ${desde} AND tipo LIKE 'externos.%' ORDER BY id`),
+  ];
+  const marcasDe = async (tx: TransactionSql, documentoId: number) =>
+    (await tx`SELECT aviso_vencido_en, escalado_en FROM externos WHERE documento_id = ${documentoId}`)[0];
+
+  it("un externo vencido avisa una vez al responsable, nombrándolo; a los Admin SGC por proceso sin códigos; y escala a su jefe sin título ni enlace", () =>
+    revertida(sql, async (tx) => {
+      const desde = await preparar(tx);
+      const config = { ...(await obtenerConfigDocumental({ sql: tx })), escalamientoDias: 3 };
+      const lider = await sesionDe(tx, "lider.cex");
+      const admin = await sesionAdmin(tx);
+      const jefe = await usuarioDePrueba(tx, { rol: "consulta" });
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta", jefeId: jefe.usuarioId });
+      // Adoptado el 7 nov 2025: la próxima verificación fue ayer, el 7 nov 2026.
+      const e = await externoDePrueba(tx, lider, {
+        proceso: "CEX",
+        edicion: "2017",
+        responsableId: responsable.usuarioId,
+        ahora: new Date("2025-11-07T15:00:00Z"),
+      });
+      try {
+        expect(await revisarVencimientosDeVigencia({ sql: tx, ahora, config })).toEqual({ avisados: 1, escalados: 0 });
+        expect(await avisosExternos(tx, responsable.usuarioId, desde)).toEqual([
+          {
+            tipo: "externos.vencida",
+            titulo: `${e.codigo} · ${e.titulo}: la verificación de vigencia venció hace 1 día`,
+            cuerpo: "Consulte la fuente oficial y registre la verificación.",
+            enlace: `/vigencia/externos/${e.documentoId}`,
+            entidad: "documento",
+            entidad_id: e.documentoId,
+          },
+        ]);
+        const [delAdmin, ...otros] = await avisosExternos(tx, admin.usuarioId, desde);
+        expect(otros).toEqual([]);
+        expect(delAdmin).toMatchObject({
+          tipo: "externos.vencida",
+          titulo: "1 documento externo con la verificación de vigencia vencida en Consulta Externa",
+          enlace: `/vigencia/externos?estado=vencida&proceso=${e.procesoId}`,
+          entidad: "proceso",
+        });
+        expect(`${delAdmin.titulo} ${delAdmin.cuerpo ?? ""}`).not.toContain(e.codigo);
+        // Nadie más: ni el líder (no es el responsable técnico) ni el jefe todavía.
+        expect(await avisosExternos(tx, lider.usuarioId, desde)).toEqual([]);
+        expect(await avisosExternos(tx, jefe.usuarioId, desde)).toEqual([]);
+        expect((await marcasDe(tx, e.documentoId)).aviso_vencido_en).toEqual(ahora);
+
+        // La misma pasada no repite; a los cuatro días escala una vez, al jefe del responsable.
+        expect(await revisarVencimientosDeVigencia({ sql: tx, ahora, config })).toEqual({ avisados: 0, escalados: 0 });
+        const enCuatro = new Date(ahora.getTime() + 4 * DIA);
+        expect(await revisarVencimientosDeVigencia({ sql: tx, ahora: enCuatro, config })).toEqual({ avisados: 0, escalados: 1 });
+        expect(await revisarVencimientosDeVigencia({ sql: tx, ahora: new Date(ahora.getTime() + 5 * DIA), config })).toEqual({
+          avisados: 0,
+          escalados: 0,
+        });
+        const delJefe = await avisosExternos(tx, jefe.usuarioId, desde);
+        expect(delJefe).toHaveLength(1);
+        expect(delJefe[0]).toMatchObject({ tipo: "externos.escalado", enlace: null });
+        expect(`${delJefe[0].titulo} ${delJefe[0].cuerpo ?? ""}`).not.toContain(e.codigo);
+        expect(`${delJefe[0].titulo} ${delJefe[0].cuerpo ?? ""}`).not.toContain(e.titulo);
+        expect(delJefe[0].cuerpo).toContain(responsable.nombre);
+        expect((await marcasDe(tx, e.documentoId)).escalado_en).toEqual(enCuatro);
+      } finally {
+        await e.limpiar();
+      }
+    }));
+
+  it("verificar reinicia las marcas y no vuelve a avisar hasta que venza otra vez; sin jefe no escala ni marca", () =>
+    revertida(sql, async (tx) => {
+      const desde = await preparar(tx);
+      const config = { ...(await obtenerConfigDocumental({ sql: tx })), escalamientoDias: 3 };
+      const lider = await sesionDe(tx, "lider.cex");
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const e = await externoDePrueba(tx, lider, {
+        proceso: "CEX",
+        edicion: "2017",
+        responsableId: responsable.usuarioId,
+        ahora: new Date("2025-08-14T15:00:00Z"),
+      });
+      try {
+        expect(await revisarVencimientosDeVigencia({ sql: tx, ahora, config })).toEqual({ avisados: 1, escalados: 0 });
+        // Vencido hace más de tres días, pero el responsable no tiene jefe: la marca del escalamiento queda vacía.
+        expect(await marcasDe(tx, e.documentoId)).toMatchObject({ aviso_vencido_en: ahora, escalado_en: null });
+
+        await registrarVerificacion(
+          responsable,
+          { documentoId: e.documentoId, resultado: "vigente", fuente: "https://www.minsalud.gov.co/normatividad", nota: null },
+          { sql: tx, ahora },
+        );
+        expect(await marcasDe(tx, e.documentoId)).toMatchObject({ aviso_vencido_en: null, escalado_en: null });
+        expect(await revisarVencimientosDeVigencia({ sql: tx, ahora, config })).toEqual({ avisados: 0, escalados: 0 });
+        expect((await avisosExternos(tx, responsable.usuarioId, desde)).map((a) => a.tipo)).toEqual(["externos.vencida"]);
+      } finally {
+        await e.limpiar();
+      }
+    }));
+
+  it("un restringido que el responsable no ve no lo nombra ante él: el aviso va solo a los Admin SGC", () =>
+    revertida(sql, async (tx) => {
+      const desde = await preparar(tx);
+      const config = await obtenerConfigDocumental({ sql: tx });
+      const lider = await sesionDe(tx, "lider.cex");
+      const admin = await sesionAdmin(tx);
+      const [cex] = await tx`SELECT id FROM procesos WHERE sigla = 'CEX'`;
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta", procesos: [Number(cex.id)] });
+      const e = await externoDePrueba(tx, lider, {
+        proceso: "CEX",
+        edicion: "2017",
+        responsableId: responsable.usuarioId,
+        nivelAcceso: "restringido",
+        ahora: new Date("2025-08-14T15:00:00Z"),
+      });
+      try {
+        await tx`DELETE FROM usuario_procesos WHERE usuario_id = ${responsable.usuarioId}`;
+        expect((await revisarVencimientosDeVigencia({ sql: tx, ahora, config })).avisados).toBe(1);
+        expect(await avisosExternos(tx, responsable.usuarioId, desde)).toEqual([]);
+        expect(await avisosExternos(tx, admin.usuarioId, desde)).toMatchObject([{ tipo: "externos.vencida", entidad: "proceso" }]);
+      } finally {
+        await e.limpiar();
+      }
     }));
 });

@@ -332,7 +332,10 @@ export async function propietarioDeDocumento(
   return f ? { procesoId: Number(f.proceso_id), subprocesoId: idONulo(f.subproceso_id) } : null;
 }
 
-/** La misma regla de `crearSolicitud`: el líder pide sobre el proceso propietario, si es suyo. */
+/**
+ * La misma regla de `crearSolicitud`: el líder pide sobre el proceso propietario, si es suyo. Un externo no tiene
+ * trámite (spec 13C §8.1): se adopta o se retira desde Vigencia → Externos.
+ */
 export async function puedePedirSobreDocumento(
   sesion: SesionFlujo,
   documentoId: number,
@@ -340,6 +343,8 @@ export async function puedePedirSobreDocumento(
 ): Promise<boolean> {
   if (!puede(sesion, "tramites.solicitar")) return false;
   const sql = opciones?.sql ?? obtenerSql();
+  const [externo] = await sql`SELECT 1 FROM documentos WHERE id = ${documentoId} AND origen = 'externo'`;
+  if (externo) return false;
   const propietario = await propietarioDeDocumento(documentoId, { sql });
   return propietario !== null && enAlcance(await alcanceProcesos(sesion, { sql }), propietario.procesoId);
 }

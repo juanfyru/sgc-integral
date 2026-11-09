@@ -17,11 +17,21 @@ export {
   type DatosExterno,
   type DestinoDeEdicion,
   type Externo,
+  type FichaExterno,
   type FilaExterno,
   type FiltroExternos,
+  type OpcionesDeExterno,
   type Verificacion,
 } from "./externos/comun";
 export { abrirEdicion, descartarEdicion, editarControlExterno, editarEdicion, registrarExterno } from "./externos/registro";
 export { adoptarEdicion, alAdoptar, validarAdopcion } from "./externos/adopcion";
 export { registrarVerificacion, retirarExterno } from "./externos/verificacion";
-export { archivoDeEdicion, autorizarArchivoDeEdicion, esResponsableTecnico, listarExternos, obtenerExterno } from "./externos/lectura";
+export {
+  archivoDeEdicion,
+  autorizarArchivoDeEdicion,
+  esResponsableTecnico,
+  fichaDeExterno,
+  listarExternos,
+  obtenerExterno,
+  opcionesDeExterno,
+} from "./externos/lectura";
