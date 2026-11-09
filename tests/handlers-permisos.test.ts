@@ -46,6 +46,8 @@ import { GET as excelVerificaciones } from "@/app/(app)/distribucion/verificacio
 import { GET as excelSemaforo } from "@/app/(app)/vigencia/semaforo/excel/route";
 import { GET as excelExternos } from "@/app/(app)/vigencia/externos/excel/route";
 import { GET as archivoDeEdicionExterna } from "@/app/(app)/vigencia/externos/[id]/archivos/[archivoId]/[[...nombre]]/route";
+import { GET as excelNormograma } from "@/app/(app)/normograma/excel/route";
+import { GET as pdfDeNorma } from "@/app/(app)/normograma/[id]/archivos/[archivoId]/[[...nombre]]/route";
 import { GET as pdfCopia } from "@/app/(app)/distribucion/copias/[id]/pdf/route";
 import { POST as reimprimirCopiaRuta } from "@/app/(app)/distribucion/copias/[id]/reimprimir/route";
 import { obtenerSql } from "@/db/cliente";
@@ -264,6 +266,37 @@ describe("GET /vigencia/externos/[id]/archivos/[archivoId]", () => {
     expect((await pedir()).status).toBe(401);
     for (const token of [tokenConsulta, tokenAdmin]) expect((await pedir(token)).status).toBe(404);
     expect((await pedir(tokenAdmin, "abc")).status).toBe(404);
+  });
+});
+
+describe("GET /normograma/excel", () => {
+  const pedir = (token?: string) =>
+    excelNormograma(new NextRequest("http://localhost:3002/normograma/excel", token ? { headers: cookie(token) } : undefined));
+
+  it("401 sin sesión; Consulta lo descarga (el normograma se lee sin permiso) y queda auditado", async () => {
+    expect((await pedir()).status).toBe(401);
+    const res = await pedir(tokenConsulta);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(res.headers.get("Content-Disposition")).toMatch(/^attachment; filename="normograma-\d{8}\.xlsx"$/);
+    const [{ id }] = await sql()`SELECT id FROM usuarios WHERE usuario = ${`zz_consulta_${SUFIJO}`}`;
+    const filas = await sql()`SELECT detalle FROM auditoria WHERE usuario_id = ${id} AND accion = 'exporto_normograma'`;
+    expect(filas).toHaveLength(1);
+    expect(filas[0].detalle).toMatchObject({ formato: "excel", alcance: "Institucional" });
+  });
+});
+
+describe("GET /normograma/[id]/archivos/[archivoId]", () => {
+  const pedir = (token?: string, id = "999999999", archivoId = "999999999") =>
+    pdfDeNorma(
+      new NextRequest(`http://localhost:3002/normograma/${id}/archivos/${archivoId}/x.pdf`, token ? { headers: cookie(token) } : undefined),
+      { params: Promise.resolve({ id, archivoId, nombre: ["x.pdf"] }) },
+    );
+
+  it("401 sin sesión; una norma o un archivo que no existe responde 404, nunca «sin permiso»", async () => {
+    expect((await pedir()).status).toBe(401);
+    for (const token of [tokenConsulta, tokenAdmin]) expect((await pedir(token)).status).toBe(404);
+    expect((await pedir(tokenConsulta, "abc")).status).toBe(404);
   });
 });
 

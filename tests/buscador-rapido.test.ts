@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estadoDeBusqueda, normalizarConsulta } from "@/lib/busqueda-rapida";
+import { estadoDeBusqueda, gruposDeResultados, normalizarConsulta, type ResultadoRapido } from "@/lib/busqueda-rapida";
 
 describe("normalizarConsulta", () => {
   it("quita las marcas de resaltado y recorta a 120 caracteres", () => {
@@ -37,5 +37,29 @@ describe("opción activa de la búsqueda Ctrl K", () => {
     const { claseOpcion } = await import("@/componentes/cascaron/Buscador");
     const inactiva = claseOpcion(false).split(/\s+/);
     expect(inactiva).toEqual(expect.arrayContaining(["border-l-2", "border-transparent", "text-foreground", "hover:bg-muted"]));
+  });
+});
+
+describe("el grupo «Normas» de la paleta", () => {
+  const norma: ResultadoRapido = {
+    grupo: "norma",
+    codigo: "Resolución 3100 de 2019",
+    titulo: "Procedimientos y condiciones de inscripción y habilitación",
+    tituloResaltado: null,
+    tipo: "Vigente",
+    ruta: "/normograma/7",
+  };
+  const documento: ResultadoRapido = {
+    grupo: "documento",
+    codigo: "SOG-MN-01",
+    titulo: "Manual de habilitación",
+    tituloResaltado: null,
+    tipo: "MN",
+    ruta: "/documentos/sog-mn-01",
+  };
+  it("separa los documentos de las normas: las normas van debajo, en el orden en que llegaron", () => {
+    const otra = { ...norma, codigo: "Resolución 2003 de 2014", ruta: "/normograma/8", tipo: "Derogada" };
+    expect(gruposDeResultados([norma, documento, otra])).toEqual({ documentos: [documento], normas: [norma, otra] });
+    expect(gruposDeResultados([])).toEqual({ documentos: [], normas: [] });
   });
 });

@@ -217,12 +217,11 @@ export async function filasDeNormas(
   }));
 }
 
-/**
- * El normograma institucional con sus filtros (spec 13C §10.6). Sin las retiradas salvo `incluirRetiradas` o
- * `estado: "retirada"`. `documentos` cuenta solo lo que `sesion` ve.
- */
-export async function listarNormas(filtro: FiltroNormas, sesion: SujetoVisibilidad, opciones?: Opciones): Promise<FilaNorma[]> {
-  const sql = opciones?.sql ?? obtenerSql();
+/** El requisito que la norma impone al proceso del filtro; nulo sin proceso o si no lo escribieron. */
+export type FilaNormaDeLista = FilaNorma & { requisito: string | null };
+
+/** Las condiciones de `listarNormas` y del Excel, sobre `normas n` y `tipos_norma tn`. */
+function condicionDeFiltro(sql: Cliente, filtro: FiltroNormas): PendingQuery<Row[]> {
   const condiciones: PendingQuery<Row[]>[] = [];
   if (filtro.estado === "retirada") condiciones.push(sql`n.estado = 'retirada'`);
   else {
@@ -236,8 +235,72 @@ export async function listarNormas(filtro: FiltroNormas, sesion: SujetoVisibilid
     condiciones.push(sql`EXISTS (SELECT 1 FROM norma_procesos fnp WHERE fnp.norma_id = n.id AND fnp.proceso_id = ${filtro.procesoId})`);
   }
   if (filtro.q?.trim()) condiciones.push(condicionTexto(sql, filtro.q.trim()));
-  const condicion = condiciones.reduce((a, b) => sql`${a} AND ${b}`, sql`true`);
-  return (await filasDeNormas(sql, condicion, sesion)).map((f) => f.fila);
+  return condiciones.reduce((a, b) => sql`${a} AND ${b}`, sql`true`);
+}
+
+/**
+ * El normograma institucional con sus filtros (spec 13C §10.6). Sin las retiradas salvo `incluirRetiradas` o
+ * `estado: "retirada"`. `documentos` cuenta solo lo que `sesion` ve. Con `procesoId`, el normograma de ese proceso:
+ * cada fila trae el requisito que la norma le impone.
+ */
+export async function listarNormas(filtro: FiltroNormas, sesion: SujetoVisibilidad, opciones?: Opciones): Promise<FilaNormaDeLista[]> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const filas = await filasDeNormas(sql, condicionDeFiltro(sql, filtro), sesion, filtro.procesoId);
+  return filas.map((f) => ({ ...f.fila, requisito: f.requisito }));
+}
+
+/** Una fila del Excel del normograma (spec 13C §10.6): la de la lista y lo que la pantalla no muestra. */
+export type FilaNormaExcel = FilaNormaDeLista & {
+  numero: string;
+  fechaExpedicion: string | null;
+  tema: string | null;
+  enlaceOficial: string | null;
+  /** «Deroga a Resolución 2003 de 2014», «Modificada por Decreto 1148 de 2024 (art. 5)»: solo las activas. */
+  relaciones: string[];
+  /** Los códigos de los enlazados que la persona ve: un restringido que no ve no se nombra. */
+  internos: string[];
+  externos: string[];
+};
+
+/** Las filas del Excel, con los mismos filtros que la lista y en el mismo orden. */
+export async function filasDelExcel(filtro: FiltroNormas, sesion: SujetoVisibilidad, opciones?: Opciones): Promise<FilaNormaExcel[]> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [filas, extra] = await Promise.all([
+    filasDeNormas(sql, condicionDeFiltro(sql, filtro), sesion, filtro.procesoId),
+    sql`SELECT n.id, n.numero, n.fecha_expedicion::text AS fecha_expedicion, n.tema, n.enlace_oficial,
+        ARRAY(
+          SELECT CASE r.tipo WHEN 'modifica' THEN 'Modifica a ' WHEN 'deroga' THEN 'Deroga a ' ELSE 'Reglamenta a ' END
+              || concat_ws(' ', otn.nombre, o.numero, 'de', o.anio::text) || COALESCE(' (' || r.detalle || ')', '')
+          FROM norma_relaciones r JOIN normas o ON o.id = r.afectada_id JOIN tipos_norma otn ON otn.id = o.tipo_norma_id
+          WHERE r.norma_id = n.id AND r.eliminada_en IS NULL ORDER BY r.id
+        ) || ARRAY(
+          SELECT CASE r.tipo WHEN 'modifica' THEN 'Modificada por ' WHEN 'deroga' THEN 'Derogada por ' ELSE 'Reglamentada por ' END
+              || concat_ws(' ', otn.nombre, o.numero, 'de', o.anio::text) || COALESCE(' (' || r.detalle || ')', '')
+          FROM norma_relaciones r JOIN normas o ON o.id = r.norma_id JOIN tipos_norma otn ON otn.id = o.tipo_norma_id
+          WHERE r.afectada_id = n.id AND r.eliminada_en IS NULL ORDER BY r.id
+        ) AS relaciones,
+        ARRAY(SELECT d.codigo FROM norma_documentos nd JOIN documentos d ON d.id = nd.documento_id
+          WHERE nd.norma_id = n.id AND d.origen = 'interno' AND ${filtroAcceso(sql, sesion)} ORDER BY d.codigo) AS internos,
+        ARRAY(SELECT d.codigo FROM norma_documentos nd JOIN documentos d ON d.id = nd.documento_id
+          WHERE nd.norma_id = n.id AND d.origen = 'externo' AND ${filtroAcceso(sql, sesion)} ORDER BY d.codigo) AS externos
+      FROM normas n JOIN tipos_norma tn ON tn.id = n.tipo_norma_id
+      WHERE ${condicionDeFiltro(sql, filtro)}`,
+  ]);
+  const porId = new Map(extra.map((e) => [Number(e.id), e]));
+  return filas.map(({ fila, requisito }) => {
+    const e = porId.get(fila.id);
+    return {
+      ...fila,
+      requisito,
+      numero: e?.numero ?? "",
+      fechaExpedicion: e?.fecha_expedicion ?? null,
+      tema: e?.tema ?? null,
+      enlaceOficial: e?.enlace_oficial ?? null,
+      relaciones: (e?.relaciones ?? []) as string[],
+      internos: (e?.internos ?? []) as string[],
+      externos: (e?.externos ?? []) as string[],
+    };
+  });
 }
 
 /** Hasta 10 entidades emisoras ya escritas que empiezan por `prefijo` (el `datalist` del formulario). */

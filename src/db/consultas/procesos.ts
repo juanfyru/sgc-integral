@@ -346,3 +346,18 @@ function aHermano(fila?: Record<string, unknown>): NodoHermano | null {
   if (!fila) return null;
   return { nombre: fila.nombre as string, slug: fila.slug as string };
 }
+
+export type ProcesoBreve = { id: number; nombre: string; sigla: string; slug: string };
+
+/**
+ * Los procesos activos de macroprocesos activos, por nombre: el filtro del normograma, su Excel y las asociaciones.
+ * El mapa es público para toda sesión, así que la lista también.
+ */
+export async function procesosActivos(opciones?: { sql?: Cliente }): Promise<ProcesoBreve[]> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const filas = await sql`SELECT p.id, p.nombre, p.sigla, p.slug FROM procesos p
+    JOIN macroprocesos m ON m.id = p.macroproceso_id
+    WHERE p.activo AND m.activo
+    ORDER BY p.nombre`;
+  return filas.map((f) => ({ id: Number(f.id), nombre: f.nombre as string, sigla: f.sigla as string, slug: f.slug as string }));
+}

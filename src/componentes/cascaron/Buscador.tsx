@@ -9,6 +9,7 @@ import {
   LARGO_MAXIMO_CONSULTA,
   LARGO_MINIMO_CONSULTA,
   estadoDeBusqueda,
+  gruposDeResultados,
   type RespuestaRapida,
   type ResultadoRapido,
 } from "@/lib/busqueda-rapida";
@@ -37,7 +38,7 @@ export function claseOpcion(activa: boolean): string {
 
 type Opcion =
   | { id: string; clase: "ir"; entrada: EntradaNav; ruta: string }
-  | { id: string; clase: "documento"; resultado: ResultadoRapido; ruta: string }
+  | { id: string; clase: "documento" | "norma"; resultado: ResultadoRapido; ruta: string }
   | { id: string; clase: "todos"; ruta: string };
 
 export function Buscador({ entradas }: { entradas: EntradaNav[] }) {
@@ -129,12 +130,15 @@ function Paleta({ entradas, cerrar }: { entradas: EntradaNav[]; cerrar: () => vo
 
   const estado = estadoDeBusqueda(consulta, respuesta);
   const resultados = (estado === "listo" && respuesta?.resultados) || [];
-  const docsVisibles = resultados;
+  const { documentos: docsVisibles, normas: normasVisibles } = gruposDeResultados(resultados);
 
   const opciones: Opcion[] = [
     ...irA.map((entrada, i): Opcion => ({ id: `${idBase}-ir-${i}`, clase: "ir", entrada, ruta: entrada.href })),
     ...docsVisibles.map(
       (resultado, i): Opcion => ({ id: `${idBase}-doc-${i}`, clase: "documento", resultado, ruta: resultado.ruta }),
+    ),
+    ...normasVisibles.map(
+      (resultado, i): Opcion => ({ id: `${idBase}-norma-${i}`, clase: "norma", resultado, ruta: resultado.ruta }),
     ),
     ...(buscaDocumentos
       ? [{ id: `${idBase}-todos`, clase: "todos", ruta: `/buscar?q=${encodeURIComponent(consulta)}` } as Opcion]
@@ -171,6 +175,7 @@ function Paleta({ entradas, cerrar }: { entradas: EntradaNav[]; cerrar: () => vo
     irA.length === 0 && (!buscaDocumentos || (estado === "listo" && resultados.length === 0));
   const filasIr = opciones.filter((o) => o.clase === "ir");
   const filasDocs = opciones.filter((o) => o.clase === "documento");
+  const filasNormas = opciones.filter((o) => o.clase === "norma");
   const filaTodos = opciones.find((o) => o.clase === "todos");
 
   const propsOpcion = (o: Opcion) => ({
@@ -195,8 +200,8 @@ function Paleta({ entradas, cerrar }: { entradas: EntradaNav[]; cerrar: () => vo
           aria-controls={idLista}
           aria-activedescendant={idActiva}
           aria-autocomplete="list"
-          aria-label="Buscar documentos o ir a una página"
-          placeholder="Buscar documentos o ir a una página…"
+          aria-label="Buscar documentos y normas, o ir a una página"
+          placeholder="Buscar documentos y normas, o ir a una página…"
           autoComplete="off"
           spellCheck={false}
           maxLength={LARGO_MAXIMO_CONSULTA}
@@ -240,6 +245,26 @@ function Paleta({ entradas, cerrar }: { entradas: EntradaNav[]; cerrar: () => vo
                       ) : (
                         o.resultado.titulo
                       )}
+                    </span>
+                    <span className="shrink-0 rounded border border-border px-1.5 text-xs text-muted-foreground">
+                      {o.resultado.tipo}
+                    </span>
+                  </li>
+                ) : null,
+              )}
+            </ul>
+          </li>
+        )}
+        {filasNormas.length > 0 && (
+          <li role="presentation">
+            <p className={claseTitulo}>Normas</p>
+            <ul role="group" aria-label="Normas">
+              {filasNormas.map((o) =>
+                o.clase === "norma" ? (
+                  <li key={o.id} {...propsOpcion(o)}>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">{o.resultado.codigo}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{o.resultado.titulo}</span>
                     </span>
                     <span className="shrink-0 rounded border border-border px-1.5 text-xs text-muted-foreground">
                       {o.resultado.tipo}

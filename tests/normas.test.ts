@@ -87,6 +87,7 @@ describe("catálogo de normas", () => {
         tipo: "Resolución",
         procesos: [],
         documentos: 0,
+        requisito: null,
       });
       expect((await listarNormas({ q: numero, anio: 2019, tipoNormaId: resolucion, emisor, estado: "vigente" }, admin, { sql: tx })).map((f) => f.id)).toEqual([id]);
       expect(await listarNormas({ q: numero, anio: 2018 }, admin, { sql: tx })).toEqual([]);

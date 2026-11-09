@@ -29,10 +29,13 @@ export {
   aniosYEmisores,
   existeNorma,
   filasDeNormas,
+  filasDelExcel,
   listarNormas,
   obtenerNorma,
   sugerirEmisores,
   type FilaNorma,
+  type FilaNormaDeLista,
+  type FilaNormaExcel,
   type FiltroNormas,
   type Norma,
 } from "./lectura";

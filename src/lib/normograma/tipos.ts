@@ -61,6 +61,17 @@ export function nombreDeNorma(n: { tipo: string; numero: string; anio: number })
   return `${n.tipo} ${n.numero} de ${n.anio}`;
 }
 
+/** Una fecha de la norma (`yyyy-mm-dd`: expedición, estado, cambio) como «25/11/2019», sin pasar por la zona. */
+export function fechaDeNorma(fecha: string): string {
+  const [anio, mes, dia] = fecha.split("-");
+  return `${dia}/${mes}/${anio}`;
+}
+
+/** «Derogada · 25/11/2019»; vigente sin fecha, «Vigente». El estado va siempre en texto, nunca solo en color. */
+export function textoEstadoNorma(estado: EstadoNorma, estadoEn: string | null): string {
+  return estadoEn && estado !== "vigente" ? `${ETIQUETA_ESTADO_NORMA[estado]} · ${fechaDeNorma(estadoEn)}` : ETIQUETA_ESTADO_NORMA[estado];
+}
+
 /** La página de los impactos de un cambio en un proceso: el enlace de su tarea y de sus avisos. */
 export function enlaceDeImpacto(cambioId: number, procesoId: number): string {
   return `/normograma/impactos/${cambioId}?proceso=${procesoId}`;
