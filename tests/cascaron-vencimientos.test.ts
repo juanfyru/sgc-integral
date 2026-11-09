@@ -10,6 +10,8 @@ vi.mock("@/db/consultas/notificaciones", () => ({ contarNoLeidas: async () => 0,
 vi.mock("@/db/consultas/tramites", () => ({ participaEnTramites: async () => false }));
 vi.mock("@/db/consultas/distribucion/puntos-uso", () => ({ esResponsableDePuntos: async () => false }));
 vi.mock("@/lib/tareas", () => ({ misTareas: async () => ({ tareas: [], total: 0 }) }));
+vi.mock("@/db/consultas/vigencia/externos", () => ({ esResponsableTecnico: async () => false }));
+vi.mock("@/db/consultas/vigencia/semaforo", () => ({ vencidosDeVigencia: async () => 0 }));
 
 import { Cascaron } from "@/componentes/cascaron/Cascaron";
 import type { SesionValida } from "@/lib/sesion";
