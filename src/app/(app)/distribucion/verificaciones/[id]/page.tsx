@@ -83,7 +83,7 @@ export default async function PaginaVerificacion({ params }: { params: Promise<{
 
       <ListaChequeo verificacion={v} fechas={fechas} />
 
-      {v.estado === "cerrada" ? <ListaHallazgos hallazgos={v.hallazgos} verificacionId={v.id} /> : null}
+      {v.estado === "cerrada" ? <ListaHallazgos hallazgos={v.hallazgos} volver={{ verificacionId: v.id }} /> : null}
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { crearNotificacion } from "@/db/consultas/notificaciones";
 import { adminsActivos } from "@/db/consultas/tramites";
-import { filtroPuntos } from "@/lib/alcance";
+import { filtroPuntos, type SujetoVisibilidad } from "@/lib/alcance";
 import { numeroDeCopia } from "@/lib/distribucion/copias";
 import { enlaceDeHallazgo } from "@/lib/distribucion/hallazgos";
 import { ErrorDistribucion } from "@/lib/distribucion/tipos";
@@ -15,6 +15,7 @@ import { textoFecha } from "@/lib/vigencia/plazo";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import type { Copia } from "./copias";
 import { evidenciasDe, evidenciasDeVarios, type Evidencia } from "./evidencias";
+import { exigirSinOtroAdmin, hayOtroAdmin } from "./otro-admin";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -35,7 +36,7 @@ export type Hallazgo = {
   creadoEn: Date;
   /** El «Corregido» del responsable, mientras el hallazgo espera validación o ya cerrado. */
   correccion: { en: Date; porId: number; por: string; nota: string } | null;
-  cierre: { en: Date; por: string; nota: string } | null;
+  cierre: { en: Date; porId: number; por: string; nota: string } | null;
   /** Quién cerró: el Admin SGC (validó o cerró directamente) o la siguiente verificación del punto. */
   validacion: "admin" | "verificacion" | null;
   validacionVerificacionId: number | null;
@@ -113,7 +114,7 @@ export async function leerHallazgos(sql: Cliente, condicion: ReturnType<Cliente>
   const filas = await sql`
     SELECT h.id, h.punto_uso_id, pu.nombre AS punto_nombre, h.origen, h.verificacion_id, h.item_id, h.copia_id,
            h.descripcion, h.retirado_en_el_acto, pu.responsable_id, ur.nombre AS responsable_nombre, h.estado,
-           h.vence_en, h.creado_en, h.cerrado_en, uc.nombre AS cerrado_por_nombre, h.nota_cierre,
+           h.vence_en, h.creado_en, h.cerrado_en, h.cerrado_por, uc.nombre AS cerrado_por_nombre, h.nota_cierre,
            h.corregido_en, h.corregido_por, uco.nombre AS corregido_por_nombre, h.nota_correccion,
            h.validacion, h.validacion_verificacion_id, h.reaperturas,
            d.codigo AS copia_codigo, v.numero AS copia_version, cc.numero AS copia_numero
@@ -156,7 +157,7 @@ export async function leerHallazgos(sql: Cliente, condicion: ReturnType<Cliente>
           }
         : null,
       cierre: f.cerrado_en
-        ? { en: f.cerrado_en as Date, por: f.cerrado_por_nombre as string, nota: f.nota_cierre as string }
+        ? { en: f.cerrado_en as Date, porId: Number(f.cerrado_por), por: f.cerrado_por_nombre as string, nota: f.nota_cierre as string }
         : null,
       validacion: (f.validacion as Hallazgo["validacion"]) ?? null,
       validacionVerificacionId: f.validacion_verificacion_id === null ? null : Number(f.validacion_verificacion_id),
@@ -200,19 +201,51 @@ export function puedeCorregirHallazgo(sesion: SesionFlujo, responsableActualId: 
   return (responsableActualId === sesion.usuarioId && puede(sesion, "distribucion.responder")) || puede(sesion, "distribucion.gestionar");
 }
 
-/** Bloquea el hallazgo con lo que la bitácora y los avisos necesitan nombrar. */
-async function bloquear(tx: Cliente, id: number): Promise<Row | undefined> {
+/**
+ * Lo que la persona puede hacer con cada hallazgo (spec 13C §12.5): «Corregido» el responsable actual del punto (o quien
+ * gestiona) mientras está abierto; «Validar» y «Reabrir» quien realiza verificaciones, si no lo corrigió él; cerrar
+ * directamente, quien gestiona la distribución, salvo su propia corrección mientras haya otro Administrador del SGC.
+ */
+export type HallazgoConAcciones = Hallazgo & { puedeCorregir: boolean; puedeValidar: boolean; puedeCerrar: boolean };
+
+/** Las marcas de cada hallazgo; consulta si hay otro Admin SGC solo si alguno espera validar una corrección de la persona. */
+export async function conAcciones(sql: Cliente, hallazgos: Hallazgo[], sesion: SesionFlujo): Promise<HallazgoConAcciones[]> {
+  const suya = (h: Hallazgo) => h.estado === "por_validar" && h.correccion?.porId === sesion.usuarioId;
+  const otroAdmin = hallazgos.some(suya) && puede(sesion, "distribucion.gestionar") ? await hayOtroAdmin(sql, sesion.usuarioId) : false;
+  return hallazgos.map((h) => ({
+    ...h,
+    puedeCorregir: h.estado === "abierto" && puedeCorregirHallazgo(sesion, h.responsable.id),
+    puedeValidar: h.estado === "por_validar" && puede(sesion, "verificaciones.realizar") && !suya(h),
+    puedeCerrar: h.estado !== "cerrado" && puede(sesion, "distribucion.gestionar") && !(suya(h) && otroAdmin),
+  }));
+}
+
+/** Los hallazgos de una recogida («No se encontró») de la copia que la persona ve por su punto, con sus acciones. */
+export async function hallazgosDeCopia(copiaId: number, sesion: SesionFlujo, opciones?: Opciones): Promise<HallazgoConAcciones[]> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const hallazgos = await leerHallazgos(sql, sql`h.origen = 'recogida' AND h.copia_id = ${copiaId} AND ${filtroPuntos(sql, sesion)}`);
+  return conAcciones(sql, hallazgos, sesion);
+}
+
+/**
+ * Bloquea el hallazgo con lo que la bitácora y los avisos necesitan nombrar, y el texto del ítem que lo abrió. Con
+ * `sesion`, solo si la persona ve su punto (`filtroPuntos`): para los demás no existe.
+ */
+async function bloquear(tx: Cliente, id: number, sesion?: SujetoVisibilidad): Promise<Row | undefined> {
   const [h] = await tx`
     SELECT h.id, h.estado, h.punto_uso_id, pu.nombre AS punto, h.origen, h.verificacion_id, h.copia_id, h.documento_id, h.descripcion,
            h.corregido_por, h.nota_correccion, h.reaperturas, pu.responsable_id AS actual_id,
-           dd.codigo AS documento, cc.numero AS copia_numero, cv.numero AS copia_version, cd.codigo AS copia_codigo
+           dd.codigo AS documento, cc.numero AS copia_numero, cv.numero AS copia_version, cd.codigo AS copia_codigo,
+           vi.texto AS item_texto, vi.origen AS item_origen
     FROM hallazgos h
     JOIN puntos_uso pu ON pu.id = h.punto_uso_id
     LEFT JOIN documentos dd ON dd.id = h.documento_id
     LEFT JOIN copias_controladas cc ON cc.id = h.copia_id
     LEFT JOIN documento_versiones cv ON cv.id = cc.version_id
     LEFT JOIN documentos cd ON cd.id = cv.documento_id
-    WHERE h.id = ${id} FOR UPDATE OF h`;
+    LEFT JOIN verificacion_items vi ON vi.id = h.item_id
+    WHERE h.id = ${id} AND ${sesion ? filtroPuntos(tx, sesion) : tx`true`}
+    FOR UPDATE OF h`;
   return h;
 }
 
@@ -354,7 +387,7 @@ export async function validarHallazgo(id: number, sesion: SesionFlujo, opciones?
   if (!puede(sesion, "verificaciones.realizar")) throw new ErrorPermiso();
   const ahora = opciones?.ahora ?? new Date();
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
-    const h = await bloquear(tx, id);
+    const h = await bloquear(tx, id, sesion);
     if (!h) throw new ErrorDistribucion(NO_EXISTE);
     if (h.estado !== "por_validar") throw new ErrorDistribucion(NO_POR_VALIDAR);
     if (Number(h.corregido_por) === sesion.usuarioId) throw new ErrorDistribucion("Quien corrigió el hallazgo no puede validarlo");
@@ -368,7 +401,7 @@ export async function reabrirHallazgo(id: number, sesion: SesionFlujo, nota: str
   const ahora = opciones?.ahora ?? new Date();
   const texto = exigirNota(nota, "Escriba por qué se reabre (mínimo 5 caracteres)");
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
-    const h = await bloquear(tx, id);
+    const h = await bloquear(tx, id, sesion);
     if (!h) throw new ErrorDistribucion(NO_EXISTE);
     if (h.estado !== "por_validar") throw new ErrorDistribucion(NO_POR_VALIDAR);
     const { plazoCorreccionDias } = (await obtenerConfigDocumental({ sql: tx })).distribucion;
@@ -376,18 +409,25 @@ export async function reabrirHallazgo(id: number, sesion: SesionFlujo, nota: str
   });
 }
 
+/** El texto de un ítem para compararlo con otro: sin mayúsculas ni espacios en los extremos. */
+const textoComparable = (texto: string) => texto.trim().toLocaleLowerCase("es");
+
+/** Un ítem no conforme de la verificación que se cierra, con lo que identifica de qué trata. */
+export type ItemNoConforme = { copiaId: number | null; documentoId: number | null; texto: string; origen: string };
+
 /**
  * La siguiente verificación cerrada del punto valida sus hallazgos por validar (spec 13C §12.5): si no trae un ítem no
  * conforme sobre la misma copia o el mismo documento, pasan a `cerrado` con `validacion = 'verificacion'`; si lo trae, se
- * reabren. Corre al final de `cerrarVerificacion`, en su transacción, y solo escribe en `hallazgos` (la verificación
- * cerrada no se toca). Los hallazgos que abrió esta misma verificación quedan fuera. Un hallazgo sin copia ni documento
- * (un ítem fijo o libre) no coincide con ningún ítem: lo valida cualquier verificación cerrada después.
+ * reabren. Un hallazgo sin copia ni documento (de un ítem fijo o libre) «sigue no conforme» si un ítem no conforme sin
+ * copia de este cierre tiene el mismo texto que el ítem que lo abrió (nunca por la descripción, que lleva la nota).
+ * Corre al final de `cerrarVerificacion`, en su transacción, y solo escribe en `hallazgos` (la verificación cerrada no se
+ * toca). Los hallazgos que abrió esta misma verificación quedan fuera.
  */
 export async function validarPorVerificacion(
   tx: Cliente,
   verificacionId: number,
   puntoId: number,
-  itemsNoConformes: { copiaId: number | null; documentoId: number | null }[],
+  itemsNoConformes: ItemNoConforme[],
   ahora: Date,
 ): Promise<{ validados: number; reabiertos: number }> {
   const candidatos = await tx`SELECT h.id FROM hallazgos h
@@ -400,13 +440,19 @@ export async function validarPorVerificacion(
   const nota = `sigue no conforme en la verificación del ${textoFecha(ahora, zonaHoraria())}`;
   const copias = new Set(itemsNoConformes.flatMap((i) => (i.copiaId === null ? [] : [i.copiaId])));
   const documentos = new Set(itemsNoConformes.flatMap((i) => (i.documentoId === null ? [] : [i.documentoId])));
+  const textos = new Set(itemsNoConformes.flatMap((i) => (i.copiaId === null ? [textoComparable(i.texto)] : [])));
   let validados = 0;
   let reabiertos = 0;
   for (const c of candidatos) {
     const h = await bloquear(tx, Number(c.id));
     if (!h || h.estado !== "por_validar") continue;
+    const sinCopiaNiDocumento = h.copia_id === null && h.documento_id === null;
     const sigue =
-      (h.copia_id !== null && copias.has(Number(h.copia_id))) || (h.documento_id !== null && documentos.has(Number(h.documento_id)));
+      (h.copia_id !== null && copias.has(Number(h.copia_id))) ||
+      (h.documento_id !== null && documentos.has(Number(h.documento_id))) ||
+      (sinCopiaNiDocumento &&
+        (h.item_origen === "fijo" || h.item_origen === "libre") &&
+        textos.has(textoComparable(h.item_texto as string)));
     if (sigue) {
       await reabrirEn(tx, h, { usuarioId, ahora, nota, plazoDias: plazoCorreccionDias, origen: "verificacion", verificacionId });
       reabiertos += 1;
@@ -420,16 +466,21 @@ export async function validarPorVerificacion(
 
 /**
  * Cerrar directamente queda para quien gestiona la distribución, desde abierto o por validar: cuenta como validado por
- * el Admin SGC. El responsable marca «Corregido» (`corregirHallazgo`).
+ * el Admin SGC. El responsable marca «Corregido» (`corregirHallazgo`). Quien corrigió no cierra su propia corrección
+ * mientras haya otro Administrador del SGC activo; si es el único, cierra y la bitácora lo marca (`propioCorrector`).
  */
 export async function cerrarHallazgo(id: number, sesion: SesionFlujo, nota: string, opciones?: Opciones): Promise<void> {
   if (!puede(sesion, "distribucion.gestionar")) throw new ErrorPermiso();
   const ahora = opciones?.ahora ?? new Date();
   const texto = exigirNota(nota, "Escriba qué se hizo para corregirlo (mínimo 5 caracteres)");
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
-    const h = await bloquear(tx, id);
+    const h = await bloquear(tx, id, sesion);
     if (!h) throw new ErrorDistribucion(NO_EXISTE);
     if (h.estado === "cerrado") throw new ErrorDistribucion(YA_CERRADO);
+    const propioCorrector = h.estado === "por_validar" && Number(h.corregido_por) === sesion.usuarioId;
+    if (propioCorrector) {
+      await exigirSinOtroAdmin(tx, sesion.usuarioId, "Otro Administrador del SGC debe validar esta corrección: usted la hizo");
+    }
     await tx`UPDATE hallazgos SET estado = 'cerrado', validacion = 'admin', cerrado_en = ${ahora}, cerrado_por = ${sesion.usuarioId},
         nota_cierre = ${texto}
       WHERE id = ${id}`;
@@ -438,7 +489,7 @@ export async function cerrarHallazgo(id: number, sesion: SesionFlujo, nota: stri
       accion: "hallazgo_cerrado",
       entidad: "hallazgo",
       entidadId: id,
-      detalle: { ...detalleBase(h), estadoPrevio: h.estado as string, validacion: "admin", nota: texto },
+      detalle: { ...detalleBase(h), estadoPrevio: h.estado as string, validacion: "admin", propioCorrector, nota: texto },
     });
   });
 }

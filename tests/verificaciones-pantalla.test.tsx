@@ -20,7 +20,8 @@ import { ResumenCierre } from "@/componentes/distribucion/verificaciones/Resumen
 import { TablaHallazgos } from "@/componentes/distribucion/verificaciones/TablaHallazgos";
 import type { Hallazgo } from "@/db/consultas/distribucion/hallazgos";
 import type { HallazgoDeVerificacion, ItemVerificacion, Verificacion } from "@/db/consultas/distribucion/verificaciones";
-import { resumenDeChequeo } from "@/lib/distribucion/verificacion";
+import { comoSeCerro } from "@/lib/distribucion/hallazgos";
+import { fechasQueViajan, resumenDeChequeo } from "@/lib/distribucion/verificacion";
 
 const item = (id: number, respuesta: ItemVerificacion["respuesta"], p: Partial<ItemVerificacion> = {}): ItemVerificacion => ({
   id,
@@ -50,6 +51,8 @@ const verificacion = (items: ItemVerificacion[], p: Partial<Verificacion> = {}):
   items,
   hallazgos: [],
   puedeEditar: true,
+  porValidarDelPunto: 0,
+  alCerrar: null,
   ...p,
 });
 
@@ -67,28 +70,12 @@ describe("ItemChequeo", () => {
     expect(html).toContain("Hay otra");
   });
 
-  it("«no conforme» propone la fecha de corrección y deja cambiarla entre mañana y hoy + 365", () => {
-    const fechas = { propuesta: "2026-11-29", minima: "2026-11-15", maxima: "2027-11-14" };
+  it("el ítem ya no pinta la fecha de corrección: se elige al cerrar", () => {
     const html = renderToStaticMarkup(
-      <ItemChequeo verificacionId={4} item={item(7, null)} valor={{ respuesta: "no_conforme", nota: "", retirado: false }} editable fechas={fechas} />,
+      <ItemChequeo verificacionId={4} item={item(7, null)} valor={{ respuesta: "no_conforme", nota: "", retirado: false }} editable />,
     );
-    const campo = /<input[^>]*name="fecha_7"[^>]*\/>/.exec(html)?.[0] ?? "";
-    expect(campo).toContain('type="date"');
-    expect(campo).toContain('value="2026-11-29"');
-    expect(campo).toContain('min="2026-11-15"');
-    expect(campo).toContain('max="2027-11-14"');
-    expect(html).toContain("Fecha de corrección");
-    const elegida = renderToStaticMarkup(
-      <ItemChequeo verificacionId={4} item={item(7, null)} valor={{ respuesta: "no_conforme", nota: "", retirado: false, fecha: "2026-12-01" }} editable fechas={fechas} />,
-    );
-    expect(elegida).toMatch(/name="fecha_7"[^>]*value="2026-12-01"|value="2026-12-01"[^>]*name="fecha_7"/);
-    // Conforme no abre hallazgo: no hay fecha que elegir.
-    const conforme = renderToStaticMarkup(
-      <ItemChequeo verificacionId={4} item={item(7, null)} valor={{ respuesta: "conforme", nota: "", retirado: false }} editable fechas={fechas} />,
-    );
-    expect(conforme).not.toContain('name="fecha_7"');
-    const lista = renderToStaticMarkup(<ListaChequeo verificacion={verificacion([item(7, "no_conforme")])} fechas={fechas} />);
-    expect(lista).toMatch(/name="fecha_7"[^>]*value="2026-11-29"|value="2026-11-29"[^>]*name="fecha_7"/);
+    expect(html).not.toContain('type="date"');
+    expect(html).not.toContain("fecha_7");
   });
 
   it("pinta la casilla «Retirado en el acto» desde el valor guardado", () => {
@@ -140,6 +127,17 @@ describe("ResumenCierre", () => {
     expect(html).toContain("7 de 9 ítems conformes · Punto no conforme");
     expect(html).not.toContain("provisional");
     expect(html).toContain("Cerrada por Ana");
+    expect(html).not.toContain("Validó");
+  });
+
+  it("dice cuántos hallazgos por validar validó y cuántos reabrió el cierre", () => {
+    const cerrada = (alCerrar: Verificacion["alCerrar"]) =>
+      renderToStaticMarkup(
+        <ResumenCierre verificacion={verificacion([item(1, "conforme")], { estado: "cerrada", conforme: true, cerradaPor: "Ana", cerradaEn: new Date("2026-11-15T15:00:00Z"), alCerrar })} />,
+      );
+    expect(cerrada({ validados: 2, reabiertos: 1 })).toContain("Validó 2 hallazgos por validar. Reabrió 1.");
+    expect(cerrada({ validados: 1, reabiertos: 0 })).toContain("Validó 1 hallazgo por validar.");
+    expect(cerrada({ validados: 0, reabiertos: 0 })).not.toMatch(/Validó|Reabrió/);
   });
 
   it("los «no aplica» no cuentan en el total", () => {
@@ -161,6 +159,51 @@ describe("ListaChequeo", () => {
     expect(html).toContain("Añadir ítem");
     expect(html).toContain("Descartar");
     expect(html).toMatch(/<button[^>]*disabled[^>]*>\s*Cerrar verificación/);
+  });
+
+  const fechas = { propuesta: "2026-11-29", minima: "2026-11-15", maxima: "2027-11-14" };
+
+  it("el diálogo de cierre lista cada hallazgo que se abrirá con su fecha propuesta, su rango y sin nombre de campo", () => {
+    const html = renderToStaticMarkup(
+      <ListaChequeo
+        verificacion={verificacion([item(1, "conforme"), item(2, "no_conforme", { texto: "Copia rota" }), item(3, "no_conforme", { texto: "Sin sello" })])}
+        fechas={fechas}
+      />,
+    );
+    const campos = html.match(/<input[^>]*type="date"[^>]*\/>/g) ?? [];
+    expect(campos).toHaveLength(2);
+    for (const campo of campos) {
+      expect(campo).toContain('value="2026-11-29"');
+      expect(campo).toContain('min="2026-11-15"');
+      expect(campo).toContain('max="2027-11-14"');
+      expect(campo).toContain("max-w-44");
+      expect(campo).not.toContain("name=");
+    }
+    expect(html).toContain("Copia rota");
+    expect(html).toContain("Sin sello");
+    expect(html).toContain("Se propone según el plazo de corrección; puede cambiarla entre mañana y un año.");
+    // Ninguna fecha sin tocar viaja: el formulario no lleva ningún campo `fecha_`.
+    expect(html).not.toContain('name="fecha_');
+  });
+
+  it("sin no conformes el diálogo queda como siempre; con por validar en el punto, lo avisa", () => {
+    const sinNoConformes = renderToStaticMarkup(<ListaChequeo verificacion={verificacion([item(1, "conforme")])} fechas={fechas} />);
+    expect(sinNoConformes).not.toContain('type="date"');
+    expect(sinNoConformes).toContain("No se abrirá ningún hallazgo.");
+    expect(sinNoConformes).not.toContain("por validar");
+    const conPorValidar = renderToStaticMarkup(
+      <ListaChequeo verificacion={verificacion([item(1, "conforme")], { porValidarDelPunto: 2 })} fechas={fechas} />,
+    );
+    expect(conPorValidar).toContain(
+      "Este punto tiene 2 hallazgos por validar: al cerrar se validan los que no vuelvan a salir no conformes y se reabren los que sí.",
+    );
+  });
+
+  it("viaja solo la fecha cambiada de un ítem no conforme", () => {
+    expect(fechasQueViajan([2, 3], {}, "2026-11-29")).toEqual([]);
+    expect(fechasQueViajan([2, 3], { 2: "2026-11-29", 3: "2026-12-05" }, "2026-11-29")).toEqual([{ itemId: 3, fecha: "2026-12-05" }]);
+    // La de un ítem que dejó de ser no conforme, o una borrada, no viaja.
+    expect(fechasQueViajan([2], { 3: "2026-12-05", 2: "" }, "2026-11-29")).toEqual([]);
   });
 
   it("cerrada o descartada es solo lectura: sin campos ni botones", () => {
@@ -201,7 +244,7 @@ describe("ListaHallazgos", () => {
   });
   const foto = { id: 3, nombreOriginal: "corregido.png", mime: "image/png", tamanoBytes: 2048, hashSha256: "a".repeat(64), creadoEn: new Date() };
   const correccion = { en: new Date("2026-11-17T15:00:00Z"), porId: 9, por: "Carlos Rojas", nota: "Retiré la guía" };
-  const pintar = (hallazgos: HallazgoDeVerificacion[]) => renderToStaticMarkup(<ListaHallazgos hallazgos={hallazgos} verificacionId={4} />);
+  const pintar = (hallazgos: HallazgoDeVerificacion[]) => renderToStaticMarkup(<ListaHallazgos hallazgos={hallazgos} volver={{ verificacionId: 4 }} />);
 
   it("un hallazgo abierto ofrece «Corregido» con nota y foto solo a quien puede corregirlo", () => {
     const conPermiso = pintar([hallazgo(1, { puedeCorregir: true })]);
@@ -210,6 +253,12 @@ describe("ListaHallazgos", () => {
     expect(conPermiso).toContain('name="nota"');
     expect(conPermiso).toMatch(/<button[^>]*type="submit"[^>]*>Corregido<\/button>/);
     expect(conPermiso).toContain("Zona de carga");
+    // Nota, foto y, al final, la acción; el botón envía el formulario de la nota.
+    expect(conPermiso.indexOf('name="nota"')).toBeLessThan(conPermiso.indexOf("Zona de carga"));
+    expect(conPermiso.indexOf("Zona de carga")).toBeLessThan(conPermiso.indexOf(">Corregido</button>"));
+    const formulario = /<form[^>]*id="([^"]+)"/.exec(conPermiso)?.[1];
+    expect(conPermiso).toMatch(new RegExp(`<button[^>]*form="${formulario}"[^>]*>Corregido</button>`));
+    expect(conPermiso).toContain('name="verificacion" value="4"');
     expect(conPermiso).toContain("Retirado en el acto");
     expect(conPermiso).not.toContain(">Validar<");
     const sinPermiso = pintar([hallazgo(1)]);
@@ -242,17 +291,46 @@ describe("ListaHallazgos", () => {
         validacion: "verificacion",
         validacionVerificacionId: 11,
         reaperturas: 1,
-        cierre: { en: new Date("2026-11-18T15:00:00Z"), por: "Ana", nota: "Retiré la guía" },
+        cierre: { en: new Date("2026-11-18T15:00:00Z"), porId: 5, por: "Ana", nota: "Retiré la guía" },
       }),
-      hallazgo(2, { estado: "cerrado", validacion: "admin", cierre: { en: new Date("2026-11-18T15:00:00Z"), por: "Ana", nota: "Se retiró la guía" } }),
+      hallazgo(2, { estado: "cerrado", validacion: "admin", cierre: { en: new Date("2026-11-18T15:00:00Z"), porId: 5, por: "Ana", nota: "Se retiró la guía" } }),
     ]);
     expect(html).toContain("Cerrado");
     expect(html).toContain("Validado por la siguiente verificación del punto");
     expect(html).toContain('href="/distribucion/verificaciones/11"');
     expect(html).toContain("Se reabrió 1 vez");
+    // La nota de la corrección va una sola vez, como corrección; no se repite como si fuera de quien valida.
+    expect(html.split("Retiré la guía").length - 1).toBe(1);
     expect(html).toContain("Cerrado por Ana");
     expect(html).toContain("Se retiró la guía");
     expect(html).not.toContain("<form");
+  });
+
+  it("dice cómo se cerró: validado por el Admin, por quien lo corrigió o directamente", () => {
+    const cierre = { en: new Date("2026-11-18T15:00:00Z"), porId: 5, por: "Ana", nota: "Retiré la guía" };
+    const validado = pintar([hallazgo(1, { estado: "cerrado", correccion, validacion: "admin", cierre })]);
+    expect(validado).toContain("Validado por el Administrador del SGC (Ana)");
+    expect(validado.split("Retiré la guía").length - 1).toBe(1);
+    const propio = pintar([hallazgo(1, { estado: "cerrado", correccion, validacion: "admin", cierre: { ...cierre, porId: 9, por: "Carlos Rojas", nota: "Cerré yo" } })]);
+    expect(propio).toContain("Cerrado por quien lo corrigió (único Administrador del SGC activo)");
+    expect(propio).toContain("Cerré yo");
+    expect(comoSeCerro({ estado: "cerrado", correccion: null, validacion: "admin", cierre })).toBe("directo");
+    expect(comoSeCerro({ estado: "cerrado", correccion, validacion: "admin", cierre: { ...cierre, nota: "Otra nota" } })).toBe("directo");
+    expect(comoSeCerro({ estado: "cerrado", correccion, validacion: "verificacion", cierre })).toBe("verificacion");
+    expect(comoSeCerro({ estado: "por_validar", correccion, validacion: null, cierre: null })).toBeNull();
+  });
+
+  it("un hallazgo de recogida vuelve a su copia y no enlaza fotos de ítem", () => {
+    const html = renderToStaticMarkup(
+      <ListaHallazgos
+        hallazgos={[hallazgo(1, { origen: "recogida", verificacionId: null, itemId: null, puedeCorregir: true })]}
+        volver={{ copiaId: 12 }}
+        titulo="Hallazgos de esta copia"
+      />,
+    );
+    expect(html).toContain("Hallazgos de esta copia (1)");
+    expect(html).toContain('name="copia" value="12"');
+    expect(html).not.toContain('name="verificacion"');
   });
 });
 
@@ -282,5 +360,20 @@ describe("TablaHallazgos", () => {
     const html = renderToStaticMarkup(<TablaHallazgos hallazgos={[base]} ahora={new Date("2026-11-18T15:00:00Z")} />);
     expect(html).toContain("Por validar");
     expect(html).toContain("Corregido por Carlos Rojas: Retiré la guía");
+    const cierre = { en: new Date("2026-11-21T15:00:00Z"), porId: 5, por: "Ana", nota: "Retiré la guía" };
+    const validada = renderToStaticMarkup(
+      <TablaHallazgos hallazgos={[{ ...base, estado: "cerrado", validacion: "verificacion", validacionVerificacionId: 11, cierre }]} ahora={new Date("2026-11-22T15:00:00Z")} />,
+    );
+    expect(validada).toContain("Validado por la verificación del 21 nov 2026");
+    expect(validada).toContain("Corrección de Carlos Rojas: Retiré la guía");
+    expect(validada).not.toContain("Cerrado por Ana");
+    const porAdmin = renderToStaticMarkup(
+      <TablaHallazgos hallazgos={[{ ...base, estado: "cerrado", validacion: "admin", cierre }]} ahora={new Date("2026-11-22T15:00:00Z")} />,
+    );
+    expect(porAdmin).toContain("Validado por Ana");
+    const directo = renderToStaticMarkup(
+      <TablaHallazgos hallazgos={[{ ...base, estado: "cerrado", correccion: null, validacion: "admin", cierre: { ...cierre, nota: "Se cerró en el comité" } }]} ahora={new Date("2026-11-22T15:00:00Z")} />,
+    );
+    expect(directo).toContain("Cerrado por Ana: Se cerró en el comité");
   });
 });

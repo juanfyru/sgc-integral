@@ -21,6 +21,7 @@ import {
   puntosParaEmitir,
   reimprimirCopia,
 } from "@/db/consultas/distribucion/copias";
+import { listarPuntosUso, obtenerPuntoUso } from "@/db/consultas/distribucion/puntos-uso";
 import { ErrorDistribucion } from "@/lib/distribucion/tipos";
 import { fechaLimite } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -437,6 +438,13 @@ describe("listado y conteos", () => {
         }
         // A quien ve todo, el restringido sí se le cuenta.
         expect((await conteosPorPunto(admin, op)).find((c) => c.puntoId === suyo.id)).toMatchObject({ vivas: 2 });
+
+        // El catálogo de puntos (que el líder abre en solo lectura) cuenta lo mismo que la tabla a la que enlaza.
+        const vivasDeLaTabla = (await listarCopias(lider, { puntoId: suyo.id, estado: "vivas" }, op)).length;
+        expect(vivasDeLaTabla).toBe(1);
+        expect((await obtenerPuntoUso(suyo.id, lider, op))?.copiasVivas).toBe(vivasDeLaTabla);
+        expect((await listarPuntosUso(lider, op)).find((p) => p.id === suyo.id)?.copiasVivas).toBe(vivasDeLaTabla);
+        expect((await obtenerPuntoUso(suyo.id, admin, op))?.copiasVivas).toBe(2);
       } finally {
         await deGth.limpiar();
         await restringidoAte.limpiar();

@@ -7,11 +7,24 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TransactionSql } from "postgres";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
 }
+
+// Para probar el alcance de validar, reabrir y cerrar hace falta alguien con el permiso que no vea el punto, y con los
+// roles reales no existe (el permiso es solo del Admin SGC, que ve todo): mientras el interruptor está puesto, el líder
+// de proceso tiene los permisos de la distribución.
+const ampliado = vi.hoisted(() => ({ activo: false }));
+vi.mock("@/lib/permisos", async (original) => {
+  const real = await original<typeof import("@/lib/permisos")>();
+  const conAmpliado = (s: Parameters<typeof real.puede>[0], p: Parameters<typeof real.puede>[1]) =>
+    (ampliado.activo && s.rol === "lider_proceso" && p.startsWith("verificaciones.")) ||
+    (ampliado.activo && s.rol === "lider_proceso" && p === "distribucion.gestionar") ||
+    real.puede(s, p);
+  return { ...real, puede: conAmpliado };
+});
 
 import { obtenerSql } from "@/db/cliente";
 import { registrarArchivo } from "@/db/consultas/admin";
@@ -29,6 +42,7 @@ import {
 import { tareasDeHallazgos, tareasDeValidacion } from "@/db/consultas/distribucion/tareas";
 import {
   abrirVerificacion,
+  agregarItemLibre,
   cerrarVerificacion,
   guardarAvance,
   obtenerVerificacion,
@@ -199,9 +213,12 @@ describe("corregir, validar y reabrir", () => {
         await reabrirHallazgo(c.hallazgoId, c.admin, "Falta la foto", { sql: tx, ahora });
 
         // El Admin SGC corrige como quien gestiona la distribución: otra persona valida.
+        const avisosAntes = (await avisos(tx, c.admin.usuarioId, "hallazgo.por_validar")).length;
         await corregirHallazgo(c.hallazgoId, c.admin, "La retiré yo mismo", { sql: tx, ahora });
         expect((await tareasDeValidacion(c.admin, { sql: tx })).map((t) => t.id)).not.toContain(`validar:${c.hallazgoId}`);
         await rechaza(validarHallazgo(c.hallazgoId, c.admin, { sql: tx }), "Quien corrigió el hallazgo no puede validarlo");
+        // Nadie se avisa a sí mismo: el Admin que corrigió no recibe su propio «por validar».
+        expect(await avisos(tx, c.admin.usuarioId, "hallazgo.por_validar")).toHaveLength(avisosAntes);
         const otro = await sesionAdmin(tx);
         expect((await tareasDeValidacion(otro, { sql: tx })).map((t) => t.id)).toContain(`validar:${c.hallazgoId}`);
         await validarHallazgo(c.hallazgoId, otro, { sql: tx, ahora });
@@ -226,7 +243,71 @@ describe("corregir, validar y reabrir", () => {
         const [a] = await tx`SELECT detalle FROM auditoria WHERE accion = 'hallazgo_cerrado' AND entidad_id = ${c.hallazgoId}`;
         expect(a.detalle).toMatchObject({ estadoPrevio: "por_validar", nota: "Cerrado en el comité" });
         await rechaza(cerrarHallazgo(c.hallazgoId, c.admin, "Otra vez, por favor", { sql: tx }), "El hallazgo ya está cerrado");
+        expect(a.detalle.propioCorrector).toBe(false);
       } finally {
+        await c.limpiar();
+      }
+    }));
+
+  it("quien corrigió no cierra directamente mientras haya otro Admin SGC; si es el único, cierra con la marca", () =>
+    revertida(sql, async (tx) => {
+      const c = await hallazgoDePrueba(tx);
+      try {
+        await corregirHallazgo(c.hallazgoId, c.admin, "La retiré yo mismo", { sql: tx, ahora });
+        const flags = async () => (await obtenerVerificacion(c.verificacionId, c.admin, { sql: tx }))!.hallazgos[0];
+        expect(await flags()).toMatchObject({ puedeValidar: false, puedeCerrar: false });
+        await rechaza(
+          cerrarHallazgo(c.hallazgoId, c.admin, "Cerrado por mí", { sql: tx, ahora: despues }),
+          "Otro Administrador del SGC debe validar esta corrección: usted la hizo",
+        );
+        expect((await tx`SELECT estado FROM hallazgos WHERE id = ${c.hallazgoId}`)[0].estado).toBe("por_validar");
+
+        // Sin otro Admin SGC activo, cierra y la bitácora lo dice.
+        await tx`UPDATE usuarios SET activo = false WHERE rol = 'admin_sgc' AND id <> ${c.admin.usuarioId}`;
+        expect((await flags()).puedeCerrar).toBe(true);
+        await cerrarHallazgo(c.hallazgoId, c.admin, "Cerrado por mí", { sql: tx, ahora: despues });
+        const [a] = await tx`SELECT detalle FROM auditoria WHERE accion = 'hallazgo_cerrado' AND entidad_id = ${c.hallazgoId}`;
+        expect(a.detalle).toMatchObject({ estadoPrevio: "por_validar", propioCorrector: true, nota: "Cerrado por mí" });
+        const [cerrado] = await hallazgosDe({ puntoId: c.punto.id, estado: "cerrado" }, c.admin, { sql: tx });
+        expect(cerrado.cierre).toMatchObject({ porId: c.admin.usuarioId });
+        expect(cerrado.correccion?.porId).toBe(c.admin.usuarioId);
+      } finally {
+        await c.limpiar();
+      }
+    }));
+
+  it("desde abierto, quien gestiona cierra directamente como siempre, aunque haya otro Admin SGC", () =>
+    revertida(sql, async (tx) => {
+      const c = await hallazgoDePrueba(tx);
+      try {
+        expect((await obtenerVerificacion(c.verificacionId, c.admin, { sql: tx }))!.hallazgos[0].puedeCerrar).toBe(true);
+        await cerrarHallazgo(c.hallazgoId, c.admin, "Se retiró en el comité", { sql: tx, ahora });
+        const [a] = await tx`SELECT detalle FROM auditoria WHERE accion = 'hallazgo_cerrado' AND entidad_id = ${c.hallazgoId}`;
+        expect(a.detalle).toMatchObject({ estadoPrevio: "abierto", propioCorrector: false });
+      } finally {
+        await c.limpiar();
+      }
+    }));
+
+  it("validar, reabrir y cerrar miran el alcance: con el permiso y sin ver el punto, el hallazgo no existe", () =>
+    revertida(sql, async (tx) => {
+      const c = await hallazgoDePrueba(tx);
+      const [{ id: gth }] = await tx`SELECT id FROM procesos WHERE sigla = 'GTH'`;
+      // El punto es de ATE: un líder de GTH no lo ve.
+      const ajeno = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [Number(gth)] });
+      ampliado.activo = true;
+      try {
+        await corregirHallazgo(c.hallazgoId, c.responsable, "Retiré la copia vieja", { sql: tx, ahora });
+        await rechaza(validarHallazgo(c.hallazgoId, ajeno, { sql: tx, ahora }), "El hallazgo no existe");
+        await rechaza(reabrirHallazgo(c.hallazgoId, ajeno, "Sigue la copia", { sql: tx, ahora }), "El hallazgo no existe");
+        await rechaza(cerrarHallazgo(c.hallazgoId, ajeno, "Cerrado en el comité", { sql: tx, ahora }), "El hallazgo no existe");
+        expect((await tx`SELECT estado FROM hallazgos WHERE id = ${c.hallazgoId}`)[0].estado).toBe("por_validar");
+        // El mismo permiso sobre un punto que sí ve, funciona.
+        const delProceso = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [Number((await tx`SELECT id FROM procesos WHERE sigla = 'ATE'`)[0].id)] });
+        await validarHallazgo(c.hallazgoId, delProceso, { sql: tx, ahora });
+        expect((await tx`SELECT estado FROM hallazgos WHERE id = ${c.hallazgoId}`)[0].estado).toBe("cerrado");
+      } finally {
+        ampliado.activo = false;
         await c.limpiar();
       }
     }));
@@ -295,6 +376,72 @@ describe("validación por la siguiente verificación", () => {
       } finally {
         await c.limpiar();
       }
+    }));
+});
+
+describe("ítems fijos y libres en la validación automática", () => {
+  /** Un punto sin copias (solo los tres ítems fijos) con un hallazgo por validar del ítem fijo `fijo`. */
+  async function porValidarDeFijo(tx: TransactionSql, fijo: string) {
+    const admin = await sesionAdmin(tx);
+    const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+    const punto = await puntoDePrueba(tx, { responsable });
+    const primera = await verificar(tx, admin, punto, T0, (i) => (i.texto === fijo ? "no_conforme" : "conforme"));
+    const [h] = await tx`SELECT id FROM hallazgos WHERE verificacion_id = ${primera}`;
+    const hallazgoId = Number(h.id);
+    await corregirHallazgo(hallazgoId, responsable, "Retiré las impresiones", { sql: tx, ahora });
+    return { admin, punto, hallazgoId };
+  }
+  const SIN_SELLO = "Sin copias no controladas (impresiones sin sello)";
+  const OBSOLETOS = "Sin documentos obsoletos a la vista";
+
+  it("el mismo ítem fijo otra vez no conforme reabre el viejo y abre uno nuevo", () =>
+    revertida(sql, async (tx) => {
+      const { admin, punto, hallazgoId } = await porValidarDeFijo(tx, SIN_SELLO);
+      const siguiente = await verificar(tx, admin, punto, despues, (i) => (i.texto === SIN_SELLO ? "no_conforme" : "conforme"));
+      expect((await tx`SELECT estado, reaperturas, validacion FROM hallazgos WHERE id = ${hallazgoId}`)[0]).toMatchObject({
+        estado: "abierto",
+        reaperturas: 1,
+        validacion: null,
+      });
+      const [a] = await tx`SELECT detalle FROM auditoria WHERE accion = 'hallazgo_reabierto' AND entidad_id = ${hallazgoId}`;
+      expect(a.detalle).toMatchObject({ nota: "sigue no conforme en la verificación del 20 nov 2026", reabiertoPor: "verificacion", verificacionQueReabre: siguiente });
+      expect(await tx`SELECT estado FROM hallazgos WHERE verificacion_id = ${siguiente}`).toEqual([{ estado: "abierto" }]);
+    }));
+
+  it("con ese ítem conforme se valida, aunque otro ítem fijo salga no conforme", () =>
+    revertida(sql, async (tx) => {
+      const { admin, punto, hallazgoId } = await porValidarDeFijo(tx, SIN_SELLO);
+      await verificar(tx, admin, punto, despues, (i) => (i.texto === OBSOLETOS ? "no_conforme" : "conforme"));
+      expect((await tx`SELECT estado, validacion FROM hallazgos WHERE id = ${hallazgoId}`)[0]).toMatchObject({ estado: "cerrado", validacion: "verificacion" });
+
+      const otro = await porValidarDeFijo(tx, SIN_SELLO);
+      await verificar(tx, otro.admin, otro.punto, despues);
+      expect((await tx`SELECT estado, validacion FROM hallazgos WHERE id = ${otro.hallazgoId}`)[0]).toMatchObject({ estado: "cerrado", validacion: "verificacion" });
+    }));
+
+  it("un ítem libre se compara por su texto, sin distinguir mayúsculas ni espacios de los extremos", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const punto = await puntoDePrueba(tx, { responsable });
+      const abrirConLibre = async (cuando: Date, texto: string) => {
+        const { verificacionId } = await abrirVerificacion(admin, punto.id, { sql: tx, ahora: cuando });
+        await agregarItemLibre(verificacionId, admin, texto, { sql: tx });
+        const v = (await obtenerVerificacion(verificacionId, admin, { sql: tx }))!;
+        await guardarAvance(
+          verificacionId,
+          admin,
+          v.items.map((i) => ({ itemId: i.id, respuesta: i.origen === "libre" ? "no_conforme" : "conforme", nota: i.origen === "libre" ? "Con nota distinta" : null })),
+          { sql: tx },
+        );
+        await cerrarVerificacion(verificacionId, admin, { sql: tx, ahora: cuando });
+        return verificacionId;
+      };
+      const primera = await abrirConLibre(T0, "Cartelera con formatos vencidos");
+      const [h] = await tx`SELECT id FROM hallazgos WHERE verificacion_id = ${primera}`;
+      await corregirHallazgo(Number(h.id), responsable, "Retiré los formatos", { sql: tx, ahora });
+      await abrirConLibre(despues, "  CARTELERA con formatos vencidos ");
+      expect((await tx`SELECT estado, reaperturas FROM hallazgos WHERE id = ${h.id}`)[0]).toMatchObject({ estado: "abierto", reaperturas: 1 });
     }));
 });
 

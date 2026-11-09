@@ -73,6 +73,22 @@ export function fechasDeCorreccion(ahora: Date, plazoDias: number, zona: string)
   };
 }
 
+/**
+ * Las fechas de corrección que viajan con el cierre: solo las de un ítem no conforme que la persona cambió (distintas de
+ * la propuesta pintada). Sin fecha, el servidor aplica su propia propuesta: una página abierta pasada la medianoche no
+ * anota como ajustada, ni rechaza, una fecha que nadie tocó.
+ */
+export function fechasQueViajan(
+  noConformes: number[],
+  elegidas: Readonly<Record<number, string>>,
+  propuesta: string,
+): { itemId: number; fecha: string }[] {
+  return noConformes.flatMap((itemId) => {
+    const fecha = elegidas[itemId];
+    return fecha && fecha !== propuesta ? [{ itemId, fecha }] : [];
+  });
+}
+
 /** Un día real del calendario en `AAAA-MM-DD` (el 30 de febrero no lo es). */
 export function esDiaReal(fecha: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return false;

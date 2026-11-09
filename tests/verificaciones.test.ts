@@ -352,10 +352,18 @@ describe("fecha de corrección ajustable", () => {
         );
       }
       expect((await obtenerVerificacion(verificacionId, admin, { sql: tx }))?.estado).toBe("abierta");
-      // Los extremos valen.
+      // Los dos extremos valen: hoy + 365 aquí y mañana en otra verificación.
       await cerrarVerificacion(verificacionId, admin, { sql: tx, ahora: T1, fechasCorreccion: [{ itemId: items[0].id, fechaCorreccion: "2027-11-20" }] });
       const [h] = await tx`SELECT vence_en FROM hallazgos WHERE verificacion_id = ${verificacionId}`;
       expect(h.vence_en).toEqual(finDeFecha("2027-11-20", zonaHoraria()));
+
+      const otroPunto = await puntoDePrueba(tx, { responsable: resp });
+      const { verificacionId: otra } = await abrirVerificacion(admin, otroPunto.id, { sql: tx, ahora: T0 });
+      const deLaOtra = (await obtenerVerificacion(otra, admin, { sql: tx }))!.items;
+      await guardarAvance(otra, admin, deLaOtra.map((i, n) => ({ itemId: i.id, respuesta: n === 0 ? "no_conforme" : "conforme", nota: null })), { sql: tx });
+      await cerrarVerificacion(otra, admin, { sql: tx, ahora: T1, fechasCorreccion: [{ itemId: deLaOtra[0].id, fechaCorreccion: "2026-11-21" }] });
+      const [manana] = await tx`SELECT vence_en FROM hallazgos WHERE verificacion_id = ${otra}`;
+      expect(manana.vence_en).toEqual(finDeFecha("2026-11-21", zonaHoraria()));
     }));
 
   it("leerChequeo rechaza una fecha que no es AAAA-MM-DD", () => {
@@ -517,7 +525,7 @@ describe("hallazgos", () => {
       await expect(cerrarHallazgo(abierto.id, resp, "Ya se corrigió todo", { sql: tx })).rejects.toBeInstanceOf(ErrorPermiso);
       await cerrarHallazgo(abierto.id, admin, "  Se revisó en el comité  ", { sql: tx, ahora: T1 });
       const [cerrado] = await hallazgosDe({ puntoId: punto.id, estado: "cerrado" }, resp, { sql: tx });
-      expect(cerrado.cierre).toEqual({ en: T1, por: admin.nombre, nota: "Se revisó en el comité" });
+      expect(cerrado.cierre).toEqual({ en: T1, porId: admin.usuarioId, por: admin.nombre, nota: "Se revisó en el comité" });
       await rechaza(cerrarHallazgo(abierto.id, admin, "Otra vez, por favor", { sql: tx }), "El hallazgo ya está cerrado");
       const [a] = await tx`SELECT usuario_id FROM auditoria WHERE accion = 'hallazgo_cerrado' AND entidad_id = ${abierto.id}`;
       expect(Number(a.usuario_id)).toBe(admin.usuarioId);

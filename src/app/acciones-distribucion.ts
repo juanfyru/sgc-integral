@@ -198,16 +198,28 @@ export async function descartarVerificacionAccion(_prev: EstadoAccion, formData:
   });
 }
 
-/** Las acciones sobre un hallazgo vuelven a la verificación desde la que se hicieron. */
+/** Los campos que dicen a dónde vuelve una acción sobre un hallazgo; no son del esquema. */
+const VUELTA_DE_HALLAZGO = ["id", "verificacion", "copia"];
+
+/**
+ * Las acciones sobre un hallazgo vuelven a donde se hicieron: la verificación que lo abrió o, si nació de una recogida,
+ * la página de su copia. Solo ids enteros: no hay dirección libre que redirigir.
+ */
 function volverDeHallazgo(formData: FormData): string {
-  const verificacion = Number(formData.get("verificacion"));
-  return Number.isInteger(verificacion) && verificacion > 0 ? rutaDeVerificacion(verificacion) : "/distribucion/verificaciones";
+  const entero = (campo: string) => {
+    const n = Number(formData.get(campo));
+    return Number.isInteger(n) && n > 0 ? n : null;
+  };
+  const verificacion = entero("verificacion");
+  if (verificacion !== null) return rutaDeVerificacion(verificacion);
+  const copia = entero("copia");
+  return copia !== null ? rutaDeCopia(copia) : "/distribucion/verificaciones";
 }
 
 /** «Corregido» (spec 13C §12.5): el responsable del punto; la función exige además ser su responsable actual o gestionar. */
 export async function corregirHallazgoAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "distribucion.responder", async (_usuarioId, _formData, sesion) => {
-    const { nota } = parsearFormulario(formData, EsquemaNotaHallazgo, { omitir: ["id", "verificacion"] });
+    const { nota } = parsearFormulario(formData, EsquemaNotaHallazgo, { omitir: VUELTA_DE_HALLAZGO });
     await corregirHallazgo(idNumerico(formData, "id"), sesion, nota);
     return volverDeHallazgo(formData);
   });
@@ -215,7 +227,7 @@ export async function corregirHallazgoAccion(_prev: EstadoAccion, formData: Form
 
 export async function validarHallazgoAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "verificaciones.realizar", async (_usuarioId, _formData, sesion) => {
-    parsearFormulario(formData, EsquemaValidarHallazgo, { omitir: ["id", "verificacion"] });
+    parsearFormulario(formData, EsquemaValidarHallazgo, { omitir: VUELTA_DE_HALLAZGO });
     await validarHallazgo(idNumerico(formData, "id"), sesion);
     return volverDeHallazgo(formData);
   });
@@ -223,7 +235,7 @@ export async function validarHallazgoAccion(_prev: EstadoAccion, formData: FormD
 
 export async function reabrirHallazgoAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "verificaciones.realizar", async (_usuarioId, _formData, sesion) => {
-    const { nota } = parsearFormulario(formData, EsquemaNotaHallazgo, { omitir: ["id", "verificacion"] });
+    const { nota } = parsearFormulario(formData, EsquemaNotaHallazgo, { omitir: VUELTA_DE_HALLAZGO });
     await reabrirHallazgo(idNumerico(formData, "id"), sesion, nota);
     return volverDeHallazgo(formData);
   });
@@ -232,7 +244,7 @@ export async function reabrirHallazgoAccion(_prev: EstadoAccion, formData: FormD
 /** Cerrar directamente queda para quien gestiona la distribución (cuenta como validado por el Admin SGC). */
 export async function cerrarHallazgoAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "distribucion.gestionar", async (_usuarioId, _formData, sesion) => {
-    const { nota } = parsearFormulario(formData, EsquemaNotaHallazgo, { omitir: ["id", "verificacion"] });
+    const { nota } = parsearFormulario(formData, EsquemaNotaHallazgo, { omitir: VUELTA_DE_HALLAZGO });
     await cerrarHallazgo(idNumerico(formData, "id"), sesion, nota);
     return volverDeHallazgo(formData);
   });

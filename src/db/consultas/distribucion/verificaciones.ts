@@ -3,7 +3,6 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { adminsActivos } from "@/db/consultas/tramites";
 import { puedeVerVerificacion } from "@/lib/alcance";
 import { armarListaDeChequeo, esConforme, esDiaReal, fechasDeCorreccion } from "@/lib/distribucion/verificacion";
 import {
@@ -18,7 +17,8 @@ import { textoFecha } from "@/lib/vigencia/plazo";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { recogerEnVerificacion } from "./copias";
 import { evidenciasDe, type Evidencia } from "./evidencias";
-import { abrirHallazgo, leerHallazgos, puedeCorregirHallazgo, validarPorVerificacion, type Hallazgo } from "./hallazgos";
+import { abrirHallazgo, conAcciones, leerHallazgos, validarPorVerificacion, type HallazgoConAcciones } from "./hallazgos";
+import { exigirSinOtroAdmin } from "./otro-admin";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -35,12 +35,8 @@ export type ItemVerificacion = {
   fotos: Evidencia[];
 };
 
-/**
- * Lo que la persona puede hacer con cada hallazgo (spec 13C §12.5): «Corregido» el responsable actual del punto (o quien
- * gestiona) mientras está abierto; «Validar» y «Reabrir» quien realiza verificaciones, si no lo corrigió él; cerrar
- * directamente, quien gestiona la distribución.
- */
-export type HallazgoDeVerificacion = Hallazgo & { puedeCorregir: boolean; puedeValidar: boolean; puedeCerrar: boolean };
+/** Los hallazgos que abrió la verificación, con lo que la persona puede hacer con cada uno (`conAcciones`). */
+export type HallazgoDeVerificacion = HallazgoConAcciones;
 
 export type Verificacion = {
   id: number;
@@ -57,6 +53,10 @@ export type Verificacion = {
   items: ItemVerificacion[];
   hallazgos: HallazgoDeVerificacion[];
   puedeEditar: boolean;
+  /** Abierta: los hallazgos por validar del punto (de otras verificaciones) que el cierre validará o reabrirá. */
+  porValidarDelPunto: number;
+  /** Cerrada: cuántos por validar validó y cuántos reabrió (del `detalle` de su cierre). */
+  alCerrar: { validados: number; reabiertos: number } | null;
 };
 
 export type RespuestaDeItem = {
@@ -91,12 +91,7 @@ function exigirAbierta(v: Row): Row {
 }
 
 /** Quien responde por el punto solo lo verifica si no hay otro Administrador del SGC activo (spec 13B §6.3). */
-async function exigirSinOtroAdmin(tx: Cliente, usuarioId: number): Promise<void> {
-  const otros = (await adminsActivos({ sql: tx })).filter((id) => id !== usuarioId);
-  if (otros.length > 0) {
-    throw new ErrorDistribucion("Otro Administrador del SGC debe verificar este punto: usted es su responsable");
-  }
-}
+const PROPIO_PUNTO = "Otro Administrador del SGC debe verificar este punto: usted es su responsable";
 
 /**
  * Abre la verificación de un punto, o devuelve la que ya está abierta. Quien es el responsable del punto no
@@ -120,7 +115,7 @@ export async function abrirVerificacion(
     if (abierta) return { verificacionId: Number(abierta.id) };
 
     const propioPunto = Number(p.responsable_id) === sesion.usuarioId;
-    if (propioPunto) await exigirSinOtroAdmin(tx, sesion.usuarioId);
+    if (propioPunto) await exigirSinOtroAdmin(tx, sesion.usuarioId, PROPIO_PUNTO);
 
     const [v] = await tx`
       INSERT INTO verificaciones
@@ -238,7 +233,7 @@ export async function cerrarVerificacion(
     // La misma regla de la apertura, con quien cierra: el responsable de hoy no cierra la verificación de su
     // punto si hay otro Admin SGC activo; si no lo hay, la cierra y queda la marca «propio punto».
     const cierraSuPunto = Number(punto.responsable_id) === sesion.usuarioId;
-    if (cierraSuPunto) await exigirSinOtroAdmin(tx, sesion.usuarioId);
+    if (cierraSuPunto) await exigirSinOtroAdmin(tx, sesion.usuarioId, PROPIO_PUNTO);
     const { plazoCorreccionDias } = (await obtenerConfigDocumental({ sql: tx })).distribucion;
 
     // Lo que puede fallar va antes del cierre: la fecha de corrección de cada no conforme, si se eligió.
@@ -302,6 +297,8 @@ export async function cerrarVerificacion(
       .map((i) => ({
         copiaId: i.copia_id === null ? null : Number(i.copia_id),
         documentoId: i.documento_id === null ? null : Number(i.documento_id),
+        texto: i.texto as string,
+        origen: i.origen as string,
       }));
     const validacion = await validarPorVerificacion(tx, id, Number(v.punto_uso_id), noConformes, ahora);
 
@@ -412,15 +409,28 @@ export async function obtenerVerificacion(
     propioPunto: f.propio_punto as boolean,
     motivoDescarte: (f.motivo_descarte as string | null) ?? null,
     items,
-    hallazgos: (await leerHallazgos(sql, sql`h.verificacion_id = ${id}`)).map((h) => ({
-      ...h,
-      puedeCorregir: h.estado === "abierto" && puedeCorregirHallazgo(sesion, Number(f.actual_id)),
-      puedeValidar:
-        h.estado === "por_validar" && puede(sesion, "verificaciones.realizar") && h.correccion?.porId !== sesion.usuarioId,
-      puedeCerrar: h.estado !== "cerrado" && puede(sesion, "distribucion.gestionar"),
-    })),
+    hallazgos: await conAcciones(sql, await leerHallazgos(sql, sql`h.verificacion_id = ${id}`), sesion),
     puedeEditar: estado === "abierta" && puede(sesion, "verificaciones.realizar"),
+    porValidarDelPunto: estado === "abierta" ? await porValidarDe(sql, Number(f.punto_uso_id), id) : 0,
+    alCerrar: estado === "cerrada" ? await resultadoDelCierre(sql, id) : null,
   };
+}
+
+/** Los hallazgos por validar del punto que vienen de otras verificaciones (o de una recogida). */
+async function porValidarDe(sql: Cliente, puntoId: number, verificacionId: number): Promise<number> {
+  const [f] = await sql`SELECT count(*)::int AS n FROM hallazgos
+    WHERE punto_uso_id = ${puntoId} AND estado = 'por_validar' AND verificacion_id IS DISTINCT FROM ${verificacionId}`;
+  return Number(f.n);
+}
+
+/** Lo que el cierre hizo con los por validar del punto, como quedó en su bitácora. */
+async function resultadoDelCierre(sql: Cliente, verificacionId: number): Promise<{ validados: number; reabiertos: number } | null> {
+  const [f] = await sql`SELECT detalle FROM auditoria
+    WHERE accion = 'verificacion_cerrada' AND entidad = 'verificacion' AND entidad_id = ${verificacionId}
+    ORDER BY id DESC LIMIT 1`;
+  if (!f) return null;
+  const d = f.detalle as { hallazgosValidados?: number; hallazgosReabiertos?: number };
+  return { validados: Number(d.hallazgosValidados ?? 0), reabiertos: Number(d.hallazgosReabiertos ?? 0) };
 }
 
 export async function ultimaVerificacionDe(

@@ -111,6 +111,20 @@ describe("las acciones de un hallazgo", () => {
     expect(hallazgos.reabrirHallazgo).toHaveBeenCalledWith(5, expect.objectContaining({ usuarioId: 7 }), "Sigue la copia");
   });
 
+  it("un hallazgo de recogida vuelve a la página de su copia", async () => {
+    sesionDe("consulta");
+    await expect(corregirHallazgoAccion(null, formulario({ id: "5", copia: "12", nota: "Apareció la copia" }))).rejects.toThrow(
+      "REDIRECT:/distribucion/copias/12",
+    );
+    sesionDe("admin_sgc");
+    await expect(validarHallazgoAccion(null, formulario({ id: "5", copia: "12" }))).rejects.toThrow("REDIRECT:/distribucion/copias/12");
+    await expect(reabrirHallazgoAccion(null, formulario({ id: "5", copia: "12", nota: "No apareció" }))).rejects.toThrow(
+      "REDIRECT:/distribucion/copias/12",
+    );
+    // Un valor que no es un id no lleva a ninguna parte rara.
+    await expect(validarHallazgoAccion(null, formulario({ id: "5", copia: "//malo" }))).rejects.toThrow("REDIRECT:/distribucion/verificaciones");
+  });
+
   it("cerrar directamente exige distribucion.gestionar", async () => {
     sesionDe("consulta");
     expect(await cerrarHallazgoAccion(null, formulario({ id: "5", nota: "Ya se corrigió" }))).toMatchObject({ ok: false });

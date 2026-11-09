@@ -76,7 +76,7 @@ const ESTADOS_VIVOS = ["emitida", "recibida", "por_recoger"];
 const YA_NO_ESTA = "La copia ya no está en ese estado";
 
 /** Si el documento `d` está en el alcance del líder (cualquier otro rol: siempre). */
-export function documentoEnAlcance(sql: Cliente, sesion: SesionFlujo) {
+export function documentoEnAlcance(sql: Cliente, sesion: Pick<SesionFlujo, "usuarioId" | "rol">) {
   if (sesion.rol !== "lider_proceso") return sql`true`;
   return sql`EXISTS (
     SELECT 1
@@ -89,7 +89,7 @@ export function documentoEnAlcance(sql: Cliente, sesion: SesionFlujo) {
 }
 
 /** Quién ve una copia (spec 13B §6.4): `distribucion.ver` con alcance, el responsable del punto o quien la emitió. */
-function condicionVista(sql: Cliente, sesion: SesionFlujo) {
+export function condicionVista(sql: Cliente, sesion: Pick<SesionFlujo, "usuarioId" | "rol" | "verHistorial">) {
   const propias = sql`(cc.emitida_por = ${sesion.usuarioId} OR cc.responsable_id = ${sesion.usuarioId} OR pu.responsable_id = ${sesion.usuarioId})`;
   if (!puede(sesion, "distribucion.ver")) return propias;
   if (sesion.rol === "lider_proceso") {

@@ -6,12 +6,10 @@ import { claseControl } from "@/componentes/ui/Campo";
 import { Insignia, type VarianteInsignia } from "@/componentes/ui/Insignia";
 import type { ItemVerificacion } from "@/db/consultas/distribucion/verificaciones";
 import { ETIQUETA_RESPUESTA, RESPUESTAS_ITEM, type RespuestaItem } from "@/lib/distribucion/tipos";
-import type { FechasCorreccion } from "@/lib/distribucion/verificacion";
 import { BotonQuitarFoto } from "./BotonQuitarFoto";
 import { urlDeFoto } from "./enlaces";
 
-/** `fecha`: la de corrección del hallazgo que abrirá un no conforme; sin ella, la propuesta. */
-export type ValorItem = { respuesta: RespuestaItem | null; nota: string; retirado: boolean; fecha?: string };
+export type ValorItem = { respuesta: RespuestaItem | null; nota: string; retirado: boolean };
 
 const ICONO = { conforme: Check, no_conforme: X, no_aplica: Minus } as const;
 
@@ -50,9 +48,9 @@ function Fotos({ verificacionId, item, editable }: { verificacionId: number; ite
 }
 
 /**
- * Una fila de la lista de chequeo. Editable, los campos viajan como `respuesta_<id>`, `nota_<id>`,
- * `retirado_<id>` y `fecha_<id>`; «no conforme» despliega la nota, «Retirado en el acto», la fecha de corrección (con
- * `fechas`) y la foto. De solo lectura, es el registro de lo que se respondió.
+ * Una fila de la lista de chequeo. Editable, los campos viajan como `respuesta_<id>`, `nota_<id>` y
+ * `retirado_<id>`; «no conforme» despliega la nota, «Retirado en el acto» y la foto. De solo lectura, es el
+ * registro de lo que se respondió.
  */
 export function ItemChequeo({
   verificacionId,
@@ -60,15 +58,12 @@ export function ItemChequeo({
   valor,
   editable,
   alCambiar,
-  fechas,
 }: {
   verificacionId: number;
   item: ItemVerificacion;
   valor: ValorItem;
   editable: boolean;
   alCambiar?: (valor: ValorItem) => void;
-  /** La fecha de corrección propuesta y su rango, calculados en el servidor en la zona de la instalación. */
-  fechas?: FechasCorreccion;
 }) {
   if (!editable) {
     return (
@@ -133,24 +128,6 @@ export function ItemChequeo({
             />
             Retirado en el acto
           </label>
-          {fechas ? (
-            <label className="flex flex-col gap-1 text-sm font-medium">
-              Fecha de corrección
-              <input
-                type="date"
-                name={`fecha_${item.id}`}
-                value={valor.fecha ?? fechas.propuesta}
-                min={fechas.minima}
-                max={fechas.maxima}
-                onChange={(e) => cambiar({ fecha: e.target.value })}
-                aria-describedby={`ayuda-fecha-${item.id}`}
-                className={claseControl}
-              />
-              <span id={`ayuda-fecha-${item.id}`} className="text-xs font-normal text-muted-foreground">
-                Se propone según el plazo de corrección; puede cambiarla entre mañana y un año. Vacía, rige la propuesta.
-              </span>
-            </label>
-          ) : null}
           <div className="flex flex-col gap-2">
             <p className="text-sm font-medium">Foto</p>
             <Fotos verificacionId={verificacionId} item={item} editable />

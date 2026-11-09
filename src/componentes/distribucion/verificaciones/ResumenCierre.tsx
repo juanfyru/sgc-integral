@@ -26,6 +26,10 @@ export function ResumenCierre({ verificacion: v }: { verificacion: Verificacion 
           : v.hallazgos.length === 1
             ? "Abrió 1 hallazgo."
             : `Abrió ${v.hallazgos.length} hallazgos.`}
+        {v.alCerrar && v.alCerrar.validados > 0
+          ? ` Validó ${v.alCerrar.validados === 1 ? "1 hallazgo por validar" : `${v.alCerrar.validados} hallazgos por validar`}.`
+          : ""}
+        {v.alCerrar && v.alCerrar.reabiertos > 0 ? ` Reabrió ${v.alCerrar.reabiertos}.` : ""}
         {v.propioPunto ? " La verificó quien responde por el punto, porque no hay otro Administrador del SGC activo." : ""}
       </p>
     </section>
