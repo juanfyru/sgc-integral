@@ -80,14 +80,26 @@ describe("semáforo de vigencia", () => {
 
   it("estadoVigencia: al día, sin fecha y los bordes de la ventana", () => {
     expect(estadoVigencia({ proxima: finDeFecha("2027-11-06", ZONA), ...sinMarcas }, ahora, 90, ZONA)).toEqual({ estado: "al_dia", dias: 363 });
-    expect(estadoVigencia({ proxima: null, ...sinMarcas }, ahora, 90, ZONA)).toEqual({ estado: "al_dia", dias: null });
-    expect(estadoVigencia({ proxima: null, enTramite: false, impactoPendiente: true }, ahora, 90, ZONA)).toEqual({ estado: "al_dia", dias: null });
+    // sin fecha de próxima revisión es una anomalía: se ve en atención, no se esconde como al día
+    expect(estadoVigencia({ proxima: null, ...sinMarcas }, ahora, 90, ZONA)).toEqual({ estado: "atencion", dias: null });
+    expect(estadoVigencia({ proxima: null, enTramite: true, impactoPendiente: false }, ahora, 90, ZONA)).toEqual({ estado: "en_tramite", dias: null });
     expect(estadoVigencia({ proxima: finDeFecha("2026-11-08", ZONA), ...sinMarcas }, ahora, 90, ZONA)).toEqual({ estado: "atencion", dias: 0 });
     expect(estadoVigencia({ proxima: finDeFecha("2026-11-07", ZONA), ...sinMarcas }, ahora, 90, ZONA)).toEqual({ estado: "vencida", dias: -1 });
     expect(estadoVigencia({ proxima: finDeFecha("2027-02-06", ZONA), ...sinMarcas }, ahora, 90, ZONA)).toEqual({ estado: "atencion", dias: 90 });
     expect(estadoVigencia({ proxima: finDeFecha("2027-02-07", ZONA), ...sinMarcas }, ahora, 90, ZONA)).toEqual({ estado: "al_dia", dias: 91 });
     // en trámite manda aunque la fecha esté vencida
     expect(estadoVigencia({ proxima: finDeFecha("2026-08-14", ZONA), enTramite: true, impactoPendiente: false }, ahora, 90, ZONA).estado).toBe("en_tramite");
+  });
+
+  it("estadoVigencia: un impacto pendiente da al menos atención, también sin fecha", () => {
+    expect(estadoVigencia({ proxima: null, enTramite: false, impactoPendiente: true }, ahora, 90, ZONA)).toEqual({ estado: "atencion", dias: null });
+    expect(estadoVigencia({ proxima: finDeFecha("2027-11-06", ZONA), enTramite: false, impactoPendiente: true }, ahora, 90, ZONA)).toEqual({ estado: "atencion", dias: 363 });
+    expect(estadoVigencia({ proxima: finDeFecha("2026-08-14", ZONA), enTramite: false, impactoPendiente: true }, ahora, 90, ZONA)).toEqual({ estado: "vencida", dias: -86 });
+  });
+
+  it("textoVigencia sin fecha de revisión lo dice", () => {
+    expect(textoVigencia({ estado: "atencion", dias: null })).toBe("Atención · sin fecha de revisión");
+    expect(textoVigencia({ estado: "atencion", dias: null }, { cambioNormativo: "Resolución 100 de 2026" })).toBe("Atención · revisión por cambio normativo");
   });
 
   it("textoVigencia dice el estado con sus días", () => {

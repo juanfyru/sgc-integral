@@ -64,8 +64,26 @@ describe("definiciones de los indicadores", () => {
   it("dentroDelPlazo cuenta vencidos sobre vigentes", () => {
     const m = dentroDelPlazo([{ vencida: true }, { vencida: false }, { vencida: false }]);
     expect(m.valor).toBe(67);
-    expect(m).toEqual({ valor: 67, numerador: 2, denominador: 3 });
+    expect(m).toEqual({ valor: 67, numerador: 2, denominador: 3, sinDato: 0 });
     expect(dentroDelPlazo([]).valor).toBeNull();
+  });
+
+  it("dentroDelPlazo no cuenta como cumplido lo que no tiene fecha: va aparte, en sinDato", () => {
+    expect(dentroDelPlazo([{ vencida: true }, { vencida: false }, { vencida: null }])).toEqual({ valor: 50, numerador: 1, denominador: 2, sinDato: 1 });
+    expect(dentroDelPlazo([{ vencida: null }])).toEqual({ valor: null, numerador: 0, denominador: 0, sinDato: 1 });
+  });
+
+  it("vencidosPorProceso calcula «dentro» solo con los de estado conocido y cuenta el resto en sinDato", () => {
+    const r = vencidosPorProceso([
+      { procesoId: 1, proceso: "Calidad", sigla: "CAL", vencida: false },
+      { procesoId: 1, proceso: "Calidad", sigla: "CAL", vencida: null },
+      { procesoId: 1, proceso: "Calidad", sigla: "CAL", vencida: true },
+      { procesoId: 2, proceso: "Urgencias", sigla: "URG", vencida: null },
+    ]);
+    expect(r).toEqual([
+      { procesoId: 1, proceso: "Calidad", sigla: "CAL", vencidos: 1, vigentes: 3, sinDato: 1, dentro: { valor: 50, numerador: 1, denominador: 2 } },
+      { procesoId: 2, proceso: "Urgencias", sigla: "URG", vencidos: 0, vigentes: 1, sinDato: 1, dentro: { valor: null, numerador: 0, denominador: 0 } },
+    ]);
   });
 
   it("tiempoDeAprobacion: promedio y mediana en días, nulos sin trámites", () => {
@@ -107,8 +125,8 @@ describe("definiciones de los indicadores", () => {
       { procesoId: 1, proceso: "Calidad", sigla: "CAL", vencida: false },
     ];
     expect(vencidosPorProceso(docs)).toEqual([
-      { procesoId: 2, proceso: "Urgencias", sigla: "URG", vencidos: 2, vigentes: 3, dentro: { valor: 33, numerador: 1, denominador: 3 } },
-      { procesoId: 1, proceso: "Calidad", sigla: "CAL", vencidos: 0, vigentes: 2, dentro: { valor: 100, numerador: 2, denominador: 2 } },
+      { procesoId: 2, proceso: "Urgencias", sigla: "URG", vencidos: 2, vigentes: 3, sinDato: 0, dentro: { valor: 33, numerador: 1, denominador: 3 } },
+      { procesoId: 1, proceso: "Calidad", sigla: "CAL", vencidos: 0, vigentes: 2, sinDato: 0, dentro: { valor: 100, numerador: 2, denominador: 2 } },
     ]);
     expect(vencidosPorProceso([])).toEqual([]);
   });

@@ -7,9 +7,13 @@ export function porcentaje(numerador: number, denominador: number): Medicion {
   return { valor: denominador === 0 ? null : Math.round((numerador / denominador) * 100), numerador, denominador };
 }
 
-/** Vigentes cuya próxima revisión no ha pasado, sobre vigentes. */
-export function dentroDelPlazo(docs: { vencida: boolean }[]): Medicion {
-  return porcentaje(docs.filter((d) => !d.vencida).length, docs.length);
+/**
+ * Vigentes cuya próxima revisión no ha pasado, sobre los vigentes con fecha; los que no la tienen
+ * (`vencida` nulo) no cuentan como cumplidos: no entran y se cuentan aparte.
+ */
+export function dentroDelPlazo(docs: { vencida: boolean | null }[]): Medicion & { sinDato: number } {
+  const conDato = docs.filter((d) => d.vencida !== null);
+  return { ...porcentaje(conDato.filter((d) => !d.vencida).length, conDato.length), sinDato: docs.length - conDato.length };
 }
 
 const unDecimal = (n: number) => Math.round(n * 10) / 10;
@@ -38,17 +42,19 @@ export function etapasEnPlazo(eventos: { cerradaEn: Date; venceEn: Date | null }
   return { ...porcentaje(enPlazo, conLimite.length), sinDato: eventos.length - conLimite.length };
 }
 
+/** `dentro` se calcula solo con los documentos de estado conocido; los que no tienen fecha van en `sinDato`. */
 export function vencidosPorProceso(
-  docs: { procesoId: number; proceso: string; sigla: string; vencida: boolean }[],
-): { procesoId: number; proceso: string; sigla: string; vencidos: number; vigentes: number; dentro: Medicion }[] {
-  const porProceso = new Map<number, { procesoId: number; proceso: string; sigla: string; vencidos: number; vigentes: number }>();
+  docs: { procesoId: number; proceso: string; sigla: string; vencida: boolean | null }[],
+): { procesoId: number; proceso: string; sigla: string; vencidos: number; vigentes: number; sinDato: number; dentro: Medicion }[] {
+  const porProceso = new Map<number, { procesoId: number; proceso: string; sigla: string; vencidos: number; vigentes: number; sinDato: number }>();
   for (const d of docs) {
-    const fila = porProceso.get(d.procesoId) ?? { procesoId: d.procesoId, proceso: d.proceso, sigla: d.sigla, vencidos: 0, vigentes: 0 };
+    const fila = porProceso.get(d.procesoId) ?? { procesoId: d.procesoId, proceso: d.proceso, sigla: d.sigla, vencidos: 0, vigentes: 0, sinDato: 0 };
     fila.vigentes += 1;
-    if (d.vencida) fila.vencidos += 1;
+    if (d.vencida === null) fila.sinDato += 1;
+    else if (d.vencida) fila.vencidos += 1;
     porProceso.set(d.procesoId, fila);
   }
   return [...porProceso.values()]
-    .map((f) => ({ ...f, dentro: porcentaje(f.vigentes - f.vencidos, f.vigentes) }))
+    .map((f) => ({ ...f, dentro: porcentaje(f.vigentes - f.sinDato - f.vencidos, f.vigentes - f.sinDato) }))
     .sort((a, b) => b.vencidos - a.vencidos || a.proceso.localeCompare(b.proceso, "es"));
 }
