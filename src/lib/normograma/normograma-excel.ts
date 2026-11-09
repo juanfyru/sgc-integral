@@ -1,6 +1,6 @@
 import type { FilaNormaExcel } from "@/db/consultas/normograma/lectura";
 import { construirHoja, type Columna } from "@/lib/distribucion/hoja-excel";
-import { ETIQUETA_ESTADO_NORMA, fechaDeNorma } from "./tipos";
+import { ETIQUETA_ESTADO_NORMA } from "./tipos";
 
 /** `alcance`: «Institucional · …» o «Proceso: Consulta Externa · …», con los filtros; con proceso va «Requisito». */
 export type MetaNormograma = { hospital: string; generadoEn: string; alcance: string; total: number; conRequisito?: boolean };
@@ -12,12 +12,13 @@ function columnas(conRequisito: boolean): Array<Columna<FilaNormaExcel>> {
     { cab: "Tipo", ancho: 14, valor: (f) => f.tipo },
     { cab: "Número", ancho: 12, valor: (f) => f.numero },
     { cab: "Año", ancho: 8, valor: (f) => f.anio },
-    { cab: "Fecha de expedición", ancho: 14, valor: (f) => (f.fechaExpedicion ? fechaDeNorma(f.fechaExpedicion) : null) },
+    // Las fechas de la norma van `aaaa-mm-dd`, como en el Listado Maestro.
+    { cab: "Fecha de expedición", ancho: 14, valor: (f) => f.fechaExpedicion },
     { cab: "Entidad emisora", ancho: 30, valor: (f) => f.entidadEmisora },
     { cab: "Título", ancho: 48, valor: (f) => f.titulo },
     { cab: "Tema", ancho: 40, valor: (f) => f.tema },
     { cab: "Estado", ancho: 12, valor: (f) => ETIQUETA_ESTADO_NORMA[f.estado] },
-    { cab: "Fecha del estado", ancho: 14, valor: (f) => (f.estadoEn ? fechaDeNorma(f.estadoEn) : null) },
+    { cab: "Fecha del estado", ancho: 14, valor: (f) => f.estadoEn },
     { cab: "Relaciones", ancho: 40, valor: (f) => lista(f.relaciones) },
     { cab: "Procesos", ancho: 36, valor: (f) => lista(f.procesos) },
     ...(conRequisito ? [{ cab: "Requisito", ancho: 48, valor: (f: FilaNormaExcel) => f.requisito }] : []),

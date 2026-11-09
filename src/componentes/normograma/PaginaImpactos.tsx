@@ -72,7 +72,13 @@ function NoAfecta({ impacto: i }: { impacto: Impacto }) {
       variante="secundario"
       tamano="sm"
     >
-      <Campo etiqueta="Por qué no afecta" nombre="nota" id={`impacto-${i.id}-nota`} ayuda="Al menos 5 caracteres. Queda en la historia del documento.">
+      <Campo
+        etiqueta="Por qué no afecta"
+        nombre="nota"
+        id={`impacto-${i.id}-nota`}
+        // Con documento, la resolución queda en su historia; sin él, en el impacto del proceso (y en la bitácora).
+        ayuda={`Al menos 5 caracteres. ${i.documento ? "Queda en la historia del documento." : "Queda en el impacto del proceso y en la bitácora."}`}
+      >
         <textarea required minLength={5} maxLength={1000} rows={2} className={CONTROL} />
       </Campo>
     </AccionNormograma>

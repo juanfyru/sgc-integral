@@ -369,7 +369,9 @@ export async function resolverImpactoPorVerificacion(
 /**
  * «Revisar el impacto de Resolución 2003 de 2014 (derogada) en Consulta Externa (2)»: una tarea por cambio y proceso
  * con impactos pendientes, del líder en sus procesos activos o del Admin SGC en los que no tienen líder activo
- * (F13A-DC2). Una sola consulta, sin la de vigencia; quien no lidera ni es Admin SGC no consulta nada.
+ * (F13A-DC2). Una sola consulta, sin la de vigencia; quien no lidera ni es Admin SGC no consulta nada. Cuenta con el
+ * mismo filtro de acceso que `impactosDe`: un documento que la persona no ve no suma, y si solo quedan esos, no hay tarea
+ * (su página sería «no encontrada»).
  */
 export async function tareasDeImpactos(sesion: SesionFlujo, opciones?: Opciones): Promise<Tarea[]> {
   if (sesion.rol !== "lider_proceso" && sesion.rol !== "admin_sgc") return [];
@@ -385,7 +387,9 @@ export async function tareasDeImpactos(sesion: SesionFlujo, opciones?: Opciones)
     JOIN normas n ON n.id = i.norma_id
     JOIN tipos_norma tn ON tn.id = n.tipo_norma_id
     JOIN procesos p ON p.id = i.proceso_id
+    LEFT JOIN documentos d ON d.id = i.documento_id
     WHERE i.estado = 'pendiente' AND ${dePersona}
+      AND (i.documento_id IS NULL OR ${filtroAcceso(sql, sesion)})
     GROUP BY i.cambio_id, i.proceso_id, p.nombre, c.estado_nuevo, tn.nombre, n.numero, n.anio, n.titulo
     ORDER BY min(i.vence_en), i.cambio_id, p.nombre`;
   return filas.map((f) => ({

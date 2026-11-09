@@ -70,10 +70,16 @@ function SeccionDatos({ norma: n, administra }: { norma: Norma; administra: bool
           <Dato etiqueta="Texto de la norma (PDF)">
             {n.archivo ? (
               <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <Link href={rutaDelPdf(n, n.archivo)} className={`inline-flex items-center gap-1 rounded underline underline-offset-2 ${FOCO}`} prefetch={false}>
+                {/* Un <a>, como las demás rutas de archivos: el enrutador pediría primero el PDF como página. */}
+                <a
+                  href={rutaDelPdf(n, n.archivo)}
+                  target="_blank"
+                  rel="noopener"
+                  className={`inline-flex items-center gap-1 rounded underline underline-offset-2 ${FOCO}`}
+                >
                   <FileText aria-hidden="true" className="size-4" />
                   {`Abrir el PDF · ${formatearTamano(n.archivo.tamanoBytes)}`}
-                </Link>
+                </a>
                 {administra ? (
                   <EliminarArchivo direccion={`/api/normas/${n.id}/archivos/${n.archivo.id}`} nombre={n.archivo.nombreOriginal} de="de la norma" />
                 ) : null}

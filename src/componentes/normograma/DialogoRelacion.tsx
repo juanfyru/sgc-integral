@@ -91,11 +91,24 @@ export function FormularioRelacion({ normaId, nombre, normas, alCerrar }: Props 
 /** «Registrar relación» de la ficha (spec 13C §10.2), para quien administra: «modifica a», «deroga a», «reglamenta a». */
 export function DialogoRelacion(props: Props) {
   const [abierto, setAbierto] = useState(false);
+  const sinNormas = props.normas.length === 0;
+  const explicacion = `relacion-${props.normaId}-sin-normas`;
   return (
     <>
-      <Boton variante="secundario" onClick={() => setAbierto(true)} aria-haspopup="dialog" disabled={props.normas.length === 0}>
+      <Boton
+        variante="secundario"
+        onClick={() => setAbierto(true)}
+        aria-haspopup="dialog"
+        aria-describedby={sinNormas ? explicacion : undefined}
+        disabled={sinNormas}
+      >
         Registrar relación
       </Boton>
+      {sinNormas ? (
+        <p id={explicacion} className="mt-1 text-xs text-muted-foreground">
+          No hay otra norma vigente o modificada que pueda ser la afectada.
+        </p>
+      ) : null}
       <Dialogo
         abierto={abierto}
         alCerrar={() => setAbierto(false)}

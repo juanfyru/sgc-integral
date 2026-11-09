@@ -9,7 +9,7 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { propietarioDeDocumento } from "@/db/consultas/tramites";
-import { alcanceProcesos, filtroAcceso, puedeAccederDocumento, puedeAsociarNorma } from "@/lib/alcance";
+import { alcanceProcesos, filtroAcceso, puedeAccederDocumento, puedeAsociarNorma, type Alcance } from "@/lib/alcance";
 import { ErrorNormograma, opcionalAcotado } from "@/lib/normograma/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
 import { nombreSql } from "./busqueda";
@@ -195,12 +195,16 @@ export type DocumentoGestionable = { id: number; codigo: string; titulo: string;
 /**
  * Los documentos que la persona ve y cuyo proceso propietario tiene (`puedeAsociarNorma`): los vigentes, que puede
  * enlazar, y los ya enlazados a la norma, que puede desenlazar aunque hayan dejado de estar vigentes. Nada para quien no
- * tiene `normograma.procesos`. Por código.
+ * tiene `normograma.procesos`. Por código. `alcance`, si quien llama ya lo leyó.
  */
-export async function documentosGestionables(normaId: number, sesion: SesionFlujo, opciones?: Opciones): Promise<DocumentoGestionable[]> {
+export async function documentosGestionables(
+  normaId: number,
+  sesion: SesionFlujo,
+  opciones?: Opciones & { alcance?: Alcance },
+): Promise<DocumentoGestionable[]> {
   if (!puede(sesion, "normograma.procesos")) return [];
   const sql = opciones?.sql ?? obtenerSql();
-  const alcance = await alcanceProcesos(sesion, { sql });
+  const alcance = opciones?.alcance ?? (await alcanceProcesos(sesion, { sql }));
   const filas = await sql`
     SELECT d.id, d.codigo, d.titulo, d.origen,
       EXISTS (SELECT 1 FROM norma_documentos nd WHERE nd.norma_id = ${normaId} AND nd.documento_id = d.id) AS enlazado

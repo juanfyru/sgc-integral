@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { FichaNorma, type OpcionesFicha } from "@/componentes/normograma/FichaNorma";
 import { documentosGestionables } from "@/db/consultas/normograma/asociaciones";
-import { listarNormas, obtenerNorma } from "@/db/consultas/normograma/lectura";
+import { normasParaElegir, obtenerNorma } from "@/db/consultas/normograma/lectura";
 import { procesosActivos } from "@/db/consultas/procesos";
 import { alcanceProcesos, puedeAsociarNorma } from "@/lib/alcance";
 import { exigirSesion } from "@/lib/paginas";
@@ -22,26 +22,27 @@ export default async function PaginaNorma({ params }: { params: Promise<{ id: st
   const sesion = await exigirSesion();
   const { id } = await params;
   if (!/^\d{1,15}$/.test(id)) notFound();
-  const norma = await obtenerNorma(Number(id), sesion);
+  // El alcance se lee una vez (una consulta solo para el líder) y lo usan la ficha y sus opciones.
+  const alcance = await alcanceProcesos(sesion);
+  const norma = await obtenerNorma(Number(id), sesion, { alcance });
   if (!norma) notFound();
 
   const abierta = norma.estado !== "retirada";
   const asocia = abierta && puede(sesion, "normograma.procesos");
   const administra = abierta && norma.acciones.administrar;
-  const [procesos, alcance, documentos, otras] = await Promise.all([
+  const [procesos, documentos, normas] = await Promise.all([
     asocia ? procesosActivos() : Promise.resolve([]),
-    asocia ? alcanceProcesos(sesion) : Promise.resolve(null),
-    asocia ? documentosGestionables(norma.id, sesion) : Promise.resolve([]),
-    administra ? listarNormas({ estado: "todas" }, sesion) : Promise.resolve([]),
+    asocia ? documentosGestionables(norma.id, sesion, { alcance }) : Promise.resolve([]),
+    // Una derogada no admite relaciones nuevas como afectada (`registrarRelacion`).
+    administra ? normasParaElegir({ distintaDe: norma.id, sinDerogadas: true }) : Promise.resolve([]),
   ]);
   const asociados = new Set(norma.procesos.map((p) => p.id));
   const opciones: OpcionesFicha = {
-    procesos: alcance
-      ? procesos.filter((p) => !asociados.has(p.id) && puedeAsociarNorma(sesion, p.id, alcance)).map(({ id, nombre, sigla }) => ({ id, nombre, sigla }))
-      : [],
+    procesos: procesos
+      .filter((p) => !asociados.has(p.id) && puedeAsociarNorma(sesion, p.id, alcance))
+      .map(({ id, nombre, sigla }) => ({ id, nombre, sigla })),
     documentos,
-    // Una derogada no admite relaciones nuevas como afectada (`registrarRelacion`).
-    normas: otras.filter((o) => o.id !== norma.id && o.estado !== "derogada").map((o) => ({ id: o.id, nombre: o.nombre, titulo: o.titulo })),
+    normas,
     hoy: fechaEnZona(new Date(), zonaHoraria()),
   };
 

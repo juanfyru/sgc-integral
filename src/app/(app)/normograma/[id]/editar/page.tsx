@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { FormularioNorma } from "@/componentes/normograma/FormularioNorma";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
-import { obtenerNorma, sugerirEmisores } from "@/db/consultas/normograma/lectura";
+import { aniosYEmisores, obtenerNorma } from "@/db/consultas/normograma/lectura";
 import { listarTiposNorma } from "@/db/consultas/normograma/tipos-norma";
 import { exigirSesion } from "@/lib/paginas";
 
@@ -19,7 +19,7 @@ export default async function PaginaEditarNorma({ params }: { params: Promise<{ 
   if (!/^\d{1,15}$/.test(id)) notFound();
   const norma = await obtenerNorma(Number(id), sesion);
   if (!norma || !norma.acciones.administrar || norma.estado === "retirada") notFound();
-  const [tipos, emisores] = await Promise.all([listarTiposNorma(), sugerirEmisores("")]);
+  const [tipos, { emisores }] = await Promise.all([listarTiposNorma(), aniosYEmisores()]);
 
   return (
     <div className="flex min-w-0 flex-col gap-6">

@@ -18,6 +18,7 @@ import {
 import { BloqueDistribucion } from "@/componentes/distribucion/BloqueDistribucion";
 import { BloqueVigencia } from "@/componentes/vigencia/BloqueVigencia";
 import { BloqueExterno } from "@/componentes/vigencia/externos/BloqueExterno";
+import { NormasEnlazadas } from "@/componentes/normograma/NormasEnlazadas";
 import { AvisoVersionQr, versionDeQr } from "@/componentes/documentos/AvisoVersionQr";
 import { DatosDeAprobacion } from "@/componentes/documentos/DatosDeAprobacion";
 import { VisorPdf } from "@/componentes/documentos/VisorPdf";
@@ -283,6 +284,9 @@ export default async function FichaDocumento({
           ) : (
             <BloqueVigencia documentoId={ficha.id} sesion={sesion} />
           )}
+
+          {/* Las normas que el documento implementa o referencia (spec 13C §14.4); sin ninguna, no se pinta. */}
+          <NormasEnlazadas documentoId={ficha.id} sesion={sesion} />
 
           <BloqueDistribucion documento={{ id: ficha.id, codigo: ficha.codigo, titulo: ficha.titulo }} sesion={sesion} />
 

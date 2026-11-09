@@ -234,7 +234,8 @@ describe("GET /normograma/excel", () => {
         expect(fila).toBeDefined();
         expect(valor("Tipo")).toBe("Resolución");
         expect(valor("Año")).toBe("2020");
-        expect(valor("Fecha de expedición")).toBe("25/11/2019");
+        // El Excel conserva el formato de los demás Excel: la fecha `aaaa-mm-dd`.
+        expect(valor("Fecha de expedición")).toBe("2019-11-25");
         expect(valor("Tema")).toBe("Habilitación de prestadores de servicios de salud");
         expect(valor("Estado")).toBe("Vigente");
         expect(valor("Relaciones")).toBe(`Deroga a ${anterior.nombre}`);

@@ -257,6 +257,39 @@ describe("la marca en el semáforo y en las listas", () => {
     }));
 });
 
+describe("la tarea cuenta lo que la página de impactos muestra", () => {
+  it("un documento que el líder dejó de ver no cuenta en su tarea; si solo quedan ocultos, no hay tarea", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const proceso = await procesoSinLider(tx);
+      const gth = await procesoDe(tx, "GTH");
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [proceso.id] });
+      const visible = await vigenteFuera(tx, { fechaAprobacion: "2026-10-01", proceso: proceso.sigla });
+      const oculto = await vigenteFuera(tx, { fechaAprobacion: "2026-10-01", proceso: proceso.sigla });
+      await tx`UPDATE documentos SET nivel_acceso = 'restringido' WHERE id = ${oculto.id}`;
+      const n = await normaDePrueba(tx, admin);
+      for (const documentoId of [visible.id, oculto.id]) await enlazarDocumento(admin, { normaId: n.id, documentoId }, { sql: tx });
+      const { cambioId } = await cambiarEstadoNorma(admin, { normaId: n.id, estado: "derogada", fecha: "2026-11-01", nota: null }, { sql: tx, ahora });
+      const id = `impacto:${cambioId}:${proceso.id}`;
+      const tarea = async () => (await tareasDeImpactos(lider, { sql: tx })).find((t) => t.id === id);
+      expect((await tarea())?.titulo).toBe(`Revisar el impacto de ${n.nombre} (derogada) en ${proceso.nombre} (2)`);
+
+      // El restringido pasa a otro proceso: su impacto sigue en el del líder, que ya no lo ve (ni en la página).
+      await tx`UPDATE documento_proceso SET proceso_id = ${gth.id}, subproceso_id = NULL WHERE documento_id = ${oculto.id} AND es_principal`;
+      expect((await tarea())?.titulo).toBe(`Revisar el impacto de ${n.nombre} (derogada) en ${proceso.nombre} (1)`);
+      expect(await impactosDe(cambioId!, proceso.id, lider, { sql: tx })).toHaveLength(1);
+
+      const [delVisible] = await tx`SELECT id FROM impactos_normativos WHERE cambio_id = ${cambioId} AND documento_id = ${visible.id}`;
+      await resolverImpacto(lider, { impactoId: Number(delVisible.id), resolucion: "no_afecta", nota: "El documento ya cumple." }, { sql: tx, ahora });
+      // Solo queda el oculto: ni tarea ni página (que sería «no encontrada»).
+      expect(await tarea()).toBeUndefined();
+      // El Admin SGC sí lo ve (ve los restringidos) en la página del proceso.
+      expect(await impactosDe(cambioId!, proceso.id, admin, { sql: tx })).toHaveLength(2);
+      await visible.limpiar();
+      await oculto.limpiar();
+    }));
+});
+
 describe("resolución de los impactos", () => {
   it("«no afecta» exige nota y quita la marca; una solicitud enlazada resuelve con el trámite; otro líder recibe 404", () =>
     revertida(sql, async (tx) => {

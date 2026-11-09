@@ -6,7 +6,7 @@ import type { PendingQuery, Row } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { evidenciasDe, type Evidencia } from "@/db/consultas/distribucion/evidencias";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { alcanceProcesos, filtroAcceso, puedeAsociarNorma, type SujetoVisibilidad } from "@/lib/alcance";
+import { alcanceProcesos, filtroAcceso, puedeAsociarNorma, type Alcance, type SujetoVisibilidad } from "@/lib/alcance";
 import type { EstadoNorma, TipoRelacion } from "@/lib/normograma/tipos";
 import { puede } from "@/lib/permisos";
 import { condicionTexto, escaparLike, nombreSql } from "./busqueda";
@@ -57,8 +57,11 @@ export type Norma = {
   acciones: { administrar: boolean };
 };
 
-/** La ficha de una norma (spec 13C §10.6), para toda sesión; también la de una retirada. `null` si no existe. */
-export async function obtenerNorma(id: number, sesion: SesionFlujo, opciones?: Opciones): Promise<Norma | null> {
+/**
+ * La ficha de una norma (spec 13C §10.6), para toda sesión; también la de una retirada. `null` si no existe. `alcance`,
+ * si quien llama ya lo leyó (la página de la ficha lo usa también para sus opciones).
+ */
+export async function obtenerNorma(id: number, sesion: SesionFlujo, opciones?: Opciones & { alcance?: Alcance }): Promise<Norma | null> {
   const sql = opciones?.sql ?? obtenerSql();
   const [n] = await sql`SELECT n.id, n.tipo_norma_id, tn.nombre AS tipo, n.numero, n.anio, ${nombreSql(sql)} AS nombre,
       n.fecha_expedicion::text AS fecha_expedicion, n.entidad_emisora, n.titulo, n.tema, n.estado, n.estado_en::text AS estado_en,
@@ -92,7 +95,7 @@ export async function obtenerNorma(id: number, sesion: SesionFlujo, opciones?: O
       WHERE nd.norma_id = ${id}
       ORDER BY 5 DESC, CASE WHEN ${filtroAcceso(sql, sesion)} THEN d.codigo END, nd.id`,
     evidenciasDe("norma", id, { sql }),
-    alcanceProcesos(sesion, { sql }),
+    opciones?.alcance ?? alcanceProcesos(sesion, { sql }),
   ]);
   return {
     id: Number(n.id),
@@ -303,7 +306,10 @@ export async function filasDelExcel(filtro: FiltroNormas, sesion: SujetoVisibili
   });
 }
 
-/** Hasta 10 entidades emisoras ya escritas que empiezan por `prefijo` (el `datalist` del formulario). */
+/**
+ * Hasta 10 entidades emisoras ya escritas que empiezan por `prefijo`. El `datalist` del formulario usa todas las de
+ * `aniosYEmisores`: con el prefijo vacío, esta solo daría las diez primeras.
+ */
 export async function sugerirEmisores(prefijo: string, opciones?: Opciones): Promise<string[]> {
   const sql = opciones?.sql ?? obtenerSql();
   const filas = await sql`SELECT DISTINCT entidad_emisora FROM normas
@@ -319,4 +325,27 @@ export async function aniosYEmisores(opciones?: Opciones): Promise<{ anios: numb
       ARRAY(SELECT DISTINCT anio FROM normas WHERE estado <> 'retirada' ORDER BY anio DESC) AS anios,
       ARRAY(SELECT DISTINCT entidad_emisora FROM normas WHERE estado <> 'retirada' ORDER BY entidad_emisora) AS emisores`;
   return { anios: (f.anios as number[]).map(Number), emisores: f.emisores as string[] };
+}
+
+/**
+ * Las opciones de los selectores «Asociar norma» y «Registrar relación»: id, nombre y título de las normas no retiradas,
+ * en el orden de la lista. Una sola consulta ligera, sin los conteos por persona de `listarNormas`. `sinProceso`: sin
+ * las que ya aplican a ese proceso; `distintaDe`: sin esa norma; `sinDerogadas`: una derogada no admite relaciones
+ * nuevas como afectada.
+ */
+export async function normasParaElegir(
+  opciones?: { sql?: Cliente; sinProceso?: number; distintaDe?: number; sinDerogadas?: boolean },
+): Promise<{ id: number; nombre: string; titulo: string }[]> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const filas = await sql`
+    SELECT n.id, ${nombreSql(sql)} AS nombre, n.titulo
+    FROM normas n JOIN tipos_norma tn ON tn.id = n.tipo_norma_id
+    WHERE n.estado <> 'retirada'
+      ${opciones?.sinDerogadas ? sql`AND n.estado <> 'derogada'` : sql``}
+      ${opciones?.distintaDe === undefined ? sql`` : sql`AND n.id <> ${opciones.distintaDe}`}
+      ${opciones?.sinProceso === undefined
+        ? sql``
+        : sql`AND NOT EXISTS (SELECT 1 FROM norma_procesos np WHERE np.norma_id = n.id AND np.proceso_id = ${opciones.sinProceso})`}
+    ORDER BY n.anio DESC, tn.orden, n.numero, n.id`;
+  return filas.map((f) => ({ id: Number(f.id), nombre: f.nombre as string, titulo: f.titulo as string }));
 }

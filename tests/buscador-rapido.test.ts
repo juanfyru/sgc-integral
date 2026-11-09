@@ -1,3 +1,5 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { estadoDeBusqueda, gruposDeResultados, normalizarConsulta, type ResultadoRapido } from "@/lib/busqueda-rapida";
 
@@ -61,5 +63,15 @@ describe("el grupo «Normas» de la paleta", () => {
     const otra = { ...norma, codigo: "Resolución 2003 de 2014", ruta: "/normograma/8", tipo: "Derogada" };
     expect(gruposDeResultados([norma, documento, otra])).toEqual({ documentos: [documento], normas: [norma, otra] });
     expect(gruposDeResultados([])).toEqual({ documentos: [], normas: [] });
+  });
+});
+
+describe("los grupos de la paleta", () => {
+  it("un grupo sin resultados no pinta su encabezado; con resultados, el encabezado y su grupo con nombre", async () => {
+    const { GrupoPaleta } = await import("@/componentes/cascaron/Buscador");
+    expect(renderToStaticMarkup(createElement(GrupoPaleta, { titulo: "Documentos", vacio: true }, null))).toBe("");
+    const html = renderToStaticMarkup(createElement(GrupoPaleta, { titulo: "Normas", vacio: false }, createElement("li", null, "Resolución 3100 de 2019")));
+    expect(html).toContain(">Normas</p>");
+    expect(html).toContain('<ul role="group" aria-label="Normas"><li>Resolución 3100 de 2019</li></ul>');
   });
 });

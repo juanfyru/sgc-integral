@@ -27,6 +27,7 @@ import {
   crearNorma,
   editarNorma,
   listarNormas,
+  normasParaElegir,
   obtenerNorma,
   retirarNorma,
   sugerirEmisores,
@@ -421,6 +422,32 @@ describe("asociaciones", () => {
       const otra = await normaDePrueba(tx, admin);
       const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [(await tx`SELECT id FROM procesos WHERE sigla = 'CEX'`)[0].id] });
       await expect(enlazarDocumento(lider, { normaId: otra.id, documentoId: restringido.id }, { sql: tx })).rejects.toThrow("El documento no existe");
+    }));
+});
+
+describe("normasParaElegir: las opciones de los selectores", () => {
+  it("una sola consulta ligera: las no retiradas, sin las ya asociadas al proceso, sin la norma misma y sin las derogadas si se pide", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const [cex] = await tx`SELECT id FROM procesos WHERE sigla = 'CEX'`;
+      const asociada = await normaDePrueba(tx, admin, { titulo: "Asociada a CEX" });
+      const libre = await normaDePrueba(tx, admin, { titulo: "Libre" });
+      const retirada = await normaDePrueba(tx, admin);
+      const derogada = await normaDePrueba(tx, admin);
+      await asociarProceso(admin, { normaId: asociada.id, procesoId: Number(cex.id), requisito: null }, { sql: tx });
+      await retirarNorma(admin, { normaId: retirada.id, motivo: "Registrada por error" }, { sql: tx });
+      await cambiarEstadoNorma(admin, { normaId: derogada.id, estado: "derogada", fecha: "2026-11-01", nota: null }, { sql: tx });
+      const ids = (filas: { id: number }[]) => filas.map((f) => f.id);
+
+      const delProceso = await normasParaElegir({ sql: tx, sinProceso: Number(cex.id) });
+      expect(ids(delProceso)).toEqual(expect.arrayContaining([libre.id, derogada.id]));
+      expect(ids(delProceso)).not.toContain(asociada.id);
+      expect(ids(delProceso)).not.toContain(retirada.id);
+      expect(delProceso.find((f) => f.id === libre.id)).toEqual({ id: libre.id, nombre: libre.nombre, titulo: "Libre" });
+
+      const afectables = await normasParaElegir({ sql: tx, distintaDe: libre.id, sinDerogadas: true });
+      expect(ids(afectables)).toContain(asociada.id);
+      for (const id of [libre.id, retirada.id, derogada.id]) expect(ids(afectables)).not.toContain(id);
     }));
 });
 

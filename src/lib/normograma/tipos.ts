@@ -3,6 +3,7 @@
  * impacto documental. Sin BD: los usan la capa de datos, los esquemas y las pantallas.
  */
 import { ErrorTramite } from "@/db/consultas/flujo/contrato";
+import { textoDeDia } from "@/lib/vigencia/plazo";
 
 export const ESTADOS_NORMA = ["vigente", "modificada", "derogada", "retirada"] as const;
 export type EstadoNorma = (typeof ESTADOS_NORMA)[number];
@@ -61,13 +62,15 @@ export function nombreDeNorma(n: { tipo: string; numero: string; anio: number })
   return `${n.tipo} ${n.numero} de ${n.anio}`;
 }
 
-/** Una fecha de la norma (`yyyy-mm-dd`: expedición, estado, cambio) como «25/11/2019», sin pasar por la zona. */
+/**
+ * Una fecha de la norma (`yyyy-mm-dd`: expedición, estado, cambio) en pantalla, con el formato de la aplicación:
+ * «25 nov 2019». El Excel la deja `aaaa-mm-dd`, como los demás Excel.
+ */
 export function fechaDeNorma(fecha: string): string {
-  const [anio, mes, dia] = fecha.split("-");
-  return `${dia}/${mes}/${anio}`;
+  return textoDeDia(fecha);
 }
 
-/** «Derogada · 25/11/2019»; vigente sin fecha, «Vigente». El estado va siempre en texto, nunca solo en color. */
+/** «Derogada · 25 nov 2019»; vigente sin fecha, «Vigente». El estado va siempre en texto, nunca solo en color. */
 export function textoEstadoNorma(estado: EstadoNorma, estadoEn: string | null): string {
   return estadoEn && estado !== "vigente" ? `${ETIQUETA_ESTADO_NORMA[estado]} · ${fechaDeNorma(estadoEn)}` : ETIQUETA_ESTADO_NORMA[estado];
 }

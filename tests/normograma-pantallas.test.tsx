@@ -56,6 +56,19 @@ vi.mock("@/app/acciones-normograma", () => ({
   desenlazarDocumentoAccion: vi.fn(),
   resolverImpactoAccion: vi.fn(),
 }));
+vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
+vi.mock("@/app/admin/acciones", () => ({
+  crearVersionAccion: vi.fn(),
+  descartarBorradorAccion: vi.fn(),
+  deshacerCargaAccion: vi.fn(),
+  editarVersionAccion: vi.fn(),
+  publicarAccion: vi.fn(),
+}));
+vi.mock("@/app/acciones-distribucion", () => ({
+  emitirCopiaAccion: vi.fn(),
+  pedirAcusesAccion: vi.fn(),
+  reemplazarCopiasAccion: vi.fn(),
+}));
 vi.mock("@/app/acciones-vigencia", () => ({
   ratificarAccion: vi.fn(),
   fijarFechaAccion: vi.fn(),
@@ -71,7 +84,9 @@ vi.mock("@/app/acciones-vigencia", () => ({
   retirarExternoAccion: vi.fn(),
 }));
 
+import PaginaDocumentoAdmin from "@/app/(app)/admin/(panel)/documentos/[codigo]/page";
 import PaginaBuscar from "@/app/(app)/buscar/page";
+import FichaDocumento from "@/app/(app)/documentos/[codigo]/page";
 import PaginaEditarNorma from "@/app/(app)/normograma/[id]/editar/page";
 import PaginaNorma from "@/app/(app)/normograma/[id]/page";
 import PaginaImpactosDelCambio from "@/app/(app)/normograma/impactos/[cambioId]/page";
@@ -79,12 +94,14 @@ import PaginaNuevaNorma from "@/app/(app)/normograma/nueva/page";
 import PaginaNormograma from "@/app/(app)/normograma/page";
 import VistaProceso from "@/app/(app)/procesos/[slug]/page";
 import PaginaExterno from "@/app/(app)/vigencia/externos/[id]/page";
+import { ZonaCarga } from "@/componentes/admin/ZonaCarga";
 import { AsociarProceso } from "@/componentes/normograma/AsociarProceso";
 import { FormularioEstado } from "@/componentes/normograma/DialogoEstado";
-import { FormularioRelacion } from "@/componentes/normograma/DialogoRelacion";
+import { DialogoRelacion, FormularioRelacion } from "@/componentes/normograma/DialogoRelacion";
 import { EnlazarDocumento } from "@/componentes/normograma/EnlazarDocumento";
 import { FormularioNorma } from "@/componentes/normograma/FormularioNorma";
 import { NormasAplicables } from "@/componentes/normograma/NormasAplicables";
+import { NormasEnlazadas } from "@/componentes/normograma/NormasEnlazadas";
 import { TablaNormas, type FilaDeTabla } from "@/componentes/normograma/TablaNormas";
 import { BloqueVigencia } from "@/componentes/vigencia/BloqueVigencia";
 import { obtenerSql } from "@/db/cliente";
@@ -93,11 +110,18 @@ import { asociarProceso, enlazarDocumento, normasDeProceso } from "@/db/consulta
 import { resolverImpacto } from "@/db/consultas/normograma/impactos";
 import { cambiarEstadoNorma, retirarNorma } from "@/db/consultas/normograma/normas";
 import { eliminarRelacion, registrarRelacion } from "@/db/consultas/normograma/relaciones";
+import {
+  EsquemaAsociarProceso,
+  EsquemaEnlazarDocumento,
+  EsquemaEstadoNorma,
+  EsquemaNorma,
+  EsquemaRelacion,
+} from "@/lib/esquemas/normograma";
 import type { SesionValida } from "@/lib/sesion";
 import { normaDePrueba } from "./utiles/normograma";
 import { sesionAdmin, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
-import { externoDePrueba, vigenteFuera } from "./utiles/vigencia";
+import { externoDePrueba, procesoSinLider, vigenteFuera } from "./utiles/vigencia";
 
 const sql = obtenerSql();
 const ahora = new Date("2026-11-08T15:00:00Z");
@@ -122,6 +146,8 @@ const sinEtiquetas = (html: string) => html.replace(/<[^>]+>/g, " ").replaceAll(
 /** Los `name` de los campos que viajan en el formulario, sin repetir. */
 const nombres = (html: string) => [...new Set([...html.matchAll(/<(?:input|select|textarea)[^>]*\sname="([^"]+)"/g)].map((m) => m[1]))].sort();
 const veces = (texto: string, parte: string) => texto.split(parte).length - 1;
+/** Las claves de un esquema estricto, ordenadas: lo que el formulario debe enviar, ni más ni menos. */
+const claves = (esquema: { shape: Record<string, unknown> }, ...extra: string[]) => [...Object.keys(esquema.shape), ...extra].sort();
 
 // ── Piezas puras ──
 
@@ -140,9 +166,11 @@ const fila: FilaDeTabla = {
 };
 
 describe("TablaNormas", () => {
-  it("pinta «Derogada · 25/11/2019» en texto, el nombre con su enlace a la ficha, el emisor, los procesos y los documentos", () => {
+  it("pinta «Derogada · 25 nov 2019» en texto, el nombre con su enlace a la ficha, el emisor, los procesos y los documentos", () => {
     const html = renderToStaticMarkup(<TablaNormas filas={[fila, { ...fila, id: 8, nombre: "Ley 1581 de 2012", estado: "vigente", estadoEn: null, procesos: [] }]} />);
-    expect(html).toContain("Derogada · 25/11/2019");
+    // El formato de fechas de la aplicación (`textoFecha`), como el resto de las pantallas.
+    expect(html).toContain("Derogada · 25 nov 2019");
+    expect(html).not.toContain("25/11/2019");
     expect(html).toContain('href="/normograma/7"');
     expect(html).toContain("Consulta Externa, Sistema Obligatorio de Garantía de la Calidad");
     expect(sinEtiquetas(html)).toContain("Ley 1581 de 2012");
@@ -189,7 +217,7 @@ describe("NormasAplicables", () => {
 describe("los formularios envían solo lo que su esquema estricto acepta", () => {
   it("la norma: los campos de EsquemaNorma; al editar, también el id de la ruta; la entidad emisora sugiere las ya escritas", () => {
     const alta = renderToStaticMarkup(<FormularioNorma tipos={[{ id: 3, nombre: "Resolución" }]} emisores={["Congreso de la República", "Ministerio de Salud y Protección Social"]} />);
-    expect(nombres(alta)).toEqual(["anio", "entidadEmisora", "enlaceOficial", "fechaExpedicion", "notas", "numero", "tema", "tipoNormaId", "titulo"].sort());
+    expect(nombres(alta)).toEqual(claves(EsquemaNorma));
     expect(alta).toMatch(/<input[^>]*list="emisores-sugeridos"/);
     expect(alta).toContain('<datalist id="emisores-sugeridos"><option value="Congreso de la República"></option>');
     expect(alta).toContain("Registrar la norma");
@@ -211,13 +239,14 @@ describe("los formularios envían solo lo que su esquema estricto acepta", () =>
         emisores={[]}
       />,
     );
-    expect(nombres(edicion)).toEqual(["anio", "entidadEmisora", "enlaceOficial", "fechaExpedicion", "id", "notas", "numero", "tema", "tipoNormaId", "titulo"].sort());
+    // El `id` de la ruta se lee aparte (`omitir: ["id"]`).
+    expect(nombres(edicion)).toEqual(claves(EsquemaNorma, "id"));
     expect(edicion).toMatch(/<input[^>]*name="numero"[^>]*value="3100"|<input[^>]*value="3100"[^>]*name="numero"/);
   });
 
   it("el estado (sin «Retirada»: eso es «Retirar…»), la relación, la asociación y el enlace", () => {
     const estado = renderToStaticMarkup(<FormularioEstado normaId={7} nombre="Resolución 3100 de 2019" estado="vigente" hoy="2026-11-08" alCerrar={() => {}} />);
-    expect(nombres(estado)).toEqual(["estado", "fecha", "nota", "normaId"].sort());
+    expect(nombres(estado)).toEqual(claves(EsquemaEstadoNorma));
     expect(estado).toContain('value="derogada"');
     expect(estado).not.toContain('value="retirada"');
     expect(estado).not.toContain('value="vigente"');
@@ -225,27 +254,45 @@ describe("los formularios envían solo lo que su esquema estricto acepta", () =>
     const relacion = renderToStaticMarkup(
       <FormularioRelacion normaId={7} nombre="Resolución 3100 de 2019" normas={[{ id: 8, nombre: "Resolución 2003 de 2014", titulo: "Anterior" }]} alCerrar={() => {}} />,
     );
-    expect(nombres(relacion)).toEqual(["afectadaId", "detalle", "fecha", "normaId", "tipo"].sort());
+    expect(nombres(relacion)).toEqual(claves(EsquemaRelacion));
     for (const tipo of ["modifica", "deroga", "reglamenta"]) expect(relacion).toContain(`value="${tipo}"`);
 
-    expect(nombres(renderToStaticMarkup(<AsociarProceso normaId={7} procesos={[{ id: 4, nombre: "Consulta Externa", sigla: "CEX" }]} />))).toEqual([
-      "normaId",
-      "procesoId",
-      "requisito",
-    ]);
-    expect(nombres(renderToStaticMarkup(<AsociarProceso procesoId={4} normas={[{ id: 7, nombre: "Resolución 3100 de 2019", titulo: "Habilitación" }]} />))).toEqual([
-      "normaId",
-      "procesoId",
-      "requisito",
-    ]);
-    expect(nombres(renderToStaticMarkup(<AsociarProceso normaId={7} procesoId={4} requisito="art. 5" proceso="Consulta Externa" />))).toEqual([
-      "normaId",
-      "procesoId",
-      "requisito",
-    ]);
+    expect(nombres(renderToStaticMarkup(<AsociarProceso normaId={7} procesos={[{ id: 4, nombre: "Consulta Externa", sigla: "CEX" }]} />))).toEqual(
+      claves(EsquemaAsociarProceso),
+    );
+    expect(nombres(renderToStaticMarkup(<AsociarProceso procesoId={4} normas={[{ id: 7, nombre: "Resolución 3100 de 2019", titulo: "Habilitación" }]} />))).toEqual(
+      claves(EsquemaAsociarProceso),
+    );
+    expect(nombres(renderToStaticMarkup(<AsociarProceso normaId={7} procesoId={4} requisito="art. 5" proceso="Consulta Externa" />))).toEqual(
+      claves(EsquemaAsociarProceso),
+    );
     expect(
       nombres(renderToStaticMarkup(<EnlazarDocumento normaId={7} documentos={[{ id: 3, codigo: "CEX-PR-02", titulo: "Atención", origen: "interno", enlazado: false }]} />)),
-    ).toEqual(["documentoId", "normaId"]);
+    ).toEqual(claves(EsquemaEnlazarDocumento));
+  });
+
+  it("«Registrar relación» sin normas que puedan ser la afectada dice por qué está deshabilitado", () => {
+    const sinCandidatas = renderToStaticMarkup(<DialogoRelacion normaId={7} nombre="Resolución 3100 de 2019" normas={[]} />);
+    expect(sinCandidatas).toMatch(/<button[^>]*aria-describedby="relacion-7-sin-normas"[^>]*disabled=""/);
+    expect(sinCandidatas).toContain('id="relacion-7-sin-normas"');
+    expect(sinEtiquetas(sinCandidatas)).toContain("No hay otra norma vigente o modificada que pueda ser la afectada.");
+    const conCandidatas = renderToStaticMarkup(
+      <DialogoRelacion normaId={7} nombre="Resolución 3100 de 2019" normas={[{ id: 8, nombre: "Resolución 2003 de 2014", titulo: "Anterior" }]} />,
+    );
+    expect(conCandidatas).not.toContain("No hay otra norma");
+    expect(conCandidatas).not.toContain('disabled=""');
+  });
+
+  it("la zona de carga del PDF de la norma habla de un PDF, no de «archivos»", () => {
+    const html = renderToStaticMarkup(<ZonaCarga direccion="/api/normas/7/archivos" soloPdf />);
+    expect(html).toContain('aria-label="Zona de carga: arrastre el PDF o presione para elegirlo"');
+    expect(sinEtiquetas(html)).toContain("Arrastre el PDF aquí");
+    expect(html).not.toContain("archivos aquí");
+    expect(html).not.toContain("arrastre archivos");
+    // Las demás zonas siguen igual.
+    expect(renderToStaticMarkup(<ZonaCarga direccion="/admin/api/archivos?versionId=1" />)).toContain(
+      'aria-label="Zona de carga: arrastre archivos o presione para elegirlos"',
+    );
   });
 });
 
@@ -338,7 +385,9 @@ describe("la ficha de la norma", () => {
         expect(texto).toContain(c.publico.codigo);
         expect(texto).toContain(c.externo.codigo);
         expect(html).not.toContain(c.restringido.codigo);
-        expect(texto).toContain("Y 1 documento interno restringido que usted no puede ver.");
+        // Lo que la persona no puede ver no existe para ella: ni se nombra ni se cuenta (decisión del controlador, R4).
+        expect(texto).not.toContain("que usted no puede ver");
+        expect(texto).not.toMatch(/restringid/i);
         expect(html).toContain(`href="/documentos/${c.publico.codigo.toLowerCase()}"`);
         // Datos, relación, proceso con su requisito.
         for (const parte of [c.n.nombre, "Habilitación de prestadores de servicios de salud", "Revisar con Gestión Jurídica.", "Toda la resolución", "Estándar de procesos prioritarios, art. 5"]) {
@@ -373,6 +422,15 @@ describe("la ficha de la norma", () => {
           expect(texto).toContain(accion);
         }
         expect(texto).not.toContain("Borrar…");
+
+        // Con PDF: un <a> en otra pestaña (como los demás archivos), no un enlace del enrutador, que pediría el archivo dos veces.
+        const [archivo] = await tx`INSERT INTO archivos (contexto, contexto_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
+          VALUES ('norma', ${c.n.id}, 'evidencia', ${`zz-pruebas/normas/${c.n.id}/r.pdf`}, 'Resolución.pdf', 'pdf', 'application/pdf', 2048, ${"0".repeat(64)})
+          RETURNING id`;
+        const conPdf = await pintar(tx, c.admin, ficha(c.n.id));
+        const ruta = `/normograma/${c.n.id}/archivos/${archivo.id}/${encodeURIComponent("Resolución.pdf")}`;
+        expect(conPdf).toContain(`<a href="${ruta}" target="_blank" rel="noopener"`);
+        expect(sinEtiquetas(conPdf)).toContain("Abrir el PDF · 2 KB");
 
         const vacia = await normaDePrueba(tx, c.admin);
         expect(sinEtiquetas(await pintar(tx, c.admin, ficha(vacia.id)))).toContain("Borrar…");
@@ -435,8 +493,8 @@ describe("la ficha de la norma", () => {
       const n = await normaDePrueba(tx, admin);
       await retirarNorma(admin, { normaId: n.id, motivo: "Registrada por error" }, { sql: tx, ahora });
       const texto = sinEtiquetas(await pintar(tx, admin, ficha(n.id)));
-      expect(texto).toContain("Retirada · 08/11/2026");
-      expect(texto).toContain("Esta norma fue retirada el 08/11/2026");
+      expect(texto).toContain("Retirada · 8 nov 2026");
+      expect(texto).toContain("Esta norma fue retirada el 8 nov 2026");
       expect(texto).toContain("Registrada por error");
       for (const accion of ["Editar", "Cambiar estado", "Registrar relación", "Retirar…", "Borrar…", "Asociar proceso"]) expect(texto).not.toContain(accion);
       expect(await falla(tx, admin, ficha(987_654_321))).toBe("NO_ENCONTRADA");
@@ -499,12 +557,16 @@ describe("páginas del normograma", () => {
         expect(await falla(tx, quien, () => PaginaNuevaNorma())).toBe("NO_ENCONTRADA");
         expect(await falla(tx, quien, () => PaginaEditarNorma({ params: Promise.resolve({ id: String(n.id) }) }))).toBe("NO_ENCONTRADA");
       }
+      // Diez emisores que van antes en el orden alfabético: la lista sugerida trae todos, no los diez primeros.
+      for (let i = 0; i < 10; i += 1) await normaDePrueba(tx, admin, { entidadEmisora: `Aaa emisor de prueba ${i}` });
       const alta = await pintar(tx, admin, () => PaginaNuevaNorma());
       expect(sinEtiquetas(alta)).toContain("Registrar la norma");
       expect(alta).toContain('<datalist id="emisores-sugeridos">');
+      expect(alta).toContain('<option value="Superintendencia Nacional de Salud"></option>');
       const edicion = await pintar(tx, admin, () => PaginaEditarNorma({ params: Promise.resolve({ id: String(n.id) }) }));
       expect(sinEtiquetas(edicion)).toContain(`Editar ${n.nombre}`);
       expect(edicion).toContain('value="Superintendencia Nacional de Salud"');
+      expect(edicion).toContain('<option value="Aaa emisor de prueba 9"></option>');
       expect(edicion).toMatch(new RegExp(`<input type="hidden" name="id" value="${n.id}"`));
     }));
 });
@@ -557,6 +619,7 @@ describe("la página de impactos", () => {
         // «No afecta…» envía lo que pide EsquemaResolverImpacto.
         expect(html).toMatch(new RegExp(`<input type="hidden" name="impactoId" value="${d.impactoInterno}"/><input type="hidden" name="resolucion" value="no_afecta"/>`));
         expect(html).toContain(`id="impacto-${d.impactoInterno}-nota"`);
+        expect(sinEtiquetas(html)).toContain("Queda en la historia del documento.");
       } finally {
         await d.limpiar();
       }
@@ -571,6 +634,9 @@ describe("la página de impactos", () => {
         expect(html).toContain(`href="/tramites/nueva?tipo=crear&amp;proceso=${d.gth.id}&amp;motivo=cambio_normativo&amp;impacto=${d.deProceso}"`);
         expect(sinEtiquetas(html)).toContain(`El proceso ${d.gth.nombre}`);
         expect(sinEtiquetas(html)).not.toContain("Abrir solicitud de cambio");
+        // Sin documento, la nota queda en el impacto del proceso, no en la historia de un documento.
+        expect(sinEtiquetas(html)).toContain("Queda en el impacto del proceso y en la bitácora.");
+        expect(sinEtiquetas(html)).not.toContain("historia del documento");
 
         await resolverImpacto(liderGth, { impactoId: d.deProceso, resolucion: "no_afecta", nota: "Nada del proceso cambia." }, { sql: tx, ahora });
         const resuelto = sinEtiquetas(await pintar(tx, liderGth, pagina(d.cambioId, d.gth.id)));
@@ -595,6 +661,35 @@ describe("la página de impactos", () => {
         expect(await falla(tx, d.admin, pagina(987_654_321, d.cex.id))).toBe("NO_ENCONTRADA");
       } finally {
         await d.limpiar();
+      }
+    }));
+
+  it("no muestra el documento que la persona no ve (resolución 7); el Admin SGC lo ve", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const proceso = await procesoSinLider(tx);
+      const gth = await procesoDe(tx, "GTH");
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [proceso.id] });
+      const visible = await vigenteFuera(tx, { fechaAprobacion: "2026-10-01", proceso: proceso.sigla });
+      const oculto = await vigenteFuera(tx, { fechaAprobacion: "2026-10-01", proceso: proceso.sigla });
+      try {
+        await tx`UPDATE documentos SET nivel_acceso = 'restringido' WHERE id = ${oculto.id}`;
+        const n = await normaDePrueba(tx, admin);
+        for (const documentoId of [visible.id, oculto.id]) await enlazarDocumento(admin, { normaId: n.id, documentoId }, { sql: tx });
+        const { cambioId } = await cambiarEstadoNorma(admin, { normaId: n.id, estado: "derogada", fecha: "2026-11-01", nota: null }, { sql: tx, ahora });
+        // El restringido pasa a otro proceso después del cambio: su impacto sigue en el del líder, que ya no lo ve.
+        await tx`UPDATE documento_proceso SET proceso_id = ${gth.id}, subproceso_id = NULL WHERE documento_id = ${oculto.id} AND es_principal`;
+
+        const html = await pintar(tx, lider, pagina(cambioId!, proceso.id));
+        expect(sinEtiquetas(html)).toContain(visible.codigo);
+        expect(html).not.toContain(oculto.codigo);
+        expect(sinEtiquetas(html)).toContain("1 pendiente de 1.");
+        const delAdmin = sinEtiquetas(await pintar(tx, admin, pagina(cambioId!, proceso.id)));
+        expect(delAdmin).toContain(oculto.codigo);
+        expect(delAdmin).toContain("2 pendientes de 2.");
+      } finally {
+        await visible.limpiar();
+        await oculto.limpiar();
       }
     }));
 
@@ -735,5 +830,67 @@ describe("el grupo «Normas» de la búsqueda", () => {
       const conRetirada = await pintar(tx, consulta, () => PaginaBuscar({ searchParams: Promise.resolve({ q: retirada.nombre.split(" ")[1] }) }));
       expect(conRetirada).not.toContain(`href="/normograma/${retirada.id}"`);
       expect(await pintar(tx, consulta, () => PaginaBuscar({ searchParams: Promise.resolve({}) }))).not.toContain('id="titulo-normas"');
+    }));
+});
+
+describe("«Normas enlazadas» en la ficha del documento (spec 13C §14.4)", () => {
+  it("lista las normas enlazadas con su estado en texto y el enlace a su ficha; de solo lectura; sin normas no se pinta", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const consulta = await usuarioDePrueba(tx, { rol: "consulta" });
+      const doc = await vigenteFuera(tx, { fechaAprobacion: "2026-10-01", proceso: "GTH" });
+      const solo = await vigenteFuera(tx, { fechaAprobacion: "2026-10-01", proceso: "GTH" });
+      try {
+        const vigente = await normaDePrueba(tx, admin);
+        const derogada = await normaDePrueba(tx, admin);
+        for (const normaId of [vigente.id, derogada.id]) await enlazarDocumento(admin, { normaId, documentoId: doc.id }, { sql: tx });
+        await cambiarEstadoNorma(admin, { normaId: derogada.id, estado: "derogada", fecha: "2026-11-01", nota: null }, { sql: tx, ahora });
+
+        const html = await pintar(tx, consulta, () => NormasEnlazadas({ documentoId: doc.id, sesion: consulta }));
+        const texto = sinEtiquetas(html);
+        expect(html).toContain('<h2 id="titulo-normas-enlazadas"');
+        expect(texto).toContain("Normas enlazadas (2)");
+        expect(html).toContain(`href="/normograma/${vigente.id}"`);
+        expect(html).toContain(`href="/normograma/${derogada.id}"`);
+        expect(texto).toContain(derogada.nombre);
+        expect(texto).toContain("Derogada · 1 nov 2026");
+        expect(texto).toMatch(/Vigente/);
+        // De solo lectura: enlazar y quitar se hace desde la ficha de la norma.
+        expect(html).not.toContain("<form");
+        // En el panel va dentro de la ficha con su nivel de título.
+        expect(await pintar(tx, admin, () => NormasEnlazadas({ documentoId: doc.id, sesion: admin, nivel: 3 }))).toContain(
+          '<h3 id="titulo-normas-enlazadas"',
+        );
+
+        expect(await pintar(tx, consulta, () => NormasEnlazadas({ documentoId: solo.id, sesion: consulta }))).toBe("");
+      } finally {
+        await doc.limpiar();
+        await solo.limpiar();
+      }
+    }));
+
+  it("las dos fichas (portal y panel) la muestran, también la de un externo", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const liderCex = await sesionDe(tx, "lider.cex");
+      const doc = await vigenteFuera(tx, { fechaAprobacion: "2026-10-01", proceso: "GTH" });
+      const externo = await externoDePrueba(tx, liderCex, { proceso: "CEX", edicion: "2017" });
+      try {
+        const n = await normaDePrueba(tx, admin);
+        for (const documentoId of [doc.id, externo.documentoId]) await enlazarDocumento(admin, { normaId: n.id, documentoId }, { sql: tx });
+        for (const codigo of [doc.codigo, externo.codigo]) {
+          const portal = await pintar(tx, admin, () =>
+            FichaDocumento({ params: Promise.resolve({ codigo: codigo.toLowerCase() }), searchParams: Promise.resolve({}) }),
+          );
+          expect(portal, codigo).toContain('id="titulo-normas-enlazadas"');
+          expect(portal, codigo).toContain(`href="/normograma/${n.id}"`);
+          const panel = await pintar(tx, admin, () => PaginaDocumentoAdmin({ params: Promise.resolve({ codigo }) }));
+          expect(panel, codigo).toContain('id="titulo-normas-enlazadas"');
+          expect(panel, codigo).toContain(`href="/normograma/${n.id}"`);
+        }
+      } finally {
+        await doc.limpiar();
+        await externo.limpiar();
+      }
     }));
 });

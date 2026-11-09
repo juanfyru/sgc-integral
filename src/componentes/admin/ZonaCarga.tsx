@@ -105,7 +105,7 @@ export function ZonaCarga({ direccion, evidencia = false, soloPdf = false }: { d
       <div
         role="button"
         tabIndex={0}
-        aria-label="Zona de carga: arrastre archivos o presione para elegirlos"
+        aria-label={soloPdf ? "Zona de carga: arrastre el PDF o presione para elegirlo" : "Zona de carga: arrastre archivos o presione para elegirlos"}
         onClick={() => entradaRef.current?.click()}
         onKeyDown={(e) => e.key === "Enter" && entradaRef.current?.click()}
         onDragOver={(e) => { e.preventDefault(); setArrastrando(true); }}

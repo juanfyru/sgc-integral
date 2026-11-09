@@ -11,6 +11,7 @@ import {
 import { BloqueDistribucion } from "@/componentes/distribucion/BloqueDistribucion";
 import { BloqueVigencia } from "@/componentes/vigencia/BloqueVigencia";
 import { BloqueExterno } from "@/componentes/vigencia/externos/BloqueExterno";
+import { NormasEnlazadas } from "@/componentes/normograma/NormasEnlazadas";
 import { EliminarArchivo } from "@/componentes/admin/EliminarArchivo";
 import { FormAccion } from "@/componentes/admin/FormAccion";
 import { FormularioVersionCliente } from "@/componentes/admin/FormularioVersionCliente";
@@ -262,6 +263,9 @@ export default async function PaginaDocumentoAdmin({
       </div>
 
       {esExterno ? <BloqueExterno documentoId={documento.id} sesion={sesion} /> : null}
+
+      {/* Las normas enlazadas (spec 13C §14.4), de solo lectura; sin ninguna, no se pinta. */}
+      <NormasEnlazadas documentoId={documento.id} sesion={sesion} />
 
       {vigente ? (
         <BloqueDistribucion documento={{ id: documento.id, codigo: documento.codigo, titulo: documento.titulo }} sesion={sesion} />

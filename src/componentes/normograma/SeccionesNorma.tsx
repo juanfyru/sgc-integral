@@ -10,7 +10,6 @@ import { Campo, claseControl } from "@/componentes/ui/Campo";
 import { Insignia } from "@/componentes/ui/Insignia";
 import type { DocumentoGestionable } from "@/db/consultas/normograma/asociaciones";
 import type { Norma } from "@/db/consultas/normograma/lectura";
-import { cuenta } from "@/lib/plural";
 import { ETIQUETA_ESTADO_NORMA, ETIQUETA_RELACION, ETIQUETA_RELACION_INVERSA, fechaDeNorma } from "@/lib/normograma/tipos";
 import { textoFecha } from "@/lib/vigencia/plazo";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -183,31 +182,31 @@ export function SeccionProcesos({
 }
 
 /**
- * Los internos que la implementan y los externos que la referencian. Un documento que la persona no ve no se nombra:
- * se cuenta, sin código, título ni enlace.
+ * Los internos que la implementan y los externos que la referencian. Un documento que la persona no ve no existe para
+ * ella (spec 13C §6.4): ni se nombra ni se cuenta.
  */
 export function SeccionDocumentos({ norma: n, abierta, documentos }: { norma: Norma; abierta: boolean; documentos: DocumentoGestionable[] }) {
   const desenlazables = new Set(documentos.filter((d) => d.enlazado).map((d) => d.id));
   const porEnlazar = documentos.filter((d) => !d.enlazado);
+  const visibles = n.documentos.filter((d) => d.visible);
   const grupos = [
-    { origen: "interno" as const, titulo: "Documentos internos", oculto: ["documento interno restringido", "documentos internos restringidos"] },
-    { origen: "externo" as const, titulo: "Documentos externos", oculto: ["documento externo restringido", "documentos externos restringidos"] },
+    { origen: "interno" as const, titulo: "Documentos internos" },
+    { origen: "externo" as const, titulo: "Documentos externos" },
   ];
   return (
     <section aria-labelledby="norma-documentos" className={SECCION}>
       <h2 id="norma-documentos" className="text-sm font-semibold">
         Documentos enlazados
       </h2>
-      {n.documentos.length === 0 ? <p className="text-sm text-muted-foreground">Ningún documento del sistema está enlazado a esta norma.</p> : null}
+      {visibles.length === 0 ? <p className="text-sm text-muted-foreground">Ningún documento del sistema está enlazado a esta norma.</p> : null}
       {grupos.map((g) => {
-        const visibles = n.documentos.filter((d) => d.origen === g.origen && d.visible);
-        const ocultos = n.documentos.filter((d) => d.origen === g.origen && !d.visible).length;
-        if (visibles.length === 0 && ocultos === 0) return null;
+        const delGrupo = visibles.filter((d) => d.origen === g.origen);
+        if (delGrupo.length === 0) return null;
         return (
           <div key={g.origen} className="flex min-w-0 flex-col gap-1">
             <h3 className="text-xs font-semibold text-muted-foreground">{g.titulo}</h3>
             <ul className="flex list-none flex-col gap-2 text-sm">
-              {visibles.map((d) => (
+              {delGrupo.map((d) => (
                 <li key={`${g.origen}-${d.id}`} className="flex min-w-0 flex-col gap-1">
                   <span className="min-w-0">
                     <Link href={`/documentos/${encodeURIComponent((d.codigo ?? "").toLowerCase())}`} className={`${ENLACE} font-mono text-xs`}>
@@ -234,9 +233,6 @@ export function SeccionDocumentos({ norma: n, abierta, documentos }: { norma: No
                   ) : null}
                 </li>
               ))}
-              {ocultos > 0 ? (
-                <li className="text-muted-foreground">{`${visibles.length > 0 ? "Y " : ""}${cuenta(ocultos, g.oculto[0], g.oculto[1])} que usted no puede ver.`}</li>
-              ) : null}
             </ul>
           </div>
         );

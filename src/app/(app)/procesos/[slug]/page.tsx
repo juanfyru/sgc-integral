@@ -11,7 +11,7 @@ import { NormasAplicables } from "@/componentes/normograma/NormasAplicables";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { ResumenVigencia } from "@/componentes/vigencia/ResumenVigencia";
 import { normasDeProceso } from "@/db/consultas/normograma/asociaciones";
-import { listarNormas } from "@/db/consultas/normograma/lectura";
+import { normasParaElegir } from "@/db/consultas/normograma/lectura";
 import {
   obtenerDetalleProceso,
   obtenerDocumentosDeProceso,
@@ -47,12 +47,7 @@ export default async function VistaProceso({
     alcanceProcesos(sesion),
   ]);
   // «Asociar norma» (spec 13C §10.3): quien tiene `normograma.procesos` sobre el proceso, con las normas que aún no aplican.
-  const asociadas = new Set(normas.map((n) => n.id));
-  const asociables = puedeAsociarNorma(sesion, proceso.id, alcance)
-    ? (await listarNormas({ estado: "todas" }, sesion))
-        .filter((n) => !asociadas.has(n.id))
-        .map((n) => ({ id: n.id, nombre: n.nombre, titulo: n.titulo }))
-    : null;
+  const asociables = puedeAsociarNorma(sesion, proceso.id, alcance) ? await normasParaElegir({ sinProceso: proceso.id }) : null;
 
   const propios = documentos.filter((d) => d.esPrincipal);
   const tambienAplican = documentos.filter((d) => !d.esPrincipal);

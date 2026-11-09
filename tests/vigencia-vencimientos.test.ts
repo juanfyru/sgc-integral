@@ -453,8 +453,10 @@ describe("impactos normativos vencidos", () => {
         const [delLider, ...otrosDelLider] = await avisosNormograma(tx, lider.usuarioId, desde);
         expect(otrosDelLider).toEqual([]);
         expect(delLider).toMatchObject(esperado);
-        expect(await avisosNormograma(tx, admin.usuarioId, desde)).toMatchObject([esperado]);
-        for (const aviso of [delLider]) {
+        const [delAdmin, ...otrosDelAdmin] = await avisosNormograma(tx, admin.usuarioId, desde);
+        expect(otrosDelAdmin).toEqual([]);
+        expect(delAdmin).toMatchObject(esperado);
+        for (const aviso of [delLider, delAdmin]) {
           expect(`${aviso.titulo} ${aviso.cuerpo ?? ""}`).not.toContain(doc.codigo);
           expect(`${aviso.titulo} ${aviso.cuerpo ?? ""}`).not.toContain(doc.titulo);
         }

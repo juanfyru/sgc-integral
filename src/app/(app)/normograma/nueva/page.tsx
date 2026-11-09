@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { FormularioNorma } from "@/componentes/normograma/FormularioNorma";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
-import { sugerirEmisores } from "@/db/consultas/normograma/lectura";
+import { aniosYEmisores } from "@/db/consultas/normograma/lectura";
 import { listarTiposNorma } from "@/db/consultas/normograma/tipos-norma";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
@@ -14,7 +14,8 @@ export const metadata: Metadata = { title: "Nueva norma" };
 export default async function PaginaNuevaNorma() {
   const sesion = await exigirSesion();
   if (!puede(sesion, "normograma.administrar")) notFound();
-  const [tipos, emisores] = await Promise.all([listarTiposNorma({ soloActivos: true }), sugerirEmisores("")]);
+  // Todas las entidades emisoras ya escritas: el navegador filtra el `datalist` mientras se escribe.
+  const [tipos, { emisores }] = await Promise.all([listarTiposNorma({ soloActivos: true }), aniosYEmisores()]);
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
