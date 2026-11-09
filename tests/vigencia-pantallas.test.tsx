@@ -90,7 +90,7 @@ describe("ChipVigencia", () => {
     const sinDia = chip({ ...filas[2], tramite: { ...filas[2].tramite!, dia: null } });
     expect(sinDia).toContain("En trámite · revisión<");
     expect(sinDia).not.toContain("día");
-    expect(chip({ ...base, vigencia: { estado: "atencion", dias: 300 }, impacto: { cambioId: 1, norma: "Resolución 2003 de 2014" } })).toContain(
+    expect(chip({ ...base, vigencia: { estado: "atencion", dias: 300 }, impacto: { cambioId: 1, procesoId: 3, norma: "Resolución 2003 de 2014" } })).toContain(
       "Atención · revisión por cambio normativo",
     );
   });

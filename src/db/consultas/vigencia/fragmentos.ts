@@ -35,7 +35,8 @@ export type FilaSemaforo = {
   vigencia: { estado: EstadoVigencia; dias: number | null };
   /** `dia`: el de la etapa en curso, como en el encabezado del trámite; nulo si la etapa no tiene fecha límite. */
   tramite: { id: number; numero: string; etapa: Etapa; dia: number | null } | null;
-  impacto: { cambioId: number; norma: string } | null;
+  /** El impacto normativo pendiente más reciente; `procesoId` es el del impacto (el de su página de impactos). */
+  impacto: { cambioId: number; procesoId: number; norma: string } | null;
   /** Un externo con una verificación «hay una edición nueva» que aún no se adopta (spec 13C §8.4): sale en atención. */
   edicionPendiente: { desde: Date } | null;
 };
@@ -70,7 +71,7 @@ function consultaSemaforo(sql: Cliente, condicion: PendingQuery<Row[]>, marcas =
       ado.nombre AS adopto,
       tra.id AS tramite_id, tra.numero AS tramite_numero, tra.etapa AS tramite_etapa, tra.vence_en AS tramite_vence_en,
       tra.entrada AS tramite_entrada,
-      imp.cambio_id, imp.norma
+      imp.cambio_id, imp.proceso_id AS impacto_proceso_id, imp.norma
       ${marcas
         ? sql`, ex.responsable_id AS responsable_tecnico_id, ${enRevisionAnualAbierta(sql)} AS en_revision_anual,
           (p.activo AND EXISTS (SELECT 1 FROM usuario_procesos lider_up
@@ -113,7 +114,7 @@ function consultaSemaforo(sql: Cliente, condicion: PendingQuery<Row[]>, marcas =
       LIMIT 1
     ) tra ON true
     LEFT JOIN LATERAL (
-      SELECT i.cambio_id, concat_ws(' ', tn.nombre, n.numero, 'de', n.anio::text) AS norma
+      SELECT i.cambio_id, i.proceso_id, concat_ws(' ', tn.nombre, n.numero, 'de', n.anio::text) AS norma
       FROM impactos_normativos i
       JOIN normas n ON n.id = i.norma_id
       JOIN tipos_norma tn ON tn.id = n.tipo_norma_id
@@ -172,7 +173,8 @@ function aFila(f: Row, ahora: Date, atencionDias: number, zona: string): FilaSem
             zona,
           )?.dia ?? null,
       };
-  const impacto = f.cambio_id === null ? null : { cambioId: Number(f.cambio_id), norma: f.norma as string };
+  const impacto =
+    f.cambio_id === null ? null : { cambioId: Number(f.cambio_id), procesoId: Number(f.impacto_proceso_id), norma: f.norma as string };
   const pendienteDesde = instante(f.edicion_nueva_pendiente_desde);
 
   return {

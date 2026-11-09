@@ -118,12 +118,14 @@ export const EsquemaAdoptar = z
   })
   .strict();
 
+/** `impactoId`: la verificación pedida desde un impacto normativo lo resuelve (spec 13C §10.5). */
 export const EsquemaVerificacion = z
   .object({
     documentoId: id,
     resultado: z.enum(RESULTADOS_VERIFICACION, { error: "Elija el resultado de la verificación" }),
     fuente: textoAcotado("La fuente consultada", 3, 300),
     nota: opcional("La nota", 1000),
+    impactoId: id.optional(),
   })
   .strict();
 

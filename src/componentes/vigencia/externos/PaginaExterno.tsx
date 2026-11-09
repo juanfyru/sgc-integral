@@ -220,11 +220,14 @@ export function PaginaExterno({
   externo: e,
   opciones,
   pideCodigo,
+  impacto = null,
 }: {
   externo: Externo;
   /** Las personas y las normas que ofrece «Editar»; null si la persona no edita. */
   opciones: OpcionesControl | null;
   pideCodigo: boolean;
+  /** El impacto normativo pendiente que la verificación resolverá (`?impacto=`), si es de este externo. */
+  impacto?: { id: number; norma: string; proceso: string } | null;
 }) {
   const zona = zonaHoraria();
   const pendiente = e.control.edicionNuevaPendienteDesde;
@@ -285,6 +288,7 @@ export function PaginaExterno({
               documentoId={e.documentoId}
               fuenteOficial={e.control.fuenteOficial}
               verificacionMeses={e.control.verificacionMeses}
+              impacto={impacto}
             />
           </section>
         ) : null}

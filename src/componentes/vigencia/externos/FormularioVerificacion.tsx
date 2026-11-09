@@ -25,11 +25,14 @@ export function FormularioVerificacion({
   documentoId,
   fuenteOficial,
   verificacionMeses,
+  impacto,
 }: {
   documentoId: number;
   /** La fuente oficial del externo, como punto de partida. */
   fuenteOficial: string | null;
   verificacionMeses: number;
+  /** El impacto normativo pendiente que esta verificación resuelve (llegó desde su página de impactos). */
+  impacto?: { id: number; norma: string; proceso: string } | null;
 }) {
   const [estado, enviar, pendiente] = useActionState(verificarExternoAccion, null);
   const [resultado, setResultado] = useState<ResultadoVerificacion>("vigente");
@@ -38,6 +41,14 @@ export function FormularioVerificacion({
   return (
     <form action={enviar} onSubmit={enviarSinReiniciar(enviar)} className="flex min-w-0 flex-col gap-4">
       <input type="hidden" name="documentoId" value={documentoId} />
+      {impacto ? (
+        <>
+          <input type="hidden" name="impactoId" value={impacto.id} />
+          <p role="note" className="rounded-md bg-estado-atencion-fondo px-3 py-2 text-sm text-estado-atencion-texto">
+            {`Revisión por cambio normativo · ${impacto.norma}. Al registrar la verificación, con cualquiera de sus tres resultados, queda resuelto el impacto en ${impacto.proceso}.`}
+          </p>
+        </>
+      ) : null}
       <Campo etiqueta="Fuente consultada" nombre="fuente" ayuda="Dónde verificó: la dirección o el nombre del portal oficial.">
         <input required minLength={3} maxLength={300} defaultValue={fuenteOficial ?? ""} className={control} />
       </Campo>

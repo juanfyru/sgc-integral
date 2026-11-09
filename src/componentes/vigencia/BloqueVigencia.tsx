@@ -5,6 +5,8 @@ import { claseBoton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { vigenciaDeDocumento, type VigenciaDeDocumento } from "@/db/consultas/vigencia/semaforo";
+import { alcanceProcesos, puedeVerImpacto } from "@/lib/alcance";
+import { enlaceDeImpacto } from "@/lib/normograma/tipos";
 import { cuenta } from "@/lib/plural";
 import { limitesDeFechaFijada, sumarMeses, textoFecha } from "@/lib/vigencia/plazo";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -107,6 +109,9 @@ export async function BloqueVigencia({
   const ahora = new Date();
   const zona = zonaHoraria();
   const [Titulo, Subtitulo] = ENCABEZADOS[nivel];
+  // La marca enlaza a la página de impactos solo para quien la ve (el líder del proceso o el Admin SGC); para los demás
+  // es texto (resolución 16 de la Tarea 9).
+  const verImpacto = v.impacto !== null && puedeVerImpacto(sesion, v.impacto.procesoId, await alcanceProcesos(sesion));
   const plazo = `${cuenta(v.mesesRevision, "mes", "meses")} ${v.plazoPropio ? "(propio del documento)" : `(el del tipo ${v.tipo})`}`;
 
   return (
@@ -119,7 +124,15 @@ export async function BloqueVigencia({
           <ChipVigencia fila={v} />
         </Dato>
         {v.impacto ? (
-          <Dato etiqueta="Cambio normativo">{`Revisión por cambio normativo · ${v.impacto.norma}`}</Dato>
+          <Dato etiqueta="Cambio normativo">
+            {verImpacto ? (
+              <Link href={enlaceDeImpacto(v.impacto.cambioId, v.impacto.procesoId)} className={`rounded underline underline-offset-2 ${FOCO}`}>
+                {`Revisión por cambio normativo · ${v.impacto.norma}`}
+              </Link>
+            ) : (
+              `Revisión por cambio normativo · ${v.impacto.norma}`
+            )}
+          </Dato>
         ) : null}
         {v.tramite ? (
           <Dato etiqueta="Trámite abierto">

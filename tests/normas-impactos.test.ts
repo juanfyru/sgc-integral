@@ -241,7 +241,7 @@ describe("la marca en el semáforo y en las listas", () => {
       await cambiarEstadoNorma(admin, { normaId: n.id, estado: "derogada", fecha: "2026-11-01", nota: null }, { sql: tx, ahora });
 
       const fila = (await listarSemaforo(admin, { estado: "todos" }, { sql: tx, ahora })).find((f) => f.documentoId === doc.id)!;
-      expect(fila.impacto).toEqual({ cambioId: expect.any(Number), norma: n.nombre });
+      expect(fila.impacto).toEqual({ cambioId: expect.any(Number), procesoId: gth.id, norma: n.nombre });
       const texto = textoVigenciaDeFila(fila);
       expect(texto).toBe("Atención · revisión por cambio normativo");
       expect((await listarDocumentosAdmin(admin, { sql: tx, ahora })).find((f) => f.id === doc.id)?.vigencia).toMatchObject({ estado: "atencion", texto });
