@@ -16,16 +16,28 @@ import {
   retirarExterno,
 } from "@/db/consultas/vigencia/externos";
 import { ratificar } from "@/db/consultas/vigencia/ratificaciones";
+import {
+  abrirRevision,
+  cerrarRevision,
+  confirmarNormograma,
+  enlazarTramiteExistente,
+  prorrogarRevision,
+} from "@/db/consultas/vigencia/revision-anual";
 import { ajustarPlazo, fijarProximaRevision, quitarFechaFijada } from "@/db/consultas/vigencia/semaforo";
 import { contextoDePeticion } from "@/lib/contexto-peticion";
 import { EsquemaSinDatos } from "@/lib/esquemas/documentos";
 import {
+  EsquemaAbrirRevision,
   EsquemaAdoptar,
   EsquemaAjustarPlazo,
+  EsquemaCerrarRevision,
+  EsquemaConfirmarNormograma,
   EsquemaControlExterno,
   EsquemaEdicion,
+  EsquemaEnlazarTramite,
   EsquemaExterno,
   EsquemaFijarFecha,
+  EsquemaProrrogar,
   EsquemaQuitarFecha,
   EsquemaRatificar,
   EsquemaRetirar,
@@ -180,5 +192,57 @@ export async function retirarExternoAccion(_prev: EstadoAccion, formData: FormDa
     const d = parsearFormulario(formData, EsquemaRetirar);
     await retirarExterno(sesion, d);
     return paginaDeExterno(d.documentoId);
+  });
+}
+
+// ── Revisión anual (spec 13C §9): la gestiona el Admin SGC; decide quien lidera el proceso (lo comprueba el dominio) ──
+
+const PAGINA_REVISION = "/vigencia/revision-anual";
+
+export async function abrirRevisionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "revision_anual.gestionar", async (_usuarioId, _formData, sesion) => {
+    await abrirRevision(sesion, parsearFormulario(formData, EsquemaAbrirRevision));
+    return PAGINA_REVISION;
+  });
+}
+
+export async function prorrogarRevisionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "revision_anual.gestionar", async (_usuarioId, _formData, sesion) => {
+    await prorrogarRevision(sesion, parsearFormulario(formData, EsquemaProrrogar));
+    return PAGINA_REVISION;
+  });
+}
+
+/** Cierra con clave y lleva a la revisión cerrada; una firma que cerró la sesión termina en el ingreso. */
+export async function cerrarRevisionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  const firma = separarFirma(formData);
+  return mutacion(formData, "revision_anual.gestionar", async (_usuarioId, _formData, sesion) => {
+    const d = parsearFormulario(firma, EsquemaCerrarRevision);
+    try {
+      await cerrarRevision(
+        sesion,
+        { revisionId: d.revisionId, credenciales: { clave: d.clave, codigo: d.codigo } },
+        { contexto: await contextoDePeticion() },
+      );
+      return `${PAGINA_REVISION}/${d.revisionId}`;
+    } catch (err) {
+      if (err instanceof ErrorFirma && err.sesionCerrada) return err.bloqueada ? "/ingreso?motivo=bloqueo" : "/ingreso";
+      throw err;
+    }
+  });
+}
+
+export async function enlazarTramiteAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "revision_anual.decidir", async (_usuarioId, _formData, sesion) => {
+    await enlazarTramiteExistente(sesion, parsearFormulario(formData, EsquemaEnlazarTramite));
+    return PAGINA_REVISION;
+  });
+}
+
+export async function confirmarNormogramaAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "revision_anual.decidir", async (_usuarioId, _formData, sesion) => {
+    const d = parsearFormulario(formData, EsquemaConfirmarNormograma);
+    await confirmarNormograma(sesion, d);
+    return `${PAGINA_REVISION}?proceso=${d.procesoId}`;
   });
 }

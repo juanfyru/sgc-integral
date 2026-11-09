@@ -130,3 +130,44 @@ export const EsquemaVerificacion = z
   .strict();
 
 export const EsquemaRetirar = z.object({ documentoId: id, motivo: textoAcotado("El motivo", 5, 500) }).strict();
+
+// ── Revisión anual (spec 13C §9) ──
+
+const entero = (minimo: number, maximo: number, mensaje: string) =>
+  z.coerce.number({ error: mensaje }).int(mensaje).min(minimo, mensaje).max(maximo, mensaje);
+
+/** El año se acota en el dominio, contra el de hoy en la zona de la instalación. */
+export const EsquemaAbrirRevision = z
+  .object({
+    anio: entero(2000, 2999, "Escriba el año de la revisión"),
+    plazoDias: entero(7, 365, "El plazo debe estar entre 7 y 365 días"),
+    ventanaMeses: entero(0, 24, "La ventana debe estar entre 0 y 24 meses"),
+  })
+  .strict();
+
+export const EsquemaProrrogar = z
+  .object({
+    revisionId: id,
+    dias: entero(1, 365, "La prórroga debe ser de 1 a 365 días"),
+    motivo: textoAcotado("El motivo", 5, 500),
+  })
+  .strict();
+
+export const EsquemaEnlazarTramite = z.object({ revisionId: id, documentoId: id, tramiteId: id }).strict();
+
+/** «Marcar cambios» exige la nota (qué norma falta, cuál cambió); el dominio lo comprueba otra vez. */
+export const EsquemaConfirmarNormograma = z
+  .object({
+    revisionId: id,
+    procesoId: id,
+    resultado: z.enum(["sin_novedad", "cambios"], { error: "Elija «Sin novedad» o «Marcar cambios»" }),
+    nota: opcional("La nota", 1000),
+  })
+  .strict()
+  .refine((d) => d.resultado !== "cambios" || (d.nota !== null && d.nota.length >= 5), {
+    message: "La nota debe tener al menos 5 caracteres",
+    path: ["nota"],
+  });
+
+/** El cierre se firma: la clave y el código del segundo factor, como en `EsquemaRatificar`. */
+export const EsquemaCerrarRevision = z.object({ revisionId: id, ...firma }).strict();
