@@ -4,7 +4,10 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-const { vigenciaDePersona } = vi.hoisted(() => ({ vigenciaDePersona: vi.fn() }));
+const { vigenciaDePersona, tareasDeImpactos } = vi.hoisted(() => ({
+  vigenciaDePersona: vi.fn(),
+  tareasDeImpactos: vi.fn<(...argumentos: unknown[]) => Promise<unknown[]>>(async () => []),
+}));
 
 vi.mock("@/db/consultas/tramites", () => ({ listarTramites: async () => [] }));
 vi.mock("@/db/consultas/distribucion/tareas", () => {
@@ -23,6 +26,7 @@ vi.mock("@/db/consultas/config-documental", async (original) => {
 });
 vi.mock("@/db/consultas/vigencia/tareas", () => ({ vigenciaDePersona }));
 vi.mock("@/db/consultas/vigencia/externos", () => ({ esResponsableTecnico: async () => false }));
+vi.mock("@/db/consultas/normograma/impactos", () => ({ tareasDeImpactos }));
 
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { misTareas } from "@/lib/tareas";
@@ -42,11 +46,14 @@ describe("misTareas sin la vigencia", () => {
     }
   });
 
-  it("con la vigencia, suma sus tareas después de las demás y devuelve sus vencidos", async () => {
+  it("con la vigencia, suma sus tareas después de las demás y devuelve sus vencidos; las de impactos van al final", async () => {
     const tarea = { id: "vigencia:9", modulo: "documentos" as const, titulo: "Revisar", detalle: null, vence: null, enlace: "/documentos/x" };
+    const impacto = { ...tarea, id: "impacto:3:4", enlace: "/normograma/impactos/3?proceso=4" };
     vigenciaDePersona.mockResolvedValueOnce({ tareas: [tarea], vencidos: 4 });
+    tareasDeImpactos.mockResolvedValueOnce([impacto]);
     const r = await misTareas(lider, { responsableTecnico: false });
-    expect(r.tareas.map((t) => t.id)).toEqual(["copia:1", "vigencia:9"]);
+    expect(r.tareas.map((t) => t.id)).toEqual(["copia:1", "vigencia:9", "impacto:3:4"]);
+    expect(tareasDeImpactos.mock.lastCall?.[0]).toBe(lider);
     expect(r.vencidos).toBe(4);
     expect(vigenciaDePersona).toHaveBeenLastCalledWith(lider, { responsableTecnico: false }, expect.objectContaining({ config: expect.any(Promise) }));
   });
