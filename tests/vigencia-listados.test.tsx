@@ -42,7 +42,9 @@ import { obtenerSql } from "@/db/cliente";
 import { listarDocumentosAdmin } from "@/db/consultas/admin";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { obtenerDocumentosDeProceso, obtenerDocumentosDeSubproceso, resumenVigenciaDeProceso } from "@/db/consultas/procesos";
-import { documentoLibre, sesionAdmin, sesionDe, usuarioDePrueba } from "./utiles/tramites";
+import { fijarProximaRevision, listarSemaforo } from "@/db/consultas/vigencia/semaforo";
+import { textoVigenciaDeFila } from "@/lib/vigencia/semaforo";
+import { documentoLibre, sesionAdmin, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 import { vigenteFuera } from "./utiles/vigencia";
 
@@ -80,6 +82,14 @@ async function pintar(tx: TransactionSql, sesion: SesionFlujo, pagina: () => Pro
 const sinEtiquetas = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 
 describe("Gestión de documentos", () => {
+  it("las páginas que solo relacionan documentos no calculan la vigencia", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const vencido = await vigenteFuera(tx, { fechaAprobacion: "2025-08-14" });
+      const filas = await listarDocumentosAdmin(admin, { sql: tx, ahora, vigencia: false });
+      expect(filas.find((f) => f.id === vencido.id)).toMatchObject({ versionVigente: 1, vigencia: null });
+    }));
+
   it("cada fila trae su origen y su vigencia; lo que no está vigente no tiene semáforo", () =>
     revertida(sql, async (tx) => {
       const admin = await sesionAdmin(tx);
@@ -94,6 +104,42 @@ describe("Gestión de documentos", () => {
       const html = await pintar(tx, admin, () => PaginaDocumentosAdmin());
       expect(html).toContain(">Vigencia<");
       expect(sinEtiquetas(html)).toMatch(new RegExp(`${vencido.codigo} ${vencido.titulo} Procedimiento GTH Vigente Vencida hace \\d+ días`));
+    }));
+});
+
+describe("el texto del chip en las listas", () => {
+  it("un documento en trámite dice en Gestión y en la página del proceso lo mismo que en el semáforo", () =>
+    revertida(sql, async (tx) => {
+      const t = await tramiteEn(tx, "elaboracion");
+      try {
+        const admin = await sesionAdmin(tx);
+        const lider = await sesionDe(tx, "lider.gth");
+        const [doc] = await tx`SELECT d.id, d.titulo FROM tramites tr JOIN documentos d ON d.id = tr.documento_id WHERE tr.id = ${t.tramiteId}`;
+        const id = Number(doc.id);
+        const [gth] = await tx`SELECT id, slug FROM procesos WHERE sigla = 'GTH'`;
+        const delSemaforo = async (conAhora?: Date) =>
+          textoVigenciaDeFila((await listarSemaforo(admin, { estado: "todos" }, { sql: tx, ahora: conAhora })).find((f) => f.documentoId === id)!);
+        const texto = await delSemaforo(ahora);
+        expect(texto).toMatch(/^En trámite · elaboración/);
+
+        expect((await listarDocumentosAdmin(admin, { sql: tx, ahora })).find((f) => f.id === id)?.vigencia).toMatchObject({ estado: "en_tramite", texto });
+        expect((await obtenerDocumentosDeProceso(Number(gth.id), false, lider, { sql: tx, ahora })).find((d) => d.id === id)?.vigencia).toMatchObject({
+          estado: "en_tramite",
+          texto,
+        });
+
+        // Las páginas calculan con la hora real: el texto esperado también.
+        const ahoraReal = await delSemaforo();
+        const gestion = sinEtiquetas(await pintar(tx, admin, () => PaginaDocumentosAdmin()));
+        // Vigente y, para quien administra, el borrador del trámite; después, la vigencia.
+        expect(gestion).toContain(`${t.codigo} ${doc.titulo} Procedimiento GTH Vigente Borrador ${ahoraReal} `);
+        const pagina = sinEtiquetas(
+          await pintar(tx, lider, () => VistaProceso({ params: Promise.resolve({ slug: gth.slug }), searchParams: Promise.resolve({}) })),
+        );
+        expect(pagina).toContain(`${t.codigo} v1 ${ahoraReal}`);
+      } finally {
+        await t.limpiar();
+      }
     }));
 });
 
@@ -113,8 +159,8 @@ describe("página del proceso", () => {
       await tx`UPDATE documentos SET nivel_acceso = 'restringido' WHERE id = ${restringido.id}`;
 
       const docs = await obtenerDocumentosDeProceso(gthId, false, lider, { sql: tx, ahora });
-      expect(docs.find((d) => d.id === vencido.id)?.vigencia).toEqual({ estado: "vencida", dias: -86 });
-      expect(docs.find((d) => d.id === pronto.id)?.vigencia).toEqual({ estado: "atencion", dias: 36 });
+      expect(docs.find((d) => d.id === vencido.id)?.vigencia).toEqual({ estado: "vencida", dias: -86, texto: "Vencida hace 86 días" });
+      expect(docs.find((d) => d.id === pronto.id)?.vigencia).toEqual({ estado: "atencion", dias: 36, texto: "Vence en 36 días" });
 
       expect(await resumenVigenciaDeProceso(gthId, lider, { sql: tx, ahora })).toEqual({
         vencidas: antesLider.vencidas + 2,
@@ -143,7 +189,7 @@ describe("página del proceso", () => {
       const d = await documentoLibre(tx, { proceso: "GTH", tipo: "PR", subproceso: s.slug });
       await tx`UPDATE documento_versiones SET fecha_aprobacion = '2025-08-14' WHERE documento_id = ${d.id}`;
       const docs = await obtenerDocumentosDeSubproceso(Number(s.id), lider, { sql: tx, ahora });
-      expect(docs.find((x) => x.id === d.id)?.vigencia).toEqual({ estado: "vencida", dias: -86 });
+      expect(docs.find((x) => x.id === d.id)?.vigencia).toEqual({ estado: "vencida", dias: -86, texto: "Vencida hace 86 días" });
     }));
 
   it("el resumen no se muestra si no hay nada vencido ni en atención", () => {
@@ -167,5 +213,14 @@ describe("Listado Maestro", () => {
       expect(sinEtiquetas(html)).toContain(
         `${d.codigo} ${d.titulo} Procedimiento Interno 1 — Vigente 2025-08-14 — — Prueba Fuera de la plataforma 2025-08-14 2026-08-14 Vencida Gestión del Talento Humano`,
       );
+    }));
+
+  it("la próxima revisión fijada a mano dice quién y cuándo, con el formato del semáforo", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const d = await vigenteFuera(tx, { fechaAprobacion: "2025-08-14" });
+      await fijarProximaRevision(admin, { documentoIds: [d.id], fecha: "2026-12-15", nota: "Carga inicial" }, { sql: tx, ahora });
+      const html = sinEtiquetas(await pintar(tx, admin, () => PaginaMaestro({ searchParams: Promise.resolve({}) })));
+      expect(html).toContain(`2025-08-14 2026-12-15 Fijada por ${admin.nombre} el 8 nov 2026 `);
     }));
 });

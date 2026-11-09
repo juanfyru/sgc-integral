@@ -190,6 +190,11 @@ describe("páginas de Vigencia", () => {
       // Las pestañas que aún no existen no se pintan.
       expect(html).not.toContain("/vigencia/externos");
       expect(html).not.toContain("/vigencia/indicadores");
+      // A 390 px el selector de proceso, con nombres largos, no desborda la página: cede al ancho disponible.
+      const clases = (patron: RegExp) => (html.match(patron)?.[1] ?? "").split(/\s+/);
+      expect(clases(/<select[^>]*id="filtro-proceso"[^>]*class="([^"]*)"/)).toEqual(expect.arrayContaining(["w-full", "max-w-full"]));
+      expect(clases(/<div class="([^"]*)"><label for="filtro-proceso"/)).toEqual(expect.arrayContaining(["min-w-0", "max-w-full"]));
+      expect(clases(/<form class="([^"]*)" action="\/vigencia\/semaforo"/)).toEqual(expect.arrayContaining(["min-w-0", "max-w-full"]));
     }));
 
   it("el líder no ve el bloque de fijar fecha ni filas de otros procesos", () =>

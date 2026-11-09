@@ -1,5 +1,5 @@
 import { obtenerSql, type Cliente } from "@/db/cliente";
-import { columnasDeVigencia } from "@/db/consultas/vigencia/fragmentos";
+import { vigenciaPorDocumento } from "@/db/consultas/vigencia/fragmentos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import type { OrigenAprobacion } from "@/lib/tramites/tipos";
 import type { EstadoVigencia } from "@/lib/vigencia/tipos";
@@ -24,6 +24,8 @@ export type FilaMaestro = {
   /** Fechas `yyyy-mm-dd` en la zona de la instalación; como la vigencia, nulas en lo que no está vigente. */
   ultimaRevision: string | null;
   proximaRevision: string | null;
+  /** La próxima revisión fijada a mano: quién y cuándo (spec 13C §7.4). */
+  fijada: { por: string; en: string } | null;
   vigencia: EstadoVigencia | null;
   propietario: string;
 };
@@ -73,9 +75,7 @@ export async function obtenerListadoMaestro(
 
   // Una versión obsoleta, anulada o descartada no tiene semáforo (spec 13C §7.2).
   const vigentes = filas.filter((f) => f.estado === "vigente").map((f) => Number(f.id));
-  const vigencias = new Map(
-    (vigentes.length === 0 ? [] : await columnasDeVigencia(sql, sql`d.id = ANY(${vigentes})`, ahora)).map((v) => [v.documentoId, v]),
-  );
+  const vigencias = await vigenciaPorDocumento(sql, vigentes, ahora);
   const zona = zonaHoraria();
   const fecha = (d: Date | null | undefined) => (d ? fechaEnZona(d, zona) : null);
 
@@ -98,6 +98,7 @@ export async function obtenerListadoMaestro(
       origenAprobacion: (f.origen_aprobacion as OrigenAprobacion | null) ?? null,
       ultimaRevision: fecha(v?.ultimaRevision?.fecha),
       proximaRevision: fecha(v?.proximaRevision),
+      fijada: v?.fijada ? { por: v.fijada.por, en: fechaEnZona(v.fijada.en, zona) } : null,
       vigencia: v?.vigencia.estado ?? null,
       propietario: f.propietario as string,
     };

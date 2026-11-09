@@ -93,6 +93,13 @@ describe("ChipVigencia", () => {
       "Atención · revisión por cambio normativo",
     );
   });
+
+  it("el texto no se parte en varias líneas, y en una lista pinta el texto que ya trae", () => {
+    expect(renderToStaticMarkup(<ChipVigencia fila={filas[2]} />)).toMatch(/class="whitespace-nowrap">En trámite · revisión, día 3</);
+    const enLista = renderToStaticMarkup(<ChipVigencia vigencia={{ estado: "en_tramite", texto: "En trámite · revisión, día 3" }} />);
+    expect(enLista).toContain('data-variante="neutra"');
+    expect(enLista).toMatch(/class="whitespace-nowrap">En trámite · revisión, día 3</);
+  });
 });
 
 describe("PestanasVigencia", () => {

@@ -1,9 +1,8 @@
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { columnasDeVigencia } from "@/db/consultas/vigencia/fragmentos";
+import { columnasDeVigencia, vigenciaEnLista, vigenciaPorDocumento, type VigenciaEnLista } from "@/db/consultas/vigencia/fragmentos";
 import { filtroAcceso, type SujetoVisibilidad } from "@/lib/alcance";
 import { ROLES_ARCHIVO_LISTA } from "@/lib/subida";
-import type { EstadoVigencia } from "@/lib/vigencia/tipos";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -59,7 +58,7 @@ export type DocumentoListado = {
   subproceso: { nombre: string; slug: string } | null;
   archivos: ArchivoResumen[];
   /** El semáforo de la versión vigente (spec 13C §7.2). */
-  vigencia: { estado: EstadoVigencia; dias: number | null } | null;
+  vigencia: VigenciaEnLista | null;
 };
 
 export async function obtenerDetalleProceso(
@@ -306,10 +305,11 @@ function aDocumentoListado(fila: FilaDocumento): DocumentoListado {
 
 /** La vigencia de cada documento de la lista, que ya trae solo lo que el sujeto ve. */
 async function conVigencia(sql: Cliente, docs: DocumentoListado[], ahora = new Date()): Promise<DocumentoListado[]> {
-  if (docs.length === 0) return docs;
-  const filas = await columnasDeVigencia(sql, sql`d.id = ANY(${docs.map((d) => d.id)})`, ahora);
-  const vigencias = new Map(filas.map((f) => [f.documentoId, f.vigencia]));
-  return docs.map((d) => ({ ...d, vigencia: vigencias.get(Number(d.id)) ?? null }));
+  const vigencias = await vigenciaPorDocumento(sql, docs.map((d) => Number(d.id)), ahora);
+  return docs.map((d) => {
+    const v = vigencias.get(Number(d.id));
+    return { ...d, vigencia: v ? vigenciaEnLista(v) : null };
+  });
 }
 
 /**

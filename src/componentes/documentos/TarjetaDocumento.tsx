@@ -30,7 +30,7 @@ export function TarjetaDocumento({
             v{documento.version}
           </span>
           {documento.vigencia ? (
-            <ChipVigencia fila={{ vigencia: documento.vigencia, tramite: null, impacto: null }} />
+            <ChipVigencia vigencia={documento.vigencia} />
           ) : null}
           {contexto && (
             <span className="text-xs text-muted-foreground">{contexto}</span>

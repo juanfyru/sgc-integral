@@ -14,6 +14,7 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 
 import type { TransactionSql } from "postgres";
 import { obtenerSql } from "@/db/cliente";
+import { aplicarPublicacion } from "@/db/consultas/admin";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { revisarVencimientos } from "@/db/consultas/vencimientos";
 import { revisarVencimientosDeVigencia } from "@/db/consultas/vigencia/vencimientos";
@@ -166,6 +167,97 @@ describe("revisarVencimientosDeVigencia", () => {
       await sinRevisionAbierta(tx);
       expect((await tx`SELECT 1 FROM revisiones_anuales WHERE estado = 'abierta'`).length).toBe(0);
       expect((await revisarVencimientosDeVigencia({ sql: tx, ahora, config })).avisados).toBe(1);
+    }));
+});
+
+describe("sin jefe ni destinatario, la marca queda para cuando los haya", () => {
+  it("un líder sin jefe no escala ni marca el escalamiento; cuando tiene jefe, la pasada siguiente escala", () =>
+    revertida(sql, async (tx) => {
+      const desde = await preparar(tx);
+      const config = { ...(await obtenerConfigDocumental({ sql: tx })), escalamientoDias: 3 };
+      const sinLider = await procesoSinLider(tx);
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [sinLider.id] });
+      const d = await vigenteFuera(tx, { fechaAprobacion: "2025-01-10", proceso: sinLider.sigla });
+
+      expect(await revisarVencimientosDeVigencia({ sql: tx, ahora, config })).toEqual({ avisados: 1, escalados: 0 });
+      const marcas = async () => (await tx`SELECT revision_aviso_en, revision_escalado_en FROM documentos WHERE id = ${d.id}`)[0];
+      expect(await marcas()).toMatchObject({ revision_aviso_en: ahora, revision_escalado_en: null });
+
+      const jefe = await usuarioDePrueba(tx, { rol: "consulta" });
+      await tx`UPDATE usuarios SET jefe_inmediato_id = ${jefe.usuarioId} WHERE id = ${lider.usuarioId}`;
+      const despues = new Date(ahora.getTime() + DIA);
+      expect(await revisarVencimientosDeVigencia({ sql: tx, ahora: despues, config })).toEqual({ avisados: 0, escalados: 1 });
+      expect(await marcas()).toMatchObject({ revision_aviso_en: ahora, revision_escalado_en: despues });
+      expect(await avisosDe(tx, jefe.usuarioId, desde)).toMatchObject([{ tipo: "vigencia.escalado", enlace: null }]);
+    }));
+
+  it("sin líder ni Admin SGC activos no avisa ni marca; con un Admin SGC, la pasada siguiente avisa", () =>
+    revertida(sql, async (tx) => {
+      const desde = await preparar(tx);
+      const config = await obtenerConfigDocumental({ sql: tx });
+      const sinLider = await procesoSinLider(tx);
+      await tx`UPDATE usuarios SET activo = false WHERE rol = 'admin_sgc' AND activo`;
+      const d = await vigenteFuera(tx, { fechaAprobacion: "2025-01-10", proceso: sinLider.sigla });
+
+      expect(await revisarVencimientosDeVigencia({ sql: tx, ahora, config })).toEqual({ avisados: 0, escalados: 0 });
+      const [marca] = await tx`SELECT revision_aviso_en, revision_escalado_en FROM documentos WHERE id = ${d.id}`;
+      expect(marca).toMatchObject({ revision_aviso_en: null, revision_escalado_en: null });
+
+      const admin = await sesionAdmin(tx);
+      expect((await revisarVencimientosDeVigencia({ sql: tx, ahora, config })).avisados).toBe(1);
+      expect(await avisosDe(tx, admin.usuarioId, desde)).toMatchObject([{ tipo: "vigencia.vencida" }]);
+    }));
+});
+
+describe("publicar una versión nueva", () => {
+  /** Un borrador listo para publicarse sobre la vigente del documento. */
+  async function borrador(tx: TransactionSql, documentoId: number): Promise<number> {
+    const [v] = await tx`INSERT INTO documento_versiones (documento_id, numero, estado, aprobo, fecha_aprobacion)
+      VALUES (${documentoId}, 2, 'borrador', 'Prueba', '2026-11-08') RETURNING id`;
+    return Number(v.id);
+  }
+
+  it("borra la fecha fijada a mano y reinicia las marcas del aviso", () =>
+    revertida(sql, async (tx) => {
+      await sinRevisionAbierta(tx);
+      const admin = await sesionAdmin(tx);
+      const d = await vigenteFuera(tx, { fechaAprobacion: "2025-01-10", proceso: "GTH" });
+      await tx`UPDATE documentos SET proxima_revision_fijada = '2026-12-15', fijada_por = ${admin.usuarioId}, fijada_en = now(),
+          fijada_nota = 'Carga inicial', revision_aviso_en = now(), revision_escalado_en = now()
+        WHERE id = ${d.id}`;
+      await aplicarPublicacion(tx, await borrador(tx, d.id), "plataforma", admin.usuarioId, ahora);
+      const [f] = await tx`SELECT proxima_revision_fijada, fijada_por, fijada_en, fijada_nota, revision_aviso_en, revision_escalado_en,
+          actualizado_en
+        FROM documentos WHERE id = ${d.id}`;
+      expect(f).toEqual({
+        proxima_revision_fijada: null,
+        fijada_por: null,
+        fijada_en: null,
+        fijada_nota: null,
+        revision_aviso_en: null,
+        revision_escalado_en: null,
+        actualizado_en: ahora,
+      });
+    }));
+
+  it("avisado, se publica una versión nueva, vuelve a vencer y la pasada avisa otra vez", () =>
+    revertida(sql, async (tx) => {
+      const desde = await preparar(tx);
+      const config = await obtenerConfigDocumental({ sql: tx });
+      const admin = await sesionAdmin(tx);
+      const liderGth = await sesionDe(tx, "lider.gth");
+      const d = await vigenteFuera(tx, { fechaAprobacion: "2025-01-10", proceso: "GTH" });
+      expect((await revisarVencimientosDeVigencia({ sql: tx, ahora, config })).avisados).toBe(1);
+
+      await aplicarPublicacion(tx, await borrador(tx, d.id), "plataforma", admin.usuarioId, ahora);
+      expect((await revisarVencimientosDeVigencia({ sql: tx, ahora, config })).avisados).toBe(0);
+      // Publicada el 8 nov 2026: la próxima revisión es el 8 nov 2027, vencida un mes después.
+      const otroAnio = new Date("2027-12-08T15:00:00Z");
+      expect((await revisarVencimientosDeVigencia({ sql: tx, ahora: otroAnio, config })).avisados).toBe(1);
+      expect((await avisosDe(tx, liderGth.usuarioId, desde)).map((a) => a.titulo)).toEqual([
+        "1 documento con revisión vencida en Gestión del Talento Humano",
+        "1 documento con revisión vencida en Gestión del Talento Humano",
+      ]);
     }));
 });
 

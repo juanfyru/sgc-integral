@@ -34,7 +34,7 @@ export default async function PaginaNuevoDocumento() {
   const [tipos, procesos, documentos] = await Promise.all([
     listarTiposActivos(),
     listarMapaParaFormulario(),
-    listarDocumentosAdmin(sesion),
+    listarDocumentosAdmin(sesion, { vigencia: false }),
   ]);
   return (
     <div>

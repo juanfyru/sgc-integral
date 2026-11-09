@@ -11,6 +11,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 if (!process.env.DATABASE_URL && existsSync(".env.local")) process.loadEnvFile(".env.local");
 import { obtenerSql } from "@/db/cliente";
 import { obtenerListadoMaestro } from "@/db/consultas/maestro";
+import { fijarProximaRevision } from "@/db/consultas/vigencia/semaforo";
+import { sesionAdmin } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 import { sinFechaDeRevision, vigenteFuera } from "./utiles/vigencia";
 
@@ -132,6 +134,20 @@ describe("obtenerListadoMaestro — vigencia (Fase 13C)", () => {
       });
     }));
 
+  it("la próxima revisión fijada a mano dice quién y cuándo la fijó; la calculada no", () =>
+    revertida(sql(), async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const fijado = await vigenteFuera(tx, { fechaAprobacion: "2025-08-14" });
+      const calculado = await vigenteFuera(tx, { fechaAprobacion: "2025-08-14" });
+      await fijarProximaRevision(admin, { documentoIds: [fijado.id], fecha: "2026-12-15", nota: "Carga inicial" }, { sql: tx, ahora });
+      const filas = await obtenerListadoMaestro({ incluir: "vigentes", sql: tx, ahora });
+      expect(filas.find((f) => f.codigo === fijado.codigo)).toMatchObject({
+        proximaRevision: "2026-12-15",
+        fijada: { por: admin.nombre, en: "2026-11-08" },
+      });
+      expect(filas.find((f) => f.codigo === calculado.codigo)).toMatchObject({ proximaRevision: "2026-08-14", fijada: null });
+    }));
+
   it("un vigente sin fecha de revisión sale en atención, nunca al día", () =>
     revertida(sql(), async (tx) => {
       const d = await vigenteFuera(tx, { fechaAprobacion: "2025-08-14" });
@@ -142,7 +158,7 @@ describe("obtenerListadoMaestro — vigencia (Fase 13C)", () => {
 
   it("en «todos», lo que no tiene versión vigente no tiene semáforo", async () => {
     const fila = (await obtenerListadoMaestro({ incluir: "todos", ahora })).find((f) => f.codigo === "ZZ-MST-004")!;
-    expect(fila).toMatchObject({ estado: "anulado", origen: "interno", ultimaRevision: null, proximaRevision: null, vigencia: null });
+    expect(fila).toMatchObject({ estado: "anulado", origen: "interno", ultimaRevision: null, proximaRevision: null, fijada: null, vigencia: null });
     const vigente = (await obtenerListadoMaestro({ incluir: "todos", ahora })).find((f) => f.codigo === "ZZ-MST-001")!;
     expect(vigente.vigencia).not.toBeNull();
   });

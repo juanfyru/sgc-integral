@@ -16,13 +16,13 @@ export type DocumentoFiltrable = {
   vigencia: { estado: EstadoVigencia; dias: number | null } | null;
 };
 
-/** Cada campo vacío es «todos»; `vigencia` es uno de los estados del semáforo. */
+/** Cada campo vacío es «todos». */
 export type FiltroDocumentos = {
   texto: string;
   tipo: string;
   proceso: string;
   estado: string;
-  vigencia: string;
+  vigencia: "" | EstadoVigencia;
 };
 
 export const FILTRO_VACIO: FiltroDocumentos = { texto: "", tipo: "", proceso: "", estado: "", vigencia: "" };

@@ -128,13 +128,14 @@ export default async function PaginaSemaforo({
             })}
           </ul>
         </nav>
-        <form method="get" action="/vigencia/semaforo" className="flex flex-wrap items-end gap-2">
+        <form method="get" action="/vigencia/semaforo" className="flex min-w-0 max-w-full flex-wrap items-end gap-2">
           {filtro.estado === "todos" ? null : <input type="hidden" name="estado" value={filtro.estado} />}
-          <div className="flex flex-col gap-1">
+          {/* Los nombres de proceso son largos: a 390 px el selector cede al ancho disponible. */}
+          <div className="flex min-w-0 max-w-full flex-col gap-1">
             <label htmlFor="filtro-proceso" className="text-sm font-medium">
               Proceso
             </label>
-            <select id="filtro-proceso" name="proceso" defaultValue={filtro.procesoId ?? ""} className={claseControl}>
+            <select id="filtro-proceso" name="proceso" defaultValue={filtro.procesoId ?? ""} className={`${claseControl} w-full max-w-full`}>
               <option value="">Todos</option>
               {procesos.map((p) => (
                 <option key={p.id} value={p.id}>

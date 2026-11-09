@@ -11,7 +11,8 @@ import { exigirPermiso } from "@/lib/paginas";
 import { alcanceMaestro, puede } from "@/lib/permisos";
 import { APROBACION_EN_LISTADO } from "@/lib/tramites/tipos";
 import { ETIQUETA_VIGENCIA, VARIANTE_VIGENCIA } from "@/lib/vigencia/tipos";
-import { fechaHoraLocal } from "@/lib/zona-horaria";
+import { textoFecha } from "@/lib/vigencia/plazo";
+import { fechaHoraLocal, zonaHoraria } from "@/lib/zona-horaria";
 
 export const metadata: Metadata = { title: "Listado Maestro — Administración SGC" };
 
@@ -45,6 +46,7 @@ export default async function PaginaMaestro({
   const veNoVigentes = puede(sesion, "documentos.ver_historial");
   const [filas, marca] = await Promise.all([obtenerListadoMaestro({ incluir }), obtenerMarcaSegura()]);
   const generadoEn = fechaHoraLocal(new Date());
+  const zona = zonaHoraria();
 
   return (
     <div>
@@ -98,7 +100,12 @@ export default async function PaginaMaestro({
             <td className={celda}>{f.aprobo ?? "—"}</td>
             <td className={celda}>{f.origenAprobacion ? APROBACION_EN_LISTADO[f.origenAprobacion] : "—"}</td>
             <td className={`${celda} whitespace-nowrap`}>{f.ultimaRevision ?? "—"}</td>
-            <td className={`${celda} whitespace-nowrap`}>{f.proximaRevision ?? "—"}</td>
+            <td className={celda}>
+              <div className="whitespace-nowrap">{f.proximaRevision ?? "—"}</div>
+              {f.fijada ? (
+                <div className="text-xs text-muted-foreground">{`Fijada por ${f.fijada.por} el ${textoFecha(f.fijada.en, zona)}`}</div>
+              ) : null}
+            </td>
             <td className={celda}>
               {/* El Maestro dice el estado; la fecha de la próxima revisión va al lado. */}
               {f.vigencia ? <Insignia variante={VARIANTE_VIGENCIA[f.vigencia]}>{ETIQUETA_VIGENCIA[f.vigencia]}</Insignia> : "—"}

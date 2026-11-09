@@ -23,7 +23,7 @@ export type FilaTablaDocumentos = {
   tipoNombre: string;
   procesos: string[];
   estados: string[];
-  vigencia: { estado: EstadoVigencia; dias: number | null } | null;
+  vigencia: { estado: EstadoVigencia; dias: number | null; texto: string } | null;
 };
 
 const COLUMNAS: readonly ColumnaTabla[] = [
@@ -134,7 +134,7 @@ export function TablaDocumentosAdmin({ filas }: { filas: FilaTablaDocumentos[] }
               </span>
             </td>
             <td className={celda}>
-              {d.vigencia ? <ChipVigencia fila={{ vigencia: d.vigencia, tramite: null, impacto: null }} /> : "—"}
+              {d.vigencia ? <ChipVigencia vigencia={d.vigencia} /> : "—"}
             </td>
           </tr>
         ))}

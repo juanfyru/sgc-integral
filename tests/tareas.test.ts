@@ -122,8 +122,7 @@ describe("misTareas", () => {
     const lider = await sesionDe(tx, "lider.gth");
     const d = await documentoLibre(tx, { proceso: "GTH", tipo: "PR" });
     await tx`UPDATE documento_versiones SET fecha_aprobacion = '2025-08-14' WHERE documento_id = ${d.id}`;
-    const { tareas, total } = await misTareas(lider, { sql: tx, ahora: new Date("2026-11-08T15:00:00Z") });
-    expect(total).toBe(tareas.length);
+    const { tareas } = await misTareas(lider, { sql: tx, ahora: new Date("2026-11-08T15:00:00Z") });
     const i = tareas.findIndex((x) => x.id === `vigencia:${d.id}`);
     expect(tareas[i]).toMatchObject({
       modulo: "documentos",

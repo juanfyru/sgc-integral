@@ -6,7 +6,6 @@ import { ROLES_ARCHIVO_LISTA } from "@/lib/subida";
 import { hashearClave } from "@/lib/clave";
 import { puede } from "@/lib/permisos";
 import { ETAPAS_ABIERTAS, NUMERO_MAXIMO_DE_VERSION, type OrigenAprobacion } from "@/lib/tramites/tipos";
-import type { EstadoVigencia } from "@/lib/vigencia/tipos";
 import {
   ACCION_EDITAR_CONTROL,
   codigoAbandonado,
@@ -19,7 +18,7 @@ import { exigirVerificacionAbierta } from "./distribucion/verificacion-abierta";
 import { alDejarDeSerVigente } from "./distribucion/version-vigencia";
 import { obtenerConfigDocumental } from "./config-documental";
 import { ErrorTramite, enTransaccion } from "./flujo/contrato";
-import { columnasDeVigencia } from "./vigencia/fragmentos";
+import { vigenciaEnLista, vigenciaPorDocumento, type VigenciaEnLista } from "./vigencia/fragmentos";
 
 type Cliente = Sql | TransactionSql;
 
@@ -624,7 +623,11 @@ export async function aplicarPublicacion(
   await tx`UPDATE documento_versiones
     SET estado = 'vigente', origen_aprobacion = ${origen}, publicado_en = ${ahora}
     WHERE id = ${versionId}`;
-  await tx`UPDATE documentos SET actualizado_en = ${ahora} WHERE id = ${documentoId}`;
+  // La versión nueva empieza su plazo de revisión: la fecha fijada a mano y las marcas del aviso eran de la anterior
+  // (spec 13C §7.1 y §13.3).
+  await tx`UPDATE documentos SET actualizado_en = ${ahora}, proxima_revision_fijada = NULL, fijada_por = NULL, fijada_en = NULL,
+      fijada_nota = NULL, revision_aviso_en = NULL, revision_escalado_en = NULL
+    WHERE id = ${documentoId}`;
   const obsoletas = anteriores.map((a) => a.numero as number);
   await registrarAuditoria(tx, {
     usuarioId, accion: "publicar_version", entidad: "documento_version",
@@ -836,18 +839,19 @@ export type FilaDocumentoAdmin = {
   procesos: string[];
   actualizadoEn: string;
   origen: "interno" | "externo";
-  /** El semáforo de la versión vigente (spec 13C §7.2); nulo si no hay vigente. */
-  vigencia: { estado: EstadoVigencia; dias: number | null } | null;
+  /** El semáforo de la versión vigente (spec 13C §7.2); nulo si no hay vigente o si no se pidió. */
+  vigencia: VigenciaEnLista | null;
 };
 
 /**
  * Lista del panel (spec 13A §12, F13A-DC13): solo lo que el sujeto puede ver. Quien
  * no administra no recibe el número del borrador ni los documentos que únicamente
- * tienen versiones en borrador o descartadas.
+ * tienen versiones en borrador o descartadas. Con `vigencia: false` no se calcula el
+ * semáforo: lo piden así las páginas que solo usan la lista para relacionar documentos.
  */
 export async function listarDocumentosAdmin(
   sujeto: SujetoVisibilidad,
-  opciones?: { sql?: Cliente; ahora?: Date },
+  opciones?: { sql?: Cliente; ahora?: Date; vigencia?: boolean },
 ): Promise<FilaDocumentoAdmin[]> {
   const sql = opciones?.sql ?? obtenerSql();
   const administra = puede(sujeto, "documentos.administrar");
@@ -873,20 +877,20 @@ export async function listarDocumentosAdmin(
             WHERE documento_id = d.id AND estado NOT IN ('borrador', 'descartado'))`}
     ORDER BY d.actualizado_en DESC`;
   // La vigencia, sobre las filas que el sujeto ya ve.
-  const vigentes = filas.filter((f) => f.vigente !== null).map((f) => Number(f.id));
-  const vigencias = new Map(
-    (vigentes.length === 0 ? [] : await columnasDeVigencia(sql, sql`d.id = ANY(${vigentes})`, opciones?.ahora ?? new Date()))
-      .map((v) => [v.documentoId, v.vigencia]),
-  );
-  return filas.map((f) => ({
-    id: f.id, codigo: f.codigo, titulo: f.titulo,
-    tipoNombre: f.tipo_nombre, tipoSigla: f.tipo_sigla,
-    versionVigente: f.vigente, versionBorrador: f.borrador,
-    anulado: f.anulado, descartado: f.descartado, procesos: f.procesos as string[],
-    actualizadoEn: String(f.actualizado_en),
-    origen: f.origen as "interno" | "externo",
-    vigencia: vigencias.get(Number(f.id)) ?? null,
-  }));
+  const vigentes = opciones?.vigencia === false ? [] : filas.filter((f) => f.vigente !== null).map((f) => Number(f.id));
+  const vigencias = await vigenciaPorDocumento(sql, vigentes, opciones?.ahora ?? new Date());
+  return filas.map((f) => {
+    const v = vigencias.get(Number(f.id));
+    return {
+      id: f.id, codigo: f.codigo, titulo: f.titulo,
+      tipoNombre: f.tipo_nombre, tipoSigla: f.tipo_sigla,
+      versionVigente: f.vigente, versionBorrador: f.borrador,
+      anulado: f.anulado, descartado: f.descartado, procesos: f.procesos as string[],
+      actualizadoEn: String(f.actualizado_en),
+      origen: f.origen as "interno" | "externo",
+      vigencia: v ? vigenciaEnLista(v) : null,
+    };
+  });
 }
 
 /** Los estados que la tabla del panel muestra de un documento: vigente y borrador pueden convivir; si no hay ninguno, el que queda. */

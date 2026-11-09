@@ -26,6 +26,7 @@ const FILA: FilaMaestro = {
   edicion: null,
   ultimaRevision: "2025-03-01",
   proximaRevision: "2026-03-01",
+  fijada: null,
   vigencia: "vencida",
 };
 
@@ -89,10 +90,10 @@ describe("construirExcelMaestro", () => {
 describe("construirExcelMaestro — origen de la aprobación", () => {
   const META = { hospital: "H", generadoEn: "x", alcance: "Documentos vigentes", total: 3 };
 
-  it("son dieciocho columnas, con «Aprobación» justo después de «Aprobó»", async () => {
+  it("son diecinueve columnas, con «Aprobación» justo después de «Aprobó»", async () => {
     const hoja = await abrir(await construirExcelMaestro([FILA], META));
     const encabezados = (hoja.getRow(6).values as unknown[]).slice(1);
-    expect(encabezados).toHaveLength(18);
+    expect(encabezados).toHaveLength(19);
     expect(encabezados.filter((c) => c === "Aprobación")).toHaveLength(1);
     expect(encabezados.indexOf("Aprobación")).toBe(encabezados.indexOf("Aprobó") + 1);
   });
@@ -134,13 +135,13 @@ describe("construirExcelMaestro — vigencia (Fase 13C)", () => {
     const encabezados = (hoja.getRow(6).values as unknown[]).slice(1);
     expect(encabezados.indexOf("Origen")).toBe(encabezados.indexOf("Tipo") + 1);
     expect(encabezados.indexOf("Edición")).toBe(encabezados.indexOf("Versión") + 1);
-    expect(encabezados.slice(-4)).toEqual(["Última revisión", "Próxima revisión", "Vigencia", "Proceso propietario"]);
+    expect(encabezados.slice(-5)).toEqual(["Última revisión", "Próxima revisión", "Fijada por", "Vigencia", "Proceso propietario"]);
   });
 
   it("dice el origen, la edición, las fechas y el estado; lo que no está vigente va vacío", async () => {
     const filas: FilaMaestro[] = [
       FILA,
-      { ...FILA, codigo: "X-EXT", origen: "externo", edicion: "2017", origenAprobacion: "externo", vigencia: "al_dia" },
+      { ...FILA, codigo: "X-EXT", origen: "externo", edicion: "2017", origenAprobacion: "externo", vigencia: "al_dia", fijada: { por: "=María F. Perdomo", en: "2026-11-03" } },
       { ...FILA, codigo: "Z-OBS", estado: "obsoleto", ultimaRevision: null, proximaRevision: null, vigencia: null },
     ];
     const hoja = await abrir(await construirExcelMaestro(filas, META));
@@ -152,10 +153,13 @@ describe("construirExcelMaestro — vigencia (Fase 13C)", () => {
     expect(valor(7, "Última revisión")).toBe("2025-03-01");
     expect(valor(7, "Próxima revisión")).toBe("2026-03-01");
     expect(valor(7, "Vigencia")).toBe("Vencida");
+    expect(valor(7, "Fijada por")).toBeNull();
     expect(valor(8, "Origen")).toBe("Externo");
     expect(valor(8, "Edición")).toBe("2017");
     expect(valor(8, "Aprobación")).toBe("Adoptado");
     expect(valor(8, "Vigencia")).toBe("Al día");
+    // El nombre viene de la BD: pasa por el mismo saneo que las demás celdas.
+    expect(valor(8, "Fijada por")).toBe("'=María F. Perdomo el 2026-11-03");
     expect(valor(9, "Próxima revisión")).toBeNull();
     expect(valor(9, "Vigencia")).toBeNull();
   });

@@ -11,7 +11,7 @@ import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { EVENTOS_SIN_CAMBIO_DE_ETAPA, diaDeEtapa } from "@/lib/tramites/dia-de-etapa";
 import { ETAPAS_ABIERTAS, type Autoridad, type Etapa } from "@/lib/tramites/tipos";
 import { fechaBase, proximaRevision, type OrigenVigencia } from "@/lib/vigencia/plazo";
-import { estadoVigencia, type ClaseRevision } from "@/lib/vigencia/semaforo";
+import { estadoVigencia, textoVigenciaDeFila, type ClaseRevision } from "@/lib/vigencia/semaforo";
 import type { EstadoVigencia } from "@/lib/vigencia/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 
@@ -190,4 +190,17 @@ export async function columnasDeVigencia(sql: Cliente, condicion: PendingQuery<R
 export function enRevisionAnualAbierta(sql: Cliente) {
   return sql`EXISTS (SELECT 1 FROM revision_anual_decisiones rad JOIN revisiones_anuales ra ON ra.id = rad.revision_id
     WHERE ra.estado = 'abierta' AND rad.documento_id = d.id)`;
+}
+
+/** La vigencia de cada documento de `ids` que tenga versión vigente, por su id. */
+export async function vigenciaPorDocumento(sql: Cliente, ids: number[], ahora: Date): Promise<Map<number, FilaSemaforo>> {
+  if (ids.length === 0) return new Map();
+  return new Map((await columnasDeVigencia(sql, sql`d.id = ANY(${ids})`, ahora)).map((f) => [f.documentoId, f]));
+}
+
+/** El semáforo de un documento en una lista (Gestión, la página del proceso): con el mismo texto que el chip del semáforo. */
+export type VigenciaEnLista = { estado: EstadoVigencia; dias: number | null; texto: string };
+
+export function vigenciaEnLista(f: FilaSemaforo): VigenciaEnLista {
+  return { ...f.vigencia, texto: textoVigenciaDeFila(f) };
 }
