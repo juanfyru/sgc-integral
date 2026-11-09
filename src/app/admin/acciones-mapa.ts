@@ -11,7 +11,6 @@ import {
 } from "@/app/admin/comun";
 import { NOMBRES_ICONO } from "@/componentes/iconos";
 import {
-  type AutoridadTipo,
   alternarActivo,
   borrar,
   CLAVES_TEXTO,
@@ -30,11 +29,12 @@ import {
   TABLAS_MAPA,
   type Tabla,
 } from "@/db/consultas/mapa-admin";
+import { parsearTipo } from "@/lib/esquemas/mapa";
 import { requerirPermiso } from "@/lib/permisos";
 import { rutaInterna } from "@/lib/rutas";
 import { generarSlug } from "@/lib/slug";
 import { requerirSesion } from "@/lib/sesion-actual";
-import { validarIcono, validarSigla } from "@/lib/validaciones-mapa";
+import { validarIcono } from "@/lib/validaciones-mapa";
 
 // ── Acciones genéricas de fila (la tabla llega del formulario y se valida) ──
 
@@ -76,36 +76,6 @@ export async function borrarAccion(formData: FormData): Promise<void> {
 }
 
 // ── Tipos de documento ──
-
-function parsearTipo(formData: FormData) {
-  const nombre = texto(formData, "nombre");
-  if (!nombre) throw new Error("El nombre es obligatorio");
-  return {
-    nombre,
-    sigla: validarSigla(texto(formData, "sigla")),
-    esDiligenciable: formData.get("esDiligenciable") === "on",
-    autoridad: validarAutoridad(texto(formData, "autoridad")),
-    plantillaDocumentoId: plantillaDe(texto(formData, "plantillaDocumentoId")),
-    mesesRevision: mesesDe(texto(formData, "mesesRevision")),
-  };
-}
-
-function mesesDe(v: string): number {
-  if (!/^d{1,3}$/.test(v)) throw new Error("El plazo de revisión debe ser un número entero de meses entre 1 y 120");
-  return Number(v);
-}
-
-function validarAutoridad(v: string): AutoridadTipo {
-  if (v !== "estrategico" && v !== "operativo") throw new Error("Elija quién aprueba los documentos de este tipo");
-  return v;
-}
-
-function plantillaDe(v: string): number | null {
-  if (v === "") return null;
-  const n = Number(v);
-  if (!Number.isInteger(n) || n <= 0) throw new Error("La plantilla elegida no es válida");
-  return n;
-}
 
 export async function crearTipoAccion(
   _prev: EstadoAccion,
