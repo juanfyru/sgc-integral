@@ -40,6 +40,7 @@ export default async function PaginaDocumentosAdmin() {
           tipoNombre: d.tipoNombre,
           procesos: d.procesos,
           estados: estadosDeDocumento(d),
+          vigencia: d.vigencia,
         }))}
       />
     </div>

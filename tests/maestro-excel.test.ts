@@ -22,6 +22,11 @@ const FILA: FilaMaestro = {
   aprobo: "Carla",
   origenAprobacion: "fuera",
   propietario: "Gestión del Talento Humano",
+  origen: "interno",
+  edicion: null,
+  ultimaRevision: "2025-03-01",
+  proximaRevision: "2026-03-01",
+  vigencia: "vencida",
 };
 
 async function abrir(buf: Buffer) {
@@ -84,10 +89,10 @@ describe("construirExcelMaestro", () => {
 describe("construirExcelMaestro — origen de la aprobación", () => {
   const META = { hospital: "H", generadoEn: "x", alcance: "Documentos vigentes", total: 3 };
 
-  it("son trece columnas, con «Aprobación» justo después de «Aprobó»", async () => {
+  it("son dieciocho columnas, con «Aprobación» justo después de «Aprobó»", async () => {
     const hoja = await abrir(await construirExcelMaestro([FILA], META));
     const encabezados = (hoja.getRow(6).values as unknown[]).slice(1);
-    expect(encabezados).toHaveLength(13);
+    expect(encabezados).toHaveLength(18);
     expect(encabezados.filter((c) => c === "Aprobación")).toHaveLength(1);
     expect(encabezados.indexOf("Aprobación")).toBe(encabezados.indexOf("Aprobó") + 1);
   });
@@ -99,10 +104,10 @@ describe("construirExcelMaestro — origen de la aprobación", () => {
       { ...FILA, codigo: "C-SIN", origenAprobacion: null },
     ];
     const hoja = await abrir(await construirExcelMaestro(filas, META));
-    expect(hoja.getCell(7, 5).value).toBe("Vigente");                            // como en pantalla
-    expect(hoja.getCell(7, 12).value).toBe("Fuera de la plataforma");
-    expect(hoja.getCell(8, 12).value).toBe("En la plataforma");
-    expect(hoja.getCell(9, 12).value).toBeNull();
+    expect(hoja.getCell(7, 7).value).toBe("Vigente");                            // como en pantalla
+    expect(hoja.getCell(7, 14).value).toBe("Fuera de la plataforma");
+    expect(hoja.getCell(8, 14).value).toBe("En la plataforma");
+    expect(hoja.getCell(9, 14).value).toBeNull();
   });
 });
 
@@ -118,5 +123,40 @@ describe("construirExcelMaestro — encabezado institucional", () => {
     const a1 = String(hoja.getCell("A1").value);
     expect(a1).not.toMatch(/^=/);
     expect(a1).toBe("'=HYPERLINK(\"x\")");
+  });
+});
+
+describe("construirExcelMaestro — vigencia (Fase 13C)", () => {
+  const META = { hospital: "H", generadoEn: "x", alcance: "Todos los documentos", total: 2 };
+
+  it("«Origen» tras «Tipo», «Edición» tras «Versión», y «Última revisión», «Próxima revisión» y «Vigencia» antes de «Proceso propietario»", async () => {
+    const hoja = await abrir(await construirExcelMaestro([FILA], META));
+    const encabezados = (hoja.getRow(6).values as unknown[]).slice(1);
+    expect(encabezados.indexOf("Origen")).toBe(encabezados.indexOf("Tipo") + 1);
+    expect(encabezados.indexOf("Edición")).toBe(encabezados.indexOf("Versión") + 1);
+    expect(encabezados.slice(-4)).toEqual(["Última revisión", "Próxima revisión", "Vigencia", "Proceso propietario"]);
+  });
+
+  it("dice el origen, la edición, las fechas y el estado; lo que no está vigente va vacío", async () => {
+    const filas: FilaMaestro[] = [
+      FILA,
+      { ...FILA, codigo: "X-EXT", origen: "externo", edicion: "2017", origenAprobacion: "externo", vigencia: "al_dia" },
+      { ...FILA, codigo: "Z-OBS", estado: "obsoleto", ultimaRevision: null, proximaRevision: null, vigencia: null },
+    ];
+    const hoja = await abrir(await construirExcelMaestro(filas, META));
+    const fila = (n: number) => (hoja.getRow(n).values as unknown[]).slice(1);
+    const encabezados = fila(6);
+    const valor = (n: number, cab: string) => fila(n)[encabezados.indexOf(cab)] ?? null;
+    expect(valor(7, "Origen")).toBe("Interno");
+    expect(valor(7, "Edición")).toBeNull();
+    expect(valor(7, "Última revisión")).toBe("2025-03-01");
+    expect(valor(7, "Próxima revisión")).toBe("2026-03-01");
+    expect(valor(7, "Vigencia")).toBe("Vencida");
+    expect(valor(8, "Origen")).toBe("Externo");
+    expect(valor(8, "Edición")).toBe("2017");
+    expect(valor(8, "Aprobación")).toBe("Adoptado");
+    expect(valor(8, "Vigencia")).toBe("Al día");
+    expect(valor(9, "Próxima revisión")).toBeNull();
+    expect(valor(9, "Vigencia")).toBeNull();
   });
 });

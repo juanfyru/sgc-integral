@@ -6,6 +6,7 @@ import { ROLES_ARCHIVO_LISTA } from "@/lib/subida";
 import { hashearClave } from "@/lib/clave";
 import { puede } from "@/lib/permisos";
 import { ETAPAS_ABIERTAS, NUMERO_MAXIMO_DE_VERSION, type OrigenAprobacion } from "@/lib/tramites/tipos";
+import type { EstadoVigencia } from "@/lib/vigencia/tipos";
 import {
   ACCION_EDITAR_CONTROL,
   codigoAbandonado,
@@ -18,6 +19,7 @@ import { exigirVerificacionAbierta } from "./distribucion/verificacion-abierta";
 import { alDejarDeSerVigente } from "./distribucion/version-vigencia";
 import { obtenerConfigDocumental } from "./config-documental";
 import { ErrorTramite, enTransaccion } from "./flujo/contrato";
+import { columnasDeVigencia } from "./vigencia/fragmentos";
 
 type Cliente = Sql | TransactionSql;
 
@@ -833,6 +835,9 @@ export type FilaDocumentoAdmin = {
   /** Siglas de sus procesos (el propietario y «donde aplica»; un subproceso cuenta por su proceso), ordenadas. */
   procesos: string[];
   actualizadoEn: string;
+  origen: "interno" | "externo";
+  /** El semáforo de la versión vigente (spec 13C §7.2); nulo si no hay vigente. */
+  vigencia: { estado: EstadoVigencia; dias: number | null } | null;
 };
 
 /**
@@ -840,11 +845,14 @@ export type FilaDocumentoAdmin = {
  * no administra no recibe el número del borrador ni los documentos que únicamente
  * tienen versiones en borrador o descartadas.
  */
-export async function listarDocumentosAdmin(sujeto: SujetoVisibilidad): Promise<FilaDocumentoAdmin[]> {
-  const sql = obtenerSql();
+export async function listarDocumentosAdmin(
+  sujeto: SujetoVisibilidad,
+  opciones?: { sql?: Cliente; ahora?: Date },
+): Promise<FilaDocumentoAdmin[]> {
+  const sql = opciones?.sql ?? obtenerSql();
   const administra = puede(sujeto, "documentos.administrar");
   const filas = await sql`
-    SELECT d.id, d.codigo, d.titulo, t.nombre AS tipo_nombre, t.sigla AS tipo_sigla,
+    SELECT d.id, d.codigo, d.titulo, d.origen, t.nombre AS tipo_nombre, t.sigla AS tipo_sigla,
       d.actualizado_en,
       (SELECT numero FROM documento_versiones WHERE documento_id = d.id AND estado = 'vigente') AS vigente,
       ${administra
@@ -864,12 +872,20 @@ export async function listarDocumentosAdmin(sujeto: SujetoVisibilidad): Promise<
         : sql`AND EXISTS (SELECT 1 FROM documento_versiones
             WHERE documento_id = d.id AND estado NOT IN ('borrador', 'descartado'))`}
     ORDER BY d.actualizado_en DESC`;
+  // La vigencia, sobre las filas que el sujeto ya ve.
+  const vigentes = filas.filter((f) => f.vigente !== null).map((f) => Number(f.id));
+  const vigencias = new Map(
+    (vigentes.length === 0 ? [] : await columnasDeVigencia(sql, sql`d.id = ANY(${vigentes})`, opciones?.ahora ?? new Date()))
+      .map((v) => [v.documentoId, v.vigencia]),
+  );
   return filas.map((f) => ({
     id: f.id, codigo: f.codigo, titulo: f.titulo,
     tipoNombre: f.tipo_nombre, tipoSigla: f.tipo_sigla,
     versionVigente: f.vigente, versionBorrador: f.borrador,
     anulado: f.anulado, descartado: f.descartado, procesos: f.procesos as string[],
     actualizadoEn: String(f.actualizado_en),
+    origen: f.origen as "interno" | "externo",
+    vigencia: vigencias.get(Number(f.id)) ?? null,
   }));
 }
 

@@ -4,12 +4,13 @@ import { obtenerListadoMaestro } from "@/db/consultas/maestro";
 import { BotonImprimir } from "@/componentes/admin/maestro/BotonImprimir";
 import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
-import { InsigniaEstadoDocumento } from "@/componentes/ui/Insignia";
+import { Insignia, InsigniaEstadoDocumento } from "@/componentes/ui/Insignia";
 import { TablaDatos, celda, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
 import { obtenerMarcaSegura } from "@/db/consultas/entidad";
 import { exigirPermiso } from "@/lib/paginas";
 import { alcanceMaestro, puede } from "@/lib/permisos";
 import { APROBACION_EN_LISTADO } from "@/lib/tramites/tipos";
+import { ETIQUETA_VIGENCIA, VARIANTE_VIGENCIA } from "@/lib/vigencia/tipos";
 import { fechaHoraLocal } from "@/lib/zona-horaria";
 
 export const metadata: Metadata = { title: "Listado Maestro — Administración SGC" };
@@ -18,13 +19,18 @@ const COLUMNAS: readonly ColumnaTabla[] = [
   { clave: "codigo", etiqueta: "Código" },
   { clave: "titulo", etiqueta: "Título" },
   { clave: "tipo", etiqueta: "Tipo" },
+  { clave: "origen", etiqueta: "Origen" },
   { clave: "version", etiqueta: "Ver." },
+  { clave: "edicion", etiqueta: "Edición" },
   { clave: "estado", etiqueta: "Estado" },
   { clave: "fechaAprobacion", etiqueta: "Fecha de aprobación" },
   { clave: "elaboro", etiqueta: "Elaboró" },
   { clave: "reviso", etiqueta: "Revisó" },
   { clave: "aprobo", etiqueta: "Aprobó" },
   { clave: "origenAprobacion", etiqueta: "Aprobación" },
+  { clave: "ultimaRevision", etiqueta: "Última revisión" },
+  { clave: "proximaRevision", etiqueta: "Próxima revisión" },
+  { clave: "vigencia", etiqueta: "Vigencia" },
   { clave: "propietario", etiqueta: "Proceso propietario" },
 ];
 
@@ -82,13 +88,21 @@ export default async function PaginaMaestro({
             <td className={`${celda} whitespace-nowrap font-mono`}>{f.codigo}</td>
             <td className={celda}>{f.titulo}</td>
             <td className={celda}>{f.tipo}</td>
+            <td className={celda}>{f.origen === "externo" ? "Externo" : "Interno"}</td>
             <td className={celda}>{f.version ?? "—"}</td>
+            <td className={celda}>{f.edicion ?? "—"}</td>
             <td className={celda}><InsigniaEstadoDocumento estado={f.estado} /></td>
             <td className={celda}>{f.fechaAprobacion ?? "—"}</td>
             <td className={celda}>{f.elaboro ?? "—"}</td>
             <td className={celda}>{f.reviso ?? "—"}</td>
             <td className={celda}>{f.aprobo ?? "—"}</td>
             <td className={celda}>{f.origenAprobacion ? APROBACION_EN_LISTADO[f.origenAprobacion] : "—"}</td>
+            <td className={`${celda} whitespace-nowrap`}>{f.ultimaRevision ?? "—"}</td>
+            <td className={`${celda} whitespace-nowrap`}>{f.proximaRevision ?? "—"}</td>
+            <td className={celda}>
+              {/* El Maestro dice el estado; la fecha de la próxima revisión va al lado. */}
+              {f.vigencia ? <Insignia variante={VARIANTE_VIGENCIA[f.vigencia]}>{ETIQUETA_VIGENCIA[f.vigencia]}</Insignia> : "—"}
+            </td>
             <td className={celda}>{f.propietario}</td>
           </tr>
         ))}

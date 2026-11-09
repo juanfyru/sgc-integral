@@ -10,8 +10,9 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import type { ResumenTramite } from "@/db/consultas/tramites";
 import type { SesionFlujo } from "@/db/consultas/tramites-flujo";
 import { agruparTareas, misTareas, tituloDeTarea } from "@/lib/tareas";
-import { sesionAdmin, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
+import { documentoLibre, sesionAdmin, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
+import { sinRevisionAbierta } from "./utiles/vigencia";
 
 const sql = obtenerSql();
 
@@ -114,6 +115,22 @@ describe("misTareas", () => {
     await tramiteEn(tx, "elaboracion", { tipo: "crear", revisor: t1.revisor });
     await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-02", revisor: t1.revisor });
     expect(await contar()).toBe(conUno);
+  }));
+
+  it("suma la revisión de la vigencia del líder, después de las demás fuentes", () => revertida(sql, async (tx) => {
+    await sinRevisionAbierta(tx);
+    const lider = await sesionDe(tx, "lider.gth");
+    const d = await documentoLibre(tx, { proceso: "GTH", tipo: "PR" });
+    await tx`UPDATE documento_versiones SET fecha_aprobacion = '2025-08-14' WHERE documento_id = ${d.id}`;
+    const { tareas, total } = await misTareas(lider, { sql: tx, ahora: new Date("2026-11-08T15:00:00Z") });
+    expect(total).toBe(tareas.length);
+    const i = tareas.findIndex((x) => x.id === `vigencia:${d.id}`);
+    expect(tareas[i]).toMatchObject({
+      modulo: "documentos",
+      titulo: `Revisar la vigencia de ${d.codigo} v1 · vencida hace 86 días`,
+      enlace: `/documentos/${d.codigo.toLowerCase()}`,
+    });
+    expect(tareas.slice(i).every((x) => x.id.startsWith("vigencia:"))).toBe(true);
   }));
 });
 

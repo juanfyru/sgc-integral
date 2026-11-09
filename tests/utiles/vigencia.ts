@@ -66,3 +66,45 @@ export async function sinRevisionAbierta(tx: TransactionSql): Promise<void> {
     SET estado = 'cerrada', cerrada_en = now(), cerrada_por = ${u.id}, metodo_cierre = 'clave'
     WHERE estado = 'abierta'`;
 }
+
+/**
+ * Abre, dentro de la transacción revertida, una revisión anual que incluye al documento (con su decisión «sin
+ * revisar» sobre la vigente). Antes cierra la que estuviera abierta: solo puede haber una.
+ */
+export async function enRevisionAbierta(tx: TransactionSql, d: { id: number; versionId: number }, anio = 2095): Promise<number> {
+  await sinRevisionAbierta(tx);
+  const [u] = await tx`SELECT id FROM usuarios ORDER BY id LIMIT 1`;
+  const [r] = await tx`INSERT INTO revisiones_anuales (anio, plazo_dias, ventana_meses, abierta_por, abierta_en, vence_en)
+    VALUES (${anio}, 60, 6, ${u.id}, now(), now() + interval '60 days') RETURNING id`;
+  await tx`INSERT INTO revision_anual_decisiones (revision_id, documento_id, version_id, decision)
+    VALUES (${r.id}, ${d.id}, ${d.versionId}, 'sin_revisar')`;
+  return Number(r.id);
+}
+
+/** El primer proceso activo sin líder activo: sus tareas y avisos de vigencia van a los Admin SGC. */
+export async function procesoSinLider(tx: TransactionSql): Promise<{ id: number; sigla: string; nombre: string }> {
+  const [p] = await tx`SELECT p.id, p.sigla, p.nombre FROM procesos p
+    WHERE p.activo AND NOT EXISTS (
+      SELECT 1 FROM usuario_procesos up JOIN usuarios u ON u.id = up.usuario_id AND u.activo AND u.rol = 'lider_proceso'
+      WHERE up.proceso_id = p.id)
+    ORDER BY p.id LIMIT 1`;
+  if (!p) throw new Error("La base no tiene un proceso activo sin líder");
+  return { id: Number(p.id), sigla: p.sigla, nombre: p.nombre };
+}
+
+/**
+ * Marca como avisados y escalados los documentos que ya hay en la base: la pasada de vencimientos los recorre
+ * todos y el test cuenta solo los suyos. Se llama antes de crear los documentos del test.
+ */
+export async function silenciarVigencia(tx: TransactionSql): Promise<void> {
+  await tx`UPDATE documentos SET revision_aviso_en = now(), revision_escalado_en = now()
+    WHERE revision_aviso_en IS NULL OR revision_escalado_en IS NULL`;
+}
+
+/**
+ * Deja a un interno vigente sin desde cuándo contar su plazo: aprobado en la plataforma y sin fecha de publicación
+ * (una vigente siempre tiene fecha de aprobación, y lo aprobado fuera cuenta desde ella).
+ */
+export async function sinFechaDeRevision(tx: TransactionSql, d: { versionId: number }): Promise<void> {
+  await tx`UPDATE documento_versiones SET origen_aprobacion = 'plataforma', publicado_en = NULL WHERE id = ${d.versionId}`;
+}

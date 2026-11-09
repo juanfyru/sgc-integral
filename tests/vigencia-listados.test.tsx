@@ -1,0 +1,171 @@
+/**
+ * El estado de vigencia donde ya se miran los documentos (spec 13C §7.2 y §14.4): Gestión de documentos, la
+ * página del proceso y el Listado Maestro. Contra la BD de desarrollo, dentro de una transacción que se revierte;
+ * las páginas se pintan de verdad, con la sesión y la conexión de la prueba.
+ */
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { renderToStaticMarkup } from "react-dom/server";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+if (!process.env.DATABASE_URL && existsSync(".env.local")) {
+  process.loadEnvFile(".env.local");
+}
+
+const contexto = vi.hoisted(() => ({ tx: null as unknown, sesion: null as unknown }));
+
+vi.mock("@/db/cliente", async (importar) => {
+  const real = await importar<typeof import("@/db/cliente")>();
+  return { ...real, obtenerSql: () => contexto.tx ?? real.obtenerSql() };
+});
+vi.mock("@/lib/paginas", () => ({
+  exigirSesion: async () => contexto.sesion,
+  exigirPermiso: async () => contexto.sesion,
+  exigirEntradaPanel: async () => contexto.sesion,
+}));
+vi.mock("next/navigation", () => ({
+  notFound: () => {
+    throw new Error("no encontrada");
+  },
+  redirect: (ruta: string) => {
+    throw new Error(`redirige a ${ruta}`);
+  },
+}));
+
+import type { TransactionSql } from "postgres";
+import PaginaMaestro from "@/app/(app)/admin/(panel)/maestro/page";
+import PaginaDocumentosAdmin from "@/app/(app)/admin/(panel)/page";
+import VistaProceso from "@/app/(app)/procesos/[slug]/page";
+import { ResumenVigencia } from "@/componentes/vigencia/ResumenVigencia";
+import { obtenerSql } from "@/db/cliente";
+import { listarDocumentosAdmin } from "@/db/consultas/admin";
+import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
+import { obtenerDocumentosDeProceso, obtenerDocumentosDeSubproceso, resumenVigenciaDeProceso } from "@/db/consultas/procesos";
+import { documentoLibre, sesionAdmin, sesionDe, usuarioDePrueba } from "./utiles/tramites";
+import { revertida } from "./utiles/transaccion";
+import { vigenteFuera } from "./utiles/vigencia";
+
+const sql = obtenerSql();
+const ahora = new Date("2026-11-08T15:00:00Z");
+
+let almacen: string;
+const previo = process.env.ALMACEN_RUTA;
+
+beforeAll(() => {
+  almacen = mkdtempSync(path.join(tmpdir(), "sgc-vigencia-listados-"));
+  process.env.ALMACEN_RUTA = almacen;
+});
+
+afterAll(async () => {
+  if (previo === undefined) delete process.env.ALMACEN_RUTA;
+  else process.env.ALMACEN_RUTA = previo;
+  rmSync(almacen, { recursive: true, force: true });
+  await sql.end();
+  globalThis.__sql = undefined;
+});
+
+/** Pinta `pagina` con la conexión de la prueba y la sesión dada. */
+async function pintar(tx: TransactionSql, sesion: SesionFlujo, pagina: () => Promise<React.ReactElement>): Promise<string> {
+  contexto.tx = tx;
+  contexto.sesion = sesion;
+  try {
+    return renderToStaticMarkup(await pagina());
+  } finally {
+    contexto.tx = null;
+    contexto.sesion = null;
+  }
+}
+
+const sinEtiquetas = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+
+describe("Gestión de documentos", () => {
+  it("cada fila trae su origen y su vigencia; lo que no está vigente no tiene semáforo", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const vencido = await vigenteFuera(tx, { fechaAprobacion: "2025-08-14" });
+      const obsoleto = await documentoLibre(tx, { proceso: "GTH", tipo: "PR" });
+      await tx`UPDATE documento_versiones SET estado = 'obsoleto' WHERE documento_id = ${obsoleto.id}`;
+
+      const filas = await listarDocumentosAdmin(admin, { sql: tx, ahora });
+      expect(filas.find((f) => f.id === vencido.id)).toMatchObject({ origen: "interno", vigencia: { estado: "vencida", dias: -86 } });
+      expect(filas.find((f) => f.id === obsoleto.id)).toMatchObject({ origen: "interno", vigencia: null });
+
+      const html = await pintar(tx, admin, () => PaginaDocumentosAdmin());
+      expect(html).toContain(">Vigencia<");
+      expect(sinEtiquetas(html)).toMatch(new RegExp(`${vencido.codigo} ${vencido.titulo} Procedimiento GTH Vigente Vencida hace \\d+ días`));
+    }));
+});
+
+describe("página del proceso", () => {
+  it("cada documento lleva su vigencia, y el resumen cuenta solo lo que la persona ve", () =>
+    revertida(sql, async (tx) => {
+      const lider = await sesionDe(tx, "lider.gth");
+      const [gth] = await tx`SELECT id, slug FROM procesos WHERE sigla = 'GTH'`;
+      const gthId = Number(gth.id);
+      const consulta = await usuarioDePrueba(tx, { rol: "consulta" });
+      const antesLider = await resumenVigenciaDeProceso(gthId, lider, { sql: tx, ahora });
+      const antesConsulta = await resumenVigenciaDeProceso(gthId, consulta, { sql: tx, ahora });
+
+      const vencido = await vigenteFuera(tx, { fechaAprobacion: "2025-08-14" });
+      const pronto = await vigenteFuera(tx, { fechaAprobacion: "2025-12-14" });
+      const restringido = await vigenteFuera(tx, { fechaAprobacion: "2025-08-14" });
+      await tx`UPDATE documentos SET nivel_acceso = 'restringido' WHERE id = ${restringido.id}`;
+
+      const docs = await obtenerDocumentosDeProceso(gthId, false, lider, { sql: tx, ahora });
+      expect(docs.find((d) => d.id === vencido.id)?.vigencia).toEqual({ estado: "vencida", dias: -86 });
+      expect(docs.find((d) => d.id === pronto.id)?.vigencia).toEqual({ estado: "atencion", dias: 36 });
+
+      expect(await resumenVigenciaDeProceso(gthId, lider, { sql: tx, ahora })).toEqual({
+        vencidas: antesLider.vencidas + 2,
+        atencion: antesLider.atencion + 1,
+      });
+      // El restringido no existe para quien no está asignado a GTH: ni en la lista ni en el conteo.
+      expect((await obtenerDocumentosDeProceso(gthId, false, consulta, { sql: tx, ahora })).some((d) => d.id === restringido.id)).toBe(false);
+      expect(await resumenVigenciaDeProceso(gthId, consulta, { sql: tx, ahora })).toEqual({
+        vencidas: antesConsulta.vencidas + 1,
+        atencion: antesConsulta.atencion + 1,
+      });
+
+      const html = sinEtiquetas(
+        await pintar(tx, lider, () => VistaProceso({ params: Promise.resolve({ slug: gth.slug }), searchParams: Promise.resolve({}) })),
+      );
+      expect(html).toMatch(/\d+ con revisión vencida/);
+      expect(html).toMatch(/\d+ en atención/);
+      expect(html).toMatch(new RegExp(`${vencido.codigo} v1 Vencida hace \\d+ días`));
+    }));
+
+  it("en la página del subproceso también", () =>
+    revertida(sql, async (tx) => {
+      const lider = await sesionDe(tx, "lider.gth");
+      const [s] = await tx`SELECT s.id, s.slug FROM subprocesos s JOIN procesos p ON p.id = s.proceso_id
+        WHERE p.sigla = 'GTH' AND s.activo ORDER BY s.orden LIMIT 1`;
+      const d = await documentoLibre(tx, { proceso: "GTH", tipo: "PR", subproceso: s.slug });
+      await tx`UPDATE documento_versiones SET fecha_aprobacion = '2025-08-14' WHERE documento_id = ${d.id}`;
+      const docs = await obtenerDocumentosDeSubproceso(Number(s.id), lider, { sql: tx, ahora });
+      expect(docs.find((x) => x.id === d.id)?.vigencia).toEqual({ estado: "vencida", dias: -86 });
+    }));
+
+  it("el resumen no se muestra si no hay nada vencido ni en atención", () => {
+    expect(renderToStaticMarkup(<ResumenVigencia vencidas={0} atencion={0} />)).toBe("");
+    const solo = sinEtiquetas(renderToStaticMarkup(<ResumenVigencia vencidas={0} atencion={2} />));
+    expect(solo).toContain("2 en atención");
+    expect(solo).not.toContain("vencida");
+    expect(sinEtiquetas(renderToStaticMarkup(<ResumenVigencia vencidas={1} atencion={0} />))).toContain("1 con revisión vencida");
+  });
+});
+
+describe("Listado Maestro", () => {
+  it("la página trae las columnas de origen, edición, revisión y vigencia", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const d = await vigenteFuera(tx, { fechaAprobacion: "2025-08-14" });
+      const html = await pintar(tx, admin, () => PaginaMaestro({ searchParams: Promise.resolve({}) }));
+      for (const cabecera of ["Origen", "Edición", "Última revisión", "Próxima revisión", "Vigencia"]) {
+        expect(html).toContain(`>${cabecera}<`);
+      }
+      expect(sinEtiquetas(html)).toContain(
+        `${d.codigo} ${d.titulo} Procedimiento Interno 1 — Vigente 2025-08-14 — — Prueba Fuera de la plataforma 2025-08-14 2026-08-14 Vencida Gestión del Talento Humano`,
+      );
+    }));
+});

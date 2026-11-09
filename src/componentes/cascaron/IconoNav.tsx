@@ -1,5 +1,6 @@
 import {
   Building2,
+  CalendarClock,
   ChartColumn,
   ClipboardList,
   FileText,
@@ -10,6 +11,7 @@ import {
   MapPin,
   MonitorSmartphone,
   Network,
+  Scale,
   ScrollText,
   Search,
   Send,
@@ -25,6 +27,8 @@ const ICONOS: Record<NombreIcono, LucideIcon> = {
   buscar: Search,
   tramites: ClipboardList,
   distribucion: Send,
+  vigencia: CalendarClock,
+  normograma: Scale,
   documentos: FileText,
   maestro: ListChecks,
   tipos: Tags,

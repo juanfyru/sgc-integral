@@ -8,9 +8,11 @@ import { Migas } from "@/componentes/navegacion/Migas";
 import { MiniMapa } from "@/componentes/navegacion/MiniMapa";
 import { NavHermanos } from "@/componentes/navegacion/NavHermanos";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
+import { ResumenVigencia } from "@/componentes/vigencia/ResumenVigencia";
 import {
   obtenerDetalleProceso,
   obtenerDocumentosDeProceso,
+  resumenVigenciaDeProceso,
 } from "@/db/consultas/procesos";
 import { exigirSesion } from "@/lib/paginas";
 
@@ -34,11 +36,10 @@ export default async function VistaProceso({
 
   const tieneSubprocesos = proceso.subprocesos.length > 0;
   const incluirSubprocesos = tieneSubprocesos && parametroSubprocesos !== "0";
-  const documentos = await obtenerDocumentosDeProceso(
-    proceso.id,
-    incluirSubprocesos,
-    sesion,
-  );
+  const [documentos, vigencia] = await Promise.all([
+    obtenerDocumentosDeProceso(proceso.id, incluirSubprocesos, sesion),
+    resumenVigenciaDeProceso(proceso.id, sesion),
+  ]);
 
   const propios = documentos.filter((d) => d.esPrincipal);
   const tambienAplican = documentos.filter((d) => !d.esPrincipal);
@@ -62,6 +63,7 @@ export default async function VistaProceso({
           </span>
         }
         codigo={proceso.sigla}
+        insignias={<ResumenVigencia vencidas={vigencia.vencidas} atencion={vigencia.atencion} />}
         titulo={proceso.nombre}
         descripcion={proceso.descripcion || undefined}
       />

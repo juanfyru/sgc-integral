@@ -12,6 +12,7 @@ import { estadoPlazo } from "@/lib/tramites/plazos";
 import { ETAPAS_ABIERTAS, ETIQUETA_ETAPA, textoResponsables } from "@/lib/tramites/tipos";
 import { avisarA, jefesDe, type Destinatario } from "@/db/consultas/avisos-vencimiento";
 import { revisarVencimientosDeDistribucion } from "@/db/consultas/distribucion/vencimientos";
+import { revisarVencimientosDeVigencia } from "@/db/consultas/vigencia/vencimientos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { enTransaccion, type FilaTramite, type TipoAviso } from "./flujo/contrato";
 
@@ -121,5 +122,8 @@ export async function revisarVencimientos(opciones?: { sql?: Cliente; ahora?: Da
   const distribucion = await revisarVencimientosDeDistribucion({ sql, ahora, config });
   resultado.avisados += distribucion.avisados;
   resultado.escalados += distribucion.escalados;
+  const vigencia = await revisarVencimientosDeVigencia({ sql, ahora, config });
+  resultado.avisados += vigencia.avisados;
+  resultado.escalados += vigencia.escalados;
   return resultado;
 }

@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { NAVEGACION, entradasVisibles, esActiva } from "@/componentes/cascaron/navegacion";
 
 describe("navegación por módulos y rol", () => {
-  it("consulta ve Inicio y Buscar; admin ve las dieciocho", () => {
+  it("consulta ve Inicio y Buscar; admin ve las diecinueve", () => {
     expect(entradasVisibles({ rol: "consulta" }).map((e) => e.href)).toEqual(["/", "/buscar"]);
-    expect(entradasVisibles({ rol: "admin_sgc" })).toHaveLength(18);
+    expect(entradasVisibles({ rol: "admin_sgc" })).toHaveLength(19);
   });
   it("Trámites: consulta solo si participa; gerencia y líder siempre; va después de Buscar", () => {
     const hrefs = (s: Parameters<typeof entradasVisibles>[0]) => entradasVisibles(s).map((e) => e.href);
@@ -96,5 +96,31 @@ describe("Distribución", () => {
     expect(entrada).toMatchObject({ etiqueta: "Distribución", icono: "distribucion", grupo: "documentos", permiso: "distribucion.ver" });
     expect(esActiva(entrada, "/distribucion/copias/7")).toBe(true);
     expect(esActiva(entrada, "/admin/puntos-uso")).toBe(false);
+  });
+});
+
+describe("Vigencia", () => {
+  const hrefs = (s: Parameters<typeof entradasVisibles>[0]) => entradasVisibles(s).map((e) => e.href);
+  it("la ven Admin SGC, Gerencia, Control Interno y el líder; consulta solo si es responsable técnico", () => {
+    for (const rol of ["admin_sgc", "gerencia", "control_interno", "lider_proceso"] as const) {
+      expect(hrefs({ rol })).toContain("/vigencia");
+    }
+    expect(hrefs({ rol: "consulta" })).not.toContain("/vigencia");
+    expect(hrefs({ rol: "consulta", responsableTecnico: true })).toEqual(["/", "/buscar", "/vigencia"]);
+  });
+  it("va justo después de Distribución, en Documentos, y se marca en sus pestañas", () => {
+    for (const rol of ["admin_sgc", "gerencia", "control_interno", "lider_proceso"] as const) {
+      const lista = hrefs({ rol });
+      expect(lista.indexOf("/vigencia")).toBe(lista.indexOf("/distribucion") + 1);
+    }
+    const entrada = NAVEGACION.find((e) => e.href === "/vigencia")!;
+    expect(entrada).toMatchObject({
+      etiqueta: "Vigencia",
+      icono: "vigencia",
+      grupo: "documentos",
+      algunPermiso: ["vigencia.ver", "documentos.indicadores"],
+      siResponsableTecnico: true,
+    });
+    expect(esActiva(entrada, "/vigencia/semaforo")).toBe(true);
   });
 });

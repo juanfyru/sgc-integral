@@ -182,3 +182,12 @@ export async function columnasDeVigencia(sql: Cliente, condicion: PendingQuery<R
   const filas = await consultaSemaforo(sql, condicion);
   return filas.map((f) => aFila(f, ahora, config.vigencia.atencionDias, zona));
 }
+
+/**
+ * El documento `d` está en la revisión anual abierta: mientras dure, la tarea de la campaña lo cubre y no da tarea
+ * ni aviso de vencimiento propios (spec 13C §7.5).
+ */
+export function enRevisionAnualAbierta(sql: Cliente) {
+  return sql`EXISTS (SELECT 1 FROM revision_anual_decisiones rad JOIN revisiones_anuales ra ON ra.id = rad.revision_id
+    WHERE ra.estado = 'abierta' AND rad.documento_id = d.id)`;
+}
