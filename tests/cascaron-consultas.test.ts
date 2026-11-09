@@ -1,7 +1,8 @@
 /**
  * Lo que cuesta el cascarón en la BD por render (resolución 1 de la Tarea 7): la consulta de vigencia corre como mucho
  * una vez por persona y la configuración documental se lee una vez; quien no es responsable técnico ni tiene
- * `vigencia.ver` no paga ninguna consulta de vigencia. Se cuentan las sentencias que se ejecutan (no los fragmentos),
+ * `vigencia.ver` no paga ninguna consulta de vigencia. Las tareas de impactos normativos (Tarea 9) son una sola consulta
+ * acotada, solo para quien lidera procesos o es Admin SGC. Se cuentan las sentencias que se ejecutan (no los fragmentos),
  * con el cascarón real contra la BD de desarrollo, dentro de una transacción que se revierte.
  */
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -102,6 +103,8 @@ async function sentenciasDelCascaron(tx: TransactionSql, sesion: SesionFlujo): P
 /** La consulta de vigencia (`columnasDeVigencia`) y la lectura de la configuración documental. */
 const deVigencia = (s: string[]) => s.filter((t) => t.includes("FROM ratificaciones r JOIN firmas f")).length;
 const deConfiguracion = (s: string[]) => s.filter((t) => t.includes("FROM configuracion WHERE clave = ANY")).length;
+/** `tareasDeImpactos`: la única sentencia que agrupa los impactos pendientes por cambio y proceso. */
+const deImpactos = (s: string[]) => s.filter((t) => t.includes("count(*)::int AS pendientes, min(i.vence_en) AS vence")).length;
 
 describe("el costo del cascarón por render", () => {
   it("la consulta de vigencia corre como mucho una vez por persona y la configuración se lee una vez; sin vigencia, ninguna", () =>
@@ -116,10 +119,10 @@ describe("el costo del cascarón por render", () => {
           ["Consulta sin externos", await usuarioDePrueba(tx, { rol: "consulta" })],
           ["Consulta responsable técnico", responsable],
         ];
-        const cuentas: Record<string, { total: number; vigencia: number; configuracion: number }> = {};
+        const cuentas: Record<string, { total: number; vigencia: number; configuracion: number; impactos: number }> = {};
         for (const [nombre, sesion] of casos) {
           const s = await sentenciasDelCascaron(tx, sesion);
-          cuentas[nombre] = { total: s.length, vigencia: deVigencia(s), configuracion: deConfiguracion(s) };
+          cuentas[nombre] = { total: s.length, vigencia: deVigencia(s), configuracion: deConfiguracion(s), impactos: deImpactos(s) };
         }
         // Para el informe: CONTAR_CASCARON=<archivo> deja las cuentas en ese archivo.
         if (process.env.CONTAR_CASCARON) writeFileSync(process.env.CONTAR_CASCARON, JSON.stringify(cuentas));
@@ -128,7 +131,18 @@ describe("el costo del cascarón por render", () => {
           expect(cuentas[nombre].vigencia, nombre).toBe(1);
           expect(cuentas[nombre].configuracion, nombre).toBe(1);
         }
-        expect(cuentas["Consulta sin externos"]).toMatchObject({ vigencia: 0, configuracion: 0 });
+        expect(cuentas["Consulta sin externos"]).toMatchObject({ vigencia: 0, configuracion: 0, impactos: 0 });
+        // Las tareas de impactos: una sentencia para el Admin SGC y el líder; ninguna para Consulta.
+        expect(cuentas["Admin SGC"].impactos).toBe(1);
+        expect(cuentas["líder"].impactos).toBe(1);
+        expect(cuentas["Consulta responsable técnico"].impactos).toBe(0);
+        // El total por render (Tarea 9): una sentencia más para quien tiene tareas de impactos, ninguna para Consulta.
+        expect(Object.fromEntries(Object.entries(cuentas).map(([nombre, c]) => [nombre, c.total]))).toEqual({
+          "Admin SGC": 14,
+          líder: 15,
+          "Consulta sin externos": 9,
+          "Consulta responsable técnico": 11,
+        });
       } finally {
         await e.limpiar();
       }

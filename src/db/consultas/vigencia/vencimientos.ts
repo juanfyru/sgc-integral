@@ -14,12 +14,15 @@
  * verificación, no el estado del semáforo. Un aviso por externo a su responsable técnico, que lo nombra (lo ve; si
  * dejó de ver un restringido, no se le avisa), uno por proceso a los Admin SGC con el conteo y sin códigos, y el
  * escalamiento al jefe del responsable sin código, título ni enlace.
+ *
+ * Impactos normativos pendientes vencidos: la pasada vive en `normograma/vencidos.ts` y se suma aquí.
  */
 import type { PendingQuery, Row, TransactionSql } from "postgres";
 import type { Cliente } from "@/db/cliente";
 import { avisarA, jefesDe } from "@/db/consultas/avisos-vencimiento";
 import type { ConfigDocumental } from "@/db/consultas/config-documental";
 import { enTransaccion } from "@/db/consultas/flujo/contrato";
+import { impactosVencidos } from "@/db/consultas/normograma/vencidos";
 import { adminsActivos, lideresDeProceso } from "@/db/consultas/tramites";
 import { filtroAccesoDe } from "@/lib/alcance";
 import { estadoPlazo } from "@/lib/tramites/plazos";
@@ -264,7 +267,10 @@ async function revisarExternosVencidos(c: Contexto): Promise<Resultado> {
   return total;
 }
 
-/** Los internos con la revisión vencida y los externos con la verificación vencida; cuentan documentos, no avisos. */
+/**
+ * Los internos con la revisión vencida, los externos con la verificación vencida y los impactos normativos pendientes
+ * vencidos (`impactosVencidos`, spec 13C §13.3); cuentan documentos e impactos, no avisos.
+ */
 export async function revisarVencimientosDeVigencia(opciones: {
   sql: Cliente;
   ahora: Date;
@@ -273,5 +279,9 @@ export async function revisarVencimientosDeVigencia(opciones: {
   const c: Contexto = { sql: opciones.sql, ahora: opciones.ahora, escalamientoDias: opciones.config.escalamientoDias };
   const internos = await revisarInternosVencidos(c);
   const deExternos = await revisarExternosVencidos(c);
-  return { avisados: internos.avisados + deExternos.avisados, escalados: internos.escalados + deExternos.escalados };
+  const deImpactos = await impactosVencidos(c);
+  return {
+    avisados: internos.avisados + deExternos.avisados + deImpactos.avisados,
+    escalados: internos.escalados + deExternos.escalados + deImpactos.escalados,
+  };
 }

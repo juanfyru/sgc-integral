@@ -77,6 +77,8 @@ export const NAVEGACION: readonly EntradaNav[] = [
     algunPermiso: ["vigencia.ver", "documentos.indicadores"],
     siResponsableTecnico: true,
   },
+  // Se lee con cualquier sesión, como «Buscar» (spec 13C §6.2 y §14.1).
+  { href: "/normograma", etiqueta: "Normograma", icono: "normograma", grupo: "documentos" },
   {
     href: "/admin",
     etiqueta: "Gestión de documentos",

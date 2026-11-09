@@ -1,7 +1,8 @@
 /**
  * La pasada de documentos con revisión vencida (spec 13C §7.5 y §13.3): un aviso por persona y proceso con el
  * conteo, el escalamiento al jefe y la exclusión de la revisión anual abierta; y la de los externos con la verificación
- * vencida. Cada caso silencia los documentos y los externos que ya hay en la base y cuenta solo los suyos.
+ * vencida; y la de los impactos normativos vencidos. Cada caso silencia los documentos, los externos y los impactos que
+ * ya hay en la base y cuenta solo los suyos.
  */
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -19,7 +20,11 @@ import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { revisarVencimientos } from "@/db/consultas/vencimientos";
 import { registrarVerificacion } from "@/db/consultas/vigencia/externos";
 import { revisarVencimientosDeVigencia } from "@/db/consultas/vigencia/vencimientos";
+import { asociarProceso, enlazarDocumento } from "@/db/consultas/normograma/asociaciones";
+import { cambiarEstadoNorma } from "@/db/consultas/normograma/normas";
+import { enlaceDeImpacto } from "@/lib/normograma/tipos";
 import { silenciarDistribucion } from "./utiles/distribucion";
+import { normaDePrueba, silenciarImpactos } from "./utiles/normograma";
 import { sesionAdmin, sesionDe, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 import {
@@ -52,10 +57,11 @@ afterAll(async () => {
   globalThis.__sql = undefined;
 });
 
-/** Antes de crear sus datos: sin revisión abierta, sin otros documentos por avisar, y el último aviso que había. */
+/** Antes de crear sus datos: sin revisión abierta, sin otros documentos ni impactos por avisar, y el último aviso. */
 async function preparar(tx: TransactionSql): Promise<number> {
   await sinRevisionAbierta(tx);
   await silenciarVigencia(tx);
+  await silenciarImpactos(tx);
   const [{ id }] = await tx`SELECT COALESCE(max(id), 0) AS id FROM notificaciones`;
   return Number(id);
 }
@@ -408,5 +414,93 @@ describe("externos con la verificación vencida", () => {
       } finally {
         await e.limpiar();
       }
+    }));
+});
+
+describe("impactos normativos vencidos", () => {
+  const avisosNormograma = async (tx: TransactionSql, usuarioId: number, desde: number) => [
+    ...(await tx`SELECT tipo, titulo, cuerpo, enlace, entidad, entidad_id FROM notificaciones
+      WHERE usuario_id = ${usuarioId} AND id > ${desde} AND tipo IN ('normograma.impacto_vencido', 'normograma.escalado') ORDER BY id`),
+  ];
+
+  it("un impacto vencido avisa una vez al líder y a los Admin SGC, sin nombrar el documento, y a los días configurados escala a su jefe sin enlace", () =>
+    revertida(sql, async (tx) => {
+      const desde = await preparar(tx);
+      const config = { ...(await obtenerConfigDocumental({ sql: tx })), escalamientoDias: 3 };
+      const admin = await sesionAdmin(tx);
+      const proceso = await procesoSinLider(tx);
+      const jefe = await usuarioDePrueba(tx, { rol: "consulta" });
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [proceso.id], jefeId: jefe.usuarioId });
+      const doc = await vigenteFuera(tx, { fechaAprobacion: "2026-10-01", proceso: proceso.sigla });
+      const n = await normaDePrueba(tx, admin);
+      await enlazarDocumento(admin, { normaId: n.id, documentoId: doc.id }, { sql: tx });
+      // El cambio se registró hace 17 días: con el plazo de 15, el impacto venció hace dos.
+      const { cambioId } = await cambiarEstadoNorma(
+        admin,
+        { normaId: n.id, estado: "derogada", fecha: "2026-10-20", nota: null },
+        { sql: tx, ahora: new Date(ahora.getTime() - 17 * DIA) },
+      );
+      const marcas = async () => (await tx`SELECT aviso_vencido_en, escalado_en FROM impactos_normativos WHERE cambio_id = ${cambioId}`)[0];
+      try {
+        expect(await revisarVencimientosDeVigencia({ sql: tx, ahora, config })).toEqual({ avisados: 1, escalados: 0 });
+        const esperado = {
+          tipo: "normograma.impacto_vencido",
+          titulo: `Venció la revisión del impacto de ${n.nombre} en ${proceso.nombre}`,
+          enlace: enlaceDeImpacto(cambioId!, proceso.id),
+          entidad: "proceso",
+          entidad_id: proceso.id,
+        };
+        const [delLider, ...otrosDelLider] = await avisosNormograma(tx, lider.usuarioId, desde);
+        expect(otrosDelLider).toEqual([]);
+        expect(delLider).toMatchObject(esperado);
+        expect(await avisosNormograma(tx, admin.usuarioId, desde)).toMatchObject([esperado]);
+        for (const aviso of [delLider]) {
+          expect(`${aviso.titulo} ${aviso.cuerpo ?? ""}`).not.toContain(doc.codigo);
+          expect(`${aviso.titulo} ${aviso.cuerpo ?? ""}`).not.toContain(doc.titulo);
+        }
+        expect(await avisosNormograma(tx, jefe.usuarioId, desde)).toEqual([]);
+        expect((await marcas()).aviso_vencido_en).toEqual(ahora);
+
+        // La misma pasada no repite; a los cuatro días de vencido (más de tres) escala una vez, al jefe del líder.
+        expect(await revisarVencimientosDeVigencia({ sql: tx, ahora, config })).toEqual({ avisados: 0, escalados: 0 });
+        const enDos = new Date(ahora.getTime() + 2 * DIA);
+        expect(await revisarVencimientosDeVigencia({ sql: tx, ahora: enDos, config })).toEqual({ avisados: 0, escalados: 1 });
+        expect(await revisarVencimientosDeVigencia({ sql: tx, ahora: new Date(ahora.getTime() + 3 * DIA), config })).toEqual({
+          avisados: 0,
+          escalados: 0,
+        });
+        const delJefe = await avisosNormograma(tx, jefe.usuarioId, desde);
+        expect(delJefe).toHaveLength(1);
+        expect(delJefe[0]).toMatchObject({ tipo: "normograma.escalado", titulo: `Impactos normativos vencidos en ${proceso.nombre}`, enlace: null });
+        expect(`${delJefe[0].titulo} ${delJefe[0].cuerpo ?? ""}`).not.toContain(doc.codigo);
+        expect(`${delJefe[0].titulo} ${delJefe[0].cuerpo ?? ""}`).not.toContain(doc.titulo);
+        expect(delJefe[0].cuerpo).toContain(lider.nombre);
+        expect((await marcas()).escalado_en).toEqual(enDos);
+        // Solo el líder y los Admin SGC recibieron el aviso de vencido: una vez cada uno.
+        expect((await avisosNormograma(tx, lider.usuarioId, desde)).map((a) => a.tipo)).toEqual(["normograma.impacto_vencido"]);
+      } finally {
+        await doc.limpiar();
+      }
+    }));
+
+  it("revisarVencimientos también corre la pasada de los impactos", () =>
+    revertida(sql, async (tx) => {
+      const desde = await preparar(tx);
+      await tx`UPDATE tramites SET aviso_vencido_en = now(), escalado_en = now()`;
+      await silenciarDistribucion(tx);
+      const admin = await sesionAdmin(tx);
+      const proceso = await procesoSinLider(tx);
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [proceso.id] });
+      const n = await normaDePrueba(tx, admin);
+      await asociarProceso(admin, { normaId: n.id, procesoId: proceso.id, requisito: null }, { sql: tx });
+      await cambiarEstadoNorma(admin, { normaId: n.id, estado: "modificada", fecha: "2026-10-20", nota: null }, {
+        sql: tx,
+        ahora: new Date(ahora.getTime() - 17 * DIA),
+      });
+
+      expect((await revisarVencimientos({ sql: tx, ahora })).avisados).toBe(1);
+      expect((await avisosNormograma(tx, lider.usuarioId, desde)).map((a) => a.titulo)).toEqual([
+        `Venció la revisión del impacto de ${n.nombre} en ${proceso.nombre}`,
+      ]);
     }));
 });

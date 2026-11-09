@@ -27,6 +27,7 @@ import { finDeFecha } from "@/lib/tramites/plazos";
 import { silenciarDistribucion } from "./utiles/distribucion";
 import { opc, sesionAdmin, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
+import { silenciarImpactos } from "./utiles/normograma";
 import { silenciarVigencia } from "./utiles/vigencia";
 
 const sql = obtenerSql();
@@ -40,6 +41,7 @@ const silenciarOtros = async (tx: TransactionSql, tramiteId: number) => {
   await tx`UPDATE tramites SET aviso_vencido_en = now(), escalado_en = now() WHERE id <> ${tramiteId}`;
   await silenciarDistribucion(tx);
   await silenciarVigencia(tx);
+  await silenciarImpactos(tx);
 };
 
 const correrEn = (tx: TransactionSql) => (ahora: string) => revisarVencimientos({ sql: tx, ahora: new Date(ahora) });
@@ -258,6 +260,7 @@ describe("revisarVencimientos", () => {
     await tx`UPDATE tramites SET aviso_vencido_en = now(), escalado_en = now() WHERE id <> ALL(${[primero.tramiteId, segundo.tramiteId]})`;
     await silenciarDistribucion(tx);
     await silenciarVigencia(tx);
+    await silenciarImpactos(tx);
     const registro = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.mocked(supervisoresDe).mockRejectedValueOnce(new Error("sin conexión"));
     try {

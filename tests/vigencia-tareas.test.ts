@@ -1,6 +1,7 @@
 /**
  * Las tareas de vigencia de «Mis tareas» (spec 13C §7.5 y §13.1): «Revisar la vigencia» de un interno, «Verificar la
- * vigencia» de un externo y «Adoptar la edición nueva»: quién las recibe, su título y cuándo desaparecen.
+ * vigencia» de un externo y «Adoptar la edición nueva»: quién las recibe, su título y cuándo desaparecen. Y la de un
+ * impacto normativo, que «Mis tareas» suma después de las de vigencia.
  */
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,9 +17,13 @@ import type { TransactionSql } from "postgres";
 import { abrirEdicion, descartarEdicion, registrarVerificacion } from "@/db/consultas/vigencia/externos";
 import { columnasDeVigencia } from "@/db/consultas/vigencia/fragmentos";
 import { tareasDeAdopcion, tareasDeExternos, tareasDeVigencia } from "@/db/consultas/vigencia/tareas";
+import { asociarProceso } from "@/db/consultas/normograma/asociaciones";
+import { resolverImpacto } from "@/db/consultas/normograma/impactos";
+import { cambiarEstadoNorma } from "@/db/consultas/normograma/normas";
 import { misTareas } from "@/lib/tareas";
 import { fechaLimite, finDeFecha } from "@/lib/tramites/plazos";
 import { sesionAdmin, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
+import { normaDePrueba } from "./utiles/normograma";
 import { revertida } from "./utiles/transaccion";
 import { enRevisionAbierta, externoDePrueba, procesoSinLider, sinFechaDeRevision, sinRevisionAbierta, vigenteFuera } from "./utiles/vigencia";
 
@@ -304,5 +309,35 @@ describe("tareasDeAdopcion", () => {
       } finally {
         await e.limpiar();
       }
+    }));
+});
+
+describe("tareas de impactos normativos en «Mis tareas»", () => {
+  it("el líder del proceso tiene «Revisar el impacto de <norma> en <proceso>», que desaparece al resolverlo; Consulta no", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const proceso = await procesoSinLider(tx);
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [proceso.id] });
+      const consulta = await usuarioDePrueba(tx, { rol: "consulta", procesos: [proceso.id] });
+      const n = await normaDePrueba(tx, admin);
+      await asociarProceso(admin, { normaId: n.id, procesoId: proceso.id, requisito: "art. 5" }, { sql: tx });
+      const { cambioId } = await cambiarEstadoNorma(admin, { normaId: n.id, estado: "derogada", fecha: "2026-11-01", nota: null }, { sql: tx, ahora });
+      const id = `impacto:${cambioId}:${proceso.id}`;
+
+      const { tareas, total } = await misTareas(lider, { sql: tx, ahora });
+      expect(total).toBe(tareas.length);
+      expect(tareas.find((t) => t.id === id)).toEqual({
+        id,
+        modulo: "documentos",
+        titulo: `Revisar el impacto de ${n.nombre} (derogada) en ${proceso.nombre} (1)`,
+        detalle: expect.stringMatching(/^Norma de prueba \d+$/),
+        vence: fechaLimite(ahora, 15, ZONA),
+        enlace: `/normograma/impactos/${cambioId}?proceso=${proceso.id}`,
+      });
+      expect(ids((await misTareas(consulta, { sql: tx, ahora })).tareas)).not.toContain(id);
+
+      const [impacto] = await tx`SELECT id FROM impactos_normativos WHERE cambio_id = ${cambioId}`;
+      await resolverImpacto(lider, { impactoId: Number(impacto.id), resolucion: "no_afecta", nota: "El proceso no cambia." }, { sql: tx, ahora });
+      expect(ids((await misTareas(lider, { sql: tx, ahora })).tareas)).not.toContain(id);
     }));
 });
