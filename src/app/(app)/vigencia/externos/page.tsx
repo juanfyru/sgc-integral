@@ -161,11 +161,20 @@ export default async function PaginaExternos({
       </div>
 
       {filas.length === 0 ? (
-        <EstadoVacio
-          icono={FileText}
-          titulo="No hay documentos externos aquí"
-          texto="Ningún documento externo de su alcance cumple los filtros elegidos."
-        />
+        filtrada || filtro.estado !== "todos" ? (
+          <EstadoVacio
+            icono={FileText}
+            titulo="No hay documentos externos aquí"
+            texto="Ningún documento externo de su alcance cumple los filtros elegidos."
+          />
+        ) : (
+          <EstadoVacio
+            icono={FileText}
+            titulo="Aún no hay documentos externos registrados"
+            texto="Las normas, guías y manuales que emite otro y que el hospital aplica se registran aquí, con su responsable técnico y su verificación de vigencia."
+            accion={puede(sesion, "externos.gestionar") ? { href: "/vigencia/externos/nuevo", etiqueta: "Registrar el primero" } : undefined}
+          />
+        )
       ) : (
         <TablaExternos filas={filas} />
       )}

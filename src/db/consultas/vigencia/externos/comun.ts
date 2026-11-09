@@ -4,6 +4,7 @@ import type { Cliente } from "@/db/cliente";
 import type { AsociacionEntrada } from "@/db/consultas/admin";
 import type { ArchivoFicha } from "@/db/consultas/documentos";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
+import { RESPONSABLE_SIN_ACCESO } from "@/db/consultas/origen";
 import { alcanceProcesos, filtroAcceso, puedeAccederDocumento, puedeGestionarExterno, type SujetoVisibilidad } from "@/lib/alcance";
 import type { DestinoVersion } from "@/lib/recepcion-archivo";
 import { ErrorVigencia, type EstadoVigencia, type ResultadoVerificacion } from "@/lib/vigencia/tipos";
@@ -159,6 +160,7 @@ export const EDICION_PENDIENTE = "Ya hay una edición pendiente de adoptar";
 export const RETIRADO = "El documento externo fue retirado: si vuelve a aplicar, regístrelo como documento nuevo";
 export const SIN_VIGENTE = "El documento externo no tiene una edición vigente";
 export const SIN_RESUMEN = "Escriba qué cambió en esta edición";
+export const PRINCIPAL_CAMBIO = "El archivo principal cambió desde que abrió el diálogo: revíselo y firme de nuevo";
 
 // ── Validación de los datos (los esquemas de las acciones dicen lo mismo con sus palabras) ──
 
@@ -293,7 +295,7 @@ export async function exigirResponsableActivo(tx: Cliente, responsableId: number
 /** Y puede ver el documento: si no, nadie podría verificarlo. Va después de sus asociaciones (un restringido). */
 export async function exigirQueElResponsableLoVea(tx: Cliente, responsable: Responsable, documentoId: number): Promise<void> {
   if (!(await puedeAccederDocumento(documentoId, responsable, { sql: tx }))) {
-    throw new ErrorVigencia("El responsable técnico no tiene acceso a este documento restringido");
+    throw new ErrorVigencia(RESPONSABLE_SIN_ACCESO);
   }
 }
 

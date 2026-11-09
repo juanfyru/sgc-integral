@@ -13,7 +13,7 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 
 import { obtenerSql } from "@/db/cliente";
 import type { TransactionSql } from "postgres";
-import { registrarVerificacion } from "@/db/consultas/vigencia/externos";
+import { abrirEdicion, descartarEdicion, registrarVerificacion } from "@/db/consultas/vigencia/externos";
 import { columnasDeVigencia } from "@/db/consultas/vigencia/fragmentos";
 import { tareasDeAdopcion, tareasDeExternos, tareasDeVigencia } from "@/db/consultas/vigencia/tareas";
 import { misTareas } from "@/lib/tareas";
@@ -238,8 +238,9 @@ describe("tareasDeAdopcion", () => {
         expect(ids((await misTareas(lider, { sql: tx, ahora })).tareas)).toContain(`adopcion:${e.documentoId}`);
         // La verificación reinició el reloj: la próxima es en un año, y la tarea ahora es adoptar.
         expect(ids(await tareasDeExternos(responsable, { sql: tx, ahora }))).not.toContain(`externo:${e.documentoId}`);
-        // El Admin SGC también lo gestiona; ni el responsable de rol Consulta ni el líder de otro proceso.
-        expect(ids(await tareasDeAdopcion(await sesionAdmin(tx), { sql: tx, ahora }))).toContain(`adopcion:${e.documentoId}`);
+        // CEX tiene líder: la tarea es suya y no del Admin SGC (F13A-DC2); ni del responsable de rol Consulta ni del líder
+        // de otro proceso.
+        expect(ids(await tareasDeAdopcion(await sesionAdmin(tx), { sql: tx, ahora }))).not.toContain(`adopcion:${e.documentoId}`);
         expect(await tareasDeAdopcion(responsable, { sql: tx, ahora })).toEqual([]);
         expect(ids(await tareasDeAdopcion(await sesionDe(tx, "lider.gth"), { sql: tx, ahora }))).not.toContain(`adopcion:${e.documentoId}`);
         // Una segunda «edición nueva» no mueve el plazo: cuenta desde la primera.
@@ -248,6 +249,42 @@ describe("tareasDeAdopcion", () => {
         expect((await tareasDeAdopcion(lider, { sql: tx, ahora: despues })).find((t) => t.id === `adopcion:${e.documentoId}`)?.vence).toEqual(
           fechaLimite(ahora, 15, ZONA),
         );
+      } finally {
+        await e.limpiar();
+      }
+    }));
+
+  it("en un proceso sin líder activo la tarea de adoptar es de los Admin SGC", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const sinLider = await procesoSinLider(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const e = await externoDePrueba(tx, admin, {
+        proceso: sinLider.sigla,
+        edicion: "2017",
+        responsableId: responsable.usuarioId,
+        ahora: new Date("2025-08-14T15:00:00Z"),
+      });
+      try {
+        await registrarVerificacion(responsable, verificacion(e.documentoId, "edicion_nueva"), { sql: tx, ahora });
+        expect(ids(await tareasDeAdopcion(admin, { sql: tx, ahora }))).toContain(`adopcion:${e.documentoId}`);
+        expect(ids((await misTareas(admin, { sql: tx, ahora })).tareas)).toContain(`adopcion:${e.documentoId}`);
+      } finally {
+        await e.limpiar();
+      }
+    }));
+
+  it("descartar la edición en borrador no borra la marca pendiente: la tarea de adoptar sigue", () =>
+    revertida(sql, async (tx) => {
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const { lider, e } = await externoAdoptadoEl(tx, "2025-08-14", responsable.usuarioId);
+      try {
+        await registrarVerificacion(responsable, verificacion(e.documentoId, "edicion_nueva"), { sql: tx, ahora });
+        const { versionId } = await abrirEdicion(lider, e.documentoId, { edicion: "2024", fechaEdicion: null, resumenCambios: "Metas 2024" }, { sql: tx, ahora });
+        await descartarEdicion(lider, versionId, { sql: tx });
+        const [marca] = await tx`SELECT edicion_nueva_pendiente_desde FROM externos WHERE documento_id = ${e.documentoId}`;
+        expect(marca.edicion_nueva_pendiente_desde).toEqual(ahora);
+        expect(ids(await tareasDeAdopcion(lider, { sql: tx, ahora }))).toContain(`adopcion:${e.documentoId}`);
       } finally {
         await e.limpiar();
       }

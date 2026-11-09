@@ -21,7 +21,6 @@ import { estadoPlazo } from "@/lib/tramites/plazos";
 import { limitesDeFechaFijada, textoFecha } from "@/lib/vigencia/plazo";
 import { ESTADOS_VIGENCIA, ErrorVigencia, type EstadoVigencia } from "@/lib/vigencia/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
-import { listarExternos } from "./externos";
 import { columnasDeVigencia, type FilaSemaforo } from "./fragmentos";
 import { NO_EXISTE } from "./comun";
 import { ratificacionesDe, type Ratificacion } from "./ratificaciones";
@@ -120,19 +119,6 @@ export async function conteosSemaforo(
 ): Promise<ConteosSemaforo> {
   const filas = await listarSemaforo(sesion, { estado: "todos", procesoId: opciones?.procesoId, origen: opciones?.origen }, opciones);
   return resumirSemaforo(filas, opciones?.ahora ?? new Date());
-}
-
-/**
- * La insignia de la entrada «Vigencia» de la barra (spec 13C §14.1): cuántos documentos de su alcance tienen la
- * vigencia vencida. Con `vigencia.ver`, los del semáforo que ve (internos y externos); para quien solo es responsable
- * técnico, sus externos. Quien no ve la entrada no cuenta nada, y no consulta.
- */
-export async function vencidosDeVigencia(sesion: SesionFlujo, d: { responsableTecnico: boolean }, opciones?: Opciones): Promise<number> {
-  if (puede(sesion, "vigencia.ver") || puede(sesion, "documentos.indicadores")) {
-    return (await listarSemaforo(sesion, { estado: "vencida" }, opciones)).length;
-  }
-  if (!d.responsableTecnico) return 0;
-  return (await listarExternos(sesion, { estado: "vencida" }, opciones)).length;
 }
 
 /** Los procesos activos que la persona puede elegir en el filtro del semáforo. */

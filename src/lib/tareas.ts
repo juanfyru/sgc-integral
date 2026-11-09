@@ -1,4 +1,5 @@
 import type { Cliente } from "@/db/cliente";
+import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import {
   tareasDeAcuses,
   tareasDeCopias,
@@ -8,7 +9,9 @@ import {
 } from "@/db/consultas/distribucion/tareas";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { listarTramites, type ResumenTramite } from "@/db/consultas/tramites";
-import { tareasDeAdopcion, tareasDeExternos, tareasDeVigencia } from "@/db/consultas/vigencia/tareas";
+import { esResponsableTecnico } from "@/db/consultas/vigencia/externos";
+import { vigenciaDePersona, type VigenciaDePersona } from "@/db/consultas/vigencia/tareas";
+import { puede } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 
 export type Tarea = {
@@ -65,25 +68,38 @@ export function agruparTareas(tareas: Tarea[], umbral = 5): Tarea[] {
   });
 }
 
+const SIN_VIGENCIA: VigenciaDePersona = { tareas: [], vencidos: 0 };
+
 /**
  * Los pasos que le tocan a la persona: los trámites (la pestaña «Por hacer» de la bandeja, spec 13A §14.1), las
- * copias, las lecturas por confirmar, las socializaciones por registrar, las verificaciones, los hallazgos, la
- * revisión de la vigencia de sus documentos, la verificación de sus externos y la adopción de sus ediciones nuevas.
+ * copias, las lecturas por confirmar, las socializaciones por registrar, las verificaciones, los hallazgos y, de la
+ * vigencia, la adopción de las ediciones nuevas, la verificación de sus externos y la revisión de sus documentos. Con
+ * ellas, `vencidos`: la insignia de «Vigencia». La configuración documental se lee una sola vez, y solo si alguna
+ * fuente la usa. `responsableTecnico`, si quien llama ya lo sabe (el cascarón).
  */
 export async function misTareas(
   sesion: SesionFlujo,
-  opciones?: { sql?: Cliente; ahora?: Date },
-): Promise<{ tareas: Tarea[]; total: number }> {
-  const [tramites, copias, acuses, socializacion, verificacion, hallazgos, vigencia, externos, adopcion] = await Promise.all([
-    listarTramites(sesion, "por_hacer", opciones),
-    tareasDeCopias(sesion, opciones),
-    tareasDeAcuses(sesion, opciones),
-    tareasDeSocializacion(sesion, opciones),
-    tareasDeVerificacion(sesion, opciones),
-    tareasDeHallazgos(sesion, opciones),
-    tareasDeVigencia(sesion, opciones),
-    tareasDeExternos(sesion, opciones),
-    tareasDeAdopcion(sesion, opciones),
+  opciones?: { sql?: Cliente; ahora?: Date; responsableTecnico?: boolean },
+): Promise<{ tareas: Tarea[]; total: number; vencidos: number }> {
+  const fuentes = { sql: opciones?.sql, ahora: opciones?.ahora };
+  const responsableTecnico = opciones?.responsableTecnico ?? (await esResponsableTecnico(sesion.usuarioId, { sql: opciones?.sql }));
+  const usaConfig =
+    puede(sesion, "verificaciones.realizar") || puede(sesion, "vigencia.ver") || puede(sesion, "documentos.indicadores") || responsableTecnico;
+  const config = usaConfig ? obtenerConfigDocumental({ sql: opciones?.sql }) : undefined;
+  // Quien la espera recibe su rechazo; este `catch` solo evita uno sin atender si ninguna fuente llega a esperarla.
+  config?.catch(() => {});
+  const [tramites, copias, acuses, socializacion, verificacion, hallazgos, vigencia] = await Promise.all([
+    listarTramites(sesion, "por_hacer", fuentes),
+    tareasDeCopias(sesion, fuentes),
+    tareasDeAcuses(sesion, fuentes),
+    tareasDeSocializacion(sesion, fuentes),
+    tareasDeVerificacion(sesion, { ...fuentes, config }),
+    tareasDeHallazgos(sesion, fuentes),
+    // Calculada del estado y la más pesada: si falla se registra, y las demás tareas y la página siguen sin ella.
+    vigenciaDePersona(sesion, { responsableTecnico }, { ...fuentes, config }).catch((err: unknown) => {
+      console.error("No se pudo calcular la vigencia de «Mis tareas» y de la insignia:", err);
+      return SIN_VIGENCIA;
+    }),
   ]);
   const tareas: Tarea[] = [
     ...tramites.map((t) => ({
@@ -99,9 +115,7 @@ export async function misTareas(
     ...socializacion,
     ...verificacion,
     ...hallazgos,
-    ...vigencia,
-    ...externos,
-    ...adopcion,
+    ...vigencia.tareas,
   ];
-  return { tareas: agruparTareas(tareas), total: tareas.length };
+  return { tareas: agruparTareas(tareas), total: tareas.length, vencidos: vigencia.vencidos };
 }

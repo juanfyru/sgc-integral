@@ -48,7 +48,10 @@ function Fecha({ fecha, zona, vacio }: { fecha: Date | null; zona: string; vacio
 }
 
 function UltimaVerificacion({ fila: f, zona }: { fila: FilaExterno; zona: string }) {
-  if (!f.ultimaVerificacion) return <span className="text-muted-foreground">Sin verificar</span>;
+  // La última verificación es la de la edición vigente: tras adoptar una nueva, se dice como en la ficha.
+  if (!f.ultimaVerificacion) {
+    return <span className="text-muted-foreground">{f.adoptadaEn ? "Sin verificaciones desde su adopción" : "Sin verificar"}</span>;
+  }
   return (
     <>
       <div className="whitespace-nowrap">{textoFecha(f.ultimaVerificacion.fecha, zona)}</div>

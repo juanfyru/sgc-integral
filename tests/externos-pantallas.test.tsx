@@ -68,7 +68,7 @@ import PaginaExterno from "@/app/(app)/vigencia/externos/[id]/page";
 import PaginaNuevoExterno from "@/app/(app)/vigencia/externos/nuevo/page";
 import PaginaExternos from "@/app/(app)/vigencia/externos/page";
 import { BloqueExterno } from "@/componentes/vigencia/externos/BloqueExterno";
-import { CuerpoAdoptar } from "@/componentes/vigencia/externos/DialogoAdoptar";
+import { CuerpoAdoptar, ocultosDeAdopcion } from "@/componentes/vigencia/externos/DialogoAdoptar";
 import { FormularioControl } from "@/componentes/vigencia/externos/FormularioControl";
 import { FormularioEdicion } from "@/componentes/vigencia/externos/FormularioEdicion";
 import { FormularioExterno } from "@/componentes/vigencia/externos/FormularioExterno";
@@ -78,8 +78,16 @@ import { TablaExternos } from "@/componentes/vigencia/externos/TablaExternos";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { puedePedirSobreDocumento } from "@/db/consultas/tramites";
-import { abrirEdicion, registrarExterno, registrarVerificacion, type Externo, type FilaExterno } from "@/db/consultas/vigencia/externos";
-import { vencidosDeVigencia } from "@/db/consultas/vigencia/semaforo";
+import { crearDocumentoEn } from "@/db/consultas/admin";
+import {
+  abrirEdicion,
+  descartarEdicion,
+  registrarExterno,
+  registrarVerificacion,
+  type Externo,
+  type FilaExterno,
+} from "@/db/consultas/vigencia/externos";
+import { vigenciaDePersona } from "@/db/consultas/vigencia/tareas";
 import type { SesionValida } from "@/lib/sesion";
 import { finDeFecha } from "@/lib/tramites/plazos";
 import { sesionAdmin, sesionDe, usuarioDePrueba } from "./utiles/tramites";
@@ -176,6 +184,13 @@ describe("TablaExternos", () => {
     expect(html).toContain("Sin adoptar");
   });
 
+  it("sin verificaciones desde la adopción lo dice como la ficha; sin edición adoptada, que no se ha verificado", () => {
+    const soloAdoptada = renderToStaticMarkup(<TablaExternos filas={[fila]} />);
+    expect(soloAdoptada).toContain("Sin verificaciones desde su adopción");
+    expect(soloAdoptada).not.toContain(">Sin verificar<");
+    expect(renderToStaticMarkup(<TablaExternos filas={[filas[2]]} />)).toContain(">Sin verificar<");
+  });
+
   it("tabla desde 768 px y una tarjeta por externo debajo, sin opacidad ni colores fijos", () => {
     expect(html).toContain('class="hidden md:block"');
     expect(html).toMatch(/<ul class="flex list-none flex-col gap-3 md:hidden"[^>]*>/);
@@ -245,6 +260,22 @@ describe("PaginaExterno", () => {
     expect(html).not.toMatch(/opacity-|bg-white|text-gray-|\bazul\b/);
   });
 
+  it("el orden del documento es el visual en todos los anchos: la verificación primero, sin reordenar ni dejar una columna vacía", () => {
+    const conVerificacion = renderToStaticMarkup(<VistaExterno externo={externo} opciones={opciones} pideCodigo={false} />);
+    const sinVerificacion = renderToStaticMarkup(
+      <VistaExterno externo={{ ...externo, acciones: { ...externo.acciones, verificar: false } }} opciones={opciones} pideCodigo={false} />,
+    );
+    for (const html of [conVerificacion, sinVerificacion]) {
+      expect(html).not.toMatch(/\border-(first|last|\d)|:order-/);
+      // Una sola columna: no queda una lateral vacía cuando la persona no verifica.
+      expect(html).not.toMatch(/grid-cols-\[minmax/);
+    }
+    const orden = ["externo-verificar", "externo-control", "externo-historial", "externo-retirar"].map((id) => conVerificacion.indexOf(`id="${id}"`));
+    expect(orden.every((i) => i >= 0)).toBe(true);
+    expect([...orden].sort((a, b) => a - b)).toEqual(orden);
+    expect(sinVerificacion).not.toContain('id="externo-verificar"');
+  });
+
   it("con la edición en borrador ofrece «Adoptar esta edición», la zona de carga, «Qué cambió» y «Descartar»", () => {
     const conBorrador: Externo = {
       ...externo,
@@ -287,13 +318,27 @@ describe("PaginaExterno", () => {
     expect(deRetirado).not.toContain("Registrar verificación");
   });
 
+  it("el diálogo de adoptar dice lo que se firma: la huella del principal, o sin él la de los datos de la edición", () => {
+    const conPrincipal = renderToStaticMarkup(<CuerpoAdoptar esPrimera conPrincipal />);
+    expect(conPrincipal).toContain("con la huella de su archivo principal");
+    expect(conPrincipal).not.toContain("Sin archivo principal");
+    const sinPrincipal = renderToStaticMarkup(<CuerpoAdoptar esPrimera={false} conPrincipal={false} />);
+    expect(sinPrincipal).toContain("Sin archivo principal: la firma lleva la huella de los datos de la edición");
+    expect(sinPrincipal).not.toContain("huella de su archivo principal");
+  });
+
+  it("el diálogo envía oculta la huella que mostró, vacía si no había principal", () => {
+    expect(ocultosDeAdopcion({ versionId: 81, huella: "b".repeat(64) })).toEqual({ versionId: "81", huella: "b".repeat(64) });
+    expect(ocultosDeAdopcion({ versionId: 81, huella: null })).toEqual({ versionId: "81", huella: "" });
+  });
+
   it("el diálogo de adoptar pide acuse y socialización en la primera edición; en una nueva el acuse va siempre", () => {
-    const primera = renderToStaticMarkup(<CuerpoAdoptar esPrimera />);
+    const primera = renderToStaticMarkup(<CuerpoAdoptar esPrimera conPrincipal />);
     expect(primera).toContain("Pedir acuse de lectura a la audiencia");
     expect(primera).toContain("Requiere socialización");
     expect(primera).toMatch(/<input[^>]*name="pedirAcuses"/);
     expect(primera).not.toMatch(/<input[^>]*name="pedirAcuses"[^>]*disabled/);
-    const nueva = renderToStaticMarkup(<CuerpoAdoptar esPrimera={false} />);
+    const nueva = renderToStaticMarkup(<CuerpoAdoptar esPrimera={false} conPrincipal />);
     expect(nueva).toMatch(/<input[^>]*checked=""[^>]*disabled=""|<input[^>]*disabled=""[^>]*checked=""/);
     expect(nueva).toContain("Requiere socialización");
   });
@@ -420,18 +465,18 @@ describe("BloqueExterno en la ficha", () => {
         expect(deLector).toContain("https://www.minsalud.gov.co/guias");
         expect(deLector).not.toContain('href="https://www.minsalud.gov.co/guias"');
         expect(deLector).not.toContain("Gestionar en Vigencia → Externos");
-        expect(deLector).not.toContain("Solicitar cambio");
 
         for (const sesion of [lider, responsable]) {
           const html = await pintar(tx, sesion, () => BloqueExterno({ documentoId: e.documentoId, sesion }));
           expect(html).toContain(`href="/vigencia/externos/${e.documentoId}"`);
           expect(html).toContain("Gestionar en Vigencia → Externos");
-          expect(html).not.toContain("Solicitar cambio");
         }
-        // Un externo no tiene trámite: tampoco el líder de su proceso puede pedir un cambio desde la ficha.
+        // Un externo no tiene trámite: el líder de su proceso, que sí pide cambios sobre un interno del mismo proceso, no
+        // puede pedirlo sobre el externo (la regla que esconde «Solicitar cambio» en las dos fichas).
+        const interno = await vigenteFuera(tx, { fechaAprobacion: "2025-08-14", proceso: "CEX" });
+        expect(await puedePedirSobreDocumento(lider, interno.id, { sql: tx })).toBe(true);
         expect(await puedePedirSobreDocumento(lider, e.documentoId, { sql: tx })).toBe(false);
         // Un interno no tiene este bloque.
-        const interno = await vigenteFuera(tx, { fechaAprobacion: "2025-08-14", proceso: "CEX" });
         expect(await pintar(tx, lider, () => BloqueExterno({ documentoId: interno.id, sesion: lider }))).toBe("");
       } finally {
         await e.limpiar();
@@ -453,18 +498,81 @@ describe("BloqueExterno en la ficha", () => {
 });
 
 describe("la ficha del panel de un externo", () => {
-  it("no ofrece los caminos genéricos de versión ni «Solicitar cambio»: lleva a Vigencia → Externos", () =>
+  /** Con la carga directa abierta, que es cuando el panel ofrece sus caminos de versión a un interno. */
+  async function conCargaAbierta(tx: TransactionSql) {
+    await tx`INSERT INTO configuracion (clave, valor) VALUES ('publicacion_directa', 'true')
+      ON CONFLICT (clave) DO UPDATE SET valor = 'true'`;
+  }
+  /** Un interno de CEX solo con su versión en borrador, como lo deja «Registrar documento ya aprobado». */
+  async function internoEnBorrador(tx: TransactionSql, admin: SesionFlujo) {
+    const [cex] = await tx`SELECT id FROM procesos WHERE sigla = 'CEX'`;
+    const [tipo] = await tx`SELECT id FROM tipos_documento WHERE sigla = 'PR'`;
+    const codigo = `ZZB-PR-${Date.now() % 100000}`;
+    const { documentoId, versionId } = await crearDocumentoEn(
+      tx,
+      {
+        codigo,
+        titulo: "Interno de contraste",
+        tipoId: Number(tipo.id),
+        descripcion: null,
+        palabrasClave: null,
+        asociaciones: [{ procesoId: Number(cex.id), esPrincipal: true }],
+        nivelAcceso: "general",
+      },
+      admin.usuarioId,
+    );
+    return { documentoId, versionId, codigo };
+  }
+  const panel = (tx: TransactionSql, admin: SesionFlujo, codigo: string) =>
+    pintar(tx, admin, () => PaginaDocumentoAdmin({ params: Promise.resolve({ codigo }) }));
+
+  it("con la edición en borrador no ofrece la zona de carga, el control de la versión, publicar ni descartar, que un interno sí tiene", () =>
     revertida(sql, async (tx) => {
+      await conCargaAbierta(tx);
       const admin = await sesionAdmin(tx);
+      const interno = await internoEnBorrador(tx, admin);
+      const delInterno = await panel(tx, admin, interno.codigo);
+      const caminos = ["Arrastre los archivos aquí", "Control de la versión", "Publicar versión", "Descartar borrador"];
+      for (const texto of caminos) expect(delInterno, texto).toContain(texto);
+
       const [cex] = await tx`SELECT id FROM procesos WHERE sigla = 'CEX'`;
       const r = await registrarExterno(admin, datosExterno({ procesoId: Number(cex.id), responsableId: admin.usuarioId }), { sql: tx, ahora });
-      const html = await pintar(tx, admin, () => PaginaDocumentoAdmin({ params: Promise.resolve({ codigo: r.codigo }) }));
-      expect(html).toContain(r.codigo);
-      for (const texto of ["Arrastre los archivos aquí", "Publicar versión", "Nueva versión (borrador)", "Descartar borrador", "Solicitar cambio", "Control de la versión"]) {
-        expect(html, texto).not.toContain(texto);
+      const delExterno = await panel(tx, admin, r.codigo);
+      expect(delExterno).toContain(r.codigo);
+      for (const texto of caminos) expect(delExterno, texto).not.toContain(texto);
+      expect(delExterno).toContain("Gestionar en Vigencia → Externos");
+      expect(delExterno).toContain(`href="/vigencia/externos/${r.documentoId}"`);
+    }));
+
+  it("sin versión ni borrador no ofrece «Nueva versión (borrador)», que un interno en esa situación sí tiene", () =>
+    revertida(sql, async (tx) => {
+      await conCargaAbierta(tx);
+      const admin = await sesionAdmin(tx);
+      const interno = await internoEnBorrador(tx, admin);
+      await tx`UPDATE documento_versiones SET estado = 'descartado' WHERE id = ${interno.versionId}`;
+      expect(await panel(tx, admin, interno.codigo)).toContain("Nueva versión (borrador)");
+
+      const [cex] = await tx`SELECT id FROM procesos WHERE sigla = 'CEX'`;
+      const r = await registrarExterno(admin, datosExterno({ procesoId: Number(cex.id), responsableId: admin.usuarioId }), { sql: tx, ahora });
+      await descartarEdicion(admin, r.versionId, { sql: tx });
+      expect(await panel(tx, admin, r.codigo)).not.toContain("Nueva versión (borrador)");
+    }));
+
+  it("con una edición vigente no ofrece «Solicitar cambio» ni «Deshacer carga», que un interno cargado sí tiene", () =>
+    revertida(sql, async (tx) => {
+      await conCargaAbierta(tx);
+      const admin = await sesionAdmin(tx);
+      const interno = await vigenteFuera(tx, { fechaAprobacion: "2025-08-14", proceso: "CEX" });
+      const delInterno = await panel(tx, admin, interno.codigo);
+      for (const texto of ["Solicitar cambio", "Deshacer carga"]) expect(delInterno, texto).toContain(texto);
+
+      const e = await externoDePrueba(tx, admin, { proceso: "CEX", edicion: "2017", ahora });
+      try {
+        const delExterno = await panel(tx, admin, e.codigo);
+        for (const texto of ["Solicitar cambio", "Deshacer carga"]) expect(delExterno, texto).not.toContain(texto);
+      } finally {
+        await e.limpiar();
       }
-      expect(html).toContain("Gestionar en Vigencia → Externos");
-      expect(html).toContain(`href="/vigencia/externos/${r.documentoId}"`);
     }));
 });
 
@@ -530,12 +638,34 @@ describe("páginas de Vigencia → Externos", () => {
     }));
 });
 
+describe("la matriz vacía", () => {
+  it("sin filtros dice que aún no hay externos y ofrece registrar el primero; con filtros, que ninguno los cumple", () =>
+    revertida(sql, async (tx) => {
+      const [m] = await tx`SELECT macroproceso_id FROM procesos WHERE sigla = 'GTH'`;
+      const sigla = `ZE${Date.now() % 100000}`;
+      const [p] = await tx`INSERT INTO procesos (macroproceso_id, nombre, sigla, slug, icono, orden)
+        VALUES (${m.macroproceso_id}, 'Proceso sin externos', ${sigla}, ${sigla.toLowerCase()}, 'circle', 999) RETURNING id`;
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [Number(p.id)] });
+
+      const vacia = await pintar(tx, lider, () => PaginaExternos(sinFiltro()));
+      expect(vacia).toContain("Aún no hay documentos externos registrados");
+      expect(vacia).toMatch(/<a[^>]*href="\/vigencia\/externos\/nuevo"[^>]*>Registrar el primero<\/a>/);
+      expect(vacia).not.toContain("cumple los filtros");
+
+      const filtrada = await pintar(tx, lider, () => PaginaExternos({ searchParams: Promise.resolve({ estado: "vencida" }) }));
+      expect(filtrada).toContain("Ningún documento externo de su alcance cumple los filtros elegidos.");
+      expect(filtrada).not.toContain("Registrar el primero");
+    }));
+});
+
 describe("la insignia de «Vigencia» en la barra", () => {
   it("cuenta los vencidos del alcance: el semáforo para quien lo ve y sus externos para el responsable técnico", () =>
     revertida(sql, async (tx) => {
       const lider = await sesionDe(tx, "lider.cex");
       const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
-      const antes = await vencidosDeVigencia(lider, { responsableTecnico: false }, { sql: tx, ahora });
+      const vencidos = async (sesion: SesionFlujo, responsableTecnico: boolean) =>
+        (await vigenciaDePersona(sesion, { responsableTecnico }, { sql: tx, ahora })).vencidos;
+      const antes = await vencidos(lider, false);
       const e = await externoDePrueba(tx, lider, {
         proceso: "CEX",
         edicion: "2017",
@@ -543,10 +673,10 @@ describe("la insignia de «Vigencia» en la barra", () => {
         ahora: new Date("2025-08-14T15:00:00Z"),
       });
       try {
-        expect(await vencidosDeVigencia(lider, { responsableTecnico: false }, { sql: tx, ahora })).toBe(antes + 1);
-        expect(await vencidosDeVigencia(responsable, { responsableTecnico: true }, { sql: tx, ahora })).toBe(1);
+        expect(await vencidos(lider, false)).toBe(antes + 1);
+        expect(await vencidos(responsable, true)).toBe(1);
         // Quien no ve la entrada no cuenta nada.
-        expect(await vencidosDeVigencia(responsable, { responsableTecnico: false }, { sql: tx, ahora })).toBe(0);
+        expect(await vencidos(responsable, false)).toBe(0);
       } finally {
         await e.limpiar();
       }

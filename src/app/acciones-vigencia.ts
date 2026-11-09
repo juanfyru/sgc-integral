@@ -151,6 +151,7 @@ export async function adoptarEdicionAccion(_prev: EstadoAccion, formData: FormDa
         sesion,
         {
           versionId: d.versionId,
+          huellaMostrada: d.huella ?? null,
           pedirAcuses: d.pedirAcuses === "on",
           requiereSocializacion: d.requiereSocializacion === "on",
           credenciales: { clave: d.clave, codigo: d.codigo },

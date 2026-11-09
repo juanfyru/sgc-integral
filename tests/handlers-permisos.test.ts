@@ -43,6 +43,7 @@ import { GET as excelCopias } from "@/app/(app)/distribucion/copias/excel/route"
 import { GET as excelVerificaciones } from "@/app/(app)/distribucion/verificaciones/excel/route";
 import { GET as excelSemaforo } from "@/app/(app)/vigencia/semaforo/excel/route";
 import { GET as excelExternos } from "@/app/(app)/vigencia/externos/excel/route";
+import { GET as archivoDeEdicionExterna } from "@/app/(app)/vigencia/externos/[id]/archivos/[archivoId]/[[...nombre]]/route";
 import { GET as pdfCopia } from "@/app/(app)/distribucion/copias/[id]/pdf/route";
 import { POST as reimprimirCopiaRuta } from "@/app/(app)/distribucion/copias/[id]/reimprimir/route";
 import { obtenerSql } from "@/db/cliente";
@@ -248,6 +249,20 @@ describe("GET /vigencia/externos/excel", () => {
         enCurso.sql = null;
       }
     }));
+});
+
+describe("GET /vigencia/externos/[id]/archivos/[archivoId]", () => {
+  const pedir = (token?: string, id = "999999999", archivoId = "999999999") =>
+    archivoDeEdicionExterna(
+      new NextRequest(`http://localhost:3002/vigencia/externos/${id}/archivos/${archivoId}/x.pdf`, token ? { headers: cookie(token) } : undefined),
+      { params: Promise.resolve({ id, archivoId, nombre: ["x.pdf"] }) },
+    );
+
+  it("401 sin sesión; un externo o un archivo que no existe, o que no se ve, responde 404 y nunca «sin permiso»", async () => {
+    expect((await pedir()).status).toBe(401);
+    for (const token of [tokenConsulta, tokenAdmin]) expect((await pedir(token)).status).toBe(404);
+    expect((await pedir(tokenAdmin, "abc")).status).toBe(404);
+  });
 });
 
 describe("handlers del panel por rol", () => {

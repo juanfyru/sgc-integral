@@ -99,7 +99,15 @@ function SeccionBorrador({ externo: e, pideCodigo, zona }: { externo: Externo; p
           <ul className="flex list-none flex-col gap-1.5 text-sm">
             {b.archivos.map((a) => (
               <li key={a.id} className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="min-w-0 break-all font-medium">{a.nombreOriginal}</span>
+                {/* Quien adopta abre lo que firma: la ficha de lectura no sirve un borrador (spec 13C §8.8). */}
+                <a
+                  href={`/vigencia/externos/${e.documentoId}/archivos/${a.id}/${encodeURIComponent(a.nombreOriginal)}`}
+                  target="_blank"
+                  rel="noopener"
+                  className={`min-w-0 break-all rounded font-medium underline underline-offset-2 ${FOCO}`}
+                >
+                  {a.nombreOriginal}
+                </a>
                 <span className="text-xs text-muted-foreground">{`${ETIQUETA_ROL[a.rol] ?? a.rol} · ${formatearTamano(a.tamanoBytes)}`}</span>
                 {e.acciones.adoptar ? (
                   <EliminarArchivo direccion={`/api/externos/${b.versionId}/archivos/${a.id}`} nombre={a.nombreOriginal} />
@@ -205,8 +213,8 @@ function Historial({ externo: e, zona }: { externo: Externo; zona: string }) {
 
 /**
  * La página de control de un externo (spec 13C §8.8): sus datos de control, la edición en borrador o «Adoptar edición
- * nueva», la verificación, el retiro y el historial. Cada acción sale según lo que la persona puede hacer; la
- * verificación va primero en el celular, porque es lo que hace el responsable técnico.
+ * nueva», la verificación, el retiro y el historial. Cada acción sale según lo que la persona puede hacer. Una sola
+ * columna en todos los anchos: el orden del documento es el visual, y no queda una columna vacía.
  */
 export function PaginaExterno({
   externo: e,
@@ -260,9 +268,11 @@ export function PaginaExterno({
         </p>
       ) : null}
 
-      <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,380px)]">
+      {/* Una sola columna, en el orden en que se lee y se recorre con el teclado: la verificación (lo que hace el
+          responsable técnico, también en el celular), los datos, la edición, el historial y el retiro. */}
+      <div className="flex min-w-0 max-w-4xl flex-col gap-6">
         {e.acciones.verificar ? (
-          <section aria-labelledby="externo-verificar" className={`${SECCION} lg:order-2 lg:self-start`}>
+          <section aria-labelledby="externo-verificar" className={SECCION}>
             <h2 id="externo-verificar" className="text-sm font-semibold">
               {`Verificar la vigencia de ${e.codigo}`}
             </h2>
@@ -279,29 +289,27 @@ export function PaginaExterno({
           </section>
         ) : null}
 
-        <div className="flex min-w-0 flex-col gap-6 lg:order-1">
-          <SeccionControl externo={e} opciones={opciones} zona={zona} />
-          {e.borrador ? <SeccionBorrador externo={e} pideCodigo={pideCodigo} zona={zona} /> : null}
-          {e.acciones.abrirEdicion ? <SeccionAbrirEdicion externo={e} zona={zona} /> : null}
-          <Historial externo={e} zona={zona} />
-          {e.acciones.retirar ? (
-            <section aria-labelledby="externo-retirar" className={SECCION}>
-              <h2 id="externo-retirar" className="text-sm font-semibold">
-                Retiro
-              </h2>
-              <AccionConfirmada
-                accion={retirarExternoAccion}
-                etiqueta="Retirar"
-                confirmacion="El documento deja de aplicar: su edición vigente se anula, sus copias controladas quedan por recoger y se avisa a quienes lo aplican. No vuelve: si aplica de nuevo, se registra como documento nuevo."
-                campos={{ documentoId: e.documentoId }}
-              >
-                <Campo etiqueta="Motivo" nombre="motivo" ayuda="Entre 5 y 500 caracteres. Queda en la bitácora.">
-                  <textarea required minLength={5} maxLength={500} rows={2} className={`${claseControl} w-full min-w-0 max-w-full`} />
-                </Campo>
-              </AccionConfirmada>
-            </section>
-          ) : null}
-        </div>
+        <SeccionControl externo={e} opciones={opciones} zona={zona} />
+        {e.borrador ? <SeccionBorrador externo={e} pideCodigo={pideCodigo} zona={zona} /> : null}
+        {e.acciones.abrirEdicion ? <SeccionAbrirEdicion externo={e} zona={zona} /> : null}
+        <Historial externo={e} zona={zona} />
+        {e.acciones.retirar ? (
+          <section aria-labelledby="externo-retirar" className={SECCION}>
+            <h2 id="externo-retirar" className="text-sm font-semibold">
+              Retiro
+            </h2>
+            <AccionConfirmada
+              accion={retirarExternoAccion}
+              etiqueta="Retirar"
+              confirmacion="El documento deja de aplicar: su edición vigente se anula, sus copias controladas quedan por recoger y se avisa a quienes lo aplican. No vuelve: si aplica de nuevo, se registra como documento nuevo."
+              campos={{ documentoId: e.documentoId }}
+            >
+              <Campo etiqueta="Motivo" nombre="motivo" ayuda="Entre 5 y 500 caracteres. Queda en la bitácora.">
+                <textarea required minLength={5} maxLength={500} rows={2} className={`${claseControl} w-full min-w-0 max-w-full`} />
+              </Campo>
+            </AccionConfirmada>
+          </section>
+        ) : null}
       </div>
     </div>
   );

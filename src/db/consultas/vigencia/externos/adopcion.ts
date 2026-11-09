@@ -14,6 +14,7 @@ import { ErrorVigencia } from "@/lib/vigencia/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import {
   NO_BORRADOR,
+  PRINCIPAL_CAMBIO,
   RETIRADO,
   SIN_RESUMEN,
   bloquear,
@@ -70,6 +71,14 @@ export async function alAdoptar(
   void d;
 }
 
+/**
+ * La huella que vio quien firma (la que mostró el diálogo; null si no había principal) es la del principal de ahora:
+ * si lo cambiaron después, o si apareció o desapareció, no se firma. `undefined`: quien llama no mostró un diálogo.
+ */
+function exigirPrincipalVisto(v: AdopcionValidada, huellaMostrada: string | null | undefined): void {
+  if (huellaMostrada !== undefined && huellaMostrada !== v.hashPrincipal) throw new ErrorVigencia(PRINCIPAL_CAMBIO);
+}
+
 /** Sin archivo principal, la firma guarda la huella de los datos de control de la edición (spec 13C §8.3). */
 function huellaDeDatos(codigo: string, edicion: string, emisor: string): string {
   return createHash("sha256").update(`${codigo}|${edicion}|${emisor}`).digest("hex");
@@ -79,11 +88,20 @@ function huellaDeDatos(codigo: string, edicion: string, emisor: string): string 
  * Adopta la edición en borrador (spec 13C §8.3): la firma «Adoptó» sin trámite y la publicación por
  * `aplicarPublicacion(…, "externo", …)`, que deja obsoleta la anterior y recoge sus copias. Una edición nueva pide
  * acuse a la audiencia; la primera, solo si se marca. La clave se verifica fuera de la transacción y todo lo que
- * puede fallar se valida antes y otra vez dentro, con el documento y la versión bloqueados (F13A-R4).
+ * puede fallar se valida antes y otra vez dentro, con el documento y la versión bloqueados (F13A-R4). `huellaMostrada`
+ * es la del principal que vio quien firma (null si no había): si cambió, se rechaza antes de pedir la clave y otra vez
+ * bajo el candado, sin escribir la firma.
  */
 export async function adoptarEdicion(
   sesion: SesionFlujo,
-  d: { versionId: number; pedirAcuses: boolean; requiereSocializacion: boolean; credenciales: CredencialesFirma; verificacionId?: number },
+  d: {
+    versionId: number;
+    pedirAcuses: boolean;
+    requiereSocializacion: boolean;
+    credenciales: CredencialesFirma;
+    verificacionId?: number;
+    huellaMostrada?: string | null;
+  },
   opciones: OpcionesFlujo = {},
 ): Promise<{ documentoId: number; numero: number; obsoletas: number[]; acuses: number }> {
   const sql = opciones.sql ?? obtenerSql();
@@ -93,6 +111,7 @@ export async function adoptarEdicion(
   const verificacionId = d.verificacionId ?? null;
 
   const previa = await validarAdopcion(sql, sesion, d.versionId);
+  exigirPrincipalVisto(previa, d.huellaMostrada);
   if (verificacionId !== null) await exigirVerificacion(sql, previa.documentoId, verificacionId, "edicion_nueva");
   const verificar = opciones.verificar ?? verificarParaFirmar;
   const r = await verificar(sesion, d.credenciales, contexto, ahora);
@@ -104,6 +123,7 @@ export async function adoptarEdicion(
       await bloquear(tx, previa.documentoId);
       await tx`SELECT id FROM documento_versiones WHERE id = ${d.versionId} FOR UPDATE`;
       const v = await validarAdopcion(tx, sesion, d.versionId);
+      exigirPrincipalVisto(v, d.huellaMostrada);
       if (verificacionId !== null) await exigirVerificacion(tx, v.documentoId, verificacionId, "edicion_nueva");
       const huella = v.ruta
         ? await exigirHuellaRegistrada(v.ruta, v.hashPrincipal, { codigo: v.codigo, numero: v.numero })

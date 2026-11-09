@@ -1,30 +1,42 @@
 /**
- * Las tareas de vigencia de «Mis tareas» (spec 13C §7.5 y §13.1), todas calculadas del estado.
+ * Las tareas de vigencia de «Mis tareas» (spec 13C §7.5 y §13.1), todas calculadas del estado, y la insignia de la
+ * entrada «Vigencia» (spec 13C §14.1). Todo sale de una sola lectura por persona (`vigenciaDePersona`, resolución 1
+ * de la Tarea 7): el cascarón corre en todas las páginas.
  *
  * «Revisar la vigencia»: nace cuando un documento interno vigente entra en atención y sigue mientras esté vencido.
- * Es de los líderes del proceso propietario o, si el proceso no tiene líder, de los Admin SGC (F13A-DC2).
+ * Es de los líderes del proceso propietario o, si el proceso no tiene líder activo, de los Admin SGC (F13A-DC2).
  * Desaparece al ratificar, al publicar una versión nueva o al abrir un trámite (pasa a ser la tarea del trámite), y
  * no se da mientras el documento esté en la revisión anual abierta.
  *
  * «Verificar la vigencia» de un externo: de su responsable técnico, cuando la próxima verificación entra en la
- * ventana de atención o ya pasó. «Adoptar la edición nueva»: de quienes gestionan el externo, desde que una
- * verificación la constató hasta que se adopte una edición.
+ * ventana de atención o ya pasó. «Adoptar la edición nueva»: de quienes gestionan el externo con la misma regla de
+ * F13A-DC2 (los líderes del proceso, o los Admin SGC si no tiene líder activo), desde que una verificación la
+ * constató hasta que se adopte una edición. Las de los externos no se omiten con una revisión anual abierta.
  */
 import { obtenerSql, type Cliente } from "@/db/cliente";
-import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
+import { obtenerConfigDocumental, type ConfigDocumental } from "@/db/consultas/config-documental";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { alcanceProcesos, filtroAcceso } from "@/lib/alcance";
+import { alcanceProcesos, filtroAcceso, filtroVigencia, type Alcance } from "@/lib/alcance";
 import { puede } from "@/lib/permisos";
 import type { Tarea } from "@/lib/tareas";
 import { estadoPlazo, fechaLimite } from "@/lib/tramites/plazos";
 import { textoFecha } from "@/lib/vigencia/plazo";
 import { zonaHoraria } from "@/lib/zona-horaria";
-import { columnasDeVigencia, enRevisionAnualAbierta, type FilaSemaforo } from "./fragmentos";
+import { filasDePersona, type FilaDePersona, type FilaSemaforo } from "./fragmentos";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
 /** Días que tiene quien gestiona un externo para adoptar la edición nueva que constató una verificación (spec 13C §13.1). */
 export const DIAS_PARA_ADOPTAR = 15;
+
+export type VigenciaDePersona = {
+  /** Las de adoptar, las de verificar y las de revisar, en ese orden. */
+  tareas: Tarea[];
+  /** La insignia de «Vigencia»: los documentos de su alcance con la vigencia vencida. */
+  vencidos: number;
+};
+
+const NADA: VigenciaDePersona = { tareas: [], vencidos: 0 };
 
 const dias = (n: number) => `${n} ${n === 1 ? "día" : "días"}`;
 
@@ -41,34 +53,29 @@ const porVencimiento = (a: FilaSemaforo, b: FilaSemaforo) =>
   (a.proximaRevision?.getTime() ?? Number.NEGATIVE_INFINITY) - (b.proximaRevision?.getTime() ?? Number.NEGATIVE_INFINITY) ||
   a.codigo.localeCompare(b.codigo, "es");
 
-export async function tareasDeVigencia(sesion: SesionFlujo, opciones?: Opciones): Promise<Tarea[]> {
-  if (sesion.rol !== "lider_proceso" && sesion.rol !== "admin_sgc") return [];
-  const sql = opciones?.sql ?? obtenerSql();
-  const ahora = opciones?.ahora ?? new Date();
+type Contexto = { sesion: SesionFlujo; alcance: Alcance; ahora: Date; zona: string; atencionDias: number };
 
-  // El Admin SGC, los procesos sin líder: la misma regla de `lideresDeProceso` (un proceso inactivo no tiene).
-  let suyos = sql`NOT (p.activo AND EXISTS (
-    SELECT 1 FROM usuario_procesos up
-    JOIN usuarios u ON u.id = up.usuario_id AND u.activo AND u.rol = 'lider_proceso'
-    WHERE up.proceso_id = p.id))`;
-  if (sesion.rol === "lider_proceso") {
-    const alcance = await alcanceProcesos(sesion, { sql });
-    if (alcance.todos || alcance.procesoIds.length === 0) return [];
-    suyos = sql`p.id = ANY(${alcance.procesoIds})`;
-  }
-  const filas = await columnasDeVigencia(
-    sql,
-    sql`d.origen = 'interno' AND ${suyos} AND ${filtroAcceso(sql, sesion)} AND NOT ${enRevisionAnualAbierta(sql)}`,
-    ahora,
-  );
-  const zona = zonaHoraria();
+/** F13A-DC2: el líder, en los procesos de su alcance; el Admin SGC, en los que no tienen líder activo. */
+function esDeLaPersona(f: FilaDePersona, c: Contexto): boolean {
+  if (c.sesion.rol === "lider_proceso") return !c.alcance.todos && c.alcance.procesoIds.includes(f.proceso.id);
+  if (c.sesion.rol === "admin_sgc") return !f.procesoConLider;
+  return false;
+}
+
+function revisarVigencia(filas: FilaDePersona[], c: Contexto): Tarea[] {
   return filas
-    .filter((f) => f.vigencia.estado === "atencion" || f.vigencia.estado === "vencida")
+    .filter(
+      (f) =>
+        f.origen === "interno" &&
+        !f.enRevisionAnual &&
+        esDeLaPersona(f, c) &&
+        (f.vigencia.estado === "atencion" || f.vigencia.estado === "vencida"),
+    )
     .sort(porVencimiento)
     .map((f) => ({
       id: `vigencia:${f.documentoId}`,
-      modulo: "documentos" as const,
-      titulo: titulo(f, zona),
+      modulo: "documentos",
+      titulo: titulo(f, c.zona),
       detalle: f.titulo,
       vence: f.proximaRevision,
       enlace: `/documentos/${encodeURIComponent(f.codigo.toLowerCase())}`,
@@ -76,37 +83,24 @@ export async function tareasDeVigencia(sesion: SesionFlujo, opciones?: Opciones)
 }
 
 /**
- * «Verificar la vigencia de CEX-DE-01 · Guía de práctica clínica HTA» para el responsable técnico. Se calcula por la
- * fecha de la próxima verificación y no por el estado del semáforo: una edición nueva pendiente lo deja en atención,
- * pero esa tarea es la de adoptarla. Un restringido que el responsable dejó de ver no le da tarea.
+ * «Verificar la vigencia de CEX-DE-01 · Guía de práctica clínica HTA», por la fecha de la próxima verificación y no por
+ * el estado del semáforo: una edición nueva pendiente lo deja en atención, pero esa tarea es la de adoptarla.
  */
-export async function tareasDeExternos(sesion: SesionFlujo, opciones?: Opciones): Promise<Tarea[]> {
-  const sql = opciones?.sql ?? obtenerSql();
-  const ahora = opciones?.ahora ?? new Date();
-  const [filas, config] = await Promise.all([
-    columnasDeVigencia(
-      sql,
-      sql`d.origen = 'externo' AND ${filtroAcceso(sql, sesion)}
-        AND EXISTS (SELECT 1 FROM externos tarea_ex WHERE tarea_ex.documento_id = d.id AND tarea_ex.responsable_id = ${sesion.usuarioId})`,
-      ahora,
-    ),
-    obtenerConfigDocumental({ sql }),
-  ]);
-  const zona = zonaHoraria();
-  const pendientes: { fila: FilaSemaforo; tarea: Tarea }[] = [];
+function verificarExternos(filas: FilaDePersona[], c: Contexto): Tarea[] {
+  const pendientes: { fila: FilaDePersona; tarea: Tarea }[] = [];
   for (const f of filas) {
     // Una vigente sin fecha no debería existir (la adopción la da): no hay qué vencer.
-    if (!f.proximaRevision) continue;
-    const plazo = estadoPlazo(f.proximaRevision, ahora, zona);
+    if (f.origen !== "externo" || f.responsableTecnicoId !== c.sesion.usuarioId || !f.proximaRevision) continue;
+    const plazo = estadoPlazo(f.proximaRevision, c.ahora, c.zona);
     const vencida = plazo.estado === "vencido";
-    if (!vencida && plazo.dias > config.vigencia.atencionDias) continue;
+    if (!vencida && plazo.dias > c.atencionDias) continue;
     pendientes.push({
       fila: f,
       tarea: {
         id: `externo:${f.documentoId}`,
         modulo: "documentos",
         titulo: `Verificar la vigencia de ${f.codigo} · ${f.titulo}`,
-        detalle: vencida ? `Verificación vencida hace ${dias(plazo.dias)}` : `Próxima verificación el ${textoFecha(f.proximaRevision, zona)}`,
+        detalle: vencida ? `Verificación vencida hace ${dias(plazo.dias)}` : `Próxima verificación el ${textoFecha(f.proximaRevision, c.zona)}`,
         vence: f.proximaRevision,
         enlace: `/vigencia/externos/${f.documentoId}`,
       },
@@ -115,33 +109,70 @@ export async function tareasDeExternos(sesion: SesionFlujo, opciones?: Opciones)
   return pendientes.sort((a, b) => porVencimiento(a.fila, b.fila)).map((p) => p.tarea);
 }
 
+/** «Adoptar la edición nueva de CEX-DE-01», a 15 días de la primera verificación «hay una edición nueva». */
+function adoptarEdiciones(filas: FilaDePersona[], c: Contexto): Tarea[] {
+  if (!puede(c.sesion, "externos.gestionar")) return [];
+  return filas
+    .flatMap((f) => (f.origen === "externo" && f.edicionPendiente && esDeLaPersona(f, c) ? [{ f, desde: f.edicionPendiente.desde }] : []))
+    .sort((a, b) => a.desde.getTime() - b.desde.getTime() || a.f.codigo.localeCompare(b.f.codigo, "es"))
+    .map(({ f, desde }) => ({
+      id: `adopcion:${f.documentoId}`,
+      modulo: "documentos",
+      titulo: `Adoptar la edición nueva de ${f.codigo}`,
+      detalle: f.titulo,
+      vence: fechaLimite(desde, DIAS_PARA_ADOPTAR, c.zona),
+      enlace: `/vigencia/externos/${f.documentoId}`,
+    }));
+}
+
 /**
- * «Adoptar la edición nueva de CEX-DE-01» para quienes gestionan el externo (`externos.gestionar` en su alcance: el
- * líder, sus procesos; el Admin SGC, todos), desde la primera verificación «hay una edición nueva» hasta que se adopte
- * una o una verificación posterior diga que sigue vigente. Vence a los 15 días de esa primera verificación.
+ * Las tareas de vigencia de la persona y la insignia de «Vigencia», con una sola consulta de vigencia y la
+ * configuración leída una vez (la de `config` si quien llama ya la pidió). Las filas son las del semáforo que ve
+ * (`vigencia.ver`) y, si es responsable técnico, sus externos: quien no tiene ninguna de las dos no consulta nada. La
+ * insignia cuenta, con `vigencia.ver`, los vencidos del semáforo que ve; si solo es responsable técnico, sus externos.
  */
-export async function tareasDeAdopcion(sesion: SesionFlujo, opciones?: Opciones): Promise<Tarea[]> {
-  if (!puede(sesion, "externos.gestionar")) return [];
+export async function vigenciaDePersona(
+  sesion: SesionFlujo,
+  d: { responsableTecnico: boolean },
+  opciones?: Opciones & { config?: Promise<ConfigDocumental> | ConfigDocumental },
+): Promise<VigenciaDePersona> {
+  const veSemaforo = puede(sesion, "vigencia.ver") || puede(sesion, "documentos.indicadores");
+  if (!veSemaforo && !d.responsableTecnico) return NADA;
   const sql = opciones?.sql ?? obtenerSql();
-  const alcance = await alcanceProcesos(sesion, { sql });
-  if (!alcance.todos && alcance.procesoIds.length === 0) return [];
-  const filas = await sql`
-    SELECT d.id, d.codigo, d.titulo, ex.edicion_nueva_pendiente_desde AS desde
-    FROM documentos d
-    JOIN externos ex ON ex.documento_id = d.id
-    JOIN documento_proceso dp ON dp.documento_id = d.id AND dp.es_principal
-    LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
-    WHERE d.origen = 'externo' AND ex.edicion_nueva_pendiente_desde IS NOT NULL AND ${filtroAcceso(sql, sesion)}
-      AND EXISTS (SELECT 1 FROM documento_versiones x WHERE x.documento_id = d.id AND x.estado = 'vigente')
-      ${alcance.todos ? sql`` : sql`AND COALESCE(dp.proceso_id, s.proceso_id) = ANY(${alcance.procesoIds})`}
-    ORDER BY ex.edicion_nueva_pendiente_desde, d.codigo`;
-  const zona = zonaHoraria();
-  return filas.map((f) => ({
-    id: `adopcion:${f.id}`,
-    modulo: "documentos",
-    titulo: `Adoptar la edición nueva de ${f.codigo}`,
-    detalle: f.titulo as string,
-    vence: fechaLimite(new Date(f.desde as string), DIAS_PARA_ADOPTAR, zona),
-    enlace: `/vigencia/externos/${f.id}`,
-  }));
+  const ahora = opciones?.ahora ?? new Date();
+  const [config, alcance] = await Promise.all([opciones?.config ?? obtenerConfigDocumental({ sql }), alcanceProcesos(sesion, { sql })]);
+  const delSemaforo = veSemaforo ? filtroVigencia(sql, sesion, alcance) : sql`false`;
+  const suyos = d.responsableTecnico
+    ? sql`(${filtroAcceso(sql, sesion)} AND EXISTS (SELECT 1 FROM externos persona_ex
+        WHERE persona_ex.documento_id = d.id AND persona_ex.responsable_id = ${sesion.usuarioId}))`
+    : sql`false`;
+  const filas = await filasDePersona(sql, sql`(${delSemaforo} OR ${suyos})`, ahora, config);
+
+  const c: Contexto = { sesion, alcance, ahora, zona: zonaHoraria(), atencionDias: config.vigencia.atencionDias };
+  const enSuSemaforo = (f: FilaDePersona) => alcance.todos || alcance.procesoIds.includes(f.proceso.id);
+  const cuenta = veSemaforo ? enSuSemaforo : (f: FilaDePersona) => f.responsableTecnicoId === sesion.usuarioId;
+  return {
+    tareas: [...adoptarEdiciones(filas, c), ...verificarExternos(filas, c), ...revisarVigencia(filas, c)],
+    vencidos: filas.filter((f) => f.vigencia.estado === "vencida" && cuenta(f)).length,
+  };
+}
+
+/** Las tareas de una fuente sola, de la misma lectura; «Mis tareas» y el cascarón usan `vigenciaDePersona`. */
+async function deUnaFuente(sesion: SesionFlujo, prefijo: string, responsableTecnico: boolean, opciones?: Opciones): Promise<Tarea[]> {
+  return (await vigenciaDePersona(sesion, { responsableTecnico }, opciones)).tareas.filter((t) => t.id.startsWith(prefijo));
+}
+
+/** «Revisar la vigencia» de los internos de la persona. */
+export function tareasDeVigencia(sesion: SesionFlujo, opciones?: Opciones): Promise<Tarea[]> {
+  return deUnaFuente(sesion, "vigencia:", false, opciones);
+}
+
+/** «Verificar la vigencia» de los externos de los que la persona es responsable técnico (y todavía ve). */
+export function tareasDeExternos(sesion: SesionFlujo, opciones?: Opciones): Promise<Tarea[]> {
+  return deUnaFuente(sesion, "externo:", true, opciones);
+}
+
+/** «Adoptar la edición nueva» de los externos que la persona gestiona. */
+export function tareasDeAdopcion(sesion: SesionFlujo, opciones?: Opciones): Promise<Tarea[]> {
+  return deUnaFuente(sesion, "adopcion:", false, opciones);
 }

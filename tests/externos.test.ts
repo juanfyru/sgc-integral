@@ -26,6 +26,7 @@ import { obtenerSql } from "@/db/cliente";
 import {
   crearDocumento,
   crearVersionBorrador,
+  editarCatalogo,
   descartarBorrador,
   deshacerCarga,
   editarControl,
@@ -61,6 +62,7 @@ import { fechaEnZona } from "@/lib/tramites/plazos";
 import { NUMERO_MAXIMO_DE_VERSION } from "@/lib/tramites/tipos";
 import { textoVigenciaDeFila } from "@/lib/vigencia/semaforo";
 import { copiaDePrueba, puntoDePrueba } from "./utiles/distribucion";
+import { pdfDePrueba } from "./utiles/pdf";
 import { aceptarCreacion, archivoPrincipal, opc, sesionAdmin, sesionDe, solicitudDeCreacion, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 import { datosExterno, externoDePrueba, firmaDePrueba, sinRevisionAbierta } from "./utiles/vigencia";
@@ -970,4 +972,105 @@ describe("esquemas de los externos", () => {
       clave: " ok ",
     });
   });
+});
+
+describe("ronda de corrección 1 de la Tarea 7", () => {
+  const CAMBIO = "El archivo principal cambió desde que abrió el diálogo: revíselo y firme de nuevo";
+
+  it("la adopción rechaza si el principal cambió desde que se abrió el diálogo, antes de pedir la clave y sin escribir la firma", () =>
+    revertida(sql, async (tx) => {
+      const lider = await sesionDe(tx, "lider.cex");
+      const cex = await proceso(tx, "CEX");
+      const r = await registrarExterno(lider, datosExterno({ procesoId: cex.id, responsableId: lider.usuarioId }), { sql: tx, ahora });
+      const primero = await archivoPrincipal(tx, r.versionId);
+      // Entre el diálogo y la firma, alguien cambia el principal por otro PDF.
+      await tx`DELETE FROM archivos WHERE id = ${primero.archivoId}`;
+      const segundo = await archivoPrincipal(tx, r.versionId, await pdfDePrueba([[300, 300]]));
+      const verificar = vi.fn(firmaDePrueba);
+      const adoptarCon = (huellaMostrada: string | null) =>
+        adoptarEdicion(
+          lider,
+          { versionId: r.versionId, pedirAcuses: false, requiereSocializacion: false, credenciales: ok, huellaMostrada },
+          { sql: tx, ahora, verificar },
+        );
+      try {
+        expect(segundo.hash).not.toBe(primero.hash);
+        await expect(adoptarCon(primero.hash)).rejects.toThrow(CAMBIO);
+        // Lo mostró sin principal y ahora tiene uno: también cambió.
+        await expect(adoptarCon(null)).rejects.toThrow(CAMBIO);
+        expect(verificar).not.toHaveBeenCalled();
+        expect((await tx`SELECT 1 FROM firmas WHERE version_id = ${r.versionId}`).length).toBe(0);
+        expect((await tx`SELECT estado FROM documento_versiones WHERE id = ${r.versionId}`)[0].estado).toBe("borrador");
+        // Con la huella que hay, adopta.
+        await adoptarCon(segundo.hash);
+        expect((await tx`SELECT estado FROM documento_versiones WHERE id = ${r.versionId}`)[0].estado).toBe("vigente");
+      } finally {
+        await primero.limpiar();
+        await segundo.limpiar();
+      }
+    }));
+
+  it("la adopción sin principal se firma si el diálogo tampoco lo mostró, y se rechaza si ahora hay uno", () =>
+    revertida(sql, async (tx) => {
+      const lider = await sesionDe(tx, "lider.cex");
+      const cex = await proceso(tx, "CEX");
+      const r = await registrarExterno(lider, datosExterno({ procesoId: cex.id, responsableId: lider.usuarioId }), { sql: tx, ahora });
+      const adoptarCon = (huellaMostrada: string | null) =>
+        adoptarEdicion(
+          lider,
+          { versionId: r.versionId, pedirAcuses: false, requiereSocializacion: false, credenciales: ok, huellaMostrada },
+          { sql: tx, ahora, verificar: firmaDePrueba },
+        );
+      await expect(adoptarCon("a".repeat(64))).rejects.toThrow(CAMBIO);
+      await adoptarCon(null);
+      expect((await tx`SELECT estado FROM documento_versiones WHERE id = ${r.versionId}`)[0].estado).toBe("vigente");
+    }));
+
+  it("el esquema de adoptar lleva la huella mostrada: 64 hexadecimales, o nada si no había principal", () => {
+    const f = new FormData();
+    f.append("versionId", "4");
+    f.append("clave", "x");
+    expect(parsearFormulario(f, EsquemaAdoptar).huella).toBeUndefined();
+    f.append("huella", "c".repeat(64));
+    expect(parsearFormulario(f, EsquemaAdoptar).huella).toBe("c".repeat(64));
+    const mala = new FormData();
+    mala.append("versionId", "4");
+    mala.append("clave", "x");
+    mala.append("huella", "no-es-una-huella");
+    expect(() => parsearFormulario(mala, EsquemaAdoptar)).toThrow();
+  });
+
+  it("el panel no deja a un externo sin un responsable técnico que lo vea", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const lider = await sesionDe(tx, "lider.cex");
+      const cex = await proceso(tx, "CEX");
+      const ate = await proceso(tx, "ATE");
+      // Sin procesos: ve el externo mientras sea general.
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const e = await externoDePrueba(tx, lider, { proceso: "CEX", edicion: "2017", responsableId: responsable.usuarioId, ahora });
+      const catalogo = (nivelAcceso: "general" | "restringido", otros: number[] = []) => ({
+        descripcion: "Guía del ministerio",
+        palabrasClave: null,
+        asociaciones: [{ procesoId: cex.id, esPrincipal: true }, ...otros.map((procesoId) => ({ procesoId, esPrincipal: false }))],
+        relacionados: [],
+        nivelAcceso,
+      });
+      const SIN_ACCESO = "El responsable técnico no tiene acceso a este documento restringido";
+      try {
+        await expect(editarCatalogo(e.documentoId, catalogo("restringido"), admin.usuarioId, { sql: tx, ahora })).rejects.toThrow(SIN_ACCESO);
+        expect((await tx`SELECT nivel_acceso FROM documentos WHERE id = ${e.documentoId}`)[0].nivel_acceso).toBe("general");
+        // Lo que no cambia quién lo ve se sigue editando.
+        await editarCatalogo(e.documentoId, catalogo("general"), admin.usuarioId, { sql: tx, ahora });
+
+        // Restringido y visto por el responsable desde ATE: quitar ATE lo dejaría sin verlo.
+        await tx`INSERT INTO usuario_procesos (usuario_id, proceso_id) VALUES (${responsable.usuarioId}, ${ate.id})`;
+        await editarCatalogo(e.documentoId, catalogo("restringido", [ate.id]), admin.usuarioId, { sql: tx, ahora });
+        await expect(editarCatalogo(e.documentoId, catalogo("restringido"), admin.usuarioId, { sql: tx, ahora })).rejects.toThrow(SIN_ACCESO);
+        const procesos = await tx`SELECT proceso_id FROM documento_proceso WHERE documento_id = ${e.documentoId} ORDER BY proceso_id`;
+        expect(procesos.map((p) => Number(p.proceso_id)).sort()).toEqual([cex.id, ate.id].sort());
+      } finally {
+        await e.limpiar();
+      }
+    }));
 });

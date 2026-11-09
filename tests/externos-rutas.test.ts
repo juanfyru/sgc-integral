@@ -25,17 +25,18 @@ vi.mock("@/db/cliente", async (original) => {
 vi.mock("@/lib/sesion-actual", () => ({ sesionDePeticion }));
 
 import { DELETE } from "@/app/api/externos/[versionId]/archivos/[archivoId]/route";
+import { GET as verArchivoDeEdicion } from "@/app/(app)/vigencia/externos/[id]/archivos/[archivoId]/[[...nombre]]/route";
 import { POST } from "@/app/api/externos/[versionId]/archivos/route";
 import { DELETE as quitarDelPanel } from "@/app/admin/api/archivos/[archivoId]/route";
 import { POST as subirAlPanel } from "@/app/admin/api/archivos/route";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { abrirEdicion } from "@/db/consultas/vigencia/externos";
+import { abrirEdicion, adoptarEdicion } from "@/db/consultas/vigencia/externos";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { pdfDePrueba } from "./utiles/pdf";
-import { sesionAdmin, sesionDe, usuarioDePrueba } from "./utiles/tramites";
+import { archivoPrincipal, sesionAdmin, sesionDe, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
-import { externoDePrueba } from "./utiles/vigencia";
+import { externoDePrueba, firmaDePrueba } from "./utiles/vigencia";
 
 const sql = obtenerSql();
 
@@ -216,5 +217,69 @@ describe("las rutas de archivos del panel no tocan la edición de un externo", (
       expect(borrado.status).toBe(409);
       expect(await borrado.json()).toEqual({ error: SE_ADOPTA });
       expect(await tx`SELECT 1 FROM archivos WHERE id = ${id}`).toHaveLength(1);
+    }));
+});
+
+describe("GET /vigencia/externos/[id]/archivos/[archivoId]: los archivos de la edición en borrador", () => {
+  const ver = (documentoId: number | string, archivoId: number | string) =>
+    verArchivoDeEdicion(new NextRequest(`http://localhost:3002/vigencia/externos/${documentoId}/archivos/${archivoId}/principal.pdf`), {
+      params: Promise.resolve({ id: String(documentoId), archivoId: String(archivoId), nombre: ["principal.pdf"] }),
+    });
+
+  it("401 sin sesión; lo abren quien lo gestiona y su responsable técnico, sin caché; 404 a los demás, a otro externo y fuera del borrador", () =>
+    revertida(sql, async (tx) => {
+      enCurso.sql = tx;
+      try {
+        const lider = await sesionDe(tx, "lider.cex");
+        const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+        const e = await externoDePrueba(tx, lider, { proceso: "CEX", edicion: "2017", responsableId: responsable.usuarioId });
+        const otro = await externoDePrueba(tx, lider, { proceso: "CEX", edicion: "2019" });
+        const { versionId } = await abrirEdicion(lider, e.documentoId, { edicion: "2023", fechaEdicion: null, resumenCambios: "Metas nuevas" }, { sql: tx });
+        const a = await archivoPrincipal(tx, versionId);
+        try {
+          como(null);
+          expect((await ver(e.documentoId, a.archivoId)).status).toBe(401);
+
+          for (const sesion of [lider, responsable]) {
+            como(sesion);
+            const r = await ver(e.documentoId, a.archivoId);
+            expect(r.status).toBe(200);
+            expect(r.headers.get("Content-Type")).toBe("application/pdf");
+            expect(r.headers.get("Cache-Control")).toBe("no-store");
+            expect(r.headers.get("Content-Disposition")).toMatch(/^inline; filename="principal\.pdf"/);
+            expect(Buffer.from(await r.arrayBuffer()).subarray(0, 5).toString()).toBe("%PDF-");
+          }
+          como(lider);
+          const descarga = await verArchivoDeEdicion(
+            new NextRequest(`http://localhost:3002/vigencia/externos/${e.documentoId}/archivos/${a.archivoId}/principal.pdf?descarga=1`),
+            { params: Promise.resolve({ id: String(e.documentoId), archivoId: String(a.archivoId), nombre: ["principal.pdf"] }) },
+          );
+          expect(descarga.headers.get("Content-Disposition")).toMatch(/^attachment;/);
+
+          // El líder de otro proceso y un Consulta cualquiera no lo ven: no existe.
+          for (const sesion of [await sesionDe(tx, "lider.gth"), await usuarioDePrueba(tx, { rol: "consulta" })]) {
+            como(sesion);
+            expect((await ver(e.documentoId, a.archivoId)).status).toBe(404);
+          }
+          como(lider);
+          // El archivo no es de ese externo, o el id no es un número.
+          expect((await ver(otro.documentoId, a.archivoId)).status).toBe(404);
+          expect((await ver("abc", a.archivoId)).status).toBe(404);
+          expect((await ver(e.documentoId, "abc")).status).toBe(404);
+          // Adoptada, la edición ya no está en borrador: sus archivos los sirve la ficha de lectura.
+          await adoptarEdicion(
+            lider,
+            { versionId, pedirAcuses: false, requiereSocializacion: false, credenciales: { clave: "ok" } },
+            { sql: tx, verificar: firmaDePrueba },
+          );
+          expect((await ver(e.documentoId, a.archivoId)).status).toBe(404);
+        } finally {
+          await a.limpiar();
+          await e.limpiar();
+          await otro.limpiar();
+        }
+      } finally {
+        enCurso.sql = null;
+      }
     }));
 });

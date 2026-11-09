@@ -19,7 +19,7 @@ import { exigirVerificacionAbierta } from "./distribucion/verificacion-abierta";
 import { alDejarDeSerVigente } from "./distribucion/version-vigencia";
 import { obtenerConfigDocumental } from "./config-documental";
 import { ErrorTramite, enTransaccion } from "./flujo/contrato";
-import { EXTERNO_CONSERVA_TIPO, exigirInterno, exigirTipoDeInterno } from "./origen";
+import { EXTERNO_CONSERVA_TIPO, exigirInterno, exigirQueElResponsableTecnicoLoVea, exigirTipoDeInterno } from "./origen";
 import { vigenciaEnLista, vigenciaPorDocumento, type VigenciaEnLista } from "./vigencia/fragmentos";
 
 type Cliente = Sql | TransactionSql;
@@ -539,6 +539,8 @@ export async function editarCatalogo(
     const cambiaron = (Object.keys(antes) as (keyof typeof antes)[]).filter(
       (dato) => JSON.stringify(antes[dato]) !== JSON.stringify(despues[dato]),
     );
+    // Lo restringido o un cambio de procesos tampoco puede dejar a un externo sin un responsable técnico que lo vea.
+    if (cambiaron.includes("nivelAcceso") || cambiaron.includes("asociaciones")) await exigirQueElResponsableTecnicoLoVea(tx, documentoId);
     if (cambiaron.length === 0) return;
     const solo = (catalogo: typeof antes) => Object.fromEntries(cambiaron.map((dato) => [dato, catalogo[dato]]));
     await tx`UPDATE documentos SET actualizado_en = now() WHERE id = ${documentoId}`;

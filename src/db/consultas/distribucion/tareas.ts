@@ -1,5 +1,5 @@
 import { obtenerSql, type Cliente } from "@/db/cliente";
-import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
+import { obtenerConfigDocumental, type ConfigDocumental } from "@/db/consultas/config-documental";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { filtroAcceso, filtroPuntos } from "@/lib/alcance";
 import { numeroDeCopia } from "@/lib/distribucion/copias";
@@ -127,12 +127,13 @@ export async function tareasDeSocializacion(sesion: SesionFlujo, opciones?: { sq
  */
 export async function tareasDeVerificacion(
   sesion: SesionFlujo,
-  opciones?: { sql?: Cliente; ahora?: Date },
+  /** `config`, si quien llama ya la pidió: «Mis tareas» la lee una vez para todas sus fuentes. */
+  opciones?: { sql?: Cliente; ahora?: Date; config?: Promise<ConfigDocumental> | ConfigDocumental },
 ): Promise<Tarea[]> {
   if (!puede(sesion, "verificaciones.realizar")) return [];
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
-  const { distribucion } = await obtenerConfigDocumental({ sql });
+  const { distribucion } = await (opciones?.config ?? obtenerConfigDocumental({ sql }));
   const filas = await sql`
     SELECT pu.id, pu.nombre,
       (SELECT max(ve.cerrada_en) FROM verificaciones ve WHERE ve.punto_uso_id = pu.id AND ve.estado = 'cerrada') AS ultima

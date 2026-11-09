@@ -27,6 +27,7 @@ export { abrirEdicion, descartarEdicion, editarControlExterno, editarEdicion, re
 export { adoptarEdicion, alAdoptar, validarAdopcion } from "./externos/adopcion";
 export { registrarVerificacion, retirarExterno } from "./externos/verificacion";
 export {
+  archivoDeBorradorExterno,
   archivoDeEdicion,
   autorizarArchivoDeEdicion,
   esResponsableTecnico,

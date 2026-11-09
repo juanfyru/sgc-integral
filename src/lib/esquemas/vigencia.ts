@@ -107,9 +107,11 @@ export const EsquemaEdicion = z
   })
   .strict();
 
+/** `huella`: la que mostró el diálogo; no llega si no había archivo principal. */
 export const EsquemaAdoptar = z
   .object({
     versionId: id,
+    huella: z.string().regex(/^[0-9a-f]{64}$/, "La huella del archivo no es válida").optional(),
     pedirAcuses: z.literal("on").optional(),
     requiereSocializacion: z.literal("on").optional(),
     ...firma,

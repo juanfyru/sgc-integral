@@ -7,7 +7,7 @@
  */
 import type { PendingQuery, Row } from "postgres";
 import type { Cliente } from "@/db/cliente";
-import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
+import { obtenerConfigDocumental, type ConfigDocumental } from "@/db/consultas/config-documental";
 import { EVENTOS_SIN_CAMBIO_DE_ETAPA, diaDeEtapa } from "@/lib/tramites/dia-de-etapa";
 import { ETAPAS_ABIERTAS, type Autoridad, type Etapa } from "@/lib/tramites/tipos";
 import { fechaBase, proximaRevision, type OrigenVigencia } from "@/lib/vigencia/plazo";
@@ -40,8 +40,24 @@ export type FilaSemaforo = {
   edicionPendiente: { desde: Date } | null;
 };
 
-/** Una sola sentencia, con un `LATERAL` por fuente; `condicion` filtra sobre `documentos d` y `procesos p`. */
-function consultaSemaforo(sql: Cliente, condicion: PendingQuery<Row[]>) {
+/**
+ * Lo que el cascarón necesita además de la vigencia para repartir las tareas y la insignia de una persona con una sola
+ * lectura (resolución 1 de la Tarea 7).
+ */
+export type FilaDePersona = FilaSemaforo & {
+  /** El responsable técnico de un externo; null en un interno. */
+  responsableTecnicoId: number | null;
+  /** Está en la revisión anual abierta: la tarea de la campaña lo cubre (spec 13C §7.5). */
+  enRevisionAnual: boolean;
+  /** Su proceso propietario está activo y tiene un líder activo: sus tareas no son del Admin SGC (F13A-DC2). */
+  procesoConLider: boolean;
+};
+
+/**
+ * Una sola sentencia, con un `LATERAL` por fuente; `condicion` filtra sobre `documentos d` y `procesos p`. `marcas`
+ * añade las columnas de `FilaDePersona`.
+ */
+function consultaSemaforo(sql: Cliente, condicion: PendingQuery<Row[]>, marcas = false) {
   return sql`
     SELECT d.id, d.codigo, d.titulo, d.origen, d.meses_revision AS meses_documento,
       d.proxima_revision_fijada::text AS fijada, d.fijada_en, d.fijada_nota, uf.nombre AS fijada_por,
@@ -55,6 +71,12 @@ function consultaSemaforo(sql: Cliente, condicion: PendingQuery<Row[]>) {
       tra.id AS tramite_id, tra.numero AS tramite_numero, tra.etapa AS tramite_etapa, tra.vence_en AS tramite_vence_en,
       tra.entrada AS tramite_entrada,
       imp.cambio_id, imp.norma
+      ${marcas
+        ? sql`, ex.responsable_id AS responsable_tecnico_id, ${enRevisionAnualAbierta(sql)} AS en_revision_anual,
+          (p.activo AND EXISTS (SELECT 1 FROM usuario_procesos lider_up
+            JOIN usuarios lider_u ON lider_u.id = lider_up.usuario_id AND lider_u.activo AND lider_u.rol = 'lider_proceso'
+            WHERE lider_up.proceso_id = p.id)) AS proceso_con_lider`
+        : sql``}
     FROM documentos d
     JOIN documento_versiones v ON v.documento_id = d.id AND v.estado = 'vigente'
     JOIN tipos_documento t ON t.id = d.tipo_id
@@ -183,13 +205,35 @@ function aFila(f: Row, ahora: Date, atencionDias: number, zona: string): FilaSem
 /**
  * La vigencia de cada documento con versión vigente que cumple `condicion` (un `WHERE` sobre `documentos d` y
  * `procesos p`, su proceso propietario por la asociación principal), en el orden del código. Quien la compone
- * pone en `condicion` su regla de visibilidad: aquí no se decide quién ve qué.
+ * pone en `condicion` su regla de visibilidad: aquí no se decide quién ve qué. `config`, si ya se leyó.
  */
-export async function columnasDeVigencia(sql: Cliente, condicion: PendingQuery<Row[]>, ahora: Date): Promise<FilaSemaforo[]> {
-  const config = await obtenerConfigDocumental({ sql });
+export async function columnasDeVigencia(
+  sql: Cliente,
+  condicion: PendingQuery<Row[]>,
+  ahora: Date,
+  opciones?: { config?: ConfigDocumental },
+): Promise<FilaSemaforo[]> {
+  const config = opciones?.config ?? (await obtenerConfigDocumental({ sql }));
   const zona = zonaHoraria();
   const filas = await consultaSemaforo(sql, condicion);
   return filas.map((f) => aFila(f, ahora, config.vigencia.atencionDias, zona));
+}
+
+/** La misma lectura con las marcas de `FilaDePersona`, sobre la configuración ya leída. */
+export async function filasDePersona(
+  sql: Cliente,
+  condicion: PendingQuery<Row[]>,
+  ahora: Date,
+  config: ConfigDocumental,
+): Promise<FilaDePersona[]> {
+  const zona = zonaHoraria();
+  const filas = await consultaSemaforo(sql, condicion, true);
+  return filas.map((f) => ({
+    ...aFila(f, ahora, config.vigencia.atencionDias, zona),
+    responsableTecnicoId: f.responsable_tecnico_id === null ? null : Number(f.responsable_tecnico_id),
+    enRevisionAnual: f.en_revision_anual as boolean,
+    procesoConLider: f.proceso_con_lider as boolean,
+  }));
 }
 
 /**

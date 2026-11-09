@@ -363,6 +363,26 @@ export async function autorizarArchivoDeEdicion(
   return { ok: true, destino: { versionId, codigo: s.codigo, numero: v.numero as number } };
 }
 
+/**
+ * Un archivo de la edición en borrador del externo `documentoId`, para quien ve su página de control
+ * (`puedeVerExterno`): quien adopta abre lo que firma, porque la ficha de lectura no sirve un borrador (spec 13C §8.8).
+ * null si la persona no lo ve, si el archivo es de otro externo o de una edición que ya no está en borrador (los de la
+ * vigente los sirve la ficha de lectura), o si es un acta.
+ */
+export async function archivoDeBorradorExterno(
+  documentoId: number,
+  archivoId: number,
+  sesion: SesionFlujo,
+  opciones?: { sql?: Cliente },
+): Promise<{ ruta: string; mime: string; nombreOriginal: string } | null> {
+  const sql = opciones?.sql ?? obtenerSql();
+  if (!(await puedeVerExterno(documentoId, sesion, { sql }))) return null;
+  const [a] = await sql`SELECT a.ruta, a.mime, a.nombre_original FROM archivos a
+    JOIN documento_versiones v ON v.id = a.version_id
+    WHERE a.id = ${archivoId} AND v.documento_id = ${documentoId} AND v.estado = 'borrador' AND a.rol = ANY(${ROLES_ARCHIVO_LISTA})`;
+  return a ? { ruta: a.ruta as string, mime: a.mime as string, nombreOriginal: a.nombre_original as string } : null;
+}
+
 /** Un archivo de la lista (principal, editable o anexo) de esa versión; null si es de otra o es un acta. */
 export async function archivoDeEdicion(
   versionId: number,
