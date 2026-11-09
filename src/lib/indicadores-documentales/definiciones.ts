@@ -16,7 +16,7 @@ export function dentroDelPlazo(docs: { vencida: boolean | null }[]): Medicion & 
   return { ...porcentaje(conDato.filter((d) => !d.vencida).length, conDato.length), sinDato: docs.length - conDato.length };
 }
 
-const unDecimal = (n: number) => Math.round(n * 10) / 10;
+export const unDecimal = (n: number) => Math.round(n * 10) / 10;
 const promedioDe = (valores: number[]) => unDecimal(valores.reduce((a, b) => a + b, 0) / valores.length);
 
 function medianaDe(valores: number[]): number {

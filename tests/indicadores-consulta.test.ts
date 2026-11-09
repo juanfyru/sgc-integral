@@ -18,12 +18,14 @@ import { obtenerSql } from "@/db/cliente";
 import { resumenAcuses } from "@/db/consultas/distribucion/acuses";
 import { estadoDePuntos } from "@/db/consultas/distribucion/verificaciones-resumen";
 import { transicionar } from "@/db/consultas/tramites-flujo";
-import { indicadoresDocumentales, type IndicadorMedido, type ResultadoIndicadores } from "@/db/consultas/vigencia/indicadores";
-import { INDICADORES, type Indicador } from "@/lib/indicadores-documentales/metas";
+import { indicadoresDocumentales } from "@/db/consultas/vigencia/indicadores";
+import { INDICADORES, type Indicador, type IndicadorMedido, type ResultadoIndicadores } from "@/lib/indicadores-documentales/metas";
 import { periodoActual } from "@/lib/indicadores-documentales/periodo";
 import { fechaEnZona, finDeFecha } from "@/lib/tramites/plazos";
 import { construirExcelIndicadores } from "@/lib/vigencia/indicadores-excel";
 import { zonaHoraria } from "@/lib/zona-horaria";
+import { textoValor } from "@/lib/indicadores-documentales/textos";
+import { puntoDePrueba, verificarPunto } from "./utiles/distribucion";
 import { opc, sesionAdmin, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 import { externoDePrueba, sinFechaDeRevision, vigenteFuera } from "./utiles/vigencia";
@@ -235,7 +237,48 @@ describe("indicadoresDocumentales", () => {
     const media = (await indicadoresDocumentales(admin, { periodo: "2026", procesoId: gth }, { sql: tx, ahora }))!;
     expect(de(media, "dentro_plazo").meta).toBe(50);
     const fila = media.dentroPorProceso.find((p) => p.procesoId === gth)!;
-    expect(fila.cumple).toBe(fila.valor === null ? null : fila.valor >= 50);
+    // Con la razón exacta, no con el entero redondeado.
+    const conFecha = fila.vigentes - fila.sinFecha;
+    expect(fila.cumple).toBe(conFecha === 0 ? null : fila.alDia * 100 >= 50 * conFecha);
+    const dentro = de(media, "dentro_plazo");
+    expect(dentro.cumple).toBe(dentro.denominador === 0 ? null : dentro.numerador * 100 >= 50 * dentro.denominador);
+  }));
+
+  it("la conformidad toma la cifra y el veredicto de la 13B: 2 de 3 frente a un umbral de 67 no cumple y se lee «66,6 %»", () => revertida(sql, async (tx) => {
+    // Sin procesos, el líder ve solo los puntos de los que es responsable: los del test.
+    const lider = await usuarioDePrueba(tx, { rol: "lider_proceso" });
+    const admin = await sesionAdmin(tx);
+    await fijarMeta(tx, "umbral_conformidad_pct", "67");
+    for (const respuesta of ["conforme", "conforme", "no_conforme"] as const) {
+      const punto = await puntoDePrueba(tx, { responsable: lider });
+      await verificarPunto(tx, { verificador: admin, punto, ahora, respuesta });
+    }
+    const actual = (await estadoDePuntos(lider, { sql: tx, ahora })).conformidad;
+    expect(actual).toMatchObject({ porcentaje: 67, cumple: false, puntos: 3 });
+    const r = (await indicadoresDocumentales(lider, { periodo: "2026" }, { sql: tx, ahora }))!;
+    expect(de(r, "conformidad")).toMatchObject({ valor: actual.porcentaje, cumple: actual.cumple, numerador: 2, denominador: 3, meta: 67 });
+    expect(textoValor(de(r, "conformidad"))).toBe("66,6 %");
+  }));
+
+  it("con un proceso elegido, la aprobación y las etapas en plazo cuentan solo los trámites de ese proceso", () => revertida(sql, async (tx) => {
+    const gth = await procesoId(tx, "GTH");
+    const cex = await procesoId(tx, "CEX");
+    const admin = await sesionAdmin(tx);
+    // Dos trámites publicados en un año sin datos de la demo: una modificación en GTH y una creación en CEX.
+    for (const t of [await tramiteEn(tx, "publicacion"), await tramiteEn(tx, "publicacion", { tipo: "crear" })]) {
+      await transicionar(
+        t.admin,
+        { tramiteId: t.tramiteId, accion: "publicar", etapaEsperada: "publicacion", rondaEsperada: t.ronda, credenciales: { clave: "x" } },
+        opc(tx, "2090-01-20T15:00:00Z"),
+      );
+    }
+    const en = async (procesoId?: number) =>
+      (await indicadoresDocumentales(admin, { periodo: "2090", procesoId }, { sql: tx, ahora: new Date("2090-02-01T15:00:00Z") }))!;
+    for (const [r, esperado] of [[await en(), 2], [await en(gth), 1], [await en(cex), 1]] as const) {
+      expect(r.tramites.publicados).toBe(esperado);
+      expect(de(r, "aprobacion").denominador).toBe(esperado);
+      expect(de(r, "etapas").denominador).toBe(esperado);
+    }
   }));
 
   it("acuses y conformidad salen de las consultas de la 13B con la sesión; los puntos de uso no se desglosan por proceso", () => revertida(sql, async (tx) => {
@@ -281,7 +324,10 @@ describe("construirExcelIndicadores", () => {
         { clave: "acuses", nombre: "Acuses de lectura confirmados", unidad: "pct", valor: null, numerador: 0, denominador: 0, meta: 90, cumple: null, detalle: null },
       ],
       vencidosPorProceso: [{ procesoId: 1, sigla: "GTH", proceso: "Gestión del Talento Humano", vencidos: 1 }],
-      dentroPorProceso: [{ procesoId: 1, sigla: "GTH", proceso: "Gestión del Talento Humano", vigentes: 14, alDia: 11, valor: 85, cumple: false, sinFecha: 1 }],
+      dentroPorProceso: [
+        { procesoId: 1, sigla: "GTH", proceso: "Gestión del Talento Humano", vigentes: 14, alDia: 11, valor: 85, cumple: false, sinFecha: 1 },
+        { procesoId: 2, sigla: "SGC", proceso: "Sistema de Gestión de Calidad", vigentes: 19, alDia: 18, valor: 95, cumple: false, sinFecha: 0 },
+      ],
       vencidos: [{
         documentoId: 9, codigo: "GTH-PR-09", titulo: "=HYPERLINK(\"http://x\")", origen: "interno", procesoId: 1, sigla: "GTH",
         proceso: "Gestión del Talento Humano", proximaRevision: finDeFecha("2026-01-10", ZONA), dias: 302, tramite: "SOL-2026-004",
@@ -303,6 +349,8 @@ describe("construirExcelIndicadores", () => {
     expect(filas("Indicadores")[5]).toEqual(["Documentos dentro de su plazo de revisión", "94 %", "≥ 95 %", "No cumple", 94, 100, "2 documentos sin fecha de revisión"]);
     expect(filas("Indicadores")[6].slice(0, 4)).toEqual(["Acuses de lectura confirmados", "Sin dato", "≥ 90 %", "Sin dato"]);
     expect(filas("Por proceso")[5]).toEqual(["GTH", "Gestión del Talento Humano", 14, 11, 1, 2, "85 %", "No cumple"]);
+    // 18 de 19 no alcanza la meta de 95: la cifra no se redondea a ella.
+    expect(filas("Por proceso")[6]).toEqual(["SGC", "Sistema de Gestión de Calidad", 19, 18, 0, 1, "94,7 %", "No cumple"]);
     expect(filas("Vencidos")[5]).toEqual(["GTH-PR-09", "'=HYPERLINK(\"http://x\")", "Interno", "GTH · Gestión del Talento Humano", "2026-01-10", 302, "SOL-2026-004"]);
   });
 });

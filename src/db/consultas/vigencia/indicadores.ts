@@ -16,11 +16,23 @@ import {
   etapasEnPlazo,
   porcentaje,
   tiempoDeAprobacion,
+  unDecimal,
   vencidosPorProceso,
   type Medicion,
 } from "@/lib/indicadores-documentales/definiciones";
-import { NOMBRE_INDICADOR, UNIDAD, cumple, metaDe, type Indicador } from "@/lib/indicadores-documentales/metas";
-import { periodoActual, periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
+import {
+  NOMBRE_INDICADOR,
+  UNIDAD,
+  cumple,
+  cumplePorcentaje,
+  metaDe,
+  type Indicador,
+  type IndicadorMedido,
+  type ResultadoIndicadores,
+  type VencidoIndicador,
+} from "@/lib/indicadores-documentales/metas";
+import { periodoActual, periodoDe } from "@/lib/indicadores-documentales/periodo";
+import { textoDias } from "@/lib/indicadores-documentales/textos";
 import { puede } from "@/lib/permisos";
 import { cuenta } from "@/lib/plural";
 import { EVENTOS_SIN_CAMBIO_DE_ETAPA } from "@/lib/tramites/dia-de-etapa";
@@ -32,60 +44,12 @@ import { listarSemaforo, type FilaSemaforo } from "./semaforo";
 
 const MS_DIA = 86_400_000;
 
-export type IndicadorMedido = {
-  clave: Indicador;
-  nombre: string;
-  unidad: "pct" | "dias" | "conteo";
-  valor: number | null;
-  numerador: number;
-  denominador: number;
-  meta: number;
-  cumple: boolean | null;
-  /** «mediana 21 días · desde la solicitud: 27 días», «3 etapas sin dato»… */
-  detalle: string | null;
-};
-
-/** Un documento con la revisión vencida que la persona ve; `tramite` es el número del trámite abierto, si lo tiene. */
-export type VencidoIndicador = {
-  documentoId: number;
-  codigo: string;
-  titulo: string;
-  origen: "interno" | "externo";
-  procesoId: number;
-  sigla: string;
-  proceso: string;
-  proximaRevision: Date | null;
-  /** Días desde el vencimiento. */
-  dias: number | null;
-  tramite: string | null;
-};
-
-export type ResultadoIndicadores = {
-  periodo: Periodo;
-  procesoId: number | null;
-  indicadores: IndicadorMedido[];
-  vencidosPorProceso: { procesoId: number; sigla: string; proceso: string; vencidos: number }[];
-  /** `alDia`: dentro del plazo; `sinFecha`: vigentes sin próxima revisión, fuera del porcentaje. */
-  dentroPorProceso: {
-    procesoId: number;
-    sigla: string;
-    proceso: string;
-    vigentes: number;
-    alDia: number;
-    valor: number | null;
-    cumple: boolean | null;
-    sinFecha: number;
-  }[];
-  vencidos: VencidoIndicador[];
-  tramites: { publicados: number; enCurso: number };
-};
-
-/** Los pasos que cierran una etapa: los de `transicionar`, menos los que dejan el trámite donde estaba. */
+/**
+ * Los pasos que cierran una etapa: los de `transicionar`, menos los que dejan el trámite donde estaba. `transicionar`
+ * (`tramites-flujo.ts`) lo decide en ejecución (`hacia !== previo.etapa`) al guardar `venceEn`; esta lista debe decir lo
+ * mismo: una acción nueva que no cambie de etapa entra en `EVENTOS_SIN_CAMBIO_DE_ETAPA`.
+ */
 const ACCIONES_QUE_CIERRAN = ACCIONES.filter((a) => !EVENTOS_SIN_CAMBIO_DE_ETAPA.includes(a));
-
-const unDecimal = (n: number) => Math.round(n * 10) / 10;
-const numero = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 1 });
-const textoDias = (n: number) => `${numero.format(n)} ${n === 1 ? "día" : "días"}`;
 
 /**
  * Los trámites de los procesos de la persona y del proceso elegido, sobre `tramites t`; el de un documento restringido
@@ -141,9 +105,11 @@ export async function indicadoresDocumentales(
   ]);
 
   const metas = { metas: config.metas, umbralConformidadPct: config.distribucion.umbralConformidadPct };
+  // Un porcentaje cumple con la razón exacta, no con el entero que se muestra (94,7 % no alcanza 95).
   const medir = (clave: Indicador, m: Medicion, detalle: string | null): IndicadorMedido => {
     const meta = metaDe(clave, metas);
-    return { clave, nombre: NOMBRE_INDICADOR[clave], unidad: UNIDAD[clave], ...m, meta, cumple: cumple(clave, m.valor, meta), detalle };
+    const veredicto = UNIDAD[clave] === "pct" ? cumplePorcentaje(clave, m, meta) : cumple(clave, m.valor, meta);
+    return { clave, nombre: NOMBRE_INDICADOR[clave], unidad: UNIDAD[clave], ...m, meta, cumple: veredicto, detalle };
   };
 
   // Por la fecha, como el porcentaje del semáforo: un documento en trámite sigue vencido o no por debajo.
@@ -204,7 +170,13 @@ export async function indicadoresDocumentales(
         ? null
         : `${cuenta(acuses.versiones.length, "versión publicada", "versiones publicadas")} en el periodo`,
     ),
-    medir("conformidad", conformidadActual, textoConformidad(conformidadPeriodo, procesoId !== undefined)),
+    // La cifra, el veredicto y el umbral son los de la 13B (spec 13C §11.1): el mismo que dice Distribución.
+    {
+      ...medir("conformidad", conformidadActual, textoConformidad(conformidadPeriodo, procesoId !== undefined)),
+      valor: puntos.conformidad.porcentaje,
+      meta: puntos.conformidad.umbral,
+      cumple: puntos.conformidad.cumple,
+    },
     medir("externos", externos, externos.sinDato > 0 ? `${cuenta(externos.sinDato, "externo", "externos")} sin fecha de verificación` : null),
     medir("etapas", etapas, etapas.sinDato > 0 ? `${cuenta(etapas.sinDato, "etapa", "etapas")} sin dato` : null),
   ];
@@ -225,7 +197,7 @@ export async function indicadoresDocumentales(
         vigentes: p.vigentes,
         alDia: p.dentro.numerador,
         valor: p.dentro.valor,
-        cumple: cumple("dentro_plazo", p.dentro.valor, metaDentro),
+        cumple: cumplePorcentaje("dentro_plazo", p.dentro, metaDentro),
         sinFecha: p.sinDato,
       }))
       // Lo que más falta, primero; sin dato, al final.

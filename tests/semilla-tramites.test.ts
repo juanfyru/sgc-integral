@@ -195,7 +195,8 @@ describe("la historia sembrada", () => {
     // «los detalles sembrados tienen la forma de los que escribe el flujo real».
     const { venceEn, ...devolucion } = eventos[4].detalle;
     expect(devolucion).toEqual({ observaciones: [1, 2] });
-    expect(venceEn === undefined || typeof venceEn === "string").toBe(true);
+    // Ausente en una demo sembrada antes de la Tarea 12; la Tarea 15 aprieta esta rama al resembrar.
+    expect(["undefined", "string"]).toContain(typeof venceEn);
   });
 
   it("el trámite de GBS omitió el visto bueno y llegó a publicación con tres firmas de una huella", async () => {
@@ -271,7 +272,8 @@ describe("la historia sembrada", () => {
       expect(await claves(sembrado.id)).toEqual(await claves(t.tramiteId));
       // La semilla guarda una fecha real, no un nulo por un `previo` sin fecha límite.
       const limites = await tx`SELECT detalle -> 'venceEn' AS vence FROM tramite_eventos WHERE tramite_id = ${sembrado.id} AND detalle ? 'venceEn'`;
-      expect(limites.length > 0 && limites.every((e) => typeof e.vence === "string")).toBe(true);
+      expect(limites).not.toHaveLength(0);
+      for (const e of limites) expect(typeof e.vence).toBe("string");
       const publicar = (await tx`SELECT detalle FROM tramite_eventos WHERE tramite_id = ${sembrado.id} AND tipo = 'publicar'`)[0];
       expect(publicar.detalle.acuses).toEqual({ creados: expect.any(Number), porFirma: expect.any(Number) });
     } finally {

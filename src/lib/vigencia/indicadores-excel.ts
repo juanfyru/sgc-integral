@@ -1,15 +1,13 @@
 import ExcelJS from "exceljs";
-import type { IndicadorMedido, ResultadoIndicadores, VencidoIndicador } from "@/db/consultas/vigencia/indicadores";
 import { agregarHoja, type Columna } from "@/lib/distribucion/hoja-excel";
-import { textoCumple, textoMeta, textoValor } from "@/lib/indicadores-documentales/textos";
+import type { IndicadorMedido, ResultadoIndicadores, VencidoIndicador } from "@/lib/indicadores-documentales/metas";
+import { mayuscula, textoCumple, textoMeta, textoPorcentaje, textoValor } from "@/lib/indicadores-documentales/textos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 
 /** `proceso`: el nombre del proceso elegido, o «todos». */
 export type MetaIndicadores = { hospital: string; generadoEn: string; proceso: string; zona: string };
 
 type FilaProceso = ResultadoIndicadores["dentroPorProceso"][number];
-
-const mayuscula = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 const INDICADORES: Array<Columna<IndicadorMedido>> = [
   { cab: "Indicador", ancho: 42, valor: (i) => i.nombre },
@@ -21,14 +19,22 @@ const INDICADORES: Array<Columna<IndicadorMedido>> = [
   { cab: "Detalle", ancho: 56, valor: (i) => i.detalle },
 ];
 
-const POR_PROCESO: Array<Columna<FilaProceso>> = [
+/** `meta`: la de documentos dentro del plazo, para que la cifra no contradiga el veredicto. */
+const porProceso = (meta: number): Array<Columna<FilaProceso>> => [
   { cab: "Sigla", ancho: 8, valor: (p) => p.sigla },
   { cab: "Proceso", ancho: 36, valor: (p) => p.proceso },
   { cab: "Vigentes", ancho: 10, valor: (p) => p.vigentes },
   { cab: "Dentro del plazo", ancho: 16, valor: (p) => p.alDia },
   { cab: "Sin fecha de revisión", ancho: 20, valor: (p) => p.sinFecha },
   { cab: "Vencidos", ancho: 10, valor: (p) => p.vigentes - p.sinFecha - p.alDia },
-  { cab: "Porcentaje", ancho: 12, valor: (p) => (p.valor === null ? null : `${p.valor} %`) },
+  {
+    cab: "Porcentaje",
+    ancho: 12,
+    valor: (p) =>
+      p.valor === null
+        ? null
+        : textoPorcentaje("dentro_plazo", { valor: p.valor, numerador: p.alDia, denominador: p.vigentes - p.sinFecha, cumple: p.cumple }, meta),
+  },
   { cab: "Cumple", ancho: 12, valor: (p) => mayuscula(textoCumple(p.cumple)) },
 ];
 
@@ -57,7 +63,8 @@ export async function construirExcelIndicadores(r: ResultadoIndicadores, meta: M
     ...base,
     detalle: `${filtro} — Trámites publicados en el periodo: ${r.tramites.publicados} · en curso: ${r.tramites.enCurso} — Los de estado, a la fecha de generación`,
   });
-  agregarHoja(wb, "Por proceso", "Documentos dentro del plazo y vencidos, por proceso", POR_PROCESO, r.dentroPorProceso, {
+  const metaDentro = r.indicadores.find((i) => i.clave === "dentro_plazo")?.meta ?? 0;
+  agregarHoja(wb, "Por proceso", "Documentos dentro del plazo y vencidos, por proceso", porProceso(metaDentro), r.dentroPorProceso, {
     ...base,
     detalle: `${filtro} — A la fecha de generación`,
   });

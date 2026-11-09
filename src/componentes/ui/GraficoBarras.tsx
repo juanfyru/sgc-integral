@@ -13,6 +13,7 @@ export function GraficoBarras({
   descripcion,
   titulo = "Consultas por día",
   columnas = ["Fecha", "Consultas"],
+  hueco,
 }: {
   serie: PuntoSerie[];
   /** El `aria-label` del gráfico. */
@@ -20,8 +21,11 @@ export function GraficoBarras({
   /** El título de la tabla equivalente. */
   titulo?: string;
   columnas?: readonly [string, string];
+  /** La parte de cada franja (0 a 1) que queda vacía entre barra y barra; sin ella, tres unidades, como los días. */
+  hueco?: number;
 }) {
-  const barras = calcularBarras(serie, { ancho: ANCHO, alto: ALTO, separacion: 3 });
+  const separacion = hueco === undefined ? 3 : (ANCHO / Math.max(serie.length, 1)) * hueco;
+  const barras = calcularBarras(serie, { ancho: ANCHO, alto: ALTO, separacion });
   const total = serie.reduce((s, p) => s + p.conteo, 0);
 
   if (serie.length === 0)

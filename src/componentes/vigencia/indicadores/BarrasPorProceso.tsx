@@ -1,5 +1,5 @@
 import { GraficoBarras } from "@/componentes/ui/GraficoBarras";
-import type { ResultadoIndicadores } from "@/db/consultas/vigencia/indicadores";
+import type { ResultadoIndicadores } from "@/lib/indicadores-documentales/metas";
 import { cuenta } from "@/lib/plural";
 
 /** El ancho de cada barra en el gráfico; con pocos procesos el gráfico no ocupa toda la caja. */
@@ -8,6 +8,8 @@ const REM_POR_BARRA = 4.5;
 /**
  * Los documentos con revisión vencida de cada proceso (spec 13C §11.4): `GraficoBarras` con una barra por proceso (la
  * sigla va en `fecha`) y su tabla equivalente; las etiquetas visibles repiten la tabla y por eso se ocultan al lector.
+ * Son categorías, no días: cada barra deja un hueco del 30 % de su franja, para que dos cifras iguales no se vean como
+ * un solo bloque.
  */
 export function BarrasPorProceso({ filas }: { filas: ResultadoIndicadores["vencidosPorProceso"] }) {
   const total = filas.reduce((s, p) => s + p.vencidos, 0);
@@ -25,6 +27,7 @@ export function BarrasPorProceso({ filas }: { filas: ResultadoIndicadores["venci
             descripcion={`Documentos con revisión vencida por proceso: ${total} en ${cuenta(filas.length, "proceso", "procesos")}.`}
             titulo="Documentos con revisión vencida por proceso"
             columnas={["Proceso", "Vencidos"]}
+            hueco={0.3}
           />
           <div
             aria-hidden="true"

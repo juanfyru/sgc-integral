@@ -51,6 +51,7 @@ export default async function PaginaIndicadores({
   // El Semáforo muestra «Vencida» solo lo que no está en trámite: lo demás lo cuenta aparte.
   const enSemaforo = r.vencidos.filter((v) => v.tramite === null).length;
   const enTramite = r.vencidos.length - enSemaforo;
+  const metaDentro = r.indicadores.find((i) => i.clave === "dentro_plazo")?.meta ?? 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -92,9 +93,10 @@ export default async function PaginaIndicadores({
         </p>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      {/* Uno debajo del otro, a todo el ancho; lado a lado solo desde 2xl, y cada uno con su altura. */}
+      <div className="grid grid-cols-1 items-start gap-6 2xl:grid-cols-2">
         <BarrasPorProceso filas={r.vencidosPorProceso} />
-        <TablaPorProceso filas={r.dentroPorProceso} />
+        <TablaPorProceso filas={r.dentroPorProceso} meta={metaDentro} />
       </div>
 
       <p className="text-sm text-muted-foreground">

@@ -1,6 +1,6 @@
 import { Insignia } from "@/componentes/ui/Insignia";
 import { TarjetaCifra } from "@/componentes/ui/TarjetaCifra";
-import type { IndicadorMedido, ResultadoIndicadores } from "@/db/consultas/vigencia/indicadores";
+import type { IndicadorMedido, ResultadoIndicadores } from "@/lib/indicadores-documentales/metas";
 import { estadoDeCumple, textoCumple, textoMeta, textoValor } from "@/lib/indicadores-documentales/textos";
 
 /**

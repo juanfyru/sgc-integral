@@ -5,7 +5,8 @@ export type Periodo = { clave: string; desde: Date; hasta: Date; etiqueta: strin
 const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 const ORDINAL = ["", "primer", "segundo", "tercer", "cuarto"];
 
-const dos = (n: number) => String(n).padStart(2, "0");
+/** «07»: el mes o el día con dos cifras. */
+export const dos = (n: number) => String(n).padStart(2, "0");
 
 /** Periodo del mes `primero` al mes `ultimo` (1-12) del año, del inicio al fin del día en la zona. */
 function entre(clave: string, anio: number, primero: number, ultimo: number, etiqueta: string, zona: string): Periodo {

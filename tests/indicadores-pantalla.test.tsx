@@ -39,17 +39,18 @@ import { TarjetasIndicadores } from "@/componentes/vigencia/indicadores/Tarjetas
 import { pestanasVisibles } from "@/componentes/vigencia/PestanasVigencia";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import type { IndicadorMedido, ResultadoIndicadores } from "@/db/consultas/vigencia/indicadores";
-import { INDICADORES, NOMBRE_INDICADOR, UNIDAD } from "@/lib/indicadores-documentales/metas";
+import { INDICADORES, NOMBRE_INDICADOR, UNIDAD, type IndicadorMedido, type ResultadoIndicadores } from "@/lib/indicadores-documentales/metas";
 import { MATRIZ } from "@/lib/permisos";
 import type { SesionValida } from "@/lib/sesion";
 import { finDeFecha } from "@/lib/tramites/plazos";
+import { zonaHoraria } from "@/lib/zona-horaria";
+import { GraficoBarras } from "@/componentes/ui/GraficoBarras";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 import { vigenteFuera } from "./utiles/vigencia";
 
 const sql = obtenerSql();
-const ZONA = "America/Bogota";
+const ZONA = zonaHoraria();
 
 let almacen: string;
 const previo = process.env.ALMACEN_RUTA;
@@ -92,6 +93,7 @@ describe("TarjetasIndicadores", () => {
         medido("aprobacion", { valor: 24, numerador: 432, denominador: 18, meta: 30, cumple: true, detalle: "mediana 21 días · desde la solicitud: 27 días" }),
         medido("vencidos", { valor: 7, numerador: 7, denominador: 100, meta: 0, cumple: false }),
         medido("acuses", { meta: 90 }),
+        medido("externos", { valor: 95, numerador: 18, denominador: 19, meta: 95, cumple: false }),
       ]}
       tramites={{ publicados: 18, enCurso: 4 }}
     />,
@@ -107,6 +109,11 @@ describe("TarjetasIndicadores", () => {
     expect(html).toMatch(/data-variante="bien"[^>]*>meta ≤ 30 días · cumple</);
     expect(html).toContain("mediana 21 días · desde la solicitud: 27 días");
     expect(html).toMatch(/>meta 0 · no cumple</);
+  });
+
+  it("18 de 19 frente a «≥ 95 %» no se redondea a la meta: «94,7 %» y no cumple", () => {
+    expect(html).toContain(">94,7 %<");
+    expect(html).not.toContain(">95 %<");
   });
 
   it("sin valor dice «Sin dato» y la insignia gris lo repite con la meta: no hay con qué decir si cumple", () => {
@@ -140,6 +147,29 @@ describe("BarrasPorProceso", () => {
     expect(html.match(/<rect /g)).toHaveLength(2);
   });
 
+  /** Posición y ancho de cada barra, en el orden en que se pintan. */
+  const barras = (html: string) => [...html.matchAll(/<rect x="([\d.]+)" y="[\d.]+" width="([\d.]+)"/g)].map((m) => ({ x: Number(m[1]), ancho: Number(m[2]) }));
+
+  it("dos procesos con la misma cifra se ven como dos barras, con un hueco visible entre ellas", () => {
+    const [a, b] = barras(
+      renderToStaticMarkup(
+        <BarrasPorProceso
+          filas={[
+            { procesoId: 1, sigla: "GTH", proceso: "Gestión del Talento Humano", vencidos: 3 },
+            { procesoId: 2, sigla: "SGC", proceso: "Sistema de Gestión de Calidad", vencidos: 3 },
+          ]}
+        />,
+      ),
+    );
+    // Cada barra ocupa la mitad del ancho (640); entre las dos queda al menos una quinta parte de esa mitad.
+    expect(b.x - (a.x + a.ancho)).toBeGreaterThanOrEqual(64);
+  });
+
+  it("el gráfico de consultas por día no cambia: tres unidades entre barra y barra", () => {
+    const [a, b] = barras(renderToStaticMarkup(<GraficoBarras serie={[{ fecha: "2026-11-01", conteo: 2 }, { fecha: "2026-11-02", conteo: 2 }]} />));
+    expect([a, b]).toEqual([{ x: 1.5, ancho: 317 }, { x: 321.5, ancho: 317 }]);
+  });
+
   it("sin vencidos lo dice en texto", () => {
     const html = renderToStaticMarkup(<BarrasPorProceso filas={[]} />);
     expect(html).toContain("Ningún documento de su alcance tiene la revisión vencida.");
@@ -152,8 +182,9 @@ describe("TablaPorProceso", () => {
     { procesoId: 1, sigla: "GTH", proceso: "Gestión del Talento Humano", vigentes: 14, alDia: 11, valor: 79, cumple: false, sinFecha: 0 },
     { procesoId: 2, sigla: "SGC", proceso: "Sistema de Gestión de Calidad", vigentes: 9, alDia: 9, valor: 100, cumple: true, sinFecha: 0 },
     { procesoId: 3, sigla: "GBS", proceso: "Gestión de Bienes y Servicios", vigentes: 1, alDia: 0, valor: null, cumple: null, sinFecha: 1 },
+    { procesoId: 4, sigla: "CEX", proceso: "Consulta Externa", vigentes: 19, alDia: 18, valor: 95, cumple: false, sinFecha: 0 },
   ];
-  const html = renderToStaticMarkup(<TablaPorProceso filas={filas} />);
+  const html = renderToStaticMarkup(<TablaPorProceso filas={filas} meta={95} />);
 
   it("dice el porcentaje y si cumple con texto, en la tabla y en las tarjetas del celular", () => {
     expect(html.match(/79 % · no cumple/g)).toHaveLength(2);
@@ -162,6 +193,21 @@ describe("TablaPorProceso", () => {
     expect(html).toContain('aria-label="Dentro del plazo, por proceso"');
     expect(html).toContain("hidden md:block");
     expect(html).toContain("md:hidden");
+  });
+
+  it("18 de 19 frente a la meta de 95 se lee «94,7 %» y no cumple, en la tabla y en las tarjetas", () => {
+    expect(html.match(/94,7 % · no cumple/g)).toHaveLength(2);
+    expect(html).not.toContain("95 % · no cumple");
+  });
+
+  it("la insignia del porcentaje no se parte en dos renglones", () => {
+    expect(html.match(/class="whitespace-nowrap">79 % · no cumple</g)).toHaveLength(2);
+    expect(html.match(/class="whitespace-nowrap">sin dato</g)).toHaveLength(2);
+  });
+
+  it("en las tarjetas del celular la insignia va siempre en su renglón, bajo el nombre", () => {
+    const tarjetas = html.slice(html.indexOf("<ul"));
+    expect(tarjetas.match(/<div class="flex flex-col items-start gap-1"><span class="[^"]*">[A-Z]{3} · /g)).toHaveLength(filas.length);
   });
 });
 
@@ -190,6 +236,8 @@ describe("FiltroPeriodo", () => {
     // Las opciones de proceso dicen «SIGLA · nombre»; las del periodo, no.
     expect(html.match(/<option value="\d+"(?: selected="")?>[^<]* · /g)).toHaveLength(1);
     expect(html).toContain('action="/vigencia/indicadores"');
+    // En pantallas estrechas los dos selectores ocupan todo el ancho; desde `sm`, el suyo.
+    expect(html.match(/<div class="flex w-full min-w-0 flex-col gap-1 sm:w-auto sm:max-w-full">/g)).toHaveLength(2);
     // Un periodo válido fuera de la lista (otro año) sigue a la vista y elegido.
     const viejo = renderToStaticMarkup(<FiltroPeriodo periodo="2019" procesoId={null} procesos={procesos} ahora={ahora} />);
     expect(viejo).toContain('<option value="2019" selected="">Año 2019</option>');
@@ -234,6 +282,8 @@ describe("la página /vigencia/indicadores", () => {
       expect(html).toMatch(/aria-current="page"[^>]*>Indicadores</);
       expect(html).toContain("Periodo: cuarto trimestre de 2026");
       expect(html).toContain("Documentos con revisión vencida por proceso");
+      // El gráfico y la tabla, uno debajo del otro y lado a lado solo desde 2xl; cada uno con su altura.
+      expect(html).toContain('<div class="grid grid-cols-1 items-start gap-6 2xl:grid-cols-2">');
       expect(html).toContain('aria-label="Dentro del plazo, por proceso"');
       expect(html).not.toContain("Consultas por día");
     }));

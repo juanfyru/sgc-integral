@@ -1,13 +1,12 @@
 import { Boton } from "@/componentes/ui/Boton";
 import { claseControl } from "@/componentes/ui/Campo";
-import { periodoDe } from "@/lib/indicadores-documentales/periodo";
+import { dos, periodoDe } from "@/lib/indicadores-documentales/periodo";
+import { mayuscula } from "@/lib/indicadores-documentales/textos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 
 type Opcion = { clave: string; etiqueta: string };
 
-const dos = (n: number) => String(n).padStart(2, "0");
-const mayuscula = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 /** «Año 2026», «Segundo semestre de 2026», «Noviembre de 2026»: la etiqueta del periodo para la lista. */
 function etiquetaDe(clave: string, zona: string): string | null {
@@ -58,7 +57,8 @@ export function FiltroPeriodo({
   const fuera = enLista ? null : etiquetaDe(periodo, zona);
   return (
     <form method="get" action="/vigencia/indicadores" className="flex min-w-0 max-w-full flex-wrap items-end gap-2">
-      <div className="flex min-w-0 max-w-full flex-col gap-1">
+      {/* En pantallas estrechas cada selector ocupa todo el ancho; desde `sm`, el suyo. */}
+      <div className="flex w-full min-w-0 flex-col gap-1 sm:w-auto sm:max-w-full">
         <label htmlFor="filtro-periodo" className="text-sm font-medium">
           Periodo
         </label>
@@ -76,7 +76,7 @@ export function FiltroPeriodo({
         </select>
       </div>
       {/* Los nombres de proceso son largos: a 390 px el selector cede al ancho disponible. */}
-      <div className="flex min-w-0 max-w-full flex-col gap-1">
+      <div className="flex w-full min-w-0 flex-col gap-1 sm:w-auto sm:max-w-full">
         <label htmlFor="filtro-proceso" className="text-sm font-medium">
           Proceso
         </label>

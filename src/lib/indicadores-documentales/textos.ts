@@ -1,13 +1,38 @@
-import type { IndicadorMedido } from "@/db/consultas/vigencia/indicadores";
-import { SENTIDO } from "./metas";
+import { SENTIDO, cumple, type Indicador, type IndicadorMedido } from "./metas";
 
 const numero = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 1 });
 
+/** «Segundo semestre de 2026», «Cumple»: la primera letra en mayúscula. */
+export function mayuscula(texto: string): string {
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
+/** «1 día», «21,5 días». */
+export function textoDias(n: number): string {
+  return `${numero.format(n)} ${n === 1 ? "día" : "días"}`;
+}
+
+/**
+ * La cifra de un porcentaje: el entero, salvo cuando el redondeo alcanzaría la meta y la razón exacta no (el único
+ * desacuerdo posible, porque las metas son enteras). Entonces va con un decimal truncado hacia el lado que no cumple,
+ * para que la cifra no contradiga el veredicto: 18 de 19 frente a «≥ 95 %» es «94,7 %», nunca «95 %» ni «95,0 %».
+ */
+export function textoPorcentaje(
+  clave: Indicador,
+  m: { valor: number | null; numerador: number; denominador: number; cumple: boolean | null },
+  meta: number,
+): string {
+  if (m.valor === null) return "Sin dato";
+  if (cumple(clave, m.valor, meta) === m.cumple) return `${m.valor} %`;
+  const decimas = (m.numerador * 1000) / m.denominador;
+  return `${numero.format((SENTIDO[clave] === "min" ? Math.floor(decimas) : Math.ceil(decimas)) / 10)} %`;
+}
+
 /** «94 %», «24 días», «7»; sin dato si no hay con qué medirlo. Lo comparten las tarjetas y el Excel. */
-export function textoValor(i: Pick<IndicadorMedido, "unidad" | "valor">): string {
+export function textoValor(i: IndicadorMedido): string {
   if (i.valor === null) return "Sin dato";
-  if (i.unidad === "pct") return `${i.valor} %`;
-  if (i.unidad === "dias") return `${numero.format(i.valor)} ${i.valor === 1 ? "día" : "días"}`;
+  if (i.unidad === "pct") return textoPorcentaje(i.clave, i, i.meta);
+  if (i.unidad === "dias") return textoDias(i.valor);
   return numero.format(i.valor);
 }
 
@@ -15,7 +40,7 @@ export function textoValor(i: Pick<IndicadorMedido, "unidad" | "valor">): string
 export function textoMeta(i: Pick<IndicadorMedido, "clave" | "unidad" | "meta">): string {
   const signo = SENTIDO[i.clave] === "min" ? "≥" : "≤";
   if (i.unidad === "pct") return `${signo} ${i.meta} %`;
-  if (i.unidad === "dias") return `${signo} ${i.meta} ${i.meta === 1 ? "día" : "días"}`;
+  if (i.unidad === "dias") return `${signo} ${textoDias(i.meta)}`;
   return i.meta === 0 ? "0" : `${signo} ${i.meta}`;
 }
 

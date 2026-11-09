@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { periodoActual, periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { dentroDelPlazo, etapasEnPlazo, porcentaje, tiempoDeAprobacion, vencidosPorProceso } from "@/lib/indicadores-documentales/definiciones";
-import { INDICADORES, NOMBRE_INDICADOR, SENTIDO, UNIDAD, cumple, metaDe } from "@/lib/indicadores-documentales/metas";
+import { INDICADORES, NOMBRE_INDICADOR, SENTIDO, UNIDAD, cumple, cumplePorcentaje, metaDe } from "@/lib/indicadores-documentales/metas";
+import { textoPorcentaje } from "@/lib/indicadores-documentales/textos";
 import { CONFIG_DOCUMENTAL_DEFECTO } from "@/db/consultas/config-documental";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 
@@ -157,5 +158,32 @@ describe("metas", () => {
     expect(INDICADORES.filter((i) => SENTIDO[i] === "max")).toEqual(["aprobacion", "vencidos"]);
     expect(UNIDAD.aprobacion).toBe("dias");
     expect(UNIDAD.vencidos).toBe("conteo");
+  });
+});
+
+describe("el cumplimiento de un porcentaje", () => {
+  const medido = (clave: Parameters<typeof cumplePorcentaje>[0], numerador: number, denominador: number, meta: number) => {
+    const m = porcentaje(numerador, denominador);
+    const veredicto = cumplePorcentaje(clave, m, meta);
+    return { veredicto, texto: textoPorcentaje(clave, { ...m, cumple: veredicto }, meta) };
+  };
+
+  it("se decide con la razón exacta: 18 de 19 no alcanza 95 y se lee «94,7 %», no «95 %»", () => {
+    expect(porcentaje(18, 19).valor).toBe(95);
+    expect(medido("dentro_plazo", 18, 19, 95)).toEqual({ veredicto: false, texto: "94,7 %" });
+  });
+
+  it("19 de 20 alcanza 95 y se lee con el entero", () => {
+    expect(medido("acuses", 19, 20, 95)).toEqual({ veredicto: true, texto: "95 %" });
+  });
+
+  it("el decimal se trunca: 94,96 % se lee «94,9 %», nunca «95,0 %»", () => {
+    expect(medido("etapas", 9496, 10_000, 95)).toEqual({ veredicto: false, texto: "94,9 %" });
+  });
+
+  it("lejos de la meta, o sin denominador, la cifra de siempre", () => {
+    expect(medido("externos", 1, 3, 90)).toEqual({ veredicto: false, texto: "33 %" });
+    expect(medido("externos", 0, 0, 95)).toEqual({ veredicto: null, texto: "Sin dato" });
+    expect(medido("conformidad", 2, 3, 67)).toEqual({ veredicto: false, texto: "66,6 %" });
   });
 });
