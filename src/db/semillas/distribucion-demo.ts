@@ -50,7 +50,8 @@ function momentoHace(dias: number): Date {
   return new Date(fechaLimite(new Date(), -dias, zonaHoraria()).getTime() - 8 * 3_600_000);
 }
 
-async function sesionDe(sql: Sql, usuario: string): Promise<SesionFlujo> {
+/** La sesión de un usuario demo, para llamar a las funciones del dominio a su nombre (también `vigencia-demo.ts`). */
+export async function sesionDe(sql: Sql, usuario: string): Promise<SesionFlujo> {
   const [u] = await sql`SELECT id, usuario, nombre, rol, ver_historial FROM usuarios WHERE usuario = ${usuario}`;
   if (!u) throw new Error(`Usuario demo no encontrado: ${usuario}`);
   return {
@@ -100,11 +101,12 @@ export async function sembrarDistribucionPrevia(sql: Sql, c: ContextoDistribucio
     if (!a) throw new Error(`Área demo no encontrada: ${nombre}`);
     return Number(a.id);
   };
+  // Toda la planta activa en el momento de cada evento, también quien no tiene cargo (spec 13C §12.4).
   const { id: todoElHospital } = await crearLista(
     {
       nombre: TODO_EL_HOSPITAL,
-      descripcion: "Todas las áreas de la institución.",
-      miembros: areas.map((a) => ({ tipo: "area" as const, referenciaId: Number(a.id) })),
+      descripcion: "Todas las personas activas de la institución.",
+      miembros: [{ tipo: "todos", referenciaId: null }],
     },
     coordinadora,
     { sql },

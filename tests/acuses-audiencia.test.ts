@@ -116,6 +116,9 @@ describe("pedir acuse", () => {
 describe("lectura obligatoria al ingresar y salida de la audiencia", () => {
   it("asignar un proceso crea los acuses de los vigentes marcados; quitarlo retira los pendientes", () =>
     revertida(sql, async (tx) => {
+      // La demo marca GTH-CA-01 con lectura obligatoria para «Todo el hospital», que desde la 13C llega a toda persona
+      // activa, también a la del test: se desmarcan los de la base para contar solo lo del test.
+      await tx`UPDATE documentos SET lectura_obligatoria_ingreso = false WHERE lectura_obligatoria_ingreso`;
       const admin = await sesionAdmin(tx);
       const gth = await idDe(tx, "GTH");
       const doc = await documentoLibre(tx, { proceso: "GTH", tipo: "PR" });

@@ -179,7 +179,7 @@ describe("la historia sembrada", () => {
     expect(firmas[0].hashSha256).not.toBe(firmas[1].hashSha256);
   });
 
-  it("la devolución deja la lista de la primera ronda, dos observaciones y su historial", async () => {
+  it("la devolución deja la lista de la primera ronda, dos observaciones y su historial", async (ctx) => {
     const t = await tramiteDe(2);
     const lista = await sql`SELECT count(*)::int AS n FROM tramite_verificaciones WHERE tramite_id = ${t.id} AND ronda = 1`;
     expect(lista).toEqual([{ n: 8 }]);
@@ -195,8 +195,9 @@ describe("la historia sembrada", () => {
     // «los detalles sembrados tienen la forma de los que escribe el flujo real».
     const { venceEn, ...devolucion } = eventos[4].detalle;
     expect(devolucion).toEqual({ observaciones: [1, 2] });
-    // Ausente en una demo sembrada antes de la Tarea 12; la Tarea 15 aprieta esta rama al resembrar.
-    expect(["undefined", "string"]).toContain(typeof venceEn);
+    exigirDemo(ctx, venceEn !== undefined, "la devolución sembrada no guarda la fecha límite de su etapa (venceEn), la demo es anterior a la Tarea 12");
+    expect(typeof venceEn).toBe("string");
+    expect(Number.isNaN(Date.parse(venceEn))).toBe(false);
   });
 
   it("el trámite de GBS omitió el visto bueno y llegó a publicación con tres firmas de una huella", async () => {

@@ -340,7 +340,9 @@ describe("la solicitud que nace de un impacto normativo o de la revisión anual"
 
 describe("configuración documental", () => {
   it("lee los valores y cae al defecto si la clave falta, está vacía o no es un entero de 0 a 365", () => revertida(sql, async (tx) => {
-    await tx`DELETE FROM configuracion WHERE clave LIKE 'plazo%' OR clave LIKE 'formato_acta%' OR clave IN ('escalamiento_dias', 'publicacion_directa', 'formato_codigo')`;
+    // La demo elige los formatos del acta y del informe (Tarea 15 de la 13C): sin sus claves, valen los de por defecto.
+    await tx`DELETE FROM configuracion WHERE clave LIKE 'plazo%' OR clave LIKE 'formato_acta%' OR clave LIKE 'formato_informe%'
+      OR clave IN ('escalamiento_dias', 'publicacion_directa', 'formato_codigo')`;
     expect(await obtenerConfigDocumental({ sql: tx })).toEqual(CONFIG_DOCUMENTAL_DEFECTO);
     await tx`INSERT INTO configuracion (clave, valor) VALUES
       ('plazo_revision_dias', '0'), ('plazo_aprobacion_dias', '366'), ('plazo_elaboracion_dias', '2.5'),

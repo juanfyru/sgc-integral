@@ -67,13 +67,15 @@ describe("distribución sembrada", () => {
     expect(filas.every((f) => f.acepto)).toBe(true);
   });
 
-  it("dos listas y la audiencia de GTH-CA-01 con lectura obligatoria al ingreso", async (ctx) => {
+  it("dos listas, «Todo el hospital» con todos los usuarios activos, y la audiencia de GTH-CA-01 con lectura obligatoria al ingreso", async (ctx) => {
     const listas = await sql`SELECT l.nombre, count(m.*)::int AS miembros, min(m.tipo) AS tipo
       FROM listas_distribucion l JOIN lista_miembros m ON m.lista_id = l.id GROUP BY l.id ORDER BY l.nombre`;
-    exigirDemo(ctx, listas.length === 2, `hay ${listas.length} listas`);
+    // Desde la 13C, «Todo el hospital» tiene un solo miembro «todos» (spec 13C §17); una demo anterior la trae por áreas.
+    const todos = listas.find((l) => l.nombre === "Todo el hospital");
+    exigirDemo(ctx, listas.length === 2 && todos?.tipo === "todos", `hay ${listas.length} listas, o «Todo el hospital» no es la de la 13C`);
     expect(listas.map((l) => [l.nombre, l.miembros, l.tipo])).toEqual([
       ["Personal asistencial", 1, "area"],
-      ["Todo el hospital", 5, "area"],
+      ["Todo el hospital", 1, "todos"],
     ]);
     const asignadas = await sql`SELECT l.nombre, d.lectura_obligatoria_ingreso AS obligatoria
       FROM documentos d JOIN documento_listas dl ON dl.documento_id = d.id JOIN listas_distribucion l ON l.id = dl.lista_id

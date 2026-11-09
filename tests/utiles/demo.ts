@@ -35,19 +35,37 @@ export async function abrirCarga(sql: Cliente): Promise<() => Promise<void>> {
   };
 }
 
-const ETAPAS_SEMBRADAS = ["publicado", "revision", "publicacion", "aceptacion", "visto_bueno"];
+/** Las cinco solicitudes de la 13A y la de la revisión anual de la 13C (`SOL-<año>-006`, por aceptar). */
+const ETAPAS_SEMBRADAS = ["publicado", "revision", "publicacion", "aceptacion", "visto_bueno", "aceptacion"];
 
-/** Los totales de la demo solo valen si nadie creó documentos, trámites ni puntos de uso, ni avanzó los sembrados. */
+/**
+ * Los totales de la demo solo valen si nadie creó documentos, trámites, puntos de uso, externos ni normas, ni avanzó
+ * los sembrados: la revisión anual sigue abierta (y ninguna cerrada), el hallazgo de Urgencias abierto y la lista
+ * «Todo el hospital» con su único miembro «todos».
+ */
 export async function exigirDemoIntacta(ctx: TestContext, sql: Cliente): Promise<void> {
-  const [{ documentos }] = await sql`SELECT count(*)::int AS documentos FROM documentos`;
-  const [{ puntos }] = await sql`SELECT count(*)::int AS puntos FROM puntos_uso`;
-  const [{ verificaciones }] = await sql`SELECT count(*)::int AS verificaciones FROM verificaciones WHERE estado = 'cerrada'`;
+  const [c] = await sql`SELECT
+      (SELECT count(*)::int FROM documentos) AS documentos,
+      (SELECT count(*)::int FROM puntos_uso) AS puntos,
+      (SELECT count(*)::int FROM verificaciones WHERE estado = 'cerrada') AS verificaciones,
+      (SELECT count(*)::int FROM externos) AS externos,
+      (SELECT count(*)::int FROM normas) AS normas,
+      (SELECT count(*)::int FROM revisiones_anuales WHERE estado = 'abierta') AS abiertas,
+      (SELECT count(*)::int FROM revisiones_anuales WHERE estado = 'cerrada') AS cerradas,
+      (SELECT count(*)::int FROM hallazgos WHERE estado = 'abierto') AS hallazgos,
+      (SELECT count(*)::int FROM lista_miembros m JOIN listas_distribucion l ON l.id = m.lista_id
+        WHERE l.nombre = 'Todo el hospital') AS miembros,
+      (SELECT count(*)::int FROM lista_miembros m JOIN listas_distribucion l ON l.id = m.lista_id
+        WHERE l.nombre = 'Todo el hospital' AND m.tipo = 'todos') AS todos`;
   const tramites = await sql`SELECT etapa FROM tramites ORDER BY id`;
   const etapas = tramites.map((t) => t.etapa as string);
   const iguales = etapas.length === ETAPAS_SEMBRADAS.length && etapas.every((e, i) => e === ETAPAS_SEMBRADAS[i]);
   exigirDemo(
     ctx,
-    documentos === 31 && iguales && puntos === 7 && verificaciones === 2,
-    `hay ${documentos} documentos, ${etapas.length} trámites, ${puntos} puntos de uso y ${verificaciones} verificaciones cerradas, o los sembrados avanzaron`,
+    c.documentos === 36 && iguales && c.puntos === 7 && c.verificaciones === 2 && c.externos === 4 && c.normas === 12 &&
+      c.abiertas === 1 && c.cerradas === 0 && c.hallazgos === 1 && c.miembros === 1 && c.todos === 1,
+    `hay ${c.documentos} documentos, ${etapas.length} trámites, ${c.puntos} puntos de uso, ${c.verificaciones} verificaciones ` +
+      `cerradas, ${c.externos} externos, ${c.normas} normas, ${c.abiertas} revisiones abiertas y ${c.cerradas} cerradas, ` +
+      `${c.hallazgos} hallazgos abiertos y ${c.miembros} miembros en «Todo el hospital» (${c.todos} «todos»), o los sembrados avanzaron`,
   );
 }
