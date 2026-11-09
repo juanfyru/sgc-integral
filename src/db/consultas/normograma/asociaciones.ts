@@ -9,7 +9,7 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { propietarioDeDocumento } from "@/db/consultas/tramites";
-import { alcanceProcesos, puedeAccederDocumento, puedeAsociarNorma } from "@/lib/alcance";
+import { alcanceProcesos, filtroAcceso, puedeAccederDocumento, puedeAsociarNorma } from "@/lib/alcance";
 import { ErrorNormograma, opcionalAcotado } from "@/lib/normograma/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
 import { nombreSql } from "./busqueda";
@@ -187,4 +187,30 @@ export async function normasDeDocumento(documentoId: number, sesion: SesionFlujo
     sesion,
   );
   return filas.map((f) => f.fila);
+}
+
+/** Un documento que la persona puede enlazar a la norma o desenlazar de ella (`enlazado`). */
+export type DocumentoGestionable = { id: number; codigo: string; titulo: string; origen: "interno" | "externo"; enlazado: boolean };
+
+/**
+ * Los documentos que la persona ve y cuyo proceso propietario tiene (`puedeAsociarNorma`): los vigentes, que puede
+ * enlazar, y los ya enlazados a la norma, que puede desenlazar aunque hayan dejado de estar vigentes. Nada para quien no
+ * tiene `normograma.procesos`. Por código.
+ */
+export async function documentosGestionables(normaId: number, sesion: SesionFlujo, opciones?: Opciones): Promise<DocumentoGestionable[]> {
+  if (!puede(sesion, "normograma.procesos")) return [];
+  const sql = opciones?.sql ?? obtenerSql();
+  const alcance = await alcanceProcesos(sesion, { sql });
+  const filas = await sql`
+    SELECT d.id, d.codigo, d.titulo, d.origen,
+      EXISTS (SELECT 1 FROM norma_documentos nd WHERE nd.norma_id = ${normaId} AND nd.documento_id = d.id) AS enlazado
+    FROM documentos d
+    JOIN documento_proceso dp ON dp.documento_id = d.id AND dp.es_principal
+    LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
+    WHERE ${filtroAcceso(sql, sesion)}
+      ${alcance.todos ? sql`` : sql`AND COALESCE(dp.proceso_id, s.proceso_id) = ANY(${alcance.procesoIds})`}
+      AND (EXISTS (SELECT 1 FROM documento_versiones v WHERE v.documento_id = d.id AND v.estado = 'vigente')
+        OR EXISTS (SELECT 1 FROM norma_documentos nd WHERE nd.norma_id = ${normaId} AND nd.documento_id = d.id))
+    ORDER BY d.codigo`;
+  return filas.map((f) => ({ id: Number(f.id), codigo: f.codigo, titulo: f.titulo, origen: f.origen, enlazado: f.enlazado }));
 }
