@@ -70,7 +70,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
 10. **Dos conexiones de BD:** `DATABASE_URL_MIGRADOR` (dueño del esquema: migraciones,
     semillas y creación del rol de la app) y `DATABASE_URL` (rol `sgc_app`, solo DML,
     sin `UPDATE` ni `DELETE` en `auditoria`, `accesos`, `firmas`, `tramite_eventos`,
-    `copia_eventos` y `acuse_eventos`).
+    `copia_eventos`, `acuse_eventos`, `ratificaciones`, `externo_verificaciones` y
+    `norma_cambios`).
     `asegurarRolApp` (`src/db/roles-bd.ts`) crea el rol y aplica sus privilegios en cada
     arranque, después de las migraciones. Los secretos (`APP_SECRETO`, `BD_APP_CLAVE`) se
     generan al instalar; sin un `APP_SECRETO` válido el arranque de producción falla.
@@ -101,10 +102,17 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
    (`PERMISO_DE_ACCION`), además de la condición de persona de la tabla de transiciones.
 5. **Trazabilidad completa:** toda acción de cualquier usuario queda en bitácora,
    inmutable en BD, con quién, qué y cuándo. `auditoria`, `accesos`, `firmas`,
-   `tramite_eventos`, `copia_eventos` y `acuse_eventos` son de solo inserción (trigger que
+   `tramite_eventos`, `copia_eventos`, `acuse_eventos`, `ratificaciones`,
+   `externo_verificaciones` y `norma_cambios` son de solo inserción (trigger que
    rechaza `UPDATE` y `DELETE` incluso al dueño del esquema, más los privilegios de `sgc_app`);
    los usuarios con historia se desactivan, nunca se borran, y una verificación cerrada no se
-   modifica. **Única excepción documentada (F12-D35):** las preferencias de interfaz de cada
+   modifica. Una revisión anual cerrada tampoco, ni sus procesos ni sus decisiones: el trigger
+   `sgc_impedir_si_revision_cerrada` rechaza `UPDATE` y `DELETE` sobre ellas y la inserción de
+   filas hijas. Toda acción que `src/` escribe en la bitácora tiene su frase legible y su
+   nombre de filtro en `src/lib/bitacora-detalle.ts` (`describirEvento`, `nombreDeAccion`),
+   armada solo con el `detalle` de la fila: lo exige `tests/bitacora-detalle.test.ts`, que recorre
+   las llamadas a `registrarAuditoria` (las acciones armadas con una variable se listan a mano).
+   **Única excepción documentada (F12-D35):** las preferencias de interfaz de cada
    persona (el tema) y las marcas de notificación leída no se auditan: no son evidencia de 7.5
    y llenarían la bitácora de ruido. El acuse de lectura, que F12-D35 dejó pendiente, sí se
    audita (`acuse_lectura`) y tiene su historial inmutable en `acuse_eventos`. Cualquier otra
@@ -119,7 +127,10 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
    (`src/db/consultas/tramites-flujo.ts`); ningún otro código cambia `tramites.etapa`.
 10. **El camino directo del panel solo da de alta documentos ya aprobados:** nunca publica
     sobre una versión vigente y se cierra con `publicacion_directa`. Eliminar un documento
-    es siempre un trámite.
+    es siempre un trámite. **La adopción de una edición de un documento externo**
+    (`adoptarEdicion`, `src/db/consultas/vigencia/externos/adopcion.ts`) es el único camino sin
+    trámite que publica sobre una versión vigente: siempre con la firma «Adoptó» y por
+    `aplicarPublicacion(tx, versionId, "externo", …)`. La carga directa sigue sin poder hacerlo.
 11. **El acta se congela al cierre** en `detalle.acta` del evento y solo se regenera si
     coincide con la huella guardada (F13A-R17). El formato elegido se congela también en
     `detalle.acta` (archivo y huella); `generarActa` no cambia un solo byte sin formato.
@@ -156,6 +167,12 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   ingreso en `app/ingreso`. Lógica de datos en `src/db` (schema Drizzle + queries),
   lógica de negocio en `src/lib`. El trámite documental vive en `app/(app)/tramites`,
   `app/acciones-tramites.ts`, `src/db/consultas/flujo/` y `src/lib/tramites/` (reglas puras).
+  La vigencia vive en `app/(app)/vigencia`, `app/acciones-vigencia.ts`,
+  `src/db/consultas/vigencia/` y `src/lib/vigencia/`; el normograma, en `app/(app)/normograma`,
+  `app/acciones-normograma.ts`, `src/db/consultas/normograma/` y `src/lib/normograma/`. Los
+  indicadores documentales viven en `src/lib/indicadores-documentales/` (funciones puras y tipos)
+  y `src/db/consultas/vigencia/indicadores.ts` (solo trae filas), y se calculan solo en
+  `/vigencia/indicadores` y su Excel, nunca en el cascarón.
   Server Components por defecto; `'use client'` solo donde hay interactividad.
 - **Cascarón y componentes base:** toda página autenticada vive dentro del cascarón del
   layout de `(app)` (`src/componentes/cascaron`: barra lateral, barra superior, búsqueda,
@@ -182,7 +199,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   `<html>` solo tras validar el hex estricto y el contraste P1/P2 (`src/lib/marca.ts`).
 - **Migraciones versionadas con Drizzle Kit**, ejecutadas en el arranque del contenedor.
   Nunca `db push` contra producción. `src/db/esquema.ts` nunca importa con `@/`
-  (drizzle-kit lo carga sin el alias): solo rutas relativas.
+  (drizzle-kit lo carga sin el alias): solo rutas relativas. Al cierre de la 13C son once
+  (`drizzle/0000` a `drizzle/0010`; el spec 13C §19 dice nueve).
 - **Toda página autenticada lleva o hereda de su layout `force-dynamic`** (`export const
   dynamic = "force-dynamic"`; lo declaran `src/app/layout.tsx` y los layouts de
   `(app)`, `(cuenta)` y `(app)/admin/(panel)`): nunca se prerenderiza, y el build de CI no
@@ -206,8 +224,22 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
     impide que la página entre en el payload RSC. El layout del panel usa además
     `exigirEntradaPanel()` (`panel.entrar` o la marca `ver_historial`). Lo exige
     `tests/paginas-sesion.test.ts`.
-  - **Cada Server Action exportada** de `src/app/admin/acciones*.ts` y de
-    `src/app/acciones-tramites.ts` pasa por `mutacion(formData, "<permiso>", fn)` o llama
+  - **Las páginas de Vigencia y del normograma** llaman `exigirSesion()` y después su regla de
+    alcance con `notFound()` (el patrón de `exigirDistribucion`, F13C-DC39: `exigirVigencia` en
+    `app/(app)/vigencia/_comun.ts`, la pestaña visible, la revisión, el externo, la norma o el
+    impacto que la persona ve), nunca `exigirPermiso`: quien no la ve recibe «no encontrado». Los
+    catálogos de puntos de uso y listas de distribución viven en `app/(app)/admin/(catalogos)`,
+    fuera del guard del panel: cada página llama `exigirSesion()` y `exigirCatalogo()` (en solo
+    lectura sin `distribucion.gestionar`), y las de alta, además, `exigirGestion()`
+    (`app/(app)/admin/(catalogos)/_comun.ts`).
+  - **`/tramites/nueva` llega prellenada** desde la revisión anual (`?revision=`) y desde un
+    impacto normativo (`?impacto=`): los campos ocultos `revisionAnualId` e `impactoId` los
+    vuelve a validar `crearSolicitud` dentro de su transacción, y la página nunca dice por qué
+    ignoró un valor que no admite.
+  - **Cada Server Action exportada** de `src/app/admin/acciones*.ts`,
+    `src/app/acciones-tramites.ts`, `src/app/acciones-distribucion.ts`,
+    `src/app/acciones-vigencia.ts` y `src/app/acciones-normograma.ts` pasa por
+    `mutacion(formData, "<permiso>", fn)` o llama
     `requerirPermiso(sesion, permiso)` después de `requerirSesion()`. Las de `src/app/acciones-cuenta.ts` llaman
     `requerirSesion()` (directamente o por `sesionParaInscribir()`), con tres
     excepciones: `ingresar` no exige sesión (es el ingreso), y `verificarFactor` y
@@ -224,8 +256,10 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
     escriben verifican `Origin` con `origenValido()`. Excepción: el GET de un archivo
     responde 404 a quien no puede verlo (F13A-R3, spec 13A §12).
   - **Las rutas que reciben una subida van fuera del `matcher` de `src/proxy.ts`**
-    (`admin/api/archivos`, `api/tramites/[id]/archivos`, `api/socializaciones/[id]/archivos` y
-    `api/verificaciones/[id]/items/[itemId]/archivos`), usan `recibirArchivo` y comparan
+    (`admin/api/archivos`, `api/tramites/[id]/archivos`, `api/socializaciones/[id]/archivos`,
+    `api/verificaciones/[id]/items/[itemId]/archivos`, `api/externos/[versionId]/archivos`,
+    `api/normas/[id]/archivos` y `api/hallazgos/[id]/archivos`, cada una con su caso en
+    `tests/proxy-matcher.test.ts`), usan `recibirArchivo` y comparan
     `content-length`: el búfer del proxy truncaba las subidas de más de 10 MB y respondía
     201 (F13A-R10).
   - **Los formularios que envían un `id` de ruta** se leen con
@@ -240,27 +274,84 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
     de `src/proxy.ts`). Una nueva se propone antes y entra con su caso en
     `tests/proxy-matcher.test.ts`.
 - **Toda escritura de la distribución** (`src/app/acciones-distribucion.ts`, los handlers de
-  `distribucion/copias`, `api/socializaciones` y `api/verificaciones`) exige su permiso de matriz
-  **más** la condición de persona: ser el responsable del punto (recibir, recoger, corregir un
-  hallazgo) o el destinatario del acuse (confirmarlo). El permiso solo no basta: lo tienen los
-  cinco roles (`distribucion.responder`, `acuses.confirmar`).
+  `distribucion/copias`, `api/socializaciones`, `api/verificaciones` y `api/hallazgos`) exige su
+  permiso de matriz **más** la condición de persona: ser el responsable del punto (recibir,
+  recoger, corregir un hallazgo) o el destinatario del acuse (confirmarlo). El permiso solo no
+  basta: lo tienen los cinco roles (`distribucion.responder`, `acuses.confirmar`). Una lista de
+  distribución admite el miembro `todos` (sin `referencia_id`): toda la planta activa en el
+  momento del evento.
+- **El cierre de un hallazgo es en dos pasos** (`src/db/consultas/distribucion/hallazgos.ts`): el
+  responsable lo marca corregido (`corregirHallazgo`, que avisa a los demás Admin SGC con
+  `hallazgo.por_validar`) y lo cierra la validación del Admin SGC (`validarHallazgo`, o
+  `reabrirHallazgo` con nota y fecha nueva) o la siguiente verificación del punto
+  (`validarPorVerificacion`, dentro de `cerrarVerificacion`). Quien corrige no valida su
+  corrección, ni la cierra directamente (`cerrarHallazgo`) mientras haya otro Administrador del
+  SGC activo (`exigirSinOtroAdmin`, `src/db/consultas/distribucion/otro-admin.ts`, la misma regla
+  de «propio punto»); si es el único, la cierra y la bitácora lo marca (`propioCorrector`).
 - **`archivos` admite dueños distintos de una versión** (`contexto`: `version`, `jornada`,
-  `verificacion_item`; con `contexto_id`): el control de acceso de un archivo es el de su
-  dueño, y las consultas heredadas siguen filtrando por `version_id`.
+  `verificacion_item`, `norma`, `revision_anual` y `hallazgo`, con `contexto_id`;
+  `CONTEXTOS_EVIDENCIA` de `src/lib/subida.ts`): el control de acceso de un archivo es el de su
+  dueño, y las consultas heredadas siguen filtrando por `version_id`. El PDF de una norma se
+  lee como la norma; la foto de la corrección de un hallazgo, como el hallazgo (`filtroPuntos`);
+  el informe de una revisión anual (rol `evidencia`, `version_id` nula, uno por año en
+  `informes/revision-<año>.pdf`) solo lo descargan Admin SGC, Gerencia y Control Interno
+  (`puedeVerInformeAnual`), y los demás reciben 404.
 - **Una versión deja de ser vigente solo por `aplicarPublicacion`, `anularVigenteEn` o
   `deshacerCarga`**, y los tres llaman `alDejarDeSerVigente`: marca sus copias controladas
   como «por recoger», supera sus acuses pendientes y su socialización requerida. Ninguna otra
-  ruta cambia ese estado.
+  ruta cambia ese estado. La adopción de una edición de un externo publica por
+  `aplicarPublicacion` y su retiro anula por `anularVigenteEn` (motivo `retirado`): no hay un
+  cuarto llamador.
+- **La fecha base de la próxima revisión depende del origen** (`fechaBase`,
+  `src/lib/vigencia/plazo.ts`; F13C-DC31): un interno publicado en la plataforma cuenta desde su
+  publicación; uno aprobado fuera, desde su `fecha_aprobacion`, nunca desde `publicado_en` (la
+  carga directa lo escribe con la fecha de carga); en los dos, una ratificación posterior manda.
+  Un externo cuenta desde su última verificación o, sin ella, desde su adopción. La fecha
+  fijada a mano reemplaza a la calculada, y publicar una versión nueva la borra junto con las
+  marcas del aviso (`aplicarPublicacion`). El plazo y la periodicidad se suman en meses
+  calendario (`sumarMeses`) y el estado se calcula, nunca se guarda (`columnasDeVigencia`).
+- **La revisión anual** (`src/db/consultas/vigencia/revision-anual/`): los actos que deciden
+  fuera de su página (ratificar, verificar, adoptar o retirar un externo, pedir una solicitud,
+  publicar, deshacer una carga) registran la decisión dentro de su propia transacción, a nombre
+  de quien actuó (`registrarDecision` y `sacarDeLaFoto`, `registro.ts`). El orden de candados es
+  la revisión primero (el acto la lee `FOR SHARE`; el cierre y la prórroga la toman
+  `FOR UPDATE`) y las filas hijas después. El informe se congela al cierre
+  (`revisiones_anuales.informe`) y su PDF se genera al primer pedido, como el acta:
+  `asegurarInforme` (`src/db/consultas/vigencia/informe.ts`) repite a propósito el algoritmo
+  de `asegurarActa` (F13A-R17), y un cambio de su invariante va en los dos.
 - **Tests contra la BD de desarrollo:** todo usuario de prueba que genere filas en
-  `auditoria`, `accesos`, `firmas`, `tramite_eventos`, `copia_eventos` o `acuse_eventos` usa un nombre único por corrida
+  `auditoria`, `accesos`, `firmas`, `tramite_eventos`, `copia_eventos`, `acuse_eventos`,
+  `ratificaciones`, `externo_verificaciones` o `norma_cambios` usa un nombre único por corrida
   (`zz_<algo>_${Date.now()}`) y no se borra (FK `RESTRICT` y trigger de solo inserción).
   Nunca `DELETE` ni `UPDATE` sobre esas tablas en una limpieza. Un test que escribe datos
   capaces de bloquear la migración o el arranque, o de romper otros tests (un usuario duplicado, la
   configuración de la entidad), los escribe dentro de una transacción que se revierte o
-  los restaura en `finally`: un test que falla no debe dejar la base inservible.
+  los restaura en `finally`: un test que falla no debe dejar la base inservible. Ningún test
+  deja confirmada una revisión anual (cerrada ya no se modifica y su año es único): la abre y la
+  cierra dentro de la transacción revertida, en un año lejano, y antes cierra la que esté
+  abierta (`sinRevisionAbierta`, `tests/utiles/vigencia.ts`).
 - **Transiciones del trámite:** la firma se verifica fuera de la transacción y lo que puede
   fallar va antes, en un validador de solo lectura (F13A-R4); `opciones.ahora` es la hora de
-  todo lo escrito (F13A-P1).
+  todo lo escrito (F13A-P1). `transicionar` guarda en el `detalle` de cada evento que cambia de
+  etapa la fecha límite de la etapa que cierra (`venceEn`), y `reasignar` usa esa misma clave
+  para la fecha nueva: una acción nueva que no cambie de etapa entra en
+  `EVENTOS_SIN_CAMBIO_DE_ETAPA` (`src/lib/tramites/dia-de-etapa.ts`), o el indicador de etapas en
+  plazo la contaría.
+- **Firmas sin trámite:** «Ratificó» y «Adoptó» se guardan con `registrarFirma` con
+  `tramiteId: null` y `ronda = 0`; el cierre de la revisión anual pide la clave igual y guarda
+  su método en la revisión (`metodo_cierre`), sin fila en `firmas`. Los tres siguen F13A-R4: un
+  validador de solo lectura antes (`validarRatificacion`, `validarAdopcion`, `validarCierre`),
+  la clave con `verificarParaFirmar` fuera de la transacción y las comprobaciones repetidas
+  dentro con `FOR UPDATE`. Ratificar, y adoptar una edición con archivo, recalculan la huella
+  del archivo en disco (`exigirHuellaRegistrada`); si no es la registrada, nada se escribe y el
+  rechazo queda en la bitácora, fuera de la transacción (`conRechazoPorHuella`,
+  `src/db/consultas/vigencia/comun.ts`).
+- **El cumplimiento de un porcentaje con meta se decide con la razón exacta, en enteros**
+  (`cumplePorcentaje`, `src/lib/indicadores-documentales/metas.ts`; `conformidad`,
+  `src/lib/distribucion/verificacion.ts`), nunca con el entero que se muestra. `conformidad()`
+  muestra el porcentaje truncado, así la cifra entera nunca contradice el veredicto; los demás
+  indicadores redondean y, cuando el entero contradiría el veredicto, `textoPorcentaje`
+  (`textos.ts`) muestra un decimal truncado.
 - **Tests y demo:** `tramiteEn` crea su documento: ningún test abre un trámite sobre uno de
   la demo. `tests/semilla-tramites.test.ts` lee el estado de la demo y salta con mensaje si
   ya avanzó; `SEMILLA_RECIEN=1 npm test` exige la demo recién sembrada.
