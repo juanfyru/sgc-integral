@@ -116,7 +116,8 @@ const CAMPOS_METAS: CampoNumerico<Metas>[] = [
   { campo: "etapasPlazoPct", clave: "meta_etapas_plazo_pct", que: "La meta de etapas a tiempo", minimo: 50, maximo: 100 },
 ];
 
-const CLAVES = [
+/** Las claves de `configuracion` que lee y guarda la configuración documental; la bitácora nombra cada una. */
+export const CLAVES_CONFIG_DOCUMENTAL = [
   "formato_codigo",
   "plazo_visto_bueno_dias",
   "plazo_aceptacion_dias",
@@ -169,7 +170,7 @@ function idDeDocumento(valor: string | undefined): number | null {
 
 export async function obtenerConfigDocumental(opciones?: { sql?: Cliente }): Promise<ConfigDocumental> {
   const sql = opciones?.sql ?? obtenerSql();
-  const filas = await sql`SELECT clave, valor FROM configuracion WHERE clave = ANY(${CLAVES})`;
+  const filas = await sql`SELECT clave, valor FROM configuracion WHERE clave = ANY(${CLAVES_CONFIG_DOCUMENTAL})`;
   const valores = new Map(filas.map((f) => [f.clave as string, f.valor as string]));
   const plazo = (nombre: keyof ConfigDocumental["plazos"]) =>
     dias(valores.get(`plazo_${nombre}_dias`), CONFIG_DOCUMENTAL_DEFECTO.plazos[nombre]);

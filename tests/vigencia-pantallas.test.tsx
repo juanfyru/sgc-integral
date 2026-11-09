@@ -39,6 +39,7 @@ const base: FilaConAcciones = {
   tramite: null,
   impacto: null,
   edicionPendiente: null,
+  revisionAnual: null,
   acciones: { ratificar: true, solicitar: true, ajustar: false, verTramite: false },
 };
 
@@ -162,6 +163,18 @@ describe("TablaSemaforo", () => {
 
   it("no atenúa con opacidad ni usa colores fijos", () => {
     expect(html).not.toMatch(/opacity-|bg-white|text-gray-|\bazul\b/);
+  });
+
+  it("en la revisión anual abierta, la leyenda va junto a los botones, también si no hay botones (spec 13C §7.5)", () => {
+    expect(html).not.toContain("En revisión anual");
+    const pintar = (fila: FilaConAcciones) => renderToStaticMarkup(<TablaSemaforo filas={[fila]} ahora={AHORA} pideCodigo={false} />);
+    const conBotones = pintar({ ...base, revisionAnual: { anio: 2026 } });
+    // Una vez en la tabla y otra en la tarjeta, después de los botones.
+    expect(conBotones.match(/>En revisión anual 2026</g)).toHaveLength(2);
+    expect(conBotones.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ")).toMatch(/Solicitar cambio En revisión anual 2026/);
+    const sinBotones = pintar({ ...base, revisionAnual: { anio: 2026 }, acciones: sinAcciones });
+    expect(sinBotones.match(/>En revisión anual 2026</g)).toHaveLength(2);
+    expect(sinBotones).not.toContain("Ratificar sin cambios");
   });
 });
 

@@ -51,7 +51,7 @@ import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { sesionAdmin, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
-import { firmaDePrueba, vigenteFuera } from "./utiles/vigencia";
+import { enRevisionAbierta, firmaDePrueba, sinRevisionAbierta, vigenteFuera } from "./utiles/vigencia";
 
 const sql = obtenerSql();
 
@@ -244,6 +244,28 @@ describe("bloque «Vigencia» de la ficha", () => {
       // Quien no ve el documento no recibe el bloque.
       await tx`UPDATE documentos SET nivel_acceso = 'restringido', origen = 'interno' WHERE id = ${d.id}`;
       expect(await BloqueVigencia({ documentoId: d.id, sesion: await sesionDe(tx, "lider.cex") })).toBeNull();
+    }));
+
+  it("en la revisión anual abierta, la ficha y el semáforo dicen «En revisión anual <año>» junto a los botones (spec 13C §7.5)", () =>
+    enTransaccion(async (tx) => {
+      const sinEtiquetas = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+      const d = await vigenteFuera(tx, { fechaAprobacion: "2025-08-14", proceso: "GTH" });
+      const lider = await sesionDe(tx, "lider.gth");
+      await sinRevisionAbierta(tx);
+      const fuera = renderToStaticMarkup((await BloqueVigencia({ documentoId: d.id, sesion: lider }))!);
+      expect(fuera).toContain("Ratificar sin cambios");
+      expect(fuera).not.toContain("En revisión anual");
+
+      await enRevisionAbierta(tx, d, 2095);
+      const ficha = sinEtiquetas(renderToStaticMarkup((await BloqueVigencia({ documentoId: d.id, sesion: lider }))!));
+      expect(ficha).toMatch(/Solicitar cambio En revisión anual 2095/);
+      // Los botones siguen activos: lo que se haga desde ahí cuenta como decisión de la campaña.
+      expect(ficha).toContain("Ratificar sin cambios");
+
+      contexto.sesion = valida(lider);
+      const semaforo = renderToStaticMarkup(await PaginaSemaforo({ searchParams: Promise.resolve({ proceso: String(d.procesoId) }) }));
+      // Solo el documento de la revisión de la prueba, en la tabla y en la tarjeta.
+      expect(semaforo.match(/>En revisión anual 2095</g)).toHaveLength(2);
     }));
 });
 

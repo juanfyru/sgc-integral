@@ -114,6 +114,7 @@ const base: FilaDecision = {
   tramite: null,
   impacto: null,
   edicionPendiente: null,
+  revisionAnual: null,
   decision: null,
   porDecidir: false,
   insumos: { acuses: { confirmados: 31, total: 34, porcentaje: 91 }, hallazgos: 0, normasCambiadas: [], consultas: 58, tramites: 1 },

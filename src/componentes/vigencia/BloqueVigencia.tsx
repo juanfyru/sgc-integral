@@ -13,7 +13,7 @@ import { zonaHoraria } from "@/lib/zona-horaria";
 import { ChipVigencia } from "./ChipVigencia";
 import { DialogoFijarFecha } from "./DialogoFijarFecha";
 import { DialogoRatificar } from "./DialogoRatificar";
-import { rutaSolicitarCambio } from "./TablaSemaforo";
+import { LeyendaRevisionAnual, rutaSolicitarCambio } from "./TablaSemaforo";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 
@@ -176,8 +176,8 @@ export async function BloqueVigencia({
         </div>
       ) : null}
 
-      {v.acciones.ratificar || v.acciones.solicitar ? (
-        <div className="mt-4 flex flex-wrap items-start gap-2 print:hidden">
+      {v.acciones.ratificar || v.acciones.solicitar || v.revisionAnual ? (
+        <div className="mt-4 flex flex-wrap items-center gap-2 print:hidden">
           {v.acciones.ratificar ? (
             <DialogoRatificar
               documento={{ id: v.documentoId, codigo: v.codigo, titulo: v.titulo, version: v.version.numero, huella: v.huella }}
@@ -190,6 +190,7 @@ export async function BloqueVigencia({
               Solicitar cambio
             </Link>
           ) : null}
+          <LeyendaRevisionAnual revision={v.revisionAnual} />
         </div>
       ) : null}
     </section>

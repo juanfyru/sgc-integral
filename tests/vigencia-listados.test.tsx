@@ -107,6 +107,21 @@ describe("Gestión de documentos", () => {
       expect(html).toMatch(/<a[^>]*href="\/vigencia\/externos\/nuevo"[^>]*>Registrar documento externo<\/a>/);
       expect(sinEtiquetas(html)).toMatch(new RegExp(`${vencido.codigo} ${vencido.titulo} Procedimiento GTH Vigente Vencida hace \\d+ días`));
     }));
+
+  it("«Registrar documento externo» lo ve solo quien tiene `externos.gestionar` (13C, resolución 7 de la Tarea 14)", () =>
+    revertida(sql, async (tx) => {
+      const boton = /<a[^>]*href="\/vigencia\/externos\/nuevo"[^>]*>Registrar documento externo<\/a>/;
+      const admin = await sesionAdmin(tx);
+      // El Admin SGC, con «Registrar documento ya aprobado» (si la publicación directa está encendida) y el de externos.
+      const delAdmin = await pintar(tx, admin, () => PaginaDocumentosAdmin());
+      expect(delAdmin).toMatch(boton);
+      expect(delAdmin.indexOf("Registrar documento externo")).toBeGreaterThan(delAdmin.indexOf("<h1"));
+      // Control Interno entra a Gestión (ve el historial) pero no gestiona externos.
+      expect(await pintar(tx, await usuarioDePrueba(tx, { rol: "control_interno" }), () => PaginaDocumentosAdmin())).not.toContain("Registrar documento externo");
+      // Un líder con la marca `ver_historial` entra al panel y sí gestiona los externos de sus procesos.
+      const lider = { ...(await usuarioDePrueba(tx, { rol: "lider_proceso" })), verHistorial: true };
+      expect(await pintar(tx, lider, () => PaginaDocumentosAdmin())).toMatch(boton);
+    }));
 });
 
 describe("el texto del chip en las listas", () => {

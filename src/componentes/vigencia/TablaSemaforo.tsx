@@ -36,6 +36,15 @@ export function rutaSolicitarCambio(codigo: string): string {
   return `/tramites/nueva?documento=${encodeURIComponent(codigo)}&motivo=revision_anual`;
 }
 
+/**
+ * «En revisión anual 2026», junto a los botones de la ficha y del Semáforo mientras el documento está en la revisión
+ * abierta (spec 13C §7.5): lo que se haga desde ahí cuenta como su decisión en la campaña.
+ */
+export function LeyendaRevisionAnual({ revision }: { revision: FilaSemaforo["revisionAnual"] }) {
+  if (!revision) return null;
+  return <span className="text-xs text-muted-foreground">{`En revisión anual ${revision.anio}`}</span>;
+}
+
 function Documento({ fila: f }: { fila: FilaSemaforo }) {
   return (
     <>
@@ -74,7 +83,7 @@ function Proxima({ fila: f, zona }: { fila: FilaSemaforo; zona: string }) {
 
 function Acciones({ fila: f, ahora, zona, pideCodigo }: { fila: FilaConAcciones; ahora: Date; zona: string; pideCodigo: boolean }) {
   const { ratificar, solicitar } = f.acciones;
-  if (!ratificar && !solicitar && !f.tramite) return null;
+  if (!ratificar && !solicitar && !f.tramite && !f.revisionAnual) return null;
   return (
     <div className="flex flex-wrap items-center gap-2">
       {ratificar ? (
@@ -98,6 +107,7 @@ function Acciones({ fila: f, ahora, zona, pideCodigo }: { fila: FilaConAcciones;
           <span className="text-sm text-muted-foreground">{`Trámite ${f.tramite.numero}`}</span>
         )
       ) : null}
+      <LeyendaRevisionAnual revision={f.revisionAnual} />
     </div>
   );
 }

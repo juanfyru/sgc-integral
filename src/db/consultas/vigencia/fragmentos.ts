@@ -39,6 +39,8 @@ export type FilaSemaforo = {
   impacto: { cambioId: number; procesoId: number; norma: string } | null;
   /** Un externo con una verificación «hay una edición nueva» que aún no se adopta (spec 13C §8.4): sale en atención. */
   edicionPendiente: { desde: Date } | null;
+  /** La revisión anual abierta que lo incluye: la leyenda «En revisión anual <año>» junto a los botones (spec 13C §7.5). */
+  revisionAnual: { anio: number } | null;
 };
 
 /**
@@ -71,7 +73,8 @@ function consultaSemaforo(sql: Cliente, condicion: PendingQuery<Row[]>, marcas =
       ado.nombre AS adopto,
       tra.id AS tramite_id, tra.numero AS tramite_numero, tra.etapa AS tramite_etapa, tra.vence_en AS tramite_vence_en,
       tra.entrada AS tramite_entrada,
-      imp.cambio_id, imp.proceso_id AS impacto_proceso_id, imp.norma
+      imp.cambio_id, imp.proceso_id AS impacto_proceso_id, imp.norma,
+      ${anioDeRevisionAbierta(sql)} AS revision_anual_anio
       ${marcas
         ? sql`, ex.responsable_id AS responsable_tecnico_id, ${enRevisionAnualAbierta(sql)} AS en_revision_anual,
           (p.activo AND EXISTS (SELECT 1 FROM usuario_procesos lider_up
@@ -201,6 +204,7 @@ function aFila(f: Row, ahora: Date, atencionDias: number, zona: string): FilaSem
     tramite,
     impacto,
     edicionPendiente: pendienteDesde === null ? null : { desde: pendienteDesde },
+    revisionAnual: f.revision_anual_anio === null ? null : { anio: Number(f.revision_anual_anio) },
   };
 }
 
@@ -245,6 +249,12 @@ export async function filasDePersona(
 export function enRevisionAnualAbierta(sql: Cliente) {
   return sql`EXISTS (SELECT 1 FROM revision_anual_decisiones rad JOIN revisiones_anuales ra ON ra.id = rad.revision_id
     WHERE ra.estado = 'abierta' AND rad.documento_id = d.id)`;
+}
+
+/** El año de la revisión anual abierta que incluye al documento `d`, o nulo: una columna de la misma sentencia. */
+function anioDeRevisionAbierta(sql: Cliente) {
+  return sql`(SELECT ra.anio FROM revision_anual_decisiones rad JOIN revisiones_anuales ra ON ra.id = rad.revision_id
+    WHERE ra.estado = 'abierta' AND rad.documento_id = d.id LIMIT 1)`;
 }
 
 /** La vigencia de cada documento de `ids` que tenga versión vigente, por su id. */

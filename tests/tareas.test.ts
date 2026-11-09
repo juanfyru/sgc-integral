@@ -117,11 +117,32 @@ describe("misTareas", () => {
     expect(await contar()).toBe(conUno);
   }));
 
+  /**
+   * Un proceso que nace en la transacción, con un líder nuevo que además revisa un trámite: sus tareas son solo las que
+   * el test le da. Con «lider.gth», los documentos de la demo que estén por revisar se sumarían y, pasados cinco, la
+   * agrupación escondería la tarea que se busca.
+   */
+  async function liderAislado(tx: TransactionSql): Promise<{ sigla: string; lider: SesionFlujo; tramiteId: number }> {
+    const [m] = await tx`SELECT macroproceso_id FROM procesos WHERE sigla = 'GTH'`;
+    const sigla = `ZT${Date.now() % 100_000}`;
+    const [p] = await tx`INSERT INTO procesos (macroproceso_id, nombre, sigla, slug, icono, orden)
+      VALUES (${m.macroproceso_id}, ${`Proceso de prueba ${sigla}`}, ${sigla}, ${sigla.toLowerCase()}, 'circle', 999) RETURNING id`;
+    const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [Number(p.id)] });
+    const t = await tramiteEn(tx, "revision", { revisor: lider });
+    return { sigla, lider, tramiteId: t.tramiteId };
+  }
+
+  /** Un documento del proceso con la revisión vencida hace 86 días al 8 nov 2026 (aprobado fuera el 14 ago 2025). */
+  async function vencido(tx: TransactionSql, sigla: string) {
+    const d = await documentoLibre(tx, { proceso: sigla, tipo: "PR" });
+    await tx`UPDATE documento_versiones SET fecha_aprobacion = '2025-08-14' WHERE documento_id = ${d.id}`;
+    return d;
+  }
+
   it("suma la revisión de la vigencia del líder, después de las demás fuentes", () => revertida(sql, async (tx) => {
     await sinRevisionAbierta(tx);
-    const lider = await sesionDe(tx, "lider.gth");
-    const d = await documentoLibre(tx, { proceso: "GTH", tipo: "PR" });
-    await tx`UPDATE documento_versiones SET fecha_aprobacion = '2025-08-14' WHERE documento_id = ${d.id}`;
+    const { sigla, lider, tramiteId } = await liderAislado(tx);
+    const d = await vencido(tx, sigla);
     const { tareas } = await misTareas(lider, { sql: tx, ahora: new Date("2026-11-08T15:00:00Z") });
     const i = tareas.findIndex((x) => x.id === `vigencia:${d.id}`);
     expect(tareas[i]).toMatchObject({
@@ -129,7 +150,23 @@ describe("misTareas", () => {
       titulo: `Revisar la vigencia de ${d.codigo} v1 · vencida hace 86 días`,
       enlace: `/documentos/${d.codigo.toLowerCase()}`,
     });
-    expect(tareas.slice(i).every((x) => x.id.startsWith("vigencia:"))).toBe(true);
+    expect(tareas.map((x) => x.id)).toEqual([`tramite:${tramiteId}`, `vigencia:${d.id}`]);
+  }));
+
+  it("seis revisiones de vigencia salen como una sola tarea y el total las sigue contando (F13B-R12)", () => revertida(sql, async (tx) => {
+    await sinRevisionAbierta(tx);
+    const { sigla, lider, tramiteId } = await liderAislado(tx);
+    for (let n = 0; n < 6; n++) await vencido(tx, sigla);
+    const ahora = new Date("2026-11-08T15:00:00Z");
+    const { tareas, total } = await misTareas(lider, { sql: tx, ahora });
+    expect(tareas.map((x) => x.id)).toEqual([`tramite:${tramiteId}`, "vigencia"]);
+    expect(tareas[1]).toMatchObject({
+      modulo: "documentos",
+      titulo: "6 documentos por revisar",
+      detalle: "El más atrasado venció el 14 de agosto de 2026",
+      enlace: "/vigencia/semaforo?estado=vencida",
+    });
+    expect(total).toBe(7);
   }));
 });
 
@@ -153,5 +190,67 @@ describe("agruparTareas", () => {
     const g = agruparTareas(tareas)[0];
     expect(g.vence).toEqual(new Date("2026-11-10T03:00:00Z"));
     expect(g.detalle).toBe("La más próxima vence el 9 de noviembre de 2026");
+  });
+
+  const de = (prefijo: string, n: number, vence: Date | null = null) => ({ ...base, id: `${prefijo}:${n}`, titulo: `${prefijo} ${n}`, enlace: `/${prefijo}/${n}`, vence });
+  const varias = (prefijo: string, cuantas: number) => Array.from({ length: cuantas }, (_, i) => de(prefijo, i + 1));
+  const AHORA = new Date("2026-11-08T15:00:00Z");
+
+  it("seis «vigencia:» se agrupan en una, «6 documentos por revisar», con enlace al semáforo de los vencidos", () => {
+    const tareas = [tramite(1), ...varias("vigencia", 6), tramite(2)];
+    const r = agruparTareas(tareas, 5, AHORA);
+    expect(r.map((t) => t.id)).toEqual(["tramite:1", "vigencia", "tramite:2"]);
+    expect(r[1]).toEqual({
+      id: "vigencia",
+      modulo: "documentos",
+      titulo: "6 documentos por revisar",
+      detalle: null,
+      vence: null,
+      enlace: "/vigencia/semaforo?estado=vencida",
+    });
+  });
+
+  it("los externos por verificar, las ediciones por adoptar y los impactos se agrupan cada uno por su lado (spec 13C §13.1)", () => {
+    const tareas = [
+      ...varias("vigencia", 5),
+      ...varias("externo", 6),
+      ...varias("adopcion", 7),
+      ...varias("revision", 7),
+      ...varias("impacto", 6),
+      tramite(1),
+    ];
+    const r = agruparTareas(tareas, 5, AHORA);
+    expect(r.map((t) => t.id)).toEqual([
+      ...varias("vigencia", 5).map((t) => t.id),
+      "externos",
+      "adopciones",
+      // La tarea de la campaña ya viene una por proceso: no se agrupa.
+      ...varias("revision", 7).map((t) => t.id),
+      "impactos",
+      "tramite:1",
+    ]);
+    const grupo = (id: string) => r.find((t) => t.id === id);
+    expect(grupo("externos")).toMatchObject({ titulo: "6 externos por verificar", enlace: "/vigencia/externos" });
+    expect(grupo("adopciones")).toMatchObject({ titulo: "7 ediciones nuevas por adoptar", enlace: "/vigencia/externos" });
+    // Sin una página que liste los impactos pendientes, el grupo lleva al primero, el que vence antes.
+    expect(grupo("impactos")).toMatchObject({ titulo: "6 impactos normativos por revisar", enlace: "/impacto/1" });
+  });
+
+  it("con cinco de cada fuente no agrupa nada", () => {
+    const tareas = ["vigencia", "externo", "adopcion", "impacto", "acuse"].flatMap((p) => varias(p, 5));
+    expect(agruparTareas(tareas, 5, AHORA)).toEqual(tareas);
+  });
+
+  it("el detalle dice la fecha más próxima, en pasado si ya venció, en la zona de la instalación", () => {
+    const pasada = new Date("2026-08-14T17:00:00Z");
+    const futura = new Date("2026-12-01T17:00:00Z");
+    const conFechas = (prefijo: string, primera: Date) => [de(prefijo, 1, null), de(prefijo, 2, primera), ...[3, 4, 5, 6].map((n) => de(prefijo, n, new Date("2027-03-01T17:00:00Z")))];
+    const grupo = (prefijo: string, primera: Date) => agruparTareas(conFechas(prefijo, primera), 5, AHORA)[0];
+    expect(grupo("vigencia", pasada)).toMatchObject({ vence: pasada, detalle: "El más atrasado venció el 14 de agosto de 2026" });
+    expect(grupo("vigencia", futura).detalle).toBe("El más próximo vence el 1 de diciembre de 2026");
+    expect(grupo("externo", futura).detalle).toBe("El más próximo vence el 1 de diciembre de 2026");
+    expect(grupo("adopcion", pasada).detalle).toBe("La más atrasada venció el 14 de agosto de 2026");
+    expect(grupo("adopcion", futura).detalle).toBe("La más próxima vence el 1 de diciembre de 2026");
+    expect(grupo("impacto", futura).detalle).toBe("El más próximo vence el 1 de diciembre de 2026");
   });
 });

@@ -48,25 +48,67 @@ export function tituloDeTarea(t: ResumenTramite): string {
   }
 }
 
-/** Más de `umbral` lecturas por confirmar se muestran como una sola tarea, en el lugar de la primera. */
-export function agruparTareas(tareas: Tarea[], umbral = 5): Tarea[] {
-  const acuses = tareas.filter((t) => t.id.startsWith("acuse:"));
-  if (acuses.length <= umbral) return tareas;
-  const fechas = acuses.flatMap((t) => (t.vence ? [t.vence] : []));
-  const vence = fechas.length > 0 ? new Date(Math.min(...fechas.map((f) => f.getTime()))) : null;
-  const agrupada: Tarea = {
-    id: "acuses",
+type Grupo = {
+  /** El inicio del `id` de las tareas que reúne. */
+  prefijo: string;
+  id: string;
+  titulo: (n: number) => string;
+  /** El detalle con la fecha más próxima, ya en texto, y si ya pasó. */
+  detalle: (fecha: string, vencida: boolean) => string;
+  /** `primera`: la primera del grupo en el orden de su fuente, la que vence antes. */
+  enlace: (primera: Tarea) => string;
+};
+
+const masculino = (fecha: string, vencida: boolean) => (vencida ? `El más atrasado venció el ${fecha}` : `El más próximo vence el ${fecha}`);
+const femenino = (fecha: string, vencida: boolean) => (vencida ? `La más atrasada venció el ${fecha}` : `La más próxima vence el ${fecha}`);
+
+/**
+ * Las fuentes que, pasadas de `umbral`, se muestran como una sola tarea (spec 13C §13.1, con el umbral de la 13B). La
+ * de la revisión anual (`revision:`) ya viene una por proceso, y las demás son pocas: no se agrupan.
+ */
+const GRUPOS: readonly Grupo[] = [
+  // Una lectura vence siempre después de pedirse: el detalle de la 13B no cambia.
+  { prefijo: "acuse:", id: "acuses", titulo: (n) => `${n} lecturas por confirmar`, detalle: (fecha) => `La más próxima vence el ${fecha}`, enlace: () => "/acuses" },
+  { prefijo: "vigencia:", id: "vigencia", titulo: (n) => `${n} documentos por revisar`, detalle: masculino, enlace: () => "/vigencia/semaforo?estado=vencida" },
+  { prefijo: "externo:", id: "externos", titulo: (n) => `${n} externos por verificar`, detalle: masculino, enlace: () => "/vigencia/externos" },
+  { prefijo: "adopcion:", id: "adopciones", titulo: (n) => `${n} ediciones nuevas por adoptar`, detalle: femenino, enlace: () => "/vigencia/externos" },
+  // No hay una página con todos los impactos pendientes: el grupo lleva al que vence antes.
+  { prefijo: "impacto:", id: "impactos", titulo: (n) => `${n} impactos normativos por revisar`, detalle: masculino, enlace: (primera) => primera.enlace },
+];
+
+function unir(g: Grupo, miembros: Tarea[], ahora: Date): Tarea {
+  const fechas = miembros.flatMap((t) => (t.vence ? [t.vence.getTime()] : []));
+  const vence = fechas.length > 0 ? new Date(Math.min(...fechas)) : null;
+  const texto = vence ? new Intl.DateTimeFormat("es-CO", { dateStyle: "long", timeZone: zonaHoraria() }).format(vence) : null;
+  return {
+    id: g.id,
     modulo: "documentos",
-    titulo: `${acuses.length} lecturas por confirmar`,
-    detalle: vence ? `La más próxima vence el ${new Intl.DateTimeFormat("es-CO", { dateStyle: "long", timeZone: zonaHoraria() }).format(vence)}` : null,
+    titulo: g.titulo(miembros.length),
+    detalle: vence && texto ? g.detalle(texto, vence.getTime() < ahora.getTime()) : null,
     vence,
-    enlace: "/acuses",
+    enlace: g.enlace(miembros[0]),
   };
-  let puesta = false;
+}
+
+/**
+ * Más de `umbral` tareas de una misma fuente de `GRUPOS` (lecturas por confirmar, documentos por revisar, externos por
+ * verificar, ediciones por adoptar, impactos normativos) se muestran como una sola, en el lugar de la primera. Quien
+ * llama cuenta el total sobre las tareas sin agrupar (F13B-R12).
+ */
+export function agruparTareas(tareas: Tarea[], umbral = 5, ahora = new Date()): Tarea[] {
+  const agrupadas = new Map<Grupo, Tarea>();
+  for (const g of GRUPOS) {
+    const miembros = tareas.filter((t) => t.id.startsWith(g.prefijo));
+    if (miembros.length > umbral) agrupadas.set(g, unir(g, miembros, ahora));
+  }
+  if (agrupadas.size === 0) return tareas;
+  const puestas = new Set<Grupo>();
   return tareas.flatMap((t) => {
-    if (!t.id.startsWith("acuse:")) return [t];
-    if (puesta) return [];
-    puesta = true;
+    const g = GRUPOS.find((x) => t.id.startsWith(x.prefijo));
+    const agrupada = g ? agrupadas.get(g) : undefined;
+    if (!g || !agrupada) return [t];
+    if (puestas.has(g)) return [];
+    puestas.add(g);
     return [agrupada];
   });
 }
@@ -128,5 +170,5 @@ export async function misTareas(
     ...revision,
     ...impactos,
   ];
-  return { tareas: agruparTareas(tareas), total: tareas.length, vencidos: vigencia.vencidos };
+  return { tareas: agruparTareas(tareas, 5, opciones?.ahora), total: tareas.length, vencidos: vigencia.vencidos };
 }

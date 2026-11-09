@@ -1,4 +1,10 @@
+import { periodoDe } from "@/lib/indicadores-documentales/periodo";
+import { ETIQUETA_ESTADO_NORMA, ETIQUETA_RELACION } from "@/lib/normograma/tipos";
+import { cuenta } from "@/lib/plural";
 import type { Accion } from "@/lib/tramites/transiciones";
+import { textoDeDia } from "@/lib/vigencia/plazo";
+import { ETIQUETA_DECISION, ETIQUETA_RESULTADO } from "@/lib/vigencia/tipos";
+import { zonaHoraria } from "@/lib/zona-horaria";
 
 export type EventoAuditoria = {
   accion: string;
@@ -63,6 +69,32 @@ const NOMBRE_CLAVE_DOCUMENTAL: Record<string, string> = {
   formato_acta_documento_id: "documento del formato del acta",
   formato_acta_margen_superior_cm: "espacio del encabezado del acta",
   formato_acta_margen_inferior_cm: "espacio del pie del acta",
+  // Distribución (13B).
+  plazo_recibido_dias: "plazo para confirmar el recibido",
+  plazo_recogida_dias: "plazo de recogida de copias",
+  plazo_acuse_dias: "plazo del acuse de lectura",
+  plazo_socializacion_dias: "plazo de socialización",
+  plazo_correccion_dias: "plazo de corrección",
+  verificacion_cada_dias: "días entre verificaciones",
+  umbral_conformidad_pct: "umbral de conformidad",
+  sello_franja_cm: "alto de la franja del sello",
+  sello_qr_cm: "tamaño del código QR",
+  // Vigencia, revisión anual, externos, impactos y el informe (13C).
+  revision_atencion_dias: "días de atención del semáforo",
+  revision_anual_plazo_dias: "plazo de la revisión anual",
+  revision_anual_ventana_meses: "ventana de la revisión anual",
+  externos_verificacion_meses: "periodicidad de verificación de externos",
+  impacto_plazo_dias: "plazo de respuesta al impacto normativo",
+  formato_informe_documento_id: "documento del formato del informe",
+  formato_informe_margen_superior_cm: "espacio del encabezado del informe",
+  formato_informe_margen_inferior_cm: "espacio del pie del informe",
+  // Metas de los indicadores documentales (13C).
+  meta_dentro_plazo_pct: "meta de documentos dentro del plazo",
+  meta_aprobacion_dias: "meta de días de aprobación",
+  meta_vencidos: "meta de documentos vencidos",
+  meta_acuses_pct: "meta de acuses de lectura",
+  meta_externos_pct: "meta de externos verificados",
+  meta_etapas_plazo_pct: "meta de etapas a tiempo",
 };
 
 function describirConfigDocumental(cambios: unknown): string {
@@ -220,6 +252,134 @@ function datosCambiados(despues: unknown): string {
   return nombres.length > 0 ? `: ${nombres.join(", ")}` : "";
 }
 
+// ── 13C: vigencia, documentos externos, revisión anual y normograma. Cada frase lee solo el `detalle` que escribe su
+// `registrarAuditoria` y el código resuelto por la entidad: nunca consulta nada más ni nombra lo que la fila no trae.
+
+const objeto = (v: unknown): Record<string, unknown> | null => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
+const numero = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+const minuscula = (t: string) => t.charAt(0).toLocaleLowerCase("es") + t.slice(1);
+/** La etiqueta de `valor` en `mapa`, en minúscula, o null si no es una de sus claves. */
+function etiquetaDe(mapa: Record<string, string>, valor: unknown): string | null {
+  const clave = texto(valor);
+  return clave && Object.hasOwn(mapa, clave) ? minuscula(mapa[clave]) : null;
+}
+/** «1 mar 2027» de una fecha `yyyy-mm-dd`; otro texto, tal cual. */
+function dia(v: unknown): string | null {
+  const t = texto(v);
+  return t && /^\d{4}-\d{2}-\d{2}$/.test(t) ? textoDeDia(t) : t;
+}
+/** « (excel, vencidos, 12 filas)» con las partes que haya. */
+function entreParentesis(partes: (string | null)[]): string {
+  const hay = partes.filter((p): p is string => p !== null);
+  return hay.length > 0 ? ` (${hay.join(", ")})` : "";
+}
+const filas = (v: unknown) => (numero(v) === null ? null : cuenta(numero(v)!, "fila", "filas"));
+/** Un filtro por proceso guarda su id: la frase dice que lo hubo, sin nombrarlo por un número. */
+const deUnProceso = (v: unknown) => (numero(v) === null ? null : "de un proceso");
+
+const MESES_DE_PLAZO = (v: unknown) => (numero(v) === null ? "el del tipo" : cuenta(numero(v)!, "mes", "meses"));
+
+const NO_COINCIDE_EN_DISCO = "el archivo en disco no coincide con el registrado";
+
+/** « 2021»: la edición de un externo, si el detalle la trae. */
+const edicionDe = (d: Record<string, unknown>) => (texto(d.edicion) ? ` ${texto(d.edicion)}` : "");
+
+const CAMPOS_DE_EXTERNO: Record<string, string> = {
+  entidadEmisora: "entidad emisora",
+  tituloOriginal: "título original",
+  fuenteOficial: "fuente oficial",
+  responsable: "responsable técnico",
+  verificacionMeses: "periodicidad de verificación",
+  norma: "norma enlazada",
+};
+
+/** Los datos de una norma que se comparan en su edición; `tipoNormaId` lo dice `tipo`. */
+const CAMPOS_DE_NORMA: Record<string, string> = {
+  tipo: "tipo",
+  numero: "número",
+  anio: "año",
+  fechaExpedicion: "fecha de expedición",
+  entidadEmisora: "entidad emisora",
+  titulo: "título",
+  tema: "tema",
+  enlaceOficial: "enlace oficial",
+  notas: "notas",
+};
+
+/** «: título, tema»: los campos de `nombres` cuyo valor difiere entre `antes` y `despues` (guardados completos). */
+function camposDistintos(antes: unknown, despues: unknown, nombres: Record<string, string>): string {
+  const a = objeto(antes);
+  const b = objeto(despues);
+  if (!a || !b) return "";
+  const lista = Object.keys(nombres).filter((k) => JSON.stringify(a[k] ?? null) !== JSON.stringify(b[k] ?? null)).map((k) => nombres[k]);
+  return lista.length > 0 ? `: ${lista.join(", ")}` : "";
+}
+
+const RESULTADO_DE_EXPORTACION: Record<string, string> = { al_dia: "al día", atencion: "en atención", vencida: "vencidos", en_tramite: "en trámite" };
+const ORIGEN_DE_EXPORTACION: Record<string, string> = { interno: "internos", externo: "externos" };
+
+/** «institucional» o «del proceso Gestión del Talento Humano», del `alcance` que guarda el Excel del normograma. */
+function alcanceDeNormograma(v: unknown): string | null {
+  const t = texto(v);
+  if (!t) return null;
+  if (t.startsWith("Proceso: ")) return `del proceso ${t.slice("Proceso: ".length)}`;
+  return minuscula(t);
+}
+
+/** «la revisión anual 2026». */
+const revisionDe = (d: Record<string, unknown>) => (numero(d.anio) === null ? "la revisión anual" : `la revisión anual ${numero(d.anio)}`);
+
+/**
+ * Una decisión de la revisión anual: la decisión nueva (y la anterior, si la había) o, con `despues: null`, el documento
+ * que sale de la foto (una carga deshecha) con su motivo. La decisión automática «reciente» de una publicación no trae
+ * autor: la fila sale a nombre del sistema.
+ */
+function describirDecision(d: Record<string, unknown>, cod: string | null): string {
+  const revision = revisionDe(d);
+  if (d.despues === null) return `${cod ?? "Un documento"} salió de ${revision}${conMotivo(d.motivo)}`;
+  const despues = objeto(d.despues) ? texto(objeto(d.despues)!.decision) : null;
+  const nueva = despues && Object.hasOwn(ETIQUETA_DECISION, despues) ? ETIQUETA_DECISION[despues as keyof typeof ETIQUETA_DECISION] : null;
+  if (!nueva) return `Registró una decisión de ${revision}${cod ? ` sobre ${cod}` : ""}`;
+  const previa = objeto(d.antes) ? texto(objeto(d.antes)!.decision) : null;
+  const antes = previa && Object.hasOwn(ETIQUETA_DECISION, previa) ? ETIQUETA_DECISION[previa as keyof typeof ETIQUETA_DECISION] : null;
+  return `En ${revision}, ${cod ?? "un documento"} quedó «${nueva}»${antes ? ` (antes «${antes}»)` : ""}`;
+}
+
+/** «Resolución 3100 de 2019 deroga a Resolución 2003 de 2014», o null si al detalle le falta una parte. */
+function relacionEnTexto(d: Record<string, unknown>): string | null {
+  const verbo = etiquetaDe(ETIQUETA_RELACION, d.tipo);
+  const norma = texto(d.norma);
+  const afectada = texto(d.afectada);
+  return verbo && norma && afectada ? `${norma} ${verbo} ${afectada}` : null;
+}
+
+/** «la norma Resolución 3100 de 2019» o «una norma». */
+const laNorma = (d: Record<string, unknown>) => (texto(d.nombre) ? `la norma ${texto(d.nombre)}` : "una norma");
+
+const RESOLUCION_DE_IMPACTO = (d: Record<string, unknown>): string | null => {
+  if (d.resolucion === "no_afecta") return "no afecta";
+  if (d.resolucion === "solicitud") return `con la solicitud${texto(d.tramite) ? ` ${texto(d.tramite)}` : ""}`;
+  if (d.resolucion === "verificacion") return "con la verificación del externo";
+  return null;
+};
+
+/** «hallazgo de verificación en Farmacia», sin artículo: la frase pone «el» o «del». */
+function hallazgoEn(d: Record<string, unknown>): string {
+  const origen = d.origen === "recogida" ? " de recogida" : d.origen === "verificacion" ? " de verificación" : "";
+  return `hallazgo${origen}${texto(d.punto) ? ` en ${texto(d.punto)}` : ""}`;
+}
+
+/** «; validó 2 correcciones y reabrió 1 hallazgo»: lo que la verificación hizo con los hallazgos por validar del punto. */
+function hallazgosDeLaVerificacion(d: Record<string, unknown>): string {
+  const validados = numero(d.hallazgosValidados) ?? 0;
+  const reabiertos = numero(d.hallazgosReabiertos) ?? 0;
+  const partes = [
+    validados > 0 ? `validó ${cuenta(validados, "corrección", "correcciones")}` : null,
+    reabiertos > 0 ? `reabrió ${cuenta(reabiertos, "hallazgo", "hallazgos")}` : null,
+  ].filter((p): p is string => p !== null);
+  return partes.length > 0 ? `; ${partes.join(" y ")}` : "";
+}
+
 /** Acciones de mapa dinámicas: <verbo>_<singular>. */
 const ACCION_DE_MAPA = /^(reordenar|activar|desactivar|borrar|crear|editar)_(.+)$/;
 const VERBOS_DE_MAPA: Record<string, string> = {
@@ -293,11 +453,31 @@ export function describirEvento(e: EventoAuditoria): string {
     case "verificacion_abierta":
       return `Abrió la verificación de ${texto(d.punto) ?? "un punto de uso"}`;
     case "verificacion_cerrada":
-      return `Cerró la verificación de ${texto(d.punto) ?? "un punto de uso"}: ${resultadoDeVerificacion(d)}`;
+      return `Cerró la verificación de ${texto(d.punto) ?? "un punto de uso"}: ${resultadoDeVerificacion(d)}${hallazgosDeLaVerificacion(d)}`;
     case "verificacion_descartada":
       return `Descartó la verificación de ${texto(d.punto) ?? "un punto de uso"}${conMotivo(d.motivo)}`;
     case "hallazgo_cerrado":
+      // Desde la Tarea 13 de la 13C el cierre directo guarda de dónde venía; una fila anterior conserva su frase.
+      if (typeof d.estadoPrevio === "string") {
+        return `Cerró directamente el ${hallazgoEn(d)}${d.propioCorrector === true ? " (único Administrador del SGC activo)" : ""}${conMotivo(d.nota)}`;
+      }
       return `Cerró un hallazgo${d.origen === "recogida" ? " de recogida" : d.origen === "verificacion" ? " de verificación" : ""}${conMotivo(d.nota)}`;
+    case "hallazgo_corregido":
+      return `Marcó corregido el ${hallazgoEn(d)}${conMotivo(d.nota)}`;
+    case "hallazgo_validado":
+      return d.validacion === "verificacion"
+        ? `Validó con la verificación del punto la corrección del ${hallazgoEn(d)} y lo cerró`
+        : `Validó la corrección del ${hallazgoEn(d)} y lo cerró`;
+    case "hallazgo_reabierto":
+      return d.reabiertoPor === "verificacion"
+        ? `Reabrió con la verificación del punto el ${hallazgoEn(d)}${conMotivo(d.nota)}`
+        : `Reabrió el ${hallazgoEn(d)}${conMotivo(d.nota)}`;
+    case "exporto_socializaciones":
+      return `Emitió el listado de socializaciones${entreParentesis([
+        texto(d.formato),
+        texto(d.desde) && texto(d.hasta) ? `${texto(d.desde)} a ${texto(d.hasta)}` : null,
+        filas(d.total),
+      ])}`;
     case "crear_punto_uso":
       return `Creó el punto de uso${nombre ? ` «${nombre}»` : ""}`;
     case "editar_punto_uso":
@@ -366,6 +546,149 @@ export function describirEvento(e: EventoAuditoria): string {
       return `Movió un ítem de la lista de verificación ${d.direccion === "arriba" ? "hacia arriba" : "hacia abajo"}: «${texto(d.texto) ?? "?"}»`;
     case "alternar_item_verificacion":
       return `${d.activo === true ? "Activó" : "Desactivó"} un ítem de la lista de verificación: «${texto(d.texto) ?? "?"}»`;
+
+    // ── Vigencia (13C)
+    case "documento_ratificado":
+      return `Ratificó sin cambios ${documentoYVersion(cod, d.version)}`;
+    case "ratificacion_rechazada":
+      return `No se pudo ratificar ${cod ?? "un documento"}: ${NO_COINCIDE_EN_DISCO}`;
+    case "adopcion_rechazada":
+      return `No se pudo adoptar ${documentoYVersion(cod, d.numero)}: ${NO_COINCIDE_EN_DISCO}`;
+    case "fecha_revision_fijada":
+      return `Fijó la próxima revisión de ${cod ?? "un documento"}${dia(d.fecha) ? ` para el ${dia(d.fecha)}` : ""}${conMotivo(d.nota)}`;
+    case "fecha_revision_quitada":
+      return `Quitó la fecha fijada de la próxima revisión de ${cod ?? "un documento"}${dia(d.fecha) ? ` (${dia(d.fecha)})` : ""}`;
+    case "plazo_revision_ajustado":
+      return numero(d.despues) === null
+        ? `Devolvió el plazo de revisión de ${cod ?? "un documento"} al del tipo (antes, ${MESES_DE_PLAZO(d.antes)})`
+        : `Ajustó el plazo de revisión de ${cod ?? "un documento"} a ${MESES_DE_PLAZO(d.despues)} (antes, ${MESES_DE_PLAZO(d.antes)})`;
+    case "exporto_semaforo":
+      return `Emitió el semáforo de vigencia${entreParentesis([
+        texto(d.formato),
+        etiquetaDe(RESULTADO_DE_EXPORTACION, d.estado),
+        deUnProceso(d.procesoId),
+        etiquetaDe(ORIGEN_DE_EXPORTACION, d.origen),
+        filas(d.total),
+      ])}`;
+
+    // ── Documentos externos (13C)
+    case "externo_registrado":
+      return cod
+        ? `Registró el documento externo ${cod}${texto(d.titulo) ? ` — ${texto(d.titulo)}` : ""}${texto(d.edicion) ? ` (edición ${texto(d.edicion)})` : ""}`
+        : "Registró un documento externo";
+    case "externo_editado":
+      return `Editó los datos de control ${cod ? `del externo ${cod}` : "de un externo"}${camposEditados(d, CAMPOS_DE_EXTERNO)}`;
+    case "externo_edicion_abierta":
+      return `Abrió en borrador la edición${edicionDe(d)} de ${cod ?? "un externo"}`;
+    case "externo_edicion_editada":
+      return `Editó la edición${edicionDe(d)} en borrador de ${cod ?? "un externo"}`;
+    case "externo_edicion_descartada":
+      return `Descartó la edición${edicionDe(d)} en borrador de ${cod ?? "un externo"}`;
+    case "externo_adoptado":
+      return `Adoptó la edición${edicionDe(d)} de ${cod ?? "un externo"}`;
+    case "externo_verificado": {
+      const resultado = etiquetaDe(ETIQUETA_RESULTADO, d.resultado);
+      return `Verificó la vigencia de ${cod ?? "un externo"}${resultado ? `: ${resultado}` : ""}`;
+    }
+    case "externo_retirado":
+      return cod ? `Retiró el documento externo ${cod}${conMotivo(d.motivo)}` : `Retiró un documento externo${conMotivo(d.motivo)}`;
+    case "exporto_externos":
+      return `Emitió el listado de documentos externos${entreParentesis([
+        texto(d.formato),
+        etiquetaDe(RESULTADO_DE_EXPORTACION, d.estado),
+        deUnProceso(d.procesoId),
+        numero(d.responsableId) === null ? null : "de un responsable",
+        texto(d.texto) ? `con el texto «${texto(d.texto)}»` : null,
+        filas(d.total),
+      ])}`;
+
+    // ── Revisión anual (13C)
+    case "revision_anual_abierta": {
+      const documentos = numero(d.documentos) === null ? null : cuenta(numero(d.documentos)!, "documento", "documentos");
+      const procesos = numero(d.procesos) === null ? null : cuenta(numero(d.procesos)!, "proceso", "procesos");
+      return `Abrió ${revisionDe(d)}${documentos ? ` con ${documentos}${procesos ? ` de ${procesos}` : ""}` : ""}`;
+    }
+    case "revision_anual_prorrogada":
+      return `Prorrogó ${numero(d.dias) === null ? "" : `${cuenta(numero(d.dias)!, "día", "días")} `}${revisionDe(d)}${conMotivo(d.motivo)}`;
+    case "revision_anual_decision":
+      return describirDecision(d, cod);
+    case "revision_anual_normograma": {
+      const resultado =
+        d.resultado === "cambios"
+          ? `: marcó cambios${conMotivo(d.nota)}`
+          : d.resultado === "sin_novedad"
+            ? `: sin novedad${texto(d.nota) ? ` (${texto(d.nota)})` : ""}`
+            : "";
+      return `Confirmó el normograma de ${texto(d.proceso) ?? "un proceso"} en ${revisionDe(d)}${resultado}`;
+    }
+    case "revision_anual_cerrada": {
+      const documentos = numero(d.documentos) === null ? "" : ` con ${cuenta(numero(d.documentos)!, "documento", "documentos")}`;
+      const sinRevisar = numero(d.sinRevisar) ?? 0;
+      const quedaron = sinRevisar === 0 ? "" : `; ${sinRevisar === 1 ? "1 quedó" : `${sinRevisar} quedaron`} sin revisar`;
+      return `Cerró ${revisionDe(d)}${documentos}${quedaron}`;
+    }
+    case "informe_generado":
+      return `Generó el informe de ${revisionDe(d)}`;
+    case "informe_no_regenerable":
+      return d.motivo === "formato"
+        ? `No se pudo generar el informe de ${revisionDe(d)}: el archivo del formato falta o cambió`
+        : `No se pudo regenerar idéntico el informe de ${revisionDe(d)}: no se entregó`;
+    case "exporto_indicadores":
+      return `Emitió los indicadores documentales${entreParentesis([
+        texto(d.formato),
+        texto(d.periodo) ? (periodoDe(texto(d.periodo)!, zonaHoraria())?.etiqueta ?? texto(d.periodo)) : null,
+        deUnProceso(d.procesoId),
+      ])}`;
+
+    // ── Normograma (13C)
+    case "norma_creada":
+      return texto(d.nombre) ? `Registró la norma ${texto(d.nombre)}${texto(d.titulo) ? ` — ${texto(d.titulo)}` : ""}` : "Registró una norma";
+    case "norma_editada":
+      return `Editó ${laNorma(d)}${camposDistintos(d.antes, d.despues, CAMPOS_DE_NORMA)}`;
+    case "norma_estado": {
+      const estado = etiquetaDe(ETIQUETA_ESTADO_NORMA, d.estadoNuevo);
+      return estado ? `Pasó ${texto(d.nombre) ?? "una norma"} a ${estado}` : `Cambió el estado de ${laNorma(d)}`;
+    }
+    case "norma_retirada":
+      return `Retiró ${laNorma(d)}${conMotivo(d.motivo)}`;
+    case "norma_borrada":
+      return `Borró ${laNorma(d)}`;
+    case "norma_relacion": {
+      const relacion = relacionEnTexto(d);
+      return relacion ? `Registró que ${relacion}` : "Registró una relación entre normas";
+    }
+    case "norma_relacion_eliminada": {
+      const relacion = relacionEnTexto(d);
+      return `${relacion ? `Eliminó la relación «${relacion}»` : "Eliminó una relación entre normas"}${conMotivo(d.motivo)}`;
+    }
+    case "norma_asociada":
+      return `Asoció ${laNorma(d)} ${texto(d.proceso) ? `al proceso ${texto(d.proceso)}` : "a un proceso"}`;
+    case "norma_requisito_editado":
+      return `Editó el requisito de ${texto(d.nombre) ?? "una norma"} ${texto(d.proceso) ? `en el proceso ${texto(d.proceso)}` : "en un proceso"}`;
+    case "norma_desasociada":
+      return `Quitó ${laNorma(d)} ${texto(d.proceso) ? `del proceso ${texto(d.proceso)}` : "de un proceso"}`;
+    case "norma_documento_enlazado":
+      return `Enlazó ${cod ?? "un documento"} a ${laNorma(d)}`;
+    case "norma_documento_desenlazado":
+      return `Quitó el enlace de ${cod ?? "un documento"} con ${laNorma(d)}`;
+    case "tipo_norma_creado":
+      return `Creó el tipo de norma${nombre ? ` «${nombre}»` : ""}`;
+    case "tipo_norma_editado":
+      return texto(d.antes) && texto(d.despues)
+        ? `Renombró el tipo de norma «${texto(d.antes)}» a «${texto(d.despues)}»`
+        : "Renombró un tipo de norma";
+    case "tipo_norma_movido":
+      return `Movió el tipo de norma${nombre ? ` «${nombre}»` : ""} ${d.direccion === "arriba" ? "hacia arriba" : "hacia abajo"}`;
+    case "tipo_norma_alternado":
+      return `${d.activo === true ? "Activó" : "Desactivó"} el tipo de norma${nombre ? ` «${nombre}»` : ""}`;
+    case "impacto_resuelto": {
+      // En la historia del documento cuando lo hay; si no, en la del proceso (`impactos.ts`).
+      const donde = cod ?? (texto(d.proceso) ? `el proceso ${texto(d.proceso)}` : "un proceso");
+      const como = RESOLUCION_DE_IMPACTO(d);
+      return `Resolvió el impacto de ${texto(d.norma) ?? "una norma"} en ${donde}${como ? `: ${como}` : ""}`;
+    }
+    case "exporto_normograma":
+      return `Emitió el normograma${entreParentesis([texto(d.formato), alcanceDeNormograma(d.alcance), filas(d.total)])}`;
   }
 
   if (e.accion.startsWith("tramite_")) return describirTramite(e.accion, texto(d.numero) ?? "?", cod, d.observacion);
@@ -449,6 +772,57 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   editar_item_verificacion: "Editó un ítem de la lista de verificación",
   mover_item_verificacion: "Movió un ítem de la lista de verificación",
   alternar_item_verificacion: "Activó o desactivó un ítem de la lista de verificación",
+  // Herencia de la 13B (13C)
+  hallazgo_corregido: "Marcó corregido un hallazgo",
+  hallazgo_validado: "Validó la corrección de un hallazgo",
+  hallazgo_reabierto: "Reabrió un hallazgo",
+  exporto_socializaciones: "Emitió el listado de socializaciones",
+  // Vigencia (13C)
+  documento_ratificado: "Ratificó sin cambios un documento",
+  ratificacion_rechazada: "No se pudo ratificar un documento",
+  adopcion_rechazada: "No se pudo adoptar una edición",
+  fecha_revision_fijada: "Fijó la próxima revisión de un documento",
+  fecha_revision_quitada: "Quitó la fecha fijada de un documento",
+  plazo_revision_ajustado: "Ajustó el plazo de revisión de un documento",
+  exporto_semaforo: "Emitió el semáforo de vigencia",
+  // Documentos externos (13C)
+  externo_registrado: "Registró un documento externo",
+  externo_editado: "Editó los datos de control de un externo",
+  externo_edicion_abierta: "Abrió en borrador la edición de un externo",
+  externo_edicion_editada: "Editó la edición en borrador de un externo",
+  externo_edicion_descartada: "Descartó la edición en borrador de un externo",
+  externo_adoptado: "Adoptó la edición de un externo",
+  externo_verificado: "Verificó la vigencia de un externo",
+  externo_retirado: "Retiró un documento externo",
+  exporto_externos: "Emitió el listado de documentos externos",
+  // Revisión anual (13C)
+  revision_anual_abierta: "Abrió la revisión anual",
+  revision_anual_prorrogada: "Prorrogó la revisión anual",
+  revision_anual_decision: "Registró una decisión de la revisión anual",
+  revision_anual_normograma: "Confirmó el normograma en la revisión anual",
+  revision_anual_cerrada: "Cerró la revisión anual",
+  informe_generado: "Generó el informe de la revisión anual",
+  informe_no_regenerable: "No se pudo generar un informe de la revisión anual",
+  exporto_indicadores: "Emitió los indicadores documentales",
+  // Normograma (13C)
+  norma_creada: "Registró una norma",
+  norma_editada: "Editó una norma",
+  norma_estado: "Cambió el estado de una norma",
+  norma_retirada: "Retiró una norma",
+  norma_borrada: "Borró una norma",
+  norma_relacion: "Registró una relación entre normas",
+  norma_relacion_eliminada: "Eliminó una relación entre normas",
+  norma_asociada: "Asoció una norma a un proceso",
+  norma_requisito_editado: "Editó el requisito de una norma en un proceso",
+  norma_desasociada: "Quitó una norma de un proceso",
+  norma_documento_enlazado: "Enlazó un documento a una norma",
+  norma_documento_desenlazado: "Quitó el enlace de un documento con una norma",
+  tipo_norma_creado: "Creó un tipo de norma",
+  tipo_norma_editado: "Renombró un tipo de norma",
+  tipo_norma_movido: "Movió un tipo de norma",
+  tipo_norma_alternado: "Activó o desactivó un tipo de norma",
+  impacto_resuelto: "Resolvió un impacto normativo",
+  exporto_normograma: "Emitió el normograma",
 };
 
 /** La frase legible de una acción de la bitácora. Una que no se conoce sale con su nombre, sin guiones. */
