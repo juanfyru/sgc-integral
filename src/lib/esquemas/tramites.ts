@@ -16,6 +16,9 @@ export const EsquemaSolicitud = z
     tipoDocumentoId: id.optional(),
     tituloPropuesto: textoAcotado("El título propuesto", 3, 200).optional(),
     documentoId: id.optional(),
+    // La revisión anual abierta y el impacto normativo de los que nace (spec 13C §9.3 y §10.5); `crearSolicitud` los valida.
+    revisionAnualId: id.optional(),
+    impactoId: id.optional(),
   })
   .strict();
 

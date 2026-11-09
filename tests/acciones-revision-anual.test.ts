@@ -12,6 +12,10 @@ const dominio = vi.hoisted(() => ({
   enlazarTramiteExistente: vi.fn(async () => {}),
   confirmarNormograma: vi.fn(async () => {}),
 }));
+const actos = vi.hoisted(() => ({
+  registrarVerificacion: vi.fn(async () => ({})),
+  ratificar: vi.fn(async () => ({ codigo: "GTH-PR-01" })),
+}));
 const { redirect, requerirSesion } = vi.hoisted(() => ({
   redirect: vi.fn((destino: string) => {
     throw new Error(`REDIRECT:${destino}`);
@@ -23,6 +27,14 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect }));
 vi.mock("@/lib/sesion-actual", () => ({ requerirSesion }));
 vi.mock("@/lib/contexto-peticion", () => ({ contextoDePeticion: async () => ({ ip: "10.0.0.1", userAgent: "prueba" }) }));
+vi.mock("@/db/consultas/vigencia/externos", async (original) => ({
+  ...(await original<typeof import("@/db/consultas/vigencia/externos")>()),
+  registrarVerificacion: actos.registrarVerificacion,
+}));
+vi.mock("@/db/consultas/vigencia/ratificaciones", async (original) => ({
+  ...(await original<typeof import("@/db/consultas/vigencia/ratificaciones")>()),
+  ratificar: actos.ratificar,
+}));
 vi.mock("@/db/consultas/vigencia/revision-anual", async (original) => ({
   ...(await original<typeof import("@/db/consultas/vigencia/revision-anual")>()),
   ...dominio,
@@ -34,6 +46,8 @@ import {
   confirmarNormogramaAccion,
   enlazarTramiteAccion,
   prorrogarRevisionAccion,
+  ratificarAccion,
+  verificarExternoAccion,
 } from "@/app/acciones-vigencia";
 import {
   EsquemaAbrirRevision,
@@ -151,5 +165,34 @@ describe("las acciones", () => {
       error: "Sin permiso para esta acción",
     });
     expect(dominio.abrirRevision).not.toHaveBeenCalled();
+  });
+});
+
+describe("decidir desde la tabla de la revisión anual vuelve a ella", () => {
+  const verificacion = { documentoId: "8", resultado: "vigente", fuente: "https://www.minsalud.gov.co/guias" };
+
+  it("verificar un externo con `volver` regresa a la tabla; sin él, o con una ruta que no es interna, a la página del externo", async () => {
+    requerirSesion.mockResolvedValue(lider);
+    await expect(verificarExternoAccion(null, formulario({ ...verificacion, volver: "/vigencia/revision-anual?proceso=3" }))).rejects.toThrow(
+      "REDIRECT:/vigencia/revision-anual?proceso=3",
+    );
+    expect(actos.registrarVerificacion).toHaveBeenCalledWith(
+      expect.objectContaining({ usuarioId: 8 }),
+      { documentoId: 8, resultado: "vigente", fuente: "https://www.minsalud.gov.co/guias", nota: null },
+    );
+    await expect(verificarExternoAccion(null, formulario(verificacion))).rejects.toThrow("REDIRECT:/vigencia/externos/8");
+    await expect(verificarExternoAccion(null, formulario({ ...verificacion, volver: "//otro.sitio/x" }))).rejects.toThrow("REDIRECT:/vigencia/externos/8");
+  });
+
+  it("ratificar con `volver` regresa a la tabla; sin él, a la ficha del documento", async () => {
+    requerirSesion.mockResolvedValue(lider);
+    const firma = { documentoId: "5", clave: "secreta" };
+    await expect(ratificarAccion(null, formulario({ ...firma, volver: "/vigencia/revision-anual" }))).rejects.toThrow("REDIRECT:/vigencia/revision-anual");
+    expect(actos.ratificar).toHaveBeenCalledWith(
+      expect.objectContaining({ usuarioId: 8 }),
+      { documentoId: 5, nota: null, credenciales: { clave: "secreta", codigo: undefined } },
+      expect.anything(),
+    );
+    await expect(ratificarAccion(null, formulario(firma))).rejects.toThrow("REDIRECT:/documentos/gth-pr-01");
   });
 });

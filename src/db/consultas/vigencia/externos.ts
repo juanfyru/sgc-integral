@@ -23,6 +23,7 @@ export {
   type OpcionesDeExterno,
   type Verificacion,
 } from "./externos/comun";
+export type { ExternoVerificable } from "./externos/lectura";
 export { abrirEdicion, descartarEdicion, editarControlExterno, editarEdicion, registrarExterno } from "./externos/registro";
 export { adoptarEdicion, alAdoptar, validarAdopcion } from "./externos/adopcion";
 export { registrarVerificacion, retirarExterno } from "./externos/verificacion";
@@ -31,6 +32,7 @@ export {
   archivoDeEdicion,
   autorizarArchivoDeEdicion,
   esResponsableTecnico,
+  externosVerificables,
   fichaDeExterno,
   listarExternos,
   obtenerExterno,

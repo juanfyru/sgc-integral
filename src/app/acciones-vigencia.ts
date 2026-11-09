@@ -44,6 +44,7 @@ import {
   EsquemaVerificacion,
 } from "@/lib/esquemas/vigencia";
 import { cuenta } from "@/lib/plural";
+import { rutaInterna } from "@/lib/rutas";
 import { parsearFormulario } from "@/lib/validacion";
 
 /**
@@ -58,18 +59,21 @@ function separarFirma(formData: FormData): FormData {
   return firma;
 }
 
-/** Ratifica con clave y vuelve a la ficha; una firma que cerró la sesión termina en el ingreso. */
+/**
+ * Ratifica con clave y vuelve a la ficha o, con `volver` (la tabla de la revisión anual), a esa página; una firma que
+ * cerró la sesión termina en el ingreso.
+ */
 export async function ratificarAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   const firma = separarFirma(formData);
   return mutacion(formData, "documentos.ratificar", async (_usuarioId, _formData, sesion) => {
-    const d = parsearFormulario(firma, EsquemaRatificar);
+    const d = parsearFormulario(firma, EsquemaRatificar, { omitir: ["volver"] });
     try {
       const { codigo } = await ratificar(
         sesion,
         { documentoId: d.documentoId, nota: d.nota || null, credenciales: { clave: d.clave, codigo: d.codigo } },
         { contexto: await contextoDePeticion() },
       );
-      return `/documentos/${encodeURIComponent(codigo.toLowerCase())}`;
+      return rutaInterna(firma.get("volver"), `/documentos/${encodeURIComponent(codigo.toLowerCase())}`);
     } catch (err) {
       if (err instanceof ErrorFirma && err.sesionCerrada) return err.bloqueada ? "/ingreso?motivo=bloqueo" : "/ingreso";
       throw err;
@@ -178,12 +182,15 @@ export async function adoptarEdicionAccion(_prev: EstadoAccion, formData: FormDa
   });
 }
 
-/** La verificación es del responsable técnico o de quien gestiona el externo: lo decide el dominio. */
+/**
+ * La verificación es del responsable técnico o de quien gestiona el externo: lo decide el dominio. Vuelve a la página
+ * del externo o, con `volver` (la tabla de la revisión anual), a esa página.
+ */
 export async function verificarExternoAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "externos.verificar", async (_usuarioId, _formData, sesion) => {
-    const d = parsearFormulario(formData, EsquemaVerificacion);
+    const d = parsearFormulario(formData, EsquemaVerificacion, { omitir: ["volver"] });
     await registrarVerificacion(sesion, d);
-    return paginaDeExterno(d.documentoId);
+    return rutaInterna(formData.get("volver"), paginaDeExterno(d.documentoId));
   });
 }
 

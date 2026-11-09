@@ -21,7 +21,8 @@ function Fila({ etiqueta, ancha, children }: { etiqueta: string; ancha?: boolean
   );
 }
 
-export function BloqueSolicitud({ tramite: t }: { tramite: DetalleTramite }) {
+/** `origen`: «Abierto desde la revisión anual 2026» o «Abierto por el cambio de …» (`origenDeTramite`), bajo el motivo. */
+export function BloqueSolicitud({ tramite: t, origen = null }: { tramite: DetalleTramite; origen?: string | null }) {
   const fecha = new Intl.DateTimeFormat("es-CO", { dateStyle: "long", timeZone: zonaHoraria() });
   return (
     <section aria-labelledby="titulo-solicitud" className="rounded-xl border border-border bg-card p-4 shadow-xs">
@@ -33,7 +34,10 @@ export function BloqueSolicitud({ tramite: t }: { tramite: DetalleTramite }) {
         <Fila etiqueta="Pedida el">{fecha.format(t.creadoEn)}</Fila>
         <Fila etiqueta="Qué pide">{ETIQUETA_TIPO_SOLICITUD[t.tipo]}</Fila>
         <Fila etiqueta="Proceso">{t.procesoNombre}</Fila>
-        <Fila etiqueta="Motivo">{ETIQUETA_MOTIVO[t.motivo]}</Fila>
+        <Fila etiqueta="Motivo">
+          {ETIQUETA_MOTIVO[t.motivo]}
+          {origen ? <span className="block text-xs text-muted-foreground">{origen}</span> : null}
+        </Fila>
         <Fila etiqueta="Visto bueno">{textoVistoBueno(t)}</Fila>
         {t.tituloPropuesto ? <Fila etiqueta="Título propuesto">{t.tituloPropuesto}</Fila> : null}
         {t.tipo !== "eliminar" && t.etapa !== "visto_bueno" && t.etapa !== "aceptacion" ? (

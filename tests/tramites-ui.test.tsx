@@ -440,6 +440,30 @@ describe("FormularioSolicitud", () => {
     expect(h).toMatch(/<option[^>]*disabled=""[^>]*>GTH-PR-03/);
     expect(h).toContain("trámite abierto");
   });
+  it("con revisionAnualId lo manda como campo oculto y preselecciona el motivo y el tipo pedidos", () => {
+    const h = renderToStaticMarkup(
+      <FormularioSolicitud procesos={procesos} tipos={tipos} documentos={documentos} documentoInicialId={3} tipoInicial="eliminar" motivoInicial="revision_anual" revisionAnualId={12} />,
+    );
+    expect(h).toMatch(/<input type="hidden" name="revisionAnualId" value="12"\/>/);
+    expect(h).not.toContain('name="impactoId"');
+    expect(h).toMatch(/<option[^>]*value="revision_anual"[^>]*selected=""|<option[^>]*selected=""[^>]*value="revision_anual"/);
+    expect(h).toMatch(/value="eliminar"[^>]*checked=""|checked=""[^>]*value="eliminar"/);
+    expect(h).toMatch(/<option[^>]*value="3"[^>]*selected=""|<option[^>]*selected=""[^>]*value="3"/);
+    // Sin los valores iniciales, nada oculto ni preseleccionado.
+    const sin = renderToStaticMarkup(<FormularioSolicitud procesos={procesos} tipos={tipos} documentos={documentos} documentoInicialId={3} />);
+    expect(sin).not.toContain('name="revisionAnualId"');
+    expect(sin).not.toMatch(/<option[^>]*selected=""[^>]*value="revision_anual"|<option[^>]*value="revision_anual"[^>]*selected=""/);
+  });
+  it("con impactoId de un proceso arranca como creación en ese proceso y lo manda oculto", () => {
+    const dos = [...procesos, { id: 2, nombre: "Consulta Externa", sigla: "CEX", subprocesos: [] }];
+    const h = renderToStaticMarkup(
+      <FormularioSolicitud procesos={dos} tipos={tipos} documentos={documentos} tipoInicial="crear" procesoInicialId={2} motivoInicial="cambio_normativo" impactoId={9} />,
+    );
+    expect(h).toMatch(/<input type="hidden" name="impactoId" value="9"\/>/);
+    expect(h).toMatch(/value="crear"[^>]*checked=""|checked=""[^>]*value="crear"/);
+    expect(h).toMatch(/<option[^>]*value="2"[^>]*selected=""|<option[^>]*selected=""[^>]*value="2"/);
+    expect(h).toMatch(/<option[^>]*value="cambio_normativo"[^>]*selected=""|<option[^>]*selected=""[^>]*value="cambio_normativo"/);
+  });
   it("sin documento arranca como creación, con proceso, tipo y título", () => {
     const h = renderToStaticMarkup(<FormularioSolicitud procesos={procesos} tipos={tipos} documentos={documentos} />);
     for (const campo of ["procesoId", "tipoDocumentoId", "tituloPropuesto", "motivo", "justificacion"]) {
@@ -1324,6 +1348,9 @@ describe("esquemas del trámite", () => {
     expect(EsquemaSolicitud.parse({ ...solicitud, justificacion: "  Diez caracteres.  " })).toEqual({ ...solicitud, procesoId: 3, tipoDocumentoId: 2 });
     expect(EsquemaSolicitud.safeParse({ ...solicitud, extra: "x" }).success).toBe(false);
     expect(EsquemaSolicitud.safeParse({ ...solicitud, tipo: "otro" }).success).toBe(false);
+    // La revisión anual y el impacto que la solicitud atiende viajan como campos ocultos.
+    expect(EsquemaSolicitud.parse({ ...solicitud, revisionAnualId: "12", impactoId: "9" })).toMatchObject({ revisionAnualId: 12, impactoId: 9 });
+    expect(EsquemaSolicitud.safeParse({ ...solicitud, revisionAnualId: "doce" }).success).toBe(false);
     expect(EsquemaSolicitud.safeParse({ ...solicitud, motivo: "otro" }).success).toBe(false);
   });
   it.each([

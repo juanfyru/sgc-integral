@@ -12,7 +12,7 @@ import type { Externo, OpcionesDeExterno } from "@/db/consultas/vigencia/externo
 import { cuenta } from "@/lib/plural";
 import { textoFecha } from "@/lib/vigencia/plazo";
 import { textoVigenciaDeExterno } from "@/lib/vigencia/semaforo";
-import { ETIQUETA_RESULTADO } from "@/lib/vigencia/tipos";
+import { ETIQUETA_RESULTADO, type ResultadoVerificacion } from "@/lib/vigencia/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { Dato } from "../BloqueVigencia";
 import { ChipVigencia } from "../ChipVigencia";
@@ -221,6 +221,7 @@ export function PaginaExterno({
   opciones,
   pideCodigo,
   impacto = null,
+  resultadoInicial,
 }: {
   externo: Externo;
   /** Las personas y las normas que ofrece «Editar»; null si la persona no edita. */
@@ -228,6 +229,8 @@ export function PaginaExterno({
   pideCodigo: boolean;
   /** El impacto normativo pendiente que la verificación resolverá (`?impacto=`), si es de este externo. */
   impacto?: { id: number; norma: string; proceso: string } | null;
+  /** El resultado con que se abre la verificación (`?verificar=`, desde la revisión anual). */
+  resultadoInicial?: ResultadoVerificacion;
 }) {
   const zona = zonaHoraria();
   const pendiente = e.control.edicionNuevaPendienteDesde;
@@ -289,6 +292,7 @@ export function PaginaExterno({
               fuenteOficial={e.control.fuenteOficial}
               verificacionMeses={e.control.verificacionMeses}
               impacto={impacto}
+              resultadoInicial={resultadoInicial}
             />
           </section>
         ) : null}

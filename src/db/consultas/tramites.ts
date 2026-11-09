@@ -8,6 +8,7 @@ import type { Row } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { sugerirCodigo, todosLosCodigos } from "@/db/consultas/codigos";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
+import { nombreSql } from "@/db/consultas/normograma/busqueda";
 import { buscarParecidos, type Parecido } from "@/db/consultas/parecidos";
 import {
   alcanceProcesos,
@@ -238,6 +239,24 @@ export async function listarTramites(
     responsables: esEtapaDeTrabajo(v.tramite.etapa) ? v.responsables : [],
     venceEn: v.tramite.venceEn,
   }));
+}
+
+/**
+ * De dónde nació la solicitud (spec 13C §14.4): «Abierto desde la revisión anual 2026» o «Abierto por el cambio de
+ * Resolución 2003 de 2014»; nulo si no nació de ninguno. Quien llama ya decidió que la persona ve el trámite.
+ */
+export async function origenDeTramite(tramiteId: number, opciones?: { sql?: Cliente }): Promise<string | null> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [f] = await sql`SELECT ra.anio, CASE WHEN n.id IS NULL THEN NULL ELSE ${nombreSql(sql)} END AS norma
+    FROM tramites t
+    LEFT JOIN revisiones_anuales ra ON ra.id = t.revision_anual_id
+    LEFT JOIN impactos_normativos i ON i.id = t.impacto_id
+    LEFT JOIN normas n ON n.id = i.norma_id
+    LEFT JOIN tipos_norma tn ON tn.id = n.tipo_norma_id
+    WHERE t.id = ${tramiteId}`;
+  if (!f) return null;
+  if (f.anio !== null) return `Abierto desde la revisión anual ${Number(f.anio)}`;
+  return f.norma ? `Abierto por el cambio de ${f.norma as string}` : null;
 }
 
 export async function obtenerTramite(

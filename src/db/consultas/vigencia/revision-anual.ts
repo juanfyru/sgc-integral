@@ -14,7 +14,14 @@ export {
   type Prorroga,
   type Revision,
 } from "./revision-anual/comun";
-export { abrirRevision, listarRevisiones, prorrogarRevision, revisionAbierta } from "./revision-anual/campana";
+export {
+  abrirRevision,
+  indiceDeRevisiones,
+  listarRevisiones,
+  prorrogarRevision,
+  revisionAbierta,
+  type RevisionEnIndice,
+} from "./revision-anual/campana";
 export {
   alPublicarDuranteRevision,
   alSolicitar,

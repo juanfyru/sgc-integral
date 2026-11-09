@@ -220,6 +220,30 @@ export async function impactoPendienteDelDocumento(
   return f ? { id: Number(f.id), norma: f.norma as string, proceso: f.proceso as string } : null;
 }
 
+/**
+ * Un impacto pendiente con lo que la solicitud prellenada necesita (`/tramites/nueva?impacto=`): su documento (nulo en el
+ * de proceso), su proceso y la norma. Quien llama decide si la persona lo ve (`puedeVerImpacto`).
+ */
+export async function impactoPendiente(
+  impactoId: number,
+  opciones?: Opciones,
+): Promise<{ id: number; documentoId: number | null; procesoId: number; norma: string; proceso: string } | null> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [f] = await sql`SELECT i.id, i.documento_id, i.proceso_id, ${nombreSql(sql)} AS norma, p.nombre AS proceso
+    FROM impactos_normativos i
+    JOIN normas n ON n.id = i.norma_id JOIN tipos_norma tn ON tn.id = n.tipo_norma_id
+    JOIN procesos p ON p.id = i.proceso_id
+    WHERE i.id = ${impactoId} AND i.estado = 'pendiente'`;
+  if (!f) return null;
+  return {
+    id: Number(f.id),
+    documentoId: f.documento_id === null ? null : Number(f.documento_id),
+    procesoId: Number(f.proceso_id),
+    norma: f.norma as string,
+    proceso: f.proceso as string,
+  };
+}
+
 /** Las de quien ve el impacto; la verificación de un externo llega por `resolverImpactoPorVerificacion`. */
 export type ResolucionDeImpacto = { resolucion: "no_afecta"; nota: string } | { resolucion: "solicitud"; tramiteId: number };
 

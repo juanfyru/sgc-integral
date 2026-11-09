@@ -48,6 +48,24 @@ export async function listarRevisiones(opciones?: Opciones): Promise<Revision[]>
   return leerRevisiones(sql, sql`true`);
 }
 
+/** Una revisión sin cifras ni nombres: lo que la pestaña lista a cualquiera que la ve, también al líder. */
+export type RevisionEnIndice = { id: number; anio: number; estado: "abierta" | "cerrada"; cerradaEn: Date | null };
+
+/**
+ * Las revisiones de la más reciente a la más antigua, sin cifras ni nombres (resolución 3 de la Tarea 11): lo que cada
+ * persona ve de una sale de `obtenerRevision`, recortado a su alcance.
+ */
+export async function indiceDeRevisiones(opciones?: Opciones): Promise<RevisionEnIndice[]> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const filas = await sql`SELECT id, anio, estado, cerrada_en FROM revisiones_anuales ORDER BY anio DESC, id DESC`;
+  return filas.map((f) => ({
+    id: Number(f.id),
+    anio: Number(f.anio),
+    estado: f.estado as RevisionEnIndice["estado"],
+    cerradaEn: f.cerrada_en === null ? null : new Date(f.cerrada_en as string),
+  }));
+}
+
 /** Los choques de los índices únicos: la carrera entre dos aperturas, o un año que ya tuvo su revisión. */
 function traducirChoque(anio: number) {
   return (err: { constraint_name?: string }): never => {

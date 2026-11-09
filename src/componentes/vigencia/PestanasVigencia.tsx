@@ -11,11 +11,11 @@ const PESTANAS = [
 export type PestanaVigencia = (typeof PESTANAS)[number]["clave"];
 
 /**
- * Las pestañas que existen para la persona: con `vigencia.ver`, el semáforo y los externos; al responsable técnico
- * sin ese permiso, solo los externos (los suyos).
+ * Las pestañas que existen para la persona: con `vigencia.ver`, el semáforo, la revisión anual y los externos; al
+ * responsable técnico sin ese permiso, solo los externos (los suyos).
  */
 export function pestanasVisibles(sujeto: SujetoPermiso, responsableTecnico: boolean): PestanaVigencia[] {
-  if (puede(sujeto, "vigencia.ver")) return ["semaforo", "externos"];
+  if (puede(sujeto, "vigencia.ver")) return ["semaforo", "revision-anual", "externos"];
   return responsableTecnico ? ["externos"] : [];
 }
 

@@ -11,15 +11,39 @@ import {
   ETIQUETA_TIPO_SOLICITUD,
   MOTIVOS,
   TIPOS_SOLICITUD,
+  type Motivo,
   type TipoSolicitud,
 } from "@/lib/tramites/tipos";
 
-type Props = DatosParaSolicitar & { documentoInicialId?: number };
+/**
+ * Los valores iniciales llegan de la dirección (`/tramites/nueva?documento=…&tipo=…&motivo=…`), ya validados por la
+ * página; la revisión anual y el impacto de los que nace la solicitud viajan como campos ocultos.
+ */
+type Props = DatosParaSolicitar & {
+  documentoInicialId?: number;
+  tipoInicial?: TipoSolicitud;
+  motivoInicial?: Motivo;
+  procesoInicialId?: number;
+  revisionAnualId?: number;
+  impactoId?: number;
+};
 
-export function FormularioSolicitud({ procesos, tipos, documentos, documentoInicialId }: Props) {
+export function FormularioSolicitud({
+  procesos,
+  tipos,
+  documentos,
+  documentoInicialId,
+  tipoInicial,
+  motivoInicial,
+  procesoInicialId,
+  revisionAnualId,
+  impactoId,
+}: Props) {
   const [estado, enviar, pendiente] = useActionState(crearSolicitudAccion, null);
-  const [tipo, setTipo] = useState<TipoSolicitud>(documentoInicialId ? "modificar" : "crear");
-  const [procesoId, setProcesoId] = useState(procesos.length === 1 ? String(procesos[0].id) : "");
+  const [tipo, setTipo] = useState<TipoSolicitud>(tipoInicial ?? (documentoInicialId ? "modificar" : "crear"));
+  const [procesoId, setProcesoId] = useState(
+    procesoInicialId !== undefined ? String(procesoInicialId) : procesos.length === 1 ? String(procesos[0].id) : "",
+  );
   const subprocesos = procesos.find((p) => String(p.id) === procesoId)?.subprocesos ?? [];
 
   // React reinicia un <form action> al terminar la acción, y los controles controlados quedan
@@ -38,6 +62,8 @@ export function FormularioSolicitud({ procesos, tipos, documentos, documentoInic
 
   return (
     <form action={enviar} onSubmit={alEnviar} className="flex max-w-2xl flex-col gap-5">
+      {revisionAnualId !== undefined ? <input type="hidden" name="revisionAnualId" value={revisionAnualId} /> : null}
+      {impactoId !== undefined ? <input type="hidden" name="impactoId" value={impactoId} /> : null}
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-1 text-sm font-medium">Qué pide</legend>
         <div className="flex flex-wrap gap-x-5 gap-y-2">
@@ -104,7 +130,7 @@ export function FormularioSolicitud({ procesos, tipos, documentos, documentoInic
       )}
 
       <Campo etiqueta="Motivo" nombre="motivo">
-        <select required defaultValue={enviado("motivo") ?? ""} className={claseControl}>
+        <select required defaultValue={enviado("motivo") ?? motivoInicial ?? ""} className={claseControl}>
           <option value="">Elija el motivo</option>
           {MOTIVOS.map((m) => (
             <option key={m} value={m}>

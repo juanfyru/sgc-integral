@@ -82,6 +82,9 @@ describe("Vigencia e Indicadores documentales", () => {
     expect(entrada(html, "informeMargenInferiorCm")).toMatch(/value="3.5"/);
     expect(html).toContain("Documento del formato del informe");
     expect(html).toContain("Ver informe de ejemplo");
+    // Conectado: abre el informe de ejemplo en otra pestaña, como el acta de ejemplo.
+    expect(html.match(/<a [^>]*href="\/admin\/api\/informe-ejemplo"[^>]*>/)?.[0]).toMatch(/target="_blank"/);
+    expect(html).not.toContain("disponible más adelante");
   });
 
   it("las seis metas llevan su valor y su unidad", async () => {

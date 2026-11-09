@@ -340,7 +340,7 @@ export function FormularioConfigDocumental({
         <Campo
           etiqueta="Documento del formato del informe"
           nombre="formatoInformeDocumentoId"
-          ayuda="Un PDF de una página, tamaño carta, con el cuerpo en blanco: el papel del informe de vigencia."
+          ayuda="Un PDF de una página, tamaño carta, con el cuerpo en blanco: el papel del informe de la revisión anual. Sin uno, se usa el del acta. Guarde y use Ver informe de ejemplo para comprobar los espacios."
         >
           <select
             defaultValue={val("formatoInformeDocumentoId") ?? String(config.vigencia.formatoInforme.documentoId ?? "")}
@@ -380,11 +380,17 @@ export function FormularioConfigDocumental({
             />
           </Campo>
         </div>
-        {/* La Tarea 11 conecta este botón con la vista previa del informe. */}
-        <Boton variante="secundario" disabled aria-label="Ver informe de ejemplo (disponible más adelante)" className="self-start">
-          <FileText className="size-4 shrink-0" aria-hidden="true" />
+        {/* Como «Ver acta de ejemplo»: el informe con el formato y los espacios guardados (o los del acta, si no hay uno). */}
+        <a
+          href="/admin/api/informe-ejemplo"
+          target="_blank"
+          rel="noopener"
+          aria-label="Ver informe de ejemplo (PDF), se abre en una pestaña nueva"
+          className="inline-flex items-center gap-1.5 self-start text-sm font-medium text-foreground underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           Ver informe de ejemplo
-        </Boton>
+        </a>
       </Seccion>
 
       <Seccion titulo="Indicadores documentales">

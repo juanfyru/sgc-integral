@@ -24,6 +24,42 @@ import { vigenciaEnLista, vigenciaPorDocumento } from "../fragmentos";
 const SIN_VIGENCIA: Externo["vigencia"] = { estado: "atencion", dias: null, proxima: null };
 const ESTADOS_COPIA_VIVA = ["emitida", "recibida", "por_recoger"];
 
+/** Lo que el formulario de verificación necesita de un externo: su fuente oficial y su periodicidad. */
+export type ExternoVerificable = { fuenteOficial: string | null; verificacionMeses: number };
+
+/**
+ * De los externos de `documentoIds`, los que la persona puede verificar (`acciones.verificar` de `obtenerExterno`: con
+ * edición vigente, `externos.verificar` y gestionarlo o ser su responsable técnico), con lo que su formulario necesita.
+ * Una sola sentencia; quien llama ya recortó los documentos a los que la persona ve.
+ */
+export async function externosVerificables(
+  documentoIds: number[],
+  sesion: SesionFlujo,
+  opciones?: Opciones,
+): Promise<Map<number, ExternoVerificable>> {
+  const verificables = new Map<number, ExternoVerificable>();
+  if (documentoIds.length === 0 || !puede(sesion, "externos.verificar")) return verificables;
+  const sql = opciones?.sql ?? obtenerSql();
+  const [filas, alcance] = await Promise.all([
+    sql`SELECT ex.documento_id, ex.responsable_id, ex.fuente_oficial, ex.verificacion_meses, COALESCE(dp.proceso_id, s.proceso_id) AS proceso_id
+      FROM externos ex
+      JOIN documento_versiones v ON v.documento_id = ex.documento_id AND v.estado = 'vigente'
+      JOIN documento_proceso dp ON dp.documento_id = ex.documento_id AND dp.es_principal
+      LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
+      WHERE ex.documento_id = ANY(${documentoIds})`,
+    alcanceProcesos(sesion, { sql }),
+  ]);
+  for (const f of filas) {
+    const gestiona = puedeGestionarExterno(sesion, Number(f.proceso_id), alcance);
+    if (!gestiona && Number(f.responsable_id) !== sesion.usuarioId) continue;
+    verificables.set(Number(f.documento_id), {
+      fuenteOficial: (f.fuente_oficial as string | null) ?? null,
+      verificacionMeses: Number(f.verificacion_meses),
+    });
+  }
+  return verificables;
+}
+
 /** La página de control de un externo (spec 13C §8.8), para quien `puedeVerExterno`; null para los demás. */
 export async function obtenerExterno(documentoId: number, sesion: SesionFlujo, opciones?: Opciones): Promise<Externo | null> {
   const sql = opciones?.sql ?? obtenerSql();
