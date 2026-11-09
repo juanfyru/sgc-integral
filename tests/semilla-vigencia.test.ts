@@ -2,10 +2,12 @@
  * La vigencia, los externos, el normograma y la revisión anual de la demo (spec 13C §17) contra la base sembrada:
  * el semáforo con vencidos, en atención y al día, las dos ratificaciones de meses atrás, los cuatro externos, las doce
  * normas con la derogación de la 2003 y sus impactos, la revisión anual abierta, la lista de todos y el formato del
- * informe. Solo lee. Como el resto de la demo, se salta si ya se usó (ver `utiles/demo.ts`); `SEMILLA_RECIEN=1` lo exige.
+ * informe. Solo lee: lo que prueba la guarda (`estadoDeLaDemo`) corre en transacciones que se revierten. Como el resto de
+ * la demo, se salta si ya se usó (ver `utiles/demo.ts`); `SEMILLA_RECIEN=1` lo exige.
  */
 import { existsSync, readFileSync } from "node:fs";
-import { afterAll, describe, expect, it } from "vitest";
+import type { TransactionSql } from "postgres";
+import { afterAll, describe, expect, it, vi, type TestContext } from "vitest";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
@@ -14,18 +16,22 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 import { obtenerSql } from "@/db/cliente";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { revisarFormatoActa } from "@/db/consultas/formato-acta";
-import { obtenerExterno } from "@/db/consultas/vigencia/externos";
+import { resolverImpacto } from "@/db/consultas/normograma/impactos";
+import { obtenerExterno, registrarVerificacion } from "@/db/consultas/vigencia/externos";
 import { indicadoresDocumentales } from "@/db/consultas/vigencia/indicadores";
-import { formatoDelInforme, revisionAbierta } from "@/db/consultas/vigencia/revision-anual";
+import { ratificar } from "@/db/consultas/vigencia/ratificaciones";
+import { confirmarNormograma, formatoDelInforme, prorrogarRevision, revisionAbierta } from "@/db/consultas/vigencia/revision-anual";
 import { pendientesPorProceso } from "@/db/consultas/vigencia/revision-anual/comun";
-import { listarSemaforo } from "@/db/consultas/vigencia/semaforo";
+import { fijarProximaRevision, listarSemaforo, quitarFechaFijada } from "@/db/consultas/vigencia/semaforo";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { huellaDeArchivo } from "@/lib/huella";
 import { fechaEnZona, fechaLimite } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
-import { exigirDemoIntacta, sembradaEn } from "./utiles/demo";
+import { estadoDeLaDemo, exigirDemoIntacta, sembradaEn } from "./utiles/demo";
 import { contenidoPorPagina, contieneTexto } from "./utiles/pdf";
 import { sesionDe } from "./utiles/tramites";
+import { revertida } from "./utiles/transaccion";
+import { firmaDePrueba } from "./utiles/vigencia";
 
 const sql = obtenerSql();
 const MS_DIA = 86_400_000;
@@ -95,7 +101,8 @@ describe("vigencia sembrada", () => {
 
     // La carga inicial: la coordinadora fijó la fecha de los internos aprobados fuera que no se ratificaron.
     const fijadas = filas.filter((f) => f.fijada !== null);
-    expect(fijadas.length).toBeGreaterThanOrEqual(20);
+    // Los 24 internos aprobados fuera y no ratificados, salvo los dos vencidos, más SGC-PR-01.
+    expect(fijadas).toHaveLength(25);
     expect(new Set(fijadas.map((f) => f.fijada!.por))).toEqual(new Set([admin.nombre]));
     expect(fijadas.every((f) => f.fijada!.nota.startsWith("Carga inicial"))).toBe(true);
     expect(fijadas.every((f) => f.origen === "interno")).toBe(true);
@@ -193,6 +200,15 @@ describe("vigencia sembrada", () => {
       expect(a.hash_sha256).toBe(a.huella);
       expect(await huellaDeArchivo(a.ruta)).toBe(a.huella);
     }
+    // Una copia controlada del manual de la bomba, recibida en Farmacia: la adopción de la edición nueva la pondrá «por recoger».
+    const copias = await sql`SELECT pu.nombre AS punto, v.numero, cc.estado, ue.usuario AS emitio, cc.emitida_en
+      FROM copias_controladas cc
+      JOIN documento_versiones v ON v.id = cc.version_id JOIN documentos d ON d.id = v.documento_id
+      JOIN puntos_uso pu ON pu.id = cc.punto_uso_id JOIN usuarios ue ON ue.id = cc.emitida_por
+      WHERE d.origen = 'externo'`;
+    expect(copias.map((x) => [x.punto, x.numero, x.estado, x.emitio])).toEqual([["Farmacia", 1, "recibida", "coordinadora.sgc"]]);
+    // Después de la verificación de Farmacia de hace 95 días, que la encontró sin copias.
+    expect(diasAntes(copias[0].emitida_en, sembrada)).toBeLessThan(95);
     // Son altas sin acuse, y la edición nueva de SOG-DE-01 no tiene audiencia: ningún acuse de un externo.
     const [{ acuses }] = await sql`SELECT count(*)::int AS acuses FROM acuses a
       JOIN documento_versiones v ON v.id = a.version_id JOIN documentos d ON d.id = v.documento_id WHERE d.origen = 'externo'`;
@@ -215,7 +231,7 @@ describe("vigencia sembrada", () => {
       expect(n.tema?.length ?? 0, n.nombre).toBeGreaterThan(5);
       expect(n.con_requisito, n.nombre).toBeGreaterThanOrEqual(1);
     }
-    expect(normas.filter((n) => n.enlazados > 0).length).toBeGreaterThanOrEqual(8);
+    expect(normas.filter((n) => n.enlazados > 0)).toHaveLength(12);
     const noVigentes = normas.filter((n) => n.estado !== "vigente").map((n) => [n.nombre, n.estado, n.estado_en]);
     expect(noVigentes).toEqual([["Resolución 2003 de 2014", "derogada", "2019-11-25"]]);
 
@@ -314,6 +330,10 @@ describe("vigencia sembrada", () => {
       "revision_anual",
       r!.id,
     ]);
+    // La solicitud de la campaña nace después de SOL-…-005: el consecutivo y la fecha van en el mismo orden.
+    const [quinta, sexta] = await sql`SELECT creado_en FROM tramites WHERE numero IN (${`SOL-${anio}-005`}, ${`SOL-${anio}-006`}) ORDER BY numero`;
+    expect(sexta.creado_en.getTime()).toBeGreaterThan(quinta.creado_en.getTime());
+    expect(sexta.creado_en.getTime()).toBeLessThan(sembrada.getTime());
     expect(delProceso("AIN").every(([, decision]) => decision === "sin_revisar")).toBe(true);
     // Fuera de GTH y CEX nadie decidió: lo que no es pendiente lo puso la foto (reciente o en trámite).
     const otras = decisiones.filter((x) => x.sigla !== "GTH" && x.sigla !== "CEX");
@@ -374,5 +394,86 @@ describe("vigencia sembrada", () => {
     expect(externos.cumple).toBe(false);
     const vencidos = resultado!.indicadores.find((i) => i.clave === "vencidos")!;
     expect(vencidos.valor).toBe(3);
+  });
+});
+
+describe("la guarda de la demo", () => {
+  /** Si la demo seguiría intacta después de `paso`, hecho por el dominio dentro de una transacción que se revierte. */
+  const intactaTras = (paso: (tx: TransactionSql) => Promise<unknown>) =>
+    revertida(sql, async (tx) => {
+      await paso(tx);
+      return (await estadoDeLaDemo(tx)).intacta;
+    });
+
+  it("se entera de los pasos del recorrido que no crean filas: los casos de la demo saltan en vez de fallar", async (ctx) => {
+    await exigirDemoIntacta(ctx, sql);
+    const [{ id: revisionId }] = await sql`SELECT id FROM revisiones_anuales WHERE estado = 'abierta'`;
+    const [{ id: impactoId }] = await sql`SELECT id FROM impactos_normativos WHERE estado = 'pendiente'`;
+    const [{ id: cex }] = await sql`SELECT id FROM procesos WHERE sigla = 'CEX'`;
+    const enUnMes = fechaEnZona(fechaLimite(new Date(), 30, zonaHoraria()), zonaHoraria());
+    const pasos: Record<string, (tx: TransactionSql) => Promise<unknown>> = {
+      "fijar la fecha de un vencido": async (tx) =>
+        fijarProximaRevision(
+          await sesionDe(tx, "coordinadora.sgc"),
+          { documentoIds: [await documentoId("GTH-PR-01")], fecha: enUnMes, nota: "Prueba de la guarda" },
+          { sql: tx },
+        ),
+      "quitar una fecha fijada": async (tx) => quitarFechaFijada(await sesionDe(tx, "coordinadora.sgc"), await documentoId("SGC-PR-01"), { sql: tx }),
+      "ratificar un vencido": async (tx) =>
+        ratificar(
+          await sesionDe(tx, "lider.gth"),
+          { documentoId: await documentoId("GTH-PR-01"), nota: null, credenciales: { clave: "ok" } },
+          { sql: tx, verificar: firmaDePrueba },
+        ),
+      "verificar un externo": async (tx) =>
+        registrarVerificacion(
+          await sesionDe(tx, "regente.farmacia"),
+          { documentoId: await documentoId("ATE-DE-01"), resultado: "vigente", fuente: "Portal del fabricante", nota: null },
+          { sql: tx },
+        ),
+      "resolver el impacto pendiente": async (tx) =>
+        resolverImpacto(
+          await sesionDe(tx, "lider.cex"),
+          { impactoId: Number(impactoId), resolucion: "no_afecta", nota: "Prueba de la guarda" },
+          { sql: tx },
+        ),
+      "confirmar un normograma": async (tx) =>
+        confirmarNormograma(
+          await sesionDe(tx, "lider.cex"),
+          { revisionId: Number(revisionId), procesoId: Number(cex), resultado: "sin_novedad", nota: null },
+          { sql: tx },
+        ),
+      "prorrogar la revisión anual": async (tx) =>
+        prorrogarRevision(await sesionDe(tx, "coordinadora.sgc"), { revisionId: Number(revisionId), dias: 15, motivo: "Prueba de la guarda" }, { sql: tx }),
+    };
+    for (const [nombre, paso] of Object.entries(pasos)) {
+      expect(await intactaTras(paso), nombre).toBe(false);
+    }
+    // Sin tocar nada, sigue intacta.
+    expect(await intactaTras(async () => {})).toBe(true);
+  });
+
+  it("tras ratificar, exigirDemoIntacta salta el caso con su aviso (con SEMILLA_RECIEN=1, falla a propósito)", async (ctx) => {
+    await exigirDemoIntacta(ctx, sql);
+    const skip = vi.fn();
+    const aviso = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await revertida(sql, async (tx) => {
+        await ratificar(
+          await sesionDe(tx, "lider.gth"),
+          { documentoId: await documentoId("GTH-PR-01"), nota: null, credenciales: { clave: "ok" } },
+          { sql: tx, verificar: firmaDePrueba },
+        );
+        const llamada = exigirDemoIntacta({ skip } as unknown as TestContext, tx);
+        if (process.env.SEMILLA_RECIEN === "1") {
+          await expect(llamada).rejects.toThrow("SEMILLA_RECIEN=1, pero hay 3 ratificaciones (se sembraron 2)");
+        } else {
+          await llamada;
+          expect(skip).toHaveBeenCalledWith(expect.stringContaining("3 ratificaciones (se sembraron 2)"));
+        }
+      });
+    } finally {
+      aviso.mockRestore();
+    }
   });
 });

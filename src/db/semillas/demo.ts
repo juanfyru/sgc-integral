@@ -47,7 +47,7 @@ import {
 import * as e from "../esquema";
 import { generarPlaceholder } from "../placeholders";
 import { CLAVE_DEMO } from "./clave-demo";
-import { sembrarDistribucion, sembrarDistribucionPrevia } from "./distribucion-demo";
+import { momentoHace, sembrarDistribucion, sembrarDistribucionPrevia } from "./distribucion-demo";
 import { CODIGO_FORMATO_ACTA, CODIGO_FORMATO_INFORME, generarFormatoActaDemo, generarFormatoInformeDemo } from "./formato-acta-demo";
 import { limpiarTodo, sembrarBase, type Db } from "./minima";
 import { sembrarVigencia } from "./vigencia-demo";
@@ -142,6 +142,9 @@ const CODIGOS_RESTRINGIDOS: ReadonlySet<string> = new Set(["GTH-FO-01"]);
  * fechas y al JSON de su cliente la conversión con que esas consultas leen y escriben.
  */
 export async function sembrarDemo(db: Db, sql: Sql): Promise<void> {
+  // Un solo reloj para toda la siembra: cada fecha relativa se cuenta desde él, y es el `creado_en` de los usuarios demo
+  // (`sembradaEn` en los tests). Cruzar la medianoche mientras siembra no corre ningún día.
+  const ahora = new Date();
   await limpiarTodo(db);
   const { tipoPorSigla } = await sembrarBase(db);
 
@@ -296,9 +299,8 @@ export async function sembrarDemo(db: Db, sql: Sql): Promise<void> {
 
   // Lo aprobado fuera cuenta su plazo desde la fecha de aprobación (F13C-DC31): los documentos cuyo estado en el
   // semáforo depende de ella la llevan relativa a hoy, para que la demo amanezca igual el día que se siembre.
-  const hoy = new Date();
   const zona = zonaHoraria();
-  const diaHace = (dias: number) => fechaEnZona(fechaLimite(hoy, -dias, zona), zona);
+  const diaHace = (dias: number) => fechaEnZona(fechaLimite(ahora, -dias, zona), zona);
   const aprobadoHace = (dias: number) => ({ elaboracion: diaHace(dias + 30), revision: diaHace(dias + 15), aprobacion: diaHace(dias) });
 
   const v1Vigente = (
@@ -695,24 +697,19 @@ export async function sembrarDemo(db: Db, sql: Sql): Promise<void> {
       .where(eq(e.tiposDocumento.id, tipoPorSigla[sigla]));
   }
 
-  const usuarioPorNombre = await sembrarEstructuraYUsuarios(db, procesoPorSigla);
+  const usuarioPorNombre = await sembrarEstructuraYUsuarios(db, procesoPorSigla, ahora);
   // Antes de los trámites: el acta de cada cierre congela el formato elegido.
   await db.insert(e.configuracion).values([
     { clave: "formato_acta_documento_id", valor: String(documentoPorCodigo[CODIGO_FORMATO_ACTA]) },
     { clave: "formato_acta_margen_superior_cm", valor: "4.2" },
     { clave: "formato_acta_margen_inferior_cm", valor: "3.2" },
-    // El informe de la revisión anual, sobre su propio formato y no sobre el membrete del acta (spec 13C §9.5).
-    { clave: "formato_informe_documento_id", valor: String(documentoPorCodigo[CODIGO_FORMATO_INFORME]) },
   ]);
-  for (const [clave, valor] of [["formato_informe_margen_superior_cm", "4.2"], ["formato_informe_margen_inferior_cm", "3.2"]]) {
-    await db.update(e.configuracion).set({ valor }).where(eq(e.configuracion.clave, clave));
-  }
   // La copia de la v2 de GTH-CA-01 se emite antes de que los trámites publiquen la v3.
-  const distribucion = { usuarioPorNombre, documentoPorCodigo, procesoPorSigla };
+  const distribucion = { ahora, usuarioPorNombre, documentoPorCodigo, procesoPorSigla };
   await sembrarDistribucionPrevia(sql, distribucion);
-  await sembrarTramites(sql, { tipoPorSigla, procesoPorSigla, documentoPorCodigo });
+  await sembrarTramites(sql, { tipoPorSigla, procesoPorSigla, documentoPorCodigo }, ahora);
   await sembrarDistribucion(sql, distribucion);
-  await sembrarVigencia(sql, { ...distribucion, ahora: new Date() });
+  await sembrarVigencia(sql, distribucion);
 }
 
 /**
@@ -722,6 +719,7 @@ export async function sembrarDemo(db: Db, sql: Sql): Promise<void> {
 async function sembrarEstructuraYUsuarios(
   db: Db,
   procesoPorSigla: Record<string, number>,
+  ahora: Date,
 ): Promise<Record<string, number>> {
   console.log("Sembrando estructura organizacional y usuarios demo…");
 
@@ -793,7 +791,8 @@ async function sembrarEstructuraYUsuarios(
         rol: u.rol,
         cargoId: cargo[u.cargo],
         debeCambiarClave: false,
-        aceptoDatosEn: new Date(),
+        aceptoDatosEn: ahora,
+        creadoEn: ahora,
       })
       .returning();
     await db.insert(e.notificaciones).values({
@@ -1094,12 +1093,12 @@ async function sembrarTramites(
     procesoPorSigla: Record<string, number>;
     documentoPorCodigo: Record<string, number>;
   },
+  ahora: Date,
 ): Promise<void> {
   console.log("Sembrando trámites…");
-  const ahora = new Date();
   const zona = zonaHoraria();
   /** Un instante de hace `dias` días en la zona: ocho horas antes de que acabara ese día, siempre en el pasado. */
-  const hace = (dias: number) => new Date(fechaLimite(ahora, -dias, zona).getTime() - 8 * 3_600_000);
+  const hace = (dias: number) => momentoHace(dias, ahora);
 
   await sql.begin(async (tx) => {
     const config = await obtenerConfigDocumental({ sql: tx });

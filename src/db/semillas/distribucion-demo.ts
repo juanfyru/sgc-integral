@@ -34,6 +34,8 @@ import {
 import { generarPlaceholder } from "../placeholders";
 
 export type ContextoDistribucion = {
+  /** El reloj de toda la siembra (`sembrarDemo`): cada fecha se cuenta hacia atrás desde él. */
+  ahora: Date;
   /** Id de cada usuario demo por su nombre de usuario. */
   usuarioPorNombre: Record<string, number>;
   documentoPorCodigo: Record<string, number>;
@@ -45,9 +47,12 @@ const SEDE = "Sede principal";
 const TODO_EL_HOSPITAL = "Todo el hospital";
 const ITEM_COPIAS_NO_CONTROLADAS = "Sin copias no controladas (impresiones sin sello)";
 
-/** La misma regla de `sembrarTramites`: ocho horas antes de que acabara el día de hace `dias` días. */
-function momentoHace(dias: number): Date {
-  return new Date(fechaLimite(new Date(), -dias, zonaHoraria()).getTime() - 8 * 3_600_000);
+/**
+ * La regla de las semillas (también la de `sembrarTramites` y `vigencia-demo.ts`): ocho horas antes de que acabara el día
+ * de hace `dias` días, contado desde el reloj de la siembra.
+ */
+export function momentoHace(dias: number, ahora: Date): Date {
+  return new Date(fechaLimite(ahora, -dias, zonaHoraria()).getTime() - 8 * 3_600_000);
 }
 
 /** La sesión de un usuario demo, para llamar a las funciones del dominio a su nombre (también `vigencia-demo.ts`). */
@@ -133,7 +138,7 @@ export async function sembrarDistribucionPrevia(sql: Sql, c: ContextoDistribucio
   await emitirCopia(
     await sesionDe(sql, "coordinadora.sgc"),
     { documentoId: c.documentoPorCodigo[CODIGO], puntoUsoId: Number(archivo.id), nota: "Copia de consulta del archivo central" },
-    { sql, ahora: momentoHace(19) },
+    { sql, ahora: momentoHace(19, c.ahora) },
   );
 }
 
@@ -202,7 +207,7 @@ export async function sembrarDistribucion(sql: Sql, c: ContextoDistribucion): Pr
   const puntoDe = async (nombre: string) => Number((await sql`SELECT id FROM puntos_uso WHERE nombre = ${nombre}`)[0].id);
 
   // Verificación de Farmacia, cuando el punto aún no tenía copias.
-  await verificar(sql, await puntoDe("Farmacia"), momentoHace(95));
+  await verificar(sql, await puntoDe("Farmacia"), momentoHace(95, c.ahora));
 
   // Lo que hace la publicación de la v3 con las copias de la v2 (la semilla de trámites publica por SQL).
   const [v2] = await sql`SELECT id FROM documento_versiones WHERE documento_id = ${documentoId} AND numero = 2`;
@@ -215,40 +220,40 @@ export async function sembrarDistribucion(sql: Sql, c: ContextoDistribucion): Pr
   );
 
   // Verificación de Urgencias, antes de que tuviera copias: un ítem no conforme y un hallazgo vencido.
-  await verificar(sql, await puntoDe("Urgencias"), momentoHace(20), {
+  await verificar(sql, await puntoDe("Urgencias"), momentoHace(20, c.ahora), {
     [ITEM_COPIAS_NO_CONTROLADAS]: "Copia no controlada de AIN-FO-01",
   });
 
   // Lecturas individuales: la persona abre el documento y después confirma.
   for (const [usuario, dias] of [["consulta", 7], ["jefe.urgencias", 6]] as const) {
     const sesion = await sesionDe(sql, usuario);
-    const abierta = new Date(momentoHace(dias).getTime() - 3_600_000);
+    const abierta = new Date(momentoHace(dias, c.ahora).getTime() - 3_600_000);
     await sql`INSERT INTO eventos_consulta (tipo, documento_id, version_id, usuario_id, creado_en)
       VALUES ('vista', ${documentoId}, ${v3.id}, ${sesion.usuarioId}, ${abierta})`;
     const [acuse] = await sql`SELECT id FROM acuses WHERE version_id = ${v3.id} AND usuario_id = ${sesion.usuarioId}`;
-    await confirmarLectura(Number(acuse.id), sesion, { sql, ahora: momentoHace(dias) });
+    await confirmarLectura(Number(acuse.id), sesion, { sql, ahora: momentoHace(dias, c.ahora) });
   }
 
   // Copias de la v3.
   await emitirCopia(
     liderGth,
     { documentoId, puntoUsoId: await puntoDe("Talento Humano"), nota: "Copia del puesto de trabajo" },
-    { sql, ahora: momentoHace(7) },
+    { sql, ahora: momentoHace(7, c.ahora) },
   );
   await emitirCopia(
     coordinadora,
     { documentoId, puntoUsoId: await puntoDe("Urgencias"), nota: "Para el servicio de urgencias" },
-    { sql, ahora: momentoHace(4) },
+    { sql, ahora: momentoHace(4, c.ahora) },
   );
   const { copiaId: errada } = await emitirCopia(
     coordinadora,
     { documentoId, puntoUsoId: await puntoDe("Vacunación"), nota: null },
-    { sql, ahora: momentoHace(3) },
+    { sql, ahora: momentoHace(3, c.ahora) },
   );
-  await anularCopia(errada, coordinadora, "error", "Se emitió al punto equivocado", { sql, ahora: momentoHace(3) });
+  await anularCopia(errada, coordinadora, "error", "Se emitió al punto equivocado", { sql, ahora: momentoHace(3, c.ahora) });
 
   // Jornada: los asistentes pendientes quedan confirmados por asistencia.
-  const momentoJornada = momentoHace(5);
+  const momentoJornada = momentoHace(5, c.ahora);
   const { jornadaId } = await registrarJornada(
     liderGth,
     {
@@ -265,6 +270,6 @@ export async function sembrarDistribucion(sql: Sql, c: ContextoDistribucion): Pr
   await guardarActaDeJornada(sql, jornadaId, liderGth.usuarioId, momentoJornada);
 
   // Un acuse pendiente con el plazo vencido: ninguna función real deja vencer un plazo hacia atrás.
-  await sql`UPDATE acuses SET vence_en = ${momentoHace(2)}
+  await sql`UPDATE acuses SET vence_en = ${momentoHace(2, c.ahora)}
     WHERE version_id = ${v3.id} AND estado = 'pendiente' AND usuario_id = ${c.usuarioPorNombre["control.interno"]}`;
 }
