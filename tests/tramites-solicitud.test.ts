@@ -23,7 +23,7 @@ import {
   transicionar,
   type Manejador,
 } from "@/db/consultas/tramites-flujo";
-import { enlazarDocumento } from "@/db/consultas/normograma/asociaciones";
+import { asociarProceso, enlazarDocumento } from "@/db/consultas/normograma/asociaciones";
 import { cambiarEstadoNorma } from "@/db/consultas/normograma/normas";
 import type { Verificador } from "@/lib/firma";
 import type { Accion } from "@/lib/tramites/transiciones";
@@ -299,6 +299,27 @@ describe("la solicitud que nace de un impacto normativo o de la revisión anual"
     expect(t).toEqual({ impacto_id: impactoId, revision_anual_id: null });
     const [i] = await tx`SELECT estado, resolucion, tramite_id, resuelto_por FROM impactos_normativos WHERE id = ${impactoId}`;
     expect(i).toEqual({ estado: "resuelto", resolucion: "solicitud", tramite_id: tramiteId, resuelto_por: lider.usuarioId });
+  }));
+
+  it("una creación con el impactoId de un impacto de proceso lo resuelve con la solicitud", () => revertida(sql, async (tx) => {
+    const admin = await sesionAdmin(tx);
+    const lider = await sesionDe(tx, "lider.gth");
+    const [gth] = await tx`SELECT id FROM procesos WHERE sigla = 'GTH'`;
+    const [tipo] = await tx`SELECT id FROM tipos_documento WHERE sigla = 'FO'`;
+    const n = await normaDePrueba(tx, admin);
+    await asociarProceso(admin, { normaId: n.id, procesoId: Number(gth.id), requisito: null }, { sql: tx });
+    const { cambioId } = await cambiarEstadoNorma(admin, { normaId: n.id, estado: "modificada", fecha: "2026-11-01", nota: null }, opc(tx));
+    const [impacto] = await tx`SELECT id FROM impactos_normativos WHERE cambio_id = ${cambioId} AND proceso_id = ${gth.id} AND documento_id IS NULL`;
+    const impactoId = Number(impacto.id);
+    const { tramiteId } = await crearSolicitud(
+      lider,
+      { tipo: "crear", motivo: "cambio_normativo", justificacion: JUSTIFICACION, procesoId: Number(gth.id), tipoDocumentoId: Number(tipo.id), tituloPropuesto: "Formato por la norma nueva", impactoId },
+      opc(tx),
+    );
+    const [t] = await tx`SELECT impacto_id, documento_id FROM tramites WHERE id = ${tramiteId}`;
+    expect(t).toEqual({ impacto_id: impactoId, documento_id: null });
+    const [i] = await tx`SELECT estado, resolucion, tramite_id FROM impactos_normativos WHERE id = ${impactoId}`;
+    expect(i).toEqual({ estado: "resuelto", resolucion: "solicitud", tramite_id: tramiteId });
   }));
 
   it("con revisionAnualId exige que esa revisión esté abierta y la guarda", () => revertida(sql, async (tx) => {

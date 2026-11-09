@@ -11,6 +11,7 @@
 import type { PendingQuery, Row } from "postgres";
 import type { Cliente } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
+import type { Etapa } from "@/lib/tramites/tipos";
 import { DECISIONES, type Decision } from "@/lib/vigencia/tipos";
 
 export type Opciones = { sql?: Cliente; ahora?: Date };
@@ -23,11 +24,39 @@ export const PROCESO_NO_EXISTE = "El proceso no existe";
 /** La decisión que guarda la fila de un documento aún sin decidir; cerrada la revisión, la definitiva. */
 export const PENDIENTE: Decision = "sin_revisar";
 
+/** Las etapas en que el trámite de una decisión murió: el documento vuelve a estar por decidir (spec 13C §9.3). */
+export const ETAPAS_MUERTAS: readonly Etapa[] = ["rechazado", "cancelado"];
+
+/** Las etapas en que el trámite de una decisión todavía no la fija: antes de aceptarse, o muerto. */
+export const ETAPAS_QUE_NO_FIJAN: readonly Etapa[] = ["visto_bueno", "aceptacion", ...ETAPAS_MUERTAS];
+
+/**
+ * La única definición de «por decidir» (spec 13C §9.3): la fila sin decisión (`sin_revisar`), o la que no produjo
+ * ratificación ni verificación y cuyo trámite murió. `pendienteSql` es la misma regla para una consulta.
+ */
+export function estaPendiente(f: {
+  decision: Decision;
+  ratificacionId: number | null;
+  verificacionId: number | null;
+  tramiteEtapa: Etapa | null;
+}): boolean {
+  if (f.decision === PENDIENTE) return true;
+  return f.ratificacionId === null && f.verificacionId === null && f.tramiteEtapa !== null && ETAPAS_MUERTAS.includes(f.tramiteEtapa);
+}
+
+/** `estaPendiente` para un `WHERE` sobre la fila de `revision_anual_decisiones` que la consulta llama `alias`. */
+export function pendienteSql(sql: Cliente, alias: string): PendingQuery<Row[]> {
+  const rad = sql(alias);
+  return sql`(${rad}.decision = ${PENDIENTE} OR (${rad}.ratificacion_id IS NULL AND ${rad}.verificacion_id IS NULL
+    AND EXISTS (SELECT 1 FROM tramites pend_t WHERE pend_t.id = ${rad}.tramite_id AND pend_t.etapa = ANY(${[...ETAPAS_MUERTAS]}))))`;
+}
+
 export type Prorroga = { fecha: Date; dias: number; motivo: string; por: string };
 
 /**
  * Una revisión anual con sus cifras. `totales` cuenta las filas por decisión y `documentos` todas; mientras está
- * abierta, `sin_revisar` son los pendientes.
+ * abierta, `sin_revisar` son los que aún no tienen decisión (por decidir están además los de trámite muerto:
+ * `estaPendiente`).
  */
 export type Revision = {
   id: number;
@@ -111,7 +140,7 @@ export function procesosDeLaPersona(sql: Cliente, sesion: Pick<SesionFlujo, "usu
   return sql`false`;
 }
 
-/** Lo que falta en cada proceso de la revisión: los documentos sin decisión (por su proceso propietario de hoy) y el normograma. */
+/** Lo que falta en cada proceso de la revisión: los documentos por decidir (por su proceso propietario de hoy) y el normograma. */
 export type PendientesDeProceso = {
   procesoId: number;
   nombre: string;
@@ -121,14 +150,15 @@ export type PendientesDeProceso = {
 };
 
 /**
- * Cuántos documentos del proceso `p` siguen sin decisión en la revisión `revision` (una columna de la consulta que lo
- * compone), por su proceso propietario de hoy.
+ * Cuántos documentos del proceso `p` siguen por decidir (`pendienteSql`) en la revisión `revision` (una columna de la
+ * consulta que lo compone), por su proceso propietario de hoy. De aquí salen la tarea, la pasada vencida y los avisos de
+ * la prórroga.
  */
 export function sinDecisionDelProceso(sql: Cliente, revision: PendingQuery<Row[]>): PendingQuery<Row[]> {
   return sql`(SELECT count(*)::int FROM revision_anual_decisiones pend_rad
     JOIN documento_proceso pend_dp ON pend_dp.documento_id = pend_rad.documento_id AND pend_dp.es_principal
     LEFT JOIN subprocesos pend_s ON pend_s.id = pend_dp.subproceso_id
-    WHERE pend_rad.revision_id = ${revision} AND pend_rad.decision = ${PENDIENTE}
+    WHERE pend_rad.revision_id = ${revision} AND ${pendienteSql(sql, "pend_rad")}
       AND COALESCE(pend_dp.proceso_id, pend_s.proceso_id) = p.id)`;
 }
 

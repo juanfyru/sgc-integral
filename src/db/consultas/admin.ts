@@ -21,7 +21,7 @@ import { obtenerConfigDocumental } from "./config-documental";
 import { ErrorTramite, enTransaccion } from "./flujo/contrato";
 import { EXTERNO_CONSERVA_TIPO, exigirInterno, exigirQueElResponsableTecnicoLoVea, exigirTipoDeInterno } from "./origen";
 import { vigenciaEnLista, vigenciaPorDocumento, type VigenciaEnLista } from "./vigencia/fragmentos";
-import { alPublicarDuranteRevision } from "./vigencia/revision-anual/registro";
+import { alPublicarDuranteRevision, sacarDeLaFoto, type RevisionBloqueada } from "./vigencia/revision-anual/registro";
 
 type Cliente = Sql | TransactionSql;
 
@@ -613,7 +613,8 @@ export async function editarControl(
  * versiones_una_vigente_idx la respalda en BD; el orden de los UPDATE importa
  * (primero obsoleto, luego vigente) para no chocar con el índice. La evidencia
  * de aprobación ya debe estar en la versión: la exige
- * versiones_vigente_con_aprobacion.
+ * versiones_vigente_con_aprobacion. `revisionAnual`: la revisión abierta, si quien
+ * publica ya la leyó (la adopción de un externo).
  */
 export async function aplicarPublicacion(
   tx: TransactionSql,
@@ -621,6 +622,7 @@ export async function aplicarPublicacion(
   origen: OrigenAprobacion,
   usuarioId: number,
   ahora: Date = new Date(),
+  revisionAnual?: RevisionBloqueada | null,
 ): Promise<{ documentoId: number; numero: number; obsoletas: number[] }> {
   const [version] = await tx`SELECT documento_id, numero, estado
     FROM documento_versiones WHERE id = ${versionId} FOR UPDATE`;
@@ -643,7 +645,7 @@ export async function aplicarPublicacion(
       fijada_nota = NULL, revision_aviso_en = NULL, revision_escalado_en = NULL
     WHERE id = ${documentoId}`;
   // Con la revisión anual abierta, lo que entra a la foto al publicarse queda «revisado recientemente» (spec 13C §9.1).
-  await alPublicarDuranteRevision(tx, documentoId, versionId, ahora);
+  await alPublicarDuranteRevision(tx, documentoId, versionId, ahora, revisionAnual);
   const obsoletas = anteriores.map((a) => a.numero as number);
   await registrarAuditoria(tx, {
     usuarioId, accion: "publicar_version", entidad: "documento_version",
@@ -713,6 +715,8 @@ export async function deshacerCargaEn(
     WHERE documento_id = ${documentoId} AND estado = 'vigente'
     RETURNING id, numero`;
   await alDejarDeSerVigente(tx, Number(version.id), "carga_deshecha", ahora, { actorId: usuarioId });
+  // La carga no debió estar: sale de la foto de la revisión anual abierta.
+  await sacarDeLaFoto(tx, { documentoId, usuarioId, motivo: `Carga deshecha: ${razon}` });
   await tx`UPDATE documentos SET actualizado_en = now() WHERE id = ${documentoId}`;
   await registrarAuditoria(tx, {
     usuarioId, accion: "deshacer_carga", entidad: "documento", entidadId: documentoId,

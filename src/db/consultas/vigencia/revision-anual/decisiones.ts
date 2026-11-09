@@ -56,7 +56,7 @@ export async function enlazarTramiteExistente(
     if (quedoFija(actual) && actual.tramiteId !== tramiteId) throw new ErrorVigencia("La decisión de este documento ya quedó fija");
     await escribirDecision(tx, revision, actual, {
       documentoId: d.documentoId,
-      versionId: doc.version_id === null ? 0 : Number(doc.version_id),
+      versionId: doc.version_id === null ? null : Number(doc.version_id),
       decision: t.tipo === "eliminar" ? "eliminar" : "actualizar",
       usuarioId: sesion.usuarioId,
       ratificacionId: null,

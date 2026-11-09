@@ -2,8 +2,9 @@
  * El cierre firmado de la revisión anual y los datos de su informe (spec 13C §9.5). Sigue F13A-R4: un validador de solo
  * lectura, la clave fuera de la transacción y las comprobaciones repetidas dentro, con la revisión bloqueada. Una clave
  * errada no escribe nada de la campaña. Al cerrar, lo que quedó sin decisión queda «sin revisar», se recuentan los
- * procesos y se congela en `informe` todo lo que el PDF imprime; `estado`, `cerrada_por`, `cerrada_en`, `metodo_cierre` e
- * `informe` se escriben en un solo `UPDATE`, después de tocar las filas hijas: cerrada, el trigger las protege.
+ * procesos, se congelan los insumos de cada fila y en `informe` todo lo que el PDF imprime; `estado`, `cerrada_por`,
+ * `cerrada_en`, `metodo_cierre` e `informe` se escriben en un solo `UPDATE`, después de tocar las filas hijas: cerrada,
+ * el trigger las protege.
  */
 import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
@@ -27,18 +28,34 @@ import { ErrorVigencia, type Decision } from "@/lib/vigencia/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { columnasDeVigencia } from "../fragmentos";
 import { PENDIENTE, REVISION_NO_EXISTE, YA_CERRADA, cerosPorDecision, prorrogasDe } from "./comun";
+import { insumosDe } from "./lectura";
 
 const FALTA_ENTIDAD = "Configure el nombre de la entidad antes de cerrar la revisión anual";
 
 /** Cómo dice el informe el normograma confirmado de un proceso. */
 const RESULTADO_NORMOGRAMA: Record<"sin_novedad" | "cambios", string> = { sin_novedad: "Sin novedad", cambios: "Con cambios" };
 
-/** El nombre de la entidad que llevará el informe: el de la instalación sin configurar quedaría congelado en un registro. */
-async function entidadDelInforme(sql: Cliente): Promise<string> {
+/**
+ * El nombre de la entidad que llevará el informe. Al cerrar es obligatorio: el de la instalación sin configurar quedaría
+ * congelado en un registro. El informe parcial, que es solo de pantalla, usa el que haya (`exigir` falso).
+ */
+async function entidadDelInforme(sql: Cliente, exigir = true): Promise<string> {
   const [entidad] = await sql`SELECT valor FROM configuracion WHERE clave = 'nombre_entidad'`;
   const nombre = typeof entidad?.valor === "string" ? entidad.valor.trim() : "";
-  if (!nombre || nombre === MARCA_DEFECTO.nombre) throw new ErrorVigencia(FALTA_ENTIDAD);
+  if (exigir && (!nombre || nombre === MARCA_DEFECTO.nombre)) throw new ErrorVigencia(FALTA_ENTIDAD);
   return nombre;
+}
+
+/**
+ * Qué pasó con un externo al cerrar (spec 13C §9.3): «Edición adoptada» si la verificación pidió una edición nueva y la
+ * fila ya apunta a otra versión, «Pendiente de adoptar» si sigue en la verificada, «Retirado» si se eliminó. Nada en los
+ * internos ni en las demás decisiones.
+ */
+function estadoDelExterno(f: { origen: string; decision: Decision; version_id: unknown; verificada_version_id: unknown }): string | null {
+  if (f.origen !== "externo") return null;
+  if (f.decision === "eliminar") return "Retirado";
+  if (f.decision !== "actualizar" || f.verificada_version_id === null) return null;
+  return Number(f.version_id) !== Number(f.verificada_version_id) ? "Edición adoptada" : "Pendiente de adoptar";
 }
 
 /** «Publicado», «Cancelado», «En curso: Elaboración»: el estado del trámite de una decisión al cerrar. */
@@ -64,7 +81,8 @@ async function formatoDelInforme(tx: Cliente): Promise<FormatoActa | null> {
  * prórrogas, quién cerró, el alcance, las cifras por decisión, cada decisión con su responsable y el estado de su trámite,
  * los cambios normativos del año con su impacto, el normograma confirmado por proceso, los acuses de lo publicado en el
  * año, la conformidad de los puntos de uso, los externos al día y el formato elegido. En una revisión cerrada, quién y
- * cómo cerró salen de ella; al cerrar los da `cierre`; en el informe parcial de una abierta quedan vacíos.
+ * cómo cerró salen de ella; al cerrar los da `cierre`; en el informe parcial de una abierta quedan vacíos, y la entidad
+ * es la que haya (sin exigirla).
  */
 export async function datosDelInforme(
   tx: Cliente,
@@ -73,11 +91,11 @@ export async function datosDelInforme(
   cierre?: { usuarioId: number; metodo: string },
 ): Promise<DatosInforme> {
   const zona = zonaHoraria();
-  const entidad = await entidadDelInforme(tx);
   const [r] = await tx`SELECT anio, estado, abierta_en, prorrogas, cerrada_por, cerrada_en, metodo_cierre FROM revisiones_anuales WHERE id = ${revisionId}`;
   if (!r) throw new ErrorVigencia(REVISION_NO_EXISTE);
   const anio = Number(r.anio);
   const cerrada = r.estado === "cerrada";
+  const entidad = await entidadDelInforme(tx, cerrada || cierre !== undefined);
   const cerroId = cerrada ? Number(r.cerrada_por) : (cierre?.usuarioId ?? null);
   const [quien] = cerroId === null ? [] : await tx`SELECT u.nombre, c.nombre AS cargo FROM usuarios u LEFT JOIN cargos c ON c.id = u.cargo_id WHERE u.id = ${cerroId}`;
   const primerDia = `${anio}-01-01`;
@@ -86,8 +104,9 @@ export async function datosDelInforme(
   const fin = new Date(finDeFecha(ultimoDia, zona).getTime() + 1);
 
   const filas = await tx`
-    SELECT d.codigo, d.titulo, d.origen, v.numero AS version, p.nombre AS proceso, rad.decision, u.nombre AS responsable,
-      rad.actualizado_en, t.numero AS tramite_numero, t.etapa AS tramite_etapa, t.vence_en AS tramite_vence_en
+    SELECT d.codigo, d.titulo, d.origen, rad.version_id, v.numero AS version, p.nombre AS proceso, rad.decision, u.nombre AS responsable,
+      rad.actualizado_en, t.numero AS tramite_numero, t.etapa AS tramite_etapa, t.vence_en AS tramite_vence_en,
+      ev.version_id AS verificada_version_id
     FROM revision_anual_decisiones rad
     JOIN documentos d ON d.id = rad.documento_id
     JOIN documento_versiones v ON v.id = rad.version_id
@@ -96,13 +115,14 @@ export async function datosDelInforme(
     LEFT JOIN procesos p ON p.id = COALESCE(dp.proceso_id, s.proceso_id)
     LEFT JOIN usuarios u ON u.id = rad.usuario_id
     LEFT JOIN tramites t ON t.id = rad.tramite_id
+    LEFT JOIN externo_verificaciones ev ON ev.id = rad.verificacion_id
     WHERE rad.revision_id = ${revisionId}
     ORDER BY p.nombre, d.codigo`;
   const totales = cerosPorDecision();
   for (const f of filas) totales[f.decision as Decision] += 1;
 
-  const [procesos, cambios, [acuses], [conformidad], externos, formato] = await Promise.all([
-    tx`SELECT p.nombre, rap.normograma_resultado, rap.normograma_nota
+  const [filasDeProcesos, cambios, [acuses], [conformidad], externos, formato] = await Promise.all([
+    tx`SELECT p.nombre, rap.documentos, rap.normograma_resultado, rap.normograma_nota
       FROM revision_anual_procesos rap JOIN procesos p ON p.id = rap.proceso_id
       WHERE rap.revision_id = ${revisionId}
       ORDER BY p.nombre`,
@@ -127,6 +147,9 @@ export async function datosDelInforme(
     formatoDelInforme(tx),
   ]);
   const alDia = externos.filter((f) => f.proximaRevision !== null && estadoPlazo(f.proximaRevision, ahora, zona).estado !== "vencido").length;
+  // Un proceso que se quedó sin documentos no cuenta en el alcance; su normograma confirmado sí se lista.
+  const conDocumentos = filasDeProcesos.filter((p) => Number(p.documentos) > 0);
+  const procesos = filasDeProcesos.filter((p) => Number(p.documentos) > 0 || p.normograma_resultado !== null);
 
   return {
     entidad,
@@ -140,26 +163,36 @@ export async function datosDelInforme(
       documentos: filas.length,
       internos: filas.filter((f) => f.origen === "interno").length,
       externos: filas.filter((f) => f.origen === "externo").length,
-      procesos: procesos.length,
+      procesos: conDocumentos.length,
     },
     totales,
-    decisiones: filas.map((f) => ({
-      codigo: f.codigo as string,
-      titulo: f.titulo as string,
-      version: Number(f.version),
-      proceso: (f.proceso as string | null) ?? "—",
-      decision: f.decision as Decision,
-      responsable: (f.responsable as string | null) ?? null,
-      solicitud:
-        f.tramite_numero === null
-          ? null
-          : {
-              numero: f.tramite_numero as string,
-              venceEn: f.tramite_vence_en === null ? null : new Date(f.tramite_vence_en as string),
-              estadoAlCierre: estadoAlCierre(f.tramite_etapa as Etapa),
-            },
-      fecha: f.decision === PENDIENTE ? null : new Date(f.actualizado_en as string),
-    })),
+    decisiones: filas.map((f) => {
+      const decision = f.decision as Decision;
+      const estadoExterno = estadoDelExterno({
+        origen: f.origen as string,
+        decision,
+        version_id: f.version_id,
+        verificada_version_id: f.verificada_version_id ?? null,
+      });
+      return {
+        codigo: f.codigo as string,
+        titulo: f.titulo as string,
+        version: Number(f.version),
+        proceso: (f.proceso as string | null) ?? "—",
+        decision,
+        responsable: (f.responsable as string | null) ?? null,
+        solicitud:
+          f.tramite_numero === null
+            ? null
+            : {
+                numero: f.tramite_numero as string,
+                venceEn: f.tramite_vence_en === null ? null : new Date(f.tramite_vence_en as string),
+                estadoAlCierre: estadoAlCierre(f.tramite_etapa as Etapa),
+              },
+        fecha: decision === PENDIENTE ? null : new Date(f.actualizado_en as string),
+        ...(estadoExterno === null ? {} : { estadoExterno }),
+      };
+    }),
     normograma: {
       cambios: cambios.map((c) => ({
         norma: c.norma as string,
@@ -238,9 +271,23 @@ async function recontarProcesos(tx: TransactionSql, revisionId: number): Promise
 }
 
 /**
+ * Los insumos de cada fila de la foto, congelados al cerrar (spec 13C §15.2): todas las filas, sin filtro de acceso y
+ * aunque el documento ya no tenga versión vigente (sus acuses quedan nulos), en una sentencia. Después del cierre, el
+ * trigger protege las filas y la revisión cerrada se muestra con estos.
+ */
+async function congelarInsumos(tx: TransactionSql, revisionId: number, anio: number): Promise<void> {
+  const filas = await tx`SELECT documento_id FROM revision_anual_decisiones WHERE revision_id = ${revisionId}`;
+  if (filas.length === 0) return;
+  const insumos = await insumosDe(tx, filas.map((f) => Number(f.documento_id)), anio);
+  await tx`UPDATE revision_anual_decisiones rad SET insumos = ${tx.json(Object.fromEntries(insumos) as never)}::jsonb -> rad.documento_id::text
+    WHERE rad.revision_id = ${revisionId}`;
+}
+
+/**
  * Cierra la revisión con la firma de quien la gestiona (spec 13C §9.5). Lo que quedó sin decisión queda «sin revisar»
- * (con la hora del cierre), el informe se congela con el formato elegido y se avisa a Gerencia, a Control Interno y a los
- * líderes. Las tareas de la campaña desaparecen solas: son calculadas. El PDF se genera después, al primer clic.
+ * (con la hora del cierre); lo de un trámite que murió conserva su decisión y el informe muestra el estado del trámite.
+ * Se congelan los insumos de cada fila y el informe con el formato elegido, y se avisa a Gerencia, a Control Interno y
+ * a los líderes. Las tareas de la campaña desaparecen solas: son calculadas. El PDF se genera después, al primer clic.
  */
 export async function cerrarRevision(
   sesion: SesionFlujo,
@@ -266,6 +313,7 @@ export async function cerrarRevision(
         RETURNING id`
     ).length;
     await recontarProcesos(tx, d.revisionId);
+    await congelarInsumos(tx, d.revisionId, anio);
     const informe = await datosDelInforme(tx, d.revisionId, ahora, { usuarioId: sesion.usuarioId, metodo: firma.metodo });
     await tx`UPDATE revisiones_anuales SET estado = 'cerrada', cerrada_por = ${sesion.usuarioId}, cerrada_en = ${ahora},
         metodo_cierre = ${firma.metodo}, informe = ${tx.json(informe as never)}

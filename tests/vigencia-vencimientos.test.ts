@@ -569,10 +569,13 @@ describe("revisión anual vencida", () => {
         expect(`${delJefe[0].titulo} ${delJefe[0].cuerpo}`).not.toContain(doc.codigo);
         expect((await marcas()).escalado_en).toEqual(el(21));
 
-        // Prorrogar reinicia las marcas: vencida otra vez, avisa otra vez.
+        // Prorrogar reinicia las marcas y, ya vencida, cuenta desde hoy (el 22 más diez: vence al terminar el 1 de
+        // febrero). Vencida otra vez, avisa otra vez.
         await prorrogarRevision(admin, { revisionId, dias: 10, motivo: "Se amplía por la auditoría" }, { sql: tx, ahora: el(22) });
         expect(await marcas()).toEqual({ aviso_vencido_en: null, escalado_en: null });
         await pasada(28);
+        expect(await avisosRevision(tx, lider.usuarioId, desde)).toHaveLength(1);
+        await revisarVencimientosDeVigencia({ sql: tx, ahora: new Date("2090-02-02T15:00:00Z"), config });
         expect(await avisosRevision(tx, lider.usuarioId, desde)).toHaveLength(2);
       } finally {
         await doc.limpiar();

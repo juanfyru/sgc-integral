@@ -16,8 +16,9 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 
 import type { TransactionSql } from "postgres";
 import { obtenerSql } from "@/db/cliente";
-import { aplicarPublicacion } from "@/db/consultas/admin";
+import { aplicarPublicacion, deshacerCargaEn } from "@/db/consultas/admin";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
+import { cambiarEstadoNorma } from "@/db/consultas/normograma/normas";
 import { crearSolicitud, transicionar } from "@/db/consultas/tramites-flujo";
 import { abrirEdicion, adoptarEdicion, registrarVerificacion } from "@/db/consultas/vigencia/externos";
 import { ratificar } from "@/db/consultas/vigencia/ratificaciones";
@@ -25,19 +26,21 @@ import {
   abrirRevision,
   cerrarRevision,
   confirmarNormograma,
+  datosDelInforme,
   enlazarTramiteExistente,
   informeCongelado,
   obtenerRevision,
   prorrogarRevision,
   registrarDecision,
   revisionAbierta,
+  tareasDeRevision,
 } from "@/db/consultas/vigencia/revision-anual";
 import { revisarVencimientosDeVigencia } from "@/db/consultas/vigencia/vencimientos";
 import { misTareas } from "@/lib/tareas";
-import { fechaEnZona, fechaLimite } from "@/lib/tramites/plazos";
+import { fechaEnZona, fechaLimite, finDeFecha } from "@/lib/tramites/plazos";
 import { textoFecha } from "@/lib/vigencia/plazo";
 import { DECISIONES } from "@/lib/vigencia/tipos";
-import { silenciarImpactos } from "./utiles/normograma";
+import { normaDePrueba, silenciarImpactos } from "./utiles/normograma";
 import { documentoLibre, opc, sesionAdmin, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 import {
@@ -244,6 +247,64 @@ describe("los tests que confirman cargas reales", () => {
     }));
 });
 
+describe("deshacer una carga durante la campaña", () => {
+  it("saca al documento de la foto, descuenta su proceso y deja la bitácora; el último de un proceso sin normograma confirmado se lleva la fila del proceso", () =>
+    revertida(sql, async (tx) => {
+      await sinRevisionAbierta(tx);
+      const admin = await sesionAdmin(tx);
+      await tx`INSERT INTO configuracion (clave, valor) VALUES ('publicacion_directa', '1') ON CONFLICT (clave) DO UPDATE SET valor = '1'`;
+      const [base] = await tx`SELECT macroproceso_id, icono FROM procesos ORDER BY id LIMIT 1`;
+      const nuevoProceso = async (letra: string) => {
+        const sigla = `ZZ${Date.now() % 100_000}${letra}`;
+        const [p] = await tx`INSERT INTO procesos (macroproceso_id, nombre, sigla, slug, icono, orden)
+          VALUES (${base.macroproceso_id}, ${`Proceso de prueba ${sigla}`}, ${sigla}, ${sigla.toLowerCase()}, ${base.icono}, 990)
+          RETURNING id, nombre`;
+        return { id: Number(p.id), nombre: p.nombre as string, sigla };
+      };
+      const soloUno = await nuevoProceso("A");
+      const confirmado = await nuevoProceso("B");
+      const deGth = await vigenteFuera(tx, { fechaAprobacion: "2025-01-10", proceso: "GTH" });
+      const unicoA = await vigenteFuera(tx, { fechaAprobacion: "2025-01-10", proceso: soloUno.sigla });
+      const unicoB = await vigenteFuera(tx, { fechaAprobacion: "2025-01-10", proceso: confirmado.sigla });
+      const { revisionId } = await revisionDePrueba(tx, admin, { ahora });
+      const gth = await procesoPorSigla(tx, "GTH");
+      const filaDelProceso = async (procesoId: number) =>
+        (await tx`SELECT documentos FROM revision_anual_procesos WHERE revision_id = ${revisionId} AND proceso_id = ${procesoId}`)[0];
+      const antes = Number((await filaDelProceso(gth.id)).documentos);
+      const motivo = "Se cargó el archivo de otro documento";
+
+      await deshacerCargaEn(tx, deGth.id, motivo, admin.usuarioId, ahora);
+      expect(await filaDe(tx, revisionId, deGth.id)).toBeNull();
+      expect(Number((await filaDelProceso(gth.id)).documentos)).toBe(antes - 1);
+      const [a] = await tx`SELECT usuario_id, detalle FROM auditoria
+        WHERE accion = 'revision_anual_decision' AND entidad_id = ${revisionId} AND detalle->>'documentoId' = ${String(deGth.id)}
+        ORDER BY id DESC LIMIT 1`;
+      expect(Number(a.usuario_id)).toBe(admin.usuarioId);
+      expect(a.detalle).toMatchObject({ codigo: deGth.codigo, antes: null, despues: null });
+      expect(a.detalle.motivo).toContain(motivo);
+
+      // El único documento de un proceso sin normograma confirmado: la fila del proceso se va con él.
+      await deshacerCargaEn(tx, unicoA.id, motivo, admin.usuarioId, ahora);
+      expect(await filaDelProceso(soloUno.id)).toBeUndefined();
+      // Con el normograma confirmado, la fila queda con cero documentos.
+      await confirmarNormograma(admin, { revisionId, procesoId: confirmado.id, resultado: "sin_novedad", nota: null }, { sql: tx, ahora });
+      await deshacerCargaEn(tx, unicoB.id, motivo, admin.usuarioId, ahora);
+      expect(Number((await filaDelProceso(confirmado.id)).documentos)).toBe(0);
+
+      // El informe cuenta los procesos con documentos y lista el normograma de los que lo confirmaron.
+      const informe = await datosDelInforme(tx, revisionId, ahora);
+      const [{ n }] = await tx`SELECT count(*)::int AS n FROM revision_anual_procesos WHERE revision_id = ${revisionId} AND documentos > 0`;
+      expect(informe.alcance.procesos).toBe(n);
+      expect(informe.normograma.porProceso.map((p) => p.proceso)).toContain(confirmado.nombre);
+      expect(informe.normograma.porProceso.map((p) => p.proceso)).not.toContain(soloUno.nombre);
+      // Sin revisión abierta, deshacer una carga no toca nada de la campaña.
+      await sinRevisionAbierta(tx);
+      const otro = await vigenteFuera(tx, { fechaAprobacion: "2025-01-10", proceso: "GTH" });
+      await deshacerCargaEn(tx, otro.id, motivo, admin.usuarioId, ahora);
+      expect(await tx`SELECT 1 FROM revision_anual_decisiones WHERE documento_id = ${otro.id}`).toHaveLength(0);
+    }));
+});
+
 describe("las decisiones", () => {
   it("ratificar desde la ficha, verificar un externo y pedir una solicitud registran la decisión; Gerencia también aunque no decida", () =>
     revertida(sql, async (tx) => {
@@ -296,7 +357,7 @@ describe("las decisiones", () => {
       expect(Number(a.usuario_id)).toBe(gerente.usuarioId);
       expect(a.detalle).toMatchObject({ codigo: estrategico.codigo, antes: null, despues: { decision: "ratificar", ratificacionId } });
 
-      // La adopción de la edición nueva no cambia la decisión: quedó fija con su verificación.
+      // La adopción de la edición nueva conserva «actualizar» con su verificación y mueve la fila a la versión adoptada.
       const { versionId } = await abrirEdicion(
         liderCex,
         externo.documentoId,
@@ -308,7 +369,7 @@ describe("las decisiones", () => {
         { versionId, pedirAcuses: false, requiereSocializacion: false, credenciales: { clave: "ok" }, verificacionId },
         { sql: tx, ahora: despues, verificar: firmaDePrueba },
       );
-      expect(await filaDe(tx, revisionId, externo.documentoId)).toMatchObject({ decision: "actualizar", verificacionId, versionId: externo.versionId });
+      expect(await filaDe(tx, revisionId, externo.documentoId)).toMatchObject({ decision: "actualizar", verificacionId, versionId });
       const r = (await obtenerRevision(revisionId, admin, { sql: tx, ahora: despues }))!;
       expect(r.documentos.find((d) => d.documentoId === externo.documentoId)!.decision).toMatchObject({
         decision: "actualizar",
@@ -382,9 +443,13 @@ describe("las decisiones", () => {
         antes: { decision: "actualizar", tramiteId: r.tramiteId },
         despues: { decision: "ratificar", ratificacionId, tramiteId: null },
       });
+      // Ratificado, queda fijo: una solicitud posterior sobre el mismo documento no lo cambia.
+      await crearSolicitud(liderGth, { tipo: "modificar", motivo: "mejora", justificacion: JUSTIFICACION, documentoId: retirado.id }, o);
+      expect(await filaDe(tx, revisionId, retirado.id)).toMatchObject({ decision: "ratificar", ratificacionId, tramiteId: null });
       await t.limpiar();
 
-      // Lo que cada quien ve: el líder, sus procesos y sus documentos; Gerencia, todo sin decidir; Consulta, nada.
+      // Lo que cada quien ve: el líder, sus procesos y sus documentos, y las cifras de ellos; Gerencia, todo sin decidir;
+      // Consulta, nada.
       const delLider = (await obtenerRevision(revisionId, liderGth, o))!;
       const gth = await procesoPorSigla(tx, "GTH");
       const cex = await procesoPorSigla(tx, "CEX");
@@ -393,10 +458,65 @@ describe("las decisiones", () => {
       expect(suyos).not.toContain(cex.id);
       expect(delLider.documentos.every((d) => suyos.includes(d.proceso.id))).toBe(true);
       expect(delLider.documentos.map((d) => d.documentoId)).not.toContain(deCex.id);
+      const sumaDe = (decision: (typeof DECISIONES)[number]) => delLider.procesos.reduce((s, p) => s + p.porDecision[decision], 0);
+      expect(delLider.totales.documentos).toBe(delLider.procesos.reduce((s, p) => s + p.documentos, 0));
+      for (const decision of DECISIONES) expect(delLider.totales[decision], decision).toBe(sumaDe(decision));
+      const delAdmin = (await obtenerRevision(revisionId, admin, o))!;
+      expect(delLider.totales.documentos).toBeLessThan(delAdmin.totales.documentos);
       const deGerencia = (await obtenerRevision(revisionId, await sesionDe(tx, "gerente"), o))!;
       expect(deGerencia.procesos.length).toBeGreaterThan(1);
       expect(deGerencia.procesos.every((p) => !p.puedeDecidir)).toBe(true);
       expect(await obtenerRevision(revisionId, await usuarioDePrueba(tx, { rol: "consulta" }), o)).toBeNull();
+    }));
+
+  it("un documento cuyo trámite murió vuelve a estar por decidir: cuenta en la tarea, admite otra decisión y, si nadie decide, cierra con su trámite «Cancelado»", () =>
+    revertida(sql, async (tx) => {
+      await sinRevisionAbierta(tx);
+      const admin = await sesionAdmin(tx);
+      const liderGth = await sesionDe(tx, "lider.gth");
+      const queda = await vigenteFuera(tx, { fechaAprobacion: "2025-01-10", proceso: "GTH" });
+      const seDecide = await vigenteFuera(tx, { fechaAprobacion: "2025-01-10", proceso: "GTH" });
+      // Pedidas antes de abrir: «en trámite», con la aceptación pendiente.
+      const t1 = await tramiteEn(tx, "aceptacion", { codigo: queda.codigo });
+      const t2 = await tramiteEn(tx, "aceptacion", { codigo: seDecide.codigo });
+      const { revisionId } = await revisionDePrueba(tx, admin, { ahora });
+      const gth = await procesoPorSigla(tx, "GTH");
+      const o = { sql: tx, ahora };
+      const leer = async () => (await obtenerRevision(revisionId, liderGth, o))!;
+      const pendientesDeLaTarea = async () => {
+        const tarea = (await tareasDeRevision(liderGth, o)).find((x) => x.id === `revision:${revisionId}:${gth.id}`)!;
+        return Number(/\((\d+) pendientes?\)/.exec(tarea.titulo)![1]);
+      };
+      const antes = await leer();
+      const enTarea = await pendientesDeLaTarea();
+      expect(antes.documentos.find((d) => d.documentoId === queda.id)).toMatchObject({ porDecidir: false, decision: { decision: "en_tramite" } });
+
+      for (const t of [t1, t2]) {
+        await transicionar(liderGth, { tramiteId: t.tramiteId, accion: "retirar", etapaEsperada: "aceptacion", rondaEsperada: 0 }, opc(tx));
+      }
+      const despues = await leer();
+      const procesoAntes = antes.procesos.find((p) => p.id === gth.id)!;
+      const procesoDespues = despues.procesos.find((p) => p.id === gth.id)!;
+      expect(procesoDespues.decididos).toBe(procesoAntes.decididos - 2);
+      expect(await pendientesDeLaTarea()).toBe(enTarea + 2);
+      expect(despues.documentos.find((d) => d.documentoId === queda.id)).toMatchObject({
+        porDecidir: true,
+        decision: { decision: "en_tramite", tramite: { id: t1.tramiteId, etapa: "cancelado" } },
+      });
+
+      // Se puede decidir de nuevo: la ratificación lo reemplaza.
+      await ratificar(liderGth, { documentoId: seDecide.id, nota: null, credenciales: { clave: "ok" } }, { ...o, verificar: firmaDePrueba });
+      expect(await filaDe(tx, revisionId, seDecide.id)).toMatchObject({ decision: "ratificar", tramiteId: null });
+      expect((await leer()).documentos.find((d) => d.documentoId === seDecide.id)).toMatchObject({ porDecidir: false });
+
+      // Nadie decide el otro: cierra con su decisión y el estado del trámite, no como «sin revisar».
+      await cerrarRevision(admin, { revisionId, credenciales: { clave: "ok" } }, { ...o, verificar: firmaDePrueba });
+      expect(await filaDe(tx, revisionId, queda.id)).toMatchObject({ decision: "en_tramite", tramiteId: t1.tramiteId });
+      const informe = (await informeCongelado(revisionId, { sql: tx }))!;
+      expect(informe.decisiones.find((d) => d.codigo === queda.codigo)).toMatchObject({
+        decision: "en_tramite",
+        solicitud: { estadoAlCierre: "Cancelado", venceEn: null },
+      });
     }));
 
   it("sin revisión abierta, ratificar no registra decisión ni enlaza la ratificación", () =>
@@ -458,13 +578,33 @@ describe("el cierre", () => {
       const enCurso = await tramiteEn(tx, "elaboracion");
       const [{ documento_id }] = await tx`SELECT documento_id FROM tramites WHERE id = ${enCurso.tramiteId}`;
       const [{ codigo: codigoEnCurso }] = await tx`SELECT codigo FROM documentos WHERE id = ${documento_id}`;
+      // El formato del informe: un documento de acceso general con un PDF de principal, con sus márgenes.
+      const formato = await vigenteFuera(tx, { fechaAprobacion: "2025-01-10", proceso: "GTH" });
+      const [archivoFormato] = await tx`SELECT id FROM archivos WHERE version_id = ${formato.versionId} AND rol = 'principal'`;
+      for (const [clave, valor] of [
+        ["formato_informe_documento_id", String(formato.id)],
+        ["formato_informe_margen_superior_cm", "6"],
+        ["formato_informe_margen_inferior_cm", "4"],
+      ]) {
+        await tx`INSERT INTO configuracion (clave, valor) VALUES (${clave}, ${valor}) ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor`;
+      }
       const { revisionId } = await revisionDePrueba(tx, admin, { ahora });
+      // Una prórroga y un cambio normativo del año: sus fechas también se congelan.
+      const prorrogaEn = new Date(ahora.getTime() + 5 * DIA);
+      await prorrogarRevision(admin, { revisionId, dias: 10, motivo: "Auditoría externa en curso" }, { sql: tx, ahora: prorrogaEn });
+      const norma = await normaDePrueba(tx, admin);
+      await cambiarEstadoNorma(admin, { normaId: norma.id, estado: "derogada", fecha: "2090-02-01", nota: null }, { sql: tx, ahora });
       const cierre = new Date(ahora.getTime() + 30 * DIA);
       const o = { sql: tx, ahora: cierre, verificar: firmaDePrueba };
 
-      // Una clave errada no escribe nada de la campaña.
+      // Una clave errada no escribe nada de la campaña: ni el cierre, ni las decisiones, ni la bitácora, ni avisos.
+      const ultimaFila = async () => (await tx`SELECT max(actualizado_en) AS en FROM revision_anual_decisiones WHERE revision_id = ${revisionId}`)[0].en;
+      const antesDeLaClave = await ultimaFila();
       await expect(cerrarRevision(admin, { revisionId, credenciales: { clave: "mala" } }, o)).rejects.toThrow("Clave o código incorrectos");
       expect((await tx`SELECT estado, informe FROM revisiones_anuales WHERE id = ${revisionId}`)[0]).toEqual({ estado: "abierta", informe: null });
+      expect(await ultimaFila()).toEqual(antesDeLaClave);
+      expect(await tx`SELECT 1 FROM auditoria WHERE accion = 'revision_anual_cerrada' AND entidad_id = ${revisionId}`).toHaveLength(0);
+      expect(await tx`SELECT 1 FROM notificaciones WHERE tipo = 'revision.cerrada' AND entidad_id = ${revisionId}`).toHaveLength(0);
 
       const r = await cerrarRevision(admin, { revisionId, credenciales: { clave: "ok" } }, o);
       expect(r.sinRevisar).toBeGreaterThan(0);
@@ -482,11 +622,40 @@ describe("el cierre", () => {
         cerradaEn: cierre,
         cerradaPor: { nombre: admin.nombre, cargo: null },
         metodo: "clave",
-        prorrogas: [],
+        prorrogas: [{ fecha: prorrogaEn, dias: 10, motivo: "Auditoría externa en curso", por: admin.nombre }],
         zona: ZONA,
       });
-      expect(typeof informe.entidad).toBe("string");
-      expect(informe).toHaveProperty("formato");
+      const [{ valor: entidad }] = await tx`SELECT valor FROM configuracion WHERE clave = 'nombre_entidad'`;
+      expect(informe.entidad).toBe((entidad as string).trim());
+      expect(informe.formato).toEqual({
+        archivoId: Number(archivoFormato.id),
+        hash: formato.hash,
+        codigo: formato.codigo,
+        version: 1,
+        margenSuperiorCm: 6,
+        margenInferiorCm: 4,
+      });
+      expect(informe.normograma.cambios.find((c) => c.norma === norma.nombre)).toEqual({
+        norma: norma.nombre,
+        estado: "Derogada",
+        fecha: finDeFecha("2090-02-01", ZONA),
+        documentos: 0,
+        resueltos: 0,
+        noAfecta: 0,
+      });
+      // Ida y vuelta: lo congelado, leído con sus fechas como `Date`, es lo mismo que el informe calculado sobre la cerrada.
+      expect(informe).toEqual(await datosDelInforme(tx, revisionId, cierre));
+      const enCursoDelInforme = informe.decisiones.find((d) => d.codigo === codigoEnCurso)!;
+      for (const fecha of [
+        informe.abiertaEn,
+        informe.cerradaEn,
+        informe.prorrogas[0].fecha,
+        enCursoDelInforme.fecha,
+        enCursoDelInforme.solicitud!.venceEn,
+        informe.normograma.cambios[0].fecha,
+      ]) {
+        expect(fecha).toBeInstanceOf(Date);
+      }
       expect(DECISIONES.reduce((s, d) => s + informe.totales[d], 0)).toBe(informe.alcance.documentos);
       expect(informe.decisiones).toHaveLength(informe.alcance.documentos);
       expect(informe.alcance.internos + informe.alcance.externos).toBe(informe.alcance.documentos);
@@ -520,6 +689,18 @@ describe("el cierre", () => {
       await enCurso.limpiar();
     }));
 
+  it("el informe parcial de la abierta no exige el nombre de la entidad; el cierre sí", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const { revisionId } = await revisionDePrueba(tx, admin, { ahora });
+      await tx`INSERT INTO configuracion (clave, valor) VALUES ('nombre_entidad', '') ON CONFLICT (clave) DO UPDATE SET valor = ''`;
+      const parcial = await datosDelInforme(tx, revisionId, ahora);
+      expect(parcial).toMatchObject({ entidad: "", anio: 2090, metodo: "", cerradaPor: { nombre: "", cargo: null } });
+      await expect(
+        cerrarRevision(admin, { revisionId, credenciales: { clave: "ok" } }, { sql: tx, ahora, verificar: firmaDePrueba }),
+      ).rejects.toThrow("Configure el nombre de la entidad antes de cerrar la revisión anual");
+    }));
+
   it("prorrogar mueve la fecha, exige motivo y reinicia las marcas de aviso", () =>
     revertida(sql, async (tx) => {
       const admin = await sesionAdmin(tx);
@@ -548,9 +729,18 @@ describe("el cierre", () => {
       expect(aviso.cuerpo).toContain((await procesoPorSigla(tx, "GTH")).nombre);
       expect(aviso.cuerpo).not.toContain(motivo);
 
-      // Una segunda prórroga se suma a la primera.
+      // Una segunda prórroga de una campaña sin vencer se suma a la primera.
       await prorrogarRevision(admin, { revisionId, dias: 5, motivo: "Cierre del trimestre" }, o);
-      expect((await revisionAbierta({ sql: tx }))!.prorrogas.map((p) => p.dias)).toEqual([15, 5]);
+      const dos = (await revisionAbierta({ sql: tx }))!;
+      expect(dos.prorrogas.map((p) => p.dias)).toEqual([15, 5]);
+      expect(dos.venceEn).toEqual(fechaLimite(fechaLimite(antes, 15, ZONA), 5, ZONA));
+
+      // Vencida hace 30 días, la prórroga cuenta desde hoy: el plazo nuevo no queda en el pasado.
+      const abierta = new Date("2091-01-10T15:00:00Z");
+      const { revisionId: otra } = await revisionDePrueba(tx, admin, { ahora: abierta, plazoDias: 7 });
+      const hoy = new Date("2091-02-16T15:00:00Z");
+      await prorrogarRevision(admin, { revisionId: otra, dias: 15, motivo: "Se retoma la campaña" }, { sql: tx, ahora: hoy });
+      expect((await revisionAbierta({ sql: tx }))!.venceEn).toEqual(fechaLimite(hoy, 15, ZONA));
     }));
 
   it("confirmar el normograma del proceso: «sin novedad» sin nota; «cambios» con nota avisa a los Admin SGC", () =>

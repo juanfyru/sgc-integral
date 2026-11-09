@@ -25,6 +25,8 @@ export type DatosInforme = {
     responsable: string | null;
     solicitud: { numero: string; venceEn: Date | null; estadoAlCierre: string } | null;
     fecha: Date | null;
+    /** Solo en un externo: «Edición adoptada», «Pendiente de adoptar» o «Retirado». */
+    estadoExterno?: string;
   }[];
   normograma: {
     cambios: { norma: string; estado: string; fecha: Date; documentos: number; resueltos: number; noAfecta: number }[];

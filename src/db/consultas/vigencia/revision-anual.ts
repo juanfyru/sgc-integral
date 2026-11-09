@@ -19,17 +19,22 @@ export {
   alPublicarDuranteRevision,
   alSolicitar,
   registrarDecision,
+  revisionAbiertaBloqueada,
   revisionQueIncluye,
+  sacarDeLaFoto,
   type NuevaDecision,
+  type RevisionBloqueada,
 } from "./revision-anual/registro";
 export { confirmarNormograma, enlazarTramiteExistente } from "./revision-anual/decisiones";
 export {
   obtenerRevision,
   type DecisionDeDocumento,
   type DetalleRevision,
+  type DocumentoDeRevision,
   type InsumosDeDocumento,
   type ProcesoDeRevision,
 } from "./revision-anual/lectura";
+export { ETAPAS_MUERTAS, estaPendiente } from "./revision-anual/comun";
 export { cerrarRevision, datosDelInforme, informeCongelado } from "./revision-anual/cierre";
 export { tareasDeRevision } from "./revision-anual/tareas";
 export { revisionVencida } from "./revision-anual/vencidos";

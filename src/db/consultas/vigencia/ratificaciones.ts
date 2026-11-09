@@ -16,7 +16,7 @@ import { sumarMeses } from "@/lib/vigencia/plazo";
 import { ErrorVigencia } from "@/lib/vigencia/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { NO_COINCIDE, NO_EXISTE, conRechazoPorHuella, exigirHuellaRegistrada } from "./comun";
-import { registrarDecision, revisionQueIncluye } from "./revision-anual/registro";
+import { registrarDecision, revisionAbiertaBloqueada, revisionQueIncluye, type RevisionBloqueada } from "./revision-anual/registro";
 
 export type Ratificacion = {
   id: number;
@@ -84,20 +84,25 @@ export async function validarRatificacion(sql: Cliente, sesion: SesionFlujo, doc
 /**
  * Lo que la revisión anual hace con una ratificación hecha durante su campaña, desde su página, la ficha o el Semáforo:
  * la decisión «ratificar» a nombre de quien firmó, aunque no tenga `revision_anual.decidir` (spec 13C §9.3). La llama
- * `ratificar` dentro de su transacción, después de insertar la fila. Sin revisión abierta no hace nada.
+ * `ratificar` dentro de su transacción, después de insertar la fila, con la revisión abierta que ya leyó (`revision`).
+ * Sin revisión abierta no hace nada.
  */
 export async function alRatificar(
   tx: TransactionSql,
-  d: { documentoId: number; versionId: number; ratificacionId: number; usuarioId: number; ahora: Date },
+  d: { documentoId: number; versionId: number; ratificacionId: number; usuarioId: number; ahora: Date; revision?: RevisionBloqueada | null },
 ): Promise<void> {
-  await registrarDecision(tx, {
-    documentoId: d.documentoId,
-    versionId: d.versionId,
-    decision: "ratificar",
-    usuarioId: d.usuarioId,
-    ratificacionId: d.ratificacionId,
-    ahora: d.ahora,
-  });
+  await registrarDecision(
+    tx,
+    {
+      documentoId: d.documentoId,
+      versionId: d.versionId,
+      decision: "ratificar",
+      usuarioId: d.usuarioId,
+      ratificacionId: d.ratificacionId,
+      ahora: d.ahora,
+    },
+    d.revision,
+  );
 }
 
 /**
@@ -144,13 +149,22 @@ export async function ratificar(
         contexto,
         ahora,
       });
-      // Hecha durante la revisión anual que incluye al documento, la ratificación queda enlazada a ella.
-      const revisionAnualId = await revisionQueIncluye(tx, d.documentoId);
+      // Hecha durante la revisión anual que incluye al documento, la ratificación queda enlazada a ella. La revisión
+      // abierta se lee una vez y pasa a la decisión.
+      const abierta = await revisionAbiertaBloqueada(tx);
+      const incluye = await revisionQueIncluye(tx, d.documentoId, abierta);
       const [fila] = await tx`INSERT INTO ratificaciones (version_id, firma_id, nota, proxima_revision, revision_anual_id, creado_en)
-        VALUES (${v.versionId}, ${firmaId}, ${nota}, ${proxima}, ${revisionAnualId}, ${ahora})
+        VALUES (${v.versionId}, ${firmaId}, ${nota}, ${proxima}, ${incluye?.id ?? null}, ${ahora})
         RETURNING id`;
       const ratificacionId = Number(fila.id);
-      await alRatificar(tx, { documentoId: d.documentoId, versionId: v.versionId, ratificacionId, usuarioId: sesion.usuarioId, ahora });
+      await alRatificar(tx, {
+        documentoId: d.documentoId,
+        versionId: v.versionId,
+        ratificacionId,
+        usuarioId: sesion.usuarioId,
+        ahora,
+        revision: abierta,
+      });
       // `actualizado_en` no cambia: ratificar no cambia el documento.
       await tx`UPDATE documentos SET proxima_revision_fijada = NULL, fijada_por = NULL, fijada_en = NULL, fijada_nota = NULL,
           revision_aviso_en = NULL, revision_escalado_en = NULL

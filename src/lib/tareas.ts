@@ -11,7 +11,7 @@ import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { tareasDeImpactos } from "@/db/consultas/normograma/impactos";
 import { listarTramites, type ResumenTramite } from "@/db/consultas/tramites";
 import { esResponsableTecnico } from "@/db/consultas/vigencia/externos";
-import { tareasDeRevision } from "@/db/consultas/vigencia/revision-anual";
+import { tareasDeRevision } from "@/db/consultas/vigencia/revision-anual/tareas";
 import { vigenciaDePersona, type VigenciaDePersona } from "@/db/consultas/vigencia/tareas";
 import { puede } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";

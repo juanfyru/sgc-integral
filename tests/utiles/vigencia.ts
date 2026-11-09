@@ -6,7 +6,8 @@ import type { TransactionSql } from "postgres";
 import type { Cliente } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { adoptarEdicion, registrarExterno, type DatosExterno } from "@/db/consultas/vigencia/externos";
-import { abrirRevision } from "@/db/consultas/vigencia/revision-anual";
+import { enTransaccion } from "@/db/consultas/flujo/contrato";
+import { abrirRevision, revisionAbiertaBloqueada, sacarDeLaFoto } from "@/db/consultas/vigencia/revision-anual";
 import type { Verificador } from "@/lib/firma";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { fechaEnZona } from "@/lib/tramites/plazos";
@@ -110,25 +111,20 @@ export async function revisionDePrueba(
 /**
  * Para los tests que confirman cargas reales (fuera de una transacción revertida) y después borran sus documentos: con
  * una revisión anual abierta en la base, publicar los hizo entrar a su foto, y esa fila impediría borrarlos (FK). Quita
- * de la revisión abierta los documentos cuyo código empieza por `prefijo`, con su conteo; la fila de la bitácora queda.
- * Va antes de borrar sus trámites y sus versiones. Una revisión cerrada no se toca (sus filas son inmutables).
+ * de la revisión abierta los documentos cuyo código empieza por `prefijo` con la función de producción (`sacarDeLaFoto`:
+ * descuenta su proceso y borra la fila del proceso que se quede vacío y sin normograma); la fila de la bitácora queda. Va
+ * antes de borrar sus trámites y sus versiones. Una revisión cerrada no se toca (sus filas son inmutables).
  */
 export async function sacarDeLaRevisionAbierta(sql: Cliente, prefijo: string): Promise<void> {
-  await sql`WITH borradas AS (
-      DELETE FROM revision_anual_decisiones rad
-      USING documentos d, revisiones_anuales ra
-      WHERE d.id = rad.documento_id AND ra.id = rad.revision_id AND ra.estado = 'abierta' AND d.codigo LIKE ${`${prefijo}%`}
-      RETURNING rad.revision_id, rad.documento_id
-    ), por_proceso AS (
-      SELECT b.revision_id, COALESCE(dp.proceso_id, s.proceso_id) AS proceso_id, count(*)::int AS n
-      FROM borradas b
-      JOIN documento_proceso dp ON dp.documento_id = b.documento_id AND dp.es_principal
-      LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
-      GROUP BY 1, 2
-    )
-    UPDATE revision_anual_procesos rap SET documentos = GREATEST(rap.documentos - pp.n, 0)
-    FROM por_proceso pp
-    WHERE rap.revision_id = pp.revision_id AND rap.proceso_id = pp.proceso_id`;
+  await enTransaccion(sql, async (tx) => {
+    const abierta = await revisionAbiertaBloqueada(tx);
+    if (!abierta) return;
+    const filas = await tx`SELECT rad.documento_id FROM revision_anual_decisiones rad JOIN documentos d ON d.id = rad.documento_id
+      WHERE rad.revision_id = ${abierta.id} AND d.codigo LIKE ${`${prefijo}%`}`;
+    for (const f of filas) {
+      await sacarDeLaFoto(tx, { documentoId: Number(f.documento_id), usuarioId: null, motivo: "Limpieza de un test que confirma cargas" }, abierta);
+    }
+  });
 }
 
 /**

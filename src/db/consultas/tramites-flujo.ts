@@ -8,7 +8,7 @@ import { registrarAuditoria } from "@/db/consultas/admin";
 import { obtenerConfigDocumental, type ConfigDocumental } from "@/db/consultas/config-documental";
 import { registrarFirma } from "@/db/consultas/firmas";
 import { resolverImpacto } from "@/db/consultas/normograma/impactos";
-import { alSolicitar } from "@/db/consultas/vigencia/revision-anual/registro";
+import { alSolicitar, revisionAbiertaBloqueada } from "@/db/consultas/vigencia/revision-anual/registro";
 import { alcanceProcesos, enAlcance } from "@/lib/alcance";
 import { verificarParaFirmar, type CredencialesFirma } from "@/lib/firma";
 import { puede } from "@/lib/permisos";
@@ -206,10 +206,11 @@ export async function crearSolicitud(
       datos.tipo === "crear" ? await destinoDeCreacion(tx, datos) : await destinoDeDocumento(tx, datos.documentoId);
     if (!enAlcance(await alcanceProcesos(sesion, { sql: tx }), destino.procesoId))
       throw new ErrorTramite("Solo puede pedir sobre los procesos que lidera");
-    // Un formulario viejo no enlaza la solicitud a una revisión ya cerrada.
-    if (datos.revisionAnualId !== undefined) {
-      const [revision] = await tx`SELECT 1 FROM revisiones_anuales WHERE id = ${datos.revisionAnualId} AND estado = 'abierta'`;
-      if (!revision) throw new ErrorTramite("La revisión anual no está abierta");
+    // Un formulario viejo no enlaza la solicitud a una revisión ya cerrada: se lee con `FOR SHARE`, y un cierre en curso
+    // espera a la solicitud. La misma lectura sirve a la decisión.
+    const abierta = datos.revisionAnualId === undefined ? undefined : await revisionAbiertaBloqueada(tx);
+    if (datos.revisionAnualId !== undefined && abierta?.id !== datos.revisionAnualId) {
+      throw new ErrorTramite("La revisión anual no está abierta");
     }
 
     // Bajo el candado, dos solicitudes simultáneas no leen el mismo consecutivo.
@@ -247,7 +248,7 @@ export async function crearSolicitud(
     // Con la revisión anual abierta, pedir el cambio o la eliminación de un documento de su foto es su decisión, venga
     // o no de la página de la campaña; con un impacto, la solicitud lo resuelve (con el permiso de quien pide).
     if (destino.documentoId !== null) {
-      await alSolicitar(tx, { tipo: datos.tipo, documentoId: destino.documentoId, tramiteId, usuarioId: sesion.usuarioId, ahora });
+      await alSolicitar(tx, { tipo: datos.tipo, documentoId: destino.documentoId, tramiteId, usuarioId: sesion.usuarioId, ahora }, abierta);
     }
     if (datos.impactoId !== undefined) {
       await resolverImpacto(sesion, { impactoId: datos.impactoId, resolucion: "solicitud", tramiteId }, { sql: tx, ahora });

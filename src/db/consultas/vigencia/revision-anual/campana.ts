@@ -161,7 +161,8 @@ export async function abrirRevision(
 }
 
 /**
- * Prorroga la revisión abierta `dias` días (de 1 a 365) con un motivo: mueve `vence_en`, guarda la prórroga, reinicia
+ * Prorroga la revisión abierta `dias` días (de 1 a 365) con un motivo: mueve `vence_en` (desde el vencimiento o, si ya
+ * pasó, desde hoy), guarda la prórroga, reinicia
  * las marcas de aviso de sus procesos (la pasada de vencimientos vuelve a avisar si vence otra vez) y avisa a quienes
  * tienen pendientes, con sus procesos y el conteo: el motivo no va en el aviso.
  */
@@ -184,7 +185,8 @@ export async function prorrogarRevision(
     if (!r) throw new ErrorVigencia(REVISION_NO_EXISTE);
     if (r.estado !== "abierta") throw new ErrorVigencia(YA_CERRADA);
     const antes = new Date(r.vence_en as string);
-    const despues = fechaLimite(antes, dias, zona);
+    // Ya vencida, cuenta desde hoy: el plazo nuevo nunca queda en el pasado.
+    const despues = fechaLimite(antes.getTime() > ahora.getTime() ? antes : ahora, dias, zona);
     const [quien] = await tx`SELECT nombre FROM usuarios WHERE id = ${sesion.usuarioId}`;
     const prorroga: ProrrogaGuardada = { fecha: ahora.toISOString(), dias, motivo, porId: sesion.usuarioId, por: quien.nombre as string };
     await tx`UPDATE revisiones_anuales SET vence_en = ${despues}, prorrogas = prorrogas || ${tx.json([prorroga])}::jsonb

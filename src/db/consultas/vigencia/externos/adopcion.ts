@@ -25,7 +25,7 @@ import {
   type AdopcionValidada,
 } from "./comun";
 import { NO_EXISTE, conRechazoPorHuella, exigirHuellaRegistrada } from "../comun";
-import { registrarDecision } from "../revision-anual/registro";
+import { registrarDecision, revisionAbiertaBloqueada, type RevisionBloqueada } from "../revision-anual/registro";
 
 /**
  * Lo que debe cumplirse para adoptar una edición, sin escribir nada (F13A-R4): un borrador de un externo que la
@@ -61,22 +61,28 @@ export async function validarAdopcion(sql: Cliente, sesion: SesionFlujo, version
 
 /**
  * Lo que la revisión anual hace con una adopción hecha durante su campaña (spec 13C §9.3): «actualizar» con la
- * verificación «hay una edición nueva» que la pidió, o «revisado recientemente» si no venía de una. La llama
- * `adoptarEdicion` dentro de su transacción, después de publicar: un externo que entró a la foto con esa publicación ya
- * tiene su «revisado recientemente» (`alPublicarDuranteRevision`) y aquí no cambia. Sin revisión abierta no hace nada.
+ * verificación «hay una edición nueva» que la pidió, o «revisado recientemente» si no venía de una, y la fila pasa a la
+ * versión adoptada. La llama `adoptarEdicion` dentro de su transacción, después de publicar, con la revisión abierta que
+ * ya leyó (`revision`): un externo que entró a la foto con esa publicación ya tiene su «revisado recientemente»
+ * (`alPublicarDuranteRevision`) y aquí no cambia. Sin revisión abierta no hace nada.
  */
 export async function alAdoptar(
   tx: TransactionSql,
-  d: { documentoId: number; versionId: number; usuarioId: number; verificacionId: number | null; ahora: Date },
+  d: { documentoId: number; versionId: number; usuarioId: number; verificacionId: number | null; ahora: Date; revision?: RevisionBloqueada | null },
 ): Promise<void> {
-  await registrarDecision(tx, {
-    documentoId: d.documentoId,
-    versionId: d.versionId,
-    decision: d.verificacionId === null ? "reciente" : "actualizar",
-    usuarioId: d.usuarioId,
-    verificacionId: d.verificacionId ?? undefined,
-    ahora: d.ahora,
-  });
+  await registrarDecision(
+    tx,
+    {
+      documentoId: d.documentoId,
+      versionId: d.versionId,
+      decision: d.verificacionId === null ? "reciente" : "actualizar",
+      usuarioId: d.usuarioId,
+      verificacionId: d.verificacionId ?? undefined,
+      moverVersion: true,
+      ahora: d.ahora,
+    },
+    d.revision,
+  );
 }
 
 /**
@@ -155,7 +161,9 @@ export async function adoptarEdicion(
         contexto,
         ahora,
       });
-      const { documentoId, numero, obsoletas } = await aplicarPublicacion(tx, d.versionId, "externo", sesion.usuarioId, ahora);
+      // La revisión abierta se lee una vez y sirve a la publicación y a la decisión de la adopción.
+      const abierta = await revisionAbiertaBloqueada(tx);
+      const { documentoId, numero, obsoletas } = await aplicarPublicacion(tx, d.versionId, "externo", sesion.usuarioId, ahora, abierta);
       // Quien adopta ya leyó la edición: su acuse nace confirmado por la firma.
       const acuses = !v.esPrimera || d.pedirAcuses ? (await crearAcusesAlPublicar(tx, d.versionId, ahora, [sesion.usuarioId])).creados : 0;
       if (d.requiereSocializacion) {
@@ -164,7 +172,7 @@ export async function adoptarEdicion(
       }
       await tx`UPDATE externos SET edicion_nueva_pendiente_desde = NULL, aviso_vencido_en = NULL, escalado_en = NULL
         WHERE documento_id = ${documentoId}`;
-      await alAdoptar(tx, { documentoId, versionId: d.versionId, usuarioId: sesion.usuarioId, verificacionId, ahora });
+      await alAdoptar(tx, { documentoId, versionId: d.versionId, usuarioId: sesion.usuarioId, verificacionId, ahora, revision: abierta });
       await registrarAuditoria(tx, {
         usuarioId: sesion.usuarioId,
         accion: "externo_adoptado",

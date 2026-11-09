@@ -28,7 +28,7 @@ vi.mock("@/db/consultas/config-documental", async (original) => {
 vi.mock("@/db/consultas/vigencia/tareas", () => ({ vigenciaDePersona }));
 vi.mock("@/db/consultas/vigencia/externos", () => ({ esResponsableTecnico: async () => false }));
 vi.mock("@/db/consultas/normograma/impactos", () => ({ tareasDeImpactos }));
-vi.mock("@/db/consultas/vigencia/revision-anual", () => ({ tareasDeRevision }));
+vi.mock("@/db/consultas/vigencia/revision-anual/tareas", () => ({ tareasDeRevision }));
 
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { misTareas } from "@/lib/tareas";
