@@ -603,7 +603,7 @@ export async function editarControl(
 export async function aplicarPublicacion(
   tx: TransactionSql,
   versionId: number,
-  origen: "plataforma" | "fuera",
+  origen: OrigenAprobacion,
   usuarioId: number,
   ahora: Date = new Date(),
 ): Promise<{ documentoId: number; numero: number; obsoletas: number[] }> {

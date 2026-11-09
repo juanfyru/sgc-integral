@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { Rol } from "@/lib/roles";
 import { accionesDisponibles, evaluarTransicion, type ActorParaRegla, type TramiteParaRegla } from "@/lib/tramites/transiciones";
 import { MATRIZ } from "@/lib/permisos";
+import { APROBACION_DE_VERSION, APROBACION_EN_LISTADO, ETIQUETA_FIRMA, FIRMAS } from "@/lib/tramites/tipos";
+import { ETIQUETA_MOTIVO_POR_RECOGER, MOTIVOS_POR_RECOGER } from "@/lib/distribucion/tipos";
 import { ROLES_REVISOR, candidatosAprobador, candidatosRevisor, rolAprobador, validarDesignacion, type Persona } from "@/lib/tramites/separacion";
 
 const base: TramiteParaRegla = { tipo: "modificar", etapa: "revision", solicitanteId: 1, elaboradorId: 2, revisorId: 3, aprobadorId: 4 };
@@ -137,5 +139,19 @@ describe("separación de funciones", () => {
   it("quien elabora no puede aprobar", () => {
     const d = { tipo: "modificar" as const, autoridad: "estrategico" as const, solicitante: p(4, "gerencia"), elaborador: p(4, "gerencia"), revisor: p(3, "admin_sgc"), aprobador: p(4, "gerencia") };
     expect(validarDesignacion(d)).toBe("Quien elabora no puede aprobar");
+  });
+});
+
+describe("tipos ampliados de la Fase 13C", () => {
+  it("las firmas sin trámite y el origen externo tienen su texto", () => {
+    expect(FIRMAS).toEqual(["elaboro", "reviso", "aprobo", "publico", "ratifico", "adopto"]);
+    expect(ETIQUETA_FIRMA.ratifico).toBe("Ratificó");
+    expect(ETIQUETA_FIRMA.adopto).toBe("Adoptó");
+    expect(APROBACION_EN_LISTADO.externo).toBe("Adoptado");
+    expect(APROBACION_DE_VERSION.externo).toBe("Edición adoptada en la plataforma");
+  });
+  it("el motivo «retirado» de una copia por recoger tiene su etiqueta", () => {
+    expect(MOTIVOS_POR_RECOGER).toContain("retirado");
+    expect(ETIQUETA_MOTIVO_POR_RECOGER.retirado).toBe("El documento externo fue retirado");
   });
 });

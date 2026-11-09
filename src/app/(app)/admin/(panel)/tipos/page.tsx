@@ -41,7 +41,7 @@ export default async function PaginaTipos() {
               {t.nombre}
             </Link>
             <span className="text-xs text-muted-foreground">
-              {t.numDocs} docs · {t.esDiligenciable ? "diligenciable" : "solo lectura"}
+              {t.numDocs} docs · {t.esDiligenciable ? "diligenciable" : "solo lectura"} · Revisión cada {t.mesesRevision} meses
             </span>
             <span className="text-xs text-muted-foreground">
               Aprueba: {t.autoridad === "estrategico" ? "Gerencia" : "Administrador del SGC"} · Plantilla:{" "}

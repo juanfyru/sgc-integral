@@ -86,7 +86,13 @@ function parsearTipo(formData: FormData) {
     esDiligenciable: formData.get("esDiligenciable") === "on",
     autoridad: validarAutoridad(texto(formData, "autoridad")),
     plantillaDocumentoId: plantillaDe(texto(formData, "plantillaDocumentoId")),
+    mesesRevision: mesesDe(texto(formData, "mesesRevision")),
   };
+}
+
+function mesesDe(v: string): number {
+  if (!/^d{1,3}$/.test(v)) throw new Error("El plazo de revisión debe ser un número entero de meses entre 1 y 120");
+  return Number(v);
 }
 
 function validarAutoridad(v: string): AutoridadTipo {

@@ -94,6 +94,19 @@ export async function sembrarBase(
     { clave: "escalamiento_dias", valor: "3" },
     { clave: "publicacion_directa", valor: "1" },
     { clave: "aviso_datos_personales", valor: AVISO_DATOS_PERSONALES },
+    { clave: "revision_atencion_dias", valor: "90" },
+    { clave: "revision_anual_plazo_dias", valor: "60" },
+    { clave: "revision_anual_ventana_meses", valor: "6" },
+    { clave: "externos_verificacion_meses", valor: "12" },
+    { clave: "impacto_plazo_dias", valor: "15" },
+    { clave: "formato_informe_margen_superior_cm", valor: "5.5" },
+    { clave: "formato_informe_margen_inferior_cm", valor: "3.5" },
+    { clave: "meta_dentro_plazo_pct", valor: "95" },
+    { clave: "meta_aprobacion_dias", valor: "30" },
+    { clave: "meta_vencidos", valor: "0" },
+    { clave: "meta_acuses_pct", valor: "90" },
+    { clave: "meta_externos_pct", valor: "95" },
+    { clave: "meta_etapas_plazo_pct", valor: "90" },
   ]);
 
   const tipos = await db

@@ -23,14 +23,20 @@ export default async function PaginaConfiguracionDocumental() {
   await exigirPermiso("tramites.gestionar");
   const [config, items] = await Promise.all([obtenerConfigDocumental(), listarItemsVerificacion()]);
   const documentoFormato = config.formatoActa.documentoId;
+  const documentoInforme = config.vigencia.formatoInforme.documentoId;
   const [documentosFormato, estadoFormato] = await Promise.all([
     documentosParaFormato({ incluir: documentoFormato }),
     estadoDelFormato(documentoFormato),
   ]);
+  // El informe usa la misma lista; si su documento guardado no está en ella, se trae aparte.
+  const documentosInforme =
+    documentoInforme === null || documentosFormato.some((d) => d.id === documentoInforme)
+      ? documentosFormato
+      : await documentosParaFormato({ incluir: documentoInforme });
   return (
     <div className="flex flex-col gap-8">
       <EncabezadoPagina titulo="Configuración documental" />
-      <FormularioConfigDocumental config={config} documentosFormato={documentosFormato} estadoFormato={estadoFormato} />
+      <FormularioConfigDocumental config={config} documentosFormato={documentosFormato} documentosInforme={documentosInforme} estadoFormato={estadoFormato} />
       <section className="flex max-w-3xl flex-col gap-4" aria-labelledby="titulo-lista-verificacion">
         <h2 id="titulo-lista-verificacion" className="text-base font-semibold">
           Lista de verificación

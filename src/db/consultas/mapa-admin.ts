@@ -155,12 +155,13 @@ export type FilaTipo = {
   id: number; nombre: string; sigla: string;
   esDiligenciable: boolean; orden: number; activo: boolean; numDocs: number;
   autoridad: AutoridadTipo; plantillaDocumentoId: number | null; plantillaCodigo: string | null; plantillaVigente: boolean;
+  mesesRevision: number;
 };
 
 export async function listarTipos(): Promise<FilaTipo[]> {
   const sql = obtenerSql();
   const filas = await sql`
-    SELECT t.id, t.nombre, t.sigla, t.es_diligenciable, t.orden, t.activo, t.autoridad,
+    SELECT t.id, t.nombre, t.sigla, t.es_diligenciable, t.orden, t.activo, t.autoridad, t.meses_revision,
       t.plantilla_documento_id, p.codigo AS plantilla_codigo,
       EXISTS (SELECT 1 FROM documento_versiones v WHERE v.documento_id = t.plantilla_documento_id AND v.estado = 'vigente') AS plantilla_vigente,
       (SELECT count(*)::int FROM documentos d WHERE d.tipo_id = t.id) AS num_docs
@@ -173,19 +174,20 @@ export async function listarTipos(): Promise<FilaTipo[]> {
     plantillaDocumentoId: f.plantilla_documento_id === null ? null : Number(f.plantilla_documento_id),
     plantillaCodigo: f.plantilla_codigo,
     plantillaVigente: f.plantilla_vigente,
+    mesesRevision: f.meses_revision,
   }));
 }
 
 export async function obtenerTipo(id: number) {
   const sql = obtenerSql();
-  const [f] = await sql`SELECT t.id, t.nombre, t.sigla, t.es_diligenciable, t.autoridad,
+  const [f] = await sql`SELECT t.id, t.nombre, t.sigla, t.es_diligenciable, t.autoridad, t.meses_revision,
       t.plantilla_documento_id, p.codigo AS plantilla_codigo
     FROM tipos_documento t LEFT JOIN documentos p ON p.id = t.plantilla_documento_id
     WHERE t.id = ${id}`;
   if (!f) return null;
   return {
     id: f.id, nombre: f.nombre, sigla: f.sigla, esDiligenciable: f.es_diligenciable,
-    autoridad: f.autoridad as AutoridadTipo,
+    autoridad: f.autoridad as AutoridadTipo, mesesRevision: f.meses_revision as number,
     plantillaDocumentoId: f.plantilla_documento_id === null ? null : Number(f.plantilla_documento_id),
     plantillaCodigo: f.plantilla_codigo as string | null,
   };
@@ -203,11 +205,16 @@ export async function listarPlantillasPosibles(): Promise<{ id: number; codigo: 
 export type DatosTipo = {
   nombre: string; sigla: string; esDiligenciable: boolean;
   autoridad: AutoridadTipo; plantillaDocumentoId: number | null;
+  /** Plazo de revisión de los documentos del tipo, en meses calendario (1 a 120). */
+  mesesRevision: number;
 };
 
 /** La autoridad es una de las dos y la plantilla, si hay, es un documento con versión vigente. */
 async function validarAutoridadYPlantilla(tx: TransactionSql, d: DatosTipo): Promise<void> {
   if (!AUTORIDADES_TIPO.includes(d.autoridad)) throw new Error("La autoridad del tipo es inválida");
+  if (!Number.isInteger(d.mesesRevision) || d.mesesRevision < 1 || d.mesesRevision > 120) {
+    throw new Error("El plazo de revisión debe ser un número entero de meses entre 1 y 120");
+  }
   if (d.plantillaDocumentoId === null) return;
   const [vigente] = await tx`SELECT 1 FROM documento_versiones
     WHERE documento_id = ${d.plantillaDocumentoId} AND estado = 'vigente'`;
@@ -223,8 +230,8 @@ export async function crearTipo(
     return await sql.begin(async (tx) => {
       await validarAutoridadYPlantilla(tx, d);
       const orden = await siguienteOrden(tx, "tipos_documento", null, null);
-      const [t] = await tx`INSERT INTO tipos_documento (nombre, sigla, es_diligenciable, orden, autoridad, plantilla_documento_id)
-        VALUES (${d.nombre}, ${d.sigla}, ${d.esDiligenciable}, ${orden}, ${d.autoridad}, ${d.plantillaDocumentoId}) RETURNING id`;
+      const [t] = await tx`INSERT INTO tipos_documento (nombre, sigla, es_diligenciable, orden, autoridad, plantilla_documento_id, meses_revision)
+        VALUES (${d.nombre}, ${d.sigla}, ${d.esDiligenciable}, ${orden}, ${d.autoridad}, ${d.plantillaDocumentoId}, ${d.mesesRevision}) RETURNING id`;
       await registrarAuditoria(tx, {
         usuarioId, accion: "crear_tipo_documento", entidad: "tipos_documento",
         entidadId: t.id, detalle: d,
@@ -245,11 +252,12 @@ export async function editarTipo(
   try {
     await sql.begin(async (tx) => {
       await validarAutoridadYPlantilla(tx, d);
-      const [antes] = await tx`SELECT autoridad, plantilla_documento_id FROM tipos_documento WHERE id = ${id} FOR UPDATE`;
+      const [antes] = await tx`SELECT autoridad, plantilla_documento_id, meses_revision FROM tipos_documento WHERE id = ${id} FOR UPDATE`;
       if (!antes) throw new Error("El tipo no existe");
       await tx`UPDATE tipos_documento SET nombre = ${d.nombre},
           sigla = ${d.sigla}, es_diligenciable = ${d.esDiligenciable},
-          autoridad = ${d.autoridad}, plantilla_documento_id = ${d.plantillaDocumentoId}
+          autoridad = ${d.autoridad}, plantilla_documento_id = ${d.plantillaDocumentoId},
+          meses_revision = ${d.mesesRevision}
         WHERE id = ${id}`;
       await registrarAuditoria(tx, {
         usuarioId, accion: "editar_tipo_documento", entidad: "tipos_documento",
@@ -257,6 +265,7 @@ export async function editarTipo(
         detalle: {
           ...d,
           autoridadAnterior: antes.autoridad,
+          mesesRevisionAnterior: antes.meses_revision,
           plantillaDocumentoIdAnterior: antes.plantilla_documento_id === null ? null : Number(antes.plantilla_documento_id),
         },
       });

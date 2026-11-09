@@ -13,6 +13,7 @@ type Valores = {
   autoridad: "estrategico" | "operativo";
   plantillaDocumentoId: number | null;
   plantillaCodigo?: string | null;
+  mesesRevision?: number;
 };
 
 export function FormularioTipo({
@@ -76,6 +77,22 @@ export function FormularioTipo({
             </option>
           ))}
         </select>
+      </Campo>
+      <Campo
+        etiqueta="Plazo de revisión (meses)"
+        nombre="mesesRevision"
+        ayuda="Cada cuántos meses se revisa un documento de este tipo para confirmar que sigue vigente (1 a 120). Cada documento puede tener su propio plazo."
+      >
+        <input
+          type="number"
+          inputMode="numeric"
+          min={1}
+          max={120}
+          step={1}
+          required
+          defaultValue={val("mesesRevision") ?? valores?.mesesRevision ?? 12}
+          className={claseControl}
+        />
       </Campo>
       {estado && (
         <p role="alert" className="rounded-md bg-estado-critico-fondo px-3 py-2 text-sm text-estado-critico-texto">

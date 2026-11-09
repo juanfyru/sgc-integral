@@ -36,6 +36,11 @@ const config = (documentoId: number | null = null) => ({
     plazoRecibidoDias: 3, plazoRecogidaDias: 5, plazoAcuseDias: 15, plazoSocializacionDias: 30, plazoCorreccionDias: 5,
     verificacionCadaDias: 90, umbralConformidadPct: 95, selloFranjaCm: 1, selloQrCm: 1.5,
   },
+  vigencia: {
+    atencionDias: 90, revisionAnualPlazoDias: 60, revisionAnualVentanaMeses: 6, externosVerificacionMeses: 12, impactoPlazoDias: 15,
+    formatoInforme: { documentoId: null, margenSuperiorCm: 5.5, margenInferiorCm: 3.5 },
+  },
+  metas: { dentroPlazoPct: 95, aprobacionDias: 30, vencidos: 0, acusesPct: 90, externosPct: 95, etapasPlazoPct: 90 },
 });
 
 const pagina = async () => renderToStaticMarkup(await PaginaConfiguracionDocumental());
@@ -59,6 +64,47 @@ describe("Distribución", () => {
     expect(entrada(html, "selloFranjaCm")).toMatch(/value="1"/);
     expect(entrada(html, "selloQrCm")).toMatch(/value="1,5"/);
     expect(html).toContain("Tamaño del código QR (cm)");
+  });
+});
+
+describe("Vigencia e Indicadores documentales", () => {
+  it("van después de Distribución, con los cinco plazos, los márgenes y el informe de ejemplo", async () => {
+    const html = await pagina();
+    expect(html.indexOf(">Vigencia<")).toBeGreaterThan(html.indexOf(">Distribución<"));
+    expect(html.indexOf(">Indicadores documentales<")).toBeGreaterThan(html.indexOf(">Vigencia<"));
+    expect(entrada(html, "atencionDias")).toMatch(/value="90"/);
+    expect(entrada(html, "revisionAnualPlazoDias")).toMatch(/value="60"/);
+    expect(entrada(html, "revisionAnualVentanaMeses")).toMatch(/min="0"/);
+    expect(entrada(html, "revisionAnualVentanaMeses")).toMatch(/value="6"/);
+    expect(entrada(html, "externosVerificacionMeses")).toMatch(/value="12"/);
+    expect(entrada(html, "impactoPlazoDias")).toMatch(/value="15"/);
+    expect(entrada(html, "informeMargenSuperiorCm")).toMatch(/value="5.5"/);
+    expect(entrada(html, "informeMargenInferiorCm")).toMatch(/value="3.5"/);
+    expect(html).toContain("Documento del formato del informe");
+    expect(html).toContain("Ver informe de ejemplo");
+  });
+
+  it("las seis metas llevan su valor y su unidad", async () => {
+    const html = await pagina();
+    expect(entrada(html, "metaDentroPlazoPct")).toMatch(/value="95"/);
+    expect(entrada(html, "metaAprobacionDias")).toMatch(/value="30"/);
+    expect(entrada(html, "metaVencidos")).toMatch(/value="0"/);
+    expect(entrada(html, "metaVencidos")).toMatch(/max="999"/);
+    expect(entrada(html, "metaAcusesPct")).toMatch(/value="90"/);
+    expect(entrada(html, "metaExternosPct")).toMatch(/value="95"/);
+    expect(entrada(html, "metaEtapasPlazoPct")).toMatch(/value="90"/);
+    expect(html).toContain("Documentos dentro de plazo (%)");
+    expect(html).toContain("Días de aprobación (máximo)");
+  });
+
+  it("el documento del informe guardado se pide aparte y sigue elegido", async () => {
+    const base = config(31);
+    obtenerConfigDocumental.mockResolvedValue({ ...base, vigencia: { ...base.vigencia, formatoInforme: { ...base.vigencia.formatoInforme, documentoId: 52 } } });
+    documentosParaFormato.mockImplementation(async (o: { incluir: number }) =>
+      o.incluir === 52 ? [{ id: 52, codigo: "SGC-FO-09", titulo: "Informe" }] : [{ id: 31, codigo: "SGC-FO-06", titulo: "Acta" }]);
+    const html = await pagina();
+    expect(documentosParaFormato).toHaveBeenCalledWith({ incluir: 52 });
+    expect(html).toMatch(/<option value="52" selected="">SGC-FO-09 — Informe<\/option>/);
   });
 });
 

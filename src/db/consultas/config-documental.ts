@@ -19,6 +19,28 @@ export type ConfigDocumental = {
   publicacionDirecta: boolean;
   formatoActa: { documentoId: number | null; margenSuperiorCm: number; margenInferiorCm: number };
   distribucion: Distribucion;
+  vigencia: Vigencia;
+  metas: Metas;
+};
+
+/** Plazos de la vigencia documental (revisión anual, externos, impacto) y el formato del informe. */
+export type Vigencia = {
+  atencionDias: number;
+  revisionAnualPlazoDias: number;
+  revisionAnualVentanaMeses: number;
+  externosVerificacionMeses: number;
+  impactoPlazoDias: number;
+  formatoInforme: { documentoId: number | null; margenSuperiorCm: number; margenInferiorCm: number };
+};
+
+/** Metas de los indicadores documentales; la de conformidad es `distribucion.umbralConformidadPct`. */
+export type Metas = {
+  dentroPlazoPct: number;
+  aprobacionDias: number;
+  vencidos: number;
+  acusesPct: number;
+  externosPct: number;
+  etapasPlazoPct: number;
 };
 
 export type Distribucion = {
@@ -50,6 +72,15 @@ export const CONFIG_DOCUMENTAL_DEFECTO: ConfigDocumental = {
     selloFranjaCm: 1.0,
     selloQrCm: 1.5,
   },
+  vigencia: {
+    atencionDias: 90,
+    revisionAnualPlazoDias: 60,
+    revisionAnualVentanaMeses: 6,
+    externosVerificacionMeses: 12,
+    impactoPlazoDias: 15,
+    formatoInforme: { documentoId: null, margenSuperiorCm: 5.5, margenInferiorCm: 3.5 },
+  },
+  metas: { dentroPlazoPct: 95, aprobacionDias: 30, vencidos: 0, acusesPct: 90, externosPct: 95, etapasPlazoPct: 90 },
 };
 
 /** Campo de `Distribucion`, su clave en `configuracion`, cómo se nombra en los errores y su rango. */
@@ -63,6 +94,26 @@ const CAMPOS_DISTRIBUCION: { campo: keyof Distribucion; clave: string; que: stri
   { campo: "umbralConformidadPct", clave: "umbral_conformidad_pct", que: "El umbral de conformidad", minimo: 50, maximo: 100 },
   { campo: "selloFranjaCm", clave: "sello_franja_cm", que: "El alto de la franja del sello", minimo: 0.5, maximo: 3, decimal: true },
   { campo: "selloQrCm", clave: "sello_qr_cm", que: "El tamaño del código QR", minimo: 1, maximo: 3, decimal: true },
+];
+
+type CampoNumerico<T> = { campo: keyof T; clave: string; que: string; minimo: number; maximo: number };
+
+/** Los cinco plazos de `Vigencia` (el formato del informe se trata aparte, como el del acta). */
+const CAMPOS_VIGENCIA: CampoNumerico<Omit<Vigencia, "formatoInforme">>[] = [
+  { campo: "atencionDias", clave: "revision_atencion_dias", que: "Los días de aviso de la revisión", minimo: 1, maximo: 365 },
+  { campo: "revisionAnualPlazoDias", clave: "revision_anual_plazo_dias", que: "El plazo de la revisión anual", minimo: 7, maximo: 365 },
+  { campo: "revisionAnualVentanaMeses", clave: "revision_anual_ventana_meses", que: "La ventana de la revisión anual", minimo: 0, maximo: 24 },
+  { campo: "externosVerificacionMeses", clave: "externos_verificacion_meses", que: "La periodicidad de verificación de externos", minimo: 1, maximo: 60 },
+  { campo: "impactoPlazoDias", clave: "impacto_plazo_dias", que: "El plazo de respuesta al impacto", minimo: 1, maximo: 365 },
+];
+
+const CAMPOS_METAS: CampoNumerico<Metas>[] = [
+  { campo: "dentroPlazoPct", clave: "meta_dentro_plazo_pct", que: "La meta de documentos dentro de plazo", minimo: 50, maximo: 100 },
+  { campo: "aprobacionDias", clave: "meta_aprobacion_dias", que: "La meta de días de aprobación", minimo: 1, maximo: 365 },
+  { campo: "vencidos", clave: "meta_vencidos", que: "La meta de documentos vencidos", minimo: 0, maximo: 999 },
+  { campo: "acusesPct", clave: "meta_acuses_pct", que: "La meta de acuses de lectura", minimo: 50, maximo: 100 },
+  { campo: "externosPct", clave: "meta_externos_pct", que: "La meta de externos verificados", minimo: 50, maximo: 100 },
+  { campo: "etapasPlazoPct", clave: "meta_etapas_plazo_pct", que: "La meta de etapas a tiempo", minimo: 50, maximo: 100 },
 ];
 
 const CLAVES = [
@@ -80,6 +131,11 @@ const CLAVES = [
   "formato_acta_margen_superior_cm",
   "formato_acta_margen_inferior_cm",
   ...CAMPOS_DISTRIBUCION.map((c) => c.clave),
+  ...CAMPOS_VIGENCIA.map((c) => c.clave),
+  "formato_informe_documento_id",
+  "formato_informe_margen_superior_cm",
+  "formato_informe_margen_inferior_cm",
+  ...CAMPOS_METAS.map((c) => c.clave),
 ];
 
 const MARGEN_MAXIMO_CM = 12;
@@ -122,6 +178,14 @@ export async function obtenerConfigDocumental(opciones?: { sql?: Cliente }): Pro
   for (const c of CAMPOS_DISTRIBUCION) {
     distribucion[c.campo] = numeroEntre(valores.get(c.clave), CONFIG_DOCUMENTAL_DEFECTO.distribucion[c.campo], c.minimo, c.maximo, c.decimal === true);
   }
+  const vigencia = { ...CONFIG_DOCUMENTAL_DEFECTO.vigencia };
+  for (const c of CAMPOS_VIGENCIA) {
+    vigencia[c.campo] = numeroEntre(valores.get(c.clave), CONFIG_DOCUMENTAL_DEFECTO.vigencia[c.campo], c.minimo, c.maximo, false);
+  }
+  const metas = { ...CONFIG_DOCUMENTAL_DEFECTO.metas };
+  for (const c of CAMPOS_METAS) {
+    metas[c.campo] = numeroEntre(valores.get(c.clave), CONFIG_DOCUMENTAL_DEFECTO.metas[c.campo], c.minimo, c.maximo, false);
+  }
 
   return {
     formatoCodigo: valores.get("formato_codigo")?.trim() || null,
@@ -143,6 +207,15 @@ export async function obtenerConfigDocumental(opciones?: { sql?: Cliente }): Pro
       margenInferiorCm: centimetros(valores.get("formato_acta_margen_inferior_cm"), CONFIG_DOCUMENTAL_DEFECTO.formatoActa.margenInferiorCm),
     },
     distribucion,
+    vigencia: {
+      ...vigencia,
+      formatoInforme: {
+        documentoId: idDeDocumento(valores.get("formato_informe_documento_id")),
+        margenSuperiorCm: centimetros(valores.get("formato_informe_margen_superior_cm"), CONFIG_DOCUMENTAL_DEFECTO.vigencia.formatoInforme.margenSuperiorCm),
+        margenInferiorCm: centimetros(valores.get("formato_informe_margen_inferior_cm"), CONFIG_DOCUMENTAL_DEFECTO.vigencia.formatoInforme.margenInferiorCm),
+      },
+    },
+    metas,
   };
 }
 
@@ -153,6 +226,9 @@ export type DatosConfigDocumental = {
   publicacionDirecta: boolean;
   formatoActa: ConfigDocumental["formatoActa"];
   distribucion: Distribucion;
+  /** Ausentes, la pantalla de otra sección no los toca: se conservan los valores guardados. */
+  vigencia?: Vigencia;
+  metas?: Metas;
 };
 
 function enteroEntre(valor: unknown, minimo: number, maximo: number, que: string): number {
@@ -167,6 +243,10 @@ function margenEntre(valor: unknown, que: string): number {
     throw new Error(`${que} debe estar entre 0 y ${MARGEN_MAXIMO_CM} cm`);
   }
   return valor;
+}
+
+function numeroDeCampo(valor: unknown, c: { que: string; minimo: number; maximo: number }): number {
+  return enteroEntre(valor, c.minimo, c.maximo, c.que);
 }
 
 function numeroDeDistribucion(valor: unknown, c: (typeof CAMPOS_DISTRIBUCION)[number]): number {
@@ -190,7 +270,7 @@ const NOMBRE_PLAZO: Record<keyof ConfigDocumental["plazos"], string> = {
 };
 
 /**
- * Guarda las veintidós claves en una transacción y audita el antes y el después de las que cambiaron
+ * Guarda las claves (veintidós de siempre y, si llegan, las de vigencia y metas) en una transacción y audita el antes y el después de las que cambiaron
  * (comparadas por su valor efectivo: una clave ausente vale lo que vale por defecto). Cerrar la
  * publicación directa no toca nada más: `descartarBorrador` sigue disponible con la carga cerrada.
  * El formato del acta solo se revisa si cambió: uno que dejó de servir, y que la pantalla ya avisa,
@@ -221,11 +301,30 @@ export async function guardarConfigDocumentalEn(tx: TransactionSql, datos: Datos
   nuevos.formato_acta_margen_superior_cm = String(margenSuperiorCm);
   nuevos.formato_acta_margen_inferior_cm = String(margenInferiorCm);
   for (const c of CAMPOS_DISTRIBUCION) nuevos[c.clave] = String(numeroDeDistribucion(datos.distribucion?.[c.campo], c));
+  const informe = datos.vigencia?.formatoInforme;
+  if (datos.vigencia) {
+    for (const c of CAMPOS_VIGENCIA) nuevos[c.clave] = String(numeroDeCampo(datos.vigencia[c.campo], c));
+    const superior = margenEntre(informe?.margenSuperiorCm, "El espacio del encabezado del informe");
+    const inferior = margenEntre(informe?.margenInferiorCm, "El espacio del pie del informe");
+    if (superior + inferior > SUMA_MARGENES_MAXIMA_CM) {
+      throw new Error(`Entre los dos no pueden pasar de ${SUMA_MARGENES_MAXIMA_CM} cm`);
+    }
+    nuevos.formato_informe_documento_id = informe?.documentoId == null ? "" : String(informe.documentoId);
+    nuevos.formato_informe_margen_superior_cm = String(superior);
+    nuevos.formato_informe_margen_inferior_cm = String(inferior);
+  }
+  if (datos.metas) for (const c of CAMPOS_METAS) nuevos[c.clave] = String(numeroDeCampo(datos.metas[c.campo], c));
 
   {
     const actual = await obtenerConfigDocumental({ sql: tx });
     if (documentoFormato !== null && documentoFormato !== actual.formatoActa.documentoId) {
       const revision = await revisarFormatoActa(documentoFormato, { sql: tx });
+      if (revision.estado === "no_sirve") throw new Error(revision.motivo);
+      if (revision.estado === "perdido") throw new Error("El archivo del formato no se encuentra o cambió");
+    }
+    const documentoInforme = datos.vigencia ? (informe?.documentoId ?? null) : null;
+    if (documentoInforme !== null && documentoInforme !== actual.vigencia.formatoInforme.documentoId) {
+      const revision = await revisarFormatoActa(documentoInforme, { sql: tx });
       if (revision.estado === "no_sirve") throw new Error(revision.motivo);
       if (revision.estado === "perdido") throw new Error("El archivo del formato no se encuentra o cambió");
     }
@@ -239,6 +338,11 @@ export async function guardarConfigDocumentalEn(tx: TransactionSql, datos: Datos
     antes.formato_acta_margen_superior_cm = String(actual.formatoActa.margenSuperiorCm);
     antes.formato_acta_margen_inferior_cm = String(actual.formatoActa.margenInferiorCm);
     for (const c of CAMPOS_DISTRIBUCION) antes[c.clave] = String(actual.distribucion[c.campo]);
+    for (const c of CAMPOS_VIGENCIA) antes[c.clave] = String(actual.vigencia[c.campo]);
+    antes.formato_informe_documento_id = actual.vigencia.formatoInforme.documentoId === null ? "" : String(actual.vigencia.formatoInforme.documentoId);
+    antes.formato_informe_margen_superior_cm = String(actual.vigencia.formatoInforme.margenSuperiorCm);
+    antes.formato_informe_margen_inferior_cm = String(actual.vigencia.formatoInforme.margenInferiorCm);
+    for (const c of CAMPOS_METAS) antes[c.clave] = String(actual.metas[c.campo]);
 
     const cambios: Record<string, { antes: string | null; despues: string }> = {};
     for (const [clave, valor] of Object.entries(nuevos)) {
