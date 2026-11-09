@@ -5,10 +5,7 @@ import type { Hallazgo } from "@/db/consultas/distribucion/hallazgos";
 import type { HallazgoDeVerificacion } from "@/db/consultas/distribucion/verificaciones";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { AccionesHallazgo } from "./AccionesHallazgo";
-import { urlDeFoto } from "./ItemChequeo";
-
-export const urlDeFotoDeHallazgo = (hallazgoId: number, fotoId: number, nombre: string) =>
-  `/distribucion/verificaciones/hallazgos/${hallazgoId}/archivos/${fotoId}/${encodeURIComponent(nombre)}`;
+import { urlDeFoto, urlDeFotoDeHallazgo } from "./enlaces";
 
 const claseEnlace =
   "break-words rounded underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";

@@ -7,6 +7,7 @@ import { crearNotificacion } from "@/db/consultas/notificaciones";
 import { adminsActivos } from "@/db/consultas/tramites";
 import { filtroPuntos } from "@/lib/alcance";
 import { numeroDeCopia } from "@/lib/distribucion/copias";
+import { enlaceDeHallazgo } from "@/lib/distribucion/hallazgos";
 import { ErrorDistribucion } from "@/lib/distribucion/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
 import { fechaLimite } from "@/lib/tramites/plazos";
@@ -62,12 +63,6 @@ export type DatosHallazgo = {
   /** Solo para el aviso: por defecto se arma con la descripción y el nombre del punto. */
   titulo?: string;
 };
-
-/** Dónde se atiende un hallazgo: la verificación que lo abrió o la copia que no se encontró. */
-export function enlaceDeHallazgo(h: { origen: string; verificacionId: number | null; copiaId: number | null }): string {
-  if (h.origen === "verificacion" && h.verificacionId !== null) return `/distribucion/verificaciones/${h.verificacionId}`;
-  return h.copiaId !== null ? `/distribucion/copias/${h.copiaId}` : "/distribucion/verificaciones";
-}
 
 /** Inserta el hallazgo y avisa a su responsable, dentro de la transacción de quien lo origina. */
 export async function abrirHallazgo(tx: Cliente, d: DatosHallazgo): Promise<{ hallazgoId: number }> {

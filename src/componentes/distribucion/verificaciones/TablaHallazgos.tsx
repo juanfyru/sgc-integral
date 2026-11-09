@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { TablaDatos, celda, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
-import { enlaceDeHallazgo, type Hallazgo } from "@/db/consultas/distribucion/hallazgos";
+import type { Hallazgo } from "@/db/consultas/distribucion/hallazgos";
+import { enlaceDeHallazgo } from "@/lib/distribucion/hallazgos";
 import { fechaConAnio } from "./fecha";
 import { InsigniaHallazgo } from "./ListaHallazgos";
 

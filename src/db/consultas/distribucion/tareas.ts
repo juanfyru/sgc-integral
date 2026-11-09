@@ -7,7 +7,8 @@ import { verificacionVencida } from "@/lib/distribucion/verificacion";
 import { puede } from "@/lib/permisos";
 import { fechaLimite } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
-import { enlaceDeHallazgo, hallazgosAbiertosDe } from "./hallazgos";
+import { enlaceDeHallazgo } from "@/lib/distribucion/hallazgos";
+import { hallazgosAbiertosDe } from "./hallazgos";
 import type { Tarea } from "@/lib/tareas";
 
 /**

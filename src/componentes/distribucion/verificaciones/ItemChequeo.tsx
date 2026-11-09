@@ -8,6 +8,7 @@ import type { ItemVerificacion } from "@/db/consultas/distribucion/verificacione
 import { ETIQUETA_RESPUESTA, RESPUESTAS_ITEM, type RespuestaItem } from "@/lib/distribucion/tipos";
 import type { FechasCorreccion } from "@/lib/distribucion/verificacion";
 import { BotonQuitarFoto } from "./BotonQuitarFoto";
+import { urlDeFoto } from "./enlaces";
 
 /** `fecha`: la de corrección del hallazgo que abrirá un no conforme; sin ella, la propuesta. */
 export type ValorItem = { respuesta: RespuestaItem | null; nota: string; retirado: boolean; fecha?: string };
@@ -23,9 +24,6 @@ const CLASE_ELEGIDA: Record<RespuestaItem, string> = {
 };
 
 const VARIANTE: Record<RespuestaItem, VarianteInsignia> = { conforme: "bien", no_conforme: "critico", no_aplica: "neutra" };
-
-export const urlDeFoto = (verificacionId: number, fotoId: number, nombre: string) =>
-  `/distribucion/verificaciones/${verificacionId}/archivos/${fotoId}/${encodeURIComponent(nombre)}`;
 
 const tamano = (bytes: number) => (bytes >= 1_048_576 ? `${(bytes / 1_048_576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
 
