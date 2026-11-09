@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ESTADOS_NORMA, TIPOS_RELACION } from "@/lib/normograma/tipos";
+import { ESTADOS_A_MANO, TIPOS_RELACION } from "@/lib/normograma/tipos";
 import { textoAcotado } from "@/lib/validacion";
 
 const id = z.coerce.number().int().positive();
@@ -32,10 +32,11 @@ export const EsquemaNorma = z
   })
   .strict();
 
+/** «Cambiar estado» no retira: eso es «Retirar», con `EsquemaMotivo`. */
 export const EsquemaEstadoNorma = z
   .object({
     normaId: id,
-    estado: z.enum(ESTADOS_NORMA, { error: "Elija el estado de la norma" }),
+    estado: z.enum(ESTADOS_A_MANO, { error: "Elija el estado de la norma" }),
     fecha: fecha("Elija una fecha válida"),
     nota: opcional("La nota", 1000),
   })
@@ -67,12 +68,12 @@ export const EsquemaAsociarProceso = z
 /** También para quitar el enlace. */
 export const EsquemaEnlazarDocumento = z.object({ normaId: id, documentoId: id }).strict();
 
+/** «No afecta…» o la solicitud que lo atiende; la verificación de un externo lo resuelve desde la página del externo. */
 export const EsquemaResolverImpacto = z.discriminatedUnion(
   "resolucion",
   [
     z.object({ impactoId: id, resolucion: z.literal("no_afecta"), nota: textoAcotado("La nota", 5, 1000) }).strict(),
     z.object({ impactoId: id, resolucion: z.literal("solicitud"), tramiteId: id }).strict(),
-    z.object({ impactoId: id, resolucion: z.literal("verificacion"), verificacionId: id }).strict(),
   ],
   { error: "Elija cómo se resuelve el impacto" },
 );

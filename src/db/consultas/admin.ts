@@ -3,7 +3,7 @@ import { obtenerSql } from "@/db/cliente";
 import { retirarAcusesFueraDeAudiencia } from "@/db/consultas/distribucion/acuses";
 import { filtroAcceso, type SujetoVisibilidad } from "@/lib/alcance";
 import type { MotivoPorRecoger } from "@/lib/distribucion/tipos";
-import { ROLES_ARCHIVO_LISTA } from "@/lib/subida";
+import { CONTEXTOS_UNICOS, ROLES_ARCHIVO_LISTA, type ContextoEvidencia } from "@/lib/subida";
 import { hashearClave } from "@/lib/clave";
 import { puede } from "@/lib/permisos";
 import { ETAPAS_ABIERTAS, NUMERO_MAXIMO_DE_VERSION, type OrigenAprobacion } from "@/lib/tramites/tipos";
@@ -769,12 +769,13 @@ export async function registrarArchivo(
           throw new Error("Una evidencia necesita su contexto");
         }
         if (datos.contexto === "verificacion_item") await exigirVerificacionAbierta(tx, datos.contextoId);
-        // Una norma tiene un solo PDF (spec 13C §10.1): con la norma bloqueada, dos subidas a la vez o un borrado
-        // de la norma se ordenan, y el nuevo reemplaza al anterior en esta misma transacción.
-        const unico = datos.contexto === "norma";
+        // Un dueño de un solo archivo (`CONTEXTOS_UNICOS`): bloqueado, dos subidas a la vez o su borrado se ordenan,
+        // y el nuevo reemplaza al anterior en esta misma transacción.
+        const tablaDelDueno = CONTEXTOS_UNICOS[datos.contexto as ContextoEvidencia];
+        const unico = tablaDelDueno !== undefined;
         if (unico) {
-          const [norma] = await tx`SELECT 1 FROM normas WHERE id = ${datos.contextoId} FOR UPDATE`;
-          if (!norma) throw new ErrorTramite("La norma no existe");
+          const [dueno] = await tx`SELECT 1 FROM ${tx(tablaDelDueno)} WHERE id = ${datos.contextoId} FOR UPDATE`;
+          if (!dueno) throw new ErrorTramite("Ya no existe a qué adjuntar el archivo");
         }
         const [evidencia] = await tx`INSERT INTO archivos
             (version_id, contexto, contexto_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)

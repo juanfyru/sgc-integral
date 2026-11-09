@@ -4,7 +4,7 @@ import { obtenerSql } from "@/db/cliente";
 import { anularVigenteEn, registrarAuditoria } from "@/db/consultas/admin";
 import { avisarEliminacion } from "@/db/consultas/distribucion/acuses";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { resolverImpactoPorVerificacion } from "@/db/consultas/normograma/impactos";
+import { IMPACTO_RESUELTO, resolverImpactoPorVerificacion } from "@/db/consultas/normograma/impactos";
 import { crearNotificacion } from "@/db/consultas/notificaciones";
 import { adminsActivos, lideresDeProceso } from "@/db/consultas/tramites";
 import { alcanceProcesos, puedeGestionarExterno } from "@/lib/alcance";
@@ -80,9 +80,10 @@ export async function registrarVerificacion(
     if (s.responsableId !== sesion.usuarioId && !gestiona) throw new ErrorVigencia(NO_EXISTE);
     if (!s.vigente) throw new ErrorVigencia(SIN_VIGENTE);
     if (d.impactoId !== undefined) {
-      const [impacto] = await tx`SELECT 1 FROM impactos_normativos
-        WHERE id = ${d.impactoId} AND documento_id = ${s.documentoId} AND estado = 'pendiente'`;
+      const [impacto] = await tx`SELECT estado FROM impactos_normativos WHERE id = ${d.impactoId} AND documento_id = ${s.documentoId}`;
+      // El impacto de otro documento no existe para este; el de este ya resuelto (un formulario viejo) lo dice.
       if (!impacto) throw new ErrorVigencia(NO_EXISTE);
+      if (impacto.estado !== "pendiente") throw new ErrorVigencia(IMPACTO_RESUELTO);
     }
     if (d.revisionAnualId !== undefined) {
       const [revision] = await tx`SELECT 1 FROM revisiones_anuales WHERE id = ${d.revisionAnualId} AND estado = 'abierta'`;

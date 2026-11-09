@@ -1251,14 +1251,26 @@ export const normaRelaciones = pgTable(
     detalle: text("detalle"),
     creadoPor: refUsuario("creado_por").notNull(),
     creadoEn: creado(),
+    // Baja lógica (migración 0010): la relación registrada por error se elimina con motivo, y el cambio de estado que
+    // causó (`norma_cambios`, de solo inserción) la sigue citando.
+    eliminadaEn: marca("eliminada_en"),
+    eliminadaPor: refUsuario("eliminada_por"),
+    eliminadaMotivo: text("eliminada_motivo"),
   },
   (t) => [
-    unique("norma_relaciones_unica").on(t.normaId, t.afectadaId, t.tipo),
+    // Única entre las no eliminadas: la misma relación se puede volver a registrar después de eliminada.
+    uniqueIndex("norma_relaciones_unica_sin_baja")
+      .on(t.normaId, t.afectadaId, t.tipo)
+      .where(sql`eliminada_en IS NULL`),
     check(
       "norma_relaciones_tipo_valido",
       sql`${t.tipo} IN ('modifica', 'deroga', 'reglamenta')`,
     ),
     check("norma_relaciones_distintas", sql`${t.normaId} <> ${t.afectadaId}`),
+    check(
+      "norma_relaciones_baja_coherente",
+      sql`(${t.eliminadaEn} IS NULL AND ${t.eliminadaPor} IS NULL AND ${t.eliminadaMotivo} IS NULL) OR (${t.eliminadaEn} IS NOT NULL AND ${t.eliminadaPor} IS NOT NULL AND ${t.eliminadaMotivo} IS NOT NULL)`,
+    ),
   ],
 );
 

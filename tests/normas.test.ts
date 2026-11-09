@@ -34,7 +34,7 @@ import {
 } from "@/db/consultas/normograma/normas";
 import { eliminarRelacion, registrarRelacion } from "@/db/consultas/normograma/relaciones";
 import { alternarTipoNorma, crearTipoNorma, editarTipoNorma, listarTiposNorma, moverTipoNorma } from "@/db/consultas/normograma/tipos-norma";
-import { EsquemaNorma, EsquemaRelacion, EsquemaResolverImpacto } from "@/lib/esquemas/normograma";
+import { EsquemaEstadoNorma, EsquemaNorma, EsquemaRelacion, EsquemaResolverImpacto } from "@/lib/esquemas/normograma";
 import { ErrorNormograma, nombreDeNorma } from "@/lib/normograma/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
 import { parsearFormulario } from "@/lib/validacion";
@@ -75,7 +75,7 @@ describe("catálogo de normas", () => {
       const { id } = await crearNorma(admin, datos, { sql: tx });
       const nombre = `Resolución ${numero} de 2019`;
 
-      const fila = (await listarNormas({ q: "zz_" }, { sql: tx })).find((f) => f.id === id);
+      const fila = (await listarNormas({ q: "zz_" }, admin, { sql: tx })).find((f) => f.id === id);
       expect(fila).toEqual({
         id,
         nombre,
@@ -88,11 +88,11 @@ describe("catálogo de normas", () => {
         procesos: [],
         documentos: 0,
       });
-      expect((await listarNormas({ q: numero, anio: 2019, tipoNormaId: resolucion, emisor, estado: "vigente" }, { sql: tx })).map((f) => f.id)).toEqual([id]);
-      expect(await listarNormas({ q: numero, anio: 2018 }, { sql: tx })).toEqual([]);
-      expect(await listarNormas({ q: numero, estado: "derogada" }, { sql: tx })).toEqual([]);
+      expect((await listarNormas({ q: numero, anio: 2019, tipoNormaId: resolucion, emisor, estado: "vigente" }, admin, { sql: tx })).map((f) => f.id)).toEqual([id]);
+      expect(await listarNormas({ q: numero, anio: 2018 }, admin, { sql: tx })).toEqual([]);
+      expect(await listarNormas({ q: numero, estado: "derogada" }, admin, { sql: tx })).toEqual([]);
       // El nombre completo, con o sin tilde, y el título por FTS sin tildes.
-      expect((await listarNormas({ q: `Resolucion ${numero}` }, { sql: tx })).map((f) => f.id)).toEqual([id]);
+      expect((await listarNormas({ q: `Resolucion ${numero}` }, admin, { sql: tx })).map((f) => f.id)).toEqual([id]);
 
       expect(await buscarNormas(numero, 4, { sql: tx })).toEqual([{ id, nombre, titulo: datos.titulo, estado: "vigente" }]);
       expect((await buscarNormas("habilitacion servicios", 50, { sql: tx })).map((r) => r.id)).toContain(id);
@@ -233,16 +233,61 @@ describe("relaciones y estado", () => {
         impactos: 0,
       });
 
-      // Una relación que no cambió estados se elimina con motivo; la que causó un cambio no (su cambio la cita).
+      // Una relación se elimina con motivo, como baja lógica: la fila queda con quién, cuándo y por qué.
       await expect(eliminarRelacion(admin, { relacionId: r3.relacionId, motivo: "no" }, { sql: tx })).rejects.toThrow("El motivo");
-      await eliminarRelacion(admin, { relacionId: r3.relacionId, motivo: "Registrada por error" }, { sql: tx });
-      expect((await tx`SELECT 1 FROM norma_relaciones WHERE id = ${r3.relacionId}`).length).toBe(0);
+      await eliminarRelacion(admin, { relacionId: r3.relacionId, motivo: "Registrada por error" }, { sql: tx, ahora });
+      expect((await tx`SELECT eliminada_en, eliminada_por, eliminada_motivo FROM norma_relaciones WHERE id = ${r3.relacionId}`)[0]).toEqual({
+        eliminada_en: ahora,
+        eliminada_por: admin.usuarioId,
+        eliminada_motivo: "Registrada por error",
+      });
       const [eliminada] = await auditoriaDe(tx, "norma_relacion_eliminada", reglamenta.id);
       expect(eliminada.detalle).toMatchObject({ tipo: "reglamenta", afectada: modifica.nombre, motivo: "Registrada por error" });
-      await expect(eliminarRelacion(admin, { relacionId: r2.relacionId, motivo: "Registrada por error" }, { sql: tx })).rejects.toThrow(
-        "cambió el estado",
+      await expect(eliminarRelacion(admin, { relacionId: r3.relacionId, motivo: "Otra vez por error" }, { sql: tx })).rejects.toThrow(
+        "La relación ya está eliminada",
       );
       await expect(eliminarRelacion(admin, { relacionId: 987_654_321, motivo: "Registrada por error" }, { sql: tx })).rejects.toThrow("La relación no existe");
+      // Eliminada, la misma relación se vuelve a registrar.
+      const otraVez = await registrarRelacion(admin, { normaId: reglamenta.id, afectadaId: modifica.id, tipo: "reglamenta", detalle: null }, { sql: tx, ahora });
+      expect(otraVez.relacionId).not.toBe(r3.relacionId);
+    }));
+
+  it("eliminar la relación que derogó deja la afectada derogada y el cambio en el historial, marcado; tras restituirla a mano se vuelve a registrar", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const vieja = await normaDePrueba(tx, admin, { anio: 2014 });
+      const nueva = await normaDePrueba(tx, admin, { anio: 2019, fechaExpedicion: "2019-11-25" });
+      const relacion = { normaId: nueva.id, afectadaId: vieja.id, tipo: "deroga" as const, detalle: null };
+      const r = await registrarRelacion(admin, relacion, { sql: tx, ahora });
+      await eliminarRelacion(admin, { relacionId: r.relacionId, motivo: "Se registró la norma equivocada" }, { sql: tx, ahora });
+
+      expect((await tx`SELECT estado FROM normas WHERE id = ${vieja.id}`)[0].estado).toBe("derogada");
+      const fichaVieja = (await obtenerNorma(vieja.id, admin, { sql: tx }))!;
+      expect(fichaVieja.relaciones).toEqual([]);
+      expect((await obtenerNorma(nueva.id, admin, { sql: tx }))!.relaciones).toEqual([]);
+      expect(fichaVieja.cambios).toMatchObject([
+        { estadoNuevo: "derogada", relacion: { id: r.relacionId, tipo: "deroga", norma: { id: nueva.id, nombre: nueva.nombre }, eliminada: true } },
+      ]);
+      // Registrar y eliminar quedan en la bitácora de las dos normas.
+      for (const id of [nueva.id, vieja.id]) {
+        expect((await auditoriaDe(tx, "norma_relacion", id))[0].detalle).toMatchObject({ relacionId: r.relacionId, tipo: "deroga" });
+        expect((await auditoriaDe(tx, "norma_relacion_eliminada", id))[0].detalle).toMatchObject({
+          relacionId: r.relacionId,
+          motivo: "Se registró la norma equivocada",
+        });
+      }
+
+      await expect(registrarRelacion(admin, relacion, { sql: tx })).rejects.toThrow("ya está derogada");
+      await cambiarEstadoNorma(admin, { normaId: vieja.id, estado: "vigente", fecha: "2026-11-09", nota: "La derogó otra norma" }, { sql: tx, ahora });
+      const otra = await registrarRelacion(admin, relacion, { sql: tx, ahora });
+      expect(otra.cambioId).not.toBeNull();
+      const despues = (await obtenerNorma(vieja.id, admin, { sql: tx }))!;
+      expect(despues.relaciones).toMatchObject([{ id: otra.relacionId, tipo: "deroga", directa: false }]);
+      expect(despues.cambios.map((c) => [c.estadoNuevo, c.relacion?.eliminada ?? null])).toEqual([
+        ["derogada", true],
+        ["vigente", null],
+        ["derogada", false],
+      ]);
     }));
 
   it("norma_cambios es inmutable y el enlace oficial se guarda como texto", () =>
@@ -260,6 +305,11 @@ describe("relaciones y estado", () => {
       expect(await cambiarEstadoNorma(admin, { normaId: n.id, estado: "modificada", fecha: "2026-11-02", nota: null }, { sql: tx, ahora })).toEqual({ cambioId: null, impactos: 0 });
       expect(await tx`SELECT 1 FROM norma_cambios WHERE norma_id = ${n.id}`).toHaveLength(1);
       await expect(cambiarEstadoNorma(admin, { normaId: n.id, estado: "abolida" as never, fecha: "2026-11-02", nota: null }, { sql: tx })).rejects.toThrow(ErrorNormograma);
+      // Retirar va solo por «Retirar», que exige el motivo.
+      await expect(
+        cambiarEstadoNorma(admin, { normaId: n.id, estado: "retirada" as never, fecha: "2026-11-02", nota: null }, { sql: tx }),
+      ).rejects.toThrow("Para retirar una norma use «Retirar»");
+      expect((await tx`SELECT estado FROM normas WHERE id = ${n.id}`)[0].estado).toBe("modificada");
       await expect(cambiarEstadoNorma(admin, { normaId: n.id, estado: "vigente", fecha: "2026-13-02", nota: null }, { sql: tx })).rejects.toThrow("fecha");
       await expect(
         cambiarEstadoNorma(await usuarioDePrueba(tx, { rol: "lider_proceso" }), { normaId: n.id, estado: "vigente", fecha: "2026-11-02", nota: null }, { sql: tx }),
@@ -323,9 +373,15 @@ describe("asociaciones", () => {
       expect(ficha.acciones).toEqual({ administrar: false });
       expect((await obtenerNorma(n.id, liderCex, { sql: tx }))!.procesos[0].puedeEditar).toBe(false);
       expect((await obtenerNorma(n.id, admin, { sql: tx }))!.acciones).toEqual({ administrar: true });
-      expect((await listarNormas({ procesoId: Number(gth.id), q: n.nombre.split(" ")[1] }, { sql: tx, sesion: liderGth })).map((f) => f.documentos)).toEqual([2]);
+      expect((await listarNormas({ procesoId: Number(gth.id), q: n.nombre.split(" ")[1] }, liderGth, { sql: tx })).map((f) => f.documentos)).toEqual([2]);
 
-      await expect(desenlazarDocumento(liderGth, { normaId: n.id, documentoId: deCex.id }, { sql: tx })).rejects.toThrow("Solo puede");
+      await expect(desenlazarDocumento(liderGth, { normaId: n.id, documentoId: deCex.id }, { sql: tx })).rejects.toThrow(
+        "Solo puede quitar el enlace de documentos de los procesos que lidera",
+      );
+      await asociarProceso(admin, { normaId: n.id, procesoId: Number(cex.id), requisito: null }, { sql: tx });
+      await expect(desasociarProceso(liderGth, { normaId: n.id, procesoId: Number(cex.id) }, { sql: tx })).rejects.toThrow(
+        "Solo puede quitar normas de los procesos que lidera",
+      );
       await desenlazarDocumento(liderGth, { normaId: n.id, documentoId: deGth.id }, { sql: tx });
       await desasociarProceso(liderGth, { normaId: n.id, procesoId: Number(gth.id) }, { sql: tx });
       await expect(desasociarProceso(liderGth, { normaId: n.id, procesoId: Number(gth.id) }, { sql: tx })).rejects.toThrow("no está asociada");
@@ -348,15 +404,16 @@ describe("asociaciones", () => {
 
       const paraConsulta = (await obtenerNorma(n.id, consulta, { sql: tx }))!.documentos;
       expect(paraConsulta).toContainEqual({ id: general.id, codigo: general.codigo, titulo: general.titulo, origen: "interno", visible: true });
-      expect(paraConsulta).toContainEqual({ id: restringido.id, codigo: null, titulo: null, origen: "interno", visible: false });
+      expect(paraConsulta).toContainEqual({ id: null, codigo: null, titulo: null, origen: "interno", visible: false });
+      expect(paraConsulta.some((d) => d.id === restringido.id)).toBe(false);
       expect(JSON.stringify(paraConsulta)).not.toContain(restringido.codigo);
       expect((await obtenerNorma(n.id, gerente, { sql: tx }))!.documentos).toContainEqual(
         expect.objectContaining({ id: restringido.id, codigo: restringido.codigo, visible: true }),
       );
 
       const numero = n.nombre.split(" ")[1];
-      expect((await listarNormas({ q: numero }, { sql: tx, sesion: consulta }))[0].documentos).toBe(1);
-      expect((await listarNormas({ q: numero }, { sql: tx, sesion: gerente }))[0].documentos).toBe(2);
+      expect((await listarNormas({ q: numero }, consulta, { sql: tx }))[0].documentos).toBe(1);
+      expect((await listarNormas({ q: numero }, gerente, { sql: tx }))[0].documentos).toBe(2);
       expect(await normasDeDocumento(restringido.id, consulta, { sql: tx })).toEqual([]);
       expect((await normasDeDocumento(restringido.id, gerente, { sql: tx })).map((f) => f.id)).toEqual([n.id]);
       // Quien no ve el documento no lo enlaza: para él no existe.
@@ -375,10 +432,10 @@ describe("retiro y borrado", () => {
       await expect(retirarNorma(admin, { normaId: n.id, motivo: "no" }, { sql: tx })).rejects.toThrow("El motivo");
       await retirarNorma(admin, { normaId: n.id, motivo: "Registrada por error" }, { sql: tx, ahora });
 
-      expect(await listarNormas({ q: numero }, { sql: tx })).toEqual([]);
-      expect(await listarNormas({ q: numero, estado: "todas" }, { sql: tx })).toEqual([]);
-      expect((await listarNormas({ q: numero, incluirRetiradas: true }, { sql: tx })).map((f) => f.estado)).toEqual(["retirada"]);
-      expect((await listarNormas({ q: numero, estado: "retirada" }, { sql: tx })).map((f) => f.id)).toEqual([n.id]);
+      expect(await listarNormas({ q: numero }, admin, { sql: tx })).toEqual([]);
+      expect(await listarNormas({ q: numero, estado: "todas" }, admin, { sql: tx })).toEqual([]);
+      expect((await listarNormas({ q: numero, incluirRetiradas: true }, admin, { sql: tx })).map((f) => f.estado)).toEqual(["retirada"]);
+      expect((await listarNormas({ q: numero, estado: "retirada" }, admin, { sql: tx })).map((f) => f.id)).toEqual([n.id]);
       expect(await buscarNormas(numero, 4, { sql: tx })).toEqual([]);
       const ficha = await obtenerNorma(n.id, admin, { sql: tx });
       expect(ficha).toMatchObject({ estado: "retirada", estadoEn: "2026-11-08" });
@@ -434,6 +491,10 @@ describe("esquemas del normograma", () => {
     expect(() =>
       parsearFormulario(formulario({ tipoNormaId: "3", numero: "1", anio: "2019", entidadEmisora: "MSPS", titulo: "Ley", estado: "derogada" }), EsquemaNorma),
     ).toThrow();
+    expect(() => parsearFormulario(formulario({ normaId: "1", estado: "retirada", fecha: "2026-11-09" }), EsquemaEstadoNorma)).toThrow(
+      "Elija el estado de la norma",
+    );
+    expect(parsearFormulario(formulario({ normaId: "1", estado: "derogada", fecha: "2026-11-09" }), EsquemaEstadoNorma)).toMatchObject({ estado: "derogada" });
     expect(parsearFormulario(formulario({ normaId: "1", afectadaId: "2", tipo: "deroga" }), EsquemaRelacion)).toEqual({
       normaId: 1,
       afectadaId: 2,
@@ -456,5 +517,9 @@ describe("esquemas del normograma", () => {
     expect(() => parsearFormulario(formulario({ impactoId: "7", resolucion: "no_afecta", nota: "no" }), EsquemaResolverImpacto)).toThrow("al menos 5");
     expect(() => parsearFormulario(formulario({ impactoId: "7", resolucion: "solicitud", tramiteId: "9", nota: "Una nota de más" }), EsquemaResolverImpacto)).toThrow();
     expect(() => parsearFormulario(formulario({ impactoId: "7", resolucion: "otra" }), EsquemaResolverImpacto)).toThrow("Elija cómo se resuelve el impacto");
+    // La verificación de un externo lo resuelve desde su página, no desde este formulario.
+    expect(() => parsearFormulario(formulario({ impactoId: "7", resolucion: "verificacion", verificacionId: "3" }), EsquemaResolverImpacto)).toThrow(
+      "Elija cómo se resuelve el impacto",
+    );
   });
 });

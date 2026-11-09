@@ -114,6 +114,12 @@ const ERROR_SOLO_PDF = "El archivo de la norma debe ser un PDF";
 export const CONTEXTOS_SOLO_PDF: readonly ContextoEvidencia[] = ["norma"];
 
 /**
+ * Los dueños de un solo archivo, con la tabla del dueño: el que se sube reemplaza al anterior en la misma transacción y
+ * con el dueño bloqueado, así dos subidas a la vez, o una subida y el borrado del dueño, se ordenan (`registrarArchivo`).
+ */
+export const CONTEXTOS_UNICOS: Partial<Record<ContextoEvidencia, string>> = { norma: "normas" };
+
+/**
  * Como `validarTipo`, pero una evidencia solo es un PDF o una imagen (nunca SVG, HTML ni Office), y con `soloPdf`
  * solo un PDF: una extensión fuera de la lista o un contenido que no la respalda dan el mismo mensaje.
  */

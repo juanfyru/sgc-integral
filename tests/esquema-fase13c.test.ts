@@ -1,5 +1,5 @@
 /**
- * Esquema de la Fase 13C (migraciones 0008 y 0009): vigencia, externos, revisión anual,
+ * Esquema de la Fase 13C (migraciones 0008, 0009 y 0010): vigencia, externos, revisión anual,
  * normograma y lo heredado de la 13B. Requiere la BD de desarrollo migrada
  * (npm run db:preparar); no exige la demo recién sembrada.
  */
@@ -35,6 +35,7 @@ function sentenciaDeMigracion(archivo: string, inicio: string): string {
 
 const MIGRACION_0008 = "0008_fase13c-vigencia-externos-normograma.sql";
 const MIGRACION_0009 = "0009_fase13c-tipos-norma-y-endurecimiento.sql";
+const MIGRACION_0010 = "0010_fase13c-baja-de-relaciones.sql";
 
 /** Un tipo de norma y una norma propios de la prueba: la base no trae tipos de norma hasta resembrar. */
 async function normaDePrueba(tx: TransactionSql, usuarioId: number, numero = "3100") {
@@ -324,6 +325,41 @@ describe("esquema de la Fase 13C", () => {
         FROM normas WHERE id = ${normaId}`;
       expect(n).toEqual({ hay: true, por_titulo: true, por_numero: true, por_emisor: true });
     }));
+
+  it("norma_relaciones (0010): la baja lleva quién, cuándo y motivo, y la unicidad es solo entre las no eliminadas", () =>
+    revertida(sql, async (tx) => {
+      const [u] = await tx`SELECT id FROM usuarios ORDER BY id LIMIT 1`;
+      const { tipoId, normaId } = await normaDePrueba(tx, u.id, "9015");
+      const [otra] = await tx`INSERT INTO normas (tipo_norma_id, numero, anio, entidad_emisora, titulo, creado_por)
+        VALUES (${tipoId}, '9016', 2020, 'MinSalud', 'La que deroga', ${u.id}) RETURNING id`;
+      const relacionar = () =>
+        tx.savepoint(
+          (s) => s`INSERT INTO norma_relaciones (norma_id, afectada_id, tipo, creado_por) VALUES (${otra.id}, ${normaId}, 'deroga', ${u.id}) RETURNING id`,
+        );
+      const [r] = await relacionar();
+      expect(await fallaCon(relacionar())).toBe("23505");
+      const baja = (en: string | null, por: number | null, motivo: string | null) =>
+        tx.savepoint(
+          (s) => s`UPDATE norma_relaciones SET eliminada_en = ${en}, eliminada_por = ${por}, eliminada_motivo = ${motivo} WHERE id = ${r.id}`,
+        );
+      expect(await fallaCon(baja("2026-11-09T10:00:00Z", null, null))).toBe("23514");
+      expect(await fallaCon(baja(null, u.id, "Por error"))).toBe("23514");
+      expect(await fallaCon(baja("2026-11-09T10:00:00Z", u.id, null))).toBe("23514");
+      await baja("2026-11-09T10:00:00Z", u.id, "Registrada por error");
+      // Eliminada, la misma relación se puede volver a registrar, pero no dos veces.
+      await relacionar();
+      expect(await fallaCon(relacionar())).toBe("23505");
+      const [indice] = await tx`SELECT indexdef FROM pg_indexes WHERE tablename = 'norma_relaciones' AND indexname = 'norma_relaciones_unica_sin_baja'`;
+      expect(indice.indexdef).toMatch(/UNIQUE INDEX .* WHERE \(eliminada_en IS NULL\)/);
+    }));
+
+  it("la migración 0010 se puede volver a correr", () => {
+    const texto = readFileSync(path.resolve(import.meta.dirname, "../drizzle", MIGRACION_0010), "utf8");
+    const sentencias = texto.split("--> statement-breakpoint").map((x) => x.trim()).filter(Boolean);
+    for (const sentencia of sentencias) {
+      expect(sentencia).toMatch(/IF NOT EXISTS|IF EXISTS|^DO \$\$/);
+    }
+  });
 
   it("hallazgos admite por_validar y archivos admite norma, revision_anual y hallazgo", () =>
     revertida(sql, async (tx) => {

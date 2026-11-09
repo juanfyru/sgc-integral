@@ -7,6 +7,9 @@ import { ErrorTramite } from "@/db/consultas/flujo/contrato";
 export const ESTADOS_NORMA = ["vigente", "modificada", "derogada", "retirada"] as const;
 export type EstadoNorma = (typeof ESTADOS_NORMA)[number];
 
+/** Los que da «Cambiar estado»: retirar va solo por «Retirar», que exige el motivo (spec 13C §10.7). */
+export const ESTADOS_A_MANO = ["vigente", "modificada", "derogada"] as const;
+
 export const ETIQUETA_ESTADO_NORMA: Record<EstadoNorma, string> = {
   vigente: "Vigente",
   modificada: "Modificada",

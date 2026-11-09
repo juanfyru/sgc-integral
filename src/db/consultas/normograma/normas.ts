@@ -12,8 +12,8 @@ import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import {
   acotado,
   ErrorNormograma,
+  ESTADOS_A_MANO,
   ESTADOS_CON_IMPACTO,
-  ESTADOS_NORMA,
   fechaValida,
   nombreDeNorma,
   opcionalAcotado,
@@ -208,14 +208,15 @@ export async function plazoDeImpactos(sql: Cliente): Promise<number> {
   return (await obtenerConfigDocumental({ sql })).vigencia.impactoPlazoDias;
 }
 
-/** «Cambiar estado» a mano, con fecha y nota (spec 13C §10.2). */
+/** «Cambiar estado» a mano, con fecha y nota (spec 13C §10.2). No retira: eso es `retirarNorma`, con su motivo. */
 export async function cambiarEstadoNorma(
   sesion: SesionFlujo,
   d: { normaId: number; estado: EstadoNorma; fecha: string; nota: string | null },
   opciones?: Opciones,
 ): Promise<{ cambioId: number | null; impactos: number }> {
   exigirAdministrar(sesion);
-  if (!ESTADOS_NORMA.includes(d.estado)) throw new ErrorNormograma("Elija el estado de la norma");
+  if (d.estado === "retirada") throw new ErrorNormograma("Para retirar una norma use «Retirar», que pide el motivo");
+  if (!(ESTADOS_A_MANO as readonly string[]).includes(d.estado)) throw new ErrorNormograma("Elija el estado de la norma");
   const fecha = fechaValida(d.fecha);
   const nota = opcionalAcotado(d.nota, "La nota", 1000);
   const sql = opciones?.sql ?? obtenerSql();

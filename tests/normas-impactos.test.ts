@@ -41,7 +41,14 @@ import { obtenerSql } from "@/db/cliente";
 import { listarDocumentosAdmin } from "@/db/consultas/admin";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { asociarProceso, enlazarDocumento } from "@/db/consultas/normograma/asociaciones";
-import { impactoPendienteDe, impactosDe, impactosVencidos, resolverImpacto, tareasDeImpactos } from "@/db/consultas/normograma/impactos";
+import {
+  impactoPendienteDe,
+  impactosDe,
+  impactosVencidos,
+  resolverImpacto,
+  resolverImpactoPorVerificacion,
+  tareasDeImpactos,
+} from "@/db/consultas/normograma/impactos";
 import { cambiarEstadoNorma, retirarNorma } from "@/db/consultas/normograma/normas";
 import { registrarRelacion } from "@/db/consultas/normograma/relaciones";
 import { obtenerDocumentosDeProceso } from "@/db/consultas/procesos";
@@ -83,8 +90,11 @@ async function procesoDe(tx: TransactionSql, sigla: string): Promise<Proceso> {
   return { id: Number(p.id), nombre: p.nombre, slug: p.slug };
 }
 
-async function avisosDe(tx: TransactionSql, usuarioId: number, tipo: string) {
-  return tx`SELECT titulo, cuerpo, enlace FROM notificaciones WHERE usuario_id = ${usuarioId} AND tipo = ${tipo} ORDER BY id`;
+/** Los avisos de `tipo` de la persona; con `normaId`, solo los de esa norma (la demo y la base pueden traer otros). */
+async function avisosDe(tx: TransactionSql, usuarioId: number, tipo: string, normaId?: number) {
+  return tx`SELECT titulo, cuerpo, enlace FROM notificaciones
+    WHERE usuario_id = ${usuarioId} AND tipo = ${tipo} ${normaId === undefined ? tx`` : tx`AND entidad = 'norma' AND entidad_id = ${normaId}`}
+    ORDER BY id`;
 }
 
 /** Pinta `pagina` con la conexión de la prueba y la sesión dada. */
@@ -142,9 +152,12 @@ describe("nacimiento de los impactos", () => {
 
       expect((await vigenciaDeDocumento(doc.id, admin, { sql: tx, ahora }))!.vigencia.estado).toBe("atencion");
       expect(await impactoPendienteDe(doc.id, { sql: tx })).toEqual({ cambioId: r.cambioId, norma: n.nombre });
-      const [aviso] = await tx`SELECT 1 FROM notificaciones WHERE tipo = 'normograma.cambio' AND usuario_id = ${liderGth.usuarioId}`;
+      const [aviso] = await tx`SELECT 1 FROM notificaciones
+        WHERE tipo = 'normograma.cambio' AND usuario_id = ${liderGth.usuarioId} AND entidad_id = ${n.id}`;
       expect(aviso).toBeTruthy();
-      const [delLider] = await avisosDe(tx, liderGth.usuarioId, "normograma.cambio");
+      const avisosDelLider = await avisosDe(tx, liderGth.usuarioId, "normograma.cambio", n.id);
+      expect(avisosDelLider).toHaveLength(1);
+      const [delLider] = avisosDelLider;
       expect(delLider).toMatchObject({
         titulo: `${n.nombre} pasó a derogada: revise su impacto en ${gth.nombre}`,
         enlace: `/normograma/impactos/${r.cambioId}?proceso=${gth.id}`,
@@ -152,7 +165,7 @@ describe("nacimiento de los impactos", () => {
       // El aviso nombra la norma y el proceso, nunca el documento.
       expect(`${delLider.titulo} ${delLider.cuerpo ?? ""}`).not.toContain(doc.codigo);
       expect(`${delLider.titulo} ${delLider.cuerpo ?? ""}`).not.toContain(doc.titulo);
-      expect(await avisosDe(tx, liderCex.usuarioId, "normograma.cambio")).toMatchObject([
+      expect(await avisosDe(tx, liderCex.usuarioId, "normograma.cambio", n.id)).toMatchObject([
         { titulo: `${n.nombre} pasó a derogada: revise su impacto en ${cex.nombre}` },
       ]);
     }));
@@ -184,8 +197,8 @@ describe("nacimiento de los impactos", () => {
       expect((await tareasDeImpactos(otroAdmin, { sql: tx })).find((t) => t.id === id)?.titulo).toBe(
         `Revisar el impacto de ${n.nombre} (modificada) en ${huerfano.nombre} (1)`,
       );
-      expect(await avisosDe(tx, admin.usuarioId, "normograma.cambio")).toEqual([]);
-      expect(await avisosDe(tx, otroAdmin.usuarioId, "normograma.cambio")).toMatchObject([
+      expect(await avisosDe(tx, admin.usuarioId, "normograma.cambio", n.id)).toEqual([]);
+      expect(await avisosDe(tx, otroAdmin.usuarioId, "normograma.cambio", n.id)).toMatchObject([
         { titulo: `${n.nombre} pasó a modificada: revise su impacto en ${huerfano.nombre}`, enlace: `/normograma/impactos/${cambioId}?proceso=${huerfano.id}` },
       ]);
     }));
@@ -320,9 +333,9 @@ describe("resolución de los impactos", () => {
       );
       expect(await impactosDe(987_654_321, cex.id, admin, { sql: tx })).toBeNull();
       // El impacto de proceso no se resuelve con una verificación ni con la modificación de un documento.
-      await expect(resolverImpacto(liderCex, { impactoId: deProceso.id, resolucion: "verificacion", verificacionId: 1 }, { sql: tx })).rejects.toThrow(
-        "Solo el impacto sobre un documento externo se resuelve con una verificación",
-      );
+      await expect(
+        tx.savepoint((sp) => resolverImpactoPorVerificacion(sp, liderCex.usuarioId, { impactoId: deProceso.id, verificacionId: 1 }, ahora)),
+      ).rejects.toThrow("Solo el impacto sobre un documento externo se resuelve con una verificación");
       await expect(resolverImpacto(liderCex, { impactoId: deProceso.id, resolucion: "solicitud", tramiteId: t.tramiteId }, { sql: tx })).rejects.toThrow(
         "La solicitud no es una creación en este proceso",
       );
@@ -362,9 +375,17 @@ describe("resolución de los impactos", () => {
       expect((await vigenciaDeDocumento(e.documentoId, admin, { sql: tx, ahora }))!.vigencia.estado).toBe("al_dia");
       const [ev] = await tx`SELECT impacto_id FROM externo_verificaciones WHERE id = ${verificacionId}`;
       expect(Number(ev.impacto_id)).toBe(impacto.id);
-      // Una verificación posterior con el mismo impacto ya no lo encuentra pendiente.
+      // Un formulario viejo con el mismo impacto lo dice; el impacto de otro documento sigue sin existir para este.
       await expect(
         registrarVerificacion(responsable, { documentoId: e.documentoId, resultado: "vigente", fuente: "Portal del Ministerio", nota: null, impactoId: impacto.id }, { sql: tx, ahora }),
+      ).rejects.toThrow("Ese impacto ya está resuelto");
+      const otro = await vigenteFuera(tx, { fechaAprobacion: "2026-10-01", proceso: "CEX" });
+      await enlazarDocumento(admin, { normaId: n.id, documentoId: otro.id }, { sql: tx });
+      await cambiarEstadoNorma(admin, { normaId: n.id, estado: "vigente", fecha: "2026-11-02", nota: null }, { sql: tx, ahora });
+      const ajeno = await cambiarEstadoNorma(admin, { normaId: n.id, estado: "modificada", fecha: "2026-11-03", nota: null }, { sql: tx, ahora });
+      const [deOtro] = await tx`SELECT id FROM impactos_normativos WHERE cambio_id = ${ajeno.cambioId} AND documento_id = ${otro.id}`;
+      await expect(
+        registrarVerificacion(responsable, { documentoId: e.documentoId, resultado: "vigente", fuente: "Portal del Ministerio", nota: null, impactoId: Number(deOtro.id) }, { sql: tx, ahora }),
       ).rejects.toThrow("El documento no existe");
     }));
 });
@@ -396,7 +417,9 @@ describe("impactos vencidos", () => {
       expect(`${aviso.titulo} ${aviso.cuerpo}`).not.toContain(doc.titulo);
       expect(await avisosDe(tx, jefe.usuarioId, "normograma.escalado")).toEqual([]);
 
-      const despues = new Date(ahora.getTime() + 20 * DIA);
+      // Vencido hace 3 días no escala con escalamientoDias = 3; hace 4, sí.
+      expect(await impactosVencidos({ sql: tx, ahora: new Date(ahora.getTime() + 18 * DIA), escalamientoDias: 3 })).toEqual({ avisados: 0, escalados: 0 });
+      const despues = new Date(ahora.getTime() + 19 * DIA);
       expect(await impactosVencidos({ sql: tx, ahora: despues, escalamientoDias: 3 })).toEqual({ avisados: 0, escalados: 1 });
       expect(await impactosVencidos({ sql: tx, ahora: despues, escalamientoDias: 3 })).toEqual({ avisados: 0, escalados: 0 });
       const delJefe = await avisosDe(tx, jefe.usuarioId, "normograma.escalado");
@@ -406,6 +429,25 @@ describe("impactos vencidos", () => {
       expect(`${delJefe[0].titulo} ${delJefe[0].cuerpo}`).not.toContain(doc.codigo);
       const [marcas] = await tx`SELECT aviso_vencido_en, escalado_en FROM impactos_normativos WHERE cambio_id = ${cambioId}`;
       expect(marcas).toEqual({ aviso_vencido_en: alDiaSiguiente, escalado_en: despues });
+    }));
+
+  it("sin destinatario no hay aviso ni marca, y sin jefe no hay escalamiento ni marca", () =>
+    revertida(sql, async (tx) => {
+      await silenciarImpactos(tx);
+      const admin = await sesionAdmin(tx);
+      const huerfano = await procesoSinLider(tx);
+      const n = await normaDePrueba(tx, admin);
+      await asociarProceso(admin, { normaId: n.id, procesoId: huerfano.id, requisito: null }, { sql: tx });
+      const { cambioId } = await cambiarEstadoNorma(admin, { normaId: n.id, estado: "derogada", fecha: "2026-11-01", nota: null }, { sql: tx, ahora });
+      // Sin líder en el proceso y sin ningún Admin SGC activo, nadie tiene la tarea.
+      await tx`UPDATE usuarios SET activo = false WHERE rol = 'admin_sgc'`;
+      const avisos = async () =>
+        (await tx`SELECT count(*)::int AS n FROM notificaciones WHERE tipo IN ('normograma.impacto_vencido', 'normograma.escalado')`)[0].n;
+      const antes = await avisos();
+      expect(await impactosVencidos({ sql: tx, ahora: new Date(ahora.getTime() + 30 * DIA), escalamientoDias: 3 })).toEqual({ avisados: 0, escalados: 0 });
+      expect(await avisos()).toBe(antes);
+      const [marcas] = await tx`SELECT aviso_vencido_en, escalado_en FROM impactos_normativos WHERE cambio_id = ${cambioId}`;
+      expect(marcas).toEqual({ aviso_vencido_en: null, escalado_en: null });
     }));
 
   it("un impacto resuelto no se avisa", () =>
@@ -419,5 +461,79 @@ describe("impactos vencidos", () => {
       const [impacto] = (await impactosDe(cambioId!, gth.id, admin, { sql: tx }))!;
       await resolverImpacto(admin, { impactoId: impacto.id, resolucion: "no_afecta", nota: "Nada cambia en el proceso" }, { sql: tx, ahora });
       expect(await impactosVencidos({ sql: tx, ahora: new Date(ahora.getTime() + 30 * DIA), escalamientoDias: 3 })).toEqual({ avisados: 0, escalados: 0 });
+    }));
+});
+
+describe("casos de borde (ronda de corrección 1)", () => {
+  it("un documento enlazado sin versión vigente y un proceso asociado inactivo no abren impactos", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const cex = await procesoDe(tx, "CEX");
+      const n = await normaDePrueba(tx, admin);
+      const sinVigente = await vigenteFuera(tx, { fechaAprobacion: "2026-10-01", proceso: "GTH" });
+      await enlazarDocumento(admin, { normaId: n.id, documentoId: sinVigente.id }, { sql: tx });
+      await tx`UPDATE documento_versiones SET estado = 'obsoleto' WHERE documento_id = ${sinVigente.id}`;
+      await asociarProceso(admin, { normaId: n.id, procesoId: cex.id, requisito: null }, { sql: tx });
+      await tx`UPDATE procesos SET activo = false WHERE id = ${cex.id}`;
+      const r = await cambiarEstadoNorma(admin, { normaId: n.id, estado: "derogada", fecha: "2026-11-01", nota: null }, { sql: tx, ahora });
+      expect(r.impactos).toBe(0);
+      expect(await tx`SELECT 1 FROM impactos_normativos WHERE cambio_id = ${r.cambioId}`).toHaveLength(0);
+    }));
+
+  it("el impacto de proceso se resuelve con una solicitud de creación en el proceso", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const liderCex = await sesionDe(tx, "lider.cex");
+      const cex = await procesoDe(tx, "CEX");
+      const n = await normaDePrueba(tx, admin);
+      await asociarProceso(admin, { normaId: n.id, procesoId: cex.id, requisito: "art. 7" }, { sql: tx });
+      const { cambioId } = await cambiarEstadoNorma(admin, { normaId: n.id, estado: "modificada", fecha: "2026-11-01", nota: null }, { sql: tx, ahora });
+      const [impacto] = (await impactosDe(cambioId!, cex.id, liderCex, { sql: tx }))!;
+      const [tipo] = await tx`SELECT id FROM tipos_documento WHERE sigla = 'PR'`;
+      const creacion = await crearSolicitud(
+        liderCex,
+        { tipo: "crear", motivo: "cambio_normativo", justificacion: "Procedimiento que exige la norma", procesoId: cex.id, tipoDocumentoId: Number(tipo.id), tituloPropuesto: "Atención según la norma nueva" },
+        opc(tx, "2026-11-09T15:00:00Z"),
+      );
+      await resolverImpacto(liderCex, { impactoId: impacto.id, resolucion: "solicitud", tramiteId: creacion.tramiteId }, { sql: tx, ahora });
+      expect((await impactosDe(cambioId!, cex.id, liderCex, { sql: tx }))![0]).toMatchObject({
+        estado: "resuelto",
+        resolucion: "solicitud",
+        tramite: { id: creacion.tramiteId, numero: creacion.numero },
+      });
+    }));
+
+  it("el trámite que resuelve un impacto está abierto o nació después del cambio; uno cerrado de antes no", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const liderGth = await sesionDe(tx, "lider.gth");
+      const gth = await procesoDe(tx, "GTH");
+      const n = await normaDePrueba(tx, admin);
+      const [cerrado, abierto, posterior] = [
+        await vigenteFuera(tx, { fechaAprobacion: "2026-10-01", proceso: "GTH" }),
+        await vigenteFuera(tx, { fechaAprobacion: "2026-10-01", proceso: "GTH" }),
+        await vigenteFuera(tx, { fechaAprobacion: "2026-10-01", proceso: "GTH" }),
+      ];
+      const pedir = (documentoId: number, cuando: string) =>
+        crearSolicitud(liderGth, { tipo: "modificar", motivo: "mejora", justificacion: "Ajuste de redacción del procedimiento", documentoId }, opc(tx, cuando));
+      const viejo = await pedir(cerrado.id, "2026-10-15T15:00:00Z");
+      await tx`UPDATE tramites SET etapa = 'cancelado' WHERE id = ${viejo.tramiteId}`;
+      const enCurso = await pedir(abierto.id, "2026-10-20T15:00:00Z");
+      for (const d of [cerrado, abierto, posterior]) await enlazarDocumento(admin, { normaId: n.id, documentoId: d.id }, { sql: tx });
+      const { cambioId } = await cambiarEstadoNorma(admin, { normaId: n.id, estado: "derogada", fecha: "2026-11-01", nota: null }, { sql: tx, ahora });
+      const lista = (await impactosDe(cambioId!, gth.id, liderGth, { sql: tx }))!;
+      const de = (id: number) => lista.find((i) => i.documento?.id === id)!.id;
+
+      await expect(resolverImpacto(liderGth, { impactoId: de(cerrado.id), resolucion: "solicitud", tramiteId: viejo.tramiteId }, { sql: tx })).rejects.toThrow(
+        "La solicitud ya está cerrada y es anterior al cambio de la norma: abra una nueva",
+      );
+      await resolverImpacto(liderGth, { impactoId: de(abierto.id), resolucion: "solicitud", tramiteId: enCurso.tramiteId }, { sql: tx, ahora });
+      // Una nueva, aunque luego se cancele, nació por el cambio.
+      const nueva = await pedir(posterior.id, "2026-11-09T15:00:00Z");
+      await tx`UPDATE tramites SET etapa = 'cancelado' WHERE id = ${nueva.tramiteId}`;
+      await resolverImpacto(liderGth, { impactoId: de(posterior.id), resolucion: "solicitud", tramiteId: nueva.tramiteId }, { sql: tx, ahora });
+      expect((await impactosDe(cambioId!, gth.id, liderGth, { sql: tx }))!.filter((i) => i.estado === "resuelto").map((i) => i.documento?.id).sort()).toEqual(
+        [abierto.id, posterior.id].sort(),
+      );
     }));
 });

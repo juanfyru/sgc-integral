@@ -36,6 +36,7 @@ export { impactosVencidos, type ContextoVencimientos } from "./vencidos";
 type Opciones = { sql?: Cliente; ahora?: Date };
 
 export const IMPACTO_NO_EXISTE = "El impacto no existe";
+export const IMPACTO_RESUELTO = "Ese impacto ya está resuelto";
 
 const estadoEnTexto = (estado: EstadoNorma) => ETIQUETA_ESTADO_NORMA[estado].toLowerCase();
 
@@ -200,14 +201,16 @@ export async function impactoPendienteDe(documentoId: number, opciones?: Opcione
   return f ? { cambioId: Number(f.cambio_id), norma: f.norma } : null;
 }
 
-export type ResolucionDeImpacto =
-  | { resolucion: "no_afecta"; nota: string }
-  | { resolucion: "solicitud"; tramiteId: number }
-  | { resolucion: "verificacion"; verificacionId: number };
+/** Las de quien ve el impacto; la verificación de un externo llega por `resolverImpactoPorVerificacion`. */
+export type ResolucionDeImpacto = { resolucion: "no_afecta"; nota: string } | { resolucion: "solicitud"; tramiteId: number };
+
+type Resolucion = ResolucionDeImpacto | { resolucion: "verificacion"; verificacionId: number };
 
 type ImpactoBloqueado = {
   id: number;
   cambioId: number;
+  /** Cuándo se registró el cambio: un trámite cerrado antes no lo atiende. */
+  cambioEn: Date;
   normaId: number;
   norma: string;
   estadoNuevo: EstadoNorma;
@@ -220,7 +223,7 @@ type ImpactoBloqueado = {
 };
 
 async function impactoBloqueado(tx: TransactionSql, impactoId: number): Promise<ImpactoBloqueado | null> {
-  const [f] = await tx`SELECT i.id, i.cambio_id, i.norma_id, ${nombreSql(tx)} AS norma, c.estado_nuevo, i.documento_id,
+  const [f] = await tx`SELECT i.id, i.cambio_id, c.creado_en AS cambio_en, i.norma_id, ${nombreSql(tx)} AS norma, c.estado_nuevo, i.documento_id,
       d.codigo, d.origen, i.proceso_id, p.nombre AS proceso, i.estado
     FROM impactos_normativos i
     JOIN norma_cambios c ON c.id = i.cambio_id
@@ -234,6 +237,7 @@ async function impactoBloqueado(tx: TransactionSql, impactoId: number): Promise<
   return {
     id: Number(f.id),
     cambioId: Number(f.cambio_id),
+    cambioEn: new Date(f.cambio_en),
     normaId: Number(f.norma_id),
     norma: f.norma,
     estadoNuevo: f.estado_nuevo,
@@ -247,8 +251,8 @@ async function impactoBloqueado(tx: TransactionSql, impactoId: number): Promise<
 }
 
 /** Resuelve un impacto ya bloqueado; quien llama ya decidió que la persona puede. */
-async function resolverBloqueado(tx: TransactionSql, usuarioId: number, i: ImpactoBloqueado, d: ResolucionDeImpacto, ahora: Date): Promise<void> {
-  if (i.estado !== "pendiente") throw new ErrorNormograma("Ese impacto ya está resuelto");
+async function resolverBloqueado(tx: TransactionSql, usuarioId: number, i: ImpactoBloqueado, d: Resolucion, ahora: Date): Promise<void> {
+  if (i.estado !== "pendiente") throw new ErrorNormograma(IMPACTO_RESUELTO);
   let nota: string | null = null;
   let tramite: { id: number; numero: string } | null = null;
   let verificacionId: number | null = null;
@@ -256,11 +260,17 @@ async function resolverBloqueado(tx: TransactionSql, usuarioId: number, i: Impac
     nota = acotado(d.nota, "La nota", 5, 1000);
   } else if (d.resolucion === "solicitud") {
     if (i.origen === "externo") throw new ErrorNormograma("Un documento externo no tiene trámite: verifíquelo o registre que no afecta");
-    const [t] = await tx`SELECT id, numero, tipo, documento_id, proceso_id FROM tramites WHERE id = ${d.tramiteId}`;
+    const [t] = await tx`SELECT id, numero, tipo, documento_id, proceso_id, creado_en, etapa = ANY(${ETAPAS_ABIERTAS}) AS abierto
+      FROM tramites WHERE id = ${d.tramiteId}`;
     if (i.documentoId !== null) {
       if (!t || Number(t.documento_id) !== i.documentoId) throw new ErrorNormograma("La solicitud no es de este documento");
     } else if (!t || t.tipo !== "crear" || Number(t.proceso_id) !== i.procesoId) {
       throw new ErrorNormograma("La solicitud no es una creación en este proceso");
+    }
+    // La atiende la que está abierta (spec 13C §10.5: «si ya tiene un trámite abierto, se enlaza») o la que nació
+    // después del cambio, aunque luego se cerrara; una cerrada de antes no sabía de él.
+    if (!t.abierto && new Date(t.creado_en).getTime() < i.cambioEn.getTime()) {
+      throw new ErrorNormograma("La solicitud ya está cerrada y es anterior al cambio de la norma: abra una nueva");
     }
     tramite = { id: Number(t.id), numero: t.numero };
   } else if (d.resolucion === "verificacion") {
@@ -303,8 +313,8 @@ async function resolverBloqueado(tx: TransactionSql, usuarioId: number, i: Impac
 /**
  * Resuelve un impacto (spec 13C §10.5): lo hace quien lo ve (`puedeVerImpacto`, el líder del proceso o el Admin SGC);
  * para los demás no existe. «No afecta» lleva una nota de al menos 5 caracteres; «solicitud», un trámite del
- * documento (o, en el impacto de proceso, una creación en el proceso), nunca sobre un externo; «verificacion», la
- * verificación del externo registrada para este impacto.
+ * documento (o, en el impacto de proceso, una creación en el proceso) abierto o nacido después del cambio, nunca sobre
+ * un externo. La verificación de un externo resuelve su impacto desde `registrarVerificacion`.
  */
 export async function resolverImpacto(sesion: SesionFlujo, d: { impactoId: number } & ResolucionDeImpacto, opciones?: Opciones): Promise<void> {
   const sql = opciones?.sql ?? obtenerSql();

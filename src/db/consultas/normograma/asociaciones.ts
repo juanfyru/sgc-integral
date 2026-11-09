@@ -32,12 +32,15 @@ async function normaAbierta(tx: TransactionSql, normaId: number): Promise<string
   return n.nombre as string;
 }
 
-/** Asociar exige un proceso activo; quitar una asociación, no (el Admin SGC limpia la de un proceso desactivado). */
-async function exigirProceso(tx: TransactionSql, sesion: SesionFlujo, procesoId: number, soloActivo: boolean): Promise<string> {
+/**
+ * Asociar exige un proceso activo; quitar una asociación, no (el Admin SGC limpia la de un proceso desactivado). El
+ * rechazo por alcance dice la acción que se intentó.
+ */
+async function exigirProceso(tx: TransactionSql, sesion: SesionFlujo, procesoId: number, accion: "asociar" | "quitar"): Promise<string> {
   const [p] = await tx`SELECT nombre, activo FROM procesos WHERE id = ${procesoId}`;
-  if (!p || (soloActivo && !p.activo)) throw new ErrorNormograma("El proceso no existe");
+  if (!p || (accion === "asociar" && !p.activo)) throw new ErrorNormograma("El proceso no existe");
   if (!puedeAsociarNorma(sesion, procesoId, await alcanceProcesos(sesion, { sql: tx }))) {
-    throw new ErrorNormograma("Solo puede asociar normas a los procesos que lidera");
+    throw new ErrorNormograma(`Solo puede ${accion === "asociar" ? "asociar normas a" : "quitar normas de"} los procesos que lidera`);
   }
   return p.nombre as string;
 }
@@ -53,7 +56,7 @@ export async function asociarProceso(
   const ahora = opciones?.ahora ?? new Date();
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
     const nombre = await normaAbierta(tx, d.normaId);
-    const proceso = await exigirProceso(tx, sesion, d.procesoId, true);
+    const proceso = await exigirProceso(tx, sesion, d.procesoId, "asociar");
     const [actual] = await tx`SELECT id, requisito FROM norma_procesos
       WHERE norma_id = ${d.normaId} AND proceso_id = ${d.procesoId} FOR UPDATE`;
     if (actual && (actual.requisito ?? null) === requisito) return;
@@ -84,7 +87,7 @@ export async function desasociarProceso(sesion: SesionFlujo, d: { normaId: numbe
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
     const [n] = await tx`SELECT ${nombreSql(tx)} AS nombre FROM normas n JOIN tipos_norma tn ON tn.id = n.tipo_norma_id WHERE n.id = ${d.normaId}`;
     if (!n) throw new ErrorNormograma(NORMA_NO_EXISTE);
-    const proceso = await exigirProceso(tx, sesion, d.procesoId, false);
+    const proceso = await exigirProceso(tx, sesion, d.procesoId, "quitar");
     const [quitada] = await tx`DELETE FROM norma_procesos WHERE norma_id = ${d.normaId} AND proceso_id = ${d.procesoId} RETURNING requisito`;
     if (!quitada) throw new ErrorNormograma("La norma no está asociada a ese proceso");
     await registrarAuditoria(tx, {

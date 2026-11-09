@@ -37,10 +37,22 @@ export type Norma = {
   notas: string | null;
   /** `directa`: esta norma es la que modifica, deroga o reglamenta a la otra. `id` es el de la relación. */
   relaciones: { id: number; tipo: TipoRelacion; norma: { id: number; nombre: string; estado: EstadoNorma }; detalle: string | null; directa: boolean }[];
-  cambios: { estadoAnterior: EstadoNorma; estadoNuevo: EstadoNorma; fecha: string; nombre: string; nota: string | null; creadoEn: Date }[];
+  /**
+   * El historial de estados. `relacion`: la que causó el cambio, con la norma que la causa; `eliminada` si se dio de
+   * baja después (el cambio queda: `norma_cambios` es de solo inserción).
+   */
+  cambios: {
+    estadoAnterior: EstadoNorma;
+    estadoNuevo: EstadoNorma;
+    fecha: string;
+    nombre: string;
+    nota: string | null;
+    creadoEn: Date;
+    relacion: { id: number; tipo: TipoRelacion; norma: { id: number; nombre: string }; eliminada: boolean } | null;
+  }[];
   procesos: { id: number; nombre: string; sigla: string; slug: string; requisito: string | null; puedeEditar: boolean }[];
-  /** Un documento que la persona no ve sale con `visible: false`, sin código ni título, después de los que ve. */
-  documentos: { id: number; codigo: string | null; titulo: string | null; origen: "interno" | "externo"; visible: boolean }[];
+  /** Un documento que la persona no ve sale con `visible: false`, sin id, código ni título, después de los que ve. */
+  documentos: { id: number | null; codigo: string | null; titulo: string | null; origen: "interno" | "externo"; visible: boolean }[];
   archivo: Evidencia | null;
   acciones: { administrar: boolean };
 };
@@ -57,15 +69,20 @@ export async function obtenerNorma(id: number, sesion: SesionFlujo, opciones?: O
     sql`SELECT r.id, r.tipo, r.detalle, true AS directa, o.id AS otra_id, o.estado AS otra_estado,
         concat_ws(' ', otn.nombre, o.numero, 'de', o.anio::text) AS otra_nombre
       FROM norma_relaciones r JOIN normas o ON o.id = r.afectada_id JOIN tipos_norma otn ON otn.id = o.tipo_norma_id
-      WHERE r.norma_id = ${id}
+      WHERE r.norma_id = ${id} AND r.eliminada_en IS NULL
       UNION ALL
       SELECT r.id, r.tipo, r.detalle, false AS directa, o.id AS otra_id, o.estado AS otra_estado,
         concat_ws(' ', otn.nombre, o.numero, 'de', o.anio::text) AS otra_nombre
       FROM norma_relaciones r JOIN normas o ON o.id = r.norma_id JOIN tipos_norma otn ON otn.id = o.tipo_norma_id
-      WHERE r.afectada_id = ${id}
+      WHERE r.afectada_id = ${id} AND r.eliminada_en IS NULL
       ORDER BY directa DESC, id`,
-    sql`SELECT c.estado_anterior, c.estado_nuevo, c.fecha::text AS fecha, u.nombre, c.nota, c.creado_en
+    sql`SELECT c.estado_anterior, c.estado_nuevo, c.fecha::text AS fecha, u.nombre, c.nota, c.creado_en,
+        r.id AS relacion_id, r.tipo AS relacion_tipo, r.eliminada_en IS NOT NULL AS relacion_eliminada,
+        o.id AS causa_id, concat_ws(' ', otn.nombre, o.numero, 'de', o.anio::text) AS causa_nombre
       FROM norma_cambios c JOIN usuarios u ON u.id = c.usuario_id
+      LEFT JOIN norma_relaciones r ON r.id = c.relacion_id
+      LEFT JOIN normas o ON o.id = r.norma_id
+      LEFT JOIN tipos_norma otn ON otn.id = o.tipo_norma_id
       WHERE c.norma_id = ${id} ORDER BY c.creado_en, c.id`,
     sql`SELECT p.id, p.nombre, p.sigla, p.slug, np.requisito
       FROM norma_procesos np JOIN procesos p ON p.id = np.proceso_id
@@ -106,6 +123,15 @@ export async function obtenerNorma(id: number, sesion: SesionFlujo, opciones?: O
       nombre: c.nombre,
       nota: c.nota ?? null,
       creadoEn: new Date(c.creado_en),
+      relacion:
+        c.relacion_id === null
+          ? null
+          : {
+              id: Number(c.relacion_id),
+              tipo: c.relacion_tipo,
+              norma: { id: Number(c.causa_id), nombre: c.causa_nombre },
+              eliminada: c.relacion_eliminada,
+            },
     })),
     procesos: procesos.map((p) => ({
       id: Number(p.id),
@@ -118,7 +144,7 @@ export async function obtenerNorma(id: number, sesion: SesionFlujo, opciones?: O
     documentos: documentos.map((d) =>
       d.visible
         ? { id: Number(d.id), codigo: d.codigo, titulo: d.titulo, origen: d.origen, visible: true }
-        : { id: Number(d.id), codigo: null, titulo: null, origen: d.origen, visible: false },
+        : { id: null, codigo: null, titulo: null, origen: d.origen, visible: false },
     ),
     archivo: archivos.at(-1) ?? null,
     acciones: { administrar: puede(sesion, "normograma.administrar") },
@@ -136,7 +162,7 @@ export type FilaNorma = {
   tipo: string;
   /** Los nombres de los procesos asociados. */
   procesos: string[];
-  /** Los documentos enlazados; con `sesion`, solo los que la persona ve. */
+  /** Los documentos enlazados que la persona ve. */
   documentos: number;
 };
 
@@ -152,13 +178,13 @@ export type FiltroNormas = {
 
 /**
  * Las filas de las listas del normograma que cumplen `condicion` (sobre `normas n` y `tipos_norma tn`), de la más
- * reciente a la más antigua. `sujeto`: `documentos` cuenta solo lo que esa persona ve (un restringido que no ve no se
+ * reciente a la más antigua. `documentos` cuenta solo lo que `sujeto` ve (un restringido que no ve no se
  * revela por diferencia). `requisitoDe`: el requisito que la norma impone a ese proceso.
  */
 export async function filasDeNormas(
   sql: Cliente,
   condicion: PendingQuery<Row[]>,
-  sujeto: SujetoVisibilidad | undefined,
+  sujeto: SujetoVisibilidad,
   requisitoDe?: number,
 ): Promise<{ fila: FilaNorma; requisito: string | null }[]> {
   const filas = await sql`
@@ -167,7 +193,7 @@ export async function filasDeNormas(
       ARRAY(SELECT p.nombre FROM norma_procesos np JOIN procesos p ON p.id = np.proceso_id
         WHERE np.norma_id = n.id ORDER BY p.nombre) AS procesos,
       (SELECT count(*) FROM norma_documentos nd JOIN documentos d ON d.id = nd.documento_id
-        WHERE nd.norma_id = n.id AND ${sujeto ? filtroAcceso(sql, sujeto) : sql`true`})::int AS documentos,
+        WHERE nd.norma_id = n.id AND ${filtroAcceso(sql, sujeto)})::int AS documentos,
       ${requisitoDe === undefined
         ? sql`NULL::text`
         : sql`(SELECT np.requisito FROM norma_procesos np WHERE np.norma_id = n.id AND np.proceso_id = ${requisitoDe})`} AS requisito
@@ -193,9 +219,9 @@ export async function filasDeNormas(
 
 /**
  * El normograma institucional con sus filtros (spec 13C §10.6). Sin las retiradas salvo `incluirRetiradas` o
- * `estado: "retirada"`. Pase `sesion` para que `documentos` cuente solo lo que la persona ve.
+ * `estado: "retirada"`. `documentos` cuenta solo lo que `sesion` ve.
  */
-export async function listarNormas(filtro: FiltroNormas, opciones?: Opciones & { sesion?: SujetoVisibilidad }): Promise<FilaNorma[]> {
+export async function listarNormas(filtro: FiltroNormas, sesion: SujetoVisibilidad, opciones?: Opciones): Promise<FilaNorma[]> {
   const sql = opciones?.sql ?? obtenerSql();
   const condiciones: PendingQuery<Row[]>[] = [];
   if (filtro.estado === "retirada") condiciones.push(sql`n.estado = 'retirada'`);
@@ -211,7 +237,7 @@ export async function listarNormas(filtro: FiltroNormas, opciones?: Opciones & {
   }
   if (filtro.q?.trim()) condiciones.push(condicionTexto(sql, filtro.q.trim()));
   const condicion = condiciones.reduce((a, b) => sql`${a} AND ${b}`, sql`true`);
-  return (await filasDeNormas(sql, condicion, opciones?.sesion)).map((f) => f.fila);
+  return (await filasDeNormas(sql, condicion, sesion)).map((f) => f.fila);
 }
 
 /** Hasta 10 entidades emisoras ya escritas que empiezan por `prefijo` (el `datalist` del formulario). */
