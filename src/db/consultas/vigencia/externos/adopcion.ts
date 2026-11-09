@@ -9,7 +9,6 @@ import { pedirSocializacion } from "@/db/consultas/distribucion/jornadas";
 import { registrarFirma } from "@/db/consultas/firmas";
 import { ErrorFirma, enTransaccion, type OpcionesFlujo, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { verificarParaFirmar, type CredencialesFirma } from "@/lib/firma";
-import { huellaDeArchivo } from "@/lib/huella";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { ErrorVigencia } from "@/lib/vigencia/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -24,7 +23,7 @@ import {
   recortado,
   type AdopcionValidada,
 } from "./comun";
-import { NO_COINCIDE, NO_EXISTE } from "../ratificaciones";
+import { NO_EXISTE, conRechazoPorHuella, exigirHuellaRegistrada } from "../comun";
 
 /**
  * Lo que debe cumplirse para adoptar una edición, sin escribir nada (F13A-R4): un borrador de un externo que la
@@ -76,23 +75,6 @@ function huellaDeDatos(codigo: string, edicion: string, emisor: string): string 
   return createHash("sha256").update(`${codigo}|${edicion}|${emisor}`).digest("hex");
 }
 
-/** Un archivo que no se puede leer tampoco es el registrado: la huella en disco queda nula. */
-async function huellaEnDisco(ruta: string): Promise<string | null> {
-  try {
-    return await huellaDeArchivo(ruta);
-  } catch (err) {
-    console.error("No se pudo leer el archivo principal al adoptar:", err);
-    return null;
-  }
-}
-
-/** El rechazo por la huella sale de la transacción con lo que la bitácora debe guardar. */
-class HuellaDistinta extends Error {
-  constructor(readonly detalle: { codigo: string; numero: number; huellaRegistrada: string | null; huellaEnDisco: string | null }) {
-    super(NO_COINCIDE);
-  }
-}
-
 /**
  * Adopta la edición en borrador (spec 13C §8.3): la firma «Adoptó» sin trámite y la publicación por
  * `aplicarPublicacion(…, "externo", …)`, que deja obsoleta la anterior y recoge sus copias. Una edición nueva pide
@@ -116,22 +98,16 @@ export async function adoptarEdicion(
   const r = await verificar(sesion, d.credenciales, contexto, ahora);
   if (!r.ok) throw new ErrorFirma(r.mensaje, r.sesionCerrada, r.bloqueada);
 
-  try {
-    return await enTransaccion(sql, async (tx) => {
+  const rechazo = { usuarioId: sesion.usuarioId, accion: "adopcion_rechazada", documentoId: previa.documentoId };
+  return conRechazoPorHuella(sql, rechazo, () =>
+    enTransaccion(sql, async (tx) => {
       await bloquear(tx, previa.documentoId);
       await tx`SELECT id FROM documento_versiones WHERE id = ${d.versionId} FOR UPDATE`;
       const v = await validarAdopcion(tx, sesion, d.versionId);
       if (verificacionId !== null) await exigirVerificacion(tx, v.documentoId, verificacionId, "edicion_nueva");
-      let huella: string;
-      if (v.ruta) {
-        const enDisco = await huellaEnDisco(v.ruta);
-        if (enDisco === null || enDisco !== v.hashPrincipal) {
-          throw new HuellaDistinta({ codigo: v.codigo, numero: v.numero, huellaRegistrada: v.hashPrincipal, huellaEnDisco: enDisco });
-        }
-        huella = enDisco;
-      } else {
-        huella = huellaDeDatos(v.codigo, v.edicion, v.entidadEmisora);
-      }
+      const huella = v.ruta
+        ? await exigirHuellaRegistrada(v.ruta, v.hashPrincipal, { codigo: v.codigo, numero: v.numero })
+        : huellaDeDatos(v.codigo, v.edicion, v.entidadEmisora);
 
       // Lo que leen el CHECK de la vigente, la ficha y el Maestro: aprobó quien adopta, hoy; elaboró y revisó, nadie.
       const [quien] = await tx`SELECT u.nombre, c.nombre AS cargo FROM usuarios u LEFT JOIN cargos c ON c.id = u.cargo_id
@@ -169,17 +145,6 @@ export async function adoptarEdicion(
         detalle: { codigo: v.codigo, numero, edicion: v.edicion, obsoletas, acuses, verificacionId },
       });
       return { documentoId, numero, obsoletas, acuses };
-    });
-  } catch (err) {
-    if (!(err instanceof HuellaDistinta)) throw err;
-    // Fuera de la transacción revertida: el rechazo queda en la bitácora.
-    await registrarAuditoria(sql, {
-      usuarioId: sesion.usuarioId,
-      accion: "adopcion_rechazada",
-      entidad: "documento",
-      entidadId: previa.documentoId,
-      detalle: err.detalle,
-    });
-    throw new ErrorVigencia(NO_COINCIDE);
-  }
+    }),
+  );
 }

@@ -22,7 +22,8 @@ import { limitesDeFechaFijada, textoFecha } from "@/lib/vigencia/plazo";
 import { ESTADOS_VIGENCIA, ErrorVigencia, type EstadoVigencia } from "@/lib/vigencia/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { columnasDeVigencia, type FilaSemaforo } from "./fragmentos";
-import { NO_EXISTE, ratificacionesDe, type Ratificacion } from "./ratificaciones";
+import { NO_EXISTE } from "./comun";
+import { ratificacionesDe, type Ratificacion } from "./ratificaciones";
 
 export type { FilaSemaforo } from "./fragmentos";
 

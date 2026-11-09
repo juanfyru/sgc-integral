@@ -21,7 +21,7 @@ import {
   type Opciones,
   type Situacion,
 } from "./comun";
-import { NO_EXISTE } from "../ratificaciones";
+import { NO_EXISTE } from "../comun";
 
 /**
  * El retiro dentro de una transacción ya abierta, con el externo bloqueado. Quien llama ya decidió quién puede:

@@ -29,7 +29,7 @@ import {
   type Opciones,
   type Situacion,
 } from "./comun";
-import { NO_EXISTE } from "../ratificaciones";
+import { NO_EXISTE } from "../comun";
 
 const FUERA_DE_ALCANCE = "Solo puede registrar externos de los procesos que lidera";
 

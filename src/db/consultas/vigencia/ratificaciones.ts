@@ -10,12 +10,12 @@ import { registrarFirma } from "@/db/consultas/firmas";
 import { ErrorFirma, enTransaccion, type OpcionesFlujo, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { alcanceProcesos, filtroAcceso, puedeRatificar } from "@/lib/alcance";
 import { verificarParaFirmar, type CredencialesFirma } from "@/lib/firma";
-import { huellaDeArchivo } from "@/lib/huella";
 import { ETAPAS_ABIERTAS, type Autoridad } from "@/lib/tramites/tipos";
 import { fechaEnZona, finDeFecha } from "@/lib/tramites/plazos";
 import { sumarMeses } from "@/lib/vigencia/plazo";
 import { ErrorVigencia } from "@/lib/vigencia/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
+import { NO_COINCIDE, NO_EXISTE, conRechazoPorHuella, exigirHuellaRegistrada } from "./comun";
 
 export type Ratificacion = {
   id: number;
@@ -29,11 +29,10 @@ export type Ratificacion = {
   revisionAnualId: number | null;
 };
 
-export const NO_EXISTE = "El documento no existe";
+export { NO_COINCIDE, NO_EXISTE };
 export const CON_TRAMITE = "El documento tiene un trámite abierto: el trámite ya es su revisión";
 export const NO_PUEDE = "No puede ratificar este documento";
 export const SIN_PRINCIPAL = "El documento no tiene archivo principal";
-export const NO_COINCIDE = "El archivo en disco no coincide con el registrado; avise al Administrador del SGC";
 
 type Validado = {
   versionId: number;
@@ -94,23 +93,6 @@ export async function alRatificar(
   void d;
 }
 
-/** Un archivo que no se puede leer tampoco es el registrado: la huella en disco queda nula. */
-async function huellaEnDisco(ruta: string): Promise<string | null> {
-  try {
-    return await huellaDeArchivo(ruta);
-  } catch (err) {
-    console.error("No se pudo leer el archivo principal al ratificar:", err);
-    return null;
-  }
-}
-
-/** El rechazo por la huella sale de la transacción con lo que la bitácora debe guardar. */
-class HuellaDistinta extends Error {
-  constructor(readonly detalle: { codigo: string; huellaRegistrada: string; huellaEnDisco: string | null }) {
-    super(NO_COINCIDE);
-  }
-}
-
 /**
  * Ratifica la versión vigente: firma «Ratificó» sin trámite, la fila de `ratificaciones` con la próxima revisión
  * que resulta (hoy más el plazo), y se borra la fecha fijada a mano. Sin avisos (F13C-DC3). Si el archivo en
@@ -132,17 +114,15 @@ export async function ratificar(
   const r = await verificar(sesion, d.credenciales, contexto, ahora);
   if (!r.ok) throw new ErrorFirma(r.mensaje, r.sesionCerrada, r.bloqueada);
 
-  try {
-    return await enTransaccion(sql, async (tx) => {
+  const rechazo = { usuarioId: sesion.usuarioId, accion: "ratificacion_rechazada", documentoId: d.documentoId };
+  return conRechazoPorHuella(sql, rechazo, () =>
+    enTransaccion(sql, async (tx) => {
       const [doc] = await tx`SELECT d.meses_revision, t.meses_revision AS meses_tipo
         FROM documentos d JOIN tipos_documento t ON t.id = d.tipo_id
         WHERE d.id = ${d.documentoId} FOR UPDATE OF d`;
       if (!doc) throw new ErrorVigencia(NO_EXISTE);
       const v = await validarRatificacion(tx, sesion, d.documentoId);
-      const enDisco = await huellaEnDisco(v.ruta);
-      if (enDisco !== v.hashRegistrado) {
-        throw new HuellaDistinta({ codigo: v.codigo, huellaRegistrada: v.hashRegistrado, huellaEnDisco: enDisco });
-      }
+      await exigirHuellaRegistrada(v.ruta, v.hashRegistrado, { codigo: v.codigo });
 
       const meses = Number(doc.meses_revision ?? doc.meses_tipo);
       const proxima = fechaEnZona(sumarMeses(ahora, meses, zona), zona);
@@ -174,19 +154,8 @@ export async function ratificar(
         detalle: { codigo: v.codigo, version: v.numero, nota, proximaRevision: proxima },
       });
       return { ratificacionId, proximaRevision: finDeFecha(proxima, zona), codigo: v.codigo };
-    });
-  } catch (err) {
-    if (!(err instanceof HuellaDistinta)) throw err;
-    // Fuera de la transacción revertida: el rechazo queda en la bitácora.
-    await registrarAuditoria(sql, {
-      usuarioId: sesion.usuarioId,
-      accion: "ratificacion_rechazada",
-      entidad: "documento",
-      entidadId: d.documentoId,
-      detalle: err.detalle,
-    });
-    throw new ErrorVigencia(NO_COINCIDE);
-  }
+    }),
+  );
 }
 
 /** Las ratificaciones de una versión, de la más reciente a la más antigua. */

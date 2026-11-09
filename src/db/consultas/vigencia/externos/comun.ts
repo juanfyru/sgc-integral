@@ -7,7 +7,7 @@ import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { alcanceProcesos, filtroAcceso, puedeAccederDocumento, puedeGestionarExterno, type SujetoVisibilidad } from "@/lib/alcance";
 import type { DestinoVersion } from "@/lib/recepcion-archivo";
 import { ErrorVigencia, type EstadoVigencia, type ResultadoVerificacion } from "@/lib/vigencia/tipos";
-import { NO_EXISTE } from "../ratificaciones";
+import { NO_EXISTE } from "../comun";
 
 export type Opciones = { sql?: Cliente; ahora?: Date };
 
