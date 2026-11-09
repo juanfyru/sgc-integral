@@ -519,6 +519,32 @@ describe("las decisiones", () => {
       });
     }));
 
+  it("cerrada, lo decidido es todo menos lo «sin revisar»: el documento de trámite cancelado cuenta como en su informe", () =>
+    revertida(sql, async (tx) => {
+      await sinRevisionAbierta(tx);
+      const admin = await sesionAdmin(tx);
+      const liderGth = await sesionDe(tx, "lider.gth");
+      const cancelado = await vigenteFuera(tx, { fechaAprobacion: "2025-01-10", proceso: "GTH" });
+      const sinDecidir = await vigenteFuera(tx, { fechaAprobacion: "2025-01-10", proceso: "GTH" });
+      const t = await tramiteEn(tx, "aceptacion", { codigo: cancelado.codigo });
+      const { revisionId } = await revisionDePrueba(tx, admin, { ahora });
+      await transicionar(liderGth, { tramiteId: t.tramiteId, accion: "retirar", etapaEsperada: "aceptacion", rondaEsperada: 0 }, opc(tx));
+      await cerrarRevision(admin, { revisionId, credenciales: { clave: "ok" } }, { sql: tx, ahora, verificar: firmaDePrueba });
+
+      const gth = await procesoPorSigla(tx, "GTH");
+      const cerrada = (await obtenerRevision(revisionId, admin, { sql: tx, ahora }))!;
+      const proceso = cerrada.procesos.find((p) => p.id === gth.id)!;
+      const delInforme = (await informeCongelado(revisionId, { sql: tx }))!.decisiones.filter((d) => d.proceso === proceso.nombre);
+      expect(proceso.documentos).toBe(delInforme.length);
+      expect(proceso.decididos).toBe(delInforme.filter((d) => d.decision !== "sin_revisar").length);
+      expect(proceso.decididos).toBe(proceso.documentos - proceso.porDecision.sin_revisar);
+      expect(cerrada.documentos.find((d) => d.documentoId === cancelado.id)).toMatchObject({
+        porDecidir: false,
+        decision: { decision: "en_tramite", tramite: { id: t.tramiteId, etapa: "cancelado" } },
+      });
+      expect(cerrada.documentos.find((d) => d.documentoId === sinDecidir.id)).toMatchObject({ porDecidir: false, decision: { decision: "sin_revisar" } });
+    }));
+
   it("sin revisión abierta, ratificar no registra decisión ni enlaza la ratificación", () =>
     revertida(sql, async (tx) => {
       await sinRevisionAbierta(tx);

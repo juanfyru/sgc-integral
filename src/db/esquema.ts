@@ -1489,7 +1489,7 @@ export const revisionAnualDecisiones = pgTable(
     id: id(),
     revisionId: ref("revision_id", () => revisionesAnuales.id).notNull(),
     documentoId: ref("documento_id", () => documentos.id).notNull(),
-    // La versión vigente al abrir la revisión.
+    // La versión vigente al abrir la revisión; la adopción de una edición la mueve a la versión adoptada.
     versionId: ref("version_id", () => documentoVersiones.id).notNull(),
     decision: text("decision").notNull(),
     // Nulo cuando la registra el sistema.

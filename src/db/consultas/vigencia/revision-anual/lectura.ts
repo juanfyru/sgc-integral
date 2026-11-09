@@ -46,7 +46,7 @@ export type ProcesoDeRevision = {
   /** Sus líderes activos, por nombre; nulo si no tiene. */
   lider: string | null;
   documentos: number;
-  /** Los que tienen una decisión efectiva: no cuenta lo que está por decidir (`estaPendiente`). */
+  /** Los que tienen una decisión efectiva: abierta, no cuenta lo que está por decidir (`estaPendiente`); cerrada, lo «sin revisar». */
   decididos: number;
   porDecision: Record<Decision, number>;
   normograma: { resultado: "sin_novedad" | "cambios"; nota: string | null; por: string; en: Date } | null;
@@ -214,7 +214,9 @@ export async function obtenerRevision(id: number, sesion: SesionFlujo, opciones?
       sigla: p.sigla as string,
       lider: (p.lider as string | null) ?? null,
       documentos,
-      decididos: documentos - conteo.pendientes,
+      // Abierta, lo que está por decidir (también lo de trámite muerto) no cuenta; cerrada, solo lo «sin revisar»: lo de
+      // un trámite que murió cerró con su decisión y el estado de su trámite, como en el informe.
+      decididos: documentos - (abierta ? conteo.pendientes : conteo.porDecision[PENDIENTE]),
       porDecision: conteo.porDecision,
       normograma:
         p.normograma_resultado === null
