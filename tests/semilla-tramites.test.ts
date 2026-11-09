@@ -269,6 +269,9 @@ describe("la historia sembrada", () => {
       };
       const sembrado = await tramiteDe(1, tx);
       expect(await claves(sembrado.id)).toEqual(await claves(t.tramiteId));
+      // La semilla guarda una fecha real, no un nulo por un `previo` sin fecha límite.
+      const limites = await tx`SELECT detalle -> 'venceEn' AS vence FROM tramite_eventos WHERE tramite_id = ${sembrado.id} AND detalle ? 'venceEn'`;
+      expect(limites.length > 0 && limites.every((e) => typeof e.vence === "string")).toBe(true);
       const publicar = (await tx`SELECT detalle FROM tramite_eventos WHERE tramite_id = ${sembrado.id} AND tipo = 'publicar'`)[0];
       expect(publicar.detalle.acuses).toEqual({ creados: expect.any(Number), porFirma: expect.any(Number) });
     } finally {
