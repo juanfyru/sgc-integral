@@ -31,7 +31,8 @@ export function textoVigencia(
   }
   if (r.estado === "atencion" && extra?.cambioNormativo) return `${ETIQUETA_VIGENCIA.atencion} · revisión por cambio normativo`;
   if (r.estado === "atencion" && r.dias === null) return `${ETIQUETA_VIGENCIA.atencion} · sin fecha de revisión`;
-  if (r.dias === null) return ETIQUETA_VIGENCIA.al_dia;
+  // Al día no lleva los días (spec 13C §7.2): «Vence en N días» es la atención, y el texto dice el estado.
+  if (r.estado === "al_dia" || r.dias === null) return ETIQUETA_VIGENCIA.al_dia;
   if (r.estado === "vencida") return `Vencida hace ${dias(-r.dias)}`;
   return r.dias === 0 ? "Vence hoy" : `Vence en ${dias(r.dias)}`;
 }

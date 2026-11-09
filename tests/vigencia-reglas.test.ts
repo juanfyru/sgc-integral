@@ -109,6 +109,9 @@ describe("semáforo de vigencia", () => {
     expect(textoVigencia({ estado: "atencion", dias: 1 })).toBe("Vence en 1 día");
     expect(textoVigencia({ estado: "atencion", dias: 0 })).toBe("Vence hoy");
     expect(textoVigencia({ estado: "al_dia", dias: null })).toBe("Al día");
+    // Al día no lleva los días (spec 13C §7.2): «Vence en N días» es el texto de la atención, y el estado no
+    // puede quedar dicho solo por el color.
+    expect(textoVigencia({ estado: "al_dia", dias: 363 })).toBe("Al día");
     expect(textoVigencia({ estado: "en_tramite", dias: null }, { etapa: "revisión", dia: 3 })).toBe("En trámite · revisión, día 3");
     expect(textoVigencia({ estado: "en_tramite", dias: null })).toBe("En trámite");
     expect(textoVigencia({ estado: "atencion", dias: 300 }, { cambioNormativo: "Resolución 100 de 2026" })).toBe("Atención · revisión por cambio normativo");
