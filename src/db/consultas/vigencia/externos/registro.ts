@@ -6,6 +6,7 @@ import { exigirFormatoDeCodigo, sugerirCodigo } from "@/db/consultas/codigos";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { alcanceProcesos, enAlcance } from "@/lib/alcance";
 import { requerirPermiso } from "@/lib/permisos";
+import { NUMERO_MAXIMO_DE_VERSION } from "@/lib/tramites/tipos";
 import { ErrorVigencia } from "@/lib/vigencia/tipos";
 import {
   EDICION_PENDIENTE,
@@ -15,7 +16,9 @@ import {
   acotado,
   bloquear,
   documentoDeVersion,
+  exigirQueElResponsableLoVea,
   exigirResponsable,
+  exigirResponsableActivo,
   gestionable,
   nombreDeNorma,
   normaEnlazada,
@@ -82,6 +85,7 @@ export async function registrarExterno(
     const codigo = await sugerirCodigo(destino, { sql: tx });
     if (!codigo) throw new ErrorVigencia("Configure el formato del código antes de registrar documentos externos");
     await exigirFormatoDeCodigo(tx, codigo, destino);
+    const responsable = await exigirResponsableActivo(tx, control.responsableId);
 
     let creado: { documentoId: number; versionId: number };
     try {
@@ -113,7 +117,7 @@ export async function registrarExterno(
     await tx`UPDATE documento_versiones SET edicion_externa = ${edicion.edicion}, fecha_edicion_externa = ${edicion.fechaEdicion}
       WHERE id = ${versionId}`;
     // Después de las asociaciones: un restringido lo ve quien está en sus procesos.
-    const responsable = await exigirResponsable(tx, control.responsableId, documentoId);
+    await exigirQueElResponsableLoVea(tx, responsable, documentoId);
     let norma: string | null = null;
     if (control.normaId !== null) {
       norma = await nombreDeNorma(tx, control.normaId);
@@ -124,7 +128,7 @@ export async function registrarExterno(
       accion: "externo_registrado",
       entidad: "documento",
       entidadId: documentoId,
-      detalle: { codigo, titulo, entidadEmisora: control.entidadEmisora, edicion: edicion.edicion, responsable, norma },
+      detalle: { codigo, titulo, entidadEmisora: control.entidadEmisora, edicion: edicion.edicion, responsable: responsable.nombre, norma },
     });
     return { documentoId, versionId, codigo };
   });
@@ -203,8 +207,8 @@ export async function editarControlExterno(
 // ── La edición en borrador ──
 
 /**
- * Abre la edición siguiente en borrador (spec 13C §8.3), con sus datos y el «qué cambió». Una sola a la vez; la
- * marca «edición nueva pendiente» que dejó una verificación sigue hasta que se adopte.
+ * Abre la edición siguiente en borrador (spec 13C §8.3), con sus datos y el «qué cambió» (obligatorio si ya hay una
+ * vigente). Una sola a la vez; la marca «edición nueva pendiente» que dejó una verificación sigue hasta que se adopte.
  */
 export async function abrirEdicion(
   sesion: SesionFlujo,
@@ -215,16 +219,17 @@ export async function abrirEdicion(
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
   const edicion = validarEdicion(d);
-  const resumen = validarResumen(d.resumenCambios, true);
 
   return enTransaccion(sql, async (tx) => {
     await bloquear(tx, documentoId);
     const s = await gestionable(tx, sesion, documentoId);
     if (s.retirado) throw new ErrorVigencia(RETIRADO);
     if (s.borrador) throw new ErrorVigencia(EDICION_PENDIENTE);
+    const resumen = validarResumen(d.resumenCambios, s.vigente !== null);
     // Una versión descartada libera su número.
     const [{ siguiente }] = await tx`SELECT coalesce(max(numero), 0) + 1 AS siguiente
       FROM documento_versiones WHERE documento_id = ${documentoId} AND estado <> 'descartado'`;
+    if (siguiente > NUMERO_MAXIMO_DE_VERSION) throw new ErrorVigencia(`Este externo llegó al máximo de ${NUMERO_MAXIMO_DE_VERSION} versiones`);
     const [v] = await tx`INSERT INTO documento_versiones
         (documento_id, numero, estado, edicion_externa, fecha_edicion_externa, resumen_cambios, creado_en)
       VALUES (${documentoId}, ${siguiente}, 'borrador', ${edicion.edicion}, ${edicion.fechaEdicion}, ${resumen}, ${ahora})
@@ -255,7 +260,7 @@ async function edicionEnBorrador(tx: TransactionSql, sesion: SesionFlujo, versio
 export async function editarEdicion(
   sesion: SesionFlujo,
   versionId: number,
-  d: Omit<DatosEdicion, "resumenCambios"> & { resumenCambios: string | null },
+  d: DatosEdicion,
   opciones?: Opciones,
 ): Promise<{ documentoId: number }> {
   const sql = opciones?.sql ?? obtenerSql();

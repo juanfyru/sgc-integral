@@ -95,10 +95,14 @@ export async function registrarVerificacion(
       RETURNING id`;
     const verificacionId = Number(fila.id);
 
-    if (d.resultado === "vigente") {
-      await tx`UPDATE externos SET aviso_vencido_en = NULL, escalado_en = NULL WHERE documento_id = ${s.documentoId}`;
-    } else if (d.resultado === "edicion_nueva") {
-      await tx`UPDATE externos SET edicion_nueva_pendiente_desde = ${ahora} WHERE documento_id = ${s.documentoId}`;
+    if (d.resultado !== "retirado") {
+      // Toda verificación reinicia el reloj (la fecha base es la última): los avisos vuelven a empezar (spec 13C §13.3).
+      // La edición nueva pendiente conserva desde cuándo lo está: de ahí cuenta la tarea de adoptarla.
+      await tx`UPDATE externos SET aviso_vencido_en = NULL, escalado_en = NULL
+          ${d.resultado === "edicion_nueva" ? tx`, edicion_nueva_pendiente_desde = COALESCE(edicion_nueva_pendiente_desde, ${ahora})` : tx``}
+        WHERE documento_id = ${s.documentoId}`;
+    }
+    if (d.resultado === "edicion_nueva") {
       if (!gestiona) {
         const destinatarios = new Set([...(await lideresDeProceso(s.procesoId, { sql: tx })), ...(await adminsActivos({ sql: tx }))]);
         destinatarios.delete(sesion.usuarioId);
@@ -156,7 +160,7 @@ export async function retirarExterno(
   await enTransaccion(sql, async (tx) => {
     await bloquear(tx, d.documentoId);
     const s = await gestionable(tx, sesion, d.documentoId);
-    if (d.verificacionId !== undefined) await exigirVerificacion(tx, s.documentoId, d.verificacionId);
+    if (d.verificacionId !== undefined) await exigirVerificacion(tx, s.documentoId, d.verificacionId, "retirado");
     await retirarEn(tx, sesion, s, { motivo, verificacionId: d.verificacionId ?? null }, ahora);
   });
 }

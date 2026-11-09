@@ -93,9 +93,12 @@ export const EsquemaControlExterno = z
   .strict()
   .transform(({ normaId, ...resto }) => ({ ...resto, normaId: normaId ?? null }));
 
-/** Abrir o corregir una edición; el `id` de la ruta (documento o versión) se lee aparte con `idNumerico`. */
+/**
+ * Abrir o corregir una edición; el `id` de la ruta (documento o versión) se lee aparte con `idNumerico`. «Qué cambió»
+ * puede faltar: el dominio lo exige cuando ya hay una edición vigente.
+ */
 export const EsquemaEdicion = z
-  .object({ ...edicion, resumenCambios: textoAcotado("Qué cambió", 5, 2000) })
+  .object({ ...edicion, resumenCambios: textoAcotado("Qué cambió", 5, 2000).optional().transform((v) => v ?? null) })
   .strict();
 
 export const EsquemaAdoptar = z

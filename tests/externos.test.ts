@@ -55,9 +55,10 @@ import {
 import { vigenciaEnLista, vigenciaPorDocumento } from "@/db/consultas/vigencia/fragmentos";
 import { listarSemaforo, vigenciaDeDocumento } from "@/db/consultas/vigencia/semaforo";
 import { puedeVerExterno } from "@/lib/alcance";
-import { EsquemaAdoptar, EsquemaControlExterno, EsquemaExterno, EsquemaRetirar, EsquemaVerificacion } from "@/lib/esquemas/vigencia";
+import { EsquemaAdoptar, EsquemaControlExterno, EsquemaEdicion, EsquemaExterno, EsquemaRetirar, EsquemaVerificacion } from "@/lib/esquemas/vigencia";
 import { parsearFormulario } from "@/lib/validacion";
 import { fechaEnZona } from "@/lib/tramites/plazos";
+import { NUMERO_MAXIMO_DE_VERSION } from "@/lib/tramites/tipos";
 import { textoVigenciaDeFila } from "@/lib/vigencia/semaforo";
 import { copiaDePrueba, puntoDePrueba } from "./utiles/distribucion";
 import { aceptarCreacion, archivoPrincipal, opc, sesionAdmin, sesionDe, solicitudDeCreacion, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
@@ -173,6 +174,9 @@ describe("alta de un externo", () => {
       const inactivo = await usuarioDePrueba(tx, { rol: "consulta" });
       await tx`UPDATE usuarios SET activo = false WHERE id = ${inactivo.usuarioId}`;
       await expect(registrarExterno(lider, datosExterno({ procesoId: cex.id, responsableId: inactivo.usuarioId }), { sql: tx })).rejects.toThrow(
+        "El responsable técnico debe ser un usuario activo",
+      );
+      await expect(registrarExterno(lider, datosExterno({ procesoId: cex.id, responsableId: 987_654_321 }), { sql: tx })).rejects.toThrow(
         "El responsable técnico debe ser un usuario activo",
       );
       const ajeno = await usuarioDePrueba(tx, { rol: "consulta" });
@@ -297,6 +301,59 @@ describe("adopción", () => {
       }
     }));
 
+  it("la adopción que sale de una verificación «edición nueva» queda enlazada a ella; otra verificación se rechaza", () =>
+    revertida(sql, async (tx) => {
+      const lider = await sesionDe(tx, "lider.cex");
+      const e = await externoDePrueba(tx, lider, { proceso: "CEX", edicion: "2017", ahora });
+      const otro = await externoDePrueba(tx, lider, { proceso: "CEX", edicion: "2019", ahora });
+      try {
+        const vigente = await registrarVerificacion(lider, verificacion(e.documentoId, "vigente"), { sql: tx, ahora });
+        const nueva = await registrarVerificacion(lider, verificacion(e.documentoId, "edicion_nueva", "Edición 2023"), { sql: tx, ahora });
+        const deOtro = await registrarVerificacion(lider, verificacion(otro.documentoId, "edicion_nueva"), { sql: tx, ahora });
+        const { versionId } = await abrirEdicion(lider, e.documentoId, { edicion: "2023", fechaEdicion: null, resumenCambios: "Metas 2023" }, { sql: tx, ahora });
+        const conVerificacion = (verificacionId: number) =>
+          adoptarEdicion(
+            lider,
+            { versionId, pedirAcuses: false, requiereSocializacion: false, credenciales: ok, verificacionId },
+            { sql: tx, ahora, verificar: firmaDePrueba },
+          );
+        await expect(conVerificacion(vigente.verificacionId)).rejects.toThrow(NO_EXISTE);
+        await expect(conVerificacion(deOtro.verificacionId)).rejects.toThrow(NO_EXISTE);
+        expect((await tx`SELECT 1 FROM firmas WHERE version_id = ${versionId}`).length).toBe(0);
+        await conVerificacion(nueva.verificacionId);
+        const [a] = await tx`SELECT detalle FROM auditoria WHERE accion = 'externo_adoptado' AND entidad_id = ${e.documentoId} ORDER BY id DESC LIMIT 1`;
+        expect(a.detalle).toMatchObject({ numero: 2, edicion: "2023", verificacionId: nueva.verificacionId });
+      } finally {
+        await e.limpiar();
+        await otro.limpiar();
+      }
+    }));
+
+  it("«qué cambió» es obligatorio solo cuando ya hay una edición vigente; abrir una edición respeta el máximo de versiones", () =>
+    revertida(sql, async (tx) => {
+      const lider = await sesionDe(tx, "lider.cex");
+      const cex = await proceso(tx, "CEX");
+      const primera = await registrarExterno(lider, datosExterno({ procesoId: cex.id, responsableId: lider.usuarioId }), { sql: tx, ahora });
+      await editarEdicion(lider, primera.versionId, { edicion: "2018", fechaEdicion: null, resumenCambios: null }, { sql: tx });
+      await descartarEdicion(lider, primera.versionId, { sql: tx });
+      const otraPrimera = await abrirEdicion(lider, primera.documentoId, { edicion: "2018", fechaEdicion: null, resumenCambios: null }, { sql: tx, ahora });
+      const [v] = await tx`SELECT numero, resumen_cambios FROM documento_versiones WHERE id = ${otraPrimera.versionId}`;
+      expect(v).toMatchObject({ numero: 1, resumen_cambios: null });
+
+      const e = await externoDePrueba(tx, lider, { proceso: "CEX", edicion: "2017", ahora });
+      try {
+        await expect(
+          abrirEdicion(lider, e.documentoId, { edicion: "2023", fechaEdicion: null, resumenCambios: null }, { sql: tx, ahora }),
+        ).rejects.toThrow("Escriba qué cambió en esta edición");
+        await tx`UPDATE documento_versiones SET numero = ${NUMERO_MAXIMO_DE_VERSION} WHERE id = ${e.versionId}`;
+        await expect(
+          abrirEdicion(lider, e.documentoId, { edicion: "2023", fechaEdicion: null, resumenCambios: "Metas nuevas" }, { sql: tx, ahora }),
+        ).rejects.toThrow(`Este externo llegó al máximo de ${NUMERO_MAXIMO_DE_VERSION} versiones`);
+      } finally {
+        await e.limpiar();
+      }
+    }));
+
   it("un principal que cambió en disco no se adopta y el rechazo queda en la bitácora", () =>
     revertida(sql, async (tx) => {
       const lider = await sesionDe(tx, "lider.cex");
@@ -401,6 +458,21 @@ describe("verificación y retiro", () => {
       }
     }));
 
+  it("el responsable técnico que perdió de vista su externo restringido deja de serlo para la entrada «Vigencia»", () =>
+    revertida(sql, async (tx) => {
+      const lider = await sesionDe(tx, "lider.cex");
+      const cex = await proceso(tx, "CEX");
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta", procesos: [cex.id] });
+      const e = await externoDePrueba(tx, lider, { proceso: "CEX", edicion: "2017", responsableId: responsable.usuarioId, nivelAcceso: "restringido", ahora });
+      try {
+        expect(await esResponsableTecnico(responsable.usuarioId, { sql: tx })).toBe(true);
+        await tx`DELETE FROM usuario_procesos WHERE usuario_id = ${responsable.usuarioId}`;
+        expect(await esResponsableTecnico(responsable.usuarioId, { sql: tx })).toBe(false);
+      } finally {
+        await e.limpiar();
+      }
+    }));
+
   it("quien gestiona y verifica una edición nueva no se avisa; la verificación se enlaza a la revisión abierta y al impacto pendiente", () =>
     revertida(sql, async (tx) => {
       await sinRevisionAbierta(tx);
@@ -410,12 +482,9 @@ describe("verificación y retiro", () => {
         await registrarVerificacion(lider, verificacion(e.documentoId, "edicion_nueva"), { sql: tx, ahora });
         expect((await tx`SELECT 1 FROM notificaciones WHERE tipo = 'externos.edicion_nueva' AND entidad_id = ${e.documentoId}`).length).toBe(0);
 
-        const [cerrada] = await tx`SELECT id FROM revisiones_anuales WHERE estado = 'cerrada' ORDER BY id LIMIT 1`;
-        if (cerrada) {
-          await expect(
-            registrarVerificacion(lider, { ...verificacion(e.documentoId, "vigente"), revisionAnualId: Number(cerrada.id) }, { sql: tx, ahora }),
-          ).rejects.toThrow("La revisión anual no está abierta");
-        }
+        await expect(
+          registrarVerificacion(lider, { ...verificacion(e.documentoId, "vigente"), revisionAnualId: 987_654_321 }, { sql: tx, ahora }),
+        ).rejects.toThrow("La revisión anual no está abierta");
         const [abierta] = await tx`INSERT INTO revisiones_anuales (anio, plazo_dias, ventana_meses, abierta_por, abierta_en, vence_en)
           VALUES (2096, 60, 6, ${lider.usuarioId}, now(), now() + interval '60 days') RETURNING id`;
         const conRevision = await registrarVerificacion(
@@ -466,6 +535,28 @@ describe("verificación y retiro", () => {
       }
     }));
 
+  it("toda verificación que reinicia el reloj reinicia los avisos; la edición nueva pendiente conserva su primera fecha", () =>
+    revertida(sql, async (tx) => {
+      const lider = await sesionDe(tx, "lider.cex");
+      const e = await externoDePrueba(tx, lider, { proceso: "CEX", edicion: "2017", ahora });
+      try {
+        const marcas = () => tx`SELECT aviso_vencido_en, escalado_en, edicion_nueva_pendiente_desde FROM externos WHERE documento_id = ${e.documentoId}`;
+        await tx`UPDATE externos SET aviso_vencido_en = now(), escalado_en = now() WHERE documento_id = ${e.documentoId}`;
+        await registrarVerificacion(lider, verificacion(e.documentoId, "edicion_nueva"), { sql: tx, ahora });
+        const [primera] = await marcas();
+        expect(primera).toMatchObject({ aviso_vencido_en: null, escalado_en: null });
+        expect(primera.edicion_nueva_pendiente_desde).toEqual(ahora);
+
+        await tx`UPDATE externos SET aviso_vencido_en = now(), escalado_en = now() WHERE documento_id = ${e.documentoId}`;
+        await registrarVerificacion(lider, verificacion(e.documentoId, "edicion_nueva"), { sql: tx, ahora: new Date("2026-11-20T15:00:00Z") });
+        const [segunda] = await marcas();
+        expect(segunda).toMatchObject({ aviso_vencido_en: null, escalado_en: null });
+        expect(segunda.edicion_nueva_pendiente_desde).toEqual(ahora);
+      } finally {
+        await e.limpiar();
+      }
+    }));
+
   it("las verificaciones son inmutables y la fecha base del externo es la última verificación", () =>
     revertida(sql, async (tx) => {
       const lider = await sesionDe(tx, "lider.cex");
@@ -482,6 +573,22 @@ describe("verificación y retiro", () => {
         const despues = await vigenciaDeDocumento(e.documentoId, lider, { sql: tx, ahora });
         expect(despues?.ultimaRevision).toMatchObject({ clase: "verificacion", quien: lider.nombre });
         expect(fechaEnZona(despues!.proximaRevision!, ZONA)).toBe("2027-11-08");
+      } finally {
+        await e.limpiar();
+      }
+    }));
+
+  it("retirar desde la ficha con una verificación solo admite una «retirado» de ese externo", () =>
+    revertida(sql, async (tx) => {
+      const lider = await sesionDe(tx, "lider.cex");
+      const e = await externoDePrueba(tx, lider, { proceso: "CEX", edicion: "2017", ahora });
+      try {
+        const { verificacionId } = await registrarVerificacion(lider, verificacion(e.documentoId, "vigente"), { sql: tx, ahora });
+        await expect(
+          retirarExterno(lider, { documentoId: e.documentoId, motivo: "Derogada según la fuente", verificacionId }, { sql: tx, ahora }),
+        ).rejects.toThrow(NO_EXISTE);
+        const [v] = await tx`SELECT estado FROM documento_versiones WHERE id = ${e.versionId}`;
+        expect(v.estado).toBe("vigente");
       } finally {
         await e.limpiar();
       }
@@ -846,6 +953,10 @@ describe("esquemas de los externos", () => {
     );
     expect(() => parsearFormulario(formulario([["documentoId", "3"], ["motivo", "ya"]]), EsquemaRetirar)).toThrow(
       "El motivo debe tener al menos 5 caracteres",
+    );
+    expect(parsearFormulario(formulario([["edicion", "2017"]]), EsquemaEdicion)).toEqual({ edicion: "2017", fechaEdicion: null, resumenCambios: null });
+    expect(() => parsearFormulario(formulario([["edicion", "2017"], ["resumenCambios", "poco"]]), EsquemaEdicion)).toThrow(
+      "Qué cambió debe tener al menos 5 caracteres",
     );
     expect(parsearFormulario(formulario([["versionId", "5"], ["pedirAcuses", "on"], ["clave", " ok "]]), EsquemaAdoptar)).toEqual({
       versionId: 5,

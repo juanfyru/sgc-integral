@@ -2,7 +2,7 @@
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import type { ArchivoFicha } from "@/db/consultas/documentos";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { alcanceProcesos, filtroAcceso, puedeGestionarExterno, puedeVerExterno } from "@/lib/alcance";
+import { alcanceProcesos, filtroAcceso, filtroAccesoDe, puedeGestionarExterno, puedeVerExterno } from "@/lib/alcance";
 import { puede } from "@/lib/permisos";
 import { ROLES_ARCHIVO_LISTA } from "@/lib/subida";
 import type { ResultadoVerificacion } from "@/lib/vigencia/tipos";
@@ -213,12 +213,15 @@ export async function listarExternos(sesion: SesionFlujo, filtro: FiltroExternos
   return estado === "todos" ? lista : lista.filter((f) => f.vigencia.estado === estado);
 }
 
-/** Si la persona responde por la vigencia de algún externo que no se ha retirado (la entrada «Vigencia» de la barra). */
+/**
+ * Si la persona responde por la vigencia de algún externo que no se ha retirado y que todavía ve (la entrada «Vigencia» de
+ * la barra): un restringido que dejó de ver no le da la entrada.
+ */
 export async function esResponsableTecnico(usuarioId: number, opciones?: { sql?: Cliente }): Promise<boolean> {
   const sql = opciones?.sql ?? obtenerSql();
   const [f] = await sql`SELECT EXISTS (
       SELECT 1 FROM externos ex JOIN documentos d ON d.id = ex.documento_id
-      WHERE ex.responsable_id = ${usuarioId} AND d.origen = 'externo'
+      WHERE ex.responsable_id = ${usuarioId} AND d.origen = 'externo' AND ${filtroAccesoDe(sql, sql`ex.responsable_id`)}
         AND NOT EXISTS (SELECT 1 FROM documento_versiones x WHERE x.documento_id = d.id AND x.estado = 'anulado')
     ) AS es`;
   return f.es as boolean;

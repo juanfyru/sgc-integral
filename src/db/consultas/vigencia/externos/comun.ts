@@ -34,7 +34,8 @@ export type DatosControlExterno = Pick<
   "entidadEmisora" | "tituloOriginal" | "fuenteOficial" | "responsableId" | "verificacionMeses" | "normaId"
 >;
 
-export type DatosEdicion = { edicion: string; fechaEdicion: string | null; resumenCambios: string };
+/** «Qué cambió» es obligatorio solo si ya hay una edición vigente: lo exige el dominio, no el formulario. */
+export type DatosEdicion = { edicion: string; fechaEdicion: string | null; resumenCambios: string | null };
 
 export type Verificacion = {
   id: number;
@@ -235,13 +236,27 @@ export async function documentoDeVersion(sql: Cliente, versionId: number): Promi
   return v ? Number(v.documento_id) : null;
 }
 
-/** El responsable técnico es una persona activa que puede ver el documento: si no, nadie podría verificarlo. */
-export async function exigirResponsable(tx: Cliente, responsableId: number, documentoId: number): Promise<string> {
+export type Responsable = SujetoVisibilidad & { nombre: string };
+
+/** El responsable técnico es una persona que existe y está activa; va antes de escribir su id en `externos`. */
+export async function exigirResponsableActivo(tx: Cliente, responsableId: number): Promise<Responsable> {
   const [u] = await tx`SELECT id, nombre, rol, ver_historial, activo FROM usuarios WHERE id = ${responsableId}`;
   if (!u?.activo) throw new ErrorVigencia("El responsable técnico debe ser un usuario activo");
-  const ve = await puedeAccederDocumento(documentoId, { usuarioId: Number(u.id), rol: u.rol, verHistorial: u.ver_historial }, { sql: tx });
-  if (!ve) throw new ErrorVigencia("El responsable técnico no tiene acceso a este documento restringido");
-  return u.nombre as string;
+  return { usuarioId: Number(u.id), nombre: u.nombre as string, rol: u.rol, verHistorial: u.ver_historial };
+}
+
+/** Y puede ver el documento: si no, nadie podría verificarlo. Va después de sus asociaciones (un restringido). */
+export async function exigirQueElResponsableLoVea(tx: Cliente, responsable: Responsable, documentoId: number): Promise<void> {
+  if (!(await puedeAccederDocumento(documentoId, responsable, { sql: tx }))) {
+    throw new ErrorVigencia("El responsable técnico no tiene acceso a este documento restringido");
+  }
+}
+
+/** Las dos comprobaciones del responsable técnico, sobre un documento que ya tiene sus asociaciones. */
+export async function exigirResponsable(tx: Cliente, responsableId: number, documentoId: number): Promise<string> {
+  const responsable = await exigirResponsableActivo(tx, responsableId);
+  await exigirQueElResponsableLoVea(tx, responsable, documentoId);
+  return responsable.nombre;
 }
 
 export async function nombreDeNorma(sql: Cliente, normaId: number): Promise<string> {
