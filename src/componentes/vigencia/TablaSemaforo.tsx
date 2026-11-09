@@ -67,7 +67,7 @@ function Proxima({ fila: f, zona }: { fila: FilaSemaforo; zona: string }) {
   );
 }
 
-function Acciones({ fila: f, ahora, zona, pideCodigo, verTramites }: { fila: FilaConAcciones; ahora: Date; zona: string; pideCodigo: boolean; verTramites: boolean }) {
+function Acciones({ fila: f, ahora, zona, pideCodigo }: { fila: FilaConAcciones; ahora: Date; zona: string; pideCodigo: boolean }) {
   const { ratificar, solicitar } = f.acciones;
   if (!ratificar && !solicitar && !f.tramite) return null;
   return (
@@ -85,7 +85,7 @@ function Acciones({ fila: f, ahora, zona, pideCodigo, verTramites }: { fila: Fil
         </Link>
       ) : null}
       {f.tramite ? (
-        verTramites ? (
+        f.acciones.verTramite ? (
           <Link href={`/tramites/${f.tramite.id}`} className={`rounded text-sm underline underline-offset-2 ${FOCO}`}>
             {`Ver trámite ${f.tramite.numero}`}
           </Link>
@@ -98,20 +98,9 @@ function Acciones({ fila: f, ahora, zona, pideCodigo, verTramites }: { fila: Fil
 }
 
 /** Tabla desde 768 px; por debajo, una tarjeta por documento. */
-export function TablaSemaforo({
-  filas,
-  ahora,
-  pideCodigo,
-  verTramites,
-}: {
-  filas: FilaConAcciones[];
-  ahora: Date;
-  pideCodigo: boolean;
-  /** Quien sigue los trámites de lo que ve (Admin SGC y líderes) tiene el enlace al trámite abierto. */
-  verTramites: boolean;
-}) {
+export function TablaSemaforo({ filas, ahora, pideCodigo }: { filas: FilaConAcciones[]; ahora: Date; pideCodigo: boolean }) {
   const zona = zonaHoraria();
-  const acciones = (f: FilaConAcciones) => <Acciones fila={f} ahora={ahora} zona={zona} pideCodigo={pideCodigo} verTramites={verTramites} />;
+  const acciones = (f: FilaConAcciones) => <Acciones fila={f} ahora={ahora} zona={zona} pideCodigo={pideCodigo} />;
   return (
     <>
       <div className="hidden md:block">

@@ -18,7 +18,7 @@ import { finDeFecha } from "@/lib/tramites/plazos";
 
 const ZONA = "America/Bogota";
 const AHORA = finDeFecha("2026-11-08", ZONA);
-const sinAcciones = { ratificar: false, solicitar: false, ajustar: false };
+const sinAcciones = { ratificar: false, solicitar: false, ajustar: false, verTramite: false };
 
 const base: FilaConAcciones = {
   documentoId: 1,
@@ -38,7 +38,7 @@ const base: FilaConAcciones = {
   vigencia: { estado: "vencida", dias: -86 },
   tramite: null,
   impacto: null,
-  acciones: { ratificar: true, solicitar: true, ajustar: false },
+  acciones: { ratificar: true, solicitar: true, ajustar: false, verTramite: false },
 };
 
 const filas: FilaConAcciones[] = [
@@ -51,7 +51,7 @@ const filas: FilaConAcciones[] = [
     proximaRevision: finDeFecha("2027-01-30", ZONA),
     fijada: { por: "María F. Perdomo", en: finDeFecha("2026-11-03", ZONA), nota: "carga inicial" },
     vigencia: { estado: "atencion", dias: 83 },
-    acciones: { ratificar: true, solicitar: false, ajustar: true },
+    acciones: { ratificar: true, solicitar: false, ajustar: true, verTramite: false },
   },
   {
     ...base,
@@ -60,7 +60,7 @@ const filas: FilaConAcciones[] = [
     version: { id: 12, numero: 2, edicion: null },
     vigencia: { estado: "en_tramite", dias: null },
     tramite: { id: 9, numero: "SOL-2026-002", etapa: "revision", dia: 3 },
-    acciones: sinAcciones,
+    acciones: { ...sinAcciones, verTramite: true },
   },
   {
     ...base,
@@ -85,6 +85,10 @@ describe("ChipVigencia", () => {
     expect(chip({ ...base, vigencia: { estado: "atencion", dias: null } })).toContain("Atención · sin fecha de revisión");
     expect(chip({ ...base, vigencia: { estado: "al_dia", dias: 200 } })).toContain("Al día");
     expect(chip(filas[2])).toContain("En trámite · revisión, día 3");
+    // Sin día (etapa sin fecha límite): solo la etapa.
+    const sinDia = chip({ ...filas[2], tramite: { ...filas[2].tramite!, dia: null } });
+    expect(sinDia).toContain("En trámite · revisión<");
+    expect(sinDia).not.toContain("día");
     expect(chip({ ...base, vigencia: { estado: "atencion", dias: 300 }, impacto: { cambioId: 1, norma: "Resolución 2003 de 2014" } })).toContain(
       "Atención · revisión por cambio normativo",
     );
@@ -103,7 +107,7 @@ describe("PestanasVigencia", () => {
 });
 
 describe("TablaSemaforo", () => {
-  const html = renderToStaticMarkup(<TablaSemaforo filas={filas} ahora={AHORA} pideCodigo={false} verTramites={true} />);
+  const html = renderToStaticMarkup(<TablaSemaforo filas={filas} ahora={AHORA} pideCodigo={false} />);
 
   it("tabla desde 768 px y una tarjeta por documento debajo", () => {
     expect(html).toContain('class="hidden md:block"');
@@ -132,7 +136,7 @@ describe("TablaSemaforo", () => {
     expect(html).not.toContain("documento=SGC-PR-01&amp;motivo");
     expect(html).toContain('href="/tramites/9"');
     expect(html).toContain("Ver trámite SOL-2026-002");
-    const sinEnlace = renderToStaticMarkup(<TablaSemaforo filas={[filas[2]]} ahora={AHORA} pideCodigo={false} verTramites={false} />);
+    const sinEnlace = renderToStaticMarkup(<TablaSemaforo filas={[{ ...filas[2], acciones: sinAcciones }]} ahora={AHORA} pideCodigo={false} />);
     expect(sinEnlace).not.toContain('href="/tramites/9"');
     expect(sinEnlace).toContain("Trámite SOL-2026-002");
   });

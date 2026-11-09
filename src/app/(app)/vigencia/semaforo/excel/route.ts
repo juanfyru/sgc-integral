@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { obtenerSql } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { obtenerMarcaSegura } from "@/db/consultas/entidad";
-import { listarSemaforo } from "@/db/consultas/vigencia/semaforo";
+import { listarSemaforo, procesosDelSemaforo } from "@/db/consultas/vigencia/semaforo";
 import { crearLimitador } from "@/lib/limite";
 import { puede } from "@/lib/permisos";
 import { sesionDePeticion } from "@/lib/sesion-actual";
@@ -30,11 +30,17 @@ export async function GET(peticion: NextRequest): Promise<Response> {
   const q = peticion.nextUrl.searchParams;
   const filtro = filtroDeConsulta({ estado: q.get("estado"), proceso: q.get("proceso"), origen: q.get("origen") });
   const sql = obtenerSql();
-  const [filas, marca] = await Promise.all([listarSemaforo(sesion, filtro, { ahora }), obtenerMarcaSegura()]);
+  const [filas, marca, procesos] = await Promise.all([
+    listarSemaforo(sesion, filtro, { ahora }),
+    obtenerMarcaSegura(),
+    filtro.procesoId === undefined ? Promise.resolve([]) : procesosDelSemaforo(sesion),
+  ]);
+  // El nombre sale del catálogo, no de las filas: un filtro sin filas también dice qué proceso se pidió.
+  const nombreProceso = procesos.find((p) => p.id === filtro.procesoId)?.nombre;
   const buffer = await construirExcelSemaforo(filas, {
     hospital: marca.nombre,
     generadoEn: fechaHoraLocal(ahora),
-    filtro: textoDelFiltro(filtro, filtro.procesoId === undefined ? undefined : filas[0]?.proceso.nombre),
+    filtro: textoDelFiltro(filtro, nombreProceso),
     total: filas.length,
     zona: zonaHoraria(),
   });

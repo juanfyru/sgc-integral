@@ -272,7 +272,7 @@ export default async function PaginaDocumentoAdmin({
             registrable={registrable}
             deshacible={puedeAdministrar && deshacible}
           >
-            {v.estado === "vigente" ? <BloqueVigencia documentoId={documento.id} sesion={sesion} /> : null}
+            {v.estado === "vigente" ? <BloqueVigencia documentoId={documento.id} sesion={sesion} nivel={4} /> : null}
           </SeccionVersion>
         ))}
       </div>

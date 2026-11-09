@@ -3,7 +3,7 @@
  * dentro de una transacción que se revierte (el cliente de la app se sustituye por ella) y escriben solo en un
  * almacén temporal.
  */
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import ExcelJS from "exceljs";
@@ -49,7 +49,7 @@ import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import type { SesionValida } from "@/lib/sesion";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
-import { sesionAdmin, sesionDe, usuarioDePrueba } from "./utiles/tramites";
+import { sesionAdmin, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 import { firmaDePrueba, vigenteFuera } from "./utiles/vigencia";
 
@@ -238,5 +238,56 @@ describe("bloque «Vigencia» de la ficha", () => {
       // Quien no ve el documento no recibe el bloque.
       await tx`UPDATE documentos SET nivel_acceso = 'restringido', origen = 'interno' WHERE id = ${d.id}`;
       expect(await BloqueVigencia({ documentoId: d.id, sesion: await sesionDe(tx, "lider.cex") })).toBeNull();
+    }));
+});
+
+describe("ronda de corrección 1", () => {
+  it("el bloque toma el nivel de encabezado de donde se monta (en el panel, bajo el h3 de la versión)", () =>
+    enTransaccion(async (tx) => {
+      const d = await vigenteFuera(tx, { fechaAprobacion: "2025-08-14", proceso: "GTH" });
+      const lider = await sesionDe(tx, "lider.gth");
+      await ratificar(lider, { documentoId: d.id, nota: null, credenciales: { clave: "ok" } }, { sql: tx, verificar: firmaDePrueba });
+      const enPortal = renderToStaticMarkup((await BloqueVigencia({ documentoId: d.id, sesion: lider }))!);
+      expect(enPortal).toContain('<h2 id="titulo-vigencia"');
+      expect(enPortal).toContain("<h3");
+      const enPanel = renderToStaticMarkup((await BloqueVigencia({ documentoId: d.id, sesion: lider, nivel: 4 }))!);
+      expect(enPanel).toContain('<h4 id="titulo-vigencia"');
+      expect(enPanel).toContain("<h5");
+      // Fuera de los diálogos (cerrados no se leen; abiertos, son modales con su propio título).
+      expect(enPanel.replace(/<dialog[\s\S]*?<\/dialog>/g, "")).not.toMatch(/<h[23][ >]/);
+      expect(enPanel).toContain("<dialog");
+      const panel = readFileSync(path.join(import.meta.dirname, "../src/app/(app)/admin/(panel)/documentos/[codigo]/page.tsx"), "utf8");
+      expect(panel).toContain("<BloqueVigencia documentoId={documento.id} sesion={sesion} nivel={4} />");
+    }));
+
+  it("el trámite abierto se enlaza solo a quien puede abrirlo; a los demás, el número como texto", () =>
+    enTransaccion(async (tx) => {
+      const d = await vigenteFuera(tx, { fechaAprobacion: "2025-08-14", proceso: "GTH" });
+      const t = await tramiteEn(tx, "elaboracion", { codigo: d.codigo });
+      const [{ numero }] = await tx`SELECT numero FROM tramites WHERE id = ${t.tramiteId}`;
+      const enlace = `href="/tramites/${t.tramiteId}"`;
+      const delLider = renderToStaticMarkup((await BloqueVigencia({ documentoId: d.id, sesion: await sesionDe(tx, "lider.gth") }))!);
+      expect(delLider).toContain(enlace);
+      for (const usuario of ["gerente", "control.interno", "lider.cex"]) {
+        const html = renderToStaticMarkup((await BloqueVigencia({ documentoId: d.id, sesion: await sesionDe(tx, usuario) }))!);
+        expect(html, usuario).not.toContain(enlace);
+        expect(html, usuario).toContain(numero);
+      }
+    }));
+
+  it("con filtro de proceso y ninguna fila, la cabecera del Excel nombra el proceso, no su id", () =>
+    enTransaccion(async (tx) => {
+      const [m] = await tx`SELECT macroproceso_id FROM procesos WHERE sigla = 'GTH'`;
+      const sigla = `ZQ${Date.now() % 100000}`;
+      const [p] = await tx`INSERT INTO procesos (macroproceso_id, nombre, sigla, slug, icono, orden)
+        VALUES (${m.macroproceso_id}, 'Proceso vacío de prueba', ${sigla}, ${sigla.toLowerCase()}, 'circle', 999) RETURNING id`;
+      como(await sesionAdmin(tx));
+      const res = await pedir(`?proceso=${p.id}`);
+      expect(res.status).toBe(200);
+      const filas = await filasDelExcel(res);
+      const detalle = filas[3][0];
+      expect(detalle).toContain("Proceso: Proceso vacío de prueba");
+      expect(detalle).not.toContain(`Proceso: ${p.id}`);
+      expect(detalle).toContain("Total: 0");
     }));
 });

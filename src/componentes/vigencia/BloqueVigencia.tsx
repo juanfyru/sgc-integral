@@ -15,6 +15,11 @@ import { rutaSolicitarCambio } from "./TablaSemaforo";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 
+type NivelTitulo = 2 | 3 | 4;
+
+/** El título del bloque y el de sus secciones, un nivel más abajo. */
+const ENCABEZADOS = { 2: ["h2", "h3"], 3: ["h3", "h4"], 4: ["h4", "h5"] } as const satisfies Record<NivelTitulo, readonly [string, string]>;
+
 /** «Ratificado el 8 nov 2026 por …» o «14 ago 2025 · fecha de aprobación registrada». */
 function textoUltima(u: NonNullable<VigenciaDeDocumento["ultimaRevision"]>, zona: string): string {
   const fecha = textoFecha(u.fecha, zona);
@@ -90,21 +95,25 @@ function Ajustar({ v, ahora, zona }: { v: VigenciaDeDocumento; ahora: Date; zona
 export async function BloqueVigencia({
   documentoId,
   sesion,
+  nivel = 2,
 }: {
   documentoId: number;
   sesion: SesionFlujo & { totpActivo?: boolean };
+  /** El nivel del título del bloque: 2 en la ficha del portal; en el panel va dentro de la versión (`h3`), 4. */
+  nivel?: NivelTitulo;
 }) {
   const v = await vigenciaDeDocumento(documentoId, sesion);
   if (!v || v.origen === "externo") return null;
   const ahora = new Date();
   const zona = zonaHoraria();
+  const [Titulo, Subtitulo] = ENCABEZADOS[nivel];
   const plazo = `${cuenta(v.mesesRevision, "mes", "meses")} ${v.plazoPropio ? "(propio del documento)" : `(el del tipo ${v.tipo})`}`;
 
   return (
     <section aria-labelledby="titulo-vigencia" className="rounded-xl border border-border bg-card p-4 shadow-xs">
-      <h2 id="titulo-vigencia" className="mb-3 text-sm font-semibold text-foreground">
+      <Titulo id="titulo-vigencia" className="mb-3 text-sm font-semibold text-foreground">
         Vigencia
-      </h2>
+      </Titulo>
       <dl className="grid grid-cols-1 gap-x-4 gap-y-2.5 text-sm">
         <Dato etiqueta="Estado">
           <ChipVigencia fila={v} />
@@ -114,9 +123,13 @@ export async function BloqueVigencia({
         ) : null}
         {v.tramite ? (
           <Dato etiqueta="Trámite abierto">
-            <Link href={`/tramites/${v.tramite.id}`} className={`rounded underline underline-offset-2 ${FOCO}`}>
-              {v.tramite.numero}
-            </Link>
+            {v.acciones.verTramite ? (
+              <Link href={`/tramites/${v.tramite.id}`} className={`rounded underline underline-offset-2 ${FOCO}`}>
+                {v.tramite.numero}
+              </Link>
+            ) : (
+              v.tramite.numero
+            )}
             {" · el trámite ya es su revisión"}
           </Dato>
         ) : null}
@@ -138,7 +151,7 @@ export async function BloqueVigencia({
 
       {v.ratificaciones.length > 0 ? (
         <div className="mt-4 border-t border-border pt-3">
-          <h3 className="mb-1 text-xs font-semibold text-muted-foreground">{`Ratificaciones de la versión ${v.version.numero}`}</h3>
+          <Subtitulo className="mb-1 text-xs font-semibold text-muted-foreground">{`Ratificaciones de la versión ${v.version.numero}`}</Subtitulo>
           <ul className="flex list-none flex-col gap-1.5 text-sm">
             {v.ratificaciones.map((r) => (
               <li key={r.id}>

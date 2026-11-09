@@ -17,8 +17,11 @@ import {
   quitarFechaFijada,
   vigenciaDeDocumento,
 } from "@/db/consultas/vigencia/semaforo";
+import { obtenerTramite } from "@/db/consultas/tramites";
 import { ErrorPermiso } from "@/lib/permisos";
+import { diaDeEtapa, entradaDeEtapa } from "@/lib/tramites/dia-de-etapa";
 import { fechaEnZona } from "@/lib/tramites/plazos";
+import { textoVigenciaDeFila } from "@/lib/vigencia/semaforo";
 import { sesionAdmin, sesionDe, tramiteEn } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 import { sinRevisionAbierta, vigenteFuera } from "./utiles/vigencia";
@@ -86,9 +89,9 @@ describe("semáforo de vigencia", () => {
       // La ficha muestra la vigencia a quien ve el documento, también a un líder ajeno, sin acciones.
       const ajeno = await vigenciaDeDocumento(cex.id, await sesionDe(tx, "lider.gth"), { sql: tx, ahora });
       expect(ajeno).not.toBeNull();
-      expect(ajeno!.acciones).toEqual({ ratificar: false, solicitar: false, ajustar: false });
+      expect(ajeno!.acciones).toEqual({ ratificar: false, solicitar: false, ajustar: false, verTramite: false });
       const propio = await vigenciaDeDocumento(gth.id, await sesionDe(tx, "lider.gth"), { sql: tx, ahora });
-      expect(propio!.acciones).toEqual({ ratificar: true, solicitar: true, ajustar: false });
+      expect(propio!.acciones).toEqual({ ratificar: true, solicitar: true, ajustar: false, verTramite: false });
       expect(propio!.ratificaciones).toEqual([]);
 
       // Un restringido no existe para quien no lo ve.
@@ -154,12 +157,26 @@ describe("semáforo de vigencia", () => {
       const t = await tramiteEn(tx, "elaboracion", { codigo: d.codigo });
       const fila = (await listarSemaforo(lider, { estado: "en_tramite" }, { sql: tx, ahora })).find((f) => f.documentoId === d.id)!;
       expect(fila.vigencia).toEqual({ estado: "en_tramite", dias: null });
-      // La aceptación fue el 5 de noviembre: el 8 es el cuarto día de la elaboración.
-      expect(fila.tramite).toMatchObject({ id: t.tramiteId, etapa: "elaboracion", dia: 4 });
+      // La aceptación fue el 5 de noviembre y la elaboración vence el 20: el 8 es el día 3, el mismo que dice
+      // el encabezado del trámite con su regla.
+      expect(fila.tramite).toMatchObject({ id: t.tramiteId, etapa: "elaboracion", dia: 3 });
+      const detalle = (await obtenerTramite(t.tramiteId, lider, { sql: tx }))!;
+      const delEncabezado = diaDeEtapa({ etapa: detalle.etapa, venceEn: detalle.venceEn, entrada: entradaDeEtapa(detalle.eventos, detalle.creadoEn) }, ahora, ZONA);
+      expect(delEncabezado).toEqual({ dia: 3, total: 15 });
+      expect(textoVigenciaDeFila(fila)).toBe("En trámite · elaboración, día 3");
       // Por debajo sigue vencido: la próxima revisión no cambia.
       expect(fechaEnZona(fila.proximaRevision!, ZONA)).toBe("2026-08-14");
       const v = await vigenciaDeDocumento(d.id, lider, { sql: tx, ahora });
-      expect(v!.acciones).toEqual({ ratificar: false, solicitar: false, ajustar: false });
+      expect(v!.acciones).toEqual({ ratificar: false, solicitar: false, ajustar: false, verTramite: true });
+
+      // Una etapa sin fecha límite no tiene día: el chip dice solo la etapa.
+      await tx`UPDATE tramites SET vence_en = NULL WHERE id = ${t.tramiteId}`;
+      const sinPlazo = (await listarSemaforo(lider, { estado: "en_tramite" }, { sql: tx, ahora })).find((f) => f.documentoId === d.id)!;
+      expect(sinPlazo.tramite).toMatchObject({ id: t.tramiteId, dia: null });
+      expect(textoVigenciaDeFila(sinPlazo)).toBe("En trámite · elaboración");
+      // Gerencia ve la vigencia de la ficha, pero no abre el trámite de otro.
+      const deGerencia = await vigenciaDeDocumento(d.id, await sesionDe(tx, "gerente"), { sql: tx, ahora });
+      expect(deGerencia!.acciones.verTramite).toBe(false);
     }));
 
   it("ajustar el plazo cambia la próxima revisión y queda auditado con antes y después", () =>

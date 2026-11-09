@@ -56,15 +56,18 @@ export function textoUltimaRevision(u: { clase: ClaseRevision; quien: string | n
   }
 }
 
-/** El texto del chip de una fila: con la etapa y el día si está en trámite, o la marca del cambio normativo. */
+/**
+ * El texto del chip de una fila: con la etapa y el día si está en trámite (sin día si la etapa no tiene fecha
+ * límite), o la marca del cambio normativo.
+ */
 export function textoVigenciaDeFila(f: {
   vigencia: { estado: EstadoVigencia; dias: number | null };
-  tramite: { etapa: Etapa; dia: number } | null;
+  tramite: { etapa: Etapa; dia: number | null } | null;
   impacto: { norma: string } | null;
 }): string {
   return textoVigencia(f.vigencia, {
     etapa: f.tramite ? ETIQUETA_ETAPA[f.tramite.etapa].toLowerCase() : undefined,
-    dia: f.tramite?.dia,
+    dia: f.tramite?.dia ?? undefined,
     cambioNormativo: f.impacto?.norma,
   });
 }

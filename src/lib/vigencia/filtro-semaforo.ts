@@ -18,10 +18,13 @@ export function filtroDeConsulta(q: { estado?: Valor; proceso?: Valor; origen?: 
   };
 }
 
-/** «Estado: Vencida · Proceso: Gestión del Talento Humano · Origen: internos», para el encabezado del Excel. */
+/**
+ * «Estado: Vencida · Proceso: Gestión del Talento Humano · Origen: internos», para el encabezado del Excel. Un
+ * proceso que no está entre los de la persona no se nombra (ni se imprime su id).
+ */
 export function textoDelFiltro(f: FiltroLeido, nombreProceso?: string): string {
   const partes = [`Estado: ${f.estado === "todos" ? "todos" : ETIQUETA_VIGENCIA[f.estado]}`];
-  if (f.procesoId !== undefined) partes.push(`Proceso: ${nombreProceso ?? f.procesoId}`);
+  if (f.procesoId !== undefined) partes.push(`Proceso: ${nombreProceso ?? "no disponible"}`);
   partes.push(`Origen: ${f.origen === "todos" ? "internos y externos" : f.origen === "interno" ? "internos" : "externos"}`);
   return partes.join(" · ");
 }

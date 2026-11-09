@@ -186,12 +186,7 @@ export default async function PaginaSemaforo({
           texto="Ningún documento vigente de su alcance tiene este estado de vigencia con los filtros elegidos."
         />
       ) : (
-        <TablaSemaforo
-          filas={filas}
-          ahora={ahora}
-          pideCodigo={sesion.totpActivo}
-          verTramites={sesion.rol === "admin_sgc" || sesion.rol === "lider_proceso"}
-        />
+        <TablaSemaforo filas={filas} ahora={ahora} pideCodigo={sesion.totpActivo} />
       )}
     </div>
   );

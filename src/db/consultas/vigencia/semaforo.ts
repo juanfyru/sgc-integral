@@ -21,6 +21,7 @@ import {
 import { dentroDelPlazo } from "@/lib/indicadores-documentales/definiciones";
 import { puede, requerirPermiso } from "@/lib/permisos";
 import { estadoPlazo } from "@/lib/tramites/plazos";
+import { EVENTOS_SIN_CAMBIO_DE_ETAPA, diaDeEtapa } from "@/lib/tramites/dia-de-etapa";
 import { ETAPAS_ABIERTAS, type Autoridad, type Etapa } from "@/lib/tramites/tipos";
 import { fechaBase, limitesDeFechaFijada, proximaRevision, textoFecha, type OrigenVigencia } from "@/lib/vigencia/plazo";
 import { estadoVigencia, type ClaseRevision } from "@/lib/vigencia/semaforo";
@@ -48,7 +49,8 @@ export type FilaSemaforo = {
   proximaRevision: Date | null;
   fijada: { por: string; en: Date; nota: string } | null;
   vigencia: { estado: EstadoVigencia; dias: number | null };
-  tramite: { id: number; numero: string; etapa: Etapa; dia: number } | null;
+  /** `dia`: el de la etapa en curso, como en el encabezado del trámite; nulo si la etapa no tiene fecha límite. */
+  tramite: { id: number; numero: string; etapa: Etapa; dia: number | null } | null;
   impacto: { cambioId: number; norma: string } | null;
 };
 
@@ -58,7 +60,8 @@ export type FiltroSemaforo = {
   origen?: "interno" | "externo" | "todos";
 };
 
-export type AccionesVigencia = { ratificar: boolean; solicitar: boolean; ajustar: boolean };
+/** `verTramite`: el trámite abierto se enlaza solo a quien puede abrirlo; a los demás se les dice su número. */
+export type AccionesVigencia = { ratificar: boolean; solicitar: boolean; ajustar: boolean; verTramite: boolean };
 
 export type VigenciaDeDocumento = FilaSemaforo & { acciones: AccionesVigencia; ratificaciones: Ratificacion[] };
 
@@ -66,9 +69,6 @@ export type ConteosSemaforo = Record<EstadoVigencia, number> & { total: number; 
 
 const SIN_FECHA_FIJADA = "El documento no tiene una fecha fijada a mano";
 const PLAZO_FUERA = "El plazo debe estar entre 1 y 120 meses";
-
-/** Los eventos que no cambian la etapa: el día de la etapa cuenta desde el último que sí (como `diaDeEtapa`). */
-const EVENTOS_SIN_CAMBIO_DE_ETAPA = ["reasignar", "corregir_datos"];
 
 /** Una sola sentencia, con un `LATERAL` por fuente; `condicion` filtra sobre `documentos d` y `procesos p`. */
 function consultaSemaforo(sql: Cliente, condicion: PendingQuery<Row[]>) {
@@ -82,7 +82,8 @@ function consultaSemaforo(sql: Cliente, condicion: PendingQuery<Row[]>) {
       rat.creado_en AS ratificado_en, rat.nombre AS ratifico,
       ver.creado_en AS verificado_en, ver.nombre AS verifico,
       ado.nombre AS adopto,
-      tra.id AS tramite_id, tra.numero AS tramite_numero, tra.etapa AS tramite_etapa, tra.entrada AS tramite_entrada,
+      tra.id AS tramite_id, tra.numero AS tramite_numero, tra.etapa AS tramite_etapa, tra.vence_en AS tramite_vence_en,
+      tra.entrada AS tramite_entrada,
       imp.cambio_id, imp.norma
     FROM documentos d
     JOIN documento_versiones v ON v.documento_id = d.id AND v.estado = 'vigente'
@@ -111,9 +112,10 @@ function consultaSemaforo(sql: Cliente, condicion: PendingQuery<Row[]>) {
       ORDER BY f.id DESC LIMIT 1
     ) ado ON true
     LEFT JOIN LATERAL (
-      SELECT tr.id, tr.numero, tr.etapa,
-        COALESCE((SELECT max(e.creado_en) FROM tramite_eventos e
-          WHERE e.tramite_id = tr.id AND e.tipo <> ALL(${EVENTOS_SIN_CAMBIO_DE_ETAPA})), tr.creado_en) AS entrada
+      SELECT tr.id, tr.numero, tr.etapa, tr.vence_en,
+        COALESCE((SELECT e.creado_en FROM tramite_eventos e
+          WHERE e.tramite_id = tr.id AND e.tipo <> ALL(${[...EVENTOS_SIN_CAMBIO_DE_ETAPA]})
+          ORDER BY e.id DESC LIMIT 1), tr.creado_en) AS entrada
       FROM tramites tr
       WHERE tr.documento_id = d.id AND tr.etapa = ANY(${ETAPAS_ABIERTAS})
       LIMIT 1
@@ -131,12 +133,6 @@ function consultaSemaforo(sql: Cliente, condicion: PendingQuery<Row[]>) {
 }
 
 const instante = (v: unknown): Date | null => (v === null || v === undefined ? null : new Date(v as string));
-
-/** El día de la etapa en curso: el de la entrada es el día 1. */
-function diaDeEtapa(entrada: Date, ahora: Date, zona: string): number {
-  const p = estadoPlazo(entrada, ahora, zona);
-  return (p.estado === "vencido" ? p.dias : 0) + 1;
-}
 
 function aFila(f: Row, ahora: Date, atencionDias: number, zona: string): FilaSemaforo {
   const origen = f.origen as "interno" | "externo";
@@ -176,7 +172,13 @@ function aFila(f: Row, ahora: Date, atencionDias: number, zona: string): FilaSem
         id: Number(f.tramite_id),
         numero: f.tramite_numero as string,
         etapa: f.tramite_etapa as Etapa,
-        dia: diaDeEtapa(new Date(f.tramite_entrada as string), ahora, zona),
+        // La misma regla del encabezado del trámite; sin fecha límite no hay día.
+        dia:
+          diaDeEtapa(
+            { etapa: f.tramite_etapa as Etapa, venceEn: instante(f.tramite_vence_en), entrada: new Date(f.tramite_entrada as string) },
+            ahora,
+            zona,
+          )?.dia ?? null,
       };
   const impacto = f.cambio_id === null ? null : { cambioId: Number(f.cambio_id), norma: f.norma as string };
 
@@ -245,6 +247,9 @@ export function accionesDeFila(sesion: SujetoVisibilidad, fila: FilaSemaforo, al
       puedeRatificar(sesion, { procesoId: fila.proceso.id, autoridad: fila.autoridad, origen: fila.origen, enTramite, vigente: true }, alcance),
     solicitar: interno && !enTramite && puede(sesion, "tramites.solicitar") && enAlcance(alcance, fila.proceso.id),
     ajustar: interno && puede(sesion, "revision_anual.gestionar"),
+    // Lo abren el Admin SGC y el líder del proceso (`puedeVerTramite`); a un participante de otro rol no se le
+    // conoce aquí, y se le dice el número.
+    verTramite: enTramite && (sesion.rol === "admin_sgc" || (sesion.rol === "lider_proceso" && enAlcance(alcance, fila.proceso.id))),
   };
 }
 

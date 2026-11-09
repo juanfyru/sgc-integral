@@ -17,7 +17,7 @@ export function ChipVigencia({
 }: {
   fila: {
     vigencia: { estado: EstadoVigencia; dias: number | null };
-    tramite: { etapa: Etapa; dia: number } | null;
+    tramite: { etapa: Etapa; dia: number | null } | null;
     impacto: { norma: string } | null;
   };
 }) {
