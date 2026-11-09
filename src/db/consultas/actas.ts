@@ -194,7 +194,7 @@ async function actaRegistrada(sql: Cliente, versionId: number, clase: ClaseActa)
   return a ? { archivoId: Number(a.id), ruta: a.ruta } : null;
 }
 
-async function existeEnDisco(absoluta: string): Promise<boolean> {
+export async function existeEnDisco(absoluta: string): Promise<boolean> {
   try {
     await stat(absoluta);
     return true;
@@ -203,8 +203,8 @@ async function existeEnDisco(absoluta: string): Promise<boolean> {
   }
 }
 
-/** Escribe en un archivo temporal y lo renombra: quien está sirviendo el acta nunca ve un archivo truncado. */
-async function escribirAtomico(absoluta: string, bytes: Uint8Array): Promise<void> {
+/** Escribe en un archivo temporal y lo renombra: quien está sirviendo el acta (o el informe) nunca ve un archivo truncado. */
+export async function escribirAtomico(absoluta: string, bytes: Uint8Array): Promise<void> {
   await mkdir(path.dirname(absoluta), { recursive: true });
   const temporal = `${absoluta}.${randomUUID()}.tmp`;
   try {

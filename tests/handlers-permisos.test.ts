@@ -26,6 +26,8 @@ import { DELETE as eliminarArchivo, GET as verArchivo } from "@/app/admin/api/ar
 import { POST as subirArchivo } from "@/app/admin/api/archivos/route";
 import { DELETE as quitarLogoRuta, POST as subirLogoRuta } from "@/app/admin/api/entidad/logo/route";
 import { GET as actaEjemplo } from "@/app/admin/api/acta-ejemplo/route";
+import { GET as informeEjemplo } from "@/app/admin/api/informe-ejemplo/route";
+import { GET as informeAnual } from "@/app/(app)/vigencia/revision-anual/[id]/informe/route";
 import { GET as servirLogo } from "@/app/marca/logo/route";
 import { rutaBaseAlmacen } from "@/lib/almacen";
 import { pngDePrueba } from "./png-prueba";
@@ -133,6 +135,47 @@ describe("GET /admin/api/acta-ejemplo", () => {
     expect(contieneTexto(paginas.join("\n"), "Criterios que no cumplen, con concepto favorable")).toBe(true);
     const [despues] = await conteo();
     expect({ ...despues }).toEqual({ ...antes });
+  });
+});
+
+describe("GET /admin/api/informe-ejemplo", () => {
+  const pedir = (token?: string) =>
+    informeEjemplo(new NextRequest("http://localhost:3002/admin/api/informe-ejemplo", token ? { headers: cookie(token) } : undefined));
+
+  it("401 sin sesión y 403 sin el permiso de gestionar trámites", async () => {
+    expect((await pedir()).status).toBe(401);
+    for (const token of [tokenConsulta, tokenCi, tokenGerencia]) expect((await pedir(token)).status).toBe(403);
+  });
+
+  it("con el permiso entrega un PDF en línea, de varias hojas marcadas, y no escribe nada", async () => {
+    const conteo = () => sql()`SELECT (SELECT count(*)::int FROM archivos) AS archivos, (SELECT count(*)::int FROM auditoria) AS auditoria`;
+    const [antes] = await conteo();
+    const res = await pedir(tokenAdmin);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("application/pdf");
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(res.headers.get("Content-Disposition")).toMatch(/^inline/);
+    expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    const paginas = await contenidoPorPagina(new Uint8Array(await res.arrayBuffer()));
+    expect(paginas.length).toBeGreaterThanOrEqual(2);
+    for (const pagina of paginas) expect(contieneTexto(pagina, "EJEMPLO, SIN VALOR")).toBe(true);
+    expect(contieneTexto(paginas[0], "INFORME DE REVISI")).toBe(true);
+    const [despues] = await conteo();
+    expect({ ...despues }).toEqual({ ...antes });
+  });
+});
+
+describe("GET /vigencia/revision-anual/[id]/informe", () => {
+  const pedir = (id: string, token?: string) =>
+    informeAnual(new NextRequest(`http://localhost:3002/vigencia/revision-anual/${id}/informe`, token ? { headers: cookie(token) } : undefined), {
+      params: Promise.resolve({ id }),
+    });
+
+  it("401 sin sesión; a quien no ve el informe, y a una revisión que no existe, 404 y nunca «sin permiso»", async () => {
+    expect((await pedir("1")).status).toBe(401);
+    const [{ id }] = await sql()`SELECT COALESCE(max(id), 0) + 1000 AS id FROM revisiones_anuales`;
+    for (const token of [tokenConsulta, tokenGerencia, tokenCi, tokenAdmin]) expect((await pedir(String(id), token)).status).toBe(404);
+    expect((await pedir("abc", tokenAdmin)).status).toBe(404);
   });
 });
 
