@@ -76,7 +76,7 @@ function consultaSemaforo(sql: Cliente, condicion: PendingQuery<Row[]>, marcas =
       imp.cambio_id, imp.proceso_id AS impacto_proceso_id, imp.norma,
       ${anioDeRevisionAbierta(sql)} AS revision_anual_anio
       ${marcas
-        ? sql`, ex.responsable_id AS responsable_tecnico_id, ${enRevisionAnualAbierta(sql)} AS en_revision_anual,
+        ? sql`, ex.responsable_id AS responsable_tecnico_id,
           (p.activo AND EXISTS (SELECT 1 FROM usuario_procesos lider_up
             JOIN usuarios lider_u ON lider_u.id = lider_up.usuario_id AND lider_u.activo AND lider_u.rol = 'lider_proceso'
             WHERE lider_up.proceso_id = p.id)) AS proceso_con_lider`
@@ -237,7 +237,8 @@ export async function filasDePersona(
   return filas.map((f) => ({
     ...aFila(f, ahora, config.vigencia.atencionDias, zona),
     responsableTecnicoId: f.responsable_tecnico_id === null ? null : Number(f.responsable_tecnico_id),
-    enRevisionAnual: f.en_revision_anual as boolean,
+    // La misma búsqueda que da el año de la leyenda: no se repite por fila.
+    enRevisionAnual: f.revision_anual_anio !== null,
     procesoConLider: f.proceso_con_lider as boolean,
   }));
 }

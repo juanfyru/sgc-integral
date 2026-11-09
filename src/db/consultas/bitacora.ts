@@ -59,9 +59,11 @@ export async function obtenerBitacora(
       LIMIT 1
     ) cd ON true`;
 
+  // Como texto y sin cast: un `normaId` que no fuera un número no puede tumbar la consulta (Postgres no garantiza el
+  // orden del `AND`), y esa fila se muestra.
   const cond = sql`
-    AND NOT (a.accion IN ('norma_relacion', 'norma_relacion_eliminada') AND a.detalle ? 'relacionId' AND a.detalle ? 'normaId'
-      AND a.entidad_id IS DISTINCT FROM (a.detalle->>'normaId')::bigint)
+    AND NOT COALESCE(a.accion IN ('norma_relacion', 'norma_relacion_eliminada') AND a.detalle ? 'relacionId'
+      AND a.detalle->>'normaId' ~ '^[0-9]+$' AND a.entidad_id::text IS DISTINCT FROM a.detalle->>'normaId', false)
     ${filtros.accion ? sql`AND a.accion = ${filtros.accion}` : sql``}
     ${filtros.entidad ? sql`AND a.entidad = ${filtros.entidad}` : sql``}
     ${desde ? sql`AND a.creado_en >= ${desde}` : sql``}

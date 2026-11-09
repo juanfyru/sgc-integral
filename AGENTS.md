@@ -108,10 +108,15 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
    los usuarios con historia se desactivan, nunca se borran, y una verificación cerrada no se
    modifica. Una revisión anual cerrada tampoco, ni sus procesos ni sus decisiones: el trigger
    `sgc_impedir_si_revision_cerrada` rechaza `UPDATE` y `DELETE` sobre ellas y la inserción de
-   filas hijas. Toda acción que `src/` escribe en la bitácora tiene su frase legible y su
-   nombre de filtro en `src/lib/bitacora-detalle.ts` (`describirEvento`, `nombreDeAccion`),
-   armada solo con el `detalle` de la fila: lo exige `tests/bitacora-detalle.test.ts`, que recorre
-   las llamadas a `registrarAuditoria` (las acciones armadas con una variable se listan a mano).
+   filas hijas. Cada acción de la bitácora tiene su frase legible y su nombre de filtro en
+   `src/lib/bitacora-detalle.ts` (`describirEvento`, `nombreDeAccion`), armada solo con el
+   `detalle` de la fila. `tests/bitacora-detalle.test.ts` lo exige para las acciones con nombre
+   literal en las llamadas a `registrarAuditoria` de `src/` (lee el texto: también los dos lados de
+   un ternario) y para las armadas con una variable o una plantilla que lista a mano
+   (`ACCIONES_ARMADAS`). Las plantillas `tramite_*` y las de los catálogos del mapa
+   (`reordenar_`, `activar_`, `desactivar_` y `borrar_` más el catálogo, `mapa-admin.ts`) tienen
+   frase por su camino genérico y el test no las vigila. Una acción nueva que se arme con una
+   variable entra a `ACCIONES_ARMADAS`.
    **Única excepción documentada (F12-D35):** las preferencias de interfaz de cada
    persona (el tema) y las marcas de notificación leída no se auditan: no son evidencia de 7.5
    y llenarían la bitácora de ruido. El acuse de lectura, que F12-D35 dejó pendiente, sí se
@@ -284,13 +289,18 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   responsable lo marca corregido (`corregirHallazgo`, que avisa a los demás Admin SGC con
   `hallazgo.por_validar`) y lo cierra la validación del Admin SGC (`validarHallazgo`, o
   `reabrirHallazgo` con nota y fecha nueva) o la siguiente verificación del punto
-  (`validarPorVerificacion`, dentro de `cerrarVerificacion`). Quien corrige no valida su
-  corrección, ni la cierra directamente (`cerrarHallazgo`) mientras haya otro Administrador del
-  SGC activo (`exigirSinOtroAdmin`, `src/db/consultas/distribucion/otro-admin.ts`, la misma regla
-  de «propio punto»); si es el único, la cierra y la bitácora lo marca (`propioCorrector`).
+  (`validarPorVerificacion`, dentro de `cerrarVerificacion`). Quien corrige no valida a mano su
+  corrección (`validarHallazgo` lo rechaza siempre), ni la cierra directamente (`cerrarHallazgo`)
+  mientras haya otro Administrador del SGC activo (`exigirSinOtroAdmin`,
+  `src/db/consultas/distribucion/otro-admin.ts`); si es el único, la cierra y la bitácora lo marca
+  (`propioCorrector`). La verificación siguiente del punto valida por el sistema, sin mirar quién
+  corrigió; a ella solo la limita la regla de «propio punto» (`exigirSinOtroAdmin` al abrir y al
+  cerrar la verificación del punto del que uno es responsable).
 - **`archivos` admite dueños distintos de una versión** (`contexto`: `version`, `jornada`,
-  `verificacion_item`, `norma`, `revision_anual` y `hallazgo`, con `contexto_id`;
-  `CONTEXTOS_EVIDENCIA` de `src/lib/subida.ts`): el control de acceso de un archivo es el de su
+  `verificacion_item`, `norma`, `revision_anual` y `hallazgo`, con `contexto_id`; los seis del
+  `CHECK` `archivos_contexto_valido` de `src/db/esquema.ts`, y `CONTEXTOS_EVIDENCIA` de
+  `src/lib/subida.ts` son los cinco que reciben evidencias, todos menos `version`): el control
+  de acceso de un archivo es el de su
   dueño, y las consultas heredadas siguen filtrando por `version_id`. El PDF de una norma se
   lee como la norma; la foto de la corrección de un hallazgo, como el hallazgo (`filtroPuntos`);
   el informe de una revisión anual (rol `evidencia`, `version_id` nula, uno por año en
@@ -300,8 +310,9 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   `deshacerCarga`**, y los tres llaman `alDejarDeSerVigente`: marca sus copias controladas
   como «por recoger», supera sus acuses pendientes y su socialización requerida. Ninguna otra
   ruta cambia ese estado. La adopción de una edición de un externo publica por
-  `aplicarPublicacion` y su retiro anula por `anularVigenteEn` (motivo `retirado`): no hay un
-  cuarto llamador.
+  `aplicarPublicacion` y su retiro anula por `anularVigenteEn` (motivo `retirado`): en la app no
+  hay un cuarto llamador. La única excepción es la semilla demo: `src/db/semillas/distribucion-demo.ts`
+  llama `alDejarDeSerVigente` directamente porque la semilla de trámites publica por SQL.
 - **La fecha base de la próxima revisión depende del origen** (`fechaBase`,
   `src/lib/vigencia/plazo.ts`; F13C-DC31): un interno publicado en la plataforma cuenta desde su
   publicación; uno aprobado fuera, desde su `fecha_aprobacion`, nunca desde `publicado_en` (la
@@ -311,9 +322,14 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   marcas del aviso (`aplicarPublicacion`). El plazo y la periodicidad se suman en meses
   calendario (`sumarMeses`) y el estado se calcula, nunca se guarda (`columnasDeVigencia`).
 - **La revisión anual** (`src/db/consultas/vigencia/revision-anual/`): los actos que deciden
-  fuera de su página (ratificar, verificar, adoptar o retirar un externo, pedir una solicitud,
-  publicar, deshacer una carga) registran la decisión dentro de su propia transacción, a nombre
-  de quien actuó (`registrarDecision` y `sacarDeLaFoto`, `registro.ts`). El orden de candados es
+  fuera de su página (ratificar, verificar, adoptar o retirar un externo, pedir una solicitud)
+  registran la decisión dentro de su propia transacción, a nombre de quien actuó
+  (`registrarDecision`, `registro.ts`), y deshacer una carga saca al documento de la foto, también
+  a nombre de quien actuó (`sacarDeLaFoto`, desde `deshacerCargaEn`). Publicar no decide: un
+  documento que no estaba en la foto (una creación publicada, una carga nueva, un externo
+  adoptado por primera vez) entra como «revisado recientemente», a nombre del sistema
+  (`alPublicarDuranteRevision`, desde `aplicarPublicacion`), y el que ya estaba conserva su
+  decisión. El orden de candados es
   la revisión primero (el acto la lee `FOR SHARE`; el cierre y la prórroga la toman
   `FOR UPDATE`) y las filas hijas después. El informe se congela al cierre
   (`revisiones_anuales.informe`) y su PDF se genera al primer pedido, como el acta:

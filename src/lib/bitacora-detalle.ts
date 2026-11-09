@@ -317,6 +317,8 @@ function camposDistintos(antes: unknown, despues: unknown, nombres: Record<strin
 
 const RESULTADO_DE_EXPORTACION: Record<string, string> = { al_dia: "al día", atencion: "en atención", vencida: "vencidos", en_tramite: "en trámite" };
 const ORIGEN_DE_EXPORTACION: Record<string, string> = { interno: "internos", externo: "externos" };
+/** El estado del filtro del normograma; «todas» no se dice. */
+const ESTADO_DE_NORMAS: Record<string, string> = { vigente: "vigentes", modificada: "modificadas", derogada: "derogadas", retirada: "retiradas" };
 
 /** «institucional» o «del proceso Gestión del Talento Humano», del `alcance` que guarda el Excel del normograma. */
 function alcanceDeNormograma(v: unknown): string | null {
@@ -476,6 +478,7 @@ export function describirEvento(e: EventoAuditoria): string {
       return `Emitió el listado de socializaciones${entreParentesis([
         texto(d.formato),
         texto(d.desde) && texto(d.hasta) ? `${texto(d.desde)} a ${texto(d.hasta)}` : null,
+        deUnProceso(d.procesoId),
         filas(d.total),
       ])}`;
     case "crear_punto_uso":
@@ -688,7 +691,18 @@ export function describirEvento(e: EventoAuditoria): string {
       return `Resolvió el impacto de ${texto(d.norma) ?? "una norma"} en ${donde}${como ? `: ${como}` : ""}`;
     }
     case "exporto_normograma":
-      return `Emitió el normograma${entreParentesis([texto(d.formato), alcanceDeNormograma(d.alcance), filas(d.total)])}`;
+      // Los mismos filtros que nombra el de los externos; el tipo se guarda por su id y no se nombra.
+      return `Emitió el normograma${entreParentesis([
+        texto(d.formato),
+        alcanceDeNormograma(d.alcance),
+        etiquetaDe(ESTADO_DE_NORMAS, d.estado),
+        numero(d.tipoNormaId) === null ? null : "de un tipo de norma",
+        numero(d.anio) === null ? null : `del año ${numero(d.anio)}`,
+        texto(d.emisor) ? `emitidas por ${texto(d.emisor)}` : null,
+        texto(d.texto) ? `con el texto «${texto(d.texto)}»` : null,
+        d.incluirRetiradas === true ? "con las retiradas" : null,
+        filas(d.total),
+      ])}`;
   }
 
   if (e.accion.startsWith("tramite_")) return describirTramite(e.accion, texto(d.numero) ?? "?", cod, d.observacion);

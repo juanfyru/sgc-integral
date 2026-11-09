@@ -66,4 +66,14 @@ describe("obtenerBitacora", () => {
       const [{ total }] = await tx`SELECT count(*)::int AS total FROM auditoria WHERE detalle->>'norma' = ${`Resolución ${marca}`}`;
       expect(total).toBe(6);
     }));
+
+  it("una fila de relación con un `normaId` que no es un número no tumba la bitácora y se muestra (R-M5)", () =>
+    revertida(sql(), async (tx) => {
+      const marca = `ZZ_REL_MAL_${Date.now()}`;
+      await tx`INSERT INTO auditoria (usuario_id, accion, entidad, entidad_id, detalle)
+        VALUES (NULL, 'norma_relacion', 'norma', 71, ${tx.json({ relacionId: 900003, normaId: "setenta y uno", norma: marca })})`;
+      const r = await obtenerBitacora({ texto: marca }, { sql: tx });
+      expect(r.total).toBe(1);
+      expect(r.filas.map((f) => f.detalle.relacionId)).toEqual([900003]);
+    }));
 });

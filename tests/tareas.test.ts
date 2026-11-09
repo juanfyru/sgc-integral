@@ -196,21 +196,42 @@ describe("agruparTareas", () => {
   const varias = (prefijo: string, cuantas: number) => Array.from({ length: cuantas }, (_, i) => de(prefijo, i + 1));
   const AHORA = new Date("2026-11-08T15:00:00Z");
 
-  it("seis «vigencia:» se agrupan en una, «6 documentos por revisar», con enlace al semáforo de los vencidos", () => {
-    const tareas = [tramite(1), ...varias("vigencia", 6), tramite(2)];
+  const VENCIDA = new Date("2026-08-14T17:00:00Z");
+  const EN_ATENCION = new Date("2026-12-01T17:00:00Z");
+
+  it("seis «vigencia:» vencidas se agrupan en una, «6 documentos por revisar», con enlace al semáforo de los vencidos", () => {
+    const tareas = [tramite(1), ...[1, 2, 3, 4, 5, 6].map((n) => de("vigencia", n, VENCIDA)), tramite(2)];
     const r = agruparTareas(tareas, 5, AHORA);
     expect(r.map((t) => t.id)).toEqual(["tramite:1", "vigencia", "tramite:2"]);
     expect(r[1]).toEqual({
       id: "vigencia",
       modulo: "documentos",
       titulo: "6 documentos por revisar",
-      detalle: null,
-      vence: null,
+      detalle: "El más atrasado venció el 14 de agosto de 2026",
+      vence: VENCIDA,
       enlace: "/vigencia/semaforo?estado=vencida",
     });
   });
 
-  it("los externos por verificar, las ediciones por adoptar y los impactos se agrupan cada uno por su lado (spec 13C §13.1)", () => {
+  it("con documentos en atención, el grupo los desglosa y lleva al semáforo sin filtro de estado (Ruling 62)", () => {
+    const grupo = (vencidas: number, enAtencion: number, sinFecha = 0) =>
+      agruparTareas(
+        [
+          ...Array.from({ length: vencidas }, (_, i) => de("vigencia", i + 1, VENCIDA)),
+          ...Array.from({ length: enAtencion }, (_, i) => de("vigencia", 100 + i, EN_ATENCION)),
+          // Sin fecha de revisión, el semáforo lo deja en atención.
+          ...Array.from({ length: sinFecha }, (_, i) => de("vigencia", 200 + i, null)),
+        ],
+        5,
+        AHORA,
+      )[0];
+    expect(grupo(7, 2)).toMatchObject({ id: "vigencia", titulo: "9 documentos por revisar: 7 vencidos y 2 en atención", enlace: "/vigencia/semaforo" });
+    expect(grupo(1, 4, 1)).toMatchObject({ titulo: "6 documentos por revisar: 1 vencido y 5 en atención", enlace: "/vigencia/semaforo" });
+    expect(grupo(0, 6)).toMatchObject({ titulo: "6 documentos por revisar: 6 en atención", enlace: "/vigencia/semaforo" });
+    expect(grupo(0, 0, 6)).toMatchObject({ titulo: "6 documentos por revisar: 6 en atención", enlace: "/vigencia/semaforo", vence: null, detalle: null });
+  });
+
+  it("los externos por verificar se agrupan; los impactos, las adopciones y la revisión anual no (Ruling 63)", () => {
     const tareas = [
       ...varias("vigencia", 5),
       ...varias("externo", 6),
@@ -223,17 +244,14 @@ describe("agruparTareas", () => {
     expect(r.map((t) => t.id)).toEqual([
       ...varias("vigencia", 5).map((t) => t.id),
       "externos",
-      "adopciones",
-      // La tarea de la campaña ya viene una por proceso: no se agrupa.
+      // Ni la matriz de externos reúne las ediciones por adoptar ni hay una página con los impactos pendientes: cada uno
+      // sale suelto, con su enlace. La tarea de la campaña ya viene una por proceso.
+      ...varias("adopcion", 7).map((t) => t.id),
       ...varias("revision", 7).map((t) => t.id),
-      "impactos",
+      ...varias("impacto", 6).map((t) => t.id),
       "tramite:1",
     ]);
-    const grupo = (id: string) => r.find((t) => t.id === id);
-    expect(grupo("externos")).toMatchObject({ titulo: "6 externos por verificar", enlace: "/vigencia/externos" });
-    expect(grupo("adopciones")).toMatchObject({ titulo: "7 ediciones nuevas por adoptar", enlace: "/vigencia/externos" });
-    // Sin una página que liste los impactos pendientes, el grupo lleva al primero, el que vence antes.
-    expect(grupo("impactos")).toMatchObject({ titulo: "6 impactos normativos por revisar", enlace: "/impacto/1" });
+    expect(r.find((t) => t.id === "externos")).toMatchObject({ titulo: "6 externos por verificar", enlace: "/vigencia/externos" });
   });
 
   it("con cinco de cada fuente no agrupa nada", () => {
@@ -249,8 +267,6 @@ describe("agruparTareas", () => {
     expect(grupo("vigencia", pasada)).toMatchObject({ vence: pasada, detalle: "El más atrasado venció el 14 de agosto de 2026" });
     expect(grupo("vigencia", futura).detalle).toBe("El más próximo vence el 1 de diciembre de 2026");
     expect(grupo("externo", futura).detalle).toBe("El más próximo vence el 1 de diciembre de 2026");
-    expect(grupo("adopcion", pasada).detalle).toBe("La más atrasada venció el 14 de agosto de 2026");
-    expect(grupo("adopcion", futura).detalle).toBe("La más próxima vence el 1 de diciembre de 2026");
-    expect(grupo("impacto", futura).detalle).toBe("El más próximo vence el 1 de diciembre de 2026");
+    expect(grupo("externo", pasada).detalle).toBe("El más atrasado venció el 14 de agosto de 2026");
   });
 });

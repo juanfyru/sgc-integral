@@ -570,16 +570,24 @@ describe("las exportaciones de la 13C, como «Emitió el Listado Maestro»", () 
     expect(x("exporto_externos", { formato: "excel", estado: "atencion", procesoId: null, responsableId: 31, texto: "bomba", total: 2 })).toBe(
       "Emitió el listado de documentos externos (excel, en atención, de un responsable, con el texto «bomba», 2 filas)",
     );
-    expect(x("exporto_normograma", { formato: "excel", alcance: "Institucional", procesoId: null, estado: "todos", total: 30 })).toBe(
-      "Emitió el normograma (excel, institucional, 30 filas)",
-    );
-    expect(x("exporto_normograma", { formato: "excel", alcance: "Proceso: Gestión del Talento Humano", procesoId: 3, total: 4 })).toBe(
+    // El detalle completo que escribe `normograma/excel/route.ts`, sin filtros y con todos.
+    const sinFiltros = { formato: "excel", alcance: "Institucional", procesoId: null, tipoNormaId: null, anio: null, emisor: null, estado: "todas", texto: null, incluirRetiradas: false, total: 30 };
+    expect(x("exporto_normograma", sinFiltros)).toBe("Emitió el normograma (excel, institucional, 30 filas)");
+    expect(x("exporto_normograma", { ...sinFiltros, alcance: "Proceso: Gestión del Talento Humano", procesoId: 3, total: 4 })).toBe(
       "Emitió el normograma (excel, del proceso Gestión del Talento Humano, 4 filas)",
+    );
+    // Los mismos filtros que nombra el de los externos: el estado, el tipo (por su id, sin nombrarlo), el año, el emisor,
+    // el texto y las retiradas.
+    expect(x("exporto_normograma", { ...sinFiltros, tipoNormaId: 3, anio: 2019, emisor: "Ministerio de Salud", estado: "derogada", texto: "habilitación", incluirRetiradas: true, total: 2 })).toBe(
+      "Emitió el normograma (excel, institucional, derogadas, de un tipo de norma, del año 2019, emitidas por Ministerio de Salud, con el texto «habilitación», con las retiradas, 2 filas)",
     );
     expect(x("exporto_indicadores", { formato: "excel", periodo: "2026-T3", procesoId: null })).toBe("Emitió los indicadores documentales (excel, tercer trimestre de 2026)");
     expect(x("exporto_indicadores", { formato: "excel", periodo: "2026-10", procesoId: 3 })).toBe("Emitió los indicadores documentales (excel, octubre de 2026, de un proceso)");
     expect(x("exporto_socializaciones", { formato: "excel", desde: "2026-01-01", hasta: "2026-12-31", procesoId: null, total: 5 })).toBe(
       "Emitió el listado de socializaciones (excel, 2026-01-01 a 2026-12-31, 5 filas)",
+    );
+    expect(x("exporto_socializaciones", { formato: "excel", desde: "2026-01-01", hasta: "2026-12-31", procesoId: 3, total: 2 })).toBe(
+      "Emitió el listado de socializaciones (excel, 2026-01-01 a 2026-12-31, de un proceso, 2 filas)",
     );
   });
 });

@@ -15,6 +15,7 @@ import { esResponsableTecnico } from "@/db/consultas/vigencia/externos";
 import { tareasDeRevision } from "@/db/consultas/vigencia/revision-anual/tareas";
 import { vigenciaDePersona, type VigenciaDePersona } from "@/db/consultas/vigencia/tareas";
 import { puede } from "@/lib/permisos";
+import { cuenta } from "@/lib/plural";
 import { zonaHoraria } from "@/lib/zona-horaria";
 
 export type Tarea = {
@@ -52,28 +53,54 @@ type Grupo = {
   /** El inicio del `id` de las tareas que reúne. */
   prefijo: string;
   id: string;
-  titulo: (n: number) => string;
+  /** El título y el enlace pueden depender de lo que reúne: el enlace lleva a una pantalla que lo muestra todo. */
+  titulo: (miembros: Tarea[], ahora: Date) => string;
   /** El detalle con la fecha más próxima, ya en texto, y si ya pasó. */
   detalle: (fecha: string, vencida: boolean) => string;
-  /** `primera`: la primera del grupo en el orden de su fuente, la que vence antes. */
-  enlace: (primera: Tarea) => string;
+  enlace: (miembros: Tarea[], ahora: Date) => string;
 };
 
 const masculino = (fecha: string, vencida: boolean) => (vencida ? `El más atrasado venció el ${fecha}` : `El más próximo vence el ${fecha}`);
-const femenino = (fecha: string, vencida: boolean) => (vencida ? `La más atrasada venció el ${fecha}` : `La más próxima vence el ${fecha}`);
+
+/** Un documento por revisar está vencido si su próxima revisión ya pasó; sin fecha, o antes de ella, está en atención. */
+const vencidas = (miembros: Tarea[], ahora: Date) => miembros.filter((t) => t.vence !== null && t.vence.getTime() < ahora.getTime()).length;
+
+/** «9 documentos por revisar: 7 vencidos y 2 en atención»; solo vencidos, «6 documentos por revisar» (Ruling 62). */
+function documentosPorRevisar(miembros: Tarea[], ahora: Date): string {
+  const total = `${miembros.length} documentos por revisar`;
+  const vencidos = vencidas(miembros, ahora);
+  const enAtencion = miembros.length - vencidos;
+  if (enAtencion === 0) return total;
+  return vencidos === 0
+    ? `${total}: ${enAtencion} en atención`
+    : `${total}: ${cuenta(vencidos, "vencido", "vencidos")} y ${enAtencion} en atención`;
+}
 
 /**
- * Las fuentes que, pasadas de `umbral`, se muestran como una sola tarea (spec 13C §13.1, con el umbral de la 13B). La
- * de la revisión anual (`revision:`) ya viene una por proceso, y las demás son pocas: no se agrupan.
+ * Las fuentes que, pasadas de `umbral`, se muestran como una sola tarea (spec 13C §13.1, con el umbral de la 13B): solo
+ * las que tienen una pantalla que muestra todo lo agrupado. No se agrupan la de la revisión anual (`revision:`, ya
+ * viene una por proceso), la de los impactos normativos (`impacto:`: no hay una página que liste los pendientes, cada
+ * tarea ya dice cuántos documentos tiene; Ruling 63) ni la de adoptar una edición nueva (`adopcion:`: la matriz de
+ * externos no las reúne ni las filtra), ni las demás, que son pocas.
  */
 const GRUPOS: readonly Grupo[] = [
   // Una lectura vence siempre después de pedirse: el detalle de la 13B no cambia.
-  { prefijo: "acuse:", id: "acuses", titulo: (n) => `${n} lecturas por confirmar`, detalle: (fecha) => `La más próxima vence el ${fecha}`, enlace: () => "/acuses" },
-  { prefijo: "vigencia:", id: "vigencia", titulo: (n) => `${n} documentos por revisar`, detalle: masculino, enlace: () => "/vigencia/semaforo?estado=vencida" },
-  { prefijo: "externo:", id: "externos", titulo: (n) => `${n} externos por verificar`, detalle: masculino, enlace: () => "/vigencia/externos" },
-  { prefijo: "adopcion:", id: "adopciones", titulo: (n) => `${n} ediciones nuevas por adoptar`, detalle: femenino, enlace: () => "/vigencia/externos" },
-  // No hay una página con todos los impactos pendientes: el grupo lleva al que vence antes.
-  { prefijo: "impacto:", id: "impactos", titulo: (n) => `${n} impactos normativos por revisar`, detalle: masculino, enlace: (primera) => primera.enlace },
+  {
+    prefijo: "acuse:",
+    id: "acuses",
+    titulo: (m) => `${m.length} lecturas por confirmar`,
+    detalle: (fecha) => `La más próxima vence el ${fecha}`,
+    enlace: () => "/acuses",
+  },
+  // El semáforo de los vencidos solo si todos lo están: si no, el filtro escondería los que están en atención.
+  {
+    prefijo: "vigencia:",
+    id: "vigencia",
+    titulo: documentosPorRevisar,
+    detalle: masculino,
+    enlace: (m, ahora) => (vencidas(m, ahora) === m.length ? "/vigencia/semaforo?estado=vencida" : "/vigencia/semaforo"),
+  },
+  { prefijo: "externo:", id: "externos", titulo: (m) => `${m.length} externos por verificar`, detalle: masculino, enlace: () => "/vigencia/externos" },
 ];
 
 function unir(g: Grupo, miembros: Tarea[], ahora: Date): Tarea {
@@ -83,17 +110,17 @@ function unir(g: Grupo, miembros: Tarea[], ahora: Date): Tarea {
   return {
     id: g.id,
     modulo: "documentos",
-    titulo: g.titulo(miembros.length),
+    titulo: g.titulo(miembros, ahora),
     detalle: vence && texto ? g.detalle(texto, vence.getTime() < ahora.getTime()) : null,
     vence,
-    enlace: g.enlace(miembros[0]),
+    enlace: g.enlace(miembros, ahora),
   };
 }
 
 /**
  * Más de `umbral` tareas de una misma fuente de `GRUPOS` (lecturas por confirmar, documentos por revisar, externos por
- * verificar, ediciones por adoptar, impactos normativos) se muestran como una sola, en el lugar de la primera. Quien
- * llama cuenta el total sobre las tareas sin agrupar (F13B-R12).
+ * verificar) se muestran como una sola, en el lugar de la primera. Quien llama cuenta el total sobre las tareas sin
+ * agrupar (F13B-R12).
  */
 export function agruparTareas(tareas: Tarea[], umbral = 5, ahora = new Date()): Tarea[] {
   const agrupadas = new Map<Grupo, Tarea>();
