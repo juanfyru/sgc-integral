@@ -58,6 +58,11 @@ export function nombreDeNorma(n: { tipo: string; numero: string; anio: number })
   return `${n.tipo} ${n.numero} de ${n.anio}`;
 }
 
+/** La página de los impactos de un cambio en un proceso: el enlace de su tarea y de sus avisos. */
+export function enlaceDeImpacto(cambioId: number, procesoId: number): string {
+  return `/normograma/impactos/${cambioId}?proceso=${procesoId}`;
+}
+
 /** Error de negocio del normograma: su mensaje se le muestra a la persona. */
 export class ErrorNormograma extends ErrorTramite {
   constructor(mensaje: string) {
