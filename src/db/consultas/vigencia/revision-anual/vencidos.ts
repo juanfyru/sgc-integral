@@ -26,9 +26,21 @@ export async function responsablesDelProceso(tx: TransactionSql, procesoId: numb
   return lideres.length > 0 ? lideres : adminsActivos({ sql: tx });
 }
 
-type Revision = { id: number; anio: number; vencidaHace: number };
+type Revision = { id: number; anio: number };
+
+/** Días desde que venció la revisión; nulo si no ha vencido. */
+function vencidaHace(venceEn: Date, ahora: Date): number | null {
+  const plazo = estadoPlazo(venceEn, ahora, zonaHoraria());
+  return plazo.estado === "vencido" ? plazo.dias : null;
+}
 
 async function revisarProceso(tx: TransactionSql, r: Revision, procesoId: number, c: ContextoVencimientos): Promise<Resultado> {
+  // La revisión primero y después la fila del proceso, en el orden de la prórroga y el cierre (que la toman `FOR
+  // UPDATE`): sin eso, el trigger de la fila pediría la revisión con la fila ya tomada y las dos se esperarían. Bajo el
+  // candado se lee otra vez el vencimiento: una prórroga que terminó entre la lista y aquí lo movió.
+  const [rev] = await tx`SELECT vence_en FROM revisiones_anuales WHERE id = ${r.id} AND estado = 'abierta' FOR SHARE`;
+  const dias = rev ? vencidaHace(new Date(rev.vence_en as string), c.ahora) : null;
+  if (dias === null) return NADA;
   const [marca] = await tx`SELECT id, aviso_vencido_en, escalado_en FROM revision_anual_procesos
     WHERE revision_id = ${r.id} AND proceso_id = ${procesoId}
     FOR UPDATE SKIP LOCKED`;
@@ -37,7 +49,7 @@ async function revisarProceso(tx: TransactionSql, r: Revision, procesoId: number
   const [p] = await pendientesPorProceso(tx, r.id, tx`rap.proceso_id = ${procesoId}`);
   if (!p || p.pendientes === 0) return NADA;
   const avisar = marca.aviso_vencido_en === null;
-  const escalar = marca.escalado_en === null && r.vencidaHace > c.escalamientoDias;
+  const escalar = marca.escalado_en === null && dias > c.escalamientoDias;
   if (!avisar && !escalar) return NADA;
 
   const responsables = await responsablesDelProceso(tx, procesoId);
@@ -79,10 +91,8 @@ async function revisarProceso(tx: TransactionSql, r: Revision, procesoId: number
 /** La pasada de la campaña vencida; `avisados` y `escalados` cuentan procesos. */
 export async function revisionVencida(c: ContextoVencimientos): Promise<Resultado> {
   const [r] = await c.sql`SELECT id, anio, vence_en FROM revisiones_anuales WHERE estado = 'abierta' AND vence_en < ${c.ahora}`;
-  if (!r) return NADA;
-  const plazo = estadoPlazo(new Date(r.vence_en as string), c.ahora, zonaHoraria());
-  if (plazo.estado !== "vencido") return NADA;
-  const revision: Revision = { id: Number(r.id), anio: Number(r.anio), vencidaHace: plazo.dias };
+  if (!r || vencidaHace(new Date(r.vence_en as string), c.ahora) === null) return NADA;
+  const revision: Revision = { id: Number(r.id), anio: Number(r.anio) };
   const candidatos = await pendientesPorProceso(c.sql, revision.id, c.sql`(rap.aviso_vencido_en IS NULL OR rap.escalado_en IS NULL)`);
 
   const total = { ...NADA };

@@ -44,6 +44,7 @@ import {
   externoDePrueba,
   firmaDePrueba,
   revisionDePrueba,
+  sacarDeLaRevisionAbierta,
   silenciarRevisionAnual,
   silenciarVigencia,
   sinRevisionAbierta,
@@ -215,6 +216,31 @@ describe("la campaña", () => {
       expect(await filaDe(tx, revisionId, conTramite)).toMatchObject({ decision: "en_tramite", tramiteId: enPublicacion.tramiteId });
       expect(await contar()).toBe(antes + 1);
       await enPublicacion.limpiar();
+    }));
+});
+
+describe("los tests que confirman cargas reales", () => {
+  it("sacarDeLaRevisionAbierta saca de la foto abierta los documentos de prueba, con su conteo, y deja borrarlos", () =>
+    revertida(sql, async (tx) => {
+      await sinRevisionAbierta(tx);
+      const admin = await sesionAdmin(tx);
+      const { revisionId } = await revisionDePrueba(tx, admin, { ahora });
+      const gth = await procesoPorSigla(tx, "GTH");
+      const contar = async () =>
+        Number((await tx`SELECT documentos FROM revision_anual_procesos WHERE revision_id = ${revisionId} AND proceso_id = ${gth.id}`)[0].documentos);
+      const antes = await contar();
+      const nuevo = await documentoLibre(tx, { proceso: "GTH", tipo: "PR" });
+      const [v2] = await tx`INSERT INTO documento_versiones (documento_id, numero, estado, aprobo, fecha_aprobacion)
+        VALUES (${nuevo.id}, 2, 'borrador', 'Prueba', '2090-03-01') RETURNING id`;
+      await aplicarPublicacion(tx, Number(v2.id), "fuera", admin.usuarioId, ahora);
+      expect(await contar()).toBe(antes + 1);
+
+      await sacarDeLaRevisionAbierta(tx, nuevo.codigo);
+      expect(await filaDe(tx, revisionId, nuevo.id)).toBeNull();
+      expect(await contar()).toBe(antes);
+      await tx`DELETE FROM archivos WHERE version_id IN (SELECT id FROM documento_versiones WHERE documento_id = ${nuevo.id})`;
+      await tx`DELETE FROM documento_versiones WHERE documento_id = ${nuevo.id}`;
+      expect(await tx`SELECT 1 FROM documento_versiones WHERE documento_id = ${nuevo.id}`).toHaveLength(0);
     }));
 });
 

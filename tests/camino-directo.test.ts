@@ -36,6 +36,7 @@ import { obtenerFichaDocumento } from "@/db/consultas/documentos";
 import { transicionar } from "@/db/consultas/tramites-flujo";
 import { opc, sesionDe, tramiteEn } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
+import { sacarDeLaRevisionAbierta } from "./utiles/vigencia";
 
 const sql = obtenerSql();
 const ACTOR = `zz_carga_${Date.now()}`;
@@ -52,6 +53,7 @@ let unico = Date.now();
 const codigoUnico = () => `ZZ-CD-${(unico += 1)}`;
 
 async function limpiar() {
+  await sacarDeLaRevisionAbierta(sql, "ZZ-CD-");
   await sql`DELETE FROM tramites WHERE documento_id IN (SELECT id FROM documentos WHERE codigo LIKE 'ZZ-CD-%')`;
   await sql`DELETE FROM archivos WHERE version_id IN (
     SELECT v.id FROM documento_versiones v JOIN documentos d ON d.id = v.documento_id WHERE d.codigo LIKE 'ZZ-CD-%')`;
