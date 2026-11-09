@@ -16,6 +16,7 @@ import {
   formatoDesdeMime,
 } from "@/componentes/documentos/IconoFormato";
 import { BloqueDistribucion } from "@/componentes/distribucion/BloqueDistribucion";
+import { BloqueVigencia } from "@/componentes/vigencia/BloqueVigencia";
 import { AvisoVersionQr, versionDeQr } from "@/componentes/documentos/AvisoVersionQr";
 import { DatosDeAprobacion } from "@/componentes/documentos/DatosDeAprobacion";
 import { VisorPdf } from "@/componentes/documentos/VisorPdf";
@@ -274,6 +275,8 @@ export default async function FichaDocumento({
               <DatosDeAprobacion origen={ficha.version.origenAprobacion} tramiteId={ficha.version.tramiteId} />
             </dl>
           </section>
+
+          <BloqueVigencia documentoId={ficha.id} sesion={sesion} />
 
           <BloqueDistribucion documento={{ id: ficha.id, codigo: ficha.codigo, titulo: ficha.titulo }} sesion={sesion} />
 

@@ -49,3 +49,11 @@ export function limitesDeFechaFijada(d: { meses: number }, hoy: Date, zona: stri
   const manana = new Date(Date.parse(`${fechaEnZona(hoy, zona)}T00:00:00Z`) + MS_DIA).toISOString().slice(0, 10);
   return { minima: manana, maxima: fechaEnZona(sumarMeses(hoy, d.meses, zona), zona) };
 }
+
+const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+
+/** «14 ago 2026»: un instante leído en la zona o una fecha `yyyy-mm-dd` tal cual. */
+export function textoFecha(fecha: Date | string, zona: string): string {
+  const [anio, mes, dia] = (typeof fecha === "string" ? fecha : fechaEnZona(fecha, zona)).split("-").map(Number);
+  return `${dia} ${MESES[mes - 1]} ${anio}`;
+}

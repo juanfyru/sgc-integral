@@ -19,7 +19,7 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { puede } from "@/lib/permisos";
 import type { Rol } from "@/lib/roles";
 import type { SesionValida } from "@/lib/sesion";
-import type { Etapa } from "@/lib/tramites/tipos";
+import type { Autoridad, Etapa } from "@/lib/tramites/tipos";
 
 export type Alcance = { todos: true } | { todos: false; procesoIds: number[] };
 
@@ -210,4 +210,43 @@ export async function puedeVerVerificacion(
   if (sesion.rol !== "lider_proceso") return false;
   const alcance = await alcanceProcesos(sesion, opciones);
   return v.procesoIds.some((p) => enAlcance(alcance, p));
+}
+
+/** Quién entra a «Vigencia»: quien ve el semáforo o los indicadores, o el responsable técnico de algún externo. */
+export function puedeVerVigencia(sesion: SujetoVisibilidad & { responsableTecnico?: boolean }): boolean {
+  return puede(sesion, "vigencia.ver") || puede(sesion, "documentos.indicadores") || sesion.responsableTecnico === true;
+}
+
+/**
+ * Quién ratifica un documento (spec 13C §6.3): solo un interno vigente sin trámite abierto (el trámite ya es su
+ * revisión); el Admin SGC siempre, el líder en los procesos de su alcance y Gerencia los de tipo estratégico.
+ */
+export function puedeRatificar(
+  sujeto: SujetoVisibilidad,
+  d: { procesoId: number; autoridad: Autoridad; origen: "interno" | "externo"; enTramite: boolean; vigente: boolean },
+  alcance: Alcance,
+): boolean {
+  if (!puede(sujeto, "documentos.ratificar") || !d.vigente || d.enTramite || d.origen !== "interno") return false;
+  if (sujeto.rol === "admin_sgc") return true;
+  if (sujeto.rol === "lider_proceso") return enAlcance(alcance, d.procesoId);
+  if (sujeto.rol === "gerencia") return d.autoridad === "estrategico";
+  return false;
+}
+
+/**
+ * Qué documentos lista la pestaña «Semáforo», para un `WHERE` sobre `documentos d`: el nivel de acceso y, para
+ * el líder, los de sus procesos por la asociación principal (también si es a un subproceso). Quien no ve la
+ * pestaña no recibe filas.
+ */
+export function filtroVigencia(sql: Cliente, sujeto: SujetoVisibilidad, alcance: Alcance) {
+  if (!puede(sujeto, "vigencia.ver") && !puede(sujeto, "documentos.indicadores")) return sql`false`;
+  if (alcance.todos) return filtroAcceso(sql, sujeto);
+  if (alcance.procesoIds.length === 0) return sql`false`;
+  return sql`(${filtroAcceso(sql, sujeto)} AND EXISTS (
+    SELECT 1
+    FROM documento_proceso vigencia_dp
+    LEFT JOIN subprocesos vigencia_s ON vigencia_s.id = vigencia_dp.subproceso_id
+    WHERE vigencia_dp.documento_id = d.id AND vigencia_dp.es_principal
+      AND COALESCE(vigencia_dp.proceso_id, vigencia_s.proceso_id) = ANY(${alcance.procesoIds})
+  ))`;
 }

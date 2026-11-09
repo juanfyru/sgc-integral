@@ -9,6 +9,7 @@ import {
   publicarAccion,
 } from "@/app/admin/acciones";
 import { BloqueDistribucion } from "@/componentes/distribucion/BloqueDistribucion";
+import { BloqueVigencia } from "@/componentes/vigencia/BloqueVigencia";
 import { EliminarArchivo } from "@/componentes/admin/EliminarArchivo";
 import { FormAccion } from "@/componentes/admin/FormAccion";
 import { FormularioVersionCliente } from "@/componentes/admin/FormularioVersionCliente";
@@ -53,6 +54,7 @@ function SeccionVersion({
   puedeAdministrar,
   registrable,
   deshacible,
+  children,
 }: {
   version: VersionAdmin;
   documentoId: number;
@@ -62,6 +64,8 @@ function SeccionVersion({
   registrable: boolean;
   /** El camino directo puede deshacer la versión vigente de este documento (spec 13A §13.2). */
   deshacible: boolean;
+  /** Lo que va al final de la versión: el bloque «Vigencia» de la vigente. */
+  children?: React.ReactNode;
 }) {
   const fueraDeCirculacion = version.estado === "obsoleto" || version.estado === "anulado";
   const borrador = version.estado === "borrador";
@@ -178,6 +182,8 @@ function SeccionVersion({
       {version.resumenCambios && (
         <p className="mt-2 text-sm text-muted-foreground">Cambios: {version.resumenCambios}</p>
       )}
+
+      {children ? <div className="mt-4">{children}</div> : null}
     </section>
   );
 }
@@ -265,7 +271,9 @@ export default async function PaginaDocumentoAdmin({
             puedeAdministrar={puedeAdministrar}
             registrable={registrable}
             deshacible={puedeAdministrar && deshacible}
-          />
+          >
+            {v.estado === "vigente" ? <BloqueVigencia documentoId={documento.id} sesion={sesion} /> : null}
+          </SeccionVersion>
         ))}
       </div>
     </div>

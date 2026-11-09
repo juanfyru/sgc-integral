@@ -1,4 +1,5 @@
 import { estadoPlazo } from "@/lib/tramites/plazos";
+import { ETIQUETA_ETAPA, type Etapa } from "@/lib/tramites/tipos";
 import { ETIQUETA_VIGENCIA, type EstadoVigencia } from "./tipos";
 
 /**
@@ -35,4 +36,35 @@ export function textoVigencia(
   if (r.estado === "al_dia" || r.dias === null) return ETIQUETA_VIGENCIA.al_dia;
   if (r.estado === "vencida") return `Vencida hace ${dias(-r.dias)}`;
   return r.dias === 0 ? "Vence hoy" : `Vence en ${dias(r.dias)}`;
+}
+
+export type ClaseRevision = "publicacion" | "aprobacion" | "ratificacion" | "verificacion" | "adopcion";
+
+/** Qué fue la última revisión, en palabras: «Ratificado por …», «Aprobación fuera de la plataforma». */
+export function textoUltimaRevision(u: { clase: ClaseRevision; quien: string | null }): string {
+  switch (u.clase) {
+    case "publicacion":
+      return "Publicada en la plataforma";
+    case "aprobacion":
+      return "Aprobación fuera de la plataforma";
+    case "ratificacion":
+      return u.quien ? `Ratificado por ${u.quien}` : "Ratificado";
+    case "verificacion":
+      return u.quien ? `Verificado por ${u.quien}` : "Verificado";
+    case "adopcion":
+      return u.quien ? `Adoptado por ${u.quien}` : "Edición adoptada";
+  }
+}
+
+/** El texto del chip de una fila: con la etapa y el día si está en trámite, o la marca del cambio normativo. */
+export function textoVigenciaDeFila(f: {
+  vigencia: { estado: EstadoVigencia; dias: number | null };
+  tramite: { etapa: Etapa; dia: number } | null;
+  impacto: { norma: string } | null;
+}): string {
+  return textoVigencia(f.vigencia, {
+    etapa: f.tramite ? ETIQUETA_ETAPA[f.tramite.etapa].toLowerCase() : undefined,
+    dia: f.tramite?.dia,
+    cambioNormativo: f.impacto?.norma,
+  });
 }

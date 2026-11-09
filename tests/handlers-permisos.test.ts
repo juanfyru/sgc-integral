@@ -30,6 +30,7 @@ import { POST as subirArchivoTramite } from "@/app/api/tramites/[id]/archivos/ro
 import { GET as excelAcuses } from "@/app/(app)/distribucion/acuses/excel/route";
 import { GET as excelCopias } from "@/app/(app)/distribucion/copias/excel/route";
 import { GET as excelVerificaciones } from "@/app/(app)/distribucion/verificaciones/excel/route";
+import { GET as excelSemaforo } from "@/app/(app)/vigencia/semaforo/excel/route";
 import { GET as pdfCopia } from "@/app/(app)/distribucion/copias/[id]/pdf/route";
 import { POST as reimprimirCopiaRuta } from "@/app/(app)/distribucion/copias/[id]/reimprimir/route";
 import { obtenerSql } from "@/db/cliente";
@@ -155,6 +156,27 @@ describe.each([
     expect(res.headers.get("Cache-Control")).toBe("no-store");
     expect(res.headers.get("Content-Disposition")).toMatch(new RegExp(String.raw`^attachment; filename="${prefijo}-\d{8}\.xlsx"$`));
     const filas = await sql()`SELECT 1 FROM auditoria WHERE usuario_id = ${u.id} AND accion = ${accion}`;
+    expect(filas.length).toBe(antes + 1);
+  });
+});
+
+describe("GET /vigencia/semaforo/excel", () => {
+  const pedir = (token?: string) =>
+    excelSemaforo(new NextRequest("http://localhost:3002/vigencia/semaforo/excel", token ? { headers: cookie(token) } : undefined));
+
+  it("401 sin sesión y 404 a quien no ve el semáforo", async () => {
+    expect((await pedir()).status).toBe(401);
+    expect((await pedir(tokenConsulta)).status).toBe(404);
+  });
+
+  it("Gerencia recibe el xlsx sin caché y queda auditado", async () => {
+    const antes = (await sql()`SELECT 1 FROM auditoria WHERE usuario_id = ${usuarioGerenciaId} AND accion = 'exporto_semaforo'`).length;
+    const res = await pedir(tokenGerencia);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(res.headers.get("Content-Disposition")).toMatch(/^attachment; filename="semaforo-\d{8}\.xlsx"$/);
+    const filas = await sql()`SELECT 1 FROM auditoria WHERE usuario_id = ${usuarioGerenciaId} AND accion = 'exporto_semaforo'`;
     expect(filas.length).toBe(antes + 1);
   });
 });
