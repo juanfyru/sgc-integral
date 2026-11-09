@@ -58,7 +58,7 @@ afterAll(() => {
 
 beforeEach(() => {
   vi.resetAllMocks();
-  registrarArchivo.mockResolvedValue({ id: 91 });
+  registrarArchivo.mockResolvedValue({ id: 91, reemplazados: [] });
   exigirEscrituraEnVersion.mockResolvedValue(undefined);
   exigirInterno.mockResolvedValue(undefined);
 });

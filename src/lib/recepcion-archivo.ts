@@ -7,6 +7,7 @@ import { registrarArchivo } from "@/db/consultas/admin";
 import { ErrorTramite } from "@/db/consultas/flujo/contrato";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import {
+  CONTEXTOS_SOLO_PDF,
   sanearNombre,
   TAMANO_MAXIMO_BYTES,
   TAMANO_MUESTRA_BYTES,
@@ -68,7 +69,10 @@ export type DestinoVersion = {
   /** Solo la ruta de externos, que ya autorizó la edición: los demás caminos no escriben en un externo. */
   externo?: boolean;
 };
-/** `carpeta` es relativa al almacén: `jornadas/<id>` o `verificaciones/<verificacionId>/items/<itemId>`. */
+/**
+ * `carpeta` es relativa al almacén: `jornadas/<id>`, `verificaciones/<verificacionId>/items/<itemId>` o `normas/<id>`.
+ * Una norma recibe solo un PDF, que reemplaza al que tuviera (`registrarArchivo`).
+ */
 export type DestinoEvidencia = { contexto: ContextoEvidencia; contextoId: number; carpeta: string };
 
 function esEvidencia(destino: DestinoVersion | DestinoEvidencia): destino is DestinoEvidencia {
@@ -114,7 +118,7 @@ export async function recibirArchivo(
   for (const p of previos) { muestra.set(p, despl); despl += p.byteLength; }
 
   const tipo = esEvidencia(destino)
-    ? await validarTipoEvidencia(nombreCrudo, muestra)
+    ? await validarTipoEvidencia(nombreCrudo, muestra, { soloPdf: CONTEXTOS_SOLO_PDF.includes(destino.contexto) })
     : await validarTipo(nombreCrudo, muestra);
   if (!tipo.ok) {
     await descartarResto(lector, acumulado);
@@ -166,7 +170,7 @@ export async function recibirArchivo(
       ruta: ruta.relativa, nombreOriginal: nombreCrudo, extension: tipo.extension, mime: tipo.mime,
       tamanoBytes: total, hashSha256: hash.digest("hex"),
     };
-    const { id } = esEvidencia(destino)
+    const { id, reemplazados } = esEvidencia(destino)
       ? await registrarArchivo(
           { versionId: null, rol: "evidencia", contexto: destino.contexto, contextoId: destino.contextoId, ...comunes },
           usuarioId,
@@ -175,6 +179,11 @@ export async function recibirArchivo(
           tramiteId: destino.tramiteId,
           externo: destino.externo,
         });
+    // La fila del anterior ya no existe: su archivo se borra después, y uno ya ausente no es un error.
+    for (const relativa of reemplazados) {
+      const absoluta = resolverRutaAlmacen(relativa);
+      if (absoluta) await unlink(absoluta).catch(() => {});
+    }
     return NextResponse.json(
       { id, nombre: nombreCrudo, mime: tipo.mime, tamanoBytes: total },
       { status: 201 },

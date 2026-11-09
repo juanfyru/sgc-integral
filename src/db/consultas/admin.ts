@@ -761,7 +761,7 @@ export async function registrarArchivo(
   },
   usuarioId: number,
   opciones?: OpcionesEscritura,
-): Promise<{ id: number }> {
+): Promise<{ id: number; reemplazados: string[] }> {
   try {
     return await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
       if (datos.versionId === null) {
@@ -769,6 +769,13 @@ export async function registrarArchivo(
           throw new Error("Una evidencia necesita su contexto");
         }
         if (datos.contexto === "verificacion_item") await exigirVerificacionAbierta(tx, datos.contextoId);
+        // Una norma tiene un solo PDF (spec 13C §10.1): con la norma bloqueada, dos subidas a la vez o un borrado
+        // de la norma se ordenan, y el nuevo reemplaza al anterior en esta misma transacción.
+        const unico = datos.contexto === "norma";
+        if (unico) {
+          const [norma] = await tx`SELECT 1 FROM normas WHERE id = ${datos.contextoId} FOR UPDATE`;
+          if (!norma) throw new ErrorTramite("La norma no existe");
+        }
         const [evidencia] = await tx`INSERT INTO archivos
             (version_id, contexto, contexto_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
           VALUES (NULL, ${datos.contexto}, ${datos.contextoId}, ${datos.rol}, ${datos.ruta}, ${datos.nombreOriginal},
@@ -780,7 +787,18 @@ export async function registrarArchivo(
             contexto: datos.contexto, contextoId: datos.contextoId, rol: datos.rol, nombre: datos.nombreOriginal,
           },
         });
-        return { id: evidencia.id };
+        const reemplazados = unico
+          ? await tx`DELETE FROM archivos
+              WHERE contexto = ${datos.contexto} AND contexto_id = ${datos.contextoId} AND id <> ${evidencia.id}
+              RETURNING id, ruta, nombre_original`
+          : [];
+        for (const r of reemplazados) {
+          await registrarAuditoria(tx, {
+            usuarioId, accion: "eliminar_archivo", entidad: "archivo", entidadId: r.id,
+            detalle: { contexto: datos.contexto, contextoId: datos.contextoId, nombre: r.nombre_original, reemplazadoPor: evidencia.id },
+          });
+        }
+        return { id: evidencia.id, reemplazados: reemplazados.map((r) => r.ruta as string) };
       }
       await exigirEscrituraEnVersion(tx, datos.versionId, desdeTramite(opciones, usuarioId));
       if (!opciones?.externo) await exigirInterno(tx, { versionId: datos.versionId });
@@ -796,7 +814,7 @@ export async function registrarArchivo(
         usuarioId, accion: "subir_archivo", entidad: "archivo", entidadId: archivo.id,
         detalle: { versionId: datos.versionId, rol: datos.rol, nombre: datos.nombreOriginal },
       });
-      return { id: archivo.id };
+      return { id: archivo.id, reemplazados: [] };
     });
   } catch (err) {
     if ((err as { code?: string }).code === "23505") {

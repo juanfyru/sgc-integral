@@ -279,3 +279,16 @@ export async function puedeVerExterno(
   if (!puede(sujeto, "externos.gestionar") && !puede(sujeto, "vigencia.ver")) return false;
   return enAlcance(await alcanceProcesos(sujeto, { sql }), Number(d.proceso_id));
 }
+
+/**
+ * Quién asocia una norma a un proceso, escribe su requisito y enlaza los documentos del proceso (spec 13C §10.3):
+ * `normograma.procesos` sobre un proceso de su alcance (el Admin SGC todos, el líder los suyos).
+ */
+export function puedeAsociarNorma(sujeto: SujetoVisibilidad, procesoId: number, alcance: Alcance): boolean {
+  return puede(sujeto, "normograma.procesos") && enAlcance(alcance, procesoId);
+}
+
+/** Quién ve y resuelve los impactos de un cambio normativo en un proceso (spec 13C §10.5): lo mismo, y el Admin SGC siempre. */
+export function puedeVerImpacto(sujeto: SujetoVisibilidad, procesoId: number, alcance: Alcance): boolean {
+  return sujeto.rol === "admin_sgc" || puedeAsociarNorma(sujeto, procesoId, alcance);
+}

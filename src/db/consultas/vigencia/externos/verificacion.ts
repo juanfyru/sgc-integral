@@ -4,6 +4,7 @@ import { obtenerSql } from "@/db/cliente";
 import { anularVigenteEn, registrarAuditoria } from "@/db/consultas/admin";
 import { avisarEliminacion } from "@/db/consultas/distribucion/acuses";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
+import { resolverImpactoPorVerificacion } from "@/db/consultas/normograma/impactos";
 import { crearNotificacion } from "@/db/consultas/notificaciones";
 import { adminsActivos, lideresDeProceso } from "@/db/consultas/tramites";
 import { alcanceProcesos, puedeGestionarExterno } from "@/lib/alcance";
@@ -57,7 +58,7 @@ async function retirarEn(
  * Registra la verificación de vigencia (spec 13C §8.4), sin clave: la hace el responsable técnico o quien gestiona
  * el externo. Sigue vigente: la próxima verificación cuenta desde hoy y se borra la marca de edición nueva pendiente.
  * Edición nueva: queda la marca pendiente y, si quien verifica no gestiona, se avisa a quienes pueden adoptarla.
- * Retirado: el externo se retira en la misma transacción.
+ * Retirado: el externo se retira en la misma transacción. Con `impactoId`, resuelve ese impacto normativo.
  */
 export async function registrarVerificacion(
   sesion: SesionFlujo,
@@ -94,6 +95,10 @@ export async function registrarVerificacion(
               ${d.revisionAnualId ?? null}, ${d.impactoId ?? null}, ${ahora})
       RETURNING id`;
     const verificacionId = Number(fila.id);
+    // La verificación pedida desde un impacto normativo lo resuelve en esta misma transacción (spec 13C §10.5).
+    if (d.impactoId !== undefined) {
+      await resolverImpactoPorVerificacion(tx, sesion.usuarioId, { impactoId: d.impactoId, verificacionId }, ahora);
+    }
 
     if (d.resultado !== "retirado") {
       // Toda verificación reinicia el reloj (la fecha base es la última): los avisos vuelven a empezar (spec 13C §13.3).

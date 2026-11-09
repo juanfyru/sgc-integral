@@ -90,4 +90,12 @@ describe("validarTipoEvidencia", () => {
     expect(await validarTipoEvidencia("foto.png", svg)).toEqual({ ok: false, error: MENSAJE });
     expect(await validarTipoEvidencia("foto.svg", svg)).toEqual({ ok: false, error: MENSAJE });
   });
+
+  it("con soloPdf (el archivo de una norma) solo pasa un PDF por su contenido", async () => {
+    const SOLO_PDF = "El archivo de la norma debe ser un PDF";
+    const pdf = await pdfDePrueba([[612, 792]]);
+    expect(await validarTipoEvidencia("resolucion.pdf", pdf, { soloPdf: true })).toEqual({ ok: true, extension: "pdf", mime: "application/pdf" });
+    expect(await validarTipoEvidencia("foto.png", PNG, { soloPdf: true })).toEqual({ ok: false, error: SOLO_PDF });
+    expect(await validarTipoEvidencia("disfrazado.pdf", PNG, { soloPdf: true })).toEqual({ ok: false, error: SOLO_PDF });
+  });
 });

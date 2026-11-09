@@ -1,7 +1,16 @@
 import { existsSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { obtenerSql } from "@/db/cliente";
-import { alcanceProcesos, enAlcance, procesosAsignados, puedeRatificar, puedeVerVigencia, type Alcance } from "@/lib/alcance";
+import {
+  alcanceProcesos,
+  enAlcance,
+  procesosAsignados,
+  puedeAsociarNorma,
+  puedeRatificar,
+  puedeVerImpacto,
+  puedeVerVigencia,
+  type Alcance,
+} from "@/lib/alcance";
 import type { Rol } from "@/lib/roles";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
@@ -103,5 +112,32 @@ describe("quién ratifica (spec 13C §6.3)", () => {
     expect(puedeVerVigencia(sujeto("consulta"))).toBe(false);
     expect(puedeVerVigencia({ ...sujeto("consulta"), responsableTecnico: true })).toBe(true);
     expect(puedeVerVigencia({ ...sujeto("consulta"), verHistorial: true })).toBe(false);
+  });
+});
+
+describe("quién asocia normas y ve sus impactos (spec 13C §10.3 y §10.5)", () => {
+  const GTH = 10;
+  const OTRO = 20;
+  const sujeto = (rol: Rol) => ({ usuarioId: 1, rol, verHistorial: false });
+  const todo: Alcance = { todos: true };
+  const deGth: Alcance = { todos: false, procesoIds: [GTH] };
+  const sinProcesos: Alcance = { todos: false, procesoIds: [] };
+
+  it.each<[string, Rol, number, Alcance, boolean, boolean]>([
+    ["el Admin SGC, cualquier proceso", "admin_sgc", OTRO, todo, true, true],
+    ["el líder, su proceso", "lider_proceso", GTH, deGth, true, true],
+    ["el líder, otro proceso", "lider_proceso", OTRO, deGth, false, false],
+    ["el líder sin procesos", "lider_proceso", GTH, sinProcesos, false, false],
+    ["Gerencia no asocia ni resuelve, aunque alcance todo", "gerencia", GTH, todo, false, false],
+    ["Control Interno tampoco", "control_interno", GTH, todo, false, false],
+    ["Consulta tampoco", "consulta", GTH, todo, false, false],
+  ])("%s", (_caso, rol, procesoId, alcance, asocia, ve) => {
+    expect(puedeAsociarNorma(sujeto(rol), procesoId, alcance)).toBe(asocia);
+    expect(puedeVerImpacto(sujeto(rol), procesoId, alcance)).toBe(ve);
+  });
+
+  it("el Admin SGC ve el impacto aunque el alcance que se le pase no traiga el proceso; la marca de historial no da el permiso", () => {
+    expect(puedeVerImpacto(sujeto("admin_sgc"), OTRO, deGth)).toBe(true);
+    expect(puedeAsociarNorma({ ...sujeto("consulta"), verHistorial: true }, GTH, todo)).toBe(false);
   });
 });
