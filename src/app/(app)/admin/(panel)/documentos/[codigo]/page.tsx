@@ -192,8 +192,10 @@ function SeccionVersion({
 
 export default async function PaginaDocumentoAdmin({
   params,
+  searchParams,
 }: {
   params: Promise<{ codigo: string }>;
+  searchParams?: Promise<{ aviso?: string | string[]; n?: string | string[] }>;
 }) {
   const sesion = await exigirPermiso("documentos.ver_historial");
   const puedeAdministrar = puede(sesion, "documentos.administrar");
@@ -268,7 +270,12 @@ export default async function PaginaDocumentoAdmin({
       <NormasEnlazadas documentoId={documento.id} sesion={sesion} />
 
       {vigente ? (
-        <BloqueDistribucion documento={{ id: documento.id, codigo: documento.codigo, titulo: documento.titulo }} sesion={sesion} />
+        <BloqueDistribucion
+          documento={{ id: documento.id, codigo: documento.codigo, titulo: documento.titulo }}
+          sesion={sesion}
+          volver={`/admin/documentos/${encodeURIComponent(documento.codigo)}`}
+          consulta={await searchParams}
+        />
       ) : null}
 
       <div className="flex flex-col gap-4">

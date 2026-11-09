@@ -3,13 +3,16 @@ import { crearPuntoUsoAccion } from "@/app/admin/acciones-puntos-uso";
 import { FormularioPuntoUso } from "@/componentes/distribucion/puntos/FormularioPuntoUso";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { opcionesFormularioPunto, subprocesoParaPunto } from "@/db/consultas/distribucion/puntos-uso";
-import { exigirPermiso } from "@/lib/paginas";
+import { exigirSesion } from "@/lib/paginas";
+import { exigirCatalogo, exigirGestion } from "../../_comun";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Nuevo punto de uso — Administración SGC" };
 
 export default async function PaginaNuevoPuntoUso({ searchParams }: { searchParams: Promise<{ subproceso?: string }> }) {
-  await exigirPermiso("distribucion.gestionar");
+  const sesion = await exigirSesion();
+  exigirCatalogo(sesion);
+  exigirGestion(sesion);
   const idSub = Number((await searchParams).subproceso);
   const [opciones, sub] = await Promise.all([
     opcionesFormularioPunto(),

@@ -62,11 +62,12 @@ export default async function FichaDocumento({
   searchParams,
 }: {
   params: Promise<{ codigo: string }>;
-  searchParams: Promise<{ v?: string | string[] }>;
+  searchParams: Promise<{ v?: string | string[]; aviso?: string | string[]; n?: string | string[] }>;
 }) {
   const sesion = await exigirSesion();
   const { codigo } = await params;
-  const versionDeCopia = versionDeQr((await searchParams).v);
+  const consulta = await searchParams;
+  const versionDeCopia = versionDeQr(consulta.v);
 
   const ficha = await obtenerFichaDocumento(codigo, sesion);
   if (!ficha) notFound();
@@ -288,7 +289,12 @@ export default async function FichaDocumento({
           {/* Las normas que el documento implementa o referencia (spec 13C §14.4); sin ninguna, no se pinta. */}
           <NormasEnlazadas documentoId={ficha.id} sesion={sesion} />
 
-          <BloqueDistribucion documento={{ id: ficha.id, codigo: ficha.codigo, titulo: ficha.titulo }} sesion={sesion} />
+          <BloqueDistribucion
+            documento={{ id: ficha.id, codigo: ficha.codigo, titulo: ficha.titulo }}
+            sesion={sesion}
+            volver={`/documentos/${encodeURIComponent(ficha.codigo)}`}
+            consulta={consulta}
+          />
 
           <section aria-labelledby="titulo-ubicaciones">
             <h2

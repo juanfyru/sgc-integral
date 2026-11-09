@@ -45,6 +45,6 @@ export function proxy(request: NextRequest) {
 // cuerpo en memoria y pasados 10 MB entrega solo esa parte, sin error. Sus handlers responden 401.
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon[.]ico|admin/api/archivos$|api/tramites/[0-9]+/archivos$|api/socializaciones/[0-9]+/archivos$|api/verificaciones/[0-9]+/items/[0-9]+/archivos$|api/externos/[0-9]+/archivos$|api/normas/[0-9]+/archivos$|.*[.](?:png|jpg|jpeg|webp|svg|ico|woff2?)$).*)",
+    "/((?!_next/static|_next/image|favicon[.]ico|admin/api/archivos$|api/tramites/[0-9]+/archivos$|api/socializaciones/[0-9]+/archivos$|api/verificaciones/[0-9]+/items/[0-9]+/archivos$|api/externos/[0-9]+/archivos$|api/normas/[0-9]+/archivos$|api/hallazgos/[0-9]+/archivos$|.*[.](?:png|jpg|jpeg|webp|svg|ico|woff2?)$).*)",
   ],
 };

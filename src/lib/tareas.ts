@@ -5,6 +5,7 @@ import {
   tareasDeCopias,
   tareasDeHallazgos,
   tareasDeSocializacion,
+  tareasDeValidacion,
   tareasDeVerificacion,
 } from "@/db/consultas/distribucion/tareas";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
@@ -74,7 +75,7 @@ const SIN_VIGENCIA: VigenciaDePersona = { tareas: [], vencidos: 0 };
 
 /**
  * Los pasos que le tocan a la persona: los trámites (la pestaña «Por hacer» de la bandeja, spec 13A §14.1), las
- * copias, las lecturas por confirmar, las socializaciones por registrar, las verificaciones, los hallazgos, de la
+ * copias, las lecturas por confirmar, las socializaciones por registrar, las verificaciones, los hallazgos (y su validación), de la
  * vigencia, la adopción de las ediciones nuevas, la verificación de sus externos y la revisión de sus documentos, la de
  * cada proceso suyo en la revisión anual abierta y los impactos normativos de sus procesos (estas dos, una consulta
  * acotada cada una, nada para quien no lidera ni es Admin SGC). Con ellas,
@@ -92,13 +93,14 @@ export async function misTareas(
   const config = usaConfig ? obtenerConfigDocumental({ sql: opciones?.sql }) : undefined;
   // Quien la espera recibe su rechazo; este `catch` solo evita uno sin atender si ninguna fuente llega a esperarla.
   config?.catch(() => {});
-  const [tramites, copias, acuses, socializacion, verificacion, hallazgos, vigencia, revision, impactos] = await Promise.all([
+  const [tramites, copias, acuses, socializacion, verificacion, hallazgos, validacion, vigencia, revision, impactos] = await Promise.all([
     listarTramites(sesion, "por_hacer", fuentes),
     tareasDeCopias(sesion, fuentes),
     tareasDeAcuses(sesion, fuentes),
     tareasDeSocializacion(sesion, fuentes),
     tareasDeVerificacion(sesion, { ...fuentes, config }),
     tareasDeHallazgos(sesion, fuentes),
+    tareasDeValidacion(sesion, { sql: opciones?.sql, config }),
     // Calculada del estado y la más pesada: si falla se registra, y las demás tareas y la página siguen sin ella.
     vigenciaDePersona(sesion, { responsableTecnico }, { ...fuentes, config }).catch((err: unknown) => {
       console.error("No se pudo calcular la vigencia de «Mis tareas» y de la insignia:", err);
@@ -121,6 +123,7 @@ export async function misTareas(
     ...socializacion,
     ...verificacion,
     ...hallazgos,
+    ...validacion,
     ...vigencia.tareas,
     ...revision,
     ...impactos,

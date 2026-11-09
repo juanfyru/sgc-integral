@@ -63,16 +63,20 @@ describe("Entidad y marca", () => {
 
 describe("Distribución en Administración", () => {
   const hrefs = (rol: Parameters<typeof entradasVisibles>[0]["rol"]) => entradasVisibles({ rol }).map((e) => e.href);
-  it("Puntos de uso y Listas de distribución: solo admin_sgc, después de Estructura", () => {
-    for (const rol of ["gerencia", "lider_proceso", "control_interno", "consulta"] as const) {
-      expect(hrefs(rol)).not.toContain("/admin/puntos-uso");
-      expect(hrefs(rol)).not.toContain("/admin/listas-distribucion");
+  it("Puntos de uso y Listas de distribución: con distribucion.ver (en solo lectura sin gestionar), después de Estructura", () => {
+    for (const rol of ["admin_sgc", "gerencia", "lider_proceso", "control_interno"] as const) {
+      expect(hrefs(rol)).toContain("/admin/puntos-uso");
+      expect(hrefs(rol)).toContain("/admin/listas-distribucion");
     }
+    expect(hrefs("consulta")).not.toContain("/admin/puntos-uso");
+    expect(hrefs("consulta")).not.toContain("/admin/listas-distribucion");
+    // Responder por un punto no abre el catálogo: esa persona ve sus copias en Distribución.
+    expect(entradasVisibles({ rol: "consulta", responsableDePuntos: true }).map((e) => e.href)).not.toContain("/admin/puntos-uso");
     const admin = hrefs("admin_sgc");
     expect(admin.indexOf("/admin/puntos-uso")).toBe(admin.indexOf("/admin/estructura") + 1);
     expect(admin.indexOf("/admin/listas-distribucion")).toBe(admin.indexOf("/admin/estructura") + 2);
     for (const href of ["/admin/puntos-uso", "/admin/listas-distribucion"]) {
-      expect(NAVEGACION.find((e) => e.href === href)).toMatchObject({ grupo: "administracion", permiso: "distribucion.gestionar" });
+      expect(NAVEGACION.find((e) => e.href === href)).toMatchObject({ grupo: "administracion", permiso: "distribucion.ver" });
     }
   });
 });

@@ -1,56 +1,60 @@
-"use client";
-
-import { useActionState } from "react";
-import { cerrarHallazgoAccion } from "@/app/acciones-distribucion";
-import type { EstadoAccion } from "@/app/admin/comun";
-import { enviarSinReiniciar } from "@/componentes/admin/sin-reiniciar";
-import { ErrorAccion } from "@/componentes/tramites/AccionesSolicitud";
-import { Boton } from "@/componentes/ui/Boton";
-import { claseControl } from "@/componentes/ui/Campo";
+import Link from "next/link";
 import { Insignia } from "@/componentes/ui/Insignia";
+import type { Evidencia } from "@/db/consultas/distribucion/evidencias";
 import type { Hallazgo } from "@/db/consultas/distribucion/hallazgos";
+import type { HallazgoDeVerificacion } from "@/db/consultas/distribucion/verificaciones";
 import { zonaHoraria } from "@/lib/zona-horaria";
+import { AccionesHallazgo } from "./AccionesHallazgo";
 import { urlDeFoto } from "./ItemChequeo";
 
-function CerrarHallazgo({ hallazgoId, verificacionId }: { hallazgoId: number; verificacionId: number }) {
-  const [estado, enviar, pendiente] = useActionState<EstadoAccion, FormData>(cerrarHallazgoAccion, null);
+export const urlDeFotoDeHallazgo = (hallazgoId: number, fotoId: number, nombre: string) =>
+  `/distribucion/verificaciones/hallazgos/${hallazgoId}/archivos/${fotoId}/${encodeURIComponent(nombre)}`;
+
+const claseEnlace =
+  "break-words rounded underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
+
+/** El estado siempre con texto: «Abierto», «Por validar» o «Cerrado». */
+export function InsigniaHallazgo({ estado, vencido = false }: { estado: Hallazgo["estado"]; vencido?: boolean }) {
+  if (estado === "cerrado") return <Insignia variante="bien">Cerrado</Insignia>;
+  if (estado === "por_validar") return <Insignia variante="atencion">Por validar</Insignia>;
+  return vencido ? <Insignia variante="critico">Abierto y vencido</Insignia> : <Insignia variante="atencion">Abierto</Insignia>;
+}
+
+function Fotos({ fotos, url, etiqueta }: { fotos: Evidencia[]; url: (f: Evidencia) => string; etiqueta: string }) {
+  if (fotos.length === 0) return null;
   return (
-    <form action={enviar} onSubmit={enviarSinReiniciar(enviar)} className="mt-3 flex flex-col gap-2 border-t border-border pt-3">
-      <input type="hidden" name="id" value={hallazgoId} />
-      <input type="hidden" name="verificacion" value={verificacionId} />
-      <label className="flex flex-col gap-1 text-sm font-medium">
-        Qué se hizo para corregirlo
-        <textarea
-          name="nota"
-          required
-          minLength={5}
-          maxLength={1000}
-          rows={2}
-          defaultValue={estado?.valores?.nota as string | undefined}
-          className={claseControl}
-        />
-      </label>
-      <ErrorAccion estado={estado} />
-      <div>
-        <Boton type="submit" pendiente={pendiente}>
-          {pendiente ? "Procesando…" : "Cerrar hallazgo"}
-        </Boton>
-      </div>
-    </form>
+    <ul className="mt-2 flex list-none flex-col gap-1" aria-label={etiqueta}>
+      {fotos.map((f) => (
+        <li key={f.id} className="text-sm">
+          <a href={url(f)} className={claseEnlace}>
+            {f.nombreOriginal}
+          </a>
+        </li>
+      ))}
+    </ul>
   );
 }
 
-/** Los hallazgos que abrió una verificación, con su cierre; quien responde por el punto puede cerrarlos. */
-export function ListaHallazgos({
-  hallazgos,
-  verificacionId,
-  cerrables,
-}: {
-  hallazgos: Hallazgo[];
-  verificacionId: number;
-  /** Los hallazgos que la persona puede cerrar. */
-  cerrables: number[];
-}) {
+/** «Validado por el Administrador del SGC» o «por la siguiente verificación del punto», con su enlace. */
+function Validacion({ h }: { h: Hallazgo }) {
+  if (h.validacion === "verificacion" && h.validacionVerificacionId !== null) {
+    return (
+      <>
+        {" · "}
+        <Link href={`/distribucion/verificaciones/${h.validacionVerificacionId}`} className={claseEnlace}>
+          Validado por la siguiente verificación del punto
+        </Link>
+      </>
+    );
+  }
+  return h.validacion === "admin" ? " · Validado por el Administrador del SGC" : null;
+}
+
+/**
+ * Los hallazgos que abrió una verificación, con su corrección y su cierre (spec 13C §12.5): quien responde por el punto
+ * marca «Corregido»; quien realiza verificaciones lo valida o lo reabre.
+ */
+export function ListaHallazgos({ hallazgos, verificacionId }: { hallazgos: HallazgoDeVerificacion[]; verificacionId: number }) {
   const fecha = new Intl.DateTimeFormat("es-CO", { dateStyle: "medium", timeZone: zonaHoraria() });
   if (hallazgos.length === 0) return null;
   return (
@@ -61,35 +65,37 @@ export function ListaHallazgos({
           <li key={h.id} className="rounded-lg border border-border p-3">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <p className="min-w-0 break-words text-sm font-medium">{h.descripcion}</p>
-              {h.estado === "abierto" ? <Insignia variante="atencion">Abierto</Insignia> : <Insignia variante="bien">Cerrado</Insignia>}
+              <InsigniaHallazgo estado={h.estado} />
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
               {`Responsable: ${h.responsable.nombre}`}
               {h.estado === "abierto" ? ` · Vence el ${fecha.format(h.venceEn)}` : ""}
               {h.retiradoEnElActo ? " · Retirado en el acto" : ""}
+              {h.reaperturas > 0 ? ` · Se reabrió ${h.reaperturas} ${h.reaperturas === 1 ? "vez" : "veces"}` : ""}
             </p>
-            {h.fotos.length > 0 ? (
-              <ul className="mt-2 flex list-none flex-col gap-1" aria-label="Fotos del hallazgo">
-                {h.fotos.map((f) => (
-                  <li key={f.id} className="text-sm">
-                    <a
-                      href={urlDeFoto(verificacionId, f.id, f.nombreOriginal)}
-                      className="break-words rounded underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca"
-                    >
-                      {f.nombreOriginal}
-                    </a>
-                  </li>
-                ))}
-              </ul>
+            <Fotos fotos={h.fotos} url={(f) => urlDeFoto(verificacionId, f.id, f.nombreOriginal)} etiqueta="Fotos del hallazgo" />
+            {h.correccion ? (
+              <p className="mt-2 whitespace-pre-wrap break-words text-sm">
+                <span className="text-xs text-muted-foreground">{`Corregido por ${h.correccion.por} el ${fecha.format(h.correccion.en)}: `}</span>
+                {h.correccion.nota}
+              </p>
             ) : null}
+            <Fotos
+              fotos={h.fotosCorreccion}
+              url={(f) => urlDeFotoDeHallazgo(h.id, f.id, f.nombreOriginal)}
+              etiqueta="Fotos de la corrección"
+            />
             {h.cierre ? (
               <p className="mt-2 whitespace-pre-wrap break-words text-sm">
-                <span className="text-xs text-muted-foreground">{`Cerrado por ${h.cierre.por} el ${fecha.format(h.cierre.en)}: `}</span>
+                <span className="text-xs text-muted-foreground">
+                  {`Cerrado por ${h.cierre.por} el ${fecha.format(h.cierre.en)}`}
+                  <Validacion h={h} />
+                  {": "}
+                </span>
                 {h.cierre.nota}
               </p>
-            ) : cerrables.includes(h.id) ? (
-              <CerrarHallazgo hallazgoId={h.id} verificacionId={verificacionId} />
             ) : null}
+            <AccionesHallazgo hallazgo={h} verificacionId={verificacionId} />
           </li>
         ))}
       </ul>

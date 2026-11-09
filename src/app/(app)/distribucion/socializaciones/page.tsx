@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Users } from "lucide-react";
+import { Download, Users } from "lucide-react";
 import { PestanasDistribucion } from "@/componentes/distribucion/PestanasDistribucion";
 import { TablaJornadas } from "@/componentes/distribucion/socializaciones/TablaJornadas";
 import { claseBoton } from "@/componentes/ui/Boton";
@@ -32,6 +32,8 @@ export default async function PaginaSocializaciones({
     procesosParaFiltro(sesion),
   ]);
   const puedeRegistrar = puede(sesion, "socializaciones.registrar");
+  const consulta = new URLSearchParams({ desde: periodo.desdeTexto, hasta: periodo.hastaTexto });
+  if (periodo.procesoId) consulta.set("proceso", String(periodo.procesoId));
 
   return (
     <div className="flex flex-col gap-6">
@@ -71,6 +73,12 @@ export default async function PaginaSocializaciones({
         <button type="submit" className={claseBoton("secundario")}>
           Filtrar
         </button>
+        {puede(sesion, "distribucion.ver") ? (
+          <a href={`/distribucion/socializaciones/excel?${consulta}`} className={`${claseBoton("primario")} ml-auto`}>
+            <Download aria-hidden="true" className="size-4" />
+            Descargar Excel
+          </a>
+        ) : null}
       </form>
 
       {jornadas.length === 0 ? (

@@ -15,7 +15,7 @@ import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { eliminarEvidencia, evidenciasDe } from "@/db/consultas/distribucion/evidencias";
 import { ErrorTramite } from "@/db/consultas/flujo/contrato";
 import { obtenerCopia } from "@/db/consultas/distribucion/copias";
-import { cerrarHallazgo, hallazgosAbiertosDe, hallazgosDe } from "@/db/consultas/distribucion/hallazgos";
+import { cerrarHallazgo, corregirHallazgo, hallazgosAbiertosDe, hallazgosDe } from "@/db/consultas/distribucion/hallazgos";
 import {
   abrirVerificacion,
   agregarItemLibre,
@@ -28,8 +28,9 @@ import {
 import { alDejarDeSerVigente } from "@/db/consultas/distribucion/version-vigencia";
 import { ErrorDistribucion } from "@/lib/distribucion/tipos";
 import { ITEMS_FIJOS } from "@/lib/distribucion/verificacion";
+import { leerChequeo } from "@/lib/esquemas/distribucion";
 import { ErrorPermiso } from "@/lib/permisos";
-import { fechaLimite } from "@/lib/tramites/plazos";
+import { fechaEnZona, fechaLimite, finDeFecha } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { copiaDePrueba, puntoDePrueba, vigenteConPdf } from "./utiles/distribucion";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
@@ -286,6 +287,84 @@ describe("cerrar", () => {
     }));
 });
 
+describe("fecha de corrección ajustable", () => {
+  // T1 es el 20 nov 2026 en la zona de la instalación.
+  const formulario = (campos: Record<string, string>) => {
+    const datos = new FormData();
+    datos.set("id", "1");
+    for (const [campo, valor] of Object.entries(campos)) datos.set(campo, valor);
+    return datos;
+  };
+
+  it("cada no conforme vence en la fecha elegida; sin fecha, en el plazo de corrección; queda en la bitácora del cierre", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const resp = await usuarioDePrueba(tx, { rol: "consulta" });
+      const punto = await puntoDePrueba(tx, { responsable: resp });
+      const { verificacionId } = await abrirVerificacion(admin, punto.id, { sql: tx, ahora: T0 });
+      const [obsoletos, sinSello, plataforma] = (await obtenerVerificacion(verificacionId, admin, { sql: tx }))!.items;
+      const filas = leerChequeo(
+        formulario({
+          [`respuesta_${obsoletos.id}`]: "no_conforme",
+          [`fecha_${obsoletos.id}`]: "2026-11-22",
+          [`respuesta_${sinSello.id}`]: "no_conforme",
+          [`respuesta_${plataforma.id}`]: "conforme",
+          // Una fecha en un ítem conforme no abre nada ni se valida.
+          [`fecha_${plataforma.id}`]: "2020-01-01",
+        }),
+        ["id"],
+      );
+      expect(filas.find((f) => f.itemId === obsoletos.id)?.fechaCorreccion).toBe("2026-11-22");
+      expect(filas.find((f) => f.itemId === sinSello.id)?.fechaCorreccion).toBeUndefined();
+      await guardarAvance(verificacionId, admin, filas, { sql: tx });
+      await cerrarVerificacion(verificacionId, admin, { sql: tx, ahora: T1, fechasCorreccion: filas });
+
+      const plazo = (await obtenerConfigDocumental({ sql: tx })).distribucion.plazoCorreccionDias;
+      const zona = zonaHoraria();
+      const hallazgos = await tx`SELECT item_id, vence_en, id FROM hallazgos WHERE verificacion_id = ${verificacionId} ORDER BY item_id`;
+      expect(hallazgos.map((h) => [Number(h.item_id), h.vence_en])).toEqual([
+        [obsoletos.id, finDeFecha("2026-11-22", zona)],
+        [sinSello.id, fechaLimite(T1, plazo, zona)],
+      ]);
+      const [auditoria] = await tx`SELECT detalle FROM auditoria WHERE accion = 'verificacion_cerrada' AND entidad_id = ${verificacionId}`;
+      expect(auditoria.detalle).toMatchObject({
+        fechaPropuesta: fechaEnZona(fechaLimite(T1, plazo, zona), zona),
+        fechasCorreccion: [
+          { itemId: obsoletos.id, hallazgoId: Number(hallazgos[0].id), fecha: "2026-11-22", ajustada: true },
+          { itemId: sinSello.id, hallazgoId: Number(hallazgos[1].id), fecha: fechaEnZona(fechaLimite(T1, plazo, zona), zona), ajustada: false },
+        ],
+      });
+    }));
+
+  it("la fecha va de mañana a hoy + 365: hoy, ayer o más allá rechaza y no cierra", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const resp = await usuarioDePrueba(tx, { rol: "consulta" });
+      const punto = await puntoDePrueba(tx, { responsable: resp });
+      const { verificacionId } = await abrirVerificacion(admin, punto.id, { sql: tx, ahora: T0 });
+      const items = (await obtenerVerificacion(verificacionId, admin, { sql: tx }))!.items;
+      await guardarAvance(verificacionId, admin, items.map((i, n) => ({ itemId: i.id, respuesta: n === 0 ? "no_conforme" : "conforme", nota: null })), { sql: tx });
+      const MENSAJE = "La fecha de corrección debe estar entre mañana y el 20 nov 2027";
+      for (const fecha of ["2026-11-19", "2026-11-20", "2027-11-21", "2026-02-30"]) {
+        await rechaza(
+          cerrarVerificacion(verificacionId, admin, { sql: tx, ahora: T1, fechasCorreccion: [{ itemId: items[0].id, fechaCorreccion: fecha }] }),
+          fecha === "2026-02-30" ? "Elija una fecha de corrección válida" : MENSAJE,
+        );
+      }
+      expect((await obtenerVerificacion(verificacionId, admin, { sql: tx }))?.estado).toBe("abierta");
+      // Los extremos valen.
+      await cerrarVerificacion(verificacionId, admin, { sql: tx, ahora: T1, fechasCorreccion: [{ itemId: items[0].id, fechaCorreccion: "2027-11-20" }] });
+      const [h] = await tx`SELECT vence_en FROM hallazgos WHERE verificacion_id = ${verificacionId}`;
+      expect(h.vence_en).toEqual(finDeFecha("2027-11-20", zonaHoraria()));
+    }));
+
+  it("leerChequeo rechaza una fecha que no es AAAA-MM-DD", () => {
+    expect(() => leerChequeo(formulario({ respuesta_5: "no_conforme", fecha_5: "22/11/2026" }), ["id"])).toThrow(
+      "Elija una fecha de corrección válida",
+    );
+  });
+});
+
 describe("propio punto al cerrar", () => {
   it("si el responsable de hoy cierra, rige la regla de la apertura: con otro admin activo lanza; sin otro, queda la marca", () =>
     revertida(sql, async (tx) => {
@@ -390,7 +469,7 @@ describe("quien no puede descartar no sabe el estado", () => {
 });
 
 describe("hallazgos", () => {
-  it("el responsable cierra su hallazgo con nota; otro consulta recibe «no existe»", () =>
+  it("el responsable marca corregido su hallazgo con nota; otro consulta recibe «no existe»; cerrar directo es de quien gestiona", () =>
     revertida(sql, async (tx) => {
       const admin = await sesionAdmin(tx);
       const resp = await usuarioDePrueba(tx, { rol: "consulta" });
@@ -412,30 +491,36 @@ describe("hallazgos", () => {
       expect(await hallazgosDe({}, ajeno, { sql: tx })).toEqual([]);
       expect((await hallazgosDe({ estado: "abierto" }, resp, { sql: tx })).map((h) => h.id)).toEqual([abierto.id]);
 
-      // El botón sigue al responsable ACTUAL del punto, como cerrarHallazgo.
+      // «Corregido» sigue al responsable ACTUAL del punto, como corregirHallazgo.
       const nuevo = await usuarioDePrueba(tx, { rol: "consulta" });
       const antes = (await obtenerVerificacion(verificacionId, resp, { sql: tx }))!;
-      expect(antes.hallazgos.map((h) => h.puedeCerrar)).toEqual([true]);
-      expect((await obtenerVerificacion(verificacionId, admin, { sql: tx }))!.hallazgos[0].puedeCerrar).toBe(true);
+      expect(antes.hallazgos.map((h) => [h.puedeCorregir, h.puedeCerrar])).toEqual([[true, false]]);
+      expect((await obtenerVerificacion(verificacionId, admin, { sql: tx }))!.hallazgos[0]).toMatchObject({ puedeCorregir: true, puedeCerrar: true });
       await tx`UPDATE puntos_uso SET responsable_id = ${nuevo.usuarioId} WHERE id = ${punto.id}`;
       expect((await obtenerVerificacion(verificacionId, resp, { sql: tx }))).toBeNull();
       const delNuevo = (await obtenerVerificacion(verificacionId, nuevo, { sql: tx }))!.hallazgos[0];
-      expect(delNuevo.puedeCerrar).toBe(true);
-      // La tarjeta nombra al responsable de hoy, el mismo de la tarea y del cierre.
+      expect(delNuevo.puedeCorregir).toBe(true);
+      // La tarjeta nombra al responsable de hoy, el mismo de la tarea y de la corrección.
       expect(delNuevo.responsable).toEqual({ id: nuevo.usuarioId, nombre: nuevo.nombre });
       expect((await hallazgosDe({ estado: "abierto" }, admin, { sql: tx })).find((h) => h.id === abierto.id)?.responsable.id).toBe(nuevo.usuarioId);
-      await rechaza(cerrarHallazgo(abierto.id, resp, "Ya se corrigió todo", { sql: tx }), "El hallazgo no existe");
+      await rechaza(corregirHallazgo(abierto.id, resp, "Ya se corrigió todo", { sql: tx }), "El hallazgo no existe");
       await tx`UPDATE puntos_uso SET responsable_id = ${resp.usuarioId} WHERE id = ${punto.id}`;
 
-      await rechaza(cerrarHallazgo(abierto.id, ajeno, "Ya se corrigió todo", { sql: tx }), "El hallazgo no existe");
-      await rechaza(cerrarHallazgo(abierto.id, resp, "abc", { sql: tx }), "Escriba qué se hizo para corregirlo (mínimo 5 caracteres)");
-      await cerrarHallazgo(abierto.id, resp, "  Se retiró la guía vieja  ", { sql: tx, ahora: T1 });
-      const [cerrado] = await hallazgosDe({ puntoId: punto.id, estado: "cerrado" }, resp, { sql: tx });
-      expect(cerrado.cierre).toEqual({ en: T1, por: resp.nombre, nota: "Se retiró la guía vieja" });
-      await rechaza(cerrarHallazgo(abierto.id, resp, "Otra vez, por favor", { sql: tx }), "El hallazgo ya está cerrado");
+      await rechaza(corregirHallazgo(abierto.id, ajeno, "Ya se corrigió todo", { sql: tx }), "El hallazgo no existe");
+      await rechaza(corregirHallazgo(abierto.id, resp, "abc", { sql: tx }), "Escriba qué se hizo para corregirlo (mínimo 5 caracteres)");
+      await corregirHallazgo(abierto.id, resp, "  Se retiró la guía vieja  ", { sql: tx, ahora: T1 });
+      const [porValidar] = await hallazgosDe({ puntoId: punto.id, estado: "por_validar" }, resp, { sql: tx });
+      expect(porValidar.correccion).toEqual({ en: T1, porId: resp.usuarioId, por: resp.nombre, nota: "Se retiró la guía vieja" });
       expect(await hallazgosAbiertosDe(resp.usuarioId, { sql: tx })).toEqual([]);
+
+      // Quien corrige no cierra: cerrar directamente es de quien gestiona la distribución.
+      await expect(cerrarHallazgo(abierto.id, resp, "Ya se corrigió todo", { sql: tx })).rejects.toBeInstanceOf(ErrorPermiso);
+      await cerrarHallazgo(abierto.id, admin, "  Se revisó en el comité  ", { sql: tx, ahora: T1 });
+      const [cerrado] = await hallazgosDe({ puntoId: punto.id, estado: "cerrado" }, resp, { sql: tx });
+      expect(cerrado.cierre).toEqual({ en: T1, por: admin.nombre, nota: "Se revisó en el comité" });
+      await rechaza(cerrarHallazgo(abierto.id, admin, "Otra vez, por favor", { sql: tx }), "El hallazgo ya está cerrado");
       const [a] = await tx`SELECT usuario_id FROM auditoria WHERE accion = 'hallazgo_cerrado' AND entidad_id = ${abierto.id}`;
-      expect(Number(a.usuario_id)).toBe(resp.usuarioId);
+      expect(Number(a.usuario_id)).toBe(admin.usuarioId);
     }));
 });
 

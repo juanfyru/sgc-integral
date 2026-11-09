@@ -19,6 +19,7 @@ vi.mock("@/db/consultas/distribucion/tareas", () => {
     tareasDeSocializacion: async () => [],
     tareasDeVerificacion: async () => [],
     tareasDeHallazgos: async () => [],
+    tareasDeValidacion: async () => [],
   };
 });
 vi.mock("@/db/consultas/config-documental", async (original) => {

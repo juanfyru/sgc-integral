@@ -520,6 +520,11 @@ export async function listarCopias(sesion: SesionFlujo, filtro: FiltroCopias, op
   return filas.map((f) => f.copia);
 }
 
+/**
+ * Los puntos que la persona ve con lo que cuenta en cada uno, con la misma condición de `listarCopias`
+ * (`condicionVista`): al líder, también los puntos de otros procesos donde hay copias de sus documentos, y en sus puntos
+ * nunca el restringido ajeno que no ve.
+ */
 export async function conteosPorPunto(
   sesion: SesionFlujo,
   opciones?: Opciones,
@@ -531,8 +536,12 @@ export async function conteosPorPunto(
            count(cc.id) FILTER (WHERE cc.estado = 'por_recoger') AS por_recoger,
            count(cc.id) FILTER (WHERE cc.estado = 'emitida') AS sin_recibido
     FROM puntos_uso pu
-    LEFT JOIN copias_controladas cc ON cc.punto_uso_id = pu.id
-    WHERE ${filtroPuntos(sql, sesion)}
+    LEFT JOIN (
+      copias_controladas cc
+      JOIN documento_versiones v ON v.id = cc.version_id
+      JOIN documentos d ON d.id = v.documento_id
+    ) ON cc.punto_uso_id = pu.id AND ${condicionVista(sql, sesion)}
+    WHERE ${filtroPuntos(sql, sesion)} OR cc.id IS NOT NULL
     GROUP BY pu.id
     ORDER BY pu.orden, lower(coalesce(pu.sede, '')), lower(pu.nombre), pu.id`;
   return filas.map((f) => ({

@@ -1,3 +1,4 @@
+import { fechaEnZona, fechaLimite } from "@/lib/tramites/plazos";
 import { numeroDeCopia } from "./copias";
 import type { RespuestaItem } from "./tipos";
 
@@ -50,8 +51,33 @@ export function conformidad(
   umbral: number,
 ): { porcentaje: number | null; cumple: boolean | null } {
   if (puntos.length === 0) return { porcentaje: null, cumple: null };
-  const exacto = (puntos.filter((p) => p.conforme).length / puntos.length) * 100;
-  return { porcentaje: Math.round(exacto), cumple: exacto >= umbral };
+  const conformes = puntos.filter((p) => p.conforme).length;
+  // En enteros: 29 de 50 en coma flotante da 57,99999999999999 y quedaría por debajo de un umbral de 58.
+  return { porcentaje: Math.round((conformes * 100) / puntos.length), cumple: conformes * 100 >= umbral * puntos.length };
+}
+
+/** Hasta cuándo puede fijarse la corrección de un hallazgo, en días desde el cierre. */
+export const MAXIMO_DIAS_CORRECCION = 365;
+
+/**
+ * La fecha de corrección que se propone al cerrar (hoy + `plazo_correccion_dias`) y el rango en que el verificador puede
+ * cambiarla (de mañana a hoy + 365), como días `AAAA-MM-DD` de la zona de la instalación (spec 13C §12.2).
+ */
+export type FechasCorreccion = { propuesta: string; minima: string; maxima: string };
+
+export function fechasDeCorreccion(ahora: Date, plazoDias: number, zona: string): FechasCorreccion {
+  return {
+    propuesta: fechaEnZona(fechaLimite(ahora, plazoDias, zona), zona),
+    minima: fechaEnZona(fechaLimite(ahora, 1, zona), zona),
+    maxima: fechaEnZona(fechaLimite(ahora, MAXIMO_DIAS_CORRECCION, zona), zona),
+  };
+}
+
+/** Un día real del calendario en `AAAA-MM-DD` (el 30 de febrero no lo es). */
+export function esDiaReal(fecha: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return false;
+  const d = new Date(`${fecha}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === fecha;
 }
 
 export function verificacionVencida(ultimaCerrada: Date | null, cadaDias: number, ahora: Date): boolean {

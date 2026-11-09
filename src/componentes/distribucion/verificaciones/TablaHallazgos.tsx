@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { Insignia } from "@/componentes/ui/Insignia";
 import { TablaDatos, celda, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
-import type { Hallazgo } from "@/db/consultas/distribucion/hallazgos";
+import { enlaceDeHallazgo, type Hallazgo } from "@/db/consultas/distribucion/hallazgos";
 import { fechaConAnio } from "./fecha";
+import { InsigniaHallazgo } from "./ListaHallazgos";
 
 const COLUMNAS: readonly ColumnaTabla[] = [
   { clave: "punto", etiqueta: "Punto de uso" },
@@ -13,11 +13,11 @@ const COLUMNAS: readonly ColumnaTabla[] = [
 ];
 
 function enlaceDe(h: Hallazgo): string | null {
-  if (h.origen === "verificacion" && h.verificacionId !== null) return `/distribucion/verificaciones/${h.verificacionId}`;
-  return h.copia ? `/distribucion/copias/${h.copia.id}` : null;
+  if (h.origen !== "verificacion" && !h.copia) return null;
+  return enlaceDeHallazgo({ origen: h.origen, verificacionId: h.verificacionId, copiaId: h.copia?.id ?? null });
 }
 
-/** Los hallazgos abiertos primero, luego los cerrados con su cierre. */
+/** Los hallazgos abiertos primero, luego los que esperan validación y los cerrados con su cierre. */
 export function TablaHallazgos({ hallazgos, ahora }: { hallazgos: Hallazgo[]; ahora: Date }) {
   return (
     <section aria-labelledby="hallazgos-verificaciones" className="flex flex-col gap-3">
@@ -39,17 +39,15 @@ export function TablaHallazgos({ hallazgos, ahora }: { hallazgos: Hallazgo[]; ah
                 ) : (
                   h.descripcion
                 )}
-                {h.cierre ? <div className="text-xs text-muted-foreground">{`Cerrado por ${h.cierre.por}: ${h.cierre.nota}`}</div> : null}
+                {h.cierre ? (
+                  <div className="text-xs text-muted-foreground">{`Cerrado por ${h.cierre.por}: ${h.cierre.nota}`}</div>
+                ) : h.correccion ? (
+                  <div className="text-xs text-muted-foreground">{`Corregido por ${h.correccion.por}: ${h.correccion.nota}`}</div>
+                ) : null}
               </td>
               <td className={celda}>{h.responsable.nombre}</td>
               <td className={celda}>
-                {h.estado === "cerrado" ? (
-                  <Insignia variante="bien">Cerrado</Insignia>
-                ) : vencido ? (
-                  <Insignia variante="critico">Abierto y vencido</Insignia>
-                ) : (
-                  <Insignia variante="atencion">Abierto</Insignia>
-                )}
+                <InsigniaHallazgo estado={h.estado} vencido={vencido} />
               </td>
               <td className={celda}>{fechaConAnio(h.cierre ? h.cierre.en : h.venceEn)}</td>
             </tr>

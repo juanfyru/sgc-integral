@@ -136,6 +136,11 @@ describe("verificación", () => {
     expect(conformidad([{ conforme: true }, { conforme: true }], 95)).toEqual({ porcentaje: 100, cumple: true });
     expect(conformidad([], 95)).toEqual({ porcentaje: null, cumple: null });
   });
+  it("conformidad compara en enteros: 29 de 50 cumple un umbral de 58", () => {
+    const puntos = Array.from({ length: 50 }, (_, i) => ({ conforme: i < 29 }));
+    expect(conformidad(puntos, 58)).toEqual({ porcentaje: 58, cumple: true });
+    expect(conformidad(puntos, 59)).toEqual({ porcentaje: 58, cumple: false });
+  });
   it("verificacionVencida", () => {
     const ahora = new Date("2026-11-12T15:00:00Z");
     const hace = (d: number) => new Date(ahora.getTime() - d * 86_400_000);

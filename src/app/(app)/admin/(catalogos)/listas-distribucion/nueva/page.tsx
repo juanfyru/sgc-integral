@@ -3,13 +3,16 @@ import { crearListaAccion } from "@/app/admin/acciones-listas";
 import { FormularioLista } from "@/componentes/distribucion/listas/FormularioLista";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { opcionesFormularioLista } from "@/db/consultas/distribucion/listas";
-import { exigirPermiso } from "@/lib/paginas";
+import { exigirSesion } from "@/lib/paginas";
+import { exigirCatalogo, exigirGestion } from "../../_comun";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Nueva lista de distribución — Administración SGC" };
 
 export default async function PaginaNuevaLista() {
-  await exigirPermiso("distribucion.gestionar");
+  const sesion = await exigirSesion();
+  exigirCatalogo(sesion);
+  exigirGestion(sesion);
   const opciones = await opcionesFormularioLista();
   return (
     <div>

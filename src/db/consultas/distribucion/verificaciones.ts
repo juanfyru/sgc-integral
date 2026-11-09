@@ -5,7 +5,7 @@ import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { adminsActivos } from "@/db/consultas/tramites";
 import { puedeVerVerificacion } from "@/lib/alcance";
-import { armarListaDeChequeo, esConforme } from "@/lib/distribucion/verificacion";
+import { armarListaDeChequeo, esConforme, esDiaReal, fechasDeCorreccion } from "@/lib/distribucion/verificacion";
 import {
   ErrorDistribucion,
   RESPUESTAS_ITEM,
@@ -13,9 +13,12 @@ import {
   type RespuestaItem,
 } from "@/lib/distribucion/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
+import { finDeFecha } from "@/lib/tramites/plazos";
+import { textoFecha } from "@/lib/vigencia/plazo";
+import { zonaHoraria } from "@/lib/zona-horaria";
 import { recogerEnVerificacion } from "./copias";
 import { evidenciasDe, type Evidencia } from "./evidencias";
-import { abrirHallazgo, leerHallazgos, type Hallazgo } from "./hallazgos";
+import { abrirHallazgo, leerHallazgos, puedeCorregirHallazgo, validarPorVerificacion, type Hallazgo } from "./hallazgos";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -32,8 +35,12 @@ export type ItemVerificacion = {
   fotos: Evidencia[];
 };
 
-/** `puedeCerrar` sigue la regla de `cerrarHallazgo`: responsable actual del punto con `distribucion.responder`, o `distribucion.gestionar`. */
-export type HallazgoDeVerificacion = Hallazgo & { puedeCerrar: boolean };
+/**
+ * Lo que la persona puede hacer con cada hallazgo (spec 13C §12.5): «Corregido» el responsable actual del punto (o quien
+ * gestiona) mientras está abierto; «Validar» y «Reabrir» quien realiza verificaciones, si no lo corrigió él; cerrar
+ * directamente, quien gestiona la distribución.
+ */
+export type HallazgoDeVerificacion = Hallazgo & { puedeCorregir: boolean; puedeValidar: boolean; puedeCerrar: boolean };
 
 export type Verificacion = {
   id: number;
@@ -52,7 +59,14 @@ export type Verificacion = {
   puedeEditar: boolean;
 };
 
-export type RespuestaDeItem = { itemId: number; respuesta: RespuestaItem | null; nota: string | null; retirado?: boolean };
+export type RespuestaDeItem = {
+  itemId: number;
+  respuesta: RespuestaItem | null;
+  nota: string | null;
+  retirado?: boolean;
+  /** `AAAA-MM-DD`. No se guarda con el avance: el cierre la usa como vencimiento del hallazgo del ítem no conforme. */
+  fechaCorreccion?: string;
+};
 
 const YA_CERRADA = "La verificación ya está cerrada";
 const NO_EXISTE = "La verificación no existe";
@@ -196,14 +210,19 @@ export async function agregarItemLibre(
 /**
  * Cierra la verificación. Todo ocurre en una transacción: el cierre, un hallazgo por cada ítem no conforme y la
  * recogida de las copias obsoletas que ya no estaban. La marca «retirado en el acto» de cada ítem no conforme pasa a su hallazgo.
+ * `fechasCorreccion`: la fecha de corrección que el verificador eligió para un no conforme (de mañana a hoy + 365); sin
+ * ella, vence en `plazo_correccion_dias`.
  */
 export async function cerrarVerificacion(
   id: number,
   sesion: SesionFlujo,
-  opciones?: Opciones,
+  opciones?: Opciones & { fechasCorreccion?: Array<Pick<RespuestaDeItem, "itemId" | "fechaCorreccion">> },
 ): Promise<{ conforme: boolean; hallazgos: number }> {
   if (!puede(sesion, "verificaciones.realizar")) throw new ErrorPermiso();
   const ahora = opciones?.ahora ?? new Date();
+  const elegidas = new Map(
+    (opciones?.fechasCorreccion ?? []).flatMap((f) => (f.fechaCorreccion ? [[f.itemId, f.fechaCorreccion] as const] : [])),
+  );
   return enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
     const v = await bloquearAbierta(tx, id);
     const items = await tx`
@@ -222,6 +241,20 @@ export async function cerrarVerificacion(
     if (cierraSuPunto) await exigirSinOtroAdmin(tx, sesion.usuarioId);
     const { plazoCorreccionDias } = (await obtenerConfigDocumental({ sql: tx })).distribucion;
 
+    // Lo que puede fallar va antes del cierre: la fecha de corrección de cada no conforme, si se eligió.
+    const zona = zonaHoraria();
+    const limites = fechasDeCorreccion(ahora, plazoCorreccionDias, zona);
+    const fechaDe = new Map<number, string>();
+    for (const item of items) {
+      const fecha = elegidas.get(Number(item.id));
+      if (item.respuesta !== "no_conforme" || fecha === undefined) continue;
+      if (!esDiaReal(fecha)) throw new ErrorDistribucion("Elija una fecha de corrección válida");
+      if (fecha < limites.minima || fecha > limites.maxima) {
+        throw new ErrorDistribucion(`La fecha de corrección debe estar entre mañana y el ${textoFecha(limites.maxima, zona)}`);
+      }
+      fechaDe.set(Number(item.id), fecha);
+    }
+
     // Una sola sentencia: el trigger rechaza cualquier cambio posterior a la verificación cerrada.
     await tx`UPDATE verificaciones
       SET estado = 'cerrada', conforme = ${conforme}, cerrada_por = ${sesion.usuarioId}, cerrada_en = ${ahora},
@@ -230,11 +263,13 @@ export async function cerrarVerificacion(
 
     let hallazgos = 0;
     let recogidas = 0;
+    const fechasCorreccion: { itemId: number; hallazgoId: number; fecha: string; ajustada: boolean }[] = [];
     for (const item of items) {
       const itemId = Number(item.id);
       const retirado = item.respuesta === "no_conforme" && item.retirado === true;
       if (item.respuesta === "no_conforme") {
-        await abrirHallazgo(tx, {
+        const fecha = fechaDe.get(itemId);
+        const { hallazgoId } = await abrirHallazgo(tx, {
           puntoId: Number(v.punto_uso_id),
           origen: "verificacion",
           verificacionId: id,
@@ -246,7 +281,9 @@ export async function cerrarVerificacion(
           responsableId: Number(punto.responsable_id),
           ahora,
           plazoDias: plazoCorreccionDias,
+          venceEn: fecha === undefined ? undefined : finDeFecha(fecha, zona),
         });
+        fechasCorreccion.push({ itemId, hallazgoId, fecha: fecha ?? limites.propuesta, ajustada: fecha !== undefined && fecha !== limites.propuesta });
         hallazgos += 1;
       }
       if (
@@ -259,12 +296,31 @@ export async function cerrarVerificacion(
       }
     }
 
+    // Después de abrir los suyos: los hallazgos por validar del punto que traía de antes se validan o se reabren.
+    const noConformes = items
+      .filter((i) => i.respuesta === "no_conforme")
+      .map((i) => ({
+        copiaId: i.copia_id === null ? null : Number(i.copia_id),
+        documentoId: i.documento_id === null ? null : Number(i.documento_id),
+      }));
+    const validacion = await validarPorVerificacion(tx, id, Number(v.punto_uso_id), noConformes, ahora);
+
     await registrarAuditoria(tx, {
       usuarioId: sesion.usuarioId,
       accion: "verificacion_cerrada",
       entidad: "verificacion",
       entidadId: id,
-      detalle: { puntoId: Number(v.punto_uso_id), punto: v.punto_nombre, conforme, hallazgos, copiasRecogidas: recogidas },
+      detalle: {
+        puntoId: Number(v.punto_uso_id),
+        punto: v.punto_nombre,
+        conforme,
+        hallazgos,
+        copiasRecogidas: recogidas,
+        fechaPropuesta: limites.propuesta,
+        fechasCorreccion,
+        hallazgosValidados: validacion.validados,
+        hallazgosReabiertos: validacion.reabiertos,
+      },
     });
     return { conforme, hallazgos };
   });
@@ -358,9 +414,10 @@ export async function obtenerVerificacion(
     items,
     hallazgos: (await leerHallazgos(sql, sql`h.verificacion_id = ${id}`)).map((h) => ({
       ...h,
-      puedeCerrar:
-        h.estado === "abierto" &&
-        ((Number(f.actual_id) === sesion.usuarioId && puede(sesion, "distribucion.responder")) || puede(sesion, "distribucion.gestionar")),
+      puedeCorregir: h.estado === "abierto" && puedeCorregirHallazgo(sesion, Number(f.actual_id)),
+      puedeValidar:
+        h.estado === "por_validar" && puede(sesion, "verificaciones.realizar") && h.correccion?.porId !== sesion.usuarioId,
+      puedeCerrar: h.estado !== "cerrado" && puede(sesion, "distribucion.gestionar"),
     })),
     puedeEditar: estado === "abierta" && puede(sesion, "verificaciones.realizar"),
   };

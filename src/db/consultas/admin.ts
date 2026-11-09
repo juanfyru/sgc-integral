@@ -15,7 +15,7 @@ import {
   sugerirCodigo,
   type DestinoDeCodigo,
 } from "./codigos";
-import { exigirVerificacionAbierta } from "./distribucion/verificacion-abierta";
+import { exigirHallazgoNoCerrado, exigirVerificacionAbierta } from "./distribucion/verificacion-abierta";
 import { alDejarDeSerVigente } from "./distribucion/version-vigencia";
 import { obtenerConfigDocumental } from "./config-documental";
 import { ErrorTramite, enTransaccion } from "./flujo/contrato";
@@ -776,6 +776,7 @@ export async function registrarArchivo(
           throw new Error("Una evidencia necesita su contexto");
         }
         if (datos.contexto === "verificacion_item") await exigirVerificacionAbierta(tx, datos.contextoId);
+        if (datos.contexto === "hallazgo") await exigirHallazgoNoCerrado(tx, datos.contextoId);
         // Un dueño de un solo archivo (`CONTEXTOS_UNICOS`): bloqueado, dos subidas a la vez o su borrado se ordenan,
         // y el nuevo reemplaza al anterior en esta misma transacción.
         const tablaDelDueno = CONTEXTOS_UNICOS[datos.contexto as ContextoEvidencia];

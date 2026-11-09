@@ -157,6 +157,14 @@ export function puedeVerDistribucion(sesion: SujetoVisibilidad & { responsableDe
 }
 
 /**
+ * Quién abre los catálogos de la distribución (Puntos de uso y Listas, spec 13C §12.3): quien tiene `distribucion.ver`;
+ * sin `distribucion.gestionar`, en solo lectura. Qué puntos ve lo dice `filtroPuntos`; las listas son de la entidad.
+ */
+export function puedeVerCatalogos(sesion: SujetoVisibilidad): boolean {
+  return puede(sesion, "distribucion.ver");
+}
+
+/**
  * Qué puntos de uso ve una persona, para un `WHERE` sobre `puntos_uso pu`: los roles que ven todo, todos;
  * el líder, los de sus procesos activos y los suyos; el resto, solo aquellos de los que es responsable.
  */

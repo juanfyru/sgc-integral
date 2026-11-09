@@ -5,8 +5,9 @@ import { enTransaccion } from "@/db/consultas/flujo/contrato";
 import { traducirUnico } from "@/db/consultas/mapa-admin";
 import { ErrorDistribucion } from "@/lib/distribucion/tipos";
 
-export type TipoMiembro = "area" | "cargo" | "proceso" | "usuario";
-export type Miembro = { tipo: TipoMiembro; referenciaId: number; nombre: string };
+/** `todos`: toda la planta activa en el momento del evento, sin referencia (spec 13C §12.4). */
+export type TipoMiembro = "area" | "cargo" | "proceso" | "usuario" | "todos";
+export type Miembro = { tipo: TipoMiembro; referenciaId: number | null; nombre: string };
 /** `personas` es cuántas resuelve hoy. */
 export type Lista = {
   id: number;
@@ -21,21 +22,24 @@ export type DatosLista = { nombre: string; descripcion: string | null; miembros:
 type Opciones = { sql?: Cliente; ahora?: Date };
 
 const NOMBRE_REPETIDO = "Ya existe una lista con ese nombre";
-const ORDEN_TIPO: Record<TipoMiembro, number> = { area: 0, cargo: 1, proceso: 2, usuario: 3 };
+const ORDEN_TIPO: Record<TipoMiembro, number> = { todos: 0, area: 1, cargo: 2, proceso: 3, usuario: 4 };
 
-const ROTULOS: Record<TipoMiembro, [string, string]> = {
+export const NOMBRE_TODOS = "Todos los usuarios activos";
+
+const ROTULOS: Record<Exclude<TipoMiembro, "todos">, [string, string]> = {
   area: ["área", "áreas"],
   cargo: ["cargo", "cargos"],
   proceso: ["proceso", "procesos"],
   usuario: ["persona", "personas"],
 };
 
-/** «2 áreas, 1 cargo, 3 personas». */
+/** «2 áreas, 1 cargo, 3 personas»; con el miembro «todos», «Todos los usuarios activos» delante. */
 export function resumenMiembros(miembros: Array<Pick<Miembro, "tipo"> & Partial<Miembro>>): string {
-  const partes = (Object.keys(ORDEN_TIPO) as TipoMiembro[]).flatMap((tipo) => {
+  const partes = (Object.keys(ROTULOS) as Exclude<TipoMiembro, "todos">[]).flatMap((tipo) => {
     const n = miembros.filter((m) => m.tipo === tipo).length;
     return n === 0 ? [] : [`${n} ${ROTULOS[tipo][n === 1 ? 0 : 1]}`];
   });
+  if (miembros.some((m) => m.tipo === "todos")) partes.unshift(NOMBRE_TODOS);
   return partes.length > 0 ? partes.join(", ") : "Sin miembros";
 }
 
@@ -48,7 +52,8 @@ export function usuariosDeListas(sql: Cliente, condicion: ReturnType<Cliente>) {
     SELECT m.lista_id, u.id
     FROM lista_miembros m
     JOIN usuarios u ON u.activo AND (
-      (m.tipo = 'usuario' AND u.id = m.referencia_id)
+      m.tipo = 'todos'
+      OR (m.tipo = 'usuario' AND u.id = m.referencia_id)
       OR (m.tipo = 'cargo' AND u.cargo_id = m.referencia_id)
       OR (m.tipo = 'area' AND u.cargo_id IN (SELECT c.id FROM cargos c WHERE c.area_id = m.referencia_id))
       OR (m.tipo = 'proceso' AND EXISTS (
@@ -77,6 +82,7 @@ async function leerListas(sql: Cliente, condicion: ReturnType<Cliente>): Promise
         WHEN 'cargo' THEN (SELECT c.nombre FROM cargos c WHERE c.id = m.referencia_id)
         WHEN 'proceso' THEN (SELECT p.nombre FROM procesos p WHERE p.id = m.referencia_id)
         WHEN 'usuario' THEN (SELECT u.nombre FROM usuarios u WHERE u.id = m.referencia_id)
+        WHEN 'todos' THEN ${NOMBRE_TODOS}::text
       END AS nombre
     FROM lista_miembros m WHERE m.lista_id IN ${sql(ids)}`;
   const personas = await sql`
@@ -92,8 +98,11 @@ async function leerListas(sql: Cliente, condicion: ReturnType<Cliente>): Promise
       activa: f.activa as boolean,
       miembros: miembros
         .filter((m) => Number(m.lista_id) === id)
-        .map((m) => ({ tipo: m.tipo as TipoMiembro, referenciaId: Number(m.referencia_id), nombre: (m.nombre as string | null) ?? "(eliminado)" }))
-        .sort((a, b) => ORDEN_TIPO[a.tipo] - ORDEN_TIPO[b.tipo] || a.nombre.localeCompare(b.nombre, "es") || a.referenciaId - b.referenciaId),
+        .map((m) => ({ tipo: m.tipo as TipoMiembro, referenciaId: referenciaDe(m.referencia_id), nombre: (m.nombre as string | null) ?? "(eliminado)" }))
+        .sort(
+          (a, b) =>
+            ORDEN_TIPO[a.tipo] - ORDEN_TIPO[b.tipo] || a.nombre.localeCompare(b.nombre, "es") || (a.referenciaId ?? 0) - (b.referenciaId ?? 0),
+        ),
       personas: cuentas.get(id) ?? 0,
     };
   });
@@ -119,24 +128,28 @@ export async function obtenerLista(
   return { ...lista, resueltas: filas.map((u) => ({ id: Number(u.id), nombre: u.nombre as string })) };
 }
 
-const TABLA_DE: Record<TipoMiembro, string> = { area: "areas", cargo: "cargos", proceso: "procesos", usuario: "usuarios" };
+const TABLA_DE: Record<Exclude<TipoMiembro, "todos">, string> = { area: "areas", cargo: "cargos", proceso: "procesos", usuario: "usuarios" };
 
-async function existeActivo(sql: Cliente, tipo: TipoMiembro, id: number): Promise<boolean> {
+/** La columna admite nulo desde la 13C: el miembro «todos» no tiene referencia y no debe volverse `0`. */
+const referenciaDe = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
+
+/** «area:3»; el miembro «todos», sin referencia, es «todos». */
+const clave = (m: Pick<Miembro, "tipo" | "referenciaId">) => (m.tipo === "todos" ? "todos" : `${m.tipo}:${m.referenciaId}`);
+
+async function existeActivo(sql: Cliente, tipo: Exclude<TipoMiembro, "todos">, id: number): Promise<boolean> {
   const filas = await sql`SELECT 1 FROM ${sql(TABLA_DE[tipo])} WHERE id = ${id} AND activo`;
   return filas.length > 0;
 }
 
-/** Cada referencia debe existir y estar activa; al editar, solo se exigen las que entran. */
+/** Cada referencia debe existir y estar activa; al editar, solo se exigen las que entran. «Todos» no tiene referencia. */
 async function exigirReferencias(sql: Cliente, miembros: DatosLista["miembros"], yaEstaban: Set<string> = new Set()) {
   for (const m of miembros) {
-    if (yaEstaban.has(`${m.tipo}:${m.referenciaId}`)) continue;
-    if (!(await existeActivo(sql, m.tipo, m.referenciaId))) {
+    if (m.tipo === "todos" || yaEstaban.has(clave(m))) continue;
+    if (m.referenciaId === null || !(await existeActivo(sql, m.tipo, m.referenciaId))) {
       throw new ErrorDistribucion(`La referencia ${m.tipo} ${m.referenciaId} no existe o está inactiva`);
     }
   }
 }
-
-const clave = (m: Pick<Miembro, "tipo" | "referenciaId">) => `${m.tipo}:${m.referenciaId}`;
 
 function unicos(miembros: DatosLista["miembros"]): DatosLista["miembros"] {
   return [...new Map(miembros.map((m) => [clave(m), { tipo: m.tipo, referenciaId: m.referenciaId }])).values()];
@@ -145,7 +158,8 @@ function unicos(miembros: DatosLista["miembros"]): DatosLista["miembros"] {
 async function guardarMiembros(sql: Cliente, listaId: number, miembros: DatosLista["miembros"]): Promise<void> {
   await sql`DELETE FROM lista_miembros WHERE lista_id = ${listaId}`;
   for (const m of miembros) {
-    await sql`INSERT INTO lista_miembros (lista_id, tipo, referencia_id) VALUES (${listaId}, ${m.tipo}, ${m.referenciaId})`;
+    await sql`INSERT INTO lista_miembros (lista_id, tipo, referencia_id)
+      VALUES (${listaId}, ${m.tipo}, ${m.tipo === "todos" ? null : m.referenciaId})`;
   }
 }
 
@@ -178,7 +192,7 @@ export async function editarLista(id: number, datos: DatosLista, actorId: number
       const [antes] = await tx`SELECT nombre, descripcion FROM listas_distribucion WHERE id = ${id} FOR UPDATE`;
       if (!antes) throw new ErrorDistribucion("La lista no existe");
       const previos = (await tx`SELECT tipo, referencia_id FROM lista_miembros WHERE lista_id = ${id}`).map((m) =>
-        clave({ tipo: m.tipo as TipoMiembro, referenciaId: Number(m.referencia_id) }),
+        clave({ tipo: m.tipo as TipoMiembro, referenciaId: referenciaDe(m.referencia_id) }),
       );
       await exigirReferencias(tx, miembros, new Set(previos));
       await tx`UPDATE listas_distribucion SET nombre = ${datos.nombre}, descripcion = ${datos.descripcion} WHERE id = ${id}`;

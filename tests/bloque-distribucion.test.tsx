@@ -56,10 +56,15 @@ afterAll(async () => {
 });
 
 /** El bloque como lo recibe `sesion`, leyendo por la transacción del test. */
-async function bloque(tx: TransactionSql, documento: { id: number; codigo: string; titulo: string }, sesion: SesionFlujo) {
+async function bloque(
+  tx: TransactionSql,
+  documento: { id: number; codigo: string; titulo: string },
+  sesion: SesionFlujo,
+  consulta?: Record<string, string | string[] | undefined>,
+) {
   contexto.tx = tx;
   try {
-    const elemento = await BloqueDistribucion({ documento, sesion });
+    const elemento = await BloqueDistribucion({ documento, sesion, volver: `/documentos/${documento.codigo}`, consulta });
     if (elemento === null) return "";
     const flujo = await renderToReadableStream(elemento);
     await flujo.allReady;
@@ -93,6 +98,29 @@ describe("BloqueDistribucion", () => {
         const html = await bloque(tx, v.documento, ajeno);
         expect(html).toContain("Copias controladas");
         expect(html).not.toContain("Emitir copia controlada");
+      } finally {
+        await v.limpiar();
+      }
+    }));
+
+  it("tras Reemplazar, la ficha dice cuántas copias se emitieron; solo con un número de 1 a 999", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const v = await vigenteConPdf(tx, { proceso: "GTH", tipo: "PR" });
+      try {
+        const aviso = (html: string) => /<p role="status"[^>]*>([^<]*)<\/p>/.exec(html)?.[1] ?? null;
+        expect(aviso(await bloque(tx, v.documento, admin, { aviso: "reemplazadas", n: "2" }))).toBe(
+          "Se emitieron 2 copias de la versión vigente",
+        );
+        expect(aviso(await bloque(tx, v.documento, admin, { aviso: "reemplazadas", n: "1" }))).toBe(
+          "Se emitió 1 copia de la versión vigente",
+        );
+        for (const n of ["0", "1000", "2.5", "-1", "abc", "<b>", ""]) {
+          expect(aviso(await bloque(tx, v.documento, admin, { aviso: "reemplazadas", n })), n).toBeNull();
+        }
+        expect(aviso(await bloque(tx, v.documento, admin, { aviso: "otra", n: "2" }))).toBeNull();
+        expect(aviso(await bloque(tx, v.documento, admin, { aviso: ["reemplazadas", "x"], n: ["2", "3"] }))).toBeNull();
+        expect(aviso(await bloque(tx, v.documento, admin))).toBeNull();
       } finally {
         await v.limpiar();
       }

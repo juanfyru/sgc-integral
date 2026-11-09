@@ -5,7 +5,9 @@ import { filtroAcceso, filtroPuntos } from "@/lib/alcance";
 import { numeroDeCopia } from "@/lib/distribucion/copias";
 import { verificacionVencida } from "@/lib/distribucion/verificacion";
 import { puede } from "@/lib/permisos";
-import { hallazgosAbiertosDe } from "./hallazgos";
+import { fechaLimite } from "@/lib/tramites/plazos";
+import { zonaHoraria } from "@/lib/zona-horaria";
+import { enlaceDeHallazgo, hallazgosAbiertosDe } from "./hallazgos";
 import type { Tarea } from "@/lib/tareas";
 
 /**
@@ -159,7 +161,43 @@ export async function tareasDeVerificacion(
   return tareas;
 }
 
-/** Cada hallazgo abierto es una tarea del responsable actual de su punto; vence con el plazo de corrección. */
+/**
+ * Cada hallazgo por validar es una tarea de quien realiza verificaciones (salvo de quien lo corrigió: no valida su propia
+ * corrección), en los puntos de su alcance; vence `plazo_correccion_dias` después del «Corregido». Una sola consulta, y
+ * ninguna para quien no verifica.
+ */
+export async function tareasDeValidacion(
+  sesion: SesionFlujo,
+  /** `config`, si quien llama ya la pidió: «Mis tareas» la lee una vez para todas sus fuentes. */
+  opciones?: { sql?: Cliente; config?: Promise<ConfigDocumental> | ConfigDocumental },
+): Promise<Tarea[]> {
+  if (!puede(sesion, "verificaciones.realizar")) return [];
+  const sql = opciones?.sql ?? obtenerSql();
+  const [{ distribucion }, filas] = await Promise.all([
+    opciones?.config ?? obtenerConfigDocumental({ sql }),
+    sql`
+      SELECT h.id, h.origen, h.verificacion_id, h.copia_id, h.descripcion, h.corregido_en, pu.nombre AS punto
+      FROM hallazgos h
+      JOIN puntos_uso pu ON pu.id = h.punto_uso_id
+      WHERE h.estado = 'por_validar' AND h.corregido_por IS DISTINCT FROM ${sesion.usuarioId} AND ${filtroPuntos(sql, sesion)}
+      ORDER BY h.corregido_en, h.id`,
+  ]);
+  const zona = zonaHoraria();
+  return filas.map((f) => ({
+    id: `validar:${f.id}`,
+    modulo: "documentos" as const,
+    titulo: `Validar la corrección del hallazgo en ${f.punto}`,
+    detalle: f.descripcion as string,
+    vence: fechaLimite(f.corregido_en as Date, distribucion.plazoCorreccionDias, zona),
+    enlace: enlaceDeHallazgo({
+      origen: f.origen as string,
+      verificacionId: f.verificacion_id === null ? null : Number(f.verificacion_id),
+      copiaId: f.copia_id === null ? null : Number(f.copia_id),
+    }),
+  }));
+}
+
+/** Cada hallazgo abierto es una tarea del responsable actual de su punto; vence con el plazo de corrección. Los por validar ya no. */
 export async function tareasDeHallazgos(sesion: SesionFlujo, opciones?: { sql?: Cliente; ahora?: Date }): Promise<Tarea[]> {
   const hallazgos = await hallazgosAbiertosDe(sesion.usuarioId, opciones);
   return hallazgos.map((h) => ({

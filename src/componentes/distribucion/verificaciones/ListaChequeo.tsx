@@ -14,7 +14,7 @@ import { Boton } from "@/componentes/ui/Boton";
 import { claseControl } from "@/componentes/ui/Campo";
 import { Dialogo } from "@/componentes/ui/Dialogo";
 import type { ItemVerificacion, Verificacion } from "@/db/consultas/distribucion/verificaciones";
-import { resumenDeChequeo } from "@/lib/distribucion/verificacion";
+import { resumenDeChequeo, type FechasCorreccion } from "@/lib/distribucion/verificacion";
 import { ItemChequeo, type ValorItem } from "./ItemChequeo";
 import { textoResumen } from "./ResumenCierre";
 
@@ -50,8 +50,9 @@ function Descartar({ id, abierto, alCerrar }: { id: number; abierto: boolean; al
 /**
  * La lista de chequeo de una verificación. Editable, lleva todo lo escrito en un solo formulario: guardar, añadir
  * un ítem y cerrar envían las respuestas actuales, así que ninguna acción las pierde. Pensada para el celular.
+ * `fechas`: la fecha de corrección propuesta para cada no conforme y su rango.
  */
-export function ListaChequeo({ verificacion: v }: { verificacion: Verificacion }) {
+export function ListaChequeo({ verificacion: v, fechas }: { verificacion: Verificacion; fechas?: FechasCorreccion }) {
   const [valores, setValores] = useState<Record<number, ValorItem>>(() =>
     Object.fromEntries(v.items.map((i) => [i.id, valorInicial(i)])),
   );
@@ -104,6 +105,7 @@ export function ListaChequeo({ verificacion: v }: { verificacion: Verificacion }
                 item={i}
                 valor={valorDe(i)}
                 editable
+                fechas={fechas}
                 alCambiar={(valor) => setValores((previos) => ({ ...previos, [i.id]: valor }))}
               />
             </li>

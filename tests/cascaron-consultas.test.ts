@@ -2,7 +2,8 @@
  * Lo que cuesta el cascarón en la BD por render (resolución 1 de la Tarea 7): la consulta de vigencia corre como mucho
  * una vez por persona y la configuración documental se lee una vez; quien no es responsable técnico ni tiene
  * `vigencia.ver` no paga ninguna consulta de vigencia. Las tareas de impactos normativos (Tarea 9) y las de la revisión
- * anual (Tarea 10) son una sola consulta acotada cada una, solo para quien lidera procesos o es Admin SGC. Se cuentan
+ * anual (Tarea 10) son una sola consulta acotada cada una, solo para quien lidera procesos o es Admin SGC; las de validar
+ * la corrección de un hallazgo (Tarea 13), una sola consulta y solo para quien realiza verificaciones. Se cuentan
  * las sentencias que se ejecutan (no los fragmentos),
  * con el cascarón real contra la BD de desarrollo, dentro de una transacción que se revierte.
  */
@@ -108,6 +109,8 @@ const deConfiguracion = (s: string[]) => s.filter((t) => t.includes("FROM config
 const deImpactos = (s: string[]) => s.filter((t) => t.includes("count(*)::int AS pendientes, min(i.vence_en) AS vence")).length;
 /** `tareasDeRevision`: la única sentencia que recorre los procesos de la revisión anual abierta. */
 const deRevision = (s: string[]) => s.filter((t) => t.includes("JOIN revision_anual_procesos rap ON rap.revision_id = ra.id")).length;
+/** `tareasDeValidacion`: la única sentencia que busca los hallazgos por validar. */
+const deValidacion = (s: string[]) => s.filter((t) => t.includes("h.estado = 'por_validar' AND h.corregido_por IS DISTINCT FROM")).length;
 
 describe("el costo del cascarón por render", () => {
   it("la consulta de vigencia corre como mucho una vez por persona y la configuración se lee una vez; sin vigencia, ninguna", () =>
@@ -122,7 +125,10 @@ describe("el costo del cascarón por render", () => {
           ["Consulta sin externos", await usuarioDePrueba(tx, { rol: "consulta" })],
           ["Consulta responsable técnico", responsable],
         ];
-        const cuentas: Record<string, { total: number; vigencia: number; configuracion: number; impactos: number; revision: number }> = {};
+        const cuentas: Record<
+          string,
+          { total: number; vigencia: number; configuracion: number; impactos: number; revision: number; validacion: number }
+        > = {};
         for (const [nombre, sesion] of casos) {
           const s = await sentenciasDelCascaron(tx, sesion);
           cuentas[nombre] = {
@@ -131,6 +137,7 @@ describe("el costo del cascarón por render", () => {
             configuracion: deConfiguracion(s),
             impactos: deImpactos(s),
             revision: deRevision(s),
+            validacion: deValidacion(s),
           };
         }
         // Para el informe: CONTAR_CASCARON=<archivo> deja las cuentas en ese archivo.
@@ -145,10 +152,14 @@ describe("el costo del cascarón por render", () => {
         // para Consulta.
         for (const nombre of ["Admin SGC", "líder"]) expect(cuentas[nombre], nombre).toMatchObject({ impactos: 1, revision: 1 });
         expect(cuentas["Consulta responsable técnico"]).toMatchObject({ impactos: 0, revision: 0 });
-        // El total por render (Tarea 10): una sentencia más que en la Tarea 9 para quien tiene las tareas de la revisión
-        // anual, ninguna para Consulta.
+        // Las tareas de validar hallazgos: una sentencia para el Admin SGC (que realiza verificaciones), sin otra lectura de
+        // la configuración; ninguna para los demás.
+        expect(cuentas["Admin SGC"].validacion).toBe(1);
+        for (const nombre of ["líder", "Consulta sin externos", "Consulta responsable técnico"]) expect(cuentas[nombre].validacion, nombre).toBe(0);
+        // El total por render (Tarea 13): una sentencia más que en la Tarea 10 para el Admin SGC (la de validar hallazgos),
+        // ninguna para los demás.
         expect(Object.fromEntries(Object.entries(cuentas).map(([nombre, c]) => [nombre, c.total]))).toEqual({
-          "Admin SGC": 15,
+          "Admin SGC": 16,
           líder: 16,
           "Consulta sin externos": 9,
           "Consulta responsable técnico": 11,

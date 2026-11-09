@@ -112,19 +112,20 @@ export const NAVEGACION: readonly EntradaNav[] = [
     grupo: "administracion",
     permiso: "estructura.administrar",
   },
+  // En solo lectura para quien no gestiona la distribución (spec 13C §12.3).
   {
     href: "/admin/puntos-uso",
     etiqueta: "Puntos de uso",
     icono: "puntos",
     grupo: "administracion",
-    permiso: "distribucion.gestionar",
+    permiso: "distribucion.ver",
   },
   {
     href: "/admin/listas-distribucion",
     etiqueta: "Listas de distribución",
     icono: "listas",
     grupo: "administracion",
-    permiso: "distribucion.gestionar",
+    permiso: "distribucion.ver",
   },
   { href: "/admin/usuarios", etiqueta: "Usuarios", icono: "usuarios", grupo: "administracion", permiso: "usuarios.administrar" },
   {

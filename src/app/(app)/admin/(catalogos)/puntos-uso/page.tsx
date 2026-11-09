@@ -5,7 +5,8 @@ import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { TablaDatos, celda, celdaNumerica, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
 import { listarPuntosUso } from "@/db/consultas/distribucion/puntos-uso";
-import { exigirPermiso } from "@/lib/paginas";
+import { exigirSesion } from "@/lib/paginas";
+import { exigirCatalogo } from "../_comun";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Puntos de uso — Administración SGC" };
@@ -18,15 +19,23 @@ const COLUMNAS: readonly ColumnaTabla[] = [
   { clave: "estado", etiqueta: "Estado" },
 ];
 
+/** Sin `distribucion.gestionar`, en solo lectura; el líder ve los puntos de sus procesos (`filtroPuntos`). */
 export default async function PaginaPuntosUso() {
-  const sesion = await exigirPermiso("distribucion.gestionar");
+  const sesion = await exigirSesion();
+  const { soloLectura } = exigirCatalogo(sesion);
   const puntos = await listarPuntosUso(sesion);
   return (
     <div>
       <EncabezadoPagina
         titulo="Puntos de uso"
         descripcion="Lugares donde se entregan copias controladas, cada uno con una persona responsable."
-        acciones={<Link href="/admin/puntos-uso/nuevo" className={claseBoton("primario")}>Nuevo punto de uso</Link>}
+        acciones={
+          soloLectura ? undefined : (
+            <Link href="/admin/puntos-uso/nuevo" className={claseBoton("primario")}>
+              Nuevo punto de uso
+            </Link>
+          )
+        }
       />
       <TablaDatos titulo="Puntos de uso" columnas={COLUMNAS} filas={puntos.length} vacio="Aún no hay puntos de uso.">
         {puntos.map((p) => (

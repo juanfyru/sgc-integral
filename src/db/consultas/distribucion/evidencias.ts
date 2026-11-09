@@ -37,6 +37,28 @@ export async function evidenciasDe(
   }));
 }
 
+/** Las evidencias de varios dueños de un mismo contexto en una sola lectura, por dueño. */
+export async function evidenciasDeVarios(
+  contexto: ContextoEvidencia,
+  contextoIds: number[],
+  opciones?: Opciones,
+): Promise<Map<number, Evidencia[]>> {
+  const porDueno = new Map<number, Evidencia[]>();
+  if (contextoIds.length === 0) return porDueno;
+  const sql = opciones?.sql ?? obtenerSql();
+  const filas = await sql`SELECT id, contexto_id, nombre_original, mime, tamano_bytes, hash_sha256, creado_en
+    FROM archivos WHERE contexto = ${contexto} AND contexto_id IN ${sql(contextoIds)} AND rol = 'evidencia'
+    ORDER BY creado_en, id`;
+  for (const f of filas) {
+    const dueno = Number(f.contexto_id);
+    porDueno.set(dueno, [
+      ...(porDueno.get(dueno) ?? []),
+      { id: Number(f.id), nombreOriginal: f.nombre_original, mime: f.mime, tamanoBytes: Number(f.tamano_bytes), hashSha256: f.hash_sha256, creadoEn: f.creado_en },
+    ]);
+  }
+  return porDueno;
+}
+
 export async function evidenciaServible(
   contexto: ContextoEvidencia,
   contextoId: number,

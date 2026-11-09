@@ -4,7 +4,8 @@
  * maestro), así que ambos llevan nombre único por corrida y no se borran. Lo que necesita un documento externo
  * corre dentro de una transacción que se revierte: el cliente de la app se sustituye por ella mientras dura.
  */
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { NextRequest } from "next/server";
 import { PDFDocument } from "pdf-lib";
@@ -42,9 +43,12 @@ import { DELETE as quitarArchivoExterno } from "@/app/api/externos/[versionId]/a
 import { POST as subirArchivoExterno } from "@/app/api/externos/[versionId]/archivos/route";
 import { DELETE as quitarArchivoNorma } from "@/app/api/normas/[id]/archivos/[archivoId]/route";
 import { POST as subirArchivoNorma } from "@/app/api/normas/[id]/archivos/route";
+import { POST as subirFotoHallazgo } from "@/app/api/hallazgos/[id]/archivos/route";
+import { GET as verFotoHallazgo } from "@/app/(app)/distribucion/verificaciones/hallazgos/[id]/archivos/[archivoId]/[[...nombre]]/route";
 import { GET as excelAcuses } from "@/app/(app)/distribucion/acuses/excel/route";
 import { GET as excelCopias } from "@/app/(app)/distribucion/copias/excel/route";
 import { GET as excelVerificaciones } from "@/app/(app)/distribucion/verificaciones/excel/route";
+import { GET as excelSocializaciones } from "@/app/(app)/distribucion/socializaciones/excel/route";
 import { GET as excelSemaforo } from "@/app/(app)/vigencia/semaforo/excel/route";
 import { GET as excelExternos } from "@/app/(app)/vigencia/externos/excel/route";
 import { GET as excelIndicadores } from "@/app/(app)/vigencia/indicadores/excel/route";
@@ -222,6 +226,50 @@ describe.each([
     const filas = await sql()`SELECT 1 FROM auditoria WHERE usuario_id = ${u.id} AND accion = ${accion}`;
     expect(filas.length).toBe(antes + 1);
   });
+});
+
+describe("GET /distribucion/socializaciones/excel", () => {
+  const pedir = (token?: string, consulta = "") =>
+    excelSocializaciones(
+      new NextRequest(`http://localhost:3002/distribucion/socializaciones/excel${consulta}`, token ? { headers: cookie(token) } : undefined),
+    );
+
+  it("401 sin sesión y 403 a quien no ve la distribución", async () => {
+    expect((await pedir()).status).toBe(401);
+    expect((await pedir(tokenConsulta)).status).toBe(403);
+  });
+
+  it("Gerencia recibe el Excel sin caché y queda auditado con el periodo", async () => {
+    const antes = (await sql()`SELECT 1 FROM auditoria WHERE usuario_id = ${usuarioGerenciaId} AND accion = 'exporto_socializaciones'`).length;
+    const res = await pedir(tokenGerencia, "?desde=2026-01-01&hasta=2026-12-31");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(res.headers.get("Content-Disposition")).toMatch(/^attachment; filename="socializaciones-\d{8}\.xlsx"$/);
+    const libro = new ExcelJS.Workbook();
+    await libro.xlsx.load(await res.arrayBuffer());
+    expect(libro.getWorksheet("Socializaciones")?.getCell("A2").value).toBe("Jornadas de socialización de documentos");
+    const filas = await sql()`SELECT detalle FROM auditoria
+      WHERE usuario_id = ${usuarioGerenciaId} AND accion = 'exporto_socializaciones' ORDER BY id`;
+    expect(filas.length).toBe(antes + 1);
+    expect(filas[filas.length - 1].detalle).toMatchObject({ formato: "excel", desde: "2026-01-01", hasta: "2026-12-31", procesoId: null });
+  });
+
+  it("limita a diez descargas por minuto por persona", () =>
+    revertida(sql(), async (tx) => {
+      enCurso.sql = tx;
+      try {
+        const lider = await usuarioDePrueba(tx, { rol: "lider_proceso" });
+        const { token } = await crearSesion(lider.usuarioId, { ip: null, userAgent: null });
+        await tx`UPDATE usuarios SET acepto_datos_en = now(), totp_activo = true WHERE id = ${lider.usuarioId}`;
+        for (let i = 0; i < 10; i++) expect((await pedir(token)).status).toBe(200);
+        const res = await pedir(token);
+        expect(res.status).toBe(429);
+        expect(res.headers.get("Retry-After")).toBe("60");
+      } finally {
+        enCurso.sql = null;
+      }
+    }));
 });
 
 describe("GET /vigencia/semaforo/excel", () => {
@@ -823,6 +871,88 @@ describe("archivos de la edición de un externo", () => {
     expect((await quitar(cookie(tokenAdmin), VERSION, "abc")).status).toBe(404);
     expect((await subir(cookie(tokenAdmin), "99999999999999999999")).status).toBe(404);
   });
+});
+
+describe("foto de la corrección de un hallazgo: /api/hallazgos/[id]/archivos", () => {
+  const HALLAZGO = "999999999";
+  const subir = (cabeceras: Record<string, string> = {}, id = HALLAZGO, bytes = pngDePrueba(8, 8)) =>
+    subirFotoHallazgo(
+      new NextRequest(`http://sgc.local/api/hallazgos/${id}/archivos`, {
+        method: "POST",
+        body: bytes as BodyInit,
+        duplex: "half",
+        headers: {
+          host: "sgc.local",
+          origin: "http://sgc.local",
+          "x-nombre-archivo": encodeURIComponent("foto.png"),
+          "content-length": String(bytes.byteLength),
+          ...cabeceras,
+        },
+      } as ConstructorParameters<typeof NextRequest>[1]),
+      { params: Promise.resolve({ id }) },
+    );
+  const ver = (cabeceras: Record<string, string> = {}, id = HALLAZGO, archivoId = "1") =>
+    verFotoHallazgo(new NextRequest(`http://sgc.local/distribucion/verificaciones/hallazgos/${id}/archivos/${archivoId}/foto.png`, { headers: cabeceras }), {
+      params: Promise.resolve({ id, archivoId, nombre: ["foto.png"] }),
+    });
+
+  it("401 sin sesión; 403 con un Origin ajeno; 404 a un hallazgo que no existe o a un id que no es un número", async () => {
+    expect((await subir()).status).toBe(401);
+    expect((await ver()).status).toBe(401);
+    const ajeno = await subir({ ...cookie(tokenAdmin), origin: "https://malo.com" });
+    expect(ajeno.status).toBe(403);
+    expect(await ajeno.json()).toEqual({ error: "Origen no permitido" });
+    expect((await subir(cookie(tokenAdmin))).status).toBe(404);
+    expect((await subir(cookie(tokenAdmin), "abc")).status).toBe(404);
+    expect((await subir(cookie(tokenAdmin), "99999999999999999999")).status).toBe(404);
+    expect((await ver(cookie(tokenAdmin))).status).toBe(404);
+    expect((await ver(cookie(tokenAdmin), "abc")).status).toBe(404);
+  });
+
+  it("la sube el responsable del punto; a quien ve el hallazgo sin responder por él, 403; a quien no lo ve, 404; cerrado, 409", () =>
+    revertida(sql(), async (tx) => {
+      const almacenPrevio = process.env.ALMACEN_RUTA;
+      const almacen = mkdtempSync(path.join(tmpdir(), "sgc-hallazgo-foto-"));
+      process.env.ALMACEN_RUTA = almacen;
+      enCurso.sql = tx;
+      try {
+        const sesionDeRol = async (rol: "consulta" | "gerencia") => {
+          const u = await usuarioDePrueba(tx, { rol });
+          await tx`UPDATE usuarios SET acepto_datos_en = now(), totp_activo = true WHERE id = ${u.usuarioId}`;
+          return { ...u, token: (await crearSesion(u.usuarioId, { ip: null, userAgent: null })).token };
+        };
+        const responsable = await sesionDeRol("consulta");
+        const ajeno = await sesionDeRol("consulta");
+        const gerente = await sesionDeRol("gerencia");
+        const [p] = await tx`INSERT INTO puntos_uso (nombre, responsable_id) VALUES (${`zz_punto_foto_${SUFIJO}`}, ${responsable.usuarioId}) RETURNING id`;
+        const [h] = await tx`INSERT INTO hallazgos (punto_uso_id, origen, descripcion, responsable_id, estado, vence_en)
+          VALUES (${p.id}, 'recogida', 'La copia no estaba', ${responsable.usuarioId}, 'abierto', now() + interval '5 days') RETURNING id`;
+        const id = String(h.id);
+
+        expect((await subir(cookie(gerente.token), id)).status).toBe(403);
+        expect((await subir(cookie(ajeno.token), id)).status).toBe(404);
+        const subida = await subir(cookie(responsable.token), id);
+        expect(subida.status).toBe(201);
+        const { id: archivoId } = (await subida.json()) as { id: number };
+        const [fila] = await tx`SELECT contexto, contexto_id, ruta, mime FROM archivos WHERE id = ${archivoId}`;
+        expect(fila).toEqual({ contexto: "hallazgo", contexto_id: Number(id), ruta: `hallazgos/${id}/foto.png`, mime: "image/png" });
+
+        // La ve quien ve el hallazgo; para los demás, no existe.
+        const deGerente = await ver(cookie(gerente.token), id, String(archivoId));
+        expect(deGerente.status).toBe(200);
+        expect(deGerente.headers.get("Content-Type")).toBe("image/png");
+        expect((await ver(cookie(ajeno.token), id, String(archivoId))).status).toBe(404);
+        expect((await ver(cookie(responsable.token), id, "999999999")).status).toBe(404);
+
+        await tx`UPDATE hallazgos SET estado = 'cerrado', cerrado_en = now(), cerrado_por = ${responsable.usuarioId}, nota_cierre = 'Listo' WHERE id = ${id}`;
+        expect((await subir(cookie(responsable.token), id)).status).toBe(409);
+      } finally {
+        enCurso.sql = null;
+        if (almacenPrevio === undefined) delete process.env.ALMACEN_RUTA;
+        else process.env.ALMACEN_RUTA = almacenPrevio;
+        rmSync(almacen, { recursive: true, force: true });
+      }
+    }));
 });
 
 describe("PDF de una norma: /api/normas/[id]/archivos", () => {

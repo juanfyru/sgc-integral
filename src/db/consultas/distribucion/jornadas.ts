@@ -214,7 +214,13 @@ export function ventanaDeEvidencia(j: Pick<Jornada, "creadoEn" | "anulada">, aho
   return j.anulada || hasta <= ahora ? null : hasta;
 }
 
-async function cargarJornadas(sql: Cliente, sesion: SesionFlujo, condicion: ReturnType<Cliente>): Promise<Jornada[]> {
+async function cargarJornadas(
+  sql: Cliente,
+  sesion: SesionFlujo,
+  condicion: ReturnType<Cliente>,
+  /** `null`: sin tope, para el Excel del periodo. */
+  tope: number | null = TOPE_LISTADO,
+): Promise<Jornada[]> {
   const filas = await sql`
     SELECT j.id, j.fecha::text AS fecha, j.modalidad, j.facilitador_id, uf.nombre AS facilitador, j.observaciones,
            j.asistentes_externos, j.registrada_por, ur.nombre AS registrada_por_nombre, j.creado_en, j.anulada_en,
@@ -224,7 +230,7 @@ async function cargarJornadas(sql: Cliente, sesion: SesionFlujo, condicion: Retu
     JOIN usuarios ur ON ur.id = j.registrada_por
     LEFT JOIN usuarios ua ON ua.id = j.anulada_por
     WHERE ${condicion}
-    ORDER BY j.fecha DESC, j.id DESC LIMIT ${TOPE_LISTADO}`;
+    ORDER BY j.fecha DESC, j.id DESC ${tope === null ? sql`` : sql`LIMIT ${tope}`}`;
   if (filas.length === 0) return [];
   const ids = filas.map((f) => Number(f.id));
   const [versiones, asistentes, procesos] = await Promise.all([
@@ -300,12 +306,9 @@ export async function obtenerJornada(id: number, sesion: SesionFlujo, opciones?:
   return j ?? null;
 }
 
-export async function listarJornadas(
-  sesion: SesionFlujo,
-  filtro: { desde?: Date; hasta?: Date; procesoId?: number },
-  opciones?: Opciones,
-): Promise<Jornada[]> {
-  const sql = opciones?.sql ?? obtenerSql();
+export type FiltroJornadas = { desde?: Date; hasta?: Date; procesoId?: number };
+
+function condicionDeFiltro(sql: Cliente, filtro: FiltroJornadas): ReturnType<Cliente> {
   const zona = zonaHoraria();
   const condicion = [
     filtro.desde ? sql`j.fecha >= ${fechaEnZona(filtro.desde, zona)}::date` : sql`true`,
@@ -317,7 +320,21 @@ export async function listarJornadas(
           LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
           WHERE jv.jornada_id = j.id AND COALESCE(dp.proceso_id, s.proceso_id) = ${filtro.procesoId})`,
   ];
-  return cargarJornadas(sql, sesion, sql`${condicion[0]} AND ${condicion[1]} AND ${condicion[2]}`);
+  return sql`${condicion[0]} AND ${condicion[1]} AND ${condicion[2]}`;
+}
+
+export async function listarJornadas(sesion: SesionFlujo, filtro: FiltroJornadas, opciones?: Opciones): Promise<Jornada[]> {
+  const sql = opciones?.sql ?? obtenerSql();
+  return cargarJornadas(sql, sesion, condicionDeFiltro(sql, filtro));
+}
+
+/**
+ * Las jornadas del periodo que la persona ve, todas (sin el tope del listado), con la misma regla de evidencia: los
+ * asistentes solo vienen en las que `puedeVerEvidencia`.
+ */
+export async function listarJornadasParaExcel(sesion: SesionFlujo, filtro: FiltroJornadas, opciones?: Opciones): Promise<Jornada[]> {
+  const sql = opciones?.sql ?? obtenerSql();
+  return cargarJornadas(sql, sesion, condicionDeFiltro(sql, filtro), null);
 }
 
 export async function jornadasDeVersion(versionId: number, sesion: SesionFlujo, opciones?: Opciones): Promise<Jornada[]> {
