@@ -1276,7 +1276,13 @@ export const normaCambios = pgTable(
     nota: text("nota"),
     creadoEn: creado(),
   },
-  (t) => [index("norma_cambios_norma_idx").on(t.normaId, t.creadoEn)],
+  (t) => [
+    index("norma_cambios_norma_idx").on(t.normaId, t.creadoEn),
+    check(
+      "norma_cambios_estados_validos",
+      sql`${t.estadoAnterior} IN ('vigente', 'modificada', 'derogada', 'retirada') AND ${t.estadoNuevo} IN ('vigente', 'modificada', 'derogada', 'retirada')`,
+    ),
+  ],
 );
 
 export const normaProcesos = pgTable(
@@ -1312,7 +1318,7 @@ export const normaDocumentos = pgTable(
   ],
 );
 
-// Cerrada, ni ella ni sus procesos ni sus decisiones se modifican (trigger en la migración).
+// Cerrada, ni ella ni sus procesos ni sus decisiones se modifican, ni recibe nuevos (triggers de las migraciones 0008 y 0009).
 export const revisionesAnuales = pgTable(
   "revisiones_anuales",
   {
@@ -1336,6 +1342,11 @@ export const revisionesAnuales = pgTable(
     check(
       "revisiones_anuales_metodo_cierre_valido",
       sql`${t.metodoCierre} IN ('clave', 'clave_totp')`,
+    ),
+    // Cerrada, siempre con quién, cuándo y el método de la firma; abierta, nunca con los tres.
+    check(
+      "revisiones_anuales_cierre_coherente",
+      sql`(${t.estado} = 'cerrada') = (${t.cerradaPor} IS NOT NULL AND ${t.cerradaEn} IS NOT NULL AND ${t.metodoCierre} IS NOT NULL)`,
     ),
     uniqueIndex("revisiones_una_abierta_idx").on(t.estado).where(sql`estado = 'abierta'`),
   ],

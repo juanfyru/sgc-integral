@@ -64,6 +64,13 @@
       "when": 1794180999998,
       "tag": "0008_fase13c-vigencia-externos-normograma",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794183278810,
+      "tag": "0009_fase13c-tipos-norma-y-endurecimiento",
+      "breakpoints": true
     }
   ]
 }
