@@ -170,7 +170,8 @@ describe("páginas de Vigencia", () => {
     enTransaccion(async (tx) => {
       contexto.sesion = valida(await sesionDe(tx, "gerente"));
       await expect(PaginaVigencia()).rejects.toThrow("REDIRECT:/vigencia/semaforo");
-      contexto.sesion = valida(await sesionDe(tx, "consulta"));
+      // Un usuario nuevo: el «consulta» de la demo puede ser responsable técnico de un externo (y entrar a Externos).
+      contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "consulta" }));
       await expect(PaginaVigencia()).rejects.toThrow("NO_ENCONTRADA");
       await expect(PaginaSemaforo({ searchParams: Promise.resolve({}) })).rejects.toThrow("NO_ENCONTRADA");
     }));
@@ -187,8 +188,8 @@ describe("páginas de Vigencia", () => {
       expect(html).toMatch(/Fijar próxima revisión (a los \d+ documentos filtrados|al documento filtrado)/);
       expect(html).toMatch(/Vencida hace \d+ días/);
       expect(html).toContain(`/tramites/nueva?documento=${d.codigo}&amp;motivo=revision_anual`);
-      // Las pestañas que aún no existen no se pintan.
-      expect(html).not.toContain("/vigencia/externos");
+      // La pestaña de externos existe; las que aún no existen no se pintan.
+      expect(html).toContain('href="/vigencia/externos"');
       expect(html).not.toContain("/vigencia/indicadores");
       // A 390 px el selector de proceso, con nombres largos, no desborda la página: cede al ancho disponible.
       const clases = (patron: RegExp) => (html.match(patron)?.[1] ?? "").split(/\s+/);

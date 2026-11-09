@@ -15,10 +15,10 @@ import { rutaSolicitarCambio } from "./TablaSemaforo";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 
-type NivelTitulo = 2 | 3 | 4;
+export type NivelTitulo = 2 | 3 | 4;
 
-/** El título del bloque y el de sus secciones, un nivel más abajo. */
-const ENCABEZADOS = { 2: ["h2", "h3"], 3: ["h3", "h4"], 4: ["h4", "h5"] } as const satisfies Record<NivelTitulo, readonly [string, string]>;
+/** El título del bloque y el de sus secciones, un nivel más abajo; lo comparte el bloque «Documento externo». */
+export const ENCABEZADOS = { 2: ["h2", "h3"], 3: ["h3", "h4"], 4: ["h4", "h5"] } as const satisfies Record<NivelTitulo, readonly [string, string]>;
 
 /** «Ratificado el 8 nov 2026 por …» o «14 ago 2025 · fecha de aprobación registrada». */
 function textoUltima(u: NonNullable<VigenciaDeDocumento["ultimaRevision"]>, zona: string): string {
@@ -37,7 +37,7 @@ function textoUltima(u: NonNullable<VigenciaDeDocumento["ultimaRevision"]>, zona
   }
 }
 
-function Dato({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
+export function Dato({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
   return (
     <div>
       <dt className="text-xs text-muted-foreground">{etiqueta}</dt>
@@ -90,7 +90,7 @@ function Ajustar({ v, ahora, zona }: { v: VigenciaDeDocumento; ahora: Date; zona
 /**
  * El bloque «Vigencia» de la ficha (portal y panel, spec 13C §7.3 y §14.4): el semáforo, el plazo, la última y
  * la próxima revisión, la fecha fijada a mano, la marca de cambio normativo, el historial de ratificaciones de
- * la versión y lo que la persona puede hacer. Un externo tiene su propio bloque.
+ * la versión y lo que la persona puede hacer. Un externo tiene su propio bloque, `BloqueExterno`, y no este.
  */
 export async function BloqueVigencia({
   documentoId,

@@ -96,6 +96,7 @@ export type FilaExterno = Pick<Externo, "documentoId" | "codigo" | "titulo" | "p
   ultimaVerificacion: { fecha: Date; resultado: ResultadoVerificacion; nombre: string } | null;
   proximaVerificacion: Date | null;
   responsable: string;
+  responsableId: number;
   fuenteOficial: string | null;
   /** La norma enlazada (la primera de `norma_documentos`). */
   norma: string | null;

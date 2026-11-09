@@ -83,12 +83,13 @@ export function ZonaCarga({ direccion, evidencia = false }: { direccion: string;
   return (
     <div className="flex flex-col gap-3">
       {evidencia ? null : (
-        <label className="flex items-center gap-2 text-sm font-medium">
+        // A 390 px el selector baja de línea en lugar de desbordar la página.
+        <label className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-medium">
           Rol de los archivos a subir
           <select
             value={rol}
             onChange={(e) => setRol(e.target.value as RolArchivo)}
-            className="rounded-md border border-border bg-card px-2 py-1"
+            className="min-w-0 max-w-full rounded-md border border-border bg-card px-2 py-1"
           >
             {ROLES.map((r) => (
               <option key={r} value={r}>{ETIQUETA_ROL[r]}</option>

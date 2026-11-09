@@ -26,6 +26,11 @@ export function rotuloVersion(f: Pick<FilaSemaforo, "origen" | "version">): stri
   return f.origen === "externo" && f.version.edicion ? `ed. ${f.version.edicion}` : `v${f.version.numero}`;
 }
 
+/** El tipo, y « · externo» en un externo cuyo tipo no lo dice ya («Documento externo»). */
+export function lineaDeTipo(f: Pick<FilaSemaforo, "origen" | "tipo">): string {
+  return f.origen === "externo" && !/externo/i.test(f.tipo) ? `${f.tipo} · externo` : f.tipo;
+}
+
 /** «Solicitar cambio» con el motivo de la revisión anual propuesto. */
 export function rutaSolicitarCambio(codigo: string): string {
   return `/tramites/nueva?documento=${encodeURIComponent(codigo)}&motivo=revision_anual`;
@@ -40,7 +45,7 @@ function Documento({ fila: f }: { fila: FilaSemaforo }) {
         </Link>
       </div>
       <div>{f.titulo}</div>
-      <div className="text-xs text-muted-foreground">{f.origen === "externo" ? `${f.tipo} · externo` : f.tipo}</div>
+      <div className="text-xs text-muted-foreground">{lineaDeTipo(f)}</div>
     </>
   );
 }

@@ -24,10 +24,20 @@ export default async function PaginaDocumentosAdmin() {
         titulo="Documentos"
         descripcion={`${enElSgc} ${enElSgc === 1 ? "documento" : "documentos"} en el SGC`}
         acciones={
-          puede(sesion, "documentos.administrar") && config.publicacionDirecta ? (
-            <Link href="/admin/documentos/nuevo" className={claseBoton("primario")}>
-              Registrar documento ya aprobado
-            </Link>
+          (puede(sesion, "documentos.administrar") && config.publicacionDirecta) || puede(sesion, "externos.gestionar") ? (
+            <div className="flex flex-wrap gap-2">
+              {puede(sesion, "documentos.administrar") && config.publicacionDirecta ? (
+                <Link href="/admin/documentos/nuevo" className={claseBoton("primario")}>
+                  Registrar documento ya aprobado
+                </Link>
+              ) : null}
+              {/* Un externo se registra en Vigencia → Externos, con su edición y su responsable técnico (spec 13C §14.4). */}
+              {puede(sesion, "externos.gestionar") ? (
+                <Link href="/vigencia/externos/nuevo" className={claseBoton("secundario")}>
+                  Registrar documento externo
+                </Link>
+              ) : null}
+            </div>
           ) : undefined
         }
       />

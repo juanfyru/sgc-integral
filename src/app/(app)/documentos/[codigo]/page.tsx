@@ -17,6 +17,7 @@ import {
 } from "@/componentes/documentos/IconoFormato";
 import { BloqueDistribucion } from "@/componentes/distribucion/BloqueDistribucion";
 import { BloqueVigencia } from "@/componentes/vigencia/BloqueVigencia";
+import { BloqueExterno } from "@/componentes/vigencia/externos/BloqueExterno";
 import { AvisoVersionQr, versionDeQr } from "@/componentes/documentos/AvisoVersionQr";
 import { DatosDeAprobacion } from "@/componentes/documentos/DatosDeAprobacion";
 import { VisorPdf } from "@/componentes/documentos/VisorPdf";
@@ -276,7 +277,12 @@ export default async function FichaDocumento({
             </dl>
           </section>
 
-          <BloqueVigencia documentoId={ficha.id} sesion={sesion} />
+          {/* Un externo adoptado tiene su bloque, con su edición y su verificación (spec 13C §14.4). */}
+          {ficha.version.origenAprobacion === "externo" ? (
+            <BloqueExterno documentoId={ficha.id} sesion={sesion} />
+          ) : (
+            <BloqueVigencia documentoId={ficha.id} sesion={sesion} />
+          )}
 
           <BloqueDistribucion documento={{ id: ficha.id, codigo: ficha.codigo, titulo: ficha.titulo }} sesion={sesion} />
 

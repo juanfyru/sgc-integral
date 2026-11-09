@@ -165,7 +165,7 @@ export async function listarExternos(sesion: SesionFlujo, filtro: FiltroExternos
   const patron = q ? `%${escaparLike(q)}%` : null;
   const filas = await sql`
     SELECT d.id, d.codigo, d.titulo, p.id AS proceso_id, p.nombre AS proceso_nombre, p.sigla AS proceso_sigla,
-      ex.entidad_emisora, ex.titulo_original, ex.fuente_oficial, ru.nombre AS responsable,
+      ex.entidad_emisora, ex.titulo_original, ex.fuente_oficial, ex.responsable_id, ru.nombre AS responsable,
       v.id AS version_id, v.edicion_externa, v.publicado_en,
       uv.creado_en AS verificado_en, uv.resultado, uv.nombre AS verifico,
       (SELECT concat_ws(' ', tn.nombre, n.numero, 'de', n.anio::text)
@@ -219,6 +219,7 @@ export async function listarExternos(sesion: SesionFlujo, filtro: FiltroExternos
           : { fecha: new Date(f.verificado_en as string), resultado: f.resultado as ResultadoVerificacion, nombre: f.verifico as string },
       proximaVerificacion: v?.proximaRevision ?? null,
       responsable: f.responsable as string,
+      responsableId: Number(f.responsable_id),
       fuenteOficial: (f.fuente_oficial as string | null) ?? null,
       norma: (f.norma as string | null) ?? null,
       copiasVivas: Number(f.copias_vivas),

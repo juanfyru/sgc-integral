@@ -12,7 +12,7 @@ vi.mock("@/app/acciones-vigencia", () => ({
 import { ChipVigencia } from "@/componentes/vigencia/ChipVigencia";
 import { CuerpoRatificar } from "@/componentes/vigencia/DialogoRatificar";
 import { FormularioFijarFecha } from "@/componentes/vigencia/DialogoFijarFecha";
-import { PestanasVigencia } from "@/componentes/vigencia/PestanasVigencia";
+import { PestanasVigencia, pestanasVisibles } from "@/componentes/vigencia/PestanasVigencia";
 import { TablaSemaforo, type FilaConAcciones } from "@/componentes/vigencia/TablaSemaforo";
 import { finDeFecha } from "@/lib/tramites/plazos";
 
@@ -109,6 +109,10 @@ describe("PestanasVigencia", () => {
     expect(html).toContain("Semáforo");
     expect(html).toContain('aria-current="page"');
     for (const otra of ["Revisión anual", "Externos", "Indicadores"]) expect(html).not.toContain(otra);
+    // Quien ve el semáforo ve también los externos; el responsable técnico sin `vigencia.ver`, solo los externos.
+    expect(pestanasVisibles({ rol: "lider_proceso" }, false)).toEqual(["semaforo", "externos"]);
+    expect(pestanasVisibles({ rol: "consulta" }, true)).toEqual(["externos"]);
+    expect(pestanasVisibles({ rol: "consulta" }, false)).toEqual([]);
     const todas = renderToStaticMarkup(<PestanasVigencia activa="semaforo" visibles={["semaforo", "revision-anual", "externos", "indicadores"]} />);
     for (const etiqueta of ["Semáforo", "Revisión anual", "Externos", "Indicadores"]) expect(todas).toContain(etiqueta);
   });
@@ -131,11 +135,17 @@ describe("TablaSemaforo", () => {
       "Publicada en la plataforma",
       "Fijada por María F. Perdomo el 3 nov 2026",
       "CEX-DE-01 ed. 2017",
-      "Documento externo · externo",
       "Verificado por Luz Dary Ortiz",
     ]) {
       expect(html).toContain(texto);
     }
+  });
+
+  it("la línea del tipo de un externo no repite «externo» cuando el tipo ya lo dice", () => {
+    expect(html).toContain(">Documento externo<");
+    expect(html).not.toContain("Documento externo · externo");
+    const otroTipo = renderToStaticMarkup(<TablaSemaforo filas={[{ ...filas[3], tipo: "Guía de práctica clínica" }]} ahora={AHORA} pideCodigo={false} />);
+    expect(otroTipo).toContain("Guía de práctica clínica · externo");
   });
 
   it("los botones salen según las acciones; el trámite abierto se enlaza", () => {

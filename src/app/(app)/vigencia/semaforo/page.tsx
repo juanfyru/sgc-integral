@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CalendarClock, Download } from "lucide-react";
 import { DialogoFijarFecha } from "@/componentes/vigencia/DialogoFijarFecha";
-import { PestanasVigencia } from "@/componentes/vigencia/PestanasVigencia";
+import { PestanasVigencia, pestanasVisibles } from "@/componentes/vigencia/PestanasVigencia";
 import { TablaSemaforo } from "@/componentes/vigencia/TablaSemaforo";
 import { Boton, claseBoton } from "@/componentes/ui/Boton";
 import { claseControl } from "@/componentes/ui/Campo";
@@ -41,7 +41,7 @@ export default async function PaginaSemaforo({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const sesion = await exigirSesion();
-  await exigirVigencia(sesion);
+  const { responsableTecnico } = await exigirVigencia(sesion);
   // La pestaña «Semáforo» es de `vigencia.ver`; quien entra a Vigencia por otra regla no la tiene.
   if (!puede(sesion, "vigencia.ver")) notFound();
 
@@ -89,7 +89,7 @@ export default async function PaginaSemaforo({
           </a>
         }
       />
-      <PestanasVigencia activa="semaforo" visibles={["semaforo"]} />
+      <PestanasVigencia activa="semaforo" visibles={pestanasVisibles(sesion, responsableTecnico)} />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <TarjetaCifra etiqueta="Revisión vencida" valor={conteos.vencida} estado={conteos.vencida > 0 ? "critico" : "bien"} />

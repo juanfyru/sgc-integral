@@ -103,6 +103,8 @@ describe("Gestión de documentos", () => {
 
       const html = await pintar(tx, admin, () => PaginaDocumentosAdmin());
       expect(html).toContain(">Vigencia<");
+      // Junto a «Registrar documento ya aprobado», el alta de un externo (spec 13C §14.4), para quien los gestiona.
+      expect(html).toMatch(/<a[^>]*href="\/vigencia\/externos\/nuevo"[^>]*>Registrar documento externo<\/a>/);
       expect(sinEtiquetas(html)).toMatch(new RegExp(`${vencido.codigo} ${vencido.titulo} Procedimiento GTH Vigente Vencida hace \\d+ días`));
     }));
 });

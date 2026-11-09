@@ -1,17 +1,26 @@
 /**
  * Handlers del panel por rol, contra la BD de desarrollo sembrada.
  * zz_consulta y zz_ci: el de control interno genera auditoría (exportar el
- * maestro), así que ambos llevan nombre único por corrida y no se borran.
+ * maestro), así que ambos llevan nombre único por corrida y no se borran. Lo que necesita un documento externo
+ * corre dentro de una transacción que se revierte: el cliente de la app se sustituye por ella mientras dura.
  */
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { NextRequest } from "next/server";
 import { PDFDocument } from "pdf-lib";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import ExcelJS from "exceljs";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
 }
+
+const enCurso = vi.hoisted(() => ({ sql: null as unknown }));
+
+vi.mock("@/db/cliente", async (original) => {
+  const real = await original<typeof import("@/db/cliente")>();
+  return { ...real, obtenerSql: () => (enCurso.sql ?? real.obtenerSql()) as ReturnType<typeof real.obtenerSql> };
+});
 
 import { DELETE as eliminarArchivo, GET as verArchivo } from "@/app/admin/api/archivos/[archivoId]/route";
 import { POST as subirArchivo } from "@/app/admin/api/archivos/route";
@@ -33,11 +42,15 @@ import { GET as excelAcuses } from "@/app/(app)/distribucion/acuses/excel/route"
 import { GET as excelCopias } from "@/app/(app)/distribucion/copias/excel/route";
 import { GET as excelVerificaciones } from "@/app/(app)/distribucion/verificaciones/excel/route";
 import { GET as excelSemaforo } from "@/app/(app)/vigencia/semaforo/excel/route";
+import { GET as excelExternos } from "@/app/(app)/vigencia/externos/excel/route";
 import { GET as pdfCopia } from "@/app/(app)/distribucion/copias/[id]/pdf/route";
 import { POST as reimprimirCopiaRuta } from "@/app/(app)/distribucion/copias/[id]/reimprimir/route";
 import { obtenerSql } from "@/db/cliente";
 import { listarDocumentosAdmin, obtenerDocumentoAdmin } from "@/db/consultas/admin";
 import { crearSesion } from "@/lib/sesion";
+import { revertida } from "./utiles/transaccion";
+import { sesionDe, usuarioDePrueba } from "./utiles/tramites";
+import { externoDePrueba } from "./utiles/vigencia";
 
 const sql = () => obtenerSql();
 const SUFIJO = Date.now();
@@ -181,6 +194,60 @@ describe("GET /vigencia/semaforo/excel", () => {
     const filas = await sql()`SELECT 1 FROM auditoria WHERE usuario_id = ${usuarioGerenciaId} AND accion = 'exporto_semaforo'`;
     expect(filas.length).toBe(antes + 1);
   });
+});
+
+describe("GET /vigencia/externos/excel", () => {
+  const pedir = (token?: string) =>
+    excelExternos(new NextRequest("http://localhost:3002/vigencia/externos/excel", token ? { headers: cookie(token) } : undefined));
+
+  async function filasDelExcel(res: Response): Promise<string[][]> {
+    const libro = new ExcelJS.Workbook();
+    await libro.xlsx.load(await res.arrayBuffer());
+    const filas: string[][] = [];
+    libro.worksheets[0].eachRow((fila) => {
+      const valores = fila.values as unknown[];
+      filas.push(valores.slice(1).map((v) => (v === null || v === undefined ? "" : String(v))));
+    });
+    return filas;
+  }
+
+  it("401 sin sesión y 404 a Consulta sin externos a su cargo", async () => {
+    expect((await pedir()).status).toBe(401);
+    expect((await pedir(tokenConsulta)).status).toBe(404);
+  });
+
+  it("el responsable técnico de rol Consulta recibe el xlsx con solo sus externos, y queda auditado", () =>
+    revertida(sql(), async (tx) => {
+      enCurso.sql = tx;
+      try {
+        const lider = await sesionDe(tx, "lider.cex");
+        const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+        const suyo = await externoDePrueba(tx, lider, { proceso: "CEX", edicion: "2017", responsableId: responsable.usuarioId });
+        const ajeno = await externoDePrueba(tx, lider, { proceso: "CEX", edicion: "2019" });
+        try {
+          const { token } = await crearSesion(responsable.usuarioId, { ip: null, userAgent: null });
+          await tx`UPDATE usuarios SET acepto_datos_en = now(), totp_activo = true WHERE id = ${responsable.usuarioId}`;
+          const res = await pedir(token);
+          expect(res.status).toBe(200);
+          expect(res.headers.get("Content-Type")).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+          expect(res.headers.get("Cache-Control")).toBe("no-store");
+          expect(res.headers.get("Content-Disposition")).toMatch(/^attachment; filename="externos-\d{8}\.xlsx"$/);
+          const texto = (await filasDelExcel(res)).map((f) => f.join(" | ")).join("\n");
+          expect(texto).toContain(suyo.codigo);
+          expect(texto).toContain("Ministerio de Salud y Protección Social");
+          expect(texto).toContain("https://www.minsalud.gov.co/guias");
+          expect(texto).not.toContain(ajeno.codigo);
+          const auditoria = await tx`SELECT detalle FROM auditoria WHERE usuario_id = ${responsable.usuarioId} AND accion = 'exporto_externos'`;
+          expect(auditoria).toHaveLength(1);
+          expect(auditoria[0].detalle).toMatchObject({ formato: "excel", total: 1 });
+        } finally {
+          await suyo.limpiar();
+          await ajeno.limpiar();
+        }
+      } finally {
+        enCurso.sql = null;
+      }
+    }));
 });
 
 describe("handlers del panel por rol", () => {
