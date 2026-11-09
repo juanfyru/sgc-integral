@@ -136,34 +136,38 @@ describe("ratificación", () => {
 
   it("una clave errada no escribe nada y cuenta como firma fallida", async () => {
     // La verificación real escribe en `usuarios` y `accesos` desde otra conexión: la cuenta va fuera de la
-    // transacción, con nombre único, y no se borra.
+    // transacción, con nombre único, y no se borra; al terminar queda inactiva (su clave está en este archivo).
     const usuario = `zz_ratifica_${Date.now()}`;
     const [u] = await sql`INSERT INTO usuarios (usuario, nombre, hash_clave, rol, acepto_datos_en)
       VALUES (${usuario}, 'Prueba ratificación', ${await hashearClave("Clave-Ratifica-13C")}, 'admin_sgc', now()) RETURNING id`;
     const sesion: SesionFlujo = { sesionId: `prueba-${u.id}`, usuarioId: Number(u.id), usuario, nombre: "Prueba ratificación", rol: "admin_sgc", verHistorial: false };
-    await revertida(sql, async (tx) => {
-      await sinRevisionAbierta(tx);
-      const d = await vigenteFuera(tx, { fechaAprobacion: "2025-08-14" });
-      await fijarProximaRevision(await sesionAdmin(tx), { documentoIds: [d.id], fecha: "2027-03-01", nota: "carga inicial" }, { sql: tx, ahora });
-      const fallo = await ratificar(sesion, { documentoId: d.id, nota: null, credenciales: { clave: "mala-clave-larga" } }, { sql: tx, ahora }).catch((e: unknown) => e);
-      expect(fallo).toBeInstanceOf(ErrorFirma);
-      expect(fallo).toMatchObject({ message: "Clave o código incorrectos", sesionCerrada: false });
-      expect((await tx`SELECT 1 FROM ratificaciones WHERE version_id = ${d.versionId}`).length).toBe(0);
-      expect((await tx`SELECT 1 FROM firmas WHERE version_id = ${d.versionId}`).length).toBe(0);
-      expect((await tx`SELECT 1 FROM auditoria WHERE accion = 'documento_ratificado' AND entidad_id = ${d.id}`).length).toBe(0);
-      const [doc] = await tx`SELECT proxima_revision_fijada::text AS fijada FROM documentos WHERE id = ${d.id}`;
-      expect(doc.fijada).toBe("2027-03-01");
+    try {
+      await revertida(sql, async (tx) => {
+        await sinRevisionAbierta(tx);
+        const d = await vigenteFuera(tx, { fechaAprobacion: "2025-08-14" });
+        await fijarProximaRevision(await sesionAdmin(tx), { documentoIds: [d.id], fecha: "2027-03-01", nota: "carga inicial" }, { sql: tx, ahora });
+        const fallo = await ratificar(sesion, { documentoId: d.id, nota: null, credenciales: { clave: "mala-clave-larga" } }, { sql: tx, ahora }).catch((e: unknown) => e);
+        expect(fallo).toBeInstanceOf(ErrorFirma);
+        expect(fallo).toMatchObject({ message: "Clave o código incorrectos", sesionCerrada: false });
+        expect((await tx`SELECT 1 FROM ratificaciones WHERE version_id = ${d.versionId}`).length).toBe(0);
+        expect((await tx`SELECT 1 FROM firmas WHERE version_id = ${d.versionId}`).length).toBe(0);
+        expect((await tx`SELECT 1 FROM auditoria WHERE accion = 'documento_ratificado' AND entidad_id = ${d.id}`).length).toBe(0);
+        const [doc] = await tx`SELECT proxima_revision_fijada::text AS fijada FROM documentos WHERE id = ${d.id}`;
+        expect(doc.fijada).toBe("2027-03-01");
 
-      // Con la verificación de prueba tampoco escribe, y el verificador sí se consultó.
-      const verificar = vi.fn(firmaDePrueba);
-      await expect(ratificar(sesion, { documentoId: d.id, nota: null, credenciales: { clave: "mala" } }, { sql: tx, ahora, verificar })).rejects.toBeInstanceOf(ErrorFirma);
-      expect(verificar).toHaveBeenCalledTimes(1);
-      expect((await tx`SELECT 1 FROM ratificaciones WHERE version_id = ${d.versionId}`).length).toBe(0);
-    });
-    const [acceso] = await sql`SELECT resultado FROM accesos WHERE usuario_id = ${u.id} ORDER BY id DESC LIMIT 1`;
-    expect(acceso.resultado).toBe("firma_fallo");
-    const [cuenta] = await sql`SELECT intentos_fallidos FROM usuarios WHERE id = ${u.id}`;
-    expect(cuenta.intentos_fallidos).toBe(1);
+        // Con la verificación de prueba tampoco escribe, y el verificador sí se consultó.
+        const verificar = vi.fn(firmaDePrueba);
+        await expect(ratificar(sesion, { documentoId: d.id, nota: null, credenciales: { clave: "mala" } }, { sql: tx, ahora, verificar })).rejects.toBeInstanceOf(ErrorFirma);
+        expect(verificar).toHaveBeenCalledTimes(1);
+        expect((await tx`SELECT 1 FROM ratificaciones WHERE version_id = ${d.versionId}`).length).toBe(0);
+      });
+      const [acceso] = await sql`SELECT resultado FROM accesos WHERE usuario_id = ${u.id} ORDER BY id DESC LIMIT 1`;
+      expect(acceso.resultado).toBe("firma_fallo");
+      const [cuenta] = await sql`SELECT intentos_fallidos FROM usuarios WHERE id = ${u.id}`;
+      expect(cuenta.intentos_fallidos).toBe(1);
+    } finally {
+      await sql`UPDATE usuarios SET activo = false WHERE id = ${u.id}`;
+    }
   });
 
   it("si el archivo en disco cambió, rechaza y deja ratificacion_rechazada", () =>
