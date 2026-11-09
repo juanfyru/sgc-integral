@@ -23,7 +23,19 @@ vi.mock("@/db/cliente", async (original) => {
 });
 
 import { obtenerSql } from "@/db/cliente";
-import { crearVersionBorrador, deshacerCarga, publicarVersion } from "@/db/consultas/admin";
+import {
+  crearDocumento,
+  crearVersionBorrador,
+  descartarBorrador,
+  deshacerCarga,
+  editarControl,
+  editarVersionBorrador,
+  eliminarArchivoBorrador,
+  publicarVersion,
+  registrarArchivo,
+} from "@/db/consultas/admin";
+import { crearSolicitud, transicionar } from "@/db/consultas/tramites-flujo";
+import { corregirDatosDeControl } from "@/db/consultas/tramites-gestion";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import {
   abrirEdicion,
@@ -48,7 +60,7 @@ import { parsearFormulario } from "@/lib/validacion";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { textoVigenciaDeFila } from "@/lib/vigencia/semaforo";
 import { copiaDePrueba, puntoDePrueba } from "./utiles/distribucion";
-import { archivoPrincipal, sesionAdmin, sesionDe, usuarioDePrueba } from "./utiles/tramites";
+import { aceptarCreacion, archivoPrincipal, opc, sesionAdmin, sesionDe, solicitudDeCreacion, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 import { datosExterno, externoDePrueba, firmaDePrueba, sinRevisionAbierta } from "./utiles/vigencia";
 
@@ -501,6 +513,122 @@ describe("verificación y retiro", () => {
       } finally {
         await e.limpiar();
       }
+    }));
+});
+
+describe("un externo no se toca por los caminos de los internos (spec 13C §8.1)", () => {
+  const SE_ADOPTA = "Un documento externo se adopta desde Vigencia → Externos";
+  const SIN_TRAMITE = "Un documento externo no tiene trámite: se adopta o se retira desde Vigencia → Externos";
+  const SOLO_EXTERNOS = "El tipo «Documento externo» es solo para documentos externos: regístrelo desde Vigencia → Externos";
+  const CONSERVA_TIPO = "Un documento externo conserva el tipo «Documento externo»";
+  const tipoDe = async (tx: TransactionSql, sigla: string) => Number((await tx`SELECT id FROM tipos_documento WHERE sigla = ${sigla}`)[0].id);
+
+  /** Las funciones del panel que abren su propia transacción reciben la del test mientras corre `prueba`. */
+  async function conTransaccionDelPanel(tx: TransactionSql, prueba: () => Promise<void>) {
+    enCurso.sql = tx;
+    try {
+      await prueba();
+    } finally {
+      enCurso.sql = null;
+    }
+  }
+
+  it("no se le pide un trámite: ni modificación, ni eliminación, ni una creación convertida en modificación de un externo", () =>
+    revertida(sql, async (tx) => {
+      const lider = await sesionDe(tx, "lider.cex");
+      const e = await externoDePrueba(tx, lider, { proceso: "CEX", edicion: "2017", ahora });
+      try {
+        const justificacion = "Se ajusta el documento al proceso actual.";
+        for (const tipo of ["modificar", "eliminar"] as const) {
+          await expect(crearSolicitud(lider, { tipo, motivo: "mejora", justificacion, documentoId: e.documentoId }, opc(tx))).rejects.toThrow(SIN_TRAMITE);
+        }
+        const { admin, liderCex, tramiteId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "ZP", titulo: "Guía de prueba convertida" });
+        const responsables = { elaboradorId: liderCex.usuarioId, revisorId: admin.usuarioId, aprobadorId: admin.usuarioId };
+        await expect(
+          transicionar(admin, { tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
+            datos: aceptarCreacion({ ...responsables, decision: "modificacion", documentoExistenteId: e.documentoId }) }, opc(tx)),
+        ).rejects.toThrow(SIN_TRAMITE);
+        expect((await tx`SELECT 1 FROM tramites WHERE documento_id = ${e.documentoId}`).length).toBe(0);
+      } finally {
+        await e.limpiar();
+      }
+    }));
+
+  it("un interno no se da de alta con el tipo «Documento externo»: ni por la carga directa, ni por una solicitud de creación", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const lider = await sesionDe(tx, "lider.cex");
+      const cex = await proceso(tx, "CEX");
+      const de = await tipoDe(tx, "DE");
+      await tx`INSERT INTO configuracion (clave, valor) VALUES ('publicacion_directa', '1') ON CONFLICT (clave) DO UPDATE SET valor = '1'`;
+      await conTransaccionDelPanel(tx, () =>
+        expect(
+          crearDocumento(
+            { codigo: "CEX-DE-99", titulo: "Guía cargada como interna", tipoId: de, descripcion: null, palabrasClave: null,
+              asociaciones: [{ procesoId: cex.id, esPrincipal: true }] },
+            admin.usuarioId,
+          ),
+        ).rejects.toThrow(SOLO_EXTERNOS),
+      );
+      await expect(
+        crearSolicitud(lider, { tipo: "crear", motivo: "mejora", justificacion: "Se necesita para la atención.", procesoId: cex.id,
+          tipoDocumentoId: de, tituloPropuesto: "Guía pedida como interna" }, opc(tx)),
+      ).rejects.toThrow(SOLO_EXTERNOS);
+      // Ni al aceptar una creación pedida con otro tipo.
+      const { liderCex, tramiteId } = await solicitudDeCreacion(tx, { proceso: "CEX", tipo: "ZP", titulo: "Guía aceptada como externa" });
+      await expect(
+        transicionar(admin, { tramiteId, accion: "aceptar", etapaEsperada: "aceptacion", rondaEsperada: 0,
+          datos: aceptarCreacion({ codigo: "CEX-DE-98", tipoDocumentoId: de, elaboradorId: liderCex.usuarioId, revisorId: admin.usuarioId,
+            aprobadorId: admin.usuarioId }) }, opc(tx)),
+      ).rejects.toThrow(SOLO_EXTERNOS);
+      // Ni al corregir el tipo de una creación en curso.
+      const t = await tramiteEn(tx, "elaboracion", { tipo: "crear", codigo: "CEX-ZP-07" });
+      try {
+        await expect(
+          corregirDatosDeControl(t.tramiteId, t.admin, { codigo: "CEX-DE-97", tipoDocumentoId: de }, { etapa: "elaboracion", ronda: 1 }, { sql: tx }),
+        ).rejects.toThrow(SOLO_EXTERNOS);
+      } finally {
+        await t.limpiar();
+      }
+    }));
+
+  it("el panel no rompe la pareja origen y tipo: un externo conserva su tipo y un interno no pasa a «Documento externo»", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const lider = await sesionDe(tx, "lider.cex");
+      const cex = await proceso(tx, "CEX");
+      const sinAdoptar = await registrarExterno(lider, datosExterno({ procesoId: cex.id, responsableId: lider.usuarioId }), { sql: tx, ahora });
+      const [interno] = await tx`INSERT INTO documentos (codigo, titulo, tipo_id) VALUES ('CEX-PR-99', 'Interno sin publicar', ${await tipoDe(tx, "PR")})
+        RETURNING id`;
+      await tx`INSERT INTO documento_proceso (documento_id, proceso_id, es_principal) VALUES (${interno.id}, ${cex.id}, true)`;
+      await conTransaccionDelPanel(tx, async () => {
+        await expect(
+          editarControl(sinAdoptar.documentoId, { codigo: sinAdoptar.codigo, titulo: "Guía", tipoId: await tipoDe(tx, "PR") }, admin.usuarioId),
+        ).rejects.toThrow(CONSERVA_TIPO);
+        await expect(editarControl(Number(interno.id), { codigo: "CEX-PR-99", titulo: "Interno sin publicar", tipoId: await tipoDe(tx, "DE") }, admin.usuarioId))
+          .rejects.toThrow(SOLO_EXTERNOS);
+      });
+    }));
+
+  it("los caminos genéricos del panel no tocan el borrador de un externo; el de externos sí sube y quita sus archivos", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const lider = await sesionDe(tx, "lider.cex");
+      const cex = await proceso(tx, "CEX");
+      const r = await registrarExterno(lider, datosExterno({ procesoId: cex.id, responsableId: lider.usuarioId }), { sql: tx, ahora });
+      const datos = { fechaElaboracion: null, fechaRevision: null, fechaAprobacion: "2026-11-08", elaboro: null, reviso: null, aprobo: "Alguien", resumenCambios: null };
+      await expect(editarVersionBorrador(r.versionId, datos, admin.usuarioId, { sql: tx })).rejects.toThrow(SE_ADOPTA);
+      await conTransaccionDelPanel(tx, () => expect(descartarBorrador(r.versionId, admin.usuarioId)).rejects.toThrow(SE_ADOPTA));
+      const archivo = {
+        versionId: r.versionId, rol: "anexo", ruta: `zz-pruebas/${Date.now()}/anexo.pdf`, nombreOriginal: "anexo.pdf",
+        extension: "pdf", mime: "application/pdf", tamanoBytes: 10, hashSha256: "a".repeat(64),
+      };
+      await expect(registrarArchivo(archivo, admin.usuarioId, { sql: tx })).rejects.toThrow(SE_ADOPTA);
+      const { id } = await registrarArchivo(archivo, lider.usuarioId, { sql: tx, externo: true });
+      await expect(eliminarArchivoBorrador(id, admin.usuarioId, { sql: tx })).rejects.toThrow(SE_ADOPTA);
+      await eliminarArchivoBorrador(id, lider.usuarioId, { sql: tx, externo: true });
+      const [v] = await tx`SELECT estado, aprobo FROM documento_versiones WHERE id = ${r.versionId}`;
+      expect(v).toMatchObject({ estado: "borrador", aprobo: null });
     }));
 });
 

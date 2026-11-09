@@ -23,6 +23,7 @@ import { exigirDesignacion, propietarioElegido } from "./flujo/aceptacion";
 import { CAMBIO_MIENTRAS, ErrorTramite, enTransaccion, type Aviso, type FilaTramite, type SesionFlujo } from "./flujo/contrato";
 import { exigirQueNoElaboro, relevoDe } from "./flujo/gestion";
 import type { Esperado } from "./revision";
+import { exigirTipoDeInterno } from "./origen";
 
 /** Solo lo que cambió, para la evidencia. null si nada cambió. */
 type Correccion = { detalle: Record<string, unknown>; avisos?: Aviso[] } | null;
@@ -86,6 +87,7 @@ async function moverAsociacionPrincipal(tx: TransactionSql, documentoId: number 
 async function exigirTipo(tx: TransactionSql, tramite: FilaTramite, tipoId: number, aprobadorId: number | undefined) {
   const tipo = await tipoDeDocumento(tipoId, { sql: tx });
   if (!tipo?.activo) throw new ErrorTramite("El tipo de documento no existe o está inactivo");
+  await exigirTipoDeInterno(tx, tipoId);
   if (aprobadorId === tramite.aprobadorId) throw new ErrorTramite("Esa persona ya tiene ese papel");
   if (aprobadorId !== undefined) await exigirQueNoElaboro(tx, tramite.id, aprobadorId, "aprobador");
   const { elaboradorId, revisorId } = tramite;

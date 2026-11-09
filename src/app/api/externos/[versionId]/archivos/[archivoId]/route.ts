@@ -38,7 +38,7 @@ export async function DELETE(peticion: NextRequest, { params }: Params) {
   if (!(await archivoDeEdicion(Number(versionId), Number(archivoId)))) return error(404, "El archivo no existe");
 
   try {
-    const { ruta } = await eliminarArchivoBorrador(Number(archivoId), sesion.usuarioId);
+    const { ruta } = await eliminarArchivoBorrador(Number(archivoId), sesion.usuarioId, { externo: true });
     const absoluta = resolverRutaAlmacen(ruta);
     if (absoluta) await unlink(absoluta).catch(() => {});
     return NextResponse.json({ ok: true });

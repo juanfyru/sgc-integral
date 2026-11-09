@@ -39,5 +39,5 @@ export async function POST(peticion: NextRequest, { params }: Params) {
   const permiso = await autorizarArchivoDeEdicion(Number(versionId), sesion);
   if (!permiso.ok) return permiso.estado === 409 ? error(409, NO_BORRADOR) : error(404, "La edición no existe");
 
-  return recibirArchivo(peticion, { ...permiso.destino, rol }, sesion.usuarioId);
+  return recibirArchivo(peticion, { ...permiso.destino, rol, externo: true }, sesion.usuarioId);
 }

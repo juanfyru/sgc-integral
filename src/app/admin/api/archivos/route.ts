@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { obtenerSql } from "@/db/cliente";
 import { exigirEscrituraEnVersion, obtenerVersionParaSubida } from "@/db/consultas/admin";
 import { ErrorTramite } from "@/db/consultas/flujo/contrato";
+import { exigirInterno } from "@/db/consultas/origen";
 import { origenValido } from "@/lib/origen";
 import { crearLimitador } from "@/lib/limite";
 import { puede } from "@/lib/permisos";
@@ -43,6 +44,7 @@ export async function POST(peticion: NextRequest) {
   // Aquí, para responder sin recibir el archivo; registrarlo lo comprueba otra vez bajo su transacción.
   try {
     await exigirEscrituraEnVersion(obtenerSql(), versionId);
+    await exigirInterno(obtenerSql(), { versionId });
   } catch (err) {
     if (err instanceof ErrorTramite) return error(409, err.message);
     throw err;

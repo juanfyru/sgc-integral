@@ -43,6 +43,7 @@ import { MANEJADORES_ELABORACION, VALIDADORES_ELABORACION } from "./flujo/elabor
 import { MANEJADORES_GESTION } from "./flujo/gestion";
 import { MANEJADORES_REVISION, VALIDADORES_REVISION } from "./flujo/revision";
 import { MANEJADORES_SOLICITUD } from "./flujo/solicitud";
+import { EXTERNO_SIN_TRAMITE, exigirInterno, exigirTipoDeInterno } from "./origen";
 import {
   adminsActivos,
   lideresDeProceso,
@@ -123,6 +124,7 @@ async function destinoDeCreacion(tx: TransactionSql, datos: DatosSolicitud): Pro
   if (!tipoDocumentoId) throw new ErrorTramite("Elija el tipo de documento");
   const [tipo] = await tx`SELECT 1 FROM tipos_documento WHERE id = ${tipoDocumentoId} AND activo`;
   if (!tipo) throw new ErrorTramite("El tipo de documento no existe o está inactivo");
+  await exigirTipoDeInterno(tx, tipoDocumentoId);
 
   if (subprocesoId) {
     const [s] = await tx`SELECT s.proceso_id FROM subprocesos s
@@ -140,6 +142,7 @@ async function destinoDeCreacion(tx: TransactionSql, datos: DatosSolicitud): Pro
 
 async function destinoDeDocumento(tx: TransactionSql, documentoId: number | undefined): Promise<Destino> {
   if (!documentoId) throw new ErrorTramite("Elija el documento");
+  await exigirInterno(tx, { documentoId }, EXTERNO_SIN_TRAMITE);
   const [vigente] = await tx`SELECT 1 FROM documento_versiones WHERE documento_id = ${documentoId} AND estado = 'vigente'`;
   if (!vigente) throw new ErrorTramite("El documento no existe o no tiene versión vigente");
   const propietario = await propietarioDeDocumento(documentoId, { sql: tx });

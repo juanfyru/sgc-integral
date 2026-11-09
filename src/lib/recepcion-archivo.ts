@@ -65,6 +65,8 @@ export type DestinoVersion = {
   numero: number;
   rol: RolArchivo;
   tramiteId?: number;
+  /** Solo la ruta de externos, que ya autorizó la edición: los demás caminos no escriben en un externo. */
+  externo?: boolean;
 };
 /** `carpeta` es relativa al almacén: `jornadas/<id>` o `verificaciones/<verificacionId>/items/<itemId>`. */
 export type DestinoEvidencia = { contexto: ContextoEvidencia; contextoId: number; carpeta: string };
@@ -171,6 +173,7 @@ export async function recibirArchivo(
         )
       : await registrarArchivo({ versionId: destino.versionId, rol: destino.rol, ...comunes }, usuarioId, {
           tramiteId: destino.tramiteId,
+          externo: destino.externo,
         });
     return NextResponse.json(
       { id, nombre: nombreCrudo, mime: tipo.mime, tamanoBytes: total },

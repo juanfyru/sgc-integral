@@ -26,12 +26,14 @@ vi.mock("@/lib/sesion-actual", () => ({ sesionDePeticion }));
 
 import { DELETE } from "@/app/api/externos/[versionId]/archivos/[archivoId]/route";
 import { POST } from "@/app/api/externos/[versionId]/archivos/route";
+import { DELETE as quitarDelPanel } from "@/app/admin/api/archivos/[archivoId]/route";
+import { POST as subirAlPanel } from "@/app/admin/api/archivos/route";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { abrirEdicion } from "@/db/consultas/vigencia/externos";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { pdfDePrueba } from "./utiles/pdf";
-import { sesionDe, usuarioDePrueba } from "./utiles/tramites";
+import { sesionAdmin, sesionDe, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 import { externoDePrueba } from "./utiles/vigencia";
 
@@ -163,5 +165,56 @@ describe("DELETE /api/externos/[versionId]/archivos/[archivoId]", () => {
       expect(await tx`SELECT 1 FROM archivos WHERE id = ${id}`).toHaveLength(0);
       expect(existsSync(resolverRutaAlmacen(a.ruta)!)).toBe(false);
       expect((await quitar(borradorId, id)).status).toBe(404);
+    }));
+
+  it("un archivo de la edición ya adoptada responde 409 y no se borra", () =>
+    conEdicion(async ({ tx, lider, vigenteId }) => {
+      como(lider);
+      const [principal] = await tx`SELECT id FROM archivos WHERE version_id = ${vigenteId} AND rol = 'principal'`;
+      const r = await quitar(vigenteId, Number(principal.id));
+      expect(r.status).toBe(409);
+      expect(await r.json()).toEqual({ error: "La edición ya no está en borrador" });
+      expect(await tx`SELECT 1 FROM archivos WHERE id = ${principal.id}`).toHaveLength(1);
+    }));
+});
+
+describe("las rutas de archivos del panel no tocan la edición de un externo", () => {
+  const SE_ADOPTA = "Un documento externo se adopta desde Vigencia → Externos";
+
+  it("la subida por /admin/api/archivos responde 409 antes de recibir el archivo; el borrado, 409 y el archivo queda", () =>
+    conEdicion(async ({ tx, lider, borradorId }) => {
+      como(lider);
+      const subida = await subir(borradorId, await pdfDePrueba([[612, 792]]), { rol: "anexo", nombre: "anexo.pdf" });
+      const { id } = (await subida.json()) as { id: number };
+
+      como(await sesionAdmin(tx));
+      const bytes = await pdfDePrueba([[612, 792]]);
+      const r = await subirAlPanel(
+        new NextRequest(`http://localhost:3002/admin/api/archivos?version=${borradorId}&rol=principal`, {
+          method: "POST",
+          body: bytes as BodyInit,
+          duplex: "half",
+          headers: {
+            origin: "http://localhost:3002",
+            host: "localhost:3002",
+            "x-nombre-archivo": encodeURIComponent("guia.pdf"),
+            "content-length": String(bytes.byteLength),
+          },
+        } as ConstructorParameters<typeof NextRequest>[1]),
+      );
+      expect(r.status).toBe(409);
+      expect(await r.json()).toEqual({ error: SE_ADOPTA });
+      expect(await tx`SELECT 1 FROM archivos WHERE version_id = ${borradorId} AND rol = 'principal'`).toHaveLength(0);
+
+      const borrado = await quitarDelPanel(
+        new NextRequest(`http://localhost:3002/admin/api/archivos/${id}`, {
+          method: "DELETE",
+          headers: { origin: "http://localhost:3002", host: "localhost:3002" },
+        }),
+        { params: Promise.resolve({ archivoId: String(id) }) },
+      );
+      expect(borrado.status).toBe(409);
+      expect(await borrado.json()).toEqual({ error: SE_ADOPTA });
+      expect(await tx`SELECT 1 FROM archivos WHERE id = ${id}`).toHaveLength(1);
     }));
 });
