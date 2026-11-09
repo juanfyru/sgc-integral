@@ -244,7 +244,7 @@ describe("indicadoresDocumentales", () => {
     expect(dentro.cumple).toBe(dentro.denominador === 0 ? null : dentro.numerador * 100 >= 50 * dentro.denominador);
   }));
 
-  it("la conformidad toma la cifra y el veredicto de la 13B: 2 de 3 frente a un umbral de 67 no cumple y se lee «66,6 %»", () => revertida(sql, async (tx) => {
+  it("la conformidad toma la cifra y el veredicto de la 13B: 2 de 3 frente a un umbral de 67 no cumple y se lee «66 %» (truncada)", () => revertida(sql, async (tx) => {
     // Sin procesos, el líder ve solo los puntos de los que es responsable: los del test.
     const lider = await usuarioDePrueba(tx, { rol: "lider_proceso" });
     const admin = await sesionAdmin(tx);
@@ -254,10 +254,11 @@ describe("indicadoresDocumentales", () => {
       await verificarPunto(tx, { verificador: admin, punto, ahora, respuesta });
     }
     const actual = (await estadoDePuntos(lider, { sql: tx, ahora })).conformidad;
-    expect(actual).toMatchObject({ porcentaje: 67, cumple: false, puntos: 3 });
+    expect(actual).toMatchObject({ porcentaje: 66, cumple: false, puntos: 3 });
     const r = (await indicadoresDocumentales(lider, { periodo: "2026" }, { sql: tx, ahora }))!;
     expect(de(r, "conformidad")).toMatchObject({ valor: actual.porcentaje, cumple: actual.cumple, numerador: 2, denominador: 3, meta: 67 });
-    expect(textoValor(de(r, "conformidad"))).toBe("66,6 %");
+    // La 13B trunca (Ruling 59): la cifra entera ya no contradice el veredicto y no hace falta el decimal.
+    expect(textoValor(de(r, "conformidad"))).toBe("66 %");
   }));
 
   it("con un proceso elegido, la aprobación y las etapas en plazo cuentan solo los trámites de ese proceso", () => revertida(sql, async (tx) => {

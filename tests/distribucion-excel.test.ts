@@ -5,7 +5,7 @@ import type { Copia } from "@/db/consultas/distribucion/copias";
 import type { Jornada } from "@/db/consultas/distribucion/jornadas";
 import { construirExcelAcuses } from "@/lib/distribucion/acuses-excel";
 import { construirExcelCopias } from "@/lib/distribucion/copias-excel";
-import { construirExcelSocializaciones } from "@/lib/distribucion/socializaciones-excel";
+import { construirExcelSocializaciones, contarExternos } from "@/lib/distribucion/socializaciones-excel";
 import { construirExcelVerificaciones } from "@/lib/distribucion/verificaciones-excel";
 
 async function leer(buffer: Buffer, hoja: string) {
@@ -208,7 +208,7 @@ describe("construirExcelSocializaciones", () => {
     expect(sinLista.getCell(10).value).toBe("Anulada: Se registró dos veces");
   });
 
-  it("cuenta los asistentes sin cuenta por renglón, coma o punto y coma, sin contar los vacíos", async () => {
+  it("cuenta los asistentes sin cuenta por renglón o punto y coma, sin contar los vacíos; la coma no separa", async () => {
     const hoja = await leer(
       await construirExcelSocializaciones([jornada({ asistentesExternos: " Juan Ruiz, María Gómez;\n\n  Pedro Díaz  \n" })], {
         ...META,
@@ -217,7 +217,9 @@ describe("construirExcelSocializaciones", () => {
       }),
       "Socializaciones",
     );
-    expect(hoja.getRow(7).getCell(7).value).toBe(3);
+    // «Juan Ruiz, María Gómez» es un renglón: con «Pedro Díaz», dos.
+    expect(hoja.getRow(7).getCell(7).value).toBe(2);
+    expect(contarExternos("Pérez, Juan\nGómez, María; Ruiz, Pedro")).toBe(3);
   });
 
   it("neutraliza las celdas de texto que empiezan por una fórmula", async () => {

@@ -4,10 +4,13 @@ import { ETIQUETA_MODALIDAD } from "./tipos";
 
 export type MetaSocializaciones = { hospital: string; generadoEn: string; periodo: string; total: number };
 
-/** Quienes asistieron sin cuenta se escriben en texto libre: uno por renglón, coma o punto y coma. */
+/**
+ * Quienes asistieron sin cuenta se escriben en texto libre, uno por renglón (o separados por punto y coma). La coma no
+ * separa: «Pérez, Juan» es una persona.
+ */
 export function contarExternos(texto: string | null): number {
   if (!texto) return 0;
-  return texto.split(/[\n,;]+/).filter((nombre) => nombre.trim() !== "").length;
+  return texto.split(/[\n;]+/).filter((nombre) => nombre.trim() !== "").length;
 }
 
 function documentos(j: Jornada): string {

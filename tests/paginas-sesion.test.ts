@@ -40,7 +40,8 @@ describe("cada página comprueba la sesión", () => {
   it("hay páginas en ambos grupos", () => {
     expect(portal.length).toBeGreaterThan(3);
     expect(paginas("src/app/(cuenta)").length).toBeGreaterThan(0);
-    expect(panel.length).toBe(35);
+    // Los catálogos salieron del panel: ninguna página del panel queda bajo sus carpetas.
+    expect(panel.filter((r) => /[\\/](puntos-uso|listas-distribucion)[\\/]/.test(r))).toEqual([]);
     expect(catalogos.length).toBe(6);
     // El grupo de los catálogos cuenta como portal: la regla de sesión del portal le aplica.
     expect(catalogos.every((r) => portal.includes(r))).toBe(true);

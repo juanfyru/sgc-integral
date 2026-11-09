@@ -53,7 +53,8 @@ export function conformidad(
   if (puntos.length === 0) return { porcentaje: null, cumple: null };
   const conformes = puntos.filter((p) => p.conforme).length;
   // En enteros: 29 de 50 en coma flotante da 57,99999999999999 y quedaría por debajo de un umbral de 58.
-  return { porcentaje: Math.round((conformes * 100) / puntos.length), cumple: conformes * 100 >= umbral * puntos.length };
+  // El porcentaje se trunca: 18 de 19 es 94 y no 95, así la cifra entera nunca contradice el veredicto (Ruling 59).
+  return { porcentaje: Math.floor((conformes * 100) / puntos.length), cumple: conformes * 100 >= umbral * puntos.length };
 }
 
 /** Hasta cuándo puede fijarse la corrección de un hallazgo, en días desde el cierre. */

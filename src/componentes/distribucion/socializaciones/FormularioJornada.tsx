@@ -155,7 +155,7 @@ export function FormularioJornada({
         <Campo
           etiqueta="Asistentes externos"
           nombre="asistentesExternos"
-          ayuda="Quienes no están en la plataforma. Obligatorio si no marca ningún asistente."
+          ayuda="Quienes no están en la plataforma, uno por renglón. Obligatorio si no marca ningún asistente."
         >
           <textarea rows={3} maxLength={1000} className={claseControl} />
         </Campo>
