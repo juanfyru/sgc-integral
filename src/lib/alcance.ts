@@ -250,3 +250,32 @@ export function filtroVigencia(sql: Cliente, sujeto: SujetoVisibilidad, alcance:
       AND COALESCE(vigencia_dp.proceso_id, vigencia_s.proceso_id) = ANY(${alcance.procesoIds})
   ))`;
 }
+
+/** Quién gestiona un externo (spec 13C §6.2): `externos.gestionar` sobre su proceso propietario, del alcance. */
+export function puedeGestionarExterno(sujeto: SujetoVisibilidad, procesoId: number, alcance: Alcance): boolean {
+  return puede(sujeto, "externos.gestionar") && enAlcance(alcance, procesoId);
+}
+
+/**
+ * Quién ve la página de control de un externo (spec 13C §8.8): quien lo gestiona, su responsable técnico (aunque sea
+ * de rol Consulta, sin que por eso vea otros) y quien tiene `vigencia.ver` sobre su proceso propietario. Siempre
+ * además la regla de nivel de acceso: un restringido no existe para quien no lo ve. `false` si no es un externo.
+ */
+export async function puedeVerExterno(
+  documentoId: number,
+  sujeto: SujetoVisibilidad & { usuarioId: number },
+  opciones?: { sql?: Cliente },
+): Promise<boolean> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [d] = await sql`
+    SELECT COALESCE(dp.proceso_id, s.proceso_id) AS proceso_id, ex.responsable_id
+    FROM documentos d
+    JOIN externos ex ON ex.documento_id = d.id
+    JOIN documento_proceso dp ON dp.documento_id = d.id AND dp.es_principal
+    LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
+    WHERE d.id = ${documentoId} AND d.origen = 'externo' AND ${filtroAcceso(sql, sujeto)}`;
+  if (!d) return false;
+  if (Number(d.responsable_id) === sujeto.usuarioId) return true;
+  if (!puede(sujeto, "externos.gestionar") && !puede(sujeto, "vigencia.ver")) return false;
+  return enAlcance(await alcanceProcesos(sujeto, { sql }), Number(d.proceso_id));
+}

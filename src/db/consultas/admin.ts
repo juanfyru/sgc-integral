@@ -2,6 +2,7 @@ import type { Sql, TransactionSql } from "postgres";
 import { obtenerSql } from "@/db/cliente";
 import { retirarAcusesFueraDeAudiencia } from "@/db/consultas/distribucion/acuses";
 import { filtroAcceso, type SujetoVisibilidad } from "@/lib/alcance";
+import type { MotivoPorRecoger } from "@/lib/distribucion/tipos";
 import { ROLES_ARCHIVO_LISTA } from "@/lib/subida";
 import { hashearClave } from "@/lib/clave";
 import { puede } from "@/lib/permisos";
@@ -218,6 +219,21 @@ async function exigirCargaAbierta(tx: Cliente): Promise<void> {
   if (!publicacionDirecta) throw new Error(CARGA_CERRADA);
 }
 
+export const EXTERNO_SE_ADOPTA = "Un documento externo se adopta desde Vigencia → Externos";
+
+/**
+ * El camino directo es de los documentos internos: un externo entra, cambia de edición y sale por su propio camino
+ * (spec 13C §8.3). Va antes que la compuerta de la carga, para que el mensaje diga dónde se hace.
+ */
+async function exigirInterno(tx: Cliente, donde: { documentoId: number } | { versionId: number }): Promise<void> {
+  const [externo] =
+    "versionId" in donde
+      ? await tx`SELECT 1 FROM documento_versiones v JOIN documentos d ON d.id = v.documento_id
+          WHERE v.id = ${donde.versionId} AND d.origen = 'externo'`
+      : await tx`SELECT 1 FROM documentos WHERE id = ${donde.documentoId} AND origen = 'externo'`;
+  if (externo) throw new Error(EXTERNO_SE_ADOPTA);
+}
+
 function exigirNumeroDeVersion(numero: number): void {
   if (!Number.isInteger(numero) || numero < 1 || numero > NUMERO_MAXIMO_DE_VERSION) {
     throw new Error(`La versión debe ser un entero de 1 a ${NUMERO_MAXIMO_DE_VERSION}`);
@@ -415,7 +431,8 @@ export async function crearVersionBorrador(
   numero?: number,
 ): Promise<{ versionId: number; numero: number }> {
   if (numero !== undefined) exigirNumeroDeVersion(numero);
-  return await obtenerSql().begin(async (tx) => {
+  return await enTransaccion(obtenerSql(), async (tx) => {
+    await exigirInterno(tx, { documentoId });
     await exigirCargaAbierta(tx);
     await exigirDocumentoRegistrable(tx, documentoId);
     return crearVersionBorradorEn(tx, documentoId, usuarioId, numero);
@@ -645,8 +662,8 @@ export async function publicarVersion(
   versionId: number,
   usuarioId: number,
 ): Promise<{ documentoId: number; obsoletas: number }> {
-  const sql = obtenerSql();
-  return await sql.begin(async (tx) => {
+  return await enTransaccion(obtenerSql(), async (tx) => {
+    await exigirInterno(tx, { versionId });
     await exigirCargaAbierta(tx);
     await exigirDocumentoRegistrable(tx, await documentoDeVersion(tx, versionId));
     const [version] = await tx`SELECT estado, aprobo, fecha_aprobacion
@@ -677,7 +694,7 @@ export async function publicarVersion(
  * libera su número. El documento conserva su código y queda listo para registrarse de nuevo (spec 13A §13.2).
  */
 export function deshacerCarga(documentoId: number, motivo: string, usuarioId: number, ahora: Date = new Date()): Promise<void> {
-  return obtenerSql().begin((tx) => deshacerCargaEn(tx, documentoId, motivo, usuarioId, ahora)) as Promise<void>;
+  return enTransaccion(obtenerSql(), (tx) => deshacerCargaEn(tx, documentoId, motivo, usuarioId, ahora));
 }
 
 export async function deshacerCargaEn(
@@ -689,6 +706,7 @@ export async function deshacerCargaEn(
 ): Promise<void> {
   const razon = motivo.trim();
   if (!razon) throw new Error("Escriba el motivo");
+  await exigirInterno(tx, { documentoId });
   await exigirCargaAbierta(tx);
   const impedimento = impedimentoDeDeshacer(await situacionBloqueada(tx, documentoId));
   if (impedimento) throw new Error(impedimento);
@@ -1052,11 +1070,13 @@ export async function obtenerDocumentoAdmin(
   };
 }
 
+/** `motivo` es el que llevan las copias por recoger: `retirado` cuando el que sale es un documento externo. */
 export async function anularVigenteEn(
   tx: TransactionSql,
   documentoId: number,
   usuarioId: number,
   ahora: Date = new Date(),
+  motivo: MotivoPorRecoger = "eliminado",
 ): Promise<{ versionId: number; numero: number }> {
   const [anulada] = await tx`UPDATE documento_versiones SET estado = 'anulado'
     WHERE documento_id = ${documentoId} AND estado = 'vigente'
@@ -1064,7 +1084,7 @@ export async function anularVigenteEn(
   if (!anulada) {
     throw new Error("El documento no tiene versión vigente que anular");
   }
-  await alDejarDeSerVigente(tx, Number(anulada.id), "eliminado", ahora, { actorId: usuarioId });
+  await alDejarDeSerVigente(tx, Number(anulada.id), motivo, ahora, { actorId: usuarioId });
   await registrarAuditoria(tx, {
     usuarioId, accion: "anular_documento", entidad: "documento",
     entidadId: documentoId, detalle: { versionAnulada: anulada.numero },

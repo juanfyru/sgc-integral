@@ -27,6 +27,8 @@ import { GET as excelMaestro } from "@/app/(app)/admin/(panel)/maestro/excel/rou
 import { GET as verArchivoTramite } from "@/app/(app)/tramites/[id]/archivos/[archivoId]/[[...nombre]]/route";
 import { DELETE as quitarArchivoTramite } from "@/app/api/tramites/[id]/archivos/[archivoId]/route";
 import { POST as subirArchivoTramite } from "@/app/api/tramites/[id]/archivos/route";
+import { DELETE as quitarArchivoExterno } from "@/app/api/externos/[versionId]/archivos/[archivoId]/route";
+import { POST as subirArchivoExterno } from "@/app/api/externos/[versionId]/archivos/route";
 import { GET as excelAcuses } from "@/app/(app)/distribucion/acuses/excel/route";
 import { GET as excelCopias } from "@/app/(app)/distribucion/copias/excel/route";
 import { GET as excelVerificaciones } from "@/app/(app)/distribucion/verificaciones/excel/route";
@@ -545,6 +547,53 @@ describe("archivos del trámite", () => {
     await seguidas(30, () => subir(cookie(token)));
     await seguidas(30, () => quitar(cookie(token)));
     await seguidas(60, () => ver(cookie(token)));
+  });
+});
+
+describe("archivos de la edición de un externo", () => {
+  const VERSION = "999999999";
+  const peticion = (metodo: string, ruta: string, cabeceras: Record<string, string> = {}) =>
+    new NextRequest(`http://sgc.local${ruta}`, { method: metodo, headers: { host: "sgc.local", ...cabeceras } });
+  const subir = (cabeceras?: Record<string, string>, versionId = VERSION, rol = "principal") =>
+    subirArchivoExterno(peticion("POST", `/api/externos/${versionId}/archivos?rol=${rol}`, cabeceras), {
+      params: Promise.resolve({ versionId }),
+    });
+  const quitar = (cabeceras?: Record<string, string>, versionId = VERSION, archivoId = "1") =>
+    quitarArchivoExterno(peticion("DELETE", `/api/externos/${versionId}/archivos/${archivoId}`, cabeceras), {
+      params: Promise.resolve({ versionId, archivoId }),
+    });
+
+  it("sin sesión responden 401", async () => {
+    expect((await subir()).status).toBe(401);
+    expect((await quitar()).status).toBe(401);
+  });
+
+  it("sin el permiso de gestionar externos responden 403", async () => {
+    for (const token of [tokenConsulta, tokenCi, tokenGerencia]) {
+      expect((await subir(cookie(token))).status).toBe(403);
+      expect((await quitar(cookie(token))).status).toBe(403);
+    }
+  });
+
+  it("con un Origin ajeno responden 403, aun con el permiso", async () => {
+    const ajeno = { ...cookie(tokenAdmin), origin: "https://malo.com" };
+    const subida = await subir(ajeno);
+    expect(subida.status).toBe(403);
+    expect(await subida.json()).toEqual({ error: "Origen no permitido" });
+    expect((await quitar(ajeno)).status).toBe(403);
+  });
+
+  it("el rol de archivo se valida antes de mirar la versión", async () => {
+    expect((await subir(cookie(tokenAdmin), VERSION, "acta_aprobacion")).status).toBe(400);
+  });
+
+  it("una versión que no existe, o un id que no es un número, responde 404 y nunca «sin permiso»", async () => {
+    expect((await subir(cookie(tokenAdmin))).status).toBe(404);
+    expect((await quitar(cookie(tokenAdmin))).status).toBe(404);
+    expect((await subir(cookie(tokenAdmin), "abc")).status).toBe(404);
+    expect((await quitar(cookie(tokenAdmin), "abc")).status).toBe(404);
+    expect((await quitar(cookie(tokenAdmin), VERSION, "abc")).status).toBe(404);
+    expect((await subir(cookie(tokenAdmin), "99999999999999999999")).status).toBe(404);
   });
 });
 

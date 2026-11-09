@@ -3,6 +3,8 @@
  * archivos que escriben en el almacén se borran con `limpiar` (o con la carpeta temporal del test).
  */
 import type { TransactionSql } from "postgres";
+import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
+import { adoptarEdicion, registrarExterno, type DatosExterno } from "@/db/consultas/vigencia/externos";
 import type { Verificador } from "@/lib/firma";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import type { Autoridad } from "@/lib/tramites/tipos";
@@ -107,4 +109,71 @@ export async function silenciarVigencia(tx: TransactionSql): Promise<void> {
  */
 export async function sinFechaDeRevision(tx: TransactionSql, d: { versionId: number }): Promise<void> {
   await tx`UPDATE documento_versiones SET origen_aprobacion = 'plataforma', publicado_en = NULL WHERE id = ${d.versionId}`;
+}
+
+let consecutivoExterno = 0;
+
+/** Los datos de un externo con valores verosímiles; el proceso y el responsable técnico los da el test. */
+export function datosExterno(d: Partial<DatosExterno> & Pick<DatosExterno, "procesoId" | "responsableId">): DatosExterno {
+  consecutivoExterno += 1;
+  return {
+    titulo: `Guía de práctica clínica de prueba ${Date.now()}-${consecutivoExterno}`,
+    subprocesoId: null,
+    otrosProcesos: [],
+    nivelAcceso: "general",
+    descripcion: null,
+    palabrasClave: null,
+    entidadEmisora: "Ministerio de Salud y Protección Social",
+    tituloOriginal: null,
+    fuenteOficial: "https://www.minsalud.gov.co/guias",
+    verificacionMeses: 12,
+    normaId: null,
+    edicion: "2017",
+    fechaEdicion: null,
+    ...d,
+  };
+}
+
+export type ExternoDePrueba = {
+  documentoId: number;
+  /** La edición adoptada: la versión 1, vigente. */
+  versionId: number;
+  codigo: string;
+  titulo: string;
+  procesoId: number;
+  /** La huella registrada del principal: un PDF real en el almacén. */
+  hash: string;
+  limpiar: () => Promise<void>;
+};
+
+/**
+ * Un externo registrado con las funciones reales en `proceso`, con un PDF real como principal de su primera edición
+ * y adoptado con `firmaDePrueba` (sin acuses). El responsable técnico es quien registra si no se dice. El test llama
+ * `limpiar` si el almacén no es una carpeta temporal.
+ */
+export async function externoDePrueba(
+  tx: TransactionSql,
+  gestor: SesionFlujo,
+  d: { proceso: string; edicion: string; responsableId?: number; nivelAcceso?: "general" | "restringido"; ahora?: Date },
+): Promise<ExternoDePrueba> {
+  const [p] = await tx`SELECT id FROM procesos WHERE sigla = ${d.proceso}`;
+  const datos = datosExterno({
+    procesoId: Number(p.id),
+    responsableId: d.responsableId ?? gestor.usuarioId,
+    edicion: d.edicion,
+    nivelAcceso: d.nivelAcceso ?? "general",
+  });
+  const r = await registrarExterno(gestor, datos, { sql: tx, ahora: d.ahora });
+  const { hash, limpiar } = await archivoPrincipal(tx, r.versionId);
+  try {
+    await adoptarEdicion(
+      gestor,
+      { versionId: r.versionId, pedirAcuses: false, requiereSocializacion: false, credenciales: { clave: "ok" } },
+      { sql: tx, ahora: d.ahora, verificar: firmaDePrueba },
+    );
+  } catch (err) {
+    await limpiar();
+    throw err;
+  }
+  return { documentoId: r.documentoId, versionId: r.versionId, codigo: r.codigo, titulo: datos.titulo, procesoId: Number(p.id), hash, limpiar };
 }

@@ -468,7 +468,10 @@ export async function retirarAcusesDeLista(tx: TransactionSql, listaId: number, 
   return n;
 }
 
-/** Avisa a quienes recibían el documento que dejó de aplicar, salvo a quien lo eliminó; no abre tarea. */
+/**
+ * Avisa a quienes recibían el documento que dejó de aplicar, salvo a quien lo eliminó; no abre tarea. `aviso`
+ * cambia el tipo y el texto: el retiro de un externo no es una eliminación.
+ */
 export async function avisarEliminacion(
   tx: TransactionSql,
   documentoId: number,
@@ -476,6 +479,7 @@ export async function avisarEliminacion(
   titulo: string,
   ahora: Date,
   actorId: number,
+  aviso?: { tipo: string; titulo: string },
 ): Promise<void> {
   const fecha = new Intl.DateTimeFormat("es-CO", { dateStyle: "long", timeZone: zonaHoraria() }).format(ahora);
   for (const usuarioId of await audienciaDeDocumento(tx, documentoId)) {
@@ -483,8 +487,8 @@ export async function avisarEliminacion(
     await crearNotificacion(
       {
         usuarioId,
-        tipo: "distribucion.eliminado",
-        titulo: `${codigo} ${titulo} dejó de aplicar: fue eliminado el ${fecha}`,
+        tipo: aviso?.tipo ?? "distribucion.eliminado",
+        titulo: aviso?.titulo ?? `${codigo} ${titulo} dejó de aplicar: fue eliminado el ${fecha}`,
         entidad: "documento",
         entidadId: documentoId,
       },
