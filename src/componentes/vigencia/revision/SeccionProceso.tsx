@@ -2,7 +2,8 @@ import type { FilaNorma } from "@/db/consultas/normograma/lectura";
 import type { ProcesoDeRevision } from "@/db/consultas/vigencia/revision-anual";
 import { cuenta } from "@/lib/plural";
 import { NormogramaDelProceso } from "./NormogramaDelProceso";
-import { TablaDecisiones, type FilaDecision } from "./TablaDecisiones";
+import type { FilaDecision } from "@/lib/vigencia/decisiones";
+import { TablaDecisiones } from "./TablaDecisiones";
 
 /**
  * Un documento que dejó de estar vigente (eliminado o retirado) no sale en la tabla pero cuenta en las cifras de su

@@ -19,7 +19,7 @@ import { enlazarDocumento } from "@/db/consultas/normograma/asociaciones";
 import { cambiarEstadoNorma } from "@/db/consultas/normograma/normas";
 import { crearSolicitud } from "@/db/consultas/tramites-flujo";
 import { abrirEdicion, adoptarEdicion, registrarVerificacion, retirarExterno } from "@/db/consultas/vigencia/externos";
-import { cerrarRevision, informeCongelado, obtenerRevision } from "@/db/consultas/vigencia/revision-anual";
+import { cerrarRevision, datosDelInforme, informeCongelado, obtenerRevision } from "@/db/consultas/vigencia/revision-anual";
 import type { ResultadoVerificacion } from "@/lib/vigencia/tipos";
 import { puntoDePrueba } from "./utiles/distribucion";
 import { normaDePrueba } from "./utiles/normograma";
@@ -125,6 +125,10 @@ describe("los externos en la campaña", () => {
 
       await verificar(pendiente, "edicion_nueva");
       await verificar(retirado, "retirado");
+      // El informe nombra un externo por la edición de su fila (la adoptada, si la hubo), también el parcial.
+      const parcial = await datosDelInforme(tx, revisionId, ahora);
+      expect(parcial.decisiones.find((d) => d.codigo === adoptado.codigo)).toMatchObject({ edicion: "2024" });
+      expect(parcial.decisiones.find((d) => d.codigo === interno.codigo)).not.toHaveProperty("edicion");
       await cerrarRevision(admin, { revisionId, credenciales: { clave: "ok" } }, { ...o, verificar: firmaDePrueba });
       const informe = (await informeCongelado(revisionId, { sql: tx }))!;
       const de = (codigo: string) => informe.decisiones.find((d) => d.codigo === codigo)!;
@@ -132,6 +136,10 @@ describe("los externos en la campaña", () => {
       expect(de(pendiente.codigo)).toMatchObject({ decision: "actualizar", version: 1, estadoExterno: "Pendiente de adoptar" });
       expect(de(retirado.codigo)).toMatchObject({ decision: "eliminar", estadoExterno: "Retirado" });
       expect(de(interno.codigo)).not.toHaveProperty("estadoExterno");
+      expect(de(adoptado.codigo)).toMatchObject({ edicion: "2024" });
+      expect(de(pendiente.codigo)).toMatchObject({ edicion: "2018" });
+      expect(de(retirado.codigo)).toMatchObject({ edicion: "2019" });
+      expect(de(interno.codigo)).not.toHaveProperty("edicion");
     }));
 });
 

@@ -523,15 +523,18 @@ describe("las decisiones", () => {
     revertida(sql, async (tx) => {
       await sinRevisionAbierta(tx);
       const admin = await sesionAdmin(tx);
-      const liderGth = await sesionDe(tx, "lider.gth");
+      const gth = await procesoPorSigla(tx, "GTH");
+      // Una persona de prueba que lidera GTH: el test no depende de los usuarios de la demo.
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [gth.id] });
       const cancelado = await vigenteFuera(tx, { fechaAprobacion: "2025-01-10", proceso: "GTH" });
       const sinDecidir = await vigenteFuera(tx, { fechaAprobacion: "2025-01-10", proceso: "GTH" });
-      const t = await tramiteEn(tx, "aceptacion", { codigo: cancelado.codigo });
+      // Pedida antes de abrir por quien lidera el proceso: queda en aceptación, y la campaña la toma «en trámite».
+      const t = await crearSolicitud(lider, { tipo: "modificar", motivo: "mejora", justificacion: JUSTIFICACION, documentoId: cancelado.id }, opc(tx));
+      expect(t.etapa).toBe("aceptacion");
       const { revisionId } = await revisionDePrueba(tx, admin, { ahora });
-      await transicionar(liderGth, { tramiteId: t.tramiteId, accion: "retirar", etapaEsperada: "aceptacion", rondaEsperada: 0 }, opc(tx));
+      await transicionar(lider, { tramiteId: t.tramiteId, accion: "retirar", etapaEsperada: "aceptacion", rondaEsperada: 0 }, opc(tx));
       await cerrarRevision(admin, { revisionId, credenciales: { clave: "ok" } }, { sql: tx, ahora, verificar: firmaDePrueba });
 
-      const gth = await procesoPorSigla(tx, "GTH");
       const cerrada = (await obtenerRevision(revisionId, admin, { sql: tx, ahora }))!;
       const proceso = cerrada.procesos.find((p) => p.id === gth.id)!;
       const delInforme = (await informeCongelado(revisionId, { sql: tx }))!.decisiones.filter((d) => d.proceso === proceso.nombre);

@@ -62,18 +62,24 @@ import PaginaDelExterno from "@/app/(app)/vigencia/externos/[id]/page";
 import PaginaNuevaSolicitud from "@/app/(app)/tramites/nueva/page";
 import { BloqueSolicitud } from "@/componentes/tramites/BloqueSolicitud";
 import { FormularioVerificacion } from "@/componentes/vigencia/externos/FormularioVerificacion";
+import { FormularioCambiosNormograma } from "@/componentes/vigencia/revision/AccionesDecision";
 import { CuerpoCerrar } from "@/componentes/vigencia/revision/DialogoCerrar";
+import { InformeEnPantalla } from "@/componentes/vigencia/revision/InformeEnPantalla";
+import { NormogramaDelProceso } from "@/componentes/vigencia/revision/NormogramaDelProceso";
+import { PanelAdmin } from "@/componentes/vigencia/revision/PanelAdmin";
 import { FormularioAbrir } from "@/componentes/vigencia/revision/DialogoAbrir";
 import { FormularioProrrogar } from "@/componentes/vigencia/revision/DialogoProrrogar";
 import { textoFueraDeTabla } from "@/componentes/vigencia/revision/SeccionProceso";
-import { TablaDecisiones, accionesDeDecision, type AccionesDecision, type FilaDecision } from "@/componentes/vigencia/revision/TablaDecisiones";
+import { TablaDecisiones } from "@/componentes/vigencia/revision/TablaDecisiones";
+import { accionesDeDecision, type AccionesDecision, type FilaDecision } from "@/lib/vigencia/decisiones";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { asociarProceso, enlazarDocumento } from "@/db/consultas/normograma/asociaciones";
 import { cambiarEstadoNorma } from "@/db/consultas/normograma/normas";
-import { obtenerTramite, origenDeTramite } from "@/db/consultas/tramites";
+import { datosParaSolicitar, obtenerTramite, origenDeTramite } from "@/db/consultas/tramites";
 import { crearSolicitud } from "@/db/consultas/tramites-flujo";
-import type { DecisionDeDocumento } from "@/db/consultas/vigencia/revision-anual";
+import type { DecisionDeDocumento, DetalleRevision, ProcesoDeRevision } from "@/db/consultas/vigencia/revision-anual";
+import { datosDeEjemplo } from "@/lib/informe-anual";
 import { cerrarRevision } from "@/db/consultas/vigencia/revision-anual";
 import { finDeFecha } from "@/lib/tramites/plazos";
 import type { Decision } from "@/lib/vigencia/tipos";
@@ -164,6 +170,38 @@ const filas: FilaDecision[] = [
   },
   { ...base, documentoId: 7, codigo: "CEX-IN-04", porDecidir: true, acciones: SIN },
 ];
+
+const procesoFijo = (o: Partial<ProcesoDeRevision> & Pick<ProcesoDeRevision, "id" | "nombre">): ProcesoDeRevision => ({
+  sigla: "CEX",
+  lider: "Luz Dary Ortiz",
+  documentos: 2,
+  decididos: 1,
+  porDecision: { ratificar: 1, actualizar: 0, eliminar: 0, reciente: 0, en_tramite: 0, sin_revisar: 1 },
+  normograma: null,
+  puedeDecidir: false,
+  ...o,
+});
+
+/** Una revisión abierta con dos procesos, uno sin líder, y tres documentos vigentes: dos internos y un externo. */
+const revisionFija: DetalleRevision = {
+  id: 4,
+  anio: 2026,
+  estado: "abierta",
+  plazoDias: 60,
+  ventanaMeses: 6,
+  abiertaPor: "María F. Perdomo",
+  abiertaEn: finDeFecha("2026-11-01", ZONA),
+  venceEn: finDeFecha("2026-12-31", ZONA),
+  prorrogas: [],
+  cerradaPor: null,
+  cerradaEn: null,
+  totales: { ratificar: 1, actualizar: 0, eliminar: 0, reciente: 1, en_tramite: 0, sin_revisar: 1, documentos: 3 },
+  procesos: [
+    procesoFijo({ id: 3, nombre: "Consulta Externa" }),
+    procesoFijo({ id: 5, nombre: "Atención Inmediata", sigla: "AIN", lider: null, documentos: 1, decididos: 1, porDecision: { ratificar: 0, actualizar: 0, eliminar: 0, reciente: 1, en_tramite: 0, sin_revisar: 0 } }),
+  ],
+  documentos: [filas[0], filas[1], filas[2]],
+};
 
 const tabla = (f: FilaDecision[] = filas) =>
   renderToStaticMarkup(<TablaDecisiones titulo="Documentos de Consulta Externa" filas={f} revision={{ id: 4, anio: 2026 }} ahora={AHORA} pideCodigo={false} volver="/vigencia/revision-anual?proceso=3" />);
@@ -273,6 +311,64 @@ describe("TablaDecisiones", () => {
     expect(textoFueraDeTabla(15, 15)).toBeNull();
     expect(textoFueraDeTabla(15, 14)).toBe("1 documento de la revisión ya no está vigente (se eliminó o se retiró): cuenta en las cifras del proceso, pero no sale en la tabla.");
     expect(textoFueraDeTabla(15, 12)).toMatch(/^3 documentos de la revisión ya no están vigentes/);
+  });
+});
+
+describe("la tabla y el panel a la vista (ronda de corrección 1)", () => {
+  it("«Ratificar sin cambios» va del tamaño de sus hermanos y su nombre accesible dice qué documento", () => {
+    const pendiente = tarjeta(tabla(), "CEX-CA-01");
+    const disparador = pendiente.match(/<button[^>]*aria-label="Ratificar sin cambios: CEX-CA-01"[^>]*>/)?.[0];
+    expect(disparador).toBeDefined();
+    expect(disparador).toContain("px-2.5 py-1 text-xs");
+    expect(pendiente).toMatch(/aria-label="Ratificar sin cambios: CEX-CA-01"[^>]*>Ratificar sin cambios</);
+  });
+
+  it("«Marcar cambios…» es un botón secundario, no un desplegable a todo el ancho; su formulario pide la nota", () => {
+    const html = renderToStaticMarkup(
+      <NormogramaDelProceso revisionId={4} proceso={{ id: 3, nombre: "Consulta Externa", normograma: null, puedeDecidir: true }} normas={[]} />,
+    );
+    expect(html).not.toContain("<summary");
+    expect(html).not.toContain("<details");
+    const boton = html.match(/<button[^>]*>Marcar cambios…<\/button>/)?.[0];
+    expect(boton).toBeDefined();
+    expect(boton).toContain('aria-expanded="false"');
+    expect(boton).toContain("border border-border bg-card");
+    const formulario = renderToStaticMarkup(<FormularioCambiosNormograma revisionId={4} procesoId={3} enviar={() => {}} pendiente={false} />);
+    expect(formulario).toContain('<input type="hidden" name="resultado" value="cambios"/>');
+    expect(campo(formulario, "nota")).toMatch(/required="" minLength="5" maxLength="1000"/);
+    expect(campo(formulario, "nota")).toContain('id="nota-normograma-3"');
+  });
+
+  it("el panel: «Sin líder» en su insignia y la tarea debajo, el pie sin marcadores y la línea con internos y externos", () => {
+    const html = renderToStaticMarkup(
+      <PanelAdmin revision={revisionFija} ahora={AHORA} gestiona={false} pideCodigo={false} rutaDeProceso={(id) => `/vigencia/revision-anual?proceso=${id}`} />,
+    );
+    expect(html).toMatch(/<span[^>]*>Sin líder<\/span>/);
+    expect(html).toContain("La tarea es del Administrador del SGC");
+    expect(html).not.toContain("Sin líder · la tarea");
+    expect(html).not.toContain("&lt;proceso&gt;");
+    expect(html).toContain("Cada líder tiene la tarea de revisar los documentos de su proceso, con el número de pendientes; vence con la campaña");
+    expect(html).toContain("3 documentos (2 internos, 1 externo)");
+    // Si los documentos leídos no suman el total (alguno dejó de estar vigente), solo el total.
+    const incompleta = renderToStaticMarkup(
+      <PanelAdmin
+        revision={{ ...revisionFija, totales: { ...revisionFija.totales, documentos: 4 } }}
+        ahora={AHORA}
+        gestiona={false}
+        pideCodigo={false}
+        rutaDeProceso={(id) => `/vigencia/revision-anual?proceso=${id}`}
+      />,
+    );
+    expect(incompleta).toContain("4 documentos");
+    expect(incompleta).not.toContain("internos");
+  });
+
+  it("el informe en pantalla nombra un externo por su edición y dice que su ratificación fue una verificación", () => {
+    const html = renderToStaticMarkup(<InformeEnPantalla informe={datosDeEjemplo("Entidad de la prueba", ZONA, null)} parcial={false} />);
+    expect(html).toContain("XXA-DE-01 ed. 2019");
+    expect(html).not.toContain("XXA-DE-01 v1");
+    expect(html).toContain("Ratificado · verificación «sigue vigente»");
+    expect(html).toContain("En trámite al abrir");
   });
 });
 
@@ -415,7 +511,9 @@ describe("/vigencia/revision-anual con la campaña abierta", () => {
         expect(lider).toContain(c.doc.codigo);
         expect(lider).toContain("Ratificar sin cambios");
         expect(lider).toContain("de sus procesos con decisión");
-        expect(lider).toContain(`href="/vigencia/revision-anual/${c.revisionId}"`);
+        // La pestaña ya le muestra todo lo suyo: no hay «informe parcial» para él.
+        expect(lider).not.toContain("Ver el informe parcial");
+        expect(lider).not.toContain(`href="/vigencia/revision-anual/${c.revisionId}"`);
         // Nada de la entidad: ni el avance por proceso, ni otro proceso, ni gestionar la campaña.
         for (const ajeno of ["Documentos con decisión", "Avance por proceso", c.cex.nombre, "Prorrogar…", "Cerrar y generar informe"]) {
           expect(lider).not.toContain(ajeno);
@@ -441,13 +539,12 @@ describe("/vigencia/revision-anual con la campaña abierta", () => {
       const admin = await sesionAdmin(tx);
       const externo = await externoDePrueba(tx, admin, { proceso: "CEX", edicion: "2017", ahora: new Date("2089-01-10T15:00:00Z") });
       try {
-        const { revisionId } = await revisionDePrueba(tx, admin, { ahora: ABRE });
+        await revisionDePrueba(tx, admin, { ahora: ABRE });
         const html = await pintar(tx, admin, pestana({ proceso: String(externo.procesoId) }));
         const fila = tarjeta(html, externo.codigo);
         expect(fila).toContain(`aria-label="Ratificar ${externo.codigo}: registrar la verificación «sigue vigente»"`);
         expect(fila).toContain(`href="/vigencia/externos/${externo.documentoId}?verificar=edicion_nueva"`);
         expect(fila).not.toContain("/tramites/nueva");
-        expect(revisionId).toBeGreaterThan(0);
       } finally {
         await externo.limpiar();
       }
@@ -509,11 +606,16 @@ describe("/vigencia/revision-anual/[id]", () => {
       }
     }));
 
-  it("abierta: el informe parcial de hoy, que dice «pendiente» y no tiene PDF", () =>
+  it("abierta: el informe parcial de hoy, que dice «pendiente» y no tiene PDF; el líder ve sus secciones bajo «Abierta»", () =>
     revertida(sql, async (tx) => {
       const c = await campana(tx);
       try {
+        const lider = await pintar(tx, c.lider, revisionPagina(c.revisionId));
+        expect(lider).toMatch(/<span[^>]*>Abierta<\/span>/);
+        expect(lider).not.toContain("informe parcial");
+        expect(lider).toContain(c.doc.codigo);
         const html = await pintar(tx, c.admin, revisionPagina(c.revisionId));
+        expect(html).toContain("Abierta · informe parcial");
         expect(html).toContain("Informe parcial");
         expect(html).toContain("Pendientes");
         expect(html).toContain("Estado hoy");
@@ -538,11 +640,14 @@ describe("la solicitud prellenada", () => {
         expect(html).toContain("Esta solicitud nace de la revisión anual 2090");
         expect(campo(html, "tipo", "eliminar")).toContain('checked=""');
         expect(html).toMatch(/<option[^>]*value="revision_anual"[^>]*selected=""|<option[^>]*selected=""[^>]*value="revision_anual"/);
+        // La justificación llega prellenada por la página (spec 13C §9.3), editable.
+        expect(html).toContain(">Decisión de la revisión anual 2090: el documento debe eliminarse.</textarea>");
 
         for (const revision of ["999999999", "abc"]) {
           const ignorada = await pintar(tx, c.lider, nueva({ ...consulta, revision }));
           expect(ignorada).not.toContain('name="revisionAnualId"');
           expect(ignorada).not.toContain("nace de la revisión anual");
+          expect(ignorada).not.toContain("Decisión de la revisión anual");
         }
       } finally {
         await c.doc.limpiar();
@@ -581,6 +686,24 @@ describe("la solicitud prellenada", () => {
       } finally {
         await doc.limpiar();
         await otro.limpiar();
+      }
+    }));
+
+  it("no ofrece externos ni el tipo «Documento externo», que la solicitud rechazaría; el código de un externo recibe el aviso de siempre", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const externo = await externoDePrueba(tx, admin, { proceso: "CEX", edicion: "2017" });
+      try {
+        const datos = await datosParaSolicitar(admin, { sql: tx });
+        expect(datos.documentos.some((d) => d.id === externo.documentoId)).toBe(false);
+        expect(datos.documentos.length).toBeGreaterThan(0);
+        expect(datos.tipos.some((t) => t.sigla === "DE")).toBe(false);
+        expect(datos.tipos.length).toBeGreaterThan(0);
+        const html = await pintar(tx, admin, nueva({ documento: externo.codigo }));
+        expect(html).toContain("No puede pedir un cambio sobre ese documento: solo sobre los documentos vigentes de sus procesos.");
+        expect(html).not.toContain(externo.codigo);
+      } finally {
+        await externo.limpiar();
       }
     }));
 

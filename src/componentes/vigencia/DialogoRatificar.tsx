@@ -14,12 +14,15 @@ export function DialogoRatificar({
   proximaRevision,
   pideCodigo,
   volver,
+  tamano,
 }: {
   documento: { id: number; codigo: string; titulo: string; version: number; huella: string | null };
   /** «8 nov 2027»: hoy más el plazo del documento. */
   proximaRevision: string;
   pideCodigo: boolean;
   volver?: string;
+  /** El tamaño del botón: el de sus hermanos en una tabla. */
+  tamano?: "sm" | "md";
 }) {
   return (
     <DialogoFirma
@@ -29,6 +32,8 @@ export function DialogoRatificar({
       accion={ratificarAccion}
       ocultos={volver ? { documentoId: String(documento.id), volver } : { documentoId: String(documento.id) }}
       pideCodigo={pideCodigo}
+      tamano={tamano}
+      etiquetaAccesible={`Ratificar sin cambios: ${documento.codigo}`}
     >
       <CuerpoRatificar proximaRevision={proximaRevision} />
     </DialogoFirma>

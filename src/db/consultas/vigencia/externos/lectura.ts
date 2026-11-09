@@ -3,7 +3,16 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import type { ArchivoFicha } from "@/db/consultas/documentos";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { alcanceProcesos, enAlcance, filtroAcceso, filtroAccesoDe, puedeGestionarExterno, puedeVerExterno } from "@/lib/alcance";
+import {
+  alcanceProcesos,
+  enAlcance,
+  filtroAcceso,
+  filtroAccesoDe,
+  puedeGestionarExterno,
+  puedeVerExterno,
+  type Alcance,
+  type SujetoVisibilidad,
+} from "@/lib/alcance";
 import { puede } from "@/lib/permisos";
 import { ROLES_ARCHIVO_LISTA } from "@/lib/subida";
 import { SIN_EDICION_ADOPTADA } from "@/lib/vigencia/semaforo";
@@ -24,13 +33,26 @@ import { vigenciaEnLista, vigenciaPorDocumento } from "../fragmentos";
 const SIN_VIGENCIA: Externo["vigencia"] = { estado: "atencion", dias: null, proxima: null };
 const ESTADOS_COPIA_VIVA = ["emitida", "recibida", "por_recoger"];
 
+/**
+ * Quién verifica un externo (spec 13C §8.4): uno activo (no retirado) con edición vigente, con `externos.verificar` y
+ * gestionándolo o siendo su responsable técnico. La única regla: la usan su página (`acciones.verificar`) y la tabla de
+ * la revisión anual (`externosVerificables`).
+ */
+function verificaElExterno(
+  sujeto: SujetoVisibilidad,
+  d: { activo: boolean; conVigente: boolean; procesoId: number; responsableId: number },
+  alcance: Alcance,
+): boolean {
+  if (!d.activo || !d.conVigente || !puede(sujeto, "externos.verificar")) return false;
+  return puedeGestionarExterno(sujeto, d.procesoId, alcance) || d.responsableId === sujeto.usuarioId;
+}
+
 /** Lo que el formulario de verificación necesita de un externo: su fuente oficial y su periodicidad. */
 export type ExternoVerificable = { fuenteOficial: string | null; verificacionMeses: number };
 
 /**
- * De los externos de `documentoIds`, los que la persona puede verificar (`acciones.verificar` de `obtenerExterno`: con
- * edición vigente, `externos.verificar` y gestionarlo o ser su responsable técnico), con lo que su formulario necesita.
- * Una sola sentencia; quien llama ya recortó los documentos a los que la persona ve.
+ * De los externos de `documentoIds`, los que la persona puede verificar (`verificaElExterno`, la regla de su página), con
+ * lo que su formulario necesita. Una sola sentencia; quien llama ya recortó los documentos a los que la persona ve.
  */
 export async function externosVerificables(
   documentoIds: number[],
@@ -41,17 +63,19 @@ export async function externosVerificables(
   if (documentoIds.length === 0 || !puede(sesion, "externos.verificar")) return verificables;
   const sql = opciones?.sql ?? obtenerSql();
   const [filas, alcance] = await Promise.all([
-    sql`SELECT ex.documento_id, ex.responsable_id, ex.fuente_oficial, ex.verificacion_meses, COALESCE(dp.proceso_id, s.proceso_id) AS proceso_id
+    sql`SELECT ex.documento_id, ex.responsable_id, ex.fuente_oficial, ex.verificacion_meses, COALESCE(dp.proceso_id, s.proceso_id) AS proceso_id,
+        v.id IS NOT NULL AS con_vigente,
+        NOT EXISTS (SELECT 1 FROM documento_versiones va WHERE va.documento_id = ex.documento_id AND va.estado = 'anulado') AS activo
       FROM externos ex
-      JOIN documento_versiones v ON v.documento_id = ex.documento_id AND v.estado = 'vigente'
+      LEFT JOIN documento_versiones v ON v.documento_id = ex.documento_id AND v.estado = 'vigente'
       JOIN documento_proceso dp ON dp.documento_id = ex.documento_id AND dp.es_principal
       LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
       WHERE ex.documento_id = ANY(${documentoIds})`,
     alcanceProcesos(sesion, { sql }),
   ]);
   for (const f of filas) {
-    const gestiona = puedeGestionarExterno(sesion, Number(f.proceso_id), alcance);
-    if (!gestiona && Number(f.responsable_id) !== sesion.usuarioId) continue;
+    const datos = { activo: f.activo as boolean, conVigente: f.con_vigente as boolean, procesoId: Number(f.proceso_id), responsableId: Number(f.responsable_id) };
+    if (!verificaElExterno(sesion, datos, alcance)) continue;
     verificables.set(Number(f.documento_id), {
       fuenteOficial: (f.fuente_oficial as string | null) ?? null,
       verificacionMeses: Number(f.verificacion_meses),
@@ -95,7 +119,8 @@ export async function obtenerExterno(documentoId: number, sesion: SesionFlujo, o
 
   const procesoId = Number(f.proceso_id);
   const responsableId = Number(f.responsable_id);
-  const gestiona = puedeGestionarExterno(sesion, procesoId, await alcanceProcesos(sesion, { sql }));
+  const alcance = await alcanceProcesos(sesion, { sql });
+  const gestiona = puedeGestionarExterno(sesion, procesoId, alcance);
   const vigente = versiones.find((v) => v.estado === "vigente");
   const borrador = versiones.find((v) => v.estado === "borrador");
   const activo = !versiones.some((v) => v.estado === "anulado");
@@ -173,7 +198,7 @@ export async function obtenerExterno(documentoId: number, sesion: SesionFlujo, o
       editar: gestiona && activo,
       abrirEdicion: gestiona && activo && !borrador,
       adoptar: gestiona && activo && borrador !== undefined,
-      verificar: activo && vigente !== undefined && puede(sesion, "externos.verificar") && (gestiona || responsableId === sesion.usuarioId),
+      verificar: verificaElExterno(sesion, { activo, conVigente: vigente !== undefined, procesoId, responsableId }, alcance),
       retirar: gestiona && activo && vigente !== undefined,
     },
   };

@@ -3,7 +3,7 @@ import type { FilaNorma } from "@/db/consultas/normograma/lectura";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { externosVerificables } from "@/db/consultas/vigencia/externos";
 import type { DetalleRevision, ProcesoDeRevision } from "@/db/consultas/vigencia/revision-anual";
-import { accionesDeDecision, type FilaDecision } from "@/componentes/vigencia/revision/TablaDecisiones";
+import { accionesDeDecision, type FilaDecision } from "@/lib/vigencia/decisiones";
 import { alcanceProcesos } from "@/lib/alcance";
 
 export type DatosDeSeccion = {

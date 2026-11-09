@@ -45,6 +45,11 @@ export type DatosInforme = {
     fecha: Date | null;
     /** Solo en un externo: «Edición adoptada», «Pendiente de adoptar» o «Retirado». */
     estadoExterno?: string;
+    /**
+     * Solo en un externo: la edición de la versión de su fila (la adoptada, si la hubo), que lo nombra en lugar del
+     * número de versión. Un informe congelado antes de traerla se genera como antes.
+     */
+    edicion?: string;
   }[];
   normograma: {
     cambios: { norma: string; estado: string; fecha: Date; documentos: number; resueltos: number; noAfecta: number }[];
@@ -67,9 +72,14 @@ const CIFRA: Record<Decision, string> = {
   reciente: "Revisados recientemente",
   actualizar: "Por actualizar",
   eliminar: "Por eliminar",
-  en_tramite: "En trámite",
+  en_tramite: "En trámite al abrir",
   sin_revisar: "Sin revisar",
 };
+
+/** «CEX-PR-02 v2» un interno; «CEX-DE-01 ed. 2017» un externo, que se nombra por su edición. */
+export function rotuloDeDecision(d: Pick<DatosInforme["decisiones"][number], "codigo" | "version" | "edicion">): string {
+  return d.edicion === undefined ? `${d.codigo} v${d.version}` : `${d.codigo} ed. ${d.edicion}`;
+}
 
 /** El orden de la tabla de cifras: lo revisado primero, lo que quedó sin revisar al final. */
 const ORDEN_CIFRAS: Decision[] = ["ratificar", "reciente", "actualizar", "eliminar", "en_tramite", "sin_revisar"];
@@ -221,7 +231,9 @@ function filaDeDecision(d: DatosInforme["decisiones"][number], zona: string): st
   const solicitud = d.solicitud
     ? `${d.solicitud.numero}${d.solicitud.venceEn ? `\nvence ${dia(d.solicitud.venceEn, zona)}` : ""}`
     : "—";
-  return [`${d.codigo} v${d.version}`, ETIQUETA_DECISION[d.decision], responsable, solicitud, d.solicitud?.estadoAlCierre ?? d.estadoExterno ?? "—"];
+  // Ratificar un externo es verificar que sigue vigente (spec 13C §9.3).
+  const decision = d.decision === "ratificar" && d.edicion !== undefined ? "Ratificado (verificación)" : ETIQUETA_DECISION[d.decision];
+  return [rotuloDeDecision(d), decision, responsable, solicitud, d.solicitud?.estadoAlCierre ?? d.estadoExterno ?? "—"];
 }
 
 export async function generarInformeAnual(d: DatosInforme, membrete: Uint8Array | null): Promise<Uint8Array> {
@@ -366,7 +378,19 @@ export function datosDeEjemplo(entidad: string, zona: string, formato: FormatoAc
       };
     }),
   );
+  decisiones.push({
+    codigo: "XXA-DE-01",
+    titulo: "Documento externo de ejemplo",
+    version: 1,
+    proceso: EJEMPLO_PROCESOS[0],
+    decision: "ratificar",
+    responsable: "Líder de ejemplo",
+    solicitud: null,
+    fecha: new Date("2026-11-20T15:00:00Z"),
+    edicion: "2019",
+  });
   const totales = Object.fromEntries(DECISIONES.map((x) => [x, decisiones.filter((y) => y.decision === x).length])) as Record<Decision, number>;
+  const externos = decisiones.filter((d) => d.edicion !== undefined).length;
   return {
     entidad,
     anio: 2026,
@@ -375,7 +399,7 @@ export function datosDeEjemplo(entidad: string, zona: string, formato: FormatoAc
     cerradaEn: new Date("2026-12-18T19:30:00Z"),
     cerradaPor: { nombre: "Persona administradora de ejemplo", cargo: "Cargo de ejemplo" },
     metodo: "clave",
-    alcance: { documentos: decisiones.length, internos: decisiones.length, externos: 0, procesos: EJEMPLO_PROCESOS.length },
+    alcance: { documentos: decisiones.length, internos: decisiones.length - externos, externos, procesos: EJEMPLO_PROCESOS.length },
     totales,
     decisiones,
     normograma: {

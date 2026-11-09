@@ -17,9 +17,9 @@ const idDe = (v: string | string[] | undefined): number | undefined => (typeof v
 
 /**
  * La solicitud puede llegar prellenada (spec 13C §9.3 y §10.5, resolución 7 de la Tarea 11): `documento`, `tipo`,
- * `motivo` y `proceso` como valores iniciales; `revision` (la revisión anual abierta, sobre un documento) e `impacto`
- * (un impacto pendiente que la persona ve, de ese documento o, en una creación, de ese proceso) como campos ocultos que
- * `crearSolicitud` vuelve a validar. Un valor que no existe, que la persona no ve o que no es de sus procesos se
+ * `motivo` y `proceso` como valores iniciales; `revision` (la revisión anual abierta, sobre un documento, con la
+ * justificación prellenada) e `impacto` (un impacto pendiente que la persona ve, de ese documento o, en una creación, de
+ * ese proceso) como campos ocultos que `crearSolicitud` vuelve a validar, con su nota. Un valor que no existe, que la persona no ve o que no es de sus procesos se
  * ignora, sin decir cuál de las tres cosas pasó.
  */
 export default async function PaginaNuevaSolicitud({
@@ -77,16 +77,6 @@ export default async function PaginaNuevaSolicitud({
           No puede pedir un cambio sobre ese documento: solo sobre los documentos vigentes de sus procesos.
         </p>
       ) : null}
-      {revision ? (
-        <p role="note" className="rounded-md border border-border bg-card px-4 py-3 text-sm">
-          {`Esta solicitud nace de la revisión anual ${revision.anio}: al enviarla queda como la decisión del documento en la revisión.`}
-        </p>
-      ) : null}
-      {impacto ? (
-        <p role="note" className="rounded-md border border-border bg-card px-4 py-3 text-sm">
-          {`Esta solicitud atiende el cambio de ${impacto.norma} en ${impacto.proceso}: al enviarla, el impacto queda resuelto.`}
-        </p>
-      ) : null}
       {sinProcesos ? (
         <EstadoVacio
           icono={ClipboardList}
@@ -100,8 +90,8 @@ export default async function PaginaNuevaSolicitud({
           tipoInicial={tipoInicial}
           motivoInicial={motivoInicial}
           procesoInicialId={procesoInicialId}
-          revisionAnualId={revision?.id}
-          impactoId={impacto?.id}
+          revisionAnual={revision ? { id: revision.id, anio: revision.anio } : undefined}
+          impacto={impacto ? { id: impacto.id, norma: impacto.norma, proceso: impacto.proceso, deProceso: impacto.documentoId === null } : undefined}
         />
       )}
     </div>

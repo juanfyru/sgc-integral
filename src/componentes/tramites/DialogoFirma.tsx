@@ -18,6 +18,13 @@ type Props = {
   ocultos: Record<string, string>;
   pideCodigo: boolean;
   children?: React.ReactNode;
+  /** El tamaño del botón que abre el diálogo: el de sus hermanos (pequeño en una tabla). */
+  tamano?: "sm" | "md";
+  /**
+   * El nombre accesible del botón que abre el diálogo, si se repite en la página (una fila por documento): empieza por
+   * el texto visible (WCAG 2.5.3) y dice sobre qué se firma.
+   */
+  etiquetaAccesible?: string;
 };
 
 /** «Firmar y publicar»; con una etiqueta que ya lleva «y», «Firmar, aprobar y publicar». */
@@ -123,7 +130,7 @@ export function DialogoFirma(props: Props) {
   useTituloAlDesaparecer(abierto);
   return (
     <>
-      <Boton onClick={() => setAbierto(true)} aria-haspopup="dialog">
+      <Boton onClick={() => setAbierto(true)} aria-haspopup="dialog" tamano={props.tamano} aria-label={props.etiquetaAccesible}>
         {props.etiquetaBoton}
       </Boton>
       <Dialogo

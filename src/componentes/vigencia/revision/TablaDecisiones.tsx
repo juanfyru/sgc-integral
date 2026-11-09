@@ -1,64 +1,17 @@
 import Link from "next/link";
 import { claseBoton } from "@/componentes/ui/Boton";
 import { TablaDatos, celda, celdaNumerica, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
-import { accionesDeFila } from "@/db/consultas/vigencia/semaforo";
 import type { DocumentoDeRevision } from "@/db/consultas/vigencia/revision-anual";
-import type { ExternoVerificable } from "@/db/consultas/vigencia/externos";
-import { enAlcance, type Alcance, type SujetoVisibilidad } from "@/lib/alcance";
 import { ETIQUETA_ETAPA, esEtapaDeTrabajo, type Etapa } from "@/lib/tramites/tipos";
 import { sumarMeses, textoFecha } from "@/lib/vigencia/plazo";
 import { textoUltimaRevision } from "@/lib/vigencia/semaforo";
+import type { FilaDecision } from "@/lib/vigencia/decisiones";
 import type { Decision } from "@/lib/vigencia/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { ChipVigencia } from "../ChipVigencia";
 import { DialogoRatificar } from "../DialogoRatificar";
 import { lineaDeTipo, rotuloVersion } from "../TablaSemaforo";
 import { DialogoVerificar, EnlazarTramite } from "./AccionesDecision";
-
-/** Lo que la persona puede hacer sobre un documento de la revisión (spec 13C §9.3); todo falso si no decide. */
-export type AccionesDecision = {
-  /** El proceso es suyo, la revisión está abierta y el documento está por decidir. */
-  decidir: boolean;
-  /** Interno: «Ratificar» abre el diálogo de la ratificación. */
-  ratificar: boolean;
-  /** Interno: «Actualizar» y «Eliminar» abren la solicitud prellenada. */
-  solicitar: boolean;
-  /** Interno con un trámite en curso que no es su decisión: se enlaza en vez de abrir otro. */
-  enlazar: { id: number; numero: string } | null;
-  /** Externo que la persona puede verificar: «Ratificar» es la verificación «sigue vigente». */
-  verificar: ExternoVerificable | null;
-  /** El número del trámite se enlaza a su página (Admin SGC y líder del proceso); a los demás se les dice. */
-  verTramite: boolean;
-};
-
-export type FilaDecision = DocumentoDeRevision & { acciones: AccionesDecision };
-
-const SIN_ACCIONES: AccionesDecision = { decidir: false, ratificar: false, solicitar: false, enlazar: null, verificar: null, verTramite: false };
-
-/**
- * Las acciones de una fila (resoluciones 2, 5 y 6 de la Tarea 11): los botones salen con `puedeDecidir` del proceso y
- * `porDecidir` del documento. En un interno, si tiene un trámite en curso que no es su decisión, solo se ofrece
- * enlazarlo (ratificar o pedir otra solicitud no procederían); en un externo, solo a quien puede verificarlo.
- */
-export function accionesDeDecision(
-  sujeto: SujetoVisibilidad,
-  fila: DocumentoDeRevision,
-  d: { puedeDecidir: boolean; alcance: Alcance; verificable: ExternoVerificable | null },
-): AccionesDecision {
-  const semaforo = accionesDeFila(sujeto, fila, d.alcance);
-  const verTramite = sujeto.rol === "admin_sgc" || (sujeto.rol === "lider_proceso" && enAlcance(d.alcance, fila.proceso.id));
-  if (!d.puedeDecidir || !fila.porDecidir) return { ...SIN_ACCIONES, verTramite };
-  if (fila.origen === "externo") return { ...SIN_ACCIONES, decidir: true, verificar: d.verificable, verTramite };
-  const enCurso = fila.tramite && fila.tramite.id !== fila.decision?.tramite?.id ? { id: fila.tramite.id, numero: fila.tramite.numero } : null;
-  return {
-    decidir: true,
-    ratificar: enCurso === null && semaforo.ratificar,
-    solicitar: enCurso === null && semaforo.solicitar,
-    enlazar: enCurso,
-    verificar: null,
-    verTramite,
-  };
-}
 
 /** «/tramites/nueva» con el documento, el tipo, el motivo «revisión anual» y el enlace a la revisión (resolución 6). */
 export function rutaDeSolicitud(codigo: string, tipo: "modificar" | "eliminar", revisionId: number): string {
@@ -170,6 +123,7 @@ function Decidir({
           proximaRevision={textoFecha(sumarMeses(ahora, f.mesesRevision, zona), zona)}
           pideCodigo={pideCodigo}
           volver={volver}
+          tamano="sm"
         />
       ) : null}
       {a.solicitar ? (

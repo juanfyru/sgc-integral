@@ -9,6 +9,7 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { sugerirCodigo, todosLosCodigos } from "@/db/consultas/codigos";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { nombreSql } from "@/db/consultas/normograma/busqueda";
+import { SIGLA_EXTERNO } from "@/db/consultas/origen";
 import { buscarParecidos, type Parecido } from "@/db/consultas/parecidos";
 import {
   alcanceProcesos,
@@ -386,7 +387,10 @@ export type DatosParaSolicitar = {
   documentos: { id: number; codigo: string; titulo: string; proceso: string; conTramite: boolean }[];
 };
 
-/** Lo que `sesion` puede elegir en una solicitud: el líder, solo sus procesos y sus documentos vigentes. */
+/**
+ * Lo que `sesion` puede elegir en una solicitud: el líder, solo sus procesos y sus documentos vigentes. Un externo no
+ * tiene trámite ni un interno nace con el tipo «Documento externo» (spec 13C §8.1): no se ofrecen.
+ */
 export async function datosParaSolicitar(
   sesion: SesionFlujo,
   opciones?: { sql?: Cliente },
@@ -397,7 +401,7 @@ export async function datosParaSolicitar(
   const [procesos, subprocesos, tipos, documentos] = await Promise.all([
     sql`SELECT p.id, p.nombre, p.sigla FROM procesos p WHERE p.activo AND ${propio()} ORDER BY p.nombre`,
     sql`SELECT s.id, s.proceso_id, s.nombre FROM subprocesos s WHERE s.activo ORDER BY s.orden`,
-    sql`SELECT id, nombre, sigla FROM tipos_documento WHERE activo ORDER BY orden`,
+    sql`SELECT id, nombre, sigla FROM tipos_documento WHERE activo AND sigla <> ${SIGLA_EXTERNO} ORDER BY orden`,
     sql`SELECT d.id, d.codigo, d.titulo, p.nombre AS proceso,
         EXISTS (SELECT 1 FROM tramites t WHERE t.documento_id = d.id AND t.etapa = ANY(${ETAPAS_ABIERTAS})) AS con_tramite
       FROM documentos d
@@ -405,7 +409,7 @@ export async function datosParaSolicitar(
       JOIN documento_proceso dp ON dp.documento_id = d.id AND dp.es_principal
       LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
       JOIN procesos p ON p.id = COALESCE(dp.proceso_id, s.proceso_id)
-      WHERE ${propio()}
+      WHERE d.origen = 'interno' AND ${propio()}
       ORDER BY d.codigo`,
   ]);
   return {

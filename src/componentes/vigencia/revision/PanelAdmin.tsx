@@ -32,10 +32,26 @@ export function textoDelPlazo(venceEn: Date, ahora: Date, zona: string): string 
   return `quedan ${cuenta(p.dias, "día", "días")}`;
 }
 
+/**
+ * Cuántos documentos tiene la revisión y, con `desglose` (quien la ve entera, maqueta 4), cuántos internos y externos,
+ * contados de los que la página ya leyó: si no suman el total (alguno dejó de estar vigente), solo el total.
+ */
+export function textoDeDocumentos(r: Pick<DetalleRevision, "totales" | "documentos">, desglose: boolean): string {
+  const total = cuenta(r.totales.documentos, "documento", "documentos");
+  if (!desglose || r.documentos.length !== r.totales.documentos) return total;
+  const externos = r.documentos.filter((d) => d.origen === "externo").length;
+  return `${total} (${cuenta(r.documentos.length - externos, "interno", "internos")}, ${cuenta(externos, "externo", "externos")})`;
+}
+
 /** El avance de la revisión, en una línea: cuándo se abrió y por quién, cuándo vence y cuántos documentos tiene. */
-export function lineaDeRevision(r: Pick<DetalleRevision, "abiertaEn" | "abiertaPor" | "venceEn" | "prorrogas" | "totales">, ahora: Date, zona: string): string {
+export function lineaDeRevision(
+  r: Pick<DetalleRevision, "abiertaEn" | "abiertaPor" | "venceEn" | "prorrogas" | "totales" | "documentos">,
+  ahora: Date,
+  zona: string,
+  desglose = false,
+): string {
   const prorrogas = r.prorrogas.length === 0 ? "" : ` · ${cuenta(r.prorrogas.length, "prórroga", "prórrogas")}`;
-  return `Abierta el ${textoFecha(r.abiertaEn, zona)} por ${r.abiertaPor} · cierra el ${textoFecha(r.venceEn, zona)} (${textoDelPlazo(r.venceEn, ahora, zona)})${prorrogas} · ${cuenta(r.totales.documentos, "documento", "documentos")}`;
+  return `Abierta el ${textoFecha(r.abiertaEn, zona)} por ${r.abiertaPor} · cierra el ${textoFecha(r.venceEn, zona)} (${textoDelPlazo(r.venceEn, ahora, zona)})${prorrogas} · ${textoDeDocumentos(r, desglose)}`;
 }
 
 function Normograma({ proceso: p }: { proceso: ProcesoDeRevision }) {
@@ -50,7 +66,14 @@ function Normograma({ proceso: p }: { proceso: ProcesoDeRevision }) {
 /** Completo cuando todos sus documentos tienen decisión y el normograma está confirmado (spec 13C §9.4). */
 function Estado({ proceso: p }: { proceso: ProcesoDeRevision }) {
   if (p.decididos === p.documentos && p.normograma) return <Insignia variante="bien">Completo</Insignia>;
-  if (!p.lider) return <Insignia variante="atencion">Sin líder · la tarea es del Administrador del SGC</Insignia>;
+  if (!p.lider) {
+    return (
+      <div className="flex min-w-0 flex-col items-start gap-1">
+        <Insignia variante="atencion">Sin líder</Insignia>
+        <span className="text-xs text-muted-foreground">La tarea es del Administrador del SGC</span>
+      </div>
+    );
+  }
   return <Insignia variante="neutra">En curso</Insignia>;
 }
 
@@ -95,7 +118,7 @@ export function PanelAdmin({
           <h2 id="revision-avance" className="font-display text-lg font-semibold">
             {`Revisión anual ${revision.anio}`}
           </h2>
-          <p className="text-sm text-muted-foreground">{lineaDeRevision(revision, ahora, zona)}</p>
+          <p className="text-sm text-muted-foreground">{lineaDeRevision(revision, ahora, zona, true)}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Link href={`/vigencia/revision-anual/${revision.id}`} className={`${claseBoton("secundario")} ${FOCO}`}>
@@ -162,9 +185,9 @@ export function PanelAdmin({
         ))}
       </ul>
       <p className="text-sm text-muted-foreground">
-        Cada líder tiene la tarea «Revisar los documentos de &lt;proceso&gt; (N pendientes)», que vence con la campaña, avisa y
-        escala como las demás; la de un proceso sin líder es del Administrador del SGC. Al cerrar, lo que siga pendiente
-        queda «sin revisar» en el informe.
+        Cada líder tiene la tarea de revisar los documentos de su proceso, con el número de pendientes; vence con la campaña,
+        avisa y escala como las demás, y la de un proceso sin líder es del Administrador del SGC. Al cerrar, lo que siga
+        pendiente queda «sin revisar» en el informe.
       </p>
     </section>
   );

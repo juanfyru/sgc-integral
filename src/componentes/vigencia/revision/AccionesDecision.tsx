@@ -92,44 +92,71 @@ export function EnlazarTramite({
   );
 }
 
+/** El formulario de «Marcar cambios…»: la nota es obligatoria (qué norma falta o cuál cambió) y llega al Admin SGC. */
+export function FormularioCambiosNormograma({
+  revisionId,
+  procesoId,
+  enviar,
+  pendiente,
+}: {
+  revisionId: number;
+  procesoId: number;
+  enviar: (datos: FormData) => void;
+  pendiente: boolean;
+}) {
+  return (
+    <form
+      id={`cambios-normograma-${procesoId}`}
+      action={enviar}
+      onSubmit={enviarSinReiniciar(enviar)}
+      className="flex min-w-0 flex-col items-start gap-2 rounded-md border border-border p-3"
+    >
+      <input type="hidden" name="revisionId" value={revisionId} />
+      <input type="hidden" name="procesoId" value={procesoId} />
+      <input type="hidden" name="resultado" value="cambios" />
+      <Campo
+        etiqueta="Qué cambió"
+        nombre="nota"
+        id={`nota-normograma-${procesoId}`}
+        ayuda="Qué norma falta o cuál cambió; entre 5 y 1000 caracteres. Le llega al Administrador del SGC."
+      >
+        <textarea required minLength={5} maxLength={1000} rows={3} className={`${claseControl} w-full min-w-0 max-w-full`} />
+      </Campo>
+      <Boton type="submit" pendiente={pendiente}>
+        {pendiente ? "Guardando…" : "Marcar cambios"}
+      </Boton>
+    </form>
+  );
+}
+
 /**
- * «Sin novedad» y «Marcar cambios…» del normograma del proceso (spec 13C §9.4). Marcar cambios exige la nota: qué norma
- * falta o cuál cambió, que llega al Administrador del SGC.
+ * «Sin novedad» y «Marcar cambios…» del normograma del proceso (spec 13C §9.4): dos botones de su ancho, uno junto al
+ * otro; «Marcar cambios…» abre debajo el formulario de la nota.
  */
 export function ConfirmarNormograma({ revisionId, procesoId, proceso }: { revisionId: number; procesoId: number; proceso: string }) {
   const [estado, enviar, pendiente] = useActionState(confirmarNormogramaAccion, null);
-  const ocultos = (
-    <>
-      <input type="hidden" name="revisionId" value={revisionId} />
-      <input type="hidden" name="procesoId" value={procesoId} />
-    </>
-  );
+  const [marcando, setMarcando] = useState(false);
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <div className="flex flex-wrap items-start gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <form action={enviar} onSubmit={enviarSinReiniciar(enviar)}>
-          {ocultos}
+          <input type="hidden" name="revisionId" value={revisionId} />
+          <input type="hidden" name="procesoId" value={procesoId} />
           <input type="hidden" name="resultado" value="sin_novedad" />
           <Boton type="submit" variante="secundario" pendiente={pendiente} aria-label={`Sin novedad en el normograma de ${proceso}`}>
             Sin novedad
           </Boton>
         </form>
-        <details className="min-w-0 flex-1 rounded-md border border-border p-2">
-          <summary className="cursor-pointer rounded text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca">
-            Marcar cambios…
-          </summary>
-          <form action={enviar} onSubmit={enviarSinReiniciar(enviar)} className="mt-2 flex min-w-0 flex-col items-start gap-2">
-            {ocultos}
-            <input type="hidden" name="resultado" value="cambios" />
-            <Campo etiqueta="Qué cambió" nombre="nota" id={`nota-normograma-${procesoId}`} ayuda="Qué norma falta o cuál cambió; entre 5 y 1000 caracteres. Le llega al Administrador del SGC.">
-              <textarea required minLength={5} maxLength={1000} rows={3} className={`${claseControl} w-full min-w-0 max-w-full`} />
-            </Campo>
-            <Boton type="submit" pendiente={pendiente}>
-              {pendiente ? "Guardando…" : "Marcar cambios"}
-            </Boton>
-          </form>
-        </details>
+        <Boton
+          variante="secundario"
+          aria-expanded={marcando}
+          aria-controls={marcando ? `cambios-normograma-${procesoId}` : undefined}
+          onClick={() => setMarcando((m) => !m)}
+        >
+          Marcar cambios…
+        </Boton>
       </div>
+      {marcando ? <FormularioCambiosNormograma revisionId={revisionId} procesoId={procesoId} enviar={enviar} pendiente={pendiente} /> : null}
       <ErrorAccion estado={estado} />
     </div>
   );

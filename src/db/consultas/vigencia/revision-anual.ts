@@ -42,6 +42,6 @@ export {
   type ProcesoDeRevision,
 } from "./revision-anual/lectura";
 export { ETAPAS_MUERTAS, estaPendiente } from "./revision-anual/comun";
-export { cerrarRevision, datosDelInforme, informeCongelado } from "./revision-anual/cierre";
+export { cerrarRevision, datosDelInforme, formatoDelInforme, informeCongelado } from "./revision-anual/cierre";
 export { tareasDeRevision } from "./revision-anual/tareas";
 export { revisionVencida } from "./revision-anual/vencidos";

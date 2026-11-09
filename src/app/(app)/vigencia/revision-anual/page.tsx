@@ -59,8 +59,8 @@ function Cerradas({ revisiones, verInforme, zona }: { revisiones: RevisionEnIndi
 /**
  * La pestaña «Revisión anual» (spec 13C §9, maquetas 4 y 5). Con una revisión abierta, quien la ve entera (Admin SGC,
  * Gerencia y Control Interno) tiene el avance por proceso y, con `?proceso=`, los documentos de ese proceso; cada líder,
- * las tablas de sus procesos para decidir. Sin revisión abierta, la última cerrada y, para quien la gestiona, abrir la
- * del año. Lo que se muestra sale de `obtenerRevision`, recortado a la persona; el índice de revisiones solo da los años.
+ * las tablas de sus procesos para decidir (sin «informe parcial»: ese es el institucional). Sin revisión abierta, la
+ * última cerrada y, para quien la gestiona, abrir la del año. Lo que se muestra sale de `obtenerRevision`, recortado a la persona; el índice de revisiones solo da los años.
  */
 export default async function PaginaRevisionAnual({
   searchParams,
@@ -170,18 +170,13 @@ export default async function PaginaRevisionAnual({
         />
       ) : (
         <section aria-labelledby="revision-del-lider" className="flex min-w-0 flex-col gap-3">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2 id="revision-del-lider" className="font-display text-lg font-semibold">
-                {`Revisión anual ${revision.anio}`}
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                {`${decididos} de ${cuenta(revision.totales.documentos, "documento", "documentos")} de sus procesos con decisión · vence el ${textoFecha(revision.venceEn, zona)}`}
-              </p>
-            </div>
-            <Link href={`${RUTA}/${revision.id}`} className={`${claseBoton("secundario")} ${FOCO}`}>
-              Ver el informe parcial
-            </Link>
+          <div className="min-w-0">
+            <h2 id="revision-del-lider" className="font-display text-lg font-semibold">
+              {`Revisión anual ${revision.anio}`}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {`${decididos} de ${cuenta(revision.totales.documentos, "documento", "documentos")} de sus procesos con decisión · vence el ${textoFecha(revision.venceEn, zona)}`}
+            </p>
           </div>
           {revision.procesos.length > 1 ? (
             <nav aria-label="Sus procesos en la revisión">

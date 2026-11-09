@@ -1,7 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
+import { obtenerSql } from "@/db/cliente";
 import { obtenerMarca } from "@/db/consultas/entidad";
-import { membreteListo } from "@/db/consultas/formato-acta";
+import { leerFormatoCongelado } from "@/db/consultas/formato-acta";
+import { formatoDelInforme } from "@/db/consultas/vigencia/revision-anual";
 import { datosDeEjemplo, generarInformeAnual } from "@/lib/informe-anual";
 import { crearLimitador } from "@/lib/limite";
 import { puede } from "@/lib/permisos";
@@ -15,8 +16,9 @@ const permitirEjemplo = crearLimitador({ limite: 10, ventanaMs: 60_000 });
 
 /**
  * El informe de la revisión anual tal como saldría con el formato y los espacios **guardados** (spec 13C §9.5, como
- * «Ver acta de ejemplo»): el elegido para el informe o, si no hay uno elegido, el del acta con los suyos. Sin un formato
- * listo, sale con el diseño básico. Solo lee: no se guarda ni se audita.
+ * «Ver acta de ejemplo»): el que congelaría el cierre (`formatoDelInforme`: el elegido para el informe o, si no hay uno
+ * elegido, el del acta con los suyos). Sin un formato listo, sale con el diseño básico. Solo lee: no se guarda ni se
+ * audita.
  */
 export async function GET(peticion: NextRequest) {
   const sesion = await sesionDePeticion(peticion);
@@ -30,22 +32,10 @@ export async function GET(peticion: NextRequest) {
     );
   }
 
-  const [{ formatoActa, vigencia }, marca] = await Promise.all([obtenerConfigDocumental(), obtenerMarca()]);
-  const elegido = vigencia.formatoInforme.documentoId !== null ? vigencia.formatoInforme : formatoActa;
-  const membrete = await membreteListo(elegido.documentoId);
-  const datos = datosDeEjemplo(
-    marca.nombre,
-    zonaHoraria(),
-    membrete && {
-      archivoId: membrete.archivoId,
-      hash: membrete.hash,
-      codigo: membrete.codigo,
-      version: membrete.version,
-      margenSuperiorCm: elegido.margenSuperiorCm,
-      margenInferiorCm: elegido.margenInferiorCm,
-    },
-  );
-  const pdf = await generarInformeAnual(datos, membrete?.bytes ?? null);
+  const [formato, marca] = await Promise.all([formatoDelInforme(obtenerSql()), obtenerMarca()]);
+  // Un formato cuyo archivo falta o cambió no se dibuja: el ejemplo sale con el diseño básico.
+  const membrete = formato ? await leerFormatoCongelado(formato) : null;
+  const pdf = await generarInformeAnual(datosDeEjemplo(marca.nombre, zonaHoraria(), membrete ? formato : null), membrete);
 
   return new NextResponse(new Uint8Array(pdf), {
     headers: {

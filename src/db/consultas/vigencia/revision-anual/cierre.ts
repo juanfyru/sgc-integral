@@ -65,9 +65,10 @@ function estadoAlCierre(etapa: Etapa): string {
 
 /**
  * El formato sobre el que se imprimirá el informe, con sus márgenes: el elegido para el informe o, si no hay, el del
- * acta con los suyos (spec 13C §9.5). Sin versión utilizable es `null` y el informe sale con el diseño básico.
+ * acta con los suyos (spec 13C §9.5). Sin versión utilizable es `null` y el informe sale con el diseño básico. Es la
+ * única regla: la usan el cierre, que lo congela, y el informe de ejemplo de Configuración documental.
  */
-async function formatoDelInforme(tx: Cliente): Promise<FormatoActa | null> {
+export async function formatoDelInforme(tx: Cliente): Promise<FormatoActa | null> {
   const { formatoActa, vigencia } = await obtenerConfigDocumental({ sql: tx });
   const elegido = vigencia.formatoInforme.documentoId !== null ? vigencia.formatoInforme : formatoActa;
   const archivo = elegido.documentoId === null ? null : await archivoDeFormato(elegido.documentoId, { sql: tx });
@@ -104,7 +105,8 @@ export async function datosDelInforme(
   const fin = new Date(finDeFecha(ultimoDia, zona).getTime() + 1);
 
   const filas = await tx`
-    SELECT d.codigo, d.titulo, d.origen, rad.version_id, v.numero AS version, p.nombre AS proceso, rad.decision, u.nombre AS responsable,
+    SELECT d.codigo, d.titulo, d.origen, rad.version_id, v.numero AS version, v.edicion_externa AS edicion, p.nombre AS proceso,
+      rad.decision, u.nombre AS responsable,
       rad.actualizado_en, t.numero AS tramite_numero, t.etapa AS tramite_etapa, t.vence_en AS tramite_vence_en,
       ev.version_id AS verificada_version_id
     FROM revision_anual_decisiones rad
@@ -191,6 +193,8 @@ export async function datosDelInforme(
               },
         fecha: decision === PENDIENTE ? null : new Date(f.actualizado_en as string),
         ...(estadoExterno === null ? {} : { estadoExterno }),
+        // Un externo se nombra por la edición de la versión de su fila (la adoptada, si la hubo).
+        ...(f.origen === "externo" && f.edicion ? { edicion: f.edicion as string } : {}),
       };
     }),
     normograma: {

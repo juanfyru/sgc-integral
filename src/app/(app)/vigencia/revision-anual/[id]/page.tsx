@@ -39,15 +39,21 @@ export default async function PaginaDeRevision({ params }: { params: Promise<{ i
   const revision = await obtenerRevision(Number(id), sesion, { ahora });
   if (!revision) notFound();
   const abierta = revision.estado === "abierta";
+  const verInforme = puedeVerInformeAnual(sesion);
 
   const migas = [{ nombre: "Vigencia", href: "/vigencia" }, { nombre: "Revisión anual", href: RUTA }, { nombre: String(revision.anio) }];
   const descripcion =
     abierta || !revision.cerradaEn
-      ? lineaDeRevision(revision, ahora, zona)
+      ? lineaDeRevision(revision, ahora, zona, verInforme)
       : `Abierta el ${textoFecha(revision.abiertaEn, zona)} y cerrada el ${textoFecha(revision.cerradaEn, zona)} por ${revision.cerradaPor ?? "—"}`;
-  const insignia = abierta ? <Insignia variante="atencion">Abierta · informe parcial</Insignia> : <Insignia variante="neutra">Cerrada</Insignia>;
+  // El informe parcial es el institucional; el líder ve aquí sus secciones de la revisión abierta, no un informe.
+  const insignia = abierta ? (
+    <Insignia variante="atencion">{verInforme ? "Abierta · informe parcial" : "Abierta"}</Insignia>
+  ) : (
+    <Insignia variante="neutra">Cerrada</Insignia>
+  );
 
-  if (puedeVerInformeAnual(sesion)) {
+  if (verInforme) {
     const informe = abierta ? await datosDelInforme(obtenerSql(), revision.id, ahora) : await informeCongelado(revision.id);
     if (!informe) notFound();
     return (

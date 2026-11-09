@@ -229,6 +229,10 @@ async function auditarNoRegenerable(sql: Cliente, usuarioId: number | null | und
  * la registra deja su fila en la bitácora: `usuarioId` es quien la pidió, y sin él la fila sale del
  * sistema. Solo al generar se lee el formato congelado: si falta o es otro archivo no hay acta, y el
  * pedido siguiente lo reintenta.
+ *
+ * El mismo algoritmo (F13A-R17) vive en `asegurarInforme` (`src/db/consultas/vigencia/informe.ts`), para el
+ * informe de la revisión anual: un cambio de su invariante (cuándo se regenera, cuándo no se entrega, qué se
+ * audita) va en los dos.
  */
 export async function asegurarActa(
   tramiteId: number,

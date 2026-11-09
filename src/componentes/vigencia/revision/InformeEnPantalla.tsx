@@ -1,6 +1,6 @@
 import { TablaDatos, celda, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
 import { TarjetaCifra } from "@/componentes/ui/TarjetaCifra";
-import type { DatosInforme } from "@/lib/informe-anual";
+import { rotuloDeDecision, type DatosInforme } from "@/lib/informe-anual";
 import { cuenta } from "@/lib/plural";
 import { textoFecha } from "@/lib/vigencia/plazo";
 import { ETIQUETA_DECISION, type Decision } from "@/lib/vigencia/tipos";
@@ -21,7 +21,14 @@ function etiquetaCifra(decision: Decision, parcial: boolean): string {
   return plural[decision];
 }
 
-const etiquetaDecision = (decision: Decision, parcial: boolean) => (parcial && decision === "sin_revisar" ? "Pendiente" : ETIQUETA_DECISION[decision]);
+type FilaInforme = DatosInforme["decisiones"][number];
+
+/** Con la revisión abierta, lo que no tiene decisión es «pendiente»; ratificar un externo fue verificarlo, como en la tabla. */
+function etiquetaDecision(d: FilaInforme, parcial: boolean): string {
+  if (parcial && d.decision === "sin_revisar") return "Pendiente";
+  if (d.decision === "ratificar" && d.edicion !== undefined) return `${ETIQUETA_DECISION.ratificar} · verificación «sigue vigente»`;
+  return ETIQUETA_DECISION[d.decision];
+}
 
 function Seccion({ id, titulo, children }: { id: string; titulo: string; children: React.ReactNode }) {
   return (
@@ -33,8 +40,6 @@ function Seccion({ id, titulo, children }: { id: string; titulo: string; childre
     </section>
   );
 }
-
-type FilaInforme = DatosInforme["decisiones"][number];
 
 function textoResponsable(d: FilaInforme, zona: string): string {
   const quien = d.responsable ?? (d.fecha ? "Automática" : "—");
@@ -102,11 +107,11 @@ export function InformeEnPantalla({ informe: d, parcial }: { informe: DatosInfor
             {d.decisiones.map((x) => (
               <tr key={x.codigo}>
                 <td className={celda}>
-                  <div className="font-mono text-xs font-medium">{`${x.codigo} v${x.version}`}</div>
+                  <div className="font-mono text-xs font-medium">{rotuloDeDecision(x)}</div>
                   <div>{x.titulo}</div>
                 </td>
                 <td className={celda}>{x.proceso}</td>
-                <td className={celda}>{etiquetaDecision(x.decision, parcial)}</td>
+                <td className={celda}>{etiquetaDecision(x, parcial)}</td>
                 <td className={celda}>{textoResponsable(x, zona)}</td>
                 <td className={celda}>{textoSolicitud(x, zona)}</td>
                 <td className={celda}>{textoEstado(x)}</td>
@@ -117,13 +122,13 @@ export function InformeEnPantalla({ informe: d, parcial }: { informe: DatosInfor
         <ul className="flex list-none flex-col gap-3 lg:hidden" aria-label="Decisiones de la revisión">
           {d.decisiones.map((x) => (
             <li key={x.codigo} className="min-w-0 rounded-lg border border-border bg-card p-3 text-sm">
-              <div className="font-mono text-xs font-medium">{`${x.codigo} v${x.version}`}</div>
+              <div className="font-mono text-xs font-medium">{rotuloDeDecision(x)}</div>
               <div className="break-words">{x.titulo}</div>
               <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
                 <dt className="text-muted-foreground">Proceso</dt>
                 <dd>{x.proceso}</dd>
                 <dt className="text-muted-foreground">Decisión</dt>
-                <dd>{etiquetaDecision(x.decision, parcial)}</dd>
+                <dd>{etiquetaDecision(x, parcial)}</dd>
                 <dt className="text-muted-foreground">Responsable</dt>
                 <dd>{textoResponsable(x, zona)}</dd>
                 <dt className="text-muted-foreground">Solicitud</dt>

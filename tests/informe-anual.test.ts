@@ -62,6 +62,18 @@ function datosDePrueba(o: { decisiones: number; formato?: DatosInforme["formato"
         solicitud: null,
         fecha: new Date("2090-11-07T15:00:00Z"),
         estadoExterno: "Edición adoptada",
+        edicion: "2024",
+      },
+      {
+        codigo: "CEX-DE-02",
+        titulo: "Guía externa ratificada",
+        version: 1,
+        proceso: "Consulta Externa",
+        decision: "ratificar",
+        responsable: "Luz Dary Ortiz Trujillo",
+        solicitud: null,
+        fecha: new Date("2090-11-07T15:00:00Z"),
+        edicion: "2019",
       },
     ],
     normograma: {
@@ -108,7 +120,14 @@ describe("generarInformeAnual", () => {
       expect(paginas.some((p) => contieneTexto(p, "Sin revisar"))).toBe(true);
       expect(contieneTexto(paginas[paginas.length - 1], "Cerr")).toBe(true);
       // Cada decisión con su código, su solicitud y el estado de su trámite al cierre; el externo, con el de la adopción.
-      for (const d of datos.decisiones) expect(contieneTexto(todo, `${d.codigo} v${d.version}`), d.codigo).toBe(true);
+      // Un interno por su versión; un externo por su edición, y su ratificación fue una verificación.
+      for (const d of datos.decisiones) {
+        expect(contieneTexto(todo, d.edicion === undefined ? `${d.codigo} v${d.version}` : `${d.codigo} ed. ${d.edicion}`), d.codigo).toBe(true);
+      }
+      expect(contieneTexto(todo, "CEX-DE-01 v2")).toBe(false);
+      // «Ratificado (verificación)» se parte en dos renglones dentro de su columna.
+      expect(contieneTexto(todo, "(verificación)")).toBe(true);
+      expect(contieneTexto(todo, "En trámite al abrir")).toBe(true);
       expect(contieneTexto(todo, "SOL-2090-002")).toBe(true);
       expect(contieneTexto(todo, "En curso: Elaboración")).toBe(true);
       expect(contieneTexto(todo, "Edición adoptada")).toBe(true);
@@ -132,14 +151,22 @@ describe("generarInformeAnual", () => {
     }
   });
 
-  it("respeta los márgenes del formato en cada hoja", async () => {
+  it("respeta los márgenes del formato en cada hoja: el cuerpo, por encima de la franja del pie", async () => {
     const datos = datosDePrueba({ decisiones: 60, formato: FORMATO });
     const paginas = await contenidoPorPagina(await generarInformeAnual(datos, await pdfDeFormato(1)));
     expect(paginas.length).toBeGreaterThan(2);
+    // El pie va sobre el margen inferior: su línea a 24 puntos y sus textos 12 y 23 bajo ella; el cuerpo termina 40 puntos
+    // sobre el margen, por encima de la línea.
+    const lineaDelPie = cm(FORMATO.margenInferiorCm) + 24;
+    const alturasDelPie = [lineaDelPie - 12, lineaDelPie - 23];
+    const esDelPie = (y: number) => alturasDelPie.some((a) => Math.abs(a - y) < 0.01);
     for (const [i, pagina] of paginas.entries()) {
       const ps = posiciones(pagina);
       expect(ps.length, `hoja ${i + 1}`).toBeGreaterThan(0);
       expect(Math.max(...ps.map((p) => p.y)), `hoja ${i + 1}`).toBeLessThanOrEqual(792 - cm(FORMATO.margenSuperiorCm));
+      expect(ps.filter((p) => esDelPie(p.y)), `hoja ${i + 1}`).toHaveLength(3);
+      const cuerpo = ps.filter((p) => !esDelPie(p.y));
+      expect(Math.min(...cuerpo.map((p) => p.y)), `hoja ${i + 1}`).toBeGreaterThan(lineaDelPie);
       expect(Math.min(...ps.map((p) => p.y)), `hoja ${i + 1}`).toBeGreaterThanOrEqual(cm(FORMATO.margenInferiorCm));
       expect(Math.min(...ps.map((p) => p.x)), `hoja ${i + 1}`).toBeGreaterThanOrEqual(48);
       expect(Math.max(...ps.map((p) => p.x)), `hoja ${i + 1}`).toBeLessThan(612 - 48);
@@ -180,6 +207,9 @@ describe("generarInformeAnual", () => {
     const ejemplo = datosDeEjemplo("Entidad de la prueba", ZONA, FORMATO);
     expect(ejemplo).toMatchObject({ ejemplo: true, entidad: "Entidad de la prueba", zona: ZONA, formato: FORMATO });
     expect(ejemplo.decisiones.length).toBeGreaterThanOrEqual(30);
+    // Trae un externo ratificado, nombrado por su edición.
+    expect(ejemplo.decisiones.some((d) => d.edicion !== undefined && d.decision === "ratificar")).toBe(true);
+    expect(ejemplo.alcance.externos).toBe(ejemplo.decisiones.filter((d) => d.edicion !== undefined).length);
     const bytes = await generarInformeAnual(ejemplo, await pdfDeFormato(1));
     const paginas = await contenidoPorPagina(bytes);
     expect(paginas.length).toBeGreaterThanOrEqual(2);
