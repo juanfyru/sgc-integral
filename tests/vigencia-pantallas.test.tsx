@@ -38,6 +38,7 @@ const base: FilaConAcciones = {
   vigencia: { estado: "vencida", dias: -86 },
   tramite: null,
   impacto: null,
+  edicionPendiente: null,
   acciones: { ratificar: true, solicitar: true, ajustar: false, verTramite: false },
 };
 

@@ -4,10 +4,11 @@ import { ETIQUETA_VIGENCIA, type EstadoVigencia } from "./tipos";
 
 /**
  * `dias` es negativo si ya venció (días desde el vencimiento) y positivo si faltan. Un vigente sin próxima
- * revisión es una anomalía: sale en atención para que se vea, nunca como al día.
+ * revisión es una anomalía: sale en atención para que se vea, nunca como al día. Un impacto normativo pendiente y,
+ * en un externo, una edición nueva pendiente de adoptar (spec 13C §8.4) dan al menos atención.
  */
 export function estadoVigencia(
-  d: { proxima: Date | null; enTramite: boolean; impactoPendiente: boolean },
+  d: { proxima: Date | null; enTramite: boolean; impactoPendiente: boolean; edicionPendiente?: boolean },
   ahora: Date,
   atencionDias: number,
   zona: string,
@@ -16,7 +17,7 @@ export function estadoVigencia(
   if (!d.proxima) return { estado: "atencion", dias: null };
   const plazo = estadoPlazo(d.proxima, ahora, zona);
   if (plazo.estado === "vencido") return { estado: "vencida", dias: -plazo.dias };
-  const estado = d.impactoPendiente || plazo.dias <= atencionDias ? "atencion" : "al_dia";
+  const estado = d.impactoPendiente || d.edicionPendiente || plazo.dias <= atencionDias ? "atencion" : "al_dia";
   return { estado, dias: plazo.dias };
 }
 
@@ -24,13 +25,20 @@ const dias = (n: number) => `${n} ${n === 1 ? "día" : "días"}`;
 
 export function textoVigencia(
   r: { estado: EstadoVigencia; dias: number | null },
-  extra?: { etapa?: string; dia?: number; cambioNormativo?: string },
+  extra?: { etapa?: string; dia?: number; cambioNormativo?: string; edicionPendiente?: boolean },
 ): string {
   if (r.estado === "en_tramite") {
     if (!extra?.etapa) return ETIQUETA_VIGENCIA.en_tramite;
     return `${ETIQUETA_VIGENCIA.en_tramite} · ${extra.etapa}${extra.dia !== undefined ? `, día ${extra.dia}` : ""}`;
   }
-  if (r.estado === "atencion" && extra?.cambioNormativo) return `${ETIQUETA_VIGENCIA.atencion} · revisión por cambio normativo`;
+  if (r.estado === "atencion") {
+    // Las marcas dicen por qué está en atención; la del cambio normativo va primero.
+    const marcas = [
+      extra?.cambioNormativo ? "revisión por cambio normativo" : null,
+      extra?.edicionPendiente ? "edición nueva pendiente de adoptar" : null,
+    ].filter((m) => m !== null);
+    if (marcas.length > 0) return `${ETIQUETA_VIGENCIA.atencion} · ${marcas.join(" · ")}`;
+  }
   if (r.estado === "atencion" && r.dias === null) return `${ETIQUETA_VIGENCIA.atencion} · sin fecha de revisión`;
   // Al día no lleva los días (spec 13C §7.2): «Vence en N días» es la atención, y el texto dice el estado.
   if (r.estado === "al_dia" || r.dias === null) return ETIQUETA_VIGENCIA.al_dia;
@@ -58,16 +66,18 @@ export function textoUltimaRevision(u: { clase: ClaseRevision; quien: string | n
 
 /**
  * El texto del chip de una fila: con la etapa y el día si está en trámite (sin día si la etapa no tiene fecha
- * límite), o la marca del cambio normativo.
+ * límite), o las marcas del cambio normativo y de la edición nueva pendiente de un externo.
  */
 export function textoVigenciaDeFila(f: {
   vigencia: { estado: EstadoVigencia; dias: number | null };
   tramite: { etapa: Etapa; dia: number | null } | null;
   impacto: { norma: string } | null;
+  edicionPendiente?: { desde: Date } | null;
 }): string {
   return textoVigencia(f.vigencia, {
     etapa: f.tramite ? ETIQUETA_ETAPA[f.tramite.etapa].toLowerCase() : undefined,
     dia: f.tramite?.dia ?? undefined,
     cambioNormativo: f.impacto?.norma,
+    edicionPendiente: f.edicionPendiente != null,
   });
 }

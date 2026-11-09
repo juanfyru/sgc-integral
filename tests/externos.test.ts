@@ -40,11 +40,13 @@ import {
   retirarExterno,
   validarAdopcion,
 } from "@/db/consultas/vigencia/externos";
-import { vigenciaDeDocumento } from "@/db/consultas/vigencia/semaforo";
+import { vigenciaEnLista, vigenciaPorDocumento } from "@/db/consultas/vigencia/fragmentos";
+import { listarSemaforo, vigenciaDeDocumento } from "@/db/consultas/vigencia/semaforo";
 import { puedeVerExterno } from "@/lib/alcance";
 import { EsquemaAdoptar, EsquemaControlExterno, EsquemaExterno, EsquemaRetirar, EsquemaVerificacion } from "@/lib/esquemas/vigencia";
 import { parsearFormulario } from "@/lib/validacion";
 import { fechaEnZona } from "@/lib/tramites/plazos";
+import { textoVigenciaDeFila } from "@/lib/vigencia/semaforo";
 import { copiaDePrueba, puntoDePrueba } from "./utiles/distribucion";
 import { archivoPrincipal, sesionAdmin, sesionDe, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
@@ -415,6 +417,38 @@ describe("verificación y retiro", () => {
         await expect(
           registrarVerificacion(lider, { ...verificacion(e.documentoId, "vigente"), impactoId: 987_654_321 }, { sql: tx, ahora }),
         ).rejects.toThrow(NO_EXISTE);
+      } finally {
+        await e.limpiar();
+      }
+    }));
+
+  it("una edición nueva pendiente pone al externo en atención en el semáforo, la ficha, las listas y su página, hasta adoptarla", () =>
+    revertida(sql, async (tx) => {
+      const lider = await sesionDe(tx, "lider.cex");
+      const e = await externoDePrueba(tx, lider, { proceso: "CEX", edicion: "2017", ahora });
+      try {
+        const antes = await vigenciaDeDocumento(e.documentoId, lider, { sql: tx, ahora });
+        expect(antes).toMatchObject({ vigencia: { estado: "al_dia" }, edicionPendiente: null });
+
+        await registrarVerificacion(lider, verificacion(e.documentoId, "edicion_nueva", "Salió la edición 2024"), { sql: tx, ahora });
+        const TEXTO = "Atención · edición nueva pendiente de adoptar";
+        const enSemaforo = (await listarSemaforo(lider, { estado: "todos", origen: "externo" }, { sql: tx, ahora })).find(
+          (f) => f.documentoId === e.documentoId,
+        )!;
+        expect(enSemaforo.vigencia).toEqual({ estado: "atencion", dias: 365 });
+        expect(enSemaforo.edicionPendiente?.desde).toEqual(ahora);
+        expect(textoVigenciaDeFila(enSemaforo)).toBe(TEXTO);
+        const ficha = await vigenciaDeDocumento(e.documentoId, lider, { sql: tx, ahora });
+        expect(ficha?.vigencia.estado).toBe("atencion");
+        expect(vigenciaEnLista((await vigenciaPorDocumento(tx, [e.documentoId], ahora)).get(e.documentoId)!).texto).toBe(TEXTO);
+        expect((await obtenerExterno(e.documentoId, lider, { sql: tx, ahora }))?.vigencia).toMatchObject({ estado: "atencion", dias: 365 });
+        const fila = (await listarExternos(lider, { estado: "atencion" }, { sql: tx, ahora })).find((f) => f.documentoId === e.documentoId);
+        expect(fila?.vigencia.estado).toBe("atencion");
+
+        const { versionId } = await abrirEdicion(lider, e.documentoId, { edicion: "2024", fechaEdicion: null, resumenCambios: "Metas 2024" }, { sql: tx, ahora });
+        await adoptar(lider, versionId, tx);
+        const despues = await vigenciaDeDocumento(e.documentoId, lider, { sql: tx, ahora });
+        expect(despues).toMatchObject({ vigencia: { estado: "al_dia" }, edicionPendiente: null });
       } finally {
         await e.limpiar();
       }

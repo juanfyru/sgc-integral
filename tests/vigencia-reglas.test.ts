@@ -97,6 +97,23 @@ describe("semáforo de vigencia", () => {
     expect(estadoVigencia({ proxima: finDeFecha("2026-08-14", ZONA), enTramite: false, impactoPendiente: true }, ahora, 90, ZONA)).toEqual({ estado: "vencida", dias: -86 });
   });
 
+  it("estadoVigencia: una edición nueva pendiente de adoptar da al menos atención (spec 13C §8.4)", () => {
+    const pendiente = { enTramite: false, impactoPendiente: false, edicionPendiente: true };
+    expect(estadoVigencia({ proxima: finDeFecha("2027-11-06", ZONA), ...pendiente }, ahora, 90, ZONA)).toEqual({ estado: "atencion", dias: 363 });
+    expect(estadoVigencia({ proxima: null, ...pendiente }, ahora, 90, ZONA)).toEqual({ estado: "atencion", dias: null });
+    expect(estadoVigencia({ proxima: finDeFecha("2026-08-14", ZONA), ...pendiente }, ahora, 90, ZONA)).toEqual({ estado: "vencida", dias: -86 });
+    expect(estadoVigencia({ proxima: finDeFecha("2027-11-06", ZONA), ...pendiente, edicionPendiente: false }, ahora, 90, ZONA).estado).toBe("al_dia");
+  });
+
+  it("textoVigencia dice la edición nueva pendiente; la leyenda del cambio normativo va primero", () => {
+    expect(textoVigencia({ estado: "atencion", dias: 363 }, { edicionPendiente: true })).toBe("Atención · edición nueva pendiente de adoptar");
+    expect(textoVigencia({ estado: "atencion", dias: null }, { edicionPendiente: true })).toBe("Atención · edición nueva pendiente de adoptar");
+    expect(textoVigencia({ estado: "atencion", dias: 30 }, { cambioNormativo: "Resolución 100 de 2026", edicionPendiente: true })).toBe(
+      "Atención · revisión por cambio normativo · edición nueva pendiente de adoptar",
+    );
+    expect(textoVigencia({ estado: "vencida", dias: -3 }, { edicionPendiente: true })).toBe("Vencida hace 3 días");
+  });
+
   it("textoVigencia sin fecha de revisión lo dice", () => {
     expect(textoVigencia({ estado: "atencion", dias: null })).toBe("Atención · sin fecha de revisión");
     expect(textoVigencia({ estado: "atencion", dias: null }, { cambioNormativo: "Resolución 100 de 2026" })).toBe("Atención · revisión por cambio normativo");

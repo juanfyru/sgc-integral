@@ -15,6 +15,7 @@ type FilaChip = {
   vigencia: { estado: EstadoVigencia; dias: number | null };
   tramite: { etapa: Etapa; dia: number | null } | null;
   impacto: { norma: string } | null;
+  edicionPendiente?: { desde: Date } | null;
 };
 
 /**

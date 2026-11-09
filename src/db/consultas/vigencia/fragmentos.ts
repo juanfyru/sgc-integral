@@ -36,6 +36,8 @@ export type FilaSemaforo = {
   /** `dia`: el de la etapa en curso, como en el encabezado del trámite; nulo si la etapa no tiene fecha límite. */
   tramite: { id: number; numero: string; etapa: Etapa; dia: number | null } | null;
   impacto: { cambioId: number; norma: string } | null;
+  /** Un externo con una verificación «hay una edición nueva» que aún no se adopta (spec 13C §8.4): sale en atención. */
+  edicionPendiente: { desde: Date } | null;
 };
 
 /** Una sola sentencia, con un `LATERAL` por fuente; `condicion` filtra sobre `documentos d` y `procesos p`. */
@@ -43,7 +45,7 @@ function consultaSemaforo(sql: Cliente, condicion: PendingQuery<Row[]>) {
   return sql`
     SELECT d.id, d.codigo, d.titulo, d.origen, d.meses_revision AS meses_documento,
       d.proxima_revision_fijada::text AS fijada, d.fijada_en, d.fijada_nota, uf.nombre AS fijada_por,
-      t.nombre AS tipo, t.autoridad, t.meses_revision AS meses_tipo, ex.verificacion_meses,
+      t.nombre AS tipo, t.autoridad, t.meses_revision AS meses_tipo, ex.verificacion_meses, ex.edicion_nueva_pendiente_desde,
       p.id AS proceso_id, p.nombre AS proceso_nombre, p.sigla AS proceso_sigla,
       v.id AS version_id, v.numero, v.edicion_externa, v.origen_aprobacion, v.publicado_en,
       v.fecha_aprobacion::text AS fecha_aprobacion, v.aprobo, pa.hash_sha256 AS huella,
@@ -149,6 +151,7 @@ function aFila(f: Row, ahora: Date, atencionDias: number, zona: string): FilaSem
           )?.dia ?? null,
       };
   const impacto = f.cambio_id === null ? null : { cambioId: Number(f.cambio_id), norma: f.norma as string };
+  const pendienteDesde = instante(f.edicion_nueva_pendiente_desde);
 
   return {
     documentoId: Number(f.id),
@@ -165,9 +168,15 @@ function aFila(f: Row, ahora: Date, atencionDias: number, zona: string): FilaSem
     ultimaRevision,
     proximaRevision: proxima,
     fijada: f.fijada ? { por: f.fijada_por as string, en: new Date(f.fijada_en as string), nota: (f.fijada_nota as string | null) ?? "" } : null,
-    vigencia: estadoVigencia({ proxima, enTramite: tramite !== null, impactoPendiente: impacto !== null }, ahora, atencionDias, zona),
+    vigencia: estadoVigencia(
+      { proxima, enTramite: tramite !== null, impactoPendiente: impacto !== null, edicionPendiente: pendienteDesde !== null },
+      ahora,
+      atencionDias,
+      zona,
+    ),
     tramite,
     impacto,
+    edicionPendiente: pendienteDesde === null ? null : { desde: pendienteDesde },
   };
 }
 
