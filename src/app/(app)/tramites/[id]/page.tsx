@@ -27,6 +27,7 @@ import {
   datosParaAceptar,
   datosParaGestionar,
   obtenerTramite,
+  origenDeTramite,
   type DetalleTramite,
 } from "@/db/consultas/tramites";
 import { criteriosNoCumplen, listarItemsVerificacion, listarObservaciones, listarRondasVerificacion, obtenerVerificacion } from "@/db/consultas/revision";
@@ -263,6 +264,7 @@ export default async function PaginaTramite({ params }: { params: Promise<{ id: 
   // El acta es del trámite cerrado: quien llegó hasta aquí ya lo ve, aunque no vea la versión.
   const claseActa = tramite.etapa === "publicado" ? "aprobacion" : tramite.etapa === "eliminado" ? "eliminacion" : null;
   const verActa = claseActa !== null && tramite.versionId !== null;
+  const origen = await origenDeTramite(tramite.id);
 
   return (
     <div className="flex flex-col gap-6">
@@ -270,7 +272,7 @@ export default async function PaginaTramite({ params }: { params: Promise<{ id: 
       <PasosTramite etapa={tramite.etapa} tipo={tramite.tipo} />
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
         <div className="flex min-w-0 flex-col gap-6">
-          <BloqueSolicitud tramite={tramite} />
+          <BloqueSolicitud tramite={tramite} origen={origen} />
           {verActa && claseActa ? (
             <section aria-label="Acta" className="rounded-xl border border-border bg-card p-4 text-sm shadow-xs">
               <EnlaceActa tramiteId={tramite.id} clase={claseActa} />

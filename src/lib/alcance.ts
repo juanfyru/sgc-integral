@@ -19,7 +19,7 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { puede } from "@/lib/permisos";
 import type { Rol } from "@/lib/roles";
 import type { SesionValida } from "@/lib/sesion";
-import type { Etapa } from "@/lib/tramites/tipos";
+import type { Autoridad, Etapa } from "@/lib/tramites/tipos";
 
 export type Alcance = { todos: true } | { todos: false; procesoIds: number[] };
 
@@ -157,6 +157,14 @@ export function puedeVerDistribucion(sesion: SujetoVisibilidad & { responsableDe
 }
 
 /**
+ * Quién abre los catálogos de la distribución (Puntos de uso y Listas, spec 13C §12.3): quien tiene `distribucion.ver`;
+ * sin `distribucion.gestionar`, en solo lectura. Qué puntos ve lo dice `filtroPuntos`; las listas son de la entidad.
+ */
+export function puedeVerCatalogos(sesion: SujetoVisibilidad): boolean {
+  return puede(sesion, "distribucion.ver");
+}
+
+/**
  * Qué puntos de uso ve una persona, para un `WHERE` sobre `puntos_uso pu`: los roles que ven todo, todos;
  * el líder, los de sus procesos activos y los suyos; el resto, solo aquellos de los que es responsable.
  */
@@ -172,6 +180,37 @@ export function filtroPuntos(sql: Cliente, sujeto: SujetoVisibilidad) {
     ))`;
   }
   return sql`pu.responsable_id = ${sujeto.usuarioId}`;
+}
+
+/**
+ * Si el documento `d` está en el alcance del líder (cualquier otro rol: siempre). Vive aquí, y no en `copias.ts`, para
+ * que los puntos de uso y las jornadas no importen el módulo de las copias (y su PDF) solo por esta regla.
+ */
+export function documentoEnAlcance(sql: Cliente, sujeto: Pick<SujetoVisibilidad, "usuarioId" | "rol">) {
+  if (sujeto.rol !== "lider_proceso") return sql`true`;
+  return sql`EXISTS (
+    SELECT 1
+    FROM documento_proceso alc_dp
+    LEFT JOIN subprocesos alc_s ON alc_s.id = alc_dp.subproceso_id
+    JOIN procesos alc_p ON alc_p.id = COALESCE(alc_dp.proceso_id, alc_s.proceso_id) AND alc_p.activo
+    JOIN usuario_procesos alc_up ON alc_up.proceso_id = alc_p.id AND alc_up.usuario_id = ${sujeto.usuarioId}
+    WHERE alc_dp.documento_id = d.id
+  )`;
+}
+
+/**
+ * Quién ve una copia controlada (spec 13B §6.4), para un `WHERE` sobre `copias_controladas cc`, `puntos_uso pu` y
+ * `documentos d`: `distribucion.ver` con alcance, el responsable del punto o quien la emitió.
+ */
+export function condicionVista(sql: Cliente, sujeto: SujetoVisibilidad) {
+  const propias = sql`(cc.emitida_por = ${sujeto.usuarioId} OR cc.responsable_id = ${sujeto.usuarioId} OR pu.responsable_id = ${sujeto.usuarioId})`;
+  if (!puede(sujeto, "distribucion.ver")) return propias;
+  if (sujeto.rol === "lider_proceso") {
+    // Las copias de sus puntos, pero nunca de un restringido que no ve (regla 3): un documento de otro proceso
+    // entregado en un punto suyo solo aparece si su nivel de acceso lo permite.
+    return sql`(${propias} OR (${filtroPuntos(sql, sujeto)} AND ${filtroAcceso(sql, sujeto)}) OR ${documentoEnAlcance(sql, sujeto)})`;
+  }
+  return sql`true`;
 }
 
 /**
@@ -210,4 +249,103 @@ export async function puedeVerVerificacion(
   if (sesion.rol !== "lider_proceso") return false;
   const alcance = await alcanceProcesos(sesion, opciones);
   return v.procesoIds.some((p) => enAlcance(alcance, p));
+}
+
+/** Quién entra a «Vigencia»: quien ve el semáforo o los indicadores, o el responsable técnico de algún externo. */
+export function puedeVerVigencia(sesion: SujetoVisibilidad & { responsableTecnico?: boolean }): boolean {
+  return puede(sesion, "vigencia.ver") || puede(sesion, "documentos.indicadores") || sesion.responsableTecnico === true;
+}
+
+/**
+ * Quién ratifica un documento (spec 13C §6.3): solo un interno vigente sin trámite abierto (el trámite ya es su
+ * revisión); el Admin SGC siempre, el líder en los procesos de su alcance y Gerencia los de tipo estratégico.
+ */
+export function puedeRatificar(
+  sujeto: SujetoVisibilidad,
+  d: { procesoId: number; autoridad: Autoridad; origen: "interno" | "externo"; enTramite: boolean; vigente: boolean },
+  alcance: Alcance,
+): boolean {
+  if (!puede(sujeto, "documentos.ratificar") || !d.vigente || d.enTramite || d.origen !== "interno") return false;
+  if (sujeto.rol === "admin_sgc") return true;
+  if (sujeto.rol === "lider_proceso") return enAlcance(alcance, d.procesoId);
+  if (sujeto.rol === "gerencia") return d.autoridad === "estrategico";
+  return false;
+}
+
+/**
+ * Qué documentos lista la pestaña «Semáforo», para un `WHERE` sobre `documentos d`: el nivel de acceso y, para
+ * el líder, los de sus procesos por la asociación principal (también si es a un subproceso). Quien no ve la
+ * pestaña no recibe filas.
+ */
+export function filtroVigencia(sql: Cliente, sujeto: SujetoVisibilidad, alcance: Alcance) {
+  if (!puede(sujeto, "vigencia.ver") && !puede(sujeto, "documentos.indicadores")) return sql`false`;
+  if (alcance.todos) return filtroAcceso(sql, sujeto);
+  if (alcance.procesoIds.length === 0) return sql`false`;
+  return sql`(${filtroAcceso(sql, sujeto)} AND EXISTS (
+    SELECT 1
+    FROM documento_proceso vigencia_dp
+    LEFT JOIN subprocesos vigencia_s ON vigencia_s.id = vigencia_dp.subproceso_id
+    WHERE vigencia_dp.documento_id = d.id AND vigencia_dp.es_principal
+      AND COALESCE(vigencia_dp.proceso_id, vigencia_s.proceso_id) = ANY(${alcance.procesoIds})
+  ))`;
+}
+
+/** Quién gestiona un externo (spec 13C §6.2): `externos.gestionar` sobre su proceso propietario, del alcance. */
+export function puedeGestionarExterno(sujeto: SujetoVisibilidad, procesoId: number, alcance: Alcance): boolean {
+  return puede(sujeto, "externos.gestionar") && enAlcance(alcance, procesoId);
+}
+
+/**
+ * Quién ve la página de control de un externo (spec 13C §8.8): quien lo gestiona, su responsable técnico (aunque sea
+ * de rol Consulta, sin que por eso vea otros) y quien tiene `vigencia.ver` sobre su proceso propietario. Siempre
+ * además la regla de nivel de acceso: un restringido no existe para quien no lo ve. `false` si no es un externo.
+ */
+export async function puedeVerExterno(
+  documentoId: number,
+  sujeto: SujetoVisibilidad & { usuarioId: number },
+  opciones?: { sql?: Cliente },
+): Promise<boolean> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [d] = await sql`
+    SELECT COALESCE(dp.proceso_id, s.proceso_id) AS proceso_id, ex.responsable_id
+    FROM documentos d
+    JOIN externos ex ON ex.documento_id = d.id
+    JOIN documento_proceso dp ON dp.documento_id = d.id AND dp.es_principal
+    LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
+    WHERE d.id = ${documentoId} AND d.origen = 'externo' AND ${filtroAcceso(sql, sujeto)}`;
+  if (!d) return false;
+  if (Number(d.responsable_id) === sujeto.usuarioId) return true;
+  if (!puede(sujeto, "externos.gestionar") && !puede(sujeto, "vigencia.ver")) return false;
+  return enAlcance(await alcanceProcesos(sujeto, { sql }), Number(d.proceso_id));
+}
+
+/**
+ * Quién asocia una norma a un proceso, escribe su requisito y enlaza los documentos del proceso (spec 13C §10.3):
+ * `normograma.procesos` sobre un proceso de su alcance (el Admin SGC todos, el líder los suyos).
+ */
+export function puedeAsociarNorma(sujeto: SujetoVisibilidad, procesoId: number, alcance: Alcance): boolean {
+  return puede(sujeto, "normograma.procesos") && enAlcance(alcance, procesoId);
+}
+
+/** Quién ve y resuelve los impactos de un cambio normativo en un proceso (spec 13C §10.5): lo mismo, y el Admin SGC siempre. */
+export function puedeVerImpacto(sujeto: SujetoVisibilidad, procesoId: number, alcance: Alcance): boolean {
+  return sujeto.rol === "admin_sgc" || puedeAsociarNorma(sujeto, procesoId, alcance);
+}
+
+/**
+ * Quién ve la revisión anual (spec 13C §9.7): quien tiene `vigencia.ver`. El líder ve solo sus procesos (lo recorta
+ * `alcanceProcesos`); el Admin SGC, Gerencia y Control Interno, toda la campaña.
+ */
+export function puedeVerRevisionAnual(sujeto: SujetoVisibilidad): boolean {
+  return puede(sujeto, "vigencia.ver");
+}
+
+/** Quién decide en la revisión anual sobre los documentos de un proceso y confirma su normograma (spec 13C §9.3 y §9.4). */
+export function puedeDecidirEn(sujeto: SujetoVisibilidad, procesoId: number, alcance: Alcance): boolean {
+  return puede(sujeto, "revision_anual.decidir") && enAlcance(alcance, procesoId);
+}
+
+/** El informe institucional de la revisión anual nombra documentos restringidos: lo ven los roles que los ven. */
+export function puedeVerInformeAnual(sujeto: SujetoVisibilidad): boolean {
+  return ROLES_VEN_RESTRINGIDO.includes(sujeto.rol);
 }

@@ -29,6 +29,7 @@ import {
 } from "@/db/consultas/admin";
 import { obtenerPatronCodigo } from "@/db/consultas/codigos";
 import { abrirCarga } from "./utiles/demo";
+import { sacarDeLaRevisionAbierta } from "./utiles/vigencia";
 
 const sql = () => obtenerSql();
 let usuarioId: number;
@@ -41,6 +42,7 @@ const USUARIO = `admin_pub_${Date.now()}`;
 let restaurarCarga: () => Promise<void>;
 
 async function limpiar() {
+  await sacarDeLaRevisionAbierta(sql(), "ZZ-TST-");
   await sql()`DELETE FROM archivos WHERE version_id IN (
     SELECT v.id FROM documento_versiones v
     JOIN documentos d ON d.id = v.documento_id WHERE d.codigo LIKE 'ZZ-TST-%')`;

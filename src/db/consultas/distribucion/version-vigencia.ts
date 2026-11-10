@@ -12,6 +12,7 @@ const CIERRE_DEL_AVISO: Record<MotivoPorRecoger, (nuevaVersion: number | null) =
   nueva_version: (n) => (n === null ? "la versión fue reemplazada" : `la versión ${n} es la vigente desde hoy`),
   eliminado: () => "el documento fue eliminado",
   carga_deshecha: () => "la carga se deshizo",
+  retirado: () => "el documento externo fue retirado",
 };
 
 /**

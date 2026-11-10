@@ -1,8 +1,11 @@
 import Link from "next/link";
-import { Insignia } from "@/componentes/ui/Insignia";
 import { TablaDatos, celda, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
 import type { Hallazgo } from "@/db/consultas/distribucion/hallazgos";
+import { comoSeCerro, enlaceDeHallazgo } from "@/lib/distribucion/hallazgos";
+import { textoFecha } from "@/lib/vigencia/plazo";
+import { zonaHoraria } from "@/lib/zona-horaria";
 import { fechaConAnio } from "./fecha";
+import { InsigniaHallazgo } from "./ListaHallazgos";
 
 const COLUMNAS: readonly ColumnaTabla[] = [
   { clave: "punto", etiqueta: "Punto de uso" },
@@ -13,11 +16,27 @@ const COLUMNAS: readonly ColumnaTabla[] = [
 ];
 
 function enlaceDe(h: Hallazgo): string | null {
-  if (h.origen === "verificacion" && h.verificacionId !== null) return `/distribucion/verificaciones/${h.verificacionId}`;
-  return h.copia ? `/distribucion/copias/${h.copia.id}` : null;
+  if (h.origen !== "verificacion" && !h.copia) return null;
+  return enlaceDeHallazgo({ origen: h.origen, verificacionId: h.verificacionId, copiaId: h.copia?.id ?? null });
 }
 
-/** Los hallazgos abiertos primero, luego los cerrados con su cierre. */
+/**
+ * Cómo terminó el hallazgo, en una línea: quien valida no firma la nota de quien corrigió (va aparte, como
+ * «Corrección de…»); en un cierre directo, la nota es la de quien cerró.
+ */
+function lineasDeCierre(h: Hallazgo): string[] {
+  const como = comoSeCerro(h);
+  const correccion = h.correccion ? `Corrección de ${h.correccion.por}: ${h.correccion.nota}` : null;
+  if (!h.cierre || !como) return h.correccion ? [`Corregido por ${h.correccion.por}: ${h.correccion.nota}`] : [];
+  if (como === "verificacion") {
+    return [`Validado por la verificación del ${textoFecha(h.cierre.en, zonaHoraria())}`, ...(correccion ? [correccion] : [])];
+  }
+  if (como === "validado") return [`Validado por ${h.cierre.por}`, ...(correccion ? [correccion] : [])];
+  if (como === "propio_corrector") return [`Cerrado por quien lo corrigió (único Administrador del SGC activo): ${h.cierre.nota}`];
+  return [`Cerrado por ${h.cierre.por}: ${h.cierre.nota}`];
+}
+
+/** Los hallazgos abiertos primero, luego los que esperan validación y los cerrados con su cierre. */
 export function TablaHallazgos({ hallazgos, ahora }: { hallazgos: Hallazgo[]; ahora: Date }) {
   return (
     <section aria-labelledby="hallazgos-verificaciones" className="flex flex-col gap-3">
@@ -39,17 +58,15 @@ export function TablaHallazgos({ hallazgos, ahora }: { hallazgos: Hallazgo[]; ah
                 ) : (
                   h.descripcion
                 )}
-                {h.cierre ? <div className="text-xs text-muted-foreground">{`Cerrado por ${h.cierre.por}: ${h.cierre.nota}`}</div> : null}
+                {lineasDeCierre(h).map((linea) => (
+                  <div key={linea} className="text-xs text-muted-foreground">
+                    {linea}
+                  </div>
+                ))}
               </td>
               <td className={celda}>{h.responsable.nombre}</td>
               <td className={celda}>
-                {h.estado === "cerrado" ? (
-                  <Insignia variante="bien">Cerrado</Insignia>
-                ) : vencido ? (
-                  <Insignia variante="critico">Abierto y vencido</Insignia>
-                ) : (
-                  <Insignia variante="atencion">Abierto</Insignia>
-                )}
+                <InsigniaHallazgo estado={h.estado} vencido={vencido} />
               </td>
               <td className={celda}>{fechaConAnio(h.cierre ? h.cierre.en : h.venceEn)}</td>
             </tr>

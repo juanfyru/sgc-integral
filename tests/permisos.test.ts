@@ -29,6 +29,15 @@ const ESPERADA: Record<Permiso, Rol[]> = {
   "acuses.confirmar": ["admin_sgc", "gerencia", "control_interno", "lider_proceso", "consulta"],
   "socializaciones.registrar": ["admin_sgc", "lider_proceso"],
   "verificaciones.realizar": ["admin_sgc"],
+  "vigencia.ver": ["admin_sgc", "gerencia", "control_interno", "lider_proceso"],
+  "documentos.ratificar": ["admin_sgc", "gerencia", "lider_proceso"],
+  "revision_anual.gestionar": ["admin_sgc"],
+  "revision_anual.decidir": ["admin_sgc", "lider_proceso"],
+  "externos.gestionar": ["admin_sgc", "lider_proceso"],
+  "externos.verificar": ["admin_sgc", "gerencia", "control_interno", "lider_proceso", "consulta"],
+  "normograma.administrar": ["admin_sgc"],
+  "normograma.procesos": ["admin_sgc", "lider_proceso"],
+  "documentos.indicadores": ["admin_sgc", "gerencia", "control_interno", "lider_proceso"],
 };
 
 describe("matriz de permisos", () => {

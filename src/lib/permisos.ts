@@ -26,7 +26,16 @@ export type Permiso =
   | "copias.emitir"
   | "acuses.confirmar"
   | "socializaciones.registrar"
-  | "verificaciones.realizar";
+  | "verificaciones.realizar"
+  | "vigencia.ver"
+  | "documentos.ratificar"
+  | "revision_anual.gestionar"
+  | "revision_anual.decidir"
+  | "externos.gestionar"
+  | "externos.verificar"
+  | "normograma.administrar"
+  | "normograma.procesos"
+  | "documentos.indicadores";
 
 /** Matriz fija rol -> permiso (diseño F11 §5). */
 export const MATRIZ: Record<Permiso, readonly Rol[]> = {
@@ -56,6 +65,15 @@ export const MATRIZ: Record<Permiso, readonly Rol[]> = {
   "acuses.confirmar": ["admin_sgc", "gerencia", "control_interno", "lider_proceso", "consulta"],
   "socializaciones.registrar": ["admin_sgc", "lider_proceso"],
   "verificaciones.realizar": ["admin_sgc"],
+  "vigencia.ver": ["admin_sgc", "gerencia", "control_interno", "lider_proceso"],
+  "documentos.ratificar": ["admin_sgc", "gerencia", "lider_proceso"],
+  "revision_anual.gestionar": ["admin_sgc"],
+  "revision_anual.decidir": ["admin_sgc", "lider_proceso"],
+  "externos.gestionar": ["admin_sgc", "lider_proceso"],
+  "externos.verificar": ["admin_sgc", "gerencia", "control_interno", "lider_proceso", "consulta"],
+  "normograma.administrar": ["admin_sgc"],
+  "normograma.procesos": ["admin_sgc", "lider_proceso"],
+  "documentos.indicadores": ["admin_sgc", "gerencia", "control_interno", "lider_proceso"],
 };
 
 export const PERMISOS = Object.keys(MATRIZ) as readonly Permiso[];

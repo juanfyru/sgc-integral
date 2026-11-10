@@ -38,11 +38,11 @@ export const CRITICO_NO_CUMPLE = "Hay un ítem crítico que no cumple";
 export const LARGO_MIN_NOTA_CRITERIO = 5;
 export const FALTA_NOTA_CRITERIO = "Escriba una nota en cada criterio que no cumple";
 
-export const FIRMAS = ["elaboro", "reviso", "aprobo", "publico"] as const;
+export const FIRMAS = ["elaboro", "reviso", "aprobo", "publico", "ratifico", "adopto"] as const;
 export type Firma = (typeof FIRMAS)[number];
 
 /** Dónde se aprobó una versión: con las firmas del trámite, o fuera de la plataforma (spec 13A §13.2). */
-export type OrigenAprobacion = "plataforma" | "fuera";
+export type OrigenAprobacion = "plataforma" | "fuera" | "externo";
 
 /** El número más alto con que un documento puede entrar por la carga: su versión real. */
 export const NUMERO_MAXIMO_DE_VERSION = 999;
@@ -51,12 +51,14 @@ export const NUMERO_MAXIMO_DE_VERSION = 999;
 export const APROBACION_EN_LISTADO: Record<OrigenAprobacion, string> = {
   plataforma: "En la plataforma",
   fuera: "Fuera de la plataforma",
+  externo: "Adoptado",
 };
 
 /** Cómo lo dice cada versión en el detalle del panel. */
 export const APROBACION_DE_VERSION: Record<OrigenAprobacion, string> = {
   plataforma: "Aprobada en la plataforma",
   fuera: "Aprobación registrada fuera de la plataforma",
+  externo: "Edición adoptada en la plataforma",
 };
 
 /** Las que puede escribir quien aprueba al devolver el documento. */
@@ -97,6 +99,8 @@ export const ETIQUETA_FIRMA: Record<Firma, string> = {
   reviso: "Revisó",
   aprobo: "Aprobó",
   publico: "Publicó",
+  ratifico: "Ratificó",
+  adopto: "Adoptó",
 };
 
 /** Un grupo se resume: la bandeja, el encabezado y el aviso al jefe nombran solo al primero. */

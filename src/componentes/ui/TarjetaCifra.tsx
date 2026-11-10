@@ -13,11 +13,14 @@ export function TarjetaCifra({
   valor,
   detalle,
   estado,
+  pie,
 }: {
   etiqueta: string;
   valor: string | number;
   detalle?: string;
   estado?: EstadoCifra;
+  /** Debajo del detalle, por ejemplo la insignia de cumplimiento de una meta. */
+  pie?: React.ReactNode;
 }) {
   return (
     <div
@@ -31,6 +34,7 @@ export function TarjetaCifra({
       {detalle ? (
         <p className="mt-1 text-xs text-muted-foreground">{detalle}</p>
       ) : null}
+      {pie ? <div className="mt-2">{pie}</div> : null}
     </div>
   );
 }

@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { PencilLine } from "lucide-react";
+import { ChipVigencia } from "@/componentes/vigencia/ChipVigencia";
 import type { DocumentoListado } from "@/db/consultas/procesos";
 import { IconoFormato } from "./IconoFormato";
 
 /**
  * Fila de documento en los listados de proceso/subproceso. Enlaza a la ficha;
  * `contexto` agrega la procedencia cuando aplica ("En subproceso: Ingreso",
- * "Propio de: Sistema de Gestión de Calidad").
+ * "Propio de: Sistema de Gestión de Calidad"). El estado de vigencia va junto al código, siempre con su texto.
  */
 export function TarjetaDocumento({
   documento,
@@ -28,6 +29,9 @@ export function TarjetaDocumento({
           <span className="text-xs tabular-nums text-muted-foreground">
             v{documento.version}
           </span>
+          {documento.vigencia ? (
+            <ChipVigencia vigencia={documento.vigencia} />
+          ) : null}
           {contexto && (
             <span className="text-xs text-muted-foreground">{contexto}</span>
           )}

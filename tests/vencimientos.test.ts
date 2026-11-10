@@ -1,6 +1,7 @@
 /**
- * Avisos de vencimiento y escalamiento al jefe. Cada caso silencia los demás trámites abiertos:
- * `revisarVencimientos` los recorre todos, y una demo puede traer vencidos.
+ * Avisos de vencimiento y escalamiento al jefe. Cada caso silencia los demás trámites abiertos, la
+ * distribución y la vigencia de los documentos: `revisarVencimientos` los recorre todos, y una demo
+ * puede traer vencidos.
  */
 import { existsSync } from "node:fs";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
@@ -26,6 +27,8 @@ import { finDeFecha } from "@/lib/tramites/plazos";
 import { silenciarDistribucion } from "./utiles/distribucion";
 import { opc, sesionAdmin, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
+import { silenciarImpactos } from "./utiles/normograma";
+import { silenciarRevisionAnual, silenciarVigencia } from "./utiles/vigencia";
 
 const sql = obtenerSql();
 
@@ -37,6 +40,9 @@ afterAll(async () => {
 const silenciarOtros = async (tx: TransactionSql, tramiteId: number) => {
   await tx`UPDATE tramites SET aviso_vencido_en = now(), escalado_en = now() WHERE id <> ${tramiteId}`;
   await silenciarDistribucion(tx);
+  await silenciarVigencia(tx);
+  await silenciarImpactos(tx);
+  await silenciarRevisionAnual(tx);
 };
 
 const correrEn = (tx: TransactionSql) => (ahora: string) => revisarVencimientos({ sql: tx, ahora: new Date(ahora) });
@@ -254,6 +260,9 @@ describe("revisarVencimientos", () => {
     const segundo = await tramiteEn(tx, "elaboracion", { tipo: "crear", elaborador: dos });
     await tx`UPDATE tramites SET aviso_vencido_en = now(), escalado_en = now() WHERE id <> ALL(${[primero.tramiteId, segundo.tramiteId]})`;
     await silenciarDistribucion(tx);
+    await silenciarVigencia(tx);
+    await silenciarImpactos(tx);
+    await silenciarRevisionAnual(tx);
     const registro = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.mocked(supervisoresDe).mockRejectedValueOnce(new Error("sin conexión"));
     try {

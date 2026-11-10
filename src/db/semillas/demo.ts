@@ -3,8 +3,10 @@
  * PLAN.md Apéndice A) + documentos ficticios pero verosímiles que cubren
  * todos los casos del modelo (asociaciones M:N con principal, relaciones
  * procedimiento↔formato, archivos multi-rol y los cuatro estados), más una
- * estructura organizacional, un usuario de ejemplo por rol, un formato de acta
- * ficticio ya elegido y trámites en cada etapa (ver `sembrarTramites`).
+ * estructura organizacional, un usuario de ejemplo por rol, formatos ficticios
+ * del acta y del informe ya elegidos, trámites en cada etapa (ver
+ * `sembrarTramites`), la distribución de la 13B y la vigencia, los externos, el
+ * normograma y la revisión anual de la 13C (`sembrarVigencia`).
  *
  * Ejecutar: npm run db:seed   (borra y recarga TODO — solo desarrollo/demo)
  */
@@ -44,11 +46,13 @@ import {
 } from "../consultas/tramites-flujo";
 import * as e from "../esquema";
 import { generarPlaceholder } from "../placeholders";
-import { sembrarDistribucion, sembrarDistribucionPrevia } from "./distribucion-demo";
-import { CODIGO_FORMATO_ACTA, generarFormatoActaDemo } from "./formato-acta-demo";
+import { CLAVE_DEMO } from "./clave-demo";
+import { momentoHace, sembrarDistribucion, sembrarDistribucionPrevia } from "./distribucion-demo";
+import { CODIGO_FORMATO_ACTA, CODIGO_FORMATO_INFORME, generarFormatoActaDemo, generarFormatoInformeDemo } from "./formato-acta-demo";
 import { limpiarTodo, sembrarBase, type Db } from "./minima";
+import { sembrarVigencia } from "./vigencia-demo";
 
-export const CLAVE_DEMO = "Demo-SGC-2026-clave";
+export { CLAVE_DEMO };
 const NOMBRE_ENTIDAD = "ESE Hospital Nuestra Señora de Fátima de Suaza";
 const LOGO_DEMO = path.join("src", "db", "semillas", "recursos", "logo-demo.png");
 
@@ -138,6 +142,9 @@ const CODIGOS_RESTRINGIDOS: ReadonlySet<string> = new Set(["GTH-FO-01"]);
  * fechas y al JSON de su cliente la conversión con que esas consultas leen y escriben.
  */
 export async function sembrarDemo(db: Db, sql: Sql): Promise<void> {
+  // Un solo reloj para toda la siembra: cada fecha relativa se cuenta desde él, y es el `creado_en` de los usuarios demo
+  // (`sembradaEn` en los tests). Cruzar la medianoche mientras siembra no corre ningún día.
+  const ahora = new Date();
   await limpiarTodo(db);
   const { tipoPorSigla } = await sembrarBase(db);
 
@@ -290,6 +297,12 @@ export async function sembrarDemo(db: Db, sql: Sql): Promise<void> {
     relaciones?: string[];
   };
 
+  // Lo aprobado fuera cuenta su plazo desde la fecha de aprobación (F13C-DC31): los documentos cuyo estado en el
+  // semáforo depende de ella la llevan relativa a hoy, para que la demo amanezca igual el día que se siembre.
+  const zona = zonaHoraria();
+  const diaHace = (dias: number) => fechaEnZona(fechaLimite(ahora, -dias, zona), zona);
+  const aprobadoHace = (dias: number) => ({ elaboracion: diaHace(dias + 30), revision: diaHace(dias + 15), aprobacion: diaHace(dias) });
+
   const v1Vigente = (
     elaboro: string,
     archivos: DefVersion["archivos"] = [{ rol: "principal", ext: "pdf" }],
@@ -383,6 +396,13 @@ export async function sembrarDemo(db: Db, sql: Sql): Promise<void> {
       versiones: [v1Vigente(CALIDAD, [{ rol: "principal", ext: "pdf", contenido: () => generarFormatoActaDemo(NOMBRE_ENTIDAD) }])],
       asociaciones: [{ proceso: "SGC", principal: true }],
     },
+    {
+      codigo: CODIGO_FORMATO_INFORME, titulo: "Informe de revisión anual de documentos", tipo: "FO",
+      descripcion: "Membrete institucional sobre el que la plataforma genera el informe de cierre de la revisión anual de documentos.",
+      palabrasClave: "informe revision anual vigencia membrete",
+      versiones: [v1Vigente(CALIDAD, [{ rol: "principal", ext: "pdf", contenido: () => generarFormatoInformeDemo(NOMBRE_ENTIDAD) }])],
+      asociaciones: [{ proceso: "SGC", principal: true }],
+    },
 
     // ── Talento Humano (GTH) ── incluye la demo de versión obsoleta retenida
     {
@@ -413,7 +433,8 @@ export async function sembrarDemo(db: Db, sql: Sql): Promise<void> {
       codigo: "GTH-PR-01", titulo: "Procedimiento de Ingreso de Personal", tipo: "PR",
       descripcion: "Establece las actividades para la vinculación de personal de planta y contratistas: verificación de requisitos, afiliaciones y posesión.",
       palabrasClave: "ingreso vinculacion contratacion hoja de vida requisitos",
-      versiones: [v1Vigente("Diana Patricia Losada — Coordinadora de Talento Humano")],
+      // Vencido en el semáforo: aprobado hace más de un año, sin fecha fijada ni ratificación.
+      versiones: [{ ...v1Vigente("Diana Patricia Losada — Coordinadora de Talento Humano"), ...aprobadoHace(450) }],
       asociaciones: [{ subproceso: "GTH/ingreso", principal: true }],
       relaciones: ["GTH-FO-01"],
     },
@@ -486,7 +507,8 @@ export async function sembrarDemo(db: Db, sql: Sql): Promise<void> {
       codigo: "CEX-CA-01", titulo: "Caracterización Consulta Externa", tipo: "CA",
       descripcion: "Caracterización del proceso de consulta externa: objetivo, alcance, actividades PHVA e indicadores.",
       palabrasClave: "caracterizacion consulta externa ambulatoria",
-      versiones: [v1Vigente("Hernán Darío Ceballos — Médico Coordinador")],
+      // Aprobado hace casi dos años y ratificado hace ocho meses (`sembrarVigencia`).
+      versiones: [{ ...v1Vigente("Hernán Darío Ceballos — Médico Coordinador"), ...aprobadoHace(660) }],
       asociaciones: [{ proceso: "CEX", principal: true }],
     },
     {
@@ -508,7 +530,11 @@ export async function sembrarDemo(db: Db, sql: Sql): Promise<void> {
       codigo: "AIN-FO-01", titulo: "Formato de Remisión de Pacientes", tipo: "FO",
       descripcion: "Registro de la remisión de pacientes: datos clínicos, motivo de remisión y condiciones del traslado.",
       palabrasClave: "remision traslado paciente formato",
-      versiones: [v1Vigente("Sandra Milena Artunduaga — Enfermera Jefe de Urgencias", [{ rol: "principal", ext: "pdf" }, { rol: "editable", ext: "docx" }])],
+      // Vencido en el semáforo, como GTH-PR-01.
+      versiones: [{
+        ...v1Vigente("Sandra Milena Artunduaga — Enfermera Jefe de Urgencias", [{ rol: "principal", ext: "pdf" }, { rol: "editable", ext: "docx" }]),
+        ...aprobadoHace(420),
+      }],
       asociaciones: [{ subproceso: "AIN/urgencias", principal: true }],
     },
     {
@@ -671,7 +697,7 @@ export async function sembrarDemo(db: Db, sql: Sql): Promise<void> {
       .where(eq(e.tiposDocumento.id, tipoPorSigla[sigla]));
   }
 
-  const usuarioPorNombre = await sembrarEstructuraYUsuarios(db, procesoPorSigla);
+  const usuarioPorNombre = await sembrarEstructuraYUsuarios(db, procesoPorSigla, ahora);
   // Antes de los trámites: el acta de cada cierre congela el formato elegido.
   await db.insert(e.configuracion).values([
     { clave: "formato_acta_documento_id", valor: String(documentoPorCodigo[CODIGO_FORMATO_ACTA]) },
@@ -679,10 +705,11 @@ export async function sembrarDemo(db: Db, sql: Sql): Promise<void> {
     { clave: "formato_acta_margen_inferior_cm", valor: "3.2" },
   ]);
   // La copia de la v2 de GTH-CA-01 se emite antes de que los trámites publiquen la v3.
-  const distribucion = { usuarioPorNombre, documentoPorCodigo, procesoPorSigla };
+  const distribucion = { ahora, usuarioPorNombre, documentoPorCodigo, procesoPorSigla };
   await sembrarDistribucionPrevia(sql, distribucion);
-  await sembrarTramites(sql, { tipoPorSigla, procesoPorSigla, documentoPorCodigo });
+  await sembrarTramites(sql, { tipoPorSigla, procesoPorSigla, documentoPorCodigo }, ahora);
   await sembrarDistribucion(sql, distribucion);
+  await sembrarVigencia(sql, distribucion);
 }
 
 /**
@@ -692,6 +719,7 @@ export async function sembrarDemo(db: Db, sql: Sql): Promise<void> {
 async function sembrarEstructuraYUsuarios(
   db: Db,
   procesoPorSigla: Record<string, number>,
+  ahora: Date,
 ): Promise<Record<string, number>> {
   console.log("Sembrando estructura organizacional y usuarios demo…");
 
@@ -763,7 +791,8 @@ async function sembrarEstructuraYUsuarios(
         rol: u.rol,
         cargoId: cargo[u.cargo],
         debeCambiarClave: false,
-        aceptoDatosEn: new Date(),
+        aceptoDatosEn: ahora,
+        creadoEn: ahora,
       })
       .returning();
     await db.insert(e.notificaciones).values({
@@ -895,7 +924,9 @@ async function paso(c: Contexto, previo: FilaTramite, p: Paso): Promise<FilaTram
     });
   }
 
-  await registrarEvento(tx, { tramiteId: t.id, tipo: accion, usuarioId: quien.id, ronda: t.ronda, detalle, ahora: momento });
+  // Como `transicionar`: el paso que cierra una etapa guarda la fecha límite que tenía (indicador de etapas en plazo).
+  const delEvento = hacia === previo.etapa ? detalle : { ...detalle, venceEn: previo.venceEn?.toISOString() ?? null };
+  await registrarEvento(tx, { tramiteId: t.id, tipo: accion, usuarioId: quien.id, ronda: t.ronda, detalle: delEvento, ahora: momento });
   // El acta congelada ya está en el evento; la bitácora no la repite.
   const detalleDeAuditoria = { ...detalle };
   delete detalleDeAuditoria.acta;
@@ -1062,12 +1093,12 @@ async function sembrarTramites(
     procesoPorSigla: Record<string, number>;
     documentoPorCodigo: Record<string, number>;
   },
+  ahora: Date,
 ): Promise<void> {
   console.log("Sembrando trámites…");
-  const ahora = new Date();
   const zona = zonaHoraria();
   /** Un instante de hace `dias` días en la zona: ocho horas antes de que acabara ese día, siempre en el pasado. */
-  const hace = (dias: number) => new Date(fechaLimite(ahora, -dias, zona).getTime() - 8 * 3_600_000);
+  const hace = (dias: number) => momentoHace(dias, ahora);
 
   await sql.begin(async (tx) => {
     const config = await obtenerConfigDocumental({ sql: tx });

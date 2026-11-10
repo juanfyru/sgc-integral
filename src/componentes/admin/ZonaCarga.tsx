@@ -25,9 +25,13 @@ const ETIQUETA_ROL: Record<RolArchivo, string> = {
 // que no se puede importar aquí por el mismo motivo.
 const EXTENSIONES_EVIDENCIA = ["pdf", "png", "jpg", "jpeg", "webp"];
 const ERROR_EVIDENCIA = "La evidencia debe ser PDF o imagen (PNG, JPG, WebP)";
+const ERROR_SOLO_PDF = "Solo se admite un PDF";
 
-/** `evidencia`: archivos de respaldo de una jornada, sin rol de archivo y limitados a PDF e imágenes. */
-export function ZonaCarga({ direccion, evidencia = false }: { direccion: string; evidencia?: boolean }) {
+/**
+ * `evidencia`: archivos de respaldo de una jornada, sin rol de archivo y limitados a PDF e imágenes. `soloPdf`: un
+ * solo PDF sin rol (el de una norma; el servidor lo valida por sus bytes y reemplaza el anterior).
+ */
+export function ZonaCarga({ direccion, evidencia = false, soloPdf = false }: { direccion: string; evidencia?: boolean; soloPdf?: boolean }) {
   const router = useRouter();
   const [rol, setRol] = useState<RolArchivo>("principal");
   const [cargas, setCargas] = useState<Carga[]>([]);
@@ -40,10 +44,10 @@ export function ZonaCarga({ direccion, evidencia = false }: { direccion: string;
 
   function subir(archivo: File) {
     const extension = archivo.name.slice(archivo.name.lastIndexOf(".") + 1).toLowerCase();
-    if (evidencia && !EXTENSIONES_EVIDENCIA.includes(extension)) {
+    if ((evidencia && !EXTENSIONES_EVIDENCIA.includes(extension)) || (soloPdf && extension !== "pdf")) {
       setCargas((prev) => [
         ...prev.filter((c) => c.nombre !== archivo.name),
-        { nombre: archivo.name, progreso: 0, estado: "error", mensaje: ERROR_EVIDENCIA },
+        { nombre: archivo.name, progreso: 0, estado: "error", mensaje: soloPdf ? ERROR_SOLO_PDF : ERROR_EVIDENCIA },
       ]);
       return;
     }
@@ -52,7 +56,7 @@ export function ZonaCarga({ direccion, evidencia = false }: { direccion: string;
       { nombre: archivo.name, progreso: 0, estado: "subiendo" },
     ]);
     const xhr = new XMLHttpRequest();
-    const url = evidencia ? direccion : `${direccion}${direccion.includes("?") ? "&" : "?"}rol=${rol}`;
+    const url = evidencia || soloPdf ? direccion : `${direccion}${direccion.includes("?") ? "&" : "?"}rol=${rol}`;
     xhr.open("POST", url);
     xhr.setRequestHeader("x-nombre-archivo", encodeURIComponent(archivo.name));
     xhr.upload.onprogress = (e) => {
@@ -82,13 +86,14 @@ export function ZonaCarga({ direccion, evidencia = false }: { direccion: string;
 
   return (
     <div className="flex flex-col gap-3">
-      {evidencia ? null : (
-        <label className="flex items-center gap-2 text-sm font-medium">
+      {evidencia || soloPdf ? null : (
+        // A 390 px el selector baja de línea en lugar de desbordar la página.
+        <label className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-medium">
           Rol de los archivos a subir
           <select
             value={rol}
             onChange={(e) => setRol(e.target.value as RolArchivo)}
-            className="rounded-md border border-border bg-card px-2 py-1"
+            className="min-w-0 max-w-full rounded-md border border-border bg-card px-2 py-1"
           >
             {ROLES.map((r) => (
               <option key={r} value={r}>{ETIQUETA_ROL[r]}</option>
@@ -100,7 +105,7 @@ export function ZonaCarga({ direccion, evidencia = false }: { direccion: string;
       <div
         role="button"
         tabIndex={0}
-        aria-label="Zona de carga: arrastre archivos o presione para elegirlos"
+        aria-label={soloPdf ? "Zona de carga: arrastre el PDF o presione para elegirlo" : "Zona de carga: arrastre archivos o presione para elegirlos"}
         onClick={() => entradaRef.current?.click()}
         onKeyDown={(e) => e.key === "Enter" && entradaRef.current?.click()}
         onDragOver={(e) => { e.preventDefault(); setArrastrando(true); }}
@@ -110,14 +115,19 @@ export function ZonaCarga({ direccion, evidencia = false }: { direccion: string;
           arrastrando ? "border-marca bg-azul/5" : "border-border text-muted-foreground"
         }`}
       >
-        <span className="font-medium">Arrastre los archivos aquí</span>
+        <span className="font-medium">{soloPdf ? "Arrastre el PDF aquí" : "Arrastre los archivos aquí"}</span>
         <span>
-          {evidencia ? "o haga clic para elegirlos (PDF o imagen, máx. 25 MB c/u)" : "o haga clic para elegirlos (máx. 25 MB c/u)"}
+          {soloPdf
+            ? "o haga clic para elegirlo (un PDF, máx. 25 MB)"
+            : evidencia
+              ? "o haga clic para elegirlos (PDF o imagen, máx. 25 MB c/u)"
+              : "o haga clic para elegirlos (máx. 25 MB c/u)"}
         </span>
         <input
           ref={entradaRef}
           type="file"
-          multiple
+          accept={soloPdf ? "application/pdf,.pdf" : undefined}
+          multiple={!soloPdf}
           hidden
           onChange={(e) => { recibir(e.target.files); e.target.value = ""; }}
         />

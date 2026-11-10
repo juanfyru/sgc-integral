@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 import type { FilaMaestro } from "@/db/consultas/maestro";
 import { neutralizarFormula } from "@/lib/celdas";
 import { APROBACION_EN_LISTADO } from "@/lib/tramites/tipos";
+import { ETIQUETA_VIGENCIA } from "@/lib/vigencia/tipos";
 
 export type MetaMaestro = {
   hospital: string;
@@ -18,7 +19,9 @@ const COLUMNAS: Array<{
   { cab: "Código", ancho: 16, valor: (f) => f.codigo },
   { cab: "Título", ancho: 42, valor: (f) => f.titulo },
   { cab: "Tipo", ancho: 18, valor: (f) => f.tipo },
+  { cab: "Origen", ancho: 10, valor: (f) => (f.origen === "externo" ? "Externo" : "Interno") },
   { cab: "Versión", ancho: 9, valor: (f) => f.version },
+  { cab: "Edición", ancho: 12, valor: (f) => f.edicion },
   { cab: "Estado", ancho: 12, valor: (f) => `${f.estado.charAt(0).toUpperCase()}${f.estado.slice(1)}` },
   { cab: "Elaboración", ancho: 14, valor: (f) => f.fechaElaboracion },
   { cab: "Revisión", ancho: 14, valor: (f) => f.fechaRevision },
@@ -27,6 +30,10 @@ const COLUMNAS: Array<{
   { cab: "Revisó", ancho: 20, valor: (f) => f.reviso },
   { cab: "Aprobó", ancho: 20, valor: (f) => f.aprobo },
   { cab: "Aprobación", ancho: 22, valor: (f) => (f.origenAprobacion ? APROBACION_EN_LISTADO[f.origenAprobacion] : null) },
+  { cab: "Última revisión", ancho: 15, valor: (f) => f.ultimaRevision },
+  { cab: "Próxima revisión", ancho: 16, valor: (f) => f.proximaRevision },
+  { cab: "Fijada por", ancho: 32, valor: (f) => (f.fijada ? `${f.fijada.por} el ${f.fijada.en}` : null) },
+  { cab: "Vigencia", ancho: 12, valor: (f) => (f.vigencia ? ETIQUETA_VIGENCIA[f.vigencia] : null) },
   { cab: "Proceso propietario", ancho: 32, valor: (f) => f.propietario },
 ];
 

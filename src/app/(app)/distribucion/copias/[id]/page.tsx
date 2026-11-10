@@ -5,9 +5,11 @@ import { TriangleAlert } from "lucide-react";
 import { AccionesCopia } from "@/componentes/distribucion/copias/AccionesCopia";
 import { HistorialCopia } from "@/componentes/distribucion/copias/HistorialCopia";
 import { InsigniaCopia, fechaCorta } from "@/componentes/distribucion/copias/TablaCopias";
+import { ListaHallazgos } from "@/componentes/distribucion/verificaciones/ListaHallazgos";
 import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { obtenerCopia } from "@/db/consultas/distribucion/copias";
+import { hallazgosDeCopia } from "@/db/consultas/distribucion/hallazgos";
 import { numeroDeCopia } from "@/lib/distribucion/copias";
 import { AVISOS_COPIA, MENSAJE_VENTANA, type AvisoCopia } from "@/lib/distribucion/respuesta-copia";
 import { ETIQUETA_MOTIVO_ANULACION, ETIQUETA_MOTIVO_POR_RECOGER } from "@/lib/distribucion/tipos";
@@ -51,6 +53,8 @@ export default async function PaginaCopia({
     ? { numero: numeroDeCopia(reemplazada.numero), version: reemplazada.version }
     : null;
   const numero = numeroDeCopia(copia.numero);
+  // Lo que dejó «No se encontró» al recogerla, para quien ve su punto: aquí se corrige y se valida (Ruling 57).
+  const hallazgos = await hallazgosDeCopia(copia.id, sesion);
 
   return (
     <div className="flex max-w-5xl flex-col gap-6">
@@ -141,6 +145,8 @@ export default async function PaginaCopia({
         </section>
         <HistorialCopia eventos={copia.eventos} />
       </div>
+
+      <ListaHallazgos hallazgos={hallazgos} volver={{ copiaId: copia.id }} titulo="Hallazgos de esta copia" />
     </div>
   );
 }

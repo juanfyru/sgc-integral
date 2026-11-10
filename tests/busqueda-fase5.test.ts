@@ -148,7 +148,9 @@ describe("buscarDocumentos — facetas", () => {
     const gth = r.facetas.procesos.find(
       (f) => f.clave === "gestion-del-talento-humano",
     );
-    expect(gth?.cantidad).toBe(4);
+    // Los cuatro internos de GTH y, desde la 13C, su externo GTH-DE-01: la faceta cuenta lo que trae la búsqueda.
+    expect(gth?.cantidad).toBeGreaterThanOrEqual(4);
+    expect(gth?.cantidad).toBe(codigosDe(r).filter((c) => c.startsWith("GTH-")).length);
   });
 
   it("la faceta de tipo no se filtra a sí misma (permite cambiar de tipo)", async () => {

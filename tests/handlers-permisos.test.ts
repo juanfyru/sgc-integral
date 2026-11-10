@@ -1,22 +1,34 @@
 /**
  * Handlers del panel por rol, contra la BD de desarrollo sembrada.
  * zz_consulta y zz_ci: el de control interno genera auditoría (exportar el
- * maestro), así que ambos llevan nombre único por corrida y no se borran.
+ * maestro), así que ambos llevan nombre único por corrida y no se borran. Lo que necesita un documento externo
+ * corre dentro de una transacción que se revierte: el cliente de la app se sustituye por ella mientras dura.
  */
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { NextRequest } from "next/server";
 import { PDFDocument } from "pdf-lib";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import ExcelJS from "exceljs";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
 }
 
+const enCurso = vi.hoisted(() => ({ sql: null as unknown }));
+
+vi.mock("@/db/cliente", async (original) => {
+  const real = await original<typeof import("@/db/cliente")>();
+  return { ...real, obtenerSql: () => (enCurso.sql ?? real.obtenerSql()) as ReturnType<typeof real.obtenerSql> };
+});
+
 import { DELETE as eliminarArchivo, GET as verArchivo } from "@/app/admin/api/archivos/[archivoId]/route";
 import { POST as subirArchivo } from "@/app/admin/api/archivos/route";
 import { DELETE as quitarLogoRuta, POST as subirLogoRuta } from "@/app/admin/api/entidad/logo/route";
 import { GET as actaEjemplo } from "@/app/admin/api/acta-ejemplo/route";
+import { GET as informeEjemplo } from "@/app/admin/api/informe-ejemplo/route";
+import { GET as informeAnual } from "@/app/(app)/vigencia/revision-anual/[id]/informe/route";
 import { GET as servirLogo } from "@/app/marca/logo/route";
 import { rutaBaseAlmacen } from "@/lib/almacen";
 import { pngDePrueba } from "./png-prueba";
@@ -27,14 +39,32 @@ import { GET as excelMaestro } from "@/app/(app)/admin/(panel)/maestro/excel/rou
 import { GET as verArchivoTramite } from "@/app/(app)/tramites/[id]/archivos/[archivoId]/[[...nombre]]/route";
 import { DELETE as quitarArchivoTramite } from "@/app/api/tramites/[id]/archivos/[archivoId]/route";
 import { POST as subirArchivoTramite } from "@/app/api/tramites/[id]/archivos/route";
+import { DELETE as quitarArchivoExterno } from "@/app/api/externos/[versionId]/archivos/[archivoId]/route";
+import { POST as subirArchivoExterno } from "@/app/api/externos/[versionId]/archivos/route";
+import { DELETE as quitarArchivoNorma } from "@/app/api/normas/[id]/archivos/[archivoId]/route";
+import { POST as subirArchivoNorma } from "@/app/api/normas/[id]/archivos/route";
+import { POST as subirFotoHallazgo } from "@/app/api/hallazgos/[id]/archivos/route";
+import { GET as verFotoHallazgo } from "@/app/(app)/distribucion/verificaciones/hallazgos/[id]/archivos/[archivoId]/[[...nombre]]/route";
 import { GET as excelAcuses } from "@/app/(app)/distribucion/acuses/excel/route";
 import { GET as excelCopias } from "@/app/(app)/distribucion/copias/excel/route";
 import { GET as excelVerificaciones } from "@/app/(app)/distribucion/verificaciones/excel/route";
+import { GET as excelSocializaciones } from "@/app/(app)/distribucion/socializaciones/excel/route";
+import { GET as excelSemaforo } from "@/app/(app)/vigencia/semaforo/excel/route";
+import { GET as excelExternos } from "@/app/(app)/vigencia/externos/excel/route";
+import { GET as excelIndicadores } from "@/app/(app)/vigencia/indicadores/excel/route";
+import { GET as archivoDeEdicionExterna } from "@/app/(app)/vigencia/externos/[id]/archivos/[archivoId]/[[...nombre]]/route";
+import { GET as excelNormograma } from "@/app/(app)/normograma/excel/route";
+import { GET as pdfDeNorma } from "@/app/(app)/normograma/[id]/archivos/[archivoId]/[[...nombre]]/route";
 import { GET as pdfCopia } from "@/app/(app)/distribucion/copias/[id]/pdf/route";
 import { POST as reimprimirCopiaRuta } from "@/app/(app)/distribucion/copias/[id]/reimprimir/route";
 import { obtenerSql } from "@/db/cliente";
 import { listarDocumentosAdmin, obtenerDocumentoAdmin } from "@/db/consultas/admin";
 import { crearSesion } from "@/lib/sesion";
+import { revertida } from "./utiles/transaccion";
+import { sesionDe, usuarioDePrueba } from "./utiles/tramites";
+import { externoDePrueba } from "./utiles/vigencia";
+import { normaDePrueba } from "./utiles/normograma";
+import { retirarNorma } from "@/db/consultas/normograma/normas";
 
 const sql = () => obtenerSql();
 const SUFIJO = Date.now();
@@ -115,6 +145,47 @@ describe("GET /admin/api/acta-ejemplo", () => {
   });
 });
 
+describe("GET /admin/api/informe-ejemplo", () => {
+  const pedir = (token?: string) =>
+    informeEjemplo(new NextRequest("http://localhost:3002/admin/api/informe-ejemplo", token ? { headers: cookie(token) } : undefined));
+
+  it("401 sin sesión y 403 sin el permiso de gestionar trámites", async () => {
+    expect((await pedir()).status).toBe(401);
+    for (const token of [tokenConsulta, tokenCi, tokenGerencia]) expect((await pedir(token)).status).toBe(403);
+  });
+
+  it("con el permiso entrega un PDF en línea, de varias hojas marcadas, y no escribe nada", async () => {
+    const conteo = () => sql()`SELECT (SELECT count(*)::int FROM archivos) AS archivos, (SELECT count(*)::int FROM auditoria) AS auditoria`;
+    const [antes] = await conteo();
+    const res = await pedir(tokenAdmin);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("application/pdf");
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(res.headers.get("Content-Disposition")).toMatch(/^inline/);
+    expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    const paginas = await contenidoPorPagina(new Uint8Array(await res.arrayBuffer()));
+    expect(paginas.length).toBeGreaterThanOrEqual(2);
+    for (const pagina of paginas) expect(contieneTexto(pagina, "EJEMPLO, SIN VALOR")).toBe(true);
+    expect(contieneTexto(paginas[0], "INFORME DE REVISI")).toBe(true);
+    const [despues] = await conteo();
+    expect({ ...despues }).toEqual({ ...antes });
+  });
+});
+
+describe("GET /vigencia/revision-anual/[id]/informe", () => {
+  const pedir = (id: string, token?: string) =>
+    informeAnual(new NextRequest(`http://localhost:3002/vigencia/revision-anual/${id}/informe`, token ? { headers: cookie(token) } : undefined), {
+      params: Promise.resolve({ id }),
+    });
+
+  it("401 sin sesión; a quien no ve el informe, y a una revisión que no existe, 404 y nunca «sin permiso»", async () => {
+    expect((await pedir("1")).status).toBe(401);
+    const [{ id }] = await sql()`SELECT COALESCE(max(id), 0) + 1000 AS id FROM revisiones_anuales`;
+    for (const token of [tokenConsulta, tokenGerencia, tokenCi, tokenAdmin]) expect((await pedir(String(id), token)).status).toBe(404);
+    expect((await pedir("abc", tokenAdmin)).status).toBe(404);
+  });
+});
+
 describe("GET /distribucion/acuses/excel", () => {
   const pedir = (token?: string) =>
     excelAcuses(new NextRequest("http://localhost:3002/distribucion/acuses/excel", token ? { headers: cookie(token) } : undefined));
@@ -156,6 +227,237 @@ describe.each([
     expect(res.headers.get("Content-Disposition")).toMatch(new RegExp(String.raw`^attachment; filename="${prefijo}-\d{8}\.xlsx"$`));
     const filas = await sql()`SELECT 1 FROM auditoria WHERE usuario_id = ${u.id} AND accion = ${accion}`;
     expect(filas.length).toBe(antes + 1);
+  });
+});
+
+describe("GET /distribucion/socializaciones/excel", () => {
+  const pedir = (token?: string, consulta = "") =>
+    excelSocializaciones(
+      new NextRequest(`http://localhost:3002/distribucion/socializaciones/excel${consulta}`, token ? { headers: cookie(token) } : undefined),
+    );
+
+  it("401 sin sesión y 403 a quien no ve la distribución", async () => {
+    expect((await pedir()).status).toBe(401);
+    expect((await pedir(tokenConsulta)).status).toBe(403);
+  });
+
+  it("Gerencia recibe el Excel sin caché y queda auditado con el periodo", async () => {
+    const antes = (await sql()`SELECT 1 FROM auditoria WHERE usuario_id = ${usuarioGerenciaId} AND accion = 'exporto_socializaciones'`).length;
+    const res = await pedir(tokenGerencia, "?desde=2026-01-01&hasta=2026-12-31");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(res.headers.get("Content-Disposition")).toMatch(/^attachment; filename="socializaciones-\d{8}\.xlsx"$/);
+    const libro = new ExcelJS.Workbook();
+    await libro.xlsx.load(await res.arrayBuffer());
+    expect(libro.getWorksheet("Socializaciones")?.getCell("A2").value).toBe("Jornadas de socialización de documentos");
+    const filas = await sql()`SELECT detalle FROM auditoria
+      WHERE usuario_id = ${usuarioGerenciaId} AND accion = 'exporto_socializaciones' ORDER BY id`;
+    expect(filas.length).toBe(antes + 1);
+    expect(filas[filas.length - 1].detalle).toMatchObject({ formato: "excel", desde: "2026-01-01", hasta: "2026-12-31", procesoId: null });
+  });
+
+  it("limita a diez descargas por minuto por persona", () =>
+    revertida(sql(), async (tx) => {
+      enCurso.sql = tx;
+      try {
+        const lider = await usuarioDePrueba(tx, { rol: "lider_proceso" });
+        const { token } = await crearSesion(lider.usuarioId, { ip: null, userAgent: null });
+        await tx`UPDATE usuarios SET acepto_datos_en = now(), totp_activo = true WHERE id = ${lider.usuarioId}`;
+        for (let i = 0; i < 10; i++) expect((await pedir(token)).status).toBe(200);
+        const res = await pedir(token);
+        expect(res.status).toBe(429);
+        expect(res.headers.get("Retry-After")).toBe("60");
+      } finally {
+        enCurso.sql = null;
+      }
+    }));
+});
+
+describe("GET /vigencia/semaforo/excel", () => {
+  const pedir = (token?: string) =>
+    excelSemaforo(new NextRequest("http://localhost:3002/vigencia/semaforo/excel", token ? { headers: cookie(token) } : undefined));
+
+  it("401 sin sesión y 404 a quien no ve el semáforo", async () => {
+    expect((await pedir()).status).toBe(401);
+    expect((await pedir(tokenConsulta)).status).toBe(404);
+  });
+
+  it("Gerencia recibe el xlsx sin caché y queda auditado", async () => {
+    const antes = (await sql()`SELECT 1 FROM auditoria WHERE usuario_id = ${usuarioGerenciaId} AND accion = 'exporto_semaforo'`).length;
+    const res = await pedir(tokenGerencia);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(res.headers.get("Content-Disposition")).toMatch(/^attachment; filename="semaforo-\d{8}\.xlsx"$/);
+    const filas = await sql()`SELECT 1 FROM auditoria WHERE usuario_id = ${usuarioGerenciaId} AND accion = 'exporto_semaforo'`;
+    expect(filas.length).toBe(antes + 1);
+  });
+});
+
+describe("GET /vigencia/externos/excel", () => {
+  const pedir = (token?: string) =>
+    excelExternos(new NextRequest("http://localhost:3002/vigencia/externos/excel", token ? { headers: cookie(token) } : undefined));
+
+  async function filasDelExcel(res: Response): Promise<string[][]> {
+    const libro = new ExcelJS.Workbook();
+    await libro.xlsx.load(await res.arrayBuffer());
+    const filas: string[][] = [];
+    libro.worksheets[0].eachRow((fila) => {
+      const valores = fila.values as unknown[];
+      filas.push(valores.slice(1).map((v) => (v === null || v === undefined ? "" : String(v))));
+    });
+    return filas;
+  }
+
+  it("401 sin sesión y 404 a Consulta sin externos a su cargo", async () => {
+    expect((await pedir()).status).toBe(401);
+    expect((await pedir(tokenConsulta)).status).toBe(404);
+  });
+
+  it("el responsable técnico de rol Consulta recibe el xlsx con solo sus externos, y queda auditado", () =>
+    revertida(sql(), async (tx) => {
+      enCurso.sql = tx;
+      try {
+        const lider = await sesionDe(tx, "lider.cex");
+        const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+        const suyo = await externoDePrueba(tx, lider, { proceso: "CEX", edicion: "2017", responsableId: responsable.usuarioId });
+        const ajeno = await externoDePrueba(tx, lider, { proceso: "CEX", edicion: "2019" });
+        try {
+          const { token } = await crearSesion(responsable.usuarioId, { ip: null, userAgent: null });
+          await tx`UPDATE usuarios SET acepto_datos_en = now(), totp_activo = true WHERE id = ${responsable.usuarioId}`;
+          const res = await pedir(token);
+          expect(res.status).toBe(200);
+          expect(res.headers.get("Content-Type")).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+          expect(res.headers.get("Cache-Control")).toBe("no-store");
+          expect(res.headers.get("Content-Disposition")).toMatch(/^attachment; filename="externos-\d{8}\.xlsx"$/);
+          const texto = (await filasDelExcel(res)).map((f) => f.join(" | ")).join("\n");
+          expect(texto).toContain(suyo.codigo);
+          expect(texto).toContain("Ministerio de Salud y Protección Social");
+          expect(texto).toContain("https://www.minsalud.gov.co/guias");
+          expect(texto).not.toContain(ajeno.codigo);
+          const auditoria = await tx`SELECT detalle FROM auditoria WHERE usuario_id = ${responsable.usuarioId} AND accion = 'exporto_externos'`;
+          expect(auditoria).toHaveLength(1);
+          expect(auditoria[0].detalle).toMatchObject({ formato: "excel", total: 1 });
+        } finally {
+          await suyo.limpiar();
+          await ajeno.limpiar();
+        }
+      } finally {
+        enCurso.sql = null;
+      }
+    }));
+});
+
+describe("GET /vigencia/indicadores/excel", () => {
+  const pedir = (token?: string, consulta = "") =>
+    excelIndicadores(new NextRequest(`http://localhost:3002/vigencia/indicadores/excel${consulta}`, token ? { headers: cookie(token) } : undefined));
+
+  async function hojasDelExcel(res: Response): Promise<Record<string, string>> {
+    const libro = new ExcelJS.Workbook();
+    await libro.xlsx.load(await res.arrayBuffer());
+    const hojas: Record<string, string> = {};
+    for (const hoja of libro.worksheets) {
+      const filas: string[] = [];
+      hoja.eachRow((fila) => filas.push((fila.values as unknown[]).slice(1).map((v) => (v === null || v === undefined ? "" : String(v))).join(" | ")));
+      hojas[hoja.name] = filas.join("\n");
+    }
+    return hojas;
+  }
+
+  it("401 sin sesión y 404 a Consulta, que no tiene los indicadores", async () => {
+    expect((await pedir()).status).toBe(401);
+    expect((await pedir(tokenConsulta)).status).toBe(404);
+  });
+
+  it("el líder recibe las tres hojas de sus procesos, sin caché, y queda auditado con el periodo y el proceso; un proceso ajeno es 404", () =>
+    revertida(sql(), async (tx) => {
+      enCurso.sql = tx;
+      try {
+        const [gth] = await tx`SELECT id FROM procesos WHERE sigla = 'GTH'`;
+        const [cex] = await tx`SELECT id FROM procesos WHERE sigla = 'CEX'`;
+        const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [Number(gth.id)] });
+        const { token } = await crearSesion(lider.usuarioId, { ip: null, userAgent: null });
+        await tx`UPDATE usuarios SET acepto_datos_en = now(), totp_activo = true WHERE id = ${lider.usuarioId}`;
+
+        expect((await pedir(token, `?proceso=${cex.id}`)).status).toBe(404);
+        const res = await pedir(token, `?periodo=2026-T4&proceso=${gth.id}`);
+        expect(res.status).toBe(200);
+        expect(res.headers.get("Content-Type")).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        expect(res.headers.get("Cache-Control")).toBe("no-store");
+        expect(res.headers.get("Content-Disposition")).toMatch(/^attachment; filename="indicadores-\d{8}\.xlsx"$/);
+        const hojas = await hojasDelExcel(res);
+        expect(Object.keys(hojas)).toEqual(["Indicadores", "Por proceso", "Vencidos"]);
+        expect(hojas.Indicadores).toContain("Documentos dentro de su plazo de revisión");
+        expect(hojas.Indicadores).toContain("Periodo: cuarto trimestre de 2026 · Proceso: Gestión del Talento Humano");
+        expect(hojas["Por proceso"]).not.toMatch(/^CEX \|/m);
+        const auditoria = await tx`SELECT detalle FROM auditoria WHERE usuario_id = ${lider.usuarioId} AND accion = 'exporto_indicadores'`;
+        expect(auditoria).toHaveLength(1);
+        expect(auditoria[0].detalle).toEqual({ formato: "excel", periodo: "2026-T4", procesoId: Number(gth.id) });
+      } finally {
+        enCurso.sql = null;
+      }
+    }));
+
+  it("limita a diez descargas por minuto por persona", () =>
+    revertida(sql(), async (tx) => {
+      enCurso.sql = tx;
+      try {
+        const lider = await usuarioDePrueba(tx, { rol: "lider_proceso" });
+        const { token } = await crearSesion(lider.usuarioId, { ip: null, userAgent: null });
+        await tx`UPDATE usuarios SET acepto_datos_en = now(), totp_activo = true WHERE id = ${lider.usuarioId}`;
+        for (let i = 0; i < 10; i++) expect((await pedir(token)).status).toBe(200);
+        const res = await pedir(token);
+        expect(res.status).toBe(429);
+        expect(res.headers.get("Retry-After")).toBe("60");
+      } finally {
+        enCurso.sql = null;
+      }
+    }));
+});
+
+describe("GET /vigencia/externos/[id]/archivos/[archivoId]", () => {
+  const pedir = (token?: string, id = "999999999", archivoId = "999999999") =>
+    archivoDeEdicionExterna(
+      new NextRequest(`http://localhost:3002/vigencia/externos/${id}/archivos/${archivoId}/x.pdf`, token ? { headers: cookie(token) } : undefined),
+      { params: Promise.resolve({ id, archivoId, nombre: ["x.pdf"] }) },
+    );
+
+  it("401 sin sesión; un externo o un archivo que no existe, o que no se ve, responde 404 y nunca «sin permiso»", async () => {
+    expect((await pedir()).status).toBe(401);
+    for (const token of [tokenConsulta, tokenAdmin]) expect((await pedir(token)).status).toBe(404);
+    expect((await pedir(tokenAdmin, "abc")).status).toBe(404);
+  });
+});
+
+describe("GET /normograma/excel", () => {
+  const pedir = (token?: string) =>
+    excelNormograma(new NextRequest("http://localhost:3002/normograma/excel", token ? { headers: cookie(token) } : undefined));
+
+  it("401 sin sesión; Consulta lo descarga (el normograma se lee sin permiso) y queda auditado", async () => {
+    expect((await pedir()).status).toBe(401);
+    const res = await pedir(tokenConsulta);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(res.headers.get("Content-Disposition")).toMatch(/^attachment; filename="normograma-\d{8}\.xlsx"$/);
+    const [{ id }] = await sql()`SELECT id FROM usuarios WHERE usuario = ${`zz_consulta_${SUFIJO}`}`;
+    const filas = await sql()`SELECT detalle FROM auditoria WHERE usuario_id = ${id} AND accion = 'exporto_normograma'`;
+    expect(filas).toHaveLength(1);
+    expect(filas[0].detalle).toMatchObject({ formato: "excel", alcance: "Institucional" });
+  });
+});
+
+describe("GET /normograma/[id]/archivos/[archivoId]", () => {
+  const pedir = (token?: string, id = "999999999", archivoId = "999999999") =>
+    pdfDeNorma(
+      new NextRequest(`http://localhost:3002/normograma/${id}/archivos/${archivoId}/x.pdf`, token ? { headers: cookie(token) } : undefined),
+      { params: Promise.resolve({ id, archivoId, nombre: ["x.pdf"] }) },
+    );
+
+  it("401 sin sesión; una norma o un archivo que no existe responde 404, nunca «sin permiso»", async () => {
+    expect((await pedir()).status).toBe(401);
+    for (const token of [tokenConsulta, tokenAdmin]) expect((await pedir(token)).status).toBe(404);
+    expect((await pedir(tokenConsulta, "abc")).status).toBe(404);
   });
 });
 
@@ -524,6 +826,191 @@ describe("archivos del trámite", () => {
     await seguidas(30, () => quitar(cookie(token)));
     await seguidas(60, () => ver(cookie(token)));
   });
+});
+
+describe("archivos de la edición de un externo", () => {
+  const VERSION = "999999999";
+  const peticion = (metodo: string, ruta: string, cabeceras: Record<string, string> = {}) =>
+    new NextRequest(`http://sgc.local${ruta}`, { method: metodo, headers: { host: "sgc.local", ...cabeceras } });
+  const subir = (cabeceras?: Record<string, string>, versionId = VERSION, rol = "principal") =>
+    subirArchivoExterno(peticion("POST", `/api/externos/${versionId}/archivos?rol=${rol}`, cabeceras), {
+      params: Promise.resolve({ versionId }),
+    });
+  const quitar = (cabeceras?: Record<string, string>, versionId = VERSION, archivoId = "1") =>
+    quitarArchivoExterno(peticion("DELETE", `/api/externos/${versionId}/archivos/${archivoId}`, cabeceras), {
+      params: Promise.resolve({ versionId, archivoId }),
+    });
+
+  it("sin sesión responden 401", async () => {
+    expect((await subir()).status).toBe(401);
+    expect((await quitar()).status).toBe(401);
+  });
+
+  it("sin el permiso de gestionar externos responden 403", async () => {
+    for (const token of [tokenConsulta, tokenCi, tokenGerencia]) {
+      expect((await subir(cookie(token))).status).toBe(403);
+      expect((await quitar(cookie(token))).status).toBe(403);
+    }
+  });
+
+  it("con un Origin ajeno responden 403, aun con el permiso", async () => {
+    const ajeno = { ...cookie(tokenAdmin), origin: "https://malo.com" };
+    const subida = await subir(ajeno);
+    expect(subida.status).toBe(403);
+    expect(await subida.json()).toEqual({ error: "Origen no permitido" });
+    expect((await quitar(ajeno)).status).toBe(403);
+  });
+
+  it("el rol de archivo se valida antes de mirar la versión", async () => {
+    expect((await subir(cookie(tokenAdmin), VERSION, "acta_aprobacion")).status).toBe(400);
+  });
+
+  it("una versión que no existe, o un id que no es un número, responde 404 y nunca «sin permiso»", async () => {
+    expect((await subir(cookie(tokenAdmin))).status).toBe(404);
+    expect((await quitar(cookie(tokenAdmin))).status).toBe(404);
+    expect((await subir(cookie(tokenAdmin), "abc")).status).toBe(404);
+    expect((await quitar(cookie(tokenAdmin), "abc")).status).toBe(404);
+    expect((await quitar(cookie(tokenAdmin), VERSION, "abc")).status).toBe(404);
+    expect((await subir(cookie(tokenAdmin), "99999999999999999999")).status).toBe(404);
+  });
+});
+
+describe("foto de la corrección de un hallazgo: /api/hallazgos/[id]/archivos", () => {
+  const HALLAZGO = "999999999";
+  const subir = (cabeceras: Record<string, string> = {}, id = HALLAZGO, bytes = pngDePrueba(8, 8)) =>
+    subirFotoHallazgo(
+      new NextRequest(`http://sgc.local/api/hallazgos/${id}/archivos`, {
+        method: "POST",
+        body: bytes as BodyInit,
+        duplex: "half",
+        headers: {
+          host: "sgc.local",
+          origin: "http://sgc.local",
+          "x-nombre-archivo": encodeURIComponent("foto.png"),
+          "content-length": String(bytes.byteLength),
+          ...cabeceras,
+        },
+      } as ConstructorParameters<typeof NextRequest>[1]),
+      { params: Promise.resolve({ id }) },
+    );
+  const ver = (cabeceras: Record<string, string> = {}, id = HALLAZGO, archivoId = "1") =>
+    verFotoHallazgo(new NextRequest(`http://sgc.local/distribucion/verificaciones/hallazgos/${id}/archivos/${archivoId}/foto.png`, { headers: cabeceras }), {
+      params: Promise.resolve({ id, archivoId, nombre: ["foto.png"] }),
+    });
+
+  it("401 sin sesión; 403 con un Origin ajeno; 404 a un hallazgo que no existe o a un id que no es un número", async () => {
+    expect((await subir()).status).toBe(401);
+    expect((await ver()).status).toBe(401);
+    const ajeno = await subir({ ...cookie(tokenAdmin), origin: "https://malo.com" });
+    expect(ajeno.status).toBe(403);
+    expect(await ajeno.json()).toEqual({ error: "Origen no permitido" });
+    expect((await subir(cookie(tokenAdmin))).status).toBe(404);
+    expect((await subir(cookie(tokenAdmin), "abc")).status).toBe(404);
+    expect((await subir(cookie(tokenAdmin), "99999999999999999999")).status).toBe(404);
+    expect((await ver(cookie(tokenAdmin))).status).toBe(404);
+    expect((await ver(cookie(tokenAdmin), "abc")).status).toBe(404);
+  });
+
+  it("la sube el responsable del punto; a quien ve el hallazgo sin responder por él, 403; a quien no lo ve, 404; cerrado, 409", () =>
+    revertida(sql(), async (tx) => {
+      const almacenPrevio = process.env.ALMACEN_RUTA;
+      const almacen = mkdtempSync(path.join(tmpdir(), "sgc-hallazgo-foto-"));
+      process.env.ALMACEN_RUTA = almacen;
+      enCurso.sql = tx;
+      try {
+        const sesionDeRol = async (rol: "consulta" | "gerencia") => {
+          const u = await usuarioDePrueba(tx, { rol });
+          await tx`UPDATE usuarios SET acepto_datos_en = now(), totp_activo = true WHERE id = ${u.usuarioId}`;
+          return { ...u, token: (await crearSesion(u.usuarioId, { ip: null, userAgent: null })).token };
+        };
+        const responsable = await sesionDeRol("consulta");
+        const ajeno = await sesionDeRol("consulta");
+        const gerente = await sesionDeRol("gerencia");
+        const [p] = await tx`INSERT INTO puntos_uso (nombre, responsable_id) VALUES (${`zz_punto_foto_${SUFIJO}`}, ${responsable.usuarioId}) RETURNING id`;
+        const [h] = await tx`INSERT INTO hallazgos (punto_uso_id, origen, descripcion, responsable_id, estado, vence_en)
+          VALUES (${p.id}, 'recogida', 'La copia no estaba', ${responsable.usuarioId}, 'abierto', now() + interval '5 days') RETURNING id`;
+        const id = String(h.id);
+
+        expect((await subir(cookie(gerente.token), id)).status).toBe(403);
+        expect((await subir(cookie(ajeno.token), id)).status).toBe(404);
+        const subida = await subir(cookie(responsable.token), id);
+        expect(subida.status).toBe(201);
+        const { id: archivoId } = (await subida.json()) as { id: number };
+        const [fila] = await tx`SELECT contexto, contexto_id, ruta, mime FROM archivos WHERE id = ${archivoId}`;
+        expect(fila).toEqual({ contexto: "hallazgo", contexto_id: Number(id), ruta: `hallazgos/${id}/foto.png`, mime: "image/png" });
+
+        // La ve quien ve el hallazgo; para los demás, no existe.
+        const deGerente = await ver(cookie(gerente.token), id, String(archivoId));
+        expect(deGerente.status).toBe(200);
+        expect(deGerente.headers.get("Content-Type")).toBe("image/png");
+        expect((await ver(cookie(ajeno.token), id, String(archivoId))).status).toBe(404);
+        expect((await ver(cookie(responsable.token), id, "999999999")).status).toBe(404);
+
+        await tx`UPDATE hallazgos SET estado = 'cerrado', cerrado_en = now(), cerrado_por = ${responsable.usuarioId}, nota_cierre = 'Listo' WHERE id = ${id}`;
+        expect((await subir(cookie(responsable.token), id)).status).toBe(409);
+      } finally {
+        enCurso.sql = null;
+        if (almacenPrevio === undefined) delete process.env.ALMACEN_RUTA;
+        else process.env.ALMACEN_RUTA = almacenPrevio;
+        rmSync(almacen, { recursive: true, force: true });
+      }
+    }));
+});
+
+describe("PDF de una norma: /api/normas/[id]/archivos", () => {
+  const NORMA = "999999999";
+  const peticion = (metodo: string, ruta: string, cabeceras: Record<string, string> = {}) =>
+    new NextRequest(`http://sgc.local${ruta}`, { method: metodo, headers: { host: "sgc.local", ...cabeceras } });
+  const subir = (cabeceras?: Record<string, string>, id = NORMA) =>
+    subirArchivoNorma(peticion("POST", `/api/normas/${id}/archivos`, cabeceras), { params: Promise.resolve({ id }) });
+  const quitar = (cabeceras?: Record<string, string>, id = NORMA, archivoId = "1") =>
+    quitarArchivoNorma(peticion("DELETE", `/api/normas/${id}/archivos/${archivoId}`, cabeceras), {
+      params: Promise.resolve({ id, archivoId }),
+    });
+
+  it("sin sesión responden 401", async () => {
+    expect((await subir()).status).toBe(401);
+    expect((await quitar()).status).toBe(401);
+  });
+
+  it("sin el permiso de administrar el normograma responden 403", async () => {
+    for (const token of [tokenConsulta, tokenCi, tokenGerencia]) {
+      expect((await subir(cookie(token))).status).toBe(403);
+      expect((await quitar(cookie(token))).status).toBe(403);
+    }
+  });
+
+  it("con un Origin ajeno responden 403, aun con el permiso", async () => {
+    const ajeno = { ...cookie(tokenAdmin), origin: "https://malo.com" };
+    const subida = await subir(ajeno);
+    expect(subida.status).toBe(403);
+    expect(await subida.json()).toEqual({ error: "Origen no permitido" });
+    expect((await quitar(ajeno)).status).toBe(403);
+  });
+
+  it("una norma o un archivo que no existe, o un id que no es un número, responde 404", async () => {
+    expect((await subir(cookie(tokenAdmin))).status).toBe(404);
+    expect((await quitar(cookie(tokenAdmin))).status).toBe(404);
+    expect((await subir(cookie(tokenAdmin), "abc")).status).toBe(404);
+    expect((await quitar(cookie(tokenAdmin), "abc")).status).toBe(404);
+    expect((await quitar(cookie(tokenAdmin), NORMA, "abc")).status).toBe(404);
+    expect((await subir(cookie(tokenAdmin), "99999999999999999999")).status).toBe(404);
+  });
+
+  it("a una norma retirada no se le sube un PDF: 409, como las asociaciones", () =>
+    revertida(sql(), async (tx) => {
+      enCurso.sql = tx;
+      try {
+        const admin = await usuarioDePrueba(tx, { rol: "admin_sgc" });
+        const norma = await normaDePrueba(tx, admin);
+        await retirarNorma(admin, { normaId: norma.id, motivo: "Registrada por error" }, { sql: tx });
+        const respuesta = await subir(cookie(tokenAdmin), String(norma.id));
+        expect(respuesta.status).toBe(409);
+        expect(await respuesta.json()).toEqual({ error: `${norma.nombre} está retirada` });
+      } finally {
+        enCurso.sql = null;
+      }
+    }));
 });
 
 describe("copias controladas: /distribucion/copias/[id]/pdf y /reimprimir", () => {

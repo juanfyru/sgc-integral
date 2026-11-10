@@ -4,14 +4,23 @@
  * desde proceso o subproceso, e `incluir:'todos'` que agrega los sin vigente
  * que tienen historial (un borrador o una versión descartada no lo son).
  */
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 if (!process.env.DATABASE_URL && existsSync(".env.local")) process.loadEnvFile(".env.local");
 import { obtenerSql } from "@/db/cliente";
 import { obtenerListadoMaestro } from "@/db/consultas/maestro";
+import { fijarProximaRevision } from "@/db/consultas/vigencia/semaforo";
+import { sesionAdmin } from "./utiles/tramites";
+import { revertida } from "./utiles/transaccion";
+import { sinFechaDeRevision, vigenteFuera } from "./utiles/vigencia";
 
 const sql = () => obtenerSql();
 let tipoId: number, procesoId: number, subprocesoId: number, procesoDelSub: string;
+let almacen: string;
+const previoAlmacen = process.env.ALMACEN_RUTA;
+const ahora = new Date("2026-11-08T15:00:00Z");
 
 async function limpiar() {
   await sql()`DELETE FROM documento_proceso WHERE documento_id IN
@@ -38,6 +47,8 @@ async function crearDoc(codigo: string, estado: string, asoc: "proceso" | "subpr
 }
 
 beforeAll(async () => {
+  almacen = mkdtempSync(path.join(tmpdir(), "sgc-maestro-"));
+  process.env.ALMACEN_RUTA = almacen;
   await limpiar();
   [{ id: tipoId }] = await sql()`SELECT id FROM tipos_documento WHERE activo LIMIT 1`;
   [{ id: procesoId }] = await sql()`SELECT id FROM procesos WHERE activo LIMIT 1`;
@@ -53,8 +64,12 @@ beforeAll(async () => {
   await crearDoc("ZZ-MST-006", "obsoleto", "subproceso");
 });
 afterAll(async () => {
+  if (previoAlmacen === undefined) delete process.env.ALMACEN_RUTA;
+  else process.env.ALMACEN_RUTA = previoAlmacen;
+  rmSync(almacen, { recursive: true, force: true });
   await limpiar();
   await sql().end();
+  globalThis.__sql = undefined;
 });
 
 describe("obtenerListadoMaestro", () => {
@@ -102,5 +117,49 @@ describe("obtenerListadoMaestro", () => {
     const fila = (await obtenerListadoMaestro({ incluir: "todos" })).find((f) => f.codigo === "ZZ-MST-004")!;
     expect(fila.estado).toBe("anulado");
     expect(fila.version).toBe(1);
+  });
+});
+
+describe("obtenerListadoMaestro — vigencia (Fase 13C)", () => {
+  it("trae el origen, la edición, la última y la próxima revisión y el estado de vigencia", () =>
+    revertida(sql(), async (tx) => {
+      const d = await vigenteFuera(tx, { fechaAprobacion: "2025-08-14" });
+      const fila = (await obtenerListadoMaestro({ incluir: "vigentes", sql: tx, ahora })).find((f) => f.codigo === d.codigo)!;
+      expect(fila).toMatchObject({
+        origen: "interno",
+        edicion: null,
+        ultimaRevision: "2025-08-14",
+        proximaRevision: "2026-08-14",
+        vigencia: "vencida",
+      });
+    }));
+
+  it("la próxima revisión fijada a mano dice quién y cuándo la fijó; la calculada no", () =>
+    revertida(sql(), async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const fijado = await vigenteFuera(tx, { fechaAprobacion: "2025-08-14" });
+      const calculado = await vigenteFuera(tx, { fechaAprobacion: "2025-08-14" });
+      await fijarProximaRevision(admin, { documentoIds: [fijado.id], fecha: "2026-12-15", nota: "Carga inicial" }, { sql: tx, ahora });
+      const filas = await obtenerListadoMaestro({ incluir: "vigentes", sql: tx, ahora });
+      expect(filas.find((f) => f.codigo === fijado.codigo)).toMatchObject({
+        proximaRevision: "2026-12-15",
+        fijada: { por: admin.nombre, en: "2026-11-08" },
+      });
+      expect(filas.find((f) => f.codigo === calculado.codigo)).toMatchObject({ proximaRevision: "2026-08-14", fijada: null });
+    }));
+
+  it("un vigente sin fecha de revisión sale en atención, nunca al día", () =>
+    revertida(sql(), async (tx) => {
+      const d = await vigenteFuera(tx, { fechaAprobacion: "2025-08-14" });
+      await sinFechaDeRevision(tx, d);
+      const fila = (await obtenerListadoMaestro({ incluir: "vigentes", sql: tx, ahora })).find((f) => f.codigo === d.codigo)!;
+      expect(fila).toMatchObject({ ultimaRevision: null, proximaRevision: null, vigencia: "atencion" });
+    }));
+
+  it("en «todos», lo que no tiene versión vigente no tiene semáforo", async () => {
+    const fila = (await obtenerListadoMaestro({ incluir: "todos", ahora })).find((f) => f.codigo === "ZZ-MST-004")!;
+    expect(fila).toMatchObject({ estado: "anulado", origen: "interno", ultimaRevision: null, proximaRevision: null, fijada: null, vigencia: null });
+    const vigente = (await obtenerListadoMaestro({ incluir: "todos", ahora })).find((f) => f.codigo === "ZZ-MST-001")!;
+    expect(vigente.vigencia).not.toBeNull();
   });
 });

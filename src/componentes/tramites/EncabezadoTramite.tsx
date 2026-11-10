@@ -1,7 +1,7 @@
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia, type VarianteInsignia } from "@/componentes/ui/Insignia";
 import type { DetalleTramite } from "@/db/consultas/tramites";
-import { estadoPlazo } from "@/lib/tramites/plazos";
+import { diaDeEtapa, entradaDeEtapa } from "@/lib/tramites/dia-de-etapa";
 import {
   ETIQUETA_MOTIVO,
   ETIQUETA_TIPO_SOLICITUD,
@@ -19,18 +19,10 @@ const VARIANTE_FINAL: Partial<Record<Etapa, VarianteInsignia>> = {
   cancelado: "sin-dato",
 };
 
-/** Lo que queda en el historial sin mover el trámite de etapa. */
-const EVENTOS_SIN_CAMBIO_DE_ETAPA = ["reasignar", "corregir_datos"];
-
 /** «día 2 de 5» de la etapa en curso; la entrada a la etapa es el último evento que la cambió. */
-function diaDeEtapa(t: DetalleTramite, ahora: Date): string | null {
-  if (!t.venceEn || !esEtapaDeTrabajo(t.etapa)) return null;
-  const zona = zonaHoraria();
-  const entrada = t.eventos.filter((e) => !EVENTOS_SIN_CAMBIO_DE_ETAPA.includes(e.tipo)).at(-1)?.creadoEn ?? t.creadoEn;
-  const total = Math.max(estadoPlazo(t.venceEn, entrada, zona).dias, 1);
-  const { estado, dias } = estadoPlazo(t.venceEn, ahora, zona);
-  const dia = estado === "a_tiempo" ? total - dias : estado === "vence_hoy" ? total : total + dias;
-  return `día ${Math.max(dia, 1)} de ${total}`;
+function textoDia(t: DetalleTramite, ahora: Date): string | null {
+  const r = diaDeEtapa({ etapa: t.etapa, venceEn: t.venceEn, entrada: entradaDeEtapa(t.eventos, t.creadoEn) }, ahora, zonaHoraria());
+  return r ? `día ${r.dia} de ${r.total}` : null;
 }
 
 export function EncabezadoTramite({ tramite: t, ahora }: { tramite: DetalleTramite; ahora: Date }) {
@@ -43,7 +35,7 @@ export function EncabezadoTramite({ tramite: t, ahora }: { tramite: DetalleTrami
   ]
     .filter(Boolean)
     .join(" · ");
-  const dia = diaDeEtapa(t, ahora);
+  const dia = textoDia(t, ahora);
 
   return (
     <EncabezadoPagina

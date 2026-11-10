@@ -221,11 +221,12 @@ describe("estados del seed (datos de demostración)", () => {
       SELECT estado, count(*)::int AS cantidad
       FROM documento_versiones GROUP BY estado ORDER BY estado`;
     const porEstado = Object.fromEntries(filas.map((f) => [f.estado, f.cantidad]));
-    expect(porEstado["vigente"]).toBe(29);
-    expect(porEstado["obsoleto"]).toBe(2);
+    // Desde la 13C: el formato del informe y cuatro externos vigentes, y la edición «2019» de SOG-DE-01 obsoleta.
+    expect(porEstado["vigente"]).toBe(34);
+    expect(porEstado["obsoleto"]).toBe(3);
     expect(porEstado["borrador"]).toBe(3);
     expect(porEstado["anulado"]).toBe(1);
-    expect(filas.reduce((total, f) => total + f.cantidad, 0)).toBe(35);
+    expect(filas.reduce((total, f) => total + f.cantidad, 0)).toBe(41);
   });
 
   it("GTH-CA-01 retiene sus versiones obsoletas junto a la vigente", async () => {
@@ -332,10 +333,10 @@ describe("marca y notificaciones de la semilla demo", () => {
 });
 
 describe("semilla con la convención del hospital", () => {
-  it("trae once tipos con su autoridad y FO en lugar de FT", async () => {
+  it("trae doce tipos con su autoridad, FO en lugar de FT y el externo DE al final", async () => {
     const filas = await sql`SELECT sigla, autoridad, es_diligenciable FROM tipos_documento ORDER BY orden`;
     expect(filas.map((f) => f.sigla)).toEqual(
-      ["CA", "MN", "PR", "IN", "FO", "GU", "PT", "PL", "PO", "RG", "MZ"],
+      ["CA", "MN", "PR", "IN", "FO", "GU", "PT", "PL", "PO", "RG", "MZ", "DE"],
     );
     expect(filas.filter((f) => f.autoridad === "estrategico").map((f) => f.sigla))
       .toEqual(["CA", "MN", "PL", "PO"]);
@@ -360,10 +361,12 @@ describe("semilla con la convención del hospital", () => {
     const filas = await sql`SELECT critico FROM lista_verificacion_items ORDER BY orden`;
     expect(filas.map((f) => f.critico)).toEqual([true, true, true, false, false, false, false, false]);
   });
-  it("la demo trae 31 documentos con códigos del hospital y GTH-FO-01 restringido", async (ctx) => {
+  it("la demo trae 36 documentos (cuatro externos) con códigos del hospital y GTH-FO-01 restringido", async (ctx) => {
     await exigirDemoIntacta(ctx, sql);
     const [{ n }] = await sql`SELECT count(*)::int AS n FROM documentos`;
-    expect(n).toBe(31);
+    expect(n).toBe(36);
+    const [{ externos }] = await sql`SELECT count(*)::int AS externos FROM documentos WHERE origen = 'externo'`;
+    expect(externos).toBe(4);
     const [{ malos }] = await sql`SELECT count(*)::int AS malos FROM documentos
       WHERE codigo !~ '^[A-Z]{2,4}-[A-Z]{2,4}-[0-9]{2,}$'`;
     expect(malos).toBe(0);

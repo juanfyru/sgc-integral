@@ -12,11 +12,19 @@ import { huellaAbreviada } from "@/lib/tramites/tipos";
 type Props = {
   titulo: string;
   etiquetaBoton: string;
-  resumen: { documento: string; version: number | null; huella: string | null };
+  /** Lo que se firma, si es un documento; sin él (cerrar la revisión anual), lo dice `children`. */
+  resumen?: { documento: string; version: number | null; huella: string | null };
   accion: (estado: EstadoAccion, formData: FormData) => Promise<EstadoAccion>;
   ocultos: Record<string, string>;
   pideCodigo: boolean;
   children?: React.ReactNode;
+  /** El tamaño del botón que abre el diálogo: el de sus hermanos (pequeño en una tabla). */
+  tamano?: "sm" | "md";
+  /**
+   * El nombre accesible del botón que abre el diálogo, si se repite en la página (una fila por documento): empieza por
+   * el texto visible (WCAG 2.5.3) y dice sobre qué se firma.
+   */
+  etiquetaAccesible?: string;
 };
 
 /** «Firmar y publicar»; con una etiqueta que ya lleva «y», «Firmar, aprobar y publicar». */
@@ -63,16 +71,18 @@ export function FormularioFirma({
       <p aria-hidden="true" className="font-semibold">
         {titulo}
       </p>
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
-        <dt className="text-muted-foreground">Documento</dt>
-        <dd className="break-words">{resumen.documento}</dd>
-        <dt className="text-muted-foreground">Versión</dt>
-        <dd>{resumen.version ?? "Sin versión"}</dd>
-        <dt className="text-muted-foreground">Huella</dt>
-        <dd className={resumen.huella ? "font-mono" : undefined}>
-          {resumen.huella ? huellaAbreviada(resumen.huella) : "Sin archivo principal"}
-        </dd>
-      </dl>
+      {resumen ? (
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
+          <dt className="text-muted-foreground">Documento</dt>
+          <dd className="break-words">{resumen.documento}</dd>
+          <dt className="text-muted-foreground">Versión</dt>
+          <dd>{resumen.version ?? "Sin versión"}</dd>
+          <dt className="text-muted-foreground">Huella</dt>
+          <dd className={resumen.huella ? "font-mono" : undefined}>
+            {resumen.huella ? huellaAbreviada(resumen.huella) : "Sin archivo principal"}
+          </dd>
+        </dl>
+      ) : null}
       {children}
       <Campo etiqueta="Su clave" nombre="clave">
         <input
@@ -120,7 +130,7 @@ export function DialogoFirma(props: Props) {
   useTituloAlDesaparecer(abierto);
   return (
     <>
-      <Boton onClick={() => setAbierto(true)} aria-haspopup="dialog">
+      <Boton onClick={() => setAbierto(true)} aria-haspopup="dialog" tamano={props.tamano} aria-label={props.etiquetaAccesible}>
         {props.etiquetaBoton}
       </Boton>
       <Dialogo

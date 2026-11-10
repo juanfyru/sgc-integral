@@ -11,3 +11,13 @@ export async function exigirVerificacionAbierta(tx: Cliente, itemId: number): Pr
     WHERE i.id = ${itemId} FOR SHARE OF v`;
   if (v && v.estado !== "abierta") throw new ErrorTramite("La verificación ya está cerrada");
 }
+
+/**
+ * La foto de la corrección de un hallazgo solo se adjunta mientras no esté cerrado: se bloquea (`FOR SHARE`, contra el
+ * `FOR UPDATE` de quien lo valida o lo cierra) dentro de la transacción de quien sube. Si no existe no decide: la ruta ya
+ * respondió 404 (`autorizarFotoDeHallazgo`).
+ */
+export async function exigirHallazgoNoCerrado(tx: Cliente, hallazgoId: number): Promise<void> {
+  const [h] = await tx`SELECT estado FROM hallazgos WHERE id = ${hallazgoId} FOR SHARE`;
+  if (h && h.estado === "cerrado") throw new ErrorTramite("El hallazgo ya está cerrado");
+}

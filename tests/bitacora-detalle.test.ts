@@ -3,6 +3,8 @@
  * traduce (acción, entidad, detalle) a una frase en español, con fallback
  * seguro para acciones no mapeadas y sin volcar JSON crudo.
  */
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { describirEvento, nombreDeAccion } from "@/lib/bitacora-detalle";
 
@@ -310,5 +312,353 @@ describe("frases con el detalle real", () => {
   });
   it("verificacion_abierta con el punto", () => {
     expect(e("verificacion_abierta", { puntoId: 3, punto: "Farmacia", items: 8, propioPunto: false })).toBe("Abrió la verificación de Farmacia");
+  });
+});
+
+/**
+ * Las acciones con nombre literal que el código pasa a `registrarAuditoria` (resolución 2 de la Tarea 14 de la 13C):
+ * dentro de cada llamada, los literales de la expresión de `accion` (también los dos lados de un ternario). Las que se
+ * arman con una plantilla o llegan en una variable no se pueden leer así: van en `ACCIONES_ARMADAS`.
+ */
+function accionesLiterales(): string[] {
+  const raiz = path.resolve(import.meta.dirname, "../src");
+  const archivos: string[] = [];
+  const recorrer = (carpeta: string) => {
+    for (const nombre of readdirSync(carpeta)) {
+      const ruta = path.join(carpeta, nombre);
+      if (statSync(ruta).isDirectory()) recorrer(ruta);
+      else if (/\.tsx?$/.test(nombre)) archivos.push(ruta);
+    }
+  };
+  recorrer(raiz);
+  const acciones = new Set<string>();
+  for (const archivo of archivos) {
+    const texto = readFileSync(archivo, "utf8");
+    for (const llamada of texto.split("registrarAuditoria(").slice(1)) {
+      const cuerpo = llamada.slice(0, Math.max(llamada.indexOf("});"), 0) || 800);
+      const expresion = /\baccion\s*:\s*([^,\n]+)/.exec(cuerpo)?.[1] ?? "";
+      if (expresion.trimStart().startsWith("`")) continue;
+      for (const [, accion] of expresion.matchAll(/"([a-z_]+)"/g)) acciones.add(accion);
+    }
+  }
+  return [...acciones].sort();
+}
+
+/** Las que se arman con una plantilla o una variable, con dónde se arman. */
+const ACCIONES_ARMADAS = [
+  // normograma/relaciones.ts: `auditarEnLasDos` las recibe como parámetro.
+  "norma_relacion",
+  "norma_relacion_eliminada",
+  // normograma/tipos-norma.ts: `auditar(tx, sesion, accion, …)`.
+  "tipo_norma_creado",
+  "tipo_norma_editado",
+  "tipo_norma_movido",
+  "tipo_norma_alternado",
+  // vigencia/comun.ts: `rechazo.accion`, de ratificaciones.ts y externos/adopcion.ts.
+  "ratificacion_rechazada",
+  "adopcion_rechazada",
+  // codigos.ts: ACCION_EDITAR_CONTROL.
+  "editar_control",
+  // config-documental.ts: `auditarItem(tx, accion, …)`.
+  "crear_item_verificacion",
+  "editar_item_verificacion",
+  "mover_item_verificacion",
+  "alternar_item_verificacion",
+  // `${activo ? "activar" : "desactivar"}_…`: distribucion/listas.ts, distribucion/puntos-uso.ts, estructura.ts.
+  "activar_lista",
+  "desactivar_lista",
+  "activar_punto_uso",
+  "desactivar_punto_uso",
+  "activar_area",
+  "desactivar_area",
+  "activar_cargo",
+  "desactivar_cargo",
+];
+
+describe("toda acción que el código escribe tiene frase y nombre de filtro (13C, resoluciones 2 y 14)", () => {
+  const literales = accionesLiterales();
+
+  it("el recorrido encuentra las acciones literales, también las de un ternario", () => {
+    expect(literales).toEqual(
+      expect.arrayContaining(["documento_ratificado", "exporto_indicadores", "norma_asociada", "norma_requisito_editado", "norma_estado", "norma_retirada", "hallazgo_validado", "publicar_version"]),
+    );
+    expect(literales).not.toContain("activar");
+  });
+
+  it.each([...new Set([...literales, ...ACCIONES_ARMADAS])])("%s", (accion) => {
+    const frase = describirEvento({ accion, entidad: "x", entidadId: 1, detalle: {} });
+    expect(frase).not.toMatch(/^Acción «/);
+    expect(frase).not.toMatch(/undefined|null|NaN|\[object/);
+    expect(nombreDeAccion(accion)).not.toBe(accion.replace(/_+/g, " "));
+  });
+});
+
+describe("frases de la vigencia (13C)", () => {
+  const e = (accion: string, detalle: Record<string, unknown>, codigoDocumento: string | null = null) =>
+    describirEvento({ accion, entidad: "documento", entidadId: 5, detalle, codigoDocumento });
+
+  it("ratificar, y el rechazo por la huella", () => {
+    expect(e("documento_ratificado", { codigo: "GTH-PR-01", version: 1, nota: null, proximaRevision: "2027-11-08" })).toBe("Ratificó sin cambios GTH-PR-01 v1");
+    // El código resuelto por la entidad manda sobre el del detalle (pudo cambiar después).
+    expect(e("documento_ratificado", { codigo: "GTH-PR-09", version: 2 }, "GTH-PR-01")).toBe("Ratificó sin cambios GTH-PR-01 v2");
+    const huellas = { huellaRegistrada: "a".repeat(64), huellaEnDisco: "b".repeat(64) };
+    expect(e("ratificacion_rechazada", { codigo: "GTH-PR-01", ...huellas })).toBe(
+      "No se pudo ratificar GTH-PR-01: el archivo en disco no coincide con el registrado",
+    );
+    expect(e("adopcion_rechazada", { codigo: "CEX-DE-01", numero: 3, ...huellas })).toBe(
+      "No se pudo adoptar CEX-DE-01 v3: el archivo en disco no coincide con el registrado",
+    );
+  });
+
+  it("la fecha fijada a mano y el plazo propio", () => {
+    expect(e("fecha_revision_fijada", { codigo: "GTH-PR-01", fecha: "2027-03-01", nota: "Carga inicial" })).toBe(
+      "Fijó la próxima revisión de GTH-PR-01 para el 1 mar 2027: Carga inicial",
+    );
+    expect(e("fecha_revision_quitada", { codigo: "GTH-PR-01", fecha: "2027-03-01", nota: "Carga inicial" })).toBe(
+      "Quitó la fecha fijada de la próxima revisión de GTH-PR-01 (1 mar 2027)",
+    );
+    expect(e("plazo_revision_ajustado", { codigo: "GTH-PR-01", antes: null, despues: 24 })).toBe("Ajustó el plazo de revisión de GTH-PR-01 a 24 meses (antes, el del tipo)");
+    expect(e("plazo_revision_ajustado", { codigo: "GTH-PR-01", antes: 12, despues: 1 })).toBe("Ajustó el plazo de revisión de GTH-PR-01 a 1 mes (antes, 12 meses)");
+    expect(e("plazo_revision_ajustado", { codigo: "GTH-PR-01", antes: 24, despues: null })).toBe("Devolvió el plazo de revisión de GTH-PR-01 al del tipo (antes, 24 meses)");
+  });
+
+  it("los documentos externos", () => {
+    expect(e("externo_registrado", {
+      codigo: "CEX-DE-01", titulo: "Guía de práctica clínica HTA", entidadEmisora: "Ministerio de Salud", edicion: "2017", responsable: "Luz Dary Ortiz", norma: null,
+    })).toBe("Registró el documento externo CEX-DE-01 — Guía de práctica clínica HTA (edición 2017)");
+    expect(e("externo_editado", { codigo: "CEX-DE-01", antes: { responsable: "A", verificacionMeses: 12 }, despues: { responsable: "B", verificacionMeses: 6 } })).toBe(
+      "Editó los datos de control del externo CEX-DE-01: responsable técnico, periodicidad de verificación",
+    );
+    expect(e("externo_edicion_abierta", { codigo: "CEX-DE-01", numero: 2, edicion: "2021" })).toBe("Abrió en borrador la edición 2021 de CEX-DE-01");
+    expect(e("externo_edicion_editada", { codigo: "CEX-DE-01", numero: 2, edicion: "2021", fechaEdicion: "2021-05-01", resumenCambios: "Nueva tabla" })).toBe(
+      "Editó la edición 2021 en borrador de CEX-DE-01",
+    );
+    expect(e("externo_edicion_descartada", { codigo: "CEX-DE-01", numero: 2, edicion: null })).toBe("Descartó la edición en borrador de CEX-DE-01");
+    expect(e("externo_adoptado", { codigo: "CEX-DE-01", numero: 2, edicion: "2021", obsoletas: 1, acuses: 3, verificacionId: 7 })).toBe("Adoptó la edición 2021 de CEX-DE-01");
+    const verificado = (resultado: string) => e("externo_verificado", { codigo: "CEX-DE-01", version: 1, verificacionId: 4, resultado, fuente: "Portal", nota: null });
+    expect(verificado("vigente")).toBe("Verificó la vigencia de CEX-DE-01: sigue vigente");
+    expect(verificado("edicion_nueva")).toBe("Verificó la vigencia de CEX-DE-01: hay una edición nueva");
+    expect(verificado("retirado")).toBe("Verificó la vigencia de CEX-DE-01: fue retirado o derogado");
+    expect(e("externo_retirado", { codigo: "CEX-DE-01", version: 1, motivo: "Derogada por la Resolución 3100", verificacionId: null, borradorDescartado: null })).toBe(
+      "Retiró el documento externo CEX-DE-01: Derogada por la Resolución 3100",
+    );
+  });
+
+  it("la revisión anual", () => {
+    const r = (accion: string, detalle: Record<string, unknown>) => describirEvento({ accion, entidad: "revision_anual", entidadId: 4, detalle });
+    expect(r("revision_anual_abierta", { anio: 2026, plazoDias: 60, ventanaMeses: 6, documentos: 48, procesos: 9, recientes: 5, enTramite: 2 })).toBe(
+      "Abrió la revisión anual 2026 con 48 documentos de 9 procesos",
+    );
+    expect(r("revision_anual_abierta", { anio: 2026, documentos: 1, procesos: 1 })).toBe("Abrió la revisión anual 2026 con 1 documento de 1 proceso");
+    expect(r("revision_anual_prorrogada", { anio: 2026, dias: 15, motivo: "Auditoría externa", venceAntes: "x", venceDespues: "y" })).toBe(
+      "Prorrogó 15 días la revisión anual 2026: Auditoría externa",
+    );
+    const decision = (antes: unknown, despues: unknown, extra: Record<string, unknown> = {}) =>
+      r("revision_anual_decision", { anio: 2026, documentoId: 5, codigo: "GTH-PR-01", versionId: 9, antes, despues, ...extra });
+    expect(decision(null, { decision: "ratificar", usuarioId: 3 })).toBe("En la revisión anual 2026, GTH-PR-01 quedó «Ratificado»");
+    expect(decision({ decision: "actualizar" }, { decision: "ratificar" })).toBe("En la revisión anual 2026, GTH-PR-01 quedó «Ratificado» (antes «Por actualizar»)");
+    expect(decision(null, { decision: "reciente", usuarioId: null })).toBe("En la revisión anual 2026, GTH-PR-01 quedó «Revisado recientemente»");
+    // Una carga deshecha saca al documento de la foto: `despues` nulo y el motivo.
+    expect(decision(null, null, { motivo: "Se deshizo su carga" })).toBe("GTH-PR-01 salió de la revisión anual 2026: Se deshizo su carga");
+    const normograma = (resultado: string, nota: string | null) =>
+      r("revision_anual_normograma", { anio: 2026, procesoId: 3, proceso: "Gestión del Talento Humano", resultado, nota, antes: null });
+    expect(normograma("sin_novedad", null)).toBe("Confirmó el normograma de Gestión del Talento Humano en la revisión anual 2026: sin novedad");
+    expect(normograma("cambios", "Falta la Resolución 100")).toBe(
+      "Confirmó el normograma de Gestión del Talento Humano en la revisión anual 2026: marcó cambios: Falta la Resolución 100",
+    );
+    expect(r("revision_anual_cerrada", { anio: 2026, totales: {}, documentos: 48, sinRevisar: 3, metodo: "clave" })).toBe(
+      "Cerró la revisión anual 2026 con 48 documentos; 3 quedaron sin revisar",
+    );
+    expect(r("revision_anual_cerrada", { anio: 2026, documentos: 48, sinRevisar: 1 })).toBe("Cerró la revisión anual 2026 con 48 documentos; 1 quedó sin revisar");
+    expect(r("revision_anual_cerrada", { anio: 2026, documentos: 48, sinRevisar: 0 })).toBe("Cerró la revisión anual 2026 con 48 documentos");
+  });
+
+  it("el informe de la revisión anual, como el acta", () => {
+    const i = (accion: string, detalle: Record<string, unknown>) => describirEvento({ accion, entidad: "archivos", entidadId: 8, detalle });
+    expect(i("informe_generado", { revisionId: 4, anio: 2026, huella: "a".repeat(64) })).toBe("Generó el informe de la revisión anual 2026");
+    expect(i("informe_no_regenerable", { revisionId: 4, anio: 2026, motivo: "formato", archivoId: 7 })).toBe(
+      "No se pudo generar el informe de la revisión anual 2026: el archivo del formato falta o cambió",
+    );
+    expect(i("informe_no_regenerable", { revisionId: 4, anio: 2026, huellaRegistrada: "a", huellaRegenerada: "b" })).toBe(
+      "No se pudo regenerar idéntico el informe de la revisión anual 2026: no se entregó",
+    );
+  });
+});
+
+describe("frases del normograma (13C)", () => {
+  const n = (accion: string, detalle: Record<string, unknown>) => describirEvento({ accion, entidad: "norma", entidadId: 2, detalle });
+  const norma = "Resolución 3100 de 2019";
+
+  it("alta, edición, estado, retiro y borrado", () => {
+    expect(n("norma_creada", { nombre: norma, tipo: "Resolución", numero: "3100", anio: 2019, titulo: "Habilitación de servicios" })).toBe(
+      "Registró la norma Resolución 3100 de 2019 — Habilitación de servicios",
+    );
+    const datos = { tipoNormaId: 3, tipo: "Resolución", numero: "3100", anio: 2019, fechaExpedicion: "2019-11-25", entidadEmisora: "MinSalud", titulo: "A", tema: null, enlaceOficial: null, notas: null };
+    expect(n("norma_editada", { nombre: norma, antes: datos, despues: { ...datos, titulo: "B", tema: "Habilitación" } })).toBe("Editó la norma Resolución 3100 de 2019: título, tema");
+    expect(n("norma_editada", { nombre: norma, antes: datos, despues: { ...datos, tipoNormaId: 4, tipo: "Decreto" } })).toBe("Editó la norma Resolución 3100 de 2019: tipo");
+    expect(n("norma_estado", { nombre: "Resolución 2003 de 2014", estadoAnterior: "vigente", estadoNuevo: "derogada", fecha: "2019-11-25", nota: null, cambioId: 1, relacionId: null, impactos: 2 })).toBe(
+      "Pasó Resolución 2003 de 2014 a derogada",
+    );
+    expect(n("norma_retirada", { nombre: "Resolución 2003 de 2014", estadoAnterior: "vigente", estadoNuevo: "retirada", motivo: "Registrada por error" })).toBe(
+      "Retiró la norma Resolución 2003 de 2014: Registrada por error",
+    );
+    expect(n("norma_borrada", { nombre: norma, titulo: "Habilitación" })).toBe("Borró la norma Resolución 3100 de 2019");
+  });
+
+  it("las relaciones entre normas", () => {
+    const relacion = { relacionId: 5, tipo: "deroga", normaId: 1, norma, afectadaId: 2, afectada: "Resolución 2003 de 2014", detalle: null, cambioId: 9 };
+    expect(n("norma_relacion", { ...relacion, impactos: 2 })).toBe("Registró que Resolución 3100 de 2019 deroga a Resolución 2003 de 2014");
+    expect(n("norma_relacion", { ...relacion, tipo: "reglamenta" })).toBe("Registró que Resolución 3100 de 2019 reglamenta a Resolución 2003 de 2014");
+    expect(n("norma_relacion_eliminada", { ...relacion, tipo: "modifica", motivo: "Registrada por error" })).toBe(
+      "Eliminó la relación «Resolución 3100 de 2019 modifica a Resolución 2003 de 2014»: Registrada por error",
+    );
+  });
+
+  it("los procesos y los documentos de una norma", () => {
+    const proceso = { nombre: norma, procesoId: 3, proceso: "Gestión del Talento Humano" };
+    expect(n("norma_asociada", { ...proceso, requisito: "Talento humano" })).toBe("Asoció la norma Resolución 3100 de 2019 al proceso Gestión del Talento Humano");
+    expect(n("norma_requisito_editado", { ...proceso, antes: null, despues: "Talento humano" })).toBe(
+      "Editó el requisito de Resolución 3100 de 2019 en el proceso Gestión del Talento Humano",
+    );
+    expect(n("norma_desasociada", { ...proceso, requisito: null })).toBe("Quitó la norma Resolución 3100 de 2019 del proceso Gestión del Talento Humano");
+    expect(n("norma_documento_enlazado", { nombre: norma, documentoId: 5, codigo: "GTH-PR-01" })).toBe("Enlazó GTH-PR-01 a la norma Resolución 3100 de 2019");
+    expect(n("norma_documento_desenlazado", { nombre: norma, documentoId: 5, codigo: "GTH-PR-01" })).toBe(
+      "Quitó el enlace de GTH-PR-01 con la norma Resolución 3100 de 2019",
+    );
+  });
+
+  it("los tipos de norma", () => {
+    const t = (accion: string, detalle: Record<string, unknown>) => describirEvento({ accion, entidad: "tipos_norma", entidadId: 10, detalle });
+    expect(t("tipo_norma_creado", { nombre: "Ordenanza" })).toBe("Creó el tipo de norma «Ordenanza»");
+    expect(t("tipo_norma_editado", { antes: "Ordenanza", despues: "Ordenanza departamental" })).toBe("Renombró el tipo de norma «Ordenanza» a «Ordenanza departamental»");
+    expect(t("tipo_norma_movido", { nombre: "Ordenanza", direccion: "arriba" })).toBe("Movió el tipo de norma «Ordenanza» hacia arriba");
+    expect(t("tipo_norma_alternado", { nombre: "Ordenanza", activo: false })).toBe("Desactivó el tipo de norma «Ordenanza»");
+    expect(t("tipo_norma_alternado", { nombre: "Ordenanza", activo: true })).toBe("Activó el tipo de norma «Ordenanza»");
+  });
+
+  it("el impacto resuelto, en el documento o en el proceso", () => {
+    const impacto = (resolucion: string, extra: Record<string, unknown> = {}) =>
+      describirEvento({
+        accion: "impacto_resuelto",
+        entidad: "documento",
+        entidadId: 5,
+        codigoDocumento: "GTH-PR-01",
+        detalle: { impactoId: 1, cambioId: 9, normaId: 2, norma: "Resolución 2003 de 2014", estadoNuevo: "derogada", codigo: "GTH-PR-01", proceso: "Gestión del Talento Humano", resolucion, nota: "No la cita", tramite: null, verificacionId: null, ...extra },
+      });
+    expect(impacto("no_afecta")).toBe("Resolvió el impacto de Resolución 2003 de 2014 en GTH-PR-01: no afecta");
+    expect(impacto("solicitud", { tramite: "SOL-2026-014" })).toBe("Resolvió el impacto de Resolución 2003 de 2014 en GTH-PR-01: con la solicitud SOL-2026-014");
+    expect(impacto("verificacion", { verificacionId: 4 })).toBe("Resolvió el impacto de Resolución 2003 de 2014 en GTH-PR-01: con la verificación del externo");
+    expect(
+      describirEvento({
+        accion: "impacto_resuelto",
+        entidad: "proceso",
+        entidadId: 3,
+        detalle: { norma: "Resolución 2003 de 2014", codigo: null, proceso: "Gestión del Talento Humano", resolucion: "solicitud", tramite: "SOL-2026-015" },
+      }),
+    ).toBe("Resolvió el impacto de Resolución 2003 de 2014 en el proceso Gestión del Talento Humano: con la solicitud SOL-2026-015");
+  });
+});
+
+describe("las exportaciones de la 13C, como «Emitió el Listado Maestro»", () => {
+  const x = (accion: string, detalle: Record<string, unknown>) => describirEvento({ accion, entidad: "documentos", entidadId: null, detalle });
+
+  it("con el formato, el filtro y las filas; un proceso no se nombra por su id", () => {
+    expect(x("exporto_semaforo", { formato: "excel", estado: "vencida", procesoId: 3, origen: "interno", total: 12 })).toBe(
+      "Emitió el semáforo de vigencia (excel, vencidos, de un proceso, internos, 12 filas)",
+    );
+    expect(x("exporto_semaforo", { formato: "excel", estado: "todos", procesoId: null, origen: "todos", total: 1 })).toBe("Emitió el semáforo de vigencia (excel, 1 fila)");
+    expect(x("exporto_externos", { formato: "excel", estado: "atencion", procesoId: null, responsableId: 31, texto: "bomba", total: 2 })).toBe(
+      "Emitió el listado de documentos externos (excel, en atención, de un responsable, con el texto «bomba», 2 filas)",
+    );
+    // El detalle completo que escribe `normograma/excel/route.ts`, sin filtros y con todos.
+    const sinFiltros = { formato: "excel", alcance: "Institucional", procesoId: null, tipoNormaId: null, anio: null, emisor: null, estado: "todas", texto: null, incluirRetiradas: false, total: 30 };
+    expect(x("exporto_normograma", sinFiltros)).toBe("Emitió el normograma (excel, institucional, 30 filas)");
+    expect(x("exporto_normograma", { ...sinFiltros, alcance: "Proceso: Gestión del Talento Humano", procesoId: 3, total: 4 })).toBe(
+      "Emitió el normograma (excel, del proceso Gestión del Talento Humano, 4 filas)",
+    );
+    // Los mismos filtros que nombra el de los externos: el estado, el tipo (por su id, sin nombrarlo), el año, el emisor,
+    // el texto y las retiradas.
+    expect(x("exporto_normograma", { ...sinFiltros, tipoNormaId: 3, anio: 2019, emisor: "Ministerio de Salud", estado: "derogada", texto: "habilitación", incluirRetiradas: true, total: 2 })).toBe(
+      "Emitió el normograma (excel, institucional, derogadas, de un tipo de norma, del año 2019, emitidas por Ministerio de Salud, con el texto «habilitación», con las retiradas, 2 filas)",
+    );
+    expect(x("exporto_indicadores", { formato: "excel", periodo: "2026-T3", procesoId: null })).toBe("Emitió los indicadores documentales (excel, tercer trimestre de 2026)");
+    expect(x("exporto_indicadores", { formato: "excel", periodo: "2026-10", procesoId: 3 })).toBe("Emitió los indicadores documentales (excel, octubre de 2026, de un proceso)");
+    expect(x("exporto_socializaciones", { formato: "excel", desde: "2026-01-01", hasta: "2026-12-31", procesoId: null, total: 5 })).toBe(
+      "Emitió el listado de socializaciones (excel, 2026-01-01 a 2026-12-31, 5 filas)",
+    );
+    expect(x("exporto_socializaciones", { formato: "excel", desde: "2026-01-01", hasta: "2026-12-31", procesoId: 3, total: 2 })).toBe(
+      "Emitió el listado de socializaciones (excel, 2026-01-01 a 2026-12-31, de un proceso, 2 filas)",
+    );
+  });
+});
+
+describe("la herencia de la 13B: hallazgos en dos pasos y la verificación que los valida", () => {
+  const h = (accion: string, detalle: Record<string, unknown>) => describirEvento({ accion, entidad: "hallazgo", entidadId: 6, detalle });
+  const base = { puntoId: 2, punto: "Farmacia", origen: "verificacion", verificacionId: 3, documento: "GTH-PR-01", copiaId: null, copia: null, descripcion: "Copia obsoleta" };
+
+  it("corregir, validar y reabrir", () => {
+    expect(h("hallazgo_corregido", { ...base, nota: "Se retiró la copia", reaperturas: 0 })).toBe("Marcó corregido el hallazgo de verificación en Farmacia: Se retiró la copia");
+    expect(h("hallazgo_validado", { ...base, validacion: "admin", verificacionQueValida: null, nota: "Se retiró la copia", corregidoPor: 9 })).toBe(
+      "Validó la corrección del hallazgo de verificación en Farmacia y lo cerró",
+    );
+    expect(h("hallazgo_validado", { ...base, origen: "recogida", validacion: "verificacion", verificacionQueValida: 8, nota: "x", corregidoPor: 9 })).toBe(
+      "Validó con la verificación del punto la corrección del hallazgo de recogida en Farmacia y lo cerró",
+    );
+    expect(h("hallazgo_reabierto", { ...base, reabiertoPor: "admin", verificacionQueReabre: null, nota: "La copia sigue ahí", notaCorreccion: "x", reaperturas: 1, venceEn: "2026-11-20T04:59:59.999Z" })).toBe(
+      "Reabrió el hallazgo de verificación en Farmacia: La copia sigue ahí",
+    );
+    expect(h("hallazgo_reabierto", { ...base, reabiertoPor: "verificacion", verificacionQueReabre: 8, nota: "Sigue igual", reaperturas: 2 })).toBe(
+      "Reabrió con la verificación del punto el hallazgo de verificación en Farmacia: Sigue igual",
+    );
+  });
+
+  it("cerrar directamente, y el único Administrador del SGC activo que cierra su propia corrección", () => {
+    const cerrado = { ...base, estadoPrevio: "abierto", validacion: "admin", propioCorrector: false, nota: "Se repuso" };
+    expect(h("hallazgo_cerrado", cerrado)).toBe("Cerró directamente el hallazgo de verificación en Farmacia: Se repuso");
+    expect(h("hallazgo_cerrado", { ...cerrado, estadoPrevio: "por_validar", propioCorrector: true })).toBe(
+      "Cerró directamente el hallazgo de verificación en Farmacia (único Administrador del SGC activo): Se repuso",
+    );
+    expect(h("hallazgo_cerrado", { ...cerrado, propioPunto: true })).toBe(
+      "Cerró directamente el hallazgo de verificación en Farmacia (de su propio punto; único Administrador del SGC activo): Se repuso",
+    );
+    // Una fila anterior a la Tarea 13 conserva su frase.
+    expect(h("hallazgo_cerrado", { origen: "recogida", nota: "Se halló" })).toBe("Cerró un hallazgo de recogida: Se halló");
+  });
+
+  it("la verificación cerrada dice las correcciones que validó y los hallazgos que reabrió", () => {
+    const v = (extra: Record<string, unknown>) => describirEvento({ accion: "verificacion_cerrada", entidad: "verificacion", entidadId: 8, detalle: { punto: "Farmacia", ...extra } });
+    expect(v({ conforme: false, hallazgos: 1, hallazgosValidados: 2, hallazgosReabiertos: 1 })).toBe(
+      "Cerró la verificación de Farmacia: no conforme, 1 hallazgo; validó 2 correcciones y reabrió 1 hallazgo",
+    );
+    expect(v({ conforme: true, hallazgos: 0, hallazgosValidados: 1, hallazgosReabiertos: 0 })).toBe("Cerró la verificación de Farmacia: conforme; validó 1 corrección");
+    expect(v({ conforme: false, hallazgos: 2, hallazgosValidados: 0, hallazgosReabiertos: 2 })).toBe("Cerró la verificación de Farmacia: no conforme, 2 hallazgos; reabrió 2 hallazgos");
+    expect(v({ conforme: true, hallazgos: 0, hallazgosValidados: 0, hallazgosReabiertos: 0 })).toBe("Cerró la verificación de Farmacia: conforme");
+  });
+});
+
+describe("nombres de filtro de la 13C", () => {
+  it.each([
+    ["documento_ratificado", "Ratificó sin cambios un documento"],
+    ["externo_adoptado", "Adoptó la edición de un externo"],
+    ["revision_anual_decision", "Registró una decisión de la revisión anual"],
+    ["norma_estado", "Cambió el estado de una norma"],
+    ["impacto_resuelto", "Resolvió un impacto normativo"],
+    ["exporto_indicadores", "Emitió los indicadores documentales"],
+    ["hallazgo_validado", "Validó la corrección de un hallazgo"],
+    ["tipo_norma_alternado", "Activó o desactivó un tipo de norma"],
+  ])("%s dice «%s»", (accion, frase) => {
+    expect(nombreDeAccion(accion)).toBe(frase);
+  });
+});
+
+describe("la configuración documental nombra cada clave que guarda", () => {
+  it("las de la vigencia, las metas y la distribución, con su nombre", async () => {
+    const { CLAVES_CONFIG_DOCUMENTAL } = await import("@/db/consultas/config-documental");
+    const cambios = Object.fromEntries(CLAVES_CONFIG_DOCUMENTAL.map((c) => [c, { antes: "1", despues: "2" }]));
+    const frase = describirEvento({ accion: "editar_config_documental", entidad: "configuracion", entidadId: null, detalle: { cambios } });
+    expect(frase).toMatch(/^Editó la configuración documental: [^_]+$/);
+    for (const nombre of ["días de atención del semáforo", "meta de documentos dentro del plazo", "plazo de la revisión anual", "periodicidad de verificación de externos", "plazo de corrección"]) {
+      expect(frase).toContain(nombre);
+    }
   });
 });

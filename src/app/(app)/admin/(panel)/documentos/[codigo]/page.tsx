@@ -9,6 +9,9 @@ import {
   publicarAccion,
 } from "@/app/admin/acciones";
 import { BloqueDistribucion } from "@/componentes/distribucion/BloqueDistribucion";
+import { BloqueVigencia } from "@/componentes/vigencia/BloqueVigencia";
+import { BloqueExterno } from "@/componentes/vigencia/externos/BloqueExterno";
+import { NormasEnlazadas } from "@/componentes/normograma/NormasEnlazadas";
 import { EliminarArchivo } from "@/componentes/admin/EliminarArchivo";
 import { FormAccion } from "@/componentes/admin/FormAccion";
 import { FormularioVersionCliente } from "@/componentes/admin/FormularioVersionCliente";
@@ -53,6 +56,7 @@ function SeccionVersion({
   puedeAdministrar,
   registrable,
   deshacible,
+  children,
 }: {
   version: VersionAdmin;
   documentoId: number;
@@ -62,6 +66,8 @@ function SeccionVersion({
   registrable: boolean;
   /** El camino directo puede deshacer la versión vigente de este documento (spec 13A §13.2). */
   deshacible: boolean;
+  /** Lo que va al final de la versión: el bloque «Vigencia» de la vigente. */
+  children?: React.ReactNode;
 }) {
   const fueraDeCirculacion = version.estado === "obsoleto" || version.estado === "anulado";
   const borrador = version.estado === "borrador";
@@ -178,14 +184,18 @@ function SeccionVersion({
       {version.resumenCambios && (
         <p className="mt-2 text-sm text-muted-foreground">Cambios: {version.resumenCambios}</p>
       )}
+
+      {children ? <div className="mt-4">{children}</div> : null}
     </section>
   );
 }
 
 export default async function PaginaDocumentoAdmin({
   params,
+  searchParams,
 }: {
   params: Promise<{ codigo: string }>;
+  searchParams?: Promise<{ aviso?: string | string[]; n?: string | string[] }>;
 }) {
   const sesion = await exigirPermiso("documentos.ver_historial");
   const puedeAdministrar = puede(sesion, "documentos.administrar");
@@ -200,7 +210,10 @@ export default async function PaginaDocumentoAdmin({
   const vigente = documento.versiones.find((v) => v.estado === "vigente");
   const borrador = documento.versiones.find((v) => v.estado === "borrador");
   const puedePedirCambio = vigente ? await puedePedirSobreDocumento(sesion, documento.id) : false;
-  const { registrable, deshacible } = caminoDirecto(situacion, config.publicacionDirecta);
+  // Un externo se registra, se adopta y se retira desde Vigencia → Externos: el panel no le ofrece los caminos de
+  // versión (editar el borrador, subir archivos, publicar, descartar, deshacer la carga; spec 13C §8.1).
+  const esExterno = documento.origen === "externo";
+  const { registrable, deshacible } = esExterno ? { registrable: false, deshacible: false } : caminoDirecto(situacion, config.publicacionDirecta);
 
   return (
     <div className="flex flex-col gap-6">
@@ -251,8 +264,18 @@ export default async function PaginaDocumentoAdmin({
         )}
       </div>
 
+      {esExterno ? <BloqueExterno documentoId={documento.id} sesion={sesion} /> : null}
+
+      {/* Las normas enlazadas (spec 13C §14.4), de solo lectura; sin ninguna, no se pinta. */}
+      <NormasEnlazadas documentoId={documento.id} sesion={sesion} />
+
       {vigente ? (
-        <BloqueDistribucion documento={{ id: documento.id, codigo: documento.codigo, titulo: documento.titulo }} sesion={sesion} />
+        <BloqueDistribucion
+          documento={{ id: documento.id, codigo: documento.codigo, titulo: documento.titulo }}
+          sesion={sesion}
+          volver={`/admin/documentos/${encodeURIComponent(documento.codigo)}`}
+          consulta={await searchParams}
+        />
       ) : null}
 
       <div className="flex flex-col gap-4">
@@ -262,10 +285,12 @@ export default async function PaginaDocumentoAdmin({
             version={v}
             documentoId={documento.id}
             nivelAcceso={documento.nivelAcceso}
-            puedeAdministrar={puedeAdministrar}
+            puedeAdministrar={puedeAdministrar && !esExterno}
             registrable={registrable}
             deshacible={puedeAdministrar && deshacible}
-          />
+          >
+            {v.estado === "vigente" && !esExterno ? <BloqueVigencia documentoId={documento.id} sesion={sesion} nivel={4} /> : null}
+          </SeccionVersion>
         ))}
       </div>
     </div>

@@ -7,11 +7,17 @@ import { Icono } from "@/componentes/iconos";
 import { Migas } from "@/componentes/navegacion/Migas";
 import { MiniMapa } from "@/componentes/navegacion/MiniMapa";
 import { NavHermanos } from "@/componentes/navegacion/NavHermanos";
+import { NormasAplicables } from "@/componentes/normograma/NormasAplicables";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
+import { ResumenVigencia } from "@/componentes/vigencia/ResumenVigencia";
+import { normasDeProceso } from "@/db/consultas/normograma/asociaciones";
+import { normasParaElegir } from "@/db/consultas/normograma/lectura";
 import {
   obtenerDetalleProceso,
   obtenerDocumentosDeProceso,
+  resumenVigenciaDeProceso,
 } from "@/db/consultas/procesos";
+import { alcanceProcesos, puedeAsociarNorma } from "@/lib/alcance";
 import { exigirSesion } from "@/lib/paginas";
 
 export const dynamic = "force-dynamic";
@@ -34,11 +40,17 @@ export default async function VistaProceso({
 
   const tieneSubprocesos = proceso.subprocesos.length > 0;
   const incluirSubprocesos = tieneSubprocesos && parametroSubprocesos !== "0";
-  const documentos = await obtenerDocumentosDeProceso(
-    proceso.id,
-    incluirSubprocesos,
-    sesion,
-  );
+  const [documentos, vigencia, normas, alcance] = await Promise.all([
+    obtenerDocumentosDeProceso(proceso.id, incluirSubprocesos, sesion),
+    resumenVigenciaDeProceso(proceso.id, sesion),
+    normasDeProceso(proceso.id, sesion),
+    alcanceProcesos(sesion),
+  ]);
+  // «Asociar norma» (spec 13C §10.3): quien tiene `normograma.procesos` sobre el proceso, con las normas que aún no aplican.
+  // Una derogada ya no se asocia a un proceso nuevo (`asociarProceso` lo rechaza).
+  const asociables = puedeAsociarNorma(sesion, proceso.id, alcance)
+    ? await normasParaElegir({ sinProceso: proceso.id, sinDerogadas: true })
+    : null;
 
   const propios = documentos.filter((d) => d.esPrincipal);
   const tambienAplican = documentos.filter((d) => !d.esPrincipal);
@@ -62,6 +74,7 @@ export default async function VistaProceso({
           </span>
         }
         codigo={proceso.sigla}
+        insignias={<ResumenVigencia vencidas={vigencia.vencidas} atencion={vigencia.atencion} />}
         titulo={proceso.nombre}
         descripcion={proceso.descripcion || undefined}
       />
@@ -159,6 +172,8 @@ export default async function VistaProceso({
           />
         )}
       </section>
+
+      <NormasAplicables proceso={{ id: proceso.id, slug: proceso.slug }} normas={normas} asociables={asociables} />
 
       {tambienAplican.length > 0 && (
         <section className="mt-8" aria-labelledby="titulo-tambien">

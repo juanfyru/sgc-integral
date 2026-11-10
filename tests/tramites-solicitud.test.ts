@@ -23,10 +23,14 @@ import {
   transicionar,
   type Manejador,
 } from "@/db/consultas/tramites-flujo";
+import { asociarProceso, enlazarDocumento } from "@/db/consultas/normograma/asociaciones";
+import { cambiarEstadoNorma } from "@/db/consultas/normograma/normas";
 import type { Verificador } from "@/lib/firma";
 import type { Accion } from "@/lib/tramites/transiciones";
+import { normaDePrueba } from "./utiles/normograma";
 import { documentoLibre, opc, sesionAdmin, sesionDe, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
+import { revisionDePrueba } from "./utiles/vigencia";
 
 const sql = obtenerSql();
 
@@ -105,7 +109,7 @@ describe("solicitud y visto bueno", () => {
     expect(t.vence_en).toBeNull();
     expect(t.cerrado_en).not.toBeNull();
     const [e] = await tx`SELECT detalle, usuario_id FROM tramite_eventos WHERE tramite_id = ${r.tramiteId} AND tipo = 'negar_visto_bueno'`;
-    expect(e.detalle).toEqual({ motivo: "No corresponde al proceso." });
+    expect(e.detalle).toEqual({ motivo: "No corresponde al proceso.", venceEn: expect.any(String) });
     expect(e.usuario_id).toBe(lider.usuarioId);
     const avisos = await tx`SELECT usuario_id, enlace FROM notificaciones WHERE entidad = 'tramite' AND entidad_id = ${r.tramiteId} AND tipo = 'tramite.resuelto'`;
     expect(avisos.map((a) => a.usuario_id)).toEqual([admin.usuarioId]);
@@ -273,9 +277,72 @@ describe("solicitud y visto bueno", () => {
   });
 });
 
+describe("la solicitud que nace de un impacto normativo o de la revisión anual", () => {
+  it("con impactoId resuelve el impacto con la solicitud y guarda tramites.impacto_id; uno de otro documento no deja nada", () => revertida(sql, async (tx) => {
+    const admin = await sesionAdmin(tx);
+    const lider = await sesionDe(tx, "lider.gth");
+    const doc = await documentoLibre(tx, { proceso: "GTH", tipo: "PR" });
+    const otro = await documentoLibre(tx, { proceso: "GTH", tipo: "PR" });
+    const n = await normaDePrueba(tx, admin);
+    await enlazarDocumento(admin, { normaId: n.id, documentoId: doc.id }, { sql: tx });
+    const { cambioId } = await cambiarEstadoNorma(admin, { normaId: n.id, estado: "derogada", fecha: "2026-11-01", nota: null }, opc(tx));
+    const [impacto] = await tx`SELECT id FROM impactos_normativos WHERE cambio_id = ${cambioId} AND documento_id = ${doc.id}`;
+    const impactoId = Number(impacto.id);
+    const base = { tipo: "modificar", motivo: "cambio_normativo", justificacion: JUSTIFICACION, impactoId } as const;
+
+    // El impacto es de otro documento: la solicitud no nace.
+    await expect(crearSolicitud(lider, { ...base, documentoId: otro.id }, opc(tx))).rejects.toThrow("La solicitud no es de este documento");
+    expect(await tx`SELECT 1 FROM tramites WHERE documento_id = ${otro.id}`).toHaveLength(0);
+
+    const { tramiteId } = await crearSolicitud(lider, { ...base, documentoId: doc.id }, opc(tx));
+    const [t] = await tx`SELECT impacto_id, revision_anual_id FROM tramites WHERE id = ${tramiteId}`;
+    expect(t).toEqual({ impacto_id: impactoId, revision_anual_id: null });
+    const [i] = await tx`SELECT estado, resolucion, tramite_id, resuelto_por FROM impactos_normativos WHERE id = ${impactoId}`;
+    expect(i).toEqual({ estado: "resuelto", resolucion: "solicitud", tramite_id: tramiteId, resuelto_por: lider.usuarioId });
+  }));
+
+  it("una creación con el impactoId de un impacto de proceso lo resuelve con la solicitud", () => revertida(sql, async (tx) => {
+    const admin = await sesionAdmin(tx);
+    const lider = await sesionDe(tx, "lider.gth");
+    const [gth] = await tx`SELECT id FROM procesos WHERE sigla = 'GTH'`;
+    const [tipo] = await tx`SELECT id FROM tipos_documento WHERE sigla = 'FO'`;
+    const n = await normaDePrueba(tx, admin);
+    await asociarProceso(admin, { normaId: n.id, procesoId: Number(gth.id), requisito: null }, { sql: tx });
+    const { cambioId } = await cambiarEstadoNorma(admin, { normaId: n.id, estado: "modificada", fecha: "2026-11-01", nota: null }, opc(tx));
+    const [impacto] = await tx`SELECT id FROM impactos_normativos WHERE cambio_id = ${cambioId} AND proceso_id = ${gth.id} AND documento_id IS NULL`;
+    const impactoId = Number(impacto.id);
+    const { tramiteId } = await crearSolicitud(
+      lider,
+      { tipo: "crear", motivo: "cambio_normativo", justificacion: JUSTIFICACION, procesoId: Number(gth.id), tipoDocumentoId: Number(tipo.id), tituloPropuesto: "Formato por la norma nueva", impactoId },
+      opc(tx),
+    );
+    const [t] = await tx`SELECT impacto_id, documento_id FROM tramites WHERE id = ${tramiteId}`;
+    expect(t).toEqual({ impacto_id: impactoId, documento_id: null });
+    const [i] = await tx`SELECT estado, resolucion, tramite_id FROM impactos_normativos WHERE id = ${impactoId}`;
+    expect(i).toEqual({ estado: "resuelto", resolucion: "solicitud", tramite_id: tramiteId });
+  }));
+
+  it("con revisionAnualId exige que esa revisión esté abierta y la guarda", () => revertida(sql, async (tx) => {
+    const admin = await sesionAdmin(tx);
+    const lider = await sesionDe(tx, "lider.gth");
+    const doc = await documentoLibre(tx, { proceso: "GTH", tipo: "PR" });
+    const ahora = new Date("2090-03-10T15:00:00Z");
+    const { revisionId } = await revisionDePrueba(tx, admin, { ahora });
+    const datos = { tipo: "modificar", motivo: "revision_anual", justificacion: JUSTIFICACION, documentoId: doc.id, revisionAnualId: revisionId } as const;
+    await expect(crearSolicitud(lider, { ...datos, revisionAnualId: revisionId + 100_000 }, { sql: tx, ahora })).rejects.toThrow(
+      "La revisión anual no está abierta",
+    );
+    const { tramiteId } = await crearSolicitud(lider, datos, { sql: tx, ahora });
+    const [t] = await tx`SELECT revision_anual_id, impacto_id FROM tramites WHERE id = ${tramiteId}`;
+    expect(t).toEqual({ revision_anual_id: revisionId, impacto_id: null });
+  }));
+});
+
 describe("configuración documental", () => {
   it("lee los valores y cae al defecto si la clave falta, está vacía o no es un entero de 0 a 365", () => revertida(sql, async (tx) => {
-    await tx`DELETE FROM configuracion WHERE clave LIKE 'plazo%' OR clave LIKE 'formato_acta%' OR clave IN ('escalamiento_dias', 'publicacion_directa', 'formato_codigo')`;
+    // La demo elige los formatos del acta y del informe (Tarea 15 de la 13C): sin sus claves, valen los de por defecto.
+    await tx`DELETE FROM configuracion WHERE clave LIKE 'plazo%' OR clave LIKE 'formato_acta%' OR clave LIKE 'formato_informe%'
+      OR clave IN ('escalamiento_dias', 'publicacion_directa', 'formato_codigo')`;
     expect(await obtenerConfigDocumental({ sql: tx })).toEqual(CONFIG_DOCUMENTAL_DEFECTO);
     await tx`INSERT INTO configuracion (clave, valor) VALUES
       ('plazo_revision_dias', '0'), ('plazo_aprobacion_dias', '366'), ('plazo_elaboracion_dias', '2.5'),

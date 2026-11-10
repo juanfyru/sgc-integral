@@ -58,7 +58,7 @@ beforeEach(() => {
   sesionDePeticion.mockResolvedValue(SESION);
   autorizarArchivoDeTramite.mockResolvedValue(ACEPTADO);
   archivoDeTramite.mockResolvedValue({ ruta: RUTA, mime: "application/pdf", nombreOriginal: "Borrador.pdf" });
-  registrarArchivo.mockResolvedValue({ id: 21 });
+  registrarArchivo.mockResolvedValue({ id: 21, reemplazados: [] });
   eliminarArchivoBorrador.mockResolvedValue({ ruta: RUTA });
 });
 

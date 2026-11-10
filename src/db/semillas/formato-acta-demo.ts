@@ -1,11 +1,13 @@
 /**
- * Un formato de acta ficticio para la demo: encabezado y pie dibujados aquí, con el cuerpo en blanco.
- * No es el formato de ninguna entidad: su nombre llega por parámetro. Con el encabezado hasta 4 cm y
- * el pie desde 3 cm, los márgenes de 4,2 y 3,2 cm que guarda la semilla dejan el cuerpo libre.
+ * Los formatos ficticios de la demo, el del acta y el del informe de la revisión anual: encabezado y pie
+ * dibujados aquí, con el cuerpo en blanco. No son el formato de ninguna entidad: su nombre llega por
+ * parámetro. Con el encabezado hasta 4 cm y el pie desde 3 cm, los márgenes de 4,2 y 3,2 cm que guarda la
+ * semilla dejan el cuerpo libre.
  */
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 
 export const CODIGO_FORMATO_ACTA = "SGC-FO-06";
+export const CODIGO_FORMATO_INFORME = "SGC-FO-07";
 
 const cm = (x: number) => (x * 72) / 2.54;
 
@@ -42,7 +44,8 @@ function raya(pagina: PDFPage, x1: number, y1: number, x2: number, y2: number): 
   pagina.drawLine({ start: { x: x1, y: y1 }, end: { x: x2, y: y2 }, thickness: 0.8, color: LINEA });
 }
 
-export async function generarFormatoActaDemo(entidad: string): Promise<Uint8Array> {
+/** El membrete de la demo con el título y el código de cada formato; el resto es igual en los dos. */
+async function generarMembreteDemo(entidad: string, d: { titulo: string; codigo: string }): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   const pagina = doc.addPage([ANCHO, ALTO]);
   const normal = await doc.embedFont(StandardFonts.Helvetica);
@@ -56,9 +59,9 @@ export async function generarFormatoActaDemo(entidad: string): Promise<Uint8Arra
   nombre.forEach((linea, i) => {
     centrado(pagina, linea, mitad - 3 + ((nombre.length - 1) / 2 - i) * 12, IZQUIERDA, COLUMNA_CENTRO, negrita, 9.5);
   });
-  centrado(pagina, "ACTA DE CONTROL DOCUMENTAL", mitad + 3, COLUMNA_CENTRO, COLUMNA_DERECHA, negrita, 12);
+  centrado(pagina, d.titulo, mitad + 3, COLUMNA_CENTRO, COLUMNA_DERECHA, negrita, 12);
   centrado(pagina, "Sistema de Gestión de Calidad", mitad - 13, COLUMNA_CENTRO, COLUMNA_DERECHA, normal, 9, SUAVE);
-  centrado(pagina, `Código: ${CODIGO_FORMATO_ACTA}`, mitad + 3, COLUMNA_DERECHA, DERECHA, normal, 9.5);
+  centrado(pagina, `Código: ${d.codigo}`, mitad + 3, COLUMNA_DERECHA, DERECHA, normal, 9.5);
   centrado(pagina, "Versión: 1", mitad - 13, COLUMNA_DERECHA, DERECHA, normal, 9.5);
 
   raya(pagina, IZQUIERDA, INICIO_PIE, DERECHA, INICIO_PIE);
@@ -68,4 +71,13 @@ export async function generarFormatoActaDemo(entidad: string): Promise<Uint8Arra
   centrado(pagina, "Formato ficticio de la demostración: no es un documento real.", 30, IZQUIERDA, DERECHA, normal, 8, SUAVE);
 
   return doc.save();
+}
+
+export function generarFormatoActaDemo(entidad: string): Promise<Uint8Array> {
+  return generarMembreteDemo(entidad, { titulo: "ACTA DE CONTROL DOCUMENTAL", codigo: CODIGO_FORMATO_ACTA });
+}
+
+/** El formato propio del informe de la revisión anual: sin él, el informe saldría sobre el membrete del acta. */
+export function generarFormatoInformeDemo(entidad: string): Promise<Uint8Array> {
+  return generarMembreteDemo(entidad, { titulo: "INFORME DE REVISIÓN ANUAL", codigo: CODIGO_FORMATO_INFORME });
 }

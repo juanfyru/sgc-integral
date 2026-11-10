@@ -41,6 +41,32 @@ const CM_DISTRIBUCION: { clave: keyof ConfigDocumental["distribucion"]; etiqueta
   { clave: "selloQrCm", etiqueta: "Tamaño del código QR (cm)", ayuda: "De 1,0 a 3,0 cm. Se acepta coma o punto." },
 ];
 
+const PLAZOS_VIGENCIA: {
+  clave: Exclude<keyof ConfigDocumental["vigencia"], "formatoInforme">;
+  etiqueta: string;
+  ayuda: string;
+  minimo: number;
+  maximo: number;
+}[] = [
+  { clave: "atencionDias", etiqueta: "Aviso antes del vencimiento de la revisión (días)", ayuda: "Desde cuántos días antes de vencer su plazo un documento aparece en «Atención».", minimo: 1, maximo: 365 },
+  { clave: "revisionAnualPlazoDias", etiqueta: "Plazo para decidir la revisión anual (días)", ayuda: "Días que tiene cada proceso para decidir sobre sus documentos, de 7 a 365.", minimo: 7, maximo: 365 },
+  { clave: "revisionAnualVentanaMeses", etiqueta: "Ventana de la revisión anual (meses)", ayuda: "Al abrir la revisión anual entran todos los documentos vigentes; los revisados dentro de estos meses (publicados, aprobados, ratificados o verificados) quedan «Revisado recientemente». Cero: ninguno.", minimo: 0, maximo: 24 },
+  { clave: "externosVerificacionMeses", etiqueta: "Verificar documentos externos cada (meses)", ayuda: "Cada cuántos meses se confirma que la edición adoptada de un documento externo sigue vigente.", minimo: 1, maximo: 60 },
+  { clave: "impactoPlazoDias", etiqueta: "Plazo para responder un impacto normativo (días)", ayuda: "Días que tiene el responsable para analizar el cambio de una norma.", minimo: 1, maximo: 365 },
+];
+
+const METAS: { clave: keyof ConfigDocumental["metas"]; etiqueta: string; ayuda: string; minimo: number; maximo: number }[] = [
+  { clave: "dentroPlazoPct", etiqueta: "Documentos dentro de plazo (%)", ayuda: "Porcentaje de documentos con su revisión al día (50 a 100).", minimo: 50, maximo: 100 },
+  { clave: "aprobacionDias", etiqueta: "Días de aprobación (máximo)", ayuda: "Días que, como mucho, debe tardar un trámite desde que se acepta hasta que se publica.", minimo: 1, maximo: 365 },
+  { clave: "vencidos", etiqueta: "Documentos vencidos (máximo)", ayuda: "Cuántos documentos con la revisión vencida se toleran. Cero: ninguno.", minimo: 0, maximo: 999 },
+  { clave: "acusesPct", etiqueta: "Acuses de lectura (%)", ayuda: "Porcentaje de acuses de lectura confirmados (50 a 100).", minimo: 50, maximo: 100 },
+  { clave: "externosPct", etiqueta: "Externos verificados (%)", ayuda: "Porcentaje de documentos externos verificados a tiempo (50 a 100).", minimo: 50, maximo: 100 },
+  { clave: "etapasPlazoPct", etiqueta: "Etapas del trámite a tiempo (%)", ayuda: "Porcentaje de etapas del trámite cerradas dentro de su plazo (50 a 100).", minimo: 50, maximo: 100 },
+];
+
+/** El nombre del campo del formulario: `metaAcusesPct` para `acusesPct`. */
+const campoMeta = (clave: string) => `meta${clave[0].toUpperCase()}${clave.slice(1)}`;
+
 function Seccion({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
     <section className="flex flex-col gap-4 rounded-lg border border-border p-4">
@@ -88,11 +114,14 @@ function AvisoFormato({ estado }: { estado: EstadoFormato }) {
 export function FormularioConfigDocumental({
   config,
   documentosFormato,
+  documentosInforme,
   estadoFormato,
 }: {
   config: ConfigDocumental;
   /** Trae el documento guardado aunque ya no sirva: así sigue elegido y guardar otra sección no lo quita. */
   documentosFormato: { id: number; codigo: string; titulo: string }[];
+  /** Lo mismo para el formato del informe de vigencia: trae el documento guardado aunque ya no sirva. */
+  documentosInforme: { id: number; codigo: string; titulo: string }[];
   estadoFormato: EstadoFormato;
 }) {
   const [estado, enviar, pendiente] = useActionState(guardarConfigDocumentalAccion, null);
@@ -284,6 +313,102 @@ export function FormularioConfigDocumental({
                 pattern="[0-9]{1,2}([.,][0-9])?"
                 required
                 defaultValue={val(d.clave) ?? String(config.distribucion[d.clave]).replace(".", ",")}
+                className={claseControl}
+              />
+            </Campo>
+          ))}
+        </div>
+      </Seccion>
+
+      <Seccion titulo="Vigencia">
+        <div className="grid gap-4 sm:grid-cols-2">
+          {PLAZOS_VIGENCIA.map((d) => (
+            <Campo key={d.clave} etiqueta={d.etiqueta} nombre={d.clave} ayuda={d.ayuda}>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={d.minimo}
+                max={d.maximo}
+                step={1}
+                required
+                defaultValue={val(d.clave) ?? config.vigencia[d.clave]}
+                className={claseControl}
+              />
+            </Campo>
+          ))}
+        </div>
+        <Campo
+          etiqueta="Documento del formato del informe"
+          nombre="formatoInformeDocumentoId"
+          ayuda="Un PDF de una página, tamaño carta, con el cuerpo en blanco: el papel del informe de la revisión anual. Sin uno, se usa el del acta. Guarde y use Ver informe de ejemplo para comprobar los espacios."
+        >
+          <select
+            defaultValue={val("formatoInformeDocumentoId") ?? String(config.vigencia.formatoInforme.documentoId ?? "")}
+            className={`${claseControl} w-full min-w-0`}
+          >
+            {/* Sin formato propio, el informe sale sobre el del acta (`revision-anual/cierre.ts`); sin ninguno, básico. */}
+            <option value="">Sin formato propio: el del acta</option>
+            {documentosInforme.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.codigo} — {d.titulo}
+              </option>
+            ))}
+          </select>
+        </Campo>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Campo etiqueta="Espacio del encabezado del informe (cm)" nombre="informeMargenSuperiorCm">
+            <input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              max={12}
+              step="0.1"
+              required
+              defaultValue={val("informeMargenSuperiorCm") ?? config.vigencia.formatoInforme.margenSuperiorCm}
+              className={claseControl}
+            />
+          </Campo>
+          <Campo etiqueta="Espacio del pie del informe (cm)" nombre="informeMargenInferiorCm">
+            <input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              max={12}
+              step="0.1"
+              required
+              defaultValue={val("informeMargenInferiorCm") ?? config.vigencia.formatoInforme.margenInferiorCm}
+              className={claseControl}
+            />
+          </Campo>
+        </div>
+        {/* Como «Ver acta de ejemplo»: el informe con el formato y los espacios guardados (o los del acta, si no hay uno). */}
+        <a
+          href="/admin/api/informe-ejemplo"
+          target="_blank"
+          rel="noopener"
+          aria-label="Ver informe de ejemplo (PDF), se abre en una pestaña nueva"
+          className="inline-flex items-center gap-1.5 self-start text-sm font-medium text-foreground underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          Ver informe de ejemplo
+        </a>
+      </Seccion>
+
+      <Seccion titulo="Indicadores documentales">
+        <p className="text-sm text-muted-foreground">
+          Las metas con que se comparan los indicadores de documentos. La meta de conformidad es el umbral de conformidad de Distribución.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {METAS.map((d) => (
+            <Campo key={d.clave} etiqueta={d.etiqueta} nombre={campoMeta(d.clave)} ayuda={d.ayuda}>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={d.minimo}
+                max={d.maximo}
+                step={1}
+                required
+                defaultValue={val(campoMeta(d.clave)) ?? config.metas[d.clave]}
                 className={claseControl}
               />
             </Campo>

@@ -7,8 +7,11 @@ export const TAMANO_MUESTRA_BYTES = 16384;
 
 export const ROLES_ARCHIVO = ["principal", "editable", "anexo"] as const;
 export type RolArchivo = (typeof ROLES_ARCHIVO)[number];
-/** Dónde cuelga una evidencia: una jornada de socialización o un ítem de verificación. */
-export const CONTEXTOS_EVIDENCIA = ["jornada", "verificacion_item"] as const;
+/**
+ * Dónde cuelga una evidencia: una jornada de socialización, un ítem de verificación, una norma (su PDF), una revisión
+ * anual o un hallazgo.
+ */
+export const CONTEXTOS_EVIDENCIA = ["jornada", "verificacion_item", "norma", "revision_anual", "hallazgo"] as const;
 export type ContextoEvidencia = (typeof CONTEXTOS_EVIDENCIA)[number];
 /** Los roles que las listas y las rutas de archivos de un documento ofrecen: las actas quedan fuera. */
 export const ROLES_ARCHIVO_LISTA: string[] = [...ROLES_ARCHIVO];
@@ -105,18 +108,31 @@ export async function validarTipo(
 const EXTENSIONES_EVIDENCIA = ["pdf", "png", "jpg", "jpeg", "webp"];
 
 const ERROR_EVIDENCIA = "La evidencia debe ser PDF o imagen (PNG, JPG, WebP)";
+const ERROR_SOLO_PDF = "El archivo de la norma debe ser un PDF";
+
+/** El archivo de una norma es su texto oficial: solo PDF (spec 13C §10.1). */
+export const CONTEXTOS_SOLO_PDF: readonly ContextoEvidencia[] = ["norma"];
 
 /**
- * Como `validarTipo`, pero una evidencia solo es un PDF o una imagen (nunca SVG, HTML ni Office):
- * una extensión fuera de la lista o un contenido que no la respalda dan el mismo mensaje.
+ * Los dueños de un solo archivo, con la tabla del dueño: el que se sube reemplaza al anterior en la misma transacción y
+ * con el dueño bloqueado, así dos subidas a la vez, o una subida y el borrado del dueño, se ordenan (`registrarArchivo`).
+ */
+export const CONTEXTOS_UNICOS: Partial<Record<ContextoEvidencia, string>> = { norma: "normas" };
+
+/**
+ * Como `validarTipo`, pero una evidencia solo es un PDF o una imagen (nunca SVG, HTML ni Office), y con `soloPdf`
+ * solo un PDF: una extensión fuera de la lista o un contenido que no la respalda dan el mismo mensaje.
  */
 export async function validarTipoEvidencia(
   nombre: string,
   muestra: Uint8Array,
+  opciones?: { soloPdf?: boolean },
 ): Promise<ResultadoTipo> {
   const punto = nombre.lastIndexOf(".");
   const extension = punto > 0 ? nombre.slice(punto + 1).toLowerCase() : "";
-  if (!EXTENSIONES_EVIDENCIA.includes(extension)) return { ok: false, error: ERROR_EVIDENCIA };
+  const error = opciones?.soloPdf ? ERROR_SOLO_PDF : ERROR_EVIDENCIA;
+  const permitidas = opciones?.soloPdf ? ["pdf"] : EXTENSIONES_EVIDENCIA;
+  if (!permitidas.includes(extension)) return { ok: false, error };
   const tipo = await validarTipo(nombre, muestra);
-  return tipo.ok ? tipo : { ok: false, error: ERROR_EVIDENCIA };
+  return tipo.ok ? tipo : { ok: false, error };
 }

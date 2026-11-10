@@ -10,6 +10,22 @@ persona y el mapa de procesos institucional, interactivo y configurable. El
 nombre, la sigla, el logo y los colores de la entidad se configuran desde la app
 (Administración → Entidad y marca), con tema claro y oscuro.
 
+Módulos, cada uno en la barra lateral según el rol de la persona:
+
+- **Inicio** (`/`): «Mis tareas» y el mapa de procesos; **Buscar documentos** (`/buscar`, y `Ctrl K`), con
+  documentos vigentes y normas.
+- **Trámites** (`/tramites`): solicitud, aceptación, elaboración, revisión, aprobación y publicación con
+  firma por clave y acta en PDF.
+- **Distribución** (`/distribucion`): copias controladas, acuses de lectura, socializaciones y verificaciones
+  en los puntos de uso.
+- **Vigencia** (`/vigencia`): semáforo de revisión y ratificación, revisión anual con su informe, documentos
+  externos (la matriz) e indicadores del proceso documental.
+- **Normograma** (`/normograma`): normas aplicables, institucional y por proceso, con sus impactos.
+- **Panel** (`/admin`): gestión de documentos, Listado Maestro, tipos, configuración documental, mapa,
+  entidad, estructura, puntos de uso, listas, usuarios, estadísticas, bitácora, accesos y sesiones.
+
+El manual de usuario está en [`docs/manual/usuario/`](docs/manual/usuario/), un capítulo por módulo.
+
 - **Reglas permanentes del proyecto:** [`CLAUDE.md`](CLAUDE.md) / [`AGENTS.md`](AGENTS.md)
 - **Estado vivo:** [`CONTEXT.md`](CONTEXT.md)
 - **Plan por fases:** [`PLAN.md`](PLAN.md)
@@ -39,7 +55,8 @@ npm run db:seed:minima
 #   coordinadora.sgc (admin_sgc), gerente (gerencia), control.interno (control_interno),
 #   lider.gth y lider.cex (lider_proceso, de GTH y CEX), consulta (consulta),
 #   jefe.urgencias y regente.farmacia (consulta; responsables de los puntos de uso
-#   Urgencias y Farmacia).
+#   Urgencias y Farmacia; regente.farmacia es además responsable técnico de un
+#   documento externo).
 
 # Puertos elegidos para convivir con sgc-suaza en la misma máquina:
 # Postgres 5435, app en Docker 9081, next dev 3002.

@@ -9,6 +9,7 @@ import {
   exigirSiglasDelCodigo,
   sugerirCodigo,
 } from "@/db/consultas/codigos";
+import { EXTERNO_SIN_TRAMITE, exigirInterno, exigirTipoDeInterno } from "@/db/consultas/origen";
 import { buscarParecidos } from "@/db/consultas/parecidos";
 import {
   propietarioDeDocumento,
@@ -111,6 +112,7 @@ async function abrirVersion(
       EXISTS (SELECT 1 FROM documento_versiones v WHERE v.documento_id = d.id AND v.estado = 'vigente') AS vigente,
       EXISTS (SELECT 1 FROM documento_versiones v WHERE v.documento_id = d.id AND v.estado = 'borrador') AS borrador
     FROM documentos d WHERE d.id = ${documentoId}`;
+  await exigirInterno(tx, { documentoId }, EXTERNO_SIN_TRAMITE);
   if (!doc?.vigente) throw new ErrorTramite("El documento ya no tiene versión vigente");
   if (doc.borrador) throw new ErrorTramite(BORRADOR_PENDIENTE);
 
@@ -251,6 +253,7 @@ async function aceptarNuevo(c: ContextoManejador): Promise<Efecto> {
   const d = c.datos as DatosNuevo;
   const tipo = await tipoDeDocumento(d.tipoDocumentoId, { sql: tx });
   if (!tipo?.activo) throw new ErrorTramite("El tipo de documento no existe o está inactivo");
+  await exigirTipoDeInterno(tx, d.tipoDocumentoId);
   const propietario = await propietarioElegido(tx, d.asociaciones.find((a) => a.esPrincipal));
   const responsables = await exigirDesignacion(tx, tramite, "crear", tipo.autoridad, d);
   const venceEn = plazoDeElaboracion(d.venceElaboracion, ahora);

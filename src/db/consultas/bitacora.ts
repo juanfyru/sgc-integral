@@ -1,4 +1,4 @@
-import { obtenerSql } from "@/db/cliente";
+import { obtenerSql, type Cliente } from "@/db/cliente";
 
 export type FiltrosBitacora = {
   accion?: string;
@@ -34,11 +34,16 @@ const PATRON_FECHA = /^\d{4}-\d{2}-\d{2}$/;
  * Vista filtrable de la bitácora (regla ISO 5). Más reciente primero, paginada.
  * Resuelve el código del documento afectado (por entidad o por `detalle`) para
  * responder "¿por qué desapareció este formato?" y permitir buscar por código.
+ *
+ * Una relación entre normas deja una fila en cada norma, con el mismo detalle (`auditarEnLasDos`, 13C): aquí se
+ * muestra una vez por `relacionId`, la de la norma que la causa, sin tocar las filas. La de la afectada se sigue
+ * encontrando por el texto: su detalle la nombra.
  */
 export async function obtenerBitacora(
   filtros: FiltrosBitacora,
+  opciones?: { sql?: Cliente },
 ): Promise<RespuestaBitacora> {
-  const sql = obtenerSql();
+  const sql = opciones?.sql ?? obtenerSql();
   const pagina = Math.max(filtros.pagina ?? 1, 1);
   const desde = filtros.desde && PATRON_FECHA.test(filtros.desde) ? filtros.desde : null;
   const hasta = filtros.hasta && PATRON_FECHA.test(filtros.hasta) ? filtros.hasta : null;
@@ -54,7 +59,11 @@ export async function obtenerBitacora(
       LIMIT 1
     ) cd ON true`;
 
+  // Como texto y sin cast: un `normaId` que no fuera un número no puede tumbar la consulta (Postgres no garantiza el
+  // orden del `AND`), y esa fila se muestra.
   const cond = sql`
+    AND NOT COALESCE(a.accion IN ('norma_relacion', 'norma_relacion_eliminada') AND a.detalle ? 'relacionId'
+      AND a.detalle->>'normaId' ~ '^[0-9]+$' AND a.entidad_id::text IS DISTINCT FROM a.detalle->>'normaId', false)
     ${filtros.accion ? sql`AND a.accion = ${filtros.accion}` : sql``}
     ${filtros.entidad ? sql`AND a.entidad = ${filtros.entidad}` : sql``}
     ${desde ? sql`AND a.creado_en >= ${desde}` : sql``}

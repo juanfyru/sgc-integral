@@ -67,7 +67,7 @@ describe("misTareas con copias", () => {
   it("quien no responde por ningún punto no tiene tareas de copias", () =>
     revertida(sql, async (tx) => {
       const nadie = await usuarioDePrueba(tx, { rol: "consulta" });
-      expect(await misTareas(nadie, { sql: tx })).toEqual({ tareas: [], total: 0 });
+      expect(await misTareas(nadie, { sql: tx })).toEqual({ tareas: [], total: 0, vencidos: 0 });
     }));
 });
 

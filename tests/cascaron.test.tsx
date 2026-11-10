@@ -60,6 +60,20 @@ describe("cascarón (render estático de los componentes cliente)", () => {
       renderToStaticMarkup(<ContenidoBarra marca={marca} entradas={entradas} tareas={3} version="0.1.0" />),
     ).toContain('data-contador="3"');
   });
+  it("la entrada «Vigencia» lleva el conteo de vencidos de su alcance, con texto accesible; sin vencidos o sin la entrada, nada", () => {
+    const conVigencia = entradasVisibles({ rol: "consulta", responsableTecnico: true });
+    const pintar = (entradas: ReturnType<typeof entradasVisibles>, vencidos: number) =>
+      renderToStaticMarkup(<ContenidoBarra marca={marca} entradas={entradas} tareas={0} vencidos={vencidos} version="0.1.0" />);
+    const con = pintar(conVigencia, 4);
+    expect(con).toMatch(/href="\/vigencia"[^]*data-vencidos="4"[^>]*>4<span class="sr-only"> con revisión vencida<\/span><\/span>/);
+    expect(pintar(conVigencia, 0)).not.toContain("data-vencidos");
+    // Quien no ve la entrada no la tiene, ni su conteo.
+    expect(pintar(entradasVisibles({ rol: "consulta" }), 4)).not.toContain("data-vencidos");
+    // La insignia de «Inicio» sigue siendo la de las tareas.
+    expect(renderToStaticMarkup(<ContenidoBarra marca={marca} entradas={conVigencia} tareas={2} vencidos={4} version="0.1.0" />)).toContain(
+      'data-contador="2"',
+    );
+  });
   it("MenuUsuario ofrece los tres temas con el actual marcado", () => {
     const h = renderToStaticMarkup(<MenuUsuario nombre="Ana" etiquetaRol="Gerencia" tema="oscuro" />);
     expect(h).toContain("Según el sistema");

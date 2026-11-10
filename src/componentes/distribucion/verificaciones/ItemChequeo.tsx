@@ -7,6 +7,7 @@ import { Insignia, type VarianteInsignia } from "@/componentes/ui/Insignia";
 import type { ItemVerificacion } from "@/db/consultas/distribucion/verificaciones";
 import { ETIQUETA_RESPUESTA, RESPUESTAS_ITEM, type RespuestaItem } from "@/lib/distribucion/tipos";
 import { BotonQuitarFoto } from "./BotonQuitarFoto";
+import { urlDeFoto } from "./enlaces";
 
 export type ValorItem = { respuesta: RespuestaItem | null; nota: string; retirado: boolean };
 
@@ -21,9 +22,6 @@ const CLASE_ELEGIDA: Record<RespuestaItem, string> = {
 };
 
 const VARIANTE: Record<RespuestaItem, VarianteInsignia> = { conforme: "bien", no_conforme: "critico", no_aplica: "neutra" };
-
-export const urlDeFoto = (verificacionId: number, fotoId: number, nombre: string) =>
-  `/distribucion/verificaciones/${verificacionId}/archivos/${fotoId}/${encodeURIComponent(nombre)}`;
 
 const tamano = (bytes: number) => (bytes >= 1_048_576 ? `${(bytes / 1_048_576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
 

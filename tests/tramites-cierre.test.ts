@@ -73,10 +73,14 @@ async function fallaSinGastarLaFirma(
 const avisos = (tx: TransactionSql, tramiteId: number, tipo: string) =>
   tx`SELECT usuario_id, titulo FROM notificaciones WHERE entidad = 'tramite' AND entidad_id = ${tramiteId} AND tipo = ${tipo}`;
 
-/** Sin `acta`: los datos congelados del acta se prueban en acta.test.ts. */
+/**
+ * Sin `acta` ni `venceEn`: los datos congelados del acta se prueban en acta.test.ts, y la fecha límite de la etapa
+ * que cierra, al final de este archivo.
+ */
 const ultimoDetalle = async (tx: TransactionSql, tramiteId: number, tipo: string) => {
   const detalle = (await tx`SELECT detalle FROM tramite_eventos WHERE tramite_id = ${tramiteId} AND tipo = ${tipo} ORDER BY id DESC LIMIT 1`)[0].detalle;
   delete detalle.acta;
+  delete detalle.venceEn;
   return detalle;
 };
 
@@ -676,5 +680,33 @@ describe("ciclo completo", () => {
         ["elaboro", elaborador.usuarioId], ["reviso", t.revisor.usuarioId], ["aprobo", gerente.usuarioId], ["publico", elaborador.usuarioId],
       ]);
     } finally { await t.limpiar(); }
+  }));
+});
+
+describe("la fecha límite de la etapa que cierra (indicador de etapas en plazo)", () => {
+  it("cada paso que cambia de etapa guarda en su evento la fecha límite de la etapa que cierra; la bitácora no la repite", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "publicacion");
+    try {
+      const [antes] = await tx`SELECT vence_en FROM tramites WHERE id = ${t.tramiteId}`;
+      await transicionar(t.admin, publicar(t), opc(tx));
+      const eventos = await tx`SELECT tipo, detalle FROM tramite_eventos WHERE tramite_id = ${t.tramiteId} ORDER BY id`;
+      const detalleDe = new Map(eventos.map((e) => [e.tipo as string, e.detalle as Record<string, unknown>]));
+      for (const tipo of ["aceptar", "enviar_a_revision", "concepto_favorable", "aprobar", "publicar"]) {
+        expect(detalleDe.get(tipo)?.venceEn, tipo).toEqual(expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/));
+      }
+      expect(detalleDe.get("publicar")!.venceEn).toBe((antes.vence_en as Date).toISOString());
+      // La solicitud no pasa por `transicionar`.
+      expect(detalleDe.get("solicitar")).not.toHaveProperty("venceEn");
+      const [auditoria] = await tx`SELECT detalle FROM auditoria WHERE accion = 'tramite_publicar' AND entidad_id = ${t.tramiteId}`;
+      expect(auditoria.detalle).not.toHaveProperty("venceEn");
+    } finally { await t.limpiar(); }
+  }));
+
+  it("reasignar no cierra la etapa: su `venceEn` sigue siendo la fecha nueva que se eligió", () => revertida(sql, async (tx) => {
+    const t = await tramiteEn(tx, "elaboracion");
+    await transicionar(t.admin, { tramiteId: t.tramiteId, accion: "reasignar", etapaEsperada: "elaboracion", rondaEsperada: t.ronda,
+      datos: { venceEn: "2026-12-01", motivo: "Se reorganiza el equipo." } }, opc(tx));
+    const [e] = await tx`SELECT detalle FROM tramite_eventos WHERE tramite_id = ${t.tramiteId} AND tipo = 'reasignar'`;
+    expect(e.detalle.venceEn).toBe("2026-12-01");
   }));
 });

@@ -6,12 +6,15 @@ import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import type { Miembro, OpcionesFormularioLista } from "@/db/consultas/distribucion/listas";
 
+/** El miembro sin referencia (`TipoMiembro`): viaja como `todos` a secas, no como `tipo:id`. */
+const TODOS = "todos";
+
 type Valores = { nombre: string; descripcion: string | null; miembros: Miembro[] };
 
 const claseGrupo = "flex min-w-0 flex-col gap-2";
 const claseLista = "flex max-h-56 flex-col gap-1 overflow-y-auto rounded-md border border-border p-3";
 
-const clave = (tipo: string, referencia: number) => `${tipo}:${referencia}`;
+const clave = (tipo: string, referencia: number | null) => (tipo === TODOS ? TODOS : `${tipo}:${referencia}`);
 
 function Casilla({ valor, marcada, children }: { valor: string; marcada: boolean; children: React.ReactNode }) {
   return (
@@ -35,6 +38,7 @@ export function FormularioLista({
 }) {
   const [estado, enviar, pendiente] = useActionState(accion, null);
   const [filtro, setFiltro] = useState("");
+  const [todos, setTodos] = useState(() => valores.miembros.some((m) => m.tipo === "todos"));
   const enviado = (campo: string): string | undefined => {
     const x = estado?.valores?.[campo];
     return typeof x === "string" ? x : undefined;
@@ -49,7 +53,7 @@ export function FormularioLista({
     ...opciones.usuarios.map((u) => clave("usuario", u.id)),
   ]);
   // Miembros que ya no están activos: se muestran para poder quitarlos y no se pierden en silencio al guardar.
-  const inactivos = valores.miembros.filter((m) => !ofrecidos.has(clave(m.tipo, m.referenciaId)));
+  const inactivos = valores.miembros.filter((m) => m.tipo !== "todos" && !ofrecidos.has(clave(m.tipo, m.referenciaId)));
   const cargosPorArea = new Map<number, { nombre: string; cargos: OpcionesFormularioLista["cargos"] }>();
   for (const c of opciones.cargos) {
     const g = cargosPorArea.get(c.areaId) ?? { nombre: c.areaNombre, cargos: [] };
@@ -68,71 +72,93 @@ export function FormularioLista({
         <textarea rows={2} maxLength={300} defaultValue={enviado("descripcion") ?? valores.descripcion ?? ""} className={claseControl} />
       </Campo>
 
-      <fieldset className={claseGrupo}>
-        <legend className="mb-1 text-sm font-medium">Áreas (toda su gente)</legend>
-        <div className={claseLista}>
-          {opciones.areas.map((a) => (
-            <Casilla key={a.id} valor={clave("area", a.id)} marcada={marcados.has(clave("area", a.id))}>{a.nombre}</Casilla>
-          ))}
-        </div>
-      </fieldset>
+      <div className="flex flex-col gap-1">
+        <label className="flex min-h-11 items-center gap-2 text-sm font-medium">
+          <input
+            type="checkbox"
+            name="miembros"
+            value={TODOS}
+            checked={todos}
+            onChange={(e) => setTodos(e.target.checked)}
+            aria-describedby="ayuda-todos"
+            className="size-5"
+          />
+          Todos los usuarios activos
+        </label>
+        <p id="ayuda-todos" className="text-xs text-muted-foreground">
+          Llega a toda persona activa en la plataforma en el momento de cada envío. Un documento restringido sigue llegando
+          solo a quien puede verlo.
+        </p>
+      </div>
 
-      <fieldset className={claseGrupo}>
-        <legend className="mb-1 text-sm font-medium">Cargos</legend>
-        <div className={claseLista}>
-          {[...cargosPorArea.entries()].map(([areaId, g]) => (
-            <div key={areaId} role="group" aria-label={`Cargos de ${g.nombre}`} className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-muted-foreground">{g.nombre}</span>
-              {g.cargos.map((c) => (
-                <Casilla key={c.id} valor={clave("cargo", c.id)} marcada={marcados.has(clave("cargo", c.id))}>{c.nombre}</Casilla>
-              ))}
-            </div>
-          ))}
-        </div>
-      </fieldset>
-
-      <fieldset className={claseGrupo}>
-        <legend className="mb-1 text-sm font-medium">Procesos (quienes están asignados)</legend>
-        <div className={claseLista}>
-          {opciones.procesos.map((p) => (
-            <Casilla key={p.id} valor={clave("proceso", p.id)} marcada={marcados.has(clave("proceso", p.id))}>
-              {p.sigla} · {p.nombre}
-            </Casilla>
-          ))}
-        </div>
-      </fieldset>
-
-      <fieldset className={claseGrupo}>
-        <legend className="mb-1 text-sm font-medium">Personas</legend>
-        <input
-          type="search"
-          aria-label="Filtrar personas por nombre"
-          placeholder="Filtrar por nombre"
-          value={filtro}
-          onChange={(e) => setFiltro(e.target.value)}
-          className={claseControl}
-        />
-        <div className={claseLista}>
-          {opciones.usuarios.map((u) => (
-            <div key={u.id} hidden={f !== "" && !u.nombre.toLocaleLowerCase("es").includes(f)}>
-              <Casilla valor={clave("usuario", u.id)} marcada={marcados.has(clave("usuario", u.id))}>
-                {u.nombre} <span className="text-xs text-muted-foreground">({u.usuario})</span>
-              </Casilla>
-            </div>
-          ))}
-        </div>
-      </fieldset>
-
-      {inactivos.length > 0 ? (
+      {/* Con «todos» los demás miembros sobran: deshabilitados no viajan en el envío. */}
+      <fieldset disabled={todos} hidden={todos} className="m-0 flex min-w-0 flex-col gap-5 border-0 p-0">
         <fieldset className={claseGrupo}>
-          <legend className="mb-1 text-sm font-medium">Miembros inactivos (desmarque para quitarlos)</legend>
-          {inactivos.map((m) => (
-            <Casilla key={clave(m.tipo, m.referenciaId)} valor={clave(m.tipo, m.referenciaId)} marcada={marcados.has(clave(m.tipo, m.referenciaId))}>
-              {m.nombre} <span className="text-xs text-muted-foreground">(inactivo)</span>
-            </Casilla>
-          ))}
+          <legend className="mb-1 text-sm font-medium">Áreas (toda su gente)</legend>
+          <div className={claseLista}>
+            {opciones.areas.map((a) => (
+              <Casilla key={a.id} valor={clave("area", a.id)} marcada={marcados.has(clave("area", a.id))}>{a.nombre}</Casilla>
+            ))}
+          </div>
         </fieldset>
-      ) : null}
+
+        <fieldset className={claseGrupo}>
+          <legend className="mb-1 text-sm font-medium">Cargos</legend>
+          <div className={claseLista}>
+            {[...cargosPorArea.entries()].map(([areaId, g]) => (
+              <div key={areaId} role="group" aria-label={`Cargos de ${g.nombre}`} className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-muted-foreground">{g.nombre}</span>
+                {g.cargos.map((c) => (
+                  <Casilla key={c.id} valor={clave("cargo", c.id)} marcada={marcados.has(clave("cargo", c.id))}>{c.nombre}</Casilla>
+                ))}
+              </div>
+            ))}
+          </div>
+        </fieldset>
+
+        <fieldset className={claseGrupo}>
+          <legend className="mb-1 text-sm font-medium">Procesos (quienes están asignados)</legend>
+          <div className={claseLista}>
+            {opciones.procesos.map((p) => (
+              <Casilla key={p.id} valor={clave("proceso", p.id)} marcada={marcados.has(clave("proceso", p.id))}>
+                {p.sigla} · {p.nombre}
+              </Casilla>
+            ))}
+          </div>
+        </fieldset>
+
+        <fieldset className={claseGrupo}>
+          <legend className="mb-1 text-sm font-medium">Personas</legend>
+          <input
+            type="search"
+            aria-label="Filtrar personas por nombre"
+            placeholder="Filtrar por nombre"
+            value={filtro}
+            onChange={(e) => setFiltro(e.target.value)}
+            className={claseControl}
+          />
+          <div className={claseLista}>
+            {opciones.usuarios.map((u) => (
+              <div key={u.id} hidden={f !== "" && !u.nombre.toLocaleLowerCase("es").includes(f)}>
+                <Casilla valor={clave("usuario", u.id)} marcada={marcados.has(clave("usuario", u.id))}>
+                  {u.nombre} <span className="text-xs text-muted-foreground">({u.usuario})</span>
+                </Casilla>
+              </div>
+            ))}
+          </div>
+        </fieldset>
+
+        {inactivos.length > 0 ? (
+          <fieldset className={claseGrupo}>
+            <legend className="mb-1 text-sm font-medium">Miembros inactivos (desmarque para quitarlos)</legend>
+            {inactivos.map((m) => (
+              <Casilla key={clave(m.tipo, m.referenciaId)} valor={clave(m.tipo, m.referenciaId)} marcada={marcados.has(clave(m.tipo, m.referenciaId))}>
+                {m.nombre} <span className="text-xs text-muted-foreground">(inactivo)</span>
+              </Casilla>
+            ))}
+          </fieldset>
+        ) : null}
+      </fieldset>
 
       {estado && (
         <p role="alert" className="rounded-md bg-estado-critico-fondo px-3 py-2 text-sm text-estado-critico-texto">

@@ -6,6 +6,7 @@ import { claseBoton } from "@/componentes/ui/Boton";
 import { claseControl } from "@/componentes/ui/Campo";
 import { InsigniaEstadoDocumento } from "@/componentes/ui/Insignia";
 import { TablaDatos, celda, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
+import { ChipVigencia } from "@/componentes/vigencia/ChipVigencia";
 import {
   ETIQUETA_ESTADO_FILTRO,
   FILTRO_VACIO,
@@ -13,6 +14,7 @@ import {
   opcionesDe,
   type FiltroDocumentos,
 } from "@/lib/filtro-documentos-admin";
+import { ETIQUETA_VIGENCIA, type EstadoVigencia } from "@/lib/vigencia/tipos";
 
 export type FilaTablaDocumentos = {
   id: number;
@@ -21,6 +23,7 @@ export type FilaTablaDocumentos = {
   tipoNombre: string;
   procesos: string[];
   estados: string[];
+  vigencia: { estado: EstadoVigencia; dias: number | null; texto: string } | null;
 };
 
 const COLUMNAS: readonly ColumnaTabla[] = [
@@ -29,12 +32,13 @@ const COLUMNAS: readonly ColumnaTabla[] = [
   { clave: "tipo", etiqueta: "Tipo" },
   { clave: "procesos", etiqueta: "Procesos" },
   { clave: "estado", etiqueta: "Estado" },
+  { clave: "vigencia", etiqueta: "Vigencia" },
 ];
 
 const claseEtiqueta = "flex flex-col gap-1 text-sm font-medium";
 
 /**
- * La tabla de Gestión de documentos con su filtro: texto sobre código y título, y tipo, proceso y estado exactos.
+ * La tabla de Gestión de documentos con su filtro: texto sobre código y título, y tipo, proceso, estado y vigencia exactos.
  * Filtra al escribir, sobre la lista que ya llegó del servidor; la dirección de la página no cambia.
  */
 export function TablaDocumentosAdmin({ filas }: { filas: FilaTablaDocumentos[] }) {
@@ -86,6 +90,15 @@ export function TablaDocumentosAdmin({ filas }: { filas: FilaTablaDocumentos[] }
             ))}
           </select>
         </label>
+        <label className={claseEtiqueta}>
+          Vigencia
+          <select value={filtro.vigencia} onChange={cambiar("vigencia")} className={claseControl}>
+            <option value="">Todas</option>
+            {opciones.vigencias.map((v) => (
+              <option key={v} value={v}>{ETIQUETA_VIGENCIA[v]}</option>
+            ))}
+          </select>
+        </label>
         {filtrando ? (
           <button type="button" onClick={() => setFiltro(FILTRO_VACIO)} className={claseBoton("secundario")}>
             Limpiar
@@ -119,6 +132,9 @@ export function TablaDocumentosAdmin({ filas }: { filas: FilaTablaDocumentos[] }
                   <InsigniaEstadoDocumento key={e} estado={e} />
                 ))}
               </span>
+            </td>
+            <td className={celda}>
+              {d.vigencia ? <ChipVigencia vigencia={d.vigencia} /> : "—"}
             </td>
           </tr>
         ))}

@@ -3,7 +3,7 @@ import { ErrorTramite } from "@/db/consultas/flujo/contrato";
 export const ESTADOS_COPIA = ["emitida", "recibida", "por_recoger", "recogida", "anulada"] as const;
 export type EstadoCopia = (typeof ESTADOS_COPIA)[number];
 
-export const MOTIVOS_POR_RECOGER = ["nueva_version", "eliminado", "carga_deshecha"] as const;
+export const MOTIVOS_POR_RECOGER = ["nueva_version", "eliminado", "carga_deshecha", "retirado"] as const;
 export type MotivoPorRecoger = (typeof MOTIVOS_POR_RECOGER)[number];
 
 /** Los tres primeros los elige la persona; `retirada_en_verificacion` lo pone el sistema. */
@@ -108,4 +108,5 @@ export const ETIQUETA_MOTIVO_POR_RECOGER: Record<MotivoPorRecoger, string> = {
   nueva_version: "Hay una versión nueva vigente",
   eliminado: "El documento fue eliminado",
   carga_deshecha: "Se deshizo la carga",
+  retirado: "El documento externo fue retirado",
 };

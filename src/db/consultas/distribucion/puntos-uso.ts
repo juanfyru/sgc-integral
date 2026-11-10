@@ -2,7 +2,7 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { enTransaccion } from "@/db/consultas/flujo/contrato";
 import { traducirUnico } from "@/db/consultas/mapa-admin";
-import { filtroPuntos, puedeAccederDocumento, type SujetoVisibilidad } from "@/lib/alcance";
+import { condicionVista, filtroPuntos, puedeAccederDocumento, type SujetoVisibilidad } from "@/lib/alcance";
 import { ErrorDistribucion } from "@/lib/distribucion/tipos";
 import type { Rol } from "@/lib/roles";
 
@@ -45,7 +45,11 @@ async function leerPuntos(
              FROM punto_uso_procesos pp JOIN procesos p ON p.id = pp.proceso_id
              WHERE pp.punto_uso_id = pu.id), '[]'::json) AS procesos,
            (SELECT count(*) FROM copias_controladas cc
-             WHERE cc.punto_uso_id = pu.id AND cc.estado IN ${sql(ESTADOS_VIVOS)}) AS copias_vivas
+             JOIN documento_versiones v ON v.id = cc.version_id
+             JOIN documentos d ON d.id = v.documento_id
+             WHERE cc.punto_uso_id = pu.id AND cc.estado IN ${sql(ESTADOS_VIVOS)}
+               -- La misma regla de la tabla de copias: al líder no se le cuenta el restringido ajeno que no ve.
+               AND ${condicionVista(sql, sesion)}) AS copias_vivas
     FROM puntos_uso pu
     JOIN usuarios u ON u.id = pu.responsable_id
     LEFT JOIN cargos c ON c.id = u.cargo_id

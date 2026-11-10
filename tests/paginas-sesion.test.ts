@@ -17,6 +17,9 @@ const esDelPanel = (ruta: string) =>
   ruta.split(path.sep).join("/").includes("/(app)/admin/(panel)/");
 const portal = paginas("src/app/(app)").filter((r) => !esDelPanel(r));
 const panel = paginas("src/app/(app)/admin/(panel)");
+// Los catálogos de la distribución salen del panel (spec 13C §12.3): el líder y Gerencia no entran a él. Siguen la
+// regla del portal, más su propia regla de alcance.
+const catalogos = paginas("src/app/(app)/admin/(catalogos)");
 
 describe("cada página comprueba la sesión", () => {
   it.each(portal)("portal: %s", (ruta) => {
@@ -28,9 +31,25 @@ describe("cada página comprueba la sesión", () => {
   it.each(panel)("panel: %s", (ruta) => {
     expect(readFileSync(ruta, "utf8")).toMatch(/(exigirPermiso|exigirEntradaPanel)\(/);
   });
+  it.each(catalogos)("catálogos: %s", (ruta) => {
+    const fuente = readFileSync(ruta, "utf8");
+    expect(fuente).toContain("exigirSesion(");
+    expect(fuente).toContain("exigirCatalogo(");
+    expect(fuente).not.toContain("exigirEntradaPanel(");
+  });
   it("hay páginas en ambos grupos", () => {
     expect(portal.length).toBeGreaterThan(3);
     expect(paginas("src/app/(cuenta)").length).toBeGreaterThan(0);
-    expect(panel.length).toBeGreaterThan(15);
+    // Los catálogos salieron del panel: ninguna página del panel queda bajo sus carpetas.
+    expect(panel.filter((r) => /[\\/](puntos-uso|listas-distribucion)[\\/]/.test(r))).toEqual([]);
+    expect(catalogos.length).toBe(6);
+    // El grupo de los catálogos cuenta como portal: la regla de sesión del portal le aplica.
+    expect(catalogos.every((r) => portal.includes(r))).toBe(true);
+  });
+  it("el layout de los catálogos no exige la entrada al panel y nunca se prerenderiza", () => {
+    const layout = readFileSync(path.join(raiz, "src/app/(app)/admin/(catalogos)/layout.tsx"), "utf8");
+    expect(layout).toContain('export const dynamic = "force-dynamic"');
+    expect(layout).not.toContain("exigirEntradaPanel(");
+    expect(layout).not.toContain("@/lib/paginas");
   });
 });

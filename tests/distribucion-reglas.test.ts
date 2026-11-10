@@ -8,6 +8,7 @@ import {
   armarListaDeChequeo,
   conformidad,
   esConforme,
+  porcentajeDeConformidad,
   verificacionVencida,
 } from "@/lib/distribucion/verificacion";
 import { ErrorTramite } from "@/db/consultas/flujo/contrato";
@@ -130,11 +131,28 @@ describe("verificación", () => {
   });
   it("conformidad", () => {
     expect(conformidad([{ conforme: true }, { conforme: true }, { conforme: false }], 95)).toEqual({
-      porcentaje: 67,
+      porcentaje: 66,
       cumple: false,
     });
     expect(conformidad([{ conforme: true }, { conforme: true }], 95)).toEqual({ porcentaje: 100, cumple: true });
     expect(conformidad([], 95)).toEqual({ porcentaje: null, cumple: null });
+  });
+  it("conformidad compara en enteros: 29 de 50 cumple un umbral de 58", () => {
+    const puntos = Array.from({ length: 50 }, (_, i) => ({ conforme: i < 29 }));
+    expect(conformidad(puntos, 58)).toEqual({ porcentaje: 58, cumple: true });
+    expect(conformidad(puntos, 59)).toEqual({ porcentaje: 58, cumple: false });
+  });
+  it("conformidad trunca el porcentaje: la cifra entera nunca contradice el veredicto", () => {
+    const de = (conformes: number, total: number) => Array.from({ length: total }, (_, i) => ({ conforme: i < conformes }));
+    expect(conformidad(de(18, 19), 95)).toEqual({ porcentaje: 94, cumple: false });
+    expect(conformidad(de(199, 200), 100)).toEqual({ porcentaje: 99, cumple: false });
+    expect(conformidad(de(23, 40), 58)).toEqual({ porcentaje: 57, cumple: false });
+  });
+  it("porcentajeDeConformidad: la misma cifra truncada desde los conteos, para el informe y los indicadores", () => {
+    expect(porcentajeDeConformidad(2, 3)).toBe(66);
+    expect(porcentajeDeConformidad(18, 19)).toBe(94);
+    expect(porcentajeDeConformidad(29, 50)).toBe(58);
+    expect(porcentajeDeConformidad(0, 0)).toBeNull();
   });
   it("verificacionVencida", () => {
     const ahora = new Date("2026-11-12T15:00:00Z");

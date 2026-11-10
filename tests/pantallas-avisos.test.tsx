@@ -58,6 +58,14 @@ describe("guardar la configuración documental", () => {
     for (const campo of ["plazoRecibidoDias", "plazoRecogidaDias", "plazoAcuseDias", "plazoSocializacionDias", "plazoCorreccionDias", "verificacionCadaDias", "umbralConformidadPct"]) f.set(campo, "10");
     f.set("selloFranjaCm", "1,0");
     f.set("selloQrCm", "1.5");
+    for (const campo of ["atencionDias", "revisionAnualPlazoDias", "externosVerificacionMeses", "impactoPlazoDias"]) f.set(campo, "20");
+    f.set("revisionAnualVentanaMeses", "0");
+    f.set("formatoInformeDocumentoId", "");
+    f.set("informeMargenSuperiorCm", "5,5");
+    f.set("informeMargenInferiorCm", "3.5");
+    for (const campo of ["metaDentroPlazoPct", "metaAcusesPct", "metaExternosPct", "metaEtapasPlazoPct"]) f.set(campo, "80");
+    f.set("metaAprobacionDias", "30");
+    f.set("metaVencidos", "0");
     for (const [campo, valor] of Object.entries(campos)) f.set(campo, valor);
     return f;
   };
@@ -75,6 +83,16 @@ describe("guardar la configuración documental", () => {
     expect(formatoGuardado()).toEqual({ documentoId: null, margenSuperiorCm: 5.5, margenInferiorCm: 3.5 });
     await guardarConfigDocumentalAccion(null, formulario({ formatoActaDocumentoId: "31" }));
     expect(formatoGuardado()).toMatchObject({ documentoId: 31 });
+  });
+
+  it("la vigencia y las metas llegan parseadas, con el informe sin documento", async () => {
+    await guardarConfigDocumentalAccion(null, formulario());
+    const datos = guardarConfigDocumental.mock.lastCall?.[0];
+    expect(datos.vigencia).toEqual({
+      atencionDias: 20, revisionAnualPlazoDias: 20, revisionAnualVentanaMeses: 0, externosVerificacionMeses: 20, impactoPlazoDias: 20,
+      formatoInforme: { documentoId: null, margenSuperiorCm: 5.5, margenInferiorCm: 3.5 },
+    });
+    expect(datos.metas).toEqual({ dentroPlazoPct: 80, aprobacionDias: 30, vencidos: 0, acusesPct: 80, externosPct: 80, etapasPlazoPct: 80 });
   });
 
   it.each(["5,5", "5.5"])("el margen «%s» vale 5,5", async (margen) => {

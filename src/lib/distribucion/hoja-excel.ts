@@ -6,15 +6,30 @@ export type Columna<F> = { cab: string; ancho: number; valor: (f: F) => Celda };
 
 export const sanear = (v: Celda): Celda => (typeof v === "string" ? neutralizarFormula(v) : v);
 
+export type MetaHoja = { hospital: string; generadoEn: string; detalle: string };
+
 /** Libro de una hoja con encabezado institucional, filtros y una fila por registro. */
 export async function construirHoja<F>(
   nombreHoja: string,
   subtitulo: string,
   columnas: Array<Columna<F>>,
   filas: F[],
-  meta: { hospital: string; generadoEn: string; detalle: string },
+  meta: MetaHoja,
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
+  agregarHoja(wb, nombreHoja, subtitulo, columnas, filas, meta);
+  return Buffer.from((await wb.xlsx.writeBuffer()) as ArrayBuffer);
+}
+
+/** Añade al libro una hoja con encabezado institucional, filtros y una fila por registro (un libro de varias hojas). */
+export function agregarHoja<F>(
+  wb: ExcelJS.Workbook,
+  nombreHoja: string,
+  subtitulo: string,
+  columnas: Array<Columna<F>>,
+  filas: F[],
+  meta: MetaHoja,
+): void {
   const hoja = wb.addWorksheet(nombreHoja);
   const ultima = columnas.length;
   hoja.columns = columnas.map((c) => ({ width: c.ancho }));
@@ -39,5 +54,4 @@ export async function construirHoja<F>(
   hoja.autoFilter = { from: { row: cabecera.number, column: 1 }, to: { row: cabecera.number, column: ultima } };
 
   for (const f of filas) hoja.addRow(columnas.map((c) => sanear(c.valor(f))));
-  return Buffer.from((await wb.xlsx.writeBuffer()) as ArrayBuffer);
 }

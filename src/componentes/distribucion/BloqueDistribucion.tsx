@@ -73,15 +73,31 @@ function LineasJornadas({ jornadas }: { jornadas: Jornada[] }) {
 const SIN_PDF = "Para emitir copias controladas el archivo principal debe ser PDF";
 
 /**
+ * Lo que dejó «Reemplazar» en la URL (`?aviso=reemplazadas&n=<k>`): la ficha se vuelve a pintar sin el botón, así que
+ * el resultado se dice aquí. Solo un entero de 1 a 999; cualquier otro valor no pinta nada.
+ */
+export function avisoDeReemplazo(consulta?: Record<string, string | string[] | undefined>): string | null {
+  const n = consulta?.n;
+  if (consulta?.aviso !== "reemplazadas" || typeof n !== "string" || !/^[1-9]\d{0,2}$/.test(n)) return null;
+  const emitidas = Number(n);
+  return `${emitidas === 1 ? "Se emitió" : "Se emitieron"} ${cuenta(emitidas, "copia", "copias")} de la versión vigente`;
+}
+
+/**
  * «Copias controladas» de la ficha del documento: lo vigente, lo que falta recoger y desde dónde emitir o reemplazar,
  * para quien ve la distribución o emite. Quien no, ve solo las jornadas de la vigente, si las hubo (spec 13B §13.3).
+ * `volver` es la ficha que lo pinta y `consulta`, sus parámetros de búsqueda.
  */
 export async function BloqueDistribucion({
   documento,
   sesion,
+  volver,
+  consulta,
 }: {
   documento: { id: number; codigo: string; titulo: string };
   sesion: SesionFlujo;
+  volver: string;
+  consulta?: Record<string, string | string[] | undefined>;
 }) {
   const puedeEmitir = puede(sesion, "copias.emitir");
   const veDistribucion = puede(sesion, "distribucion.ver");
@@ -117,6 +133,7 @@ export async function BloqueDistribucion({
   const faltan = resumenAcuses?.faltan ?? null;
   const versionAnterior = Math.max(0, ...copias.porRecoger.map((c) => c.version));
   const avisoSinQr = urlPublica ? null : { enlace: puede(sesion, "entidad.administrar") };
+  const avisoReemplazo = avisoDeReemplazo(consulta);
 
   return (
     <section aria-labelledby="titulo-copias" className="rounded-xl border border-border bg-card p-4 shadow-xs">
@@ -124,6 +141,11 @@ export async function BloqueDistribucion({
         Copias controladas
       </h2>
       <div className="flex flex-col gap-3">
+        {avisoReemplazo ? (
+          <p role="status" className="rounded-md bg-estado-bien-fondo px-3 py-2 text-sm text-estado-bien-texto">
+            {avisoReemplazo}
+          </p>
+        ) : null}
         {copias.vigentes.length === 0 && copias.porRecoger.length === 0 ? (
           <p className="text-sm text-muted-foreground">No hay copias controladas en circulación.</p>
         ) : null}
@@ -153,7 +175,7 @@ export async function BloqueDistribucion({
                 accion={reemplazarCopiasAccion}
                 etiqueta={`Reemplazar las copias de la v${versionAnterior} (${copias.reemplazables})`}
                 confirmacion="Emite una copia de la versión vigente por cada punto que tenía la anterior; cada responsable confirma en una sola tarea que recibió la nueva y retiró la vieja."
-                campos={{ versionId: copias.versionVigenteId }}
+                campos={{ versionId: copias.versionVigenteId, volver }}
               />
             ) : null}
           </div>

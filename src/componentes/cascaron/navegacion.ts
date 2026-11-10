@@ -5,6 +5,8 @@ export type IconoNav =
   | "buscar"
   | "tramites"
   | "distribucion"
+  | "vigencia"
+  | "normograma"
   | "documentos"
   | "maestro"
   | "tipos"
@@ -34,6 +36,8 @@ export type EntradaNav = {
   siParticipa?: true;
   /** Se ve también si la persona responde por algún punto de uso activo. */
   siResponsable?: true;
+  /** Se ve también si la persona es responsable técnico de algún externo vigente. */
+  siResponsableTecnico?: true;
   exacta?: boolean;
   /** Rutas adicionales que también marcan la entrada como activa (igual al prefijo o debajo de él). */
   prefijos?: readonly string[];
@@ -65,6 +69,16 @@ export const NAVEGACION: readonly EntradaNav[] = [
     permiso: "distribucion.ver",
     siResponsable: true,
   },
+  {
+    href: "/vigencia",
+    etiqueta: "Vigencia",
+    icono: "vigencia",
+    grupo: "documentos",
+    algunPermiso: ["vigencia.ver", "documentos.indicadores"],
+    siResponsableTecnico: true,
+  },
+  // Se lee con cualquier sesión, como «Buscar» (spec 13C §6.2 y §14.1).
+  { href: "/normograma", etiqueta: "Normograma", icono: "normograma", grupo: "documentos" },
   {
     href: "/admin",
     etiqueta: "Gestión de documentos",
@@ -98,19 +112,20 @@ export const NAVEGACION: readonly EntradaNav[] = [
     grupo: "administracion",
     permiso: "estructura.administrar",
   },
+  // En solo lectura para quien no gestiona la distribución (spec 13C §12.3).
   {
     href: "/admin/puntos-uso",
     etiqueta: "Puntos de uso",
     icono: "puntos",
     grupo: "administracion",
-    permiso: "distribucion.gestionar",
+    permiso: "distribucion.ver",
   },
   {
     href: "/admin/listas-distribucion",
     etiqueta: "Listas de distribución",
     icono: "listas",
     grupo: "administracion",
-    permiso: "distribucion.gestionar",
+    permiso: "distribucion.ver",
   },
   { href: "/admin/usuarios", etiqueta: "Usuarios", icono: "usuarios", grupo: "administracion", permiso: "usuarios.administrar" },
   {
@@ -126,12 +141,15 @@ export const NAVEGACION: readonly EntradaNav[] = [
 ];
 
 /** Entradas que el sujeto puede ver; una entrada sin condiciones la ve todo usuario con sesión. */
-export function entradasVisibles(sujeto: SujetoPermiso & { participaEnTramites?: boolean; responsableDePuntos?: boolean }): EntradaNav[] {
+export function entradasVisibles(
+  sujeto: SujetoPermiso & { participaEnTramites?: boolean; responsableDePuntos?: boolean; responsableTecnico?: boolean },
+): EntradaNav[] {
   return NAVEGACION.filter((e) => {
-    if (!e.permiso && !e.algunPermiso && !e.siParticipa && !e.siResponsable) return true;
+    if (!e.permiso && !e.algunPermiso && !e.siParticipa && !e.siResponsable && !e.siResponsableTecnico) return true;
     if (e.permiso && puede(sujeto, e.permiso)) return true;
     if (e.algunPermiso?.some((p) => puede(sujeto, p))) return true;
     if (e.siResponsable === true && sujeto.responsableDePuntos === true) return true;
+    if (e.siResponsableTecnico === true && sujeto.responsableTecnico === true) return true;
     return e.siParticipa === true && sujeto.participaEnTramites === true;
   });
 }

@@ -15,6 +15,8 @@ import { transicionar } from "@/db/consultas/tramites-flujo";
 import { revisarVencimientos } from "@/db/consultas/vencimientos";
 import { pdfDePrueba } from "./utiles/pdf";
 import { copiaSobreVigente, puntoDePrueba, silenciarDistribucion } from "./utiles/distribucion";
+import { silenciarImpactos } from "./utiles/normograma";
+import { silenciarRevisionAnual, silenciarVigencia } from "./utiles/vigencia";
 import { opc, sesionAdmin, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -36,10 +38,13 @@ afterAll(async () => {
   globalThis.__sql = undefined;
 });
 
-/** Lo demas (tramites y distribucion de la demo) queda silenciado antes de crear los datos del test. */
+/** Lo demas (tramites, distribucion y vigencia de la demo) queda silenciado antes de crear los datos del test. */
 async function silenciar(tx: TransactionSql) {
   await tx`UPDATE tramites SET aviso_vencido_en = now(), escalado_en = now()`;
   await silenciarDistribucion(tx);
+  await silenciarVigencia(tx);
+  await silenciarImpactos(tx);
+  await silenciarRevisionAnual(tx);
 }
 
 const correr = (tx: TransactionSql, ahora: string) => revisarVencimientos({ sql: tx, ahora: new Date(ahora) });

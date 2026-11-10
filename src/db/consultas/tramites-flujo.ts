@@ -7,6 +7,8 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { obtenerConfigDocumental, type ConfigDocumental } from "@/db/consultas/config-documental";
 import { registrarFirma } from "@/db/consultas/firmas";
+import { resolverImpacto } from "@/db/consultas/normograma/impactos";
+import { alSolicitar, revisionAbiertaBloqueada } from "@/db/consultas/vigencia/revision-anual/registro";
 import { alcanceProcesos, enAlcance } from "@/lib/alcance";
 import { verificarParaFirmar, type CredencialesFirma } from "@/lib/firma";
 import { puede } from "@/lib/permisos";
@@ -43,6 +45,7 @@ import { MANEJADORES_ELABORACION, VALIDADORES_ELABORACION } from "./flujo/elabor
 import { MANEJADORES_GESTION } from "./flujo/gestion";
 import { MANEJADORES_REVISION, VALIDADORES_REVISION } from "./flujo/revision";
 import { MANEJADORES_SOLICITUD } from "./flujo/solicitud";
+import { EXTERNO_SIN_TRAMITE, exigirInterno, exigirTipoDeInterno } from "./origen";
 import {
   adminsActivos,
   lideresDeProceso,
@@ -97,6 +100,10 @@ export type DatosSolicitud = {
   tipoDocumentoId?: number;
   tituloPropuesto?: string;
   documentoId?: number;
+  /** La solicitud nace de una decisión de la revisión anual abierta (spec 13C §9.3). */
+  revisionAnualId?: number;
+  /** La solicitud atiende un impacto normativo, que queda resuelto con ella (spec 13C §10.5). */
+  impactoId?: number;
 };
 
 export type EntradaTransicion = {
@@ -123,6 +130,7 @@ async function destinoDeCreacion(tx: TransactionSql, datos: DatosSolicitud): Pro
   if (!tipoDocumentoId) throw new ErrorTramite("Elija el tipo de documento");
   const [tipo] = await tx`SELECT 1 FROM tipos_documento WHERE id = ${tipoDocumentoId} AND activo`;
   if (!tipo) throw new ErrorTramite("El tipo de documento no existe o está inactivo");
+  await exigirTipoDeInterno(tx, tipoDocumentoId);
 
   if (subprocesoId) {
     const [s] = await tx`SELECT s.proceso_id FROM subprocesos s
@@ -140,6 +148,7 @@ async function destinoDeCreacion(tx: TransactionSql, datos: DatosSolicitud): Pro
 
 async function destinoDeDocumento(tx: TransactionSql, documentoId: number | undefined): Promise<Destino> {
   if (!documentoId) throw new ErrorTramite("Elija el documento");
+  await exigirInterno(tx, { documentoId }, EXTERNO_SIN_TRAMITE);
   const [vigente] = await tx`SELECT 1 FROM documento_versiones WHERE documento_id = ${documentoId} AND estado = 'vigente'`;
   if (!vigente) throw new ErrorTramite("El documento no existe o no tiene versión vigente");
   const propietario = await propietarioDeDocumento(documentoId, { sql: tx });
@@ -197,6 +206,12 @@ export async function crearSolicitud(
       datos.tipo === "crear" ? await destinoDeCreacion(tx, datos) : await destinoDeDocumento(tx, datos.documentoId);
     if (!enAlcance(await alcanceProcesos(sesion, { sql: tx }), destino.procesoId))
       throw new ErrorTramite("Solo puede pedir sobre los procesos que lidera");
+    // Un formulario viejo no enlaza la solicitud a una revisión ya cerrada: se lee con `FOR SHARE`, y un cierre en curso
+    // espera a la solicitud. La misma lectura sirve a la decisión.
+    const abierta = datos.revisionAnualId === undefined ? undefined : await revisionAbiertaBloqueada(tx);
+    if (datos.revisionAnualId !== undefined && abierta?.id !== datos.revisionAnualId) {
+      throw new ErrorTramite("La revisión anual no está abierta");
+    }
 
     // Bajo el candado, dos solicitudes simultáneas no leen el mismo consecutivo.
     await tx`SELECT pg_advisory_xact_lock(hashtext('tramites_numero'))`;
@@ -215,12 +230,14 @@ export async function crearSolicitud(
 
     const [fila] = await tx`INSERT INTO tramites
         (numero, anio, consecutivo, tipo, motivo, justificacion, solicitante_id, proceso_id, subproceso_id,
-         tipo_documento_id, titulo_propuesto, documento_id, etapa, ronda, vence_en, creado_en, actualizado_en)
+         tipo_documento_id, titulo_propuesto, documento_id, etapa, ronda, vence_en, revision_anual_id, impacto_id,
+         creado_en, actualizado_en)
       VALUES
         (${numero}, ${anio}, ${consecutivo}, ${datos.tipo}, ${datos.motivo}, ${datos.justificacion.trim()},
          ${sesion.usuarioId}, ${destino.procesoId}, ${destino.subprocesoId}, ${destino.tipoDocumentoId},
          ${destino.tituloPropuesto}, ${destino.documentoId}, ${etapa}, 0,
-         ${fechaLimite(ahora, config.plazos[etapa], zona)}, ${ahora}, ${ahora})
+         ${fechaLimite(ahora, config.plazos[etapa], zona)}, ${datos.revisionAnualId ?? null}, ${datos.impactoId ?? null},
+         ${ahora}, ${ahora})
       RETURNING id`.catch(traducirChoqueDeAbierto);
     const tramiteId = Number(fila.id);
 
@@ -228,6 +245,14 @@ export async function crearSolicitud(
     await registrarEvento(tx, { ...evento, tipo: "solicitar", usuarioId: sesion.usuarioId });
     if (pideElLider) await registrarEvento(tx, { ...evento, tipo: "visto_bueno_automatico", usuarioId: sesion.usuarioId });
     else if (lideres.length === 0) await registrarEvento(tx, { ...evento, tipo: "visto_bueno_omitido", usuarioId: null });
+    // Con la revisión anual abierta, pedir el cambio o la eliminación de un documento de su foto es su decisión, venga
+    // o no de la página de la campaña; con un impacto, la solicitud lo resuelve (con el permiso de quien pide).
+    if (destino.documentoId !== null) {
+      await alSolicitar(tx, { tipo: datos.tipo, documentoId: destino.documentoId, tramiteId, usuarioId: sesion.usuarioId, ahora }, abierta);
+    }
+    if (datos.impactoId !== undefined) {
+      await resolverImpacto(sesion, { impactoId: datos.impactoId, resolucion: "solicitud", tramiteId }, { sql: tx, ahora });
+    }
 
     const { codigo, texto } = await rotuloDeTramite(tx, { tipo: datos.tipo, ...destino });
     await registrarAuditoria(tx, {
@@ -235,7 +260,18 @@ export async function crearSolicitud(
       accion: "tramite_solicitar",
       entidad: "tramite",
       entidadId: tramiteId,
-      detalle: { numero, codigo, documentoId: destino.documentoId, de: null, hacia: etapa, ronda: 0, tipo: datos.tipo, motivo: datos.motivo },
+      detalle: {
+        numero,
+        codigo,
+        documentoId: destino.documentoId,
+        de: null,
+        hacia: etapa,
+        ronda: 0,
+        tipo: datos.tipo,
+        motivo: datos.motivo,
+        ...(datos.revisionAnualId === undefined ? {} : { revisionAnualId: datos.revisionAnualId }),
+        ...(datos.impactoId === undefined ? {} : { impactoId: datos.impactoId }),
+      },
     });
     await enviarAvisos(tx, tramiteId, sesion.usuarioId, [
       etapa === "aceptacion"
@@ -372,7 +408,13 @@ export async function transicionar(
       }
     }
 
-    await registrarEvento(tx, { tramiteId: t.id, tipo: entrada.accion, usuarioId: sesion.usuarioId, ronda: t.ronda, detalle: efecto.detalle, ahora });
+    // La fecha límite de la etapa que cierra no queda en otro sitio (el trámite guarda solo la de la actual): la mide el
+    // indicador de etapas en plazo (spec 13C §11.1). `reasignar` no cierra etapa y su `venceEn` es la fecha nueva. El
+    // indicador elige los pasos con una lista fija (`ACCIONES_QUE_CIERRAN`, `vigencia/indicadores.ts`): una acción nueva
+    // que no cambie de etapa entra en `EVENTOS_SIN_CAMBIO_DE_ETAPA`, y una que termine el trámite sin avanzarlo (retirar,
+    // cancelar, rechazar, negar), en `ACCIONES_QUE_TERMINAN`, que el indicador no cuenta (Ruling 66).
+    const detalle = hacia === previo.etapa ? efecto.detalle : { ...efecto.detalle, venceEn: previo.venceEn?.toISOString() ?? null };
+    await registrarEvento(tx, { tramiteId: t.id, tipo: entrada.accion, usuarioId: sesion.usuarioId, ronda: t.ronda, detalle, ahora });
     const { codigo } = await rotuloDeTramite(tx, t);
     // El acta congelada ya está en el evento; la bitácora no la repite.
     const detalleDeAuditoria: Record<string, unknown> = { ...efecto.detalle };

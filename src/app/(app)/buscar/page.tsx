@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
-import { CalendarRange, FileSearch, Filter, SearchX, TimerOff } from "lucide-react";
+import { CalendarRange, FileSearch, Filter, Scale, SearchX, TimerOff } from "lucide-react";
 import { CampoBusqueda } from "@/componentes/busqueda/CampoBusqueda";
 import { TarjetaResultado } from "@/componentes/busqueda/TarjetaResultado";
+import { InsigniaNorma } from "@/componentes/normograma/TablaNormas";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import {
   buscarDocumentos,
@@ -12,6 +13,7 @@ import {
   type FiltrosBusqueda,
   type RespuestaBusqueda,
 } from "@/db/consultas/busqueda";
+import { buscarNormas, type ResultadoNorma } from "@/db/consultas/normograma/busqueda";
 import { obtenerDetalleProceso } from "@/db/consultas/procesos";
 import { crearLimitador } from "@/lib/limite";
 import { exigirSesion } from "@/lib/paginas";
@@ -42,6 +44,9 @@ type Parametros = {
 };
 
 const CLAVES: (keyof Parametros)[] = ["q", "tipo", "proceso", "sub", "desde", "hasta"];
+
+/** Hasta cuántas normas se muestran debajo de los documentos (spec 13C §10.6). */
+const NORMAS_EN_LA_BUSQUEDA = 5;
 
 function urlBusqueda(
   actuales: Parametros,
@@ -84,11 +89,18 @@ export default async function PaginaBuscar({
     facetas: { tipos: [], procesos: [] },
   };
 
+  let normas: ResultadoNorma[] = [];
+
   if (conCriterios) {
     if (!permitirBusqueda(String(sesion.usuarioId))) {
       limitado = true;
     } else {
-      respuesta = await buscarDocumentos(filtros, sesion);
+      // El normograma se lee con cualquier sesión: las normas no retiradas que coinciden con el texto, sin los filtros
+      // de documento (tipo, proceso, fechas), que no les aplican.
+      [respuesta, normas] = await Promise.all([
+        buscarDocumentos(filtros, sesion),
+        filtros.q?.trim() ? buscarNormas(filtros.q, NORMAS_EN_LA_BUSQUEDA) : Promise.resolve([]),
+      ]);
       if (filtros.q?.trim()) {
         await registrarBusqueda(filtros.q, respuesta.total).catch((err) =>
           console.error("No se pudo registrar la búsqueda:", err),
@@ -345,10 +357,39 @@ export default async function PaginaBuscar({
                 ))}
               </ul>
             )}
+            {normas.length > 0 ? <GrupoNormas normas={normas} /> : null}
           </section>
         </div>
       )}
     </div>
+  );
+}
+
+/** El grupo «Normas» debajo de los documentos: el nombre, el título y el estado en texto, con el enlace a su ficha. */
+function GrupoNormas({ normas }: { normas: ResultadoNorma[] }) {
+  return (
+    <section aria-labelledby="titulo-normas" className="mt-8">
+      <h2 id="titulo-normas" className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+        <Scale className="size-4 text-muted-foreground" aria-hidden="true" />
+        Normas
+      </h2>
+      <ul className="space-y-2">
+        {normas.map((n) => (
+          <li key={n.id} className="flex min-w-0 flex-wrap items-start justify-between gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm">
+            <span className="min-w-0 flex-1">
+              <Link
+                href={`/normograma/${n.id}`}
+                className="rounded font-medium text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca"
+              >
+                {n.nombre}
+              </Link>
+              <span className="block break-words text-muted-foreground">{n.titulo}</span>
+            </span>
+            <InsigniaNorma estado={n.estado} estadoEn={null} />
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

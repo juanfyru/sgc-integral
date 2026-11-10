@@ -18,7 +18,7 @@ vi.mock("@/db/cliente", async (importar) => {
   const real = await importar<typeof import("@/db/cliente")>();
   return { ...real, obtenerSql: () => contexto.tx ?? real.obtenerSql() };
 });
-vi.mock("@/lib/paginas", () => ({ exigirPermiso: async () => contexto.sesion }));
+vi.mock("@/lib/paginas", () => ({ exigirPermiso: async () => contexto.sesion, exigirSesion: async () => contexto.sesion }));
 vi.mock("next/navigation", () => ({
   notFound: () => {
     throw new Error("no encontrada");
@@ -32,7 +32,7 @@ vi.mock("@/app/admin/acciones-puntos-uso", () => ({
 vi.mock("@/app/admin/acciones-mapa", () => ({ editarSubprocesoAccion: vi.fn() }));
 
 import PaginaSubproceso from "@/app/(app)/admin/(panel)/mapa/subprocesos/[id]/page";
-import PaginaPuntoUso from "@/app/(app)/admin/(panel)/puntos-uso/[id]/page";
+import PaginaPuntoUso from "@/app/(app)/admin/(catalogos)/puntos-uso/[id]/page";
 import { obtenerSql } from "@/db/cliente";
 import { documentoLibre, sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { puntoDePrueba } from "./utiles/distribucion";

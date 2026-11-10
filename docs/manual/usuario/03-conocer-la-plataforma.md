@@ -2,7 +2,7 @@
 
 Este capítulo es para todas las personas que usan el SGC: cómo está organizada la
 pantalla, qué encuentra en la barra lateral según su rol, qué hay en **Inicio**, cómo
-buscar con `Ctrl K`, para qué sirve la campana, cómo cambiar el tema claro u oscuro, cómo
+buscar documentos y normas con `Ctrl K`, para qué sirve la campana, cómo cambiar el tema claro u oscuro, cómo
 se ve en el celular y cómo imprimir. Para ingresar y manejar su cuenta, vea el Capítulo 1.
 
 ## 1. Cómo está organizada la pantalla
@@ -27,16 +27,17 @@ De arriba abajo:
 1. **La entidad**: su logo (o, si no tiene, un cuadro con la sigla) y su nombre. Al
    pulsarlo vuelve a **Inicio**.
 2. **Inicio**.
-3. El grupo **Documentos**: **Buscar documentos**, **Trámites**, **Distribución**, **Gestión de
-   documentos**, **Listado Maestro**, **Tipos de documento**, **Configuración documental** y
-   **Mapa de procesos**.
+3. El grupo **Documentos**: **Buscar documentos**, **Trámites**, **Distribución**, **Vigencia**,
+   **Normograma**, **Gestión de documentos**, **Listado Maestro**, **Tipos de documento**,
+   **Configuración documental** y **Mapa de procesos**.
 4. El grupo **Administración**: **Entidad y marca**, **Estructura**, **Puntos de
    uso**, **Listas de distribución**, **Usuarios**, **Estadísticas**, **Bitácora**, **Accesos** y **Sesiones**.
 5. Al pie, **SGC Integral · v** seguido del número de versión. Es el nombre de la
    plataforma; si reporta un problema a sistemas, indique ese número.
 
 La página en la que está aparece resaltada con el color de la entidad. Junto a **Inicio**
-aparece un número con cuántas tareas tiene pendientes.
+aparece un número con cuántas tareas tiene pendientes, y junto a **Vigencia**, cuántos
+documentos de su alcance tienen la revisión vencida (Capítulo 7).
 
 ### Qué ve cada rol
 
@@ -44,15 +45,17 @@ Cada persona ve solo los enlaces que su rol permite. Un grupo sin enlaces no apa
 
 | Rol | Documentos | Administración |
 |---|---|---|
-| Administrador del SGC | Buscar documentos, Trámites, Distribución, Gestión de documentos, Listado Maestro, Tipos de documento, Configuración documental, Mapa de procesos | Entidad y marca, Estructura, Puntos de uso, Listas de distribución, Usuarios, Estadísticas, Bitácora, Accesos, Sesiones |
-| Gerencia | Buscar documentos, Trámites, Distribución (solo lectura), Listado Maestro (solo vigentes, sin Excel) | Estadísticas |
-| Control Interno | Buscar documentos, Distribución (solo lectura), Gestión de documentos (solo lectura), Listado Maestro | Estadísticas, Bitácora, Accesos |
-| Líder de proceso | Buscar documentos, Trámites, Distribución (la de sus procesos) | — |
-| Consulta | Buscar documentos | — |
+| Administrador del SGC | Buscar documentos, Trámites, Distribución, Vigencia, Normograma, Gestión de documentos, Listado Maestro, Tipos de documento, Configuración documental, Mapa de procesos | Entidad y marca, Estructura, Puntos de uso, Listas de distribución, Usuarios, Estadísticas, Bitácora, Accesos, Sesiones |
+| Gerencia | Buscar documentos, Trámites, Distribución (solo lectura), Vigencia (solo lectura), Normograma, Listado Maestro (solo vigentes, sin Excel) | Puntos de uso y Listas de distribución (solo lectura), Estadísticas |
+| Control Interno | Buscar documentos, Distribución (solo lectura), Vigencia (solo lectura), Normograma, Gestión de documentos (solo lectura), Listado Maestro | Puntos de uso y Listas de distribución (solo lectura), Estadísticas, Bitácora, Accesos |
+| Líder de proceso | Buscar documentos, Trámites, Distribución (la de sus procesos), Vigencia (la de sus procesos), Normograma | Puntos de uso (los de sus procesos) y Listas de distribución, en solo lectura |
+| Consulta | Buscar documentos, Normograma | — |
 
 Todos ven además **Inicio**. **Trámites** también le aparece a cualquier persona que
 participe en un trámite, sea cual sea su rol (Capítulo 5), y **Distribución** a cualquier
-persona que sea responsable de un punto de uso activo, con solo sus puntos (Capítulo 6). Si el administrador le marcó **"Puede ver el historial de
+persona que sea responsable de un punto de uso activo, con solo sus puntos (Capítulo 6), y **Vigencia**
+a cualquier persona que sea responsable técnico de un documento externo, con solo la pestaña
+**Externos** y sus externos (Capítulo 7). Si el administrador le marcó **"Puede ver el historial de
 documentos (versiones obsoletas y anuladas)"**, verá también **Gestión de documentos**,
 en solo lectura (Capítulo 2, sección 1).
 
@@ -79,11 +82,17 @@ Cada tarea sale de un trámite de documentos, por ejemplo «Aceptar SOL-2026-014
 GTH-PR-02 v2», o de la distribución de un documento publicado: «Recibir la copia N.º 02 de
 GTH-PR-01 v1 en Urgencias», «Recoger la copia N.º 03 de GBS-PR-01 v1 en Urgencias»,
 «Confirmar lectura de GTH-PR-01 v2», «Registrar la socialización de GTH-PR-02 v2», «Verificar
-Farmacia: última hace 95 días» o «Corregir hallazgo en Farmacia: …». Muestra de qué documento
-se trata y su fecha límite, o la marca **Vence hoy** o **Vencida**. Pulse una tarea para abrir el
-trámite, la copia, la lectura o la verificación (Capítulo 5, sección 12; Capítulo 6). Cuando
-tiene más de cinco lecturas por confirmar, **Mis tareas** las junta en una sola línea («12
-lecturas por confirmar»), para que no tapen las demás.
+Farmacia: última hace 95 días», «Corregir hallazgo en Farmacia: …» o «Validar la corrección del
+hallazgo en Urgencias». También salen de la vigencia de los documentos: «Revisar la vigencia de
+GTH-PR-01 v1 · vence el 14 ago 2027», «Verificar la vigencia de ATE-DE-01 · …», «Adoptar la
+edición nueva de ATE-DE-01», «Revisar los documentos de Consulta Externa (2 pendientes)» (la
+revisión anual) o «Revisar el impacto de Resolución 2003 de 2014 (derogada) en Consulta Externa
+(1)». Muestra de qué documento se trata y su fecha límite, o la marca **Vence hoy** o
+**Vencida**. Pulse una tarea para abrir el trámite, la copia, la lectura, la verificación, el
+documento o la revisión (Capítulo 5, sección 12; Capítulos 6 y 7). Cuando tiene más de cinco
+lecturas por confirmar, documentos por revisar o externos por verificar, **Mis tareas** los junta
+en una sola línea («12 lecturas por confirmar», «9 documentos por revisar», «6 externos por
+verificar»), para que no tapen las demás.
 
 ### 3.2 Mis procesos (solo líderes de proceso)
 
@@ -103,7 +112,7 @@ Desde cualquier página puede buscar un documento o saltar a una sección:
 1. Pulse **Buscar…** en la barra superior, o presione **`Ctrl K`** (en Mac, **`⌘ K`**).
 2. Escriba en el campo **"Buscar documentos o ir a una página…"**.
 
-Debajo aparecen dos grupos:
+Debajo aparecen tres grupos:
 
 - **Ir a**: las secciones de la barra lateral cuyo nombre coincide con lo que escribió.
   Solo aparecen las que su rol puede ver: si escribe "usuarios" y no administra usuarios,
@@ -112,6 +121,8 @@ Debajo aparecen dos grupos:
   su título (con las palabras encontradas resaltadas) y su tipo. Por ejemplo, "induc"
   encuentra los documentos de inducción. Un documento restringido solo aparece a quien lo
   puede ver.
+- **Normas**: hasta 4 normas del normograma cuyo número, título, tema o emisor coincide, con
+  su estado. Las retiradas no aparecen (Capítulo 7, sección 2.2).
 
 La última fila, **Ver todos los resultados de “…”**, abre la página **Buscar documentos**
 con la lista completa y sus filtros.
@@ -123,12 +134,13 @@ ratón.
 Mensajes que puede ver debajo de la lista:
 
 - **"Buscando…"**: espere un momento.
-- **"Sin coincidencias"**: ninguna sección ni documento vigente coincide. Pruebe con otra
-  palabra o con el código del documento.
+- **"Sin coincidencias"**: ninguna sección, documento vigente ni norma coincide. Pruebe con
+  otra palabra o con el código del documento.
 - **"No se pudo buscar; intente de nuevo"**: falló la conexión con el servidor. Escriba
   otra letra o cierre y vuelva a abrir la búsqueda.
 
-La búsqueda rápida y la página **Buscar documentos** muestran solo versiones vigentes.
+La búsqueda rápida y la página **Buscar documentos** muestran solo versiones vigentes; las
+normas salen en su propio grupo.
 
 ## 5. La campana
 
@@ -150,7 +162,10 @@ Los avisos salen de los trámites de documentos: cuando le toca un paso, cuando 
 un documento, cuando se publica o se elimina uno en el que usted participa, o cuando un paso
 se vence (Capítulo 5, sección 12). También salen de la distribución: una copia que le entregan
 o que debe recoger, una lectura que debe confirmar, un documento que dejó de aplicar, un
-hallazgo que debe corregir (Capítulo 6). Un aviso nunca trae el contenido del documento.
+hallazgo que debe corregir (Capítulo 6). Y de la vigencia: un documento o un externo con la
+revisión vencida, una edición nueva por adoptar, un externo que dejó de aplicar, la apertura,
+la prórroga o el cierre de la revisión anual, una norma que cambió y le pide revisar su impacto
+(Capítulo 7). Un aviso nunca trae el contenido del documento.
 
 ## 6. El menú con su nombre: Mi cuenta, tema y salir
 
@@ -214,7 +229,7 @@ impresión.
 |---|---|---|
 | No tiene tareas pendientes. Cuando un documento necesite su revisión o aprobación, aparecerá aquí. | No hay nada que el SGC espere de usted | Nada |
 | Sin notificaciones. Aquí verá los avisos del sistema y las tareas que le asignen. | No tiene avisos | Nada |
-| Sin coincidencias | La búsqueda rápida no encontró secciones ni documentos vigentes | Pruebe con otra palabra o con el código |
+| Sin coincidencias | La búsqueda rápida no encontró secciones, documentos vigentes ni normas | Pruebe con otra palabra o con el código |
 | No se pudo buscar; intente de nuevo | Falló la conexión con el servidor | Escriba otra letra o vuelva a abrir la búsqueda |
 | Sin acceso: "Su cuenta no tiene permiso para ver esta sección." | Abrió una página que su rol no puede ver | Pulse **Volver al inicio**; si necesita ese acceso, pídalo al administrador |
 | Página no encontrada | La dirección no existe o el registro ya no está disponible | Pulse **Volver al inicio** y busque lo que necesita |

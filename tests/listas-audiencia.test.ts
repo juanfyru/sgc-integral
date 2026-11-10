@@ -22,6 +22,7 @@ import {
   resolverLista,
   resumenMiembros,
 } from "@/db/consultas/distribucion/listas";
+import { parsearLista } from "@/lib/esquemas/distribucion";
 import { revertida } from "./utiles/transaccion";
 import { documentoLibre, sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 
@@ -156,6 +157,59 @@ describe("listas de distribución", () => {
       expect(Object.keys(acciones[1].detalle.despues).sort()).toEqual(["descripcion", "miembros", "nombre"]);
     }));
 
+  it("el miembro «todos» resuelve a toda la planta activa, con o sin cargo, y no a un inactivo; uno por lista", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      await tx`UPDATE usuarios SET cargo_id = NULL WHERE id = ${admin.usuarioId}`;
+      const inactivo = await usuarioDePrueba(tx, { rol: "consulta" });
+      await tx`UPDATE usuarios SET activo = false WHERE id = ${inactivo.usuarioId}`;
+      const { id } = await crearLista(
+        { nombre: nombre("todos"), descripcion: null, miembros: [{ tipo: "todos", referenciaId: null }] },
+        admin.usuarioId,
+        { sql: tx },
+      );
+      const activos = (await tx`SELECT id FROM usuarios WHERE activo ORDER BY id`).map((u) => Number(u.id));
+      const ids = await resolverLista(tx, id);
+      expect(ids).toEqual(activos);
+      expect(ids).toContain(admin.usuarioId);
+      expect(ids).not.toContain(inactivo.usuarioId);
+
+      const lista = await obtenerLista(id, { sql: tx });
+      expect(lista?.miembros).toEqual([{ tipo: "todos", referenciaId: null, nombre: "Todos los usuarios activos" }]);
+      expect(lista?.personas).toBe(activos.length);
+      expect(resumenMiembros(lista!.miembros)).toBe("Todos los usuarios activos");
+      const [creada] = await tx`SELECT detalle FROM auditoria WHERE accion = 'crear_lista' AND entidad_id = ${id}`;
+      expect(creada.detalle.miembros).toEqual(["todos"]);
+
+      // La unicidad es de la BD (NULLS NOT DISTINCT): un segundo «todos» en la misma lista choca.
+      await expect(
+        tx.savepoint((sp) => sp`INSERT INTO lista_miembros (lista_id, tipo, referencia_id) VALUES (${id}, 'todos', NULL)`),
+      ).rejects.toMatchObject({ code: "23505" });
+
+      // Pasar de «todos» a una persona deja una sola persona y lo audita con la clave «todos».
+      await editarLista(
+        id,
+        { nombre: nombre("todos-b"), descripcion: null, miembros: [{ tipo: "usuario", referenciaId: admin.usuarioId }] },
+        admin.usuarioId,
+        { sql: tx },
+      );
+      expect(await resolverLista(tx, id)).toEqual([admin.usuarioId]);
+      const [editada] = await tx`SELECT detalle FROM auditoria WHERE accion = 'editar_lista' AND entidad_id = ${id}`;
+      expect(editada.detalle.antes.miembros).toEqual(["todos"]);
+      expect(editada.detalle.despues.miembros).toEqual([`usuario:${admin.usuarioId}`]);
+    }));
+
+  it("el formulario envía «todos» sin referencia", () => {
+    const datos = new FormData();
+    datos.set("nombre", "Todo el hospital");
+    datos.append("miembros", "todos");
+    expect(parsearLista(datos)).toEqual({ nombre: "Todo el hospital", descripcion: null, miembros: [{ tipo: "todos", referenciaId: null }] });
+    const malo = new FormData();
+    malo.set("nombre", "Otra");
+    malo.append("miembros", "todos:3");
+    expect(() => parsearLista(malo)).toThrow("Miembro inválido");
+  });
+
   it("resume los miembros por tipo", () => {
     expect(
       resumenMiembros([
@@ -192,6 +246,34 @@ describe("audiencia del documento", () => {
       const restringida = await audienciaDeDocumento(tx, doc.id);
       expect(restringida).toContain(dentro.usuarioId);
       expect(restringida).not.toContain(fuera.usuarioId); // la lista no abre lo restringido
+    }));
+
+  it("una lista con «todos» llega a toda la planta activa que puede ver el documento; desactivar una cuenta la saca", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const [{ id: gth }] = await tx`SELECT id FROM procesos WHERE sigla = 'GTH'`;
+      const delProceso = await usuarioDePrueba(tx, { rol: "consulta", procesos: [gth] });
+      const otro = await usuarioDePrueba(tx, { rol: "consulta" });
+      const doc = await documentoLibre(tx, { proceso: "GTH", tipo: "PR" });
+      const { id: lista } = await crearLista(
+        { nombre: nombre("todos"), descripcion: null, miembros: [{ tipo: "todos", referenciaId: null }] },
+        admin.usuarioId,
+        { sql: tx },
+      );
+      await guardarAudiencia(doc.id, { listaIds: [lista], lecturaObligatoriaIngreso: false }, admin.usuarioId, { sql: tx });
+      const activos = (await tx`SELECT id FROM usuarios WHERE activo ORDER BY id`).map((u) => Number(u.id));
+      expect(await audienciaDeDocumento(tx, doc.id)).toEqual(activos);
+
+      await tx`UPDATE usuarios SET activo = false WHERE id = ${otro.usuarioId}`;
+      expect(await audienciaDeDocumento(tx, doc.id)).not.toContain(otro.usuarioId);
+      await tx`UPDATE usuarios SET activo = true WHERE id = ${otro.usuarioId}`;
+
+      // «Todos» no abre lo restringido: el nivel de acceso del documento sigue mandando (spec 13C §12.4).
+      await tx`UPDATE documentos SET nivel_acceso = 'restringido' WHERE id = ${doc.id}`;
+      const restringida = await audienciaDeDocumento(tx, doc.id);
+      expect(restringida).toContain(delProceso.usuarioId);
+      expect(restringida).toContain(admin.usuarioId);
+      expect(restringida).not.toContain(otro.usuarioId);
     }));
 
   it("una lista desactivada y un inactivo no cuentan; un subproceso cuenta por su proceso", () =>

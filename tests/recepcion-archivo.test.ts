@@ -9,15 +9,17 @@ import path from "node:path";
 import { NextRequest } from "next/server";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { registrarArchivo, obtenerVersionParaSubida, exigirEscrituraEnVersion, sesionDePeticion } = vi.hoisted(() => ({
+const { registrarArchivo, obtenerVersionParaSubida, exigirEscrituraEnVersion, exigirInterno, sesionDePeticion } = vi.hoisted(() => ({
   registrarArchivo: vi.fn(),
   obtenerVersionParaSubida: vi.fn(),
   exigirEscrituraEnVersion: vi.fn(),
+  exigirInterno: vi.fn(),
   sesionDePeticion: vi.fn(),
 }));
 
 vi.mock("@/db/cliente", () => ({ obtenerSql: () => "conexión" }));
 vi.mock("@/db/consultas/admin", () => ({ registrarArchivo, obtenerVersionParaSubida, exigirEscrituraEnVersion }));
+vi.mock("@/db/consultas/origen", () => ({ exigirInterno }));
 vi.mock("@/lib/sesion-actual", () => ({ sesionDePeticion }));
 
 import { POST as subirAlPanel } from "@/app/admin/api/archivos/route";
@@ -56,8 +58,9 @@ afterAll(() => {
 
 beforeEach(() => {
   vi.resetAllMocks();
-  registrarArchivo.mockResolvedValue({ id: 91 });
+  registrarArchivo.mockResolvedValue({ id: 91, reemplazados: [] });
   exigirEscrituraEnVersion.mockResolvedValue(undefined);
+  exigirInterno.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -264,6 +267,19 @@ describe("POST del panel: el orden de siempre", () => {
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: EN_TRAMITE });
     expect(exigirEscrituraEnVersion).toHaveBeenCalledExactlyOnceWith("conexión", 4);
+    expect(pedida.bodyUsed).toBe(false);
+    expect(registrarArchivo).not.toHaveBeenCalled();
+    expect(enAlmacen()).toEqual([]);
+  });
+
+  it("la versión de un documento externo responde 409 sin recibir el archivo", async () => {
+    const EXTERNO = "Un documento externo se adopta desde Vigencia → Externos";
+    exigirInterno.mockRejectedValue(new ErrorTramite(EXTERNO));
+    const pedida = peticion(PDF, {}, URL_PANEL);
+    const res = await subirAlPanel(pedida);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: EXTERNO });
+    expect(exigirInterno).toHaveBeenCalledExactlyOnceWith("conexión", { versionId: 4 });
     expect(pedida.bodyUsed).toBe(false);
     expect(registrarArchivo).not.toHaveBeenCalled();
     expect(enAlmacen()).toEqual([]);

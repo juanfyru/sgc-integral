@@ -5,7 +5,7 @@ import { esResponsableDePuntos } from "@/db/consultas/distribucion/puntos-uso";
 import { participaEnTramites } from "@/db/consultas/tramites";
 import { ETIQUETA_ROL } from "@/lib/roles";
 import type { SesionValida } from "@/lib/sesion";
-import { misTareas } from "@/lib/tareas";
+import { tareasDePeticion } from "@/lib/tareas-peticion";
 import { dispararRevisionDeVencimientos } from "@/lib/vencimientos-disparo";
 import { VERSION_APP } from "@/lib/version";
 import { BarraLateral } from "./BarraLateral";
@@ -21,26 +21,35 @@ import { entradasVisibles } from "./navegacion";
  */
 export async function Cascaron({ sesion, children }: { sesion: SesionValida; children: React.ReactNode }) {
   after(() => dispararRevisionDeVencimientos());
-  const [marca, { total: tareas }, noLeidas, recientes, participa, responsable] = await Promise.all([
+  // Las tareas y la insignia de «Vigencia» salen de la misma lectura de la vigencia, compartida con la página de la
+  // misma petición (`tareasDePeticion`). El responsable técnico de un externo ve «Vigencia» aunque sea de rol Consulta:
+  // es una marca de la barra que viene con las tareas (si no se puede saber, se registra y la página sigue sin ella).
+  const [marca, { total: tareas, vencidos, responsableTecnico: esResponsable }, noLeidas, recientes, participa, responsable] = await Promise.all([
     obtenerMarcaSegura(),
-    misTareas(sesion),
+    tareasDePeticion(sesion),
     contarNoLeidas(sesion.usuarioId),
     listarRecientes(sesion.usuarioId, 10),
     participaEnTramites(sesion.usuarioId),
     esResponsableDePuntos(sesion.usuarioId),
   ]);
-  const entradas = entradasVisibles({ ...sesion, participaEnTramites: participa, responsableDePuntos: responsable });
+  const entradas = entradasVisibles({
+    ...sesion,
+    participaEnTramites: participa,
+    responsableDePuntos: responsable,
+    responsableTecnico: esResponsable,
+  });
   const logoUrl = marca.logo ? `/marca/logo?v=${marca.logo.version}` : null;
   const marcaBarra = { nombre: marca.nombre, sigla: marca.sigla, logoUrl };
 
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] print:block! print:min-h-0">
-      <BarraLateral marca={marcaBarra} entradas={entradas} tareas={tareas} version={VERSION_APP} />
+      <BarraLateral marca={marcaBarra} entradas={entradas} tareas={tareas} vencidos={vencidos} version={VERSION_APP} />
       <div className="min-w-0">
         <BarraSuperior
           marca={marcaBarra}
           entradas={entradas}
           tareas={tareas}
+          vencidos={vencidos}
           version={VERSION_APP}
           buscador={<Buscador entradas={entradas} />}
           campana={<Campana noLeidas={noLeidas} recientes={recientes} />}

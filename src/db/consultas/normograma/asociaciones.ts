@@ -1,0 +1,227 @@
+/**
+ * Las asociaciones del normograma (spec 13C §10.3): norma–proceso, con el requisito que la norma le impone, y
+ * norma–documento (los internos que la implementan y los externos que la referencian, en la misma tabla). Las edita
+ * quien tiene `normograma.procesos` sobre el proceso (`puedeAsociarNorma`): el Admin SGC todos, el líder los suyos; el
+ * enlace de un documento, sobre su proceso propietario y si la persona lo ve.
+ */
+import type { TransactionSql } from "postgres";
+import { obtenerSql, type Cliente } from "@/db/cliente";
+import { registrarAuditoria } from "@/db/consultas/admin";
+import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
+import { propietarioDeDocumento } from "@/db/consultas/tramites";
+import { alcanceProcesos, filtroAcceso, puedeAccederDocumento, puedeAsociarNorma, type Alcance } from "@/lib/alcance";
+import { ErrorNormograma, opcionalAcotado } from "@/lib/normograma/tipos";
+import { ErrorPermiso, puede } from "@/lib/permisos";
+import { nombreSql } from "./busqueda";
+import { filasDeNormas, NORMA_NO_EXISTE, type FilaNorma } from "./normas";
+
+type Opciones = { sql?: Cliente; ahora?: Date };
+
+const DOCUMENTO_NO_EXISTE = "El documento no existe";
+
+function exigirPermiso(sesion: SesionFlujo): void {
+  if (!puede(sesion, "normograma.procesos")) throw new ErrorPermiso();
+}
+
+/**
+ * La norma, bloqueada para compartir (un borrado o un retiro concurrente esperan); una retirada no admite cambios.
+ * Devuelve su nombre y su estado.
+ */
+async function normaAbierta(tx: TransactionSql, normaId: number): Promise<{ nombre: string; estado: string }> {
+  const [n] = await tx`SELECT n.estado, ${nombreSql(tx)} AS nombre
+    FROM normas n JOIN tipos_norma tn ON tn.id = n.tipo_norma_id WHERE n.id = ${normaId} FOR SHARE OF n`;
+  if (!n) throw new ErrorNormograma(NORMA_NO_EXISTE);
+  if (n.estado === "retirada") throw new ErrorNormograma(`${n.nombre} está retirada`);
+  return { nombre: n.nombre as string, estado: n.estado as string };
+}
+
+/**
+ * Asociar exige un proceso activo; quitar una asociación, no (el Admin SGC limpia la de un proceso desactivado). El
+ * rechazo por alcance dice la acción que se intentó.
+ */
+async function exigirProceso(tx: TransactionSql, sesion: SesionFlujo, procesoId: number, accion: "asociar" | "quitar"): Promise<string> {
+  const [p] = await tx`SELECT nombre, activo FROM procesos WHERE id = ${procesoId}`;
+  if (!p || (accion === "asociar" && !p.activo)) throw new ErrorNormograma("El proceso no existe");
+  if (!puedeAsociarNorma(sesion, procesoId, await alcanceProcesos(sesion, { sql: tx }))) {
+    throw new ErrorNormograma(`Solo puede ${accion === "asociar" ? "asociar normas a" : "quitar normas de"} los procesos que lidera`);
+  }
+  return p.nombre as string;
+}
+
+/**
+ * Asocia la norma al proceso o, si ya lo está, actualiza su requisito; el mismo requisito no escribe nada. Una derogada
+ * no se asocia a un proceso nuevo (su normograma no la aplicaría hoy); el requisito de uno que ya la tenía sí se edita.
+ */
+export async function asociarProceso(
+  sesion: SesionFlujo,
+  d: { normaId: number; procesoId: number; requisito: string | null },
+  opciones?: Opciones,
+): Promise<void> {
+  exigirPermiso(sesion);
+  const requisito = opcionalAcotado(d.requisito, "El requisito", 2000);
+  const ahora = opciones?.ahora ?? new Date();
+  await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+    const { nombre, estado } = await normaAbierta(tx, d.normaId);
+    const proceso = await exigirProceso(tx, sesion, d.procesoId, "asociar");
+    const [actual] = await tx`SELECT id, requisito FROM norma_procesos
+      WHERE norma_id = ${d.normaId} AND proceso_id = ${d.procesoId} FOR UPDATE`;
+    if (!actual && estado === "derogada") throw new ErrorNormograma(`${nombre} está derogada: no se asocia a procesos nuevos`);
+    if (actual && (actual.requisito ?? null) === requisito) return;
+    if (actual) {
+      await tx`UPDATE norma_procesos SET requisito = ${requisito}, actualizado_por = ${sesion.usuarioId}, actualizado_en = ${ahora}
+        WHERE id = ${actual.id}`;
+    } else {
+      // Dos asociaciones simultáneas: la segunda no inserta otra fila y actualiza el requisito.
+      await tx`INSERT INTO norma_procesos (norma_id, proceso_id, requisito, creado_por, creado_en)
+        VALUES (${d.normaId}, ${d.procesoId}, ${requisito}, ${sesion.usuarioId}, ${ahora})
+        ON CONFLICT (norma_id, proceso_id)
+        DO UPDATE SET requisito = EXCLUDED.requisito, actualizado_por = ${sesion.usuarioId}, actualizado_en = ${ahora}`;
+    }
+    await registrarAuditoria(tx, {
+      usuarioId: sesion.usuarioId,
+      accion: actual ? "norma_requisito_editado" : "norma_asociada",
+      entidad: "norma",
+      entidadId: d.normaId,
+      detalle: actual
+        ? { nombre, procesoId: d.procesoId, proceso, antes: actual.requisito ?? null, despues: requisito }
+        : { nombre, procesoId: d.procesoId, proceso, requisito },
+    });
+  });
+}
+
+export async function desasociarProceso(sesion: SesionFlujo, d: { normaId: number; procesoId: number }, opciones?: Opciones): Promise<void> {
+  exigirPermiso(sesion);
+  await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+    const [n] = await tx`SELECT ${nombreSql(tx)} AS nombre FROM normas n JOIN tipos_norma tn ON tn.id = n.tipo_norma_id WHERE n.id = ${d.normaId}`;
+    if (!n) throw new ErrorNormograma(NORMA_NO_EXISTE);
+    const proceso = await exigirProceso(tx, sesion, d.procesoId, "quitar");
+    const [quitada] = await tx`DELETE FROM norma_procesos WHERE norma_id = ${d.normaId} AND proceso_id = ${d.procesoId} RETURNING requisito`;
+    if (!quitada) throw new ErrorNormograma("La norma no está asociada a ese proceso");
+    await registrarAuditoria(tx, {
+      usuarioId: sesion.usuarioId,
+      accion: "norma_desasociada",
+      entidad: "norma",
+      entidadId: d.normaId,
+      detalle: { nombre: n.nombre, procesoId: d.procesoId, proceso, requisito: quitada.requisito ?? null },
+    });
+  });
+}
+
+/**
+ * El documento, si la persona lo ve, y el derecho sobre su proceso propietario. Quien no lo ve no sabe que existe;
+ * quien lo ve pero no tiene su proceso, recibe el motivo.
+ */
+async function documentoGestionable(tx: TransactionSql, sesion: SesionFlujo, documentoId: number, verbo: string) {
+  if (!(await puedeAccederDocumento(documentoId, sesion, { sql: tx }))) throw new ErrorNormograma(DOCUMENTO_NO_EXISTE);
+  const [d] = await tx`SELECT codigo FROM documentos WHERE id = ${documentoId}`;
+  const propietario = await propietarioDeDocumento(documentoId, { sql: tx });
+  if (!d || !propietario) throw new ErrorNormograma(DOCUMENTO_NO_EXISTE);
+  if (!puedeAsociarNorma(sesion, propietario.procesoId, await alcanceProcesos(sesion, { sql: tx }))) {
+    throw new ErrorNormograma(`Solo puede ${verbo} documentos de los procesos que lidera`);
+  }
+  return { codigo: d.codigo as string };
+}
+
+/** Enlaza un documento interno o externo a la norma (spec 13C §10.3): un cambio de la norma le abrirá un impacto. */
+export async function enlazarDocumento(sesion: SesionFlujo, d: { normaId: number; documentoId: number }, opciones?: Opciones): Promise<void> {
+  exigirPermiso(sesion);
+  const ahora = opciones?.ahora ?? new Date();
+  await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+    const { nombre } = await normaAbierta(tx, d.normaId);
+    const { codigo } = await documentoGestionable(tx, sesion, d.documentoId, "enlazar");
+    const [nuevo] = await tx`INSERT INTO norma_documentos (norma_id, documento_id, creado_por, creado_en)
+      VALUES (${d.normaId}, ${d.documentoId}, ${sesion.usuarioId}, ${ahora})
+      ON CONFLICT (norma_id, documento_id) DO NOTHING
+      RETURNING id`;
+    if (!nuevo) throw new ErrorNormograma("El documento ya está enlazado a esta norma");
+    await registrarAuditoria(tx, {
+      usuarioId: sesion.usuarioId,
+      accion: "norma_documento_enlazado",
+      entidad: "norma",
+      entidadId: d.normaId,
+      detalle: { nombre, documentoId: d.documentoId, codigo },
+    });
+  });
+}
+
+export async function desenlazarDocumento(sesion: SesionFlujo, d: { normaId: number; documentoId: number }, opciones?: Opciones): Promise<void> {
+  exigirPermiso(sesion);
+  await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+    const [n] = await tx`SELECT ${nombreSql(tx)} AS nombre FROM normas n JOIN tipos_norma tn ON tn.id = n.tipo_norma_id WHERE n.id = ${d.normaId}`;
+    if (!n) throw new ErrorNormograma(NORMA_NO_EXISTE);
+    const { codigo } = await documentoGestionable(tx, sesion, d.documentoId, "quitar el enlace de");
+    const [quitado] = await tx`DELETE FROM norma_documentos WHERE norma_id = ${d.normaId} AND documento_id = ${d.documentoId} RETURNING id`;
+    if (!quitado) throw new ErrorNormograma("El documento no está enlazado a esta norma");
+    await registrarAuditoria(tx, {
+      usuarioId: sesion.usuarioId,
+      accion: "norma_documento_desenlazado",
+      entidad: "norma",
+      entidadId: d.normaId,
+      detalle: { nombre: n.nombre, documentoId: d.documentoId, codigo },
+    });
+  });
+}
+
+/**
+ * El normograma del proceso (spec 13C §10.6 y §9.4): las normas no retiradas asociadas a él, con su requisito.
+ * `documentos` cuenta los que la persona ve.
+ */
+export async function normasDeProceso(
+  procesoId: number,
+  sesion: SesionFlujo,
+  opciones?: Opciones,
+): Promise<(FilaNorma & { requisito: string | null })[]> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const filas = await filasDeNormas(
+    sql,
+    sql`n.estado <> 'retirada' AND EXISTS (SELECT 1 FROM norma_procesos pnp WHERE pnp.norma_id = n.id AND pnp.proceso_id = ${procesoId})`,
+    sesion,
+    procesoId,
+  );
+  return filas.map((f) => ({ ...f.fila, requisito: f.requisito }));
+}
+
+/**
+ * Todas las normas enlazadas a un documento, en cualquier estado (el control de un externo muestra una sola; resolución
+ * 10 de la Tarea 8); ninguna si la persona no ve el documento.
+ */
+export async function normasDeDocumento(documentoId: number, sesion: SesionFlujo, opciones?: Opciones): Promise<FilaNorma[]> {
+  const sql = opciones?.sql ?? obtenerSql();
+  if (!(await puedeAccederDocumento(documentoId, sesion, { sql }))) return [];
+  const filas = await filasDeNormas(
+    sql,
+    sql`EXISTS (SELECT 1 FROM norma_documentos dnd WHERE dnd.norma_id = n.id AND dnd.documento_id = ${documentoId})`,
+    sesion,
+  );
+  return filas.map((f) => f.fila);
+}
+
+/** Un documento que la persona puede enlazar a la norma o desenlazar de ella (`enlazado`). */
+export type DocumentoGestionable = { id: number; codigo: string; titulo: string; origen: "interno" | "externo"; enlazado: boolean };
+
+/**
+ * Los documentos que la persona ve y cuyo proceso propietario tiene (`puedeAsociarNorma`): los vigentes, que puede
+ * enlazar, y los ya enlazados a la norma, que puede desenlazar aunque hayan dejado de estar vigentes. Nada para quien no
+ * tiene `normograma.procesos`. Por código. `alcance`, si quien llama ya lo leyó.
+ */
+export async function documentosGestionables(
+  normaId: number,
+  sesion: SesionFlujo,
+  opciones?: Opciones & { alcance?: Alcance },
+): Promise<DocumentoGestionable[]> {
+  if (!puede(sesion, "normograma.procesos")) return [];
+  const sql = opciones?.sql ?? obtenerSql();
+  const alcance = opciones?.alcance ?? (await alcanceProcesos(sesion, { sql }));
+  const filas = await sql`
+    SELECT d.id, d.codigo, d.titulo, d.origen,
+      EXISTS (SELECT 1 FROM norma_documentos nd WHERE nd.norma_id = ${normaId} AND nd.documento_id = d.id) AS enlazado
+    FROM documentos d
+    JOIN documento_proceso dp ON dp.documento_id = d.id AND dp.es_principal
+    LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
+    WHERE ${filtroAcceso(sql, sesion)}
+      ${alcance.todos ? sql`` : sql`AND COALESCE(dp.proceso_id, s.proceso_id) = ANY(${alcance.procesoIds})`}
+      AND (EXISTS (SELECT 1 FROM documento_versiones v WHERE v.documento_id = d.id AND v.estado = 'vigente')
+        OR EXISTS (SELECT 1 FROM norma_documentos nd WHERE nd.norma_id = ${normaId} AND nd.documento_id = d.id))
+    ORDER BY d.codigo`;
+  return filas.map((f) => ({ id: Number(f.id), codigo: f.codigo, titulo: f.titulo, origen: f.origen, enlazado: f.enlazado }));
+}

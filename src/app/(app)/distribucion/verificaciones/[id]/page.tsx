@@ -6,7 +6,9 @@ import { ListaHallazgos } from "@/componentes/distribucion/verificaciones/ListaH
 import { ResumenCierre } from "@/componentes/distribucion/verificaciones/ResumenCierre";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
+import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { obtenerVerificacion, ultimaVerificacionDe } from "@/db/consultas/distribucion/verificaciones";
+import { fechasDeCorreccion } from "@/lib/distribucion/verificacion";
 import { exigirSesion } from "@/lib/paginas";
 import { zonaHoraria } from "@/lib/zona-horaria";
 
@@ -33,10 +35,13 @@ export default async function PaginaVerificacion({ params }: { params: Promise<{
 
   // En una cerrada, la última es ella misma: el resumen ya lo dice.
   const ultima = v.estado === "cerrada" ? null : await ultimaVerificacionDe(v.punto.id);
+  // La fecha de corrección que se propone a cada no conforme, en la zona de la instalación (spec 13C §12.2).
+  const fechas = v.puedeEditar
+    ? fechasDeCorreccion(new Date(), (await obtenerConfigDocumental()).distribucion.plazoCorreccionDias, zonaHoraria())
+    : undefined;
   const fecha = new Intl.DateTimeFormat("es-CO", { dateStyle: "medium", timeZone: zonaHoraria() });
   const cuando = new Intl.DateTimeFormat("es-CO", { dateStyle: "medium", timeStyle: "short", timeZone: zonaHoraria() });
   const hace = ultima ? Math.floor((new Date().getTime() - ultima.cerradaEn.getTime()) / DIA_MS) : null;
-  const cerrables = v.hallazgos.filter((h) => h.puedeCerrar).map((h) => h.id);
 
   return (
     <div className="flex flex-col gap-4">
@@ -76,9 +81,9 @@ export default async function PaginaVerificacion({ params }: { params: Promise<{
       ) : null}
       {v.estado === "cerrada" ? <ResumenCierre verificacion={v} /> : null}
 
-      <ListaChequeo verificacion={v} />
+      <ListaChequeo verificacion={v} fechas={fechas} />
 
-      {v.estado === "cerrada" ? <ListaHallazgos hallazgos={v.hallazgos} verificacionId={v.id} cerrables={cerrables} /> : null}
+      {v.estado === "cerrada" ? <ListaHallazgos hallazgos={v.hallazgos} volver={{ verificacionId: v.id }} /> : null}
     </div>
   );
 }

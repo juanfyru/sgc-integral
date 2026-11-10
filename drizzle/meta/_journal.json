@@ -57,6 +57,27 @@
       "when": 1794085443391,
       "tag": "0007_fase13b-item-retirado",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794180999998,
+      "tag": "0008_fase13c-vigencia-externos-normograma",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794183278810,
+      "tag": "0009_fase13c-tipos-norma-y-endurecimiento",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794212807362,
+      "tag": "0010_fase13c-baja-de-relaciones",
+      "breakpoints": true
     }
   ]
 }

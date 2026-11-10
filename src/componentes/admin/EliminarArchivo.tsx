@@ -18,7 +18,8 @@ export async function pedirQuitar(direccion: string): Promise<string | null> {
   }
 }
 
-export function EliminarArchivo({ direccion, nombre }: { direccion: string; nombre: string }) {
+/** `de`: de dónde se quita, para la confirmación («del borrador», «de la norma»). */
+export function EliminarArchivo({ direccion, nombre, de = "del borrador" }: { direccion: string; nombre: string; de?: string }) {
   const router = useRouter();
   const [abierto, setAbierto] = useState(false);
   const [pendiente, setPendiente] = useState(false);
@@ -63,7 +64,7 @@ export function EliminarArchivo({ direccion, nombre }: { direccion: string; nomb
           <p aria-hidden="true" className="font-semibold">
             Quitar el archivo
           </p>
-          <p className="break-words text-sm">{`Se quitará «${nombre}» del borrador. Esta acción queda en la bitácora.`}</p>
+          <p className="break-words text-sm">{`Se quitará «${nombre}» ${de}. Esta acción queda en la bitácora.`}</p>
           <div className="flex flex-wrap justify-end gap-2">
             <Boton variante="secundario" onClick={() => setAbierto(false)}>
               Cancelar

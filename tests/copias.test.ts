@@ -21,6 +21,7 @@ import {
   puntosParaEmitir,
   reimprimirCopia,
 } from "@/db/consultas/distribucion/copias";
+import { listarPuntosUso, obtenerPuntoUso } from "@/db/consultas/distribucion/puntos-uso";
 import { ErrorDistribucion } from "@/lib/distribucion/tipos";
 import { fechaLimite } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -405,6 +406,48 @@ describe("listado y conteos", () => {
         expect(fila).toMatchObject({ vivas: 1, porRecoger: 0, sinRecibido: 1, nombre: punto.nombre });
       } finally {
         await limpiar();
+      }
+    }));
+
+  it("al líder le cuenta lo mismo que le lista: sus documentos en puntos de otros procesos, sin el restringido ajeno de sus puntos", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const [{ id: gth }] = await tx`SELECT id FROM procesos WHERE sigla = 'GTH'`;
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [Number(gth)] });
+      const [{ id: ate }] = await tx`SELECT id FROM procesos WHERE sigla = 'ATE'`;
+      // El responsable ve el restringido de ATE: puede recibir su copia en el punto de GTH.
+      const resp = await usuarioDePrueba(tx, { rol: "consulta", procesos: [Number(ate)] });
+      const suyo = await puntoDePrueba(tx, { responsable: resp, procesos: ["GTH"] });
+      const ajeno = await puntoDePrueba(tx, { responsable: resp, procesos: ["ATE"] });
+      const sinNada = await puntoDePrueba(tx, { responsable: resp, procesos: ["ATE"] });
+      const deGth = await vigenteConPdf(tx, { proceso: "GTH", tipo: "PR" });
+      const restringidoAte = await vigenteConPdf(tx, { proceso: "ATE", tipo: "PR", restringido: true });
+      try {
+        await copiaDePrueba(tx, { emisor: lider, documento: deGth.documento, punto: ajeno, ahora: T0 });
+        await copiaDePrueba(tx, { emisor: admin, documento: deGth.documento, punto: suyo, ahora: T0 });
+        await copiaDePrueba(tx, { emisor: admin, documento: restringidoAte.documento, punto: suyo, ahora: T0 });
+        const op = { sql: tx };
+        const conteos = await conteosPorPunto(lider, op);
+        const de = (id: number) => conteos.find((c) => c.puntoId === id);
+        expect(de(ajeno.id)).toMatchObject({ vivas: 1, sinRecibido: 1, nombre: ajeno.nombre });
+        expect(de(suyo.id)).toMatchObject({ vivas: 1, sinRecibido: 1 });
+        expect(de(sinNada.id)).toBeUndefined();
+        // Las mismas copias que la tabla.
+        for (const c of conteos) {
+          expect(c.vivas, c.nombre).toBe((await listarCopias(lider, { puntoId: c.puntoId, estado: "vivas" }, op)).length);
+        }
+        // A quien ve todo, el restringido sí se le cuenta.
+        expect((await conteosPorPunto(admin, op)).find((c) => c.puntoId === suyo.id)).toMatchObject({ vivas: 2 });
+
+        // El catálogo de puntos (que el líder abre en solo lectura) cuenta lo mismo que la tabla a la que enlaza.
+        const vivasDeLaTabla = (await listarCopias(lider, { puntoId: suyo.id, estado: "vivas" }, op)).length;
+        expect(vivasDeLaTabla).toBe(1);
+        expect((await obtenerPuntoUso(suyo.id, lider, op))?.copiasVivas).toBe(vivasDeLaTabla);
+        expect((await listarPuntosUso(lider, op)).find((p) => p.id === suyo.id)?.copiasVivas).toBe(vivasDeLaTabla);
+        expect((await obtenerPuntoUso(suyo.id, admin, op))?.copiasVivas).toBe(2);
+      } finally {
+        await deGth.limpiar();
+        await restringidoAte.limpiar();
       }
     }));
 });

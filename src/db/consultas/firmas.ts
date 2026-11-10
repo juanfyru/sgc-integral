@@ -20,7 +20,7 @@ export type FirmaRegistrada = {
 export async function registrarFirma(
   tx: Cliente,
   f: {
-    tramiteId: number;
+    tramiteId: number | null;
     versionId: number | null;
     usuarioId: number;
     firma: Firma;

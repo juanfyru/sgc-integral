@@ -179,7 +179,7 @@ describe("la historia sembrada", () => {
     expect(firmas[0].hashSha256).not.toBe(firmas[1].hashSha256);
   });
 
-  it("la devolución deja la lista de la primera ronda, dos observaciones y su historial", async () => {
+  it("la devolución deja la lista de la primera ronda, dos observaciones y su historial", async (ctx) => {
     const t = await tramiteDe(2);
     const lista = await sql`SELECT count(*)::int AS n FROM tramite_verificaciones WHERE tramite_id = ${t.id} AND ronda = 1`;
     expect(lista).toEqual([{ n: 8 }]);
@@ -191,7 +191,13 @@ describe("la historia sembrada", () => {
     expect(eventos.map((e) => `${e.tipo}:${e.ronda}`)).toEqual([
       "solicitar:0", "visto_bueno_automatico:0", "aceptar:1", "enviar_a_revision:1", "devolver_revision:2", "enviar_a_revision:2",
     ]);
-    expect(eventos[4].detalle).toEqual({ observaciones: [1, 2] });
+    // `venceEn` (la fecha límite de la etapa que cierra) lo trae la demo sembrada desde la Tarea 12; su forma la prueba
+    // «los detalles sembrados tienen la forma de los que escribe el flujo real».
+    const { venceEn, ...devolucion } = eventos[4].detalle;
+    expect(devolucion).toEqual({ observaciones: [1, 2] });
+    exigirDemo(ctx, venceEn !== undefined, "la devolución sembrada no guarda la fecha límite de su etapa (venceEn), la demo es anterior a la Tarea 12");
+    expect(typeof venceEn).toBe("string");
+    expect(Number.isNaN(Date.parse(venceEn))).toBe(false);
   });
 
   it("el trámite de GBS omitió el visto bueno y llegó a publicación con tres firmas de una huella", async () => {
@@ -250,7 +256,10 @@ describe("la historia sembrada", () => {
     ]);
   });
 
-  it("los detalles sembrados tienen la forma de los que escribe el flujo real", () => revertida(sql, async (tx) => {
+  it("los detalles sembrados tienen la forma de los que escribe el flujo real", (ctx) => revertida(sql, async (tx) => {
+    // Desde la Tarea 12 el paso que cierra una etapa guarda su fecha límite; una demo sembrada antes no la trae.
+    const [conLimite] = await tx`SELECT 1 FROM tramite_eventos WHERE tramite_id = ${(await tramiteDe(1, tx)).id} AND detalle ? 'venceEn' LIMIT 1`;
+    exigirDemo(ctx, conLimite !== undefined, "los eventos sembrados no guardan la fecha límite de su etapa (venceEn), la demo es anterior a la Tarea 12");
     const gerente = await sesionDe(tx, "gerente");
     const { t, confirmaNoCumple } = await aprobacionConCriterio(tx, { tipoDocumento: "CA", aprobador: gerente });
     try {
@@ -262,6 +271,10 @@ describe("la historia sembrada", () => {
       };
       const sembrado = await tramiteDe(1, tx);
       expect(await claves(sembrado.id)).toEqual(await claves(t.tramiteId));
+      // La semilla guarda una fecha real, no un nulo por un `previo` sin fecha límite.
+      const limites = await tx`SELECT detalle -> 'venceEn' AS vence FROM tramite_eventos WHERE tramite_id = ${sembrado.id} AND detalle ? 'venceEn'`;
+      expect(limites).not.toHaveLength(0);
+      for (const e of limites) expect(typeof e.vence).toBe("string");
       const publicar = (await tx`SELECT detalle FROM tramite_eventos WHERE tramite_id = ${sembrado.id} AND tipo = 'publicar'`)[0];
       expect(publicar.detalle.acuses).toEqual({ creados: expect.any(Number), porFirma: expect.any(Number) });
     } finally {

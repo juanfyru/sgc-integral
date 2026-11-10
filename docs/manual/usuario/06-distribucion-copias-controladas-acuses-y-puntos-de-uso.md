@@ -24,7 +24,8 @@ Capítulo 3 (la barra lateral y **Mis tareas**).
 - **Jornada de socialización:** una reunión o capacitación sobre uno o varios documentos, con
   sus asistentes y su evidencia. Quien asiste queda con su lectura confirmada.
 - **Verificación:** la revisión de un punto de uso con una lista que arma el SGC. Cada punto
-  que falla deja un **hallazgo** con responsable y fecha.
+  que falla deja un **hallazgo** con responsable y fecha, que se cierra en dos pasos: el
+  responsable lo corrige y otro valida la corrección.
 
 Dónde está cada cosa:
 
@@ -32,11 +33,12 @@ Dónde está cada cosa:
   controladas**, **Acuses de lectura**, **Socializaciones** y **Verificaciones**. La ven el
   Administrador del SGC, Gerencia, Control Interno, los líderes de proceso y **cualquier
   persona que sea responsable de un punto de uso activo** (esta última solo ve sus puntos).
-- **Puntos de uso** y **Listas de distribución**, en el grupo **Administración**, solo para el
-  Administrador del SGC.
+- **Puntos de uso** y **Listas de distribución**, en el grupo **Administración**. El
+  Administrador del SGC los crea y los edita; Gerencia, Control Interno y los líderes de proceso
+  los consultan en solo lectura (el líder, los puntos de sus procesos).
 - **Mis tareas**, en **Inicio**: aquí llega todo lo que el SGC espera de usted (recibir una
   copia, recogerla, confirmar una lectura, registrar una socialización, verificar un punto,
-  corregir un hallazgo).
+  corregir un hallazgo, validar una corrección).
 
 Cada tarea nace sola: nadie tiene que acordarse de pedirla.
 
@@ -80,7 +82,8 @@ viejo no puede quedar en circulación sin que alguien tenga la tarea de retirarl
    - **Destruida en el punto:** la destruyó en el servicio.
    - **No se encontró:** el papel no estaba. Esta opción cierra la copia y **abre un hallazgo**
      a su nombre, porque un papel controlado perdido es una no conformidad. Úsela solo si
-     de verdad no apareció.
+     de verdad no apareció. El hallazgo aparece en la página de la copia, en **Hallazgos de
+     esta copia**, y se corrige desde ahí (sección 2.4).
 4. Pulse **Confirmar la recogida**.
 
 Si la copia **nunca llegó a recibirse**, la pantalla le sugiere «Devuelta al SGC» para que no
@@ -96,10 +99,22 @@ del papel viejo (**Devuelta al SGC** o **Destruida en el punto**).
 ### 2.4 Corregir un hallazgo
 
 Cuando una verificación encuentra algo mal en su punto, le llega la tarea **Corregir hallazgo en
-Farmacia: …** con la descripción, lo que se hizo en el acto y la fecha límite («Vence el …», 5 días
-por defecto desde que se cierra la verificación). Corríjalo (retire la copia no controlada, cambie la versión, etc.), abra el
-hallazgo en **Mis tareas** y pulse **Cerrar hallazgo**, con una nota que diga qué hizo. El
-Administrador del SGC también puede cerrarlo.
+Farmacia: …** con la descripción, lo que se hizo en el acto y la fecha límite («Vence el …»: la que
+eligió quien verificó al cerrar la verificación; por defecto, 5 días). El cierre tiene dos pasos:
+
+1. **Usted lo corrige.** Retire la copia no controlada, cambie la versión, lo que haga falta. Abra
+   el hallazgo desde **Mis tareas**, escriba **Qué se hizo para corregirlo**, si quiere adjunte
+   una **Foto de la corrección (opcional)** y pulse **Corregido**. El hallazgo pasa a **Por
+   validar** y su tarea desaparece.
+2. **Otro valida la corrección.** Los Administradores del SGC reciben el aviso y la tarea
+   **Validar la corrección del hallazgo en Farmacia**. La aceptan con **Validar** o, si no basta,
+   la devuelven con **Reabrir…** y una nota: el hallazgo vuelve a usted con una fecha nueva y dice
+   cuántas veces se reabrió. También la valida la **siguiente verificación** del punto: si lo que
+   falló ya no sale no conforme, el hallazgo queda «Validado por la verificación del …»; si vuelve
+   a salir, se reabre.
+
+Quien corrige no valida su propia corrección. Un hallazgo de una recogida («No se encontró») se
+corrige igual, desde la página de su copia (**Hallazgos de esta copia**).
 
 ### 2.5 Reglas que le conviene saber
 
@@ -147,7 +162,7 @@ Otros casos:
 
 El líder emite y reemplaza las copias de los documentos de **sus** procesos, registra las
 socializaciones y ve la distribución de su alcance. No verifica puntos de uso (lo hace el
-Administrador del SGC) ni administra los catálogos.
+Administrador del SGC) ni administra los catálogos: los consulta en solo lectura (sección 5.1).
 
 ### 4.1 Emitir una copia controlada
 
@@ -235,6 +250,10 @@ Quién ve qué: cualquiera que vea el documento ve que hubo una jornada, su fech
 asistieron. **La lista de asistentes y el acta** solo las ven el Administrador del SGC, Control
 Interno, Gerencia y el líder del proceso (son datos de personas).
 
+En **Distribución** → **Socializaciones**, **Descargar Excel** baja las jornadas de la vista: fecha,
+modalidad, facilitador, documentos, asistentes, evidencia y estado. Para quien no puede ver los
+asistentes de una jornada, la columna de sus nombres dice «Reservada».
+
 ### 4.6 Su porcentaje de lectura
 
 En la ficha del documento, el bloque dice **Acuses v2: 14 de 18 (78 %)** y, con **Ver quién
@@ -257,6 +276,10 @@ puntos al emitir; un punto puede quedar sin procesos. También puede crearlo des
 **Mapa de procesos** (grupo **Documentos**), la pantalla de un subproceso ofrece **Nuevo punto de uso para este
 subproceso**, que llena el nombre y el proceso (no queda ningún vínculo con el subproceso).
 
+Gerencia, Control Interno y los líderes de proceso abren la misma lista y la ficha de cada punto
+en solo lectura, sin botones ni formularios (el líder, los puntos de sus procesos); la ficha
+lleva a las copias del punto con **Ver sus copias controladas**.
+
 Reglas: un punto no se desactiva con copias emitidas, recibidas o por recoger: la página del punto
 las lista (documento, número y estado) con enlace a cada una, para recogerlas o anularlas; una
 persona responsable de puntos activos no se desactiva en **Usuarios** hasta que los reasigne; y el
@@ -268,6 +291,12 @@ responsable nuevo de un punto con copias de un documento restringido debe poder 
 («Todo el hospital», «Personal asistencial») formado por **Áreas (toda su gente)**, **Cargos**,
 **Procesos (quienes están asignados)** y **Personas**. La pantalla muestra a cuántas personas
 llega hoy. Se resuelve en el momento de publicar, con las personas activas.
+
+Una lista armada por áreas no alcanza a quien no tiene cargo. Para llegar a todos, marque
+**Todos los usuarios activos**: la lista llega a toda persona activa en la plataforma en el
+momento de cada envío, tenga o no cargo, y los demás miembros se ocultan porque sobran. Un
+documento restringido sigue llegando solo a quien puede verlo. Gerencia, Control Interno y los
+líderes ven las listas en solo lectura.
 
 ### 5.3 La audiencia de un documento
 
@@ -314,19 +343,31 @@ La verificación se hace de pie en el servicio, con el celular: la pantalla est�
    **Guardar avance** conserva lo respondido si se pierde la señal; puede **Continuar** después.
    Hay una sola verificación abierta por punto.
 4. Para comparar con el papel, escanee su QR con el celular (sección 6).
-5. Cuando todos los ítems estén respondidos, **Cerrar la verificación**. Si no puede terminar,
-   **Descartar la verificación** (pide un motivo y queda registrada, sin efectos).
+5. Cuando todos los ítems estén respondidos, pulse **Cerrar verificación**. Se abre una ventana
+   con el resumen y cuántos hallazgos se abrirán. En **Fecha de corrección de cada hallazgo**
+   aparece cada ítem no conforme con su fecha, propuesta según el plazo de corrección: puede
+   cambiarla entre mañana y un año. Una fecha fuera de ese rango, o vacía, no deja cerrar: la
+   ventana dice debajo del campo de qué ítem es y entre qué fechas debe estar. Si el punto tiene
+   hallazgos por validar, la ventana lo avisa:
+   al cerrar se validan los que no vuelvan a salir no conformes y se reabren los que sí. Pulse
+   **Cerrar verificación** en la ventana. Si no puede terminar, **Descartar** (pide un motivo y
+   queda registrada, sin efectos).
 
 El resultado es **Punto conforme** o **Punto no conforme**. Cada ítem no conforme abre un
-**hallazgo** para el responsable del punto, con su fecha límite. Las copias que usted
+**hallazgo** para el responsable del punto, con la fecha que usted eligió. La verificación
+cerrada dice cuántos abrió, cuántos validó y cuántos reabrió («Abrió 1 hallazgo. Validó 2
+hallazgos por validar. Reabrió 1.»). Si un hallazgo por validar vuelve a salir no conforme, se
+reabre y el ítem abre además el suyo: quedan dos abiertos. Las copias que usted
 confirmó como retiradas pasan a **Recogida**. **Una verificación cerrada no se edita**, ni
 usted ni nadie: se corrigen los hallazgos, no la verificación. Si usted es además responsable
 del punto y no hay otro Administrador activo, la verificación queda marcada «la verificó quien
 responde por el punto».
 
 La pestaña muestra la **Conformidad actual** contra el **umbral** (95 % por defecto, por
-ejemplo «86 %, por debajo del 95 %»), el historial con filtros, los hallazgos abiertos y cerrados
-y **Qué falla más en el periodo**. Cada vista tiene **Descargar Excel**.
+ejemplo «86 %, por debajo del 95 %»), el historial con filtros, los hallazgos abiertos, por
+validar y cerrados y **Qué falla más en el periodo**. El porcentaje se trunca, nunca se
+redondea hacia arriba: 18 de 19 puntos conformes es 94 %, por debajo de 95. Cada vista tiene
+**Descargar Excel**.
 
 ### 5.7 Asigne procesos a todo el personal
 
@@ -369,10 +410,15 @@ copias.
 
 ### 5.9 Cerrar hallazgos, anular y descartar
 
-Con su permiso puede cerrar cualquier hallazgo, anular cualquier copia, cerrar o recoger
-por quien no está, y descartar verificaciones. Todo queda en la **Bitácora** con frases
-legibles, y puede descargar el Excel de copias, acuses y verificaciones
-(queda registrado quién y cuándo).
+Con su permiso puede validar o reabrir las correcciones, cerrar cualquier hallazgo sin esperar
+la validación (**Cerrar directamente…**: queda como validado por el Administrador del SGC),
+anular cualquier copia, cerrar o recoger por quien no está, y descartar verificaciones. Una
+corrección que usted mismo marcó no la valida nunca, y no la cierra directamente mientras haya
+otro Administrador del SGC activo; tampoco cierra directamente un hallazgo abierto de un punto
+del que usted responde (otro Administrador del SGC lo cierra, o usted lo marca corregido y otro
+lo valida). Si es el único activo, lo cierra y queda la marca en la bitácora. Todo
+queda en la **Bitácora** con frases legibles, y puede descargar el Excel de copias, acuses,
+socializaciones y verificaciones (queda registrado quién y cuándo).
 
 ## 6. El QR y el celular
 
@@ -413,6 +459,7 @@ documentos del hospital se ajustan, y el hospital lo hace por su cuenta:
 | Acuses | Cada persona, los suyos; porcentajes y «quién falta»: Administrador, Gerencia, Control Interno y, en sus procesos, el líder |
 | Jornadas | El resumen, quien ve el documento; asistentes y acta, solo Administrador, Control Interno, Gerencia y el líder |
 | Verificaciones y hallazgos | Administrador, Gerencia y Control Interno, todos; el líder, los de sus puntos; el responsable, los de sus puntos |
+| Puntos de uso y listas de distribución | El Administrador, para crearlos y editarlos; Gerencia, Control Interno y el líder (los puntos de sus procesos), en solo lectura |
 
 Para quien no puede ver algo, simplemente no existe: la pantalla dice «Página no encontrada».
 
@@ -424,6 +471,7 @@ Para quien no puede ver algo, simplemente no existe: la pantalla dice «Página 
 | Abra el documento para habilitar la confirmación | Todavía no abrió la versión | Pulse **Abrir el documento**, léalo y vuelva |
 | Esta lectura ya no está pendiente | Salió una versión más nueva, o fue retirada | Busque la tarea de la versión nueva |
 | Esta copia es de la versión N; la vigente es la M | El papel que escaneó está obsoleto | Entréguelo al responsable del punto para su recogida |
-| No se encontró (destino de la recogida) | El papel no apareció | Se abre un hallazgo a su nombre: corríjalo y ciérrelo |
+| No se encontró (destino de la recogida) | El papel no apareció | Se abre un hallazgo a su nombre: corríjalo desde la página de la copia y márquelo **Corregido** |
+| Por validar | El responsable marcó corregido el hallazgo | Un Administrador del SGC lo valida o lo reabre, o lo valida la siguiente verificación del punto |
 | Sin acta adjunta | La jornada se registró sin evidencia | Adjúntela en las 24 horas siguientes |
 | Toca verificar | El punto lleva más de 90 días sin verificarse | Pulse **Verificar** |

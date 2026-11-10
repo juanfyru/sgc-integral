@@ -32,7 +32,7 @@ export default async function PaginaEditarDocumento({
     obtenerDocumentoAdmin(decodeURIComponent(codigo), sesion),
     listarTiposActivos(),
     listarMapaParaFormulario(),
-    listarDocumentosAdmin(sesion),
+    listarDocumentosAdmin(sesion, { vigencia: false }),
     obtenerConfigDocumental(),
   ]);
   if (!documento) notFound();

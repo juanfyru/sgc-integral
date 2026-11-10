@@ -166,16 +166,16 @@ describe("borrar", () => {
 describe("tipos_documento CRUD", () => {
   it("crea, aparece en el listado y se puede editar", async () => {
     const { id } = await crearTipo(
-      { nombre: "ZZ Formato Prueba", sigla: "ZZF", esDiligenciable: true, autoridad: "operativo", plantillaDocumentoId: null },
+      { nombre: "ZZ Formato Prueba", sigla: "ZZF", esDiligenciable: true, autoridad: "operativo", plantillaDocumentoId: null, mesesRevision: 12 },
       usuarioId,
     );
     const lista = await listarTipos();
     const fila = lista.find((f) => f.id === id);
     expect(fila).toMatchObject({ sigla: "ZZF", esDiligenciable: true, numDocs: 0 });
 
-    await editarTipo(id, { nombre: "ZZ Formato Prueba", sigla: "ZZG", esDiligenciable: false, autoridad: "operativo", plantillaDocumentoId: null }, usuarioId);
+    await editarTipo(id, { nombre: "ZZ Formato Prueba", sigla: "ZZG", esDiligenciable: false, autoridad: "operativo", plantillaDocumentoId: null, mesesRevision: 12 }, usuarioId);
     const t = await obtenerTipo(id);
-    expect(t).toMatchObject({ sigla: "ZZG", esDiligenciable: false, autoridad: "operativo", plantillaDocumentoId: null });
+    expect(t).toMatchObject({ sigla: "ZZG", esDiligenciable: false, autoridad: "operativo", plantillaDocumentoId: null, mesesRevision: 12 });
     const [aud] = await sql()`SELECT 1 FROM auditoria
       WHERE accion = 'editar_tipo_documento' AND entidad_id = ${id}`;
     expect(aud).toBeTruthy();
@@ -187,13 +187,13 @@ describe("tipos_documento CRUD", () => {
     const [sinVigente] = await sql()`SELECT d.id FROM documentos d
       WHERE NOT EXISTS (SELECT 1 FROM documento_versiones v WHERE v.documento_id = d.id AND v.estado = 'vigente') LIMIT 1`;
     const base = { nombre: "ZZ Tipo Plantilla", sigla: "ZZP", esDiligenciable: false };
-    const { id } = await crearTipo({ ...base, autoridad: "estrategico", plantillaDocumentoId: Number(vigente.id) }, usuarioId);
-    expect(await obtenerTipo(id)).toMatchObject({ autoridad: "estrategico", plantillaDocumentoId: Number(vigente.id), plantillaCodigo: vigente.codigo });
+    const { id } = await crearTipo({ ...base, autoridad: "estrategico", plantillaDocumentoId: Number(vigente.id), mesesRevision: 12 }, usuarioId);
+    expect(await obtenerTipo(id)).toMatchObject({ autoridad: "estrategico", plantillaDocumentoId: Number(vigente.id), plantillaCodigo: vigente.codigo, mesesRevision: 12 });
     expect((await listarTipos()).find((t) => t.id === id)).toMatchObject({ autoridad: "estrategico", plantillaCodigo: vigente.codigo, plantillaVigente: true });
     expect((await listarPlantillasPosibles()).some((p) => p.id === Number(vigente.id))).toBe(true);
 
-    await editarTipo(id, { ...base, autoridad: "operativo", plantillaDocumentoId: null }, usuarioId);
-    expect(await obtenerTipo(id)).toMatchObject({ autoridad: "operativo", plantillaDocumentoId: null });
+    await editarTipo(id, { ...base, autoridad: "operativo", plantillaDocumentoId: null, mesesRevision: 12 }, usuarioId);
+    expect(await obtenerTipo(id)).toMatchObject({ autoridad: "operativo", plantillaDocumentoId: null, mesesRevision: 12 });
     const [aud] = await sql()`SELECT detalle FROM auditoria WHERE accion = 'editar_tipo_documento' AND entidad_id = ${id} ORDER BY id DESC LIMIT 1`;
     expect(aud.detalle).toMatchObject({
       autoridad: "operativo", plantillaDocumentoId: null,
@@ -201,16 +201,32 @@ describe("tipos_documento CRUD", () => {
     });
     expect(sinVigente).toBeTruthy();
     const mensaje = /La plantilla debe ser un documento vigente/;
-    await expect(editarTipo(id, { ...base, autoridad: "operativo", plantillaDocumentoId: Number(sinVigente.id) }, usuarioId)).rejects.toThrow(mensaje);
-    await expect(crearTipo({ ...base, sigla: "ZZQ", nombre: "ZZ Otro tipo", autoridad: "operativo", plantillaDocumentoId: Number(sinVigente.id) }, usuarioId)).rejects.toThrow(mensaje);
+    await expect(editarTipo(id, { ...base, autoridad: "operativo", plantillaDocumentoId: Number(sinVigente.id), mesesRevision: 12 }, usuarioId)).rejects.toThrow(mensaje);
+    await expect(crearTipo({ ...base, sigla: "ZZQ", nombre: "ZZ Otro tipo", autoridad: "operativo", plantillaDocumentoId: Number(sinVigente.id), mesesRevision: 12 }, usuarioId)).rejects.toThrow(mensaje);
     expect((await listarPlantillasPosibles()).some((p) => p.id === Number(sinVigente.id))).toBe(false);
-    await expect(editarTipo(id, { ...base, autoridad: "otra" as never, plantillaDocumentoId: null }, usuarioId)).rejects.toThrow(/autoridad/);
+    await expect(editarTipo(id, { ...base, autoridad: "otra" as never, plantillaDocumentoId: null, mesesRevision: 12 }, usuarioId)).rejects.toThrow(/autoridad/);
+  });
+
+  it("guarda el plazo de revisión en meses, lo lista y rechaza 0 y 121", async () => {
+    const base = { nombre: "ZZ Tipo Meses", sigla: "ZZM", esDiligenciable: false, autoridad: "operativo" as const, plantillaDocumentoId: null };
+    const { id } = await crearTipo({ ...base, mesesRevision: 24 }, usuarioId);
+    expect(await obtenerTipo(id)).toMatchObject({ mesesRevision: 24 });
+    expect((await listarTipos()).find((t) => t.id === id)).toMatchObject({ mesesRevision: 24 });
+    await editarTipo(id, { ...base, mesesRevision: 6 }, usuarioId);
+    expect(await obtenerTipo(id)).toMatchObject({ mesesRevision: 6 });
+    const [aud] = await sql()`SELECT detalle FROM auditoria WHERE accion = 'editar_tipo_documento' AND entidad_id = ${id} ORDER BY id DESC LIMIT 1`;
+    expect(aud.detalle).toMatchObject({ mesesRevision: 6, mesesRevisionAnterior: 24 });
+    for (const malo of [0, 121, 1.5]) {
+      await expect(editarTipo(id, { ...base, mesesRevision: malo }, usuarioId)).rejects.toThrow(/plazo de revisión/);
+      await expect(crearTipo({ ...base, sigla: "ZZN", nombre: "ZZ Tipo Meses 2", mesesRevision: malo }, usuarioId)).rejects.toThrow(/plazo de revisión/);
+    }
+    expect(await obtenerTipo(id)).toMatchObject({ mesesRevision: 6 });
   });
 
   it("rechaza sigla duplicada con error legible", async () => {
     const [existente] = await sql()`SELECT sigla FROM tipos_documento WHERE activo LIMIT 1`;
     await expect(
-      crearTipo({ nombre: "ZZ Otro", sigla: existente.sigla, esDiligenciable: false, autoridad: "operativo", plantillaDocumentoId: null }, usuarioId),
+      crearTipo({ nombre: "ZZ Otro", sigla: existente.sigla, esDiligenciable: false, autoridad: "operativo", plantillaDocumentoId: null, mesesRevision: 12 }, usuarioId),
     ).rejects.toThrow(/ya existe/i);
   });
 });

@@ -61,6 +61,8 @@ const aGuardar = (c: ConfigDocumental) => ({
   publicacionDirecta: c.publicacionDirecta,
   formatoActa: c.formatoActa,
   distribucion: c.distribucion,
+  vigencia: c.vigencia,
+  metas: c.metas,
 });
 
 const ultimaAuditoria = async (tx: TransactionSql, actorId: number) => {
@@ -289,6 +291,63 @@ describe("distribución", () => {
     await rechaza({ plazoRecibidoDias: 0 }, /recibido/);
     await rechaza({ verificacionCadaDias: 366 }, /verificaciones/);
     await rechaza({ plazoCorreccionDias: 1.5 }, /corrección/);
+  }));
+});
+
+describe("vigencia y metas", () => {
+  const CLAVES = "'revision_%' OR clave LIKE 'meta_%' OR clave LIKE 'externos_%' OR clave LIKE 'impacto_%' OR clave LIKE 'formato_informe_%'";
+  const limpiar = (tx: TransactionSql) =>
+    tx.unsafe(`DELETE FROM configuracion WHERE clave LIKE ${CLAVES}`);
+  const valorDe = async (tx: TransactionSql, clave: string) =>
+    (await tx`SELECT valor FROM configuracion WHERE clave = ${clave}`)[0]?.valor;
+
+  it("lee los valores por defecto de vigencia y metas sin filas en configuracion", () => revertida(sql, async (tx) => {
+    await limpiar(tx);
+    const c = await obtenerConfigDocumental({ sql: tx });
+    expect(c.vigencia).toEqual({ atencionDias: 90, revisionAnualPlazoDias: 60, revisionAnualVentanaMeses: 6, externosVerificacionMeses: 12, impactoPlazoDias: 15, formatoInforme: { documentoId: null, margenSuperiorCm: 5.5, margenInferiorCm: 3.5 } });
+    expect(c.metas).toEqual({ dentroPlazoPct: 95, aprobacionDias: 30, vencidos: 0, acusesPct: 90, externosPct: 95, etapasPlazoPct: 90 });
+  }));
+
+  it("guarda metas y plazos de vigencia, acota los rangos y audita el cambio", () => revertida(sql, async (tx) => {
+    const { usuarioId } = await sesionAdmin(tx);
+    await limpiar(tx);
+    const antes = await obtenerConfigDocumental({ sql: tx });
+    const metas = { ...antes.metas, acusesPct: 80 };
+    const vigencia = { ...antes.vigencia, atencionDias: 100, revisionAnualVentanaMeses: 0 };
+    await guardarConfigDocumentalEn(tx, { ...aGuardar(antes), metas, vigencia }, usuarioId);
+    const despues = await obtenerConfigDocumental({ sql: tx });
+    expect(despues.metas).toEqual(metas);
+    expect(despues.vigencia).toEqual(vigencia);
+    expect(await valorDe(tx, "meta_acuses_pct")).toBe("80");
+    const { cambios } = await ultimaAuditoria(tx, usuarioId);
+    expect(cambios.meta_acuses_pct).toEqual({ antes: "90", despues: "80" });
+    expect(cambios.revision_atencion_dias).toEqual({ antes: "90", despues: "100" });
+    expect(cambios.revision_anual_ventana_meses).toEqual({ antes: "6", despues: "0" });
+
+    // Un valor fuera de rango en la base cae al defecto al leer.
+    await tx`UPDATE configuracion SET valor = '30' WHERE clave = 'meta_acuses_pct'`;
+    expect((await obtenerConfigDocumental({ sql: tx })).metas.acusesPct).toBe(90);
+    await tx`UPDATE configuracion SET valor = '3' WHERE clave = 'revision_anual_plazo_dias'`;
+    expect((await obtenerConfigDocumental({ sql: tx })).vigencia.revisionAnualPlazoDias).toBe(60);
+
+    // Al escribir, fuera de rango se rechaza.
+    const rechaza = (cambio: object, mensaje: RegExp) =>
+      expect(tx.savepoint(() => guardarConfigDocumentalEn(tx, { ...aGuardar(antes), metas, vigencia, ...cambio }, usuarioId))).rejects.toThrow(mensaje);
+    await rechaza({ metas: { ...metas, acusesPct: 49 } }, /meta de acuses de lectura debe ser un número entero de 50 a 100/);
+    await rechaza({ metas: { ...metas, vencidos: 1000 } }, /vencidos/);
+    await rechaza({ vigencia: { ...vigencia, revisionAnualPlazoDias: 6 } }, /plazo de la revisión anual/);
+    await rechaza({ vigencia: { ...vigencia, externosVerificacionMeses: 61 } }, /externos/);
+    await rechaza({ vigencia: { ...vigencia, formatoInforme: { ...vigencia.formatoInforme, margenSuperiorCm: 13 } } }, /encabezado/);
+  }));
+
+  it("sin vigencia ni metas en los datos, conserva lo guardado", () => revertida(sql, async (tx) => {
+    const { usuarioId } = await sesionAdmin(tx);
+    await limpiar(tx);
+    const antes = await obtenerConfigDocumental({ sql: tx });
+    await guardarConfigDocumentalEn(tx, { ...aGuardar(antes), metas: { ...antes.metas, vencidos: 5 } }, usuarioId);
+    const sinNuevos = { ...aGuardar(antes), vigencia: undefined, metas: undefined };
+    await guardarConfigDocumentalEn(tx, sinNuevos, usuarioId);
+    expect((await obtenerConfigDocumental({ sql: tx })).metas.vencidos).toBe(5);
   }));
 });
 

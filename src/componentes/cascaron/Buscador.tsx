@@ -9,6 +9,7 @@ import {
   LARGO_MAXIMO_CONSULTA,
   LARGO_MINIMO_CONSULTA,
   estadoDeBusqueda,
+  gruposDeResultados,
   type RespuestaRapida,
   type ResultadoRapido,
 } from "@/lib/busqueda-rapida";
@@ -35,9 +36,24 @@ export function claseOpcion(activa: boolean): string {
   }`;
 }
 
+const CLASE_TITULO = "px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-texto-terciario";
+
+/** Un grupo de la lista con su encabezado; sin resultados no pinta nada, ni el encabezado. */
+export function GrupoPaleta({ titulo, vacio, children }: { titulo: string; vacio: boolean; children?: React.ReactNode }) {
+  if (vacio) return null;
+  return (
+    <li role="presentation">
+      <p className={CLASE_TITULO}>{titulo}</p>
+      <ul role="group" aria-label={titulo}>
+        {children}
+      </ul>
+    </li>
+  );
+}
+
 type Opcion =
   | { id: string; clase: "ir"; entrada: EntradaNav; ruta: string }
-  | { id: string; clase: "documento"; resultado: ResultadoRapido; ruta: string }
+  | { id: string; clase: "documento" | "norma"; resultado: ResultadoRapido; ruta: string }
   | { id: string; clase: "todos"; ruta: string };
 
 export function Buscador({ entradas }: { entradas: EntradaNav[] }) {
@@ -129,12 +145,15 @@ function Paleta({ entradas, cerrar }: { entradas: EntradaNav[]; cerrar: () => vo
 
   const estado = estadoDeBusqueda(consulta, respuesta);
   const resultados = (estado === "listo" && respuesta?.resultados) || [];
-  const docsVisibles = resultados;
+  const { documentos: docsVisibles, normas: normasVisibles } = gruposDeResultados(resultados);
 
   const opciones: Opcion[] = [
     ...irA.map((entrada, i): Opcion => ({ id: `${idBase}-ir-${i}`, clase: "ir", entrada, ruta: entrada.href })),
     ...docsVisibles.map(
       (resultado, i): Opcion => ({ id: `${idBase}-doc-${i}`, clase: "documento", resultado, ruta: resultado.ruta }),
+    ),
+    ...normasVisibles.map(
+      (resultado, i): Opcion => ({ id: `${idBase}-norma-${i}`, clase: "norma", resultado, ruta: resultado.ruta }),
     ),
     ...(buscaDocumentos
       ? [{ id: `${idBase}-todos`, clase: "todos", ruta: `/buscar?q=${encodeURIComponent(consulta)}` } as Opcion]
@@ -171,6 +190,7 @@ function Paleta({ entradas, cerrar }: { entradas: EntradaNav[]; cerrar: () => vo
     irA.length === 0 && (!buscaDocumentos || (estado === "listo" && resultados.length === 0));
   const filasIr = opciones.filter((o) => o.clase === "ir");
   const filasDocs = opciones.filter((o) => o.clase === "documento");
+  const filasNormas = opciones.filter((o) => o.clase === "norma");
   const filaTodos = opciones.find((o) => o.clase === "todos");
 
   const propsOpcion = (o: Opcion) => ({
@@ -181,7 +201,6 @@ function Paleta({ entradas, cerrar }: { entradas: EntradaNav[]; cerrar: () => vo
     onMouseMove: () => setActiva(opciones.indexOf(o)),
     className: claseOpcion(o.id === idActiva),
   });
-  const claseTitulo = "px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-texto-terciario";
 
   return (
     <div className="flex max-h-[80vh] flex-col">
@@ -195,8 +214,8 @@ function Paleta({ entradas, cerrar }: { entradas: EntradaNav[]; cerrar: () => vo
           aria-controls={idLista}
           aria-activedescendant={idActiva}
           aria-autocomplete="list"
-          aria-label="Buscar documentos o ir a una página"
-          placeholder="Buscar documentos o ir a una página…"
+          aria-label="Buscar documentos y normas, o ir a una página"
+          placeholder="Buscar documentos y normas, o ir a una página…"
           autoComplete="off"
           spellCheck={false}
           maxLength={LARGO_MAXIMO_CONSULTA}
@@ -211,45 +230,50 @@ function Paleta({ entradas, cerrar }: { entradas: EntradaNav[]; cerrar: () => vo
       </div>
 
       <ul id={idLista} role="listbox" aria-label="Resultados" className="min-h-0 flex-1 overflow-y-auto p-2">
-        {filasIr.length > 0 && (
-          <li role="presentation">
-            <p className={claseTitulo}>Ir a</p>
-            <ul role="group" aria-label="Ir a">
-              {filasIr.map((o) =>
-                o.clase === "ir" ? (
-                  <li key={o.id} {...propsOpcion(o)}>
-                    <IconoNav nombre={o.entrada.icono} className="size-4 shrink-0" />
-                    {o.entrada.etiqueta}
-                  </li>
-                ) : null,
-              )}
-            </ul>
-          </li>
-        )}
-        {buscaDocumentos && (
-          <li role="presentation">
-            <p className={claseTitulo}>Documentos</p>
-            <ul role="group" aria-label="Documentos">
-              {filasDocs.map((o) =>
-                o.clase === "documento" ? (
-                  <li key={o.id} {...propsOpcion(o)}>
-                    <span className="shrink-0 font-mono text-xs">{o.resultado.codigo}</span>
-                    <span className="min-w-0 flex-1 truncate">
-                      {o.resultado.tituloResaltado ? (
-                        <TextoResaltado texto={o.resultado.tituloResaltado} />
-                      ) : (
-                        o.resultado.titulo
-                      )}
-                    </span>
-                    <span className="shrink-0 rounded border border-border px-1.5 text-xs text-muted-foreground">
-                      {o.resultado.tipo}
-                    </span>
-                  </li>
-                ) : null,
-              )}
-            </ul>
-          </li>
-        )}
+        <GrupoPaleta titulo="Ir a" vacio={filasIr.length === 0}>
+          {filasIr.map((o) =>
+            o.clase === "ir" ? (
+              <li key={o.id} {...propsOpcion(o)}>
+                <IconoNav nombre={o.entrada.icono} className="size-4 shrink-0" />
+                {o.entrada.etiqueta}
+              </li>
+            ) : null,
+          )}
+        </GrupoPaleta>
+        <GrupoPaleta titulo="Documentos" vacio={filasDocs.length === 0}>
+          {filasDocs.map((o) =>
+            o.clase === "documento" ? (
+              <li key={o.id} {...propsOpcion(o)}>
+                <span className="shrink-0 font-mono text-xs">{o.resultado.codigo}</span>
+                <span className="min-w-0 flex-1 truncate">
+                  {o.resultado.tituloResaltado ? (
+                    <TextoResaltado texto={o.resultado.tituloResaltado} />
+                  ) : (
+                    o.resultado.titulo
+                  )}
+                </span>
+                <span className="shrink-0 rounded border border-border px-1.5 text-xs text-muted-foreground">
+                  {o.resultado.tipo}
+                </span>
+              </li>
+            ) : null,
+          )}
+        </GrupoPaleta>
+        <GrupoPaleta titulo="Normas" vacio={filasNormas.length === 0}>
+          {filasNormas.map((o) =>
+            o.clase === "norma" ? (
+              <li key={o.id} {...propsOpcion(o)}>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">{o.resultado.codigo}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{o.resultado.titulo}</span>
+                </span>
+                <span className="shrink-0 rounded border border-border px-1.5 text-xs text-muted-foreground">
+                  {o.resultado.tipo}
+                </span>
+              </li>
+            ) : null,
+          )}
+        </GrupoPaleta>
         {filaTodos && (
           <li {...propsOpcion(filaTodos)}>Ver todos los resultados de “{consulta}”</li>
         )}

@@ -52,13 +52,14 @@ export const EsquemaAnulacion = z
   })
   .strict();
 
-export const EsquemaReemplazarCopias = z.object({ versionId: id }).strict();
+/** `volver` es la ficha desde donde se reemplaza (la del buscador o la del panel): ahí se dice cuántas se emitieron. */
+export const EsquemaReemplazarCopias = z.object({ versionId: id, volver: z.string().max(300).optional() }).strict();
 
 export const EsquemaLista = z
   .object({
     nombre: textoAcotado("El nombre", 2, 80),
     descripcion: textoAcotado("La descripción", 0, 300).optional(),
-    miembros: lista(z.string().regex(/^(area|cargo|proceso|usuario):[1-9]\d*$/, "Miembro inválido")).pipe(
+    miembros: lista(z.string().regex(/^(?:(?:area|cargo|proceso|usuario):[1-9]\d*|todos)$/, "Miembro inválido")).pipe(
       z.array(z.string()).min(1, "Elija al menos un miembro"),
     ),
   })
@@ -71,6 +72,7 @@ export function parsearLista(formData: FormData): DatosLista {
     nombre: d.nombre,
     descripcion: d.descripcion || null,
     miembros: d.miembros.map((m) => {
+      if (m === "todos") return { tipo: "todos" as const, referenciaId: null };
       const [tipo, referencia] = m.split(":");
       return { tipo: tipo as TipoMiembro, referenciaId: Number(referencia) };
     }),
@@ -115,7 +117,20 @@ export const EsquemaItemLibre = z.object({ texto: textoAcotado("El ítem", 5, 20
 
 export const EsquemaNotaHallazgo = z.object({ nota: textoAcotado("La nota", 5, 1000) }).strict();
 
-export type RespuestaChequeo = { itemId: number; respuesta: RespuestaItem | null; nota: string | null; retirado: boolean };
+/** «Validar» solo lleva el hallazgo (y la verificación a la que volver): ningún otro campo. */
+export const EsquemaValidarHallazgo = z.object({}).strict();
+
+export type RespuestaChequeo = {
+  itemId: number;
+  respuesta: RespuestaItem | null;
+  nota: string | null;
+  retirado: boolean;
+  /** `AAAA-MM-DD`: la fecha de corrección del hallazgo que abre un no conforme, si el verificador la cambió. */
+  fechaCorreccion?: string;
+};
+
+/** Los campos de un ítem de la lista de chequeo: `<campo>_<itemId>`. */
+export const CAMPO_DE_CHEQUEO = /^(respuesta|nota|retirado|fecha)_(\d{1,15})$/;
 
 const EsquemaFilaChequeo = z
   .object({
@@ -123,30 +138,33 @@ const EsquemaFilaChequeo = z
     respuesta: z.enum(RESPUESTAS_ITEM, { error: "Respuesta inválida" }).nullable(),
     nota: z.string().trim().max(1000, "La nota no puede pasar de 1000 caracteres").nullable(),
     retirado: z.boolean(),
+    fechaCorreccion: z.iso.date({ error: "Elija una fecha de corrección válida" }).optional(),
   })
   .strict();
 
 /**
- * Las respuestas de la lista de chequeo viajan como `respuesta_<id>` (un radio por ítem), `nota_<id>` y
- * `retirado_<id>` (casilla): los campos dependen de los ítems, así que no caben en un esquema de claves fijas.
- * Un ítem sin marcar no envía su respuesta.
+ * Las respuestas de la lista de chequeo viajan como `respuesta_<id>` (un radio por ítem), `nota_<id>`,
+ * `retirado_<id>` (casilla) y `fecha_<id>` (la fecha de corrección de un no conforme): los campos dependen de los
+ * ítems, así que no caben en un esquema de claves fijas. Un ítem sin marcar no envía su respuesta.
  */
 export function leerChequeo(formData: FormData, omitir: readonly string[]): RespuestaChequeo[] {
   const ids = new Set<string>();
   for (const clave of new Set(formData.keys())) {
     if (clave.startsWith("$ACTION_") || omitir.includes(clave)) continue;
-    const m = /^(respuesta|nota|retirado)_(\d{1,15})$/.exec(clave);
+    const m = CAMPO_DE_CHEQUEO.exec(clave);
     if (!m) throw new Error("Formulario inválido. Recargue la página.");
     ids.add(m[2]);
   }
   const filas = [...ids].map((itemId) => {
     const respuesta = formData.get(`respuesta_${itemId}`);
     const nota = formData.get(`nota_${itemId}`);
+    const fecha = formData.get(`fecha_${itemId}`);
     return {
       itemId,
       respuesta: typeof respuesta === "string" && respuesta ? respuesta : null,
       nota: typeof nota === "string" && nota.trim() ? nota : null,
       retirado: formData.get(`retirado_${itemId}`) === "on",
+      ...(typeof fecha === "string" && fecha.trim() ? { fechaCorreccion: fecha.trim() } : {}),
     };
   });
   const resultado = z.array(EsquemaFilaChequeo).safeParse(filas);
