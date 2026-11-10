@@ -5,7 +5,8 @@ pide un cambio, el líder del proceso, quien elabora, quien revisa, quien aprueb
 **Administrador del SGC** (Oficina de Calidad; en el procedimiento del hospital se le llama
 Coordinador SGC). Explica cómo se pide, se elabora, se revisa, se aprueba y se publica un
 documento dentro del SGC, cómo se elimina, cómo se registran los documentos que ya estaban
-aprobados en papel y quién puede ver cada cosa.
+aprobados en papel y quién puede ver cada cosa. La revisión periódica de los documentos
+vigentes, los documentos externos y el normograma están en el Capítulo 7.
 
 Si solo participa en un paso, lea la sección 1 y la sección de ese paso. Para ingresar y
 manejar su cuenta, vea el Capítulo 1.
@@ -68,7 +69,9 @@ Arriba están el código, el título, la versión, el número de solicitud, qué
 motivo y el responsable, y la etapa con el día en que va («día 2 de 5»). Debajo aparecen
 los pasos: los hechos llevan una marca y el actual va resaltado. Después vienen **La
 solicitud**, lo propio de la etapa y el **Historial**, con cada acción, su fecha, su hora y
-la persona.
+la persona. Si la solicitud nació de la revisión anual o de un cambio normativo, **La
+solicitud** lo dice bajo el motivo: «Abierto desde la revisión anual 2026» o «Abierto por el
+cambio de Resolución 2003 de 2014» (Capítulo 7, secciones 4.5 y 4.8).
 
 Cuando el trámite ya se publicó, la página trae además el bloque **Distribución**, con el estado
 de la versión publicada, en una línea como «Distribución de la versión 2: acuses 14 de 18 (78 %)
@@ -86,7 +89,15 @@ cualquiera. Hay dos caminos:
 
 - **Trámites** → **Nueva solicitud**.
 - En la ficha de un documento vigente, el botón **Solicitar cambio**. La solicitud se abre
-  con ese documento ya elegido.
+  con ese documento ya elegido. El que está en el bloque **Vigencia** de la ficha y en el
+  Semáforo propone además el motivo «Revisión anual» (Capítulo 7, sección 4.1).
+- Desde la revisión anual (**Actualizar** o **Eliminar**) y desde un impacto normativo (**Abrir
+  solicitud de cambio** o **Abrir solicitud de creación**). La solicitud llega con el documento,
+  el tipo y el motivo elegidos, y con una nota arriba que dice de dónde nace: «Esta solicitud
+  nace de la revisión anual 2026: al enviarla queda como la decisión del documento en la
+  revisión» o «Esta solicitud atiende el cambio de … en …: al enviarla, el impacto queda
+  resuelto». La de la revisión anual trae además la justificación «Decisión de la revisión
+  anual 2026: el documento debe actualizarse.», que puede cambiar (Capítulo 7).
 
 Llene el formulario:
 
@@ -95,7 +106,8 @@ Llene el formulario:
    documento**, y escriba el **Título propuesto**.
 3. Si va a **Modificar** o **Eliminar**, elija el **Documento**. Solo aparecen documentos
    con versión vigente. Los que ya tienen un trámite salen marcados «(trámite abierto)» y
-   no se pueden elegir.
+   no se pueden elegir. Los documentos externos no aparecen, ni el tipo «Documento externo»
+   al crear: un externo no pasa por trámite, se adopta y se verifica (Capítulo 7).
 4. Elija el **Motivo**: Cambio normativo, Mejora del proceso, No conformidad, Solicitud del
    personal o Revisión anual.
 5. Escriba la **Justificación**, entre 10 y 2000 caracteres.
@@ -418,7 +430,13 @@ El **Listado Maestro** tiene dos columnas parecidas:
 
 - **Fecha de aprobación:** el día en que se aprobó. Antes esta columna se llamaba
   «Aprobación».
-- **Aprobación:** cómo se aprobó. Dice **En la plataforma** o **Fuera de la plataforma**.
+- **Aprobación:** cómo se aprobó. Dice **En la plataforma**, **Fuera de la plataforma** o, en un
+  documento externo, **Adoptado**.
+
+Trae además el **Origen** (**Interno** o **Externo**), la **Edición** de un
+externo, la **Última revisión**, la **Próxima revisión** (con «Fijada por … el …» si se fijó a
+mano) y la **Vigencia** (**Al día**, **Atención**, **Vencida** o **En trámite**). Se explican en el
+Capítulo 7.
 
 ## 9. El acta
 
@@ -552,7 +570,8 @@ El bloque **Mis tareas** de **Inicio** lista lo que el SGC espera de usted:
 | Revisar GTH-PR-02 v2 | Quien revisa |
 | Aprobar GTH-PR-02 v2, o Aprobar la eliminación de CEX-GU-01 | Quien aprueba |
 | Publicar GTH-PR-02 v2, o Eliminar CEX-GU-01 | Todo Administrador del SGC |
-| Las tareas de la distribución: recibir o recoger una copia, confirmar una lectura, registrar una socialización, verificar un punto, corregir un hallazgo | Se explican en el Capítulo 6 |
+| Las tareas de la distribución: recibir o recoger una copia, confirmar una lectura, registrar una socialización, verificar un punto, corregir o validar un hallazgo | Se explican en el Capítulo 6 |
+| Las tareas de la vigencia: revisar la vigencia de un documento, verificar o adoptar un externo, decidir en la revisión anual, revisar el impacto de una norma | Se explican en el Capítulo 7 |
 
 Cada tarea lleva su fecha límite, o la marca **Vence hoy** o **Vencida**. Pulse la tarea
 para abrir el trámite. El número junto a **Inicio**, en la barra lateral, dice cuántas
@@ -564,7 +583,8 @@ Cada paso del trámite avisa en la campana a quien le toca seguir, por ejemplo �
 SOL-2026-014: le toca revisar». También avisa a quien pidió cuando la solicitud se acepta,
 se rechaza o se niega, a quien elabora cuando le devuelven, y a los participantes y líderes
 de los procesos cuando el documento se publica, se elimina o se cancela. Nadie recibe aviso
-de lo que acaba de hacer. El SGC todavía no envía correos.
+de lo que acaba de hacer. Los avisos de la distribución están en el Capítulo 6 y los de la
+vigencia, la revisión anual y el normograma, en el Capítulo 7. El SGC todavía no envía correos.
 
 ### 12.3 Si un paso se vence
 
@@ -589,6 +609,15 @@ documento, con su número real. Las obsoletas se irán acumulando con el uso.
 
 Este camino **solo da de alta**. Si el documento ya tiene una versión vigente, el SGC dice
 «Este documento ya tiene una versión vigente: el cambio se pide por trámite».
+
+**Antes de cargar, lea el Capítulo 7, sección 6.1.** Un documento registrado así cuenta su
+plazo de revisión desde la **fecha de aprobación** que usted escriba, no desde el día de la
+carga: si se aprobó hace más de 12 meses, amanece con la revisión **vencida**. Ahí se explica
+cómo fijar fechas escalonadas para la carga inicial.
+
+Los documentos externos (normas, guías y manuales que emite otro) no se registran por aquí:
+en **Gestión de documentos**, junto a **Registrar documento ya aprobado**, está **Registrar
+documento externo**, que lleva a **Vigencia** → **Externos** (Capítulo 7, sección 4.3).
 
 ### 13.1 Registrar un documento
 
@@ -644,7 +673,8 @@ Cuando termine la carga inicial, ciérrela en **Configuración documental**: des
 **Permitir registrar documentos ya aprobados sin trámite** y pulse **Guardar configuración**.
 
 Con la carga cerrada, los botones de registrar, publicar y deshacer desaparecen, y todo
-documento nuevo y todo cambio pasan por un trámite. Si alguien insiste, el SGC dice «La
+documento nuevo y todo cambio pasan por un trámite. Registrar y adoptar documentos externos
+no depende de esta casilla: sigue disponible. Si alguien insiste, el SGC dice «La
 carga de documentos ya aprobados está cerrada: use un trámite». **Descartar borrador** sigue
 disponible.
 
@@ -668,9 +698,9 @@ En la página del documento, **Editar datos** separa dos grupos:
 ### 14.1 Configuración documental
 
 Barra lateral → grupo **Documentos** → **Configuración documental**. Solo la ve el
-Administrador del SGC. Pulse **Guardar configuración** para aplicar las cinco primeras
-partes (formato del código, plazos, publicación directa, formato del acta y distribución): aparece
-«Configuración guardada». La lista de verificación se guarda ítem por ítem.
+Administrador del SGC. Pulse **Guardar configuración** para aplicar las siete primeras
+partes (formato del código, plazos, publicación directa, formato del acta, distribución,
+vigencia e indicadores documentales): aparece «Configuración guardada». La lista de verificación se guarda ítem por ítem.
 
 **Formato del código.** Use estos marcadores, separados con guiones:
 
@@ -696,6 +726,11 @@ Cero quiere decir que la etapa vence el mismo día en que empieza.
 umbral de conformidad y las medidas del sello de las copias controladas. Se explica en el
 Capítulo 6, sección 5.8.
 
+**Vigencia** e **Indicadores documentales.** Los plazos de la revisión de los documentos, de la
+revisión anual, de los externos y de los impactos normativos, el formato del informe de la
+revisión anual (con **Ver informe de ejemplo**) y las metas de los indicadores. Se explican en
+el Capítulo 7, sección 6.7.
+
 **Lista de verificación.** Es una sola para todos los tipos. Cada ítem tiene **Subir**,
 **Bajar**, **Desactivar** y **Editar ítem**. Para crear uno, use **Añadir un ítem**: escriba
 el **Texto del ítem**, marque **Crítico** si no puede quedar sin cumplir y pulse **Añadir
@@ -719,6 +754,9 @@ cada tipo tiene:
 - **Plantilla:** un documento vigente del SGC. Se muestra al aceptar y al elaborar. Es un
   documento más: tiene su código, sus versiones y su propio trámite. Si deja de estar
   vigente, el tipo lo advierte y las solicitudes siguen sin plantilla.
+- **Plazo de revisión (meses):** cada cuántos meses se revisa un documento de este tipo para
+  confirmar que sigue vigente, de 1 a 120 (12 por defecto). Cada documento puede tener el suyo
+  (Capítulo 7, sección 6.2).
 
 ### 14.3 El formato del acta
 
@@ -803,7 +841,8 @@ Reglas que conviene conocer:
   permiso de historial.
 - **Lo que no puede ver no existe para usted.** El SGC muestra **Página no encontrada**,
   igual que si no existiera. Así no revela que hay un borrador o un documento restringido.
-- **La búsqueda y `Ctrl K` muestran solo vigentes** que usted puede ver.
+- **La búsqueda y `Ctrl K` muestran solo vigentes** que usted puede ver, y en su propio grupo
+  las normas del normograma, que ve toda persona con cuenta.
 
 Todo PDF que sale por el portal lleva la marca **COPIA NO CONTROLADA** y la leyenda
 «Descargada por … el … — verifique su vigencia en el SGC», con su nombre y la fecha. Los
