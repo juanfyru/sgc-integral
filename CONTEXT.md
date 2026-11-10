@@ -269,9 +269,10 @@ ha recorrido todavía el usuario**; el controlador lo recorre en el navegador so
    N días», «Vence en 83 días» (`SGC-PR-01`, con «Fijada por …»), «Al día» y «En trámite · …». Filtre **Vencidas** con
    **Origen: Internos**: quedan los dos de la carga inicial (`GTH-PR-01` y `AIN-FO-01`; `ATE-DE-01` es externo y no admite
    fecha fijada). **Fijar próxima revisión a los 2 documentos filtrados** con fecha y nota: cada uno dice «Fijada por … el
-   …» y la **Bitácora** tiene una fila por documento («Fijó la próxima revisión de … para el …»). Devuelva `GTH-PR-01` al
-   estado anterior: en su ficha, **Vigencia** → **Ajustar** → **Quitar la fecha fijada** (vuelve a «Vencida»: el paso 2 la
-   necesita así). **Descargar Excel** baja lo filtrado.
+   …» y la **Bitácora** tiene una fila por documento («Fijó la próxima revisión de … para el …»). **Devuelva los dos** al
+   estado anterior: en la ficha de `GTH-PR-01` y en la de `AIN-FO-01`, **Vigencia** → **Ajustar** → **Quitar la fecha
+   fijada** (vuelven a «Vencida»: los pasos 2, 6, 8 y 9 los necesitan así). **Descargar Excel** baja lo filtrado. La
+   campana ya trae los avisos de vencimiento de la siembra (paso 11).
 2. **Ratificar (`lider.gth`).** En la ficha de `GTH-PR-01` (vencido), **Ratificar sin cambios** con nota y clave: la ficha
    dice «Ratificado el … por …», la próxima revisión queda a 12 meses y, como el documento está en la revisión abierta, su
    decisión queda «Ratificado» y GTH completo («Revisar los documentos de Gestión del Talento Humano (1 pendiente)»
@@ -290,10 +291,10 @@ ha recorrido todavía el usuario**; el controlador lo recorre en el navegador so
 4. **Verificación (`regente.farmacia`, en el celular o a 390 px).** **Mis tareas** → «Verificar la vigencia de ATE-DE-01 ·
    Manual de usuario de la bomba de infusión volumétrica» (vencida): fuente, **Hay una edición nueva**, nota →
    **Registrar verificación**. ATE no tiene líder: el aviso y la tarea «Adoptar la edición nueva de ATE-DE-01» llegan a
-   `coordinadora.sgc`, que en la página del externo abre **Adoptar edición nueva** (edición «rev. 5.0» y «qué cambió»), sube
+   los Admin SGC (`coordinadora.sgc` y `admin`); `coordinadora.sgc`, en la página del externo abre **Adoptar edición nueva** (edición «rev. 5.0» y «qué cambió»), sube
    el PDF y **Adoptar esta edición** con clave (la casilla del acuse viene marcada y fija): la rev. 4.2 queda obsoleta con
    banda, la copia de Farmacia pasa a «Por recoger» (tarea de recogida para `regente.farmacia`) y la audiencia recibe el
-   acuse con «qué cambió» (la ficha dice «Acuses v2: 0 de 1 · vencen el …»). Como `consulta` (responsable solo de
+   acuse con «qué cambió» (la ficha dice «Acuses v2: 0 de 1 (0 %) · vencen el …»). Como `consulta` (responsable solo de
    `CEX-DE-02`), su pestaña **Externos** lista solo ese, y la página de `ATE-DE-01` le dice «Página no encontrada».
 5. **Retiro (`lider.gth`).** En `GTH-DE-01` (**Externos**, del que es responsable técnico), verificación **Fue retirado o
    derogado** → **Registrar verificación y retirar**: queda anulado, fuera del portal y de la búsqueda, y la audiencia
@@ -302,7 +303,9 @@ ha recorrido todavía el usuario**; el controlador lo recorre en el navegador so
 6. **Normograma (`coordinadora.sgc`).** **Normograma** → **Nueva norma** (una resolución nueva) → en su ficha **Registrar
    relación** → **Deroga a** → Resolución 1995 de 1999 (enlazada a `AIN-PR-01` y `AIN-FO-01`, asociada a AIN y GDO). Debe
    verse: la 1995 «Derogada · <fecha>» con el cambio en **Estado e historial**; los dos documentos con «Revisión por cambio
-   normativo · Resolución 1995 de 1999» en la ficha (`AIN-PR-01` en atención; `AIN-FO-01` sigue «Vencida»); y en **Mis
+   normativo · Resolución 1995 de 1999» en la ficha (`AIN-PR-01` pasa a «Atención · revisión por cambio normativo»;
+   `AIN-FO-01`, devuelto a vencido en el paso 1, sigue «Vencida» y lleva la marca en la fila **Cambio normativo** de su
+   bloque **Vigencia**); y en **Mis
    tareas** de `coordinadora.sgc` (AIN y GDO no tienen líder) «Revisar el impacto de Resolución 1995 de 1999 (derogada) en
    Atención Inmediata (2)» y la de Gestión Documental (impacto de proceso). Resuelva: en `AIN-PR-01` **Abrir solicitud de
    cambio** (llega con el motivo «Cambio normativo» y la nota del impacto; enviada, el impacto queda resuelto, el trámite
@@ -319,21 +322,27 @@ ha recorrido todavía el usuario**; el controlador lo recorre en el navegador so
    SOL-…-005** o **No afecta…**. El ejercicio «ratificar uno, actualizar otro, eliminar otro» va en el paso 8, sobre AIN
    (F13C-R40).
 8. **Revisión anual, Admin (`coordinadora.sgc`).** **Vigencia** → **Revisión anual**: el avance por proceso (GTH y CEX
-   «Completo», AIN «Sin líder»); **Prorrogar…** 15 días con motivo (los líderes con pendientes reciben «La revisión anual
-   2026 se prorrogó hasta el …»); con una abierta no hay botón para abrir otra. Pulse Atención Inmediata y decida: ratifique
-   uno (**Ratificar sin cambios**, con clave), **Actualizar** otro y **Eliminar** otro (las solicitudes llegan prellenadas con
-   «Decisión de la revisión anual 2026: …»); si en el paso 6 abrió la solicitud de `AIN-PR-01`, ese ya está «Actualizar»:
-   decida los otros dos. **Cerrar y generar informe** con clave: lo pendiente queda «Sin revisar». **Informe 2026 en PDF**:
+   «Completo», AIN «Sin líder»); **Prorrogar…** 15 días con motivo: el aviso «La revisión anual 2026 se prorrogó hasta el …»
+   va a los responsables de los procesos con pendientes, menos a quien prorroga; a esta altura ya no quedan líderes con
+   pendientes, así que en la demo lo recibe solo `admin`, por los procesos sin líder. Con una abierta no hay botón para
+   abrir otra. Pulse Atención Inmediata y decida uno de cada: `AIN-PR-01` ya está «Actualizar» con la solicitud del paso 6
+   (si no la abrió, **Actualizar** desde aquí); ratifique `AIN-PT-01` (**Ratificar sin cambios**, con clave) y **Eliminar**
+   `AIN-FO-01` (la solicitud llega prellenada con «Decisión de la revisión anual 2026: el documento debe eliminarse.» y el
+   trámite dice «Abierto desde la revisión anual 2026»; `AIN-FO-01` queda en trámite, y vencido por su fecha, para el paso
+   9). **Cerrar y generar informe** con clave: lo pendiente queda «Sin revisar». **Informe 2026 en PDF**:
    sale sobre `SGC-FO-07` («INFORME DE REVISIÓN ANUAL») con las cifras, la tabla de decisiones con su estado al cierre, los
    cambios normativos del año, el normograma por proceso, los otros insumos y la firma; abrirlo otra vez da el mismo
    archivo. Como `gerente`, la revisión cerrada y el informe; como `lider.gth`, la página de la revisión con GTH y sin el
    PDF. En **Configuración documental** → **Vigencia**, **Ver informe de ejemplo**. **Cerrar deja la revisión del año
    cerrada e inmutable** en la base de desarrollo: para repetir el recorrido, resiembre.
 9. **Indicadores (`gerente`).** **Vigencia** → **Indicadores**: las siete tarjetas con meta y «cumple», «no cumple» o «sin
-   dato», la octava de trámites, el gráfico de vencidos por proceso, la tabla por proceso, «Ver los N vencidos en el
-   Semáforo» y el Excel (tres hojas). Como `lider.gth`, solo GTH. Cambie una meta en **Configuración documental** →
-   **Indicadores documentales** (por ejemplo «Documentos vencidos (máximo)» a 10) y vea cambiar el color y el texto;
-   devuélvala.
+   dato», y la octava de trámites. Seguido en orden, el único vencido que queda es `AIN-FO-01`, con su solicitud de
+   eliminación del paso 8: «Documentos con revisión vencida» marca 1, con «1 en trámite» (cuenta por la fecha, F13C-R28), y
+   no cumple la meta de 0; el gráfico de vencidos por proceso muestra AIN; y debajo, en lugar del enlace «Ver los N vencidos
+   en el Semáforo» (que cuenta solo los que el Semáforo pinta «Vencida»), dice «1 vencido está en trámite: el Semáforo lo
+   muestra en «En trámite».». Con la demo recién sembrada el enlace sí sale: «Ver los 3 vencidos en el Semáforo». La tabla
+   por proceso y el Excel (tres hojas). Como `lider.gth`, solo GTH. En **Configuración documental** → **Indicadores
+   documentales**, suba «Documentos vencidos (máximo)» a 1: la tarjeta pasa a «cumple» y cambia de color; devuélvala a 0.
 10. **Herencia de la 13B.** **Distribución** → **Socializaciones** → **Descargar Excel**: con nombres para `gerente` y
     «Reservada» para `lider.cex` en la jornada de GTH. Como `coordinadora.sgc`, verifique Farmacia («Toca verificar») con un
     ítem no conforme y, en el diálogo de **Cerrar verificación**, cambie la fecha de corrección: el hallazgo vence ese día.
@@ -347,11 +356,16 @@ ha recorrido todavía el usuario**; el controlador lo recorre en el navegador so
     dice «Validó 1 hallazgo por validar.». El aviso «Se emitió N copia(s) de la versión vigente» de **Reemplazar** se ve (por
     ejemplo en `ATE-DE-01` tras el paso 4, o con `GBS-PR-01` como en la 13B), y en **Copias controladas** los conteos del
     líder incluyen las copias que emitió en puntos de otros procesos.
-11. **Vencimientos.** Con la revisión abierta (antes del paso 8), la revisión de vencimientos (cada diez minutos como mucho)
-    no avisa por los documentos internos de la campaña (en la demo, todos), y sí por el externo vencido (`ATE-DE-01`, al
-    responsable técnico y agrupado a los Admin SGC). Después del cierre, baje a 1 **Aviso antes del vencimiento de la
-    revisión**, **Plazo para responder un impacto normativo** y **Días para avisar al jefe**: los responsables reciben un
-    solo aviso por proceso («N documentos con revisión vencida en …») y el jefe uno sin títulos. Devuelva los valores.
+11. **Vencimientos.** La revisión de vencimientos corre al usar el SGC, cada diez minutos como mucho. Con la demo recién
+    sembrada (paso 1) avisa por el externo vencido `ATE-DE-01`: a `regente.farmacia`, con su nombre («ATE-DE-01 · Manual de
+    usuario de la bomba de infusión volumétrica: la verificación de vigencia venció hace N días»), y a los Admin SGC,
+    agrupado y sin códigos («1 documento externo con la verificación de vigencia vencida en Apoyo Terapéutico»). No avisa
+    por `GTH-PR-01` ni por `AIN-FO-01`: están vencidos, pero dentro de la revisión abierta (F13C-DC6). El escalamiento al jefe
+    no se ve en la demo: nadie tiene el cargo superior del regente (Subgerente Científico). Seguido en orden, después del
+    paso 8 no queda ningún interno vencido fuera de un trámite (`GTH-PR-01` se ratificó y `AIN-FO-01` tiene su solicitud de
+    eliminación) ni ningún externo vencido: el aviso agrupado «N documentos con revisión vencida en …» y el del jefe sin
+    títulos no tienen de qué salir con la demo, y los cubre `tests/vigencia-vencimientos.test.ts`. Bajar «Plazo para
+    responder un impacto normativo» solo cambia los impactos que nazcan después: los ya creados guardan su vencimiento.
 12. **Verificación técnica:** hecha al cierre (ver «Hecho (Fase 13C)»), con **once** migraciones (0000 a 0010), no nueve como
     dice el spec §19.12 (la 0009 y la 0010 nacieron en la ejecución: F13C-R2, R3 y R10).
 
@@ -389,9 +403,10 @@ con un aviso en la salida. `npm run db:seed && npm run admin:asegurar` la deja c
 9. **Las tareas se agrupan pasadas cinco** solo para acuses, documentos por revisar y externos por verificar. Las de
    impactos, adopciones y la revisión anual no, y **no hay una lista de impactos pendientes**: cada impacto se atiende desde
    el enlace de su tarea (F13C-R39).
-10. **Dos ayudas de la Configuración documental no dicen lo que hace el código** (halladas al escribir el manual, en la deuda
-    técnica): la de «Ventana de la revisión anual (meses)» y la de «Aviso antes del vencimiento de la revisión (días)». El
-    manual (capítulo 7, sección 6.7) dice lo que hace la aplicación.
+10. **Tres textos de la Configuración documental no dicen lo que hace el código** (en la deuda técnica, pendientes de la
+    corrección final): la ayuda de «Ventana de la revisión anual (meses)», la de «Aviso antes del vencimiento de la revisión
+    (días)» y la opción «Sin formato: diseño básico» de **Documento del formato del informe**: sin formato propio el informe
+    sale sobre el del acta. El manual (capítulo 7, sección 6.7) dice lo que hace la aplicación.
 
 ## Qué probar y cómo (Fase 13B)
 
@@ -977,7 +992,8 @@ construyó (decisión 3 del usuario, spec §5): el documento tipo CA sigue siend
   vencidos, los externos, los impactos y la revisión anual vencida, agrupados por persona y proceso, sin avisos por los
   documentos de una revisión abierta (F13C-DC6), con escalamiento al jefe sin títulos.
 - **Bitácora:** las acciones nuevas de la fase tienen frase y nombre de filtro propios en `src/lib/bitacora-detalle.ts`
-  (la revisión de la Tarea 14 comprobó 46 nuevas y 2 ampliadas contra el `detalle` que escribe el código); las relaciones
+  (la Tarea 14 dio frase a 46 acciones nuevas y amplió 2, y su revisión las comprobó contra el `detalle` que escribe el
+  código); las relaciones
   entre normas, que auditan en las dos normas, se agrupan en una línea.
 - **Semilla:** `src/db/semillas/vigencia-demo.ts` (normograma, externos con su PDF, carga inicial con fechas fijadas y
   ratificaciones, la revisión anual abierta y el formato del informe `SGC-FO-07`) y `src/db/semillas/clave-demo.ts`; un
@@ -2081,79 +2097,107 @@ plan. Base: **ISO** (cláusula de 9001:2015), **Regulación** o **Práctica**.
 
 ## Deuda técnica conocida
 
-**De la Fase 13C** (todos menores, aceptados en la revisión de cada tarea; los marcados «para la corrección final» los
-lleva el despacho que sigue a la revisión de toda la rama):
+**De la Fase 13C** (todos menores; son los «minor (deferred)» de la bitácora de ejecución que siguen abiertos, los hallazgos
+del recorrido final del controlador y los de la revisión de la documentación, agrupados por módulo. La bitácora está fuera de
+git: esta lista es la que queda. Lo marcado «(pendiente de la corrección final)» lo lleva el despacho que sigue a la revisión
+de toda la rama y se ajusta al cierre):
 
-- **Registro de riesgos (spec §22), con los que aparecieron en la ejecución:**
-  - La paleta `Ctrl K` y **Buscar documentos** recorren `normas` en secuencia en cada búsqueda
-    (`unaccent(nombre) ILIKE` sin índice). Con cientos de normas conviene un índice de trigramas sobre el nombre.
-  - La apertura de la revisión anual puede cruzarse con una publicación que confirma en ese instante: la fila de la foto
-    queda con la versión anterior o el documento nuevo fuera de la foto.
-  - Costo de las pasadas: la revisión de vencimientos recalcula la vigencia de todos los internos vigentes sin marca cada
-    diez minutos, y el test de la campaña vencida necesita 30 s por eso. Medir con los documentos reales.
-- **Ya decidido (bitácora, F13C-R21 y R25):** `asegurarInforme` repite a propósito el algoritmo de `asegurarActa` (unas
-  55 líneas, con comentario cruzado; una factorización a `asegurarPdfCongelado` iría con los tests de huella del acta y
-  del informe como red); el informe no imprime el detalle de las cifras «Ratificados» y «Revisados recientemente»; verificar
-  un externo desde la tabla de la campaña no resuelve su impacto.
-- **Para la corrección final:** la tarjeta de indicadores y el informe anual (`revision-anual/cierre.ts`) redondean la
-  conformidad del periodo mientras Distribución la trunca (66 % arriba y «en el periodo: 67 %» abajo); los campos de fecha
-  del diálogo de cierre de la verificación están fuera del formulario y el navegador ya no bloquea una fecha fuera de rango
-  (solo el servidor, sin decir el ítem); `puntos-uso.ts` importa `copias.ts` (y su PDF) por `condicionVista`.
-- **Textos de la interfaz que no dicen lo que hace el código** (hallados al escribir el manual): la ayuda de «Ventana de la
-  revisión anual (meses)» en Configuración documental dice «Meses antes de su vencimiento desde los que un documento entra a
-  la revisión anual. Cero: solo los ya vencidos.», pero la ventana es la de «revisado recientemente» que propone el diálogo
-  de apertura (`abrirRevision` toma todo vigente); y la de «Aviso antes del vencimiento de la revisión» habla de «Por
-  vencer», cuando el Semáforo dice «Atención».
-- **Pantallas y tareas:** no existe una lista de impactos pendientes (cada impacto se atiende desde
-  `/normograma/impactos/[cambioId]?proceso=`); el grupo «N externos por verificar» lleva a la matriz, que muestra más que
-  los agrupados; el título del grupo de vigencia clasifica «vencido» por instante y el Semáforo por días (en el borde el
-  enlace cae al lado seguro); tras ratificar, «Ratificar sin cambios» sigue disponible el mismo día; un líder de otro proceso
-  que podría abrir el trámite ve solo su número en el bloque de vigencia; el conteo del encabezado del proceso cuenta por
-  proceso propietario y puede no coincidir con la lista visible; el número del aviso agrupado es el de los avisados en esa
-  pasada; el selector de responsable técnico lista todos los usuarios activos; la insignia de **Vigencia** no cuenta un
-  externo fuera del alcance de quien tiene `vigencia.ver` y es su responsable; si la lectura compartida de la vigencia
-  falla, las tareas de vigencia y la insignia desaparecen sin aviso (queda en el registro y la página pinta); las tareas de
-  vigencia salen en el orden adoptar, verificar, revisar; «Marcar cambios…» exige JavaScript; las pestañas de Vigencia pasan
-  a dos renglones a 390 px; el selector de periodo de los indicadores ofrece solo el año en curso y el anterior; el indicador
-  de acuses hereda de `resumenAcuses` que las versiones no vigentes solo cuentan para quien tiene `documentos.ver_historial`;
-  los Excel de la fase no usan el mismo formato de fecha (Maestro, normograma e indicadores `aaaa-mm-dd`; semáforo y externos
-  «14 ago 2026»).
-- **Lo heredado de la 13B (Tarea 13):** las fotos de una corrección rechazada siguen bajo la corrección siguiente; el título
-  del aviso de reapertura lleva la nota entera; la página del hallazgo no muestra el motivo de la reapertura (va en el aviso
-  y en la bitácora); el Excel de socializaciones no tiene tope y multiplica consultas por jornada; al líder le aparecen puntos
-  ajenos donde solo tuvo copias ya retiradas, con todo en cero; tras un cierre rechazado por el servidor las respuestas de la
-  lista de chequeo se ven en blanco hasta recargar (heredado de la 13B); un Admin SGC que responde por un punto puede cerrar
-  directamente un hallazgo abierto de su propio punto (la excepción del spec §12.5); el enlace de la foto de la corrección no
-  dice formato ni tamaño; `comoSeCerro` distingue la validación del cierre directo comparando notas; el cascarón de quien
-  tiene hallazgos abiertos corre una sentencia más (y la N+1 previa), que su test no mide.
-- **Costo por página:** `PaginaSemaforo` llama `alcanceProcesos` tres veces; la página de indicadores, `alcanceProcesos`
-  cuatro (cinco en el Excel) y `obtenerConfigDocumental` tres; `columnasDeVigencia` relee la configuración en cada llamada;
-  en `/` el layout y la página corren `misTareas` cada uno (la lectura de vigencia dos veces); `misTareas` espera
-  `esResponsableTecnico` antes de su `Promise.all` cuando no se lo pasan, y `esResponsableTecnico` es una consulta por render
-  para todo usuario; `jefesDe` se llama una vez por externo en el escalamiento.
-- **Datos y capas:** `NULLS NOT DISTINCT` de `lista_miembros_unico_idx` solo en el SQL (el test lo detecta si se pierde);
-  tres nombres de FK de más de 63 caracteres (NOTICE al migrar); `MS_DIA` redeclarado; `sumarMeses` con meses negativos
-  daría un mes inválido (nadie lo llama así); la «norma enlazada» de un externo es la primera fila de `norma_documentos`;
-  `escaparLike` en tres sitios y `documentoDeVersion` duplicado; el panel deja cambiar el código y el título de un externo sin
-  auditoría `externo_*` (solo Admin SGC); `exigirTipoDeInterno` reconoce el tipo solo por la sigla `DE`; `cambiarEstadoNorma`
-  tipa el estado como `EstadoNorma` (solo el chequeo en ejecución rechaza `retirada`); `CONTEXTOS_UNICOS` es una búsqueda
-  sobre un objeto plano; `src/lib/normograma/tipos.ts` reimplementa validaciones de `vigencia/externos/comun.ts` y
-  `concat_ws` del nombre de la norma sigue repetido; adoptar sobre una fila pendiente deja `antes: null` en la bitácora;
-  `responsablesDelProceso` vive en `vencidos.ts`; `src/lib/vigencia/decisiones.ts` no es puro por sus importaciones; el
-  informe reconoce un externo por traer `edicion`; `informeRegistrado` supone una sola evidencia por revisión y
-  `asegurarInforme` deja un archivo huérfano inofensivo si falla el `INSERT` (como el acta); el panel de toda la entidad se
-  decide con `alcance.todos`; `condicionTramites` vive en `indicadores.ts` y no en `src/lib/alcance.ts`; `textoPorcentaje`
-  supone que la cifra y el veredicto de la 13B salen de la misma razón.
-- **Pruebas:** el test de la clave errada crea un `admin_sgc` activo y lo desactiva en `finally`; sin test del 429 de las
-  rutas de externos; algunos `CHECK` sin test (estados y resolución de impactos, meses de externos, `metodo_cierre`, únicos de
-  normas); el test «la 0010 se puede volver a correr» solo mira el texto del SQL y la aserción `/ FOR SHARE;/g` depende del
-  texto literal de la función; `tests/revision-anual-externos-insumos.test.ts` usa `lider.cex` y `lider.gth` de la demo y el
-  test «no ofrece externos» escribe "DE" a mano; la parte «sin revisión abierta» del test de la prórroga no puede fallar y el
-  filtro `normograma.porProceso` no se ejercita; ningún test prueba acuses con proceso elegido ni el valor exacto «desde la
-  solicitud»; el test de frases de la bitácora recorre por texto y las plantillas van a mano; el test de la frontera
-  cliente/servidor no ve constantes en mayúsculas, comentarios antes de `"use client"` ni `import X, { a }`; `sembradaEn` se
-  toma unos segundos antes de las filas que la siembra inserta con `now()`; «Worker exited unexpectedly» de Vitest se vio en
-  algunas primeras corridas, sin tests fallidos (la intermitencia de la Fase 11).
+- **Registro de riesgos (spec §22) y los que aparecieron:**
+  - La paleta `Ctrl K` y **Buscar documentos** recorren `normas` en secuencia en cada búsqueda (`unaccent(nombre) ILIKE` sin índice); con cientos de normas conviene un índice de trigramas.
+  - La apertura de la revisión anual puede cruzarse con una publicación que confirma en ese instante: la fila de la foto queda con la versión anterior o el documento nuevo fuera de la foto.
+  - La revisión de vencimientos recalcula la vigencia de todos los internos vigentes sin marca cada diez minutos (el test de la campaña vencida necesita 30 s por eso); medir con los documentos reales.
+- **Ya decidido (Ruling 43, F13C-R21 y R25):**
+  - `asegurarInforme` repite a propósito el algoritmo de `asegurarActa` (unas 55 líneas, con comentario cruzado); una factorización a `asegurarPdfCongelado` iría con los tests de huella del acta y del informe como red.
+  - El informe no imprime el detalle de las cifras «Ratificados» y «Revisados recientemente» (la ventana vive en `revisiones_anuales.ventana_meses`).
+  - Verificar un externo desde la tabla de la campaña no resuelve su impacto normativo pendiente.
+- **Semáforo, ratificación y ficha:**
+  - La ficha del portal decide el bloque «Documento externo» por `version.origenAprobacion === "externo"` y no por `documentos.origen` (`src/app/(app)/documentos/[codigo]/page.tsx:283`), contra F13C-DC8 («el origen manda»).
+  - Tras ratificar, «Ratificar sin cambios» sigue disponible el mismo día (el spec no lo limita).
+  - El enlace al trámite del bloque de vigencia (`verTramite`) es más estricto que `puedeVerTramite`: un líder de otro proceso que podría abrir el trámite ve solo su número.
+  - `resumenVigenciaDeProceso` cuenta por proceso propietario (con subprocesos inactivos y sin «También aplica aquí»): el resumen del encabezado del proceso puede no coincidir con la lista visible.
+  - `TablaSemaforo` monta `DialogoRatificar` dos veces por fila (en la tabla y en la tarjeta del celular).
+  - `PaginaSemaforo` llama `alcanceProcesos` tres veces y `obtenerConfigDocumental` dos; `columnasDeVigencia` relee la configuración en cada llamada.
+  - Capas: `filtro-semaforo.ts` y `semaforo-excel.ts` importan tipos de `@/db/consultas`; `rutaSolicitarCambio` vive en un componente; dos helpers del texto de la última revisión (`textoUltima` y `textoUltimaRevision`); la clase `FOCO` repetida; el rótulo «ed. X»/«vN» duplicado entre `rotuloVersion` y el Excel.
+  - W4 (cosmético): en la ficha, «Ratificar sin cambios» ocupa su línea y «Solicitar cambio» con la leyenda «En revisión anual» pasan a la siguiente (pendiente de la corrección final).
+- **Externos:**
+  - El selector de responsable técnico lista todos los usuarios activos.
+  - La «norma enlazada» de un externo es la primera fila de `norma_documentos`; cambiarla borra esa fila aunque la haya creado el normograma.
+  - El panel (`editarControl`) deja cambiar el código y el título de un externo sin auditoría `externo_*` (solo Admin SGC; el tipo sí está protegido); `exigirTipoDeInterno` reconoce el tipo solo por la sigla `DE`.
+  - `fichaDeExterno` es la tercera copia del `LATERAL` de «última verificación».
+  - `escaparLike` existe en tres sitios y `documentoDeVersion` duplica `admin.ts` con otra nulabilidad.
+  - `jefesDe` se llama una vez por externo dentro del bucle de escalamiento.
+  - Adoptar sobre una fila pendiente de la revisión deja `antes: null` en la bitácora (la versión anterior se deduce de `externo_adoptado`).
+- **Revisión anual e informe:**
+  - W3: la tabla de decisiones de un proceso corta la columna «Decisión» a 1280 px (desplazamiento horizontal dentro de la tarjeta) (pendiente de la corrección final).
+  - N1: el informe anual (`revision-anual/cierre.ts`) redondea la conformidad mientras Distribución la trunca (pendiente de la corrección final).
+  - `vigencia/revision-anual/[id]/page.tsx` pasa `abierta: false` con la revisión abierta para apagar los botones e importa `lineaDeRevision` de `PanelAdmin.tsx`.
+  - `alcanceProcesos` corre dos veces por página de la revisión y `anioDeRevisionCerrada` dos veces por PDF.
+  - El panel de toda la entidad se decide con `alcance.todos` (verdadero también para Consulta, que la guarda de la página deja fuera).
+  - `informeRegistrado` supone una sola evidencia por revisión, y `asegurarInforme` deja un archivo huérfano inofensivo si falla el `INSERT` (como el acta).
+  - El informe reconoce un externo por traer `edicion` (uno sin edición saldría «v<n>»; ningún camino validado lo produce).
+  - `revisionAnualId` viaja también si la persona cambia a otro documento en la solicitud (la decisión se registra igual por `alSolicitar`).
+  - «Marcar cambios…» exige JavaScript (antes era un `details`).
+  - `src/lib/vigencia/decisiones.ts` no es puro por sus importaciones; `responsablesDelProceso` vive en `vencidos.ts` y lo importa `campana.ts`; el ciclo `admin.ts` ↔ `registro.ts` es benigno.
+  - `sacarDeLaRevisionAbierta` fuera de una transacción revertida deja una fila `revision_anual_decision` con usuario nulo (permitido).
+- **Normograma:**
+  - W1: la página del trámite dice «Abierto por el cambio de …» sin enlace a la norma (el spec §19, paso 6, lo pedía) (pendiente de la corrección final).
+  - W2: «Asociar norma» ofrece normas derogadas (pendiente de la corrección final).
+  - No existe una lista de impactos pendientes: cada impacto se atiende desde `/normograma/impactos/[cambioId]?proceso=`.
+  - `cambiarEstadoNorma` tipa el estado como `EstadoNorma` (solo el chequeo en ejecución rechaza `retirada`); `CONTEXTOS_UNICOS` es una búsqueda sobre un objeto plano.
+  - `src/lib/normograma/tipos.ts` reimplementa `acotado`, `opcionalAcotado` y la validación de fecha de `vigencia/externos/comun.ts`; `concat_ws` del nombre de la norma sigue repetido aunque existe `nombreSql`.
+- **Indicadores:**
+  - N1: la tarjeta de conformidad calcula la del periodo con `Math.round` («66 %» arriba y «en el periodo: 67 %» abajo) (pendiente de la corrección final).
+  - La página corre `alcanceProcesos` cuatro veces (cinco en el Excel) y `obtenerConfigDocumental` tres; `condicionTramites` es una regla de alcance que vive en `indicadores.ts` y no en `src/lib/alcance.ts`.
+  - El selector de periodo ofrece solo el año en curso y el anterior (uno más viejo entra por la dirección).
+  - El indicador de acuses hereda de `resumenAcuses` que las versiones no vigentes solo cuentan para quien tiene `documentos.ver_historial` (Gerencia y el Admin SGC pueden ver cifras distintas del mismo periodo).
+  - `textoPorcentaje` supone que la cifra y el veredicto de la 13B salen de la misma razón (hoy es así).
+  - «Días vencido» como cabecera del Excel; los Excel de la fase no usan el mismo formato de fecha (Maestro, normograma e indicadores `aaaa-mm-dd`; semáforo y externos «14 ago 2026»).
+  - Las pestañas de Vigencia pasan a dos renglones a 390 px con la cuarta pestaña.
+- **Tareas, avisos y cascarón:**
+  - El grupo «N externos por verificar» lleva a la matriz, que muestra más que los agrupados.
+  - El título del grupo de vigencia clasifica «vencido» por instante y el Semáforo por días (en el borde, el enlace cae al lado seguro, sin filtro).
+  - El número del aviso agrupado de vencidos es el de los avisados en esa pasada (una pasada posterior puede decir «1 documento» con ocho vencidos).
+  - La insignia de **Vigencia** no cuenta un externo fuera del alcance de quien tiene `vigencia.ver` y es su responsable técnico.
+  - Si la lectura compartida de la vigencia falla, las tareas de vigencia y la insignia desaparecen sin aviso al usuario (queda en el registro y la página pinta).
+  - Las tareas de vigencia salen en el orden adoptar, verificar, revisar (nadie lo pidió).
+  - En `/` el layout y la página corren `misTareas` cada uno (la lectura de vigencia dos veces); `misTareas` espera `esResponsableTecnico` antes de su `Promise.all` cuando no se lo pasan; `esResponsableTecnico` es una consulta por render para todo usuario; «Mis tareas» corre la lectura de vigencia en cada página para Admin SGC y líderes.
+  - El SQL de «proceso sin líder» de `src/db/consultas/vigencia/tareas.ts` duplica la regla de `lideresDeProceso`.
+- **Lo heredado de la 13B (distribución):**
+  - N2: los campos de fecha del diálogo de cierre de la verificación están fuera del formulario y el navegador no bloquea una fecha fuera de rango (solo el servidor, sin decir el ítem) (pendiente de la corrección final).
+  - `puntos-uso.ts` importa `copias.ts` (y su PDF) por `condicionVista` (pendiente de la corrección final).
+  - Las fotos de una corrección rechazada siguen bajo la corrección siguiente.
+  - El título del aviso de reapertura lleva la nota entera, y la página del hallazgo no muestra el motivo de la reapertura (va en el aviso y en la bitácora).
+  - El Excel de socializaciones no tiene tope: multiplica consultas por jornada y carga evidencias que no usa.
+  - Al líder le aparecen puntos ajenos donde solo tuvo copias ya retiradas, con todo en cero.
+  - Tras un cierre rechazado por el servidor, las respuestas de la lista de chequeo se ven en blanco hasta recargar (heredado de la 13B).
+  - Un Admin SGC que responde por un punto puede cerrar directamente un hallazgo abierto de su propio punto (la excepción del spec §12.5).
+  - El enlace de la foto de la corrección no dice formato ni tamaño.
+  - `comoSeCerro` distingue la validación del cierre directo comparando notas.
+  - El cascarón de quien tiene hallazgos abiertos corre una sentencia más (y la N+1 previa), que su test no mide.
+- **Configuración documental y textos:**
+  - La ayuda de «Ventana de la revisión anual (meses)» dice «Meses antes de su vencimiento desde los que un documento entra a la revisión anual. Cero: solo los ya vencidos.», pero es la ventana de «revisado recientemente» que propone el diálogo de apertura (`abrirRevision` toma toda vigente) (pendiente de la corrección final).
+  - La ayuda de «Aviso antes del vencimiento de la revisión (días)» habla de «Por vencer», y el Semáforo dice «Atención» (pendiente de la corrección final).
+  - La opción vacía de «Documento del formato del informe» dice «Sin formato: diseño básico», pero sin formato propio el informe sale sobre el del acta (`revision-anual/cierre.ts:73`) (pendiente de la corrección final).
+  - `campoMeta` arma los nombres de campo por convención en `FormularioConfigDocumental`, y el bloque de márgenes del informe repite el del acta en `config-documental.ts`.
+  - `src/lib/esquemas/mapa.ts` redefine un `texto` local idéntico al de `src/app/admin/comun.ts`.
+  - Una línea corta por el reflujo del párrafo de `archivos` en `AGENTS.md` (cosmético).
+- **Esquema y datos:**
+  - `NULLS NOT DISTINCT` de `lista_miembros_unico_idx` está solo en el SQL, no en `esquema.ts` ni en el snapshot (el test lo detecta si se pierde).
+  - Tres nombres de FK de más de 63 caracteres: Postgres los trunca y la migración imprime tres NOTICE 42622.
+  - `MS_DIA` redeclarado en `plazo.ts` y `definiciones.ts`; `sumarMeses` con meses negativos daría un mes inválido (nadie lo llama así).
+- **Pruebas:**
+  - El test de la clave errada crea un `admin_sgc` activo y lo desactiva en `finally` (si la corrida muere en medio, queda activo).
+  - Sin test del 429 de las rutas de externos.
+  - `CHECK` sin test: estados y resolución de impactos, meses de externos, `metodo_cierre`, únicos de `norma_procesos` y `norma_documentos`, número de norma sin distinguir mayúsculas.
+  - El test «la 0010 se puede volver a correr» solo mira el texto del SQL, y la aserción `/ FOR SHARE;/g` depende del texto literal de la función.
+  - Un externo ignora `ultimaRatificacion` sin test que lo fije.
+  - La parte «sin revisión abierta» del test de la prórroga no puede fallar; el filtro `normograma.porProceso` no se ejercita; `porDecidir: true` no se afirma en una fila «sin revisar» simple; `propuesto` (el año que propone abrir) no prueba el año anterior.
+  - `tests/revision-anual-externos-insumos.test.ts` usa `lider.cex` y `lider.gth` de la demo; el test «no ofrece externos» escribe "DE" a mano y depende de que haya internos vigentes.
+  - Ningún test prueba los acuses con proceso elegido ni el valor exacto «desde la solicitud» del tiempo de aprobación.
+  - El test de frases de la bitácora recorre por texto y las plantillas van a mano.
+  - El test de la frontera cliente/servidor no ve constantes en mayúsculas, comentarios antes de `"use client"` ni `import X, { a }`.
+  - `sembradaEn` se toma unos segundos antes de las filas que la siembra inserta con `now()`.
+  - «Worker exited unexpectedly» de Vitest en algunas primeras corridas, sin tests fallidos (la intermitencia de la Fase 11).
 
 **De la Fase 13B** (todos menores, aceptados en la revisión de cada tarea o aplazados en la ola final, salvo el
 primero; los marcados «resuelto en la 13C» ya no son deuda):

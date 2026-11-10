@@ -142,7 +142,8 @@ hacerse desde el celular.
 3. En **Resultado** elija una opción. Cada una dice qué hace:
    - **Sigue vigente:** la próxima verificación pasa a 12 meses después de hoy.
    - **Hay una edición nueva:** el documento queda en atención («edición nueva pendiente de
-     adoptar») hasta que alguien la adopte.
+     adoptar») hasta que alguien la adopte, o hasta que una verificación posterior diga «Sigue
+     vigente» (por si la alarma fue falsa).
    - **Fue retirado o derogado:** retira el documento: deja de aplicar y sus copias controladas
      quedan por recoger.
 4. Si quiere, escriba una **Nota** (por ejemplo, la edición que encontró).
@@ -409,8 +410,10 @@ quiere, el **Proceso**. Cada tarjeta dice la cifra, la meta y si **cumple**, **n
 | Etapas del trámite cerradas en plazo | 90 % o más |
 
 Una octava tarjeta cuenta los trámites publicados en el periodo y los que siguen en curso.
-Debajo están el gráfico **Documentos con revisión vencida por proceso**, la tabla **Dentro del
-plazo, por proceso** y el enlace **Ver los N vencidos en el Semáforo**. Un documento vencido que
+Debajo están el gráfico **Documentos con revisión vencida, por proceso**, la tabla **Dentro del
+plazo, por proceso** y el enlace **Ver los N vencidos en el Semáforo**, que cuenta solo los que
+el Semáforo pinta «Vencida»; los que tienen trámite abierto se dicen aparte («1 vencido está en
+trámite: el Semáforo lo muestra en «En trámite».»). Un documento vencido que
 ya tiene trámite abierto cuenta como vencido: el trámite no vuelve al día su revisión, y la
 tarjeta dice cuántos están en trámite. **Descargar Excel** baja las cifras, el detalle por
 proceso y la lista de vencidos. Las metas las fija el Administrador del SGC (sección 6.7).
