@@ -7,7 +7,7 @@ import { obtenerMarcaSegura } from "@/db/consultas/entidad";
 import { MisProcesos } from "@/componentes/MisProcesos";
 import { procesosAsignados } from "@/lib/alcance";
 import { exigirSesion } from "@/lib/paginas";
-import { misTareas } from "@/lib/tareas";
+import { tareasDePeticion } from "@/lib/tareas-peticion";
 
 // El mapa vive en BD: siempre se lee en el momento de la petición.
 export const dynamic = "force-dynamic";
@@ -18,7 +18,8 @@ export default async function Inicio() {
   const [datos, marca, { tareas, total }] = await Promise.all([
     obtenerDatosMapa(sesion),
     obtenerMarcaSegura(),
-    misTareas(sesion),
+    // Las mismas que el cascarón ya pidió en esta petición (`React.cache`).
+    tareasDePeticion(sesion),
   ]);
   const { configuracion } = datos;
 

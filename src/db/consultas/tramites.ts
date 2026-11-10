@@ -243,12 +243,21 @@ export async function listarTramites(
 }
 
 /**
- * De dónde nació la solicitud (spec 13C §14.4): «Abierto desde la revisión anual 2026» o «Abierto por el cambio de
- * Resolución 2003 de 2014»; nulo si no nació de ninguno. Quien llama ya decidió que la persona ve el trámite.
+ * De dónde nació la solicitud (spec 13C §14.4 y §19.6): de la revisión anual de un año o del cambio de una norma.
+ * `enlazable`: la ficha de la norma se enlaza mientras no esté retirada (la ve toda persona con sesión).
  */
-export async function origenDeTramite(tramiteId: number, opciones?: { sql?: Cliente }): Promise<string | null> {
+export type OrigenTramite =
+  | { clase: "revision"; anio: number }
+  | { clase: "cambio"; norma: { id: number; nombre: string; enlazable: boolean } };
+
+/**
+ * De dónde nació la solicitud: «Abierto desde la revisión anual 2026» o «Abierto por el cambio de Resolución 2003 de
+ * 2014»; nulo si no nació de ninguno. Quien llama ya decidió que la persona ve el trámite.
+ */
+export async function origenDeTramite(tramiteId: number, opciones?: { sql?: Cliente }): Promise<OrigenTramite | null> {
   const sql = opciones?.sql ?? obtenerSql();
-  const [f] = await sql`SELECT ra.anio, CASE WHEN n.id IS NULL THEN NULL ELSE ${nombreSql(sql)} END AS norma
+  const [f] = await sql`SELECT ra.anio, n.id AS norma_id, n.estado AS norma_estado,
+      CASE WHEN n.id IS NULL THEN NULL ELSE ${nombreSql(sql)} END AS norma
     FROM tramites t
     LEFT JOIN revisiones_anuales ra ON ra.id = t.revision_anual_id
     LEFT JOIN impactos_normativos i ON i.id = t.impacto_id
@@ -256,8 +265,9 @@ export async function origenDeTramite(tramiteId: number, opciones?: { sql?: Clie
     LEFT JOIN tipos_norma tn ON tn.id = n.tipo_norma_id
     WHERE t.id = ${tramiteId}`;
   if (!f) return null;
-  if (f.anio !== null) return `Abierto desde la revisión anual ${Number(f.anio)}`;
-  return f.norma ? `Abierto por el cambio de ${f.norma as string}` : null;
+  if (f.anio !== null) return { clase: "revision", anio: Number(f.anio) };
+  if (f.norma_id === null) return null;
+  return { clase: "cambio", norma: { id: Number(f.norma_id), nombre: f.norma as string, enlazable: f.norma_estado !== "retirada" } };
 }
 
 export async function obtenerTramite(

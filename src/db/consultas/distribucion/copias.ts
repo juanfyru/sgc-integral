@@ -9,7 +9,7 @@ import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { crearNotificacion } from "@/db/consultas/notificaciones";
 import { evento } from "./eventos-copia";
 import { abrirHallazgoDeRecogida } from "./hallazgos";
-import { filtroAcceso, filtroPuntos, puedeAccederDocumento } from "@/lib/alcance";
+import { condicionVista, documentoEnAlcance, filtroPuntos, puedeAccederDocumento } from "@/lib/alcance";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { enVentanaDeImpresion, numeroDeCopia, puedePasar, textoSello, urlDeQr } from "@/lib/distribucion/copias";
 import { estamparCopiaControlada } from "@/lib/distribucion/sello-pdf";
@@ -74,31 +74,6 @@ export type AccionCopia = "recibir" | "recoger" | "anular" | "reimprimir" | "pdf
 
 const ESTADOS_VIVOS = ["emitida", "recibida", "por_recoger"];
 const YA_NO_ESTA = "La copia ya no está en ese estado";
-
-/** Si el documento `d` está en el alcance del líder (cualquier otro rol: siempre). */
-export function documentoEnAlcance(sql: Cliente, sesion: Pick<SesionFlujo, "usuarioId" | "rol">) {
-  if (sesion.rol !== "lider_proceso") return sql`true`;
-  return sql`EXISTS (
-    SELECT 1
-    FROM documento_proceso alc_dp
-    LEFT JOIN subprocesos alc_s ON alc_s.id = alc_dp.subproceso_id
-    JOIN procesos alc_p ON alc_p.id = COALESCE(alc_dp.proceso_id, alc_s.proceso_id) AND alc_p.activo
-    JOIN usuario_procesos alc_up ON alc_up.proceso_id = alc_p.id AND alc_up.usuario_id = ${sesion.usuarioId}
-    WHERE alc_dp.documento_id = d.id
-  )`;
-}
-
-/** Quién ve una copia (spec 13B §6.4): `distribucion.ver` con alcance, el responsable del punto o quien la emitió. */
-export function condicionVista(sql: Cliente, sesion: Pick<SesionFlujo, "usuarioId" | "rol" | "verHistorial">) {
-  const propias = sql`(cc.emitida_por = ${sesion.usuarioId} OR cc.responsable_id = ${sesion.usuarioId} OR pu.responsable_id = ${sesion.usuarioId})`;
-  if (!puede(sesion, "distribucion.ver")) return propias;
-  if (sesion.rol === "lider_proceso") {
-    // Las copias de sus puntos, pero nunca de un restringido que no ve (regla 3): un documento de otro proceso
-    // entregado en un punto suyo solo aparece si su nivel de acceso lo permite.
-    return sql`(${propias} OR (${filtroPuntos(sql, sesion)} AND ${filtroAcceso(sql, sesion)}) OR ${documentoEnAlcance(sql, sesion)})`;
-  }
-  return sql`true`;
-}
 
 type FilaCopia = { copia: Copia; enAlcance: boolean; ultimaAperturaEn: Date | null };
 

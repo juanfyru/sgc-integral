@@ -5,13 +5,12 @@ import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { crearNotificacion } from "@/db/consultas/notificaciones";
 import { adminsActivos, lideresDeProceso } from "@/db/consultas/tramites";
-import { alcanceProcesos, puedeAccederDocumento, puedeVerJornada } from "@/lib/alcance";
+import { alcanceProcesos, documentoEnAlcance, puedeAccederDocumento, puedeVerJornada } from "@/lib/alcance";
 import { ErrorDistribucion, type ModalidadJornada } from "@/lib/distribucion/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
 import { fechaEnZona, fechaLimite } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { confirmarPorAsistencia, revertirAsistencia } from "./acuses";
-import { documentoEnAlcance } from "./copias";
 import { evidenciasDe, type Evidencia } from "./evidencias";
 
 type Opciones = { sql?: Cliente; ahora?: Date };

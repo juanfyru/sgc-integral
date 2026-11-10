@@ -9,6 +9,7 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { resumenAcuses } from "@/db/consultas/distribucion/acuses";
 import { estadoDePuntos, historialVerificaciones } from "@/db/consultas/distribucion/verificaciones-resumen";
+import { porcentajeDeConformidad } from "@/lib/distribucion/verificacion";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { alcanceProcesos, enAlcance, filtroAcceso, type Alcance } from "@/lib/alcance";
 import {
@@ -45,11 +46,19 @@ import { listarSemaforo, type FilaSemaforo } from "./semaforo";
 const MS_DIA = 86_400_000;
 
 /**
- * Los pasos que cierran una etapa: los de `transicionar`, menos los que dejan el trámite donde estaba. `transicionar`
- * (`tramites-flujo.ts`) lo decide en ejecución (`hacia !== previo.etapa`) al guardar `venceEn`; esta lista debe decir lo
- * mismo: una acción nueva que no cambie de etapa entra en `EVENTOS_SIN_CAMBIO_DE_ETAPA`.
+ * Los pasos que terminan el trámite sin avanzarlo (Ruling 66): el indicador mide el avance del trámite, no su muerte.
+ * Contarlos premiaría retirar temprano y castigaría cancelar tarde.
  */
-const ACCIONES_QUE_CIERRAN = ACCIONES.filter((a) => !EVENTOS_SIN_CAMBIO_DE_ETAPA.includes(a));
+const ACCIONES_QUE_TERMINAN: readonly string[] = ["retirar", "cancelar", "rechazar", "negar_visto_bueno", "negar_eliminacion"];
+
+/**
+ * Los pasos que cierran una etapa y cuentan en «etapas del trámite cerradas en plazo»: los de `transicionar`, menos los
+ * que dejan el trámite donde estaba y los que lo terminan sin avanzarlo (`ACCIONES_QUE_TERMINAN`). `transicionar`
+ * (`tramites-flujo.ts`) decide en ejecución (`hacia !== previo.etapa`) si guarda `venceEn`; esta lista debe decir lo
+ * mismo: una acción nueva que no cambie de etapa entra en `EVENTOS_SIN_CAMBIO_DE_ETAPA`, y una que cierre el trámite sin
+ * avanzarlo, en `ACCIONES_QUE_TERMINAN`.
+ */
+export const ACCIONES_QUE_CIERRAN = ACCIONES.filter((a) => !EVENTOS_SIN_CAMBIO_DE_ETAPA.includes(a) && !ACCIONES_QUE_TERMINAN.includes(a));
 
 /**
  * Los trámites de los procesos de la persona y del proceso elegido, sobre `tramites t`; el de un documento restringido
@@ -149,7 +158,13 @@ export async function indicadoresDocumentales(
   const { confirmados, pendientes } = acuses.entidad;
   const verificados = puntos.puntos.filter((p) => p.ultima !== null);
   const conformidadActual = porcentaje(verificados.filter((p) => p.ultima!.conforme).length, verificados.length);
-  const conformidadPeriodo = porcentaje(verificadas.filas.filter((v) => v.conforme).length, verificadas.filas.length);
+  // La del periodo se trunca como la actual (Ruling 59): la tarjeta no dice «66 %» arriba y «67 %» abajo.
+  const conformesDelPeriodo = verificadas.filas.filter((v) => v.conforme).length;
+  const conformidadPeriodo: Medicion = {
+    valor: porcentajeDeConformidad(conformesDelPeriodo, verificadas.filas.length),
+    numerador: conformesDelPeriodo,
+    denominador: verificadas.filas.length,
+  };
 
   const indicadores: IndicadorMedido[] = [
     medir("dentro_plazo", dentro, sinFechaDeRevision),

@@ -63,6 +63,8 @@ import { crearSesion } from "@/lib/sesion";
 import { revertida } from "./utiles/transaccion";
 import { sesionDe, usuarioDePrueba } from "./utiles/tramites";
 import { externoDePrueba } from "./utiles/vigencia";
+import { normaDePrueba } from "./utiles/normograma";
+import { retirarNorma } from "@/db/consultas/normograma/normas";
 
 const sql = () => obtenerSql();
 const SUFIJO = Date.now();
@@ -994,6 +996,21 @@ describe("PDF de una norma: /api/normas/[id]/archivos", () => {
     expect((await quitar(cookie(tokenAdmin), NORMA, "abc")).status).toBe(404);
     expect((await subir(cookie(tokenAdmin), "99999999999999999999")).status).toBe(404);
   });
+
+  it("a una norma retirada no se le sube un PDF: 409, como las asociaciones", () =>
+    revertida(sql(), async (tx) => {
+      enCurso.sql = tx;
+      try {
+        const admin = await usuarioDePrueba(tx, { rol: "admin_sgc" });
+        const norma = await normaDePrueba(tx, admin);
+        await retirarNorma(admin, { normaId: norma.id, motivo: "Registrada por error" }, { sql: tx });
+        const respuesta = await subir(cookie(tokenAdmin), String(norma.id));
+        expect(respuesta.status).toBe(409);
+        expect(await respuesta.json()).toEqual({ error: `${norma.nombre} está retirada` });
+      } finally {
+        enCurso.sql = null;
+      }
+    }));
 });
 
 describe("copias controladas: /distribucion/copias/[id]/pdf y /reimprimir", () => {

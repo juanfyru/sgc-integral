@@ -411,7 +411,8 @@ export async function transicionar(
     // La fecha límite de la etapa que cierra no queda en otro sitio (el trámite guarda solo la de la actual): la mide el
     // indicador de etapas en plazo (spec 13C §11.1). `reasignar` no cierra etapa y su `venceEn` es la fecha nueva. El
     // indicador elige los pasos con una lista fija (`ACCIONES_QUE_CIERRAN`, `vigencia/indicadores.ts`): una acción nueva
-    // que no cambie de etapa entra en `EVENTOS_SIN_CAMBIO_DE_ETAPA`.
+    // que no cambie de etapa entra en `EVENTOS_SIN_CAMBIO_DE_ETAPA`, y una que termine el trámite sin avanzarlo (retirar,
+    // cancelar, rechazar, negar), en `ACCIONES_QUE_TERMINAN`, que el indicador no cuenta (Ruling 66).
     const detalle = hacia === previo.etapa ? efecto.detalle : { ...efecto.detalle, venceEn: previo.venceEn?.toISOString() ?? null };
     await registrarEvento(tx, { tramiteId: t.id, tipo: entrada.accion, usuarioId: sesion.usuarioId, ronda: t.ronda, detalle, ahora });
     const { codigo } = await rotuloDeTramite(tx, t);

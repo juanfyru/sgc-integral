@@ -1,4 +1,5 @@
-import type { DetalleTramite } from "@/db/consultas/tramites";
+import Link from "next/link";
+import type { DetalleTramite, OrigenTramite } from "@/db/consultas/tramites";
 import { ETIQUETA_MOTIVO, ETIQUETA_TIPO_SOLICITUD } from "@/lib/tramites/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 
@@ -21,8 +22,28 @@ function Fila({ etiqueta, ancha, children }: { etiqueta: string; ancha?: boolean
   );
 }
 
-/** `origen`: «Abierto desde la revisión anual 2026» o «Abierto por el cambio de …» (`origenDeTramite`), bajo el motivo. */
-export function BloqueSolicitud({ tramite: t, origen = null }: { tramite: DetalleTramite; origen?: string | null }) {
+const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
+
+/** «Abierto desde la revisión anual 2026» o «Abierto por el cambio de …», con el nombre de la norma enlazado a su ficha. */
+function Origen({ origen }: { origen: OrigenTramite }) {
+  if (origen.clase === "revision") return <>{`Abierto desde la revisión anual ${origen.anio}`}</>;
+  const { norma } = origen;
+  return (
+    <>
+      {"Abierto por el cambio de "}
+      {norma.enlazable ? (
+        <Link href={`/normograma/${norma.id}`} className={`rounded underline underline-offset-2 ${FOCO}`}>
+          {norma.nombre}
+        </Link>
+      ) : (
+        norma.nombre
+      )}
+    </>
+  );
+}
+
+/** `origen`: de dónde nació la solicitud (`origenDeTramite`), bajo el motivo. */
+export function BloqueSolicitud({ tramite: t, origen = null }: { tramite: DetalleTramite; origen?: OrigenTramite | null }) {
   const fecha = new Intl.DateTimeFormat("es-CO", { dateStyle: "long", timeZone: zonaHoraria() });
   return (
     <section aria-labelledby="titulo-solicitud" className="rounded-xl border border-border bg-card p-4 shadow-xs">
@@ -36,7 +57,11 @@ export function BloqueSolicitud({ tramite: t, origen = null }: { tramite: Detall
         <Fila etiqueta="Proceso">{t.procesoNombre}</Fila>
         <Fila etiqueta="Motivo">
           {ETIQUETA_MOTIVO[t.motivo]}
-          {origen ? <span className="block text-xs text-muted-foreground">{origen}</span> : null}
+          {origen ? (
+            <span className="block text-xs text-muted-foreground">
+              <Origen origen={origen} />
+            </span>
+          ) : null}
         </Fila>
         <Fila etiqueta="Visto bueno">{textoVistoBueno(t)}</Fila>
         {t.tituloPropuesto ? <Fila etiqueta="Título propuesto">{t.tituloPropuesto}</Fila> : null}

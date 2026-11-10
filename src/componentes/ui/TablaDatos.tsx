@@ -3,6 +3,8 @@ export type ColumnaTabla = {
   etiqueta: string;
   numerica?: boolean;
   oculta?: boolean;
+  /** Clases de más para el encabezado (una columna fija con `sticky`, por ejemplo). */
+  clase?: string;
 };
 
 export const celda = "px-3 py-2 align-top border-t border-linea-suave";
@@ -36,7 +38,7 @@ export function TablaDatos({
               <th
                 key={c.clave}
                 scope="col"
-                className={`px-3 py-2 font-medium${c.numerica ? " text-right" : ""}`}
+                className={`px-3 py-2 font-medium${c.numerica ? " text-right" : ""}${c.clase ? ` ${c.clase}` : ""}`}
               >
                 {c.oculta ? <span className="sr-only">{c.etiqueta}</span> : c.etiqueta}
               </th>

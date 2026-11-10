@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { existeNorma } from "@/db/consultas/normograma/normas";
+import { normaParaSubir } from "@/db/consultas/normograma/normas";
 import { crearLimitador } from "@/lib/limite";
 import { origenValido } from "@/lib/origen";
 import { puede } from "@/lib/permisos";
@@ -19,8 +19,9 @@ function error(estado: number, mensaje: string) {
 
 /**
  * Sube el PDF de una norma (spec 13C §10.1): quien administra el normograma, solo PDF por sus bytes, hasta 25 MB. Una
- * norma tiene un solo PDF: el nuevo reemplaza al anterior en la misma transacción. Va fuera del `matcher` del proxy:
- * con él, Next copia el cuerpo y pasados 10 MB lo entrega cortado (F13A-R10).
+ * norma tiene un solo PDF: el nuevo reemplaza al anterior en la misma transacción. Una retirada no admite cambios: 409,
+ * como sus asociaciones. Va fuera del `matcher` del proxy: con él, Next copia el cuerpo y pasados 10 MB lo entrega
+ * cortado (F13A-R10).
  */
 export async function POST(peticion: NextRequest, { params }: Params) {
   const sesion = await sesionDePeticion(peticion);
@@ -30,6 +31,8 @@ export async function POST(peticion: NextRequest, { params }: Params) {
   if (!permitirSubida(String(sesion.usuarioId))) return error(429, "Demasiadas subidas seguidas. Espere un minuto.");
 
   const { id } = await params;
-  if (!/^\d{1,15}$/.test(id) || !(await existeNorma(Number(id)))) return error(404, "La norma no existe");
+  const norma = /^\d{1,15}$/.test(id) ? await normaParaSubir(Number(id)) : null;
+  if (!norma) return error(404, "La norma no existe");
+  if (norma.estado === "retirada") return error(409, `${norma.nombre} está retirada`);
   return recibirArchivo(peticion, { contexto: "norma", contextoId: Number(id), carpeta: `normas/${id}` }, sesion.usuarioId);
 }

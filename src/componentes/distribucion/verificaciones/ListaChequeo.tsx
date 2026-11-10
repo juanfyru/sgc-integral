@@ -14,7 +14,13 @@ import { Boton } from "@/componentes/ui/Boton";
 import { claseControl } from "@/componentes/ui/Campo";
 import { Dialogo } from "@/componentes/ui/Dialogo";
 import type { ItemVerificacion, Verificacion } from "@/db/consultas/distribucion/verificaciones";
-import { fechasQueViajan, resumenDeChequeo, type FechasCorreccion } from "@/lib/distribucion/verificacion";
+import {
+  avisarFechasInvalidas,
+  fechasInvalidas,
+  fechasQueViajan,
+  resumenDeChequeo,
+  type FechasCorreccion,
+} from "@/lib/distribucion/verificacion";
 import { ItemChequeo, type ValorItem } from "./ItemChequeo";
 import { textoResumen } from "./ResumenCierre";
 
@@ -89,6 +95,10 @@ export function ListaChequeo({ verificacion: v, fechas }: { verificacion: Verifi
   const itemsNoConformes = v.items.filter((i) => valorDe(i).respuesta === "no_conforme");
   const noConformes = itemsNoConformes.length;
   const viajan = fechas ? fechasQueViajan(itemsNoConformes.map((i) => i.id), elegidas, fechas.propuesta) : [];
+  // Las fechas que el servidor rechazaría: se dicen junto a su campo y bloquean el envío (el servidor sigue validando).
+  const invalidas = fechas ? fechasInvalidas(itemsNoConformes, elegidas, fechas) : [];
+  const errorDeFecha = new Map(invalidas.map((f) => [f.itemId, f.mensaje]));
+  const idDeFecha = (itemId: number) => `fecha-correccion-${itemId}`;
   const estado = ultima === "cerrar" ? estadoCerrar : ultima === "anadir" ? estadoAnadir : estadoGuardar;
 
   return (
@@ -185,22 +195,35 @@ export function ListaChequeo({ verificacion: v, fechas }: { verificacion: Verifi
             <fieldset className="flex min-w-0 flex-col gap-2">
               <legend className="mb-1 text-sm font-medium">Fecha de corrección de cada hallazgo</legend>
               <ul className="flex list-none flex-col gap-3">
-                {itemsNoConformes.map((i) => (
-                  <li key={i.id}>
-                    <label className="flex flex-col gap-1 text-sm">
-                      <span className="break-words">{i.texto}</span>
-                      <input
-                        type="date"
-                        value={elegidas[i.id] ?? fechas.propuesta}
-                        min={fechas.minima}
-                        max={fechas.maxima}
-                        onChange={(e) => setElegidas((previas) => ({ ...previas, [i.id]: e.target.value }))}
-                        aria-describedby="ayuda-fecha-correccion"
-                        className={`${claseControl} w-full max-w-44`}
-                      />
-                    </label>
-                  </li>
-                ))}
+                {itemsNoConformes.map((i) => {
+                  const error = errorDeFecha.get(i.id);
+                  return (
+                    <li key={i.id} className="flex flex-col gap-1">
+                      <label className="flex flex-col gap-1 text-sm">
+                        <span className="break-words">{i.texto}</span>
+                        <input
+                          id={idDeFecha(i.id)}
+                          type="date"
+                          value={elegidas[i.id] ?? fechas.propuesta}
+                          min={fechas.minima}
+                          max={fechas.maxima}
+                          onChange={(e) => {
+                            e.target.setCustomValidity("");
+                            setElegidas((previas) => ({ ...previas, [i.id]: e.target.value }));
+                          }}
+                          aria-invalid={error ? true : undefined}
+                          aria-describedby={error ? `error-${idDeFecha(i.id)} ayuda-fecha-correccion` : "ayuda-fecha-correccion"}
+                          className={`${claseControl} w-full max-w-44`}
+                        />
+                      </label>
+                      {error ? (
+                        <p id={`error-${idDeFecha(i.id)}`} className="break-words text-xs text-estado-critico-texto">
+                          {error}
+                        </p>
+                      ) : null}
+                    </li>
+                  );
+                })}
               </ul>
               <p id="ayuda-fecha-correccion" className="text-xs text-muted-foreground">
                 {AYUDA_FECHA}
@@ -209,7 +232,21 @@ export function ListaChequeo({ verificacion: v, fechas }: { verificacion: Verifi
           ) : null}
           <div className="flex flex-wrap justify-end gap-2">
             <Boton variante="secundario" onClick={() => setConfirmando(false)}>Cancelar</Boton>
-            <Boton type="submit" form={ID_FORMULARIO} formAction={enviarComo("cerrar", cerrar)} pendiente={cerrando} onClick={() => setConfirmando(false)}>
+            <Boton
+              type="submit"
+              form={ID_FORMULARIO}
+              formAction={enviarComo("cerrar", cerrar)}
+              pendiente={cerrando}
+              onClick={(e) => {
+                // Los campos de fecha están fuera del formulario: su validez se revisa aquí, antes de enviar.
+                const campo = (itemId: number) => document.getElementById(idDeFecha(itemId)) as HTMLInputElement | null;
+                if (avisarFechasInvalidas(itemsNoConformes.map((i) => i.id), invalidas, campo)) {
+                  e.preventDefault();
+                  return;
+                }
+                setConfirmando(false);
+              }}
+            >
               {cerrando ? "Procesando…" : "Cerrar verificación"}
             </Boton>
           </div>

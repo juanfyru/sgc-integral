@@ -1,4 +1,5 @@
 /** La lectura de los externos: su página de control, la matriz y los archivos de la edición (spec 13C §8.6 y §8.8). */
+import { cache } from "react";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import type { ArchivoFicha } from "@/db/consultas/documentos";
@@ -295,6 +296,12 @@ export async function listarExternos(sesion: SesionFlujo, filtro: FiltroExternos
  * Si la persona responde por la vigencia de algún externo que no se ha retirado y que todavía ve (la entrada «Vigencia» de
  * la barra): un restringido que dejó de ver no le da la entrada.
  */
+/**
+ * `esResponsableTecnico` una vez por petición (Ruling 68): la preguntan el cascarón (la barra y las tareas) y la guarda de
+ * las pestañas de Vigencia (`exigirVigencia`); `React.cache` comparte la respuesta en la misma petición.
+ */
+export const esResponsableTecnicoDePeticion = cache((usuarioId: number): Promise<boolean> => esResponsableTecnico(usuarioId));
+
 export async function esResponsableTecnico(usuarioId: number, opciones?: { sql?: Cliente }): Promise<boolean> {
   const sql = opciones?.sql ?? obtenerSql();
   const [f] = await sql`SELECT EXISTS (

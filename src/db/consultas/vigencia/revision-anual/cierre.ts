@@ -16,6 +16,7 @@ import { archivoDeFormato } from "@/db/consultas/formato-acta";
 import { nombreSql } from "@/db/consultas/normograma/busqueda";
 import type { FormatoActa } from "@/lib/acta";
 import { porcentaje } from "@/lib/distribucion/acuses";
+import { porcentajeDeConformidad } from "@/lib/distribucion/verificacion";
 import { verificarParaFirmar, type CredencialesFirma } from "@/lib/firma";
 import type { DatosInforme } from "@/lib/informe-anual";
 import { MARCA_DEFECTO } from "@/lib/marca";
@@ -214,7 +215,7 @@ export async function datosDelInforme(
     },
     otros: {
       acusesPct: porcentaje(Number(acuses.confirmados), Number(acuses.pendientes)),
-      conformidadPct: Number(conformidad.total) === 0 ? null : Math.round((Number(conformidad.conformes) / Number(conformidad.total)) * 100),
+      conformidadPct: porcentajeDeConformidad(Number(conformidad.conformes), Number(conformidad.total)),
       externosAlDia: { alDia, total: externos.length },
     },
     formato,

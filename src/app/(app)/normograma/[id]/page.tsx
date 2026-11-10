@@ -29,9 +29,11 @@ export default async function PaginaNorma({ params }: { params: Promise<{ id: st
 
   const abierta = norma.estado !== "retirada";
   const asocia = abierta && puede(sesion, "normograma.procesos");
+  // Una derogada conserva sus procesos (se edita o se quita su requisito) pero no se asocia a uno nuevo.
+  const asociaNuevos = asocia && norma.estado !== "derogada";
   const administra = abierta && norma.acciones.administrar;
   const [procesos, documentos, normas] = await Promise.all([
-    asocia ? procesosActivos() : Promise.resolve([]),
+    asociaNuevos ? procesosActivos() : Promise.resolve([]),
     asocia ? documentosGestionables(norma.id, sesion, { alcance }) : Promise.resolve([]),
     // Una derogada no admite relaciones nuevas como afectada (`registrarRelacion`).
     administra ? normasParaElegir({ distintaDe: norma.id, sinDerogadas: true }) : Promise.resolve([]),

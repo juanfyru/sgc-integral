@@ -32,6 +32,7 @@ export {
   filasDelExcel,
   listarNormas,
   normasParaElegir,
+  normaParaSubir,
   obtenerNorma,
   sugerirEmisores,
   type FilaNorma,

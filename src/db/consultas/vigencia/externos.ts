@@ -32,6 +32,7 @@ export {
   archivoDeEdicion,
   autorizarArchivoDeEdicion,
   esResponsableTecnico,
+  esResponsableTecnicoDePeticion,
   externosVerificables,
   fichaDeExterno,
   listarExternos,

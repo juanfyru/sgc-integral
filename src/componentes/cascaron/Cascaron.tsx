@@ -3,10 +3,9 @@ import { obtenerMarcaSegura } from "@/db/consultas/entidad";
 import { contarNoLeidas, listarRecientes } from "@/db/consultas/notificaciones";
 import { esResponsableDePuntos } from "@/db/consultas/distribucion/puntos-uso";
 import { participaEnTramites } from "@/db/consultas/tramites";
-import { esResponsableTecnico } from "@/db/consultas/vigencia/externos";
 import { ETIQUETA_ROL } from "@/lib/roles";
 import type { SesionValida } from "@/lib/sesion";
-import { misTareas } from "@/lib/tareas";
+import { tareasDePeticion } from "@/lib/tareas-peticion";
 import { dispararRevisionDeVencimientos } from "@/lib/vencimientos-disparo";
 import { VERSION_APP } from "@/lib/version";
 import { BarraLateral } from "./BarraLateral";
@@ -22,21 +21,16 @@ import { entradasVisibles } from "./navegacion";
  */
 export async function Cascaron({ sesion, children }: { sesion: SesionValida; children: React.ReactNode }) {
   after(() => dispararRevisionDeVencimientos());
-  // El responsable técnico de un externo ve «Vigencia» aunque sea de rol Consulta. Es una marca de la barra: si no se
-  // puede saber, se registra y la página sigue sin la entrada.
-  const responsableTecnico = esResponsableTecnico(sesion.usuarioId).catch((err: unknown) => {
-    console.error("No se pudo saber si la persona es responsable técnico de algún externo:", err);
-    return false;
-  });
-  const [marca, { total: tareas, vencidos }, noLeidas, recientes, participa, responsable, esResponsable] = await Promise.all([
+  // Las tareas y la insignia de «Vigencia» salen de la misma lectura de la vigencia, compartida con la página de la
+  // misma petición (`tareasDePeticion`). El responsable técnico de un externo ve «Vigencia» aunque sea de rol Consulta:
+  // es una marca de la barra que viene con las tareas (si no se puede saber, se registra y la página sigue sin ella).
+  const [marca, { total: tareas, vencidos, responsableTecnico: esResponsable }, noLeidas, recientes, participa, responsable] = await Promise.all([
     obtenerMarcaSegura(),
-    // Las tareas y la insignia de «Vigencia» salen de la misma lectura de la vigencia.
-    responsableTecnico.then((rt) => misTareas(sesion, { responsableTecnico: rt })),
+    tareasDePeticion(sesion),
     contarNoLeidas(sesion.usuarioId),
     listarRecientes(sesion.usuarioId, 10),
     participaEnTramites(sesion.usuarioId),
     esResponsableDePuntos(sesion.usuarioId),
-    responsableTecnico,
   ]);
   const entradas = entradasVisibles({
     ...sesion,

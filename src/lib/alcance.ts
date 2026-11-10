@@ -183,6 +183,37 @@ export function filtroPuntos(sql: Cliente, sujeto: SujetoVisibilidad) {
 }
 
 /**
+ * Si el documento `d` está en el alcance del líder (cualquier otro rol: siempre). Vive aquí, y no en `copias.ts`, para
+ * que los puntos de uso y las jornadas no importen el módulo de las copias (y su PDF) solo por esta regla.
+ */
+export function documentoEnAlcance(sql: Cliente, sujeto: Pick<SujetoVisibilidad, "usuarioId" | "rol">) {
+  if (sujeto.rol !== "lider_proceso") return sql`true`;
+  return sql`EXISTS (
+    SELECT 1
+    FROM documento_proceso alc_dp
+    LEFT JOIN subprocesos alc_s ON alc_s.id = alc_dp.subproceso_id
+    JOIN procesos alc_p ON alc_p.id = COALESCE(alc_dp.proceso_id, alc_s.proceso_id) AND alc_p.activo
+    JOIN usuario_procesos alc_up ON alc_up.proceso_id = alc_p.id AND alc_up.usuario_id = ${sujeto.usuarioId}
+    WHERE alc_dp.documento_id = d.id
+  )`;
+}
+
+/**
+ * Quién ve una copia controlada (spec 13B §6.4), para un `WHERE` sobre `copias_controladas cc`, `puntos_uso pu` y
+ * `documentos d`: `distribucion.ver` con alcance, el responsable del punto o quien la emitió.
+ */
+export function condicionVista(sql: Cliente, sujeto: SujetoVisibilidad) {
+  const propias = sql`(cc.emitida_por = ${sujeto.usuarioId} OR cc.responsable_id = ${sujeto.usuarioId} OR pu.responsable_id = ${sujeto.usuarioId})`;
+  if (!puede(sujeto, "distribucion.ver")) return propias;
+  if (sujeto.rol === "lider_proceso") {
+    // Las copias de sus puntos, pero nunca de un restringido que no ve (regla 3): un documento de otro proceso
+    // entregado en un punto suyo solo aparece si su nivel de acceso lo permite.
+    return sql`(${propias} OR (${filtroPuntos(sql, sujeto)} AND ${filtroAcceso(sql, sujeto)}) OR ${documentoEnAlcance(sql, sujeto)})`;
+  }
+  return sql`true`;
+}
+
+/**
  * Quién ve una jornada de socialización (spec 13B §6.4): el resumen, quien ve alguno de los documentos
  * socializados; la evidencia (lista de asistentes y actas), Admin SGC, Gerencia, Control Interno y el
  * líder de alguno de los procesos de esos documentos. `procesoIds` son todos los procesos de los documentos.

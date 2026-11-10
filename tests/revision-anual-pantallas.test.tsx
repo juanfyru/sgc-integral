@@ -226,6 +226,17 @@ function campo(html: string, nombre: string, valor?: string): string {
 }
 
 describe("TablaDecisiones", () => {
+  it("la columna «Decisión» queda fija a la derecha de la tabla (a 1280 px los insumos se desplazan bajo ella), con su fondo", () => {
+    const html = tabla();
+    const cabecera = html.match(/<th[^>]*>Decisión<\/th>/)?.[0] ?? "";
+    expect(cabecera).toMatch(/class="[^"]* sticky right-0 [^"]*bg-muted/);
+    const celdas = html.match(/<td class="[^"]* sticky right-0 [^"]*"/g) ?? [];
+    expect(celdas.length).toBeGreaterThan(0);
+    for (const celda of celdas) expect(celda).toMatch(/ bg-background .*print:static|print:static.* bg-background/);
+    // Las tarjetas del celular no cambian: ninguna celda fija fuera de la tabla.
+    expect(html.match(/sticky right-0/g)?.length).toBe(celdas.length + 1);
+  });
+
   it("«Revisado recientemente» va sin botones; un pendiente lleva los tres, que piden la solicitud prellenada y enlazada", () => {
     const html = tabla();
     const reciente = tarjeta(html, "CEX-FO-01");
@@ -717,9 +728,10 @@ describe("la solicitud prellenada", () => {
           { tipo: "modificar", motivo: "revision_anual", justificacion: "Se actualiza en la revisión anual.", documentoId: c.doc.id, revisionAnualId: c.revisionId },
           { sql: tx, ahora: ABRE },
         );
-        expect(await origenDeTramite(tramiteId, { sql: tx })).toBe("Abierto desde la revisión anual 2090");
+        const origen = await origenDeTramite(tramiteId, { sql: tx });
+        expect(origen).toEqual({ clase: "revision", anio: 2090 });
         const tramite = (await obtenerTramite(tramiteId, c.lider, { sql: tx }))!;
-        const html = renderToStaticMarkup(<BloqueSolicitud tramite={tramite} origen="Abierto desde la revisión anual 2090" />);
+        const html = renderToStaticMarkup(<BloqueSolicitud tramite={tramite} origen={origen} />);
         expect(sinEtiquetas(html)).toContain("Motivo Revisión anual Abierto desde la revisión anual 2090");
         expect(sinEtiquetas(renderToStaticMarkup(<BloqueSolicitud tramite={tramite} />))).not.toContain("Abierto desde");
         expect(await origenDeTramite(999_999_999, { sql: tx })).toBeNull();

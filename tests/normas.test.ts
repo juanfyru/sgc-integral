@@ -488,6 +488,25 @@ describe("retiro y borrado", () => {
       expect((await auditoriaDe(tx, "norma_borrada", vacia.id))[0].detalle).toMatchObject({ nombre: vacia.nombre });
       await expect(borrarNorma(admin, vacia.id, { sql: tx })).rejects.toThrow("La norma no existe");
     }));
+
+  it("una derogada no se asocia a un proceso nuevo, pero el requisito de un proceso que ya la tenía se sigue editando", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const n = await normaDePrueba(tx, admin);
+      const [gth] = await tx`SELECT id FROM procesos WHERE sigla = 'GTH'`;
+      const [cex] = await tx`SELECT id FROM procesos WHERE sigla = 'CEX'`;
+      await asociarProceso(admin, { normaId: n.id, procesoId: Number(gth.id), requisito: "Art. 3" }, { sql: tx });
+      await cambiarEstadoNorma(admin, { normaId: n.id, estado: "derogada", fecha: "2026-11-01", nota: null }, { sql: tx, ahora });
+
+      await expect(asociarProceso(admin, { normaId: n.id, procesoId: Number(cex.id), requisito: null }, { sql: tx })).rejects.toThrow(
+        `${n.nombre} está derogada: no se asocia a procesos nuevos`,
+      );
+      expect((await tx`SELECT count(*)::int AS n FROM norma_procesos WHERE norma_id = ${n.id}`)[0].n).toBe(1);
+      await asociarProceso(admin, { normaId: n.id, procesoId: Number(gth.id), requisito: "Art. 3, mientras dure la transición" }, { sql: tx });
+      expect((await tx`SELECT requisito FROM norma_procesos WHERE norma_id = ${n.id} AND proceso_id = ${gth.id}`)[0].requisito).toBe(
+        "Art. 3, mientras dure la transición",
+      );
+    }));
 });
 
 describe("esquemas del normograma", () => {

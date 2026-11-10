@@ -34,6 +34,7 @@ import {
   autorizarFotoDeHallazgo,
   cerrarHallazgo,
   corregirHallazgo,
+  hallazgosAbiertosDe,
   hallazgosDe,
   obtenerHallazgo,
   reabrirHallazgo,
@@ -289,6 +290,46 @@ describe("corregir, validar y reabrir", () => {
       }
     }));
 
+  it("quien responde por el punto no cierra directamente un hallazgo abierto de su punto mientras haya otro Admin SGC; si es el único, cierra con la marca", () =>
+    revertida(sql, async (tx) => {
+      const c = await hallazgoDePrueba(tx);
+      try {
+        // El punto pasa a un Admin SGC (verificarlo él mismo no se podía con otro Admin activo; el hallazgo ya existe).
+        const responde = await sesionAdmin(tx);
+        await tx`UPDATE puntos_uso SET responsable_id = ${responde.usuarioId} WHERE id = ${c.punto.id}`;
+        const flags = async (sesion: SesionFlujo) => (await obtenerVerificacion(c.verificacionId, sesion, { sql: tx }))!.hallazgos[0];
+        expect(await flags(responde)).toMatchObject({ estado: "abierto", puedeCorregir: true, puedeCerrar: false });
+        // Otro Admin SGC, que no responde por el punto, sí lo cierra directamente.
+        expect((await flags(c.admin)).puedeCerrar).toBe(true);
+        await rechaza(
+          cerrarHallazgo(c.hallazgoId, responde, "Lo cerré en el comité", { sql: tx, ahora: despues }),
+          "Otro Administrador del SGC debe cerrar el hallazgo: usted responde por el punto",
+        );
+        expect((await tx`SELECT estado FROM hallazgos WHERE id = ${c.hallazgoId}`)[0].estado).toBe("abierto");
+
+        // Sin otro Admin SGC activo, cierra y la bitácora lo dice.
+        await tx`UPDATE usuarios SET activo = false WHERE rol = 'admin_sgc' AND id <> ${responde.usuarioId}`;
+        expect((await flags(responde)).puedeCerrar).toBe(true);
+        await cerrarHallazgo(c.hallazgoId, responde, "Lo cerré en el comité", { sql: tx, ahora: despues });
+        const [a] = await tx`SELECT detalle FROM auditoria WHERE accion = 'hallazgo_cerrado' AND entidad_id = ${c.hallazgoId}`;
+        expect(a.detalle).toMatchObject({ estadoPrevio: "abierto", propioCorrector: false, propioPunto: true, nota: "Lo cerré en el comité" });
+      } finally {
+        await c.limpiar();
+      }
+    }));
+
+  it("el cierre directo de un hallazgo de otro punto no lleva la marca del propio punto", () =>
+    revertida(sql, async (tx) => {
+      const c = await hallazgoDePrueba(tx);
+      try {
+        await cerrarHallazgo(c.hallazgoId, c.admin, "Se retiró en el comité", { sql: tx, ahora });
+        const [a] = await tx`SELECT detalle FROM auditoria WHERE accion = 'hallazgo_cerrado' AND entidad_id = ${c.hallazgoId}`;
+        expect(a.detalle).toMatchObject({ propioCorrector: false, propioPunto: false });
+      } finally {
+        await c.limpiar();
+      }
+    }));
+
   it("validar, reabrir y cerrar miran el alcance: con el permiso y sin ver el punto, el hallazgo no existe", () =>
     revertida(sql, async (tx) => {
       const c = await hallazgoDePrueba(tx);
@@ -479,6 +520,42 @@ describe("quién corrige y qué cuenta", () => {
       } finally {
         await c.limpiar();
       }
+    }));
+});
+
+describe("las fotos del ítem que abrió el hallazgo", () => {
+  it("salen con cada hallazgo, leídas juntas; la tarea del responsable no las lee", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const punto = await puntoDePrueba(tx, { responsable, procesos: ["ATE"] });
+      const op = { sql: tx };
+      const { verificacionId } = await abrirVerificacion(admin, punto.id, { sql: tx, ahora: T0 });
+      const v = (await obtenerVerificacion(verificacionId, admin, op))!;
+      const [primero, segundo] = v.items;
+      const fotoDe = async (itemId: number, nombre: string) =>
+        (
+          await registrarArchivo(
+            {
+              versionId: null, contexto: "verificacion_item", contextoId: itemId, rol: "evidencia",
+              ruta: `verificaciones/${verificacionId}/items/${itemId}/${nombre}`, nombreOriginal: "foto.png",
+              extension: "png", mime: "image/png", tamanoBytes: 10, hashSha256: "d".repeat(64),
+            },
+            admin.usuarioId,
+            op,
+          )
+        ).id;
+      const fotos = { [primero.id]: await fotoDe(primero.id, "a"), [segundo.id]: await fotoDe(segundo.id, "b") };
+      const noConformes = new Set([primero.id, segundo.id]);
+      await guardarAvance(verificacionId, admin, v.items.map((i) => ({ itemId: i.id, respuesta: noConformes.has(i.id) ? "no_conforme" : "conforme", nota: null })), op);
+      await cerrarVerificacion(verificacionId, admin, { sql: tx, ahora: T0 });
+
+      const hallazgos = await hallazgosDe({ puntoId: punto.id }, admin, op);
+      expect(hallazgos).toHaveLength(2);
+      for (const h of hallazgos) expect(h.fotos.map((f) => f.id), `ítem ${h.itemId}`).toEqual([fotos[h.itemId!]]);
+      const tareas = await hallazgosAbiertosDe(responsable.usuarioId, op);
+      expect(tareas.map((h) => h.id).sort()).toEqual(hallazgos.map((h) => h.id).sort());
+      expect(tareas.every((h) => h.fotos.length === 0 && h.fotosCorreccion.length === 0)).toBe(true);
     }));
 });
 

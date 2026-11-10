@@ -102,8 +102,9 @@ async function sentenciasDelCascaron(tx: TransactionSql, sesion: SesionFlujo): P
   return sentencias;
 }
 
-/** La consulta de vigencia (`columnasDeVigencia`) y la lectura de la configuración documental. */
-const deVigencia = (s: string[]) => s.filter((t) => t.includes("FROM ratificaciones r JOIN firmas f")).length;
+/** La consulta de vigencia (las filas de `lecturaDeVigencia`), su conteo (`contarVencidas`) y la configuración documental. */
+const deVigencia = (s: string[]) => s.filter((t) => t.includes("FROM ratificaciones r JOIN firmas f") && !t.includes("AS vencidas")).length;
+const deConteo = (s: string[]) => s.filter((t) => t.includes("count(*)::int AS vencidas")).length;
 const deConfiguracion = (s: string[]) => s.filter((t) => t.includes("FROM configuracion WHERE clave = ANY")).length;
 /** `tareasDeImpactos`: la única sentencia que agrupa los impactos pendientes por cambio y proceso. */
 const deImpactos = (s: string[]) => s.filter((t) => t.includes("count(*)::int AS pendientes, min(i.vence_en) AS vence")).length;
@@ -111,6 +112,8 @@ const deImpactos = (s: string[]) => s.filter((t) => t.includes("count(*)::int AS
 const deRevision = (s: string[]) => s.filter((t) => t.includes("JOIN revision_anual_procesos rap ON rap.revision_id = ra.id")).length;
 /** `tareasDeValidacion`: la única sentencia que busca los hallazgos por validar. */
 const deValidacion = (s: string[]) => s.filter((t) => t.includes("h.estado = 'por_validar' AND h.corregido_por IS DISTINCT FROM")).length;
+/** Las fotos de los hallazgos (`evidenciasDe` y `evidenciasDeVarios`): las tareas no las usan. */
+const deEvidencias = (s: string[]) => s.filter((t) => t.includes("FROM archivos WHERE contexto")).length;
 
 describe("el costo del cascarón por render", () => {
   it("la consulta de vigencia corre como mucho una vez por persona y la configuración se lee una vez; sin vigencia, ninguna", () =>
@@ -118,26 +121,45 @@ describe("el costo del cascarón por render", () => {
       const lider = await sesionDe(tx, "lider.cex");
       const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
       const e = await externoDePrueba(tx, lider, { proceso: "CEX", edicion: "2017", responsableId: responsable.usuarioId });
+      // Quien responde por un punto con un hallazgo abierto: su tarea no necesita las fotos (F-M10).
+      const conHallazgo = await usuarioDePrueba(tx, { rol: "consulta" });
+      const [punto] = await tx`INSERT INTO puntos_uso (nombre, responsable_id) VALUES (${`zz_punto_cascaron_${Date.now()}`}, ${conHallazgo.usuarioId}) RETURNING id`;
+      await tx`INSERT INTO hallazgos (punto_uso_id, origen, descripcion, responsable_id, estado, vence_en)
+        VALUES (${punto.id}, 'recogida', 'La copia no estaba', ${conHallazgo.usuarioId}, 'abierto', now() + interval '5 days')`;
       try {
         const casos: [string, SesionFlujo][] = [
           ["Admin SGC", await sesionAdmin(tx)],
           ["líder", lider],
+          ["Gerencia", await usuarioDePrueba(tx, { rol: "gerencia" })],
+          ["Control Interno", await usuarioDePrueba(tx, { rol: "control_interno" })],
           ["Consulta sin externos", await usuarioDePrueba(tx, { rol: "consulta" })],
           ["Consulta responsable técnico", responsable],
+          ["Consulta con hallazgo abierto", conHallazgo],
         ];
         const cuentas: Record<
           string,
-          { total: number; vigencia: number; configuracion: number; impactos: number; revision: number; validacion: number }
+          {
+            total: number;
+            vigencia: number;
+            conteo: number;
+            configuracion: number;
+            impactos: number;
+            revision: number;
+            validacion: number;
+            evidencias: number;
+          }
         > = {};
         for (const [nombre, sesion] of casos) {
           const s = await sentenciasDelCascaron(tx, sesion);
           cuentas[nombre] = {
             total: s.length,
             vigencia: deVigencia(s),
+            conteo: deConteo(s),
             configuracion: deConfiguracion(s),
             impactos: deImpactos(s),
             revision: deRevision(s),
             validacion: deValidacion(s),
+            evidencias: deEvidencias(s),
           };
         }
         // Para el informe: CONTAR_CASCARON=<archivo> deja las cuentas en ese archivo.
@@ -147,7 +169,13 @@ describe("el costo del cascarón por render", () => {
           expect(cuentas[nombre].vigencia, nombre).toBe(1);
           expect(cuentas[nombre].configuracion, nombre).toBe(1);
         }
-        expect(cuentas["Consulta sin externos"]).toMatchObject({ vigencia: 0, configuracion: 0, impactos: 0, revision: 0 });
+        expect(cuentas["Consulta sin externos"]).toMatchObject({ vigencia: 0, conteo: 0, configuracion: 0, impactos: 0, revision: 0 });
+        // Gerencia y Control Interno no reciben tareas de vigencia: su insignia es un conteo, sin filas ni configuración
+        // (F-I3, Ruling 68); los demás leen filas y no cuentan aparte.
+        for (const nombre of ["Gerencia", "Control Interno"]) {
+          expect(cuentas[nombre], nombre).toMatchObject({ vigencia: 0, conteo: 1, configuracion: 0, impactos: 0, revision: 0 });
+        }
+        for (const nombre of ["Admin SGC", "líder", "Consulta responsable técnico"]) expect(cuentas[nombre].conteo, nombre).toBe(0);
         // Las tareas de impactos y las de la revisión anual: una sentencia cada una para el Admin SGC y el líder; ninguna
         // para Consulta.
         for (const nombre of ["Admin SGC", "líder"]) expect(cuentas[nombre], nombre).toMatchObject({ impactos: 1, revision: 1 });
@@ -156,13 +184,20 @@ describe("el costo del cascarón por render", () => {
         // la configuración; ninguna para los demás.
         expect(cuentas["Admin SGC"].validacion).toBe(1);
         for (const nombre of ["líder", "Consulta sin externos", "Consulta responsable técnico"]) expect(cuentas[nombre].validacion, nombre).toBe(0);
+        // La tarea de corregir un hallazgo no carga sus fotos (F-M10): el hallazgo abierto no suma sentencias de evidencias.
+        for (const [nombre, c] of Object.entries(cuentas)) expect(c.evidencias, nombre).toBe(0);
         // El total por render (Tarea 13): una sentencia más que en la Tarea 10 para el Admin SGC (la de validar hallazgos),
-        // ninguna para los demás.
+        // ninguna para los demás; la de los hallazgos abiertos es la misma con o sin hallazgos (F-M10). Gerencia y Control
+        // Interno bajan de 11 a 10 con el conteo (F-I3); el layout y la página comparten las demás lecturas por petición
+        // (`tests/cascaron-peticion.test.ts`), lo que este test no ve porque aquí `React.cache` no guarda nada.
         expect(Object.fromEntries(Object.entries(cuentas).map(([nombre, c]) => [nombre, c.total]))).toEqual({
           "Admin SGC": 16,
           líder: 16,
+          Gerencia: 10,
+          "Control Interno": 10,
           "Consulta sin externos": 9,
           "Consulta responsable técnico": 11,
+          "Consulta con hallazgo abierto": 9,
         });
       } finally {
         await e.limpiar();

@@ -18,7 +18,7 @@ import { obtenerSql } from "@/db/cliente";
 import { resumenAcuses } from "@/db/consultas/distribucion/acuses";
 import { estadoDePuntos } from "@/db/consultas/distribucion/verificaciones-resumen";
 import { transicionar } from "@/db/consultas/tramites-flujo";
-import { indicadoresDocumentales } from "@/db/consultas/vigencia/indicadores";
+import { ACCIONES_QUE_CIERRAN, indicadoresDocumentales } from "@/db/consultas/vigencia/indicadores";
 import { INDICADORES, type Indicador, type IndicadorMedido, type ResultadoIndicadores } from "@/lib/indicadores-documentales/metas";
 import { periodoActual } from "@/lib/indicadores-documentales/periodo";
 import { fechaEnZona, finDeFecha } from "@/lib/tramites/plazos";
@@ -26,7 +26,7 @@ import { construirExcelIndicadores } from "@/lib/vigencia/indicadores-excel";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { textoValor } from "@/lib/indicadores-documentales/textos";
 import { puntoDePrueba, verificarPunto } from "./utiles/distribucion";
-import { opc, sesionAdmin, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
+import { opc, sesionAdmin, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 import { externoDePrueba, sinFechaDeRevision, vigenteFuera } from "./utiles/vigencia";
 
@@ -195,6 +195,33 @@ describe("indicadoresDocumentales", () => {
     expect(sinDato(de(r, "etapas"), patron)).toBe(sinDato(de(antes, "etapas"), patron) + 1);
   }));
 
+  it("las etapas en plazo no cuentan los pasos que terminan el trámite sin avanzarlo: retirar, rechazar, cancelar y negar (Ruling 66)", () => revertida(sql, async (tx) => {
+    expect([...ACCIONES_QUE_CIERRAN].sort()).toEqual(
+      ["aceptar", "aprobar", "aprobar_y_publicar", "concepto_favorable", "dar_visto_bueno", "devolver_aprobacion", "devolver_revision", "enviar_a_revision", "publicar"].sort(),
+    );
+    const admin = await sesionAdmin(tx);
+    const liderGth = await sesionDe(tx, "lider.gth");
+    // Todo pasa en un año sin datos de la demo: el periodo solo tiene estos pasos.
+    const cuando = "2091-01-20T15:00:00Z";
+    const leer = async () => (await indicadoresDocumentales(admin, { periodo: "2091" }, { sql: tx, ahora: new Date("2091-02-01T15:00:00Z") }))!;
+    const motivo = { motivo: "Ya no hace falta el cambio." };
+
+    const retirado = await tramiteEn(tx, "aceptacion");
+    await transicionar(liderGth, { tramiteId: retirado.tramiteId, accion: "retirar", etapaEsperada: "aceptacion", rondaEsperada: retirado.ronda, datos: motivo }, opc(tx, cuando));
+    const rechazado = await tramiteEn(tx, "aceptacion");
+    await transicionar(rechazado.admin, { tramiteId: rechazado.tramiteId, accion: "rechazar", etapaEsperada: "aceptacion", rondaEsperada: rechazado.ronda, datos: motivo }, opc(tx, cuando));
+    const cancelado = await tramiteEn(tx, "elaboracion");
+    await transicionar(cancelado.admin, { tramiteId: cancelado.tramiteId, accion: "cancelar", etapaEsperada: "elaboracion", rondaEsperada: cancelado.ronda, datos: motivo }, opc(tx, cuando));
+    const negado = await tramiteEn(tx, "visto_bueno");
+    await transicionar(liderGth, { tramiteId: negado.tramiteId, accion: "negar_visto_bueno", etapaEsperada: "visto_bueno", rondaEsperada: negado.ronda, datos: motivo }, opc(tx, cuando));
+    const [{ n }] = await tx`SELECT count(*)::int AS n FROM tramite_eventos
+      WHERE tramite_id = ANY(${[retirado.tramiteId, rechazado.tramiteId, cancelado.tramiteId, negado.tramiteId]})
+        AND tipo IN ('retirar', 'rechazar', 'cancelar', 'negar_visto_bueno')`;
+    expect(n).toBe(4);
+
+    expect(de(await leer(), "etapas")).toMatchObject({ denominador: 0, valor: null, detalle: null });
+  }));
+
   it("el líder solo cuenta los trámites de sus procesos", () => revertida(sql, async (tx) => {
     const gth = await procesoId(tx, "GTH");
     const admin = await sesionAdmin(tx);
@@ -259,6 +286,8 @@ describe("indicadoresDocumentales", () => {
     expect(de(r, "conformidad")).toMatchObject({ valor: actual.porcentaje, cumple: actual.cumple, numerador: 2, denominador: 3, meta: 67 });
     // La 13B trunca (Ruling 59): la cifra entera ya no contradice el veredicto y no hace falta el decimal.
     expect(textoValor(de(r, "conformidad"))).toBe("66 %");
+    // La del periodo también se trunca: la tarjeta no dice «66 %» arriba y «67 %» abajo.
+    expect(de(r, "conformidad").detalle).toBe("en el periodo: 66 % de 3 verificaciones cerradas");
   }));
 
   it("con un proceso elegido, la aprobación y las etapas en plazo cuentan solo los trámites de ese proceso", () => revertida(sql, async (tx) => {

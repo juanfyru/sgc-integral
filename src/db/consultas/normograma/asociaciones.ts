@@ -23,13 +23,16 @@ function exigirPermiso(sesion: SesionFlujo): void {
   if (!puede(sesion, "normograma.procesos")) throw new ErrorPermiso();
 }
 
-/** La norma, bloqueada para compartir (un borrado o un retiro concurrente esperan); una retirada no admite cambios. */
-async function normaAbierta(tx: TransactionSql, normaId: number): Promise<string> {
+/**
+ * La norma, bloqueada para compartir (un borrado o un retiro concurrente esperan); una retirada no admite cambios.
+ * Devuelve su nombre y su estado.
+ */
+async function normaAbierta(tx: TransactionSql, normaId: number): Promise<{ nombre: string; estado: string }> {
   const [n] = await tx`SELECT n.estado, ${nombreSql(tx)} AS nombre
     FROM normas n JOIN tipos_norma tn ON tn.id = n.tipo_norma_id WHERE n.id = ${normaId} FOR SHARE OF n`;
   if (!n) throw new ErrorNormograma(NORMA_NO_EXISTE);
   if (n.estado === "retirada") throw new ErrorNormograma(`${n.nombre} está retirada`);
-  return n.nombre as string;
+  return { nombre: n.nombre as string, estado: n.estado as string };
 }
 
 /**
@@ -45,7 +48,10 @@ async function exigirProceso(tx: TransactionSql, sesion: SesionFlujo, procesoId:
   return p.nombre as string;
 }
 
-/** Asocia la norma al proceso o, si ya lo está, actualiza su requisito; el mismo requisito no escribe nada. */
+/**
+ * Asocia la norma al proceso o, si ya lo está, actualiza su requisito; el mismo requisito no escribe nada. Una derogada
+ * no se asocia a un proceso nuevo (su normograma no la aplicaría hoy); el requisito de uno que ya la tenía sí se edita.
+ */
 export async function asociarProceso(
   sesion: SesionFlujo,
   d: { normaId: number; procesoId: number; requisito: string | null },
@@ -55,10 +61,11 @@ export async function asociarProceso(
   const requisito = opcionalAcotado(d.requisito, "El requisito", 2000);
   const ahora = opciones?.ahora ?? new Date();
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
-    const nombre = await normaAbierta(tx, d.normaId);
+    const { nombre, estado } = await normaAbierta(tx, d.normaId);
     const proceso = await exigirProceso(tx, sesion, d.procesoId, "asociar");
     const [actual] = await tx`SELECT id, requisito FROM norma_procesos
       WHERE norma_id = ${d.normaId} AND proceso_id = ${d.procesoId} FOR UPDATE`;
+    if (!actual && estado === "derogada") throw new ErrorNormograma(`${nombre} está derogada: no se asocia a procesos nuevos`);
     if (actual && (actual.requisito ?? null) === requisito) return;
     if (actual) {
       await tx`UPDATE norma_procesos SET requisito = ${requisito}, actualizado_por = ${sesion.usuarioId}, actualizado_en = ${ahora}
@@ -120,7 +127,7 @@ export async function enlazarDocumento(sesion: SesionFlujo, d: { normaId: number
   exigirPermiso(sesion);
   const ahora = opciones?.ahora ?? new Date();
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
-    const nombre = await normaAbierta(tx, d.normaId);
+    const { nombre } = await normaAbierta(tx, d.normaId);
     const { codigo } = await documentoGestionable(tx, sesion, d.documentoId, "enlazar");
     const [nuevo] = await tx`INSERT INTO norma_documentos (norma_id, documento_id, creado_por, creado_en)
       VALUES (${d.normaId}, ${d.documentoId}, ${sesion.usuarioId}, ${ahora})

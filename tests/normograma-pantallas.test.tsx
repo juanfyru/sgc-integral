@@ -103,6 +103,7 @@ import { FormularioNorma } from "@/componentes/normograma/FormularioNorma";
 import { NormasAplicables } from "@/componentes/normograma/NormasAplicables";
 import { NormasEnlazadas } from "@/componentes/normograma/NormasEnlazadas";
 import { TablaNormas, type FilaDeTabla } from "@/componentes/normograma/TablaNormas";
+import { BloqueSolicitud } from "@/componentes/tramites/BloqueSolicitud";
 import { BloqueVigencia } from "@/componentes/vigencia/BloqueVigencia";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
@@ -110,6 +111,8 @@ import { asociarProceso, enlazarDocumento, normasDeProceso } from "@/db/consulta
 import { resolverImpacto } from "@/db/consultas/normograma/impactos";
 import { cambiarEstadoNorma, retirarNorma } from "@/db/consultas/normograma/normas";
 import { eliminarRelacion, registrarRelacion } from "@/db/consultas/normograma/relaciones";
+import { obtenerTramite, origenDeTramite } from "@/db/consultas/tramites";
+import { crearSolicitud } from "@/db/consultas/tramites-flujo";
 import {
   EsquemaAsociarProceso,
   EsquemaEnlazarDocumento,
@@ -806,6 +809,60 @@ describe("«Normas aplicables» en la página del proceso", () => {
         const otro = sinEtiquetas(await pintar(tx, quien, vista));
         expect(otro).toContain(`Normas aplicables (${total})`);
         expect(otro).not.toContain("Asociar norma");
+      }
+    }));
+});
+
+describe("las normas derogadas al asociar", () => {
+  it("«Asociar norma» del proceso no ofrece las derogadas; la ficha de una derogada no ofrece asociar procesos nuevos", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const cex = await procesoDe(tx, "CEX");
+      const vigente = await normaDePrueba(tx, admin);
+      const derogada = await normaDePrueba(tx, admin);
+      await cambiarEstadoNorma(admin, { normaId: derogada.id, estado: "derogada", fecha: "2026-11-01", nota: null }, { sql: tx, ahora });
+
+      const html = await pintar(tx, admin, () => VistaProceso({ params: Promise.resolve({ slug: cex.slug }), searchParams: Promise.resolve({}) }));
+      expect(html).toMatch(new RegExp(`<option value="${vigente.id}">`));
+      expect(html).not.toMatch(new RegExp(`<option value="${derogada.id}">`));
+      expect(sinEtiquetas(await pintar(tx, admin, ficha(vigente.id)))).toContain("Asociar proceso");
+      expect(sinEtiquetas(await pintar(tx, admin, ficha(derogada.id)))).not.toContain("Asociar proceso");
+    }));
+});
+
+describe("el trámite abierto por un cambio normativo", () => {
+  it("«Abierto por el cambio de …» enlaza la ficha de la norma; retirada, la nombra sin enlace", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const cex = await procesoDe(tx, "CEX");
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [cex.id] });
+      const doc = await vigenteFuera(tx, { fechaAprobacion: "2026-06-01", proceso: "CEX" });
+      try {
+        const n = await normaDePrueba(tx, admin);
+        await enlazarDocumento(admin, { normaId: n.id, documentoId: doc.id }, { sql: tx });
+        const { cambioId } = await cambiarEstadoNorma(admin, { normaId: n.id, estado: "modificada", fecha: "2026-11-01", nota: null }, { sql: tx, ahora });
+        const [impacto] = await tx`SELECT id FROM impactos_normativos WHERE cambio_id = ${cambioId} AND documento_id = ${doc.id}`;
+        const { tramiteId } = await crearSolicitud(
+          lider,
+          { tipo: "modificar", motivo: "cambio_normativo", justificacion: "Se ajusta a la norma modificada.", documentoId: doc.id, impactoId: Number(impacto.id) },
+          { sql: tx, ahora },
+        );
+        const tramite = (await obtenerTramite(tramiteId, lider, { sql: tx }))!;
+
+        const origen = await origenDeTramite(tramiteId, { sql: tx });
+        expect(origen).toEqual({ clase: "cambio", norma: { id: n.id, nombre: n.nombre, enlazable: true } });
+        const html = renderToStaticMarkup(<BloqueSolicitud tramite={tramite} origen={origen} />);
+        expect(html).toMatch(new RegExp(`<a [^>]*href="/normograma/${n.id}"[^>]*>${n.nombre}</a>`));
+        expect(sinEtiquetas(html)).toContain(`Abierto por el cambio de ${n.nombre}`);
+
+        await retirarNorma(admin, { normaId: n.id, motivo: "Registrada por error" }, { sql: tx, ahora });
+        const retirada = await origenDeTramite(tramiteId, { sql: tx });
+        expect(retirada).toEqual({ clase: "cambio", norma: { id: n.id, nombre: n.nombre, enlazable: false } });
+        const sinEnlace = renderToStaticMarkup(<BloqueSolicitud tramite={tramite} origen={retirada} />);
+        expect(sinEnlace).not.toContain("/normograma/");
+        expect(sinEtiquetas(sinEnlace)).toContain(`Abierto por el cambio de ${n.nombre}`);
+      } finally {
+        await doc.limpiar();
       }
     }));
 });

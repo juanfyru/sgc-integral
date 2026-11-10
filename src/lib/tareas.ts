@@ -16,6 +16,7 @@ import { tareasDeRevision } from "@/db/consultas/vigencia/revision-anual/tareas"
 import { vigenciaDePersona, type VigenciaDePersona } from "@/db/consultas/vigencia/tareas";
 import { puede } from "@/lib/permisos";
 import { cuenta } from "@/lib/plural";
+import { modoDeVigencia } from "@/lib/vigencia/modo";
 import { zonaHoraria } from "@/lib/zona-horaria";
 
 export type Tarea = {
@@ -157,8 +158,8 @@ export async function misTareas(
 ): Promise<{ tareas: Tarea[]; total: number; vencidos: number }> {
   const fuentes = { sql: opciones?.sql, ahora: opciones?.ahora };
   const responsableTecnico = opciones?.responsableTecnico ?? (await esResponsableTecnico(sesion.usuarioId, { sql: opciones?.sql }));
-  const usaConfig =
-    puede(sesion, "verificaciones.realizar") || puede(sesion, "vigencia.ver") || puede(sesion, "documentos.indicadores") || responsableTecnico;
+  // La vigencia usa la configuración solo si lee filas: el conteo de la insignia no la necesita (Ruling 68).
+  const usaConfig = puede(sesion, "verificaciones.realizar") || modoDeVigencia(sesion, responsableTecnico) === "filas";
   const config = usaConfig ? obtenerConfigDocumental({ sql: opciones?.sql }) : undefined;
   // Quien la espera recibe su rechazo; este `catch` solo evita uno sin atender si ninguna fuente llega a esperarla.
   config?.catch(() => {});

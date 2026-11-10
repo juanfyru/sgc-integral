@@ -21,7 +21,7 @@ import { TablaHallazgos } from "@/componentes/distribucion/verificaciones/TablaH
 import type { Hallazgo } from "@/db/consultas/distribucion/hallazgos";
 import type { HallazgoDeVerificacion, ItemVerificacion, Verificacion } from "@/db/consultas/distribucion/verificaciones";
 import { comoSeCerro } from "@/lib/distribucion/hallazgos";
-import { fechasQueViajan, resumenDeChequeo } from "@/lib/distribucion/verificacion";
+import { avisarFechasInvalidas, fechasInvalidas, fechasQueViajan, resumenDeChequeo } from "@/lib/distribucion/verificacion";
 
 const item = (id: number, respuesta: ItemVerificacion["respuesta"], p: Partial<ItemVerificacion> = {}): ItemVerificacion => ({
   id,
@@ -204,6 +204,50 @@ describe("ListaChequeo", () => {
     expect(fechasQueViajan([2, 3], { 2: "2026-11-29", 3: "2026-12-05" }, "2026-11-29")).toEqual([{ itemId: 3, fecha: "2026-12-05" }]);
     // La de un ítem que dejó de ser no conforme, o una borrada, no viaja.
     expect(fechasQueViajan([2], { 3: "2026-12-05", 2: "" }, "2026-11-29")).toEqual([]);
+  });
+
+  it("cada campo de fecha del diálogo se identifica por su ítem: el bloqueo del cierre lo encuentra", () => {
+    const html = renderToStaticMarkup(
+      <ListaChequeo verificacion={verificacion([item(2, "no_conforme", { texto: "Copia rota" })])} fechas={fechas} />,
+    );
+    expect(html).toMatch(/<input[^>]*id="fecha-correccion-2"[^>]*type="date"|<input[^>]*type="date"[^>]*id="fecha-correccion-2"/);
+  });
+
+  it("las fechas que el servidor rechazaría, con el ítem en el mensaje: fuera del rango, un día que no existe o vacía", () => {
+    const items = [
+      { id: 2, texto: "Copia rota" },
+      { id: 3, texto: "Sin sello" },
+      { id: 4, texto: "Falta el anexo" },
+      { id: 5, texto: "Versión vieja" },
+    ];
+    expect(fechasInvalidas(items, {}, fechas)).toEqual([]);
+    expect(fechasInvalidas(items, { 2: "2026-11-15", 3: "2027-11-14", 4: "2026-12-05" }, fechas)).toEqual([]);
+    expect(fechasInvalidas(items, { 2: "2026-11-14", 3: "2027-11-15", 4: "2026-02-30", 5: "" }, fechas)).toEqual([
+      { itemId: 2, mensaje: "La fecha de corrección de «Copia rota» debe estar entre mañana (15 nov 2026) y el 14 nov 2027" },
+      { itemId: 3, mensaje: "La fecha de corrección de «Sin sello» debe estar entre mañana (15 nov 2026) y el 14 nov 2027" },
+      { itemId: 4, mensaje: "Elija una fecha de corrección válida para «Falta el anexo»" },
+      { itemId: 5, mensaje: "Elija la fecha de corrección de «Versión vieja»" },
+    ]);
+  });
+
+  it("antes de enviar el cierre, marca cada fecha inválida y el navegador muestra el mensaje de la primera", () => {
+    const campo = () => {
+      const c = { mensaje: "", reportado: false, setCustomValidity: (m: string) => void (c.mensaje = m), reportValidity: () => ((c.reportado = true), false) };
+      return c;
+    };
+    const campos = { 2: campo(), 3: campo(), 4: campo() };
+    const buscar = (id: number) => campos[id as 2 | 3 | 4] ?? null;
+    const invalidas = [
+      { itemId: 3, mensaje: "La fecha de corrección de «Sin sello» debe estar entre mañana (15 nov 2026) y el 14 nov 2027" },
+      { itemId: 4, mensaje: "Elija una fecha de corrección válida para «Falta el anexo»" },
+    ];
+    expect(avisarFechasInvalidas([2, 3, 4], invalidas, buscar)).toBe(true);
+    expect(campos[2]).toMatchObject({ mensaje: "", reportado: false });
+    expect(campos[3]).toMatchObject({ mensaje: invalidas[0].mensaje, reportado: true });
+    expect(campos[4]).toMatchObject({ mensaje: invalidas[1].mensaje, reportado: false });
+    // Corregidas, el cierre sigue y los campos quedan limpios.
+    expect(avisarFechasInvalidas([2, 3, 4], [], buscar)).toBe(false);
+    expect([campos[3].mensaje, campos[4].mensaje]).toEqual(["", ""]);
   });
 
   it("cerrada o descartada es solo lectura: sin campos ni botones", () => {

@@ -25,6 +25,12 @@ export function rutaDeVerificacion(documentoId: number, resultado: "edicion_nuev
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 
+/**
+ * La columna «Decisión» queda fija a la derecha (W3 del recorrido final): a 1280 px la tabla no cabe y los insumos se
+ * desplazan bajo ella, con la decisión siempre a la vista. Cada celda fija lleva su fondo y un borde; al imprimir, no.
+ */
+const COLUMNA_FIJA = "sticky right-0 z-[1] border-l border-linea-suave print:static print:border-l-0 print:bg-transparent";
+
 /** Cómo dice la tabla cada decisión ya tomada; la pendiente de una revisión abierta es «Pendiente» (resolución 1). */
 const VERBO: Record<Decision, string> = {
   ratificar: "Ratificado",
@@ -202,7 +208,7 @@ export function TablaDecisiones({
     { clave: "normas", etiqueta: "Normas cambiadas" },
     { clave: "consultas", etiqueta: `Consultas ${revision.anio}`, numerica: true },
     { clave: "tramites", etiqueta: `Trámites ${revision.anio}`, numerica: true },
-    { clave: "decision", etiqueta: "Decisión" },
+    { clave: "decision", etiqueta: "Decisión", clase: `${COLUMNA_FIJA} bg-muted` },
   ];
   const decision = (f: FilaDecision) => <CeldaDecision fila={f} revisionId={revision.id} ahora={ahora} zona={zona} pideCodigo={pideCodigo} volver={volver} />;
   return (
@@ -218,7 +224,7 @@ export function TablaDecisiones({
               <td className={celda}>{textoNormas(f.insumos.normasCambiadas)}</td>
               <td className={celdaNumerica}>{f.insumos.consultas}</td>
               <td className={celdaNumerica}>{f.insumos.tramites}</td>
-              <td className={`${celda} min-w-56`}>{decision(f)}</td>
+              <td className={`${celda} min-w-56 ${COLUMNA_FIJA} bg-background`}>{decision(f)}</td>
             </tr>
           ))}
         </TablaDatos>

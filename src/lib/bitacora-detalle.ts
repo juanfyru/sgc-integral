@@ -371,6 +371,12 @@ function hallazgoEn(d: Record<string, unknown>): string {
   return `hallazgo${origen}${texto(d.punto) ? ` en ${texto(d.punto)}` : ""}`;
 }
 
+/** El cierre directo que solo se admite al único Administrador del SGC activo: su propia corrección o su propio punto. */
+function marcaDeCierre(d: Record<string, unknown>): string {
+  if (d.propioPunto === true) return " (de su propio punto; único Administrador del SGC activo)";
+  return d.propioCorrector === true ? " (único Administrador del SGC activo)" : "";
+}
+
 /** «; validó 2 correcciones y reabrió 1 hallazgo»: lo que la verificación hizo con los hallazgos por validar del punto. */
 function hallazgosDeLaVerificacion(d: Record<string, unknown>): string {
   const validados = numero(d.hallazgosValidados) ?? 0;
@@ -461,7 +467,7 @@ export function describirEvento(e: EventoAuditoria): string {
     case "hallazgo_cerrado":
       // Desde la Tarea 13 de la 13C el cierre directo guarda de dónde venía; una fila anterior conserva su frase.
       if (typeof d.estadoPrevio === "string") {
-        return `Cerró directamente el ${hallazgoEn(d)}${d.propioCorrector === true ? " (único Administrador del SGC activo)" : ""}${conMotivo(d.nota)}`;
+        return `Cerró directamente el ${hallazgoEn(d)}${marcaDeCierre(d)}${conMotivo(d.nota)}`;
       }
       return `Cerró un hallazgo${d.origen === "recogida" ? " de recogida" : d.origen === "verificacion" ? " de verificación" : ""}${conMotivo(d.nota)}`;
     case "hallazgo_corregido":

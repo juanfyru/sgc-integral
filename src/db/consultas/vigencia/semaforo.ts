@@ -5,12 +5,12 @@
  */
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
+import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import {
   alcanceProcesos,
   enAlcance,
   filtroAcceso,
-  filtroVigencia,
   puedeRatificar,
   type Alcance,
   type SujetoVisibilidad,
@@ -21,7 +21,7 @@ import { estadoPlazo } from "@/lib/tramites/plazos";
 import { limitesDeFechaFijada, textoFecha } from "@/lib/vigencia/plazo";
 import { ESTADOS_VIGENCIA, ErrorVigencia, type EstadoVigencia } from "@/lib/vigencia/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
-import { columnasDeVigencia, type FilaSemaforo } from "./fragmentos";
+import { columnasDeVigencia, enElSemaforo, filasDeLectura, lecturaDeVigencia, sinMarcas, type FilaSemaforo } from "./fragmentos";
 import { NO_EXISTE } from "./comun";
 import { ratificacionesDe, type Ratificacion } from "./ratificaciones";
 
@@ -57,19 +57,26 @@ function compararFilas(a: FilaSemaforo, b: FilaSemaforo): number {
 }
 
 /**
- * Los documentos con versión vigente que la persona ve en la pestaña «Semáforo» (`filtroVigencia`), filtrados
- * por proceso y origen en la consulta y por estado después, sobre el estado calculado.
+ * Los documentos con versión vigente que la persona ve en la pestaña «Semáforo» (`filtroVigencia`), filtrados por
+ * proceso, origen y estado sobre el estado calculado. Sale de la lectura de la persona que el cascarón ya pidió en la
+ * misma petición (`lecturaDeVigencia`, Ruling 68): la página no vuelve a leer la vigencia.
  */
 export async function listarSemaforo(sesion: SesionFlujo, filtro: FiltroSemaforo, opciones?: Opciones): Promise<FilaSemaforo[]> {
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
-  const alcance = await alcanceProcesos(sesion, { sql });
-  const condicion = sql`${filtroVigencia(sql, sesion, alcance)}
-    ${filtro.procesoId === undefined ? sql`` : sql`AND p.id = ${filtro.procesoId}`}
-    ${filtro.origen === "interno" || filtro.origen === "externo" ? sql`AND d.origen = ${filtro.origen}` : sql``}`;
-  const filas = await columnasDeVigencia(sql, condicion, ahora);
+  const [{ filas: crudas, alcance }, config] = await Promise.all([lecturaDeVigencia(sql, sesion), obtenerConfigDocumental({ sql })]);
+  const delSemaforo = enElSemaforo(puede(sesion, "vigencia.ver") || puede(sesion, "documentos.indicadores"), alcance);
   const estado = filtro.estado ?? "todos";
-  return (estado === "todos" ? filas : filas.filter((f) => f.vigencia.estado === estado)).sort(compararFilas);
+  return filasDeLectura(crudas, ahora, config)
+    .filter(
+      (f) =>
+        delSemaforo(f) &&
+        (filtro.procesoId === undefined || f.proceso.id === filtro.procesoId) &&
+        (filtro.origen === "interno" || filtro.origen === "externo" ? f.origen === filtro.origen : true) &&
+        (estado === "todos" || f.vigencia.estado === estado),
+    )
+    .map(sinMarcas)
+    .sort(compararFilas);
 }
 
 /** Qué puede hacer la persona con la vigencia de un documento, desde la ficha o el semáforo. */

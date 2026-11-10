@@ -6,8 +6,11 @@
  * pantallas y pasadas que muestran o usan el estado de vigencia.
  */
 import type { PendingQuery, Row } from "postgres";
+import { cache } from "react";
 import type { Cliente } from "@/db/cliente";
 import { obtenerConfigDocumental, type ConfigDocumental } from "@/db/consultas/config-documental";
+import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
+import { alcanceProcesos, filtroAcceso, filtroVigencia, type Alcance } from "@/lib/alcance";
 import { EVENTOS_SIN_CAMBIO_DE_ETAPA, diaDeEtapa } from "@/lib/tramites/dia-de-etapa";
 import { ETAPAS_ABIERTAS, type Autoridad, type Etapa } from "@/lib/tramites/tipos";
 import { fechaBase, proximaRevision, type OrigenVigencia } from "@/lib/vigencia/plazo";
@@ -225,15 +228,38 @@ export async function columnasDeVigencia(
   return filas.map((f) => aFila(f, ahora, config.vigencia.atencionDias, zona));
 }
 
-/** La misma lectura con las marcas de `FilaDePersona`, sobre la configuración ya leída. */
-export async function filasDePersona(
-  sql: Cliente,
-  condicion: PendingQuery<Row[]>,
-  ahora: Date,
-  config: ConfigDocumental,
-): Promise<FilaDePersona[]> {
+/** Las filas crudas de la vigencia de una persona y su alcance: lo que comparten el cascarón y las pestañas de Vigencia. */
+export type LecturaDeVigencia = { filas: readonly Row[]; alcance: Alcance };
+
+/**
+ * Las filas de vigencia de la persona, con las marcas de `FilaDePersona`: las del semáforo que ve (`filtroVigencia`) y
+ * sus externos, si es responsable técnico (los que ve). Una vez por petición (Ruling 68): `React.cache` la comparte
+ * entre el cascarón del layout y la página de la misma petición (`/`, Semáforo, Indicadores), porque la sesión es el
+ * mismo objeto en los dos (`sesionActual` va en caché) y la conexión también; con otra conexión (una transacción) o
+ * fuera de un render no se comparte. Las filas no dependen de la hora: el estado lo calcula cada quien con su `ahora`
+ * (`filasDeLectura`). Para quien no es responsable técnico, «sus externos» no trae nada.
+ */
+export const lecturaDeVigencia = cache(async (sql: Cliente, sesion: SesionFlujo): Promise<LecturaDeVigencia> => {
+  const alcance = await alcanceProcesos(sesion, { sql });
+  const suyos = sql`(${filtroAcceso(sql, sesion)} AND EXISTS (SELECT 1 FROM externos persona_ex
+    WHERE persona_ex.documento_id = d.id AND persona_ex.responsable_id = ${sesion.usuarioId}))`;
+  const filas = await consultaSemaforo(sql, sql`(${filtroVigencia(sql, sesion, alcance)} OR ${suyos})`, true);
+  return { filas, alcance };
+});
+
+/**
+ * Cuáles de las filas de `lecturaDeVigencia` son del semáforo de la persona: con `vigencia.ver` o
+ * `documentos.indicadores`, las de su alcance por el proceso propietario (`filtroVigencia` sobre filas que ya pasaron
+ * `filtroAcceso`); sin ninguno, ninguna (solo quedan sus externos como responsable técnico).
+ */
+export function enElSemaforo(veSemaforo: boolean, alcance: Alcance): (f: FilaSemaforo) => boolean {
+  if (!veSemaforo) return () => false;
+  return (f) => alcance.todos || alcance.procesoIds.includes(f.proceso.id);
+}
+
+/** Las filas de `lecturaDeVigencia` con su estado a `ahora`, sobre la configuración ya leída. */
+export function filasDeLectura(filas: readonly Row[], ahora: Date, config: ConfigDocumental): FilaDePersona[] {
   const zona = zonaHoraria();
-  const filas = await consultaSemaforo(sql, condicion, true);
   return filas.map((f) => ({
     ...aFila(f, ahora, config.vigencia.atencionDias, zona),
     responsableTecnicoId: f.responsable_tecnico_id === null ? null : Number(f.responsable_tecnico_id),
@@ -241,6 +267,63 @@ export async function filasDePersona(
     enRevisionAnual: f.revision_anual_anio !== null,
     procesoConLider: f.proceso_con_lider as boolean,
   }));
+}
+
+const MARCAS = ["responsableTecnicoId", "enRevisionAnual", "procesoConLider"] as const;
+
+/** Una `FilaDePersona` sin sus marcas: lo que el semáforo pinta y exporta, como antes de compartir la lectura. */
+export function sinMarcas(f: FilaDePersona): FilaSemaforo {
+  const fila: Partial<FilaDePersona> = { ...f };
+  for (const marca of MARCAS) delete fila[marca];
+  return fila as FilaSemaforo;
+}
+
+/**
+ * Cuántos documentos con versión vigente que cumplen `condicion` tienen la vigencia vencida a `ahora`, en una sola
+ * sentencia y sin traer filas: la insignia de quien solo necesita la cifra (Gerencia y Control Interno sin externos a
+ * cargo; Ruling 68). Repite en SQL, a propósito, las reglas puras de `fechaBase`, `proximaRevision` y `estadoVigencia`
+ * (`src/lib/vigencia`): un trámite abierto lo deja «en trámite» y no vencido; sin fecha base tampoco vence; la fecha
+ * fijada manda; la base de un externo es su última verificación o, sin ella, su adopción; la de un interno aprobado
+ * fuera, su fecha de aprobación, y la de uno publicado en la plataforma, su publicación, o en los dos su última
+ * ratificación si es posterior; los meses (del externo, del documento o del tipo) se suman en el calendario y recortan
+ * al último día del mes, como `sumarMeses`; y vencida es una próxima revisión de un día anterior a hoy en la zona, como
+ * `estadoPlazo`. `::date` es el día de la zona porque la conexión abre con `TimeZone = zonaHoraria()`. Los mismos `JOIN`
+ * que `consultaSemaforo`. Si esas reglas cambian, esto cambia con ellas: `tests/vigencia-insignia.test.ts` compara el
+ * conteo con el estado calculado de cada caso y de toda la base.
+ */
+export async function contarVencidas(sql: Cliente, condicion: PendingQuery<Row[]>, ahora: Date): Promise<number> {
+  const [f] = await sql`
+    SELECT count(*)::int AS vencidas
+    FROM documentos d
+    JOIN documento_versiones v ON v.documento_id = d.id AND v.estado = 'vigente'
+    JOIN tipos_documento t ON t.id = d.tipo_id
+    JOIN documento_proceso dp ON dp.documento_id = d.id AND dp.es_principal
+    LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
+    JOIN procesos p ON p.id = COALESCE(dp.proceso_id, s.proceso_id)
+    LEFT JOIN externos ex ON ex.documento_id = d.id
+    LEFT JOIN LATERAL (
+      SELECT max(r.creado_en) AS en FROM ratificaciones r JOIN firmas f ON f.id = r.firma_id WHERE r.version_id = v.id
+    ) rat ON true
+    LEFT JOIN LATERAL (
+      SELECT max(ev.creado_en) AS en FROM externo_verificaciones ev JOIN usuarios u ON u.id = ev.usuario_id
+      WHERE ev.documento_id = d.id AND ev.version_id = v.id
+    ) ver ON true
+    CROSS JOIN LATERAL (
+      SELECT
+        CASE
+          WHEN d.origen = 'externo' THEN (COALESCE(ver.en, v.publicado_en))::date
+          WHEN v.origen_aprobacion = 'plataforma' THEN GREATEST((v.publicado_en)::date, (rat.en)::date)
+          ELSE GREATEST(v.fecha_aprobacion, (rat.en)::date)
+        END AS base,
+        CASE
+          WHEN d.origen = 'externo' THEN COALESCE(ex.verificacion_meses, d.meses_revision, t.meses_revision)
+          ELSE COALESCE(d.meses_revision, t.meses_revision)
+        END AS meses
+    ) b
+    WHERE ${condicion}
+      AND NOT EXISTS (SELECT 1 FROM tramites tr WHERE tr.documento_id = d.id AND tr.etapa = ANY(${ETAPAS_ABIERTAS}))
+      AND COALESCE(d.proxima_revision_fijada, (b.base + make_interval(months => b.meses))::date) < (${ahora}::timestamptz)::date`;
+  return Number(f.vencidas);
 }
 
 /**

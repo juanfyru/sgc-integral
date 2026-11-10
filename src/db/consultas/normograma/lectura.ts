@@ -19,6 +19,14 @@ export async function existeNorma(normaId: number, opciones?: Opciones): Promise
   return (await sql`SELECT 1 FROM normas WHERE id = ${normaId}`).length > 0;
 }
 
+/** Para la subida del PDF: el nombre y el estado de la norma, o null si no existe. */
+export async function normaParaSubir(normaId: number, opciones?: Opciones): Promise<{ nombre: string; estado: EstadoNorma } | null> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [n] = await sql`SELECT n.estado, ${nombreSql(sql)} AS nombre
+    FROM normas n JOIN tipos_norma tn ON tn.id = n.tipo_norma_id WHERE n.id = ${normaId}`;
+  return n ? { nombre: n.nombre as string, estado: n.estado as EstadoNorma } : null;
+}
+
 export type Norma = {
   id: number;
   tipoNormaId: number;

@@ -20,7 +20,8 @@ vi.mock("@/db/consultas/notificaciones", () => ({ contarNoLeidas: async () => 0,
 vi.mock("@/db/consultas/tramites", () => ({ participaEnTramites: async () => false }));
 vi.mock("@/db/consultas/distribucion/puntos-uso", () => ({ esResponsableDePuntos: async () => false }));
 vi.mock("@/lib/tareas", () => ({ misTareas }));
-vi.mock("@/db/consultas/vigencia/externos", () => ({ esResponsableTecnico }));
+// El cascarón pregunta por `tareasDePeticion` (`@/lib/tareas-peticion`, real), que usa la pregunta por petición.
+vi.mock("@/db/consultas/vigencia/externos", () => ({ esResponsableTecnicoDePeticion: esResponsableTecnico }));
 
 import { Cascaron } from "@/componentes/cascaron/Cascaron";
 import type { SesionValida } from "@/lib/sesion";

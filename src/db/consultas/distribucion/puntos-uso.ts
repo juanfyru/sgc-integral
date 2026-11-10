@@ -2,9 +2,8 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { enTransaccion } from "@/db/consultas/flujo/contrato";
 import { traducirUnico } from "@/db/consultas/mapa-admin";
-import { filtroPuntos, puedeAccederDocumento, type SujetoVisibilidad } from "@/lib/alcance";
+import { condicionVista, filtroPuntos, puedeAccederDocumento, type SujetoVisibilidad } from "@/lib/alcance";
 import { ErrorDistribucion } from "@/lib/distribucion/tipos";
-import { condicionVista } from "./copias";
 import type { Rol } from "@/lib/roles";
 
 export type PuntoUso = {

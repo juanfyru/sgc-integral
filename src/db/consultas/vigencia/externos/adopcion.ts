@@ -93,6 +93,21 @@ function exigirPrincipalVisto(v: AdopcionValidada, huellaMostrada: string | null
   if (huellaMostrada !== undefined && huellaMostrada !== v.hashPrincipal) throw new ErrorVigencia(PRINCIPAL_CAMBIO);
 }
 
+/**
+ * La verificación «hay una edición nueva» que pidió esta adopción (spec 13C §8.3): la última de ese resultado sobre la
+ * vigente, mientras la edición nueva siga pendiente (una «sigue vigente» posterior la borra: manda el acto más
+ * reciente). Nula en la primera adopción (no hay vigente que verificar) o sin edición pendiente. Va bajo el candado del
+ * externo y antes de publicar, que cambia la vigente y borra la marca.
+ */
+async function verificacionPendiente(tx: TransactionSql, documentoId: number): Promise<number | null> {
+  const [f] = await tx`SELECT ev.id FROM externos ex
+    JOIN documento_versiones v ON v.documento_id = ex.documento_id AND v.estado = 'vigente'
+    JOIN externo_verificaciones ev ON ev.documento_id = ex.documento_id AND ev.version_id = v.id AND ev.resultado = 'edicion_nueva'
+    WHERE ex.documento_id = ${documentoId} AND ex.edicion_nueva_pendiente_desde IS NOT NULL
+    ORDER BY ev.creado_en DESC, ev.id DESC LIMIT 1`;
+  return f ? Number(f.id) : null;
+}
+
 /** Sin archivo principal, la firma guarda la huella de los datos de control de la edición (spec 13C §8.3). */
 function huellaDeDatos(codigo: string, edicion: string, emisor: string): string {
   return createHash("sha256").update(`${codigo}|${edicion}|${emisor}`).digest("hex");
@@ -104,7 +119,8 @@ function huellaDeDatos(codigo: string, edicion: string, emisor: string): string 
  * acuse a la audiencia; la primera, solo si se marca. La clave se verifica fuera de la transacción y todo lo que
  * puede fallar se valida antes y otra vez dentro, con el documento y la versión bloqueados (F13A-R4). `huellaMostrada`
  * es la del principal que vio quien firma (null si no había): si cambió, se rechaza antes de pedir la clave y otra vez
- * bajo el candado, sin escribir la firma.
+ * bajo el candado, sin escribir la firma. `verificacionId`, si quien llama la conoce; si no (el diálogo no la envía), la
+ * resuelve el dominio (`verificacionPendiente`), y la usan la decisión de la revisión anual y la bitácora.
  */
 export async function adoptarEdicion(
   sesion: SesionFlujo,
@@ -139,6 +155,7 @@ export async function adoptarEdicion(
       const v = await validarAdopcion(tx, sesion, d.versionId);
       exigirPrincipalVisto(v, d.huellaMostrada);
       if (verificacionId !== null) await exigirVerificacion(tx, v.documentoId, verificacionId, "edicion_nueva");
+      const enlazada = verificacionId ?? (await verificacionPendiente(tx, v.documentoId));
       const huella = v.ruta
         ? await exigirHuellaRegistrada(v.ruta, v.hashPrincipal, { codigo: v.codigo, numero: v.numero })
         : huellaDeDatos(v.codigo, v.edicion, v.entidadEmisora);
@@ -172,13 +189,13 @@ export async function adoptarEdicion(
       }
       await tx`UPDATE externos SET edicion_nueva_pendiente_desde = NULL, aviso_vencido_en = NULL, escalado_en = NULL
         WHERE documento_id = ${documentoId}`;
-      await alAdoptar(tx, { documentoId, versionId: d.versionId, usuarioId: sesion.usuarioId, verificacionId, ahora, revision: abierta });
+      await alAdoptar(tx, { documentoId, versionId: d.versionId, usuarioId: sesion.usuarioId, verificacionId: enlazada, ahora, revision: abierta });
       await registrarAuditoria(tx, {
         usuarioId: sesion.usuarioId,
         accion: "externo_adoptado",
         entidad: "documento",
         entidadId: documentoId,
-        detalle: { codigo: v.codigo, numero, edicion: v.edicion, obsoletas, acuses, verificacionId },
+        detalle: { codigo: v.codigo, numero, edicion: v.edicion, obsoletas, acuses, verificacionId: enlazada },
       });
       return { documentoId, numero, obsoletas, acuses };
     }),

@@ -21,7 +21,7 @@ import { crearSolicitud } from "@/db/consultas/tramites-flujo";
 import { abrirEdicion, adoptarEdicion, registrarVerificacion, retirarExterno } from "@/db/consultas/vigencia/externos";
 import { cerrarRevision, datosDelInforme, informeCongelado, obtenerRevision } from "@/db/consultas/vigencia/revision-anual";
 import type { ResultadoVerificacion } from "@/lib/vigencia/tipos";
-import { puntoDePrueba } from "./utiles/distribucion";
+import { puntoDePrueba, verificarPunto } from "./utiles/distribucion";
 import { normaDePrueba } from "./utiles/normograma";
 import { sesionAdmin, sesionDe, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
@@ -189,5 +189,21 @@ describe("los insumos al cerrar", () => {
         VALUES ('descarga', ${con.id}, ${con.versionId}, ${new Date("2090-04-20T15:00:00Z")})`;
       const cerrada = (await obtenerRevision(revisionId, admin, { sql: tx, ahora: new Date("2090-04-21T15:00:00Z") }))!;
       expect(cerrada.documentos.find((d) => d.documentoId === con.id)!.insumos).toEqual(esperado);
+    }));
+});
+
+describe("las cifras del informe", () => {
+  it("la conformidad de los puntos de uso se trunca como en Distribución: 2 de 3 verificaciones conformes es 66 %", () =>
+    revertida(sql, async (tx) => {
+      await sinRevisionAbierta(tx);
+      const admin = await sesionAdmin(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const enElAnio = new Date("2090-02-10T15:00:00Z");
+      for (const respuesta of ["conforme", "conforme", "no_conforme"] as const) {
+        const punto = await puntoDePrueba(tx, { responsable });
+        await verificarPunto(tx, { verificador: admin, punto, ahora: enElAnio, respuesta });
+      }
+      const { revisionId } = await revisionDePrueba(tx, admin, { ahora });
+      expect((await datosDelInforme(tx, revisionId, ahora)).otros.conformidadPct).toBe(66);
     }));
 });

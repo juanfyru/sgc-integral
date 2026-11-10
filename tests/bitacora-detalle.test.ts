@@ -618,6 +618,9 @@ describe("la herencia de la 13B: hallazgos en dos pasos y la verificación que l
     expect(h("hallazgo_cerrado", { ...cerrado, estadoPrevio: "por_validar", propioCorrector: true })).toBe(
       "Cerró directamente el hallazgo de verificación en Farmacia (único Administrador del SGC activo): Se repuso",
     );
+    expect(h("hallazgo_cerrado", { ...cerrado, propioPunto: true })).toBe(
+      "Cerró directamente el hallazgo de verificación en Farmacia (de su propio punto; único Administrador del SGC activo): Se repuso",
+    );
     // Una fila anterior a la Tarea 13 conserva su frase.
     expect(h("hallazgo_cerrado", { origen: "recogida", nota: "Se halló" })).toBe("Cerró un hallazgo de recogida: Se halló");
   });

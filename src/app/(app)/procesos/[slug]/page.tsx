@@ -47,7 +47,10 @@ export default async function VistaProceso({
     alcanceProcesos(sesion),
   ]);
   // «Asociar norma» (spec 13C §10.3): quien tiene `normograma.procesos` sobre el proceso, con las normas que aún no aplican.
-  const asociables = puedeAsociarNorma(sesion, proceso.id, alcance) ? await normasParaElegir({ sinProceso: proceso.id }) : null;
+  // Una derogada ya no se asocia a un proceso nuevo (`asociarProceso` lo rechaza).
+  const asociables = puedeAsociarNorma(sesion, proceso.id, alcance)
+    ? await normasParaElegir({ sinProceso: proceso.id, sinDerogadas: true })
+    : null;
 
   const propios = documentos.filter((d) => d.esPrincipal);
   const tambienAplican = documentos.filter((d) => !d.esPrincipal);

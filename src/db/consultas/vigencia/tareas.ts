@@ -16,13 +16,14 @@
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { obtenerConfigDocumental, type ConfigDocumental } from "@/db/consultas/config-documental";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { alcanceProcesos, filtroAcceso, filtroVigencia, type Alcance } from "@/lib/alcance";
+import { alcanceProcesos, filtroVigencia, type Alcance } from "@/lib/alcance";
 import { puede } from "@/lib/permisos";
 import type { Tarea } from "@/lib/tareas";
 import { estadoPlazo, fechaLimite } from "@/lib/tramites/plazos";
+import { modoDeVigencia } from "@/lib/vigencia/modo";
 import { textoFecha } from "@/lib/vigencia/plazo";
 import { zonaHoraria } from "@/lib/zona-horaria";
-import { filasDePersona, type FilaDePersona, type FilaSemaforo } from "./fragmentos";
+import { contarVencidas, enElSemaforo, filasDeLectura, lecturaDeVigencia, type FilaDePersona, type FilaSemaforo } from "./fragmentos";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -128,29 +129,33 @@ function adoptarEdiciones(filas: FilaDePersona[], c: Contexto): Tarea[] {
 /**
  * Las tareas de vigencia de la persona y la insignia de «Vigencia», con una sola consulta de vigencia y la
  * configuración leída una vez (la de `config` si quien llama ya la pidió). Las filas son las del semáforo que ve
- * (`vigencia.ver`) y, si es responsable técnico, sus externos: quien no tiene ninguna de las dos no consulta nada. La
- * insignia cuenta, con `vigencia.ver`, los vencidos del semáforo que ve; si solo es responsable técnico, sus externos.
+ * (`vigencia.ver`) y, si es responsable técnico, sus externos (`lecturaDeVigencia`, compartida por petición con las
+ * pestañas de Vigencia): quien no tiene ninguna de las dos no consulta nada, y quien solo necesita la insignia la cuenta
+ * en SQL sin leer filas ni la configuración (`contarVencidas`). La insignia cuenta, con `vigencia.ver`, los vencidos del
+ * semáforo que ve; si solo es responsable técnico, sus externos.
  */
 export async function vigenciaDePersona(
   sesion: SesionFlujo,
   d: { responsableTecnico: boolean },
   opciones?: Opciones & { config?: Promise<ConfigDocumental> | ConfigDocumental },
 ): Promise<VigenciaDePersona> {
+  const modo = modoDeVigencia(sesion, d.responsableTecnico);
+  if (modo === "nada") return NADA;
   const veSemaforo = puede(sesion, "vigencia.ver") || puede(sesion, "documentos.indicadores");
-  if (!veSemaforo && !d.responsableTecnico) return NADA;
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
-  const [config, alcance] = await Promise.all([opciones?.config ?? obtenerConfigDocumental({ sql }), alcanceProcesos(sesion, { sql })]);
-  const delSemaforo = veSemaforo ? filtroVigencia(sql, sesion, alcance) : sql`false`;
-  const suyos = d.responsableTecnico
-    ? sql`(${filtroAcceso(sql, sesion)} AND EXISTS (SELECT 1 FROM externos persona_ex
-        WHERE persona_ex.documento_id = d.id AND persona_ex.responsable_id = ${sesion.usuarioId}))`
-    : sql`false`;
-  const filas = await filasDePersona(sql, sql`(${delSemaforo} OR ${suyos})`, ahora, config);
+  if (modo === "conteo") {
+    const alcance = await alcanceProcesos(sesion, { sql });
+    return { tareas: [], vencidos: await contarVencidas(sql, filtroVigencia(sql, sesion, alcance), ahora) };
+  }
+  const [config, { filas: crudas, alcance }] = await Promise.all([
+    opciones?.config ?? obtenerConfigDocumental({ sql }),
+    lecturaDeVigencia(sql, sesion),
+  ]);
+  const filas = filasDeLectura(crudas, ahora, config);
 
   const c: Contexto = { sesion, alcance, ahora, zona: zonaHoraria(), atencionDias: config.vigencia.atencionDias };
-  const enSuSemaforo = (f: FilaDePersona) => alcance.todos || alcance.procesoIds.includes(f.proceso.id);
-  const cuenta = veSemaforo ? enSuSemaforo : (f: FilaDePersona) => f.responsableTecnicoId === sesion.usuarioId;
+  const cuenta = veSemaforo ? enElSemaforo(true, alcance) : (f: FilaDePersona) => f.responsableTecnicoId === sesion.usuarioId;
   return {
     tareas: [...adoptarEdiciones(filas, c), ...verificarExternos(filas, c), ...revisarVigencia(filas, c)],
     vencidos: filas.filter((f) => f.vigencia.estado === "vencida" && cuenta(f)).length,
