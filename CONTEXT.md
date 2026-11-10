@@ -1,8 +1,8 @@
 # CONTEXT.md — Estado vivo del proyecto
 
 > Se actualiza al cierre de cada fase. Última actualización: **2026-11-09**, al cierre de la 13C. La **Fase 13C —
-> Vigencia, externos y normograma** está terminada en su rama `fase-13c-vigencia-externos-normograma` (unas 60
-> confirmaciones sobre `main` (se actualiza al cierre)) y **sin fusionar**: la fusión la decide el usuario tras su
+> Vigencia, externos y normograma** está terminada en su rama `fase-13c-vigencia-externos-normograma` (64
+> confirmaciones sobre `main`) y **sin fusionar**: la fusión la decide el usuario tras su
 > recorrido, como en la 13A y la 13B. La **Fase 13B — Distribución y puntos de uso** está fusionada en `main` (`2e321b6`,
 > PR #2, 2026-11-08) y la **Fase 13A — Flujo documental**, con sus adiciones, también (`d0c6a42`, 2026-11-07), con el CI
 > en verde. Lo siguiente es la fusión de la 13C y la Fase 14. La Fase 12 (nueva estructura visual) y la Fase 11 (fundación
@@ -18,7 +18,7 @@
    La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
    proyecto**.
 1. **Dónde quedamos:** la **Fase 13C está terminada en su rama** `fase-13c-vigencia-externos-normograma` (base
-   `4bbb428` de `main`; spec `b702403`, plan `faaae79`; unas 60 confirmaciones (se actualiza al cierre)) y **sin
+   `4bbb428` de `main`; spec `b702403`, plan `faaae79`; 64 confirmaciones) y **sin
    fusionar**. Los pasos 11 y 13 del procedimiento de control de documentos y la evidencia de PC-11 y PC-13 quedan dentro
    del sistema, y con ellos se cierra la Fase 13: plazo de revisión por tipo y por documento, contado desde la publicación
    o, en lo cargado como ya aprobado, desde la fecha de aprobación; semáforo de vigencia en la ficha, las listas, el
@@ -31,9 +31,9 @@
    los usuarios activos», hallazgos en dos pasos, el aviso de **Reemplazar** y los conteos de copias del líder). **Sin
    dependencias npm nuevas.** Once migraciones en total (0000 a 0010). Detalle en «Hecho (Fase 13C)»; el recorrido, en «Qué
    probar y cómo (Fase 13C)»; las decisiones, en «Decisiones adicionales (Fase 13C)»; el manual, en el capítulo 7.
-   **Verificado al cierre (se actualiza al cierre):** la última corrida completa de la bitácora, `SEMILLA_RECIEN=1 npm
-   test` sobre la demo recién sembrada en una base aparte, dio 194 archivos, 4697 pruebas en verde y 1 saltada; lint
-   limpio. **La base de desarrollo no se resembró** (F13C-R20) y un `next dev` arrancado antes de la 13C sirve una matriz
+   **Verificado al cierre:** tras la corrección final, `SEMILLA_RECIEN=1 npm test` sobre la demo recién sembrada en una
+   base aparte dio 197 archivos, 4722 pruebas en verde y 1 saltada; lint limpio; `npm run build` sin URL de base en
+   verde; la imagen del compose de desarrollo arranca con «Migraciones al día» y responde `/api/salud`. **La base de desarrollo no se resembró** (F13C-R20) y un `next dev` arrancado antes de la 13C sirve una matriz
    de permisos vieja: ver «Avisos para el usuario (Fase 13C)». **Falta del usuario:** su recorrido y la decisión de fusionar.
    **Antes, la Fase 13B:** está en `main` (`2e321b6`, PR #2 fusionado el 2026-11-08 por decisión del
    usuario tras su recorrido manual, 42 commits sobre `f08f01d`; la rama `fase-13b-distribucion-puntos-de-uso` ya se
@@ -183,7 +183,7 @@
    avanza otra vez). **También se resembró varias veces en la 13A** (Tareas 2 y 15, sus arreglos y el
    cierre): cada vez se pierden los datos de prueba manual y `admin` se recrea con la `ADMIN_CLAVE`
    de `.env.local` y cambio obligatorio.
-5. **Tests:** 4697 en 194 archivos (se actualiza al cierre; la 13B cerró con 3568 en 151), en serie (`fileParallelism: false`), contra la BD de
+5. **Tests:** 4722 en 197 archivos (la 13B cerró con 3568 en 151), en serie (`fileParallelism: false`), contra la BD de
    desarrollo sembrada y **conectados como `sgc_app`**, igual que la app; el test de
    privilegios usa además `DATABASE_URL_MIGRADOR`. Los usuarios de prueba con historia
    (`zz_<algo>_<timestamp>`) se acumulan porque no se pueden borrar (F11-D2); `db:seed` los
@@ -918,7 +918,7 @@ Plan: `docs/superpowers/plans/2026-11-08-fase13c-vigencia-externos-normograma.md
 `docs/superpowers/specs/2026-11-08-fase13c-vigencia-externos-normograma-design.md`. Los pasos 11 y 13 del procedimiento de
 control de documentos del hospital quedan dentro del sistema, con la evidencia de PC-11 y PC-13 (spec §5 y Apéndice A), y
 con ellos se cierra la Fase 13. **Sin dependencias npm nuevas** (`pdf-lib`, `exceljs` y `zod` ya estaban). La rama
-`fase-13c-vigencia-externos-normograma` (base `4bbb428` de `main`; unas 60 confirmaciones (se actualiza al cierre)) está **sin
+`fase-13c-vigencia-externos-normograma` (base `4bbb428` de `main`; 64 confirmaciones) está **sin
 fusionar**: la fusión la decide el usuario tras su recorrido. La caracterización estructurada del spec maestro no se
 construyó (decisión 3 del usuario, spec §5): el documento tipo CA sigue siendo la caracterización.
 
@@ -1003,13 +1003,15 @@ construyó (decisión 3 del usuario, spec §5): el documento tipo CA sigue siend
 - **`AGENTS.md`** quedó con las reglas de la fase (Tarea 14): tablas de solo inserción, adopción y retiro de externos por
   los dos caminos de siempre, fecha base, revisión anual, firmas sin trámite, páginas de Vigencia y del normograma,
   catálogos fuera del panel y subidas nuevas.
-- **Verificado al cierre (se actualiza al cierre):** la última corrida completa de la bitácora es
-  `SEMILLA_RECIEN=1 npm test` sobre la demo recién sembrada en la base aparte (194 archivos, **4697 pruebas en verde y 1
-  saltada**: el `skipIf(!DATABASE_URL_MIGRADOR)` de `esquema-fase13c`); tras la ronda de la Tarea 15, 4699 en verde y 1
-  saltada sin la variable sobre la misma base; lint limpio. Pendientes del controlador: `npm run build` sin URL de base,
-  compose de desarrollo con «Migraciones al día» (once) y `/api/salud`, la 0008 a 0010 sobre una copia con la demo de
-  `main` y otra con el esquema de `sgc-suaza`, y el recorrido de §19 en el navegador. La revisión de cada tarea quedó
-  asentada en la bitácora de ejecución, con puntos de control en navegador tras las Tareas 4, 5, 7, 9, 11, 12, 13, 14 y 15.
+- **Verificado al cierre:** la última corrida completa de la bitácora es `SEMILLA_RECIEN=1 npm test` sobre la demo
+  recién sembrada en la base aparte, tras la corrección final (197 archivos, **4722 pruebas en verde y 1 saltada**: el
+  `skipIf(!DATABASE_URL_MIGRADOR)` de `esquema-fase13c`); lint limpio; `npm run build` sin URL de base en verde; la imagen
+  del compose de desarrollo arranca con «Migraciones al día» (once) y responde `/api/salud`; la 0008 a 0010 se ensayaron
+  sobre una copia con la demo de `main` (el acta congelada conserva su huella) y sobre otra con solo el esquema heredado de
+  `sgc-suaza` (0000 y 0001); el recorrido de §19 se hizo en el navegador sobre la base aparte, y la corrección final se
+  volvió a mirar ahí (F-I1 de punta a punta, F-I4, W1, W2, W3 en claro, oscuro y 390 px, N2 y las ayudas). La revisión de
+  cada tarea quedó asentada en la bitácora de ejecución, con puntos de control en navegador tras las Tareas 4, 5, 7, 9, 11,
+  12, 13, 14 y 15 y la revisión final de toda la rama con una sola ronda de corrección.
 
 ## Hecho (Fase 13B)
 
@@ -2139,11 +2141,13 @@ import de `condicionVista`, el cierre directo de un hallazgo del propio punto (F
   - El informe reconoce un externo por traer `edicion` (uno sin edición saldría «v<n>»; ningún camino validado lo produce).
   - `revisionAnualId` viaja también si la persona cambia a otro documento en la solicitud (la decisión se registra igual por `alSolicitar`).
   - «Marcar cambios…» exige JavaScript (antes era un `details`).
+  - En la tabla de la revisión por proceso, un chip de vigencia largo («Atención · edición nueva pendiente de adoptar») estrecha la columna «Documento» a 1280 px (la decisión queda a la vista por la columna fija de W3; con «Al día» la tabla cabe entera).
   - `src/lib/vigencia/decisiones.ts` no es puro por sus importaciones; `responsablesDelProceso` vive en `vencidos.ts` y lo importa `campana.ts`; el ciclo `admin.ts` ↔ `registro.ts` es benigno.
   - `sacarDeLaRevisionAbierta` fuera de una transacción revertida deja una fila `revision_anual_decision` con usuario nulo (permitido).
 - **Normograma:**
-  - El selector «Norma enlazada» del alta y la edición de un externo lista todas las normas, también las derogadas y las retiradas (enlazar una retirada lo rechaza el dominio); W2 solo quitó las derogadas de «Asociar norma» y de «Asociar proceso».
+  - El selector «Norma enlazada» del alta y la edición de un externo lista todas las normas, también las derogadas y las retiradas, y el dominio tampoco lo rechaza (`registrarExterno` y `editarControlExterno` solo comprueban que la norma exista, `nombreDeNorma`); en la ficha de una derogada sigue «Enlazar documento» (un documento enlazado a una derogada ya no recibe impactos, solo el retiro). W2 solo quitó las derogadas de «Asociar norma» y de «Asociar proceso».
   - No existe una lista de impactos pendientes: cada impacto se atiende desde `/normograma/impactos/[cambioId]?proceso=`.
+  - El 409 de la subida del PDF a una norma retirada (F-M7) se comprueba antes de la transacción y no se repite bajo el candado de `registrarArchivo`: un retiro que confirme mientras dura la subida deja el PDF en la norma retirada.
   - `cambiarEstadoNorma` tipa el estado como `EstadoNorma` (solo el chequeo en ejecución rechaza `retirada`); `CONTEXTOS_UNICOS` es una búsqueda sobre un objeto plano.
   - `src/lib/normograma/tipos.ts` reimplementa `acotado`, `opcionalAcotado` y la validación de fecha de `vigencia/externos/comun.ts`; `concat_ws` del nombre de la norma sigue repetido aunque existe `nombreSql`.
 - **Indicadores:**
@@ -2160,6 +2164,7 @@ import de `condicionVista`, el cierre directo de un hallazgo del propio punto (F
   - El número del aviso agrupado de vencidos es el de los avisados en esa pasada (una pasada posterior puede decir «1 documento» con ocho vencidos).
   - La insignia de **Vigencia** no cuenta un externo fuera del alcance de quien tiene `vigencia.ver` y es su responsable técnico.
   - Si la lectura compartida de la vigencia falla, las tareas de vigencia y la insignia desaparecen sin aviso al usuario (queda en el registro y la página pinta).
+  - La respuesta en caché de `esResponsableTecnicoDePeticion` comparte también su rechazo: el cascarón lo captura (`tareasDePeticion`), pero `exigirVigencia` no, así que un fallo pasajero de esa consulta en el cascarón tumba también la página de Vigencia de esa petición (antes eran dos consultas).
   - Las tareas de vigencia salen en el orden adoptar, verificar, revisar (nadie lo pidió).
   - `esResponsableTecnico` sigue siendo una consulta por petición para todo usuario, y «Mis tareas» corre la lectura de vigencia una vez por petición para Admin SGC y líderes (desde la corrección final la comparten el cascarón y la página con `React.cache`, y Gerencia y Control Interno solo cuentan la insignia; Ruling 68).
   - F-M1: `procesosDeLaPersona` (`revision-anual/comun.ts`), `dePersona` y la marca de proceso sin líder (`normograma/impactos.ts`) y `proceso_con_lider` (`fragmentos.ts`) reescriben en SQL «líder → sus procesos activos» y «Admin SGC → procesos sin líder», contra la letra de la regla de `alcanceProcesos()` de `AGENTS.md`: moverlos a `alcance.ts` o matizar la regla.

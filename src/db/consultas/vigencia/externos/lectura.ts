@@ -293,15 +293,15 @@ export async function listarExternos(sesion: SesionFlujo, filtro: FiltroExternos
 }
 
 /**
- * Si la persona responde por la vigencia de algún externo que no se ha retirado y que todavía ve (la entrada «Vigencia» de
- * la barra): un restringido que dejó de ver no le da la entrada.
- */
-/**
  * `esResponsableTecnico` una vez por petición (Ruling 68): la preguntan el cascarón (la barra y las tareas) y la guarda de
- * las pestañas de Vigencia (`exigirVigencia`); `React.cache` comparte la respuesta en la misma petición.
+ * las pestañas de Vigencia (`exigirVigencia`); `React.cache` comparte la respuesta en la misma petición, también si falla.
  */
 export const esResponsableTecnicoDePeticion = cache((usuarioId: number): Promise<boolean> => esResponsableTecnico(usuarioId));
 
+/**
+ * Si la persona responde por la vigencia de algún externo que no se ha retirado y que todavía ve (la entrada «Vigencia» de
+ * la barra): un restringido que dejó de ver no le da la entrada.
+ */
 export async function esResponsableTecnico(usuarioId: number, opciones?: { sql?: Cliente }): Promise<boolean> {
   const sql = opciones?.sql ?? obtenerSql();
   const [f] = await sql`SELECT EXISTS (
