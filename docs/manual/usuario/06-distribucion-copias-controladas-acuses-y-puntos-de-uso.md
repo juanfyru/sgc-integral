@@ -346,7 +346,9 @@ La verificación se hace de pie en el servicio, con el celular: la pantalla est�
 5. Cuando todos los ítems estén respondidos, pulse **Cerrar verificación**. Se abre una ventana
    con el resumen y cuántos hallazgos se abrirán. En **Fecha de corrección de cada hallazgo**
    aparece cada ítem no conforme con su fecha, propuesta según el plazo de corrección: puede
-   cambiarla entre mañana y un año. Si el punto tiene hallazgos por validar, la ventana lo avisa:
+   cambiarla entre mañana y un año. Una fecha fuera de ese rango, o vacía, no deja cerrar: la
+   ventana dice debajo del campo de qué ítem es y entre qué fechas debe estar. Si el punto tiene
+   hallazgos por validar, la ventana lo avisa:
    al cerrar se validan los que no vuelvan a salir no conformes y se reabren los que sí. Pulse
    **Cerrar verificación** en la ventana. Si no puede terminar, **Descartar** (pide un motivo y
    queda registrada, sin efectos).
@@ -412,7 +414,9 @@ Con su permiso puede validar o reabrir las correcciones, cerrar cualquier hallaz
 la validación (**Cerrar directamente…**: queda como validado por el Administrador del SGC),
 anular cualquier copia, cerrar o recoger por quien no está, y descartar verificaciones. Una
 corrección que usted mismo marcó no la valida nunca, y no la cierra directamente mientras haya
-otro Administrador del SGC activo; si es el único, la cierra y queda la marca en la bitácora. Todo
+otro Administrador del SGC activo; tampoco cierra directamente un hallazgo abierto de un punto
+del que usted responde (otro Administrador del SGC lo cierra, o usted lo marca corregido y otro
+lo valida). Si es el único activo, lo cierra y queda la marca en la bitácora. Todo
 queda en la **Bitácora** con frases legibles, y puede descargar el Excel de copias, acuses,
 socializaciones y verificaciones (queda registrado quién y cuándo).
 

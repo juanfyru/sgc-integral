@@ -331,7 +331,8 @@ El Administrador del SGC registra las normas; usted las asocia a sus procesos:
 - En la página de su proceso, sección **Normas aplicables**, despliegue **Asociar norma**, elija
   la **Norma**, escriba el **Requisito que la norma impone al proceso** (los artículos que
   aplican y la obligación) y pulse **Asociar la norma**. También desde la ficha de la norma,
-  con **Asociar proceso**.
+  con **Asociar proceso**. Una norma derogada no se ofrece ni se asocia a un proceso nuevo; en
+  los procesos que ya la tenían, su requisito se sigue editando o se quita la asociación.
 - En la ficha de la norma, junto a cada proceso suyo, **Editar el requisito de …** y **Quitar
   GTH…** (la sigla del proceso); y en **Documentos enlazados**, **Enlazar documento** (los
   internos y externos de sus procesos que la implementan) y **Quitar el enlace de …**. Todo
@@ -352,7 +353,8 @@ está asociada al proceso sin documentos enlazados, «El proceso …»). Por cad
 
 - **Abrir solicitud de cambio:** la solicitud llega con el motivo «Cambio normativo» y la nota
   «Esta solicitud atiende el cambio de …». Al enviarla, el impacto queda resuelto y el trámite
-  dice «Abierto por el cambio de …».
+  dice «Abierto por el cambio de …», con el nombre de la norma como enlace a su ficha (sin
+  enlace si la norma se retiró).
 - **Enlazar el trámite en curso SOL-…**, si el documento ya tiene uno abierto.
 - **Verificar el externo**, si es un documento externo: su verificación lo resuelve.
 - **Abrir solicitud de creación**, en el impacto de un proceso sin documentos, si hace falta uno
@@ -405,9 +407,9 @@ quiere, el **Proceso**. Cada tarjeta dice la cifra, la meta y si **cumple**, **n
 | Tiempo de aprobación (de la aceptación a la publicación, con la mediana y el tiempo desde la solicitud) | 30 días o menos |
 | Documentos con revisión vencida | 0 |
 | Acuses de lectura confirmados | 90 % o más |
-| Conformidad en puntos de uso (la misma cifra de Distribución) | El umbral de conformidad, 95 % |
+| Conformidad en puntos de uso (la misma cifra de Distribución, también la del periodo y la del informe anual: sin redondear hacia arriba) | El umbral de conformidad, 95 % |
 | Externos verificados al día | 95 % o más |
-| Etapas del trámite cerradas en plazo | 90 % o más |
+| Etapas del trámite cerradas en plazo (las que avanzan el trámite: retirar, rechazar, cancelar o negar no cuentan) | 90 % o más |
 
 Una octava tarjeta cuenta los trámites publicados en el periodo y los que siguen en curso.
 Debajo están el gráfico **Documentos con revisión vencida, por proceso**, la tabla **Dentro del

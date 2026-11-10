@@ -272,7 +272,8 @@ ha recorrido todavía el usuario**; el controlador lo recorre en el navegador so
    …» y la **Bitácora** tiene una fila por documento («Fijó la próxima revisión de … para el …»). **Devuelva los dos** al
    estado anterior: en la ficha de `GTH-PR-01` y en la de `AIN-FO-01`, **Vigencia** → **Ajustar** → **Quitar la fecha
    fijada** (vuelven a «Vencida»: los pasos 2, 6, 8 y 9 los necesitan así). **Descargar Excel** baja lo filtrado. La
-   campana ya trae los avisos de vencimiento de la siembra (paso 11).
+   campana no trae avisos de vencimiento de la siembra: los genera la pasada de vencimientos al usar el sistema (cada
+   diez minutos como mucho; paso 11).
 2. **Ratificar (`lider.gth`).** En la ficha de `GTH-PR-01` (vencido), **Ratificar sin cambios** con nota y clave: la ficha
    dice «Ratificado el … por …», la próxima revisión queda a 12 meses y, como el documento está en la revisión abierta, su
    decisión queda «Ratificado» y GTH completo («Revisar los documentos de Gestión del Talento Humano (1 pendiente)»
@@ -403,10 +404,9 @@ con un aviso en la salida. `npm run db:seed && npm run admin:asegurar` la deja c
 9. **Las tareas se agrupan pasadas cinco** solo para acuses, documentos por revisar y externos por verificar. Las de
    impactos, adopciones y la revisión anual no, y **no hay una lista de impactos pendientes**: cada impacto se atiende desde
    el enlace de su tarea (F13C-R39).
-10. **Tres textos de la Configuración documental no dicen lo que hace el código** (en la deuda técnica, pendientes de la
-    corrección final): la ayuda de «Ventana de la revisión anual (meses)», la de «Aviso antes del vencimiento de la revisión
-    (días)» y la opción «Sin formato: diseño básico» de **Documento del formato del informe**: sin formato propio el informe
-    sale sobre el del acta. El manual (capítulo 7, sección 6.7) dice lo que hace la aplicación.
+10. **Los textos de la Configuración documental ya dicen lo que hace el código** (corrección final): las ayudas de
+    «Ventana de la revisión anual (meses)», «Aviso antes del vencimiento de la revisión (días)» y «Días de aprobación
+    (máximo)», y la opción «Sin formato propio: el del acta» de **Documento del formato del informe**.
 
 ## Qué probar y cómo (Fase 13B)
 
@@ -2098,14 +2098,15 @@ plan. Base: **ISO** (cláusula de 9001:2015), **Regulación** o **Práctica**.
 ## Deuda técnica conocida
 
 **De la Fase 13C** (todos menores; son los «minor (deferred)» de la bitácora de ejecución que siguen abiertos, los hallazgos
-del recorrido final del controlador y los de la revisión de la documentación, agrupados por módulo. La bitácora está fuera de
-git: esta lista es la que queda. Lo marcado «(pendiente de la corrección final)» lo lleva el despacho que sigue a la revisión
-de toda la rama y se ajusta al cierre):
+del recorrido final del controlador, los de la revisión de la documentación y los menores de la revisión final de la rama
+(F-M1 a F-M10) que no entraron en su corrección, agrupados por módulo. La bitácora está fuera de git: esta lista es la que
+queda. La corrección final resolvió y quitó de aquí W1, W2, W3, N1, N2, los textos de la Configuración documental, el
+import de `condicionVista`, el cierre directo de un hallazgo del propio punto (F-I4) y las fotos del cascarón (F-M10)):
 
 - **Registro de riesgos (spec §22) y los que aparecieron:**
   - La paleta `Ctrl K` y **Buscar documentos** recorren `normas` en secuencia en cada búsqueda (`unaccent(nombre) ILIKE` sin índice); con cientos de normas conviene un índice de trigramas.
-  - La apertura de la revisión anual puede cruzarse con una publicación que confirma en ese instante: la fila de la foto queda con la versión anterior o el documento nuevo fuera de la foto.
-  - La revisión de vencimientos recalcula la vigencia de todos los internos vigentes sin marca cada diez minutos (el test de la campaña vencida necesita 30 s por eso); medir con los documentos reales.
+  - La apertura de la revisión anual puede cruzarse con una publicación que confirma en ese instante: la fila de la foto queda con la versión anterior o el documento nuevo fuera de la foto (F-M2: entre el `INSERT` de la revisión y la foto, un acto concurrente no ve la fila; ventana de milisegundos; un `pg_advisory_xact_lock` compartido entre `abrirRevision` y `revisionAbiertaBloqueada` lo cerraría).
+  - La revisión de vencimientos recalcula la vigencia de todos los internos vigentes sin marca cada diez minutos (el test de la campaña vencida necesita 30 s por eso; su filtro de candidatos casi no acota, F-I3); por el Ruling 68 no se rediseñó: medir con los documentos reales.
 - **Ya decidido (Ruling 43, F13C-R21 y R25):**
   - `asegurarInforme` repite a propósito el algoritmo de `asegurarActa` (unas 55 líneas, con comentario cruzado); una factorización a `asegurarPdfCongelado` iría con los tests de huella del acta y del informe como red.
   - El informe no imprime el detalle de las cifras «Ratificados» y «Revisados recientemente» (la ventana vive en `revisiones_anuales.ventana_meses`).
@@ -2118,7 +2119,7 @@ de toda la rama y se ajusta al cierre):
   - `TablaSemaforo` monta `DialogoRatificar` dos veces por fila (en la tabla y en la tarjeta del celular).
   - `PaginaSemaforo` llama `alcanceProcesos` tres veces y `obtenerConfigDocumental` dos; `columnasDeVigencia` relee la configuración en cada llamada.
   - Capas: `filtro-semaforo.ts` y `semaforo-excel.ts` importan tipos de `@/db/consultas`; `rutaSolicitarCambio` vive en un componente; dos helpers del texto de la última revisión (`textoUltima` y `textoUltimaRevision`); la clase `FOCO` repetida; el rótulo «ed. X»/«vN» duplicado entre `rotuloVersion` y el Excel.
-  - W4 (cosmético): en la ficha, «Ratificar sin cambios» ocupa su línea y «Solicitar cambio» con la leyenda «En revisión anual» pasan a la siguiente (pendiente de la corrección final).
+  - W4 (cosmético): en la ficha, «Ratificar sin cambios» ocupa su línea y «Solicitar cambio» con la leyenda «En revisión anual» pasan a la siguiente (depende del ancho medido en el navegador).
 - **Externos:**
   - El selector de responsable técnico lista todos los usuarios activos.
   - La «norma enlazada» de un externo es la primera fila de `norma_documentos`; cambiarla borra esa fila aunque la haya creado el normograma.
@@ -2127,9 +2128,10 @@ de toda la rama y se ajusta al cierre):
   - `escaparLike` existe en tres sitios y `documentoDeVersion` duplica `admin.ts` con otra nulabilidad.
   - `jefesDe` se llama una vez por externo dentro del bucle de escalamiento.
   - Adoptar sobre una fila pendiente de la revisión deja `antes: null` en la bitácora (la versión anterior se deduce de `externo_adoptado`).
+  - F-M5: un externo registrado y nunca adoptado no da tarea ni aviso (sin vigente no entra al semáforo); solo la matriz lo muestra «Atención · sin edición adoptada». Una tarea «Adoptar la primera edición de …» para quien lo gestiona cerraría el hueco.
+  - F-M6: el tipo «Documento externo» se reconoce por la sigla `DE` (`origen.ts`, `registro.ts`): si el Admin SGC la edita en Tipos de documento, `registrarExterno` falla con «Falta el tipo» y `exigirTipoDeInterno` deja de rechazar. Proteger la sigla de ese tipo (o marcarlo con una columna) y decirlo en el manual.
 - **Revisión anual e informe:**
-  - W3: la tabla de decisiones de un proceso corta la columna «Decisión» a 1280 px (desplazamiento horizontal dentro de la tarjeta) (pendiente de la corrección final).
-  - N1: el informe anual (`revision-anual/cierre.ts`) redondea la conformidad mientras Distribución la trunca (pendiente de la corrección final).
+  - F-M3: un documento que cambia de proceso propietario con la campaña abierta se queda sin sección (los procesos salen de la foto y los documentos se agrupan por el propietario de hoy) hasta que `recontarProcesos` lo asienta al cierre, ya «sin revisar»; un `alCambiarPropietario` que asegure la fila del proceso lo resuelve.
   - `vigencia/revision-anual/[id]/page.tsx` pasa `abierta: false` con la revisión abierta para apagar los botones e importa `lineaDeRevision` de `PanelAdmin.tsx`.
   - `alcanceProcesos` corre dos veces por página de la revisión y `anioDeRevisionCerrada` dos veces por PDF.
   - El panel de toda la entidad se decide con `alcance.todos` (verdadero también para Consulta, que la guarda de la página deja fuera).
@@ -2140,13 +2142,12 @@ de toda la rama y se ajusta al cierre):
   - `src/lib/vigencia/decisiones.ts` no es puro por sus importaciones; `responsablesDelProceso` vive en `vencidos.ts` y lo importa `campana.ts`; el ciclo `admin.ts` ↔ `registro.ts` es benigno.
   - `sacarDeLaRevisionAbierta` fuera de una transacción revertida deja una fila `revision_anual_decision` con usuario nulo (permitido).
 - **Normograma:**
-  - W1: la página del trámite dice «Abierto por el cambio de …» sin enlace a la norma (el spec §19, paso 6, lo pedía) (pendiente de la corrección final).
-  - W2: «Asociar norma» ofrece normas derogadas (pendiente de la corrección final).
+  - El selector «Norma enlazada» del alta y la edición de un externo lista todas las normas, también las derogadas y las retiradas (enlazar una retirada lo rechaza el dominio); W2 solo quitó las derogadas de «Asociar norma» y de «Asociar proceso».
   - No existe una lista de impactos pendientes: cada impacto se atiende desde `/normograma/impactos/[cambioId]?proceso=`.
   - `cambiarEstadoNorma` tipa el estado como `EstadoNorma` (solo el chequeo en ejecución rechaza `retirada`); `CONTEXTOS_UNICOS` es una búsqueda sobre un objeto plano.
   - `src/lib/normograma/tipos.ts` reimplementa `acotado`, `opcionalAcotado` y la validación de fecha de `vigencia/externos/comun.ts`; `concat_ws` del nombre de la norma sigue repetido aunque existe `nombreSql`.
 - **Indicadores:**
-  - N1: la tarjeta de conformidad calcula la del periodo con `Math.round` («66 %» arriba y «en el periodo: 67 %» abajo) (pendiente de la corrección final).
+  - F-M4: los Excel de vigencia (semáforo, externos, indicadores) responden 404 sin permiso y los de la 13B 403; `AGENTS.md` fija 403 salvo el GET de un archivo. Unificar o escribir la excepción.
   - La página corre `alcanceProcesos` cuatro veces (cinco en el Excel) y `obtenerConfigDocumental` tres; `condicionTramites` es una regla de alcance que vive en `indicadores.ts` y no en `src/lib/alcance.ts`.
   - El selector de periodo ofrece solo el año en curso y el anterior (uno más viejo entra por la dirección).
   - El indicador de acuses hereda de `resumenAcuses` que las versiones no vigentes solo cuentan para quien tiene `documentos.ver_historial` (Gerencia y el Admin SGC pueden ver cifras distintas del mismo periodo).
@@ -2160,24 +2161,19 @@ de toda la rama y se ajusta al cierre):
   - La insignia de **Vigencia** no cuenta un externo fuera del alcance de quien tiene `vigencia.ver` y es su responsable técnico.
   - Si la lectura compartida de la vigencia falla, las tareas de vigencia y la insignia desaparecen sin aviso al usuario (queda en el registro y la página pinta).
   - Las tareas de vigencia salen en el orden adoptar, verificar, revisar (nadie lo pidió).
-  - En `/` el layout y la página corren `misTareas` cada uno (la lectura de vigencia dos veces); `misTareas` espera `esResponsableTecnico` antes de su `Promise.all` cuando no se lo pasan; `esResponsableTecnico` es una consulta por render para todo usuario; «Mis tareas» corre la lectura de vigencia en cada página para Admin SGC y líderes.
+  - `esResponsableTecnico` sigue siendo una consulta por petición para todo usuario, y «Mis tareas» corre la lectura de vigencia una vez por petición para Admin SGC y líderes (desde la corrección final la comparten el cascarón y la página con `React.cache`, y Gerencia y Control Interno solo cuentan la insignia; Ruling 68).
+  - F-M1: `procesosDeLaPersona` (`revision-anual/comun.ts`), `dePersona` y la marca de proceso sin líder (`normograma/impactos.ts`) y `proceso_con_lider` (`fragmentos.ts`) reescriben en SQL «líder → sus procesos activos» y «Admin SGC → procesos sin líder», contra la letra de la regla de `alcanceProcesos()` de `AGENTS.md`: moverlos a `alcance.ts` o matizar la regla.
+  - F-M9: `exigirVigencia` pregunta `esResponsableTecnico` aunque la persona tenga `vigencia.ver` (desde la corrección final la respuesta es la del cascarón en la misma petición, `esResponsableTecnicoDePeticion`; cortocircuitar con el permiso la quitaría también fuera de un render).
   - El SQL de «proceso sin líder» de `src/db/consultas/vigencia/tareas.ts` duplica la regla de `lideresDeProceso`.
 - **Lo heredado de la 13B (distribución):**
-  - N2: los campos de fecha del diálogo de cierre de la verificación están fuera del formulario y el navegador no bloquea una fecha fuera de rango (solo el servidor, sin decir el ítem) (pendiente de la corrección final).
-  - `puntos-uso.ts` importa `copias.ts` (y su PDF) por `condicionVista` (pendiente de la corrección final).
   - Las fotos de una corrección rechazada siguen bajo la corrección siguiente.
   - El título del aviso de reapertura lleva la nota entera, y la página del hallazgo no muestra el motivo de la reapertura (va en el aviso y en la bitácora).
   - El Excel de socializaciones no tiene tope: multiplica consultas por jornada y carga evidencias que no usa.
   - Al líder le aparecen puntos ajenos donde solo tuvo copias ya retiradas, con todo en cero.
   - Tras un cierre rechazado por el servidor, las respuestas de la lista de chequeo se ven en blanco hasta recargar (heredado de la 13B).
-  - Un Admin SGC que responde por un punto puede cerrar directamente un hallazgo abierto de su propio punto (la excepción del spec §12.5).
   - El enlace de la foto de la corrección no dice formato ni tamaño.
   - `comoSeCerro` distingue la validación del cierre directo comparando notas.
-  - El cascarón de quien tiene hallazgos abiertos corre una sentencia más (y la N+1 previa), que su test no mide.
 - **Configuración documental y textos:**
-  - La ayuda de «Ventana de la revisión anual (meses)» dice «Meses antes de su vencimiento desde los que un documento entra a la revisión anual. Cero: solo los ya vencidos.», pero es la ventana de «revisado recientemente» que propone el diálogo de apertura (`abrirRevision` toma toda vigente) (pendiente de la corrección final).
-  - La ayuda de «Aviso antes del vencimiento de la revisión (días)» habla de «Por vencer», y el Semáforo dice «Atención» (pendiente de la corrección final).
-  - La opción vacía de «Documento del formato del informe» dice «Sin formato: diseño básico», pero sin formato propio el informe sale sobre el del acta (`revision-anual/cierre.ts:73`) (pendiente de la corrección final).
   - `campoMeta` arma los nombres de campo por convención en `FormularioConfigDocumental`, y el bloque de márgenes del informe repite el del acta en `config-documental.ts`.
   - `src/lib/esquemas/mapa.ts` redefine un `texto` local idéntico al de `src/app/admin/comun.ts`.
   - Una línea corta por el reflujo del párrafo de `archivos` en `AGENTS.md` (cosmético).

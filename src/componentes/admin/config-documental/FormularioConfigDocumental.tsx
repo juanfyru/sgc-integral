@@ -48,16 +48,16 @@ const PLAZOS_VIGENCIA: {
   minimo: number;
   maximo: number;
 }[] = [
-  { clave: "atencionDias", etiqueta: "Aviso antes del vencimiento de la revisión (días)", ayuda: "Desde cuántos días antes de vencer su plazo un documento aparece en «Por vencer».", minimo: 1, maximo: 365 },
+  { clave: "atencionDias", etiqueta: "Aviso antes del vencimiento de la revisión (días)", ayuda: "Desde cuántos días antes de vencer su plazo un documento aparece en «Atención».", minimo: 1, maximo: 365 },
   { clave: "revisionAnualPlazoDias", etiqueta: "Plazo para decidir la revisión anual (días)", ayuda: "Días que tiene cada proceso para decidir sobre sus documentos, de 7 a 365.", minimo: 7, maximo: 365 },
-  { clave: "revisionAnualVentanaMeses", etiqueta: "Ventana de la revisión anual (meses)", ayuda: "Meses antes de su vencimiento desde los que un documento entra a la revisión anual. Cero: solo los ya vencidos.", minimo: 0, maximo: 24 },
+  { clave: "revisionAnualVentanaMeses", etiqueta: "Ventana de la revisión anual (meses)", ayuda: "Al abrir la revisión anual entran todos los documentos vigentes; los revisados dentro de estos meses (publicados, aprobados, ratificados o verificados) quedan «Revisado recientemente». Cero: ninguno.", minimo: 0, maximo: 24 },
   { clave: "externosVerificacionMeses", etiqueta: "Verificar documentos externos cada (meses)", ayuda: "Cada cuántos meses se confirma que la edición adoptada de un documento externo sigue vigente.", minimo: 1, maximo: 60 },
   { clave: "impactoPlazoDias", etiqueta: "Plazo para responder un impacto normativo (días)", ayuda: "Días que tiene el responsable para analizar el cambio de una norma.", minimo: 1, maximo: 365 },
 ];
 
 const METAS: { clave: keyof ConfigDocumental["metas"]; etiqueta: string; ayuda: string; minimo: number; maximo: number }[] = [
   { clave: "dentroPlazoPct", etiqueta: "Documentos dentro de plazo (%)", ayuda: "Porcentaje de documentos con su revisión al día (50 a 100).", minimo: 50, maximo: 100 },
-  { clave: "aprobacionDias", etiqueta: "Días de aprobación (máximo)", ayuda: "Días que, como mucho, debe tardar un trámite desde su solicitud hasta publicarse.", minimo: 1, maximo: 365 },
+  { clave: "aprobacionDias", etiqueta: "Días de aprobación (máximo)", ayuda: "Días que, como mucho, debe tardar un trámite desde que se acepta hasta que se publica.", minimo: 1, maximo: 365 },
   { clave: "vencidos", etiqueta: "Documentos vencidos (máximo)", ayuda: "Cuántos documentos con la revisión vencida se toleran. Cero: ninguno.", minimo: 0, maximo: 999 },
   { clave: "acusesPct", etiqueta: "Acuses de lectura (%)", ayuda: "Porcentaje de acuses de lectura confirmados (50 a 100).", minimo: 50, maximo: 100 },
   { clave: "externosPct", etiqueta: "Externos verificados (%)", ayuda: "Porcentaje de documentos externos verificados a tiempo (50 a 100).", minimo: 50, maximo: 100 },
@@ -346,7 +346,8 @@ export function FormularioConfigDocumental({
             defaultValue={val("formatoInformeDocumentoId") ?? String(config.vigencia.formatoInforme.documentoId ?? "")}
             className={`${claseControl} w-full min-w-0`}
           >
-            <option value="">Sin formato: diseño básico</option>
+            {/* Sin formato propio, el informe sale sobre el del acta (`revision-anual/cierre.ts`); sin ninguno, básico. */}
+            <option value="">Sin formato propio: el del acta</option>
             {documentosInforme.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.codigo} — {d.titulo}

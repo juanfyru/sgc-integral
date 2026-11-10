@@ -87,6 +87,22 @@ describe("Vigencia e Indicadores documentales", () => {
     expect(html).not.toContain("disponible más adelante");
   });
 
+  it("las ayudas dicen lo que hace el código (F-I2 de la revisión final)", async () => {
+    const html = (await pagina()).replaceAll("&quot;", '"');
+    // Entran todos los vigentes; la ventana decide cuáles quedan «revisado recientemente» (`abrirRevision`).
+    expect(html).toContain(
+      "Al abrir la revisión anual entran todos los documentos vigentes; los revisados dentro de estos meses (publicados, aprobados, ratificados o verificados) quedan «Revisado recientemente». Cero: ninguno.",
+    );
+    expect(html).not.toContain("Cero: solo los ya vencidos");
+    // El estado del semáforo se llama «Atención».
+    expect(html).toContain("Desde cuántos días antes de vencer su plazo un documento aparece en «Atención».");
+    expect(html).not.toContain("«Por vencer»");
+    // El indicador mide desde la aceptación (`tiempoDeAprobacion`).
+    expect(html).toContain("Días que, como mucho, debe tardar un trámite desde que se acepta hasta que se publica.");
+    // Sin formato propio, el informe sale sobre el formato del acta (`revision-anual/cierre.ts`).
+    expect(html).toMatch(/<select[^>]*name="formatoInformeDocumentoId"[^>]*>(<option[^>]*>[^<]*<\/option>)*?<option value=""[^>]*>Sin formato propio: el del acta<\/option>/);
+  });
+
   it("las seis metas llevan su valor y su unidad", async () => {
     const html = await pagina();
     expect(entrada(html, "metaDentroPlazoPct")).toMatch(/value="95"/);

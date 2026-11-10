@@ -177,7 +177,12 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   `app/acciones-normograma.ts`, `src/db/consultas/normograma/` y `src/lib/normograma/`. Los
   indicadores documentales viven en `src/lib/indicadores-documentales/` (funciones puras y tipos)
   y `src/db/consultas/vigencia/indicadores.ts` (solo trae filas), y se calculan solo en
-  `/vigencia/indicadores` y su Excel, nunca en el cascarón.
+  `/vigencia/indicadores` y su Excel, nunca en el cascarón. La lectura de la vigencia de la
+  persona, sus tareas y «¿es responsable técnico?» se comparten por petición entre el cascarón y
+  la página con `React.cache` (`lecturaDeVigencia` de `src/db/consultas/vigencia/fragmentos.ts`,
+  `tareasDePeticion` de `src/lib/tareas-peticion.ts` y `esResponsableTecnicoDePeticion`; Ruling
+  68): una página que las necesite usa esas, no otra lectura; quien solo necesita la insignia de
+  «Vigencia» la cuenta en SQL (`contarVencidas`, que repite las reglas de `src/lib/vigencia`).
   Server Components por defecto; `'use client'` solo donde hay interactividad.
 - **Cascarón y componentes base:** toda página autenticada vive dentro del cascarón del
   layout de `(app)` (`src/componentes/cascaron`: barra lateral, barra superior, búsqueda,
@@ -293,9 +298,12 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   corrección (`validarHallazgo` lo rechaza siempre), ni la cierra directamente (`cerrarHallazgo`)
   mientras haya otro Administrador del SGC activo (`exigirSinOtroAdmin`,
   `src/db/consultas/distribucion/otro-admin.ts`); si es el único, la cierra y la bitácora lo marca
-  (`propioCorrector`). La verificación siguiente del punto valida por el sistema, sin mirar quién
-  corrigió; a ella solo la limita la regla de «propio punto» (`exigirSinOtroAdmin` al abrir y al
-  cerrar la verificación del punto del que uno es responsable).
+  (`propioCorrector`). Con la misma regla, quien responde por el punto no cierra directamente un
+  hallazgo abierto de su propio punto mientras haya otro Administrador del SGC activo; si es el
+  único, lo cierra con la marca `propioPunto` (Ruling 67). La verificación siguiente del punto
+  valida por el sistema, sin mirar quién corrigió; a ella solo la limita la regla de «propio
+  punto» (`exigirSinOtroAdmin` al abrir y al cerrar la verificación del punto del que uno es
+  responsable).
 - **`archivos` admite dueños distintos de una versión** (`contexto`: `version`, `jornada`,
   `verificacion_item`, `norma`, `revision_anual` y `hallazgo`, con `contexto_id`; los seis del
   `CHECK` `archivos_contexto_valido` de `src/db/esquema.ts`, y `CONTEXTOS_EVIDENCIA` de
@@ -352,7 +360,10 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   etapa la fecha límite de la etapa que cierra (`venceEn`), y `reasignar` usa esa misma clave
   para la fecha nueva: una acción nueva que no cambie de etapa entra en
   `EVENTOS_SIN_CAMBIO_DE_ETAPA` (`src/lib/tramites/dia-de-etapa.ts`), o el indicador de etapas en
-  plazo la contaría.
+  plazo la contaría. Ese indicador mide el avance del trámite: no cuenta los pasos que lo terminan
+  sin avanzarlo (`retirar`, `cancelar`, `rechazar`, `negar_visto_bueno` y `negar_eliminacion`,
+  `ACCIONES_QUE_TERMINAN` de `src/db/consultas/vigencia/indicadores.ts`; Ruling 66), y una acción
+  nueva que termine el trámite entra en esa lista.
 - **Firmas sin trámite:** «Ratificó» y «Adoptó» se guardan con `registrarFirma` con
   `tramiteId: null` y `ronda = 0`; el cierre de la revisión anual pide la clave igual y guarda
   su método en la revisión (`metodo_cierre`), sin fila en `firmas`. Los tres siguen F13A-R4: un
@@ -365,9 +376,10 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
 - **El cumplimiento de un porcentaje con meta se decide con la razón exacta, en enteros**
   (`cumplePorcentaje`, `src/lib/indicadores-documentales/metas.ts`; `conformidad`,
   `src/lib/distribucion/verificacion.ts`), nunca con el entero que se muestra. `conformidad()`
-  muestra el porcentaje truncado, así la cifra entera nunca contradice el veredicto; los demás
-  indicadores redondean y, cuando el entero contradiría el veredicto, `textoPorcentaje`
-  (`textos.ts`) muestra un decimal truncado.
+  muestra el porcentaje truncado, así la cifra entera nunca contradice el veredicto, y es la
+  misma cifra en Distribución, los indicadores y el informe anual (`porcentajeDeConformidad`);
+  los demás indicadores redondean y, cuando el entero contradiría el veredicto,
+  `textoPorcentaje` (`textos.ts`) muestra un decimal truncado.
 - **Tests y demo:** `tramiteEn` crea su documento: ningún test abre un trámite sobre uno de
   la demo. `tests/semilla-tramites.test.ts` lee el estado de la demo y salta con mensaje si
   ya avanzó; `SEMILLA_RECIEN=1 npm test` exige la demo recién sembrada.
