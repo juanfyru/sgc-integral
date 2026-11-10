@@ -1,11 +1,11 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-11-09**, al cierre de la 13C. La **Fase 13C —
-> Vigencia, externos y normograma** está terminada en su rama `fase-13c-vigencia-externos-normograma` (64
-> confirmaciones sobre `main`) y **sin fusionar**: la fusión la decide el usuario tras su
-> recorrido, como en la 13A y la 13B. La **Fase 13B — Distribución y puntos de uso** está fusionada en `main` (`2e321b6`,
-> PR #2, 2026-11-08) y la **Fase 13A — Flujo documental**, con sus adiciones, también (`d0c6a42`, 2026-11-07), con el CI
-> en verde. Lo siguiente es la fusión de la 13C y la Fase 14. La Fase 12 (nueva estructura visual) y la Fase 11 (fundación
+> Se actualiza al cierre de cada fase. Última actualización: **2026-11-10**, al fusionar la 13C. La **Fase 13C —
+> Vigencia, externos y normograma** está fusionada en `main` (`8acc9cf`, PR #3, 2026-11-10, 64 confirmaciones sobre
+> `4bbb428`; la rama `fase-13c-vigencia-externos-normograma` sigue publicada, lista para borrarse), con el CI en verde. La **Fase 13B —
+> Distribución y puntos de uso** está fusionada en `main` (`2e321b6`, PR #2, 2026-11-08) y la **Fase 13A — Flujo
+> documental**, con sus adiciones, también (`d0c6a42`, 2026-11-07), con el CI en verde. Lo siguiente es la Fase 14 (y el
+> recorrido del usuario sobre la 13C, aún pendiente). La Fase 12 (nueva estructura visual) y la Fase 11 (fundación
 > de acceso) también están en `main`. La variante nació el 2026-11-03, bifurcada de `sgc-suaza` en `9644ceb`; el
 > diseño maestro de las fases 11–20 (`docs/superpowers/specs/2026-11-03-sgc-integral-plataforma-design.md`) está
 > aprobado y `AGENTS.md` describe el piso de despliegue nuevo.
@@ -17,9 +17,9 @@
    con sus funcionalidades, y construir aquí otra con **funcionalidades más completas**.
    La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
    proyecto**.
-1. **Dónde quedamos:** la **Fase 13C está terminada en su rama** `fase-13c-vigencia-externos-normograma` (base
-   `4bbb428` de `main`; spec `b702403`, plan `faaae79`; 64 confirmaciones) y **sin
-   fusionar**. Los pasos 11 y 13 del procedimiento de control de documentos y la evidencia de PC-11 y PC-13 quedan dentro
+1. **Dónde quedamos:** la **Fase 13C está en `main`** (`8acc9cf`, PR #3 fusionado el 2026-11-10 por decisión del
+   usuario, 64 confirmaciones sobre `4bbb428`; spec `b702403`, plan `faaae79`; la rama
+   `fase-13c-vigencia-externos-normograma` sigue publicada, lista para borrarse). Los pasos 11 y 13 del procedimiento de control de documentos y la evidencia de PC-11 y PC-13 quedan dentro
    del sistema, y con ellos se cierra la Fase 13: plazo de revisión por tipo y por documento, contado desde la publicación
    o, en lo cargado como ya aprobado, desde la fecha de aprobación; semáforo de vigencia en la ficha, las listas, el
    Maestro, la página del proceso y **Vigencia → Semáforo**; ratificación con firma «Ratificó» y fecha fijada a mano (también
@@ -34,7 +34,8 @@
    **Verificado al cierre:** tras la corrección final, `SEMILLA_RECIEN=1 npm test` sobre la demo recién sembrada en una
    base aparte dio 197 archivos, 4722 pruebas en verde y 1 saltada; lint limpio; `npm run build` sin URL de base en
    verde; la imagen del compose de desarrollo arranca con «Migraciones al día» y responde `/api/salud`. **La base de desarrollo no se resembró** (F13C-R20) y un `next dev` arrancado antes de la 13C sirve una matriz
-   de permisos vieja: ver «Avisos para el usuario (Fase 13C)». **Falta del usuario:** su recorrido y la decisión de fusionar.
+   de permisos vieja: ver «Avisos para el usuario (Fase 13C)». El usuario decidió fusionar el 2026-11-10; **su recorrido («Qué probar y cómo (Fase 13C)») sigue pendiente**, ahora
+   sobre `main`.
    **Antes, la Fase 13B:** está en `main` (`2e321b6`, PR #2 fusionado el 2026-11-08 por decisión del
    usuario tras su recorrido manual, 42 commits sobre `f08f01d`; la rama `fase-13b-distribucion-puntos-de-uso` ya se
    borró). Lo que el papel y las personas hacen después de publicar queda dentro del sistema: puntos de uso con
@@ -83,8 +84,8 @@
    F13A-R35 (404 real en páginas). F13A-R36 ya está resuelta (F13A-AU6). Los archivos reales del
    hospital están en la raíz, sin seguimiento y excluidos en `.git/info/exclude`: nunca entran a un
    commit.
-2. **Lo que sigue:** (a) el recorrido del usuario sobre la rama («Qué probar y cómo (Fase 13C)», que empieza por
-   reiniciar `npm run dev` y resembrar) y su decisión de fusionar (un PR a `main`, como la 13A y la 13B); (b) la **Fase 14
+2. **Lo que sigue:** (a) el recorrido del usuario sobre `main` («Qué probar y cómo (Fase 13C)», que empieza por
+   reiniciar `npm run dev` y resembrar); (b) la **Fase 14
    — Indicadores** (spec maestro §8): ficha técnica versionada, variables, fórmula, metas y mediciones por periodo,
    regulatorios ligados al normograma. Sigue el mismo camino: spec aprobado, plan, ejecución, prueba y fusión. Enganches
    que deja la 13C: las normas, con id estable y estado, para «norma que lo exige» de los indicadores regulatorios (spec
@@ -918,8 +919,8 @@ Plan: `docs/superpowers/plans/2026-11-08-fase13c-vigencia-externos-normograma.md
 `docs/superpowers/specs/2026-11-08-fase13c-vigencia-externos-normograma-design.md`. Los pasos 11 y 13 del procedimiento de
 control de documentos del hospital quedan dentro del sistema, con la evidencia de PC-11 y PC-13 (spec §5 y Apéndice A), y
 con ellos se cierra la Fase 13. **Sin dependencias npm nuevas** (`pdf-lib`, `exceljs` y `zod` ya estaban). La rama
-`fase-13c-vigencia-externos-normograma` (base `4bbb428` de `main`; 64 confirmaciones) está **sin
-fusionar**: la fusión la decide el usuario tras su recorrido. La caracterización estructurada del spec maestro no se
+`fase-13c-vigencia-externos-normograma` (64 confirmaciones sobre `4bbb428`) se fusionó en `main` el 2026-11-10 (`8acc9cf`,
+PR #3); la rama sigue publicada, lista para borrarse, y el recorrido del usuario sigue pendiente. La caracterización estructurada del spec maestro no se
 construyó (decisión 3 del usuario, spec §5): el documento tipo CA sigue siendo la caracterización.
 
 - **Rutas nuevas:** `/vigencia` (lleva a la pestaña que le toca a la persona) con `/vigencia/semaforo`,
