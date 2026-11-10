@@ -33,8 +33,8 @@
    probar y cómo (Fase 13C)»; las decisiones, en «Decisiones adicionales (Fase 13C)»; el manual, en el capítulo 7.
    **Verificado al cierre (se actualiza al cierre):** la última corrida completa de la bitácora, `SEMILLA_RECIEN=1 npm
    test` sobre la demo recién sembrada en una base aparte, dio 194 archivos, 4697 pruebas en verde y 1 saltada; lint
-   limpio. **La base de desarrollo no se resembró** (F13C-R20) y el `next dev` que estuvo abierto sirve una matriz de
-   permisos vieja: ver «Avisos para el usuario (Fase 13C)». **Falta del usuario:** su recorrido y la decisión de fusionar.
+   limpio. **La base de desarrollo no se resembró** (F13C-R20) y un `next dev` arrancado antes de la 13C sirve una matriz
+   de permisos vieja: ver «Avisos para el usuario (Fase 13C)». **Falta del usuario:** su recorrido y la decisión de fusionar.
    **Antes, la Fase 13B:** está en `main` (`2e321b6`, PR #2 fusionado el 2026-11-08 por decisión del
    usuario tras su recorrido manual, 42 commits sobre `f08f01d`; la rama `fase-13b-distribucion-puntos-de-uso` ya se
    borró). Lo que el papel y las personas hacen después de publicar queda dentro del sistema: puntos de uso con
@@ -229,8 +229,8 @@ manual (`docs/manual/usuario/07-vigencia-revision-anual-externos-y-normograma.md
 ha recorrido todavía el usuario**; el controlador lo recorre en el navegador sobre una base aparte (claro, oscuro y
 390 px) y deja sus capturas en la bitácora de la sesión.
 
-0. **Preparar.** Base arriba, **reinicie `npm run dev`** (el que estuvo abierto durante la ejecución sirve una matriz de
-   permisos vieja) y **resiembre**: la base de desarrollo no se resembró en la fase y no tiene la demo de la 13C
+0. **Preparar.** Base arriba, **reinicie `npm run dev`** (uno arrancado antes de la 13C sirve la matriz de permisos vieja)
+   y **resiembre**: la base de desarrollo no se resembró en la fase y no tiene la demo de la 13C
    (`npm run db:seed && npm run admin:asegurar`; vacía la base y `./almacen`, y `admin` vuelve a pedir el cambio de
    clave). Abra `http://localhost:3002` (**no use 9081**: el compose no monta el almacén). Use ventanas privadas para tener
    varias sesiones; para el celular, `DEV_ORIGENES` como en la 13B (paso 0 de «Qué probar y cómo (Fase 13B)»).
@@ -360,10 +360,8 @@ con un aviso en la salida. `npm run db:seed && npm run admin:asegurar` la deja c
 
 ### Avisos para el usuario (Fase 13C)
 
-1. **Reinicie `npm run dev`.** El servidor de desarrollo que estaba abierto en el puerto 3002 durante toda la ejecución
-   (PID 22056, lanzado desde su terminal) sirve una matriz de permisos vieja: sin reiniciarlo, Vigencia, el normograma y los
-   permisos nuevos fallan o no aparecen. El implementador de la Tarea 4 intentó detenerlo y el sistema se lo negó; el
-   controlador no lo tocó.
+1. **Reinicie `npm run dev` antes del recorrido.** Un servidor de desarrollo arrancado antes de la 13C sirve la matriz de
+   permisos vieja: sin reiniciarlo, Vigencia, el normograma y los permisos nuevos fallan o no aparecen.
 2. **La base de desarrollo no se resembró** (el spec §17 decía resembrarla; F13C-R20). La demo nueva, los tests con
    `SEMILLA_RECIEN=1`, los ensayos de migración y los recorridos se hicieron en una base aparte (`sgc_f13c`, con su almacén
    aparte). Su base de desarrollo tiene las migraciones 0008 a 0010, la demo de la 13B y los datos de prueba de los puntos

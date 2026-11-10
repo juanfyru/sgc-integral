@@ -32,7 +32,8 @@ Antes de seguir, vea el Capítulo 5 (cómo se pide y se publica un documento) y 
   SGC congela un informe en PDF.
 - **Normograma:** las leyes, decretos, resoluciones y demás normas que aplican al hospital,
   con los procesos a los que aplican y los documentos que las implementan. Cuando una norma
-  cambia de estado, el SGC abre la revisión de su impacto en esos documentos y procesos.
+  se modifica, se deroga o se retira, el SGC abre la revisión de su impacto en esos documentos
+  y procesos.
 - **Indicadores documentales:** siete cifras del proceso documental con su meta: documentos al
   día, tiempo de aprobación, vencidos, acuses, conformidad, externos y etapas a tiempo.
 
@@ -335,13 +336,13 @@ El Administrador del SGC registra las normas; usted las asocia a sus procesos:
   internos y externos de sus procesos que la implementan) y **Quitar el enlace de …**. Todo
   queda en la bitácora.
 
-Enlazar un documento importa: si la norma cambia de estado, el documento queda marcado
-«Revisión por cambio normativo» y su proceso recibe la tarea.
+Enlazar un documento importa: si la norma se modifica, se deroga o se retira, el documento queda
+marcado «Revisión por cambio normativo» y su proceso recibe la tarea.
 
 ### 4.8 Resolver un impacto normativo
 
-Cuando una norma enlazada a sus documentos o asociada a su proceso se deroga o se modifica, le
-llega el aviso y la tarea **Revisar el impacto de Resolución 2003 de 2014 (derogada) en
+Cuando una norma enlazada a sus documentos o asociada a su proceso se deroga, se modifica o se
+retira, le llega el aviso y la tarea **Revisar el impacto de Resolución 2003 de 2014 (derogada) en
 Consulta Externa (1)**, con 15 días de plazo. Los documentos afectados quedan en atención con
 la marca «Revisión por cambio normativo · …».
 
@@ -505,8 +506,9 @@ del informe y elíjalo**: después del cierre el informe ya no cambia de papel.
 - **Registrar relación:** elija la **Relación** (**Modifica a**, **Deroga a** o **Reglamenta a**),
   la **Norma afectada**, un **Detalle** y la fecha. Derogar deja la afectada **Derogada**;
   modificar la deja **Modificada** (si estaba vigente); reglamentar no cambia estados.
-- **Cada cambio de estado abre la revisión de su impacto:** un impacto por documento enlazado y
-  uno por proceso asociado que no tiene documentos enlazados. Cada proceso recibe una tarea
+- **Pasar una norma a modificada, derogada o retirada abre la revisión de su impacto:** un
+  impacto por documento enlazado y uno por proceso asociado que no tiene documentos enlazados
+  (volverla a vigente no abre ninguno). Cada proceso recibe una tarea
   (sección 4.8); la de un proceso sin líder es suya.
 - **Eliminar relación…**, con motivo, para una relación registrada por error. La norma afectada
   no recupera su estado sola (cámbielo a mano) y los impactos que ya nacieron se resuelven como
