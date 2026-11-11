@@ -16,7 +16,7 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { puedeMedir, puedeVerIndicador, type Capacidad, type SujetoVisibilidad } from "@/lib/alcance";
-import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
+import { MESES, periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
 import { calcular, variacionExcesiva } from "@/lib/indicadores/calculo";
 import { analisisCompleto, analisisExigido, esRepetido, estadoVisible, type EstadoVisible } from "@/lib/indicadores/estados";
 import { enPalabras } from "@/lib/indicadores/formula/formas";
@@ -473,10 +473,16 @@ type Contexto = {
 
 /**
  * Lo que debe cumplirse para tocar una medición: que la persona la vea (si no, «no existe»), que pueda medir el
- * indicador, que este siga activo y que la medición no esté cerrada. Con `bloquear`, dentro de la transacción: el
- * indicador `FOR SHARE` y la medición `FOR UPDATE`, en ese orden.
+ * indicador, que este siga activo y que la medición no esté cerrada (salvo con `admiteCerrada`, para leerla). Con
+ * `bloquear`, dentro de la transacción: el indicador `FOR SHARE` y la medición `FOR UPDATE`, en ese orden.
  */
-async function contextoDeMedicion(sql: Cliente, sesion: SujetoVisibilidad, medicionId: number, bloquear: boolean): Promise<Contexto> {
+async function contextoDeMedicion(
+  sql: Cliente,
+  sesion: SujetoVisibilidad,
+  medicionId: number,
+  bloquear: boolean,
+  opciones?: { admiteCerrada?: boolean },
+): Promise<Contexto> {
   const [i] = bloquear
     ? await sql`SELECT id, codigo, estado, soporte_obligatorio FROM indicadores
         WHERE id = (SELECT indicador_id FROM mediciones WHERE id = ${medicionId}) FOR SHARE`
@@ -490,7 +496,7 @@ async function contextoDeMedicion(sql: Cliente, sesion: SujetoVisibilidad, medic
   const capacidad = await puedeMedir(indicadorId, sesion, { sql });
   if (!capacidad.puede) throw new ErrorPermiso();
   if (i.estado !== "activo") throw new ErrorIndicador(i.estado === "retirado" ? RETIRADO : NO_EXISTE);
-  if (m.estado === "cerrada") throw new ErrorIndicador(CERRADA);
+  if (m.estado === "cerrada" && opciones?.admiteCerrada !== true) throw new ErrorIndicador(CERRADA);
   const zona = zonaHoraria();
   const periodo = periodoDe(m.periodo as string, zona);
   const version = periodo ? versionQueRigeEntre(await versionesAprobadas(sql, indicadorId), periodo, zona) : null;
@@ -762,8 +768,6 @@ export async function quitarNoAplica(sesion: SesionFlujo, medicionId: number, op
 // Lecturas
 // ─────────────────────────────────────────────────────────────────────────────
 
-const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
-
 /** «10 de octubre de 2026», el día en la zona de la instalación. */
 function diaEnPalabras(d: Date): string {
   const [anio, mes, dia] = fechaEnZona(d, zonaHoraria()).split("-").map(Number);
@@ -834,40 +838,13 @@ export async function medicionParaReportar(
   if (!m) return null;
   let ctx: Contexto;
   try {
-    ctx = await contextoDeMedicion(sql, sesion, Number(m.id), false);
+    // Una medición cerrada se muestra (sin formulario) a quien podría medirla; lo demás no existe para la persona.
+    ctx = await contextoDeMedicion(sql, sesion, Number(m.id), false, { admiteCerrada: true });
   } catch (err) {
-    // Una medición cerrada se muestra (sin formulario); lo demás no existe para la persona.
-    if (!(err instanceof ErrorIndicador && err.message === CERRADA)) {
-      if (err instanceof ErrorIndicador || err instanceof ErrorPermiso) return null;
-      throw err;
-    }
-    return cerradaParaReportar(sql, sesion, Number(m.id), ahora);
+    if (err instanceof ErrorIndicador || err instanceof ErrorPermiso) return null;
+    throw err;
   }
   return datosDeReporte(sql, ctx, ahora);
-}
-
-/** Una medición cerrada la ve quien podría medirla, para decirle que se pide reabrirla. */
-async function cerradaParaReportar(sql: Cliente, sesion: SujetoVisibilidad, medicionId: number, ahora: Date): Promise<DatosDeReporte | null> {
-  const [m] = await sql`SELECT * FROM mediciones WHERE id = ${medicionId}`;
-  const [i] = await sql`SELECT id, codigo, soporte_obligatorio FROM indicadores WHERE id = ${m.indicador_id} AND estado = 'activo'`;
-  if (!i || !(await puedeVerIndicador(Number(i.id), sesion, { sql }))) return null;
-  const capacidad = await puedeMedir(Number(i.id), sesion, { sql });
-  if (!capacidad.puede) return null;
-  const zona = zonaHoraria();
-  const periodo = periodoDe(m.periodo as string, zona)!;
-  const version = versionQueRigeEntre(await versionesAprobadas(sql, Number(i.id)), periodo, zona);
-  if (!version) return null;
-  return datosDeReporte(
-    sql,
-    {
-      medicion: { ...m, id: Number(m.id) },
-      indicador: { id: Number(i.id), codigo: i.codigo as string, soporteObligatorio: i.soporte_obligatorio === true },
-      capacidad,
-      version,
-      periodo,
-    },
-    ahora,
-  );
 }
 
 async function datosDeReporte(sql: Cliente, ctx: Contexto, ahora: Date): Promise<DatosDeReporte> {

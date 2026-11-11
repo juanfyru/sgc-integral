@@ -65,7 +65,7 @@ function vistaDe(v: Parametros["vista"], conResultados: boolean, conVersion: boo
   return v === "ficha" || v === "versiones" ? v : null;
 }
 
-/** El año de `?anio=AAAA`; sin parámetro, el en curso; cualquier otra cosa es «no encontrada». */
+/** El año de `?anio=AAAA`; sin parámetro, el en curso; otra cosa es «no encontrada» (y un año fuera de la tabla, también). */
 function anioDe(a: Parametros["anio"], enCurso: number): number | null {
   if (a === undefined) return enCurso;
   return typeof a === "string" && /^\d{4}$/.test(a) ? Number(a) : null;
@@ -320,8 +320,13 @@ export default async function PaginaIndicador({ params, searchParams }: { params
   const zona = zonaHoraria();
   const ahora = new Date();
   const anioEnCurso = Number(fechaEnZona(ahora, zona).slice(0, 4));
+  // La tabla va del año del inicio de medición (si ya llegó) al en curso; otro año no existe.
+  const primerAnio =
+    vista === "resultados"
+      ? Math.min(Number((await operacionDeIndicador(indicador.id)).inicioMedicion.slice(0, 4)) || anioEnCurso, anioEnCurso)
+      : anioEnCurso;
   const anio = vista === "resultados" ? anioDe(sp.anio, anioEnCurso) : anioEnCurso;
-  if (anio === null) notFound();
+  if (anio === null || anio < primerAnio || anio > anioEnCurso) notFound();
   const mostrada = vista === "ficha" ? versionMostrada(versiones, sp.version) : porOmisionDe(versiones);
   if (!mostrada) notFound();
   const ficha = await fichaDeVersion(sesion, mostrada.id);
@@ -377,8 +382,6 @@ export default async function PaginaIndicador({ params, searchParams }: { params
   const filas = vista === "resultados" ? await tablaDelAnio(sesion, indicador.id, anio, { ahora }) : [];
   const mide = conResultados && indicador.estado === "activo" && (await puedeMedir(indicador.id, sesion)).puede;
   const pendiente = mide ? await proximaPorReportar(sesion, indicador.id) : null;
-  // El selector de año va del año del inicio de medición al en curso.
-  const primerAnio = vista === "resultados" ? Number((await operacionDeIndicador(indicador.id)).inicioMedicion.slice(0, 4)) || anioEnCurso : anioEnCurso;
   const anios = { anterior: anio > primerAnio ? anio - 1 : null, siguiente: anio < anioEnCurso ? anio + 1 : null };
   const reportarBoton = pendiente ? (
     <Link href={`${rutaDeIndicador(codigo)}/reportar/${pendiente.periodo}`} className={`${claseBoton("primario")} ${FOCO}`}>

@@ -30,6 +30,7 @@ import {
   EsquemaNoAplica,
   EsquemaOperacion,
   EsquemaReporte,
+  juntarValoresDeReporte,
 } from "@/lib/esquemas/indicadores";
 import type { EstadoReporte } from "@/lib/indicadores/reporte";
 import { rutaInterna } from "@/lib/rutas";
@@ -201,7 +202,7 @@ export async function reportarAccion(_prev: EstadoReporte, formData: FormData): 
   // `mutacion` solo devuelve un destino: lo demás que dice `reportar` sale por aquí.
   const dicho: { confirmar: string | null; parcial: boolean } = { confirmar: null, parcial: false };
   const estado = await mutacion(formData, "indicadores.medir", async (_usuarioId, _formData, sesion) => {
-    const d = parsearFormulario(formData, EsquemaReporte, { omitir: ["id", "volver"] });
+    const d = parsearFormulario(juntarValoresDeReporte(formData), EsquemaReporte, { omitir: ["id", "volver"] });
     dicho.parcial = d.intencion === "parcial";
     const r = await reportar(sesion, {
       medicionId: idNumerico(formData, "id"),

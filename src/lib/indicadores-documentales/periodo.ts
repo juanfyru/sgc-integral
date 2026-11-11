@@ -2,7 +2,8 @@ import { fechaEnZona, finDeFecha } from "@/lib/tramites/plazos";
 
 export type Periodo = { clave: string; desde: Date; hasta: Date; etiqueta: string };
 
-const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+/** Los meses en minúscula, de enero a diciembre. */
+export const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 const ORDINAL = ["", "primer", "segundo", "tercer", "cuarto", "quinto", "sexto"];
 
 /** «07»: el mes o el día con dos cifras. */

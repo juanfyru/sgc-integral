@@ -54,7 +54,7 @@ import { ResultadoEnVivo } from "@/componentes/indicadores/medicion/ResultadoEnV
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { reportar, type DatosDeReporte } from "@/db/consultas/indicadores/mediciones";
-import { EsquemaReporte } from "@/lib/esquemas/indicadores";
+import { EsquemaReporte, juntarValoresDeReporte } from "@/lib/esquemas/indicadores";
 import type { SesionValida } from "@/lib/sesion";
 import { parsearFormulario } from "@/lib/validacion";
 import { indicadorDePrueba } from "./utiles/indicadores";
@@ -145,8 +145,10 @@ describe("FormularioReporte y ResultadoEnVivo", () => {
       expect(html).toMatch(new RegExp(`<label[^>]*for="reporte-${v.letra}"[^>]*>${v.nombre}</label>`));
       expect(html).toContain(v.descripcion!);
       expect(html).toContain(`Fuente: ${v.fuente}`);
-      expect(html).toContain(`id="reporte-${v.letra}"`);
+      // Cada variable viaja en su propio campo: el formulario funciona igual antes de hidratar.
+      expect(html).toMatch(new RegExp(`<input(?=[^>]*id="reporte-${v.letra}")(?=[^>]*name="valor_${v.letra}")[^>]*>`));
     }
+    expect(html).not.toContain('name="valores"');
     expect(html).toContain('inputMode="decimal"');
     expect(html).toContain('<input type="hidden" name="id" value="41"/>');
     expect(html).toContain('name="volver" value="/indicadores/SGC-IND-01"');
@@ -239,6 +241,19 @@ describe("EsquemaReporte", () => {
     // Sin el botón pulsado no se adivina: ni reporte ni borrador.
     expect(() => leer({ valores: '{"A":"3"}' })).toThrow("Elija si reporta o guarda sin reportar");
   });
+
+  it("junta los campos de cada variable (`valor_A`…) en los valores que lee el esquema", () => {
+    const juntado = juntarValoresDeReporte(formulario({ valor_A: "3", valor_B: "", intencion: "reportar", confirmado: "on" }));
+    expect(juntado.has("valor_A")).toBe(false);
+    expect(juntado.get("id")).toBe("41");
+    expect(parsearFormulario(juntado, EsquemaReporte, { omitir: ["id", "volver"] })).toEqual({
+      valores: { A: "3", B: "" },
+      intencion: "reportar",
+      confirmado: true,
+    });
+    // Una letra que no es de la A a la Z no pasa: el esquema estricto la rechaza.
+    expect(() => parsearFormulario(juntarValoresDeReporte(formulario({ valor_a: "3", intencion: "reportar" })), EsquemaReporte, { omitir: ["id", "volver"] })).toThrow();
+  });
 });
 
 const valida = (s: SesionFlujo): SesionValida => ({
@@ -318,6 +333,9 @@ describe("las páginas", () => {
       expect(deOtro).not.toContain("/reportar/");
       expect(deOtro).toContain(">90 %<");
       await expect(pagina(ind.codigo, { anio: "abc" })).rejects.toThrow("NO_ENCONTRADA");
+      // Fuera de [año del inicio de medición, año en curso], la tabla no existe.
+      await expect(pagina(ind.codigo, { anio: "2025" })).rejects.toThrow("NO_ENCONTRADA");
+      await expect(pagina(ind.codigo, { anio: "2099" })).rejects.toThrow("NO_ENCONTRADA");
 
       // Sin ficha aprobada (un borrador), la ficha técnica sigue siendo la vista por omisión y Resultados no existe.
       const admin = await sesionAdmin(tx);

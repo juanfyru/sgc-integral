@@ -261,3 +261,19 @@ export const EsquemaReporte = z
 
 /** «No aplica en este periodo» (spec §8.2): motivo de 5 a 500 caracteres. El `id` de la medición y `volver`, aparte. */
 export const EsquemaNoAplica = z.object({ motivo: textoAcotado("El motivo", 5, 500) }).strict();
+
+/**
+ * El formulario de reporte manda cada variable en su propio campo (`valor_A` … `valor_Z`), para que funcione igual antes
+ * de hidratar; aquí se juntan en `valores` (JSON), como los lee `EsquemaReporte`. Lo demás pasa igual.
+ */
+export function juntarValoresDeReporte(formData: FormData): FormData {
+  const salida = new FormData();
+  const valores: Record<string, string> = {};
+  for (const [campo, valor] of formData) {
+    const letra = /^valor_(.+)$/.exec(campo)?.[1];
+    if (letra !== undefined && typeof valor === "string") valores[letra] = valor;
+    else salida.append(campo, valor);
+  }
+  if (Object.keys(valores).length > 0) salida.set("valores", JSON.stringify(valores));
+  return salida;
+}

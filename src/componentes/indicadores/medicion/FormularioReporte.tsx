@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useActionState, useState, type FormEvent } from "react";
+import { startTransition, useActionState, useState, type FormEvent, type MouseEvent } from "react";
 import { marcarNoAplicaAccion, quitarNoAplicaAccion, reportarAccion } from "@/app/acciones-indicadores";
 import type { EstadoAccion } from "@/app/admin/comun";
 import { Boton } from "@/componentes/ui/Boton";
@@ -14,14 +14,30 @@ const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visib
 const CAJA = "flex min-w-0 flex-col gap-3 rounded-lg border border-border px-4 py-3";
 const AVISO = "flex flex-col gap-2 rounded-md border border-l-4 border-border border-l-estado-atencion bg-card px-3 py-2 text-sm";
 
-/** Envía desde una transición, con el botón pulsado: sin reiniciar lo digitado y diciendo qué se quiso hacer. */
+/**
+ * Envía desde una transición, para que React no reinicie lo digitado, con lo mismo que mandaría el navegador: los campos
+ * con `name` y el botón pulsado, que `new FormData(form)` no incluye y se añade aquí. Un navegador sin
+ * `SubmitEvent.submitter` usa el último botón pulsado, que cada botón anota en el formulario (`anotarBoton`).
+ */
 function enviarConBoton(enviar: (datos: FormData) => void) {
   return (evento: FormEvent<HTMLFormElement>) => {
     evento.preventDefault();
+    const formulario = evento.currentTarget;
+    const datos = new FormData(formulario);
     const boton = (evento.nativeEvent as SubmitEvent).submitter;
-    const datos = new FormData(evento.currentTarget, boton instanceof HTMLElement ? boton : null);
+    const nombre = boton instanceof HTMLButtonElement && boton.name ? boton.name : formulario.dataset.botonNombre;
+    const valor = boton instanceof HTMLButtonElement && boton.name ? boton.value : formulario.dataset.botonValor;
+    if (nombre && valor !== undefined) datos.set(nombre, valor);
     startTransition(() => enviar(datos));
   };
+}
+
+function anotarBoton(evento: MouseEvent<HTMLButtonElement>) {
+  const { form, name, value } = evento.currentTarget;
+  if (form && name) {
+    form.dataset.botonNombre = name;
+    form.dataset.botonValor = value;
+  }
 }
 
 function Mensaje({ estado }: { estado: EstadoReporte | EstadoAccion }) {
@@ -117,7 +133,6 @@ export function FormularioReporte({ datos, volver }: { datos: DatosDeReporte; vo
       <form action={enviar} onSubmit={enviarConBoton(enviar)} className={CAJA}>
         <input type="hidden" name="id" value={datos.medicionId} />
         <input type="hidden" name="volver" value={volver} />
-        <input type="hidden" name="valores" value={JSON.stringify(valores)} />
         <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2">
           <fieldset className="flex min-w-0 flex-col gap-3">
             <legend className="sr-only">Datos del periodo</legend>
@@ -132,6 +147,7 @@ export function FormularioReporte({ datos, volver }: { datos: DatosDeReporte; vo
                   </label>
                   <input
                     id={id}
+                    name={`valor_${v.letra}`}
                     inputMode="decimal"
                     autoComplete="off"
                     value={valores[v.letra] ?? ""}
@@ -194,15 +210,15 @@ export function FormularioReporte({ datos, volver }: { datos: DatosDeReporte; vo
 
         <div className="flex flex-wrap gap-2">
           {datos.reportada ? (
-            <Boton type="submit" name="intencion" value="reportar" pendiente={pendiente}>
+            <Boton type="submit" name="intencion" value="reportar" onClick={anotarBoton} pendiente={pendiente}>
               {pendiente ? "Guardando…" : "Guardar la corrección"}
             </Boton>
           ) : (
             <>
-              <Boton type="submit" name="intencion" value="parcial" variante="secundario" pendiente={pendiente}>
+              <Boton type="submit" name="intencion" value="parcial" onClick={anotarBoton} variante="secundario" pendiente={pendiente}>
                 Guardar sin reportar
               </Boton>
-              <Boton type="submit" name="intencion" value="reportar" pendiente={pendiente}>
+              <Boton type="submit" name="intencion" value="reportar" onClick={anotarBoton} pendiente={pendiente}>
                 Reportar
               </Boton>
             </>
