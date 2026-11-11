@@ -705,6 +705,13 @@ export function describirEvento(e: EventoAuditoria): string {
         ? "Guardó los parámetros de indicadores sin cambios"
         : `Guardó los parámetros de indicadores (${cambios} ${cambios === 1 ? "cambio" : "cambios"})`;
     }
+    // ── Indicadores (14A): la ficha
+    case "indicador_creado":
+      return `Creó el indicador${cod ? ` ${cod}` : ""}${nombre ? ` «${nombre}»` : ""} en borrador`;
+    case "indicador_borrador_guardado":
+      return `Guardó el borrador de la ficha de ${cod ?? "un indicador"}${numero(d.numero) === null ? "" : ` (versión ${numero(d.numero)})`}`;
+    case "indicador_cambio_abierto":
+      return `Abrió un cambio en la ficha de ${cod ?? "un indicador"}${numero(d.numero) === null ? "" : ` (versión ${numero(d.numero)})`}`;
     case "tipo_norma_creado":
       return `Creó el tipo de norma${nombre ? ` «${nombre}»` : ""}`;
     case "tipo_norma_editado":
@@ -866,6 +873,9 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   indicador_maestro_activado: "Activó o desactivó un elemento de los maestros de indicadores",
   indicador_maestro_borrado: "Borró un elemento de los maestros de indicadores",
   indicador_parametros_guardados: "Guardó los parámetros de indicadores",
+  indicador_creado: "Creó un indicador",
+  indicador_borrador_guardado: "Guardó el borrador de una ficha de indicador",
+  indicador_cambio_abierto: "Abrió un cambio en una ficha de indicador",
   tipo_norma_creado: "Creó un tipo de norma",
   tipo_norma_editado: "Renombró un tipo de norma",
   tipo_norma_movido: "Movió un tipo de norma",

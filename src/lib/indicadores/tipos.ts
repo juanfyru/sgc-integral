@@ -56,6 +56,43 @@ export const ETIQUETA_SEMAFORO: Record<Semaforo, string> = {
   critico: "Crítico",
 };
 
+export const NIVELES_ACCESO = ["general", "restringido"] as const;
+export type NivelAcceso = (typeof NIVELES_ACCESO)[number];
+
+/** Los datos de operación del indicador (spec §7.3): viven en `indicadores`, no se versionan ni se firman. */
+export type DatosOperacion = {
+  plazoReporteDias: number;
+  inicioMedicion: string;
+  soporteObligatorio: boolean;
+  nivelAcceso: NivelAcceso;
+};
+
+/** Lo que el formulario de la ficha ofrece para elegir; lo arma el servidor (`opcionesDeFicha`). */
+export type OpcionesFicha = {
+  procesos: { id: number; sigla: string; nombre: string }[];
+  subprocesos: { id: number; procesoId: number; nombre: string }[];
+  /** El código que se propone en cada proceso (`SIGLA-IND-NN`). */
+  codigosPropuestos: Record<number, string>;
+  tipos: { id: number; nombre: string }[];
+  clasificaciones: { id: number; nombre: string; exigeNorma: boolean }[];
+  unidades: { id: number; nombre: string; sufijo: string; decimales: number }[];
+  objetivos: { id: number; nombre: string }[];
+  cargos: { id: number; nombre: string }[];
+  normas: { id: number; nombre: string; estado: string }[];
+  usuarios: { id: number; nombre: string; cargoId: number | null }[];
+  /** Quien llena el formulario: por omisión, quien mide (spec §7.3). */
+  usuarioActual: number | null;
+  /** Los documentos vigentes que pueden ser el procedimiento, con los procesos a los que pertenecen. */
+  documentos: { id: number; codigo: string; titulo: string; procesoIds: number[] }[];
+  umbralAtencionPct: number;
+  plazoReporteDias: number;
+  /** El año en curso: el de referencia de «sin línea base». */
+  anio: number;
+  /** Los periodos que se ofrecen como inicio de medición, en cada periodicidad. */
+  periodos: Record<Periodicidad, { clave: string; etiqueta: string }[]>;
+  periodoEnCurso: Record<Periodicidad, string>;
+};
+
 export const ESTADOS_MEDICION = ["abierta", "reportada", "cerrada"] as const;
 export type EstadoMedicion = (typeof ESTADOS_MEDICION)[number];
 

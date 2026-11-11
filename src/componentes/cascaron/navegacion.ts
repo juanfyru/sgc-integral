@@ -7,6 +7,7 @@ export type IconoNav =
   | "distribucion"
   | "vigencia"
   | "normograma"
+  | "indicadores"
   | "documentos"
   | "maestro"
   | "tipos"
@@ -23,7 +24,7 @@ export type IconoNav =
   | "accesos"
   | "sesiones";
 
-export type GrupoNav = "inicio" | "documentos" | "administracion";
+export type GrupoNav = "inicio" | "documentos" | "indicadores" | "administracion";
 
 export type EntradaNav = {
   href: string;
@@ -44,9 +45,10 @@ export type EntradaNav = {
   prefijos?: readonly string[];
 };
 
-export const GRUPOS: Record<GrupoNav, { etiqueta: string | null; color: "marca" | "mod-documentos" }> = {
+export const GRUPOS: Record<GrupoNav, { etiqueta: string | null; color: "marca" | "mod-documentos" | "mod-indicadores" }> = {
   inicio: { etiqueta: null, color: "marca" },
   documentos: { etiqueta: "Documentos", color: "mod-documentos" },
+  indicadores: { etiqueta: "Indicadores", color: "mod-indicadores" },
   administracion: { etiqueta: "Administración", color: "marca" },
 };
 
@@ -80,6 +82,8 @@ export const NAVEGACION: readonly EntradaNav[] = [
   },
   // Se lee con cualquier sesión, como «Buscar» (spec 13C §6.2 y §14.1).
   { href: "/normograma", etiqueta: "Normograma", icono: "normograma", grupo: "documentos" },
+  // Toda sesión, con pestañas (spec 14 §12.1); qué indicadores ve cada persona lo decide `filtroIndicadores`.
+  { href: "/indicadores", etiqueta: "Indicadores", icono: "indicadores", grupo: "indicadores" },
   {
     href: "/admin",
     etiqueta: "Gestión de documentos",

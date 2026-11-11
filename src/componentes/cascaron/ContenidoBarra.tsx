@@ -16,11 +16,11 @@ export function claseNombreEntidad(nombre: string): "text-sm" | "text-xs" {
 
 export type MarcaBarra = { nombre: string; sigla: string; logoUrl: string | null };
 
-const ORDEN_GRUPOS: readonly GrupoNav[] = ["inicio", "documentos", "administracion"];
+export const ORDEN_GRUPOS: readonly GrupoNav[] = ["inicio", "documentos", "indicadores", "administracion"];
 
 // Clases completas por color de grupo: Tailwind solo genera las que ve escritas.
-const COLOR_ICONO = { marca: "text-marca", "mod-documentos": "text-mod-documentos" } as const;
-const COLOR_INDICADOR = { marca: "bg-marca", "mod-documentos": "bg-mod-documentos" } as const;
+const COLOR_ICONO = { marca: "text-marca", "mod-documentos": "text-mod-documentos", "mod-indicadores": "text-mod-indicadores" } as const;
+const COLOR_INDICADOR = { marca: "bg-marca", "mod-documentos": "bg-mod-documentos", "mod-indicadores": "bg-mod-indicadores" } as const;
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 

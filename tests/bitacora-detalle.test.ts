@@ -684,3 +684,20 @@ describe("maestros y parámetros de indicadores", () => {
     );
   });
 });
+
+describe("la ficha de indicador", () => {
+  const frase = (accion: string, detalle: Record<string, unknown>) =>
+    describirEvento({ accion, entidad: "indicador", entidadId: 1, detalle });
+  it("dice qué indicador y qué versión", () => {
+    expect(frase("indicador_creado", { codigo: "SGC-IND-06", nombre: "Cumplimiento del plan", versionId: 3 })).toBe(
+      "Creó el indicador SGC-IND-06 «Cumplimiento del plan» en borrador",
+    );
+    expect(frase("indicador_borrador_guardado", { codigo: "SGC-IND-06", numero: 2, versionId: 3 })).toBe(
+      "Guardó el borrador de la ficha de SGC-IND-06 (versión 2)",
+    );
+    expect(frase("indicador_cambio_abierto", { codigo: "SGC-IND-06", numero: 2, versionId: 3 })).toBe(
+      "Abrió un cambio en la ficha de SGC-IND-06 (versión 2)",
+    );
+    expect(nombreDeAccion("indicador_creado")).toBe("Creó un indicador");
+  });
+});

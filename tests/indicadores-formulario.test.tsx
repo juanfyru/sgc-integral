@@ -1,0 +1,194 @@
+/**
+ * El formulario de la ficha de indicador (Fase 14A, Tarea 6; spec §12.4, maqueta 6): render estático con datos de
+ * muestra, sin BD. Lo que se ve al abrirlo: la forma y sus variables, «Así quedará el semáforo», la prueba y «Más
+ * opciones» plegado con sus valores por omisión; y que cada control tenga su etiqueta y envíe un campo del esquema.
+ */
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@/app/acciones-indicadores", () => ({
+  crearIndicadorAccion: vi.fn(),
+  guardarBorradorAccion: vi.fn(),
+  abrirCambioAccion: vi.fn(),
+}));
+
+import { FormularioFicha } from "@/componentes/indicadores/ficha/FormularioFicha";
+import { EsquemaFicha, type DatosFicha } from "@/lib/esquemas/indicadores";
+import type { OpcionesFicha } from "@/lib/indicadores/tipos";
+
+const OPCIONES: OpcionesFicha = {
+  procesos: [
+    { id: 2, sigla: "SGC", nombre: "Sistema de Gestión de Calidad" },
+    { id: 13, sigla: "GTH", nombre: "Gestión del Talento Humano" },
+  ],
+  subprocesos: [{ id: 40, procesoId: 13, nombre: "Bienestar" }],
+  codigosPropuestos: { 2: "SGC-IND-06", 13: "GTH-IND-01" },
+  tipos: [
+    { id: 1, nombre: "Eficacia" },
+    { id: 2, nombre: "Eficiencia" },
+  ],
+  clasificaciones: [
+    { id: 1, nombre: "Estratégico", exigeNorma: false },
+    { id: 2, nombre: "Operativo", exigeNorma: false },
+    { id: 3, nombre: "Regulatorio", exigeNorma: true },
+  ],
+  unidades: [
+    { id: 1, nombre: "Porcentaje", sufijo: " %", decimales: 1 },
+    { id: 2, nombre: "Número", sufijo: "", decimales: 0 },
+  ],
+  objetivos: [{ id: 5, nombre: "Mejorar la satisfacción del usuario" }],
+  cargos: [
+    { id: 4, nombre: "Líder de Calidad" },
+    { id: 9, nombre: "Coordinadora de Talento Humano" },
+  ],
+  normas: [{ id: 4, nombre: "Resolución 3100 de 2019", estado: "vigente" }],
+  usuarios: [
+    { id: 7, nombre: "Coordinadora del SGC", cargoId: 4 },
+    { id: 8, nombre: "Auxiliar de calidad", cargoId: null },
+  ],
+  usuarioActual: 7,
+  documentos: [{ id: 30, codigo: "SGC-PR-01", titulo: "Auditorías internas", procesoIds: [2] }],
+  umbralAtencionPct: 70,
+  plazoReporteDias: 10,
+  anio: 2026,
+  periodos: {
+    mensual: [{ clave: "2026-11", etiqueta: "Noviembre de 2026" }],
+    bimestral: [{ clave: "2026-B6", etiqueta: "Sexto bimestre de 2026" }],
+    trimestral: [
+      { clave: "2026-T3", etiqueta: "Tercer trimestre de 2026" },
+      { clave: "2026-T4", etiqueta: "Cuarto trimestre de 2026" },
+    ],
+    semestral: [{ clave: "2026-S2", etiqueta: "Segundo semestre de 2026" }],
+    anual: [{ clave: "2026", etiqueta: "2026" }],
+  },
+  periodoEnCurso: { mensual: "2026-11", bimestral: "2026-B6", trimestral: "2026-T4", semestral: "2026-S2", anual: "2026" },
+};
+
+const pintar = (valores: Partial<DatosFicha> = {}) => renderToStaticMarkup(<FormularioFicha opciones={OPCIONES} valores={valores} />);
+
+/** El valor de un campo oculto, con las entidades de HTML resueltas. */
+function oculto(html: string, nombre: string): string | null {
+  const m = new RegExp(`<input type="hidden" name="${nombre}" value="([^"]*)"`).exec(html);
+  return m ? m[1].replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&") : null;
+}
+
+/** «Más opciones»: el `<details>` que lo contiene, de su apertura a su cierre (no anida otro). */
+function masOpciones(html: string): string {
+  const resumen = html.indexOf(">Más opciones</summary>");
+  expect(resumen).toBeGreaterThan(-1);
+  const inicio = html.lastIndexOf("<details", resumen);
+  return html.slice(inicio, html.indexOf("</details>", resumen) + "</details>".length);
+}
+
+const nombres = (html: string) => [...new Set([...html.matchAll(/<(?:input|select|textarea)[^>]*\sname="([^"]+)"/g)].map((m) => m[1]))].sort();
+
+/** La etiqueta de apertura del control que envía `nombre`. */
+function control(html: string, nombre: string): string {
+  const tag = html.match(new RegExp(`<(?:input|select|textarea)\\b[^>]*\\sname="${nombre}"[^>]*>`))?.[0];
+  expect(tag, nombre).toBeTruthy();
+  return tag!;
+}
+
+describe("FormularioFicha", () => {
+  const html = pintar({ procesoId: 2, meta: "80", tendencia: "ascendente", umbralAtencionPct: 70 });
+
+  it("primero pregunta cómo se calcula, con las cinco formas", () => {
+    expect(html).toContain("¿Cómo se calcula?");
+    for (const forma of ["Porcentaje", "Tasa", "Promedio o razón", "Conteo", "Fórmula libre"]) expect(html).toContain(`>${forma}<`);
+    expect(html.indexOf("¿Cómo se calcula?")).toBeLessThan(html.indexOf(">Nombre<"));
+  });
+
+  it("con la forma «Porcentaje» hay dos variables, A y B", () => {
+    expect(html).toContain(">A · Numerador<");
+    expect(html).toContain(">B · Denominador<");
+    const variables = JSON.parse(oculto(html, "variables")!) as { letra: string }[];
+    expect(variables.map((v) => v.letra)).toEqual(["A", "B"]);
+    expect(html).not.toContain(">C · ");
+  });
+
+  it("«Así quedará el semáforo» escribe los rangos en palabras", () => {
+    expect(html).toContain("Así quedará el semáforo");
+    expect(html).toContain("Bien desde 80 % · Atención de 56 a 79,9 % · Crítico por debajo de 56 %");
+    expect(html).toContain(">Cambiar rangos</summary>");
+  });
+
+  it("«Más opciones» está plegado y trae tipo «Eficacia» y clasificación «Operativo»", () => {
+    const mas = masOpciones(html);
+    expect(mas).not.toMatch(/^<details[^>]*\sopen/);
+    expect(mas).toContain('<option value="1" selected="">Eficacia</option>');
+    expect(mas).toContain('<option value="2" selected="">Operativo</option>');
+    // Los responsables nacen con el cargo de quien mide, y la línea base con el año de referencia.
+    expect(JSON.parse(oculto(html, "cargosMedir")!)).toEqual([4]);
+    expect(JSON.parse(oculto(html, "cargosAnalizar")!)).toEqual([4]);
+    expect(mas).toContain("Sin línea base: 2026 es el año de referencia");
+    expect(mas).toContain('<option value="2026-T4" selected="">Cuarto trimestre de 2026</option>');
+  });
+
+  it("el código propuesto es el del proceso y el plazo, el del parámetro", () => {
+    expect(control(html, "codigo")).toContain('value="SGC-IND-06"');
+    expect(control(html, "plazoReporteDias")).toContain('value="10"');
+    expect(control(pintar(), "codigo")).toContain('value=""');
+    expect(JSON.parse(oculto(html, "mide")!)).toEqual([7]);
+    expect(JSON.parse(oculto(html, "analiza")!)).toEqual([7]);
+  });
+
+  it("la prueba con valores de ejemplo dice el resultado, el color y la frase, y los guarda", () => {
+    const conPrueba = pintar({ meta: "80", tendencia: "ascendente", umbralAtencionPct: 70, prueba: { valores: { A: "9", B: "10" } } });
+    expect(conPrueba).toContain("Cumple: 90 % frente a una meta de 80 %.");
+    expect(conPrueba).toMatch(/data-variante="bien"[^>]*>Bien</);
+    expect(JSON.parse(oculto(conPrueba, "prueba")!)).toEqual({ valores: { A: "9", B: "10" } });
+    // Sin valores no hay prueba que guardar.
+    expect(oculto(html, "prueba")).toBeNull();
+  });
+
+  it("la fórmula libre se escribe y se lee en palabras; la tasa pide su factor; la constante, su rango", () => {
+    const libre = pintar({
+      forma: "libre",
+      formula: "A / B",
+      variables: [
+        { letra: "A", nombre: "Días de estancia", consolidacion: "suma", admiteNegativos: false },
+        { letra: "B", nombre: "Egresos", consolidacion: "suma", admiteNegativos: false },
+      ],
+    });
+    expect(libre).toMatch(/<textarea[^>]*name="formula"/);
+    expect(libre).toContain("Días de estancia ÷ Egresos");
+    expect(pintar({ forma: "tasa" })).toMatch(/<select[^>]*name="factor"/);
+    const constante = pintar({ tendencia: "constante", meta: "98", metaMax: "100", tolerancia: "2" });
+    expect(constante).toMatch(/name="metaMax"/);
+    expect(constante).toMatch(/name="tolerancia"/);
+  });
+
+  it("todo control tiene su etiqueta y envía un campo del esquema", () => {
+    const variantes = [
+      html,
+      pintar({ forma: "libre", formula: "A" }),
+      pintar({ forma: "tasa", tendencia: "constante", meta: "1", semaforoModo: "fijo" }),
+      pintar({ meta: "80", tendencia: "descendente", semaforoModo: "fijo", limiteCritico: "90", prueba: { valores: { A: "1", B: "2" } } }),
+    ];
+    const claves = Object.keys(EsquemaFicha.shape);
+    for (const h of variantes) {
+      for (const control of h.match(/<(?:input|select|textarea)\b[^>]*>/g) ?? []) {
+        if (/type="hidden"/.test(control)) continue;
+        if (/aria-label="[^"]+"/.test(control)) continue;
+        const id = /\sid="([^"]+)"/.exec(control)?.[1];
+        expect(id, control).toBeTruthy();
+        expect(h, control).toContain(`for="${id}"`);
+      }
+      for (const n of nombres(h)) expect(claves, n).toContain(n);
+    }
+  });
+
+  it("al editar un cambio pide el motivo y no deja cambiar el proceso ni el código", () => {
+    const cambio = renderToStaticMarkup(
+      <FormularioFicha opciones={OPCIONES} valores={{ procesoId: 2, codigo: "SGC-IND-02", meta: "80" }} edicion={{ versionId: 15, cambio: true, codigoFijo: true }} />,
+    );
+    expect(cambio).toContain('<input type="hidden" name="id" value="15"/>');
+    expect(cambio).toMatch(/<textarea[^>]*name="motivoCambio"/);
+    expect(control(cambio, "codigo")).toMatch(/readonly=""/i);
+    expect(control(cambio, "codigo")).toContain('value="SGC-IND-02"');
+    // El proceso viaja oculto y se muestra en solo lectura.
+    expect(cambio).toContain('<input type="hidden" name="procesoId" value="2"/>');
+    expect(cambio).not.toMatch(/<select[^>]*name="procesoId"/);
+    expect(cambio).toContain("Guardar borrador");
+  });
+});
