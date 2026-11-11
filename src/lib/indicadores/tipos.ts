@@ -46,6 +46,13 @@ export type OrigenVariable = (typeof ORIGENES_VARIABLE)[number];
 export const FUNCIONES_DESIGNADO = ["mide", "analiza", "seguimiento"] as const;
 export type FuncionDesignado = (typeof FUNCIONES_DESIGNADO)[number];
 
+/** El comienzo del aviso `indicadores.designacion` de cada función: «Ahora mide SGC-IND-01». */
+export const AVISO_DESIGNACION: Record<FuncionDesignado, string> = {
+  mide: "Ahora mide",
+  analiza: "Ahora analiza",
+  seguimiento: "Ahora hace seguimiento de",
+};
+
 /** Las funciones de un cargo en la ficha (quién mide y quién analiza). */
 export const FUNCIONES_CARGO = ["medir", "analizar"] as const;
 export type FuncionCargo = (typeof FUNCIONES_CARGO)[number];

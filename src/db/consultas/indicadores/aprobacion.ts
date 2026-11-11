@@ -23,7 +23,9 @@ import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo"
 import { camposCambiados, huellaDeFicha, tipoDeCambio, type ContenidoFicha } from "@/lib/indicadores/ficha";
 import { periodicidadDe, periodosTerminados, periodoQueContiene } from "@/lib/indicadores/periodos";
 import {
+  AVISO_DESIGNACION,
   ErrorIndicador,
+  FUNCIONES_DESIGNADO,
   MAXIMO_EN_BLOQUE,
   type DatosOperacion,
   type EstadoVersion,
@@ -444,7 +446,28 @@ export async function aprobarFichas(
         contexto,
         ahora,
       });
-      if (f.tipo === "inicial") await tx`UPDATE indicadores SET estado = 'activo' WHERE id = ${f.indicadorId} AND estado = 'borrador'`;
+      if (f.tipo === "inicial") {
+        await tx`UPDATE indicadores SET estado = 'activo' WHERE id = ${f.indicadorId} AND estado = 'borrador'`;
+        // Quienes se designaron antes de la primera aprobación no pudieron recibir su aviso: el indicador no existía para ellos.
+        const designados = await tx`SELECT DISTINCT d.usuario_id, d.funcion FROM indicador_designados d
+          JOIN usuarios u ON u.id = d.usuario_id AND u.activo
+          WHERE d.indicador_id = ${f.indicadorId} AND d.usuario_id <> ${sesion.usuarioId} ORDER BY d.usuario_id, d.funcion`;
+        for (const funcion of FUNCIONES_DESIGNADO) {
+          const personas = designados.filter((x) => x.funcion === funcion).map((x) => Number(x.usuario_id));
+          if (personas.length === 0) continue;
+          await avisarA(
+            tx,
+            {
+              tipo: "indicadores.designacion",
+              titulo: `${AVISO_DESIGNACION[funcion]} ${f.codigo}`,
+              enlace: `/indicadores/${encodeURIComponent(f.codigo)}`,
+              entidad: "indicador",
+              entidadId: f.indicadorId,
+            },
+            personas.map((usuarioId) => ({ usuarioId, cuerpo: `${AVISO_DESIGNACION[funcion]} ${f.codigo}${f.nombre ? `: ${f.nombre}` : ""}` })),
+          );
+        }
+      }
       if (f.elaboradaPor !== null) {
         await avisarA(
           tx,

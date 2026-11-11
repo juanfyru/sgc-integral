@@ -125,7 +125,7 @@ export function MenuAdministrar({ panel, hrefEditar }: { panel: PanelDeAdministr
   const { estado } = panel;
   const abre = (d: Dialogos) => () => {
     setMenu(false);
-    if (d === "designar") setReinicio((n) => n + 1);
+    setReinicio((n) => n + 1); // cada apertura monta el diálogo de nuevo: sin errores ni valores de la anterior
     setDialogo(d);
   };
   const cierra = () => {
@@ -192,6 +192,7 @@ export function MenuAdministrar({ panel, hrefEditar }: { panel: PanelDeAdministr
         designados={panel.designados}
       />
       <DialogoOperacion
+        key={`op${reinicio}`}
         abierto={dialogo === "operacion"}
         alCerrar={cierra}
         indicadorId={panel.indicadorId}
@@ -199,14 +200,14 @@ export function MenuAdministrar({ panel, hrefEditar }: { panel: PanelDeAdministr
         operacion={panel.operacion}
         periodos={panel.periodos}
       />
-      <DialogoDuplicar abierto={dialogo === "duplicar"} alCerrar={cierra} panel={panel} />
+      <DialogoDuplicar key={`du${reinicio}`} abierto={dialogo === "duplicar"} alCerrar={cierra} panel={panel} />
       {estado === "activo" ? (
-        <DialogoRetirar modo="retirar" abierto={dialogo === "retirar"} alCerrar={cierra} indicadorId={panel.indicadorId} codigo={panel.codigo} />
+        <DialogoRetirar key={`re${reinicio}`} modo="retirar" abierto={dialogo === "retirar"} alCerrar={cierra} indicadorId={panel.indicadorId} codigo={panel.codigo} />
       ) : null}
       {estado === "borrador" && panel.enviado ? (
-        <DialogoRetirar modo="descartar" abierto={dialogo === "descartar"} alCerrar={cierra} indicadorId={panel.indicadorId} codigo={panel.codigo} />
+        <DialogoRetirar key={`de${reinicio}`} modo="descartar" abierto={dialogo === "descartar"} alCerrar={cierra} indicadorId={panel.indicadorId} codigo={panel.codigo} />
       ) : null}
-      {estado === "borrador" && !panel.enviado ? <DialogoBorrar abierto={dialogo === "borrar"} alCerrar={cierra} panel={panel} /> : null}
+      {estado === "borrador" && !panel.enviado ? <DialogoBorrar key={`bo${reinicio}`} abierto={dialogo === "borrar"} alCerrar={cierra} panel={panel} /> : null}
     </div>
   );
 }

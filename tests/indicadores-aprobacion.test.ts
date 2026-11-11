@@ -807,3 +807,33 @@ describe("lo que cada persona ve de la ficha", () => {
       expect((await fichaDeVersion(b.admin, versionId, { sql: tx }))!.aprueba).toBe(false);
     }));
 });
+
+describe("aviso de designación en la primera aprobación", () => {
+  it("al quedar activo el indicador, avisa a sus designados activos y no a quien aprueba", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const mide = await usuarioDePrueba(tx, { rol: "lider_proceso" });
+      const analiza = await usuarioDePrueba(tx, { rol: "lider_proceso" });
+      const inactivo = await usuarioDePrueba(tx, { rol: "lider_proceso" });
+      const creado = await crearIndicador(b.admin, datos(b, { mide: [mide.usuarioId, inactivo.usuarioId], analiza: [analiza.usuarioId] }), { sql: tx });
+      await tx`UPDATE usuarios SET activo = false WHERE id = ${inactivo.usuarioId}`;
+      await enviarAAprobacion(b.admin, { versionId: creado.versionId, credenciales: CLAVE }, firmar(tx));
+      expect((await avisos(tx, "indicadores.designacion", creado.indicadorId)).length).toBe(0);
+
+      const gerente = await usuarioDePrueba(tx, { rol: "gerencia" });
+      await aprobarFichas(gerente, { versionIds: [creado.versionId], credenciales: CLAVE }, firmar(tx));
+      const filas = await avisos(tx, "indicadores.designacion", creado.indicadorId);
+      expect(filas.map((a) => [Number(a.usuario_id), a.titulo])).toEqual(
+        [
+          [mide.usuarioId, `Ahora mide ${creado.codigo}`],
+          [analiza.usuarioId, `Ahora analiza ${creado.codigo}`],
+        ].sort((x, y) => (x[0] as number) - (y[0] as number)),
+      );
+
+      // Un cambio posterior no repite el aviso.
+      const v2 = await cambio(tx, b, creado.indicadorId, { ...datos(b), meta: "80", motivoCambio: "Otra meta" });
+      await enviarAAprobacion(b.admin, { versionId: v2, credenciales: CLAVE }, firmar(tx));
+      await aprobarFichas(gerente, { versionIds: [v2], credenciales: CLAVE }, firmar(tx));
+      expect((await avisos(tx, "indicadores.designacion", creado.indicadorId)).length).toBe(2);
+    }));
+});

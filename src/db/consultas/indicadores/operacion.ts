@@ -15,6 +15,7 @@ import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { clavesDelAnio, periodicidadDe } from "@/lib/indicadores/periodos";
 import {
+  AVISO_DESIGNACION,
   ErrorIndicador,
   FUNCIONES_DESIGNADO,
   NIVELES_ACCESO,
@@ -81,6 +82,18 @@ async function nombreDe(tx: TransactionSql, indicadorId: number): Promise<string
 
 const ascendente = (ids: readonly number[]) => [...ids].sort((a, b) => a - b);
 
+/**
+ * «Medición con datos» (alias `m`): cualquier cosa que ya es historia y no se puede quitar. Una medición que no está
+ * abierta, con valores, análisis, causa o acción propuesta, eventos, observaciones o soportes (`archivos` no tiene FK
+ * hacia la medición: quitarla dejaría la evidencia huérfana). Una sola definición para retirar y para cambiar el inicio.
+ */
+const conDatos = (sql: Cliente | TransactionSql) => sql`(m.estado <> 'abierta' OR m.no_aplica
+  OR coalesce(btrim(m.analisis), '') <> '' OR coalesce(btrim(m.causa), '') <> '' OR coalesce(btrim(m.accion_propuesta), '') <> ''
+  OR EXISTS (SELECT 1 FROM medicion_valores mv WHERE mv.medicion_id = m.id)
+  OR EXISTS (SELECT 1 FROM medicion_eventos me WHERE me.medicion_id = m.id)
+  OR EXISTS (SELECT 1 FROM medicion_observaciones mo WHERE mo.medicion_id = m.id)
+  OR EXISTS (SELECT 1 FROM archivos ar WHERE ar.contexto = 'medicion' AND ar.contexto_id = m.id))`;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Designados
 // ─────────────────────────────────────────────────────────────────────────────
@@ -97,12 +110,6 @@ export async function designadosDe(indicadorId: number, opciones?: { sql?: Clien
     filas.filter((f) => f.funcion === funcion).map((f) => ({ id: Number(f.id), nombre: f.nombre as string, activo: f.activo as boolean }));
   return { mide: de("mide"), analiza: de("analiza"), seguimiento: de("seguimiento") };
 }
-
-const AVISO_DESIGNACION: Record<FuncionDesignado, string> = {
-  mide: "Ahora mide",
-  analiza: "Ahora analiza",
-  seguimiento: "Ahora hace seguimiento de",
-};
 
 /**
  * Reemplaza la lista de una función (spec §7.3). Solo se puede designar a usuarios activos; quien ya estaba en la lista y
@@ -226,14 +233,13 @@ export async function cambiarOperacion(
     if (JSON.stringify(antes) === JSON.stringify(despues)) return;
 
     // Por fechas, no por clave: una ficha anterior pudo tener otra periodicidad.
-    const [conDatos] = await tx`SELECT m.id FROM mediciones m
-      WHERE m.indicador_id = ${i.id} AND m.desde < ${nuevo.desde}
-        AND (m.estado <> 'abierta' OR m.no_aplica OR coalesce(btrim(m.analisis), '') <> ''
-          OR EXISTS (SELECT 1 FROM medicion_valores mv WHERE mv.medicion_id = m.id)
-          OR EXISTS (SELECT 1 FROM medicion_eventos me WHERE me.medicion_id = m.id)
-          OR EXISTS (SELECT 1 FROM medicion_observaciones mo WHERE mo.medicion_id = m.id))
+    const [hayDatos] = await tx`SELECT m.id FROM mediciones m
+      WHERE m.indicador_id = ${i.id} AND m.desde < ${nuevo.desde} AND ${conDatos(tx)}
       LIMIT 1`;
-    if (conDatos) throw new ErrorIndicador("Hay mediciones con datos antes de ese periodo");
+    if (hayDatos) throw new ErrorIndicador("Hay mediciones con datos antes de ese periodo");
+    // Las abiertas y vacías anteriores al inicio nuevo no tienen historia: no se dejan.
+    const quitadas = await tx`DELETE FROM mediciones m
+      WHERE m.indicador_id = ${i.id} AND m.desde < ${nuevo.desde} AND NOT ${conDatos(tx)} RETURNING m.id`;
 
     await tx`UPDATE indicadores SET plazo_reporte_dias = ${despues.plazoReporteDias}, inicio_medicion = ${despues.inicioMedicion},
         soporte_obligatorio = ${despues.soporteObligatorio}, nivel_acceso = ${despues.nivelAcceso}
@@ -243,7 +249,7 @@ export async function cambiarOperacion(
       accion: "indicador_operacion",
       entidad: "indicador",
       entidadId: i.id,
-      detalle: { codigo: i.codigo, antes, despues },
+      detalle: { codigo: i.codigo, antes, despues, ...(quitadas.length > 0 ? { medicionesQuitadas: quitadas.length } : {}) },
     });
   });
 }
@@ -366,10 +372,7 @@ export async function retirar(sesion: SesionFlujo, d: { indicadorId: number; mot
     if (i.estado !== "activo") throw new ErrorIndicador("Solo se puede retirar un indicador activo");
     const descartadas = await descartarEnCurso(tx, i.id, ahora);
     const quitadas = await tx`DELETE FROM mediciones m
-      WHERE m.indicador_id = ${i.id} AND m.estado = 'abierta' AND NOT m.no_aplica AND coalesce(btrim(m.analisis), '') = ''
-        AND NOT EXISTS (SELECT 1 FROM medicion_valores mv WHERE mv.medicion_id = m.id)
-        AND NOT EXISTS (SELECT 1 FROM medicion_eventos me WHERE me.medicion_id = m.id)
-        AND NOT EXISTS (SELECT 1 FROM medicion_observaciones mo WHERE mo.medicion_id = m.id)
+      WHERE m.indicador_id = ${i.id} AND NOT ${conDatos(tx)}
       RETURNING m.id`;
     await tx`UPDATE indicadores SET estado = 'retirado', baja_por = ${sesion.usuarioId}, baja_en = ${ahora}, baja_motivo = ${motivo}
       WHERE id = ${i.id}`;
@@ -502,7 +505,8 @@ export async function panelDeAdministracion(
   const anio = Number(fechaEnZona(opciones?.ahora ?? new Date(), zona).slice(0, 4));
   const inicio = (i.inicio_medicion as string | null) ?? "";
   const claves = periodicidad ? [...clavesDelAnio(periodicidad, anio - 2), ...clavesDelAnio(periodicidad, anio - 1), ...clavesDelAnio(periodicidad, anio)] : [];
-  if (inicio && (periodicidad === null || periodicidadDe(inicio) === periodicidad) && !claves.includes(inicio)) claves.unshift(inicio);
+  // El valor guardado siempre es una opción, aunque ya no sea de la periodicidad: lo decide el servidor, no el navegador.
+  if (inicio && !claves.includes(inicio)) claves.unshift(inicio);
   const [usuarios, procesos, propuestos, enviadas] = await Promise.all([
     sql`SELECT id, nombre FROM usuarios WHERE activo OR id = ANY(${actuales}) ORDER BY nombre, id`,
     sql`SELECT id, sigla, nombre FROM procesos WHERE activo ORDER BY nombre`,
@@ -524,7 +528,9 @@ export async function panelDeAdministracion(
     periodicidad,
     periodos: claves.map((clave) => {
       const etiqueta = periodoDe(clave, zona)?.etiqueta ?? clave;
-      return { clave, etiqueta: etiqueta.charAt(0).toUpperCase() + etiqueta.slice(1) };
+      const base = etiqueta.charAt(0).toUpperCase() + etiqueta.slice(1);
+      const ajeno = periodicidad !== null && periodicidadDe(clave) !== periodicidad;
+      return { clave, etiqueta: ajeno ? `${base} (no es de la periodicidad de la ficha)` : base };
     }),
     usuarios: usuarios.map((u) => ({ id: Number(u.id), nombre: u.nombre as string })),
     designados,

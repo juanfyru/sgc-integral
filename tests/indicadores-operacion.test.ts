@@ -13,7 +13,7 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { aprobarFichas, enviarAAprobacion, versionVigente } from "@/db/consultas/indicadores/aprobacion";
-import { abrirCambio, contenidoDeVersion, crearIndicador } from "@/db/consultas/indicadores/fichas";
+import { abrirCambio, contenidoDeVersion, crearIndicador, guardarBorrador } from "@/db/consultas/indicadores/fichas";
 import {
   borrarIndicador,
   cambiarOperacion,
@@ -138,7 +138,7 @@ const avisos = (tx: TransactionSql, tipo: string, indicadorId: number) =>
     WHERE tipo = ${tipo} AND entidad = 'indicador' AND entidad_id = ${indicadorId} ORDER BY usuario_id`;
 
 const bitacora = (tx: TransactionSql, accion: string, indicadorId: number) =>
-  tx`SELECT detalle, usuario_id FROM auditoria WHERE accion = ${accion} AND entidad = 'indicador' AND entidad_id = ${indicadorId}`;
+  tx`SELECT detalle, usuario_id FROM auditoria WHERE accion = ${accion} AND entidad = 'indicador' AND entidad_id = ${indicadorId} ORDER BY id`;
 
 const designadosIds = async (tx: TransactionSql, indicadorId: number, funcion: string) =>
   (await tx`SELECT usuario_id FROM indicador_designados WHERE indicador_id = ${indicadorId} AND funcion = ${funcion} ORDER BY usuario_id`).map((f) =>
@@ -275,9 +275,19 @@ describe("datos de operación", () => {
       await rechaza(cambiarOperacion(b.admin, { ...op, inicioMedicion: "2026-04" }, { sql: tx }), "Hay mediciones con datos antes de ese periodo");
       // Hasta el periodo de la medición con datos, sí.
       await cambiarOperacion(b.admin, { ...op, inicioMedicion: "2026-03" }, { sql: tx });
-      // Y una medición abierta y vacía no lo impide.
-      await medicion(tx, c.indicadorId, c.versionId, "2026-05", "abierta");
-      await cambiarOperacion(b.admin, { ...op, inicioMedicion: "2026-03" }, { sql: tx });
+      // Una abierta y vacía antes del inicio nuevo se quita; una con solo causa (datos) lo impide.
+      const d = await aprobado(tx, b);
+      const vacia = await medicion(tx, d.indicadorId, d.versionId, "2026-02", "abierta");
+      const soloCausa = await medicion(tx, d.indicadorId, d.versionId, "2026-03", "abierta");
+      await tx`UPDATE mediciones SET causa = 'Faltó personal' WHERE id = ${soloCausa}`;
+      const cambio = { ...op, indicadorId: d.indicadorId, plazoReporteDias: 12, inicioMedicion: "2026-05" };
+      await rechaza(cambiarOperacion(b.admin, cambio, { sql: tx }), "Hay mediciones con datos antes de ese periodo");
+      expect((await tx`SELECT id FROM mediciones WHERE id = ${vacia}`).length).toBe(1);
+      await tx`UPDATE mediciones SET causa = NULL WHERE id = ${soloCausa}`;
+      await cambiarOperacion(b.admin, cambio, { sql: tx });
+      expect((await tx`SELECT id FROM mediciones WHERE indicador_id = ${d.indicadorId}`).length).toBe(0);
+      const [i] = await tx`SELECT plazo_reporte_dias, inicio_medicion FROM indicadores WHERE id = ${d.indicadorId}`;
+      expect(i).toMatchObject({ plazo_reporte_dias: 12, inicio_medicion: "2026-05" });
     }));
 });
 
@@ -350,8 +360,17 @@ describe("retirar", () => {
       await tx`INSERT INTO medicion_valores (medicion_id, variable_id, valor) VALUES (${conValores}, ${variable.id}, 3)`;
       await tx`UPDATE mediciones SET analisis = 'Se analizó' WHERE id = ${conAnalisis}`;
       await tx`INSERT INTO medicion_eventos (medicion_id, usuario_id, tipo) VALUES (${conEvento}, ${b.admin.usuarioId}, 'reporte')`;
-      // Un cambio por aprobar, en vuelo.
+      // Un cambio mayor por aprobar, en vuelo.
       const { versionId: enCurso } = await abrirCambio(b.admin, c.indicadorId, { sql: tx });
+      await guardarBorrador(b.admin, enCurso, { ...datos(b, { mide: [mide.usuarioId], analiza: [mide.usuarioId] }), meta: "80", motivoCambio: "Meta más realista" }, { sql: tx });
+      await enviarAAprobacion(b.admin, { versionId: enCurso, credenciales: CLAVE }, firmar(tx));
+      expect((await tx`SELECT estado FROM indicador_versiones WHERE id = ${enCurso}`)[0].estado).toBe("por_aprobar");
+      // Soporte solo, y causa sola: tienen datos aunque no haya valores.
+      const soloSoporte = await medicion(tx, c.indicadorId, c.versionId, "2026-09", "abierta");
+      const soloCausa = await medicion(tx, c.indicadorId, c.versionId, "2026-10", "abierta");
+      await tx`UPDATE mediciones SET causa = 'Faltó personal' WHERE id = ${soloCausa}`;
+      await tx`INSERT INTO archivos (rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256, contexto, contexto_id)
+        VALUES ('evidencia', ${`zz/${unico()}.pdf`}, 'soporte.pdf', 'pdf', 'application/pdf', 10, ${"a".repeat(64)}, 'medicion', ${soloSoporte})`;
 
       await rechaza(retirar(b.admin, { indicadorId: c.indicadorId, motivo: "no" }, { sql: tx }), "El motivo debe tener al menos 5 caracteres");
       await rechaza(retirar(b.admin, { indicadorId: c.indicadorId, motivo: "x".repeat(501) }, { sql: tx }), "El motivo no puede pasar de 500 caracteres");
@@ -364,7 +383,7 @@ describe("retirar", () => {
       expect(i.baja_motivo).toBe("Se dejó de medir en el hospital");
 
       const quedan = (await tx`SELECT id FROM mediciones WHERE indicador_id = ${c.indicadorId} ORDER BY id`).map((m) => Number(m.id));
-      expect(quedan).toEqual([conValores, conAnalisis, conEvento, reportada].sort((x, y) => x - y));
+      expect(quedan).toEqual([conValores, conAnalisis, conEvento, reportada, soloSoporte, soloCausa].sort((x, y) => x - y));
       expect(quedan).not.toContain(vacia);
       const [v] = await tx`SELECT estado FROM indicador_versiones WHERE id = ${enCurso}`;
       expect(v.estado).toBe("descartada");

@@ -41,22 +41,20 @@ export function DialogoDesignar({
   designados: Record<FuncionDesignado, Persona[]>;
 }) {
   const [funcion, setFuncion] = useState<FuncionDesignado>("mide");
-  const [elegidos, setElegidos] = useState<Record<FuncionDesignado, number[]>>({
-    mide: designados.mide.map((p) => p.id),
-    analiza: designados.analiza.map((p) => p.id),
-    seguimiento: designados.seguimiento.map((p) => p.id),
-  });
+  // Solo se envía la función elegida: al cambiarla, la selección vuelve a la lista guardada de esa función.
+  const guardados = (f: FuncionDesignado) => designados[f].map((p) => p.id);
+  const [elegidos, setElegidos] = useState<number[]>(guardados("mide"));
   const [filtro, setFiltro] = useState("");
   const [estado, enviar, pendiente] = useAccionDeDialogo(designarAccion, alCerrar);
   const idFuncion = useId();
   const idFiltro = useId();
   const inactivos = new Set(Object.values(designados).flatMap((l) => l.filter((p) => !p.activo).map((p) => p.id)));
-  const actuales = elegidos[funcion];
+  const actuales = elegidos;
   const visibles = usuarios.filter((u) => u.nombre.toLowerCase().includes(filtro.trim().toLowerCase()));
   const info = FUNCIONES.find((f) => f.clave === funcion)!;
 
   function alternar(id: number, marcado: boolean) {
-    setElegidos((previo) => ({ ...previo, [funcion]: marcado ? [...previo[funcion], id] : previo[funcion].filter((x) => x !== id) }));
+    setElegidos((previo) => (marcado ? [...previo, id] : previo.filter((x) => x !== id)));
   }
 
   return (
@@ -73,7 +71,11 @@ export function DialogoDesignar({
             <label htmlFor={idFuncion} className="text-sm font-medium">
               Función
             </label>
-            <select id={idFuncion} name="funcion" value={funcion} onChange={(e) => setFuncion(e.target.value as FuncionDesignado)} className={`${claseControl} w-full`}>
+            <select id={idFuncion} name="funcion" value={funcion} onChange={(e) => {
+                const nueva = e.target.value as FuncionDesignado;
+                setFuncion(nueva);
+                setElegidos(guardados(nueva));
+              }} className={`${claseControl} w-full`}>
               {FUNCIONES.map((f) => (
                 <option key={f.clave} value={f.clave}>
                   {f.etiqueta}
