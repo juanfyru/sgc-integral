@@ -28,7 +28,7 @@ export function TablaDatos({
       role="region"
       aria-label={titulo}
       tabIndex={0}
-      className="overflow-x-auto rounded-lg border border-border print:overflow-visible print:border-0"
+      className="relative overflow-x-auto rounded-lg border border-border print:overflow-visible print:border-0"
     >
       <table className="w-full text-sm print:text-xs">
         <caption className="sr-only">{titulo}</caption>

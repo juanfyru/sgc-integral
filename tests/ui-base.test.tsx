@@ -37,6 +37,9 @@ describe("componentes base de presentación", () => {
     expect(h).toContain("Sin usuarios");
     expect(h).toMatch(/colspan="2"/i);
     expect(h).toMatch(/<span class="sr-only">Acción<\/span>/);
+    // Posicionado: los `sr-only` de las celdas (absolutos) quedan dentro del desplazamiento de la tabla, y a 390 px la
+    // página no se desplaza a lo ancho.
+    expect(h).toMatch(/<div role="region"(?=[^>]*class="(?=[^"]*\brelative\b)(?=[^"]*\boverflow-x-auto\b)[^"]*")[^>]*>/);
   });
   it("TarjetaCifra pinta la franja del estado y el valor", () => {
     const h = html(<TarjetaCifra etiqueta="Vistas" valor={212} estado="bien" />);
