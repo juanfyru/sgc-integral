@@ -35,7 +35,11 @@ describe("textos de indicadores", () => {
     expect(fraseDeResultado({ resultado: f("80"), semaforo: "atencion", noAplica: false, motivo: null }, asc, pct)).toBe("No cumple: 80 % frente a una meta de 90 %.");
     expect(fraseDeResultado({ resultado: f("28"), semaforo: "bien", noAplica: false, motivo: null }, desc, min)).toBe("Cumple: 28 min frente a una meta de máximo 30 min.");
     const cte: Regla = { ...asc, tendencia: "constante", meta: f("98"), metaMax: f("100"), modo: "fijo", umbralPct: null, tolerancia: f("2") };
-    expect(fraseDeResultado({ resultado: f("99"), semaforo: "bien", noAplica: false, motivo: null }, cte, pct)).toBe("Cumple: 99 % frente a una meta de 98 a 100 %.");
+    expect(fraseDeResultado({ resultado: f("99"), semaforo: "bien", noAplica: false, motivo: null }, cte, pct)).toBe("Cumple: 99 % dentro del rango de 98 a 100 %.");
+    expect(fraseDeResultado({ resultado: f("97"), semaforo: "atencion", noAplica: false, motivo: null }, cte, pct)).toBe("No cumple: 97 % fuera del rango de 98 a 100 %.");
+    const uno: Regla = { ...cte, meta: f("50"), metaMax: null };
+    expect(fraseDeResultado({ resultado: f("50"), semaforo: "bien", noAplica: false, motivo: null }, uno, min)).toBe("Cumple: 50 min frente a una meta de 50 min.");
+    expect(fraseDeResultado({ resultado: f("50"), semaforo: "bien", noAplica: false, motivo: null }, { ...uno, metaMax: f("50") }, min)).toBe("Cumple: 50 min frente a una meta de 50 min.");
     expect(fraseDeResultado({ resultado: f("92"), semaforo: null, noAplica: false, motivo: null }, { ...asc, meta: null }, pct)).toBe("92 %, sin meta para este periodo.");
     expect(fraseDeResultado({ resultado: null, semaforo: null, noAplica: true, motivo: "no había auditorías programadas" }, asc, pct)).toBe("No aplica: no había auditorías programadas.");
     expect(fraseDeResultado({ resultado: null, semaforo: null, noAplica: false, motivo: null }, asc, pct)).toBe("Sin dato: no se reportó.");

@@ -64,6 +64,10 @@ describe("periodos de indicadores", () => {
     expect(periodosTerminados("mensual", "2027-02", ahora, zona)).toEqual([]);
     expect(periodosTerminados("mensual", "2026-12", ahora, zona).map((x) => x.clave)).toEqual(["2026-12", "2027-01"]);
   });
+  it("una clave de otra periodicidad es un error, no una lista vacía", () => {
+    expect(() => periodosTerminados("mensual", "2026-T1", new Date("2027-01-01T12:00:00Z"), zona)).toThrow(/2026-T1.*trimestral.*mensual/);
+    expect(() => periodosTerminados("mensual", "basura", new Date(), zona)).toThrow(/inválida/);
+  });
   it("anterior, mismo periodo del año anterior, claves y meses", () => {
     expect([anterior("2026-01"), anterior("2026-B1"), anterior("2026-T1"), anterior("2026-S1"), anterior("2026")]).toEqual([
       "2025-12",

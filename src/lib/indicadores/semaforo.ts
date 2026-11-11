@@ -2,7 +2,7 @@
  * Meta y semáforo de un indicador (spec §7.5). Todo se decide con fracciones exactas, nunca con el número
  * redondeado. Sin Node ni BD: lo importan componentes de cliente.
  */
-import { aDecimal, CERO, CIEN, comparar, dividir, entero, fraccion, multiplicar, restar, sumar, UNO, type Fraccion } from "./formula/fraccion";
+import { aDecimal, CERO, CIEN, comparar, dividir, entero, fraccion, multiplicar, restar, UNO, type Fraccion } from "./formula/fraccion";
 import type { Semaforo, Tendencia, ModoSemaforo } from "./tipos";
 import type { Unidad } from "./textos";
 
@@ -79,6 +79,12 @@ export function errorDeRegla(r: Regla): string | null {
   }
   if (r.modo === null) return "Elija el modo del semáforo";
   if (r.modo === "relativo") {
+    if (r.tendencia === "ascendente" && comparar(r.meta, CERO) <= 0) {
+      return "Con meta 0 o negativa en tendencia ascendente, escriba los rangos del semáforo";
+    }
+    if (r.tendencia === "descendente" && comparar(r.meta, CERO) < 0) {
+      return "Con meta negativa en tendencia descendente, escriba los rangos del semáforo";
+    }
     if (r.umbralPct === null || !Number.isInteger(r.umbralPct) || r.umbralPct < 1 || r.umbralPct > 99) {
       return "El umbral de atención debe estar entre 1 y 99 %";
     }
@@ -95,19 +101,23 @@ export function rangosEnPalabras(r: Regla, u: Unidad): string | null {
   if (r.meta === null || errorDeRegla(r) !== null) return null;
   const n = (a: Fraccion) => numeroExacto(a, u.decimales);
   const con = (a: Fraccion) => `${n(a)}${u.sufijo}`;
+  const esPorcentaje = u.sufijo.trim() === "%";
   if (r.tendencia === "constante") {
     const maximo = r.metaMax ?? r.meta;
     const tolerancia = r.tolerancia ?? CERO;
     const bien = comparar(maximo, r.meta) === 0 ? `Bien en ${con(r.meta)}` : `Bien de ${n(r.meta)} a ${con(maximo)}`;
     return comparar(tolerancia, CERO) === 0
       ? `${bien} · Fuera del rango, Crítico`
-      : `${bien} · Atención hasta ${con(tolerancia)} fuera del rango · Crítico más allá`;
+      : `${bien} · Atención hasta ${esPorcentaje ? `${n(tolerancia)} ${n(tolerancia) === "1" ? "punto" : "puntos"}` : con(tolerancia)} fuera del rango · Crítico más allá`;
   }
   const limite = limiteDeCritico(r);
   if (limite === null) return null;
-  const paso = dividir(UNO, entero(10 ** u.decimales))!;
   if (r.tendencia === "ascendente") {
-    return `Bien desde ${con(r.meta)} · Atención de ${n(limite)} a ${con(restar(r.meta, paso))} · Crítico por debajo de ${con(limite)}`;
+    // Con la meta en la cuadrícula de decimales de la unidad, lo último que se ve en Atención es la meta menos un paso;
+    // fuera de ella, un valor entre ese y la meta se vería en Atención, así que se dice «menos de».
+    const enCuadricula = multiplicar(r.meta, entero(10 ** u.decimales)).d === BigInt(1);
+    const tope = enCuadricula ? `a ${con(restar(r.meta, dividir(UNO, entero(10 ** u.decimales))!))}` : `a menos de ${con(r.meta)}`;
+    return `Bien desde ${con(r.meta)} · Atención de ${n(limite)} ${tope} · Crítico por debajo de ${con(limite)}`;
   }
-  return `Bien hasta ${con(r.meta)} · Atención de ${n(sumar(r.meta, paso))} a ${con(limite)} · Crítico por encima de ${con(limite)}`;
+  return `Bien hasta ${con(r.meta)} · Atención de más de ${n(r.meta)} a ${con(limite)} · Crítico por encima de ${con(limite)}`;
 }

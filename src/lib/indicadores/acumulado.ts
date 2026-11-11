@@ -24,14 +24,16 @@ export function acumulado(
   const ordenados = [...periodos].sort((a, b) => (a.clave < b.clave ? -1 : a.clave > b.clave ? 1 : 0));
   const deLaVersion = ordenados.filter((p) => p.versionId === f.versionId);
   const desde = deLaVersion.length > 0 ? deLaVersion[0].clave : null;
-  const medidos = deLaVersion.filter((p) => !p.noAplica && p.valores !== null);
+  // Un periodo al que le falta alguna letra de la fórmula es «sin dato»: no aporta a las demás.
+  const completo = (p: PeriodoMedido) => p.valores !== null && f.calculo.letras.every((letra) => Object.hasOwn(p.valores!, letra));
+  const medidos = deLaVersion.filter((p) => !p.noAplica && completo(p));
 
   // Lo que falta: un periodo esperado que no existe o está «sin dato». Lo anterior a `desde` es de otra versión.
   const porClave = new Map(ordenados.map((p) => [p.clave, p]));
   const faltan = f.esperados.filter((clave) => {
     const p = porClave.get(clave);
     if (p === undefined) return desde === null || clave >= desde;
-    return p.versionId === f.versionId && !p.noAplica && p.valores === null;
+    return p.versionId === f.versionId && !p.noAplica && !completo(p);
   });
 
   const valores: Record<string, Fraccion> = {};

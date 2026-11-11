@@ -7,6 +7,7 @@ const base = (): ContenidoFicha => ({
   proposito: "Saber si se atiende a tiempo",
   requisito: "NTC ISO 9001:2015, numeral 9.1",
   tipoNombre: "Eficacia",
+  clasificacionId: 1,
   clasificacionNombre: "Operativo",
   objetivoNombre: "Mejorar la oportunidad",
   procesoNombre: "Urgencias",
@@ -19,6 +20,7 @@ const base = (): ContenidoFicha => ({
   forma: "porcentaje",
   factor: null,
   formula: "A / B * 100",
+  unidadId: 1,
   unidadNombre: "Porcentaje",
   unidadSufijo: " %",
   decimales: 1,
@@ -96,17 +98,19 @@ describe("tipo de cambio de una ficha", () => {
     ["límites del resultado", (c) => (c.resultadoMax = "120")],
     ["línea base", (c) => (c.lineaBaseValor = "80")],
     ["una norma", (c) => (c.normas = [{ normaNombre: "Otra norma" }])],
+    ["el nombre de la clasificación (mismo id)", (c) => (c.clasificacionNombre = "Operacional")],
+    ["el nombre de la unidad (mismo id)", (c) => (c.unidadNombre = "Porcentaje (%)")],
+    ["el sufijo de la unidad (mismo id)", (c) => (c.unidadSufijo = "%")],
     ["el ente", (c) => (c.ente = "Secretaría")],
   ];
   const mayores: [string, (c: ContenidoFicha) => void][] = [
-    ["clasificación", (c) => (c.clasificacionNombre = "Estratégico")],
+    ["clasificación (otro id)", (c) => ((c.clasificacionId = 2), (c.clasificacionNombre = "Estratégico"))],
     ["forma", (c) => (c.forma = "tasa")],
     ["fórmula", (c) => (c.formula = "A / B")],
     ["cuántas variables", (c) => c.variables.pop()],
     ["origen de una variable", (c) => (c.variables[0].origen = "compartida")],
     ["consolidación de una variable", (c) => (c.variables[0].consolidacion = "promedio")],
-    ["unidad", (c) => (c.unidadNombre = "Minutos")],
-    ["sufijo de la unidad", (c) => (c.unidadSufijo = " min")],
+    ["unidad (otro id)", (c) => ((c.unidadId = 2), (c.unidadNombre = "Minutos"), (c.unidadSufijo = " min"))],
     ["periodicidad", (c) => (c.periodicidad = "trimestral")],
     ["tendencia", (c) => (c.tendencia = "descendente")],
     ["meta", (c) => (c.meta = "95")],
@@ -147,6 +151,16 @@ describe("tipo de cambio de una ficha", () => {
     expect(camposCambiados(base(), nuevo)).toEqual(["Meta", "Nombre"]);
     expect(camposCambiados(base(), base())).toEqual([]);
   });
+  it("renombrar el catálogo no vuelve mayor la ficha; cambiar de unidad sí, y se dice una sola vez", () => {
+    const renombrada = base();
+    renombrada.unidadNombre = "Porcentaje (%)";
+    expect(camposCambiados(base(), renombrada)).toEqual(["Unidad (nombre)"]);
+    const otra = base();
+    otra.unidadId = 2;
+    otra.unidadNombre = "Minutos";
+    otra.unidadSufijo = " min";
+    expect(camposCambiados(base(), otra)).toEqual(["Unidad"]);
+  });
   it("los campos mayores nombrados existen en la ficha", () => {
     for (const campo of CAMPOS_MAYORES) expect(Object.keys(base())).toContain(campo);
   });
@@ -170,6 +184,11 @@ describe("huella de la ficha", () => {
     nuevo.variables.reverse();
     nuevo.meta = "90.00";
     expect(huellaDeFicha(nuevo)).toBe(huellaDeFicha(base()));
+  });
+  it("cambia si cambia el nombre firmado de la unidad", () => {
+    const nuevo = base();
+    nuevo.unidadNombre = "Porcentaje (%)";
+    expect(huellaDeFicha(nuevo)).not.toBe(huellaDeFicha(base()));
   });
 });
 

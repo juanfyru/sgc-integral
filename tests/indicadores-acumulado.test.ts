@@ -85,6 +85,13 @@ describe("acumulado", () => {
     expect(r.desde).toBe("2026-T2");
     expect(r.faltan).toEqual([]);
   });
+  it("un periodo al que le falta una letra cuenta como «sin dato» y no alimenta a las demás", () => {
+    const parcial: PeriodoMedido = { clave: "2026-T2", versionId: 1, noAplica: false, valores: { A: f("5") } };
+    const r = acumulado([p("2026-T1", "5", "5"), parcial], { versionId: 1, calculo: porcentaje(), consolidacion: { A: "suma", B: "suma" }, esperados: ["2026-T1", "2026-T2"], regla: asc });
+    expect(r.faltan).toEqual(["2026-T2"]);
+    expect(r.valores).toEqual({ A: f("5"), B: f("5") });
+    expect(comparar(r.resultado!, f("100"))).toBe(0);
+  });
   it("sin periodos medidos no hay resultado", () => {
     const r = acumulado([], ficha("suma", ["2026-T1"]));
     expect(r).toMatchObject({ resultado: null, semaforo: null, faltan: ["2026-T1"], desde: null });

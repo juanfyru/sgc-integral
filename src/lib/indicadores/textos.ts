@@ -61,6 +61,9 @@ export function fraseDeResultado(
   const meta = metaEnPalabras(r, u);
   if (m.semaforo === null || meta === null) return `${textoValor(m.resultado, u)}, sin meta para este periodo.`;
   const veredicto = m.semaforo === "bien" ? "Cumple" : "No cumple";
+  if (r.tendencia === "constante" && r.metaMax !== null && comparar(r.metaMax, r.meta!) !== 0) {
+    return `${veredicto}: ${textoValor(m.resultado, u, r)} ${m.semaforo === "bien" ? "dentro del" : "fuera del"} rango de ${meta}.`;
+  }
   return `${veredicto}: ${textoValor(m.resultado, u, r)} frente a una meta de ${meta}.`;
 }
 

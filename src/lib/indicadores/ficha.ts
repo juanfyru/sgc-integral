@@ -33,6 +33,7 @@ export type ContenidoFicha = {
   proposito: string | null;
   requisito: string | null;
   tipoNombre: string | null;
+  clasificacionId: number | null;
   clasificacionNombre: string | null;
   objetivoNombre: string | null;
   procesoNombre: string | null;
@@ -45,6 +46,7 @@ export type ContenidoFicha = {
   forma: string | null;
   factor: number | null;
   formula: string | null;
+  unidadId: number | null;
   unidadNombre: string | null;
   unidadSufijo: string | null;
   decimales: number | null;
@@ -73,17 +75,20 @@ export type ContenidoFicha = {
 
 type Campo = keyof Omit<ContenidoFicha, "variables" | "responsables" | "normas">;
 
-/** Los campos escalares cuyo cambio es mayor (spec §7.2). Las variables tienen su propia regla (`ESTRUCTURA_DE_VARIABLE`). */
+/**
+ * Los campos escalares cuyo cambio es mayor (spec §7.2). Las variables tienen su propia regla (`ESTRUCTURA_DE_VARIABLE`).
+ * La clasificación y la unidad se comparan por id: otro id es mayor; el mismo id con otro nombre o sufijo firmado (el
+ * catálogo se renombró) es menor.
+ */
 export const CAMPOS_MAYORES: readonly Campo[] = [
-  "clasificacionNombre",
+  "clasificacionId",
   "origenDato",
   "calculo",
   "calculoAlcance",
   "forma",
   "factor",
   "formula",
-  "unidadNombre",
-  "unidadSufijo",
+  "unidadId",
   "periodicidad",
   "tendencia",
   "meta",
@@ -100,7 +105,8 @@ const ETIQUETAS: Record<Campo, string> = {
   proposito: "Propósito",
   requisito: "Requisito",
   tipoNombre: "Tipo",
-  clasificacionNombre: "Clasificación",
+  clasificacionId: "Clasificación",
+  clasificacionNombre: "Clasificación (nombre)",
   objetivoNombre: "Objetivo que mide",
   procesoNombre: "Proceso",
   subprocesoNombre: "Subproceso",
@@ -112,8 +118,9 @@ const ETIQUETAS: Record<Campo, string> = {
   forma: "Forma",
   factor: "Factor de la tasa",
   formula: "Fórmula",
-  unidadNombre: "Unidad",
-  unidadSufijo: "Sufijo de la unidad",
+  unidadId: "Unidad",
+  unidadNombre: "Unidad (nombre)",
+  unidadSufijo: "Unidad (sufijo)",
   decimales: "Decimales",
   periodicidad: "Periodicidad",
   tendencia: "Tendencia",
@@ -133,6 +140,13 @@ const ETIQUETAS: Record<Campo, string> = {
   periodicidadExterna: "Periodicidad externa",
   plazoExternoDias: "Plazo externo",
   dimensionId: "Dimensión",
+};
+
+/** El nombre firmado que depende de un id de catálogo: si el id cambió, el cambio ya se dijo con el id. */
+const DEPENDE_DE: Partial<Record<Campo, Campo>> = {
+  clasificacionNombre: "clasificacionId",
+  unidadNombre: "unidadId",
+  unidadSufijo: "unidadId",
 };
 
 const NUMEROS: ReadonlySet<string> = new Set([
@@ -192,6 +206,8 @@ function cambios(vigente: ContenidoFicha, nuevo: ContenidoFicha): Cambio[] {
   const b = conOrden(nuevo);
   const salida: Cambio[] = [];
   for (const campo of Object.keys(ETIQUETAS) as Campo[]) {
+    const id = DEPENDE_DE[campo];
+    if (id !== undefined && json({ [id]: a[id] }) !== json({ [id]: b[id] })) continue;
     if (json({ [campo]: a[campo] }) !== json({ [campo]: b[campo] })) salida.push({ etiqueta: ETIQUETAS[campo], mayor: CAMPOS_MAYORES.includes(campo) });
   }
   const mismasLetras = a.variables.map((v) => v.letra).join() === b.variables.map((v) => v.letra).join();
@@ -223,5 +239,9 @@ export function camposCambiados(vigente: ContenidoFicha, nuevo: ContenidoFicha):
 
 /** SHA-256 en hexadecimal del contenido en JSON canónico (claves ordenadas, listas sin orden propio ordenadas). */
 export function huellaDeFicha(c: ContenidoFicha): string {
-  return createHash("sha256").update(json(conOrden(c))).digest("hex");
+  // Los ids de catálogo no se firman: la huella es sobre los textos.
+  const firmado: Record<string, unknown> = { ...conOrden(c) };
+  delete firmado.clasificacionId;
+  delete firmado.unidadId;
+  return createHash("sha256").update(json(firmado)).digest("hex");
 }

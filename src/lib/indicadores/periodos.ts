@@ -68,7 +68,8 @@ export function clavesDelAnio(p: Periodicidad, anio: number): string[] {
 
 /** Los periodos de la periodicidad desde `desdeClave` (incluida) hasta el último que terminó antes de `ahora`. */
 export function periodosTerminados(p: Periodicidad, desdeClave: string, ahora: Date, zona: string): Periodo[] {
-  if (periodicidadDe(desdeClave) !== p) return [];
+  const real = periodicidadDe(desdeClave);
+  if (real !== p) throw new Error(`La clave «${desdeClave}» es ${real ?? "inválida"} y se pidió la periodicidad ${p}`);
   const terminados: Periodo[] = [];
   for (let clave = desdeClave; terminados.length < 1000; clave = siguiente(clave)) {
     const periodo = periodoDe(clave, zona);
