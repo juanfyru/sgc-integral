@@ -32,19 +32,27 @@ vi.mock("@/app/acciones-indicadores", () => ({
   crearIndicadorAccion: vi.fn(),
   guardarBorradorAccion: vi.fn(),
   abrirCambioAccion: vi.fn(),
+  enviarAAprobacionAccion: vi.fn(),
+  aprobarFichasAccion: vi.fn(),
+  devolverFichaAccion: vi.fn(),
+  descartarBorradorAccion: vi.fn(),
 }));
 
+import PaginaIndicador from "@/app/(app)/indicadores/[codigo]/page";
 import PaginaEditarFicha from "@/app/(app)/indicadores/[codigo]/editar/page";
 import PaginaNuevoIndicador from "@/app/(app)/indicadores/nuevo/page";
 import PaginaIndicadores from "@/app/(app)/indicadores/page";
+import PaginaPorAprobar from "@/app/(app)/indicadores/por-aprobar/page";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
+import { aprobarFichas, enviarAAprobacion } from "@/db/consultas/indicadores/aprobacion";
 import { crearIndicador } from "@/db/consultas/indicadores/fichas";
 import type { DatosFicha } from "@/lib/esquemas/indicadores";
 import type { SesionValida } from "@/lib/sesion";
 import { indicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
+import { firmaDePrueba } from "./utiles/vigencia";
 
 const sql = obtenerSql();
 
@@ -76,8 +84,8 @@ const enTransaccion = (prueba: (tx: TransactionSql) => Promise<void>) =>
     }
   });
 
-/** Un borrador de forma «porcentaje» en el proceso SGC, creado por la consulta real. */
-async function borrador(tx: TransactionSql, admin: SesionFlujo) {
+/** Un borrador de forma «porcentaje» en el proceso SGC (o en `procesoId`), creado por la consulta real. */
+async function borrador(tx: TransactionSql, admin: SesionFlujo, parcial: Partial<DatosFicha> = {}) {
   const [p] = await tx`SELECT id FROM procesos WHERE sigla = 'SGC'`;
   const [t] = await tx`SELECT id FROM tipos_indicador WHERE nombre = 'Eficacia'`;
   const [c] = await tx`SELECT id FROM clasificaciones_indicador WHERE nombre = 'Operativo'`;
@@ -110,11 +118,25 @@ async function borrador(tx: TransactionSql, admin: SesionFlujo) {
     nivelAcceso: "general",
     mide: [],
     analiza: [],
+    ...parcial,
   };
   return crearIndicador(admin, d, { sql: tx });
 }
 
 const editar = async (codigo: string) => renderToStaticMarkup(await PaginaEditarFicha({ params: Promise.resolve({ codigo }) }));
+const pagina = async (codigo: string, sp: Record<string, string> = {}) =>
+  renderToStaticMarkup(await PaginaIndicador({ params: Promise.resolve({ codigo }), searchParams: Promise.resolve(sp) }));
+const firmar = (tx: TransactionSql) => ({ sql: tx, verificar: firmaDePrueba });
+
+/** Un proceso que solo existe en la transacción, con un líder suyo. */
+async function procesoConLider(tx: TransactionSql) {
+  const sigla = `Z${Date.now() % 100_000_000}${Math.floor(Math.random() * 1000)}`;
+  const [macro] = await tx`SELECT id FROM macroprocesos ORDER BY id LIMIT 1`;
+  const [p] = await tx`INSERT INTO procesos (macroproceso_id, nombre, sigla, slug, icono, orden)
+    VALUES (${macro.id}, ${`Proceso ${sigla}`}, ${sigla}, ${sigla.toLowerCase()}, 'circle', 99) RETURNING id`;
+  const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [Number(p.id)] });
+  return { procesoId: Number(p.id), lider };
+}
 
 describe("las páginas de la ficha de indicador", () => {
   it("/indicadores: Consulta ve lo aprobado sin borradores ni «Nuevo indicador»; quien administra, los borradores con su enlace", () =>
@@ -134,8 +156,11 @@ describe("las páginas de la ficha de indicador", () => {
       contexto.sesion = valida(admin);
       const deAdmin = renderToStaticMarkup(await PaginaIndicadores());
       expect(deAdmin).toContain('href="/indicadores/nuevo"');
-      expect(deAdmin).toContain(`href="/indicadores/${nuevo.codigo}/editar"`);
+      expect(deAdmin).toContain(`href="/indicadores/${nuevo.codigo}"`);
       expect(deAdmin).toContain(">Borrador<");
+      // «Por aprobar» es de quien administra o aprueba.
+      expect(deAdmin).toContain('href="/indicadores/por-aprobar"');
+      expect(deConsulta).not.toContain('href="/indicadores/por-aprobar"');
     }));
 
   it("/indicadores/nuevo: no existe para quien no administra; a quien administra le pinta el formulario", () =>
@@ -172,5 +197,108 @@ describe("las páginas de la ficha de indicador", () => {
       await expect(editar("a b")).rejects.toThrow("NO_ENCONTRADA");
       contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "gerencia" }));
       await expect(editar(aprobado.codigo)).rejects.toThrow("NO_ENCONTRADA");
+    }));
+
+  it("/indicadores/[codigo]/editar: el borrador ofrece enviarlo y avisa si falta la prueba", () =>
+    enTransaccion(async (tx) => {
+      const admin = await sesionAdmin(tx);
+      contexto.sesion = valida(admin);
+      const sinProbar = await borrador(tx, admin);
+      expect(await editar(sinProbar.codigo)).toContain("pruebe la fórmula con valores de ejemplo");
+      const probado = await borrador(tx, admin, { prueba: { valores: { A: "9", B: "10" } } });
+      const html = await editar(probado.codigo);
+      expect(html).toContain(">Enviar a aprobación</button>");
+      expect(html).toContain("Se envía la ficha tal como quedó guardada");
+      // Una ficha nueva no se descarta aquí.
+      expect(html).not.toContain("Descartar el cambio");
+    }));
+
+  it("/indicadores/[codigo]: la ficha técnica y las versiones de un indicador aprobado, para quien lo ve", () =>
+    enTransaccion(async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const [es] = await tx`SELECT id FROM clasificaciones_indicador WHERE nombre = 'Estratégico'`;
+      const nuevo = await borrador(tx, admin, { clasificacionId: Number(es.id), prueba: { valores: { A: "9", B: "10" } } });
+      await enviarAAprobacion(admin, { versionId: nuevo.versionId, credenciales: { clave: "ok" } }, firmar(tx));
+      const gerente = await usuarioDePrueba(tx, { rol: "gerencia" });
+      await aprobarFichas(gerente, { versionIds: [nuevo.versionId], credenciales: { clave: "ok" } }, firmar(tx));
+
+      contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "consulta" }));
+      const ficha = await pagina(nuevo.codigo.toLowerCase());
+      expect(ficha).toContain("Ficha nueva en borrador");
+      expect(ficha).toMatch(/aria-current="page"[^>]*>Ficha técnica</);
+      expect(ficha).toContain("(Cumplidas ÷ Programadas) × 100");
+      expect(ficha).toContain("Bien desde 80 %");
+      expect(ficha).toContain(">Elaboró<");
+      expect(ficha).toContain(">Datos de operación<");
+      expect(ficha).toContain("vigente desde el primer trimestre de 2026");
+      expect(ficha).not.toContain("Editar ficha");
+      const versiones = await pagina(nuevo.codigo, { vista: "versiones" });
+      expect(versiones).toContain("Control de cambios");
+      expect(versiones).toContain("Primera versión de la ficha");
+
+      await expect(pagina(nuevo.codigo, { vista: "otra" })).rejects.toThrow("NO_ENCONTRADA");
+      await expect(pagina(nuevo.codigo, { version: "9" })).rejects.toThrow("NO_ENCONTRADA");
+      await expect(pagina(nuevo.codigo, { version: "uno" })).rejects.toThrow("NO_ENCONTRADA");
+      contexto.sesion = valida(admin);
+      expect(await pagina(nuevo.codigo)).toContain("Editar ficha");
+    }));
+
+  it("/indicadores/[codigo]: la ficha por aprobar de un indicador nuevo la abre quien debe aprobarla; para los demás no existe", () =>
+    enTransaccion(async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const { procesoId, lider } = await procesoConLider(tx);
+      const nuevo = await borrador(tx, admin, { procesoId, prueba: { valores: { A: "9", B: "10" } } });
+      contexto.sesion = valida(lider);
+      // En borrador, ni quien la aprobará la ve.
+      await expect(pagina(nuevo.codigo)).rejects.toThrow("NO_ENCONTRADA");
+      await enviarAAprobacion(admin, { versionId: nuevo.versionId, credenciales: { clave: "ok" } }, firmar(tx));
+
+      const html = await pagina(nuevo.codigo);
+      expect(html).toContain("Por aprobar");
+      expect(html).toContain(">Aprobar</button>");
+      expect(html).toContain(">Devolver</button>");
+      expect(html).not.toContain(">Versiones<");
+      expect(await pagina(nuevo.codigo, { version: "1" })).toContain(">Aprobar</button>");
+      await expect(pagina(nuevo.codigo, { vista: "versiones" })).rejects.toThrow("NO_ENCONTRADA");
+      await expect(pagina(nuevo.codigo, { version: "2" })).rejects.toThrow("NO_ENCONTRADA");
+
+      for (const rol of ["consulta", "gerencia"] as const) {
+        contexto.sesion = valida(await usuarioDePrueba(tx, { rol }));
+        await expect(pagina(nuevo.codigo)).rejects.toThrow("NO_ENCONTRADA");
+      }
+      contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [procesoId] }));
+      expect(await pagina(nuevo.codigo)).toContain(">Aprobar</button>");
+      // Quien administra la ve, sin aprobarla.
+      contexto.sesion = valida(admin);
+      const deAdmin = await pagina(nuevo.codigo);
+      expect(deAdmin).toContain("Espera la aprobación");
+      expect(deAdmin).not.toContain(">Aprobar</button>");
+    }));
+
+  it("/indicadores/por-aprobar: no existe para Consulta; quien aprueba ve lo suyo y quien administra, los borradores", () =>
+    enTransaccion(async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const { procesoId, lider } = await procesoConLider(tx);
+      const enviado = await borrador(tx, admin, { procesoId, nombre: "Ficha enviada al líder", prueba: { valores: { A: "9", B: "10" } } });
+      await enviarAAprobacion(admin, { versionId: enviado.versionId, credenciales: { clave: "ok" } }, firmar(tx));
+      const quieto = await borrador(tx, admin, { nombre: "Ficha que sigue en borrador" });
+
+      contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "consulta" }));
+      await expect(PaginaPorAprobar()).rejects.toThrow("NO_ENCONTRADA");
+
+      contexto.sesion = valida(lider);
+      const deLider = renderToStaticMarkup(await PaginaPorAprobar());
+      expect(deLider).toContain("Ficha enviada al líder");
+      expect(deLider).toContain(`aria-label="Elegir ${enviado.codigo}"`);
+      expect(deLider).toMatch(/aria-current="page"[^>]*>Por aprobar · 1</);
+      expect(deLider).not.toContain("Ficha que sigue en borrador");
+      expect(deLider).not.toContain("Borradores y devueltas");
+
+      contexto.sesion = valida(admin);
+      const deAdmin = renderToStaticMarkup(await PaginaPorAprobar());
+      expect(deAdmin).toContain("Borradores y devueltas");
+      expect(deAdmin).toContain(quieto.codigo);
+      expect(deAdmin).toContain("Enviadas, esperando aprobación");
+      expect(deAdmin).not.toContain("Le toca aprobar");
     }));
 });

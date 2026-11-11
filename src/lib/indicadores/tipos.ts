@@ -12,6 +12,9 @@ export class ErrorIndicador extends ErrorTramite {
   }
 }
 
+/** Tope de una aprobación de fichas en bloque (spec §7.6.4): el de la lista que «Por aprobar» puede mostrar. */
+export const MAXIMO_EN_BLOQUE = 200;
+
 export const ESTADOS_INDICADOR = ["borrador", "activo", "retirado", "descartado"] as const;
 export type EstadoIndicador = (typeof ESTADOS_INDICADOR)[number];
 

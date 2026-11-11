@@ -2,7 +2,7 @@ import { z } from "zod";
 import { FACTORES_TASA } from "@/lib/indicadores/formula/formas";
 import { fraccion } from "@/lib/indicadores/formula/fraccion";
 import { periodicidadDe } from "@/lib/indicadores/periodos";
-import { CONSOLIDACIONES, FORMAS, MODOS_SEMAFORO, NIVELES_ACCESO, PERIODICIDADES, TENDENCIAS } from "@/lib/indicadores/tipos";
+import { CONSOLIDACIONES, FORMAS, MAXIMO_EN_BLOQUE, MODOS_SEMAFORO, NIVELES_ACCESO, PERIODICIDADES, TENDENCIAS } from "@/lib/indicadores/tipos";
 import { textoAcotado } from "@/lib/validacion";
 
 /**
@@ -176,3 +176,39 @@ export const EsquemaFicha = z
   .strict();
 
 export type DatosFicha = z.infer<typeof EsquemaFicha>;
+
+/** La clave y el código del segundo factor de una firma, como en `EsquemaRatificar`: la clave no se recorta. */
+const firma = {
+  clave: z.string({ error: "Escriba su clave" }).min(1, "Escriba su clave").max(128, "La clave no puede pasar de 128 caracteres"),
+  codigo: textoAcotado("El código", 6, 20).optional(),
+};
+
+/** Enviar la ficha a aprobación o publicar un cambio menor (spec §7.6); el `id` de la versión viaja aparte. */
+export const EsquemaEnviarFicha = z
+  .object({
+    rigeDesde: z
+      .string()
+      .trim()
+      .refine((v) => periodicidadDe(v) !== null, "«Rige desde» no es un periodo válido")
+      .optional(),
+    motivo: opcional("El motivo del cambio", 500),
+    ...firma,
+  })
+  .strict();
+
+/** Aprobar en bloque (spec §7.6.4): los ids de las versiones elegidas, en JSON. */
+export const EsquemaAprobarFichas = z
+  .object({
+    versionIds: enJson(
+      z
+        .array(id("Las fichas elegidas no son válidas"), { error: "Elija al menos una ficha" })
+        .min(1, "Elija al menos una ficha")
+        .max(MAXIMO_EN_BLOQUE, `Elija hasta ${MAXIMO_EN_BLOQUE} fichas`),
+      "Las fichas elegidas no son válidas",
+    ),
+    ...firma,
+  })
+  .strict();
+
+/** Devolver con nota, sin clave (spec §7.6.3); el `id` de la versión viaja aparte. */
+export const EsquemaDevolverFicha = z.object({ nota: textoAcotado("La nota", 5, 1000) }).strict();

@@ -1,17 +1,22 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
+import { DescartarCambio, DialogoEnviar } from "@/componentes/indicadores/ficha/DialogoEnviar";
 import { AbrirCambio, FormularioFicha } from "@/componentes/indicadores/ficha/FormularioFicha";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
+import { etiquetaDePeriodo, previaDeEnvio } from "@/db/consultas/indicadores/aprobacion";
 import { fichaParaEditar, opcionesDeFicha } from "@/db/consultas/indicadores/fichas";
 import type { EstadoVersion } from "@/lib/indicadores/tipos";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
 import { fechaHoraLocal } from "@/lib/zona-horaria";
-import { exigirIndicador } from "../../_comun";
+import { exigirIndicador, rutaDeIndicador } from "../../_comun";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Editar ficha de indicador" };
+
+const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 
 const ESTADO_VERSION: Record<EstadoVersion, string> = {
   borrador: "Borrador",
@@ -21,8 +26,9 @@ const ESTADO_VERSION: Record<EstadoVersion, string> = {
 };
 
 /**
- * La ficha de un indicador para quien administra (spec §7.6 y §12.4): el borrador se edita con el formulario; sobre una
- * ficha aprobada, «Abrir un cambio» crea el borrador con su contenido. Para los demás, «no encontrada».
+ * La ficha de un indicador para quien administra (spec §7.6 y §12.4): el borrador se edita con el formulario y se envía
+ * con su clave; sobre una ficha aprobada, «Abrir un cambio» crea el borrador con su contenido. Para los demás, «no
+ * encontrada».
  */
 export default async function PaginaEditarFicha({ params }: { params: Promise<{ codigo: string }> }) {
   const sesion = await exigirSesion();
@@ -34,26 +40,64 @@ export default async function PaginaEditarFicha({ params }: { params: Promise<{ 
 
   const encabezado = (descripcion: string) => (
     <EncabezadoPagina
-      migas={[{ nombre: "Indicadores", href: "/indicadores" }, { nombre: indicador.codigo }]}
+      migas={[
+        { nombre: "Indicadores", href: "/indicadores" },
+        { nombre: indicador.codigo, href: rutaDeIndicador(indicador.codigo) },
+        { nombre: "Editar ficha" },
+      ]}
       codigo={indicador.codigo}
       insignias={<Insignia variante={ficha.estado === "borrador" ? "atencion" : "neutra"}>{`${ESTADO_VERSION[ficha.estado]} · versión ${ficha.numero}`}</Insignia>}
       titulo={ficha.contenido.nombre ?? indicador.codigo}
       descripcion={descripcion}
+      tituloEnfocable
     />
   );
 
   if (ficha.estado === "borrador") {
-    const opciones = await opcionesDeFicha(sesion, { actuales: ficha.valores });
+    const [opciones, previa] = await Promise.all([opcionesDeFicha(sesion, { actuales: ficha.valores }), previaDeEnvio(sesion, ficha.versionId)]);
     return (
       <div className="flex min-w-0 flex-col gap-6">
         {encabezado(
           `${ficha.vigente ? "Cambio sobre la ficha aprobada" : "Ficha nueva"}, guardado el ${fechaHoraLocal(ficha.actualizadoEn)}.`,
         )}
+        {previa?.notaDevolucion ? (
+          <p className="flex flex-wrap items-center gap-2 rounded-md border border-l-4 border-border border-l-mod-indicadores bg-muted px-3 py-2 text-sm">
+            <Insignia variante="atencion">Devuelta</Insignia>
+            {`Nota de quien la devolvió: ${previa.notaDevolucion}`}
+          </p>
+        ) : null}
         <FormularioFicha
           opciones={opciones}
           valores={ficha.valores}
           edicion={{ versionId: ficha.versionId, cambio: ficha.vigente !== null, codigoFijo: indicador.estado !== "borrador" }}
         />
+        {previa ? (
+          <section aria-labelledby="ficha-enviar" className="flex min-w-0 flex-col gap-3 border-t border-border pt-6">
+            <h2 id="ficha-enviar" className="text-lg font-semibold">
+              {previa.tipo === "menor" ? "Publicar el cambio" : "Enviar a aprobación"}
+            </h2>
+            <div className="flex flex-wrap items-start gap-3">
+              <DialogoEnviar
+                envio={{
+                  versionId: previa.versionId,
+                  codigo: indicador.codigo,
+                  nombre: ficha.contenido.nombre ?? indicador.codigo,
+                  numero: previa.numero,
+                  tipo: previa.tipo,
+                  cambios: previa.cambios,
+                  huella: previa.huella,
+                  probada: previa.probada,
+                  motivo: previa.motivo,
+                  rigeDesde: previa.rigeDesde ? etiquetaDePeriodo(previa.rigeDesde) : null,
+                  rige: previa.rige,
+                  guardado: fechaHoraLocal(ficha.actualizadoEn),
+                }}
+                pideCodigo={sesion.totpActivo}
+              />
+              {ficha.vigente ? <DescartarCambio versionId={ficha.versionId} volver={rutaDeIndicador(indicador.codigo)} /> : null}
+            </div>
+          </section>
+        ) : null}
       </div>
     );
   }
@@ -71,6 +115,11 @@ export default async function PaginaEditarFicha({ params }: { params: Promise<{ 
     <div className="flex min-w-0 flex-col gap-6">
       {encabezado(texto)}
       {puedeCambiar ? <AbrirCambio indicadorId={ficha.indicadorId} /> : null}
+      <p>
+        <Link href={rutaDeIndicador(indicador.codigo)} className={`rounded-sm text-sm text-marca underline-offset-2 hover:underline ${FOCO}`}>
+          Ver la ficha técnica
+        </Link>
+      </p>
     </div>
   );
 }

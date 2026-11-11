@@ -1,17 +1,18 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Gauge, Plus } from "lucide-react";
-import { PestanasIndicadores, pestanasVisibles } from "@/componentes/indicadores/PestanasIndicadores";
+import { apruebaFichas, PestanasIndicadores, pestanasVisibles } from "@/componentes/indicadores/PestanasIndicadores";
 import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { EstadoVacio } from "@/componentes/ui/EstadoVacio";
 import { Insignia, type VarianteInsignia } from "@/componentes/ui/Insignia";
 import { celda, TablaDatos } from "@/componentes/ui/TablaDatos";
+import { fichasPorAprobar } from "@/db/consultas/indicadores/aprobacion";
 import { listarIndicadoresBasico, type FilaIndicadorBasica } from "@/db/consultas/indicadores/fichas";
 import type { EstadoIndicador } from "@/lib/indicadores/tipos";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
-import { rutaDeEdicion } from "./_comun";
+import { rutaDeIndicador } from "./_comun";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Indicadores" };
@@ -47,7 +48,8 @@ const COLUMNAS = [
 export default async function PaginaIndicadores() {
   const sesion = await exigirSesion();
   const administra = puede(sesion, "indicadores.administrar");
-  const filas = await listarIndicadoresBasico(sesion);
+  const aprueba = apruebaFichas(sesion);
+  const [filas, porAprobar] = await Promise.all([listarIndicadoresBasico(sesion), aprueba ? fichasPorAprobar(sesion) : []]);
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -63,7 +65,7 @@ export default async function PaginaIndicadores() {
           ) : undefined
         }
       />
-      <PestanasIndicadores activa="lista" visibles={pestanasVisibles(sesion, { aprueba: false })} />
+      <PestanasIndicadores activa="lista" visibles={pestanasVisibles(sesion, { aprueba })} numeros={{ "por-aprobar": porAprobar.length }} />
       {filas.length === 0 ? (
         <EstadoVacio
           icono={Gauge}
@@ -79,13 +81,9 @@ export default async function PaginaIndicadores() {
               <tr key={f.id}>
                 <td className={`${celda} whitespace-nowrap font-mono text-xs`}>{f.codigo}</td>
                 <td className={celda}>
-                  {administra && f.estado !== "descartado" ? (
-                    <Link href={rutaDeEdicion(f.codigo)} className={`rounded-sm text-marca underline-offset-2 hover:underline ${FOCO}`}>
-                      {f.nombre || "(sin nombre)"}
-                    </Link>
-                  ) : (
-                    f.nombre
-                  )}
+                  <Link href={rutaDeIndicador(f.codigo)} className={`rounded-sm text-marca underline-offset-2 hover:underline ${FOCO}`}>
+                    {f.nombre || "(sin nombre)"}
+                  </Link>
                 </td>
                 <td className={celda}>{f.proceso}</td>
                 <td className={celda}>

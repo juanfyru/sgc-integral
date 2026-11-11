@@ -503,8 +503,10 @@ export async function guardarBorrador(sesion: SesionFlujo, versionId: number, d:
       const indicadorId = Number(ind.id);
       const enBorrador = ind.estado === "borrador";
       if (!enBorrador) {
-        if (f.d.procesoId !== Number(ind.proceso_id)) throw new ErrorIndicador("El proceso queda fijo desde la primera aprobación");
-        if (f.d.codigo !== undefined && f.d.codigo !== ind.codigo) throw new ErrorIndicador("El código queda fijo desde la primera aprobación");
+        // F14-DC18 y DC40: el subproceso sí cambia (cambio menor); el proceso y el código, no.
+        if (f.d.procesoId !== Number(ind.proceso_id) || (f.d.codigo !== undefined && f.d.codigo !== ind.codigo)) {
+          throw new ErrorIndicador("El proceso y el código quedan fijos desde la primera aprobación");
+        }
       } else {
         revisarOperacion(f.d);
       }

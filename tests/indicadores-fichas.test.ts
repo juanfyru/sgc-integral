@@ -488,11 +488,11 @@ describe("la ficha en borrador", () => {
       // Sobre el cambio: el proceso y el código quedan fijos y los datos de operación no se tocan.
       await rechaza(
         guardarBorrador(b.admin, versionId, datos(b, { procesoId: ind.procesoId + 1 }), { sql: tx }),
-        "El proceso queda fijo desde la primera aprobación",
+        "El proceso y el código quedan fijos desde la primera aprobación",
       );
       await rechaza(
         guardarBorrador(b.admin, versionId, datos(b, { codigo: `${ind.codigo}X` }), { sql: tx }),
-        "El código queda fijo desde la primera aprobación",
+        "El proceso y el código quedan fijos desde la primera aprobación",
       );
       await guardarBorrador(b.admin, versionId, datos(b, { codigo: ind.codigo, nombre: "Nombre del cambio", plazoReporteDias: 30 }), { sql: tx });
       const [cambio] = await tx`SELECT nombre, tipo_cambio FROM indicador_versiones WHERE id = ${versionId}`;

@@ -712,6 +712,22 @@ export function describirEvento(e: EventoAuditoria): string {
       return `Guardó el borrador de la ficha de ${cod ?? "un indicador"}${numero(d.numero) === null ? "" : ` (versión ${numero(d.numero)})`}`;
     case "indicador_cambio_abierto":
       return `Abrió un cambio en la ficha de ${cod ?? "un indicador"}${numero(d.numero) === null ? "" : ` (versión ${numero(d.numero)})`}`;
+    case "indicador_enviado": {
+      const clave = texto(d.rigeDesde);
+      const etiqueta = clave ? (periodoDe(clave, zonaHoraria())?.etiqueta ?? clave) : null;
+      // «desde el tercer trimestre de 2026», pero «desde noviembre de 2026» y «desde 2026».
+      const rige = clave && etiqueta ? (/^\d{4}(-\d{2})?$/.test(clave) ? ` desde ${etiqueta}` : ` desde el ${etiqueta}`) : "";
+      const tipo = d.tipoCambio === "inicial" ? "ficha nueva" : d.tipoCambio === "mayor" ? `cambio mayor${rige}` : null;
+      return `Envió a aprobación la ficha de ${cod ?? "un indicador"}${entreParentesis([numero(d.numero) === null ? null : `versión ${numero(d.numero)}`, tipo])}`;
+    }
+    case "indicador_cambio_menor":
+      return `Publicó un cambio menor en la ficha de ${cod ?? "un indicador"}${numero(d.numero) === null ? "" : ` (versión ${numero(d.numero)})`}${conMotivo(d.motivo)}`;
+    case "indicador_aprobado":
+      return `Aprobó la ficha de ${cod ?? "un indicador"}${numero(d.numero) === null ? "" : ` (versión ${numero(d.numero)})`}`;
+    case "indicador_devuelto":
+      return `Devolvió la ficha de ${cod ?? "un indicador"}${numero(d.numero) === null ? "" : ` (versión ${numero(d.numero)})`}${conMotivo(d.nota)}`;
+    case "indicador_borrador_descartado":
+      return `Descartó el borrador de la ficha de ${cod ?? "un indicador"}${numero(d.numero) === null ? "" : ` (versión ${numero(d.numero)})`}`;
     case "tipo_norma_creado":
       return `Creó el tipo de norma${nombre ? ` «${nombre}»` : ""}`;
     case "tipo_norma_editado":
@@ -876,6 +892,11 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   indicador_creado: "Creó un indicador",
   indicador_borrador_guardado: "Guardó el borrador de una ficha de indicador",
   indicador_cambio_abierto: "Abrió un cambio en una ficha de indicador",
+  indicador_enviado: "Envió una ficha de indicador a aprobación",
+  indicador_cambio_menor: "Publicó un cambio menor en una ficha de indicador",
+  indicador_aprobado: "Aprobó una ficha de indicador",
+  indicador_devuelto: "Devolvió una ficha de indicador",
+  indicador_borrador_descartado: "Descartó el borrador de una ficha de indicador",
   tipo_norma_creado: "Creó un tipo de norma",
   tipo_norma_editado: "Renombró un tipo de norma",
   tipo_norma_movido: "Movió un tipo de norma",

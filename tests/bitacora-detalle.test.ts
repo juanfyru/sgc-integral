@@ -710,4 +710,30 @@ describe("la ficha de indicador", () => {
     );
     expect(nombreDeAccion("indicador_creado")).toBe("Creó un indicador");
   });
+
+  it("dice qué pasó con la aprobación de la ficha", () => {
+    expect(frase("indicador_enviado", { codigo: "SGC-IND-06", numero: 1, versionId: 3, tipoCambio: "inicial", rigeDesde: "2026-T1" })).toBe(
+      "Envió a aprobación la ficha de SGC-IND-06 (versión 1, ficha nueva)",
+    );
+    expect(frase("indicador_enviado", { codigo: "SGC-IND-06", numero: 2, versionId: 4, tipoCambio: "mayor", rigeDesde: "2026-T3" })).toBe(
+      "Envió a aprobación la ficha de SGC-IND-06 (versión 2, cambio mayor desde el tercer trimestre de 2026)",
+    );
+    expect(frase("indicador_cambio_menor", { codigo: "SGC-IND-06", numero: 3, versionId: 5, motivo: "Aclarar el nombre" })).toBe(
+      "Publicó un cambio menor en la ficha de SGC-IND-06 (versión 3): Aclarar el nombre",
+    );
+    expect(frase("indicador_aprobado", { codigo: "SGC-IND-06", numero: 2, versionId: 4 })).toBe("Aprobó la ficha de SGC-IND-06 (versión 2)");
+    expect(frase("indicador_devuelto", { codigo: "SGC-IND-06", numero: 2, versionId: 4, nota: "Falta el sustento" })).toBe(
+      "Devolvió la ficha de SGC-IND-06 (versión 2): Falta el sustento",
+    );
+    expect(frase("indicador_borrador_descartado", { codigo: "SGC-IND-06", numero: 4, versionId: 6 })).toBe(
+      "Descartó el borrador de la ficha de SGC-IND-06 (versión 4)",
+    );
+    // Sin código, la frase no se cae.
+    expect(frase("indicador_aprobado", {})).toBe("Aprobó la ficha de un indicador");
+    expect(nombreDeAccion("indicador_enviado")).toBe("Envió una ficha de indicador a aprobación");
+    expect(nombreDeAccion("indicador_cambio_menor")).toBe("Publicó un cambio menor en una ficha de indicador");
+    expect(nombreDeAccion("indicador_aprobado")).toBe("Aprobó una ficha de indicador");
+    expect(nombreDeAccion("indicador_devuelto")).toBe("Devolvió una ficha de indicador");
+    expect(nombreDeAccion("indicador_borrador_descartado")).toBe("Descartó el borrador de una ficha de indicador");
+  });
 });
