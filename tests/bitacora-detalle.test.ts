@@ -760,3 +760,40 @@ describe("la ficha de indicador", () => {
     expect(nombreDeAccion("indicador_retirado")).toBe("Retiró un indicador");
   });
 });
+
+describe("la medición de un indicador", () => {
+  const frase = (accion: string, detalle: Record<string, unknown>) =>
+    describirEvento({ accion, entidad: "medicion", entidadId: 1, detalle });
+  it("dice qué indicador, qué periodo y qué resultado", () => {
+    expect(frase("medicion_reportada", { codigo: "SGC-IND-01", periodo: "2026-T3", resultado: "60 %" })).toBe(
+      "Reportó SGC-IND-01, tercer trimestre de 2026: 60 %",
+    );
+    expect(frase("medicion_reportada", { codigo: "SGC-IND-01", periodo: "2026-T3", resultado: "60 %", sinMedidor: true })).toBe(
+      "Reportó SGC-IND-01, tercer trimestre de 2026: 60 % (sin nadie más que pudiera medirlo)",
+    );
+    expect(frase("medicion_reportada", { codigo: "SGC-IND-01", periodo: "2026-03", parcial: true, resultado: null })).toBe(
+      "Guardó sin reportar los datos de SGC-IND-01, marzo de 2026",
+    );
+    expect(frase("medicion_corregida", { codigo: "SGC-IND-01", periodo: "2026-T3", resultadoAntes: "100 %", resultado: "80 %" })).toBe(
+      "Corrigió SGC-IND-01, tercer trimestre de 2026: 100 % → 80 %",
+    );
+    expect(
+      frase("medicion_corregida", {
+        codigo: "SGC-IND-01",
+        periodo: "2026-T3",
+        resultadoAntes: null,
+        resultado: null,
+        antes: { noAplica: true },
+        despues: { noAplica: false },
+      }),
+    ).toBe("Quitó «No aplica» de SGC-IND-01, tercer trimestre de 2026");
+    expect(frase("medicion_no_aplica", { codigo: "SGC-IND-01", periodo: "2026-T3", motivo: "No hubo auditorías programadas" })).toBe(
+      "Marcó «No aplica» en SGC-IND-01, tercer trimestre de 2026: No hubo auditorías programadas",
+    );
+    // Sin código ni periodo, la frase no se cae.
+    expect(frase("medicion_corregida", {})).toBe("Corrigió la medición de un indicador");
+    expect(nombreDeAccion("medicion_reportada")).toBe("Reportó una medición de indicador");
+    expect(nombreDeAccion("medicion_corregida")).toBe("Corrigió una medición de indicador");
+    expect(nombreDeAccion("medicion_no_aplica")).toBe("Marcó «No aplica» en una medición de indicador");
+  });
+});

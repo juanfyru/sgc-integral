@@ -8,8 +8,8 @@
  * repetidas antes de escribir nada. Una versión pasa a `aprobada` en una sola sentencia: el trigger de la 0011 rechaza
  * cualquier cambio posterior.
  *
- * Una medición «reportada» es la que está `reportada` o `cerrada`: ya tiene un dato que cuenta y ninguna versión nueva
- * puede regirla (F14-DC17).
+ * Una medición «reportada» es la que está `reportada` o `cerrada`, o la abierta con sus datos reportados (`reportada_en`)
+ * o «no aplica»: ya tiene un dato que cuenta y ninguna versión nueva puede regirla (F14-DC17).
  */
 import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
@@ -21,7 +21,7 @@ import { aprobadoresDeFicha, filtroAcceso, puedeAprobarFicha, puedeVerIndicador,
 import { verificarParaFirmar, type CredencialesFirma } from "@/lib/firma";
 import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
 import { camposCambiados, huellaDeFicha, tipoDeCambio, type ContenidoFicha } from "@/lib/indicadores/ficha";
-import { periodicidadDe, periodosTerminados, periodoQueContiene } from "@/lib/indicadores/periodos";
+import { periodicidadDe, periodosTerminados, periodoQueContiene, versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import {
   AVISO_DESIGNACION,
   ErrorIndicador,
@@ -35,6 +35,7 @@ import {
 import { ErrorPermiso, puede, type SujetoPermiso } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { contenidoDeVersion } from "./fichas";
+import { asegurarMediciones } from "./mediciones";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -103,18 +104,20 @@ export async function versionQueRige(sql: Cliente, indicadorId: number, periodo:
   if (!objetivo) throw new ErrorIndicador("El periodo no es válido");
   const filas = await sql`SELECT id, rige_desde FROM indicador_versiones
     WHERE indicador_id = ${indicadorId} AND estado = 'aprobada' ORDER BY numero DESC`;
-  if (filas.length === 0) return null;
-  const versiones = filas.map((f) => ({ id: Number(f.id), desde: periodoDe(f.rige_desde as string, zona)?.desde.getTime() ?? Infinity }));
-  const rige = versiones.find((v) => v.desde <= objetivo.desde.getTime());
-  if (rige) return rige.id;
-  const masAntiguo = Math.min(...versiones.map((v) => v.desde));
-  return versiones.find((v) => v.desde === masAntiguo)!.id;
+  const versiones = filas.map((f) => ({ id: Number(f.id), rigeDesde: f.rige_desde as string | null }));
+  return versionQueRigeEntre(versiones, objetivo, zona)?.id ?? null;
 }
+
+/**
+ * Una medición «reportada» para «Rige desde» (F14-DC17: no se recalcula lo ya medido): reportada o cerrada, y también la
+ * abierta que ya tiene sus datos reportados o «no aplica» y espera el análisis o el soporte.
+ */
+const conDatoReportado = (sql: Cliente) => sql`(estado IN ('reportada', 'cerrada') OR reportada_en IS NOT NULL OR no_aplica)`;
 
 /** El fin del último periodo con una medición reportada; `null` si no hay ninguna. */
 async function finDeLoReportado(sql: Cliente, indicadorId: number): Promise<Date | null> {
   const [m] = await sql`SELECT max(hasta) AS hasta FROM mediciones
-    WHERE indicador_id = ${indicadorId} AND estado IN ('reportada', 'cerrada')`;
+    WHERE indicador_id = ${indicadorId} AND ${conDatoReportado(sql)}`;
   return fecha(m?.hasta);
 }
 
@@ -167,7 +170,7 @@ async function validarRige(
   const [m] = await sql`SELECT
       coalesce(bool_or(desde <= ${periodo.hasta} AND hasta >= ${periodo.desde}), false) AS en_el_periodo,
       coalesce(bool_or(desde > ${periodo.hasta}), false) AS despues
-    FROM mediciones WHERE indicador_id = ${indicadorId} AND estado IN ('reportada', 'cerrada')`;
+    FROM mediciones WHERE indicador_id = ${indicadorId} AND ${conDatoReportado(sql)}`;
   if (m.en_el_periodo) throw new ErrorIndicador("Ese periodo ya tiene una medición reportada");
   if (m.despues) throw new ErrorIndicador("Hay mediciones reportadas después de ese periodo: elija uno posterior");
   if (desdeLoPorOmision) {
@@ -448,6 +451,8 @@ export async function aprobarFichas(
       });
       if (f.tipo === "inicial") {
         await tx`UPDATE indicadores SET estado = 'activo' WHERE id = ${f.indicadorId} AND estado = 'borrador'`;
+        // Al aprobarse la primera versión se abren de una vez los periodos históricos (spec §8.1).
+        await asegurarMediciones({ sql: tx, ahora, indicadorId: f.indicadorId });
         // Quienes se designaron antes de la primera aprobación no pudieron recibir su aviso: el indicador no existía para ellos.
         const designados = await tx`SELECT DISTINCT d.usuario_id, d.funcion FROM indicador_designados d
           JOIN usuarios u ON u.id = d.usuario_id AND u.activo

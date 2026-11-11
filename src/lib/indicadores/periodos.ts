@@ -92,6 +92,25 @@ export function fechaLimiteDeReporte(periodo: Periodo, plazoDias: number, zona: 
   return fechaLimite(periodo.hasta, plazoDias, zona);
 }
 
+/**
+ * La versión que rige el periodo, entre las aprobadas ordenadas de mayor a menor número: la primera cuyo «rige desde»
+ * empieza antes que el periodo o con él. Para un histórico anterior a todas, la de mayor número entre las que comparten
+ * el «rige desde» más antiguo: un cambio menor guarda el «rige desde» de la versión que reemplaza y, con número mayor,
+ * rige los mismos periodos. Se compara por fechas: un cambio mayor puede traer otra periodicidad.
+ */
+export function versionQueRigeEntre<T extends { rigeDesde: string | null }>(
+  aprobadas: readonly T[],
+  periodo: Pick<Periodo, "desde">,
+  zona: string,
+): T | null {
+  if (aprobadas.length === 0) return null;
+  const desde = (v: T) => (v.rigeDesde ? periodoDe(v.rigeDesde, zona)?.desde.getTime() : undefined) ?? Infinity;
+  const rige = aprobadas.find((v) => desde(v) <= periodo.desde.getTime());
+  if (rige) return rige;
+  const masAntiguo = Math.min(...aprobadas.map(desde));
+  return aprobadas.find((v) => desde(v) === masAntiguo)!;
+}
+
 /** ¿Cada periodo de `mayor` se forma con periodos enteros de `menor`? */
 export function contiene(mayor: Periodicidad, menor: Periodicidad): boolean {
   return MESES[mayor] >= MESES[menor] && MESES[mayor] % MESES[menor] === 0;

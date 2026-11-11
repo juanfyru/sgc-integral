@@ -120,6 +120,7 @@ async function aprobado(tx: TransactionSql, b: Base, d: DatosFicha = datos(b)) {
   return c;
 }
 
+/** La medición del periodo en el estado pedido. Aprobar la versión inicial ya abrió las de los periodos terminados. */
 async function medicion(
   tx: TransactionSql,
   indicadorId: number,
@@ -129,7 +130,9 @@ async function medicion(
 ): Promise<number> {
   const p = periodoDe(periodo, zonaHoraria())!;
   const [m] = await tx`INSERT INTO mediciones (indicador_id, version_id, periodo, desde, hasta, vence_en, estado)
-    VALUES (${indicadorId}, ${versionId}, ${periodo}, ${p.desde}, ${p.hasta}, ${p.hasta}, ${estado}) RETURNING id`;
+    VALUES (${indicadorId}, ${versionId}, ${periodo}, ${p.desde}, ${p.hasta}, ${p.hasta}, ${estado})
+    ON CONFLICT (indicador_id, periodo) DO UPDATE SET estado = EXCLUDED.estado, version_id = EXCLUDED.version_id
+    RETURNING id`;
   return Number(m.id);
 }
 
@@ -285,7 +288,10 @@ describe("datos de operación", () => {
       expect((await tx`SELECT id FROM mediciones WHERE id = ${vacia}`).length).toBe(1);
       await tx`UPDATE mediciones SET causa = NULL WHERE id = ${soloCausa}`;
       await cambiarOperacion(b.admin, cambio, { sql: tx });
-      expect((await tx`SELECT id FROM mediciones WHERE indicador_id = ${d.indicadorId}`).length).toBe(0);
+      // No queda ninguna antes del inicio nuevo: ni la vacía ni las que abrió la aprobación.
+      const mayo = periodoDe("2026-05", zonaHoraria())!;
+      expect((await tx`SELECT id FROM mediciones WHERE indicador_id = ${d.indicadorId} AND desde < ${mayo.desde}`).length).toBe(0);
+      expect((await tx`SELECT id FROM mediciones WHERE id = ${vacia}`).length).toBe(0);
       const [i] = await tx`SELECT plazo_reporte_dias, inicio_medicion FROM indicadores WHERE id = ${d.indicadorId}`;
       expect(i).toMatchObject({ plazo_reporte_dias: 12, inicio_medicion: "2026-05" });
     }));
@@ -393,7 +399,8 @@ describe("retirar", () => {
       expect(enviados.map((a) => Number(a.usuario_id))).toEqual([mide.usuarioId]);
       expect(enviados[0].titulo).toContain(c.codigo);
       const [fila] = await bitacora(tx, "indicador_retirado", c.indicadorId);
-      expect(fila.detalle).toMatchObject({ codigo: c.codigo, motivo: "Se dejó de medir en el hospital", medicionesQuitadas: 1 });
+      // La vacía de mayo y las que abrió la aprobación sin datos: enero, febrero y abril.
+      expect(fila.detalle).toMatchObject({ codigo: c.codigo, motivo: "Se dejó de medir en el hospital", medicionesQuitadas: 4 });
 
       await rechaza(retirar(b.admin, { indicadorId: c.indicadorId, motivo: "Otra vez retirado" }, { sql: tx }), "Solo se puede retirar un indicador activo");
     }));

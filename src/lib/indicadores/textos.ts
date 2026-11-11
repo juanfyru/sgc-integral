@@ -3,6 +3,7 @@
  * y los formularios del cliente. Sin Node ni BD.
  */
 import { aDecimal, comparar, CERO, fraccion, restar, esNegativa, type Fraccion } from "./formula/fraccion";
+import { periodicidadDe } from "./periodos";
 import { numeroEs, numeroExacto, semaforoDe, type Regla } from "./semaforo";
 import type { Semaforo, Tendencia } from "./tipos";
 
@@ -73,6 +74,20 @@ function cantidad(diferencia: Fraccion, u: Unidad): string {
   let texto = numeroEs(abs, u.decimales, "redondear");
   for (let k = u.decimales + 1; texto === "0" && k <= u.decimales + 4; k++) texto = numeroEs(abs, k, "redondear");
   return texto;
+}
+
+/**
+ * La confirmación que pide un salto grande frente al periodo anterior con resultado (spec §7.4), sin bloquear: «El
+ * resultado baja 43,3 puntos frente al segundo trimestre de 2026. ¿Los datos son correctos?». `anterior.etiqueta` va en
+ * minúscula; un mes o un año van sin artículo («frente a marzo de 2026»).
+ */
+export function fraseDeVariacion(actual: Fraccion, anterior: { valor: Fraccion; clave: string; etiqueta: string }, u: Unidad): string {
+  const n = cantidad(restar(actual, anterior.valor), u);
+  const palabra = u.sufijo.trim() === "%" ? (n === "1" ? "punto" : "puntos") : u.sufijo.trim();
+  const p = periodicidadDe(anterior.clave);
+  const frente = p === "mensual" || p === "anual" || p === null ? `a ${anterior.etiqueta}` : `al ${anterior.etiqueta}`;
+  const verbo = comparar(actual, anterior.valor) > 0 ? "sube" : "baja";
+  return `El resultado ${verbo} ${[n, palabra].filter(Boolean).join(" ")} frente ${frente}. ¿Los datos son correctos?`;
 }
 
 type Referencia = { valor: Fraccion; etiqueta: string };

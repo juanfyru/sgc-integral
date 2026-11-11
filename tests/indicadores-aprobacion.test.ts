@@ -30,6 +30,7 @@ import {
   versionVigente,
 } from "@/db/consultas/indicadores/aprobacion";
 import { abrirCambio, contenidoDeVersion, crearIndicador, guardarBorrador } from "@/db/consultas/indicadores/fichas";
+import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
 import type { DatosFicha } from "@/lib/esquemas/indicadores";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { huellaDeFicha } from "@/lib/indicadores/ficha";
@@ -152,11 +153,15 @@ async function cambio(tx: TransactionSql, b: Base, indicadorId: number, d: Datos
   return versionId;
 }
 
-/** Una medición reportada (o en otro estado) del periodo, con la versión que congeló. */
+/**
+ * Una medición reportada (o en otro estado) del periodo, con la versión que congeló. Aprobar la versión inicial ya abrió
+ * los periodos terminados (`asegurarMediciones`): si la del periodo existe, toma el estado y la versión pedidos.
+ */
 async function medicion(tx: TransactionSql, indicadorId: number, versionId: number, periodo: string, estado = "reportada") {
   const p = periodoDe(periodo, zonaHoraria())!;
   await tx`INSERT INTO mediciones (indicador_id, version_id, periodo, desde, hasta, vence_en, estado)
-    VALUES (${indicadorId}, ${versionId}, ${periodo}, ${p.desde}, ${p.hasta}, ${p.hasta}, ${estado})`;
+    VALUES (${indicadorId}, ${versionId}, ${periodo}, ${p.desde}, ${p.hasta}, ${p.hasta}, ${estado})
+    ON CONFLICT (indicador_id, periodo) DO UPDATE SET estado = EXCLUDED.estado, version_id = EXCLUDED.version_id`;
 }
 
 const firmasDe = (tx: TransactionSql, versionId: number) =>
@@ -538,8 +543,10 @@ describe("cambios sobre una ficha aprobada", () => {
       const [v] = await tx`SELECT estado, tipo_cambio, aprobada_por, rige_desde, motivo_cambio, numero FROM indicador_versiones WHERE id = ${v2}`;
       expect(v).toEqual({ estado: "aprobada", tipo_cambio: "menor", aprobada_por: null, rige_desde: "2026-T1", motivo_cambio: "Aclarar el nombre", numero: 2 });
       expect((await firmasDe(tx, v2)).map((f) => f.firma)).toEqual(["elaboro"]);
+      // Las que abrió la aprobación y la reportada siguen con la versión que congelaron.
       const mediciones = await tx`SELECT version_id FROM mediciones WHERE indicador_id = ${ind.indicadorId}`;
-      expect(mediciones.map((m) => Number(m.version_id))).toEqual([ind.versionId]);
+      expect(mediciones.length).toBeGreaterThan(0);
+      expect([...new Set(mediciones.map((m) => Number(m.version_id)))]).toEqual([ind.versionId]);
       // Nadie recibe «por aprobar»: el cambio menor no tiene aprobador.
       expect(await avisos(tx, "indicadores.por_aprobar", ind.indicadorId)).toHaveLength(avisadosAntes);
       const [bitacora] = await tx`SELECT detalle FROM auditoria WHERE accion = 'indicador_cambio_menor' AND entidad_id = ${ind.indicadorId}`;
@@ -585,6 +592,38 @@ describe("cambios sobre una ficha aprobada", () => {
       await aprobarFichas(ind.gerente, { versionIds: [v2], credenciales: CLAVE }, firmar(tx));
       const [aprobada] = await tx`SELECT estado, rige_desde FROM indicador_versiones WHERE id = ${v2}`;
       expect(aprobada).toEqual({ estado: "aprobada", rige_desde: "2026-T3" });
+    }));
+
+  it("con mediciones reales: la aprobación abre los históricos y un cambio mayor no rige desde un periodo ya reportado", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const d = datos(b, { mide: [mide.usuarioId] });
+      // Aprobada el 10 de noviembre de 2026: los tres primeros trimestres terminaron antes y son históricos.
+      const ind = await aprobado(tx, b, d);
+      const abiertas = await tx`SELECT periodo, historica, estado FROM mediciones WHERE indicador_id = ${ind.indicadorId} ORDER BY desde`;
+      expect(abiertas.map((m) => [m.periodo, m.historica, m.estado])).toEqual([
+        ["2026-T1", true, "abierta"],
+        ["2026-T2", true, "abierta"],
+        ["2026-T3", true, "abierta"],
+      ]);
+      const ENERO = new Date("2027-01-05T15:00:00Z");
+      expect(await asegurarMediciones({ sql: tx, ahora: ENERO, indicadorId: ind.indicadorId })).toBe(1);
+      const [t4] = await tx`SELECT id, historica FROM mediciones WHERE indicador_id = ${ind.indicadorId} AND periodo = '2026-T4'`;
+      expect(t4.historica).toBe(false);
+      // Crítico: queda abierta porque falta el análisis, pero ya tiene un dato reportado.
+      await reportar(mide, { medicionId: Number(t4.id), valores: { A: "3", B: "10" }, parcial: false, confirmado: true }, { sql: tx, ahora: ENERO });
+      expect((await tx`SELECT estado FROM mediciones WHERE id = ${t4.id}`)[0].estado).toBe("abierta");
+
+      const v2 = await cambio(tx, b, ind.indicadorId, { ...d, meta: "85", motivoCambio: "La meta de 90 no es alcanzable este año" });
+      const enero = { sql: tx, ahora: ENERO, verificar: firmaDePrueba };
+      const enviar = (rigeDesde?: string) => enviarAAprobacion(b.admin, { versionId: v2, rigeDesde, credenciales: CLAVE }, enero);
+      await rechaza(enviar("2026-T4"), "Ese periodo ya tiene una medición reportada");
+      await rechaza(enviar("2026-T3"), "Hay mediciones reportadas después de ese periodo: elija uno posterior");
+      expect(await rigeDesdePorOmision(tx, ind.indicadorId, "trimestral", ENERO)).toBe("2027-T1");
+      expect(await enviar()).toEqual({ codigo: ind.codigo, menor: false });
+      const [v] = await tx`SELECT rige_desde FROM indicador_versiones WHERE id = ${v2}`;
+      expect(v.rige_desde).toBe("2027-T1");
     }));
 
   it("«Rige desde» no puede ser anterior al de por omisión", () =>

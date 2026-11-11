@@ -44,6 +44,18 @@ export type OpcionesIndicadorDePrueba = {
   analiza?: number[];
   seguimiento?: number[];
   elaboradaPor?: number;
+  /** Lo que cambia de cada variable; sin valor, «Casos que cumplen» y «Casos evaluados», sin fuente ni límites. */
+  variables?: Partial<Record<"A" | "B", VariableDePrueba>>;
+  /** El máximo del resultado (límites del indicador); sin valor, ninguno. */
+  resultadoMax?: string;
+};
+
+export type VariableDePrueba = {
+  nombre?: string;
+  descripcion?: string;
+  fuente?: string;
+  capturaMin?: string;
+  capturaMax?: string;
 };
 
 /**
@@ -79,11 +91,11 @@ export async function indicadorDePrueba(
       (indicador_id, numero, estado, tipo_cambio, nombre, proposito, tipo_id, tipo_nombre,
        clasificacion_id, clasificacion_nombre, proceso_nombre, origen_dato, calculo, forma, factor, formula,
        unidad_id, unidad_nombre, unidad_sufijo, decimales, periodicidad, tendencia, meta,
-       semaforo_modo, umbral_atencion_pct, creado_por)
+       semaforo_modo, umbral_atencion_pct, resultado_max, creado_por)
     SELECT ${indicadorId}, 1, 'borrador', 'inicial', ${`Indicador de prueba ${codigo}`}, 'Medir el cumplimiento de la prueba',
       t.id, t.nombre, c.id, c.nombre, ${proceso.nombre as string}, 'manual', 'Porcentaje de cumplimiento', 'porcentaje', NULL, 'A / B * 100',
       un.id, un.nombre, un.sufijo, 1, ${o.periodicidad ?? "mensual"}, ${o.tendencia ?? "ascendente"}, ${meta},
-      'relativo', ${o.umbralPct ?? 70}, ${elaboradaPor}
+      'relativo', ${o.umbralPct ?? 70}, ${o.resultadoMax ?? null}, ${elaboradaPor}
     FROM tipos_indicador t, clasificaciones_indicador c, unidades_indicador un
     WHERE t.nombre = 'Eficacia' AND c.nombre = ${clasificacion} AND un.nombre = 'Porcentaje'
     RETURNING id`;
@@ -93,8 +105,11 @@ export async function indicadorDePrueba(
 
   const variables: Record<"A" | "B", number> = { A: 0, B: 0 };
   for (const [orden, letra, nombre] of [[1, "A", "Casos que cumplen"], [2, "B", "Casos evaluados"]] as const) {
-    const [v] = await tx`INSERT INTO indicador_variables (version_id, letra, nombre, consolidacion, origen, orden)
-      VALUES (${versionId}, ${letra}, ${nombre}, 'suma', 'propia', ${orden}) RETURNING id`;
+    const x = o.variables?.[letra] ?? {};
+    const [v] = await tx`INSERT INTO indicador_variables
+        (version_id, letra, nombre, descripcion, fuente, captura_min, captura_max, consolidacion, origen, orden)
+      VALUES (${versionId}, ${letra}, ${x.nombre ?? nombre}, ${x.descripcion ?? null}, ${x.fuente ?? null},
+        ${x.capturaMin ?? null}, ${x.capturaMax ?? null}, 'suma', 'propia', ${orden}) RETURNING id`;
     variables[letra] = Number(v.id);
   }
 

@@ -198,6 +198,14 @@ function copiaControlada(d: Record<string, unknown>, codigo: string | null): str
   return `la copia controlada${numero} de ${documentoYVersion(codigo, d.version)}`;
 }
 
+/** «SGC-IND-01, tercer trimestre de 2026»: la medición de un indicador, con su periodo en palabras. */
+function medicionDe(codigo: string | null, periodo: unknown): string {
+  const clave = texto(periodo);
+  const etiqueta = clave ? (periodoDe(clave, zonaHoraria())?.etiqueta ?? clave) : null;
+  if (!codigo) return `la medición de un indicador${etiqueta ? ` (${etiqueta})` : ""}`;
+  return `${codigo}${etiqueta ? `, ${etiqueta}` : ""}`;
+}
+
 /** «: motivo», o nada si no se guardó. */
 function conMotivo(v: unknown): string {
   const t = texto(v);
@@ -756,6 +764,24 @@ export function describirEvento(e: EventoAuditoria): string {
       return cod ? `Descartó el indicador ${cod}${conMotivo(d.motivo)}` : `Descartó un indicador${conMotivo(d.motivo)}`;
     case "indicador_borrado":
       return `Borró el indicador${cod ? ` ${cod}` : ""}, que nunca se envió a aprobación`;
+    // ── Indicadores (14A): las mediciones
+    case "medicion_reportada": {
+      const de = medicionDe(cod, d.periodo);
+      if (d.parcial === true) return `Guardó sin reportar los datos de ${de}`;
+      const resultado = texto(d.resultado);
+      return `Reportó ${de}${resultado ? `: ${resultado}` : ""}${d.sinMedidor === true ? " (sin nadie más que pudiera medirlo)" : ""}`;
+    }
+    case "medicion_corregida": {
+      const de = medicionDe(cod, d.periodo);
+      if (objeto(d.antes)?.noAplica === true && objeto(d.despues)?.noAplica === false && texto(d.resultado) === null) {
+        return `Quitó «No aplica» de ${de}`;
+      }
+      const antes = texto(d.resultadoAntes);
+      const despues = texto(d.resultado);
+      return `Corrigió ${de}${antes || despues ? `: ${antes ?? "sin resultado"} → ${despues ?? "sin resultado"}` : ""}`;
+    }
+    case "medicion_no_aplica":
+      return `Marcó «No aplica» en ${medicionDe(cod, d.periodo)}${conMotivo(d.motivo)}`;
     case "tipo_norma_creado":
       return `Creó el tipo de norma${nombre ? ` «${nombre}»` : ""}`;
     case "tipo_norma_editado":
@@ -931,6 +957,9 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   indicador_retirado: "Retiró un indicador",
   indicador_descartado: "Descartó un indicador",
   indicador_borrado: "Borró un indicador",
+  medicion_reportada: "Reportó una medición de indicador",
+  medicion_corregida: "Corrigió una medición de indicador",
+  medicion_no_aplica: "Marcó «No aplica» en una medición de indicador",
   tipo_norma_creado: "Creó un tipo de norma",
   tipo_norma_editado: "Renombró un tipo de norma",
   tipo_norma_movido: "Movió un tipo de norma",
