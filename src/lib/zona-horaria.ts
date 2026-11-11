@@ -54,3 +54,13 @@ export function tiempoRelativo(fecha: Date, ahora: Date = new Date()): string {
   const p = partesLocales(fecha);
   return `${p.year}-${p.month}-${p.day}`;
 }
+
+/**
+ * «10 de marzo de 2026, 13:33» en la zona de la instalación: el día en palabras, como lo escribe la interfaz (los plazos,
+ * los acuses), con la hora. Para los hilos que la persona lee, como las observaciones de una medición.
+ */
+export function fechaHoraLarga(d: Date): string {
+  const dia = new Intl.DateTimeFormat("es-CO", { day: "numeric", month: "long", year: "numeric", timeZone: zonaHoraria() }).format(d);
+  const p = partesLocales(d);
+  return `${dia}, ${p.hour}:${p.minute}`;
+}

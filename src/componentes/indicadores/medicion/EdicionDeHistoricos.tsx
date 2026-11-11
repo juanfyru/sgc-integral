@@ -122,7 +122,7 @@ export function EdicionDeHistoricos({
                 </div>
               )}
             </td>
-            <td className={celdaNumerica}>{f.noAplica ? "No aplica" : (f.resultado ?? "—")}</td>
+            <td className={`${celdaNumerica} whitespace-nowrap`}>{f.noAplica ? "No aplica" : (f.resultado ?? "—")}</td>
           </tr>
         ))}
       </TablaDatos>

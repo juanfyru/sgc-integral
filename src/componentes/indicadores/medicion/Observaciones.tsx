@@ -1,12 +1,13 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useRef } from "react";
 import { observarAccion, responderAccion } from "@/app/acciones-indicadores";
 import { ErrorAccion } from "@/componentes/tramites/AccionesSolicitud";
 import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { MAXIMO_TEXTO_MEDICION } from "@/lib/indicadores/tipos";
+import { cerrarTrasGuardar } from "./cerrar-tras-guardar";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 const CONTROL = `${claseControl} w-full min-w-0`;
@@ -31,8 +32,15 @@ function Responder({ observacionId, de }: { observacionId: number; de: Respuesta
   const aQuien = <span className="sr-only">{` a ${de.autor}, ${de.fecha}`}</span>;
   const [estado, enviar, pendiente] = useActionState(responderAccion, null);
   const texto = estado?.valores?.texto;
+  // Guardada la respuesta, el desplegable se cierra (la respuesta ya se ve en el hilo); con error, sigue abierto.
+  const desplegable = useRef<HTMLDetailsElement>(null);
+  const enviaba = useRef(false);
+  useEffect(() => {
+    if (desplegable.current) cerrarTrasGuardar(desplegable.current, { enviaba: enviaba.current, pendiente, estado });
+    enviaba.current = pendiente;
+  }, [pendiente, estado]);
   return (
-    <details className="rounded-md border border-border px-3 py-2">
+    <details ref={desplegable} className="rounded-md border border-border px-3 py-2">
       <summary className={`cursor-pointer rounded-sm text-sm font-medium ${FOCO}`}>
         Responder
         {aQuien}

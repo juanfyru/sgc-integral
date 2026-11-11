@@ -36,7 +36,7 @@ import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
 import { cuenta } from "@/lib/plural";
 import { fechaEnZona } from "@/lib/tramites/plazos";
-import { fechaHoraLocal, zonaHoraria } from "@/lib/zona-horaria";
+import { fechaHoraLarga, fechaHoraLocal, zonaHoraria } from "@/lib/zona-horaria";
 import { exigirFichaDeIndicador, rutaDeEdicion, rutaDeIndicador } from "../_comun";
 
 export const dynamic = "force-dynamic";
@@ -579,7 +579,7 @@ export default async function PaginaIndicador({ params, searchParams }: { params
           ? (obs.mediciones.find((m) => m.periodo === pedida) ?? null)
           : null;
     if (pedida !== undefined && !elegida) notFound();
-    const enVista = (r: { id: number; autor: string; creadoEn: Date; texto: string }) => ({ id: r.id, autor: r.autor, fecha: fechaHoraLocal(r.creadoEn), texto: r.texto });
+    const enVista = (r: { id: number; autor: string; creadoEn: Date; texto: string }) => ({ id: r.id, autor: r.autor, fecha: fechaHoraLarga(r.creadoEn), texto: r.texto });
     const lista = elegida ? ((await observacionesDe(sesion, elegida.medicionId)) ?? []) : [];
     observaciones = {
       elegida,

@@ -45,8 +45,8 @@ function FilaDeMeta({ indicadorId, m }: { indicadorId: number; m: MetaDelPeriodo
           </span>
         ))}
       </th>
-      <td className={celda}>{m.textoHeredada}</td>
-      <td className={celda}>{enTexto(m)}</td>
+      <td className={`${celda} whitespace-nowrap`}>{m.textoHeredada}</td>
+      <td className={`${celda} whitespace-nowrap`}>{enTexto(m)}</td>
       <td className={`${celda} min-w-56`}>
         {m.cerrada ? (
           <span className="text-muted-foreground">Cerrada: reábrala para cambiar su meta.</span>

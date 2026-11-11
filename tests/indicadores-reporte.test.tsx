@@ -57,6 +57,7 @@ import PaginaReportar from "@/app/(app)/indicadores/[codigo]/reportar/[periodo]/
 import { DialogoMetas } from "@/componentes/indicadores/medicion/DialogoMetas";
 import { FormularioAnalisis } from "@/componentes/indicadores/medicion/FormularioAnalisis";
 import { FormularioReporte } from "@/componentes/indicadores/medicion/FormularioReporte";
+import { cerrarTrasGuardar } from "@/componentes/indicadores/medicion/cerrar-tras-guardar";
 import { Observaciones } from "@/componentes/indicadores/medicion/Observaciones";
 import { ResultadoEnVivo } from "@/componentes/indicadores/medicion/ResultadoEnVivo";
 import { obtenerSql } from "@/db/cliente";
@@ -447,6 +448,23 @@ describe("FormularioAnalisis y DialogoMetas", () => {
 });
 
 describe("Observaciones", () => {
+  it("«Responder» se cierra cuando el envío termina sin error, y solo entonces", () => {
+    const abierto = () => ({ open: true });
+    const error = { ok: false as const, error: "Escriba la respuesta" };
+    // Terminó un envío (pendiente pasó de sí a no) sin error: se cierra.
+    let p = abierto();
+    expect(cerrarTrasGuardar(p, { enviaba: true, pendiente: false, estado: null })).toBe(true);
+    expect(p.open).toBe(false);
+    // Con error, sigue abierto con lo escrito; mientras envía o sin envío, tampoco se toca.
+    p = abierto();
+    expect(cerrarTrasGuardar(p, { enviaba: true, pendiente: false, estado: error })).toBe(false);
+    expect(cerrarTrasGuardar(p, { enviaba: true, pendiente: true, estado: null })).toBe(false);
+    expect(cerrarTrasGuardar(p, { enviaba: false, pendiente: false, estado: null })).toBe(false);
+    expect(p.open).toBe(true);
+    // Ya cerrado, no hay nada que cerrar.
+    expect(cerrarTrasGuardar({ open: false }, { enviaba: true, pendiente: false, estado: null })).toBe(false);
+  });
+
   it("cada «Responder» y cada «Enviar la respuesta» dicen de quién es la observación", () => {
     const html = renderToStaticMarkup(
       <Observaciones
@@ -535,6 +553,9 @@ describe("las páginas de la Tarea 10", () => {
       contexto.sesion = valida(analiza);
       const html = await pagina(ind.codigo, { anio: "2026" });
       expect(html).toContain("Análisis: primer trimestre de 2026");
+      // La meta y el resultado no se parten en dos líneas.
+      expect(html).toMatch(/<td class="[^"]*\bwhitespace-nowrap\b[^"]*">≥ 90 %<\/td>/);
+      expect(html).toMatch(/<td class="[^"]*\bwhitespace-nowrap\b[^"]*">60 %<\/td>/);
       expect(html).toContain('name="causa"');
       expect(html).toContain('name="accionPropuesta"');
       expect(html).toContain("No escriba nombres de pacientes ni de funcionarios.");
@@ -565,6 +586,8 @@ describe("las páginas de la Tarea 10", () => {
       const html = await pagina(ind.codigo, { anio: "2025" });
       expect(html).toContain("&amp;historicos=editar");
       expect(html).toContain(">Registrar históricos de 2025</a>");
+      expect(html).toContain(">Por registrar</span>");
+      expect(html).not.toContain("Por reportar");
       // Un histórico no se reporta por «Reportar»: la tabla no lo enlaza y su pantalla lo dice.
       expect(html).not.toContain("/reportar/2025-T3");
       const enReporte = await reporte(ind.codigo, "2025-T3");
@@ -580,7 +603,9 @@ describe("las páginas de la Tarea 10", () => {
       expect(edicion).toContain('name="motivo_2025-T3"');
       const filas = [{ periodo: "2025-T4", valores: {}, noAplica: true, motivo: "No hubo auditorías programadas" }];
       await registrarHistoricos(mide, { indicadorId: ind.id, filas }, { sql: tx });
+      await registrarHistoricos(mide, { indicadorId: ind.id, filas: [{ periodo: "2025-T3", valores: { A: "5", B: "5" } }] }, { sql: tx });
       const conNoAplica = await pagina(ind.codigo, { anio: "2025", historicos: "editar" });
+      expect(conNoAplica).toMatch(/<td class="[^"]*\bwhitespace-nowrap\b[^"]*">100 %<\/td>/);
       expect(conNoAplica).toMatch(/<input(?=[^>]*name="na_2025-T4")(?=[^>]*checked="")[^>]*>/);
       expect(conNoAplica).toMatch(/<input(?=[^>]*name="motivo_2025-T4")(?=[^>]*value="No hubo auditorías programadas")[^>]*>/);
       expect(conNoAplica).not.toMatch(/<input(?=[^>]*name="na_2025-T3")(?=[^>]*checked="")[^>]*>/);
@@ -664,6 +689,8 @@ describe("las páginas de la Tarea 10", () => {
       expect(await pagina(ind.codigo, { anio: "2026" })).toContain(">Observaciones · 1</a>");
       const deControl = await pagina(ind.codigo, { vista: "observaciones" });
       expect(deControl).toContain("Revise el denominador");
+      expect(deControl).toMatch(/ · \d{1,2} de [a-z]+ de \d{4}, \d{2}:\d{2}<\/p>/);
+      expect(deControl).not.toMatch(/ · \d{4}-\d{2}-\d{2} \d{2}:\d{2}/);
       expect(deControl).toContain(">Sin respuesta<");
       expect(deControl).toMatch(/<option[^>]*value="2026-T1"[^>]*selected=""[^>]*>Primer trimestre de 2026 · 1 observación, 1 sin respuesta<\/option>/);
       expect(deControl).toContain(">Dejar la observación</button>");

@@ -17,7 +17,14 @@ function Estado({ f }: { f: FilaDelAnio }) {
     f.metaTardia ? "Meta ajustada después del periodo" : null,
     f.sinAnalisis ? "Cerrada sin análisis" : null,
   ].filter((m): m is string => m !== null);
-  const estado = f.estado === "por_venir" || f.estado === "sin_dato" ? null : `${ETIQUETA_ESTADO[f.estado]}${f.vencida ? " · vencida" : ""}`;
+  // Un histórico abierto sin datos no se reporta: se registra en la tabla del año (spec §8.8). Solo cambia la etiqueta.
+  const etiqueta =
+    f.historica && f.estado === "por_reportar"
+      ? "Por registrar"
+      : f.estado === "por_venir" || f.estado === "sin_dato"
+        ? null
+        : ETIQUETA_ESTADO[f.estado];
+  const estado = etiqueta === null ? null : `${etiqueta}${f.vencida ? " · vencida" : ""}`;
   return (
     <div className="flex flex-col items-start gap-1">
       {f.semaforo ? (
@@ -124,8 +131,8 @@ export function TablaDelAnio({
                 {f.valores.find((x) => x.letra === v.letra)?.valor ?? "—"}
               </td>
             ))}
-            <td className={celdaNumerica}>{f.resultado ?? (f.noAplica ? "n. a." : "—")}</td>
-            <td className={celdaNumerica}>{f.meta}</td>
+            <td className={`${celdaNumerica} whitespace-nowrap`}>{f.resultado ?? (f.noAplica ? "n. a." : "—")}</td>
+            <td className={`${celdaNumerica} whitespace-nowrap`}>{f.meta}</td>
             <td className={celda}>{f.cumple === null ? "—" : f.cumple ? "Sí" : "No"}</td>
             <td className={celda}>
               <Estado f={f} />
