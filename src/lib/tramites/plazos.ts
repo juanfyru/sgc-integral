@@ -1,13 +1,20 @@
 const MS_DIA = 86_400_000;
 
+/** Un formateador por zona, creado al primer uso: crearlo cuesta mucho más que usarlo, y la búsqueda del fin del día lo usa ~27 veces. */
+const FORMATEADORES = new Map<string, Intl.DateTimeFormat>();
+
+function formateadorDe(zona: string): Intl.DateTimeFormat {
+  let f = FORMATEADORES.get(zona);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-US", { timeZone: zona, year: "numeric", month: "numeric", day: "numeric" });
+    FORMATEADORES.set(zona, f);
+  }
+  return f;
+}
+
 /** Número de día calendario (días desde 1970-01-01) del instante en la zona. */
 function diaLocal(instante: Date, zona: string): number {
-  const partes = new Intl.DateTimeFormat("en-US", {
-    timeZone: zona,
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-  }).formatToParts(instante);
+  const partes = formateadorDe(zona).formatToParts(instante);
   const de = (tipo: Intl.DateTimeFormatPartTypes) => Number(partes.find((p) => p.type === tipo)?.value);
   return Date.UTC(de("year"), de("month") - 1, de("day")) / MS_DIA;
 }
