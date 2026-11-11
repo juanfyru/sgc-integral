@@ -37,6 +37,27 @@ export const TIPOS_NORMA: ReadonlyArray<string> = [
   "Otro",
 ];
 
+/** Maestros de la ficha de indicador (spec 14 §19.5): la migración 0011 repite estos valores. */
+export const TIPOS_INDICADOR: ReadonlyArray<string> = ["Eficacia", "Eficiencia", "Efectividad"];
+
+/** Nombre, quién aprueba la ficha y si exige norma. */
+export const CLASIFICACIONES_INDICADOR: ReadonlyArray<readonly [string, "gerencia" | "lider", boolean]> = [
+  ["Estratégico", "gerencia", false],
+  ["Operativo", "lider", false],
+  ["Regulatorio", "gerencia", true],
+];
+
+/** Nombre, sufijo y decimales por omisión. */
+export const UNIDADES_INDICADOR: ReadonlyArray<readonly [string, string, number]> = [
+  ["Porcentaje", " %", 1],
+  ["Número", "", 0],
+  ["Días", " días", 1],
+  ["Horas", " h", 1],
+  ["Minutos", " min", 0],
+  ["Tasa por mil", " por mil", 1],
+  ["Pesos", " pesos", 0],
+];
+
 const AVISO_DATOS_PERSONALES = [
   "TEXTO DE EJEMPLO — la entidad debe reemplazarlo por su política de tratamiento de datos personales. Al ingresar a este sistema, la entidad registra su usuario, cargo, dirección IP y las acciones que realiza, con el único fin de garantizar el control, la trazabilidad y la seguridad de la información documentada del sistema de gestión.",
   "Los datos se tratan conforme a la Ley 1581 de 2012 y se conservan mientras dure su vinculación. Puede ejercer sus derechos de conocer, actualizar y rectificar sus datos solicitándolo al administrador del sistema.",
@@ -65,7 +86,13 @@ export async function limpiarTodo(db: Db): Promise<void> {
       verificaciones, verificacion_items, hallazgos,
       ratificaciones, externos, externo_verificaciones, revisiones_anuales,
       revision_anual_procesos, revision_anual_decisiones, tipos_norma, normas,
-      norma_relaciones, norma_cambios, norma_procesos, norma_documentos, impactos_normativos
+      norma_relaciones, norma_cambios, norma_procesos, norma_documentos, impactos_normativos,
+      tipos_indicador, clasificaciones_indicador, unidades_indicador, objetivos, indicadores,
+      indicador_versiones, indicador_variables, indicador_responsables, indicador_normas,
+      indicador_designados, indicador_metas, mediciones, medicion_valores, medicion_eventos,
+      medicion_observaciones, cierres_indicadores, variables_compartidas, variable_responsables,
+      variable_valores, calculo_fotos, dimensiones, dimension_categorias, reportes_externos,
+      impactos_indicadores
     RESTART IDENTITY CASCADE
   `);
 }
@@ -107,6 +134,11 @@ export async function sembrarBase(
     { clave: "meta_acuses_pct", valor: "90" },
     { clave: "meta_externos_pct", valor: "95" },
     { clave: "meta_etapas_plazo_pct", valor: "90" },
+    { clave: "ind_umbral_atencion_pct", valor: "70" },
+    { clave: "ind_aviso_previo_dias", valor: "3" },
+    { clave: "ind_plazo_reporte_dias", valor: "10" },
+    { clave: "ind_incumplimiento_periodos", valor: "3" },
+    { clave: "ind_variacion_confirmar_pct", valor: "30" },
   ]);
 
   const tipos = await db
@@ -131,6 +163,13 @@ export async function sembrarBase(
     ITEMS_VERIFICACION.map(([texto, critico], i) => ({ texto, critico, orden: i + 1 })),
   );
   await db.insert(e.tiposNorma).values(TIPOS_NORMA.map((nombre, i) => ({ nombre, orden: i + 1 })));
+  await db.insert(e.tiposIndicador).values(TIPOS_INDICADOR.map((nombre, i) => ({ nombre, orden: i + 1 })));
+  await db.insert(e.clasificacionesIndicador).values(
+    CLASIFICACIONES_INDICADOR.map(([nombre, aprueba, exigeNorma], i) => ({ nombre, aprueba, exigeNorma, orden: i + 1 })),
+  );
+  await db.insert(e.unidadesIndicador).values(
+    UNIDADES_INDICADOR.map(([nombre, sufijo, decimales], i) => ({ nombre, sufijo, decimales, orden: i + 1 })),
+  );
   return { tipoPorSigla: Object.fromEntries(tipos.map((t) => [t.sigla, t.id])) };
 }
 

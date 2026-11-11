@@ -43,7 +43,7 @@ export async function asegurarRolApp(
     await tx.unsafe(`REVOKE CREATE ON SCHEMA public FROM PUBLIC`);
     await tx.unsafe(`GRANT USAGE ON SCHEMA public TO ${r}`);
     await tx.unsafe(`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${r}`);
-    await tx.unsafe(`REVOKE UPDATE, DELETE ON auditoria, accesos, firmas, tramite_eventos, copia_eventos, acuse_eventos, ratificaciones, externo_verificaciones, norma_cambios FROM ${r}`);
+    await tx.unsafe(`REVOKE UPDATE, DELETE ON auditoria, accesos, firmas, tramite_eventos, copia_eventos, acuse_eventos, ratificaciones, externo_verificaciones, norma_cambios, medicion_eventos, medicion_observaciones FROM ${r}`);
     await tx.unsafe(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${r}`);
     // Toda tabla futura nace con UPDATE y DELETE para sgc_app. Una tabla inmutable nueva
     // (como `firmas` y `tramite_eventos`) debe entrar al REVOKE de arriba y al trigger

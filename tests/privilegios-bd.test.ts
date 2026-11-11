@@ -47,7 +47,7 @@ describe.skipIf(!process.env.DATABASE_URL_MIGRADOR)("rol sgc_app", () => {
     expect(await codigoDeError(app`DELETE FROM accesos WHERE id = ${a.id}`)).toBe("42501");
     expect(await codigoDeError(app`DELETE FROM auditoria WHERE id = -1`)).toBe("42501");
   });
-  it.each(["firmas", "tramite_eventos", "copia_eventos", "acuse_eventos", "ratificaciones", "externo_verificaciones", "norma_cambios"])("no puede modificar ni borrar %s", async (tabla) => {
+  it.each(["firmas", "tramite_eventos", "copia_eventos", "acuse_eventos", "ratificaciones", "externo_verificaciones", "norma_cambios", "medicion_eventos", "medicion_observaciones"])("no puede modificar ni borrar %s", async (tabla) => {
     expect(await codigoDeError(app`UPDATE ${app(tabla)} SET creado_en = creado_en WHERE id = -1`)).toBe("42501");
     expect(await codigoDeError(app`DELETE FROM ${app(tabla)} WHERE id = -1`)).toBe("42501");
   });
