@@ -695,6 +695,16 @@ describe("la ficha de indicador", () => {
     expect(frase("indicador_borrador_guardado", { codigo: "SGC-IND-06", numero: 2, versionId: 3 })).toBe(
       "Guardó el borrador de la ficha de SGC-IND-06 (versión 2)",
     );
+    // Con los datos de operación y los designados de antes y después, la frase sale igual del detalle.
+    expect(
+      frase("indicador_borrador_guardado", {
+        codigo: "SGC-IND-06",
+        numero: 1,
+        versionId: 3,
+        operacion: { antes: { plazoReporteDias: 10 }, despues: { plazoReporteDias: 15 } },
+        designados: { antes: { mide: [4], analiza: [4] }, despues: { mide: [5], analiza: [4] } },
+      }),
+    ).toBe("Guardó el borrador de la ficha de SGC-IND-06 (versión 1)");
     expect(frase("indicador_cambio_abierto", { codigo: "SGC-IND-06", numero: 2, versionId: 3 })).toBe(
       "Abrió un cambio en la ficha de SGC-IND-06 (versión 2)",
     );

@@ -14,6 +14,9 @@ import { textoAcotado } from "@/lib/validacion";
 /** El código de un indicador (`SGC-IND-01`): también es un segmento de la URL. */
 export const PATRON_CODIGO_INDICADOR = /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/;
 export const LARGO_CODIGO_INDICADOR = 30;
+/** Los segmentos de `/indicadores/…` que son páginas de la aplicación, no indicadores (sin distinguir mayúsculas). */
+export const CODIGOS_RESERVADOS: readonly string[] = ["nuevo", "matriz", "por-aprobar", "cierre", "excel"];
+const RESERVADO = "«nuevo», «matriz», «por-aprobar», «cierre» y «excel» son nombres reservados: elija otro código";
 
 /** Un entero: texto del formulario o número de la consulta. */
 const entero = (nombre: string, minimo: number, maximo: number) =>
@@ -110,6 +113,7 @@ export const EsquemaFicha = z
       .trim()
       .max(LARGO_CODIGO_INDICADOR, `El código no puede pasar de ${LARGO_CODIGO_INDICADOR} caracteres`)
       .regex(PATRON_CODIGO_INDICADOR, "El código solo admite letras, números y guiones")
+      .refine((c) => !CODIGOS_RESERVADOS.includes(c.toLowerCase()), RESERVADO)
       .optional(),
     nombre: textoAcotado("El nombre", 1, 200),
     proposito: textoAcotado("El objetivo del indicador", 1, 1000),

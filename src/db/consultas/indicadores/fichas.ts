@@ -32,7 +32,7 @@ import {
   type OpcionesFicha,
   type Periodicidad,
 } from "@/lib/indicadores/tipos";
-import { ErrorPermiso, puede } from "@/lib/permisos";
+import { ErrorPermiso, puede, type SujetoPermiso } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { listarMaestro, obtenerParametros } from "./maestros";
@@ -51,7 +51,7 @@ const ADJETIVO: Record<Periodicidad, string> = {
   anual: "anual",
 };
 
-function exigirAdministrar(sesion: SesionFlujo): void {
+function exigirAdministrar(sesion: SujetoPermiso): void {
   if (!puede(sesion, "indicadores.administrar")) throw new ErrorPermiso();
 }
 
@@ -109,7 +109,7 @@ function leer(d: DatosFicha): DatosFicha {
 
 const fr = (v: string | null | undefined) => (v === null || v === undefined ? null : fraccion(v));
 
-/** Fórmula, variables declaradas contra usadas, regla del semáforo e inicio de medición. */
+/** Fórmula, variables declaradas contra usadas y regla del semáforo. */
 function revisar(entrada: DatosFicha): FichaRevisada {
   const d = leer(entrada);
   let formula: string;
@@ -160,11 +160,14 @@ function revisar(entrada: DatosFicha): FichaRevisada {
   if (error) throw new ErrorIndicador(error);
   const [rMin, rMax] = [fr(d.resultadoMin), fr(d.resultadoMax)];
   if (rMin && rMax && comparar(rMin, rMax) > 0) throw new ErrorIndicador("El mínimo del resultado no puede pasar del máximo");
+  return { d, formula, factor, semaforo };
+}
 
+/** Los datos de operación que se van a escribir (solo con el indicador en borrador): el inicio, de la periodicidad. */
+function revisarOperacion(d: DatosFicha): void {
   if (periodicidadDe(d.inicioMedicion) !== d.periodicidad) {
     throw new ErrorIndicador(`El inicio de medición debe ser un periodo ${ADJETIVO[d.periodicidad]}`);
   }
-  return { d, formula, factor, semaforo };
 }
 
 /** Las referencias que ya tiene la versión: un elemento que se desactivó después sigue valiendo en ella. */
@@ -204,8 +207,11 @@ async function exigirFila(
   return fila;
 }
 
-/** Catálogos, norma exigida, subproceso del proceso, procedimiento, cargos y personas activas. */
-async function revisarContraLaBase(tx: TransactionSql, f: FichaRevisada, actual: Actual | null): Promise<Nombres> {
+/**
+ * Catálogos, norma exigida, subproceso del proceso, procedimiento, cargos y, si se van a escribir los datos de operación
+ * (`conOperacion`), personas designadas activas.
+ */
+async function revisarContraLaBase(tx: TransactionSql, f: FichaRevisada, actual: Actual | null, conOperacion: boolean): Promise<Nombres> {
   const { d } = f;
   const proceso = await exigirFila(
     tx`SELECT nombre, activo FROM procesos WHERE id = ${d.procesoId} FOR KEY SHARE`,
@@ -280,7 +286,7 @@ async function revisarContraLaBase(tx: TransactionSql, f: FichaRevisada, actual:
   }
   if (cargos.size !== cargoIds.length) throw new ErrorIndicador("Los cargos responsables deben existir y estar activos");
 
-  const personas = [...new Set([...d.mide, ...d.analiza])];
+  const personas = conOperacion ? [...new Set([...d.mide, ...d.analiza])] : [];
   if (personas.length > 0) {
     const activas = await tx`SELECT id FROM usuarios WHERE id IN ${tx(personas)} AND activo FOR KEY SHARE`;
     if (activas.length !== personas.length) throw new ErrorIndicador("Las personas designadas deben ser usuarios activos");
@@ -393,6 +399,20 @@ async function escribirDesignados(tx: TransactionSql, indicadorId: number, d: Da
   }
 }
 
+/** Quiénes miden y analizan, por id ascendente: lo que la bitácora guarda con antes y después (spec §7.3). */
+type Designados = { mide: number[]; analiza: number[] };
+
+const ascendente = (ids: readonly number[]) => [...ids].sort((a, b) => a - b);
+
+async function designadosDe(tx: TransactionSql, indicadorId: number): Promise<Designados> {
+  const filas = await tx`SELECT usuario_id, funcion FROM indicador_designados
+    WHERE indicador_id = ${indicadorId} AND funcion IN ('mide', 'analiza')`;
+  const de = (funcion: string) => ascendente(filas.filter((x) => x.funcion === funcion).map((x) => Number(x.usuario_id)));
+  return { mide: de("mide"), analiza: de("analiza") };
+}
+
+const designadosDeFicha = (d: DatosFicha): Designados => ({ mide: ascendente(d.mide), analiza: ascendente(d.analiza) });
+
 const operacionDe = (d: DatosFicha): DatosOperacion => ({
   plazoReporteDias: d.plazoReporteDias,
   inicioMedicion: d.inicioMedicion,
@@ -408,11 +428,12 @@ export async function crearIndicador(
 ): Promise<{ indicadorId: number; versionId: number; codigo: string }> {
   exigirAdministrar(sesion);
   const f = revisar(d);
+  revisarOperacion(f.d);
   const ahora = opciones?.ahora ?? new Date();
   let codigo = f.d.codigo ?? "";
   try {
     return await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
-      const nombres = await revisarContraLaBase(tx, f, null);
+      const nombres = await revisarContraLaBase(tx, f, null, true);
       codigo = f.d.codigo ?? (await proponerCodigo(f.d.procesoId, { sql: tx }));
       const o = operacionDe(f.d);
       const [i] = await tx`INSERT INTO indicadores
@@ -441,7 +462,7 @@ export async function crearIndicador(
         accion: "indicador_creado",
         entidad: "indicador",
         entidadId: indicadorId,
-        detalle: { codigo, nombre: f.d.nombre, proceso: nombres.procesoNombre, versionId, operacion: o },
+        detalle: { codigo, nombre: f.d.nombre, proceso: nombres.procesoNombre, versionId, operacion: o, designados: designadosDeFicha(f.d) },
       });
       return { indicadorId, versionId, codigo };
     });
@@ -458,7 +479,11 @@ async function idVigente(sql: Cliente, indicadorId: number): Promise<number | nu
   return v ? Number(v.id) : null;
 }
 
-/** Reemplaza el contenido de un borrador. Mientras el indicador está en borrador, también sus datos de operación. */
+/**
+ * Reemplaza el contenido de un borrador. Mientras el indicador está en borrador, también sus datos de operación y sus
+ * designados; en el cambio de una ficha aprobada, esos campos no se leen ni se validan (se cambian en «Datos de
+ * operación», Tarea 8).
+ */
 export async function guardarBorrador(sesion: SesionFlujo, versionId: number, d: DatosFicha, opciones?: Opciones): Promise<void> {
   exigirAdministrar(sesion);
   const f = revisar(d);
@@ -480,6 +505,8 @@ export async function guardarBorrador(sesion: SesionFlujo, versionId: number, d:
       if (!enBorrador) {
         if (f.d.procesoId !== Number(ind.proceso_id)) throw new ErrorIndicador("El proceso queda fijo desde la primera aprobación");
         if (f.d.codigo !== undefined && f.d.codigo !== ind.codigo) throw new ErrorIndicador("El código queda fijo desde la primera aprobación");
+      } else {
+        revisarOperacion(f.d);
       }
       const cargosActuales = await tx`SELECT DISTINCT cargo_id FROM indicador_responsables WHERE version_id = ${versionId}`;
       const normasActuales = await tx`SELECT norma_id FROM indicador_normas WHERE version_id = ${versionId}`;
@@ -493,13 +520,20 @@ export async function guardarBorrador(sesion: SesionFlujo, versionId: number, d:
         procedimientoDocumentoId: v.procedimiento_documento_id === null ? null : Number(v.procedimiento_documento_id),
         cargoIds: cargosActuales.map((c) => Number(c.cargo_id)),
         normaIds: normasActuales.map((n) => Number(n.norma_id)),
-      });
+      }, enBorrador);
 
       codigo = ind.codigo as string;
       let operacion: { antes: DatosOperacion; despues: DatosOperacion } | null = null;
+      let designados: { antes: Designados; despues: Designados } | null = null;
       if (enBorrador) {
         const mismoProceso = f.d.procesoId === Number(ind.proceso_id);
-        codigo = f.d.codigo ?? (mismoProceso ? codigo : await proponerCodigo(f.d.procesoId, { sql: tx }));
+        // La sigla del proceso decide el código (spec §7.1): al mudarse de proceso, un código con la del anterior se propone de nuevo.
+        let elegido = f.d.codigo;
+        if (!mismoProceso && elegido !== undefined) {
+          const [anterior] = await tx`SELECT sigla FROM procesos WHERE id = ${ind.proceso_id}`;
+          if (elegido.toLowerCase().startsWith(`${anterior.sigla as string}-IND-`.toLowerCase())) elegido = undefined;
+        }
+        codigo = elegido ?? (mismoProceso ? codigo : await proponerCodigo(f.d.procesoId, { sql: tx }));
         const antes: DatosOperacion = {
           plazoReporteDias: ind.plazo_reporte_dias as number,
           inicioMedicion: ind.inicio_medicion as string,
@@ -511,8 +545,11 @@ export async function guardarBorrador(sesion: SesionFlujo, versionId: number, d:
             plazo_reporte_dias = ${despues.plazoReporteDias}, inicio_medicion = ${despues.inicioMedicion},
             soporte_obligatorio = ${despues.soporteObligatorio}
           WHERE id = ${indicadorId}`;
+        const designadosAntes = await designadosDe(tx, indicadorId);
         await escribirDesignados(tx, indicadorId, f.d, sesion.usuarioId, ahora);
         if (JSON.stringify(antes) !== JSON.stringify(despues)) operacion = { antes, despues };
+        const designadosDespues = designadosDeFicha(f.d);
+        if (JSON.stringify(designadosAntes) !== JSON.stringify(designadosDespues)) designados = { antes: designadosAntes, despues: designadosDespues };
       }
 
       await tx`UPDATE indicador_versiones SET ${tx({ ...columnasDeContenido(tx, f, nombres), actualizado_en: ahora })} WHERE id = ${versionId}`;
@@ -531,7 +568,14 @@ export async function guardarBorrador(sesion: SesionFlujo, versionId: number, d:
         accion: "indicador_borrador_guardado",
         entidad: "indicador",
         entidadId: indicadorId,
-        detalle: { codigo, nombre: f.d.nombre, versionId, numero: v.numero as number, ...(operacion ? { operacion } : {}) },
+        detalle: {
+          codigo,
+          nombre: f.d.nombre,
+          versionId,
+          numero: v.numero as number,
+          ...(operacion ? { operacion } : {}),
+          ...(designados ? { designados } : {}),
+        },
       });
     });
   } catch (err) {
@@ -857,18 +901,20 @@ const conMayuscula = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 /**
  * Lo que el formulario ofrece: los catálogos activos (y, al editar, los que la versión ya usa aunque ya no lo estén), el
- * código propuesto en cada proceso, los parámetros y los periodos que se pueden elegir como inicio de medición.
+ * código propuesto en cada proceso, los parámetros, los periodos que se pueden elegir como inicio de medición y los entes
+ * ya usados (spec §17.1). Solo para quien administra: lleva el nombre y el cargo de cada persona.
  */
 export async function opcionesDeFicha(
   sesion: SujetoVisibilidad,
   opciones?: { sql?: Cliente; ahora?: Date; actuales?: Partial<DatosFicha> },
 ): Promise<OpcionesFicha> {
+  exigirAdministrar(sesion);
   const sql = opciones?.sql ?? obtenerSql();
   const a = opciones?.actuales ?? {};
   const zona = zonaHoraria();
   const ahora = opciones?.ahora ?? new Date();
   const ids = (...xs: (number | number[] | undefined)[]) => xs.flat().filter((x): x is number => typeof x === "number");
-  const [procesos, subprocesos, propuestos, tipos, clasificaciones, unidades, objetivos, cargos, normas, usuarios, documentos, parametros] =
+  const [procesos, subprocesos, propuestos, tipos, clasificaciones, unidades, objetivos, cargos, normas, usuarios, documentos, parametros, entes] =
     await Promise.all([
       sql`SELECT id, sigla, nombre FROM procesos WHERE activo OR id = ANY(${ids(a.procesoId)}) ORDER BY nombre`,
       sql`SELECT id, proceso_id, nombre FROM subprocesos WHERE activo OR id = ANY(${ids(a.subprocesoId)}) ORDER BY proceso_id, orden, nombre`,
@@ -892,6 +938,7 @@ export async function opcionesDeFicha(
           AND ${filtroAcceso(sql, sesion)}
         GROUP BY d.id ORDER BY d.codigo`,
       obtenerParametros({ sql }),
+      sql`SELECT DISTINCT btrim(ente) AS ente FROM indicador_versiones WHERE btrim(coalesce(ente, '')) <> '' ORDER BY 1`,
     ]);
   const activo = (actual: number | undefined) => (f: { id: number; activo: boolean }) => f.activo || f.id === actual;
   const anio = Number(fechaEnZona(ahora, zona).slice(0, 4));
@@ -923,6 +970,7 @@ export async function opcionesDeFicha(
       titulo: d.titulo as string,
       procesoIds: (d.procesos as (number | null)[]).filter((x): x is number => x !== null),
     })),
+    entes: entes.map((e) => e.ente as string),
     umbralAtencionPct: parametros.umbralAtencionPct,
     plazoReporteDias: parametros.plazoReporteDias,
     anio,

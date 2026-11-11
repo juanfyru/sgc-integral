@@ -12,7 +12,7 @@ vi.mock("@/app/acciones-indicadores", () => ({
   abrirCambioAccion: vi.fn(),
 }));
 
-import { FormularioFicha } from "@/componentes/indicadores/ficha/FormularioFicha";
+import { codigoAlCambiarDeProceso, FormularioFicha } from "@/componentes/indicadores/ficha/FormularioFicha";
 import { EsquemaFicha, type DatosFicha } from "@/lib/esquemas/indicadores";
 import type { OpcionesFicha } from "@/lib/indicadores/tipos";
 
@@ -48,6 +48,7 @@ const OPCIONES: OpcionesFicha = {
   ],
   usuarioActual: 7,
   documentos: [{ id: 30, codigo: "SGC-PR-01", titulo: "Auditorías internas", procesoIds: [2] }],
+  entes: ["Superintendencia de Salud"],
   umbralAtencionPct: 70,
   plazoReporteDias: 10,
   anio: 2026,
@@ -139,6 +140,23 @@ describe("FormularioFicha", () => {
     expect(JSON.parse(oculto(conPrueba, "prueba")!)).toEqual({ valores: { A: "9", B: "10" } });
     // Sin valores no hay prueba que guardar.
     expect(oculto(html, "prueba")).toBeNull();
+    // Fuera de los límites del resultado: lo dice una insignia con su texto, no un texto teñido.
+    const fuera = pintar({ meta: "80", tendencia: "ascendente", resultadoMax: "100", prueba: { valores: { A: "12", B: "10" } } });
+    expect(fuera).toMatch(/data-variante="atencion"[^>]*>Fuera de los límites del resultado</);
+    expect(fuera).not.toContain('<span class="text-estado-atencion-texto">');
+  });
+
+  it("el ente sugiere los ya usados", () => {
+    expect(control(html, "ente")).toContain('list="ficha-entes"');
+    expect(html).toContain('<datalist id="ficha-entes"><option value="Superintendencia de Salud"></option></datalist>');
+  });
+
+  it("al mudarse de proceso, el código se propone de nuevo si nadie lo tocó o si aún lleva la sigla anterior", () => {
+    expect(codigoAlCambiarDeProceso("SGC-IND-06", false, "SGC", "GTH-IND-01")).toBe("GTH-IND-01");
+    expect(codigoAlCambiarDeProceso("sgc-ind-06", true, "SGC", "GTH-IND-01")).toBe("GTH-IND-01");
+    expect(codigoAlCambiarDeProceso("", true, "SGC", "GTH-IND-01")).toBe("GTH-IND-01");
+    expect(codigoAlCambiarDeProceso("CAL-07", true, "SGC", "GTH-IND-01")).toBe("CAL-07");
+    expect(codigoAlCambiarDeProceso("SGCX-IND-02", true, "SGC", "GTH-IND-01")).toBe("SGCX-IND-02");
   });
 
   it("la fórmula libre se escribe y se lee en palabras; la tasa pide su factor; la constante, su rango", () => {
@@ -180,7 +198,21 @@ describe("FormularioFicha", () => {
 
   it("al editar un cambio pide el motivo y no deja cambiar el proceso ni el código", () => {
     const cambio = renderToStaticMarkup(
-      <FormularioFicha opciones={OPCIONES} valores={{ procesoId: 2, codigo: "SGC-IND-02", meta: "80" }} edicion={{ versionId: 15, cambio: true, codigoFijo: true }} />,
+      <FormularioFicha
+        opciones={OPCIONES}
+        valores={{
+          procesoId: 2,
+          codigo: "SGC-IND-02",
+          meta: "80",
+          plazoReporteDias: 15,
+          inicioMedicion: "2026-T3",
+          nivelAcceso: "restringido",
+          soporteObligatorio: true,
+          mide: [8],
+          analiza: [7, 8],
+        }}
+        edicion={{ versionId: 15, cambio: true, codigoFijo: true }}
+      />,
     );
     expect(cambio).toContain('<input type="hidden" name="id" value="15"/>');
     expect(cambio).toMatch(/<textarea[^>]*name="motivoCambio"/);
@@ -190,5 +222,29 @@ describe("FormularioFicha", () => {
     expect(cambio).toContain('<input type="hidden" name="procesoId" value="2"/>');
     expect(cambio).not.toMatch(/<select[^>]*name="procesoId"/);
     expect(cambio).toContain("Guardar borrador");
+
+    // Los datos de operación (spec §7.3) se ven pero no se editan: viajan como están y se cambian aparte.
+    expect(control(cambio, "plazoReporteDias")).toMatch(/readonly=""/i);
+    expect(control(cambio, "plazoReporteDias")).toContain('value="15"');
+    expect(cambio).toContain('<input type="hidden" name="inicioMedicion" value="2026-T3"/>');
+    expect(cambio).toContain('<input type="hidden" name="nivelAcceso" value="restringido"/>');
+    expect(cambio).toContain('<input type="hidden" name="soporteObligatorio" value="on"/>');
+    expect(JSON.parse(oculto(cambio, "mide")!)).toEqual([8]);
+    expect(JSON.parse(oculto(cambio, "analiza")!)).toEqual([7, 8]);
+    for (const nombre of ["inicioMedicion", "nivelAcceso", "soporteObligatorio"]) expect(cambio).not.toMatch(new RegExp(`<(select|input type="checkbox")[^>]*name="${nombre}"`));
+    expect(cambio).not.toContain('<select id="ficha-mide"');
+    expect(cambio).toMatch(/<input id="ficha-mide" readOnly="" [^>]*value="Auxiliar de calidad"/);
+    expect(cambio).toMatch(/<input id="ficha-analiza" readOnly="" [^>]*value="Coordinadora del SGC, Auxiliar de calidad"/);
+    expect(cambio).toMatch(/<input id="ficha-inicioMedicion" readOnly="" [^>]*value="Tercer trimestre de 2026"/);
+    expect(cambio).toContain("Es un dato de operación: se cambia en «Datos de operación», no en la ficha.");
+    // Cada control con su etiqueta y cada nombre del esquema (más el `id` de la ruta).
+    const claves = [...Object.keys(EsquemaFicha.shape), "id"];
+    for (const c of cambio.match(/<(?:input|select|textarea)\b[^>]*>/g) ?? []) {
+      if (/type="hidden"/.test(c)) continue;
+      const id = /\sid="([^"]+)"/.exec(c)?.[1];
+      expect(id, c).toBeTruthy();
+      expect(cambio, c).toContain(`for="${id}"`);
+    }
+    for (const n of nombres(cambio)) expect(claves, n).toContain(n);
   });
 });

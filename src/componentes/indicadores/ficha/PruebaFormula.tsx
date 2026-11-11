@@ -1,5 +1,6 @@
 "use client";
 
+import { claseControl } from "@/componentes/ui/Campo";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { calcular } from "@/lib/indicadores/calculo";
 import { analizar } from "@/lib/indicadores/formula/analizar";
@@ -9,8 +10,7 @@ import type { Regla } from "@/lib/indicadores/semaforo";
 import { fraseDeResultado, type Unidad } from "@/lib/indicadores/textos";
 import { ETIQUETA_SEMAFORO } from "@/lib/indicadores/tipos";
 
-const CONTROL =
-  "w-full min-w-0 rounded-md border border-border bg-card px-3 py-2 text-foreground outline-none focus:border-marca focus:ring-2 focus:ring-marca/20";
+const CONTROL = `${claseControl} w-full min-w-0`;
 
 /**
  * «Prueba» (spec §7.4 y §12.4): valores de ejemplo para cada variable, con el resultado, el color y la frase, calculados
@@ -95,7 +95,7 @@ export function PruebaFormula({
             ) : resultado.resultado !== null ? (
               <Insignia variante="sin-dato">Sin meta</Insignia>
             ) : null}
-            {resultado.fueraDeLimites ? <span className="text-estado-atencion-texto">Queda fuera de los límites del resultado.</span> : null}
+            {resultado.fueraDeLimites ? <Insignia variante="atencion">Fuera de los límites del resultado</Insignia> : null}
           </>
         )}
       </div>

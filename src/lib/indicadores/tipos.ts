@@ -84,6 +84,8 @@ export type OpcionesFicha = {
   usuarioActual: number | null;
   /** Los documentos vigentes que pueden ser el procedimiento, con los procesos a los que pertenecen. */
   documentos: { id: number; codigo: string; titulo: string; procesoIds: number[] }[];
+  /** Los entes a los que ya se reporta algún indicador: sugerencias, no un catálogo (spec §17.1). */
+  entes: string[];
   umbralAtencionPct: number;
   plazoReporteDias: number;
   /** El año en curso: el de referencia de «sin línea base». */

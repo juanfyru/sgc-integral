@@ -86,6 +86,27 @@ function limpia(v: Variable): Variable {
   };
 }
 
+/**
+ * El código al cambiar de proceso (spec §7.1: la sigla del proceso decide el código): el propuesto del nuevo si nadie
+ * lo tocó, si quedó vacío o si aún lleva el prefijo del proceso anterior; si no, el que escribió la persona.
+ */
+export function codigoAlCambiarDeProceso(codigo: string, tocado: boolean, siglaAnterior: string | null, propuesto: string): string {
+  const actual = codigo.trim();
+  const delAnterior = siglaAnterior !== null && actual.toLowerCase().startsWith(`${siglaAnterior}-IND-`.toLowerCase());
+  return !tocado || actual === "" || delAnterior ? propuesto : codigo;
+}
+
+/** Un dato que aquí solo se muestra: sin `name`, el valor viaja aparte. */
+function SoloLectura({ id, etiqueta, valor, ayuda }: { id: string; etiqueta: string; valor: string; ayuda: string }) {
+  return (
+    <Etiquetado id={id} etiqueta={etiqueta} ayuda={ayuda}>
+      <input id={id} readOnly value={valor} className={CONTROL} />
+    </Etiquetado>
+  );
+}
+
+const EN_OPERACION = "Es un dato de operación: se cambia en «Datos de operación», no en la ficha.";
+
 function Etiquetado({ id, etiqueta, ayuda, children }: { id: string; etiqueta: string; ayuda?: string; children: React.ReactNode }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
@@ -223,8 +244,14 @@ export function FormularioFicha({ opciones, valores = {}, edicion }: { opciones:
   const documentos = opciones.documentos.filter((d) => procesoId !== "" && d.procesoIds.includes(procesoId));
   const proceso = opciones.procesos.find((p) => p.id === procesoId);
   const bloqueado = edicion?.codigoFijo === true;
-  const listaMide = mide === "" ? [] : [mide];
-  const listaAnaliza = analiza === "misma" ? listaMide : analiza === "" ? [] : [analiza];
+  // El cambio de una ficha aprobada no toca los datos de operación (spec §7.3): se muestran y viajan como están.
+  const operacionFija = edicion?.cambio === true;
+  const listaMide = operacionFija ? (valores.mide ?? []) : mide === "" ? [] : [mide];
+  const listaAnaliza = operacionFija ? (valores.analiza ?? []) : analiza === "misma" ? listaMide : analiza === "" ? [] : [analiza];
+  const nombresDe = (ids: readonly number[]) =>
+    ids.length === 0 ? "(el líder del proceso)" : ids.map((id) => opciones.usuarios.find((u) => u.id === id)?.nombre ?? `Usuario ${id}`).join(", ");
+  const etiquetaDeInicio = (clave: string | undefined) =>
+    clave === undefined ? "" : (Object.values(opciones.periodos).flat().find((p) => p.clave === clave)?.etiqueta ?? clave);
 
   const cambiarVariable = (letra: string, cambio: Partial<Variable>) =>
     setVariables((vs) => vs.map((v) => (v.letra === letra ? { ...v, ...cambio } : v)));
@@ -246,12 +273,13 @@ export function FormularioFicha({ opciones, valores = {}, edicion }: { opciones:
     if (procedimientoId !== "" && !opciones.documentos.some((d) => d.id === procedimientoId && id !== "" && d.procesoIds.includes(id))) {
       setProcedimientoId("");
     }
-    if (!codigoTocado) setCodigo(id === "" ? "" : (opciones.codigosPropuestos[id] ?? ""));
+    const propuesto = id === "" ? "" : (opciones.codigosPropuestos[id] ?? "");
+    setCodigo(codigoAlCambiarDeProceso(codigo, codigoTocado, proceso?.sigla ?? null, propuesto));
   }
 
   function elegirPeriodicidad(p: Periodicidad) {
     setPeriodicidad(p);
-    if (!opciones.periodos[p].some((x) => x.clave === inicio)) setInicio(opciones.periodoEnCurso[p]);
+    if (!operacionFija && !opciones.periodos[p].some((x) => x.clave === inicio)) setInicio(opciones.periodoEnCurso[p]);
   }
 
   function elegirMide(id: number | "") {
@@ -283,6 +311,13 @@ export function FormularioFicha({ opciones, valores = {}, edicion }: { opciones:
       <input type="hidden" name="mide" value={JSON.stringify(listaMide)} />
       <input type="hidden" name="analiza" value={JSON.stringify(listaAnaliza)} />
       {bloqueado ? <input type="hidden" name="procesoId" value={procesoId} /> : null}
+      {operacionFija ? (
+        <>
+          <input type="hidden" name="inicioMedicion" value={valores.inicioMedicion ?? ""} />
+          <input type="hidden" name="nivelAcceso" value={valores.nivelAcceso ?? "general"} />
+          {valores.soporteObligatorio ? <input type="hidden" name="soporteObligatorio" value="on" /> : null}
+        </>
+      ) : null}
 
       <SelectorForma forma={forma} factor={factor} alElegir={elegirForma} />
       {forma === "tasa" ? (
@@ -428,8 +463,22 @@ export function FormularioFicha({ opciones, valores = {}, edicion }: { opciones:
                 ))}
               </select>
             </Campo>
-            <Campo etiqueta="Plazo de reporte (días)" nombre="plazoReporteDias" id="ficha-plazoReporteDias" ayuda="Después del cierre del periodo.">
-              <input type="number" required min={0} max={90} step={1} defaultValue={valores.plazoReporteDias ?? opciones.plazoReporteDias} className={CONTROL} />
+            <Campo
+              etiqueta="Plazo de reporte (días)"
+              nombre="plazoReporteDias"
+              id="ficha-plazoReporteDias"
+              ayuda={operacionFija ? EN_OPERACION : "Después del cierre del periodo."}
+            >
+              <input
+                type="number"
+                required
+                readOnly={operacionFija}
+                min={0}
+                max={90}
+                step={1}
+                defaultValue={valores.plazoReporteDias ?? opciones.plazoReporteDias}
+                className={CONTROL}
+              />
             </Campo>
           </div>
           <Campo etiqueta="Tendencia" nombre="tendencia" id="ficha-tendencia">
@@ -486,34 +535,41 @@ export function FormularioFicha({ opciones, valores = {}, edicion }: { opciones:
               </div>
             </details>
           )}
-          <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
-            <Etiquetado id="ficha-mide" etiqueta="Quién mide" ayuda="Sin persona, mide el líder del proceso.">
-              <select id="ficha-mide" value={mide} onChange={(e) => elegirMide(e.target.value ? Number(e.target.value) : "")} className={CONTROL}>
-                <option value="">(el líder del proceso)</option>
-                {opciones.usuarios.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.nombre}
-                  </option>
-                ))}
-              </select>
-            </Etiquetado>
-            <Etiquetado id="ficha-analiza" etiqueta="Quién analiza">
-              <select
-                id="ficha-analiza"
-                value={analiza}
-                onChange={(e) => elegirAnaliza(e.target.value === "misma" ? "misma" : e.target.value ? Number(e.target.value) : "")}
-                className={CONTROL}
-              >
-                <option value="misma">La misma persona que mide</option>
-                <option value="">(el líder del proceso)</option>
-                {opciones.usuarios.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.nombre}
-                  </option>
-                ))}
-              </select>
-            </Etiquetado>
-          </div>
+          {operacionFija ? (
+            <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
+              <SoloLectura id="ficha-mide" etiqueta="Quién mide" valor={nombresDe(listaMide)} ayuda={EN_OPERACION} />
+              <SoloLectura id="ficha-analiza" etiqueta="Quién analiza" valor={nombresDe(listaAnaliza)} ayuda={EN_OPERACION} />
+            </div>
+          ) : (
+            <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
+              <Etiquetado id="ficha-mide" etiqueta="Quién mide" ayuda="Sin persona, mide el líder del proceso.">
+                <select id="ficha-mide" value={mide} onChange={(e) => elegirMide(e.target.value ? Number(e.target.value) : "")} className={CONTROL}>
+                  <option value="">(el líder del proceso)</option>
+                  {opciones.usuarios.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.nombre}
+                    </option>
+                  ))}
+                </select>
+              </Etiquetado>
+              <Etiquetado id="ficha-analiza" etiqueta="Quién analiza">
+                <select
+                  id="ficha-analiza"
+                  value={analiza}
+                  onChange={(e) => elegirAnaliza(e.target.value === "misma" ? "misma" : e.target.value ? Number(e.target.value) : "")}
+                  className={CONTROL}
+                >
+                  <option value="misma">La misma persona que mide</option>
+                  <option value="">(el líder del proceso)</option>
+                  {opciones.usuarios.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.nombre}
+                    </option>
+                  ))}
+                </select>
+              </Etiquetado>
+            </div>
+          )}
           <PruebaFormula
             formula={formulaVigente}
             variables={variables.map((v, i) => ({ letra: v.letra, etiqueta: etiqueta(v, i) }))}
@@ -747,34 +803,56 @@ export function FormularioFicha({ opciones, valores = {}, edicion }: { opciones:
             ))}
           </fieldset>
 
-          <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
-            <Campo etiqueta="Inicio de medición" nombre="inicioMedicion" id="ficha-inicioMedicion" ayuda="El primer periodo que se mide; puede ser anterior a hoy.">
-              <select value={inicio} onChange={(e) => setInicio(e.target.value)} className={CONTROL}>
-                {opciones.periodos[periodicidad].map((p) => (
-                  <option key={p.clave} value={p.clave}>
-                    {p.etiqueta}
-                  </option>
-                ))}
-              </select>
-            </Campo>
-            <Campo etiqueta="Nivel de acceso" nombre="nivelAcceso" id="ficha-nivelAcceso" ayuda="Uno restringido solo lo ven los del proceso y los designados.">
-              <select defaultValue={valores.nivelAcceso ?? "general"} className={CONTROL}>
-                <option value="general">General</option>
-                <option value="restringido">Restringido</option>
-              </select>
-            </Campo>
-          </div>
-          <div className="flex items-center gap-2">
-            <input type="checkbox" id="ficha-soporteObligatorio" name="soporteObligatorio" defaultChecked={valores.soporteObligatorio ?? false} />
-            <label htmlFor="ficha-soporteObligatorio" className="text-sm">
-              Cada reporte debe llevar su soporte
-            </label>
-          </div>
+          {operacionFija ? (
+            <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-3">
+              <SoloLectura id="ficha-inicioMedicion" etiqueta="Inicio de medición" valor={etiquetaDeInicio(valores.inicioMedicion)} ayuda={EN_OPERACION} />
+              <SoloLectura
+                id="ficha-nivelAcceso"
+                etiqueta="Nivel de acceso"
+                valor={valores.nivelAcceso === "restringido" ? "Restringido" : "General"}
+                ayuda={EN_OPERACION}
+              />
+              <SoloLectura id="ficha-soporteObligatorio" etiqueta="Soporte obligatorio" valor={valores.soporteObligatorio ? "Sí" : "No"} ayuda={EN_OPERACION} />
+            </div>
+          ) : (
+            <>
+              <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
+                <Campo etiqueta="Inicio de medición" nombre="inicioMedicion" id="ficha-inicioMedicion" ayuda="El primer periodo que se mide; puede ser anterior a hoy.">
+                  <select value={inicio} onChange={(e) => setInicio(e.target.value)} className={CONTROL}>
+                    {opciones.periodos[periodicidad].map((p) => (
+                      <option key={p.clave} value={p.clave}>
+                        {p.etiqueta}
+                      </option>
+                    ))}
+                  </select>
+                </Campo>
+                <Campo etiqueta="Nivel de acceso" nombre="nivelAcceso" id="ficha-nivelAcceso" ayuda="Uno restringido solo lo ven los del proceso y los designados.">
+                  <select defaultValue={valores.nivelAcceso ?? "general"} className={CONTROL}>
+                    <option value="general">General</option>
+                    <option value="restringido">Restringido</option>
+                  </select>
+                </Campo>
+              </div>
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="ficha-soporteObligatorio" name="soporteObligatorio" defaultChecked={valores.soporteObligatorio ?? false} />
+                <label htmlFor="ficha-soporteObligatorio" className="text-sm">
+                  Cada reporte debe llevar su soporte
+                </label>
+              </div>
+            </>
+          )}
 
           <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-3">
-            <Campo etiqueta="Se reporta a un ente" nombre="ente" id="ficha-ente" ayuda="Opcional: el destinatario externo.">
-              <input maxLength={150} defaultValue={valores.ente ?? ""} className={CONTROL} />
-            </Campo>
+            <div className="min-w-0">
+              <Campo etiqueta="Se reporta a un ente" nombre="ente" id="ficha-ente" ayuda="Opcional: el destinatario externo. Sugiere los ya usados.">
+                <input maxLength={150} list="ficha-entes" defaultValue={valores.ente ?? ""} className={CONTROL} />
+              </Campo>
+              <datalist id="ficha-entes">
+                {opciones.entes.map((e) => (
+                  <option key={e} value={e} />
+                ))}
+              </datalist>
+            </div>
             <Campo etiqueta="Periodicidad del ente" nombre="periodicidadExterna" id="ficha-periodicidadExterna">
               <select defaultValue={valores.periodicidadExterna ?? ""} className={CONTROL}>
                 <option value="">(no se reporta)</option>

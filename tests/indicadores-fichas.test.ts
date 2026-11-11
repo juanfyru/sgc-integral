@@ -188,6 +188,10 @@ describe("EsquemaFicha", () => {
     expect(falla({ meta: "ochenta" })).toBe("La meta debe ser un número");
     expect(falla({ prueba: JSON.stringify({ valores: { A: "nueve" } }) })).toBe("Los valores de la prueba deben ser números");
     expect(falla({ codigo: "SGC IND/01" })).toBe("El código solo admite letras, números y guiones");
+    // Los segmentos que son páginas de /indicadores no pueden ser códigos, sin distinguir mayúsculas.
+    const reservado = "«nuevo», «matriz», «por-aprobar», «cierre» y «excel» son nombres reservados: elija otro código";
+    for (const codigo of ["nuevo", "Matriz", "POR-APROBAR", "cierre", "Excel"]) expect(falla({ codigo })).toBe(reservado);
+    expect(parsearFormulario(formulario({ ...minimo, codigo: "NUEVO-1" }), EsquemaFicha).codigo).toBe("NUEVO-1");
   });
 });
 
@@ -268,7 +272,15 @@ describe("la ficha en borrador", () => {
         [b.mideId, "mide"],
       ]);
       const [bitacora] = await tx`SELECT accion, detalle FROM auditoria WHERE entidad = 'indicador' AND entidad_id = ${indicadorId}`;
-      expect(bitacora).toMatchObject({ accion: "indicador_creado", detalle: { codigo, versionId } });
+      expect(bitacora).toMatchObject({
+        accion: "indicador_creado",
+        detalle: {
+          codigo,
+          versionId,
+          operacion: { plazoReporteDias: 10, inicioMedicion: "2026-T1", soporteObligatorio: true, nivelAcceso: "restringido" },
+          designados: { mide: [b.mideId], analiza: [b.mideId] },
+        },
+      });
     }));
 
   it("valida la fórmula libre contra sus variables", () =>
@@ -429,7 +441,16 @@ describe("la ficha en borrador", () => {
         [otra.usuarioId, "mide"],
       ]);
       const [bitacora] = await tx`SELECT detalle FROM auditoria WHERE accion = 'indicador_borrador_guardado' AND entidad_id = ${indicadorId}`;
-      expect(bitacora.detalle).toMatchObject({ codigo, versionId, numero: 1 });
+      expect(bitacora.detalle).toMatchObject({
+        codigo,
+        versionId,
+        numero: 1,
+        operacion: {
+          antes: { plazoReporteDias: 10, inicioMedicion: "2026-T1", soporteObligatorio: true, nivelAcceso: "restringido" },
+          despues: { plazoReporteDias: 15, inicioMedicion: "2026-T1", soporteObligatorio: true, nivelAcceso: "restringido" },
+        },
+        designados: { antes: { mide: [b.mideId], analiza: [b.mideId] }, despues: { mide: [otra.usuarioId], analiza: [b.mideId] } },
+      });
 
       const aprobado = await indicadorDePrueba(tx, { procesoId: b.procesoId });
       await rechaza(guardarBorrador(b.admin, aprobado.versionId, datos(b), { sql: tx }), "Solo se puede editar una ficha en borrador");
@@ -482,6 +503,66 @@ describe("la ficha en borrador", () => {
       await rechaza(abrirCambio(b.admin, 999_999_999, { sql: tx }), "El indicador no existe");
     }));
 
+  it("un cambio de una ficha aprobada no lee ni valida los datos de operación: guarda aunque un designado ya no esté activo", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const designada = await usuarioDePrueba(tx, { rol: "consulta" });
+      const ind = await indicadorDePrueba(tx, { procesoId: b.procesoId, mide: [designada.usuarioId], analiza: [designada.usuarioId] });
+      await tx`UPDATE usuarios SET activo = false WHERE id = ${designada.usuarioId}`;
+      const { versionId } = await abrirCambio(b.admin, ind.id, { sql: tx });
+
+      // Con lo que el formulario devuelve, cambiando solo el nombre (y los cargos, que el ayudante no siembra): menor.
+      const ficha = await fichaParaEditar(b.admin, ind.codigo, { sql: tx });
+      const igual = EsquemaFicha.parse({ ...ficha!.valores, nombre: "Solo cambia el nombre", cargosMedir: [b.cargoId], cargosAnalizar: [b.cargoId] });
+      await guardarBorrador(b.admin, versionId, igual, { sql: tx });
+      const [v] = await tx`SELECT nombre, tipo_cambio FROM indicador_versiones WHERE id = ${versionId}`;
+      expect(v).toEqual({ nombre: "Solo cambia el nombre", tipo_cambio: "menor" });
+
+      // Datos de operación distintos (otro acceso, otro plazo, un inicio que no es de la periodicidad): no se tocan.
+      await guardarBorrador(
+        b.admin,
+        versionId,
+        datos(b, { periodicidad: "trimestral", inicioMedicion: "2026-01", nivelAcceso: "restringido", plazoReporteDias: 30, mide: [b.mideId], analiza: [] }),
+        { sql: tx },
+      );
+      const [i] = await tx`SELECT nivel_acceso, plazo_reporte_dias, inicio_medicion, soporte_obligatorio FROM indicadores WHERE id = ${ind.id}`;
+      expect(i).toEqual({ nivel_acceso: "general", plazo_reporte_dias: 10, inicio_medicion: "2026-01", soporte_obligatorio: false });
+      const designados = await tx`SELECT usuario_id, funcion FROM indicador_designados WHERE indicador_id = ${ind.id} ORDER BY funcion`;
+      expect(designados.map((x) => [Number(x.usuario_id), x.funcion])).toEqual([
+        [designada.usuarioId, "analiza"],
+        [designada.usuarioId, "mide"],
+      ]);
+      const guardados = await tx`SELECT detalle FROM auditoria WHERE accion = 'indicador_borrador_guardado' AND entidad_id = ${ind.id}`;
+      expect(guardados.every((g) => !("operacion" in g.detalle) && !("designados" in g.detalle))).toBe(true);
+
+      // En un borrador sí se validan: la misma persona inactiva no se puede designar.
+      const nuevo = await crearIndicador(b.admin, datos(b), { sql: tx });
+      await rechaza(
+        guardarBorrador(b.admin, nuevo.versionId, datos(b, { mide: [designada.usuarioId] }), { sql: tx }),
+        "Las personas designadas deben ser usuarios activos",
+      );
+      await rechaza(guardarBorrador(b.admin, nuevo.versionId, datos(b, { inicioMedicion: "2026-01" }), { sql: tx }), "El inicio de medición debe ser un periodo trimestral");
+    }));
+
+  it("al mudar un borrador de proceso, un código con la sigla del anterior se propone de nuevo", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const [gth] = await tx`SELECT id FROM procesos WHERE sigla = 'GTH'`;
+      const creado = await crearIndicador(b.admin, datos(b), { sql: tx });
+      expect(creado.codigo).toMatch(/^SGC-IND-/);
+      const propuesto = await proponerCodigo(Number(gth.id), { sql: tx });
+      await guardarBorrador(b.admin, creado.versionId, datos(b, { procesoId: Number(gth.id), codigo: creado.codigo.toLowerCase() }), { sql: tx });
+      const [i] = await tx`SELECT codigo, proceso_id FROM indicadores WHERE id = ${creado.indicadorId}`;
+      expect(i).toEqual({ codigo: propuesto, proceso_id: Number(gth.id) });
+
+      // Un código propio, sin la sigla del proceso anterior, se respeta.
+      const propio = `ZZPROPIO-${unico()}`;
+      await guardarBorrador(b.admin, creado.versionId, datos(b, { procesoId: Number(gth.id), codigo: propio }), { sql: tx });
+      await guardarBorrador(b.admin, creado.versionId, datos(b, { procesoId: b.procesoId, codigo: propio }), { sql: tx });
+      const [j] = await tx`SELECT codigo FROM indicadores WHERE id = ${creado.indicadorId}`;
+      expect(j.codigo).toBe(propio);
+    }));
+
   it("contenidoDeVersion da siempre la misma huella y no depende del nombre actual del catálogo", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);
@@ -528,7 +609,13 @@ describe("la ficha en borrador", () => {
   it("opcionesDeFicha ofrece los catálogos activos, el código propuesto y los periodos", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);
+      // Lleva el nombre y el cargo de cada persona: solo para quien administra.
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [b.procesoId] });
+      await expect(opcionesDeFicha(lider, { sql: tx })).rejects.toBeInstanceOf(ErrorPermiso);
+      const ente = `ZZ Ente ${unico()}`;
+      await crearIndicador(b.admin, datos(b, { ente: `  ${ente} ` }), { sql: tx });
       const o = await opcionesDeFicha(b.admin, { sql: tx, ahora: new Date("2026-11-10T15:00:00Z") });
+      expect(o.entes).toContain(ente);
       expect(o.codigosPropuestos[b.procesoId]).toBe(await proponerCodigo(b.procesoId, { sql: tx }));
       expect(o.tipos.map((t) => t.nombre)).toContain("Eficacia");
       expect(o.clasificaciones.find((c) => c.nombre === "Regulatorio")?.exigeNorma).toBe(true);
