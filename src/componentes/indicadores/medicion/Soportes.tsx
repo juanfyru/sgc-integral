@@ -64,7 +64,7 @@ export function Soportes({
         </ul>
       ) : (
         <p className="text-sm text-muted-foreground">
-          {obligatorio ? "Este indicador exige un soporte: adjúntelo antes de reportar." : "Sin soportes adjuntos."}
+          {obligatorio && editable ? "Este indicador exige un soporte: adjúntelo antes de reportar." : "Sin soportes adjuntos."}
         </p>
       )}
       {editable ? (

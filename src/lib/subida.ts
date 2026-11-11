@@ -136,8 +136,8 @@ export const CONTEXTOS_UNICOS: Partial<Record<ContextoEvidencia, string>> = { no
 /**
  * Como `validarTipo`, pero una evidencia solo es un PDF o una imagen (nunca SVG, HTML ni Office), y con `soloPdf`
  * solo un PDF: una extensión fuera de la lista o un contenido que no la respalda dan el mismo mensaje. Con `conExcel`
- * (el soporte de una medición) admite además un `.xlsx`, nunca un `.xls`, (por la muestra, que un
- * ZIP renombrado también pasa: `recibirArchivo` lo comprueba después sobre el archivo completo, ver `MIME_XLSX`).
+ * (el soporte de una medición) admite además un `.xlsx`, nunca un `.xls`. Es una comprobación por la muestra, y un ZIP renombrado
+ * a `.xlsx` también la pasa: `recibirArchivo` comprueba después el archivo completo contra `MIME_XLSX`.
  */
 export async function validarTipoEvidencia(
   nombre: string,
@@ -150,6 +150,5 @@ export async function validarTipoEvidencia(
   const permitidas = opciones?.soloPdf ? ["pdf"] : opciones?.conExcel ? [...EXTENSIONES_EVIDENCIA, "xlsx"] : EXTENSIONES_EVIDENCIA;
   if (!permitidas.includes(extension)) return { ok: false, error };
   const tipo = await validarTipo(nombre, muestra);
-  if (!tipo.ok) return { ok: false, error };
-  return tipo;
+  return tipo.ok ? tipo : { ok: false, error };
 }

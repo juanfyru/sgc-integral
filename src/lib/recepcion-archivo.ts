@@ -7,6 +7,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { registrarArchivo } from "@/db/consultas/admin";
 import { ErrorTramite } from "@/db/consultas/flujo/contrato";
 import { resolverRutaAlmacen } from "@/lib/almacen";
+import { ErrorPermiso } from "@/lib/permisos";
 import {
   CONTEXTOS_SOLO_PDF,
   ERROR_SOPORTE,
@@ -203,6 +204,7 @@ export async function recibirArchivo(
   } catch (err) {
     salida.destroy();
     await unlink(ruta.absoluta).catch(() => {});
+    if (err instanceof ErrorPermiso) return error(403, "Sin permiso");
     if (err instanceof ErrorTramite) return error(409, err.message);
     const mensaje = (err as Error).message;
     if (mensaje === "incompleto") return error(400, "El archivo llegó incompleto. Vuelva a subirlo.");

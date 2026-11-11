@@ -19,7 +19,7 @@ import { resolverRutaAlmacen } from "@/lib/almacen";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
 import type { ArchivoServible } from "@/lib/servir-archivo";
-import { contarSoportes, contextoDeMedicion, NO_EXISTE, recalcularMedicion } from "./mediciones";
+import { contarSoportes, contextoDeMedicion, type CondicionDePersona, NO_EXISTE, recalcularMedicion } from "./mediciones";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -138,6 +138,8 @@ export async function dejarSoporteSubido(tx: TransactionSql, c: { medicionId: nu
   const capacidad = u
     ? await puedeMedir(Number(m.indicador_id), { usuarioId: c.usuarioId, rol: u.rol, verHistorial: u.ver_historial === true }, { sql: tx })
     : null;
+  // La persona se vuelve a comprobar con los candados tomados: su designación pudo cambiar tras `autorizarSoporte`.
+  if (!capacidad?.puede) throw new ErrorPermiso();
   await recalcularMedicion(tx, c.medicionId, {
     ahora: c.ahora,
     actorId: c.usuarioId,
@@ -160,8 +162,13 @@ export async function quitarSoporte(sesion: SesionFlujo, d: { archivoId: number 
   const medicionId = Number(destino.contexto_id);
   const ruta = await enTransaccion(sql, async (tx) => {
     // El indicador y la medición, bloqueados en ese orden, antes de tocar la fila hija.
-    // Quien no ve el indicador recibe el mismo mensaje que si el soporte no existiera.
-    const ctx = await contextoDeMedicion(tx, sesion, medicionId, true).catch((err: unknown) => {
+    // Quien no ve el indicador ni sus soportes recibe el mismo mensaje que si el soporte no existiera; quien los ve y no
+    // mide, «sin permiso».
+    const exigir: CondicionDePersona = async (indicadorId, sujeto, o) => {
+      if (!(await puedeVerSoportes(indicadorId, sujeto, o))) throw new ErrorIndicador(SOPORTE_NO_EXISTE);
+      return puedeMedir(indicadorId, sujeto, o);
+    };
+    const ctx = await contextoDeMedicion(tx, sesion, medicionId, true, { exigir }).catch((err: unknown) => {
       throw err instanceof ErrorIndicador && err.message === NO_EXISTE ? new ErrorIndicador(SOPORTE_NO_EXISTE) : err;
     });
     const [archivo] = await tx`SELECT ruta, nombre_original FROM archivos

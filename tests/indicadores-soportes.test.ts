@@ -338,6 +338,13 @@ describe("registrarArchivo (la transacción de la subida)", () => {
     nombreOriginal: "x.pdf", extension: "pdf", mime: "application/pdf", tamanoBytes: 4, hashSha256: "b".repeat(64),
   });
 
+  it("con quien no puede medir (su designación cambió tras autorizar) rechaza con ErrorPermiso, sin fila ni evento", () =>
+    entorno(async ({ tx, medicion, ajeno }) => {
+      await expect(registrarArchivo(archivo(medicion), ajeno.sesion.usuarioId, { sql: tx })).rejects.toBeInstanceOf(ErrorPermiso);
+      expect(await archivosDe(tx, medicion)).toHaveLength(0);
+      expect(await eventos(tx, medicion)).toHaveLength(0);
+    }));
+
   it("con la medición cerrada, el indicador retirado o la medición inexistente rechaza, sin fila de archivos ni evento", () =>
     entorno(async ({ tx, ind, medicion, mide, admin }) => {
       const opciones = { sql: tx };
@@ -406,7 +413,9 @@ describe("quitar un soporte", () => {
   it("solo lo quita quien puede medir el indicador activo; un soporte que no existe, o que no es de una medición, no se quita", () =>
     entorno(async ({ tx, ind, medicion, mide, ajeno, admin }) => {
       const { id } = (await (await subir(mide.token, medicion, "Informe.pdf", await PDF())).json()) as { id: number };
-      await expect(quitarSoporte(ajeno.sesion, { archivoId: id }, { sql: tx, ahora: AHORA })).rejects.toBeInstanceOf(ErrorPermiso);
+      // Quien ve el indicador pero no sus soportes no se entera de que existe: igual que un id falso.
+      await expect(quitarSoporte(ajeno.sesion, { archivoId: id }, { sql: tx, ahora: AHORA })).rejects.toThrow("El soporte no existe");
+      // Quien ve los soportes y no puede medir (el Admin SGC con medidor designado): sin permiso.
       await expect(quitarSoporte(admin.sesion, { archivoId: id }, { sql: tx, ahora: AHORA })).rejects.toBeInstanceOf(ErrorPermiso);
       await expect(quitarSoporte(mide.sesion, { archivoId: 999_999_999 }, { sql: tx, ahora: AHORA })).rejects.toThrow("El soporte no existe");
       expect(await archivosDe(tx, medicion)).toHaveLength(1);
