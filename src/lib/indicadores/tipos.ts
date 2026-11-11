@@ -83,8 +83,13 @@ export type OpcionesFicha = {
   cargos: { id: number; nombre: string }[];
   normas: { id: number; nombre: string; estado: string }[];
   usuarios: { id: number; nombre: string; cargoId: number | null }[];
-  /** Quien llena el formulario: por omisión, quien mide (spec §7.3). */
+  /** Quien llena el formulario, si es un usuario activo. No se designa solo: «Quién mide» nace sin persona (F14-DC10). */
   usuarioActual: number | null;
+  /**
+   * Los cargos de los líderes activos de cada proceso (la definición de `src/lib/alcance.ts`): los responsables de medir y
+   * de analizar por omisión cuando no hay persona designada (spec §12.4).
+   */
+  cargosDeLideres: Record<number, number[]>;
   /** Los documentos vigentes que pueden ser el procedimiento, con los procesos a los que pertenecen. */
   documentos: { id: number; codigo: string; titulo: string; procesoIds: number[] }[];
   /** Los entes a los que ya se reporta algún indicador: sugerencias, no un catálogo (spec §17.1). */

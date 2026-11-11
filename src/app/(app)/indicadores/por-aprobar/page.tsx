@@ -49,11 +49,14 @@ function Indicador({ f, href }: { f: FichaEnCurso; href: string }) {
  * una; quien administra ve además los borradores, las devueltas con su nota y lo que espera aprobación. Para quien no
  * administra ni aprueba, «no encontrada».
  */
-export default async function PaginaPorAprobar() {
+export default async function PaginaPorAprobar({ searchParams }: { searchParams: Promise<{ aprobadas?: string | string[] }> }) {
   const sesion = await exigirSesion();
   const administra = puede(sesion, "indicadores.administrar");
   const aprueba = apruebaFichas(sesion);
   if (!administra && !aprueba) notFound();
+  // Lo que acaba de aprobar «Aprobar las seleccionadas» (la acción vuelve con `aprobadas=N`).
+  const { aprobadas: pedidas } = await searchParams;
+  const aprobadas = typeof pedidas === "string" && /^[1-9]\d{0,2}$/.test(pedidas) ? Number(pedidas) : 0;
   const [fichas, enCurso] = await Promise.all([fichasPorAprobar(sesion), fichasEnCurso(sesion)]);
   const filas: FilaPorAprobar[] = fichas.map((f) => ({
     versionId: f.versionId,
@@ -79,6 +82,11 @@ export default async function PaginaPorAprobar() {
         tituloEnfocable
       />
       <PestanasIndicadores activa="por-aprobar" visibles={pestanasVisibles(sesion, { aprueba })} numeros={{ "por-aprobar": fichas.length }} />
+      {aprobadas > 0 ? (
+        <p role="status" className="rounded-lg border border-border bg-muted p-3 text-sm text-foreground">
+          {aprobadas === 1 ? "Se aprobó 1 ficha." : `Se aprobaron ${aprobadas} fichas.`}
+        </p>
+      ) : null}
 
       {aprueba ? (
         <section aria-labelledby="por-aprobar-suyas" className="flex min-w-0 flex-col gap-3">

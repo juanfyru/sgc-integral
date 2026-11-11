@@ -7,6 +7,7 @@ import { fraccion } from "@/lib/indicadores/formula/fraccion";
 import { numeroExacto, rangosEnPalabras, type Regla } from "@/lib/indicadores/semaforo";
 import { textoMeta, type Unidad } from "@/lib/indicadores/textos";
 import type { ModoSemaforo, Tendencia } from "@/lib/indicadores/tipos";
+import { cuenta } from "@/lib/plural";
 import { fechaHoraLocal } from "@/lib/zona-horaria";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
@@ -196,7 +197,7 @@ export function FichaTecnica({
             ))}
           </ul>
         </Dato>
-        <Dato termino="Unidad del resultado">{`${c.unidadNombre ?? ""}${u.sufijo.trim() ? ` (${u.sufijo.trim()})` : ""} · ${c.decimales ?? 0} decimales`}</Dato>
+        <Dato termino="Unidad del resultado">{`${c.unidadNombre ?? ""}${u.sufijo.trim() ? ` (${u.sufijo.trim()})` : ""} · ${cuenta(c.decimales ?? 0, "decimal", "decimales")}`}</Dato>
         <Dato termino="Periodicidad">{c.periodicidad ? (PERIODICIDAD[c.periodicidad] ?? c.periodicidad) : ninguno}</Dato>
         <Dato termino="Tendencia">{c.tendencia ? (TENDENCIA[c.tendencia] ?? c.tendencia) : ninguno}</Dato>
         <Dato termino="Meta">{regla.meta === null ? "Sin meta: cada medición queda «Sin meta», sin color ni alertas" : textoMeta(regla, u)}</Dato>

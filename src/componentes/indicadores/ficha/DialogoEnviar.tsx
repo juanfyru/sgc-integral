@@ -28,6 +28,8 @@ export type EnvioDeFicha = {
   rigeDesde: string | null;
   /** Solo en un cambio mayor. */
   rige: { porOmision: string; opciones: { clave: string; etiqueta: string }[] } | null;
+  /** Un cambio mayor que hoy no tiene desde cuándo regir: «desde el primer trimestre de 2027». */
+  enviableDesde: string | null;
   /** Cuándo se guardó el borrador por última vez. */
   guardado: string;
 };
@@ -50,6 +52,13 @@ export function DialogoEnviar({ envio, pideCodigo }: { envio: EnvioDeFicha; pide
   if (envio.tipo === "ninguno") return <Aviso>El borrador no cambia nada frente a la ficha vigente: no hay qué enviar.</Aviso>;
   if (!envio.probada) {
     return <Aviso>Para enviarla, pruebe la fórmula con valores de ejemplo en «Prueba» y guarde el borrador.</Aviso>;
+  }
+  if (envio.enviableDesde) {
+    return (
+      <Aviso>
+        {`Este cambio mayor aún no tiene desde cuándo regir: todos los periodos ya empezados de su periodicidad tienen mediciones reportadas. Se podrá enviar ${envio.enviableDesde}, cuando empiece.`}
+      </Aviso>
+    );
   }
   const tipo = envio.tipo;
   const menor = tipo === "menor";

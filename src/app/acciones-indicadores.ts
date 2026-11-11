@@ -87,16 +87,22 @@ export async function enviarAAprobacionAccion(_prev: EstadoAccion, formData: For
 }
 
 /**
- * Aprueba con una clave las fichas elegidas (todo o nada) y vuelve a `volver` o a «Por aprobar». Quien aprueba sigue
- * viendo el indicador aprobado: Gerencia ve todos y el líder, los de sus procesos.
+ * Aprueba con una clave las fichas elegidas (todo o nada) y vuelve a `volver` o a «Por aprobar», con `aprobadas=N` para
+ * que la página lo confirme. Quien aprueba sigue viendo el indicador aprobado: Gerencia ve todos y el líder, los de sus
+ * procesos.
  */
 export async function aprobarFichasAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   const firma = separarFirma(formData);
   return mutacion(formData, "indicadores.aprobar", async (_usuarioId, _formData, sesion) => {
     const d = parsearFormulario(firma, EsquemaAprobarFichas, { omitir: ["volver"] });
     try {
-      await aprobarFichas(sesion, { versionIds: d.versionIds, credenciales: { clave: d.clave, codigo: d.codigo } }, { contexto: await contextoDePeticion() });
-      return rutaInterna(firma.get("volver"), POR_APROBAR);
+      const { aprobadas } = await aprobarFichas(
+        sesion,
+        { versionIds: d.versionIds, credenciales: { clave: d.clave, codigo: d.codigo } },
+        { contexto: await contextoDePeticion() },
+      );
+      const destino = rutaInterna(firma.get("volver"), POR_APROBAR);
+      return `${destino}${destino.includes("?") ? "&" : "?"}aprobadas=${aprobadas}`;
     } catch (err) {
       return destinoDeFirma(err);
     }

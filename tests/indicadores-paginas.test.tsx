@@ -231,6 +231,7 @@ describe("las páginas de la ficha de indicador", () => {
       expect(ficha).toContain(">Elaboró<");
       expect(ficha).toContain(">Datos de operación<");
       expect(ficha).toContain("vigente desde el primer trimestre de 2026");
+      expect(ficha).toContain("Porcentaje (%) · 1 decimal<");
       expect(ficha).not.toContain("Editar ficha");
       const versiones = await pagina(nuevo.codigo, { vista: "versiones" });
       expect(versiones).toContain("Control de cambios");
@@ -283,19 +284,26 @@ describe("las páginas de la ficha de indicador", () => {
       await enviarAAprobacion(admin, { versionId: enviado.versionId, credenciales: { clave: "ok" } }, firmar(tx));
       const quieto = await borrador(tx, admin, { nombre: "Ficha que sigue en borrador" });
 
+      const porAprobar = async (sp: Record<string, string> = {}) =>
+        renderToStaticMarkup(await PaginaPorAprobar({ searchParams: Promise.resolve(sp) }));
       contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "consulta" }));
-      await expect(PaginaPorAprobar()).rejects.toThrow("NO_ENCONTRADA");
+      await expect(porAprobar()).rejects.toThrow("NO_ENCONTRADA");
 
       contexto.sesion = valida(lider);
-      const deLider = renderToStaticMarkup(await PaginaPorAprobar());
+      const deLider = await porAprobar();
       expect(deLider).toContain("Ficha enviada al líder");
       expect(deLider).toContain(`aria-label="Elegir ${enviado.codigo}"`);
       expect(deLider).toMatch(/aria-current="page"[^>]*>Por aprobar · 1</);
       expect(deLider).not.toContain("Ficha que sigue en borrador");
       expect(deLider).not.toContain("Borradores y devueltas");
+      expect(deLider).not.toContain('role="status"');
+      // «Aprobar las seleccionadas» vuelve con cuántas aprobó: la página lo confirma.
+      expect(await porAprobar({ aprobadas: "1" })).toContain('<p role="status" class="rounded-lg border border-border bg-muted p-3 text-sm text-foreground">Se aprobó 1 ficha.</p>');
+      expect(await porAprobar({ aprobadas: "3" })).toContain(">Se aprobaron 3 fichas.</p>");
+      for (const raro of ["0", "x", "1000", "-1"]) expect(await porAprobar({ aprobadas: raro })).not.toContain('role="status"');
 
       contexto.sesion = valida(admin);
-      const deAdmin = renderToStaticMarkup(await PaginaPorAprobar());
+      const deAdmin = await porAprobar();
       expect(deAdmin).toContain("Borradores y devueltas");
       expect(deAdmin).toContain(quieto.codigo);
       expect(deAdmin).toContain("Enviadas, esperando aprobación");

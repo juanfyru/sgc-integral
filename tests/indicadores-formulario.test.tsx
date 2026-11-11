@@ -12,7 +12,7 @@ vi.mock("@/app/acciones-indicadores", () => ({
   abrirCambioAccion: vi.fn(),
 }));
 
-import { codigoAlCambiarDeProceso, FormularioFicha } from "@/componentes/indicadores/ficha/FormularioFicha";
+import { campoDeMasOpciones, codigoAlCambiarDeProceso, FormularioFicha } from "@/componentes/indicadores/ficha/FormularioFicha";
 import { EsquemaFicha, type DatosFicha } from "@/lib/esquemas/indicadores";
 import type { OpcionesFicha } from "@/lib/indicadores/tipos";
 
@@ -47,6 +47,8 @@ const OPCIONES: OpcionesFicha = {
     { id: 8, nombre: "Auxiliar de calidad", cargoId: null },
   ],
   usuarioActual: 7,
+  // El líder de SGC tiene otro cargo que la persona 7: así se distingue de dónde sale cada valor por omisión.
+  cargosDeLideres: { 2: [9] },
   documentos: [{ id: 30, codigo: "SGC-PR-01", titulo: "Auditorías internas", procesoIds: [2] }],
   entes: ["Superintendencia de Salud"],
   umbralAtencionPct: 70,
@@ -118,9 +120,10 @@ describe("FormularioFicha", () => {
     expect(mas).not.toMatch(/^<details[^>]*\sopen/);
     expect(mas).toContain('<option value="1" selected="">Eficacia</option>');
     expect(mas).toContain('<option value="2" selected="">Operativo</option>');
-    // Los responsables nacen con el cargo de quien mide, y la línea base con el año de referencia.
-    expect(JSON.parse(oculto(html, "cargosMedir")!)).toEqual([4]);
-    expect(JSON.parse(oculto(html, "cargosAnalizar")!)).toEqual([4]);
+    // Sin persona designada, los responsables nacen con los cargos de los líderes del proceso; la línea base, con el año
+    // de referencia.
+    expect(JSON.parse(oculto(html, "cargosMedir")!)).toEqual([9]);
+    expect(JSON.parse(oculto(html, "cargosAnalizar")!)).toEqual([9]);
     expect(mas).toContain("Sin línea base: 2026 es el año de referencia");
     expect(mas).toContain('<option value="2026-T4" selected="">Cuarto trimestre de 2026</option>');
   });
@@ -129,8 +132,50 @@ describe("FormularioFicha", () => {
     expect(control(html, "codigo")).toContain('value="SGC-IND-06"');
     expect(control(html, "plazoReporteDias")).toContain('value="10"');
     expect(control(pintar(), "codigo")).toContain('value=""');
-    expect(JSON.parse(oculto(html, "mide")!)).toEqual([7]);
-    expect(JSON.parse(oculto(html, "analiza")!)).toEqual([7]);
+  });
+
+  it("«Quién mide» nace sin persona: quien llena la ficha no queda designado (F14-DC10)", () => {
+    expect(JSON.parse(oculto(html, "mide")!)).toEqual([]);
+    expect(JSON.parse(oculto(html, "analiza")!)).toEqual([]);
+    expect(html).toMatch(/<select id="ficha-mide"[^>]*>[\s\S]*?<option value="" selected="">\(el líder del proceso\)<\/option>/);
+    expect(html).toMatch(/<select id="ficha-analiza"[^>]*>[\s\S]*?<option value="misma" selected="">La misma persona que mide<\/option>/);
+  });
+
+  it("los cargos responsables nacen con los de los líderes del proceso o, con persona designada, con el suyo", () => {
+    // Sin proceso no hay líder del que tomarlos.
+    expect(JSON.parse(oculto(pintar(), "cargosMedir")!)).toEqual([]);
+    // Un proceso sin líderes con cargo tampoco propone.
+    expect(JSON.parse(oculto(pintar({ procesoId: 13 }), "cargosMedir")!)).toEqual([]);
+    const designada = pintar({ procesoId: 2, mide: [7], analiza: [7] });
+    expect(JSON.parse(oculto(designada, "cargosMedir")!)).toEqual([4]);
+    expect(JSON.parse(oculto(designada, "cargosAnalizar")!)).toEqual([4]);
+    // Una persona sin cargo no se reemplaza por el del líder.
+    expect(JSON.parse(oculto(pintar({ procesoId: 2, mide: [8], analiza: [8] }), "cargosMedir")!)).toEqual([]);
+  });
+
+  it("un error del servidor sobre un campo de «Más opciones» dice a qué campo llevar el foco", () => {
+    expect(campoDeMasOpciones("Elija al menos un cargo responsable de medir")).toBe("ficha-cargo-medir");
+    expect(campoDeMasOpciones("Elija al menos un cargo responsable de analizar")).toBe("ficha-cargo-analizar");
+    expect(campoDeMasOpciones("Los cargos responsables de analizar no son válidos")).toBe("ficha-cargo-analizar");
+    expect(campoDeMasOpciones("Los cargos responsables deben existir y estar activos")).toBe("ficha-cargo-medir");
+    expect(campoDeMasOpciones("Un indicador regulatorio debe citar al menos una norma")).toBe("ficha-norma");
+    expect(campoDeMasOpciones("La línea base debe ser un número")).toBe("ficha-lineaBaseValor");
+    expect(campoDeMasOpciones("El mínimo del resultado no puede pasar del máximo")).toBe("ficha-resultadoMin");
+    expect(campoDeMasOpciones("El mínimo de captura de A no puede pasar del máximo")).toBe("ficha-detalle-variables");
+    expect(campoDeMasOpciones("El inicio de medición debe ser un periodo trimestral")).toBe("ficha-inicioMedicion");
+    expect(campoDeMasOpciones("El procedimiento debe ser un documento del proceso")).toBe("ficha-procedimientoDocumentoId");
+    // Lo que está a la vista no abre nada.
+    expect(campoDeMasOpciones("Escriba la fórmula")).toBeNull();
+    expect(campoDeMasOpciones("La meta debe ser un número")).toBeNull();
+    expect(campoDeMasOpciones("El nombre debe tener al menos 1 carácter")).toBeNull();
+    // Cada destino existe dentro de «Más opciones» y recibe el foco.
+    const mas = masOpciones(html);
+    for (const id of ["ficha-cargo-medir", "ficha-cargo-analizar", "ficha-norma", "ficha-detalle-variables"]) {
+      expect(mas).toContain(`<fieldset id="${id}" tabindex="-1"`);
+    }
+    for (const id of ["ficha-tipoId", "ficha-lineaBaseValor", "ficha-resultadoMin", "ficha-inicioMedicion", "ficha-procedimientoDocumentoId"]) {
+      expect(mas).toContain(`id="${id}"`);
+    }
   });
 
   it("la prueba con valores de ejemplo dice el resultado, el color y la frase, y los guarda", () => {

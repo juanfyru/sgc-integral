@@ -90,9 +90,10 @@ export async function versionVigente(sql: Cliente, indicadorId: number): Promise
 }
 
 /**
- * La versión aprobada de mayor número cuyo «rige desde» empieza antes que el periodo o con él; para un histórico
- * anterior a todas, la primera. Se compara por fechas: un cambio mayor puede traer otra periodicidad. Un cambio menor
- * guarda el «rige desde» de la versión que reemplaza: con número mayor, rige los mismos periodos.
+ * La versión aprobada de mayor número cuyo «rige desde» empieza antes que el periodo o con él. Para un histórico
+ * anterior a todas, la de mayor número entre las que comparten el «rige desde» más antiguo: un cambio menor guarda el
+ * «rige desde» de la versión que reemplaza y, con número mayor, rige los mismos periodos, también los históricos. Se
+ * compara por fechas: un cambio mayor puede traer otra periodicidad.
  */
 export async function versionQueRige(sql: Cliente, indicadorId: number, periodo: string): Promise<number | null> {
   const zona = zonaHoraria();
@@ -101,11 +102,11 @@ export async function versionQueRige(sql: Cliente, indicadorId: number, periodo:
   const filas = await sql`SELECT id, rige_desde FROM indicador_versiones
     WHERE indicador_id = ${indicadorId} AND estado = 'aprobada' ORDER BY numero DESC`;
   if (filas.length === 0) return null;
-  for (const f of filas) {
-    const rige = periodoDe(f.rige_desde as string, zona);
-    if (rige && rige.desde.getTime() <= objetivo.desde.getTime()) return Number(f.id);
-  }
-  return Number(filas[filas.length - 1].id);
+  const versiones = filas.map((f) => ({ id: Number(f.id), desde: periodoDe(f.rige_desde as string, zona)?.desde.getTime() ?? Infinity }));
+  const rige = versiones.find((v) => v.desde <= objetivo.desde.getTime());
+  if (rige) return rige.id;
+  const masAntiguo = Math.min(...versiones.map((v) => v.desde));
+  return versiones.find((v) => v.desde === masAntiguo)!.id;
 }
 
 /** El fin del último periodo con una medición reportada; `null` si no hay ninguna. */
@@ -118,30 +119,46 @@ async function finDeLoReportado(sql: Cliente, indicadorId: number): Promise<Date
 const despues = (p: Periodicidad, periodo: Periodo, zona: string) => periodoQueContiene(p, new Date(periodo.hasta.getTime() + 1), zona);
 
 /**
- * Desde cuándo rige por omisión un cambio mayor (F14-DC17): el primer periodo, en la periodicidad de la versión nueva,
- * que no se cruza con una medición reportada (sin ninguna, el que contiene el inicio de medición); nunca uno que no ha
- * empezado: si lo fuera, el periodo en curso.
+ * El primer periodo, en la periodicidad dada, que no se cruza con una medición reportada; sin ninguna, el que contiene el
+ * inicio de medición (o, sin inicio, el en curso). Puede no haber empezado.
  */
-export async function rigeDesdePorOmision(sql: Cliente, indicadorId: number, periodicidad: Periodicidad, ahora: Date): Promise<string> {
+async function primerSinReporte(sql: Cliente, indicadorId: number, periodicidad: Periodicidad, ahora: Date): Promise<Periodo> {
   const zona = zonaHoraria();
   const [i] = await sql`SELECT inicio_medicion FROM indicadores WHERE id = ${indicadorId}`;
   if (!i) throw new ErrorIndicador("El indicador no existe");
-  const enCurso = periodoQueContiene(periodicidad, ahora, zona);
   const ultimo = await finDeLoReportado(sql, indicadorId);
-  let candidato: Periodo;
   if (ultimo) {
     const tras = new Date(ultimo.getTime() + 1);
-    candidato = periodoQueContiene(periodicidad, tras, zona);
-    if (candidato.desde.getTime() < tras.getTime()) candidato = despues(periodicidad, candidato, zona);
-  } else {
-    const inicio = i.inicio_medicion ? periodoDe(i.inicio_medicion as string, zona) : null;
-    candidato = inicio ? periodoQueContiene(periodicidad, inicio.desde, zona) : enCurso;
+    const candidato = periodoQueContiene(periodicidad, tras, zona);
+    return candidato.desde.getTime() < tras.getTime() ? despues(periodicidad, candidato, zona) : candidato;
   }
-  return candidato.desde.getTime() > ahora.getTime() ? enCurso.clave : candidato.clave;
+  const inicio = i.inicio_medicion ? periodoDe(i.inicio_medicion as string, zona) : null;
+  return periodoQueContiene(periodicidad, inicio ? inicio.desde : ahora, zona);
 }
 
-/** Lo que la elección de «Rige desde» de un cambio mayor debe cumplir (F14-DC17). */
-async function validarRige(sql: Cliente, indicadorId: number, clave: string, periodicidad: Periodicidad, ahora: Date): Promise<void> {
+/**
+ * Desde cuándo rige por omisión un cambio mayor (F14-DC17): el primer periodo, en la periodicidad de la versión nueva,
+ * que no se cruza con una medición reportada (sin ninguna, el que contiene el inicio de medición); nunca uno que no ha
+ * empezado: si lo fuera, el periodo en curso (que `validarRige` puede rechazar: ver `previaDeEnvio`).
+ */
+export async function rigeDesdePorOmision(sql: Cliente, indicadorId: number, periodicidad: Periodicidad, ahora: Date): Promise<string> {
+  const candidato = await primerSinReporte(sql, indicadorId, periodicidad, ahora);
+  return candidato.desde.getTime() > ahora.getTime() ? periodoQueContiene(periodicidad, ahora, zonaHoraria()).clave : candidato.clave;
+}
+
+/**
+ * Lo que la elección de «Rige desde» de un cambio mayor debe cumplir (F14-DC17): de la periodicidad de la versión nueva,
+ * ya empezado, sin mediciones reportadas en él ni después y, al enviar (`desdeLoPorOmision`), no anterior al de por
+ * omisión (spec §7.6.5). Al aprobar no se mira ese límite: correr el tiempo no invalida lo elegido al enviar.
+ */
+async function validarRige(
+  sql: Cliente,
+  indicadorId: number,
+  clave: string,
+  periodicidad: Periodicidad,
+  ahora: Date,
+  desdeLoPorOmision: boolean,
+): Promise<void> {
   const periodo = periodicidadDe(clave) === periodicidad ? periodoDe(clave, zonaHoraria()) : null;
   if (!periodo) throw new ErrorIndicador(`«Rige desde» debe ser un periodo ${ADJETIVO[periodicidad]}`);
   if (periodo.desde.getTime() > ahora.getTime()) throw new ErrorIndicador("Una versión no puede regir desde un periodo que no ha empezado");
@@ -151,6 +168,13 @@ async function validarRige(sql: Cliente, indicadorId: number, clave: string, per
     FROM mediciones WHERE indicador_id = ${indicadorId} AND estado IN ('reportada', 'cerrada')`;
   if (m.en_el_periodo) throw new ErrorIndicador("Ese periodo ya tiene una medición reportada");
   if (m.despues) throw new ErrorIndicador("Hay mediciones reportadas después de ese periodo: elija uno posterior");
+  if (desdeLoPorOmision) {
+    const porOmision = await rigeDesdePorOmision(sql, indicadorId, periodicidad, ahora);
+    const minimo = periodoDe(porOmision, zonaHoraria())!;
+    if (periodo.desde.getTime() < minimo.desde.getTime()) {
+      throw new ErrorIndicador(`Un cambio mayor rige ${desdePeriodo(porOmision)} o desde un periodo posterior`);
+    }
+  }
 }
 
 /** Los periodos que se pueden elegir como «Rige desde» de un cambio mayor: del de por omisión al que está en curso. */
@@ -219,7 +243,7 @@ async function validarEnvio(sql: Cliente, d: DatosEnvio, ahora: Date): Promise<E
   } else {
     const periodicidad = v.periodicidad as Periodicidad;
     rigeDesde = d.rigeDesde ?? (await rigeDesdePorOmision(sql, indicadorId, periodicidad, ahora));
-    await validarRige(sql, indicadorId, rigeDesde, periodicidad, ahora);
+    await validarRige(sql, indicadorId, rigeDesde, periodicidad, ahora, true);
   }
   if (!rigeDesde) throw new ErrorIndicador("Elija el inicio de medición antes de enviar la ficha");
   return { indicadorId, codigo: v.codigo as string, numero: Number(v.numero), tipo, rigeDesde, motivo, contenido };
@@ -320,13 +344,24 @@ type PorAprobar = {
   elaboradaPor: number | null;
 };
 
+/** Si la versión se envió alguna vez (está aprobada o lleva una firma «Elaboró»): su aprobador ya supo de ella. */
+const fueEnviada = (sql: Cliente) => sql`(v.estado = 'aprobada' OR EXISTS (
+  SELECT 1 FROM firmas env_f WHERE env_f.indicador_version_id = v.id AND env_f.firma = 'elaboro'))`;
+
+/**
+ * Por qué no se puede aprobar ni devolver una versión que ya no está por aprobar. El código solo se dice de una que se
+ * envió alguna vez; de un borrador que nunca se envió o de uno descartado así, el mismo mensaje que a quien no le toca:
+ * `aprobadoresDeFicha` no mira el estado y el código de un borrador no debe salir por aquí (spec §6.4).
+ */
+const yaNo = (v: Record<string, unknown>) => new ErrorIndicador(v.enviada === true ? yaNoPorAprobar(v.codigo as string) : NO_LE_TOCA);
+
 /**
  * Lo que debe cumplirse para aprobar, sin escribir nada, en orden de id. Primero si a la persona le toca (quien no es su
  * aprobador recibe siempre el mismo mensaje, sin código), después si sigue por aprobar y si su contenido es el firmado.
  */
 async function validarAprobacion(sql: Cliente, sesion: SujetoVisibilidad, ids: readonly number[], ahora: Date): Promise<PorAprobar[]> {
   const filas = await sql`SELECT v.id, v.indicador_id, v.numero, v.estado, v.tipo_cambio, v.nombre, v.huella, v.rige_desde,
-      v.elaborada_por, v.periodicidad, i.codigo, i.estado AS indicador_estado, i.inicio_medicion
+      v.elaborada_por, v.periodicidad, i.codigo, i.estado AS indicador_estado, i.inicio_medicion, ${fueEnviada(sql)} AS enviada
     FROM indicador_versiones v JOIN indicadores i ON i.id = v.indicador_id
     WHERE v.id IN ${sql(ids)}`;
   const salida: PorAprobar[] = [];
@@ -334,9 +369,7 @@ async function validarAprobacion(sql: Cliente, sesion: SujetoVisibilidad, ids: r
     const v = filas.find((f) => Number(f.id) === id);
     if (!v || !(await puedeAprobarFicha(id, sesion, { sql }))) throw new ErrorIndicador(NO_LE_TOCA);
     const codigo = v.codigo as string;
-    if (v.estado !== "por_aprobar" || v.indicador_estado === "retirado" || v.indicador_estado === "descartado") {
-      throw new ErrorIndicador(yaNoPorAprobar(codigo));
-    }
+    if (v.estado !== "por_aprobar" || v.indicador_estado === "retirado" || v.indicador_estado === "descartado") throw yaNo(v);
     if (huellaDeFicha(await contenidoDeVersion(sql, id)) !== v.huella) {
       throw new ErrorIndicador(`La ficha ${codigo} cambió después de la firma de quien la elaboró`);
     }
@@ -347,7 +380,7 @@ async function validarAprobacion(sql: Cliente, sesion: SujetoVisibilidad, ids: r
       rigeDesde = (v.inicio_medicion as string | null) ?? rigeDesde;
     } else if (tipo === "mayor") {
       try {
-        await validarRige(sql, Number(v.indicador_id), rigeDesde, v.periodicidad as Periodicidad, ahora);
+        await validarRige(sql, Number(v.indicador_id), rigeDesde, v.periodicidad as Periodicidad, ahora, false);
       } catch (err) {
         if (!(err instanceof ErrorIndicador)) throw err;
         throw new ErrorIndicador(`La ficha ${codigo} ya no puede regir ${desdePeriodo(rigeDesde)}: devuélvala para que elijan otro periodo`);
@@ -446,11 +479,11 @@ export async function devolverFicha(sesion: SesionFlujo, d: { versionId: number;
   const ahora = opciones?.ahora ?? new Date();
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
     await bloquear(tx, [d.versionId]);
-    const [v] = await tx`SELECT v.indicador_id, v.numero, v.estado, v.nombre, v.elaborada_por, i.codigo
+    const [v] = await tx`SELECT v.indicador_id, v.numero, v.estado, v.nombre, v.elaborada_por, i.codigo, ${fueEnviada(tx)} AS enviada
       FROM indicador_versiones v JOIN indicadores i ON i.id = v.indicador_id WHERE v.id = ${d.versionId}`;
     if (!v || !(await puedeAprobarFicha(d.versionId, sesion, { sql: tx }))) throw new ErrorIndicador(NO_LE_TOCA);
     const codigo = v.codigo as string;
-    if (v.estado !== "por_aprobar") throw new ErrorIndicador(yaNoPorAprobar(codigo));
+    if (v.estado !== "por_aprobar") throw yaNo(v);
     // De vuelta en borrador no queda nada de la firma de quien la elaboró en la versión: la firma sigue en `firmas`.
     await tx`UPDATE indicador_versiones SET estado = 'borrador', nota_devolucion = ${nota}, huella = NULL, elaborada_por = NULL,
         elaborada_en = NULL, rige_desde = NULL, actualizado_en = ${ahora}
@@ -791,8 +824,13 @@ export type PreviaDeEnvio = {
   notaDevolucion: string | null;
   /** Desde cuándo regirá: el inicio de medición (inicial) o el de la versión que reemplaza (menor). */
   rigeDesde: string | null;
-  /** Solo en un cambio mayor: los periodos que se pueden elegir. */
+  /** Solo en un cambio mayor que hoy se puede enviar: los periodos que se pueden elegir. */
   rige: { porOmision: string; opciones: { clave: string; etiqueta: string }[] } | null;
+  /**
+   * Un cambio mayor que hoy no tiene desde cuándo regir (todo lo empezado ya tiene mediciones reportadas): el primer
+   * periodo de su periodicidad sin reporte, desde cuyo inicio se podrá enviar. `null` en los demás casos.
+   */
+  enviableDesde: string | null;
 };
 
 /** Para quien administra: qué se va a firmar al enviar el borrador guardado. `null` si la versión no es un borrador. */
@@ -815,6 +853,19 @@ export async function previaDeEnvio(sesion: SujetoPermiso, versionId: number, op
     rigeDesde = r.rige_desde as string;
   }
   const periodicidad = v.periodicidad as Periodicidad | null;
+  let rige: PreviaDeEnvio["rige"] = null;
+  let enviableDesde: string | null = null;
+  if (tipo === "mayor" && periodicidad) {
+    rige = await opcionesDeRige(sql, indicadorId, periodicidad, ahora);
+    // El de por omisión es el más temprano posible: si no pasa, ningún otro de la lista pasa.
+    try {
+      await validarRige(sql, indicadorId, rige.porOmision, periodicidad, ahora, true);
+    } catch (err) {
+      if (!(err instanceof ErrorIndicador)) throw err;
+      rige = null;
+      enviableDesde = (await primerSinReporte(sql, indicadorId, periodicidad, ahora)).clave;
+    }
+  }
   return {
     versionId,
     numero: Number(v.numero),
@@ -825,6 +876,7 @@ export async function previaDeEnvio(sesion: SujetoPermiso, versionId: number, op
     motivo: (v.motivo_cambio as string | null) ?? null,
     notaDevolucion: (v.nota_devolucion as string | null) ?? null,
     rigeDesde,
-    rige: tipo === "mayor" && periodicidad ? await opcionesDeRige(sql, indicadorId, periodicidad, ahora) : null,
+    rige,
+    enviableDesde,
   };
 }

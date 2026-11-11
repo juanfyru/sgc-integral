@@ -614,7 +614,10 @@ describe("la ficha en borrador", () => {
       await expect(opcionesDeFicha(lider, { sql: tx })).rejects.toBeInstanceOf(ErrorPermiso);
       const ente = `ZZ Ente ${unico()}`;
       await crearIndicador(b.admin, datos(b, { ente: `  ${ente} ` }), { sql: tx });
+      // Los cargos de los líderes activos de cada proceso: los responsables por omisión sin persona designada.
+      await tx`UPDATE usuarios SET cargo_id = ${b.cargoId} WHERE id = ${lider.usuarioId}`;
       const o = await opcionesDeFicha(b.admin, { sql: tx, ahora: new Date("2026-11-10T15:00:00Z") });
+      expect(o.cargosDeLideres[b.procesoId]).toContain(b.cargoId);
       expect(o.entes).toContain(ente);
       expect(o.codigosPropuestos[b.procesoId]).toBe(await proponerCodigo(b.procesoId, { sql: tx }));
       expect(o.tipos.map((t) => t.nombre)).toContain("Eficacia");
@@ -630,7 +633,9 @@ describe("la ficha en borrador", () => {
 
       // Un cargo inactivo deja de ofrecerse, salvo en la versión que ya lo usa.
       await tx`UPDATE cargos SET activo = false WHERE id = ${b.cargoId}`;
-      expect((await opcionesDeFicha(b.admin, { sql: tx })).cargos.map((c) => c.id)).not.toContain(b.cargoId);
+      const sinCargo = await opcionesDeFicha(b.admin, { sql: tx });
+      expect(sinCargo.cargos.map((c) => c.id)).not.toContain(b.cargoId);
+      expect(sinCargo.cargosDeLideres[b.procesoId] ?? []).not.toContain(b.cargoId);
       expect((await opcionesDeFicha(b.admin, { sql: tx, actuales: { cargosMedir: [b.cargoId] } })).cargos.map((c) => c.id)).toContain(b.cargoId);
       await rechaza(crearIndicador(b.admin, datos(b), { sql: tx }), "Los cargos responsables deben existir y estar activos");
     }));

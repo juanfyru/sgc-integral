@@ -5,7 +5,7 @@ import { DescartarCambio, DialogoEnviar } from "@/componentes/indicadores/ficha/
 import { AbrirCambio, FormularioFicha } from "@/componentes/indicadores/ficha/FormularioFicha";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
-import { etiquetaDePeriodo, previaDeEnvio } from "@/db/consultas/indicadores/aprobacion";
+import { desdePeriodo, etiquetaDePeriodo, previaDeEnvio } from "@/db/consultas/indicadores/aprobacion";
 import { fichaParaEditar, opcionesDeFicha } from "@/db/consultas/indicadores/fichas";
 import type { EstadoVersion } from "@/lib/indicadores/tipos";
 import { exigirSesion } from "@/lib/paginas";
@@ -90,6 +90,7 @@ export default async function PaginaEditarFicha({ params }: { params: Promise<{ 
                   motivo: previa.motivo,
                   rigeDesde: previa.rigeDesde ? etiquetaDePeriodo(previa.rigeDesde) : null,
                   rige: previa.rige,
+                  enviableDesde: previa.enviableDesde ? desdePeriodo(previa.enviableDesde) : null,
                   guardado: fechaHoraLocal(ficha.actualizadoEn),
                 }}
                 pideCodigo={sesion.totpActivo}

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { abrirCambioAccion, crearIndicadorAccion, guardarBorradorAccion } from "@/app/acciones-indicadores";
 import { enviarSinReiniciar } from "@/componentes/admin/sin-reiniciar";
 import { Boton, claseBoton } from "@/componentes/ui/Boton";
@@ -136,7 +136,8 @@ function Casillas({
   alCambiar: (ids: number[]) => void;
 }) {
   return (
-    <fieldset className="min-w-0">
+    // Enfocable desde el código: un error del servidor sobre este campo lleva el foco aquí (`campoDeMasOpciones`).
+    <fieldset id={prefijo} tabIndex={-1} className="min-w-0">
       <legend className="text-sm font-medium">{leyenda}</legend>
       {ayuda ? <p className="text-xs text-muted-foreground">{ayuda}</p> : null}
       {opciones.length === 0 ? (
@@ -168,6 +169,40 @@ function Casillas({
 }
 
 /**
+ * Los errores del servidor sobre un campo que vive en «Más opciones», plegado: el `id` del control (o del grupo de
+ * casillas) al que llevar el foco tras abrirlo. `null` si el campo está a la vista.
+ */
+const CAMPOS_DE_MAS_OPCIONES: readonly [RegExp, string][] = [
+  [/^(Elija el tipo|El tipo no existe)/, "ficha-tipoId"],
+  [/^(Elija la clasificación$|La clasificación no existe)/, "ficha-clasificacionId"],
+  [/^(Elija la unidad del resultado|La unidad no existe)/, "ficha-unidadId"],
+  [/^Los decimales/, "ficha-decimales"],
+  [/^El requisito/, "ficha-requisito"],
+  [/^El objetivo que mide/, "ficha-objetivoId"],
+  [/^El procedimiento/, "ficha-procedimientoDocumentoId"],
+  [/^El punto de control/, "ficha-puntoControl"],
+  [/^(Las normas|Elija hasta 20 normas|Un indicador regulatorio|Solo se pueden citar normas|La norma no existe)/, "ficha-norma"],
+  [/(cargos? responsables? de analizar)/, "ficha-cargo-analizar"],
+  [/^(Los cargos responsables|Elija al menos un cargo responsable de medir|Elija hasta 20 cargos)/, "ficha-cargo-medir"],
+  [/^La línea base/, "ficha-lineaBaseValor"],
+  [/^El periodo de la línea base/, "ficha-lineaBasePeriodo"],
+  [/^La nota de la línea base/, "ficha-lineaBaseNota"],
+  [/^El sustento de la meta/, "ficha-sustentoMeta"],
+  [/^El mínimo del resultado/, "ficha-resultadoMin"],
+  [/^El máximo del resultado/, "ficha-resultadoMax"],
+  [/^(La descripción de una variable|La unidad de una variable|El mínimo de captura|El máximo de captura|Diga si cada variable|Elija cómo se junta)/, "ficha-detalle-variables"],
+  [/^(Elija el inicio de medición$|El inicio de medición)/, "ficha-inicioMedicion"],
+  [/^Elija el nivel de acceso/, "ficha-nivelAcceso"],
+  [/^El ente/, "ficha-ente"],
+  [/^Elija con qué periodicidad se reporta al ente/, "ficha-periodicidadExterna"],
+  [/^El plazo del ente/, "ficha-plazoExternoDias"],
+];
+
+export function campoDeMasOpciones(mensaje: string): string | null {
+  return CAMPOS_DE_MAS_OPCIONES.find(([patron]) => patron.test(mensaje))?.[1] ?? null;
+}
+
+/**
  * El formulario de la ficha (spec §12.4, maqueta 6): primero cómo se calcula; a la vista lo del caso común, «Así quedará
  * el semáforo» y la prueba; lo demás de §7.2 y §7.3 en «Más opciones», plegado, con sus valores por omisión. Las
  * variables y las listas viajan como JSON en campos ocultos. Sin `edicion`, crea el indicador; con ella, guarda el
@@ -175,14 +210,28 @@ function Casillas({
  */
 export function FormularioFicha({ opciones, valores = {}, edicion }: { opciones: OpcionesFicha; valores?: Partial<DatosFicha>; edicion?: EdicionFicha }) {
   const [estado, enviar, pendiente] = useActionState(edicion ? guardarBorradorAccion : crearIndicadorAccion, null);
-  const cargoDe = (usuario: number | "") => {
-    const cargo = opciones.usuarios.find((u) => u.id === usuario)?.cargoId;
-    return cargo === null || cargo === undefined ? [] : [cargo];
+  const masOpciones = useRef<HTMLDetailsElement>(null);
+  // Un error sobre un campo plegado en «Más opciones»: se abre y el foco va al campo, para que la persona lo vea.
+  useEffect(() => {
+    const id = estado?.error ? campoDeMasOpciones(estado.error) : null;
+    const detalles = masOpciones.current;
+    if (!id || !detalles) return;
+    detalles.open = true;
+    (document.getElementById(id) ?? detalles.querySelector("summary"))?.focus();
+  }, [estado]);
+  /** Los cargos por omisión (spec §12.4): el de la persona designada o, sin persona, los de los líderes activos del proceso. */
+  const cargosPorOmision = (usuario: number | "", proceso: number | ""): number[] => {
+    if (usuario !== "") {
+      const cargo = opciones.usuarios.find((u) => u.id === usuario)?.cargoId;
+      return cargo === null || cargo === undefined ? [] : [cargo];
+    }
+    return proceso === "" ? [] : [...(opciones.cargosDeLideres[proceso] ?? [])];
   };
   const formaInicial = valores.forma ?? "porcentaje";
   const unidadPorForma = (f: Forma) => (f === "porcentaje" ? opciones.unidades.find((u) => u.sufijo.trim() === "%")?.id : undefined);
   const unidadInicial = valores.unidadId ?? unidadPorForma(formaInicial) ?? opciones.unidades[0]?.id;
-  const mideInicial: number | "" = valores.mide ? (valores.mide[0] ?? "") : (opciones.usuarioActual ?? "");
+  // Quien llena la ficha no queda designado solo: sin persona, mide el líder del proceso (F14-DC10, spec §6.3).
+  const mideInicial: number | "" = valores.mide ? (valores.mide[0] ?? "") : "";
   const analizaInicial: number | "" | "misma" =
     valores.analiza === undefined || (valores.analiza.length === 1 && valores.analiza[0] === mideInicial) ? "misma" : (valores.analiza[0] ?? "");
 
@@ -213,9 +262,9 @@ export function FormularioFicha({ opciones, valores = {}, edicion }: { opciones:
   const [clasificacionId, setClasificacionId] = useState<number | "">(valores.clasificacionId ?? porNombre(opciones.clasificaciones, "Operativo") ?? "");
   const [mide, setMide] = useState<number | "">(mideInicial);
   const [analiza, setAnaliza] = useState<number | "" | "misma">(analizaInicial);
-  const [cargosMedir, setCargosMedir] = useState<number[]>(valores.cargosMedir ?? cargoDe(mideInicial));
+  const [cargosMedir, setCargosMedir] = useState<number[]>(valores.cargosMedir ?? cargosPorOmision(mideInicial, valores.procesoId ?? ""));
   const [cargosAnalizar, setCargosAnalizar] = useState<number[]>(
-    valores.cargosAnalizar ?? cargoDe(analizaInicial === "misma" ? mideInicial : analizaInicial),
+    valores.cargosAnalizar ?? cargosPorOmision(analizaInicial === "misma" ? mideInicial : analizaInicial, valores.procesoId ?? ""),
   );
   const [cargosTocados, setCargosTocados] = useState({ medir: valores.cargosMedir !== undefined, analizar: valores.cargosAnalizar !== undefined });
   const [normaIds, setNormaIds] = useState<number[]>(valores.normaIds ?? []);
@@ -275,6 +324,9 @@ export function FormularioFicha({ opciones, valores = {}, edicion }: { opciones:
     }
     const propuesto = id === "" ? "" : (opciones.codigosPropuestos[id] ?? "");
     setCodigo(codigoAlCambiarDeProceso(codigo, codigoTocado, proceso?.sigla ?? null, propuesto));
+    // Sin persona designada, los responsables son los cargos de los líderes del proceso nuevo.
+    if (!cargosTocados.medir && mide === "") setCargosMedir(cargosPorOmision("", id));
+    if (!cargosTocados.analizar && (analiza === "misma" ? mide : analiza) === "") setCargosAnalizar(cargosPorOmision("", id));
   }
 
   function elegirPeriodicidad(p: Periodicidad) {
@@ -284,13 +336,13 @@ export function FormularioFicha({ opciones, valores = {}, edicion }: { opciones:
 
   function elegirMide(id: number | "") {
     setMide(id);
-    if (!cargosTocados.medir) setCargosMedir(cargoDe(id));
-    if (analiza === "misma" && !cargosTocados.analizar) setCargosAnalizar(cargoDe(id));
+    if (!cargosTocados.medir) setCargosMedir(cargosPorOmision(id, procesoId));
+    if (analiza === "misma" && !cargosTocados.analizar) setCargosAnalizar(cargosPorOmision(id, procesoId));
   }
 
   function elegirAnaliza(v: number | "" | "misma") {
     setAnaliza(v);
-    if (!cargosTocados.analizar) setCargosAnalizar(cargoDe(v === "misma" ? mide : v));
+    if (!cargosTocados.analizar) setCargosAnalizar(cargosPorOmision(v === "misma" ? mide : v, procesoId));
   }
 
   function elegirUnidad(id: number | "") {
@@ -594,7 +646,7 @@ export function FormularioFicha({ opciones, valores = {}, edicion }: { opciones:
         </Campo>
       ) : null}
 
-      <details className="rounded-md border border-border px-3 py-2">
+      <details ref={masOpciones} className="rounded-md border border-border px-3 py-2">
         <summary className={RESUMEN}>Más opciones</summary>
         <div className="mt-3 flex min-w-0 flex-col gap-5">
           <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
@@ -730,7 +782,7 @@ export function FormularioFicha({ opciones, valores = {}, edicion }: { opciones:
             </Campo>
           </div>
 
-          <fieldset className="flex min-w-0 flex-col gap-3">
+          <fieldset id="ficha-detalle-variables" tabIndex={-1} className="flex min-w-0 flex-col gap-3">
             <legend className="mb-1 text-sm font-medium">Detalle de las variables</legend>
             {variables.map((v, i) => (
               <div key={v.letra} className="grid min-w-0 grid-cols-1 gap-2 rounded-md border border-border p-3 sm:grid-cols-2">

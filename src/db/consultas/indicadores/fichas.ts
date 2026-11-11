@@ -916,7 +916,7 @@ export async function opcionesDeFicha(
   const zona = zonaHoraria();
   const ahora = opciones?.ahora ?? new Date();
   const ids = (...xs: (number | number[] | undefined)[]) => xs.flat().filter((x): x is number => typeof x === "number");
-  const [procesos, subprocesos, propuestos, tipos, clasificaciones, unidades, objetivos, cargos, normas, usuarios, documentos, parametros, entes] =
+  const [procesos, subprocesos, propuestos, tipos, clasificaciones, unidades, objetivos, cargos, normas, usuarios, documentos, parametros, entes, lideres] =
     await Promise.all([
       sql`SELECT id, sigla, nombre FROM procesos WHERE activo OR id = ANY(${ids(a.procesoId)}) ORDER BY nombre`,
       sql`SELECT id, proceso_id, nombre FROM subprocesos WHERE activo OR id = ANY(${ids(a.subprocesoId)}) ORDER BY proceso_id, orden, nombre`,
@@ -941,6 +941,13 @@ export async function opcionesDeFicha(
         GROUP BY d.id ORDER BY d.codigo`,
       obtenerParametros({ sql }),
       sql`SELECT DISTINCT btrim(ente) AS ente FROM indicador_versiones WHERE btrim(coalesce(ente, '')) <> '' ORDER BY 1`,
+      // «Líder del proceso» como en `src/lib/alcance.ts`: usuario activo de rol líder con el proceso activo asignado.
+      sql`SELECT up.proceso_id, array_agg(DISTINCT u.cargo_id ORDER BY u.cargo_id)::int[] AS cargos
+        FROM usuario_procesos up
+        JOIN usuarios u ON u.id = up.usuario_id AND u.activo AND u.rol = 'lider_proceso'
+        JOIN procesos p ON p.id = up.proceso_id AND p.activo
+        JOIN cargos c ON c.id = u.cargo_id AND c.activo
+        GROUP BY up.proceso_id`,
     ]);
   const activo = (actual: number | undefined) => (f: { id: number; activo: boolean }) => f.activo || f.id === actual;
   const anio = Number(fechaEnZona(ahora, zona).slice(0, 4));
@@ -966,6 +973,7 @@ export async function opcionesDeFicha(
     normas: normas.map((n) => ({ id: Number(n.id), nombre: n.nombre as string, estado: n.estado as string })),
     usuarios: usuarios.map((u) => ({ id: Number(u.id), nombre: u.nombre as string, cargoId: numeroONulo(u.cargo_id) })),
     usuarioActual: usuarios.some((u) => Number(u.id) === sesion.usuarioId) ? sesion.usuarioId : null,
+    cargosDeLideres: Object.fromEntries(lideres.map((l) => [Number(l.proceso_id), (l.cargos as number[]).map(Number)])),
     documentos: documentos.map((d) => ({
       id: Number(d.id),
       codigo: d.codigo as string,
