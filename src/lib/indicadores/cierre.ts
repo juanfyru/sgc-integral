@@ -52,6 +52,29 @@ export function esMesTerminado(mes: unknown, ahora: Date): mes is string {
   return periodo !== null && periodo.hasta.getTime() < ahora.getTime();
 }
 
+/**
+ * Las líneas de «No se cierran» (F14-DC3), con concordancia: lo que sigue en plazo y los históricos sin registrar. Un
+ * grupo en cero no tiene línea; sin ninguna, la caja no se muestra.
+ */
+export function frasesDeNoSeCierran(r: { enPlazo: number; historicosSinRegistrar: number }): string[] {
+  const frases: string[] = [];
+  if (r.enPlazo > 0) {
+    frases.push(
+      r.enPlazo === 1
+        ? "1 medición sigue dentro de su plazo de reporte: queda para el siguiente cierre."
+        : `${r.enPlazo} mediciones siguen dentro de su plazo de reporte: quedan para el siguiente cierre.`,
+    );
+  }
+  if (r.historicosSinRegistrar > 0) {
+    frases.push(
+      r.historicosSinRegistrar === 1
+        ? "1 histórico sin registrar sigue abierto hasta que se registre."
+        : `${r.historicosSinRegistrar} históricos sin registrar siguen abiertos hasta que se registren.`,
+    );
+  }
+  return frases;
+}
+
 /** Lo que va a pasar al confirmar el cierre (spec §9.3), con singular y plural: «Se cerrará 1 medición: 1 reportada, …». */
 export function fraseDelCierre(r: { aCerrar: number; reportadas: number; sinDato: number; noAplica: number; sinAnalisis: number }): string {
   if (r.aCerrar === 0) return "No hay mediciones que cerrar: el mes queda cerrado igual y el siguiente cierre empieza después de él.";

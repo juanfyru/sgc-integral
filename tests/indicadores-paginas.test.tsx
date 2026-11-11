@@ -62,12 +62,14 @@ import PaginaEditarFicha from "@/app/(app)/indicadores/[codigo]/editar/page";
 import PaginaNuevoIndicador from "@/app/(app)/indicadores/nuevo/page";
 import PaginaIndicadores from "@/app/(app)/indicadores/page";
 import PaginaPorAprobar from "@/app/(app)/indicadores/por-aprobar/page";
+import { ResumenDeCierre } from "@/componentes/indicadores/cierre/ResumenDeCierre";
+import { TablaDelAnio } from "@/componentes/indicadores/medicion/TablaDelAnio";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { aprobarFichas, enviarAAprobacion } from "@/db/consultas/indicadores/aprobacion";
-import { cerrarMes, reabrirMedicion } from "@/db/consultas/indicadores/cierre";
+import { cerrarMes, reabrirMedicion, type ResumenDeCierre as DatosDelResumen } from "@/db/consultas/indicadores/cierre";
 import { crearIndicador } from "@/db/consultas/indicadores/fichas";
-import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
+import { asegurarMediciones, reportar, type FilaDelAnio } from "@/db/consultas/indicadores/mediciones";
 import { descartarIndicador, retirar } from "@/db/consultas/indicadores/operacion";
 import type { DatosFicha } from "@/lib/esquemas/indicadores";
 import type { SesionValida } from "@/lib/sesion";
@@ -410,8 +412,8 @@ describe("el cierre del mes", () => {
       const [proceso] = await tx`SELECT nombre FROM procesos WHERE id = ${ind.procesoId}`;
       expect(html).toContain(">Por proceso</h3>");
       expect(html).toMatch(new RegExp(`<th scope="row"[^>]*>${proceso.nombre}</th>`));
-      expect(html).toContain("dentro de su plazo de reporte");
-      expect(html).toContain("históricos sin registrar");
+      // Nada queda en plazo ni hay históricos por registrar: la caja «No se cierran» no aparece.
+      expect(html).not.toContain("No se cierran");
       for (const raro of ["2003-13", "2003-1", "abc", "2099-01"]) await expect(cierre({ mes: raro })).rejects.toThrow("NO_ENCONTRADA");
 
       const { cerradas } = await cerrarMes(admin, "2003-01", { sql: tx });
@@ -455,4 +457,99 @@ describe("el cierre del mes", () => {
       expect(ajena).toContain("El dato venía del informe equivocado");
       expect(ajena).not.toContain(">Cerrar de nuevo<");
     }), 20_000);
+});
+
+// Ronda 2 de la Tarea 12 (punto de control en navegador): los textos y la estructura del resumen y de la tabla del año.
+describe("el resumen del cierre y la tabla del año, sin navegador", () => {
+  const RESUMEN: DatosDelResumen = {
+    mes: "2003-03",
+    yaCerrado: false,
+    aCerrar: 0,
+    reportadas: 0,
+    sinDato: [],
+    noAplica: 0,
+    sinAnalisis: 0,
+    observacionesSinRespuesta: 0,
+    enPlazo: 0,
+    historicosSinRegistrar: 0,
+    porProceso: [],
+  };
+  const resumen = (o: Partial<DatosDelResumen>) =>
+    renderToStaticMarkup(<ResumenDeCierre resumen={{ ...RESUMEN, ...o }} mes="marzo de 2003" periodos={{}} />);
+
+  it("sin filas, «Por proceso» y «Quedarán sin dato» son una frase, no una tabla vacía", () => {
+    const html = resumen({});
+    expect(html).toContain("<p class=\"text-sm text-muted-foreground\">Ningún proceso tiene mediciones que cerrar ni observaciones sin respuesta.</p>");
+    expect(html).toContain("<p class=\"text-sm text-muted-foreground\">Ninguna medición quedará sin dato.</p>");
+    expect(html).not.toContain("<table");
+    // Con filas, las dos tablas.
+    const conFilas = resumen({
+      aCerrar: 1,
+      sinDato: [{ codigo: "ZZ-1", nombre: "Uno", proceso: "Gestión", periodo: "2003-03", quien: ["Ana"] }],
+      porProceso: [{ proceso: "Gestión", reportadas: 0, sinDato: 1, noAplica: 0, sinAnalisis: 0, observacionesSinRespuesta: 0 }],
+    });
+    expect(conFilas.match(/<table/g)).toHaveLength(2);
+  });
+
+  it("«No se cierran» concuerda en número y no aparece si los dos grupos están vacíos", () => {
+    expect(resumen({})).not.toContain("No se cierran");
+    const uno = resumen({ enPlazo: 1, historicosSinRegistrar: 1 });
+    expect(uno).toContain("No se cierran");
+    expect(uno).toContain("1 medición sigue dentro de su plazo de reporte: queda para el siguiente cierre.");
+    expect(uno).toContain("1 histórico sin registrar sigue abierto hasta que se registre.");
+    const varios = resumen({ enPlazo: 3, historicosSinRegistrar: 2 });
+    expect(varios).toContain("3 mediciones siguen dentro de su plazo de reporte: quedan para el siguiente cierre.");
+    expect(varios).toContain("2 históricos sin registrar siguen abiertos hasta que se registren.");
+    const soloPlazo = resumen({ enPlazo: 2 });
+    expect(soloPlazo).toContain("2 mediciones siguen dentro de su plazo de reporte");
+    expect(soloPlazo).not.toContain("histórico");
+  });
+
+  it("en la tabla del año, «Reabrir» y «Cerrar de nuevo» no se parten y el historial abierto tiene un ancho que se lee", () => {
+    const fila = (o: Partial<FilaDelAnio>): FilaDelAnio => ({
+      periodo: "2003-01",
+      etiqueta: "Enero de 2003",
+      medicionId: 41,
+      estado: "cerrada",
+      vencida: false,
+      vence: "10 de febrero de 2003",
+      historica: false,
+      noAplica: false,
+      motivo: null,
+      valores: [],
+      resultado: "90 %",
+      semaforo: "bien",
+      meta: "≥ 90 %",
+      cumple: true,
+      frase: null,
+      requiereAccion: false,
+      repetido: false,
+      corregida: false,
+      metaTardia: false,
+      sinAnalisis: false,
+      analisis: null,
+      causa: null,
+      accionPropuesta: null,
+      ...o,
+    });
+    const historial = new Map([
+      [42, [{ id: 1, que: "Reabrió", quien: "Ana", cuando: "21 de abril de 2003, 10:00", porque: "El dato venía de otro informe", cambios: ["Estado: Cerrada → Reportada"] }]],
+    ]);
+    const html = renderToStaticMarkup(
+      <TablaDelAnio
+        filas={[fila({}), fila({ periodo: "2003-02", etiqueta: "Febrero de 2003", medicionId: 42, estado: "reportada", corregida: true })]}
+        variables={[]}
+        anio={2003}
+        codigo="ZZ-1"
+        puedeMedir={false}
+        puedeReabrir
+        puedeCerrarDeNuevo
+        historial={historial}
+      />,
+    );
+    expect(html).toMatch(/<button[^>]*class="[^"]*whitespace-nowrap[^"]*"[^>]*>Reabrir<span class="sr-only"> Enero de 2003<\/span>/);
+    expect(html).toMatch(/<button[^>]*class="[^"]*whitespace-nowrap[^"]*"[^>]*>Cerrar de nuevo<span class="sr-only"> Febrero de 2003<\/span>/);
+    // La lista del historial ocupa al menos 18 rem: la columna se ensancha solo mientras está abierta.
+    expect(html).toMatch(/<details[^>]*>.*<ol class="[^"]*min-w-72[^"]*">.*El dato venía de otro informe/);
+  });
 });

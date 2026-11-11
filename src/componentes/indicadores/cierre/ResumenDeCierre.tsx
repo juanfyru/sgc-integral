@@ -11,7 +11,7 @@ import { useTituloAlDesaparecer } from "@/componentes/ui/foco";
 import { celda, celdaNumerica, TablaDatos } from "@/componentes/ui/TablaDatos";
 import { TarjetaCifra } from "@/componentes/ui/TarjetaCifra";
 import type { ResumenDeCierre as Resumen } from "@/db/consultas/indicadores/cierre";
-import { fraseDelCierre } from "@/lib/indicadores/cierre";
+import { fraseDelCierre, frasesDeNoSeCierran } from "@/lib/indicadores/cierre";
 import { cuenta } from "@/lib/plural";
 
 const COLUMNAS_SIN_DATO = [
@@ -78,6 +78,7 @@ function ConfirmarCierre({ resumen, mes }: { resumen: Resumen; mes: string }) {
  */
 export function ResumenDeCierre({ resumen, mes, periodos }: { resumen: Resumen; mes: string; periodos: Readonly<Record<string, string>> }) {
   const r = resumen;
+  const noSeCierran = frasesDeNoSeCierran(r);
   return (
     <section aria-labelledby="cierre-resumen" className="flex min-w-0 flex-col gap-4">
       <h2 id="cierre-resumen" className="text-lg font-semibold">
@@ -98,13 +99,12 @@ export function ResumenDeCierre({ resumen, mes, periodos }: { resumen: Resumen; 
         <h3 id="cierre-por-proceso" className="font-semibold">
           Por proceso
         </h3>
-        <TablaDatos
-          titulo="El resumen por proceso"
-          columnas={COLUMNAS_POR_PROCESO}
-          filas={r.porProceso.length}
-          vacio="Ningún proceso tiene mediciones que cerrar ni observaciones sin respuesta."
-        >
-          {r.porProceso.map((p) => (
+        {/* Sin filas, una frase: el mensaje de una tabla vacía se corta a 390 px dentro de su contenedor. */}
+        {r.porProceso.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Ningún proceso tiene mediciones que cerrar ni observaciones sin respuesta.</p>
+        ) : (
+          <TablaDatos titulo="El resumen por proceso" columnas={COLUMNAS_POR_PROCESO} filas={r.porProceso.length} vacio="">
+            {r.porProceso.map((p) => (
             <tr key={p.proceso}>
               <th scope="row" className={`${celda} text-left font-medium`}>
                 {p.proceso}
@@ -114,17 +114,21 @@ export function ResumenDeCierre({ resumen, mes, periodos }: { resumen: Resumen; 
               <td className={celdaNumerica}>{p.noAplica}</td>
               <td className={celdaNumerica}>{p.sinAnalisis}</td>
               <td className={celdaNumerica}>{p.observacionesSinRespuesta}</td>
-            </tr>
-          ))}
-        </TablaDatos>
+              </tr>
+            ))}
+          </TablaDatos>
+        )}
       </section>
 
       <section aria-labelledby="cierre-sin-dato" className="flex min-w-0 flex-col gap-2">
         <h3 id="cierre-sin-dato" className="font-semibold">
           Quedarán sin dato
         </h3>
-        <TablaDatos titulo="Mediciones que quedarán sin dato" columnas={COLUMNAS_SIN_DATO} filas={r.sinDato.length} vacio="Ninguna medición quedará sin dato.">
-          {r.sinDato.map((s) => (
+        {r.sinDato.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Ninguna medición quedará sin dato.</p>
+        ) : (
+          <TablaDatos titulo="Mediciones que quedarán sin dato" columnas={COLUMNAS_SIN_DATO} filas={r.sinDato.length} vacio="">
+            {r.sinDato.map((s) => (
             <tr key={`${s.codigo}-${s.periodo}`}>
               <td className={celda}>{s.proceso}</td>
               <td className={celda}>
@@ -133,9 +137,10 @@ export function ResumenDeCierre({ resumen, mes, periodos }: { resumen: Resumen; 
               </td>
               <td className={celda}>{periodos[s.periodo] ?? s.periodo}</td>
               <td className={celda}>{s.quien.length > 0 ? s.quien.join(", ") : <span className="text-muted-foreground">Nadie</span>}</td>
-            </tr>
-          ))}
-        </TablaDatos>
+              </tr>
+            ))}
+          </TablaDatos>
+        )}
       </section>
 
       <ul className="flex list-none flex-col gap-2 text-sm">
@@ -146,11 +151,14 @@ export function ResumenDeCierre({ resumen, mes, periodos }: { resumen: Resumen; 
         </li>
       </ul>
 
-      <div className="flex flex-col gap-2 rounded-lg border border-l-4 border-border border-l-mod-indicadores bg-muted px-4 py-3 text-sm">
-        <p className="font-semibold">No se cierran</p>
-        <p>{`${cuenta(r.enPlazo, "medición sigue", "mediciones siguen")} dentro de su plazo de reporte: quedan para el siguiente cierre.`}</p>
-        <p>{`${cuenta(r.historicosSinRegistrar, "histórico sin registrar sigue abierto", "históricos sin registrar siguen abiertos")} hasta que se registren.`}</p>
-      </div>
+      {noSeCierran.length > 0 ? (
+        <div className="flex flex-col gap-2 rounded-lg border border-l-4 border-border border-l-mod-indicadores bg-muted px-4 py-3 text-sm">
+          <p className="font-semibold">No se cierran</p>
+          {noSeCierran.map((f) => (
+            <p key={f}>{f}</p>
+          ))}
+        </div>
+      ) : null}
 
       <ConfirmarCierre resumen={r} mes={mes} />
     </section>

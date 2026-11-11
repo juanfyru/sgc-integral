@@ -28,7 +28,7 @@ export function DialogoReabrir({ medicionId, codigo, etiqueta }: { medicionId: n
   const titulo = `Reabrir ${codigo}, ${etiqueta.toLowerCase()}`;
   return (
     <>
-      <Boton variante="secundario" tamano="sm" onClick={() => setAbierto(true)} aria-haspopup="dialog">
+      <Boton variante="secundario" tamano="sm" onClick={() => setAbierto(true)} aria-haspopup="dialog" className="whitespace-nowrap">
         Reabrir<span className="sr-only">{` ${etiqueta}`}</span>
       </Boton>
       <Dialogo abierto={abierto} alCerrar={cerrar} titulo={titulo} className={CLASE_DIALOGO}>
@@ -85,7 +85,7 @@ export function CerrarDeNuevo({ medicionId, etiqueta }: { medicionId: number; et
   return (
     <form action={enviar} className="flex flex-col items-start gap-1">
       <input type="hidden" name="id" value={medicionId} />
-      <Boton type="submit" variante="secundario" tamano="sm" pendiente={pendiente}>
+      <Boton type="submit" variante="secundario" tamano="sm" pendiente={pendiente} className="whitespace-nowrap">
         {pendiente ? "Cerrando…" : "Cerrar de nuevo"}
         <span className="sr-only">{` ${etiqueta}`}</span>
       </Boton>

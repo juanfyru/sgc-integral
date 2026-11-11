@@ -38,7 +38,7 @@ import { observar } from "@/db/consultas/indicadores/observaciones";
 import { retirar } from "@/db/consultas/indicadores/operacion";
 import { quitarSoporte } from "@/db/consultas/indicadores/soportes";
 import { describirEvento } from "@/lib/bitacora-detalle";
-import { fraseDelCierre, mesPorOmisionDe } from "@/lib/indicadores/cierre";
+import { fraseDelCierre, frasesDeNoSeCierran, mesPorOmisionDe } from "@/lib/indicadores/cierre";
 import { historialDeCorreccion, type EventoDeMedicion } from "@/lib/indicadores/historial";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
@@ -622,6 +622,18 @@ describe("el mes por omisión y la confirmación", () => {
       await tx`INSERT INTO cierres_indicadores (mes, cerrado_por) VALUES ('2090-05-31', ${admin.usuarioId})`;
       expect(await mesPorOmision(opc(tx, junio))).toBeNull();
     });
+  });
+
+  it("«No se cierran» concuerda en número y calla los grupos en cero", () => {
+    expect(frasesDeNoSeCierran({ enPlazo: 0, historicosSinRegistrar: 0 })).toEqual([]);
+    expect(frasesDeNoSeCierran({ enPlazo: 1, historicosSinRegistrar: 1 })).toEqual([
+      "1 medición sigue dentro de su plazo de reporte: queda para el siguiente cierre.",
+      "1 histórico sin registrar sigue abierto hasta que se registre.",
+    ]);
+    expect(frasesDeNoSeCierran({ enPlazo: 4, historicosSinRegistrar: 0 })).toEqual([
+      "4 mediciones siguen dentro de su plazo de reporte: quedan para el siguiente cierre.",
+    ]);
+    expect(frasesDeNoSeCierran({ enPlazo: 0, historicosSinRegistrar: 2 })).toEqual(["2 históricos sin registrar siguen abiertos hasta que se registren."]);
   });
 
   it("la confirmación dice lo que se cierra, en singular o en plural", () => {

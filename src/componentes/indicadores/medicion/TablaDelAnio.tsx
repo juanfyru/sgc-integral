@@ -15,11 +15,12 @@ const ENLACE = `rounded-sm text-marca underline-offset-2 hover:underline ${FOCO}
 /** «Corregida» con su historial (spec §8.7): qué había, qué quedó, quién, cuándo y por qué, desde la reapertura. */
 function Historial({ etiqueta, entradas }: { etiqueta: string; entradas: EntradaDeHistorial[] }) {
   return (
-    <details className="max-w-xs text-xs">
+    <details className="text-xs">
       <summary className={`cursor-pointer rounded-sm text-marca underline-offset-2 hover:underline ${FOCO}`}>
         Ver el historial<span className="sr-only">{` de ${etiqueta}`}</span>
       </summary>
-      <ol className="mt-1 flex list-none flex-col gap-2">
+      {/* Al menos 18 rem: la columna del estado se ensancha solo mientras el historial está abierto. */}
+      <ol className="mt-1 flex min-w-72 max-w-sm list-none flex-col gap-2">
         {entradas.map((e) => (
           <li key={e.id} className="flex flex-col gap-0.5 break-words">
             <span>
