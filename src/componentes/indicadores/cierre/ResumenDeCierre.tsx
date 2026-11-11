@@ -105,15 +105,15 @@ export function ResumenDeCierre({ resumen, mes, periodos }: { resumen: Resumen; 
         ) : (
           <TablaDatos titulo="El resumen por proceso" columnas={COLUMNAS_POR_PROCESO} filas={r.porProceso.length} vacio="">
             {r.porProceso.map((p) => (
-            <tr key={p.proceso}>
-              <th scope="row" className={`${celda} text-left font-medium`}>
-                {p.proceso}
-              </th>
-              <td className={celdaNumerica}>{p.reportadas}</td>
-              <td className={celdaNumerica}>{p.sinDato}</td>
-              <td className={celdaNumerica}>{p.noAplica}</td>
-              <td className={celdaNumerica}>{p.sinAnalisis}</td>
-              <td className={celdaNumerica}>{p.observacionesSinRespuesta}</td>
+              <tr key={p.proceso}>
+                <th scope="row" className={`${celda} text-left font-medium`}>
+                  {p.proceso}
+                </th>
+                <td className={celdaNumerica}>{p.reportadas}</td>
+                <td className={celdaNumerica}>{p.sinDato}</td>
+                <td className={celdaNumerica}>{p.noAplica}</td>
+                <td className={celdaNumerica}>{p.sinAnalisis}</td>
+                <td className={celdaNumerica}>{p.observacionesSinRespuesta}</td>
               </tr>
             ))}
           </TablaDatos>
@@ -129,14 +129,14 @@ export function ResumenDeCierre({ resumen, mes, periodos }: { resumen: Resumen; 
         ) : (
           <TablaDatos titulo="Mediciones que quedarán sin dato" columnas={COLUMNAS_SIN_DATO} filas={r.sinDato.length} vacio="">
             {r.sinDato.map((s) => (
-            <tr key={`${s.codigo}-${s.periodo}`}>
-              <td className={celda}>{s.proceso}</td>
-              <td className={celda}>
-                <span className="block font-mono text-xs text-muted-foreground">{s.codigo}</span>
-                <span className="break-words">{s.nombre}</span>
-              </td>
-              <td className={celda}>{periodos[s.periodo] ?? s.periodo}</td>
-              <td className={celda}>{s.quien.length > 0 ? s.quien.join(", ") : <span className="text-muted-foreground">Nadie</span>}</td>
+              <tr key={`${s.codigo}-${s.periodo}`}>
+                <td className={celda}>{s.proceso}</td>
+                <td className={celda}>
+                  <span className="block font-mono text-xs text-muted-foreground">{s.codigo}</span>
+                  <span className="break-words">{s.nombre}</span>
+                </td>
+                <td className={celda}>{periodos[s.periodo] ?? s.periodo}</td>
+                <td className={celda}>{s.quien.length > 0 ? s.quien.join(", ") : <span className="text-muted-foreground">Nadie</span>}</td>
               </tr>
             ))}
           </TablaDatos>
