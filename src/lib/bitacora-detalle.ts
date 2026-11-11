@@ -812,6 +812,20 @@ export function describirEvento(e: EventoAuditoria): string {
       }
       return `Registró el histórico de ${de}${despues ? `: ${despues}` : ""}`;
     }
+    case "indicadores_mes_cerrado": {
+      const mes = texto(d.mes);
+      const etiqueta = mes ? (periodoDe(mes, zonaHoraria())?.etiqueta ?? mes) : null;
+      if (!etiqueta) return "Cerró un mes en los indicadores";
+      const cerradas = numero(d.cerradas);
+      return `Cerró ${etiqueta} en los indicadores${cerradas === null ? "" : `: ${cuenta(cerradas, "medición cerrada", "mediciones cerradas")}`}`;
+    }
+    case "medicion_reabierta":
+      return `Reabrió ${medicionDe(cod, d.periodo)}${d.propioMedidor === true ? ", que también mide" : ""}${conMotivo(d.justificacion)}`;
+    case "medicion_cerrada_de_nuevo": {
+      const mes = texto(d.mes);
+      const etiqueta = mes ? (periodoDe(mes, zonaHoraria())?.etiqueta ?? mes) : null;
+      return `Cerró de nuevo ${medicionDe(cod, d.periodo)}${etiqueta ? ` (cierre de ${etiqueta})` : ""}`;
+    }
     case "indicador_meta_programada": {
       if (!cod) return "Programó la meta de un periodo de un indicador";
       const antes = metaDeBitacora(d.antes);
@@ -1004,6 +1018,9 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   medicion_observacion_respondida: "Respondió una observación de una medición de indicador",
   medicion_historica_registrada: "Registró o corrigió un histórico de indicador",
   indicador_meta_programada: "Programó la meta de un periodo de un indicador",
+  indicadores_mes_cerrado: "Cerró un mes de los indicadores",
+  medicion_reabierta: "Reabrió una medición de indicador",
+  medicion_cerrada_de_nuevo: "Cerró de nuevo una medición de indicador",
   tipo_norma_creado: "Creó un tipo de norma",
   tipo_norma_editado: "Renombró un tipo de norma",
   tipo_norma_movido: "Movió un tipo de norma",

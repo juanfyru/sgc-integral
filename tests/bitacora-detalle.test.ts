@@ -800,6 +800,29 @@ describe("la medición de un indicador", () => {
     expect(nombreDeAccion("medicion_guardada")).toBe("Guardó sin reportar una medición de indicador");
   });
 
+  it("el cierre del mes, la reapertura y el cierre de nuevo (Tarea 12)", () => {
+    const delCierre = (detalle: Record<string, unknown>) =>
+      describirEvento({ accion: "indicadores_mes_cerrado", entidad: "cierre_indicadores", entidadId: 3, detalle });
+    expect(delCierre({ mes: "2026-03", cerradas: 12, sinDato: 2 })).toBe("Cerró marzo de 2026 en los indicadores: 12 mediciones cerradas");
+    expect(delCierre({ mes: "2026-03", cerradas: 1 })).toBe("Cerró marzo de 2026 en los indicadores: 1 medición cerrada");
+    expect(delCierre({})).toBe("Cerró un mes en los indicadores");
+    const de = { codigo: "SGC-IND-01", periodo: "2026-03" };
+    expect(frase("medicion_reabierta", { ...de, justificacion: "El dato venía de otro informe" })).toBe(
+      "Reabrió SGC-IND-01, marzo de 2026: El dato venía de otro informe",
+    );
+    expect(frase("medicion_reabierta", { ...de, justificacion: "El dato venía de otro informe", propioMedidor: true })).toBe(
+      "Reabrió SGC-IND-01, marzo de 2026, que también mide: El dato venía de otro informe",
+    );
+    expect(frase("medicion_cerrada_de_nuevo", { ...de, mes: "2026-04", cierreId: 4 })).toBe(
+      "Cerró de nuevo SGC-IND-01, marzo de 2026 (cierre de abril de 2026)",
+    );
+    expect(frase("medicion_reabierta", {})).toBe("Reabrió la medición de un indicador");
+    expect(frase("medicion_cerrada_de_nuevo", {})).toBe("Cerró de nuevo la medición de un indicador");
+    expect(nombreDeAccion("indicadores_mes_cerrado")).toBe("Cerró un mes de los indicadores");
+    expect(nombreDeAccion("medicion_reabierta")).toBe("Reabrió una medición de indicador");
+    expect(nombreDeAccion("medicion_cerrada_de_nuevo")).toBe("Cerró de nuevo una medición de indicador");
+  });
+
   it("quitar un soporte (Tarea 11)", () => {
     expect(frase("medicion_soporte_quitado", { codigo: "SGC-IND-01", periodo: "2026-T3", nombre: "Informe.pdf" })).toBe(
       "Quitó el soporte «Informe.pdf» de SGC-IND-01, tercer trimestre de 2026",

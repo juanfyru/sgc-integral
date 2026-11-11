@@ -73,7 +73,7 @@ const ES_HISTORICO = "Ese periodo es histórico: regístrelo en la tabla del añ
  * Una medición abierta de la periodicidad vieja que quedó dentro del tramo de un cambio mayor de periodicidad (los meses
  * de un trimestre que ahora rige una ficha trimestral) no se mide ni se calcula con una ficha que no es la suya.
  */
-const esDeOtraPeriodicidad = (periodo: string, version: { periodicidad: Periodicidad | null }) =>
+export const esDeOtraPeriodicidad = (periodo: string, version: { periodicidad: Periodicidad | null }) =>
   periodicidadDe(periodo) !== version.periodicidad;
 
 const texto = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
