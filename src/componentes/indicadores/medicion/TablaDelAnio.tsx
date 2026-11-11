@@ -64,7 +64,8 @@ function Analisis({ f }: { f: FilaDelAnio }) {
 /**
  * La tabla del año (spec §8.5, §8.3 y §12.3; maqueta 2): una fila por periodo con sus valores, el resultado, la meta, la
  * columna «Cumple», el estado con sus marcas y el análisis; sin soportes. Quien puede medir tiene en cada periodo abierto
- * el enlace para reportarlo o corregirlo.
+ * el enlace para reportarlo o corregirlo (un histórico se registra en el modo edición, spec §8.8); quien puede analizar,
+ * el de escribir o editar el análisis de lo que tiene resultado.
  */
 export function TablaDelAnio({
   filas,
@@ -72,12 +73,14 @@ export function TablaDelAnio({
   anio,
   codigo,
   puedeMedir,
+  puedeAnalizar = false,
 }: {
   filas: FilaDelAnio[];
   variables: { letra: string; nombre: string }[];
   anio: number;
   codigo: string;
   puedeMedir: boolean;
+  puedeAnalizar?: boolean;
 }) {
   const columnas: ColumnaTabla[] = [
     { clave: "periodo", etiqueta: "Periodo" },
@@ -87,7 +90,7 @@ export function TablaDelAnio({
     { clave: "cumple", etiqueta: "Cumple" },
     { clave: "estado", etiqueta: "Estado" },
     { clave: "analisis", etiqueta: "Análisis" },
-    ...(puedeMedir ? [{ clave: "acciones", etiqueta: "Acciones", oculta: true }] : []),
+    ...(puedeMedir || puedeAnalizar ? [{ clave: "acciones", etiqueta: "Acciones", oculta: true }] : []),
   ];
   return (
     <TablaDatos titulo={`Resultados de ${anio}`} columnas={columnas} filas={filas.length} vacio={`No hay periodos que medir en ${anio}.`}>
@@ -110,7 +113,9 @@ export function TablaDelAnio({
             </tr>
           );
         }
-        const reportable = puedeMedir && f.medicionId !== null && f.estado !== "cerrada";
+        const reportable = puedeMedir && f.medicionId !== null && f.estado !== "cerrada" && !f.historica;
+        const analizable = puedeAnalizar && f.medicionId !== null && f.estado !== "cerrada" && f.resultado !== null && !f.noAplica;
+        const conAnalisis = f.analisis !== null || f.causa !== null || f.accionPropuesta !== null;
         return (
           <tr key={f.periodo}>
             {cabecera}
@@ -128,14 +133,22 @@ export function TablaDelAnio({
             <td className={`${celda} min-w-48`}>
               <Analisis f={f} />
             </td>
-            {puedeMedir ? (
+            {puedeMedir || puedeAnalizar ? (
               <td className={celda}>
-                {reportable ? (
-                  <Link href={`/indicadores/${encodeURIComponent(codigo)}/reportar/${f.periodo}`} className={ENLACE}>
-                    {f.estado === "por_reportar" ? "Reportar" : "Corregir"}
-                    <span className="sr-only">{` ${f.etiqueta}`}</span>
-                  </Link>
-                ) : null}
+                <div className="flex flex-col items-start gap-1">
+                  {reportable ? (
+                    <Link href={`/indicadores/${encodeURIComponent(codigo)}/reportar/${f.periodo}`} className={ENLACE}>
+                      {f.estado === "por_reportar" ? "Reportar" : "Corregir"}
+                      <span className="sr-only">{` ${f.etiqueta}`}</span>
+                    </Link>
+                  ) : null}
+                  {analizable ? (
+                    <Link href={`/indicadores/${encodeURIComponent(codigo)}?vista=resultados&anio=${anio}&analizar=${f.periodo}#analisis`} className={ENLACE}>
+                      {conAnalisis ? "Editar el análisis" : "Analizar"}
+                      <span className="sr-only">{` ${f.etiqueta}`}</span>
+                    </Link>
+                  ) : null}
+                </div>
               </td>
             ) : null}
           </tr>

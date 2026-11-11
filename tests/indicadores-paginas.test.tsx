@@ -45,6 +45,11 @@ vi.mock("@/app/acciones-indicadores", () => ({
   reportarAccion: vi.fn(),
   marcarNoAplicaAccion: vi.fn(),
   quitarNoAplicaAccion: vi.fn(),
+  analizarAccion: vi.fn(),
+  observarAccion: vi.fn(),
+  responderAccion: vi.fn(),
+  programarMetaAccion: vi.fn(),
+  registrarHistoricosAccion: vi.fn(),
 }));
 
 import PaginaIndicador from "@/app/(app)/indicadores/[codigo]/page";

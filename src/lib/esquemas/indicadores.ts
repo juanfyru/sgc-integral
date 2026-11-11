@@ -3,7 +3,7 @@ import { FACTORES_TASA } from "@/lib/indicadores/formula/formas";
 import { fraccion } from "@/lib/indicadores/formula/fraccion";
 import { periodicidadDe } from "@/lib/indicadores/periodos";
 import { CONSOLIDACIONES, FORMAS, FUNCIONES_DESIGNADO, MAXIMO_EN_BLOQUE, MODOS_SEMAFORO, NIVELES_ACCESO, PERIODICIDADES, TENDENCIAS } from "@/lib/indicadores/tipos";
-import { textoAcotado } from "@/lib/validacion";
+import { parsearFormulario, textoAcotado } from "@/lib/validacion";
 
 /**
  * El formulario de la ficha de indicador (spec 14 §7.2, §7.3 y §12.4). Llega como texto: los números se validan con
@@ -275,5 +275,102 @@ export function juntarValoresDeReporte(formData: FormData): FormData {
     else salida.append(campo, valor);
   }
   if (Object.keys(valores).length > 0) salida.set("valores", JSON.stringify(valores));
+  return salida;
+}
+
+/** Una parte del análisis; la consulta decide qué alcanza. Lo vaciado lo dice `analisisDelFormulario`. */
+const parteDeAnalisis = (nombre: string) =>
+  z.string({ error: `${nombre} no tiene un formato válido` }).max(2000, `${nombre} no puede pasar de 2000 caracteres`).optional();
+
+/** El análisis de una medición (spec §8.4). El `id` de la medición y `volver` viajan aparte. */
+export const EsquemaAnalisis = z
+  .object({
+    analisis: parteDeAnalisis("El análisis"),
+    causa: parteDeAnalisis("La causa de la desviación"),
+    accionPropuesta: parteDeAnalisis("La acción propuesta"),
+  })
+  .strict();
+
+type TextosDelFormulario = { analisis?: string; causa?: string; accionPropuesta?: string };
+
+/**
+ * Lo que `analizar` recibe del formulario del análisis. Un campo vacío no llega a lo que devuelve el esquema
+ * (`parsearFormulario` lo quita): si el formulario lo trae, la persona lo vació y se borra; si no lo trae, queda como
+ * estaba.
+ */
+export function analisisDelFormulario(formData: FormData): TextosDelFormulario {
+  const d = parsearFormulario(formData, EsquemaAnalisis, { omitir: ["id", "volver"] });
+  const salida: TextosDelFormulario = {};
+  for (const campo of ["analisis", "causa", "accionPropuesta"] as const) {
+    const valor = d[campo] ?? (formData.has(campo) ? "" : undefined);
+    if (valor !== undefined) salida[campo] = valor;
+  }
+  return salida;
+}
+
+const textoDeObservacion = (que: "observación" | "respuesta") =>
+  z
+    .string({ error: `Escriba la ${que}` })
+    .trim()
+    .min(1, `Escriba la ${que}`)
+    .max(2000, `La ${que} no puede pasar de 2000 caracteres`);
+
+/** Una observación (spec §8.6), de 1 a 2.000 caracteres; el `id` de la medición viaja aparte. */
+export const EsquemaObservacion = z.object({ texto: textoDeObservacion("observación") }).strict();
+
+/** La respuesta a una observación; el `id` de la observación viaja aparte. */
+export const EsquemaRespuesta = z.object({ texto: textoDeObservacion("respuesta") }).strict();
+
+/** Programar la meta de un periodo (spec §8.9); el `id` del indicador viaja aparte. Un máximo vacío es «sin máximo». */
+export const EsquemaMeta = z
+  .object({
+    periodo: z
+      .string({ error: "Elija el periodo" })
+      .trim()
+      .refine((v) => periodicidadDe(v) !== null, "El periodo no es válido"),
+    meta: numero("La meta debe ser un número"),
+    metaMax: z.preprocess(
+      (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+      numero("El máximo del rango debe ser un número").optional(),
+    ),
+    justificacion: opcional("La justificación", 500),
+  })
+  .strict();
+
+/** Los históricos de la tabla del año (spec §8.8): una fila por periodo con sus valores por letra, en JSON. */
+export const EsquemaHistoricos = z
+  .object({
+    filas: enJson(
+      z
+        .array(
+          z
+            .object({
+              periodo: z.string().refine((v) => periodicidadDe(v) !== null, "Las filas no tienen un formato válido"),
+              valores: z
+                .record(z.string(), z.string().max(40, "Un valor no puede pasar de 40 caracteres"))
+                .refine((v) => Object.keys(v).length <= 26 && Object.keys(v).every((l) => /^[A-Z]$/.test(l)), "Las filas no tienen un formato válido"),
+            })
+            .strict(),
+          { error: "Las filas no tienen un formato válido" },
+        )
+        .max(60, "Registre hasta 60 periodos a la vez"),
+      "Las filas no tienen un formato válido",
+    ),
+  })
+  .strict();
+
+/**
+ * El modo edición de la tabla del año manda cada celda en su propio campo (`h_2025-T3_A`), para que funcione igual antes
+ * de hidratar; aquí se juntan en `filas` (JSON), como las lee `EsquemaHistoricos`. Lo demás pasa igual.
+ */
+export function juntarHistoricos(formData: FormData): FormData {
+  const salida = new FormData();
+  const filas = new Map<string, Record<string, string>>();
+  for (const [campo, valor] of formData) {
+    const celda = /^h_(.+)_([^_]+)$/.exec(campo);
+    if (celda && typeof valor === "string") filas.set(celda[1], { ...(filas.get(celda[1]) ?? {}), [celda[2]]: valor });
+    else salida.append(campo, valor);
+  }
+  if (filas.size > 0) salida.set("filas", JSON.stringify([...filas].map(([periodo, valores]) => ({ periodo, valores }))));
   return salida;
 }

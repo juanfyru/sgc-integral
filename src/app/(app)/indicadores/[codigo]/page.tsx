@@ -5,11 +5,16 @@ import { MenuAdministrar } from "@/componentes/indicadores/admin/MenuAdministrar
 import { ControlDeCambios } from "@/componentes/indicadores/ficha/ControlDeCambios";
 import { FichaTecnica } from "@/componentes/indicadores/ficha/FichaTecnica";
 import { AprobarFicha, DevolverFicha, type FilaPorAprobar } from "@/componentes/indicadores/ficha/ListaPorAprobar";
+import { EdicionDeHistoricos, type FilaHistoricaVista } from "@/componentes/indicadores/medicion/EdicionDeHistoricos";
+import { FormularioAnalisis } from "@/componentes/indicadores/medicion/FormularioAnalisis";
+import { Observaciones, type ObservacionVista } from "@/componentes/indicadores/medicion/Observaciones";
 import { TablaDelAnio } from "@/componentes/indicadores/medicion/TablaDelAnio";
 import { claseBoton } from "@/componentes/ui/Boton";
+import { claseControl } from "@/componentes/ui/Campo";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { obtenerSql } from "@/db/cliente";
+import { datosDeAnalisis, type DatosDeAnalisis } from "@/db/consultas/indicadores/analisis";
 import {
   cambiosFrenteALaVigente,
   desdePeriodo,
@@ -22,11 +27,14 @@ import {
   type VersionVisible,
 } from "@/db/consultas/indicadores/aprobacion";
 import { asegurarMediciones, proximaPorReportar, tablaDelAnio, type FilaDelAnio } from "@/db/consultas/indicadores/mediciones";
+import { metasDelAnio } from "@/db/consultas/indicadores/metas";
+import { observacionesDe, resumenDeObservaciones, type ResumenDeObservaciones } from "@/db/consultas/indicadores/observaciones";
 import { bajaDeIndicador, panelDeAdministracion } from "@/db/consultas/indicadores/operacion";
-import { puedeMedir } from "@/lib/alcance";
+import { puedeAnalizar, puedeMedir, puedeObservar, puedeRegistrarHistoricos } from "@/lib/alcance";
 import { periodicidadDe } from "@/lib/indicadores/periodos";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
+import { cuenta } from "@/lib/plural";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { fechaHoraLocal, zonaHoraria } from "@/lib/zona-horaria";
 import { exigirFichaDeIndicador, rutaDeEdicion, rutaDeIndicador } from "../_comun";
@@ -51,17 +59,18 @@ const ESTADO_VERSION: Record<VersionVisible["estado"], string> = {
   descartada: "descartada",
 };
 
-type Vista = "resultados" | "ficha" | "versiones";
+type Vista = "resultados" | "ficha" | "versiones" | "observaciones";
 type Parametros = Record<string, string | string[] | undefined>;
 
 /**
  * La vista pedida; cualquier otra cosa es «no encontrada». Por omisión, «Resultados» si la persona ve el indicador y hay
  * una ficha aprobada; si no (un borrador, un descartado o quien solo debe aprobar la ficha), o si se pide una versión
- * (`?version=N`), «Ficha técnica».
+ * (`?version=N`), «Ficha técnica». «Observaciones», solo para quien ve los soportes (spec §6.4).
  */
-function vistaDe(v: Parametros["vista"], conResultados: boolean, conVersion: boolean): Vista | null {
+function vistaDe(v: Parametros["vista"], conResultados: boolean, conVersion: boolean, conObservaciones: boolean): Vista | null {
   if (v === undefined) return conResultados && !conVersion ? "resultados" : "ficha";
   if (v === "resultados") return conResultados ? "resultados" : null;
+  if (v === "observaciones") return conObservaciones ? "observaciones" : null;
   return v === "ficha" || v === "versiones" ? v : null;
 }
 
@@ -98,16 +107,20 @@ function PestanasDeIndicador({
   activa,
   conVersiones,
   conResultados,
+  observaciones,
 }: {
   codigo: string;
   activa: Vista;
   conVersiones: boolean;
   conResultados: boolean;
+  /** Cuántas observaciones tiene, para quien las ve; `null` sin la pestaña. */
+  observaciones: number | null;
 }) {
   const pestanas: { clave: Vista; etiqueta: string }[] = [];
   if (conResultados) pestanas.push({ clave: "resultados", etiqueta: "Resultados" });
   pestanas.push({ clave: "ficha", etiqueta: "Ficha técnica" });
   if (conVersiones) pestanas.push({ clave: "versiones", etiqueta: "Versiones" });
+  if (observaciones !== null) pestanas.push({ clave: "observaciones", etiqueta: `Observaciones · ${observaciones}` });
   return (
     <nav aria-label="Vistas del indicador">
       <ul className="flex list-none flex-wrap gap-1 border-b border-border">
@@ -260,43 +273,158 @@ function Versiones({ resumen, anteriores, vigente }: { resumen: VersionResumen[]
   );
 }
 
-/** «Resultados» (spec §12.3): por ahora, la tabla del año con su selector de año. */
+/** «Se registraron 3 históricos.» tras guardar el modo edición (`?registrados=N`); `null` sin el parámetro. */
+function avisoDeHistoricos(r: Parametros["registrados"]): string | null {
+  if (typeof r !== "string" || !/^\d{1,3}$/.test(r)) return null;
+  const n = Number(r);
+  return n === 0 ? "No cambió ningún histórico." : `Se ${n === 1 ? "registró" : "registraron"} ${cuenta(n, "histórico", "históricos")}.`;
+}
+
+/**
+ * «Resultados» (spec §12.3): el análisis que falta (o el pedido con `?analizar=`), la tabla del año con su selector de
+ * año y, para quien registra históricos, el modo edición (`?historicos=editar`, spec §8.8).
+ */
 function Resultados({
   filas,
   variables,
   anio,
   anios,
   codigo,
+  indicadorId,
   mide,
+  analiza,
+  analisis,
+  historicos,
+  aviso,
 }: {
   filas: FilaDelAnio[];
   variables: { letra: string; nombre: string }[];
   anio: number;
   anios: { anterior: number | null; siguiente: number | null };
   codigo: string;
+  indicadorId: number;
   mide: boolean;
+  analiza: boolean;
+  /** El formulario del análisis que se muestra arriba de la tabla. */
+  analisis: DatosDeAnalisis | null;
+  /** Quien registra históricos: si el año los tiene abiertos y si está en el modo edición. */
+  historicos: { editables: FilaHistoricaVista[]; editando: boolean } | null;
+  aviso: string | null;
 }) {
   const enlaceDeAnio = (a: number) => `${rutaDeIndicador(codigo)}?vista=resultados&anio=${a}`;
+  const editando = historicos?.editando === true;
+  const conEdicion = historicos !== null && historicos.editables.some((f) => !f.cerrada);
   return (
-    <section aria-labelledby="indicador-anio" className="flex min-w-0 flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="indicador-anio" className="text-lg font-semibold">
-          {`Resultados de ${anio}`}
-        </h2>
-        <nav aria-label="Año de la tabla" className="flex flex-wrap gap-3 text-sm">
-          {anios.anterior !== null ? (
-            <Link href={enlaceDeAnio(anios.anterior)} className={ENLACE}>
-              {`‹ ${anios.anterior}`}
-            </Link>
-          ) : null}
-          {anios.siguiente !== null ? (
-            <Link href={enlaceDeAnio(anios.siguiente)} className={ENLACE}>
-              {`${anios.siguiente} ›`}
-            </Link>
-          ) : null}
-        </nav>
-      </div>
-      <TablaDelAnio filas={filas} variables={variables} anio={anio} codigo={codigo} puedeMedir={mide} />
+    <div className="flex min-w-0 flex-col gap-6">
+      {analisis && !editando ? (
+        <section id="analisis" aria-labelledby="indicador-analisis" className="flex min-w-0 scroll-mt-4 flex-col gap-3">
+          <h2 id="indicador-analisis" className="text-lg font-semibold">
+            {`Análisis: ${analisis.etiqueta.toLowerCase()}`}
+          </h2>
+          <FormularioAnalisis datos={analisis} volver={enlaceDeAnio(anio)} />
+        </section>
+      ) : null}
+      <section aria-labelledby="indicador-anio" className="flex min-w-0 flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="indicador-anio" className="text-lg font-semibold">
+            {editando ? `Registrar históricos de ${anio}` : `Resultados de ${anio}`}
+          </h2>
+          <nav aria-label="Año de la tabla" className="flex flex-wrap gap-3 text-sm">
+            {conEdicion && !editando ? (
+              <Link href={`${enlaceDeAnio(anio)}&historicos=editar`} className={ENLACE}>
+                {`Registrar históricos de ${anio}`}
+              </Link>
+            ) : null}
+            {anios.anterior !== null ? (
+              <Link href={enlaceDeAnio(anios.anterior)} className={ENLACE}>
+                {`‹ ${anios.anterior}`}
+              </Link>
+            ) : null}
+            {anios.siguiente !== null ? (
+              <Link href={enlaceDeAnio(anios.siguiente)} className={ENLACE}>
+                {`${anios.siguiente} ›`}
+              </Link>
+            ) : null}
+          </nav>
+        </div>
+        {aviso ? (
+          <p role="status" className="text-sm text-estado-bien-texto">
+            {aviso}
+          </p>
+        ) : null}
+        {editando && historicos ? (
+          <EdicionDeHistoricos indicadorId={indicadorId} anio={anio} variables={variables} filas={historicos.editables} volver={enlaceDeAnio(anio)} />
+        ) : (
+          <TablaDelAnio filas={filas} variables={variables} anio={anio} codigo={codigo} puedeMedir={mide} puedeAnalizar={analiza} />
+        )}
+      </section>
+    </div>
+  );
+}
+
+/**
+ * «Observaciones» (spec §8.6 y §12.3): el periodo elegido (`?periodo=`; por omisión, el primero con observaciones sin
+ * respuesta, o con observaciones, o el más reciente), con su lista y los formularios. El selector es un formulario `GET`:
+ * funciona antes de hidratar.
+ */
+function VistaObservaciones({
+  codigo,
+  resumen,
+  elegida,
+  observaciones,
+  puedeObservar,
+  puedeResponder,
+}: {
+  codigo: string;
+  resumen: ResumenDeObservaciones;
+  elegida: ResumenDeObservaciones["mediciones"][number] | null;
+  observaciones: ObservacionVista[];
+  puedeObservar: boolean;
+  puedeResponder: boolean;
+}) {
+  const opcion = (m: ResumenDeObservaciones["mediciones"][number]) =>
+    m.total === 0
+      ? m.etiqueta
+      : `${m.etiqueta} · ${cuenta(m.total, "observación", "observaciones")}${m.sinRespuesta > 0 ? `, ${m.sinRespuesta} sin respuesta` : ""}`;
+  return (
+    <section aria-labelledby="indicador-observaciones" className="flex min-w-0 flex-col gap-4">
+      <h2 id="indicador-observaciones" className="text-lg font-semibold">
+        Observaciones
+      </h2>
+      <p className="text-sm text-muted-foreground">
+        {`${cuenta(resumen.total, "observación", "observaciones")}, ${resumen.sinRespuesta} sin respuesta. Las ven quienes ven los soportes del indicador; no se editan ni se borran.`}
+      </p>
+      {elegida ? (
+        <>
+          <form method="get" action={rutaDeIndicador(codigo)} className="flex flex-wrap items-end gap-2">
+            <input type="hidden" name="vista" value="observaciones" />
+            <div className="flex min-w-0 flex-col gap-1">
+              <label htmlFor="observaciones-periodo" className="text-sm font-medium">
+                Periodo
+              </label>
+              <select id="observaciones-periodo" name="periodo" defaultValue={elegida.periodo} className={`${claseControl} min-w-0 max-w-full`}>
+                {resumen.mediciones.map((m) => (
+                  <option key={m.medicionId} value={m.periodo}>
+                    {opcion(m)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button type="submit" className={`${claseBoton("secundario")} ${FOCO}`}>
+              Ver
+            </button>
+          </form>
+          <Observaciones
+            medicionId={elegida.medicionId}
+            etiqueta={elegida.etiqueta}
+            observaciones={observaciones}
+            puedeObservar={puedeObservar}
+            puedeResponder={puedeResponder}
+          />
+        </>
+      ) : (
+        <p className="text-sm text-muted-foreground">Aún no hay periodos medidos que observar.</p>
+      )}
     </section>
   );
 }
@@ -305,8 +433,10 @@ function Resultados({
  * La página de un indicador (spec §12.3, maqueta 2): el encabezado con la ficha vigente y las vistas «Resultados» (la de
  * por omisión cuando hay ficha aprobada: la tabla del año, `?anio=AAAA`), «Ficha técnica» (`?vista=ficha`, con
  * `?version=N` para otra versión que la persona pueda abrir) y «Versiones» (el control de cambios y cada versión anterior
- * completa). Quien debe aprobar la ficha por aprobar de un indicador que aún no existe para él solo abre esa versión
- * (spec §6.4); para los demás, «no encontrada».
+ * completa) y, para quien ve los soportes, «Observaciones» (`?vista=observaciones&periodo=`). En «Resultados», el análisis
+ * pendiente o el pedido (`?analizar=PERIODO`) y el modo edición de históricos (`?historicos=editar`). Quien debe aprobar
+ * la ficha por aprobar de un indicador que aún no existe para él solo abre esa versión (spec §6.4); para los demás, «no
+ * encontrada».
  */
 export default async function PaginaIndicador({ params, searchParams }: { params: Promise<{ codigo: string }>; searchParams: Promise<Parametros> }) {
   const sesion = await exigirSesion();
@@ -315,7 +445,9 @@ export default async function PaginaIndicador({ params, searchParams }: { params
   const { indicador, ve, versiones } = await exigirFichaDeIndicador(sesion, segmento);
   const vigente = vigenteDe(versiones);
   const conResultados = ve && vigente !== null;
-  const vista = vistaDe(sp.vista, conResultados, sp.version !== undefined);
+  // La pestaña «Observaciones», con su número, a quien ve los soportes (spec §6.4).
+  const obs = conResultados ? await resumenDeObservaciones(sesion, indicador.id) : null;
+  const vista = vistaDe(sp.vista, conResultados, sp.version !== undefined, obs !== null);
   if (vista === null || (vista === "versiones" && !ve)) notFound();
   const zona = zonaHoraria();
   const ahora = new Date();
@@ -383,6 +515,50 @@ export default async function PaginaIndicador({ params, searchParams }: { params
   const mide = conResultados && indicador.estado === "activo" && (await puedeMedir(indicador.id, sesion)).puede;
   const pendiente = mide ? await proximaPorReportar(sesion, indicador.id) : null;
   const anios = { anterior: anio > primerAnio ? anio - 1 : null, siguiente: anio < anioEnCurso ? anio + 1 : null };
+
+  // Analizar: lo pedido con `?analizar=`, o la primera medición del año a la que le falta el análisis (spec §8.4).
+  const enResultados = vista === "resultados";
+  const analiza = enResultados && indicador.estado === "activo" && (await puedeAnalizar(indicador.id, sesion)).puede;
+  let analisis: DatosDeAnalisis | null = null;
+  if (sp.analizar !== undefined) {
+    const f = analiza && typeof sp.analizar === "string" ? filas.find((x) => x.periodo === sp.analizar && x.medicionId !== null) : undefined;
+    analisis = f ? await datosDeAnalisis(sesion, f.medicionId!) : null;
+    if (!analisis) notFound();
+  } else if (analiza) {
+    const falta = filas.find((x) => x.estado === "falta_analisis" && x.medicionId !== null);
+    if (falta) analisis = await datosDeAnalisis(sesion, falta.medicionId!);
+  }
+  // Los históricos del año, a quien los registra (spec §8.8): el modo edición existe si alguno sigue abierto.
+  const registra = enResultados && indicador.estado === "activo" && (await puedeRegistrarHistoricos(indicador.id, sesion)).puede;
+  const editables: FilaHistoricaVista[] = filas
+    .filter((f) => f.historica && f.medicionId !== null)
+    .map((f) => ({ periodo: f.periodo, etiqueta: f.etiqueta, cerrada: f.estado === "cerrada", valores: f.valores, resultado: f.resultado }));
+  const editando = sp.historicos !== undefined;
+  if (editando && (sp.historicos !== "editar" || !registra || !editables.some((f) => !f.cerrada))) notFound();
+
+  // Observaciones del periodo elegido; por omisión, el primero con alguna sin respuesta, o con alguna, o el más reciente.
+  let observaciones: { elegida: ResumenDeObservaciones["mediciones"][number] | null; lista: ObservacionVista[]; observa: boolean; responde: boolean } | null =
+    null;
+  if (vista === "observaciones" && obs) {
+    const pedida = sp.periodo;
+    const elegida =
+      pedida === undefined
+        ? (obs.mediciones.find((m) => m.sinRespuesta > 0) ?? obs.mediciones.find((m) => m.total > 0) ?? obs.mediciones[0] ?? null)
+        : typeof pedida === "string"
+          ? (obs.mediciones.find((m) => m.periodo === pedida) ?? null)
+          : null;
+    if (pedida !== undefined && !elegida) notFound();
+    const enVista = (r: { id: number; autor: string; creadoEn: Date; texto: string }) => ({ id: r.id, autor: r.autor, fecha: fechaHoraLocal(r.creadoEn), texto: r.texto });
+    const lista = elegida ? ((await observacionesDe(sesion, elegida.medicionId)) ?? []) : [];
+    observaciones = {
+      elegida,
+      lista: lista.map((o) => ({ ...enVista(o), respuestas: o.respuestas.map(enVista) })),
+      observa: await puedeObservar(indicador.id, sesion),
+      responde: administra || (await puedeAnalizar(indicador.id, sesion)).puede,
+    };
+  }
+  // «Programar metas» del año de la página, para quien administra un indicador activo (spec §8.9).
+  const metas = panel && indicador.estado === "activo" && vigente ? { anio, filas: await metasDelAnio(indicador.id, anio, { ahora }) } : null;
   const reportarBoton = pendiente ? (
     <Link href={`${rutaDeIndicador(codigo)}/reportar/${pendiente.periodo}`} className={`${claseBoton("primario")} ${FOCO}`}>
       {etiquetaDeReportar(pendiente.periodo, pendiente.etiqueta)}
@@ -410,12 +586,12 @@ export default async function PaginaIndicador({ params, searchParams }: { params
           reportarBoton || panel ? (
             <>
               {reportarBoton}
-              {panel ? <MenuAdministrar panel={panel} hrefEditar={rutaDeEdicion(codigo)} /> : null}
+              {panel ? <MenuAdministrar panel={panel} hrefEditar={rutaDeEdicion(codigo)} metas={metas} /> : null}
             </>
           ) : undefined
         }
       />
-      <PestanasDeIndicador codigo={codigo} activa={vista} conVersiones={ve} conResultados={conResultados} />
+      <PestanasDeIndicador codigo={codigo} activa={vista} conVersiones={ve} conResultados={conResultados} observaciones={obs?.total ?? null} />
       {baja ? (
         <Recuadro>
           <p>{`${indicador.estado === "retirado" ? "Retirado" : "Descartado"} el ${fechaHoraLocal(baja.en)}${baja.por ? ` por ${baja.por}` : ""}.`}</p>
@@ -433,7 +609,21 @@ export default async function PaginaIndicador({ params, searchParams }: { params
           anio={anio}
           anios={anios}
           codigo={codigo}
+          indicadorId={indicador.id}
           mide={mide}
+          analiza={analiza}
+          analisis={analisis}
+          historicos={registra ? { editables, editando } : null}
+          aviso={avisoDeHistoricos(sp.registrados)}
+        />
+      ) : vista === "observaciones" && obs && observaciones ? (
+        <VistaObservaciones
+          codigo={codigo}
+          resumen={obs}
+          elegida={observaciones.elegida}
+          observaciones={observaciones.lista}
+          puedeObservar={observaciones.observa}
+          puedeResponder={observaciones.responde}
         />
       ) : vista === "ficha" ? (
         <>

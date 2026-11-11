@@ -6,9 +6,13 @@
 import { rutaDeEdicion, rutaDeIndicador } from "@/app/(app)/indicadores/_comun";
 import { idNumerico, mutacion, valoresDeFormulario, type EstadoAccion } from "@/app/admin/comun";
 import { ErrorFirma } from "@/db/consultas/flujo/contrato";
+import { analizar } from "@/db/consultas/indicadores/analisis";
 import { aprobarFichas, descartarBorrador, devolverFicha, enviarAAprobacion } from "@/db/consultas/indicadores/aprobacion";
 import { abrirCambio, crearIndicador, guardarBorrador } from "@/db/consultas/indicadores/fichas";
+import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
 import { marcarNoAplica, quitarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
+import { programarMeta } from "@/db/consultas/indicadores/metas";
+import { observar, responder } from "@/db/consultas/indicadores/observaciones";
 import {
   borrarIndicador,
   cambiarOperacion,
@@ -20,16 +24,22 @@ import {
 import { contextoDePeticion } from "@/lib/contexto-peticion";
 import { EsquemaSinDatos } from "@/lib/esquemas/documentos";
 import {
+  analisisDelFormulario,
   EsquemaAprobarFichas,
   EsquemaDesignar,
   EsquemaDevolverFicha,
   EsquemaDuplicar,
   EsquemaEnviarFicha,
   EsquemaFicha,
+  EsquemaHistoricos,
+  EsquemaMeta,
   EsquemaMotivoDeBaja,
   EsquemaNoAplica,
+  EsquemaObservacion,
   EsquemaOperacion,
   EsquemaReporte,
+  EsquemaRespuesta,
+  juntarHistoricos,
   juntarValoresDeReporte,
 } from "@/lib/esquemas/indicadores";
 import type { EstadoReporte } from "@/lib/indicadores/reporte";
@@ -235,6 +245,54 @@ export async function quitarNoAplicaAccion(_prev: EstadoAccion, formData: FormDa
   return mutacion(formData, "indicadores.medir", async (_usuarioId, _formData, sesion) => {
     parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
     await quitarNoAplica(sesion, idNumerico(formData, "id"));
+  });
+}
+
+/**
+ * `id` es el de la medición. Escribe el análisis (o la causa y la acción propuesta) y lleva a `volver`. Un campo que no
+ * llega queda como estaba; uno vacío se borra.
+ */
+export async function analizarAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.medir", async (_usuarioId, _formData, sesion) => {
+    await analizar(sesion, { medicionId: idNumerico(formData, "id"), ...analisisDelFormulario(formData) });
+    return rutaInterna(formData.get("volver"), "/indicadores");
+  });
+}
+
+/** `id` es el de la medición. No navega: la lista de observaciones vuelve a pintarse con la nueva. */
+export async function observarAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.observar", async (_usuarioId, _formData, sesion) => {
+    const { texto } = parsearFormulario(formData, EsquemaObservacion, { omitir: ["id"] });
+    await observar(sesion, { medicionId: idNumerico(formData, "id"), texto });
+  });
+}
+
+/** `id` es el de la observación que se responde. No navega. */
+export async function responderAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.observar", async (_usuarioId, _formData, sesion) => {
+    const { texto } = parsearFormulario(formData, EsquemaRespuesta, { omitir: ["id"] });
+    await responder(sesion, { observacionId: idNumerico(formData, "id"), texto });
+  });
+}
+
+/** `id` es el del indicador. Programa la meta de un periodo; no navega: el diálogo sigue abierto con la tabla al día. */
+export async function programarMetaAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    const d = parsearFormulario(formData, EsquemaMeta, { omitir: ["id"] });
+    await programarMeta(sesion, { indicadorId: idNumerico(formData, "id"), ...d });
+  });
+}
+
+/**
+ * `id` es el del indicador. Registra (o corrige) los históricos de la tabla del año, que manda cada celda en su campo
+ * (`h_2025-T3_A`), y vuelve a `volver` con cuántos registró (`registrados=N`).
+ */
+export async function registrarHistoricosAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.medir", async (_usuarioId, _formData, sesion) => {
+    const { filas } = parsearFormulario(juntarHistoricos(formData), EsquemaHistoricos, { omitir: ["id", "volver"] });
+    const { registrados } = await registrarHistoricos(sesion, { indicadorId: idNumerico(formData, "id"), filas });
+    const destino = rutaInterna(formData.get("volver"), "/indicadores");
+    return `${destino}${destino.includes("?") ? "&" : "?"}registrados=${registrados}`;
   });
 }
 

@@ -206,6 +206,17 @@ function medicionDe(codigo: string | null, periodo: unknown): string {
   return `${codigo}${etiqueta ? `, ${etiqueta}` : ""}`;
 }
 
+/** «90», «96,5», «98 a 100» o «sin meta»: la meta de un periodo como la guarda `programarMeta`; `null` si no vino. */
+function metaDeBitacora(v: unknown): string | null {
+  const m = objeto(v);
+  if (!m) return null;
+  const meta = texto(m.meta);
+  const maximo = texto(m.metaMax);
+  if (meta === null) return "sin meta";
+  const coma = (t: string) => t.replace(".", ",");
+  return maximo === null || maximo === meta ? coma(meta) : `${coma(meta)} a ${coma(maximo)}`;
+}
+
 /** «: motivo», o nada si no se guardó. */
 function conMotivo(v: unknown): string {
   const t = texto(v);
@@ -783,6 +794,28 @@ export function describirEvento(e: EventoAuditoria): string {
     }
     case "medicion_no_aplica":
       return `Marcó «No aplica» en ${medicionDe(cod, d.periodo)}${conMotivo(d.motivo)}`;
+    case "medicion_analizada":
+      return `${d.primera === false ? "Editó" : "Escribió"} el análisis de ${medicionDe(cod, d.periodo)}${d.sinMedidor === true ? " (sin nadie más que pudiera analizarlo)" : ""}`;
+    case "medicion_observada":
+      return `Dejó una observación en ${medicionDe(cod, d.periodo)}`;
+    case "medicion_observacion_respondida":
+      return `Respondió una observación en ${medicionDe(cod, d.periodo)}`;
+    case "medicion_historica_registrada": {
+      const de = medicionDe(cod, d.periodo);
+      const despues = texto(d.resultado);
+      if (d.correccion === true) {
+        const antes = texto(d.resultadoAntes);
+        return `Corrigió el histórico de ${de}${antes || despues ? `: ${antes ?? "sin resultado"} → ${despues ?? "sin resultado"}` : ""}`;
+      }
+      return `Registró el histórico de ${de}${despues ? `: ${despues}` : ""}`;
+    }
+    case "indicador_meta_programada": {
+      if (!cod) return "Programó la meta de un periodo de un indicador";
+      const antes = metaDeBitacora(d.antes);
+      const despues = metaDeBitacora(d.despues);
+      const cambio = antes && despues ? `: ${antes} → ${despues}` : "";
+      return `Programó la meta de ${medicionDe(cod, d.periodo)}${cambio}${d.tardia === true ? ", después de terminado el periodo" : ""}${conMotivo(d.justificacion)}`;
+    }
     case "tipo_norma_creado":
       return `Creó el tipo de norma${nombre ? ` «${nombre}»` : ""}`;
     case "tipo_norma_editado":
@@ -962,6 +995,11 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   medicion_corregida: "Corrigió una medición de indicador",
   medicion_no_aplica: "Marcó «No aplica» en una medición de indicador",
   medicion_guardada: "Guardó sin reportar una medición de indicador",
+  medicion_analizada: "Escribió o editó el análisis de una medición de indicador",
+  medicion_observada: "Dejó una observación en una medición de indicador",
+  medicion_observacion_respondida: "Respondió una observación de una medición de indicador",
+  medicion_historica_registrada: "Registró o corrigió un histórico de indicador",
+  indicador_meta_programada: "Programó la meta de un periodo de un indicador",
   tipo_norma_creado: "Creó un tipo de norma",
   tipo_norma_editado: "Renombró un tipo de norma",
   tipo_norma_movido: "Movió un tipo de norma",

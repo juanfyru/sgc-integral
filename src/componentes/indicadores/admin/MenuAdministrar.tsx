@@ -9,7 +9,9 @@ import { Boton, claseBoton } from "@/componentes/ui/Boton";
 import { claseControl } from "@/componentes/ui/Campo";
 import { Dialogo } from "@/componentes/ui/Dialogo";
 import { useTituloAlDesaparecer } from "@/componentes/ui/foco";
+import type { MetaDelPeriodo } from "@/db/consultas/indicadores/metas";
 import type { PanelDeAdministracion } from "@/db/consultas/indicadores/operacion";
+import { DialogoMetas } from "../medicion/DialogoMetas";
 import { DialogoDesignar } from "./DialogoDesignar";
 import { DialogoOperacion } from "./DialogoOperacion";
 import { CLASE_DIALOGO, DialogoRetirar } from "./DialogoRetirar";
@@ -17,7 +19,7 @@ import { CLASE_DIALOGO, DialogoRetirar } from "./DialogoRetirar";
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 const ITEM = `block w-full rounded-sm px-3 py-2 text-left text-sm hover:bg-muted ${FOCO}`;
 
-type Dialogos = "designar" | "operacion" | "duplicar" | "retirar" | "descartar" | "borrar";
+type Dialogos = "designar" | "operacion" | "metas" | "duplicar" | "retirar" | "descartar" | "borrar";
 
 /** «Crear a partir de este» (spec §7.7): pide el proceso, muestra el código que se propone y lleva al borrador nuevo. */
 function DialogoDuplicar({
@@ -102,9 +104,18 @@ function DialogoBorrar({ abierto, alCerrar, panel }: { abierto: boolean; alCerra
 /**
  * «Administrar» (spec §12.3): lo que quien administra puede hacer con el indicador, según su estado. Cada opción abre su
  * diálogo; «Editar ficha» lleva a la edición. Solo se pinta para quien tiene `indicadores.administrar`: el servidor le
- * entrega el panel y las acciones vuelven a comprobar el permiso.
+ * entrega el panel (y las metas del año, en un indicador activo) y las acciones vuelven a comprobar el permiso.
  */
-export function MenuAdministrar({ panel, hrefEditar }: { panel: PanelDeAdministracion; hrefEditar: string }) {
+export function MenuAdministrar({
+  panel,
+  hrefEditar,
+  metas = null,
+}: {
+  panel: PanelDeAdministracion;
+  hrefEditar: string;
+  /** «Programar metas» del año que muestra la página (spec §8.9). */
+  metas?: { anio: number; filas: MetaDelPeriodo[] } | null;
+}) {
   const [menu, setMenu] = useState(false);
   const [dialogo, setDialogo] = useState<Dialogos | null>(null);
   const [reinicio, setReinicio] = useState(0);
@@ -137,6 +148,7 @@ export function MenuAdministrar({ panel, hrefEditar }: { panel: PanelDeAdministr
   if (estado === "borrador" || estado === "activo") {
     opciones.push({ dialogo: "designar", etiqueta: "Designar personas" }, { dialogo: "operacion", etiqueta: "Datos de operación" });
   }
+  if (estado === "activo" && metas) opciones.push({ dialogo: "metas", etiqueta: "Programar metas" });
   opciones.push({ dialogo: "duplicar", etiqueta: "Crear a partir de este" });
   if (estado === "activo") opciones.push({ dialogo: "retirar", etiqueta: "Retirar" });
   if (estado === "borrador") opciones.push(panel.enviado ? { dialogo: "descartar", etiqueta: "Descartar" } : { dialogo: "borrar", etiqueta: "Borrar" });
@@ -200,6 +212,17 @@ export function MenuAdministrar({ panel, hrefEditar }: { panel: PanelDeAdministr
         operacion={panel.operacion}
         periodos={panel.periodos}
       />
+      {estado === "activo" && metas ? (
+        <DialogoMetas
+          key={`me${reinicio}`}
+          abierto={dialogo === "metas"}
+          alCerrar={cierra}
+          indicadorId={panel.indicadorId}
+          codigo={panel.codigo}
+          anio={metas.anio}
+          metas={metas.filas}
+        />
+      ) : null}
       <DialogoDuplicar key={`du${reinicio}`} abierto={dialogo === "duplicar"} alCerrar={cierra} panel={panel} />
       {estado === "activo" ? (
         <DialogoRetirar key={`re${reinicio}`} modo="retirar" abierto={dialogo === "retirar"} alCerrar={cierra} indicadorId={panel.indicadorId} codigo={panel.codigo} />

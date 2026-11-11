@@ -799,4 +799,53 @@ describe("la medición de un indicador", () => {
     expect(nombreDeAccion("medicion_no_aplica")).toBe("Marcó «No aplica» en una medición de indicador");
     expect(nombreDeAccion("medicion_guardada")).toBe("Guardó sin reportar una medición de indicador");
   });
+
+  it("el análisis, las observaciones y los históricos (Tarea 10)", () => {
+    const de = { codigo: "SGC-IND-01", periodo: "2026-T3" };
+    expect(frase("medicion_analizada", { ...de, primera: true, despues: { analisis: "Faltó personal" } })).toBe(
+      "Escribió el análisis de SGC-IND-01, tercer trimestre de 2026",
+    );
+    expect(frase("medicion_analizada", { ...de, primera: false })).toBe("Editó el análisis de SGC-IND-01, tercer trimestre de 2026");
+    expect(frase("medicion_analizada", { ...de, primera: true, sinMedidor: true })).toBe(
+      "Escribió el análisis de SGC-IND-01, tercer trimestre de 2026 (sin nadie más que pudiera analizarlo)",
+    );
+    expect(frase("medicion_analizada", {})).toBe("Escribió el análisis de la medición de un indicador");
+    // El texto de una observación o de una respuesta queda en el detalle, no en la frase.
+    expect(frase("medicion_observada", { ...de, texto: "¿Por qué bajó?" })).toBe("Dejó una observación en SGC-IND-01, tercer trimestre de 2026");
+    expect(frase("medicion_observacion_respondida", { ...de, texto: "Faltó personal" })).toBe(
+      "Respondió una observación en SGC-IND-01, tercer trimestre de 2026",
+    );
+    expect(frase("medicion_historica_registrada", { codigo: "SGC-IND-01", periodo: "2025-T4", correccion: false, resultado: "60 %" })).toBe(
+      "Registró el histórico de SGC-IND-01, cuarto trimestre de 2025: 60 %",
+    );
+    expect(
+      frase("medicion_historica_registrada", { codigo: "SGC-IND-01", periodo: "2025-T4", correccion: true, resultadoAntes: "60 %", resultado: "100 %" }),
+    ).toBe("Corrigió el histórico de SGC-IND-01, cuarto trimestre de 2025: 60 % → 100 %");
+    expect(nombreDeAccion("medicion_analizada")).toBe("Escribió o editó el análisis de una medición de indicador");
+    expect(nombreDeAccion("medicion_observada")).toBe("Dejó una observación en una medición de indicador");
+    expect(nombreDeAccion("medicion_observacion_respondida")).toBe("Respondió una observación de una medición de indicador");
+    expect(nombreDeAccion("medicion_historica_registrada")).toBe("Registró o corrigió un histórico de indicador");
+  });
+
+  it("la meta de un periodo", () => {
+    const meta = (detalle: Record<string, unknown>) => describirEvento({ accion: "indicador_meta_programada", entidad: "indicador", entidadId: 1, detalle });
+    expect(meta({ codigo: "SGC-IND-01", periodo: "2026-T4", antes: { meta: "90", metaMax: null }, despues: { meta: "96.5", metaMax: null }, tardia: false })).toBe(
+      "Programó la meta de SGC-IND-01, cuarto trimestre de 2026: 90 → 96,5",
+    );
+    expect(
+      meta({
+        codigo: "SGC-IND-01",
+        periodo: "2026-T3",
+        antes: { meta: "90", metaMax: null },
+        despues: { meta: "80", metaMax: null },
+        tardia: true,
+        justificacion: "La Secretaría ajustó la meta",
+      }),
+    ).toBe("Programó la meta de SGC-IND-01, tercer trimestre de 2026: 90 → 80, después de terminado el periodo: La Secretaría ajustó la meta");
+    expect(meta({ codigo: "SGC-IND-02", periodo: "2026", antes: { meta: null, metaMax: null }, despues: { meta: "98", metaMax: "100" } })).toBe(
+      "Programó la meta de SGC-IND-02, 2026: sin meta → 98 a 100",
+    );
+    expect(meta({})).toBe("Programó la meta de un periodo de un indicador");
+    expect(nombreDeAccion("indicador_meta_programada")).toBe("Programó la meta de un periodo de un indicador");
+  });
 });

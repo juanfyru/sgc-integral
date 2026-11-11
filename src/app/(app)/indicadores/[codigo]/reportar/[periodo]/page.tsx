@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
+import { FormularioAnalisis } from "@/componentes/indicadores/medicion/FormularioAnalisis";
 import { FormularioReporte } from "@/componentes/indicadores/medicion/FormularioReporte";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
+import { datosDeAnalisis } from "@/db/consultas/indicadores/analisis";
 import { asegurarMediciones, medicionParaReportar } from "@/db/consultas/indicadores/mediciones";
 import { periodicidadDe } from "@/lib/indicadores/periodos";
 import { exigirSesion } from "@/lib/paginas";
@@ -11,9 +14,13 @@ import { exigirIndicador, rutaDeIndicador } from "../../../_comun";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Reportar una medición" };
 
+const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
+const ENLACE = `rounded-sm text-marca underline-offset-2 hover:underline ${FOCO}`;
+
 /**
  * Reportar una medición (spec §8.2 y §12.5, maqueta 3). Antes de leer abre los periodos que hayan terminado (F14-DC12).
- * Quien no ve el indicador, no puede medirlo o pide un periodo sin medición recibe «no encontrado».
+ * Quien no ve el indicador, no puede medirlo o pide un periodo sin medición recibe «no encontrado». Un histórico no se
+ * reporta aquí: se registra en la tabla del año (spec §8.8). Con resultado, quien puede analizar tiene debajo el análisis.
  */
 export default async function PaginaReportar({ params }: { params: Promise<{ codigo: string; periodo: string }> }) {
   const sesion = await exigirSesion();
@@ -24,6 +31,7 @@ export default async function PaginaReportar({ params }: { params: Promise<{ cod
   const datos = await medicionParaReportar(sesion, indicador.codigo, periodo);
   if (!datos) notFound();
   const volver = rutaDeIndicador(indicador.codigo);
+  const analisis = datos.estado !== "cerrada" && !datos.historica ? await datosDeAnalisis(sesion, datos.medicionId) : null;
   const plazo = datos.historica ? "Registro histórico" : `Plazo hasta el ${datos.vence}${datos.vencida ? " (vencido)" : ""}`;
 
   return (
@@ -48,9 +56,24 @@ export default async function PaginaReportar({ params }: { params: Promise<{ cod
         <p className="rounded-lg border border-l-4 border-border border-l-mod-indicadores bg-muted px-4 py-3 text-sm">
           La medición está cerrada: pida al Administrador del SGC que la reabra.
         </p>
+      ) : datos.historica ? (
+        <p className="rounded-lg border border-l-4 border-border border-l-mod-indicadores bg-muted px-4 py-3 text-sm">
+          {"Ese periodo es histórico: se registra en la tabla del año. "}
+          <Link href={`${volver}?vista=resultados&anio=${datos.periodo.slice(0, 4)}&historicos=editar`} className={ENLACE}>
+            Registrar los históricos
+          </Link>
+        </p>
       ) : (
         <FormularioReporte datos={datos} volver={volver} />
       )}
+      {analisis ? (
+        <section aria-labelledby="reporte-analisis" className="flex min-w-0 flex-col gap-3">
+          <h2 id="reporte-analisis" className="text-lg font-semibold">
+            Análisis
+          </h2>
+          <FormularioAnalisis datos={analisis} volver={volver} />
+        </section>
+      ) : null}
     </div>
   );
 }

@@ -45,16 +45,33 @@ vi.mock("@/app/acciones-indicadores", () => ({
   reportarAccion: vi.fn(),
   marcarNoAplicaAccion: vi.fn(),
   quitarNoAplicaAccion: vi.fn(),
+  analizarAccion: vi.fn(),
+  observarAccion: vi.fn(),
+  responderAccion: vi.fn(),
+  programarMetaAccion: vi.fn(),
+  registrarHistoricosAccion: vi.fn(),
 }));
 
 import PaginaIndicador from "@/app/(app)/indicadores/[codigo]/page";
 import PaginaReportar from "@/app/(app)/indicadores/[codigo]/reportar/[periodo]/page";
+import { DialogoMetas } from "@/componentes/indicadores/medicion/DialogoMetas";
+import { FormularioAnalisis } from "@/componentes/indicadores/medicion/FormularioAnalisis";
 import { FormularioReporte } from "@/componentes/indicadores/medicion/FormularioReporte";
 import { ResultadoEnVivo } from "@/componentes/indicadores/medicion/ResultadoEnVivo";
 import { obtenerSql } from "@/db/cliente";
+import type { DatosDeAnalisis } from "@/db/consultas/indicadores/analisis";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { reportar, type DatosDeReporte } from "@/db/consultas/indicadores/mediciones";
-import { EsquemaReporte, juntarValoresDeReporte } from "@/lib/esquemas/indicadores";
+import { asegurarMediciones, reportar, type DatosDeReporte } from "@/db/consultas/indicadores/mediciones";
+import type { MetaDelPeriodo } from "@/db/consultas/indicadores/metas";
+import { observar } from "@/db/consultas/indicadores/observaciones";
+import {
+  analisisDelFormulario,
+  EsquemaHistoricos,
+  EsquemaMeta,
+  EsquemaReporte,
+  juntarHistoricos,
+  juntarValoresDeReporte,
+} from "@/lib/esquemas/indicadores";
 import type { SesionValida } from "@/lib/sesion";
 import { parsearFormulario } from "@/lib/validacion";
 import { indicadorDePrueba } from "./utiles/indicadores";
@@ -343,5 +360,229 @@ describe("las páginas", () => {
       contexto.sesion = valida(admin);
       expect(await pagina(borrador.codigo)).toMatch(/aria-current="page"[^>]*>Ficha técnica</);
       await expect(pagina(borrador.codigo, { vista: "resultados" })).rejects.toThrow("NO_ENCONTRADA");
+    }));
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tarea 10: análisis, observaciones, metas por periodo e históricos
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ANALISIS: DatosDeAnalisis = {
+  medicionId: 41,
+  periodo: "2026-T3",
+  etiqueta: "Tercer trimestre de 2026",
+  exigido: "dos_partes",
+  semaforo: "critico",
+  repetido: false,
+  analisis: null,
+  causa: null,
+  accionPropuesta: null,
+};
+
+describe("FormularioAnalisis y DialogoMetas", () => {
+  it("en crítico pide causa y acción propuesta, con el aviso de no escribir nombres", () => {
+    const html = renderToStaticMarkup(<FormularioAnalisis datos={ANALISIS} volver="/indicadores/SGC-IND-01" />);
+    expect(html).toMatch(/<label[^>]*for="analisis-41-causa"[^>]*>Causa de la desviación<\/label>/);
+    expect(html).toMatch(/<label[^>]*for="analisis-41-accionPropuesta"[^>]*>Acción propuesta<\/label>/);
+    expect(html).toMatch(/<textarea(?=[^>]*name="causa")(?=[^>]*required)(?=[^>]*minLength="10")[^>]*>/);
+    expect(html).toMatch(/<textarea(?=[^>]*name="accionPropuesta")(?=[^>]*required)[^>]*>/);
+    expect(html).not.toContain('name="analisis"');
+    expect(html.split("No escriba nombres de pacientes ni de funcionarios.").length - 1).toBe(2);
+    expect(html).toContain("«Requiere acción de mejora»");
+    expect(html).toContain('<input type="hidden" name="id" value="41"/>');
+    expect(html).toContain(">Guardar el análisis</button>");
+  });
+
+  it("en atención, un campo obligatorio; si cumple, opcional; lo que ya tiene texto se puede editar", () => {
+    const simple = renderToStaticMarkup(<FormularioAnalisis datos={{ ...ANALISIS, exigido: "simple", semaforo: "atencion" }} volver="/x" />);
+    expect(simple).toMatch(/<textarea(?=[^>]*name="analisis")(?=[^>]*required)(?=[^>]*minLength="10")[^>]*>/);
+    expect(simple).not.toContain('name="causa"');
+    expect(simple).toContain(">Análisis</label>");
+    const opcional = renderToStaticMarkup(<FormularioAnalisis datos={{ ...ANALISIS, exigido: "ninguno", semaforo: "bien" }} volver="/x" />);
+    expect(opcional).toContain(">Análisis (opcional)</label>");
+    expect(opcional).not.toMatch(/<textarea(?=[^>]*name="analisis")(?=[^>]*required)[^>]*>/);
+    const conTexto = renderToStaticMarkup(
+      <FormularioAnalisis datos={{ ...ANALISIS, analisis: "Un análisis anterior", causa: "Faltó personal" }} volver="/x" />,
+    );
+    expect(conTexto).toContain(">Un análisis anterior</textarea>");
+    expect(conTexto).toContain(">Faltó personal</textarea>");
+  });
+
+  it("DialogoMetas: un renglón por periodo con su meta heredada y un campo; justificación si ya terminó", () => {
+    const fila = (m: Partial<MetaDelPeriodo>): MetaDelPeriodo => ({
+      periodo: "2026-T1",
+      etiqueta: "Primer trimestre de 2026",
+      heredada: "90",
+      heredadaMax: null,
+      textoHeredada: "≥ 90 %",
+      programada: null,
+      programadaMax: null,
+      tardia: false,
+      cerrada: false,
+      terminado: false,
+      historica: false,
+      pideJustificacion: false,
+      constante: false,
+      sufijo: " %",
+      ...m,
+    });
+    const metas = [
+      fila({ cerrada: true, terminado: true }),
+      fila({ periodo: "2026-T3", etiqueta: "Tercer trimestre de 2026", programada: "80.5", tardia: true, terminado: true, pideJustificacion: true }),
+      fila({ periodo: "2026-T4", etiqueta: "Cuarto trimestre de 2026" }),
+    ];
+    const html = renderToStaticMarkup(<DialogoMetas abierto alCerrar={() => {}} indicadorId={7} codigo="SGC-IND-01" anio={2026} metas={metas} />);
+    expect(html).toContain("Programar metas de SGC-IND-01 en 2026");
+    expect(html).toContain("Cerrada: reábrala para cambiar su meta.");
+    expect(html).toContain(">80,5 %<");
+    expect(html).toContain("Meta ajustada después del periodo");
+    expect(html).toMatch(/<input(?=[^>]*name="meta")(?=[^>]*value="80,5")[^>]*>/);
+    expect(html).toMatch(/<input(?=[^>]*name="meta")(?=[^>]*value="90")[^>]*>/);
+    expect(html.split('name="justificacion"').length - 1).toBe(1);
+    expect(html.split('name="periodo"').length - 1).toBe(2);
+    expect(html).not.toContain('name="metaMax"');
+  });
+});
+
+describe("los esquemas de la Tarea 10", () => {
+  const formulario = (campos: Record<string, string>) => {
+    const f = new FormData();
+    for (const [k, v] of Object.entries({ id: "41", ...campos })) f.append(k, v);
+    return f;
+  };
+
+  it("el análisis conserva un campo vaciado (lo borra) y no inventa los que no llegan", () => {
+    expect(analisisDelFormulario(formulario({ analisis: "", volver: "/x" }))).toEqual({ analisis: "" });
+    expect(analisisDelFormulario(formulario({ causa: "Faltó personal", accionPropuesta: "Suplentes" }))).toEqual({
+      causa: "Faltó personal",
+      accionPropuesta: "Suplentes",
+    });
+    expect(() => analisisDelFormulario(formulario({ analisis: "x".repeat(2001) }))).toThrow("El análisis no puede pasar de 2000 caracteres");
+    expect(() => analisisDelFormulario(formulario({ otro: "x" }))).toThrow();
+  });
+
+  it("la meta: coma decimal, máximo vacío y justificación opcional", () => {
+    expect(parsearFormulario(formulario({ periodo: "2026-T3", meta: "80,5", metaMax: "" }), EsquemaMeta, { omitir: ["id"] })).toEqual({
+      periodo: "2026-T3",
+      meta: "80.5",
+    });
+    expect(() => parsearFormulario(formulario({ periodo: "2026-T9", meta: "80" }), EsquemaMeta, { omitir: ["id"] })).toThrow("El periodo no es válido");
+    expect(() => parsearFormulario(formulario({ periodo: "2026-T3", meta: "mucho" }), EsquemaMeta, { omitir: ["id"] })).toThrow(
+      "La meta debe ser un número",
+    );
+  });
+
+  it("los históricos: cada celda en su campo se junta en una fila por periodo", () => {
+    const juntado = juntarHistoricos(formulario({ "h_2025-T3_A": "5", "h_2025-T3_B": "5", "h_2025-T4_A": "", "h_2025-T4_B": "", volver: "/x" }));
+    expect(juntado.get("volver")).toBe("/x");
+    expect(parsearFormulario(juntado, EsquemaHistoricos, { omitir: ["id", "volver"] })).toEqual({
+      filas: [
+        { periodo: "2025-T3", valores: { A: "5", B: "5" } },
+        { periodo: "2025-T4", valores: { A: "", B: "" } },
+      ],
+    });
+    expect(() => parsearFormulario(juntarHistoricos(formulario({ "h_2025-T3_a": "5" })), EsquemaHistoricos, { omitir: ["id"] })).toThrow(
+      "Las filas no tienen un formato válido",
+    );
+  });
+});
+
+describe("las páginas de la Tarea 10", () => {
+  const historico = { periodicidad: "trimestral" as const, inicioMedicion: "2025-T3", aprobadaEn: APROBADA };
+
+  it("/indicadores/[codigo]: quien analiza escribe el análisis que falta; quien solo mide, no", () =>
+    enTransaccion(async (tx) => {
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const analiza = await usuarioDePrueba(tx, { rol: "consulta" });
+      const ind = await indicadorDePrueba(tx, { ...historico, inicioMedicion: "2026-T1", mide: [mide.usuarioId], analiza: [analiza.usuarioId] });
+      await asegurarMediciones({ sql: tx, indicadorId: ind.id });
+      const [t1] = await tx`SELECT id FROM mediciones WHERE indicador_id = ${ind.id} AND periodo = '2026-T1'`;
+      await reportar(mide, { medicionId: Number(t1.id), valores: { A: "3", B: "5" }, parcial: false, confirmado: true }, { sql: tx });
+
+      contexto.sesion = valida(analiza);
+      const html = await pagina(ind.codigo, { anio: "2026" });
+      expect(html).toContain("Análisis: primer trimestre de 2026");
+      expect(html).toContain('name="causa"');
+      expect(html).toContain('name="accionPropuesta"');
+      expect(html).toContain("No escriba nombres de pacientes ni de funcionarios.");
+      expect(html).toContain("?vista=resultados&amp;anio=2026&amp;analizar=2026-T1#analisis");
+      // El análisis de un periodo sin resultado no existe.
+      await expect(pagina(ind.codigo, { anio: "2026", analizar: "2026-T2" })).rejects.toThrow("NO_ENCONTRADA");
+
+      // Quien solo mide no tiene el formulario ni el enlace, ni lo pide con `?analizar=`.
+      contexto.sesion = valida(mide);
+      const deMide = await pagina(ind.codigo, { anio: "2026" });
+      expect(deMide).not.toContain('name="causa"');
+      expect(deMide).not.toContain("analizar=");
+      await expect(pagina(ind.codigo, { anio: "2026", analizar: "2026-T1" })).rejects.toThrow("NO_ENCONTRADA");
+
+      // Quien mide y analiza tiene el análisis también debajo del reporte.
+      await tx`INSERT INTO indicador_designados (indicador_id, usuario_id, funcion, creado_por)
+        VALUES (${ind.id}, ${mide.usuarioId}, 'analiza', ${mide.usuarioId})`;
+      const enReporte = await reporte(ind.codigo, "2026-T1");
+      expect(enReporte).toContain('id="reporte-analisis"');
+      expect(enReporte).toContain('name="causa"');
+    }));
+
+  it("/indicadores/[codigo]: los históricos se registran en la tabla del año en modo edición", () =>
+    enTransaccion(async (tx) => {
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const ind = await indicadorDePrueba(tx, { ...historico, mide: [mide.usuarioId] });
+      contexto.sesion = valida(mide);
+      const html = await pagina(ind.codigo, { anio: "2025" });
+      expect(html).toContain("&amp;historicos=editar");
+      expect(html).toContain(">Registrar históricos de 2025</a>");
+      // Un histórico no se reporta por «Reportar»: la tabla no lo enlaza y su pantalla lo dice.
+      expect(html).not.toContain("/reportar/2025-T3");
+      const enReporte = await reporte(ind.codigo, "2025-T3");
+      expect(enReporte).toContain("Ese periodo es histórico: se registra en la tabla del año.");
+      expect(enReporte).not.toContain(">Reportar</button>");
+
+      const edicion = await pagina(ind.codigo, { anio: "2025", historicos: "editar" });
+      for (const campo of ["h_2025-T3_A", "h_2025-T3_B", "h_2025-T4_A", "h_2025-T4_B"]) expect(edicion).toContain(`name="${campo}"`);
+      expect(edicion).toContain(">Guardar los históricos</button>");
+      expect(edicion).toContain('aria-label="Casos que cumplen, tercer trimestre de 2025"');
+      await expect(pagina(ind.codigo, { anio: "2025", historicos: "otra" })).rejects.toThrow("NO_ENCONTRADA");
+      // 2026 no tiene históricos.
+      await expect(pagina(ind.codigo, { anio: "2026", historicos: "editar" })).rejects.toThrow("NO_ENCONTRADA");
+      expect(await pagina(ind.codigo, { anio: "2025", registrados: "2" })).toContain("Se registraron 2 históricos.");
+
+      // El Admin SGC los registra aunque haya quien mida; quien solo ve el indicador, no.
+      contexto.sesion = valida(await sesionAdmin(tx));
+      expect(await pagina(ind.codigo, { anio: "2025", historicos: "editar" })).toContain('name="h_2025-T3_A"');
+      contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "consulta" }));
+      expect(await pagina(ind.codigo, { anio: "2025" })).not.toContain("historicos=editar");
+      await expect(pagina(ind.codigo, { anio: "2025", historicos: "editar" })).rejects.toThrow("NO_ENCONTRADA");
+    }));
+
+  it("/indicadores/[codigo]: «Observaciones» solo para quien ve los soportes", () =>
+    enTransaccion(async (tx) => {
+      const analiza = await usuarioDePrueba(tx, { rol: "consulta" });
+      const ind = await indicadorDePrueba(tx, { ...historico, inicioMedicion: "2026-T1", analiza: [analiza.usuarioId] });
+      await asegurarMediciones({ sql: tx, indicadorId: ind.id });
+      const [t1] = await tx`SELECT id FROM mediciones WHERE indicador_id = ${ind.id} AND periodo = '2026-T1'`;
+      const control = await usuarioDePrueba(tx, { rol: "control_interno" });
+      await observar(control, { medicionId: Number(t1.id), texto: "Revise el denominador" }, { sql: tx });
+
+      contexto.sesion = valida(control);
+      expect(await pagina(ind.codigo, { anio: "2026" })).toContain(">Observaciones · 1</a>");
+      const deControl = await pagina(ind.codigo, { vista: "observaciones" });
+      expect(deControl).toContain("Revise el denominador");
+      expect(deControl).toContain(">Sin respuesta<");
+      expect(deControl).toMatch(/<option[^>]*value="2026-T1"[^>]*selected=""[^>]*>Primer trimestre de 2026 · 1 observación, 1 sin respuesta<\/option>/);
+      expect(deControl).toContain(">Dejar la observación</button>");
+      expect(deControl).not.toContain(">Responder</summary>");
+
+      // Quien analiza la ve y la responde, pero no observa.
+      contexto.sesion = valida(analiza);
+      const deAnalista = await pagina(ind.codigo, { vista: "observaciones", periodo: "2026-T1" });
+      expect(deAnalista).toContain(">Responder</summary>");
+      expect(deAnalista).not.toContain(">Dejar la observación</button>");
+      await expect(pagina(ind.codigo, { vista: "observaciones", periodo: "2099-T1" })).rejects.toThrow("NO_ENCONTRADA");
+
+      // Quien solo ve el indicador no tiene la pestaña ni la vista.
+      contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "consulta" }));
+      expect(await pagina(ind.codigo, { anio: "2026" })).not.toContain("Observaciones ·");
+      await expect(pagina(ind.codigo, { vista: "observaciones" })).rejects.toThrow("NO_ENCONTRADA");
     }));
 });
