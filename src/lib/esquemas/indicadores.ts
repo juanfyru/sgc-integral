@@ -335,6 +335,19 @@ export const EsquemaObservacion = z.object({ texto: textoDeObservacion("observac
 /** La respuesta a una observación; el `id` de la observación viaja aparte. */
 export const EsquemaRespuesta = z.object({ texto: textoDeObservacion("respuesta") }).strict();
 
+/** El mes que se cierra (spec §9), `AAAA-MM`; la consulta exige que haya terminado y que no esté cerrado. */
+export const EsquemaCierreMes = z
+  .object({
+    mes: z
+      .string({ error: "Elija el mes" })
+      .trim()
+      .regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Elija el mes"),
+  })
+  .strict();
+
+/** La justificación de una reapertura (spec §8.7): de 10 a 1000 caracteres; el `id` de la medición viaja aparte. */
+export const EsquemaReapertura = z.object({ justificacion: textoAcotado("La justificación", 10, 1000) }).strict();
+
 /** Programar la meta de un periodo (spec §8.9); el `id` del indicador viaja aparte. Un máximo vacío es «sin máximo». */
 export const EsquemaMeta = z
   .object({

@@ -95,7 +95,8 @@ function exigirAdministrar(sesion: SujetoPermiso): void {
 // El mes
 // ─────────────────────────────────────────────────────────────────────────────
 
-const PATRON_MES = /^\d{4}-(0[1-9]|1[0-2])$/;
+/** Un mes, `AAAA-MM`. */
+export const PATRON_MES = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 /** El mes en curso en la zona de la instalación (`AAAA-MM`). */
 const mesEnCurso = (ahora: Date, zona: string) => periodoQueContiene("mensual", ahora, zona).clave;
@@ -124,6 +125,12 @@ export function mesesParaCerrar(porOmision: string | null, ahora: Date, zona: st
 
 /** «Marzo de 2026». */
 export const etiquetaDeMes = (mes: string) => conMayuscula(periodoDe(mes, zonaHoraria())?.etiqueta ?? mes);
+
+/** ¿`mes` es un mes (`AAAA-MM`) que ya terminó? Pura. */
+export function esMesTerminado(mes: unknown, ahora: Date): mes is string {
+  const periodo = typeof mes === "string" && PATRON_MES.test(mes) ? periodoDe(mes, zonaHoraria()) : null;
+  return periodo !== null && periodo.hasta.getTime() < ahora.getTime();
+}
 
 /** El mes `AAAA-MM`, si ya terminó; si no, el error de negocio que corresponde. */
 function mesTerminado(mes: unknown, ahora: Date): Periodo {
@@ -192,7 +199,7 @@ async function clasificar(sql: Cliente, hasta: Date, ahora: Date, bloquear: bool
       WHERE id IN (SELECT indicador_id FROM mediciones WHERE hasta <= ${hasta} AND estado <> 'cerrada')
       ORDER BY id FOR SHARE`;
   }
-  const filas = await sql`SELECT m.id, m.indicador_id, m.periodo, m.estado, m.historica, m.no_aplica, m.reportada_en, m.vence_en,
+  const filas = await sql`SELECT m.id, m.indicador_id, m.periodo, m.desde, m.estado, m.historica, m.no_aplica, m.reportada_en, m.vence_en,
       m.resultado_exacto, m.semaforo, m.incumplimiento_repetido, m.analisis, m.causa, m.accion_propuesta,
       i.codigo, p.nombre AS proceso
     FROM mediciones m JOIN indicadores i ON i.id = m.indicador_id JOIN procesos p ON p.id = i.proceso_id
@@ -205,8 +212,8 @@ async function clasificar(sql: Cliente, hasta: Date, ahora: Date, bloquear: bool
     const indicadorId = Number(m.indicador_id);
     if (!versiones.has(indicadorId)) versiones.set(indicadorId, await versionesAprobadas(sql, indicadorId));
     const clave = m.periodo as string;
-    const periodo = periodoDe(clave, zona);
-    const version = periodo ? versionQueRigeEntre(versiones.get(indicadorId)!, periodo, zona) : null;
+    // El inicio guardado del periodo: el mismo que daría `periodoDe`, sin recalcularlo en la zona.
+    const version = versionQueRigeEntre(versiones.get(indicadorId)!, { desde: new Date(m.desde as string) }, zona);
     if (!version || esDeOtraPeriodicidad(clave, version)) continue;
     const historica = m.historica === true;
     if (historica && m.no_aplica !== true && m.reportada_en === null) {

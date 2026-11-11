@@ -26,12 +26,14 @@ import {
   type VersionResumen,
   type VersionVisible,
 } from "@/db/consultas/indicadores/aprobacion";
+import { historialDeCorregidas } from "@/db/consultas/indicadores/cierre";
 import { asegurarMediciones, proximaPorReportar, tablaDelAnio, type FilaDelAnio } from "@/db/consultas/indicadores/mediciones";
 import { metasDelAnio } from "@/db/consultas/indicadores/metas";
 import { observacionesDe, resumenDeObservaciones, type ResumenDeObservaciones } from "@/db/consultas/indicadores/observaciones";
 import { bajaDeIndicador, panelDeAdministracion } from "@/db/consultas/indicadores/operacion";
 import { soportesDeVarias, type Soporte } from "@/db/consultas/indicadores/soportes";
 import { puedeAnalizar, puedeMedir, puedeObservar, puedeRegistrarHistoricos } from "@/lib/alcance";
+import type { EntradaDeHistorial } from "@/lib/indicadores/historial";
 import { periodicidadDe } from "@/lib/indicadores/periodos";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
@@ -315,6 +317,7 @@ function Resultados({
   historicos,
   aviso,
   soportes,
+  cierre,
 }: {
   filas: FilaDelAnio[];
   variables: { letra: string; nombre: string }[];
@@ -331,6 +334,8 @@ function Resultados({
   aviso: { texto: string; exito: boolean } | null;
   /** Los soportes de cada medición del año, solo a quien ve los soportes del indicador (`null` para los demás). */
   soportes: Map<number, Soporte[]> | null;
+  /** Reabrir y cerrar de nuevo (quien administra) y el historial de cada medición corregida (spec §8.7). */
+  cierre: { reabre: boolean; cierraDeNuevo: boolean; historial: Map<number, EntradaDeHistorial[]> };
 }) {
   const enlaceDeAnio = (a: number) => `${rutaDeIndicador(codigo)}?vista=resultados&anio=${a}`;
   const editando = historicos?.editando === true;
@@ -382,7 +387,18 @@ function Resultados({
             volver={enlaceDeAnio(anio)}
           />
         ) : (
-          <TablaDelAnio filas={filas} variables={variables} anio={anio} codigo={codigo} puedeMedir={mide} puedeAnalizar={analiza} soportes={soportes} />
+          <TablaDelAnio
+            filas={filas}
+            variables={variables}
+            anio={anio}
+            codigo={codigo}
+            puedeMedir={mide}
+            puedeAnalizar={analiza}
+            soportes={soportes}
+            puedeReabrir={cierre.reabre}
+            puedeCerrarDeNuevo={cierre.cierraDeNuevo}
+            historial={cierre.historial}
+          />
         )}
       </section>
     </div>
@@ -542,6 +558,8 @@ export default async function PaginaIndicador({ params, searchParams }: { params
   // La columna de soportes, solo a quien los ve (spec §6.4 y §12.3).
   const soportesDelAnio =
     vista === "resultados" ? await soportesDeVarias(sesion, indicador.id, filas.flatMap((f) => (f.medicionId === null ? [] : [f.medicionId]))) : null;
+  // «Corregida» con su historial, a quien ve el indicador (spec §8.7); reabrir, solo con el indicador activo.
+  const historial = await historialDeCorregidas(sesion, indicador.id, filas.flatMap((f) => (f.corregida && f.medicionId !== null ? [f.medicionId] : [])));
   const mide = conResultados && indicador.estado === "activo" && (await puedeMedir(indicador.id, sesion)).puede;
   const pendiente = mide ? await proximaPorReportar(sesion, indicador.id) : null;
   const anios = { anterior: anio > primerAnio ? anio - 1 : null, siguiente: anio < anioEnCurso ? anio + 1 : null };
@@ -654,6 +672,7 @@ export default async function PaginaIndicador({ params, searchParams }: { params
           historicos={registra ? { editables, editando } : null}
           aviso={avisoDeHistoricos(sp.registrados)}
           soportes={soportesDelAnio}
+          cierre={{ reabre: administra && indicador.estado === "activo", cierraDeNuevo: administra, historial }}
         />
       ) : vista === "observaciones" && obs && observaciones ? (
         <VistaObservaciones

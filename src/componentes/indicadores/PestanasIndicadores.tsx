@@ -13,12 +13,13 @@ export type PestanaIndicadores = (typeof PESTANAS)[number]["clave"];
 type Regla = (sujeto: SujetoPermiso, opciones: { aprueba: boolean }) => boolean;
 
 /**
- * Quién ve cada pestaña (spec §6.4). Una pestaña sin regla aún no tiene página: «Cierre del mes» y «Matriz del año»
- * llegan con las suyas. `aprueba` es tener `indicadores.aprobar` (`apruebaFichas`).
+ * Quién ve cada pestaña (spec §6.4). Una pestaña sin regla aún no tiene página: «Matriz del año» llega con la suya.
+ * `aprueba` es tener `indicadores.aprobar` (`apruebaFichas`).
  */
 const QUIEN_LA_VE: Partial<Record<PestanaIndicadores, Regla>> = {
   lista: () => true,
   "por-aprobar": (sujeto, { aprueba }) => aprueba || puede(sujeto, "indicadores.administrar"),
+  cierre: (sujeto) => puede(sujeto, "indicadores.administrar"),
 };
 
 /** Quien aprueba fichas: Gerencia y los líderes; de cuáles, lo dice `puedeAprobarFicha`. */

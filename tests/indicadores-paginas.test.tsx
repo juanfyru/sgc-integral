@@ -50,8 +50,13 @@ vi.mock("@/app/acciones-indicadores", () => ({
   responderAccion: vi.fn(),
   programarMetaAccion: vi.fn(),
   registrarHistoricosAccion: vi.fn(),
+  quitarSoporteAccion: vi.fn(),
+  cerrarMesAccion: vi.fn(),
+  reabrirMedicionAccion: vi.fn(),
+  cerrarDeNuevoAccion: vi.fn(),
 }));
 
+import PaginaCierre from "@/app/(app)/indicadores/cierre/page";
 import PaginaIndicador from "@/app/(app)/indicadores/[codigo]/page";
 import PaginaEditarFicha from "@/app/(app)/indicadores/[codigo]/editar/page";
 import PaginaNuevoIndicador from "@/app/(app)/indicadores/nuevo/page";
@@ -60,7 +65,9 @@ import PaginaPorAprobar from "@/app/(app)/indicadores/por-aprobar/page";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { aprobarFichas, enviarAAprobacion } from "@/db/consultas/indicadores/aprobacion";
+import { cerrarMes, reabrirMedicion } from "@/db/consultas/indicadores/cierre";
 import { crearIndicador } from "@/db/consultas/indicadores/fichas";
+import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
 import { descartarIndicador, retirar } from "@/db/consultas/indicadores/operacion";
 import type { DatosFicha } from "@/lib/esquemas/indicadores";
 import type { SesionValida } from "@/lib/sesion";
@@ -360,4 +367,85 @@ describe("las páginas de la ficha de indicador", () => {
       expect(deAdmin).toContain("Enviadas, esperando aprobación");
       expect(deAdmin).not.toContain("Le toca aprobar");
     }));
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tarea 12: el cierre del mes y la reapertura
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("el cierre del mes", () => {
+  /** Un indicador mensual que se mide desde enero de 2025: un mes que el cierre por omisión no propone. */
+  async function deEnero2025(tx: TransactionSql) {
+    const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+    const ind = await indicadorDePrueba(tx, { inicioMedicion: "2025-01", aprobadaEn: new Date("2024-12-15T15:00:00Z"), mide: [mide.usuarioId] });
+    await asegurarMediciones({ sql: tx, indicadorId: ind.id });
+    const [enero] = await tx`SELECT id FROM mediciones WHERE indicador_id = ${ind.id} AND periodo = '2025-01'`;
+    return { mide, ind, enero: Number(enero.id) };
+  }
+  const cierre = async (sp: Record<string, string> = {}) => renderToStaticMarkup(await PaginaCierre({ searchParams: Promise.resolve(sp) }));
+
+  it("/indicadores/cierre: solo quien administra; el resumen del mes elegido, su confirmación y los cierres anteriores", () =>
+    enTransaccion(async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const { mide, ind } = await deEnero2025(tx);
+      for (const rol of ["lider_proceso", "gerencia", "consulta"] as const) {
+        contexto.sesion = valida(await usuarioDePrueba(tx, { rol }));
+        await expect(cierre()).rejects.toThrow("NO_ENCONTRADA");
+      }
+
+      contexto.sesion = valida(admin);
+      const html = await cierre({ mes: "2025-01" });
+      expect(html).toMatch(/aria-current="page"[^>]*>Cierre del mes</);
+      expect(html).toContain(">Resumen de enero de 2025</h2>");
+      // Quedará sin dato, con quién debía medirla; y la confirmación sin clave.
+      expect(html).toContain(ind.codigo);
+      expect(html).toContain(mide.nombre);
+      expect(html).toMatch(/<select[^>]*name="mes"/);
+      expect(html).toContain('<option value="2025-01" selected="">Enero de 2025</option>');
+      expect(html).toMatch(/aria-haspopup="dialog"[^>]*>Cerrar enero de 2025</);
+      expect(html).toContain("dentro de su plazo de reporte");
+      expect(html).toContain("históricos sin registrar");
+      for (const raro of ["2025-13", "2025-1", "abc", "2099-01"]) await expect(cierre({ mes: raro })).rejects.toThrow("NO_ENCONTRADA");
+
+      const { cerradas } = await cerrarMes(admin, "2025-01", { sql: tx });
+      const cerrado = await cierre({ mes: "2025-01", cerrado: "2025-01", cerradas: String(cerradas) });
+      expect(cerrado).toContain(`Se cerró enero de 2025: ${cerradas === 1 ? "1 medición cerrada" : `${cerradas} mediciones cerradas`}.`);
+      expect(cerrado).toContain("Enero de 2025 ya está cerrado.");
+      expect(cerrado).not.toContain(">Cerrar enero de 2025<");
+      expect(cerrado).toContain(">Cierres anteriores</h2>");
+      expect(cerrado).toMatch(new RegExp(`Enero de 2025</td><td[^>]*>${admin.nombre}</td>`));
+      for (const raro of [{ cerrado: "2025-13", cerradas: "1" }, { cerrado: "2025-01", cerradas: "x" }]) {
+        expect(await cierre(raro)).not.toContain("Se cerró");
+      }
+    }), 20_000);
+
+  it("/indicadores/[codigo]: quien administra reabre lo cerrado y cierra de nuevo lo reabierto; «Corregida» lleva su historial", () =>
+    enTransaccion(async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const { mide, ind, enero } = await deEnero2025(tx);
+      await reportar(mide, { medicionId: enero, valores: { A: "9", B: "10" }, parcial: false, confirmado: true }, { sql: tx });
+      await cerrarMes(admin, "2025-01", { sql: tx });
+      const de2025 = () => pagina(ind.codigo, { vista: "resultados", anio: "2025" });
+
+      contexto.sesion = valida(admin);
+      expect(await de2025()).toMatch(/aria-haspopup="dialog"[^>]*>Reabrir<span class="sr-only"> Enero de 2025<\/span>/);
+      contexto.sesion = valida(mide);
+      expect(await de2025()).not.toContain(">Reabrir<");
+
+      await reabrirMedicion(admin, { medicionId: enero, justificacion: "El dato venía del informe equivocado" }, { sql: tx });
+      contexto.sesion = valida(admin);
+      const reabierta = await de2025();
+      expect(reabierta).not.toContain(">Reabrir<");
+      expect(reabierta).toMatch(/>Cerrar de nuevo<span class="sr-only"> Enero de 2025<\/span>/);
+      expect(reabierta).toContain(">Corregida<");
+      expect(reabierta).toContain("Reabrió");
+      expect(reabierta).toContain("El dato venía del informe equivocado");
+      expect(reabierta).toContain("Estado: Cerrada → Reportada");
+
+      // El historial lo ve quien ve el indicador; «Cerrar de nuevo», solo quien administra.
+      contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "consulta" }));
+      const ajena = await de2025();
+      expect(ajena).toContain("El dato venía del informe equivocado");
+      expect(ajena).not.toContain(">Cerrar de nuevo<");
+    }), 20_000);
 });

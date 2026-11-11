@@ -1,16 +1,45 @@
 import Link from "next/link";
+import { CerrarDeNuevo, DialogoReabrir } from "@/componentes/indicadores/cierre/DialogoReabrir";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { celda, celdaNumerica, TablaDatos, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
 import type { FilaDelAnio } from "@/db/consultas/indicadores/mediciones";
 import type { Soporte } from "@/db/consultas/indicadores/soportes";
 import { ETIQUETA_ESTADO } from "@/lib/indicadores/estados";
+import type { EntradaDeHistorial } from "@/lib/indicadores/historial";
 import { enlaceDeSoporte } from "@/lib/indicadores/soportes";
 import { ETIQUETA_SEMAFORO } from "@/lib/indicadores/tipos";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 const ENLACE = `rounded-sm text-marca underline-offset-2 hover:underline ${FOCO}`;
 
-function Estado({ f }: { f: FilaDelAnio }) {
+/** «Corregida» con su historial (spec §8.7): qué había, qué quedó, quién, cuándo y por qué, desde la reapertura. */
+function Historial({ etiqueta, entradas }: { etiqueta: string; entradas: EntradaDeHistorial[] }) {
+  return (
+    <details className="max-w-xs text-xs">
+      <summary className={`cursor-pointer rounded-sm text-marca underline-offset-2 hover:underline ${FOCO}`}>
+        Ver el historial<span className="sr-only">{` de ${etiqueta}`}</span>
+      </summary>
+      <ol className="mt-1 flex list-none flex-col gap-2">
+        {entradas.map((e) => (
+          <li key={e.id} className="flex flex-col gap-0.5 break-words">
+            <span>
+              <b>{e.que}</b>
+              {` · ${e.quien} · ${e.cuando}`}
+            </span>
+            {e.porque ? <span>{`Por qué: ${e.porque}`}</span> : null}
+            {e.cambios.map((c, i) => (
+              <span key={i} className="text-muted-foreground">
+                {c}
+              </span>
+            ))}
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
+function Estado({ f, historial }: { f: FilaDelAnio; historial: EntradaDeHistorial[] | null }) {
   const marcas = [
     f.historica ? "Registro histórico" : null,
     f.requiereAccion ? "Requiere acción de mejora" : null,
@@ -44,6 +73,7 @@ function Estado({ f }: { f: FilaDelAnio }) {
           {m}
         </Insignia>
       ))}
+      {f.corregida && historial && historial.length > 0 ? <Historial etiqueta={f.etiqueta} entradas={historial} /> : null}
     </div>
   );
 }
@@ -90,7 +120,8 @@ function ListaDeSoportes({ codigo, soportes }: { codigo: string; soportes: Sopor
  * columna «Cumple», el estado con sus marcas y el análisis; los soportes, en su columna, solo para quien los ve (`soportes`
  * es `null` para los demás, y entonces no hay columna). Quien puede medir tiene en cada periodo abierto
  * el enlace para reportarlo o corregirlo (un histórico se registra en el modo edición, spec §8.8); quien puede analizar,
- * el de escribir o editar el análisis de lo que tiene resultado.
+ * el de escribir o editar el análisis de lo que tiene resultado. Quien administra reabre una cerrada (`puedeReabrir`) y
+ * cierra de nuevo una reabierta (`puedeCerrarDeNuevo`, spec §8.7); una corregida lleva su historial (`historial`).
  */
 export function TablaDelAnio({
   filas,
@@ -100,6 +131,9 @@ export function TablaDelAnio({
   puedeMedir,
   puedeAnalizar = false,
   soportes = null,
+  puedeReabrir = false,
+  puedeCerrarDeNuevo = false,
+  historial = null,
 }: {
   filas: FilaDelAnio[];
   variables: { letra: string; nombre: string }[];
@@ -109,7 +143,12 @@ export function TablaDelAnio({
   puedeAnalizar?: boolean;
   /** Los soportes de cada medición, solo a quien ve los soportes del indicador. */
   soportes?: Map<number, Soporte[]> | null;
+  puedeReabrir?: boolean;
+  puedeCerrarDeNuevo?: boolean;
+  /** El historial de cada medición corregida, por medición. */
+  historial?: Map<number, EntradaDeHistorial[]> | null;
 }) {
+  const conAcciones = puedeMedir || puedeAnalizar || puedeReabrir || puedeCerrarDeNuevo;
   const columnas: ColumnaTabla[] = [
     { clave: "periodo", etiqueta: "Periodo" },
     ...variables.map((v) => ({ clave: `var-${v.letra}`, etiqueta: v.nombre, numerica: true })),
@@ -119,7 +158,7 @@ export function TablaDelAnio({
     { clave: "estado", etiqueta: "Estado" },
     { clave: "analisis", etiqueta: "Análisis" },
     ...(soportes ? [{ clave: "soportes", etiqueta: "Soportes" }] : []),
-    ...(puedeMedir || puedeAnalizar ? [{ clave: "acciones", etiqueta: "Acciones", oculta: true }] : []),
+    ...(conAcciones ? [{ clave: "acciones", etiqueta: "Acciones", oculta: true }] : []),
   ];
   return (
     <TablaDatos titulo={`Resultados de ${anio}`} columnas={columnas} filas={filas.length} vacio={`No hay periodos que medir en ${anio}.`}>
@@ -145,6 +184,9 @@ export function TablaDelAnio({
         const reportable = puedeMedir && f.medicionId !== null && f.estado !== "cerrada" && !f.historica;
         const analizable = puedeAnalizar && f.medicionId !== null && f.estado !== "cerrada" && f.resultado !== null && !f.noAplica;
         const conAnalisis = f.analisis !== null || f.causa !== null || f.accionPropuesta !== null;
+        const reabrible = puedeReabrir && f.medicionId !== null && f.estado === "cerrada";
+        // Corregida y sin cerrar: solo la reapertura marca «corregida».
+        const reabierta = puedeCerrarDeNuevo && f.medicionId !== null && f.corregida && f.estado !== "cerrada";
         return (
           <tr key={f.periodo}>
             {cabecera}
@@ -157,7 +199,7 @@ export function TablaDelAnio({
             <td className={`${celdaNumerica} whitespace-nowrap`}>{f.meta}</td>
             <td className={celda}>{f.cumple === null ? "—" : f.cumple ? "Sí" : "No"}</td>
             <td className={celda}>
-              <Estado f={f} />
+              <Estado f={f} historial={f.medicionId === null ? null : (historial?.get(f.medicionId) ?? null)} />
             </td>
             <td className={`${celda} min-w-48`}>
               <Analisis f={f} />
@@ -167,7 +209,7 @@ export function TablaDelAnio({
                 <ListaDeSoportes codigo={codigo} soportes={f.medicionId === null ? [] : (soportes.get(f.medicionId) ?? [])} />
               </td>
             ) : null}
-            {puedeMedir || puedeAnalizar ? (
+            {conAcciones ? (
               <td className={celda}>
                 <div className="flex flex-col items-start gap-1">
                   {reportable ? (
@@ -182,6 +224,8 @@ export function TablaDelAnio({
                       <span className="sr-only">{` ${f.etiqueta}`}</span>
                     </Link>
                   ) : null}
+                  {reabrible ? <DialogoReabrir medicionId={f.medicionId!} codigo={codigo} etiqueta={f.etiqueta} /> : null}
+                  {reabierta ? <CerrarDeNuevo medicionId={f.medicionId!} etiqueta={f.etiqueta} /> : null}
                 </div>
               </td>
             ) : null}

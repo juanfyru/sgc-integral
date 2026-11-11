@@ -8,6 +8,7 @@ import { idNumerico, mutacion, valoresDeFormulario, type EstadoAccion } from "@/
 import { ErrorFirma } from "@/db/consultas/flujo/contrato";
 import { analizar } from "@/db/consultas/indicadores/analisis";
 import { aprobarFichas, descartarBorrador, devolverFicha, enviarAAprobacion } from "@/db/consultas/indicadores/aprobacion";
+import { cerrarDeNuevo, cerrarMes, reabrirMedicion } from "@/db/consultas/indicadores/cierre";
 import { abrirCambio, crearIndicador, guardarBorrador } from "@/db/consultas/indicadores/fichas";
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
 import { marcarNoAplica, quitarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
@@ -27,6 +28,7 @@ import { EsquemaSinDatos } from "@/lib/esquemas/documentos";
 import {
   analisisDelFormulario,
   EsquemaAprobarFichas,
+  EsquemaCierreMes,
   EsquemaDesignar,
   EsquemaDevolverFicha,
   EsquemaDuplicar,
@@ -38,6 +40,7 @@ import {
   EsquemaNoAplica,
   EsquemaObservacion,
   EsquemaOperacion,
+  EsquemaReapertura,
   EsquemaReporte,
   EsquemaRespuesta,
   juntarHistoricos,
@@ -314,5 +317,33 @@ export async function borrarIndicadorAccion(_prev: EstadoAccion, formData: FormD
     parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
     await borrarIndicador(sesion, idNumerico(formData, "id"));
     return "/indicadores";
+  });
+}
+
+/**
+ * Cierra el mes elegido (spec §9), sin clave (F14-DC9), y vuelve a «Cierre del mes» con cuántas mediciones cerró
+ * (`cerrado=AAAA-MM&cerradas=N`).
+ */
+export async function cerrarMesAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    const { mes } = parsearFormulario(formData, EsquemaCierreMes);
+    const { cerradas } = await cerrarMes(sesion, mes);
+    return `/indicadores/cierre?cerrado=${mes}&cerradas=${cerradas}`;
+  });
+}
+
+/** `id` es el de la medición cerrada. La reabre con justificación y sin clave; no navega: la tabla se repinta. */
+export async function reabrirMedicionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    const { justificacion } = parsearFormulario(formData, EsquemaReapertura, { omitir: ["id"] });
+    await reabrirMedicion(sesion, { medicionId: idNumerico(formData, "id"), justificacion });
+  });
+}
+
+/** `id` es el de la medición reabierta. Vuelve a cerrada con el último cierre; no navega. */
+export async function cerrarDeNuevoAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
+    await cerrarDeNuevo(sesion, idNumerico(formData, "id"));
   });
 }
