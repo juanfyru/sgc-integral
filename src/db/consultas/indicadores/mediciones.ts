@@ -358,12 +358,14 @@ const objeto = (v: unknown): Record<string, unknown> =>
  *
  * Cuenta como dato lo reportado (`reportada_en`) o «no aplica». `c.detalle` se guarda en el evento; su `antes` y su
  * `despues` (lo que quien llama cambió: valores, «no aplica», análisis) se completan con el resultado, el semáforo y el
- * estado, y cuentan para saber si algo cambió.
+ * estado, y cuentan para saber si algo cambió. `c.estadoAnterior` es el estado verdadero de antes cuando quien llama ya
+ * lo cambió con un `UPDATE` provisional (la reapertura saca la medición de `cerrada`): va al `antes.estado` del evento;
+ * las columnas se siguen comparando contra la fila tal como está.
  */
 export async function recalcularMedicion(
   tx: TransactionSql,
   medicionId: number,
-  c: { ahora: Date; actorId: number | null; evento: TipoEvento; detalle?: Record<string, unknown> },
+  c: { ahora: Date; actorId: number | null; evento: TipoEvento; detalle?: Record<string, unknown>; estadoAnterior?: EstadoMedicion },
 ): Promise<Recalculo> {
   const zona = zonaHoraria();
   const [m] = await tx`SELECT m.*, i.soporte_obligatorio FROM mediciones m JOIN indicadores i ON i.id = m.indicador_id
@@ -444,7 +446,12 @@ export async function recalcularMedicion(
 
   const { antes: antesDe, despues: despuesDe, ...resto } = c.detalle ?? {};
   const resultadoAntes = m.resultado_exacto ? decimalCorto(deTexto(m.resultado_exacto as string)) : null;
-  const antes = { ...objeto(antesDe), resultado: resultadoAntes, semaforo: (m.semaforo as Semaforo | null) ?? null, estado: m.estado as string };
+  const antes = {
+    ...objeto(antesDe),
+    resultado: resultadoAntes,
+    semaforo: (m.semaforo as Semaforo | null) ?? null,
+    estado: c.estadoAnterior ?? (m.estado as string),
+  };
   const despues = { ...objeto(despuesDe), resultado: resultado ? decimalCorto(resultado) : null, semaforo, estado };
   const cambio = columnasCambiaron || JSON.stringify(antes) !== JSON.stringify(despues);
   const r: Recalculo = {

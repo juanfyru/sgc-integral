@@ -9,6 +9,7 @@ import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import { Dialogo } from "@/componentes/ui/Dialogo";
 import { useTituloAlDesaparecer } from "@/componentes/ui/foco";
+import { JUSTIFICACION_MAXIMA, JUSTIFICACION_MINIMA } from "@/lib/indicadores/cierre";
 
 /**
  * «Reabrir» una medición cerrada (spec §8.7): pide la justificación y no la clave. Tras reabrir, la fila cambia y este
@@ -42,11 +43,16 @@ export function DialogoReabrir({ medicionId, codigo, etiqueta }: { medicionId: n
               La medición se abre para que quien mide la corrija o la reporte tarde, y se le avisa. Queda marcada «Corregida», con esta
               justificación en su historial, y se cierra otra vez con el siguiente cierre del mes o con «Cerrar de nuevo». No pide clave.
             </p>
-            <Campo etiqueta="Justificación" nombre="justificacion" id={`reabrir-${medicionId}`} ayuda="Entre 10 y 1000 caracteres. La ve quien ve el indicador.">
+            <Campo
+              etiqueta="Justificación"
+              nombre="justificacion"
+              id={`reabrir-${medicionId}`}
+              ayuda={`Entre ${JUSTIFICACION_MINIMA} y ${JUSTIFICACION_MAXIMA} caracteres. La ve quien ve el indicador.`}
+            >
               <textarea
                 required
-                minLength={10}
-                maxLength={1000}
+                minLength={JUSTIFICACION_MINIMA}
+                maxLength={JUSTIFICACION_MAXIMA}
                 rows={4}
                 defaultValue={typeof previa === "string" ? previa : ""}
                 className={`${claseControl} w-full`}

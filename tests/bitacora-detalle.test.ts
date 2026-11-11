@@ -813,6 +813,10 @@ describe("la medición de un indicador", () => {
     expect(frase("medicion_reabierta", { ...de, justificacion: "El dato venía de otro informe", propioMedidor: true })).toBe(
       "Reabrió SGC-IND-01, marzo de 2026, que también mide: El dato venía de otro informe",
     );
+    // Quien reabre y mide solo como respaldo (nadie más podía) no «también mide».
+    expect(frase("medicion_reabierta", { ...de, justificacion: "El dato venía de otro informe", sinMedidor: true })).toBe(
+      "Reabrió SGC-IND-01, marzo de 2026: El dato venía de otro informe",
+    );
     expect(frase("medicion_cerrada_de_nuevo", { ...de, mes: "2026-04", cierreId: 4 })).toBe(
       "Cerró de nuevo SGC-IND-01, marzo de 2026 (cierre de abril de 2026)",
     );

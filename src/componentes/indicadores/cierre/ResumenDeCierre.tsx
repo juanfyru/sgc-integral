@@ -8,9 +8,10 @@ import { ErrorAccion } from "@/componentes/tramites/AccionesSolicitud";
 import { Boton } from "@/componentes/ui/Boton";
 import { Dialogo } from "@/componentes/ui/Dialogo";
 import { useTituloAlDesaparecer } from "@/componentes/ui/foco";
-import { celda, TablaDatos } from "@/componentes/ui/TablaDatos";
+import { celda, celdaNumerica, TablaDatos } from "@/componentes/ui/TablaDatos";
 import { TarjetaCifra } from "@/componentes/ui/TarjetaCifra";
 import type { ResumenDeCierre as Resumen } from "@/db/consultas/indicadores/cierre";
+import { fraseDelCierre } from "@/lib/indicadores/cierre";
 import { cuenta } from "@/lib/plural";
 
 const COLUMNAS_SIN_DATO = [
@@ -18,6 +19,14 @@ const COLUMNAS_SIN_DATO = [
   { clave: "indicador", etiqueta: "Indicador" },
   { clave: "periodo", etiqueta: "Periodo" },
   { clave: "quien", etiqueta: "Debía medirla" },
+];
+const COLUMNAS_POR_PROCESO = [
+  { clave: "proceso", etiqueta: "Proceso" },
+  { clave: "reportadas", etiqueta: "Reportadas", numerica: true },
+  { clave: "sinDato", etiqueta: "Sin dato", numerica: true },
+  { clave: "noAplica", etiqueta: "No aplica", numerica: true },
+  { clave: "sinAnalisis", etiqueta: "Sin análisis", numerica: true },
+  { clave: "observaciones", etiqueta: "Observaciones sin respuesta", numerica: true },
 ];
 
 /** La confirmación del cierre (spec §9.3): sin clave, con lo que va a pasar. */
@@ -41,11 +50,7 @@ function ConfirmarCierre({ resumen, mes }: { resumen: Resumen; mes: string }) {
             <p aria-hidden="true" className="font-semibold">
               {titulo}
             </p>
-            <p className="text-sm">
-              {resumen.aCerrar === 0
-                ? "No hay mediciones que cerrar: el mes queda cerrado igual y el siguiente cierre empieza después de él."
-                : `Se cerrarán ${cuenta(resumen.aCerrar, "medición", "mediciones")}: ${resumen.reportadas} reportadas, ${resumen.sinDato.length} sin dato, ${resumen.noAplica} «No aplica» y ${resumen.sinAnalisis} sin análisis.`}
-            </p>
+            <p className="text-sm">{fraseDelCierre({ ...resumen, sinDato: resumen.sinDato.length })}</p>
             <p className="text-sm text-muted-foreground">
               Después del cierre, los datos, el resultado, el análisis y los soportes de esas mediciones no cambian: para corregir una hay que
               reabrirla con una justificación. Las observaciones se siguen admitiendo. No pide clave.
@@ -67,9 +72,9 @@ function ConfirmarCierre({ resumen, mes }: { resumen: Resumen; mes: string }) {
 }
 
 /**
- * El resumen previo del cierre (spec §9.2): cuántas mediciones se cerrarán y cómo, las que quedarán sin dato con quién
- * debía medirlas (por proceso), las observaciones sin respuesta y los dos grupos que no se cierran (F14-DC3); al final,
- * la confirmación. `mes` es el mes en palabras, en minúscula («marzo de 2026»); `periodos`, cada periodo en palabras.
+ * El resumen previo del cierre (spec §9.2): cuántas mediciones se cerrarán y cómo, en total y por proceso, las que
+ * quedarán sin dato con quién debía medirlas, las observaciones sin respuesta y los dos grupos que no se cierran
+ * (F14-DC3); al final, la confirmación. `mes` es el mes en palabras, en minúscula («marzo de 2026»); `periodos`, cada periodo en palabras.
  */
 export function ResumenDeCierre({ resumen, mes, periodos }: { resumen: Resumen; mes: string; periodos: Readonly<Record<string, string>> }) {
   const r = resumen;
@@ -88,6 +93,31 @@ export function ResumenDeCierre({ resumen, mes, periodos }: { resumen: Resumen; 
         <TarjetaCifra etiqueta="No aplica" valor={r.noAplica} />
         <TarjetaCifra etiqueta="Sin análisis" valor={r.sinAnalisis} detalle="Con datos y sin el análisis exigido" estado={r.sinAnalisis > 0 ? "atencion" : undefined} />
       </div>
+
+      <section aria-labelledby="cierre-por-proceso" className="flex min-w-0 flex-col gap-2">
+        <h3 id="cierre-por-proceso" className="font-semibold">
+          Por proceso
+        </h3>
+        <TablaDatos
+          titulo="El resumen por proceso"
+          columnas={COLUMNAS_POR_PROCESO}
+          filas={r.porProceso.length}
+          vacio="Ningún proceso tiene mediciones que cerrar ni observaciones sin respuesta."
+        >
+          {r.porProceso.map((p) => (
+            <tr key={p.proceso}>
+              <th scope="row" className={`${celda} text-left font-medium`}>
+                {p.proceso}
+              </th>
+              <td className={celdaNumerica}>{p.reportadas}</td>
+              <td className={celdaNumerica}>{p.sinDato}</td>
+              <td className={celdaNumerica}>{p.noAplica}</td>
+              <td className={celdaNumerica}>{p.sinAnalisis}</td>
+              <td className={celdaNumerica}>{p.observacionesSinRespuesta}</td>
+            </tr>
+          ))}
+        </TablaDatos>
+      </section>
 
       <section aria-labelledby="cierre-sin-dato" className="flex min-w-0 flex-col gap-2">
         <h3 id="cierre-sin-dato" className="font-semibold">

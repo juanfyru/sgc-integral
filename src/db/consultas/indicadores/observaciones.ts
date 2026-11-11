@@ -207,6 +207,12 @@ export async function resumenDeObservaciones(sesion: SujetoVisibilidad, indicado
   };
 }
 
+/** Una observación (`o`, de la medición `m`) sin respuesta; con `hasta`, de una medición cuyo periodo terminó entonces o antes. */
+const sinResponder = (sql: Cliente, filtro: { hasta?: Date }) =>
+  sql`o.responde_a IS NULL
+    AND NOT EXISTS (SELECT 1 FROM medicion_observaciones r WHERE r.responde_a = o.id)
+    ${filtro.hasta ? sql`AND m.hasta <= ${filtro.hasta}` : sql``}`;
+
 /**
  * Cuántas observaciones siguen sin respuesta, en todo el sistema (spec §8.6 y §9: el resumen del cierre del mes). Con
  * `hasta`, solo las de mediciones cuyo periodo terminó entonces o antes.
@@ -214,8 +220,16 @@ export async function resumenDeObservaciones(sesion: SujetoVisibilidad, indicado
 export async function sinRespuesta(sql: Cliente, filtro: { hasta?: Date }): Promise<number> {
   const [f] = await sql`SELECT count(*)::int AS n
     FROM medicion_observaciones o JOIN mediciones m ON m.id = o.medicion_id
-    WHERE o.responde_a IS NULL
-      AND NOT EXISTS (SELECT 1 FROM medicion_observaciones r WHERE r.responde_a = o.id)
-      ${filtro.hasta ? sql`AND m.hasta <= ${filtro.hasta}` : sql``}`;
+    WHERE ${sinResponder(sql, filtro)}`;
   return Number(f.n);
+}
+
+/** Lo mismo que `sinRespuesta`, por proceso del indicador (spec §9.2); solo los procesos que tienen alguna. */
+export async function sinRespuestaPorProceso(sql: Cliente, filtro: { hasta?: Date }): Promise<{ procesoId: number; proceso: string; n: number }[]> {
+  const filas = await sql`SELECT p.id, p.nombre, count(*)::int AS n
+    FROM medicion_observaciones o JOIN mediciones m ON m.id = o.medicion_id
+    JOIN indicadores i ON i.id = m.indicador_id JOIN procesos p ON p.id = i.proceso_id
+    WHERE ${sinResponder(sql, filtro)}
+    GROUP BY p.id, p.nombre`;
+  return filas.map((f) => ({ procesoId: Number(f.id), proceso: f.nombre as string, n: Number(f.n) }));
 }

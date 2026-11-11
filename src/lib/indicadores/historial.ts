@@ -1,7 +1,7 @@
 /**
  * El historial de una medición corregida (spec 14 §8.7): lo que la tabla del año muestra bajo «Corregida», desde su
  * primera reapertura: qué hizo cada quien, cuándo, por qué y qué había y qué quedó. Funciones puras sobre los eventos de
- * `medicion_eventos`; los soportes no entran (spec §6.4: el historial de la medición se ve sin los soportes).
+ * `medicion_eventos`; los de los soportes, solo para quien ve los soportes (spec §6.4).
  */
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { fechaHoraLarga, zonaHoraria } from "@/lib/zona-horaria";
@@ -59,8 +59,11 @@ function queHizo(e: EventoDeMedicion): string {
       return "Cambió la meta";
     case "cierre":
       return e.detalle.deNuevo === true ? "Cerró de nuevo" : `Cerró con el cierre de ${mesEnPalabras(e.detalle.mes)}`;
-    case "soporte":
-      return "Cambió los soportes";
+    case "soporte": {
+      const nombre = texto(e.detalle.nombre);
+      const que = e.detalle.accion === "subido" ? "Subió" : e.detalle.accion === "quitado" ? "Quitó" : "Cambió";
+      return nombre ? `${que} el soporte «${nombre}»` : `${que} un soporte`;
+    }
     case "recalculo":
       return "Se recalculó";
   }
@@ -70,8 +73,6 @@ function queHizo(e: EventoDeMedicion): string {
 function cambiosDe(e: EventoDeMedicion, unidad: Unidad, nombres: Readonly<Record<string, string>>): string[] {
   const antes = objeto(e.detalle.antes);
   const despues = objeto(e.detalle.despues);
-  // La reapertura saca la medición de «cerrada» antes de recalcular: el estado de antes es el del cierre.
-  if (e.tipo === "reapertura") return [`Estado: Cerrada → ${ESTADO[String(despues.estado)] ?? String(despues.estado ?? "?")}`];
   const salida: string[] = [];
   const cambio = (etiqueta: string, a: string | null, b: string | null, vacio: string) => salida.push(`${etiqueta}: ${a ?? vacio} → ${b ?? vacio}`);
   const letras = [...new Set([...Object.keys(antes), ...Object.keys(despues)])].filter((k) => /^[A-Z]$/.test(k)).sort();
@@ -80,6 +81,10 @@ function cambiosDe(e: EventoDeMedicion, unidad: Unidad, nombres: Readonly<Record
     cambio("No aplica", antes.noAplica === true ? "Sí" : "No", despues.noAplica === true ? "Sí" : "No", "No");
   }
   if (distinto(antes.motivo, despues.motivo)) cambio("Motivo", texto(antes.motivo), texto(despues.motivo), "—");
+  if (distinto(antes.soportes, despues.soportes)) {
+    const n = (v: unknown) => (typeof v === "number" ? String(v) : null);
+    cambio("Soportes", n(antes.soportes), n(despues.soportes), "—");
+  }
   if (distinto(antes.meta, despues.meta) || distinto(antes.metaMax, despues.metaMax)) {
     // «90 %» o, en un rango, «98 a 100 %».
     const meta = (m: Record<string, unknown>) => {
@@ -105,18 +110,19 @@ function cambiosDe(e: EventoDeMedicion, unidad: Unidad, nombres: Readonly<Record
 }
 
 /**
- * El historial de la medición desde su primera reapertura, sin los soportes, de lo más antiguo a lo más reciente; vacío
- * si nunca se reabrió. `eventos` van en el orden en que se registraron.
+ * El historial de la medición desde su primera reapertura, de lo más antiguo a lo más reciente; vacío si nunca se
+ * reabrió. Los eventos de los soportes, solo con `conSoportes` (quien ve los soportes). `eventos` van en el orden en que
+ * se registraron.
  */
 export function historialDeCorreccion(
   eventos: readonly EventoDeMedicion[],
-  c: { unidad: Unidad; nombres: Readonly<Record<string, string>> },
+  c: { unidad: Unidad; nombres: Readonly<Record<string, string>>; conSoportes: boolean },
 ): EntradaDeHistorial[] {
   const desde = eventos.findIndex((e) => e.tipo === "reapertura");
   if (desde < 0) return [];
   return eventos
     .slice(desde)
-    .filter((e) => e.tipo !== "soporte")
+    .filter((e) => c.conSoportes || e.tipo !== "soporte")
     .map((e) => ({
       id: e.id,
       que: queHizo(e),

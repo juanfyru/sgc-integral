@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { JUSTIFICACION_MAXIMA, JUSTIFICACION_MINIMA, PATRON_MES } from "@/lib/indicadores/cierre";
 import { FACTORES_TASA } from "@/lib/indicadores/formula/formas";
 import { fraccion } from "@/lib/indicadores/formula/fraccion";
 import { periodicidadDe } from "@/lib/indicadores/periodos";
@@ -341,12 +342,14 @@ export const EsquemaCierreMes = z
     mes: z
       .string({ error: "Elija el mes" })
       .trim()
-      .regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Elija el mes"),
+      .regex(PATRON_MES, "Elija el mes"),
   })
   .strict();
 
 /** La justificación de una reapertura (spec §8.7): de 10 a 1000 caracteres; el `id` de la medición viaja aparte. */
-export const EsquemaReapertura = z.object({ justificacion: textoAcotado("La justificación", 10, 1000) }).strict();
+export const EsquemaReapertura = z
+  .object({ justificacion: textoAcotado("La justificación", JUSTIFICACION_MINIMA, JUSTIFICACION_MAXIMA) })
+  .strict();
 
 /** Programar la meta de un periodo (spec §8.9); el `id` del indicador viaja aparte. Un máximo vacío es «sin máximo». */
 export const EsquemaMeta = z

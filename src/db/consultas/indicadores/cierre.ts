@@ -22,11 +22,12 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { avisarA } from "@/db/consultas/avisos-vencimiento";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { puedeMedir, puedeVerIndicador, responsablesDeMedir, type SujetoVisibilidad } from "@/lib/alcance";
+import { puedeMedir, puedeVerIndicador, puedeVerSoportes, responsablesDeMedir, type SujetoVisibilidad } from "@/lib/alcance";
 import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
 import { analisisCompleto, analisisExigido } from "@/lib/indicadores/estados";
+import { JUSTIFICACION_MAXIMA, JUSTIFICACION_MINIMA, mesPorOmisionDe, PATRON_MES } from "@/lib/indicadores/cierre";
 import { historialDeCorreccion, type EntradaDeHistorial, type EventoDeMedicion } from "@/lib/indicadores/historial";
-import { anterior, periodoQueContiene, versionQueRigeEntre } from "@/lib/indicadores/periodos";
+import { versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import { ErrorIndicador, type Semaforo, type TipoEvento } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede, type SujetoPermiso } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
@@ -34,7 +35,6 @@ import { zonaHoraria } from "@/lib/zona-horaria";
 import {
   analisisDe,
   asegurarMediciones,
-  conMayuscula,
   contextoDeMedicion,
   esDeOtraPeriodicidad,
   NO_EXISTE,
@@ -43,7 +43,7 @@ import {
   type CondicionDePersona,
   type VersionDeCalculo,
 } from "./mediciones";
-import { sinRespuesta } from "./observaciones";
+import { sinRespuestaPorProceso } from "./observaciones";
 
 export type { EntradaDeHistorial } from "@/lib/indicadores/historial";
 
@@ -55,9 +55,15 @@ const YA_CERRADO = "Ese mes ya está cerrado";
 const SOLO_CERRADA = "Solo se reabre una medición cerrada";
 const NO_REABIERTA = "Solo se cierra de nuevo una medición reabierta";
 
-/** Lo mínimo y lo máximo de la justificación de una reapertura (spec §8.7). */
-export const JUSTIFICACION_MINIMA = 10;
-export const JUSTIFICACION_MAXIMA = 1000;
+/** Las cuentas de un proceso en el resumen (spec §9.2). */
+export type CuentasDeProceso = {
+  proceso: string;
+  reportadas: number;
+  sinDato: number;
+  noAplica: number;
+  sinAnalisis: number;
+  observacionesSinRespuesta: number;
+};
 
 export type ResumenDeCierre = {
   mes: string;
@@ -73,6 +79,8 @@ export type ResumenDeCierre = {
   enPlazo: number;
   /** No se cierran: históricos sin registrar (F14-DC3). */
   historicosSinRegistrar: number;
+  /** Las mismas cuentas por proceso, ordenadas por su nombre; sin los procesos que quedan en cero. */
+  porProceso: CuentasDeProceso[];
 };
 
 /** Lo que guarda `cierres_indicadores.resumen`: las cuentas del resumen previo, tal como quedaron al cerrar. */
@@ -85,6 +93,7 @@ type Cuentas = {
   observacionesSinRespuesta: number;
   enPlazo: number;
   historicosSinRegistrar: number;
+  porProceso: CuentasDeProceso[];
 };
 
 function exigirAdministrar(sesion: SujetoPermiso): void {
@@ -94,43 +103,6 @@ function exigirAdministrar(sesion: SujetoPermiso): void {
 // ─────────────────────────────────────────────────────────────────────────────
 // El mes
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** Un mes, `AAAA-MM`. */
-export const PATRON_MES = /^\d{4}-(0[1-9]|1[0-2])$/;
-
-/** El mes en curso en la zona de la instalación (`AAAA-MM`). */
-const mesEnCurso = (ahora: Date, zona: string) => periodoQueContiene("mensual", ahora, zona).clave;
-
-/** El mes que sigue a `mes` (`AAAA-MM`). */
-const mesSiguiente = (mes: string, zona: string) => periodoQueContiene("mensual", new Date(periodoDe(mes, zona)!.hasta.getTime() + 1), zona).clave;
-
-/**
- * El mes que se propone cerrar (spec §9.1): el siguiente al último cerrado o, sin cierres, el anterior al mes en curso;
- * `null` si ese mes todavía no ha terminado. Pura.
- */
-export function mesPorOmisionDe(ultimo: string | null, ahora: Date, zona: string): string | null {
-  const actual = mesEnCurso(ahora, zona);
-  const candidato = ultimo ? mesSiguiente(ultimo, zona) : anterior(actual);
-  return candidato < actual ? candidato : null;
-}
-
-/** Los meses que tiene sentido cerrar: del de por omisión al último que terminó. Pura. */
-export function mesesParaCerrar(porOmision: string | null, ahora: Date, zona: string): string[] {
-  if (!porOmision || !PATRON_MES.test(porOmision)) return [];
-  const actual = mesEnCurso(ahora, zona);
-  const salida: string[] = [];
-  for (let mes = porOmision; mes < actual; mes = mesSiguiente(mes, zona)) salida.push(mes);
-  return salida;
-}
-
-/** «Marzo de 2026». */
-export const etiquetaDeMes = (mes: string) => conMayuscula(periodoDe(mes, zonaHoraria())?.etiqueta ?? mes);
-
-/** ¿`mes` es un mes (`AAAA-MM`) que ya terminó? Pura. */
-export function esMesTerminado(mes: unknown, ahora: Date): mes is string {
-  const periodo = typeof mes === "string" && PATRON_MES.test(mes) ? periodoDe(mes, zonaHoraria()) : null;
-  return periodo !== null && periodo.hasta.getTime() < ahora.getTime();
-}
 
 /** El mes `AAAA-MM`, si ya terminó; si no, el error de negocio que corresponde. */
 function mesTerminado(mes: unknown, ahora: Date): Periodo {
@@ -161,7 +133,16 @@ export async function mesPorOmision(opciones?: Opciones): Promise<string | null>
 /** Cómo queda una medición alcanzada: los cuatro grupos del resumen, que se reparten todas. */
 type Grupo = "reportada" | "sin_dato" | "no_aplica" | "sin_analisis";
 
-type Alcanzada = { id: number; indicadorId: number; codigo: string; proceso: string; periodo: string; estado: string; grupo: Grupo };
+type Alcanzada = {
+  id: number;
+  indicadorId: number;
+  codigo: string;
+  procesoId: number;
+  proceso: string;
+  periodo: string;
+  estado: string;
+  grupo: Grupo;
+};
 
 type Clasificacion = {
   alcanzadas: Alcanzada[];
@@ -190,24 +171,30 @@ function grupoDe(m: Record<string, unknown>): Grupo {
 /**
  * Las mediciones sin cerrar cuyo periodo terminó en `hasta` o antes, repartidas en lo que el cierre alcanza (por grupo)
  * y lo que deja abierto. Una sola regla para el resumen previo y el cierre; con `bloquear`, dentro de la transacción del
- * cierre, con los candados del encabezado.
+ * cierre, con los candados del encabezado. Al bloquear, solo las de los indicadores ya bloqueados: una que aparezca entre
+ * las dos sentencias (una reapertura que se confirma en medio) la alcanza el siguiente cierre.
  */
 async function clasificar(sql: Cliente, hasta: Date, ahora: Date, bloquear: boolean): Promise<Clasificacion> {
   const zona = zonaHoraria();
+  const versiones = new Map<number, VersionDeCalculo[]>();
+  const salida: Clasificacion = { alcanzadas: [], enPlazo: 0, historicosSinRegistrar: 0, versiones };
+  let bloqueados: number[] | null = null;
   if (bloquear) {
-    await sql`SELECT id FROM indicadores
-      WHERE id IN (SELECT indicador_id FROM mediciones WHERE hasta <= ${hasta} AND estado <> 'cerrada')
-      ORDER BY id FOR SHARE`;
+    bloqueados = (
+      await sql`SELECT id FROM indicadores
+        WHERE id IN (SELECT indicador_id FROM mediciones WHERE hasta <= ${hasta} AND estado <> 'cerrada')
+        ORDER BY id FOR SHARE`
+    ).map((f) => Number(f.id));
+    if (bloqueados.length === 0) return salida;
   }
   const filas = await sql`SELECT m.id, m.indicador_id, m.periodo, m.desde, m.estado, m.historica, m.no_aplica, m.reportada_en, m.vence_en,
       m.resultado_exacto, m.semaforo, m.incumplimiento_repetido, m.analisis, m.causa, m.accion_propuesta,
-      i.codigo, p.nombre AS proceso
+      i.codigo, p.id AS proceso_id, p.nombre AS proceso
     FROM mediciones m JOIN indicadores i ON i.id = m.indicador_id JOIN procesos p ON p.id = i.proceso_id
     WHERE m.hasta <= ${hasta} AND m.estado <> 'cerrada'
+      ${bloqueados ? sql`AND m.indicador_id = ANY(${sql.array(bloqueados)}::bigint[])` : sql``}
     ORDER BY m.indicador_id, m.desde, m.id
     ${bloquear ? sql`FOR UPDATE OF m` : sql``}`;
-  const versiones = new Map<number, VersionDeCalculo[]>();
-  const salida: Clasificacion = { alcanzadas: [], enPlazo: 0, historicosSinRegistrar: 0, versiones };
   for (const m of filas) {
     const indicadorId = Number(m.indicador_id);
     if (!versiones.has(indicadorId)) versiones.set(indicadorId, await versionesAprobadas(sql, indicadorId));
@@ -228,6 +215,7 @@ async function clasificar(sql: Cliente, hasta: Date, ahora: Date, bloquear: bool
       id: Number(m.id),
       indicadorId,
       codigo: m.codigo as string,
+      procesoId: Number(m.proceso_id),
       proceso: m.proceso as string,
       periodo: clave,
       estado: m.estado as string,
@@ -237,17 +225,38 @@ async function clasificar(sql: Cliente, hasta: Date, ahora: Date, bloquear: bool
   return salida;
 }
 
-function cuentas(c: Clasificacion, observacionesSinRespuesta: number): Cuentas {
-  const de = (g: Grupo) => c.alcanzadas.filter((a) => a.grupo === g).length;
+/**
+ * Las cuentas del resumen, en total y por proceso. `observaciones` son las que siguen sin respuesta en mediciones cuyo
+ * periodo terminó en el mes o antes, por proceso (`sinRespuestaPorProceso`); su total es la suma.
+ */
+function cuentas(c: Clasificacion, observaciones: { procesoId: number; proceso: string; n: number }[]): Cuentas {
+  const de = (g: Grupo, procesoId?: number) =>
+    c.alcanzadas.filter((a) => a.grupo === g && (procesoId === undefined || a.procesoId === procesoId)).length;
+  const procesos = new Map<number, string>([
+    ...c.alcanzadas.map((a) => [a.procesoId, a.proceso] as const),
+    ...observaciones.map((o) => [o.procesoId, o.proceso] as const),
+  ]);
+  const porProceso = [...procesos]
+    .map(([id, proceso]) => ({
+      proceso,
+      reportadas: de("reportada", id),
+      sinDato: de("sin_dato", id),
+      noAplica: de("no_aplica", id),
+      sinAnalisis: de("sin_analisis", id),
+      observacionesSinRespuesta: observaciones.find((o) => o.procesoId === id)?.n ?? 0,
+    }))
+    .filter((p) => p.reportadas + p.sinDato + p.noAplica + p.sinAnalisis + p.observacionesSinRespuesta > 0)
+    .sort((x, y) => x.proceso.localeCompare(y.proceso, "es"));
   return {
     cerradas: c.alcanzadas.length,
     reportadas: de("reportada"),
     sinDato: de("sin_dato"),
     noAplica: de("no_aplica"),
     sinAnalisis: de("sin_analisis"),
-    observacionesSinRespuesta,
+    observacionesSinRespuesta: observaciones.reduce((n, o) => n + o.n, 0),
     enPlazo: c.enPlazo,
     historicosSinRegistrar: c.historicosSinRegistrar,
+    porProceso,
   };
 }
 
@@ -268,7 +277,7 @@ export async function resumenDeCierre(sesion: SujetoPermiso, mes: string, opcion
   const periodo = mesTerminado(mes, ahora);
   await asegurarMediciones({ sql, ahora });
   const c = await clasificar(sql, periodo.hasta, ahora, false);
-  const n = cuentas(c, await sinRespuesta(sql, { hasta: periodo.hasta }));
+  const n = cuentas(c, await sinRespuestaPorProceso(sql, { hasta: periodo.hasta }));
   const quien = new Map<number, string[]>();
   const sinDato: ResumenDeCierre["sinDato"] = [];
   for (const a of c.alcanzadas) {
@@ -294,6 +303,7 @@ export async function resumenDeCierre(sesion: SujetoPermiso, mes: string, opcion
     observacionesSinRespuesta: n.observacionesSinRespuesta,
     enPlazo: n.enPlazo,
     historicosSinRegistrar: n.historicosSinRegistrar,
+    porProceso: n.porProceso,
   };
 }
 
@@ -316,7 +326,7 @@ export async function cerrarMes(sesion: SesionFlujo, mes: string, opciones?: Opc
     return await enTransaccion(sql, async (tx) => {
       if (await estaCerrado(tx, periodo)) throw new ErrorIndicador(YA_CERRADO);
       const c = await clasificar(tx, periodo.hasta, ahora, true);
-      const resumen = cuentas(c, await sinRespuesta(tx, { hasta: periodo.hasta }));
+      const resumen = cuentas(c, await sinRespuestaPorProceso(tx, { hasta: periodo.hasta }));
       const [cierre] = await tx`INSERT INTO cierres_indicadores (mes, cerrado_por, cerrado_en, resumen)
         VALUES (${ultimoDia(periodo)}, ${sesion.usuarioId}, ${ahora}, ${tx.json(resumen as never)}) RETURNING id`;
       const cierreId = Number(cierre.id);
@@ -355,12 +365,13 @@ export async function cerrarMes(sesion: SesionFlujo, mes: string, opciones?: Opc
 }
 
 /** Los cierres hechos, del mes más reciente al más antiguo. Quien llama comprueba que la persona administra. */
-export async function cierres(opciones?: { sql?: Cliente }): Promise<{ mes: string; cerradoPor: string; cerradoEn: Date; cerradas: number }[]> {
+export async function cierres(opciones?: { sql?: Cliente }): Promise<{ id: number; mes: string; cerradoPor: string; cerradoEn: Date; cerradas: number }[]> {
   const sql = opciones?.sql ?? obtenerSql();
-  const filas = await sql`SELECT to_char(c.mes, 'YYYY-MM') AS mes, u.nombre, c.cerrado_en, c.resumen->>'cerradas' AS cerradas
+  const filas = await sql`SELECT c.id, to_char(c.mes, 'YYYY-MM') AS mes, u.nombre, c.cerrado_en, c.resumen->>'cerradas' AS cerradas
     FROM cierres_indicadores c JOIN usuarios u ON u.id = c.cerrado_por
     ORDER BY c.mes DESC`;
   return filas.map((f) => ({
+    id: Number(f.id),
     mes: f.mes as string,
     cerradoPor: f.nombre as string,
     cerradoEn: new Date(f.cerrado_en as string),
@@ -391,8 +402,9 @@ const idValido = (id: number) => Number.isSafeInteger(id) && id > 0;
 
 /**
  * Reabre una medición cerrada (spec §8.7, F14-DC31) con justificación y sin clave: queda «Corregida», vuelve a
- * `reportada` o a `abierta` (lo decide `recalcularMedicion`, con el evento `reapertura`) y se avisa a quienes miden, salvo
- * a quien reabre. Si quien reabre es también quien mide, el evento y la bitácora lo marcan (`propioMedidor`). Un
+ * `reportada` o a `abierta` (lo decide `recalcularMedicion`, con el evento `reapertura` cuyo estado de antes es
+ * `cerrada`) y se avisa a quienes miden, salvo a quien reabre. Si quien reabre está designado para medir el indicador, el
+ * evento y la bitácora lo marcan (`propioMedidor`); si solo mide como respaldo porque nadie más puede, `sinMedidor`. Un
  * indicador retirado no se reabre: nadie podría corregirlo.
  */
 export async function reabrirMedicion(sesion: SesionFlujo, d: { medicionId: number; justificacion: string }, opciones?: Opciones): Promise<void> {
@@ -414,14 +426,16 @@ export async function reabrirMedicion(sesion: SesionFlujo, d: { medicionId: numb
     await tx`UPDATE mediciones SET estado = 'abierta', reabierta_por = ${sesion.usuarioId}, reabierta_en = ${ahora},
         reabierta_motivo = ${justificacion}, corregida = true, cierre_id = NULL, sin_analisis = false
       WHERE id = ${m.id}`;
-    const propioMedidor = (await puedeMedir(ctx.indicador.id, sesion, { sql: tx })).puede;
-    const marca = propioMedidor ? { propioMedidor: true } : {};
-    // `cerrada` en el antes y el después: el evento queda aunque ninguna columna calculada cambie.
+    // Quien administra mide si está designado (`propioMedidor`) o, sin nadie más, como respaldo (`sinMedidor`).
+    const capacidad = await puedeMedir(ctx.indicador.id, sesion, { sql: tx });
+    const marca = !capacidad.puede ? {} : capacidad.sinMedidor ? { sinMedidor: true } : { propioMedidor: true };
+    // El estado de antes es el verdadero (`cerrada`), no el provisional del UPDATE: el evento queda siempre.
     const r = await recalcularMedicion(tx, m.id, {
       ahora,
       actorId: sesion.usuarioId,
       evento: "reapertura",
-      detalle: { justificacion, cierre, ...marca, antes: { cerrada: true }, despues: { cerrada: false } },
+      estadoAnterior: "cerrada",
+      detalle: { justificacion, cierre, ...marca },
     });
     const codigo = ctx.indicador.codigo;
     const periodo = m.periodo as string;
@@ -488,7 +502,8 @@ export async function cerrarDeNuevo(sesion: SesionFlujo, medicionId: number, opc
 
 /**
  * El historial de las mediciones corregidas (reabiertas alguna vez) de `medicionIds`, por medición (spec §8.7 y §6.4):
- * desde la primera reapertura, sin los soportes, para quien ve el indicador. Las demás no salen.
+ * desde la primera reapertura, para quien ve el indicador; los eventos de los soportes, solo para quien ve los soportes.
+ * Las demás no salen.
  */
 export async function historialDeCorregidas(
   sesion: SujetoVisibilidad,
@@ -503,9 +518,10 @@ export async function historialDeCorregidas(
     WHERE indicador_id = ${indicadorId} AND corregida AND id IN ${sql([...medicionIds])}`;
   if (corregidas.length === 0) return salida;
   const versiones = await versionesAprobadas(sql, indicadorId);
+  const conSoportes = await puedeVerSoportes(indicadorId, sesion, { sql });
   const eventos = await sql`SELECT e.id, e.medicion_id, e.tipo, e.detalle, e.creado_en, u.nombre
     FROM medicion_eventos e LEFT JOIN usuarios u ON u.id = e.usuario_id
-    WHERE e.medicion_id IN ${sql(corregidas.map((c) => Number(c.id)))} AND e.tipo <> 'soporte'
+    WHERE e.medicion_id IN ${sql(corregidas.map((c) => Number(c.id)))} ${conSoportes ? sql`` : sql`AND e.tipo <> 'soporte'`}
     ORDER BY e.medicion_id, e.id`;
   for (const c of corregidas) {
     const id = Number(c.id);
@@ -520,7 +536,8 @@ export async function historialDeCorregidas(
         creadoEn: new Date(e.creado_en as string),
         detalle: typeof e.detalle === "object" && e.detalle !== null ? (e.detalle as Record<string, unknown>) : {},
       }));
-    salida.set(id, historialDeCorreccion(propios, { unidad: version.unidad, nombres: Object.fromEntries(version.variables.map((v) => [v.letra, v.nombre])) }));
+    const nombres = Object.fromEntries(version.variables.map((v) => [v.letra, v.nombre]));
+    salida.set(id, historialDeCorreccion(propios, { unidad: version.unidad, nombres, conSoportes }));
   }
   return salida;
 }

@@ -6,15 +6,8 @@ import { claseBoton } from "@/componentes/ui/Boton";
 import { claseControl } from "@/componentes/ui/Campo";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { celda, celdaNumerica, TablaDatos } from "@/componentes/ui/TablaDatos";
-import {
-  cierres,
-  esMesTerminado,
-  etiquetaDeMes,
-  mesesParaCerrar,
-  mesPorOmision,
-  PATRON_MES,
-  resumenDeCierre,
-} from "@/db/consultas/indicadores/cierre";
+import { cierres, mesPorOmision, resumenDeCierre } from "@/db/consultas/indicadores/cierre";
+import { esMesTerminado, etiquetaDeMes, mesesParaCerrar, PATRON_MES } from "@/lib/indicadores/cierre";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
