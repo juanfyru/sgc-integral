@@ -35,6 +35,8 @@ export type VariableDeCaptura = {
 };
 
 export const DIVISION_POR_CERO = "No se puede calcular: división por cero. Si no hubo casos, marque «No aplica en este periodo».";
+/** El mismo caso en la tabla del año, donde «No aplica» se marca en la fila del histórico. */
+export const DIVISION_POR_CERO_HISTORICO = "No se puede calcular: división por cero. Si no hubo casos, marque «No aplica» en esa fila.";
 export const CIFRA_FUERA_DE_RANGO = "No se puede calcular: una cifra intermedia queda fuera de rango";
 
 /** «El resultado (120 %) queda fuera de los límites del indicador». */

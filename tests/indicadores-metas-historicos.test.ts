@@ -17,7 +17,7 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
-import { asegurarMediciones, proximaPorReportar, reportar, tablaDelAnio } from "@/db/consultas/indicadores/mediciones";
+import { asegurarMediciones, marcarNoAplica, proximaPorReportar, quitarNoAplica, reportar, tablaDelAnio } from "@/db/consultas/indicadores/mediciones";
 import { metasDelAnio, programarMeta } from "@/db/consultas/indicadores/metas";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
@@ -283,6 +283,65 @@ describe("registrarHistoricos", () => {
       expect(lista[1].detalle).toMatchObject({ antes: { A: "3", B: "5", semaforo: "critico" }, despues: { A: "5", B: "5", semaforo: "bien" } });
       const registros = await bitacora(tx, "medicion_historica_registrada", "medicion", t4);
       expect(registros.map((b) => b.detalle.correccion)).toEqual([false, true]);
+    }));
+
+  it("un histórico sin casos se registra «No aplica» en su fila, con su motivo", () =>
+    revertida(sql, async (tx) => {
+      const { ind, mide, id } = await preparar(tx);
+      const t3 = await id("2025-T3");
+      const una = (fila: Record<string, unknown>) => registrarHistoricos(mide, { indicadorId: ind.id, filas: [{ periodo: "2025-T3", valores: {}, ...fila }] }, opc(tx));
+      // Con 0 y 0, el mensaje dice cómo salir desde la tabla del año.
+      await rechaza(
+        una({ valores: { A: "0", B: "0" } }),
+        "Tercer trimestre de 2025: No se puede calcular: división por cero. Si no hubo casos, marque «No aplica» en esa fila.",
+      );
+      await rechaza(una({ noAplica: true, motivo: "Poco" }), "Tercer trimestre de 2025: El motivo debe tener al menos 5 caracteres");
+      await rechaza(una({ noAplica: true }), "Tercer trimestre de 2025: El motivo debe tener al menos 5 caracteres");
+      // Con «No aplica», los valores de la fila no se registran.
+      expect(await una({ valores: { A: "0", B: "0" }, noAplica: true, motivo: "No hubo auditorías programadas" })).toEqual({ registrados: 1 });
+      let m = await fila(tx, t3);
+      expect([m.no_aplica, m.no_aplica_motivo, m.estado, m.semaforo, m.resultado_exacto, Number(m.reportada_por)]).toEqual([
+        true,
+        "No hubo auditorías programadas",
+        "reportada",
+        null,
+        null,
+        mide.usuarioId,
+      ]);
+      expect(await tx`SELECT id FROM medicion_valores WHERE medicion_id = ${t3}`).toHaveLength(0);
+      let lista = await eventos(tx, t3);
+      expect(lista.map((e) => e.tipo)).toEqual(["historico"]);
+      expect(lista[0].detalle).toMatchObject({ antes: { noAplica: false }, despues: { noAplica: true, motivo: "No hubo auditorías programadas" } });
+      const [b] = await bitacora(tx, "medicion_historica_registrada", "medicion", t3);
+      expect(b.detalle).toMatchObject({ periodo: "2025-T3", noAplica: true, motivo: "No hubo auditorías programadas", correccion: false });
+      // Lo mismo otra vez no deja nada.
+      expect(await una({ noAplica: true, motivo: "No hubo auditorías programadas" })).toEqual({ registrados: 0 });
+
+      // Con valores, deja de ser «No aplica»: es una corrección con el antes y el después.
+      expect(await una({ valores: { A: "4", B: "5" } })).toEqual({ registrados: 1 });
+      m = await fila(tx, t3);
+      expect([m.no_aplica, m.no_aplica_motivo, m.semaforo, m.estado]).toEqual([false, null, "atencion", "reportada"]);
+      lista = await eventos(tx, t3);
+      expect(lista.map((e) => e.tipo)).toEqual(["historico", "correccion"]);
+      expect(lista[1].detalle).toMatchObject({
+        antes: { noAplica: true, motivo: "No hubo auditorías programadas" },
+        despues: { noAplica: false, motivo: null, A: "4", B: "5" },
+      });
+    }));
+
+  it("«No aplica» y quitarlo tampoco entran a un histórico por fuera de la tabla del año", () =>
+    revertida(sql, async (tx) => {
+      const { ind, mide, id } = await preparar(tx);
+      const t4h = await id("2025-T4");
+      const historico = "Ese periodo es histórico: regístrelo en la tabla del año";
+      await rechaza(marcarNoAplica(mide, { medicionId: t4h, motivo: "No hubo auditorías programadas" }, opc(tx)), historico);
+      await registrarHistoricos(
+        mide,
+        { indicadorId: ind.id, filas: [{ periodo: "2025-T4", valores: {}, noAplica: true, motivo: "No hubo auditorías programadas" }] },
+        opc(tx),
+      );
+      await rechaza(quitarNoAplica(mide, t4h, opc(tx)), historico);
+      expect((await fila(tx, t4h)).no_aplica).toBe(true);
     }));
 
   it("una fila que no sirve dice su periodo y no deja nada escrito", () =>

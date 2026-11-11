@@ -337,7 +337,10 @@ export const EsquemaMeta = z
   })
   .strict();
 
-/** Los históricos de la tabla del año (spec §8.8): una fila por periodo con sus valores por letra, en JSON. */
+/**
+ * Los históricos de la tabla del año (spec §8.8): una fila por periodo con sus valores por letra o «no aplica» con su
+ * motivo (la consulta lo valida, como `marcarNoAplica`), en JSON.
+ */
 export const EsquemaHistoricos = z
   .object({
     filas: enJson(
@@ -349,6 +352,8 @@ export const EsquemaHistoricos = z
               valores: z
                 .record(z.string(), z.string().max(40, "Un valor no puede pasar de 40 caracteres"))
                 .refine((v) => Object.keys(v).length <= 26 && Object.keys(v).every((l) => /^[A-Z]$/.test(l)), "Las filas no tienen un formato válido"),
+              noAplica: z.literal(true).optional(),
+              motivo: z.string().max(500, "El motivo no puede pasar de 500 caracteres").optional(),
             })
             .strict(),
           { error: "Las filas no tienen un formato válido" },
@@ -360,17 +365,28 @@ export const EsquemaHistoricos = z
   .strict();
 
 /**
- * El modo edición de la tabla del año manda cada celda en su propio campo (`h_2025-T3_A`), para que funcione igual antes
- * de hidratar; aquí se juntan en `filas` (JSON), como las lee `EsquemaHistoricos`. Lo demás pasa igual.
+ * El modo edición de la tabla del año manda cada celda en su propio campo (`h_2025-T3_A`), y «No aplica» y su motivo en
+ * los suyos (`na_2025-T3`, `motivo_2025-T3`), para que funcione igual antes de hidratar; aquí se juntan en `filas`
+ * (JSON), como las lee `EsquemaHistoricos`. Sin la casilla, el motivo no cuenta. Lo demás pasa igual.
  */
 export function juntarHistoricos(formData: FormData): FormData {
   const salida = new FormData();
-  const filas = new Map<string, Record<string, string>>();
+  const filas = new Map<string, { valores: Record<string, string>; noAplica?: true; motivo?: string }>();
+  const fila = (periodo: string) => filas.get(periodo) ?? filas.set(periodo, { valores: {} }).get(periodo)!;
+  const motivos = new Map<string, string>();
   for (const [campo, valor] of formData) {
     const celda = /^h_(.+)_([^_]+)$/.exec(campo);
-    if (celda && typeof valor === "string") filas.set(celda[1], { ...(filas.get(celda[1]) ?? {}), [celda[2]]: valor });
+    const noAplica = /^na_(.+)$/.exec(campo);
+    const motivo = /^motivo_(.+)$/.exec(campo);
+    if (typeof valor === "string" && celda) fila(celda[1]).valores[celda[2]] = valor;
+    else if (typeof valor === "string" && noAplica) fila(noAplica[1]).noAplica = true;
+    else if (typeof valor === "string" && motivo) motivos.set(motivo[1], valor);
     else salida.append(campo, valor);
   }
-  if (filas.size > 0) salida.set("filas", JSON.stringify([...filas].map(([periodo, valores]) => ({ periodo, valores }))));
+  for (const [periodo, f] of filas) {
+    const motivo = motivos.get(periodo);
+    if (f.noAplica && motivo) f.motivo = motivo;
+  }
+  if (filas.size > 0) salida.set("filas", JSON.stringify([...filas].map(([periodo, f]) => ({ periodo, ...f }))));
   return salida;
 }

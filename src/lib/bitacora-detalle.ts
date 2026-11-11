@@ -802,6 +802,7 @@ export function describirEvento(e: EventoAuditoria): string {
       return `Respondió una observación en ${medicionDe(cod, d.periodo)}`;
     case "medicion_historica_registrada": {
       const de = medicionDe(cod, d.periodo);
+      if (d.noAplica === true) return `${d.correccion === true ? "Corrigió" : "Registró"} el histórico de ${de} como «No aplica»${conMotivo(d.motivo)}`;
       const despues = texto(d.resultado);
       if (d.correccion === true) {
         const antes = texto(d.resultadoAntes);

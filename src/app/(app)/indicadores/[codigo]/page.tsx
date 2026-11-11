@@ -547,7 +547,15 @@ export default async function PaginaIndicador({ params, searchParams }: { params
   const registra = enResultados && indicador.estado === "activo" && (await puedeRegistrarHistoricos(indicador.id, sesion)).puede;
   const editables: FilaHistoricaVista[] = filas
     .filter((f) => f.historica && f.medicionId !== null)
-    .map((f) => ({ periodo: f.periodo, etiqueta: f.etiqueta, cerrada: f.estado === "cerrada", valores: f.valores, resultado: f.resultado }));
+    .map((f) => ({
+      periodo: f.periodo,
+      etiqueta: f.etiqueta,
+      cerrada: f.estado === "cerrada",
+      valores: f.valores,
+      noAplica: f.noAplica,
+      motivo: f.motivo,
+      resultado: f.resultado,
+    }));
   const editando = sp.historicos !== undefined;
   if (editando && (sp.historicos !== "editar" || !registra || !editables.some((f) => !f.cerrada))) notFound();
 

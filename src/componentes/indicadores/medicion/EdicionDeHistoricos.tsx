@@ -10,13 +10,15 @@ import { celda, celdaNumerica, TablaDatos, type ColumnaTabla } from "@/component
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 
-/** Un periodo histórico de la tabla del año, con sus valores por letra (coma decimal) y el resultado guardado. */
+/** Un periodo histórico de la tabla del año, con sus valores por letra (coma decimal), «no aplica» y el resultado guardado. */
 export type FilaHistoricaVista = {
   periodo: string;
   /** «Tercer trimestre de 2025». */
   etiqueta: string;
   cerrada: boolean;
   valores: { letra: string; valor: string | null }[];
+  noAplica: boolean;
+  motivo: string | null;
   resultado: string | null;
 };
 
@@ -24,7 +26,8 @@ export type FilaHistoricaVista = {
  * La tabla del año en modo edición (spec §8.8): una fila por periodo histórico y una celda por variable, y se guardan
  * todas a la vez. Cada celda viaja en su propio campo (`h_2025-T3_A`): funciona antes de hidratar. Una fila en blanco no
  * se registra; una cerrada se muestra sin campos. Cada fila lleva campos solo para las variables de la versión que rige
- * su periodo (`valores`): tras un cambio mayor que añade una variable, los históricos no la piden.
+ * su periodo (`valores`): tras un cambio mayor que añade una variable, los históricos no la piden. «No aplica» se marca en
+ * la fila, con su motivo (`na_2025-T3`, `motivo_2025-T3`); con la casilla, los valores de la fila no se registran.
  */
 export function EdicionDeHistoricos({
   indicadorId,
@@ -45,15 +48,22 @@ export function EdicionDeHistoricos({
   const columnas: ColumnaTabla[] = [
     { clave: "periodo", etiqueta: "Periodo" },
     ...variables.map((x) => ({ clave: `var-${x.letra}`, etiqueta: x.nombre })),
+    { clave: "noAplica", etiqueta: "No aplica" },
     { clave: "resultado", etiqueta: "Resultado guardado", numerica: true },
   ];
+  // Tras un error, lo que se envió; si no, lo guardado.
+  const marcada = (f: FilaHistoricaVista) => (estado ? v[`na_${f.periodo}`] === "on" : f.noAplica);
+  const motivoDe = (f: FilaHistoricaVista) => {
+    const enviado = v[`motivo_${f.periodo}`];
+    return typeof enviado === "string" ? enviado : (f.motivo ?? "");
+  };
   return (
     <form action={enviar} className="flex min-w-0 flex-col gap-3">
       <input type="hidden" name="id" value={indicadorId} />
       <input type="hidden" name="volver" value={volver} />
       <p className="text-sm text-muted-foreground">
         Los periodos que terminaron antes de aprobarse la ficha se registran aquí, varios a la vez. Quedan marcados «Registro histórico»; el análisis y el
-        soporte son opcionales. Deje en blanco los que no tenga.
+        soporte son opcionales. Deje en blanco los que no tenga. Si en un periodo no hubo casos, marque «No aplica» y escriba el motivo.
       </p>
       <TablaDatos titulo={`Históricos de ${anio}`} columnas={columnas} filas={filas.length} vacio={`No hay históricos que registrar en ${anio}.`}>
         {filas.map((f) => (
@@ -87,7 +97,30 @@ export function EdicionDeHistoricos({
                 </td>
               );
             })}
-            <td className={celdaNumerica}>{f.resultado ?? "—"}</td>
+            <td className={`${celda} min-w-48`}>
+              {f.cerrada ? (
+                <span className="break-words">{f.noAplica ? `Sí${f.motivo ? `: ${f.motivo}` : ""}` : "No"}</span>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" name={`na_${f.periodo}`} defaultChecked={marcada(f)} className={`size-4 accent-marca-relleno ${FOCO}`} />
+                    <span>
+                      No aplica<span className="sr-only">{` en ${f.etiqueta.toLowerCase()}`}</span>
+                    </span>
+                  </label>
+                  <input
+                    name={`motivo_${f.periodo}`}
+                    aria-label={`Motivo de «No aplica», ${f.etiqueta.toLowerCase()}`}
+                    placeholder="Motivo (5 a 500 caracteres)"
+                    maxLength={500}
+                    autoComplete="off"
+                    defaultValue={motivoDe(f)}
+                    className={`${claseControl} w-full min-w-0`}
+                  />
+                </div>
+              )}
+            </td>
+            <td className={celdaNumerica}>{f.noAplica ? "No aplica" : (f.resultado ?? "—")}</td>
           </tr>
         ))}
       </TablaDatos>

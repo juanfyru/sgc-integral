@@ -485,6 +485,16 @@ describe("los esquemas de la Tarea 10", () => {
     expect(() => parsearFormulario(juntarHistoricos(formulario({ "h_2025-T3_a": "5" })), EsquemaHistoricos, { omitir: ["id"] })).toThrow(
       "Las filas no tienen un formato válido",
     );
+    // «No aplica» y su motivo viajan en sus propios campos; sin la casilla, el motivo no cuenta.
+    const conNoAplica = juntarHistoricos(
+      formulario({ "h_2025-T3_A": "5", "motivo_2025-T3": "Escrito sin marcar", "h_2025-T4_A": "", "na_2025-T4": "on", "motivo_2025-T4": "Sin casos" }),
+    );
+    expect(parsearFormulario(conNoAplica, EsquemaHistoricos, { omitir: ["id"] })).toEqual({
+      filas: [
+        { periodo: "2025-T3", valores: { A: "5" } },
+        { periodo: "2025-T4", valores: { A: "" }, noAplica: true, motivo: "Sin casos" },
+      ],
+    });
   });
 });
 
@@ -543,6 +553,15 @@ describe("las páginas de la Tarea 10", () => {
       for (const campo of ["h_2025-T3_A", "h_2025-T3_B", "h_2025-T4_A", "h_2025-T4_B"]) expect(edicion).toContain(`name="${campo}"`);
       expect(edicion).toContain(">Guardar los históricos</button>");
       expect(edicion).toContain('aria-label="Casos que cumplen, tercer trimestre de 2025"');
+      // Cada fila ofrece «No aplica» con su motivo, en campos propios.
+      expect(edicion).toMatch(/<input(?=[^>]*type="checkbox")(?=[^>]*name="na_2025-T3")[^>]*>/);
+      expect(edicion).toContain('name="motivo_2025-T3"');
+      const filas = [{ periodo: "2025-T4", valores: {}, noAplica: true, motivo: "No hubo auditorías programadas" }];
+      await registrarHistoricos(mide, { indicadorId: ind.id, filas }, { sql: tx });
+      const conNoAplica = await pagina(ind.codigo, { anio: "2025", historicos: "editar" });
+      expect(conNoAplica).toMatch(/<input(?=[^>]*name="na_2025-T4")(?=[^>]*checked="")[^>]*>/);
+      expect(conNoAplica).toMatch(/<input(?=[^>]*name="motivo_2025-T4")(?=[^>]*value="No hubo auditorías programadas")[^>]*>/);
+      expect(conNoAplica).not.toMatch(/<input(?=[^>]*name="na_2025-T3")(?=[^>]*checked="")[^>]*>/);
       await expect(pagina(ind.codigo, { anio: "2025", historicos: "otra" })).rejects.toThrow("NO_ENCONTRADA");
       // 2026 no tiene históricos.
       await expect(pagina(ind.codigo, { anio: "2026", historicos: "editar" })).rejects.toThrow("NO_ENCONTRADA");

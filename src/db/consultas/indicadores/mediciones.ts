@@ -729,7 +729,7 @@ export async function reportar(sesion: SesionFlujo, d: DatosDeReportar, opciones
 }
 
 /** El motivo de «no aplica»: de 5 a 500 caracteres. */
-function motivoValido(motivo: string): string {
+export function motivoValido(motivo: string): string {
   const m = typeof motivo === "string" ? motivo.trim() : "";
   if (m.length < 5) throw new ErrorIndicador("El motivo debe tener al menos 5 caracteres");
   if (m.length > 500) throw new ErrorIndicador("El motivo no puede pasar de 500 caracteres");
@@ -737,29 +737,48 @@ function motivoValido(motivo: string): string {
 }
 
 /**
+ * Marca «no aplica» con su motivo ya validado, con los candados de `contextoDeMedicion` tomados: cuenta como reportado
+ * (quién y cuándo, la primera vez), conserva lo digitado y recalcula con el evento que diga `evento` (según si la medición
+ * se reportaba por primera vez). `null` si ya estaba marcada con el mismo motivo (no deja nada). Lo comparten
+ * `marcarNoAplica` y `registrarHistoricos`.
+ */
+export async function escribirNoAplica(
+  tx: TransactionSql,
+  ctx: Contexto,
+  motivo: string,
+  c: { usuarioId: number; ahora: Date; evento: (primera: boolean) => TipoEvento },
+): Promise<ReporteEscrito | null> {
+  const m = ctx.medicion;
+  if (m.no_aplica === true && m.no_aplica_motivo === motivo) return null;
+  const primera = !(await seReportoAlgunaVez(tx, m.id));
+  await tx`UPDATE mediciones SET no_aplica = true, no_aplica_motivo = ${motivo},
+      reportada_por = coalesce(reportada_por, ${c.usuarioId}), reportada_en = coalesce(reportada_en, ${c.ahora})
+    WHERE id = ${m.id}`;
+  const detalle = {
+    antes: { noAplica: m.no_aplica === true, motivo: (m.no_aplica_motivo as string | null) ?? null },
+    despues: { noAplica: true, motivo },
+    ...(ctx.capacidad.sinMedidor ? { sinMedidor: true as const } : {}),
+  };
+  const r = await recalcularMedicion(tx, m.id, { ahora: c.ahora, actorId: c.usuarioId, evento: c.evento(primera), detalle });
+  return { r, primera, detalle };
+}
+
+/**
  * «No aplica en este periodo» (spec §8.2): con motivo, cuenta como reportado, queda en gris y no pide análisis ni
- * soporte. Conserva lo digitado. Marcar lo mismo otra vez no deja nada.
+ * soporte. Conserva lo digitado. Marcar lo mismo otra vez no deja nada. Un histórico no: se marca en la tabla del año.
  */
 export async function marcarNoAplica(sesion: SesionFlujo, d: { medicionId: number; motivo: string }, opciones?: Opciones): Promise<void> {
   if (!puede(sesion, "indicadores.medir")) throw new ErrorPermiso();
   const motivo = motivoValido(d.motivo);
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
-  await contextoDeMedicion(sql, sesion, d.medicionId, false);
+  noHistorica(await contextoDeMedicion(sql, sesion, d.medicionId, false));
   await enTransaccion(sql, async (tx) => {
-    const ctx = await contextoDeMedicion(tx, sesion, d.medicionId, true);
+    const ctx = noHistorica(await contextoDeMedicion(tx, sesion, d.medicionId, true));
     const m = ctx.medicion;
-    if (m.no_aplica === true && m.no_aplica_motivo === motivo) return;
-    await tx`UPDATE mediciones SET no_aplica = true, no_aplica_motivo = ${motivo},
-        reportada_por = coalesce(reportada_por, ${sesion.usuarioId}), reportada_en = coalesce(reportada_en, ${ahora})
-      WHERE id = ${m.id}`;
-    const detalle = {
-      antes: { noAplica: m.no_aplica === true, motivo: (m.no_aplica_motivo as string | null) ?? null },
-      despues: { noAplica: true, motivo },
-      ...(ctx.capacidad.sinMedidor ? { sinMedidor: true } : {}),
-    };
-    const r = await recalcularMedicion(tx, m.id, { ahora, actorId: sesion.usuarioId, evento: "no_aplica", detalle });
-    if (!r.cambio) return;
+    const escrito = await escribirNoAplica(tx, ctx, motivo, { usuarioId: sesion.usuarioId, ahora, evento: () => "no_aplica" });
+    if (!escrito?.r.cambio) return;
+    const { detalle } = escrito;
     await registrarAuditoria(tx, {
       usuarioId: sesion.usuarioId,
       accion: "medicion_no_aplica",
@@ -772,7 +791,7 @@ export async function marcarNoAplica(sesion: SesionFlujo, d: { medicionId: numbe
 
 /**
  * Quita «no aplica» (spec §8.7): es una corrección. La medición vuelve a estar por reportar, con lo que se hubiera
- * digitado.
+ * digitado. Un histórico no: se corrige en la tabla del año.
  */
 export async function quitarNoAplica(sesion: SesionFlujo, medicionId: number, opciones?: Opciones): Promise<void> {
   if (!puede(sesion, "indicadores.medir")) throw new ErrorPermiso();
@@ -781,9 +800,9 @@ export async function quitarNoAplica(sesion: SesionFlujo, medicionId: number, op
   const sinMarca = (m: Record<string, unknown>) => {
     if (m.no_aplica !== true) throw new ErrorIndicador("La medición no está marcada «No aplica»");
   };
-  sinMarca((await contextoDeMedicion(sql, sesion, medicionId, false)).medicion);
+  sinMarca(noHistorica(await contextoDeMedicion(sql, sesion, medicionId, false)).medicion);
   await enTransaccion(sql, async (tx) => {
-    const ctx = await contextoDeMedicion(tx, sesion, medicionId, true);
+    const ctx = noHistorica(await contextoDeMedicion(tx, sesion, medicionId, true));
     const m = ctx.medicion;
     sinMarca(m);
     await tx`UPDATE mediciones SET no_aplica = false, no_aplica_motivo = NULL, reportada_por = NULL, reportada_en = NULL WHERE id = ${m.id}`;

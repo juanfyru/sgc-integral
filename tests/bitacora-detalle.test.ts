@@ -821,6 +821,12 @@ describe("la medición de un indicador", () => {
     expect(
       frase("medicion_historica_registrada", { codigo: "SGC-IND-01", periodo: "2025-T4", correccion: true, resultadoAntes: "60 %", resultado: "100 %" }),
     ).toBe("Corrigió el histórico de SGC-IND-01, cuarto trimestre de 2025: 60 % → 100 %");
+    expect(
+      frase("medicion_historica_registrada", { codigo: "SGC-IND-01", periodo: "2025-T4", correccion: false, noAplica: true, motivo: "No hubo auditorías" }),
+    ).toBe("Registró el histórico de SGC-IND-01, cuarto trimestre de 2025 como «No aplica»: No hubo auditorías");
+    expect(frase("medicion_historica_registrada", { codigo: "SGC-IND-01", periodo: "2025-T4", correccion: true, noAplica: true, motivo: "Sin casos" })).toBe(
+      "Corrigió el histórico de SGC-IND-01, cuarto trimestre de 2025 como «No aplica»: Sin casos",
+    );
     expect(nombreDeAccion("medicion_analizada")).toBe("Escribió o editó el análisis de una medición de indicador");
     expect(nombreDeAccion("medicion_observada")).toBe("Dejó una observación en una medición de indicador");
     expect(nombreDeAccion("medicion_observacion_respondida")).toBe("Respondió una observación de una medición de indicador");
