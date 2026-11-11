@@ -61,6 +61,7 @@ import { ResultadoEnVivo } from "@/componentes/indicadores/medicion/ResultadoEnV
 import { obtenerSql } from "@/db/cliente";
 import type { DatosDeAnalisis } from "@/db/consultas/indicadores/analisis";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
+import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
 import { asegurarMediciones, reportar, type DatosDeReporte } from "@/db/consultas/indicadores/mediciones";
 import type { MetaDelPeriodo } from "@/db/consultas/indicadores/metas";
 import { observar } from "@/db/consultas/indicadores/observaciones";
@@ -553,6 +554,35 @@ describe("las páginas de la Tarea 10", () => {
       contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "consulta" }));
       expect(await pagina(ind.codigo, { anio: "2025" })).not.toContain("historicos=editar");
       await expect(pagina(ind.codigo, { anio: "2025", historicos: "editar" })).rejects.toThrow("NO_ENCONTRADA");
+    }));
+
+  it("/indicadores/[codigo]: tras un cambio mayor que añade una variable, cada histórico pide solo las de su ficha", () =>
+    enTransaccion(async (tx) => {
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const admin = await sesionAdmin(tx);
+      const ind = await indicadorDePrueba(tx, { ...historico, mide: [mide.usuarioId] });
+      const [v2] = await tx`INSERT INTO indicador_versiones (indicador_id, numero, estado, tipo_cambio, nombre, forma, formula, periodicidad,
+          tendencia, meta, semaforo_modo, umbral_atencion_pct, unidad_sufijo, decimales, creado_por)
+        VALUES (${ind.id}, 2, 'borrador', 'mayor', 'Con tres variables', 'libre', '(A + C) / B * 100', 'trimestral', 'ascendente', 90,
+          'relativo', 70, ' %', 1, ${admin.usuarioId}) RETURNING id`;
+      await tx`SELECT id FROM indicador_versiones WHERE id = ${v2.id} FOR UPDATE`;
+      for (const [orden, letra, nombre] of [[1, "A", "Casos que cumplen"], [2, "B", "Casos evaluados"], [3, "C", "Casos recuperados"]] as const) {
+        await tx`INSERT INTO indicador_variables (version_id, letra, nombre, orden) VALUES (${v2.id}, ${letra}, ${nombre}, ${orden})`;
+      }
+      await tx`UPDATE indicador_versiones SET estado = 'aprobada', elaborada_por = ${admin.usuarioId}, huella = ${"2".repeat(64)},
+          rige_desde = '2026-T3', aprobada_por = ${admin.usuarioId}, aprobada_en = '2026-06-15T15:00:00Z'
+        WHERE id = ${v2.id}`;
+
+      contexto.sesion = valida(mide);
+      const edicion = await pagina(ind.codigo, { anio: "2025", historicos: "editar" });
+      expect(edicion).toContain(">Casos recuperados<");
+      expect(edicion).toContain('name="h_2025-T3_A"');
+      expect(edicion).toContain('name="h_2025-T3_B"');
+      expect(edicion).not.toContain('name="h_2025-T3_C"');
+      expect(edicion).toContain("la ficha de este periodo no tiene esta variable");
+      // Lo que el formulario manda se registra con la ficha que rige el periodo.
+      const filas = [{ periodo: "2025-T3", valores: { A: "4", B: "5" } }];
+      expect(await registrarHistoricos(mide, { indicadorId: ind.id, filas }, { sql: tx })).toEqual({ registrados: 1 });
     }));
 
   it("/indicadores/[codigo]: «Observaciones» solo para quien ve los soportes", () =>

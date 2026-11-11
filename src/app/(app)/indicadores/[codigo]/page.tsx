@@ -273,6 +273,15 @@ function Versiones({ resumen, anteriores, vigente }: { resumen: VersionResumen[]
   );
 }
 
+/**
+ * Las variables de la ficha vigente más las letras que solo tiene la versión que rige algún histórico (una variable que
+ * un cambio mayor quitó), para que el modo edición pida todas las de cada periodo.
+ */
+function conLetrasDe(variables: { letra: string; nombre: string }[], filas: FilaHistoricaVista[]): { letra: string; nombre: string }[] {
+  const extra = [...new Set(filas.flatMap((f) => f.valores.map((v) => v.letra)))].filter((l) => !variables.some((v) => v.letra === l));
+  return [...variables, ...extra.sort().map((letra) => ({ letra, nombre: `Variable ${letra}` }))];
+}
+
 /** «Se registraron 3 históricos.» tras guardar el modo edición (`?registrados=N`); `null` sin el parámetro. */
 function avisoDeHistoricos(r: Parametros["registrados"]): string | null {
   if (typeof r !== "string" || !/^\d{1,3}$/.test(r)) return null;
@@ -353,7 +362,13 @@ function Resultados({
           </p>
         ) : null}
         {editando && historicos ? (
-          <EdicionDeHistoricos indicadorId={indicadorId} anio={anio} variables={variables} filas={historicos.editables} volver={enlaceDeAnio(anio)} />
+          <EdicionDeHistoricos
+            indicadorId={indicadorId}
+            anio={anio}
+            variables={conLetrasDe(variables, historicos.editables)}
+            filas={historicos.editables}
+            volver={enlaceDeAnio(anio)}
+          />
         ) : (
           <TablaDelAnio filas={filas} variables={variables} anio={anio} codigo={codigo} puedeMedir={mide} puedeAnalizar={analiza} />
         )}

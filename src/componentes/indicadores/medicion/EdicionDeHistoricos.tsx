@@ -23,7 +23,8 @@ export type FilaHistoricaVista = {
 /**
  * La tabla del año en modo edición (spec §8.8): una fila por periodo histórico y una celda por variable, y se guardan
  * todas a la vez. Cada celda viaja en su propio campo (`h_2025-T3_A`): funciona antes de hidratar. Una fila en blanco no
- * se registra; una cerrada se muestra sin campos.
+ * se registra; una cerrada se muestra sin campos. Cada fila lleva campos solo para las variables de la versión que rige
+ * su periodo (`valores`): tras un cambio mayor que añade una variable, los históricos no la piden.
  */
 export function EdicionDeHistoricos({
   indicadorId,
@@ -62,11 +63,16 @@ export function EdicionDeHistoricos({
               {f.cerrada ? <span className="block text-xs font-normal text-muted-foreground">Cerrada</span> : null}
             </th>
             {variables.map((x) => {
-              const guardado = f.valores.find((y) => y.letra === x.letra)?.valor ?? null;
+              const propia = f.valores.find((y) => y.letra === x.letra);
+              const guardado = propia?.valor ?? null;
               const campo = `h_${f.periodo}_${x.letra}`;
               return (
                 <td key={x.letra} className={celda}>
-                  {f.cerrada ? (
+                  {!propia ? (
+                    <span className="text-muted-foreground">
+                      —<span className="sr-only"> la ficha de este periodo no tiene esta variable</span>
+                    </span>
+                  ) : f.cerrada ? (
                     <span className="tabular-nums">{guardado ?? "—"}</span>
                   ) : (
                     <input
