@@ -63,7 +63,7 @@ const esCodigoRepetido = (err: unknown) =>
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** El siguiente número por proceso: 1 + el más alto ya usado con `SIGLA-IND-`, en cualquier estado (no se reusan). */
-function siguientes(sql: Cliente, procesoId?: number) {
+export function siguientes(sql: Cliente, procesoId?: number) {
   return sql`
     SELECT p.id, p.sigla, coalesce(max(substr(i.codigo, length(p.sigla) + 6)::int), 0) + 1 AS siguiente
     FROM procesos p
@@ -74,7 +74,7 @@ function siguientes(sql: Cliente, procesoId?: number) {
     GROUP BY p.id, p.sigla`;
 }
 
-const codigoCon = (sigla: string, n: number) => `${sigla}-IND-${String(n).padStart(2, "0")}`;
+export const codigoCon = (sigla: string, n: number) => `${sigla}-IND-${String(n).padStart(2, "0")}`;
 
 /** `SIGLA-IND-NN`, con dos cifras al menos (spec §7.1). */
 export async function proponerCodigo(procesoId: number, opciones?: { sql?: Cliente }): Promise<string> {
@@ -587,7 +587,7 @@ export async function guardarBorrador(sesion: SesionFlujo, versionId: number, d:
 }
 
 /** Las columnas de contenido que un cambio copia de la versión vigente. Identificadores fijos. */
-const CONTENIDO = [
+export const CONTENIDO = [
   "nombre", "proposito", "requisito", "tipo_id", "tipo_nombre", "clasificacion_id", "clasificacion_nombre", "objetivo_id",
   "objetivo_nombre", "proceso_nombre", "subproceso_id", "subproceso_nombre", "procedimiento_documento_id", "punto_control",
   "origen_dato", "calculo", "calculo_alcance", "forma", "factor", "formula", "unidad_id", "unidad_nombre", "unidad_sufijo",
@@ -596,7 +596,7 @@ const CONTENIDO = [
   "ente", "periodicidad_externa", "plazo_externo_dias", "dimension_id", "prueba",
 ].join(", ");
 
-const COLUMNAS_VARIABLE = [
+export const COLUMNAS_VARIABLE = [
   "letra", "nombre", "descripcion", "fuente", "unidad", "consolidacion", "origen", "variable_compartida_id",
   "indicador_origen_id", "toma", "captura_min", "captura_max", "admite_negativos", "orden",
 ].join(", ");

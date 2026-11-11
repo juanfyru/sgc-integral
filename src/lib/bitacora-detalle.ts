@@ -728,6 +728,34 @@ export function describirEvento(e: EventoAuditoria): string {
       return `Devolvió la ficha de ${cod ?? "un indicador"}${numero(d.numero) === null ? "" : ` (versión ${numero(d.numero)})`}${conMotivo(d.nota)}`;
     case "indicador_borrador_descartado":
       return `Descartó el borrador de la ficha de ${cod ?? "un indicador"}${numero(d.numero) === null ? "" : ` (versión ${numero(d.numero)})`}`;
+    case "indicador_designados": {
+      const funcion = texto(d.funcion);
+      const quien = funcion === "analiza" ? "analiza" : funcion === "seguimiento" ? "hace seguimiento de" : "mide";
+      const lista = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.length > 0) : []);
+      const antes = lista(d.nombresAntes);
+      const despues = lista(d.nombresDespues);
+      return `Cambió quién ${quien} ${cod ?? "un indicador"}: ${antes.length > 0 ? antes.join(", ") : "nadie"} → ${despues.length > 0 ? despues.join(", ") : "nadie"}`;
+    }
+    case "indicador_operacion": {
+      const antes = objeto(d.antes) ?? {};
+      const despues = objeto(d.despues) ?? {};
+      const campos: [string, string][] = [
+        ["plazoReporteDias", "plazo de reporte"],
+        ["inicioMedicion", "inicio de medición"],
+        ["soporteObligatorio", "soporte obligatorio"],
+        ["nivelAcceso", "nivel de acceso"],
+      ];
+      const cambiados = campos.filter(([clave]) => JSON.stringify(antes[clave]) !== JSON.stringify(despues[clave])).map(([, campo]) => campo);
+      return `Cambió los datos de operación de ${cod ?? "un indicador"}${cambiados.length > 0 ? `: ${cambiados.join(", ")}` : ""}`;
+    }
+    case "indicador_duplicado":
+      return `Creó el indicador${cod ? ` ${cod}` : ""} a partir de ${texto(d.origen) ?? "otro indicador"}`;
+    case "indicador_retirado":
+      return cod ? `Retiró el indicador ${cod}${conMotivo(d.motivo)}` : `Retiró un indicador${conMotivo(d.motivo)}`;
+    case "indicador_descartado":
+      return cod ? `Descartó el indicador ${cod}${conMotivo(d.motivo)}` : `Descartó un indicador${conMotivo(d.motivo)}`;
+    case "indicador_borrado":
+      return `Borró el indicador${cod ? ` ${cod}` : ""}, que nunca se envió a aprobación`;
     case "tipo_norma_creado":
       return `Creó el tipo de norma${nombre ? ` «${nombre}»` : ""}`;
     case "tipo_norma_editado":
@@ -897,6 +925,12 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   indicador_aprobado: "Aprobó una ficha de indicador",
   indicador_devuelto: "Devolvió una ficha de indicador",
   indicador_borrador_descartado: "Descartó el borrador de una ficha de indicador",
+  indicador_designados: "Cambió las personas designadas de un indicador",
+  indicador_operacion: "Cambió los datos de operación de un indicador",
+  indicador_duplicado: "Creó un indicador a partir de otro",
+  indicador_retirado: "Retiró un indicador",
+  indicador_descartado: "Descartó un indicador",
+  indicador_borrado: "Borró un indicador",
   tipo_norma_creado: "Creó un tipo de norma",
   tipo_norma_editado: "Renombró un tipo de norma",
   tipo_norma_movido: "Movió un tipo de norma",

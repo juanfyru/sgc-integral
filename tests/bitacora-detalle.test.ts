@@ -736,4 +736,27 @@ describe("la ficha de indicador", () => {
     expect(nombreDeAccion("indicador_devuelto")).toBe("Devolvió una ficha de indicador");
     expect(nombreDeAccion("indicador_borrador_descartado")).toBe("Descartó el borrador de una ficha de indicador");
   });
+
+  it("dice qué pasó con las personas, la operación y la baja de un indicador", () => {
+    expect(
+      frase("indicador_designados", { codigo: "SGC-IND-06", funcion: "mide", antes: [4], despues: [5, 6], nombresAntes: ["Ana"], nombresDespues: ["Beto", "Carla"] }),
+    ).toBe("Cambió quién mide SGC-IND-06: Ana → Beto, Carla");
+    expect(frase("indicador_designados", { codigo: "SGC-IND-06", funcion: "seguimiento", nombresAntes: [], nombresDespues: ["Ana"] })).toBe(
+      "Cambió quién hace seguimiento de SGC-IND-06: nadie → Ana",
+    );
+    expect(
+      frase("indicador_operacion", {
+        codigo: "SGC-IND-06",
+        antes: { plazoReporteDias: 10, nivelAcceso: "general", inicioMedicion: "2026-01", soporteObligatorio: false },
+        despues: { plazoReporteDias: 15, nivelAcceso: "restringido", inicioMedicion: "2026-01", soporteObligatorio: false },
+      }),
+    ).toBe("Cambió los datos de operación de SGC-IND-06: plazo de reporte, nivel de acceso");
+    expect(frase("indicador_duplicado", { codigo: "GTH-IND-02", origen: "SGC-IND-06" })).toBe("Creó el indicador GTH-IND-02 a partir de SGC-IND-06");
+    expect(frase("indicador_retirado", { codigo: "SGC-IND-06", motivo: "Ya no se mide" })).toBe("Retiró el indicador SGC-IND-06: Ya no se mide");
+    expect(frase("indicador_descartado", { codigo: "SGC-IND-06", motivo: "Se abandonó" })).toBe("Descartó el indicador SGC-IND-06: Se abandonó");
+    expect(frase("indicador_borrado", { codigo: "SGC-IND-06" })).toBe("Borró el indicador SGC-IND-06, que nunca se envió a aprobación");
+    expect(frase("indicador_retirado", {})).toBe("Retiró un indicador");
+    expect(nombreDeAccion("indicador_designados")).toBe("Cambió las personas designadas de un indicador");
+    expect(nombreDeAccion("indicador_retirado")).toBe("Retiró un indicador");
+  });
 });

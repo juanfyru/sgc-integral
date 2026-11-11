@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Pencil } from "lucide-react";
+import { MenuAdministrar } from "@/componentes/indicadores/admin/MenuAdministrar";
 import { ControlDeCambios } from "@/componentes/indicadores/ficha/ControlDeCambios";
 import { FichaTecnica } from "@/componentes/indicadores/ficha/FichaTecnica";
 import { AprobarFicha, DevolverFicha, type FilaPorAprobar } from "@/componentes/indicadores/ficha/ListaPorAprobar";
-import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { obtenerSql } from "@/db/cliente";
@@ -20,6 +19,7 @@ import {
   type VersionResumen,
   type VersionVisible,
 } from "@/db/consultas/indicadores/aprobacion";
+import { bajaDeIndicador, panelDeAdministracion } from "@/db/consultas/indicadores/operacion";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
 import { fechaHoraLocal } from "@/lib/zona-horaria";
@@ -57,9 +57,15 @@ function vistaDe(v: Parametros["vista"]): Vista | null {
 const vigenteDe = (versiones: VersionVisible[]) => [...versiones].reverse().find((v) => v.estado === "aprobada") ?? null;
 const enCursoDe = (versiones: VersionVisible[]) => versiones.find((v) => v.estado === "borrador" || v.estado === "por_aprobar") ?? null;
 
-/** La versión de `?version=N` si la persona puede abrirla; sin parámetro, la vigente o, sin ella, la que está en curso. */
+/**
+ * La que se muestra sin pedirla: la vigente, la que está en curso o, en un indicador descartado (todas sus versiones
+ * quedaron descartadas), la última. Ese último caso solo lo alcanza quien administra: las demás ni lo encuentran.
+ */
+const porOmisionDe = (versiones: VersionVisible[]) => vigenteDe(versiones) ?? enCursoDe(versiones) ?? versiones[versiones.length - 1] ?? null;
+
+/** La versión de `?version=N` si la persona puede abrirla; sin parámetro, la de `porOmisionDe`. */
 function versionMostrada(versiones: VersionVisible[], pedida: Parametros["version"]): VersionVisible | null {
-  if (pedida === undefined) return vigenteDe(versiones) ?? enCursoDe(versiones);
+  if (pedida === undefined) return porOmisionDe(versiones);
   if (typeof pedida !== "string" || !/^\d{1,6}$/.test(pedida)) return null;
   return versiones.find((v) => v.numero === Number(pedida)) ?? null;
 }
@@ -233,7 +239,7 @@ export default async function PaginaIndicador({ params, searchParams }: { params
   const vista = vistaDe(sp.vista);
   if (vista === null || (vista === "versiones" && !ve)) notFound();
   const vigente = vigenteDe(versiones);
-  const mostrada = vista === "ficha" ? versionMostrada(versiones, sp.version) : (vigente ?? enCursoDe(versiones));
+  const mostrada = vista === "ficha" ? versionMostrada(versiones, sp.version) : porOmisionDe(versiones);
   if (!mostrada) notFound();
   const ficha = await fichaDeVersion(sesion, mostrada.id);
   if (!ficha) notFound();
@@ -253,7 +259,9 @@ export default async function PaginaIndicador({ params, searchParams }: { params
   ]
     .filter(Boolean)
     .join(" · ");
-  const editable = administra && (indicador.estado === "borrador" || indicador.estado === "activo");
+  // Lo que quien administra puede hacer con el indicador; solo se lee para él (viaja en el payload de la página).
+  const panel = administra ? await panelDeAdministracion(sesion, indicador.id) : null;
+  const baja = administra && (indicador.estado === "retirado" || indicador.estado === "descartado") ? await bajaDeIndicador(indicador.id) : null;
 
   let porAprobar: FilaPorAprobar | null = null;
   if (vista === "ficha" && ficha.estado === "por_aprobar") {
@@ -298,16 +306,18 @@ export default async function PaginaIndicador({ params, searchParams }: { params
         titulo={c.nombre ?? codigo}
         descripcion={linea}
         tituloEnfocable
-        acciones={
-          editable ? (
-            <Link href={rutaDeEdicion(codigo)} className={`${claseBoton("secundario")} ${FOCO}`}>
-              <Pencil aria-hidden="true" className="size-4" />
-              Editar ficha
-            </Link>
-          ) : undefined
-        }
+        acciones={panel ? <MenuAdministrar panel={panel} hrefEditar={rutaDeEdicion(codigo)} /> : undefined}
       />
       <PestanasDeIndicador codigo={codigo} activa={vista} conVersiones={ve} />
+      {baja ? (
+        <Recuadro>
+          <p>{`${indicador.estado === "retirado" ? "Retirado" : "Descartado"} el ${fechaHoraLocal(baja.en)}${baja.por ? ` por ${baja.por}` : ""}.`}</p>
+          <p className="break-words">{`Motivo: ${baja.motivo}`}</p>
+          {indicador.estado === "descartado" ? (
+            <p className="text-muted-foreground">Solo lo ve quien administra y su código sigue ocupado. Para retomarlo, use «Crear a partir de este».</p>
+          ) : null}
+        </Recuadro>
+      ) : null}
 
       {vista === "ficha" ? (
         <>

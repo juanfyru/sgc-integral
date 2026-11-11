@@ -36,6 +36,12 @@ vi.mock("@/app/acciones-indicadores", () => ({
   aprobarFichasAccion: vi.fn(),
   devolverFichaAccion: vi.fn(),
   descartarBorradorAccion: vi.fn(),
+  designarAccion: vi.fn(),
+  cambiarOperacionAccion: vi.fn(),
+  duplicarAccion: vi.fn(),
+  retirarAccion: vi.fn(),
+  descartarIndicadorAccion: vi.fn(),
+  borrarIndicadorAccion: vi.fn(),
 }));
 
 import PaginaIndicador from "@/app/(app)/indicadores/[codigo]/page";
@@ -47,6 +53,7 @@ import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { aprobarFichas, enviarAAprobacion } from "@/db/consultas/indicadores/aprobacion";
 import { crearIndicador } from "@/db/consultas/indicadores/fichas";
+import { descartarIndicador, retirar } from "@/db/consultas/indicadores/operacion";
 import type { DatosFicha } from "@/lib/esquemas/indicadores";
 import type { SesionValida } from "@/lib/sesion";
 import { indicadorDePrueba } from "./utiles/indicadores";
@@ -241,7 +248,8 @@ describe("las páginas de la ficha de indicador", () => {
       await expect(pagina(nuevo.codigo, { version: "9" })).rejects.toThrow("NO_ENCONTRADA");
       await expect(pagina(nuevo.codigo, { version: "uno" })).rejects.toThrow("NO_ENCONTRADA");
       contexto.sesion = valida(admin);
-      expect(await pagina(nuevo.codigo)).toContain("Editar ficha");
+      expect(await pagina(nuevo.codigo)).toContain(">Administrar<");
+      expect(ficha).not.toContain(">Administrar<");
     }));
 
   it("/indicadores/[codigo]: la ficha por aprobar de un indicador nuevo la abre quien debe aprobarla; para los demás no existe", () =>
@@ -274,6 +282,39 @@ describe("las páginas de la ficha de indicador", () => {
       const deAdmin = await pagina(nuevo.codigo);
       expect(deAdmin).toContain("Espera la aprobación");
       expect(deAdmin).not.toContain(">Aprobar</button>");
+    }));
+
+  it("/indicadores/[codigo]: un indicador descartado lo ve quien administra, marcado, y nadie más", () =>
+    enTransaccion(async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const { procesoId, lider } = await procesoConLider(tx);
+      const enviado = await borrador(tx, admin, { procesoId, prueba: { valores: { A: "9", B: "10" } } });
+      await enviarAAprobacion(admin, { versionId: enviado.versionId, credenciales: { clave: "ok" } }, firmar(tx));
+      await descartarIndicador(admin, { indicadorId: enviado.indicadorId, motivo: "Se abandonó la idea" }, { sql: tx });
+
+      contexto.sesion = valida(admin);
+      const html = await pagina(enviado.codigo);
+      expect(html).toContain(">Descartado<");
+      expect(html).toContain("Motivo: Se abandonó la idea");
+      expect(html).toContain("Versión 1, descartada: nunca rigió.");
+      expect(html).toContain(">Administrar<");
+      expect(await pagina(enviado.codigo, { vista: "versiones" })).toContain("Control de cambios");
+
+      for (const sesion of [lider, await usuarioDePrueba(tx, { rol: "gerencia" }), await usuarioDePrueba(tx, { rol: "consulta" })]) {
+        contexto.sesion = valida(sesion);
+        await expect(pagina(enviado.codigo)).rejects.toThrow("NO_ENCONTRADA");
+      }
+
+      // Un indicador retirado lo ven todos; el motivo y «Administrar», solo quien administra.
+      const activo = await indicadorDePrueba(tx);
+      await retirar(admin, { indicadorId: activo.id, motivo: "Ya no se mide" }, { sql: tx });
+      contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "consulta" }));
+      const deConsulta = await pagina(activo.codigo);
+      expect(deConsulta).toContain(">Retirado<");
+      expect(deConsulta).not.toContain("Ya no se mide");
+      expect(deConsulta).not.toContain(">Administrar<");
+      contexto.sesion = valida(admin);
+      expect(await pagina(activo.codigo)).toContain("Motivo: Ya no se mide");
     }));
 
   it("/indicadores/por-aprobar: no existe para Consulta; quien aprueba ve lo suyo y quien administra, los borradores", () =>

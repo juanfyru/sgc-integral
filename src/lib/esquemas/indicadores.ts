@@ -2,7 +2,7 @@ import { z } from "zod";
 import { FACTORES_TASA } from "@/lib/indicadores/formula/formas";
 import { fraccion } from "@/lib/indicadores/formula/fraccion";
 import { periodicidadDe } from "@/lib/indicadores/periodos";
-import { CONSOLIDACIONES, FORMAS, MAXIMO_EN_BLOQUE, MODOS_SEMAFORO, NIVELES_ACCESO, PERIODICIDADES, TENDENCIAS } from "@/lib/indicadores/tipos";
+import { CONSOLIDACIONES, FORMAS, FUNCIONES_DESIGNADO, MAXIMO_EN_BLOQUE, MODOS_SEMAFORO, NIVELES_ACCESO, PERIODICIDADES, TENDENCIAS } from "@/lib/indicadores/tipos";
 import { textoAcotado } from "@/lib/validacion";
 
 /**
@@ -212,3 +212,30 @@ export const EsquemaAprobarFichas = z
 
 /** Devolver con nota, sin clave (spec §7.6.3); el `id` de la versión viaja aparte. */
 export const EsquemaDevolverFicha = z.object({ nota: textoAcotado("La nota", 5, 1000) }).strict();
+
+/** Designar personas (spec §7.3): la función y la lista completa de quienes la tienen; el `id` del indicador viaja aparte. */
+export const EsquemaDesignar = z
+  .object({
+    funcion: z.enum(FUNCIONES_DESIGNADO, { error: "Elija la función" }),
+    usuarioIds: listaDeIds("Las personas elegidas no son válidas", "Elija hasta 20 personas"),
+  })
+  .strict();
+
+/** Los datos de operación (spec §7.3); el `id` del indicador viaja aparte. */
+export const EsquemaOperacion = z
+  .object({
+    plazoReporteDias: entero("El plazo de reporte", 0, 90),
+    inicioMedicion: z
+      .string({ error: "Elija el inicio de medición" })
+      .trim()
+      .refine((v) => periodicidadDe(v) !== null, "El inicio de medición no es un periodo válido"),
+    soporteObligatorio: casilla,
+    nivelAcceso: z.enum(NIVELES_ACCESO, { error: "Elija el nivel de acceso" }),
+  })
+  .strict();
+
+/** «Crear a partir de este» (spec §7.7): el proceso del indicador nuevo; el `id` del original viaja aparte. */
+export const EsquemaDuplicar = z.object({ procesoId: id("Elija el proceso") }).strict();
+
+/** Retirar o descartar un indicador (spec §7.7): motivo obligatorio y sin clave; el `id` viaja aparte. */
+export const EsquemaMotivoDeBaja = z.object({ motivo: textoAcotado("El motivo", 5, 500) }).strict();

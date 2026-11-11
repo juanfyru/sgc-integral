@@ -8,9 +8,26 @@ import { idNumerico, mutacion, type EstadoAccion } from "@/app/admin/comun";
 import { ErrorFirma } from "@/db/consultas/flujo/contrato";
 import { aprobarFichas, descartarBorrador, devolverFicha, enviarAAprobacion } from "@/db/consultas/indicadores/aprobacion";
 import { abrirCambio, crearIndicador, guardarBorrador } from "@/db/consultas/indicadores/fichas";
+import {
+  borrarIndicador,
+  cambiarOperacion,
+  descartarIndicador,
+  designar,
+  duplicar,
+  retirar,
+} from "@/db/consultas/indicadores/operacion";
 import { contextoDePeticion } from "@/lib/contexto-peticion";
 import { EsquemaSinDatos } from "@/lib/esquemas/documentos";
-import { EsquemaAprobarFichas, EsquemaDevolverFicha, EsquemaEnviarFicha, EsquemaFicha } from "@/lib/esquemas/indicadores";
+import {
+  EsquemaAprobarFichas,
+  EsquemaDesignar,
+  EsquemaDevolverFicha,
+  EsquemaDuplicar,
+  EsquemaEnviarFicha,
+  EsquemaFicha,
+  EsquemaMotivoDeBaja,
+  EsquemaOperacion,
+} from "@/lib/esquemas/indicadores";
 import { rutaInterna } from "@/lib/rutas";
 import { parsearFormulario } from "@/lib/validacion";
 
@@ -127,5 +144,55 @@ export async function descartarBorradorAccion(_prev: EstadoAccion, formData: For
     parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id", "volver"] });
     await descartarBorrador(sesion, idNumerico(formData, "id"));
     return rutaInterna(formData.get("volver"), "/indicadores");
+  });
+}
+
+/** `id` es el del indicador. Reemplaza la lista de una función; no navega: el diálogo se cierra y la página se repinta. */
+export async function designarAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    const d = parsearFormulario(formData, EsquemaDesignar, { omitir: ["id"] });
+    await designar(sesion, { indicadorId: idNumerico(formData, "id"), funcion: d.funcion, usuarioIds: d.usuarioIds });
+  });
+}
+
+/** `id` es el del indicador. No crea versión ni cambia la huella de la ficha. */
+export async function cambiarOperacionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    const d = parsearFormulario(formData, EsquemaOperacion, { omitir: ["id"] });
+    await cambiarOperacion(sesion, { indicadorId: idNumerico(formData, "id"), ...d });
+  });
+}
+
+/** `id` es el del indicador original; lleva a la edición del borrador nuevo. */
+export async function duplicarAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    const d = parsearFormulario(formData, EsquemaDuplicar, { omitir: ["id"] });
+    const { codigo } = await duplicar(sesion, { indicadorId: idNumerico(formData, "id"), procesoId: d.procesoId });
+    return rutaDeEdicion(codigo);
+  });
+}
+
+/** `id` es el del indicador. Motivo obligatorio y sin clave. */
+export async function retirarAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    const { motivo } = parsearFormulario(formData, EsquemaMotivoDeBaja, { omitir: ["id"] });
+    await retirar(sesion, { indicadorId: idNumerico(formData, "id"), motivo });
+  });
+}
+
+/** `id` es el del indicador. Solo un borrador que ya se envió a aprobación. */
+export async function descartarIndicadorAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    const { motivo } = parsearFormulario(formData, EsquemaMotivoDeBaja, { omitir: ["id"] });
+    await descartarIndicador(sesion, { indicadorId: idNumerico(formData, "id"), motivo });
+  });
+}
+
+/** `id` es el del indicador. Solo un borrador que nunca se envió a aprobación; lleva a la lista. */
+export async function borrarIndicadorAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
+    await borrarIndicador(sesion, idNumerico(formData, "id"));
+    return "/indicadores";
   });
 }
