@@ -81,7 +81,7 @@ describe("esquema de la Fase 13C", () => {
 
   it("documentos: origen, plazo y fecha fijada coherente", () =>
     revertida(sql, async (tx) => {
-      const [d] = await tx`SELECT id FROM documentos LIMIT 1`;
+      const [d] = await tx`SELECT id FROM documentos WHERE proxima_revision_fijada IS NULL AND fijada_por IS NULL ORDER BY id LIMIT 1`;
       const [u] = await tx`SELECT id FROM usuarios ORDER BY id LIMIT 1`;
       expect(await fallaCon(tx.savepoint((s) => s`UPDATE documentos SET origen = 'otro' WHERE id = ${d.id}`))).toBe("23514");
       expect(await fallaCon(tx.savepoint((s) => s`UPDATE documentos SET meses_revision = 0 WHERE id = ${d.id}`))).toBe("23514");
