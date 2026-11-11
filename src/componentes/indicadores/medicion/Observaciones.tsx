@@ -6,9 +6,12 @@ import { ErrorAccion } from "@/componentes/tramites/AccionesSolicitud";
 import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import { Insignia } from "@/componentes/ui/Insignia";
+import { MAXIMO_TEXTO_MEDICION } from "@/lib/indicadores/tipos";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 const CONTROL = `${claseControl} w-full min-w-0`;
+/** «Hasta 2.000 caracteres.», con el punto de miles escrito aquí: igual en el servidor y en cualquier navegador. */
+const HASTA = `Hasta ${String(MAXIMO_TEXTO_MEDICION).replace(/\B(?=(\d{3})+(?!\d))/g, ".")} caracteres.`;
 
 /** Una respuesta, con su fecha ya escrita en la zona de la instalación. */
 export type RespuestaVista = { id: number; autor: string; fecha: string; texto: string };
@@ -23,21 +26,27 @@ function Autor({ r }: { r: RespuestaVista }) {
   );
 }
 
-function Responder({ observacionId }: { observacionId: number }) {
+/** «Responder» se repite en cada observación: dice a quién, como los enlaces de cada fila de la tabla del año. */
+function Responder({ observacionId, de }: { observacionId: number; de: RespuestaVista }) {
+  const aQuien = <span className="sr-only">{` a ${de.autor}, ${de.fecha}`}</span>;
   const [estado, enviar, pendiente] = useActionState(responderAccion, null);
   const texto = estado?.valores?.texto;
   return (
     <details className="rounded-md border border-border px-3 py-2">
-      <summary className={`cursor-pointer rounded-sm text-sm font-medium ${FOCO}`}>Responder</summary>
+      <summary className={`cursor-pointer rounded-sm text-sm font-medium ${FOCO}`}>
+        Responder
+        {aQuien}
+      </summary>
       <form action={enviar} className="mt-3 flex flex-col gap-3">
         <input type="hidden" name="id" value={observacionId} />
-        <Campo etiqueta="Respuesta" nombre="texto" id={`respuesta-${observacionId}`} ayuda="Hasta 2.000 caracteres. Avisa a quien dejó la observación.">
-          <textarea required maxLength={2000} rows={3} defaultValue={typeof texto === "string" ? texto : ""} className={CONTROL} />
+        <Campo etiqueta="Respuesta" nombre="texto" id={`respuesta-${observacionId}`} ayuda={`${HASTA} Avisa a quien dejó la observación.`}>
+          <textarea required maxLength={MAXIMO_TEXTO_MEDICION} rows={3} defaultValue={typeof texto === "string" ? texto : ""} className={CONTROL} />
         </Campo>
         <ErrorAccion estado={estado} />
         <div>
           <Boton type="submit" variante="secundario" pendiente={pendiente}>
             {pendiente ? "Respondiendo…" : "Enviar la respuesta"}
+            {aQuien}
           </Boton>
         </div>
       </form>
@@ -55,9 +64,9 @@ function NuevaObservacion({ medicionId, etiqueta }: { medicionId: number; etique
         etiqueta={`Observación sobre ${etiqueta.toLowerCase()}`}
         nombre="texto"
         id={`observacion-${medicionId}`}
-        ayuda="Hasta 2.000 caracteres. No se edita ni se borra; avisa a quienes analizan el indicador."
+        ayuda={`${HASTA} No se edita ni se borra; avisa a quienes analizan el indicador.`}
       >
-        <textarea required maxLength={2000} rows={3} defaultValue={typeof texto === "string" ? texto : ""} className={CONTROL} />
+        <textarea required maxLength={MAXIMO_TEXTO_MEDICION} rows={3} defaultValue={typeof texto === "string" ? texto : ""} className={CONTROL} />
       </Campo>
       <ErrorAccion estado={estado} />
       <div>
@@ -111,7 +120,7 @@ export function Observaciones({
                   ))}
                 </ol>
               ) : null}
-              {puedeResponder ? <Responder observacionId={o.id} /> : null}
+              {puedeResponder ? <Responder observacionId={o.id} de={o} /> : null}
             </li>
           ))}
         </ol>

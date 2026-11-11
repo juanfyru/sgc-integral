@@ -12,6 +12,12 @@ export class ErrorIndicador extends ErrorTramite {
   }
 }
 
+/** El tope de cada parte del análisis, de una observación y de una respuesta (spec §8.4 y §8.6). */
+export const MAXIMO_TEXTO_MEDICION = 2000;
+
+/** Los periodos que caben en un lote de históricos (spec §8.8): los meses de cinco años. */
+export const MAXIMO_HISTORICOS = 60;
+
 /** Tope de una aprobación de fichas en bloque (spec §7.6.4): el de la lista que «Por aprobar» puede mostrar. */
 export const MAXIMO_EN_BLOQUE = 200;
 

@@ -17,7 +17,7 @@ import { puedeRegistrarHistoricos, puedeVerIndicador } from "@/lib/alcance";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { DIVISION_POR_CERO, DIVISION_POR_CERO_HISTORICO, reglaDeTexto } from "@/lib/indicadores/reporte";
 import { textoValor } from "@/lib/indicadores/textos";
-import { ErrorIndicador } from "@/lib/indicadores/tipos";
+import { ErrorIndicador, MAXIMO_HISTORICOS } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import {
@@ -34,9 +34,6 @@ import {
 } from "./mediciones";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
-
-/** Lo que cabe en un lote: los meses de cinco años. */
-export const MAXIMO_HISTORICOS = 60;
 
 const NO_HISTORICO = "Ese periodo no es histórico: repórtelo por «Reportar»";
 

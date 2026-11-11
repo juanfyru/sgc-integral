@@ -16,7 +16,8 @@ export type FilaHistoricaVista = {
   /** «Tercer trimestre de 2025». */
   etiqueta: string;
   cerrada: boolean;
-  valores: { letra: string; valor: string | null }[];
+  /** Las variables de la versión que rige el periodo, con su nombre en ella. */
+  valores: { letra: string; nombre: string; valor: string | null }[];
   noAplica: boolean;
   motivo: string | null;
   resultado: string | null;
@@ -63,7 +64,8 @@ export function EdicionDeHistoricos({
       <input type="hidden" name="volver" value={volver} />
       <p className="text-sm text-muted-foreground">
         Los periodos que terminaron antes de aprobarse la ficha se registran aquí, varios a la vez. Quedan marcados «Registro histórico»; el análisis y el
-        soporte son opcionales. Deje en blanco los que no tenga. Si en un periodo no hubo casos, marque «No aplica» y escriba el motivo.
+        soporte son opcionales. Deje en blanco los que no tenga. Una fila en blanco no cambia lo ya registrado. Si en un periodo no
+        hubo casos, marque «No aplica» y escriba el motivo.
       </p>
       <TablaDatos titulo={`Históricos de ${anio}`} columnas={columnas} filas={filas.length} vacio={`No hay históricos que registrar en ${anio}.`}>
         {filas.map((f) => (
@@ -87,7 +89,7 @@ export function EdicionDeHistoricos({
                   ) : (
                     <input
                       name={campo}
-                      aria-label={`${x.nombre}, ${f.etiqueta.toLowerCase()}`}
+                      aria-label={`${propia.nombre}, ${f.etiqueta.toLowerCase()}`}
                       inputMode="decimal"
                       autoComplete="off"
                       defaultValue={typeof v[campo] === "string" ? (v[campo] as string) : (guardado ?? "")}

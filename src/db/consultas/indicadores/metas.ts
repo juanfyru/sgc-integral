@@ -5,7 +5,9 @@
  * justificación ni deja marca. En rangos fijos el límite es el de la ficha y una meta que lo deja del lado equivocado
  * necesita una versión nueva. La medición del periodo, si existe, se recalcula (`recalcularMedicion`, evento `meta`).
  *
- * Candados: el indicador `FOR SHARE`, la medición del periodo `FOR UPDATE` y después la meta (`indicador_metas`).
+ * Candados: el indicador `FOR UPDATE` (primero, como en el resto del módulo), la medición del periodo `FOR UPDATE` y
+ * después la meta (`indicador_metas`). El indicador va `FOR UPDATE` porque un periodo sin medición no tiene otra fila que
+ * bloquear: así dos programaciones simultáneas no leen la misma meta anterior y la bitácora no lleva un «antes» viejo.
  */
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
@@ -89,7 +91,7 @@ export async function programarMeta(
   await asegurarMediciones({ sql, ahora, indicadorId: d.indicadorId });
 
   await enTransaccion(sql, async (tx) => {
-    const [i] = await tx`SELECT id, codigo, estado, inicio_medicion FROM indicadores WHERE id = ${d.indicadorId} FOR SHARE`;
+    const [i] = await tx`SELECT id, codigo, estado, inicio_medicion FROM indicadores WHERE id = ${d.indicadorId} FOR UPDATE`;
     if (!i) throw new ErrorIndicador("El indicador no existe");
     if (i.estado !== "activo") {
       throw new ErrorIndicador(i.estado === "retirado" ? "El indicador está retirado: ya no admite cambios de meta" : "El indicador no tiene una ficha aprobada");

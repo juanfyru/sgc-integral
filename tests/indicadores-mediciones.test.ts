@@ -644,8 +644,8 @@ describe("lecturas", () => {
       ]);
       expect(filas[0]).toMatchObject({ resultado: "100 %", semaforo: "bien", cumple: true, meta: "≥ 90 %" });
       expect(filas[0].valores).toEqual([
-        { letra: "A", valor: "5" },
-        { letra: "B", valor: "5" },
+        { letra: "A", nombre: "Auditorías ejecutadas", valor: "5" },
+        { letra: "B", nombre: "Auditorías programadas", valor: "5" },
       ]);
       expect(filas[1]).toMatchObject({ noAplica: true, motivo: "No hubo auditorías programadas", resultado: null, semaforo: null, cumple: null });
       expect(filas[2]).toMatchObject({ resultado: "60 %", semaforo: "critico", cumple: false, requiereAccion: true, vencida: false });

@@ -275,18 +275,26 @@ function Versiones({ resumen, anteriores, vigente }: { resumen: VersionResumen[]
 
 /**
  * Las variables de la ficha vigente más las letras que solo tiene la versión que rige algún histórico (una variable que
- * un cambio mayor quitó), para que el modo edición pida todas las de cada periodo.
+ * un cambio mayor quitó), con el nombre que tienen en esa versión, para que el modo edición pida todas las de cada
+ * periodo.
  */
 function conLetrasDe(variables: { letra: string; nombre: string }[], filas: FilaHistoricaVista[]): { letra: string; nombre: string }[] {
-  const extra = [...new Set(filas.flatMap((f) => f.valores.map((v) => v.letra)))].filter((l) => !variables.some((v) => v.letra === l));
-  return [...variables, ...extra.sort().map((letra) => ({ letra, nombre: `Variable ${letra}` }))];
+  const extra = new Map<string, string>();
+  for (const v of filas.flatMap((f) => f.valores)) {
+    if (!variables.some((x) => x.letra === v.letra) && !extra.has(v.letra)) extra.set(v.letra, v.nombre);
+  }
+  return [...variables, ...[...extra].sort(([a], [b]) => a.localeCompare(b)).map(([letra, nombre]) => ({ letra, nombre }))];
 }
 
-/** «Se registraron 3 históricos.» tras guardar el modo edición (`?registrados=N`); `null` sin el parámetro. */
-function avisoDeHistoricos(r: Parametros["registrados"]): string | null {
+/**
+ * «Se registraron 3 históricos.» tras guardar el modo edición (`?registrados=N`); `null` sin el parámetro. «No cambió
+ * ningún histórico.» no es un éxito: va en texto neutro.
+ */
+function avisoDeHistoricos(r: Parametros["registrados"]): { texto: string; exito: boolean } | null {
   if (typeof r !== "string" || !/^\d{1,3}$/.test(r)) return null;
   const n = Number(r);
-  return n === 0 ? "No cambió ningún histórico." : `Se ${n === 1 ? "registró" : "registraron"} ${cuenta(n, "histórico", "históricos")}.`;
+  if (n === 0) return { texto: "No cambió ningún histórico.", exito: false };
+  return { texto: `Se ${n === 1 ? "registró" : "registraron"} ${cuenta(n, "histórico", "históricos")}.`, exito: true };
 }
 
 /**
@@ -318,7 +326,7 @@ function Resultados({
   analisis: DatosDeAnalisis | null;
   /** Quien registra históricos: si el año los tiene abiertos y si está en el modo edición. */
   historicos: { editables: FilaHistoricaVista[]; editando: boolean } | null;
-  aviso: string | null;
+  aviso: { texto: string; exito: boolean } | null;
 }) {
   const enlaceDeAnio = (a: number) => `${rutaDeIndicador(codigo)}?vista=resultados&anio=${a}`;
   const editando = historicos?.editando === true;
@@ -357,8 +365,8 @@ function Resultados({
           </nav>
         </div>
         {aviso ? (
-          <p role="status" className="text-sm text-estado-bien-texto">
-            {aviso}
+          <p role="status" className={`text-sm ${aviso.exito ? "text-estado-bien-texto" : "text-muted-foreground"}`}>
+            {aviso.texto}
           </p>
         ) : null}
         {editando && historicos ? (

@@ -2,7 +2,18 @@ import { z } from "zod";
 import { FACTORES_TASA } from "@/lib/indicadores/formula/formas";
 import { fraccion } from "@/lib/indicadores/formula/fraccion";
 import { periodicidadDe } from "@/lib/indicadores/periodos";
-import { CONSOLIDACIONES, FORMAS, FUNCIONES_DESIGNADO, MAXIMO_EN_BLOQUE, MODOS_SEMAFORO, NIVELES_ACCESO, PERIODICIDADES, TENDENCIAS } from "@/lib/indicadores/tipos";
+import {
+  CONSOLIDACIONES,
+  FORMAS,
+  FUNCIONES_DESIGNADO,
+  MAXIMO_EN_BLOQUE,
+  MAXIMO_HISTORICOS,
+  MAXIMO_TEXTO_MEDICION,
+  MODOS_SEMAFORO,
+  NIVELES_ACCESO,
+  PERIODICIDADES,
+  TENDENCIAS,
+} from "@/lib/indicadores/tipos";
 import { parsearFormulario, textoAcotado } from "@/lib/validacion";
 
 /**
@@ -280,7 +291,10 @@ export function juntarValoresDeReporte(formData: FormData): FormData {
 
 /** Una parte del análisis; la consulta decide qué alcanza. Lo vaciado lo dice `analisisDelFormulario`. */
 const parteDeAnalisis = (nombre: string) =>
-  z.string({ error: `${nombre} no tiene un formato válido` }).max(2000, `${nombre} no puede pasar de 2000 caracteres`).optional();
+  z
+    .string({ error: `${nombre} no tiene un formato válido` })
+    .max(MAXIMO_TEXTO_MEDICION, `${nombre} no puede pasar de ${MAXIMO_TEXTO_MEDICION} caracteres`)
+    .optional();
 
 /** El análisis de una medición (spec §8.4). El `id` de la medición y `volver` viajan aparte. */
 export const EsquemaAnalisis = z
@@ -313,9 +327,9 @@ const textoDeObservacion = (que: "observación" | "respuesta") =>
     .string({ error: `Escriba la ${que}` })
     .trim()
     .min(1, `Escriba la ${que}`)
-    .max(2000, `La ${que} no puede pasar de 2000 caracteres`);
+    .max(MAXIMO_TEXTO_MEDICION, `La ${que} no puede pasar de ${MAXIMO_TEXTO_MEDICION} caracteres`);
 
-/** Una observación (spec §8.6), de 1 a 2.000 caracteres; el `id` de la medición viaja aparte. */
+/** Una observación (spec §8.6), de 1 a `MAXIMO_TEXTO_MEDICION` caracteres; el `id` de la medición viaja aparte. */
 export const EsquemaObservacion = z.object({ texto: textoDeObservacion("observación") }).strict();
 
 /** La respuesta a una observación; el `id` de la observación viaja aparte. */
@@ -358,7 +372,7 @@ export const EsquemaHistoricos = z
             .strict(),
           { error: "Las filas no tienen un formato válido" },
         )
-        .max(60, "Registre hasta 60 periodos a la vez"),
+        .max(MAXIMO_HISTORICOS, `Registre hasta ${MAXIMO_HISTORICOS} periodos a la vez`),
       "Las filas no tienen un formato válido",
     ),
   })

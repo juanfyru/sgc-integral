@@ -11,15 +11,12 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { puedeAnalizar, type SujetoVisibilidad } from "@/lib/alcance";
-import { analisisCompleto, analisisExigido, type AnalisisExigido } from "@/lib/indicadores/estados";
-import { ErrorIndicador, type Semaforo } from "@/lib/indicadores/tipos";
+import { analisisCompleto, analisisExigido, MINIMO_ANALISIS, type AnalisisExigido } from "@/lib/indicadores/estados";
+import { ErrorIndicador, MAXIMO_TEXTO_MEDICION, type Semaforo } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
 import { analisisDe, conMayuscula, contextoDeMedicion, recalcularMedicion, type Contexto } from "./mediciones";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
-
-/** El tope de cada parte del análisis. */
-export const MAXIMO_ANALISIS = 2000;
 
 const SIN_DATOS = "Reporte los datos antes de escribir el análisis";
 const NO_APLICA = "Una medición «No aplica» no lleva análisis: basta el motivo";
@@ -43,7 +40,7 @@ function exigidoDe(m: Record<string, unknown>): AnalisisExigido {
 
 /** El mensaje de un análisis que no alcanza lo exigido. */
 function faltaDe(exigido: AnalisisExigido, m: Record<string, unknown>): string {
-  if (exigido === "simple") return "Escriba el análisis (al menos 10 caracteres)";
+  if (exigido === "simple") return `Escriba el análisis (al menos ${MINIMO_ANALISIS} caracteres)`;
   return m.semaforo === "critico"
     ? "En un resultado crítico escriba la causa de la desviación y la acción propuesta"
     : "Con un incumplimiento repetido escriba la causa de la desviación y la acción propuesta";
@@ -53,7 +50,7 @@ function faltaDe(exigido: AnalisisExigido, m: Record<string, unknown>): string {
 function textoNuevo(valor: string | undefined, actual: string | null, nombre: string): string | null {
   if (valor === undefined) return actual;
   const t = typeof valor === "string" ? valor.trim() : "";
-  if (t.length > MAXIMO_ANALISIS) throw new ErrorIndicador(`${nombre} no puede pasar de ${MAXIMO_ANALISIS} caracteres`);
+  if (t.length > MAXIMO_TEXTO_MEDICION) throw new ErrorIndicador(`${nombre} no puede pasar de ${MAXIMO_TEXTO_MEDICION} caracteres`);
   return t === "" ? null : t;
 }
 

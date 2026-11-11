@@ -1005,8 +1005,8 @@ export type FilaDelAnio = {
   historica: boolean;
   noAplica: boolean;
   motivo: string | null;
-  /** Por letra de la versión que rige el periodo, con coma decimal; `null` si no hay. */
-  valores: { letra: string; valor: string | null }[];
+  /** Por letra de la versión que rige el periodo, con el nombre que tiene en ella y coma decimal; `null` si no hay. */
+  valores: { letra: string; nombre: string; valor: string | null }[];
   /** «60 %»: nunca contradice el color. */
   resultado: string | null;
   semaforo: Semaforo | null;
@@ -1072,7 +1072,7 @@ function filaSinMedicion(p: Periodo, version: VersionDeCalculo, regla: Regla, ah
     historica: false,
     noAplica: false,
     motivo: null,
-    valores: version.calculo.letras.map((letra) => ({ letra, valor: null })),
+    valores: version.variables.map((v) => ({ letra: v.letra, nombre: v.nombre, valor: null })),
     resultado: null,
     semaforo: null,
     meta: textoMeta(regla, version.unidad),
@@ -1134,7 +1134,11 @@ async function filaDeMedicion(
     historica,
     noAplica,
     motivo,
-    valores: version.calculo.letras.map((letra) => ({ letra, valor: valores[letra] ? numeroEs(valores[letra], 4, "truncar") : null })),
+    valores: version.variables.map((v) => ({
+      letra: v.letra,
+      nombre: v.nombre,
+      valor: valores[v.letra] ? numeroEs(valores[v.letra], 4, "truncar") : null,
+    })),
     resultado: resultado ? textoValor(resultado, version.unidad, regla) : null,
     semaforo,
     meta: textoMeta(regla, version.unidad),

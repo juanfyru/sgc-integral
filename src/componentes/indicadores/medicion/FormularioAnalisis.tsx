@@ -7,6 +7,7 @@ import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import type { DatosDeAnalisis } from "@/db/consultas/indicadores/analisis";
 import { MINIMO_ANALISIS } from "@/lib/indicadores/estados";
+import { MAXIMO_TEXTO_MEDICION } from "@/lib/indicadores/tipos";
 
 const CONTROL = `${claseControl} w-full min-w-0`;
 /** El análisis lo ve quien ve el indicador (en uno general, toda sesión): los datos personales van en el soporte (spec §21). */
@@ -41,7 +42,7 @@ export function FormularioAnalisis({ datos, volver }: { datos: DatosDeAnalisis; 
         rows={3}
         required={dosPartes}
         minLength={dosPartes ? MINIMO_ANALISIS : undefined}
-        maxLength={2000}
+        maxLength={MAXIMO_TEXTO_MEDICION}
         defaultValue={valor(campo, datos[campo])}
         className={CONTROL}
       />
@@ -64,7 +65,7 @@ export function FormularioAnalisis({ datos, volver }: { datos: DatosDeAnalisis; 
             rows={3}
             required={datos.exigido === "simple" && !conDosPartes}
             minLength={datos.exigido === "simple" && !conDosPartes ? MINIMO_ANALISIS : undefined}
-            maxLength={2000}
+            maxLength={MAXIMO_TEXTO_MEDICION}
             defaultValue={valor("analisis", datos.analisis)}
             className={CONTROL}
           />

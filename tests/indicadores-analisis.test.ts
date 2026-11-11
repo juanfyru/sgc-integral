@@ -329,6 +329,44 @@ describe("observaciones", () => {
       expect(await avisos(tx, "indicadores.respuesta", t3)).toHaveLength(3);
     }));
 
+  it("quien observa y además analiza no recibe su propio aviso", () =>
+    revertida(sql, async (tx) => {
+      const gerencia = await usuarioDePrueba(tx, { rol: "gerencia" });
+      const { analiza, medicion } = await preparar(tx);
+      const t3 = await medicion("2026-T3");
+      const [i] = await tx`SELECT indicador_id FROM mediciones WHERE id = ${t3}`;
+      await tx`INSERT INTO indicador_designados (indicador_id, usuario_id, funcion, creado_por)
+        VALUES (${i.indicador_id}, ${gerencia.usuarioId}, 'analiza', ${gerencia.usuarioId})`;
+      await observar(gerencia, { medicionId: t3, texto: "¿Por qué bajó el resultado?" }, opc(tx));
+      expect((await avisos(tx, "indicadores.observacion", t3)).map((a) => Number(a.usuario_id))).toEqual([analiza.usuarioId]);
+    }));
+
+  it("la respuesta no avisa a quien observó si ya no está activo o ya no ve las observaciones", () =>
+    revertida(sql, async (tx) => {
+      const { analiza, sigue, medicion } = await preparar(tx);
+      const t3 = await medicion("2026-T3");
+      const control = await usuarioDePrueba(tx, { rol: "control_interno" });
+      const deControl = await observar(control, { medicionId: t3, texto: "Revise el denominador" }, opc(tx));
+      const deSigue = await observar(sigue, { medicionId: t3, texto: "Falta el soporte" }, opc(tx));
+      // Control Interno se desactiva; a quien seguía le quitan la designación (ya no ve las observaciones).
+      await tx`UPDATE usuarios SET activo = false WHERE id = ${control.usuarioId}`;
+      await tx`DELETE FROM indicador_designados WHERE usuario_id = ${sigue.usuarioId}`;
+      await responder(analiza, { observacionId: deControl.id, texto: "Revisado: estaba bien" }, opc(tx));
+      await responder(analiza, { observacionId: deSigue.id, texto: "Ya se adjuntó" }, opc(tx));
+      expect(await avisos(tx, "indicadores.respuesta", t3)).toHaveLength(0);
+    }));
+
+  it("responder en un indicador restringido que la persona no ve: la observación no existe", () =>
+    revertida(sql, async (tx) => {
+      const restringido = await preparar(tx, { nivelAcceso: "restringido" });
+      const r3 = await restringido.medicion("2026-T3");
+      const { id } = await observar(await usuarioDePrueba(tx, { rol: "control_interno" }), { medicionId: r3, texto: "Revise el denominador" }, opc(tx));
+      // Analiza otro indicador, pero este no lo ve.
+      const otro = await preparar(tx);
+      await rechaza(responder(otro.analiza, { observacionId: id, texto: "Una respuesta" }, opc(tx)), "La observación no existe");
+      expect(await tx`SELECT id FROM medicion_observaciones WHERE responde_a = ${id}`).toHaveLength(0);
+    }));
+
   it("una observación no se edita ni se borra, y se puede añadir a una medición cerrada", () =>
     revertida(sql, async (tx) => {
       const { analiza, sigue, medicion } = await preparar(tx);

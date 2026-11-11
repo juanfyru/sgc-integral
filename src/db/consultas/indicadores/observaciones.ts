@@ -14,7 +14,7 @@ import { avisarA } from "@/db/consultas/avisos-vencimiento";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { puedeAnalizar, puedeObservar, puedeVerIndicador, puedeVerSoportes, responsablesDeAnalizar, type SujetoVisibilidad } from "@/lib/alcance";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
-import { ErrorIndicador } from "@/lib/indicadores/tipos";
+import { ErrorIndicador, MAXIMO_TEXTO_MEDICION } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
 import type { Rol } from "@/lib/roles";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -22,20 +22,17 @@ import { conMayuscula, NO_EXISTE } from "./mediciones";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
-/** El tope de una observación y de una respuesta (spec §8.6). */
-export const MAXIMO_OBSERVACION = 2000;
-
 const OBSERVACION_NO_EXISTE = "La observación no existe";
 
 export type Respuesta = { id: number; autor: string; texto: string; creadoEn: Date };
 /** Una observación con sus respuestas, de la más antigua a la más reciente. */
 export type Observacion = Respuesta & { respuestas: Respuesta[] };
 
-/** De 1 a 2.000 caracteres, sin los espacios de los extremos. */
+/** De 1 a `MAXIMO_TEXTO_MEDICION` caracteres, sin los espacios de los extremos. */
 function textoDe(valor: string, que: "observación" | "respuesta"): string {
   const t = typeof valor === "string" ? valor.trim() : "";
   if (t === "") throw new ErrorIndicador(`Escriba la ${que}`);
-  if (t.length > MAXIMO_OBSERVACION) throw new ErrorIndicador(`La ${que} no puede pasar de ${MAXIMO_OBSERVACION} caracteres`);
+  if (t.length > MAXIMO_TEXTO_MEDICION) throw new ErrorIndicador(`La ${que} no puede pasar de ${MAXIMO_TEXTO_MEDICION} caracteres`);
   return t;
 }
 

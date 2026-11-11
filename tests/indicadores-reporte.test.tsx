@@ -57,6 +57,7 @@ import PaginaReportar from "@/app/(app)/indicadores/[codigo]/reportar/[periodo]/
 import { DialogoMetas } from "@/componentes/indicadores/medicion/DialogoMetas";
 import { FormularioAnalisis } from "@/componentes/indicadores/medicion/FormularioAnalisis";
 import { FormularioReporte } from "@/componentes/indicadores/medicion/FormularioReporte";
+import { Observaciones } from "@/componentes/indicadores/medicion/Observaciones";
 import { ResultadoEnVivo } from "@/componentes/indicadores/medicion/ResultadoEnVivo";
 import { obtenerSql } from "@/db/cliente";
 import type { DatosDeAnalisis } from "@/db/consultas/indicadores/analisis";
@@ -445,6 +446,27 @@ describe("FormularioAnalisis y DialogoMetas", () => {
   });
 });
 
+describe("Observaciones", () => {
+  it("cada «Responder» y cada «Enviar la respuesta» dicen de quién es la observación", () => {
+    const html = renderToStaticMarkup(
+      <Observaciones
+        medicionId={41}
+        etiqueta="Tercer trimestre de 2026"
+        observaciones={[
+          { id: 1, autor: "Ana Pérez", fecha: "5 oct 2026, 10:00", texto: "Revise el denominador", respuestas: [] },
+          { id: 2, autor: "Luis Gómez", fecha: "6 oct 2026, 09:00", texto: "Falta el soporte", respuestas: [] },
+        ]}
+        puedeObservar={false}
+        puedeResponder
+      />,
+    );
+    expect(html).toContain('Responder<span class="sr-only"> a Ana Pérez, 5 oct 2026, 10:00</span></summary>');
+    expect(html).toContain('Responder<span class="sr-only"> a Luis Gómez, 6 oct 2026, 09:00</span></summary>');
+    expect(html).toMatch(/Enviar la respuesta<span class="sr-only"> a Ana Pérez, 5 oct 2026, 10:00<\/span><\/button>/);
+    expect(html).toContain("Hasta 2.000 caracteres. Avisa a quien dejó la observación.");
+  });
+});
+
 describe("los esquemas de la Tarea 10", () => {
   const formulario = (campos: Record<string, string>) => {
     const f = new FormData();
@@ -565,7 +587,10 @@ describe("las páginas de la Tarea 10", () => {
       await expect(pagina(ind.codigo, { anio: "2025", historicos: "otra" })).rejects.toThrow("NO_ENCONTRADA");
       // 2026 no tiene históricos.
       await expect(pagina(ind.codigo, { anio: "2026", historicos: "editar" })).rejects.toThrow("NO_ENCONTRADA");
-      expect(await pagina(ind.codigo, { anio: "2025", registrados: "2" })).toContain("Se registraron 2 históricos.");
+      expect(edicion).toContain("Una fila en blanco no cambia lo ya registrado.");
+      expect(await pagina(ind.codigo, { anio: "2025", registrados: "2" })).toMatch(/<p role="status" class="[^"]*text-estado-bien-texto[^"]*">Se registraron 2 históricos\.<\/p>/);
+      // «No cambió nada» no es un éxito: va en texto neutro.
+      expect(await pagina(ind.codigo, { anio: "2025", registrados: "0" })).toMatch(/<p role="status" class="[^"]*text-muted-foreground[^"]*">No cambió ningún histórico\.<\/p>/);
 
       // El Admin SGC los registra aunque haya quien mida; quien solo ve el indicador, no.
       contexto.sesion = valida(await sesionAdmin(tx));
@@ -604,6 +629,28 @@ describe("las páginas de la Tarea 10", () => {
       expect(await registrarHistoricos(mide, { indicadorId: ind.id, filas }, { sql: tx })).toEqual({ registrados: 1 });
     }));
 
+  it("/indicadores/[codigo]: una variable que un cambio mayor quitó se nombra como en la ficha del histórico", () =>
+    enTransaccion(async (tx) => {
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const admin = await sesionAdmin(tx);
+      const ind = await indicadorDePrueba(tx, { ...historico, mide: [mide.usuarioId] });
+      const [v2] = await tx`INSERT INTO indicador_versiones (indicador_id, numero, estado, tipo_cambio, nombre, forma, formula, periodicidad,
+          tendencia, meta, semaforo_modo, umbral_atencion_pct, unidad_sufijo, decimales, creado_por)
+        VALUES (${ind.id}, 2, 'borrador', 'mayor', 'Con una variable', 'conteo', 'A', 'trimestral', 'ascendente', 5,
+          'relativo', 70, '', 0, ${admin.usuarioId}) RETURNING id`;
+      await tx`SELECT id FROM indicador_versiones WHERE id = ${v2.id} FOR UPDATE`;
+      await tx`INSERT INTO indicador_variables (version_id, letra, nombre, orden) VALUES (${v2.id}, 'A', 'Auditorías hechas', 1)`;
+      await tx`UPDATE indicador_versiones SET estado = 'aprobada', elaborada_por = ${admin.usuarioId}, huella = ${"3".repeat(64)},
+          rige_desde = '2026-T3', aprobada_por = ${admin.usuarioId}, aprobada_en = '2026-06-15T15:00:00Z'
+        WHERE id = ${v2.id}`;
+      contexto.sesion = valida(mide);
+      const edicion = await pagina(ind.codigo, { anio: "2025", historicos: "editar" });
+      expect(edicion).toContain('name="h_2025-T3_B"');
+      expect(edicion).toContain(">Casos evaluados<");
+      expect(edicion).toContain('aria-label="Casos evaluados, tercer trimestre de 2025"');
+      expect(edicion).not.toContain("Variable B");
+    }));
+
   it("/indicadores/[codigo]: «Observaciones» solo para quien ve los soportes", () =>
     enTransaccion(async (tx) => {
       const analiza = await usuarioDePrueba(tx, { rol: "consulta" });
@@ -620,12 +667,12 @@ describe("las páginas de la Tarea 10", () => {
       expect(deControl).toContain(">Sin respuesta<");
       expect(deControl).toMatch(/<option[^>]*value="2026-T1"[^>]*selected=""[^>]*>Primer trimestre de 2026 · 1 observación, 1 sin respuesta<\/option>/);
       expect(deControl).toContain(">Dejar la observación</button>");
-      expect(deControl).not.toContain(">Responder</summary>");
+      expect(deControl).not.toContain(">Responder<span");
 
       // Quien analiza la ve y la responde, pero no observa.
       contexto.sesion = valida(analiza);
       const deAnalista = await pagina(ind.codigo, { vista: "observaciones", periodo: "2026-T1" });
-      expect(deAnalista).toContain(">Responder</summary>");
+      expect(deAnalista).toContain(`>Responder<span class="sr-only"> a ${control.nombre}, `);
       expect(deAnalista).not.toContain(">Dejar la observación</button>");
       await expect(pagina(ind.codigo, { vista: "observaciones", periodo: "2099-T1" })).rejects.toThrow("NO_ENCONTRADA");
 
