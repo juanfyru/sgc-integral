@@ -38,6 +38,9 @@ describe("periodos", () => {
     expect(fechaEnZona(periodoDe("2026-S2", ZONA)!.desde, ZONA)).toBe("2026-07-01");
     expect(periodoDe("2026-T1", ZONA)!.etiqueta).toBe("primer trimestre de 2026");
     expect(periodoDe("2026-T4", ZONA)!.etiqueta).toBe("cuarto trimestre de 2026");
+    expect(periodoDe("2026-B3", ZONA)!.etiqueta).toBe("tercer bimestre de 2026");
+    expect(fechaEnZona(periodoDe("2026-B3", ZONA)!.desde, ZONA)).toBe("2026-05-01");
+    expect(fechaEnZona(periodoDe("2026-B3", ZONA)!.hasta, ZONA)).toBe("2026-06-30");
   });
 
   it("rechaza claves mal formadas", () => {
