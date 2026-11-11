@@ -357,6 +357,14 @@ describe("la ficha en borrador", () => {
       const conProcedimiento = await crearIndicador(b.admin, datos(b, { procedimientoDocumentoId: propio.id, puntoControl: "PC-13" }), { sql: tx });
       const [pc] = await tx`SELECT procedimiento_documento_id, punto_control FROM indicador_versiones WHERE id = ${conProcedimiento.versionId}`;
       expect([Number(pc.procedimiento_documento_id), pc.punto_control]).toEqual([propio.id, "PC-13"]);
+      // Si el borrador cambia de proceso, el procedimiento que ya tenía se vuelve a validar.
+      const [gth] = await tx`SELECT id FROM procesos WHERE sigla = 'GTH'`;
+      await rechaza(
+        guardarBorrador(b.admin, conProcedimiento.versionId, datos(b, { procesoId: Number(gth.id), procedimientoDocumentoId: propio.id }), { sql: tx }),
+        "El procedimiento debe ser un documento del proceso",
+      );
+      // En el mismo proceso, el que ya tenía sigue valiendo.
+      await guardarBorrador(b.admin, conProcedimiento.versionId, datos(b, { procedimientoDocumentoId: propio.id }), { sql: tx });
 
       const codigo = `SGC-IND-9${unico()}`;
       const creado = await crearIndicador(b.admin, datos(b, { codigo }), { sql: tx });
