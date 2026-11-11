@@ -508,7 +508,7 @@ BEGIN
       -- El único cambio que admite una medición cerrada es su reapertura.
       IF TG_OP = 'UPDATE' AND NEW.estado IN ('abierta', 'reportada')
          AND NEW.reabierta_por IS NOT NULL AND NEW.reabierta_motivo IS NOT NULL
-         AND NEW.reabierta_en IS DISTINCT FROM OLD.reabierta_en THEN
+         AND NEW.reabierta_en IS NOT NULL AND NEW.reabierta_en IS DISTINCT FROM OLD.reabierta_en THEN
         RETURN NEW;
       END IF;
       RAISE EXCEPTION 'La medición % está cerrada y no admite cambios (%)', OLD.id, TG_OP USING ERRCODE = '42501';

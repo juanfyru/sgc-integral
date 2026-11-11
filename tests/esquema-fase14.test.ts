@@ -308,6 +308,17 @@ describe("esquema de la Fase 14", () => {
       await tx`INSERT INTO medicion_valores (medicion_id, variable_id, valor) VALUES (${medicionId}, ${w.id}, 1)`;
       const [m] = await tx`SELECT resultado::text AS resultado, estado, reabierta_motivo FROM mediciones WHERE id = ${medicionId}`;
       expect(m).toEqual({ resultado: "60", estado: "reportada", reabierta_motivo: "Error de captura" });
+      // Cerrada otra vez, con la marca de la primera reapertura todavía puesta.
+      await tx`UPDATE mediciones SET estado = 'cerrada' WHERE id = ${medicionId}`;
+      expect(
+        await fallaCon(
+          tx.savepoint((s) => s`UPDATE mediciones SET estado = 'reportada', reabierta_en = NULL WHERE id = ${medicionId}`),
+        ),
+      ).toBe("42501");
+      await tx`UPDATE mediciones SET estado = 'reportada', reabierta_por = ${usuarioId}, reabierta_en = now() + interval '1 minute',
+        reabierta_motivo = 'Segunda corrección' WHERE id = ${medicionId}`;
+      const [m2] = await tx`SELECT estado, reabierta_motivo FROM mediciones WHERE id = ${medicionId}`;
+      expect(m2).toEqual({ estado: "reportada", reabierta_motivo: "Segunda corrección" });
     }));
 
   it("una versión aprobada no cambia, ni sus variables, responsables y normas", () =>
