@@ -771,9 +771,11 @@ describe("la medición de un indicador", () => {
     expect(frase("medicion_reportada", { codigo: "SGC-IND-01", periodo: "2026-T3", resultado: "60 %", sinMedidor: true })).toBe(
       "Reportó SGC-IND-01, tercer trimestre de 2026: 60 % (sin nadie más que pudiera medirlo)",
     );
-    expect(frase("medicion_reportada", { codigo: "SGC-IND-01", periodo: "2026-03", parcial: true, resultado: null })).toBe(
-      "Guardó sin reportar los datos de SGC-IND-01, marzo de 2026",
-    );
+    // «Guardar sin reportar» tiene su propia acción, con los valores de antes y de después.
+    expect(
+      frase("medicion_guardada", { codigo: "SGC-IND-01", periodo: "2026-03", antes: { A: null, B: null }, despues: { A: "3", B: null } }),
+    ).toBe("Guardó sin reportar los datos de SGC-IND-01, marzo de 2026");
+    expect(frase("medicion_guardada", {})).toBe("Guardó sin reportar los datos de la medición de un indicador");
     expect(frase("medicion_corregida", { codigo: "SGC-IND-01", periodo: "2026-T3", resultadoAntes: "100 %", resultado: "80 %" })).toBe(
       "Corrigió SGC-IND-01, tercer trimestre de 2026: 100 % → 80 %",
     );
@@ -795,5 +797,6 @@ describe("la medición de un indicador", () => {
     expect(nombreDeAccion("medicion_reportada")).toBe("Reportó una medición de indicador");
     expect(nombreDeAccion("medicion_corregida")).toBe("Corrigió una medición de indicador");
     expect(nombreDeAccion("medicion_no_aplica")).toBe("Marcó «No aplica» en una medición de indicador");
+    expect(nombreDeAccion("medicion_guardada")).toBe("Guardó sin reportar una medición de indicador");
   });
 });

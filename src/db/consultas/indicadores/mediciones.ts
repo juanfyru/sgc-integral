@@ -18,7 +18,7 @@ import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { puedeMedir, puedeVerIndicador, type Capacidad, type SujetoVisibilidad } from "@/lib/alcance";
 import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
 import { calcular, variacionExcesiva } from "@/lib/indicadores/calculo";
-import { analisisExigido, esRepetido, estadoVisible, type EstadoVisible } from "@/lib/indicadores/estados";
+import { analisisCompleto, analisisExigido, esRepetido, estadoVisible, type EstadoVisible } from "@/lib/indicadores/estados";
 import { enPalabras } from "@/lib/indicadores/formula/formas";
 import { aDecimal, aTexto, comparar, deTexto, fraccion, type Fraccion } from "@/lib/indicadores/formula/fraccion";
 import {
@@ -75,7 +75,8 @@ const esDeOtraPeriodicidad = (periodo: string, version: { periodicidad: Periodic
   periodicidadDe(periodo) !== version.periodicidad;
 
 const texto = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
-const lleno = (v: unknown) => typeof v === "string" && v.trim() !== "";
+/** El análisis guardado de una medición, para `analisisCompleto`. */
+const analisisDe = (m: Record<string, unknown>) => ({ analisis: texto(m.analisis), causa: texto(m.causa), accionPropuesta: texto(m.accion_propuesta) });
 const fr = (v: unknown): Fraccion | null => (v === null || v === undefined ? null : fraccion(String(v)));
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -343,9 +344,11 @@ const objeto = (v: unknown): Record<string, unknown> =>
 
 /**
  * El único camino que escribe el resultado, el semáforo, la meta aplicada y el estado de una medición (spec §8.2): con la
- * fila bloqueada calcula con la versión que rige el periodo y la meta programada (o la de la ficha), congela la versión,
- * la meta y el límite, decide `requiere_accion`, el incumplimiento repetido y el estado, deja el evento con el antes y el
- * después y llama `alRecalcular`. Si nada cambió, ni evento ni alertas.
+ * fila bloqueada calcula con la versión que rige el periodo y la meta programada (o la de la ficha), decide
+ * `requiere_accion`, el incumplimiento repetido y el estado y deja el evento con el antes y el después. Solo con un dato
+ * (resultado o «no aplica») congela la versión, la meta y el límite: sin él, la meta y el límite quedan nulos y la versión
+ * sigue la que se puso al abrir el periodo (`version_id` no admite nulo). Llama `alRecalcular` solo si cambió una columna
+ * calculada; si nada cambió, ni evento ni alertas.
  *
  * Cuenta como dato lo reportado (`reportada_en`) o «no aplica». `c.detalle` se guarda en el evento; su `antes` y su
  * `despues` (lo que quien llama cambió: valores, «no aplica», análisis) se completan con el resultado, el semáforo y el
@@ -397,20 +400,19 @@ export async function recalcularMedicion(
       n,
     );
   }
-  const exigido = analisisExigido({ semaforo, repetido, historica, noAplica });
-  const dosPartes = lleno(m.causa) && lleno(m.accion_propuesta);
-  const conAnalisis = exigido === "ninguno" || dosPartes || (exigido === "simple" && lleno(m.analisis));
+  const conAnalisis = analisisCompleto(analisisExigido({ semaforo, repetido, historica, noAplica }), analisisDe(m));
   const conSoporte = m.soporte_obligatorio !== true || historica || noAplica || (await contarSoportes(tx, medicionId)) > 0;
-  const estado: EstadoMedicion = (noAplica || resultado !== null) && conAnalisis && conSoporte ? "reportada" : "abierta";
-  const limite = limiteDeCritico(regla);
+  const conDato = noAplica || resultado !== null;
+  const estado: EstadoMedicion = conDato && conAnalisis && conSoporte ? "reportada" : "abierta";
+  const limite = conDato ? limiteDeCritico(regla) : null;
 
   const nuevo = {
-    version_id: version.id,
+    version_id: conDato ? version.id : Number(m.version_id),
     resultado_exacto: resultado ? aTexto(resultado) : null,
     resultado: resultado ? aDecimal(resultado, 10, "redondear") : null,
     semaforo,
-    meta_aplicada: reglaTexto.meta,
-    meta_max_aplicada: reglaTexto.metaMax,
+    meta_aplicada: conDato ? reglaTexto.meta : null,
+    meta_max_aplicada: conDato ? reglaTexto.metaMax : null,
     limite_aplicado: limite ? decimalCorto(limite) : null,
     requiere_accion: !historica && !noAplica && (semaforo === "critico" || repetido),
     incumplimiento_repetido: repetido,
@@ -453,7 +455,7 @@ export async function recalcularMedicion(
   if (!cambio) return r;
   await tx`INSERT INTO medicion_eventos (medicion_id, tipo, usuario_id, detalle, creado_en)
     VALUES (${medicionId}, ${c.evento}, ${c.actorId}, ${tx.json({ ...resto, antes, despues } as never)}, ${c.ahora})`;
-  await alRecalcular(tx, r, { ahora: c.ahora, actorId: c.actorId });
+  if (columnasCambiaron) await alRecalcular(tx, r, { ahora: c.ahora, actorId: c.actorId });
   return r;
 }
 
@@ -604,11 +606,19 @@ const resultadoEnTexto = (exacto: unknown, version: VersionDeCalculo, regla: Reg
 
 export type ResultadoDeReporte = { ok: true; estado: EstadoMedicion; semaforo: Semaforo | null } | { ok: false; confirmar: string };
 
+/** ¿La medición se reportó alguna vez? Lo dice su historial: un reporte, un «no aplica» o un registro histórico. */
+async function seReportoAlgunaVez(tx: TransactionSql, medicionId: number): Promise<boolean> {
+  const [e] = await tx`SELECT 1 AS hay FROM medicion_eventos
+    WHERE medicion_id = ${medicionId} AND tipo IN ('reporte', 'no_aplica', 'historico') LIMIT 1`;
+  return e !== undefined;
+}
+
 /**
  * Reporta los datos de una medición, los guarda sin reportar (`parcial`) o los corrige antes del cierre (spec §8.2 y
  * §8.7). Valida fuera de la transacción lo que puede y lo repite dentro, con los candados, antes de escribir nada. Un
- * salto grande frente al periodo anterior con resultado no escribe y pide confirmación (`confirmado`). Deja el evento
- * `reporte` la primera vez y `correccion` después; lo mismo otra vez no deja nada.
+ * salto grande frente al periodo anterior con resultado no escribe y pide confirmación (`confirmado`). Un reporte deja el
+ * evento `reporte` si la medición nunca se reportó y `correccion` si ya; lo mismo otra vez no deja nada. «Guardar sin
+ * reportar» no calcula ni deja evento: solo los valores y su acción de bitácora (`medicion_guardada`).
  */
 export async function reportar(sesion: SesionFlujo, d: DatosDeReportar, opciones?: Opciones): Promise<ResultadoDeReporte> {
   if (!puede(sesion, "indicadores.medir")) throw new ErrorPermiso();
@@ -623,9 +633,25 @@ export async function reportar(sesion: SesionFlujo, d: DatosDeReportar, opciones
     if (plan.confirmar) return { ok: false as const, confirmar: plan.confirmar };
     const { medicion: m, version } = ctx;
     const antes = enTexto(version, await valoresPorLetra(tx, m.id, version));
-    const primera = m.reportada_en === null && m.no_aplica !== true;
+    const despues = enTexto(version, plan.valores);
+    const base = { codigo: ctx.indicador.codigo, indicadorId: ctx.indicador.id, periodo: m.periodo };
+    if (d.parcial) {
+      if (JSON.stringify(antes) !== JSON.stringify(despues)) {
+        await escribirValores(tx, m.id, version, plan.valores, sesion.usuarioId, ahora);
+        await registrarAuditoria(tx, {
+          usuarioId: sesion.usuarioId,
+          accion: "medicion_guardada",
+          entidad: "medicion",
+          entidadId: m.id,
+          detalle: { ...base, antes, despues, ...(ctx.capacidad.sinMedidor ? { sinMedidor: true } : {}) },
+        });
+      }
+      return { ok: true as const, estado: m.estado as EstadoMedicion, semaforo: (m.semaforo as Semaforo | null) ?? null };
+    }
+
+    const primera = !(await seReportoAlgunaVez(tx, m.id));
     await escribirValores(tx, m.id, version, plan.valores, sesion.usuarioId, ahora);
-    if (!d.parcial && (m.reportada_en === null || m.no_aplica === true)) {
+    if (m.reportada_en === null || m.no_aplica === true) {
       await tx`UPDATE mediciones SET reportada_por = coalesce(reportada_por, ${sesion.usuarioId}), reportada_en = coalesce(reportada_en, ${ahora}),
           no_aplica = false, no_aplica_motivo = NULL
         WHERE id = ${m.id}`;
@@ -633,8 +659,7 @@ export async function reportar(sesion: SesionFlujo, d: DatosDeReportar, opciones
     const conMotivo = m.no_aplica === true ? { motivo: m.no_aplica_motivo as string | null } : {};
     const detalle = {
       antes: { ...antes, noAplica: m.no_aplica === true, ...conMotivo },
-      despues: { ...enTexto(version, plan.valores), noAplica: false, ...(m.no_aplica === true ? { motivo: null } : {}) },
-      ...(d.parcial ? { parcial: true } : {}),
+      despues: { ...despues, noAplica: false, ...(m.no_aplica === true ? { motivo: null } : {}) },
       ...(ctx.capacidad.sinMedidor ? { sinMedidor: true } : {}),
     };
     const r = await recalcularMedicion(tx, m.id, { ahora, actorId: sesion.usuarioId, evento: primera ? "reporte" : "correccion", detalle });
@@ -646,9 +671,7 @@ export async function reportar(sesion: SesionFlujo, d: DatosDeReportar, opciones
         entidad: "medicion",
         entidadId: m.id,
         detalle: {
-          codigo: ctx.indicador.codigo,
-          indicadorId: ctx.indicador.id,
-          periodo: m.periodo,
+          ...base,
           resultado: r.resultado ? textoValor(r.resultado, version.unidad, regla) : null,
           resultadoAntes: resultadoEnTexto(m.resultado_exacto, version, regla),
           semaforo: r.despues,
@@ -1038,9 +1061,10 @@ async function filaDeMedicion(
   const semaforo = (m.semaforo as Semaforo | null) ?? null;
   const historica = m.historica === true;
   const noAplica = m.no_aplica === true;
-  const exigido = analisisExigido({ semaforo, repetido: m.incumplimiento_repetido === true, historica, noAplica });
-  const conAnalisis =
-    exigido === "ninguno" || (lleno(m.causa) && lleno(m.accion_propuesta)) || (exigido === "simple" && lleno(m.analisis));
+  const conAnalisis = analisisCompleto(
+    analisisExigido({ semaforo, repetido: m.incumplimiento_repetido === true, historica, noAplica }),
+    analisisDe(m),
+  );
   const datos = noAplica || resultado !== null;
   // Con los datos y el análisis, lo que deja abierta una medición es el soporte que falta: se muestra por reportar.
   const faltaSoporte = datos && conAnalisis && m.estado === "abierta" && soporteObligatorio && !historica && !noAplica;

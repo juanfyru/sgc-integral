@@ -765,9 +765,10 @@ export function describirEvento(e: EventoAuditoria): string {
     case "indicador_borrado":
       return `Borró el indicador${cod ? ` ${cod}` : ""}, que nunca se envió a aprobación`;
     // ── Indicadores (14A): las mediciones
+    case "medicion_guardada":
+      return `Guardó sin reportar los datos de ${medicionDe(cod, d.periodo)}`;
     case "medicion_reportada": {
       const de = medicionDe(cod, d.periodo);
-      if (d.parcial === true) return `Guardó sin reportar los datos de ${de}`;
       const resultado = texto(d.resultado);
       return `Reportó ${de}${resultado ? `: ${resultado}` : ""}${d.sinMedidor === true ? " (sin nadie más que pudiera medirlo)" : ""}`;
     }
@@ -960,6 +961,7 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   medicion_reportada: "Reportó una medición de indicador",
   medicion_corregida: "Corrigió una medición de indicador",
   medicion_no_aplica: "Marcó «No aplica» en una medición de indicador",
+  medicion_guardada: "Guardó sin reportar una medición de indicador",
   tipo_norma_creado: "Creó un tipo de norma",
   tipo_norma_editado: "Renombró un tipo de norma",
   tipo_norma_movido: "Movió un tipo de norma",

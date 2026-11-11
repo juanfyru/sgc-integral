@@ -43,3 +43,17 @@ export function esRepetido(anteriores: (Semaforo | null)[], actual: Semaforo | n
   if (actual === null || actual === "bien" || anteriores.length < n - 1) return false;
   return anteriores.slice(0, n - 1).every((s) => s !== null && s !== "bien");
 }
+
+/**
+ * ¿La medición tiene el análisis que se le exige (spec §8.4)? El simple lo satisface el análisis o la causa con la acción
+ * propuesta; las dos partes, solo la causa y la acción propuesta. Un texto en blanco no cuenta.
+ */
+export function analisisCompleto(
+  exigido: "ninguno" | "simple" | "dos_partes",
+  a: { analisis: string | null; causa: string | null; accionPropuesta: string | null },
+): boolean {
+  const lleno = (t: string | null) => t !== null && t.trim() !== "";
+  const dosPartes = lleno(a.causa) && lleno(a.accionPropuesta);
+  if (exigido === "ninguno") return true;
+  return exigido === "simple" ? dosPartes || lleno(a.analisis) : dosPartes;
+}

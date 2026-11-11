@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { analisisExigido, esRepetido, estadoVisible, ETIQUETA_ESTADO } from "@/lib/indicadores/estados";
+import { analisisCompleto, analisisExigido, esRepetido, estadoVisible, ETIQUETA_ESTADO } from "@/lib/indicadores/estados";
 import { camposCambiados, CAMPOS_MAYORES, huellaDeFicha, tipoDeCambio, type ContenidoFicha } from "@/lib/indicadores/ficha";
 
 const base = (): ContenidoFicha => ({
@@ -202,6 +202,20 @@ describe("estados de una medición", () => {
     expect(analisisExigido({ ...m, semaforo: "atencion", repetido: true })).toBe("dos_partes");
     expect(analisisExigido({ ...m, semaforo: "critico", historica: true })).toBe("ninguno");
     expect(analisisExigido({ ...m, semaforo: "critico", noAplica: true })).toBe("ninguno");
+  });
+  it("si tiene el análisis que se le exige", () => {
+    const vacio = { analisis: null, causa: null, accionPropuesta: null };
+    const simple = { ...vacio, analisis: "Faltó personal en agosto" };
+    const dos = { ...vacio, causa: "Faltó personal", accionPropuesta: "Formar suplentes" };
+    expect(analisisCompleto("ninguno", vacio)).toBe(true);
+    expect(analisisCompleto("simple", vacio)).toBe(false);
+    expect(analisisCompleto("simple", { ...vacio, analisis: "   " })).toBe(false);
+    expect(analisisCompleto("simple", simple)).toBe(true);
+    // Las dos partes también satisfacen el simple; el simple no basta para las dos partes.
+    expect(analisisCompleto("simple", dos)).toBe(true);
+    expect(analisisCompleto("dos_partes", simple)).toBe(false);
+    expect(analisisCompleto("dos_partes", { ...dos, accionPropuesta: "" })).toBe(false);
+    expect(analisisCompleto("dos_partes", dos)).toBe(true);
   });
   it("incumplimiento repetido: N periodos seguidos sin «Bien»", () => {
     expect(esRepetido(["atencion", "critico"], "atencion", 3)).toBe(true);

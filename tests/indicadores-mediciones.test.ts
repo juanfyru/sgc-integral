@@ -286,6 +286,7 @@ describe("reportar", () => {
       const { mide, medicion } = await preparar(tx);
       const t3 = await medicion("2026-T3");
       const guardar = (v: Record<string, string>) => reportar(mide, { medicionId: t3, valores: v, parcial: true, confirmado: false }, opc(tx));
+      const guardadas = () => bitacora(tx, "medicion_guardada", t3);
       expect(await guardar({ A: "3" })).toEqual({ ok: true, estado: "abierta", semaforo: null });
       expect(await valores(tx, t3)).toEqual({ A: 3 });
       let m = await fila(tx, t3);
@@ -294,18 +295,70 @@ describe("reportar", () => {
       expect(await guardar({ A: "3", B: "5" })).toEqual({ ok: true, estado: "abierta", semaforo: null });
       m = await fila(tx, t3);
       expect([m.resultado_exacto, m.semaforo, m.estado]).toEqual([null, null, "abierta"]);
-      const lista = await eventos(tx, t3);
-      expect(lista.map((e) => e.tipo)).toEqual(["reporte", "reporte"]);
-      expect(lista[0].detalle).toMatchObject({ parcial: true, antes: { A: null }, despues: { A: "3", B: null } });
+      // Un borrador no deja evento en el historial de la medición ni pasa por «Reportó»: tiene su propia acción.
+      expect(await eventos(tx, t3)).toHaveLength(0);
+      expect(await bitacora(tx, "medicion_reportada", t3)).toHaveLength(0);
+      const filas = await guardadas();
+      expect(filas).toHaveLength(2);
+      expect(filas[0].detalle).toMatchObject({ periodo: "2026-T3", antes: { A: null, B: null }, despues: { A: "3", B: null } });
+      expect(filas[1].detalle).toMatchObject({ antes: { A: "3", B: null }, despues: { A: "3", B: "5" } });
+      // Lo mismo otra vez no deja nada.
+      await guardar({ A: "3", B: "5" });
+      expect(await guardadas()).toHaveLength(2);
       // Un campo vaciado se quita.
       await guardar({ A: "", B: "5" });
       expect(await valores(tx, t3)).toEqual({ B: 5 });
+      expect(await guardadas()).toHaveLength(3);
 
-      // Reportado después, cuenta y calcula; ya reportado, no vuelve a «guardar sin reportar».
+      // Reportado después, cuenta y calcula, y es el primer reporte; ya reportado, no vuelve a «guardar sin reportar».
       await reportarCon(tx, mide, t3, { A: "3", B: "5" });
       m = await fila(tx, t3);
       expect(m.semaforo).toBe("critico");
+      expect((await eventos(tx, t3)).map((e) => e.tipo)).toEqual(["reporte"]);
+      expect(await bitacora(tx, "medicion_reportada", t3)).toHaveLength(1);
       await rechaza(guardar({ A: "4", B: "5" }), "La medición ya se reportó: corrija los datos y pulse «Reportar»");
+    }));
+
+  it("un borrador no congela la versión, la meta ni el límite", () =>
+    revertida(sql, async (tx) => {
+      const { ind, mide, medicion } = await preparar(tx);
+      const t3 = await medicion("2026-T3");
+      await reportar(mide, { medicionId: t3, valores: { A: "3", B: "5" }, parcial: true, confirmado: false }, opc(tx));
+      let m = await fila(tx, t3);
+      expect([m.meta_aplicada, m.meta_max_aplicada, m.limite_aplicado, Number(m.version_id)]).toEqual([null, null, null, ind.versionId]);
+      // Reportado, se congela; con «no aplica», también; quitado el «no aplica», vuelve a no tener meta aplicada.
+      await reportarCon(tx, mide, t3, { A: "3", B: "5" });
+      m = await fila(tx, t3);
+      expect([Number(m.meta_aplicada), Number(m.limite_aplicado)]).toEqual([90, 63]);
+      await marcarNoAplica(mide, { medicionId: t3, motivo: "No hubo auditorías programadas" }, opc(tx));
+      expect(Number((await fila(tx, t3)).meta_aplicada)).toBe(90);
+      await quitarNoAplica(mide, t3, opc(tx));
+      m = await fila(tx, t3);
+      expect([m.meta_aplicada, m.limite_aplicado, m.estado]).toEqual([null, null, "abierta"]);
+      // Sin meta congelada, la tabla del año muestra la que aplica hoy (aquí, la programada después).
+      const admin = await sesionAdmin(tx);
+      await tx`INSERT INTO indicador_metas (indicador_id, periodo, meta, programada_por) VALUES (${ind.id}, '2026-T3', 50, ${admin.usuarioId})`;
+      const t3Fila = (await tablaDelAnio(mide, ind.id, 2026, opc(tx)))[2];
+      expect(t3Fila.meta).toBe("≥ 50 %");
+    }));
+
+  it("lo que ya se reportó una vez se corrige: quitar «no aplica» y volver a reportar no es un primer reporte", () =>
+    revertida(sql, async (tx) => {
+      const { mide, medicion } = await preparar(tx);
+      const [t2, t3] = [await medicion("2026-T2"), await medicion("2026-T3")];
+      await reportarCon(tx, mide, t3, { A: "5", B: "5" });
+      await marcarNoAplica(mide, { medicionId: t3, motivo: "No hubo auditorías programadas" }, opc(tx));
+      await quitarNoAplica(mide, t3, opc(tx));
+      await reportarCon(tx, mide, t3, { A: "4", B: "5" });
+      expect((await eventos(tx, t3)).map((e) => e.tipo)).toEqual(["reporte", "no_aplica", "correccion", "correccion"]);
+      expect(await bitacora(tx, "medicion_reportada", t3)).toHaveLength(1);
+      expect(await bitacora(tx, "medicion_corregida", t3)).toHaveLength(2);
+      // Marcada «no aplica» sin haberse reportado nunca, quitarla y reportar también es una corrección.
+      await marcarNoAplica(mide, { medicionId: t2, motivo: "No hubo auditorías programadas" }, opc(tx));
+      await quitarNoAplica(mide, t2, opc(tx));
+      await reportarCon(tx, mide, t2, { A: "5", B: "5" });
+      expect((await eventos(tx, t2)).map((e) => e.tipo)).toEqual(["no_aplica", "correccion", "correccion"]);
+      expect(await bitacora(tx, "medicion_reportada", t2)).toHaveLength(0);
     }));
 
   it("validaciones al digitar", () =>
