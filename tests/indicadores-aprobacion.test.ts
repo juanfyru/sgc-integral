@@ -626,6 +626,76 @@ describe("cambios sobre una ficha aprobada", () => {
       expect(v.rige_desde).toBe("2027-T1");
     }));
 
+  it("un cambio de periodicidad rige desde una frontera común con la periodicidad que reemplaza", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      // De bimestral a trimestral con el primer bimestre reportado: el segundo trimestre (abril) partiría el segundo bimestre.
+      const d = datos(b, { periodicidad: "bimestral", inicioMedicion: "2026-B1" });
+      const ind = await aprobado(tx, b, d);
+      await medicion(tx, ind.indicadorId, ind.versionId, "2026-B1");
+      const v2 = await cambio(tx, b, ind.indicadorId, { ...d, periodicidad: "trimestral", motivoCambio: "Se mide por trimestre" });
+      expect(await rigeDesdePorOmision(tx, ind.indicadorId, "trimestral", AHORA)).toBe("2026-T3");
+      const frontera = "La ficha pasa de periodicidad bimestral a trimestral: «Rige desde» debe empezar donde empieza un periodo bimestral";
+      const enviar = (rigeDesde?: string) => enviarAAprobacion(b.admin, { versionId: v2, rigeDesde, credenciales: CLAVE }, firmar(tx));
+      await rechaza(enviar("2026-T2"), frontera);
+      // El cuarto trimestre (octubre) cae en medio del quinto bimestre: tampoco se ofrece.
+      await rechaza(enviar("2026-T4"), frontera);
+      expect(await previaDeEnvio(b.admin, v2, { sql: tx, ahora: AHORA })).toMatchObject({
+        rige: { porOmision: "2026-T3", opciones: [{ clave: "2026-T3" }] },
+        enviableDesde: null,
+      });
+      expect(await enviar()).toEqual({ codigo: ind.codigo, menor: false });
+      expect((await tx`SELECT rige_desde FROM indicador_versiones WHERE id = ${v2}`)[0].rige_desde).toBe("2026-T3");
+
+      // De trimestral a mensual: agosto parte el tercer trimestre; octubre empieza con el cuarto.
+      const t = datos(b);
+      const otro = await aprobado(tx, b, t);
+      const v3 = await cambio(tx, b, otro.indicadorId, { ...t, periodicidad: "mensual", motivoCambio: "Se mide por mes" });
+      const enviarOtro = (rigeDesde: string) => enviarAAprobacion(b.admin, { versionId: v3, rigeDesde, credenciales: CLAVE }, firmar(tx));
+      await rechaza(enviarOtro("2026-08"), "La ficha pasa de periodicidad trimestral a mensual: «Rige desde» debe empezar donde empieza un periodo trimestral");
+      expect(await enviarOtro("2026-10")).toEqual({ codigo: otro.codigo, menor: false });
+    }));
+
+  it("un cambio de periodicidad sin frontera común ya empezada: el diálogo dice desde cuándo se podrá enviar", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      // Bimestral con enero a agosto reportados que pasa a trimestral.
+      const d = datos(b, { periodicidad: "bimestral", inicioMedicion: "2026-B1" });
+      const ind = await aprobado(tx, b, d);
+      for (const p of ["2026-B1", "2026-B2", "2026-B3", "2026-B4"]) await medicion(tx, ind.indicadorId, ind.versionId, p);
+      const v2 = await cambio(tx, b, ind.indicadorId, { ...d, periodicidad: "trimestral", motivoCambio: "Se mide por trimestre" });
+      // Tras agosto, el primer trimestre que empieza con un bimestre es el primero de 2027, que no ha empezado.
+      expect(await previaDeEnvio(b.admin, v2, { sql: tx, ahora: AHORA })).toMatchObject({ tipo: "mayor", rige: null, enviableDesde: "2027-T1" });
+    }));
+
+  it("al aprobar un cambio de periodicidad se quitan las mediciones vacías de la periodicidad vieja desde su «rige desde»", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      // Mensual desde enero, aprobado el 10 de noviembre: se abren enero a octubre.
+      const d = datos(b, { periodicidad: "mensual", inicioMedicion: "2026-01", mide: [mide.usuarioId] });
+      const ind = await aprobado(tx, b, d);
+      const id = async (periodo: string) =>
+        Number((await tx`SELECT id FROM mediciones WHERE indicador_id = ${ind.indicadorId} AND periodo = ${periodo}`)[0].id);
+      // Agosto tiene un valor guardado sin reportar; julio, septiembre y octubre están vacíos.
+      const agosto = await id("2026-08");
+      await reportar(mide, { medicionId: agosto, valores: { A: "3" }, parcial: true, confirmado: false }, { sql: tx, ahora: AHORA });
+      const v2 = await cambio(tx, b, ind.indicadorId, { ...d, periodicidad: "trimestral", motivoCambio: "Se mide por trimestre" });
+      await enviarAAprobacion(b.admin, { versionId: v2, rigeDesde: "2026-T3", credenciales: CLAVE }, firmar(tx));
+      await aprobarFichas(ind.gerente, { versionIds: [v2], credenciales: CLAVE }, firmar(tx));
+
+      const quedan = await tx`SELECT periodo FROM mediciones WHERE indicador_id = ${ind.indicadorId} ORDER BY desde`;
+      expect(quedan.map((m) => m.periodo)).toEqual(["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-08"]);
+      const [bitacora] = await tx`SELECT detalle FROM auditoria WHERE accion = 'indicador_aprobado' AND entidad_id = ${ind.indicadorId}
+        ORDER BY id DESC LIMIT 1`;
+      expect(bitacora.detalle).toMatchObject({ versionId: v2, tipoCambio: "mayor", medicionesQuitadas: 3 });
+      // Agosto se queda con su dato, pero no se mide con la ficha trimestral.
+      await rechaza(
+        reportar(mide, { medicionId: agosto, valores: { A: "3", B: "5" }, parcial: false, confirmado: true }, { sql: tx, ahora: AHORA }),
+        "Ese periodo ya no se mide: la ficha que lo rige es de otra periodicidad",
+      );
+    }));
+
   it("«Rige desde» no puede ser anterior al de por omisión", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);

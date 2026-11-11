@@ -29,6 +29,7 @@ import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { versionVigente } from "./aprobacion";
 import { codigoCon, COLUMNAS_VARIABLE, CONTENIDO, proponerCodigo, siguientes } from "./fichas";
+import { conDatos } from "./mediciones";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -81,18 +82,6 @@ async function nombreDe(tx: TransactionSql, indicadorId: number): Promise<string
 }
 
 const ascendente = (ids: readonly number[]) => [...ids].sort((a, b) => a - b);
-
-/**
- * «Medición con datos» (alias `m`): cualquier cosa que ya es historia y no se puede quitar. Una medición que no está
- * abierta, con valores, análisis, causa o acción propuesta, eventos, observaciones o soportes (`archivos` no tiene FK
- * hacia la medición: quitarla dejaría la evidencia huérfana). Una sola definición para retirar y para cambiar el inicio.
- */
-const conDatos = (sql: Cliente | TransactionSql) => sql`(m.estado <> 'abierta' OR m.no_aplica
-  OR coalesce(btrim(m.analisis), '') <> '' OR coalesce(btrim(m.causa), '') <> '' OR coalesce(btrim(m.accion_propuesta), '') <> ''
-  OR EXISTS (SELECT 1 FROM medicion_valores mv WHERE mv.medicion_id = m.id)
-  OR EXISTS (SELECT 1 FROM medicion_eventos me WHERE me.medicion_id = m.id)
-  OR EXISTS (SELECT 1 FROM medicion_observaciones mo WHERE mo.medicion_id = m.id)
-  OR EXISTS (SELECT 1 FROM archivos ar WHERE ar.contexto = 'medicion' AND ar.contexto_id = m.id))`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Designados

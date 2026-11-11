@@ -202,6 +202,35 @@ function tramos(versiones: readonly VersionDeCalculo[], inicio: string, zona: st
   return salida;
 }
 
+/**
+ * «Medición con datos» (alias `m`): cualquier cosa que ya es historia y no se puede quitar. Una medición que no está
+ * abierta, con valores, análisis, causa o acción propuesta, eventos, observaciones o soportes (`archivos` no tiene FK
+ * hacia la medición: quitarla dejaría la evidencia huérfana). Una sola definición para retirar, cambiar el inicio y
+ * aprobar un cambio de periodicidad.
+ */
+export const conDatos = (sql: Cliente) => sql`(m.estado <> 'abierta' OR m.no_aplica
+  OR coalesce(btrim(m.analisis), '') <> '' OR coalesce(btrim(m.causa), '') <> '' OR coalesce(btrim(m.accion_propuesta), '') <> ''
+  OR EXISTS (SELECT 1 FROM medicion_valores mv WHERE mv.medicion_id = m.id)
+  OR EXISTS (SELECT 1 FROM medicion_eventos me WHERE me.medicion_id = m.id)
+  OR EXISTS (SELECT 1 FROM medicion_observaciones mo WHERE mo.medicion_id = m.id)
+  OR EXISTS (SELECT 1 FROM archivos ar WHERE ar.contexto = 'medicion' AND ar.contexto_id = m.id))`;
+
+/**
+ * Al aprobar un cambio mayor que cambia la periodicidad: quita las mediciones abiertas y sin datos de otra periodicidad
+ * que empiezan con su «rige desde» o después (no tienen historia y se pisarían con las nuevas). Las que tienen datos se
+ * quedan y no se miden (`esDeOtraPeriodicidad`). Quien llama tiene el indicador `FOR UPDATE`. Devuelve cuántas quitó.
+ */
+export async function quitarMedicionesDeOtraPeriodicidad(tx: TransactionSql, indicadorId: number, rigeDesde: string): Promise<number> {
+  const periodo = periodoDe(rigeDesde, zonaHoraria());
+  const nueva = periodicidadDe(rigeDesde);
+  if (!periodo || !nueva) return 0;
+  const filas = await tx`SELECT m.id, m.periodo FROM mediciones m
+    WHERE m.indicador_id = ${indicadorId} AND m.desde >= ${periodo.desde} AND NOT ${conDatos(tx)}`;
+  const ids = filas.filter((f) => periodicidadDe(f.periodo as string) !== nueva).map((f) => Number(f.id));
+  if (ids.length > 0) await tx`DELETE FROM mediciones WHERE id IN ${tx(ids)}`;
+  return ids.length;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Abrir los periodos
 // ─────────────────────────────────────────────────────────────────────────────

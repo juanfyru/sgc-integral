@@ -35,7 +35,7 @@ import {
 import { ErrorPermiso, puede, type SujetoPermiso } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { contenidoDeVersion } from "./fichas";
-import { asegurarMediciones } from "./mediciones";
+import { asegurarMediciones, quitarMedicionesDeOtraPeriodicidad } from "./mediciones";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -123,28 +123,59 @@ async function finDeLoReportado(sql: Cliente, indicadorId: number): Promise<Date
 
 const despues = (p: Periodicidad, periodo: Periodo, zona: string) => periodoQueContiene(p, new Date(periodo.hasta.getTime() + 1), zona);
 
+type AprobadaDeRige = { rigeDesde: string | null; periodicidad: Periodicidad | null };
+
+/** Las versiones aprobadas, de mayor a menor número (el orden de `versionQueRigeEntre`), con su periodicidad. */
+async function aprobadasDeRige(sql: Cliente, indicadorId: number): Promise<AprobadaDeRige[]> {
+  const filas = await sql`SELECT rige_desde, periodicidad FROM indicador_versiones
+    WHERE indicador_id = ${indicadorId} AND estado = 'aprobada' ORDER BY numero DESC`;
+  return filas.map((f) => ({ rigeDesde: (f.rige_desde as string | null) ?? null, periodicidad: (f.periodicidad as Periodicidad | null) ?? null }));
+}
+
+/** La periodicidad que reemplaza un cambio que empieza con `periodo`: la de la versión que rige justo antes. */
+function periodicidadQueReemplaza(aprobadas: readonly AprobadaDeRige[], periodo: Periodo, zona: string): Periodicidad | null {
+  return versionQueRigeEntre(aprobadas, { desde: new Date(periodo.desde.getTime() - 1) }, zona)?.periodicidad ?? null;
+}
+
 /**
- * El primer periodo, en la periodicidad dada, que no se cruza con una medición reportada; sin ninguna, el que contiene el
- * inicio de medición (o, sin inicio, el en curso). Puede no haber empezado.
+ * Frontera común: el periodo empieza donde empieza también un periodo de la periodicidad que reemplaza. Si no, un periodo
+ * viejo se partiría en dos y una parte del tiempo se mediría dos veces (de bimestral a trimestral desde abril).
+ */
+function enFronteraComun(aprobadas: readonly AprobadaDeRige[], periodo: Periodo, zona: string): boolean {
+  const anterior = periodicidadQueReemplaza(aprobadas, periodo, zona);
+  return anterior === null || periodoQueContiene(anterior, periodo.desde, zona).desde.getTime() === periodo.desde.getTime();
+}
+
+/**
+ * El primer periodo, en la periodicidad dada, que no se cruza con una medición reportada (sin ninguna, el que contiene el
+ * inicio de medición o, sin inicio, el en curso) y empieza en una frontera común con la periodicidad que reemplaza. Puede
+ * no haber empezado.
  */
 async function primerSinReporte(sql: Cliente, indicadorId: number, periodicidad: Periodicidad, ahora: Date): Promise<Periodo> {
   const zona = zonaHoraria();
   const [i] = await sql`SELECT inicio_medicion FROM indicadores WHERE id = ${indicadorId}`;
   if (!i) throw new ErrorIndicador("El indicador no existe");
   const ultimo = await finDeLoReportado(sql, indicadorId);
+  let candidato: Periodo;
   if (ultimo) {
     const tras = new Date(ultimo.getTime() + 1);
-    const candidato = periodoQueContiene(periodicidad, tras, zona);
-    return candidato.desde.getTime() < tras.getTime() ? despues(periodicidad, candidato, zona) : candidato;
+    const contiene = periodoQueContiene(periodicidad, tras, zona);
+    candidato = contiene.desde.getTime() < tras.getTime() ? despues(periodicidad, contiene, zona) : contiene;
+  } else {
+    const inicio = i.inicio_medicion ? periodoDe(i.inicio_medicion as string, zona) : null;
+    candidato = periodoQueContiene(periodicidad, inicio ? inicio.desde : ahora, zona);
   }
-  const inicio = i.inicio_medicion ? periodoDe(i.inicio_medicion as string, zona) : null;
-  return periodoQueContiene(periodicidad, inicio ? inicio.desde : ahora, zona);
+  // Las fronteras comunes se repiten al menos una vez al año: doce pasos bastan.
+  const aprobadas = await aprobadasDeRige(sql, indicadorId);
+  for (let k = 0; k < 12 && !enFronteraComun(aprobadas, candidato, zona); k++) candidato = despues(periodicidad, candidato, zona);
+  return candidato;
 }
 
 /**
  * Desde cuándo rige por omisión un cambio mayor (F14-DC17): el primer periodo, en la periodicidad de la versión nueva,
- * que no se cruza con una medición reportada (sin ninguna, el que contiene el inicio de medición); nunca uno que no ha
- * empezado: si lo fuera, el periodo en curso (que `validarRige` puede rechazar: ver `previaDeEnvio`).
+ * que no se cruza con una medición reportada (sin ninguna, el que contiene el inicio de medición) y empieza en una
+ * frontera común con la que reemplaza; nunca uno que no ha empezado: si lo fuera, el periodo en curso (que
+ * `validarRige` puede rechazar: ver `previaDeEnvio`).
  */
 export async function rigeDesdePorOmision(sql: Cliente, indicadorId: number, periodicidad: Periodicidad, ahora: Date): Promise<string> {
   const candidato = await primerSinReporte(sql, indicadorId, periodicidad, ahora);
@@ -153,8 +184,9 @@ export async function rigeDesdePorOmision(sql: Cliente, indicadorId: number, per
 
 /**
  * Lo que la elección de «Rige desde» de un cambio mayor debe cumplir (F14-DC17): de la periodicidad de la versión nueva,
- * ya empezado, sin mediciones reportadas en él ni después y, al enviar (`desdeLoPorOmision`), no anterior al de por
- * omisión (spec §7.6.5). Al aprobar no se mira ese límite: correr el tiempo no invalida lo elegido al enviar.
+ * ya empezado, en una frontera común con la periodicidad que reemplaza, sin mediciones reportadas en él ni después y, al
+ * enviar (`desdeLoPorOmision`), no anterior al de por omisión (spec §7.6.5). Al aprobar no se mira ese límite: correr el
+ * tiempo no invalida lo elegido al enviar.
  */
 async function validarRige(
   sql: Cliente,
@@ -164,9 +196,17 @@ async function validarRige(
   ahora: Date,
   desdeLoPorOmision: boolean,
 ): Promise<void> {
-  const periodo = periodicidadDe(clave) === periodicidad ? periodoDe(clave, zonaHoraria()) : null;
+  const zona = zonaHoraria();
+  const periodo = periodicidadDe(clave) === periodicidad ? periodoDe(clave, zona) : null;
   if (!periodo) throw new ErrorIndicador(`«Rige desde» debe ser un periodo ${ADJETIVO[periodicidad]}`);
   if (periodo.desde.getTime() > ahora.getTime()) throw new ErrorIndicador("Una versión no puede regir desde un periodo que no ha empezado");
+  const aprobadas = await aprobadasDeRige(sql, indicadorId);
+  const anterior = periodicidadQueReemplaza(aprobadas, periodo, zona);
+  if (anterior !== null && !enFronteraComun(aprobadas, periodo, zona)) {
+    throw new ErrorIndicador(
+      `La ficha pasa de periodicidad ${ADJETIVO[anterior]} a ${ADJETIVO[periodicidad]}: «Rige desde» debe empezar donde empieza un periodo ${ADJETIVO[anterior]}`,
+    );
+  }
   const [m] = await sql`SELECT
       coalesce(bool_or(desde <= ${periodo.hasta} AND hasta >= ${periodo.desde}), false) AS en_el_periodo,
       coalesce(bool_or(desde > ${periodo.hasta}), false) AS despues
@@ -182,7 +222,10 @@ async function validarRige(
   }
 }
 
-/** Los periodos que se pueden elegir como «Rige desde» de un cambio mayor: del de por omisión al que está en curso. */
+/**
+ * Los periodos que se pueden elegir como «Rige desde» de un cambio mayor: del de por omisión al que está en curso, solo
+ * los que empiezan en una frontera común con la periodicidad que reemplazan.
+ */
 export async function opcionesDeRige(
   sql: Cliente,
   indicadorId: number,
@@ -192,8 +235,10 @@ export async function opcionesDeRige(
   const zona = zonaHoraria();
   const porOmision = await rigeDesdePorOmision(sql, indicadorId, periodicidad, ahora);
   const enCurso = periodoQueContiene(periodicidad, ahora, zona);
-  const claves = [...periodosTerminados(periodicidad, porOmision, ahora, zona).map((p) => p.clave), enCurso.clave];
-  return { porOmision, opciones: [...new Set(claves)].map((clave) => ({ clave, etiqueta: etiquetaDePeriodo(clave) })) };
+  const aprobadas = await aprobadasDeRige(sql, indicadorId);
+  const periodos = [...periodosTerminados(periodicidad, porOmision, ahora, zona), enCurso].filter((p) => enFronteraComun(aprobadas, p, zona));
+  const claves = [...new Set(periodos.map((p) => p.clave))];
+  return { porOmision, opciones: claves.map((clave) => ({ clave, etiqueta: etiquetaDePeriodo(clave) })) };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -449,6 +494,8 @@ export async function aprobarFichas(
         contexto,
         ahora,
       });
+      // Un cambio mayor de periodicidad deja vacías de la periodicidad vieja en su tramo: se quitan (las que tienen datos, no).
+      const medicionesQuitadas = f.tipo === "mayor" ? await quitarMedicionesDeOtraPeriodicidad(tx, f.indicadorId, f.rigeDesde) : 0;
       if (f.tipo === "inicial") {
         await tx`UPDATE indicadores SET estado = 'activo' WHERE id = ${f.indicadorId} AND estado = 'borrador'`;
         // Al aprobarse la primera versión se abren de una vez los periodos históricos (spec §8.1).
@@ -491,7 +538,15 @@ export async function aprobarFichas(
         accion: "indicador_aprobado",
         entidad: "indicador",
         entidadId: f.indicadorId,
-        detalle: { codigo: f.codigo, nombre: f.nombre, versionId: f.versionId, numero: f.numero, tipoCambio: f.tipo, rigeDesde: f.rigeDesde },
+        detalle: {
+          codigo: f.codigo,
+          nombre: f.nombre,
+          versionId: f.versionId,
+          numero: f.numero,
+          tipoCambio: f.tipo,
+          rigeDesde: f.rigeDesde,
+          ...(f.tipo === "mayor" ? { medicionesQuitadas } : {}),
+        },
       });
     }
     return { aprobadas: fichas.length };
