@@ -356,17 +356,45 @@ export function puedeVerInformeAnual(sujeto: SujetoVisibilidad): boolean {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Indicadores (Fase 14, spec §6). «Líder del proceso» es un usuario activo de rol `lider_proceso`
-// con el proceso activo en `usuario_procesos`, como `lideresDeProceso`.
+// Indicadores (Fase 14, spec §6). Una consulta por función. «Líder del proceso» es un usuario activo de rol
+// `lider_proceso` con el proceso activo en `usuario_procesos`, como `lideresDeProceso` (`lideresActivos`).
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Los ids de los líderes activos del proceso que da `procesoId` (un fragmento de SQL), como `lideresDeProceso`. */
+function lideresActivos(sql: Cliente, procesoId: ReturnType<Cliente>) {
+  return sql`SELECT lu.id AS id
+    FROM usuario_procesos lp
+    JOIN usuarios lu ON lu.id = lp.usuario_id AND lu.activo AND lu.rol = 'lider_proceso'
+    JOIN procesos lpp ON lpp.id = lp.proceso_id AND lpp.activo
+    WHERE lp.proceso_id = ${procesoId}`;
+}
+
+/** La persona es líder activo del proceso del indicador `i`; falso sin consultar si su rol no es de líder. */
+function esLiderDe(sql: Cliente, sujeto: SujetoVisibilidad) {
+  if (sujeto.rol !== "lider_proceso") return sql`false`;
+  return sql`(${sujeto.usuarioId}::bigint IN (${lideresActivos(sql, sql`i.proceso_id`)}))`;
+}
+
+/** La persona es un usuario activo designado en el indicador `i` en alguna de las funciones dadas. */
+function estaDesignado(sql: Cliente, sujeto: SujetoVisibilidad, funciones: readonly FuncionDesignado[]) {
+  return sql`EXISTS (
+    SELECT 1 FROM indicador_designados des_d
+    JOIN usuarios des_u ON des_u.id = des_d.usuario_id AND des_u.activo
+    WHERE des_d.indicador_id = i.id AND des_d.usuario_id = ${sujeto.usuarioId}
+      AND des_d.funcion IN ${sql([...funciones])})`;
+}
+
 /**
- * Qué indicadores ve una persona, para un `WHERE` sobre `indicadores i`: los generales; los restringidos, los roles que
- * ven todo, quien está asignado al proceso activo del indicador y quien está designado en él, en cualquier función.
+ * Qué indicadores ve una persona, para un `WHERE` sobre `indicadores i` (spec 14 §6.4). Con `indicadores.administrar`,
+ * todos. Sin él, solo los activos y los retirados (un borrador, una ficha por aprobar o un descartado no existen para
+ * los demás) que además pasan el nivel de acceso: los generales; los restringidos, los roles que ven todo, quien está
+ * asignado al proceso activo del indicador y quien está designado en él, en cualquier función.
  */
 export function filtroIndicadores(sql: Cliente, sujeto: SujetoVisibilidad) {
-  if (ROLES_VEN_RESTRINGIDO.includes(sujeto.rol)) return sql`true`;
-  return sql`(i.nivel_acceso = 'general'
+  if (puede(sujeto, "indicadores.administrar")) return sql`true`;
+  const publicado = sql`i.estado IN ('activo', 'retirado')`;
+  if (ROLES_VEN_RESTRINGIDO.includes(sujeto.rol)) return publicado;
+  return sql`(${publicado} AND (i.nivel_acceso = 'general'
     OR EXISTS (
       SELECT 1
       FROM usuario_procesos ind_up
@@ -376,58 +404,18 @@ export function filtroIndicadores(sql: Cliente, sujeto: SujetoVisibilidad) {
     OR EXISTS (
       SELECT 1 FROM indicador_designados ind_d
       WHERE ind_d.indicador_id = i.id AND ind_d.usuario_id = ${sujeto.usuarioId}
-    ))`;
+    )))`;
 }
 
-/** La persona es líder activo del proceso `procesoId`: lo mismo que `lideresDeProceso`, para una sola persona. */
-async function esLiderDelProceso(sql: Cliente, sujeto: SujetoVisibilidad, procesoId: number): Promise<boolean> {
-  if (sujeto.rol !== "lider_proceso") return false;
-  const filas = await sql`
-    SELECT 1
-    FROM usuario_procesos up
-    JOIN usuarios u ON u.id = up.usuario_id AND u.activo AND u.rol = 'lider_proceso'
-    JOIN procesos p ON p.id = up.proceso_id AND p.activo
-    WHERE up.usuario_id = ${sujeto.usuarioId} AND up.proceso_id = ${procesoId}`;
-  return filas.length > 0;
-}
-
-/** La persona es un usuario activo designado en el indicador en alguna de las funciones dadas. */
-async function estaDesignado(
-  sql: Cliente,
-  sujeto: SujetoVisibilidad,
-  indicadorId: number,
-  funciones: readonly FuncionDesignado[],
-): Promise<boolean> {
-  const filas = await sql`
-    SELECT 1
-    FROM indicador_designados d
-    JOIN usuarios u ON u.id = d.usuario_id AND u.activo
-    WHERE d.indicador_id = ${indicadorId} AND d.usuario_id = ${sujeto.usuarioId}
-      AND d.funcion IN ${sql([...funciones])}`;
-  return filas.length > 0;
-}
-
-async function procesoDelIndicador(sql: Cliente, indicadorId: number): Promise<number | null> {
-  const [i] = await sql`SELECT proceso_id FROM indicadores WHERE id = ${indicadorId}`;
-  return i ? Number(i.proceso_id) : null;
-}
-
-/**
- * Quién ve un indicador (spec 14 §6.4): activo o retirado, quien pasa `filtroIndicadores`; un borrador o un
- * descartado, solo quien tiene `indicadores.administrar`. `false` si no existe.
- */
+/** Quién ve un indicador: el que pasa `filtroIndicadores`. `false` si no existe. */
 export async function puedeVerIndicador(
   indicadorId: number,
   sujeto: SujetoVisibilidad,
   opciones?: { sql?: Cliente },
 ): Promise<boolean> {
   const sql = opciones?.sql ?? obtenerSql();
-  const [i] = await sql`
-    SELECT i.estado FROM indicadores i
-    WHERE i.id = ${indicadorId} AND ${filtroIndicadores(sql, sujeto)}`;
-  if (!i) return false;
-  if (i.estado === "borrador" || i.estado === "descartado") return puede(sujeto, "indicadores.administrar");
-  return true;
+  const filas = await sql`SELECT 1 FROM indicadores i WHERE i.id = ${indicadorId} AND ${filtroIndicadores(sql, sujeto)}`;
+  return filas.length > 0;
 }
 
 /**
@@ -440,11 +428,11 @@ export async function puedeVerSoportes(
   opciones?: { sql?: Cliente },
 ): Promise<boolean> {
   const sql = opciones?.sql ?? obtenerSql();
-  const procesoId = await procesoDelIndicador(sql, indicadorId);
-  if (procesoId === null) return false;
-  if (ROLES_VEN_RESTRINGIDO.includes(sujeto.rol)) return true;
-  if (await esLiderDelProceso(sql, sujeto, procesoId)) return true;
-  return estaDesignado(sql, sujeto, indicadorId, FUNCIONES_DESIGNADO);
+  const rolesTodo = ROLES_VEN_RESTRINGIDO.includes(sujeto.rol) ? sql`true` : sql`false`;
+  const [f] = await sql`
+    SELECT (${rolesTodo} OR ${esLiderDe(sql, sujeto)} OR ${estaDesignado(sql, sujeto, FUNCIONES_DESIGNADO)}) AS ok
+    FROM indicadores i WHERE i.id = ${indicadorId}`;
+  return f?.ok === true;
 }
 
 export type Capacidad = { puede: boolean; sinMedidor: boolean };
@@ -460,25 +448,18 @@ async function capacidad(
   opciones?: { sql?: Cliente },
 ): Promise<Capacidad> {
   const sql = opciones?.sql ?? obtenerSql();
-  const no: Capacidad = { puede: false, sinMedidor: false };
-  const procesoId = await procesoDelIndicador(sql, indicadorId);
-  if (procesoId === null) return no;
-  if (await estaDesignado(sql, sujeto, indicadorId, [funcion])) return { puede: true, sinMedidor: false };
-  if (await esLiderDelProceso(sql, sujeto, procesoId)) return { puede: true, sinMedidor: false };
-  if (sujeto.rol !== "admin_sgc") return no;
-  const [hay] = await sql`
-    SELECT
-      EXISTS (
-        SELECT 1 FROM indicador_designados d JOIN usuarios u ON u.id = d.usuario_id AND u.activo
-        WHERE d.indicador_id = ${indicadorId} AND d.funcion = ${funcion}
-      ) OR EXISTS (
-        SELECT 1
-        FROM usuario_procesos up
-        JOIN usuarios u ON u.id = up.usuario_id AND u.activo AND u.rol = 'lider_proceso'
-        JOIN procesos p ON p.id = up.proceso_id AND p.activo
-        WHERE up.proceso_id = ${procesoId}
-      ) AS alguien`;
-  return hay.alguien ? no : { puede: true, sinMedidor: true };
+  const [f] = await sql`
+    SELECT ${estaDesignado(sql, sujeto, [funcion])} AS designado,
+      ${esLiderDe(sql, sujeto)} AS lider,
+      (EXISTS (
+        SELECT 1 FROM indicador_designados cap_d JOIN usuarios cap_u ON cap_u.id = cap_d.usuario_id AND cap_u.activo
+        WHERE cap_d.indicador_id = i.id AND cap_d.funcion = ${funcion}
+      ) OR EXISTS (${lideresActivos(sql, sql`i.proceso_id`)})) AS alguien
+    FROM indicadores i WHERE i.id = ${indicadorId}`;
+  if (!f) return { puede: false, sinMedidor: false };
+  if (f.designado || f.lider) return { puede: true, sinMedidor: false };
+  if (sujeto.rol === "admin_sgc" && !f.alguien) return { puede: true, sinMedidor: true };
+  return { puede: false, sinMedidor: false };
 }
 
 export function puedeMedir(indicadorId: number, sujeto: SujetoVisibilidad, opciones?: { sql?: Cliente }): Promise<Capacidad> {
@@ -496,9 +477,12 @@ export async function puedeObservar(
   opciones?: { sql?: Cliente },
 ): Promise<boolean> {
   const sql = opciones?.sql ?? obtenerSql();
-  if (!(await puedeVerIndicador(indicadorId, sujeto, { sql }))) return false;
-  if (ROLES_VEN_RESTRINGIDO.includes(sujeto.rol)) return true;
-  return estaDesignado(sql, sujeto, indicadorId, ["seguimiento"]);
+  const rolesTodo = ROLES_VEN_RESTRINGIDO.includes(sujeto.rol) ? sql`true` : sql`false`;
+  const filas = await sql`
+    SELECT 1 FROM indicadores i
+    WHERE i.id = ${indicadorId} AND ${filtroIndicadores(sql, sujeto)}
+      AND (${rolesTodo} OR ${estaDesignado(sql, sujeto, ["seguimiento"])})`;
+  return filas.length > 0;
 }
 
 /**
@@ -508,27 +492,26 @@ export async function puedeObservar(
  */
 export async function aprobadoresDeFicha(versionId: number, opciones?: { sql?: Cliente }): Promise<number[]> {
   const sql = opciones?.sql ?? obtenerSql();
-  const [v] = await sql`
-    SELECT i.proceso_id, v.elaborada_por, c.aprueba
-    FROM indicador_versiones v
-    JOIN indicadores i ON i.id = v.indicador_id
-    LEFT JOIN clasificaciones_indicador c ON c.id = v.clasificacion_id
-    WHERE v.id = ${versionId}`;
-  if (!v || v.aprueba === null) return [];
-  const elaboro = v.elaborada_por === null ? null : Number(v.elaborada_por);
-  if (v.aprueba === "lider") {
-    const lideres = await sql`
-      SELECT DISTINCT u.id
-      FROM usuario_procesos up
-      JOIN usuarios u ON u.id = up.usuario_id AND u.activo AND u.rol = 'lider_proceso'
-      JOIN procesos p ON p.id = up.proceso_id AND p.activo
-      WHERE up.proceso_id = ${v.proceso_id} AND u.id IS DISTINCT FROM ${elaboro}
-      ORDER BY u.id`;
-    if (lideres.length > 0) return lideres.map((f) => Number(f.id));
-  }
-  const gerencia = await sql`
-    SELECT id FROM usuarios WHERE rol = 'gerencia' AND activo AND id IS DISTINCT FROM ${elaboro} ORDER BY id`;
-  return gerencia.map((f) => Number(f.id));
+  const filas = await sql`
+    WITH v AS (
+      SELECT i.proceso_id, fv.elaborada_por, c.aprueba
+      FROM indicador_versiones fv
+      JOIN indicadores i ON i.id = fv.indicador_id
+      JOIN clasificaciones_indicador c ON c.id = fv.clasificacion_id
+      WHERE fv.id = ${versionId}
+    ),
+    lideres AS (
+      SELECT DISTINCT l.id
+      FROM v CROSS JOIN LATERAL (${lideresActivos(sql, sql`v.proceso_id`)}) l
+      WHERE v.aprueba = 'lider' AND l.id IS DISTINCT FROM v.elaborada_por
+    ),
+    gerencia AS (
+      SELECT g.id FROM v, usuarios g
+      WHERE g.rol = 'gerencia' AND g.activo AND g.id IS DISTINCT FROM v.elaborada_por
+        AND NOT EXISTS (SELECT 1 FROM lideres)
+    )
+    SELECT id FROM lideres UNION ALL SELECT id FROM gerencia ORDER BY id`;
+  return filas.map((f) => Number(f.id));
 }
 
 export async function puedeAprobarFicha(
@@ -542,23 +525,23 @@ export async function puedeAprobarFicha(
 /** Los destinatarios de las tareas y avisos de una función: los designados activos; si no, los líderes; si no, los Admin SGC. */
 async function responsables(indicadorId: number, funcion: "mide" | "analiza", opciones?: { sql?: Cliente }): Promise<number[]> {
   const sql = opciones?.sql ?? obtenerSql();
-  const designados = await sql`
-    SELECT DISTINCT d.usuario_id AS id
-    FROM indicador_designados d JOIN usuarios u ON u.id = d.usuario_id AND u.activo
-    WHERE d.indicador_id = ${indicadorId} AND d.funcion = ${funcion}
-    ORDER BY d.usuario_id`;
-  if (designados.length > 0) return designados.map((f) => Number(f.id));
-  const lideres = await sql`
-    SELECT DISTINCT u.id
-    FROM indicadores i
-    JOIN usuario_procesos up ON up.proceso_id = i.proceso_id
-    JOIN usuarios u ON u.id = up.usuario_id AND u.activo AND u.rol = 'lider_proceso'
-    JOIN procesos p ON p.id = up.proceso_id AND p.activo
-    WHERE i.id = ${indicadorId}
-    ORDER BY u.id`;
-  if (lideres.length > 0) return lideres.map((f) => Number(f.id));
-  const admins = await sql`SELECT id FROM usuarios WHERE rol = 'admin_sgc' AND activo ORDER BY id`;
-  return admins.map((f) => Number(f.id));
+  const filas = await sql`
+    WITH des AS (
+      SELECT DISTINCT d.usuario_id AS id
+      FROM indicador_designados d JOIN usuarios u ON u.id = d.usuario_id AND u.activo
+      WHERE d.indicador_id = ${indicadorId} AND d.funcion = ${funcion}
+    ),
+    lid AS (
+      SELECT DISTINCT l.id
+      FROM indicadores i CROSS JOIN LATERAL (${lideresActivos(sql, sql`i.proceso_id`)}) l
+      WHERE i.id = ${indicadorId} AND NOT EXISTS (SELECT 1 FROM des)
+    ),
+    adm AS (
+      SELECT id FROM usuarios
+      WHERE rol = 'admin_sgc' AND activo AND NOT EXISTS (SELECT 1 FROM des) AND NOT EXISTS (SELECT 1 FROM lid)
+    )
+    SELECT id FROM des UNION ALL SELECT id FROM lid UNION ALL SELECT id FROM adm ORDER BY id`;
+  return filas.map((f) => Number(f.id));
 }
 
 export function responsablesDeMedir(indicadorId: number, opciones?: { sql?: Cliente }): Promise<number[]> {

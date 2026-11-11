@@ -88,7 +88,12 @@ describe("visibilidad de un indicador", () => {
     const a = await indicadorDePrueba(tx, { procesoId: e.gth, nivelAcceso: "restringido" });
     const b = await indicadorDePrueba(tx, { procesoId: e.cex, nivelAcceso: "restringido", seguimiento: [e.consultaSeguimiento.usuarioId] });
     const c = await indicadorDePrueba(tx, { procesoId: e.cex, nivelAcceso: "general" });
-    const ids = [a.id, b.id, c.id];
+    // Un general en borrador, un restringido en borrador y uno descartado: solo los ve quien administra.
+    const d = await indicadorDePrueba(tx, { procesoId: e.gth, nivelAcceso: "general", estado: "borrador" });
+    const f = await indicadorDePrueba(tx, { procesoId: e.gth, nivelAcceso: "restringido", estado: "borrador" });
+    const g = await indicadorDePrueba(tx, { procesoId: e.gth, nivelAcceso: "general" });
+    await tx`UPDATE indicadores SET estado = 'descartado', baja_por = ${e.admin.usuarioId}, baja_en = now(), baja_motivo = 'prueba' WHERE id = ${g.id}`;
+    const ids = [a.id, b.id, c.id, d.id, f.id, g.id];
     for (const u of [e.admin, e.gerencia, e.control, e.liderGth, e.liderCex, e.consultaGth, e.consultaSeguimiento, e.consultaNada]) {
       const s = sujeto(u);
       const filas = await tx`SELECT i.id FROM indicadores i WHERE i.id IN ${tx(ids)} AND ${filtroIndicadores(tx, s)}`;
@@ -96,6 +101,8 @@ describe("visibilidad de un indicador", () => {
       const unoPorUno: number[] = [];
       for (const id of ids) if (await puedeVerIndicador(id, s, { sql: tx })) unoPorUno.push(id);
       expect(porFiltro, `rol ${u.rol}`).toEqual(unoPorUno.sort((x, y) => x - y));
+      const borradores = [d.id, f.id, g.id];
+      expect(porFiltro.filter((id) => borradores.includes(id)), `borradores de ${u.rol}`).toEqual(u.rol === "admin_sgc" ? borradores.sort((x, y) => x - y) : []);
     }
   }));
 
@@ -276,13 +283,9 @@ describe("aprobación de la ficha", () => {
 
   it("operativo en un proceso sin líder: aprueba Gerencia", () => revertida(sql, async (tx) => {
     const e = await escenario(tx);
-    const sinLider = await tx`SELECT p.id FROM procesos p WHERE p.activo AND NOT EXISTS (
-      SELECT 1 FROM usuario_procesos up JOIN usuarios u ON u.id = up.usuario_id AND u.activo AND u.rol = 'lider_proceso'
-      WHERE up.proceso_id = p.id) LIMIT 1`;
-    const procesoId = sinLider.length > 0
-      ? Number(sinLider[0].id)
-      : Number((await tx`INSERT INTO procesos (nombre, sigla, slug, banda, orden) VALUES ('Proceso de prueba', 'ZZP', ${`zz-${Date.now()}`}, 'apoyo', 99) RETURNING id`)[0].id);
-    const i = await indicadorDePrueba(tx, { procesoId, clasificacion: "Operativo", elaboradaPor: e.admin.usuarioId });
+    // CEX sin ningún líder activo: el de la demo ya está desactivado por `escenario`, y el de la prueba, aquí.
+    await tx`UPDATE usuarios SET activo = false WHERE id = ${e.liderCex.usuarioId}`;
+    const i = await indicadorDePrueba(tx, { procesoId: e.cex, clasificacion: "Operativo", elaboradaPor: e.admin.usuarioId });
     const gerencias = (await tx`SELECT id FROM usuarios WHERE rol = 'gerencia' AND activo ORDER BY id`).map((f) => Number(f.id));
     expect(await aprobadoresDeFicha(i.versionId, { sql: tx })).toEqual(gerencias);
     expect(await puedeAprobarFicha(i.versionId, sujeto(e.gerencia), { sql: tx })).toBe(true);

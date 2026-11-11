@@ -8,6 +8,15 @@ import { usuarioDePrueba } from "./tramites";
 
 let consecutivo = 0;
 
+/** La clave de periodo de enero de 2026 en cada periodicidad. */
+const INICIO_POR_PERIODICIDAD: Record<Periodicidad, string> = {
+  mensual: "2026-01",
+  bimestral: "2026-B1",
+  trimestral: "2026-T1",
+  semestral: "2026-S1",
+  anual: "2026",
+};
+
 export type IndicadorDePrueba = {
   id: number;
   codigo: string;
@@ -26,7 +35,7 @@ export type OpcionesIndicadorDePrueba = {
   meta?: string | null;
   umbralPct?: number;
   clasificacion?: "Estratégico" | "Operativo" | "Regulatorio";
-  /** Clave de periodo desde la que se mide y rige la versión 1; sin valor, `2026-01`. */
+  /** Clave de periodo desde la que se mide y rige la versión 1; sin valor, enero de 2026 en la periodicidad. */
   inicioMedicion?: string;
   aprobadaEn?: Date;
   soporteObligatorio?: boolean;
@@ -49,7 +58,7 @@ export async function indicadorDePrueba(
   consecutivo += 1;
   const codigo = `ZZ-IND-${Date.now() % 100_000_000}-${consecutivo}`;
   const aprobada = (o.estado ?? "activo") === "activo";
-  const inicio = o.inicioMedicion ?? "2026-01";
+  const inicio = o.inicioMedicion ?? INICIO_POR_PERIODICIDAD[o.periodicidad ?? "mensual"];
 
   const procesoId =
     o.procesoId ?? Number((await tx`SELECT id FROM procesos WHERE sigla = 'GTH'`)[0].id);
@@ -73,7 +82,7 @@ export async function indicadorDePrueba(
     SELECT ${indicadorId}, 1, 'borrador', 'inicial', ${`Indicador de prueba ${codigo}`}, 'Medir el cumplimiento de la prueba',
       t.id, t.nombre, c.id, c.nombre, ${proceso.nombre as string}, 'manual', 'Porcentaje de cumplimiento', 'porcentaje', 100, 'A / B * 100',
       un.id, un.nombre, '%', 1, ${o.periodicidad ?? "mensual"}, ${o.tendencia ?? "ascendente"}, ${meta},
-      'relativo', ${o.umbralPct ?? 10}, ${elaboradaPor}
+      'relativo', ${o.umbralPct ?? 70}, ${elaboradaPor}
     FROM tipos_indicador t, clasificaciones_indicador c, unidades_indicador un
     WHERE t.nombre = 'Eficacia' AND c.nombre = ${clasificacion} AND un.nombre = 'Porcentaje'
     RETURNING id`;
