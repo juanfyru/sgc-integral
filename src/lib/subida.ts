@@ -11,7 +11,15 @@ export type RolArchivo = (typeof ROLES_ARCHIVO)[number];
  * Dónde cuelga una evidencia: una jornada de socialización, un ítem de verificación, una norma (su PDF), una revisión
  * anual o un hallazgo.
  */
-export const CONTEXTOS_EVIDENCIA = ["jornada", "verificacion_item", "norma", "revision_anual", "hallazgo"] as const;
+export const CONTEXTOS_EVIDENCIA = [
+  "jornada",
+  "verificacion_item",
+  "norma",
+  "revision_anual",
+  "hallazgo",
+  "medicion",
+  "reporte_externo",
+] as const;
 export type ContextoEvidencia = (typeof CONTEXTOS_EVIDENCIA)[number];
 /** Los roles que las listas y las rutas de archivos de un documento ofrecen: las actas quedan fuera. */
 export const ROLES_ARCHIVO_LISTA: string[] = [...ROLES_ARCHIVO];
@@ -109,6 +117,7 @@ const EXTENSIONES_EVIDENCIA = ["pdf", "png", "jpg", "jpeg", "webp"];
 
 const ERROR_EVIDENCIA = "La evidencia debe ser PDF o imagen (PNG, JPG, WebP)";
 const ERROR_SOLO_PDF = "El archivo de la norma debe ser un PDF";
+export const ERROR_SOPORTE = "El soporte debe ser PDF, imagen (PNG, JPG, WebP) o Excel (.xlsx)";
 
 /** El archivo de una norma es su texto oficial: solo PDF (spec 13C §10.1). */
 export const CONTEXTOS_SOLO_PDF: readonly ContextoEvidencia[] = ["norma"];
@@ -121,17 +130,18 @@ export const CONTEXTOS_UNICOS: Partial<Record<ContextoEvidencia, string>> = { no
 
 /**
  * Como `validarTipo`, pero una evidencia solo es un PDF o una imagen (nunca SVG, HTML ni Office), y con `soloPdf`
- * solo un PDF: una extensión fuera de la lista o un contenido que no la respalda dan el mismo mensaje.
+ * solo un PDF: una extensión fuera de la lista o un contenido que no la respalda dan el mismo mensaje. Con `conExcel`
+ * (el soporte de una medición) admite además un `.xlsx`, nunca un `.xls`.
  */
 export async function validarTipoEvidencia(
   nombre: string,
   muestra: Uint8Array,
-  opciones?: { soloPdf?: boolean },
+  opciones?: { soloPdf?: boolean; conExcel?: boolean },
 ): Promise<ResultadoTipo> {
   const punto = nombre.lastIndexOf(".");
   const extension = punto > 0 ? nombre.slice(punto + 1).toLowerCase() : "";
-  const error = opciones?.soloPdf ? ERROR_SOLO_PDF : ERROR_EVIDENCIA;
-  const permitidas = opciones?.soloPdf ? ["pdf"] : EXTENSIONES_EVIDENCIA;
+  const error = opciones?.soloPdf ? ERROR_SOLO_PDF : opciones?.conExcel ? ERROR_SOPORTE : ERROR_EVIDENCIA;
+  const permitidas = opciones?.soloPdf ? ["pdf"] : opciones?.conExcel ? [...EXTENSIONES_EVIDENCIA, "xlsx"] : EXTENSIONES_EVIDENCIA;
   if (!permitidas.includes(extension)) return { ok: false, error };
   const tipo = await validarTipo(nombre, muestra);
   return tipo.ok ? tipo : { ok: false, error };

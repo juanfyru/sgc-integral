@@ -14,8 +14,13 @@
  * - Los demás roles alcanzan todo (`{ todos: true }`).
  * - `procesoIds` sale ordenado ascendente; `procesosAsignados` devuelve procesos
  *   activos ordenados por nombre.
+ *
+ * Indicadores (spec 14 §6.4) tienen dos excepciones nombradas a esta regla: la lectura de los
+ * indicadores generales es de toda sesión, y la designación (`indicador_designados`) da alcance
+ * a un indicador sin liderar su proceso. Sus reglas están al final de este archivo.
  */
 import { obtenerSql, type Cliente } from "@/db/cliente";
+import { FUNCIONES_DESIGNADO, type FuncionDesignado } from "@/lib/indicadores/tipos";
 import { puede } from "@/lib/permisos";
 import type { Rol } from "@/lib/roles";
 import type { SesionValida } from "@/lib/sesion";
@@ -348,4 +353,218 @@ export function puedeDecidirEn(sujeto: SujetoVisibilidad, procesoId: number, alc
 /** El informe institucional de la revisión anual nombra documentos restringidos: lo ven los roles que los ven. */
 export function puedeVerInformeAnual(sujeto: SujetoVisibilidad): boolean {
   return ROLES_VEN_RESTRINGIDO.includes(sujeto.rol);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Indicadores (Fase 14, spec §6). «Líder del proceso» es un usuario activo de rol `lider_proceso`
+// con el proceso activo en `usuario_procesos`, como `lideresDeProceso`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Qué indicadores ve una persona, para un `WHERE` sobre `indicadores i`: los generales; los restringidos, los roles que
+ * ven todo, quien está asignado al proceso activo del indicador y quien está designado en él, en cualquier función.
+ */
+export function filtroIndicadores(sql: Cliente, sujeto: SujetoVisibilidad) {
+  if (ROLES_VEN_RESTRINGIDO.includes(sujeto.rol)) return sql`true`;
+  return sql`(i.nivel_acceso = 'general'
+    OR EXISTS (
+      SELECT 1
+      FROM usuario_procesos ind_up
+      JOIN procesos ind_p ON ind_p.id = ind_up.proceso_id AND ind_p.activo
+      WHERE ind_up.usuario_id = ${sujeto.usuarioId} AND ind_up.proceso_id = i.proceso_id
+    )
+    OR EXISTS (
+      SELECT 1 FROM indicador_designados ind_d
+      WHERE ind_d.indicador_id = i.id AND ind_d.usuario_id = ${sujeto.usuarioId}
+    ))`;
+}
+
+/** La persona es líder activo del proceso `procesoId`: lo mismo que `lideresDeProceso`, para una sola persona. */
+async function esLiderDelProceso(sql: Cliente, sujeto: SujetoVisibilidad, procesoId: number): Promise<boolean> {
+  if (sujeto.rol !== "lider_proceso") return false;
+  const filas = await sql`
+    SELECT 1
+    FROM usuario_procesos up
+    JOIN usuarios u ON u.id = up.usuario_id AND u.activo AND u.rol = 'lider_proceso'
+    JOIN procesos p ON p.id = up.proceso_id AND p.activo
+    WHERE up.usuario_id = ${sujeto.usuarioId} AND up.proceso_id = ${procesoId}`;
+  return filas.length > 0;
+}
+
+/** La persona es un usuario activo designado en el indicador en alguna de las funciones dadas. */
+async function estaDesignado(
+  sql: Cliente,
+  sujeto: SujetoVisibilidad,
+  indicadorId: number,
+  funciones: readonly FuncionDesignado[],
+): Promise<boolean> {
+  const filas = await sql`
+    SELECT 1
+    FROM indicador_designados d
+    JOIN usuarios u ON u.id = d.usuario_id AND u.activo
+    WHERE d.indicador_id = ${indicadorId} AND d.usuario_id = ${sujeto.usuarioId}
+      AND d.funcion IN ${sql([...funciones])}`;
+  return filas.length > 0;
+}
+
+async function procesoDelIndicador(sql: Cliente, indicadorId: number): Promise<number | null> {
+  const [i] = await sql`SELECT proceso_id FROM indicadores WHERE id = ${indicadorId}`;
+  return i ? Number(i.proceso_id) : null;
+}
+
+/**
+ * Quién ve un indicador (spec 14 §6.4): activo o retirado, quien pasa `filtroIndicadores`; un borrador o un
+ * descartado, solo quien tiene `indicadores.administrar`. `false` si no existe.
+ */
+export async function puedeVerIndicador(
+  indicadorId: number,
+  sujeto: SujetoVisibilidad,
+  opciones?: { sql?: Cliente },
+): Promise<boolean> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [i] = await sql`
+    SELECT i.estado FROM indicadores i
+    WHERE i.id = ${indicadorId} AND ${filtroIndicadores(sql, sujeto)}`;
+  if (!i) return false;
+  if (i.estado === "borrador" || i.estado === "descartado") return puede(sujeto, "indicadores.administrar");
+  return true;
+}
+
+/**
+ * Quién ve los soportes de las mediciones (spec 14 §6.4), más estricto que ver el indicador: Admin SGC, Gerencia y
+ * Control Interno, el líder del proceso y los designados en cualquier función.
+ */
+export async function puedeVerSoportes(
+  indicadorId: number,
+  sujeto: SujetoVisibilidad,
+  opciones?: { sql?: Cliente },
+): Promise<boolean> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const procesoId = await procesoDelIndicador(sql, indicadorId);
+  if (procesoId === null) return false;
+  if (ROLES_VEN_RESTRINGIDO.includes(sujeto.rol)) return true;
+  if (await esLiderDelProceso(sql, sujeto, procesoId)) return true;
+  return estaDesignado(sql, sujeto, indicadorId, FUNCIONES_DESIGNADO);
+}
+
+export type Capacidad = { puede: boolean; sinMedidor: boolean };
+
+/**
+ * Quién cumple una función de la medición: el designado activo y el líder del proceso. El Admin SGC solo si está
+ * designado o si no hay designado activo en la función ni líder activo (entonces `sinMedidor`).
+ */
+async function capacidad(
+  indicadorId: number,
+  sujeto: SujetoVisibilidad,
+  funcion: "mide" | "analiza",
+  opciones?: { sql?: Cliente },
+): Promise<Capacidad> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const no: Capacidad = { puede: false, sinMedidor: false };
+  const procesoId = await procesoDelIndicador(sql, indicadorId);
+  if (procesoId === null) return no;
+  if (await estaDesignado(sql, sujeto, indicadorId, [funcion])) return { puede: true, sinMedidor: false };
+  if (await esLiderDelProceso(sql, sujeto, procesoId)) return { puede: true, sinMedidor: false };
+  if (sujeto.rol !== "admin_sgc") return no;
+  const [hay] = await sql`
+    SELECT
+      EXISTS (
+        SELECT 1 FROM indicador_designados d JOIN usuarios u ON u.id = d.usuario_id AND u.activo
+        WHERE d.indicador_id = ${indicadorId} AND d.funcion = ${funcion}
+      ) OR EXISTS (
+        SELECT 1
+        FROM usuario_procesos up
+        JOIN usuarios u ON u.id = up.usuario_id AND u.activo AND u.rol = 'lider_proceso'
+        JOIN procesos p ON p.id = up.proceso_id AND p.activo
+        WHERE up.proceso_id = ${procesoId}
+      ) AS alguien`;
+  return hay.alguien ? no : { puede: true, sinMedidor: true };
+}
+
+export function puedeMedir(indicadorId: number, sujeto: SujetoVisibilidad, opciones?: { sql?: Cliente }): Promise<Capacidad> {
+  return capacidad(indicadorId, sujeto, "mide", opciones);
+}
+
+export function puedeAnalizar(indicadorId: number, sujeto: SujetoVisibilidad, opciones?: { sql?: Cliente }): Promise<Capacidad> {
+  return capacidad(indicadorId, sujeto, "analiza", opciones);
+}
+
+/** Quién deja observaciones en una medición: quien ve el indicador y es Admin SGC, Gerencia, Control Interno o designado en seguimiento. */
+export async function puedeObservar(
+  indicadorId: number,
+  sujeto: SujetoVisibilidad,
+  opciones?: { sql?: Cliente },
+): Promise<boolean> {
+  const sql = opciones?.sql ?? obtenerSql();
+  if (!(await puedeVerIndicador(indicadorId, sujeto, { sql }))) return false;
+  if (ROLES_VEN_RESTRINGIDO.includes(sujeto.rol)) return true;
+  return estaDesignado(sql, sujeto, indicadorId, ["seguimiento"]);
+}
+
+/**
+ * Quiénes aprueban una ficha (spec 14 §6.3), según la clasificación de la versión: usuarios activos de Gerencia o
+ * líderes activos del proceso; nunca quien la elaboró. Si con `lider` no queda nadie, Gerencia (F14-DC19). Sin
+ * clasificación no hay aprobadores.
+ */
+export async function aprobadoresDeFicha(versionId: number, opciones?: { sql?: Cliente }): Promise<number[]> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [v] = await sql`
+    SELECT i.proceso_id, v.elaborada_por, c.aprueba
+    FROM indicador_versiones v
+    JOIN indicadores i ON i.id = v.indicador_id
+    LEFT JOIN clasificaciones_indicador c ON c.id = v.clasificacion_id
+    WHERE v.id = ${versionId}`;
+  if (!v || v.aprueba === null) return [];
+  const elaboro = v.elaborada_por === null ? null : Number(v.elaborada_por);
+  if (v.aprueba === "lider") {
+    const lideres = await sql`
+      SELECT DISTINCT u.id
+      FROM usuario_procesos up
+      JOIN usuarios u ON u.id = up.usuario_id AND u.activo AND u.rol = 'lider_proceso'
+      JOIN procesos p ON p.id = up.proceso_id AND p.activo
+      WHERE up.proceso_id = ${v.proceso_id} AND u.id IS DISTINCT FROM ${elaboro}
+      ORDER BY u.id`;
+    if (lideres.length > 0) return lideres.map((f) => Number(f.id));
+  }
+  const gerencia = await sql`
+    SELECT id FROM usuarios WHERE rol = 'gerencia' AND activo AND id IS DISTINCT FROM ${elaboro} ORDER BY id`;
+  return gerencia.map((f) => Number(f.id));
+}
+
+export async function puedeAprobarFicha(
+  versionId: number,
+  sujeto: SujetoVisibilidad,
+  opciones?: { sql?: Cliente },
+): Promise<boolean> {
+  return (await aprobadoresDeFicha(versionId, opciones)).includes(sujeto.usuarioId);
+}
+
+/** Los destinatarios de las tareas y avisos de una función: los designados activos; si no, los líderes; si no, los Admin SGC. */
+async function responsables(indicadorId: number, funcion: "mide" | "analiza", opciones?: { sql?: Cliente }): Promise<number[]> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const designados = await sql`
+    SELECT DISTINCT d.usuario_id AS id
+    FROM indicador_designados d JOIN usuarios u ON u.id = d.usuario_id AND u.activo
+    WHERE d.indicador_id = ${indicadorId} AND d.funcion = ${funcion}
+    ORDER BY d.usuario_id`;
+  if (designados.length > 0) return designados.map((f) => Number(f.id));
+  const lideres = await sql`
+    SELECT DISTINCT u.id
+    FROM indicadores i
+    JOIN usuario_procesos up ON up.proceso_id = i.proceso_id
+    JOIN usuarios u ON u.id = up.usuario_id AND u.activo AND u.rol = 'lider_proceso'
+    JOIN procesos p ON p.id = up.proceso_id AND p.activo
+    WHERE i.id = ${indicadorId}
+    ORDER BY u.id`;
+  if (lideres.length > 0) return lideres.map((f) => Number(f.id));
+  const admins = await sql`SELECT id FROM usuarios WHERE rol = 'admin_sgc' AND activo ORDER BY id`;
+  return admins.map((f) => Number(f.id));
+}
+
+export function responsablesDeMedir(indicadorId: number, opciones?: { sql?: Cliente }): Promise<number[]> {
+  return responsables(indicadorId, "mide", opciones);
+}
+
+export function responsablesDeAnalizar(indicadorId: number, opciones?: { sql?: Cliente }): Promise<number[]> {
+  return responsables(indicadorId, "analiza", opciones);
 }

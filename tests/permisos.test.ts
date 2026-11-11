@@ -38,6 +38,10 @@ const ESPERADA: Record<Permiso, Rol[]> = {
   "normograma.administrar": ["admin_sgc"],
   "normograma.procesos": ["admin_sgc", "lider_proceso"],
   "documentos.indicadores": ["admin_sgc", "gerencia", "control_interno", "lider_proceso"],
+  "indicadores.administrar": ["admin_sgc"],
+  "indicadores.aprobar": ["gerencia", "lider_proceso"],
+  "indicadores.medir": ["admin_sgc", "gerencia", "control_interno", "lider_proceso", "consulta"],
+  "indicadores.observar": ["admin_sgc", "gerencia", "control_interno", "lider_proceso", "consulta"],
 };
 
 describe("matriz de permisos", () => {

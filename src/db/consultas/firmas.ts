@@ -22,6 +22,8 @@ export async function registrarFirma(
   f: {
     tramiteId: number | null;
     versionId: number | null;
+    /** La versión de la ficha de un indicador que se firma (sin trámite ni versión de documento). */
+    indicadorVersionId?: number | null;
     usuarioId: number;
     firma: Firma;
     ronda: number;
@@ -32,9 +34,9 @@ export async function registrarFirma(
   },
 ): Promise<number> {
   const [fila] = await tx`INSERT INTO firmas
-      (tramite_id, version_id, usuario_id, firma, ronda, hash_sha256,
+      (tramite_id, version_id, indicador_version_id, usuario_id, firma, ronda, hash_sha256,
        nombre_firmante, cargo_firmante, metodo, ip, user_agent, creado_en)
-    SELECT ${f.tramiteId}, ${f.versionId}, u.id, ${f.firma}, ${f.ronda}, ${f.hashSha256},
+    SELECT ${f.tramiteId}, ${f.versionId}, ${f.indicadorVersionId ?? null}, u.id, ${f.firma}, ${f.ronda}, ${f.hashSha256},
        u.nombre, c.nombre, ${f.metodo}, ${f.contexto.ip}, ${f.contexto.userAgent}, ${f.ahora ?? new Date()}
     FROM usuarios u LEFT JOIN cargos c ON c.id = u.cargo_id
     WHERE u.id = ${f.usuarioId}

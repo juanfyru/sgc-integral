@@ -1,6 +1,6 @@
 import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
-import { sanearNombre, validarTipo, validarTipoEvidencia } from "@/lib/subida";
+import { ERROR_SOPORTE, sanearNombre, validarTipo, validarTipoEvidencia } from "@/lib/subida";
 import { pdfDePrueba } from "./utiles/pdf";
 
 // Cabeceras mínimas reales por formato para probar magic bytes.
@@ -97,5 +97,20 @@ describe("validarTipoEvidencia", () => {
     expect(await validarTipoEvidencia("resolucion.pdf", pdf, { soloPdf: true })).toEqual({ ok: true, extension: "pdf", mime: "application/pdf" });
     expect(await validarTipoEvidencia("foto.png", PNG, { soloPdf: true })).toEqual({ ok: false, error: SOLO_PDF });
     expect(await validarTipoEvidencia("disfrazado.pdf", PNG, { soloPdf: true })).toEqual({ ok: false, error: SOLO_PDF });
+  });
+
+  it("con conExcel (el soporte de una medición) admite también un .xlsx, nunca .xls, .docx ni .zip", async () => {
+    const zip = new JSZip();
+    zip.file("[Content_Types].xml", "<Types/>");
+    zip.file("xl/workbook.xml", "<workbook/>");
+    const xlsx = await zip.generateAsync({ type: "uint8array" });
+    const conExcel = { conExcel: true };
+    expect(await validarTipoEvidencia("soporte.xlsx", xlsx, conExcel)).toMatchObject({ ok: true, extension: "xlsx" });
+    expect(await validarTipoEvidencia("foto.png", PNG, conExcel)).toEqual({ ok: true, extension: "png", mime: "image/png" });
+    const cfb = new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, ...new Array(600).fill(0)]);
+    expect(await validarTipoEvidencia("viejo.xls", cfb, conExcel)).toEqual({ ok: false, error: ERROR_SOPORTE });
+    expect(await validarTipoEvidencia("lista.docx", await docxMinimo(), conExcel)).toEqual({ ok: false, error: ERROR_SOPORTE });
+    expect(await validarTipoEvidencia("todo.zip", xlsx, conExcel)).toEqual({ ok: false, error: ERROR_SOPORTE });
+    expect(await validarTipoEvidencia("soporte.xlsx", xlsx)).toEqual({ ok: false, error: MENSAJE });
   });
 });

@@ -1,0 +1,74 @@
+/**
+ * Constantes y tipos compartidos del módulo de indicadores (Fase 14). Los valores son los de los `CHECK` de la
+ * migración 0011. Sin importaciones que arrastren el cliente de la BD: los componentes de cliente importan de aquí.
+ */
+import { ErrorTramite } from "@/db/consultas/flujo/contrato";
+
+/** Error de negocio del módulo: su mensaje se le muestra a la persona. */
+export class ErrorIndicador extends ErrorTramite {
+  constructor(mensaje: string) {
+    super(mensaje);
+    this.name = "ErrorIndicador";
+  }
+}
+
+export const ESTADOS_INDICADOR = ["borrador", "activo", "retirado", "descartado"] as const;
+export type EstadoIndicador = (typeof ESTADOS_INDICADOR)[number];
+
+export const ESTADOS_VERSION = ["borrador", "por_aprobar", "aprobada", "descartada"] as const;
+export type EstadoVersion = (typeof ESTADOS_VERSION)[number];
+
+export const TIPOS_CAMBIO = ["inicial", "mayor", "menor"] as const;
+export type TipoCambio = (typeof TIPOS_CAMBIO)[number];
+
+export const FORMAS = ["porcentaje", "tasa", "razon", "conteo", "libre"] as const;
+export type Forma = (typeof FORMAS)[number];
+
+export const PERIODICIDADES = ["mensual", "bimestral", "trimestral", "semestral", "anual"] as const;
+export type Periodicidad = (typeof PERIODICIDADES)[number];
+
+export const TENDENCIAS = ["ascendente", "descendente", "constante"] as const;
+export type Tendencia = (typeof TENDENCIAS)[number];
+
+export const MODOS_SEMAFORO = ["relativo", "fijo"] as const;
+export type ModoSemaforo = (typeof MODOS_SEMAFORO)[number];
+
+export const CONSOLIDACIONES = ["suma", "ultimo", "promedio"] as const;
+export type Consolidacion = (typeof CONSOLIDACIONES)[number];
+
+export const ORIGENES_VARIABLE = ["propia", "compartida", "automatica", "indicador"] as const;
+export type OrigenVariable = (typeof ORIGENES_VARIABLE)[number];
+
+/** Quién tiene la función de una medición: medir, analizar o seguirla. */
+export const FUNCIONES_DESIGNADO = ["mide", "analiza", "seguimiento"] as const;
+export type FuncionDesignado = (typeof FUNCIONES_DESIGNADO)[number];
+
+/** Las funciones de un cargo en la ficha (quién mide y quién analiza). */
+export const FUNCIONES_CARGO = ["medir", "analizar"] as const;
+export type FuncionCargo = (typeof FUNCIONES_CARGO)[number];
+
+export const SEMAFOROS = ["bien", "atencion", "critico"] as const;
+export type Semaforo = (typeof SEMAFOROS)[number];
+
+export const ETIQUETA_SEMAFORO: Record<Semaforo, string> = {
+  bien: "Bien",
+  atencion: "Atención",
+  critico: "Crítico",
+};
+
+export const ESTADOS_MEDICION = ["abierta", "reportada", "cerrada"] as const;
+export type EstadoMedicion = (typeof ESTADOS_MEDICION)[number];
+
+export const TIPOS_EVENTO = [
+  "reporte",
+  "correccion",
+  "analisis",
+  "no_aplica",
+  "meta",
+  "soporte",
+  "cierre",
+  "reapertura",
+  "recalculo",
+  "historico",
+] as const;
+export type TipoEvento = (typeof TIPOS_EVENTO)[number];
