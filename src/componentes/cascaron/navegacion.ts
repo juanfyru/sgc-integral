@@ -11,6 +11,7 @@ export type IconoNav =
   | "maestro"
   | "tipos"
   | "configuracion"
+  | "indicadores-config"
   | "mapa"
   | "entidad"
   | "estructura"
@@ -96,6 +97,13 @@ export const NAVEGACION: readonly EntradaNav[] = [
     icono: "configuracion",
     grupo: "documentos",
     permiso: "tramites.gestionar",
+  },
+  {
+    href: "/admin/indicadores",
+    etiqueta: "Configuración de indicadores",
+    icono: "indicadores-config",
+    grupo: "administracion",
+    permiso: "indicadores.administrar",
   },
   { href: "/admin/mapa", etiqueta: "Mapa de procesos", icono: "mapa", grupo: "documentos", permiso: "mapa.administrar" },
   {

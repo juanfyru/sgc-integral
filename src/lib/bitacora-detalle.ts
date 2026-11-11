@@ -163,6 +163,13 @@ function texto(v: unknown): string | null {
   return typeof v === "string" && v.length > 0 ? v : null;
 }
 
+const ARTICULO_MAESTRO_INDICADOR: Record<string, string> = {
+  tipos: "el tipo",
+  clasificaciones: "la clasificación",
+  unidades: "la unidad",
+  objetivos: "el objetivo",
+};
+
 const DESTINO_DE_COPIA: Record<string, string> = {
   devuelta: "devuelta al SGC",
   destruida: "destruida",
@@ -680,6 +687,24 @@ export function describirEvento(e: EventoAuditoria): string {
       return `Enlazó ${cod ?? "un documento"} a ${laNorma(d)}`;
     case "norma_documento_desenlazado":
       return `Quitó el enlace de ${cod ?? "un documento"} con ${laNorma(d)}`;
+    case "indicador_maestro_guardado": {
+      const que = ARTICULO_MAESTRO_INDICADOR[texto(d.maestro) ?? ""] ?? "el elemento";
+      return `${d.creado === true ? "Creó" : "Editó"} ${que}${nombre ? ` «${nombre}»` : ""} de indicadores`;
+    }
+    case "indicador_maestro_activado": {
+      const que = ARTICULO_MAESTRO_INDICADOR[texto(d.maestro) ?? ""] ?? "el elemento";
+      return `${d.activo === true ? "Activó" : "Desactivó"} ${que}${nombre ? ` «${nombre}»` : ""} de indicadores`;
+    }
+    case "indicador_maestro_borrado": {
+      const que = ARTICULO_MAESTRO_INDICADOR[texto(d.maestro) ?? ""] ?? "el elemento";
+      return `Borró ${que}${nombre ? ` «${nombre}»` : ""} de indicadores`;
+    }
+    case "indicador_parametros_guardados": {
+      const cambios = Object.keys(typeof d.cambios === "object" && d.cambios !== null ? d.cambios : {}).length;
+      return cambios === 0
+        ? "Guardó los parámetros de indicadores sin cambios"
+        : `Guardó los parámetros de indicadores (${cambios} ${cambios === 1 ? "cambio" : "cambios"})`;
+    }
     case "tipo_norma_creado":
       return `Creó el tipo de norma${nombre ? ` «${nombre}»` : ""}`;
     case "tipo_norma_editado":
@@ -837,6 +862,10 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   norma_desasociada: "Quitó una norma de un proceso",
   norma_documento_enlazado: "Enlazó un documento a una norma",
   norma_documento_desenlazado: "Quitó el enlace de un documento con una norma",
+  indicador_maestro_guardado: "Guardó un elemento de los maestros de indicadores",
+  indicador_maestro_activado: "Activó o desactivó un elemento de los maestros de indicadores",
+  indicador_maestro_borrado: "Borró un elemento de los maestros de indicadores",
+  indicador_parametros_guardados: "Guardó los parámetros de indicadores",
   tipo_norma_creado: "Creó un tipo de norma",
   tipo_norma_editado: "Renombró un tipo de norma",
   tipo_norma_movido: "Movió un tipo de norma",

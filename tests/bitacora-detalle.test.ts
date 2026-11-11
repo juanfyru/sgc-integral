@@ -662,3 +662,25 @@ describe("la configuración documental nombra cada clave que guarda", () => {
     }
   });
 });
+
+describe("maestros y parámetros de indicadores", () => {
+  const frase = (accion: string, detalle: Record<string, unknown>) =>
+    describirEvento({ accion, entidad: "x", entidadId: 1, detalle });
+  it("dicen qué maestro y qué elemento", () => {
+    expect(frase("indicador_maestro_guardado", { maestro: "unidades", nombre: "Minutos", creado: true })).toBe(
+      "Creó la unidad «Minutos» de indicadores",
+    );
+    expect(frase("indicador_maestro_guardado", { maestro: "tipos", nombre: "Eficacia", creado: false })).toBe(
+      "Editó el tipo «Eficacia» de indicadores",
+    );
+    expect(frase("indicador_maestro_activado", { maestro: "objetivos", nombre: "Mejorar", activo: false })).toBe(
+      "Desactivó el objetivo «Mejorar» de indicadores",
+    );
+    expect(frase("indicador_maestro_borrado", { maestro: "clasificaciones", nombre: "Otra" })).toBe(
+      "Borró la clasificación «Otra» de indicadores",
+    );
+    expect(frase("indicador_parametros_guardados", { cambios: { a: {}, b: {} } })).toBe(
+      "Guardó los parámetros de indicadores (2 cambios)",
+    );
+  });
+});

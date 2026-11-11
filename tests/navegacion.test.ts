@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { NAVEGACION, entradasVisibles, esActiva } from "@/componentes/cascaron/navegacion";
 
 describe("navegación por módulos y rol", () => {
-  it("consulta ve Inicio, Buscar y Normograma; admin ve las veinte", () => {
+  it("consulta ve Inicio, Buscar y Normograma; admin ve las veintiuna", () => {
     expect(entradasVisibles({ rol: "consulta" }).map((e) => e.href)).toEqual(["/", "/buscar", "/normograma"]);
-    expect(entradasVisibles({ rol: "admin_sgc" })).toHaveLength(20);
+    expect(entradasVisibles({ rol: "admin_sgc" })).toHaveLength(21);
   });
   it("Trámites: consulta solo si participa; gerencia y líder siempre; va después de Buscar", () => {
     const hrefs = (s: Parameters<typeof entradasVisibles>[0]) => entradasVisibles(s).map((e) => e.href);
@@ -51,6 +51,20 @@ describe("Configuración documental", () => {
     }
     const admin = hrefs("admin_sgc");
     expect(admin.indexOf("/admin/configuracion-documental")).toBe(admin.indexOf("/admin/tipos") + 1);
+  });
+});
+
+describe("Configuración de indicadores", () => {
+  it("exige indicadores.administrar, va en Administración y solo admin_sgc la ve", () => {
+    expect(NAVEGACION.find((e) => e.href === "/admin/indicadores")).toMatchObject({
+      etiqueta: "Configuración de indicadores",
+      permiso: "indicadores.administrar",
+      grupo: "administracion",
+    });
+    for (const rol of ["gerencia", "lider_proceso", "control_interno", "consulta"] as const) {
+      expect(entradasVisibles({ rol }).map((e) => e.href)).not.toContain("/admin/indicadores");
+    }
+    expect(entradasVisibles({ rol: "admin_sgc" }).map((e) => e.href)).toContain("/admin/indicadores");
   });
 });
 
