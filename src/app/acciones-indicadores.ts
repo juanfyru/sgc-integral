@@ -4,10 +4,11 @@
 // de persona la vuelve a comprobar la consulta. Las de los maestros viven en `src/app/admin/acciones-indicadores.ts`.
 
 import { rutaDeEdicion, rutaDeIndicador } from "@/app/(app)/indicadores/_comun";
-import { idNumerico, mutacion, type EstadoAccion } from "@/app/admin/comun";
+import { idNumerico, mutacion, valoresDeFormulario, type EstadoAccion } from "@/app/admin/comun";
 import { ErrorFirma } from "@/db/consultas/flujo/contrato";
 import { aprobarFichas, descartarBorrador, devolverFicha, enviarAAprobacion } from "@/db/consultas/indicadores/aprobacion";
 import { abrirCambio, crearIndicador, guardarBorrador } from "@/db/consultas/indicadores/fichas";
+import { marcarNoAplica, quitarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
 import {
   borrarIndicador,
   cambiarOperacion,
@@ -26,8 +27,11 @@ import {
   EsquemaEnviarFicha,
   EsquemaFicha,
   EsquemaMotivoDeBaja,
+  EsquemaNoAplica,
   EsquemaOperacion,
+  EsquemaReporte,
 } from "@/lib/esquemas/indicadores";
+import type { EstadoReporte } from "@/lib/indicadores/reporte";
 import { rutaInterna } from "@/lib/rutas";
 import { parsearFormulario } from "@/lib/validacion";
 
@@ -185,6 +189,51 @@ export async function descartarIndicadorAccion(_prev: EstadoAccion, formData: Fo
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     const { motivo } = parsearFormulario(formData, EsquemaMotivoDeBaja, { omitir: ["id"] });
     await descartarIndicador(sesion, { indicadorId: idNumerico(formData, "id"), motivo });
+  });
+}
+
+/**
+ * `id` es el de la medición. Reporta (o corrige) y lleva a `volver`; «Guardar sin reportar» (`intencion=parcial`) se
+ * queda en la pantalla con su aviso. Un salto grande frente al periodo anterior no escribe nada y vuelve con la
+ * pregunta (`confirmar`), que la persona responde con `confirmado`.
+ */
+export async function reportarAccion(_prev: EstadoReporte, formData: FormData): Promise<EstadoReporte> {
+  // `mutacion` solo devuelve un destino: lo demás que dice `reportar` sale por aquí.
+  const dicho: { confirmar: string | null; parcial: boolean } = { confirmar: null, parcial: false };
+  const estado = await mutacion(formData, "indicadores.medir", async (_usuarioId, _formData, sesion) => {
+    const d = parsearFormulario(formData, EsquemaReporte, { omitir: ["id", "volver"] });
+    dicho.parcial = d.intencion === "parcial";
+    const r = await reportar(sesion, {
+      medicionId: idNumerico(formData, "id"),
+      valores: d.valores,
+      parcial: dicho.parcial,
+      confirmado: d.confirmado,
+    });
+    if (!r.ok) {
+      dicho.confirmar = r.confirmar;
+      return;
+    }
+    if (!dicho.parcial) return rutaInterna(formData.get("volver"), "/indicadores");
+  });
+  if (dicho.confirmar) return { ok: false, error: dicho.confirmar, confirmar: dicho.confirmar, valores: valoresDeFormulario(formData) };
+  if (estado === null && dicho.parcial) return { ok: true, aviso: "Se guardó sin reportar: la medición sigue abierta." };
+  return estado;
+}
+
+/** `id` es el de la medición. Pide el motivo y lleva a `volver`. */
+export async function marcarNoAplicaAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.medir", async (_usuarioId, _formData, sesion) => {
+    const { motivo } = parsearFormulario(formData, EsquemaNoAplica, { omitir: ["id", "volver"] });
+    await marcarNoAplica(sesion, { medicionId: idNumerico(formData, "id"), motivo });
+    return rutaInterna(formData.get("volver"), "/indicadores");
+  });
+}
+
+/** `id` es el de la medición. No navega: la pantalla vuelve a pintarse por reportar. */
+export async function quitarNoAplicaAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.medir", async (_usuarioId, _formData, sesion) => {
+    parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
+    await quitarNoAplica(sesion, idNumerico(formData, "id"));
   });
 }
 

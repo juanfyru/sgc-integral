@@ -42,6 +42,9 @@ vi.mock("@/app/acciones-indicadores", () => ({
   retirarAccion: vi.fn(),
   descartarIndicadorAccion: vi.fn(),
   borrarIndicadorAccion: vi.fn(),
+  reportarAccion: vi.fn(),
+  marcarNoAplicaAccion: vi.fn(),
+  quitarNoAplicaAccion: vi.fn(),
 }));
 
 import PaginaIndicador from "@/app/(app)/indicadores/[codigo]/page";
@@ -230,7 +233,9 @@ describe("las páginas de la ficha de indicador", () => {
       await aprobarFichas(gerente, { versionIds: [nuevo.versionId], credenciales: { clave: "ok" } }, firmar(tx));
 
       contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "consulta" }));
-      const ficha = await pagina(nuevo.codigo.toLowerCase());
+      // Con ficha aprobada, la vista por omisión es «Resultados»; la ficha técnica se pide.
+      expect(await pagina(nuevo.codigo.toLowerCase())).toMatch(/aria-current="page"[^>]*>Resultados</);
+      const ficha = await pagina(nuevo.codigo.toLowerCase(), { vista: "ficha" });
       expect(ficha).toContain("Ficha nueva en borrador");
       expect(ficha).toMatch(/aria-current="page"[^>]*>Ficha técnica</);
       expect(ficha).toContain("(Cumplidas ÷ Programadas) × 100");

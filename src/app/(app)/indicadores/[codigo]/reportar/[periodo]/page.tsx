@@ -1,0 +1,56 @@
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import { FormularioReporte } from "@/componentes/indicadores/medicion/FormularioReporte";
+import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
+import { Insignia } from "@/componentes/ui/Insignia";
+import { asegurarMediciones, medicionParaReportar } from "@/db/consultas/indicadores/mediciones";
+import { periodicidadDe } from "@/lib/indicadores/periodos";
+import { exigirSesion } from "@/lib/paginas";
+import { exigirIndicador, rutaDeIndicador } from "../../../_comun";
+
+export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Reportar una medición" };
+
+/**
+ * Reportar una medición (spec §8.2 y §12.5, maqueta 3). Antes de leer abre los periodos que hayan terminado (F14-DC12).
+ * Quien no ve el indicador, no puede medirlo o pide un periodo sin medición recibe «no encontrado».
+ */
+export default async function PaginaReportar({ params }: { params: Promise<{ codigo: string; periodo: string }> }) {
+  const sesion = await exigirSesion();
+  const { codigo: segmento, periodo } = await params;
+  const indicador = await exigirIndicador(sesion, segmento);
+  if (periodicidadDe(periodo) === null) notFound();
+  await asegurarMediciones({ indicadorId: indicador.id });
+  const datos = await medicionParaReportar(sesion, indicador.codigo, periodo);
+  if (!datos) notFound();
+  const volver = rutaDeIndicador(indicador.codigo);
+  const plazo = datos.historica ? "Registro histórico" : `Plazo hasta el ${datos.vence}${datos.vencida ? " (vencido)" : ""}`;
+
+  return (
+    <div className="flex min-w-0 flex-col gap-6">
+      <EncabezadoPagina
+        migas={[
+          { nombre: "Indicadores", href: "/indicadores" },
+          { nombre: indicador.codigo, href: volver },
+          { nombre: `Reportar: ${datos.etiqueta.toLowerCase()}` },
+        ]}
+        codigo={datos.codigo}
+        insignias={datos.historica ? <Insignia variante="neutra">Histórico</Insignia> : undefined}
+        titulo={`Reportar · ${datos.nombre}`}
+        descripcion={`${datos.etiqueta} · ${plazo}`}
+      />
+      {datos.sinMedidor ? (
+        <p className="rounded-lg border border-l-4 border-border border-l-estado-atencion bg-card px-4 py-3 text-sm">
+          Sin responsable: nadie más puede medir este indicador. El reporte queda marcado; designe a alguien que lo mida.
+        </p>
+      ) : null}
+      {datos.estado === "cerrada" ? (
+        <p className="rounded-lg border border-l-4 border-border border-l-mod-indicadores bg-muted px-4 py-3 text-sm">
+          La medición está cerrada: pida al Administrador del SGC que la reabra.
+        </p>
+      ) : (
+        <FormularioReporte datos={datos} volver={volver} />
+      )}
+    </div>
+  );
+}

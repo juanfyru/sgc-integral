@@ -239,3 +239,24 @@ export const EsquemaDuplicar = z.object({ procesoId: id("Elija el proceso") }).s
 
 /** Retirar o descartar un indicador (spec §7.7): motivo obligatorio y sin clave; el `id` viaja aparte. */
 export const EsquemaMotivoDeBaja = z.object({ motivo: textoAcotado("El motivo", 5, 500) }).strict();
+
+/**
+ * Reportar, guardar sin reportar o corregir una medición (spec §8.2): los valores por letra, en JSON, tal como se
+ * digitaron (la consulta los valida con los límites de la ficha); `intencion` dice qué botón se pulsó. El `id` de la
+ * medición y `volver` viajan aparte.
+ */
+export const EsquemaReporte = z
+  .object({
+    valores: enJson(
+      z
+        .record(z.string(), z.string({ error: "Los valores no tienen un formato válido" }).max(40, "Un valor no puede pasar de 40 caracteres"))
+        .refine((v) => Object.keys(v).length <= 26 && Object.keys(v).every((l) => /^[A-Z]$/.test(l)), "Los valores no tienen un formato válido"),
+      "Los valores no tienen un formato válido",
+    ),
+    intencion: z.enum(["reportar", "parcial"], { error: "Elija si reporta o guarda sin reportar" }).optional(),
+    confirmado: casilla,
+  })
+  .strict();
+
+/** «No aplica en este periodo» (spec §8.2): motivo de 5 a 500 caracteres. El `id` de la medición y `volver`, aparte. */
+export const EsquemaNoAplica = z.object({ motivo: textoAcotado("El motivo", 5, 500) }).strict();

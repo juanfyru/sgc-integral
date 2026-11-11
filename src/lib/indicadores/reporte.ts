@@ -3,11 +3,13 @@
  * una medición (spec §7.4 y §8.2). Todo llega en texto, también los números de la BD: así viaja del servidor al
  * navegador sin `bigint`. Sin Node ni BD.
  */
-import type { FichaDeCalculo } from "./calculo";
+import { calcular, variacionExcesiva, type FichaDeCalculo } from "./calculo";
 import { analizar } from "./formula/analizar";
-import { aDecimal, comparar, esNegativa, fraccion, type Fraccion } from "./formula/fraccion";
+import type { Motivo } from "./formula/evaluar";
+import { aDecimal, comparar, deTexto, esNegativa, fraccion, type Fraccion } from "./formula/fraccion";
 import { numeroExacto, type Regla } from "./semaforo";
-import type { ModoSemaforo, Tendencia } from "./tipos";
+import { fraseDeVariacion, textoValor, type Unidad } from "./textos";
+import type { ModoSemaforo, Semaforo, Tendencia } from "./tipos";
 
 /** La regla del semáforo de una versión (o con la meta programada del periodo), con sus números en texto. */
 export type ReglaEnTexto = {
@@ -105,3 +107,57 @@ export const valorEnTexto = (v: Fraccion): string => sinCeros(aDecimal(v, 4, "tr
 
 /** Un resultado en el detalle de los eventos: punto decimal, hasta 10 decimales y sin ceros de relleno. */
 export const decimalCorto = (v: Fraccion): string => sinCeros(aDecimal(v, 10, "redondear"));
+
+/** Lo que vuelve de `reportarAccion`: un error, un aviso o la confirmación que pide un salto grande (`confirmar`). */
+export type EstadoReporte =
+  | { ok: false; error: string; confirmar?: string; valores?: Record<string, string | string[]> }
+  | { ok: true; aviso: string }
+  | null;
+
+/** Lo que la pantalla de reporte calcula mientras se digita: lo mismo que decide el servidor, que es quien manda. */
+export type CalculoEnVivo = {
+  /** El error de cada valor que no sirve, por letra. */
+  errores: Record<string, string>;
+  /** Todos los valores digitados y válidos. */
+  completo: boolean;
+  resultado: Fraccion | null;
+  /** «60 %», sin contradecir el color. */
+  texto: string | null;
+  semaforo: Semaforo | null;
+  sinResultado: Motivo | null;
+  /** El mensaje de un resultado fuera de los límites del indicador. */
+  fueraDeLimites: string | null;
+  /** La pregunta por un salto grande frente a la medición anterior con resultado. */
+  variacion: string | null;
+};
+
+export function calcularEnVivo(
+  d: {
+    calculo: CalculoEnTexto;
+    regla: ReglaEnTexto;
+    unidad: Unidad;
+    variables: readonly VariableDeCaptura[];
+    anterior: { clave: string; etiqueta: string; resultado: string } | null;
+    variacionPct: number;
+  },
+  textos: Readonly<Record<string, string | undefined>>,
+): CalculoEnVivo {
+  const { valores, errores } = leerValores(d.variables, textos);
+  const completo = Object.keys(errores).length === 0 && d.variables.every((v) => valores[v.letra] !== null);
+  const ficha = fichaDeCalculo(d.calculo);
+  const vacio: CalculoEnVivo = { errores, completo, resultado: null, texto: null, semaforo: null, sinResultado: null, fueraDeLimites: null, variacion: null };
+  if (!completo || !ficha) return vacio;
+  const regla = reglaDeTexto(d.regla);
+  const r = calcular(ficha, Object.fromEntries(Object.entries(valores).map(([l, v]) => [l, v ?? undefined])), regla);
+  if (!r.resultado) return { ...vacio, sinResultado: r.sinResultado };
+  const anterior = d.anterior ? { ...d.anterior, valor: deTexto(d.anterior.resultado) } : null;
+  return {
+    ...vacio,
+    resultado: r.resultado,
+    texto: textoValor(r.resultado, d.unidad, regla),
+    semaforo: r.semaforo,
+    fueraDeLimites: r.fueraDeLimites ? fueraDeLimites(textoValor(r.resultado, d.unidad)) : null,
+    variacion:
+      anterior && variacionExcesiva(r.resultado, anterior.valor, d.variacionPct) ? fraseDeVariacion(r.resultado, anterior, d.unidad) : null,
+  };
+}

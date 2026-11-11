@@ -5,6 +5,8 @@ import { MenuAdministrar } from "@/componentes/indicadores/admin/MenuAdministrar
 import { ControlDeCambios } from "@/componentes/indicadores/ficha/ControlDeCambios";
 import { FichaTecnica } from "@/componentes/indicadores/ficha/FichaTecnica";
 import { AprobarFicha, DevolverFicha, type FilaPorAprobar } from "@/componentes/indicadores/ficha/ListaPorAprobar";
+import { TablaDelAnio } from "@/componentes/indicadores/medicion/TablaDelAnio";
+import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { obtenerSql } from "@/db/cliente";
@@ -19,10 +21,14 @@ import {
   type VersionResumen,
   type VersionVisible,
 } from "@/db/consultas/indicadores/aprobacion";
+import { asegurarMediciones, proximaPorReportar, tablaDelAnio, type FilaDelAnio } from "@/db/consultas/indicadores/mediciones";
 import { bajaDeIndicador, panelDeAdministracion } from "@/db/consultas/indicadores/operacion";
+import { puedeMedir } from "@/lib/alcance";
+import { periodicidadDe } from "@/lib/indicadores/periodos";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
-import { fechaHoraLocal } from "@/lib/zona-horaria";
+import { fechaEnZona } from "@/lib/tramites/plazos";
+import { fechaHoraLocal, zonaHoraria } from "@/lib/zona-horaria";
 import { exigirFichaDeIndicador, rutaDeEdicion, rutaDeIndicador } from "../_comun";
 
 export const dynamic = "force-dynamic";
@@ -45,13 +51,30 @@ const ESTADO_VERSION: Record<VersionVisible["estado"], string> = {
   descartada: "descartada",
 };
 
-type Vista = "ficha" | "versiones";
+type Vista = "resultados" | "ficha" | "versiones";
 type Parametros = Record<string, string | string[] | undefined>;
 
-/** La vista pedida; cualquier otra cosa es «no encontrada». */
-function vistaDe(v: Parametros["vista"]): Vista | null {
-  if (v === undefined || v === "ficha") return "ficha";
-  return v === "versiones" ? "versiones" : null;
+/**
+ * La vista pedida; cualquier otra cosa es «no encontrada». Por omisión, «Resultados» si la persona ve el indicador y hay
+ * una ficha aprobada; si no (un borrador, un descartado o quien solo debe aprobar la ficha), o si se pide una versión
+ * (`?version=N`), «Ficha técnica».
+ */
+function vistaDe(v: Parametros["vista"], conResultados: boolean, conVersion: boolean): Vista | null {
+  if (v === undefined) return conResultados && !conVersion ? "resultados" : "ficha";
+  if (v === "resultados") return conResultados ? "resultados" : null;
+  return v === "ficha" || v === "versiones" ? v : null;
+}
+
+/** El año de `?anio=AAAA`; sin parámetro, el en curso; cualquier otra cosa es «no encontrada». */
+function anioDe(a: Parametros["anio"], enCurso: number): number | null {
+  if (a === undefined) return enCurso;
+  return typeof a === "string" && /^\d{4}$/.test(a) ? Number(a) : null;
+}
+
+/** «Reportar el tercer trimestre de 2026», «Reportar marzo de 2026», «Reportar 2026». */
+function etiquetaDeReportar(periodo: string, etiqueta: string): string {
+  const p = periodicidadDe(periodo);
+  return p === "mensual" || p === "anual" ? `Reportar ${etiqueta}` : `Reportar el ${etiqueta}`;
 }
 
 const vigenteDe = (versiones: VersionVisible[]) => [...versiones].reverse().find((v) => v.estado === "aprobada") ?? null;
@@ -70,8 +93,20 @@ function versionMostrada(versiones: VersionVisible[], pedida: Parametros["versio
   return versiones.find((v) => v.numero === Number(pedida)) ?? null;
 }
 
-function PestanasDeIndicador({ codigo, activa, conVersiones }: { codigo: string; activa: Vista; conVersiones: boolean }) {
-  const pestanas: { clave: Vista; etiqueta: string }[] = [{ clave: "ficha", etiqueta: "Ficha técnica" }];
+function PestanasDeIndicador({
+  codigo,
+  activa,
+  conVersiones,
+  conResultados,
+}: {
+  codigo: string;
+  activa: Vista;
+  conVersiones: boolean;
+  conResultados: boolean;
+}) {
+  const pestanas: { clave: Vista; etiqueta: string }[] = [];
+  if (conResultados) pestanas.push({ clave: "resultados", etiqueta: "Resultados" });
+  pestanas.push({ clave: "ficha", etiqueta: "Ficha técnica" });
   if (conVersiones) pestanas.push({ clave: "versiones", etiqueta: "Versiones" });
   return (
     <nav aria-label="Vistas del indicador">
@@ -225,20 +260,68 @@ function Versiones({ resumen, anteriores, vigente }: { resumen: VersionResumen[]
   );
 }
 
+/** «Resultados» (spec §12.3): por ahora, la tabla del año con su selector de año. */
+function Resultados({
+  filas,
+  variables,
+  anio,
+  anios,
+  codigo,
+  mide,
+}: {
+  filas: FilaDelAnio[];
+  variables: { letra: string; nombre: string }[];
+  anio: number;
+  anios: { anterior: number | null; siguiente: number | null };
+  codigo: string;
+  mide: boolean;
+}) {
+  const enlaceDeAnio = (a: number) => `${rutaDeIndicador(codigo)}?vista=resultados&anio=${a}`;
+  return (
+    <section aria-labelledby="indicador-anio" className="flex min-w-0 flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 id="indicador-anio" className="text-lg font-semibold">
+          {`Resultados de ${anio}`}
+        </h2>
+        <nav aria-label="Año de la tabla" className="flex flex-wrap gap-3 text-sm">
+          {anios.anterior !== null ? (
+            <Link href={enlaceDeAnio(anios.anterior)} className={ENLACE}>
+              {`‹ ${anios.anterior}`}
+            </Link>
+          ) : null}
+          {anios.siguiente !== null ? (
+            <Link href={enlaceDeAnio(anios.siguiente)} className={ENLACE}>
+              {`${anios.siguiente} ›`}
+            </Link>
+          ) : null}
+        </nav>
+      </div>
+      <TablaDelAnio filas={filas} variables={variables} anio={anio} codigo={codigo} puedeMedir={mide} />
+    </section>
+  );
+}
+
 /**
- * La página de un indicador (spec §12.3, maqueta 2): el encabezado con la ficha vigente y las vistas «Ficha técnica»
- * (`?vista=ficha`, con `?version=N` para otra versión que la persona pueda abrir) y «Versiones» (el control de cambios y
- * cada versión anterior completa). Quien debe aprobar la ficha por aprobar de un indicador que aún no existe para él solo
- * abre esa versión (spec §6.4); para los demás, «no encontrada».
+ * La página de un indicador (spec §12.3, maqueta 2): el encabezado con la ficha vigente y las vistas «Resultados» (la de
+ * por omisión cuando hay ficha aprobada: la tabla del año, `?anio=AAAA`), «Ficha técnica» (`?vista=ficha`, con
+ * `?version=N` para otra versión que la persona pueda abrir) y «Versiones» (el control de cambios y cada versión anterior
+ * completa). Quien debe aprobar la ficha por aprobar de un indicador que aún no existe para él solo abre esa versión
+ * (spec §6.4); para los demás, «no encontrada».
  */
 export default async function PaginaIndicador({ params, searchParams }: { params: Promise<{ codigo: string }>; searchParams: Promise<Parametros> }) {
   const sesion = await exigirSesion();
   const { codigo: segmento } = await params;
   const sp = await searchParams;
   const { indicador, ve, versiones } = await exigirFichaDeIndicador(sesion, segmento);
-  const vista = vistaDe(sp.vista);
-  if (vista === null || (vista === "versiones" && !ve)) notFound();
   const vigente = vigenteDe(versiones);
+  const conResultados = ve && vigente !== null;
+  const vista = vistaDe(sp.vista, conResultados, sp.version !== undefined);
+  if (vista === null || (vista === "versiones" && !ve)) notFound();
+  const zona = zonaHoraria();
+  const ahora = new Date();
+  const anioEnCurso = Number(fechaEnZona(ahora, zona).slice(0, 4));
+  const anio = vista === "resultados" ? anioDe(sp.anio, anioEnCurso) : anioEnCurso;
+  if (anio === null) notFound();
   const mostrada = vista === "ficha" ? versionMostrada(versiones, sp.version) : porOmisionDe(versiones);
   if (!mostrada) notFound();
   const ficha = await fichaDeVersion(sesion, mostrada.id);
@@ -289,6 +372,20 @@ export default async function PaginaIndicador({ params, searchParams }: { params
     if (anterior) anteriores.push(anterior);
   }
 
+  // Resultados: antes de leer se abren los periodos que hayan terminado (F14-DC12).
+  if (vista === "resultados") await asegurarMediciones({ indicadorId: indicador.id, ahora });
+  const filas = vista === "resultados" ? await tablaDelAnio(sesion, indicador.id, anio, { ahora }) : [];
+  const mide = conResultados && indicador.estado === "activo" && (await puedeMedir(indicador.id, sesion)).puede;
+  const pendiente = mide ? await proximaPorReportar(sesion, indicador.id) : null;
+  // El selector de año va del año del inicio de medición al en curso.
+  const primerAnio = vista === "resultados" ? Number((await operacionDeIndicador(indicador.id)).inicioMedicion.slice(0, 4)) || anioEnCurso : anioEnCurso;
+  const anios = { anterior: anio > primerAnio ? anio - 1 : null, siguiente: anio < anioEnCurso ? anio + 1 : null };
+  const reportarBoton = pendiente ? (
+    <Link href={`${rutaDeIndicador(codigo)}/reportar/${pendiente.periodo}`} className={`${claseBoton("primario")} ${FOCO}`}>
+      {etiquetaDeReportar(pendiente.periodo, pendiente.etiqueta)}
+    </Link>
+  ) : null;
+
   return (
     <div className="flex min-w-0 flex-col gap-6">
       <EncabezadoPagina
@@ -306,9 +403,16 @@ export default async function PaginaIndicador({ params, searchParams }: { params
         titulo={c.nombre ?? codigo}
         descripcion={linea}
         tituloEnfocable
-        acciones={panel ? <MenuAdministrar panel={panel} hrefEditar={rutaDeEdicion(codigo)} /> : undefined}
+        acciones={
+          reportarBoton || panel ? (
+            <>
+              {reportarBoton}
+              {panel ? <MenuAdministrar panel={panel} hrefEditar={rutaDeEdicion(codigo)} /> : null}
+            </>
+          ) : undefined
+        }
       />
-      <PestanasDeIndicador codigo={codigo} activa={vista} conVersiones={ve} />
+      <PestanasDeIndicador codigo={codigo} activa={vista} conVersiones={ve} conResultados={conResultados} />
       {baja ? (
         <Recuadro>
           <p>{`${indicador.estado === "retirado" ? "Retirado" : "Descartado"} el ${fechaHoraLocal(baja.en)}${baja.por ? ` por ${baja.por}` : ""}.`}</p>
@@ -319,7 +423,16 @@ export default async function PaginaIndicador({ params, searchParams }: { params
         </Recuadro>
       ) : null}
 
-      {vista === "ficha" ? (
+      {vista === "resultados" ? (
+        <Resultados
+          filas={filas}
+          variables={c.variables.map((v) => ({ letra: v.letra, nombre: v.nombre ?? v.letra }))}
+          anio={anio}
+          anios={anios}
+          codigo={codigo}
+          mide={mide}
+        />
+      ) : vista === "ficha" ? (
         <>
           <EstadoDeLaVersion
             ficha={ficha}
