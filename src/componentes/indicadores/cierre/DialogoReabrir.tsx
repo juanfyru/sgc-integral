@@ -69,8 +69,8 @@ export function DialogoReabrir({ medicionId, codigo, etiqueta }: { medicionId: n
 }
 
 /**
- * «Cerrar de nuevo» una medición reabierta (F14-DC31), con el último cierre y como esté. Un formulario con su botón:
- * funciona antes de hidratar.
+ * «Cerrar de nuevo» una medición reabierta (F14-DC31), con el último cierre y como esté, sin confirmación. Tras cerrarla,
+ * la fila cambia y este botón se va: el foco pasa al título de la página.
  */
 export function CerrarDeNuevo({ medicionId, etiqueta }: { medicionId: number; etiqueta: string }) {
   const [hecho, setHecho] = useState(false);

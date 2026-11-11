@@ -239,7 +239,8 @@ describe("el resumen y el cierre del mes", () => {
       const [b] = await bitacora(tx, "indicadores_mes_cerrado", "cierre_indicadores", cierreId);
       expect(Number(b.usuario_id)).toBe(admin.usuarioId);
       expect(b.detalle).toEqual({ mes: MARZO, ...c.resumen });
-      expect((await cierres(opc(tx)))[0]).toEqual({ mes: MARZO, cerradoPor: admin.nombre, cerradoEn: AHORA, cerradas });
+      // La base puede tener cierres confirmados de meses posteriores: se busca el de marzo.
+      expect((await cierres(opc(tx))).find((x) => x.mes === MARZO)).toEqual({ mes: MARZO, cerradoPor: admin.nombre, cerradoEn: AHORA, cerradas });
     }));
 
   it("«cerrar hasta marzo» alcanza también enero y febrero", () =>
@@ -448,7 +449,12 @@ describe("la reapertura", () => {
       const a = await nuevo();
       await reportarCon(tx, mide, a.marzo, { A: "9", B: "10" });
       const b = await nuevo();
-      const marzo = await cerrarMes(admin, MARZO, opc(tx));
+      await cerrarMes(admin, MARZO, opc(tx));
+      // «El último cierre» es el de mes más reciente de la base, que puede tener cierres confirmados posteriores.
+      const ultimo = async () => {
+        const [c] = await tx`SELECT id, to_char(mes, 'YYYY-MM') AS mes FROM cierres_indicadores ORDER BY mes DESC LIMIT 1`;
+        return { id: Number(c.id), mes: c.mes as string };
+      };
       await reabrirMedicion(admin, { medicionId: a.marzo, justificacion: JUSTIFICACION }, opc(tx, dia(21)));
       await reabrirMedicion(admin, { medicionId: b.marzo, justificacion: "Quien mide reportará el dato tarde" }, opc(tx, dia(21)));
 
@@ -456,14 +462,15 @@ describe("la reapertura", () => {
       await reportarCon(tx, mide, a.marzo, { A: "10", B: "10" }, dia(22));
       await tx`INSERT INTO medicion_eventos (medicion_id, tipo, usuario_id, detalle, creado_en)
         VALUES (${a.marzo}, 'soporte', ${mide.usuarioId}, ${tx.json({ accion: "subido", nombre: "nomina-confidencial.pdf" })}, ${dia(22)})`;
+      const conCierre = await ultimo();
       await cerrarDeNuevo(admin, a.marzo, opc(tx, dia(23)));
       const ma = await fila(tx, a.marzo);
-      expect([ma.estado, Number(ma.cierre_id), ma.corregida, ma.resultado_exacto]).toEqual(["cerrada", marzo.cierreId, true, "100/1"]);
+      expect([ma.estado, Number(ma.cierre_id), ma.corregida, ma.resultado_exacto]).toEqual(["cerrada", conCierre.id, true, "100/1"]);
       expect((await eventos(tx, a.marzo)).map((e) => e.tipo)).toEqual(["reporte", "cierre", "reapertura", "correccion", "soporte", "cierre"]);
       const [otraVez] = (await eventos(tx, a.marzo)).slice(-1);
-      expect(otraVez.detalle).toMatchObject({ cierreId: marzo.cierreId, mes: MARZO, deNuevo: true, antes: { estado: "reportada" }, despues: { estado: "cerrada" } });
+      expect(otraVez.detalle).toMatchObject({ cierreId: conCierre.id, mes: conCierre.mes, deNuevo: true, antes: { estado: "reportada" }, despues: { estado: "cerrada" } });
       const [bit] = await bitacora(tx, "medicion_cerrada_de_nuevo", "medicion", a.marzo);
-      expect(bit.detalle).toMatchObject({ codigo: a.ind.codigo, periodo: MARZO, mes: MARZO, cierreId: marzo.cierreId });
+      expect(bit.detalle).toMatchObject({ codigo: a.ind.codigo, periodo: MARZO, mes: conCierre.mes, cierreId: conCierre.id });
       await rechaza(reportarCon(tx, mide, a.marzo, { A: "8", B: "10" }, dia(24)), CERRADA);
 
       // El historial de «Corregida»: desde la reapertura, sin los soportes.
@@ -491,7 +498,7 @@ describe("la reapertura", () => {
         "Cerró con el cierre de abril de 2026",
       ]);
 
-      // La misma medición se reabre otra vez y se cierra de nuevo con el último cierre (abril).
+      // La misma medición se reabre otra vez y se cierra de nuevo con el último cierre (abril, si la base no tiene uno posterior).
       await reabrirMedicion(admin, { medicionId: a.marzo, justificacion: "Segunda revisión del dato de marzo" }, opc(tx, dia(16, 5)));
       await rechaza(
         reabrirMedicion(admin, { medicionId: a.marzo, justificacion: "Tercera revisión del dato de marzo" }, opc(tx, dia(17, 5))),
@@ -500,8 +507,10 @@ describe("la reapertura", () => {
       const otra = await fila(tx, a.marzo);
       expect([otra.estado, otra.reabierta_motivo, otra.reabierta_en]).toEqual(["reportada", "Segunda revisión del dato de marzo", dia(16, 5)]);
       expect((await eventos(tx, a.marzo)).filter((e) => e.tipo === "reapertura")).toHaveLength(2);
+      const otroCierre = await ultimo();
+      expect(otroCierre.mes >= "2026-04").toBe(true);
       await cerrarDeNuevo(admin, a.marzo, opc(tx, dia(18, 5)));
-      expect(Number((await fila(tx, a.marzo)).cierre_id)).toBe(abril.cierreId);
+      expect(Number((await fila(tx, a.marzo)).cierre_id)).toBe(otroCierre.id);
     }));
 
   it("solo se reabre lo cerrado", () =>
