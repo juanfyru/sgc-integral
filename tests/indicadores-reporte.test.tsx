@@ -27,6 +27,7 @@ vi.mock("next/navigation", () => ({
     throw new Error(`REDIRECT:${destino}`);
   },
   usePathname: () => "/indicadores",
+  useRouter: () => ({ refresh: () => {} }),
 }));
 vi.mock("@/app/acciones-indicadores", () => ({
   crearIndicadorAccion: vi.fn(),
@@ -45,6 +46,7 @@ vi.mock("@/app/acciones-indicadores", () => ({
   reportarAccion: vi.fn(),
   marcarNoAplicaAccion: vi.fn(),
   quitarNoAplicaAccion: vi.fn(),
+  quitarSoporteAccion: vi.fn(),
   analizarAccion: vi.fn(),
   observarAccion: vi.fn(),
   responderAccion: vi.fn(),
@@ -310,6 +312,10 @@ describe("las páginas", () => {
       expect(html).toContain("Primer trimestre de 2026");
       expect(html).toContain(">Casos que cumplen</label>");
       expect(html).toContain(">Reportar</button>");
+      // Los soportes, con su zona de carga, antes del cierre.
+      expect(html).toContain(">Soportes</h2>");
+      expect(html).toContain("Sin soportes adjuntos.");
+      expect(html).toContain("Arrastre los archivos aquí");
       expect((await tx`SELECT id FROM mediciones WHERE indicador_id = ${ind.id} AND periodo = '2026-T1'`).length).toBe(1);
 
       await expect(reporte(ind.codigo, "2099-T1")).rejects.toThrow("NO_ENCONTRADA");
@@ -324,6 +330,29 @@ describe("las páginas", () => {
       const cerrada = await reporte(ind.codigo, "2026-T1");
       expect(cerrada).toContain("La medición está cerrada: pida al Administrador del SGC que la reabra");
       expect(cerrada).not.toContain(">Reportar</button>");
+      // Cerrada, los soportes se ven pero ya no se suben ni se quitan.
+      expect(cerrada).toContain(">Soportes</h2>");
+      expect(cerrada).not.toContain("Arrastre los archivos aquí");
+    }));
+
+  it("/indicadores/[codigo]: los soportes salen en la tabla del año solo para quien los ve, y se descargan", () =>
+    enTransaccion(async (tx) => {
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const ind = await indicadorDePrueba(tx, { periodicidad: "trimestral", inicioMedicion: "2026-T1", aprobadaEn: APROBADA, mide: [mide.usuarioId] });
+      contexto.sesion = valida(mide);
+      await pagina(ind.codigo, { anio: "2026" });
+      const [t1] = await tx`SELECT id FROM mediciones WHERE indicador_id = ${ind.id} AND periodo = '2026-T1'`;
+      await reportar(mide, { medicionId: Number(t1.id), valores: { A: "9", B: "10" }, parcial: false, confirmado: true }, { sql: tx });
+      const [a] = await tx`INSERT INTO archivos (version_id, contexto, contexto_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
+        VALUES (NULL, 'medicion', ${t1.id}, 'evidencia', ${`mediciones/${t1.id}/informe.pdf`}, 'Informe de auditoría.pdf', 'pdf', 'application/pdf', 4, ${"c".repeat(64)}) RETURNING id`;
+      const conSoportes = await pagina(ind.codigo, { vista: "resultados", anio: "2026" });
+      expect(conSoportes).toContain(">Soportes</th>");
+      expect(conSoportes).toContain(`href="/indicadores/${ind.codigo}/soportes/${a.id}/Informe%20de%20auditor%C3%ADa.pdf"`);
+      // Quien ve el indicador pero no sus soportes: ni columna ni enlace.
+      contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "consulta" }));
+      const sinSoportes = await pagina(ind.codigo, { vista: "resultados", anio: "2026" });
+      expect(sinSoportes).not.toContain(">Soportes</th>");
+      expect(sinSoportes).not.toContain("/soportes/");
     }));
 
   it("/indicadores/[codigo]: Resultados por omisión, con la tabla del año y «Reportar» para quien mide", () =>

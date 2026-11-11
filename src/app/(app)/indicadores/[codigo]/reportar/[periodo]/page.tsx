@@ -3,10 +3,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FormularioAnalisis } from "@/componentes/indicadores/medicion/FormularioAnalisis";
 import { FormularioReporte } from "@/componentes/indicadores/medicion/FormularioReporte";
+import { Soportes } from "@/componentes/indicadores/medicion/Soportes";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { datosDeAnalisis } from "@/db/consultas/indicadores/analisis";
 import { asegurarMediciones, medicionParaReportar } from "@/db/consultas/indicadores/mediciones";
+import { soportesDe } from "@/db/consultas/indicadores/soportes";
 import { periodicidadDe } from "@/lib/indicadores/periodos";
 import { exigirSesion } from "@/lib/paginas";
 import { exigirIndicador, rutaDeIndicador } from "../../../_comun";
@@ -20,7 +22,7 @@ const ENLACE = `rounded-sm text-marca underline-offset-2 hover:underline ${FOCO}
 /**
  * Reportar una medición (spec §8.2 y §12.5, maqueta 3). Antes de leer abre los periodos que hayan terminado (F14-DC12).
  * Quien no ve el indicador, no puede medirlo o pide un periodo sin medición recibe «no encontrado». Un histórico no se
- * reporta aquí: se registra en la tabla del año (spec §8.8). Con resultado, quien puede analizar tiene debajo el análisis.
+ * reporta aquí: se registra en la tabla del año (spec §8.8). Debajo van los soportes y, con resultado, quien puede analizar tiene el análisis.
  */
 export default async function PaginaReportar({ params }: { params: Promise<{ codigo: string; periodo: string }> }) {
   const sesion = await exigirSesion();
@@ -32,6 +34,8 @@ export default async function PaginaReportar({ params }: { params: Promise<{ cod
   if (!datos) notFound();
   const volver = rutaDeIndicador(indicador.codigo);
   const analisis = datos.estado !== "cerrada" && !datos.historica ? await datosDeAnalisis(sesion, datos.medicionId) : null;
+  // Quien puede medir ve los soportes del indicador (spec §6.4); la lista se lee solo para quien los ve.
+  const soportes = (await soportesDe(sesion, datos.medicionId)) ?? [];
   const plazo = datos.historica ? "Registro histórico" : `Plazo hasta el ${datos.vence}${datos.vencida ? " (vencido)" : ""}`;
 
   return (
@@ -66,6 +70,18 @@ export default async function PaginaReportar({ params }: { params: Promise<{ cod
       ) : (
         <FormularioReporte datos={datos} volver={volver} />
       )}
+      <section aria-labelledby="reporte-soportes" className="flex min-w-0 flex-col gap-3">
+        <h2 id="reporte-soportes" className="text-lg font-semibold">
+          Soportes
+        </h2>
+        <Soportes
+          medicionId={datos.medicionId}
+          codigo={datos.codigo}
+          soportes={soportes}
+          editable={datos.estado !== "cerrada"}
+          obligatorio={datos.soporteObligatorio && !datos.historica}
+        />
+      </section>
       {analisis ? (
         <section aria-labelledby="reporte-analisis" className="flex min-w-0 flex-col gap-3">
           <h2 id="reporte-analisis" className="text-lg font-semibold">

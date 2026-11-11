@@ -9,7 +9,7 @@ export const ROLES_ARCHIVO = ["principal", "editable", "anexo"] as const;
 export type RolArchivo = (typeof ROLES_ARCHIVO)[number];
 /**
  * Dónde cuelga una evidencia: una jornada de socialización, un ítem de verificación, una norma (su PDF), una revisión
- * anual o un hallazgo.
+ * anual, un hallazgo, una medición de indicador (sus soportes) o una constancia de envío externo (`reporte_externo`, 14B).
  */
 export const CONTEXTOS_EVIDENCIA = [
   "jornada",
@@ -29,7 +29,11 @@ export const ROLES_ARCHIVO_LISTA: string[] = [...ROLES_ARCHIVO];
 // aceptan también application/zip: file-type no siempre alcanza a distinguir
 // el subtipo con la muestra — el riesgo residual (un zip renombrado) es
 // aceptable: solo suben quien administra documentos y el elaborador designado
-// de un trámite, y el archivo se sirve siempre con su MIME y `nosniff`.
+// de un trámite, y el archivo se sirve siempre con su MIME y `nosniff`. En los
+// soportes de una medición, donde sube cualquier designado, no se acepta: allí el
+// `.xlsx` se comprueba sobre el archivo completo ya escrito (`recibirArchivo`: la
+// muestra no basta si `[Content_Types].xml` queda al final), y el soporte se sirve
+// siempre como descarga, con su MIME, `nosniff` y `no-store`, solo a quien ve soportes.
 const PERMITIDOS: Record<string, string[]> = {
   pdf: ["application/pdf"],
   docx: [
@@ -117,6 +121,7 @@ const EXTENSIONES_EVIDENCIA = ["pdf", "png", "jpg", "jpeg", "webp"];
 
 const ERROR_EVIDENCIA = "La evidencia debe ser PDF o imagen (PNG, JPG, WebP)";
 const ERROR_SOLO_PDF = "El archivo de la norma debe ser un PDF";
+export const MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 export const ERROR_SOPORTE = "El soporte debe ser PDF, imagen (PNG, JPG, WebP) o Excel (.xlsx)";
 
 /** El archivo de una norma es su texto oficial: solo PDF (spec 13C §10.1). */
@@ -131,7 +136,8 @@ export const CONTEXTOS_UNICOS: Partial<Record<ContextoEvidencia, string>> = { no
 /**
  * Como `validarTipo`, pero una evidencia solo es un PDF o una imagen (nunca SVG, HTML ni Office), y con `soloPdf`
  * solo un PDF: una extensión fuera de la lista o un contenido que no la respalda dan el mismo mensaje. Con `conExcel`
- * (el soporte de una medición) admite además un `.xlsx`, nunca un `.xls`.
+ * (el soporte de una medición) admite además un `.xlsx`, nunca un `.xls`, (por la muestra, que un
+ * ZIP renombrado también pasa: `recibirArchivo` lo comprueba después sobre el archivo completo, ver `MIME_XLSX`).
  */
 export async function validarTipoEvidencia(
   nombre: string,
@@ -144,5 +150,6 @@ export async function validarTipoEvidencia(
   const permitidas = opciones?.soloPdf ? ["pdf"] : opciones?.conExcel ? [...EXTENSIONES_EVIDENCIA, "xlsx"] : EXTENSIONES_EVIDENCIA;
   if (!permitidas.includes(extension)) return { ok: false, error };
   const tipo = await validarTipo(nombre, muestra);
-  return tipo.ok ? tipo : { ok: false, error };
+  if (!tipo.ok) return { ok: false, error };
+  return tipo;
 }

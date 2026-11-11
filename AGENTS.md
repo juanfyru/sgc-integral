@@ -268,7 +268,7 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   - **Las rutas que reciben una subida van fuera del `matcher` de `src/proxy.ts`**
     (`admin/api/archivos`, `api/tramites/[id]/archivos`, `api/socializaciones/[id]/archivos`,
     `api/verificaciones/[id]/items/[itemId]/archivos`, `api/externos/[versionId]/archivos`,
-    `api/normas/[id]/archivos` y `api/hallazgos/[id]/archivos`, cada una con su caso en
+    `api/normas/[id]/archivos`, `api/hallazgos/[id]/archivos` y `api/mediciones/[id]/archivos`, cada una con su caso en
     `tests/proxy-matcher.test.ts`), usan `recibirArchivo` y comparan
     `content-length`: el búfer del proxy truncaba las subidas de más de 10 MB y respondía
     201 (F13A-R10).
@@ -305,12 +305,16 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   punto» (`exigirSinOtroAdmin` al abrir y al cerrar la verificación del punto del que uno es
   responsable).
 - **`archivos` admite dueños distintos de una versión** (`contexto`: `version`, `jornada`,
-  `verificacion_item`, `norma`, `revision_anual` y `hallazgo`, con `contexto_id`; los seis del
-  `CHECK` `archivos_contexto_valido` de `src/db/esquema.ts`, y `CONTEXTOS_EVIDENCIA` de
-  `src/lib/subida.ts` son los cinco que reciben evidencias, todos menos `version`): el control
+  `verificacion_item`, `norma`, `revision_anual`, `hallazgo`, `medicion` y `reporte_externo`, con
+  `contexto_id`; los ocho del `CHECK` `archivos_contexto_valido` de `src/db/esquema.ts`, y
+  `CONTEXTOS_EVIDENCIA` de `src/lib/subida.ts` son los siete que reciben evidencias, todos menos
+  `version`; `reporte_externo` es de la 14B y aún no tiene ruta): el control
   de acceso de un archivo es el de su
   dueño, y las consultas heredadas siguen filtrando por `version_id`. El PDF de una norma se
   lee como la norma; la foto de la corrección de un hallazgo, como el hallazgo (`filtroPuntos`);
+  el soporte de una medición (PDF, imagen o `.xlsx` detectado como hoja de cálculo, nunca `.xls`) solo lo
+  ve quien ve soportes (`puedeVerSoportes`, no quien solo ve el indicador: 404) y siempre se sirve como
+  descarga (`src/db/consultas/indicadores/soportes.ts`);
   el informe de una revisión anual (rol `evidencia`, `version_id` nula, uno por año en
   `informes/revision-<año>.pdf`) solo lo descargan Admin SGC, Gerencia y Control Interno
   (`puedeVerInformeAnual`), y los demás reciben 404.

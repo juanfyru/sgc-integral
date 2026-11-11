@@ -2,7 +2,9 @@ import Link from "next/link";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { celda, celdaNumerica, TablaDatos, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
 import type { FilaDelAnio } from "@/db/consultas/indicadores/mediciones";
+import type { Soporte } from "@/db/consultas/indicadores/soportes";
 import { ETIQUETA_ESTADO } from "@/lib/indicadores/estados";
+import { enlaceDeSoporte } from "@/lib/indicadores/soportes";
 import { ETIQUETA_SEMAFORO } from "@/lib/indicadores/tipos";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
@@ -68,9 +70,25 @@ function Analisis({ f }: { f: FilaDelAnio }) {
   return <span className="text-muted-foreground">{f.cumple ? "Sin análisis (cumple)" : "—"}</span>;
 }
 
+function ListaDeSoportes({ codigo, soportes }: { codigo: string; soportes: Soporte[] }) {
+  if (soportes.length === 0) return <span className="text-muted-foreground">—</span>;
+  return (
+    <ul className="flex list-none flex-col gap-1">
+      {soportes.map((s) => (
+        <li key={s.id}>
+          <a href={enlaceDeSoporte(codigo, s)} className={`break-words ${ENLACE}`}>
+            {s.nombre}
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /**
  * La tabla del año (spec §8.5, §8.3 y §12.3; maqueta 2): una fila por periodo con sus valores, el resultado, la meta, la
- * columna «Cumple», el estado con sus marcas y el análisis; sin soportes. Quien puede medir tiene en cada periodo abierto
+ * columna «Cumple», el estado con sus marcas y el análisis; los soportes, en su columna, solo para quien los ve (`soportes`
+ * es `null` para los demás, y entonces no hay columna). Quien puede medir tiene en cada periodo abierto
  * el enlace para reportarlo o corregirlo (un histórico se registra en el modo edición, spec §8.8); quien puede analizar,
  * el de escribir o editar el análisis de lo que tiene resultado.
  */
@@ -81,6 +99,7 @@ export function TablaDelAnio({
   codigo,
   puedeMedir,
   puedeAnalizar = false,
+  soportes = null,
 }: {
   filas: FilaDelAnio[];
   variables: { letra: string; nombre: string }[];
@@ -88,6 +107,8 @@ export function TablaDelAnio({
   codigo: string;
   puedeMedir: boolean;
   puedeAnalizar?: boolean;
+  /** Los soportes de cada medición, solo a quien ve los soportes del indicador. */
+  soportes?: Map<number, Soporte[]> | null;
 }) {
   const columnas: ColumnaTabla[] = [
     { clave: "periodo", etiqueta: "Periodo" },
@@ -97,6 +118,7 @@ export function TablaDelAnio({
     { clave: "cumple", etiqueta: "Cumple" },
     { clave: "estado", etiqueta: "Estado" },
     { clave: "analisis", etiqueta: "Análisis" },
+    ...(soportes ? [{ clave: "soportes", etiqueta: "Soportes" }] : []),
     ...(puedeMedir || puedeAnalizar ? [{ clave: "acciones", etiqueta: "Acciones", oculta: true }] : []),
   ];
   return (
@@ -140,6 +162,11 @@ export function TablaDelAnio({
             <td className={`${celda} min-w-48`}>
               <Analisis f={f} />
             </td>
+            {soportes ? (
+              <td className={`${celda} min-w-32`}>
+                <ListaDeSoportes codigo={codigo} soportes={f.medicionId === null ? [] : (soportes.get(f.medicionId) ?? [])} />
+              </td>
+            ) : null}
             {puedeMedir || puedeAnalizar ? (
               <td className={celda}>
                 <div className="flex flex-col items-start gap-1">

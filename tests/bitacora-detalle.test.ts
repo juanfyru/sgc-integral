@@ -800,6 +800,14 @@ describe("la medición de un indicador", () => {
     expect(nombreDeAccion("medicion_guardada")).toBe("Guardó sin reportar una medición de indicador");
   });
 
+  it("quitar un soporte (Tarea 11)", () => {
+    expect(frase("medicion_soporte_quitado", { codigo: "SGC-IND-01", periodo: "2026-T3", nombre: "Informe.pdf" })).toBe(
+      "Quitó el soporte «Informe.pdf» de SGC-IND-01, tercer trimestre de 2026",
+    );
+    expect(frase("medicion_soporte_quitado", {})).toBe("Quitó el soporte «?» de la medición de un indicador");
+    expect(nombreDeAccion("medicion_soporte_quitado")).toBe("Quitó un soporte de una medición de indicador");
+  });
+
   it("el análisis, las observaciones y los históricos (Tarea 10)", () => {
     const de = { codigo: "SGC-IND-01", periodo: "2026-T3" };
     expect(frase("medicion_analizada", { ...de, primera: true, despues: { analisis: "Faltó personal" } })).toBe(

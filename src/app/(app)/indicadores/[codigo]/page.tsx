@@ -30,6 +30,7 @@ import { asegurarMediciones, proximaPorReportar, tablaDelAnio, type FilaDelAnio 
 import { metasDelAnio } from "@/db/consultas/indicadores/metas";
 import { observacionesDe, resumenDeObservaciones, type ResumenDeObservaciones } from "@/db/consultas/indicadores/observaciones";
 import { bajaDeIndicador, panelDeAdministracion } from "@/db/consultas/indicadores/operacion";
+import { soportesDeVarias, type Soporte } from "@/db/consultas/indicadores/soportes";
 import { puedeAnalizar, puedeMedir, puedeObservar, puedeRegistrarHistoricos } from "@/lib/alcance";
 import { periodicidadDe } from "@/lib/indicadores/periodos";
 import { exigirSesion } from "@/lib/paginas";
@@ -313,6 +314,7 @@ function Resultados({
   analisis,
   historicos,
   aviso,
+  soportes,
 }: {
   filas: FilaDelAnio[];
   variables: { letra: string; nombre: string }[];
@@ -327,6 +329,8 @@ function Resultados({
   /** Quien registra históricos: si el año los tiene abiertos y si está en el modo edición. */
   historicos: { editables: FilaHistoricaVista[]; editando: boolean } | null;
   aviso: { texto: string; exito: boolean } | null;
+  /** Los soportes de cada medición del año, solo a quien ve los soportes del indicador (`null` para los demás). */
+  soportes: Map<number, Soporte[]> | null;
 }) {
   const enlaceDeAnio = (a: number) => `${rutaDeIndicador(codigo)}?vista=resultados&anio=${a}`;
   const editando = historicos?.editando === true;
@@ -378,7 +382,7 @@ function Resultados({
             volver={enlaceDeAnio(anio)}
           />
         ) : (
-          <TablaDelAnio filas={filas} variables={variables} anio={anio} codigo={codigo} puedeMedir={mide} puedeAnalizar={analiza} />
+          <TablaDelAnio filas={filas} variables={variables} anio={anio} codigo={codigo} puedeMedir={mide} puedeAnalizar={analiza} soportes={soportes} />
         )}
       </section>
     </div>
@@ -535,6 +539,9 @@ export default async function PaginaIndicador({ params, searchParams }: { params
   // Resultados: antes de leer se abren los periodos que hayan terminado (F14-DC12).
   if (vista === "resultados") await asegurarMediciones({ indicadorId: indicador.id, ahora });
   const filas = vista === "resultados" ? await tablaDelAnio(sesion, indicador.id, anio, { ahora }) : [];
+  // La columna de soportes, solo a quien los ve (spec §6.4 y §12.3).
+  const soportesDelAnio =
+    vista === "resultados" ? await soportesDeVarias(sesion, indicador.id, filas.flatMap((f) => (f.medicionId === null ? [] : [f.medicionId]))) : null;
   const mide = conResultados && indicador.estado === "activo" && (await puedeMedir(indicador.id, sesion)).puede;
   const pendiente = mide ? await proximaPorReportar(sesion, indicador.id) : null;
   const anios = { anterior: anio > primerAnio ? anio - 1 : null, siguiente: anio < anioEnCurso ? anio + 1 : null };
@@ -646,6 +653,7 @@ export default async function PaginaIndicador({ params, searchParams }: { params
           analisis={analisis}
           historicos={registra ? { editables, editando } : null}
           aviso={avisoDeHistoricos(sp.registrados)}
+          soportes={soportesDelAnio}
         />
       ) : vista === "observaciones" && obs && observaciones ? (
         <VistaObservaciones

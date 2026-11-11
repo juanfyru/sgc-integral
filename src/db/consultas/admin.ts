@@ -16,6 +16,7 @@ import {
   type DestinoDeCodigo,
 } from "./codigos";
 import { exigirHallazgoNoCerrado, exigirVerificacionAbierta } from "./distribucion/verificacion-abierta";
+import { bloquearParaSoporte, dejarSoporteSubido } from "./indicadores/soportes";
 import { alDejarDeSerVigente } from "./distribucion/version-vigencia";
 import { obtenerConfigDocumental } from "./config-documental";
 import { ErrorTramite, enTransaccion } from "./flujo/contrato";
@@ -777,6 +778,8 @@ export async function registrarArchivo(
         }
         if (datos.contexto === "verificacion_item") await exigirVerificacionAbierta(tx, datos.contextoId);
         if (datos.contexto === "hallazgo") await exigirHallazgoNoCerrado(tx, datos.contextoId);
+        // El soporte de una medición: el indicador y la medición bloqueados antes de escribir la fila hija.
+        if (datos.contexto === "medicion") await bloquearParaSoporte(tx, datos.contextoId);
         // Un dueño de un solo archivo (`CONTEXTOS_UNICOS`): bloqueado, dos subidas a la vez o su borrado se ordenan,
         // y el nuevo reemplaza al anterior en esta misma transacción.
         const tablaDelDueno = CONTEXTOS_UNICOS[datos.contexto as ContextoEvidencia];
@@ -796,6 +799,9 @@ export async function registrarArchivo(
             contexto: datos.contexto, contextoId: datos.contextoId, rol: datos.rol, nombre: datos.nombreOriginal,
           },
         });
+        if (datos.contexto === "medicion") {
+          await dejarSoporteSubido(tx, { medicionId: datos.contextoId, usuarioId, nombre: datos.nombreOriginal, ahora: new Date() });
+        }
         const reemplazados = unico
           ? await tx`DELETE FROM archivos
               WHERE contexto = ${datos.contexto} AND contexto_id = ${datos.contextoId} AND id <> ${evidencia.id}

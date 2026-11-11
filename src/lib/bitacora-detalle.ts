@@ -796,6 +796,8 @@ export function describirEvento(e: EventoAuditoria): string {
       return `Marcó «No aplica» en ${medicionDe(cod, d.periodo)}${conMotivo(d.motivo)}`;
     case "medicion_analizada":
       return `${d.primera === false ? "Editó" : "Escribió"} el análisis de ${medicionDe(cod, d.periodo)}${d.sinMedidor === true ? " (sin nadie más que pudiera analizarlo)" : ""}`;
+    case "medicion_soporte_quitado":
+      return `Quitó el soporte «${texto(d.nombre) ?? "?"}» de ${medicionDe(cod, d.periodo)}`;
     case "medicion_observada":
       return `Dejó una observación en ${medicionDe(cod, d.periodo)}`;
     case "medicion_observacion_respondida":
@@ -997,6 +999,7 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   medicion_no_aplica: "Marcó «No aplica» en una medición de indicador",
   medicion_guardada: "Guardó sin reportar una medición de indicador",
   medicion_analizada: "Escribió o editó el análisis de una medición de indicador",
+  medicion_soporte_quitado: "Quitó un soporte de una medición de indicador",
   medicion_observada: "Dejó una observación en una medición de indicador",
   medicion_observacion_respondida: "Respondió una observación de una medición de indicador",
   medicion_historica_registrada: "Registró o corrigió un histórico de indicador",

@@ -26,12 +26,26 @@ const ETIQUETA_ROL: Record<RolArchivo, string> = {
 const EXTENSIONES_EVIDENCIA = ["pdf", "png", "jpg", "jpeg", "webp"];
 const ERROR_EVIDENCIA = "La evidencia debe ser PDF o imagen (PNG, JPG, WebP)";
 const ERROR_SOLO_PDF = "Solo se admite un PDF";
+// El soporte de una medición admite además un Excel .xlsx (nunca .xls); el servidor lo valida por su contenido.
+const EXTENSIONES_SOPORTE = [...EXTENSIONES_EVIDENCIA, "xlsx"];
+const ERROR_SOPORTE = "El soporte debe ser PDF, imagen (PNG, JPG, WebP) o Excel (.xlsx)";
 
 /**
  * `evidencia`: archivos de respaldo de una jornada, sin rol de archivo y limitados a PDF e imágenes. `soloPdf`: un
- * solo PDF sin rol (el de una norma; el servidor lo valida por sus bytes y reemplaza el anterior).
+ * solo PDF sin rol (el de una norma; el servidor lo valida por sus bytes y reemplaza el anterior). `soporte`: como la
+ * evidencia, y además un Excel `.xlsx` (el soporte de una medición de indicador).
  */
-export function ZonaCarga({ direccion, evidencia = false, soloPdf = false }: { direccion: string; evidencia?: boolean; soloPdf?: boolean }) {
+export function ZonaCarga({
+  direccion,
+  evidencia = false,
+  soloPdf = false,
+  soporte = false,
+}: {
+  direccion: string;
+  evidencia?: boolean;
+  soloPdf?: boolean;
+  soporte?: boolean;
+}) {
   const router = useRouter();
   const [rol, setRol] = useState<RolArchivo>("principal");
   const [cargas, setCargas] = useState<Carga[]>([]);
@@ -44,10 +58,14 @@ export function ZonaCarga({ direccion, evidencia = false, soloPdf = false }: { d
 
   function subir(archivo: File) {
     const extension = archivo.name.slice(archivo.name.lastIndexOf(".") + 1).toLowerCase();
-    if ((evidencia && !EXTENSIONES_EVIDENCIA.includes(extension)) || (soloPdf && extension !== "pdf")) {
+    if (
+      (evidencia && !EXTENSIONES_EVIDENCIA.includes(extension)) ||
+      (soporte && !EXTENSIONES_SOPORTE.includes(extension)) ||
+      (soloPdf && extension !== "pdf")
+    ) {
       setCargas((prev) => [
         ...prev.filter((c) => c.nombre !== archivo.name),
-        { nombre: archivo.name, progreso: 0, estado: "error", mensaje: soloPdf ? ERROR_SOLO_PDF : ERROR_EVIDENCIA },
+        { nombre: archivo.name, progreso: 0, estado: "error", mensaje: soloPdf ? ERROR_SOLO_PDF : soporte ? ERROR_SOPORTE : ERROR_EVIDENCIA },
       ]);
       return;
     }
@@ -56,7 +74,7 @@ export function ZonaCarga({ direccion, evidencia = false, soloPdf = false }: { d
       { nombre: archivo.name, progreso: 0, estado: "subiendo" },
     ]);
     const xhr = new XMLHttpRequest();
-    const url = evidencia || soloPdf ? direccion : `${direccion}${direccion.includes("?") ? "&" : "?"}rol=${rol}`;
+    const url = evidencia || soloPdf || soporte ? direccion : `${direccion}${direccion.includes("?") ? "&" : "?"}rol=${rol}`;
     xhr.open("POST", url);
     xhr.setRequestHeader("x-nombre-archivo", encodeURIComponent(archivo.name));
     xhr.upload.onprogress = (e) => {
@@ -86,7 +104,7 @@ export function ZonaCarga({ direccion, evidencia = false, soloPdf = false }: { d
 
   return (
     <div className="flex flex-col gap-3">
-      {evidencia || soloPdf ? null : (
+      {evidencia || soloPdf || soporte ? null : (
         // A 390 px el selector baja de línea en lugar de desbordar la página.
         <label className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-medium">
           Rol de los archivos a subir
@@ -119,8 +137,10 @@ export function ZonaCarga({ direccion, evidencia = false, soloPdf = false }: { d
         <span>
           {soloPdf
             ? "o haga clic para elegirlo (un PDF, máx. 25 MB)"
-            : evidencia
-              ? "o haga clic para elegirlos (PDF o imagen, máx. 25 MB c/u)"
+            : soporte
+              ? "o haga clic para elegirlos (PDF, imagen o Excel .xlsx, máx. 25 MB c/u)"
+              : evidencia
+                ? "o haga clic para elegirlos (PDF o imagen, máx. 25 MB c/u)"
               : "o haga clic para elegirlos (máx. 25 MB c/u)"}
         </span>
         <input

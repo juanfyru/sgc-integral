@@ -21,6 +21,7 @@ import {
   duplicar,
   retirar,
 } from "@/db/consultas/indicadores/operacion";
+import { quitarSoporte } from "@/db/consultas/indicadores/soportes";
 import { contextoDePeticion } from "@/lib/contexto-peticion";
 import { EsquemaSinDatos } from "@/lib/esquemas/documentos";
 import {
@@ -272,6 +273,17 @@ export async function responderAccion(_prev: EstadoAccion, formData: FormData): 
   return mutacion(formData, "indicadores.observar", async (_usuarioId, _formData, sesion) => {
     const { texto } = parsearFormulario(formData, EsquemaRespuesta, { omitir: ["id"] });
     await responder(sesion, { observacionId: idNumerico(formData, "id"), texto });
+  });
+}
+
+/**
+ * `id` es el del soporte (la fila de `archivos`). No navega: la pantalla vuelve a pintarse sin él. Solo antes del cierre y
+ * de quien puede medir el indicador: la consulta lo comprueba.
+ */
+export async function quitarSoporteAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.medir", async (_usuarioId, _formData, sesion) => {
+    parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
+    await quitarSoporte(sesion, { archivoId: idNumerico(formData, "id") });
   });
 }
 

@@ -1,6 +1,7 @@
+import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
-import { ERROR_SOPORTE, sanearNombre, validarTipo, validarTipoEvidencia } from "@/lib/subida";
+import { ERROR_SOPORTE, sanearNombre, TAMANO_MUESTRA_BYTES, validarTipo, validarTipoEvidencia } from "@/lib/subida";
 import { pdfDePrueba } from "./utiles/pdf";
 
 // Cabeceras mínimas reales por formato para probar magic bytes.
@@ -100,10 +101,9 @@ describe("validarTipoEvidencia", () => {
   });
 
   it("con conExcel (el soporte de una medición) admite también un .xlsx, nunca .xls, .docx ni .zip", async () => {
-    const zip = new JSZip();
-    zip.file("[Content_Types].xml", "<Types/>");
-    zip.file("xl/workbook.xml", "<workbook/>");
-    const xlsx = await zip.generateAsync({ type: "uint8array" });
+    const libro = new ExcelJS.Workbook();
+    libro.addWorksheet("Datos").addRow([1, 2]);
+    const xlsx = new Uint8Array(await libro.xlsx.writeBuffer());
     const conExcel = { conExcel: true };
     expect(await validarTipoEvidencia("soporte.xlsx", xlsx, conExcel)).toMatchObject({ ok: true, extension: "xlsx" });
     expect(await validarTipoEvidencia("foto.png", PNG, conExcel)).toEqual({ ok: true, extension: "png", mime: "image/png" });
@@ -112,5 +112,22 @@ describe("validarTipoEvidencia", () => {
     expect(await validarTipoEvidencia("lista.docx", await docxMinimo(), conExcel)).toEqual({ ok: false, error: ERROR_SOPORTE });
     expect(await validarTipoEvidencia("todo.zip", xlsx, conExcel)).toEqual({ ok: false, error: ERROR_SOPORTE });
     expect(await validarTipoEvidencia("soporte.xlsx", xlsx)).toEqual({ ok: false, error: MENSAJE });
+  });
+
+  it("con conExcel, un ZIP o un Word renombrados a .xlsx pasan la muestra: los rechaza recibirArchivo sobre el archivo completo", async () => {
+    const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    const comun = new JSZip();
+    comun.file("datos.txt", "no es una hoja de cálculo");
+    const zipRenombrado = await comun.generateAsync({ type: "uint8array" });
+    const conExcel = { conExcel: true };
+    expect(await validarTipoEvidencia("soporte.xlsx", zipRenombrado, conExcel)).toMatchObject({ ok: true, extension: "xlsx" });
+    expect(await validarTipoEvidencia("soporte.xlsx", await docxMinimo(), conExcel)).toMatchObject({ ok: true });
+    // Un libro real, de los que escribe `exceljs`, se reconoce por su contenido dentro de la muestra de la subida.
+    const libro = new ExcelJS.Workbook();
+    const hoja = libro.addWorksheet("Datos");
+    for (let i = 0; i < 3000; i++) hoja.addRow([i, `texto largo número ${i} `.repeat(5), i * 1.5]);
+    const real = new Uint8Array(await libro.xlsx.writeBuffer());
+    expect(real.byteLength).toBeGreaterThan(TAMANO_MUESTRA_BYTES);
+    expect(await validarTipoEvidencia("soporte.xlsx", real.subarray(0, TAMANO_MUESTRA_BYTES), conExcel)).toEqual({ ok: true, extension: "xlsx", mime: XLSX });
   });
 });
