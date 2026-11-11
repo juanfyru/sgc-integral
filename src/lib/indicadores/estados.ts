@@ -33,7 +33,7 @@ export function analisisExigido(m: {
   repetido: boolean;
   historica: boolean;
   noAplica: boolean;
-}): "ninguno" | "simple" | "dos_partes" {
+}): AnalisisExigido {
   if (m.historica || m.noAplica || m.semaforo === null || m.semaforo === "bien") return "ninguno";
   return m.semaforo === "critico" || m.repetido ? "dos_partes" : "simple";
 }
@@ -44,15 +44,22 @@ export function esRepetido(anteriores: (Semaforo | null)[], actual: Semaforo | n
   return anteriores.slice(0, n - 1).every((s) => s !== null && s !== "bien");
 }
 
+/** Lo mínimo que lleva cada parte exigida del análisis (spec §8.4), sin contar los espacios de los extremos. */
+export const MINIMO_ANALISIS = 10;
+
+/** Lo que se exige del análisis de una medición (spec §8.4). */
+export type AnalisisExigido = "ninguno" | "simple" | "dos_partes";
+
 /**
  * ¿La medición tiene el análisis que se le exige (spec §8.4)? El simple lo satisface el análisis o la causa con la acción
- * propuesta; las dos partes, solo la causa y la acción propuesta. Un texto en blanco no cuenta.
+ * propuesta; las dos partes, solo la causa y la acción propuesta. Cada parte exigida lleva al menos `MINIMO_ANALISIS`
+ * caracteres: es la única regla, y la usan el estado guardado, la tabla del año y `analizar`.
  */
 export function analisisCompleto(
-  exigido: "ninguno" | "simple" | "dos_partes",
+  exigido: AnalisisExigido,
   a: { analisis: string | null; causa: string | null; accionPropuesta: string | null },
 ): boolean {
-  const lleno = (t: string | null) => t !== null && t.trim() !== "";
+  const lleno = (t: string | null) => t !== null && t.trim().length >= MINIMO_ANALISIS;
   const dosPartes = lleno(a.causa) && lleno(a.accionPropuesta);
   if (exigido === "ninguno") return true;
   return exigido === "simple" ? dosPartes || lleno(a.analisis) : dosPartes;

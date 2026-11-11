@@ -34,6 +34,9 @@ export type OpcionesIndicadorDePrueba = {
   /** `null` deja la meta vacía; sin valor, 90. */
   meta?: string | null;
   umbralPct?: number;
+  /** Con «fijo», el límite de crítico es `limite`; sin valor, «relativo» con el umbral. */
+  modo?: "relativo" | "fijo";
+  limite?: string;
   clasificacion?: "Estratégico" | "Operativo" | "Regulatorio";
   /** Clave de periodo desde la que se mide y rige la versión 1; sin valor, enero de 2026 en la periodicidad. */
   inicioMedicion?: string;
@@ -91,11 +94,11 @@ export async function indicadorDePrueba(
       (indicador_id, numero, estado, tipo_cambio, nombre, proposito, tipo_id, tipo_nombre,
        clasificacion_id, clasificacion_nombre, proceso_nombre, origen_dato, calculo, forma, factor, formula,
        unidad_id, unidad_nombre, unidad_sufijo, decimales, periodicidad, tendencia, meta,
-       semaforo_modo, umbral_atencion_pct, resultado_max, creado_por)
+       semaforo_modo, umbral_atencion_pct, limite_critico, resultado_max, creado_por)
     SELECT ${indicadorId}, 1, 'borrador', 'inicial', ${`Indicador de prueba ${codigo}`}, 'Medir el cumplimiento de la prueba',
       t.id, t.nombre, c.id, c.nombre, ${proceso.nombre as string}, 'manual', 'Porcentaje de cumplimiento', 'porcentaje', NULL, 'A / B * 100',
       un.id, un.nombre, un.sufijo, 1, ${o.periodicidad ?? "mensual"}, ${o.tendencia ?? "ascendente"}, ${meta},
-      'relativo', ${o.umbralPct ?? 70}, ${o.resultadoMax ?? null}, ${elaboradaPor}
+      ${o.modo ?? "relativo"}, ${o.modo === "fijo" ? null : (o.umbralPct ?? 70)}, ${o.limite ?? null}, ${o.resultadoMax ?? null}, ${elaboradaPor}
     FROM tipos_indicador t, clasificaciones_indicador c, unidades_indicador un
     WHERE t.nombre = 'Eficacia' AND c.nombre = ${clasificacion} AND un.nombre = 'Porcentaje'
     RETURNING id`;

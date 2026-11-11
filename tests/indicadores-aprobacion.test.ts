@@ -677,9 +677,12 @@ describe("cambios sobre una ficha aprobada", () => {
       const ind = await aprobado(tx, b, d);
       const id = async (periodo: string) =>
         Number((await tx`SELECT id FROM mediciones WHERE indicador_id = ${ind.indicadorId} AND periodo = ${periodo}`)[0].id);
-      // Agosto tiene un valor guardado sin reportar; julio, septiembre y octubre están vacíos.
+      // Agosto tiene un valor guardado sin reportar; julio, septiembre y octubre están vacíos. Son históricos (terminaron
+      // antes de la aprobación) y un histórico ya no se guarda sin reportar: el valor se pone por SQL.
       const agosto = await id("2026-08");
-      await reportar(mide, { medicionId: agosto, valores: { A: "3" }, parcial: true, confirmado: false }, { sql: tx, ahora: AHORA });
+      const [a] = await tx`SELECT id FROM indicador_variables WHERE version_id = ${ind.versionId} AND letra = 'A'`;
+      await tx`INSERT INTO medicion_valores (medicion_id, variable_id, valor, reportado_por, reportado_en)
+        VALUES (${agosto}, ${a.id}, 3, ${mide.usuarioId}, ${AHORA})`;
       const v2 = await cambio(tx, b, ind.indicadorId, { ...d, periodicidad: "trimestral", motivoCambio: "Se mide por trimestre" });
       await enviarAAprobacion(b.admin, { versionId: v2, rigeDesde: "2026-T3", credenciales: CLAVE }, firmar(tx));
       await aprobarFichas(ind.gerente, { versionIds: [v2], credenciales: CLAVE }, firmar(tx));

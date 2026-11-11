@@ -17,6 +17,7 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
+import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
 import {
   asegurarMediciones,
   contarSoportes,
@@ -402,9 +403,9 @@ describe("reportar", () => {
 
   it("la confirmación compara con la medición anterior con resultado, aunque sea histórica", () =>
     revertida(sql, async (tx) => {
-      const { mide, medicion } = await preparar(tx);
-      const [t4h, t1] = [await medicion("2025-T4"), await medicion("2026-T1")];
-      await reportarCon(tx, mide, t4h, { A: "5", B: "5" });
+      const { ind, mide, medicion } = await preparar(tx);
+      const t1 = await medicion("2026-T1");
+      await registrarHistoricos(mide, { indicadorId: ind.id, filas: [{ periodo: "2025-T4", valores: { A: "5", B: "5" } }] }, opc(tx));
       expect(await reportar(mide, { medicionId: t1, valores: { A: "1", B: "5" }, parcial: false, confirmado: false }, opc(tx))).toEqual({
         ok: false,
         confirmar: "El resultado baja 80 puntos frente al cuarto trimestre de 2025. ¿Los datos son correctos?",
@@ -463,7 +464,7 @@ describe("reportar", () => {
 
   it("soporte obligatorio: no se reporta sin él, salvo parcial o «no aplica»", () =>
     revertida(sql, async (tx) => {
-      const { mide, medicion } = await preparar(tx, { soporteObligatorio: true });
+      const { ind, mide, medicion } = await preparar(tx, { soporteObligatorio: true });
       const [t2, t3] = [await medicion("2026-T2"), await medicion("2026-T3")];
       expect(await contarSoportes(tx, t3)).toBe(0);
       await rechaza(reportarCon(tx, mide, t3, { A: "5", B: "5" }), "Este indicador exige un soporte: adjúntelo antes de reportar");
@@ -474,8 +475,8 @@ describe("reportar", () => {
       expect(await contarSoportes(tx, t3)).toBe(1);
       expect(await reportarCon(tx, mide, t3, { A: "5", B: "5" })).toEqual({ ok: true, estado: "reportada", semaforo: "bien" });
       // Un histórico no lo exige.
-      const t4h = await medicion("2025-T4");
-      expect((await reportarCon(tx, mide, t4h, { A: "5", B: "5" })).ok).toBe(true);
+      const filas = [{ periodo: "2025-T4", valores: { A: "5", B: "5" } }];
+      expect(await registrarHistoricos(mide, { indicadorId: ind.id, filas }, opc(tx))).toEqual({ registrados: 1 });
     }));
 
   it("mide el designado y el líder; los demás no", () =>

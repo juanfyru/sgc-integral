@@ -470,6 +470,19 @@ export function puedeAnalizar(indicadorId: number, sujeto: SujetoVisibilidad, op
   return capacidad(indicadorId, sujeto, "analiza", opciones);
 }
 
+/**
+ * Quién registra los históricos (spec 14 §8.8): el Admin SGC, aunque haya quien mida (sin la marca `sinMedidor`), y quien
+ * puede medir el indicador.
+ */
+export async function puedeRegistrarHistoricos(
+  indicadorId: number,
+  sujeto: SujetoVisibilidad,
+  opciones?: { sql?: Cliente },
+): Promise<Capacidad> {
+  if (puede(sujeto, "indicadores.administrar")) return { puede: true, sinMedidor: false };
+  return capacidad(indicadorId, sujeto, "mide", opciones);
+}
+
 /** Quién deja observaciones en una medición: quien ve el indicador y es Admin SGC, Gerencia, Control Interno o designado en seguimiento. */
 export async function puedeObservar(
   indicadorId: number,

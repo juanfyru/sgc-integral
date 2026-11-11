@@ -60,12 +60,14 @@ import { obtenerParametros } from "./maestros";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
-const NO_EXISTE = "La medición no existe";
+export const NO_EXISTE = "La medición no existe";
 const CERRADA = "La medición está cerrada: pida al Administrador del SGC que la reabra";
 const RETIRADO = "El indicador está retirado: ya no admite reportes";
 const YA_REPORTADA = "La medición ya se reportó: corrija los datos y pulse «Reportar»";
 const FICHA_CAMBIO = "La ficha del indicador cambió: recargue la página";
 const OTRA_PERIODICIDAD = "Ese periodo ya no se mide: la ficha que lo rige es de otra periodicidad";
+/** Un histórico entra solo por la tabla del año (`registrarHistoricos`, spec §8.8). */
+const ES_HISTORICO = "Ese periodo es histórico: regístrelo en la tabla del año";
 
 /**
  * Una medición abierta de la periodicidad vieja que quedó dentro del tramo de un cambio mayor de periodicidad (los meses
@@ -76,7 +78,11 @@ const esDeOtraPeriodicidad = (periodo: string, version: { periodicidad: Periodic
 
 const texto = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
 /** El análisis guardado de una medición, para `analisisCompleto`. */
-const analisisDe = (m: Record<string, unknown>) => ({ analisis: texto(m.analisis), causa: texto(m.causa), accionPropuesta: texto(m.accion_propuesta) });
+export const analisisDe = (m: Record<string, unknown>) => ({
+  analisis: texto(m.analisis),
+  causa: texto(m.causa),
+  accionPropuesta: texto(m.accion_propuesta),
+});
 const fr = (v: unknown): Fraccion | null => (v === null || v === undefined ? null : fraccion(String(v)));
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -94,7 +100,7 @@ type VariableDeVersion = {
   admiteNegativos: boolean;
 };
 
-type VersionDeCalculo = {
+export type VersionDeCalculo = {
   id: number;
   numero: number;
   tipoCambio: string;
@@ -110,7 +116,7 @@ type VersionDeCalculo = {
 };
 
 /** Las versiones aprobadas del indicador, de mayor a menor número (el orden de `versionQueRigeEntre`). */
-async function versionesAprobadas(sql: Cliente, indicadorId: number): Promise<VersionDeCalculo[]> {
+export async function versionesAprobadas(sql: Cliente, indicadorId: number): Promise<VersionDeCalculo[]> {
   const filas = await sql`SELECT id, numero, tipo_cambio, rige_desde, aprobada_en, periodicidad, nombre, formula, resultado_min, resultado_max,
       tendencia, meta, meta_max, semaforo_modo, umbral_atencion_pct, limite_critico, tolerancia, unidad_sufijo, decimales
     FROM indicador_versiones WHERE indicador_id = ${indicadorId} AND estado = 'aprobada' ORDER BY numero DESC`;
@@ -160,13 +166,13 @@ async function versionesAprobadas(sql: Cliente, indicadorId: number): Promise<Ve
 }
 
 /** La meta programada del periodo (spec §8.9) reemplaza la de la ficha. */
-async function reglaDelPeriodo(sql: Cliente, indicadorId: number, periodo: string, v: VersionDeCalculo): Promise<ReglaEnTexto> {
+export async function reglaDelPeriodo(sql: Cliente, indicadorId: number, periodo: string, v: VersionDeCalculo): Promise<ReglaEnTexto> {
   const [p] = await sql`SELECT meta, meta_max FROM indicador_metas WHERE indicador_id = ${indicadorId} AND periodo = ${periodo}`;
   return p ? { ...v.regla, meta: texto(p.meta), metaMax: texto(p.meta_max) } : v.regla;
 }
 
 /** La primera versión aprobada: con su aprobación, lo que terminó antes es histórico (spec §8.8). */
-function primeraAprobada(versiones: readonly VersionDeCalculo[]): VersionDeCalculo | null {
+export function primeraAprobada(versiones: readonly VersionDeCalculo[]): VersionDeCalculo | null {
   return versiones.find((v) => v.tipoCambio === "inicial") ?? versiones[versiones.length - 1] ?? null;
 }
 
@@ -463,7 +469,7 @@ export async function recalcularMedicion(
 // Reportar, «no aplica» y corregir
 // ─────────────────────────────────────────────────────────────────────────────
 
-type Contexto = {
+export type Contexto = {
   medicion: Record<string, unknown> & { id: number };
   indicador: { id: number; codigo: string; soporteObligatorio: boolean };
   capacidad: Capacidad;
@@ -471,17 +477,21 @@ type Contexto = {
   periodo: Periodo;
 };
 
+/** La condición de persona que exige tocar la medición (`puedeMedir`, `puedeAnalizar`, …), de `src/lib/alcance.ts`. */
+export type CondicionDePersona = (indicadorId: number, sujeto: SujetoVisibilidad, opciones: { sql: Cliente }) => Promise<Capacidad>;
+
 /**
- * Lo que debe cumplirse para tocar una medición: que la persona la vea (si no, «no existe»), que pueda medir el
- * indicador, que este siga activo y que la medición no esté cerrada (salvo con `admiteCerrada`, para leerla). Con
- * `bloquear`, dentro de la transacción: el indicador `FOR SHARE` y la medición `FOR UPDATE`, en ese orden.
+ * Lo que debe cumplirse para tocar una medición: que la persona la vea (si no, «no existe»), que cumpla la condición de
+ * persona (`exigir`; por omisión, poder medir el indicador), que este siga activo y que la medición no esté cerrada
+ * (salvo con `admiteCerrada`, para leerla). Con `bloquear`, dentro de la transacción: el indicador `FOR SHARE` y la
+ * medición `FOR UPDATE`, en ese orden.
  */
-async function contextoDeMedicion(
+export async function contextoDeMedicion(
   sql: Cliente,
   sesion: SujetoVisibilidad,
   medicionId: number,
   bloquear: boolean,
-  opciones?: { admiteCerrada?: boolean },
+  opciones?: { admiteCerrada?: boolean; exigir?: CondicionDePersona },
 ): Promise<Contexto> {
   const [i] = bloquear
     ? await sql`SELECT id, codigo, estado, soporte_obligatorio FROM indicadores
@@ -493,7 +503,7 @@ async function contextoDeMedicion(
     : await sql`SELECT * FROM mediciones WHERE id = ${medicionId}`;
   if (!i || !m || !(await puedeVerIndicador(Number(i.id), sesion, { sql }))) throw new ErrorIndicador(NO_EXISTE);
   const indicadorId = Number(i.id);
-  const capacidad = await puedeMedir(indicadorId, sesion, { sql });
+  const capacidad = await (opciones?.exigir ?? puedeMedir)(indicadorId, sesion, { sql });
   if (!capacidad.puede) throw new ErrorPermiso();
   if (i.estado !== "activo") throw new ErrorIndicador(i.estado === "retirado" ? RETIRADO : NO_EXISTE);
   if (m.estado === "cerrada" && opciones?.admiteCerrada !== true) throw new ErrorIndicador(CERRADA);
@@ -529,9 +539,10 @@ type DatosDeReportar = { medicionId: number; valores: Record<string, string>; pa
 
 /**
  * Lo que se va a escribir, sin escribir nada: los valores leídos y validados (spec §7.4) y, en un reporte, el cálculo,
- * los límites del resultado, la división por cero, el soporte obligatorio y la confirmación por variación.
+ * los límites del resultado, la división por cero, el soporte obligatorio y la confirmación por variación. Lo comparten
+ * `reportar` y `registrarHistoricos` (que no pide la confirmación, y a un histórico no se le exige el soporte).
  */
-async function planDeReporte(
+export async function planDeReporte(
   sql: Cliente,
   ctx: Contexto,
   d: DatosDeReportar,
@@ -607,7 +618,7 @@ async function escribirValores(
 }
 
 /** «60 %» con la regla del periodo, o `null` sin resultado. */
-const resultadoEnTexto = (exacto: unknown, version: VersionDeCalculo, regla: Regla): string | null =>
+export const resultadoEnTexto = (exacto: unknown, version: VersionDeCalculo, regla: Regla): string | null =>
   typeof exacto === "string" ? textoValor(deTexto(exacto), version.unidad, regla) : null;
 
 export type ResultadoDeReporte = { ok: true; estado: EstadoMedicion; semaforo: Semaforo | null } | { ok: false; confirmar: string };
@@ -619,9 +630,50 @@ async function seReportoAlgunaVez(tx: TransactionSql, medicionId: number): Promi
   return e !== undefined;
 }
 
+/** Lo que dejó `escribirReporte`: el recálculo, si era la primera vez y el antes y el después del evento. */
+export type ReporteEscrito = { r: Recalculo; primera: boolean; detalle: { antes: Record<string, unknown>; despues: Record<string, unknown>; sinMedidor?: true } };
+
+/**
+ * Escribe un reporte ya validado por `planDeReporte`, con los candados de `contextoDeMedicion` tomados: los valores, la
+ * marca de reportada (quién y cuándo, la primera vez) y, si estaba, quita «no aplica»; después recalcula. Deja el evento
+ * `primerEvento` si la medición nunca se reportó y `correccion` si ya. Lo comparten `reportar` y `registrarHistoricos`.
+ */
+export async function escribirReporte(
+  tx: TransactionSql,
+  ctx: Contexto,
+  valores: Readonly<Record<string, Fraccion | null>>,
+  c: { usuarioId: number; ahora: Date; primerEvento: TipoEvento },
+): Promise<ReporteEscrito> {
+  const { medicion: m, version } = ctx;
+  const antes = enTexto(version, await valoresPorLetra(tx, m.id, version));
+  const despues = enTexto(version, valores);
+  const primera = !(await seReportoAlgunaVez(tx, m.id));
+  await escribirValores(tx, m.id, version, valores, c.usuarioId, c.ahora);
+  if (m.reportada_en === null || m.no_aplica === true) {
+    await tx`UPDATE mediciones SET reportada_por = coalesce(reportada_por, ${c.usuarioId}), reportada_en = coalesce(reportada_en, ${c.ahora}),
+        no_aplica = false, no_aplica_motivo = NULL
+      WHERE id = ${m.id}`;
+  }
+  const conMotivo = m.no_aplica === true ? { motivo: m.no_aplica_motivo as string | null } : {};
+  const detalle = {
+    antes: { ...antes, noAplica: m.no_aplica === true, ...conMotivo },
+    despues: { ...despues, noAplica: false, ...(m.no_aplica === true ? { motivo: null } : {}) },
+    ...(ctx.capacidad.sinMedidor ? { sinMedidor: true as const } : {}),
+  };
+  const r = await recalcularMedicion(tx, m.id, { ahora: c.ahora, actorId: c.usuarioId, evento: primera ? c.primerEvento : "correccion", detalle });
+  return { r, primera, detalle };
+}
+
+/** Un histórico no se reporta ni se guarda por aquí: entra por la tabla del año (spec §8.8). */
+function noHistorica(ctx: Contexto): Contexto {
+  if (ctx.medicion.historica === true) throw new ErrorIndicador(ES_HISTORICO);
+  return ctx;
+}
+
 /**
  * Reporta los datos de una medición, los guarda sin reportar (`parcial`) o los corrige antes del cierre (spec §8.2 y
- * §8.7). Valida fuera de la transacción lo que puede y lo repite dentro, con los candados, antes de escribir nada. Un
+ * §8.7). Un histórico no: entra por `registrarHistoricos`. Valida fuera de la transacción lo que puede y lo repite
+ * dentro, con los candados, antes de escribir nada. Un
  * salto grande frente al periodo anterior con resultado no escribe y pide confirmación (`confirmado`). Un reporte deja el
  * evento `reporte` si la medición nunca se reportó y `correccion` si ya; lo mismo otra vez no deja nada. «Guardar sin
  * reportar» no calcula ni deja evento: solo los valores y su acción de bitácora (`medicion_guardada`).
@@ -630,18 +682,18 @@ export async function reportar(sesion: SesionFlujo, d: DatosDeReportar, opciones
   if (!puede(sesion, "indicadores.medir")) throw new ErrorPermiso();
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
-  const fuera = await planDeReporte(sql, await contextoDeMedicion(sql, sesion, d.medicionId, false), d);
+  const fuera = await planDeReporte(sql, noHistorica(await contextoDeMedicion(sql, sesion, d.medicionId, false)), d);
   if (fuera.confirmar) return { ok: false, confirmar: fuera.confirmar };
 
   return enTransaccion(sql, async (tx) => {
-    const ctx = await contextoDeMedicion(tx, sesion, d.medicionId, true);
+    const ctx = noHistorica(await contextoDeMedicion(tx, sesion, d.medicionId, true));
     const plan = await planDeReporte(tx, ctx, d);
     if (plan.confirmar) return { ok: false as const, confirmar: plan.confirmar };
     const { medicion: m, version } = ctx;
-    const antes = enTexto(version, await valoresPorLetra(tx, m.id, version));
-    const despues = enTexto(version, plan.valores);
     const base = { codigo: ctx.indicador.codigo, indicadorId: ctx.indicador.id, periodo: m.periodo };
     if (d.parcial) {
+      const antes = enTexto(version, await valoresPorLetra(tx, m.id, version));
+      const despues = enTexto(version, plan.valores);
       if (JSON.stringify(antes) !== JSON.stringify(despues)) {
         await escribirValores(tx, m.id, version, plan.valores, sesion.usuarioId, ahora);
         await registrarAuditoria(tx, {
@@ -655,20 +707,7 @@ export async function reportar(sesion: SesionFlujo, d: DatosDeReportar, opciones
       return { ok: true as const, estado: m.estado as EstadoMedicion, semaforo: (m.semaforo as Semaforo | null) ?? null };
     }
 
-    const primera = !(await seReportoAlgunaVez(tx, m.id));
-    await escribirValores(tx, m.id, version, plan.valores, sesion.usuarioId, ahora);
-    if (m.reportada_en === null || m.no_aplica === true) {
-      await tx`UPDATE mediciones SET reportada_por = coalesce(reportada_por, ${sesion.usuarioId}), reportada_en = coalesce(reportada_en, ${ahora}),
-          no_aplica = false, no_aplica_motivo = NULL
-        WHERE id = ${m.id}`;
-    }
-    const conMotivo = m.no_aplica === true ? { motivo: m.no_aplica_motivo as string | null } : {};
-    const detalle = {
-      antes: { ...antes, noAplica: m.no_aplica === true, ...conMotivo },
-      despues: { ...despues, noAplica: false, ...(m.no_aplica === true ? { motivo: null } : {}) },
-      ...(ctx.capacidad.sinMedidor ? { sinMedidor: true } : {}),
-    };
-    const r = await recalcularMedicion(tx, m.id, { ahora, actorId: sesion.usuarioId, evento: primera ? "reporte" : "correccion", detalle });
+    const { r, primera, detalle } = await escribirReporte(tx, ctx, plan.valores, { usuarioId: sesion.usuarioId, ahora, primerEvento: "reporte" });
     if (r.cambio) {
       const regla = reglaDeTexto(await reglaDelPeriodo(tx, ctx.indicador.id, m.periodo as string, version));
       await registrarAuditoria(tx, {
@@ -774,7 +813,7 @@ function diaEnPalabras(d: Date): string {
   return `${dia} de ${MESES[mes - 1]} de ${anio}`;
 }
 
-const conMayuscula = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+export const conMayuscula = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 export type VariableDeReporte = {
   letra: string;
@@ -918,6 +957,22 @@ export async function proximaPorReportar(
   return null;
 }
 
+/**
+ * Los periodos de `anio` que se miden: los de la periodicidad que rige cada tramo, desde el inicio de medición. Lo usan la
+ * tabla del año y las metas por periodo.
+ */
+export function periodosDelAnio(versiones: readonly VersionDeCalculo[], inicioMedicion: string, anio: number, zona: string): Periodo[] {
+  if (!periodoDe(inicioMedicion, zona)) return [];
+  const periodos: Periodo[] = [];
+  for (const t of tramos(versiones, inicioMedicion, zona)) {
+    for (const clave of clavesDelAnio(t.periodicidad, anio)) {
+      const p = periodoDe(clave, zona)!;
+      if (p.desde.getTime() >= t.desde && p.desde.getTime() < t.hasta) periodos.push(p);
+    }
+  }
+  return periodos;
+}
+
 export type FilaDelAnio = {
   periodo: string;
   /** «Primer trimestre de 2026». */
@@ -964,15 +1019,7 @@ export async function tablaDelAnio(sesion: SujetoVisibilidad, indicadorId: numbe
   if (!i?.inicio_medicion) return [];
   const zona = zonaHoraria();
   const versiones = await versionesAprobadas(sql, indicadorId);
-  const inicio = periodoDe(i.inicio_medicion as string, zona);
-  if (!inicio) return [];
-  const periodos: Periodo[] = [];
-  for (const t of tramos(versiones, i.inicio_medicion as string, zona)) {
-    for (const clave of clavesDelAnio(t.periodicidad, anio)) {
-      const p = periodoDe(clave, zona)!;
-      if (p.desde.getTime() >= t.desde && p.desde.getTime() < t.hasta) periodos.push(p);
-    }
-  }
+  const periodos = periodosDelAnio(versiones, i.inicio_medicion as string, anio, zona);
   if (periodos.length === 0) return [];
   const mediciones = await sql`SELECT * FROM mediciones WHERE indicador_id = ${indicadorId} AND periodo IN ${sql(periodos.map((p) => p.clave))}`;
   const metas = await sql`SELECT periodo, meta, meta_max FROM indicador_metas

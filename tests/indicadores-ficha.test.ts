@@ -216,6 +216,11 @@ describe("estados de una medición", () => {
     expect(analisisCompleto("dos_partes", simple)).toBe(false);
     expect(analisisCompleto("dos_partes", { ...dos, accionPropuesta: "" })).toBe(false);
     expect(analisisCompleto("dos_partes", dos)).toBe(true);
+    // Lo exigido lleva al menos 10 caracteres, sin contar los espacios de los extremos (spec §8.4).
+    expect(analisisCompleto("simple", { ...vacio, analisis: " 123456789 " })).toBe(false);
+    expect(analisisCompleto("simple", { ...vacio, analisis: "1234567890" })).toBe(true);
+    expect(analisisCompleto("dos_partes", { ...dos, causa: "Sin gente" })).toBe(false);
+    expect(analisisCompleto("ninguno", { ...vacio, analisis: "Corto" })).toBe(true);
   });
   it("incumplimiento repetido: N periodos seguidos sin «Bien»", () => {
     expect(esRepetido(["atencion", "critico"], "atencion", 3)).toBe(true);
