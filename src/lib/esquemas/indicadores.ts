@@ -253,7 +253,8 @@ export const EsquemaReporte = z
         .refine((v) => Object.keys(v).length <= 26 && Object.keys(v).every((l) => /^[A-Z]$/.test(l)), "Los valores no tienen un formato válido"),
       "Los valores no tienen un formato válido",
     ),
-    intencion: z.enum(["reportar", "parcial"], { error: "Elija si reporta o guarda sin reportar" }).optional(),
+    // Obligatorio: si el botón pulsado no llega, no se reporta un borrador por error.
+    intencion: z.enum(["reportar", "parcial"], { error: "Elija si reporta o guarda sin reportar" }),
     confirmado: casilla,
   })
   .strict();

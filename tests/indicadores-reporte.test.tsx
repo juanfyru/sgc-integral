@@ -233,9 +233,11 @@ describe("EsquemaReporte", () => {
       confirmado: false,
     });
     expect(leer({ valores: '{"A":"3"}', intencion: "reportar", confirmado: "on" })).toMatchObject({ confirmado: true });
-    expect(() => leer({ valores: "{roto" })).toThrow("Los valores no tienen un formato válido");
-    expect(() => leer({ valores: '{"a":"3"}' })).toThrow("Los valores no tienen un formato válido");
-    expect(() => leer({ valores: "{}", otro: "x" })).toThrow();
+    expect(() => leer({ valores: "{roto", intencion: "reportar" })).toThrow("Los valores no tienen un formato válido");
+    expect(() => leer({ valores: '{"a":"3"}', intencion: "reportar" })).toThrow("Los valores no tienen un formato válido");
+    expect(() => leer({ valores: "{}", intencion: "reportar", otro: "x" })).toThrow();
+    // Sin el botón pulsado no se adivina: ni reporte ni borrador.
+    expect(() => leer({ valores: '{"A":"3"}' })).toThrow("Elija si reporta o guarda sin reportar");
   });
 });
 
@@ -294,11 +296,14 @@ describe("las páginas", () => {
       const mide = await usuarioDePrueba(tx, { rol: "consulta" });
       const ind = await indicadorDePrueba(tx, { periodicidad: "trimestral", inicioMedicion: "2026-T1", aprobadaEn: APROBADA, mide: [mide.usuarioId] });
       contexto.sesion = valida(mide);
+      // Sin parámetros, «Resultados» y el botón de la medición más antigua por reportar.
       const html = await pagina(ind.codigo);
       expect(html).toMatch(/aria-current="page"[^>]*>Resultados</);
-      expect(html).toContain("Primer trimestre de 2026");
-      expect(html).toContain(`href="/indicadores/${ind.codigo}/reportar/2026-T1"`);
       expect(html).toMatch(/>Reportar el primer trimestre de 2026</);
+      // La tabla de 2026, pedida con su año para no depender del reloj.
+      const de2026 = await pagina(ind.codigo, { anio: "2026" });
+      expect(de2026).toContain("Primer trimestre de 2026");
+      expect(de2026).toContain(`href="/indicadores/${ind.codigo}/reportar/2026-T1"`);
 
       const [t1] = await tx`SELECT id FROM mediciones WHERE indicador_id = ${ind.id} AND periodo = '2026-T1'`;
       await reportar(mide, { medicionId: Number(t1.id), valores: { A: "9", B: "10" }, parcial: false, confirmado: true }, { sql: tx });
@@ -308,8 +313,8 @@ describe("las páginas", () => {
 
       // Quien solo ve el indicador no tiene «Reportar».
       contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "consulta" }));
-      const deOtro = await pagina(ind.codigo);
-      expect(deOtro).toMatch(/aria-current="page"[^>]*>Resultados</);
+      expect(await pagina(ind.codigo)).toMatch(/aria-current="page"[^>]*>Resultados</);
+      const deOtro = await pagina(ind.codigo, { anio: "2026" });
       expect(deOtro).not.toContain("/reportar/");
       expect(deOtro).toContain(">90 %<");
       await expect(pagina(ind.codigo, { anio: "abc" })).rejects.toThrow("NO_ENCONTRADA");

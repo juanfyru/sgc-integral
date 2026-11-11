@@ -22,6 +22,7 @@ import {
   contarSoportes,
   marcarNoAplica,
   medicionParaReportar,
+  proximaPorReportar,
   quitarNoAplica,
   recalcularMedicion,
   reportar,
@@ -120,6 +121,23 @@ async function procesoSinLider(tx: TransactionSql): Promise<number> {
   return Number(p.id);
 }
 
+/** Una versión 2 trimestral, aprobada, que rige desde el tercer trimestre de 2026; devuelve su id. */
+async function versionTrimestral(tx: TransactionSql, indicadorId: number): Promise<number> {
+  const admin = await sesionAdmin(tx);
+  const [v2] = await tx`INSERT INTO indicador_versiones (indicador_id, numero, estado, tipo_cambio, nombre, forma, formula, periodicidad,
+      tendencia, meta, semaforo_modo, umbral_atencion_pct, unidad_sufijo, decimales, creado_por)
+    VALUES (${indicadorId}, 2, 'borrador', 'mayor', 'Trimestral', 'porcentaje', 'A / B * 100', 'trimestral', 'ascendente', 90, 'relativo', 70,
+      ' %', 1, ${admin.usuarioId}) RETURNING id`;
+  await tx`SELECT id FROM indicador_versiones WHERE id = ${v2.id} FOR UPDATE`;
+  for (const [orden, letra] of [[1, "A"], [2, "B"]] as const) {
+    await tx`INSERT INTO indicador_variables (version_id, letra, nombre, orden) VALUES (${v2.id}, ${letra}, ${letra}, ${orden})`;
+  }
+  await tx`UPDATE indicador_versiones SET estado = 'aprobada', elaborada_por = ${admin.usuarioId}, huella = ${"1".repeat(64)},
+      rige_desde = '2026-T3', aprobada_por = ${admin.usuarioId}, aprobada_en = '2026-06-15T15:00:00Z'
+    WHERE id = ${v2.id}`;
+  return Number(v2.id);
+}
+
 /** Un soporte de la medición, como lo dejaría la subida (contexto `medicion`). */
 const soporte = (tx: TransactionSql, medicionId: number) =>
   tx`INSERT INTO archivos (rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256, contexto, contexto_id)
@@ -180,25 +198,36 @@ describe("asegurarMediciones", () => {
 
   it("tras un cambio mayor de periodicidad, los periodos desde su «rige desde» son de la nueva", () =>
     revertida(sql, async (tx) => {
-      const admin = await sesionAdmin(tx);
       const ind = await indicadorDePrueba(tx, { periodicidad: "mensual", inicioMedicion: "2026-01", aprobadaEn: APROBADA });
-      // Una versión 2 trimestral que rige desde el tercer trimestre de 2026.
-      const [v2] = await tx`INSERT INTO indicador_versiones (indicador_id, numero, estado, tipo_cambio, nombre, forma, formula, periodicidad,
-          tendencia, meta, semaforo_modo, umbral_atencion_pct, unidad_sufijo, decimales, creado_por)
-        VALUES (${ind.id}, 2, 'borrador', 'mayor', 'Trimestral', 'porcentaje', 'A / B * 100', 'trimestral', 'ascendente', 90, 'relativo', 70,
-          ' %', 1, ${admin.usuarioId}) RETURNING id`;
-      await tx`SELECT id FROM indicador_versiones WHERE id = ${v2.id} FOR UPDATE`;
-      for (const [orden, letra] of [[1, "A"], [2, "B"]] as const) {
-        await tx`INSERT INTO indicador_variables (version_id, letra, nombre, orden) VALUES (${v2.id}, ${letra}, ${letra}, ${orden})`;
-      }
-      await tx`UPDATE indicador_versiones SET estado = 'aprobada', elaborada_por = ${admin.usuarioId}, huella = ${"1".repeat(64)},
-          rige_desde = '2026-T3', aprobada_por = ${admin.usuarioId}, aprobada_en = '2026-06-15T15:00:00Z'
-        WHERE id = ${v2.id}`;
+      const v2 = await versionTrimestral(tx, ind.id);
       expect(await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: ind.id })).toBe(7);
       const filas = await tx`SELECT periodo, version_id FROM mediciones WHERE indicador_id = ${ind.id} ORDER BY desde`;
       expect(filas.map((f) => f.periodo)).toEqual(["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-T3"]);
       expect(Number(filas[5].version_id)).toBe(ind.versionId);
-      expect(Number(filas[6].version_id)).toBe(Number(v2.id));
+      expect(Number(filas[6].version_id)).toBe(v2);
+    }));
+
+  it("un mes que quedó abierto dentro del trimestre de un cambio mayor de periodicidad no se mide", () =>
+    revertida(sql, async (tx) => {
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const ind = await indicadorDePrueba(tx, { periodicidad: "mensual", inicioMedicion: "2026-01", aprobadaEn: APROBADA, mide: [mide.usuarioId] });
+      // Los meses hasta septiembre se abren con la ficha mensual; después llega la trimestral que rige desde el tercer trimestre.
+      expect(await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: ind.id })).toBe(9);
+      await versionTrimestral(tx, ind.id);
+      expect(await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: ind.id })).toBe(1);
+      const id = async (periodo: string) => Number((await tx`SELECT id FROM mediciones WHERE indicador_id = ${ind.id} AND periodo = ${periodo}`)[0].id);
+      const julio = await id("2026-07");
+      const ajena = "Ese periodo ya no se mide: la ficha que lo rige es de otra periodicidad";
+      await rechaza(reportarCon(tx, mide, julio, { A: "5", B: "5" }), ajena);
+      await rechaza(marcarNoAplica(mide, { medicionId: julio, motivo: "Sin casos en el mes" }, opc(tx)), ajena);
+      await rechaza(recalcularMedicion(tx, julio, { ahora: AHORA, actorId: mide.usuarioId, evento: "recalculo" }), ajena);
+      expect(await medicionParaReportar(mide, ind.codigo, "2026-07", opc(tx))).toBeNull();
+      // «Reportar» ofrece la primera que sí se mide: con enero a junio resueltos, el tercer trimestre y no julio.
+      for (const mes of ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"]) {
+        await marcarNoAplica(mide, { medicionId: await id(mes), motivo: "Sin casos en el mes" }, opc(tx));
+      }
+      expect(await proximaPorReportar(mide, ind.id, { sql: tx })).toEqual({ periodo: "2026-T3", etiqueta: "tercer trimestre de 2026" });
+      expect((await reportarCon(tx, mide, await id("2026-T3"), { A: "5", B: "5" })).ok).toBe(true);
     }));
 });
 
@@ -433,12 +462,16 @@ describe("reportar", () => {
       const mide = await usuarioDePrueba(tx, { rol: "consulta" });
       await tx`INSERT INTO indicador_designados (indicador_id, usuario_id, funcion, creado_por) VALUES (${ind.id}, ${mide.usuarioId}, 'mide', ${admin.usuarioId})`;
       await sinPermiso(reportarCon(tx, admin, t3, { A: "4", B: "5" }));
+      // Si quien mide se desactiva, el Admin SGC vuelve a poder, con la marca.
+      await tx`UPDATE usuarios SET activo = false WHERE id = ${mide.usuarioId}`;
+      await reportarCon(tx, admin, t3, { A: "3", B: "5" });
+      expect((await eventos(tx, t3))[1].detalle).toMatchObject({ sinMedidor: true });
       // Designado, sí, y sin marca.
       await tx`INSERT INTO indicador_designados (indicador_id, usuario_id, funcion, creado_por) VALUES (${ind.id}, ${admin.usuarioId}, 'mide', ${admin.usuarioId})`;
       await reportarCon(tx, admin, t3, { A: "4", B: "5" });
       const lista = await eventos(tx, t3);
-      expect(lista).toHaveLength(2);
-      expect(lista[1].detalle.sinMedidor).toBeUndefined();
+      expect(lista).toHaveLength(3);
+      expect(lista[2].detalle.sinMedidor).toBeUndefined();
     }));
 
   it("corregir antes del cierre deja el antes y el después, y puede volver a pedir el análisis", () =>

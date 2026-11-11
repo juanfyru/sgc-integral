@@ -65,6 +65,14 @@ const CERRADA = "La medición está cerrada: pida al Administrador del SGC que l
 const RETIRADO = "El indicador está retirado: ya no admite reportes";
 const YA_REPORTADA = "La medición ya se reportó: corrija los datos y pulse «Reportar»";
 const FICHA_CAMBIO = "La ficha del indicador cambió: recargue la página";
+const OTRA_PERIODICIDAD = "Ese periodo ya no se mide: la ficha que lo rige es de otra periodicidad";
+
+/**
+ * Una medición abierta de la periodicidad vieja que quedó dentro del tramo de un cambio mayor de periodicidad (los meses
+ * de un trimestre que ahora rige una ficha trimestral) no se mide ni se calcula con una ficha que no es la suya.
+ */
+const esDeOtraPeriodicidad = (periodo: string, version: { periodicidad: Periodicidad | null }) =>
+  periodicidadDe(periodo) !== version.periodicidad;
 
 const texto = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
 const lleno = (v: unknown) => typeof v === "string" && v.trim() !== "";
@@ -330,6 +338,7 @@ export async function recalcularMedicion(
   const version = periodo ? versionQueRigeEntre(versiones, periodo, zona) : null;
   const ficha = version ? fichaDeCalculo(version.calculo) : null;
   if (!version || !ficha) throw new ErrorIndicador("El indicador no tiene una ficha aprobada que calcule este periodo");
+  if (esDeOtraPeriodicidad(m.periodo as string, version)) throw new ErrorIndicador(OTRA_PERIODICIDAD);
 
   const reglaTexto = await reglaDelPeriodo(tx, indicadorId, m.periodo as string, version);
   const regla = reglaDeTexto(reglaTexto);
@@ -455,6 +464,7 @@ async function contextoDeMedicion(sql: Cliente, sesion: SujetoVisibilidad, medic
   const periodo = periodoDe(m.periodo as string, zona);
   const version = periodo ? versionQueRigeEntre(await versionesAprobadas(sql, indicadorId), periodo, zona) : null;
   if (!periodo || !version) throw new ErrorIndicador(NO_EXISTE);
+  if (esDeOtraPeriodicidad(m.periodo as string, version)) throw new ErrorIndicador(OTRA_PERIODICIDAD);
   return {
     medicion: { ...m, id: Number(m.id) },
     indicador: { id: indicadorId, codigo: i.codigo as string, soporteObligatorio: i.soporte_obligatorio === true },
@@ -865,12 +875,18 @@ export async function proximaPorReportar(
   const [i] = await sql`SELECT estado FROM indicadores WHERE id = ${indicadorId}`;
   if (i?.estado !== "activo" || !(await puedeVerIndicador(indicadorId, sesion, { sql }))) return null;
   if (!(await puedeMedir(indicadorId, sesion, { sql })).puede) return null;
-  const [m] = await sql`SELECT periodo FROM mediciones
+  const filas = await sql`SELECT periodo FROM mediciones
     WHERE indicador_id = ${indicadorId} AND estado = 'abierta' AND NOT historica AND NOT no_aplica AND reportada_en IS NULL
-    ORDER BY desde LIMIT 1`;
-  if (!m) return null;
-  const clave = m.periodo as string;
-  return { periodo: clave, etiqueta: periodoDe(clave, zonaHoraria())?.etiqueta ?? clave };
+    ORDER BY desde`;
+  const zona = zonaHoraria();
+  const versiones = filas.length > 0 ? await versionesAprobadas(sql, indicadorId) : [];
+  for (const f of filas) {
+    const clave = f.periodo as string;
+    const periodo = periodoDe(clave, zona);
+    const version = periodo ? versionQueRigeEntre(versiones, periodo, zona) : null;
+    if (periodo && version && !esDeOtraPeriodicidad(clave, version)) return { periodo: clave, etiqueta: periodo.etiqueta };
+  }
+  return null;
 }
 
 export type FilaDelAnio = {
