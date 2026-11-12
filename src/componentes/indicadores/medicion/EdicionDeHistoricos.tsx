@@ -63,7 +63,7 @@ export function EdicionDeHistoricos({
       <input type="hidden" name="id" value={indicadorId} />
       <input type="hidden" name="volver" value={volver} />
       <p className="text-sm text-muted-foreground">
-        Los periodos que terminaron antes de aprobarse la ficha se registran aquí, varios a la vez. Quedan marcados «Registro histórico»; el análisis y el
+        Los periodos que terminaron antes de aprobarse la ficha se registran aquí, varios a la vez. Quedan marcados «Histórico»; el análisis y el
         soporte son opcionales. Deje en blanco los que no tenga. Una fila en blanco no cambia lo ya registrado. Si en un periodo no
         hubo casos, marque «No aplica» y escriba el motivo.
       </p>

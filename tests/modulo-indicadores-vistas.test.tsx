@@ -330,7 +330,8 @@ describe("las páginas", () => {
       const filtrada = await listaPagina({ semaforo: "critico", texto: ind.codigo, reporte: "nada" });
       expect(filtrada).toMatch(/<option value="critico" selected="">/);
       expect(filtrada).toContain(`value="${ind.codigo}"`);
-      expect(filtrada).toContain(ind.codigo);
+      // «reporte=nada» no filtra: la fila sigue (solo con el texto, que no depende del reloj).
+      expect(await listaPagina({ texto: ind.codigo, reporte: "nada" })).toContain(`href="/indicadores/${ind.codigo}"`);
       // Sin coincidencias, el estado vacío.
       expect(await listaPagina({ texto: "zz-no-hay-ninguno" })).toContain("Ningún indicador coincide");
     }));
@@ -348,7 +349,8 @@ describe("las páginas", () => {
       for (const t of ["Bien", "Atención", "Crítico", "Sin dato"]) expect(html).toContain(`>${t}<`);
       expect(html).toContain(`href="/indicadores/${ind.codigo}?vista=resultados&amp;anio=2026#periodo-2026-T1"`);
       expect(html).toContain('aria-label="primer trimestre: 100 %, Bien"');
-      expect(html).toContain('aria-label="Año 2026: 81,3 %, Atención"');
+      // Sin la comilla de cierre: desde 2027 el nombre añade «Acumulado parcial: falta el cuarto trimestre».
+      expect(html).toContain('aria-label="Año 2026: 81,3 %, Atención');
       await expect(matrizPagina({ anio: "abc" })).rejects.toThrow("NO_ENCONTRADA");
       await expect(matrizPagina({ anio: "2999" })).rejects.toThrow("NO_ENCONTRADA");
       // Un año sin nada medido: el estado vacío.
