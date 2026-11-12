@@ -12,7 +12,7 @@ vi.mock("@/app/acciones-indicadores", () => ({
   abrirCambioAccion: vi.fn(),
 }));
 
-import { campoDeMasOpciones, codigoAlCambiarDeProceso, FormularioFicha } from "@/componentes/indicadores/ficha/FormularioFicha";
+import { campoDeMasOpciones, campoDelError, codigoAlCambiarDeProceso, FormularioFicha } from "@/componentes/indicadores/ficha/FormularioFicha";
 import { EsquemaFicha, type DatosFicha } from "@/lib/esquemas/indicadores";
 import { unidadDeForma } from "@/lib/indicadores/formula/formas";
 import type { OpcionesFicha } from "@/lib/indicadores/tipos";
@@ -215,6 +215,37 @@ describe("FormularioFicha", () => {
     expect(unidadDeForma("tasa", 1000, unidades)).toBe(3);
     expect(unidadDeForma("tasa", 100000, unidades)).toBe(2);
     expect(unidadDeForma("porcentaje", 1000, [{ id: 2, sufijo: "" }])).toBeUndefined();
+  });
+
+  it("un error del servidor dice de qué campo es, también de los que están a la vista (ronda 1 de la Tarea 19, D-13)", () => {
+    expect(campoDelError("La fórmula usa la variable D, que no está declarada")).toBe("ficha-formula");
+    expect(campoDelError("La variable C no se usa en la fórmula")).toBe("ficha-formula");
+    expect(campoDelError("Falta cerrar un paréntesis")).toBe("ficha-formula");
+    expect(campoDelError("Ya existe un indicador con el código SGC-IND-01")).toBe("ficha-codigo");
+    expect(campoDelError("El nombre de cada variable no puede pasar de 150 caracteres")).toBe("ficha-variables");
+    expect(campoDelError("El nombre no puede pasar de 200 caracteres")).toBe("ficha-nombre");
+    expect(campoDelError("Con meta 0 en tendencia descendente, escriba los rangos del semáforo")).toBe("ficha-meta");
+    expect(campoDelError("El límite de crítico debe quedar por debajo de la meta")).toBe("ficha-limiteCritico");
+    // Los de «Más opciones» siguen yendo a su campo; lo que no es de un campo, a ninguno.
+    expect(campoDelError("Elija al menos un cargo responsable de medir")).toBe("ficha-cargo-medir");
+    expect(campoDelError("No se pudo guardar")).toBeNull();
+  });
+
+  it("el error va junto a su campo, lo describe y no se repite al pie", () => {
+    const mensaje = "La fórmula usa la variable D, que no está declarada";
+    const conFormula = renderToStaticMarkup(
+      <FormularioFicha opciones={OPCIONES} valores={{ forma: "libre", formula: "A + D" }} errorInicial={mensaje} />,
+    );
+    expect(conFormula).toMatch(/<textarea(?=[^>]*id="ficha-formula")(?=[^>]*aria-describedby="[^"]*ficha-formula-error)(?=[^>]*aria-invalid="true")[^>]*>/);
+    expect(conFormula).toContain(`<p id="ficha-formula-error" role="alert" class="text-xs text-estado-critico-texto">${mensaje}</p>`);
+    expect(conFormula.split(mensaje).length - 1).toBe(1);
+    // Un grupo de casillas también lo lleva, descrito.
+    const conCargos = renderToStaticMarkup(<FormularioFicha opciones={OPCIONES} errorInicial="Elija al menos un cargo responsable de medir" />);
+    expect(conCargos).toMatch(/<fieldset id="ficha-cargo-medir" tabindex="-1" aria-describedby="ficha-cargo-medir-error"/);
+    expect(conCargos).toContain('id="ficha-cargo-medir-error" role="alert"');
+    // Un error que no es de un campo (o de uno que no se pinta: la fórmula de una forma que no es libre) queda al pie.
+    const alPie = renderToStaticMarkup(<FormularioFicha opciones={OPCIONES} errorInicial={mensaje} />);
+    expect(alPie).toContain(`<p role="alert" class="text-sm text-estado-critico-texto">${mensaje}</p>`);
   });
 
   it("el ente sugiere los ya usados", () => {
