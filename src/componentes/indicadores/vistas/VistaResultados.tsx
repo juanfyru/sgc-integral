@@ -13,7 +13,8 @@ import type { ResultadosDelAnio, UltimoResultado } from "@/db/consultas/indicado
 import type { Soporte } from "@/db/consultas/indicadores/soportes";
 import type { EntradaDeHistorial } from "@/lib/indicadores/historial";
 import type { Periodicidad } from "@/lib/indicadores/tipos";
-import { ENLACE, FOCO, rutaDe } from "./comun";
+import { rutaDeIndicador } from "@/lib/indicadores/rutas";
+import { ENLACE, FOCO } from "./comun";
 
 /** El rango de la gráfica principal (spec §11): el año de la tabla, ese y el anterior, o todo desde el inicio de medición. */
 export type RangoDeGrafica = "anio" | "dos" | "todo";
@@ -47,7 +48,7 @@ const POR: Record<Periodicidad, string> = { mensual: "mes", bimestral: "bimestre
 const cifra = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 4 });
 
 const rutaDeResultados = (codigo: string, anio: number, rango: RangoDeGrafica = "anio") =>
-  `${rutaDe(codigo)}?vista=resultados&anio=${anio}${rango === "anio" ? "" : `&rango=${rango}`}`;
+  `${rutaDeIndicador(codigo)}?vista=resultados&anio=${anio}${rango === "anio" ? "" : `&rango=${rango}`}`;
 
 /** La meta de la gráfica: una línea si es la misma en todos los periodos, escalonada si cambia; sin meta, ninguna. */
 function metaDeGrafica(g: ResultadosDelAnio["grafica"]) {
@@ -217,7 +218,7 @@ export function VistaResultados(d: DatosDeResultados) {
               </Link>
             ) : null}
             {editando ? null : (
-              <form method="get" action={rutaDe(codigo)} className="flex items-end gap-2">
+              <form method="get" action={rutaDeIndicador(codigo)} className="flex items-end gap-2">
                 <input type="hidden" name="vista" value="resultados" />
                 {d.rango === "anio" ? null : <input type="hidden" name="rango" value={d.rango} />}
                 <div className="flex flex-col gap-1">

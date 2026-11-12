@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Gauge, Plus } from "lucide-react";
 import { FiltrosIndicadores } from "@/componentes/indicadores/FiltrosIndicadores";
-import { ListaIndicadores } from "@/componentes/indicadores/ListaIndicadores";
+import { BarraDeLista, ListaIndicadores } from "@/componentes/indicadores/ListaIndicadores";
 import { apruebaFichas, PestanasIndicadores, pestanasVisibles } from "@/componentes/indicadores/PestanasIndicadores";
 import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
@@ -35,6 +35,8 @@ export default async function PaginaIndicadores({ searchParams }: { searchParams
     aprueba ? fichasPorAprobar(sesion) : [],
   ]);
   const filtrada = Object.keys(filtro).length > 0;
+  // La barra se cuenta antes del filtro de semáforo: si ese filtro deja cero filas, la barra sigue diciendo lo visible.
+  const visibles = resumen.bien + resumen.atencion + resumen.critico + resumen.sinDato;
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -54,12 +56,15 @@ export default async function PaginaIndicadores({ searchParams }: { searchParams
       <FiltrosIndicadores filtro={filtro} opciones={opciones} />
       {filas.length === 0 ? (
         filtrada ? (
-          <EstadoVacio
-            icono={Gauge}
-            titulo="Ningún indicador coincide"
-            texto="Cambie o quite los filtros para ver los indicadores que usted puede ver."
-            accion={{ href: "/indicadores", etiqueta: "Quitar los filtros" }}
-          />
+          <>
+            {visibles > 0 ? <BarraDeLista resumen={resumen} /> : null}
+            <EstadoVacio
+              icono={Gauge}
+              titulo="Ningún indicador coincide"
+              texto="Cambie o quite los filtros para ver los indicadores que usted puede ver."
+              accion={{ href: "/indicadores", etiqueta: "Quitar los filtros" }}
+            />
+          </>
         ) : (
           <EstadoVacio
             icono={Gauge}

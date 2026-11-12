@@ -17,7 +17,10 @@ const ALTO_PISTA = 160;
 const ANCHO_MINIMO = 540;
 /** Con muchos periodos el lienzo crece (y se desplaza en pantallas angostas) antes que apretar los valores. */
 const FRANJA_MINIMA = 34;
-const MARGEN = { izq: 34, arriba: 26 };
+/** La escala va en su propio lienzo, fuera de lo que se desplaza: el de los tubos solo deja un respiro a la izquierda. */
+const MARGEN = { izq: 6, arriba: 26 };
+/** El ancho mínimo del lienzo de la escala; crece con el rótulo más largo. */
+const EJE_MINIMO = 30;
 /** Debajo van el rótulo y el valor; si la serie abarca más de un año, también el año. */
 const ABAJO = 36;
 const ABAJO_CON_ANIOS = 50;
@@ -91,8 +94,10 @@ function lecturaDeReferencias(
  * (escalonada si cambia entre periodos), el límite de crítico punteado y, en tendencia constante, la franja del rango.
  * Sin meta, los tubos van en neutro y no hay líneas. Con más de un año, el eje marca dónde empieza cada uno. Cada franja
  * se enfoca con el teclado y dice su valor y su estado; la tarjeta (`TarjetaDeTubo`) lo repite al pasar el cursor. El
- * nombre de la figura y la tabla equivalente (`sr-only`) dicen además la meta y el límite. Al imprimir, la hoja de
- * estilos pone el relleno sólido y escribe el valor y el estado sobre cada columna.
+ * nombre de la figura y la tabla equivalente (`sr-only`) dicen además la meta y el límite. La escala va en su propio
+ * lienzo, a la izquierda y fuera de lo que se desplaza: en un teléfono, o con muchos periodos, siempre se ve. Bajo un
+ * periodo que aún no llega se escribe «—». Al imprimir, la hoja de estilos pone el relleno sólido y escribe el valor y el
+ * estado sobre cada columna.
  */
 export function GraficoTubos({
   serie,
@@ -135,6 +140,9 @@ export function GraficoTubos({
   const anchoMeta = etiquetaMeta ? anchoDeEtiqueta(etiquetaMeta, 9.5) : 0;
   const anchoLimite = limite ? anchoDeEtiqueta(limite.texto, 9) : 0;
   const der = Math.max(MARGEN_DERECHO_MINIMO, Math.max(anchoMeta, anchoLimite) + 12);
+  // Los rótulos de la escala, el de arriba con su unidad, en un lienzo angosto que no se desplaza (siempre se ven).
+  const rotulos = e.marcas.map((m, i) => ({ m, texto: i === e.marcas.length - 1 ? conCifra(m) : cifra.format(m) }));
+  const eje = Math.max(EJE_MINIMO, ...rotulos.map((r) => Math.ceil(r.texto.length * 9.5 * 0.56) + 10));
   const anios = cambiosDeAnio(serie.map((p) => p.clave));
   const abajo = anios.length > 0 ? ABAJO_CON_ANIOS : ABAJO;
   const g: Geometria = {
@@ -159,6 +167,8 @@ export function GraficoTubos({
   const debajo = (p: PuntoDeSerie): string => {
     if (p.estado === "sin-dato") return "s. d.";
     if (p.estado === "no-aplica") return "n. a.";
+    // Lo que no ha llegado lleva «—»: un texto largo se encima con el de la franja vecina. El nombre lo dice la zona.
+    if (p.estado === "futuro") return "—";
     if (p.valor === null || franja >= FRANJA_CON_UNIDAD || !p.texto.endsWith(unidad.sufijo)) return p.texto;
     return p.texto.slice(0, p.texto.length - unidad.sufijo.length);
   };
@@ -180,144 +190,152 @@ export function GraficoTubos({
   return (
     <figure className="flex min-w-0 flex-col">
       <TarjetaDeTubo>
-        <div className="tubo-desplazable overflow-x-auto [direction:rtl]">
-          <svg viewBox={`0 0 ${g.ancho} ${g.alto}`} className="tubo-lienzo block h-auto w-full [direction:ltr]" style={{ minWidth: g.ancho }}>
-            <DefinicionesDeTubo id={id} clases={clases} pistas={tubos.map((t) => ({ x: t.x, y: tope, ancho: t.ancho, alto: base - tope }))} />
-            <g role="img" aria-label={lectura}>
-              {e.marcas.map((m, i) => (
-                <g key={m}>
-                  <line x1={MARGEN.izq} x2={derecha} y1={y(m)} y2={y(m)} className="stroke-border" strokeWidth={1} />
-                  <text x={MARGEN.izq - 6} y={y(m) + 3.5} textAnchor="end" fontSize={9.5} className="fill-muted-foreground">
-                    {i === e.marcas.length - 1 ? conCifra(m) : cifra.format(m)}
-                  </text>
-                </g>
-              ))}
-              {rango ? (
-                <rect
-                  className="tubo-franja fill-estado-bien-fondo"
-                  x={MARGEN.izq}
-                  y={y(rango.max)}
-                  width={derecha - MARGEN.izq}
-                  height={Math.max(y(rango.min) - y(rango.max), 0)}
-                />
-              ) : null}
-              {tubos.map((t, i) => {
-                const p = serie[i];
-                return (
-                  <TuboSvg
-                    key={p.clave}
-                    id={id}
-                    indice={i}
-                    tubo={t}
-                    tope={tope}
-                    base={base}
-                    futuro={p.estado === "futuro"}
-                    clase={p.valor === null ? null : claseDeRelleno(p.estado)}
-                    negativo={p.valor !== null && p.valor < 0}
-                  />
-                );
-              })}
-              {anios.slice(1).map((a) => (
-                <line
-                  key={a.anio}
-                  className="tubo-anio stroke-border"
-                  x1={MARGEN.izq + a.indice * franja}
-                  x2={MARGEN.izq + a.indice * franja}
-                  y1={tope - 4}
-                  y2={g.alto - 2}
-                  strokeWidth={1}
-                  strokeDasharray="2 2"
-                />
-              ))}
-              <Lineas meta={meta} y={y} izq={MARGEN.izq} derecha={derecha} franja={franja} limite={limite} />
-              {etiquetaMeta !== null && yMeta !== null ? (
-                <g>
-                  <rect x={derecha + 6} y={yMeta - 9} width={anchoMeta} height={18} rx={9} className="fill-foreground" />
-                  <text x={derecha + 6 + anchoMeta / 2} y={yMeta + 3.5} textAnchor="middle" fontSize={9.5} fontWeight={600} className="fill-card">
-                    {etiquetaMeta}
-                  </text>
-                </g>
-              ) : null}
-              {limite && yEtiquetaLimite !== null ? (
-                <g>
+        {/*
+          Dos columnas en la proporción de sus lienzos: cuando caben, los dos se agrandan por igual y la escala sigue a la
+          misma altura que los tubos; cuando no, la escala queda a 1:1 y lo de la derecha se desplaza a 1:1.
+        */}
+        <div className="grid items-start" style={{ gridTemplateColumns: `minmax(${eje}px, ${eje}fr) minmax(0, ${g.ancho}fr)` }}>
+          <svg viewBox={`0 0 ${eje} ${g.alto}`} aria-hidden="true" className="tubo-eje block h-auto w-full">
+            {rotulos.map((r) => (
+              <text key={r.m} x={eje - 4} y={y(r.m) + 3.5} textAnchor="end" fontSize={9.5} className="fill-muted-foreground">
+                {r.texto}
+              </text>
+            ))}
+          </svg>
+          <div className="tubo-desplazable min-w-0 overflow-x-auto [direction:rtl]">
+            <svg viewBox={`0 0 ${g.ancho} ${g.alto}`} className="tubo-lienzo block h-auto w-full [direction:ltr]" style={{ minWidth: g.ancho }}>
+              <DefinicionesDeTubo id={id} clases={clases} pistas={tubos.map((t) => ({ x: t.x, y: tope, ancho: t.ancho, alto: base - tope }))} />
+              <g role="img" aria-label={lectura}>
+                {e.marcas.map((m) => (
+                  <line key={m} data-marca={m} x1={0} x2={derecha} y1={y(m)} y2={y(m)} className="stroke-border" strokeWidth={1} />
+                ))}
+                {rango ? (
                   <rect
-                    x={derecha + 6}
-                    y={yEtiquetaLimite - 9}
-                    width={anchoLimite}
-                    height={18}
-                    rx={9}
-                    className="fill-card stroke-muted-foreground"
-                    strokeWidth={1}
+                    className="tubo-franja fill-estado-bien-fondo"
+                    x={MARGEN.izq}
+                    y={y(rango.max)}
+                    width={derecha - MARGEN.izq}
+                    height={Math.max(y(rango.min) - y(rango.max), 0)}
                   />
-                  <text x={derecha + 6 + anchoLimite / 2} y={yEtiquetaLimite + 3.5} textAnchor="middle" fontSize={9} className="fill-foreground">
-                    {limite.texto}
-                  </text>
-                </g>
-              ) : null}
-              {tubos.map((t, i) => {
-                const p = serie[i];
-                const valor = debajo(p);
-                return (
-                  <g key={p.clave}>
-                    <text x={t.centro} y={base + 15} textAnchor="middle" fontSize={9.5} className="fill-muted-foreground">
-                      {rotuloCorto(p.clave, p.etiqueta)}
-                    </text>
-                    {valor ? (
-                      <text
-                        x={t.centro}
-                        y={base + 29}
-                        textAnchor="middle"
-                        fontSize={10}
-                        className={p.valor === null ? "fill-muted-foreground" : "fill-foreground font-semibold"}
-                      >
-                        {valor}
-                      </text>
-                    ) : null}
-                    <text className="tubo-impreso" x={t.centro} y={tope - 13} textAnchor="middle" fontSize={7.5}>
-                      {p.valor !== null ? <tspan x={t.centro}>{p.texto}</tspan> : null}
-                      <tspan x={t.centro} dy={9}>
-                        {p.nombreEstado}
-                      </tspan>
+                ) : null}
+                {tubos.map((t, i) => {
+                  const p = serie[i];
+                  return (
+                    <TuboSvg
+                      key={p.clave}
+                      id={id}
+                      indice={i}
+                      tubo={t}
+                      tope={tope}
+                      base={base}
+                      futuro={p.estado === "futuro"}
+                      clase={p.valor === null ? null : claseDeRelleno(p.estado)}
+                      negativo={p.valor !== null && p.valor < 0}
+                    />
+                  );
+                })}
+                {anios.slice(1).map((a) => (
+                  <line
+                    key={a.anio}
+                    className="tubo-anio stroke-border"
+                    x1={MARGEN.izq + a.indice * franja}
+                    x2={MARGEN.izq + a.indice * franja}
+                    y1={tope - 4}
+                    y2={g.alto - 2}
+                    strokeWidth={1}
+                    strokeDasharray="2 2"
+                  />
+                ))}
+                <Lineas meta={meta} y={y} izq={MARGEN.izq} derecha={derecha} franja={franja} limite={limite} />
+                {etiquetaMeta !== null && yMeta !== null ? (
+                  <g>
+                    <rect x={derecha + 6} y={yMeta - 9} width={anchoMeta} height={18} rx={9} className="fill-foreground" />
+                    <text x={derecha + 6 + anchoMeta / 2} y={yMeta + 3.5} textAnchor="middle" fontSize={9.5} fontWeight={600} className="fill-card">
+                      {etiquetaMeta}
                     </text>
                   </g>
-                );
-              })}
-              {rotulosDeAnio.map((r) => (
-                <text
-                  key={r.clave}
-                  className="tubo-anio fill-muted-foreground font-semibold"
-                  x={r.x}
-                  y={base + 43}
-                  textAnchor={r.anclaje}
-                  fontSize={9.5}
-                >
-                  {r.anio}
-                </text>
-              ))}
-            </g>
-            <g className="tubo-zonas">
-              {serie.map((p, i) => (
-                <rect
-                  key={p.clave}
-                  className="tubo-zona"
-                  x={MARGEN.izq + i * franja}
-                  y={tope}
-                  width={franja}
-                  height={base - tope}
-                  rx={4}
-                  tabIndex={0}
-                  role="img"
-                  aria-label={p.valor === null ? `${p.etiqueta}: ${p.nombreEstado}` : `${p.etiqueta}: ${p.texto}, ${p.nombreEstado}`}
-                  data-tubo={i}
-                  data-periodo={p.etiqueta}
-                  data-valor={p.valor === null ? "" : p.texto}
-                  data-estado={p.estado}
-                  data-nombre={p.nombreEstado}
-                  data-meta={metaDe(i)}
-                />
-              ))}
-            </g>
-          </svg>
+                ) : null}
+                {limite && yEtiquetaLimite !== null ? (
+                  <g>
+                    <rect
+                      x={derecha + 6}
+                      y={yEtiquetaLimite - 9}
+                      width={anchoLimite}
+                      height={18}
+                      rx={9}
+                      className="fill-card stroke-muted-foreground"
+                      strokeWidth={1}
+                    />
+                    <text x={derecha + 6 + anchoLimite / 2} y={yEtiquetaLimite + 3.5} textAnchor="middle" fontSize={9} className="fill-foreground">
+                      {limite.texto}
+                    </text>
+                  </g>
+                ) : null}
+                {tubos.map((t, i) => {
+                  const p = serie[i];
+                  const valor = debajo(p);
+                  return (
+                    <g key={p.clave}>
+                      <text x={t.centro} y={base + 15} textAnchor="middle" fontSize={9.5} className="fill-muted-foreground">
+                        {rotuloCorto(p.clave, p.etiqueta)}
+                      </text>
+                      {valor ? (
+                        <text
+                          x={t.centro}
+                          y={base + 29}
+                          textAnchor="middle"
+                          fontSize={10}
+                          className={p.valor === null ? "fill-muted-foreground" : "fill-foreground font-semibold"}
+                        >
+                          {valor}
+                        </text>
+                      ) : null}
+                      <text className="tubo-impreso" x={t.centro} y={tope - 13} textAnchor="middle" fontSize={7.5}>
+                        {p.valor !== null ? <tspan x={t.centro}>{p.texto}</tspan> : null}
+                        <tspan x={t.centro} dy={9}>
+                          {p.nombreEstado}
+                        </tspan>
+                      </text>
+                    </g>
+                  );
+                })}
+                {rotulosDeAnio.map((r) => (
+                  <text
+                    key={r.clave}
+                    className="tubo-anio fill-muted-foreground font-semibold"
+                    x={r.x}
+                    y={base + 43}
+                    textAnchor={r.anclaje}
+                    fontSize={9.5}
+                  >
+                    {r.anio}
+                  </text>
+                ))}
+              </g>
+              <g className="tubo-zonas">
+                {serie.map((p, i) => (
+                  <rect
+                    key={p.clave}
+                    className="tubo-zona"
+                    x={MARGEN.izq + i * franja}
+                    y={tope}
+                    width={franja}
+                    height={base - tope}
+                    rx={4}
+                    tabIndex={0}
+                    role="img"
+                    aria-label={p.valor === null ? `${p.etiqueta}: ${p.nombreEstado}` : `${p.etiqueta}: ${p.texto}, ${p.nombreEstado}`}
+                    data-tubo={i}
+                    data-periodo={p.etiqueta}
+                    data-valor={p.valor === null ? "" : p.texto}
+                    data-estado={p.estado}
+                    data-nombre={p.nombreEstado}
+                    data-meta={metaDe(i)}
+                  />
+                ))}
+              </g>
+            </svg>
+          </div>
         </div>
       </TarjetaDeTubo>
       <figcaption className="sr-only">

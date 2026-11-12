@@ -20,7 +20,8 @@ export function MiniTubos({ titulo, serie }: { titulo: string; serie: PuntoDeSer
   const tubos = calcularTubos(serie, g, e);
   const base = ALTO - MARGEN.abajo;
   const tope = MARGEN.arriba;
-  const sobre = (p: PuntoDeSerie) => (p.estado === "sin-dato" ? "s. d." : p.estado === "no-aplica" ? "n. a." : p.texto);
+  // Lo que no ha llegado lleva «—» (cabe en una franja angosta); su nombre, «Por venir», lo dice la tabla equivalente.
+  const sobre = (p: PuntoDeSerie) => (p.estado === "sin-dato" ? "s. d." : p.estado === "no-aplica" ? "n. a." : p.estado === "futuro" ? "—" : p.texto);
 
   return (
     <figure className="flex min-w-0 flex-col">

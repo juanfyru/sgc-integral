@@ -99,6 +99,9 @@ export function fraseDeVariacion(actual: Fraccion, anterior: { valor: Fraccion; 
   return `El resultado ${verbo} ${[n, palabra].filter(Boolean).join(" ")} frente ${frente}. ¿Los datos son correctos?`;
 }
 
+/** La flecha de un cambio (spec §8.3): decorativa, porque el texto ya dice hacia dónde fue. */
+export const FLECHA_DE_CAMBIO: Record<"sube" | "baja" | "igual", string> = { sube: "▲", baja: "▼", igual: "=" };
+
 type Referencia = { valor: Fraccion; etiqueta: string };
 
 /**

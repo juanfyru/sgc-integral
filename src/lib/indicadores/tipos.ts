@@ -124,6 +124,21 @@ export type OpcionesFicha = {
   periodoEnCurso: Record<Periodicidad, string>;
 };
 
+/** El estado de un periodo en las gráficas (spec §11): el del semáforo, o por qué no tiene uno. */
+export type EstadoDePunto = "bien" | "atencion" | "critico" | "sin-meta" | "sin-dato" | "no-aplica" | "futuro";
+
+/** Un periodo de una gráfica: lo arman las lecturas (`resultadosDelAnio`) y lo dibujan los componentes de tubos. */
+export type PuntoDeSerie = {
+  clave: string;
+  /** El periodo en palabras («marzo», «tercer trimestre de 2026»): lo leen la tabla, el foco y la tarjeta. */
+  etiqueta: string;
+  valor: number | null;
+  /** El valor tal como se muestra, con su unidad («86 %»). */
+  texto: string;
+  estado: EstadoDePunto;
+  nombreEstado: string;
+};
+
 export const ESTADOS_MEDICION = ["abierta", "reportada", "cerrada"] as const;
 export type EstadoMedicion = (typeof ESTADOS_MEDICION)[number];
 

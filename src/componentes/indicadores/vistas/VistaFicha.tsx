@@ -3,7 +3,8 @@ import { FichaTecnica } from "@/componentes/indicadores/ficha/FichaTecnica";
 import { AprobarFicha, DevolverFicha, type FilaPorAprobar } from "@/componentes/indicadores/ficha/ListaPorAprobar";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { desdePeriodo, enlaceDeVersion, type FichaLeida, type OperacionLeida, type VersionVisible } from "@/db/consultas/indicadores/aprobacion";
-import { ENLACE, Recuadro, rutaDe } from "./comun";
+import { rutaDeEdicion, rutaDeIndicador } from "@/lib/indicadores/rutas";
+import { ENLACE, Recuadro } from "./comun";
 
 export const ESTADO_VERSION: Record<VersionVisible["estado"], string> = {
   borrador: "en borrador",
@@ -11,9 +12,6 @@ export const ESTADO_VERSION: Record<VersionVisible["estado"], string> = {
   aprobada: "aprobada",
   descartada: "descartada",
 };
-
-/** La página de edición de la ficha (como `rutaDeEdicion` de las páginas). */
-const rutaDeEdicion = (codigo: string) => `${rutaDe(codigo)}/editar`;
 
 export type DatosDeFicha = {
   ficha: FichaLeida;
@@ -95,7 +93,7 @@ function EstadoDeLaVersion({ ficha, codigo, vigente, enCurso, administra, porApr
       {ficha.rigeDesde && ficha.tipoCambio === "mayor" ? <p>{`Regirá ${desdePeriodo(ficha.rigeDesde)}.`}</p> : null}
       {ficha.aprueba && porAprobar ? (
         <div className="flex flex-wrap items-start gap-2">
-          <AprobarFicha ficha={porAprobar} volver={rutaDe(codigo)} pideCodigo={pideCodigo} />
+          <AprobarFicha ficha={porAprobar} volver={rutaDeIndicador(codigo)} pideCodigo={pideCodigo} />
           <DevolverFicha versionId={ficha.versionId} codigo={codigo} />
         </div>
       ) : (

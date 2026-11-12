@@ -1,10 +1,9 @@
 import Link from "next/link";
+import { rutaDeIndicador } from "@/lib/indicadores/rutas";
 
 export const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 export const ENLACE = `rounded-sm text-marca underline-offset-2 hover:underline ${FOCO}`;
 
-/** La página de un indicador (como `rutaDeIndicador` de las páginas). */
-export const rutaDe = (codigo: string) => `/indicadores/${encodeURIComponent(codigo)}`;
 
 /** Un aviso con el borde del color del módulo: el estado de una versión, la baja de un indicador. */
 export function Recuadro({ children }: { children: React.ReactNode }) {
@@ -41,7 +40,7 @@ export function PestanasDeIndicador({
         {pestanas.map((p) => (
           <li key={p.clave} className="-mb-px">
             <Link
-              href={`${rutaDe(codigo)}?vista=${p.clave}`}
+              href={`${rutaDeIndicador(codigo)}?vista=${p.clave}`}
               aria-current={p.clave === activa ? "page" : undefined}
               className={`inline-block rounded-t-md border-b-2 px-3 py-2 text-sm ${FOCO} ${
                 p.clave === activa ? "border-mod-indicadores font-semibold text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"

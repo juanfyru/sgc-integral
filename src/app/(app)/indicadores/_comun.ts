@@ -36,8 +36,5 @@ export async function exigirFichaDeIndicador(
   return { indicador, ve, versiones };
 }
 
-/** La página de un indicador. */
-export const rutaDeIndicador = (codigo: string) => `/indicadores/${encodeURIComponent(codigo)}`;
-
-/** La página de edición de la ficha de un indicador. */
-export const rutaDeEdicion = (codigo: string) => `/indicadores/${encodeURIComponent(codigo)}/editar`;
+/** Las rutas del módulo viven en `src/lib/indicadores/rutas.ts`; las páginas y las acciones las toman de aquí. */
+export { rutaDeEdicion, rutaDeIndicador } from "@/lib/indicadores/rutas";

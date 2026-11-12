@@ -5,13 +5,14 @@ import { celda, celdaNumerica, TablaDatos } from "@/componentes/ui/TablaDatos";
 import { Tendencia } from "@/componentes/ui/Tendencia";
 import { rotuloCorto, type EstadoDePunto } from "@/componentes/ui/geometria-tubos";
 import type { FilaDeLista, ResumenDeLista } from "@/db/consultas/indicadores/lista";
+import { rutaDeIndicador } from "@/lib/indicadores/rutas";
+import { FLECHA_DE_CAMBIO } from "@/lib/indicadores/textos";
 import { ETIQUETA_PERIODICIDAD } from "@/lib/indicadores/tipos";
 import { cuenta } from "@/lib/plural";
 import { InsigniaSemaforo } from "./InsigniaSemaforo";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 const ENLACE = `rounded-sm text-marca underline-offset-2 hover:underline ${FOCO}`;
-const FLECHA = { sube: "▲", baja: "▼", igual: "=" } as const;
 
 const COLUMNAS = [
   { clave: "codigo", etiqueta: "Código" },
@@ -60,22 +61,41 @@ function Periodo({ f }: { f: FilaDeLista }) {
   );
 }
 
-/** La tendencia en miniatura y, escrita, hacia dónde fue el último valor y si eso es mejorar (spec §8.3 y §11). */
+/**
+ * La tendencia en miniatura (con dos periodos con dato o más; si no, «un solo periodo» o «—») y, escrita siempre que haya
+ * comparación, hacia dónde fue el último valor y si eso es mejorar (spec §8.3 y §11): el periodo anterior medido puede
+ * quedar fuera de los seis de la miniatura.
+ */
 function TendenciaDeFila({ f }: { f: FilaDeLista }) {
   const conDato = f.tendencia.filter((v) => v !== null).length;
-  if (conDato < 2) return <span className="text-muted-foreground">{conDato === 0 ? "—" : "un solo periodo"}</span>;
   const final: EstadoDePunto = f.semaforo ?? (f.noAplica ? "no-aplica" : f.resultado ? "sin-meta" : "sin-dato");
   return (
-    <span className="flex items-center gap-1.5 whitespace-nowrap">
-      <Tendencia valores={f.tendencia} estadoFinal={final} descripcion={`Tendencia de los últimos ${f.tendencia.length} periodos`} />
+    <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 whitespace-nowrap">
+      {conDato >= 2 ? (
+        <Tendencia valores={f.tendencia} estadoFinal={final} descripcion={`Tendencia de los últimos ${f.tendencia.length} periodos`} />
+      ) : (
+        <span className="text-muted-foreground">{conDato === 0 ? "—" : "un solo periodo"}</span>
+      )}
       {f.flecha ? (
         <span className="text-xs">
-          <span aria-hidden="true">{FLECHA[f.flecha]} </span>
+          <span aria-hidden="true">{FLECHA_DE_CAMBIO[f.flecha]} </span>
           {f.flecha}
           {f.mejora === null ? null : f.mejora ? " · mejora" : " · empeora"}
         </span>
       ) : null}
     </span>
+  );
+}
+
+/** La barra de estados de la lista, con su lectura en texto, y los reportes vencidos. */
+export function BarraDeLista({ resumen }: { resumen: ResumenDeLista }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <BarraEstados bien={resumen.bien} atencion={resumen.atencion} critico={resumen.critico} sinDato={resumen.sinDato} />
+      <p className="text-sm text-muted-foreground">
+        {resumen.vencidos === 0 ? "Ningún reporte vencido." : `${cuenta(resumen.vencidos, "reporte vencido", "reportes vencidos")}.`}
+      </p>
+    </div>
   );
 }
 
@@ -88,19 +108,14 @@ function TendenciaDeFila({ f }: { f: FilaDeLista }) {
 export function ListaIndicadores({ filas, resumen }: { filas: FilaDeLista[]; resumen: ResumenDeLista }) {
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <div className="flex min-w-0 flex-col gap-1">
-        <BarraEstados bien={resumen.bien} atencion={resumen.atencion} critico={resumen.critico} sinDato={resumen.sinDato} />
-        <p className="text-sm text-muted-foreground">
-          {resumen.vencidos === 0 ? "Ningún reporte vencido." : `${cuenta(resumen.vencidos, "reporte vencido", "reportes vencidos")}.`}
-        </p>
-      </div>
+      <BarraDeLista resumen={resumen} />
       <TablaDatos titulo="Indicadores" columnas={COLUMNAS} filas={filas.length} vacio="Sin indicadores.">
         {filas.map((f) => (
           <tr key={f.id}>
             <td className={`${celda} whitespace-nowrap font-mono text-xs`}>{f.codigo}</td>
             <td className={`${celda} min-w-56`}>
               <span className="flex flex-col gap-1">
-                <Link href={`/indicadores/${encodeURIComponent(f.codigo)}`} className={`break-words ${ENLACE}`}>
+                <Link href={rutaDeIndicador(f.codigo)} className={`break-words ${ENLACE}`}>
                   {f.nombre || "(sin nombre)"}
                 </Link>
                 <span className="text-xs text-muted-foreground">

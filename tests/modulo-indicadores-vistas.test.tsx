@@ -63,11 +63,12 @@ import PaginaMatriz from "@/app/(app)/indicadores/matriz/page";
 import PaginaIndicadores from "@/app/(app)/indicadores/page";
 import { InsigniaSemaforo } from "@/componentes/indicadores/InsigniaSemaforo";
 import { ListaIndicadores } from "@/componentes/indicadores/ListaIndicadores";
-import { MatrizDelAnio } from "@/componentes/indicadores/MatrizDelAnio";
+import { LeyendaDeMatriz, MatrizDelAnio } from "@/componentes/indicadores/MatrizDelAnio";
+import { columnasDeVariables, TablaDelAnio } from "@/componentes/indicadores/medicion/TablaDelAnio";
 import { ResultadoPrincipal } from "@/componentes/indicadores/ResultadoPrincipal";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import type { UltimoResultado } from "@/db/consultas/indicadores/lectura";
+import type { FilaDelAnio, UltimoResultado } from "@/db/consultas/indicadores/lectura";
 import type { FilaDeLista } from "@/db/consultas/indicadores/lista";
 import type { CeldaDeMatriz, MatrizLeida } from "@/db/consultas/indicadores/matriz";
 import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
@@ -213,10 +214,119 @@ describe("los componentes", () => {
     // Sin enlace, el nombre va en texto para lectores de pantalla.
     expect(html).toContain('<span class="sr-only">cuarto trimestre: por venir</span>');
     expect(html).toContain('href="/indicadores/SGC-IND-01?vista=resultados&amp;anio=2026#periodo-2026-T1"');
-    // Agrupada por proceso, con el indicador como encabezado de su fila.
-    expect(html).toMatch(/<th[^>]*scope="colgroup"[^>]*>Sistema de Gestión de Calidad<\/th>/);
+    // Agrupada por proceso (el encabezado del grupo de filas), con el indicador como encabezado de su fila.
+    expect(html).toMatch(/<th[^>]*scope="rowgroup"[^>]*>Sistema de Gestión de Calidad<\/th>/);
+    expect(html).not.toContain('scope="colgroup"');
     expect(html).toMatch(/<th[^>]*scope="row"/);
     expect(html).toMatch(/role="region" aria-label="Matriz de 2026" tabindex="0"/);
+    // El nombre lo dice el enlace: la celda no lo repite en un `title`.
+    expect(html).not.toMatch(/<td[^>]*\stitle=/);
+  });
+
+  it("MatrizDelAnio: Bien, Atención y Crítico se distinguen también por su forma, y la leyenda la repite", () => {
+    const fila = (codigo: string, celdas: CeldaDeMatriz[]): MatrizLeida["procesos"][number]["filas"][number] => ({
+      codigo,
+      nombre: codigo,
+      celdas,
+      anio: celda(1, 12, { texto: "s. d.", estado: "sin-dato", nombre: "Año 2026: sin dato", enlace: `/indicadores/${codigo}?vista=resultados&anio=2026` }),
+    });
+    const enlace = "/indicadores/X?vista=resultados&anio=2026#periodo-2026";
+    const procesos: MatrizLeida["procesos"] = [
+      {
+        id: 1,
+        nombre: "Gestión",
+        filas: [
+          fila("A-1", [
+            celda(1, 3, { texto: "91,6 %", estado: "bien", nombre: "primer trimestre: 91,6 %, Bien", enlace }),
+            celda(4, 6, { texto: "81,4 %", estado: "atencion", nombre: "segundo trimestre: 81,4 %, Atención", enlace }),
+            celda(7, 9, { texto: "60 %", estado: "critico", nombre: "tercer trimestre: 60 %, Crítico" }),
+            celda(10, 12, { texto: "12", estado: "sin-meta", nombre: "cuarto trimestre: 12, sin meta", enlace }),
+          ]),
+        ],
+      },
+    ];
+    const html = renderToStaticMarkup(<MatrizDelAnio anio={2026} procesos={procesos} />);
+    // Cada celda con valor y estado lleva su glifo, decorativo; sin meta no lleva ninguno.
+    for (const estado of ["bien", "atencion", "critico"]) {
+      expect(html).toMatch(new RegExp(`<svg(?=[^>]*aria-hidden="true")(?=[^>]*data-glifo="${estado}")[^>]*>`));
+      expect(html.match(new RegExp(`data-glifo="${estado}"`, "g"))).toHaveLength(1);
+    }
+    expect(html).not.toContain('data-glifo="sin-meta"');
+    // La celda «Año» sin acumulado es un dato que falta, no un periodo por venir.
+    expect(html).toContain('aria-label="Año 2026: sin dato"');
+    expect(html).toMatch(/aria-label="Año 2026: sin dato"[^>]*>s\. d\.</);
+
+    const leyenda = renderToStaticMarkup(<LeyendaDeMatriz />);
+    for (const [estado, texto] of [["bien", "Bien"], ["atencion", "Atención"], ["critico", "Crítico"]]) {
+      expect(leyenda).toMatch(new RegExp(`data-glifo="${estado}"[^]*?<span>${texto}</span>`));
+    }
+    expect(leyenda).toContain("<span>Por venir</span>");
+  });
+
+  it("la lista escribe la flecha aunque la miniatura tenga un solo periodo", () => {
+    const html = renderToStaticMarkup(
+      <ListaIndicadores
+        filas={[{ ...FILA, tendencia: [null, null, null, null, null, 87], semaforo: "bien", resultado: "87 %", flecha: "sube", mejora: true }]}
+        resumen={{ bien: 1, atencion: 0, critico: 0, sinDato: 0, vencidos: 0 }}
+      />,
+    );
+    expect(html).toContain("un solo periodo");
+    expect(html).not.toContain('aria-label="Tendencia de');
+    expect(html).toContain("sube · mejora");
+  });
+
+  it("la tabla del año: las columnas son la unión de las letras y una celda dice el nombre que tiene en su ficha si es otro", () => {
+    const fila = (periodo: string, valores: FilaDelAnio["valores"]): FilaDelAnio => ({
+      periodo,
+      etiqueta: periodo,
+      medicionId: null,
+      estado: "cerrada",
+      vencida: false,
+      vence: null,
+      historica: false,
+      noAplica: false,
+      motivo: null,
+      valores,
+      resultado: "80 %",
+      semaforo: "atencion",
+      meta: "≥ 90 %",
+      cumple: false,
+      frase: null,
+      requiereAccion: false,
+      repetido: false,
+      corregida: false,
+      metaTardia: false,
+      sinAnalisis: false,
+      analisis: null,
+      causa: null,
+      accionPropuesta: null,
+    });
+    const filas = [
+      fila("2026-05", [
+        { letra: "A", nombre: "Atenciones a tiempo", valor: "8" },
+        { letra: "B", nombre: "Atenciones", valor: "10" },
+      ]),
+      fila("2026-07", [
+        { letra: "A", nombre: "Casos oportunos", valor: "4" },
+        { letra: "B", nombre: "Atenciones", valor: "10" },
+        { letra: "C", nombre: "Casos recuperados", valor: "4" },
+      ]),
+    ];
+    // La unión, en orden de aparición, con el nombre de la versión más reciente que tiene la letra.
+    expect(columnasDeVariables(filas)).toEqual([
+      { letra: "A", nombre: "Casos oportunos" },
+      { letra: "B", nombre: "Atenciones" },
+      { letra: "C", nombre: "Casos recuperados" },
+    ]);
+    const html = renderToStaticMarkup(
+      <TablaDelAnio filas={filas} variables={columnasDeVariables(filas)} anio={2026} codigo="ZZ-1" puedeMedir={false} />,
+    );
+    // Mayo tenía otro nombre para A: se lee bajo el valor, sin cursor; julio no repite el del encabezado.
+    expect(html).toContain('8<span class="block text-xs font-normal text-muted-foreground">(Atenciones a tiempo)</span>');
+    expect(html).not.toContain("(Casos oportunos)");
+    expect(html).not.toContain("(Atenciones)");
+    // Mayo no tiene C: «—».
+    expect(html).toMatch(/<td class="[^"]*">—<\/td>/);
   });
 });
 
@@ -288,6 +398,10 @@ describe("las páginas", () => {
       expect(html).toContain("&amp;rango=dos");
       expect(html).toContain("&amp;rango=todo");
       expect(html).toMatch(/<select[^>]*name="anio"/);
+      // El selector ofrece los años con mediciones (y el en curso), no un año sin nada que mostrar.
+      const opciones = [...(/<select[^>]*name="anio"[^>]*>(.*?)<\/select>/.exec(html)?.[1] ?? "").matchAll(/value="(\d{4})"/g)].map((m) => Number(m[1]));
+      expect(opciones).toContain(2026);
+      expect(opciones.every((a) => a >= 2026)).toBe(true);
       // La fila del periodo tiene su ancla: la matriz enlaza a ella.
       expect(html).toContain('id="periodo-2026-T3"');
       await expect(pagina(ind.codigo, { anio: "2026", rango: "siempre" })).rejects.toThrow("NO_ENCONTRADA");
@@ -321,6 +435,8 @@ describe("las páginas", () => {
       const html = await listaPagina();
       estructuraAccesible(html);
       expect(html).toMatch(/<form(?=[^>]*method="get")(?=[^>]*action="\/indicadores")[^>]*>/);
+      // A 390 px, dos selectores por fila; desde `sm`, la fila que se envuelve.
+      expect(html).toMatch(/<form(?=[^>]*class="[^"]*\bgrid-cols-2\b)(?=[^>]*class="[^"]*\bsm:flex\b)[^>]*action="\/indicadores"/);
       for (const nombre of ["proceso", "subproceso", "clasificacion", "tipo", "semaforo", "reporte", "participo", "texto", "retirados"]) {
         expect(html).toMatch(new RegExp(`name="${nombre}"`));
       }
@@ -336,6 +452,11 @@ describe("las páginas", () => {
       expect(await listaPagina({ texto: ind.codigo, reporte: "nada" })).toContain(`href="/indicadores/${ind.codigo}"`);
       // Sin coincidencias, el estado vacío.
       expect(await listaPagina({ texto: "zz-no-hay-ninguno" })).toContain("Ningún indicador coincide");
+      // Si lo que deja cero filas es el semáforo, la barra (contada antes) sigue: dice lo que la persona ve.
+      const porSemaforo = await listaPagina({ texto: ind.codigo, semaforo: "bien" });
+      expect(porSemaforo).toContain("Ningún indicador coincide");
+      expect(porSemaforo).toContain("0 bien, ");
+      expect(porSemaforo).not.toContain(`href="/indicadores/${ind.codigo}"`);
     }));
 
   it("/indicadores/matriz: filtros de año, proceso y clasificación, leyenda con texto y cada celda enlazada", () =>

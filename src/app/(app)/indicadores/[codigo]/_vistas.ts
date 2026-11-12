@@ -135,7 +135,8 @@ export async function datosDeResultados(
     codigo: indicador.codigo,
     indicadorId: indicador.id,
     anio: a.anio,
-    anios: Array.from({ length: a.anioEnCurso - a.primerAnio + 1 }, (_, i) => a.anioEnCurso - i),
+    // Los años con mediciones (dentro de los que la página admite), más el en curso y el que se muestra.
+    anios: [...new Set([...resultados.anios.filter((x) => x >= a.primerAnio && x <= a.anioEnCurso), a.anioEnCurso, a.anio])].sort((x, y) => y - x),
     rango,
     periodicidad: (vista.ficha.contenido.periodicidad as Periodicidad | null) ?? null,
     resultados,

@@ -175,6 +175,40 @@ describe("GraficoTubos", () => {
   });
 });
 
+describe("GraficoTubos: la escala y lo que aún no llega (ronda 1 de la Tarea 15)", () => {
+  it("la escala va en su propio lienzo, fuera de lo que se desplaza, a la misma altura que los tubos", () => {
+    const html = principal();
+    const eje = /<svg(?=[^>]*class="tubo-eje )[^>]*>(.*?)<\/svg>/.exec(html);
+    expect(eje).not.toBeNull();
+    expect(eje![0]).toContain('aria-hidden="true"');
+    // Los rótulos de la escala (0, 50 y 100 %) están en ese lienzo y no en el que se desplaza.
+    for (const r of [">0<", ">50<", ">100 %<"]) expect(eje![1]).toContain(r);
+    const desplazable = html.slice(html.indexOf('class="tubo-desplazable'), html.indexOf("<figcaption"));
+    expect(desplazable).not.toContain(">100 %<");
+    expect(html.indexOf('class="tubo-eje ')).toBeLessThan(html.indexOf('class="tubo-desplazable'));
+    // Las dos columnas van en la proporción de sus lienzos: el de la escala, a 1:1 como mínimo.
+    expect(html).toMatch(/grid-template-columns:minmax\((\d+)px, \1fr\) minmax\(0, \d+fr\)/);
+    // Las líneas de guía siguen en el lienzo de los tubos, una por marca.
+    expect(cuenta(desplazable, /<line data-marca=/g)).toBe(3);
+  });
+
+  it("bajo un periodo que aún no llega va «—»; su nombre sigue diciendo «Por venir»", () => {
+    const serie = doce.map((p) => (p.estado === "futuro" ? { ...p, texto: "por venir", nombreEstado: "Por venir" } : p));
+    const html = principal({ serie });
+    const visible = html.slice(0, html.indexOf("<figcaption"));
+    expect(visible).not.toContain("por venir");
+    expect(visible).toMatch(/>—<\/text>/);
+    expect(html).toContain('aria-label="diciembre: Por venir"');
+    expect(html.slice(html.indexOf("<figcaption"))).toContain("<td>Por venir</td>");
+
+    const mini = renderToStaticMarkup(<MiniTubos titulo="Auditorías ejecutadas" serie={serie} />);
+    const dibujo = mini.slice(0, mini.indexOf("<figcaption"));
+    expect(dibujo).not.toContain("por venir");
+    expect(dibujo).toMatch(/>—<\/text>/);
+    expect(mini).toContain('<tr><th scope="row">diciembre</th><td>Por venir</td></tr>');
+  });
+});
+
 describe("GraficoTubos: lectura, negativos y años", () => {
   it("la lectura dice de qué lado de la meta queda el crítico (menor es mejor: por encima)", () => {
     const minutos = doce.map((p) => (p.valor === null ? p : { ...p, texto: `${p.valor} min` }));
@@ -206,7 +240,7 @@ describe("GraficoTubos: lectura, negativos y años", () => {
     expect(cuenta(html, /class="tubo-relleno tubo-neutro"/g)).toBe(2);
     expect(cuenta(html, /class="tubo-relleno tubo-neutro tubo-negativo"/g)).toBe(1);
     // El relleno negativo cuelga de la línea del cero.
-    const cero = /<line x1="[^"]*" x2="[^"]*" y1="([^"]+)"[^>]*class="stroke-border"[^>]*><\/line><text[^>]*>0<\/text>/.exec(html)?.[1];
+    const cero = /<line data-marca="0"[^>]*\sy1="([^"]+)"/.exec(html)?.[1];
     expect(cero).toBeDefined();
     expect(/<rect class="tubo-relleno tubo-neutro tubo-negativo"[^>]*\sy="([^"]+)"/.exec(html)?.[1]).toBe(cero);
     expect(html).not.toContain("NaN");

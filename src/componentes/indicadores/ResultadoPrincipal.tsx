@@ -1,8 +1,7 @@
 import { Insignia } from "@/componentes/ui/Insignia";
 import type { UltimoResultado } from "@/db/consultas/indicadores/lectura";
+import { FLECHA_DE_CAMBIO } from "@/lib/indicadores/textos";
 import { InsigniaSemaforo } from "./InsigniaSemaforo";
-
-const FLECHA: Record<"sube" | "baja" | "igual", string> = { sube: "▲", baja: "▼", igual: "=" };
 
 /**
  * El último resultado en grande (spec §8.3 y §12.3, maqueta 2): la cifra, su estado escrito, las marcas, la frase y, debajo,
@@ -29,7 +28,7 @@ export function ResultadoPrincipal({ ultimo, periodosSinCumplir }: { ultimo: Ult
           {c ? (
             <>
               {" · "}
-              <span aria-hidden="true">{FLECHA[c.flecha]} </span>
+              <span aria-hidden="true">{FLECHA_DE_CAMBIO[c.flecha]} </span>
               {c.texto}
               {c.mejora === null ? null : c.mejora ? " · mejora" : " · empeora"}
             </>

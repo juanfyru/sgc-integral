@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Check, TriangleAlert, X, type LucideIcon } from "lucide-react";
 import type { CeldaDeMatriz, MatrizLeida } from "@/db/consultas/indicadores/matriz";
 import { MESES } from "@/lib/indicadores-documentales/periodo";
 
@@ -12,15 +13,30 @@ const FRANJA: Partial<Record<CeldaDeMatriz["estado"], string>> = {
   "sin-meta": "bg-tubo-neutro",
 };
 
-/** La leyenda de la matriz: cada franja con su nombre escrito (el color nunca va solo). */
+/**
+ * La forma de cada estado junto al valor (WCAG 1.4.1): el color de la franja nunca es la única diferencia entre Bien,
+ * Atención y Crítico. Decorativa: el nombre accesible de la celda ya dice el estado.
+ */
+const GLIFO: Partial<Record<CeldaDeMatriz["estado"], { Icono: LucideIcon; clase: string }>> = {
+  bien: { Icono: Check, clase: "text-estado-bien-texto" },
+  atencion: { Icono: TriangleAlert, clase: "text-estado-atencion-texto" },
+  critico: { Icono: X, clase: "text-estado-critico-texto" },
+};
+
+function Glifo({ estado }: { estado: CeldaDeMatriz["estado"] }) {
+  const g = GLIFO[estado];
+  return g ? <g.Icono aria-hidden="true" data-glifo={estado} className={`size-3 shrink-0 ${g.clase}`} /> : null;
+}
+
+/** La leyenda de la matriz: cada estado con su franja, su forma y su nombre escrito (el color nunca va solo). */
 export const LEYENDA_DE_MATRIZ = [
-  { clase: "bg-estado-bien", texto: "Bien" },
-  { clase: "bg-estado-atencion", texto: "Atención" },
-  { clase: "bg-estado-critico", texto: "Crítico" },
-  { clase: "bg-tubo-neutro", texto: "Sin meta" },
-  { clase: null, texto: "Sin dato", muestra: "s. d." },
-  { clase: null, texto: "No aplica", muestra: "n. a." },
-  { clase: null, texto: "Por venir", muestra: "—" },
+  { estado: "bien", clase: "bg-estado-bien", texto: "Bien" },
+  { estado: "atencion", clase: "bg-estado-atencion", texto: "Atención" },
+  { estado: "critico", clase: "bg-estado-critico", texto: "Crítico" },
+  { estado: "sin-meta", clase: "bg-tubo-neutro", texto: "Sin meta" },
+  { estado: "sin-dato", clase: null, texto: "Sin dato", muestra: "s. d." },
+  { estado: "no-aplica", clase: null, texto: "No aplica", muestra: "n. a." },
+  { estado: "futuro", clase: null, texto: "Por venir", muestra: "—" },
 ] as const;
 
 export function LeyendaDeMatriz() {
@@ -29,7 +45,10 @@ export function LeyendaDeMatriz() {
       {LEYENDA_DE_MATRIZ.map((l) => (
         <li key={l.texto} className="inline-flex items-center gap-1.5">
           {l.clase ? (
-            <span aria-hidden="true" className={`h-1 w-4 rounded-full ${l.clase}`} />
+            <>
+              <span aria-hidden="true" className={`tubo-color-exacto h-1 w-4 rounded-full ${l.clase}`} />
+              <Glifo estado={l.estado} />
+            </>
           ) : (
             <span aria-hidden="true" className="italic">
               {l.muestra}
@@ -43,25 +62,27 @@ export function LeyendaDeMatriz() {
 }
 
 /**
- * Una celda: el valor y, abajo, la franja del color de su estado. El nombre accesible lo dice entero («marzo: 86 %,
- * Bien»): en el enlace, como su nombre; sin enlace, en texto para lectores de pantalla. Lo que no se mide queda vacío;
- * «s. d.», «n. a.» y lo que no ha llegado, en gris.
+ * Una celda: el valor con la forma de su estado y, abajo, la franja de su color. El nombre accesible lo dice entero
+ * («marzo: 86 %, Bien»): en el enlace, como su nombre; sin enlace, en texto para lectores de pantalla. Lo que no se mide
+ * queda vacío; «s. d.», «n. a.» y lo que no ha llegado, en gris.
  */
 function Celda({ c, columnas = c.hastaMes - c.desdeMes + 1 }: { c: CeldaDeMatriz; columnas?: number }) {
   const franja = FRANJA[c.estado];
   const gris = c.estado === "sin-dato" || c.estado === "no-aplica" || c.estado === "futuro";
   const texto = `${gris ? "italic text-muted-foreground" : "text-foreground"} ${c.estado === "critico" ? "font-bold" : ""}`;
   return (
-    <td colSpan={columnas} title={c.estado === "vacia" ? undefined : c.nombre} className="relative border-l border-linea-suave px-1.5 py-2 text-center tabular-nums whitespace-nowrap">
+    <td colSpan={columnas} className="relative border-l border-linea-suave px-1.5 py-2 text-center tabular-nums whitespace-nowrap">
       {c.enlace ? (
-        <Link href={c.enlace} aria-label={c.nombre} className={`rounded-sm underline-offset-2 hover:underline ${FOCO} ${texto}`}>
+        <Link href={c.enlace} aria-label={c.nombre} className={`inline-flex items-center gap-0.5 rounded-sm underline-offset-2 hover:underline ${FOCO} ${texto}`}>
+          <Glifo estado={c.estado} />
           {c.texto}
         </Link>
       ) : c.estado === "vacia" ? (
         <span className="sr-only">{c.nombre}</span>
       ) : (
         <>
-          <span aria-hidden="true" className={texto}>
+          <span aria-hidden="true" className={`inline-flex items-center gap-0.5 ${texto}`}>
+            <Glifo estado={c.estado} />
             {c.texto}
           </span>
           <span className="sr-only">{c.nombre}</span>
@@ -104,7 +125,7 @@ export function MatrizDelAnio({ anio, procesos }: { anio: number; procesos: Matr
         {procesos.map((p) => (
           <tbody key={p.id}>
             <tr>
-              <th scope="colgroup" colSpan={14} className="border-t border-border bg-card px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <th scope="rowgroup" colSpan={14} className="border-t border-border bg-card px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {p.nombre}
               </th>
             </tr>

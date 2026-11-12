@@ -3,7 +3,8 @@ import { claseBoton } from "@/componentes/ui/Boton";
 import { claseControl } from "@/componentes/ui/Campo";
 import type { ResumenDeObservaciones } from "@/db/consultas/indicadores/observaciones";
 import { cuenta } from "@/lib/plural";
-import { FOCO, rutaDe } from "./comun";
+import { rutaDeIndicador } from "@/lib/indicadores/rutas";
+import { FOCO } from "./comun";
 
 export type DatosDeObservaciones = {
   codigo: string;
@@ -33,7 +34,7 @@ export function VistaObservaciones({ codigo, resumen, elegida, observaciones, pu
       </p>
       {elegida ? (
         <>
-          <form method="get" action={rutaDe(codigo)} className="flex flex-wrap items-end gap-2">
+          <form method="get" action={rutaDeIndicador(codigo)} className="flex flex-wrap items-end gap-2">
             <input type="hidden" name="vista" value="observaciones" />
             <div className="flex min-w-0 flex-col gap-1">
               <label htmlFor="observaciones-periodo" className="text-sm font-medium">

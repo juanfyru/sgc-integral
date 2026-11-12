@@ -135,9 +135,14 @@ export async function versionesAprobadasDe(sql: Cliente, indicadorIds: readonly 
   if (filas.length === 0) return salida;
   const variables = await sql`SELECT id, version_id, letra, nombre, descripcion, fuente, captura_min, captura_max, admite_negativos, consolidacion
     FROM indicador_variables WHERE version_id IN ${sql(filas.map((f) => Number(f.id)))} ORDER BY orden, letra`;
+  const porVersion = new Map<number, (typeof variables)[number][]>();
+  for (const v of variables) {
+    const lista = porVersion.get(Number(v.version_id));
+    if (lista) lista.push(v);
+    else porVersion.set(Number(v.version_id), [v]);
+  }
   for (const f of filas) {
-    const propias = variables
-      .filter((v) => Number(v.version_id) === Number(f.id))
+    const propias = (porVersion.get(Number(f.id)) ?? [])
       .map((v) => ({
         id: Number(v.id),
         letra: v.letra as string,

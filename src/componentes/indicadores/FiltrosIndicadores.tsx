@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Boton } from "@/componentes/ui/Boton";
 import { claseControl } from "@/componentes/ui/Campo";
 import type { FiltroDeLista, OpcionesDeLista } from "@/db/consultas/indicadores/lista";
+import { Selector } from "./Selector";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 
@@ -19,19 +20,8 @@ const REPORTES = [
   { valor: "requiere-accion", etiqueta: "Requiere acción de mejora" },
 ] as const;
 
-/** Un selector con su etiqueta; a 390 px ocupa todo el ancho, desde `sm`, el suyo. */
-function Selector({ id, nombre, etiqueta, valor, children }: { id: string; nombre: string; etiqueta: string; valor: string; children: React.ReactNode }) {
-  return (
-    <div className="flex w-full min-w-0 flex-col gap-1 sm:w-auto sm:max-w-56">
-      <label htmlFor={id} className="text-sm font-medium">
-        {etiqueta}
-      </label>
-      <select id={id} name={nombre} defaultValue={valor} className={`${claseControl} w-full max-w-full`}>
-        {children}
-      </select>
-    </div>
-  );
-}
+/** En pantallas angostas, dos selectores por fila; desde `sm`, cada uno con su ancho en la fila que se envuelve. */
+const ANCHO = "sm:w-auto sm:max-w-56";
 
 function Casilla({ id, nombre, etiqueta, marcada }: { id: string; nombre: string; etiqueta: string; marcada: boolean }) {
   return (
@@ -45,7 +35,8 @@ function Casilla({ id, nombre, etiqueta, marcada }: { id: string; nombre: string
 }
 
 /**
- * Los filtros de la lista (spec §12.2, maqueta 4) en una fila que se envuelve: proceso y subproceso, clasificación, tipo,
+ * Los filtros de la lista (spec §12.2, maqueta 4) en una fila que se envuelve (a 390 px, dos selectores por fila):
+ * proceso y subproceso, clasificación, tipo,
  * estado del semáforo, estado del reporte, «Donde participo», texto e «Incluir retirados». Es un formulario `GET` con los
  * nombres que lee `filtroDeConsulta`: funciona antes de hidratar y deja la URL para compartir.
  */
@@ -53,8 +44,14 @@ export function FiltrosIndicadores({ filtro, opciones }: { filtro: FiltroDeLista
   const id = (n?: number) => (n === undefined ? "" : String(n));
   const conFiltros = Object.keys(filtro).length > 0;
   return (
-    <form method="get" action="/indicadores" role="search" aria-label="Filtrar indicadores" className="flex min-w-0 max-w-full flex-wrap items-end gap-2">
-      <Selector id="filtro-proceso" nombre="proceso" etiqueta="Proceso" valor={id(filtro.procesoId)}>
+    <form
+      method="get"
+      action="/indicadores"
+      role="search"
+      aria-label="Filtrar indicadores"
+      className="grid min-w-0 max-w-full grid-cols-2 items-end gap-2 sm:flex sm:flex-wrap"
+    >
+      <Selector className={ANCHO} id="filtro-proceso" nombre="proceso" etiqueta="Proceso" valor={id(filtro.procesoId)}>
         <option value="">Todos</option>
         {opciones.procesos.map((p) => (
           <option key={p.id} value={p.id}>
@@ -62,7 +59,7 @@ export function FiltrosIndicadores({ filtro, opciones }: { filtro: FiltroDeLista
           </option>
         ))}
       </Selector>
-      <Selector id="filtro-subproceso" nombre="subproceso" etiqueta="Subproceso" valor={id(filtro.subprocesoId)}>
+      <Selector className={ANCHO} id="filtro-subproceso" nombre="subproceso" etiqueta="Subproceso" valor={id(filtro.subprocesoId)}>
         <option value="">Todos</option>
         {opciones.procesos
           .filter((p) => opciones.subprocesos.some((s) => s.procesoId === p.id))
@@ -78,7 +75,7 @@ export function FiltrosIndicadores({ filtro, opciones }: { filtro: FiltroDeLista
             </optgroup>
           ))}
       </Selector>
-      <Selector id="filtro-clasificacion" nombre="clasificacion" etiqueta="Clasificación" valor={id(filtro.clasificacionId)}>
+      <Selector className={ANCHO} id="filtro-clasificacion" nombre="clasificacion" etiqueta="Clasificación" valor={id(filtro.clasificacionId)}>
         <option value="">Todas</option>
         {opciones.clasificaciones.map((c) => (
           <option key={c.id} value={c.id}>
@@ -86,7 +83,7 @@ export function FiltrosIndicadores({ filtro, opciones }: { filtro: FiltroDeLista
           </option>
         ))}
       </Selector>
-      <Selector id="filtro-tipo" nombre="tipo" etiqueta="Tipo" valor={id(filtro.tipoId)}>
+      <Selector className={ANCHO} id="filtro-tipo" nombre="tipo" etiqueta="Tipo" valor={id(filtro.tipoId)}>
         <option value="">Todos</option>
         {opciones.tipos.map((t) => (
           <option key={t.id} value={t.id}>
@@ -94,7 +91,7 @@ export function FiltrosIndicadores({ filtro, opciones }: { filtro: FiltroDeLista
           </option>
         ))}
       </Selector>
-      <Selector id="filtro-semaforo" nombre="semaforo" etiqueta="Estado" valor={filtro.semaforo ?? ""}>
+      <Selector className={ANCHO} id="filtro-semaforo" nombre="semaforo" etiqueta="Estado" valor={filtro.semaforo ?? ""}>
         <option value="">Todos</option>
         {SEMAFOROS.map((s) => (
           <option key={s.valor} value={s.valor}>
@@ -102,7 +99,7 @@ export function FiltrosIndicadores({ filtro, opciones }: { filtro: FiltroDeLista
           </option>
         ))}
       </Selector>
-      <Selector id="filtro-reporte" nombre="reporte" etiqueta="Reporte" valor={filtro.reporte ?? ""}>
+      <Selector className={ANCHO} id="filtro-reporte" nombre="reporte" etiqueta="Reporte" valor={filtro.reporte ?? ""}>
         <option value="">Todos</option>
         {REPORTES.map((r) => (
           <option key={r.valor} value={r.valor}>
@@ -110,7 +107,7 @@ export function FiltrosIndicadores({ filtro, opciones }: { filtro: FiltroDeLista
           </option>
         ))}
       </Selector>
-      <div className="flex w-full min-w-0 flex-col gap-1 sm:w-auto">
+      <div className="col-span-2 flex min-w-0 flex-col gap-1 sm:w-auto">
         <label htmlFor="filtro-texto" className="text-sm font-medium">
           Buscar
         </label>
@@ -126,7 +123,7 @@ export function FiltrosIndicadores({ filtro, opciones }: { filtro: FiltroDeLista
       </div>
       <Casilla id="filtro-participo" nombre="participo" etiqueta="Donde participo" marcada={filtro.participo === true} />
       <Casilla id="filtro-retirados" nombre="retirados" etiqueta="Incluir retirados" marcada={filtro.retirados === true} />
-      <Boton type="submit" variante="secundario">
+      <Boton type="submit" variante="secundario" className="justify-self-start">
         Filtrar
       </Boton>
       {conFiltros ? (

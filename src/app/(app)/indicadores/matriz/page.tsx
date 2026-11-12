@@ -3,8 +3,8 @@ import { notFound } from "next/navigation";
 import { Grid3x3 } from "lucide-react";
 import { LeyendaDeMatriz, MatrizDelAnio } from "@/componentes/indicadores/MatrizDelAnio";
 import { apruebaFichas, PestanasIndicadores, pestanasVisibles } from "@/componentes/indicadores/PestanasIndicadores";
+import { Selector } from "@/componentes/indicadores/Selector";
 import { Boton } from "@/componentes/ui/Boton";
-import { claseControl } from "@/componentes/ui/Campo";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { EstadoVacio } from "@/componentes/ui/EstadoVacio";
 import { filtroDeConsulta, opcionesDeLista } from "@/db/consultas/indicadores/lista";
@@ -19,19 +19,8 @@ export const metadata: Metadata = { title: "Matriz del año" };
 
 type Parametros = Record<string, string | string[] | undefined>;
 
-/** Un selector con su etiqueta; a 390 px ocupa todo el ancho, desde `sm`, el suyo. */
-function Selector({ id, nombre, etiqueta, valor, children }: { id: string; nombre: string; etiqueta: string; valor: string; children: React.ReactNode }) {
-  return (
-    <div className="flex w-full min-w-0 flex-col gap-1 sm:w-auto sm:max-w-64">
-      <label htmlFor={id} className="text-sm font-medium">
-        {etiqueta}
-      </label>
-      <select id={id} name={nombre} defaultValue={valor} className={`${claseControl} w-full max-w-full`}>
-        {children}
-      </select>
-    </div>
-  );
-}
+/** A 390 px cada selector ocupa todo el ancho; desde `sm`, el suyo. */
+const ANCHO = "w-full sm:w-auto sm:max-w-64";
 
 /**
  * La matriz del año (spec §12.7, maqueta 5), para toda persona con sesión: los indicadores que ve y que se miden en el año
@@ -61,14 +50,14 @@ export default async function PaginaMatriz({ searchParams }: { searchParams: Pro
       />
       <PestanasIndicadores activa="matriz" visibles={pestanasVisibles(sesion, { aprueba: apruebaFichas(sesion) })} />
       <form method="get" action="/indicadores/matriz" role="search" aria-label="Filtrar la matriz" className="flex min-w-0 max-w-full flex-wrap items-end gap-2">
-        <Selector id="matriz-anio" nombre="anio" etiqueta="Año" valor={String(anio)}>
+        <Selector className={ANCHO} id="matriz-anio" nombre="anio" etiqueta="Año" valor={String(anio)}>
           {anios.map((a) => (
             <option key={a} value={a}>
               {a}
             </option>
           ))}
         </Selector>
-        <Selector id="matriz-proceso" nombre="proceso" etiqueta="Proceso" valor={procesoId === undefined ? "" : String(procesoId)}>
+        <Selector className={ANCHO} id="matriz-proceso" nombre="proceso" etiqueta="Proceso" valor={procesoId === undefined ? "" : String(procesoId)}>
           <option value="">Todos</option>
           {opciones.procesos.map((p) => (
             <option key={p.id} value={p.id}>
@@ -76,7 +65,7 @@ export default async function PaginaMatriz({ searchParams }: { searchParams: Pro
             </option>
           ))}
         </Selector>
-        <Selector id="matriz-clasificacion" nombre="clasificacion" etiqueta="Clasificación" valor={clasificacionId === undefined ? "" : String(clasificacionId)}>
+        <Selector className={ANCHO} id="matriz-clasificacion" nombre="clasificacion" etiqueta="Clasificación" valor={clasificacionId === undefined ? "" : String(clasificacionId)}>
           <option value="">Todas</option>
           {opciones.clasificaciones.map((c) => (
             <option key={c.id} value={c.id}>

@@ -3,17 +3,16 @@
  * proceso, con una celda por periodo ubicada por sus meses y la columna del acumulado. Los periodos y el acumulado vienen
  * de `lectura.ts`: son los mismos de la página del indicador.
  */
-import type { EstadoDePunto } from "@/componentes/ui/geometria-tubos";
 import { obtenerSql } from "@/db/cliente";
 import { filtroIndicadores, type SujetoVisibilidad } from "@/lib/alcance";
 import { mesesDe } from "@/lib/indicadores/periodos";
 import { mesesEnPalabras, nombreCorto, repartirMeses } from "@/lib/indicadores/resultados";
-import { ETIQUETA_SEMAFORO } from "@/lib/indicadores/tipos";
+import { rutaDeIndicador } from "@/lib/indicadores/rutas";
+import { ETIQUETA_SEMAFORO, type EstadoDePunto } from "@/lib/indicadores/tipos";
 import {
   anioValido,
   leerPeriodos,
   resumenAcumulado,
-  rutaDe,
   type Base,
   type Opciones,
   type PeriodoLeido,
@@ -56,7 +55,8 @@ function celdaDelAnio(a: ResumenAcumulado, anio: number, ruta: string): CeldaDeM
   return {
     desdeMes: 1,
     hastaMes: 12,
-    texto: a.texto ?? "—",
+    // Sin acumulado es un dato que falta («s. d.»), no un periodo por venir («—», en la leyenda).
+    texto: a.texto ?? "s. d.",
     estado: a.semaforo ?? (a.texto ? "sin-meta" : "sin-dato"),
     nombre: `Año ${anio}: ${valor}${a.rotulo ? `. ${a.rotulo}` : ""}`,
     enlace: ruta,
@@ -108,7 +108,7 @@ export async function matrizDelAnio(
     const rigen = propios.filter((l) => l.fila.deOtraPeriodicidad !== true);
     if (!propios.some((l) => l.fila.medicionId !== null) && !(x.estado === "activo" && rigen.length > 0)) continue;
     const codigo = x.codigo as string;
-    const ruta = `${rutaDe(codigo)}?vista=resultados&anio=${f.anio}`;
+    const ruta = `${rutaDeIndicador(codigo)}?vista=resultados&anio=${f.anio}`;
     const celdas = repartirMeses(
       // La periodicidad que rige pisa a la que quedó de otra; entre las que rigen, la versión más nueva.
       propios.map((l) => ({ celda: celdaDe(l, ruta), prioridad: (l.fila.deOtraPeriodicidad ? 0 : 10_000) + l.version.numero })),

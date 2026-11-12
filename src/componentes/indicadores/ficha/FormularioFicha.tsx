@@ -13,6 +13,7 @@ import { fraccion } from "@/lib/indicadores/formula/fraccion";
 import type { Regla } from "@/lib/indicadores/semaforo";
 import {
   CONSOLIDACIONES,
+  ETIQUETA_PERIODICIDAD,
   PERIODICIDADES,
   TENDENCIAS,
   type Consolidacion,
@@ -35,13 +36,6 @@ const CONTROL = `${claseControl} w-full min-w-0 max-w-full`;
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 const RESUMEN = `cursor-pointer rounded-md text-sm font-medium ${FOCO}`;
 
-const ETIQUETA_PERIODICIDAD: Record<Periodicidad, string> = {
-  mensual: "Mensual",
-  bimestral: "Bimestral",
-  trimestral: "Trimestral",
-  semestral: "Semestral",
-  anual: "Anual",
-};
 const ETIQUETA_TENDENCIA: Record<Tendencia, string> = {
   ascendente: "Ascendente (mayor es mejor)",
   descendente: "Descendente (menor es mejor)",

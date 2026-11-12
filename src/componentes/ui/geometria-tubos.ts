@@ -4,18 +4,10 @@
  * con `aDecimal`. Sin React, sin Node ni BD: la usan los componentes de servidor de las gráficas.
  */
 
-export type EstadoDePunto = "bien" | "atencion" | "critico" | "sin-meta" | "sin-dato" | "no-aplica" | "futuro";
+import type { EstadoDePunto, PuntoDeSerie } from "@/lib/indicadores/tipos";
 
-export type PuntoDeSerie = {
-  clave: string;
-  /** El periodo en palabras («marzo», «tercer trimestre de 2026»): lo leen la tabla, el foco y la tarjeta. */
-  etiqueta: string;
-  valor: number | null;
-  /** El valor tal como se muestra, con su unidad («86 %»). */
-  texto: string;
-  estado: EstadoDePunto;
-  nombreEstado: string;
-};
+// Los tipos viven con los del módulo (los arman las lecturas de la BD); se reexportan para los componentes.
+export type { EstadoDePunto, PuntoDeSerie };
 
 export type Geometria = { ancho: number; alto: number; margen: { izq: number; der: number; arriba: number; abajo: number } };
 export type Escala = { min: number; max: number };

@@ -6,6 +6,7 @@ import type { FilaDelAnio } from "@/db/consultas/indicadores/lectura";
 import type { Soporte } from "@/db/consultas/indicadores/soportes";
 import { ETIQUETA_ESTADO } from "@/lib/indicadores/estados";
 import type { EntradaDeHistorial } from "@/lib/indicadores/historial";
+import { rutaDeIndicador } from "@/lib/indicadores/rutas";
 import { enlaceDeSoporte } from "@/lib/indicadores/soportes";
 import { InsigniaSemaforo } from "../InsigniaSemaforo";
 
@@ -92,6 +93,21 @@ function Analisis({ f }: { f: FilaDelAnio }) {
   }
   if (f.analisis) return <span className="break-words">{f.analisis}</span>;
   return <span className="text-muted-foreground">{f.cumple ? "Sin análisis (cumple)" : "—"}</span>;
+}
+
+/**
+ * El valor de una variable en un periodo. Si la ficha que rige ese periodo nombra la letra distinto que el encabezado de
+ * la columna (el de la versión más reciente), lo dice debajo, en texto: se lee sin cursor y lo leen los lectores de
+ * pantalla.
+ */
+function ValorDeVariable({ columna, valor }: { columna: { letra: string; nombre: string }; valor: FilaDelAnio["valores"][number] | undefined }) {
+  if (!valor) return <>—</>;
+  return (
+    <>
+      {valor.valor ?? "—"}
+      {valor.nombre !== columna.nombre ? <span className="block text-xs font-normal text-muted-foreground">{`(${valor.nombre})`}</span> : null}
+    </>
+  );
 }
 
 function ListaDeSoportes({ codigo, soportes }: { codigo: string; soportes: Soporte[] }) {
@@ -196,7 +212,7 @@ export function TablaDelAnio({
             {cabecera}
             {variables.map((v) => (
               <td key={v.letra} className={celdaNumerica}>
-                {f.valores.find((x) => x.letra === v.letra)?.valor ?? "—"}
+                <ValorDeVariable columna={v} valor={f.valores.find((x) => x.letra === v.letra)} />
               </td>
             ))}
             <td className={`${celdaNumerica} whitespace-nowrap`}>{f.resultado ?? (f.noAplica ? "n. a." : "—")}</td>
@@ -217,13 +233,13 @@ export function TablaDelAnio({
               <td className={celda}>
                 <div className="flex flex-col items-start gap-1">
                   {reportable ? (
-                    <Link href={`/indicadores/${encodeURIComponent(codigo)}/reportar/${f.periodo}`} className={ENLACE}>
+                    <Link href={`${rutaDeIndicador(codigo)}/reportar/${f.periodo}`} className={ENLACE}>
                       {f.estado === "por_reportar" ? "Reportar" : "Corregir"}
                       <span className="sr-only">{` ${f.etiqueta}`}</span>
                     </Link>
                   ) : null}
                   {analizable ? (
-                    <Link href={`/indicadores/${encodeURIComponent(codigo)}?vista=resultados&anio=${anio}&analizar=${f.periodo}#analisis`} className={ENLACE}>
+                    <Link href={`${rutaDeIndicador(codigo)}?vista=resultados&anio=${anio}&analizar=${f.periodo}#analisis`} className={ENLACE}>
                       {conAnalisis ? "Editar el análisis" : "Analizar"}
                       <span className="sr-only">{` ${f.etiqueta}`}</span>
                     </Link>

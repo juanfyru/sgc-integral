@@ -6,7 +6,6 @@
  * `mediciones.ts`. Las importaciones van en un solo sentido: `lista`/`matriz` → `lectura` → `mediciones`.
  */
 import type { Row } from "postgres";
-import type { PuntoDeSerie } from "@/componentes/ui/geometria-tubos";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import {
   puedeAnalizar,
@@ -31,6 +30,7 @@ import {
   ETIQUETA_SEMAFORO,
   type EstadoIndicador,
   type EstadoMedicion,
+  type PuntoDeSerie,
   type Semaforo,
 } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
@@ -267,8 +267,6 @@ export const anioValido = (anio: number) => Number.isInteger(anio) && anio >= 19
 /** Una fracción como número para dibujar: las gráficas trabajan con números; el veredicto ya se decidió con la fracción. */
 export const aNumero = (f: Fraccion) => Number(aDecimal(f, 6, "redondear"));
 
-/** La página de un indicador (como `rutaDeIndicador`, que vive en la capa de las páginas). */
-export const rutaDe = (codigo: string) => `/indicadores/${encodeURIComponent(codigo)}`;
 
 export function agrupar<T>(filas: readonly T[], clave: (f: T) => number): Map<number, T[]> {
   const salida = new Map<number, T[]>();
@@ -505,7 +503,7 @@ function nombreSinDato(f: FilaDelAnio): string {
   return f.estado === "falta_dato" ? "Falta un dato" : "Sin dato";
 }
 
-const POR_VENIR = { valor: null, texto: "por venir", estado: "futuro", nombreEstado: "Por venir" } as const;
+const POR_VENIR = { valor: null, texto: "—", estado: "futuro", nombreEstado: "Por venir" } as const;
 
 /** El periodo como punto de la gráfica (spec §11): «s. d.» y «n. a.» son huecos, nunca cero; lo que no ha terminado, tenue. */
 function puntoDe(l: PeriodoLeido): PuntoDeSerie {

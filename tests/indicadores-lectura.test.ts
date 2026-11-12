@@ -479,6 +479,8 @@ describe("la matriz del año", () => {
       expect(de(m.codigo).celdas[1]).toMatchObject({ texto: "n. a.", estado: "no-aplica", nombre: "febrero: no aplica" });
       expect(de(m.codigo).celdas[0]).toMatchObject({ texto: "s. d.", estado: "sin-dato", nombre: "enero: sin dato" });
       expect(meses(de(a.codigo).celdas)).toEqual([[1, 12]]);
+      // Sin acumulado (el año aún no termina ningún periodo), «s. d.»: «—» es «por venir» en la leyenda.
+      expect(de(a.codigo).anio).toMatchObject({ texto: "s. d.", estado: "sin-dato", nombre: "Año 2026: sin dato" });
       // Desde abril: lo de antes es una sola celda vacía, y todo suma doce meses.
       expect(de(medioAnio.codigo).celdas[0]).toMatchObject({ desdeMes: 1, hastaMes: 3, estado: "vacia", enlace: null });
       for (const f of filas) cubreElAnio(f.celdas);
@@ -504,6 +506,44 @@ describe("la matriz del año", () => {
       const r = await resultadosDelAnio(admin, ind.id, 2026, opc(tx));
       expect(r.filas.find((f) => f.periodo === "2026-07")).toMatchObject({ deOtraPeriodicidad: true, resultado: "10 %" });
       expect(r.serie.map((x) => x.clave)).not.toContain("2026-07");
+
+      // La misma fórmula y las mismas variables: el acumulado no se parte con la versión trimestral (nota 4). Junta los
+      // meses de la versión 1 con el trimestre de la 2, y deja fuera el julio mensual que quedó.
+      const mes = { A: "9", B: "10" };
+      await medir(tx, mide, ind, { "2026-01": mes, "2026-02": mes, "2026-03": mes, "2026-04": mes, "2026-05": mes, "2026-T3": { A: "27", B: "30" } });
+      const acumulado = (await resultadosDelAnio(admin, ind.id, 2026, opc(tx))).acumulado;
+      expect(acumulado).toMatchObject({ texto: "90 %", semaforo: "bien", valores: { A: "81", B: "90" }, rotulo: null });
+      const [conTodo] = (await matrizDelAnio(admin, { anio: 2026, procesoId: p.id }, opc(tx))).procesos[0].filas;
+      expect(conTodo.anio).toMatchObject({ texto: "90 %", estado: "bien", nombre: "Año 2026: 90 %, Bien" });
+      expect(conTodo.anio.nombre).not.toContain("desde");
+    }));
+
+  it("un cambio que no toca la fórmula ni las variables no parte el acumulado del año", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const admin = await sesionAdmin(tx);
+      const ind = await indicadorDePrueba(tx, { procesoId: p.id, inicioMedicion: "2026-05", aprobadaEn: APROBADA, mide: [mide.usuarioId] });
+      await medir(tx, mide, ind, { "2026-05": { A: "9", B: "10" }, "2026-06": { A: "7", B: "10" } }, new Date("2026-07-02T15:00:00Z"));
+      // Versión 2, mayor, desde julio: otra meta, la misma fórmula; versión 3, menor, sobre ella (el mismo «rige desde»).
+      for (const [numero, tipo, meta, huella] of [[2, "mayor", 80, "4"], [3, "menor", 80, "5"]] as const) {
+        const [v] = await tx`INSERT INTO indicador_versiones (indicador_id, numero, estado, tipo_cambio, nombre, forma, formula, periodicidad,
+            tendencia, meta, semaforo_modo, umbral_atencion_pct, unidad_sufijo, decimales, creado_por)
+          VALUES (${ind.id}, ${numero}, 'borrador', ${tipo}, ${`Versión ${numero}`}, 'porcentaje', 'A / B * 100', 'mensual', 'ascendente', ${meta},
+            'relativo', 70, ' %', 1, ${admin.usuarioId}) RETURNING id`;
+        await tx`SELECT id FROM indicador_versiones WHERE id = ${v.id} FOR UPDATE`;
+        for (const [orden, letra] of [[1, "A"], [2, "B"]] as const) {
+          await tx`INSERT INTO indicador_variables (version_id, letra, nombre, orden) VALUES (${v.id}, ${letra}, ${letra}, ${orden})`;
+        }
+        await tx`UPDATE indicador_versiones SET estado = 'aprobada', elaborada_por = ${admin.usuarioId}, huella = ${huella.repeat(64)},
+            rige_desde = '2026-07', aprobada_por = ${tipo === "menor" ? null : admin.usuarioId}, aprobada_en = '2026-06-20T15:00:00Z'
+          WHERE id = ${v.id}`;
+      }
+      const despues = new Date("2026-09-02T15:00:00Z");
+      await medir(tx, mide, ind, { "2026-07": { A: "8", B: "10" }, "2026-08": { A: "8", B: "10" } }, despues);
+      const r = await resultadosDelAnio(mide, ind.id, 2026, { sql: tx, ahora: despues });
+      // Mayo a agosto juntos (32 / 40), contra la meta del último periodo medido (80): Bien, sin «desde …, versión 2».
+      expect(r.acumulado).toMatchObject({ texto: "80 %", semaforo: "bien", valores: { A: "32", B: "40" }, rotulo: null, meta: { valor: 80 } });
     }));
 
   it("la matriz agrupa por proceso y deja fuera lo restringido ajeno y lo que no se midió ese año", () =>
