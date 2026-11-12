@@ -1,7 +1,7 @@
 # CONTEXT.md — Estado vivo del proyecto
 
 > Se actualiza al cierre de cada fase. Última actualización: **2026-11-12**, al cerrar la 14A en su rama. La **Fase 14A —
-> Indicadores, el indicador de punta a punta** está terminada en la rama `fase-14a-indicadores` (87 confirmaciones sobre
+> Indicadores, el indicador de punta a punta** está terminada en la rama `fase-14a-indicadores` (90 confirmaciones sobre
 > `bced185`, sin publicar ni fusionar), con el recorrido del controlador hecho y sus defectos corregidos y la ola final de
 > la revisión de toda la rama aplicada, y espera el recorrido del usuario; después viene la **Fase 14B** (datos compartidos,
 > automáticos y avanzados), que cierra la Fase 14 del diseño maestro. La **Fase 13C — Vigencia, externos y normograma**
@@ -22,7 +22,7 @@
    La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
    proyecto**.
 1. **Dónde quedamos:** la **Fase 14A — Indicadores, el indicador de punta a punta** está terminada en la rama
-   `fase-14a-indicadores` (87 confirmaciones sobre `bced185`; spec
+   `fase-14a-indicadores` (90 confirmaciones sobre `bced185`; spec
    `docs/superpowers/specs/2026-11-10-fase14-indicadores-design.md`, aprobado el 2026-11-10 y común a la 14A y la 14B;
    plan `docs/superpowers/plans/2026-11-10-fase14a-indicadores.md`). **No está publicada ni fusionada:** espera el
    recorrido del usuario («Qué probar y cómo (Fase 14A)») y su decisión. Con ella el hospital ya puede llevar sus
@@ -43,9 +43,10 @@
    `.xlsx` (D-1). La ronda 1 corrigió sus trece defectos (D-1 a D-13), añadió el mensaje «Se devolvió la ficha …» y
    ajustó este recorrido (ver «Hecho (Fase 14A)»). Después, el controlador subió un `.xlsx` real con el arreglo de D-1,
    en `next dev` y en la imagen reconstruida: entra («Listo», «Excel, 6 KB») y un `.xls` se rechaza. La revisión final de
-   toda la rama pidió una ola de corrección (un crítico, dos importantes y nueve menores; F14A-R51 a R53), ya aplicada.
-   **Verificado al cierre de la ola final:** con la demo recién sembrada en la base aparte `sgc_f14a`,
-   `SEMILLA_RECIEN=1 npm test` dio 235 archivos, 5690 pruebas en verde y 1 saltada; lint limpio; `npm run build` sin
+   toda la rama pidió una ola de corrección (un crítico, dos importantes y nueve menores; F14A-R51 a R53), ya aplicada,
+   y su re-revisión dos residuos (el soporte obligatorio hacia adelante y la gráfica alineada a una columna), también.
+   **Verificado al cierre de los residuos:** con la demo recién sembrada en la base aparte `sgc_f14a`,
+   `SEMILLA_RECIEN=1 npm test` dio 235 archivos, 5696 pruebas en verde y 1 saltada; lint limpio; `npm run build` sin
    URL de base en verde.
    **La base `sgc` del usuario no se tocó** (ver «Avisos para el usuario (Fase 14A)»).
    **Antes, la Fase 13C:** está en `main` (`8acc9cf`, PR #3 fusionado el 2026-11-10 por decisión del
@@ -225,7 +226,7 @@
    avanza otra vez). **También se resembró varias veces en la 13A** (Tareas 2 y 15, sus arreglos y el
    cierre): cada vez se pierden los datos de prueba manual y `admin` se recrea con la `ADMIN_CLAVE`
    de `.env.local` y cambio obligatorio.
-5. **Tests:** 5690 en 235 archivos, más 1 saltado (la 13C cerró con 4722 en 197), en serie (`fileParallelism: false`), contra la BD de
+5. **Tests:** 5696 en 235 archivos, más 1 saltado (la 13C cerró con 4722 en 197), en serie (`fileParallelism: false`), contra la BD de
    desarrollo sembrada y **conectados como `sgc_app`**, igual que la app; el test de
    privilegios usa además `DATABASE_URL_MIGRADOR`. Los usuarios de prueba con historia
    (`zz_<algo>_<timestamp>`) se acumulan porque no se pueden borrar (F11-D2); `db:seed` los
@@ -427,8 +428,11 @@ y la pantalla de reporte solo con el teclado); lo que no salió como decía se c
     borrador: la ficha de la norma ya solo ofrece **Retirar…** (antes, borrarla daba un error en inglés). En `AIN-IND-01` →
     **Administrar** → **Datos de operación**, suba el plazo de reporte hasta que la fecha límite de septiembre quede en el
     futuro: el periodo deja de estar **Vencido** y su aviso de vencido se volverá a mandar cuando venza. En `SGC-IND-01`
-    → **Resultados**, el valor bajo cada tubo lleva su unidad («100 %», «83,3 %», «60 %»). Si corrige o reporta tarde un
-    periodo que cambia de color, la marca «N periodos sin cumplir» de los siguientes que siguen abiertos se pone o se quita.
+    → **Resultados**, el valor bajo cada tubo lleva su unidad («100 %», «83,3 %», «60 %»), y a 390 px la gráfica arranca
+    con columnas enteras (ningún valor partido). Si corrige o reporta tarde un periodo que cambia de color, la marca «N
+    periodos sin cumplir» de los siguientes que siguen abiertos se pone o se quita. En un indicador con periodos ya
+    reportados y vencidos, marcar **Pedir un soporte** en **Datos de operación** no los reabre ni los vuelve vencidos: el
+    soporte se pide desde ahora.
 20. **Verificación técnica:** lint, `SEMILLA_RECIEN=1 npm test` y el build sin URL de base, hechos al cierre de la
     ola final; la imagen en un contenedor aparte, la `0011` sobre una copia de la base del usuario y este recorrido en el
     navegador, hechos por el controlador tras la ronda 1 (ver «Hecho (Fase 14A)»).
@@ -471,6 +475,10 @@ ella, con un aviso en la salida. `npm run db:seed && npm run admin:asegurar` la 
    rechazaba todo `.xlsx` con un error 500 (D-1, ya corregido: F14A-R41). Queda una posibilidad sin reproducir: que un
    Excel legítimo con una hoja muy grande, escrito por algunos programas, no se reconozca (ver Deuda técnica); se guarda
    de nuevo con Excel o como PDF.
+10. **En su base, después de traer la rama, corra `npm run db:preparar` antes de `npm run dev`**: aplica la migración
+    `0011` y deja el rol `sgc_app` con sus privilegios, entre ellos el `REVOKE` nuevo de `cierres_indicadores` (ola final,
+    M1). `npm run dev` no lo hace solo; la imagen de Docker sí, al arrancar (`arrancar.js`). Sin él, la prueba
+    `tests/privilegios-bd.test.ts` falla en esa base.
 
 ## Qué probar y cómo (Fase 13C)
 
@@ -1170,7 +1178,7 @@ Plan: `docs/superpowers/plans/2026-11-10-fase14a-indicadores.md`; diseño:
 `docs/superpowers/specs/2026-11-10-fase14-indicadores-design.md` (común a la 14A y la 14B; §5.1 dice qué va en cada una).
 El indicador de punta a punta, del ISO 9001:2015 4.4.1 c), 9.1.1 y 9.1.3: el hospital ya puede llevar sus indicadores como
 los ocho del Excel del usuario. **Sin dependencias npm nuevas** (`exceljs`, `zod` y `pdf-lib` ya estaban; las animaciones
-son CSS, F14-DC23). La rama `fase-14a-indicadores` (87 confirmaciones sobre `bced185`) se trabajó en el worktree
+son CSS, F14-DC23). La rama `fase-14a-indicadores` (90 confirmaciones sobre `bced185`) se trabajó en el worktree
 `F:\sgc-integral-f14a` contra la base aparte `sgc_f14a`; no está publicada ni fusionada.
 
 - **Rutas nuevas:** `/indicadores` (la lista) con las pestañas `/indicadores/matriz`, `/indicadores/por-aprobar` y
@@ -1272,7 +1280,7 @@ son CSS, F14-DC23). La rama `fase-14a-indicadores` (87 confirmaciones sobre `bce
   control en el navegador tras las Tareas 7, 10, 12, 15, 16 y 17 y la ficha impresa de la 18. Después, el controlador
   subió un `.xlsx` real con el arreglo de D-1, en `next dev` y en la imagen reconstruida (contenedor aparte): entra
   («Listo», «Excel, 6 KB») y un `.xls` se rechaza con el mensaje del soporte.
-- **Ola final de corrección** (doce confirmaciones, de `5b73fe8` a la de esta documentación; F14A-R51 a R53), tras la
+- **Ola final de corrección** (doce confirmaciones, de `5b73fe8` a `e694135`; F14A-R51 a R53), tras la
   revisión de toda la rama: una norma citada por una ficha de indicador, aunque sea un borrador, ya no da el error crudo
   de la llave al borrarla (`historiaDeNorma`, y el servidor decide si ofrece **Borrar…**, C1); el plazo de reporte y
   «soporte obligatorio» llegan a las mediciones en curso (fecha límite, avisos y estado, I1); corregir, reabrir o
@@ -1284,9 +1292,19 @@ son CSS, F14-DC23). La rama `fase-14a-indicadores` (87 confirmaciones sobre `bce
   recorrido de arriba gana el paso 19 y el manual, tres frases (capítulos 7 y 8). Lo que la revisión dejó como deuda está
   en «Deuda técnica conocida».
 - **Verificado al cierre de la ola final** (por el guardián de la base aparte): resiembra de `sgc_f14a`; `npm run lint`
-  limpio; `SEMILLA_RECIEN=1 npm test` con la demo recién sembrada: **235 archivos, 5690 pruebas en verde y 1 saltada** (la
+  limpio; `SEMILLA_RECIEN=1 npm test` con la demo recién sembrada: 235 archivos, 5690 pruebas en verde y 1 saltada (la
   misma de antes); `npm run build` sin `DATABASE_URL` ni `DATABASE_URL_MIGRADOR` en verde; y otra resiembra al final.
-  `npm run db:roles` (por el guardián) aplicó el `REVOKE` nuevo a `sgc_f14a`; en otra base lo aplica el arranque.
+  `npm run db:roles` (por el guardián) aplicó el `REVOKE` nuevo a `sgc_f14a`; en otra base lo aplica `npm run db:preparar`
+  (o `db:roles`), o el arranque de la imagen: `npm run dev` no lo hace (ver «Avisos para el usuario (Fase 14A)», 10).
+- **Residuos de la ola final** (tres confirmaciones, de `e0f39a7` a la de esta documentación), tras su re-revisión: «soporte
+  obligatorio» rige hacia adelante (activarlo solo alcanza lo que sigue en plazo; lo reportado a tiempo no se vuelve
+  vencido, y la racha de los siguientes no lo reabre: `sistema` en `recalcularMedicion`), el recálculo de sistema dice
+  qué pasó con la marca y su motivo en el historial, y la gráfica de tubos arranca en el borde de una columna
+  (`desplazamientoInicial`: a 390 px el «83,3 %» de `SGC-IND-01` se leía «3,3 %»). Seis pruebas nuevas; el aviso 10 para
+  el usuario (`npm run db:preparar` antes de `npm run dev`).
+- **Verificado al cierre de los residuos** (por el guardián): resiembra; `npm run lint` limpio; `SEMILLA_RECIEN=1 npm test`
+  con la demo recién sembrada: **235 archivos, 5696 pruebas en verde y 1 saltada**; `npm run build` sin URL de base en
+  verde; y otra resiembra al final.
 
 ## Hecho (Fase 13C)
 
@@ -2560,7 +2578,7 @@ el mecanismo es de Claude), **Regulación** o **Práctica**.
 | F14A-R39 (T17) | Si la lectura de los indicadores de la página del proceso falla, la sección no sale y queda en el registro: los documentos (7.5) nunca caen por ella | Práctica | Una sección que falta en silencio para el usuario |
 | F14A-R40 (T18) | La demo: el calendario se cuenta desde la siembra con el plazo de reporte (10 días) como umbral, no se fuerza un «por reportar» dentro de su plazo, y la siembra deja leídos los avisos que su propia historia ya resolvió | Práctica; F12-D35 | Avisos viejos sin leer o fechas fijas que envejecen |
 | F14A-R41 (T19, D-1) | El `.xlsx` de un soporte se lee entero (hasta 25 MB) y se valida con `fileTypeFromBuffer`, nunca con `fileTypeFromFile`: su `import()` de especificador no literal no sobrevive al empaquetado de Next y todo `.xlsx` respondía 500 (Vitest no empaqueta: las pruebas pasaban). `tests/file-type-empaquetado.test.ts` impide volver a importarlo | Regla de negocio 6; Práctica | 25 MB en memoria en la subida de un Excel; `serverExternalPackages` era la otra salida |
-| F14A-R42 (T19, D-2) | El lienzo de una gráfica de tubos mide según sus periodos (34 px por columna, con un tope de 1,3 veces su proporción; desde la ola final, M7, una serie corta ensancha sus columnas hasta que el valor quepa con su unidad, sin pasar de lo que ocupan seis a 34 px); si se desplaza y la última columna con valor queda cortada, al cargar se corre hasta mostrarla (sin JavaScript arranca en lo más reciente, como antes) | Spec §11; F14A-R31 | Un trimestral a 390 px enseñaba solo el periodo por venir |
+| F14A-R42 (T19, D-2) | El lienzo de una gráfica de tubos mide según sus periodos (34 px por columna, con un tope de 1,3 veces su proporción; desde la ola final, M7, una serie corta ensancha sus columnas hasta que el valor quepa con su unidad, sin pasar de lo que ocupan seis a 34 px); si se desplaza y la última columna con valor queda cortada, al cargar se corre hasta mostrarla, y siempre arranca con el borde izquierdo de lo visible en el de una columna: la que quedaría partida queda fuera, con un relleno a la derecha de menos de una columna si hace falta (`desplazamientoInicial`, residuos de la ola final; a 390 px el «83,3 %» de `SGC-IND-01` se leía «3,3 %»). Sin JavaScript arranca en lo más reciente, como antes | Spec §11; F14A-R31 | Un trimestral a 390 px enseñaba solo el periodo por venir |
 | F14A-R43 (T19, D-3) | Elegir la forma sugiere su unidad: porcentaje, la de «%»; una tasa por mil, la de «por mil»; las demás, la que no lleva sufijo. Cambiar el factor también la sugiere; la persona puede elegir otra | Práctica | Un conteo quedaba en «%» |
 | F14A-R44 (T19, D-7 y D-8) | El límite de crítico de la gráfica es uno solo si todos los periodos tienen el mismo, y si no uno por periodo, escalonado con la meta; la etiqueta y el pie accesible usan `textoDelLimite` y la pantalla de reporte («Así quedará el semáforo») `rangosEnPalabras`, que dicen el mismo número (lo fija `tests/indicadores-limite-grafica.test.tsx`) | Spec §11; regla del veredicto con el valor exacto | Dos cifras para un mismo límite, o una punteada plana con metas programadas |
 | F14A-R45 (T19, D-9) | Un retirado sale en la matriz (pantalla, impresión y Excel) con la marca «Retirado» («(Retirado)» tras el nombre en el Excel), y sus periodos sin medición desde el retiro quedan vacíos, como los de antes del inicio (no se miden), no «por venir» | Spec §6.4 | Un indicador retirado que parece pendiente |
@@ -2570,8 +2588,8 @@ el mecanismo es de Claude), **Regulación** o **Práctica**.
 | F14A-R49 (T19, D-13) | Un error del servidor sobre un campo de la ficha sale junto a él (`aria-describedby`), y el foco va a él, abriendo los plegables que lo contienen; al pie solo quedan los que no son de un campo | WCAG 3.3.1; Práctica | El error lejos del campo y el foco en `body` |
 | F14A-R50 (T19) | Devolver una ficha vuelve a «Por aprobar» con `devuelta=<código>` y la página confirma «Se devolvió la ficha de … a borrador, con su nota.», como la aprobación en bloque; solo repite un código bien formado | Práctica | Quien devuelve no veía confirmación |
 | F14A-R51 (ola final, C1) | Una norma que cita una ficha de indicador (de cualquier versión, también un borrador) o un impacto de indicador tiene historia: no se borra, se retira, con el mensaje legible «La norma tiene historia: retírela». El servidor decide si ofrece «Borrar la norma» con la misma regla (`historiaDeNorma`, que también cuenta las relaciones eliminadas), no la ficha con lo que muestra | D47 (13C); Práctica | El Admin veía el error crudo de la llave foránea en inglés |
-| F14A-R52 (ola final, I1) | Cambiar el plazo de reporte mueve la fecha límite de las mediciones sin cerrar y no históricas y limpia los avisos que ya no son ciertos: el de vencido y el escalamiento si la fecha nueva aún no llega (se avisan otra vez cuando venza), el previo si la fecha quedó más lejos que los días del aviso previo; los que siguen siendo ciertos se conservan. Cambiar «soporte obligatorio» las recalcula: la que solo esperaba el soporte queda reportada y deja de ser tarea, y una reportada sin soporte vuelve a abierta. La bitácora cuenta cuántas tocó | Spec §7.3, §10.2; Práctica | Ampliar el plazo no evitaba el aviso de vencido ni el cierre en «sin dato», y desmarcar el soporte dejaba la tarea |
-| F14A-R53 (ola final, I2) | Corregir, reabrir, reportar tarde o marcar «no aplica» un periodo que cambia de semáforo o de resultado recalcula el incumplimiento repetido de los periodos siguientes que su racha alcanza (los n − 1 primeros medidos), con el evento `recalculo` a nombre de quien actuó. Los cerrados no cambian (se reabren a mano); cada siguiente conserva la versión con que se calculó, y sus avisos siguen el último nivel alertado | Spec §10.3; Práctica | Una marca «Requiere acción de mejora» que ya no era cierta, o una que faltaba |
+| F14A-R52 (ola final, I1) | Cambiar el plazo de reporte mueve la fecha límite de las mediciones sin cerrar y no históricas y limpia los avisos que ya no son ciertos: el de vencido y el escalamiento si la fecha nueva aún no llega (se avisan otra vez cuando venza), el previo si la fecha quedó más lejos que los días del aviso previo; los que siguen siendo ciertos se conservan. «Soporte obligatorio» **rige hacia adelante** (residuos de la ola final): desactivarlo recalcula todas las mediciones en curso (la que solo esperaba el soporte queda reportada y deja de ser tarea); activarlo, solo las que siguen en plazo (una reportada sin soporte vuelve a abierta para pedirlo), y lo reportado a tiempo cuyo plazo ya pasó se queda reportado, sin volverse vencido ni escalarse; tampoco lo reabre después la racha de los siguientes. La bitácora cuenta cuántas tocó | Spec 3.16, §7.3, §8.2, §10.2; Práctica | Ampliar el plazo no evitaba el aviso de vencido ni el cierre en «sin dato»; desmarcar el soporte dejaba la tarea, y marcarlo volvía vencido lo reportado a tiempo, con aviso al jefe |
+| F14A-R53 (ola final, I2) | Corregir, reabrir, reportar tarde, marcar «no aplica» o reprogramar la meta de un periodo que cambia de semáforo o de resultado recalcula el incumplimiento repetido de los periodos siguientes que su racha alcanza (los n − 1 primeros medidos), con el evento `recalculo` a nombre de quien actuó, que dice qué pasó con la marca; el historial lo cuenta como «Se recalculó por la racha de periodos anteriores». Los cerrados no cambian (se reabren a mano); cada siguiente conserva la versión con que se calculó, la falta de un soporte que se volvió obligatorio después no la reabre, y sus avisos siguen el último nivel alertado | Spec §10.3; Práctica | Una marca «Requiere acción de mejora» que ya no era cierta, o una que faltaba |
 
 ## Deuda técnica conocida
 
@@ -2649,10 +2667,12 @@ distintas, la racha de los periodos siguientes (F14A-R53), «soporte obligatorio
   - «Reabrir» y la zona de carga de soportes necesitan JavaScript; el camino 23505 del cierre no tiene prueba.
   - Las mediciones de respaldo (sin designado ni líder) nunca se marcan escaladas y se vuelven a resolver en cada pasada
     (costo, no error).
+  - Acortar el plazo de reporte de forma retroactiva dispara el aviso de vencido y el escalamiento en la misma pasada, y el
+    aviso previo ya mandado puede quedar con la fecha vieja en su texto (`marcasQueSiguen`, `src/lib/indicadores/periodos.ts`).
 - **Pantallas, gráficas y Excel:**
-  - Las series largas tienen una parada de `Tab` por columna (falta el `tabindex` itinerante); con un desborde de pocos
-    píxeles, el desplazamiento que arranca en lo reciente (sin JavaScript, o cuando la última columna con valor ya se ve:
-    F14A-R42) corta el rótulo del año del primer periodo («025»).
+  - Las series largas tienen una parada de `Tab` por columna (falta el `tabindex` itinerante); sin JavaScript, con un
+    desborde de pocos píxeles, el desplazamiento que arranca en lo reciente corta el rótulo del año del primer periodo
+    («025»); con JavaScript arranca en el borde de una columna (`desplazamientoInicial`, F14A-R42).
   - `resultadosDeLaLista` e `impresionDelAnio` leen las versiones dos veces; la hoja impresa usa tablas propias y no
     `TablaDatos` (excepción aceptada); `tests/handlers-permisos.test.ts` no lista las rutas nuevas (las prueban
     los archivos de prueba del módulo, como `indicadores-excel`).
@@ -2660,7 +2680,10 @@ distintas, la racha de los periodos siguientes (F14A-R53), «soporte obligatorio
     vacío en `lista.ts`; la ficha de la norma no tiene prueba de integración de «Indicadores que exige» con indicadores (la
     de la ola final la pinta cuando su lectura falla).
   - El ancho del valor bajo cada tubo se estima (0,6 de la letra por carácter; no hay medida de texto en el servidor): la
-    unidad que vuelve con la ola final (M7) y la franja ensanchada de una serie corta no se comprobaron en el navegador.
+    unidad que vuelve con la ola final (M7) y la franja ensanchada de una serie corta no se comprobaron en el navegador, y
+    la prueba de que los valores no se enciman usa la misma estimación que el componente.
+- **Normograma (13C, tocado en la 14A):** `tieneHistoria` viaja en el objeto `Norma` también a quien no administra (un
+  booleano que no usa; impacto despreciable).
 - **Maestros y parámetros:** sin respaldo `catch 23505` en `guardarEnMaestro` (solo la comprobación bajo `LOCK`);
   `DatosMaestro` no es una unión discriminada; la prueba de «borrar solo si nadie lo usa» y del nombre repetido cubre solo
   `tipos`; «Borrar» un maestro no pide confirmación; la constante `ORDEN` tiene un nombre engañoso.
