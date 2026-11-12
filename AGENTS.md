@@ -436,8 +436,10 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   el resultado de una medición ordinaria, ella misma recalcula la racha de las n − 1 siguientes
   medidas sin cerrar (`recalcularSiguientes`, evento `recalculo`, F14A-R53), y cambiar el plazo o
   «soporte obligatorio» llega a las mediciones en curso (`cambiarOperacion`, F14A-R52). Un
-  recálculo que no nace de un cambio en la medición (esos dos) pasa `conservarVersion`: no la mueve
-  de la versión con que se congeló al reportarla.
+  recálculo que no nace de un cambio en la medición (esos dos) es de sistema (`sistema: "racha"` o
+  `"soporte"`): no la mueve de la versión con que se congeló al reportarla, su evento dice qué pasó
+  con la marca, y el de la racha no reabre por falta de soporte lo ya reportado. **El soporte
+  obligatorio rige hacia adelante:** activarlo solo alcanza las mediciones aún en plazo.
 - **El cumplimiento de un porcentaje con meta se decide con la razón exacta, en enteros**
   (`cumplePorcentaje`, `src/lib/indicadores-documentales/metas.ts`; `conformidad`,
   `src/lib/distribucion/verificacion.ts`), nunca con el entero que se muestra. `conformidad()`

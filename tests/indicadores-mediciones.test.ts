@@ -662,7 +662,11 @@ describe("el incumplimiento repetido de los periodos siguientes", () => {
       expect(await recalculos(tx, junio)).toEqual([]);
       for (const id of [abril, mayo]) {
         const [e] = await recalculos(tx, id);
-        expect(e).toMatchObject({ usuario_id: mide.usuarioId, detalle: { causa: "racha", periodo: "2026-03" } });
+        // El evento dice qué cambió: la marca de incumplimiento repetido (residuos, 3).
+        expect(e).toMatchObject({
+          usuario_id: mide.usuarioId,
+          detalle: { causa: "racha", periodo: "2026-03", antes: { incumplimientoRepetido: true }, despues: { incumplimientoRepetido: false } },
+        });
         const [cuando] = await tx`SELECT creado_en FROM medicion_eventos WHERE medicion_id = ${id} AND tipo = 'recalculo'`;
         expect(cuando.creado_en).toEqual(AHORA);
       }
@@ -718,6 +722,38 @@ describe("el incumplimiento repetido de los periodos siguientes", () => {
       expect(Number((await fila(tx, await medicion("2026-02"))).version_id)).toBe(Number(v2.id));
       const marzo = await fila(tx, await medicion("2026-03"));
       expect([marzo.incumplimiento_repetido, Number(marzo.version_id)]).toEqual([true, ind.versionId]);
+    }));
+
+  it("la cascada no reabre por falta de soporte una siguiente ya reportada (residuos, 1)", () =>
+    revertida(sql, async (tx) => {
+      const { ind, mide, medicion } = await mensual(tx);
+      await reportarCon(tx, mide, await medicion("2026-01"), ATENCION);
+      await reportarCon(tx, mide, await medicion("2026-02"), ATENCION);
+      // Marzo, el tercero sin cumplir, con su análisis en dos partes: reportada con la marca.
+      const marzo = await medicion("2026-03");
+      await tx`UPDATE mediciones SET causa = 'El personal de turno no registró los casos',
+          accion_propuesta = 'Capacitar al personal de turno en el registro'
+        WHERE id = ${marzo}`;
+      await reportarCon(tx, mide, marzo, ATENCION);
+      expect([(await fila(tx, marzo)).estado, ...(await racha(tx, marzo))]).toEqual(["reportada", "atencion", true, true]);
+
+      // El soporte se vuelve obligatorio cuando marzo ya se reportó: lo reportado no se reabre por eso.
+      await tx`UPDATE indicadores SET soporte_obligatorio = true WHERE id = ${ind.id}`;
+      // Enero se corrige (con su soporte, que ahora se exige para reportar) y cumple: la marca de marzo se va, y marzo,
+      // sin soporte, sigue reportada.
+      const enero = await medicion("2026-01");
+      await soporte(tx, enero);
+      await reportarCon(tx, mide, enero, BIEN);
+      const m = await fila(tx, marzo);
+      expect([m.estado, m.incumplimiento_repetido, m.requiere_accion]).toEqual(["reportada", false, false]);
+      expect((await recalculos(tx, marzo)).map((e) => e.detalle)).toMatchObject([
+        {
+          causa: "racha",
+          periodo: "2026-01",
+          antes: { incumplimientoRepetido: true, estado: "reportada" },
+          despues: { incumplimientoRepetido: false, estado: "reportada" },
+        },
+      ]);
     }));
 });
 

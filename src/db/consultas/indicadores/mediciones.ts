@@ -415,10 +415,14 @@ const objeto = (v: unknown): Record<string, unknown> =>
  * las columnas se siguen comparando contra la fila tal como está.
  *
  * Si cambió el semáforo o el resultado de una medición ordinaria, recalcula después las siguientes cuya racha la alcanza
- * (`recalcularSiguientes`), salvo con `c.siguientes === false`, que es como esas se recalculan. Con `c.conservarVersion`
- * (un recálculo que no nace de un cambio en la medición: la racha de una siguiente, un dato de operación) calcula con la
- * versión que la medición ya tiene, la que se congeló al reportarla, y no con la que hoy rige el periodo: un cambio menor
- * aprobado después no la cambia de versión sin que nadie la toque.
+ * (`recalcularSiguientes`). `c.sistema` marca un recálculo de sistema, que no nace de un cambio en la medición:
+ * - siempre calcula con la versión que la medición ya tiene, la que se congeló al reportarla, y no con la que hoy rige el
+ *   periodo: un cambio menor aprobado después no la cambia de versión sin que nadie la toque;
+ * - `"racha"` (la de una siguiente, desde `recalcularSiguientes`) no sigue en cadena y la falta del soporte obligatorio no
+ *   regresa a `abierta` una medición ya `reportada`: el soporte rige hacia adelante (residuos finales, punto 1);
+ * - `"soporte"` (`cambiarOperacion` al cambiar «soporte obligatorio») aplica el soporte como está, porque es su causa:
+ *   quien llama elige a qué mediciones (al activarlo, solo a las que siguen en plazo).
+ * Una acción sobre la medición (reportar, corregir, analizar, la meta, un soporte, reabrir) aplica la regla viva.
  */
 export async function recalcularMedicion(
   tx: TransactionSql,
@@ -429,8 +433,7 @@ export async function recalcularMedicion(
     evento: TipoEvento;
     detalle?: Record<string, unknown>;
     estadoAnterior?: EstadoMedicion;
-    siguientes?: boolean;
-    conservarVersion?: boolean;
+    sistema?: "racha" | "soporte";
   },
 ): Promise<Recalculo> {
   const zona = zonaHoraria();
@@ -442,7 +445,7 @@ export async function recalcularMedicion(
   const periodo = periodoDe(m.periodo as string, zona);
   const versiones = await versionesAprobadas(tx, indicadorId);
   const rige = periodo ? versionQueRigeEntre(versiones, periodo, zona) : null;
-  const version = rige && c.conservarVersion ? (versiones.find((v) => v.id === Number(m.version_id)) ?? rige) : rige;
+  const version = rige && c.sistema ? (versiones.find((v) => v.id === Number(m.version_id)) ?? rige) : rige;
   const ficha = version ? fichaDeCalculo(version.calculo) : null;
   if (!rige || !version || !ficha) throw new ErrorIndicador("El indicador no tiene una ficha aprobada que calcule este periodo");
   if (esDeOtraPeriodicidad(m.periodo as string, rige)) throw new ErrorIndicador(OTRA_PERIODICIDAD);
@@ -476,7 +479,13 @@ export async function recalcularMedicion(
     );
   }
   const conAnalisis = analisisCompleto(analisisExigido({ semaforo, repetido, historica, noAplica }), analisisDe(m));
-  const conSoporte = m.soporte_obligatorio !== true || historica || noAplica || (await contarSoportes(tx, medicionId)) > 0;
+  // El soporte rige hacia adelante: la racha de una siguiente no reabre por él lo que ya estaba reportado.
+  const conSoporte =
+    m.soporte_obligatorio !== true ||
+    historica ||
+    noAplica ||
+    (c.sistema === "racha" && m.estado === "reportada") ||
+    (await contarSoportes(tx, medicionId)) > 0;
   const conDato = noAplica || resultado !== null;
   const estado: EstadoMedicion = conDato && conAnalisis && conSoporte ? "reportada" : "abierta";
   const limite = conDato ? limiteDeCritico(regla) : null;
@@ -513,13 +522,16 @@ export async function recalcularMedicion(
 
   const { antes: antesDe, despues: despuesDe, ...resto } = c.detalle ?? {};
   const resultadoAntes = m.resultado_exacto ? decimalCorto(deTexto(m.resultado_exacto as string)) : null;
+  // Un recálculo de sistema no cambia valores ni resultado: dice también qué pasó con la marca (residuos finales, punto 3).
+  const marca = (v: boolean) => (c.sistema ? { incumplimientoRepetido: v } : {});
   const antes = {
     ...objeto(antesDe),
     resultado: resultadoAntes,
     semaforo: (m.semaforo as Semaforo | null) ?? null,
     estado: c.estadoAnterior ?? (m.estado as string),
+    ...marca(m.incumplimiento_repetido === true),
   };
-  const despues = { ...objeto(despuesDe), resultado: resultado ? decimalCorto(resultado) : null, semaforo, estado };
+  const despues = { ...objeto(despuesDe), resultado: resultado ? decimalCorto(resultado) : null, semaforo, estado, ...marca(repetido) };
   const cambio = columnasCambiaron || JSON.stringify(antes) !== JSON.stringify(despues);
   const r: Recalculo = {
     medicionId,
@@ -537,7 +549,7 @@ export async function recalcularMedicion(
     VALUES (${medicionId}, ${c.evento}, ${c.actorId}, ${tx.json({ ...resto, antes, despues } as never)}, ${c.ahora})`;
   if (columnasCambiaron) await alRecalcular(tx, r, { ahora: c.ahora, actorId: c.actorId });
   const cambioLaRacha = m.semaforo !== nuevo.semaforo || m.resultado_exacto !== nuevo.resultado_exacto;
-  if (c.siguientes !== false && !historica && cambioLaRacha) {
+  if (c.sistema !== "racha" && !historica && cambioLaRacha) {
     await recalcularSiguientes(tx, { id: medicionId, indicadorId, periodo: m.periodo as string, hasta: m.hasta as Date }, c);
   }
   return r;
@@ -549,10 +561,11 @@ export async function recalcularMedicion(
  * siguientes medidas del indicador cuya racha la alcanza, que son las n − 1 primeras, con el evento `recalculo`, el mismo
  * actor y la misma hora. Las cerradas cuentan pero no cambian: son evidencia cerrada (el trigger lo impide y se reabren a
  * mano); las históricas no tienen racha, y una de otra periodicidad no se calcula (`esDeOtraPeriodicidad`). Se bloquean en
- * el orden de los demás caminos (por `desde` e id, como el cierre y los históricos). Cada una conserva la versión con que
- * se calculó (`conservarVersion`): lo único que cambia es su racha y lo que de ella depende (la marca, el análisis exigido
- * y con él el estado). El semáforo de una siguiente no depende de las anteriores: su recálculo no sigue en cadena
- * (`siguientes: false`). Sus avisos son los de `alRecalcular`, por el último nivel alertado.
+ * el orden de los demás caminos (por `desde` e id, como el cierre y los históricos). Son recálculos de sistema
+ * (`sistema: "racha"`): cada una conserva la versión con que se calculó y lo único que cambia es su racha y lo que de ella
+ * depende (la marca, el análisis exigido y con él el estado); la falta de un soporte que se volvió obligatorio después no la
+ * reabre. El semáforo de una siguiente no depende de las anteriores: su recálculo no sigue en cadena. Sus avisos son los de
+ * `alRecalcular`, por el último nivel alertado.
  */
 async function recalcularSiguientes(
   tx: TransactionSql,
@@ -580,8 +593,7 @@ async function recalcularSiguientes(
       actorId: c.actorId,
       evento: "recalculo",
       detalle: { causa: "racha", periodo: m.periodo },
-      siguientes: false,
-      conservarVersion: true,
+      sistema: "racha",
     });
   }
 }

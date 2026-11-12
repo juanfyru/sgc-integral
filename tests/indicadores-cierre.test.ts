@@ -732,4 +732,31 @@ describe("el historial de «Corregida»", () => {
   it("sin reapertura no hay historial", () => {
     expect(historialDeCorreccion([evento(1, "reporte", { antes: {}, despues: { A: "9" } })], { unidad, nombres, conSoportes: true })).toEqual([]);
   });
+
+  it("un recálculo de sistema dice su motivo y qué pasó con la marca de periodos sin cumplir (residuos, 3)", () => {
+    const sistema = { resultado: "60", semaforo: "atencion" };
+    const h = historialDeCorreccion(
+      [
+        evento(1, "reapertura", { justificacion: JUSTIFICACION, antes: { estado: "cerrada" }, despues: { estado: "reportada" } }, "Admin"),
+        evento(2, "recalculo", {
+          causa: "racha",
+          periodo: "2026-02",
+          antes: { ...sistema, estado: "reportada", incumplimientoRepetido: false },
+          despues: { ...sistema, estado: "abierta", incumplimientoRepetido: true },
+        }),
+        evento(3, "recalculo", {
+          causa: "soporte_obligatorio",
+          antes: { ...sistema, estado: "reportada", incumplimientoRepetido: true },
+          despues: { ...sistema, estado: "abierta", incumplimientoRepetido: true },
+        }),
+        evento(4, "recalculo", { causa: "plazo", antes: { ...sistema, estado: "abierta" }, despues: { ...sistema, estado: "abierta" } }),
+      ],
+      { unidad, nombres, conSoportes: false },
+    );
+    expect(h.slice(1).map((e) => [e.que, e.cambios])).toEqual([
+      ["Se recalculó por la racha de periodos anteriores", ["Estado: Reportada → Abierta", "Incumplimiento repetido: No → Sí"]],
+      ["Se recalculó por el cambio del soporte obligatorio", ["Estado: Reportada → Abierta"]],
+      ["Se recalculó por el cambio del plazo", []],
+    ]);
+  });
 });

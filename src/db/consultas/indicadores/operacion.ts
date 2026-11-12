@@ -239,8 +239,11 @@ export async function cambiarOperacion(
         soporte_obligatorio = ${despues.soporteObligatorio}, nivel_acceso = ${despues.nivelAcceso}
       WHERE id = ${i.id}`;
     const conFechaNueva = antes.plazoReporteDias !== despues.plazoReporteDias ? await moverFechasLimite(tx, i.id, despues.plazoReporteDias, ahora) : 0;
+    // Después del plazo: al activarlo, el soporte solo alcanza lo que sigue en plazo con la fecha límite nueva.
     const recalculadas =
-      antes.soporteObligatorio !== despues.soporteObligatorio ? await recalcularPorSoporte(tx, i.id, { ahora, actorId: sesion.usuarioId }) : 0;
+      antes.soporteObligatorio !== despues.soporteObligatorio
+        ? await recalcularPorSoporte(tx, i.id, { ahora, actorId: sesion.usuarioId, activado: despues.soporteObligatorio })
+        : 0;
     await registrarAuditoria(tx, {
       usuarioId: sesion.usuarioId,
       accion: "indicador_operacion",
@@ -260,7 +263,7 @@ export async function cambiarOperacion(
 
 /** Las mediciones que todavía siguen su curso: sin cerrar y no históricas (un histórico no tiene plazo ni avisos), bloqueadas. */
 const enCurso = (tx: TransactionSql, indicadorId: number) =>
-  tx`SELECT id, periodo, aviso_previo_en, aviso_vencido_en, escalado_en FROM mediciones
+  tx`SELECT id, periodo, vence_en, aviso_previo_en, aviso_vencido_en, escalado_en FROM mediciones
     WHERE indicador_id = ${indicadorId} AND estado <> 'cerrada' AND NOT historica
     ORDER BY desde, id FOR UPDATE`;
 
@@ -289,15 +292,23 @@ async function moverFechasLimite(tx: TransactionSql, indicadorId: number, plazo:
 }
 
 /**
- * «Soporte obligatorio» cambió: cada medición en curso se recalcula (evento `recalculo`, la misma persona y la misma hora),
- * con la versión con que se calculó (`conservarVersion`): una que solo esperaba el soporte queda reportada, y una ya
- * reportada sin soporte vuelve a abierta. Las de otra periodicidad no se calculan. Devuelve cuántas cambiaron.
+ * «Soporte obligatorio» cambió: las mediciones en curso se recalculan (evento `recalculo`, la misma persona y la misma
+ * hora, recálculo de sistema `"soporte"`: con la versión con que se calcularon). El soporte rige hacia adelante (residuos
+ * finales, punto 1): al **activarlo** solo alcanza las que siguen en plazo (`vence_en >= ahora`), y una ya reportada sin
+ * soporte vuelve a abierta para pedirlo; las que ya vencieron se quedan como están (se reportaron cuando no se pedía y no
+ * se vuelven vencidas). Al **desactivarlo**, todas: una que solo esperaba el soporte queda reportada. Las de otra
+ * periodicidad no se calculan. Devuelve cuántas cambiaron.
  */
-async function recalcularPorSoporte(tx: TransactionSql, indicadorId: number, c: { ahora: Date; actorId: number }): Promise<number> {
+async function recalcularPorSoporte(
+  tx: TransactionSql,
+  indicadorId: number,
+  c: { ahora: Date; actorId: number; activado: boolean },
+): Promise<number> {
   const zona = zonaHoraria();
   const versiones = await versionesAprobadas(tx, indicadorId);
   let recalculadas = 0;
   for (const m of await enCurso(tx, indicadorId)) {
+    if (c.activado && new Date(m.vence_en as string).getTime() < c.ahora.getTime()) continue;
     const clave = m.periodo as string;
     const periodo = periodoDe(clave, zona);
     const version = periodo ? versionQueRigeEntre(versiones, periodo, zona) : null;
@@ -307,7 +318,7 @@ async function recalcularPorSoporte(tx: TransactionSql, indicadorId: number, c: 
       actorId: c.actorId,
       evento: "recalculo",
       detalle: { causa: "soporte_obligatorio" },
-      conservarVersion: true,
+      sistema: "soporte",
     });
     if (r.cambio) recalculadas += 1;
   }

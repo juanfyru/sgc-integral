@@ -41,6 +41,13 @@ const mesEnPalabras = (mes: unknown) => {
   return clave ? (periodoDe(clave, zonaHoraria())?.etiqueta ?? clave) : "un mes";
 };
 
+/** Por qué se recalculó una medición sin que nadie la tocara (`detalle.causa` del evento `recalculo`; residuos finales, 3). */
+const MOTIVO_DE_RECALCULO: Readonly<Record<string, string>> = {
+  racha: " por la racha de periodos anteriores",
+  soporte_obligatorio: " por el cambio del soporte obligatorio",
+  plazo: " por el cambio del plazo",
+};
+
 function queHizo(e: EventoDeMedicion): string {
   switch (e.tipo) {
     case "reapertura":
@@ -65,11 +72,11 @@ function queHizo(e: EventoDeMedicion): string {
       return nombre ? `${que} el soporte «${nombre}»` : `${que} un soporte`;
     }
     case "recalculo":
-      return "Se recalculó";
+      return `Se recalculó${MOTIVO_DE_RECALCULO[String(e.detalle.causa)] ?? ""}`;
   }
 }
 
-/** Qué había y qué quedó: las variables (por su nombre), «no aplica», el resultado, el semáforo, el estado, el análisis y la meta. */
+/** Qué había y qué quedó: las variables (por su nombre), «no aplica», el resultado, el semáforo, el estado, la marca de incumplimiento repetido, el análisis y la meta. */
 function cambiosDe(e: EventoDeMedicion, unidad: Unidad, nombres: Readonly<Record<string, string>>): string[] {
   const antes = objeto(e.detalle.antes);
   const despues = objeto(e.detalle.despues);
@@ -102,6 +109,10 @@ function cambiosDe(e: EventoDeMedicion, unidad: Unidad, nombres: Readonly<Record
   if (distinto(antes.estado, despues.estado)) {
     const s = (v: unknown) => (typeof v === "string" ? (ESTADO[v] ?? v) : null);
     cambio("Estado", s(antes.estado), s(despues.estado), "—");
+  }
+  if (distinto(antes.incumplimientoRepetido, despues.incumplimientoRepetido)) {
+    const s = (v: unknown) => (v === true ? "Sí" : v === false ? "No" : null);
+    cambio("Incumplimiento repetido", s(antes.incumplimientoRepetido), s(despues.incumplimientoRepetido), "—");
   }
   for (const [k, etiqueta] of TEXTOS) {
     if (distinto(texto(antes[k]), texto(despues[k]))) cambio(etiqueta, texto(antes[k]) && `«${texto(antes[k])}»`, texto(despues[k]) && `«${texto(despues[k])}»`, "(vacío)");

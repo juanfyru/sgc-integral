@@ -415,6 +415,58 @@ describe("los datos de operación en las mediciones abiertas", () => {
       const filas = await bitacora(tx, "indicador_operacion", ind.id);
       expect(filas.map((f) => f.detalle.medicionesRecalculadas)).toEqual([1, 1]);
     }));
+
+  it("activar el soporte rige hacia adelante: una reportada a tiempo y ya vencida no se reabre, ni vence ni se escala (residuos, 1)", () =>
+    revertida(sql, async (tx) => {
+      const { admin, mide, nuevo, op } = await entorno(tx);
+      // Con jefe: si la medición volviera a abrirse vencida, la pasada lo escalaría.
+      const jefe = await usuarioDePrueba(tx, { rol: "consulta" });
+      await tx`UPDATE usuarios SET jefe_inmediato_id = ${jefe.usuarioId} WHERE id = ${mide.usuarioId}`;
+      const { ind, marzo } = await nuevo();
+      await reportar(mide, { medicionId: marzo, valores: { A: "9", B: "10" }, parcial: false, confirmado: true }, { sql: tx, ahora: abril(5) });
+
+      // El 15 de abril el plazo de marzo (el 10) ya pasó: el soporte se pide desde ahora, no a lo ya reportado.
+      await cambiarOperacion(admin, op(ind.id, { soporteObligatorio: true }), { sql: tx, ahora: abril(15) });
+      expect((await marcas(tx, marzo)).estado).toBe("reportada");
+      expect(await tx`SELECT id FROM medicion_eventos WHERE medicion_id = ${marzo} AND tipo = 'recalculo'`).toHaveLength(0);
+      const [fila] = await bitacora(tx, "indicador_operacion", ind.id);
+      expect(fila.detalle.medicionesRecalculadas).toBeUndefined();
+      expect((await tareasDeIndicadores(mide, { sql: tx, ahora: abril(15) })).tareas.find((t) => t.id === `medir:${marzo}`)).toBeUndefined();
+
+      // La pasada no la ve vencida ni la escala.
+      await pasada(tx, abril(20));
+      expect(await marcas(tx, marzo)).toMatchObject({ estado: "reportada", aviso_vencido_en: null, escalado_en: null });
+      const avisos = await tx`SELECT tipo FROM notificaciones WHERE tipo IN ('indicadores.vencido', 'indicadores.escalado')
+        AND usuario_id IN (${mide.usuarioId}, ${jefe.usuarioId})`;
+      expect(avisos).toHaveLength(0);
+    }));
+
+  it("el recálculo por el soporte conserva la versión con que se calculó: un cambio menor aprobado después no la mueve", () =>
+    revertida(sql, async (tx) => {
+      const { admin, mide, nuevo, op } = await entorno(tx);
+      const { ind, marzo } = await nuevo();
+      await reportar(mide, { medicionId: marzo, valores: { A: "9", B: "10" }, parcial: false, confirmado: true }, { sql: tx, ahora: abril(5) });
+      // Un cambio menor rige los mismos periodos que la versión que reemplaza.
+      const [v2] = await tx`INSERT INTO indicador_versiones (indicador_id, numero, estado, tipo_cambio, nombre, forma, formula, periodicidad,
+          tendencia, meta, semaforo_modo, umbral_atencion_pct, unidad_sufijo, decimales, creado_por)
+        SELECT indicador_id, 2, 'borrador', 'menor', 'Nombre corregido', forma, formula, periodicidad, tendencia, meta, semaforo_modo,
+          umbral_atencion_pct, unidad_sufijo, decimales, ${admin.usuarioId}
+        FROM indicador_versiones WHERE id = ${ind.versionId} RETURNING id`;
+      await tx`SELECT id FROM indicador_versiones WHERE id = ${v2.id} FOR UPDATE`;
+      await tx`INSERT INTO indicador_variables (version_id, letra, nombre, consolidacion, origen, orden)
+        SELECT ${v2.id}, letra, nombre, consolidacion, origen, orden FROM indicador_variables WHERE version_id = ${ind.versionId}`;
+      await tx`UPDATE indicador_versiones SET estado = 'aprobada', elaborada_por = ${admin.usuarioId}, huella = ${"2".repeat(64)},
+          rige_desde = ${MARZO}, aprobada_por = ${admin.usuarioId}, aprobada_en = ${abril(5)}
+        WHERE id = ${v2.id}`;
+
+      // En plazo, activarlo la reabre y desactivarlo la deja reportada: las dos veces sigue con la versión 1.
+      await cambiarOperacion(admin, op(ind.id, { soporteObligatorio: true }), { sql: tx, ahora: abril(6) });
+      const [abierta] = await tx`SELECT estado, version_id FROM mediciones WHERE id = ${marzo}`;
+      expect([abierta.estado, Number(abierta.version_id)]).toEqual(["abierta", ind.versionId]);
+      await cambiarOperacion(admin, op(ind.id, { soporteObligatorio: false }), { sql: tx, ahora: abril(7) });
+      const [reportada] = await tx`SELECT estado, version_id FROM mediciones WHERE id = ${marzo}`;
+      expect([reportada.estado, Number(reportada.version_id)]).toEqual(["reportada", ind.versionId]);
+    }));
 });
 
 describe("duplicar", () => {
