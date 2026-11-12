@@ -72,7 +72,8 @@ búsqueda ni la página del proceso, y su dirección dice «Página no encontrad
 
 Barra lateral → **Indicadores**. Arriba, una barra con cuántos indicadores hay en cada color y su
 lectura en texto («19 bien, 7 en atención, 3 críticos, 3 sin dato») y cuántos reportes están
-vencidos. Debajo, una fila por indicador con el **último periodo terminado**:
+vencidos. Los «No aplica» se cuentan aparte, con su tramo rayado, y el texto los nombra cuando hay
+(«1 no aplica»). Debajo, una fila por indicador con el **último periodo terminado**:
 
 | Columna | Qué dice |
 |---|---|
@@ -176,8 +177,10 @@ Pestaña **Matriz del año**: todos los indicadores que usted ve, agrupados por 
 columnas de mes y la columna **Año** (el acumulado). Un trimestre ocupa sus tres meses unidos. Cada
 celda lleva el valor, una franja con el color y una figura por estado (una marca para Bien, un
 triángulo para Atención y una equis para Crítico), para que se distinga también sin color; «s. d.»
-y «n. a.» van en gris. Pulse una celda para ir a esa medición. Filtre por **Año**, **Proceso** y
-**Clasificación**. **Imprimir** la saca en papel y **Excel** la descarga.
+y «n. a.» van en gris. Un indicador retirado lleva la marca «Retirado» y, después del retiro, sus
+periodos quedan vacíos, como los de antes de su inicio: ya no se miden. Pulse una celda para ir a
+esa medición. Filtre por **Año**, **Proceso** y **Clasificación**. **Imprimir** la saca en papel y
+**Excel** la descarga.
 
 ### 2.8 Imprimir la ficha y los Excel
 
@@ -251,7 +254,9 @@ es una segunda mirada.
 Al reportar, el SGC calcula el resultado con la ficha que rige ese periodo y lo deja fijo con su
 meta. Si queda en **Atención** o **Crítico**, avisa a quien analiza y a quien hace seguimiento; si es
 **Crítico**, también a los líderes del proceso y al Administrador del SGC. A usted no le llega aviso
-de lo que usted mismo reportó. Un resultado que cumple no avisa a nadie.
+de lo que usted mismo reportó. Un resultado que cumple no avisa a nadie. Si el periodo pide análisis y
+a usted le toca analizarlo, la página del indicador se abre con el cursor en la sección **Análisis**
+(sección 4).
 
 ### 3.3 «No aplica en este periodo»
 
@@ -268,9 +273,9 @@ En la misma pantalla, sección **Soportes**, adjunte el archivo de donde salió 
 una **imagen** (PNG, JPG o WebP) o un **Excel `.xlsx`**, de hasta 25 MB cada uno. No se admiten el
 Excel viejo `.xls`, Word, archivos comprimidos ni páginas web: un `.xls` se guarda como `.xlsx` o
 como PDF. El SGC mira el contenido del archivo, no solo su nombre: un archivo renombrado a `.xlsx`
-que no es una hoja de cálculo se rechaza. Si un Excel verdadero se rechaza (pasa con algunos
-archivos que generan otros programas, con hojas muy grandes), ábralo y guárdelo de nuevo con Excel,
-o adjúntelo como PDF.
+que no es una hoja de cálculo se rechaza. Si un Excel verdadero se rechazara (podría pasar con
+algunos archivos de hojas muy grandes que generan otros programas), ábralo y guárdelo de nuevo con
+Excel, o adjúntelo como PDF.
 
 Si la ficha marca **soporte obligatorio**, no se puede reportar sin al menos uno. Mientras la
 medición no esté cerrada, **Quitar** retira un soporte (queda registrado). Los soportes solo los
@@ -388,7 +393,8 @@ Cuando le toca, le llegan el aviso «Ficha por aprobar: …» y la tarea **Aprob
    seleccionadas**: firma con **una sola clave**. Es todo o nada: si alguna ya no está por aprobar,
    no se aprueba ninguna y el mensaje dice cuál.
 3. Para devolver una, pulse **Devolver**, escriba la **Nota** (de 5 a 1.000 caracteres) y pulse
-   **Devolver la ficha**. No pide clave; quien la elaboró recibe el aviso y la tarea.
+   **Devolver la ficha**. No pide clave. La página lo confirma («Se devolvió la ficha de … a
+   borrador, con su nota.») y quien la elaboró recibe el aviso con la nota y la tarea.
 
 La firma «Aprobó» queda en la ficha con su nombre, su cargo y la fecha. Al aprobarse la primera
 versión, el indicador empieza a medirse y se abren de una vez sus periodos históricos.
@@ -434,8 +440,10 @@ En **Indicadores**, pulse **Nuevo indicador**.
    límites del resultado, qué incluye y qué excluye cada variable y cómo se junta al pasar a un
    periodo mayor (se suma, último valor o promedio), **Inicio de medición** (puede ser anterior a
    hoy: así se abren los históricos), **Nivel de acceso**, soporte obligatorio y, si se reporta a
-   un ente, a quién y cada cuánto (por ahora es informativo). Si un error está en un campo de
-   **Más opciones**, la sección se abre sola y lo señala.
+   un ente, a quién y cada cuánto (por ahora es informativo). Si al guardar hay un error en un
+   campo, el mensaje sale junto a ese campo y el cursor va a él; si está en **Más opciones**, la
+   sección se abre sola. Al elegir **¿Cómo se calcula?** el SGC sugiere la unidad («Porcentaje»
+   para un porcentaje, «Número» para un conteo); puede cambiarla.
 6. Pulse **Guardar borrador**. La ficha queda en borrador y se abre su página de edición.
 7. Al pie, **Enviar a aprobación**: la ventana muestra el indicador, la versión, el tipo y la huella
    de la ficha; firme con su clave. Queda la firma «Elaboró» y la ficha pasa a **Por aprobar**.
