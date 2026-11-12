@@ -1,4 +1,5 @@
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
+import { ETIQUETA_REPORTE_DE_LISTA, ETIQUETA_SEMAFORO_DE_LISTA } from "@/lib/indicadores/filtros";
 import { ETIQUETA_ESTADO_NORMA, ETIQUETA_RELACION } from "@/lib/normograma/tipos";
 import { cuenta } from "@/lib/plural";
 import type { Accion } from "@/lib/tramites/transiciones";
@@ -163,6 +164,13 @@ function texto(v: unknown): string | null {
   return typeof v === "string" && v.length > 0 ? v : null;
 }
 
+const ARTICULO_MAESTRO_INDICADOR: Record<string, string> = {
+  tipos: "el tipo",
+  clasificaciones: "la clasificación",
+  unidades: "la unidad",
+  objetivos: "el objetivo",
+};
+
 const DESTINO_DE_COPIA: Record<string, string> = {
   devuelta: "devuelta al SGC",
   destruida: "destruida",
@@ -189,6 +197,53 @@ function documentoYVersion(codigo: string | null, version: unknown): string {
 function copiaControlada(d: Record<string, unknown>, codigo: string | null): string {
   const numero = typeof d.numero === "number" ? ` N.º ${String(d.numero).padStart(2, "0")}` : "";
   return `la copia controlada${numero} de ${documentoYVersion(codigo, d.version)}`;
+}
+
+/** «SGC-IND-01, tercer trimestre de 2026»: la medición de un indicador, con su periodo en palabras. */
+function medicionDe(codigo: string | null, periodo: unknown): string {
+  const clave = texto(periodo);
+  const etiqueta = clave ? (periodoDe(clave, zonaHoraria())?.etiqueta ?? clave) : null;
+  if (!codigo) return `la medición de un indicador${etiqueta ? ` (${etiqueta})` : ""}`;
+  return `${codigo}${etiqueta ? `, ${etiqueta}` : ""}`;
+}
+
+/** La etiqueta de `valor` en `mapa`, tal cual (con su mayúscula), o null si no es una de sus claves. */
+function etiquetaTal(mapa: Record<string, string>, valor: unknown): string | null {
+  const clave = texto(valor);
+  return clave && Object.hasOwn(mapa, clave) ? mapa[clave] : null;
+}
+
+/**
+ * Los filtros de la lista de indicadores que guarda el Excel de resultados, cada uno con su nombre (los ids no se nombran);
+ * el semáforo y el reporte con los nombres del formulario de la lista (`filtros.ts`).
+ */
+function filtrosDeLista(v: unknown): (string | null)[] {
+  const f = objeto(v);
+  if (!f) return [];
+  const semaforo = etiquetaTal(ETIQUETA_SEMAFORO_DE_LISTA, f.semaforo);
+  const reporte = etiquetaTal(ETIQUETA_REPORTE_DE_LISTA, f.reporte);
+  return [
+    numero(f.procesoId) === null ? null : "de un proceso",
+    numero(f.subprocesoId) === null ? null : "de un subproceso",
+    numero(f.clasificacionId) === null ? null : "de una clasificación",
+    numero(f.tipoId) === null ? null : "de un tipo",
+    semaforo ? `con semáforo «${semaforo}»` : null,
+    reporte ? `con reporte «${reporte}»` : null,
+    f.participo === true ? "donde participa" : null,
+    texto(f.texto) ? `con el texto «${texto(f.texto)}»` : null,
+    f.retirados === true ? "con los retirados" : null,
+  ];
+}
+
+/** «90», «96,5», «98 a 100» o «sin meta»: la meta de un periodo como la guarda `programarMeta`; `null` si no vino. */
+function metaDeBitacora(v: unknown): string | null {
+  const m = objeto(v);
+  if (!m) return null;
+  const meta = texto(m.meta);
+  const maximo = texto(m.metaMax);
+  if (meta === null) return "sin meta";
+  const coma = (t: string) => t.replace(".", ",");
+  return maximo === null || maximo === meta ? coma(meta) : `${coma(meta)} a ${coma(maximo)}`;
 }
 
 /** «: motivo», o nada si no se guardó. */
@@ -680,6 +735,147 @@ export function describirEvento(e: EventoAuditoria): string {
       return `Enlazó ${cod ?? "un documento"} a ${laNorma(d)}`;
     case "norma_documento_desenlazado":
       return `Quitó el enlace de ${cod ?? "un documento"} con ${laNorma(d)}`;
+    case "indicador_maestro_guardado": {
+      const que = ARTICULO_MAESTRO_INDICADOR[texto(d.maestro) ?? ""] ?? "el elemento";
+      return `${d.creado === true ? "Creó" : "Editó"} ${que}${nombre ? ` «${nombre}»` : ""} de indicadores`;
+    }
+    case "indicador_maestro_activado": {
+      const que = ARTICULO_MAESTRO_INDICADOR[texto(d.maestro) ?? ""] ?? "el elemento";
+      return `${d.activo === true ? "Activó" : "Desactivó"} ${que}${nombre ? ` «${nombre}»` : ""} de indicadores`;
+    }
+    case "indicador_maestro_borrado": {
+      const que = ARTICULO_MAESTRO_INDICADOR[texto(d.maestro) ?? ""] ?? "el elemento";
+      return `Borró ${que}${nombre ? ` «${nombre}»` : ""} de indicadores`;
+    }
+    case "indicador_parametros_guardados": {
+      const cambios = Object.keys(typeof d.cambios === "object" && d.cambios !== null ? d.cambios : {}).length;
+      return cambios === 0
+        ? "Guardó los parámetros de indicadores sin cambios"
+        : `Guardó los parámetros de indicadores (${cambios} ${cambios === 1 ? "cambio" : "cambios"})`;
+    }
+    // ── Indicadores (14A): la ficha
+    case "indicador_creado":
+      return `Creó el indicador${cod ? ` ${cod}` : ""}${nombre ? ` «${nombre}»` : ""} en borrador`;
+    case "indicador_borrador_guardado":
+      return `Guardó el borrador de la ficha de ${cod ?? "un indicador"}${numero(d.numero) === null ? "" : ` (versión ${numero(d.numero)})`}`;
+    case "indicador_cambio_abierto":
+      return `Abrió un cambio en la ficha de ${cod ?? "un indicador"}${numero(d.numero) === null ? "" : ` (versión ${numero(d.numero)})`}`;
+    case "indicador_enviado": {
+      const clave = texto(d.rigeDesde);
+      const etiqueta = clave ? (periodoDe(clave, zonaHoraria())?.etiqueta ?? clave) : null;
+      // «desde el tercer trimestre de 2026», pero «desde noviembre de 2026» y «desde 2026».
+      const rige = clave && etiqueta ? (/^\d{4}(-\d{2})?$/.test(clave) ? ` desde ${etiqueta}` : ` desde el ${etiqueta}`) : "";
+      const tipo = d.tipoCambio === "inicial" ? "ficha nueva" : d.tipoCambio === "mayor" ? `cambio mayor${rige}` : null;
+      return `Envió a aprobación la ficha de ${cod ?? "un indicador"}${entreParentesis([numero(d.numero) === null ? null : `versión ${numero(d.numero)}`, tipo])}`;
+    }
+    case "indicador_cambio_menor":
+      return `Publicó un cambio menor en la ficha de ${cod ?? "un indicador"}${numero(d.numero) === null ? "" : ` (versión ${numero(d.numero)})`}${conMotivo(d.motivo)}`;
+    case "indicador_aprobado":
+      return `Aprobó la ficha de ${cod ?? "un indicador"}${numero(d.numero) === null ? "" : ` (versión ${numero(d.numero)})`}`;
+    case "indicador_devuelto":
+      return `Devolvió la ficha de ${cod ?? "un indicador"}${numero(d.numero) === null ? "" : ` (versión ${numero(d.numero)})`}${conMotivo(d.nota)}`;
+    case "indicador_borrador_descartado":
+      return `Descartó el borrador de la ficha de ${cod ?? "un indicador"}${numero(d.numero) === null ? "" : ` (versión ${numero(d.numero)})`}`;
+    case "indicador_designados": {
+      const funcion = texto(d.funcion);
+      const quien = funcion === "analiza" ? "analiza" : funcion === "seguimiento" ? "hace seguimiento de" : "mide";
+      const lista = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.length > 0) : []);
+      const antes = lista(d.nombresAntes);
+      const despues = lista(d.nombresDespues);
+      return `Cambió quién ${quien} ${cod ?? "un indicador"}: ${antes.length > 0 ? antes.join(", ") : "nadie"} → ${despues.length > 0 ? despues.join(", ") : "nadie"}`;
+    }
+    case "indicador_operacion": {
+      const antes = objeto(d.antes) ?? {};
+      const despues = objeto(d.despues) ?? {};
+      const campos: [string, string][] = [
+        ["plazoReporteDias", "plazo de reporte"],
+        ["inicioMedicion", "inicio de medición"],
+        ["soporteObligatorio", "soporte obligatorio"],
+        ["nivelAcceso", "nivel de acceso"],
+      ];
+      const cambiados = campos.filter(([clave]) => JSON.stringify(antes[clave]) !== JSON.stringify(despues[clave])).map(([, campo]) => campo);
+      // Lo que tocó en las mediciones en curso (ola final, I1): la fecha límite nueva y el recálculo por el soporte.
+      const enMediciones = [
+        numero(d.medicionesConFechaNueva) ? `${cuenta(numero(d.medicionesConFechaNueva)!, "medición", "mediciones")} con la fecha límite nueva` : null,
+        numero(d.medicionesRecalculadas) ? `${cuenta(numero(d.medicionesRecalculadas)!, "medición recalculada", "mediciones recalculadas")}` : null,
+      ].filter((p): p is string => p !== null);
+      return `Cambió los datos de operación de ${cod ?? "un indicador"}${cambiados.length > 0 ? `: ${cambiados.join(", ")}` : ""}${
+        enMediciones.length > 0 ? ` (${enMediciones.join("; ")})` : ""
+      }`;
+    }
+    case "indicador_duplicado":
+      return `Creó el indicador${cod ? ` ${cod}` : ""} a partir de ${texto(d.origen) ?? "otro indicador"}`;
+    case "indicador_retirado":
+      return cod ? `Retiró el indicador ${cod}${conMotivo(d.motivo)}` : `Retiró un indicador${conMotivo(d.motivo)}`;
+    case "indicador_descartado":
+      return cod ? `Descartó el indicador ${cod}${conMotivo(d.motivo)}` : `Descartó un indicador${conMotivo(d.motivo)}`;
+    case "indicador_borrado":
+      return `Borró el indicador${cod ? ` ${cod}` : ""}, que nunca se envió a aprobación`;
+    // ── Indicadores (14A): las mediciones
+    case "medicion_guardada":
+      return `Guardó sin reportar los datos de ${medicionDe(cod, d.periodo)}`;
+    case "medicion_reportada": {
+      const de = medicionDe(cod, d.periodo);
+      const resultado = texto(d.resultado);
+      return `Reportó ${de}${resultado ? `: ${resultado}` : ""}${d.sinMedidor === true ? " (sin nadie más que pudiera medirlo)" : ""}`;
+    }
+    case "medicion_corregida": {
+      const de = medicionDe(cod, d.periodo);
+      if (objeto(d.antes)?.noAplica === true && objeto(d.despues)?.noAplica === false && texto(d.resultado) === null) {
+        return `Quitó «No aplica» de ${de}`;
+      }
+      const antes = texto(d.resultadoAntes);
+      const despues = texto(d.resultado);
+      return `Corrigió ${de}${antes || despues ? `: ${antes ?? "sin resultado"} → ${despues ?? "sin resultado"}` : ""}`;
+    }
+    case "medicion_no_aplica":
+      return `Marcó «No aplica» en ${medicionDe(cod, d.periodo)}${conMotivo(d.motivo)}`;
+    case "medicion_analizada":
+      return `${d.primera === false ? "Editó" : "Escribió"} el análisis de ${medicionDe(cod, d.periodo)}${d.sinMedidor === true ? " (sin nadie más que pudiera analizarlo)" : ""}`;
+    case "medicion_soporte_quitado":
+      return `Quitó el soporte «${texto(d.nombre) ?? "?"}» de ${medicionDe(cod, d.periodo)}`;
+    case "medicion_observada":
+      return `Dejó una observación en ${medicionDe(cod, d.periodo)}`;
+    case "medicion_observacion_respondida":
+      return `Respondió una observación en ${medicionDe(cod, d.periodo)}`;
+    case "medicion_historica_registrada": {
+      const de = medicionDe(cod, d.periodo);
+      if (d.noAplica === true) return `${d.correccion === true ? "Corrigió" : "Registró"} el histórico de ${de} como «No aplica»${conMotivo(d.motivo)}`;
+      const despues = texto(d.resultado);
+      if (d.correccion === true) {
+        const antes = texto(d.resultadoAntes);
+        return `Corrigió el histórico de ${de}${antes || despues ? `: ${antes ?? "sin resultado"} → ${despues ?? "sin resultado"}` : ""}`;
+      }
+      return `Registró el histórico de ${de}${despues ? `: ${despues}` : ""}`;
+    }
+    case "indicadores_mes_cerrado": {
+      const mes = texto(d.mes);
+      const etiqueta = mes ? (periodoDe(mes, zonaHoraria())?.etiqueta ?? mes) : null;
+      if (!etiqueta) return "Cerró un mes en los indicadores";
+      const cerradas = numero(d.cerradas);
+      return `Cerró ${etiqueta} en los indicadores${cerradas === null ? "" : `: ${cuenta(cerradas, "medición cerrada", "mediciones cerradas")}`}`;
+    }
+    case "medicion_reabierta":
+      return `Reabrió ${medicionDe(cod, d.periodo)}${d.propioMedidor === true ? ", que también mide" : ""}${conMotivo(d.justificacion)}`;
+    case "medicion_cerrada_de_nuevo": {
+      const mes = texto(d.mes);
+      const etiqueta = mes ? (periodoDe(mes, zonaHoraria())?.etiqueta ?? mes) : null;
+      return `Cerró de nuevo ${medicionDe(cod, d.periodo)}${etiqueta ? ` (cierre de ${etiqueta})` : ""}`;
+    }
+    case "indicador_meta_programada": {
+      if (!cod) return "Programó la meta de un periodo de un indicador";
+      const antes = metaDeBitacora(d.antes);
+      const despues = metaDeBitacora(d.despues);
+      const cambio = antes && despues ? `: ${antes} → ${despues}` : "";
+      return `Programó la meta de ${medicionDe(cod, d.periodo)}${cambio}${d.tardia === true ? ", después de terminado el periodo" : ""}${conMotivo(d.justificacion)}`;
+    }
+    // ── Indicadores (14A): los Excel
+    case "exporto_ficha_indicador":
+      return `Emitió el Excel de la ficha y los resultados de ${cod ?? "un indicador"}${numero(d.anio) === null ? "" : ` (${numero(d.anio)})`}`;
+    case "exporto_resultados_indicadores": {
+      const anio = numero(d.anio);
+      return `Emitió los resultados de los indicadores${anio === null ? "" : ` de ${anio}`}${entreParentesis(filtrosDeLista(d.filtros))}`;
+    }
     case "tipo_norma_creado":
       return `Creó el tipo de norma${nombre ? ` «${nombre}»` : ""}`;
     case "tipo_norma_editado":
@@ -824,6 +1020,8 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   informe_generado: "Generó el informe de la revisión anual",
   informe_no_regenerable: "No se pudo generar un informe de la revisión anual",
   exporto_indicadores: "Emitió los indicadores documentales",
+  exporto_ficha_indicador: "Emitió el Excel de un indicador",
+  exporto_resultados_indicadores: "Emitió los resultados de los indicadores",
   // Normograma (13C)
   norma_creada: "Registró una norma",
   norma_editada: "Editó una norma",
@@ -837,6 +1035,37 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   norma_desasociada: "Quitó una norma de un proceso",
   norma_documento_enlazado: "Enlazó un documento a una norma",
   norma_documento_desenlazado: "Quitó el enlace de un documento con una norma",
+  indicador_maestro_guardado: "Guardó un elemento de los maestros de indicadores",
+  indicador_maestro_activado: "Activó o desactivó un elemento de los maestros de indicadores",
+  indicador_maestro_borrado: "Borró un elemento de los maestros de indicadores",
+  indicador_parametros_guardados: "Guardó los parámetros de indicadores",
+  indicador_creado: "Creó un indicador",
+  indicador_borrador_guardado: "Guardó el borrador de una ficha de indicador",
+  indicador_cambio_abierto: "Abrió un cambio en una ficha de indicador",
+  indicador_enviado: "Envió una ficha de indicador a aprobación",
+  indicador_cambio_menor: "Publicó un cambio menor en una ficha de indicador",
+  indicador_aprobado: "Aprobó una ficha de indicador",
+  indicador_devuelto: "Devolvió una ficha de indicador",
+  indicador_borrador_descartado: "Descartó el borrador de una ficha de indicador",
+  indicador_designados: "Cambió las personas designadas de un indicador",
+  indicador_operacion: "Cambió los datos de operación de un indicador",
+  indicador_duplicado: "Creó un indicador a partir de otro",
+  indicador_retirado: "Retiró un indicador",
+  indicador_descartado: "Descartó un indicador",
+  indicador_borrado: "Borró un indicador",
+  medicion_reportada: "Reportó una medición de indicador",
+  medicion_corregida: "Corrigió una medición de indicador",
+  medicion_no_aplica: "Marcó «No aplica» en una medición de indicador",
+  medicion_guardada: "Guardó sin reportar una medición de indicador",
+  medicion_analizada: "Escribió o editó el análisis de una medición de indicador",
+  medicion_soporte_quitado: "Quitó un soporte de una medición de indicador",
+  medicion_observada: "Dejó una observación en una medición de indicador",
+  medicion_observacion_respondida: "Respondió una observación de una medición de indicador",
+  medicion_historica_registrada: "Registró o corrigió un histórico de indicador",
+  indicador_meta_programada: "Programó la meta de un periodo de un indicador",
+  indicadores_mes_cerrado: "Cerró un mes de los indicadores",
+  medicion_reabierta: "Reabrió una medición de indicador",
+  medicion_cerrada_de_nuevo: "Cerró de nuevo una medición de indicador",
   tipo_norma_creado: "Creó un tipo de norma",
   tipo_norma_editado: "Renombró un tipo de norma",
   tipo_norma_movido: "Movió un tipo de norma",

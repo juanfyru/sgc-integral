@@ -1,0 +1,131 @@
+import Link from "next/link";
+import { Boton } from "@/componentes/ui/Boton";
+import { claseControl } from "@/componentes/ui/Campo";
+import type { FiltroDeLista, OpcionesDeLista } from "@/db/consultas/indicadores/lista";
+import {
+  ETIQUETA_REPORTE_DE_LISTA,
+  ETIQUETA_SEMAFORO_DE_LISTA,
+  REPORTES_DE_LISTA,
+  SEMAFOROS_DE_LISTA,
+} from "@/lib/indicadores/filtros";
+import { Selector } from "./Selector";
+
+const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
+
+const SEMAFOROS = SEMAFOROS_DE_LISTA.map((valor) => ({ valor, etiqueta: ETIQUETA_SEMAFORO_DE_LISTA[valor] }));
+const REPORTES = REPORTES_DE_LISTA.map((valor) => ({ valor, etiqueta: ETIQUETA_REPORTE_DE_LISTA[valor] }));
+
+/** En pantallas angostas, dos selectores por fila; desde `sm`, cada uno con su ancho en la fila que se envuelve. */
+const ANCHO = "sm:w-auto sm:max-w-56";
+
+function Casilla({ id, nombre, etiqueta, marcada }: { id: string; nombre: string; etiqueta: string; marcada: boolean }) {
+  return (
+    <div className="flex items-center gap-2 py-2">
+      <input id={id} type="checkbox" name={nombre} value="1" defaultChecked={marcada} className={`size-4 accent-marca ${FOCO}`} />
+      <label htmlFor={id} className="text-sm">
+        {etiqueta}
+      </label>
+    </div>
+  );
+}
+
+/**
+ * Los filtros de la lista (spec §12.2, maqueta 4) en una fila que se envuelve (a 390 px, dos selectores por fila):
+ * proceso y subproceso, clasificación, tipo,
+ * estado del semáforo, estado del reporte, «Donde participo», texto e «Incluir retirados». Es un formulario `GET` con los
+ * nombres que lee `filtroDeConsulta`: funciona antes de hidratar y deja la URL para compartir.
+ */
+export function FiltrosIndicadores({ filtro, opciones }: { filtro: FiltroDeLista; opciones: OpcionesDeLista }) {
+  const id = (n?: number) => (n === undefined ? "" : String(n));
+  const conFiltros = Object.keys(filtro).length > 0;
+  return (
+    <form
+      method="get"
+      action="/indicadores"
+      role="search"
+      aria-label="Filtrar indicadores"
+      className="grid min-w-0 max-w-full grid-cols-2 items-end gap-2 sm:flex sm:flex-wrap"
+    >
+      <Selector className={ANCHO} id="filtro-proceso" nombre="proceso" etiqueta="Proceso" valor={id(filtro.procesoId)}>
+        <option value="">Todos</option>
+        {opciones.procesos.map((p) => (
+          <option key={p.id} value={p.id}>
+            {`${p.sigla} · ${p.nombre}`}
+          </option>
+        ))}
+      </Selector>
+      <Selector className={ANCHO} id="filtro-subproceso" nombre="subproceso" etiqueta="Subproceso" valor={id(filtro.subprocesoId)}>
+        <option value="">Todos</option>
+        {opciones.procesos
+          .filter((p) => opciones.subprocesos.some((s) => s.procesoId === p.id))
+          .map((p) => (
+            <optgroup key={p.id} label={p.nombre}>
+              {opciones.subprocesos
+                .filter((s) => s.procesoId === p.id)
+                .map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.nombre}
+                  </option>
+                ))}
+            </optgroup>
+          ))}
+      </Selector>
+      <Selector className={ANCHO} id="filtro-clasificacion" nombre="clasificacion" etiqueta="Clasificación" valor={id(filtro.clasificacionId)}>
+        <option value="">Todas</option>
+        {opciones.clasificaciones.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.nombre}
+          </option>
+        ))}
+      </Selector>
+      <Selector className={ANCHO} id="filtro-tipo" nombre="tipo" etiqueta="Tipo" valor={id(filtro.tipoId)}>
+        <option value="">Todos</option>
+        {opciones.tipos.map((t) => (
+          <option key={t.id} value={t.id}>
+            {t.nombre}
+          </option>
+        ))}
+      </Selector>
+      <Selector className={ANCHO} id="filtro-semaforo" nombre="semaforo" etiqueta="Estado" valor={filtro.semaforo ?? ""}>
+        <option value="">Todos</option>
+        {SEMAFOROS.map((s) => (
+          <option key={s.valor} value={s.valor}>
+            {s.etiqueta}
+          </option>
+        ))}
+      </Selector>
+      <Selector className={ANCHO} id="filtro-reporte" nombre="reporte" etiqueta="Reporte" valor={filtro.reporte ?? ""}>
+        <option value="">Todos</option>
+        {REPORTES.map((r) => (
+          <option key={r.valor} value={r.valor}>
+            {r.etiqueta}
+          </option>
+        ))}
+      </Selector>
+      <div className="col-span-2 flex min-w-0 flex-col gap-1 sm:w-auto">
+        <label htmlFor="filtro-texto" className="text-sm font-medium">
+          Buscar
+        </label>
+        <input
+          id="filtro-texto"
+          type="search"
+          name="texto"
+          defaultValue={filtro.texto ?? ""}
+          maxLength={100}
+          placeholder="Código o nombre"
+          className={`${claseControl} w-full sm:w-48`}
+        />
+      </div>
+      <Casilla id="filtro-participo" nombre="participo" etiqueta="Donde participo" marcada={filtro.participo === true} />
+      <Casilla id="filtro-retirados" nombre="retirados" etiqueta="Incluir retirados" marcada={filtro.retirados === true} />
+      <Boton type="submit" variante="secundario" className="justify-self-start">
+        Filtrar
+      </Boton>
+      {conFiltros ? (
+        <Link href="/indicadores" className={`self-center rounded-sm py-2 text-sm text-marca underline-offset-2 hover:underline ${FOCO}`}>
+          Quitar los filtros
+        </Link>
+      ) : null}
+    </form>
+  );
+}

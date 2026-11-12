@@ -6,7 +6,7 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 }
 
 import { obtenerSql } from "@/db/cliente";
-import { fechaCompactaLocal, fechaHoraLocal, ZONA_HORARIA_DEFECTO, zonaHoraria } from "@/lib/zona-horaria";
+import { fechaCompactaLocal, fechaHoraLarga, fechaHoraLocal, ZONA_HORARIA_DEFECTO, zonaHoraria } from "@/lib/zona-horaria";
 
 const original = process.env.ZONA_HORARIA;
 afterEach(() => {
@@ -46,6 +46,14 @@ describe("fechas que ve el usuario, en la zona de la instalación (M1)", () => {
   it("la medianoche sale como 00, no 24", () => {
     process.env.ZONA_HORARIA = "UTC";
     expect(fechaHoraLocal(new Date("2026-01-05T00:05:00Z"))).toBe("2026-01-05 00:05");
+    expect(fechaHoraLarga(new Date("2026-01-05T00:05:00Z"))).toBe("5 de enero de 2026, 00:05");
+  });
+
+  it("fechaHoraLarga escribe el día en palabras, con la hora", () => {
+    delete process.env.ZONA_HORARIA;
+    expect(fechaHoraLarga(instante)).toBe("3 de noviembre de 2026, 21:30");
+    process.env.ZONA_HORARIA = "Asia/Tokyo";
+    expect(fechaHoraLarga(instante)).toBe("4 de noviembre de 2026, 11:30");
   });
 });
 

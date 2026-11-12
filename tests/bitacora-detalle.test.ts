@@ -662,3 +662,270 @@ describe("la configuración documental nombra cada clave que guarda", () => {
     }
   });
 });
+
+describe("maestros y parámetros de indicadores", () => {
+  const frase = (accion: string, detalle: Record<string, unknown>) =>
+    describirEvento({ accion, entidad: "x", entidadId: 1, detalle });
+  it("dicen qué maestro y qué elemento", () => {
+    expect(frase("indicador_maestro_guardado", { maestro: "unidades", nombre: "Minutos", creado: true })).toBe(
+      "Creó la unidad «Minutos» de indicadores",
+    );
+    expect(frase("indicador_maestro_guardado", { maestro: "tipos", nombre: "Eficacia", creado: false })).toBe(
+      "Editó el tipo «Eficacia» de indicadores",
+    );
+    expect(frase("indicador_maestro_activado", { maestro: "objetivos", nombre: "Mejorar", activo: false })).toBe(
+      "Desactivó el objetivo «Mejorar» de indicadores",
+    );
+    expect(frase("indicador_maestro_borrado", { maestro: "clasificaciones", nombre: "Otra" })).toBe(
+      "Borró la clasificación «Otra» de indicadores",
+    );
+    expect(frase("indicador_parametros_guardados", { cambios: { a: {}, b: {} } })).toBe(
+      "Guardó los parámetros de indicadores (2 cambios)",
+    );
+  });
+});
+
+describe("la ficha de indicador", () => {
+  const frase = (accion: string, detalle: Record<string, unknown>) =>
+    describirEvento({ accion, entidad: "indicador", entidadId: 1, detalle });
+  it("dice qué indicador y qué versión", () => {
+    expect(frase("indicador_creado", { codigo: "SGC-IND-06", nombre: "Cumplimiento del plan", versionId: 3 })).toBe(
+      "Creó el indicador SGC-IND-06 «Cumplimiento del plan» en borrador",
+    );
+    expect(frase("indicador_borrador_guardado", { codigo: "SGC-IND-06", numero: 2, versionId: 3 })).toBe(
+      "Guardó el borrador de la ficha de SGC-IND-06 (versión 2)",
+    );
+    // Con los datos de operación y los designados de antes y después, la frase sale igual del detalle.
+    expect(
+      frase("indicador_borrador_guardado", {
+        codigo: "SGC-IND-06",
+        numero: 1,
+        versionId: 3,
+        operacion: { antes: { plazoReporteDias: 10 }, despues: { plazoReporteDias: 15 } },
+        designados: { antes: { mide: [4], analiza: [4] }, despues: { mide: [5], analiza: [4] } },
+      }),
+    ).toBe("Guardó el borrador de la ficha de SGC-IND-06 (versión 1)");
+    expect(frase("indicador_cambio_abierto", { codigo: "SGC-IND-06", numero: 2, versionId: 3 })).toBe(
+      "Abrió un cambio en la ficha de SGC-IND-06 (versión 2)",
+    );
+    expect(nombreDeAccion("indicador_creado")).toBe("Creó un indicador");
+  });
+
+  it("dice qué pasó con la aprobación de la ficha", () => {
+    expect(frase("indicador_enviado", { codigo: "SGC-IND-06", numero: 1, versionId: 3, tipoCambio: "inicial", rigeDesde: "2026-T1" })).toBe(
+      "Envió a aprobación la ficha de SGC-IND-06 (versión 1, ficha nueva)",
+    );
+    expect(frase("indicador_enviado", { codigo: "SGC-IND-06", numero: 2, versionId: 4, tipoCambio: "mayor", rigeDesde: "2026-T3" })).toBe(
+      "Envió a aprobación la ficha de SGC-IND-06 (versión 2, cambio mayor desde el tercer trimestre de 2026)",
+    );
+    expect(frase("indicador_cambio_menor", { codigo: "SGC-IND-06", numero: 3, versionId: 5, motivo: "Aclarar el nombre" })).toBe(
+      "Publicó un cambio menor en la ficha de SGC-IND-06 (versión 3): Aclarar el nombre",
+    );
+    expect(frase("indicador_aprobado", { codigo: "SGC-IND-06", numero: 2, versionId: 4 })).toBe("Aprobó la ficha de SGC-IND-06 (versión 2)");
+    expect(frase("indicador_devuelto", { codigo: "SGC-IND-06", numero: 2, versionId: 4, nota: "Falta el sustento" })).toBe(
+      "Devolvió la ficha de SGC-IND-06 (versión 2): Falta el sustento",
+    );
+    expect(frase("indicador_borrador_descartado", { codigo: "SGC-IND-06", numero: 4, versionId: 6 })).toBe(
+      "Descartó el borrador de la ficha de SGC-IND-06 (versión 4)",
+    );
+    // Sin código, la frase no se cae.
+    expect(frase("indicador_aprobado", {})).toBe("Aprobó la ficha de un indicador");
+    expect(nombreDeAccion("indicador_enviado")).toBe("Envió una ficha de indicador a aprobación");
+    expect(nombreDeAccion("indicador_cambio_menor")).toBe("Publicó un cambio menor en una ficha de indicador");
+    expect(nombreDeAccion("indicador_aprobado")).toBe("Aprobó una ficha de indicador");
+    expect(nombreDeAccion("indicador_devuelto")).toBe("Devolvió una ficha de indicador");
+    expect(nombreDeAccion("indicador_borrador_descartado")).toBe("Descartó el borrador de una ficha de indicador");
+  });
+
+  it("dice qué pasó con las personas, la operación y la baja de un indicador", () => {
+    expect(
+      frase("indicador_designados", { codigo: "SGC-IND-06", funcion: "mide", antes: [4], despues: [5, 6], nombresAntes: ["Ana"], nombresDespues: ["Beto", "Carla"] }),
+    ).toBe("Cambió quién mide SGC-IND-06: Ana → Beto, Carla");
+    expect(frase("indicador_designados", { codigo: "SGC-IND-06", funcion: "seguimiento", nombresAntes: [], nombresDespues: ["Ana"] })).toBe(
+      "Cambió quién hace seguimiento de SGC-IND-06: nadie → Ana",
+    );
+    expect(
+      frase("indicador_operacion", {
+        codigo: "SGC-IND-06",
+        antes: { plazoReporteDias: 10, nivelAcceso: "general", inicioMedicion: "2026-01", soporteObligatorio: false },
+        despues: { plazoReporteDias: 15, nivelAcceso: "restringido", inicioMedicion: "2026-01", soporteObligatorio: false },
+      }),
+    ).toBe("Cambió los datos de operación de SGC-IND-06: plazo de reporte, nivel de acceso");
+    // Lo que el cambio tocó en las mediciones en curso (ola final, I1).
+    expect(
+      frase("indicador_operacion", {
+        codigo: "SGC-IND-06",
+        antes: { plazoReporteDias: 10, soporteObligatorio: false },
+        despues: { plazoReporteDias: 30, soporteObligatorio: true },
+        medicionesConFechaNueva: 3,
+        medicionesRecalculadas: 1,
+      }),
+    ).toBe(
+      "Cambió los datos de operación de SGC-IND-06: plazo de reporte, soporte obligatorio (3 mediciones con la fecha límite nueva; 1 medición recalculada)",
+    );
+    expect(frase("indicador_duplicado", { codigo: "GTH-IND-02", origen: "SGC-IND-06" })).toBe("Creó el indicador GTH-IND-02 a partir de SGC-IND-06");
+    expect(frase("indicador_retirado", { codigo: "SGC-IND-06", motivo: "Ya no se mide" })).toBe("Retiró el indicador SGC-IND-06: Ya no se mide");
+    expect(frase("indicador_descartado", { codigo: "SGC-IND-06", motivo: "Se abandonó" })).toBe("Descartó el indicador SGC-IND-06: Se abandonó");
+    expect(frase("indicador_borrado", { codigo: "SGC-IND-06" })).toBe("Borró el indicador SGC-IND-06, que nunca se envió a aprobación");
+    expect(frase("indicador_retirado", {})).toBe("Retiró un indicador");
+    expect(nombreDeAccion("indicador_designados")).toBe("Cambió las personas designadas de un indicador");
+    expect(nombreDeAccion("indicador_retirado")).toBe("Retiró un indicador");
+  });
+});
+
+describe("la medición de un indicador", () => {
+  const frase = (accion: string, detalle: Record<string, unknown>) =>
+    describirEvento({ accion, entidad: "medicion", entidadId: 1, detalle });
+  it("dice qué indicador, qué periodo y qué resultado", () => {
+    expect(frase("medicion_reportada", { codigo: "SGC-IND-01", periodo: "2026-T3", resultado: "60 %" })).toBe(
+      "Reportó SGC-IND-01, tercer trimestre de 2026: 60 %",
+    );
+    expect(frase("medicion_reportada", { codigo: "SGC-IND-01", periodo: "2026-T3", resultado: "60 %", sinMedidor: true })).toBe(
+      "Reportó SGC-IND-01, tercer trimestre de 2026: 60 % (sin nadie más que pudiera medirlo)",
+    );
+    // «Guardar sin reportar» tiene su propia acción, con los valores de antes y de después.
+    expect(
+      frase("medicion_guardada", { codigo: "SGC-IND-01", periodo: "2026-03", antes: { A: null, B: null }, despues: { A: "3", B: null } }),
+    ).toBe("Guardó sin reportar los datos de SGC-IND-01, marzo de 2026");
+    expect(frase("medicion_guardada", {})).toBe("Guardó sin reportar los datos de la medición de un indicador");
+    expect(frase("medicion_corregida", { codigo: "SGC-IND-01", periodo: "2026-T3", resultadoAntes: "100 %", resultado: "80 %" })).toBe(
+      "Corrigió SGC-IND-01, tercer trimestre de 2026: 100 % → 80 %",
+    );
+    expect(
+      frase("medicion_corregida", {
+        codigo: "SGC-IND-01",
+        periodo: "2026-T3",
+        resultadoAntes: null,
+        resultado: null,
+        antes: { noAplica: true },
+        despues: { noAplica: false },
+      }),
+    ).toBe("Quitó «No aplica» de SGC-IND-01, tercer trimestre de 2026");
+    expect(frase("medicion_no_aplica", { codigo: "SGC-IND-01", periodo: "2026-T3", motivo: "No hubo auditorías programadas" })).toBe(
+      "Marcó «No aplica» en SGC-IND-01, tercer trimestre de 2026: No hubo auditorías programadas",
+    );
+    // Sin código ni periodo, la frase no se cae.
+    expect(frase("medicion_corregida", {})).toBe("Corrigió la medición de un indicador");
+    expect(nombreDeAccion("medicion_reportada")).toBe("Reportó una medición de indicador");
+    expect(nombreDeAccion("medicion_corregida")).toBe("Corrigió una medición de indicador");
+    expect(nombreDeAccion("medicion_no_aplica")).toBe("Marcó «No aplica» en una medición de indicador");
+    expect(nombreDeAccion("medicion_guardada")).toBe("Guardó sin reportar una medición de indicador");
+  });
+
+  it("el cierre del mes, la reapertura y el cierre de nuevo (Tarea 12)", () => {
+    const delCierre = (detalle: Record<string, unknown>) =>
+      describirEvento({ accion: "indicadores_mes_cerrado", entidad: "cierre_indicadores", entidadId: 3, detalle });
+    expect(delCierre({ mes: "2026-03", cerradas: 12, sinDato: 2 })).toBe("Cerró marzo de 2026 en los indicadores: 12 mediciones cerradas");
+    expect(delCierre({ mes: "2026-03", cerradas: 1 })).toBe("Cerró marzo de 2026 en los indicadores: 1 medición cerrada");
+    expect(delCierre({})).toBe("Cerró un mes en los indicadores");
+    const de = { codigo: "SGC-IND-01", periodo: "2026-03" };
+    expect(frase("medicion_reabierta", { ...de, justificacion: "El dato venía de otro informe" })).toBe(
+      "Reabrió SGC-IND-01, marzo de 2026: El dato venía de otro informe",
+    );
+    expect(frase("medicion_reabierta", { ...de, justificacion: "El dato venía de otro informe", propioMedidor: true })).toBe(
+      "Reabrió SGC-IND-01, marzo de 2026, que también mide: El dato venía de otro informe",
+    );
+    // Quien reabre y mide solo como respaldo (nadie más podía) no «también mide».
+    expect(frase("medicion_reabierta", { ...de, justificacion: "El dato venía de otro informe", sinMedidor: true })).toBe(
+      "Reabrió SGC-IND-01, marzo de 2026: El dato venía de otro informe",
+    );
+    expect(frase("medicion_cerrada_de_nuevo", { ...de, mes: "2026-04", cierreId: 4 })).toBe(
+      "Cerró de nuevo SGC-IND-01, marzo de 2026 (cierre de abril de 2026)",
+    );
+    expect(frase("medicion_reabierta", {})).toBe("Reabrió la medición de un indicador");
+    expect(frase("medicion_cerrada_de_nuevo", {})).toBe("Cerró de nuevo la medición de un indicador");
+    expect(nombreDeAccion("indicadores_mes_cerrado")).toBe("Cerró un mes de los indicadores");
+    expect(nombreDeAccion("medicion_reabierta")).toBe("Reabrió una medición de indicador");
+    expect(nombreDeAccion("medicion_cerrada_de_nuevo")).toBe("Cerró de nuevo una medición de indicador");
+  });
+
+  it("quitar un soporte (Tarea 11)", () => {
+    expect(frase("medicion_soporte_quitado", { codigo: "SGC-IND-01", periodo: "2026-T3", nombre: "Informe.pdf" })).toBe(
+      "Quitó el soporte «Informe.pdf» de SGC-IND-01, tercer trimestre de 2026",
+    );
+    expect(frase("medicion_soporte_quitado", {})).toBe("Quitó el soporte «?» de la medición de un indicador");
+    expect(nombreDeAccion("medicion_soporte_quitado")).toBe("Quitó un soporte de una medición de indicador");
+  });
+
+  it("el análisis, las observaciones y los históricos (Tarea 10)", () => {
+    const de = { codigo: "SGC-IND-01", periodo: "2026-T3" };
+    expect(frase("medicion_analizada", { ...de, primera: true, despues: { analisis: "Faltó personal" } })).toBe(
+      "Escribió el análisis de SGC-IND-01, tercer trimestre de 2026",
+    );
+    expect(frase("medicion_analizada", { ...de, primera: false })).toBe("Editó el análisis de SGC-IND-01, tercer trimestre de 2026");
+    expect(frase("medicion_analizada", { ...de, primera: true, sinMedidor: true })).toBe(
+      "Escribió el análisis de SGC-IND-01, tercer trimestre de 2026 (sin nadie más que pudiera analizarlo)",
+    );
+    expect(frase("medicion_analizada", {})).toBe("Escribió el análisis de la medición de un indicador");
+    // El texto de una observación o de una respuesta queda en el detalle, no en la frase.
+    expect(frase("medicion_observada", { ...de, texto: "¿Por qué bajó?" })).toBe("Dejó una observación en SGC-IND-01, tercer trimestre de 2026");
+    expect(frase("medicion_observacion_respondida", { ...de, texto: "Faltó personal" })).toBe(
+      "Respondió una observación en SGC-IND-01, tercer trimestre de 2026",
+    );
+    expect(frase("medicion_historica_registrada", { codigo: "SGC-IND-01", periodo: "2025-T4", correccion: false, resultado: "60 %" })).toBe(
+      "Registró el histórico de SGC-IND-01, cuarto trimestre de 2025: 60 %",
+    );
+    expect(
+      frase("medicion_historica_registrada", { codigo: "SGC-IND-01", periodo: "2025-T4", correccion: true, resultadoAntes: "60 %", resultado: "100 %" }),
+    ).toBe("Corrigió el histórico de SGC-IND-01, cuarto trimestre de 2025: 60 % → 100 %");
+    expect(
+      frase("medicion_historica_registrada", { codigo: "SGC-IND-01", periodo: "2025-T4", correccion: false, noAplica: true, motivo: "No hubo auditorías" }),
+    ).toBe("Registró el histórico de SGC-IND-01, cuarto trimestre de 2025 como «No aplica»: No hubo auditorías");
+    expect(frase("medicion_historica_registrada", { codigo: "SGC-IND-01", periodo: "2025-T4", correccion: true, noAplica: true, motivo: "Sin casos" })).toBe(
+      "Corrigió el histórico de SGC-IND-01, cuarto trimestre de 2025 como «No aplica»: Sin casos",
+    );
+    expect(nombreDeAccion("medicion_analizada")).toBe("Escribió o editó el análisis de una medición de indicador");
+    expect(nombreDeAccion("medicion_observada")).toBe("Dejó una observación en una medición de indicador");
+    expect(nombreDeAccion("medicion_observacion_respondida")).toBe("Respondió una observación de una medición de indicador");
+    expect(nombreDeAccion("medicion_historica_registrada")).toBe("Registró o corrigió un histórico de indicador");
+  });
+
+  it("la meta de un periodo", () => {
+    const meta = (detalle: Record<string, unknown>) => describirEvento({ accion: "indicador_meta_programada", entidad: "indicador", entidadId: 1, detalle });
+    expect(meta({ codigo: "SGC-IND-01", periodo: "2026-T4", antes: { meta: "90", metaMax: null }, despues: { meta: "96.5", metaMax: null }, tardia: false })).toBe(
+      "Programó la meta de SGC-IND-01, cuarto trimestre de 2026: 90 → 96,5",
+    );
+    expect(
+      meta({
+        codigo: "SGC-IND-01",
+        periodo: "2026-T3",
+        antes: { meta: "90", metaMax: null },
+        despues: { meta: "80", metaMax: null },
+        tardia: true,
+        justificacion: "La Secretaría ajustó la meta",
+      }),
+    ).toBe("Programó la meta de SGC-IND-01, tercer trimestre de 2026: 90 → 80, después de terminado el periodo: La Secretaría ajustó la meta");
+    expect(meta({ codigo: "SGC-IND-02", periodo: "2026", antes: { meta: null, metaMax: null }, despues: { meta: "98", metaMax: "100" } })).toBe(
+      "Programó la meta de SGC-IND-02, 2026: sin meta → 98 a 100",
+    );
+    expect(meta({})).toBe("Programó la meta de un periodo de un indicador");
+    expect(nombreDeAccion("indicador_meta_programada")).toBe("Programó la meta de un periodo de un indicador");
+  });
+});
+
+describe("los Excel de indicadores (14A)", () => {
+  const x = (accion: string, detalle: Record<string, unknown>) => describirEvento({ accion, entidad: "indicador", entidadId: 4, detalle });
+
+  it("el de un indicador dice su código y el año", () => {
+    expect(x("exporto_ficha_indicador", { codigo: "SGC-IND-01", anio: 2026 })).toBe("Emitió el Excel de la ficha y los resultados de SGC-IND-01 (2026)");
+    expect(x("exporto_ficha_indicador", {})).toBe("Emitió el Excel de la ficha y los resultados de un indicador");
+    expect(nombreDeAccion("exporto_ficha_indicador")).toBe("Emitió el Excel de un indicador");
+  });
+
+  it("el de resultados dice el año y nombra cada filtro, sin volcar el objeto", () => {
+    expect(x("exporto_resultados_indicadores", { anio: 2026, filtros: {} })).toBe("Emitió los resultados de los indicadores de 2026");
+    expect(x("exporto_resultados_indicadores", { anio: 2026, filtros: { procesoId: 3, semaforo: "critico" } })).toBe(
+      "Emitió los resultados de los indicadores de 2026 (de un proceso, con semáforo «Crítico»)",
+    );
+    expect(
+      x("exporto_resultados_indicadores", {
+        anio: 2025,
+        filtros: { subprocesoId: 4, clasificacionId: 5, tipoId: 6, semaforo: "sin-dato", reporte: "vencida", participo: true, texto: "auditoría", retirados: true },
+      }),
+    ).toBe(
+      "Emitió los resultados de los indicadores de 2025 (de un subproceso, de una clasificación, de un tipo, con semáforo «Sin dato», con reporte «Vencido», donde participa, con el texto «auditoría», con los retirados)",
+    );
+    expect(x("exporto_resultados_indicadores", {})).toBe("Emitió los resultados de los indicadores");
+    expect(nombreDeAccion("exporto_resultados_indicadores")).toBe("Emitió los resultados de los indicadores");
+  });
+});

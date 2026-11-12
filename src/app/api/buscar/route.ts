@@ -1,13 +1,16 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { buscarDocumentos } from "@/db/consultas/busqueda";
+import { buscarIndicadores } from "@/db/consultas/indicadores/busqueda";
 import { buscarNormas } from "@/db/consultas/normograma/busqueda";
 import {
+  INDICADORES_EN_LA_PALETA,
   LARGO_MINIMO_CONSULTA,
   NORMAS_EN_LA_PALETA,
   normalizarConsulta,
   type ResultadoRapido,
 } from "@/lib/busqueda-rapida";
 import { crearLimitador } from "@/lib/limite";
+import { rutaDeIndicador } from "@/lib/indicadores/rutas";
 import { ETIQUETA_ESTADO_NORMA } from "@/lib/normograma/tipos";
 import { sesionDePeticion } from "@/lib/sesion-actual";
 
@@ -18,7 +21,8 @@ const permitirBusqueda = crearLimitador({ limite: 60, ventanaMs: 60_000 });
 
 /**
  * Búsqueda rápida de la paleta Ctrl K: los documentos con versión vigente que el usuario puede ver y, debajo, hasta
- * cuatro normas no retiradas (el normograma se lee con cualquier sesión).
+ * cuatro normas no retiradas (el normograma se lee con cualquier sesión) y, debajo, hasta cuatro indicadores de los que
+ * ve (activos o retirados).
  */
 export async function GET(peticion: NextRequest) {
   const sesion = await sesionDePeticion(peticion);
@@ -37,7 +41,11 @@ export async function GET(peticion: NextRequest) {
     return NextResponse.json({ resultados: [] satisfies ResultadoRapido[] });
   }
 
-  const [{ resultados }, normas] = await Promise.all([buscarDocumentos({ q, limite: 8 }, sesion), buscarNormas(q, NORMAS_EN_LA_PALETA)]);
+  const [{ resultados }, normas, indicadores] = await Promise.all([
+    buscarDocumentos({ q, limite: 8 }, sesion),
+    buscarNormas(q, NORMAS_EN_LA_PALETA),
+    buscarIndicadores(q, sesion, INDICADORES_EN_LA_PALETA),
+  ]);
   return NextResponse.json({
     resultados: [
       ...resultados.map(
@@ -58,6 +66,16 @@ export async function GET(peticion: NextRequest) {
           tituloResaltado: null,
           tipo: ETIQUETA_ESTADO_NORMA[n.estado],
           ruta: `/normograma/${n.id}`,
+        }),
+      ),
+      ...indicadores.map(
+        (i): ResultadoRapido => ({
+          grupo: "indicador",
+          codigo: i.codigo,
+          titulo: i.nombre,
+          tituloResaltado: null,
+          tipo: i.retirado ? "Retirado" : i.proceso,
+          ruta: rutaDeIndicador(i.codigo),
         }),
       ),
     ],

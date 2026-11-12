@@ -1,5 +1,6 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { contrasteWCAG } from "@/lib/contraste";
+import { contrasteWCAG, luminanciaRelativa } from "@/lib/contraste";
 
 describe("contrasteWCAG", () => {
   it("negro sobre blanco da la razón máxima (21:1)", () => {
@@ -33,5 +34,58 @@ describe("contrasteWCAG", () => {
 
   it.each(paresTextoNormal)("%s cumple AA (≥ 4.5:1)", (_n, a, b) => {
     expect(contrasteWCAG(a, b)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+// Gráficas de los indicadores en estilo «Tubos» (Fase 14A, Tarea 14; spec §11). El volumen sale de un degradado
+// brillo → color → sombra sobre el token del estado. El borde en sombra y el tubo neutro son objetos gráficos: se
+// distinguen (≥ 3:1, WCAG 1.4.11) de la pista sobre la que crecen y de la tarjeta que los rodea, en los dos temas. El
+// color base de «Atención» no llega a 3:1 sobre blanco y no se toca (es el token del estado). Basta porque en pantalla
+// el estado no depende de distinguir ese color (spec §11): el valor va escrito debajo de cada columna y la altura del
+// tubo se lee frente a la línea de la meta y a la punteada de crítico. El nombre del estado está en el foco de cada
+// columna, en la tarjeta, en la tabla equivalente y en la impresión.
+describe("tokens de las gráficas de tubos", () => {
+  const css = readFileSync("src/app/globals.css", "utf8");
+  const valor = (nombre: string) => {
+    const m = css.match(new RegExp(String.raw`(?<![\w-])${nombre}:\s*light-dark\((#[0-9a-f]{6}),\s*(#[0-9a-f]{6})\)`));
+    if (!m) throw new Error(nombre);
+    return { claro: m[1], oscuro: m[2] };
+  };
+  const TEMAS = ["claro", "oscuro"] as const;
+  const tarjeta = valor("--card");
+  const pista = valor("--tubo-pista");
+
+  it.each(["bien", "atencion", "critico"])("el tubo %s: el brillo es más claro y la sombra más oscura que su color, en los dos temas", (e) => {
+    const base = valor(`--estado-${e}`);
+    const brillo = valor(`--estado-${e}-brillo`);
+    const sombra = valor(`--estado-${e}-sombra`);
+    for (const t of TEMAS) {
+      expect(luminanciaRelativa(brillo[t])).toBeGreaterThan(luminanciaRelativa(base[t]));
+      expect(luminanciaRelativa(base[t])).toBeGreaterThan(luminanciaRelativa(sombra[t]));
+    }
+  });
+
+  it.each(["bien", "atencion", "critico"])("el borde en sombra del tubo %s se distingue (≥ 3:1) de la pista y de la tarjeta", (e) => {
+    const sombra = valor(`--estado-${e}-sombra`);
+    for (const t of TEMAS) {
+      expect(contrasteWCAG(sombra[t], pista[t])).toBeGreaterThanOrEqual(3);
+      expect(contrasteWCAG(sombra[t], tarjeta[t])).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("el tubo neutro (sin meta) se distingue (≥ 3:1) de la pista y de la tarjeta, en los dos temas", () => {
+    const neutro = valor("--tubo-neutro");
+    for (const t of TEMAS) {
+      expect(contrasteWCAG(neutro[t], pista[t])).toBeGreaterThanOrEqual(3);
+      expect(contrasteWCAG(neutro[t], tarjeta[t])).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("la pista se ve sobre la tarjeta y la del periodo que aún no llega es más tenue, sin opacidad", () => {
+    const futura = valor("--tubo-pista-futura");
+    for (const t of TEMAS) {
+      expect(contrasteWCAG(pista[t], tarjeta[t])).toBeGreaterThan(contrasteWCAG(futura[t], tarjeta[t]));
+      expect(contrasteWCAG(futura[t], tarjeta[t])).toBeGreaterThan(1.03);
+    }
   });
 });

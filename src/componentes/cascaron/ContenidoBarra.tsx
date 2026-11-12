@@ -16,23 +16,25 @@ export function claseNombreEntidad(nombre: string): "text-sm" | "text-xs" {
 
 export type MarcaBarra = { nombre: string; sigla: string; logoUrl: string | null };
 
-const ORDEN_GRUPOS: readonly GrupoNav[] = ["inicio", "documentos", "administracion"];
+export const ORDEN_GRUPOS: readonly GrupoNav[] = ["inicio", "documentos", "indicadores", "administracion"];
 
 // Clases completas por color de grupo: Tailwind solo genera las que ve escritas.
-const COLOR_ICONO = { marca: "text-marca", "mod-documentos": "text-mod-documentos" } as const;
-const COLOR_INDICADOR = { marca: "bg-marca", "mod-documentos": "bg-mod-documentos" } as const;
+const COLOR_ICONO = { marca: "text-marca", "mod-documentos": "text-mod-documentos", "mod-indicadores": "text-mod-indicadores" } as const;
+const COLOR_INDICADOR = { marca: "bg-marca", "mod-documentos": "bg-mod-documentos", "mod-indicadores": "bg-mod-indicadores" } as const;
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 
 /**
  * Marca, entradas por grupo y pie; lo comparten la barra lateral y el cajón móvil. «Inicio» lleva el conteo de las
- * tareas y «Vigencia», el de los documentos de su alcance con la vigencia vencida (spec 13C §14.1).
+ * tareas; «Vigencia», el de los documentos de su alcance con la vigencia vencida (spec 13C §14.1), e «Indicadores», el de
+ * las mediciones vencidas a cargo de la persona (spec 14 §10.1, F14-DC32).
  */
 export function ContenidoBarra({
   marca,
   entradas,
   tareas,
   vencidos = 0,
+  vencidasIndicadores = 0,
   version,
   alNavegar,
 }: {
@@ -40,6 +42,7 @@ export function ContenidoBarra({
   entradas: EntradaNav[];
   tareas: number;
   vencidos?: number;
+  vencidasIndicadores?: number;
   version: string;
   alNavegar?: () => void;
 }) {
@@ -123,6 +126,15 @@ export function ContenidoBarra({
                           >
                             {vencidos}
                             <span className="sr-only"> con revisión vencida</span>
+                          </span>
+                        )}
+                        {e.href === "/indicadores" && vencidasIndicadores > 0 && (
+                          <span
+                            data-reportes-vencidos={vencidasIndicadores}
+                            className="rounded-full bg-estado-critico-fondo px-1.5 text-[11px] font-semibold leading-4 text-estado-critico-texto"
+                          >
+                            {vencidasIndicadores}
+                            <span className="sr-only">{vencidasIndicadores === 1 ? " reporte vencido" : " reportes vencidos"}</span>
                           </span>
                         )}
                       </Link>

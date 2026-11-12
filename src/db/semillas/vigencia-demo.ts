@@ -42,18 +42,19 @@ import { abrirRevision, confirmarNormograma } from "../consultas/vigencia/revisi
 import { fijarProximaRevision } from "../consultas/vigencia/semaforo";
 import { generarPlaceholder } from "../placeholders";
 import { CLAVE_DEMO } from "./clave-demo";
-import { momentoHace, sesionDe, type ContextoDistribucion } from "./distribucion-demo";
+import { minutosDespues, momentoHace, sesionDe, type ContextoDistribucion } from "./distribucion-demo";
 import { CODIGO_FORMATO_INFORME } from "./formato-acta-demo";
 
-/** La firma de la semilla: acepta la clave de la demo sin tocar `accesos` (los tests usan su propia `firmaDePrueba`). */
-const firmaDeLaDemo: Verificador = async (_sesion, credenciales) =>
+/**
+ * La firma de la semilla: acepta la clave de la demo sin tocar `accesos` (los tests usan su propia `firmaDePrueba`). La
+ * usan también las fichas de `indicadores-demo.ts`.
+ */
+export const firmaDeLaDemo: Verificador = async (_sesion, credenciales) =>
   credenciales.clave === CLAVE_DEMO
     ? { ok: true, metodo: "clave" }
     : { ok: false, mensaje: "Clave o código incorrectos", sesionCerrada: false };
 
-const FIRMA = { clave: CLAVE_DEMO };
-
-const minutosDespues = (instante: Date, minutos: number) => new Date(instante.getTime() + minutos * 60_000);
+export const FIRMA = { clave: CLAVE_DEMO };
 
 type Norma = {
   tipo: "Ley" | "Decreto" | "Resolución";

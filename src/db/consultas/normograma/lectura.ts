@@ -62,8 +62,29 @@ export type Norma = {
   /** Un documento que la persona no ve sale con `visible: false`, sin id, código ni título, después de los que ve. */
   documentos: { id: number | null; codigo: string | null; titulo: string | null; origen: "interno" | "externo"; visible: boolean }[];
   archivo: Evidencia | null;
+  /**
+   * Tiene historia (D47, `historiaDeNorma`): se retira, no se borra. Lo decide el servidor con la regla de `borrarNorma`;
+   * la ficha no lo deduce de lo que muestra, que no incluye las relaciones eliminadas ni las citas de los indicadores.
+   */
+  tieneHistoria: boolean;
   acciones: { administrar: boolean };
 };
+
+/**
+ * ¿La norma tiene historia (D47)? Una relación (también una eliminada), un proceso, un documento, un cambio de estado, un
+ * impacto, su PDF, la cita de una ficha de indicador (de cualquier versión, también un borrador) o un impacto de indicador
+ * (14B): cada tabla con llave foránea hacia `normas`. Una norma con historia se retira; borrarla daría el error crudo de
+ * la llave. La comparten `borrarNorma` y la ficha (`tieneHistoria`).
+ */
+export const historiaDeNorma = (sql: Cliente, normaId: number) => sql`(
+  EXISTS (SELECT 1 FROM norma_relaciones WHERE norma_id = ${normaId} OR afectada_id = ${normaId})
+  OR EXISTS (SELECT 1 FROM norma_procesos WHERE norma_id = ${normaId})
+  OR EXISTS (SELECT 1 FROM norma_documentos WHERE norma_id = ${normaId})
+  OR EXISTS (SELECT 1 FROM norma_cambios WHERE norma_id = ${normaId})
+  OR EXISTS (SELECT 1 FROM impactos_normativos WHERE norma_id = ${normaId})
+  OR EXISTS (SELECT 1 FROM archivos WHERE contexto = 'norma' AND contexto_id = ${normaId})
+  OR EXISTS (SELECT 1 FROM indicador_normas WHERE norma_id = ${normaId})
+  OR EXISTS (SELECT 1 FROM impactos_indicadores WHERE norma_id = ${normaId}))`;
 
 /**
  * La ficha de una norma (spec 13C §10.6), para toda sesión; también la de una retirada. `null` si no existe. `alcance`,
@@ -73,7 +94,7 @@ export async function obtenerNorma(id: number, sesion: SesionFlujo, opciones?: O
   const sql = opciones?.sql ?? obtenerSql();
   const [n] = await sql`SELECT n.id, n.tipo_norma_id, tn.nombre AS tipo, n.numero, n.anio, ${nombreSql(sql)} AS nombre,
       n.fecha_expedicion::text AS fecha_expedicion, n.entidad_emisora, n.titulo, n.tema, n.estado, n.estado_en::text AS estado_en,
-      n.enlace_oficial, n.notas
+      n.enlace_oficial, n.notas, ${historiaDeNorma(sql, id)} AS tiene_historia
     FROM normas n JOIN tipos_norma tn ON tn.id = n.tipo_norma_id WHERE n.id = ${id}`;
   if (!n) return null;
   const [relaciones, cambios, procesos, documentos, archivos, alcance] = await Promise.all([
@@ -158,6 +179,7 @@ export async function obtenerNorma(id: number, sesion: SesionFlujo, opciones?: O
         : { id: null, codigo: null, titulo: null, origen: d.origen, visible: false },
     ),
     archivo: archivos.at(-1) ?? null,
+    tieneHistoria: n.tiene_historia === true,
     acciones: { administrar: puede(sesion, "normograma.administrar") },
   };
 }

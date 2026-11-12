@@ -33,6 +33,12 @@ export function fechaHoraLocal(d: Date): string {
   return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
 }
 
+/** «HH:mm» en la zona de la instalación. */
+export function horaLocal(d: Date): string {
+  const p = partesLocales(d);
+  return `${p.hour}:${p.minute}`;
+}
+
 /** «AAAAMMDD» en la zona de la instalación, para nombres de archivo. */
 export function fechaCompactaLocal(d: Date): string {
   const p = partesLocales(d);
@@ -53,4 +59,14 @@ export function tiempoRelativo(fecha: Date, ahora: Date = new Date()): string {
   if (dias === 1) return "ayer";
   const p = partesLocales(fecha);
   return `${p.year}-${p.month}-${p.day}`;
+}
+
+/**
+ * «10 de marzo de 2026, 13:33» en la zona de la instalación: el día en palabras, como lo escribe la interfaz (los plazos,
+ * los acuses), con la hora. Para los hilos que la persona lee, como las observaciones de una medición.
+ */
+export function fechaHoraLarga(d: Date): string {
+  const dia = new Intl.DateTimeFormat("es-CO", { day: "numeric", month: "long", year: "numeric", timeZone: zonaHoraria() }).format(d);
+  const p = partesLocales(d);
+  return `${dia}, ${p.hour}:${p.minute}`;
 }

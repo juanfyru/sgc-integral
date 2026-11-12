@@ -24,6 +24,7 @@ import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { nombreSql } from "./busqueda";
 import { crearImpactos } from "./impactos";
+import { historiaDeNorma } from "./lectura";
 
 export {
   aniosYEmisores,
@@ -247,20 +248,17 @@ export async function retirarNorma(
   );
 }
 
-/** Solo una norma sin relaciones, asociaciones, cambios, impactos ni PDF (D47); las demás se retiran. */
+/**
+ * Solo una norma sin historia (D47, `historiaDeNorma`): sin relaciones, asociaciones, cambios, impactos, PDF ni la cita de
+ * una ficha de indicador; las demás se retiran.
+ */
 export async function borrarNorma(sesion: SesionFlujo, normaId: number, opciones?: Opciones): Promise<void> {
   exigirAdministrar(sesion);
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
     const [n] = await tx`SELECT ${nombreSql(tx)} AS nombre, n.titulo
       FROM normas n JOIN tipos_norma tn ON tn.id = n.tipo_norma_id WHERE n.id = ${normaId} FOR UPDATE OF n`;
     if (!n) throw new ErrorNormograma(NORMA_NO_EXISTE);
-    const [historia] = await tx`SELECT
-        EXISTS (SELECT 1 FROM norma_relaciones WHERE norma_id = ${normaId} OR afectada_id = ${normaId})
-        OR EXISTS (SELECT 1 FROM norma_procesos WHERE norma_id = ${normaId})
-        OR EXISTS (SELECT 1 FROM norma_documentos WHERE norma_id = ${normaId})
-        OR EXISTS (SELECT 1 FROM norma_cambios WHERE norma_id = ${normaId})
-        OR EXISTS (SELECT 1 FROM impactos_normativos WHERE norma_id = ${normaId})
-        OR EXISTS (SELECT 1 FROM archivos WHERE contexto = 'norma' AND contexto_id = ${normaId}) AS tiene`;
+    const [historia] = await tx`SELECT ${historiaDeNorma(tx, normaId)} AS tiene`;
     if (historia.tiene) throw new ErrorNormograma("La norma tiene historia: retírela");
     await tx`DELETE FROM normas WHERE id = ${normaId}`;
     await registrarAuditoria(tx, {

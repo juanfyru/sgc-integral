@@ -267,7 +267,10 @@ riesgos del usuario.
 
 El usuario partió la Fase 13 en tres entregas el 2026-11-05 (13A, 13B y 13C), cada una con su
 spec, su plan, su prueba y su fusión; el reparto y los cambios al diseño maestro están en
-`docs/superpowers/specs/2026-11-05-fase13a-flujo-documental-design.md` (§2 y §5).
+`docs/superpowers/specs/2026-11-05-fase13a-flujo-documental-design.md` (§2 y §5). La Fase 14 va en
+dos entregas, 14A y 14B, con un solo spec
+(`docs/superpowers/specs/2026-11-10-fase14-indicadores-design.md`, §5.1) y un plan, una rama, una
+prueba y una fusión por entrega; la Fase 14 del diseño maestro se cierra al fusionar la 14B.
 
 | Fase | Nombre | Entrega demostrable |
 |---|---|---|
@@ -276,7 +279,8 @@ spec, su plan, su prueba y su fusión; el reparto y los cambios al diseño maest
 | 13A | Documentación SGC: flujo documental ✅ (2026-11-06) | Solicitud con visto bueno del líder, aceptación con duplicidad asistida, código correlativo y plantilla; elaboración; revisión con lista de verificación; aprobación por autoridad con firma por clave; publicación con acta PDF; eliminación por el mismo trámite; visibilidad por rol y nivel de acceso; tareas y avisos; carga de lo ya aprobado; marca de agua con el nombre de quien descarga |
 | 13B | Documentación SGC: distribución y puntos de uso ✅ (2026-11-07) | Listas de distribución y acuse de lectura con porcentaje, evidencia de capacitación; copias controladas con sello, recibido y recogida de las obsoletas; puntos de uso y su verificación con porcentaje de conformidad |
 | 13C | Documentación SGC: vigencia, externos y normograma ✅ (2026-11-09) | Plazo de revisión, semáforo documental con ratificación y revisión anual con informe firmado; documentos externos con adopción por edición, verificación de vigencia y su matriz; normograma institucional y por proceso con impactos normativos; indicadores del proceso documental; lo heredado de la 13B. La caracterización estructurada no se construyó (decisión del usuario, spec 13C §5): el documento tipo CA la cumple |
-| 14 | Indicadores | Ficha técnica versionada, variables compartidas, fórmula con intérprete propio, metas y semáforo por periodo, mediciones con análisis y evidencias, gráficas, cierre de periodo, "sin dato", regulatorios ligados al normograma, permisos por indicador |
+| 14A | Indicadores: el indicador de punta a punta ✅ (2026-11-12, en su rama) | Maestros y parámetros; ficha técnica versionada con formas de fórmula e intérprete propio, aprobación con firma (también en bloque), cambios mayores y menores, duplicar, retirar, nivel de acceso y norma que lo exige; medición por periodo con validaciones, "no aplica", análisis según el color, soportes, observaciones, históricos y metas por periodo; semáforo en palabras, frase y comparación; tareas, recordatorios, alertas y escalamiento; cierre del mes y reapertura; lista, página con gráficas de tubos, matriz del año, ficha impresa y Excel; indicadores en la página del proceso, la búsqueda y el normograma |
+| 14B | Indicadores: datos compartidos, automáticos y avanzados | Variables compartidas; fuente automática (los cálculos documentales, "Reportes a tiempo" y "Objetivos cumplidos") con su enlace a Vigencia; página "Objetivos"; constancias de envío al ente e impactos por cambio de norma; desagregación y compuestos |
 | 15 | Planes de mejoramiento | Motor único de acciones: planes, hallazgos con máquina de estados, causa raíz, cuatro tipos de acción, actividades con evidencias, verificación de eficacia, reincidencia, formato Contraloría/Supersalud, objetivos institucionales; "abrir acción" desde documento, proceso e indicador |
 | 16 | Notificaciones y planificador | Planificador en la app, cola de correo con reintentos, resumen diario e inmediatas, escalamiento al supervisor, recordatorios, verificación de correo, "olvidé mi clave" |
 | 17 | Tablero gerencial y reportes | Tablero por rol con cuatro franjas y matriz de pendientes, foto mensual, informe de revisión por la dirección, catálogo de reportes Excel/PDF con pie de control |

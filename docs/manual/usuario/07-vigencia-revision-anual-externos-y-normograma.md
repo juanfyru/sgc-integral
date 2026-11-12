@@ -35,7 +35,9 @@ Antes de seguir, vea el Capítulo 5 (cómo se pide y se publica un documento) y 
   se modifica, se deroga o se retira, el SGC abre la revisión de su impacto en esos documentos
   y procesos.
 - **Indicadores documentales:** siete cifras del proceso documental con su meta: documentos al
-  día, tiempo de aprobación, vencidos, acuses, conformidad, externos y etapas a tiempo.
+  día, tiempo de aprobación, vencidos, acuses, conformidad, externos y etapas a tiempo. El SGC las
+  calcula solo, desde los documentos; no son las fichas del módulo **Indicadores** (Capítulo 8),
+  que se reportan periodo a periodo.
 
 Dónde está cada cosa:
 
@@ -102,6 +104,8 @@ Pulse una norma para ver su ficha:
 - **Relaciones con otras normas:** a cuáles modifica, deroga o reglamenta, y cuáles la afectan.
 - **Procesos a los que aplica**, con su requisito, y **Documentos enlazados**: los internos que
   la implementan y los externos que la reproducen.
+- **Indicadores que exige:** los indicadores cuya ficha cita la norma, por ejemplo un indicador
+  regulatorio (Capítulo 8). Uno restringido solo aparece a quien lo puede ver.
 
 **Los documentos restringidos.** Si una norma está enlazada a un documento restringido que
 usted no puede ver, ese documento no aparece en la ficha ni se cuenta: para usted no existe.
@@ -521,8 +525,8 @@ del informe y elíjalo**: después del cierre el informe ya no cambia de papel.
 - **Retirar…**, con motivo, para una norma registrada por error o que dejó de aplicar: sale de
   las listas y de la búsqueda, conserva su ficha y, si tiene documentos enlazados o procesos
   asociados, abre la revisión de su impacto (con **Incluir retiradas**, en los filtros, la
-  vuelve a ver). **Borrar…** solo aparece en una norma sin relaciones, procesos, documentos,
-  cambios ni PDF.
+  vuelve a ver). **Borrar…** solo aparece en una norma sin relaciones (tampoco eliminadas),
+  procesos, documentos, cambios, PDF ni fichas de indicador que la citen, aunque sean borradores.
 - **Tipos de norma**, al pie del normograma: los nueve iniciales (Ley, Decreto, Resolución,
   Circular, Acuerdo, Norma técnica, Sentencia, Directiva, Otro) se renombran, se ordenan y se
   desactivan; **Nuevo tipo de norma** crea otro.

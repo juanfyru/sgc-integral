@@ -13,7 +13,7 @@ nombre, la sigla, el logo y los colores de la entidad se configuran desde la app
 Módulos, cada uno en la barra lateral según el rol de la persona:
 
 - **Inicio** (`/`): «Mis tareas» y el mapa de procesos; **Buscar documentos** (`/buscar`, y `Ctrl K`), con
-  documentos vigentes y normas.
+  documentos vigentes, normas e indicadores.
 - **Trámites** (`/tramites`): solicitud, aceptación, elaboración, revisión, aprobación y publicación con
   firma por clave y acta en PDF.
 - **Distribución** (`/distribucion`): copias controladas, acuses de lectura, socializaciones y verificaciones
@@ -21,8 +21,10 @@ Módulos, cada uno en la barra lateral según el rol de la persona:
 - **Vigencia** (`/vigencia`): semáforo de revisión y ratificación, revisión anual con su informe, documentos
   externos (la matriz) e indicadores del proceso documental.
 - **Normograma** (`/normograma`): normas aplicables, institucional y por proceso, con sus impactos.
-- **Panel** (`/admin`): gestión de documentos, Listado Maestro, tipos, configuración documental, mapa,
-  entidad, estructura, puntos de uso, listas, usuarios, estadísticas, bitácora, accesos y sesiones.
+- **Indicadores** (`/indicadores`): ficha técnica versionada con fórmula y semáforo, aprobada con firma; reporte y
+  análisis de cada periodo con soportes y observaciones; gráficas, matriz del año, cierre del mes, ficha impresa y Excel.
+- **Panel** (`/admin`): gestión de documentos, Listado Maestro, tipos, configuración documental, configuración de
+  indicadores, mapa, entidad, estructura, puntos de uso, listas, usuarios, estadísticas, bitácora, accesos y sesiones.
 
 El manual de usuario está en [`docs/manual/usuario/`](docs/manual/usuario/), un capítulo por módulo.
 
@@ -56,7 +58,7 @@ npm run db:seed:minima
 #   lider.gth y lider.cex (lider_proceso, de GTH y CEX), consulta (consulta),
 #   jefe.urgencias y regente.farmacia (consulta; responsables de los puntos de uso
 #   Urgencias y Farmacia; regente.farmacia es además responsable técnico de un
-#   documento externo).
+#   documento externo y jefe.urgencias mide un indicador de urgencias).
 
 # Puertos elegidos para convivir con sgc-suaza en la misma máquina:
 # Postgres 5435, app en Docker 9081, next dev 3002.

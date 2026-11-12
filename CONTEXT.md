@@ -1,14 +1,18 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-11-10**, al fusionar la 13C. La **Fase 13C —
-> Vigencia, externos y normograma** está fusionada en `main` (`8acc9cf`, PR #3, 2026-11-10, 64 confirmaciones sobre
-> `4bbb428`; la rama `fase-13c-vigencia-externos-normograma` sigue publicada, lista para borrarse), con el CI en verde. La **Fase 13B —
-> Distribución y puntos de uso** está fusionada en `main` (`2e321b6`, PR #2, 2026-11-08) y la **Fase 13A — Flujo
-> documental**, con sus adiciones, también (`d0c6a42`, 2026-11-07), con el CI en verde. Lo siguiente es la Fase 14 (y el
-> recorrido del usuario sobre la 13C, aún pendiente). La Fase 12 (nueva estructura visual) y la Fase 11 (fundación
-> de acceso) también están en `main`. La variante nació el 2026-11-03, bifurcada de `sgc-suaza` en `9644ceb`; el
-> diseño maestro de las fases 11–20 (`docs/superpowers/specs/2026-11-03-sgc-integral-plataforma-design.md`) está
-> aprobado y `AGENTS.md` describe el piso de despliegue nuevo.
+> Se actualiza al cierre de cada fase. Última actualización: **2026-11-12**, al cerrar la 14A en su rama. La **Fase 14A —
+> Indicadores, el indicador de punta a punta** está terminada en la rama `fase-14a-indicadores` (90 confirmaciones sobre
+> `bced185`, sin publicar ni fusionar), con el recorrido del controlador hecho y sus defectos corregidos y la ola final de
+> la revisión de toda la rama aplicada, y espera el recorrido del usuario; después viene la **Fase 14B** (datos compartidos,
+> automáticos y avanzados), que cierra la Fase 14 del diseño maestro. La **Fase 13C — Vigencia, externos y normograma**
+> está fusionada en `main` (`8acc9cf`, PR #3, 2026-11-10, 64 confirmaciones sobre `4bbb428`; la rama
+> `fase-13c-vigencia-externos-normograma` sigue publicada, lista para borrarse), con el CI en verde; su recorrido del
+> usuario sigue pendiente. La **Fase 13B — Distribución y puntos de uso** está fusionada en `main` (`2e321b6`, PR #2,
+> 2026-11-08) y la **Fase 13A — Flujo documental**, con sus adiciones, también (`d0c6a42`, 2026-11-07), con el CI en
+> verde. La Fase 12 (nueva estructura visual) y la Fase 11 (fundación de acceso) también están en `main`. La variante
+> nació el 2026-11-03, bifurcada de `sgc-suaza` en `9644ceb`; el diseño maestro de las fases 11–20
+> (`docs/superpowers/specs/2026-11-03-sgc-integral-plataforma-design.md`) está aprobado y `AGENTS.md` describe el piso de
+> despliegue nuevo.
 
 ## ⏸ Punto de reanudación (próxima sesión)
 
@@ -17,7 +21,35 @@
    con sus funcionalidades, y construir aquí otra con **funcionalidades más completas**.
    La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
    proyecto**.
-1. **Dónde quedamos:** la **Fase 13C está en `main`** (`8acc9cf`, PR #3 fusionado el 2026-11-10 por decisión del
+1. **Dónde quedamos:** la **Fase 14A — Indicadores, el indicador de punta a punta** está terminada en la rama
+   `fase-14a-indicadores` (90 confirmaciones sobre `bced185`; spec
+   `docs/superpowers/specs/2026-11-10-fase14-indicadores-design.md`, aprobado el 2026-11-10 y común a la 14A y la 14B;
+   plan `docs/superpowers/plans/2026-11-10-fase14a-indicadores.md`). **No está publicada ni fusionada:** espera el
+   recorrido del usuario («Qué probar y cómo (Fase 14A)») y su decisión. Con ella el hospital ya puede llevar sus
+   indicadores como los del Excel: ficha técnica versionada con formas de fórmula y fórmula libre (intérprete propio con
+   fracciones exactas), semáforo escrito en palabras, aprobación con firma «Elaboró» y «Aprobó» (también en bloque),
+   cambios mayores con «rige desde» y menores sin aprobador, duplicar, retirar, descartar, nivel de acceso y norma que lo
+   exige; medición por periodo con resultado, color y frase al instante, «no aplica», soportes (PDF, imagen o `.xlsx`),
+   análisis según el color (causa y acción propuesta en crítico, con la marca «Requiere acción de mejora»),
+   observaciones, históricos y metas por periodo; cierre del mes y reapertura justificada; tareas, recordatorios,
+   alertas por color y escalamiento al jefe sin nombre del indicador; lista, página del indicador con gráficas de tubos,
+   matriz del año, ficha impresa y dos Excel; indicadores en la página del proceso, en la búsqueda y en el normograma.
+   **Sin dependencias npm nuevas.** Doce migraciones en total (0000 a 0011). Detalle en «Hecho (Fase 14A)»; el
+   recorrido, en «Qué probar y cómo (Fase 14A)»; las decisiones, en «Decisiones adicionales (Fase 14A)»; el manual, en
+   el capítulo 8. **El controlador comprobó** la imagen `sgc-integral:f14a` en un contenedor aparte («Migraciones al
+   día» y `/api/salud` `{"estado":"ok"}`), la `0011` sobre una copia de la base del usuario (de 11 a 12 migraciones; los
+   maestros y los parámetros sembrados, ningún indicador, los usuarios intactos; la copia se borró) y el recorrido de §24
+   en el navegador: de 18 pasos, 16 bien, el 8 con un texto del recorrido que no era así y el 7 fallido por el soporte
+   `.xlsx` (D-1). La ronda 1 corrigió sus trece defectos (D-1 a D-13), añadió el mensaje «Se devolvió la ficha …» y
+   ajustó este recorrido (ver «Hecho (Fase 14A)»). Después, el controlador subió un `.xlsx` real con el arreglo de D-1,
+   en `next dev` y en la imagen reconstruida: entra («Listo», «Excel, 6 KB») y un `.xls` se rechaza. La revisión final de
+   toda la rama pidió una ola de corrección (un crítico, dos importantes y nueve menores; F14A-R51 a R53), ya aplicada,
+   y su re-revisión dos residuos (el soporte obligatorio hacia adelante y la gráfica alineada a una columna), también.
+   **Verificado al cierre de los residuos:** con la demo recién sembrada en la base aparte `sgc_f14a`,
+   `SEMILLA_RECIEN=1 npm test` dio 235 archivos, 5696 pruebas en verde y 1 saltada; lint limpio; `npm run build` sin
+   URL de base en verde.
+   **La base `sgc` del usuario no se tocó** (ver «Avisos para el usuario (Fase 14A)»).
+   **Antes, la Fase 13C:** está en `main` (`8acc9cf`, PR #3 fusionado el 2026-11-10 por decisión del
    usuario, 64 confirmaciones sobre `4bbb428`; spec `b702403`, plan `faaae79`; la rama
    `fase-13c-vigencia-externos-normograma` sigue publicada, lista para borrarse). Los pasos 11 y 13 del procedimiento de control de documentos y la evidencia de PC-11 y PC-13 quedan dentro
    del sistema, y con ellos se cierra la Fase 13: plazo de revisión por tipo y por documento, contado desde la publicación
@@ -84,20 +116,21 @@
    F13A-R35 (404 real en páginas). F13A-R36 ya está resuelta (F13A-AU6). Los archivos reales del
    hospital están en la raíz, sin seguimiento y excluidos en `.git/info/exclude`: nunca entran a un
    commit.
-2. **Lo que sigue:** (a) el recorrido del usuario sobre `main` («Qué probar y cómo (Fase 13C)», que empieza por
-   reiniciar `npm run dev` y resembrar); (b) la **Fase 14
-   — Indicadores** (spec maestro §8): ficha técnica versionada, variables, fórmula, metas y mediciones por periodo,
-   regulatorios ligados al normograma. Sigue el mismo camino: spec aprobado, plan, ejecución, prueba y fusión. Enganches
-   que deja la 13C: las normas, con id estable y estado, para «norma que lo exige» de los indicadores regulatorios (spec
-   13C §10.8); los siete indicadores documentales (`src/lib/indicadores-documentales/`,
-   `src/db/consultas/vigencia/indicadores.ts`), que la Fase 14 puede tomar como fichas; la serie mensual de los
-   indicadores de estado, que llega con la foto mensual de la Fase 17 (F13C-DC23); `archivos` con los contextos `norma`,
-   `revision_anual` y `hallazgo`; los hallazgos, ahora con corrección y validación, que la Fase 15 convertirá en
-   acciones correctivas; y las tareas y avisos nuevos que la Fase 16 llevará al correo. Insumos que dependen del usuario:
-   spec maestro §11 (SMTP, versión de Windows del servidor, planta de cargos real, plantilla del plan de mejoramiento,
-   total de cuentas), la lista de verificación real (SGC-FO-03), el formato del informe de la revisión anual (con el código
-   SGC-RG-06 si lo quiere en el encabezado) y el ajuste del texto de su procedimiento (el listado maestro aparece con dos
-   códigos, la «carpeta oficial» pasa a ser la plataforma y los tres textos de la 13C: manual, capítulo 7, sección 7).
+2. **Lo que sigue:** (a) el recorrido del usuario sobre la rama de la 14A («Qué probar y cómo (Fase 14A)», que empieza
+   por resembrar) y su decisión de publicarla y fusionarla; (b) el recorrido de la 13C sobre `main`, aún pendiente
+   («Qué probar y cómo (Fase 13C)»); (c) la **Fase 14B — Datos compartidos, automáticos y avanzados** (spec de la Fase
+   14, §5.1 y §14 a §18): variables compartidas, fuente automática (los siete cálculos documentales de la 13C, «Reportes
+   a tiempo» y «Objetivos cumplidos») con su enlace a Vigencia, la página «Objetivos», las constancias de envío al ente
+   y los impactos por cambio de norma sobre indicadores, la desagregación y los compuestos. Su plan empieza por revisar
+   §14 a §18 del spec contra el código, y la `0012` puede rehacer las tablas de la 14B que la `0011` dejó vacías (spec
+   §19.5). La Fase 14 del diseño maestro se cierra cuando se fusione la 14B. Enganches que deja la 14A: la marca
+   «Requiere acción de mejora» con su causa y su acción propuesta, que la Fase 15 convierte en acción formal; los
+   objetivos como maestro; las tareas y avisos de indicadores, que la Fase 16 lleva al correo; los resultados por periodo,
+   la matriz y el Excel, para el tablero y los reportes de la Fase 17. Insumos que dependen del usuario: las fichas reales
+   de sus indicadores (el Excel `INDICADORES_PROCESO_SGC_OK.xlsx` trae las ocho del SGC), la regla del cambio mayor a una
+   periodicidad más gruesa (F14A-R15) y, de antes, spec maestro §11 (SMTP, versión de Windows del servidor, planta de
+   cargos real, plantilla del plan de mejoramiento, total de cuentas), la lista de verificación real (SGC-FO-03), el
+   formato del informe de la revisión anual y el ajuste del texto de su procedimiento (manual, capítulo 7, sección 7).
 3. **Entorno de desarrollo** (convive con `sgc-suaza` en la misma máquina):
 
    | Pieza | SGC Integral (esta) | sgc-suaza (original) |
@@ -180,11 +213,20 @@
    `SOL-…-006` (nacido de la revisión) y «Todo el hospital» con el miembro «todos los usuarios activos». El detalle está en
    «Qué probar y cómo (Fase 13C)», paso 0. **La base de desarrollo NO se resembró en la 13C** (F13C-R20): la demo nueva se
    sembró y se probó en una base aparte; para tenerla, `npm run db:seed && npm run admin:asegurar`.
+   **Desde la 14A la demo trae además** (`src/db/semillas/indicadores-demo.ts`, con su historia en
+   `indicadores-demo-agenda.ts` y sus fichas en `indicadores-demo-fichas.ts`, todo por las funciones del dominio y con
+   firmas reales): **14 indicadores**: los ocho del Excel del usuario, `SGC-IND-01` a `SGC-IND-08` (elaborados por
+   `coordinadora.sgc` y aprobados en bloque por `gerente`, con sus históricos registrados), `SGC-IND-09` retirado,
+   `AIN-IND-01` (urgencias, en minutos, que mide `jefe.urgencias` con rol Consulta), `CEX-IND-01` (el regulatorio, con la
+   Resolución 256 de 2016), `GTH-IND-01` (restringido), `GTH-IND-02` por aprobar y `GRF-IND-01` en borrador; tres
+   objetivos de calidad y dos institucionales; y el cierre de un mes anterior. El detalle está en «Qué probar y cómo
+   (Fase 14A)», paso 0. Las fechas son relativas al día de la siembra. **La base de desarrollo NO se resembró en la 14A**:
+   la demo se sembró y se probó en la base aparte `sgc_f14a`; para tenerla, `npm run db:seed && npm run admin:asegurar`.
    **La base de desarrollo se resembró en la 13B** (Tarea 15, con la demo de distribución; el recorrido de §18 la
    avanza otra vez). **También se resembró varias veces en la 13A** (Tareas 2 y 15, sus arreglos y el
    cierre): cada vez se pierden los datos de prueba manual y `admin` se recrea con la `ADMIN_CLAVE`
    de `.env.local` y cambio obligatorio.
-5. **Tests:** 4722 en 197 archivos (la 13B cerró con 3568 en 151), en serie (`fileParallelism: false`), contra la BD de
+5. **Tests:** 5696 en 235 archivos, más 1 saltado (la 13C cerró con 4722 en 197), en serie (`fileParallelism: false`), contra la BD de
    desarrollo sembrada y **conectados como `sgc_app`**, igual que la app; el test de
    privilegios usa además `DATABASE_URL_MIGRADOR`. Los usuarios de prueba con historia
    (`zz_<algo>_<timestamp>`) se acumulan porque no se pueden borrar (F11-D2); `db:seed` los
@@ -198,7 +240,7 @@
    CI → Run workflow**. Motivos: la cuota de almacenamiento de Actions es de la cuenta y
    la comparte con `sgc-suaza` (se agotó el 2026-08-25) y cada build ARM64 por QEMU es
    lento. La imagen `amd64` del CI llega en la Fase 20. La Fase 11 añadió `otpauth`,
-   `qrcode` y `zod` (todos JS puro); las Fases 12, 13A, 13B y 13C no añadieron dependencias. No consta que el
+   `qrcode` y `zod` (todos JS puro); las Fases 12, 13A, 13B, 13C y 14A no añadieron dependencias. No consta que el
    job ARM64 se haya relanzado desde la Fase 11: lanzarlo a mano antes de la Fase 20.
 7. **Despliegue: decidido en el spec §4 y escrito en `AGENTS.md` ("Piso de despliegue")**
    (contenedores portables, Windows con WSL2 o Linux, tres contenedores proxy + app +
@@ -220,6 +262,223 @@
 9. **Memoria de Claude Code:** es por carpeta; la de `F:\sgc-integral` solo guarda
    preferencias de trabajo del usuario (decide por listas numeradas; recomendaciones con
    base ISO, Regulación o Práctica). Este archivo es el contexto durable de la variante.
+
+## Qué probar y cómo (Fase 14A)
+
+Recorrido de los veinte pasos de la 14A de §24 del spec de la fase
+(`docs/superpowers/specs/2026-11-10-fase14-indicadores-design.md`), ordenados y adaptados a la demo que la semilla deja de
+verdad (`src/db/semillas/indicadores-demo.ts` y su agenda): entre paréntesis, el paso de §24 que cubre cada uno. El
+capítulo 8 del manual (`docs/manual/usuario/08-indicadores.md`) explica cada pantalla por persona. **No lo ha recorrido
+todavía el usuario.** El controlador lo recorrió en el navegador el 2026-11-12 sobre la base aparte (claro, oscuro, 390 px
+y la pantalla de reporte solo con el teclado); lo que no salió como decía se corrigió en la app o aquí (ronda 1).
+
+0. **Preparar.** Con la rama de la 14A en su carpeta, **reinicie `npm run dev`** (uno arrancado antes sirve la matriz de
+   permisos vieja, sin `indicadores.*`) y **resiembre justo antes de empezar**: `npm run db:seed && npm run
+   admin:asegurar` (vacía la base y `./almacen`; `admin` vuelve a pedir el cambio de clave). Arrancar la app de la rama o
+   `npm run db:preparar` aplica antes la migración `0011` a su base. Abra `http://localhost:3002` y use ventanas privadas
+   para tener varias sesiones; para el celular, `DEV_ORIGENES` como en la 13B.
+
+   | Usuario | Clave | Papel en el recorrido |
+   |---|---|---|
+   | `coordinadora.sgc` | `Demo-SGC-2026-clave` | Administrador del SGC: crea, cambia y configura fichas, designa, programa metas, cierra el mes y reabre; está designada para medir y analizar los del SGC |
+   | `gerente` | ídem | Aprueba las fichas estratégicas, las regulatorias y las de los procesos sin líder (SGC, AIN); hace seguimiento de `SGC-IND-01` |
+   | `control.interno` | ídem | Ve todo, también lo restringido; deja observaciones |
+   | `jefe.urgencias` | ídem | Rol Consulta: mide y analiza `AIN-IND-01` sin ser líder |
+   | `lider.cex` | ídem | Líder de CEX: mide `CEX-IND-01`; su cargo (Médico Coordinador) es el jefe de la Enfermera Jefe en la estructura |
+   | `lider.gth` | ídem | Líder de GTH: mide `GTH-IND-01` (restringido); le toca aprobar `GTH-IND-02` |
+   | `consulta` | ídem | Rol Consulta, asignada a AIN y CEX y sin designaciones: ve los generales, sus resultados y su análisis, no los soportes ni las observaciones |
+   | `admin` | La `ADMIN_CLAVE` de `.env.local` | Segundo Admin SGC: recibe las alertas críticas |
+
+   Lo que la demo trae, sembrada el 2026-11-12 (los periodos se cuentan desde el día de la siembra; con qué fechas sale
+   igual, en el aviso 4 de «Avisos para el usuario (Fase 14A)»):
+
+   - **Los ocho del SGC del Excel** (`SGC-IND-01` a `SGC-IND-08`; trimestrales salvo `SGC-IND-03`, semestral, y `SGC-IND-04`,
+     anual), elaborados por `coordinadora.sgc` y aprobados en bloque por `gerente`, con sus históricos registrados (los
+     dos primeros trimestres; el semestre o el año en el 03 y el 04). El tercer trimestre, reportado: **`SGC-IND-01` 3 de 5
+     = 60 % Crítico**, con causa, acción propuesta, «Requiere acción de mejora», la alerta sin leer de `gerente` y una
+     **observación de `control.interno` sin respuesta**; `SGC-IND-02` 6 de 8 = 75 % **Atención** con su análisis; `SGC-IND-06`
+     en Bien con una **meta programada** de 70 (la ficha dice 80); `SGC-IND-08` **«No aplica»** con su motivo; `SGC-IND-05`
+     con **tres versiones** (la 1 con meta 85; la 2, cambio mayor a 90, aprobada por `gerente` y vigente desde el cuarto
+     trimestre; la 3, cambio menor de la fuente de una variable, sin aprobador). `SGC-IND-09` **retirado**.
+   - **`AIN-IND-01` «Tiempo de espera en triage II»** (Urgencias, minutos, «Promedio o razón», menor es mejor, meta 30,
+     mensual; mide y analiza `jefe.urgencias`): mayo y junio en Bien, **julio sin dato** (lo dejó así el cierre), agosto en
+     Atención con su análisis, **septiembre vencido** (la única medición ordinaria por reportar) y octubre en Bien
+     (27 min, reportado y sin cerrar).
+   - **`CEX-IND-01` «Oportunidad en la asignación de cita de medicina general»** (regulatorio, **Resolución 256 de 2016**,
+     días, menor es mejor, meta 3, mensual; mide `lider.cex`): de mayo a octubre en Bien; **julio salió en Atención, se
+     cerró, se reabrió con justificación, se corrigió a 2,9 y se cerró de nuevo** («Corregida»).
+   - **`GTH-IND-01` «Rotación de personal»**, **restringido** (trimestral, meta 5 %, aprobó `lider.gth`); **`GTH-IND-02`
+     por aprobar** (le toca a `lider.gth`); **`GRF-IND-01`** en borrador, nunca enviado (Gestión de Cartera).
+   - Tres objetivos de calidad y dos institucionales. **El cierre de agosto** (24 mediciones), hecho a mediados de
+     septiembre; el mes que se propone cerrar es septiembre. La demo no trae soportes.
+   - Avisos sin leer: `coordinadora.sgc` «Observación en SGC-IND-01», `gerente` la alerta del crítico de `SGC-IND-01`,
+     `lider.cex` «Medición reabierta en CEX-IND-01» y `lider.gth` «Ficha por aprobar: GTH-IND-02 · …». Los demás avisos de
+     la siembra quedan leídos.
+
+1. **Vencido y escalamiento (§24.17).** La primera página que alguien abre después de sembrar dispara la revisión de
+   vencimientos (corre al usar el SGC, cada diez minutos como mucho), con el reloj real. **Mírelo antes del paso 7**, que
+   reporta ese periodo. Como `jefe.urgencias`: la campana «Tiene 1 indicador por reportar con el plazo vencido», la insignia
+   «1» junto a **Indicadores**, en **Mis tareas** «Reportar AIN-IND-01 Tiempo de espera en triage II, septiembre de 2026»
+   con **Vencida**, y en la lista la columna **Reporte** con «Vencido hace N días». Como `lider.cex`, el escalamiento
+   «Reportes de indicadores vencidos»: «1 reporte de indicadores a cargo de Luz Dary Ortiz sigue vencido. Venció hace N
+   días.», sin código, nombre ni enlace del indicador. El Admin SGC no recibe el escalamiento, y AIN no tiene líder que
+   reciba el aviso por proceso.
+2. **Crear una ficha «Porcentaje» (§24.1; `coordinadora.sgc`).** **Indicadores** → **Nuevo indicador** → **¿Cómo se
+   calcula?** **Porcentaje**, en el proceso SGC (sin líder: la aprobará Gerencia), mensual, ascendente, meta 90, con sus dos
+   variables y sus fuentes. El código propuesto es `SGC-IND-10` (el 09 está ocupado por el retirado). En **Quién mide**
+   elíjase usted (con «(el líder del proceso)» y un proceso sin líder, los cargos responsables quedan vacíos: al guardar, el
+   error abre **Más opciones** y sale junto a la lista de cargos, con el foco en ella); en **Más opciones**, **Inicio de
+   medición** en enero, para el paso 6. **Así quedará el semáforo**: «Bien desde 90 % · Atención de 63 a 89,9 % · Crítico
+   por debajo de 63 %». **Prueba** con 9 y 10: «Cumple: 90 % frente
+   a una meta de 90 %.» y «Bien». **Guardar borrador** → en la página de edición, **Enviar a aprobación** con su clave: la
+   ventana muestra la versión, el tipo («Ficha nueva») y la huella; la ficha queda **Por aprobar**.
+3. **Fórmula libre (§24.2).** Otra ficha en SGC con **Fórmula libre** y tres variables. Escriba `max(A, B)`: debajo sale
+   «Separe los argumentos con punto y coma»; `A ^ 2`, «Carácter no admitido: «^»»; `(A + B`, «Falta cerrar un
+   paréntesis»; una letra sin declarar, al guardar, «La fórmula usa la variable D, que no está declarada», junto a la
+   fórmula y con el foco en ella. Corríjala (por ejemplo `(A + B) ÷ C × 100`, con **En palabras** debajo), pruébela y
+   envíela. Cree y envíe además **una tercera** ficha cualquiera en SGC: es la que se devuelve en el paso 4.
+4. **Aprobar en bloque y devolver (§24.3; `gerente`).** **Mis tareas**: tres «Aprobar la ficha de SGC-IND-1…» y sus avisos
+   «Ficha por aprobar: …». **Indicadores** → **Por aprobar · 3**: marque dos y **Aprobar las seleccionadas** con una sola
+   clave («Se aprobaron 2 fichas.»); en la tercera, **Devolver** con una nota: la página lo confirma («Se devolvió la ficha
+   de … a borrador, con su nota.»). `coordinadora.sgc` recibe «Devolvieron la ficha de …» con la nota y la tarea «Ficha
+   devuelta: …». La demo no trae fichas por aprobar para `gerente`: la de `GTH-IND-02` es de `lider.gth`.
+5. **Ficha impresa (§24.4).** En `SGC-IND-01`, **Imprimir ficha** (y **Imprimir**, o guardar como PDF): encabezado con el
+   logo, «Ficha técnica de indicador», código, versión y fecha; **Identificación** y **Estructura de medición** (fórmula y
+   rangos en palabras); **Firmas** reales («Elaboró» María Fernanda Perdomo, Líder de Calidad; «Revisó y aprobó» Gerente
+   de ejemplo, con su fecha); **Control de cambios**; **Datos de operación**; **Seguimiento y medición** (primer trimestre
+   5/5 = 100 % y segundo 5/6 = 83,3 %, históricos; tercero 3/5 = 60 % Crítico con causa y acción; el cuarto por venir; el
+   acumulado 13/16 = 81,3 %); y la **Representación gráfica** con el valor y el estado escritos. Compárela con la hoja
+   IND-01 del Excel del usuario: por diseño las firmas van después de la estructura, hay una fila por periodo (no doce
+   meses) y no lleva NIT ni «Página 1 de 1».
+6. **Históricos (§24.5).** En la ficha aprobada en el paso 4 (con inicio en enero), **Registrar históricos de 2026**: llene
+   algunos meses, marque **No aplica** con motivo en uno y **Guardar los históricos**. Quedan marcados «Histórico», con su
+   color, sin tareas ni alertas (ni siquiera un crítico); los que no llene siguen «Por registrar».
+7. **Reportar sin ser líder, Crítico y Atención, soportes (§24.6, §24.7 y §24.20; `jefe.urgencias`, a 390 px y solo con el
+   teclado).** Desde su tarea, la pantalla **Reportar** de septiembre. En **Soportes**, intente un `.xls` o un Word: «El
+   soporte debe ser PDF, imagen (PNG, JPG, WebP) o Excel (.xlsx)»; un `.xlsx` y un PDF entran. Digite 2000 y 40: al
+   instante «50 min», «Crítico» y «No cumple: 50 min frente a una meta de máximo 30 min.»; como sube más de 30 % frente a
+   agosto, pide **Sí, los datos son correctos**. **Reportar**: la página del indicador se abre con el foco en la sección
+   **Análisis**, que pide **Causa de la desviación** y **Acción propuesta**, y la medición queda «Requiere acción de
+   mejora». La alerta del crítico les llega a `coordinadora.sgc` y a `admin` (AIN no tiene líder; a quien reporta no le
+   llega). Luego **Corregir** octubre con 1520 y 40 (38 min): **Atención**, y la pantalla avisa que el análisis será
+   obligatorio; pero agosto (Atención), septiembre (Crítico) y octubre quedan tres periodos seguidos sin cumplir, el umbral
+   del incumplimiento repetido (spec §13.8), así que al guardar pide también **Causa de la desviación** y **Acción
+   propuesta**, la medición queda «Requiere acción de mejora» («El resultado no cumple por varios periodos seguidos») y
+   `coordinadora.sgc` y `admin` reciben «… Atención con 3 periodos sin cumplir. Octubre de 2026». Una Atención sin esa
+   racha pide solo el análisis; un periodo en Bien (por ejemplo 1080 y 40) no pide nada.
+8. **«No aplica» no es «Sin dato» (§24.8).** `SGC-IND-08`, tercer trimestre: «n. a.», gris, «Reportada», con su motivo y
+   sin análisis; `AIN-IND-01`, julio: «s. d.» en la gráfica y la matriz, y en la tabla del año «— · Sin dato · Cerrada»
+   (el cierre lo dejó sin datos; «Sin dato: no se midió.» es la fila de un periodo que no tiene medición). Ninguno entra
+   al acumulado. El «No aplica» que usted marcó en el paso 6 tampoco. (En una medición ordinaria, **No aplica en este
+   periodo** en la pantalla de reporte y **Quitar «No aplica»** para deshacerlo.)
+9. **La página del indicador (§24.9).** `AIN-IND-01` → **Resultados**: el último resultado con su frase y su comparación
+   con el periodo anterior (la flecha, la diferencia en minutos y «mejora» o «empeora»: aquí bajar es mejorar), la gráfica
+   de tubos con **el hueco de julio**, la línea de la meta y la punteada del límite, el **Acumulado del año** (después del
+   paso 7, «Acumulado parcial: falta julio»), **Sus variables** y la tabla del año. Pase el cursor
+   por una columna, enfóquela con **Tab** y tóquela en el celular: la tarjeta dice periodo, valor, estado y meta.
+   **Ver:** 2 años y Todo.
+10. **Metas por periodo (§24.10; `coordinadora.sgc`).** `AIN-IND-01` → **Administrar** → **Programar metas**: diciembre
+    (aún no termina) se cambia sin más («Meta guardada.»); octubre (terminado y sin cerrar) pide **Justificación**, queda
+    marcado «Meta ajustada después del periodo» y se recalcula (si cambia el color, avisa como una corrección).
+11. **Observaciones y lo que no ve Consulta (§24.11).** Como `control.interno`, `AIN-IND-01` → **Observaciones** → periodo
+    septiembre → **Dejar la observación**. `jefe.urgencias` recibe «Observación en AIN-IND-01» y la tarea «Responder la
+    observación de Control Interno de ejemplo en AIN-IND-01»; **Responder** → `control.interno` recibe «Respuesta a su
+    observación en AIN-IND-01». Como `consulta` (asignada a AIN, sin designación): ve `AIN-IND-01`, su resultado y su
+    análisis, pero no la pestaña **Observaciones** ni la columna **Soportes**. `coordinadora.sgc` puede responder también la
+    observación sembrada en `SGC-IND-01`.
+12. **Matriz y Excel (§24.12).** **Matriz del año** con **Proceso** AIN y con todos: celdas con valor, franja y figura por
+    estado, «s. d.» en julio, la columna **Año**; **Imprimir** y **Excel** (incluye retirados). En la lista, **Excel** con
+    los filtros puestos; en `SGC-IND-01`, **Excel** (hojas «Ficha» y «Resultados 2026»). Cada descarga queda en la
+    **Bitácora**.
+13. **Cierre del mes y reapertura (§24.13; `coordinadora.sgc`).** **Cierre del mes** → **Cerrar hasta** septiembre → **Ver
+    el resumen**: cuántas se cerrarán, las reportadas, las que quedarán sin dato y quién debía medirlas, las «no aplica»,
+    las que no tienen análisis, **Por proceso**, las observaciones sin respuesta (no lo impiden) y **No se cierran** (los
+    históricos sin registrar del paso 6). Con la demo, después del paso 7 no queda nada sin dato ni sin análisis
+    (septiembre de AIN, la única medición por reportar, ya se reportó y se analizó): esas secciones salen en cero
+    («Ninguna medición quedará sin dato.»); para ver «quién debía medirlas», mire el resumen antes del paso 7, sin
+    cerrar. **Cerrar septiembre de 2026** → **Cerrar el mes**, sin clave. Como `jefe.urgencias`, septiembre ya no tiene
+    **Corregir** y su pantalla de reporte dice «La medición está cerrada: pida al Administrador del SGC que la reabra.».
+    Como `coordinadora.sgc`, **Reabrir** septiembre con su justificación (`jefe.urgencias` recibe «Medición reabierta en
+    AIN-IND-01»), corrija como `jefe.urgencias`, vea **Corregida** con **Ver el historial** (qué había, qué quedó, quién,
+    cuándo y por qué) y **Cerrar de nuevo**. `CEX-IND-01` julio trae ya un ejemplo.
+14. **Cambio mayor y menor (§24.14).** `SGC-IND-05` → **Versiones** ya muestra los dos. Hágalo usted en `SGC-IND-02`:
+    **Administrar** → **Editar ficha** → **Abrir un cambio**, meta 80 → 85, **Motivo del cambio**, **Guardar borrador** →
+    **Enviar a aprobación** («Cambio mayor», **Rige desde** el cuarto trimestre) → `gerente` lo aprueba: versión 2, y el
+    tercer trimestre conserva la versión 1. Después **Abrir un cambio**, corrija una tilde o una letra del nombre y
+    **Publicar el cambio menor** con su clave: versión 3, «No requiere: cambio menor». El **Control de cambios** muestra las
+    dos.
+15. **Restringido (§24.15).** `GTH-IND-01` es restringido: como `consulta`, no está en la lista, ni en `Ctrl K` («rotación»)
+    ni en la matriz, y `/indicadores/GTH-IND-01` dice «Página no encontrada»; como `lider.gth` (asignado a GTH), sí. Para
+    marcar uno usted: `coordinadora.sgc`, `CEX-IND-01` → **Administrar** → **Datos de operación** → **Nivel de acceso**
+    Restringido: `jefe.urgencias` (Consulta, solo AIN) deja de encontrarlo y `consulta` (asignada a CEX) lo sigue viendo.
+    Devuélvalo a General.
+16. **Regulatorio y normograma (§24.16).** `CEX-IND-01` → **Ficha técnica**: clasificación Regulatorio, **Normas que lo
+    exigen** «Resolución 256 de 2016» y **Se reporta a**. **Normograma** → Resolución 256 de 2016 → **Indicadores que
+    exige**: `CEX-IND-01`.
+17. **Retirar, duplicar y descartar (§24.18; `coordinadora.sgc`).** Retire `SGC-IND-07` con motivo: «Retirado el … por …»
+    con el motivo, sus designados (aquí, la propia `coordinadora.sgc`) reciben «Retiraron el indicador SGC-IND-07», sale
+    de la lista (vuelve con **Incluir retirados**) y en la búsqueda sale marcado «Retirado». **Crear a partir de este** en
+    otro: un borrador nuevo con el contenido y el código propuesto. La ficha devuelta en el paso 4 → **Administrar** →
+    **Descartar** con motivo: «Descartado el …» y «Solo lo ve quien administra y su código sigue ocupado.»; un indicador
+    nuevo en SGC recibe el número siguiente.
+18. **La ficha guarda los nombres firmados (§24.19).** **Estructura** → renombre el cargo «Líder de Calidad»: la ficha de
+    `SGC-IND-01` (y su firma «Elaboró») sigue diciendo «Líder de Calidad». Devuélvale el nombre.
+19. **Lo que cambió con la ola final (F14A-R51 a R53; `coordinadora.sgc`).** En **Normograma**, registre una norma
+    nueva: su ficha ofrece **Borrar…**. Cítela en un **Nuevo indicador** (**Normas que lo exigen**) y guárdelo como
+    borrador: la ficha de la norma ya solo ofrece **Retirar…** (antes, borrarla daba un error en inglés). En `AIN-IND-01` →
+    **Administrar** → **Datos de operación**, suba el plazo de reporte hasta que la fecha límite de septiembre quede en el
+    futuro: el periodo deja de estar **Vencido** y su aviso de vencido se volverá a mandar cuando venza. En `SGC-IND-01`
+    → **Resultados**, el valor bajo cada tubo lleva su unidad («100 %», «83,3 %», «60 %»), y a 390 px la gráfica arranca
+    con columnas enteras (ningún valor partido). Si corrige o reporta tarde un periodo que cambia de color, la marca «N
+    periodos sin cumplir» de los siguientes que siguen abiertos se pone o se quita. En un indicador con periodos ya
+    reportados y vencidos, marcar **Pedir un soporte** en **Datos de operación** no los reabre ni los vuelve vencidos: el
+    soporte se pide desde ahora.
+20. **Verificación técnica:** lint, `SEMILLA_RECIEN=1 npm test` y el build sin URL de base, hechos al cierre de la
+    ola final; la imagen en un contenedor aparte, la `0011` sobre una copia de la base del usuario y este recorrido en el
+    navegador, hechos por el controlador tras la ronda 1 (ver «Hecho (Fase 14A)»).
+
+**Al terminar:** el recorrido avanza la demo (y cierra septiembre en la base), y `npm test` salta los casos que dependen de
+ella, con un aviso en la salida. `npm run db:seed && npm run admin:asegurar` la deja como nueva.
+
+### Avisos para el usuario (Fase 14A)
+
+1. **La rama trabajó sobre una base aparte, `sgc_f14a`** (con su almacén `almacen-f14a`), en el worktree
+   `F:\sgc-integral-f14a`, por decisión del usuario del 2026-11-10 («Worktree aparte»; precedente F13C-R20). **Su base `sgc`
+   y su `next dev` no se tocaron.** La migración `0011` se aplicará a su base cuando arranque la app de la rama (o con
+   `npm run db:preparar`): es aditiva y siembra los tres maestros (tipos, clasificaciones y unidades) y los cinco
+   parámetros si están vacíos. Git no deja sacar la misma rama en dos carpetas a la vez: mientras exista el worktree, su
+   carpeta no puede hacer `git switch fase-14a-indicadores`.
+2. **Para ver la demo de la 14A en su base:** `npm run db:seed` (vacía la base y `./almacen`) y `npm run admin:asegurar`.
+   Reinicie `npm run dev` antes, por la matriz de permisos nueva.
+3. **La primera carga de página después de sembrar dispara la pasada de vencimientos** con el reloj real: aparecen el aviso
+   de vencido de `AIN-IND-01` a `jefe.urgencias` y el escalamiento a `lider.cex`. Es el comportamiento normal. Para ver la
+   demo «limpia», resiembre justo antes.
+4. **Los periodos de la demo se mueven con el día de la siembra:** lo que terminó hace más que el plazo de reporte (10 días)
+   ya está reportado y no siempre queda un periodo «por reportar» dentro de su plazo (sembrando el 2026-11-12, ninguno).
+   Sembrando entre el 11 de octubre de 2026 y el 10 de enero de 2027, los trimestres sembrados son los tres primeros de 2026
+   (`SGC-IND-01` como la maqueta); los meses de urgencias y consulta externa son de mayo a octubre, como en el recorrido,
+   solo sembrando entre el 11 de noviembre y el 10 de diciembre de 2026; fuera de esas fechas se corren con el día.
+5. **El Excel `INDICADORES_PROCESO_SGC_OK.xlsx` sigue fuera del repositorio** (en la raíz, excluido en
+   `.git/info/exclude`): la semilla tomó de él el nombre, el objetivo, la fórmula, las variables con su fuente, la meta y la
+   periodicidad de las ocho fichas, sin copiarlo.
+6. **Decida usted una regla que el spec dejó abierta** (F14A-R15): un cambio mayor que pasa a una periodicidad más gruesa a
+   mitad de periodo no puede regir hasta que empiece el siguiente periodo sin reportes; el diálogo lo dice. Si la Fase 16
+   necesita otra regla (vigencia en fecha futura), se propone entonces.
+7. **`diaLocal` (`src/lib/tramites/plazos.ts`) guarda ahora su formateador de fechas por zona** (F14A-R29): es un caché de
+   módulo que comparten los trámites y los indicadores, sin cambio de comportamiento; lo pidió el cierre del mes, que
+   recorre todos los indicadores activos.
+8. **Las tareas de indicadores las calcula «Mis tareas» sin escribir** (F14A-R2): una tarea de un periodo que acaba de
+   terminar aparece cuando la revisión de vencimientos o una página del módulo abre ese periodo, a lo sumo una carga
+   después.
+9. **Los soportes `.xlsx` se validan sobre el archivo completo** (F14A-R26): el riesgo del ZIP renombrado que el spec
+   aceptaba (§8.2 y §21) queda cerrado en los soportes. Hasta la ronda 1 la validación rompía en la app empaquetada y
+   rechazaba todo `.xlsx` con un error 500 (D-1, ya corregido: F14A-R41). Queda una posibilidad sin reproducir: que un
+   Excel legítimo con una hoja muy grande, escrito por algunos programas, no se reconozca (ver Deuda técnica); se guarda
+   de nuevo con Excel o como PDF.
+10. **En su base, después de traer la rama, corra `npm run db:preparar` antes de `npm run dev`**: aplica la migración
+    `0011` y deja el rol `sgc_app` con sus privilegios, entre ellos el `REVOKE` nuevo de `cierres_indicadores` (ola final,
+    M1). `npm run dev` no lo hace solo; la imagen de Docker sí, al arrancar (`arrancar.js`). Sin él, la prueba
+    `tests/privilegios-bd.test.ts` falla en esa base.
 
 ## Qué probar y cómo (Fase 13C)
 
@@ -913,6 +1172,140 @@ desarrollo en `http://localhost:3002`.
 Manual de usuario de esta fase: `docs/manual/usuario/01-ingreso-clave-y-segundo-factor.md`
 y `docs/manual/usuario/02-usuarios-cargos-y-procesos.md`.
 
+## Hecho (Fase 14A)
+
+Plan: `docs/superpowers/plans/2026-11-10-fase14a-indicadores.md`; diseño:
+`docs/superpowers/specs/2026-11-10-fase14-indicadores-design.md` (común a la 14A y la 14B; §5.1 dice qué va en cada una).
+El indicador de punta a punta, del ISO 9001:2015 4.4.1 c), 9.1.1 y 9.1.3: el hospital ya puede llevar sus indicadores como
+los ocho del Excel del usuario. **Sin dependencias npm nuevas** (`exceljs`, `zod` y `pdf-lib` ya estaban; las animaciones
+son CSS, F14-DC23). La rama `fase-14a-indicadores` (90 confirmaciones sobre `bced185`) se trabajó en el worktree
+`F:\sgc-integral-f14a` contra la base aparte `sgc_f14a`; no está publicada ni fusionada.
+
+- **Rutas nuevas:** `/indicadores` (la lista) con las pestañas `/indicadores/matriz`, `/indicadores/por-aprobar` y
+  `/indicadores/cierre`; `/indicadores/nuevo`; `/indicadores/[codigo]` (vistas Resultados, Ficha técnica con `?version=N`,
+  Versiones y Observaciones), `/indicadores/[codigo]/editar`, `/indicadores/[codigo]/imprimir` y
+  `/indicadores/[codigo]/reportar/[periodo]`; los Excel `GET /indicadores/excel` y `GET /indicadores/[codigo]/excel`;
+  `GET /indicadores/[codigo]/soportes/[archivoId]/[[...nombre]]` (siempre como descarga; 404 a quien no ve soportes); la
+  subida `POST /api/mediciones/[id]/archivos` (fuera del `matcher` del proxy); y `/admin/indicadores` (maestros y
+  parámetros, dentro del panel). Las URL existentes se conservan; los códigos `nuevo`, `matriz`, `por-aprobar`, `cierre` y
+  `excel` están reservados.
+- **Esquema (`drizzle/0011_fase14-indicadores.sql`):** 24 tablas nuevas, las 16 de la 14A (`tipos_indicador`,
+  `clasificaciones_indicador`, `unidades_indicador`, `objetivos`, `indicadores`, `indicador_versiones`,
+  `indicador_variables`, `indicador_responsables`, `indicador_normas`, `indicador_designados`, `indicador_metas`,
+  `mediciones`, `medicion_valores`, `medicion_eventos`, `medicion_observaciones` y `cierres_indicadores`) y las 8 de la 14B,
+  vacías hasta entonces (`variables_compartidas`, `variable_responsables`, `variable_valores`, `calculo_fotos`,
+  `dimensiones`, `dimension_categorias`, `reportes_externos` e `impactos_indicadores`); `firmas.indicador_version_id` con
+  `firmas_tramite_coherente` ampliado; `archivos.contexto` gana `medicion` y `reporte_externo`; las cinco claves `ind_*`
+  de configuración (umbral de atención 70, aviso previo 3, plazo de reporte 10, incumplimiento repetido 3, variación que
+  pide confirmación 30) y los tres maestros (tipos, clasificaciones y unidades) si están vacíos. Triggers: solo inserción
+  en `medicion_eventos`, `medicion_observaciones` y `cierres_indicadores`; `sgc_impedir_si_medicion_cerrada` (una medición
+  cerrada no cambia salvo la reapertura) y `sgc_impedir_si_version_aprobada` (una versión aprobada, ni sus hijas).
+  `medicion_eventos`, `medicion_observaciones` y `cierres_indicadores` entran al `REVOKE UPDATE, DELETE` de `sgc_app`
+  (`cierres_indicadores` desde la ola final de corrección, M1, en `src/db/roles-bd.ts`). **Doce migraciones en total
+  (0000 a 0011).** Aditiva: sobre una base de la 13C o de `sgc-suaza` no se renombra ni se borra nada.
+- **Permisos (`src/lib/permisos.ts`):** `indicadores.administrar` (admin_sgc), `indicadores.aprobar` (gerencia,
+  lider_proceso), `indicadores.medir` e `indicadores.observar` (los cinco roles; la condición de persona se comprueba en
+  el servidor). Las reglas de alcance de los indicadores viven al final de `src/lib/alcance.ts` (`filtroIndicadores`,
+  `puedeVerIndicador`, `puedeVerSoportes`, `puedeMedir`, `puedeAnalizar`, `puedeRegistrarHistoricos`, `puedeObservar`,
+  `aprobadoresDeFicha`, `puedeAprobarFicha`, `esAprobadorDe`, `responsablesDeMedir`, `responsablesDeAnalizar`,
+  `sinResponsable`, `responsableDe` y `participaEn`), con las dos excepciones nombradas a `alcanceProcesos()`.
+- **Reglas puras:** `src/lib/indicadores/` con el intérprete de fórmulas (`formula/`: analizar, evaluar con fracciones
+  exactas de `bigint`, las formas y la fórmula en palabras), periodos y fechas límite, semáforo y rangos en palabras,
+  textos (la cifra que no contradice el veredicto, la frase, la comparación, la variación), acumulado, estados, cálculo,
+  ficha (mayor o menor, huella), reporte, resultados, cierre, historial de la corrección, filtros, Excel, la ficha en texto
+  y rutas; `periodoDe` (`src/lib/indicadores-documentales/periodo.ts`) gana el bimestre. Esquemas
+  `src/lib/esquemas/indicadores.ts` e `indicadores-maestros.ts`.
+- **Consultas (`src/db/consultas/indicadores/`):** maestros y parámetros, fichas (crear, guardar, abrir un cambio, código
+  propuesto), aprobación (enviar, aprobar en bloque, devolver, descartar, «rige desde», versiones), operación (designar,
+  datos de operación, duplicar, retirar, borrar, descartar), mediciones (`asegurarMediciones`, reportar, guardar sin
+  reportar, «no aplica» y el único camino de cálculo `recalcularMedicion`), análisis, observaciones, soportes, históricos,
+  metas, cierre y reapertura, alertas, tareas, vencimientos, lectura, lista, matriz, impresión y búsqueda. Acciones en
+  `src/app/acciones-indicadores.ts` y `src/app/admin/acciones-indicadores.ts`.
+- **Componentes:** `src/componentes/indicadores/` (lista y filtros, matriz, pestañas, la página por vistas, la ficha y su
+  formulario, la prueba, el diálogo de envío, «Por aprobar», el reporte con el resultado en vivo, los soportes, el
+  análisis, las observaciones, la tabla del año y la de históricos, las metas, el cierre, la reapertura, la administración
+  y los maestros) y, en `src/componentes/ui`, las gráficas de tubos (`GraficoTubos`, `MiniTubos`, `TuboAcumulado`,
+  `TuboSvg`, `TarjetaDeTubo`, `Tendencia`, `BarraEstados`, con su geometría en `geometria-tubos.ts`), con sus tokens de
+  brillo y sombra en `globals.css` para claro y oscuro y su tabla equivalente.
+- **Pantallas existentes:** la barra lateral con el grupo **Indicadores** (su insignia de reportes vencidos a cargo de la
+  persona) y **Configuración de indicadores** en Administración; `Ctrl K` y **Buscar documentos** con el grupo
+  **Indicadores**; la página del proceso y la del subproceso con **Indicadores del proceso**; la ficha de una norma con
+  **Indicadores que exige**; **Tipos de documento** rechaza la sigla `IND`; `ZonaCarga` admite el soporte `.xlsx`; la regla
+  global de impresión ya no imprime «Saltar al contenido».
+- **Tareas, avisos y vencimientos:** `misTareas` suma reportar, analizar, responder una observación, aprobar una ficha y
+  retomar una devuelta (agrupadas pasadas cinco las de reportar, analizar y aprobar), sin escribir (F14A-R2). Avisos
+  `indicadores.por_aprobar`, `.aprobada`, `.devuelta`, `.designacion`, `.retirado`, `.observacion`, `.respuesta`,
+  `.reabierta`, `.alerta`, `.correccion`, `.por_vencer`, `.vencido` y `.escalado`. `revisarVencimientos` gana
+  `revisarVencimientosDeIndicadores`: abre los periodos que terminaron, el aviso previo, el vencido (a quien lo tiene y,
+  por proceso, a sus líderes) y el escalamiento al jefe sin nombrar el indicador; nada para los históricos ni los «no
+  aplica».
+- **Bitácora:** 33 acciones nuevas (contadas en `src/lib/bitacora-detalle.ts`), con frase y nombre de filtro (`indicador_*`,
+  `medicion_*`, `indicadores_mes_cerrado` y las dos de exportación, `exporto_ficha_indicador` y
+  `exporto_resultados_indicadores`).
+- **Semilla:** `src/db/semillas/indicadores-demo.ts`, `indicadores-demo-agenda.ts` (la historia como datos, con el
+  calendario relativo a la siembra) e `indicadores-demo-fichas.ts`, todo por las funciones del dominio y con firmas
+  (paso 0 de «Qué probar y cómo (Fase 14A)»); la mínima siembra los maestros y los parámetros, sin objetivos ni
+  indicadores.
+- **Pruebas:** 38 archivos nuevos (intérprete con entradas hostiles, reglas puras, flujo contra la base en transacciones
+  que se revierten, visibilidad con los cinco roles, vencimientos, pantallas, gráficas, Excel, impresión, semilla; dos de
+  ellos de la ronda 1, `file-type-empaquetado` e `indicadores-limite-grafica`) y los
+  estructurales ampliados (`permisos`, `paginas-sesion`, `acciones-permisos`, `proxy-matcher`, `privilegios-bd`,
+  `navegacion`, `bitacora-detalle`, `esquema`).
+- **`AGENTS.md`** quedó con lo de la 14A del spec §20: las dos tablas de solo inserción, las mediciones cerradas, las
+  versiones aprobadas y los cierres inmutables, la regla de las fórmulas, el único camino de cálculo, el veredicto con el
+  valor exacto, las dos excepciones de alcance, la estructura del módulo y el aviso de los nombres de la 13C, la acción
+  nueva en la lista fija, las firmas de ficha, la sigla `IND`, la ficha firmada, los históricos, la fila «Animación» del
+  stack y la regla de los tests.
+- **Lo que comprobó el controlador (2026-11-12):** la imagen `sgc-integral:f14a`, en un contenedor aparte, arrancó con
+  «Migraciones al día» y respondió `/api/salud` con `{"estado":"ok"}`; la `0011` sobre una copia de la base del usuario
+  pasó de 11 a 12 migraciones y sembró 3 tipos, 3 clasificaciones, 7 unidades y 5 parámetros, sin indicadores, con los
+  usuarios intactos (la copia se borró); y el recorrido de §24 en el navegador (claro, oscuro, 390 px y la pantalla de
+  reporte solo con el teclado) dio, de 18 pasos, 16 bien, el 8 con una diferencia del texto del recorrido y el 7 fallido
+  por el soporte `.xlsx`, con trece defectos (1 crítico, 1 importante y 11 menores).
+- **Ronda 1 de corrección** (trece confirmaciones, de `fbaae29` a `f89c79a`; F14A-R41 a R50): el soporte `.xlsx` entra
+  (D-1, `fileTypeFromBuffer`); las gráficas de tubos miden según sus periodos y arrancan en el último con valor (D-2,
+  `DesplazableDeTubos`); la unidad sigue a la forma (D-3); el motivo de «no aplica» sin doble punto (D-4); las fechas de
+  las pantallas con el formato de la app, «8 jul 2026, 09:05» (D-5, `fechaYHora`); la hoja impresa sin el bloque gris
+  (D-6); el límite de crítico con un solo texto y escalonado con la meta (D-7 y D-8); los retirados marcados en la matriz y
+  su Excel, sin «por venir» (D-9); la línea base de las fichas de la demo (D-10); «No aplica» aparte en la barra de la
+  lista (D-11); el foco en el análisis después de reportar (D-12); los errores de la ficha junto a su campo (D-13); y la
+  confirmación «Se devolvió la ficha …». El recorrido de arriba corrige además los pasos 0, 2, 3, 4, 7, 8, 13 y 19 y
+  los avisos 4 y 9, y el manual sus secciones 2.1, 2.7, 3.2, 3.4, 5.4 y 6.1.
+- **Verificado al cierre de la ronda 1** (por el guardián de la base aparte): resiembra de `sgc_f14a` (`db:seed` y
+  `admin:asegurar`); `npm run lint` limpio; `SEMILLA_RECIEN=1 npm test` con la demo recién sembrada: **235
+  archivos, 5675 pruebas en verde y 1 saltada** (el `ctx.skip` de `tests/ratificaciones.test.ts`, «el acta
+  registrada de un trámite no cambia con firmas sin trámite en la base», cuando la base no tiene un acta regenerable; ya
+  estaba en la línea base de la fase); `npm run build` sin `DATABASE_URL` ni `DATABASE_URL_MIGRADOR` en verde; y otra
+  resiembra al final. Cada tarea tuvo su revisión con su ronda de corrección (en la bitácora de ejecución) y puntos de
+  control en el navegador tras las Tareas 7, 10, 12, 15, 16 y 17 y la ficha impresa de la 18. Después, el controlador
+  subió un `.xlsx` real con el arreglo de D-1, en `next dev` y en la imagen reconstruida (contenedor aparte): entra
+  («Listo», «Excel, 6 KB») y un `.xls` se rechaza con el mensaje del soporte.
+- **Ola final de corrección** (doce confirmaciones, de `5b73fe8` a `e694135`; F14A-R51 a R53), tras la
+  revisión de toda la rama: una norma citada por una ficha de indicador, aunque sea un borrador, ya no da el error crudo
+  de la llave al borrarla (`historiaDeNorma`, y el servidor decide si ofrece **Borrar…**, C1); el plazo de reporte y
+  «soporte obligatorio» llegan a las mediciones en curso (fecha límite, avisos y estado, I1); corregir, reabrir o
+  reportar tarde un periodo recalcula la racha de los siguientes (I2); `cierres_indicadores` entra al `REVOKE` de
+  `sgc_app` (M1); la matriz y el cierre abren los periodos indicador por indicador (M3); la ficha de la norma no cae si
+  falla «Indicadores que exige» (M4); «Estado: Sin dato» no trae los «No aplica» (M6); el valor bajo cada tubo vuelve a
+  llevar su unidad cuando cabe (M7); un soporte repetido dice «Ya hay un soporte con ese nombre en esta medición» (M8);
+  el formato de `firmas` en el esquema (M9) y la documentación (M10: F14A-R41 en `AGENTS.md`). Quince pruebas nuevas; el
+  recorrido de arriba gana el paso 19 y el manual, tres frases (capítulos 7 y 8). Lo que la revisión dejó como deuda está
+  en «Deuda técnica conocida».
+- **Verificado al cierre de la ola final** (por el guardián de la base aparte): resiembra de `sgc_f14a`; `npm run lint`
+  limpio; `SEMILLA_RECIEN=1 npm test` con la demo recién sembrada: 235 archivos, 5690 pruebas en verde y 1 saltada (la
+  misma de antes); `npm run build` sin `DATABASE_URL` ni `DATABASE_URL_MIGRADOR` en verde; y otra resiembra al final.
+  `npm run db:roles` (por el guardián) aplicó el `REVOKE` nuevo a `sgc_f14a`; en otra base lo aplica `npm run db:preparar`
+  (o `db:roles`), o el arranque de la imagen: `npm run dev` no lo hace (ver «Avisos para el usuario (Fase 14A)», 10).
+- **Residuos de la ola final** (tres confirmaciones, de `e0f39a7` a la de esta documentación), tras su re-revisión: «soporte
+  obligatorio» rige hacia adelante (activarlo solo alcanza lo que sigue en plazo; lo reportado a tiempo no se vuelve
+  vencido, y la racha de los siguientes no lo reabre: `sistema` en `recalcularMedicion`), el recálculo de sistema dice
+  qué pasó con la marca y su motivo en el historial, y la gráfica de tubos arranca en el borde de una columna
+  (`desplazamientoInicial`: a 390 px el «83,3 %» de `SGC-IND-01` se leía «3,3 %»). Seis pruebas nuevas; el aviso 10 para
+  el usuario (`npm run db:preparar` antes de `npm run dev`).
+- **Verificado al cierre de los residuos** (por el guardián): resiembra; `npm run lint` limpio; `SEMILLA_RECIEN=1 npm test`
+  con la demo recién sembrada: **235 archivos, 5696 pruebas en verde y 1 saltada**; `npm run build` sin URL de base en
+  verde; y otra resiembra al final.
+
 ## Hecho (Fase 13C)
 
 Plan: `docs/superpowers/plans/2026-11-08-fase13c-vigencia-externos-normograma.md`; diseño:
@@ -1578,6 +1971,9 @@ Plan: `docs/superpowers/plans/2026-11-03-fase11-fundacion-acceso.md`; diseño de
 - [ ] **Formato del informe de la revisión anual** (13C): registrar el PDF propio (con el código SGC-RG-06 si se
   quiere en el encabezado) y elegirlo en Configuración documental antes del primer cierre real; ajustar los tres textos
   del procedimiento de la 13C (manual, capítulo 7, sección 7) y tratar la carga inicial vencida (capítulo 7, sección 6.1).
+- [ ] **Indicadores** (14A): cargar las fichas reales (el Excel `INDICADORES_PROCESO_SGC_OK.xlsx` trae las ocho del SGC),
+  con su meta, sus responsables y su inicio de medición, y decidir la regla del cambio mayor a una periodicidad más
+  gruesa (F14A-R15).
 
 ## Dudas menores resueltas/abiertas sobre el mapa
 
@@ -2098,7 +2494,207 @@ plan. Base: **ISO** (cláusula de 9001:2015), **Regulación** o **Práctica**.
 | F13C-R40 (64) | El ejercicio «ratificar uno, actualizar otro, eliminar otro» del recorrido se hace sobre AIN, que decide la Admin SGC por ser un proceso sin líder; el líder de CEX queda con la solicitud enlazada, el externo y el normograma | Práctica: añadir documentos a CEX cambiaría la demo de la 13A y la 13B al cierre | La demostración del líder decidiendo las tres cosas se ve con la Admin; añadir dos documentos a CEX es una tarde |
 | F13C-R41 (65) | Se aceptan los desvíos de la semilla: GTH completo salvo `GTH-PR-01`, que sigue vencido para el paso 2 (el spec se contradecía entre §17 y §19); la ratificación de GTH sobre `GTH-FO-01`; fechas de aprobación relativas; `SGC-FO-07` como formato del informe | Práctica | Cambios de datos en la semilla, sin efecto en la aplicación |
 
+## Decisiones adicionales (Fase 14A)
+
+F14-DC1 a F14-DC42 vienen del spec de la Fase 14 (§28), del 2026-11-10; aquí van las que rigen en la 14A (DC24 a DC28, DC33,
+DC35, DC37 a DC39 y DC42 son de la 14B y están en el spec). Las decisiones del usuario están en el §2 del spec. F14A-R1 a
+R53 son las resoluciones del controlador durante la ejecución (2026-11-10 a 2026-11-12) que cambian lo que el usuario ve o
+hace, o lo que el spec decía; entre paréntesis, la tarea del plan en que se tomó (la bitácora de ejecución las guarda con
+su contexto; R41 a R50 son de la ronda 1 de la Tarea 19, tras el recorrido del controlador, con el defecto que corrigen, y
+R51 a R53, de la ola final de corrección tras la revisión de toda la rama, con su hallazgo). Mandan sobre el plan. Base: **ISO** (cláusula de 9001:2015), **ISO derivada** (la cláusula respalda el fin;
+el mecanismo es de Claude), **Regulación** o **Práctica**.
+
+| # | Decisión y porqué | Base | Si es incorrecta |
+|---|---|---|---|
+| F14-DC1 | La gráfica principal va siempre en columnas (tubos): es la del Excel y la que sirve con cuatro, dos o un periodo al año | Práctica | Una gráfica de línea para los mensuales |
+| F14-DC2 | Plazo de reporte, inicio de medición, soporte obligatorio, nivel de acceso y personas son datos de operación: fuera de la ficha firmada y, en el impreso, en un bloque aparte | ISO derivada de 7.5.3.2 c) | La ficha aprobada cambiaría sin cambiar de versión |
+| F14-DC3 | El cierre no alcanza lo que sigue en su plazo de reporte ni los históricos sin registrar | Práctica | Cerrar el 1 de abril dejaría sin dato lo que tenía plazo hasta el 10, y el primer cierre bloquearía la historia por llenar |
+| F14-DC4 | La meta base es opcional: sin meta, «Sin meta» en gris y sin alertas | Práctica | Toda ficha exigiría una meta, también las que solo vigilan |
+| F14-DC5 | El soporte admite PDF, imagen y `.xlsx`; no `.xls`, Word, comprimidos, SVG ni HTML; siempre se descarga | Spec maestro §5.5 | Un `.xls` se confundiría con un `.doc` |
+| F14-DC6 | Las fichas no entran al Listado Maestro: su control vive en el módulo, con su lista y su Excel | ISO derivada de 7.5.3 | Las fichas en el Maestro con códigos que no son de documento |
+| F14-DC7 | La sigla `IND` queda reservada en Tipos de documento | Práctica | `SGC-IND-01` se confundiría con un documento |
+| F14-DC8 | Las firmas de una ficha van en `firmas`, con la huella del contenido de la versión y nombre y cargo congelados | ISO derivada de 7.5.2 c); Ley 527 de 1999 | Otra tabla de firmas |
+| F14-DC9 | El cierre del mes no pide clave: es rutina mensual y cada medición se reabre con justificación | Práctica | Una firma más cada mes |
+| F14-DC10 | El Admin SGC no reporta mediciones ordinarias salvo que esté designado o que nadie más pueda (marca `sinMedidor`) | ISO derivada de 9.1.1 b) | Quien cierra el mes produciría los datos que cierra |
+| F14-DC11 | No se reporta un periodo que no ha terminado | Práctica | Datos de un periodo que todavía no existe |
+| F14-DC12 | Cada medición es una fila que se abre al terminar el periodo, y toda lectura del módulo lo asegura | Práctica | Un planificador, que el piso de despliegue no tiene |
+| F14-DC13 | `medicion_eventos` y `medicion_observaciones` de solo inserción; mediciones cerradas y versiones aprobadas inmutables por trigger | ISO derivada de 7.5.3.1 b) | Evidencia alterable, o un historial que solo vería quien ve la bitácora |
+| F14-DC14 | El intérprete calcula con fracciones exactas y solo admite cuatro operaciones, paréntesis y `min`, `max`, `abs`, con punto y coma entre argumentos | ISO derivada de 9.1.1 b); seguridad | Errores de coma flotante o más superficie para una fórmula hostil |
+| F14-DC15 | Reglas del semáforo en descendente y en constante; con meta 0 en descendente, rangos fijos | Práctica | El Excel solo define el ascendente |
+| F14-DC16 | El acumulado se juzga contra la meta del último periodo medido, dice «parcial» si falta algo y cubre solo la versión vigente si cambió el cálculo | ISO derivada de 9.1.1 b) | Un acumulado que mezcla fórmulas o se juzga contra una meta que ya no rige |
+| F14-DC17 | Un cambio mayor rige desde un periodo aún no reportado y nunca desde uno que no ha empezado | ISO derivada de 7.5.3.2 c) | Recalcular lo ya medido o una vigencia en fecha futura (Fase 16) |
+| F14-DC18 | Código fijo tras la primera aprobación; retiro definitivo; se borra solo lo que nunca se envió y lo enviado sin aprobar se descarta conservando su código | Práctica (D47) | Un retirado que revive confunde su historia; una firma no se borra |
+| F14-DC19 | Sin un líder distinto de quien elaboró, aprueba Gerencia; el aprobador puede devolver con nota | Spec maestro §5.1 | Un proceso sin líder trabado |
+| F14-DC20 | El incumplimiento repetido no cambia el color: añade la insignia, la alerta crítica y el análisis en dos partes; «no aplica», «sin dato» e históricos ni cuentan ni rompen la racha | Práctica | El color dejaría de decir el resultado del periodo |
+| F14-DC21 | Una observación genera la tarea de responderla para quien analiza | Práctica | Una observación sin respuesta solo se vería en el resumen del cierre |
+| F14-DC22 | El Excel lo descarga quien ve lo que exporta; lo que no ve, 404 | Práctica | «Imprimir» separado de «consultar» |
+| F14-DC23 | Las animaciones son CSS; `motion` no está instalada y no se añade | Stack | Una dependencia nueva |
+| F14-DC29 | La `0011` crea todas las tablas de la fase; la `0012` queda para los ajustes de la 14B | Práctica | La 14B alteraría lo que construyó la 14A |
+| F14-DC30 | La alerta sale cuando el resultado queda calculado, aunque falte el análisis | Práctica | Quien analiza se enteraría tarde |
+| F14-DC31 | Una medición reabierta se cierra con el siguiente cierre o con «Cerrar de nuevo» | Práctica | Una corrección abierta sin fin |
+| F14-DC32 | La insignia de «Indicadores» cuenta las mediciones vencidas a cargo de la persona | Práctica | Otra insignia que contar |
+| F14-DC34 | El aviso de escalamiento no nombra el indicador | Regla de negocio 3 | Un jefe sin acceso conocería un restringido |
+| F14-DC36 | La aprobación en bloque es todo o nada | Práctica | Firmas a medias |
+| F14-DC40 | Cada versión guarda los textos de los catálogos como se firmaron y la huella va sobre ellos; el proceso queda fijo tras la primera aprobación y el subproceso es cambio menor | ISO derivada de 7.5.3.2 c) | Renombrar un cargo cambiaría una ficha aprobada |
+| F14-DC41 | Los históricos programan su meta sin justificación, no llevan «Requiere acción de mejora» y no cuentan para el incumplimiento repetido | Práctica | Digitar la historia crearía pendientes y cambiaría marcas ya puestas |
+| F14A-R1 (preparación) | La fase corrió en un worktree aparte (`F:\sgc-integral-f14a`), con la base `sgc_f14a` y el almacén `almacen-f14a`, por decisión del usuario; su base `sgc` y su `next dev` no se tocaron (precedente F13C-R20; se aparta de F13B-R1, que trabajó en la carpeta principal) | Práctica | Resembrar la base del usuario: `npm run db:seed && npm run admin:asegurar` |
+| F14A-R2 (T13) | «Mis tareas» solo lee: los periodos los abren la revisión de vencimientos del cascarón y las páginas del módulo, así que una tarea nueva aparece a lo sumo una carga después (el spec §8.1 contaba «Mis tareas» entre las lecturas que abren) | Práctica: el cascarón no escribe | Abrir periodos en cada página del cascarón |
+| F14A-R3 (T4) | La cifra mostrada se redondea; si contradice el color, se trunca, y si aún contradice (descendente justo sobre la meta), con más decimales truncados, hasta diez | Spec §7.5 | Un decimal de más en los bordes |
+| F14A-R4 (T4) | En tendencia constante, «Cumple: X dentro del rango de A a B.» y «No cumple: X fuera del rango de A a B.»; con un solo valor, «… frente a una meta de A.»; la flecha no dice «mejora» ni «empeora» en constante ni sin cambio | Spec §8.3 | Una palabra en la frase |
+| F14A-R5 (T4) | Los rangos en palabras parten los valores como los muestra la cifra: descendente «Bien hasta M · Atención de más de M a L · Crítico por encima de L»; ascendente «Atención de L a M menos un paso» si M cae en los decimales de la unidad, si no «de L a menos de M»; la tolerancia de un porcentaje, en puntos | Spec §7.5 | El texto del semáforo en los bordes |
+| F14A-R6 (T4) | El semáforo relativo se rechaza con meta 0 o negativa en ascendente y negativa en descendente: hay que escribir rangos fijos | Práctica | Una ficha con un semáforo que no se puede calcular |
+| F14A-R7 (T4) | En el acumulado, un periodo al que le falta alguna variable cuenta como sin dato | Práctica | A y B sumarían periodos distintos |
+| F14A-R8 (T4) | Lo firmado (la huella) es el contenido de §7.2 con los nombres firmados; quedan fuera los datos de operación, el estado, el número, el tipo y el motivo del cambio y «rige desde» | ISO derivada de 7.5.3.2 c) | Un cambio de «rige desde» o del motivo cambiaría la huella |
+| F14A-R9 (T4) | «Mayor» o «menor» compara las referencias a catálogo por su id: renombrar una unidad o una clasificación es editorial y un cambio solo de su nombre o su sufijo no pide aprobación | Spec §7.2; F14-DC40 | Tras renombrar una unidad, toda edición de la ficha pediría aprobación |
+| F14A-R10 (T6) | El código propuesto es 1 más el mayor número usado con ese prefijo en cualquier estado (no se reusan); `nuevo`, `matriz`, `por-aprobar`, `cierre` y `excel` están reservados; mover un borrador de proceso repropone el código | Spec §7.1 | Un número saltado tras un descarte |
+| F14A-R11 (T6) | En un cambio sobre una ficha aprobada, los datos de operación se ven en solo lectura con la nota de que se cambian en «Datos de operación» | ISO derivada de 7.5.3.2 c) | Un «Restringido» en el formulario que no hace nada |
+| F14A-R12 (T6) | Una norma derogada no puede quedarse en un cambio de la ficha: se sustituye por la vigente | Spec §17.1 | El administrador debe cambiar la norma antes de guardar cualquier cambio |
+| F14A-R13 (T7) | «Quién mide» nace en «(el líder del proceso)», no en quien crea la ficha; sin persona, los cargos nacen con los de los líderes del proceso, y un error de un campo de «Más opciones» abre la sección y lleva el foco a él | F14-DC10; spec §12.4 | El administrador se elige a sí mismo a mano |
+| F14A-R14 (T7) | «Rige desde» propone el primer periodo sin reporte, que es también el más temprano admitido; si no hay uno válido, el diálogo dice desde cuándo podrá enviarse el cambio en vez de pedir la clave | Spec §7.6 | Un periodo propuesto que el servidor rechaza |
+| F14A-R15 (T7) | Un cambio mayor que pasa a una periodicidad más gruesa a mitad de periodo no puede regir hasta que empiece el siguiente periodo sin reportes; queda para el usuario decidir si la Fase 16 necesita otra regla | F14-DC17 | El cambio espera hasta el próximo periodo de la periodicidad nueva |
+| F14A-R16 (T7) | Un cambio menor rige para los mismos periodos que la versión que reemplaza: los históricos los rige la de mayor número entre las del primer «rige desde» | Spec §7.6 y §8.8 | Un histórico con la versión de antes del cambio menor |
+| F14A-R17 (T7) | A quien no le toca aprobar una ficha, el mensaje es «La ficha no existe o no le corresponde aprobarla», sin revelar el código de lo que no se envió | Regla de negocio 3 | El código de un borrador ajeno |
+| F14A-R18 (T8) | «Medición con datos» son valores, análisis, causa, acción propuesta, eventos, observaciones o soportes; retirar y correr el inicio de medición hacia adelante quitan solo las abiertas sin datos | Spec §7.7 | Una medición vacía que se queda abierta, o un soporte huérfano |
+| F14A-R19 (T8) | El aviso de designación sale también al aprobarse la versión inicial; un retirado no se vuelve a designar; «Crear a partir de este» copia los designados activos y limpia subproceso y procedimiento si cambia de proceso | Spec §10.4 | Un aviso de más, o un retirado con quién cierre lo pendiente |
+| F14A-R20 (T9) | «Guardar sin reportar» no es un reporte: no deja evento, no congela versión ni meta, no alerta aunque esté completo y deja su propia línea en la bitácora («Guardó sin reportar una medición de indicador») | Spec §8.2 | Un borrador sin historia en la medición, que la bitácora sí guarda |
+| F14A-R21 (T9) | Quitar «no aplica» es una corrección; marcarlo, su propia acción; un histórico reportado después cuenta como corrección | Spec §8.7 | Otro nombre de acción para filtrar aparte |
+| F14A-R22 (T9) | Para «rige desde», una medición abierta con todos los datos o «no aplica» cuenta como reportada | F14-DC17 | Un cambio mayor rige un periodo más tarde |
+| F14A-R23 (T9) | Un cambio de periodicidad empieza en una frontera común (de bimestral a trimestral, en enero o julio); al aprobarlo se quitan las mediciones abiertas sin datos de la periodicidad vieja, y las que tienen datos quedan sin tareas ni cierre | Spec §7.6 y §8.1 | Un mes medido dos veces, o mediciones que nadie puede reportar |
+| F14A-R24 (T10) | Los históricos entran solo por la tabla del año: reportar y «no aplica» los rechazan, y la tabla admite «No aplica» por fila con su motivo (la fila marcada ignora sus valores) | Spec §8.8 | Un histórico no se digita desde la pantalla de reporte |
+| F14A-R25 (T10) | «Programar metas» trabaja sobre el año que muestra la página | Spec §8.9 | La meta de enero del año siguiente no se programa en diciembre |
+| F14A-R26 (T11) | Un soporte `.xlsx` se valida sobre el archivo completo: el ZIP renombrado, que el spec aceptaba como riesgo residual (§8.2 y §21), queda cerrado en los soportes | Regla de negocio 6; seguridad | Una lectura más del archivo en cada subida de Excel |
+| F14A-R27 (T12) | El resumen del cierre lleva la tabla «Por proceso» (spec §9.2) y se guarda con el cierre | Spec §9.2 | Una tabla de más en la pantalla |
+| F14A-R28 (T12) | El cierre admite un mes anterior al último cerrado (por la dirección); rechaza solo el mismo mes y uno sin terminar | Spec §9.1 | Un cierre «fuera de orden» posible por URL |
+| F14A-R29 (T12) | `diaLocal` guarda su formateador de fechas por zona: un caché de módulo que comparten trámites e indicadores, sin cambio de comportamiento | Práctica: el cierre recorre todos los indicadores activos | Un formateador por llamada, más lento |
+| F14A-R30 (T13) | Un crítico sin alerta previa es una alerta nueva, no una corrección; lo que el Admin SGC tiene de respaldo no se escala; las mediciones de otra periodicidad no dan tareas ni avisos | Spec §10.2 y §10.3 | Cambia el tipo y el texto del aviso, no sus destinatarios |
+| F14A-R31 (T14) | Las gráficas nunca se encogen por debajo de su proporción: con muchos periodos se desplazan y arrancan en lo más reciente | Spec §11 | Un desplazamiento lateral en cada tarjeta de variable |
+| F14A-R32 (T15) | La celda de la matriz lleva una figura por estado además de la franja de color (se aparta de la maqueta 5) | `AGENTS.md`; WCAG 1.4.1 | Quitar tres íconos |
+| F14A-R33 (T15) | La lista escribe la flecha y «mejora» o «empeora» aunque la miniatura tenga un solo periodo; un periodo por venir lleva «—»; quien administra ve los borradores en la lista, sin contarlos en la barra | Spec §8.3 y §12.2 | La comparación escondida en la lista |
+| F14A-R34 (T16) | Bitácora `exporto_ficha_indicador` (el spec decía `exporto_indicador`, que se confunde con `exporto_indicadores` de la 13C) y `exporto_resultados_indicadores` | Práctica | Renombrar una acción y su frase |
+| F14A-R35 (T16) | El Excel de resultados es el de la lista con sus filtros más el año (código, nombre, proceso, subproceso, clasificación, tipo, unidad, meta, doce meses y año); el de la matriz incluye los retirados | Spec §13 | Menos columnas o filas vacías de más |
+| F14A-R36 (T16) | La ficha impresa de un año usa la versión que regía ese año; la tabla va en orden de periodo, en tramos consecutivos con el rótulo de su versión | Spec §7.8 | Imprimir la vigente para años pasados |
+| F14A-R37 (T16) | «Saltar al contenido» no se imprime en ninguna página (regla global de impresión) | Práctica | El enlace al pie de cada hoja impresa |
+| F14A-R38 (T17) | La búsqueda incluye los retirados, marcados «Retirado» (nunca borradores, descartados ni restringidos ajenos) | Spec §12.8 | Un filtro más |
+| F14A-R39 (T17) | Si la lectura de los indicadores de la página del proceso falla, la sección no sale y queda en el registro: los documentos (7.5) nunca caen por ella | Práctica | Una sección que falta en silencio para el usuario |
+| F14A-R40 (T18) | La demo: el calendario se cuenta desde la siembra con el plazo de reporte (10 días) como umbral, no se fuerza un «por reportar» dentro de su plazo, y la siembra deja leídos los avisos que su propia historia ya resolvió | Práctica; F12-D35 | Avisos viejos sin leer o fechas fijas que envejecen |
+| F14A-R41 (T19, D-1) | El `.xlsx` de un soporte se lee entero (hasta 25 MB) y se valida con `fileTypeFromBuffer`, nunca con `fileTypeFromFile`: su `import()` de especificador no literal no sobrevive al empaquetado de Next y todo `.xlsx` respondía 500 (Vitest no empaqueta: las pruebas pasaban). `tests/file-type-empaquetado.test.ts` impide volver a importarlo | Regla de negocio 6; Práctica | 25 MB en memoria en la subida de un Excel; `serverExternalPackages` era la otra salida |
+| F14A-R42 (T19, D-2) | El lienzo de una gráfica de tubos mide según sus periodos (34 px por columna, con un tope de 1,3 veces su proporción; desde la ola final, M7, una serie corta ensancha sus columnas hasta que el valor quepa con su unidad, sin pasar de lo que ocupan seis a 34 px); si se desplaza y la última columna con valor queda cortada, al cargar se corre hasta mostrarla, y siempre arranca con el borde izquierdo de lo visible en el de una columna: la que quedaría partida queda fuera, con un relleno a la derecha de menos de una columna si hace falta (`desplazamientoInicial`, residuos de la ola final; a 390 px el «83,3 %» de `SGC-IND-01` se leía «3,3 %»). Sin JavaScript arranca en lo más reciente, como antes | Spec §11; F14A-R31 | Un trimestral a 390 px enseñaba solo el periodo por venir |
+| F14A-R43 (T19, D-3) | Elegir la forma sugiere su unidad: porcentaje, la de «%»; una tasa por mil, la de «por mil»; las demás, la que no lleva sufijo. Cambiar el factor también la sugiere; la persona puede elegir otra | Práctica | Un conteo quedaba en «%» |
+| F14A-R44 (T19, D-7 y D-8) | El límite de crítico de la gráfica es uno solo si todos los periodos tienen el mismo, y si no uno por periodo, escalonado con la meta; la etiqueta y el pie accesible usan `textoDelLimite` y la pantalla de reporte («Así quedará el semáforo») `rangosEnPalabras`, que dicen el mismo número (lo fija `tests/indicadores-limite-grafica.test.tsx`) | Spec §11; regla del veredicto con el valor exacto | Dos cifras para un mismo límite, o una punteada plana con metas programadas |
+| F14A-R45 (T19, D-9) | Un retirado sale en la matriz (pantalla, impresión y Excel) con la marca «Retirado» («(Retirado)» tras el nombre en el Excel), y sus periodos sin medición desde el retiro quedan vacíos, como los de antes del inicio (no se miden), no «por venir» | Spec §6.4 | Un indicador retirado que parece pendiente |
+| F14A-R46 (T19, D-10) | Cada ficha de la demo trae su línea base en una de las dos formas: `AIN-IND-01` (34 min) y `CEX-IND-01` (3,4 días) con valor y periodo 2025; las demás, «Sin línea base: <año> es el año de referencia» | Spec §7.2 | El primer cambio de una ficha sembrada sumaba «Nota de la línea base» a lo que cambió |
+| F14A-R47 (T19, D-11) | La barra de la lista cuenta «No aplica» aparte (segmento neutro rayado; el texto lo nombra solo si hay alguno); «Sin meta» sigue contando con «sin dato» | Spec §24.8; WCAG 1.4.1 | «No aplica» confundido con «Sin dato» |
+| F14A-R48 (T19, D-12) | Reportar un periodo que queda pidiendo análisis (Atención o Crítico) vuelve a la página del indicador con `foco=analisis`, y el foco va a la sección **Análisis** | WCAG 2.4.3; Práctica | El análisis obligatorio a 22 `Tab` y sin anuncio |
+| F14A-R49 (T19, D-13) | Un error del servidor sobre un campo de la ficha sale junto a él (`aria-describedby`), y el foco va a él, abriendo los plegables que lo contienen; al pie solo quedan los que no son de un campo | WCAG 3.3.1; Práctica | El error lejos del campo y el foco en `body` |
+| F14A-R50 (T19) | Devolver una ficha vuelve a «Por aprobar» con `devuelta=<código>` y la página confirma «Se devolvió la ficha de … a borrador, con su nota.», como la aprobación en bloque; solo repite un código bien formado | Práctica | Quien devuelve no veía confirmación |
+| F14A-R51 (ola final, C1) | Una norma que cita una ficha de indicador (de cualquier versión, también un borrador) o un impacto de indicador tiene historia: no se borra, se retira, con el mensaje legible «La norma tiene historia: retírela». El servidor decide si ofrece «Borrar la norma» con la misma regla (`historiaDeNorma`, que también cuenta las relaciones eliminadas), no la ficha con lo que muestra | D47 (13C); Práctica | El Admin veía el error crudo de la llave foránea en inglés |
+| F14A-R52 (ola final, I1) | Cambiar el plazo de reporte mueve la fecha límite de las mediciones sin cerrar y no históricas y limpia los avisos que ya no son ciertos: el de vencido y el escalamiento si la fecha nueva aún no llega (se avisan otra vez cuando venza), el previo si la fecha quedó más lejos que los días del aviso previo; los que siguen siendo ciertos se conservan. «Soporte obligatorio» **rige hacia adelante** (residuos de la ola final): desactivarlo recalcula todas las mediciones en curso (la que solo esperaba el soporte queda reportada y deja de ser tarea); activarlo, solo las que siguen en plazo (una reportada sin soporte vuelve a abierta para pedirlo), y lo reportado a tiempo cuyo plazo ya pasó se queda reportado, sin volverse vencido ni escalarse; tampoco lo reabre después la racha de los siguientes. La bitácora cuenta cuántas tocó | Spec 3.16, §7.3, §8.2, §10.2; Práctica | Ampliar el plazo no evitaba el aviso de vencido ni el cierre en «sin dato»; desmarcar el soporte dejaba la tarea, y marcarlo volvía vencido lo reportado a tiempo, con aviso al jefe |
+| F14A-R53 (ola final, I2) | Corregir, reabrir, reportar tarde, marcar «no aplica» o reprogramar la meta de un periodo que cambia de semáforo o de resultado recalcula el incumplimiento repetido de los periodos siguientes que su racha alcanza (los n − 1 primeros medidos), con el evento `recalculo` a nombre de quien actuó, que dice qué pasó con la marca; el historial lo cuenta como «Se recalculó por la racha de periodos anteriores». Los cerrados no cambian (se reabren a mano); cada siguiente conserva la versión con que se calculó, la falta de un soporte que se volvió obligatorio después no la reabre, y sus avisos siguen el último nivel alertado | Spec §10.3; Práctica | Una marca «Requiere acción de mejora» que ya no era cierta, o una que faltaba |
+
 ## Deuda técnica conocida
+
+**De la Fase 14A** (todos menores; son los «minor (deferred)» de la bitácora de ejecución que siguen abiertos y lo que la
+revisión final de toda la rama (2026-11-12) adjudicó como deuda, agrupados por módulo; los que una tarea posterior o la ola
+final de corrección resolvió ya no están: la partición de `mediciones.ts` en `lectura.ts`, `lista.ts` y `matriz.ts`, el
+acento de la tarjeta del resultado en vivo, la nota del ZIP renombrado, las columnas de un año con versiones de letras
+distintas, la racha de los periodos siguientes (F14A-R53), «soporte obligatorio» y el plazo en las mediciones abiertas
+(F14A-R52), el `],` de `firmas` en `esquema.ts` y el 409 de un soporte repetido):
+
+- **Esquema y triggers:**
+  - La excepción de reapertura de `sgc_impedir_si_medicion_cerrada` no limita qué otras columnas cambian en el mismo
+    `UPDATE` (spec §19.4: «el único cambio que admite es la reapertura»); no escala porque la fila reabierta es editable.
+    Dos reaperturas de la misma medición en una sola transacción con la misma hora chocan con el trigger (42501).
+  - Los triggers de las hijas toman el padre `FOR SHARE`: un camino nuevo que escriba filas hijas y después actualice el
+    padre sin tomarlo antes `FOR UPDATE` puede dar un interbloqueo (40P01). Reportar, «no aplica», metas y soportes siguen
+    ese orden.
+  - Dos nombres de FK de más de 63 caracteres: Postgres los trunca y `db:preparar` imprime dos NOTICE más.
+  - Sin índices sobre `firmas.indicador_version_id`, `medicion_observaciones.responde_a` ni `mediciones.cierre_id`
+    (revisión final, M2): van en la próxima migración, porque la `0011` ya se aplicó y no se cambia; hoy las consultas que
+    los usarían son baratas.
+  - Para la 14B (la `0012` puede rehacerlas, spec §19.5): `dimension_categorias.activo` frente a «activa» del spec, y
+    `reportes_externos.desde`/`hasta` como `date` frente a `timestamptz` en `mediciones`.
+  - `borrarIndicador` no comprueba `impactos_indicadores` ni `indicador_variables.indicador_origen_id` (14B): daría un
+    23503 crudo.
+- **Intérprete y reglas puras:**
+  - Mensajes con la causa equivocada para `1,`, `,5` («Separe los argumentos…») y `1.`, `.5`, `1.2.3` («Carácter no
+    admitido: «.»»); un carácter astral se describe como medio carácter; `enPalabras` devuelve la fórmula cruda si no se
+    puede leer y escribe «−−» con dos menos seguidos.
+  - `FACTORES_TASA` es un arreglo mutable; `evaluar` no acota el valor de una variable ni rechaza `null` en ejecución; una
+    rama inalcanzable en `fraccion.ts`.
+  - `textoValor` en el tope de diez decimales aún puede contradecir a menos de 1e-10 del borde, y con más de 15 cifras
+    enteras devuelve el redondeado; un límite periódico (42,857…) se escribe «42,85».
+  - `partes(clave)!` lanza un `TypeError` sin nombrar la clave (`periodos.ts`); `variacionExcesiva` redondea en silencio un
+    porcentaje no entero; `abs` duplicado y un ciclo de tipos entre `semaforo.ts` y `textos.ts`.
+  - La huella excluye los ids de clasificación y unidad: dos entradas de catálogo con el mismo nombre y sufijo darían la misma
+    huella aunque `tipoDeCambio` diga «mayor». La fórmula libre se guarda como se escribió («A × B» y «A * B» son un cambio
+    mayor por los glifos).
+  - Huecos de prueba: límites de profundidad por menos unario y por función, el borde de 200 dígitos, los campos mayores
+    añadidos (cálculo, alcance del cálculo, dimensión, meta máxima).
+- **Ficha y aprobación:**
+  - `FormularioFicha.tsx` (952 líneas, unos 35 estados), `aprobacion.ts` (965 líneas con seis lecturas) y `fichas.ts` (947):
+    partirlos si la 14B los extiende; `PERIODICIDAD`, `ESTADO_VERSION` y `separarFirma` repetidos; formateadores puros
+    (`etiquetaDePeriodo`, `desdePeriodo`) en un módulo de base y reimplementados en `bitacora-detalle.ts`; `concat_ws` del
+    nombre de la norma duplicado.
+  - `campoDeMasOpciones` reconoce los mensajes del servidor por expresión regular (un mensaje reescrito deja de abrir «Más
+    opciones»); `?aprobadas=N` se añade tras `rutaInterna` y se repite al refrescar; `usuarioActual` sin uso en
+    `OpcionesFicha`; `DescartarCambio` sin título visible.
+  - N+1 en `fichasPorAprobar` y en la cuenta de la pestaña; `fichaDeVersion` repite `versionesVisibles`.
+  - Las listas de personas muestran solo el nombre (con homónimos, «nombre · cargo» desambiguaría).
+  - `primerSinReporte` devuelve el último candidato sin frontera común si no la encuentra en doce pasos (no lanza;
+    `validarRige` lo rechaza).
+  - Una persona con dos funciones recibe dos avisos al aprobarse la versión inicial.
+  - `tipos.ts` importa `ErrorTramite` como valor desde `flujo/contrato.ts`: seguro mientras ese archivo solo tenga
+    `import type`.
+  - `?devuelta=` se toma de la URL, como `?aprobadas=` (solo repite, escapado, un código bien formado: alguien puede
+    armar un enlace que confirme una devolución que no hizo); con `operacionFija`, un error del servidor sobre
+    `ficha-nivelAcceso` o `ficha-inicioMedicion` sale al pie y no junto a su campo (caso extremo).
+- **Medición, soportes y cierre:**
+  - Abrir los periodos no tiene una precomprobación barata (revisión final, M5): cada lectura que los asegura abre una
+    transacción por indicador aunque no haya terminado ningún periodo nuevo; una consulta previa («¿algún periodo terminado
+    sin medición?») la evitaría.
+  - La carrera heredada de `recibirArchivo` (código de `main`, no de esta fase): dos subidas simultáneas con el mismo nombre
+    ven libre la misma ruta, y la que pierde (al abrir el archivo con `wx` o en el 23505 de la ruta) borra en su `catch`
+    el archivo de la otra, que queda con su fila y sin su archivo. Afecta a todas las subidas, no solo a los soportes.
+  - N+1 en `registrarHistoricos` (hasta 60 filas); `?registrados=` se toma de la URL; sin prueba de carrera del candado de
+    `programarMeta`.
+  - `file-type` puede no reconocer un `.xlsx` escrito con descriptores de datos (`streamFiles`) y una hoja de más de 1 MB,
+    que entonces se rechaza como soporte: así lo anotó la revisión de la Tarea 11 en la bitácora, sin reproducirlo aquí.
+    El tope de 1 MiB por entrada es de `file-type` (`detectors/zip.js`) y sigue con `fileTypeFromBuffer` (F14A-R41); el
+    manual, capítulo 8, sección 3.4, dice qué hacer si un Excel legítimo se rechazara.
+  - `registrarArchivo` pasa una hora fija a `dejarSoporteSubido` y arma el sujeto desde `usuarios`; ciclo de importación
+    `admin.ts` ↔ `indicadores/soportes.ts`; consultas de candado repetidas en `bloquearParaSoporte`; la fila «sin dato» con
+    `colSpan` esconde la columna Soportes; sin pruebas de quitar con `sinMedidor` ni del 429.
+  - «Reabrir» y la zona de carga de soportes necesitan JavaScript; el camino 23505 del cierre no tiene prueba.
+  - Las mediciones de respaldo (sin designado ni líder) nunca se marcan escaladas y se vuelven a resolver en cada pasada
+    (costo, no error).
+  - Acortar el plazo de reporte de forma retroactiva dispara el aviso de vencido y el escalamiento en la misma pasada, y el
+    aviso previo ya mandado puede quedar con la fecha vieja en su texto (`marcasQueSiguen`, `src/lib/indicadores/periodos.ts`).
+- **Pantallas, gráficas y Excel:**
+  - Las series largas tienen una parada de `Tab` por columna (falta el `tabindex` itinerante); sin JavaScript, con un
+    desborde de pocos píxeles, el desplazamiento que arranca en lo reciente corta el rótulo del año del primer periodo
+    («025»); con JavaScript arranca en el borde de una columna (`desplazamientoInicial`, F14A-R42).
+  - `resultadosDeLaLista` e `impresionDelAnio` leen las versiones dos veces; la hoja impresa usa tablas propias y no
+    `TablaDatos` (excepción aceptada); `tests/handlers-permisos.test.ts` no lista las rutas nuevas (las prueban
+    los archivos de prueba del módulo, como `indicadores-excel`).
+  - La prueba de la paleta solo prueba `GrupoPaleta` con el título a mano; un grupo de subproceso con nombre nulo saldría
+    vacío en `lista.ts`; la ficha de la norma no tiene prueba de integración de «Indicadores que exige» con indicadores (la
+    de la ola final la pinta cuando su lectura falla).
+  - El ancho del valor bajo cada tubo se estima (0,6 de la letra por carácter; no hay medida de texto en el servidor): la
+    unidad que vuelve con la ola final (M7) y la franja ensanchada de una serie corta no se comprobaron en el navegador, y
+    la prueba de que los valores no se enciman usa la misma estimación que el componente.
+- **Normograma (13C, tocado en la 14A):** `tieneHistoria` viaja en el objeto `Norma` también a quien no administra (un
+  booleano que no usa; impacto despreciable).
+- **Maestros y parámetros:** sin respaldo `catch 23505` en `guardarEnMaestro` (solo la comprobación bajo `LOCK`);
+  `DatosMaestro` no es una unión discriminada; la prueba de «borrar solo si nadie lo usa» y del nombre repetido cubre solo
+  `tipos`; «Borrar» un maestro no pide confirmación; la constante `ORDEN` tiene un nombre engañoso.
+- **Alcance:** `lideresActivos` recibe `procesoId` con un tipo raro (`ReturnType<Cliente>`).
+- **Semilla y pruebas:** en `semilla-indicadores`, la aserción de los avisos resueltos y leídos es dura (un aviso nuevo de
+  esos tipos tras la siembra la hace fallar en vez de saltar) y `leerAvisosResueltos` acota por tipo, no por indicador; el
+  primer commit de la Tarea 10 (`0184382`) deja `bitacora-detalle` en rojo (rompe la bisección); huecos de prueba de la
+  `0011`: `INSERT` en `indicador_normas` bajo una versión aprobada, la unicidad `indicador_normas_unica`, `UPDATE` y
+  `DELETE` de `medicion_observaciones` con el dueño, y el test de la siembra no compara contra las constantes de
+  `minima.ts`. «Worker exited unexpectedly» de Vitest, intermitente (revisión final, M11): se vio en primeras corridas de
+  las Tareas 9 y 18, sin pruebas fallidas; vigilarlo en el CI.
 
 **De la Fase 13C** (todos menores; son los «minor (deferred)» de la bitácora de ejecución que siguen abiertos, los hallazgos
 del recorrido final del controlador, los de la revisión de la documentación y los menores de la revisión final de la rama
@@ -2324,8 +2920,8 @@ primero; los marcados «resuelto en la 13C» ya no son deuda):
   spec dice `tramites.gestionar` (hoy el mismo rol). La rama de historial de la ruta de archivos
   del panel es por exclusión.
 - `PanelPublicacion` repite el tipo de `PanelAprobacion`; `publicarVersion` existe en `cierre.ts` y
-  en `admin.ts`. `tramites.documento_id` no tiene índice propio. `diaLocal` crea un
-  `Intl.DateTimeFormat` por llamada. Un `patron_codigo` vacío compila a `RegExp("")` y acepta todo
+  en `admin.ts`. `tramites.documento_id` no tiene índice propio. `diaLocal` creaba un
+  `Intl.DateTimeFormat` por llamada (resuelto en la 14A, F14A-R29). Un `patron_codigo` vacío compila a `RegExp("")` y acepta todo
   (heredado). `firmas.ts` con un `usuarioId` inexistente da `TypeError` (falla cerrado).
 - Cobertura: `esquema-fase13a` y privilegios dependen de una base sembrada; sin test de que
   `maestro.ver`, `maestro.exportar`, `estadisticas.ver` y `bitacora.ver` sean subconjunto de

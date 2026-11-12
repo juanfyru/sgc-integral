@@ -3,7 +3,9 @@
  * una vez por persona y la configuración documental se lee una vez; quien no es responsable técnico ni tiene
  * `vigencia.ver` no paga ninguna consulta de vigencia. Las tareas de impactos normativos (Tarea 9) y las de la revisión
  * anual (Tarea 10) son una sola consulta acotada cada una, solo para quien lidera procesos o es Admin SGC; las de validar
- * la corrección de un hallazgo (Tarea 13), una sola consulta y solo para quien realiza verificaciones. Se cuentan
+ * la corrección de un hallazgo (Tarea 13), una sola consulta y solo para quien realiza verificaciones. Las de los
+ * indicadores (Fase 14A, Tarea 13), una para las mediciones y otra para las observaciones de toda persona, más una para
+ * quien aprueba fichas y otra para quien administra, sin importar cuántas haya. Se cuentan
  * las sentencias que se ejecutan (no los fragmentos),
  * con el cascarón real contra la BD de desarrollo, dentro de una transacción que se revierte.
  */
@@ -112,6 +114,15 @@ const deImpactos = (s: string[]) => s.filter((t) => t.includes("count(*)::int AS
 const deRevision = (s: string[]) => s.filter((t) => t.includes("JOIN revision_anual_procesos rap ON rap.revision_id = ra.id")).length;
 /** `tareasDeValidacion`: la única sentencia que busca los hallazgos por validar. */
 const deValidacion = (s: string[]) => s.filter((t) => t.includes("h.estado = 'por_validar' AND h.corregido_por IS DISTINCT FROM")).length;
+/** `tareasDeIndicadores`: las mediciones a cargo, las observaciones sin respuesta, las fichas por aprobar y las devueltas. */
+const deIndicadores = (s: string[]) =>
+  s.filter(
+    (t) =>
+      t.includes("AS mide,") ||
+      t.includes("FROM medicion_observaciones o") ||
+      t.includes("fv.estado = 'por_aprobar'") ||
+      t.includes("fv.nota_devolucion IS NOT NULL"),
+  ).length;
 /** Las fotos de los hallazgos (`evidenciasDe` y `evidenciasDeVarios`): las tareas no las usan. */
 const deEvidencias = (s: string[]) => s.filter((t) => t.includes("FROM archivos WHERE contexto")).length;
 
@@ -147,6 +158,7 @@ describe("el costo del cascarón por render", () => {
             revision: number;
             validacion: number;
             evidencias: number;
+            indicadores: number;
           }
         > = {};
         for (const [nombre, sesion] of casos) {
@@ -160,6 +172,7 @@ describe("el costo del cascarón por render", () => {
             revision: deRevision(s),
             validacion: deValidacion(s),
             evidencias: deEvidencias(s),
+            indicadores: deIndicadores(s),
           };
         }
         // Para el informe: CONTAR_CASCARON=<archivo> deja las cuentas en ese archivo.
@@ -186,18 +199,30 @@ describe("el costo del cascarón por render", () => {
         for (const nombre of ["líder", "Consulta sin externos", "Consulta responsable técnico"]) expect(cuentas[nombre].validacion, nombre).toBe(0);
         // La tarea de corregir un hallazgo no carga sus fotos (F-M10): el hallazgo abierto no suma sentencias de evidencias.
         for (const [nombre, c] of Object.entries(cuentas)) expect(c.evidencias, nombre).toBe(0);
+        // Las de los indicadores (Fase 14A): mediciones y observaciones para todos; las fichas por aprobar para quien aprueba
+        // (Gerencia y el líder) y las devueltas para quien administra.
+        expect(Object.fromEntries(Object.entries(cuentas).map(([nombre, c]) => [nombre, c.indicadores]))).toEqual({
+          "Admin SGC": 3,
+          líder: 3,
+          Gerencia: 3,
+          "Control Interno": 2,
+          "Consulta sin externos": 2,
+          "Consulta responsable técnico": 2,
+          "Consulta con hallazgo abierto": 2,
+        });
         // El total por render (Tarea 13): una sentencia más que en la Tarea 10 para el Admin SGC (la de validar hallazgos),
         // ninguna para los demás; la de los hallazgos abiertos es la misma con o sin hallazgos (F-M10). Gerencia y Control
         // Interno bajan de 11 a 10 con el conteo (F-I3); el layout y la página comparten las demás lecturas por petición
-        // (`tests/cascaron-peticion.test.ts`), lo que este test no ve porque aquí `React.cache` no guarda nada.
+        // (`tests/cascaron-peticion.test.ts`), lo que este test no ve porque aquí `React.cache` no guarda nada. Con los
+        // indicadores (Fase 14A), las de arriba.
         expect(Object.fromEntries(Object.entries(cuentas).map(([nombre, c]) => [nombre, c.total]))).toEqual({
-          "Admin SGC": 16,
-          líder: 16,
-          Gerencia: 10,
-          "Control Interno": 10,
-          "Consulta sin externos": 9,
-          "Consulta responsable técnico": 11,
-          "Consulta con hallazgo abierto": 9,
+          "Admin SGC": 19,
+          líder: 19,
+          Gerencia: 13,
+          "Control Interno": 12,
+          "Consulta sin externos": 11,
+          "Consulta responsable técnico": 13,
+          "Consulta con hallazgo abierto": 11,
         });
       } finally {
         await e.limpiar();

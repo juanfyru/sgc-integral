@@ -13,6 +13,7 @@ export function BarraSuperior({
   entradas,
   tareas,
   vencidos,
+  vencidasIndicadores,
   version,
   buscador,
   campana,
@@ -22,6 +23,7 @@ export function BarraSuperior({
   entradas: EntradaNav[];
   tareas: number;
   vencidos: number;
+  vencidasIndicadores: number;
   version: string;
   buscador: React.ReactNode;
   campana: React.ReactNode;
@@ -71,7 +73,15 @@ export function BarraSuperior({
             </button>
           </div>
           <div className="min-h-0 flex-1">
-            <ContenidoBarra marca={marca} entradas={entradas} tareas={tareas} vencidos={vencidos} version={version} alNavegar={cerrarCajon} />
+            <ContenidoBarra
+              marca={marca}
+              entradas={entradas}
+              tareas={tareas}
+              vencidos={vencidos}
+              vencidasIndicadores={vencidasIndicadores}
+              version={version}
+              alNavegar={cerrarCajon}
+            />
           </div>
         </div>
       </Dialogo>

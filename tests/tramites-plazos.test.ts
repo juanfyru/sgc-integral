@@ -43,3 +43,27 @@ describe("plazos", () => {
     expect(estadoPlazo(null, new Date(), Z).estado).toBe("sin_plazo");
   });
 });
+
+describe("el formateador de cada zona", () => {
+  it("se crea una vez por zona y no en cada paso de la búsqueda del fin del día (ronda 1 de la Tarea 12)", () => {
+    // Una zona que ningún otro caso de este archivo usa: su formateador aún no existe.
+    const zona = "America/Lima";
+    const Original = Intl.DateTimeFormat;
+    let creados = 0;
+    class Contado extends Original {
+      constructor(locales?: string | string[], opciones?: Intl.DateTimeFormatOptions) {
+        super(locales, opciones);
+        if (opciones?.timeZone === zona) creados += 1;
+      }
+    }
+    Intl.DateTimeFormat = Contado as typeof Intl.DateTimeFormat;
+    try {
+      for (let dia = 1; dia <= 20; dia++) finDeFecha(`2026-11-${String(dia).padStart(2, "0")}`, zona);
+      expect(fechaEnZona(new Date("2026-11-20T12:00:00Z"), zona)).toBe("2026-11-20");
+      expect(finDeFecha("2026-11-20", zona).toISOString()).toBe("2026-11-21T04:59:59.999Z");
+      expect(creados).toBe(1);
+    } finally {
+      Intl.DateTimeFormat = Original;
+    }
+  });
+});

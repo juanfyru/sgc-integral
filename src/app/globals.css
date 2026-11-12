@@ -61,6 +61,11 @@
   --color-estado-sin-dato-fondo: var(--estado-sin-dato-fondo);
   --color-estado-sin-dato-texto: var(--estado-sin-dato-texto);
 
+  /* Gráficas de tubos (Fase 14A): la pista, la del periodo que no llega y el tubo sin meta */
+  --color-tubo-pista: var(--tubo-pista);
+  --color-tubo-pista-futura: var(--tubo-pista-futura);
+  --color-tubo-neutro: var(--tubo-neutro);
+
   /* Formatos de archivo: insignia de IconoFormato (Word azul, Excel verde, PDF rojo) */
   --color-formato-pdf-fondo: var(--formato-pdf-fondo);
   --color-formato-pdf-texto: var(--formato-pdf-texto);
@@ -195,6 +200,18 @@
   --estado-sin-dato: light-dark(#a3abb8, #6b7483);
   --estado-sin-dato-fondo: light-dark(#eef0f3, #242a33);
   --estado-sin-dato-texto: light-dark(#5b6472, #9aa3b0);
+
+  /* Volumen de los tubos (Fase 14A, spec §11): brillo y sombra de cada estado, elegidos en cada tema. La sombra es el
+     borde del tubo: ≥ 3:1 sobre la pista y la tarjeta (tests/contraste.test.ts). */
+  --estado-bien-brillo: light-dark(#63dd63, #74d874);
+  --estado-bien-sombra: light-dark(#088408, #1f931f);
+  --estado-atencion-brillo: light-dark(#ffe08a, #ffd977);
+  --estado-atencion-sombra: light-dark(#b07400, #c98a00);
+  --estado-critico-brillo: light-dark(#f19090, #f29393);
+  --estado-critico-sombra: light-dark(#ab2a2a, #ce4a4a);
+  --tubo-pista: light-dark(#eceff3, #252a31);
+  --tubo-pista-futura: light-dark(#f5f7f9, #1d2128);
+  --tubo-neutro: light-dark(#737d8f, #7f899b);
 
   /* Formatos de archivo: colores convencionales, no de estado (la etiqueta siempre acompaña) */
   --formato-pdf-fondo: light-dark(#fef2f2, #3f1a1a);
@@ -382,11 +399,198 @@
 .saltar-al-contenido:focus {
   transform: translateY(0);
 }
+/* En papel no sale: un elemento fijo se repite en cada hoja impresa (y su traslado cae al pie de la anterior). */
+@media print {
+  .saltar-al-contenido {
+    display: none;
+  }
+}
 
 /* El Listado Maestro impreso sale siempre en claro, aunque el usuario use el tema oscuro. */
 @media print {
   :root,
   [data-tema] {
     color-scheme: light;
+  }
+  /* Con «gráficos de fondo», el gris de la página no se imprime como un bloque bajo lo último de la hoja (la ficha de un
+     indicador, Tarea 19, D-6): en papel el fondo es el del papel. Solo las bandas y las insignias, que lo piden con
+     `print-color-adjust: exact`, llevan color. */
+  html,
+  body {
+    background: none;
+  }
+  .ficha-impresa {
+    background: none;
+  }
+}
+
+/* ── Fase 14A: gráficas de indicadores en estilo «Tubos» (spec §11) ──────
+   Cada clase de estado da los tres tonos del volumen. El relleno los pinta con un degradado horizontal: con
+   `background` en HTML y, en SVG, con el <linearGradient> de la propia gráfica (fill="url(#…)"), cuyas paradas
+   heredan los mismos tonos de la clase del degradado. */
+.tubo-bien {
+  --tubo-brillo: var(--estado-bien-brillo);
+  --tubo-base: var(--estado-bien);
+  --tubo-sombra: var(--estado-bien-sombra);
+}
+.tubo-atencion {
+  --tubo-brillo: var(--estado-atencion-brillo);
+  --tubo-base: var(--estado-atencion);
+  --tubo-sombra: var(--estado-atencion-sombra);
+}
+.tubo-critico {
+  --tubo-brillo: var(--estado-critico-brillo);
+  --tubo-base: var(--estado-critico);
+  --tubo-sombra: var(--estado-critico-sombra);
+}
+.tubo-neutro {
+  --tubo-brillo: color-mix(in srgb, var(--tubo-neutro) 60%, white);
+  --tubo-base: var(--tubo-neutro);
+  --tubo-sombra: color-mix(in srgb, var(--tubo-neutro) 80%, black);
+}
+.tubo-parada-brillo {
+  stop-color: var(--tubo-brillo);
+}
+.tubo-parada-base {
+  stop-color: var(--tubo-base);
+}
+.tubo-parada-sombra {
+  stop-color: var(--tubo-sombra);
+}
+.tubo-relleno {
+  background: linear-gradient(var(--tubo-direccion, to right), var(--tubo-brillo) 10%, var(--tubo-base) 55%, var(--tubo-sombra));
+}
+/* El tubo acostado (el acumulado del año) lleva el volumen de arriba abajo. */
+.tubo-acostado {
+  --tubo-direccion: to bottom;
+}
+/* El área sensible de cada periodo es transparente; el anillo de foco se dibuja en el propio SVG. */
+.tubo-zona {
+  fill: transparent;
+}
+.tubo-zona:focus-visible {
+  outline: none;
+  stroke: var(--ring);
+  stroke-width: 2;
+}
+/* El valor y el estado escritos sobre cada columna solo salen en papel. */
+.tubo-impreso {
+  display: none;
+}
+
+/* Los tubos crecen una vez al cargar, columna por columna; con «reducir movimiento», llegan quietos. */
+@keyframes tubo-crecer {
+  from {
+    transform: scaleY(0);
+  }
+}
+@keyframes tubo-crecer-acostado {
+  from {
+    transform: scaleX(0);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .tubo-relleno {
+    transform-box: fill-box;
+    transform-origin: 50% 100%;
+    animation: tubo-crecer 0.75s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    animation-delay: calc(var(--i, 0) * 45ms);
+  }
+  /* El relleno negativo cuelga del cero: crece hacia abajo. */
+  .tubo-relleno.tubo-negativo {
+    transform-origin: 50% 0;
+  }
+  .tubo-relleno.tubo-acostado {
+    transform-origin: 0 50%;
+    animation-name: tubo-crecer-acostado;
+  }
+}
+
+/* En papel: relleno sólido del color del estado, sin animación, y la gráfica entera aunque en pantalla se desplace. */
+@media print {
+  .tubo-relleno {
+    animation: none;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  .tubo-relleno.tubo-bien {
+    fill: var(--estado-bien);
+    background: var(--estado-bien);
+  }
+  .tubo-relleno.tubo-atencion {
+    fill: var(--estado-atencion);
+    background: var(--estado-atencion);
+  }
+  .tubo-relleno.tubo-critico {
+    fill: var(--estado-critico);
+    background: var(--estado-critico);
+  }
+  .tubo-relleno.tubo-neutro {
+    fill: var(--tubo-neutro);
+    background: var(--tubo-neutro);
+  }
+  .tubo-impreso {
+    display: inline;
+  }
+  /* Las piezas HTML (la pista y la marca del acumulado, los segmentos de la barra) se imprimen aunque el navegador
+     no imprima los fondos; la propiedad se hereda. */
+  .tubo-color-exacto {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  .tubo-desplazable {
+    overflow: visible;
+  }
+  .tubo-lienzo {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    height: auto;
+  }
+}
+
+/* «No aplica» en la barra de estados de la lista: el tono neutro de «sin dato», con rayas, para que no se distinga solo
+   por el color (la lectura en texto ya lo dice; Tarea 19, D-11). */
+.barra-no-aplica {
+  background: repeating-linear-gradient(135deg, var(--estado-sin-dato) 0 2px, var(--estado-sin-dato-fondo) 2px 4px);
+}
+
+/* ── Fase 14A: la ficha impresa de un indicador (spec §7.8, maqueta 7) ──────
+   Su propia página con nombre: los márgenes no cambian la impresión del resto de la app (el Listado Maestro, la matriz).
+   Al imprimir, la hoja y sus bloques pasan de flex a bloque (el navegador parte mejor los bloques); ninguna fila de una
+   tabla se parte entre dos hojas, las secciones cortas (encabezado, firmas, control de cambios, datos de operación) y la
+   gráfica tampoco, y ni un título de sección ni la fila «Calculado con la versión N» quedan solos al pie. El encabezado
+   de cada tabla se repite en cada hoja; las bandas de la marca y el estado de cada periodo salen en color (el estado
+   siempre va escrito, además). */
+@page ficha {
+  margin: 12mm 10mm;
+}
+@media print {
+  .ficha-impresa {
+    page: ficha;
+    display: block;
+    font-size: 9pt;
+  }
+  .ficha-impresa > * + * {
+    margin-top: 0.6rem;
+  }
+  .ficha-impresa .ficha-bloque {
+    display: block;
+  }
+  .ficha-impresa .ficha-tabla thead {
+    display: table-header-group;
+  }
+  .ficha-impresa .ficha-tabla tr,
+  .ficha-impresa .ficha-corto,
+  .ficha-impresa .ficha-grafica {
+    break-inside: avoid;
+  }
+  .ficha-impresa .ficha-banda,
+  .ficha-impresa .ficha-tramo {
+    break-after: avoid;
+  }
+  .ficha-color-exacto,
+  .ficha-color-exacto * {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
   }
 }

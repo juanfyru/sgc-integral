@@ -75,13 +75,17 @@ describe("esquema de la Fase 13C", () => {
       await firmar("adopto", null);
       expect(await fallaCon(firmar("aprobo", null))).toBe("23514");
       expect(await fallaCon(firmar("otra", null))).toBe("23514");
-      const [{ n }] = await tx`SELECT count(*)::int AS n FROM firmas WHERE tramite_id IS NULL AND firma NOT IN ('ratifico', 'adopto')`;
+      // Desde la 14A, la ficha de un indicador también se firma sin trámite: «Elaboró» y «Aprobó» con su
+      // `indicador_version_id` (spec 14 §19.1).
+      const [{ n }] = await tx`SELECT count(*)::int AS n FROM firmas
+        WHERE tramite_id IS NULL AND firma NOT IN ('ratifico', 'adopto')
+          AND NOT (indicador_version_id IS NOT NULL AND firma IN ('elaboro', 'aprobo'))`;
       expect(n).toBe(0);
     }));
 
   it("documentos: origen, plazo y fecha fijada coherente", () =>
     revertida(sql, async (tx) => {
-      const [d] = await tx`SELECT id FROM documentos LIMIT 1`;
+      const [d] = await tx`SELECT id FROM documentos WHERE proxima_revision_fijada IS NULL AND fijada_por IS NULL ORDER BY id LIMIT 1`;
       const [u] = await tx`SELECT id FROM usuarios ORDER BY id LIMIT 1`;
       expect(await fallaCon(tx.savepoint((s) => s`UPDATE documentos SET origen = 'otro' WHERE id = ${d.id}`))).toBe("23514");
       expect(await fallaCon(tx.savepoint((s) => s`UPDATE documentos SET meses_revision = 0 WHERE id = ${d.id}`))).toBe("23514");

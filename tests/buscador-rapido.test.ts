@@ -59,10 +59,12 @@ describe("el grupo «Normas» de la paleta", () => {
     tipo: "MN",
     ruta: "/documentos/sog-mn-01",
   };
-  it("separa los documentos de las normas: las normas van debajo, en el orden en que llegaron", () => {
+  it("separa los documentos, las normas y los indicadores: cada grupo en el orden en que llegó", () => {
+    const indicador = { ...documento, grupo: "indicador" as const, codigo: "GTH-IND-01", ruta: "/indicadores/GTH-IND-01" };
     const otra = { ...norma, codigo: "Resolución 2003 de 2014", ruta: "/normograma/8", tipo: "Derogada" };
-    expect(gruposDeResultados([norma, documento, otra])).toEqual({ documentos: [documento], normas: [norma, otra] });
-    expect(gruposDeResultados([])).toEqual({ documentos: [], normas: [] });
+    expect(gruposDeResultados([norma, documento, otra])).toEqual({ documentos: [documento], normas: [norma, otra], indicadores: [] });
+    expect(gruposDeResultados([indicador, norma, documento]).indicadores).toEqual([indicador]);
+    expect(gruposDeResultados([])).toEqual({ documentos: [], normas: [], indicadores: [] });
   });
 });
 
@@ -73,5 +75,12 @@ describe("los grupos de la paleta", () => {
     const html = renderToStaticMarkup(createElement(GrupoPaleta, { titulo: "Normas", vacio: false }, createElement("li", null, "Resolución 3100 de 2019")));
     expect(html).toContain(">Normas</p>");
     expect(html).toContain('<ul role="group" aria-label="Normas"><li>Resolución 3100 de 2019</li></ul>');
+  });
+
+  it("el grupo «Indicadores» sigue el patrón de los demás: encabezado y grupo con nombre", async () => {
+    const { GrupoPaleta } = await import("@/componentes/cascaron/Buscador");
+    const html = renderToStaticMarkup(createElement(GrupoPaleta, { titulo: "Indicadores", vacio: false }, createElement("li", null, "GTH-IND-01")));
+    expect(html).toContain(">Indicadores</p>");
+    expect(html).toContain('<ul role="group" aria-label="Indicadores"><li>GTH-IND-01</li></ul>');
   });
 });

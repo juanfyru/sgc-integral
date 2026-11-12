@@ -1,13 +1,17 @@
 import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { mkdir, stat, unlink } from "node:fs/promises";
+import { mkdir, readFile, stat, unlink } from "node:fs/promises";
 import path from "node:path";
+import { fileTypeFromBuffer } from "file-type";
 import { type NextRequest, NextResponse } from "next/server";
 import { registrarArchivo } from "@/db/consultas/admin";
 import { ErrorTramite } from "@/db/consultas/flujo/contrato";
 import { resolverRutaAlmacen } from "@/lib/almacen";
+import { ErrorPermiso } from "@/lib/permisos";
 import {
   CONTEXTOS_SOLO_PDF,
+  ERROR_SOPORTE,
+  MIME_XLSX,
   sanearNombre,
   TAMANO_MAXIMO_BYTES,
   TAMANO_MUESTRA_BYTES,
@@ -70,7 +74,7 @@ export type DestinoVersion = {
   externo?: boolean;
 };
 /**
- * `carpeta` es relativa al almacén: `jornadas/<id>`, `verificaciones/<verificacionId>/items/<itemId>` o `normas/<id>`.
+ * `carpeta` es relativa al almacén: `jornadas/<id>`, `verificaciones/<verificacionId>/items/<itemId>`, `normas/<id>` o `mediciones/<id>`.
  * Una norma recibe solo un PDF, que reemplaza al que tuviera (`registrarArchivo`).
  */
 export type DestinoEvidencia = { contexto: ContextoEvidencia; contextoId: number; carpeta: string };
@@ -118,7 +122,10 @@ export async function recibirArchivo(
   for (const p of previos) { muestra.set(p, despl); despl += p.byteLength; }
 
   const tipo = esEvidencia(destino)
-    ? await validarTipoEvidencia(nombreCrudo, muestra, { soloPdf: CONTEXTOS_SOLO_PDF.includes(destino.contexto) })
+    ? await validarTipoEvidencia(nombreCrudo, muestra, {
+        soloPdf: CONTEXTOS_SOLO_PDF.includes(destino.contexto),
+        conExcel: destino.contexto === "medicion",
+      })
     : await validarTipo(nombreCrudo, muestra);
   if (!tipo.ok) {
     await descartarResto(lector, acumulado);
@@ -137,7 +144,7 @@ export async function recibirArchivo(
   }
   await mkdir(path.dirname(ruta.absoluta), { recursive: true });
 
-  // ── Streaming a disco con hash y tope de tamaño (nunca 25 MB en RAM) ──
+  // ── Streaming a disco con hash y tope de tamaño (nunca 25 MB en RAM, salvo el `.xlsx` de un soporte, abajo) ──
   const hash = createHash("sha256");
   const salida = createWriteStream(ruta.absoluta, { flags: "wx" });
   let total = 0;
@@ -165,9 +172,18 @@ export async function recibirArchivo(
     // Lo guardado se firma por su huella: un archivo cortado no debe llegar a tener una.
     if (declarado !== null && total !== declarado) throw new Error("incompleto");
     if (total === 0) throw new Error("vacio");
+    // El `.xlsx` de un soporte se comprueba sobre el archivo completo: la muestra no ve el final de un ZIP. Se lee
+    // entero (como mucho 25 MB, y solo en este caso) y se analiza con `fileTypeFromBuffer`: `fileTypeFromFile` carga
+    // `node:fs/promises` y `strtok3` con un `import()` de especificador no literal, que el empaquetador de Next
+    // reemplaza por un módulo que siempre lanza (ver `tests/file-type-empaquetado.test.ts`).
+    let mimeGuardado = tipo.mime;
+    if (esEvidencia(destino) && destino.contexto === "medicion" && tipo.extension === "xlsx") {
+      if ((await fileTypeFromBuffer(await readFile(ruta.absoluta)))?.mime !== MIME_XLSX) throw new Error("no_xlsx");
+      mimeGuardado = MIME_XLSX;
+    }
 
     const comunes = {
-      ruta: ruta.relativa, nombreOriginal: nombreCrudo, extension: tipo.extension, mime: tipo.mime,
+      ruta: ruta.relativa, nombreOriginal: nombreCrudo, extension: tipo.extension, mime: mimeGuardado,
       tamanoBytes: total, hashSha256: hash.digest("hex"),
     };
     const { id, reemplazados } = esEvidencia(destino)
@@ -185,16 +201,18 @@ export async function recibirArchivo(
       if (absoluta) await unlink(absoluta).catch(() => {});
     }
     return NextResponse.json(
-      { id, nombre: nombreCrudo, mime: tipo.mime, tamanoBytes: total },
+      { id, nombre: nombreCrudo, mime: mimeGuardado, tamanoBytes: total },
       { status: 201 },
     );
   } catch (err) {
     salida.destroy();
     await unlink(ruta.absoluta).catch(() => {});
+    if (err instanceof ErrorPermiso) return error(403, "Sin permiso");
     if (err instanceof ErrorTramite) return error(409, err.message);
     const mensaje = (err as Error).message;
     if (mensaje === "incompleto") return error(400, "El archivo llegó incompleto. Vuelva a subirlo.");
     if (mensaje === "tamano") return error(413, "El archivo supera el máximo de 25 MB");
+    if (mensaje === "no_xlsx") return error(415, ERROR_SOPORTE);
     if (mensaje === "vacio") return error(400, "El archivo está vacío");
     if (mensaje.includes("principal")) return error(409, mensaje);
     console.error("Fallo en la subida:", err);

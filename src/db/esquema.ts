@@ -10,6 +10,7 @@ import {
   inet,
   integer,
   jsonb,
+  numeric,
   pgTable,
   primaryKey,
   text,
@@ -285,7 +286,7 @@ export const archivos = pgTable(
     ),
     check(
       "archivos_contexto_valido",
-      sql`${t.contexto} IN ('version', 'jornada', 'verificacion_item', 'norma', 'revision_anual', 'hallazgo')`,
+      sql`${t.contexto} IN ('version', 'jornada', 'verificacion_item', 'norma', 'revision_anual', 'hallazgo', 'medicion', 'reporte_externo')`,
     ),
     check(
       "archivos_contexto_coherente",
@@ -744,6 +745,11 @@ export const firmas = pgTable(
       () => documentoVersiones.id,
       { onDelete: "restrict" },
     ),
+    // La firma de una ficha de indicador (`elaboro`, `aprobo`) no tiene trámite ni versión documental.
+    indicadorVersionId: bigint("indicador_version_id", { mode: "number" }).references(
+      (): AnyPgColumn => indicadorVersiones.id,
+      { onDelete: "restrict" },
+    ),
     usuarioId: refUsuario("usuario_id").notNull(),
     firma: text("firma").notNull(),
     ronda: integer("ronda").notNull(),
@@ -762,7 +768,7 @@ export const firmas = pgTable(
     ),
     check(
       "firmas_tramite_coherente",
-      sql`${t.tramiteId} IS NOT NULL OR ${t.firma} IN ('ratifico', 'adopto')`,
+      sql`${t.tramiteId} IS NOT NULL OR ${t.firma} IN ('ratifico', 'adopto') OR ${t.indicadorVersionId} IS NOT NULL`,
     ),
     check("firmas_metodo_valido", sql`${t.metodo} IN ('clave', 'clave_totp')`),
     index("firmas_tramite_idx").on(t.tramiteId),
@@ -1509,4 +1515,516 @@ export const revisionAnualDecisiones = pgTable(
     ),
     index("revision_anual_decisiones_tramite_idx").on(t.tramiteId),
   ],
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Grupo: indicadores (Fase 14). «Indicadores» ya nombra cosas de la 13C (indicadores documentales);
+// aquí viven la ficha, las mediciones y sus maestros.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const num = (nombre: string) => numeric(nombre);
+
+export const tiposIndicador = pgTable(
+  "tipos_indicador",
+  {
+    id: id(),
+    nombre: text("nombre").notNull(),
+    orden: integer("orden").notNull(),
+    activo: boolean("activo").notNull().default(true),
+  },
+  (t) => [uniqueIndex("tipos_indicador_nombre_unico").on(sql`lower(${t.nombre})`)],
+);
+
+export const clasificacionesIndicador = pgTable(
+  "clasificaciones_indicador",
+  {
+    id: id(),
+    nombre: text("nombre").notNull(),
+    // Quién aprueba la ficha: Gerencia o el líder del proceso.
+    aprueba: text("aprueba").notNull(),
+    exigeNorma: boolean("exige_norma").notNull().default(false),
+    orden: integer("orden").notNull(),
+    activo: boolean("activo").notNull().default(true),
+  },
+  (t) => [
+    uniqueIndex("clasificaciones_indicador_nombre_unico").on(sql`lower(${t.nombre})`),
+    check("clasificaciones_indicador_aprueba_valida", sql`${t.aprueba} IN ('gerencia', 'lider')`),
+  ],
+);
+
+export const unidadesIndicador = pgTable(
+  "unidades_indicador",
+  {
+    id: id(),
+    nombre: text("nombre").notNull(),
+    sufijo: text("sufijo").notNull().default(""),
+    decimales: integer("decimales").notNull().default(0),
+    orden: integer("orden").notNull(),
+    activo: boolean("activo").notNull().default(true),
+  },
+  (t) => [
+    uniqueIndex("unidades_indicador_nombre_unico").on(sql`lower(${t.nombre})`),
+    check("unidades_indicador_decimales_validos", sql`${t.decimales} BETWEEN 0 AND 4`),
+  ],
+);
+
+export const objetivos = pgTable(
+  "objetivos",
+  {
+    id: id(),
+    clase: text("clase").notNull(),
+    enunciado: text("enunciado").notNull(),
+    orden: integer("orden").notNull(),
+    activo: boolean("activo").notNull().default(true),
+  },
+  (t) => [check("objetivos_clase_valida", sql`${t.clase} IN ('calidad', 'institucional')`)],
+);
+
+export const dimensiones = pgTable("dimensiones", {
+  id: id(),
+  nombre: text("nombre").notNull().unique(),
+});
+
+export const dimensionCategorias = pgTable("dimension_categorias", {
+  id: id(),
+  dimensionId: ref("dimension_id", () => dimensiones.id).notNull(),
+  nombre: text("nombre").notNull(),
+  orden: integer("orden").notNull(),
+  activo: boolean("activo").notNull().default(true),
+});
+
+export const indicadores = pgTable(
+  "indicadores",
+  {
+    id: id(),
+    codigo: text("codigo").notNull(),
+    procesoId: ref("proceso_id", () => procesos.id).notNull(),
+    estado: text("estado").notNull().default("borrador"),
+    nivelAcceso: text("nivel_acceso").notNull().default("general"),
+    plazoReporteDias: integer("plazo_reporte_dias").notNull().default(10),
+    // Clave de periodo (`2026-03`, `2026-T1`…) desde la que se mide.
+    inicioMedicion: text("inicio_medicion"),
+    soporteObligatorio: boolean("soporte_obligatorio").notNull().default(false),
+    bajaPor: refUsuario("baja_por"),
+    bajaEn: marca("baja_en"),
+    bajaMotivo: text("baja_motivo"),
+    creadoPor: refUsuario("creado_por").notNull(),
+    creadoEn: creado(),
+  },
+  (t) => [
+    uniqueIndex("indicadores_codigo_unico").on(sql`lower(${t.codigo})`),
+    index("indicadores_proceso_idx").on(t.procesoId),
+    check("indicadores_estado_valido", sql`${t.estado} IN ('borrador', 'activo', 'retirado', 'descartado')`),
+    check("indicadores_nivel_acceso_valido", sql`${t.nivelAcceso} IN ('general', 'restringido')`),
+    check("indicadores_plazo_reporte_valido", sql`${t.plazoReporteDias} BETWEEN 0 AND 90`),
+    check(
+      "indicadores_baja_coherente",
+      sql`(${t.estado} IN ('retirado', 'descartado')) = (${t.bajaPor} IS NOT NULL AND ${t.bajaEn} IS NOT NULL AND ${t.bajaMotivo} IS NOT NULL)`,
+    ),
+  ],
+);
+
+// Aprobada es inmutable (trigger en la migración 0011), con sus variables, responsables y normas.
+export const indicadorVersiones = pgTable(
+  "indicador_versiones",
+  {
+    id: id(),
+    indicadorId: ref("indicador_id", () => indicadores.id).notNull(),
+    numero: integer("numero").notNull(),
+    estado: text("estado").notNull().default("borrador"),
+    tipoCambio: text("tipo_cambio").notNull(),
+    motivoCambio: text("motivo_cambio"),
+    // Clave de periodo desde la que rige.
+    rigeDesde: text("rige_desde"),
+    nombre: text("nombre"),
+    proposito: text("proposito"),
+    requisito: text("requisito"),
+    tipoId: ref("tipo_id", () => tiposIndicador.id),
+    tipoNombre: text("tipo_nombre"),
+    clasificacionId: ref("clasificacion_id", () => clasificacionesIndicador.id),
+    clasificacionNombre: text("clasificacion_nombre"),
+    objetivoId: ref("objetivo_id", () => objetivos.id),
+    objetivoNombre: text("objetivo_nombre"),
+    procesoNombre: text("proceso_nombre"),
+    subprocesoId: ref("subproceso_id", () => subprocesos.id),
+    subprocesoNombre: text("subproceso_nombre"),
+    procedimientoDocumentoId: ref("procedimiento_documento_id", () => documentos.id),
+    puntoControl: text("punto_control"),
+    origenDato: text("origen_dato").notNull().default("manual"),
+    calculo: text("calculo"),
+    calculoAlcance: text("calculo_alcance"),
+    forma: text("forma"),
+    factor: integer("factor"),
+    formula: text("formula"),
+    unidadId: ref("unidad_id", () => unidadesIndicador.id),
+    unidadNombre: text("unidad_nombre"),
+    unidadSufijo: text("unidad_sufijo"),
+    decimales: integer("decimales"),
+    periodicidad: text("periodicidad"),
+    tendencia: text("tendencia"),
+    meta: num("meta"),
+    metaMax: num("meta_max"),
+    semaforoModo: text("semaforo_modo"),
+    umbralAtencionPct: integer("umbral_atencion_pct"),
+    limiteCritico: num("limite_critico"),
+    tolerancia: num("tolerancia"),
+    resultadoMin: num("resultado_min"),
+    resultadoMax: num("resultado_max"),
+    lineaBaseValor: num("linea_base_valor"),
+    lineaBasePeriodo: text("linea_base_periodo"),
+    lineaBaseNota: text("linea_base_nota"),
+    sustentoMeta: text("sustento_meta"),
+    ente: text("ente"),
+    periodicidadExterna: text("periodicidad_externa"),
+    plazoExternoDias: integer("plazo_externo_dias"),
+    dimensionId: ref("dimension_id", () => dimensiones.id),
+    prueba: jsonb("prueba"),
+    notaDevolucion: text("nota_devolucion"),
+    huella: text("huella"),
+    elaboradaPor: refUsuario("elaborada_por"),
+    elaboradaEn: marca("elaborada_en"),
+    aprobadaPor: refUsuario("aprobada_por"),
+    aprobadaEn: marca("aprobada_en"),
+    creadoPor: refUsuario("creado_por").notNull(),
+    creadoEn: creado(),
+    actualizadoEn: marca("actualizado_en").notNull().defaultNow(),
+  },
+  (t) => [
+    unique("indicador_versiones_numero_unico").on(t.indicadorId, t.numero),
+    uniqueIndex("indicador_versiones_un_borrador_idx")
+      .on(t.indicadorId)
+      .where(sql`estado IN ('borrador', 'por_aprobar')`),
+    check("indicador_versiones_estado_valido", sql`${t.estado} IN ('borrador', 'por_aprobar', 'aprobada', 'descartada')`),
+    check("indicador_versiones_tipo_cambio_valido", sql`${t.tipoCambio} IN ('inicial', 'mayor', 'menor')`),
+    check("indicador_versiones_origen_dato_valido", sql`${t.origenDato} IN ('manual', 'automatico')`),
+    check("indicador_versiones_forma_valida", sql`${t.forma} IN ('porcentaje', 'tasa', 'razon', 'conteo', 'libre')`),
+    check(
+      "indicador_versiones_periodicidad_valida",
+      sql`${t.periodicidad} IN ('mensual', 'bimestral', 'trimestral', 'semestral', 'anual')`,
+    ),
+    check("indicador_versiones_tendencia_valida", sql`${t.tendencia} IN ('ascendente', 'descendente', 'constante')`),
+    check("indicador_versiones_semaforo_modo_valido", sql`${t.semaforoModo} IN ('relativo', 'fijo')`),
+    check("indicador_versiones_decimales_validos", sql`${t.decimales} BETWEEN 0 AND 4`),
+    check("indicador_versiones_umbral_valido", sql`${t.umbralAtencionPct} BETWEEN 1 AND 99`),
+    check(
+      "indicador_versiones_aprobada_coherente",
+      sql`${t.estado} <> 'aprobada' OR (${t.elaboradaPor} IS NOT NULL AND ${t.huella} IS NOT NULL AND ${t.rigeDesde} IS NOT NULL AND (${t.tipoCambio} = 'menor' OR ${t.aprobadaPor} IS NOT NULL))`,
+    ),
+  ],
+);
+
+export const variablesCompartidas = pgTable(
+  "variables_compartidas",
+  {
+    id: id(),
+    procesoId: ref("proceso_id", () => procesos.id).notNull(),
+    nombre: text("nombre").notNull(),
+    descripcion: text("descripcion"),
+    fuente: text("fuente"),
+    unidad: text("unidad"),
+    periodicidad: text("periodicidad"),
+    consolidacion: text("consolidacion"),
+    capturaMin: num("captura_min"),
+    capturaMax: num("captura_max"),
+    admiteNegativos: boolean("admite_negativos").notNull().default(false),
+    plazoReporteDias: integer("plazo_reporte_dias"),
+    dimensionId: ref("dimension_id", () => dimensiones.id),
+    activa: boolean("activa").notNull().default(true),
+  },
+  (t) => [unique("variables_compartidas_unica").on(t.procesoId, t.nombre)],
+);
+
+export const indicadorVariables = pgTable(
+  "indicador_variables",
+  {
+    id: id(),
+    versionId: ref("version_id", () => indicadorVersiones.id).notNull(),
+    letra: text("letra").notNull(),
+    nombre: text("nombre"),
+    descripcion: text("descripcion"),
+    fuente: text("fuente"),
+    unidad: text("unidad"),
+    consolidacion: text("consolidacion").notNull().default("suma"),
+    origen: text("origen").notNull().default("propia"),
+    variableCompartidaId: ref("variable_compartida_id", () => variablesCompartidas.id),
+    indicadorOrigenId: ref("indicador_origen_id", () => indicadores.id),
+    toma: text("toma"),
+    capturaMin: num("captura_min"),
+    capturaMax: num("captura_max"),
+    admiteNegativos: boolean("admite_negativos").notNull().default(false),
+    orden: integer("orden").notNull().default(0),
+  },
+  (t) => [
+    unique("indicador_variables_letra_unica").on(t.versionId, t.letra),
+    check("indicador_variables_letra_valida", sql`${t.letra} ~ '^[A-Z]$'`),
+    check("indicador_variables_consolidacion_valida", sql`${t.consolidacion} IN ('suma', 'ultimo', 'promedio')`),
+    check("indicador_variables_origen_valido", sql`${t.origen} IN ('propia', 'compartida', 'automatica', 'indicador')`),
+    check("indicador_variables_toma_valida", sql`${t.toma} IN ('valor', 'cumplimiento')`),
+  ],
+);
+
+export const indicadorResponsables = pgTable(
+  "indicador_responsables",
+  {
+    id: id(),
+    versionId: ref("version_id", () => indicadorVersiones.id).notNull(),
+    cargoId: ref("cargo_id", () => cargos.id).notNull(),
+    cargoNombre: text("cargo_nombre").notNull(),
+    funcion: text("funcion").notNull(),
+  },
+  (t) => [
+    unique("indicador_responsables_unico").on(t.versionId, t.cargoId, t.funcion),
+    check("indicador_responsables_funcion_valida", sql`${t.funcion} IN ('medir', 'analizar')`),
+  ],
+);
+
+export const indicadorNormas = pgTable(
+  "indicador_normas",
+  {
+    id: id(),
+    versionId: ref("version_id", () => indicadorVersiones.id).notNull(),
+    normaId: ref("norma_id", () => normas.id).notNull(),
+    normaNombre: text("norma_nombre").notNull(),
+  },
+  (t) => [unique("indicador_normas_unica").on(t.versionId, t.normaId)],
+);
+
+export const indicadorDesignados = pgTable(
+  "indicador_designados",
+  {
+    id: id(),
+    indicadorId: ref("indicador_id", () => indicadores.id).notNull(),
+    usuarioId: refUsuario("usuario_id").notNull(),
+    funcion: text("funcion").notNull(),
+    creadoPor: refUsuario("creado_por").notNull(),
+    creadoEn: creado(),
+  },
+  (t) => [
+    unique("indicador_designados_unico").on(t.indicadorId, t.usuarioId, t.funcion),
+    index("indicador_designados_usuario_idx").on(t.usuarioId),
+    check("indicador_designados_funcion_valida", sql`${t.funcion} IN ('mide', 'analiza', 'seguimiento')`),
+  ],
+);
+
+export const indicadorMetas = pgTable(
+  "indicador_metas",
+  {
+    id: id(),
+    indicadorId: ref("indicador_id", () => indicadores.id).notNull(),
+    periodo: text("periodo").notNull(),
+    meta: num("meta"),
+    metaMax: num("meta_max"),
+    justificacion: text("justificacion"),
+    tardia: boolean("tardia").notNull().default(false),
+    programadaPor: refUsuario("programada_por").notNull(),
+    programadaEn: marca("programada_en").notNull().defaultNow(),
+  },
+  (t) => [unique("indicador_metas_unica").on(t.indicadorId, t.periodo)],
+);
+
+// Solo-inserción (trigger en la migración 0011).
+export const cierresIndicadores = pgTable("cierres_indicadores", {
+  id: id(),
+  // El último día del mes cerrado.
+  mes: date("mes").notNull().unique(),
+  cerradoPor: refUsuario("cerrado_por").notNull(),
+  cerradoEn: marca("cerrado_en").notNull().defaultNow(),
+  resumen: jsonb("resumen").notNull().default(sql`'{}'::jsonb`),
+});
+
+// Cerrada es inmutable salvo su reapertura (trigger en la migración 0011).
+export const mediciones = pgTable(
+  "mediciones",
+  {
+    id: id(),
+    indicadorId: ref("indicador_id", () => indicadores.id).notNull(),
+    versionId: ref("version_id", () => indicadorVersiones.id).notNull(),
+    periodo: text("periodo").notNull(),
+    desde: marca("desde").notNull(),
+    hasta: marca("hasta").notNull(),
+    venceEn: marca("vence_en").notNull(),
+    estado: text("estado").notNull().default("abierta"),
+    historica: boolean("historica").notNull().default(false),
+    noAplica: boolean("no_aplica").notNull().default(false),
+    noAplicaMotivo: text("no_aplica_motivo"),
+    // La fracción exacta como «n/d»; con ella se decide el semáforo.
+    resultadoExacto: text("resultado_exacto"),
+    resultado: num("resultado"),
+    semaforo: text("semaforo"),
+    metaAplicada: num("meta_aplicada"),
+    metaMaxAplicada: num("meta_max_aplicada"),
+    limiteAplicado: num("limite_aplicado"),
+    requiereAccion: boolean("requiere_accion").notNull().default(false),
+    incumplimientoRepetido: boolean("incumplimiento_repetido").notNull().default(false),
+    analisis: text("analisis"),
+    causa: text("causa"),
+    accionPropuesta: text("accion_propuesta"),
+    reportadaPor: refUsuario("reportada_por"),
+    reportadaEn: marca("reportada_en"),
+    analizadaPor: refUsuario("analizada_por"),
+    analizadaEn: marca("analizada_en"),
+    corregida: boolean("corregida").notNull().default(false),
+    metaTardia: boolean("meta_tardia").notNull().default(false),
+    sinAnalisis: boolean("sin_analisis").notNull().default(false),
+    cierreId: ref("cierre_id", () => cierresIndicadores.id),
+    reabiertaPor: refUsuario("reabierta_por"),
+    reabiertaEn: marca("reabierta_en"),
+    reabiertaMotivo: text("reabierta_motivo"),
+    avisoPrevioEn: marca("aviso_previo_en"),
+    avisoVencidoEn: marca("aviso_vencido_en"),
+    escaladoEn: marca("escalado_en"),
+    alertaEstado: text("alerta_estado"),
+  },
+  (t) => [
+    unique("mediciones_periodo_unico").on(t.indicadorId, t.periodo),
+    index("mediciones_estado_vence_idx").on(t.estado, t.venceEn),
+    index("mediciones_indicador_hasta_idx").on(t.indicadorId, t.hasta),
+    check("mediciones_estado_valido", sql`${t.estado} IN ('abierta', 'reportada', 'cerrada')`),
+    check("mediciones_semaforo_valido", sql`${t.semaforo} IN ('bien', 'atencion', 'critico')`),
+  ],
+);
+
+export const medicionValores = pgTable(
+  "medicion_valores",
+  {
+    id: id(),
+    medicionId: ref("medicion_id", () => mediciones.id).notNull(),
+    variableId: ref("variable_id", () => indicadorVariables.id).notNull(),
+    categoriaId: ref("categoria_id", () => dimensionCategorias.id),
+    valor: num("valor"),
+    noAplica: boolean("no_aplica").notNull().default(false),
+    noAplicaMotivo: text("no_aplica_motivo"),
+    reportadoPor: refUsuario("reportado_por"),
+    reportadoEn: marca("reportado_en"),
+  },
+  // La migración lo crea con NULLS NOT DISTINCT: un valor sin categoría también es único.
+  (t) => [uniqueIndex("medicion_valores_unico_idx").on(t.medicionId, t.variableId, t.categoriaId)],
+);
+
+// Solo-inserción (trigger y REVOKE en roles-bd.ts).
+export const medicionEventos = pgTable(
+  "medicion_eventos",
+  {
+    id: id(),
+    medicionId: ref("medicion_id", () => mediciones.id).notNull(),
+    tipo: text("tipo").notNull(),
+    // Nulo cuando lo hizo el sistema.
+    usuarioId: refUsuario("usuario_id"),
+    detalle: jsonb("detalle").notNull().default(sql`'{}'::jsonb`),
+    creadoEn: creado(),
+  },
+  (t) => [
+    index("medicion_eventos_medicion_idx").on(t.medicionId, t.creadoEn),
+    check(
+      "medicion_eventos_tipo_valido",
+      sql`${t.tipo} IN ('reporte', 'correccion', 'analisis', 'no_aplica', 'meta', 'soporte', 'cierre', 'reapertura', 'recalculo', 'historico')`,
+    ),
+  ],
+);
+
+// Solo-inserción (trigger y REVOKE en roles-bd.ts).
+export const medicionObservaciones = pgTable(
+  "medicion_observaciones",
+  {
+    id: id(),
+    medicionId: ref("medicion_id", () => mediciones.id).notNull(),
+    usuarioId: refUsuario("usuario_id").notNull(),
+    texto: text("texto").notNull(),
+    respondeA: ref("responde_a", (): AnyPgColumn => medicionObservaciones.id),
+    creadoEn: creado(),
+  },
+  (t) => [index("medicion_observaciones_medicion_idx").on(t.medicionId, t.creadoEn)],
+);
+
+// Las tablas siguientes son de la 14B: nacen vacías y la migración 0012 puede rehacerlas (spec §19.5).
+export const variableResponsables = pgTable(
+  "variable_responsables",
+  {
+    id: id(),
+    variableId: ref("variable_id", () => variablesCompartidas.id).notNull(),
+    usuarioId: refUsuario("usuario_id").notNull(),
+  },
+  (t) => [unique("variable_responsables_unico").on(t.variableId, t.usuarioId)],
+);
+
+export const variableValores = pgTable(
+  "variable_valores",
+  {
+    id: id(),
+    variableId: ref("variable_id", () => variablesCompartidas.id).notNull(),
+    periodo: text("periodo").notNull(),
+    categoriaId: ref("categoria_id", () => dimensionCategorias.id),
+    valor: num("valor"),
+    estado: text("estado").notNull().default("pendiente"),
+    venceEn: marca("vence_en"),
+    reportadoPor: refUsuario("reportado_por"),
+    reportadoEn: marca("reportado_en"),
+    avisoPrevioEn: marca("aviso_previo_en"),
+    avisoVencidoEn: marca("aviso_vencido_en"),
+    cierreId: ref("cierre_id", () => cierresIndicadores.id),
+  },
+  // La migración lo crea con NULLS NOT DISTINCT.
+  (t) => [uniqueIndex("variable_valores_unico_idx").on(t.variableId, t.periodo, t.categoriaId)],
+);
+
+export const calculoFotos = pgTable(
+  "calculo_fotos",
+  {
+    id: id(),
+    calculo: text("calculo").notNull(),
+    // Alcance: un proceso, una clase de objetivo, o ambos nulos para la entidad.
+    procesoId: ref("proceso_id", () => procesos.id),
+    claseObjetivo: text("clase_objetivo"),
+    periodo: text("periodo").notNull(),
+    numerador: num("numerador"),
+    denominador: num("denominador"),
+    valor: num("valor"),
+    tomadaEn: marca("tomada_en").notNull().defaultNow(),
+    historica: boolean("historica").notNull().default(false),
+    cierreId: ref("cierre_id", () => cierresIndicadores.id),
+  },
+  // La migración lo crea con NULLS NOT DISTINCT.
+  (t) => [uniqueIndex("calculo_fotos_unico_idx").on(t.calculo, t.procesoId, t.claseObjetivo, t.periodo)],
+);
+
+export const reportesExternos = pgTable(
+  "reportes_externos",
+  {
+    id: id(),
+    indicadorId: ref("indicador_id", () => indicadores.id).notNull(),
+    periodo: text("periodo").notNull(),
+    desde: date("desde").notNull(),
+    hasta: date("hasta").notNull(),
+    venceEn: marca("vence_en").notNull(),
+    estado: text("estado").notNull().default("pendiente"),
+    fechaEnvio: date("fecha_envio"),
+    radicado: text("radicado"),
+    resultadoEnviado: text("resultado_enviado"),
+    nota: text("nota"),
+    registradaPor: refUsuario("registrada_por"),
+    registradaEn: marca("registrada_en"),
+    avisoPrevioEn: marca("aviso_previo_en"),
+    avisoVencidoEn: marca("aviso_vencido_en"),
+  },
+  (t) => [unique("reportes_externos_unico").on(t.indicadorId, t.periodo)],
+);
+
+export const impactosIndicadores = pgTable(
+  "impactos_indicadores",
+  {
+    id: id(),
+    normaCambioId: ref("norma_cambio_id", () => normaCambios.id).notNull(),
+    normaId: ref("norma_id", () => normas.id).notNull(),
+    indicadorId: ref("indicador_id", () => indicadores.id).notNull(),
+    estado: text("estado").notNull().default("pendiente"),
+    venceEn: marca("vence_en").notNull(),
+    avisoVencidoEn: marca("aviso_vencido_en"),
+    escaladoEn: marca("escalado_en"),
+    resolucion: text("resolucion"),
+    versionId: ref("version_id", () => indicadorVersiones.id),
+    nota: text("nota"),
+    resueltoPor: refUsuario("resuelto_por"),
+    resueltoEn: marca("resuelto_en"),
+  },
+  (t) => [unique("impactos_indicadores_unico").on(t.normaCambioId, t.indicadorId)],
 );

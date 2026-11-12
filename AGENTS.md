@@ -70,8 +70,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
 10. **Dos conexiones de BD:** `DATABASE_URL_MIGRADOR` (dueño del esquema: migraciones,
     semillas y creación del rol de la app) y `DATABASE_URL` (rol `sgc_app`, solo DML,
     sin `UPDATE` ni `DELETE` en `auditoria`, `accesos`, `firmas`, `tramite_eventos`,
-    `copia_eventos`, `acuse_eventos`, `ratificaciones`, `externo_verificaciones` y
-    `norma_cambios`).
+    `copia_eventos`, `acuse_eventos`, `ratificaciones`, `externo_verificaciones`,
+    `norma_cambios`, `medicion_eventos`, `medicion_observaciones` y `cierres_indicadores`).
     `asegurarRolApp` (`src/db/roles-bd.ts`) crea el rol y aplica sus privilegios en cada
     arranque, después de las migraciones. Los secretos (`APP_SECRETO`, `BD_APP_CLAVE`) se
     generan al instalar; sin un `APP_SECRETO` válido el arranque de producción falla.
@@ -100,30 +100,41 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
    `src/lib/permisos.ts`** y pasa por `mutacion()` o `requerirPermiso()`; los handlers
    que escriben verifican `Origin`. Toda acción del trámite lleva su permiso de matriz
    (`PERMISO_DE_ACCION`), además de la condición de persona de la tabla de transiciones.
-5. **Trazabilidad completa:** toda acción de cualquier usuario queda en bitácora,
-   inmutable en BD, con quién, qué y cuándo. `auditoria`, `accesos`, `firmas`,
-   `tramite_eventos`, `copia_eventos`, `acuse_eventos`, `ratificaciones`,
-   `externo_verificaciones` y `norma_cambios` son de solo inserción (trigger que
-   rechaza `UPDATE` y `DELETE` incluso al dueño del esquema, más los privilegios de `sgc_app`);
-   los usuarios con historia se desactivan, nunca se borran, y una verificación cerrada no se
+5. **Trazabilidad completa:** toda acción de cualquier usuario queda en bitácora, inmutable en BD,
+   con quién, qué y cuándo. `auditoria`, `accesos`, `firmas`, `tramite_eventos`, `copia_eventos`,
+   `acuse_eventos`, `ratificaciones`, `externo_verificaciones`, `norma_cambios`,
+   `medicion_eventos` y `medicion_observaciones` son de solo inserción (trigger que rechaza
+   `UPDATE` y `DELETE` incluso al dueño del esquema, más los privilegios de `sgc_app`); los
+   usuarios con historia se desactivan, nunca se borran, y una verificación cerrada no se
    modifica. Una revisión anual cerrada tampoco, ni sus procesos ni sus decisiones: el trigger
    `sgc_impedir_si_revision_cerrada` rechaza `UPDATE` y `DELETE` sobre ellas y la inserción de
-   filas hijas. Cada acción de la bitácora tiene su frase legible y su nombre de filtro en
-   `src/lib/bitacora-detalle.ts` (`describirEvento`, `nombreDeAccion`), armada solo con el
-   `detalle` de la fila. `tests/bitacora-detalle.test.ts` lo exige para las acciones con nombre
-   literal en las llamadas a `registrarAuditoria` de `src/` (lee el texto: también los dos lados de
-   un ternario) y para las armadas con una variable o una plantilla que lista a mano
-   (`ACCIONES_ARMADAS`). Las plantillas `tramite_*` y las de los catálogos del mapa
-   (`reordenar_`, `activar_`, `desactivar_` y `borrar_` más el catálogo, `mapa-admin.ts`) tienen
-   frase por su camino genérico y el test no las vigila. Una acción nueva que se arme con una
-   variable entra a `ACCIONES_ARMADAS`.
+   filas hijas. Lo mismo en los indicadores: una medición cerrada no cambia salvo su reapertura,
+   que deja quién, cuándo y por qué (`sgc_impedir_si_medicion_cerrada`, sobre `mediciones` y
+   `medicion_valores`, también al insertar valores); una versión aprobada de una ficha no cambia,
+   ni sus variables, responsables y normas (`sgc_impedir_si_version_aprobada`, también al insertar
+   hijas); y un cierre del mes (`cierres_indicadores`) no se modifica ni se borra (trigger
+   `sgc_impedir_modificacion` y el `REVOKE` de `sgc_app`, con su caso en
+   `tests/privilegios-bd.test.ts`; la reapertura no lo toca). Cada acción de la bitácora
+   tiene su frase legible y su nombre de filtro en `src/lib/bitacora-detalle.ts`
+   (`describirEvento`, `nombreDeAccion`), armada solo con el `detalle` de la fila.
+   `tests/bitacora-detalle.test.ts` lo exige para las acciones con nombre literal en las llamadas
+   a `registrarAuditoria` de `src/` (lee el texto: también los dos lados de un ternario) y para
+   las armadas con una variable o una plantilla que lista a mano (`ACCIONES_ARMADAS`). Las
+   plantillas `tramite_*` y las de los catálogos del mapa (`reordenar_`, `activar_`, `desactivar_`
+   y `borrar_` más el catálogo, `mapa-admin.ts`) tienen frase por su camino genérico y el test no
+   las vigila. Una acción nueva que se arme con una variable entra a `ACCIONES_ARMADAS`.
    **Única excepción documentada (F12-D35):** las preferencias de interfaz de cada
    persona (el tema) y las marcas de notificación leída no se auditan: no son evidencia de 7.5
    y llenarían la bitácora de ruido. El acuse de lectura, que F12-D35 dejó pendiente, sí se
    audita (`acuse_lectura`) y tiene su historial inmutable en `acuse_eventos`. Cualquier otra
    acción sin auditar se propone antes.
 6. **El MIME se detecta de los magic bytes en la carga** (no de la extensión del nombre)
-   y se guarda en BD. El ícono de formato se deriva del MIME guardado.
+   y se guarda en BD. El ícono de formato se deriva del MIME guardado. De `file-type`, en `src/`
+   solo se importa `fileTypeFromBuffer` (F14A-R41): `fileTypeFromFile` carga sus módulos con un
+   `import()` no literal que el empaquetador de Next reemplaza por uno que siempre lanza (todo
+   `.xlsx` respondía 500 en `next dev` y en la imagen, y Vitest, que no empaqueta, no lo veía). El
+   `.xlsx` de un soporte se lee entero (hasta 25 MB) y se analiza como búfer. Lo exige
+   `tests/file-type-empaquetado.test.ts`.
 7. **Archivos fuera del webroot**, servidos por la app con `Content-Type` y
    `Content-Disposition` correctos. Nombres saneados (path traversal). Nunca ejecutables.
 8. **El mapa de procesos NO se hardcodea.** Vive en BD y se edita desde el admin. El
@@ -146,7 +157,7 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
 |---|---|---|
 | Framework | Next.js (App Router) + TypeScript estricto, `output: 'standalone'` | Node 24 LTS en la imagen, CI y desarrollo (mismo major en los tres: npm 10 y 11 generan lockfiles incompatibles) |
 | UI | Tailwind CSS + componentes propios en `src/componentes/ui` (shadcn/ui solo como hoja base) | Íconos: `lucide-react` (local). Tema claro y oscuro con tokens CSS (`light-dark()`) |
-| Animación | Motion (Framer Motion) | Respetar `prefers-reduced-motion` siempre |
+| Animación | CSS (transiciones y `@keyframes` en `src/app/globals.css`) | `motion` (Framer Motion) no está instalada y no se añade sin proponerlo (F14-DC23). Respetar `prefers-reduced-motion` siempre |
 | Mapa | SVG/HTML generado desde datos, layout por bandas con CSS grid | Sin lib de diagramas |
 | BD | PostgreSQL 16 (`postgres:16-alpine`), roles `sgc_migrador` dueño y `sgc_app` de mínimo privilegio | Extensiones: `unaccent`, `pg_trgm`. `sgc_migrador` es el nombre del spec: hoy el dueño es el usuario de `POSTGRES_USER` (`sgc` en desarrollo) |
 | ORM | **Drizzle** | TS puro, sin engine binario (evita el riesgo ARM de Prisma), SQL-first para FTS |
@@ -168,22 +179,30 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
 - **TypeScript estricto** (`strict: true`). Sin `any` salvo justificación puntual.
 - **Estructura:** App Router con el portal y el panel en `app/(app)` (el panel en
   `app/(app)/admin/(panel)`), las acciones y handlers del panel en
-  `app/admin/{acciones*.ts,comun.ts,api}`, los pasos de la cuenta en `app/(cuenta)` y el
-  ingreso en `app/ingreso`. Lógica de datos en `src/db` (schema Drizzle + queries),
-  lógica de negocio en `src/lib`. El trámite documental vive en `app/(app)/tramites`,
-  `app/acciones-tramites.ts`, `src/db/consultas/flujo/` y `src/lib/tramites/` (reglas puras).
-  La vigencia vive en `app/(app)/vigencia`, `app/acciones-vigencia.ts`,
-  `src/db/consultas/vigencia/` y `src/lib/vigencia/`; el normograma, en `app/(app)/normograma`,
-  `app/acciones-normograma.ts`, `src/db/consultas/normograma/` y `src/lib/normograma/`. Los
-  indicadores documentales viven en `src/lib/indicadores-documentales/` (funciones puras y tipos)
-  y `src/db/consultas/vigencia/indicadores.ts` (solo trae filas), y se calculan solo en
-  `/vigencia/indicadores` y su Excel, nunca en el cascarón. La lectura de la vigencia de la
-  persona, sus tareas y «¿es responsable técnico?» se comparten por petición entre el cascarón y
-  la página con `React.cache` (`lecturaDeVigencia` de `src/db/consultas/vigencia/fragmentos.ts`,
-  `tareasDePeticion` de `src/lib/tareas-peticion.ts` y `esResponsableTecnicoDePeticion`; Ruling
-  68): una página que las necesite usa esas, no otra lectura; quien solo necesita la insignia de
-  «Vigencia» la cuenta en SQL (`contarVencidas`, que repite las reglas de `src/lib/vigencia`).
-  Server Components por defecto; `'use client'` solo donde hay interactividad.
+  `app/admin/{acciones*.ts,comun.ts,api}`, los pasos de la cuenta en `app/(cuenta)` y el ingreso
+  en `app/ingreso`. Lógica de datos en `src/db` (schema Drizzle + queries), lógica de negocio en
+  `src/lib`. El trámite documental vive en `app/(app)/tramites`, `app/acciones-tramites.ts`,
+  `src/db/consultas/flujo/` y `src/lib/tramites/` (reglas puras). La vigencia vive en
+  `app/(app)/vigencia`, `app/acciones-vigencia.ts`, `src/db/consultas/vigencia/` y
+  `src/lib/vigencia/`; el normograma, en `app/(app)/normograma`, `app/acciones-normograma.ts`,
+  `src/db/consultas/normograma/` y `src/lib/normograma/`. Los indicadores documentales viven en
+  `src/lib/indicadores-documentales/` (funciones puras y tipos) y
+  `src/db/consultas/vigencia/indicadores.ts` (solo trae filas), y se calculan solo en
+  `/vigencia/indicadores` y su Excel, nunca en el cascarón. El módulo de **Indicadores** (Fase 14)
+  vive en `app/(app)/indicadores`, `app/acciones-indicadores.ts` (las de sus maestros y
+  parámetros, en `app/admin/acciones-indicadores.ts`), `src/db/consultas/indicadores/`,
+  `src/lib/indicadores/` (reglas puras: fórmula, periodos, semáforo, textos, acumulado, estados) y
+  `src/componentes/indicadores/`; su configuración, en `app/(app)/admin/(panel)/indicadores`.
+  **Ojo con los nombres de la 13C, que no son este módulo:** `/vigencia/indicadores`, el permiso
+  `documentos.indicadores`, `src/lib/indicadores-documentales/`,
+  `src/db/consultas/vigencia/indicadores.ts` y la acción de bitácora `exporto_indicadores`. La
+  lectura de la vigencia de la persona, sus tareas y «¿es responsable técnico?» se comparten por
+  petición entre el cascarón y la página con `React.cache` (`lecturaDeVigencia` de
+  `src/db/consultas/vigencia/fragmentos.ts`, `tareasDePeticion` de `src/lib/tareas-peticion.ts` y
+  `esResponsableTecnicoDePeticion`; Ruling 68): una página que las necesite usa esas, no otra
+  lectura; quien solo necesita la insignia de «Vigencia» la cuenta en SQL (`contarVencidas`, que
+  repite las reglas de `src/lib/vigencia`). Server Components por defecto; `'use client'` solo
+  donde hay interactividad.
 - **Cascarón y componentes base:** toda página autenticada vive dentro del cascarón del
   layout de `(app)` (`src/componentes/cascaron`: barra lateral, barra superior, búsqueda,
   campana y menú); los pasos de la cuenta y el ingreso usan `PantallaCentrada`. La
@@ -209,17 +228,24 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   `<html>` solo tras validar el hex estricto y el contraste P1/P2 (`src/lib/marca.ts`).
 - **Migraciones versionadas con Drizzle Kit**, ejecutadas en el arranque del contenedor.
   Nunca `db push` contra producción. `src/db/esquema.ts` nunca importa con `@/`
-  (drizzle-kit lo carga sin el alias): solo rutas relativas. Al cierre de la 13C son once
-  (`drizzle/0000` a `drizzle/0010`; el spec 13C §19 dice nueve).
+  (drizzle-kit lo carga sin el alias): solo rutas relativas. Al cierre de la 14A son doce
+  (`drizzle/0000` a `drizzle/0011`; la `0011` crea también, vacías, las tablas de la 14B, que la
+  `0012` puede rehacer mientras sigan sin uso, spec 14 §19.5).
 - **Toda página autenticada lleva o hereda de su layout `force-dynamic`** (`export const
   dynamic = "force-dynamic"`; lo declaran `src/app/layout.tsx` y los layouts de
   `(app)`, `(cuenta)` y `(app)/admin/(panel)`): nunca se prerenderiza, y el build de CI no
   tiene `DATABASE_URL`.
 - **Toda consulta de los módulos nuevos pasa por `alcanceProcesos()`**
   (`src/lib/alcance.ts`): el líder de proceso solo alcanza sus procesos activos; el
-  filtro por rol no se reimplementa en cada módulo. La visibilidad de documentos y de
-  trámites se decide en ese mismo archivo; la participación designada en un trámite es la
-  única excepción a `alcanceProcesos()`.
+  filtro por rol no se reimplementa en cada módulo. La visibilidad de documentos, de
+  trámites y de indicadores se decide en ese mismo archivo. Hay tres excepciones nombradas a
+  `alcanceProcesos()`: la participación designada en un trámite y, en los indicadores (spec 14
+  §6.4), la **lectura** de un indicador general, que es de toda sesión, como el normograma, y la
+  **designación** en un indicador (`indicador_designados`: mide, analiza o hace seguimiento), que
+  da alcance sobre él sin liderar su proceso. Las reglas de los indicadores son las funciones de
+  `src/lib/alcance.ts` (`filtroIndicadores` para un `WHERE`, `puedeVerIndicador`,
+  `puedeVerSoportes`, `puedeMedir`, `puedeAnalizar`, `puedeRegistrarHistoricos`, `puedeObservar`,
+  `aprobadoresDeFicha`, `puedeAprobarFicha`, `esAprobadorDe`, `responsableDe` y `participaEn`).
 - **Accesibilidad no negociable:** navegable por teclado, foco visible, contraste AA,
   SVG del mapa con roles/etiquetas ARIA. El ícono de formato de archivo nunca es la
   única señal (siempre etiqueta textual + tamaño, `aria-label`), ni el color de un
@@ -234,10 +260,12 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
     impide que la página entre en el payload RSC. El layout del panel usa además
     `exigirEntradaPanel()` (`panel.entrar` o la marca `ver_historial`). Lo exige
     `tests/paginas-sesion.test.ts`.
-  - **Las páginas de Vigencia y del normograma** llaman `exigirSesion()` y después su regla de
-    alcance con `notFound()` (el patrón de `exigirDistribucion`, F13C-DC39: `exigirVigencia` en
-    `app/(app)/vigencia/_comun.ts`, la pestaña visible, la revisión, el externo, la norma o el
-    impacto que la persona ve), nunca `exigirPermiso`: quien no la ve recibe «no encontrado». Los
+  - **Las páginas de Vigencia, del normograma y de Indicadores** llaman `exigirSesion()` y después
+    su regla de alcance con `notFound()` (el patrón de `exigirDistribucion`, F13C-DC39:
+    `exigirVigencia` en `app/(app)/vigencia/_comun.ts`, la pestaña visible, la revisión, el externo,
+    la norma o el impacto que la persona ve; `exigirIndicador` y `exigirFichaDeIndicador` en
+    `app/(app)/indicadores/_comun.ts`), nunca `exigirPermiso`: quien no la ve recibe «no
+    encontrado». La configuración de indicadores (`/admin/indicadores`) va con `exigirPermiso`. Los
     catálogos de puntos de uso y listas de distribución viven en `app/(app)/admin/(catalogos)`,
     fuera del guard del panel: cada página llama `exigirSesion()` y `exigirCatalogo()` (en solo
     lectura sin `distribucion.gestionar`), y las de alta, además, `exigirGestion()`
@@ -248,7 +276,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
     ignoró un valor que no admite.
   - **Cada Server Action exportada** de `src/app/admin/acciones*.ts`,
     `src/app/acciones-tramites.ts`, `src/app/acciones-distribucion.ts`,
-    `src/app/acciones-vigencia.ts` y `src/app/acciones-normograma.ts` pasa por
+    `src/app/acciones-vigencia.ts`, `src/app/acciones-normograma.ts` y
+    `src/app/acciones-indicadores.ts` pasa por
     `mutacion(formData, "<permiso>", fn)` o llama
     `requerirPermiso(sesion, permiso)` después de `requerirSesion()`. Las de `src/app/acciones-cuenta.ts` llaman
     `requerirSesion()` (directamente o por `sesionParaInscribir()`), con tres
@@ -268,7 +297,7 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   - **Las rutas que reciben una subida van fuera del `matcher` de `src/proxy.ts`**
     (`admin/api/archivos`, `api/tramites/[id]/archivos`, `api/socializaciones/[id]/archivos`,
     `api/verificaciones/[id]/items/[itemId]/archivos`, `api/externos/[versionId]/archivos`,
-    `api/normas/[id]/archivos` y `api/hallazgos/[id]/archivos`, cada una con su caso en
+    `api/normas/[id]/archivos`, `api/hallazgos/[id]/archivos` y `api/mediciones/[id]/archivos`, cada una con su caso en
     `tests/proxy-matcher.test.ts`), usan `recibirArchivo` y comparan
     `content-length`: el búfer del proxy truncaba las subidas de más de 10 MB y respondía
     201 (F13A-R10).
@@ -305,12 +334,16 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   punto» (`exigirSinOtroAdmin` al abrir y al cerrar la verificación del punto del que uno es
   responsable).
 - **`archivos` admite dueños distintos de una versión** (`contexto`: `version`, `jornada`,
-  `verificacion_item`, `norma`, `revision_anual` y `hallazgo`, con `contexto_id`; los seis del
-  `CHECK` `archivos_contexto_valido` de `src/db/esquema.ts`, y `CONTEXTOS_EVIDENCIA` de
-  `src/lib/subida.ts` son los cinco que reciben evidencias, todos menos `version`): el control
+  `verificacion_item`, `norma`, `revision_anual`, `hallazgo`, `medicion` y `reporte_externo`, con
+  `contexto_id`; los ocho del `CHECK` `archivos_contexto_valido` de `src/db/esquema.ts`, y
+  `CONTEXTOS_EVIDENCIA` de `src/lib/subida.ts` son los siete que reciben evidencias, todos menos
+  `version`; `reporte_externo` es de la 14B y aún no tiene ruta): el control
   de acceso de un archivo es el de su
   dueño, y las consultas heredadas siguen filtrando por `version_id`. El PDF de una norma se
   lee como la norma; la foto de la corrección de un hallazgo, como el hallazgo (`filtroPuntos`);
+  el soporte de una medición (PDF, imagen o `.xlsx` detectado como hoja de cálculo, nunca `.xls`) solo lo
+  ve quien ve soportes (`puedeVerSoportes`, no quien solo ve el indicador: 404) y siempre se sirve como
+  descarga (`src/db/consultas/indicadores/soportes.ts`);
   el informe de una revisión anual (rol `evidencia`, `version_id` nula, uno por año en
   `informes/revision-<año>.pdf`) solo lo descargan Admin SGC, Gerencia y Control Interno
   (`puedeVerInformeAnual`), y los demás reciben 404.
@@ -345,7 +378,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   de `asegurarActa` (F13A-R17), y un cambio de su invariante va en los dos.
 - **Tests contra la BD de desarrollo:** todo usuario de prueba que genere filas en
   `auditoria`, `accesos`, `firmas`, `tramite_eventos`, `copia_eventos`, `acuse_eventos`,
-  `ratificaciones`, `externo_verificaciones` o `norma_cambios` usa un nombre único por corrida
+  `ratificaciones`, `externo_verificaciones`, `norma_cambios`, `medicion_eventos` o
+  `medicion_observaciones` usa un nombre único por corrida
   (`zz_<algo>_${Date.now()}`) y no se borra (FK `RESTRICT` y trigger de solo inserción).
   Nunca `DELETE` ni `UPDATE` sobre esas tablas en una limpieza. Un test que escribe datos
   capaces de bloquear la migración o el arranque, o de romper otros tests (un usuario duplicado, la
@@ -353,7 +387,10 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   los restaura en `finally`: un test que falla no debe dejar la base inservible. Ningún test
   deja confirmada una revisión anual (cerrada ya no se modifica y su año es único): la abre y la
   cierra dentro de la transacción revertida, en un año lejano, y antes cierra la que esté
-  abierta (`sinRevisionAbierta`, `tests/utiles/vigencia.ts`).
+  abierta (`sinRevisionAbierta`, `tests/utiles/vigencia.ts`). Tampoco deja confirmado un cierre
+  del mes de indicadores (no se borra y su mes es único) ni una ficha aprobada (su versión ya no
+  cambia y su firma no se borra): los hace dentro de una transacción que se revierte, y los del
+  cierre, en un año lejano del pasado con `ahora` inyectado.
 - **Transiciones del trámite:** la firma se verifica fuera de la transacción y lo que puede
   fallar va antes, en un validador de solo lectura (F13A-R4); `opciones.ahora` es la hora de
   todo lo escrito (F13A-P1). `transicionar` guarda en el `detalle` de cada evento que cambia de
@@ -372,14 +409,48 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   dentro con `FOR UPDATE`. Ratificar, y adoptar una edición con archivo, recalculan la huella
   del archivo en disco (`exigirHuellaRegistrada`); si no es la registrada, nada se escribe y el
   rechazo queda en la bitácora, fuera de la transacción (`conRechazoPorHuella`,
-  `src/db/consultas/vigencia/comun.ts`).
+  `src/db/consultas/vigencia/comun.ts`). Las firmas de una ficha de indicador («Elaboró» al
+  enviarla a aprobación o al publicar un cambio menor, y «Aprobó») van también en `firmas`, con
+  `indicador_version_id`, `tramite_id` y `version_id` nulos, `ronda = 0` y como huella el SHA-256
+  del contenido firmado de la versión (`huellaDeFicha`, `src/lib/indicadores/ficha.ts`); siguen
+  F13A-R4 (`validarEnvio` y `validarAprobacion`, `src/db/consultas/indicadores/aprobacion.ts`). El
+  acta y `listarFirmas` filtran por trámite y no las ven.
+- **La ficha de un indicador** (`src/db/consultas/indicadores/`, spec 14 §7): la sigla `IND` está
+  reservada y no es un tipo de documento (`mapa-admin.ts` la rechaza), para que `SGC-IND-01` no
+  se confunda con un `PROCESO-TIPO-NN`. Una versión guarda, junto a la referencia, el nombre con
+  que se firmó cada catálogo que cita (tipo, clasificación, unidad, objetivo, proceso, subproceso,
+  cargos y normas), y la huella va sobre esos textos: renombrar un cargo, una unidad o un proceso
+  no cambia una ficha aprobada. Un indicador enviado alguna vez a aprobación no se borra: se
+  descarta y su código sigue ocupado. Los **históricos** (periodos que terminaron antes de la
+  primera aprobación) no generan tareas, avisos ni la marca «Requiere acción de mejora», y no
+  cuentan ni rompen la racha del incumplimiento repetido.
+- **Fórmulas:** una fórmula de indicador solo se evalúa con el intérprete de
+  `src/lib/indicadores/formula/` (gramática cerrada, fracciones exactas con `bigint`, límites de
+  longitud, profundidad y cifras); nunca `eval`, `Function` ni SQL armado con texto del usuario.
+- **Un solo camino de cálculo:** solo `recalcularMedicion`
+  (`src/db/consultas/indicadores/mediciones.ts`) escribe el resultado, el semáforo, la meta
+  aplicada y el estado de una medición abierta o reportada; reportar, registrar históricos,
+  corregir, marcar «no aplica», reprogramar la meta, subir o quitar un soporte y reabrir pasan por
+  ella, con la fila bloqueada. El cierre del mes y «Cerrar de nuevo»
+  solo la pasan a `cerrada` (`src/db/consultas/indicadores/cierre.ts`). Cuando cambia el semáforo o
+  el resultado de una medición ordinaria, ella misma recalcula la racha de las n − 1 siguientes
+  medidas sin cerrar (`recalcularSiguientes`, evento `recalculo`, F14A-R53), y cambiar el plazo o
+  «soporte obligatorio» llega a las mediciones en curso (`cambiarOperacion`, F14A-R52). Un
+  recálculo que no nace de un cambio en la medición (esos dos) es de sistema (`sistema: "racha"` o
+  `"soporte"`): no la mueve de la versión con que se congeló al reportarla, su evento dice qué pasó
+  con la marca, y el de la racha no reabre por falta de soporte lo ya reportado. **El soporte
+  obligatorio rige hacia adelante:** activarlo solo alcanza las mediciones aún en plazo.
 - **El cumplimiento de un porcentaje con meta se decide con la razón exacta, en enteros**
   (`cumplePorcentaje`, `src/lib/indicadores-documentales/metas.ts`; `conformidad`,
   `src/lib/distribucion/verificacion.ts`), nunca con el entero que se muestra. `conformidad()`
   muestra el porcentaje truncado, así la cifra entera nunca contradice el veredicto, y es la
   misma cifra en Distribución, los indicadores y el informe anual (`porcentajeDeConformidad`);
   los demás indicadores redondean y, cuando el entero contradiría el veredicto,
-  `textoPorcentaje` (`textos.ts`) muestra un decimal truncado.
+  `textoPorcentaje` (`textos.ts`) muestra un decimal truncado. En el módulo de Indicadores la regla
+  vale para todo indicador, no solo los porcentajes: el semáforo compara la fracción exacta
+  (`Fraccion`, `src/lib/indicadores/formula/fraccion.ts`) y la cifra que se muestra nunca lo
+  contradice (`textoValor`, `src/lib/indicadores/textos.ts`: redondea a los decimales de la ficha
+  y, si eso contradijera el color, trunca, con más decimales si hace falta).
 - **Tests y demo:** `tramiteEn` crea su documento: ningún test abre un trámite sobre uno de
   la demo. `tests/semilla-tramites.test.ts` lee el estado de la demo y salta con mensaje si
   ya avanzó; `SEMILLA_RECIEN=1 npm test` exige la demo recién sembrada.

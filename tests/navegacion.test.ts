@@ -1,16 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { NAVEGACION, entradasVisibles, esActiva } from "@/componentes/cascaron/navegacion";
+import { ORDEN_GRUPOS } from "@/componentes/cascaron/ContenidoBarra";
+import { GRUPOS, NAVEGACION, entradasVisibles, esActiva } from "@/componentes/cascaron/navegacion";
 
 describe("navegación por módulos y rol", () => {
-  it("consulta ve Inicio, Buscar y Normograma; admin ve las veinte", () => {
-    expect(entradasVisibles({ rol: "consulta" }).map((e) => e.href)).toEqual(["/", "/buscar", "/normograma"]);
-    expect(entradasVisibles({ rol: "admin_sgc" })).toHaveLength(20);
+  it("consulta ve Inicio, Buscar, Normograma e Indicadores; admin ve las veintidós", () => {
+    expect(entradasVisibles({ rol: "consulta" }).map((e) => e.href)).toEqual(["/", "/buscar", "/normograma", "/indicadores"]);
+    expect(entradasVisibles({ rol: "admin_sgc" })).toHaveLength(22);
   });
   it("Trámites: consulta solo si participa; gerencia y líder siempre; va después de Buscar", () => {
     const hrefs = (s: Parameters<typeof entradasVisibles>[0]) => entradasVisibles(s).map((e) => e.href);
     expect(hrefs({ rol: "consulta" })).not.toContain("/tramites");
     expect(hrefs({ rol: "control_interno" })).not.toContain("/tramites");
-    expect(hrefs({ rol: "consulta", participaEnTramites: true })).toEqual(["/", "/buscar", "/tramites", "/normograma"]);
+    expect(hrefs({ rol: "consulta", participaEnTramites: true })).toEqual(["/", "/buscar", "/tramites", "/normograma", "/indicadores"]);
     expect(hrefs({ rol: "gerencia" })).toContain("/tramites");
     expect(hrefs({ rol: "lider_proceso" })).toContain("/tramites");
     expect(hrefs({ rol: "admin_sgc" }).indexOf("/tramites")).toBe(hrefs({ rol: "admin_sgc" }).indexOf("/buscar") + 1);
@@ -54,6 +55,38 @@ describe("Configuración documental", () => {
   });
 });
 
+describe("Configuración de indicadores", () => {
+  it("exige indicadores.administrar, va en Administración y solo admin_sgc la ve", () => {
+    expect(NAVEGACION.find((e) => e.href === "/admin/indicadores")).toMatchObject({
+      etiqueta: "Configuración de indicadores",
+      permiso: "indicadores.administrar",
+      grupo: "administracion",
+    });
+    for (const rol of ["gerencia", "lider_proceso", "control_interno", "consulta"] as const) {
+      expect(entradasVisibles({ rol }).map((e) => e.href)).not.toContain("/admin/indicadores");
+    }
+    expect(entradasVisibles({ rol: "admin_sgc" }).map((e) => e.href)).toContain("/admin/indicadores");
+  });
+});
+
+describe("Indicadores", () => {
+  it("la ve toda sesión, sin permiso, en su grupo, y se marca en sus subrutas", () => {
+    const entrada = NAVEGACION.find((e) => e.href === "/indicadores")!;
+    expect(entrada).toEqual({ href: "/indicadores", etiqueta: "Indicadores", icono: "indicadores", grupo: "indicadores" });
+    for (const rol of ["admin_sgc", "gerencia", "lider_proceso", "control_interno", "consulta"] as const) {
+      expect(entradasVisibles({ rol }).map((e) => e.href)).toContain("/indicadores");
+    }
+    expect(esActiva(entrada, "/indicadores/SGC-IND-01/editar")).toBe(true);
+    expect(esActiva(entrada, "/admin/indicadores")).toBe(false);
+  });
+  it("el grupo «Indicadores» lleva el color del módulo y va antes de Administración", () => {
+    expect(GRUPOS.indicadores).toEqual({ etiqueta: "Indicadores", color: "mod-indicadores" });
+    const orden = Object.keys(GRUPOS);
+    expect(orden.indexOf("indicadores")).toBe(orden.indexOf("administracion") - 1);
+    expect(ORDEN_GRUPOS.indexOf("indicadores")).toBe(ORDEN_GRUPOS.indexOf("administracion") - 1);
+  });
+});
+
 describe("Entidad y marca", () => {
   it("exige entidad.administrar: control interno no la ve", () => {
     expect(NAVEGACION.find((e) => e.href === "/admin/entidad")?.permiso).toBe("entidad.administrar");
@@ -85,7 +118,7 @@ describe("Distribución", () => {
   const hrefs = (s: Parameters<typeof entradasVisibles>[0]) => entradasVisibles(s).map((e) => e.href);
   it("va justo después de Trámites; consulta la ve solo si responde por un punto", () => {
     expect(hrefs({ rol: "consulta" })).not.toContain("/distribucion");
-    expect(hrefs({ rol: "consulta", responsableDePuntos: true })).toEqual(["/", "/buscar", "/distribucion", "/normograma"]);
+    expect(hrefs({ rol: "consulta", responsableDePuntos: true })).toEqual(["/", "/buscar", "/distribucion", "/normograma", "/indicadores"]);
     for (const rol of ["admin_sgc", "gerencia", "lider_proceso"] as const) {
       const lista = hrefs({ rol });
       expect(lista.indexOf("/distribucion")).toBe(lista.indexOf("/tramites") + 1);
@@ -110,7 +143,7 @@ describe("Vigencia", () => {
       expect(hrefs({ rol })).toContain("/vigencia");
     }
     expect(hrefs({ rol: "consulta" })).not.toContain("/vigencia");
-    expect(hrefs({ rol: "consulta", responsableTecnico: true })).toEqual(["/", "/buscar", "/vigencia", "/normograma"]);
+    expect(hrefs({ rol: "consulta", responsableTecnico: true })).toEqual(["/", "/buscar", "/vigencia", "/normograma", "/indicadores"]);
   });
   it("va justo después de Distribución, en Documentos, y se marca en sus pestañas", () => {
     for (const rol of ["admin_sgc", "gerencia", "control_interno", "lider_proceso"] as const) {

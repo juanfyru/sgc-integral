@@ -221,10 +221,16 @@ async function validarAutoridadYPlantilla(tx: TransactionSql, d: DatosTipo): Pro
   if (!vigente) throw new Error("La plantilla debe ser un documento vigente");
 }
 
+/** `IND` es la sigla de los códigos de indicador (spec 14 §7.1): ningún tipo de documento la usa. */
+function exigirSiglaLibre(sigla: string): void {
+  if (sigla.trim().toUpperCase() === "IND") throw new Error("La sigla IND está reservada para los indicadores");
+}
+
 export async function crearTipo(
   d: DatosTipo,
   usuarioId: number,
 ): Promise<{ id: number }> {
+  exigirSiglaLibre(d.sigla);
   const sql = obtenerSql();
   try {
     return await sql.begin(async (tx) => {
@@ -248,6 +254,7 @@ export async function editarTipo(
   d: DatosTipo,
   usuarioId: number,
 ): Promise<void> {
+  exigirSiglaLibre(d.sigla);
   const sql = obtenerSql();
   try {
     await sql.begin(async (tx) => {
