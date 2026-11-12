@@ -17,7 +17,8 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
-import { asegurarMediciones, marcarNoAplica, proximaPorReportar, quitarNoAplica, reportar, tablaDelAnio } from "@/db/consultas/indicadores/mediciones";
+import { proximaPorReportar, tablaDelAnio } from "@/db/consultas/indicadores/lectura";
+import { asegurarMediciones, marcarNoAplica, quitarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
 import { metasDelAnio, programarMeta } from "@/db/consultas/indicadores/metas";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import { ErrorPermiso } from "@/lib/permisos";

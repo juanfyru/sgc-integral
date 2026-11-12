@@ -24,13 +24,13 @@ import { zonaHoraria } from "@/lib/zona-horaria";
 import {
   asegurarMediciones,
   conMayuscula,
-  periodosDelAnio,
   primeraAprobada,
   recalcularMedicion,
   reglaDelPeriodo,
   versionesAprobadas,
   type VersionDeCalculo,
 } from "./mediciones";
+import { periodosDelAnio } from "./lectura";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 

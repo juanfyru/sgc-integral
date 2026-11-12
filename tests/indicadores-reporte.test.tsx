@@ -69,7 +69,8 @@ import { obtenerSql } from "@/db/cliente";
 import type { DatosDeAnalisis } from "@/db/consultas/indicadores/analisis";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
-import { asegurarMediciones, reportar, type DatosDeReporte } from "@/db/consultas/indicadores/mediciones";
+import type { DatosDeReporte } from "@/db/consultas/indicadores/lectura";
+import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
 import type { MetaDelPeriodo } from "@/db/consultas/indicadores/metas";
 import { observar } from "@/db/consultas/indicadores/observaciones";
 import {

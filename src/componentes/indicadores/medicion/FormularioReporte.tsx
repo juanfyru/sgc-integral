@@ -5,7 +5,7 @@ import { marcarNoAplicaAccion, quitarNoAplicaAccion, reportarAccion } from "@/ap
 import type { EstadoAccion } from "@/app/admin/comun";
 import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
-import type { DatosDeReporte } from "@/db/consultas/indicadores/mediciones";
+import type { DatosDeReporte } from "@/db/consultas/indicadores/lectura";
 import { calcularEnVivo, type EstadoReporte } from "@/lib/indicadores/reporte";
 import { cuenta } from "@/lib/plural";
 import { ResultadoEnVivo } from "./ResultadoEnVivo";

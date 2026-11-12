@@ -27,7 +27,8 @@ import {
   type VersionVisible,
 } from "@/db/consultas/indicadores/aprobacion";
 import { historialDeCorregidas } from "@/db/consultas/indicadores/cierre";
-import { asegurarMediciones, proximaPorReportar, tablaDelAnio, type FilaDelAnio } from "@/db/consultas/indicadores/mediciones";
+import { proximaPorReportar, tablaDelAnio, type FilaDelAnio } from "@/db/consultas/indicadores/lectura";
+import { asegurarMediciones } from "@/db/consultas/indicadores/mediciones";
 import { metasDelAnio } from "@/db/consultas/indicadores/metas";
 import { observacionesDe, resumenDeObservaciones, type ResumenDeObservaciones } from "@/db/consultas/indicadores/observaciones";
 import { bajaDeIndicador, panelDeAdministracion } from "@/db/consultas/indicadores/operacion";

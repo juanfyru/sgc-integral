@@ -22,13 +22,11 @@ import {
   asegurarMediciones,
   contarSoportes,
   marcarNoAplica,
-  medicionParaReportar,
-  proximaPorReportar,
   quitarNoAplica,
   recalcularMedicion,
   reportar,
-  tablaDelAnio,
 } from "@/db/consultas/indicadores/mediciones";
+import { medicionParaReportar, proximaPorReportar, tablaDelAnio } from "@/db/consultas/indicadores/lectura";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
 import { indicadorDePrueba, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";

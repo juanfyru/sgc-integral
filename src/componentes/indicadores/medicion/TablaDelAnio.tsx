@@ -2,7 +2,7 @@ import Link from "next/link";
 import { CerrarDeNuevo, DialogoReabrir } from "@/componentes/indicadores/cierre/DialogoReabrir";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { celda, celdaNumerica, TablaDatos, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
-import type { FilaDelAnio } from "@/db/consultas/indicadores/mediciones";
+import type { FilaDelAnio } from "@/db/consultas/indicadores/lectura";
 import type { Soporte } from "@/db/consultas/indicadores/soportes";
 import { ETIQUETA_ESTADO } from "@/lib/indicadores/estados";
 import type { EntradaDeHistorial } from "@/lib/indicadores/historial";
