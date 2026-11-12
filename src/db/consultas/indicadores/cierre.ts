@@ -266,16 +266,31 @@ async function nombresDe(sql: Cliente, ids: number[]): Promise<string[]> {
 }
 
 /**
+ * Abre (F14-DC12) los periodos terminados de los indicadores activos que el cierre de `periodo` puede alcanzar (los que se
+ * miden desde ese mes o antes), uno por uno (`indicadorIds`): el que falla se registra y el resumen o el cierre siguen; su
+ * periodo lo alcanza un cierre posterior, cuando se abra.
+ */
+async function abrirPeriodosDelCierre(sql: Cliente, periodo: Periodo, ahora: Date): Promise<void> {
+  const zona = zonaHoraria();
+  const activos = await sql`SELECT id, inicio_medicion FROM indicadores WHERE estado = 'activo' AND inicio_medicion IS NOT NULL ORDER BY id`;
+  const alcanzables = activos.filter((f) => {
+    const inicio = periodoDe(f.inicio_medicion as string, zona);
+    return inicio !== null && inicio.desde.getTime() <= periodo.hasta.getTime();
+  });
+  await asegurarMediciones({ sql, ahora, indicadorIds: alcanzables.map((f) => Number(f.id)) });
+}
+
+/**
  * El resumen previo del cierre de `mes` (spec §9.2): cuántas mediciones se cerrarán y cómo, las que quedarán sin dato
  * con quién debía medirlas, las observaciones sin respuesta y los dos grupos que no se cierran. Abre antes los periodos
- * que hayan terminado (F14-DC12). No escribe nada más.
+ * que hayan terminado (F14-DC12, `abrirPeriodosDelCierre`). No escribe nada más.
  */
 export async function resumenDeCierre(sesion: SujetoPermiso, mes: string, opciones?: Opciones): Promise<ResumenDeCierre> {
   exigirAdministrar(sesion);
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
   const periodo = mesTerminado(mes, ahora);
-  await asegurarMediciones({ sql, ahora });
+  await abrirPeriodosDelCierre(sql, periodo, ahora);
   const c = await clasificar(sql, periodo.hasta, ahora, false);
   const n = cuentas(c, await sinRespuestaPorProceso(sql, { hasta: periodo.hasta }));
   const quien = new Map<number, string[]>();
@@ -321,7 +336,7 @@ export async function cerrarMes(sesion: SesionFlujo, mes: string, opciones?: Opc
   const ahora = opciones?.ahora ?? new Date();
   const periodo = mesTerminado(mes, ahora);
   if (await estaCerrado(sql, periodo)) throw new ErrorIndicador(YA_CERRADO);
-  await asegurarMediciones({ sql, ahora });
+  await abrirPeriodosDelCierre(sql, periodo, ahora);
   try {
     return await enTransaccion(sql, async (tx) => {
       if (await estaCerrado(tx, periodo)) throw new ErrorIndicador(YA_CERRADO);

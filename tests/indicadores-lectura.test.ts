@@ -6,7 +6,7 @@
  * cuentas.
  */
 import type { TransactionSql } from "postgres";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { analizar } from "@/db/consultas/indicadores/analisis";
@@ -457,6 +457,36 @@ describe("el indicador", () => {
 });
 
 describe("la matriz del año", () => {
+  it("abre solo los periodos de los indicadores que lee, uno por uno: el que falla se registra y la matriz se pinta (M3)", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const otro = await proceso(tx);
+      const a = await trimestral(tx, p.id);
+      const b = await trimestral(tx, p.id);
+      const ajeno = await trimestral(tx, otro.id);
+      const abiertas = async (id: number) => Number((await tx`SELECT count(*)::int AS n FROM mediciones WHERE indicador_id = ${id}`)[0].n);
+      const admin = await sesionAdmin(tx);
+      // El primer indicador que intenta abrir lanza; el cliente es el mismo para todo lo demás.
+      let intentos = 0;
+      const cliente = new Proxy(tx, {
+        get: (destino, propiedad) => {
+          if (propiedad !== "savepoint") return Reflect.get(destino, propiedad, destino);
+          return (fn: never) => (++intentos === 1 ? Promise.reject(new Error("falla de prueba")) : destino.savepoint(fn));
+        },
+      });
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const m = await matrizDelAnio(admin, { anio: 2026, procesoId: p.id }, { sql: cliente, ahora: AHORA });
+        expect(error).toHaveBeenCalledTimes(1);
+        expect(m.procesos[0].filas.map((f) => f.codigo).sort()).toEqual([a.codigo, b.codigo].sort());
+        // Uno de los dos no abrió (el que falló); el otro abrió sus tres trimestres terminados; el de otro proceso, nada.
+        expect([await abiertas(a.id), await abiertas(b.id)].sort()).toEqual([0, 3]);
+        expect(await abiertas(ajeno.id)).toBe(0);
+      } finally {
+        error.mockRestore();
+      }
+    }));
+
   it("la matriz: una celda por periodo con sus meses, y la columna del año", () =>
     revertida(sql, async (tx) => {
       const p = await proceso(tx);

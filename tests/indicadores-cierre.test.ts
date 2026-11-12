@@ -12,7 +12,7 @@
  */
 import { existsSync } from "node:fs";
 import type { TransactionSql } from "postgres";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
@@ -314,6 +314,41 @@ describe("el resumen y el cierre del mes", () => {
       expect((await fila(tx, enero)).estado).toBe("reportada");
       expect((await fila(tx, cambio.marzo)).estado).toBe("abierta");
       expect((await eventos(tx, enero)).map((e) => e.tipo)).toEqual(["reporte"]);
+    }));
+
+  it("abre los periodos indicador por indicador: uno que falla se registra y el resumen y el cierre siguen (M3)", () =>
+    revertida(sql, async (tx) => {
+      const { admin, mide } = await entorno(tx);
+      // Dos indicadores con marzo terminado y sin abrir: el resumen y el cierre los abren antes de leer.
+      const primero = await indicadorDePrueba(tx, { inicioMedicion: MARZO, aprobadaEn: APROBADA, mide: [mide.usuarioId] });
+      const segundo = await indicadorDePrueba(tx, { inicioMedicion: MARZO, aprobadaEn: APROBADA, mide: [mide.usuarioId] });
+      const abiertas = async (id: number) => Number((await tx`SELECT count(*)::int AS n FROM mediciones WHERE indicador_id = ${id}`)[0].n);
+      // El primer indicador que intenta abrir (el de menor id entre los que el cierre alcanza) lanza; el cliente es el mismo
+      // para todo lo demás.
+      let intentos = 0;
+      const cliente = new Proxy(tx, {
+        get: (destino, propiedad) => {
+          if (propiedad !== "savepoint") return Reflect.get(destino, propiedad, destino);
+          return (fn: never) => (++intentos === 1 ? Promise.reject(new Error("falla de prueba")) : destino.savepoint(fn));
+        },
+      });
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const r = await resumenDeCierre(admin, MARZO, { sql: cliente, ahora: AHORA });
+        expect(error).toHaveBeenCalledTimes(1);
+        // El último por id abrió su marzo, sin dato; el resumen cuenta lo que se abrió.
+        expect(await abiertas(segundo.id)).toBe(1);
+        expect(r.aCerrar).toBe((await abiertas(primero.id)) + (await abiertas(segundo.id)));
+
+        intentos = 0;
+        error.mockClear();
+        const { cerradas } = await cerrarMes(admin, MARZO, { sql: cliente, ahora: AHORA });
+        expect(error).toHaveBeenCalledTimes(1);
+        expect(cerradas).toBe((await abiertas(primero.id)) + (await abiertas(segundo.id)));
+        expect((await tx`SELECT estado FROM mediciones WHERE indicador_id = ${segundo.id}`)[0].estado).toBe("cerrada");
+      } finally {
+        error.mockRestore();
+      }
     }));
 
   it("no se cierra un mes sin terminar ni dos veces el mismo", () =>

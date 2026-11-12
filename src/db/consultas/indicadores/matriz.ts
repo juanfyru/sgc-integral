@@ -96,8 +96,9 @@ function celdasDelAnio(
 /**
  * La matriz del año (spec §12.7, maqueta 5): una fila por indicador visible que se mide ese año (uno activo con periodos
  * en él, o cualquiera con mediciones de ese año), agrupadas por proceso; cada periodo ocupa sus meses (`mesesDe`), lo que
- * no se mide queda en una celda vacía y la columna «Año» es el acumulado, el mismo de la página. Antes de leer abre los
- * periodos terminados. Seis lecturas además de abrir periodos, sin importar cuántos indicadores haya.
+ * no se mide queda en una celda vacía y la columna «Año» es el acumulado, el mismo de la página. Antes de leer sus
+ * mediciones abre los periodos terminados de los indicadores activos que lee, uno por uno (`indicadorIds`: el que falla se
+ * registra y la matriz se pinta). Seis lecturas además de abrir periodos, sin importar cuántos indicadores haya.
  */
 export async function matrizDelAnio(
   sesion: SujetoVisibilidad,
@@ -107,7 +108,6 @@ export async function matrizDelAnio(
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
   if (!anioValido(f.anio)) return { procesos: [] };
-  await asegurarMediciones({ sql, ahora });
   const filas = await sql`
     SELECT i.id, i.codigo, i.estado, i.inicio_medicion, i.soporte_obligatorio, i.proceso_id, p.nombre AS proceso, va.nombre
     FROM indicadores i
@@ -120,6 +120,7 @@ export async function matrizDelAnio(
       ${f.clasificacionId ? sql`AND va.clasificacion_id = ${f.clasificacionId}` : sql``}
     ORDER BY p.orden, p.nombre, p.id, i.codigo`;
   if (filas.length === 0) return { procesos: [] };
+  await asegurarMediciones({ sql, ahora, indicadorIds: filas.filter((x) => x.estado === "activo").map((x) => Number(x.id)) });
   const versiones = await versionesAprobadasDe(
     sql,
     filas.map((x) => Number(x.id)),
