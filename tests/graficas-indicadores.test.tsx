@@ -8,6 +8,7 @@ import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { BarraEstados } from "@/componentes/ui/BarraEstados";
+import { llevarALaColumnaInicial } from "@/componentes/ui/DesplazableDeTubos";
 import { GraficoTubos } from "@/componentes/ui/GraficoTubos";
 import { MiniTubos } from "@/componentes/ui/MiniTubos";
 import { Tendencia } from "@/componentes/ui/Tendencia";
@@ -215,6 +216,60 @@ describe("GraficoTubos: la escala y lo que aún no llega (ronda 1 de la Tarea 15
   });
 });
 
+describe("GraficoTubos: el ancho y la columna en que arranca (ronda 1 de la Tarea 19, D-2)", () => {
+  const trimestres: PuntoDeSerie[] = [
+    { clave: "2026-T1", etiqueta: "primer trimestre", valor: 100, texto: "100 %", estado: "bien", nombreEstado: "Bien" },
+    { clave: "2026-T2", etiqueta: "segundo trimestre", valor: 83.3, texto: "83,3 %", estado: "atencion", nombreEstado: "Atención" },
+    { clave: "2026-T3", etiqueta: "tercer trimestre", valor: 60, texto: "60 %", estado: "critico", nombreEstado: "Crítico" },
+    { clave: "2026-T4", etiqueta: "cuarto trimestre", valor: null, texto: "", estado: "futuro", nombreEstado: "Por venir" },
+  ];
+  const pintar = (serie: PuntoDeSerie[]) =>
+    renderToStaticMarkup(
+      <GraficoTubos serie={serie} titulo="Resultado por trimestre, 2026" meta={{ valor: 90, texto: "Meta 90 %" }} unidad={UNIDAD} columnas={COLUMNAS} />,
+    );
+  const anchoDelLienzo = (html: string) => Number(/<svg viewBox="0 0 (\d+(?:\.\d+)?) [\d.]+" class="tubo-lienzo/.exec(html)?.[1]);
+
+  it("el lienzo mide un paso por periodo más los márgenes: cuatro trimestres no ocupan lo que doce meses", () => {
+    const cuatro = anchoDelLienzo(pintar(trimestres));
+    const doceMeses = anchoDelLienzo(renderToStaticMarkup(<GraficoTubos serie={doce} titulo={TITULO} meta={{ valor: 85, texto: "Meta 85 %" }} unidad={UNIDAD} columnas={COLUMNAS} />));
+    expect(doceMeses - cuatro).toBe(8 * 34);
+    expect(cuatro).toBeLessThan(330);
+    // El lienzo no se agranda sin fin para llenar una caja ancha.
+    expect(pintar(trimestres)).toMatch(/grid-template-columns:[^;"]*;max-width:\d+px/);
+  });
+
+  it("el desplazamiento arranca en la columna del último periodo con valor, y cada columna lleva su índice", () => {
+    const html = pintar(trimestres);
+    expect(html).toMatch(/<div(?=[^>]*class="tubo-desplazable)(?=[^>]*data-inicio="2")[^>]*>/);
+    for (let i = 0; i < 4; i++) expect(html).toContain(`data-columna="${i}"`);
+    // Sin ningún valor no hay columna inicial: arranca en lo más reciente.
+    const vacia = pintar(trimestres.map((p) => ({ ...p, valor: null, texto: "", estado: "sin-dato" as const, nombreEstado: "Sin dato" })));
+    expect(vacia).not.toContain("data-inicio=");
+  });
+
+  it("al montarse, lleva a la vista la columna inicial solo si quedó cortada a la izquierda", () => {
+    const columna = { getBoundingClientRect: () => ({ left: -40, right: -6 }) };
+    const contenedor = {
+      dataset: { inicio: "2" },
+      scrollWidth: 330,
+      clientWidth: 288,
+      scrollLeft: 0,
+      getBoundingClientRect: () => ({ left: 0, right: 288 }),
+      querySelector: (sel: string) => (sel === '[data-columna="2"]' ? columna : null),
+    };
+    llevarALaColumnaInicial(contenedor as unknown as HTMLElement);
+    expect(contenedor.scrollLeft).toBe(-294);
+    // Si ya se ve entera, no se mueve (las etiquetas de la meta y el límite siguen a la vista).
+    const visible = { ...contenedor, scrollLeft: 0, querySelector: () => ({ getBoundingClientRect: () => ({ left: 120, right: 154 }) }) };
+    llevarALaColumnaInicial(visible as unknown as HTMLElement);
+    expect(visible.scrollLeft).toBe(0);
+    // Si no se desplaza, tampoco.
+    const cabe = { ...contenedor, scrollLeft: 0, scrollWidth: 288 };
+    llevarALaColumnaInicial(cabe as unknown as HTMLElement);
+    expect(cabe.scrollLeft).toBe(0);
+  });
+});
+
 describe("GraficoTubos: lectura, negativos y años", () => {
   it("la lectura dice de qué lado de la meta queda el crítico (menor es mejor: por encima)", () => {
     const minutos = doce.map((p) => (p.valor === null ? p : { ...p, texto: `${p.valor} min` }));
@@ -308,7 +363,11 @@ describe("las piezas pequeñas", () => {
     expect(miniMes).toMatch(
       /<div(?=[^>]*class="[^"]*overflow-x-auto)(?=[^>]*\[direction:rtl\])(?=[^>]*tabindex="0")(?=[^>]*role="region")(?=[^>]*aria-label="Cartera recaudada")[^>]*>/,
     );
-    expect(mini).toMatch(/<svg(?=[^>]*\swidth="150")[^>]*>/);
+    // El ancho sigue al número de periodos (Tarea 19, D-2): 6 + 6 de márgenes y 30 por columna.
+    expect(mini).toMatch(/<svg(?=[^>]*\swidth="132")[^>]*>/);
+    // Arranca en la columna del último periodo con valor (T3), no en el que aún no llega.
+    expect(mini).toMatch(/<div(?=[^>]*class="tubo-desplazable)(?=[^>]*data-inicio="2")[^>]*>/);
+    expect(mini).toContain('data-columna="2"');
 
     const tendencia = renderToStaticMarkup(
       <Tendencia valores={[80, 82, null, 78, 85, 87]} estadoFinal="bien" descripcion="Tendencia de los últimos seis periodos: sube" />,

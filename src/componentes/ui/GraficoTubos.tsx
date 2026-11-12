@@ -1,11 +1,14 @@
 import type { Unidad } from "@/lib/indicadores/textos";
+import { DesplazableDeTubos } from "./DesplazableDeTubos";
 import { TarjetaDeTubo } from "./TarjetaDeTubo";
 import { DefinicionesDeTubo, TuboSvg, useIdDeGrafica } from "./TuboSvg";
 import {
   anchoDeFranja,
+  anchoDeLienzo,
   calcularTubos,
   cambiosDeAnio,
   claseDeRelleno,
+  columnaInicial,
   escala,
   rotuloCorto,
   yDe,
@@ -14,9 +17,16 @@ import {
 } from "./geometria-tubos";
 
 const ALTO_PISTA = 160;
-const ANCHO_MINIMO = 540;
-/** Con muchos periodos el lienzo crece (y se desplaza en pantallas angostas) antes que apretar los valores. */
-const FRANJA_MINIMA = 34;
+/**
+ * El paso de cada columna: el lienzo mide los márgenes más un paso por periodo (`anchoDeLienzo`), así pocos periodos
+ * caben en un teléfono y muchos crecen (y se desplazan) antes que apretar los valores.
+ */
+const PASO = 34;
+/**
+ * Cuánto se agranda la gráfica, como mucho, para llenar su caja: con pocos periodos el lienzo es angosto y, sin tope,
+ * el texto y la altura crecerían al doble en una pantalla ancha.
+ */
+const ESCALA_MAXIMA = 1.3;
 /** La escala va en su propio lienzo, fuera de lo que se desplaza: el de los tubos solo deja un respiro a la izquierda. */
 const MARGEN = { izq: 6, arriba: 26 };
 /** El ancho mínimo del lienzo de la escala; crece con el rótulo más largo. */
@@ -148,7 +158,7 @@ export function GraficoTubos({
   const anios = cambiosDeAnio(serie.map((p) => p.clave));
   const abajo = anios.length > 0 ? ABAJO_CON_ANIOS : ABAJO;
   const g: Geometria = {
-    ancho: Math.max(ANCHO_MINIMO, MARGEN.izq + der + serie.length * FRANJA_MINIMA),
+    ancho: anchoDeLienzo(serie.length, { izq: MARGEN.izq, der }, PASO),
     alto: MARGEN.arriba + ALTO_PISTA + abajo,
     margen: { ...MARGEN, der, abajo },
   };
@@ -202,7 +212,10 @@ export function GraficoTubos({
           Dos columnas en la proporción de sus lienzos: cuando caben, los dos se agrandan por igual y la escala sigue a la
           misma altura que los tubos; cuando no, la escala queda a 1:1 y lo de la derecha se desplaza a 1:1.
         */}
-        <div className="grid items-start" style={{ gridTemplateColumns: `minmax(${eje}px, ${eje}fr) minmax(0, ${g.ancho}fr)` }}>
+        <div
+          className="grid items-start"
+          style={{ gridTemplateColumns: `minmax(${eje}px, ${eje}fr) minmax(0, ${g.ancho}fr)`, maxWidth: Math.round((eje + g.ancho) * ESCALA_MAXIMA) }}
+        >
           <svg viewBox={`0 0 ${eje} ${g.alto}`} aria-hidden="true" className="tubo-eje block h-auto w-full">
             {rotulos.map((r) => (
               <text key={r.m} x={eje - 4} y={y(r.m) + 3.5} textAnchor="end" fontSize={9.5} className="fill-muted-foreground">
@@ -210,7 +223,7 @@ export function GraficoTubos({
               </text>
             ))}
           </svg>
-          <div className="tubo-desplazable min-w-0 overflow-x-auto [direction:rtl]">
+          <DesplazableDeTubos inicio={columnaInicial(serie)} className="tubo-desplazable min-w-0 overflow-x-auto [direction:rtl]">
             <svg viewBox={`0 0 ${g.ancho} ${g.alto}`} className="tubo-lienzo block h-auto w-full [direction:ltr]" style={{ minWidth: g.ancho }}>
               <DefinicionesDeTubo id={id} clases={clases} pistas={tubos.map((t) => ({ x: t.x, y: tope, ancho: t.ancho, alto: base - tope }))} />
               <g role="img" aria-label={lectura}>
@@ -336,6 +349,7 @@ export function GraficoTubos({
                     role="img"
                     aria-label={p.valor === null ? `${p.etiqueta}: ${p.nombreEstado}` : `${p.etiqueta}: ${p.texto}, ${p.nombreEstado}`}
                     data-tubo={i}
+                    data-columna={i}
                     data-periodo={p.etiqueta}
                     data-valor={p.valor === null ? "" : p.texto}
                     data-estado={p.estado}
@@ -345,7 +359,7 @@ export function GraficoTubos({
                 ))}
               </g>
             </svg>
-          </div>
+          </DesplazableDeTubos>
         </div>
       </TarjetaDeTubo>
       <figcaption className="sr-only">

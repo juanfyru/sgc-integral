@@ -1,5 +1,6 @@
+import { DesplazableDeTubos } from "./DesplazableDeTubos";
 import { DefinicionesDeTubo, TuboSvg, useIdDeGrafica } from "./TuboSvg";
-import { calcularTubos, escala, rotuloCorto, type Geometria, type PuntoDeSerie } from "./geometria-tubos";
+import { anchoDeFranja, anchoDeLienzo, calcularTubos, columnaInicial, escala, rotuloCorto, type Geometria, type PuntoDeSerie } from "./geometria-tubos";
 
 const ALTO = 64;
 const MARGEN = { izq: 6, der: 6, arriba: 14, abajo: 16 };
@@ -15,9 +16,10 @@ export function MiniTubos({ titulo, serie }: { titulo: string; serie: PuntoDeSer
   const id = useIdDeGrafica("mini");
   if (serie.length === 0) return <p className="text-sm text-muted-foreground">Sin periodos para mostrar.</p>;
 
-  const g: Geometria = { ancho: Math.max(150, MARGEN.izq + MARGEN.der + serie.length * FRANJA), alto: ALTO, margen: MARGEN };
+  const g: Geometria = { ancho: anchoDeLienzo(serie.length, MARGEN, FRANJA), alto: ALTO, margen: MARGEN };
   const e = escala(serie.flatMap((p) => (p.valor === null ? [] : [p.valor])), [], false);
   const tubos = calcularTubos(serie, g, e);
+  const franja = anchoDeFranja(serie.length, g);
   const base = ALTO - MARGEN.abajo;
   const tope = MARGEN.arriba;
   // Lo que no ha llegado lleva «—» (cabe en una franja angosta); su nombre, «Por venir», lo dice la tabla equivalente.
@@ -26,7 +28,7 @@ export function MiniTubos({ titulo, serie }: { titulo: string; serie: PuntoDeSer
   return (
     <figure className="flex min-w-0 flex-col">
       {/* Enfocable: sin nada enfocable adentro, es la única forma de desplazarla con el teclado. */}
-      <div className="tubo-desplazable overflow-x-auto [direction:rtl]" tabIndex={0} role="region" aria-label={titulo}>
+      <DesplazableDeTubos inicio={columnaInicial(serie)} className="tubo-desplazable overflow-x-auto [direction:rtl]" tabIndex={0} role="region" aria-label={titulo}>
         <svg
           viewBox={`0 0 ${g.ancho} ${ALTO}`}
           width={g.ancho}
@@ -56,6 +58,8 @@ export function MiniTubos({ titulo, serie }: { titulo: string; serie: PuntoDeSer
             const p = serie[i];
             return (
               <g key={p.clave}>
+                {/* La franja de la columna, sin pintar: la que `DesplazableDeTubos` deja a la vista al abrir. */}
+                <rect data-columna={i} x={MARGEN.izq + i * franja} y={0} width={franja} height={ALTO} fill="none" />
                 {sobre(p) ? (
                   <text
                     x={t.centro}
@@ -74,7 +78,7 @@ export function MiniTubos({ titulo, serie }: { titulo: string; serie: PuntoDeSer
             );
           })}
         </svg>
-      </div>
+      </DesplazableDeTubos>
       <figcaption className="sr-only">
         <table>
           <caption>{titulo}</caption>

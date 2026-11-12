@@ -56,6 +56,23 @@ export function yDe(valor: number, g: Geometria, e: Escala): number {
   return base - ((v - e.min) / (e.max - e.min)) * (base - tope);
 }
 
+/**
+ * El ancho del lienzo de una gráfica de tubos: un paso fijo por columna más los márgenes (Tarea 19, D-2). Crece con los
+ * periodos y nunca se impone un ancho fijo: cuatro trimestres caben en un teléfono y doce meses se desplazan.
+ */
+export function anchoDeLienzo(periodos: number, margen: { izq: number; der: number }, paso: number): number {
+  return margen.izq + margen.der + Math.max(periodos, 1) * paso;
+}
+
+/**
+ * La columna en que arranca una gráfica que se desplaza: la del último periodo con valor (no un periodo por venir, que
+ * queda al final). Sin ningún valor, `null`: arranca donde arranca, en lo más reciente.
+ */
+export function columnaInicial(serie: readonly Pick<PuntoDeSerie, "valor">[]): number | null {
+  for (let i = serie.length - 1; i >= 0; i--) if (serie[i].valor !== null) return i;
+  return null;
+}
+
 /** El ancho de la franja de cada periodo: toda ella es el área sensible de la columna. */
 export function anchoDeFranja(periodos: number, g: Geometria): number {
   return (g.ancho - g.margen.izq - g.margen.der) / Math.max(periodos, 1);

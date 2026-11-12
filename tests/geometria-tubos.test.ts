@@ -5,7 +5,9 @@
 import { describe, expect, it } from "vitest";
 import {
   anchoDeFranja,
+  anchoDeLienzo,
   calcularTubos,
+  columnaInicial,
   cambiosDeAnio,
   escala,
   puntosDeTendencia,
@@ -176,5 +178,21 @@ describe("cambiosDeAnio", () => {
     ]);
     expect(cambiosDeAnio(doce.map((p) => p.clave))).toEqual([]);
     expect(cambiosDeAnio([])).toEqual([]);
+  });
+});
+
+describe("el ancho del lienzo y la columna inicial (ronda 1 de la Tarea 19, D-2)", () => {
+  it("el lienzo mide los márgenes más un paso por periodo; sin periodos, uno", () => {
+    expect(anchoDeLienzo(4, { izq: 6, der: 150 }, 34)).toBe(6 + 150 + 4 * 34);
+    expect(anchoDeLienzo(12, { izq: 6, der: 150 }, 34)).toBe(6 + 150 + 12 * 34);
+    expect(anchoDeLienzo(0, { izq: 6, der: 6 }, 30)).toBe(42);
+  });
+
+  it("la columna inicial es la del último periodo con valor; sin valores, ninguna", () => {
+    expect(columnaInicial([{ valor: 5 }, { valor: 3 }, { valor: null }])).toBe(1);
+    expect(columnaInicial([{ valor: null }, { valor: 7 }, { valor: null }, { valor: null }])).toBe(1);
+    expect(columnaInicial([{ valor: 0 }])).toBe(0);
+    expect(columnaInicial([{ valor: null }, { valor: null }])).toBeNull();
+    expect(columnaInicial([])).toBeNull();
   });
 });
