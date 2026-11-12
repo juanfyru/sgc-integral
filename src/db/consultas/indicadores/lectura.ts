@@ -1100,7 +1100,7 @@ function celdaDelAnio(a: ResumenAcumulado, anio: number, ruta: string): CeldaDeM
  * La matriz del año (spec §12.7, maqueta 5): una fila por indicador visible que se mide ese año (uno activo con periodos
  * en él, o cualquiera con mediciones de ese año), agrupadas por proceso; cada periodo ocupa sus meses (`mesesDe`), lo que
  * no se mide queda en una celda vacía y la columna «Año» es el acumulado, el mismo de la página. Antes de leer abre los
- * periodos terminados. Cinco lecturas además de abrir periodos.
+ * periodos terminados. Seis lecturas además de abrir periodos, sin importar cuántos indicadores haya.
  */
 export async function matrizDelAnio(
   sesion: SujetoVisibilidad,
