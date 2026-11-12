@@ -14,7 +14,7 @@ import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { filtroAcceso, filtroIndicadores, type SujetoVisibilidad } from "@/lib/alcance";
+import { filtroAcceso, type SujetoVisibilidad } from "@/lib/alcance";
 import { EsquemaFicha, type DatosFicha } from "@/lib/esquemas/indicadores";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { tipoDeCambio, type ContenidoFicha } from "@/lib/indicadores/ficha";
@@ -853,49 +853,6 @@ export async function fichaParaEditar(sesion: SujetoVisibilidad, codigo: string,
     vigente: vigenteId === null ? null : vigenteId === versionId ? contenido : await contenidoDeVersion(sql, vigenteId),
     valores: await valoresDeVersion(sql, versionId, i),
   };
-}
-
-export type FilaIndicadorBasica = {
-  id: number;
-  codigo: string;
-  nombre: string;
-  proceso: string;
-  estado: EstadoIndicador;
-  versionEstado: EstadoVersion;
-};
-
-/**
- * Los indicadores que la persona ve (`filtroIndicadores`), con el nombre de la ficha aprobada. Quien administra ve
- * además los borradores, y el estado de la versión más reciente (un cambio en curso); a los demás, un cambio sin aprobar
- * no se les asoma. La Tarea 15 la reemplaza por la lista completa.
- */
-export async function listarIndicadoresBasico(sesion: SujetoVisibilidad, opciones?: { sql?: Cliente }): Promise<FilaIndicadorBasica[]> {
-  const sql = opciones?.sql ?? obtenerSql();
-  const administra = puede(sesion, "indicadores.administrar");
-  const filas = await sql`
-    SELECT i.id, i.codigo, i.estado, p.nombre AS proceso,
-      ${administra ? sql`coalesce(va.nombre, vu.nombre)` : sql`va.nombre`} AS nombre,
-      ${administra ? sql`coalesce(vu.estado, va.estado)` : sql`va.estado`} AS version_estado
-    FROM indicadores i
-    JOIN procesos p ON p.id = i.proceso_id
-    LEFT JOIN LATERAL (
-      SELECT nombre, estado FROM indicador_versiones
-      WHERE indicador_id = i.id AND estado = 'aprobada' ORDER BY numero DESC LIMIT 1
-    ) va ON true
-    LEFT JOIN LATERAL (
-      SELECT nombre, estado FROM indicador_versiones
-      WHERE indicador_id = i.id ORDER BY numero DESC LIMIT 1
-    ) vu ON ${administra}
-    WHERE ${filtroIndicadores(sql, sesion)}
-    ORDER BY i.codigo`;
-  return filas.map((f) => ({
-    id: Number(f.id),
-    codigo: f.codigo as string,
-    nombre: (f.nombre as string | null) ?? "",
-    proceso: f.proceso as string,
-    estado: f.estado as EstadoIndicador,
-    versionEstado: f.version_estado as EstadoVersion,
-  }));
 }
 
 /** «noviembre de 2026» → «Noviembre de 2026». */

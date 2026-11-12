@@ -7,7 +7,7 @@ import type { Soporte } from "@/db/consultas/indicadores/soportes";
 import { ETIQUETA_ESTADO } from "@/lib/indicadores/estados";
 import type { EntradaDeHistorial } from "@/lib/indicadores/historial";
 import { enlaceDeSoporte } from "@/lib/indicadores/soportes";
-import { ETIQUETA_SEMAFORO } from "@/lib/indicadores/tipos";
+import { InsigniaSemaforo } from "../InsigniaSemaforo";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 const ENLACE = `rounded-sm text-marca underline-offset-2 hover:underline ${FOCO}`;
@@ -40,11 +40,12 @@ function Historial({ etiqueta, entradas }: { etiqueta: string; entradas: Entrada
   );
 }
 
-function Estado({ f, historial }: { f: FilaDelAnio; historial: EntradaDeHistorial[] | null }) {
+function Estado({ f, historial, periodosSinCumplir }: { f: FilaDelAnio; historial: EntradaDeHistorial[] | null; periodosSinCumplir: number }) {
   const marcas = [
-    f.historica ? "Registro histórico" : null,
+    f.deOtraPeriodicidad ? "Periodicidad anterior" : null,
+    f.historica ? "Histórico" : null,
     f.requiereAccion ? "Requiere acción de mejora" : null,
-    f.repetido ? "Incumplimiento repetido" : null,
+    f.repetido ? `${periodosSinCumplir} periodos sin cumplir` : null,
     f.corregida ? "Corregida" : null,
     f.metaTardia ? "Meta ajustada después del periodo" : null,
     f.sinAnalisis ? "Cerrada sin análisis" : null,
@@ -59,15 +60,7 @@ function Estado({ f, historial }: { f: FilaDelAnio; historial: EntradaDeHistoria
   const estado = etiqueta === null ? null : `${etiqueta}${f.vencida ? " · vencida" : ""}`;
   return (
     <div className="flex flex-col items-start gap-1">
-      {f.semaforo ? (
-        <Insignia variante={f.semaforo}>{ETIQUETA_SEMAFORO[f.semaforo]}</Insignia>
-      ) : f.noAplica ? (
-        <Insignia variante="sin-dato">No aplica</Insignia>
-      ) : f.resultado ? (
-        <Insignia variante="sin-dato">Sin meta</Insignia>
-      ) : (
-        <Insignia variante="sin-dato">Sin dato</Insignia>
-      )}
+      <InsigniaSemaforo semaforo={f.semaforo} noAplica={f.noAplica} conResultado={f.resultado !== null} />
       {estado ? <span className="text-xs text-muted-foreground">{estado}</span> : null}
       {marcas.map((m) => (
         <Insignia key={m} variante="neutra">
@@ -122,7 +115,11 @@ function ListaDeSoportes({ codigo, soportes }: { codigo: string; soportes: Sopor
  * es `null` para los demás, y entonces no hay columna). Quien puede medir tiene en cada periodo abierto
  * el enlace para reportarlo o corregirlo (un histórico se registra en el modo edición, spec §8.8); quien puede analizar,
  * el de escribir o editar el análisis de lo que tiene resultado. Quien administra reabre una cerrada (`puedeReabrir`) y
- * cierra de nuevo una reabierta (`puedeCerrarDeNuevo`, spec §8.7); una corregida lleva su historial (`historial`).
+ * cierra de nuevo una reabierta (`puedeCerrarDeNuevo`, spec §8.7); una corregida lleva su historial (`historial`). Las
+ * marcas acompañan al estado (spec §8.5): «Histórico», «Corregida», «Requiere acción de mejora», «Meta ajustada después del
+ * periodo», «N periodos sin cumplir» y «Periodicidad anterior», que no se toca (la dejó un cambio mayor). Cada fila lleva
+ * el ancla `periodo-<clave>`: la matriz del año enlaza a ella. Las columnas de las variables son las que pasa quien llama
+ * (`columnasDeVariables`: la unión de las letras del año); un periodo cuya ficha no tiene una, la deja en «—».
  */
 export function TablaDelAnio({
   filas,
@@ -135,6 +132,7 @@ export function TablaDelAnio({
   puedeReabrir = false,
   puedeCerrarDeNuevo = false,
   historial = null,
+  periodosSinCumplir = 3,
 }: {
   filas: FilaDelAnio[];
   variables: { letra: string; nombre: string }[];
@@ -148,6 +146,8 @@ export function TablaDelAnio({
   puedeCerrarDeNuevo?: boolean;
   /** El historial de cada medición corregida, por medición. */
   historial?: Map<number, EntradaDeHistorial[]> | null;
+  /** El parámetro del incumplimiento repetido (spec §10.3), para la marca «3 periodos sin cumplir». */
+  periodosSinCumplir?: number;
 }) {
   const conAcciones = puedeMedir || puedeAnalizar || puedeReabrir || puedeCerrarDeNuevo;
   const columnas: ColumnaTabla[] = [
@@ -167,14 +167,15 @@ export function TablaDelAnio({
         const cabecera = (
           <th scope="row" className={`${celda} text-left font-medium`}>
             {f.etiqueta}
-            {f.vence && f.estado !== "cerrada" && f.estado !== "reportada" && !f.historica ? (
+            {f.vence && f.estado !== "cerrada" && f.estado !== "reportada" && !f.historica && !f.deOtraPeriodicidad ? (
               <span className="block text-xs font-normal text-muted-foreground">{`Plazo hasta el ${f.vence}`}</span>
             ) : null}
           </th>
         );
+        const ancla = `periodo-${f.periodo}`;
         if (f.estado === "por_venir" || f.estado === "sin_dato") {
           return (
-            <tr key={f.periodo}>
+            <tr key={f.periodo} id={ancla} className="scroll-mt-24">
               {cabecera}
               <td colSpan={columnas.length - 1} className={`${celda} text-muted-foreground`}>
                 {f.estado === "por_venir" ? "Por venir: el periodo no ha terminado." : "Sin dato: no se midió."}
@@ -182,14 +183,16 @@ export function TablaDelAnio({
             </tr>
           );
         }
-        const reportable = puedeMedir && f.medicionId !== null && f.estado !== "cerrada" && !f.historica;
-        const analizable = puedeAnalizar && f.medicionId !== null && f.estado !== "cerrada" && f.resultado !== null && !f.noAplica;
+        // Una medición de otra periodicidad no se toca: nadie puede reportarla, analizarla ni reabrirla.
+        const tocable = f.medicionId !== null && f.deOtraPeriodicidad !== true;
+        const reportable = puedeMedir && tocable && f.estado !== "cerrada" && !f.historica;
+        const analizable = puedeAnalizar && tocable && f.estado !== "cerrada" && f.resultado !== null && !f.noAplica;
         const conAnalisis = f.analisis !== null || f.causa !== null || f.accionPropuesta !== null;
-        const reabrible = puedeReabrir && f.medicionId !== null && f.estado === "cerrada";
+        const reabrible = puedeReabrir && tocable && f.estado === "cerrada";
         // Corregida y sin cerrar: solo la reapertura marca «corregida».
-        const reabierta = puedeCerrarDeNuevo && f.medicionId !== null && f.corregida && f.estado !== "cerrada";
+        const reabierta = puedeCerrarDeNuevo && tocable && f.corregida && f.estado !== "cerrada";
         return (
-          <tr key={f.periodo}>
+          <tr key={f.periodo} id={ancla} className="scroll-mt-24">
             {cabecera}
             {variables.map((v) => (
               <td key={v.letra} className={celdaNumerica}>
@@ -200,7 +203,7 @@ export function TablaDelAnio({
             <td className={`${celdaNumerica} whitespace-nowrap`}>{f.meta}</td>
             <td className={celda}>{f.cumple === null ? "—" : f.cumple ? "Sí" : "No"}</td>
             <td className={celda}>
-              <Estado f={f} historial={f.medicionId === null ? null : (historial?.get(f.medicionId) ?? null)} />
+              <Estado f={f} historial={f.medicionId === null ? null : (historial?.get(f.medicionId) ?? null)} periodosSinCumplir={periodosSinCumplir} />
             </td>
             <td className={`${celda} min-w-48`}>
               <Analisis f={f} />
@@ -235,4 +238,14 @@ export function TablaDelAnio({
       })}
     </TablaDatos>
   );
+}
+
+/**
+ * Las columnas de las variables de la tabla del año: la unión de las letras de sus periodos (cada uno con su ficha), en el
+ * orden en que aparecen, con el nombre que tiene en la versión más reciente que la usa.
+ */
+export function columnasDeVariables(filas: readonly FilaDelAnio[]): { letra: string; nombre: string }[] {
+  const nombres = new Map<string, string>();
+  for (const f of filas) for (const v of f.valores) nombres.set(v.letra, v.nombre);
+  return [...nombres].map(([letra, nombre]) => ({ letra, nombre }));
 }

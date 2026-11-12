@@ -36,6 +36,14 @@ export type Forma = (typeof FORMAS)[number];
 export const PERIODICIDADES = ["mensual", "bimestral", "trimestral", "semestral", "anual"] as const;
 export type Periodicidad = (typeof PERIODICIDADES)[number];
 
+export const ETIQUETA_PERIODICIDAD: Record<Periodicidad, string> = {
+  mensual: "Mensual",
+  bimestral: "Bimestral",
+  trimestral: "Trimestral",
+  semestral: "Semestral",
+  anual: "Anual",
+};
+
 export const TENDENCIAS = ["ascendente", "descendente", "constante"] as const;
 export type Tendencia = (typeof TENDENCIAS)[number];
 

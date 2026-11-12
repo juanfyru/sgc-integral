@@ -13,11 +13,12 @@ export type PestanaIndicadores = (typeof PESTANAS)[number]["clave"];
 type Regla = (sujeto: SujetoPermiso, opciones: { aprueba: boolean }) => boolean;
 
 /**
- * Quién ve cada pestaña (spec §6.4). Una pestaña sin regla aún no tiene página: «Matriz del año» llega con la suya.
+ * Quién ve cada pestaña (spec §6.4). La lista y la matriz, toda sesión: cada una muestra solo lo que la persona ve.
  * `aprueba` es tener `indicadores.aprobar` (`apruebaFichas`).
  */
-const QUIEN_LA_VE: Partial<Record<PestanaIndicadores, Regla>> = {
+const QUIEN_LA_VE: Record<PestanaIndicadores, Regla> = {
   lista: () => true,
+  matriz: () => true,
   "por-aprobar": (sujeto, { aprueba }) => aprueba || puede(sujeto, "indicadores.administrar"),
   cierre: (sujeto) => puede(sujeto, "indicadores.administrar"),
 };
@@ -27,7 +28,7 @@ export const apruebaFichas = (sujeto: SujetoPermiso) => puede(sujeto, "indicador
 
 /** Las pestañas de «Indicadores» que existen para la persona (spec §12.1), en su orden. */
 export function pestanasVisibles(sujeto: SujetoPermiso, opciones: { aprueba: boolean }): PestanaIndicadores[] {
-  return PESTANAS.filter((p) => QUIEN_LA_VE[p.clave]?.(sujeto, opciones) === true).map((p) => p.clave);
+  return PESTANAS.filter((p) => QUIEN_LA_VE[p.clave](sujeto, opciones)).map((p) => p.clave);
 }
 
 export function PestanasIndicadores({

@@ -1,0 +1,367 @@
+/**
+ * Las vistas del módulo de indicadores (Fase 14A, Tarea 15; spec §11, §12.2, §12.3 y §12.7; maquetas 2, 4 y 5): la lista
+ * con su barra de estados, el resultado principal y la matriz del año, en render estático con datos de muestra; y las tres
+ * páginas contra la BD de desarrollo, dentro de una transacción que se revierte (el cliente de la app se sustituye por
+ * ella).
+ */
+import { existsSync } from "node:fs";
+import type { TransactionSql } from "postgres";
+import { renderToStaticMarkup } from "react-dom/server";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+if (!process.env.DATABASE_URL && existsSync(".env.local")) {
+  process.loadEnvFile(".env.local");
+}
+
+const contexto = vi.hoisted(() => ({ sql: null as unknown, sesion: null as unknown }));
+
+vi.mock("@/db/cliente", async (original) => {
+  const real = await original<typeof import("@/db/cliente")>();
+  return { ...real, obtenerSql: () => (contexto.sql ?? real.obtenerSql()) as ReturnType<typeof real.obtenerSql> };
+});
+vi.mock("@/lib/paginas", () => ({ exigirSesion: async () => contexto.sesion }));
+vi.mock("next/navigation", () => ({
+  notFound: () => {
+    throw new Error("NO_ENCONTRADA");
+  },
+  redirect: (destino: string) => {
+    throw new Error(`REDIRECT:${destino}`);
+  },
+  usePathname: () => "/indicadores",
+  useRouter: () => ({ refresh: () => {} }),
+}));
+vi.mock("@/app/acciones-indicadores", () => ({
+  crearIndicadorAccion: vi.fn(),
+  guardarBorradorAccion: vi.fn(),
+  abrirCambioAccion: vi.fn(),
+  enviarAAprobacionAccion: vi.fn(),
+  aprobarFichasAccion: vi.fn(),
+  devolverFichaAccion: vi.fn(),
+  descartarBorradorAccion: vi.fn(),
+  designarAccion: vi.fn(),
+  cambiarOperacionAccion: vi.fn(),
+  duplicarAccion: vi.fn(),
+  retirarAccion: vi.fn(),
+  descartarIndicadorAccion: vi.fn(),
+  borrarIndicadorAccion: vi.fn(),
+  reportarAccion: vi.fn(),
+  marcarNoAplicaAccion: vi.fn(),
+  quitarNoAplicaAccion: vi.fn(),
+  quitarSoporteAccion: vi.fn(),
+  analizarAccion: vi.fn(),
+  observarAccion: vi.fn(),
+  responderAccion: vi.fn(),
+  programarMetaAccion: vi.fn(),
+  registrarHistoricosAccion: vi.fn(),
+  cerrarMesAccion: vi.fn(),
+  reabrirMedicionAccion: vi.fn(),
+  cerrarDeNuevoAccion: vi.fn(),
+}));
+
+import PaginaIndicador from "@/app/(app)/indicadores/[codigo]/page";
+import PaginaMatriz from "@/app/(app)/indicadores/matriz/page";
+import PaginaIndicadores from "@/app/(app)/indicadores/page";
+import { InsigniaSemaforo } from "@/componentes/indicadores/InsigniaSemaforo";
+import { ListaIndicadores } from "@/componentes/indicadores/ListaIndicadores";
+import { MatrizDelAnio } from "@/componentes/indicadores/MatrizDelAnio";
+import { ResultadoPrincipal } from "@/componentes/indicadores/ResultadoPrincipal";
+import { obtenerSql } from "@/db/cliente";
+import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
+import type { CeldaDeMatriz, FilaDeLista, MatrizLeida, UltimoResultado } from "@/db/consultas/indicadores/lectura";
+import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
+import type { SesionValida } from "@/lib/sesion";
+import { indicadorDePrueba } from "./utiles/indicadores";
+import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
+import { revertida } from "./utiles/transaccion";
+
+const sql = obtenerSql();
+
+afterAll(async () => {
+  await sql.end();
+  globalThis.__sql = undefined;
+});
+
+beforeEach(() => {
+  contexto.sesion = null;
+});
+
+const FILA: FilaDeLista = {
+  id: 1,
+  codigo: "SGC-IND-01",
+  nombre: "Cumplimiento del programa de auditorías",
+  proceso: "Sistema de Gestión de Calidad",
+  subproceso: null,
+  periodicidad: "trimestral",
+  restringido: false,
+  retirado: false,
+  estado: "activo",
+  cambioEnCurso: null,
+  periodo: "2026-T3",
+  etiquetaPeriodo: "Tercer trimestre de 2026",
+  resultado: "60 %",
+  meta: "≥ 90 %",
+  semaforo: "critico",
+  noAplica: false,
+  tendencia: [100, 83.3, 60],
+  flecha: "baja",
+  mejora: false,
+  reporte: { texto: "Reportado", vencida: false },
+};
+
+const ULTIMO: UltimoResultado = {
+  periodo: "2026-T3",
+  etiqueta: "Tercer trimestre de 2026",
+  resultado: "60 %",
+  semaforo: "critico",
+  noAplica: false,
+  frase: "No cumple: 60 % frente a una meta de 90 %.",
+  comparacion: { texto: "23,3 puntos menos que en el segundo trimestre", flecha: "baja", mejora: false },
+  requiereAccion: true,
+  repetido: false,
+};
+
+const celda = (desdeMes: number, hastaMes: number, o: Partial<CeldaDeMatriz>): CeldaDeMatriz => ({
+  desdeMes,
+  hastaMes,
+  texto: "—",
+  estado: "futuro",
+  nombre: "por venir",
+  enlace: null,
+  ...o,
+});
+
+describe("los componentes", () => {
+  it("InsigniaSemaforo siempre lleva el estado escrito", () => {
+    expect(renderToStaticMarkup(<InsigniaSemaforo semaforo="critico" />)).toMatch(/data-variante="critico"[^>]*>Crítico</);
+    expect(renderToStaticMarkup(<InsigniaSemaforo semaforo={null} noAplica />)).toContain(">No aplica<");
+    expect(renderToStaticMarkup(<InsigniaSemaforo semaforo={null} conResultado />)).toContain(">Sin meta<");
+    expect(renderToStaticMarkup(<InsigniaSemaforo semaforo={null} />)).toContain(">Sin dato<");
+  });
+
+  it("ListaIndicadores pinta la barra de estados con su lectura en texto y una InsigniaSemaforo con texto en cada fila", () => {
+    const filas: FilaDeLista[] = [
+      FILA,
+      { ...FILA, id: 2, codigo: "GTH-IND-03", nombre: "Rotación de personal", restringido: true, resultado: null, semaforo: null, tendencia: [null], flecha: null, mejora: null, reporte: { texto: "Vencido hace 6 días", vencida: true } },
+      { ...FILA, id: 3, codigo: "AIN-IND-01", nombre: "Tiempo de espera", semaforo: "bien", resultado: "28 min", subproceso: "Urgencias", flecha: "baja", mejora: true },
+    ];
+    const html = renderToStaticMarkup(
+      <ListaIndicadores filas={filas} resumen={{ bien: 19, atencion: 7, critico: 3, sinDato: 3, vencidos: 2 }} />,
+    );
+    expect(html).toContain("19 bien, ");
+    expect(html).toContain("7 en atención, ");
+    expect(html).toContain("3 críticos, ");
+    expect(html).toContain("3 sin dato");
+    expect(html).toContain("2 reportes vencidos");
+    // Cada fila con su estado escrito, nunca solo el color.
+    expect(html.match(/data-variante="critico"[^>]*>Crítico</g)).toHaveLength(1);
+    expect(html).toMatch(/data-variante="sin-dato"[^>]*>Sin dato</);
+    expect(html).toMatch(/data-variante="bien"[^>]*>Bien</);
+    expect(html).toContain('href="/indicadores/SGC-IND-01"');
+    expect(html).toContain(">Restringido<");
+    expect(html).toContain("Sistema de Gestión de Calidad › Urgencias · Trimestral");
+    expect(html).toContain("Vencido hace 6 días");
+    // La tendencia: la miniatura con su nombre y la flecha escrita.
+    expect(html).toContain('role="img" aria-label="Tendencia de los últimos 3 periodos"');
+    expect(html).toContain("baja · mejora");
+    expect(html).toContain("baja · empeora");
+    // La tabla es una región enfocable con nombre.
+    expect(html).toMatch(/role="region" aria-label="Indicadores" tabindex="0"/);
+  });
+
+  it("ResultadoPrincipal pinta el valor, el estado, la frase y la comparación", () => {
+    const html = renderToStaticMarkup(<ResultadoPrincipal ultimo={ULTIMO} periodosSinCumplir={3} />);
+    expect(html).toContain(">60 %<");
+    expect(html).toMatch(/data-variante="critico"[^>]*>Crítico</);
+    expect(html).toContain(">Requiere acción de mejora<");
+    expect(html).toContain("No cumple: 60 % frente a una meta de 90 %.");
+    expect(html).toContain("Tercer trimestre de 2026");
+    expect(html).toContain("23,3 puntos menos que en el segundo trimestre");
+    expect(html).toContain("empeora");
+    expect(renderToStaticMarkup(<ResultadoPrincipal ultimo={{ ...ULTIMO, repetido: true }} periodosSinCumplir={3} />)).toContain(">3 periodos sin cumplir<");
+    expect(renderToStaticMarkup(<ResultadoPrincipal ultimo={null} periodosSinCumplir={3} />)).toContain("Aún no hay resultados");
+  });
+
+  it("MatrizDelAnio usa colSpan={3} para un trimestre, escribe «s. d.» y «n. a.» y da nombre accesible a cada celda", () => {
+    const procesos: MatrizLeida["procesos"] = [
+      {
+        id: 7,
+        nombre: "Sistema de Gestión de Calidad",
+        filas: [
+          {
+            codigo: "SGC-IND-01",
+            nombre: "Auditorías internas",
+            celdas: [
+              celda(1, 3, { texto: "100 %", estado: "bien", nombre: "primer trimestre: 100 %, Bien", enlace: "/indicadores/SGC-IND-01?vista=resultados&anio=2026#periodo-2026-T1" }),
+              celda(4, 6, { texto: "s. d.", estado: "sin-dato", nombre: "segundo trimestre: sin dato", enlace: "/indicadores/SGC-IND-01?vista=resultados&anio=2026#periodo-2026-T2" }),
+              celda(7, 9, { texto: "n. a.", estado: "no-aplica", nombre: "tercer trimestre: no aplica", enlace: "/indicadores/SGC-IND-01?vista=resultados&anio=2026#periodo-2026-T3" }),
+              celda(10, 12, { nombre: "cuarto trimestre: por venir" }),
+            ],
+            anio: celda(1, 12, { texto: "100 %", estado: "bien", nombre: "Año 2026: 100 %, Bien", enlace: "/indicadores/SGC-IND-01?vista=resultados&anio=2026" }),
+          },
+        ],
+      },
+    ];
+    const html = renderToStaticMarkup(<MatrizDelAnio anio={2026} procesos={procesos} />);
+    expect(html.match(/colSpan="3"/gi)).toHaveLength(4);
+    expect(html).toContain(">s. d.<");
+    expect(html).toContain(">n. a.<");
+    for (const nombre of ["primer trimestre: 100 %, Bien", "segundo trimestre: sin dato", "tercer trimestre: no aplica", "Año 2026: 100 %, Bien"]) {
+      expect(html).toContain(`aria-label="${nombre}"`);
+    }
+    // Sin enlace, el nombre va en texto para lectores de pantalla.
+    expect(html).toContain('<span class="sr-only">cuarto trimestre: por venir</span>');
+    expect(html).toContain('href="/indicadores/SGC-IND-01?vista=resultados&amp;anio=2026#periodo-2026-T1"');
+    // Agrupada por proceso, con el indicador como encabezado de su fila.
+    expect(html).toMatch(/<th[^>]*scope="colgroup"[^>]*>Sistema de Gestión de Calidad<\/th>/);
+    expect(html).toMatch(/<th[^>]*scope="row"/);
+    expect(html).toMatch(/role="region" aria-label="Matriz de 2026" tabindex="0"/);
+  });
+});
+
+const valida = (s: SesionFlujo): SesionValida => ({
+  ...s,
+  totpActivo: false,
+  factorPendiente: false,
+  debeCambiarClave: false,
+  aceptoDatos: true,
+  tema: "sistema",
+});
+
+const enTransaccion = (prueba: (tx: TransactionSql) => Promise<void>) =>
+  revertida(sql, async (tx) => {
+    contexto.sql = tx;
+    try {
+      await prueba(tx);
+    } finally {
+      contexto.sql = null;
+    }
+  });
+
+const pagina = async (codigo: string, sp: Record<string, string> = {}) =>
+  renderToStaticMarkup(await PaginaIndicador({ params: Promise.resolve({ codigo }), searchParams: Promise.resolve(sp) }));
+const listaPagina = async (sp: Record<string, string> = {}) => renderToStaticMarkup(await PaginaIndicadores({ searchParams: Promise.resolve(sp) }));
+const matrizPagina = async (sp: Record<string, string> = {}) => renderToStaticMarkup(await PaginaMatriz({ searchParams: Promise.resolve(sp) }));
+
+/** Un solo `h1` por página, y cada región desplazable con nombre y enfocable. */
+function estructuraAccesible(html: string) {
+  expect(html.match(/<h1[\s>]/g)).toHaveLength(1);
+  const regiones = html.match(/<[a-z]+[^>]*role="region"[^>]*>/g) ?? [];
+  for (const r of regiones) {
+    expect(r).toMatch(/aria-label="[^"]+"/);
+    expect(r).toContain('tabindex="0"');
+  }
+}
+
+/** Un trimestral de 2026 con los tres primeros trimestres reportados por quien mide. */
+async function conResultados(tx: TransactionSql) {
+  const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+  const ind = await indicadorDePrueba(tx, {
+    periodicidad: "trimestral",
+    inicioMedicion: "2026-T1",
+    aprobadaEn: new Date("2025-12-15T15:00:00Z"),
+    mide: [mide.usuarioId],
+  });
+  await asegurarMediciones({ sql: tx, indicadorId: ind.id });
+  for (const [periodo, valores] of [["2026-T1", { A: "5", B: "5" }], ["2026-T2", { A: "5", B: "6" }], ["2026-T3", { A: "3", B: "5" }]] as const) {
+    const [m] = await tx`SELECT id FROM mediciones WHERE indicador_id = ${ind.id} AND periodo = ${periodo}`;
+    await reportar(mide, { medicionId: Number(m.id), valores, parcial: false, confirmado: true }, { sql: tx });
+  }
+  return { mide, ind };
+}
+
+describe("las páginas", () => {
+  it("/indicadores/[codigo]: Resultados con el último resultado, la gráfica de tubos, el acumulado, las variables y la tabla del año", () =>
+    enTransaccion(async (tx) => {
+      const { mide, ind } = await conResultados(tx);
+      contexto.sesion = valida(mide);
+      const html = await pagina(ind.codigo, { anio: "2026" });
+      estructuraAccesible(html);
+      expect(html).toContain("No cumple: 60 % frente a una meta de 90 %.");
+      expect(html).toContain(">Acumulado del año</h2>");
+      expect(html).toContain("81,3 %");
+      expect(html).toContain("Crítico por debajo de 63 %");
+      expect(html).toContain(">Sus variables</h2>");
+      expect(html).toContain('aria-label="Casos que cumplen"');
+      // El selector de rango de la gráfica y el del año de la tabla.
+      expect(html).toContain("&amp;rango=dos");
+      expect(html).toContain("&amp;rango=todo");
+      expect(html).toMatch(/<select[^>]*name="anio"/);
+      // La fila del periodo tiene su ancla: la matriz enlaza a ella.
+      expect(html).toContain('id="periodo-2026-T3"');
+      await expect(pagina(ind.codigo, { anio: "2026", rango: "siempre" })).rejects.toThrow("NO_ENCONTRADA");
+      expect(await pagina(ind.codigo, { anio: "2026", rango: "todo" })).toContain(">Resultados de 2026</h2>");
+    }));
+
+  it("la página del indicador no pinta la columna de soportes ni la pestaña Observaciones a quien no las ve", () =>
+    enTransaccion(async (tx) => {
+      const { mide, ind } = await conResultados(tx);
+      contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "consulta" }));
+      const ajena = await pagina(ind.codigo, { anio: "2026" });
+      expect(ajena).not.toContain(">Soportes</th>");
+      expect(ajena).not.toContain("Observaciones ·");
+      expect(ajena).not.toContain("?vista=observaciones");
+      await expect(pagina(ind.codigo, { vista: "observaciones" })).rejects.toThrow("NO_ENCONTRADA");
+
+      contexto.sesion = valida(mide);
+      const propia = await pagina(ind.codigo, { anio: "2026" });
+      expect(propia).toContain(">Soportes</th>");
+      expect(propia).toContain(">Observaciones · 0</a>");
+      const observaciones = await pagina(ind.codigo, { vista: "observaciones" });
+      estructuraAccesible(observaciones);
+      expect(observaciones).toContain(">Observaciones</h2>");
+    }));
+
+  it("/indicadores: la lista con su barra, sus filtros en un formulario GET y lo que la persona ve", () =>
+    enTransaccion(async (tx) => {
+      const { mide, ind } = await conResultados(tx);
+      const restringido = await indicadorDePrueba(tx, { nivelAcceso: "restringido" });
+      contexto.sesion = valida(mide);
+      const html = await listaPagina();
+      estructuraAccesible(html);
+      expect(html).toMatch(/<form(?=[^>]*method="get")(?=[^>]*action="\/indicadores")[^>]*>/);
+      for (const nombre of ["proceso", "subproceso", "clasificacion", "tipo", "semaforo", "reporte", "participo", "texto", "retirados"]) {
+        expect(html).toMatch(new RegExp(`name="${nombre}"`));
+      }
+      expect(html).toContain(ind.codigo);
+      expect(html).not.toContain(restringido.codigo);
+      expect(html).toMatch(/aria-current="page"[^>]*>Lista</);
+      expect(html).toContain('href="/indicadores/matriz"');
+      // Los filtros elegidos siguen elegidos; uno inválido se ignora.
+      const filtrada = await listaPagina({ semaforo: "critico", texto: ind.codigo, reporte: "nada" });
+      expect(filtrada).toMatch(/<option value="critico" selected="">/);
+      expect(filtrada).toContain(`value="${ind.codigo}"`);
+      expect(filtrada).toContain(ind.codigo);
+      // Sin coincidencias, el estado vacío.
+      expect(await listaPagina({ texto: "zz-no-hay-ninguno" })).toContain("Ningún indicador coincide");
+    }));
+
+  it("/indicadores/matriz: filtros de año, proceso y clasificación, leyenda con texto y cada celda enlazada", () =>
+    enTransaccion(async (tx) => {
+      const { mide, ind } = await conResultados(tx);
+      contexto.sesion = valida(mide);
+      const html = await matrizPagina({ anio: "2026", proceso: String(ind.procesoId) });
+      estructuraAccesible(html);
+      expect(html).toMatch(/aria-current="page"[^>]*>Matriz del año</);
+      expect(html).toMatch(/<select[^>]*name="anio"/);
+      expect(html).toMatch(/<select[^>]*name="proceso"/);
+      expect(html).toMatch(/<select[^>]*name="clasificacion"/);
+      for (const t of ["Bien", "Atención", "Crítico", "Sin dato"]) expect(html).toContain(`>${t}<`);
+      expect(html).toContain(`href="/indicadores/${ind.codigo}?vista=resultados&amp;anio=2026#periodo-2026-T1"`);
+      expect(html).toContain('aria-label="primer trimestre: 100 %, Bien"');
+      expect(html).toContain('aria-label="Año 2026: 81,3 %, Atención"');
+      await expect(matrizPagina({ anio: "abc" })).rejects.toThrow("NO_ENCONTRADA");
+      await expect(matrizPagina({ anio: "2999" })).rejects.toThrow("NO_ENCONTRADA");
+      // Un año sin nada medido: el estado vacío.
+      expect(await matrizPagina({ anio: "2026", proceso: String(ind.procesoId), clasificacion: "999999" })).toContain("Ningún indicador");
+    }));
+
+  it("quien administra ve el borrador en la lista, con su enlace", () =>
+    enTransaccion(async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const borrador = await indicadorDePrueba(tx, { estado: "borrador" });
+      contexto.sesion = valida(admin);
+      const html = await listaPagina({ texto: borrador.codigo });
+      expect(html).toContain(`href="/indicadores/${borrador.codigo}"`);
+      expect(html).toContain(">Borrador<");
+    }));
+});

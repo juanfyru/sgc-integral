@@ -46,4 +46,30 @@ describe("estructura de accesibilidad (Fase 9)", () => {
     expect(tabla).toContain("tabIndex={0}");
     expect(tabla).toMatch(/aria-label=/);
   });
+
+  // Fase 14A, Tarea 15: la lista, la página de un indicador y la matriz del año.
+  it.each([
+    "src/app/(app)/indicadores/page.tsx",
+    "src/app/(app)/indicadores/[codigo]/page.tsx",
+    "src/app/(app)/indicadores/matriz/page.tsx",
+  ])("%s titula con EncabezadoPagina", (ruta) => {
+    expect(readFileSync(path.join(raiz, ruta), "utf8")).toContain("<EncabezadoPagina");
+  });
+
+  it.each([
+    "src/componentes/indicadores/ListaIndicadores.tsx",
+    "src/componentes/indicadores/medicion/TablaDelAnio.tsx",
+  ])("la tabla de %s es una TablaDatos (región enfocable con nombre)", (ruta) => {
+    expect(readFileSync(path.join(raiz, ruta), "utf8")).toContain("<TablaDatos");
+  });
+
+  it("la matriz del año es una región enfocable con nombre y cada celda dice su nombre entero", () => {
+    const src = readFileSync(path.join(raiz, "src/componentes/indicadores/MatrizDelAnio.tsx"), "utf8");
+    expect(src).toContain('role="region"');
+    expect(src).toContain("tabIndex={0}");
+    expect(src).toContain("aria-label={`Matriz de ${anio}`}");
+    expect(src).toContain("aria-label={c.nombre}");
+    expect(src).toContain('<span className="sr-only">{c.nombre}</span>');
+    expect(src).toContain('scope="row"');
+  });
 });

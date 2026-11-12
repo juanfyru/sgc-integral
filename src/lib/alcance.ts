@@ -600,6 +600,16 @@ export async function sinResponsable(indicadorId: number, funcion: "mide" | "ana
   return f?.sin === true;
 }
 
+/**
+ * «Donde participo» (spec §12.2), para un `WHERE` sobre `indicadores i`: la persona está designada en el indicador (en
+ * cualquier función), es líder activo de su proceso o lo tiene de respaldo (Admin SGC sin designado ni líder). Es la gente
+ * a la que le llegan sus tareas y avisos (`responsableDe`): los enlaces de «Mis tareas» la filtran así.
+ */
+export function participaEn(sql: Cliente, sujeto: SujetoVisibilidad) {
+  return sql`(${estaDesignado(sql, sujeto, FUNCIONES_DESIGNADO)} OR ${esLiderDe(sql, sujeto)}
+    OR ${responsableDe(sql, sujeto, "mide")} IS NOT NULL OR ${responsableDe(sql, sujeto, "analiza")} IS NOT NULL)`;
+}
+
 /** Por qué le toca a una persona una función de la medición (`responsableDe`). */
 export type Responsabilidad = "designado" | "lider" | "respaldo";
 

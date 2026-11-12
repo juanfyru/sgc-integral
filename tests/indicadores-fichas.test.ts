@@ -19,7 +19,6 @@ import {
   crearIndicador,
   fichaParaEditar,
   guardarBorrador,
-  listarIndicadoresBasico,
   opcionesDeFicha,
   proponerCodigo,
 } from "@/db/consultas/indicadores/fichas";
@@ -638,38 +637,5 @@ describe("la ficha en borrador", () => {
       expect(sinCargo.cargosDeLideres[b.procesoId] ?? []).not.toContain(b.cargoId);
       expect((await opcionesDeFicha(b.admin, { sql: tx, actuales: { cargosMedir: [b.cargoId] } })).cargos.map((c) => c.id)).toContain(b.cargoId);
       await rechaza(crearIndicador(b.admin, datos(b), { sql: tx }), "Los cargos responsables deben existir y estar activos");
-    }));
-
-  it("la lista básica muestra lo que la persona ve", () =>
-    revertida(sql, async (tx) => {
-      const b = await base(tx);
-      const consulta = await usuarioDePrueba(tx, { rol: "consulta" });
-      const general = await indicadorDePrueba(tx, { procesoId: b.procesoId });
-      const restringido = await indicadorDePrueba(tx, { procesoId: b.procesoId, nivelAcceso: "restringido" });
-      const propio = await indicadorDePrueba(tx, { nivelAcceso: "restringido", mide: [consulta.usuarioId] });
-      const borrador = await crearIndicador(b.admin, datos(b, { nombre: "Ficha nueva sin aprobar" }), { sql: tx });
-      // Un cambio en curso sobre una ficha aprobada no se asoma a quien no administra.
-      const cambio = await abrirCambio(b.admin, general.id, { sql: tx });
-      await guardarBorrador(b.admin, cambio.versionId, datos(b, { nombre: "Nombre del cambio sin aprobar" }), { sql: tx });
-
-      const deConsulta = await listarIndicadoresBasico(consulta, { sql: tx });
-      const codigos = deConsulta.map((f) => f.codigo);
-      expect(codigos).toContain(general.codigo);
-      expect(codigos).toContain(propio.codigo);
-      expect(codigos).not.toContain(restringido.codigo);
-      expect(codigos).not.toContain(borrador.codigo);
-      expect(deConsulta.find((f) => f.codigo === general.codigo)).toEqual({
-        id: general.id,
-        codigo: general.codigo,
-        nombre: `Indicador de prueba ${general.codigo}`,
-        proceso: b.procesoNombre,
-        estado: "activo",
-        versionEstado: "aprobada",
-      });
-
-      const deAdmin = await listarIndicadoresBasico(b.admin, { sql: tx });
-      expect(deAdmin.map((f) => f.codigo)).toEqual(expect.arrayContaining([general.codigo, restringido.codigo, propio.codigo, borrador.codigo]));
-      expect(deAdmin.find((f) => f.codigo === borrador.codigo)).toMatchObject({ nombre: "Ficha nueva sin aprobar", estado: "borrador", versionEstado: "borrador" });
-      expect(deAdmin.find((f) => f.codigo === general.codigo)).toMatchObject({ nombre: `Indicador de prueba ${general.codigo}`, versionEstado: "borrador" });
     }));
 });

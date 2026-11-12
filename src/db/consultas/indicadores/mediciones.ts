@@ -43,6 +43,7 @@ import { limiteDeCritico, type Regla } from "@/lib/indicadores/semaforo";
 import { fraseDeVariacion, textoValor, type Unidad } from "@/lib/indicadores/textos";
 import {
   ErrorIndicador,
+  type Consolidacion,
   type EstadoMedicion,
   type ModoSemaforo,
   type Periodicidad,
@@ -96,6 +97,8 @@ type VariableDeVersion = {
   capturaMin: string | null;
   capturaMax: string | null;
   admiteNegativos: boolean;
+  /** Cómo se junta en el acumulado del año (spec §8.10). */
+  consolidacion: Consolidacion;
 };
 
 export type VersionDeCalculo = {
@@ -115,13 +118,24 @@ export type VersionDeCalculo = {
 
 /** Las versiones aprobadas del indicador, de mayor a menor número (el orden de `versionQueRigeEntre`). */
 export async function versionesAprobadas(sql: Cliente, indicadorId: number): Promise<VersionDeCalculo[]> {
-  const filas = await sql`SELECT id, numero, tipo_cambio, rige_desde, aprobada_en, periodicidad, nombre, formula, resultado_min, resultado_max,
-      tendencia, meta, meta_max, semaforo_modo, umbral_atencion_pct, limite_critico, tolerancia, unidad_sufijo, decimales
-    FROM indicador_versiones WHERE indicador_id = ${indicadorId} AND estado = 'aprobada' ORDER BY numero DESC`;
-  if (filas.length === 0) return [];
-  const variables = await sql`SELECT id, version_id, letra, nombre, descripcion, fuente, captura_min, captura_max, admite_negativos
+  return (await versionesAprobadasDe(sql, [indicadorId])).get(indicadorId) ?? [];
+}
+
+/**
+ * Las versiones aprobadas de varios indicadores en dos lecturas (la lista y la matriz), por indicador y de mayor a menor
+ * número. Un indicador sin versión aprobada no aparece.
+ */
+export async function versionesAprobadasDe(sql: Cliente, indicadorIds: readonly number[]): Promise<Map<number, VersionDeCalculo[]>> {
+  const salida = new Map<number, VersionDeCalculo[]>();
+  if (indicadorIds.length === 0) return salida;
+  const filas = await sql`SELECT id, indicador_id, numero, tipo_cambio, rige_desde, aprobada_en, periodicidad, nombre, formula, resultado_min,
+      resultado_max, tendencia, meta, meta_max, semaforo_modo, umbral_atencion_pct, limite_critico, tolerancia, unidad_sufijo, decimales
+    FROM indicador_versiones WHERE indicador_id IN ${sql([...new Set(indicadorIds)])} AND estado = 'aprobada'
+    ORDER BY indicador_id, numero DESC`;
+  if (filas.length === 0) return salida;
+  const variables = await sql`SELECT id, version_id, letra, nombre, descripcion, fuente, captura_min, captura_max, admite_negativos, consolidacion
     FROM indicador_variables WHERE version_id IN ${sql(filas.map((f) => Number(f.id)))} ORDER BY orden, letra`;
-  return filas.map((f) => {
+  for (const f of filas) {
     const propias = variables
       .filter((v) => Number(v.version_id) === Number(f.id))
       .map((v) => ({
@@ -133,8 +147,9 @@ export async function versionesAprobadas(sql: Cliente, indicadorId: number): Pro
         capturaMin: texto(v.captura_min),
         capturaMax: texto(v.captura_max),
         admiteNegativos: v.admite_negativos === true,
+        consolidacion: ((v.consolidacion as Consolidacion | null) ?? "suma") as Consolidacion,
       }));
-    return {
+    const version: VersionDeCalculo = {
       id: Number(f.id),
       numero: Number(f.numero),
       tipoCambio: f.tipo_cambio as string,
@@ -160,7 +175,10 @@ export async function versionesAprobadas(sql: Cliente, indicadorId: number): Pro
       unidad: { sufijo: (f.unidad_sufijo as string | null) ?? "", decimales: f.decimales === null ? 0 : Number(f.decimales) },
       variables: propias,
     };
-  });
+    const id = Number(f.indicador_id);
+    salida.set(id, [...(salida.get(id) ?? []), version]);
+  }
+  return salida;
 }
 
 /** La meta programada del periodo (spec §8.9) reemplaza la de la ficha. */
@@ -317,19 +335,37 @@ export async function contarSoportes(sql: Cliente, medicionId: number): Promise<
   return Number(f.n);
 }
 
-/** Los valores de la medición por letra de la versión dada: primero los de sus variables; si no, los de otra versión. */
-export async function valoresPorLetra(sql: Cliente, medicionId: number, v: VersionDeCalculo): Promise<Record<string, Fraccion>> {
-  const propias = v.variables.map((x) => x.id);
-  const filas = await sql`SELECT iv.letra, mv.valor FROM medicion_valores mv JOIN indicador_variables iv ON iv.id = mv.variable_id
-    WHERE mv.medicion_id = ${medicionId} AND mv.categoria_id IS NULL AND mv.valor IS NOT NULL
-    ORDER BY (mv.variable_id = ANY(${propias})) DESC, mv.reportado_en DESC NULLS LAST, mv.id DESC`;
+/** Una fila de `medicion_valores` con la letra de su variable, la que leen `valoresPorLetra` y `elegirValores`. */
+export type ValorGuardado = { variable_id: unknown; letra: unknown; valor: unknown; reportado_en: unknown; id: unknown };
+
+/**
+ * Los valores de una medición por letra de la versión dada, de sus filas guardadas: primero los de las variables de esa
+ * versión; si no, los de otra versión (un cambio menor da otros ids a las mismas letras), el más reciente.
+ */
+export function elegirValores(filas: readonly ValorGuardado[], v: VersionDeCalculo): Record<string, Fraccion> {
+  const propias = new Set(v.variables.map((x) => x.id));
+  const instante = (f: ValorGuardado) => (f.reportado_en === null || f.reportado_en === undefined ? -Infinity : new Date(f.reportado_en as string).getTime());
+  const ordenadas = [...filas].sort(
+    (a, b) =>
+      Number(propias.has(Number(b.variable_id))) - Number(propias.has(Number(a.variable_id))) ||
+      instante(b) - instante(a) ||
+      Number(b.id) - Number(a.id),
+  );
   const salida: Record<string, Fraccion> = {};
-  for (const f of filas) {
+  for (const f of ordenadas) {
     const letra = f.letra as string;
     const valor = fr(f.valor);
     if (v.calculo.letras.includes(letra) && !Object.hasOwn(salida, letra) && valor) salida[letra] = valor;
   }
   return salida;
+}
+
+/** Los valores de la medición por letra de la versión dada (`elegirValores`). */
+export async function valoresPorLetra(sql: Cliente, medicionId: number, v: VersionDeCalculo): Promise<Record<string, Fraccion>> {
+  const filas = await sql`SELECT mv.id, mv.variable_id, iv.letra, mv.valor, mv.reportado_en
+    FROM medicion_valores mv JOIN indicador_variables iv ON iv.id = mv.variable_id
+    WHERE mv.medicion_id = ${medicionId} AND mv.categoria_id IS NULL AND mv.valor IS NOT NULL`;
+  return elegirValores(filas as unknown as ValorGuardado[], v);
 }
 
 /** Los valores en el texto de los eventos, uno por letra de la versión («5», `null` si no hay). */

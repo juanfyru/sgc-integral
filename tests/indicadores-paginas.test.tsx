@@ -171,7 +171,7 @@ describe("las páginas de la ficha de indicador", () => {
       const nuevo = await borrador(tx, admin);
 
       contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "consulta" }));
-      const deConsulta = renderToStaticMarkup(await PaginaIndicadores());
+      const deConsulta = renderToStaticMarkup(await PaginaIndicadores({ searchParams: Promise.resolve({}) }));
       expect(deConsulta).toContain(general.codigo);
       expect(deConsulta).not.toContain(nuevo.codigo);
       expect(deConsulta).not.toContain("Nuevo indicador");
@@ -179,7 +179,7 @@ describe("las páginas de la ficha de indicador", () => {
       expect(deConsulta).toMatch(/aria-current="page"[^>]*>Lista</);
 
       contexto.sesion = valida(admin);
-      const deAdmin = renderToStaticMarkup(await PaginaIndicadores());
+      const deAdmin = renderToStaticMarkup(await PaginaIndicadores({ searchParams: Promise.resolve({}) }));
       expect(deAdmin).toContain('href="/indicadores/nuevo"');
       expect(deAdmin).toContain(`href="/indicadores/${nuevo.codigo}"`);
       expect(deAdmin).toContain(">Borrador<");
