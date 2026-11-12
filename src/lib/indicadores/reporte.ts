@@ -110,7 +110,6 @@ export const valorEnTexto = (v: Fraccion): string => sinCeros(aDecimal(v, 4, "tr
 /** Un resultado en el detalle de los eventos: punto decimal, hasta 10 decimales y sin ceros de relleno. */
 export const decimalCorto = (v: Fraccion): string => sinCeros(aDecimal(v, 10, "redondear"));
 
-/** Lo que vuelve de `reportarAccion`: un error, un aviso o la confirmación que pide un salto grande (`confirmar`). */
 /**
  * A dónde se vuelve tras reportar (Tarea 19, D-12): a `volver` (la página del indicador) y, si el periodo quedó abierto
  * pidiendo su análisis (Atención o Crítico), a su tabla del año con `foco=analisis`: la página lleva el foco al formulario
@@ -122,6 +121,7 @@ export function destinoTrasReportar(volver: string, periodo: string, r: { estado
   return `${volver}?vista=resultados&anio=${periodo.slice(0, 4)}&foco=analisis#analisis`;
 }
 
+/** Lo que vuelve de `reportarAccion`: un error, un aviso o la confirmación que pide un salto grande (`confirmar`). */
 export type EstadoReporte =
   | { ok: false; error: string; confirmar?: string; valores?: Record<string, string | string[]> }
   | { ok: true; aviso: string }
