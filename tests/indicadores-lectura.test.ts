@@ -206,6 +206,11 @@ describe("la lista", () => {
       const [t3] = await tx`SELECT id FROM mediciones WHERE indicador_id = ${otro.id} AND periodo = '2026-T3'`;
       await marcarNoAplica(quien, { medicionId: Number(t3.id), motivo: "No hubo casos que medir" }, opc(tx));
       expect((await lista(tx, ajeno, { procesoId: p.id })).resumen).toMatchObject({ bien: 1, sinDato: 0, noAplica: 1 });
+      // Y el filtro «Estado: Sin dato» no trae los «No aplica», como la barra (ola final, M6).
+      const sinDato = await trimestral(tx, p.id, { inicioMedicion: "2026-T3" });
+      await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: sinDato.id });
+      const filtrada = await lista(tx, ajeno, { procesoId: p.id, semaforo: "sin-dato" });
+      expect(filtrada.filas.map((f) => f.codigo)).toEqual([sinDato.codigo]);
     }));
 
   it("quien administra ve además los borradores y los cambios en curso, sin contarlos en la barra", () =>

@@ -310,8 +310,9 @@ export async function listarIndicadores(
     resumen.vencidos += x.pend?.vencidas ?? 0;
   }
   const semaforo = filtro.semaforo;
+  // «Sin dato» es lo que la barra cuenta como tal: sin semáforo y no «No aplica», que va aparte (D-11, ola final M6).
   const pasaSemaforo = (x: (typeof todas)[number]) =>
-    !semaforo || (x.conFicha && (semaforo === "sin-dato" ? x.fila.semaforo === null : x.fila.semaforo === semaforo));
+    !semaforo || (x.conFicha && (semaforo === "sin-dato" ? x.fila.semaforo === null && !x.fila.noAplica : x.fila.semaforo === semaforo));
   return { filas: filtradas.filter(pasaSemaforo).map((x) => x.fila), resumen };
 }
 
