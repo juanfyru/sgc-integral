@@ -480,6 +480,10 @@
     animation: tubo-crecer 0.75s cubic-bezier(0.2, 0.8, 0.2, 1) both;
     animation-delay: calc(var(--i, 0) * 45ms);
   }
+  /* El relleno negativo cuelga del cero: crece hacia abajo. */
+  .tubo-relleno.tubo-negativo {
+    transform-origin: 50% 0;
+  }
   .tubo-relleno.tubo-acostado {
     transform-origin: 0 50%;
     animation-name: tubo-crecer-acostado;
@@ -512,10 +516,18 @@
   .tubo-impreso {
     display: inline;
   }
+  /* Las piezas HTML (la pista y la marca del acumulado, los segmentos de la barra) se imprimen aunque el navegador
+     no imprima los fondos; la propiedad se hereda. */
+  .tubo-color-exacto {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
   .tubo-desplazable {
     overflow: visible;
   }
   .tubo-lienzo {
     min-width: 0 !important;
+    max-width: 100% !important;
+    height: auto;
   }
 }

@@ -52,10 +52,8 @@ export function ResultadoEnVivo({
     Object.fromEntries(variables.map((v) => [v.letra, (valores[v.letra] ?? "").trim() || v.nombre])),
   );
 
-  const conResultado = Object.keys(vivo.errores).length === 0 && vivo.completo && vivo.resultado !== null;
-  const acento = ACENTO[(conResultado ? vivo.semaforo : null) ?? "ninguno"];
-
   let contenido: React.ReactNode;
+  let acento = ACENTO.ninguno;
   if (Object.keys(vivo.errores).length > 0) {
     contenido = <p className="text-muted-foreground">Corrija los datos para ver el resultado.</p>;
   } else if (!vivo.completo) {
@@ -66,6 +64,7 @@ export function ResultadoEnVivo({
     );
   } else {
     const frase = fraseDeResultado({ resultado: vivo.resultado, semaforo: vivo.semaforo, noAplica: false, motivo: null }, reglaDeTexto(regla), unidad);
+    acento = ACENTO[vivo.semaforo ?? "ninguno"];
     contenido = (
       <>
         <p className="flex flex-wrap items-center gap-3">

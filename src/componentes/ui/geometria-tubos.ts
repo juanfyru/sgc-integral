@@ -1,7 +1,7 @@
 /**
  * Geometría pura de las gráficas en estilo «Tubos» (Fase 14A, spec §11): la escala, la altura de un valor, un tubo por
  * periodo y los trazos de la tendencia en miniatura. Trabaja sobre números: quien la usa convierte antes las fracciones
- * con `aDecimal`. Sin React, sin Node ni BD: la importan los componentes de servidor y la tarjeta de cliente.
+ * con `aDecimal`. Sin React, sin Node ni BD: la usan los componentes de servidor de las gráficas.
  */
 
 export type EstadoDePunto = "bien" | "atencion" | "critico" | "sin-meta" | "sin-dato" | "no-aplica" | "futuro";
@@ -69,16 +69,30 @@ export function anchoDeFranja(periodos: number, g: Geometria): number {
   return (g.ancho - g.margen.izq - g.margen.der) / Math.max(periodos, 1);
 }
 
-/** Un tubo por punto, todos del mismo ancho y centrados en su franja; el relleno sube desde la base hasta el valor. */
+/**
+ * Un tubo por punto, todos del mismo ancho y centrados en su franja. El relleno parte del cero cuando la escala lo
+ * incluye (un positivo sube, un negativo baja, el cero no tiene relleno) y, si no, de la base. `yRelleno` es siempre el
+ * borde de arriba del relleno.
+ */
 export function calcularTubos(serie: PuntoDeSerie[], g: Geometria, e: Escala): Tubo[] {
   const franja = anchoDeFranja(serie.length, g);
   const ancho = Math.min(ANCHO_MAXIMO_TUBO, franja * PROPORCION_TUBO);
-  const base = g.alto - g.margen.abajo;
+  const origen = e.min <= 0 && e.max >= 0 ? yDe(0, g, e) : g.alto - g.margen.abajo;
   return serie.map((p, i) => {
     const centro = g.margen.izq + franja * (i + 0.5);
-    const yRelleno = p.valor === null ? base : yDe(p.valor, g, e);
-    return { x: centro - ancho / 2, ancho, yRelleno, altoRelleno: base - yRelleno, centro };
+    const y = p.valor === null ? origen : yDe(p.valor, g, e);
+    return { x: centro - ancho / 2, ancho, yRelleno: Math.min(y, origen), altoRelleno: Math.abs(origen - y), centro };
   });
+}
+
+/** Dónde empieza cada año de una serie que abarca más de uno (por la clave, `AAAA…`); con un solo año, ninguno. */
+export function cambiosDeAnio(claves: string[]): { indice: number; anio: string }[] {
+  const cambios: { indice: number; anio: string }[] = [];
+  claves.forEach((clave, indice) => {
+    const anio = /^(\d{4})/.exec(clave)?.[1];
+    if (anio !== undefined && anio !== cambios.at(-1)?.anio) cambios.push({ indice, anio });
+  });
+  return cambios.length > 1 ? cambios : [];
 }
 
 type Punto = { x: number; y: number };

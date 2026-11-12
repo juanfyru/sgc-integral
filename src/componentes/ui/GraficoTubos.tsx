@@ -1,9 +1,10 @@
-import { useId } from "react";
 import type { Unidad } from "@/lib/indicadores/textos";
 import { TarjetaDeTubo } from "./TarjetaDeTubo";
+import { DefinicionesDeTubo, TuboSvg, useIdDeGrafica } from "./TuboSvg";
 import {
   anchoDeFranja,
   calcularTubos,
+  cambiosDeAnio,
   claseDeRelleno,
   escala,
   rotuloCorto,
@@ -12,16 +13,25 @@ import {
   type PuntoDeSerie,
 } from "./geometria-tubos";
 
-const ALTO = 222;
+const ALTO_PISTA = 160;
 const ANCHO_MINIMO = 540;
 /** Con muchos periodos el lienzo crece (y se desplaza en pantallas angostas) antes que apretar los valores. */
 const FRANJA_MINIMA = 34;
-const MARGEN = { izq: 34, arriba: 26, abajo: 36 };
+const MARGEN = { izq: 34, arriba: 26 };
+/** Debajo van el rótulo y el valor; si la serie abarca más de un año, también el año. */
+const ABAJO = 36;
+const ABAJO_CON_ANIOS = 50;
 const MARGEN_DERECHO_MINIMO = 100;
 /** Con franjas angostas el valor de cada columna va sin su unidad: la dice el eje. */
 const FRANJA_CON_UNIDAD = 48;
+/**
+ * Un año con tantos periodos o más no cabe entero en un teléfono (390 px): su año se escribe también bajo su último
+ * periodo, para que se lea al abrir la gráfica, que arranca en lo más reciente.
+ */
+const PERIODOS_PARA_REPETIR_ANIO = 8;
 
 type Meta = { valor: number; texto: string } | { porPeriodo: (number | null)[]; texto: string };
+type Limite = { valor: number; texto: string };
 
 const cifra = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 2 });
 
@@ -31,48 +41,58 @@ const anchoDeEtiqueta = (texto: string, tamano: number) => Math.ceil(texto.lengt
 const esPorcentaje = (u: Pick<Unidad, "sufijo">) => u.sufijo.trim() === "%";
 
 /**
- * Los degradados del volumen y el recorte de las pistas de una gráfica, con ids propios: en una página caben varias
- * gráficas. Las paradas toman sus tonos de la clase de estado del degradado (`globals.css`).
+ * Lo que la gráfica dice de su meta y su límite a las tecnologías de apoyo (las etiquetas del dibujo no se leen):
+ * «meta 85 %» o «meta entre 95 y 105 %», «la meta cambia por periodo (85 % de enero a marzo; …)» y «crítico por
+ * debajo de 59,5 %» (o «por encima», si el límite queda del otro lado de la meta).
  */
-export function DefinicionesDeTubo({
-  id,
-  clases,
-  pistas,
-}: {
-  id: string;
-  clases: readonly string[];
-  pistas: readonly { x: number; y: number; ancho: number; alto: number }[];
-}) {
-  return (
-    <defs>
-      {clases.map((c) => (
-        <linearGradient key={c} id={`${id}-${c}`} className={c} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0.1" className="tubo-parada-brillo" />
-          <stop offset="0.55" className="tubo-parada-base" />
-          <stop offset="1" className="tubo-parada-sombra" />
-        </linearGradient>
-      ))}
-      <clipPath id={`${id}-pistas`}>
-        {pistas.map((p, i) => (
-          <rect key={i} x={p.x} y={p.y} width={p.ancho} height={p.alto} rx={p.ancho / 2} />
-        ))}
-      </clipPath>
-    </defs>
-  );
-}
-
-/** Un id de `useId` que sirve dentro de `url(#…)`. */
-export function useIdDeGrafica(prefijo: string): string {
-  return `${prefijo}-${useId().replace(/[^\w-]/g, "")}`;
+function lecturaDeReferencias(
+  serie: PuntoDeSerie[],
+  meta: Meta | undefined,
+  limite: Limite | undefined,
+  rango: { min: number; max: number } | undefined,
+  conCifra: (n: number) => string,
+): string[] {
+  const partes: string[] = [];
+  let referencia: { min: number; max: number } | null = rango ?? null;
+  if (rango) partes.push(`meta entre ${cifra.format(rango.min)} y ${conCifra(rango.max)}`);
+  else if (meta && "valor" in meta) {
+    partes.push(`meta ${conCifra(meta.valor)}`);
+    referencia = { min: meta.valor, max: meta.valor };
+  } else if (meta) {
+    const tramos: { valor: number | null; desde: number; hasta: number }[] = [];
+    serie.forEach((_, i) => {
+      const valor = meta.porPeriodo[i] ?? null;
+      const ultimo = tramos.at(-1);
+      if (ultimo && ultimo.valor === valor) ultimo.hasta = i;
+      else tramos.push({ valor, desde: i, hasta: i });
+    });
+    const cuando = (t: { desde: number; hasta: number }) =>
+      t.desde === t.hasta ? `en ${serie[t.desde].etiqueta}` : `de ${serie[t.desde].etiqueta} a ${serie[t.hasta].etiqueta}`;
+    const valores = tramos.flatMap((t) => (t.valor === null ? [] : [t.valor]));
+    if (tramos.length === 1 && tramos[0].valor !== null) partes.push(`meta ${conCifra(tramos[0].valor)}`);
+    else if (valores.length > 0) {
+      partes.push(
+        `la meta cambia por periodo (${tramos.map((t) => (t.valor === null ? `sin meta ${cuando(t)}` : `${conCifra(t.valor)} ${cuando(t)}`)).join("; ")})`,
+      );
+    }
+    if (valores.length > 0) referencia = { min: valores.at(-1)!, max: valores.at(-1)! };
+  }
+  if (limite) {
+    if (referencia && limite.valor < referencia.min) partes.push(`crítico por debajo de ${conCifra(limite.valor)}`);
+    else if (referencia && limite.valor > referencia.max) partes.push(`crítico por encima de ${conCifra(limite.valor)}`);
+    else partes.push(limite.texto);
+  }
+  return partes;
 }
 
 /**
  * La gráfica principal de un indicador (spec §11, estilo A «Tubos»): un tubo por periodo que se llena hasta su
  * resultado con el color de su estado, el valor escrito debajo, la meta como línea con su etiqueta en el margen derecho
  * (escalonada si cambia entre periodos), el límite de crítico punteado y, en tendencia constante, la franja del rango.
- * Sin meta, los tubos van en neutro y no hay líneas. Cada franja se enfoca con el teclado y dice su valor y su estado;
- * la tarjeta (`TarjetaDeTubo`) lo repite al pasar el cursor. La tabla equivalente va en `sr-only`. Al imprimir, la hoja
- * de estilos pone el relleno sólido y escribe el valor y el estado sobre cada columna.
+ * Sin meta, los tubos van en neutro y no hay líneas. Con más de un año, el eje marca dónde empieza cada uno. Cada franja
+ * se enfoca con el teclado y dice su valor y su estado; la tarjeta (`TarjetaDeTubo`) lo repite al pasar el cursor. El
+ * nombre de la figura y la tabla equivalente (`sr-only`) dicen además la meta y el límite. Al imprimir, la hoja de
+ * estilos pone el relleno sólido y escribe el valor y el estado sobre cada columna.
  */
 export function GraficoTubos({
   serie,
@@ -84,11 +104,15 @@ export function GraficoTubos({
   columnas,
 }: {
   serie: PuntoDeSerie[];
-  /** El nombre de la figura y el título de la tabla equivalente. */
+  /** El nombre de la figura y el título de la tabla equivalente; la gráfica les añade la meta y el límite. */
   titulo: string;
   /** Con `porPeriodo`, `texto` es solo el nombre («Meta»): la gráfica le añade la cifra de cada periodo. */
   meta?: Meta;
-  limite?: { valor: number; texto: string };
+  /**
+   * El límite de crítico. Quien llama lo pasa siempre que el indicador tenga umbral de crítico: sin esta línea punteada,
+   * atención y crítico se distinguen solo por el color.
+   */
+  limite?: Limite;
   /** La franja del rango de una meta en tendencia constante. */
   rango?: { min: number; max: number };
   unidad: Pick<Unidad, "sufijo">;
@@ -105,17 +129,20 @@ export function GraficoTubos({
   const e = escala(serie.flatMap((p) => (p.valor === null ? [] : [p.valor])), referencias, esPorcentaje(unidad));
 
   const conCifra = (m: number) => `${cifra.format(m)}${unidad.sufijo}`;
+  const lectura = [titulo, lecturaDeReferencias(serie, meta, limite, rango, conCifra).join(", ")].filter(Boolean).join(": ");
   const ultimaMeta = metas.at(-1);
   const etiquetaMeta = meta === undefined || ultimaMeta === undefined ? null : "valor" in meta ? meta.texto : `${meta.texto} ${conCifra(ultimaMeta)}`;
   const anchoMeta = etiquetaMeta ? anchoDeEtiqueta(etiquetaMeta, 9.5) : 0;
   const anchoLimite = limite ? anchoDeEtiqueta(limite.texto, 9) : 0;
   const der = Math.max(MARGEN_DERECHO_MINIMO, Math.max(anchoMeta, anchoLimite) + 12);
+  const anios = cambiosDeAnio(serie.map((p) => p.clave));
+  const abajo = anios.length > 0 ? ABAJO_CON_ANIOS : ABAJO;
   const g: Geometria = {
     ancho: Math.max(ANCHO_MINIMO, MARGEN.izq + der + serie.length * FRANJA_MINIMA),
-    alto: ALTO,
-    margen: { ...MARGEN, der },
+    alto: MARGEN.arriba + ALTO_PISTA + abajo,
+    margen: { ...MARGEN, der, abajo },
   };
-  const base = ALTO - MARGEN.abajo;
+  const base = MARGEN.arriba + ALTO_PISTA;
   const tope = MARGEN.arriba;
   const derecha = g.ancho - der;
   const franja = anchoDeFranja(serie.length, g);
@@ -142,13 +169,21 @@ export function GraficoTubos({
   const yEtiquetaLimite =
     yLimite === null ? null : yMeta !== null && Math.abs(yLimite - yMeta) < 20 ? yMeta + (yLimite >= yMeta ? 20 : -20) : yLimite;
 
+  // El año bajo el primer periodo de cada uno (y bajo el último del año más reciente si no cabe en un teléfono).
+  const rotulosDeAnio = anios.flatMap((a, k) => {
+    const hasta = (anios[k + 1]?.indice ?? serie.length) - 1;
+    const inicio = { x: MARGEN.izq + a.indice * franja + 2, anclaje: "start" as const, anio: a.anio, clave: `${a.anio}-inicio` };
+    const repetir = k === anios.length - 1 && hasta - a.indice + 1 >= PERIODOS_PARA_REPETIR_ANIO;
+    return repetir ? [inicio, { x: MARGEN.izq + (hasta + 1) * franja - 2, anclaje: "end" as const, anio: a.anio, clave: `${a.anio}-fin` }] : [inicio];
+  });
+
   return (
     <figure className="flex min-w-0 flex-col">
       <TarjetaDeTubo>
         <div className="tubo-desplazable overflow-x-auto [direction:rtl]">
-          <svg viewBox={`0 0 ${g.ancho} ${ALTO}`} className="tubo-lienzo block h-auto w-full [direction:ltr]" style={{ minWidth: g.ancho }}>
+          <svg viewBox={`0 0 ${g.ancho} ${g.alto}`} className="tubo-lienzo block h-auto w-full [direction:ltr]" style={{ minWidth: g.ancho }}>
             <DefinicionesDeTubo id={id} clases={clases} pistas={tubos.map((t) => ({ x: t.x, y: tope, ancho: t.ancho, alto: base - tope }))} />
-            <g role="img" aria-label={titulo}>
+            <g role="img" aria-label={lectura}>
               {e.marcas.map((m, i) => (
                 <g key={m}>
                   <line x1={MARGEN.izq} x2={derecha} y1={y(m)} y2={y(m)} className="stroke-border" strokeWidth={1} />
@@ -166,35 +201,34 @@ export function GraficoTubos({
                   height={Math.max(y(rango.min) - y(rango.max), 0)}
                 />
               ) : null}
-              {tubos.map((t, i) => (
-                <rect
-                  key={serie[i].clave}
-                  className={`tubo-pista ${serie[i].estado === "futuro" ? "fill-tubo-pista-futura" : "fill-tubo-pista"}`}
-                  x={t.x}
-                  y={tope}
-                  width={t.ancho}
-                  height={base - tope}
-                  rx={t.ancho / 2}
+              {tubos.map((t, i) => {
+                const p = serie[i];
+                return (
+                  <TuboSvg
+                    key={p.clave}
+                    id={id}
+                    indice={i}
+                    tubo={t}
+                    tope={tope}
+                    base={base}
+                    futuro={p.estado === "futuro"}
+                    clase={p.valor === null ? null : claseDeRelleno(p.estado)}
+                    negativo={p.valor !== null && p.valor < 0}
+                  />
+                );
+              })}
+              {anios.slice(1).map((a) => (
+                <line
+                  key={a.anio}
+                  className="tubo-anio stroke-border"
+                  x1={MARGEN.izq + a.indice * franja}
+                  x2={MARGEN.izq + a.indice * franja}
+                  y1={tope - 4}
+                  y2={g.alto - 2}
+                  strokeWidth={1}
+                  strokeDasharray="2 2"
                 />
               ))}
-              <g clipPath={`url(#${id}-pistas)`}>
-                {tubos.map((t, i) => {
-                  const clase = serie[i].valor === null ? null : claseDeRelleno(serie[i].estado);
-                  return clase ? (
-                    <rect
-                      key={serie[i].clave}
-                      className={`tubo-relleno ${clase}`}
-                      style={{ "--i": i } as React.CSSProperties}
-                      x={t.x}
-                      y={t.yRelleno}
-                      width={t.ancho}
-                      height={t.altoRelleno + t.ancho}
-                      rx={t.ancho / 2}
-                      fill={`url(#${id}-${clase})`}
-                    />
-                  ) : null;
-                })}
-              </g>
               <Lineas meta={meta} y={y} izq={MARGEN.izq} derecha={derecha} franja={franja} limite={limite} />
               {etiquetaMeta !== null && yMeta !== null ? (
                 <g>
@@ -248,6 +282,18 @@ export function GraficoTubos({
                   </g>
                 );
               })}
+              {rotulosDeAnio.map((r) => (
+                <text
+                  key={r.clave}
+                  className="tubo-anio fill-muted-foreground font-semibold"
+                  x={r.x}
+                  y={base + 43}
+                  textAnchor={r.anclaje}
+                  fontSize={9.5}
+                >
+                  {r.anio}
+                </text>
+              ))}
             </g>
             <g className="tubo-zonas">
               {serie.map((p, i) => (
@@ -276,7 +322,7 @@ export function GraficoTubos({
       </TarjetaDeTubo>
       <figcaption className="sr-only">
         <table>
-          <caption>{titulo}</caption>
+          <caption>{lectura}</caption>
           <thead>
             <tr>
               {columnas.map((c) => (
@@ -311,7 +357,7 @@ function Lineas({
   franja,
 }: {
   meta?: Meta;
-  limite?: { valor: number; texto: string };
+  limite?: Limite;
   y: (v: number) => number;
   izq: number;
   derecha: number;
@@ -349,4 +395,3 @@ function Lineas({
     </>
   );
 }
-

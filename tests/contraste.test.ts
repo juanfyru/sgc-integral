@@ -40,8 +40,10 @@ describe("contrasteWCAG", () => {
 // Gráficas de los indicadores en estilo «Tubos» (Fase 14A, Tarea 14; spec §11). El volumen sale de un degradado
 // brillo → color → sombra sobre el token del estado. El borde en sombra y el tubo neutro son objetos gráficos: se
 // distinguen (≥ 3:1, WCAG 1.4.11) de la pista sobre la que crecen y de la tarjeta que los rodea, en los dos temas. El
-// color base de «Atención» no llega a 3:1 sobre blanco y no se toca (es el token del estado): el valor y el nombre del
-// estado van siempre escritos.
+// color base de «Atención» no llega a 3:1 sobre blanco y no se toca (es el token del estado). Basta porque en pantalla
+// el estado no depende de distinguir ese color (spec §11): el valor va escrito debajo de cada columna y la altura del
+// tubo se lee frente a la línea de la meta y a la punteada de crítico. El nombre del estado está en el foco de cada
+// columna, en la tarjeta, en la tabla equivalente y en la impresión.
 describe("tokens de las gráficas de tubos", () => {
   const css = readFileSync("src/app/globals.css", "utf8");
   const valor = (nombre: string) => {

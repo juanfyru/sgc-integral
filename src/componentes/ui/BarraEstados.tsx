@@ -12,7 +12,7 @@ export function BarraEstados({ bien, atencion, critico, sinDato }: { bien: numbe
     { cuantos: sinDato, clase: "bg-estado-sin-dato", texto: `${sinDato} sin dato` },
   ];
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
+    <div className="tubo-color-exacto flex min-w-0 flex-col gap-1.5">
       <div aria-hidden="true" className="flex h-2.5 w-full overflow-hidden rounded-full bg-muted">
         {total > 0
           ? partes

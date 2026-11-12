@@ -19,6 +19,8 @@ const raiz = path.resolve(import.meta.dirname, "..");
 const UNIDAD = { sufijo: " %", decimales: 1 };
 const COLUMNAS = ["Mes", "Resultado", "Estado"] as const;
 const TITULO = "Recaudo de cartera corriente por mes, 2026";
+/** Lo que leen las tecnologías de apoyo de la figura y de su tabla: el título, la meta y de qué lado queda el crítico. */
+const LECTURA = `${TITULO}: meta 85 %, crítico por debajo de 59,5 %`;
 
 const cuenta = (html: string, re: RegExp) => (html.match(re) ?? []).length;
 const sinEtiquetas = (html: string) => html.replace(/<[^>]+>/g, "");
@@ -70,7 +72,7 @@ describe("GraficoTubos", () => {
   it("GraficoTubos: una figura con nombre, un tubo por periodo, la meta, el límite y su tabla equivalente", () => {
     const html = principal();
     expect(html).toMatch(/^<figure/);
-    expect(html).toMatch(new RegExp(`<g(?=[^>]*role="img")(?=[^>]*aria-label="${TITULO}")[^>]*>`));
+    expect(html).toMatch(new RegExp(`<g(?=[^>]*role="img")(?=[^>]*aria-label="${LECTURA}")[^>]*>`));
     expect(html).not.toContain("NaN");
 
     // Doce pistas; la del mes que aún no llega, más tenue.
@@ -97,7 +99,7 @@ describe("GraficoTubos", () => {
 
     // La tabla equivalente: una fila por periodo con el periodo, el valor y el nombre del estado.
     const tabla = html.slice(html.indexOf('<figcaption class="sr-only">'));
-    expect(tabla).toContain(`<caption>${TITULO}</caption>`);
+    expect(tabla).toContain(`<caption>${LECTURA}</caption>`);
     expect(tabla).toContain('<th scope="col">Mes</th><th scope="col">Resultado</th><th scope="col">Estado</th>');
     expect(cuenta(tabla, /<tr><th scope="row">/g)).toBe(12);
     expect(tabla).toContain('<tr><th scope="row">marzo</th><td>86 %</td><td>Bien</td></tr>');
@@ -143,6 +145,7 @@ describe("GraficoTubos", () => {
     expect(html).not.toMatch(/class="tubo-(meta|limite|franja)/);
     expect(html).not.toContain("Meta");
     expect(html).toContain('aria-label="marzo: 86 %, Sin meta"');
+    expect(html).toMatch(new RegExp(`<g(?=[^>]*role="img")(?=[^>]*aria-label="${TITULO}")[^>]*>`));
   });
 
   it("la meta que cambia entre periodos es escalonada, la tendencia constante dibuja su franja y sin periodos no hay gráfica", () => {
@@ -156,15 +159,70 @@ describe("GraficoTubos", () => {
     expect(escalonada).toContain(">Meta 90 %<");
     expect(escalonada).toContain('data-meta="Meta 85 %"');
     expect(escalonada).toContain('aria-label="julio: Sin dato"');
+    expect(escalonada).toContain(
+      `aria-label="${TITULO}: la meta cambia por periodo (85 % de enero a marzo; 90 % de abril a junio; sin meta en julio; 90 % de agosto a diciembre)"`,
+    );
 
     const constante = principal({ meta: { valor: 100, texto: "Meta 95 a 105 %" }, limite: undefined, rango: { min: 95, max: 105 } });
     expect(constante).toMatch(/<rect(?=[^>]*class="tubo-franja)[^>]*>/);
     // La franja entra en la escala: 105 % pasa de 100, así que el eje llega a 125.
     expect(constante).toContain(">125 %<");
+    expect(constante).toContain(`<caption>${TITULO}: meta entre 95 y 105 %</caption>`);
 
     const vacia = principal({ serie: [] });
     expect(vacia).not.toContain("<svg");
     expect(sinEtiquetas(vacia)).toBe("Sin periodos para mostrar.");
+  });
+});
+
+describe("GraficoTubos: lectura, negativos y años", () => {
+  it("la lectura dice de qué lado de la meta queda el crítico (menor es mejor: por encima)", () => {
+    const minutos = doce.map((p) => (p.valor === null ? p : { ...p, texto: `${p.valor} min` }));
+    const html = principal({
+      serie: minutos,
+      meta: { valor: 30, texto: "Meta 30 min" },
+      limite: { valor: 40, texto: "Crítico > 40 min" },
+      unidad: { sufijo: " min" },
+    });
+    expect(html).toContain(`<caption>${TITULO}: meta 30 min, crítico por encima de 40 min</caption>`);
+  });
+
+  it("con negativos, el relleno parte del cero: hacia arriba o hacia abajo, y el cero no tiene relleno", () => {
+    const punto = (clave: string, etiqueta: string, valor: number): PuntoDeSerie => ({
+      clave,
+      etiqueta,
+      valor,
+      texto: String(valor).replace("-", "−"),
+      estado: "sin-meta",
+      nombreEstado: "Sin meta",
+    });
+    const serie = [
+      punto("2025-11", "noviembre de 2025", 12),
+      punto("2025-12", "diciembre de 2025", -8),
+      punto("2026-01", "enero de 2026", 0),
+      punto("2026-02", "febrero de 2026", 5),
+    ];
+    const html = principal({ serie, meta: undefined, limite: undefined, unidad: { sufijo: "" } });
+    expect(cuenta(html, /class="tubo-relleno tubo-neutro"/g)).toBe(2);
+    expect(cuenta(html, /class="tubo-relleno tubo-neutro tubo-negativo"/g)).toBe(1);
+    // El relleno negativo cuelga de la línea del cero.
+    const cero = /<line x1="[^"]*" x2="[^"]*" y1="([^"]+)"[^>]*class="stroke-border"[^>]*><\/line><text[^>]*>0<\/text>/.exec(html)?.[1];
+    expect(cero).toBeDefined();
+    expect(/<rect class="tubo-relleno tubo-neutro tubo-negativo"[^>]*\sy="([^"]+)"/.exec(html)?.[1]).toBe(cero);
+    expect(html).not.toContain("NaN");
+
+    // Más de un año: el año bajo el primer periodo de cada uno y una raya donde cambia.
+    expect(html).toMatch(/<text(?=[^>]*class="tubo-anio )[^>]*>2025<\/text>/);
+    expect(html).toMatch(/<text(?=[^>]*class="tubo-anio )[^>]*>2026<\/text>/);
+    expect(cuenta(html, /<line(?=[^>]*class="tubo-anio )[^>]*>/g)).toBe(1);
+    // Un solo año: nada de eso.
+    expect(principal()).not.toContain("tubo-anio");
+    // Un año largo no cabe en un teléfono y la gráfica arranca en lo más reciente: su año se repite bajo su último periodo.
+    const dosAnios = [...doce.map((p) => ({ ...p, clave: p.clave.replace("2026", "2025") })), ...doce];
+    const largo = principal({ serie: dosAnios });
+    expect(cuenta(largo, /<text(?=[^>]*class="tubo-anio )[^>]*>2025<\/text>/g)).toBe(1);
+    expect(cuenta(largo, /<text(?=[^>]*class="tubo-anio )[^>]*>2026<\/text>/g)).toBe(2);
+    expect(largo).toMatch(/<text(?=[^>]*class="tubo-anio )(?=[^>]*text-anchor="end")[^>]*>2026<\/text>/);
   });
 });
 
@@ -185,6 +243,10 @@ describe("las piezas pequeñas", () => {
     const sinDato = renderToStaticMarkup(<TuboAcumulado valor={null} texto="Sin dato" estado="sin-dato" unidad={UNIDAD} />);
     expect(sinDato).not.toContain("tubo-relleno");
     expect(sinDato).not.toContain("NaN");
+    // Un acumulado negativo también parte del cero.
+    const negativo = renderToStaticMarkup(<TuboAcumulado valor={-5} texto="−5" estado="sin-meta" />);
+    expect(negativo).toContain('style="width:71.428%;margin-left:14.286%"');
+    expect(acumulado).toMatch(/^<div class="tubo-color-exacto /);
 
     const variable: PuntoDeSerie[] = [
       { clave: "2026-T1", etiqueta: "primer trimestre", valor: 5, texto: "5", estado: "sin-meta", nombreEstado: "Sin meta" },
@@ -199,6 +261,14 @@ describe("las piezas pequeñas", () => {
     expect(mini).toContain(">3<");
     expect(mini).toContain('<tr><th scope="row">tercer trimestre</th><td>3</td></tr>');
     expect(mini).not.toContain("NaN");
+    // Nunca por debajo de 1:1: con doce meses el lienzo mide lo que pide y se desplaza desde lo más reciente.
+    const mensual = doce.map((p) => (p.valor === null ? p : { ...p, texto: String(p.valor), estado: "sin-meta" as const }));
+    const miniMes = renderToStaticMarkup(<MiniTubos titulo="Cartera recaudada" serie={mensual} />);
+    expect(miniMes).toMatch(/<svg(?=[^>]*\swidth="372")(?=[^>]*\sheight="64")(?=[^>]*class="[^"]*max-w-none)(?=[^>]*\[direction:ltr\])[^>]*>/);
+    expect(miniMes).toMatch(
+      /<div(?=[^>]*class="[^"]*overflow-x-auto)(?=[^>]*\[direction:rtl\])(?=[^>]*tabindex="0")(?=[^>]*role="region")(?=[^>]*aria-label="Cartera recaudada")[^>]*>/,
+    );
+    expect(mini).toMatch(/<svg(?=[^>]*\swidth="150")[^>]*>/);
 
     const tendencia = renderToStaticMarkup(
       <Tendencia valores={[80, 82, null, 78, 85, 87]} estadoFinal="bien" descripcion="Tendencia de los últimos seis periodos: sube" />,
@@ -217,6 +287,7 @@ describe("las piezas pequeñas", () => {
       "0 bien, 0 en atención, 1 crítico, 0 sin dato",
     );
     expect(renderToStaticMarkup(<BarraEstados bien={0} atencion={0} critico={0} sinDato={0} />)).not.toContain("NaN");
+    expect(barra).toMatch(/^<div class="tubo-color-exacto /);
   });
 });
 
@@ -240,6 +311,26 @@ describe("hoja de estilos y colores", () => {
     expect(impresion).toMatch(/\.tubo-relleno\s*\{[^}]*animation:\s*none/);
     expect(impresion).toMatch(/\.tubo-impreso\s*\{[^}]*display:\s*inline/);
     expect(fuera).toMatch(/\.tubo-impreso\s*\{[^}]*display:\s*none/);
+    // Sin «gráficos de fondo», las piezas HTML (pista, marca, segmentos) se imprimen igual.
+    expect(impresion).toMatch(/\.tubo-color-exacto\s*\{[^}]*print-color-adjust:\s*exact/);
+  });
+
+  it("cada franja enfocada dibuja su anillo de foco", () => {
+    expect(css).toMatch(/\.tubo-zona:focus-visible\s*\{[^}]*stroke:\s*var\(--ring\);[^}]*stroke-width:\s*2;/);
+  });
+
+  it("las dos gráficas comparten el tubo SVG y la pequeña no arrastra la tarjeta de cliente", () => {
+    const fuente = (a: string) => readFileSync(path.join(raiz, "src/componentes/ui", a), "utf8");
+    expect(fuente("MiniTubos.tsx")).not.toMatch(/from "\.\/(GraficoTubos|TarjetaDeTubo)"/);
+    for (const a of ["MiniTubos.tsx", "GraficoTubos.tsx"]) expect(fuente(a)).toMatch(/import \{[^}]*\bTuboSvg\b[^}]*\} from "\.\/TuboSvg"/);
+    expect(fuente("TuboSvg.tsx")).not.toMatch(/^\s*["']use client["']/);
+  });
+
+  it("Escape descarta la tarjeta también cuando la abrió el cursor: escucha en el documento solo mientras se ve", () => {
+    const tarjeta = readFileSync(path.join(raiz, "src/componentes/ui/TarjetaDeTubo.tsx"), "utf8");
+    expect(tarjeta).toMatch(/document\.addEventListener\(\s*"keydown"/);
+    expect(tarjeta).toMatch(/signal:\s*teclado\.signal/);
+    expect(tarjeta).toMatch(/teclado\?\.abort\(\)/);
   });
 
   it("los tokens de las gráficas tienen su color de Tailwind", () => {
@@ -251,7 +342,7 @@ describe("hoja de estilos y colores", () => {
   it("ningún componente de gráfica usa un color fijo", () => {
     const FIJO =
       /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?)\(|\b(?:bg|text|fill|stroke|border|from|via|to)-(?:white|black|gray|slate|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)(?:-\d+)?\b/i;
-    const archivos = ["geometria-tubos.ts", "GraficoTubos.tsx", "TarjetaDeTubo.tsx", "TuboAcumulado.tsx", "MiniTubos.tsx", "Tendencia.tsx", "BarraEstados.tsx"];
+    const archivos = ["geometria-tubos.ts", "GraficoTubos.tsx", "TuboSvg.tsx", "TarjetaDeTubo.tsx", "TuboAcumulado.tsx", "MiniTubos.tsx", "Tendencia.tsx", "BarraEstados.tsx"];
     for (const a of archivos) {
       const malas = readFileSync(path.join(raiz, "src/componentes/ui", a), "utf8")
         .split("\n")

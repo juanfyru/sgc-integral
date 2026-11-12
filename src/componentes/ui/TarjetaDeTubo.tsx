@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 
 // Clases literales: Tailwind solo genera las que ve escritas completas.
 const PUNTO: Record<string, string> = {
@@ -13,9 +13,9 @@ const FORMA_PUNTO = "inline-block size-2 shrink-0 rounded-full";
 
 /**
  * La tarjeta de una gráfica de tubos (spec §11): aparece al pasar el cursor por la franja de un periodo y al enfocarla
- * con el teclado, con el periodo, el valor, el estado y la meta, y se va con Escape. Lee lo que cada área sensible
- * (`[data-tubo]`, que pinta el servidor) trae escrito y lo copia con `textContent`. No se lee aparte: el área enfocada
- * ya dice su valor y su estado, y la tabla equivalente lo trae todo.
+ * con el teclado, con el periodo, el valor, el estado y la meta, y se va con Escape, la haya abierto el cursor o el
+ * foco (WCAG 1.4.13). Lee lo que cada área sensible (`[data-tubo]`, que pinta el servidor) trae escrito y lo copia con
+ * `textContent`. No se lee aparte: el área enfocada ya dice su valor y su estado, y la tabla equivalente lo trae todo.
  */
 export function TarjetaDeTubo({ children }: { children: React.ReactNode }) {
   const raiz = useRef<HTMLDivElement>(null);
@@ -25,50 +25,78 @@ export function TarjetaDeTubo({ children }: { children: React.ReactNode }) {
   const estado = useRef<HTMLSpanElement>(null);
   const pie = useRef<HTMLElement>(null);
 
-  const zonaDe = (objetivo: EventTarget | null) =>
-    objetivo instanceof Element ? objetivo.closest<SVGElement | HTMLElement>("[data-tubo]") : null;
-
-  function mostrar(zona: SVGElement | HTMLElement, x: number, y: number) {
+  useEffect(() => {
     const caja = raiz.current;
     const t = tarjeta.current;
-    if (!caja || !t || !valor.current || !punto.current || !estado.current || !pie.current) return;
-    const d = zona.dataset;
-    valor.current.textContent = d.valor || d.nombre || "";
-    estado.current.textContent = d.valor ? (d.nombre ?? "") : "";
-    punto.current.className = `${FORMA_PUNTO} ${PUNTO[d.estado ?? ""] ?? "bg-estado-sin-dato"}`;
-    punto.current.hidden = !d.valor;
-    pie.current.textContent = d.meta ? `${d.periodo ?? ""} · ${d.meta}` : (d.periodo ?? "");
-    t.hidden = false;
-    const r = caja.getBoundingClientRect();
-    t.style.left = `${Math.min(Math.max(x - r.left + 14, 0), Math.max(r.width - t.offsetWidth, 0))}px`;
-    t.style.top = `${Math.max(y - r.top - t.offsetHeight - 12, 0)}px`;
-  }
+    const cifra = valor.current;
+    const marca = punto.current;
+    const nombre = estado.current;
+    const linea = pie.current;
+    if (!caja || !t || !cifra || !marca || !nombre || !linea) return;
 
-  function ocultar() {
-    if (tarjeta.current) tarjeta.current.hidden = true;
-  }
+    // Escape se escucha en el documento solo mientras la tarjeta se ve.
+    let teclado: AbortController | null = null;
+    const ocultar = () => {
+      t.hidden = true;
+      teclado?.abort();
+      teclado = null;
+    };
+    const mostrar = (zona: SVGElement | HTMLElement, x: number, y: number) => {
+      const d = zona.dataset;
+      cifra.textContent = d.valor || d.nombre || "";
+      nombre.textContent = d.valor ? (d.nombre ?? "") : "";
+      marca.className = `${FORMA_PUNTO} ${PUNTO[d.estado ?? ""] ?? "bg-estado-sin-dato"}`;
+      marca.hidden = !d.valor;
+      linea.textContent = d.meta ? `${d.periodo ?? ""} · ${d.meta}` : (d.periodo ?? "");
+      t.hidden = false;
+      const r = caja.getBoundingClientRect();
+      t.style.left = `${Math.min(Math.max(x - r.left + 14, 0), Math.max(r.width - t.offsetWidth, 0))}px`;
+      t.style.top = `${Math.max(y - r.top - t.offsetHeight - 12, 0)}px`;
+      if (!teclado) {
+        teclado = new AbortController();
+        document.addEventListener(
+          "keydown",
+          (e) => {
+            if (e.key === "Escape") ocultar();
+          },
+          { signal: teclado.signal },
+        );
+      }
+    };
+    const zonaDe = (objetivo: EventTarget | null) =>
+      objetivo instanceof Element ? objetivo.closest<SVGElement | HTMLElement>("[data-tubo]") : null;
 
-  return (
-    <div
-      ref={raiz}
-      className="relative"
-      onPointerMove={(e) => {
+    const eventos = new AbortController();
+    const { signal } = eventos;
+    caja.addEventListener(
+      "pointermove",
+      (e) => {
         const zona = zonaDe(e.target);
         if (zona) mostrar(zona, e.clientX, e.clientY);
         else ocultar();
-      }}
-      onPointerLeave={ocultar}
-      onFocus={(e) => {
+      },
+      { signal },
+    );
+    caja.addEventListener("pointerleave", ocultar, { signal });
+    caja.addEventListener(
+      "focusin",
+      (e) => {
         const zona = zonaDe(e.target);
         if (!zona) return;
         const c = zona.getBoundingClientRect();
         mostrar(zona, c.left + c.width / 2, c.top + 24);
-      }}
-      onBlur={ocultar}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") ocultar();
-      }}
-    >
+      },
+      { signal },
+    );
+    caja.addEventListener("focusout", ocultar, { signal });
+    return () => {
+      eventos.abort();
+      ocultar();
+    };
+  }, []);
+
+  return (
+    <div ref={raiz} className="relative">
       {children}
       <div
         ref={tarjeta}

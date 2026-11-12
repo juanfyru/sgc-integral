@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   anchoDeFranja,
   calcularTubos,
+  cambiosDeAnio,
   escala,
   puntosDeTendencia,
   rotuloCorto,
@@ -98,6 +99,27 @@ describe("calcularTubos", () => {
   });
 });
 
+describe("calcularTubos con negativos", () => {
+  const e = { min: -25, max: 100 };
+  const tres = [{ ...doce[0], valor: 50 }, { ...doce[1], valor: -10 }, { ...doce[2], valor: 0 }];
+
+  it("cuando la escala incluye el cero, el relleno parte de él: un positivo sube y un negativo baja", () => {
+    const [positivo, negativo] = calcularTubos(tres, G, e);
+    expect(yDe(0, G, e)).toBe(146);
+    expect(positivo.yRelleno).toBeCloseTo(82);
+    expect(positivo.altoRelleno).toBeCloseTo(64);
+    expect(negativo.yRelleno).toBe(146);
+    expect(negativo.altoRelleno).toBeCloseTo(12.8);
+  });
+
+  it("un cero no tiene relleno, y una escala que no incluye el cero parte de su base", () => {
+    expect(calcularTubos(tres, G, e)[2].altoRelleno).toBe(0);
+    const [solo] = calcularTubos([{ ...doce[0], valor: 75 }], G, { min: 50, max: 100 });
+    expect(solo.yRelleno).toBe(98);
+    expect(solo.altoRelleno).toBe(80);
+  });
+});
+
 describe("puntosDeTendencia", () => {
   const g = { ancho: 64, alto: 18, margen: 3 };
 
@@ -134,5 +156,25 @@ describe("rotuloCorto", () => {
     expect(rotuloCorto("2026-S1", "primer semestre")).toBe("S1");
     expect(rotuloCorto("2026", "2026")).toBe("2026");
     expect(rotuloCorto("otra", "Otra cosa")).toBe("Otra cosa");
+  });
+});
+
+describe("cambiosDeAnio", () => {
+  it("con más de un año, el primer periodo de cada año; con uno solo, nada", () => {
+    expect(cambiosDeAnio(["2025-11", "2025-12", "2026-01", "2026-02"])).toEqual([
+      { indice: 0, anio: "2025" },
+      { indice: 2, anio: "2026" },
+    ]);
+    expect(cambiosDeAnio(["2025-T3", "2025-T4", "2026-T1", "2026-T2", "2026-T3", "2026-T4", "2027-T1"])).toEqual([
+      { indice: 0, anio: "2025" },
+      { indice: 2, anio: "2026" },
+      { indice: 6, anio: "2027" },
+    ]);
+    expect(cambiosDeAnio(["2025", "2026"])).toEqual([
+      { indice: 0, anio: "2025" },
+      { indice: 1, anio: "2026" },
+    ]);
+    expect(cambiosDeAnio(doce.map((p) => p.clave))).toEqual([]);
+    expect(cambiosDeAnio([])).toEqual([]);
   });
 });
