@@ -125,7 +125,9 @@ registrar**. Las marcas que pueden acompañarlo:
 **Histórico**, **Corregida** (con **Ver el historial**: qué había, qué quedó, quién, cuándo y por
 qué), **Requiere acción de mejora**, **Meta ajustada después del periodo** y **N periodos sin
 cumplir** (el indicador no cumple desde hace varios periodos seguidos: el color sigue diciendo el
-resultado del periodo, pero se trata como crítico para el análisis y las alertas).
+resultado del periodo, pero se trata como crítico para el análisis y las alertas). Si se corrige,
+se reabre o se reporta tarde un periodo, el SGC vuelve a revisar esta marca en los periodos
+siguientes que aún no están cerrados: puede ponerla o quitarla, y el cambio queda registrado.
 
 La ficha dice cómo se reparten los colores, en palabras: «Bien desde 90 % · Atención de 63 a
 89,9 % · Crítico por debajo de 63 %». **La cifra nunca contradice el color:** el SGC decide con el
@@ -506,7 +508,11 @@ En **Administrar**:
 Estos datos **no son parte de la ficha firmada**: cambiarlos no crea versión, queda en la bitácora
 con lo que había y lo que quedó, y la ficha impresa los muestra aparte. Correr el inicio de
 medición hacia adelante quita los periodos abiertos sin ningún dato anteriores a él; si alguno ya
-tiene datos, no deja.
+tiene datos, no deja. Los cambios alcanzan también los periodos que siguen abiertos (no los
+cerrados ni los históricos): con otro **plazo de reporte** cambia su fecha límite, y si la nueva
+aún no llega, el aviso de vencido se vuelve a mandar cuando venza; con otro **soporte**, un
+periodo que solo esperaba el archivo queda reportado y deja de ser tarea, y uno reportado sin
+archivo vuelve a pedirlo.
 
 ### 6.5 Programar metas
 

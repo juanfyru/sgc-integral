@@ -432,7 +432,12 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   aplicada y el estado de una medición abierta o reportada; reportar, registrar históricos,
   corregir, marcar «no aplica», reprogramar la meta, subir o quitar un soporte y reabrir pasan por
   ella, con la fila bloqueada. El cierre del mes y «Cerrar de nuevo»
-  solo la pasan a `cerrada` (`src/db/consultas/indicadores/cierre.ts`).
+  solo la pasan a `cerrada` (`src/db/consultas/indicadores/cierre.ts`). Cuando cambia el semáforo o
+  el resultado de una medición ordinaria, ella misma recalcula la racha de las n − 1 siguientes
+  medidas sin cerrar (`recalcularSiguientes`, evento `recalculo`, F14A-R53), y cambiar el plazo o
+  «soporte obligatorio» llega a las mediciones en curso (`cambiarOperacion`, F14A-R52). Un
+  recálculo que no nace de un cambio en la medición (esos dos) pasa `conservarVersion`: no la mueve
+  de la versión con que se congeló al reportarla.
 - **El cumplimiento de un porcentaje con meta se decide con la razón exacta, en enteros**
   (`cumplePorcentaje`, `src/lib/indicadores-documentales/metas.ts`; `conformidad`,
   `src/lib/distribucion/verificacion.ts`), nunca con el entero que se muestra. `conformidad()`
