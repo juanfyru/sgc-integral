@@ -93,6 +93,8 @@ export type FilaDeLista = {
   nombre: string;
   proceso: string;
   subproceso: string | null;
+  /** El subproceso de la versión aprobada vigente; `null` sin subproceso o sin ficha aprobada. */
+  subprocesoId: number | null;
   periodicidad: Periodicidad | null;
   restringido: boolean;
   retirado: boolean;
@@ -141,7 +143,7 @@ function textoDeReporte(p: Pendientes | undefined, ultima: Row | undefined, ahor
 /**
  * La lista de «Indicadores» (spec §12.2, maqueta 4): lo que la persona ve (`filtroIndicadores`), cada uno con su último
  * periodo terminado (resultado, meta, estado y los seis últimos valores) y lo pendiente de reportar o analizar, más la barra
- * de estados. Antes de leer abre los periodos terminados (`asegurarMediciones`). El filtro de reporte mira toda medición
+ * de estados. Antes de leer las mediciones abre los periodos terminados de los indicadores activos que lee (`asegurarMediciones`). El filtro de reporte mira toda medición
  * pendiente, no solo la del último periodo: es el de los enlaces de «Mis tareas». La barra (`resumen`) cuenta las filas con
  * ficha aprobada que dejan los demás filtros, antes del de semáforo. Las mediciones de otra periodicidad no cuentan como
  * periodo vigente. Cinco lecturas además de abrir periodos, sin importar cuántos indicadores haya.
@@ -154,14 +156,13 @@ export async function listarIndicadores(
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
   const zona = zonaHoraria();
-  await asegurarMediciones({ sql, ahora });
   const administra = puede(sesion, "indicadores.administrar");
   const estados = ["activo", ...(administra ? ["borrador"] : []), ...(filtro.retirados ? ["retirado", ...(administra ? ["descartado"] : [])] : [])];
   const patron = filtro.texto ? `%${escaparLike(filtro.texto)}%` : null;
   const indicadores = await sql`
     SELECT i.id, i.codigo, i.estado, i.nivel_acceso, p.nombre AS proceso,
       va.id AS vigente_id, va.numero AS numero_vigente, va.nombre AS nombre_vigente, va.periodicidad AS periodicidad_vigente,
-      va.subproceso_nombre, vu.numero AS numero_ultima, vu.estado AS estado_ultima, vu.nombre AS nombre_ultima,
+      va.subproceso_id, va.subproceso_nombre, vu.numero AS numero_ultima, vu.estado AS estado_ultima, vu.nombre AS nombre_ultima,
       vu.periodicidad AS periodicidad_ultima
     FROM indicadores i
     JOIN procesos p ON p.id = i.proceso_id
@@ -182,6 +183,8 @@ export async function listarIndicadores(
     ORDER BY i.codigo`;
 
   const ids = indicadores.filter((f) => f.vigente_id !== null).map((f) => Number(f.id));
+  // Abre los periodos terminados solo de los activos que va a leer; sin indicadores no abre nada.
+  await asegurarMediciones({ sql, ahora, indicadorIds: indicadores.filter((f) => f.estado === "activo").map((f) => Number(f.id)) });
   const [versiones, recientes, pendientes] =
     ids.length === 0
       ? [new Map<number, VersionDeCalculo[]>(), [], []]
@@ -264,6 +267,7 @@ export async function listarIndicadores(
       nombre: (f.nombre_vigente ?? f.nombre_ultima ?? "") as string,
       proceso: f.proceso as string,
       subproceso: texto(f.subproceso_nombre),
+      subprocesoId: f.subproceso_id === null || f.subproceso_id === undefined ? null : Number(f.subproceso_id),
       periodicidad: ((f.periodicidad_vigente ?? f.periodicidad_ultima) as Periodicidad | null) ?? null,
       restringido: f.nivel_acceso === "restringido",
       retirado: f.estado === "retirado",
@@ -343,7 +347,7 @@ export async function opcionesDeLista(sesion: SujetoVisibilidad, opciones?: { sq
 /** Lo que la página de un proceso o de un subproceso muestra de cada indicador (spec §12.8). */
 export type FilaDeProceso = Pick<
   FilaDeLista,
-  "id" | "codigo" | "nombre" | "resultado" | "semaforo" | "noAplica" | "periodo" | "etiquetaPeriodo" | "reporte" | "restringido"
+  "id" | "codigo" | "nombre" | "resultado" | "semaforo" | "noAplica" | "periodo" | "etiquetaPeriodo" | "restringido"
 >;
 
 const filaDeProceso = (f: FilaDeLista): FilaDeProceso => ({
@@ -355,7 +359,6 @@ const filaDeProceso = (f: FilaDeLista): FilaDeProceso => ({
   noAplica: f.noAplica,
   periodo: f.periodo,
   etiquetaPeriodo: f.etiquetaPeriodo,
-  reporte: f.reporte,
   restringido: f.restringido,
 });
 
@@ -364,7 +367,8 @@ const conFicha = (f: FilaDeLista) => f.estado === "activo";
 
 /**
  * Los indicadores del proceso que la persona ve, los suyos y, agrupados por subproceso, los de cada subproceso (spec
- * §12.8): la misma lectura, visibilidad y último periodo que la lista. Un grupo sin indicadores visibles no existe.
+ * §12.8): la misma lectura, visibilidad y último periodo que la lista. Los grupos llevan el nombre del subproceso que
+ * congeló la versión vigente y van en el orden del mapa; un grupo sin indicadores visibles no existe.
  */
 export async function indicadoresDeProceso(
   sesion: SujetoVisibilidad,
@@ -374,33 +378,37 @@ export async function indicadoresDeProceso(
   const sql = opciones?.sql ?? obtenerSql();
   const { filas } = await listarIndicadores(sesion, { procesoId }, opciones);
   const visibles = filas.filter(conFicha);
-  if (visibles.length === 0) return { propios: [], porSubproceso: [] };
-  const subprocesos = await sql`
-    SELECT i.id, va.subproceso_id, s.nombre
-    FROM indicadores i
-    JOIN LATERAL (
-      SELECT subproceso_id FROM indicador_versiones WHERE indicador_id = i.id AND estado = 'aprobada' ORDER BY numero DESC LIMIT 1
-    ) va ON true
-    LEFT JOIN subprocesos s ON s.id = va.subproceso_id
-    WHERE i.id IN ${sql(visibles.map((f) => f.id))}`;
-  const deIndicador = new Map(subprocesos.map((s) => [Number(s.id), s.subproceso_id === null ? null : { id: Number(s.subproceso_id), nombre: s.nombre as string }]));
-  const propios: FilaDeProceso[] = [];
+  const propios = visibles.filter((f) => f.subprocesoId === null).map(filaDeProceso);
+  const conSubproceso = visibles.filter((f) => f.subprocesoId !== null);
+  if (conSubproceso.length === 0) return { propios, porSubproceso: [] };
+  // Una sola lectura del catálogo para el orden del mapa.
+  const orden = new Map((await sql`SELECT id, orden FROM subprocesos WHERE proceso_id = ${procesoId}`).map((s) => [Number(s.id), Number(s.orden)]));
   const grupos = new Map<number, { subprocesoId: number; nombre: string; filas: FilaDeProceso[] }>();
-  for (const f of visibles) {
-    const sub = deIndicador.get(f.id) ?? null;
-    if (!sub) {
-      propios.push(filaDeProceso(f));
-      continue;
-    }
-    const grupo = grupos.get(sub.id) ?? { subprocesoId: sub.id, nombre: sub.nombre, filas: [] };
+  for (const f of conSubproceso) {
+    const id = f.subprocesoId as number;
+    const grupo = grupos.get(id) ?? { subprocesoId: id, nombre: f.subproceso ?? "", filas: [] };
     grupo.filas.push(filaDeProceso(f));
-    grupos.set(sub.id, grupo);
+    grupos.set(id, grupo);
   }
-  return { propios, porSubproceso: [...grupos.values()].sort((a, b) => a.nombre.localeCompare(b.nombre, "es") || a.subprocesoId - b.subprocesoId) };
+  const lugar = (id: number) => orden.get(id) ?? Number.MAX_SAFE_INTEGER;
+  return { propios, porSubproceso: [...grupos.values()].sort((a, b) => lugar(a.subprocesoId) - lugar(b.subprocesoId) || a.subprocesoId - b.subprocesoId) };
 }
 
 /** Los indicadores del subproceso que la persona ve (spec §12.8). */
 export async function indicadoresDeSubproceso(sesion: SujetoVisibilidad, subprocesoId: number, opciones?: Opciones): Promise<FilaDeProceso[]> {
   const { filas } = await listarIndicadores(sesion, { subprocesoId }, opciones);
   return filas.filter(conFicha).map(filaDeProceso);
+}
+
+/**
+ * La lectura de indicadores de una página cuyo núcleo son los documentos (7.5): si falla, se registra y devuelve `null`,
+ * y la página pinta sin esa sección.
+ */
+export async function sinTumbarLaPagina<T>(lectura: Promise<T>): Promise<T | null> {
+  try {
+    return await lectura;
+  } catch (error) {
+    console.error("No se pudieron leer los indicadores de la página:", error);
+    return null;
+  }
 }

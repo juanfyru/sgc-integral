@@ -8,7 +8,7 @@ import { MiniMapa } from "@/componentes/navegacion/MiniMapa";
 import { NavHermanos } from "@/componentes/navegacion/NavHermanos";
 import { IndicadoresDelProceso } from "@/componentes/indicadores/IndicadoresDelProceso";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
-import { indicadoresDeSubproceso } from "@/db/consultas/indicadores/lista";
+import { indicadoresDeSubproceso, sinTumbarLaPagina } from "@/db/consultas/indicadores/lista";
 import {
   obtenerDetalleSubproceso,
   obtenerDocumentosDeSubproceso,
@@ -30,7 +30,7 @@ export default async function VistaSubproceso({
 
   const [documentos, indicadores] = await Promise.all([
     obtenerDocumentosDeSubproceso(subproceso.id, sesion),
-    indicadoresDeSubproceso(sesion, subproceso.id),
+    sinTumbarLaPagina(indicadoresDeSubproceso(sesion, subproceso.id)),
   ]);
   const propios = documentos.filter((d) => d.esPrincipal);
   const tambienAplican = documentos.filter((d) => !d.esPrincipal);
@@ -85,7 +85,9 @@ export default async function VistaSubproceso({
         )}
       </section>
 
-      <IndicadoresDelProceso procesoId={subproceso.proceso.id} titulo="Indicadores del subproceso" propios={indicadores} />
+      {indicadores ? (
+        <IndicadoresDelProceso procesoId={subproceso.proceso.id} titulo="Indicadores del subproceso" propios={indicadores} />
+      ) : null}
 
       {tambienAplican.length > 0 && (
         <section className="mt-8" aria-labelledby="titulo-tambien">

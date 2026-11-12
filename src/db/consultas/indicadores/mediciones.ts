@@ -266,11 +266,24 @@ export async function quitarMedicionesDeOtraPeriodicidad(tx: TransactionSql, ind
 /**
  * Abre (crea, idempotente) la medición de cada periodo terminado de cada indicador activo desde su inicio de medición
  * (spec §8.1, F14-DC12), con la versión que rige el periodo y su fecha límite. Es histórica la de un periodo que terminó
- * antes de aprobarse la primera versión (§8.8). Devuelve cuántas creó.
+ * antes de aprobarse la primera versión (§8.8). Devuelve cuántas creó. Con `indicadorId` abre solo ese; con `indicadorIds`,
+ * solo esos, y uno que falla no impide los demás.
  */
-export async function asegurarMediciones(opciones?: { sql?: Cliente; ahora?: Date; indicadorId?: number }): Promise<number> {
+export async function asegurarMediciones(opciones?: { sql?: Cliente; ahora?: Date; indicadorId?: number; indicadorIds?: number[] }): Promise<number> {
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
+  if (opciones?.indicadorIds) {
+    // Solo los indicadores que la lectura va a mostrar, cada uno en su transacción: uno que falla se registra y se salta.
+    let abiertas = 0;
+    for (const id of opciones.indicadorIds) {
+      try {
+        abiertas += await abrirPeriodos(sql, id, ahora);
+      } catch (error) {
+        console.error(`No se pudieron abrir los periodos del indicador ${id}:`, error);
+      }
+    }
+    return abiertas;
+  }
   const ids =
     opciones?.indicadorId !== undefined
       ? [opciones.indicadorId]

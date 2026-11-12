@@ -13,7 +13,7 @@ export type ResultadoIndicador = { codigo: string; nombre: string; proceso: stri
 
 /**
  * Hasta `limite` indicadores activos o retirados que la persona ve y cuyo código o nombre (el de la versión vigente)
- * contiene el texto, sin tildes ni mayúsculas; primero los que empiezan por él en el código. Nunca un borrador ni un
+ * contiene el texto, sin tildes ni mayúsculas; primero los que empiezan por él en el código, después por nombre y por código. Nunca un borrador ni un
  * descartado. Con menos de 2 caracteres, ninguno.
  */
 export async function buscarIndicadores(
@@ -36,7 +36,7 @@ export async function buscarIndicadores(
     ) va ON true
     WHERE i.estado IN ('activo', 'retirado') AND ${filtroIndicadores(sql, sesion)}
       AND (unaccent(i.codigo) ILIKE unaccent(${contiene}) OR unaccent(coalesce(va.nombre, '')) ILIKE unaccent(${contiene}))
-    ORDER BY (unaccent(i.codigo) ILIKE unaccent(${empieza})) DESC, i.codigo
+    ORDER BY (unaccent(i.codigo) ILIKE unaccent(${empieza})) DESC, unaccent(lower(coalesce(va.nombre, ''))), i.codigo
     LIMIT ${Math.min(Math.max(Math.trunc(limite), 1), 50)}`;
   return filas.map((f) => ({ codigo: f.codigo as string, nombre: (f.nombre as string | null) ?? "", proceso: f.proceso as string, retirado: f.retirado === true }));
 }

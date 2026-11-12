@@ -2,7 +2,7 @@
 
 Este capítulo es para todas las personas que usan el SGC: cómo está organizada la
 pantalla, qué encuentra en la barra lateral según su rol, qué hay en **Inicio**, cómo
-buscar documentos y normas con `Ctrl K`, para qué sirve la campana, cómo cambiar el tema claro u oscuro, cómo
+buscar documentos, normas e indicadores con `Ctrl K`, para qué sirve la campana, cómo cambiar el tema claro u oscuro, cómo
 se ve en el celular y cómo imprimir. Para ingresar y manejar su cuenta, vea el Capítulo 1.
 
 ## 1. Cómo está organizada la pantalla

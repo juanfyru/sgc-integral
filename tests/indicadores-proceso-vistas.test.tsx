@@ -17,7 +17,6 @@ const fila = (o: Partial<FilaDeProceso> = {}): FilaDeProceso => ({
   noAplica: false,
   periodo: "2026-T3",
   etiquetaPeriodo: "Tercer trimestre de 2026",
-  reporte: { texto: "Reportado", vencida: false },
   restringido: false,
   ...o,
 });
@@ -32,7 +31,7 @@ describe("IndicadoresDelProceso", () => {
       <IndicadoresDelProceso
         procesoId={3}
         titulo="Indicadores del proceso"
-        propios={[fila(), fila({ id: 2, codigo: "GTH-IND-02", resultado: null, semaforo: null, reporte: { texto: "Por reportar", vencida: false } })]}
+        propios={[fila(), fila({ id: 2, codigo: "GTH-IND-02", resultado: null, semaforo: null, restringido: true })]}
         porSubproceso={[{ subprocesoId: 9, nombre: "Nómina", filas: [fila({ id: 3, codigo: "GTH-IND-03" })] }]}
       />,
     );
@@ -40,7 +39,8 @@ describe("IndicadoresDelProceso", () => {
     expect(html).toContain('href="/indicadores/GTH-IND-01"');
     expect(html).toContain("92 %");
     expect(html).toContain("Bien");
-    expect(html).toContain("Por reportar");
+    expect(html).toContain("Restringido");
+    expect(html).toContain("Lista de indicadores del proceso");
     expect(html).toContain("Sin dato");
     expect(html).toContain("Subproceso: Nómina");
     expect(html).toContain('href="/indicadores/matriz?proceso=3"');

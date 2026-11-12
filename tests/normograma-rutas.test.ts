@@ -325,10 +325,12 @@ describe("GET /api/buscar: el grupo «Normas»", () => {
         ruta: `/normograma/${id}`,
       });
       expect(resultados.filter((r) => r.grupo === "norma").length).toBeLessThanOrEqual(4);
-      expect(resultados.every((r) => r.grupo === "norma" || r.grupo === "documento")).toBe(true);
-      // Las normas van después de los documentos.
+      expect(resultados.every((r) => ["norma", "documento", "indicador"].includes(r.grupo))).toBe(true);
+      // Las normas van después de los documentos y los indicadores, después de las normas.
       const primeraNorma = resultados.findIndex((r) => r.grupo === "norma");
-      expect(resultados.slice(primeraNorma).every((r) => r.grupo === "norma")).toBe(true);
+      expect(resultados.slice(primeraNorma).every((r) => r.grupo === "norma" || r.grupo === "indicador")).toBe(true);
+      const primerIndicador = resultados.findIndex((r) => r.grupo === "indicador");
+      if (primerIndicador >= 0) expect(resultados.slice(primerIndicador).every((r) => r.grupo === "indicador")).toBe(true);
     }));
 
   it("los documentos llevan grupo «documento»; una norma retirada no sale", () =>

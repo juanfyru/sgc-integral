@@ -94,6 +94,7 @@ const FILA: FilaDeLista = {
   nombre: "Cumplimiento del programa de auditorías",
   proceso: "Sistema de Gestión de Calidad",
   subproceso: null,
+  subprocesoId: null,
   periodicidad: "trimestral",
   restringido: false,
   retirado: false,

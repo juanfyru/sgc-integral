@@ -11,7 +11,7 @@ import { NormasAplicables } from "@/componentes/normograma/NormasAplicables";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { IndicadoresDelProceso } from "@/componentes/indicadores/IndicadoresDelProceso";
 import { ResumenVigencia } from "@/componentes/vigencia/ResumenVigencia";
-import { indicadoresDeProceso } from "@/db/consultas/indicadores/lista";
+import { indicadoresDeProceso, sinTumbarLaPagina } from "@/db/consultas/indicadores/lista";
 import { normasDeProceso } from "@/db/consultas/normograma/asociaciones";
 import { normasParaElegir } from "@/db/consultas/normograma/lectura";
 import {
@@ -47,7 +47,7 @@ export default async function VistaProceso({
     resumenVigenciaDeProceso(proceso.id, sesion),
     normasDeProceso(proceso.id, sesion),
     alcanceProcesos(sesion),
-    indicadoresDeProceso(sesion, proceso.id),
+    sinTumbarLaPagina(indicadoresDeProceso(sesion, proceso.id)),
   ]);
   // «Asociar norma» (spec 13C §10.3): quien tiene `normograma.procesos` sobre el proceso, con las normas que aún no aplican.
   // Una derogada ya no se asocia a un proceso nuevo (`asociarProceso` lo rechaza).
@@ -176,12 +176,14 @@ export default async function VistaProceso({
         )}
       </section>
 
-      <IndicadoresDelProceso
-        procesoId={proceso.id}
-        titulo="Indicadores del proceso"
-        propios={indicadores.propios}
-        porSubproceso={indicadores.porSubproceso}
-      />
+      {indicadores ? (
+        <IndicadoresDelProceso
+          procesoId={proceso.id}
+          titulo="Indicadores del proceso"
+          propios={indicadores.propios}
+          porSubproceso={indicadores.porSubproceso}
+        />
+      ) : null}
 
       <NormasAplicables proceso={{ id: proceso.id, slug: proceso.slug }} normas={normas} asociables={asociables} />
 

@@ -26,12 +26,13 @@ vi.mock("@/lib/sesion-actual", () => ({ sesionDePeticion }));
 import { GET as buscarRapido } from "@/app/api/buscar/route";
 import { obtenerSql } from "@/db/cliente";
 import { buscarIndicadores, indicadoresQueExige } from "@/db/consultas/indicadores/busqueda";
-import { indicadoresDeProceso, indicadoresDeSubproceso } from "@/db/consultas/indicadores/lista";
+import { indicadoresDeProceso, indicadoresDeSubproceso, sinTumbarLaPagina } from "@/db/consultas/indicadores/lista";
+import { asegurarMediciones } from "@/db/consultas/indicadores/mediciones";
 import { retirar } from "@/db/consultas/indicadores/operacion";
 import { INDICADORES_EN_LA_BUSQUEDA, INDICADORES_EN_LA_PALETA, gruposDeResultados, type ResultadoRapido } from "@/lib/busqueda-rapida";
 import { indicadorDePrueba, type IndicadorDePrueba, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
 import { normaDePrueba } from "./utiles/normograma";
-import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
+import { documentoLibre, sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
 const sql = obtenerSql();
@@ -144,7 +145,128 @@ describe("la página del proceso", () => {
     }));
 });
 
+describe("los periodos que abre la lectura", () => {
+  const abiertas = async (tx: TransactionSql, indicadorId: number) =>
+    Number((await tx`SELECT count(*)::int AS n FROM mediciones WHERE indicador_id = ${indicadorId}`)[0].n);
+
+  it("un proceso sin indicadores no abre periodos de otro; la del proceso abre solo los suyos", () =>
+    revertida(sql, async (tx) => {
+      const vacio = await proceso(tx);
+      const lleno = await proceso(tx);
+      const otro = await proceso(tx);
+      const mio = await aprobadoCon(tx, { procesoId: lleno.id }, {});
+      const ajeno = await aprobadoCon(tx, { procesoId: otro.id }, {});
+      const quien = await usuarioDePrueba(tx, { rol: "consulta" });
+
+      expect(await indicadoresDeProceso(quien, vacio.id, opc(tx))).toEqual({ propios: [], porSubproceso: [] });
+      expect(await abiertas(tx, mio.id)).toBe(0);
+      expect(await abiertas(tx, ajeno.id)).toBe(0);
+      await indicadoresDeProceso(quien, lleno.id, opc(tx));
+      expect(await abiertas(tx, mio.id)).toBeGreaterThan(0);
+      expect(await abiertas(tx, ajeno.id)).toBe(0);
+    }));
+
+  it("un indicador que falla al abrir sus periodos no impide abrir los demás ni leer", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const roto = await aprobadoCon(tx, { procesoId: p.id }, {});
+      const sano = await aprobadoCon(tx, { procesoId: p.id }, {});
+      // El primer indicador que intenta abrir lanza; el cliente es el mismo para todo lo demás.
+      let intentos = 0;
+      const cliente = new Proxy(tx, {
+        get: (destino, propiedad) => {
+          if (propiedad !== "savepoint") return Reflect.get(destino, propiedad, destino);
+          return (fn: never) => (++intentos === 1 ? Promise.reject(new Error("falla de prueba")) : destino.savepoint(fn));
+        },
+      });
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        await asegurarMediciones({ sql: cliente, ahora: AHORA, indicadorIds: [roto.id, sano.id] });
+        expect(error).toHaveBeenCalledTimes(1);
+        expect(await abiertas(tx, roto.id)).toBe(0);
+        expect(await abiertas(tx, sano.id)).toBeGreaterThan(0);
+        const quien = await usuarioDePrueba(tx, { rol: "consulta" });
+        const r = await indicadoresDeProceso(quien, p.id, opc(tx));
+        expect(r.propios.map((f) => f.codigo).sort()).toEqual([roto.codigo, sano.codigo].sort());
+      } finally {
+        error.mockRestore();
+      }
+    }));
+
+  it("los grupos de subproceso llevan el nombre congelado en la versión y van en el orden del mapa", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const [b] = await tx`INSERT INTO subprocesos (proceso_id, nombre, slug, orden) VALUES (${p.id}, 'Alfa', ${`zz-${unico()}`}, 2) RETURNING id`;
+      const [a] = await tx`INSERT INTO subprocesos (proceso_id, nombre, slug, orden) VALUES (${p.id}, 'Zeta', ${`zz-${unico()}`}, 1) RETURNING id`;
+      await aprobadoCon(tx, { procesoId: p.id }, { subprocesoId: Number(b.id) });
+      await aprobadoCon(tx, { procesoId: p.id }, { subprocesoId: Number(a.id) });
+      await tx`UPDATE subprocesos SET nombre = 'Renombrado' WHERE id = ${a.id}`;
+      const quien = await usuarioDePrueba(tx, { rol: "consulta" });
+      const r = await indicadoresDeProceso(quien, p.id, opc(tx));
+      expect(r.porSubproceso.map((g) => g.nombre)).toEqual(["Zeta", "Alfa"]);
+    }));
+});
+
+describe("sinTumbarLaPagina", () => {
+  it("devuelve la lectura, o registra el error y devuelve null para que los documentos se muestren", async () => {
+    expect(await sinTumbarLaPagina(Promise.resolve({ propios: [] }))).toEqual({ propios: [] });
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(await sinTumbarLaPagina(Promise.reject(new Error("falla")))).toBeNull();
+      expect(error).toHaveBeenCalledTimes(1);
+    } finally {
+      error.mockRestore();
+    }
+  });
+});
+
 describe("buscarIndicadores", () => {
+  it("con más coincidencias que el tope: primero el código que empieza por el texto, luego por nombre y por código", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const marca = `zo${unico()}`;
+      const c = await aprobadoCon(tx, { procesoId: p.id }, { nombre: `Cobertura ${marca}` });
+      const a = await aprobadoCon(tx, { procesoId: p.id }, { nombre: `Auditoría ${marca}` });
+      const b = await aprobadoCon(tx, { procesoId: p.id }, { nombre: `Bienestar ${marca}` });
+      const quien = await usuarioDePrueba(tx, { rol: "consulta" });
+      expect((await buscarIndicadores(marca, quien, 2, { sql: tx })).map((r) => r.codigo)).toEqual([a.codigo, b.codigo]);
+      expect((await buscarIndicadores(marca, quien, 10, { sql: tx })).map((r) => r.codigo)).toEqual([a.codigo, b.codigo, c.codigo]);
+      // Un código que empieza por el texto va antes que un nombre que lo contiene.
+      expect((await buscarIndicadores(c.codigo.toLowerCase(), quien, 1, { sql: tx }))[0].codigo).toBe(c.codigo);
+    }));
+
+  it("busca el guion bajo y la barra invertida tal cual, sin tratarlos como comodines", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const marca = `zu${unico()}`;
+      const guion = await aprobadoCon(tx, { procesoId: p.id }, { nombre: `Tasa a_b ${marca}` });
+      await aprobadoCon(tx, { procesoId: p.id }, { nombre: `Tasa axb ${marca}` });
+      const barra = await aprobadoCon(tx, { procesoId: p.id }, { nombre: `Tasa c\\d ${marca}` });
+      await aprobadoCon(tx, { procesoId: p.id }, { nombre: `Tasa cxd ${marca}` });
+      const quien = await usuarioDePrueba(tx, { rol: "consulta" });
+      const de = async (q: string) => (await buscarIndicadores(q, quien, 10, { sql: tx })).map((r) => r.codigo);
+      expect(await de(`a_b ${marca}`)).toEqual([guion.codigo]);
+      expect(await de(`c\\d ${marca}`)).toEqual([barra.codigo]);
+    }));
+
+  it("sigue la versión vigente: un borrador v2 con otro nombre y otra norma no cambia lo que se encuentra", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const admin = await sesionAdmin(tx);
+      const marca = `zv${unico()}`;
+      const normaA = await normaDePrueba(tx, admin);
+      const normaB = await normaDePrueba(tx, admin);
+      const ind = await aprobadoCon(tx, { procesoId: p.id }, { nombre: `Vigente ${marca}`, normas: [normaA] });
+      const [v2] = await tx`INSERT INTO indicador_versiones (indicador_id, numero, estado, tipo_cambio, nombre, creado_por)
+        SELECT indicador_id, 2, 'borrador', 'mayor', ${`Borrador ${marca}`}, creado_por FROM indicador_versiones WHERE id = ${ind.versionId} RETURNING id`;
+      await tx`INSERT INTO indicador_normas (version_id, norma_id, norma_nombre) VALUES (${v2.id}, ${normaB.id}, ${normaB.nombre})`;
+      const quien = await usuarioDePrueba(tx, { rol: "consulta" });
+      expect((await buscarIndicadores(`Vigente ${marca}`, quien, 5, { sql: tx })).map((r) => r.codigo)).toEqual([ind.codigo]);
+      expect(await buscarIndicadores(`Borrador ${marca}`, quien, 5, { sql: tx })).toEqual([]);
+      expect((await indicadoresQueExige(quien, normaA.id, { sql: tx })).map((r) => r.codigo)).toEqual([ind.codigo]);
+      expect(await indicadoresQueExige(quien, normaB.id, { sql: tx })).toEqual([]);
+    }));
+
   it("encuentra por código y por nombre, sin tildes ni mayúsculas, con tope", () =>
     revertida(sql, async (tx) => {
       const p = await proceso(tx);
@@ -214,12 +336,15 @@ describe("GET /api/buscar: el grupo «indicador»", () => {
         const admin = await sesionAdmin(tx);
         const marca = `zs${unico()}`;
         const norma = await normaDePrueba(tx, admin, { titulo: `Norma ${marca}` });
+        await documentoLibre(tx, { proceso: "GTH", tipo: "PR", titulo: `Documento ${marca}` });
         const ind = await aprobadoCon(tx, { procesoId: p.id }, { nombre: `Indicador ${marca}` });
         sesionDePeticion.mockResolvedValue(await usuarioDePrueba(tx, { rol: "consulta" }));
         const r = (await (await buscarRapido(new NextRequest(`http://localhost:3002/api/buscar?q=${marca}`))).json()) as { resultados: ResultadoRapido[] };
+        const iDoc = r.resultados.findIndex((x) => x.grupo === "documento");
         const iNorma = r.resultados.findIndex((x) => x.ruta === `/normograma/${norma.id}`);
         const iInd = r.resultados.findIndex((x) => x.grupo === "indicador");
-        expect(iNorma).toBeGreaterThanOrEqual(0);
+        expect(iDoc).toBeGreaterThanOrEqual(0);
+        expect(iNorma).toBeGreaterThan(iDoc);
         expect(iInd).toBeGreaterThan(iNorma);
         expect(r.resultados[iInd]).toEqual({
           grupo: "indicador",

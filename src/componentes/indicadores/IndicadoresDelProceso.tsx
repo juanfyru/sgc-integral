@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Gauge } from "lucide-react";
+import { Insignia } from "@/componentes/ui/Insignia";
 import { celda, celdaNumerica, TablaDatos } from "@/componentes/ui/TablaDatos";
 import type { FilaDeProceso } from "@/db/consultas/indicadores/lista";
 import { rutaDeIndicador } from "@/lib/indicadores/rutas";
@@ -16,11 +17,6 @@ const COLUMNAS = [
   { clave: "estado", etiqueta: "Estado" },
 ];
 
-/** Lo que dice la columna «Resultado» cuando no hay uno: «n. a.», lo que falta reportar o «sin dato». */
-function sinResultado(f: FilaDeProceso): string {
-  if (f.noAplica) return "n. a.";
-  return ["—", "Cerrado", "Reportado"].includes(f.reporte.texto) ? "sin dato" : f.reporte.texto;
-}
 
 function Tabla({ titulo, filas }: { titulo: string; filas: FilaDeProceso[] }) {
   return (
@@ -29,12 +25,19 @@ function Tabla({ titulo, filas }: { titulo: string; filas: FilaDeProceso[] }) {
         <tr key={f.id}>
           <td className={`${celda} whitespace-nowrap font-mono text-xs`}>{f.codigo}</td>
           <td className={`${celda} min-w-48`}>
-            <Link href={rutaDeIndicador(f.codigo)} className={`break-words ${ENLACE}`}>
-              {f.nombre || "(sin nombre)"}
-            </Link>
+            <span className="flex flex-col gap-1">
+              <Link href={rutaDeIndicador(f.codigo)} className={`break-words ${ENLACE}`}>
+                {f.nombre || "(sin nombre)"}
+              </Link>
+              {f.restringido ? (
+                <span className="flex flex-wrap gap-1">
+                  <Insignia variante="neutra">Restringido</Insignia>
+                </span>
+              ) : null}
+            </span>
           </td>
           <td className={`${celda} whitespace-nowrap`}>{f.etiquetaPeriodo ?? <span className="text-muted-foreground">—</span>}</td>
-          <td className={`${celdaNumerica} whitespace-nowrap`}>{f.resultado ?? <span className="text-muted-foreground">{sinResultado(f)}</span>}</td>
+          <td className={`${celdaNumerica} whitespace-nowrap`}>{f.resultado ?? <span className="text-muted-foreground">{f.noAplica ? "n. a." : "sin dato"}</span>}</td>
           <td className={celda}>
             <InsigniaSemaforo semaforo={f.semaforo} noAplica={f.noAplica} conResultado={f.resultado !== null} />
           </td>
@@ -73,7 +76,7 @@ export function IndicadoresDelProceso({
         </Link>
       </div>
       <div className="flex min-w-0 flex-col gap-4">
-        {propios.length > 0 ? <Tabla titulo={titulo} filas={propios} /> : null}
+        {propios.length > 0 ? <Tabla titulo={`Lista de ${titulo.toLowerCase()}`} filas={propios} /> : null}
         {porSubproceso.map((g) => (
           <div key={g.subprocesoId} className="flex min-w-0 flex-col gap-2">
             <h3 className="text-xs font-semibold text-muted-foreground">{`Subproceso: ${g.nombre}`}</h3>

@@ -76,4 +76,11 @@ describe("los grupos de la paleta", () => {
     expect(html).toContain(">Normas</p>");
     expect(html).toContain('<ul role="group" aria-label="Normas"><li>Resolución 3100 de 2019</li></ul>');
   });
+
+  it("el grupo «Indicadores» sigue el patrón de los demás: encabezado y grupo con nombre", async () => {
+    const { GrupoPaleta } = await import("@/componentes/cascaron/Buscador");
+    const html = renderToStaticMarkup(createElement(GrupoPaleta, { titulo: "Indicadores", vacio: false }, createElement("li", null, "GTH-IND-01")));
+    expect(html).toContain(">Indicadores</p>");
+    expect(html).toContain('<ul role="group" aria-label="Indicadores"><li>GTH-IND-01</li></ul>');
+  });
 });
