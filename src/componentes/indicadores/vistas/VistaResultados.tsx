@@ -7,6 +7,7 @@ import { ResultadoPrincipal } from "@/componentes/indicadores/ResultadoPrincipal
 import { Boton } from "@/componentes/ui/Boton";
 import { claseControl } from "@/componentes/ui/Campo";
 import { GraficoTubos } from "@/componentes/ui/GraficoTubos";
+import { EnfocarAlCargar } from "@/componentes/ui/EnfocarAlCargar";
 import { MiniTubos } from "@/componentes/ui/MiniTubos";
 import { TuboAcumulado } from "@/componentes/ui/TuboAcumulado";
 import type { DatosDeAnalisis } from "@/db/consultas/indicadores/analisis";
@@ -35,6 +36,8 @@ export type DatosDeResultados = {
   analiza: boolean;
   /** El formulario del análisis que se muestra arriba de la tabla. */
   analisis: DatosDeAnalisis | null;
+  /** La dirección pide llevar el foco al análisis (`?foco=analisis`, tras reportar un periodo que lo exige). */
+  enfocarAnalisis: boolean;
   /** Quien registra históricos: si el año los tiene abiertos, si está en el modo edición y las columnas que pide. */
   historicos: { editables: FilaHistoricaVista[]; editando: boolean; variables: { letra: string; nombre: string }[] } | null;
   aviso: { texto: string; exito: boolean } | null;
@@ -158,12 +161,7 @@ export function VistaResultados(d: DatosDeResultados) {
         </div>
       )}
       {d.analisis && !editando ? (
-        <section id="analisis" aria-labelledby="indicador-analisis" className="flex min-w-0 scroll-mt-4 flex-col gap-3">
-          <h2 id="indicador-analisis" className="text-lg font-semibold">
-            {`Análisis: ${d.analisis.etiqueta.toLowerCase()}`}
-          </h2>
-          <FormularioAnalisis datos={d.analisis} volver={rutaDeResultados(codigo, anio, d.rango)} />
-        </section>
+        <SeccionDeAnalisis datos={d.analisis} volver={rutaDeResultados(codigo, anio, d.rango)} enfocar={d.enfocarAnalisis} />
       ) : null}
       <section aria-labelledby="indicador-anio" className="flex min-w-0 flex-col gap-3">
         <div className="flex flex-wrap items-end justify-between gap-2">
@@ -229,5 +227,21 @@ export function VistaResultados(d: DatosDeResultados) {
         )}
       </section>
     </div>
+  );
+}
+
+/**
+ * El análisis de un periodo, arriba de la tabla del año: un ancla enfocable (`#analisis`, `tabIndex={-1}`) que, si la
+ * dirección lo pide (`enfocar`), recibe el foco al cargar (Tarea 19, D-12).
+ */
+export function SeccionDeAnalisis({ datos, volver, enfocar }: { datos: DatosDeAnalisis; volver: string; enfocar: boolean }) {
+  return (
+    <section id="analisis" tabIndex={-1} aria-labelledby="indicador-analisis" className={`flex min-w-0 scroll-mt-4 flex-col gap-3 rounded-sm ${FOCO}`}>
+      <h2 id="indicador-analisis" className="text-lg font-semibold">
+        {`Análisis: ${datos.etiqueta.toLowerCase()}`}
+      </h2>
+      {enfocar ? <EnfocarAlCargar id="analisis" /> : null}
+      <FormularioAnalisis datos={datos} volver={volver} />
+    </section>
   );
 }

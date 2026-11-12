@@ -146,6 +146,7 @@ export async function datosDeResultados(
     mide,
     analiza,
     analisis,
+    enfocarAnalisis: sp.foco === "analisis" && analisis !== null,
     historicos: registra ? { editables, editando, variables: conLetrasDe(vigentes, editables) } : null,
     aviso: avisoDeHistoricos(sp.registrados),
     soportes,

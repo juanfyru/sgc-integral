@@ -133,6 +133,7 @@ export function FormularioReporte({ datos, volver }: { datos: DatosDeReporte; vo
       <form action={enviar} onSubmit={enviarConBoton(enviar)} className={CAJA}>
         <input type="hidden" name="id" value={datos.medicionId} />
         <input type="hidden" name="volver" value={volver} />
+        <input type="hidden" name="periodo" value={datos.periodo} />
         <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2">
           <fieldset className="flex min-w-0 flex-col gap-3">
             <legend className="sr-only">Datos del periodo</legend>

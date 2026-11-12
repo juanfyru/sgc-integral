@@ -46,7 +46,7 @@ import {
   juntarHistoricos,
   juntarValoresDeReporte,
 } from "@/lib/esquemas/indicadores";
-import type { EstadoReporte } from "@/lib/indicadores/reporte";
+import { destinoTrasReportar, type EstadoReporte } from "@/lib/indicadores/reporte";
 import { rutaInterna } from "@/lib/rutas";
 import { parsearFormulario } from "@/lib/validacion";
 
@@ -216,7 +216,7 @@ export async function reportarAccion(_prev: EstadoReporte, formData: FormData): 
   // `mutacion` solo devuelve un destino: lo demás que dice `reportar` sale por aquí.
   const dicho: { confirmar: string | null; parcial: boolean } = { confirmar: null, parcial: false };
   const estado = await mutacion(formData, "indicadores.medir", async (_usuarioId, _formData, sesion) => {
-    const d = parsearFormulario(juntarValoresDeReporte(formData), EsquemaReporte, { omitir: ["id", "volver"] });
+    const d = parsearFormulario(juntarValoresDeReporte(formData), EsquemaReporte, { omitir: ["id", "volver", "periodo"] });
     dicho.parcial = d.intencion === "parcial";
     const r = await reportar(sesion, {
       medicionId: idNumerico(formData, "id"),
@@ -228,7 +228,9 @@ export async function reportarAccion(_prev: EstadoReporte, formData: FormData): 
       dicho.confirmar = r.confirmar;
       return;
     }
-    if (!dicho.parcial) return rutaInterna(formData.get("volver"), "/indicadores");
+    if (dicho.parcial) return;
+    // Si el periodo quedó pidiendo su análisis, la página a la que se vuelve lleva el foco a él (Tarea 19, D-12).
+    return destinoTrasReportar(rutaInterna(formData.get("volver"), "/indicadores"), String(formData.get("periodo") ?? ""), r);
   });
   if (dicho.confirmar) return { ok: false, error: dicho.confirmar, confirmar: dicho.confirmar, valores: valoresDeFormulario(formData) };
   if (estado === null && dicho.parcial) return { ok: true, aviso: "Se guardó sin reportar: la medición sigue abierta." };

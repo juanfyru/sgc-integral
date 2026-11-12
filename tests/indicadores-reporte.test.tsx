@@ -62,6 +62,7 @@ import PaginaReportar from "@/app/(app)/indicadores/[codigo]/reportar/[periodo]/
 import { DialogoMetas } from "@/componentes/indicadores/medicion/DialogoMetas";
 import { FormularioAnalisis } from "@/componentes/indicadores/medicion/FormularioAnalisis";
 import { FormularioReporte } from "@/componentes/indicadores/medicion/FormularioReporte";
+import { SeccionDeAnalisis } from "@/componentes/indicadores/vistas/VistaResultados";
 import { cerrarTrasGuardar } from "@/componentes/indicadores/medicion/cerrar-tras-guardar";
 import { Observaciones } from "@/componentes/indicadores/medicion/Observaciones";
 import { ResultadoEnVivo } from "@/componentes/indicadores/medicion/ResultadoEnVivo";
@@ -81,6 +82,7 @@ import {
   juntarHistoricos,
   juntarValoresDeReporte,
 } from "@/lib/esquemas/indicadores";
+import { destinoTrasReportar } from "@/lib/indicadores/reporte";
 import type { SesionValida } from "@/lib/sesion";
 import { parsearFormulario } from "@/lib/validacion";
 import { indicadorDePrueba } from "./utiles/indicadores";
@@ -765,4 +767,31 @@ describe("las páginas de la Tarea 10", () => {
       expect(await pagina(ind.codigo, { anio: "2026" })).not.toContain("Observaciones ·");
       await expect(pagina(ind.codigo, { vista: "observaciones" })).rejects.toThrow("NO_ENCONTRADA");
     }));
+});
+
+describe("tras reportar un periodo que pide análisis, el foco va al análisis (ronda 1 de la Tarea 19, D-12)", () => {
+  it("el formulario de reporte envía su periodo, y la acción vuelve con `foco=analisis` solo si el análisis falta", () => {
+    expect(renderToStaticMarkup(<FormularioReporte datos={DATOS} volver="/indicadores/SGC-IND-01" />)).toContain(
+      `<input type="hidden" name="periodo" value="${DATOS.periodo}"/>`,
+    );
+    const volver = "/indicadores/AIN-IND-01";
+    expect(destinoTrasReportar(volver, "2026-09", { estado: "abierta", semaforo: "critico" })).toBe(
+      "/indicadores/AIN-IND-01?vista=resultados&anio=2026&foco=analisis#analisis",
+    );
+    expect(destinoTrasReportar(volver, "2026-T3", { estado: "abierta", semaforo: "atencion" })).toContain("&foco=analisis#analisis");
+    // Reportada (cumple o ya tiene el análisis), «sin meta» o una clave rara: vuelve tal cual.
+    expect(destinoTrasReportar(volver, "2026-09", { estado: "reportada", semaforo: "critico" })).toBe(volver);
+    expect(destinoTrasReportar(volver, "2026-09", { estado: "abierta", semaforo: "bien" })).toBe(volver);
+    expect(destinoTrasReportar(volver, "2026-09", { estado: "abierta", semaforo: null })).toBe(volver);
+    expect(destinoTrasReportar(volver, "x&y=1", { estado: "abierta", semaforo: "critico" })).toBe(volver);
+  });
+
+  it("la sección del análisis es un ancla enfocable y, cuando la dirección lo pide, recibe el foco al cargar", () => {
+    const sin = renderToStaticMarkup(<SeccionDeAnalisis datos={ANALISIS} volver="/indicadores/SGC-IND-01" enfocar={false} />);
+    expect(sin).toMatch(/<section(?=[^>]*id="analisis")(?=[^>]*tabindex="-1")(?=[^>]*aria-labelledby="indicador-analisis")[^>]*>/);
+    expect(sin).not.toContain("data-enfocar");
+    const con = renderToStaticMarkup(<SeccionDeAnalisis datos={ANALISIS} volver="/indicadores/SGC-IND-01" enfocar />);
+    expect(con).toContain('<span hidden="" data-enfocar="analisis"></span>');
+    expect(con).toContain(">Análisis: tercer trimestre de 2026</h2>");
+  });
 });
