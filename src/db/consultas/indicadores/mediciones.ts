@@ -413,11 +413,25 @@ const objeto = (v: unknown): Record<string, unknown> =>
  * estado, y cuentan para saber si algo cambió. `c.estadoAnterior` es el estado verdadero de antes cuando quien llama ya
  * lo cambió con un `UPDATE` provisional (la reapertura saca la medición de `cerrada`): va al `antes.estado` del evento;
  * las columnas se siguen comparando contra la fila tal como está.
+ *
+ * Si cambió el semáforo o el resultado de una medición ordinaria, recalcula después las siguientes cuya racha la alcanza
+ * (`recalcularSiguientes`), salvo con `c.siguientes === false`, que es como esas se recalculan. Con `c.conservarVersion`
+ * (un recálculo que no nace de un cambio en la medición: la racha de una siguiente, un dato de operación) calcula con la
+ * versión que la medición ya tiene, la que se congeló al reportarla, y no con la que hoy rige el periodo: un cambio menor
+ * aprobado después no la cambia de versión sin que nadie la toque.
  */
 export async function recalcularMedicion(
   tx: TransactionSql,
   medicionId: number,
-  c: { ahora: Date; actorId: number | null; evento: TipoEvento; detalle?: Record<string, unknown>; estadoAnterior?: EstadoMedicion },
+  c: {
+    ahora: Date;
+    actorId: number | null;
+    evento: TipoEvento;
+    detalle?: Record<string, unknown>;
+    estadoAnterior?: EstadoMedicion;
+    siguientes?: boolean;
+    conservarVersion?: boolean;
+  },
 ): Promise<Recalculo> {
   const zona = zonaHoraria();
   const [m] = await tx`SELECT m.*, i.soporte_obligatorio FROM mediciones m JOIN indicadores i ON i.id = m.indicador_id
@@ -427,10 +441,11 @@ export async function recalcularMedicion(
   const indicadorId = Number(m.indicador_id);
   const periodo = periodoDe(m.periodo as string, zona);
   const versiones = await versionesAprobadas(tx, indicadorId);
-  const version = periodo ? versionQueRigeEntre(versiones, periodo, zona) : null;
+  const rige = periodo ? versionQueRigeEntre(versiones, periodo, zona) : null;
+  const version = rige && c.conservarVersion ? (versiones.find((v) => v.id === Number(m.version_id)) ?? rige) : rige;
   const ficha = version ? fichaDeCalculo(version.calculo) : null;
-  if (!version || !ficha) throw new ErrorIndicador("El indicador no tiene una ficha aprobada que calcule este periodo");
-  if (esDeOtraPeriodicidad(m.periodo as string, version)) throw new ErrorIndicador(OTRA_PERIODICIDAD);
+  if (!rige || !version || !ficha) throw new ErrorIndicador("El indicador no tiene una ficha aprobada que calcule este periodo");
+  if (esDeOtraPeriodicidad(m.periodo as string, rige)) throw new ErrorIndicador(OTRA_PERIODICIDAD);
 
   const reglaTexto = await reglaDelPeriodo(tx, indicadorId, m.periodo as string, version);
   const regla = reglaDeTexto(reglaTexto);
@@ -521,7 +536,54 @@ export async function recalcularMedicion(
   await tx`INSERT INTO medicion_eventos (medicion_id, tipo, usuario_id, detalle, creado_en)
     VALUES (${medicionId}, ${c.evento}, ${c.actorId}, ${tx.json({ ...resto, antes, despues } as never)}, ${c.ahora})`;
   if (columnasCambiaron) await alRecalcular(tx, r, { ahora: c.ahora, actorId: c.actorId });
+  const cambioLaRacha = m.semaforo !== nuevo.semaforo || m.resultado_exacto !== nuevo.resultado_exacto;
+  if (c.siguientes !== false && !historica && cambioLaRacha) {
+    await recalcularSiguientes(tx, { id: medicionId, indicadorId, periodo: m.periodo as string, hasta: m.hasta as Date }, c);
+  }
   return r;
+}
+
+/**
+ * El incumplimiento repetido de una medición sale del semáforo de las n − 1 anteriores medidas (spec §10.3): cuando una
+ * cambia de semáforo o de resultado (se corrige, se reabre, se reporta tarde, se marca «no aplica»), se recalculan las
+ * siguientes medidas del indicador cuya racha la alcanza, que son las n − 1 primeras, con el evento `recalculo`, el mismo
+ * actor y la misma hora. Las cerradas cuentan pero no cambian: son evidencia cerrada (el trigger lo impide y se reabren a
+ * mano); las históricas no tienen racha, y una de otra periodicidad no se calcula (`esDeOtraPeriodicidad`). Se bloquean en
+ * el orden de los demás caminos (por `desde` e id, como el cierre y los históricos). Cada una conserva la versión con que
+ * se calculó (`conservarVersion`): lo único que cambia es su racha y lo que de ella depende (la marca, el análisis exigido
+ * y con él el estado). El semáforo de una siguiente no depende de las anteriores: su recálculo no sigue en cadena
+ * (`siguientes: false`). Sus avisos son los de `alRecalcular`, por el último nivel alertado.
+ */
+async function recalcularSiguientes(
+  tx: TransactionSql,
+  m: { id: number; indicadorId: number; periodo: string; hasta: Date },
+  c: { ahora: Date; actorId: number | null },
+): Promise<void> {
+  const { incumplimientoPeriodos: n } = await obtenerParametros({ sql: tx });
+  const siguientes = await tx`SELECT id, periodo, estado FROM mediciones
+    WHERE indicador_id = ${m.indicadorId} AND id <> ${m.id} AND desde > ${m.hasta}
+      AND NOT historica AND NOT no_aplica AND resultado_exacto IS NOT NULL
+    ORDER BY desde, id
+    LIMIT ${n - 1}
+    FOR UPDATE`;
+  const abiertas = siguientes.filter((s) => s.estado !== "cerrada");
+  if (abiertas.length === 0) return;
+  const zona = zonaHoraria();
+  const versiones = await versionesAprobadas(tx, m.indicadorId);
+  for (const s of abiertas) {
+    const clave = s.periodo as string;
+    const periodo = periodoDe(clave, zona);
+    const version = periodo ? versionQueRigeEntre(versiones, periodo, zona) : null;
+    if (!version || esDeOtraPeriodicidad(clave, version)) continue;
+    await recalcularMedicion(tx, Number(s.id), {
+      ahora: c.ahora,
+      actorId: c.actorId,
+      evento: "recalculo",
+      detalle: { causa: "racha", periodo: m.periodo },
+      siguientes: false,
+      conservarVersion: true,
+    });
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

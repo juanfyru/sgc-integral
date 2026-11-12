@@ -625,6 +625,102 @@ describe("reportar", () => {
     }));
 });
 
+/**
+ * La racha de los periodos siguientes (ola final, I2; spec §10.3): un periodo que cambia de semáforo o de resultado
+ * recalcula, con el evento `recalculo`, las siguientes medidas cuya racha lo alcanza (las n − 1 primeras); las cerradas no
+ * cambian. El indicador es mensual desde enero de 2026 y aprobado el 15 de enero: de enero a septiembre son ordinarios.
+ * 4 de 5 es Atención (80 %), 5 de 5 es Bien.
+ */
+describe("el incumplimiento repetido de los periodos siguientes", () => {
+  const ATENCION = { A: "4", B: "5" };
+  const BIEN = { A: "5", B: "5" };
+  const mensual = async (tx: TransactionSql) => {
+    await tx`UPDATE configuracion SET valor = '3' WHERE clave = 'ind_incumplimiento_periodos'`;
+    return preparar(tx, { periodicidad: "mensual", inicioMedicion: "2026-01" });
+  };
+  const racha = async (tx: TransactionSql, medicionId: number) => {
+    const m = await fila(tx, medicionId);
+    return [m.semaforo, m.incumplimiento_repetido, m.requiere_accion];
+  };
+  const recalculos = async (tx: TransactionSql, medicionId: number) =>
+    (await eventos(tx, medicionId)).filter((e) => e.tipo === "recalculo");
+
+  it("reportar tarde en «Bien» un periodo quita la marca de los siguientes que la tenían por él", () =>
+    revertida(sql, async (tx) => {
+      const { mide, medicion } = await mensual(tx);
+      for (const periodo of ["2026-01", "2026-02", "2026-04", "2026-05", "2026-06"]) await reportarCon(tx, mide, await medicion(periodo), ATENCION);
+      const [abril, mayo, junio] = [await medicion("2026-04"), await medicion("2026-05"), await medicion("2026-06")];
+      // Marzo sin dato ni cuenta ni rompe: abril, mayo y junio llevan la marca.
+      for (const id of [abril, mayo, junio]) expect(await racha(tx, id)).toEqual(["atencion", true, true]);
+
+      // Marzo se reporta tarde (su plazo venció el 10 de abril) y cumple.
+      await reportarCon(tx, mide, await medicion("2026-03"), BIEN);
+      expect(await racha(tx, abril)).toEqual(["atencion", false, false]);
+      expect(await racha(tx, mayo)).toEqual(["atencion", false, false]);
+      // Junio sigue con la marca: su racha (mayo y abril) ya no llega a marzo, y no se recalcula.
+      expect(await racha(tx, junio)).toEqual(["atencion", true, true]);
+      expect(await recalculos(tx, junio)).toEqual([]);
+      for (const id of [abril, mayo]) {
+        const [e] = await recalculos(tx, id);
+        expect(e).toMatchObject({ usuario_id: mide.usuarioId, detalle: { causa: "racha", periodo: "2026-03" } });
+        const [cuando] = await tx`SELECT creado_en FROM medicion_eventos WHERE medicion_id = ${id} AND tipo = 'recalculo'`;
+        expect(cuando.creado_en).toEqual(AHORA);
+      }
+    }));
+
+  it("corregir a «Atención» un periodo pone la marca al siguiente; una cerrada no cambia", () =>
+    revertida(sql, async (tx) => {
+      const { mide, medicion } = await mensual(tx);
+      await reportarCon(tx, mide, await medicion("2026-01"), ATENCION);
+      await reportarCon(tx, mide, await medicion("2026-02"), BIEN);
+      await reportarCon(tx, mide, await medicion("2026-03"), ATENCION);
+      await reportarCon(tx, mide, await medicion("2026-04"), ATENCION);
+      const [marzo, abril] = [await medicion("2026-03"), await medicion("2026-04")];
+      expect(await racha(tx, marzo)).toEqual(["atencion", false, false]);
+      expect((await fila(tx, marzo)).alerta_estado).toBe("atencion");
+      // Abril ya se cerró: es evidencia cerrada y el recálculo no la toca.
+      await tx`UPDATE mediciones SET estado = 'cerrada' WHERE id = ${abril}`;
+
+      // Febrero se corrige antes del cierre: ahora no cumple.
+      await reportarCon(tx, mide, await medicion("2026-02"), ATENCION);
+      const m = await fila(tx, marzo);
+      expect([m.semaforo, m.incumplimiento_repetido, m.requiere_accion, m.estado]).toEqual(["atencion", true, true, "abierta"]);
+      // El aviso sigue la regla de `alerta_estado`: el nivel pasó a crítico (corrección), sin avisos de más.
+      expect(m.alerta_estado).toBe("critico");
+      expect((await recalculos(tx, marzo)).map((e) => e.detalle)).toMatchObject([{ causa: "racha", periodo: "2026-02" }]);
+      const a = await fila(tx, abril);
+      expect([a.estado, a.incumplimiento_repetido, a.requiere_accion]).toEqual(["cerrada", false, false]);
+      expect(await recalculos(tx, abril)).toEqual([]);
+    }));
+
+  it("la siguiente conserva la versión con que se calculó: un cambio menor aprobado después no la cambia", () =>
+    revertida(sql, async (tx) => {
+      const { ind, mide, medicion } = await mensual(tx);
+      await reportarCon(tx, mide, await medicion("2026-01"), ATENCION);
+      await reportarCon(tx, mide, await medicion("2026-02"), BIEN);
+      await reportarCon(tx, mide, await medicion("2026-03"), ATENCION);
+      // Un cambio menor rige los mismos periodos que la versión que reemplaza.
+      const admin = await sesionAdmin(tx);
+      const [v2] = await tx`INSERT INTO indicador_versiones (indicador_id, numero, estado, tipo_cambio, nombre, forma, formula, periodicidad,
+          tendencia, meta, semaforo_modo, umbral_atencion_pct, unidad_sufijo, decimales, creado_por)
+        SELECT indicador_id, 2, 'borrador', 'menor', 'Nombre corregido', forma, formula, periodicidad, tendencia, meta, semaforo_modo,
+          umbral_atencion_pct, unidad_sufijo, decimales, ${admin.usuarioId}
+        FROM indicador_versiones WHERE id = ${ind.versionId} RETURNING id`;
+      await tx`SELECT id FROM indicador_versiones WHERE id = ${v2.id} FOR UPDATE`;
+      await tx`INSERT INTO indicador_variables (version_id, letra, nombre, consolidacion, origen, orden)
+        SELECT ${v2.id}, letra, nombre, consolidacion, origen, orden FROM indicador_variables WHERE version_id = ${ind.versionId}`;
+      await tx`UPDATE indicador_versiones SET estado = 'aprobada', elaborada_por = ${admin.usuarioId}, huella = ${"2".repeat(64)},
+          rige_desde = '2026-01', aprobada_por = ${admin.usuarioId}, aprobada_en = ${AHORA}
+        WHERE id = ${v2.id}`;
+
+      // Quien corrige febrero lo recalcula con la versión 2; marzo gana la marca y sigue con la 1.
+      await reportarCon(tx, mide, await medicion("2026-02"), ATENCION);
+      expect(Number((await fila(tx, await medicion("2026-02"))).version_id)).toBe(Number(v2.id));
+      const marzo = await fila(tx, await medicion("2026-03"));
+      expect([marzo.incumplimiento_repetido, Number(marzo.version_id)]).toEqual([true, ind.versionId]);
+    }));
+});
+
 describe("lecturas", () => {
   it("la tabla del año trae un renglón por periodo de la periodicidad", () =>
     revertida(sql, async (tx) => {
