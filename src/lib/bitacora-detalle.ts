@@ -1,4 +1,5 @@
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
+import { ETIQUETA_REPORTE_DE_LISTA, ETIQUETA_SEMAFORO_DE_LISTA } from "@/lib/indicadores/filtros";
 import { ETIQUETA_ESTADO_NORMA, ETIQUETA_RELACION } from "@/lib/normograma/tipos";
 import { cuenta } from "@/lib/plural";
 import type { Accion } from "@/lib/tramites/transiciones";
@@ -206,27 +207,28 @@ function medicionDe(codigo: string | null, periodo: unknown): string {
   return `${codigo}${etiqueta ? `, ${etiqueta}` : ""}`;
 }
 
-const SEMAFORO_DE_LISTA: Record<string, string> = { bien: "Bien", atencion: "Atención", critico: "Crítico", "sin-dato": "Sin dato" };
-const REPORTE_DE_LISTA: Record<string, string> = {
-  "por-reportar": "por reportar",
-  "falta-analisis": "con el análisis pendiente",
-  vencida: "vencidos",
-  "requiere-accion": "que requieren acción de mejora",
-};
+/** La etiqueta de `valor` en `mapa`, tal cual (con su mayúscula), o null si no es una de sus claves. */
+function etiquetaTal(mapa: Record<string, string>, valor: unknown): string | null {
+  const clave = texto(valor);
+  return clave && Object.hasOwn(mapa, clave) ? mapa[clave] : null;
+}
 
-/** Los filtros de la lista de indicadores que guarda el Excel de resultados, cada uno con su nombre (los ids no se nombran). */
+/**
+ * Los filtros de la lista de indicadores que guarda el Excel de resultados, cada uno con su nombre (los ids no se nombran);
+ * el semáforo y el reporte con los nombres del formulario de la lista (`filtros.ts`).
+ */
 function filtrosDeLista(v: unknown): (string | null)[] {
   const f = objeto(v);
   if (!f) return [];
-  const clave = texto(f.semaforo);
-  const semaforo = clave && Object.hasOwn(SEMAFORO_DE_LISTA, clave) ? SEMAFORO_DE_LISTA[clave] : null;
+  const semaforo = etiquetaTal(ETIQUETA_SEMAFORO_DE_LISTA, f.semaforo);
+  const reporte = etiquetaTal(ETIQUETA_REPORTE_DE_LISTA, f.reporte);
   return [
     numero(f.procesoId) === null ? null : "de un proceso",
     numero(f.subprocesoId) === null ? null : "de un subproceso",
     numero(f.clasificacionId) === null ? null : "de una clasificación",
     numero(f.tipoId) === null ? null : "de un tipo",
     semaforo ? `con semáforo «${semaforo}»` : null,
-    etiquetaDe(REPORTE_DE_LISTA, f.reporte),
+    reporte ? `con reporte «${reporte}»` : null,
     f.participo === true ? "donde participa" : null,
     texto(f.texto) ? `con el texto «${texto(f.texto)}»` : null,
     f.retirados === true ? "con los retirados" : null,

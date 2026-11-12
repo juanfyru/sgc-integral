@@ -2,23 +2,18 @@ import Link from "next/link";
 import { Boton } from "@/componentes/ui/Boton";
 import { claseControl } from "@/componentes/ui/Campo";
 import type { FiltroDeLista, OpcionesDeLista } from "@/db/consultas/indicadores/lista";
+import {
+  ETIQUETA_REPORTE_DE_LISTA,
+  ETIQUETA_SEMAFORO_DE_LISTA,
+  REPORTES_DE_LISTA,
+  SEMAFOROS_DE_LISTA,
+} from "@/lib/indicadores/filtros";
 import { Selector } from "./Selector";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 
-const SEMAFOROS = [
-  { valor: "bien", etiqueta: "Bien" },
-  { valor: "atencion", etiqueta: "Atención" },
-  { valor: "critico", etiqueta: "Crítico" },
-  { valor: "sin-dato", etiqueta: "Sin dato" },
-] as const;
-
-const REPORTES = [
-  { valor: "por-reportar", etiqueta: "Por reportar" },
-  { valor: "falta-analisis", etiqueta: "Falta el análisis" },
-  { valor: "vencida", etiqueta: "Vencido" },
-  { valor: "requiere-accion", etiqueta: "Requiere acción de mejora" },
-] as const;
+const SEMAFOROS = SEMAFOROS_DE_LISTA.map((valor) => ({ valor, etiqueta: ETIQUETA_SEMAFORO_DE_LISTA[valor] }));
+const REPORTES = REPORTES_DE_LISTA.map((valor) => ({ valor, etiqueta: ETIQUETA_REPORTE_DE_LISTA[valor] }));
 
 /** En pantallas angostas, dos selectores por fila; desde `sm`, cada uno con su ancho en la fila que se envuelve. */
 const ANCHO = "sm:w-auto sm:max-w-56";

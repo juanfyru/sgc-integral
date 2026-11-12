@@ -304,13 +304,13 @@ describe("los componentes", () => {
     });
     const filas = [
       fila("2026-05", [
-        { letra: "A", nombre: "Atenciones a tiempo", valor: "8" },
-        { letra: "B", nombre: "Atenciones", valor: "10" },
+        { letra: "A", nombre: "Atenciones a tiempo", valor: "8", numero: 8 },
+        { letra: "B", nombre: "Atenciones", valor: "10", numero: 10 },
       ]),
       fila("2026-07", [
-        { letra: "A", nombre: "Casos oportunos", valor: "4" },
-        { letra: "B", nombre: "Atenciones", valor: "10" },
-        { letra: "C", nombre: "Casos recuperados", valor: "4" },
+        { letra: "A", nombre: "Casos oportunos", valor: "4", numero: 4 },
+        { letra: "B", nombre: "Atenciones", valor: "10", numero: 10 },
+        { letra: "C", nombre: "Casos recuperados", valor: "4", numero: 4 },
       ]),
     ];
     // La unión, en orden de aparición, con el nombre de la versión más reciente que tiene la letra.

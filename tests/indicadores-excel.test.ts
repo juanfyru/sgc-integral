@@ -32,10 +32,11 @@ import { consultaDeFiltro, filtroDeConsulta, type FiltroDeLista } from "@/db/con
 import { resultadosDeLaLista } from "@/db/consultas/indicadores/matriz";
 import { asegurarMediciones, marcarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
 import { observar } from "@/db/consultas/indicadores/observaciones";
+import { retirar } from "@/db/consultas/indicadores/operacion";
 import type { MetaHoja } from "@/lib/distribucion/hoja-excel";
 import { construirExcelDeIndicador, construirExcelDeResultados } from "@/lib/indicadores/excel";
 import { crearSesion } from "@/lib/sesion";
-import { indicadorDePrueba, type IndicadorDePrueba, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
+import { indicadorDePrueba, versionTrimestral, type IndicadorDePrueba, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -130,6 +131,15 @@ async function leerLibro(datos: Buffer | ArrayBuffer): Promise<Record<string, Ho
   return hojas;
 }
 
+/** Los valores tal como quedaron en las celdas de una hoja (números como números), por fila. */
+async function celdasCrudas(datos: Buffer, nombre: string): Promise<unknown[][]> {
+  const libro = new ExcelJS.Workbook();
+  await libro.xlsx.load(datos as unknown as ArrayBuffer);
+  const filas: unknown[][] = [];
+  libro.getWorksheet(nombre)!.eachRow((f) => filas.push((f.values as unknown[]).slice(1)));
+  return filas;
+}
+
 const texto = (h: Hoja) => h.filas.map((f) => f.join(" | ")).join("\n");
 /** La fila cuya primera celda es `primera`. */
 const fila = (h: Hoja, primera: string) => h.filas.find((f) => f[0] === primera);
@@ -152,6 +162,8 @@ describe("el Excel de un indicador", () => {
       expect(texto(ficha)).toContain("Bien desde 90 %");
       expect(texto(ficha)).toContain(`Datos de operación | Quién mide | ${quien.nombre}`);
       expect(texto(ficha)).toContain("Encabezado | Versión | 1");
+      // La fecha de un día, con el formato de la app (no ISO).
+      expect(texto(ficha)).toContain("Encabezado | Vigente desde | 15 dic 2025");
       expect(texto(ficha)).toContain("Firmas | Elaboró | ");
 
       const r = libro["Resultados 2026"];
@@ -176,6 +188,50 @@ describe("el Excel de un indicador", () => {
       // El acumulado junta las variables (13 de 16), nunca promedia los resultados.
       expect(fila(r, "Acumulado del año")?.slice(0, 8)).toEqual(["Acumulado del año", "", "13", "16", "81,3 %", "≥ 90 %", "No", "Atención"]);
       expect(r.filas.findIndex((f) => f[0] === "Acumulado del año")).toBe(r.filas.length - 1);
+
+      // Las variables son celdas numéricas (el número guardado); el resultado y la meta siguen como texto.
+      const crudas = await celdasCrudas(await construirExcelDeIndicador(d!, META), "Resultados 2026");
+      const t2 = crudas.find((c) => c[0] === "Segundo trimestre de 2026")!;
+      expect(t2.slice(2, 6)).toEqual([5, 6, "83,3 %", "≥ 90 %"]);
+      expect(crudas.find((c) => c[0] === "Acumulado del año")!.slice(2, 4)).toEqual([13, 16]);
+    }));
+
+  it("un retirado, uno anual, «no aplica» y lo de otra periodicidad (marcado) en el Excel de un indicador", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const admin = await sesionAdmin(tx);
+
+      // Retirado: se exporta con lo que se midió.
+      const { ind: retirado, quien } = await trimestralMedido(tx, p.id);
+      await retirar(admin, { indicadorId: retirado.id, motivo: "Se reemplaza por otro indicador" }, opc(tx));
+      const deRetirado = await leerLibro(await construirExcelDeIndicador((await impresionDelAnio(quien, retirado.codigo, 2026, opc(tx)))!, META));
+      expect(fila(deRetirado["Resultados 2026"], "Primer trimestre de 2026")?.[4]).toBe("100 %");
+
+      // «No aplica»: sin resultado ni «Cumple», con su motivo en el análisis.
+      const conNoAplica = await indicadorDePrueba(tx, { procesoId: p.id, periodicidad: "trimestral", inicioMedicion: "2026-T1", aprobadaEn: APROBADA, mide: [quien.usuarioId] });
+      await medir(tx, quien, conNoAplica, { "2026-T1": { A: "9", B: "10" } });
+      const [t2] = await tx`SELECT id FROM mediciones WHERE indicador_id = ${conNoAplica.id} AND periodo = '2026-T2'`;
+      await marcarNoAplica(quien, { medicionId: Number(t2.id), motivo: "No hubo auditorías programadas" }, opc(tx));
+      const deNoAplica = await leerLibro(await construirExcelDeIndicador((await impresionDelAnio(quien, conNoAplica.codigo, 2026, opc(tx)))!, META));
+      expect(fila(deNoAplica["Resultados 2026"], "Segundo trimestre de 2026")?.slice(2, 10)).toEqual(["", "", "", "≥ 90 %", "", "No aplica", "Reportada", "No aplica: No hubo auditorías programadas"]);
+
+      // Otra periodicidad: julio mensual queda marcado, con su versión, tras un cambio a trimestral.
+      const mensual = await indicadorDePrueba(tx, { procesoId: p.id, inicioMedicion: "2026-01", aprobadaEn: APROBADA, mide: [quien.usuarioId] });
+      await medir(tx, quien, mensual, { "2026-06": { A: "9", B: "10" }, "2026-07": { A: "1", B: "10" } }, new Date("2026-08-15T15:00:00Z"));
+      await versionTrimestral(tx, { indicadorId: mensual.id, usuarioId: admin.usuarioId, rigeDesde: "2026-T3", aprobadaEn: new Date("2026-07-20T15:00:00Z") });
+      const deMensual = await leerLibro(await construirExcelDeIndicador((await impresionDelAnio(quien, mensual.codigo, 2026, opc(tx)))!, META));
+      const julio = fila(deMensual["Resultados 2026"], "Julio de 2026")!;
+      expect(julio[1]).toBe("1");
+      expect(julio.at(-1)).toBe("Periodicidad anterior · Requiere acción de mejora");
+      expect(fila(deMensual["Resultados 2026"], "Tercer trimestre de 2026")?.[1]).toBe("2");
+
+      // Anual: una fila por año.
+      const anual = await indicadorDePrueba(tx, { procesoId: p.id, periodicidad: "anual", inicioMedicion: "2025", aprobadaEn: new Date("2024-12-15T15:00:00Z"), mide: [quien.usuarioId] });
+      await medir(tx, quien, anual, { "2025": { A: "7", B: "10" } }, new Date("2026-01-20T15:00:00Z"));
+      const deAnual = (await leerLibro(await construirExcelDeIndicador((await impresionDelAnio(quien, anual.codigo, 2025, opc(tx)))!, META)))["Resultados 2025"];
+      const datos = deAnual.filas.slice(deAnual.filas.indexOf(cabecera(deAnual, "Periodo")) + 1);
+      expect(datos.map((x) => x[0])).toEqual(["2025", "Acumulado del año"]);
+      expect(datos[0][4]).toBe("70 %");
     }));
 
   it("neutraliza las fórmulas", () =>

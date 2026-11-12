@@ -63,6 +63,10 @@ import PaginaNuevoIndicador from "@/app/(app)/indicadores/nuevo/page";
 import PaginaIndicadores from "@/app/(app)/indicadores/page";
 import PaginaMatriz from "@/app/(app)/indicadores/matriz/page";
 import PaginaPorAprobar from "@/app/(app)/indicadores/por-aprobar/page";
+import { GET as excelDeResultados } from "@/app/(app)/indicadores/excel/route";
+import ExcelJS from "exceljs";
+import { NextRequest } from "next/server";
+import { crearSesion } from "@/lib/sesion";
 import { ResumenDeCierre } from "@/componentes/indicadores/cierre/ResumenDeCierre";
 import { TablaDelAnio } from "@/componentes/indicadores/medicion/TablaDelAnio";
 import { obtenerSql } from "@/db/cliente";
@@ -583,10 +587,47 @@ describe("los botones de imprimir y de Excel (Tarea 16)", () => {
       expect(sinFiltros).toContain('href="/indicadores/excel"');
 
       const matriz = renderToStaticMarkup(await PaginaMatriz({ searchParams: Promise.resolve({ anio: "2026", proceso: "3", clasificacion: "5" }) }));
-      expect(matriz).toContain('href="/indicadores/excel?proceso=3&amp;clasificacion=5&amp;anio=2026"');
+      // Con los retirados: la matriz trae los retirados medidos ese año y su Excel también (un superconjunto).
+      expect(matriz).toContain('href="/indicadores/excel?proceso=3&amp;clasificacion=5&amp;retirados=1&amp;anio=2026"');
       expect(matriz).toMatch(/<button[^>]*print:hidden[^>]*>.*?Imprimir<\/button>/);
       // Al imprimir la matriz no salen los filtros ni las pestañas.
       expect(matriz).toMatch(/<form[^>]*aria-label="Filtrar la matriz"[^>]*class="[^"]*print:hidden/);
       expect(matriz).toMatch(/<div class="print:hidden"><nav/);
+    }));
+});
+
+describe("el Excel de la matriz (ronda 1 de la Tarea 16)", () => {
+  it("un retirado medido en el año sale en la matriz y en el libro que se descarga desde su enlace", () =>
+    enTransaccion(async (tx) => {
+      const { procesoId } = await procesoConLider(tx);
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const ind = await indicadorDePrueba(tx, {
+        procesoId,
+        periodicidad: "trimestral",
+        inicioMedicion: "2026-T1",
+        aprobadaEn: new Date("2025-12-15T15:00:00Z"),
+        mide: [mide.usuarioId],
+      });
+      const ahora = new Date("2026-04-20T15:00:00Z");
+      await asegurarMediciones({ sql: tx, ahora, indicadorId: ind.id });
+      const [t1] = await tx`SELECT id FROM mediciones WHERE indicador_id = ${ind.id} AND periodo = '2026-T1'`;
+      await reportar(mide, { medicionId: Number(t1.id), valores: { A: "9", B: "10" }, parcial: false, confirmado: true }, { sql: tx, ahora });
+      await retirar(await sesionAdmin(tx), { indicadorId: ind.id, motivo: "Se reemplaza por otro indicador" }, { sql: tx, ahora });
+
+      contexto.sesion = valida(mide);
+      const matriz = renderToStaticMarkup(await PaginaMatriz({ searchParams: Promise.resolve({ anio: "2026", proceso: String(procesoId) }) }));
+      expect(matriz).toContain(ind.codigo);
+      const href = /href="(\/indicadores\/excel\?[^"]*)"/.exec(matriz)?.[1].replaceAll("&amp;", "&");
+      expect(href).toContain("retirados=1");
+
+      const { token } = await crearSesion(mide.usuarioId, { ip: null, userAgent: null });
+      await tx`UPDATE usuarios SET acepto_datos_en = now(), totp_activo = true WHERE id = ${mide.usuarioId}`;
+      const res = await excelDeResultados(new NextRequest(`http://localhost:3002${href}`, { headers: { cookie: `sgc_sesion=${token}` } }));
+      expect(res.status).toBe(200);
+      const libro = new ExcelJS.Workbook();
+      await libro.xlsx.load(await res.arrayBuffer());
+      const codigos: string[] = [];
+      libro.getWorksheet("Resultados 2026")!.eachRow((fila) => codigos.push(String(fila.getCell(1).value ?? "")));
+      expect(codigos).toContain(ind.codigo);
     }));
 });

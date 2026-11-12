@@ -7,6 +7,7 @@ import type { Row } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { escaparLike } from "@/db/consultas/normograma/busqueda";
 import { filtroIndicadores, participaEn, type SujetoVisibilidad } from "@/lib/alcance";
+import { REPORTES_DE_LISTA, SEMAFOROS_DE_LISTA, type ReporteDeLista } from "@/lib/indicadores/filtros";
 import { deTexto } from "@/lib/indicadores/formula/fraccion";
 import { reglaDeTexto } from "@/lib/indicadores/reporte";
 import { textoMeta, textoValor } from "@/lib/indicadores/textos";
@@ -19,8 +20,8 @@ import { agrupar, aNumero, comparacionDe, conResultado, vigentes, type Opciones 
 import { asegurarMediciones, conMayuscula, texto, versionesAprobadasDe, type VersionDeCalculo } from "./mediciones";
 import { columnasDePendiente, esPendiente, queFalta, type Falta } from "./tareas";
 
-export const SEMAFOROS_DE_LISTA = ["bien", "atencion", "critico", "sin-dato"] as const;
-export const REPORTES_DE_LISTA = ["por-reportar", "falta-analisis", "vencida", "requiere-accion"] as const;
+/** Los valores de los filtros de estado viven en `src/lib/indicadores/filtros.ts`, con sus nombres. */
+export { REPORTES_DE_LISTA, SEMAFOROS_DE_LISTA };
 
 export type FiltroDeLista = {
   procesoId?: number;
@@ -28,7 +29,7 @@ export type FiltroDeLista = {
   clasificacionId?: number;
   tipoId?: number;
   semaforo?: Semaforo | "sin-dato";
-  reporte?: (typeof REPORTES_DE_LISTA)[number];
+  reporte?: ReporteDeLista;
   participo?: boolean;
   texto?: string;
   retirados?: boolean;

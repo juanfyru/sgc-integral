@@ -27,6 +27,8 @@ const ABAJO_CON_ANIOS = 50;
 const MARGEN_DERECHO_MINIMO = 100;
 /** Con franjas angostas el valor de cada columna va sin su unidad: la dice el eje. */
 const FRANJA_CON_UNIDAD = 48;
+/** La letra más grande del valor y el estado que se imprimen sobre cada columna; con franjas angostas, menor. */
+const LETRA_IMPRESA = 7.5;
 /**
  * Un año con tantos periodos o más no cabe entero en un teléfono (390 px): su año se escribe también bajo su último
  * periodo, para que se lea al abrir la gráfica, que arranca en lo más reciente.
@@ -97,7 +99,7 @@ function lecturaDeReferencias(
  * nombre de la figura y la tabla equivalente (`sr-only`) dicen además la meta y el límite. La escala va en su propio
  * lienzo, a la izquierda y fuera de lo que se desplaza: en un teléfono, o con muchos periodos, siempre se ve. Bajo un
  * periodo que aún no llega se escribe «—». Al imprimir, la hoja de estilos pone el relleno sólido y escribe el valor y el
- * estado sobre cada columna.
+ * estado sobre cada columna que tiene valor.
  */
 export function GraficoTubos({
   serie,
@@ -172,6 +174,12 @@ export function GraficoTubos({
     if (p.valor === null || franja >= FRANJA_CON_UNIDAD || !p.texto.endsWith(unidad.sufijo)) return p.texto;
     return p.texto.slice(0, p.texto.length - unidad.sufijo.length);
   };
+
+  // Al imprimir, sobre cada columna con valor van su valor y su estado, en dos líneas, con una letra que quepa en la
+  // franja (doce meses en una hoja vertical); sobre las demás nada: debajo ya dicen «s. d.», «n. a.» o «—».
+  const impresos = serie.filter((p) => p.valor !== null).flatMap((p) => [p.texto, p.nombreEstado]);
+  const largo = Math.max(1, ...impresos.map((t) => t.length));
+  const letraImpresa = Math.max(4, Math.min(LETRA_IMPRESA, Math.floor(((franja - 2) / (largo * 0.56)) * 10) / 10));
 
   const yMeta = meta === undefined || ultimaMeta === undefined ? null : y(ultimaMeta);
   const yLimite = limite ? y(limite.valor) : null;
@@ -290,12 +298,14 @@ export function GraficoTubos({
                           {valor}
                         </text>
                       ) : null}
-                      <text className="tubo-impreso" x={t.centro} y={tope - 13} textAnchor="middle" fontSize={7.5}>
-                        {p.valor !== null ? <tspan x={t.centro}>{p.texto}</tspan> : null}
-                        <tspan x={t.centro} dy={9}>
-                          {p.nombreEstado}
-                        </tspan>
-                      </text>
+                      {p.valor !== null ? (
+                        <text className="tubo-impreso" x={t.centro} y={tope - 4 - letraImpresa * 1.2} textAnchor="middle" fontSize={letraImpresa}>
+                          <tspan x={t.centro}>{p.texto}</tspan>
+                          <tspan x={t.centro} dy={letraImpresa * 1.2}>
+                            {p.nombreEstado}
+                          </tspan>
+                        </text>
+                      ) : null}
                     </g>
                   );
                 })}

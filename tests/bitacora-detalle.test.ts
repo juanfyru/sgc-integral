@@ -911,7 +911,7 @@ describe("los Excel de indicadores (14A)", () => {
         filtros: { subprocesoId: 4, clasificacionId: 5, tipoId: 6, semaforo: "sin-dato", reporte: "vencida", participo: true, texto: "auditoría", retirados: true },
       }),
     ).toBe(
-      "Emitió los resultados de los indicadores de 2025 (de un subproceso, de una clasificación, de un tipo, con semáforo «Sin dato», vencidos, donde participa, con el texto «auditoría», con los retirados)",
+      "Emitió los resultados de los indicadores de 2025 (de un subproceso, de una clasificación, de un tipo, con semáforo «Sin dato», con reporte «Vencido», donde participa, con el texto «auditoría», con los retirados)",
     );
     expect(x("exporto_resultados_indicadores", {})).toBe("Emitió los resultados de los indicadores");
     expect(nombreDeAccion("exporto_resultados_indicadores")).toBe("Emitió los resultados de los indicadores");

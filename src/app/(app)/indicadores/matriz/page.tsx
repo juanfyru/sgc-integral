@@ -10,6 +10,7 @@ import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { EstadoVacio } from "@/componentes/ui/EstadoVacio";
 import { consultaDeFiltro, filtroDeConsulta, opcionesDeLista } from "@/db/consultas/indicadores/lista";
 import { matrizDelAnio } from "@/db/consultas/indicadores/matriz";
+import { anioDeConsulta } from "@/lib/indicadores/rutas";
 import { exigirSesion } from "@/lib/paginas";
 import { cuenta } from "@/lib/plural";
 import { fechaEnZona } from "@/lib/tramites/plazos";
@@ -35,17 +36,16 @@ export default async function PaginaMatriz({ searchParams }: { searchParams: Pro
   const sesion = await exigirSesion();
   const sp = await searchParams;
   const anioEnCurso = Number(fechaEnZona(new Date(), zonaHoraria()).slice(0, 4));
-  const pedido = sp.anio;
-  if (pedido !== undefined && (typeof pedido !== "string" || !/^\d{4}$/.test(pedido))) notFound();
-  const anio = pedido === undefined ? anioEnCurso : Number(pedido);
-  if (anio < 1900 || anio > anioEnCurso) notFound();
+  const anio = anioDeConsulta(sp.anio, anioEnCurso);
+  if (anio === null) notFound();
   const { procesoId, clasificacionId } = filtroDeConsulta({ proceso: sp.proceso, clasificacion: sp.clasificacion });
   const [opciones, matriz] = await Promise.all([opcionesDeLista(sesion), matrizDelAnio(sesion, { anio, procesoId, clasificacionId })]);
   const anios = [...new Set([...opciones.anios, anioEnCurso, anio])].sort((a, b) => b - a);
   const filas = matriz.procesos.reduce((n, p) => n + p.filas.length, 0);
   const proceso = procesoId === undefined ? null : (opciones.procesos.find((p) => p.id === procesoId)?.nombre ?? null);
-  // «Excel» con el año, el proceso y la clasificación de la matriz (spec §12.7): una descarga auditada, sin precarga.
-  const excel = `/indicadores/excel?${[consultaDeFiltro({ procesoId, clasificacionId }), `anio=${anio}`].filter(Boolean).join("&")}`;
+  // «Excel» con el año, el proceso y la clasificación de la matriz (spec §12.7) y los retirados: la matriz trae los
+  // retirados medidos ese año; el Excel es el de la lista, un superconjunto. Es una descarga auditada, sin precarga.
+  const excel = `/indicadores/excel?${consultaDeFiltro({ procesoId, clasificacionId, retirados: true })}&anio=${anio}`;
 
   return (
     <div className="flex min-w-0 flex-col gap-6">

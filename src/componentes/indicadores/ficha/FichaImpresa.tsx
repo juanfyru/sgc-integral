@@ -1,10 +1,9 @@
 import { InsigniaSemaforo } from "@/componentes/indicadores/InsigniaSemaforo";
-import { LeyendaDeGrafica, metaDeGrafica } from "@/componentes/indicadores/vistas/VistaResultados";
+import { LeyendaDeGrafica, metaDeGrafica } from "@/componentes/indicadores/LeyendaDeGrafica";
 import { GraficoTubos } from "@/componentes/ui/GraficoTubos";
 import type { ImpresionDelAnio } from "@/db/consultas/indicadores/impresion";
 import {
   analisisEnTexto,
-  bloquesPorVersion,
   camposDeFicha,
   camposDeOperacion,
   columnasDeVariables,
@@ -13,10 +12,11 @@ import {
   marcasDeFila,
   periodoEnPalabras,
   rigeDesdeEnTexto,
+  tramosPorVersion,
   type CampoDeTexto,
   type FirmaEnTexto,
 } from "@/lib/indicadores/ficha-en-texto";
-import { fechaEnZona } from "@/lib/tramites/plazos";
+import { textoFecha } from "@/lib/vigencia/plazo";
 import { fechaHoraLocal, zonaHoraria } from "@/lib/zona-horaria";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
@@ -34,9 +34,10 @@ function Banda({ id, children }: { id: string; children: React.ReactNode }) {
   );
 }
 
-function Bloque({ id, titulo, children }: { id: string; titulo: React.ReactNode; children: React.ReactNode }) {
+/** Un bloque de la hoja; `corto`: uno que no se parte entre dos hojas impresas (encabezado, firmas, cambios, operación). */
+function Bloque({ id, titulo, corto = false, children }: { id: string; titulo: React.ReactNode; corto?: boolean; children: React.ReactNode }) {
   return (
-    <section aria-labelledby={id} className="ficha-bloque flex min-w-0 flex-col">
+    <section aria-labelledby={id} className={`ficha-bloque${corto ? " ficha-corto" : ""} flex min-w-0 flex-col`}>
       <Banda id={id}>{titulo}</Banda>
       {children}
     </section>
@@ -102,9 +103,9 @@ export type DatosDeFichaImpresa = ImpresionDelAnio & {
  * entidad, «Ficha técnica de indicador», código, versión y fechas), la identificación y la estructura de medición de la
  * versión que regía el año (la fórmula y los rangos en palabras), las firmas tomadas de `firmas`, el control de cambios
  * hasta esa versión, los datos de operación rotulados como tales, el seguimiento del año (una fila por periodo de la
- * periodicidad, en bloques por la versión con que se calculó, y el acumulado del año) y la gráfica, que al imprimir escribe
- * el valor y el estado sobre cada columna. Sin soportes ni observaciones. La hoja titula sus bloques con `h2`: el `h1` es
- * el de la página.
+ * periodicidad, en el orden del calendario y en tramos por la versión con que se calculó, y el acumulado del año) y la
+ * gráfica, que al imprimir escribe el valor y el estado sobre cada columna con valor. Sin soportes ni observaciones. La
+ * hoja titula sus bloques con `h2`: el `h1` es el de la página.
  */
 export function FichaImpresa(d: DatosDeFichaImpresa) {
   const { ficha, resultados: r, anio } = d;
@@ -119,7 +120,7 @@ export function FichaImpresa(d: DatosDeFichaImpresa) {
   return (
     <article aria-labelledby={id("titulo")} className="ficha-impresa flex min-w-0 flex-col gap-4 rounded-lg border border-border bg-card p-4 text-sm text-foreground print:rounded-none print:border-0 print:p-0">
       <header
-        className={`ficha-encabezado grid min-w-0 grid-cols-1 ${BORDE} ${d.logo ? "sm:grid-cols-[8rem_minmax(0,1fr)_13rem]" : "sm:grid-cols-[minmax(0,1fr)_13rem]"}`}
+        className={`ficha-encabezado ficha-corto grid min-w-0 grid-cols-1 ${BORDE} ${d.logo ? "sm:grid-cols-[8rem_minmax(0,1fr)_13rem]" : "sm:grid-cols-[minmax(0,1fr)_13rem]"}`}
       >
         {d.logo ? (
           <div className="flex items-center justify-center border-b border-border p-2 sm:border-b-0 sm:border-r">
@@ -140,7 +141,7 @@ export function FichaImpresa(d: DatosDeFichaImpresa) {
           <dt className="font-semibold">Versión</dt>
           <dd>{ficha.numero}</dd>
           <dt className="font-semibold">Vigente desde</dt>
-          <dd>{aprobada ? fechaEnZona(aprobada, zona) : "—"}</dd>
+          <dd>{aprobada ? textoFecha(aprobada, zona) : "—"}</dd>
           <dt className="font-semibold">Rige desde</dt>
           <dd>{rigeDesdeEnTexto(ficha)}</dd>
         </dl>
@@ -154,7 +155,7 @@ export function FichaImpresa(d: DatosDeFichaImpresa) {
         <Campos nombre="Estructura de medición" campos={estructura} />
       </Bloque>
 
-      <Bloque id={id("firmas")} titulo="Firmas">
+      <Bloque id={id("firmas")} titulo="Firmas" corto>
         <div className="ficha-firmas grid gap-2 pt-2 sm:grid-cols-2">
           {firmasDeFicha(ficha).map((f) => (
             <Firma key={f.rol} f={f} />
@@ -162,7 +163,7 @@ export function FichaImpresa(d: DatosDeFichaImpresa) {
         </div>
       </Bloque>
 
-      <Bloque id={id("cambios")} titulo="Control de cambios">
+      <Bloque id={id("cambios")} titulo="Control de cambios" corto>
         <Tabla nombre="Control de cambios" ancha>
           <thead>
             <tr>
@@ -182,12 +183,12 @@ export function FichaImpresa(d: DatosDeFichaImpresa) {
                   {v.tipoCambio === "inicial" ? "Primera versión de la ficha" : v.cambios.join(", ")}
                   {v.motivo && v.tipoCambio !== "inicial" ? <span className="block text-muted-foreground">{`Motivo: ${v.motivo}`}</span> : null}
                 </td>
-                <td className={TD}>{v.elaboro ? `${v.elaboro}${v.elaboradaEn ? ` · ${fechaEnZona(v.elaboradaEn, zona)}` : ""}` : "(sin firma)"}</td>
+                <td className={TD}>{v.elaboro ? `${v.elaboro}${v.elaboradaEn ? ` · ${textoFecha(v.elaboradaEn, zona)}` : ""}` : "(sin firma)"}</td>
                 <td className={TD}>
                   {v.tipoCambio === "menor"
                     ? "No requiere: cambio menor"
                     : v.aprobo
-                      ? `${v.aprobo}${v.aprobadaEn ? ` · ${fechaEnZona(v.aprobadaEn, zona)}` : ""}`
+                      ? `${v.aprobo}${v.aprobadaEn ? ` · ${textoFecha(v.aprobadaEn, zona)}` : ""}`
                       : "(sin firma)"}
                 </td>
               </tr>
@@ -196,7 +197,7 @@ export function FichaImpresa(d: DatosDeFichaImpresa) {
         </Tabla>
       </Bloque>
 
-      <Bloque id={id("operacion")} titulo="Datos de operación">
+      <Bloque id={id("operacion")} titulo="Datos de operación" corto>
         <p className="py-1 text-xs text-muted-foreground">No son contenido de la ficha: no crean versión ni se firman.</p>
         <Campos nombre="Datos de operación" campos={camposDeOperacion(d.operacion)} />
       </Bloque>
@@ -220,9 +221,9 @@ export function FichaImpresa(d: DatosDeFichaImpresa) {
               ))}
             </tr>
           </thead>
-          {bloquesPorVersion(r.filas).map((b) => (
-            <tbody key={b.version}>
-              <tr>
+          {tramosPorVersion(r.filas).map((b, i) => (
+            <tbody key={`${i}-${b.version}`}>
+              <tr className="ficha-tramo">
                 <th scope="rowgroup" colSpan={columnas} className={`${TD} bg-marca-tinte text-left font-semibold`}>
                   {`Calculado con la versión ${b.version} de la ficha`}
                 </th>

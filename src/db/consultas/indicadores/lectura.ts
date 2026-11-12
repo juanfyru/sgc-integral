@@ -243,7 +243,7 @@ export type FilaDelAnio = {
   noAplica: boolean;
   motivo: string | null;
   /** Por letra de la versión que rige el periodo, con el nombre que tiene en ella y coma decimal; `null` si no hay. */
-  valores: { letra: string; nombre: string; valor: string | null }[];
+  valores: { letra: string; nombre: string; valor: string | null; numero: number | null }[];
   /** «60 %»: nunca contradice el color. */
   resultado: string | null;
   semaforo: Semaforo | null;
@@ -271,6 +271,9 @@ export const anioValido = (anio: number) => Number.isInteger(anio) && anio >= 19
 
 /** Una fracción como número para dibujar: las gráficas trabajan con números; el veredicto ya se decidió con la fracción. */
 export const aNumero = (f: Fraccion) => Number(aDecimal(f, 6, "redondear"));
+
+/** Un valor guardado como número de celda (el Excel): con diez decimales, más de los que se capturan. */
+const aCelda = (f: Fraccion) => Number(aDecimal(f, 10, "redondear"));
 
 
 export function agrupar<T>(filas: readonly T[], clave: (f: T) => number): Map<number, T[]> {
@@ -431,6 +434,8 @@ export type ResumenAcumulado = {
   texto: string | null;
   semaforo: Semaforo | null;
   valores: Record<string, string>;
+  /** Los mismos valores como números (las celdas del Excel). */
+  numeros: Record<string, number>;
   rotulo: string | null;
   valor: number | null;
   meta: { valor: number; texto: string } | null;
@@ -438,7 +443,7 @@ export type ResumenAcumulado = {
   metaEnTexto: string | null;
 };
 
-const SIN_ACUMULADO: ResumenAcumulado = { texto: null, semaforo: null, valores: {}, rotulo: null, valor: null, meta: null, metaEnTexto: null };
+const SIN_ACUMULADO: ResumenAcumulado = { texto: null, semaforo: null, valores: {}, numeros: {}, rotulo: null, valor: null, meta: null, metaEnTexto: null };
 
 /**
  * El acumulado de un año con los periodos que rigen en él, en orden (`acumulado`, la función pura de la Tarea 4). Manda
@@ -478,6 +483,7 @@ export function resumenAcumulado(leidos: readonly PeriodoLeido[], versiones: rea
     texto: r.resultado ? textoValor(r.resultado, unidad, regla) : null,
     semaforo: r.semaforo,
     valores: Object.fromEntries(Object.entries(r.valores).map(([letra, v]) => [letra, numeroEs(v, 4, "truncar")])),
+    numeros: Object.fromEntries(Object.entries(r.valores).map(([letra, v]) => [letra, aCelda(v)])),
     rotulo: rotuloDelAcumulado(
       r.faltan.map(clave),
       desdeOtraRacha ? { clave: clave(r.desde!), numero: rachas.get(ultimo.version.id)?.numero ?? ultimo.version.numero } : null,
@@ -754,7 +760,7 @@ function filaSinMedicion(p: Periodo, version: VersionDeCalculo, regla: Regla, ah
     historica: false,
     noAplica: false,
     motivo: null,
-    valores: version.variables.map((v) => ({ letra: v.letra, nombre: v.nombre, valor: null })),
+    valores: version.variables.map((v) => ({ letra: v.letra, nombre: v.nombre, valor: null, numero: null })),
     resultado: null,
     semaforo: null,
     meta: textoMeta(regla, version.unidad),
@@ -820,6 +826,7 @@ function filaDeMedicion(
       letra: v.letra,
       nombre: v.nombre,
       valor: valores[v.letra] ? numeroEs(valores[v.letra], 4, "truncar") : null,
+      numero: valores[v.letra] ? aCelda(valores[v.letra]) : null,
     })),
     resultado: resultado ? textoValor(resultado, version.unidad, regla) : null,
     semaforo,

@@ -5,7 +5,7 @@ import { celda, celdaNumerica, TablaDatos, type ColumnaTabla } from "@/component
 import type { FilaDelAnio } from "@/db/consultas/indicadores/lectura";
 import type { Soporte } from "@/db/consultas/indicadores/soportes";
 import { ETIQUETA_ESTADO } from "@/lib/indicadores/estados";
-import { marcasDeFila } from "@/lib/indicadores/ficha-en-texto";
+import { analisisDeFila, marcasDeFila } from "@/lib/indicadores/ficha-en-texto";
 import type { EntradaDeHistorial } from "@/lib/indicadores/historial";
 import { rutaDeIndicador } from "@/lib/indicadores/rutas";
 import { enlaceDeSoporte } from "@/lib/indicadores/soportes";
@@ -69,25 +69,26 @@ function Estado({ f, historial, periodosSinCumplir }: { f: FilaDelAnio; historia
   );
 }
 
+/** El análisis con la regla de `analisisDeFila` (la misma de la ficha impresa y el Excel), con sus rótulos en negrita. */
 function Analisis({ f }: { f: FilaDelAnio }) {
-  if (f.noAplica) return <span className="break-words">{f.motivo ? `No aplica: ${f.motivo}` : "No aplica"}</span>;
-  if (f.causa || f.accionPropuesta) {
+  const a = analisisDeFila(f);
+  if (a?.tipo === "causa") {
     return (
       <span className="break-words">
-        {f.causa ? (
+        {a.causa ? (
           <>
-            <b>Causa:</b> {f.causa}{" "}
+            <b>Causa:</b> {a.causa}{" "}
           </>
         ) : null}
-        {f.accionPropuesta ? (
+        {a.accionPropuesta ? (
           <>
-            <b>Acción propuesta:</b> {f.accionPropuesta}
+            <b>Acción propuesta:</b> {a.accionPropuesta}
           </>
         ) : null}
       </span>
     );
   }
-  if (f.analisis) return <span className="break-words">{f.analisis}</span>;
+  if (a) return <span className="break-words">{a.texto}</span>;
   return <span className="text-muted-foreground">{f.cumple ? "Sin análisis (cumple)" : "—"}</span>;
 }
 

@@ -223,13 +223,26 @@ export function estadoEnTexto(f: Pick<FilaDelAnio, "estado" | "vencida" | "histo
 /** La columna «Cumple»: «Sí», «No» o vacía (sin resultado o sin meta). */
 export const cumpleEnTexto = (c: boolean | null) => (c === null ? "" : c ? "Sí" : "No");
 
+type ConAnalisis = Pick<FilaDelAnio, "noAplica" | "motivo" | "causa" | "accionPropuesta" | "analisis">;
+
+/**
+ * El análisis de un periodo (spec §8.4), una sola regla para la tabla del año y para la impresa y el Excel: «no aplica» con
+ * su motivo; si no, la causa y la acción propuesta (un incumplimiento); si no, el análisis; `null` si no hay ninguno.
+ */
+export function analisisDeFila(
+  f: ConAnalisis,
+): { tipo: "no_aplica"; texto: string } | { tipo: "causa"; causa: string | null; accionPropuesta: string | null } | { tipo: "analisis"; texto: string } | null {
+  if (f.noAplica) return { tipo: "no_aplica", texto: f.motivo ? `No aplica: ${f.motivo}` : "No aplica" };
+  if (f.causa || f.accionPropuesta) return { tipo: "causa", causa: f.causa, accionPropuesta: f.accionPropuesta };
+  return f.analisis ? { tipo: "analisis", texto: f.analisis } : null;
+}
+
 /** El análisis de un periodo en una línea: «No aplica: …», «Causa: … Acción propuesta: …» o el análisis; vacío si no hay. */
-export function analisisEnTexto(f: Pick<FilaDelAnio, "noAplica" | "motivo" | "causa" | "accionPropuesta" | "analisis">): string {
-  if (f.noAplica) return f.motivo ? `No aplica: ${f.motivo}` : "No aplica";
-  if (f.causa || f.accionPropuesta) {
-    return [f.causa ? `Causa: ${f.causa}` : null, f.accionPropuesta ? `Acción propuesta: ${f.accionPropuesta}` : null].filter(Boolean).join(" ");
-  }
-  return f.analisis ?? "";
+export function analisisEnTexto(f: ConAnalisis): string {
+  const a = analisisDeFila(f);
+  if (a === null) return "";
+  if (a.tipo !== "causa") return a.texto;
+  return [a.causa ? `Causa: ${a.causa}` : null, a.accionPropuesta ? `Acción propuesta: ${a.accionPropuesta}` : null].filter(Boolean).join(" ");
 }
 
 /**
@@ -243,16 +256,25 @@ export function columnasDeVariables(filas: readonly Pick<FilaDelAnio, "valores">
 }
 
 /**
- * Las filas del año en bloques por la versión de la ficha con que se calcularon (spec §7.8.6, «cada bloque dice con qué
- * versión»), de la versión más antigua a la más reciente, cada bloque con sus filas en el orden del año; las de otra
- * periodicidad van en el bloque de la suya. Un periodo corregido después de un cambio menor no adelanta su versión.
+ * Las filas del año, en el orden del calendario, en tramos por la versión de la ficha con que se calcularon (spec §7.8.6,
+ * «cada bloque dice con qué versión»): un tramo nuevo empieza solo cuando una fila con resultado trae otra versión que la
+ * del tramo en curso, y el rótulo se repite cada vez que la versión cambia. Una fila sin resultado (sin dato, por
+ * registrar, por venir, «no aplica») no abre tramo: queda en el que cae; las primeras del año sin resultado van en el
+ * primero, con la versión de la primera fila que tiene resultado (o la suya, si ninguna lo tiene).
  */
-export function bloquesPorVersion<F extends Pick<FilaDelAnio, "version">>(filas: readonly F[]): { version: number; filas: F[] }[] {
-  const bloques: { version: number; filas: F[] }[] = [];
+export function tramosPorVersion<F extends Pick<FilaDelAnio, "version" | "resultado">>(filas: readonly F[]): { version: number; filas: F[] }[] {
+  const tramos: { version: number; filas: F[]; conResultado: boolean }[] = [];
   for (const f of filas) {
-    const bloque = bloques.find((b) => b.version === f.version);
-    if (bloque) bloque.filas.push(f);
-    else bloques.push({ version: f.version, filas: [f] });
+    const actual = tramos.at(-1);
+    const conResultado = f.resultado !== null;
+    if (!actual) tramos.push({ version: f.version, filas: [f], conResultado });
+    else if (!conResultado) actual.filas.push(f);
+    else if (!actual.conResultado) {
+      actual.version = f.version;
+      actual.conResultado = true;
+      actual.filas.push(f);
+    } else if (actual.version !== f.version) tramos.push({ version: f.version, filas: [f], conResultado });
+    else actual.filas.push(f);
   }
-  return bloques.sort((a, b) => a.version - b.version);
+  return tramos.map(({ version, filas: propias }) => ({ version, filas: propias }));
 }

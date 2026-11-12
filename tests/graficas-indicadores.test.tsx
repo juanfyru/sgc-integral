@@ -105,9 +105,15 @@ describe("GraficoTubos", () => {
     expect(tabla).toContain('<tr><th scope="row">marzo</th><td>86 %</td><td>Bien</td></tr>');
     expect(tabla).toContain('<tr><th scope="row">julio</th><td>—</td><td>Sin dato</td></tr>');
 
-    // Al imprimir se leen el valor y el estado sobre cada columna (la hoja de estilos los muestra).
-    expect(cuenta(html, /class="tubo-impreso"/g)).toBe(12);
+    // Al imprimir se leen el valor y el estado sobre cada columna con valor (la hoja de estilos los muestra), en dos
+    // líneas; sobre julio (sin dato), noviembre («no aplica») y diciembre (por venir) no se escribe nada: debajo ya lo dicen.
+    expect(cuenta(html, /class="tubo-impreso"/g)).toBe(9);
     expect(html).toMatch(/<text class="tubo-impreso"[^>]*><tspan[^>]*>58 %<\/tspan><tspan[^>]*>Crítico<\/tspan><\/text>/);
+    expect(html).not.toMatch(/<text class="tubo-impreso"[^>]*>(?:(?!<\/text>).)*(Sin dato|No aplica|Por reportar)/);
+    // La letra cabe en el paso de una columna: el estado más largo («Atención») no pasa de su franja.
+    const impreso = /<text class="tubo-impreso"[^>]*font-size="([\d.]+)"/.exec(html);
+    const franja = atributo(/<rect class="tubo-zona"[^>]*>/.exec(html)![0], "width");
+    expect(Number(impreso?.[1]) * 0.56 * "Atención".length).toBeLessThanOrEqual(franja);
   });
 
   it("cada columna se enfoca con el teclado y dice su valor y su estado", () => {
@@ -345,6 +351,14 @@ describe("hoja de estilos y colores", () => {
     expect(impresion).toMatch(/\.tubo-relleno\s*\{[^}]*animation:\s*none/);
     expect(impresion).toMatch(/\.tubo-impreso\s*\{[^}]*display:\s*inline/);
     expect(fuera).toMatch(/\.tubo-impreso\s*\{[^}]*display:\s*none/);
+    // «Saltar al contenido» no sale en el papel (es fijo: se repetiría al pie de cada hoja).
+    expect(impresion).toMatch(/\.saltar-al-contenido\s*\{[^}]*display:\s*none/);
+    // La ficha impresa: los títulos y la fila «Calculado con la versión» no quedan solos al pie, las secciones cortas
+    // no se parten y los contenedores flex pasan a bloque para que el navegador los pueda partir.
+    expect(impresion).toMatch(/\.ficha-banda[^{]*\{[^}]*break-after:\s*avoid/);
+    expect(impresion).toMatch(/\.ficha-tramo[^{]*\{[^}]*break-after:\s*avoid/);
+    expect(impresion).toMatch(/\.ficha-corto[^{]*\{[^}]*break-inside:\s*avoid/);
+    expect(impresion).toMatch(/\.ficha-impresa[^{]*\{[^}]*display:\s*block/);
     // Sin «gráficos de fondo», las piezas HTML (pista, marca, segmentos) se imprimen igual.
     expect(impresion).toMatch(/\.tubo-color-exacto\s*\{[^}]*print-color-adjust:\s*exact/);
   });

@@ -399,6 +399,12 @@
 .saltar-al-contenido:focus {
   transform: translateY(0);
 }
+/* En papel no sale: un elemento fijo se repite en cada hoja impresa (y su traslado cae al pie de la anterior). */
+@media print {
+  .saltar-al-contenido {
+    display: none;
+  }
+}
 
 /* El Listado Maestro impreso sale siempre en claro, aunque el usuario use el tema oscuro. */
 @media print {
@@ -534,30 +540,37 @@
 
 /* ── Fase 14A: la ficha impresa de un indicador (spec §7.8, maqueta 7) ──────
    Su propia página con nombre: los márgenes no cambian la impresión del resto de la app (el Listado Maestro, la matriz).
-   Ninguna fila de una tabla ni un bloque de firmas se parte entre dos hojas; el encabezado de cada tabla se repite en cada
-   hoja; las bandas de la marca y el estado de cada periodo salen en color (el estado siempre va escrito, además). */
+   Al imprimir, la hoja y sus bloques pasan de flex a bloque (el navegador parte mejor los bloques); ninguna fila de una
+   tabla se parte entre dos hojas, las secciones cortas (encabezado, firmas, control de cambios, datos de operación) y la
+   gráfica tampoco, y ni un título de sección ni la fila «Calculado con la versión N» quedan solos al pie. El encabezado
+   de cada tabla se repite en cada hoja; las bandas de la marca y el estado de cada periodo salen en color (el estado
+   siempre va escrito, además). */
 @page ficha {
   margin: 12mm 10mm;
 }
 @media print {
   .ficha-impresa {
     page: ficha;
-    gap: 0.6rem;
+    display: block;
     font-size: 9pt;
+  }
+  .ficha-impresa > * + * {
+    margin-top: 0.6rem;
+  }
+  .ficha-impresa .ficha-bloque {
+    display: block;
   }
   .ficha-impresa .ficha-tabla thead {
     display: table-header-group;
   }
   .ficha-impresa .ficha-tabla tr,
-  .ficha-impresa .ficha-firmas,
-  .ficha-impresa .ficha-encabezado {
-    break-inside: avoid;
-  }
-  .ficha-impresa .ficha-banda {
-    break-after: avoid;
-  }
+  .ficha-impresa .ficha-corto,
   .ficha-impresa .ficha-grafica {
     break-inside: avoid;
+  }
+  .ficha-impresa .ficha-banda,
+  .ficha-impresa .ficha-tramo {
+    break-after: avoid;
   }
   .ficha-color-exacto,
   .ficha-color-exacto * {

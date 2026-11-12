@@ -11,7 +11,7 @@ import type { FilaDeResultados } from "@/db/consultas/indicadores/matriz";
 import { neutralizarFormula } from "@/lib/celdas";
 import { agregarHoja, type Celda, type Columna, type MetaHoja } from "@/lib/distribucion/hoja-excel";
 import { MESES } from "@/lib/indicadores-documentales/periodo";
-import { fechaEnZona } from "@/lib/tramites/plazos";
+import { textoFecha } from "@/lib/vigencia/plazo";
 import { fechaHoraLocal, zonaHoraria } from "@/lib/zona-horaria";
 import {
   analisisEnTexto,
@@ -27,7 +27,7 @@ import {
   semaforoEnTexto,
   type CampoDeTexto,
 } from "./ficha-en-texto";
-import { ETIQUETA_SEMAFORO } from "./tipos";
+import { ETIQUETA_REPORTE_DE_LISTA, ETIQUETA_SEMAFORO_DE_LISTA } from "./filtros";
 
 const MES_CORTO = MESES.map((m) => m.charAt(0).toUpperCase() + m.slice(1, 3));
 
@@ -46,11 +46,11 @@ const FICHA: Array<Columna<FilaDeFicha>> = [
 const enSeccion = (seccion: string, campos: CampoDeTexto[]): FilaDeFicha[] =>
   campos.map((c) => ({ seccion, termino: c.termino, valor: c.detalle ? `${c.valor} — ${c.detalle}` : c.valor }));
 
-/** Una fila de la hoja de resultados: un periodo o el acumulado del año, ya en texto. */
+/** Una fila de la hoja de resultados: un periodo o el acumulado del año, ya en texto salvo las variables (números). */
 type FilaDeResultado = {
   periodo: string;
   version: number | null;
-  valores: Record<string, string | null>;
+  valores: Record<string, number | null>;
   resultado: string | null;
   meta: string | null;
   cumple: string;
@@ -94,7 +94,7 @@ export async function construirExcelDeIndicador(d: ImpresionDelAnio, meta: MetaH
   const filasDeFicha: FilaDeFicha[] = [
     { seccion: "Encabezado", termino: "Código", valor: d.codigo },
     { seccion: "Encabezado", termino: "Versión", valor: String(ficha.numero) },
-    { seccion: "Encabezado", termino: "Vigente desde", valor: aprobada ? fechaEnZona(aprobada, zona) : "—" },
+    { seccion: "Encabezado", termino: "Vigente desde", valor: aprobada ? textoFecha(aprobada, zona) : "—" },
     { seccion: "Encabezado", termino: "Rige desde", valor: rigeDesdeEnTexto(ficha) },
     ...enSeccion("Identificación", identificacion),
     ...enSeccion("Estructura de medición", estructura),
@@ -108,7 +108,8 @@ export async function construirExcelDeIndicador(d: ImpresionDelAnio, meta: MetaH
   const filas: FilaDeResultado[] = r.filas.map((f) => ({
     periodo: f.etiqueta,
     version: f.version,
-    valores: Object.fromEntries(f.valores.map((v) => [v.letra, v.valor])),
+    // Las variables, como número de celda (se pueden sumar en la hoja); el resultado y la meta, con su texto.
+    valores: Object.fromEntries(f.valores.map((v) => [v.letra, v.numero])),
     resultado: f.resultado,
     meta: f.meta,
     cumple: cumpleEnTexto(f.cumple),
@@ -121,7 +122,7 @@ export async function construirExcelDeIndicador(d: ImpresionDelAnio, meta: MetaH
   filas.push({
     periodo: "Acumulado del año",
     version: null,
-    valores: a.valores,
+    valores: a.numeros,
     resultado: a.texto,
     meta: a.metaEnTexto,
     cumple: a.texto ? cumpleEnTexto(a.semaforo ? a.semaforo === "bien" : null) : "",
@@ -160,8 +161,6 @@ const RESULTADOS: Array<Columna<FilaDeResultados>> = [
 /** La columna del primer mes (Ene), contando desde 1. */
 const PRIMER_MES = RESULTADOS.findIndex((c) => c.cab === MES_CORTO[0]) + 1;
 
-const SEMAFOROS: Record<string, string> = { ...ETIQUETA_SEMAFORO, "sin-dato": "Sin dato" };
-
 /**
  * Lo que dice la línea de filtros del Excel de resultados: el año y cada filtro de la lista con su nombre
  * («Proceso: Gestión del Talento Humano · Semáforo: Crítico»). Un id que ya no está en los catálogos se dice «no
@@ -169,20 +168,14 @@ const SEMAFOROS: Record<string, string> = { ...ETIQUETA_SEMAFORO, "sin-dato": "S
  */
 export function detalleDeFiltros(anio: number, f: FiltroDeLista, o: Pick<OpcionesDeLista, "procesos" | "subprocesos" | "clasificaciones" | "tipos">): string {
   const nombre = (lista: { id: number; nombre: string }[], id: number) => lista.find((x) => x.id === id)?.nombre ?? "no disponible";
-  const REPORTE: Record<string, string> = {
-    "por-reportar": "Por reportar",
-    "falta-analisis": "Falta el análisis",
-    vencida: "Vencido",
-    "requiere-accion": "Requiere acción de mejora",
-  };
   return [
     `Año: ${anio}`,
     f.procesoId !== undefined ? `Proceso: ${nombre(o.procesos, f.procesoId)}` : null,
     f.subprocesoId !== undefined ? `Subproceso: ${nombre(o.subprocesos, f.subprocesoId)}` : null,
     f.clasificacionId !== undefined ? `Clasificación: ${nombre(o.clasificaciones, f.clasificacionId)}` : null,
     f.tipoId !== undefined ? `Tipo: ${nombre(o.tipos, f.tipoId)}` : null,
-    f.semaforo ? `Semáforo: ${SEMAFOROS[f.semaforo]}` : null,
-    f.reporte ? `Reporte: ${REPORTE[f.reporte]}` : null,
+    f.semaforo ? `Semáforo: ${ETIQUETA_SEMAFORO_DE_LISTA[f.semaforo]}` : null,
+    f.reporte ? `Reporte: ${ETIQUETA_REPORTE_DE_LISTA[f.reporte]}` : null,
     f.participo ? "Donde participo" : null,
     f.texto ? `Texto: «${f.texto}»` : null,
     f.retirados ? "Incluye retirados" : null,
@@ -200,10 +193,10 @@ export function detalleDeFiltros(anio: number, f: FiltroDeLista, o: Pick<Opcione
 export async function construirExcelDeResultados(filas: FilaDeResultados[], anio: number, meta: MetaHoja): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   const nombre = `Resultados ${anio}`;
-  agregarHoja(wb, nombre, `Resultados de los indicadores · ${anio}`, RESULTADOS, filas, meta);
+  const cabecera = agregarHoja(wb, nombre, `Resultados de los indicadores · ${anio}`, RESULTADOS, filas, meta);
   const hoja = wb.getWorksheet(nombre)!;
-  // Las filas de datos son las últimas: un periodo de varios meses une sus celdas, como en la matriz.
-  const primera = hoja.rowCount - filas.length + 1;
+  // Las filas de datos van debajo de la cabecera: un periodo de varios meses une sus celdas, como en la matriz.
+  const primera = cabecera + 1;
   filas.forEach((f, i) => {
     for (const c of f.celdas ?? []) {
       if (c.hastaMes > c.desdeMes && c.estado !== "vacia") hoja.mergeCells(primera + i, PRIMER_MES + c.desdeMes - 1, primera + i, PRIMER_MES + c.hastaMes - 1);
@@ -211,4 +204,3 @@ export async function construirExcelDeResultados(filas: FilaDeResultados[], anio
   });
   return Buffer.from((await wb.xlsx.writeBuffer()) as ArrayBuffer);
 }
-

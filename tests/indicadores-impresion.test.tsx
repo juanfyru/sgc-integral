@@ -31,13 +31,19 @@ vi.mock("next/navigation", () => ({
 }));
 
 import PaginaImprimir from "@/app/(app)/indicadores/[codigo]/imprimir/page";
+import ExcelJS from "exceljs";
 import { FichaImpresa } from "@/componentes/indicadores/ficha/FichaImpresa";
+import { FichaTecnica } from "@/componentes/indicadores/ficha/FichaTecnica";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { analizar } from "@/db/consultas/indicadores/analisis";
 import { impresionDelAnio } from "@/db/consultas/indicadores/impresion";
 import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
 import { observar } from "@/db/consultas/indicadores/observaciones";
+import { retirar } from "@/db/consultas/indicadores/operacion";
+import type { FichaLeida } from "@/db/consultas/indicadores/aprobacion";
+import { construirExcelDeIndicador } from "@/lib/indicadores/excel";
+import { camposDeFicha } from "@/lib/indicadores/ficha-en-texto";
 import type { SesionValida } from "@/lib/sesion";
 import { indicadorDePrueba, versionTrimestral, type IndicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
@@ -60,6 +66,87 @@ const AHORA = new Date("2026-10-20T15:00:00Z");
 const APROBADA = new Date("2025-12-15T15:00:00Z");
 const opc = (tx: TransactionSql, ahora = AHORA) => ({ sql: tx, ahora });
 const ENTIDAD = "Entidad Zeta de Prueba";
+const META = { hospital: ENTIDAD, generadoEn: "2026-10-20 10:00", detalle: "Año: 2025" };
+
+/** Una ficha con todos los campos que pueden faltar llenos: así la pantalla y la impresa los nombran todos. */
+function fichaCompleta(): FichaLeida {
+  const variable = (letra: string, nombre: string): FichaLeida["contenido"]["variables"][number] => ({
+    letra,
+    nombre,
+    descripcion: null,
+    fuente: null,
+    unidad: null,
+    consolidacion: "suma",
+    origen: "propia",
+    variableCompartidaId: null,
+    indicadorOrigenId: null,
+    toma: null,
+    capturaMin: null,
+    capturaMax: null,
+    admiteNegativos: false,
+  });
+  return {
+    versionId: 1,
+    indicadorId: 1,
+    numero: 1,
+    estado: "aprobada",
+    tipoCambio: "inicial",
+    rigeDesde: "2026-T1",
+    motivo: null,
+    notaDevolucion: null,
+    elaboradaEn: null,
+    contenido: {
+      nombre: "Cumplimiento de auditorías",
+      proposito: "Saber si se cumple el programa",
+      requisito: "NTC ISO 9001:2015, numeral 9.2",
+      tipoNombre: "Eficacia",
+      clasificacionId: 1,
+      clasificacionNombre: "Operativo",
+      objetivoNombre: "Mejorar la calidad",
+      procesoNombre: "Gestión de calidad",
+      subprocesoNombre: "Auditoría",
+      procedimientoDocumentoId: 9,
+      puntoControl: "PC-13",
+      origenDato: "manual",
+      calculo: null,
+      calculoAlcance: null,
+      forma: "porcentaje",
+      factor: null,
+      formula: "A / B * 100",
+      unidadId: 1,
+      unidadNombre: "Porcentaje",
+      unidadSufijo: " %",
+      decimales: 1,
+      periodicidad: "trimestral",
+      tendencia: "ascendente",
+      meta: "90",
+      metaMax: null,
+      semaforoModo: "relativo",
+      umbralAtencionPct: 70,
+      limiteCritico: null,
+      tolerancia: null,
+      resultadoMin: "0",
+      resultadoMax: "100",
+      lineaBaseValor: "80",
+      lineaBasePeriodo: "2025",
+      lineaBaseNota: "Del informe de 2025",
+      sustentoMeta: "La meta de la gerencia",
+      ente: "Supersalud",
+      periodicidadExterna: "anual",
+      plazoExternoDias: 30,
+      dimensionId: null,
+      variables: [variable("A", "Ejecutadas"), variable("B", "Programadas")],
+      responsables: [
+        { cargoNombre: "Líder de Calidad", funcion: "medir" },
+        { cargoNombre: "Gerente", funcion: "analizar" },
+      ],
+      normas: [{ normaNombre: "Resolución 1 de 2020" }],
+    },
+    procedimiento: { id: 9, codigo: "SGC-PR-01", titulo: "Auditorías internas" },
+    firmas: { elaboro: null, aprobo: null },
+    aprueba: false,
+  };
+}
 
 const valida = (s: SesionFlujo): SesionValida => ({
   ...s,
@@ -109,6 +196,24 @@ async function firmar(tx: TransactionSql, versionId: number) {
         nombre_firmante, cargo_firmante, metodo, creado_en)
       VALUES (NULL, NULL, ${versionId}, ${f.u}, ${f.firma}, 0, ${v.huella as string}, ${f.nombre}, ${f.cargo}, 'clave', ${f.en})`;
   }
+}
+
+/** Una versión 2 menor aprobada en octubre de 2026: rige los mismos periodos que la 1, con otro nombre. */
+async function cambioMenor(tx: TransactionSql, ind: IndicadorDePrueba): Promise<number> {
+  const admin = await sesionAdmin(tx);
+  const [v2] = await tx`INSERT INTO indicador_versiones (indicador_id, numero, estado, tipo_cambio, nombre, proposito, tipo_id, tipo_nombre,
+      clasificacion_id, clasificacion_nombre, proceso_nombre, origen_dato, calculo, forma, formula, unidad_id, unidad_nombre, unidad_sufijo,
+      decimales, periodicidad, tendencia, meta, semaforo_modo, umbral_atencion_pct, motivo_cambio, creado_por)
+    SELECT indicador_id, 2, 'borrador', 'menor', ${`Nombre corregido ${ind.codigo}`}, proposito, tipo_id, tipo_nombre, clasificacion_id,
+      clasificacion_nombre, proceso_nombre, origen_dato, calculo, forma, formula, unidad_id, unidad_nombre, unidad_sufijo, decimales,
+      periodicidad, tendencia, meta, semaforo_modo, umbral_atencion_pct, 'Aclarar el nombre', ${admin.usuarioId}
+    FROM indicador_versiones WHERE id = ${ind.versionId} RETURNING id`;
+  await tx`SELECT id FROM indicador_versiones WHERE id = ${v2.id} FOR UPDATE`;
+  await tx`INSERT INTO indicador_variables (version_id, letra, nombre, descripcion, fuente, consolidacion, origen, orden)
+    SELECT ${v2.id}, letra, nombre, descripcion, fuente, consolidacion, origen, orden FROM indicador_variables WHERE version_id = ${ind.versionId}`;
+  await tx`UPDATE indicador_versiones SET estado = 'aprobada', elaborada_por = ${admin.usuarioId}, huella = ${"2".repeat(64)},
+      rige_desde = '2026-T1', aprobada_en = ${new Date("2026-10-05T15:00:00Z")} WHERE id = ${v2.id}`;
+  return Number(v2.id);
 }
 
 /** Un trimestral firmado del proceso, con sus nombres de variable y su fuente, medido de enero a septiembre de 2026. */
@@ -179,8 +284,9 @@ describe("FichaImpresa", () => {
       const html = await impreso(tx, await usuarioDePrueba(tx, { rol: "consulta" }), ind);
       const firmas = html.slice(html.indexOf(">Firmas<"), html.indexOf(">Control de cambios<"));
       enOrden(firmas, ["Elaboró", "Ana Elaboradora", "Líder de Calidad", "2025-12-10", "Revisó y aprobó", "Juan Aprobador", "Gerente", "2025-12-15"]);
-      // La fecha de la aprobación es la de «Vigente desde» en el encabezado.
-      expect(html.slice(0, html.indexOf(">Identificación<"))).toContain("2025-12-15");
+      // La fecha de la aprobación es la de «Vigente desde» en el encabezado, con el formato de un día de la app.
+      expect(html.slice(0, html.indexOf(">Identificación<"))).toContain(">15 dic 2025<");
+      expect(html.slice(0, html.indexOf(">Identificación<"))).not.toContain("2025-12-15");
     }));
 
   it("los datos de operación van después de las firmas, rotulados como tales", () =>
@@ -221,19 +327,7 @@ describe("FichaImpresa", () => {
     revertida(sql, async (tx) => {
       const { ind, quien } = await trimestralMedido(tx);
       // Una versión 2 menor (rige los mismos periodos) aprobada en octubre; el tercer trimestre se corrige después, con ella.
-      const admin = await sesionAdmin(tx);
-      const [v2] = await tx`INSERT INTO indicador_versiones (indicador_id, numero, estado, tipo_cambio, nombre, proposito, tipo_id, tipo_nombre,
-          clasificacion_id, clasificacion_nombre, proceso_nombre, origen_dato, calculo, forma, formula, unidad_id, unidad_nombre, unidad_sufijo,
-          decimales, periodicidad, tendencia, meta, semaforo_modo, umbral_atencion_pct, motivo_cambio, creado_por)
-        SELECT indicador_id, 2, 'borrador', 'menor', ${`Nombre corregido ${ind.codigo}`}, proposito, tipo_id, tipo_nombre, clasificacion_id,
-          clasificacion_nombre, proceso_nombre, origen_dato, calculo, forma, formula, unidad_id, unidad_nombre, unidad_sufijo, decimales,
-          periodicidad, tendencia, meta, semaforo_modo, umbral_atencion_pct, 'Aclarar el nombre', ${admin.usuarioId}
-        FROM indicador_versiones WHERE id = ${ind.versionId} RETURNING id`;
-      await tx`SELECT id FROM indicador_versiones WHERE id = ${v2.id} FOR UPDATE`;
-      await tx`INSERT INTO indicador_variables (version_id, letra, nombre, descripcion, fuente, consolidacion, origen, orden)
-        SELECT ${v2.id}, letra, nombre, descripcion, fuente, consolidacion, origen, orden FROM indicador_variables WHERE version_id = ${ind.versionId}`;
-      await tx`UPDATE indicador_versiones SET estado = 'aprobada', elaborada_por = ${admin.usuarioId}, huella = ${"2".repeat(64)},
-          rige_desde = '2026-T1', aprobada_en = ${new Date("2026-10-05T15:00:00Z")} WHERE id = ${v2.id}`;
+      const v2 = { id: await cambioMenor(tx, ind) };
       const [t3] = await tx`SELECT id, version_id FROM mediciones WHERE indicador_id = ${ind.id} AND periodo = '2026-T3'`;
       expect(Number(t3.version_id)).toBe(ind.versionId);
       await reportar(quien, { medicionId: Number(t3.id), valores: { A: "4", B: "5" }, parcial: false, confirmado: true }, opc(tx));
@@ -257,7 +351,7 @@ describe("FichaImpresa", () => {
       expect(cambios).toContain("Aclarar el nombre");
     }));
 
-  it("un año anterior imprime la versión que regía y su control de cambios hasta ella; lo de otra periodicidad va en el bloque de su versión", () =>
+  it("lo de otra periodicidad va en el orden del calendario, en el tramo de su versión, marcado", () =>
     revertida(sql, async (tx) => {
       const p = await proceso(tx);
       const quien = await usuarioDePrueba(tx, { rol: "consulta" });
@@ -265,16 +359,141 @@ describe("FichaImpresa", () => {
       const ind = await indicadorDePrueba(tx, { procesoId: p.id, inicioMedicion: "2026-01", aprobadaEn: APROBADA, mide: [quien.usuarioId] });
       await medir(tx, quien, ind, { "2026-06": { A: "9", B: "10" }, "2026-07": { A: "1", B: "10" } }, new Date("2026-08-15T15:00:00Z"));
       await versionTrimestral(tx, { indicadorId: ind.id, usuarioId: admin.usuarioId, rigeDesde: "2026-T3", aprobadaEn: new Date("2026-07-20T15:00:00Z") });
+      await medir(tx, quien, ind, { "2026-T3": { A: "8", B: "10" } });
 
       const html = await impreso(tx, quien, ind);
       const tabla = html.slice(html.indexOf(">Seguimiento y medición"), html.indexOf(">Representación gráfica<"));
-      enOrden(tabla, ["Calculado con la versión 1 de la ficha", "Enero de 2026", "Junio de 2026", "Julio de 2026", "Periodicidad anterior", "Calculado con la versión 2 de la ficha", "Tercer trimestre de 2026"]);
+      // Los tramos siguen el calendario: cambian solo entre filas con resultado de otra versión.
+      enOrden(tabla, [
+        "Calculado con la versión 1 de la ficha",
+        "Enero de 2026",
+        "Junio de 2026",
+        "Calculado con la versión 2 de la ficha",
+        "Tercer trimestre de 2026",
+        "Calculado con la versión 1 de la ficha",
+        "Julio de 2026",
+        "Periodicidad anterior",
+        "Cuarto trimestre de 2026",
+      ]);
+      expect(tabla.match(/Calculado con la versión/g)).toHaveLength(3);
       // El encabezado, el de la versión 2 (rige el último periodo empezado).
       expect(html.slice(0, html.indexOf(">Identificación<"))).toMatch(/Versión[^0-9]*2/);
 
       // 2025 no se mide (empieza en enero de 2026): no hay impreso de ese año.
       expect(await impresionDelAnio(quien, ind.codigo, 2025, opc(tx))).toBeNull();
     }));
+
+  it("la tabla va en el orden del calendario: un periodo corregido tras un cambio menor y uno vencido sin reportar no la desordenan", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const quien = await usuarioDePrueba(tx, { rol: "consulta" });
+      const ind = await indicadorDePrueba(tx, {
+        procesoId: p.id,
+        periodicidad: "trimestral",
+        inicioMedicion: "2026-T1",
+        aprobadaEn: APROBADA,
+        mide: [quien.usuarioId],
+      });
+      // El segundo trimestre vence sin reportarse; el primero se corrige con la versión 2 menor.
+      const ids = await medir(tx, quien, ind, { "2026-T1": { A: "9", B: "10" }, "2026-T3": { A: "8", B: "10" } });
+      await cambioMenor(tx, ind);
+      await reportar(quien, { medicionId: ids["2026-T1"], valores: { A: "10", B: "10" }, parcial: false, confirmado: true }, opc(tx));
+
+      const html = await impreso(tx, quien, ind);
+      const tabla = html.slice(html.indexOf(">Seguimiento y medición"), html.indexOf(">Representación gráfica<"));
+      enOrden(tabla, [
+        "Calculado con la versión 2 de la ficha",
+        "Primer trimestre de 2026",
+        "Segundo trimestre de 2026",
+        "Calculado con la versión 1 de la ficha",
+        "Tercer trimestre de 2026",
+        "Cuarto trimestre de 2026",
+        "Acumulado del año",
+      ]);
+      expect(tabla.match(/Calculado con la versión/g)).toHaveLength(2);
+    }));
+
+  it("un año anterior imprime la versión que regía: un cambio mayor que rige después no entra ni en la ficha ni en el Excel", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const quien = await usuarioDePrueba(tx, { rol: "consulta" });
+      const ind = await indicadorDePrueba(tx, {
+        procesoId: p.id,
+        periodicidad: "trimestral",
+        inicioMedicion: "2025-T1",
+        aprobadaEn: new Date("2024-12-15T15:00:00Z"),
+        mide: [quien.usuarioId],
+      });
+      await firmar(tx, ind.versionId);
+      await medir(tx, quien, ind, { "2025-T3": { A: "9", B: "10" } }, new Date("2025-10-20T15:00:00Z"));
+      // La versión 2 (mayor, «Trimestral») rige desde 2026: en 2025 regía la 1.
+      const admin = await sesionAdmin(tx);
+      const v2 = await versionTrimestral(tx, { indicadorId: ind.id, usuarioId: admin.usuarioId, rigeDesde: "2026-T1", aprobadaEn: new Date("2025-12-01T15:00:00Z") });
+      await tx`INSERT INTO firmas (tramite_id, version_id, indicador_version_id, usuario_id, firma, ronda, hash_sha256, nombre_firmante,
+          cargo_firmante, metodo, creado_en)
+        VALUES (NULL, NULL, ${v2}, ${admin.usuarioId}, 'elaboro', 0, ${"1".repeat(64)}, 'Zoe Segunda', 'Asesora', 'clave', ${new Date("2025-11-20T15:00:00Z")})`;
+
+      const datos = await impresionDelAnio(quien, ind.codigo, 2025, opc(tx));
+      expect(datos?.ficha.numero).toBe(1);
+      const html = renderToStaticMarkup(<FichaImpresa entidad={ENTIDAD} logo={null} {...datos!} />);
+      const encabezado = html.slice(0, html.indexOf(">Identificación<"));
+      expect(encabezado).toMatch(/Versión<\/dt><dd[^>]*>1</);
+      expect(html.slice(html.indexOf(">Identificación<"), html.indexOf(">Estructura de medición<"))).toContain(`Indicador de prueba ${ind.codigo}`);
+      const cambios = html.slice(html.indexOf(">Control de cambios<"), html.indexOf(">Datos de operación<"));
+      expect(cambios).toContain("1 · Inicial");
+      expect(cambios).not.toContain("2 · Mayor");
+      const firmas = html.slice(html.indexOf(">Firmas<"), html.indexOf(">Control de cambios<"));
+      expect(firmas).toContain("Ana Elaboradora");
+      expect(html).not.toContain("Zoe Segunda");
+
+      const libro = new ExcelJS.Workbook();
+      await libro.xlsx.load((await construirExcelDeIndicador(datos!, META)) as unknown as ArrayBuffer);
+      const ficha: string[] = [];
+      libro.getWorksheet("Ficha")!.eachRow((fila) => ficha.push((fila.values as unknown[]).slice(1).map((v) => String(v ?? "")).join(" | ")));
+      expect(ficha).toContain("Encabezado | Versión | 1");
+      expect(ficha).toContain(`Identificación | Nombre | Indicador de prueba ${ind.codigo}`);
+      expect(ficha.join("\n")).toContain("Firmas | Elaboró | Ana Elaboradora");
+      expect(ficha.join("\n")).not.toContain("Zoe Segunda");
+
+      // Y el año en curso, la versión 2.
+      expect((await impresionDelAnio(quien, ind.codigo, 2026, opc(tx)))?.ficha.numero).toBe(2);
+    }));
+
+  it("imprime un indicador retirado y uno anual", () =>
+    revertida(sql, async (tx) => {
+      const { ind } = await trimestralMedido(tx);
+      const admin = await sesionAdmin(tx);
+      await retirar(admin, { indicadorId: ind.id, motivo: "Se reemplaza por otro indicador" }, opc(tx));
+      const retirado = await impreso(tx, await usuarioDePrueba(tx, { rol: "consulta" }), ind);
+      enOrden(retirado, ["Ficha técnica de indicador", "Primer trimestre de 2026", "100 %", "Acumulado del año", "81,3 %"]);
+
+      const p = await proceso(tx);
+      const quien = await usuarioDePrueba(tx, { rol: "consulta" });
+      const anual = await indicadorDePrueba(tx, {
+        procesoId: p.id,
+        periodicidad: "anual",
+        inicioMedicion: "2025",
+        aprobadaEn: new Date("2024-12-15T15:00:00Z"),
+        mide: [quien.usuarioId],
+      });
+      await medir(tx, quien, anual, { "2025": { A: "7", B: "10" } }, new Date("2026-01-20T15:00:00Z"));
+      const html = await impreso(tx, quien, anual, 2025);
+      const tabla = html.slice(html.indexOf(">Seguimiento y medición"), html.indexOf(">Representación gráfica<"));
+      enOrden(tabla, ["Calculado con la versión 1 de la ficha", ">2025<", "70 %", "Acumulado del año", "70 %"]);
+      expect(tabla.match(/<th scope="row"/g)).toHaveLength(2);
+    }));
+
+  it("la ficha impresa y la ficha en pantalla nombran los mismos campos", () => {
+    const ficha = fichaCompleta();
+    const pantalla = renderToStaticMarkup(<FichaTecnica ficha={ficha} operacion={null} />);
+    const seccion = (inicio: string, fin: string) =>
+      [...pantalla.slice(pantalla.indexOf(`>${inicio}<`), pantalla.indexOf(`>${fin}<`)).matchAll(/<dt[^>]*>([^<]+)<\/dt>/g)].map((m) => m[1]);
+    const { identificacion, estructura } = camposDeFicha(ficha);
+    // La impresa da una fila por variable; la pantalla, una lista en «Variables».
+    const rotulos = (campos: { termino: string }[]) => [...new Set(campos.map((c) => (/^Variable [A-Z]$/.test(c.termino) ? "Variables" : c.termino)))];
+    expect(rotulos(identificacion)).toEqual(seccion("Identificación", "Estructura de medición"));
+    expect(rotulos(estructura)).toEqual(seccion("Estructura de medición", "Firmas"));
+  });
 
   it("no imprime soportes ni observaciones, ni el nombre de la entidad escrito en el código", () =>
     revertida(sql, async (tx) => {
@@ -291,6 +510,8 @@ describe("FichaImpresa", () => {
       expect(html).not.toMatch(/Soportes|Observaciones/);
       const fuente = readFileSync(path.resolve(import.meta.dirname, "../src/componentes/indicadores/ficha/FichaImpresa.tsx"), "utf8");
       expect(fuente).not.toMatch(/Hospital|E\.S\.E|Suaza|Fátima/i);
+      // La gráfica impresa no arrastra la vista de resultados (sus formularios y la edición de históricos).
+      expect(fuente).not.toContain("vistas/VistaResultados");
     }));
 });
 

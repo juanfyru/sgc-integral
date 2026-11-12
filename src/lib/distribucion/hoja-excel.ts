@@ -21,7 +21,10 @@ export async function construirHoja<F>(
   return Buffer.from((await wb.xlsx.writeBuffer()) as ArrayBuffer);
 }
 
-/** Añade al libro una hoja con encabezado institucional, filtros y una fila por registro (un libro de varias hojas). */
+/**
+ * Añade al libro una hoja con encabezado institucional, filtros y una fila por registro (un libro de varias hojas).
+ * Devuelve el número de la fila de cabecera: las de datos van justo debajo, en el orden de `filas`.
+ */
 export function agregarHoja<F>(
   wb: ExcelJS.Workbook,
   nombreHoja: string,
@@ -29,7 +32,7 @@ export function agregarHoja<F>(
   columnas: Array<Columna<F>>,
   filas: F[],
   meta: MetaHoja,
-): void {
+): number {
   const hoja = wb.addWorksheet(nombreHoja);
   const ultima = columnas.length;
   hoja.columns = columnas.map((c) => ({ width: c.ancho }));
@@ -54,4 +57,5 @@ export function agregarHoja<F>(
   hoja.autoFilter = { from: { row: cabecera.number, column: 1 }, to: { row: cabecera.number, column: ultima } };
 
   for (const f of filas) hoja.addRow(columnas.map((c) => sanear(c.valor(f))));
+  return cabecera.number;
 }

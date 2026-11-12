@@ -45,7 +45,7 @@ export default async function PaginaImprimir({
   const volver = `${rutaDeIndicador(codigo)}?vista=resultados&anio=${anio}`;
 
   return (
-    <div className="flex min-w-0 flex-col gap-6">
+    <div className="flex min-w-0 flex-col gap-6 print:block">
       <div className="print:hidden">
         <EncabezadoPagina
           migas={[{ nombre: "Indicadores", href: "/indicadores" }, { nombre: codigo, href: volver }, { nombre: "Ficha impresa" }]}
