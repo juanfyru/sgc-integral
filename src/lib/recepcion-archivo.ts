@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { mkdir, stat, unlink } from "node:fs/promises";
+import { mkdir, readFile, stat, unlink } from "node:fs/promises";
 import path from "node:path";
-import { fileTypeFromFile } from "file-type";
+import { fileTypeFromBuffer } from "file-type";
 import { type NextRequest, NextResponse } from "next/server";
 import { registrarArchivo } from "@/db/consultas/admin";
 import { ErrorTramite } from "@/db/consultas/flujo/contrato";
@@ -144,7 +144,7 @@ export async function recibirArchivo(
   }
   await mkdir(path.dirname(ruta.absoluta), { recursive: true });
 
-  // ── Streaming a disco con hash y tope de tamaño (nunca 25 MB en RAM) ──
+  // ── Streaming a disco con hash y tope de tamaño (nunca 25 MB en RAM, salvo el `.xlsx` de un soporte, abajo) ──
   const hash = createHash("sha256");
   const salida = createWriteStream(ruta.absoluta, { flags: "wx" });
   let total = 0;
@@ -172,10 +172,13 @@ export async function recibirArchivo(
     // Lo guardado se firma por su huella: un archivo cortado no debe llegar a tener una.
     if (declarado !== null && total !== declarado) throw new Error("incompleto");
     if (total === 0) throw new Error("vacio");
-    // El `.xlsx` de un soporte se comprueba sobre el archivo completo: la muestra no ve el final de un ZIP.
+    // El `.xlsx` de un soporte se comprueba sobre el archivo completo: la muestra no ve el final de un ZIP. Se lee
+    // entero (como mucho 25 MB, y solo en este caso) y se analiza con `fileTypeFromBuffer`: `fileTypeFromFile` carga
+    // `node:fs/promises` y `strtok3` con un `import()` de especificador no literal, que el empaquetador de Next
+    // reemplaza por un módulo que siempre lanza (ver `tests/file-type-empaquetado.test.ts`).
     let mimeGuardado = tipo.mime;
     if (esEvidencia(destino) && destino.contexto === "medicion" && tipo.extension === "xlsx") {
-      if ((await fileTypeFromFile(ruta.absoluta))?.mime !== MIME_XLSX) throw new Error("no_xlsx");
+      if ((await fileTypeFromBuffer(await readFile(ruta.absoluta)))?.mime !== MIME_XLSX) throw new Error("no_xlsx");
       mimeGuardado = MIME_XLSX;
     }
 
