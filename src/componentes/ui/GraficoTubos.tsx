@@ -1,4 +1,5 @@
 import type { Unidad } from "@/lib/indicadores/textos";
+import type { LimiteDeGrafica } from "@/lib/indicadores/tipos";
 import { DesplazableDeTubos } from "./DesplazableDeTubos";
 import { TarjetaDeTubo } from "./TarjetaDeTubo";
 import { DefinicionesDeTubo, TuboSvg, useIdDeGrafica } from "./TuboSvg";
@@ -46,7 +47,7 @@ const LETRA_IMPRESA = 7.5;
 const PERIODOS_PARA_REPETIR_ANIO = 8;
 
 type Meta = { valor: number; texto: string } | { porPeriodo: (number | null)[]; texto: string };
-type Limite = { valor: number; texto: string };
+type Limite = LimiteDeGrafica;
 
 const cifra = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 2 });
 
@@ -55,10 +56,30 @@ const anchoDeEtiqueta = (texto: string, tamano: number) => Math.ceil(texto.lengt
 
 const esPorcentaje = (u: Pick<Unidad, "sufijo">) => u.sufijo.trim() === "%";
 
+/** «Crítico por encima de…» dentro de una frase. */
+const enMinuscula = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
+
+/** Los periodos seguidos con el mismo valor, de la serie. */
+function tramosDe<T>(serie: PuntoDeSerie[], valores: readonly (T | null)[]): { valor: T | null; desde: number; hasta: number }[] {
+  const tramos: { valor: T | null; desde: number; hasta: number }[] = [];
+  serie.forEach((_, i) => {
+    const valor = valores[i] ?? null;
+    const ultimo = tramos.at(-1);
+    if (ultimo && ultimo.valor === valor) ultimo.hasta = i;
+    else tramos.push({ valor, desde: i, hasta: i });
+  });
+  return tramos;
+}
+
+/** Los valores del límite que entran en la escala; el de la etiqueta es el del último periodo que lo tiene. */
+const valoresDelLimite = (l: Limite | undefined): number[] =>
+  l === undefined ? [] : "valor" in l ? [l.valor] : l.porPeriodo.filter((v): v is number => v !== null);
+
 /**
  * Lo que la gráfica dice de su meta y su límite a las tecnologías de apoyo (las etiquetas del dibujo no se leen):
- * «meta 85 %» o «meta entre 95 y 105 %», «la meta cambia por periodo (85 % de enero a marzo; …)» y «crítico por
- * debajo de 59,5 %» (o «por encima», si el límite queda del otro lado de la meta).
+ * «meta 85 %» o «meta entre 95 y 105 %», «la meta cambia por periodo (85 % de enero a marzo; …)» y el límite con la
+ * misma frase de su etiqueta y de «Así quedará el semáforo» («crítico por debajo de 59,5 %»; Tarea 19, D-7), o «el
+ * límite de crítico cambia por periodo (…)» si sigue a una meta programada (D-8).
  */
 function lecturaDeReferencias(
   serie: PuntoDeSerie[],
@@ -68,34 +89,28 @@ function lecturaDeReferencias(
   conCifra: (n: number) => string,
 ): string[] {
   const partes: string[] = [];
-  let referencia: { min: number; max: number } | null = rango ?? null;
+  const cuando = (t: { desde: number; hasta: number }) =>
+    t.desde === t.hasta ? `en ${serie[t.desde].etiqueta}` : `de ${serie[t.desde].etiqueta} a ${serie[t.hasta].etiqueta}`;
   if (rango) partes.push(`meta entre ${cifra.format(rango.min)} y ${conCifra(rango.max)}`);
-  else if (meta && "valor" in meta) {
-    partes.push(`meta ${conCifra(meta.valor)}`);
-    referencia = { min: meta.valor, max: meta.valor };
-  } else if (meta) {
-    const tramos: { valor: number | null; desde: number; hasta: number }[] = [];
-    serie.forEach((_, i) => {
-      const valor = meta.porPeriodo[i] ?? null;
-      const ultimo = tramos.at(-1);
-      if (ultimo && ultimo.valor === valor) ultimo.hasta = i;
-      else tramos.push({ valor, desde: i, hasta: i });
-    });
-    const cuando = (t: { desde: number; hasta: number }) =>
-      t.desde === t.hasta ? `en ${serie[t.desde].etiqueta}` : `de ${serie[t.desde].etiqueta} a ${serie[t.hasta].etiqueta}`;
-    const valores = tramos.flatMap((t) => (t.valor === null ? [] : [t.valor]));
+  else if (meta && "valor" in meta) partes.push(`meta ${conCifra(meta.valor)}`);
+  else if (meta) {
+    const tramos = tramosDe(serie, meta.porPeriodo);
     if (tramos.length === 1 && tramos[0].valor !== null) partes.push(`meta ${conCifra(tramos[0].valor)}`);
-    else if (valores.length > 0) {
+    else if (tramos.some((t) => t.valor !== null)) {
       partes.push(
         `la meta cambia por periodo (${tramos.map((t) => (t.valor === null ? `sin meta ${cuando(t)}` : `${conCifra(t.valor)} ${cuando(t)}`)).join("; ")})`,
       );
     }
-    if (valores.length > 0) referencia = { min: valores.at(-1)!, max: valores.at(-1)! };
   }
-  if (limite) {
-    if (referencia && limite.valor < referencia.min) partes.push(`crítico por debajo de ${conCifra(limite.valor)}`);
-    else if (referencia && limite.valor > referencia.max) partes.push(`crítico por encima de ${conCifra(limite.valor)}`);
-    else partes.push(limite.texto);
+  if (limite && "valor" in limite) partes.push(enMinuscula(limite.texto));
+  else if (limite) {
+    const tramos = tramosDe(serie, limite.textos);
+    if (tramos.length === 1 && tramos[0].valor !== null) partes.push(enMinuscula(tramos[0].valor));
+    else {
+      partes.push(
+        `el límite de crítico cambia por periodo (${tramos.map((t) => (t.valor === null ? `sin límite ${cuando(t)}` : `${enMinuscula(t.valor)} ${cuando(t)}`)).join("; ")})`,
+      );
+    }
   }
   return partes;
 }
@@ -142,7 +157,7 @@ export function GraficoTubos({
   const meta: Meta | undefined = metaDada && "porPeriodo" in metaDada ? { ...metaDada, porPeriodo: metaDada.porPeriodo.slice(0, serie.length) } : metaDada;
 
   const metas = meta === undefined ? [] : "valor" in meta ? [meta.valor] : meta.porPeriodo.filter((m): m is number => m !== null);
-  const referencias = [...metas, ...(limite ? [limite.valor] : []), ...(rango ? [rango.min, rango.max] : [])];
+  const referencias = [...metas, ...valoresDelLimite(limite), ...(rango ? [rango.min, rango.max] : [])];
   const e = escala(serie.flatMap((p) => (p.valor === null ? [] : [p.valor])), referencias, esPorcentaje(unidad));
 
   const conCifra = (m: number) => `${cifra.format(m)}${unidad.sufijo}`;
@@ -192,7 +207,8 @@ export function GraficoTubos({
   const letraImpresa = Math.max(4, Math.min(LETRA_IMPRESA, Math.floor(((franja - 2) / (largo * 0.56)) * 10) / 10));
 
   const yMeta = meta === undefined || ultimaMeta === undefined ? null : y(ultimaMeta);
-  const yLimite = limite ? y(limite.valor) : null;
+  const ultimoLimite = valoresDelLimite(limite).at(-1);
+  const yLimite = ultimoLimite === undefined ? null : y(ultimoLimite);
   // Dos etiquetas casi a la misma altura se separan; la de la meta se queda junto a su línea.
   const yEtiquetaLimite =
     yLimite === null ? null : yMeta !== null && Math.abs(yLimite - yMeta) < 20 ? yMeta + (yLimite >= yMeta ? 20 : -20) : yLimite;
@@ -389,7 +405,7 @@ export function GraficoTubos({
   );
 }
 
-/** La meta (recta o escalonada, con huecos donde no hay) y el límite de crítico punteado. */
+/** La meta (recta o escalonada, con huecos donde no hay) y el límite de crítico punteado, que se escalona con ella. */
 function Lineas({
   meta,
   limite,
@@ -405,21 +421,28 @@ function Lineas({
   derecha: number;
   franja: number;
 }) {
-  let escalonada = "";
-  if (meta && "porPeriodo" in meta) {
+  // Una línea escalonada, con huecos donde el periodo no tiene valor: la de la meta y la del límite que la sigue.
+  const escalonar = (porPeriodo: readonly (number | null)[]) => {
+    let d = "";
     let anterior = false;
-    meta.porPeriodo.forEach((m, i) => {
+    porPeriodo.forEach((m, i) => {
       if (m === null) {
         anterior = false;
         return;
       }
-      escalonada += `${anterior ? "V" : `M${izq + i * franja},`}${y(m)}H${izq + (i + 1) * franja}`;
+      d += `${anterior ? "V" : `M${izq + i * franja},`}${y(m)}H${izq + (i + 1) * franja}`;
       anterior = true;
     });
-  }
+    return d;
+  };
+  const escalonada = meta && "porPeriodo" in meta ? escalonar(meta.porPeriodo) : "";
+  const limiteEscalonado = limite && "porPeriodo" in limite ? escalonar(limite.porPeriodo) : "";
   return (
     <>
-      {limite ? (
+      {limiteEscalonado ? (
+        <path className="tubo-limite stroke-muted-foreground" d={limiteEscalonado} fill="none" strokeWidth={1.2} strokeDasharray="3 3" />
+      ) : null}
+      {limite && "valor" in limite ? (
         <line
           className="tubo-limite stroke-muted-foreground"
           x1={izq}

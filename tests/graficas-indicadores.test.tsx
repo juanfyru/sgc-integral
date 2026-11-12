@@ -62,7 +62,7 @@ const principal = (cambios: Partial<Parameters<typeof GraficoTubos>[0]> = {}) =>
       serie={doce}
       titulo={TITULO}
       meta={{ valor: 85, texto: "Meta 85 %" }}
-      limite={{ valor: 59.5, texto: "Crítico < 59,5 %" }}
+      limite={{ valor: 59.5, texto: "Crítico por debajo de 59,5 %" }}
       unidad={UNIDAD}
       columnas={COLUMNAS}
       {...cambios}
@@ -96,7 +96,7 @@ describe("GraficoTubos", () => {
     expect(html).toMatch(/<line(?=[^>]*class="tubo-meta)[^>]*>/);
     expect(html).toMatch(/<line(?=[^>]*class="tubo-limite)(?=[^>]*stroke-dasharray)[^>]*>/);
     expect(html).toContain(">Meta 85 %<");
-    expect(html).toContain(">Crítico &lt; 59,5 %<");
+    expect(html).toContain(">Crítico por debajo de 59,5 %<");
 
     // La tabla equivalente: una fila por periodo con el periodo, el valor y el nombre del estado.
     const tabla = html.slice(html.indexOf('<figcaption class="sr-only">'));
@@ -276,7 +276,7 @@ describe("GraficoTubos: lectura, negativos y años", () => {
     const html = principal({
       serie: minutos,
       meta: { valor: 30, texto: "Meta 30 min" },
-      limite: { valor: 40, texto: "Crítico > 40 min" },
+      limite: { valor: 40, texto: "Crítico por encima de 40 min" },
       unidad: { sufijo: " min" },
     });
     expect(html).toContain(`<caption>${TITULO}: meta 30 min, crítico por encima de 40 min</caption>`);
@@ -420,6 +420,12 @@ describe("hoja de estilos y colores", () => {
     expect(impresion).toMatch(/\.ficha-impresa[^{]*\{[^}]*display:\s*block/);
     // Sin «gráficos de fondo», las piezas HTML (pista, marca, segmentos) se imprimen igual.
     expect(impresion).toMatch(/\.tubo-color-exacto\s*\{[^}]*print-color-adjust:\s*exact/);
+  });
+
+  it("al imprimir, el fondo de la página y de la ficha no sale como un bloque (ronda 1 de la Tarea 19, D-6)", () => {
+    const impresion = bloques(css, "@media print").join("\n");
+    expect(impresion).toMatch(/html,\s*body\s*\{[^}]*background:\s*none/);
+    expect(impresion).toMatch(/\.ficha-impresa\s*\{[^}]*background:\s*none/);
   });
 
   it("cada franja enfocada dibuja su anillo de foco", () => {

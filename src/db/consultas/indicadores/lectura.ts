@@ -22,7 +22,7 @@ import { enPalabras } from "@/lib/indicadores/formula/formas";
 import { aDecimal, aTexto, comparar, deTexto, type Fraccion } from "@/lib/indicadores/formula/fraccion";
 import { clavesDelAnio, mismoDelAnioAnterior, periodicidadDe, versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import { fichaDeCalculo, reglaDeTexto, valorEnTexto, type CalculoEnTexto, type ReglaEnTexto } from "@/lib/indicadores/reporte";
-import { anioDeClave, etiquetaDeComparacion, rachasDe, rotuloDelAcumulado, textoDelLimite } from "@/lib/indicadores/resultados";
+import { anioDeClave, etiquetaDeComparacion, limiteDeLaGrafica, rachasDe, rotuloDelAcumulado, textoDelLimite } from "@/lib/indicadores/resultados";
 import { limiteDeCritico, numeroEs, numeroExacto, rangosEnPalabras, type Regla } from "@/lib/indicadores/semaforo";
 import { comparacion, fraseDeResultado, textoMeta, textoValor, type Unidad } from "@/lib/indicadores/textos";
 import {
@@ -30,6 +30,7 @@ import {
   ETIQUETA_SEMAFORO,
   type EstadoIndicador,
   type EstadoMedicion,
+  type LimiteDeGrafica,
   type PuntoDeSerie,
   type Semaforo,
 } from "@/lib/indicadores/tipos";
@@ -510,7 +511,7 @@ export type ResultadosDelAnio = {
   /** Los años con mediciones, para elegir el de la tabla y el rango «todo». */
   anios: number[];
   /** Lo que la gráfica dibuja además de la serie: la meta de cada periodo, el límite de crítico y la franja del rango. */
-  grafica: { meta: (number | null)[]; limite: { valor: number; texto: string } | null; rango: { min: number; max: number } | null; unidad: Unidad };
+  grafica: { meta: (number | null)[]; limite: LimiteDeGrafica | null; rango: { min: number; max: number } | null; unidad: Unidad };
 };
 
 /** «Por reportar», «Por registrar», «Sin dato»: el estado de un periodo terminado que no tiene resultado. */
@@ -559,14 +560,20 @@ function seriesDeVariables(leidos: readonly PeriodoLeido[]): SerieDeVariable[] {
   return [...nombres].map(([letra, nombre]) => ({ letra, nombre, serie: leidos.map((l) => puntoDeVariable(l, letra)) }));
 }
 
-/** La meta de cada periodo y, del último con meta, el límite de crítico y la franja de una meta en rango. */
+/**
+ * La meta y el límite de crítico de cada periodo (el límite sigue a la meta programada: la punteada se escalona como ella)
+ * y, del último con meta, la franja de una meta en rango.
+ */
 function referencias(leidos: readonly PeriodoLeido[], versiones: readonly VersionDeCalculo[]): ResultadosDelAnio["grafica"] {
   const conMeta = [...leidos].reverse().find((l) => l.regla.meta !== null);
-  const limite = conMeta ? limiteDeCritico(conMeta.regla) : null;
   const r = conMeta?.regla;
+  const limites = leidos.map((l) => {
+    const limite = limiteDeCritico(l.regla);
+    return limite ? { valor: aNumero(limite), texto: textoDelLimite(limite, l.regla, l.version.unidad) } : null;
+  });
   return {
     meta: leidos.map((l) => (l.regla.meta ? aNumero(l.regla.meta) : null)),
-    limite: conMeta && limite ? { valor: aNumero(limite), texto: textoDelLimite(limite, conMeta.regla, conMeta.version.unidad) } : null,
+    limite: limiteDeLaGrafica(limites),
     rango:
       r && r.tendencia === "constante" && r.meta && r.metaMax && comparar(r.meta, r.metaMax) !== 0
         ? { min: aNumero(r.meta), max: aNumero(r.metaMax) }

@@ -194,7 +194,7 @@ describe("FormularioFicha", () => {
 
   it("la unidad sigue a la forma: un conteo no queda en «Porcentaje» y la prueba lo dice (ronda 1 de la Tarea 19, D-3)", () => {
     const conteo = pintar({ forma: "conteo", meta: "5", tendencia: "descendente", umbralAtencionPct: 70, prueba: { valores: { A: "3" } } });
-    expect(conteo).toMatch(/<select[^>]*id="ficha-unidadId"[^>]*>(?:(?!<\/select>).)*<option value="2" selected="">Número/s);
+    expect(conteo).toMatch(/<select[^>]*id="ficha-unidadId"[^>]*>(?:(?!<\/select>)[\s\S])*<option value="2" selected="">Número/);
     expect(conteo).toContain("Cumple: 3 frente a una meta de máximo 5.");
     expect(conteo).not.toContain("3 %");
     // La forma «Porcentaje» sigue con su unidad, y una unidad elegida a mano no cambia con la forma.

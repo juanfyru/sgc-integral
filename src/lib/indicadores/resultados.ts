@@ -8,7 +8,7 @@ import type { Fraccion } from "./formula/fraccion";
 import { periodicidadDe } from "./periodos";
 import { numeroExacto, type Regla } from "./semaforo";
 import type { Unidad } from "./textos";
-import type { Consolidacion } from "./tipos";
+import type { Consolidacion, LimiteDeGrafica } from "./tipos";
 
 /** El año de una clave de periodo (`2026-T3` → 2026). */
 export const anioDeClave = (clave: string): number => Number(clave.slice(0, 4));
@@ -94,6 +94,19 @@ export function rotuloDelAcumulado(faltan: readonly string[], desde: { clave: st
 export function textoDelLimite(limite: Fraccion, regla: Pick<Regla, "tendencia">, u: Unidad): string {
   const lado = regla.tendencia === "descendente" ? "por encima de" : "por debajo de";
   return `Crítico ${lado} ${numeroExacto(limite, u.decimales)}${u.sufijo}`;
+}
+
+/**
+ * El límite de crítico de la gráfica a partir del de cada periodo (Tarea 19, D-7 y D-8): uno solo si todos los periodos
+ * tienen el mismo; si no (una meta programada lo movió, o un periodo sin meta no lo tiene), uno por periodo. Sin ninguno,
+ * `null`. Cada texto es el de `textoDelLimite`.
+ */
+export function limiteDeLaGrafica(porPeriodo: readonly ({ valor: number; texto: string } | null)[]): LimiteDeGrafica | null {
+  const con = porPeriodo.filter((l): l is { valor: number; texto: string } => l !== null);
+  const ultimo = con.at(-1);
+  if (!ultimo) return null;
+  if (con.length === porPeriodo.length && con.every((l) => l.valor === ultimo.valor)) return { valor: ultimo.valor, texto: ultimo.texto };
+  return { porPeriodo: porPeriodo.map((l) => l?.valor ?? null), textos: porPeriodo.map((l) => l?.texto ?? null), texto: ultimo.texto };
 }
 
 /** «enero», «enero a marzo»: los meses de un tramo en palabras. */

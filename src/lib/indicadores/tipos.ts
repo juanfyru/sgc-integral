@@ -139,6 +139,13 @@ export type PuntoDeSerie = {
   nombreEstado: string;
 };
 
+/**
+ * El límite de crítico de una gráfica: uno para todo el rango o, si cambia con la meta de cada periodo, uno por periodo
+ * (la punteada se escalona como la meta). `texto` es la frase del último («Crítico por encima de 42,85 min») y `textos`,
+ * la de cada periodo: las arma `textoDelLimite`, con el mismo número que «Así quedará el semáforo».
+ */
+export type LimiteDeGrafica = { valor: number; texto: string } | { porPeriodo: (number | null)[]; textos: (string | null)[]; texto: string };
+
 export const ESTADOS_MEDICION = ["abierta", "reportada", "cerrada"] as const;
 export type EstadoMedicion = (typeof ESTADOS_MEDICION)[number];
 
