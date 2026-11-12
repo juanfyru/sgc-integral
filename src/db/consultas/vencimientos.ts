@@ -1,5 +1,6 @@
 /**
- * Avisos de vencimiento y escalamiento (spec 13A §14.3). Corre fuera de cualquier petición: cada
+ * Avisos de vencimiento y escalamiento (spec 13A §14.3), con las pasadas de la distribución, la vigencia y los
+ * indicadores (spec 14 §10.2) sumadas al final. Corre fuera de cualquier petición: cada
  * trámite va en su propia transacción corta y `SKIP LOCKED` salta al que está en una transición
  * o lo está revisando otra pasada. Lo vuelve a mirar la siguiente. Lo hace el sistema, no una
  * persona: no deja fila en `auditoria`; el rastro son los avisos y las marcas del trámite.
@@ -12,6 +13,7 @@ import { estadoPlazo } from "@/lib/tramites/plazos";
 import { ETAPAS_ABIERTAS, ETIQUETA_ETAPA, textoResponsables } from "@/lib/tramites/tipos";
 import { avisarA, jefesDe, type Destinatario } from "@/db/consultas/avisos-vencimiento";
 import { revisarVencimientosDeDistribucion } from "@/db/consultas/distribucion/vencimientos";
+import { revisarVencimientosDeIndicadores } from "@/db/consultas/indicadores/vencimientos";
 import { revisarVencimientosDeVigencia } from "@/db/consultas/vigencia/vencimientos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { enTransaccion, type FilaTramite, type TipoAviso } from "./flujo/contrato";
@@ -125,5 +127,8 @@ export async function revisarVencimientos(opciones?: { sql?: Cliente; ahora?: Da
   const vigencia = await revisarVencimientosDeVigencia({ sql, ahora, config });
   resultado.avisados += vigencia.avisados;
   resultado.escalados += vigencia.escalados;
+  const indicadores = await revisarVencimientosDeIndicadores({ sql, ahora, config });
+  resultado.avisados += indicadores.avisados;
+  resultado.escalados += indicadores.escalados;
   return resultado;
 }

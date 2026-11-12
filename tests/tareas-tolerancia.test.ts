@@ -1,11 +1,13 @@
 /**
  * La vigencia de «Mis tareas» y de la insignia se calcula del estado: si su lectura falla, se registra el error y las
- * demás tareas siguen, sin insignia; ninguna página cae por ella (ronda de corrección 1 de la Tarea 7, R6).
+ * demás tareas siguen, sin insignia; ninguna página cae por ella (ronda de corrección 1 de la Tarea 7, R6). Lo mismo
+ * las de los indicadores y su insignia (Fase 14A, Tarea 13).
  */
 import { describe, expect, it, vi } from "vitest";
 
-const { vigenciaDePersona, tareasDeImpactos, tareasDeRevision } = vi.hoisted(() => ({
+const { vigenciaDePersona, tareasDeImpactos, tareasDeIndicadores, tareasDeRevision } = vi.hoisted(() => ({
   vigenciaDePersona: vi.fn(),
+  tareasDeIndicadores: vi.fn<(...argumentos: unknown[]) => Promise<{ tareas: unknown[]; vencidas: number }>>(async () => ({ tareas: [], vencidas: 0 })),
   tareasDeImpactos: vi.fn<(...argumentos: unknown[]) => Promise<unknown[]>>(async () => []),
   tareasDeRevision: vi.fn<(...argumentos: unknown[]) => Promise<unknown[]>>(async () => []),
 }));
@@ -30,6 +32,7 @@ vi.mock("@/db/consultas/vigencia/tareas", () => ({ vigenciaDePersona }));
 vi.mock("@/db/consultas/vigencia/externos", () => ({ esResponsableTecnico: async () => false }));
 vi.mock("@/db/consultas/normograma/impactos", () => ({ tareasDeImpactos }));
 vi.mock("@/db/consultas/vigencia/revision-anual/tareas", () => ({ tareasDeRevision }));
+vi.mock("@/db/consultas/indicadores/tareas", () => ({ tareasDeIndicadores }));
 
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { misTareas } from "@/lib/tareas";
@@ -42,7 +45,7 @@ describe("misTareas sin la vigencia", () => {
     try {
       vigenciaDePersona.mockRejectedValueOnce(new Error("sin conexión"));
       const r = await misTareas(lider, { responsableTecnico: false });
-      expect(r).toEqual({ tareas: [expect.objectContaining({ id: "copia:1" })], total: 1, vencidos: 0 });
+      expect(r).toEqual({ tareas: [expect.objectContaining({ id: "copia:1" })], total: 1, vencidos: 0, vencidasIndicadores: 0 });
       expect(error).toHaveBeenCalledWith(expect.stringContaining("vigencia"), expect.any(Error));
     } finally {
       error.mockRestore();
@@ -62,5 +65,30 @@ describe("misTareas sin la vigencia", () => {
     expect(tareasDeImpactos.mock.lastCall?.[0]).toBe(lider);
     expect(r.vencidos).toBe(4);
     expect(vigenciaDePersona).toHaveBeenLastCalledWith(lider, { responsableTecnico: false }, expect.objectContaining({ config: expect.any(Promise) }));
+  });
+});
+
+describe("misTareas sin los indicadores", () => {
+  it("si las tareas de indicadores fallan, lo registra y devuelve las demás, sin su insignia", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      vigenciaDePersona.mockResolvedValueOnce({ tareas: [], vencidos: 2 });
+      tareasDeIndicadores.mockRejectedValueOnce(new Error("sin conexión"));
+      const r = await misTareas(lider, { responsableTecnico: false });
+      expect(r).toEqual({ tareas: [expect.objectContaining({ id: "copia:1" })], total: 1, vencidos: 2, vencidasIndicadores: 0 });
+      expect(error).toHaveBeenCalledWith(expect.stringContaining("indicadores"), expect.any(Error));
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it("con los indicadores, suma sus tareas al final y devuelve sus vencidas", async () => {
+    const medir = { id: "medir:7", modulo: "indicadores" as const, titulo: "Reportar", detalle: null, vence: null, enlace: "/indicadores/x/reportar/2026-T3" };
+    vigenciaDePersona.mockResolvedValueOnce({ tareas: [], vencidos: 0 });
+    tareasDeIndicadores.mockResolvedValueOnce({ tareas: [medir], vencidas: 3 });
+    const r = await misTareas(lider, { responsableTecnico: false });
+    expect(r.tareas.map((t) => t.id)).toEqual(["copia:1", "medir:7"]);
+    expect(r.vencidasIndicadores).toBe(3);
+    expect(tareasDeIndicadores.mock.lastCall?.[0]).toBe(lider);
   });
 });

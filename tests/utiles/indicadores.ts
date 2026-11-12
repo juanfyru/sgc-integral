@@ -135,3 +135,16 @@ export async function indicadorDePrueba(
 
   return { id: indicadorId, codigo, versionId, variables, procesoId };
 }
+
+/**
+ * Calla la pasada de los indicadores sobre lo que trae la base (la demo, el punto de control): marca como avisadas y
+ * escaladas sus mediciones abiertas y deja sin inicio de medición a sus indicadores activos, para que no abra periodos
+ * nuevos. `revisarVencimientos` los recorre todos y un test cuenta solo lo suyo. Se llama antes de crear los datos del
+ * test, dentro de la transacción que se revierte.
+ */
+export async function silenciarIndicadores(tx: TransactionSql): Promise<void> {
+  await tx`UPDATE mediciones SET aviso_previo_en = coalesce(aviso_previo_en, now()), aviso_vencido_en = coalesce(aviso_vencido_en, now()),
+      escalado_en = coalesce(escalado_en, now())
+    WHERE estado <> 'cerrada' AND (aviso_previo_en IS NULL OR aviso_vencido_en IS NULL OR escalado_en IS NULL)`;
+  await tx`UPDATE indicadores SET inicio_medicion = NULL WHERE estado = 'activo' AND inicio_medicion IS NOT NULL`;
+}

@@ -51,6 +51,19 @@ export function textoMeta(r: Regla, u: Unidad): string {
   return metaEnPalabras(r, u)!;
 }
 
+/**
+ * El resultado frente a la meta, sin el veredicto: «92 % frente a una meta de 90 %», «97 % fuera del rango de 98 a
+ * 100 %». `null` sin resultado, sin semáforo o sin meta. Lo dicen `fraseDeResultado` y las alertas (spec §10.3).
+ */
+export function resultadoFrenteAMeta(m: { resultado: Fraccion | null; semaforo: Semaforo | null }, r: Regla, u: Unidad): string | null {
+  const meta = metaEnPalabras(r, u);
+  if (m.resultado === null || m.semaforo === null || meta === null) return null;
+  if (r.tendencia === "constante" && r.metaMax !== null && comparar(r.metaMax, r.meta!) !== 0) {
+    return `${textoValor(m.resultado, u, r)} ${m.semaforo === "bien" ? "dentro del" : "fuera del"} rango de ${meta}`;
+  }
+  return `${textoValor(m.resultado, u, r)} frente a una meta de ${meta}`;
+}
+
 /** La frase de una medición («Cumple: 92 % frente a una meta de 90 %.»). «Atención» es «No cumple»: el color dice el nivel. */
 export function fraseDeResultado(
   m: { resultado: Fraccion | null; semaforo: Semaforo | null; noAplica: boolean; motivo: string | null },
@@ -59,13 +72,9 @@ export function fraseDeResultado(
 ): string {
   if (m.noAplica) return m.motivo ? `No aplica: ${m.motivo}.` : "No aplica en este periodo.";
   if (m.resultado === null) return m.motivo ? `Sin resultado: ${m.motivo}.` : "Sin dato: no se reportó.";
-  const meta = metaEnPalabras(r, u);
-  if (m.semaforo === null || meta === null) return `${textoValor(m.resultado, u)}, sin meta para este periodo.`;
-  const veredicto = m.semaforo === "bien" ? "Cumple" : "No cumple";
-  if (r.tendencia === "constante" && r.metaMax !== null && comparar(r.metaMax, r.meta!) !== 0) {
-    return `${veredicto}: ${textoValor(m.resultado, u, r)} ${m.semaforo === "bien" ? "dentro del" : "fuera del"} rango de ${meta}.`;
-  }
-  return `${veredicto}: ${textoValor(m.resultado, u, r)} frente a una meta de ${meta}.`;
+  const frente = resultadoFrenteAMeta(m, r, u);
+  if (frente === null) return `${textoValor(m.resultado, u)}, sin meta para este periodo.`;
+  return `${m.semaforo === "bien" ? "Cumple" : "No cumple"}: ${frente}.`;
 }
 
 /** La cantidad de un cambio, con los decimales de la unidad o los que hagan falta para que no quede en «0». */

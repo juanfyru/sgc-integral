@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { dividir, entero, fraccion } from "@/lib/indicadores/formula/fraccion";
 import type { Regla } from "@/lib/indicadores/semaforo";
-import { comparacion, fraseDeResultado, textoMeta, textoValor, type Unidad } from "@/lib/indicadores/textos";
+import { comparacion, fraseDeResultado, resultadoFrenteAMeta, textoMeta, textoValor, type Unidad } from "@/lib/indicadores/textos";
 
 const f = (t: string) => fraccion(t)!;
 const asc: Regla = { tendencia: "ascendente", meta: f("90"), metaMax: null, modo: "relativo", umbralPct: 70, limite: null, tolerancia: null };
@@ -44,6 +44,14 @@ describe("textos de indicadores", () => {
     expect(fraseDeResultado({ resultado: null, semaforo: null, noAplica: true, motivo: "no había auditorías programadas" }, asc, pct)).toBe("No aplica: no había auditorías programadas.");
     expect(fraseDeResultado({ resultado: null, semaforo: null, noAplica: false, motivo: null }, asc, pct)).toBe("Sin dato: no se reportó.");
     expect(fraseDeResultado({ resultado: null, semaforo: null, noAplica: false, motivo: "división por cero" }, asc, pct)).toBe("Sin resultado: división por cero.");
+  });
+  it("el resultado frente a la meta, sin el veredicto, para las alertas", () => {
+    const cte: Regla = { ...asc, tendencia: "constante", meta: f("98"), metaMax: f("100"), modo: "fijo", umbralPct: null, tolerancia: f("2") };
+    expect(resultadoFrenteAMeta({ resultado: f("83,33"), semaforo: "atencion" }, asc, pct)).toBe("83,3 % frente a una meta de 90 %");
+    expect(resultadoFrenteAMeta({ resultado: f("97"), semaforo: "atencion" }, cte, pct)).toBe("97 % fuera del rango de 98 a 100 %");
+    expect(resultadoFrenteAMeta({ resultado: f("89,96"), semaforo: "atencion" }, asc, pct)).toBe("89,9 % frente a una meta de 90 %");
+    expect(resultadoFrenteAMeta({ resultado: f("92"), semaforo: null }, { ...asc, meta: null }, pct)).toBeNull();
+    expect(resultadoFrenteAMeta({ resultado: null, semaforo: null }, asc, pct)).toBeNull();
   });
   it("la frase usa la misma cifra que el veredicto", () => {
     expect(fraseDeResultado({ resultado: f("89,96"), semaforo: "atencion", noAplica: false, motivo: null }, asc, pct)).toBe("No cumple: 89,9 % frente a una meta de 90 %.");

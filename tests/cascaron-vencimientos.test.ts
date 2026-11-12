@@ -9,7 +9,7 @@ const { after, disparar, esResponsableTecnico, misTareas } = vi.hoisted(() => ({
   after: vi.fn(),
   disparar: vi.fn(),
   esResponsableTecnico: vi.fn(async () => false),
-  misTareas: vi.fn(async () => ({ tareas: [], total: 0, vencidos: 0 })),
+  misTareas: vi.fn(async () => ({ tareas: [], total: 0, vencidos: 0, vencidasIndicadores: 0 })),
 }));
 
 vi.mock("next/server", async (original) => ({ ...(await original<typeof import("next/server")>()), after }));
@@ -55,8 +55,14 @@ describe("el cascarón y los vencimientos", () => {
 
   it("la insignia de «Vigencia» sale del conteo de misTareas", async () => {
     esResponsableTecnico.mockResolvedValueOnce(true);
-    misTareas.mockResolvedValueOnce({ tareas: [], total: 0, vencidos: 3 });
+    misTareas.mockResolvedValueOnce({ tareas: [], total: 0, vencidos: 3, vencidasIndicadores: 0 });
     const html = renderToStaticMarkup(await Cascaron({ sesion, children: null }));
     expect(html).toMatch(/href="\/vigencia"[^]*data-vencidos="3"/);
+  });
+
+  it("la insignia de «Indicadores» sale de las vencidas de misTareas, en la barra y en el cajón", async () => {
+    misTareas.mockResolvedValueOnce({ tareas: [], total: 0, vencidos: 0, vencidasIndicadores: 2 });
+    const html = renderToStaticMarkup(await Cascaron({ sesion, children: null }));
+    expect(html).toMatch(/href="\/indicadores"[^]*data-reportes-vencidos="2"/);
   });
 });

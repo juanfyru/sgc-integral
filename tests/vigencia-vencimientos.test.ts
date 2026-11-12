@@ -25,6 +25,7 @@ import { asociarProceso, enlazarDocumento } from "@/db/consultas/normograma/asoc
 import { cambiarEstadoNorma } from "@/db/consultas/normograma/normas";
 import { enlaceDeImpacto } from "@/lib/normograma/tipos";
 import { silenciarDistribucion } from "./utiles/distribucion";
+import { silenciarIndicadores } from "./utiles/indicadores";
 import { normaDePrueba, silenciarImpactos } from "./utiles/normograma";
 import { sesionAdmin, sesionDe, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
@@ -60,12 +61,13 @@ afterAll(async () => {
   globalThis.__sql = undefined;
 });
 
-/** Antes de crear sus datos: sin revisión abierta, sin otros documentos ni impactos por avisar, y el último aviso. */
+/** Antes de crear sus datos: sin revisión abierta, sin otros documentos, impactos ni indicadores por avisar, y el último aviso. */
 async function preparar(tx: TransactionSql): Promise<number> {
   await sinRevisionAbierta(tx);
   await silenciarVigencia(tx);
   await silenciarImpactos(tx);
   await silenciarRevisionAnual(tx);
+  await silenciarIndicadores(tx);
   const [{ id }] = await tx`SELECT COALESCE(max(id), 0) AS id FROM notificaciones`;
   return Number(id);
 }

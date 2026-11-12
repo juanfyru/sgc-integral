@@ -74,6 +74,24 @@ describe("cascarón (render estático de los componentes cliente)", () => {
       'data-contador="2"',
     );
   });
+  it("la entrada «Indicadores» lleva las mediciones vencidas a cargo de la persona, con texto accesible; sin vencidas, nada", () => {
+    const entradas = entradasVisibles({ rol: "consulta" });
+    const pintar = (vencidasIndicadores?: number) =>
+      renderToStaticMarkup(
+        <ContenidoBarra marca={marca} entradas={entradas} tareas={0} vencidasIndicadores={vencidasIndicadores} version="0.1.0" />,
+      );
+    expect(pintar(3)).toMatch(/href="\/indicadores"[^]*data-reportes-vencidos="3"[^>]*>3<span class="sr-only"> reportes vencidos<\/span><\/span>/);
+    expect(pintar(1)).toMatch(/data-reportes-vencidos="1"[^>]*>1<span class="sr-only"> reporte vencido<\/span>/);
+    expect(pintar(0)).not.toContain("data-reportes-vencidos");
+    expect(pintar()).not.toContain("data-reportes-vencidos");
+    // La insignia de «Vigencia» es otra: no se mezclan.
+    const conVigencia = entradasVisibles({ rol: "consulta", responsableTecnico: true });
+    const ambas = renderToStaticMarkup(
+      <ContenidoBarra marca={marca} entradas={conVigencia} tareas={0} vencidos={4} vencidasIndicadores={2} version="0.1.0" />,
+    );
+    expect(ambas).toMatch(/href="\/vigencia"[^>]*>(?:(?!<\/a>)[^])*data-vencidos="4"/);
+    expect(ambas).toMatch(/href="\/indicadores"[^>]*>(?:(?!<\/a>)[^])*data-reportes-vencidos="2"/);
+  });
   it("MenuUsuario ofrece los tres temas con el actual marcado", () => {
     const h = renderToStaticMarkup(<MenuUsuario nombre="Ana" etiquetaRol="Gerencia" tema="oscuro" />);
     expect(h).toContain("Según el sistema");

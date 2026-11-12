@@ -535,6 +535,26 @@ export async function puedeAprobarFicha(
   return (await aprobadoresDeFicha(versionId, opciones)).includes(sujeto.usuarioId);
 }
 
+/**
+ * La regla de `aprobadoresDeFicha` para una persona, en un `WHERE` sobre `indicador_versiones fv` e `indicadores i`: la
+ * persona aprueba la versión (las tareas de «Mis tareas», una sola consulta). Falso sin consultar si su rol no aprueba.
+ */
+export function esAprobadorDe(sql: Cliente, sujeto: SujetoVisibilidad) {
+  const noElaboro = sql`fv.elaborada_por IS DISTINCT FROM ${sujeto.usuarioId}::bigint`;
+  const clasificacion = (condicion: ReturnType<Cliente>) =>
+    sql`EXISTS (SELECT 1 FROM clasificaciones_indicador apr_c WHERE apr_c.id = fv.clasificacion_id AND ${condicion})`;
+  if (sujeto.rol === "lider_proceso") {
+    return sql`(${noElaboro} AND ${clasificacion(sql`apr_c.aprueba = 'lider'`)}
+      AND ${sujeto.usuarioId}::bigint IN (${lideresActivos(sql, sql`i.proceso_id`)}))`;
+  }
+  if (sujeto.rol === "gerencia") {
+    const sinLider = sql`NOT EXISTS (SELECT 1 FROM (${lideresActivos(sql, sql`i.proceso_id`)}) apr_l WHERE apr_l.id IS DISTINCT FROM fv.elaborada_por)`;
+    return sql`(${noElaboro} AND EXISTS (SELECT 1 FROM usuarios apr_g WHERE apr_g.id = ${sujeto.usuarioId} AND apr_g.activo)
+      AND ${clasificacion(sql`(apr_c.aprueba <> 'lider' OR ${sinLider})`)})`;
+  }
+  return sql`false`;
+}
+
 /** Los destinatarios de las tareas y avisos de una función: los designados activos; si no, los líderes; si no, los Admin SGC. */
 async function responsables(indicadorId: number, funcion: "mide" | "analiza", opciones?: { sql?: Cliente }): Promise<number[]> {
   const sql = opciones?.sql ?? obtenerSql();
@@ -563,4 +583,30 @@ export function responsablesDeMedir(indicadorId: number, opciones?: { sql?: Clie
 
 export function responsablesDeAnalizar(indicadorId: number, opciones?: { sql?: Cliente }): Promise<number[]> {
   return responsables(indicadorId, "analiza", opciones);
+}
+
+/** Por qué le toca a una persona una función de la medición (`responsableDe`). */
+export type Responsabilidad = "designado" | "lider" | "respaldo";
+
+/**
+ * La regla de `responsables` para una persona, en un `SELECT` sobre `indicadores i` (las tareas de «Mis tareas», una sola
+ * consulta): `designado` si lo está, activa, en la función; si no hay designado activo, `lider` si es líder activo del
+ * proceso; si tampoco hay líder activo, `respaldo` si es Admin SGC activo (spec §6.1: «sin responsable»). `NULL` si no le
+ * toca.
+ */
+export function responsableDe(sql: Cliente, sujeto: SujetoVisibilidad, funcion: "mide" | "analiza") {
+  const hayDesignado = sql`EXISTS (
+    SELECT 1 FROM indicador_designados res_d JOIN usuarios res_u ON res_u.id = res_d.usuario_id AND res_u.activo
+    WHERE res_d.indicador_id = i.id AND res_d.funcion = ${funcion})`;
+  const respaldo =
+    sujeto.rol === "admin_sgc"
+      ? sql`(NOT EXISTS (${lideresActivos(sql, sql`i.proceso_id`)})
+          AND EXISTS (SELECT 1 FROM usuarios res_a WHERE res_a.id = ${sujeto.usuarioId} AND res_a.activo))`
+      : sql`false`;
+  return sql`(CASE
+    WHEN ${estaDesignado(sql, sujeto, [funcion])} THEN 'designado'
+    WHEN ${hayDesignado} THEN NULL
+    WHEN ${esLiderDe(sql, sujeto)} THEN 'lider'
+    WHEN ${respaldo} THEN 'respaldo'
+  END)`;
 }

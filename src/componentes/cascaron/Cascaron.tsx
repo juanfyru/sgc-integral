@@ -21,10 +21,17 @@ import { entradasVisibles } from "./navegacion";
  */
 export async function Cascaron({ sesion, children }: { sesion: SesionValida; children: React.ReactNode }) {
   after(() => dispararRevisionDeVencimientos());
-  // Las tareas y la insignia de «Vigencia» salen de la misma lectura de la vigencia, compartida con la página de la
-  // misma petición (`tareasDePeticion`). El responsable técnico de un externo ve «Vigencia» aunque sea de rol Consulta:
+  // Las tareas y las insignias de «Vigencia» y de «Indicadores» salen de la misma lectura, compartida con la página de
+  // la misma petición (`tareasDePeticion`). El responsable técnico de un externo ve «Vigencia» aunque sea de rol Consulta:
   // es una marca de la barra que viene con las tareas (si no se puede saber, se registra y la página sigue sin ella).
-  const [marca, { total: tareas, vencidos, responsableTecnico: esResponsable }, noLeidas, recientes, participa, responsable] = await Promise.all([
+  const [
+    marca,
+    { total: tareas, vencidos, vencidasIndicadores, responsableTecnico: esResponsable },
+    noLeidas,
+    recientes,
+    participa,
+    responsable,
+  ] = await Promise.all([
     obtenerMarcaSegura(),
     tareasDePeticion(sesion),
     contarNoLeidas(sesion.usuarioId),
@@ -43,13 +50,21 @@ export async function Cascaron({ sesion, children }: { sesion: SesionValida; chi
 
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] print:block! print:min-h-0">
-      <BarraLateral marca={marcaBarra} entradas={entradas} tareas={tareas} vencidos={vencidos} version={VERSION_APP} />
+      <BarraLateral
+        marca={marcaBarra}
+        entradas={entradas}
+        tareas={tareas}
+        vencidos={vencidos}
+        vencidasIndicadores={vencidasIndicadores}
+        version={VERSION_APP}
+      />
       <div className="min-w-0">
         <BarraSuperior
           marca={marcaBarra}
           entradas={entradas}
           tareas={tareas}
           vencidos={vencidos}
+          vencidasIndicadores={vencidasIndicadores}
           version={VERSION_APP}
           buscador={<Buscador entradas={entradas} />}
           campana={<Campana noLeidas={noLeidas} recientes={recientes} />}

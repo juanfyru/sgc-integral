@@ -9,6 +9,7 @@ import {
   tareasDeVerificacion,
 } from "@/db/consultas/distribucion/tareas";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
+import { tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
 import { tareasDeImpactos } from "@/db/consultas/normograma/impactos";
 import { listarTramites, type ResumenTramite } from "@/db/consultas/tramites";
 import { esResponsableTecnico } from "@/db/consultas/vigencia/externos";
@@ -54,6 +55,8 @@ type Grupo = {
   /** El inicio del `id` de las tareas que reúne. */
   prefijo: string;
   id: string;
+  /** El de las tareas que reúne; sin él, «documentos». */
+  modulo?: Tarea["modulo"];
   /** El título y el enlace pueden depender de lo que reúne: el enlace lleva a una pantalla que lo muestra todo. */
   titulo: (miembros: Tarea[], ahora: Date) => string;
   /** El detalle con la fecha más próxima, ya en texto, y si ya pasó. */
@@ -77,12 +80,21 @@ function documentosPorRevisar(miembros: Tarea[], ahora: Date): string {
     : `${total}: ${cuenta(vencidos, "vencido", "vencidos")} y ${enAtencion} en atención`;
 }
 
+/** «6 indicadores por reportar, 2 vencidos»; sin vencidos, «6 indicadores por reportar» (spec 14 §10.1). */
+const indicadoresPor = (que: string) => (miembros: Tarea[], ahora: Date) => {
+  const vencidos = vencidas(miembros, ahora);
+  const total = `${miembros.length} indicadores por ${que}`;
+  return vencidos === 0 ? total : `${total}, ${cuenta(vencidos, "vencido", "vencidos")}`;
+};
+
 /**
  * Las fuentes que, pasadas de `umbral`, se muestran como una sola tarea (spec 13C §13.1, con el umbral de la 13B): solo
  * las que tienen una pantalla que muestra todo lo agrupado. No se agrupan la de la revisión anual (`revision:`, ya
  * viene una por proceso), la de los impactos normativos (`impacto:`: no hay una página que liste los pendientes, cada
  * tarea ya dice cuántos documentos tiene; Ruling 63) ni la de adoptar una edición nueva (`adopcion:`: la matriz de
- * externos no las reúne ni las filtra), ni las demás, que son pocas.
+ * externos no las reúne ni las filtra), ni las demás, que son pocas. De los indicadores (spec 14 §10.1) se agrupan
+ * reportar y analizar, que llevan a la lista filtrada por lo que falta y por «Donde participo», y las fichas por aprobar;
+ * no las observaciones ni las fichas devueltas (`ficha-devuelta:` no empieza por `ficha:`).
  */
 const GRUPOS: readonly Grupo[] = [
   // Una lectura vence siempre después de pedirse: el detalle de la 13B no cambia.
@@ -102,6 +114,30 @@ const GRUPOS: readonly Grupo[] = [
     enlace: (m, ahora) => (vencidas(m, ahora) === m.length ? "/vigencia/semaforo?estado=vencida" : "/vigencia/semaforo"),
   },
   { prefijo: "externo:", id: "externos", titulo: (m) => `${m.length} externos por verificar`, detalle: masculino, enlace: () => "/vigencia/externos" },
+  {
+    prefijo: "medir:",
+    id: "indicadores-por-reportar",
+    modulo: "indicadores",
+    titulo: indicadoresPor("reportar"),
+    detalle: masculino,
+    enlace: () => "/indicadores?reporte=por-reportar&participo=1",
+  },
+  {
+    prefijo: "analizar:",
+    id: "indicadores-por-analizar",
+    modulo: "indicadores",
+    titulo: indicadoresPor("analizar"),
+    detalle: masculino,
+    enlace: () => "/indicadores?reporte=falta-analisis&participo=1",
+  },
+  {
+    prefijo: "ficha:",
+    id: "fichas-por-aprobar",
+    modulo: "indicadores",
+    titulo: (m) => `${m.length} fichas por aprobar`,
+    detalle: masculino,
+    enlace: () => "/indicadores/por-aprobar",
+  },
 ];
 
 function unir(g: Grupo, miembros: Tarea[], ahora: Date): Tarea {
@@ -110,7 +146,7 @@ function unir(g: Grupo, miembros: Tarea[], ahora: Date): Tarea {
   const texto = vence ? new Intl.DateTimeFormat("es-CO", { dateStyle: "long", timeZone: zonaHoraria() }).format(vence) : null;
   return {
     id: g.id,
-    modulo: "documentos",
+    modulo: g.modulo ?? "documentos",
     titulo: g.titulo(miembros, ahora),
     detalle: vence && texto ? g.detalle(texto, vence.getTime() < ahora.getTime()) : null,
     vence,
@@ -142,20 +178,22 @@ export function agruparTareas(tareas: Tarea[], umbral = 5, ahora = new Date()): 
 }
 
 const SIN_VIGENCIA: VigenciaDePersona = { tareas: [], vencidos: 0 };
+const SIN_INDICADORES = { tareas: [] as Tarea[], vencidas: 0 };
 
 /**
  * Los pasos que le tocan a la persona: los trámites (la pestaña «Por hacer» de la bandeja, spec 13A §14.1), las
  * copias, las lecturas por confirmar, las socializaciones por registrar, las verificaciones, los hallazgos (y su validación), de la
  * vigencia, la adopción de las ediciones nuevas, la verificación de sus externos y la revisión de sus documentos, la de
  * cada proceso suyo en la revisión anual abierta y los impactos normativos de sus procesos (estas dos, una consulta
- * acotada cada una, nada para quien no lidera ni es Admin SGC). Con ellas,
- * `vencidos`: la insignia de «Vigencia». La configuración documental se lee una sola vez, y solo si alguna
- * fuente la usa. `responsableTecnico`, si quien llama ya lo sabe (el cascarón).
+ * acotada cada una, nada para quien no lidera ni es Admin SGC) y, al final, las de los indicadores. Con ellas,
+ * `vencidos`: la insignia de «Vigencia», y `vencidasIndicadores`: la de «Indicadores» (spec 14 §10.1). La configuración
+ * documental se lee una sola vez, y solo si alguna fuente la usa. `responsableTecnico`, si quien llama ya lo sabe (el
+ * cascarón).
  */
 export async function misTareas(
   sesion: SesionFlujo,
   opciones?: { sql?: Cliente; ahora?: Date; responsableTecnico?: boolean },
-): Promise<{ tareas: Tarea[]; total: number; vencidos: number }> {
+): Promise<{ tareas: Tarea[]; total: number; vencidos: number; vencidasIndicadores: number }> {
   const fuentes = { sql: opciones?.sql, ahora: opciones?.ahora };
   const responsableTecnico = opciones?.responsableTecnico ?? (await esResponsableTecnico(sesion.usuarioId, { sql: opciones?.sql }));
   // La vigencia usa la configuración solo si lee filas: el conteo de la insignia no la necesita (Ruling 68).
@@ -163,7 +201,7 @@ export async function misTareas(
   const config = usaConfig ? obtenerConfigDocumental({ sql: opciones?.sql }) : undefined;
   // Quien la espera recibe su rechazo; este `catch` solo evita uno sin atender si ninguna fuente llega a esperarla.
   config?.catch(() => {});
-  const [tramites, copias, acuses, socializacion, verificacion, hallazgos, validacion, vigencia, revision, impactos] = await Promise.all([
+  const [tramites, copias, acuses, socializacion, verificacion, hallazgos, validacion, vigencia, revision, impactos, indicadores] = await Promise.all([
     listarTramites(sesion, "por_hacer", fuentes),
     tareasDeCopias(sesion, fuentes),
     tareasDeAcuses(sesion, fuentes),
@@ -178,6 +216,11 @@ export async function misTareas(
     }),
     tareasDeRevision(sesion, fuentes),
     tareasDeImpactos(sesion, fuentes),
+    // Como la vigencia, calculada del estado: si falla se registra, y las demás tareas y la página siguen sin ella.
+    tareasDeIndicadores(sesion, fuentes).catch((err: unknown) => {
+      console.error("No se pudieron calcular las tareas de indicadores de «Mis tareas» y de la insignia:", err);
+      return SIN_INDICADORES;
+    }),
   ]);
   const tareas: Tarea[] = [
     ...tramites.map((t) => ({
@@ -197,6 +240,12 @@ export async function misTareas(
     ...vigencia.tareas,
     ...revision,
     ...impactos,
+    ...indicadores.tareas,
   ];
-  return { tareas: agruparTareas(tareas, 5, opciones?.ahora), total: tareas.length, vencidos: vigencia.vencidos };
+  return {
+    tareas: agruparTareas(tareas, 5, opciones?.ahora),
+    total: tareas.length,
+    vencidos: vigencia.vencidos,
+    vencidasIndicadores: indicadores.vencidas,
+  };
 }
