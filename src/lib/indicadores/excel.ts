@@ -12,7 +12,7 @@ import { neutralizarFormula } from "@/lib/celdas";
 import { agregarHoja, type Celda, type Columna, type MetaHoja } from "@/lib/distribucion/hoja-excel";
 import { MESES } from "@/lib/indicadores-documentales/periodo";
 import { textoFecha } from "@/lib/vigencia/plazo";
-import { fechaHoraLocal, zonaHoraria } from "@/lib/zona-horaria";
+import { zonaHoraria } from "@/lib/zona-horaria";
 import {
   analisisEnTexto,
   camposDeFicha,
@@ -20,6 +20,7 @@ import {
   columnasDeVariables,
   cumpleEnTexto,
   estadoEnTexto,
+  fechaDeFirma,
   firmasDeFicha,
   marcasDeFila,
   rigeDesdeEnTexto,
@@ -89,7 +90,7 @@ export async function construirExcelDeIndicador(d: ImpresionDelAnio, meta: MetaH
   const firmas = firmasDeFicha(ficha).map((f) => ({
     seccion: "Firmas",
     termino: f.rol,
-    valor: f.nombre ? [f.nombre, f.cargo, f.fecha ? fechaHoraLocal(f.fecha) : null].filter(Boolean).join(" · ") : (f.nota ?? ""),
+    valor: f.nombre ? [f.nombre, f.cargo, f.fecha ? fechaDeFirma(f.fecha) : null].filter(Boolean).join(" · ") : (f.nota ?? ""),
   }));
   const filasDeFicha: FilaDeFicha[] = [
     { seccion: "Encabezado", termino: "Código", valor: d.codigo },

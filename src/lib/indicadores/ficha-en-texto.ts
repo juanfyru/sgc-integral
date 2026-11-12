@@ -7,7 +7,8 @@ import type { FichaLeida, FirmaDeFicha, OperacionLeida } from "@/db/consultas/in
 import type { FilaDelAnio } from "@/db/consultas/indicadores/lectura";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { cuenta } from "@/lib/plural";
-import { zonaHoraria } from "@/lib/zona-horaria";
+import { textoFecha } from "@/lib/vigencia/plazo";
+import { horaLocal, zonaHoraria } from "@/lib/zona-horaria";
 import { ETIQUETA_ESTADO } from "./estados";
 import type { ContenidoFicha } from "./ficha";
 import { enPalabras } from "./formula/formas";
@@ -166,6 +167,9 @@ export type FirmaEnTexto = { rol: "Elaboró" | "Revisó y aprobó"; nombre: stri
 
 const firma = (rol: FirmaEnTexto["rol"], f: FirmaDeFicha | null, nota: string): FirmaEnTexto =>
   f ? { rol, nombre: f.nombre, cargo: f.cargo, fecha: f.fecha, nota: null } : { rol, nombre: null, cargo: null, fecha: null, nota };
+
+/** «8 jul 2026, 09:05»: el día de una firma con el formato de las fechas de la app y su hora, en la zona de la instalación. */
+export const fechaDeFirma = (fecha: Date): string => `${textoFecha(fecha, zonaHoraria())}, ${horaLocal(fecha)}`;
 
 /** «Elaboró» y «Revisó y aprobó» de una versión aprobada (spec §7.8.3); un cambio menor no requiere aprobación. */
 export function firmasDeFicha(ficha: FichaLeida): [FirmaEnTexto, FirmaEnTexto] {

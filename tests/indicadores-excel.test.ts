@@ -196,6 +196,21 @@ describe("el Excel de un indicador", () => {
       expect(crudas.find((c) => c[0] === "Acumulado del año")!.slice(2, 4)).toEqual([13, 16]);
     }));
 
+  it("la firma de la hoja «Ficha» lleva su día con el formato de la app y su hora, en la zona de la instalación", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const { ind, quien } = await trimestralMedido(tx, p.id);
+      // La firma «Elaboró» sobre la huella de la versión, como la deja el envío (nombre y cargo congelados).
+      await tx`INSERT INTO firmas (tramite_id, version_id, indicador_version_id, usuario_id, firma, ronda, hash_sha256,
+          nombre_firmante, cargo_firmante, metodo, creado_en)
+        SELECT NULL, NULL, v.id, ${quien.usuarioId}, 'elaboro', 0, v.huella, 'Ana Elaboradora', 'Líder de Calidad', 'clave',
+          ${new Date("2025-12-10T14:05:00Z")}
+        FROM indicador_versiones v WHERE v.id = ${ind.versionId}`;
+      const libro = await leerLibro(await construirExcelDeIndicador((await impresionDelAnio(quien, ind.codigo, 2026, opc(tx)))!, META));
+      expect(texto(libro.Ficha)).toContain("Firmas | Elaboró | Ana Elaboradora · Líder de Calidad · 10 dic 2025, 09:05");
+      expect(texto(libro.Ficha)).not.toContain("2025-12-10");
+    }));
+
   it("un retirado, uno anual, «no aplica» y lo de otra periodicidad (marcado) en el Excel de un indicador", () =>
     revertida(sql, async (tx) => {
       const p = await proceso(tx);

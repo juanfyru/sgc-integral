@@ -33,6 +33,12 @@ export function fechaHoraLocal(d: Date): string {
   return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
 }
 
+/** «HH:mm» en la zona de la instalación. */
+export function horaLocal(d: Date): string {
+  const p = partesLocales(d);
+  return `${p.hour}:${p.minute}`;
+}
+
 /** «AAAAMMDD» en la zona de la instalación, para nombres de archivo. */
 export function fechaCompactaLocal(d: Date): string {
   const p = partesLocales(d);

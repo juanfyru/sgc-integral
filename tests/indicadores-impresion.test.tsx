@@ -283,7 +283,12 @@ describe("FichaImpresa", () => {
       const { ind } = await trimestralMedido(tx);
       const html = await impreso(tx, await usuarioDePrueba(tx, { rol: "consulta" }), ind);
       const firmas = html.slice(html.indexOf(">Firmas<"), html.indexOf(">Control de cambios<"));
-      enOrden(firmas, ["Elaboró", "Ana Elaboradora", "Líder de Calidad", "2025-12-10", "Revisó y aprobó", "Juan Aprobador", "Gerente", "2025-12-15"]);
+      // La fecha y la hora de cada firma, con el formato de las fechas de la app y en la zona de la instalación.
+      enOrden(firmas, [
+        "Elaboró", "Ana Elaboradora", "Líder de Calidad", "Firmado el 10 dic 2025, 10:00",
+        "Revisó y aprobó", "Juan Aprobador", "Gerente", "Firmado el 15 dic 2025, 10:00",
+      ]);
+      expect(firmas).not.toContain("2025-12-1");
       // La fecha de la aprobación es la de «Vigente desde» en el encabezado, con el formato de un día de la app.
       expect(html.slice(0, html.indexOf(">Identificación<"))).toContain(">15 dic 2025<");
       expect(html.slice(0, html.indexOf(">Identificación<"))).not.toContain("2025-12-15");

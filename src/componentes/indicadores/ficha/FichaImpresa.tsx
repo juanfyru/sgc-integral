@@ -8,6 +8,7 @@ import {
   camposDeOperacion,
   columnasDeVariables,
   cumpleEnTexto,
+  fechaDeFirma,
   firmasDeFicha,
   marcasDeFila,
   periodoEnPalabras,
@@ -17,7 +18,7 @@ import {
   type FirmaEnTexto,
 } from "@/lib/indicadores/ficha-en-texto";
 import { textoFecha } from "@/lib/vigencia/plazo";
-import { fechaHoraLocal, zonaHoraria } from "@/lib/zona-horaria";
+import { zonaHoraria } from "@/lib/zona-horaria";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 /** Los bordes de la hoja, como los del Excel del usuario. */
@@ -82,7 +83,7 @@ function Firma({ f }: { f: FirmaEnTexto }) {
         <>
           <span className="break-words">{f.nombre}</span>
           {f.cargo ? <span className="break-words text-muted-foreground">{f.cargo}</span> : null}
-          {f.fecha ? <span className="text-muted-foreground">{`Firmado el ${fechaHoraLocal(f.fecha)}`}</span> : null}
+          {f.fecha ? <span className="text-muted-foreground">{`Firmado el ${fechaDeFirma(f.fecha)}`}</span> : null}
         </>
       ) : (
         <span className="text-muted-foreground">{f.nota}</span>
