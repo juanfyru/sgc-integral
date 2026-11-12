@@ -833,6 +833,11 @@ export async function registrarArchivo(
     });
   } catch (err) {
     if ((err as { code?: string }).code === "23505") {
+      // Una evidencia solo choca por su ruta (el nombre en la carpeta de su dueño): el mensaje es el de su contexto, y como
+      // `ErrorTramite` la subida responde 409 con él (ola final, M8). El de una versión no cambia.
+      if (datos.versionId === null) {
+        throw new ErrorTramite(datos.contexto === "medicion" ? "Ya hay un soporte con ese nombre en esta medición" : "Ya hay un archivo con ese nombre");
+      }
       throw new Error("Ya hay un archivo principal en esta versión");
     }
     throw err;

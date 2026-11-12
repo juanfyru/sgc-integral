@@ -33,6 +33,7 @@ import { obtenerSql } from "@/db/cliente";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { registrarArchivo } from "@/db/consultas/admin";
+import { ErrorTramite } from "@/db/consultas/flujo/contrato";
 import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
 import { autorizarSoporte, quitarSoporte, soportesDe, soportesDeVarias } from "@/db/consultas/indicadores/soportes";
 import { ErrorPermiso } from "@/lib/permisos";
@@ -272,6 +273,19 @@ describe("POST /api/mediciones/[id]/archivos: qué se guarda", () => {
       expect((await subir(mide.token, historica, "foto.png", pngDePrueba(8, 8))).status).toBe(201);
       expect(await archivosDe(tx, historica)).toHaveLength(1);
     }));
+
+  it("si ya hay un soporte con ese nombre en la medición (su fila sin su archivo), 409 lo dice así y no queda nada escrito (M8)", () =>
+    entorno(async ({ tx, medicion, mide, almacen }) => {
+      // La fila de un soporte cuyo archivo no está en este almacén (lo subió otra instalación): la ruta queda ocupada.
+      await tx`INSERT INTO archivos (rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256, contexto, contexto_id)
+        VALUES ('evidencia', ${`mediciones/${medicion}/informe.pdf`}, 'informe.pdf', 'pdf', 'application/pdf', 10, ${"c".repeat(64)}, 'medicion', ${medicion})`;
+      const r = await subir(mide.token, medicion, "informe.pdf", await PDF());
+      expect(r.status).toBe(409);
+      expect(await r.json()).toEqual({ error: "Ya hay un soporte con ese nombre en esta medición" });
+      expect(await archivosDe(tx, medicion)).toHaveLength(1);
+      expect(await eventos(tx, medicion)).toHaveLength(0);
+      expect(enAlmacen(almacen, medicion)).toEqual([]);
+    }));
 });
 
 describe("GET /indicadores/[codigo]/soportes/[archivoId]", () => {
@@ -343,6 +357,18 @@ describe("registrarArchivo (la transacción de la subida)", () => {
       await expect(registrarArchivo(archivo(medicion), ajeno.sesion.usuarioId, { sql: tx })).rejects.toBeInstanceOf(ErrorPermiso);
       expect(await archivosDe(tx, medicion)).toHaveLength(0);
       expect(await eventos(tx, medicion)).toHaveLength(0);
+    }));
+
+  it("la misma ruta dos veces dice que ya hay un soporte con ese nombre en la medición, no un «archivo principal» (M8)", () =>
+    entorno(async ({ tx, medicion, mide }) => {
+      await registrarArchivo(archivo(medicion), mide.sesion.usuarioId, { sql: tx });
+      const err = await registrarArchivo(archivo(medicion), mide.sesion.usuarioId, { sql: tx }).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(ErrorTramite);
+      expect((err as Error).message).toBe("Ya hay un soporte con ese nombre en esta medición");
+      expect(await archivosDe(tx, medicion)).toHaveLength(1);
     }));
 
   it("con la medición cerrada, el indicador retirado o la medición inexistente rechaza, sin fila de archivos ni evento", () =>
