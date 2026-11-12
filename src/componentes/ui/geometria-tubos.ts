@@ -73,6 +73,40 @@ export function columnaInicial(serie: readonly Pick<PuntoDeSerie, "valor">[]): n
   return null;
 }
 
+/** Medio píxel: lo que un borde puede estar corrido por redondeo sin que la columna se vea partida. */
+const TOLERANCIA = 0.5;
+
+/**
+ * Dónde arranca una gráfica de tubos que no cabe (Tarea 19, D-2; residuos finales, punto 2), en píxeles del lienzo a 1:1.
+ * En lo más reciente (el borde derecho, con las etiquetas de la meta y del límite) salvo que la columna inicial quede
+ * cortada a la izquierda: entonces su borde derecho va al de lo visible. Después se alinea al borde de una columna, para
+ * que ningún valor se lea partido («83,3 %» como «3,3 %»): la columna que el borde izquierdo de lo visible partiría queda
+ * fuera (nunca la inicial). `desde` es la distancia del borde izquierdo del lienzo al de lo visible: dentro del margen
+ * izquierdo (antes de la primera columna) o en el borde de una columna (`izq` más un múltiplo del paso). `relleno` es el
+ * aire que hay que añadir a la derecha del lienzo para llegar ahí
+ * cuando lo más reciente ya es el final: menos de una columna.
+ */
+export function desplazamientoInicial(d: {
+  visible: number;
+  lienzo: number;
+  izq: number;
+  paso: number;
+  periodos: number;
+  columna: number | null;
+}): { desde: number; relleno: number } {
+  const maximo = d.lienzo - d.visible;
+  if (maximo <= 0 || d.paso <= 0 || d.periodos <= 0) return { desde: 0, relleno: 0 };
+  const borde = (k: number) => d.izq + k * d.paso;
+  const columna = d.columna !== null && d.columna >= 0 && d.columna < d.periodos ? d.columna : null;
+  let desde = maximo;
+  if (columna !== null && borde(columna) < desde - TOLERANCIA) desde = Math.max(0, borde(columna + 1) - d.visible);
+  const partida = Math.floor((desde - d.izq) / d.paso);
+  if (partida >= 0 && partida < d.periodos && desde - borde(partida) > TOLERANCIA && (columna === null || partida < columna)) {
+    desde = borde(partida + 1);
+  }
+  return { desde, relleno: Math.max(0, desde - maximo) };
+}
+
 /** El ancho de la franja de cada periodo: toda ella es el área sensible de la columna. */
 export function anchoDeFranja(periodos: number, g: Geometria): number {
   return (g.ancho - g.margen.izq - g.margen.der) / Math.max(periodos, 1);

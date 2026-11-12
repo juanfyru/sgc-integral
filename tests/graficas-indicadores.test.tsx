@@ -13,7 +13,7 @@ import { GraficoTubos } from "@/componentes/ui/GraficoTubos";
 import { MiniTubos } from "@/componentes/ui/MiniTubos";
 import { Tendencia } from "@/componentes/ui/Tendencia";
 import { TuboAcumulado } from "@/componentes/ui/TuboAcumulado";
-import type { PuntoDeSerie } from "@/componentes/ui/geometria-tubos";
+import { desplazamientoInicial, type PuntoDeSerie } from "@/componentes/ui/geometria-tubos";
 import { doce } from "./utiles/tubos";
 
 const raiz = path.resolve(import.meta.dirname, "..");
@@ -275,26 +275,95 @@ describe("GraficoTubos: el ancho y la columna en que arranca (ronda 1 de la Tare
     expect(vacia).not.toContain("data-inicio=");
   });
 
-  it("al montarse, lleva a la vista la columna inicial solo si quedó cortada a la izquierda", () => {
-    const columna = { getBoundingClientRect: () => ({ left: -40, right: -6 }) };
-    const contenedor = {
-      dataset: { inicio: "2" },
-      scrollWidth: 330,
-      clientWidth: 288,
+  /**
+   * Un contenedor `direction: rtl` falso con su lienzo y sus columnas a 1:1: `scrollLeft` 0 es lo más reciente (el borde
+   * derecho) y crece hacia la derecha; un relleno a la derecha (`style.paddingRight`) alarga lo que se desplaza.
+   */
+  function contenedorFalso(o: { visible: number; lienzo: number; izq: number; paso: number; periodos: number; inicio?: number }) {
+    const c = {
+      dataset: o.inicio === undefined ? {} : { inicio: String(o.inicio) },
+      clientWidth: o.visible,
+      clientLeft: 0,
       scrollLeft: 0,
-      getBoundingClientRect: () => ({ left: 0, right: 288 }),
-      querySelector: (sel: string) => (sel === '[data-columna="2"]' ? columna : null),
+      style: { paddingRight: "" },
+      get relleno() {
+        return Number.parseFloat(c.style.paddingRight) || 0;
+      },
+      get scrollWidth() {
+        return o.lienzo + c.relleno;
+      },
+      getBoundingClientRect: () => ({ left: 0, right: o.visible, width: o.visible }),
+      /** Dónde queda, en la pantalla, el borde izquierdo del lienzo. */
+      lienzoIzq: () => o.visible - o.lienzo - c.relleno - c.scrollLeft,
+      /** La distancia del borde izquierdo del lienzo al de lo visible. */
+      desde: () => -c.lienzoIzq(),
+      querySelector: (sel: string) =>
+        sel === ".tubo-lienzo" ? { getBoundingClientRect: () => ({ left: c.lienzoIzq(), right: c.lienzoIzq() + o.lienzo, width: o.lienzo }) } : null,
+      querySelectorAll: (sel: string) =>
+        sel === "[data-columna]"
+          ? Array.from({ length: o.periodos }, (_, k) => ({
+              getBoundingClientRect: () => {
+                const left = c.lienzoIzq() + o.izq + k * o.paso;
+                return { left, right: left + o.paso, width: o.paso };
+              },
+            }))
+          : [],
     };
-    llevarALaColumnaInicial(contenedor as unknown as HTMLElement);
-    expect(contenedor.scrollLeft).toBe(-294);
-    // Si ya se ve entera, no se mueve (las etiquetas de la meta y el límite siguen a la vista).
-    const visible = { ...contenedor, scrollLeft: 0, querySelector: () => ({ getBoundingClientRect: () => ({ left: 120, right: 154 }) }) };
-    llevarALaColumnaInicial(visible as unknown as HTMLElement);
-    expect(visible.scrollLeft).toBe(0);
-    // Si no se desplaza, tampoco.
-    const cabe = { ...contenedor, scrollLeft: 0, scrollWidth: 288 };
+    return c;
+  }
+
+  // SGC-IND-01 a 390 px: cuatro trimestres a 42 px, la columna inicial es el tercero (con valor) y el lienzo mide 333.
+  const trimestral = { lienzo: 333, izq: 6, paso: 42, periodos: 4 };
+
+  it("el desplazamiento inicial se alinea al borde de una columna: ninguna queda partida a la izquierda (residuos, 2)", () => {
+    for (let visible = 160; visible <= 340; visible += 1) {
+      const { desde, relleno } = desplazamientoInicial({ ...trimestral, visible, columna: 2 });
+      const maximo = trimestral.lienzo - visible;
+      if (maximo <= 0) {
+        expect({ desde, relleno }).toEqual({ desde: 0, relleno: 0 });
+        continue;
+      }
+      // Dentro del margen izquierdo (no parte ninguna columna) o un múltiplo del paso desde el borde de la primera columna; la
+      // columna inicial, entera; el relleno, menor que una.
+      if (desde > trimestral.izq) expect((desde - trimestral.izq) % trimestral.paso, `visible ${visible}`).toBe(0);
+      expect(desde).toBeLessThanOrEqual(trimestral.izq + 2 * trimestral.paso);
+      expect(trimestral.izq + 3 * trimestral.paso).toBeLessThanOrEqual(desde + visible);
+      expect(relleno).toBe(Math.max(0, desde - maximo));
+      expect(relleno).toBeLessThan(trimestral.paso);
+    }
+    // A 290 px, lo más reciente partía el primer trimestre (de 6 a 48, visto desde 43): queda fuera con 5 px de relleno.
+    expect(desplazamientoInicial({ ...trimestral, visible: 290, columna: 2 })).toEqual({ desde: 48, relleno: 5 });
+    // Sin columna con valor, lo mismo desde lo más reciente.
+    expect(desplazamientoInicial({ ...trimestral, visible: 290, columna: null })).toEqual({ desde: 48, relleno: 5 });
+    // Si la columna inicial estaba cortada, su borde derecho va al de lo visible y después se alinea: doce meses a 34 px.
+    const doceMeses = { lienzo: 6 + 12 * 34 + 100, izq: 6, paso: 34, periodos: 12 };
+    const r = desplazamientoInicial({ ...doceMeses, visible: 200, columna: 5 });
+    expect((r.desde - 6) % 34).toBe(0);
+    expect(r.desde).toBeLessThanOrEqual(6 + 5 * 34);
+    expect(6 + 6 * 34).toBeLessThanOrEqual(r.desde + 200);
+    expect(r.relleno).toBe(0);
+  });
+
+  it("al montarse, lleva lo visible a ese borde, con el relleno que haga falta; si cabe, no hace nada", () => {
+    const partida = contenedorFalso({ ...trimestral, visible: 290, inicio: 2 });
+    llevarALaColumnaInicial(partida as unknown as HTMLElement);
+    expect([partida.desde(), partida.style.paddingRight]).toEqual([48, "5px"]);
+    // Doce meses con la columna inicial cortada: el borde izquierdo de lo visible cae en el de una columna.
+    const meses = contenedorFalso({ lienzo: 514, izq: 6, paso: 34, periodos: 12, visible: 200, inicio: 5 });
+    llevarALaColumnaInicial(meses as unknown as HTMLElement);
+    expect((meses.desde() - 6) % 34).toBe(0);
+    expect(meses.style.paddingRight).toBe("");
+    // Si no se desplaza, nada.
+    const cabe = contenedorFalso({ ...trimestral, visible: 340, inicio: 2 });
     llevarALaColumnaInicial(cabe as unknown as HTMLElement);
-    expect(cabe.scrollLeft).toBe(0);
+    expect([cabe.scrollLeft, cabe.style.paddingRight]).toEqual([0, ""]);
+  });
+
+  it("MiniTubos usa el mismo contenedor y marca cada columna", () => {
+    const html = renderToStaticMarkup(<MiniTubos titulo="Casos evaluados" serie={trimestres.map((p) => ({ ...p, estado: p.valor === null ? p.estado : ("bien" as const) }))} />);
+    expect(html).toMatch(/<div(?=[^>]*class="tubo-desplazable)(?=[^>]*data-inicio="2")[^>]*>/);
+    expect(html).toMatch(/<svg(?=[^>]*class="tubo-lienzo)[^>]*>/);
+    for (let i = 0; i < 4; i++) expect(html).toContain(`data-columna="${i}"`);
   });
 });
 

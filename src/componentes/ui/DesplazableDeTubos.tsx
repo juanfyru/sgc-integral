@@ -1,24 +1,38 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { desplazamientoInicial } from "./geometria-tubos";
 
 /**
- * Lleva la columna `data-inicio` a la vista (Tarea 19, D-2): si la gráfica se desplaza y esa columna (la del último
- * periodo con valor, marcada `data-columna`) queda cortada a la izquierda, el contenedor se corre hasta que su borde
- * derecho coincida con el del contenedor. Si ya se ve entera, no se mueve (y siguen a la vista las etiquetas de la meta y
- * del límite, a la derecha). Funciona con `direction: rtl` y `ltr`: sumar a `scrollLeft` corre el contenido igual en los
- * dos.
+ * Deja la gráfica, al montarse, donde dice `desplazamientoInicial` (Tarea 19, D-2; residuos finales, punto 2): la columna
+ * `data-inicio` (la del último periodo con valor) entera a la vista y el borde izquierdo de lo visible en el de una
+ * columna (`data-columna`), para que ningún valor se lea partido. Si para eso hace falta pasar de lo más reciente, añade a
+ * la derecha un relleno de menos de una columna. Mide el lienzo (`.tubo-lienzo`, a 1:1 cuando se desplaza) y sus columnas
+ * en la pantalla. Funciona con `direction: rtl` y `ltr`: sumar a `scrollLeft` corre el contenido igual en los dos. Si la
+ * gráfica cabe, no hace nada.
  */
 export function llevarALaColumnaInicial(contenedor: HTMLElement | null): void {
   if (!contenedor) return;
+  contenedor.style.paddingRight = "";
+  if (contenedor.scrollWidth <= contenedor.clientWidth) return;
+  const lienzo = contenedor.querySelector(".tubo-lienzo");
+  const columnas = contenedor.querySelectorAll("[data-columna]");
+  if (!lienzo || columnas.length === 0) return;
+  const medida = lienzo.getBoundingClientRect();
+  const primera = columnas[0].getBoundingClientRect();
   const inicio = contenedor.dataset.inicio;
-  if (inicio === undefined || contenedor.scrollWidth <= contenedor.clientWidth) return;
-  const columna = contenedor.querySelector(`[data-columna="${inicio}"]`);
-  if (!columna) return;
-  const caja = contenedor.getBoundingClientRect();
-  const zona = columna.getBoundingClientRect();
-  if (zona.left >= caja.left - 0.5) return;
-  contenedor.scrollLeft += zona.right - caja.right;
+  const { desde, relleno } = desplazamientoInicial({
+    visible: contenedor.clientWidth,
+    lienzo: medida.width,
+    izq: primera.left - medida.left,
+    paso: primera.width,
+    periodos: columnas.length,
+    columna: inicio === undefined ? null : Number(inicio),
+  });
+  if (relleno > 0) contenedor.style.paddingRight = `${Math.ceil(relleno)}px`;
+  // Lo que se ve ahora, medido después del relleno: desde el borde izquierdo del lienzo hasta el de lo visible.
+  const visto = contenedor.getBoundingClientRect().left + contenedor.clientLeft - lienzo.getBoundingClientRect().left;
+  contenedor.scrollLeft += desde - visto;
 }
 
 /**
