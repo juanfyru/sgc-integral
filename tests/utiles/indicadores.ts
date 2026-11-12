@@ -148,3 +148,25 @@ export async function silenciarIndicadores(tx: TransactionSql): Promise<void> {
     WHERE estado <> 'cerrada' AND (aviso_previo_en IS NULL OR aviso_vencido_en IS NULL OR escalado_en IS NULL)`;
   await tx`UPDATE indicadores SET inicio_medicion = NULL WHERE estado = 'activo' AND inicio_medicion IS NOT NULL`;
 }
+
+/**
+ * Una versión 2 trimestral aprobada que rige desde `rigeDesde`, como la dejaría un cambio mayor de periodicidad, sin
+ * quitar las mediciones abiertas de la periodicidad vieja: quedan «de otra periodicidad» (`esDeOtraPeriodicidad`).
+ */
+export async function versionTrimestral(
+  tx: TransactionSql,
+  d: { indicadorId: number; usuarioId: number; rigeDesde: string; aprobadaEn: Date },
+): Promise<number> {
+  const [v2] = await tx`INSERT INTO indicador_versiones (indicador_id, numero, estado, tipo_cambio, nombre, forma, formula, periodicidad,
+      tendencia, meta, semaforo_modo, umbral_atencion_pct, unidad_sufijo, decimales, creado_por)
+    VALUES (${d.indicadorId}, 2, 'borrador', 'mayor', 'Trimestral', 'porcentaje', 'A / B * 100', 'trimestral', 'ascendente', 90, 'relativo', 70,
+      ' %', 1, ${d.usuarioId}) RETURNING id`;
+  await tx`SELECT id FROM indicador_versiones WHERE id = ${v2.id} FOR UPDATE`;
+  for (const [orden, letra] of [[1, "A"], [2, "B"]] as const) {
+    await tx`INSERT INTO indicador_variables (version_id, letra, nombre, orden) VALUES (${v2.id}, ${letra}, ${letra}, ${orden})`;
+  }
+  await tx`UPDATE indicador_versiones SET estado = 'aprobada', elaborada_por = ${d.usuarioId}, huella = ${"1".repeat(64)},
+      rige_desde = ${d.rigeDesde}, aprobada_por = ${d.usuarioId}, aprobada_en = ${d.aprobadaEn}
+    WHERE id = ${v2.id}`;
+  return Number(v2.id);
+}

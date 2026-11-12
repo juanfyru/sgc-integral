@@ -14,11 +14,10 @@
  * Los textos salen del cálculo y de la medición, nunca del detalle de un evento: ningún aviso lleva contenido de un
  * soporte (spec §10.4 y §21). Sin fila en `auditoria`: el rastro es el evento de quien hizo el cambio.
  *
- * Los avisos entran con `crearNotificacion` y no con `avisarA`: `avisos-vencimiento` importa `estructura`, que importa
- * `admin`, que llega a `mediciones` por los soportes; desde aquí cerraría el ciclo.
+ * Los avisos entran con una sola inserción propia y no con `avisarA`: `avisos-vencimiento` importa `estructura`, que
+ * importa `admin`, que llega a `mediciones` por los soportes; desde aquí cerraría el ciclo.
  */
 import type { TransactionSql } from "postgres";
-import { crearNotificacion } from "@/db/consultas/notificaciones";
 import { adminsActivos, lideresDeProceso } from "@/db/consultas/tramites";
 import { responsablesDeAnalizar } from "@/lib/alcance";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
@@ -27,15 +26,13 @@ import { fraseDeResultado, resultadoFrenteAMeta } from "@/lib/indicadores/textos
 import { ETIQUETA_SEMAFORO, type ModoSemaforo, type Semaforo, type Tendencia } from "@/lib/indicadores/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { obtenerParametros } from "./maestros";
-import type { Recalculo } from "./mediciones";
+import { conMayuscula, texto, type Recalculo } from "./mediciones";
 
 type Nivel = "atencion" | "critico";
 
 /** El nivel de alerta del resultado: el incumplimiento repetido se alerta como crítico (spec §10.3). */
 const nivelDe = (r: Recalculo): Nivel | null =>
   r.despues === "critico" || r.repetido ? "critico" : r.despues === "atencion" ? "atencion" : null;
-
-const texto = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
 
 /** Quienes reciben el nivel: los que analizan y hacen seguimiento; en crítico, además, los líderes del proceso y los Admin SGC. */
 async function destinatarios(tx: TransactionSql, m: { indicadorId: number; procesoId: number }, nivel: Nivel | null): Promise<number[]> {
@@ -67,8 +64,7 @@ export async function alRecalcular(tx: TransactionSql, r: Recalculo, c: { ahora:
 
   const codigo = m.codigo as string;
   const nombre = (m.nombre as string | null) ?? codigo;
-  const etiqueta = periodoDe(m.periodo as string, zonaHoraria())?.etiqueta ?? (m.periodo as string);
-  const periodo = etiqueta.charAt(0).toUpperCase() + etiqueta.slice(1);
+  const periodo = conMayuscula(periodoDe(m.periodo as string, zonaHoraria())?.etiqueta ?? (m.periodo as string));
   // La regla con la meta congelada en la medición: la misma con la que se calculó.
   const regla = reglaDeTexto({
     tendencia: (m.tendencia as Tendencia | null) ?? "ascendente",
@@ -86,11 +82,12 @@ export async function alRecalcular(tx: TransactionSql, r: Recalculo, c: { ahora:
   const estado = estadoEnPalabras(r.despues, r.repetido, periodos, noAplica ? "No aplica" : r.resultado ? "Sin meta" : "Sin dato");
   const donde = { indicadorId: r.indicadorId, procesoId: Number(m.proceso_id) };
   const sinQuienCambio = (ids: number[]) => [...new Set(ids)].filter((u) => u !== c.actorId);
+  // Una sola inserción para todos, con la medición bloqueada (como `avisarA`).
   const avisar = async (tipo: string, titulo: string, cuerpo: string, para: number[]) => {
-    const enlace = `/indicadores/${encodeURIComponent(codigo)}`;
-    for (const usuarioId of para) {
-      await crearNotificacion({ usuarioId, tipo, titulo, cuerpo, enlace, entidad: "medicion", entidadId: r.medicionId }, tx);
-    }
+    if (para.length === 0) return;
+    await tx`INSERT INTO notificaciones (usuario_id, tipo, titulo, cuerpo, enlace, entidad, entidad_id)
+      SELECT u, ${tipo}, ${titulo}, ${cuerpo}, ${`/indicadores/${encodeURIComponent(codigo)}`}, 'medicion', ${r.medicionId}
+      FROM unnest(${tx.array(para)}::int[]) AS a(u)`;
   };
 
   if (guardado === null) {

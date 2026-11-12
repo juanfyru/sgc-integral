@@ -30,12 +30,14 @@ import { enlaceDeObservaciones } from "./observaciones";
 export type Falta = "reporte" | "analisis";
 
 /**
- * Las columnas de `mediciones m` que lee `queFalta`, con las versiones aprobadas del indicador (de mayor a menor número,
- * el orden de `versionQueRigeEntre`) en la misma fila: el costo en sentencias no depende de cuántas haya.
+ * Las columnas de `mediciones m` e `indicadores i` que lee `queFalta`, con las versiones aprobadas del indicador (de mayor
+ * a menor número, el orden de `versionQueRigeEntre`) y si tiene algún soporte en la misma fila: el costo en sentencias no
+ * depende de cuántas haya.
  */
 export const columnasDePendiente = (sql: Cliente) =>
   sql`m.id, m.indicador_id, m.periodo, m.vence_en, m.reportada_en, m.semaforo, m.incumplimiento_repetido, m.analisis, m.causa,
-    m.accion_propuesta,
+    m.accion_propuesta, i.soporte_obligatorio,
+    EXISTS (SELECT 1 FROM archivos pa WHERE pa.contexto = 'medicion' AND pa.contexto_id = m.id) AS con_soporte,
     (SELECT coalesce(json_agg(json_build_object('rigeDesde', pv.rige_desde, 'periodicidad', pv.periodicidad, 'nombre', pv.nombre)
         ORDER BY pv.numero DESC), '[]'::json)
       FROM indicador_versiones pv WHERE pv.indicador_id = m.indicador_id AND pv.estado = 'aprobada') AS versiones`;
@@ -43,14 +45,19 @@ export const columnasDePendiente = (sql: Cliente) =>
 /** Una medición ordinaria por completar, para un `WHERE` sobre `mediciones m` e `indicadores i`. */
 export const esPendiente = (sql: Cliente) => sql`m.estado = 'abierta' AND NOT m.historica AND NOT m.no_aplica AND i.estado = 'activo'`;
 
-export type Pendiente = { falta: Falta; periodo: Periodo; nombre: string | null };
+/**
+ * `falta` es lo primero que falta (con los datos, el análisis; si no, el reporte); `faltaSoporte`, que además falta el
+ * soporte obligatorio de una medición ya reportada, que es de quien mide aunque falte el análisis.
+ */
+export type Pendiente = { falta: Falta; faltaSoporte: boolean; periodo: Periodo; nombre: string | null };
 
 type VersionDePendiente = { rigeDesde: string | null; periodicidad: Periodicidad | null; nombre: string | null };
 
 /**
  * Lo que le falta a cada medición de `filas` (leídas con `columnasDePendiente`): con los datos, el análisis exigido si no
- * está (la regla del estado guardado, `analisisCompleto`); si no, el reporte. Con el periodo y el nombre de la versión que
- * lo rige. Sin las de otra periodicidad (`esDeOtraPeriodicidad`): no se miden. No consulta nada.
+ * está (la regla del estado guardado, `analisisCompleto`) y el soporte obligatorio si no lo tiene; sin ellos, el reporte.
+ * Con el periodo y el nombre de la versión que lo rige. Sin las de otra periodicidad (`esDeOtraPeriodicidad`): no se
+ * miden. No consulta nada.
  */
 export function queFalta(filas: readonly Row[]): Map<number, Pendiente> {
   const salida = new Map<number, Pendiente>();
@@ -66,15 +73,21 @@ export function queFalta(filas: readonly Row[]): Map<number, Pendiente> {
       historica: false,
       noAplica: false,
     });
-    const falta: Falta = f.reportada_en !== null && !analisisCompleto(exigido, analisisDe(f)) ? "analisis" : "reporte";
-    salida.set(Number(f.id), { falta, periodo, nombre: version.nombre });
+    const conDatos = f.reportada_en !== null;
+    const falta: Falta = conDatos && !analisisCompleto(exigido, analisisDe(f)) ? "analisis" : "reporte";
+    const faltaSoporte = conDatos && f.soporte_obligatorio === true && f.con_soporte !== true;
+    salida.set(Number(f.id), { falta, faltaSoporte, periodo, nombre: version.nombre });
   }
   return salida;
 }
 
 const SIN_RESPONSABLE = "Sin responsable: designe a alguien";
+const FALTA_SOPORTE = "Falta el soporte obligatorio";
 
-/** Las de reportar y analizar: las mediciones de las que la persona es responsable de lo que les falta. */
+/**
+ * Las de reportar y analizar: las mediciones de las que la persona es responsable de lo que les falta. Con el análisis y
+ * el soporte pendientes, las dos: «Analizar» a quien analiza y «Reportar» a quien mide.
+ */
 async function deMediciones(sql: Cliente, sesion: SesionFlujo): Promise<Tarea[]> {
   const filas = await sql`SELECT * FROM (
       SELECT ${columnasDePendiente(sql)}, i.codigo, p.nombre AS proceso,
@@ -89,18 +102,22 @@ async function deMediciones(sql: Cliente, sesion: SesionFlujo): Promise<Tarea[]>
   for (const f of filas) {
     const p = pendientes.get(Number(f.id));
     if (!p) continue;
-    const quien = (p.falta === "reporte" ? f.mide : f.analiza) as Responsabilidad | null;
-    if (quien === null) continue;
     const codigo = f.codigo as string;
     const indicador = p.nombre ? `${codigo} ${p.nombre}` : codigo;
-    tareas.push({
-      id: `${p.falta === "reporte" ? "medir" : "analizar"}:${f.id}`,
+    const tarea = (falta: Falta, quien: Responsabilidad, detalle: string): Tarea => ({
+      id: `${falta === "reporte" ? "medir" : "analizar"}:${f.id}`,
       modulo: "indicadores",
-      titulo: `${p.falta === "reporte" ? "Reportar" : "Analizar"} ${indicador}, ${p.periodo.etiqueta}`,
-      detalle: quien === "respaldo" ? SIN_RESPONSABLE : (f.proceso as string),
+      titulo: `${falta === "reporte" ? "Reportar" : "Analizar"} ${indicador}, ${p.periodo.etiqueta}`,
+      detalle: quien === "respaldo" ? SIN_RESPONSABLE : detalle,
       vence: new Date(f.vence_en as string),
       enlace: `/indicadores/${encodeURIComponent(codigo)}/reportar/${encodeURIComponent(f.periodo as string)}`,
     });
+    const mide = f.mide as Responsabilidad | null;
+    const analiza = f.analiza as Responsabilidad | null;
+    const reportada = f.reportada_en !== null;
+    if (p.falta === "reporte" && mide) tareas.push(tarea("reporte", mide, reportada ? FALTA_SOPORTE : (f.proceso as string)));
+    if (p.falta === "analisis" && p.faltaSoporte && mide) tareas.push(tarea("reporte", mide, FALTA_SOPORTE));
+    if (p.falta === "analisis" && analiza) tareas.push(tarea("analisis", analiza, f.proceso as string));
   }
   return tareas;
 }
@@ -132,7 +149,10 @@ async function deObservaciones(sql: Cliente, sesion: SesionFlujo): Promise<Tarea
   });
 }
 
-/** Las fichas por aprobar de las que la persona es aprobadora (spec §7.6.2). */
+/**
+ * Las fichas por aprobar de las que la persona es aprobadora (spec §7.6.2). Sin `filtroIndicadores`, que esconde los
+ * borradores: el aprobador de una primera ficha la ve aunque el indicador aún no exista para él (spec §6.4).
+ */
 async function deFichasPorAprobar(sql: Cliente, sesion: SesionFlujo): Promise<Tarea[]> {
   if (!puede(sesion, "indicadores.aprobar")) return [];
   const filas = await sql`SELECT fv.id, fv.numero, fv.nombre, i.codigo
@@ -170,7 +190,7 @@ async function deFichasDevueltas(sql: Cliente, sesion: SesionFlujo): Promise<Tar
 
 /**
  * Las tareas de los indicadores de la persona y `vencidas`, la insignia de «Indicadores» (F14-DC32): las mediciones a su
- * cargo, por reportar o por analizar, que pasaron su fecha límite.
+ * cargo, por reportar o por analizar, que pasaron su fecha límite (una medición cuenta una vez aunque tenga las dos).
  */
 export async function tareasDeIndicadores(
   sesion: SesionFlujo,
@@ -184,6 +204,8 @@ export async function tareasDeIndicadores(
     deFichasPorAprobar(sql, sesion),
     deFichasDevueltas(sql, sesion),
   ]);
-  const vencidas = mediciones.filter((t) => t.vence !== null && t.vence.getTime() < ahora.getTime()).length;
+  const vencidas = new Set(
+    mediciones.filter((t) => t.vence !== null && t.vence.getTime() < ahora.getTime()).map((t) => t.id.slice(t.id.indexOf(":") + 1)),
+  ).size;
   return { tareas: [...mediciones, ...observaciones, ...porAprobar, ...devueltas], vencidas };
 }

@@ -76,7 +76,8 @@ const ES_HISTORICO = "Ese periodo es histórico: regístrelo en la tabla del añ
 export const esDeOtraPeriodicidad = (periodo: string, version: { periodicidad: Periodicidad | null }) =>
   periodicidadDe(periodo) !== version.periodicidad;
 
-const texto = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
+/** Un valor de una fila en texto, o `null`. */
+export const texto = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
 /** El análisis guardado de una medición, para `analisisCompleto`. */
 export const analisisDe = (m: Record<string, unknown>) => ({
   analisis: texto(m.analisis),

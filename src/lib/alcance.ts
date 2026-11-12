@@ -585,6 +585,21 @@ export function responsablesDeAnalizar(indicadorId: number, opciones?: { sql?: C
   return responsables(indicadorId, "analiza", opciones);
 }
 
+/**
+ * La función no tiene designado activo ni líder activo del proceso: sus tareas y avisos van al Admin SGC de respaldo
+ * (`responsables`, spec §6.1). Lo que se tiene de respaldo no se escala al jefe (spec §10.2: «jefes de quienes miden»).
+ */
+export async function sinResponsable(indicadorId: number, funcion: "mide" | "analiza", opciones?: { sql?: Cliente }): Promise<boolean> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [f] = await sql`
+    SELECT NOT EXISTS (
+        SELECT 1 FROM indicador_designados sr_d JOIN usuarios sr_u ON sr_u.id = sr_d.usuario_id AND sr_u.activo
+        WHERE sr_d.indicador_id = i.id AND sr_d.funcion = ${funcion})
+      AND NOT EXISTS (${lideresActivos(sql, sql`i.proceso_id`)}) AS sin
+    FROM indicadores i WHERE i.id = ${indicadorId}`;
+  return f?.sin === true;
+}
+
 /** Por qué le toca a una persona una función de la medición (`responsableDe`). */
 export type Responsabilidad = "designado" | "lider" | "respaldo";
 

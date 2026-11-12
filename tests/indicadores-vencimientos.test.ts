@@ -21,7 +21,7 @@ import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { asegurarMediciones, marcarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
 import { revisarVencimientosDeIndicadores } from "@/db/consultas/indicadores/vencimientos";
 import { revisarVencimientos } from "@/db/consultas/vencimientos";
-import { indicadorDePrueba, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
+import { indicadorDePrueba, versionTrimestral, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -229,6 +229,65 @@ describe("revisarVencimientosDeIndicadores", () => {
       expect((await avisosDe(tx, jefe.usuarioId)).map((x) => x.cuerpo)).toEqual([
         `1 reporte de indicadores a cargo de ${mide.nombre} sigue vencido. Venció hace 6 días.`,
       ]);
+    }));
+
+  it("si lo vencido es el análisis, el jefe lo lee como análisis; con los dos, en una sola frase", () =>
+    revertida(sql, async (tx) => {
+      const { proceso } = await entorno(tx);
+      const jefe = await usuarioDePrueba(tx, { rol: "consulta" });
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const analiza = await usuarioDePrueba(tx, { rol: "consulta", jefeId: jefe.usuarioId });
+      const a = await indicador(tx, proceso.id, { mide: [mide.usuarioId], analiza: [analiza.usuarioId] });
+      await reportarCon(tx, mide, await a.medicion(), { A: "1", B: "2" }, abril(5));
+      expect(await pasada(tx, abril(15))).toMatchObject({ escalados: 1 });
+      expect(await avisosDe(tx, jefe.usuarioId)).toMatchObject([
+        {
+          tipo: "indicadores.escalado",
+          titulo: "Análisis de indicadores vencidos",
+          cuerpo: `1 análisis de indicadores a cargo de ${analiza.nombre} sigue vencido. Venció hace 5 días.`,
+          enlace: null,
+        },
+      ]);
+
+      // Quien mide uno y analiza otro: una frase con los dos.
+      const otroJefe = await usuarioDePrueba(tx, { rol: "consulta" });
+      const persona = await usuarioDePrueba(tx, { rol: "consulta", jefeId: otroJefe.usuarioId });
+      await indicador(tx, proceso.id, { mide: [persona.usuarioId] });
+      const b = await indicador(tx, proceso.id, { mide: [mide.usuarioId], analiza: [persona.usuarioId] });
+      await reportarCon(tx, mide, await b.medicion(), { A: "1", B: "2" }, abril(5));
+      await pasada(tx, abril(15));
+      expect(await avisosDe(tx, otroJefe.usuarioId)).toMatchObject([
+        {
+          titulo: "Reportes y análisis de indicadores vencidos",
+          cuerpo: `1 reporte y 1 análisis de indicadores a cargo de ${persona.nombre} siguen vencidos. Vencieron hace 5 días.`,
+        },
+      ]);
+    }));
+
+  it("lo que el Admin SGC tiene de respaldo no se escala a su jefe: ya es «Sin responsable: designe a alguien»", () =>
+    revertida(sql, async (tx) => {
+      const { proceso } = await entorno(tx);
+      const jefe = await usuarioDePrueba(tx, { rol: "consulta" });
+      const admin = await usuarioDePrueba(tx, { rol: "admin_sgc", jefeId: jefe.usuarioId });
+      // Sin designado ni líder del proceso: mide el Admin SGC de respaldo.
+      const a = await indicador(tx, proceso.id);
+      expect(await pasada(tx, abril(15))).toMatchObject({ escalados: 0 });
+      expect((await avisosDe(tx, admin.usuarioId)).map((x) => x.titulo)).toEqual(["Tiene 1 indicador por reportar con el plazo vencido"]);
+      expect(await avisosDe(tx, jefe.usuarioId)).toEqual([]);
+      expect((await marcas(tx, await a.medicion())).escalado_en).toBeNull();
+    }));
+
+  it("una medición de otra periodicidad no genera recordatorios", () =>
+    revertida(sql, async (tx) => {
+      const { proceso, admin } = await entorno(tx);
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const { ind, medicion } = await indicador(tx, proceso.id, { mide: [mide.usuarioId] });
+      const marzo = await medicion();
+      // Un cambio mayor a trimestral que rige desde el primer trimestre: marzo, que se abrió mensual, ya no se mide.
+      await versionTrimestral(tx, { indicadorId: ind.id, usuarioId: admin.usuarioId, rigeDesde: "2003-T1", aprobadaEn: new Date("2002-12-20T15:00:00Z") });
+      for (const d of [8, 12, 20]) await pasada(tx, abril(d));
+      expect(await marcas(tx, marzo)).toEqual({ aviso_previo_en: null, aviso_vencido_en: null, escalado_en: null });
+      expect(await avisosDe(tx, mide.usuarioId)).toEqual([]);
     }));
 
   it("nada para históricos, «no aplica» ni cerradas; cada aviso sale una sola vez", () =>

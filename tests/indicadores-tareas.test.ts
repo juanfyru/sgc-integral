@@ -18,6 +18,7 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { analizar } from "@/db/consultas/indicadores/analisis";
+import { reabrirMedicion } from "@/db/consultas/indicadores/cierre";
 import { devolverFicha, enviarAAprobacion } from "@/db/consultas/indicadores/aprobacion";
 import { crearIndicador } from "@/db/consultas/indicadores/fichas";
 import { asegurarMediciones, marcarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
@@ -27,7 +28,7 @@ import { tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
 import { aprobadoresDeFicha, responsablesDeMedir } from "@/lib/alcance";
 import type { DatosFicha } from "@/lib/esquemas/indicadores";
 import { agruparTareas, misTareas, type Tarea } from "@/lib/tareas";
-import { indicadorDePrueba, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
+import { indicadorDePrueba, versionTrimestral, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 import { firmaDePrueba } from "./utiles/vigencia";
@@ -190,11 +191,63 @@ describe("tareas de medir y analizar", () => {
       // Un mes que quedó abierto dentro del trimestre de un cambio mayor de periodicidad no se mide (Ruling de la T9).
       const mensual = await indicadorDePrueba(tx, { procesoId: proceso.id, periodicidad: "mensual", inicioMedicion: "2026-09", aprobadaEn: APROBADA, ...con });
       await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: mensual.id });
-      await versionTrimestral(tx, mensual.id, admin.usuarioId, "2026-T3");
+      await versionTrimestral(tx, { indicadorId: mensual.id, usuarioId: admin.usuarioId, rigeDesde: "2026-T3", aprobadaEn: new Date("2026-06-20T15:00:00Z") });
       expect(await tx`SELECT periodo FROM mediciones WHERE indicador_id = ${mensual.id}`).toHaveLength(1);
 
       expect(await deIndicadores(tx, mide)).toEqual({ tareas: [], vencidas: 0 });
       expect(await deIndicadores(tx, mide, new Date("2026-12-01T15:00:00Z"))).toEqual({ tareas: [], vencidas: 0 });
+    }));
+
+  it("una reabierta sin datos y vencida es «Reportar», vencida; una reabierta que queda reportada no es tarea", () =>
+    revertida(sql, async (tx) => {
+      const proceso = await procesoNuevo(tx);
+      const admin = await sesionAdmin(tx);
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const analiza = await usuarioDePrueba(tx, { rol: "consulta" });
+      const con = { mide: [mide.usuarioId], analiza: [analiza.usuarioId] };
+      const tarde = new Date("2026-10-20T15:00:00Z");
+      const justificacion = "Llegó el informe que faltaba del trimestre";
+      // Cerrada sin dato y reabierta después del plazo (spec §8.7): vuelve abierta y vencida.
+      const sinDato = await indicador(tx, proceso.id, con);
+      const a = await sinDato.medicion(T3);
+      await tx`UPDATE mediciones SET estado = 'cerrada' WHERE id = ${a}`;
+      await reabrirMedicion(admin, { medicionId: a, justificacion }, opc(tx, tarde));
+      // Cerrada con su resultado: reabierta, vuelve reportada (ya avisó a quien mide con `indicadores.reabierta`).
+      const conDato = await indicador(tx, proceso.id, con);
+      const b = await conDato.medicion(T3);
+      await reportarCon(tx, mide, b, { A: "19", B: "20" });
+      await tx`UPDATE mediciones SET estado = 'cerrada' WHERE id = ${b}`;
+      await reabrirMedicion(admin, { medicionId: b, justificacion }, opc(tx, tarde));
+      expect((await tx`SELECT estado FROM mediciones WHERE id = ${b}`)[0].estado).toBe("reportada");
+
+      const r = await deIndicadores(tx, mide, tarde);
+      expect(r.tareas).toMatchObject([{ id: `medir:${a}`, vence: VENCE_T3 }]);
+      expect(r.vencidas).toBe(1);
+      expect(await deIndicadores(tx, analiza, tarde)).toEqual({ tareas: [], vencidas: 0 });
+    }));
+
+  it("con el análisis y el soporte obligatorio pendientes, quien analiza tiene «Analizar» y quien mide «Reportar»", () =>
+    revertida(sql, async (tx) => {
+      const proceso = await procesoNuevo(tx);
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const analiza = await usuarioDePrueba(tx, { rol: "consulta" });
+      const { ind, medicion } = await indicador(tx, proceso.id, { mide: [mide.usuarioId], analiza: [analiza.usuarioId] });
+      const t3 = await medicion(T3);
+      await reportarCon(tx, mide, t3, { A: "1", B: "2" });
+      // El soporte se volvió obligatorio después del reporte (dato de operación): falta además del análisis.
+      await tx`UPDATE indicadores SET soporte_obligatorio = true WHERE id = ${ind.id}`;
+      expect(ids((await deIndicadores(tx, analiza)).tareas)).toEqual([`analizar:${t3}`]);
+      expect((await deIndicadores(tx, mide)).tareas).toMatchObject([{ id: `medir:${t3}`, detalle: "Falta el soporte obligatorio" }]);
+
+      // Quien mide y analiza tiene las dos tareas, y la insignia cuenta la medición una vez.
+      const persona = await usuarioDePrueba(tx, { rol: "consulta" });
+      const ambas = await indicador(tx, proceso.id, { mide: [persona.usuarioId], analiza: [persona.usuarioId] });
+      const otra = await ambas.medicion(T3);
+      await reportarCon(tx, persona, otra, { A: "1", B: "2" });
+      await tx`UPDATE indicadores SET soporte_obligatorio = true WHERE id = ${ambas.ind.id}`;
+      const r = await deIndicadores(tx, persona, new Date("2026-10-12T15:00:00Z"));
+      expect(ids(r.tareas).sort()).toEqual([`analizar:${otra}`, `medir:${otra}`]);
+      expect(r.vencidas).toBe(1);
     }));
 
   it("vencidasIndicadores cuenta las mediciones vencidas a cargo de la persona", () =>
@@ -366,22 +419,6 @@ describe("agrupación", () => {
     });
   });
 });
-
-/** Una versión 2 trimestral aprobada que rige desde `rigeDesde`, como la dejaría un cambio mayor de periodicidad. */
-async function versionTrimestral(tx: TransactionSql, indicadorId: number, usuarioId: number, rigeDesde: string): Promise<number> {
-  const [v2] = await tx`INSERT INTO indicador_versiones (indicador_id, numero, estado, tipo_cambio, nombre, forma, formula, periodicidad,
-      tendencia, meta, semaforo_modo, umbral_atencion_pct, unidad_sufijo, decimales, creado_por)
-    VALUES (${indicadorId}, 2, 'borrador', 'mayor', 'Trimestral', 'porcentaje', 'A / B * 100', 'trimestral', 'ascendente', 90, 'relativo', 70,
-      ' %', 1, ${usuarioId}) RETURNING id`;
-  await tx`SELECT id FROM indicador_versiones WHERE id = ${v2.id} FOR UPDATE`;
-  for (const [orden, letra] of [[1, "A"], [2, "B"]] as const) {
-    await tx`INSERT INTO indicador_variables (version_id, letra, nombre, orden) VALUES (${v2.id}, ${letra}, ${letra}, ${orden})`;
-  }
-  await tx`UPDATE indicador_versiones SET estado = 'aprobada', elaborada_por = ${usuarioId}, huella = ${"1".repeat(64)},
-      rige_desde = ${rigeDesde}, aprobada_por = ${usuarioId}, aprobada_en = '2026-06-20T15:00:00Z'
-    WHERE id = ${v2.id}`;
-  return Number(v2.id);
-}
 
 /** Una ficha operativa del proceso, trimestral desde 2026-T4, ya probada con valores de ejemplo. */
 async function datosFicha(tx: TransactionSql, procesoId: number): Promise<DatosFicha> {

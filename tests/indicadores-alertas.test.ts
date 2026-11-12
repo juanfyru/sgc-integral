@@ -196,6 +196,40 @@ describe("alertas de resultado", () => {
       expect(deOtro[0].titulo).toBe(`Corrección: ${otro.nombre} pasó de Atención a Crítico. Segundo trimestre de 2026`);
     }));
 
+  it("sin nada alertado antes, una corrección de Bien a Crítico es una alerta con la cifra; de Crítico a Bien, una corrección", () =>
+    revertida(sql, async (tx) => {
+      const e = await entorno(tx);
+      const { ind, nombre, medicionId } = await e.nuevo();
+      await reportarCon(tx, e.mide, medicionId, { A: "19", B: "20" });
+      expect(await alertas(tx, medicionId)).toEqual([]);
+
+      await reportarCon(tx, e.mide, medicionId, { A: "1", B: "2" });
+      const alerta = await alertas(tx, medicionId);
+      expect(quienes(alerta)).toEqual(await e.criticos([e.mide.usuarioId]));
+      expect(alerta.every((a) => a.tipo === "indicadores.alerta")).toBe(true);
+      expect(alerta[0]).toMatchObject({
+        titulo: `${nombre}: 50 % frente a una meta de 90 %, Crítico. Segundo trimestre de 2026`,
+        cuerpo: `${ind.codigo} · ${e.proceso.nombre}`,
+      });
+
+      await reportarCon(tx, e.mide, medicionId, { A: "19", B: "20" });
+      const correccion = (await alertas(tx, medicionId)).slice(alerta.length);
+      expect(quienes(correccion)).toEqual(await e.criticos([e.mide.usuarioId]));
+      const titulo = `Corrección: ${nombre} pasó de Crítico a Bien. Segundo trimestre de 2026`;
+      expect(correccion.every((a) => a.tipo === "indicadores.correccion" && a.titulo === titulo)).toBe(true);
+    }));
+
+  it("«Guardar sin reportar» no alerta, aunque los datos estén completos", () =>
+    revertida(sql, async (tx) => {
+      const e = await entorno(tx);
+      const { medicionId } = await e.nuevo();
+      const r = await reportar(e.mide, { medicionId, valores: { A: "1", B: "2" }, parcial: true, confirmado: true }, opc(tx));
+      expect(r).toMatchObject({ ok: true });
+      const [m] = await tx`SELECT reportada_en, semaforo, alerta_estado FROM mediciones WHERE id = ${medicionId}`;
+      expect(m).toEqual({ reportada_en: null, semaforo: null, alerta_estado: null });
+      expect(await alertas(tx, medicionId)).toEqual([]);
+    }));
+
   it("«No aplica» después de una alerta es una corrección a los de antes", () =>
     revertida(sql, async (tx) => {
       const e = await entorno(tx);
