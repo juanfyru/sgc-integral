@@ -1,7 +1,7 @@
 # CONTEXT.md — Estado vivo del proyecto
 
 > Se actualiza al cierre de cada fase. Última actualización: **2026-11-12**, al cerrar la 14A en su rama. La **Fase 14A —
-> Indicadores, el indicador de punta a punta** está terminada en la rama `fase-14a-indicadores` (60 confirmaciones sobre
+> Indicadores, el indicador de punta a punta** está terminada en la rama `fase-14a-indicadores` (61 confirmaciones sobre
 > `bced185`, sin publicar ni fusionar) y espera el recorrido del usuario; después viene la **Fase 14B** (datos compartidos,
 > automáticos y avanzados), que cierra la Fase 14 del diseño maestro. La **Fase 13C — Vigencia, externos y normograma**
 > está fusionada en `main` (`8acc9cf`, PR #3, 2026-11-10, 64 confirmaciones sobre `4bbb428`; la rama
@@ -21,7 +21,7 @@
    La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
    proyecto**.
 1. **Dónde quedamos:** la **Fase 14A — Indicadores, el indicador de punta a punta** está terminada en la rama
-   `fase-14a-indicadores` (60 confirmaciones sobre `bced185`; spec
+   `fase-14a-indicadores` (61 confirmaciones sobre `bced185`; spec
    `docs/superpowers/specs/2026-11-10-fase14-indicadores-design.md`, aprobado el 2026-11-10 y común a la 14A y la 14B;
    plan `docs/superpowers/plans/2026-11-10-fase14a-indicadores.md`). **No está publicada ni fusionada:** espera el
    recorrido del usuario («Qué probar y cómo (Fase 14A)») y su decisión. Con ella el hospital ya puede llevar sus
@@ -281,8 +281,10 @@ aquí lo que no salga como dice el spec.
    | `admin` | La `ADMIN_CLAVE` de `.env.local` | Segundo Admin SGC: recibe las alertas críticas |
 
    Lo que la demo trae (los periodos se cuentan desde el día de la siembra: lo que terminó hace más de 10 días, el plazo de
-   reporte, ya se reportó; sembrando entre finales de octubre de 2026 y mediados de enero de 2027 los trimestres son los de
-   2026 y los meses van de mayo a octubre, como en la siembra del 2026-11-12 que se describe aquí):
+   reporte, ya se reportó. Sembrando entre el 11 de octubre de 2026 y el 10 de enero de 2027, los trimestres sembrados son
+   los tres primeros de 2026; los meses de urgencias y consulta externa van de mayo a octubre si se siembra entre el 11 de
+   noviembre y el 10 de diciembre de 2026, como en la siembra del 2026-11-12 que se describe aquí, y se corren con la
+   fecha):
 
    - **Los ocho del SGC del Excel** (`SGC-IND-01` a `SGC-IND-08`; trimestrales salvo `SGC-IND-03`, semestral, y `SGC-IND-04`,
      anual), elaborados por `coordinadora.sgc` y aprobados en bloque por `gerente`, con sus históricos registrados (los
@@ -428,8 +430,9 @@ ella, con un aviso en la salida. `npm run db:seed && npm run admin:asegurar` la 
    demo «limpia», resiembre justo antes.
 4. **Los periodos de la demo se mueven con el día de la siembra:** lo que terminó hace más que el plazo de reporte (10 días)
    ya está reportado y no siempre queda un periodo «por reportar» dentro de su plazo (sembrando el 2026-11-12, ninguno).
-   Sembrando entre finales de octubre de 2026 y mediados de enero de 2027, `SGC-IND-01` lleva los trimestres de 2026 como la
-   maqueta.
+   Sembrando entre el 11 de octubre de 2026 y el 10 de enero de 2027, `SGC-IND-01` lleva los trimestres de 2026 como la
+   maqueta; los meses de urgencias y consulta externa son de mayo a octubre solo sembrando entre el 11 de noviembre y el 10
+   de diciembre de 2026.
 5. **El Excel `INDICADORES_PROCESO_SGC_OK.xlsx` sigue fuera del repositorio** (en la raíz, excluido en
    `.git/info/exclude`): la semilla tomó de él el nombre, el objetivo, la fórmula, las variables con su fuente, la meta y la
    periodicidad de las ocho fichas, sin copiarlo.
@@ -1144,7 +1147,7 @@ Plan: `docs/superpowers/plans/2026-11-10-fase14a-indicadores.md`; diseño:
 `docs/superpowers/specs/2026-11-10-fase14-indicadores-design.md` (común a la 14A y la 14B; §5.1 dice qué va en cada una).
 El indicador de punta a punta, del ISO 9001:2015 4.4.1 c), 9.1.1 y 9.1.3: el hospital ya puede llevar sus indicadores como
 los ocho del Excel del usuario. **Sin dependencias npm nuevas** (`exceljs`, `zod` y `pdf-lib` ya estaban; las animaciones
-son CSS, F14-DC23). La rama `fase-14a-indicadores` (60 confirmaciones sobre `bced185`) se trabajó en el worktree
+son CSS, F14-DC23). La rama `fase-14a-indicadores` (61 confirmaciones sobre `bced185`) se trabajó en el worktree
 `F:\sgc-integral-f14a` contra la base aparte `sgc_f14a`; no está publicada ni fusionada.
 
 - **Rutas nuevas:** `/indicadores` (la lista) con las pestañas `/indicadores/matriz`, `/indicadores/por-aprobar` y
@@ -2557,8 +2560,9 @@ de letras distintas):
     recalcula las mediciones abiertas.
   - N+1 en `registrarHistoricos` (hasta 60 filas); `?registrados=` se toma de la URL; sin prueba de carrera del candado de
     `programarMeta`.
-  - `file-type` puede no reconocer un `.xlsx` escrito con descriptores de datos (`streamFiles`) y una hoja de más de 1 MB:
-    se rechaza como soporte (el manual, capítulo 8, sección 3.4, dice qué hacer).
+  - `file-type` puede no reconocer un `.xlsx` escrito con descriptores de datos (`streamFiles`) y una hoja de más de 1 MB,
+    que entonces se rechaza como soporte: así lo anotó la revisión de la Tarea 11 en la bitácora, sin reproducirlo aquí
+    (el manual, capítulo 8, sección 3.4, dice qué hacer si un Excel legítimo se rechaza).
   - `registrarArchivo` pasa una hora fija a `dejarSoporteSubido` y arma el sujeto desde `usuarios`; ciclo de importación
     `admin.ts` ↔ `indicadores/soportes.ts`; consultas de candado repetidas en `bloquearParaSoporte`; la fila «sin dato» con
     `colSpan` esconde la columna Soportes; sin pruebas del 409 por el handler, de quitar con `sinMedidor` ni del 429.
