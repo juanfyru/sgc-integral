@@ -10,9 +10,17 @@ import {
   type VariableDeCaptura,
 } from "@/lib/indicadores/reporte";
 import { fraseDeResultado, type Unidad } from "@/lib/indicadores/textos";
-import { ETIQUETA_SEMAFORO } from "@/lib/indicadores/tipos";
+import { ETIQUETA_SEMAFORO, type Semaforo } from "@/lib/indicadores/tipos";
 
 const AVISO = "rounded-md border border-l-4 border-border bg-card px-3 py-2 text-sm";
+
+// El acento de la tarjeta sigue al resultado; sin resultado o sin meta, el borde neutro. Clases literales para Tailwind.
+const ACENTO: Record<Semaforo | "ninguno", string> = {
+  bien: "border-l-estado-bien",
+  atencion: "border-l-estado-atencion",
+  critico: "border-l-estado-critico",
+  ninguno: "border-l-border",
+};
 
 /**
  * El resultado mientras se digita (spec §8.2, maqueta 3): la cifra, el color con su nombre, la frase, la fórmula con los
@@ -43,6 +51,9 @@ export function ResultadoEnVivo({
     calculo.formula,
     Object.fromEntries(variables.map((v) => [v.letra, (valores[v.letra] ?? "").trim() || v.nombre])),
   );
+
+  const conResultado = Object.keys(vivo.errores).length === 0 && vivo.completo && vivo.resultado !== null;
+  const acento = ACENTO[(conResultado ? vivo.semaforo : null) ?? "ninguno"];
 
   let contenido: React.ReactNode;
   if (Object.keys(vivo.errores).length > 0) {
@@ -81,7 +92,7 @@ export function ResultadoEnVivo({
   }
 
   return (
-    <section aria-labelledby="reporte-resultado" className="flex min-w-0 flex-col gap-2 rounded-lg border border-l-4 border-border border-l-mod-indicadores bg-muted px-4 py-3">
+    <section aria-labelledby="reporte-resultado" className={`flex min-w-0 flex-col gap-2 rounded-lg border border-l-4 border-border ${acento} bg-muted px-4 py-3`}>
       <h2 id="reporte-resultado" className="text-sm font-semibold">
         Resultado
       </h2>

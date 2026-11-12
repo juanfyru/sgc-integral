@@ -207,6 +207,30 @@ describe("FormularioReporte y ResultadoEnVivo", () => {
     expect(enVivo({ A: "abc", B: "5" })).toContain("Corrija los datos para ver el resultado.");
   });
 
+  it("el acento de la tarjeta del resultado sigue su estado; sin resultado o sin meta, el borde neutro", () => {
+    const tarjeta = (html: string) => /<section[^>]*>/.exec(html)![0];
+    expect(tarjeta(enVivo({ A: "3", B: "5" }))).toContain("border-l-estado-critico");
+    expect(tarjeta(enVivo({ A: "4", B: "5" }))).toContain("border-l-estado-atencion");
+    expect(tarjeta(enVivo({ A: "5", B: "5" }))).toContain("border-l-estado-bien");
+    const sinMeta = renderToStaticMarkup(
+      <ResultadoEnVivo
+        calculo={DATOS.calculo}
+        regla={{ ...DATOS.regla, meta: null }}
+        unidad={DATOS.unidad}
+        variables={DATOS.variables}
+        valores={{ A: "3", B: "5" }}
+        rangos={null}
+        anterior={null}
+        variacionPct={DATOS.variacionPct}
+      />,
+    );
+    expect(sinMeta).toContain(">Sin meta<");
+    for (const html of [sinMeta, enVivo({ A: "3" }), enVivo({ A: "0", B: "0" }), enVivo({ A: "abc", B: "5" })]) {
+      expect(tarjeta(html)).toContain("border-l-border");
+      expect(tarjeta(html)).not.toMatch(/border-l-(estado|mod)-/);
+    }
+  });
+
   it("un valor que no sirve se dice junto a su campo", () => {
     const html = renderToStaticMarkup(
       <FormularioReporte datos={{ ...DATOS, variables: [{ ...DATOS.variables[0], valor: "abc" }, DATOS.variables[1]] }} volver="/x" />,
