@@ -772,7 +772,8 @@ export const firmas = pgTable(
     ),
     check("firmas_metodo_valido", sql`${t.metodo} IN ('clave', 'clave_totp')`),
     index("firmas_tramite_idx").on(t.tramiteId),
-    index("firmas_version_idx").on(t.versionId),  ],
+    index("firmas_version_idx").on(t.versionId),
+  ],
 );
 
 export const tramiteObservaciones = pgTable(
