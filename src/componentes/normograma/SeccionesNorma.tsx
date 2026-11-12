@@ -242,9 +242,8 @@ export function SeccionDocumentos({ norma: n, abierta, documentos }: { norma: No
   );
 }
 
-/** Retirar (con motivo, también abre impactos) y, si no tiene historia, borrar (D47). */
+/** Retirar (con motivo, también abre impactos) y, si no tiene historia (lo dice el servidor), borrar (D47). */
 export function SeccionAdministrar({ norma: n }: { norma: Norma }) {
-  const vacia = n.relaciones.length === 0 && n.cambios.length === 0 && n.procesos.length === 0 && n.documentos.length === 0 && n.archivo === null;
   return (
     <section aria-labelledby="norma-administrar" className={SECCION}>
       <h2 id="norma-administrar" className="text-sm font-semibold">
@@ -260,13 +259,13 @@ export function SeccionAdministrar({ norma: n }: { norma: Norma }) {
       >
         <Motivo id={`norma-${n.id}-motivo`} ayuda="Entre 5 y 500 caracteres. Queda en el historial y en la bitácora." />
       </AccionNormograma>
-      {vacia ? (
+      {!n.tieneHistoria ? (
         <AccionNormograma
           accion={borrarNormaAccion}
           boton="Borrar la norma"
           campos={{ id: n.id }}
           desplegable="Borrar…"
-          explicacion="No tiene relaciones, procesos, documentos, cambios ni PDF: se puede borrar. Queda en la bitácora."
+          explicacion="No tiene relaciones, procesos, documentos, cambios, PDF ni fichas de indicador que la citen: se puede borrar. Queda en la bitácora."
           variante="peligro"
         />
       ) : null}

@@ -525,8 +525,8 @@ del informe y elíjalo**: después del cierre el informe ya no cambia de papel.
 - **Retirar…**, con motivo, para una norma registrada por error o que dejó de aplicar: sale de
   las listas y de la búsqueda, conserva su ficha y, si tiene documentos enlazados o procesos
   asociados, abre la revisión de su impacto (con **Incluir retiradas**, en los filtros, la
-  vuelve a ver). **Borrar…** solo aparece en una norma sin relaciones, procesos, documentos,
-  cambios ni PDF.
+  vuelve a ver). **Borrar…** solo aparece en una norma sin relaciones (tampoco eliminadas),
+  procesos, documentos, cambios, PDF ni fichas de indicador que la citen, aunque sean borradores.
 - **Tipos de norma**, al pie del normograma: los nueve iniciales (Ley, Decreto, Resolución,
   Circular, Acuerdo, Norma técnica, Sentencia, Directiva, Otro) se renombran, se ordenan y se
   desactivan; **Nuevo tipo de norma** crea otro.

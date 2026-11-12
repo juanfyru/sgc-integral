@@ -121,6 +121,7 @@ import {
   EsquemaRelacion,
 } from "@/lib/esquemas/normograma";
 import type { SesionValida } from "@/lib/sesion";
+import { indicadorDePrueba } from "./utiles/indicadores";
 import { normaDePrueba } from "./utiles/normograma";
 import { sesionAdmin, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
@@ -437,6 +438,12 @@ describe("la ficha de la norma", () => {
 
         const vacia = await normaDePrueba(tx, c.admin);
         expect(sinEtiquetas(await pintar(tx, c.admin, ficha(vacia.id)))).toContain("Borrar…");
+        // La cita de una ficha de indicador, aunque sea un borrador, es historia: el servidor ya no ofrece borrarla.
+        const borrador = await indicadorDePrueba(tx, { estado: "borrador" });
+        await tx`INSERT INTO indicador_normas (version_id, norma_id, norma_nombre) VALUES (${borrador.versionId}, ${vacia.id}, ${vacia.nombre})`;
+        const citada = sinEtiquetas(await pintar(tx, c.admin, ficha(vacia.id)));
+        expect(citada).toContain("Retirar…");
+        expect(citada).not.toContain("Borrar…");
       } finally {
         await c.limpiar();
       }

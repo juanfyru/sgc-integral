@@ -39,6 +39,7 @@ import { EsquemaEstadoNorma, EsquemaNorma, EsquemaRelacion, EsquemaResolverImpac
 import { ErrorNormograma, nombreDeNorma } from "@/lib/normograma/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
 import { parsearFormulario } from "@/lib/validacion";
+import { indicadorDePrueba } from "./utiles/indicadores";
 import { normaDePrueba, tipoNormaId } from "./utiles/normograma";
 import { documentoLibre, sesionAdmin, sesionDe, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
@@ -487,6 +488,28 @@ describe("retiro y borrado", () => {
       expect(await obtenerNorma(vacia.id, admin, { sql: tx })).toBeNull();
       expect((await auditoriaDe(tx, "norma_borrada", vacia.id))[0].detalle).toMatchObject({ nombre: vacia.nombre });
       await expect(borrarNorma(admin, vacia.id, { sql: tx })).rejects.toThrow("La norma no existe");
+    }));
+
+  it("una norma que cita una ficha de indicador, aunque sea un borrador, tiene historia: no se borra y lo dice en palabras", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const citada = await normaDePrueba(tx, admin);
+      const libre = await normaDePrueba(tx, admin);
+      expect((await obtenerNorma(citada.id, admin, { sql: tx }))?.tieneHistoria).toBe(false);
+      const borrador = await indicadorDePrueba(tx, { estado: "borrador" });
+      await tx`INSERT INTO indicador_normas (version_id, norma_id, norma_nombre) VALUES (${borrador.versionId}, ${citada.id}, ${citada.nombre})`;
+
+      // Ni el error crudo de la llave foránea ni un borrado a medias: el mensaje legible de D47.
+      const err = await borrarNorma(admin, citada.id, { sql: tx }).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(ErrorNormograma);
+      expect((err as Error).message).toBe("La norma tiene historia: retírela");
+      expect(await obtenerNorma(citada.id, admin, { sql: tx })).toMatchObject({ id: citada.id, tieneHistoria: true });
+      expect((await obtenerNorma(libre.id, admin, { sql: tx }))?.tieneHistoria).toBe(false);
+      await borrarNorma(admin, libre.id, { sql: tx });
+      expect(await obtenerNorma(libre.id, admin, { sql: tx })).toBeNull();
     }));
 
   it("una derogada no se asocia a un proceso nuevo, pero el requisito de un proceso que ya la tenía se sigue editando", () =>
