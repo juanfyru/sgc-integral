@@ -13,7 +13,7 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 }
 
 import { obtenerSql } from "@/db/cliente";
-import { fichaDeVersion } from "@/db/consultas/indicadores/aprobacion";
+import { fichaDeVersion, versionesDe } from "@/db/consultas/indicadores/aprobacion";
 import { indicadoresQueExige } from "@/db/consultas/indicadores/busqueda";
 import { mesPorOmision } from "@/db/consultas/indicadores/cierre";
 import { listarMaestro } from "@/db/consultas/indicadores/maestros";
@@ -382,6 +382,25 @@ describe("indicadores sembrados", () => {
     expect(objetivos.filter((o) => o.clase === "institucional")).toHaveLength(2);
     // Con algunos indicadores ligados.
     expect(objetivos.filter((o) => o.usos > 0).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("cada ficha sembrada trae su línea base o «sin línea base» con su nota (ronda 1 de la Tarea 19, D-10)", async (ctx) => {
+    await exigirIndicadores(ctx);
+    const fichas = await sql`SELECT i.codigo, v.numero, v.linea_base_valor, v.linea_base_periodo, v.linea_base_nota
+      FROM indicador_versiones v JOIN indicadores i ON i.id = v.indicador_id
+      WHERE i.codigo LIKE ANY (${["SGC-IND-%", "AIN-IND-%", "CEX-IND-%", "GTH-IND-%", "GRF-IND-%"]}::text[]) ORDER BY i.codigo, v.numero`;
+    expect(fichas.length).toBeGreaterThanOrEqual(14);
+    const sinNinguna = fichas.filter((f) => !(f.linea_base_valor !== null && f.linea_base_periodo !== null) && largo(f.linea_base_nota) === 0);
+    expect(sinNinguna.map((f) => `${f.codigo} v${f.numero}`)).toEqual([]);
+    // Donde tiene sentido, una línea base de verdad; en las demás, la nota que propone el formulario.
+    const de = (codigo: string) => fichas.find((f) => f.codigo === codigo)!;
+    expect([de("AIN-IND-01").linea_base_periodo, de("CEX-IND-01").linea_base_periodo]).toEqual(["2025", "2025"]);
+    expect(de("SGC-IND-01").linea_base_nota).toMatch(/^Sin línea base: \d{4} es el año de referencia$/);
+    // El cambio mayor y el menor de SGC-IND-05 no cambiaron la línea base: no la cuentan entre lo que cambió.
+    const resumen = await versionesDe(Number((await indicador("SGC-IND-05")).id), { sql });
+    const cambios = resumen.filter((r) => r.tipoCambio !== "inicial");
+    expect(cambios).toHaveLength(2);
+    for (const v of cambios) expect(v.cambios).not.toContain("Nota de la línea base");
   });
 
   it("los avisos de lo que la historia ya resolvió quedan leídos; la alerta, la observación, la reapertura y la ficha por aprobar, no", async (ctx) => {

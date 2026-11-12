@@ -64,6 +64,11 @@ export type FichaDemo = {
   procedimiento?: string;
   ente?: string;
   periodicidadExterna?: Periodicidad;
+  /**
+   * La línea base, donde la hay (valor y periodo); sin ella, la ficha dice «Sin línea base: <año> es el año de referencia»,
+   * como la propone el formulario (spec §7.2: una de las dos formas es obligatoria).
+   */
+  lineaBase?: { valor: string; periodo: string };
 };
 
 /** Los ids de lo que la ficha cita, que salen de la base sembrada. */
@@ -129,6 +134,9 @@ export function datosDeFicha(cat: Catalogo, f: FichaDemo, op: OperacionDemo): Da
     ...(f.periodicidadExterna ? { periodicidadExterna: f.periodicidadExterna } : {}),
     ...(op.motivoCambio ? { motivoCambio: op.motivoCambio } : {}),
     ...(f.prueba ? { prueba: { valores: { A: f.prueba[0], B: f.prueba[1] } } } : {}),
+    ...(f.lineaBase
+      ? { lineaBaseValor: f.lineaBase.valor, lineaBasePeriodo: f.lineaBase.periodo }
+      : { lineaBaseNota: `Sin línea base: ${op.inicio.slice(0, 4)} es el año de referencia` }),
     plazoReporteDias: PLAZO_DE_REPORTE,
     inicioMedicion: op.inicio,
     soporteObligatorio: false,
@@ -381,6 +389,7 @@ export const DEL_SGC: FichaDemo[] = [SGC_01, SGC_02, SGC_03, SGC_04, SGC_05, SGC
 /** Urgencias: lo mide la enfermera jefe, de rol Consulta (spec §22). AIN no tiene líder: lo operativo lo aprueba Gerencia. */
 export const AIN_01: FichaDemo = {
   codigo: "AIN-IND-01",
+  lineaBase: { valor: "34", periodo: "2025" },
   proceso: "AIN",
   subproceso: "urgencias",
   nombre: "Tiempo de espera en triage II",
@@ -415,6 +424,7 @@ export const AIN_01: FichaDemo = {
 /** Regulatorio: cita la Resolución 256 de 2016, que ya está en el normograma de la demo (spec §22). */
 export const CEX_01: FichaDemo = {
   codigo: "CEX-IND-01",
+  lineaBase: { valor: "3.4", periodo: "2025" },
   proceso: "CEX",
   subproceso: "medicina-general",
   nombre: "Oportunidad en la asignación de cita de medicina general",
