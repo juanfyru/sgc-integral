@@ -13,7 +13,7 @@ import { registrarAuditoria } from "@/db/consultas/admin";
 import { avisarA } from "@/db/consultas/avisos-vencimiento";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
-import { clavesDelAnio, periodicidadDe } from "@/lib/indicadores/periodos";
+import { clavesDelAnio, fechaLimiteDeReporte, marcasQueSiguen, periodicidadDe, versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import {
   AVISO_DESIGNACION,
   ErrorIndicador,
@@ -29,7 +29,8 @@ import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { versionVigente } from "./aprobacion";
 import { codigoCon, COLUMNAS_VARIABLE, CONTENIDO, proponerCodigo, siguientes } from "./fichas";
-import { conDatos } from "./mediciones";
+import { obtenerParametros } from "./maestros";
+import { conDatos, esDeOtraPeriodicidad, recalcularMedicion, versionesAprobadas } from "./mediciones";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -180,7 +181,9 @@ export async function designar(
 /**
  * Cambia el plazo de reporte, el inicio de medición, el soporte obligatorio y el nivel de acceso (spec §7.3): no crean
  * versión ni tocan la huella. El inicio de medición es una clave de la periodicidad de la ficha que rige y no puede dejar
- * fuera una medición que ya tiene datos.
+ * fuera una medición que ya tiene datos. El plazo nuevo y el soporte llegan a las mediciones sin cerrar y no históricas
+ * (ola final, I1): su fecha límite y sus marcas de aviso (`moverFechasLimite`) y su estado (`recalcularPorSoporte`); la
+ * bitácora cuenta cuántas tocó.
  */
 export async function cambiarOperacion(
   sesion: SesionFlujo,
@@ -194,6 +197,7 @@ export async function cambiarOperacion(
   const nuevo = periodoDe(d.inicioMedicion, zonaHoraria());
   if (!nuevo || periodicidadDe(d.inicioMedicion) === null) throw new ErrorIndicador("El inicio de medición no es un periodo válido");
   const soporte = d.soporteObligatorio === true;
+  const ahora = opciones?.ahora ?? new Date();
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
     const i = await bloquearIndicador(tx, d.indicadorId);
     exigirAbierto(i);
@@ -230,17 +234,84 @@ export async function cambiarOperacion(
     const quitadas = await tx`DELETE FROM mediciones m
       WHERE m.indicador_id = ${i.id} AND m.desde < ${nuevo.desde} AND NOT ${conDatos(tx)} RETURNING m.id`;
 
+    // Antes que las mediciones: `recalcularMedicion` lee «soporte obligatorio» del indicador.
     await tx`UPDATE indicadores SET plazo_reporte_dias = ${despues.plazoReporteDias}, inicio_medicion = ${despues.inicioMedicion},
         soporte_obligatorio = ${despues.soporteObligatorio}, nivel_acceso = ${despues.nivelAcceso}
       WHERE id = ${i.id}`;
+    const conFechaNueva = antes.plazoReporteDias !== despues.plazoReporteDias ? await moverFechasLimite(tx, i.id, despues.plazoReporteDias, ahora) : 0;
+    const recalculadas =
+      antes.soporteObligatorio !== despues.soporteObligatorio ? await recalcularPorSoporte(tx, i.id, { ahora, actorId: sesion.usuarioId }) : 0;
     await registrarAuditoria(tx, {
       usuarioId: sesion.usuarioId,
       accion: "indicador_operacion",
       entidad: "indicador",
       entidadId: i.id,
-      detalle: { codigo: i.codigo, antes, despues, ...(quitadas.length > 0 ? { medicionesQuitadas: quitadas.length } : {}) },
+      detalle: {
+        codigo: i.codigo,
+        antes,
+        despues,
+        ...(quitadas.length > 0 ? { medicionesQuitadas: quitadas.length } : {}),
+        ...(conFechaNueva > 0 ? { medicionesConFechaNueva: conFechaNueva } : {}),
+        ...(recalculadas > 0 ? { medicionesRecalculadas: recalculadas } : {}),
+      },
     });
   });
+}
+
+/** Las mediciones que todavía siguen su curso: sin cerrar y no históricas (un histórico no tiene plazo ni avisos), bloqueadas. */
+const enCurso = (tx: TransactionSql, indicadorId: number) =>
+  tx`SELECT id, periodo, aviso_previo_en, aviso_vencido_en, escalado_en FROM mediciones
+    WHERE indicador_id = ${indicadorId} AND estado <> 'cerrada' AND NOT historica
+    ORDER BY desde, id FOR UPDATE`;
+
+/**
+ * El plazo nuevo en las mediciones en curso: la fecha límite (`fechaLimiteDeReporte`, como al abrir el periodo) y las
+ * marcas de aviso que ya no son ciertas con ella (`marcasQueSiguen`), para que la pasada vuelva a avisar cuando toque.
+ * Quien llama tiene el indicador `FOR UPDATE`. Devuelve cuántas cambiaron de fecha.
+ */
+async function moverFechasLimite(tx: TransactionSql, indicadorId: number, plazo: number, ahora: Date): Promise<number> {
+  const zona = zonaHoraria();
+  const { avisoPrevioDias } = await obtenerParametros({ sql: tx });
+  let movidas = 0;
+  for (const m of await enCurso(tx, indicadorId)) {
+    const periodo = periodoDe(m.periodo as string, zona);
+    if (!periodo) continue;
+    const vence = fechaLimiteDeReporte(periodo, plazo, zona);
+    const siguen = marcasQueSiguen(vence, ahora, avisoPrevioDias, zona);
+    await tx`UPDATE mediciones SET vence_en = ${vence},
+        aviso_previo_en = ${siguen.previo ? (m.aviso_previo_en as Date | null) : null},
+        aviso_vencido_en = ${siguen.vencido ? (m.aviso_vencido_en as Date | null) : null},
+        escalado_en = ${siguen.escalado ? (m.escalado_en as Date | null) : null}
+      WHERE id = ${m.id}`;
+    movidas += 1;
+  }
+  return movidas;
+}
+
+/**
+ * «Soporte obligatorio» cambió: cada medición en curso se recalcula (evento `recalculo`, la misma persona y la misma hora),
+ * con la versión con que se calculó (`conservarVersion`): una que solo esperaba el soporte queda reportada, y una ya
+ * reportada sin soporte vuelve a abierta. Las de otra periodicidad no se calculan. Devuelve cuántas cambiaron.
+ */
+async function recalcularPorSoporte(tx: TransactionSql, indicadorId: number, c: { ahora: Date; actorId: number }): Promise<number> {
+  const zona = zonaHoraria();
+  const versiones = await versionesAprobadas(tx, indicadorId);
+  let recalculadas = 0;
+  for (const m of await enCurso(tx, indicadorId)) {
+    const clave = m.periodo as string;
+    const periodo = periodoDe(clave, zona);
+    const version = periodo ? versionQueRigeEntre(versiones, periodo, zona) : null;
+    if (!version || esDeOtraPeriodicidad(clave, version)) continue;
+    const r = await recalcularMedicion(tx, Number(m.id), {
+      ahora: c.ahora,
+      actorId: c.actorId,
+      evento: "recalculo",
+      detalle: { causa: "soporte_obligatorio" },
+      conservarVersion: true,
+    });
+    if (r.cambio) recalculadas += 1;
+  }
+  return recalculadas;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

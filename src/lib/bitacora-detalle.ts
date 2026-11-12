@@ -794,7 +794,14 @@ export function describirEvento(e: EventoAuditoria): string {
         ["nivelAcceso", "nivel de acceso"],
       ];
       const cambiados = campos.filter(([clave]) => JSON.stringify(antes[clave]) !== JSON.stringify(despues[clave])).map(([, campo]) => campo);
-      return `Cambió los datos de operación de ${cod ?? "un indicador"}${cambiados.length > 0 ? `: ${cambiados.join(", ")}` : ""}`;
+      // Lo que tocó en las mediciones en curso (ola final, I1): la fecha límite nueva y el recálculo por el soporte.
+      const enMediciones = [
+        numero(d.medicionesConFechaNueva) ? `${cuenta(numero(d.medicionesConFechaNueva)!, "medición", "mediciones")} con la fecha límite nueva` : null,
+        numero(d.medicionesRecalculadas) ? `${cuenta(numero(d.medicionesRecalculadas)!, "medición recalculada", "mediciones recalculadas")}` : null,
+      ].filter((p): p is string => p !== null);
+      return `Cambió los datos de operación de ${cod ?? "un indicador"}${cambiados.length > 0 ? `: ${cambiados.join(", ")}` : ""}${
+        enMediciones.length > 0 ? ` (${enMediciones.join("; ")})` : ""
+      }`;
     }
     case "indicador_duplicado":
       return `Creó el indicador${cod ? ` ${cod}` : ""} a partir de ${texto(d.origen) ?? "otro indicador"}`;

@@ -751,6 +751,18 @@ describe("la ficha de indicador", () => {
         despues: { plazoReporteDias: 15, nivelAcceso: "restringido", inicioMedicion: "2026-01", soporteObligatorio: false },
       }),
     ).toBe("Cambió los datos de operación de SGC-IND-06: plazo de reporte, nivel de acceso");
+    // Lo que el cambio tocó en las mediciones en curso (ola final, I1).
+    expect(
+      frase("indicador_operacion", {
+        codigo: "SGC-IND-06",
+        antes: { plazoReporteDias: 10, soporteObligatorio: false },
+        despues: { plazoReporteDias: 30, soporteObligatorio: true },
+        medicionesConFechaNueva: 3,
+        medicionesRecalculadas: 1,
+      }),
+    ).toBe(
+      "Cambió los datos de operación de SGC-IND-06: plazo de reporte, soporte obligatorio (3 mediciones con la fecha límite nueva; 1 medición recalculada)",
+    );
     expect(frase("indicador_duplicado", { codigo: "GTH-IND-02", origen: "SGC-IND-06" })).toBe("Creó el indicador GTH-IND-02 a partir de SGC-IND-06");
     expect(frase("indicador_retirado", { codigo: "SGC-IND-06", motivo: "Ya no se mide" })).toBe("Retiró el indicador SGC-IND-06: Ya no se mide");
     expect(frase("indicador_descartado", { codigo: "SGC-IND-06", motivo: "Se abandonó" })).toBe("Descartó el indicador SGC-IND-06: Se abandonó");

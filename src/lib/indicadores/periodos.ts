@@ -4,7 +4,7 @@
  * componentes de cliente.
  */
 import { dos, periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
-import { fechaEnZona, fechaLimite } from "@/lib/tramites/plazos";
+import { estadoPlazo, fechaEnZona, fechaLimite } from "@/lib/tramites/plazos";
 import type { Periodicidad } from "./tipos";
 
 /** Meses que abarca cada periodicidad. */
@@ -90,6 +90,23 @@ export function mesesDe(clave: string): [number, number] {
 /** Fin del día, en la zona, del último día del periodo más el plazo de reporte (días calendario). */
 export function fechaLimiteDeReporte(periodo: Periodo, plazoDias: number, zona: string): Date {
   return fechaLimite(periodo.hasta, plazoDias, zona);
+}
+
+/** ¿Toca el aviso previo (spec §10.2)? La fecha límite no ha pasado y faltan, en la zona, como mucho `avisoPrevioDias` días. */
+export function tocaAvisoPrevio(vence: Date, ahora: Date, avisoPrevioDias: number, zona: string): boolean {
+  const p = estadoPlazo(vence, ahora, zona);
+  return p.estado !== "vencido" && p.dias <= avisoPrevioDias;
+}
+
+/**
+ * Las marcas de aviso que siguen siendo ciertas con una fecha límite nueva (cambió el plazo de reporte; ola final, I1),
+ * con las reglas de los pasos de la pasada (`vencimientos.ts`): el aviso de vencido y el escalamiento, solo si la fecha
+ * nueva ya pasó; si aún no llega, se limpian y la pasada vuelve a avisar cuando venza. El previo sigue salvo si la fecha
+ * nueva quedó más lejos que los días del aviso previo: entonces se avisa otra vez cuando se acerque.
+ */
+export function marcasQueSiguen(vence: Date, ahora: Date, avisoPrevioDias: number, zona: string): { previo: boolean; vencido: boolean; escalado: boolean } {
+  const vencida = vence.getTime() < ahora.getTime();
+  return { previo: vencida || tocaAvisoPrevio(vence, ahora, avisoPrevioDias, zona), vencido: vencida, escalado: vencida };
 }
 
 /**

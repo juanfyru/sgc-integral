@@ -11,9 +11,12 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 }
 
 import { obtenerSql } from "@/db/cliente";
+import { CONFIG_DOCUMENTAL_DEFECTO } from "@/db/consultas/config-documental";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { aprobarFichas, enviarAAprobacion, versionVigente } from "@/db/consultas/indicadores/aprobacion";
+import { cerrarMes } from "@/db/consultas/indicadores/cierre";
 import { abrirCambio, contenidoDeVersion, crearIndicador, guardarBorrador } from "@/db/consultas/indicadores/fichas";
+import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
 import {
   borrarIndicador,
   cambiarOperacion,
@@ -23,9 +26,11 @@ import {
   duplicar,
   retirar,
 } from "@/db/consultas/indicadores/operacion";
+import { tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
+import { revisarVencimientosDeIndicadores } from "@/db/consultas/indicadores/vencimientos";
 import type { DatosFicha } from "@/lib/esquemas/indicadores";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
-import { ErrorIndicador } from "@/lib/indicadores/tipos";
+import { ErrorIndicador, type DatosOperacion } from "@/lib/indicadores/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { indicadorDePrueba } from "./utiles/indicadores";
@@ -294,6 +299,121 @@ describe("datos de operación", () => {
       expect((await tx`SELECT id FROM mediciones WHERE id = ${vacia}`).length).toBe(0);
       const [i] = await tx`SELECT plazo_reporte_dias, inicio_medicion FROM indicadores WHERE id = ${d.indicadorId}`;
       expect(i).toMatchObject({ plazo_reporte_dias: 12, inicio_medicion: "2026-05" });
+    }));
+});
+
+/**
+ * Los datos de operación llegan a las mediciones abiertas (ola final, I1): el plazo nuevo mueve su fecha límite y sus marcas
+ * de aviso, y «soporte obligatorio» las recalcula. La pasada de vencimientos y el cierre recorren todo el sistema: los casos
+ * viven en 2003, antes de todo inicio de medición de la base. El indicador es mensual desde marzo de 2003, aprobado el 15 de
+ * diciembre de 2002, con plazo de 10 días: marzo vence el 10 de abril de 2003.
+ */
+describe("los datos de operación en las mediciones abiertas", () => {
+  const MARZO = "2003-03";
+  const abril = (d: number) => new Date(`2003-04-${String(d).padStart(2, "0")}T15:00:00Z`);
+  /** El fin del día dado de 2003 en Bogotá: la fecha límite de un plazo. */
+  const finDelDia = (mes: number, d: number) => new Date(Date.UTC(2003, mes - 1, d + 1, 4, 59, 59, 999));
+  const config = { ...CONFIG_DOCUMENTAL_DEFECTO, escalamientoDias: 3 };
+  const pasada = (tx: TransactionSql, ahora: Date) => revisarVencimientosDeIndicadores({ sql: tx, ahora, config });
+
+  async function entorno(tx: TransactionSql, o: { soporteObligatorio?: boolean } = {}) {
+    await tx`UPDATE configuracion SET valor = '3' WHERE clave = 'ind_aviso_previo_dias'`;
+    const admin = await sesionAdmin(tx);
+    const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+    const nuevo = async () => {
+      const ind = await indicadorDePrueba(tx, { inicioMedicion: MARZO, aprobadaEn: new Date("2002-12-15T15:00:00Z"), mide: [mide.usuarioId], ...o });
+      await asegurarMediciones({ sql: tx, ahora: abril(5), indicadorId: ind.id });
+      const [m] = await tx`SELECT id FROM mediciones WHERE indicador_id = ${ind.id} AND periodo = ${MARZO}`;
+      return { ind, marzo: Number(m.id) };
+    };
+    const op = (indicadorId: number, cambios: Partial<DatosOperacion>) => ({
+      indicadorId,
+      plazoReporteDias: 10,
+      inicioMedicion: MARZO,
+      soporteObligatorio: o.soporteObligatorio ?? false,
+      nivelAcceso: "general" as const,
+      ...cambios,
+    });
+    return { admin, mide, nuevo, op };
+  }
+
+  const marcas = async (tx: TransactionSql, medicionId: number) =>
+    (await tx`SELECT vence_en, aviso_previo_en, aviso_vencido_en, escalado_en, estado FROM mediciones WHERE id = ${medicionId}`)[0];
+
+  it("ampliar el plazo antes del vencimiento evita el aviso de vencido y el cierre en «sin dato»", () =>
+    revertida(sql, async (tx) => {
+      const { admin, mide, nuevo, op } = await entorno(tx);
+      const { ind, marzo } = await nuevo();
+      const igual = await nuevo();
+      expect((await marcas(tx, marzo)).vence_en).toEqual(finDelDia(4, 10));
+
+      await cambiarOperacion(admin, op(ind.id, { plazoReporteDias: 30 }), { sql: tx, ahora: abril(5) });
+      expect((await marcas(tx, marzo)).vence_en).toEqual(finDelDia(4, 30));
+      expect((await marcas(tx, igual.marzo)).vence_en).toEqual(finDelDia(4, 10));
+      const [fila] = await bitacora(tx, "indicador_operacion", ind.id);
+      expect(fila.detalle).toMatchObject({ antes: { plazoReporteDias: 10 }, despues: { plazoReporteDias: 30 }, medicionesConFechaNueva: 1 });
+
+      // El 12 de abril, solo la del plazo de siempre está vencida.
+      await pasada(tx, abril(12));
+      expect((await marcas(tx, marzo)).aviso_vencido_en).toBeNull();
+      expect((await marcas(tx, igual.marzo)).aviso_vencido_en).toEqual(abril(12));
+      const vencidos = await tx`SELECT cuerpo FROM notificaciones WHERE usuario_id = ${mide.usuarioId} AND tipo = 'indicadores.vencido'`;
+      expect(vencidos).toHaveLength(1);
+
+      // El cierre de marzo, el 20 de abril, deja «sin dato» la del plazo de siempre y no cierra la que sigue en su plazo.
+      await cerrarMes(admin, MARZO, { sql: tx, ahora: abril(20) });
+      expect((await marcas(tx, igual.marzo)).estado).toBe("cerrada");
+      expect((await marcas(tx, marzo)).estado).toBe("abierta");
+    }));
+
+  it("una fecha nueva que ya pasó conserva el aviso de vencido; una que aún no llega lo limpia y avisa otra vez cuando toca", () =>
+    revertida(sql, async (tx) => {
+      const { admin, mide, nuevo, op } = await entorno(tx);
+      const { ind, marzo } = await nuevo();
+      await tx`UPDATE mediciones SET aviso_previo_en = ${abril(8)}, aviso_vencido_en = ${abril(11)}, escalado_en = ${abril(14)} WHERE id = ${marzo}`;
+
+      // El 15 de abril, con 12 días el plazo sigue vencido (venció el 12): se conservan las tres marcas.
+      await cambiarOperacion(admin, op(ind.id, { plazoReporteDias: 12 }), { sql: tx, ahora: abril(15) });
+      expect(await marcas(tx, marzo)).toMatchObject({ vence_en: finDelDia(4, 12), aviso_previo_en: abril(8), aviso_vencido_en: abril(11), escalado_en: abril(14) });
+      // Con 17 días vence en dos: el vencido y el escalamiento ya no son ciertos; el previo sí (faltan menos de 3 días).
+      await cambiarOperacion(admin, op(ind.id, { plazoReporteDias: 17 }), { sql: tx, ahora: abril(15) });
+      expect(await marcas(tx, marzo)).toMatchObject({ vence_en: finDelDia(4, 17), aviso_previo_en: abril(8), aviso_vencido_en: null, escalado_en: null });
+      // Con 30, faltan quince días: tampoco el previo.
+      await tx`UPDATE mediciones SET aviso_vencido_en = ${abril(11)}, escalado_en = ${abril(14)} WHERE id = ${marzo}`;
+      await cambiarOperacion(admin, op(ind.id, { plazoReporteDias: 30 }), { sql: tx, ahora: abril(15) });
+      expect(await marcas(tx, marzo)).toMatchObject({ vence_en: finDelDia(4, 30), aviso_previo_en: null, aviso_vencido_en: null, escalado_en: null });
+
+      // La pasada vuelve a avisar con la fecha nueva: el previo el 28 de abril y el vencido el 2 de mayo.
+      await pasada(tx, abril(28));
+      expect((await marcas(tx, marzo)).aviso_previo_en).toEqual(abril(28));
+      const previos = await tx`SELECT titulo FROM notificaciones WHERE usuario_id = ${mide.usuarioId} AND tipo = 'indicadores.por_vencer'`;
+      expect(previos.map((p) => p.titulo)).toEqual(["Tiene 1 indicador por reportar antes del 30 de abril"]);
+      const mayo2 = new Date("2003-05-02T15:00:00Z");
+      await pasada(tx, mayo2);
+      expect((await marcas(tx, marzo)).aviso_vencido_en).toEqual(mayo2);
+    }));
+
+  it("desmarcar el soporte obligatorio deja reportada la medición que solo esperaba el soporte y quita su tarea", () =>
+    revertida(sql, async (tx) => {
+      const { admin, mide, nuevo, op } = await entorno(tx);
+      const { ind, marzo } = await nuevo();
+      await reportar(mide, { medicionId: marzo, valores: { A: "9", B: "10" }, parcial: false, confirmado: true }, { sql: tx, ahora: abril(5) });
+      expect((await marcas(tx, marzo)).estado).toBe("reportada");
+      const tareaDe = async () => (await tareasDeIndicadores(mide, { sql: tx, ahora: abril(7) })).tareas.find((t) => t.id === `medir:${marzo}`);
+
+      // Con el soporte obligatorio, la ya reportada vuelve a abierta y es tarea de quien mide.
+      await cambiarOperacion(admin, op(ind.id, { soporteObligatorio: true }), { sql: tx, ahora: abril(6) });
+      expect((await marcas(tx, marzo)).estado).toBe("abierta");
+      expect((await tareaDe())?.detalle).toBe("Falta el soporte obligatorio");
+      const [recalculo] = await tx`SELECT usuario_id, detalle, creado_en FROM medicion_eventos WHERE medicion_id = ${marzo} AND tipo = 'recalculo'`;
+      expect(recalculo).toMatchObject({ usuario_id: admin.usuarioId, creado_en: abril(6), detalle: { causa: "soporte_obligatorio", despues: { estado: "abierta" } } });
+
+      // Sin él, queda reportada otra vez y la tarea se va.
+      await cambiarOperacion(admin, op(ind.id, { soporteObligatorio: false }), { sql: tx, ahora: abril(7) });
+      expect((await marcas(tx, marzo)).estado).toBe("reportada");
+      expect(await tareaDe()).toBeUndefined();
+      const filas = await bitacora(tx, "indicador_operacion", ind.id);
+      expect(filas.map((f) => f.detalle.medicionesRecalculadas)).toEqual([1, 1]);
     }));
 });
 

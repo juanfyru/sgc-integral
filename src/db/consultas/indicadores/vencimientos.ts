@@ -28,6 +28,7 @@ import { enTransaccion } from "@/db/consultas/flujo/contrato";
 import { lideresDeProceso } from "@/db/consultas/tramites";
 import { responsablesDeAnalizar, responsablesDeMedir, sinResponsable } from "@/lib/alcance";
 import { MESES } from "@/lib/indicadores-documentales/periodo";
+import { tocaAvisoPrevio } from "@/lib/indicadores/periodos";
 import { cuenta } from "@/lib/plural";
 import { estadoPlazo, fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -168,10 +169,7 @@ const PREVIO: Paso = {
   nombre: "el aviso previo",
   sinMarca: (sql) => sql`m.aviso_previo_en IS NULL`,
   ventana: (sql, c) => sql`m.vence_en >= ${c.ahora} AND m.vence_en < ${new Date(c.ahora.getTime() + (c.avisoPrevioDias + 1) * DIA_MS)}`,
-  queda: (m, c) => {
-    const p = estadoPlazo(m.vence, c.ahora, c.zona);
-    return p.estado !== "vencido" && p.dias <= c.avisoPrevioDias;
-  },
+  queda: (m, c) => tocaAvisoPrevio(m.vence, c.ahora, c.avisoPrevioDias, c.zona),
   busca: {},
   avisar: async (tx, ms, r, c) => {
     const avisadas = new Set<number>();

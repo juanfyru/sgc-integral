@@ -5,11 +5,13 @@ import {
   clavesDelAnio,
   contiene,
   fechaLimiteDeReporte,
+  marcasQueSiguen,
   mesesDe,
   mismoDelAnioAnterior,
   periodicidadDe,
   periodoQueContiene,
   periodosTerminados,
+  tocaAvisoPrevio,
 } from "@/lib/indicadores/periodos";
 import type { Periodicidad } from "@/lib/indicadores/tipos";
 
@@ -94,6 +96,22 @@ describe("periodos de indicadores", () => {
   it("la fecha límite es el fin del día, diez días después del fin del periodo", () => {
     expect(fechaLimiteDeReporte(periodoDe("2026-03", zona)!, 10, zona).toISOString()).toBe("2026-04-11T04:59:59.999Z");
     expect(fechaLimiteDeReporte(periodoDe("2026-12", zona)!, 10, zona).toISOString()).toBe("2027-01-11T04:59:59.999Z");
+  });
+  it("con una fecha límite nueva siguen solo las marcas de aviso que siguen siendo ciertas (ola final, I1)", () => {
+    const ahora = new Date("2026-04-15T15:00:00Z");
+    const vence = (dia: number) => fechaLimiteDeReporte(periodoDe("2026-03", zona)!, dia, zona);
+    // Ya venció (el 12 de abril): las tres siguen.
+    expect(marcasQueSiguen(vence(12), ahora, 3, zona)).toEqual({ previo: true, vencido: true, escalado: true });
+    // Vence en dos días (el 17): el vencido y el escalamiento no son ciertos; el previo, sí.
+    expect(marcasQueSiguen(vence(17), ahora, 3, zona)).toEqual({ previo: true, vencido: false, escalado: false });
+    // Vence hoy (el 15, al final del día): tampoco ha vencido.
+    expect(marcasQueSiguen(vence(15), ahora, 3, zona)).toEqual({ previo: true, vencido: false, escalado: false });
+    // Vence en quince días: ninguna; la pasada vuelve a avisar cuando toque.
+    expect(marcasQueSiguen(vence(30), ahora, 3, zona)).toEqual({ previo: false, vencido: false, escalado: false });
+    // El borde del aviso previo es el de la pasada (`tocaAvisoPrevio`): a tres días, sí; a cuatro, no.
+    expect(tocaAvisoPrevio(vence(18), ahora, 3, zona)).toBe(true);
+    expect(tocaAvisoPrevio(vence(19), ahora, 3, zona)).toBe(false);
+    expect(tocaAvisoPrevio(vence(12), ahora, 3, zona)).toBe(false);
   });
   it("qué periodicidad contiene a cuál", () => {
     expect(contiene("trimestral", "mensual")).toBe(true);
