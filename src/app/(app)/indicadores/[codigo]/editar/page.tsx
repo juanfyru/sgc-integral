@@ -10,7 +10,7 @@ import { fichaParaEditar, opcionesDeFicha } from "@/db/consultas/indicadores/fic
 import type { EstadoVersion } from "@/lib/indicadores/tipos";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
-import { fechaHoraLocal } from "@/lib/zona-horaria";
+import { fechaYHora } from "@/lib/indicadores/ficha-en-texto";
 import { exigirIndicador, rutaDeIndicador } from "../../_comun";
 
 export const dynamic = "force-dynamic";
@@ -58,7 +58,7 @@ export default async function PaginaEditarFicha({ params }: { params: Promise<{ 
     return (
       <div className="flex min-w-0 flex-col gap-6">
         {encabezado(
-          `${ficha.vigente ? "Cambio sobre la ficha aprobada" : "Ficha nueva"}, guardado el ${fechaHoraLocal(ficha.actualizadoEn)}.`,
+          `${ficha.vigente ? "Cambio sobre la ficha aprobada" : "Ficha nueva"}, guardado el ${fechaYHora(ficha.actualizadoEn)}.`,
         )}
         {previa?.notaDevolucion ? (
           <p className="flex flex-wrap items-center gap-2 rounded-md border border-l-4 border-border border-l-mod-indicadores bg-muted px-3 py-2 text-sm">
@@ -91,7 +91,7 @@ export default async function PaginaEditarFicha({ params }: { params: Promise<{ 
                   rigeDesde: previa.rigeDesde ? etiquetaDePeriodo(previa.rigeDesde) : null,
                   rige: previa.rige,
                   enviableDesde: previa.enviableDesde ? desdePeriodo(previa.enviableDesde) : null,
-                  guardado: fechaHoraLocal(ficha.actualizadoEn),
+                  guardado: fechaYHora(ficha.actualizadoEn),
                 }}
                 pideCodigo={sesion.totpActivo}
               />

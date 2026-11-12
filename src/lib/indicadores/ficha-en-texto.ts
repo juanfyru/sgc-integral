@@ -168,8 +168,14 @@ export type FirmaEnTexto = { rol: "Elaboró" | "Revisó y aprobó"; nombre: stri
 const firma = (rol: FirmaEnTexto["rol"], f: FirmaDeFicha | null, nota: string): FirmaEnTexto =>
   f ? { rol, nombre: f.nombre, cargo: f.cargo, fecha: f.fecha, nota: null } : { rol, nombre: null, cargo: null, fecha: null, nota };
 
-/** «8 jul 2026, 09:05»: el día de una firma con el formato de las fechas de la app y su hora, en la zona de la instalación. */
-export const fechaDeFirma = (fecha: Date): string => `${textoFecha(fecha, zonaHoraria())}, ${horaLocal(fecha)}`;
+/**
+ * «8 jul 2026, 09:05»: un día con el formato de las fechas de la app y su hora, en la zona de la instalación. Es la fecha
+ * de toda pantalla del módulo (firmas, guardado, envío, retiro, control de cambios; Tarea 19, D-5), del impreso y del Excel.
+ */
+export const fechaYHora = (fecha: Date): string => `${textoFecha(fecha, zonaHoraria())}, ${horaLocal(fecha)}`;
+
+/** La fecha de una firma: `fechaYHora`. */
+export const fechaDeFirma = fechaYHora;
 
 /** «Elaboró» y «Revisó y aprobó» de una versión aprobada (spec §7.8.3); un cambio menor no requiere aprobación. */
 export function firmasDeFicha(ficha: FichaLeida): [FirmaEnTexto, FirmaEnTexto] {

@@ -1,13 +1,12 @@
 import Link from "next/link";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { etiquetaDePeriodo, type FichaLeida, type FirmaDeFicha, type OperacionLeida } from "@/db/consultas/indicadores/aprobacion";
-import { cifraDeFicha as cifra, CONSOLIDACION, FORMA, ORIGEN, reglaDeFicha, TENDENCIA, unidadDeFicha } from "@/lib/indicadores/ficha-en-texto";
+import { cifraDeFicha as cifra, CONSOLIDACION, fechaYHora, FORMA, ORIGEN, reglaDeFicha, TENDENCIA, unidadDeFicha } from "@/lib/indicadores/ficha-en-texto";
 import { enPalabras } from "@/lib/indicadores/formula/formas";
 import { rangosEnPalabras } from "@/lib/indicadores/semaforo";
 import { textoMeta } from "@/lib/indicadores/textos";
 import { ETIQUETA_PERIODICIDAD, type Periodicidad } from "@/lib/indicadores/tipos";
 import { cuenta } from "@/lib/plural";
-import { fechaHoraLocal } from "@/lib/zona-horaria";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 
@@ -52,7 +51,7 @@ function textoFirma(f: FirmaDeFicha) {
     <>
       <span className="font-medium">{f.nombre}</span>
       {f.cargo ? <span className="text-muted-foreground">{` · ${f.cargo}`}</span> : null}
-      <span className="block text-xs text-muted-foreground">{fechaHoraLocal(f.fecha)}</span>
+      <span className="block text-xs text-muted-foreground">{fechaYHora(f.fecha)}</span>
     </>
   );
 }

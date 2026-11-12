@@ -30,7 +30,8 @@ import { puedeAnalizar, puedeObservar, puedeRegistrarHistoricos } from "@/lib/al
 import type { EstadoIndicador, Periodicidad } from "@/lib/indicadores/tipos";
 import { cuenta } from "@/lib/plural";
 import type { SesionValida } from "@/lib/sesion";
-import { fechaHoraLarga, fechaHoraLocal } from "@/lib/zona-horaria";
+import { fechaYHora } from "@/lib/indicadores/ficha-en-texto";
+import { fechaHoraLarga } from "@/lib/zona-horaria";
 
 type Parametros = Record<string, string | string[] | undefined>;
 
@@ -194,7 +195,7 @@ export async function datosDeFicha(c: ContextoDeVista): Promise<DatosDeFicha> {
       cambios: ficha.tipoCambio === "inicial" ? [] : await cambiosFrenteALaVigente(obtenerSql(), indicador.id, ficha.versionId),
       motivo: ficha.motivo,
       elaboro: ficha.firmas.elaboro?.nombre ?? "",
-      enviada: ficha.firmas.elaboro ? fechaHoraLocal(ficha.firmas.elaboro.fecha) : "",
+      enviada: ficha.firmas.elaboro ? fechaYHora(ficha.firmas.elaboro.fecha) : "",
       enlace: enlaceDeVersion(codigo, ficha.numero),
     };
   }

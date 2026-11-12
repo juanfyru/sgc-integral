@@ -2,7 +2,7 @@ import { Insignia, type VarianteInsignia } from "@/componentes/ui/Insignia";
 import { celda, TablaDatos } from "@/componentes/ui/TablaDatos";
 import { etiquetaDePeriodo, type VersionResumen } from "@/db/consultas/indicadores/aprobacion";
 import type { TipoCambio } from "@/lib/indicadores/tipos";
-import { fechaHoraLocal } from "@/lib/zona-horaria";
+import { fechaYHora } from "@/lib/indicadores/ficha-en-texto";
 
 const TIPO: Record<TipoCambio, { etiqueta: string; variante: VarianteInsignia }> = {
   inicial: { etiqueta: "Inicial", variante: "neutra" },
@@ -23,7 +23,7 @@ function Quien({ nombre, fecha }: { nombre: string | null; fecha: Date | null })
   return (
     <>
       <span className="block">{nombre}</span>
-      {fecha ? <span className="block text-xs text-muted-foreground">{fechaHoraLocal(fecha)}</span> : null}
+      {fecha ? <span className="block text-xs text-muted-foreground">{fechaYHora(fecha)}</span> : null}
     </>
   );
 }

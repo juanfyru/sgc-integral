@@ -11,7 +11,7 @@ import { celda, TablaDatos } from "@/componentes/ui/TablaDatos";
 import { enlaceDeVersion, fichasEnCurso, fichasPorAprobar, type FichaEnCurso } from "@/db/consultas/indicadores/aprobacion";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
-import { fechaHoraLocal } from "@/lib/zona-horaria";
+import { fechaYHora } from "@/lib/indicadores/ficha-en-texto";
 import { rutaDeEdicion } from "../_comun";
 
 export const dynamic = "force-dynamic";
@@ -68,7 +68,7 @@ export default async function PaginaPorAprobar({ searchParams }: { searchParams:
     cambios: f.cambios,
     motivo: f.motivo,
     elaboro: f.elaboro,
-    enviada: fechaHoraLocal(f.enviadaEn),
+    enviada: fechaYHora(f.enviadaEn),
     enlace: enlaceDeVersion(f.codigo, f.numero),
   }));
   const borradores = enCurso.filter((f) => f.estado === "borrador");
@@ -122,7 +122,7 @@ export default async function PaginaPorAprobar({ searchParams }: { searchParams:
                     {f.nota ? <Insignia variante="atencion">Devuelta</Insignia> : <Insignia variante="neutra">Borrador</Insignia>}
                   </td>
                   <td className={celda}>{f.nota ?? <span className="text-muted-foreground">(no se ha devuelto)</span>}</td>
-                  <td className={`${celda} whitespace-nowrap`}>{fechaHoraLocal(f.fecha)}</td>
+                  <td className={`${celda} whitespace-nowrap`}>{fechaYHora(f.fecha)}</td>
                 </tr>
               ))}
             </TablaDatos>
@@ -138,7 +138,7 @@ export default async function PaginaPorAprobar({ searchParams }: { searchParams:
                     <Indicador f={f} href={enlaceDeVersion(f.codigo, f.numero)} />
                   </td>
                   <td className={celda}>{f.tipoCambio === "inicial" ? "Nueva" : "Cambio mayor"}</td>
-                  <td className={`${celda} whitespace-nowrap`}>{fechaHoraLocal(f.fecha)}</td>
+                  <td className={`${celda} whitespace-nowrap`}>{fechaYHora(f.fecha)}</td>
                 </tr>
               ))}
             </TablaDatos>

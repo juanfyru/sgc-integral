@@ -33,6 +33,7 @@ vi.mock("next/navigation", () => ({
 import PaginaImprimir from "@/app/(app)/indicadores/[codigo]/imprimir/page";
 import ExcelJS from "exceljs";
 import { FichaImpresa } from "@/componentes/indicadores/ficha/FichaImpresa";
+import { ControlDeCambios } from "@/componentes/indicadores/ficha/ControlDeCambios";
 import { FichaTecnica } from "@/componentes/indicadores/ficha/FichaTecnica";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
@@ -43,7 +44,7 @@ import { observar } from "@/db/consultas/indicadores/observaciones";
 import { retirar } from "@/db/consultas/indicadores/operacion";
 import type { FichaLeida } from "@/db/consultas/indicadores/aprobacion";
 import { construirExcelDeIndicador } from "@/lib/indicadores/excel";
-import { camposDeFicha } from "@/lib/indicadores/ficha-en-texto";
+import { camposDeFicha, fechaYHora } from "@/lib/indicadores/ficha-en-texto";
 import type { SesionValida } from "@/lib/sesion";
 import { indicadorDePrueba, versionTrimestral, type IndicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
@@ -487,6 +488,25 @@ describe("FichaImpresa", () => {
       enOrden(tabla, ["Calculado con la versión 1 de la ficha", ">2025<", "70 %", "Acumulado del año", "70 %"]);
       expect(tabla.match(/<th scope="row"/g)).toHaveLength(2);
     }));
+
+  it("en pantalla, las firmas y el control de cambios dicen la fecha como el resto de la app (ronda 1 de la Tarea 19, D-5)", () => {
+    const firmado = new Date("2026-07-08T14:05:00Z");
+    const aprobado = new Date("2026-07-15T15:00:00Z");
+    const ficha = { ...fichaCompleta(), firmas: { elaboro: { nombre: "Persona A", cargo: "Líder", fecha: firmado }, aprobo: { nombre: "Persona B", cargo: "Gerente", fecha: aprobado } } };
+    const pantalla = renderToStaticMarkup(<FichaTecnica ficha={ficha} operacion={null} />);
+    const cambios = renderToStaticMarkup(
+      <ControlDeCambios
+        versiones={[{ id: 1, numero: 1, tipoCambio: "inicial", rigeDesde: "2026-T1", motivo: null, cambios: [], elaboro: "Persona A", elaboradaEn: firmado, aprobo: "Persona B", aprobadaEn: aprobado }]}
+        vigente={1}
+      />,
+    );
+    for (const html of [pantalla, cambios]) {
+      expect(html).not.toMatch(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/);
+      expect(html).toContain(fechaYHora(firmado));
+      expect(html).toContain(fechaYHora(aprobado));
+    }
+    expect(fechaYHora(firmado)).toMatch(/^\d{1,2} [a-z]{3} 2026, \d{2}:\d{2}$/);
+  });
 
   it("la ficha impresa y la ficha en pantalla nombran los mismos campos", () => {
     const ficha = fichaCompleta();

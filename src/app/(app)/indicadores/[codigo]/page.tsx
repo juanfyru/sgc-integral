@@ -22,7 +22,8 @@ import { ETIQUETA_PERIODICIDAD, type Periodicidad } from "@/lib/indicadores/tipo
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
-import { fechaHoraLocal, zonaHoraria } from "@/lib/zona-horaria";
+import { fechaYHora } from "@/lib/indicadores/ficha-en-texto";
+import { zonaHoraria } from "@/lib/zona-horaria";
 import { exigirFichaDeIndicador, rutaDeEdicion, rutaDeIndicador } from "../_comun";
 import { datosDeFicha, datosDeObservaciones, datosDeResultados, datosDeVersiones, type ContextoDeVista } from "./_vistas";
 
@@ -192,7 +193,7 @@ export default async function PaginaIndicador({ params, searchParams }: { params
       <PestanasDeIndicador codigo={codigo} activa={vista} conVersiones={ve} conResultados={conResultados} observaciones={obs?.total ?? null} />
       {baja ? (
         <Recuadro>
-          <p>{`${indicador.estado === "retirado" ? "Retirado" : "Descartado"} el ${fechaHoraLocal(baja.en)}${baja.por ? ` por ${baja.por}` : ""}.`}</p>
+          <p>{`${indicador.estado === "retirado" ? "Retirado" : "Descartado"} el ${fechaYHora(baja.en)}${baja.por ? ` por ${baja.por}` : ""}.`}</p>
           <p className="break-words">{`Motivo: ${baja.motivo}`}</p>
           {indicador.estado === "descartado" ? (
             <p className="text-muted-foreground">Solo lo ve quien administra y su código sigue ocupado. Para retomarlo, use «Crear a partir de este».</p>
