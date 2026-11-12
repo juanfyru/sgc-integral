@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Check, TriangleAlert, X, type LucideIcon } from "lucide-react";
+import { Insignia } from "@/componentes/ui/Insignia";
 import type { CeldaDeMatriz, MatrizLeida } from "@/db/consultas/indicadores/matriz";
 import { MESES } from "@/lib/indicadores-documentales/periodo";
 
@@ -134,6 +135,11 @@ export function MatrizDelAnio({ anio, procesos }: { anio: number; procesos: Matr
                 <th scope="row" className="sticky left-0 z-10 min-w-56 max-w-72 bg-card px-3 py-2 text-left font-normal print:static">
                   <span className="mr-1.5 font-mono text-xs text-muted-foreground">{f.codigo}</span>
                   <span className="break-words">{f.nombre}</span>
+                  {f.retirado ? (
+                    <span className="ml-1.5 inline-block align-middle">
+                      <Insignia variante="sin-dato">Retirado</Insignia>
+                    </span>
+                  ) : null}
                 </th>
                 {f.celdas.map((c) => (
                   <Celda key={c.desdeMes} c={c} />

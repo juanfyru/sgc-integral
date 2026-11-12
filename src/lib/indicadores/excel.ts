@@ -148,7 +148,8 @@ function mesDe(f: FilaDeResultados, mes: number): Celda {
 
 const RESULTADOS: Array<Columna<FilaDeResultados>> = [
   { cab: "Código", ancho: 16, valor: (f) => f.codigo },
-  { cab: "Nombre", ancho: 42, valor: (f) => f.nombre },
+  // Un retirado lleva la marca junto al nombre, como en la matriz (spec §6.4; Tarea 19, D-9).
+  { cab: "Nombre", ancho: 42, valor: (f) => (f.retirado ? `${f.nombre} (Retirado)` : f.nombre) },
   { cab: "Proceso", ancho: 30, valor: (f) => f.proceso },
   { cab: "Subproceso", ancho: 24, valor: (f) => f.subproceso },
   { cab: "Clasificación", ancho: 14, valor: (f) => f.clasificacion },

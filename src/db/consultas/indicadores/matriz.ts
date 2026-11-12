@@ -35,7 +35,8 @@ export type CeldaDeMatriz = {
   enlace: string | null;
 };
 
-export type FilaDeMatriz = { codigo: string; nombre: string; celdas: CeldaDeMatriz[]; anio: CeldaDeMatriz };
+/** `retirado`: la fila lleva la marca «Retirado» (spec §6.4), en pantalla, en papel y en el Excel. */
+export type FilaDeMatriz = { codigo: string; nombre: string; retirado: boolean; celdas: CeldaDeMatriz[]; anio: CeldaDeMatriz };
 export type MatrizLeida = { procesos: { id: number; nombre: string; filas: FilaDeMatriz[] }[] };
 
 function celdaDe(l: PeriodoLeido, ruta: string): CeldaDeMatriz {
@@ -67,16 +68,19 @@ function celdaDelAnio(a: ResumenAcumulado, anio: number, ruta: string): CeldaDeM
 
 /**
  * Las celdas de un indicador en el año: cada periodo en sus meses (`mesesDe`), lo que no se mide en una celda vacía y la
- * del acumulado. `null` si no se mide ese año: ni un activo con periodos en él, ni uno con mediciones de ese año.
+ * del acumulado. `null` si no se mide ese año: ni un activo con periodos en él, ni uno con mediciones de ese año. De un
+ * retirado solo cuentan los periodos con medición: lo posterior al retiro (y lo vacío que el retiro quitó) no se mide, no
+ * está «por venir» (Tarea 19, D-9).
  */
 function celdasDelAnio(
   codigo: string,
   estado: string,
-  propios: readonly PeriodoLeido[],
+  todos: readonly PeriodoLeido[],
   versiones: readonly VersionDeCalculo[],
   anio: number,
   ahora: Date,
 ): { celdas: CeldaDeMatriz[]; anio: CeldaDeMatriz; acumulado: ResumenAcumulado; rigen: PeriodoLeido[] } | null {
+  const propios = estado === "retirado" ? todos.filter((l) => l.fila.medicionId !== null) : todos;
   const rigen = propios.filter((l) => l.fila.deOtraPeriodicidad !== true);
   if (!propios.some((l) => l.fila.medicionId !== null) && !(estado === "activo" && rigen.length > 0)) return null;
   const ruta = `${rutaDeIndicador(codigo)}?vista=resultados&anio=${anio}`;
@@ -133,7 +137,13 @@ export async function matrizDelAnio(
     const codigo = x.codigo as string;
     const medido = celdasDelAnio(codigo, x.estado as string, leidos.get(id) ?? [], versiones.get(id) ?? [], f.anio, ahora);
     if (!medido) continue;
-    const fila: FilaDeMatriz = { codigo, nombre: (x.nombre as string | null) ?? codigo, celdas: medido.celdas, anio: medido.anio };
+    const fila: FilaDeMatriz = {
+      codigo,
+      nombre: (x.nombre as string | null) ?? codigo,
+      retirado: x.estado === "retirado",
+      celdas: medido.celdas,
+      anio: medido.anio,
+    };
     const procesoId = Number(x.proceso_id);
     const grupo = procesos.at(-1);
     if (grupo && grupo.id === procesoId) grupo.filas.push(fila);
@@ -149,6 +159,8 @@ export async function matrizDelAnio(
 export type FilaDeResultados = {
   codigo: string;
   nombre: string;
+  /** Lleva la marca «Retirado» junto al nombre (spec §6.4). */
+  retirado: boolean;
   proceso: string;
   subproceso: string | null;
   clasificacion: string | null;
@@ -210,6 +222,7 @@ export async function resultadosDeLaLista(
     return {
       codigo: f.codigo,
       nombre: f.nombre,
+      retirado: f.estado === "retirado",
       proceso: f.proceso,
       subproceso: f.subproceso,
       clasificacion: texto(d?.clasificacion),

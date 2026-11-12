@@ -546,6 +546,33 @@ describe("la matriz del año", () => {
       expect(r.acumulado).toMatchObject({ texto: "80 %", semaforo: "bien", valores: { A: "32", B: "40" }, rotulo: null, meta: { valor: 80 } });
     }));
 
+  it("un retirado sale en la matriz marcado y lo posterior al retiro no se mide, no está por venir (ronda 1 de la Tarea 19, D-9)", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const admin = await sesionAdmin(tx);
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const t = await trimestral(tx, p.id, { mide: [mide.usuarioId] });
+      await medir(tx, mide, t, { "2026-T1": { A: "5", B: "5" }, "2026-T2": { A: "5", B: "6" } });
+      // El tercer trimestre se abrió y quedó vacío: el retiro lo quita.
+      await retirar(admin, { indicadorId: t.id, motivo: "Ya no se mide" }, opc(tx));
+      const m = await matrizDelAnio(admin, { anio: 2026, procesoId: p.id }, opc(tx));
+      const fila = m.procesos[0].filas.find((f) => f.codigo === t.codigo)!;
+      expect(fila.retirado).toBe(true);
+      expect(fila.celdas.map((c) => [c.desdeMes, c.hastaMes, c.estado])).toEqual([
+        [1, 3, "bien"],
+        [4, 6, "atencion"],
+        [7, 12, "vacia"],
+      ]);
+      expect(fila.celdas[2].nombre).toBe("julio a diciembre: no se mide");
+      // Un activo del mismo proceso no lleva la marca y conserva su periodo por venir.
+      const activo = await trimestral(tx, p.id, { mide: [mide.usuarioId] });
+      await medir(tx, mide, activo, { "2026-T1": { A: "5", B: "5" } });
+      const otra = await matrizDelAnio(admin, { anio: 2026, procesoId: p.id }, opc(tx));
+      const deActivo = otra.procesos[0].filas.find((f) => f.codigo === activo.codigo)!;
+      expect(deActivo.retirado).toBe(false);
+      expect(deActivo.celdas.at(-1)?.estado).toBe("futuro");
+    }));
+
   it("la matriz agrupa por proceso y deja fuera lo restringido ajeno y lo que no se midió ese año", () =>
     revertida(sql, async (tx) => {
       const p1 = await proceso(tx);

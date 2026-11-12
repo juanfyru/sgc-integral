@@ -221,6 +221,10 @@ describe("el Excel de un indicador", () => {
       await retirar(admin, { indicadorId: retirado.id, motivo: "Se reemplaza por otro indicador" }, opc(tx));
       const deRetirado = await leerLibro(await construirExcelDeIndicador((await impresionDelAnio(quien, retirado.codigo, 2026, opc(tx)))!, META));
       expect(fila(deRetirado["Resultados 2026"], "Primer trimestre de 2026")?.[4]).toBe("100 %");
+      // En el de resultados, la marca va junto al nombre (ronda 1 de la Tarea 19, D-9).
+      const filasDeLista = await resultadosDeLaLista(admin, { procesoId: p.id, retirados: true }, 2026, opc(tx));
+      const libroDeLista = await leerLibro(await construirExcelDeResultados(filasDeLista, 2026, META));
+      expect(libroDeLista["Resultados 2026"].filas.some((f) => f[0] === retirado.codigo && f[1].endsWith("(Retirado)"))).toBe(true);
 
       // «No aplica»: sin resultado ni «Cumple», con su motivo en el análisis.
       const conNoAplica = await indicadorDePrueba(tx, { procesoId: p.id, periodicidad: "trimestral", inicioMedicion: "2026-T1", aprobadaEn: APROBADA, mide: [quien.usuarioId] });

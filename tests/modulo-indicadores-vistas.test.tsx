@@ -194,6 +194,7 @@ describe("los componentes", () => {
           {
             codigo: "SGC-IND-01",
             nombre: "Auditorías internas",
+            retirado: false,
             celdas: [
               celda(1, 3, { texto: "100 %", estado: "bien", nombre: "primer trimestre: 100 %, Bien", enlace: "/indicadores/SGC-IND-01?vista=resultados&anio=2026#periodo-2026-T1" }),
               celda(4, 6, { texto: "s. d.", estado: "sin-dato", nombre: "segundo trimestre: sin dato", enlace: "/indicadores/SGC-IND-01?vista=resultados&anio=2026#periodo-2026-T2" }),
@@ -222,12 +223,19 @@ describe("los componentes", () => {
     expect(html).toMatch(/role="region" aria-label="Matriz de 2026" tabindex="0"/);
     // El nombre lo dice el enlace: la celda no lo repite en un `title`.
     expect(html).not.toMatch(/<td[^>]*\stitle=/);
+    // Un activo no lleva la marca; un retirado, sí, junto al nombre (ronda 1 de la Tarea 19, D-9).
+    expect(html).not.toContain(">Retirado<");
+    const conRetirado = renderToStaticMarkup(
+      <MatrizDelAnio anio={2026} procesos={[{ ...procesos[0], filas: [{ ...procesos[0].filas[0], retirado: true }] }]} />,
+    );
+    expect(conRetirado).toMatch(/Auditorías internas<\/span>(?:(?!<\/th>)[\s\S])*>Retirado</);
   });
 
   it("MatrizDelAnio: Bien, Atención y Crítico se distinguen también por su forma, y la leyenda la repite", () => {
     const fila = (codigo: string, celdas: CeldaDeMatriz[]): MatrizLeida["procesos"][number]["filas"][number] => ({
       codigo,
       nombre: codigo,
+      retirado: false,
       celdas,
       anio: celda(1, 12, { texto: "s. d.", estado: "sin-dato", nombre: "Año 2026: sin dato", enlace: `/indicadores/${codigo}?vista=resultados&anio=2026` }),
     });
