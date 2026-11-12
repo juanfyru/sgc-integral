@@ -531,3 +531,37 @@
     height: auto;
   }
 }
+
+/* ── Fase 14A: la ficha impresa de un indicador (spec §7.8, maqueta 7) ──────
+   Su propia página con nombre: los márgenes no cambian la impresión del resto de la app (el Listado Maestro, la matriz).
+   Ninguna fila de una tabla ni un bloque de firmas se parte entre dos hojas; el encabezado de cada tabla se repite en cada
+   hoja; las bandas de la marca y el estado de cada periodo salen en color (el estado siempre va escrito, además). */
+@page ficha {
+  margin: 12mm 10mm;
+}
+@media print {
+  .ficha-impresa {
+    page: ficha;
+    gap: 0.6rem;
+    font-size: 9pt;
+  }
+  .ficha-impresa .ficha-tabla thead {
+    display: table-header-group;
+  }
+  .ficha-impresa .ficha-tabla tr,
+  .ficha-impresa .ficha-firmas,
+  .ficha-impresa .ficha-encabezado {
+    break-inside: avoid;
+  }
+  .ficha-impresa .ficha-banda {
+    break-after: avoid;
+  }
+  .ficha-impresa .ficha-grafica {
+    break-inside: avoid;
+  }
+  .ficha-color-exacto,
+  .ficha-color-exacto * {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}

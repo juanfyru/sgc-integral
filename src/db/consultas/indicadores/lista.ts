@@ -65,6 +65,27 @@ export function filtroDeConsulta(q: Consulta): FiltroDeLista {
   return f;
 }
 
+/**
+ * Lo contrario de `filtroDeConsulta`: los filtros como consulta de la URL (`proceso=3&semaforo=critico`), con los mismos
+ * nombres. Lo usan los enlaces que llevan los filtros de la persona, como el del Excel de resultados.
+ */
+export function consultaDeFiltro(f: FiltroDeLista): string {
+  const q = new URLSearchParams();
+  const pares: [string, string | number | boolean | undefined][] = [
+    ["proceso", f.procesoId],
+    ["subproceso", f.subprocesoId],
+    ["clasificacion", f.clasificacionId],
+    ["tipo", f.tipoId],
+    ["semaforo", f.semaforo],
+    ["reporte", f.reporte],
+    ["participo", f.participo ? "1" : undefined],
+    ["texto", f.texto],
+    ["retirados", f.retirados ? "1" : undefined],
+  ];
+  for (const [clave, valor] of pares) if (valor !== undefined && valor !== false) q.set(clave, String(valor));
+  return q.toString();
+}
+
 export type FilaDeLista = {
   id: number;
   codigo: string;

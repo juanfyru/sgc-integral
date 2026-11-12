@@ -206,6 +206,33 @@ function medicionDe(codigo: string | null, periodo: unknown): string {
   return `${codigo}${etiqueta ? `, ${etiqueta}` : ""}`;
 }
 
+const SEMAFORO_DE_LISTA: Record<string, string> = { bien: "Bien", atencion: "Atención", critico: "Crítico", "sin-dato": "Sin dato" };
+const REPORTE_DE_LISTA: Record<string, string> = {
+  "por-reportar": "por reportar",
+  "falta-analisis": "con el análisis pendiente",
+  vencida: "vencidos",
+  "requiere-accion": "que requieren acción de mejora",
+};
+
+/** Los filtros de la lista de indicadores que guarda el Excel de resultados, cada uno con su nombre (los ids no se nombran). */
+function filtrosDeLista(v: unknown): (string | null)[] {
+  const f = objeto(v);
+  if (!f) return [];
+  const clave = texto(f.semaforo);
+  const semaforo = clave && Object.hasOwn(SEMAFORO_DE_LISTA, clave) ? SEMAFORO_DE_LISTA[clave] : null;
+  return [
+    numero(f.procesoId) === null ? null : "de un proceso",
+    numero(f.subprocesoId) === null ? null : "de un subproceso",
+    numero(f.clasificacionId) === null ? null : "de una clasificación",
+    numero(f.tipoId) === null ? null : "de un tipo",
+    semaforo ? `con semáforo «${semaforo}»` : null,
+    etiquetaDe(REPORTE_DE_LISTA, f.reporte),
+    f.participo === true ? "donde participa" : null,
+    texto(f.texto) ? `con el texto «${texto(f.texto)}»` : null,
+    f.retirados === true ? "con los retirados" : null,
+  ];
+}
+
 /** «90», «96,5», «98 a 100» o «sin meta»: la meta de un periodo como la guarda `programarMeta`; `null` si no vino. */
 function metaDeBitacora(v: unknown): string | null {
   const m = objeto(v);
@@ -833,6 +860,13 @@ export function describirEvento(e: EventoAuditoria): string {
       const cambio = antes && despues ? `: ${antes} → ${despues}` : "";
       return `Programó la meta de ${medicionDe(cod, d.periodo)}${cambio}${d.tardia === true ? ", después de terminado el periodo" : ""}${conMotivo(d.justificacion)}`;
     }
+    // ── Indicadores (14A): los Excel
+    case "exporto_ficha_indicador":
+      return `Emitió el Excel de la ficha y los resultados de ${cod ?? "un indicador"}${numero(d.anio) === null ? "" : ` (${numero(d.anio)})`}`;
+    case "exporto_resultados_indicadores": {
+      const anio = numero(d.anio);
+      return `Emitió los resultados de los indicadores${anio === null ? "" : ` de ${anio}`}${entreParentesis(filtrosDeLista(d.filtros))}`;
+    }
     case "tipo_norma_creado":
       return `Creó el tipo de norma${nombre ? ` «${nombre}»` : ""}`;
     case "tipo_norma_editado":
@@ -977,6 +1011,8 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   informe_generado: "Generó el informe de la revisión anual",
   informe_no_regenerable: "No se pudo generar un informe de la revisión anual",
   exporto_indicadores: "Emitió los indicadores documentales",
+  exporto_ficha_indicador: "Emitió el Excel de un indicador",
+  exporto_resultados_indicadores: "Emitió los resultados de los indicadores",
   // Normograma (13C)
   norma_creada: "Registró una norma",
   norma_editada: "Editó una norma",

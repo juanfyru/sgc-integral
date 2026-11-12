@@ -51,7 +51,7 @@ const rutaDeResultados = (codigo: string, anio: number, rango: RangoDeGrafica = 
   `${rutaDeIndicador(codigo)}?vista=resultados&anio=${anio}${rango === "anio" ? "" : `&rango=${rango}`}`;
 
 /** La meta de la gráfica: una línea si es la misma en todos los periodos, escalonada si cambia; sin meta, ninguna. */
-function metaDeGrafica(g: ResultadosDelAnio["grafica"]) {
+export function metaDeGrafica(g: ResultadosDelAnio["grafica"]) {
   const valores = g.meta.filter((m): m is number => m !== null);
   if (g.rango || valores.length === 0) return undefined;
   if (valores.length === g.meta.length && valores.every((m) => m === valores[0])) {
@@ -61,7 +61,7 @@ function metaDeGrafica(g: ResultadosDelAnio["grafica"]) {
 }
 
 /** La leyenda de la gráfica principal, con texto: el color de cada estado, la meta y el límite de crítico. */
-function LeyendaDeGrafica({ conLimite, conMeta }: { conLimite: boolean; conMeta: boolean }) {
+export function LeyendaDeGrafica({ conLimite, conMeta }: { conLimite: boolean; conMeta: boolean }) {
   const estados = [
     { clase: "bg-estado-bien", texto: "Bien" },
     { clase: "bg-estado-atencion", texto: "Atención" },

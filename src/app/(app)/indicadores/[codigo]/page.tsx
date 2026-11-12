@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { FileSpreadsheet, Printer } from "lucide-react";
 import { MenuAdministrar } from "@/componentes/indicadores/admin/MenuAdministrar";
 import { PestanasDeIndicador, Recuadro, type PestanaDeIndicador } from "@/componentes/indicadores/vistas/comun";
 import { ESTADO_VERSION, VistaFicha } from "@/componentes/indicadores/vistas/VistaFicha";
@@ -141,6 +142,20 @@ export default async function PaginaIndicador({ params, searchParams }: { params
   const pendiente = mide ? await proximaPorReportar(sesion, indicador.id) : null;
   // «Programar metas» del año de la página, para quien administra un indicador activo (spec §8.9).
   const metas = panel && indicador.estado === "activo" && vigente ? { anio, filas: await metasDelAnio(indicador.id, anio, { ahora }) } : null;
+  // «Imprimir ficha» y «Excel» del año que se muestra, a quien ve los resultados (spec §7.8 y §13). El Excel es una
+  // descarga que queda en la bitácora: un enlace simple, sin la precarga de `Link`.
+  const exportar = conResultados ? (
+    <>
+      <Link href={`${rutaDeIndicador(codigo)}/imprimir?anio=${anio}`} className={`${claseBoton("secundario")} ${FOCO}`}>
+        <Printer aria-hidden="true" className="size-4" />
+        Imprimir ficha
+      </Link>
+      <a href={`${rutaDeIndicador(codigo)}/excel?anio=${anio}`} className={`${claseBoton("secundario")} ${FOCO}`}>
+        <FileSpreadsheet aria-hidden="true" className="size-4" />
+        Excel
+      </a>
+    </>
+  ) : null;
   const reportarBoton = pendiente ? (
     <Link href={`${rutaDeIndicador(codigo)}/reportar/${pendiente.periodo}`} className={`${claseBoton("primario")} ${FOCO}`}>
       {etiquetaDeReportar(pendiente.periodo, pendiente.etiqueta)}
@@ -165,9 +180,10 @@ export default async function PaginaIndicador({ params, searchParams }: { params
         descripcion={linea}
         tituloEnfocable
         acciones={
-          reportarBoton || panel ? (
+          reportarBoton || panel || exportar ? (
             <>
               {reportarBoton}
+              {exportar}
               {panel ? <MenuAdministrar panel={panel} hrefEditar={rutaDeEdicion(codigo)} metas={metas} /> : null}
             </>
           ) : undefined

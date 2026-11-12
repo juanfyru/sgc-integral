@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Gauge, Plus } from "lucide-react";
+import { FileSpreadsheet, Gauge, Plus } from "lucide-react";
 import { FiltrosIndicadores } from "@/componentes/indicadores/FiltrosIndicadores";
 import { BarraDeLista, ListaIndicadores } from "@/componentes/indicadores/ListaIndicadores";
 import { apruebaFichas, PestanasIndicadores, pestanasVisibles } from "@/componentes/indicadores/PestanasIndicadores";
@@ -8,7 +8,7 @@ import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { EstadoVacio } from "@/componentes/ui/EstadoVacio";
 import { fichasPorAprobar } from "@/db/consultas/indicadores/aprobacion";
-import { filtroDeConsulta, listarIndicadores, opcionesDeLista } from "@/db/consultas/indicadores/lista";
+import { consultaDeFiltro, filtroDeConsulta, listarIndicadores, opcionesDeLista } from "@/db/consultas/indicadores/lista";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
 import { cuenta } from "@/lib/plural";
@@ -37,6 +37,8 @@ export default async function PaginaIndicadores({ searchParams }: { searchParams
   const filtrada = Object.keys(filtro).length > 0;
   // La barra se cuenta antes del filtro de semáforo: si ese filtro deja cero filas, la barra sigue diciendo lo visible.
   const visibles = resumen.bien + resumen.atencion + resumen.critico + resumen.sinDato;
+  // El Excel de resultados lleva los filtros puestos (spec §13); es una descarga auditada: un enlace simple, sin precarga.
+  const consulta = consultaDeFiltro(filtro);
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -44,12 +46,18 @@ export default async function PaginaIndicadores({ searchParams }: { searchParams
         titulo="Indicadores"
         descripcion={`${cuenta(filas.length, "indicador", "indicadores")} · el último periodo terminado de cada uno.`}
         acciones={
-          administra ? (
-            <Link href="/indicadores/nuevo" className={`${claseBoton("primario")} ${FOCO}`}>
-              <Plus aria-hidden="true" className="size-4" />
-              Nuevo indicador
-            </Link>
-          ) : undefined
+          <>
+            <a href={`/indicadores/excel${consulta ? `?${consulta}` : ""}`} className={`${claseBoton("secundario")} ${FOCO}`}>
+              <FileSpreadsheet aria-hidden="true" className="size-4" />
+              Excel
+            </a>
+            {administra ? (
+              <Link href="/indicadores/nuevo" className={`${claseBoton("primario")} ${FOCO}`}>
+                <Plus aria-hidden="true" className="size-4" />
+                Nuevo indicador
+              </Link>
+            ) : null}
+          </>
         }
       />
       <PestanasIndicadores activa="lista" visibles={pestanasVisibles(sesion, { aprueba })} numeros={{ "por-aprobar": porAprobar.length }} />

@@ -5,10 +5,14 @@ import { celda, celdaNumerica, TablaDatos, type ColumnaTabla } from "@/component
 import type { FilaDelAnio } from "@/db/consultas/indicadores/lectura";
 import type { Soporte } from "@/db/consultas/indicadores/soportes";
 import { ETIQUETA_ESTADO } from "@/lib/indicadores/estados";
+import { marcasDeFila } from "@/lib/indicadores/ficha-en-texto";
 import type { EntradaDeHistorial } from "@/lib/indicadores/historial";
 import { rutaDeIndicador } from "@/lib/indicadores/rutas";
 import { enlaceDeSoporte } from "@/lib/indicadores/soportes";
 import { InsigniaSemaforo } from "../InsigniaSemaforo";
+
+/** Las columnas de las variables viven con los textos de la ficha: la impresa y el Excel las usan también. */
+export { columnasDeVariables } from "@/lib/indicadores/ficha-en-texto";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 const ENLACE = `rounded-sm text-marca underline-offset-2 hover:underline ${FOCO}`;
@@ -42,15 +46,7 @@ function Historial({ etiqueta, entradas }: { etiqueta: string; entradas: Entrada
 }
 
 function Estado({ f, historial, periodosSinCumplir }: { f: FilaDelAnio; historial: EntradaDeHistorial[] | null; periodosSinCumplir: number }) {
-  const marcas = [
-    f.deOtraPeriodicidad ? "Periodicidad anterior" : null,
-    f.historica ? "Histórico" : null,
-    f.requiereAccion ? "Requiere acción de mejora" : null,
-    f.repetido ? `${periodosSinCumplir} periodos sin cumplir` : null,
-    f.corregida ? "Corregida" : null,
-    f.metaTardia ? "Meta ajustada después del periodo" : null,
-    f.sinAnalisis ? "Cerrada sin análisis" : null,
-  ].filter((m): m is string => m !== null);
+  const marcas = marcasDeFila(f, periodosSinCumplir);
   // Un histórico abierto sin datos no se reporta: se registra en la tabla del año (spec §8.8). Solo cambia la etiqueta.
   const etiqueta =
     f.historica && f.estado === "por_reportar"
@@ -254,14 +250,4 @@ export function TablaDelAnio({
       })}
     </TablaDatos>
   );
-}
-
-/**
- * Las columnas de las variables de la tabla del año: la unión de las letras de sus periodos (cada uno con su ficha), en el
- * orden en que aparecen, con el nombre que tiene en la versión más reciente que la usa.
- */
-export function columnasDeVariables(filas: readonly FilaDelAnio[]): { letra: string; nombre: string }[] {
-  const nombres = new Map<string, string>();
-  for (const f of filas) for (const v of f.valores) nombres.set(v.letra, v.nombre);
-  return [...nombres].map(([letra, nombre]) => ({ letra, nombre }));
 }

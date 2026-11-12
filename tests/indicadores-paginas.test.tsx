@@ -61,6 +61,7 @@ import PaginaIndicador from "@/app/(app)/indicadores/[codigo]/page";
 import PaginaEditarFicha from "@/app/(app)/indicadores/[codigo]/editar/page";
 import PaginaNuevoIndicador from "@/app/(app)/indicadores/nuevo/page";
 import PaginaIndicadores from "@/app/(app)/indicadores/page";
+import PaginaMatriz from "@/app/(app)/indicadores/matriz/page";
 import PaginaPorAprobar from "@/app/(app)/indicadores/por-aprobar/page";
 import { ResumenDeCierre } from "@/componentes/indicadores/cierre/ResumenDeCierre";
 import { TablaDelAnio } from "@/componentes/indicadores/medicion/TablaDelAnio";
@@ -510,6 +511,7 @@ describe("el resumen del cierre y la tabla del año, sin navegador", () => {
     const fila = (o: Partial<FilaDelAnio>): FilaDelAnio => ({
       periodo: "2003-01",
       etiqueta: "Enero de 2003",
+      version: 1,
       medicionId: 41,
       estado: "cerrada",
       vencida: false,
@@ -553,4 +555,38 @@ describe("el resumen del cierre y la tabla del año, sin navegador", () => {
     // La lista del historial ocupa al menos 18 rem: la columna se ensancha solo mientras está abierta.
     expect(html).toMatch(/<details[^>]*>.*<ol class="[^"]*min-w-72[^"]*">.*El dato venía de otro informe/);
   });
+});
+
+describe("los botones de imprimir y de Excel (Tarea 16)", () => {
+  it("la página del indicador los lleva con el año que muestra; la lista, el Excel con sus filtros; la matriz, «Imprimir» y el Excel con su año, proceso y clasificación", () =>
+    enTransaccion(async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const general = await indicadorDePrueba(tx);
+      const nuevo = await borrador(tx, admin);
+      contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "consulta" }));
+
+      const html = await pagina(general.codigo, { vista: "resultados", anio: "2026" });
+      expect(html).toContain(`href="/indicadores/${general.codigo}/imprimir?anio=2026"`);
+      expect(html).toContain(">Imprimir ficha<");
+      // El Excel es una descarga auditada: un enlace simple, sin la precarga de `Link`.
+      expect(html).toContain(`<a href="/indicadores/${general.codigo}/excel?anio=2026"`);
+
+      // Sin ficha aprobada no hay resultados que imprimir ni exportar.
+      contexto.sesion = valida(admin);
+      const deBorrador = await pagina(nuevo.codigo);
+      expect(deBorrador).not.toContain("/imprimir?");
+      expect(deBorrador).not.toContain("/excel?");
+
+      const lista = renderToStaticMarkup(await PaginaIndicadores({ searchParams: Promise.resolve({ proceso: "3", semaforo: "critico", basura: "x" }) }));
+      expect(lista).toContain('href="/indicadores/excel?proceso=3&amp;semaforo=critico"');
+      const sinFiltros = renderToStaticMarkup(await PaginaIndicadores({ searchParams: Promise.resolve({}) }));
+      expect(sinFiltros).toContain('href="/indicadores/excel"');
+
+      const matriz = renderToStaticMarkup(await PaginaMatriz({ searchParams: Promise.resolve({ anio: "2026", proceso: "3", clasificacion: "5" }) }));
+      expect(matriz).toContain('href="/indicadores/excel?proceso=3&amp;clasificacion=5&amp;anio=2026"');
+      expect(matriz).toMatch(/<button[^>]*print:hidden[^>]*>.*?Imprimir<\/button>/);
+      // Al imprimir la matriz no salen los filtros ni las pestañas.
+      expect(matriz).toMatch(/<form[^>]*aria-label="Filtrar la matriz"[^>]*class="[^"]*print:hidden/);
+      expect(matriz).toMatch(/<div class="print:hidden"><nav/);
+    }));
 });

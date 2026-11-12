@@ -228,6 +228,11 @@ export type FilaDelAnio = {
   periodo: string;
   /** «Primer trimestre de 2026». */
   etiqueta: string;
+  /**
+   * El número de la versión de la ficha con que se calculó (spec §7.8): la que quedó en la medición con su dato (un cambio
+   * menor posterior no la cambia); sin dato, la que rige el periodo.
+   */
+  version: number;
   medicionId: number | null;
   /** «por_venir»: el periodo no ha terminado; «sin_dato»: terminó y no tiene medición. */
   estado: EstadoVisible | "por_venir" | "sin_dato";
@@ -371,13 +376,15 @@ export async function leerPeriodos(
       const regla = reglaDeTexto(reglaTexto);
       const exactos = m ? elegirValores((valoresDe.get(Number(m.id)) ?? []) as unknown as ValorGuardado[], version) : {};
       const fila = m ? filaDeMedicion(m, p, version, regla, exactos, b.soporteObligatorio, ahora) : filaSinMedicion(p, version, regla, ahora);
+      const conDato = m !== null && (m.no_aplica === true || typeof m.resultado_exacto === "string");
+      const calculada = conDato ? (b.versiones.find((v) => v.id === Number(m.version_id))?.numero ?? version.numero) : version.numero;
       return {
         periodo: p,
         version,
         regla,
         resultado: m && typeof m.resultado_exacto === "string" ? deTexto(m.resultado_exacto) : null,
         valores: exactos,
-        fila: otra ? { ...fila, deOtraPeriodicidad: true } : fila,
+        fila: { ...fila, version: calculada, ...(otra ? { deOtraPeriodicidad: true } : {}) },
       };
     };
     const leidos = periodos.map((p) => leer(p, versionQueRigeEntre(b.versiones, p, zona)!, porClave.get(p.clave) ?? null, false));
@@ -427,9 +434,11 @@ export type ResumenAcumulado = {
   rotulo: string | null;
   valor: number | null;
   meta: { valor: number; texto: string } | null;
+  /** La meta contra la que se juzga, como la columna «Meta» de la tabla: «≥ 90 %», «sin meta». */
+  metaEnTexto: string | null;
 };
 
-const SIN_ACUMULADO: ResumenAcumulado = { texto: null, semaforo: null, valores: {}, rotulo: null, valor: null, meta: null };
+const SIN_ACUMULADO: ResumenAcumulado = { texto: null, semaforo: null, valores: {}, rotulo: null, valor: null, meta: null, metaEnTexto: null };
 
 /**
  * El acumulado de un año con los periodos que rigen en él, en orden (`acumulado`, la función pura de la Tarea 4). Manda
@@ -475,6 +484,7 @@ export function resumenAcumulado(leidos: readonly PeriodoLeido[], versiones: rea
     ),
     valor: r.resultado ? aNumero(r.resultado) : null,
     meta: regla.meta ? { valor: aNumero(regla.meta), texto: `Meta ${numeroExacto(regla.meta, unidad.decimales)}${unidad.sufijo}` } : null,
+    metaEnTexto: textoMeta(regla, unidad),
   };
 }
 
@@ -736,6 +746,7 @@ function filaSinMedicion(p: Periodo, version: VersionDeCalculo, regla: Regla, ah
   return {
     periodo: p.clave,
     etiqueta: conMayuscula(p.etiqueta),
+    version: version.numero,
     medicionId: null,
     estado: p.hasta.getTime() >= ahora.getTime() ? "por_venir" : "sin_dato",
     vencida: false,
@@ -797,6 +808,7 @@ function filaDeMedicion(
   return {
     periodo: p.clave,
     etiqueta: conMayuscula(p.etiqueta),
+    version: version.numero,
     medicionId: id,
     estado: visible.estado,
     vencida: visible.vencida,

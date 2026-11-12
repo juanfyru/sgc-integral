@@ -279,6 +279,7 @@ describe("los componentes", () => {
     const fila = (periodo: string, valores: FilaDelAnio["valores"]): FilaDelAnio => ({
       periodo,
       etiqueta: periodo,
+      version: 1,
       medicionId: null,
       estado: "cerrada",
       vencida: false,

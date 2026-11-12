@@ -1,54 +1,15 @@
 import Link from "next/link";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { etiquetaDePeriodo, type FichaLeida, type FirmaDeFicha, type OperacionLeida } from "@/db/consultas/indicadores/aprobacion";
-import type { ContenidoFicha } from "@/lib/indicadores/ficha";
+import { cifraDeFicha as cifra, CONSOLIDACION, FORMA, ORIGEN, reglaDeFicha, TENDENCIA, unidadDeFicha } from "@/lib/indicadores/ficha-en-texto";
 import { enPalabras } from "@/lib/indicadores/formula/formas";
-import { fraccion } from "@/lib/indicadores/formula/fraccion";
-import { numeroExacto, rangosEnPalabras, type Regla } from "@/lib/indicadores/semaforo";
-import { textoMeta, type Unidad } from "@/lib/indicadores/textos";
-import { ETIQUETA_PERIODICIDAD, type ModoSemaforo, type Periodicidad, type Tendencia } from "@/lib/indicadores/tipos";
+import { rangosEnPalabras } from "@/lib/indicadores/semaforo";
+import { textoMeta } from "@/lib/indicadores/textos";
+import { ETIQUETA_PERIODICIDAD, type Periodicidad } from "@/lib/indicadores/tipos";
 import { cuenta } from "@/lib/plural";
 import { fechaHoraLocal } from "@/lib/zona-horaria";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
-
-const FORMA: Record<string, string> = {
-  porcentaje: "Porcentaje",
-  tasa: "Tasa",
-  razon: "Promedio o razón",
-  conteo: "Conteo",
-  libre: "Fórmula libre",
-};
-const TENDENCIA: Record<string, string> = {
-  ascendente: "Ascendente (mayor es mejor)",
-  descendente: "Descendente (menor es mejor)",
-  constante: "Constante (mantenerse en un rango)",
-};
-const CONSOLIDACION: Record<string, string> = { suma: "Se suma", ultimo: "Último valor", promedio: "Promedio" };
-const ORIGEN: Record<string, string> = { manual: "Lo digita una persona", automatico: "Lo calcula el sistema" };
-
-const fr = (v: string | null) => (v === null ? null : fraccion(v));
-
-/** La regla del semáforo con lo que la versión firmó. */
-export function reglaDeFicha(c: ContenidoFicha): Regla {
-  return {
-    tendencia: (c.tendencia ?? "ascendente") as Tendencia,
-    meta: fr(c.meta),
-    metaMax: fr(c.metaMax),
-    modo: (c.semaforoModo as ModoSemaforo | null) ?? null,
-    umbralPct: c.umbralAtencionPct,
-    limite: fr(c.limiteCritico),
-    tolerancia: fr(c.tolerancia),
-  };
-}
-
-export const unidadDeFicha = (c: ContenidoFicha): Unidad => ({ sufijo: c.unidadSufijo ?? "", decimales: c.decimales ?? 0 });
-
-/** Un número firmado, con coma y los decimales que hagan falta. */
-function cifra(v: string | null, u: Unidad): string | null {
-  const f = fr(v);
-  return f === null ? null : `${numeroExacto(f, u.decimales)}${u.sufijo}`;
-}
 
 function Dato({ termino, children }: { termino: string; children: React.ReactNode }) {
   return (

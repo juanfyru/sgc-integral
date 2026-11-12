@@ -890,3 +890,30 @@ describe("la medición de un indicador", () => {
     expect(nombreDeAccion("indicador_meta_programada")).toBe("Programó la meta de un periodo de un indicador");
   });
 });
+
+describe("los Excel de indicadores (14A)", () => {
+  const x = (accion: string, detalle: Record<string, unknown>) => describirEvento({ accion, entidad: "indicador", entidadId: 4, detalle });
+
+  it("el de un indicador dice su código y el año", () => {
+    expect(x("exporto_ficha_indicador", { codigo: "SGC-IND-01", anio: 2026 })).toBe("Emitió el Excel de la ficha y los resultados de SGC-IND-01 (2026)");
+    expect(x("exporto_ficha_indicador", {})).toBe("Emitió el Excel de la ficha y los resultados de un indicador");
+    expect(nombreDeAccion("exporto_ficha_indicador")).toBe("Emitió el Excel de un indicador");
+  });
+
+  it("el de resultados dice el año y nombra cada filtro, sin volcar el objeto", () => {
+    expect(x("exporto_resultados_indicadores", { anio: 2026, filtros: {} })).toBe("Emitió los resultados de los indicadores de 2026");
+    expect(x("exporto_resultados_indicadores", { anio: 2026, filtros: { procesoId: 3, semaforo: "critico" } })).toBe(
+      "Emitió los resultados de los indicadores de 2026 (de un proceso, con semáforo «Crítico»)",
+    );
+    expect(
+      x("exporto_resultados_indicadores", {
+        anio: 2025,
+        filtros: { subprocesoId: 4, clasificacionId: 5, tipoId: 6, semaforo: "sin-dato", reporte: "vencida", participo: true, texto: "auditoría", retirados: true },
+      }),
+    ).toBe(
+      "Emitió los resultados de los indicadores de 2025 (de un subproceso, de una clasificación, de un tipo, con semáforo «Sin dato», vencidos, donde participa, con el texto «auditoría», con los retirados)",
+    );
+    expect(x("exporto_resultados_indicadores", {})).toBe("Emitió los resultados de los indicadores");
+    expect(nombreDeAccion("exporto_resultados_indicadores")).toBe("Emitió los resultados de los indicadores");
+  });
+});
