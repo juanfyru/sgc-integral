@@ -10,6 +10,7 @@ import { Insignia } from "@/componentes/ui/Insignia";
 import { celda, TablaDatos } from "@/componentes/ui/TablaDatos";
 import { enlaceDeVersion, fichasEnCurso, fichasPorAprobar, type FichaEnCurso } from "@/db/consultas/indicadores/aprobacion";
 import { exigirSesion } from "@/lib/paginas";
+import { LARGO_CODIGO_INDICADOR, PATRON_CODIGO_INDICADOR } from "@/lib/esquemas/indicadores";
 import { puede } from "@/lib/permisos";
 import { fechaYHora } from "@/lib/indicadores/ficha-en-texto";
 import { rutaDeEdicion } from "../_comun";
@@ -49,14 +50,21 @@ function Indicador({ f, href }: { f: FichaEnCurso; href: string }) {
  * una; quien administra ve además los borradores, las devueltas con su nota y lo que espera aprobación. Para quien no
  * administra ni aprueba, «no encontrada».
  */
-export default async function PaginaPorAprobar({ searchParams }: { searchParams: Promise<{ aprobadas?: string | string[] }> }) {
+export default async function PaginaPorAprobar({
+  searchParams,
+}: {
+  searchParams: Promise<{ aprobadas?: string | string[]; devuelta?: string | string[] }>;
+}) {
   const sesion = await exigirSesion();
   const administra = puede(sesion, "indicadores.administrar");
   const aprueba = apruebaFichas(sesion);
   if (!administra && !aprueba) notFound();
   // Lo que acaba de aprobar «Aprobar las seleccionadas» (la acción vuelve con `aprobadas=N`).
-  const { aprobadas: pedidas } = await searchParams;
+  // Y lo que acaba de devolver «Devolver la ficha» (`devuelta=<código>`): solo un código bien formado se repite.
+  const { aprobadas: pedidas, devuelta: pedida } = await searchParams;
   const aprobadas = typeof pedidas === "string" && /^[1-9]\d{0,2}$/.test(pedidas) ? Number(pedidas) : 0;
+  const devuelta =
+    typeof pedida === "string" && pedida.length <= LARGO_CODIGO_INDICADOR && PATRON_CODIGO_INDICADOR.test(pedida) ? pedida : null;
   const [fichas, enCurso] = await Promise.all([fichasPorAprobar(sesion), fichasEnCurso(sesion)]);
   const filas: FilaPorAprobar[] = fichas.map((f) => ({
     versionId: f.versionId,
@@ -85,6 +93,11 @@ export default async function PaginaPorAprobar({ searchParams }: { searchParams:
       {aprobadas > 0 ? (
         <p role="status" className="rounded-lg border border-border bg-muted p-3 text-sm text-foreground">
           {aprobadas === 1 ? "Se aprobó 1 ficha." : `Se aprobaron ${aprobadas} fichas.`}
+        </p>
+      ) : null}
+      {devuelta ? (
+        <p role="status" className="rounded-lg border border-border bg-muted p-3 text-sm text-foreground">
+          {`Se devolvió la ficha de ${devuelta} a borrador, con su nota.`}
         </p>
       ) : null}
 

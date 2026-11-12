@@ -367,6 +367,10 @@ describe("las páginas de la ficha de indicador", () => {
       expect(await porAprobar({ aprobadas: "1" })).toContain('<p role="status" class="rounded-lg border border-border bg-muted p-3 text-sm text-foreground">Se aprobó 1 ficha.</p>');
       expect(await porAprobar({ aprobadas: "3" })).toContain(">Se aprobaron 3 fichas.</p>");
       for (const raro of ["0", "x", "1000", "-1"]) expect(await porAprobar({ aprobadas: raro })).not.toContain('role="status"');
+      // «Devolver la ficha» vuelve con el código de la devuelta (Tarea 19): la página también lo confirma, y solo repite
+      // un código bien formado.
+      expect(await porAprobar({ devuelta: "SGC-IND-12" })).toContain('<p role="status" class="rounded-lg border border-border bg-muted p-3 text-sm text-foreground">Se devolvió la ficha de SGC-IND-12 a borrador, con su nota.</p>');
+      for (const raro of ["", "SGC IND", "<b>x</b>", "A".repeat(31), "-SGC"]) expect(await porAprobar({ devuelta: raro })).not.toContain('role="status"');
 
       contexto.sesion = valida(admin);
       const deAdmin = await porAprobar();

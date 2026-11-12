@@ -553,14 +553,21 @@ export async function aprobarFichas(
   });
 }
 
-/** Devuelve una ficha por aprobar a borrador, con nota y sin clave, y avisa a quien la elaboró (spec §7.6.3). */
-export async function devolverFicha(sesion: SesionFlujo, d: { versionId: number; nota: string }, opciones?: Opciones): Promise<void> {
+/**
+ * Devuelve una ficha por aprobar a borrador, con nota y sin clave, y avisa a quien la elaboró (spec §7.6.3). Responde el
+ * código, para que la página lo confirme.
+ */
+export async function devolverFicha(
+  sesion: SesionFlujo,
+  d: { versionId: number; nota: string },
+  opciones?: Opciones,
+): Promise<{ codigo: string }> {
   if (!puede(sesion, "indicadores.aprobar")) throw new ErrorPermiso();
   const nota = d.nota.trim();
   if (nota.length < 5) throw new ErrorIndicador("La nota debe tener al menos 5 caracteres");
   if (nota.length > 1000) throw new ErrorIndicador("La nota no puede pasar de 1000 caracteres");
   const ahora = opciones?.ahora ?? new Date();
-  await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+  return enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
     await bloquear(tx, [d.versionId]);
     const [v] = await tx`SELECT v.indicador_id, v.numero, v.estado, v.nombre, v.elaborada_por, i.codigo, ${fueEnviada(tx)} AS enviada
       FROM indicador_versiones v JOIN indicadores i ON i.id = v.indicador_id WHERE v.id = ${d.versionId}`;
@@ -592,6 +599,7 @@ export async function devolverFicha(sesion: SesionFlujo, d: { versionId: number;
       entidadId: indicadorId,
       detalle: { codigo, nombre: v.nombre as string | null, versionId: d.versionId, numero: Number(v.numero), nota },
     });
+    return { codigo };
   });
 }
 

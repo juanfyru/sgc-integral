@@ -147,13 +147,13 @@ export async function aprobarFichasAccion(_prev: EstadoAccion, formData: FormDat
 
 /**
  * Devuelve la ficha (`id`, de la versión) con nota. Siempre a «Por aprobar»: devuelta, la ficha de un indicador nuevo ya
- * no existe para quien la devolvió.
+ * no existe para quien la devolvió. Vuelve con `devuelta=<código>`, que la página confirma (Tarea 19).
  */
 export async function devolverFichaAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "indicadores.aprobar", async (_usuarioId, _formData, sesion) => {
     const { nota } = parsearFormulario(formData, EsquemaDevolverFicha, { omitir: ["id"] });
-    await devolverFicha(sesion, { versionId: idNumerico(formData, "id"), nota });
-    return POR_APROBAR;
+    const { codigo } = await devolverFicha(sesion, { versionId: idNumerico(formData, "id"), nota });
+    return `${POR_APROBAR}?devuelta=${encodeURIComponent(codigo)}`;
   });
 }
 

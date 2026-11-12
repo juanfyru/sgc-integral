@@ -423,7 +423,10 @@ describe("aprobar", () => {
       await rechaza(aprobarFichas(gerente, { versionIds: [enviada.versionId, borrador.versionId], credenciales: CLAVE }, firmar(tx)), NO_LE_TOCA);
       // Una que sí se envió alguna vez (aprobada, o devuelta con su firma «Elaboró») dice su código.
       await rechaza(aprobarFichas(gerente, { versionIds: [ind.versionId], credenciales: CLAVE }, firmar(tx)), `La ficha ${ind.codigo} ya no está por aprobar`);
-      await devolverFicha(gerente, { versionId: enviada.versionId, nota: "Falta el sustento" }, { sql: tx });
+      // Responde el código: la acción vuelve a «Por aprobar» con él y la página lo confirma.
+      expect(await devolverFicha(gerente, { versionId: enviada.versionId, nota: "Falta el sustento" }, { sql: tx })).toEqual({
+        codigo: enviada.codigo,
+      });
       await rechaza(
         aprobarFichas(gerente, { versionIds: [enviada.versionId], credenciales: CLAVE }, firmar(tx)),
         `La ficha ${enviada.codigo} ya no está por aprobar`,
