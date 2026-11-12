@@ -16,11 +16,20 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
 }
 
-const contexto = vi.hoisted(() => ({ tx: null as unknown, sesion: null as unknown }));
+const contexto = vi.hoisted(() => ({ tx: null as unknown, sesion: null as unknown, fallanIndicadores: false }));
 
 vi.mock("@/db/cliente", async (importar) => {
   const real = await importar<typeof import("@/db/cliente")>();
   return { ...real, obtenerSql: () => (contexto.tx ?? real.obtenerSql()) as ReturnType<typeof real.obtenerSql> };
+});
+// «Indicadores que exige» de la ficha de la norma, que una prueba hace fallar (ola final, M4); las demás usan la real.
+vi.mock("@/db/consultas/indicadores/busqueda", async (importar) => {
+  const real = await importar<typeof import("@/db/consultas/indicadores/busqueda")>();
+  return {
+    ...real,
+    indicadoresQueExige: (...args: Parameters<typeof real.indicadoresQueExige>) =>
+      contexto.fallanIndicadores ? Promise.reject(new Error("falla de prueba")) : real.indicadoresQueExige(...args),
+  };
 });
 vi.mock("@/lib/paginas", () => ({
   exigirSesion: async () => contexto.sesion,
@@ -446,6 +455,23 @@ describe("la ficha de la norma", () => {
         expect(citada).not.toContain("Borrar…");
       } finally {
         await c.limpiar();
+      }
+    }));
+
+  it("si la lectura de «Indicadores que exige» falla, la ficha de la norma se pinta sin esa sección y el error queda en el registro (M4)", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const n = await normaDePrueba(tx, admin, { titulo: "Norma con indicadores que no se leen" });
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      contexto.fallanIndicadores = true;
+      try {
+        const texto = sinEtiquetas(await pintar(tx, admin, ficha(n.id)));
+        expect(texto).toContain("Norma con indicadores que no se leen");
+        expect(texto).not.toContain("Indicadores que exige");
+        expect(error).toHaveBeenCalledTimes(1);
+      } finally {
+        contexto.fallanIndicadores = false;
+        error.mockRestore();
       }
     }));
 
