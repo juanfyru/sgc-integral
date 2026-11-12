@@ -412,6 +412,16 @@
   [data-tema] {
     color-scheme: light;
   }
+  /* Con «gráficos de fondo», el gris de la página no se imprime como un bloque bajo lo último de la hoja (la ficha de un
+     indicador, Tarea 19, D-6): en papel el fondo es el del papel. Solo las bandas y las insignias, que lo piden con
+     `print-color-adjust: exact`, llevan color. */
+  html,
+  body {
+    background: none;
+  }
+  .ficha-impresa {
+    background: none;
+  }
 }
 
 /* ── Fase 14A: gráficas de indicadores en estilo «Tubos» (spec §11) ──────
