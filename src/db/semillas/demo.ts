@@ -5,8 +5,9 @@
  * procedimiento↔formato, archivos multi-rol y los cuatro estados), más una
  * estructura organizacional, un usuario de ejemplo por rol, formatos ficticios
  * del acta y del informe ya elegidos, trámites en cada etapa (ver
- * `sembrarTramites`), la distribución de la 13B y la vigencia, los externos, el
- * normograma y la revisión anual de la 13C (`sembrarVigencia`).
+ * `sembrarTramites`), la distribución de la 13B, la vigencia, los externos, el
+ * normograma y la revisión anual de la 13C (`sembrarVigencia`) y los indicadores
+ * de la 14A (`sembrarIndicadores`).
  *
  * Ejecutar: npm run db:seed   (borra y recarga TODO — solo desarrollo/demo)
  */
@@ -49,6 +50,7 @@ import { generarPlaceholder } from "../placeholders";
 import { CLAVE_DEMO } from "./clave-demo";
 import { momentoHace, sembrarDistribucion, sembrarDistribucionPrevia } from "./distribucion-demo";
 import { CODIGO_FORMATO_ACTA, CODIGO_FORMATO_INFORME, generarFormatoActaDemo, generarFormatoInformeDemo } from "./formato-acta-demo";
+import { sembrarIndicadores } from "./indicadores-demo";
 import { limpiarTodo, sembrarBase, type Db } from "./minima";
 import { sembrarVigencia } from "./vigencia-demo";
 
@@ -710,6 +712,8 @@ export async function sembrarDemo(db: Db, sql: Sql): Promise<void> {
   await sembrarTramites(sql, { tipoPorSigla, procesoPorSigla, documentoPorCodigo }, ahora);
   await sembrarDistribucion(sql, distribucion);
   await sembrarVigencia(sql, distribucion);
+  // Después de la vigencia: el regulatorio cita una norma del normograma.
+  await sembrarIndicadores(sql, distribucion);
 }
 
 /**

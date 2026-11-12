@@ -117,8 +117,10 @@ describe("esquema de la Fase 14", () => {
       expect(await fallaCon(crear({ estado: "retirado", baja_por: u.id, baja_en: new Date() }))).toBe("23514");
       expect(await fallaCon(crear({ estado: "activo", baja_por: u.id, baja_en: new Date(), baja_motivo: "x" }))).toBe("23514");
       await crear({ estado: "retirado", baja_por: u.id, baja_en: new Date(), baja_motivo: "Ya no se mide" });
-      await crear({ codigo: "SGC-IND-01" });
-      expect(await fallaCon(crear({ codigo: "sgc-ind-01" }))).toBe("23505");
+      // Un código que la demo no trae (la demo de la 14A siembra `SGC-IND-01`): el índice no distingue mayúsculas.
+      const codigo = `ZZ-IND-${Date.now()}`;
+      await crear({ codigo });
+      expect(await fallaCon(crear({ codigo: codigo.toLowerCase() }))).toBe("23505");
     }));
 
   it("una versión: listas cerradas y un solo borrador o por aprobar por indicador", () =>

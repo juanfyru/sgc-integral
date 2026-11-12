@@ -75,7 +75,9 @@ describe("esquema de la Fase 13C", () => {
       await firmar("adopto", null);
       expect(await fallaCon(firmar("aprobo", null))).toBe("23514");
       expect(await fallaCon(firmar("otra", null))).toBe("23514");
-      const [{ n }] = await tx`SELECT count(*)::int AS n FROM firmas WHERE tramite_id IS NULL AND firma NOT IN ('ratifico', 'adopto')`;
+      // Desde la 14A, la ficha de un indicador también se firma sin trámite (`indicador_version_id`, spec 14 §19.1).
+      const [{ n }] = await tx`SELECT count(*)::int AS n FROM firmas
+        WHERE tramite_id IS NULL AND indicador_version_id IS NULL AND firma NOT IN ('ratifico', 'adopto')`;
       expect(n).toBe(0);
     }));
 
