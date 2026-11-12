@@ -8,7 +8,7 @@ import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { EstadoVacio } from "@/componentes/ui/EstadoVacio";
 import { fichasPorAprobar } from "@/db/consultas/indicadores/aprobacion";
-import { filtroDeConsulta, listarIndicadores, opcionesDeLista } from "@/db/consultas/indicadores/lectura";
+import { filtroDeConsulta, listarIndicadores, opcionesDeLista } from "@/db/consultas/indicadores/lista";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
 import { cuenta } from "@/lib/plural";

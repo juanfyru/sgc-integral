@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Boton } from "@/componentes/ui/Boton";
 import { claseControl } from "@/componentes/ui/Campo";
-import type { FiltroDeLista, OpcionesDeLista } from "@/db/consultas/indicadores/lectura";
+import type { FiltroDeLista, OpcionesDeLista } from "@/db/consultas/indicadores/lista";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 

@@ -4,7 +4,7 @@ import { Insignia } from "@/componentes/ui/Insignia";
 import { celda, celdaNumerica, TablaDatos } from "@/componentes/ui/TablaDatos";
 import { Tendencia } from "@/componentes/ui/Tendencia";
 import { rotuloCorto, type EstadoDePunto } from "@/componentes/ui/geometria-tubos";
-import type { FilaDeLista, ResumenDeLista } from "@/db/consultas/indicadores/lectura";
+import type { FilaDeLista, ResumenDeLista } from "@/db/consultas/indicadores/lista";
 import { ETIQUETA_PERIODICIDAD } from "@/lib/indicadores/tipos";
 import { cuenta } from "@/lib/plural";
 import { InsigniaSemaforo } from "./InsigniaSemaforo";

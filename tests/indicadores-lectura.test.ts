@@ -11,15 +11,9 @@ import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { analizar } from "@/db/consultas/indicadores/analisis";
 import { abrirCambio } from "@/db/consultas/indicadores/fichas";
-import {
-  filtroDeConsulta,
-  listarIndicadores,
-  matrizDelAnio,
-  obtenerIndicador,
-  resultadosDelAnio,
-  type CeldaDeMatriz,
-  type FiltroDeLista,
-} from "@/db/consultas/indicadores/lectura";
+import { obtenerIndicador, resultadosDelAnio } from "@/db/consultas/indicadores/lectura";
+import { filtroDeConsulta, listarIndicadores, type FiltroDeLista } from "@/db/consultas/indicadores/lista";
+import { matrizDelAnio, type CeldaDeMatriz } from "@/db/consultas/indicadores/matriz";
 import { asegurarMediciones, marcarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
 import { retirar } from "@/db/consultas/indicadores/operacion";
 import { indicadorDePrueba, versionTrimestral, type IndicadorDePrueba, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";

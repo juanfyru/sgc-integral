@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { CeldaDeMatriz, MatrizLeida } from "@/db/consultas/indicadores/lectura";
+import type { CeldaDeMatriz, MatrizLeida } from "@/db/consultas/indicadores/matriz";
 import { MESES } from "@/lib/indicadores-documentales/periodo";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
