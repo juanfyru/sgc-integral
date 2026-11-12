@@ -1,10 +1,11 @@
 /**
- * De `file-type` solo se usan las funciones que analizan un búfer (Tarea 19, ronda 1, defecto D-1). `fileTypeFromFile`
- * (y el método `fromFile` del analizador, que usan también las funciones de flujo y de tokenizador de archivo) cargan
- * `node:fs/promises` y `strtok3` con un `import()` de especificador no literal (`importAtRuntime`): el empaquetador de
- * Next lo reemplaza por un módulo que siempre lanza «Cannot find module as expression is too dynamic», y la subida de un
- * soporte `.xlsx` respondía 500 en `next dev` y en la imagen. Vitest no empaqueta, así que solo una prueba de texto lo ve:
- * esta lee las importaciones de `file-type` en `src/` y exige que sean de la lista permitida.
+ * De `file-type` solo se usa la función que analiza un búfer (Tarea 19, ronda 1, defecto D-1; F14A-R41). `fileTypeFromFile`
+ * y el método `fromFile` del analizador, al que llama, son los únicos que cargan `node:fs/promises` y `strtok3` con un
+ * `import()` de especificador no literal (`importAtRuntime`; `fromStream`, `fromBlob` y `fromBuffer` no lo hacen): el
+ * empaquetador de Next lo reemplaza por un módulo que siempre lanza «Cannot find module as expression is too dynamic», y la
+ * subida de un soporte `.xlsx` respondía 500 en `next dev` y en la imagen. Vitest no empaqueta, así que solo una prueba de
+ * texto lo ve: esta lee las importaciones de `file-type` en `src/` y exige que sean de la lista permitida, que se queda en
+ * `fileTypeFromBuffer` porque es la única que la app necesita.
  */
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";

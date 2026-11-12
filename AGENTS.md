@@ -129,7 +129,12 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
    audita (`acuse_lectura`) y tiene su historial inmutable en `acuse_eventos`. Cualquier otra
    acción sin auditar se propone antes.
 6. **El MIME se detecta de los magic bytes en la carga** (no de la extensión del nombre)
-   y se guarda en BD. El ícono de formato se deriva del MIME guardado.
+   y se guarda en BD. El ícono de formato se deriva del MIME guardado. De `file-type`, en `src/`
+   solo se importa `fileTypeFromBuffer` (F14A-R41): `fileTypeFromFile` carga sus módulos con un
+   `import()` no literal que el empaquetador de Next reemplaza por uno que siempre lanza (todo
+   `.xlsx` respondía 500 en `next dev` y en la imagen, y Vitest, que no empaqueta, no lo veía). El
+   `.xlsx` de un soporte se lee entero (hasta 25 MB) y se analiza como búfer. Lo exige
+   `tests/file-type-empaquetado.test.ts`.
 7. **Archivos fuera del webroot**, servidos por la app con `Content-Type` y
    `Content-Disposition` correctos. Nombres saneados (path traversal). Nunca ejecutables.
 8. **El mapa de procesos NO se hardcodea.** Vive en BD y se edita desde el admin. El

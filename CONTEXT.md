@@ -43,8 +43,9 @@
    `.xlsx` (D-1). La ronda 1 corrigió sus trece defectos (D-1 a D-13), añadió el mensaje «Se devolvió la ficha …» y
    ajustó este recorrido (ver «Hecho (Fase 14A)»). **Verificado al cierre de la ronda 1:** con la demo recién sembrada
    en la base aparte `sgc_f14a`, `SEMILLA_RECIEN=1 npm test` dio 235 archivos, 5675 pruebas en verde y
-   1 saltada; lint limpio; `npm run build` sin URL de base en verde. **Queda del controlador:** subir un
-   `.xlsx` contra la imagen con el arreglo de D-1.
+   1 saltada; lint limpio; `npm run build` sin URL de base en verde. Después, el controlador subió un `.xlsx` real
+   con el arreglo de D-1, en `next dev` y en la imagen reconstruida: entra («Listo», «Excel, 6 KB») y un `.xls` se
+   rechaza.
    **La base `sgc` del usuario no se tocó** (ver «Avisos para el usuario (Fase 14A)»).
    **Antes, la Fase 13C:** está en `main` (`8acc9cf`, PR #3 fusionado el 2026-11-10 por decisión del
    usuario, 64 confirmaciones sobre `4bbb428`; spec `b702403`, plan `faaae79`; la rama
@@ -1260,8 +1261,9 @@ son CSS, F14-DC23). La rama `fase-14a-indicadores` (75 confirmaciones sobre `bce
   registrada de un trámite no cambia con firmas sin trámite en la base», cuando la base no tiene un acta regenerable; ya
   estaba en la línea base de la fase); `npm run build` sin `DATABASE_URL` ni `DATABASE_URL_MIGRADOR` en verde; y otra
   resiembra al final. Cada tarea tuvo su revisión con su ronda de corrección (en la bitácora de ejecución) y puntos de
-  control en el navegador tras las Tareas 7, 10, 12, 15, 16 y 17 y la ficha impresa de la 18. **Queda del controlador:**
-  subir un `.xlsx` contra la imagen con el arreglo de D-1.
+  control en el navegador tras las Tareas 7, 10, 12, 15, 16 y 17 y la ficha impresa de la 18. Después, el controlador
+  subió un `.xlsx` real con el arreglo de D-1, en `next dev` y en la imagen reconstruida (contenedor aparte): entra
+  («Listo», «Excel, 6 KB») y un `.xls` se rechaza con el mensaje del soporte.
 
 ## Hecho (Fase 13C)
 
@@ -2536,7 +2538,7 @@ el mecanismo es de Claude), **Regulación** o **Práctica**.
 | F14A-R41 (T19, D-1) | El `.xlsx` de un soporte se lee entero (hasta 25 MB) y se valida con `fileTypeFromBuffer`, nunca con `fileTypeFromFile`: su `import()` de especificador no literal no sobrevive al empaquetado de Next y todo `.xlsx` respondía 500 (Vitest no empaqueta: las pruebas pasaban). `tests/file-type-empaquetado.test.ts` impide volver a importarlo | Regla de negocio 6; Práctica | 25 MB en memoria en la subida de un Excel; `serverExternalPackages` era la otra salida |
 | F14A-R42 (T19, D-2) | El lienzo de una gráfica de tubos mide según sus periodos (34 px por columna, con un tope de 1,3 veces su proporción); si se desplaza y la última columna con valor queda cortada, al cargar se corre hasta mostrarla (sin JavaScript arranca en lo más reciente, como antes) | Spec §11; F14A-R31 | Un trimestral a 390 px enseñaba solo el periodo por venir |
 | F14A-R43 (T19, D-3) | Elegir la forma sugiere su unidad: porcentaje, la de «%»; una tasa por mil, la de «por mil»; las demás, la que no lleva sufijo. Cambiar el factor también la sugiere; la persona puede elegir otra | Práctica | Un conteo quedaba en «%» |
-| F14A-R44 (T19, D-7 y D-8) | El límite de crítico de la gráfica es uno solo si todos los periodos tienen el mismo, y si no uno por periodo, escalonado con la meta; la etiqueta, la pantalla de reporte y el pie accesible usan el mismo texto (`textoDelLimite`) | Spec §11; regla del veredicto con el valor exacto | Dos cifras para un mismo límite, o una punteada plana con metas programadas |
+| F14A-R44 (T19, D-7 y D-8) | El límite de crítico de la gráfica es uno solo si todos los periodos tienen el mismo, y si no uno por periodo, escalonado con la meta; la etiqueta y el pie accesible usan `textoDelLimite` y la pantalla de reporte («Así quedará el semáforo») `rangosEnPalabras`, que dicen el mismo número (lo fija `tests/indicadores-limite-grafica.test.tsx`) | Spec §11; regla del veredicto con el valor exacto | Dos cifras para un mismo límite, o una punteada plana con metas programadas |
 | F14A-R45 (T19, D-9) | Un retirado sale en la matriz (pantalla, impresión y Excel) con la marca «Retirado» («(Retirado)» tras el nombre en el Excel), y sus periodos sin medición desde el retiro quedan vacíos, como los de antes del inicio (no se miden), no «por venir» | Spec §6.4 | Un indicador retirado que parece pendiente |
 | F14A-R46 (T19, D-10) | Cada ficha de la demo trae su línea base en una de las dos formas: `AIN-IND-01` (34 min) y `CEX-IND-01` (3,4 días) con valor y periodo 2025; las demás, «Sin línea base: <año> es el año de referencia» | Spec §7.2 | El primer cambio de una ficha sembrada sumaba «Nota de la línea base» a lo que cambió |
 | F14A-R47 (T19, D-11) | La barra de la lista cuenta «No aplica» aparte (segmento neutro rayado; el texto lo nombra solo si hay alguno); «Sin meta» sigue contando con «sin dato» | Spec §24.8; WCAG 1.4.1 | «No aplica» confundido con «Sin dato» |
