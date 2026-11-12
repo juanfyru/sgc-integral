@@ -20,7 +20,8 @@ import {
 const ALTO_PISTA = 160;
 /**
  * El paso de cada columna: el lienzo mide los márgenes más un paso por periodo (`anchoDeLienzo`), así pocos periodos
- * caben en un teléfono y muchos crecen (y se desplazan) antes que apretar los valores.
+ * caben en un teléfono y muchos crecen (y se desplazan) antes que apretar los valores. Una serie corta lo ensancha para
+ * que su valor quepa con la unidad (`pasoYUnidad`).
  */
 const PASO = 34;
 /**
@@ -36,8 +37,14 @@ const EJE_MINIMO = 30;
 const ABAJO = 36;
 const ABAJO_CON_ANIOS = 50;
 const MARGEN_DERECHO_MINIMO = 100;
-/** Con franjas angostas el valor de cada columna va sin su unidad: la dice el eje. */
-const FRANJA_CON_UNIDAD = 48;
+/** La letra del valor bajo cada columna y el aire mínimo que lo separa del de la columna vecina. */
+const LETRA_VALOR = 10;
+const AIRE_DEL_VALOR = 6;
+/**
+ * Lo más que ocupan las columnas de una serie corta cuando su franja se ensancha para que el valor quepa con su unidad: lo
+ * de seis periodos a paso normal, que cabe en un teléfono (390 px). Una serie larga no se ensancha.
+ */
+const ANCHO_DE_SERIE_CORTA = 6 * PASO;
 /** La letra más grande del valor y el estado que se imprimen sobre cada columna; con franjas angostas, menor. */
 const LETRA_IMPRESA = 7.5;
 /**
@@ -53,6 +60,23 @@ const cifra = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 2 });
 
 /** El ancho aproximado de una etiqueta en el margen derecho (no hay medida de texto en el servidor). */
 const anchoDeEtiqueta = (texto: string, tamano: number) => Math.ceil(texto.length * tamano * 0.56 + 16);
+
+/**
+ * El ancho aproximado del valor bajo una columna, en negrita: un poco más ancho por carácter que el de las etiquetas, para
+ * pecar de holgado (no hay medida de texto en el servidor).
+ */
+export const anchoDelValor = (texto: string) => Math.ceil(texto.length * LETRA_VALOR * 0.6);
+
+/**
+ * El paso de las columnas y si el valor bajo cada una lleva su unidad (ola final, M7). La unidad se escribe si el valor más
+ * largo cabe con ella en la franja, con su aire; en una serie corta la franja se ensancha hasta admitirla, sin pasar de
+ * `ANCHO_DE_SERIE_CORTA`. Si no cabe, todos van sin unidad (la dice el eje): una sola decisión para la gráfica.
+ */
+export function pasoYUnidad(valores: readonly string[], periodos: number): { paso: number; conUnidad: boolean } {
+  const necesario = Math.max(0, ...valores.map(anchoDelValor)) + AIRE_DEL_VALOR;
+  const paso = necesario > PASO && necesario * Math.max(periodos, 1) <= ANCHO_DE_SERIE_CORTA ? necesario : PASO;
+  return { paso, conUnidad: necesario <= paso };
+}
 
 const esPorcentaje = (u: Pick<Unidad, "sufijo">) => u.sufijo.trim() === "%";
 
@@ -172,8 +196,12 @@ export function GraficoTubos({
   const eje = Math.max(EJE_MINIMO, ...rotulos.map((r) => Math.ceil(r.texto.length * 9.5 * 0.56) + 10));
   const anios = cambiosDeAnio(serie.map((p) => p.clave));
   const abajo = anios.length > 0 ? ABAJO_CON_ANIOS : ABAJO;
+  const { paso, conUnidad } = pasoYUnidad(
+    serie.filter((p) => p.valor !== null).map((p) => p.texto),
+    serie.length,
+  );
   const g: Geometria = {
-    ancho: anchoDeLienzo(serie.length, { izq: MARGEN.izq, der }, PASO),
+    ancho: anchoDeLienzo(serie.length, { izq: MARGEN.izq, der }, paso),
     alto: MARGEN.arriba + ALTO_PISTA + abajo,
     margen: { ...MARGEN, der, abajo },
   };
@@ -196,8 +224,9 @@ export function GraficoTubos({
     if (p.estado === "no-aplica") return "n. a.";
     // Lo que no ha llegado lleva «—»: un texto largo se encima con el de la franja vecina. El nombre lo dice la zona.
     if (p.estado === "futuro") return "—";
-    if (p.valor === null || franja >= FRANJA_CON_UNIDAD || !p.texto.endsWith(unidad.sufijo)) return p.texto;
-    return p.texto.slice(0, p.texto.length - unidad.sufijo.length);
+    if (p.valor === null || conUnidad || !p.texto.endsWith(unidad.sufijo)) return p.texto;
+    // Sin su unidad (la dice el eje), y sin el espacio que la precedía.
+    return p.texto.slice(0, p.texto.length - unidad.sufijo.length).trimEnd();
   };
 
   // Al imprimir, sobre cada columna con valor van su valor y su estado, en dos líneas, con una letra que quepa en la

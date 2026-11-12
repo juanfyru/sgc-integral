@@ -232,10 +232,38 @@ describe("GraficoTubos: el ancho y la columna en que arranca (ronda 1 de la Tare
   it("el lienzo mide un paso por periodo más los márgenes: cuatro trimestres no ocupan lo que doce meses", () => {
     const cuatro = anchoDelLienzo(pintar(trimestres));
     const doceMeses = anchoDelLienzo(renderToStaticMarkup(<GraficoTubos serie={doce} titulo={TITULO} meta={{ valor: 85, texto: "Meta 85 %" }} unidad={UNIDAD} columnas={COLUMNAS} />));
-    expect(doceMeses - cuatro).toBe(8 * 34);
+    // Doce meses van a 34 px; los cuatro trimestres, a 42, para que «83,3 %» quepa con su unidad (ola final, M7).
+    expect(doceMeses - cuatro).toBe(12 * 34 - 4 * 42);
     expect(cuatro).toBeLessThan(330);
     // El lienzo no se agranda sin fin para llenar una caja ancha.
     expect(pintar(trimestres)).toMatch(/grid-template-columns:[^;"]*;max-width:\d+px/);
+  });
+
+  /** El valor escrito bajo cada columna con valor (no el impreso, ni la tabla equivalente). */
+  const valoresDebajo = (html: string) => [...html.matchAll(/font-size="10" class="fill-foreground font-semibold">([^<]*)</g)].map((m) => m[1]);
+  const franjaDe = (html: string) => atributo(/<rect class="tubo-zona"[^>]*>/.exec(html)![0], "width");
+  /** Lo que la prueba estima que ocupa un valor de letra 10 en negrita, con 6 px de aire hasta el vecino. */
+  const ocupa = (texto: string) => texto.length * 10 * 0.6 + 6;
+
+  it("el valor bajo cada tubo lleva su unidad cuando cabe: una serie corta ensancha la franja; doce periodos no se enciman (M7)", () => {
+    const corta = pintar(trimestres);
+    expect(valoresDebajo(corta)).toEqual(["100 %", "83,3 %", "60 %"]);
+    for (const v of valoresDebajo(corta)) expect(ocupa(v)).toBeLessThanOrEqual(franjaDe(corta));
+
+    // Doce meses de dos cifras caben con su unidad en 34 px.
+    const meses = renderToStaticMarkup(<GraficoTubos serie={doce} titulo={TITULO} meta={{ valor: 85, texto: "Meta 85 %" }} unidad={UNIDAD} columnas={COLUMNAS} />);
+    expect(franjaDe(meses)).toBe(34);
+    expect(valoresDebajo(meses)).toContain("88 %");
+    for (const v of valoresDebajo(meses)) expect(ocupa(v)).toBeLessThanOrEqual(franjaDe(meses));
+
+    // Con decimales no caben: los doce van sin unidad (la dice el eje), y sin encimarse.
+    const largos = doce.map((p) => (p.valor === null ? p : { ...p, valor: 83.3, texto: "83,3 %" }));
+    const conDecimales = renderToStaticMarkup(<GraficoTubos serie={largos} titulo={TITULO} meta={{ valor: 85, texto: "Meta 85 %" }} unidad={UNIDAD} columnas={COLUMNAS} />);
+    expect(franjaDe(conDecimales)).toBe(34);
+    expect(new Set(valoresDebajo(conDecimales))).toEqual(new Set(["83,3"]));
+    for (const v of valoresDebajo(conDecimales)) expect(ocupa(v)).toBeLessThanOrEqual(franjaDe(conDecimales));
+    // La tabla equivalente sigue con la unidad.
+    expect(conDecimales).toContain("<td>83,3 %</td>");
   });
 
   it("el desplazamiento arranca en la columna del último periodo con valor, y cada columna lleva su índice", () => {
