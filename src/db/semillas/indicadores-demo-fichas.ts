@@ -82,6 +82,12 @@ export type Catalogo = {
 /** Lo de operación de la ficha (spec §7.3): desde cuándo se mide y quién mide y analiza. */
 export type OperacionDemo = { inicio: string; mide: number[]; analiza: number[]; motivoCambio?: string };
 
+/**
+ * El plazo de reporte de todas las fichas sembradas, el de la configuración por omisión (spec §10.4). Decide también qué
+ * periodo terminado ya se reportó en la demo: el que terminó hace más que su plazo (`calendarioDeIndicadores`).
+ */
+export const PLAZO_DE_REPORTE = 10;
+
 const variable = (letra: "A" | "B", v: VariableDemo) => ({
   letra,
   nombre: v.nombre,
@@ -123,7 +129,7 @@ export function datosDeFicha(cat: Catalogo, f: FichaDemo, op: OperacionDemo): Da
     ...(f.periodicidadExterna ? { periodicidadExterna: f.periodicidadExterna } : {}),
     ...(op.motivoCambio ? { motivoCambio: op.motivoCambio } : {}),
     ...(f.prueba ? { prueba: { valores: { A: f.prueba[0], B: f.prueba[1] } } } : {}),
-    plazoReporteDias: 10,
+    plazoReporteDias: PLAZO_DE_REPORTE,
     inicioMedicion: op.inicio,
     soporteObligatorio: false,
     nivelAcceso: f.nivelAcceso ?? "general",

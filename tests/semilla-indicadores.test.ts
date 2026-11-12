@@ -18,7 +18,7 @@ import { indicadoresQueExige } from "@/db/consultas/indicadores/busqueda";
 import { mesPorOmision } from "@/db/consultas/indicadores/cierre";
 import { listarMaestro } from "@/db/consultas/indicadores/maestros";
 import { observacionesDe } from "@/db/consultas/indicadores/observaciones";
-import { calendarioDeIndicadores } from "@/db/semillas/indicadores-demo";
+import { calendarioDeIndicadores } from "@/db/semillas/indicadores-demo-agenda";
 import { aprobadoresDeFicha, puedeMedir, puedeVerIndicador } from "@/lib/alcance";
 import { estadoVisible } from "@/lib/indicadores/estados";
 import { exigirDemo, sembradaEn } from "./utiles/demo";
@@ -43,14 +43,31 @@ const DEL_SGC: [string, string, string, string, number, string, string][] = [
   ["SGC-IND-08", "Oportunidad de Cierre de No Conformidades", "No conformidades cerradas a tiempo", "No conformidades con plazo vencido o cerradas", 75, "trimestral", "Efectividad"],
 ];
 
+/** Los catorce indicadores sembrados con el estado en que se sembraron. */
+const SEMBRADOS: Record<string, string> = {
+  "AIN-IND-01": "activo",
+  "CEX-IND-01": "activo",
+  "GRF-IND-01": "borrador",
+  "GTH-IND-01": "activo",
+  "GTH-IND-02": "borrador",
+  ...Object.fromEntries(DEL_SGC.map(([codigo]) => [codigo, "activo"])),
+  "SGC-IND-09": "retirado",
+};
+
 /**
  * Si lo sembrado en los indicadores sigue como se sembró: cada paso sembrado ocurrió antes del reloj de la siembra, y lo
  * que se hace después (reportar, analizar, observar, cambiar una ficha, programar una meta, designar, retirar, cerrar un
- * mes) queda con su hora. Mira solo los indicadores sembrados: los que se crean después no cambian lo sembrado. El nivel
- * de acceso no deja hora: se compara con el sembrado.
+ * mes) queda con su hora. Mira solo los indicadores sembrados: los que se crean después no cambian lo sembrado. Lo que no
+ * deja hora se compara con las cifras sembradas, como `SEMBRADO` en `utiles/demo.ts`: los catorce códigos con su estado
+ * (un borrador se puede borrar), el único restringido y los cinco objetivos activos.
  */
 async function indicadoresComoSeSembraron(): Promise<{ intacta: boolean; motivo: string }> {
   const t = await sembradaEn(sql);
+  const estados = new Map((await sql`SELECT codigo, estado FROM indicadores WHERE codigo IN ${sql(Object.keys(SEMBRADOS))}`).map((f) => [
+    f.codigo as string,
+    f.estado as string,
+  ]));
+  const [objetivos] = await sql`SELECT count(*)::int AS total, count(*) FILTER (WHERE activo)::int AS activos FROM objetivos`;
   const [c] = await sql`
     WITH ind AS (SELECT id FROM indicadores WHERE creado_en <= ${t}),
       ver AS (SELECT id FROM indicador_versiones WHERE indicador_id IN (SELECT id FROM ind)),
@@ -70,6 +87,10 @@ async function indicadoresComoSeSembraron(): Promise<{ intacta: boolean; motivo:
     .filter((clave) => Number(c[clave]) > 0)
     .map((clave) => `${c[clave]} ${clave} posteriores a la siembra`);
   if (c.restringidos !== "GTH-IND-01") cambios.push(`los restringidos son «${c.restringidos}» (se sembró solo GTH-IND-01)`);
+  for (const [codigo, estado] of Object.entries(SEMBRADOS)) {
+    if (estados.get(codigo) !== estado) cambios.push(`${codigo} está ${estados.get(codigo) ?? "borrado"} (se sembró ${estado})`);
+  }
+  if (objetivos.total !== 5 || objetivos.activos !== 5) cambios.push(`${objetivos.activos} de ${objetivos.total} objetivos activos (se sembraron 5 activos)`);
   return { intacta: cambios.length === 0, motivo: cambios.length === 0 ? "los indicadores están como se sembraron" : `hay ${cambios.join("; ")}` };
 }
 
@@ -196,7 +217,9 @@ describe("indicadores sembrados", () => {
     expect(await designados(cex.id, "mide")).toEqual(["lider.cex"]);
     // En el Normograma, «Indicadores que exige».
     const [norma] = await sql`SELECT id FROM normas WHERE numero = '256' AND anio = 2016`;
-    expect((await indicadoresQueExige(consulta, Number(norma.id), { sql })).map((x) => x.codigo)).toEqual(["CEX-IND-01"]);
+    // Solo entre los sembrados: aprobar después otro que la cite no cambia lo sembrado.
+    const exige = (await indicadoresQueExige(consulta, Number(norma.id), { sql })).map((x) => x.codigo);
+    expect(exige.filter((codigo) => Object.hasOwn(SEMBRADOS, codigo))).toEqual(["CEX-IND-01"]);
 
     const grf = await indicador("GRF-IND-01");
     const [vGrf] = await versiones(grf.id);
@@ -252,7 +275,7 @@ describe("indicadores sembrados", () => {
     for (const t of cal.trimestres) expect(Number((await medicion("SGC-IND-05", t.clave)).version_id), t.clave).toBe(v1.id);
   });
 
-  it("2026 tiene históricos, un «Bien», un «Atención» con análisis, un «Crítico» con causa y acción, un sin dato, una vencida y un «no aplica»", async (ctx) => {
+  it("el año de la demo tiene históricos, un «Bien», un «Atención» con análisis, un «Crítico» con causa y acción, un sin dato, una vencida y un «no aplica»", async (ctx) => {
     await exigirIndicadores(ctx);
     const sembrada = await sembradaEn(sql);
     const cal = calendarioDeIndicadores(sembrada);
@@ -298,6 +321,11 @@ describe("indicadores sembrados", () => {
         sembrada,
       ),
     ).toEqual({ estado: "por_reportar", vencida: true });
+    // Es la única: lo demás que pasó su plazo de reporte se reportó; lo que sigue en plazo queda por reportar, sin vencer.
+    const vencidas = await sql`SELECT i.codigo, m.periodo FROM mediciones m JOIN indicadores i ON i.id = m.indicador_id
+      WHERE i.codigo IN ${sql(Object.keys(SEMBRADOS))} AND m.estado = 'abierta' AND NOT m.historica AND NOT m.no_aplica
+        AND m.reportada_en IS NULL AND m.vence_en < ${sembrada}`;
+    expect(vencidas.map((v) => [v.codigo, v.periodo])).toEqual([["AIN-IND-01", cal.meses[2].clave]]);
 
     // No aplica, con su motivo.
     const noAplica = await medicion("SGC-IND-08", t3.clave);
@@ -354,5 +382,34 @@ describe("indicadores sembrados", () => {
     expect(objetivos.filter((o) => o.clase === "institucional")).toHaveLength(2);
     // Con algunos indicadores ligados.
     expect(objetivos.filter((o) => o.usos > 0).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("los avisos de lo que la historia ya resolvió quedan leídos; la alerta, la observación, la reapertura y la ficha por aprobar, no", async (ctx) => {
+    await exigirIndicadores(ctx);
+    // Los avisos de los indicadores sembrados (los de una medición, por su indicador).
+    const avisos = await sql`SELECT n.tipo, u.usuario, i.codigo, n.leida_en IS NOT NULL AS leida
+      FROM notificaciones n JOIN usuarios u ON u.id = n.usuario_id
+      LEFT JOIN mediciones m ON n.entidad = 'medicion' AND m.id = n.entidad_id
+      JOIN indicadores i ON i.id = CASE WHEN n.entidad = 'indicador' THEN n.entidad_id ELSE m.indicador_id END
+      WHERE n.tipo LIKE 'indicadores.%' AND i.codigo IN ${sql(Object.keys(SEMBRADOS))}`;
+    const resueltos = avisos.filter(
+      (a) =>
+        ["indicadores.aprobada", "indicadores.designacion", "indicadores.retirado"].includes(a.tipo) ||
+        (a.tipo === "indicadores.por_aprobar" && a.codigo !== "GTH-IND-02"),
+    );
+    expect(new Set(resueltos.map((a) => a.tipo))).toEqual(
+      new Set(["indicadores.aprobada", "indicadores.designacion", "indicadores.retirado", "indicadores.por_aprobar"]),
+    );
+    expect(resueltos.filter((a) => !a.leida)).toEqual([]);
+
+    const importan = [
+      ["indicadores.alerta", "gerente", "SGC-IND-01"],
+      ["indicadores.observacion", "coordinadora.sgc", "SGC-IND-01"],
+      ["indicadores.reabierta", "lider.cex", "CEX-IND-01"],
+      ["indicadores.por_aprobar", "lider.gth", "GTH-IND-02"],
+    ].map(([tipo, usuario, codigo]) => avisos.filter((a) => a.tipo === tipo && a.usuario === usuario && a.codigo === codigo));
+    for (const de of importan) expect(de.length).toBeGreaterThan(0);
+    // Si alguien los leyó, la demo ya se usó.
+    exigirDemo(ctx, importan.flat().every((a) => !a.leida), "se leyeron avisos de los indicadores de la demo");
   });
 });

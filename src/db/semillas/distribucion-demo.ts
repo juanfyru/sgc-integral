@@ -55,6 +55,9 @@ export function momentoHace(dias: number, ahora: Date): Date {
   return new Date(fechaLimite(ahora, -dias, zonaHoraria()).getTime() - 8 * 3_600_000);
 }
 
+/** `minutos` después del instante: los pasos seguidos de un mismo momento (`vigencia-demo.ts` y los indicadores). */
+export const minutosDespues = (instante: Date, minutos: number) => new Date(instante.getTime() + minutos * 60_000);
+
 /** La sesión de un usuario demo, para llamar a las funciones del dominio a su nombre (también `vigencia-demo.ts`). */
 export async function sesionDe(sql: Sql, usuario: string): Promise<SesionFlujo> {
   const [u] = await sql`SELECT id, usuario, nombre, rol, ver_historial FROM usuarios WHERE usuario = ${usuario}`;

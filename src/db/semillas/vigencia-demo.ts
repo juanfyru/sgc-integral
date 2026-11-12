@@ -42,7 +42,7 @@ import { abrirRevision, confirmarNormograma } from "../consultas/vigencia/revisi
 import { fijarProximaRevision } from "../consultas/vigencia/semaforo";
 import { generarPlaceholder } from "../placeholders";
 import { CLAVE_DEMO } from "./clave-demo";
-import { momentoHace, sesionDe, type ContextoDistribucion } from "./distribucion-demo";
+import { minutosDespues, momentoHace, sesionDe, type ContextoDistribucion } from "./distribucion-demo";
 import { CODIGO_FORMATO_INFORME } from "./formato-acta-demo";
 
 /**
@@ -55,8 +55,6 @@ export const firmaDeLaDemo: Verificador = async (_sesion, credenciales) =>
     : { ok: false, mensaje: "Clave o código incorrectos", sesionCerrada: false };
 
 export const FIRMA = { clave: CLAVE_DEMO };
-
-const minutosDespues = (instante: Date, minutos: number) => new Date(instante.getTime() + minutos * 60_000);
 
 type Norma = {
   tipo: "Ley" | "Decreto" | "Resolución";
