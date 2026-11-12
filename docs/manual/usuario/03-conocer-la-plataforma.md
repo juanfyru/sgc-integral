@@ -30,28 +30,33 @@ De arriba abajo:
 3. El grupo **Documentos**: **Buscar documentos**, **Trámites**, **Distribución**, **Vigencia**,
    **Normograma**, **Gestión de documentos**, **Listado Maestro**, **Tipos de documento**,
    **Configuración documental** y **Mapa de procesos**.
-4. El grupo **Administración**: **Entidad y marca**, **Estructura**, **Puntos de
-   uso**, **Listas de distribución**, **Usuarios**, **Estadísticas**, **Bitácora**, **Accesos** y **Sesiones**.
-5. Al pie, **SGC Integral · v** seguido del número de versión. Es el nombre de la
+4. El grupo **Indicadores**: **Indicadores** (Capítulo 8).
+5. El grupo **Administración**: **Configuración de indicadores**, **Entidad y marca**, **Estructura**,
+   **Puntos de uso**, **Listas de distribución**, **Usuarios**, **Estadísticas**, **Bitácora**,
+   **Accesos** y **Sesiones**.
+6. Al pie, **SGC Integral · v** seguido del número de versión. Es el nombre de la
    plataforma; si reporta un problema a sistemas, indique ese número.
 
 La página en la que está aparece resaltada con el color de la entidad. Junto a **Inicio**
-aparece un número con cuántas tareas tiene pendientes, y junto a **Vigencia**, cuántos
-documentos de su alcance tienen la revisión vencida (Capítulo 7).
+aparece un número con cuántas tareas tiene pendientes; junto a **Vigencia**, cuántos
+documentos de su alcance tienen la revisión vencida (Capítulo 7); y junto a **Indicadores**,
+cuántos reportes o análisis de indicadores a su cargo están vencidos (Capítulo 8).
 
 ### Qué ve cada rol
 
 Cada persona ve solo los enlaces que su rol permite. Un grupo sin enlaces no aparece.
 
-| Rol | Documentos | Administración |
-|---|---|---|
-| Administrador del SGC | Buscar documentos, Trámites, Distribución, Vigencia, Normograma, Gestión de documentos, Listado Maestro, Tipos de documento, Configuración documental, Mapa de procesos | Entidad y marca, Estructura, Puntos de uso, Listas de distribución, Usuarios, Estadísticas, Bitácora, Accesos, Sesiones |
-| Gerencia | Buscar documentos, Trámites, Distribución (solo lectura), Vigencia (solo lectura), Normograma, Listado Maestro (solo vigentes, sin Excel) | Puntos de uso y Listas de distribución (solo lectura), Estadísticas |
-| Control Interno | Buscar documentos, Distribución (solo lectura), Vigencia (solo lectura), Normograma, Gestión de documentos (solo lectura), Listado Maestro | Puntos de uso y Listas de distribución (solo lectura), Estadísticas, Bitácora, Accesos |
-| Líder de proceso | Buscar documentos, Trámites, Distribución (la de sus procesos), Vigencia (la de sus procesos), Normograma | Puntos de uso (los de sus procesos) y Listas de distribución, en solo lectura |
-| Consulta | Buscar documentos, Normograma | — |
+| Rol | Documentos | Indicadores | Administración |
+|---|---|---|---|
+| Administrador del SGC | Buscar documentos, Trámites, Distribución, Vigencia, Normograma, Gestión de documentos, Listado Maestro, Tipos de documento, Configuración documental, Mapa de procesos | Indicadores, con las pestañas Lista, Matriz del año, Por aprobar y Cierre del mes | Configuración de indicadores, Entidad y marca, Estructura, Puntos de uso, Listas de distribución, Usuarios, Estadísticas, Bitácora, Accesos, Sesiones |
+| Gerencia | Buscar documentos, Trámites, Distribución (solo lectura), Vigencia (solo lectura), Normograma, Listado Maestro (solo vigentes, sin Excel) | Indicadores, con Lista, Matriz del año y Por aprobar | Puntos de uso y Listas de distribución (solo lectura), Estadísticas |
+| Control Interno | Buscar documentos, Distribución (solo lectura), Vigencia (solo lectura), Normograma, Gestión de documentos (solo lectura), Listado Maestro | Indicadores, con Lista y Matriz del año | Puntos de uso y Listas de distribución (solo lectura), Estadísticas, Bitácora, Accesos |
+| Líder de proceso | Buscar documentos, Trámites, Distribución (la de sus procesos), Vigencia (la de sus procesos), Normograma | Indicadores, con Lista, Matriz del año y Por aprobar | Puntos de uso (los de sus procesos) y Listas de distribución, en solo lectura |
+| Consulta | Buscar documentos, Normograma | Indicadores, con Lista y Matriz del año | — |
 
-Todos ven además **Inicio**. **Trámites** también le aparece a cualquier persona que
+Todos ven además **Inicio**. En **Indicadores** cada persona ve solo los indicadores que puede
+ver: los generales y, de los restringidos, los de su proceso o donde está designada (Capítulo 8,
+sección 8). **Trámites** también le aparece a cualquier persona que
 participe en un trámite, sea cual sea su rol (Capítulo 5), y **Distribución** a cualquier
 persona que sea responsable de un punto de uso activo, con solo sus puntos (Capítulo 6), y **Vigencia**
 a cualquier persona que sea responsable técnico de un documento externo, con solo la pestaña
@@ -87,12 +92,18 @@ hallazgo en Urgencias». También salen de la vigencia de los documentos: «Revi
 GTH-PR-01 v1 · vence el 14 ago 2027», «Verificar la vigencia de ATE-DE-01 · …», «Adoptar la
 edición nueva de ATE-DE-01», «Revisar los documentos de Consulta Externa (2 pendientes)» (la
 revisión anual) o «Revisar el impacto de Resolución 2003 de 2014 (derogada) en Consulta Externa
-(1)». Muestra de qué documento se trata y su fecha límite, o la marca **Vence hoy** o
-**Vencida**. Pulse una tarea para abrir el trámite, la copia, la lectura, la verificación, el
-documento o la revisión (Capítulo 5, sección 12; Capítulos 6 y 7). Cuando tiene más de cinco
-lecturas por confirmar, documentos por revisar o externos por verificar, **Mis tareas** los junta
+(1)». Y de los indicadores: «Reportar AIN-IND-01 Tiempo de espera en triage II, septiembre de
+2026», «Analizar SGC-IND-02 Eficacia de Acciones Correctivas, tercer trimestre de 2026»,
+«Responder la observación de … en SGC-IND-01», «Aprobar la ficha de GTH-IND-02» o «Ficha
+devuelta: SGC-IND-10». Muestra de qué documento o indicador se trata y su fecha límite, o la
+marca **Vence hoy** o **Vencida**. Pulse una tarea para abrir el trámite, la copia, la lectura,
+la verificación, el documento, la revisión o el indicador (Capítulo 5, sección 12; Capítulos 6, 7
+y 8). Cuando tiene más de cinco lecturas por confirmar, documentos por revisar, externos por
+verificar, indicadores por reportar o por analizar, o fichas por aprobar, **Mis tareas** los junta
 en una sola línea («12 lecturas por confirmar», «9 documentos por revisar», «6 externos por
-verificar»), para que no tapen las demás.
+verificar», «6 indicadores por reportar, 2 vencidos», «7 fichas por aprobar»), para que no tapen
+las demás. Una tarea de reportar un indicador puede tardar una carga de página en aparecer después
+de que termina su periodo.
 
 ### 3.2 Mis procesos (solo líderes de proceso)
 
@@ -103,16 +114,17 @@ administrador le asignó. Pulse uno para abrirlo.
 
 Debajo está el mapa de procesos de la entidad, por bandas (estratégicos, misionales, de
 apoyo y de evaluación), y al final la franja con el lema de la entidad. Pulse un proceso
-para ver sus subprocesos y sus documentos vigentes.
+para ver sus subprocesos, sus documentos vigentes y sus indicadores.
 
 ## 4. Buscar con `Ctrl K`
 
-Desde cualquier página puede buscar un documento o saltar a una sección:
+Desde cualquier página puede buscar un documento, una norma o un indicador, o saltar a una
+sección:
 
 1. Pulse **Buscar…** en la barra superior, o presione **`Ctrl K`** (en Mac, **`⌘ K`**).
-2. Escriba en el campo **"Buscar documentos o ir a una página…"**.
+2. Escriba en el campo **"Buscar documentos, normas e indicadores, o ir a una página…"**.
 
-Debajo aparecen tres grupos:
+Debajo aparecen cuatro grupos:
 
 - **Ir a**: las secciones de la barra lateral cuyo nombre coincide con lo que escribió.
   Solo aparecen las que su rol puede ver: si escribe "usuarios" y no administra usuarios,
@@ -123,9 +135,13 @@ Debajo aparecen tres grupos:
   puede ver.
 - **Normas**: hasta 4 normas del normograma cuyo número, título, tema o emisor coincide, con
   su estado. Las retiradas no aparecen (Capítulo 7, sección 2.2).
+- **Indicadores**: hasta 4 indicadores cuyo código o nombre coincide, sin importar las tildes,
+  con su proceso; uno retirado sale marcado «Retirado». Un indicador restringido solo aparece a
+  quien lo puede ver (Capítulo 8).
 
 La última fila, **Ver todos los resultados de “…”**, abre la página **Buscar documentos**
-con la lista completa y sus filtros.
+con la lista completa y sus filtros; debajo de los documentos trae también los grupos
+**Normas** e **Indicadores**.
 
 Con el teclado: las flechas **↑** y **↓** recorren las filas, **Enter** abre la elegida y
 **Escape** cierra la búsqueda y lo deja donde estaba. También puede pulsar la fila con el
@@ -134,13 +150,13 @@ ratón.
 Mensajes que puede ver debajo de la lista:
 
 - **"Buscando…"**: espere un momento.
-- **"Sin coincidencias"**: ninguna sección, documento vigente ni norma coincide. Pruebe con
-  otra palabra o con el código del documento.
+- **"Sin coincidencias"**: ninguna sección, documento vigente, norma ni indicador coincide.
+  Pruebe con otra palabra o con el código del documento o del indicador.
 - **"No se pudo buscar; intente de nuevo"**: falló la conexión con el servidor. Escriba
   otra letra o cierre y vuelva a abrir la búsqueda.
 
 La búsqueda rápida y la página **Buscar documentos** muestran solo versiones vigentes; las
-normas salen en su propio grupo.
+normas y los indicadores salen en su propio grupo.
 
 ## 5. La campana
 
@@ -165,7 +181,12 @@ o que debe recoger, una lectura que debe confirmar, un documento que dejó de ap
 hallazgo que debe corregir (Capítulo 6). Y de la vigencia: un documento o un externo con la
 revisión vencida, una edición nueva por adoptar, un externo que dejó de aplicar, la apertura,
 la prórroga o el cierre de la revisión anual, una norma que cambió y le pide revisar su impacto
-(Capítulo 7). Un aviso nunca trae el contenido del documento.
+(Capítulo 7). Y de los indicadores: una ficha que le toca aprobar, aprobada o devuelta; una
+designación nueva («Ahora mide SGC-IND-01»); un reporte que vence pronto o que ya venció; un
+resultado en Atención o en Crítico y su corrección; una observación o su respuesta; una medición
+reabierta; un indicador retirado; y el aviso a un jefe por los reportes vencidos de su equipo, que
+no nombra el indicador (Capítulo 8). Un aviso nunca trae el contenido del documento ni de un
+soporte.
 
 ## 6. El menú con su nombre: Mi cuenta, tema y salir
 
@@ -220,8 +241,8 @@ ancho de la hoja. La impresión sale siempre en colores claros, aunque usted
 use el tema oscuro.
 
 En el **Listado Maestro** (si su rol lo ve) hay además un botón **Imprimir / Guardar
-PDF**. Para obtener un PDF, elija "Guardar como PDF" como impresora en la ventana de
-impresión.
+PDF**, y en un indicador, **Imprimir ficha** (Capítulo 8, sección 2.8). Para obtener un PDF,
+elija "Guardar como PDF" como impresora en la ventana de impresión.
 
 ## 9. Resumen de mensajes
 
@@ -229,7 +250,7 @@ impresión.
 |---|---|---|
 | No tiene tareas pendientes. Cuando un documento necesite su revisión o aprobación, aparecerá aquí. | No hay nada que el SGC espere de usted | Nada |
 | Sin notificaciones. Aquí verá los avisos del sistema y las tareas que le asignen. | No tiene avisos | Nada |
-| Sin coincidencias | La búsqueda rápida no encontró secciones, documentos vigentes ni normas | Pruebe con otra palabra o con el código |
+| Sin coincidencias | La búsqueda rápida no encontró secciones, documentos vigentes, normas ni indicadores | Pruebe con otra palabra o con el código |
 | No se pudo buscar; intente de nuevo | Falló la conexión con el servidor | Escriba otra letra o vuelva a abrir la búsqueda |
 | Sin acceso: "Su cuenta no tiene permiso para ver esta sección." | Abrió una página que su rol no puede ver | Pulse **Volver al inicio**; si necesita ese acceso, pídalo al administrador |
 | Página no encontrada | La dirección no existe o el registro ya no está disponible | Pulse **Volver al inicio** y busque lo que necesita |

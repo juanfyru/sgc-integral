@@ -35,7 +35,9 @@ Antes de seguir, vea el Capítulo 5 (cómo se pide y se publica un documento) y 
   se modifica, se deroga o se retira, el SGC abre la revisión de su impacto en esos documentos
   y procesos.
 - **Indicadores documentales:** siete cifras del proceso documental con su meta: documentos al
-  día, tiempo de aprobación, vencidos, acuses, conformidad, externos y etapas a tiempo.
+  día, tiempo de aprobación, vencidos, acuses, conformidad, externos y etapas a tiempo. El SGC las
+  calcula solo, desde los documentos; no son las fichas del módulo **Indicadores** (Capítulo 8),
+  que se reportan periodo a periodo.
 
 Dónde está cada cosa:
 
@@ -102,6 +104,8 @@ Pulse una norma para ver su ficha:
 - **Relaciones con otras normas:** a cuáles modifica, deroga o reglamenta, y cuáles la afectan.
 - **Procesos a los que aplica**, con su requisito, y **Documentos enlazados**: los internos que
   la implementan y los externos que la reproducen.
+- **Indicadores que exige:** los indicadores cuya ficha cita la norma, por ejemplo un indicador
+  regulatorio (Capítulo 8). Uno restringido solo aparece a quien lo puede ver.
 
 **Los documentos restringidos.** Si una norma está enlazada a un documento restringido que
 usted no puede ver, ese documento no aparece en la ficha ni se cuenta: para usted no existe.
