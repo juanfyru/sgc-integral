@@ -244,7 +244,8 @@ export function columnasDeVariables(filas: readonly Pick<FilaDelAnio, "valores">
 
 /**
  * Las filas del año en bloques por la versión de la ficha con que se calcularon (spec §7.8.6, «cada bloque dice con qué
- * versión»), en el orden en que aparece cada versión; las de otra periodicidad van en el bloque de la suya.
+ * versión»), de la versión más antigua a la más reciente, cada bloque con sus filas en el orden del año; las de otra
+ * periodicidad van en el bloque de la suya. Un periodo corregido después de un cambio menor no adelanta su versión.
  */
 export function bloquesPorVersion<F extends Pick<FilaDelAnio, "version">>(filas: readonly F[]): { version: number; filas: F[] }[] {
   const bloques: { version: number; filas: F[] }[] = [];
@@ -253,5 +254,5 @@ export function bloquesPorVersion<F extends Pick<FilaDelAnio, "version">>(filas:
     if (bloque) bloque.filas.push(f);
     else bloques.push({ version: f.version, filas: [f] });
   }
-  return bloques;
+  return bloques.sort((a, b) => a.version - b.version);
 }

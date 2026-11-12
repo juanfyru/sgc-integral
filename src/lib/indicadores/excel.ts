@@ -8,6 +8,7 @@ import ExcelJS from "exceljs";
 import type { ImpresionDelAnio } from "@/db/consultas/indicadores/impresion";
 import type { FiltroDeLista, OpcionesDeLista } from "@/db/consultas/indicadores/lista";
 import type { FilaDeResultados } from "@/db/consultas/indicadores/matriz";
+import { neutralizarFormula } from "@/lib/celdas";
 import { agregarHoja, type Celda, type Columna, type MetaHoja } from "@/lib/distribucion/hoja-excel";
 import { MESES } from "@/lib/indicadores-documentales/periodo";
 import { fechaEnZona } from "@/lib/tramites/plazos";
@@ -63,7 +64,8 @@ function columnasDeResultados(variables: { letra: string; nombre: string }[]): A
   return [
     { cab: "Periodo", ancho: 28, valor: (f) => f.periodo },
     { cab: "Versión de la ficha", ancho: 10, valor: (f) => f.version },
-    ...variables.map((v): Columna<FilaDeResultado> => ({ cab: v.nombre, ancho: 16, valor: (f) => f.valores[v.letra] ?? null })),
+    // El encabezado de una variable es texto del usuario: `agregarHoja` solo sanea las filas de datos.
+    ...variables.map((v): Columna<FilaDeResultado> => ({ cab: neutralizarFormula(v.nombre), ancho: 16, valor: (f) => f.valores[v.letra] ?? null })),
     { cab: "Resultado", ancho: 12, valor: (f) => f.resultado },
     { cab: "Meta", ancho: 14, valor: (f) => f.meta },
     { cab: "Cumple", ancho: 9, valor: (f) => f.cumple || null },

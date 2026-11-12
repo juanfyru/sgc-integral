@@ -182,11 +182,20 @@ describe("el Excel de un indicador", () => {
     revertida(sql, async (tx) => {
       const p = await proceso(tx);
       const quien = await usuarioDePrueba(tx, { rol: "consulta" });
-      const ind = await conNombre(tx, "=SUMA(A1)", { procesoId: p.id, periodicidad: "trimestral", inicioMedicion: "2026-T1", mide: [quien.usuarioId] });
+      const ind = await conNombre(tx, "=SUMA(A1)", {
+        procesoId: p.id,
+        periodicidad: "trimestral",
+        inicioMedicion: "2026-T1",
+        mide: [quien.usuarioId],
+        variables: { A: { nombre: "+HIPERVINCULO(B1)" } },
+      });
       await medir(tx, quien, ind, { "2026-T1": { A: "9", B: "10" } });
 
       const deIndicador = await leerLibro(await construirExcelDeIndicador((await impresionDelAnio(quien, ind.codigo, 2026, opc(tx)))!, META));
       expect(fila(deIndicador.Ficha, "Identificación")?.[2]).toBe("'=SUMA(A1)");
+      expect(texto(deIndicador.Ficha)).toContain("Variable A | '+HIPERVINCULO(B1)");
+      // El encabezado de la columna de una variable también es texto del usuario.
+      expect(cabecera(deIndicador["Resultados 2026"], "Periodo")[2]).toBe("'+HIPERVINCULO(B1)");
       const deLista = await leerLibro(await construirExcelDeResultados(await resultadosDeLaLista(quien, { procesoId: p.id }, 2026, opc(tx)), 2026, META));
       expect(fila(deLista["Resultados 2026"], ind.codigo)?.[1]).toBe("'=SUMA(A1)");
     }));
