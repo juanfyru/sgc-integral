@@ -1183,7 +1183,8 @@ son CSS, F14-DC23). La rama `fase-14a-indicadores` (75 confirmaciones sobre `bce
   pide confirmación 30) y los tres maestros (tipos, clasificaciones y unidades) si están vacíos. Triggers: solo inserción
   en `medicion_eventos`, `medicion_observaciones` y `cierres_indicadores`; `sgc_impedir_si_medicion_cerrada` (una medición
   cerrada no cambia salvo la reapertura) y `sgc_impedir_si_version_aprobada` (una versión aprobada, ni sus hijas).
-  `medicion_eventos` y `medicion_observaciones` entran al `REVOKE UPDATE, DELETE` de `sgc_app`. **Doce migraciones en total
+  `medicion_eventos`, `medicion_observaciones` y `cierres_indicadores` entran al `REVOKE UPDATE, DELETE` de `sgc_app`
+  (`cierres_indicadores` desde la ola final de corrección, M1, en `src/db/roles-bd.ts`). **Doce migraciones en total
   (0000 a 0011).** Aditiva: sobre una base de la 13C o de `sgc-suaza` no se renombra ni se borra nada.
 - **Permisos (`src/lib/permisos.ts`):** `indicadores.administrar` (admin_sgc), `indicadores.aprobar` (gerencia,
   lider_proceso), `indicadores.medir` e `indicadores.observar` (los cinco roles; la condición de persona se comprueba en

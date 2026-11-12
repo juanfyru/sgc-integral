@@ -71,7 +71,7 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
     semillas y creación del rol de la app) y `DATABASE_URL` (rol `sgc_app`, solo DML,
     sin `UPDATE` ni `DELETE` en `auditoria`, `accesos`, `firmas`, `tramite_eventos`,
     `copia_eventos`, `acuse_eventos`, `ratificaciones`, `externo_verificaciones`,
-    `norma_cambios`, `medicion_eventos` y `medicion_observaciones`).
+    `norma_cambios`, `medicion_eventos`, `medicion_observaciones` y `cierres_indicadores`).
     `asegurarRolApp` (`src/db/roles-bd.ts`) crea el rol y aplica sus privilegios en cada
     arranque, después de las migraciones. Los secretos (`APP_SECRETO`, `BD_APP_CLAVE`) se
     generan al instalar; sin un `APP_SECRETO` válido el arranque de producción falla.
@@ -113,7 +113,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
    `medicion_valores`, también al insertar valores); una versión aprobada de una ficha no cambia,
    ni sus variables, responsables y normas (`sgc_impedir_si_version_aprobada`, también al insertar
    hijas); y un cierre del mes (`cierres_indicadores`) no se modifica ni se borra (trigger
-   `sgc_impedir_modificacion`, sin entrar al `REVOKE` de `sgc_app`). Cada acción de la bitácora
+   `sgc_impedir_modificacion` y el `REVOKE` de `sgc_app`, con su caso en
+   `tests/privilegios-bd.test.ts`; la reapertura no lo toca). Cada acción de la bitácora
    tiene su frase legible y su nombre de filtro en `src/lib/bitacora-detalle.ts`
    (`describirEvento`, `nombreDeAccion`), armada solo con el `detalle` de la fila.
    `tests/bitacora-detalle.test.ts` lo exige para las acciones con nombre literal en las llamadas

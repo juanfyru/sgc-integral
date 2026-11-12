@@ -51,6 +51,11 @@ describe.skipIf(!process.env.DATABASE_URL_MIGRADOR)("rol sgc_app", () => {
     expect(await codigoDeError(app`UPDATE ${app(tabla)} SET creado_en = creado_en WHERE id = -1`)).toBe("42501");
     expect(await codigoDeError(app`DELETE FROM ${app(tabla)} WHERE id = -1`)).toBe("42501");
   });
+  // Un cierre del mes tampoco (ola final, M1): su columna de tiempo es `cerrado_en`. Sin filas, el 42501 es del privilegio.
+  it("no puede modificar ni borrar cierres_indicadores", async () => {
+    expect(await codigoDeError(app`UPDATE cierres_indicadores SET cerrado_en = cerrado_en WHERE id = -1`)).toBe("42501");
+    expect(await codigoDeError(app`DELETE FROM cierres_indicadores WHERE id = -1`)).toBe("42501");
+  });
   it("sí puede insertar, leer y borrar en tablas operativas", async () => {
     const [u] = await app`INSERT INTO usuarios (usuario, nombre, hash_clave) VALUES (${'zz_priv_u_' + Date.now()}, 'x', 'h') RETURNING id`;
     expect(u.id).toBeGreaterThan(0);
