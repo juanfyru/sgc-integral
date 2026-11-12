@@ -59,10 +59,12 @@ describe("el grupo «Normas» de la paleta", () => {
     tipo: "MN",
     ruta: "/documentos/sog-mn-01",
   };
-  it("separa los documentos de las normas: las normas van debajo, en el orden en que llegaron", () => {
+  it("separa los documentos, las normas y los indicadores: cada grupo en el orden en que llegó", () => {
+    const indicador = { ...documento, grupo: "indicador" as const, codigo: "GTH-IND-01", ruta: "/indicadores/GTH-IND-01" };
     const otra = { ...norma, codigo: "Resolución 2003 de 2014", ruta: "/normograma/8", tipo: "Derogada" };
-    expect(gruposDeResultados([norma, documento, otra])).toEqual({ documentos: [documento], normas: [norma, otra] });
-    expect(gruposDeResultados([])).toEqual({ documentos: [], normas: [] });
+    expect(gruposDeResultados([norma, documento, otra])).toEqual({ documentos: [documento], normas: [norma, otra], indicadores: [] });
+    expect(gruposDeResultados([indicador, norma, documento]).indicadores).toEqual([indicador]);
+    expect(gruposDeResultados([])).toEqual({ documentos: [], normas: [], indicadores: [] });
   });
 });
 

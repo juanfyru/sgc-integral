@@ -53,7 +53,7 @@ export function GrupoPaleta({ titulo, vacio, children }: { titulo: string; vacio
 
 type Opcion =
   | { id: string; clase: "ir"; entrada: EntradaNav; ruta: string }
-  | { id: string; clase: "documento" | "norma"; resultado: ResultadoRapido; ruta: string }
+  | { id: string; clase: "documento" | "norma" | "indicador"; resultado: ResultadoRapido; ruta: string }
   | { id: string; clase: "todos"; ruta: string };
 
 export function Buscador({ entradas }: { entradas: EntradaNav[] }) {
@@ -145,7 +145,7 @@ function Paleta({ entradas, cerrar }: { entradas: EntradaNav[]; cerrar: () => vo
 
   const estado = estadoDeBusqueda(consulta, respuesta);
   const resultados = (estado === "listo" && respuesta?.resultados) || [];
-  const { documentos: docsVisibles, normas: normasVisibles } = gruposDeResultados(resultados);
+  const { documentos: docsVisibles, normas: normasVisibles, indicadores: indicadoresVisibles } = gruposDeResultados(resultados);
 
   const opciones: Opcion[] = [
     ...irA.map((entrada, i): Opcion => ({ id: `${idBase}-ir-${i}`, clase: "ir", entrada, ruta: entrada.href })),
@@ -154,6 +154,9 @@ function Paleta({ entradas, cerrar }: { entradas: EntradaNav[]; cerrar: () => vo
     ),
     ...normasVisibles.map(
       (resultado, i): Opcion => ({ id: `${idBase}-norma-${i}`, clase: "norma", resultado, ruta: resultado.ruta }),
+    ),
+    ...indicadoresVisibles.map(
+      (resultado, i): Opcion => ({ id: `${idBase}-indicador-${i}`, clase: "indicador", resultado, ruta: resultado.ruta }),
     ),
     ...(buscaDocumentos
       ? [{ id: `${idBase}-todos`, clase: "todos", ruta: `/buscar?q=${encodeURIComponent(consulta)}` } as Opcion]
@@ -191,6 +194,7 @@ function Paleta({ entradas, cerrar }: { entradas: EntradaNav[]; cerrar: () => vo
   const filasIr = opciones.filter((o) => o.clase === "ir");
   const filasDocs = opciones.filter((o) => o.clase === "documento");
   const filasNormas = opciones.filter((o) => o.clase === "norma");
+  const filasIndicadores = opciones.filter((o) => o.clase === "indicador");
   const filaTodos = opciones.find((o) => o.clase === "todos");
 
   const propsOpcion = (o: Opcion) => ({
@@ -214,8 +218,8 @@ function Paleta({ entradas, cerrar }: { entradas: EntradaNav[]; cerrar: () => vo
           aria-controls={idLista}
           aria-activedescendant={idActiva}
           aria-autocomplete="list"
-          aria-label="Buscar documentos y normas, o ir a una página"
-          placeholder="Buscar documentos y normas, o ir a una página…"
+          aria-label="Buscar documentos, normas e indicadores, o ir a una página"
+          placeholder="Buscar documentos, normas e indicadores, o ir a una página…"
           autoComplete="off"
           spellCheck={false}
           maxLength={LARGO_MAXIMO_CONSULTA}
@@ -268,6 +272,19 @@ function Paleta({ entradas, cerrar }: { entradas: EntradaNav[]; cerrar: () => vo
                   <span className="block truncate text-xs text-muted-foreground">{o.resultado.titulo}</span>
                 </span>
                 <span className="shrink-0 rounded border border-border px-1.5 text-xs text-muted-foreground">
+                  {o.resultado.tipo}
+                </span>
+              </li>
+            ) : null,
+          )}
+        </GrupoPaleta>
+        <GrupoPaleta titulo="Indicadores" vacio={filasIndicadores.length === 0}>
+          {filasIndicadores.map((o) =>
+            o.clase === "indicador" ? (
+              <li key={o.id} {...propsOpcion(o)}>
+                <span className="shrink-0 font-mono text-xs">{o.resultado.codigo}</span>
+                <span className="min-w-0 flex-1 truncate">{o.resultado.titulo}</span>
+                <span className="max-w-40 shrink-0 truncate rounded border border-border px-1.5 text-xs text-muted-foreground">
                   {o.resultado.tipo}
                 </span>
               </li>

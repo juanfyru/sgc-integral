@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
-import { CalendarRange, FileSearch, Filter, Scale, SearchX, TimerOff } from "lucide-react";
+import { CalendarRange, FileSearch, Filter, Gauge, Scale, SearchX, TimerOff } from "lucide-react";
 import { CampoBusqueda } from "@/componentes/busqueda/CampoBusqueda";
 import { TarjetaResultado } from "@/componentes/busqueda/TarjetaResultado";
 import { InsigniaNorma } from "@/componentes/normograma/TablaNormas";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
+import { Insignia } from "@/componentes/ui/Insignia";
 import {
   buscarDocumentos,
   hayCriterios,
@@ -13,8 +14,11 @@ import {
   type FiltrosBusqueda,
   type RespuestaBusqueda,
 } from "@/db/consultas/busqueda";
+import { buscarIndicadores, type ResultadoIndicador } from "@/db/consultas/indicadores/busqueda";
 import { buscarNormas, type ResultadoNorma } from "@/db/consultas/normograma/busqueda";
 import { obtenerDetalleProceso } from "@/db/consultas/procesos";
+import { INDICADORES_EN_LA_BUSQUEDA } from "@/lib/busqueda-rapida";
+import { rutaDeIndicador } from "@/lib/indicadores/rutas";
 import { crearLimitador } from "@/lib/limite";
 import { exigirSesion } from "@/lib/paginas";
 
@@ -90,6 +94,7 @@ export default async function PaginaBuscar({
   };
 
   let normas: ResultadoNorma[] = [];
+  let indicadores: ResultadoIndicador[] = [];
 
   if (conCriterios) {
     if (!permitirBusqueda(String(sesion.usuarioId))) {
@@ -97,9 +102,10 @@ export default async function PaginaBuscar({
     } else {
       // El normograma se lee con cualquier sesión: las normas no retiradas que coinciden con el texto, sin los filtros
       // de documento (tipo, proceso, fechas), que no les aplican.
-      [respuesta, normas] = await Promise.all([
+      [respuesta, normas, indicadores] = await Promise.all([
         buscarDocumentos(filtros, sesion),
         filtros.q?.trim() ? buscarNormas(filtros.q, NORMAS_EN_LA_BUSQUEDA) : Promise.resolve([]),
+        filtros.q?.trim() ? buscarIndicadores(filtros.q, sesion, INDICADORES_EN_LA_BUSQUEDA) : Promise.resolve([]),
       ]);
       if (filtros.q?.trim()) {
         await registrarBusqueda(filtros.q, respuesta.total).catch((err) =>
@@ -358,6 +364,7 @@ export default async function PaginaBuscar({
               </ul>
             )}
             {normas.length > 0 ? <GrupoNormas normas={normas} /> : null}
+            {indicadores.length > 0 ? <GrupoIndicadores indicadores={indicadores} /> : null}
           </section>
         </div>
       )}
@@ -386,6 +393,34 @@ function GrupoNormas({ normas }: { normas: ResultadoNorma[] }) {
               <span className="block break-words text-muted-foreground">{n.titulo}</span>
             </span>
             <InsigniaNorma estado={n.estado} estadoEn={null} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** El grupo «Indicadores» debajo de las normas: el código, el nombre y el proceso en texto, con el enlace a su página. */
+function GrupoIndicadores({ indicadores }: { indicadores: ResultadoIndicador[] }) {
+  return (
+    <section aria-labelledby="titulo-indicadores" className="mt-8">
+      <h2 id="titulo-indicadores" className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+        <Gauge className="size-4 text-muted-foreground" aria-hidden="true" />
+        Indicadores
+      </h2>
+      <ul className="space-y-2">
+        {indicadores.map((i) => (
+          <li key={i.codigo} className="flex min-w-0 flex-wrap items-start justify-between gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm">
+            <span className="min-w-0 flex-1">
+              <Link
+                href={rutaDeIndicador(i.codigo)}
+                className="rounded font-medium text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca"
+              >
+                <span className="font-mono text-xs">{i.codigo}</span> {i.nombre}
+              </Link>
+              <span className="block break-words text-muted-foreground">{i.proceso}</span>
+            </span>
+            {i.retirado ? <Insignia variante="sin-dato">Retirado</Insignia> : null}
           </li>
         ))}
       </ul>

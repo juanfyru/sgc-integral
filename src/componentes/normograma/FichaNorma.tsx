@@ -5,6 +5,8 @@ import { ZonaCarga } from "@/componentes/admin/ZonaCarga";
 import { formatearTamano } from "@/componentes/documentos/IconoFormato";
 import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
+import { IndicadoresQueExige } from "@/componentes/indicadores/IndicadoresQueExige";
+import type { IndicadorQueExige } from "@/db/consultas/indicadores/busqueda";
 import type { DocumentoGestionable } from "@/db/consultas/normograma/asociaciones";
 import type { Norma } from "@/db/consultas/normograma/lectura";
 import { fechaDeNorma } from "@/lib/normograma/tipos";
@@ -23,6 +25,8 @@ export type OpcionesFicha = {
   normas: { id: number; nombre: string; titulo: string }[];
   /** Hoy, `yyyy-mm-dd` en la zona de la instalación. */
   hoy: string;
+  /** Los indicadores activos cuya versión vigente la cita y que la persona ve; sin ellos, la sección no se pinta. */
+  indicadores?: IndicadorQueExige[];
 };
 
 function Dato({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
@@ -140,6 +144,7 @@ export function FichaNorma({ norma: n, opciones }: { norma: Norma; opciones: Opc
         <SeccionRelaciones norma={n} administra={administra} normas={opciones.normas} />
         <SeccionProcesos norma={n} abierta={!retirada} procesos={opciones.procesos} />
         <SeccionDocumentos norma={n} abierta={!retirada} documentos={opciones.documentos} />
+        <IndicadoresQueExige indicadores={opciones.indicadores ?? []} clase={SECCION} />
         {administra ? <SeccionAdministrar norma={n} /> : null}
       </div>
     </div>

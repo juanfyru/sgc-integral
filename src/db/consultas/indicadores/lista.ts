@@ -339,3 +339,68 @@ export async function opcionesDeLista(sesion: SujetoVisibilidad, opciones?: { sq
     anios: anios.map((f) => Number(f.anio)),
   };
 }
+
+/** Lo que la página de un proceso o de un subproceso muestra de cada indicador (spec §12.8). */
+export type FilaDeProceso = Pick<
+  FilaDeLista,
+  "id" | "codigo" | "nombre" | "resultado" | "semaforo" | "noAplica" | "periodo" | "etiquetaPeriodo" | "reporte" | "restringido"
+>;
+
+const filaDeProceso = (f: FilaDeLista): FilaDeProceso => ({
+  id: f.id,
+  codigo: f.codigo,
+  nombre: f.nombre,
+  resultado: f.resultado,
+  semaforo: f.semaforo,
+  noAplica: f.noAplica,
+  periodo: f.periodo,
+  etiquetaPeriodo: f.etiquetaPeriodo,
+  reporte: f.reporte,
+  restringido: f.restringido,
+});
+
+/** Los de la lista (los que la persona ve, con su último periodo terminado), sin borradores ni descartados: no tienen ficha aprobada. */
+const conFicha = (f: FilaDeLista) => f.estado === "activo";
+
+/**
+ * Los indicadores del proceso que la persona ve, los suyos y, agrupados por subproceso, los de cada subproceso (spec
+ * §12.8): la misma lectura, visibilidad y último periodo que la lista. Un grupo sin indicadores visibles no existe.
+ */
+export async function indicadoresDeProceso(
+  sesion: SujetoVisibilidad,
+  procesoId: number,
+  opciones?: Opciones,
+): Promise<{ propios: FilaDeProceso[]; porSubproceso: { subprocesoId: number; nombre: string; filas: FilaDeProceso[] }[] }> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const { filas } = await listarIndicadores(sesion, { procesoId }, opciones);
+  const visibles = filas.filter(conFicha);
+  if (visibles.length === 0) return { propios: [], porSubproceso: [] };
+  const subprocesos = await sql`
+    SELECT i.id, va.subproceso_id, s.nombre
+    FROM indicadores i
+    JOIN LATERAL (
+      SELECT subproceso_id FROM indicador_versiones WHERE indicador_id = i.id AND estado = 'aprobada' ORDER BY numero DESC LIMIT 1
+    ) va ON true
+    LEFT JOIN subprocesos s ON s.id = va.subproceso_id
+    WHERE i.id IN ${sql(visibles.map((f) => f.id))}`;
+  const deIndicador = new Map(subprocesos.map((s) => [Number(s.id), s.subproceso_id === null ? null : { id: Number(s.subproceso_id), nombre: s.nombre as string }]));
+  const propios: FilaDeProceso[] = [];
+  const grupos = new Map<number, { subprocesoId: number; nombre: string; filas: FilaDeProceso[] }>();
+  for (const f of visibles) {
+    const sub = deIndicador.get(f.id) ?? null;
+    if (!sub) {
+      propios.push(filaDeProceso(f));
+      continue;
+    }
+    const grupo = grupos.get(sub.id) ?? { subprocesoId: sub.id, nombre: sub.nombre, filas: [] };
+    grupo.filas.push(filaDeProceso(f));
+    grupos.set(sub.id, grupo);
+  }
+  return { propios, porSubproceso: [...grupos.values()].sort((a, b) => a.nombre.localeCompare(b.nombre, "es") || a.subprocesoId - b.subprocesoId) };
+}
+
+/** Los indicadores del subproceso que la persona ve (spec §12.8). */
+export async function indicadoresDeSubproceso(sesion: SujetoVisibilidad, subprocesoId: number, opciones?: Opciones): Promise<FilaDeProceso[]> {
+  const { filas } = await listarIndicadores(sesion, { subprocesoId }, opciones);
+  return filas.filter(conFicha).map(filaDeProceso);
+}
