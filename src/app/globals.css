@@ -548,6 +548,12 @@
   }
 }
 
+/* «No aplica» en la barra de estados de la lista: el tono neutro de «sin dato», con rayas, para que no se distinga solo
+   por el color (la lectura en texto ya lo dice; Tarea 19, D-11). */
+.barra-no-aplica {
+  background: repeating-linear-gradient(135deg, var(--estado-sin-dato) 0 2px, var(--estado-sin-dato-fondo) 2px 4px);
+}
+
 /* ── Fase 14A: la ficha impresa de un indicador (spec §7.8, maqueta 7) ──────
    Su propia página con nombre: los márgenes no cambian la impresión del resto de la app (el Listado Maestro, la matriz).
    Al imprimir, la hoja y sus bloques pasan de flex a bloque (el navegador parte mejor los bloques); ninguna fila de una

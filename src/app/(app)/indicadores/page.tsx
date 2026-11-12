@@ -36,7 +36,7 @@ export default async function PaginaIndicadores({ searchParams }: { searchParams
   ]);
   const filtrada = Object.keys(filtro).length > 0;
   // La barra se cuenta antes del filtro de semáforo: si ese filtro deja cero filas, la barra sigue diciendo lo visible.
-  const visibles = resumen.bien + resumen.atencion + resumen.critico + resumen.sinDato;
+  const visibles = resumen.bien + resumen.atencion + resumen.critico + resumen.sinDato + resumen.noAplica;
   // El Excel de resultados lleva los filtros puestos (spec §13); es una descarga auditada: un enlace simple, sin precarga.
   const consulta = consultaDeFiltro(filtro);
 

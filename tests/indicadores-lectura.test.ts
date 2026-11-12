@@ -187,18 +187,25 @@ describe("la lista", () => {
       const ajeno = await usuarioDePrueba(tx, { rol: "consulta" });
       const deAjeno = await lista(tx, ajeno, { procesoId: p.id });
       expect(deAjeno.filas.map((f) => f.codigo)).toEqual([general.codigo]);
-      expect(deAjeno.resumen).toEqual({ bien: 1, atencion: 0, critico: 0, sinDato: 0, vencidos: 0 });
+      expect(deAjeno.resumen).toEqual({ bien: 1, atencion: 0, critico: 0, sinDato: 0, noAplica: 0, vencidos: 0 });
 
       // El Admin SGC sí: el crítico, y su análisis vencido.
       const deAdmin = await lista(tx, admin, { procesoId: p.id });
       expect(deAdmin.filas.map((f) => f.codigo).sort()).toEqual([general.codigo, restringido.codigo].sort());
-      expect(deAdmin.resumen).toEqual({ bien: 1, atencion: 0, critico: 1, sinDato: 0, vencidos: 1 });
+      expect(deAdmin.resumen).toEqual({ bien: 1, atencion: 0, critico: 1, sinDato: 0, noAplica: 0, vencidos: 1 });
       expect(deAdmin.filas.find((f) => f.codigo === restringido.codigo)).toMatchObject({ restringido: true, semaforo: "critico" });
 
       // El filtro de semáforo no cambia la barra: se cuenta antes.
       const criticos = await lista(tx, admin, { procesoId: p.id, semaforo: "critico" });
       expect(criticos.filas.map((f) => f.codigo)).toEqual([restringido.codigo]);
       expect(criticos.resumen).toEqual(deAdmin.resumen);
+
+      // «No aplica» se cuenta aparte de «sin dato» (ronda 1 de la Tarea 19, D-11).
+      const otro = await trimestral(tx, p.id, { inicioMedicion: "2026-T3", mide: [quien.usuarioId] });
+      await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: otro.id });
+      const [t3] = await tx`SELECT id FROM mediciones WHERE indicador_id = ${otro.id} AND periodo = '2026-T3'`;
+      await marcarNoAplica(quien, { medicionId: Number(t3.id), motivo: "No hubo casos que medir" }, opc(tx));
+      expect((await lista(tx, ajeno, { procesoId: p.id })).resumen).toMatchObject({ bien: 1, sinDato: 0, noAplica: 1 });
     }));
 
   it("quien administra ve además los borradores y los cambios en curso, sin contarlos en la barra", () =>
@@ -219,7 +226,7 @@ describe("la lista", () => {
         periodo: null,
         semaforo: null,
       });
-      expect(deAdmin.resumen).toEqual({ bien: 1, atencion: 0, critico: 0, sinDato: 0, vencidos: 0 });
+      expect(deAdmin.resumen).toEqual({ bien: 1, atencion: 0, critico: 0, sinDato: 0, noAplica: 0, vencidos: 0 });
 
       // Un cambio en curso sobre la aprobada: el nombre sigue siendo el aprobado y el cambio se marca, solo a quien administra.
       const cambio = await abrirCambio(admin, general.id, { sql: tx });

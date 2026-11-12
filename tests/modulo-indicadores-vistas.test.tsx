@@ -149,7 +149,7 @@ describe("los componentes", () => {
       { ...FILA, id: 3, codigo: "AIN-IND-01", nombre: "Tiempo de espera", semaforo: "bien", resultado: "28 min", subproceso: "Urgencias", flecha: "baja", mejora: true },
     ];
     const html = renderToStaticMarkup(
-      <ListaIndicadores filas={filas} resumen={{ bien: 19, atencion: 7, critico: 3, sinDato: 3, vencidos: 2 }} />,
+      <ListaIndicadores filas={filas} resumen={{ bien: 19, atencion: 7, critico: 3, sinDato: 3, noAplica: 0, vencidos: 2 }} />,
     );
     expect(html).toContain("19 bien, ");
     expect(html).toContain("7 en atención, ");
@@ -276,7 +276,7 @@ describe("los componentes", () => {
     const html = renderToStaticMarkup(
       <ListaIndicadores
         filas={[{ ...FILA, tendencia: [null, null, null, null, null, 87], semaforo: "bien", resultado: "87 %", flecha: "sube", mejora: true }]}
-        resumen={{ bien: 1, atencion: 0, critico: 0, sinDato: 0, vencidos: 0 }}
+        resumen={{ bien: 1, atencion: 0, critico: 0, sinDato: 0, noAplica: 0, vencidos: 0 }}
       />,
     );
     expect(html).toContain("un solo periodo");

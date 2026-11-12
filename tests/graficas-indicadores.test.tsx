@@ -387,6 +387,13 @@ describe("las piezas pequeñas", () => {
     );
     expect(renderToStaticMarkup(<BarraEstados bien={0} atencion={0} critico={0} sinDato={0} />)).not.toContain("NaN");
     expect(barra).toMatch(/^<div class="tubo-color-exacto /);
+    // «No aplica» va aparte de «sin dato», escrito y con su propio segmento rayado (ronda 1 de la Tarea 19, D-11).
+    const conNoAplica = renderToStaticMarkup(<BarraEstados bien={7} atencion={1} critico={1} sinDato={0} noAplica={1} />);
+    expect(sinEtiquetas(conNoAplica)).toBe("7 bien, 1 en atención, 1 crítico, 0 sin dato, 1 no aplica");
+    expect(conNoAplica).toContain('<span class="barra-no-aplica" style="width:10%"');
+    expect(readFileSync(path.join(raiz, "src/app/globals.css"), "utf8")).toMatch(
+      /\.barra-no-aplica\s*\{[^}]*repeating-linear-gradient\([^)]*var\(--estado-sin-dato\)/,
+    );
   });
 });
 

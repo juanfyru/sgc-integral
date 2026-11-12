@@ -91,7 +91,7 @@ function TendenciaDeFila({ f }: { f: FilaDeLista }) {
 export function BarraDeLista({ resumen }: { resumen: ResumenDeLista }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <BarraEstados bien={resumen.bien} atencion={resumen.atencion} critico={resumen.critico} sinDato={resumen.sinDato} />
+      <BarraEstados bien={resumen.bien} atencion={resumen.atencion} critico={resumen.critico} sinDato={resumen.sinDato} noAplica={resumen.noAplica} />
       <p className="text-sm text-muted-foreground">
         {resumen.vencidos === 0 ? "Ningún reporte vencido." : `${cuenta(resumen.vencidos, "reporte vencido", "reportes vencidos")}.`}
       </p>
