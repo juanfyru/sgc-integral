@@ -8,7 +8,7 @@ import { Boton, claseBoton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import type { DatosFicha } from "@/lib/esquemas/indicadores";
 import { analizar } from "@/lib/indicadores/formula/analizar";
-import { enPalabras, FACTORES_TASA, formulaDeForma, letrasDeForma } from "@/lib/indicadores/formula/formas";
+import { enPalabras, FACTORES_TASA, formulaDeForma, letrasDeForma, unidadDeForma } from "@/lib/indicadores/formula/formas";
 import { fraccion } from "@/lib/indicadores/formula/fraccion";
 import type { Regla } from "@/lib/indicadores/semaforo";
 import {
@@ -222,8 +222,9 @@ export function FormularioFicha({ opciones, valores = {}, edicion }: { opciones:
     return proceso === "" ? [] : [...(opciones.cargosDeLideres[proceso] ?? [])];
   };
   const formaInicial = valores.forma ?? "porcentaje";
-  const unidadPorForma = (f: Forma) => (f === "porcentaje" ? opciones.unidades.find((u) => u.sufijo.trim() === "%")?.id : undefined);
-  const unidadInicial = valores.unidadId ?? unidadPorForma(formaInicial) ?? opciones.unidades[0]?.id;
+  // La unidad sigue a la forma mientras nadie la elija a mano: un conteo no queda en «%» (Tarea 19, D-3).
+  const unidadPorForma = (f: Forma, fa: number) => unidadDeForma(f, fa, opciones.unidades);
+  const unidadInicial = valores.unidadId ?? unidadPorForma(formaInicial, valores.factor ?? 1000) ?? opciones.unidades[0]?.id;
   // Quien llena la ficha no queda designado solo: sin persona, mide el líder del proceso (F14-DC10, spec §6.3).
   const mideInicial: number | "" = valores.mide ? (valores.mide[0] ?? "") : "";
   const analizaInicial: number | "" | "misma" =
@@ -303,7 +304,11 @@ export function FormularioFicha({ opciones, valores = {}, edicion }: { opciones:
     if (f === "libre" && !formula.trim()) setFormula(formulaVigente);
     setForma(f);
     setVariables((vs) => variablesDeForma(f, vs));
-    const u = unidadPorForma(f);
+    sugerirUnidad(f, factor);
+  }
+
+  function sugerirUnidad(f: Forma, fa: number) {
+    const u = unidadPorForma(f, fa);
     if (!unidadTocada && u !== undefined) {
       setUnidadId(u);
       if (!decimalesTocados) setDecimales(opciones.unidades.find((x) => x.id === u)?.decimales ?? decimales);
@@ -369,7 +374,14 @@ export function FormularioFicha({ opciones, valores = {}, edicion }: { opciones:
       {forma === "tasa" ? (
         <div className="max-w-xs">
           <Campo etiqueta="Factor de la tasa" nombre="factor" id="ficha-factor">
-            <select value={factor} onChange={(e) => setFactor(Number(e.target.value))} className={CONTROL}>
+            <select
+              value={factor}
+              onChange={(e) => {
+                setFactor(Number(e.target.value));
+                sugerirUnidad(forma, Number(e.target.value));
+              }}
+              className={CONTROL}
+            >
               {FACTORES_TASA.map((f) => (
                 <option key={f} value={f}>
                   {`Por ${conMiles(f)}`}

@@ -42,6 +42,10 @@ describe("textos de indicadores", () => {
     expect(fraseDeResultado({ resultado: f("50"), semaforo: "bien", noAplica: false, motivo: null }, { ...uno, metaMax: f("50") }, min)).toBe("Cumple: 50 min frente a una meta de 50 min.");
     expect(fraseDeResultado({ resultado: f("92"), semaforo: null, noAplica: false, motivo: null }, { ...asc, meta: null }, pct)).toBe("92 %, sin meta para este periodo.");
     expect(fraseDeResultado({ resultado: null, semaforo: null, noAplica: true, motivo: "no había auditorías programadas" }, asc, pct)).toBe("No aplica: no había auditorías programadas.");
+    // Un motivo que ya termina en punto no lleva otro (ronda 1 de la Tarea 19, D-4).
+    expect(fraseDeResultado({ resultado: null, semaforo: null, noAplica: true, motivo: "No hubo casos que medir." }, asc, pct)).toBe("No aplica: No hubo casos que medir.");
+    expect(fraseDeResultado({ resultado: null, semaforo: null, noAplica: true, motivo: "¿Sin auditorías?" }, asc, pct)).toBe("No aplica: ¿Sin auditorías?");
+    expect(fraseDeResultado({ resultado: null, semaforo: null, noAplica: false, motivo: "división por cero." }, asc, pct)).toBe("Sin resultado: división por cero.");
     expect(fraseDeResultado({ resultado: null, semaforo: null, noAplica: false, motivo: null }, asc, pct)).toBe("Sin dato: no se reportó.");
     expect(fraseDeResultado({ resultado: null, semaforo: null, noAplica: false, motivo: "división por cero" }, asc, pct)).toBe("Sin resultado: división por cero.");
   });

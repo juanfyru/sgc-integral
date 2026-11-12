@@ -64,14 +64,17 @@ export function resultadoFrenteAMeta(m: { resultado: Fraccion | null; semaforo: 
   return `${textoValor(m.resultado, u, r)} frente a una meta de ${meta}`;
 }
 
+/** Un motivo escrito por una persona, cerrado con punto si no termina ya en un signo de puntuación (Tarea 19, D-4). */
+const conPunto = (texto: string) => (/[.!?…;:]["»”)]?$/.test(texto.trim()) ? texto.trim() : `${texto.trim()}.`);
+
 /** La frase de una medición («Cumple: 92 % frente a una meta de 90 %.»). «Atención» es «No cumple»: el color dice el nivel. */
 export function fraseDeResultado(
   m: { resultado: Fraccion | null; semaforo: Semaforo | null; noAplica: boolean; motivo: string | null },
   r: Regla,
   u: Unidad,
 ): string {
-  if (m.noAplica) return m.motivo ? `No aplica: ${m.motivo}.` : "No aplica en este periodo.";
-  if (m.resultado === null) return m.motivo ? `Sin resultado: ${m.motivo}.` : "Sin dato: no se reportó.";
+  if (m.noAplica) return m.motivo ? `No aplica: ${conPunto(m.motivo)}` : "No aplica en este periodo.";
+  if (m.resultado === null) return m.motivo ? `Sin resultado: ${conPunto(m.motivo)}` : "Sin dato: no se reportó.";
   const frente = resultadoFrenteAMeta(m, r, u);
   if (frente === null) return `${textoValor(m.resultado, u)}, sin meta para este periodo.`;
   return `${m.semaforo === "bien" ? "Cumple" : "No cumple"}: ${frente}.`;

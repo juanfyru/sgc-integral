@@ -14,6 +14,7 @@ vi.mock("@/app/acciones-indicadores", () => ({
 
 import { campoDeMasOpciones, codigoAlCambiarDeProceso, FormularioFicha } from "@/componentes/indicadores/ficha/FormularioFicha";
 import { EsquemaFicha, type DatosFicha } from "@/lib/esquemas/indicadores";
+import { unidadDeForma } from "@/lib/indicadores/formula/formas";
 import type { OpcionesFicha } from "@/lib/indicadores/tipos";
 
 const OPCIONES: OpcionesFicha = {
@@ -189,6 +190,31 @@ describe("FormularioFicha", () => {
     const fuera = pintar({ meta: "80", tendencia: "ascendente", resultadoMax: "100", prueba: { valores: { A: "12", B: "10" } } });
     expect(fuera).toMatch(/data-variante="atencion"[^>]*>Fuera de los límites del resultado</);
     expect(fuera).not.toContain('<span class="text-estado-atencion-texto">');
+  });
+
+  it("la unidad sigue a la forma: un conteo no queda en «Porcentaje» y la prueba lo dice (ronda 1 de la Tarea 19, D-3)", () => {
+    const conteo = pintar({ forma: "conteo", meta: "5", tendencia: "descendente", umbralAtencionPct: 70, prueba: { valores: { A: "3" } } });
+    expect(conteo).toMatch(/<select[^>]*id="ficha-unidadId"[^>]*>(?:(?!<\/select>).)*<option value="2" selected="">Número/s);
+    expect(conteo).toContain("Cumple: 3 frente a una meta de máximo 5.");
+    expect(conteo).not.toContain("3 %");
+    // La forma «Porcentaje» sigue con su unidad, y una unidad elegida a mano no cambia con la forma.
+    expect(pintar({ forma: "porcentaje" })).toMatch(/<option value="1" selected="">Porcentaje/);
+    expect(pintar({ forma: "conteo", unidadId: 1 })).toMatch(/<option value="1" selected="">Porcentaje/);
+  });
+
+  it("la unidad que sugiere cada forma", () => {
+    const unidades = [
+      { id: 1, sufijo: " %" },
+      { id: 2, sufijo: "" },
+      { id: 3, sufijo: " por mil" },
+    ];
+    expect(unidadDeForma("porcentaje", 1000, unidades)).toBe(1);
+    expect(unidadDeForma("conteo", 1000, unidades)).toBe(2);
+    expect(unidadDeForma("razon", 1000, unidades)).toBe(2);
+    expect(unidadDeForma("libre", 1000, unidades)).toBe(2);
+    expect(unidadDeForma("tasa", 1000, unidades)).toBe(3);
+    expect(unidadDeForma("tasa", 100000, unidades)).toBe(2);
+    expect(unidadDeForma("porcentaje", 1000, [{ id: 2, sufijo: "" }])).toBeUndefined();
   });
 
   it("el ente sugiere los ya usados", () => {

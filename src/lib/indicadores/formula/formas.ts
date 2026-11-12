@@ -23,6 +23,18 @@ export function formulaDeForma(forma: FormaConFormula, factor?: number): string 
   }
 }
 
+/**
+ * La unidad que sugiere cada forma al elegirla (Tarea 19, D-3): el porcentaje, la de sufijo «%»; una tasa por mil, la de
+ * sufijo «por mil» si la hay; las demás formas, la que no lleva sufijo («Número»). Así un conteo no queda en «%». Sin la
+ * unidad buscada en el maestro, `undefined`: la elección no cambia.
+ */
+export function unidadDeForma(forma: Forma, factor: number, unidades: readonly { id: number; sufijo: string }[]): number | undefined {
+  const buscada = forma === "porcentaje" ? "%" : forma === "tasa" && factor === 1000 ? "por mil" : "";
+  const sugerida = unidades.find((u) => u.sufijo.trim() === buscada);
+  if (sugerida) return sugerida.id;
+  return forma === "porcentaje" ? undefined : unidades.find((u) => u.sufijo.trim() === "")?.id;
+}
+
 export function letrasDeForma(forma: FormaConFormula): string[] {
   return forma === "conteo" ? ["A"] : ["A", "B"];
 }
