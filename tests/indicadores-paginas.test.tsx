@@ -438,6 +438,26 @@ describe("el cierre del mes", () => {
       }
     }), 20_000);
 
+  it("/indicadores/[codigo]: el acumulado del año que no alcanza la meta no pinta un Bien a secas", () =>
+    enTransaccion(async (tx) => {
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const ind = await indicadorDePrueba(tx, {
+        inicioMedicion: "2003-01",
+        aprobadaEn: new Date("2002-12-15T15:00:00Z"),
+        mide: [mide.usuarioId],
+        meta: "95",
+        rangos: { bien: [{ signo: ">=", valor: "91" }], atencion: [{ signo: "entre", valor: "41", hasta: "90" }], critico: [{ signo: "<=", valor: "40" }] },
+      });
+      await asegurarMediciones({ sql: tx, indicadorId: ind.id });
+      const [enero] = await tx`SELECT id FROM mediciones WHERE indicador_id = ${ind.id} AND periodo = '2003-01'`;
+      await reportar(mide, { medicionId: Number(enero.id), valores: { A: "92", B: "100" }, parcial: false, confirmado: true }, { sql: tx });
+      contexto.sesion = valida(mide);
+      const html = await pagina(ind.codigo, { vista: "resultados", anio: "2003" });
+      const desde = html.indexOf('id="indicador-acumulado"');
+      const acumulado = html.slice(desde, html.indexOf("</section>", desde));
+      expect(acumulado).toMatch(/data-variante="bien"[^>]*>Bien · no alcanza la meta</);
+    }), 20_000);
+
   it("/indicadores/[codigo]: quien administra reabre lo cerrado y cierra de nuevo lo reabierto; «Corregida» lleva su historial", () =>
     enTransaccion(async (tx) => {
       const admin = await sesionAdmin(tx);

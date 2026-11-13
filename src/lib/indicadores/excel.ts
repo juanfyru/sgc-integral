@@ -127,7 +127,7 @@ export async function construirExcelDeIndicador(d: ImpresionDelAnio, meta: MetaH
     resultado: a.texto,
     meta: a.metaEnTexto,
     cumple: a.texto ? cumpleEnTexto(a.cumple) : "",
-    semaforo: semaforoDeResultado(a.semaforo, false, a.texto !== null),
+    semaforo: semaforoDeResultado(a.semaforo, false, a.texto !== null, a.cumple),
     estado: "",
     analisis: "",
     marcas: a.rotulo ?? "",

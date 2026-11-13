@@ -16,7 +16,7 @@ import { fraccion } from "./formula/fraccion";
 import { rangosDeTexto } from "./rangos";
 import { numeroExacto, rangosEnPalabras, type Regla } from "./semaforo";
 import { textoMeta, type Unidad } from "./textos";
-import { ETIQUETA_PERIODICIDAD, ETIQUETA_SEMAFORO, type ModoSemaforo, type Periodicidad, type Semaforo, type Tendencia } from "./tipos";
+import { ETIQUETA_PERIODICIDAD, ETIQUETA_SEMAFORO, NO_ALCANZA_LA_META, sinAlcanzarLaMeta, type ModoSemaforo, type Periodicidad, type Semaforo, type Tendencia } from "./tipos";
 
 export const FORMA: Record<string, string> = {
   porcentaje: "Porcentaje",
@@ -215,14 +215,14 @@ export function marcasDeFila(f: ConMarcas, periodosSinCumplir: number): string[]
 }
 
 /** El estado escrito de un resultado, nunca solo el color; vacío en lo que no ha llegado. */
-export function semaforoEnTexto(f: Pick<FilaDelAnio, "estado" | "semaforo" | "noAplica" | "resultado">): string {
+export function semaforoEnTexto(f: Pick<FilaDelAnio, "estado" | "semaforo" | "noAplica" | "resultado" | "cumple">): string {
   if (f.estado === "por_venir") return "";
-  return semaforoDeResultado(f.semaforo, f.noAplica, f.resultado !== null);
+  return semaforoDeResultado(f.semaforo, f.noAplica, f.resultado !== null, f.cumple);
 }
 
 /** «Bien», «Atención», «Crítico»; sin semáforo, «No aplica», «Sin meta» (hay resultado) o «Sin dato». */
-export function semaforoDeResultado(semaforo: Semaforo | null, noAplica: boolean, conResultado: boolean): string {
-  if (semaforo) return ETIQUETA_SEMAFORO[semaforo];
+export function semaforoDeResultado(semaforo: Semaforo | null, noAplica: boolean, conResultado: boolean, cumple: boolean | null = null): string {
+  if (semaforo) return sinAlcanzarLaMeta(semaforo, cumple) ? `${ETIQUETA_SEMAFORO[semaforo]} · ${NO_ALCANZA_LA_META}` : ETIQUETA_SEMAFORO[semaforo];
   return noAplica ? "No aplica" : conResultado ? "Sin meta" : "Sin dato";
 }
 

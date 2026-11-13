@@ -218,8 +218,8 @@ describe("el Excel de un indicador", () => {
       await medir(tx, quien, ind, { "2026-T3": { A: "92", B: "100" } });
       const libro = await leerLibro(await construirExcelDeIndicador((await impresionDelAnio(quien, ind.codigo, 2026, opc(tx)))!, META));
       const r = libro["Resultados 2026"];
-      expect(fila(r, "Tercer trimestre de 2026")?.slice(4, 8)).toEqual(["92 %", "≥ 95 %", "No", "Bien"]);
-      expect(fila(r, "Acumulado del año")?.slice(4, 8)).toEqual(["92 %", "≥ 95 %", "No", "Bien"]);
+      expect(fila(r, "Tercer trimestre de 2026")?.slice(4, 8)).toEqual(["92 %", "≥ 95 %", "No", "Bien · no alcanza la meta"]);
+      expect(fila(r, "Acumulado del año")?.slice(4, 8)).toEqual(["92 %", "≥ 95 %", "No", "Bien · no alcanza la meta"]);
       const ficha = texto(libro.Ficha);
       expect(ficha).toContain("Nivel | Proceso");
       expect(ficha).toContain("Riesgo asociado | Retraso en la entrega de resultados");

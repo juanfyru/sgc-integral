@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { LeyendaDeGrafica } from "@/componentes/indicadores/LeyendaDeGrafica";
 import { BarraEstados } from "@/componentes/ui/BarraEstados";
 import { llevarALaColumnaInicial } from "@/componentes/ui/DesplazableDeTubos";
 import { GraficoTubos } from "@/componentes/ui/GraficoTubos";
@@ -119,12 +120,20 @@ describe("GraficoTubos", () => {
 
   it("un Bien que no alcanza la meta lo dice en la tabla y en el nombre de la columna, y abrevia «Bien*» al imprimir", () => {
     const serie = doce.map((p) =>
-      p.clave === doce.find((x) => x.estado === "bien")?.clave ? { ...p, nombreEstado: "Bien, no alcanza la meta", sinAlcanzar: true } : p,
+      p.clave === doce.find((x) => x.estado === "bien")?.clave ? { ...p, nombreEstado: "Bien, no alcanza la meta", sinAlcanzar: true, nombreImpreso: "Bien*" } : p,
     );
     const html = principal({ serie });
     expect(html).toMatch(/<tr><th scope="row">[^<]+<\/th><td>[^<]+<\/td><td>Bien, no alcanza la meta<\/td><\/tr>/);
     expect(html).toMatch(/aria-label="[^"]*, Bien, no alcanza la meta"/);
     expect(html).toMatch(/<text class="tubo-impreso"[^>]*><tspan[^>]*>[^<]+<\/tspan><tspan[^>]*>Bien\*<\/tspan><\/text>/);
+  });
+
+  it("el acumulado que no alcanza la meta lo dice en su insignia, y la leyenda explica el «Bien*» impreso", () => {
+    const html = renderToStaticMarkup(<TuboAcumulado valor={92} texto="92 %" estado="bien" cumple={false} meta={{ valor: 95, texto: "Meta 95 %" }} unidad={UNIDAD} />);
+    expect(html).toMatch(/data-variante="bien"[^>]*>Bien · no alcanza la meta</);
+    expect(renderToStaticMarkup(<TuboAcumulado valor={96} texto="96 %" estado="bien" cumple meta={{ valor: 95, texto: "Meta 95 %" }} unidad={UNIDAD} />)).toMatch(/>Bien</);
+    expect(renderToStaticMarkup(<LeyendaDeGrafica conMeta conLimite={false} conAsterisco />)).toContain("Bien*: Bien, sin alcanzar la meta");
+    expect(renderToStaticMarkup(<LeyendaDeGrafica conMeta conLimite={false} />)).not.toContain("Bien*");
   });
 
   it("cada columna se enfoca con el teclado y dice su valor y su estado", () => {

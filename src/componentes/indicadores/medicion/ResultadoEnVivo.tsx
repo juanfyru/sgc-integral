@@ -1,3 +1,4 @@
+import { InsigniaSemaforo } from "@/componentes/indicadores/InsigniaSemaforo";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { enPalabras } from "@/lib/indicadores/formula/formas";
 import {
@@ -10,7 +11,7 @@ import {
   type VariableDeCaptura,
 } from "@/lib/indicadores/reporte";
 import { fraseDeResultado, type Unidad } from "@/lib/indicadores/textos";
-import { ETIQUETA_SEMAFORO, type Semaforo } from "@/lib/indicadores/tipos";
+import type { Semaforo } from "@/lib/indicadores/tipos";
 
 const AVISO = "rounded-md border border-l-4 border-border bg-card px-3 py-2 text-sm";
 
@@ -70,7 +71,7 @@ export function ResultadoEnVivo({
         <p className="flex flex-wrap items-center gap-3">
           <span className="text-3xl font-bold tabular-nums">{vivo.texto}</span>
           {vivo.semaforo ? (
-            <Insignia variante={vivo.semaforo}>{ETIQUETA_SEMAFORO[vivo.semaforo]}</Insignia>
+            <InsigniaSemaforo semaforo={vivo.semaforo} cumple={vivo.cumple} />
           ) : (
             <Insignia variante="sin-dato">Sin meta</Insignia>
           )}

@@ -218,7 +218,7 @@ describe("FormularioReporte y ResultadoEnVivo", () => {
         variacionPct={DATOS.variacionPct}
       />,
     );
-    expect(html).toContain(">Bien<");
+    expect(html).toContain(">Bien · no alcanza la meta<");
     expect(html).toContain("No cumple: después de reportar, el análisis es obligatorio.");
     const cumple = renderToStaticMarkup(
       <ResultadoEnVivo

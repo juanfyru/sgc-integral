@@ -146,6 +146,8 @@ export type PuntoDeSerie = {
   nombreEstado: string;
   /** Bien que no alcanza la meta: el nombre lo dice entero y la impresión lo abrevia con «*». */
   sinAlcanzar?: boolean;
+  /** Lo que la columna impresa escribe en vez de `nombreEstado` cuando es largo: «Bien*». */
+  nombreImpreso?: string;
 };
 
 /**

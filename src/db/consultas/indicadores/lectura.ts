@@ -27,6 +27,7 @@ import { limiteDeCritico, numeroEs, numeroExacto, rangosEnPalabras, type Regla }
 import { comparacion, fraseDeResultado, textoMeta, textoValor, type Unidad } from "@/lib/indicadores/textos";
 import {
   ErrorIndicador,
+  ETIQUETA_SEMAFORO,
   nombreDeEstado,
   sinAlcanzarLaMeta,
   type EstadoIndicador,
@@ -539,7 +540,7 @@ function puntoDe(l: PeriodoLeido): PuntoDeSerie {
       texto: f.resultado,
       estado: f.semaforo ?? "sin-meta",
       nombreEstado: f.semaforo ? nombreDeEstado(f.semaforo, f.cumple) : "Sin meta",
-      ...(sinAlcanzarLaMeta(f.semaforo, f.cumple) ? { sinAlcanzar: true } : {}),
+      ...(sinAlcanzarLaMeta(f.semaforo, f.cumple) ? { sinAlcanzar: true, nombreImpreso: `${ETIQUETA_SEMAFORO.bien}*` } : {}),
     };
   }
   return { ...base, valor: null, texto: "s. d.", estado: "sin-dato", nombreEstado: nombreSinDato(f) };

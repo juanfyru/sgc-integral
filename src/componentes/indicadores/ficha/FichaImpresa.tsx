@@ -282,7 +282,7 @@ export function FichaImpresa(d: DatosDeFichaImpresa) {
 
       <Bloque id={id("grafica")} titulo="Representación gráfica">
         <div className="ficha-grafica flex min-w-0 flex-col gap-2 pt-2">
-          <LeyendaDeGrafica conMeta={metaDeGrafica(r.grafica) !== undefined} conLimite={r.grafica.limite !== null} />
+          <LeyendaDeGrafica conMeta={metaDeGrafica(r.grafica) !== undefined} conLimite={r.grafica.limite !== null} conAsterisco={r.serie.some((p) => p.sinAlcanzar)} />
           <GraficoTubos
             serie={r.serie}
             titulo={`Resultado de ${anio}`}

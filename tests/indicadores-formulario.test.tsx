@@ -408,10 +408,10 @@ describe("FormularioFicha: los rangos escritos (Tarea 5 de la 14A)", () => {
     expect(oculto(viejo, "umbralAtencionPct")).toBe("70");
   });
 
-  it("la prueba con 95 y meta 100 (Bien desde 91) dice «Bien» y «No cumple»", () => {
+  it("la prueba con 95 y meta 100 (Bien desde 91) dice «Bien · no alcanza la meta» y «No cumple»", () => {
     const h = pintar({ meta: "100", tendencia: "ascendente", rangos: RANGOS_91, semaforoModo: "rangos", prueba: { valores: { A: "95", B: "100" } } });
     expect(h).toContain("No cumple: 95 % frente a una meta de 100 %.");
-    expect(h).toMatch(/data-variante="bien"[^>]*>Bien</);
+    expect(h).toMatch(/data-variante="bien"[^>]*>Bien · no alcanza la meta</);
   });
 
   it("«Mantenerse en un rango» pide Bien «entre» y Atención y Crítico a cada lado", () => {
