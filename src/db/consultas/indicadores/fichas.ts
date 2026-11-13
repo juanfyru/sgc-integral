@@ -22,6 +22,7 @@ import { analizar } from "@/lib/indicadores/formula/analizar";
 import { formulaDeForma } from "@/lib/indicadores/formula/formas";
 import { comparar, fraccion } from "@/lib/indicadores/formula/fraccion";
 import { clavesDelAnio, periodicidadDe, periodoQueContiene } from "@/lib/indicadores/periodos";
+import { rangosATexto, rangosDeTexto, type RangosEnTexto } from "@/lib/indicadores/rangos";
 import { errorDeRegla } from "@/lib/indicadores/semaforo";
 import {
   ErrorIndicador,
@@ -92,11 +93,16 @@ export async function proponerCodigo(procesoId: number, opciones?: { sql?: Clien
 type Semaforo = {
   meta: string | null;
   metaMax: string | null;
-  semaforoModo: "relativo" | "fijo" | null;
+  semaforoModo: "relativo" | "fijo" | "rangos" | null;
   umbralAtencionPct: number | null;
   limiteCritico: string | null;
   tolerancia: string | null;
+  /** Solo con el modo «rangos»; la columna `rangos` de la versión. */
+  rangos: RangosEnTexto | null;
 };
+
+const SIN_RANGOS = "Escriba los rangos del semáforo";
+const CAMBIO_MAYOR_SIN_RANGOS = "Un cambio mayor escribe los rangos del semáforo: complete Bien, Atención y Crítico";
 
 /** La ficha que pasó las reglas que no consultan la BD. */
 type FichaRevisada = { d: DatosFicha; formula: string; factor: number | null; semaforo: Semaforo };
@@ -109,8 +115,12 @@ function leer(d: DatosFicha): DatosFicha {
 
 const fr = (v: string | null | undefined) => (v === null || v === undefined ? null : fraccion(v));
 
-/** Fórmula, variables declaradas contra usadas y regla del semáforo. */
-function revisar(entrada: DatosFicha): FichaRevisada {
+/**
+ * Fórmula, variables declaradas contra usadas y regla del semáforo. Una meta lleva siempre sus rangos (spec 14A §3.5);
+ * solo un cambio sobre una ficha que aún tiene la regla vieja puede conservarla (`reglaVieja`), y `guardarBorrador` vuelve
+ * a exigir los rangos si el cambio resulta mayor.
+ */
+function revisar(entrada: DatosFicha, reglaVieja = false): FichaRevisada {
   const d = leer(entrada);
   let formula: string;
   let factor: number | null = null;
@@ -139,14 +149,19 @@ function revisar(entrada: DatosFicha): FichaRevisada {
 
   const conMeta = d.meta !== undefined;
   const constante = d.tendencia === "constante";
-  const modo = conMeta && !constante ? (d.semaforoModo ?? null) : null;
+  const conRangos = conMeta && d.rangos !== undefined;
+  if (conMeta && !conRangos && (!reglaVieja || d.semaforoModo === "rangos")) throw new ErrorIndicador(SIN_RANGOS);
+  const rangos = conRangos ? rangosDeTexto(JSON.parse(d.rangos!) as RangosEnTexto) : null;
+  if (conRangos && rangos === null) throw new ErrorIndicador("Complete los valores de cada rango");
+  const modo = conRangos ? "rangos" : conMeta && !constante ? ((d.semaforoModo as "relativo" | "fijo" | undefined) ?? null) : null;
   const semaforo: Semaforo = {
     meta: d.meta ?? null,
     metaMax: conMeta && constante ? (d.metaMax ?? null) : null,
     semaforoModo: modo,
     umbralAtencionPct: modo === "relativo" ? (d.umbralAtencionPct ?? null) : null,
     limiteCritico: modo === "fijo" ? (d.limiteCritico ?? null) : null,
-    tolerancia: conMeta && constante ? (d.tolerancia ?? null) : null,
+    tolerancia: conMeta && constante && !conRangos ? (d.tolerancia ?? null) : null,
+    rangos: conRangos ? rangosATexto(rangos!) : null,
   };
   const error = errorDeRegla({
     tendencia: d.tendencia,
@@ -156,6 +171,7 @@ function revisar(entrada: DatosFicha): FichaRevisada {
     umbralPct: semaforo.umbralAtencionPct,
     limite: fr(semaforo.limiteCritico),
     tolerancia: fr(semaforo.tolerancia),
+    rangos,
   });
   if (error) throw new ErrorIndicador(error);
   const [rMin, rMax] = [fr(d.resultadoMin), fr(d.resultadoMax)];
@@ -342,6 +358,9 @@ function columnasDeContenido(tx: TransactionSql, f: FichaRevisada, n: Nombres) {
     umbral_atencion_pct: semaforo.umbralAtencionPct,
     limite_critico: semaforo.limiteCritico,
     tolerancia: semaforo.tolerancia,
+    rangos: semaforo.rangos ? tx.json(semaforo.rangos as never) : null,
+    nivel: d.nivel ?? null,
+    riesgo_asociado: d.riesgoAsociado ?? null,
     resultado_min: d.resultadoMin ?? null,
     resultado_max: d.resultadoMax ?? null,
     linea_base_valor: d.lineaBaseValor ?? null,
@@ -486,9 +505,9 @@ async function idVigente(sql: Cliente, indicadorId: number): Promise<number | nu
  */
 export async function guardarBorrador(sesion: SesionFlujo, versionId: number, d: DatosFicha, opciones?: Opciones): Promise<void> {
   exigirAdministrar(sesion);
-  const f = revisar(d);
+  const entrada = leer(d);
   const ahora = opciones?.ahora ?? new Date();
-  let codigo = f.d.codigo ?? "";
+  let codigo = entrada.codigo ?? "";
   try {
     await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
       const [ref] = await tx`SELECT indicador_id FROM indicador_versiones WHERE id = ${versionId}`;
@@ -501,6 +520,10 @@ export async function guardarBorrador(sesion: SesionFlujo, versionId: number, d:
       if (!v || Number(v.indicador_id) !== Number(ind.id)) throw new ErrorIndicador(FICHA_NO_EXISTE);
       if (v.estado !== "borrador") throw new ErrorIndicador(SOLO_BORRADOR);
       const indicadorId = Number(ind.id);
+      // La regla vieja (relativo, fijo o la tolerancia de una constante) solo la conserva un cambio sobre una ficha que la tiene.
+      const vigente = await idVigente(tx, indicadorId);
+      const [reglaDeLaVigente] = vigente === null ? [] : await tx`SELECT meta, semaforo_modo FROM indicador_versiones WHERE id = ${vigente}`;
+      const f = revisar(entrada, reglaDeLaVigente !== undefined && reglaDeLaVigente.meta !== null && reglaDeLaVigente.semaforo_modo !== "rangos");
       const enBorrador = ind.estado === "borrador";
       if (!enBorrador) {
         // F14-DC18 y DC40: el subproceso sí cambia (cambio menor); el proceso y el código, no.
@@ -559,9 +582,9 @@ export async function guardarBorrador(sesion: SesionFlujo, versionId: number, d:
       await escribirHijos(tx, versionId, f, nombres);
 
       // Un cambio sobre una ficha aprobada es mayor o menor según lo que cambió (spec §7.2); lo decide el sistema.
-      const vigente = await idVigente(tx, indicadorId);
       if (vigente !== null) {
         const tipo = tipoDeCambio(await contenidoDeVersion(tx, vigente), await contenidoDeVersion(tx, versionId));
+        if (tipo === "mayor" && f.semaforo.meta !== null && f.semaforo.semaforoModo !== "rangos") throw new ErrorIndicador(CAMBIO_MAYOR_SIN_RANGOS);
         await tx`UPDATE indicador_versiones SET tipo_cambio = ${tipo === "mayor" ? "mayor" : "menor"} WHERE id = ${versionId}`;
       }
 
@@ -593,7 +616,7 @@ export const CONTENIDO = [
   "origen_dato", "calculo", "calculo_alcance", "forma", "factor", "formula", "unidad_id", "unidad_nombre", "unidad_sufijo",
   "decimales", "periodicidad", "tendencia", "meta", "meta_max", "semaforo_modo", "umbral_atencion_pct", "limite_critico",
   "tolerancia", "resultado_min", "resultado_max", "linea_base_valor", "linea_base_periodo", "linea_base_nota", "sustento_meta",
-  "ente", "periodicidad_externa", "plazo_externo_dias", "dimension_id", "prueba",
+  "ente", "periodicidad_externa", "plazo_externo_dias", "dimension_id", "prueba", "rangos", "nivel", "riesgo_asociado",
 ].join(", ");
 
 export const COLUMNAS_VARIABLE = [
@@ -690,6 +713,9 @@ export async function contenidoDeVersion(sql: Cliente, versionId: number): Promi
     meta: v.meta,
     metaMax: v.meta_max,
     semaforoModo: v.semaforo_modo,
+    rangos: (v.rangos as RangosEnTexto | null) ?? null,
+    nivel: v.nivel,
+    riesgoAsociado: v.riesgo_asociado,
     umbralAtencionPct: v.umbral_atencion_pct,
     limiteCritico: v.limite_critico,
     tolerancia: v.tolerancia,
@@ -779,6 +805,9 @@ async function valoresDeVersion(sql: Cliente, versionId: number, indicador: Reco
     meta: texto(v.meta),
     metaMax: texto(v.meta_max),
     semaforoModo: v.semaforo_modo ?? undefined,
+    rangos: v.rangos === null ? undefined : JSON.stringify(v.rangos),
+    nivel: texto(v.nivel),
+    riesgoAsociado: texto(v.riesgo_asociado),
     umbralAtencionPct: entero(v.umbral_atencion_pct),
     limiteCritico: texto(v.limite_critico),
     tolerancia: texto(v.tolerancia),

@@ -137,8 +137,8 @@ async function borrador(tx: TransactionSql, admin: SesionFlujo, parcial: Partial
     periodicidad: "trimestral",
     tendencia: "ascendente",
     meta: "80",
-    semaforoModo: "relativo",
-    umbralAtencionPct: 70,
+    semaforoModo: "rangos",
+    rangos: JSON.stringify({ bien: [{ signo: ">=", valor: "80" }], atencion: [{ signo: ">=", valor: "56" }], critico: [{ signo: "<", valor: "56" }] }),
     cargosMedir: [Number(cargo.id)],
     cargosAnalizar: [Number(cargo.id)],
     normaIds: [],
@@ -259,7 +259,7 @@ describe("las páginas de la ficha de indicador", () => {
       expect(ficha).toContain("Ficha nueva en borrador");
       expect(ficha).toMatch(/aria-current="page"[^>]*>Ficha técnica</);
       expect(ficha).toContain("(Cumplidas ÷ Programadas) × 100");
-      expect(ficha).toContain("Bien desde 80 %");
+      expect(ficha).toContain("Bien: ≥ 80 %");
       expect(ficha).toContain(">Elaboró<");
       expect(ficha).toContain(">Datos de operación<");
       expect(ficha).toContain("vigente desde el primer trimestre de 2026");

@@ -3,6 +3,7 @@ import { JUSTIFICACION_MAXIMA, JUSTIFICACION_MINIMA, PATRON_MES } from "@/lib/in
 import { FACTORES_TASA } from "@/lib/indicadores/formula/formas";
 import { fraccion } from "@/lib/indicadores/formula/fraccion";
 import { periodicidadDe } from "@/lib/indicadores/periodos";
+import { SIGNOS } from "@/lib/indicadores/rangos";
 import {
   CONSOLIDACIONES,
   FORMAS,
@@ -10,6 +11,7 @@ import {
   MAXIMO_EN_BLOQUE,
   MAXIMO_HISTORICOS,
   MAXIMO_TEXTO_MEDICION,
+  MODOS_SEMAFORO,
   NIVELES_ACCESO,
   PERIODICIDADES,
   TENDENCIAS,
@@ -115,6 +117,45 @@ const EsquemaPrueba = z
   })
   .strict();
 
+const FORMATO_RANGOS = "Los rangos del semáforo no tienen un formato válido";
+const NUMERO_RANGOS = "Los valores de los rangos deben ser números";
+
+/** Un renglón de los rangos: el signo y uno o dos números (el segundo solo con «entre»). */
+const EsquemaFilaDeRango = z
+  .object({
+    signo: z.enum(SIGNOS, { error: FORMATO_RANGOS }),
+    valor: numero(NUMERO_RANGOS),
+    hasta: numero(NUMERO_RANGOS).optional(),
+  })
+  .strict()
+  .refine((f) => (f.signo === "entre") === (f.hasta !== undefined), "Solo «entre» lleva dos valores, y los lleva");
+
+const filasDeRango = z.array(EsquemaFilaDeRango, { error: FORMATO_RANGOS }).max(4, "Un estado admite hasta cuatro renglones");
+
+/** Los rangos por estado (spec 14A §3.2); la regla entre ellos la revisa `errorDeRangos`. */
+export const EsquemaRangos = z.object({ bien: filasDeRango, atencion: filasDeRango, critico: filasDeRango }).strict();
+
+/** Los rangos viajan como el JSON de `RangosEnTexto` en un solo campo; vacío es «no vino». Devuelve el JSON normalizado. */
+const rangosEnJson = z
+  .string({ error: FORMATO_RANGOS })
+  .transform((v, ctx) => {
+    if (v.trim() === "") return undefined;
+    let leido: unknown;
+    try {
+      leido = JSON.parse(v);
+    } catch {
+      ctx.addIssue({ code: "custom", message: FORMATO_RANGOS });
+      return z.NEVER;
+    }
+    const r = EsquemaRangos.safeParse(leido);
+    if (!r.success) {
+      ctx.addIssue({ code: "custom", message: r.error.issues[0].message });
+      return z.NEVER;
+    }
+    return JSON.stringify(r.data);
+  })
+  .optional();
+
 export const EsquemaFicha = z
   .object({
     procesoId: id("Elija el proceso"),
@@ -152,7 +193,8 @@ export const EsquemaFicha = z
     tendencia: z.enum(TENDENCIAS, { error: "Elija la tendencia" }),
     meta: numero("La meta debe ser un número").optional(),
     metaMax: numero("El máximo del rango debe ser un número").optional(),
-    semaforoModo: z.enum(["relativo", "fijo"], { error: "Elija el modo del semáforo" }).optional(),
+    semaforoModo: z.enum(MODOS_SEMAFORO, { error: "Elija el modo del semáforo" }).optional(),
+    rangos: rangosEnJson,
     umbralAtencionPct: entero("El umbral de atención", 1, 99).optional(),
     limiteCritico: numero("El límite de crítico debe ser un número").optional(),
     tolerancia: numero("La tolerancia debe ser un número").optional(),
@@ -166,6 +208,8 @@ export const EsquemaFicha = z
       .optional(),
     lineaBaseNota: opcional("La nota de la línea base", 500),
     sustentoMeta: opcional("El sustento de la meta", 500),
+    nivel: opcional("El nivel", 60),
+    riesgoAsociado: opcional("El riesgo asociado", 300),
     cargosMedir: listaDeIds("Los cargos responsables de medir no son válidos", "Elija hasta 20 cargos", "Elija al menos un cargo responsable de medir"),
     cargosAnalizar: listaDeIds("Los cargos responsables de analizar no son válidos", "Elija hasta 20 cargos", "Elija al menos un cargo responsable de analizar"),
     normaIds: listaDeIds("Las normas no son válidas", "Elija hasta 20 normas").optional().transform((v) => v ?? []),

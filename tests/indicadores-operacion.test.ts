@@ -79,6 +79,12 @@ async function base(tx: TransactionSql): Promise<Base> {
   };
 }
 
+/** Los rangos de «más es mejor» con el 70 % de la meta como límite de crítico. */
+const rangosDe = (meta: number) =>
+  JSON.stringify({ bien: [{ signo: ">=", valor: String(meta) }], atencion: [{ signo: ">=", valor: String((meta * 70) / 100) }], critico: [{ signo: "<", valor: String((meta * 70) / 100) }] });
+/** Los rangos de la ficha de prueba (meta 90, ascendente): lo que antes era «relativo» con umbral 70 %. */
+const RANGOS_90 = JSON.stringify({ bien: [{ signo: ">=", valor: "90" }], atencion: [{ signo: ">=", valor: "63" }], critico: [{ signo: "<", valor: "63" }] });
+
 const datos = (b: Base, parcial: Partial<DatosFicha> = {}): DatosFicha => ({
   procesoId: b.sgc,
   nombre: "Cumplimiento del plan de capacitación",
@@ -95,8 +101,8 @@ const datos = (b: Base, parcial: Partial<DatosFicha> = {}): DatosFicha => ({
   periodicidad: "mensual",
   tendencia: "ascendente",
   meta: "90",
-  semaforoModo: "relativo",
-  umbralAtencionPct: 70,
+  semaforoModo: "rangos",
+  rangos: RANGOS_90,
   cargosMedir: [b.cargoId],
   cargosAnalizar: [b.cargoId],
   normaIds: [],
@@ -540,7 +546,7 @@ describe("retirar", () => {
       await tx`INSERT INTO medicion_eventos (medicion_id, usuario_id, tipo) VALUES (${conEvento}, ${b.admin.usuarioId}, 'reporte')`;
       // Un cambio mayor por aprobar, en vuelo.
       const { versionId: enCurso } = await abrirCambio(b.admin, c.indicadorId, { sql: tx });
-      await guardarBorrador(b.admin, enCurso, { ...datos(b, { mide: [mide.usuarioId], analiza: [mide.usuarioId] }), meta: "80", motivoCambio: "Meta más realista" }, { sql: tx });
+      await guardarBorrador(b.admin, enCurso, { ...datos(b, { mide: [mide.usuarioId], analiza: [mide.usuarioId] }), meta: "80", rangos: rangosDe(80), motivoCambio: "Meta más realista" }, { sql: tx });
       await enviarAAprobacion(b.admin, { versionId: enCurso, credenciales: CLAVE }, firmar(tx));
       expect((await tx`SELECT estado FROM indicador_versiones WHERE id = ${enCurso}`)[0].estado).toBe("por_aprobar");
       // Soporte solo, y causa sola: tienen datos aunque no haya valores.

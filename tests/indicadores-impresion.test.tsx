@@ -136,6 +136,9 @@ function fichaCompleta(): FichaLeida {
       periodicidadExterna: "anual",
       plazoExternoDias: 30,
       dimensionId: null,
+      rangos: null,
+      nivel: null,
+      riesgoAsociado: null,
       variables: [variable("A", "Ejecutadas"), variable("B", "Programadas")],
       responsables: [
         { cargoNombre: "Líder de Calidad", funcion: "medir" },

@@ -5,6 +5,9 @@
  * Los textos son del dominio, no de la entidad. `indicadores-demo.ts` las crea y las mueve por las funciones del dominio.
  */
 import type { DatosFicha } from "../../lib/esquemas/indicadores";
+import { fraccion } from "../../lib/indicadores/formula/fraccion";
+import { rangosATexto } from "../../lib/indicadores/rangos";
+import { rangosEquivalentes } from "../../lib/indicadores/semaforo";
 import type { Consolidacion, Periodicidad } from "../../lib/indicadores/tipos";
 
 export type ClaveObjetivo = "eficacia" | "informacion" | "competencia" | "oportunidad" | "finanzas";
@@ -103,7 +106,22 @@ const variable = (letra: "A" | "B", v: VariableDemo) => ({
   admiteNegativos: false,
 });
 
-/** El formulario de la ficha, como lo dejaría la persona: el semáforo relativo con el umbral de la configuración (70 %). */
+/** Los rangos que dan los colores del umbral de la configuración (70 %): lo que la persona escribiría en los tres estados. */
+function rangosDeLaFicha(f: FichaDemo): string {
+  const equivalentes = rangosEquivalentes({
+    tendencia: f.tendencia,
+    meta: fraccion(f.meta),
+    metaMax: null,
+    modo: "relativo",
+    umbralPct: 70,
+    limite: null,
+    tolerancia: null,
+  });
+  if (equivalentes === null) throw new Error(`La ficha ${f.codigo} de la demo no tiene unos rangos equivalentes`);
+  return JSON.stringify(rangosATexto(equivalentes));
+}
+
+/** El formulario de la ficha, como lo dejaría la persona: los rangos del semáforo, con el umbral de la configuración (70 %). */
 export function datosDeFicha(cat: Catalogo, f: FichaDemo, op: OperacionDemo): DatosFicha {
   const cargo = cat.cargo(f.cargo);
   return {
@@ -125,8 +143,8 @@ export function datosDeFicha(cat: Catalogo, f: FichaDemo, op: OperacionDemo): Da
     periodicidad: f.periodicidad,
     tendencia: f.tendencia,
     meta: f.meta,
-    semaforoModo: "relativo",
-    umbralAtencionPct: 70,
+    semaforoModo: "rangos",
+    rangos: rangosDeLaFicha(f),
     cargosMedir: [cargo],
     cargosAnalizar: [cargo],
     normaIds: f.norma ? [cat.norma(f.norma)] : [],

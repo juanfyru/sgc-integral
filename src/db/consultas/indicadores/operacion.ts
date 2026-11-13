@@ -13,7 +13,10 @@ import { registrarAuditoria } from "@/db/consultas/admin";
 import { avisarA } from "@/db/consultas/avisos-vencimiento";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
+import { fraccion } from "@/lib/indicadores/formula/fraccion";
 import { clavesDelAnio, fechaLimiteDeReporte, marcasQueSiguen, periodicidadDe, versionQueRigeEntre } from "@/lib/indicadores/periodos";
+import { rangosATexto } from "@/lib/indicadores/rangos";
+import { rangosEquivalentes } from "@/lib/indicadores/semaforo";
 import {
   AVISO_DESIGNACION,
   ErrorIndicador,
@@ -22,7 +25,9 @@ import {
   type DatosOperacion,
   type EstadoIndicador,
   type FuncionDesignado,
+  type ModoSemaforo,
   type Periodicidad,
+  type Tendencia,
 } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede, type SujetoPermiso } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
@@ -376,6 +381,25 @@ export async function duplicar(
       await tx`SELECT id FROM indicador_versiones WHERE id = ${versionId} FOR UPDATE`;
       await tx`UPDATE indicador_versiones SET proceso_nombre = ${proceso.nombre as string}
         WHERE id = ${versionId}`;
+      // La regla vieja no se copia: la copia lleva los rangos que dan los mismos colores (spec 14A §3.5).
+      const [regla] = await tx`SELECT tendencia, meta, meta_max, semaforo_modo, umbral_atencion_pct, limite_critico, tolerancia
+        FROM indicador_versiones WHERE id = ${versionId}`;
+      if (regla.meta !== null && regla.semaforo_modo !== "rangos") {
+        const equivalentes = rangosEquivalentes({
+          tendencia: regla.tendencia as Tendencia,
+          meta: fraccion(regla.meta as string),
+          metaMax: regla.meta_max === null ? null : fraccion(regla.meta_max as string),
+          modo: regla.semaforo_modo as ModoSemaforo | null,
+          umbralPct: regla.umbral_atencion_pct as number | null,
+          limite: regla.limite_critico === null ? null : fraccion(regla.limite_critico as string),
+          tolerancia: regla.tolerancia === null ? null : fraccion(regla.tolerancia as string),
+        });
+        if (equivalentes !== null) {
+          await tx`UPDATE indicador_versiones SET semaforo_modo = 'rangos', rangos = ${tx.json(rangosATexto(equivalentes) as never)},
+              umbral_atencion_pct = NULL, limite_critico = NULL, tolerancia = NULL
+            WHERE id = ${versionId}`;
+        }
+      }
       if (!mismoProceso) {
         await tx`UPDATE indicador_versiones SET subproceso_id = NULL, subproceso_nombre = NULL, procedimiento_documento_id = NULL
           WHERE id = ${versionId}`;

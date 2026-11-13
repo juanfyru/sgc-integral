@@ -13,6 +13,7 @@ import { ETIQUETA_ESTADO } from "./estados";
 import type { ContenidoFicha } from "./ficha";
 import { enPalabras } from "./formula/formas";
 import { fraccion } from "./formula/fraccion";
+import { rangosDeTexto } from "./rangos";
 import { numeroExacto, rangosEnPalabras, type Regla } from "./semaforo";
 import { textoMeta, type Unidad } from "./textos";
 import { ETIQUETA_PERIODICIDAD, ETIQUETA_SEMAFORO, type ModoSemaforo, type Periodicidad, type Semaforo, type Tendencia } from "./tipos";
@@ -44,6 +45,7 @@ export function reglaDeFicha(c: ContenidoFicha): Regla {
     umbralPct: c.umbralAtencionPct,
     limite: fr(c.limiteCritico),
     tolerancia: fr(c.tolerancia),
+    rangos: c.rangos ? rangosDeTexto(c.rangos) : null,
   };
 }
 

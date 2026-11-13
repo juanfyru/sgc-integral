@@ -22,10 +22,12 @@ import {
   opcionesDeFicha,
   proponerCodigo,
 } from "@/db/consultas/indicadores/fichas";
+import { duplicar } from "@/db/consultas/indicadores/operacion";
 import { EsquemaFicha, type DatosFicha } from "@/lib/esquemas/indicadores";
 import { huellaDeFicha } from "@/lib/indicadores/ficha";
 import { analizar } from "@/lib/indicadores/formula/analizar";
 import { fraccion } from "@/lib/indicadores/formula/fraccion";
+import { rangosDeTexto } from "@/lib/indicadores/rangos";
 import { errorDeRegla } from "@/lib/indicadores/semaforo";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
@@ -81,6 +83,13 @@ async function base(tx: TransactionSql): Promise<Base> {
   };
 }
 
+/** Los rangos de la ficha de prueba (meta 80, ascendente): lo que antes era «relativo» con umbral 70 %. */
+const RANGOS_80 = JSON.stringify({
+  bien: [{ signo: ">=", valor: "80" }],
+  atencion: [{ signo: ">=", valor: "56" }],
+  critico: [{ signo: "<", valor: "56" }],
+});
+
 /** Una ficha de forma «porcentaje» válida para el proceso SGC. */
 const datos = (b: Base, parcial: Partial<DatosFicha> = {}): DatosFicha => ({
   procesoId: b.procesoId,
@@ -98,8 +107,8 @@ const datos = (b: Base, parcial: Partial<DatosFicha> = {}): DatosFicha => ({
   periodicidad: "trimestral",
   tendencia: "ascendente",
   meta: "80",
-  semaforoModo: "relativo",
-  umbralAtencionPct: 70,
+  semaforoModo: "rangos",
+  rangos: RANGOS_80,
   lineaBaseNota: "Sin línea base: 2026 es el año de referencia",
   cargosMedir: [b.cargoId],
   cargosAnalizar: [b.cargoId],
@@ -250,8 +259,8 @@ describe("la ficha en borrador", () => {
         proceso_nombre: b.procesoNombre,
         subproceso_nombre: null,
         meta: "80",
-        semaforo_modo: "relativo",
-        umbral_atencion_pct: 70,
+        semaforo_modo: "rangos",
+        umbral_atencion_pct: null,
         periodicidad: "trimestral",
         tendencia: "ascendente",
       });
@@ -306,24 +315,23 @@ describe("la ficha en borrador", () => {
   it("valida la regla del semáforo", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);
+      // Con meta 0 en «menos es mejor», unos rangos de «más es mejor» no sirven.
       const esperado = errorDeRegla({
         tendencia: "descendente",
         meta: fraccion("0"),
         metaMax: null,
-        modo: "relativo",
-        umbralPct: 70,
+        modo: "rangos",
+        umbralPct: null,
         limite: null,
         tolerancia: null,
+        rangos: rangosDeTexto(JSON.parse(RANGOS_80)),
       });
       expect(esperado).not.toBeNull();
-      await rechaza(
-        crearIndicador(b.admin, datos(b, { meta: "0", tendencia: "descendente", semaforoModo: "relativo" }), { sql: tx }),
-        esperado!,
-      );
+      await rechaza(crearIndicador(b.admin, datos(b, { meta: "0", tendencia: "descendente" }), { sql: tx }), esperado!);
       // Sin meta no hay semáforo que validar.
-      const { versionId } = await crearIndicador(b.admin, datos(b, { meta: undefined, semaforoModo: undefined, umbralAtencionPct: undefined }), { sql: tx });
-      const [v] = await tx`SELECT meta, semaforo_modo FROM indicador_versiones WHERE id = ${versionId}`;
-      expect(v).toEqual({ meta: null, semaforo_modo: null });
+      const { versionId } = await crearIndicador(b.admin, datos(b, { meta: undefined, semaforoModo: undefined, rangos: undefined }), { sql: tx });
+      const [v] = await tx`SELECT meta, semaforo_modo, rangos FROM indicador_versiones WHERE id = ${versionId}`;
+      expect(v).toEqual({ meta: null, semaforo_modo: null, rangos: null });
     }));
 
   it("un regulatorio debe citar una norma vigente o modificada", () =>
@@ -589,6 +597,104 @@ describe("la ficha en borrador", () => {
       await tx`UPDATE cargos SET nombre = ${`ZZ Renombrado ${unico()}`} WHERE id = ${b.cargoId}`;
       await tx`UPDATE procesos SET nombre = 'Otro nombre del proceso' WHERE id = ${b.procesoId}`;
       expect(huellaDeFicha(await contenidoDeVersion(tx, versionId))).toBe(huella);
+    }));
+
+  it("guarda los rangos, el nivel y el riesgo asociado, y los lee de la versión", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const { versionId } = await crearIndicador(b.admin, datos(b, { nivel: "Estratégico", riesgoAsociado: "Demora en la atención" }), { sql: tx });
+      const [v] = await tx`SELECT semaforo_modo, rangos, umbral_atencion_pct, limite_critico, nivel, riesgo_asociado FROM indicador_versiones WHERE id = ${versionId}`;
+      expect(v).toEqual({
+        semaforo_modo: "rangos",
+        rangos: JSON.parse(RANGOS_80),
+        umbral_atencion_pct: null,
+        limite_critico: null,
+        nivel: "Estratégico",
+        riesgo_asociado: "Demora en la atención",
+      });
+      const contenido = await contenidoDeVersion(tx, versionId);
+      expect(contenido).toMatchObject({ semaforoModo: "rangos", rangos: JSON.parse(RANGOS_80), nivel: "Estratégico", riesgoAsociado: "Demora en la atención" });
+      const huella = huellaDeFicha(contenido);
+      const [{ codigo }] = await tx`SELECT i.codigo FROM indicadores i JOIN indicador_versiones v ON v.indicador_id = i.id WHERE v.id = ${versionId}`;
+      const ficha = await fichaParaEditar(b.admin, codigo as string, { sql: tx });
+      expect(ficha!.valores).toMatchObject({ semaforoModo: "rangos", nivel: "Estratégico", riesgoAsociado: "Demora en la atención" });
+      await guardarBorrador(b.admin, versionId, EsquemaFicha.parse(ficha!.valores), { sql: tx });
+      expect(huellaDeFicha(await contenidoDeVersion(tx, versionId))).toBe(huella);
+    }));
+
+  it("con meta exige los rangos: ni el modo relativo ni el fijo los reemplazan", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const mensaje = "Escriba los rangos del semáforo";
+      await rechaza(crearIndicador(b.admin, datos(b, { semaforoModo: undefined, rangos: undefined }), { sql: tx }), mensaje);
+      await rechaza(crearIndicador(b.admin, datos(b, { semaforoModo: "relativo", rangos: undefined, umbralAtencionPct: 70 }), { sql: tx }), mensaje);
+      await rechaza(crearIndicador(b.admin, datos(b, { semaforoModo: "fijo", rangos: undefined, limiteCritico: "50" }), { sql: tx }), mensaje);
+      // Una meta de constante tampoco se salva con tolerancia.
+      await rechaza(crearIndicador(b.admin, datos(b, { tendencia: "constante", semaforoModo: undefined, rangos: undefined, tolerancia: "2" }), { sql: tx }), mensaje);
+    }));
+
+  it("los rangos mal escritos se rechazan con el mensaje de errorDeRangos", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const sinBien = JSON.stringify({ bien: [], atencion: [], critico: [{ signo: "<", valor: "56" }] });
+      await rechaza(crearIndicador(b.admin, datos(b, { rangos: sinBien }), { sql: tx }), "Escriba el rango de Bien");
+      const alReves = JSON.stringify({ bien: [{ signo: "<=", valor: "80" }], atencion: [], critico: [{ signo: "<", valor: "56" }] });
+      await rechaza(crearIndicador(b.admin, datos(b, { rangos: alReves }), { sql: tx }), "En «más es mejor», Bien va con ≥, > o «entre»");
+      expect(() => EsquemaFicha.parse(datos(b, { rangos: "no es json" }))).toThrow();
+      expect(() => EsquemaFicha.parse(datos(b, { rangos: JSON.stringify({ bien: [], atencion: [], critico: [], otro: 1 }) }))).toThrow();
+    }));
+
+  it("un cambio sobre una ficha con la regla vieja la conserva si es menor y pide los rangos si es mayor", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const ind = await indicadorDePrueba(tx, { procesoId: b.procesoId });
+      const { versionId } = await abrirCambio(b.admin, ind.id, { sql: tx });
+      const editable = (await fichaParaEditar(b.admin, ind.codigo, { sql: tx }))!.valores as DatosFicha;
+      // La ficha de prueba no tiene cargos; añadirlos es un cambio menor (Responsables).
+      const valores: DatosFicha = { ...editable, cargosMedir: [b.cargoId], cargosAnalizar: [b.cargoId] };
+      expect(valores).toMatchObject({ semaforoModo: "relativo", umbralAtencionPct: 70, meta: "90" });
+
+      // Renombrarla (cambio menor): la regla vieja se conserva y el cambio no se vuelve mayor por el modo (R3).
+      await guardarBorrador(b.admin, versionId, { ...valores, nombre: "Otro nombre" }, { sql: tx });
+      const [menor] = await tx`SELECT tipo_cambio, semaforo_modo, rangos, umbral_atencion_pct FROM indicador_versiones WHERE id = ${versionId}`;
+      expect(menor).toEqual({ tipo_cambio: "menor", semaforo_modo: "relativo", rangos: null, umbral_atencion_pct: 70 });
+
+      // Cambiar la meta sin escribir los rangos: mayor, y la regla vieja ya no vale.
+      await rechaza(
+        guardarBorrador(b.admin, versionId, { ...valores, meta: "95" }, { sql: tx }),
+        "Un cambio mayor escribe los rangos del semáforo: complete Bien, Atención y Crítico",
+      );
+
+      // Con los rangos, el cambio mayor se guarda.
+      const rangos = JSON.stringify({ bien: [{ signo: ">=", valor: "95" }], atencion: [{ signo: ">=", valor: "66.5" }], critico: [{ signo: "<", valor: "66.5" }] });
+      await guardarBorrador(b.admin, versionId, { ...valores, meta: "95", semaforoModo: "rangos", rangos, umbralAtencionPct: undefined }, { sql: tx });
+      const [mayor] = await tx`SELECT tipo_cambio, semaforo_modo, rangos, umbral_atencion_pct FROM indicador_versiones WHERE id = ${versionId}`;
+      expect(mayor).toEqual({ tipo_cambio: "mayor", semaforo_modo: "rangos", rangos: JSON.parse(rangos), umbral_atencion_pct: null });
+    }));
+
+  it("abrir un cambio copia los rangos, el nivel y el riesgo de la vigente, y no el lote de importación", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const rangos = { bien: [{ signo: ">=" as const, valor: "90" }], atencion: [{ signo: ">=" as const, valor: "63" }], critico: [{ signo: "<" as const, valor: "63" }] };
+      const ind = await indicadorDePrueba(tx, { procesoId: b.procesoId, rangos, nivel: "Táctico", riesgoAsociado: "Riesgo X" });
+      const { versionId } = await abrirCambio(b.admin, ind.id, { sql: tx });
+      const [v] = await tx`SELECT semaforo_modo, rangos, nivel, riesgo_asociado, importacion_id FROM indicador_versiones WHERE id = ${versionId}`;
+      expect(v).toEqual({ semaforo_modo: "rangos", rangos, nivel: "Táctico", riesgo_asociado: "Riesgo X", importacion_id: null });
+    }));
+
+  it("«Crear a partir de este» de una ficha con la regla vieja lleva los rangos equivalentes", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const ind = await indicadorDePrueba(tx, { procesoId: b.procesoId });
+      const { codigo } = await duplicar(b.admin, { indicadorId: ind.id, procesoId: b.procesoId }, { sql: tx });
+      const [v] = await tx`SELECT v.semaforo_modo, v.rangos, v.umbral_atencion_pct, v.limite_critico FROM indicador_versiones v
+        JOIN indicadores i ON i.id = v.indicador_id WHERE i.codigo = ${codigo}`;
+      expect(v).toEqual({
+        semaforo_modo: "rangos",
+        rangos: { bien: [{ signo: ">=", valor: "90" }], atencion: [{ signo: ">=", valor: "63" }], critico: [{ signo: "<", valor: "63" }] },
+        umbral_atencion_pct: null,
+        limite_critico: null,
+      });
     }));
 
   it("fichaParaEditar devuelve lo que el formulario vuelve a enviar", () =>

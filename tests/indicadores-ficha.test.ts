@@ -42,6 +42,9 @@ const base = (): ContenidoFicha => ({
   periodicidadExterna: null,
   plazoExternoDias: null,
   dimensionId: null,
+  rangos: null,
+  nivel: null,
+  riesgoAsociado: null,
   variables: [
     {
       letra: "A",
@@ -102,6 +105,8 @@ describe("tipo de cambio de una ficha", () => {
     ["el nombre de la unidad (mismo id)", (c) => (c.unidadNombre = "Porcentaje (%)")],
     ["el sufijo de la unidad (mismo id)", (c) => (c.unidadSufijo = "%")],
     ["el ente", (c) => (c.ente = "Secretaría")],
+    ["el nivel", (c) => (c.nivel = "Estratégico")],
+    ["el riesgo asociado", (c) => (c.riesgoAsociado = "Demora en la atención")],
   ];
   const mayores: [string, (c: ContenidoFicha) => void][] = [
     ["clasificación (otro id)", (c) => ((c.clasificacionId = 2), (c.clasificacionNombre = "Estratégico"))],
@@ -119,6 +124,13 @@ describe("tipo de cambio de una ficha", () => {
     ["límite", (c) => (c.limiteCritico = "50")],
     ["tolerancia", (c) => (c.tolerancia = "3")],
     ["origen del dato", (c) => (c.origenDato = "automatico")],
+    [
+      "los rangos",
+      (c) => {
+        c.semaforoModo = "rangos";
+        c.rangos = { bien: [{ signo: ">=", valor: "90" }], atencion: [{ signo: ">=", valor: "63" }], critico: [{ signo: "<", valor: "63" }] };
+      },
+    ],
   ];
   it.each(menores)("cambiar %s es menor", (_, cambiar) => {
     const nuevo = base();
@@ -129,6 +141,16 @@ describe("tipo de cambio de una ficha", () => {
     const nuevo = base();
     cambiar(nuevo);
     expect(tipoDeCambio(base(), nuevo)).toBe("mayor");
+  });
+  it("con el mismo modo «rangos», cambiar solo un valor de los rangos es mayor", () => {
+    const rangos = (corte: string) => ({ bien: [{ signo: ">=" as const, valor: "90" }], atencion: [{ signo: ">=" as const, valor: corte }], critico: [{ signo: "<" as const, valor: corte }] });
+    const a = base();
+    a.semaforoModo = "rangos";
+    a.rangos = rangos("63");
+    const b = structuredClone(a);
+    b.rangos = rangos("60");
+    expect(tipoDeCambio(a, b)).toBe("mayor");
+    expect(camposCambiados(a, b)).toEqual(["Rangos del semáforo"]);
   });
   it("sin cambios es «ninguno»; uno mayor entre varios menores lo hace mayor", () => {
     expect(tipoDeCambio(base(), base())).toBe("ninguno");
@@ -184,6 +206,21 @@ describe("huella de la ficha", () => {
     nuevo.variables.reverse();
     nuevo.meta = "90.00";
     expect(huellaDeFicha(nuevo)).toBe(huellaDeFicha(base()));
+  });
+  it("una ficha sin rangos, nivel ni riesgo conserva la huella que tenía antes de la 14A (R2)", () => {
+    // Calculada con el código de `main`, antes de añadir esos campos al contenido.
+    expect(huellaDeFicha(base())).toBe("0e7ed850fc2aa4ae7120c36e348a737454eb558dd141fca98e4ec2860e3425e0");
+  });
+  it("rangos, nivel y riesgo asociado, cuando existen, entran a la huella", () => {
+    for (const cambiar of [
+      (c: ContenidoFicha) => (c.nivel = "Estratégico"),
+      (c: ContenidoFicha) => (c.riesgoAsociado = "Demora"),
+      (c: ContenidoFicha) => (c.rangos = { bien: [{ signo: ">=", valor: "90" }], atencion: [], critico: [{ signo: "<", valor: "90" }] }),
+    ]) {
+      const nuevo = base();
+      cambiar(nuevo);
+      expect(huellaDeFicha(nuevo)).not.toBe(huellaDeFicha(base()));
+    }
   });
   it("cambia si cambia el nombre firmado de la unidad", () => {
     const nuevo = base();

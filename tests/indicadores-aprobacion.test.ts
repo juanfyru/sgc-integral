@@ -95,6 +95,12 @@ async function procesoNuevo(tx: TransactionSql): Promise<number> {
 }
 
 /** Una ficha de forma «porcentaje», trimestral desde 2026-T1, ya probada con valores de ejemplo. */
+/** Los rangos de «más es mejor» con el 70 % de la meta como límite de crítico. */
+const rangosDe = (meta: number) =>
+  JSON.stringify({ bien: [{ signo: ">=", valor: String(meta) }], atencion: [{ signo: ">=", valor: String((meta * 70) / 100) }], critico: [{ signo: "<", valor: String((meta * 70) / 100) }] });
+/** Los rangos de la ficha de prueba (meta 90, ascendente): lo que antes era «relativo» con umbral 70 %. */
+const RANGOS_90 = JSON.stringify({ bien: [{ signo: ">=", valor: "90" }], atencion: [{ signo: ">=", valor: "63" }], critico: [{ signo: "<", valor: "63" }] });
+
 const datos = (b: Base, parcial: Partial<DatosFicha> = {}): DatosFicha => ({
   procesoId: b.sgc,
   nombre: "Cumplimiento del plan de capacitación",
@@ -111,8 +117,8 @@ const datos = (b: Base, parcial: Partial<DatosFicha> = {}): DatosFicha => ({
   periodicidad: "trimestral",
   tendencia: "ascendente",
   meta: "90",
-  semaforoModo: "relativo",
-  umbralAtencionPct: 70,
+  semaforoModo: "rangos",
+  rangos: RANGOS_90,
   cargosMedir: [b.cargoId],
   cargosAnalizar: [b.cargoId],
   normaIds: [],
@@ -413,7 +419,7 @@ describe("aprobar", () => {
       // El borrador descartado de un cambio que nunca se envió, igual.
       const d = datos(b);
       const ind = await aprobado(tx, b, d);
-      const v2 = await cambio(tx, b, ind.indicadorId, { ...d, meta: "80", motivoCambio: "Otra meta" });
+      const v2 = await cambio(tx, b, ind.indicadorId, { ...d, meta: "80", rangos: rangosDe(80), motivoCambio: "Otra meta" });
       await descartarBorrador(b.admin, v2, { sql: tx });
       await rechaza(aprobarFichas(gerente, { versionIds: [v2], credenciales: CLAVE }, firmar(tx)), NO_LE_TOCA);
       await rechaza(devolverFicha(gerente, { versionId: v2, nota: "Nota de prueba" }, { sql: tx }), NO_LE_TOCA);
@@ -501,7 +507,7 @@ describe("devolver y descartar", () => {
       const d = datos(b);
       const ind = await aprobado(tx, b, d);
       const huella = huellaDeFicha(await contenidoDeVersion(tx, ind.versionId));
-      const v2 = await cambio(tx, b, ind.indicadorId, { ...d, meta: "80", motivoCambio: "Meta más realista" });
+      const v2 = await cambio(tx, b, ind.indicadorId, { ...d, meta: "80", rangos: rangosDe(80), motivoCambio: "Meta más realista" });
 
       const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [b.sgc] });
       await expect(descartarBorrador(lider, v2, { sql: tx })).rejects.toBeInstanceOf(ErrorPermiso);
@@ -570,7 +576,7 @@ describe("cambios sobre una ficha aprobada", () => {
       await medicion(tx, ind.indicadorId, ind.versionId, "2026-T2");
       // Una medición abierta no es un reporte.
       await medicion(tx, ind.indicadorId, ind.versionId, "2026-T3", "abierta");
-      const v2 = await cambio(tx, b, ind.indicadorId, { ...d, meta: "85", motivoCambio: "La meta de 90 no es alcanzable este año" });
+      const v2 = await cambio(tx, b, ind.indicadorId, { ...d, meta: "85", rangos: rangosDe(85), motivoCambio: "La meta de 90 no es alcanzable este año" });
       const enviar = (rigeDesde?: string) => enviarAAprobacion(b.admin, { versionId: v2, rigeDesde, credenciales: CLAVE }, firmar(tx));
 
       await rechaza(enviar("2026-T2"), "Ese periodo ya tiene una medición reportada");
@@ -583,14 +589,14 @@ describe("cambios sobre una ficha aprobada", () => {
       expect(await rigeDesdePorOmision(tx, ind.indicadorId, "trimestral", AHORA)).toBe("2026-T3");
       expect(await previaDeEnvio(b.admin, v2, { sql: tx, ahora: AHORA })).toMatchObject({
         tipo: "mayor",
-        cambios: ["Meta"],
+        cambios: ["Meta", "Rangos del semáforo"],
         rige: { porOmision: "2026-T3", opciones: [{ clave: "2026-T3" }, { clave: "2026-T4" }] },
         enviableDesde: null,
       });
       expect(await enviar()).toEqual({ codigo: ind.codigo, menor: false });
       const [v] = await tx`SELECT estado, tipo_cambio, rige_desde FROM indicador_versiones WHERE id = ${v2}`;
       expect(v).toEqual({ estado: "por_aprobar", tipo_cambio: "mayor", rige_desde: "2026-T3" });
-      expect((await fichasPorAprobar(ind.gerente, { sql: tx })).find((f) => f.versionId === v2)).toMatchObject({ tipoCambio: "mayor", cambios: ["Meta"] });
+      expect((await fichasPorAprobar(ind.gerente, { sql: tx })).find((f) => f.versionId === v2)).toMatchObject({ tipoCambio: "mayor", cambios: ["Meta", "Rangos del semáforo"] });
 
       await aprobarFichas(ind.gerente, { versionIds: [v2], credenciales: CLAVE }, firmar(tx));
       const [aprobada] = await tx`SELECT estado, rige_desde FROM indicador_versiones WHERE id = ${v2}`;
@@ -618,7 +624,7 @@ describe("cambios sobre una ficha aprobada", () => {
       await reportar(mide, { medicionId: Number(t4.id), valores: { A: "3", B: "10" }, parcial: false, confirmado: true }, { sql: tx, ahora: ENERO });
       expect((await tx`SELECT estado FROM mediciones WHERE id = ${t4.id}`)[0].estado).toBe("abierta");
 
-      const v2 = await cambio(tx, b, ind.indicadorId, { ...d, meta: "85", motivoCambio: "La meta de 90 no es alcanzable este año" });
+      const v2 = await cambio(tx, b, ind.indicadorId, { ...d, meta: "85", rangos: rangosDe(85), motivoCambio: "La meta de 90 no es alcanzable este año" });
       const enero = { sql: tx, ahora: ENERO, verificar: firmaDePrueba };
       const enviar = (rigeDesde?: string) => enviarAAprobacion(b.admin, { versionId: v2, rigeDesde, credenciales: CLAVE }, enero);
       await rechaza(enviar("2026-T4"), "Ese periodo ya tiene una medición reportada");
@@ -707,7 +713,7 @@ describe("cambios sobre una ficha aprobada", () => {
       const b = await base(tx);
       const d = datos(b);
       const ind = await aprobado(tx, b, d);
-      const v2 = await cambio(tx, b, ind.indicadorId, { ...d, meta: "85", motivoCambio: "Otra meta" });
+      const v2 = await cambio(tx, b, ind.indicadorId, { ...d, meta: "85", rangos: rangosDe(85), motivoCambio: "Otra meta" });
       // Sin reportes, el de por omisión es el primer periodo del indicador: uno anterior no se acepta.
       await rechaza(
         enviarAAprobacion(b.admin, { versionId: v2, rigeDesde: "2025-T4", credenciales: CLAVE }, firmar(tx)),
@@ -715,7 +721,7 @@ describe("cambios sobre una ficha aprobada", () => {
       );
       // Con el inicio en el futuro, el de por omisión es el en curso.
       const futuro = await aprobado(tx, b, { ...d, inicioMedicion: "2027-T1" });
-      const v3 = await cambio(tx, b, futuro.indicadorId, { ...d, inicioMedicion: "2027-T1", meta: "85", motivoCambio: "Otra meta" });
+      const v3 = await cambio(tx, b, futuro.indicadorId, { ...d, inicioMedicion: "2027-T1", meta: "85", rangos: rangosDe(85), motivoCambio: "Otra meta" });
       await rechaza(
         enviarAAprobacion(b.admin, { versionId: v3, rigeDesde: "2026-T3", credenciales: CLAVE }, firmar(tx)),
         "Un cambio mayor rige desde el cuarto trimestre de 2026 o desde un periodo posterior",
@@ -782,7 +788,7 @@ describe("cambios sobre una ficha aprobada", () => {
       expect(await versionQueRige(tx, ind.indicadorId, "2025-T2")).toBe(ind.versionId);
       await medicion(tx, ind.indicadorId, ind.versionId, "2026-T1");
       await medicion(tx, ind.indicadorId, ind.versionId, "2026-T2");
-      const v2 = await cambio(tx, b, ind.indicadorId, { ...d, meta: "85", motivoCambio: "Otra meta" });
+      const v2 = await cambio(tx, b, ind.indicadorId, { ...d, meta: "85", rangos: rangosDe(85), motivoCambio: "Otra meta" });
       await enviarAAprobacion(b.admin, { versionId: v2, rigeDesde: "2026-T3", credenciales: CLAVE }, firmar(tx));
       // Por aprobar todavía no rige.
       expect(await versionQueRige(tx, ind.indicadorId, "2026-T3")).toBe(ind.versionId);
@@ -816,11 +822,11 @@ describe("cambios sobre una ficha aprobada", () => {
       const d = datos(b);
       const ind = await aprobado(tx, b, d);
       const motivo = "La meta de 90 no es alcanzable este año";
-      const v2 = await cambio(tx, b, ind.indicadorId, { ...d, meta: "85", motivoCambio: motivo });
+      const v2 = await cambio(tx, b, ind.indicadorId, { ...d, meta: "85", rangos: rangosDe(85), motivoCambio: motivo });
       await enviarAAprobacion(b.admin, { versionId: v2, credenciales: CLAVE }, firmar(tx));
       await aprobarFichas(ind.gerente, { versionIds: [v2], credenciales: CLAVE }, firmar(tx));
       // Un cambio en curso no aparece en el control de cambios.
-      await cambio(tx, b, ind.indicadorId, { ...d, meta: "70", motivoCambio: "Otra" });
+      await cambio(tx, b, ind.indicadorId, { ...d, meta: "70", rangos: rangosDe(70), motivoCambio: "Otra" });
 
       const [admin] = await tx`SELECT nombre FROM usuarios WHERE id = ${b.admin.usuarioId}`;
       const [gerente] = await tx`SELECT nombre FROM usuarios WHERE id = ${ind.gerente.usuarioId}`;
@@ -831,7 +837,7 @@ describe("cambios sobre una ficha aprobada", () => {
         numero: 2,
         tipoCambio: "mayor",
         rigeDesde: "2026-T1",
-        cambios: ["Meta"],
+        cambios: ["Meta", "Rangos del semáforo"],
         motivo,
         elaboro: admin.nombre,
         elaboradaEn: AHORA,
@@ -946,7 +952,7 @@ describe("aviso de designación en la primera aprobación", () => {
       );
 
       // Un cambio posterior no repite el aviso.
-      const v2 = await cambio(tx, b, creado.indicadorId, { ...datos(b), meta: "80", motivoCambio: "Otra meta" });
+      const v2 = await cambio(tx, b, creado.indicadorId, { ...datos(b), meta: "80", rangos: rangosDe(80), motivoCambio: "Otra meta" });
       await enviarAAprobacion(b.admin, { versionId: v2, credenciales: CLAVE }, firmar(tx));
       await aprobarFichas(gerente, { versionIds: [v2], credenciales: CLAVE }, firmar(tx));
       expect((await avisos(tx, "indicadores.designacion", creado.indicadorId)).length).toBe(2);
