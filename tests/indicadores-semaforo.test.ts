@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { comparar, fraccion } from "@/lib/indicadores/formula/fraccion";
-import { errorDeRegla, limiteDeCritico, rangosEnPalabras, semaforoDe, type Regla } from "@/lib/indicadores/semaforo";
+import { rangosDeTexto, type RangosEnTexto } from "@/lib/indicadores/rangos";
+import { cumpleMeta, errorDeRegla, limiteDeCritico, rangosEnPalabras, rangosEquivalentes, semaforoDe, type Regla } from "@/lib/indicadores/semaforo";
 import type { Unidad } from "@/lib/indicadores/textos";
 
 const f = (t: string) => fraccion(t)!;
@@ -58,5 +59,34 @@ describe("semáforo", () => {
     expect(errorDeRegla({ ...asc, meta: f("-5") })).toBe(mensaje);
     expect(errorDeRegla({ ...desc, meta: f("-5") })).toBe("Con meta negativa en tendencia descendente, escriba los rangos del semáforo");
     expect(errorDeRegla({ ...asc, meta: f("0"), modo: "fijo", umbralPct: null, limite: f("-1") })).toBeNull();
+  });
+  it("cumple: alcanzar la meta, sin importar el color", () => {
+    expect(["99,99", "100"].map((v) => cumpleMeta(f(v), { ...asc, meta: f("100") }))).toEqual([false, true]);
+    expect(["30", "30,01"].map((v) => cumpleMeta(f(v), desc))).toEqual([true, false]);
+    const cte: Regla = { tendencia: "constante", meta: f("98"), metaMax: f("100"), modo: "fijo", umbralPct: null, limite: null, tolerancia: f("2") };
+    expect(["97,99", "99", "98", "100", "100,01"].map((v) => cumpleMeta(f(v), cte))).toEqual([false, true, true, true, false]);
+    expect(cumpleMeta(f("50"), { ...asc, meta: null })).toBeNull();
+  });
+  it("los rangos en modo «rangos»: palabras, semáforo y errores", () => {
+    const t: RangosEnTexto = { bien: [{ signo: ">=", valor: "91" }], atencion: [{ signo: "entre", valor: "41", hasta: "90" }], critico: [{ signo: "<=", valor: "40" }] };
+    const r: Regla = { ...asc, meta: f("100"), modo: "rangos", umbralPct: null, rangos: rangosDeTexto(t) };
+    expect(rangosEnPalabras(r, pct)).toBe("Bien: ≥ 91 % · Atención: 41 a 90 % · Crítico: ≤ 40 %");
+    expect(rangosEnPalabras({ ...r, rangos: rangosDeTexto({ ...t, atencion: [] }) }, pct)).toBe("Bien: ≥ 91 % · Crítico: ≤ 40 %");
+    expect(rangosEnPalabras({ ...r, rangos: rangosDeTexto({ ...t, atencion: [{ signo: ">=", valor: "41" }, { signo: "<", valor: "30" }] }) }, pct))
+      .toContain("Atención: ≥ 41 % y < 30 %");
+    expect(["95", "90,5", "40,5"].map((v) => semaforoDe(f(v), r))).toEqual(["bien", "atencion", "critico"]);
+    expect(limiteDeCritico(r)).toEqual(f("40"));
+    expect(errorDeRegla(r)).toBeNull();
+    expect(errorDeRegla({ ...r, meta: f("90") })).toBe("La meta debe quedar dentro del rango de Bien");
+    expect(errorDeRegla({ ...r, rangos: null })).toBe("Escriba los rangos del semáforo");
+  });
+  it("una regla relativa o fija da lo mismo escrita como rangos", () => {
+    const cte: Regla = { tendencia: "constante", meta: f("98"), metaMax: f("100"), modo: "fijo", umbralPct: null, limite: null, tolerancia: f("2") };
+    const valores = ["0", "62,99", "63", "89,96", "90", "100", "30", "31", "42,85", "43", "95", "95,99", "96", "97", "98", "100", "101", "102", "102,01", "103"];
+    for (const regla of [asc, desc, cte]) {
+      const equivalente: Regla = { ...regla, modo: "rangos", rangos: rangosEquivalentes(regla) };
+      expect(valores.map((v) => semaforoDe(f(v), equivalente))).toEqual(valores.map((v) => semaforoDe(f(v), regla)));
+    }
+    expect(rangosEquivalentes({ ...asc, meta: null })).toBeNull();
   });
 });

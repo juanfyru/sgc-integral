@@ -47,7 +47,7 @@ export const ETIQUETA_PERIODICIDAD: Record<Periodicidad, string> = {
 export const TENDENCIAS = ["ascendente", "descendente", "constante"] as const;
 export type Tendencia = (typeof TENDENCIAS)[number];
 
-export const MODOS_SEMAFORO = ["relativo", "fijo"] as const;
+export const MODOS_SEMAFORO = ["relativo", "fijo", "rangos"] as const;
 export type ModoSemaforo = (typeof MODOS_SEMAFORO)[number];
 
 export const CONSOLIDACIONES = ["suma", "ultimo", "promedio"] as const;

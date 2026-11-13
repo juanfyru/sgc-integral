@@ -7,6 +7,7 @@ import { calcular, variacionExcesiva, type FichaDeCalculo } from "./calculo";
 import { analizar } from "./formula/analizar";
 import type { Motivo } from "./formula/evaluar";
 import { aDecimal, comparar, deTexto, esNegativa, fraccion, type Fraccion } from "./formula/fraccion";
+import { rangosDeTexto, type RangosEnTexto } from "./rangos";
 import { numeroExacto, type Regla } from "./semaforo";
 import { fraseDeVariacion, textoValor, type Unidad } from "./textos";
 import type { EstadoMedicion, ModoSemaforo, Semaforo, Tendencia } from "./tipos";
@@ -20,6 +21,7 @@ export type ReglaEnTexto = {
   umbralPct: number | null;
   limite: string | null;
   tolerancia: string | null;
+  rangos?: RangosEnTexto | null;
 };
 
 /** La fórmula de una versión y sus límites del resultado. */
@@ -53,6 +55,7 @@ export function reglaDeTexto(r: ReglaEnTexto): Regla {
     umbralPct: r.umbralPct,
     limite: fr(r.limite),
     tolerancia: fr(r.tolerancia),
+    ...(r.rangos ? { rangos: rangosDeTexto(r.rangos) } : {}),
   };
 }
 
