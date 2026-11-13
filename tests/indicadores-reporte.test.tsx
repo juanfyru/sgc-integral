@@ -200,6 +200,40 @@ describe("FormularioReporte y ResultadoEnVivo", () => {
     expect(html).toContain('aria-live="polite"');
   });
 
+  it("ResultadoEnVivo avisa que el análisis es obligatorio cuando no cumple, aunque el color sea Bien", () => {
+    const rangos = {
+      bien: [{ signo: ">=" as const, valor: "91" }],
+      atencion: [{ signo: "entre" as const, valor: "41", hasta: "90" }],
+      critico: [{ signo: "<=" as const, valor: "40" }],
+    };
+    const html = renderToStaticMarkup(
+      <ResultadoEnVivo
+        calculo={DATOS.calculo}
+        regla={{ ...DATOS.regla, meta: "100", modo: "rangos", umbralPct: null, rangos }}
+        unidad={DATOS.unidad}
+        variables={DATOS.variables}
+        valores={{ A: "95", B: "100" }}
+        rangos={null}
+        anterior={null}
+        variacionPct={DATOS.variacionPct}
+      />,
+    );
+    expect(html).toContain(">Bien<");
+    expect(html).toContain("No cumple: después de reportar, el análisis es obligatorio.");
+    const cumple = renderToStaticMarkup(
+      <ResultadoEnVivo
+        calculo={DATOS.calculo}
+        regla={{ ...DATOS.regla, meta: "100", modo: "rangos", umbralPct: null, rangos }}
+        unidad={DATOS.unidad}
+        variables={DATOS.variables}
+        valores={{ A: "105", B: "100" }}
+        rangos={null}
+        anterior={null}
+        variacionPct={DATOS.variacionPct}
+      />,
+    );
+    expect(cumple).not.toContain("el análisis es obligatorio");
+  });
   it("ResultadoEnVivo pide confirmar un salto grande, dice la división por cero y espera los datos", () => {
     expect(enVivo({ A: "2", B: "5" })).toContain(
       "El resultado baja 43,3 puntos frente al segundo trimestre de 2026. ¿Los datos son correctos?",
@@ -775,15 +809,15 @@ describe("tras reportar un periodo que pide análisis, el foco va al análisis (
       `<input type="hidden" name="periodo" value="${DATOS.periodo}"/>`,
     );
     const volver = "/indicadores/AIN-IND-01";
-    expect(destinoTrasReportar(volver, "2026-09", { estado: "abierta", semaforo: "critico" })).toBe(
+    expect(destinoTrasReportar(volver, "2026-09", { estado: "abierta", cumple: false })).toBe(
       "/indicadores/AIN-IND-01?vista=resultados&anio=2026&foco=analisis#analisis",
     );
-    expect(destinoTrasReportar(volver, "2026-T3", { estado: "abierta", semaforo: "atencion" })).toContain("&foco=analisis#analisis");
+    expect(destinoTrasReportar(volver, "2026-T3", { estado: "abierta", cumple: false })).toContain("&foco=analisis#analisis");
     // Reportada (cumple o ya tiene el análisis), «sin meta» o una clave rara: vuelve tal cual.
-    expect(destinoTrasReportar(volver, "2026-09", { estado: "reportada", semaforo: "critico" })).toBe(volver);
-    expect(destinoTrasReportar(volver, "2026-09", { estado: "abierta", semaforo: "bien" })).toBe(volver);
-    expect(destinoTrasReportar(volver, "2026-09", { estado: "abierta", semaforo: null })).toBe(volver);
-    expect(destinoTrasReportar(volver, "x&y=1", { estado: "abierta", semaforo: "critico" })).toBe(volver);
+    expect(destinoTrasReportar(volver, "2026-09", { estado: "reportada", cumple: false })).toBe(volver);
+    expect(destinoTrasReportar(volver, "2026-09", { estado: "abierta", cumple: true })).toBe(volver);
+    expect(destinoTrasReportar(volver, "2026-09", { estado: "abierta", cumple: null })).toBe(volver);
+    expect(destinoTrasReportar(volver, "x&y=1", { estado: "abierta", cumple: false })).toBe(volver);
   });
 
   it("la sección del análisis es un ancla enfocable y, cuando la dirección lo pide, recibe el foco al cargar", () => {

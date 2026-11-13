@@ -115,11 +115,11 @@ export const decimalCorto = (v: Fraccion): string => sinCeros(aDecimal(v, 10, "r
 
 /**
  * A dónde se vuelve tras reportar (Tarea 19, D-12): a `volver` (la página del indicador) y, si el periodo quedó abierto
- * pidiendo su análisis (Atención o Crítico), a su tabla del año con `foco=analisis`: la página lleva el foco al formulario
+ * pidiendo su análisis (no cumple la meta, sea cual sea su color), a su tabla del año con `foco=analisis`: la página lleva el foco al formulario
  * del análisis. Un periodo que no es una clave válida, o un `volver` que ya trae consulta, vuelve tal cual.
  */
-export function destinoTrasReportar(volver: string, periodo: string, r: { estado: EstadoMedicion; semaforo: Semaforo | null }): string {
-  const pideAnalisis = r.estado === "abierta" && (r.semaforo === "atencion" || r.semaforo === "critico");
+export function destinoTrasReportar(volver: string, periodo: string, r: { estado: EstadoMedicion; cumple: boolean | null }): string {
+  const pideAnalisis = r.estado === "abierta" && r.cumple === false;
   if (!pideAnalisis || !/^\d{4}(-(\d{2}|[BTS]\d))?$/.test(periodo) || volver.includes("?") || volver.includes("#")) return volver;
   return `${volver}?vista=resultados&anio=${periodo.slice(0, 4)}&foco=analisis#analisis`;
 }

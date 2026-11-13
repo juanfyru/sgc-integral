@@ -235,7 +235,7 @@ describe("reportar", () => {
     revertida(sql, async (tx) => {
       const { ind, mide, medicion } = await preparar(tx);
       const t3 = await medicion("2026-T3");
-      expect(await reportarCon(tx, mide, t3, { A: "3", B: "5" })).toEqual({ ok: true, estado: "abierta", semaforo: "critico" });
+      expect(await reportarCon(tx, mide, t3, { A: "3", B: "5" })).toEqual({ ok: true, estado: "abierta", semaforo: "critico", cumple: false });
       const m = await fila(tx, t3);
       expect({
         resultado_exacto: m.resultado_exacto,
@@ -275,7 +275,7 @@ describe("reportar", () => {
     revertida(sql, async (tx) => {
       const { mide, medicion } = await preparar(tx);
       const t3 = await medicion("2026-T3");
-      expect(await reportarCon(tx, mide, t3, { A: "5", B: "5" })).toEqual({ ok: true, estado: "reportada", semaforo: "bien" });
+      expect(await reportarCon(tx, mide, t3, { A: "5", B: "5" })).toEqual({ ok: true, estado: "reportada", semaforo: "bien", cumple: true });
       const m = await fila(tx, t3);
       expect([m.estado, m.semaforo, m.requiere_accion]).toEqual(["reportada", "bien", false]);
     }));
@@ -286,12 +286,12 @@ describe("reportar", () => {
       const t3 = await medicion("2026-T3");
       const guardar = (v: Record<string, string>) => reportar(mide, { medicionId: t3, valores: v, parcial: true, confirmado: false }, opc(tx));
       const guardadas = () => bitacora(tx, "medicion_guardada", t3);
-      expect(await guardar({ A: "3" })).toEqual({ ok: true, estado: "abierta", semaforo: null });
+      expect(await guardar({ A: "3" })).toEqual({ ok: true, estado: "abierta", semaforo: null, cumple: null });
       expect(await valores(tx, t3)).toEqual({ A: 3 });
       let m = await fila(tx, t3);
       expect([m.resultado_exacto, m.semaforo, m.estado, m.reportada_en]).toEqual([null, null, "abierta", null]);
       // Completo pero sin reportar: tampoco se calcula ni da color.
-      expect(await guardar({ A: "3", B: "5" })).toEqual({ ok: true, estado: "abierta", semaforo: null });
+      expect(await guardar({ A: "3", B: "5" })).toEqual({ ok: true, estado: "abierta", semaforo: null, cumple: null });
       m = await fila(tx, t3);
       expect([m.resultado_exacto, m.semaforo, m.estado]).toEqual([null, null, "abierta"]);
       // Un borrador no deja evento en el historial de la medición ni pasa por «Reportó»: tiene su propia acción.
@@ -395,7 +395,7 @@ describe("reportar", () => {
       });
       expect(await valores(tx, t3)).toEqual({});
       expect(await eventos(tx, t3)).toHaveLength(0);
-      expect(await pedir(true)).toEqual({ ok: true, estado: "abierta", semaforo: "critico" });
+      expect(await pedir(true)).toEqual({ ok: true, estado: "abierta", semaforo: "critico", cumple: false });
       expect(await valores(tx, t3)).toEqual({ A: 2, B: 5 });
     }));
 
@@ -471,7 +471,7 @@ describe("reportar", () => {
       expect((await fila(tx, t2)).estado).toBe("reportada");
       await soporte(tx, t3);
       expect(await contarSoportes(tx, t3)).toBe(1);
-      expect(await reportarCon(tx, mide, t3, { A: "5", B: "5" })).toEqual({ ok: true, estado: "reportada", semaforo: "bien" });
+      expect(await reportarCon(tx, mide, t3, { A: "5", B: "5" })).toEqual({ ok: true, estado: "reportada", semaforo: "bien", cumple: true });
       // Un histórico no lo exige.
       const filas = [{ periodo: "2025-T4", valores: { A: "5", B: "5" } }];
       expect(await registrarHistoricos(mide, { indicadorId: ind.id, filas }, opc(tx))).toEqual({ registrados: 1 });
@@ -532,7 +532,7 @@ describe("reportar", () => {
       const t3 = await medicion("2026-T3");
       await reportarCon(tx, mide, t3, { A: "5", B: "5" });
       expect((await fila(tx, t3)).estado).toBe("reportada");
-      expect(await reportarCon(tx, mide, t3, { A: "4", B: "5" })).toEqual({ ok: true, estado: "abierta", semaforo: "atencion" });
+      expect(await reportarCon(tx, mide, t3, { A: "4", B: "5" })).toEqual({ ok: true, estado: "abierta", semaforo: "atencion", cumple: false });
       const lista = await eventos(tx, t3);
       expect(lista.map((e) => e.tipo)).toEqual(["reporte", "correccion"]);
       expect(lista[1].detalle).toMatchObject({
@@ -551,7 +551,7 @@ describe("reportar", () => {
       const { mide, medicion } = await preparar(tx);
       const t3 = await medicion("2026-T3");
       await reportarCon(tx, mide, t3, { A: "5", B: "5" });
-      expect(await reportarCon(tx, mide, t3, { A: "5,0", B: "5" })).toEqual({ ok: true, estado: "reportada", semaforo: "bien" });
+      expect(await reportarCon(tx, mide, t3, { A: "5,0", B: "5" })).toEqual({ ok: true, estado: "reportada", semaforo: "bien", cumple: true });
       expect(await eventos(tx, t3)).toHaveLength(1);
       expect(await bitacora(tx, "medicion_reportada", t3)).toHaveLength(1);
       expect(await bitacora(tx, "medicion_corregida", t3)).toHaveLength(0);
@@ -585,7 +585,7 @@ describe("reportar", () => {
       const { ind, mide, medicion } = await preparar(tx);
       const t3 = await medicion("2026-T3");
       await tx`INSERT INTO indicador_metas (indicador_id, periodo, meta, programada_por) VALUES (${ind.id}, '2026-T3', 50, ${admin.usuarioId})`;
-      expect(await reportarCon(tx, mide, t3, { A: "3", B: "5" })).toEqual({ ok: true, estado: "reportada", semaforo: "bien" });
+      expect(await reportarCon(tx, mide, t3, { A: "3", B: "5" })).toEqual({ ok: true, estado: "reportada", semaforo: "bien", cumple: true });
       const m = await fila(tx, t3);
       expect([Number(m.meta_aplicada), Number(m.limite_aplicado)]).toEqual([50, 35]);
     }));

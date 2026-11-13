@@ -83,7 +83,7 @@ export function ResultadoEnVivo({
             El resultado queda en crítico: el análisis es obligatorio, en dos partes, y la medición quedará marcada «Requiere acción de
             mejora».
           </p>
-        ) : vivo.semaforo === "atencion" ? (
+        ) : vivo.cumple === false ? (
           <p className={`${AVISO} border-l-estado-atencion`}>No cumple: después de reportar, el análisis es obligatorio.</p>
         ) : null}
       </>

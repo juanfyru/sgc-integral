@@ -48,9 +48,13 @@ export function esRepetido(anteriores: (boolean | null)[], actual: boolean | nul
   return anteriores.slice(0, n - 1).every((c) => c === false);
 }
 
-/** `cumpleDeFila` sobre una fila de `mediciones` tal como la devuelve la base. */
+/**
+ * `cumpleDeFila` sobre una fila de `mediciones` tal como la devuelve la base. Solo un `cumple` nulo (una fila anterior a la
+ * 0012) se deriva del semáforo; que la columna falte es un error de la consulta, no una fila vieja.
+ */
 export function cumpleDeMedicion(m: Record<string, unknown>): boolean | null {
-  return cumpleDeFila({ cumple: (m.cumple as boolean | null | undefined) ?? null, semaforo: (m.semaforo as Semaforo | null | undefined) ?? null });
+  if (m.cumple === undefined) throw new Error("La consulta de la medición no trae la columna `cumple`");
+  return cumpleDeFila({ cumple: m.cumple as boolean | null, semaforo: (m.semaforo as Semaforo | null | undefined) ?? null });
 }
 
 /**

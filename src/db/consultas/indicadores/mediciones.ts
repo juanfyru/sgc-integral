@@ -341,6 +341,8 @@ export type Recalculo = {
   indicadorId: number;
   antes: Semaforo | null;
   despues: Semaforo | null;
+  /** Si cumplía antes (`cumpleDeFila`: una fila anterior a la 0012 se lee por su semáforo). */
+  cumpleAntes: boolean | null;
   /** Si el resultado alcanza la meta (spec 14A §3.1); `null` sin resultado o sin meta. */
   cumple: boolean | null;
   estado: EstadoMedicion;
@@ -548,6 +550,7 @@ export async function recalcularMedicion(
     indicadorId,
     antes: (m.semaforo as Semaforo | null) ?? null,
     despues: semaforo,
+    cumpleAntes,
     cumple,
     estado,
     resultado,
@@ -765,7 +768,7 @@ async function escribirValores(
 export const resultadoEnTexto = (exacto: unknown, version: VersionDeCalculo, regla: Regla): string | null =>
   typeof exacto === "string" ? textoValor(deTexto(exacto), version.unidad, regla) : null;
 
-export type ResultadoDeReporte = { ok: true; estado: EstadoMedicion; semaforo: Semaforo | null } | { ok: false; confirmar: string };
+export type ResultadoDeReporte = { ok: true; estado: EstadoMedicion; semaforo: Semaforo | null; cumple: boolean | null } | { ok: false; confirmar: string };
 
 /** ¿La medición se reportó alguna vez? Lo dice su historial: un reporte, un «no aplica» o un registro histórico. */
 async function seReportoAlgunaVez(tx: TransactionSql, medicionId: number): Promise<boolean> {
@@ -848,7 +851,7 @@ export async function reportar(sesion: SesionFlujo, d: DatosDeReportar, opciones
           detalle: { ...base, antes, despues, ...(ctx.capacidad.sinMedidor ? { sinMedidor: true } : {}) },
         });
       }
-      return { ok: true as const, estado: m.estado as EstadoMedicion, semaforo: (m.semaforo as Semaforo | null) ?? null };
+      return { ok: true as const, estado: m.estado as EstadoMedicion, semaforo: (m.semaforo as Semaforo | null) ?? null, cumple: cumpleDeFila({ cumple: (m.cumple as boolean | null | undefined) ?? null, semaforo: (m.semaforo as Semaforo | null) ?? null }) };
     }
 
     const { r, primera, detalle } = await escribirReporte(tx, ctx, plan.valores, { usuarioId: sesion.usuarioId, ahora, primerEvento: "reporte" });
@@ -868,7 +871,7 @@ export async function reportar(sesion: SesionFlujo, d: DatosDeReportar, opciones
         },
       });
     }
-    return { ok: true as const, estado: r.estado, semaforo: r.despues };
+    return { ok: true as const, estado: r.estado, semaforo: r.despues, cumple: r.cumple };
   });
 }
 

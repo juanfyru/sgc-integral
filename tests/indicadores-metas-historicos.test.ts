@@ -126,7 +126,7 @@ describe("programarMeta", () => {
     revertida(sql, async (tx) => {
       const { ind, mide, admin, id } = await preparar(tx);
       const t3 = await id("2026-T3");
-      expect(await reportarCon(tx, mide, t3, { A: "4", B: "5" })).toEqual({ ok: true, estado: "abierta", semaforo: "atencion" });
+      expect(await reportarCon(tx, mide, t3, { A: "4", B: "5" })).toEqual({ ok: true, estado: "abierta", semaforo: "atencion", cumple: false });
       await rechaza(programarMeta(admin, { indicadorId: ind.id, periodo: "2026-T3", meta: "80" }, opc(tx)), TARDIA);
       await rechaza(programarMeta(admin, { indicadorId: ind.id, periodo: "2026-T3", meta: "80", justificacion: "Corta" }, opc(tx)), TARDIA);
       await rechaza(
@@ -251,6 +251,31 @@ describe("programarMeta con rangos (spec 14A §3.4)", () => {
       // Bien empieza antes de la meta: una meta de 95 cae dentro de Bien y se acepta.
       await programarMeta(admin, { indicadorId: ind.id, periodo: "2026-T4", meta: "95" }, opc(tx));
       expect(Number((await meta(tx, ind.id, "2026-T4")).meta)).toBe(95);
+    }));
+});
+
+describe("un cambio solo de «cumple» (programarMeta dentro de Bien)", () => {
+  const RANGOS = {
+    bien: [{ signo: ">=" as const, valor: "91" }],
+    atencion: [{ signo: "entre" as const, valor: "41", hasta: "90" }],
+    critico: [{ signo: "<=" as const, valor: "40" }],
+  };
+
+  it("reprogramar la meta de 100 a 95 con un resultado de 95 la hace cumplir, lo dice el evento y recalcula las siguientes", () =>
+    revertida(sql, async (tx) => {
+      await tx`UPDATE configuracion SET valor = '3' WHERE clave = 'ind_incumplimiento_periodos'`;
+      const { ind, mide, admin, id } = await preparar(tx, { rangos: RANGOS, meta: "100" });
+      for (const periodo of ["2026-T1", "2026-T2", "2026-T3"]) await reportarCon(tx, mide, await id(periodo), { A: "95", B: "100" });
+      const [t1, t3] = [await id("2026-T1"), await id("2026-T3")];
+      expect(await fila(tx, t3)).toMatchObject({ cumple: false, incumplimiento_repetido: true });
+
+      await programarMeta(admin, { indicadorId: ind.id, periodo: "2026-T1", meta: "95", justificacion: JUSTIFICACION }, opc(tx));
+      expect(await fila(tx, t1)).toMatchObject({ semaforo: "bien", cumple: true, estado: "reportada" });
+      const [evento] = (await eventos(tx, t1)).filter((e) => e.tipo === "meta");
+      expect(evento.detalle).toMatchObject({ antes: { semaforo: "bien", cumple: false }, despues: { semaforo: "bien", cumple: true } });
+      // Cambió solo el cumplir, y la racha de las siguientes lo alcanza: T3 ya no tiene tres seguidas sin cumplir.
+      expect(await fila(tx, t3)).toMatchObject({ cumple: false, incumplimiento_repetido: false });
+      expect((await eventos(tx, t3)).filter((e) => e.tipo === "recalculo")).toHaveLength(1);
     }));
 });
 

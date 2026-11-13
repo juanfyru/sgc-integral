@@ -80,7 +80,8 @@ export async function alRecalcular(tx: TransactionSql, r: Recalculo, c: { ahora:
   });
   const unidad = { sufijo: (m.unidad_sufijo as string | null) ?? "", decimales: m.decimales === null ? 0 : Number(m.decimales) };
   const noAplica = m.no_aplica === true;
-  const repetidoAntes = guardado === "critico" && r.antes === "atencion";
+  // Un nivel crítico con un color que no es crítico fue un incumplimiento repetido (Atención, o Bien sin cumplir).
+  const repetidoAntes = guardado === "critico" && r.antes !== "critico";
   const periodos = r.repetido || repetidoAntes ? (await obtenerParametros({ sql: tx })).incumplimientoPeriodos : 0;
   const estado = estadoEnPalabras(r.despues, r.repetido, periodos, noAplica ? "No aplica" : r.resultado ? "Sin meta" : "Sin dato", r.cumple);
   const donde = { indicadorId: r.indicadorId, procesoId: Number(m.proceso_id) };
@@ -99,8 +100,9 @@ export async function alRecalcular(tx: TransactionSql, r: Recalculo, c: { ahora:
     const cuerpo = `${codigo} · ${m.proceso as string}`;
     await avisar("indicadores.alerta", titulo, cuerpo, sinQuienCambio(await destinatarios(tx, donde, nivel)));
   } else {
-    // El nivel crítico de un incumplimiento repetido se alertó sobre un color en atención.
-    const antes = guardado === "critico" ? (repetidoAntes ? estadoEnPalabras("atencion", true, periodos, "") : "Crítico") : "Atención";
+    // El estado de antes, con el color y el cumplir que tenía: «Atención», «Crítico», «Bien, sin alcanzar la meta» o, si
+    // el nivel crítico fue por incumplimiento repetido, el mismo con sus periodos.
+    const antes = estadoEnPalabras(r.antes, repetidoAntes, periodos, guardado === "critico" ? "Crítico" : "Atención", r.cumpleAntes);
     const titulo = `Corrección: ${nombre} pasó de ${antes} a ${estado}. ${periodo}`;
     const frase = fraseDeResultado({ resultado: r.resultado, semaforo: r.despues, cumple: r.cumple, noAplica, motivo: texto(m.no_aplica_motivo) }, regla, unidad);
     const cuerpo = `${codigo} · ${frase}`;

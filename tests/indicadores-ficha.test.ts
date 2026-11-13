@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { analisisCompleto, analisisExigido, cumpleDeFila, esRepetido, estadoVisible, ETIQUETA_ESTADO } from "@/lib/indicadores/estados";
+import { analisisCompleto, analisisExigido, cumpleDeFila, cumpleDeMedicion, esRepetido, estadoVisible, ETIQUETA_ESTADO } from "@/lib/indicadores/estados";
 import { camposCambiados, CAMPOS_MAYORES, huellaDeFicha, tipoDeCambio, type ContenidoFicha } from "@/lib/indicadores/ficha";
 
 const base = (): ContenidoFicha => ({
@@ -208,6 +208,12 @@ describe("estados de una medición", () => {
     expect(analisisExigido({ ...m, semaforo: "bien", cumple: false })).toBe("simple");
     expect(analisisExigido({ ...m, semaforo: "bien", cumple: true })).toBe("ninguno");
     expect(analisisExigido({ ...m, semaforo: "bien", cumple: false, repetido: true })).toBe("dos_partes");
+  });
+  it("cumpleDeMedicion: solo null deriva del semáforo; una fila sin la columna es un error de la consulta", () => {
+    expect(cumpleDeMedicion({ cumple: null, semaforo: "bien" })).toBe(true);
+    expect(cumpleDeMedicion({ cumple: false, semaforo: "bien" })).toBe(false);
+    expect(cumpleDeMedicion({ cumple: null, semaforo: null })).toBeNull();
+    expect(() => cumpleDeMedicion({ semaforo: "bien" })).toThrow(/columna `cumple`/);
   });
   it("cumpleDeFila lee las filas anteriores a la 0012 como antes: Bien es cumplir", () => {
     expect(cumpleDeFila({ cumple: null, semaforo: "bien" })).toBe(true);

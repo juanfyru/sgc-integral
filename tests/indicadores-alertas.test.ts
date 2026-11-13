@@ -343,4 +343,29 @@ describe("alertas de un Bien que no cumple (spec 14A §3.1)", () => {
       expect(await alertas(tx, medicionId)).toEqual([]);
       expect(await alertaGuardada(tx, medicionId)).toBeNull();
     }));
+
+  it("la corrección dice el estado anterior verdadero: «Bien, sin alcanzar la meta», no «Atención»", () =>
+    revertida(sql, async (tx) => {
+      const e = await entorno(tx);
+      const { nombre, medicionId } = await e.nuevo({ rangos: RANGOS, meta: "100" });
+      await reportarCon(tx, e.mide, medicionId, { A: "95", B: "100" });
+      const antes = (await alertas(tx, medicionId)).length;
+      await reportarCon(tx, e.mide, medicionId, { A: "105", B: "100" });
+      const [c] = (await alertas(tx, medicionId)).slice(antes);
+      expect(c.titulo).toBe(`Corrección: ${nombre} pasó de Bien, sin alcanzar la meta a Bien. Segundo trimestre de 2026`);
+    }));
+
+  it("un Bien sin cumplir repetido que se corrige no dice «Crítico»: dice el estado con sus periodos", () =>
+    revertida(sql, async (tx) => {
+      const e = await entorno(tx);
+      const { nombre, medicion } = await e.nuevo({ rangos: RANGOS, meta: "100", periodicidad: "mensual", inicioMedicion: "2026-01", aprobadaEn: new Date("2026-01-05T15:00:00Z") }, "2026-01");
+      for (const mes of ["2026-01", "2026-02", "2026-03"]) await reportarCon(tx, e.mide, await medicion(mes), { A: "95", B: "100" });
+      const marzo = await medicion("2026-03");
+      expect(await alertaGuardada(tx, marzo)).toBe("critico");
+      const antes = (await alertas(tx, marzo)).length;
+      await reportarCon(tx, e.mide, marzo, { A: "105", B: "100" });
+      const [c] = (await alertas(tx, marzo)).slice(antes);
+      expect(c.tipo).toBe("indicadores.correccion");
+      expect(c.titulo).toBe(`Corrección: ${nombre} pasó de Bien, sin alcanzar la meta en 3 periodos a Bien. Marzo de 2026`);
+    }));
 });
