@@ -958,3 +958,31 @@ describe("aviso de designación en la primera aprobación", () => {
       expect((await avisos(tx, "indicadores.designacion", creado.indicadorId)).length).toBe(2);
     }));
 });
+
+describe("enviar con la regla vieja del semáforo", () => {
+  const aLaReglaVieja = (tx: TransactionSql, versionId: number) =>
+    tx`UPDATE indicador_versiones SET semaforo_modo = 'relativo', rangos = NULL, umbral_atencion_pct = 70 WHERE id = ${versionId}`;
+
+  it("una ficha nueva con meta y regla vieja no se envía: pide los rangos", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const { versionId } = await crearIndicador(b.admin, datos(b), { sql: tx });
+      await aLaReglaVieja(tx, versionId);
+      await rechaza(enviarAAprobacion(b.admin, { versionId, credenciales: CLAVE }, firmar(tx)), "Escriba los rangos del semáforo");
+      const [v] = await tx`SELECT estado FROM indicador_versiones WHERE id = ${versionId}`;
+      expect(v.estado).toBe("borrador");
+    }));
+
+  it("un cambio mayor con la regla vieja no se envía", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const d = datos(b);
+      const ind = await aprobado(tx, b, d);
+      const mayor = await cambio(tx, b, ind.indicadorId, { ...d, codigo: ind.codigo, meta: "85", rangos: rangosDe(85), motivoCambio: "Otra meta" });
+      await aLaReglaVieja(tx, mayor);
+      await rechaza(
+        enviarAAprobacion(b.admin, { versionId: mayor, credenciales: CLAVE }, firmar(tx)),
+        "Un cambio mayor escribe los rangos del semáforo: complete Bien, Atención y Crítico",
+      );
+    }));
+});

@@ -394,11 +394,10 @@ export async function duplicar(
           limite: regla.limite_critico === null ? null : fraccion(regla.limite_critico as string),
           tolerancia: regla.tolerancia === null ? null : fraccion(regla.tolerancia as string),
         });
-        if (equivalentes !== null) {
-          await tx`UPDATE indicador_versiones SET semaforo_modo = 'rangos', rangos = ${tx.json(rangosATexto(equivalentes) as never)},
-              umbral_atencion_pct = NULL, limite_critico = NULL, tolerancia = NULL
-            WHERE id = ${versionId}`;
-        }
+        if (equivalentes === null) throw new ErrorIndicador("Escriba los rangos del semáforo");
+        await tx`UPDATE indicador_versiones SET semaforo_modo = 'rangos', rangos = ${tx.json(rangosATexto(equivalentes) as never)},
+            umbral_atencion_pct = NULL, limite_critico = NULL, tolerancia = NULL
+          WHERE id = ${versionId}`;
       }
       if (!mismoProceso) {
         await tx`UPDATE indicador_versiones SET subproceso_id = NULL, subproceso_nombre = NULL, procedimiento_documento_id = NULL

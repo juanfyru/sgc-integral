@@ -150,8 +150,7 @@ describe("indicadores sembrados", () => {
         formula: "A / B * 100",
         periodicidad,
         tendencia: "ascendente",
-        semaforo_modo: "relativo",
-        umbral_atencion_pct: 70,
+        semaforo_modo: "rangos",
         tipo_nombre: tipo,
         clasificacion_nombre: "Estratégico",
       });
@@ -340,15 +339,16 @@ describe("indicadores sembrados", () => {
     const admin = await sesionDe(sql, "coordinadora.sgc");
     const t3 = cal.trimestres[2];
 
-    // Una meta programada distinta de la de la ficha (80), antes de terminar el periodo: sin la marca de tardía.
+    // Una meta programada distinta de la de la ficha (80) y dentro de Bien, antes de terminar el periodo: sin la marca de tardía.
     const capacitacion = await indicador("SGC-IND-06");
     const [meta] = await sql`SELECT meta, tardia FROM indicador_metas WHERE indicador_id = ${capacitacion.id} AND periodo = ${t3.clave}`;
-    expect(Number(meta.meta)).toBe(70);
+    expect(Number(meta.meta)).toBe(90);
     expect(meta.tardia).toBe(false);
     expect(Number((await vigente(capacitacion.id)).meta)).toBe(80);
     const conMeta = await medicion("SGC-IND-06", t3.clave);
-    expect(Number(conMeta.meta_aplicada)).toBe(70);
-    expect(conMeta).toMatchObject({ semaforo: "bien", meta_tardia: false });
+    expect(Number(conMeta.meta_aplicada)).toBe(90);
+    // 17/20 = 85 %: Bien (desde 80) sin alcanzar la meta de 90, y sin la marca de tardía.
+    expect(conMeta).toMatchObject({ semaforo: "bien", cumple: false, meta_tardia: false });
 
     // La observación de Control Interno, sin respuesta; quien tiene rol Consulta no la ve.
     const critica = await medicion("SGC-IND-01", t3.clave);

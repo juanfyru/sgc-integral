@@ -259,7 +259,7 @@ type Envio = {
 
 /** Lo que debe cumplirse para enviar, sin escribir nada. El tipo de cambio lo decide el sistema contra la vigente. */
 async function validarEnvio(sql: Cliente, d: DatosEnvio, ahora: Date): Promise<Envio> {
-  const [v] = await sql`SELECT v.indicador_id, v.numero, v.estado, v.prueba, v.motivo_cambio, v.periodicidad,
+  const [v] = await sql`SELECT v.indicador_id, v.numero, v.estado, v.prueba, v.motivo_cambio, v.periodicidad, v.meta, v.semaforo_modo,
       i.codigo, i.estado AS indicador_estado, i.inicio_medicion,
       EXISTS (SELECT 1 FROM clasificaciones_indicador c WHERE c.id = v.clasificacion_id) AS con_clasificacion
     FROM indicador_versiones v JOIN indicadores i ON i.id = v.indicador_id
@@ -279,6 +279,11 @@ async function validarEnvio(sql: Cliente, d: DatosEnvio, ahora: Date): Promise<E
     const t = tipoDeCambio(await contenidoDeVersion(sql, vigente.id), contenido);
     if (t === "ninguno") throw new ErrorIndicador("No hay cambios que enviar");
     tipo = t;
+  }
+  // Una ficha nueva y un cambio mayor solo usan los rangos (spec 14A §3.5); la regla vieja solo la conserva un cambio menor.
+  if (v.meta !== null && v.semaforo_modo !== "rangos") {
+    if (tipo === "inicial") throw new ErrorIndicador("Escriba los rangos del semáforo");
+    if (tipo === "mayor") throw new ErrorIndicador("Un cambio mayor escribe los rangos del semáforo: complete Bien, Atención y Crítico");
   }
   const motivo = d.motivo?.trim() || (v.motivo_cambio as string | null)?.trim() || null;
   if (tipo !== "inicial" && !motivo) throw new ErrorIndicador("Escriba el motivo del cambio");

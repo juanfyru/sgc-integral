@@ -676,10 +676,32 @@ describe("la ficha en borrador", () => {
     revertida(sql, async (tx) => {
       const b = await base(tx);
       const rangos = { bien: [{ signo: ">=" as const, valor: "90" }], atencion: [{ signo: ">=" as const, valor: "63" }], critico: [{ signo: "<" as const, valor: "63" }] };
-      const ind = await indicadorDePrueba(tx, { procesoId: b.procesoId, rangos, nivel: "Táctico", riesgoAsociado: "Riesgo X" });
+      const [lote] = await tx`INSERT INTO importaciones_indicadores (cargado_por) VALUES (${b.admin.usuarioId}) RETURNING id`;
+      const ind = await indicadorDePrueba(tx, { procesoId: b.procesoId, rangos, nivel: "Táctico", riesgoAsociado: "Riesgo X", importacionId: Number(lote.id) });
+      const [origen] = await tx`SELECT importacion_id, aprobacion_previa_documento FROM indicador_versiones WHERE id = ${ind.versionId}`;
+      expect(Number(origen.importacion_id)).toBe(Number(lote.id));
+      expect(origen.aprobacion_previa_documento).not.toBeNull();
       const { versionId } = await abrirCambio(b.admin, ind.id, { sql: tx });
-      const [v] = await tx`SELECT semaforo_modo, rangos, nivel, riesgo_asociado, importacion_id FROM indicador_versiones WHERE id = ${versionId}`;
-      expect(v).toEqual({ semaforo_modo: "rangos", rangos, nivel: "Táctico", riesgo_asociado: "Riesgo X", importacion_id: null });
+      const [v] = await tx`SELECT semaforo_modo, rangos, nivel, riesgo_asociado, importacion_id, aprobacion_previa_documento,
+          aprobacion_previa_por, aprobacion_previa_fecha FROM indicador_versiones WHERE id = ${versionId}`;
+      expect(v).toEqual({
+        semaforo_modo: "rangos",
+        rangos,
+        nivel: "Táctico",
+        riesgo_asociado: "Riesgo X",
+        importacion_id: null,
+        aprobacion_previa_documento: null,
+        aprobacion_previa_por: null,
+        aprobacion_previa_fecha: null,
+      });
+    }));
+
+  it("«Crear a partir de este» no conserva en silencio una regla vieja sin rangos equivalentes", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      // «Fijo» sin límite de crítico: la regla no da unos rangos que la reemplacen.
+      const ind = await indicadorDePrueba(tx, { procesoId: b.procesoId, modo: "fijo" });
+      await rechaza(duplicar(b.admin, { indicadorId: ind.id, procesoId: b.procesoId }, { sql: tx }), "Escriba los rangos del semáforo");
     }));
 
   it("«Crear a partir de este» de una ficha con la regla vieja lleva los rangos equivalentes", () =>

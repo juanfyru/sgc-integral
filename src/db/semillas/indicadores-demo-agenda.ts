@@ -240,14 +240,15 @@ function sgcYTalentoHumano(cal: CalendarioDeIndicadores, zona: string, en: En): 
   Object.entries(historicosDelSgc(cal)).forEach(([codigo, filas], i) =>
     en(minutosDespues(enDia(ultimo, 21, 9), i * 10), { tipo: "historicos", codigo, filas }),
   );
-  // Una meta programada distinta de la de la ficha (80), antes de que el periodo termine: sin justificación ni marca.
-  en(enDia(ultimo, 24, 11), { tipo: "meta", codigo: "SGC-IND-06", periodo: ultimo.clave, meta: "70" });
+  // Una meta programada distinta de la de la ficha (80), dentro de Bien, antes de que el periodo termine: sin justificación
+  // ni marca. El resultado (85 %) queda en Bien sin alcanzar esa meta: un «Bien que no cumple».
+  en(enDia(ultimo, 24, 11), { tipo: "meta", codigo: "SGC-IND-06", periodo: ultimo.clave, meta: "90" });
 
   const reportes: [string, string, [string, string], Semaforo][] = [
     ["SGC-IND-01", ultimo.clave, ["3", "5"], "critico"],
     ["SGC-IND-02", ultimo.clave, ["6", "8"], "atencion"],
     ["SGC-IND-05", ultimo.clave, ["47", "50"], "bien"],
-    ["SGC-IND-06", ultimo.clave, ["3", "4"], "bien"],
+    ["SGC-IND-06", ultimo.clave, ["17", "20"], "bien"],
     ["SGC-IND-07", ultimo.clave, ["8", "10"], "bien"],
   ];
   // El semestre y el año de la aprobación, si terminaron con el último trimestre sembrado (ya pasó su plazo).

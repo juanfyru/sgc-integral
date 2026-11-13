@@ -5,8 +5,8 @@
  * Los textos son del dominio, no de la entidad. `indicadores-demo.ts` las crea y las mueve por las funciones del dominio.
  */
 import type { DatosFicha } from "../../lib/esquemas/indicadores";
-import { fraccion } from "../../lib/indicadores/formula/fraccion";
-import { rangosATexto } from "../../lib/indicadores/rangos";
+import { aDecimal, fraccion } from "../../lib/indicadores/formula/fraccion";
+import { rangosATexto, type FilaEnTexto } from "../../lib/indicadores/rangos";
 import { rangosEquivalentes } from "../../lib/indicadores/semaforo";
 import type { Consolidacion, Periodicidad } from "../../lib/indicadores/tipos";
 
@@ -118,7 +118,15 @@ function rangosDeLaFicha(f: FichaDemo): string {
     tolerancia: null,
   });
   if (equivalentes === null) throw new Error(`La ficha ${f.codigo} de la demo no tiene unos rangos equivalentes`);
-  return JSON.stringify(rangosATexto(equivalentes));
+  // Como los escribiría una persona: lo que no termina en cuatro decimales se redondea a los decimales de la ficha.
+  const redondeado = (t: string): string => {
+    if ((t.split(".")[1] ?? "").length <= 4) return t;
+    const r = aDecimal(fraccion(t)!, f.decimales, "redondear");
+    return r.includes(".") ? r.replace(/0+$/, "").replace(/\.$/, "") : r;
+  };
+  const fila = (x: FilaEnTexto): FilaEnTexto => (x.hasta === undefined ? { ...x, valor: redondeado(x.valor) } : { ...x, valor: redondeado(x.valor), hasta: redondeado(x.hasta) });
+  const t = rangosATexto(equivalentes);
+  return JSON.stringify({ bien: t.bien.map(fila), atencion: t.atencion.map(fila), critico: t.critico.map(fila) });
 }
 
 /** El formulario de la ficha, como lo dejaría la persona: los rangos del semáforo, con el umbral de la configuración (70 %). */

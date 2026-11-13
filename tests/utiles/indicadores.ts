@@ -41,6 +41,8 @@ export type OpcionesIndicadorDePrueba = {
   /** Con rangos, `semaforo_modo = 'rangos'` y la regla sale de ellos (sin umbral ni límite). */
   rangos?: RangosEnTexto;
   nivel?: string;
+  /** Un lote de importación de la transacción: la versión nace con su lote y su aprobación previa. */
+  importacionId?: number;
   riesgoAsociado?: string;
   clasificacion?: "Estratégico" | "Operativo" | "Regulatorio";
   /** Clave de periodo desde la que se mide y rige la versión 1; sin valor, enero de 2026 en la periodicidad. */
@@ -99,12 +101,15 @@ export async function indicadorDePrueba(
       (indicador_id, numero, estado, tipo_cambio, nombre, proposito, tipo_id, tipo_nombre,
        clasificacion_id, clasificacion_nombre, proceso_nombre, origen_dato, calculo, forma, factor, formula,
        unidad_id, unidad_nombre, unidad_sufijo, decimales, periodicidad, tendencia, meta,
-       semaforo_modo, umbral_atencion_pct, limite_critico, rangos, resultado_max, nivel, riesgo_asociado, creado_por)
+       semaforo_modo, umbral_atencion_pct, limite_critico, rangos, resultado_max, nivel, riesgo_asociado,
+       importacion_id, aprobacion_previa_documento, aprobacion_previa_por, aprobacion_previa_fecha, creado_por)
     SELECT ${indicadorId}, 1, 'borrador', 'inicial', ${`Indicador de prueba ${codigo}`}, 'Medir el cumplimiento de la prueba',
       t.id, t.nombre, c.id, c.nombre, ${proceso.nombre as string}, 'manual', 'Porcentaje de cumplimiento', 'porcentaje', NULL, 'A / B * 100',
       un.id, un.nombre, un.sufijo, 1, ${o.periodicidad ?? "mensual"}, ${o.tendencia ?? "ascendente"}, ${meta},
       ${o.rangos ? "rangos" : (o.modo ?? "relativo")}, ${o.rangos || o.modo === "fijo" ? null : (o.umbralPct ?? 70)}, ${o.limite ?? null},
-      ${o.rangos ? tx.json(o.rangos as never) : null}, ${o.resultadoMax ?? null}, ${o.nivel ?? null}, ${o.riesgoAsociado ?? null}, ${elaboradaPor}
+      ${o.rangos ? tx.json(o.rangos as never) : null}, ${o.resultadoMax ?? null}, ${o.nivel ?? null}, ${o.riesgoAsociado ?? null},
+      ${o.importacionId ?? null}, ${o.importacionId ? "Acta 1 de 2025" : null}, ${o.importacionId ? "Comité de calidad" : null},
+      ${o.importacionId ? "2025-01-15" : null}, ${elaboradaPor}
     FROM tipos_indicador t, clasificaciones_indicador c, unidades_indicador un
     WHERE t.nombre = 'Eficacia' AND c.nombre = ${clasificacion} AND un.nombre = 'Porcentaje'
     RETURNING id`;
