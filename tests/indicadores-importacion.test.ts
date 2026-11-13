@@ -21,11 +21,13 @@ import { ErrorFirma, ErrorTramite, type SesionFlujo } from "@/db/consultas/flujo
 import { aprobarFichas, enviarAAprobacion } from "@/db/consultas/indicadores/aprobacion";
 import { contenidoDeVersion, errorDeFichaImportada, guardarBorrador } from "@/db/consultas/indicadores/fichas";
 import {
+  archivoDeLote,
   autorizarArchivoDeLote,
   crearLote,
   datosDeFichaImportada,
   estadoDeLote,
   importarLote,
+  listasDePlantilla,
   vistaPrevia,
 } from "@/db/consultas/indicadores/importacion";
 import { tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
@@ -381,12 +383,37 @@ describe("el lote de importación", () => {
       expect(await estadoDeLote(tx, id)).toBe("sin_archivo");
       expect(await autorizarArchivoDeLote(id, b.admin, { sql: tx })).toEqual({ ok: true });
 
+      expect(await archivoDeLote(b.admin, id, { sql: tx })).toBeNull();
       const bytes = await plantilla([aprobada(b, `CNT-ID-${unico()}`)]);
       await subir(tx, b.admin, id, bytes);
       expect(await estadoDeLote(tx, id)).toBe("por_importar");
+      // La plantilla subida se descarga como soporte del lote, solo administrando indicadores.
+      expect(await archivoDeLote(b.admin, id, { sql: tx })).toEqual({
+        ruta: expect.stringMatching(new RegExp(`^${CARPETA}/${id}-\\d+/plantilla\\.xlsx$`)),
+        mime: MIME_XLSX,
+        nombreOriginal: "Matriz de indicadores.xlsx",
+      });
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [b.procesoId] });
+      expect(await archivoDeLote(lider, id, { sql: tx })).toBeNull();
       expect(await autorizarArchivoDeLote(id, b.admin, { sql: tx })).toEqual({ ok: false, estado: 409 });
       // Dos subidas a la vez pasan las dos la autorización: el registro, con el lote bloqueado, deja entrar solo una.
       await rechaza(subir(tx, b.admin, id, bytes), "La importación ya tiene su plantilla", ErrorTramite);
+    }));
+});
+
+describe("la plantilla vacía", () => {
+  it("trae en sus listas los procesos, subprocesos y maestros activos de hoy", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const [inactivo] = await tx`INSERT INTO subprocesos (proceso_id, nombre, slug, orden, activo)
+        VALUES (${b.procesoId}, ${`ZZ Inactivo ${unico()}`}, ${`zz-inactivo-${unico()}`}, 2, false) RETURNING nombre`;
+      const listas = await listasDePlantilla({ sql: tx });
+      expect(listas.procesos).toContain(b.sigla);
+      expect(listas.subprocesos).toContain(b.subproceso);
+      expect(listas.subprocesos).not.toContain(inactivo.nombre);
+      expect(listas.tipos).toContain("Eficacia");
+      expect(listas.clasificaciones).toContain("Regulatorio");
+      expect(listas.unidades).toContain("Porcentaje");
     }));
 });
 
