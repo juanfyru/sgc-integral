@@ -597,6 +597,11 @@ describe("los botones de imprimir y de Excel (Tarea 16)", () => {
       // Al imprimir la matriz no salen los filtros ni las pestañas.
       expect(matriz).toMatch(/<form[^>]*aria-label="Filtrar la matriz"[^>]*class="[^"]*print:hidden/);
       expect(matriz).toMatch(/<div class="print:hidden"><nav/);
+      // El filtro de subproceso: el selector con el valor elegido y el enlace del Excel con él.
+      const conSub = renderToStaticMarkup(await PaginaMatriz({ searchParams: Promise.resolve({ anio: "2026", subproceso: "4" }) }));
+      expect(conSub).toMatch(/<label[^>]*for="matriz-subproceso"[^>]*>Subproceso<\/label>/);
+      expect(conSub).toContain('name="subproceso"');
+      expect(conSub).toContain('href="/indicadores/excel?subproceso=4&amp;retirados=1&amp;anio=2026"');
     }));
 });
 

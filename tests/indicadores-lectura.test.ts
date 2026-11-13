@@ -641,4 +641,18 @@ describe("la matriz del año", () => {
       expect(soloP2.procesos.map((x) => x.id)).toEqual([p2.id]);
       expect(soloP2.procesos[0].nombre).toBe(p2.nombre);
     }));
+
+  it("el filtro de subproceso: solo el de la versión aprobada vigente del indicador; sin él, también los demás", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const [sub] = await tx`INSERT INTO subprocesos (proceso_id, nombre, slug, orden) VALUES (${p.id}, 'Urgencias de prueba', 'urgencias-prueba', 1) RETURNING id`;
+      const admin = await sesionAdmin(tx);
+      const con = await aprobadoCon(tx, { procesoId: p.id, aprobadaEn: APROBADA }, { subprocesoId: Number(sub.id) });
+      const sin = await trimestral(tx, p.id);
+      for (const i of [con, sin]) await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: i.id });
+      const codigosDe = async (f: { subprocesoId?: number }) =>
+        (await matrizDelAnio(admin, { anio: 2026, procesoId: p.id, ...f }, opc(tx))).procesos.flatMap((x) => x.filas.map((r) => r.codigo)).sort();
+      expect(await codigosDe({ subprocesoId: Number(sub.id) })).toEqual([con.codigo]);
+      expect(await codigosDe({})).toEqual([con.codigo, sin.codigo].sort());
+    }));
 });

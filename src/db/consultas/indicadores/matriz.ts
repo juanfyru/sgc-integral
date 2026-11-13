@@ -95,14 +95,14 @@ function celdasDelAnio(
 
 /**
  * La matriz del año (spec §12.7, maqueta 5): una fila por indicador visible que se mide ese año (uno activo con periodos
- * en él, o cualquiera con mediciones de ese año), agrupadas por proceso; cada periodo ocupa sus meses (`mesesDe`), lo que
+ * en él, o cualquiera con mediciones de ese año), agrupadas por proceso (filtros: año, proceso, subproceso y clasificación de la versión aprobada vigente, como la lista); cada periodo ocupa sus meses (`mesesDe`), lo que
  * no se mide queda en una celda vacía y la columna «Año» es el acumulado, el mismo de la página. Antes de leer sus
  * mediciones abre los periodos terminados de los indicadores activos que lee, uno por uno (`indicadorIds`: el que falla se
  * registra y la matriz se pinta). Seis lecturas además de abrir periodos, sin importar cuántos indicadores haya.
  */
 export async function matrizDelAnio(
   sesion: SujetoVisibilidad,
-  f: { anio: number; procesoId?: number; clasificacionId?: number },
+  f: { anio: number; procesoId?: number; subprocesoId?: number; clasificacionId?: number },
   opciones?: Opciones,
 ): Promise<MatrizLeida> {
   const sql = opciones?.sql ?? obtenerSql();
@@ -113,10 +113,11 @@ export async function matrizDelAnio(
     FROM indicadores i
     JOIN procesos p ON p.id = i.proceso_id
     JOIN LATERAL (
-      SELECT nombre, clasificacion_id FROM indicador_versiones WHERE indicador_id = i.id AND estado = 'aprobada' ORDER BY numero DESC LIMIT 1
+      SELECT nombre, subproceso_id, clasificacion_id FROM indicador_versiones WHERE indicador_id = i.id AND estado = 'aprobada' ORDER BY numero DESC LIMIT 1
     ) va ON true
     WHERE ${filtroIndicadores(sql, sesion)} AND i.estado IN ('activo', 'retirado')
       ${f.procesoId ? sql`AND i.proceso_id = ${f.procesoId}` : sql``}
+      ${f.subprocesoId ? sql`AND va.subproceso_id = ${f.subprocesoId}` : sql``}
       ${f.clasificacionId ? sql`AND va.clasificacion_id = ${f.clasificacionId}` : sql``}
     ORDER BY p.orden, p.nombre, p.id, i.codigo`;
   if (filas.length === 0) return { procesos: [] };
