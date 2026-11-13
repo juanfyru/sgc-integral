@@ -2,9 +2,11 @@ import { celda, TablaDatos, type ColumnaTabla } from "@/componentes/ui/TablaDato
 import { Insignia } from "@/componentes/ui/Insignia";
 import type { VistaPrevia } from "@/db/consultas/indicadores/importacion";
 import { fraccion } from "@/lib/indicadores/formula/fraccion";
-import type { FichaImportada, FilaRevisada } from "@/lib/indicadores/importacion/revisar";
+import { FORMA } from "@/lib/indicadores/ficha-en-texto";
+import { esImportable } from "@/lib/indicadores/importacion/formulario";
+import type { FichaImportada } from "@/lib/indicadores/importacion/revisar";
 import { rangosDeTexto } from "@/lib/indicadores/rangos";
-import { rangosEnPalabras } from "@/lib/indicadores/semaforo";
+import { numeroExacto, rangosEnPalabras } from "@/lib/indicadores/semaforo";
 import type { Consolidacion } from "@/lib/indicadores/tipos";
 
 const COLUMNAS: readonly ColumnaTabla[] = [
@@ -12,7 +14,7 @@ const COLUMNAS: readonly ColumnaTabla[] = [
   { clave: "codigo", etiqueta: "Código" },
   { clave: "nombre", etiqueta: "Nombre" },
   { clave: "proceso", etiqueta: "Proceso › subproceso" },
-  { clave: "formula", etiqueta: "Fórmula" },
+  { clave: "formula", etiqueta: "Forma y fórmula" },
   { clave: "meta", etiqueta: "Meta", numerica: true },
   { clave: "rangos", etiqueta: "Rangos" },
   { clave: "acumulado", etiqueta: "Cómo quedará el acumulado del año" },
@@ -26,11 +28,29 @@ const FRASE_ACUMULADO: Record<Consolidacion, string> = {
   promedio: "el promedio de los periodos",
 };
 
-const TIPO_PENDIENTE = { subproceso: "subproceso", cargo: "cargo", tipo: "tipo", unidad: "unidad" } as const;
+const TIPO_PENDIENTE = { subproceso: "el subproceso", cargo: "el cargo", tipo: "el tipo", unidad: "la unidad" } as const;
 
-/** Una fila entra a la importación si tiene ficha, ningún problema y ninguna correspondencia pendiente. */
-export function esImportable(f: FilaRevisada): boolean {
-  return f.ficha !== null && f.problemas.length === 0 && f.pendientes.length === 0;
+/** El factor de una tasa con punto de miles: «× 1.000». */
+const conMiles = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+
+/** La forma con su factor, si lo tiene: «Porcentaje», «Tasa (× 1.000)». */
+function formaEnPalabras(f: FichaImportada): string {
+  const forma = FORMA[f.forma] ?? f.forma;
+  return f.forma === "tasa" && f.factor !== null ? `${forma} (× ${conMiles(f.factor)})` : forma;
+}
+
+/** La meta con los decimales y el sufijo de su unidad; con tope, «meta hasta …». */
+function metaEnTexto(f: FichaImportada, u: { sufijo: string; decimales: number }): { meta: string; hasta: string | null } {
+  if (f.meta === null) return { meta: "Sin meta", hasta: null };
+  try {
+    const n = (v: string) => {
+      const valor = fraccion(v);
+      return `${valor ? numeroExacto(valor, u.decimales) : v}${u.sufijo}`;
+    };
+    return { meta: n(f.meta), hasta: f.metaMax === null ? null : `meta hasta ${n(f.metaMax)}` };
+  } catch {
+    return { meta: f.meta, hasta: null };
+  }
 }
 
 /**
@@ -69,10 +89,16 @@ function rangosEnLetras(f: FichaImportada, unidad: { sufijo: string; decimales: 
 }
 
 /** La tabla de la vista previa (spec 14A §5.3, paso 4): lo que cada fila crearía y por qué una fila no entra. */
-export function TablaVistaPrevia({ vista }: { vista: VistaPrevia }) {
+export function TablaVistaPrevia({ vista, desactualizada = false }: { vista: VistaPrevia; desactualizada?: boolean }) {
   const { opciones } = vista;
   return (
-    <TablaDatos titulo="Vista previa de la importación" columnas={COLUMNAS} filas={vista.filas.length} vacio="La plantilla no trae filas.">
+    <>
+      {desactualizada ? (
+        <p role="status" className="rounded-md border border-l-4 border-border border-l-estado-atencion bg-muted px-3 py-2 text-sm">
+          La vista previa no refleja los cambios del formulario: pulse Actualizar
+        </p>
+      ) : null}
+      <TablaDatos titulo="Vista previa de la importación" columnas={COLUMNAS} filas={vista.filas.length} vacio="La plantilla no trae filas.">
       {vista.filas.map((fila) => {
         const f = fila.ficha;
         const subproceso = f?.subprocesoId == null ? null : opciones.subprocesos.find((s) => s.id === f.subprocesoId);
@@ -85,8 +111,26 @@ export function TablaVistaPrevia({ vista }: { vista: VistaPrevia }) {
             <td className={`${celda} whitespace-nowrap font-mono`}>{fila.codigo || "—"}</td>
             <td className={`${celda} min-w-48`}>{f?.nombre ?? "—"}</td>
             <td className={`${celda} min-w-40`}>{f ? (subproceso ? `${proceso} › ${subproceso.nombre}` : proceso) : "—"}</td>
-            <td className={`${celda} min-w-40 break-words font-mono text-xs`}>{f ? f.formula : "—"}</td>
-            <td className={`${celda} text-right tabular-nums`}>{f ? (f.meta === null ? "Sin meta" : `${f.meta}${unidad.sufijo}`) : "—"}</td>
+            <td className={`${celda} min-w-40`}>
+              {f ? (
+                <>
+                  <span className="block font-medium">{formaEnPalabras(f)}</span>
+                  <span className="block break-words font-mono text-xs">{f.formula}</span>
+                </>
+              ) : (
+                "—"
+              )}
+            </td>
+            <td className={`${celda} text-right tabular-nums`}>
+              {f ? (
+                <>
+                  {metaEnTexto(f, unidad).meta}
+                  {metaEnTexto(f, unidad).hasta ? <span className="block text-xs text-muted-foreground">{metaEnTexto(f, unidad).hasta}</span> : null}
+                </>
+              ) : (
+                "—"
+              )}
+            </td>
             <td className={`${celda} min-w-64`}>{f ? rangosEnLetras(f, unidad) : "—"}</td>
             <td className={`${celda} min-w-40`}>{f ? acumuladoEnPalabras(f) : "—"}</td>
             <td className={`${celda} whitespace-nowrap`}>
@@ -106,7 +150,7 @@ export function TablaVistaPrevia({ vista }: { vista: VistaPrevia }) {
                     <li key={p} className="text-estado-critico-texto">{`Problema: ${p}`}</li>
                   ))}
                   {fila.pendientes.map((p) => (
-                    <li key={`${p.tipo}:${p.texto}`}>{`Falta elegir el ${TIPO_PENDIENTE[p.tipo]} de «${p.texto}»`}</li>
+                    <li key={`${p.tipo}:${p.texto}`}>{`Falta elegir ${TIPO_PENDIENTE[p.tipo]} de «${p.texto}»`}</li>
                   ))}
                   {fila.avisos.map((a) => (
                     <li key={a} className="text-estado-atencion-texto">{`Aviso: ${a}`}</li>
@@ -117,6 +161,7 @@ export function TablaVistaPrevia({ vista }: { vista: VistaPrevia }) {
           </tr>
         );
       })}
-    </TablaDatos>
+      </TablaDatos>
+    </>
   );
 }

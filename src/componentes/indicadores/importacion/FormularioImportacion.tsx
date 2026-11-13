@@ -6,24 +6,21 @@ import { DialogoFirma } from "@/componentes/tramites/DialogoFirma";
 import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import type { VistaPrevia } from "@/db/consultas/indicadores/importacion";
+import {
+  camposDeLaImportacion,
+  camposDeLaVista,
+  claveDeCorrespondencia as clave,
+  codigosDeLaVista,
+  esImportable,
+} from "@/lib/indicadores/importacion/formulario";
 import type { Pendiente } from "@/lib/indicadores/importacion/revisar";
-import { esImportable, TablaVistaPrevia } from "./TablaVistaPrevia";
+import { ResumenDeImportacion } from "./ResumenDeImportacion";
+import { TablaVistaPrevia } from "./TablaVistaPrevia";
 
 const CONTROL = `${claseControl} w-full`;
 const NUMERO = `${claseControl} w-24`;
 
-/** El texto como lo normaliza el servidor (minúsculas, sin acentos, espacios simples): es la clave de la correspondencia. */
-function clave(texto: string): string {
-  return texto
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 const ROTULO: Record<Pendiente["tipo"], string> = { subproceso: "Subproceso", cargo: "Cargo", tipo: "Tipo", unidad: "Unidad" };
-const noVacio = (v: string) => v.trim() !== "";
 
 type Elegida = { tipo: Pendiente["tipo"]; texto: string; valor: string };
 
@@ -32,10 +29,21 @@ type Elegida = { tipo: Pendiente["tipo"]; texto: string; valor: string };
  * correspondencias que faltan, la vista previa y, con la clave, «Importar N fichas». La vista previa se pide al servidor
  * con lo escrito; importar queda deshabilitado mientras la vista no refleje lo que hay en el formulario.
  */
-export function FormularioImportacion({ loteId, vistaInicial, pideCodigo }: { loteId: number; vistaInicial: VistaPrevia; pideCodigo: boolean }) {
-  const [documento, setDocumento] = useState("");
-  const [aprobadoPor, setAprobadoPor] = useState("");
-  const [fecha, setFecha] = useState("");
+export function FormularioImportacion({
+  loteId,
+  vistaInicial,
+  pideCodigo,
+  valoresIniciales,
+}: {
+  loteId: number;
+  vistaInicial: VistaPrevia;
+  pideCodigo: boolean;
+  /** Los datos de la aprobación previa con que arranca el formulario (las pruebas lo usan; la página no). */
+  valoresIniciales?: { documento: string; aprobadoPor: string; fecha: string };
+}) {
+  const [documento, setDocumento] = useState(valoresIniciales?.documento ?? "");
+  const [aprobadoPor, setAprobadoPor] = useState(valoresIniciales?.aprobadoPor ?? "");
+  const [fecha, setFecha] = useState(valoresIniciales?.fecha ?? "");
   const [pctAscendente, setPctAscendente] = useState("90");
   const [pctDescendente, setPctDescendente] = useState("110");
   const [elegidas, setElegidas] = useState<Record<string, Elegida>>({});
@@ -61,25 +69,18 @@ export function FormularioImportacion({ loteId, vistaInicial, pideCodigo }: { lo
     if (f.ficha?.subprocesoId != null && f.ficha.siglaParaSubproceso) siglas.set(f.ficha.subprocesoId, f.ficha.siglaParaSubproceso);
   }
 
-  function camposDeLaRegla(): Record<string, string> {
-    const campos: Record<string, string> = { pctAscendente, pctDescendente };
-    for (const [k, e] of Object.entries(elegidas)) if (noVacio(e.valor)) campos[`corr:${k}`] = e.valor;
-    return campos;
-  }
-
   async function actualizar(evento: React.FormEvent<HTMLFormElement>) {
     evento.preventDefault();
     setActualizando(true);
     setError(null);
     try {
       const datos = new FormData();
-      datos.set("id", String(loteId));
-      for (const [campo, valor] of Object.entries(camposDeLaRegla())) datos.set(campo, valor);
+      for (const [campo, valor] of Object.entries(camposDeLaVista({ loteId, pctAscendente, pctDescendente, elegidas }))) datos.set(campo, valor);
       const respuesta = await vistaPreviaAccion(null, datos);
       if (respuesta && respuesta.ok && "vista" in respuesta) {
         setVista(respuesta.vista);
         setFirmaVista(firma);
-      } else if (respuesta && !respuesta.ok) setError(respuesta.error);
+      } else setError(respuesta && !respuesta.ok ? respuesta.error : "No se pudo actualizar la vista previa: intente de nuevo");
     } catch {
       setError("No se pudo actualizar la vista previa: intente de nuevo");
     } finally {
@@ -95,8 +96,19 @@ export function FormularioImportacion({ loteId, vistaInicial, pideCodigo }: { lo
     return o.unidades.map((x) => ({ id: x.id, etiqueta: x.nombre }));
   };
 
-  const ocultos: Record<string, string> = { id: String(loteId), documento, aprobadoPor, fecha, ...camposDeLaRegla() };
-  for (const [subprocesoId, sigla] of siglas) if (!siglasNo[subprocesoId]) ocultos[`sigla:${subprocesoId}`] = sigla;
+  const siglasAsignadas: Record<number, string> = {};
+  for (const [subprocesoId, sigla] of siglas) if (!siglasNo[subprocesoId]) siglasAsignadas[subprocesoId] = sigla;
+  const ocultos = camposDeLaImportacion({
+    loteId,
+    pctAscendente,
+    pctDescendente,
+    elegidas,
+    documento,
+    aprobadoPor,
+    fecha,
+    siglas: siglasAsignadas,
+    codigos: codigosDeLaVista(vista.filas),
+  });
 
   const n = importables.length;
   const etiqueta = `Importar ${n} ${n === 1 ? "ficha" : "fichas"}`;
@@ -158,9 +170,9 @@ export function FormularioImportacion({ loteId, vistaInicial, pideCodigo }: { lo
             <p className="text-sm text-muted-foreground">
               Lo que no coincide exactamente con el sistema se elige una vez y vale para todas las filas que lo usan.
             </p>
-            {lista.map((p) => {
+            {lista.map((p, i) => {
               const k = `${p.tipo}:${clave(p.texto)}`;
-              const id = `corr-${p.tipo}-${clave(p.texto).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+              const id = `corr-${p.tipo}-${i}-${clave(p.texto).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
               return (
                 <Campo key={k} etiqueta={`${ROTULO[p.tipo]} para «${p.texto}»`} nombre={`corr:${k}`} id={id}>
                   <select
@@ -220,10 +232,10 @@ export function FormularioImportacion({ loteId, vistaInicial, pideCodigo }: { lo
         <h2 id="titulo-vista" className="font-display text-lg font-semibold">
           Vista previa
         </h2>
-        <p className="text-sm text-muted-foreground">
+        <p role="status" className="text-sm text-muted-foreground">
           {`${n} de ${vista.filas.length} filas están listas. Una fila con problemas o sin correspondencia no se importa; el resto sí.`}
         </p>
-        <TablaVistaPrevia vista={vista} />
+        <TablaVistaPrevia vista={vista} desactualizada={!actualizada} />
       </section>
 
       <section className="flex max-w-2xl flex-col items-start gap-2" aria-labelledby="titulo-importar">
@@ -232,8 +244,12 @@ export function FormularioImportacion({ loteId, vistaInicial, pideCodigo }: { lo
         </h2>
         {motivoDeshabilitado ? (
           <>
-            <Boton disabled>{etiqueta}</Boton>
-            <p className="text-sm text-muted-foreground">{motivoDeshabilitado}</p>
+            <Boton disabled aria-describedby="motivo-importar">
+              {etiqueta}
+            </Boton>
+            <p id="motivo-importar" className="text-sm text-muted-foreground">
+              {motivoDeshabilitado}
+            </p>
           </>
         ) : (
           <DialogoFirma
@@ -243,20 +259,17 @@ export function FormularioImportacion({ loteId, vistaInicial, pideCodigo }: { lo
             ocultos={ocultos}
             pideCodigo={pideCodigo}
           >
-            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
-              <dt className="text-muted-foreground">Fichas</dt>
-              <dd>{n}</dd>
-              <dt className="text-muted-foreground">Documento</dt>
-              <dd className="break-words">{documento}</dd>
-              <dt className="text-muted-foreground">Quién aprobó</dt>
-              <dd className="break-words">{aprobadoPor}</dd>
-              <dt className="text-muted-foreground">Fecha</dt>
-              <dd>{fecha}</dd>
-            </dl>
-            <p className="text-sm text-muted-foreground">
-              Entra todo o nada. Las fichas «Aprobado» quedan aprobadas con esta aprobación previa y las «Propuesto» quedan en borrador. La
-              clave deja constancia de quién importó.
-            </p>
+            <ResumenDeImportacion
+              fichas={n}
+              documento={documento}
+              aprobadoPor={aprobadoPor}
+              fecha={fecha}
+              pctAscendente={pctAscendente}
+              pctDescendente={pctDescendente}
+              siglas={[...siglas]
+                .filter(([id]) => !siglasNo[id])
+                .map(([id, sigla]) => ({ sigla, subproceso: vista.opciones.subprocesos.find((x) => x.id === id)?.nombre ?? `n.º ${id}` }))}
+            />
           </DialogoFirma>
         )}
       </section>

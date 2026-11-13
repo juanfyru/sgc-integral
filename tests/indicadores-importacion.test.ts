@@ -643,6 +643,37 @@ describe("importar el lote", () => {
       expect(await tx`SELECT 1 FROM auditoria WHERE accion = 'importo_indicadores' AND entidad_id = ${loteId}`).toHaveLength(0);
     }));
 
+  it("una vista previa vieja respecto de la base no se importa: los códigos que se vieron deben ser los de hoy (Ruling 38)", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const [cod1, cod2] = [`CNT-ID-${unico()}`, `CNT-ID-${unico()}`];
+      const { loteId } = await loteCon(tx, b.admin, [aprobada(b, cod1), propuesta(b, cod2)]);
+      const vista = (await vistaPrevia(b.admin, loteId, { correspondencias: SIN_CORR, regla: REGLA }, { sql: tx, ahora: AHORA }))!;
+      const vistos = vista.filas.filter((f) => f.ficha).map((f) => f.ficha!.codigo.toLowerCase()).sort().join("\n");
+      // Antes de dar la clave, alguien desactiva el cargo de la primera fila: la vista que se firmó ya no es la de hoy.
+      await tx`UPDATE cargos SET activo = false WHERE id = ${b.cargoId}`;
+      let pidioClave = false;
+      const verificar = async () => ((pidioClave = true), { ok: true as const, metodo: "clave" as const });
+      await rechaza(
+        importarLote(b.admin, loteId, datosImportacion({ codigos: vistos }), { sql: tx, ahora: AHORA, verificar }),
+        "La vista previa cambió mientras se importaba: revísela y vuelva a importar",
+      );
+      expect(pidioClave).toBe(false);
+      expect(await tx`SELECT 1 FROM indicadores WHERE codigo = ${cod1}`).toHaveLength(0);
+    }));
+
+  it("con los códigos que se vieron, la importación sigue igual; sin ellos, también", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const [cod1, cod2] = [`CNT-ID-${unico()}`, `CNT-ID-${unico()}`];
+      const { loteId } = await loteCon(tx, b.admin, [aprobada(b, cod1), propuesta(b, cod2)]);
+      const vistos = [cod1, cod2].map((x) => x.toLowerCase()).sort().join("\n");
+      expect(await importarLote(b.admin, loteId, datosImportacion({ siglas: { [b.subprocesoId]: "CNT" }, codigos: vistos }), firmar(tx))).toMatchObject({
+        aprobadas: 1,
+        borradores: 1,
+      });
+    }));
+
   it("si las filas importables cambian mientras se verifica la clave, no se importa un lote distinto del que se vio", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);

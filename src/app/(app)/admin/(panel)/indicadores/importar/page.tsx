@@ -11,6 +11,7 @@ import { celda, TablaDatos } from "@/componentes/ui/TablaDatos";
 import { lotesRecientes } from "@/db/consultas/indicadores/importacion";
 import { fechaYHora } from "@/lib/indicadores/ficha-en-texto";
 import { exigirPermiso } from "@/lib/paginas";
+import { cuenta } from "@/lib/plural";
 
 export const metadata: Metadata = { title: "Importar indicadores — Administración SGC" };
 
@@ -35,7 +36,7 @@ export default async function PaginaImportarIndicadores() {
     <div className="flex flex-col gap-8">
       <EncabezadoPagina
         titulo="Importar indicadores"
-        descripcion="Cargue de una vez las fichas que el hospital aprobó antes de SGC Integral: una plantilla en Excel, una vista previa y la clave de quien importa."
+        descripcion="Cargue de una vez las fichas que la entidad aprobó antes de SGC Integral: una plantilla en Excel, una vista previa y la clave de quien importa."
         migas={[{ nombre: "Configuración de indicadores", href: "/admin/indicadores" }, { nombre: "Importar indicadores" }]}
       />
       <section className="flex flex-col items-start gap-3" aria-labelledby="titulo-plantilla">
@@ -76,7 +77,7 @@ export default async function PaginaImportarIndicadores() {
                   <Insignia variante={ESTADO_DE_LOTE[l.estado].variante}>{ESTADO_DE_LOTE[l.estado].texto}</Insignia>
                 </td>
                 <td className={celda}>
-                  {l.estado === "importado" || l.estado === "deshecho" ? `${l.aprobadas} aprobadas, ${l.borradores} en borrador` : "—"}
+                  {l.estado === "importado" || l.estado === "deshecho" ? `${cuenta(l.aprobadas, "aprobada", "aprobadas")}, ${l.borradores} en borrador` : "—"}
                 </td>
                 <td className={celda}>{l.cargadoPor}</td>
               </tr>

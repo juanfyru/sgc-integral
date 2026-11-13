@@ -35,7 +35,14 @@ vi.mock("@/db/consultas/indicadores/importacion", () => ({
 
 import PaginaImportar from "@/app/(app)/admin/(panel)/indicadores/importar/page";
 import PaginaLote from "@/app/(app)/admin/(panel)/indicadores/importar/[id]/page";
+import { FormularioImportacion } from "@/componentes/indicadores/importacion/FormularioImportacion";
+import { ResumenDeImportacion } from "@/componentes/indicadores/importacion/ResumenDeImportacion";
 import { TablaVistaPrevia } from "@/componentes/indicadores/importacion/TablaVistaPrevia";
+import { FormularioFirma } from "@/componentes/tramites/DialogoFirma";
+import { EsquemaImportarLote, EsquemaVistaPreviaImportacion, juntarImportacion } from "@/lib/esquemas/indicadores";
+import { camposDeLaImportacion, camposDeLaVista, claveDeCorrespondencia, codigosDeLaVista } from "@/lib/indicadores/importacion/formulario";
+import { normalizar } from "@/lib/lote-usuarios";
+import { parsearFormulario } from "@/lib/validacion";
 import type { VistaPrevia } from "@/db/consultas/indicadores/importacion";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 
@@ -126,8 +133,8 @@ describe("la página de un lote por importar", () => {
     expect(html).toMatch(/Atención desde el[\s\S]*?value="90"[\s\S]*?% de la meta, en ascendente/);
     expect(html).toMatch(/Atención hasta el[\s\S]*?value="110"[\s\S]*?% de la meta, en descendente/);
     // Un select por texto pendiente, con su label.
-    expect(html).toMatch(/<label[^>]*for="corr-subproceso-laboratorio-clinico"[^>]*>[^<]*Laboratorio Clínico/);
-    expect(html).toMatch(/<select[^>]*id="corr-subproceso-laboratorio-clinico"/);
+    expect(html).toMatch(/<label[^>]*for="corr-subproceso-0-laboratorio-clinico"[^>]*>[^<]*Laboratorio Clínico/);
+    expect(html).toMatch(/<select[^>]*id="corr-subproceso-0-laboratorio-clinico"/);
     expect(html).toContain("Gestión de calidad › Laboratorio");
   });
 
@@ -136,9 +143,11 @@ describe("la página de un lote por importar", () => {
     expect(html).toContain("GC-ID-01");
     expect(html).toContain("Documentos vigentes");
     expect(html).toContain("Gestión de calidad › Laboratorio");
-    expect(html).toContain("(A / B) * 100");
-    expect(html).toContain("Bien");
-    expect(html).toContain("Atención");
+    // La forma con su fórmula, en la misma celda.
+    expect(html).toMatch(/Porcentaje<\/span><span[^>]*>\(A \/ B\) \* 100/);
+    // Los rangos en palabras, en la celda de rangos (no un «Atención» cualquiera de la página).
+    expect(html).toMatch(/<td[^>]*>Bien: ≥ 95 %[^<]*Atención: 85,5 a 94,99 %[^<]*Crítico: &lt; 85,5 %<\/td>/);
+    expect(html).toMatch(/<td[^>]*>95 %<\/td>/);
     expect(html).toContain("suma de los periodos");
     expect(html).toContain("el del último periodo");
     expect(html).toContain("La meta no es un número");
@@ -146,11 +155,59 @@ describe("la página de un lote por importar", () => {
     expect(html).toContain("Aprobado");
   });
 
-  it("la clave se pide en un diálogo y el botón dice cuántas fichas entran", async () => {
+  it("con la aprobación previa sin llenar, «Importar» está deshabilitado y dice por qué", async () => {
     c.vistaPrevia.mockResolvedValue(vista({ pendientes: [] }));
     const html = await lote();
-    expect(html).toContain("Importar 1 ficha");
+    const boton = /<button[^>]*>Importar 1 ficha<\/button>/.exec(html)?.[0] ?? "";
+    expect(boton).toMatch(/\sdisabled[\s=>]/);
+    expect(boton).toContain('aria-describedby="motivo-importar"');
+    expect(html).toMatch(/id="motivo-importar"[^>]*>Complete los datos de la aprobación previa/);
     expect(html).not.toContain("Importar 1 fichas");
+    expect(html).toMatch(/role="status"[^>]*>1 de 2 filas están listas/);
+  });
+
+  it("con la aprobación previa llena, «Importar» abre el diálogo de la clave", () => {
+    const html = renderToStaticMarkup(
+      <FormularioImportacion
+        loteId={7}
+        vistaInicial={vista({ pendientes: [] })}
+        pideCodigo={false}
+        valoresIniciales={{ documento: "SGC-TI-002 v1", aprobadoPor: "Gerente", fecha: "2026-09-11" }}
+      />,
+    );
+    const boton = /<button[^>]*>Importar 1 ficha<\/button>/.exec(html)?.[0] ?? "";
+    expect(boton).toContain('aria-haspopup="dialog"');
+    expect(boton).not.toMatch(/\sdisabled[\s=>]/);
+    expect(html).toContain("<dialog");
+  });
+
+  it("el diálogo de la clave lista lo que se firma: fichas, aprobación previa, regla y siglas", () => {
+    const html = renderToStaticMarkup(
+      <FormularioFirma
+        titulo="Importar 2 fichas de indicadores"
+        etiquetaBoton="Importar 2 fichas"
+        accion={vi.fn()}
+        ocultos={{ id: "7" }}
+        pideCodigo={false}
+        alCancelar={() => {}}
+      >
+        <ResumenDeImportacion
+          fichas={2}
+          documento="SGC-TI-002 v1"
+          aprobadoPor="Gerente"
+          fecha="2026-09-11"
+          pctAscendente="90"
+          pctDescendente="110"
+          siglas={[{ sigla: "CNT", subproceso: "Gestión Contable" }]}
+        />
+      </FormularioFirma>,
+    );
+    expect(html).toContain("Su clave");
+    expect(html).toContain("SGC-TI-002 v1");
+    expect(html).toContain("Gerente");
+    expect(html).toMatch(/Atención desde el 90 % de la meta[^<]*110 %/);
+    expect(html).toContain("CNT");
+    expect(html).toContain("Gestión Contable");
   });
 
   it("con varias fichas, el botón va en plural", async () => {
@@ -206,6 +263,7 @@ describe("la página de un lote ya importado", () => {
     c.resumenDeLote.mockResolvedValue(resumen({ estado: "importado", aprobadas: 2, borradores: 1, omitidas: 3, importadoEn: new Date("2026-11-11T15:00:00Z") }));
     const html = await lote("7", { aprobadas: "99", borradores: "98" });
     expect(html).toContain("Se importaron 2 fichas aprobadas y 1 en borrador");
+    expect(html).not.toContain("importaron 2 fichas aprobadas y 1 en borrador.");
     expect(html).not.toContain("99");
     expect(html).toContain("3 filas omitidas");
     expect(html).toContain('href="/indicadores"');
@@ -253,10 +311,33 @@ describe("la página de importación", () => {
 });
 
 describe("TablaVistaPrevia", () => {
-  it("una fila con problemas dice por qué y no cuenta como importable", () => {
+  it("cada fila dice si está lista o con problemas, en su celda de estado", () => {
     const html = renderToStaticMarkup(<TablaVistaPrevia vista={vista()} />);
-    expect(html).toContain("Con problemas");
-    expect(html).toContain("Lista");
+    expect(html).toMatch(/GC-ID-01[\s\S]*?<span[^>]*>Lista<\/span>[\s\S]*?GC-ID-02[\s\S]*?<span[^>]*>Con problemas<\/span>/);
+    expect(codigosDeLaVista(vista().filas)).toBe("gc-id-01");
+  });
+
+  it("una tasa muestra su factor y la meta con el sufijo de su unidad", () => {
+    const v = vista();
+    v.filas = [
+      { numero: 2, codigo: "T-ID-01", ficha: ficha({ forma: "tasa", factor: 1000, formula: "(A / B) * 1000", metaMax: "100" }) as never, problemas: [], avisos: [], pendientes: [] },
+    ];
+    const html = renderToStaticMarkup(<TablaVistaPrevia vista={v} />);
+    expect(html).toMatch(/Tasa \(× 1\.000\)<\/span>/);
+    expect(html).toContain("meta hasta 100 %");
+  });
+
+  it("avisa mientras la vista no refleje el formulario", () => {
+    expect(renderToStaticMarkup(<TablaVistaPrevia vista={vista()} desactualizada />)).toContain(
+      "La vista previa no refleja los cambios del formulario: pulse Actualizar",
+    );
+    expect(renderToStaticMarkup(<TablaVistaPrevia vista={vista()} />)).not.toContain("no refleja");
+  });
+
+  it("una correspondencia pendiente de unidad dice «la unidad»", () => {
+    const v = vista();
+    v.filas = [{ numero: 2, codigo: "U-ID-01", ficha: null, problemas: [], avisos: [], pendientes: [{ tipo: "unidad", texto: "porcentual" }] }];
+    expect(renderToStaticMarkup(<TablaVistaPrevia vista={v} />)).toContain("Falta elegir la unidad de «porcentual»");
   });
 
   it("el acumulado distingue las variables cuando se juntan distinto", () => {
@@ -270,5 +351,89 @@ describe("TablaVistaPrevia", () => {
     const f = ficha({ variables: [{ letra: "A", nombre: "x", fuente: null, consolidacion: "promedio" }], forma: "conteo" });
     v.filas = [{ numero: 2, codigo: "P-ID-01", ficha: f as never, problemas: [], avisos: [], pendientes: [] }];
     expect(renderToStaticMarkup(<TablaVistaPrevia vista={v} />)).toContain("el promedio de los periodos");
+  });
+});
+
+describe("el singular de los resultados", () => {
+  it("una sola ficha aprobada, una sola omitida", async () => {
+    c.resumenDeLote.mockResolvedValue(resumen({ estado: "importado", aprobadas: 1, borradores: 0, omitidas: 1, importadoEn: new Date("2026-11-11T15:00:00Z") }));
+    const html = await lote();
+    expect(html).toContain("Se importó 1 ficha aprobada y 0 en borrador");
+    expect(html).toContain("1 fila omitida");
+  });
+
+  it("la lista de lotes dice «1 aprobada»", async () => {
+    c.lotesRecientes.mockResolvedValue([
+      { id: 7, cargadoEn: new Date("2026-11-10T15:00:00Z"), cargadoPor: "Ana", estado: "importado", archivo: "a.xlsx", aprobadas: 1, borradores: 1 },
+    ]);
+    expect(renderToStaticMarkup(await PaginaImportar())).toContain("1 aprobada, 1 en borrador");
+  });
+
+  it("un id de lote de más de nueve cifras no existe", async () => {
+    await expect(lote("1234567890")).rejects.toThrow("NO_ENCONTRADA");
+  });
+});
+
+describe("los selects de las correspondencias", () => {
+  it("dos textos que se parecen no comparten id", () => {
+    const v = vista({ pendientes: [{ tipo: "cargo", texto: "Gestión-Calidad" }, { tipo: "cargo", texto: "Gestión Calidad" }] });
+    const html = renderToStaticMarkup(<FormularioImportacion loteId={7} vistaInicial={v} pideCodigo={false} />);
+    const ids = [...html.matchAll(/<select[^>]*id="(corr-[^"]+)"/g)].map((m) => m[1]);
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+  });
+});
+
+describe("el formulario que viaja al servidor", () => {
+  const estado = {
+    loteId: 7,
+    pctAscendente: "90",
+    pctDescendente: "110",
+    elegidas: { "subproceso:laboratorio clinico": { valor: "8" }, "cargo:jefe de area": { valor: "" } },
+    documento: "SGC-TI-002 v1",
+    aprobadoPor: "Gerente",
+    fecha: "2026-09-11",
+    siglas: { 8: "CNT" },
+    codigos: "gc-id-01\ngc-id-03",
+  };
+  const formData = (campos: Record<string, string>) => {
+    const f = new FormData();
+    for (const [k, v] of Object.entries(campos)) f.set(k, v);
+    return f;
+  };
+
+  it("ida y vuelta: lo que arma el cliente lo lee el esquema de importar", () => {
+    const campos = { ...camposDeLaImportacion(estado), clave: "secreta" };
+    expect(Object.keys(campos)).toEqual(
+      expect.arrayContaining(["corr:subproceso:laboratorio clinico", "sigla:8", "codigos", "pctAscendente", "documento"]),
+    );
+    expect(campos).not.toHaveProperty(["corr:cargo:jefe de area"]);
+    const d = parsearFormulario(juntarImportacion(formData(campos)), EsquemaImportarLote, { omitir: ["id"] });
+    expect(d).toMatchObject({
+      correspondencias: { subprocesos: { "laboratorio clinico": 8 }, cargos: {}, tipos: {}, unidades: {} },
+      siglas: { "8": "CNT" },
+      documento: "SGC-TI-002 v1",
+      aprobadoPor: "Gerente",
+      fecha: "2026-09-11",
+      pctAscendente: "90",
+      pctDescendente: "110",
+      codigos: "gc-id-01\ngc-id-03",
+      clave: "secreta",
+    });
+  });
+
+  it("la vista previa manda solo lo que su esquema estricto admite", () => {
+    const d = parsearFormulario(juntarImportacion(formData(camposDeLaVista(estado))), EsquemaVistaPreviaImportacion, { omitir: ["id"] });
+    expect(d.correspondencias?.subprocesos).toEqual({ "laboratorio clinico": 8 });
+    expect(d.pctDescendente).toBe("110");
+  });
+
+  it("el servidor normaliza la clave de la correspondencia aunque el cliente la mande distinta", () => {
+    const d = parsearFormulario(juntarImportacion(formData({ "corr:subproceso:Laboratorio  Clínico": "8" })), EsquemaVistaPreviaImportacion);
+    expect(d.correspondencias?.subprocesos).toEqual({ "laboratorio clinico": 8 });
+  });
+
+  it("la clave del cliente es la misma que la del servidor", () => {
+    for (const t of ["Laboratorio  Clínico", "  ÁREA de Gestión ", "x", "Ñandú\tAzul"]) expect(claveDeCorrespondencia(t)).toBe(normalizar(t));
   });
 });

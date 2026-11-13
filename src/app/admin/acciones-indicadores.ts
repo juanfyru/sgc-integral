@@ -134,6 +134,7 @@ export async function importarLoteAccion(_prev: EstadoAccion, formData: FormData
           regla: { pctAscendente: porcentaje(d.pctAscendente), pctDescendente: porcentaje(d.pctDescendente) },
           aprobacionPrevia: { documento: d.documento ?? "", aprobadoPor: d.aprobadoPor ?? "", fecha: d.fecha ?? "" },
           siglas: Object.fromEntries(Object.entries(d.siglas ?? {}).map(([subprocesoId, sigla]) => [Number(subprocesoId), sigla])),
+          ...(d.codigos === undefined ? {} : { codigos: d.codigos }),
           credenciales: { clave: d.clave, codigo: d.codigo },
         },
         { contexto: await contextoDePeticion() },

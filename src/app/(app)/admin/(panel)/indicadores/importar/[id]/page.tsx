@@ -10,6 +10,7 @@ import { resumenDeLote, vistaPrevia, type ResumenDeLote, type VistaPrevia } from
 import { fechaYHora } from "@/lib/indicadores/ficha-en-texto";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import { exigirPermiso } from "@/lib/paginas";
+import { cuenta } from "@/lib/plural";
 
 export const metadata: Metadata = { title: "Importación de indicadores — Administración SGC" };
 
@@ -36,10 +37,10 @@ function Resultado({ lote }: { lote: ResumenDeLote }) {
         Resultado
       </h2>
       <p role="status" className="rounded-md border border-l-4 border-border border-l-estado-bien bg-muted px-3 py-2 text-sm font-medium">
-        {`Se importaron ${lote.aprobadas} fichas aprobadas y ${lote.borradores} en borrador`}
+        {`Se ${lote.aprobadas === 1 ? "importó" : "importaron"} ${cuenta(lote.aprobadas, "ficha aprobada", "fichas aprobadas")} y ${lote.borradores} en borrador`}
       </p>
       {lote.omitidas > 0 ? (
-        <p className="text-sm text-muted-foreground">{`${lote.omitidas} ${lote.omitidas === 1 ? "fila omitida" : "filas omitidas"} por problemas o correspondencias sin resolver.`}</p>
+        <p className="text-sm text-muted-foreground">{`${cuenta(lote.omitidas, "fila omitida", "filas omitidas")} por problemas o correspondencias sin resolver.`}</p>
       ) : null}
       {lote.importadoEn ? <p className="text-sm text-muted-foreground">{`Importadas el ${fechaYHora(lote.importadoEn)}.`}</p> : null}
       <p>
@@ -60,7 +61,7 @@ export default async function PaginaLoteDeImportacion({
 }) {
   const sesion = await exigirPermiso("indicadores.administrar");
   const { id } = await params;
-  if (!/^\d{1,10}$/.test(id)) notFound();
+  if (!/^\d{1,9}$/.test(id)) notFound();
   const loteId = Number(id);
   const lote = await resumenDeLote(sesion, loteId);
   if (!lote) notFound();

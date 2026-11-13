@@ -44,7 +44,7 @@ import { fechaEnZona } from "@/lib/tramites/plazos";
 import { exigirSiglaNoReservada, validarSigla } from "@/lib/validaciones-mapa";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { contenidoDeVersion, errorDeFichaImportada, escribirFichaNueva, type DatosFichaNueva } from "./fichas";
-import { bloquearLote, estadoDeLote, type EstadoLote } from "./lote-importacion";
+import { bloquearLote, estadoDeEventos, estadoDeLote, type EstadoLote } from "./lote-importacion";
 import { obtenerParametros } from "./maestros";
 import { asegurarMediciones } from "./mediciones";
 
@@ -75,6 +75,8 @@ export type DatosImportacion = {
   aprobacionPrevia: AprobacionPrevia;
   /** Por subproceso, la sigla que se le da (spec §5.3, paso 5). */
   siglas: Record<number, string>;
+  /** Los códigos de las filas importables que la persona vio (minúsculas, ordenados, unidos con salto de línea): si hoy son otros, no se importa. */
+  codigos?: string;
   credenciales: CredencialesFirma;
 };
 
@@ -211,13 +213,7 @@ export async function lotesRecientes(sesion: SujetoPermiso, opciones?: { sql?: C
     ? new Set((await sql`SELECT importacion_id FROM importacion_eventos WHERE tipo = 'deshecho' AND importacion_id IN ${sql(ids)}`).map((e) => Number(e.importacion_id)))
     : new Set<number>();
   return filas.map((r) => {
-    const estado: EstadoLote = deshechos.has(Number(r.id))
-      ? "deshecho"
-      : r.importado_en
-        ? "importado"
-        : r.archivo
-          ? "por_importar"
-          : "sin_archivo";
+    const estado = estadoDeEventos(Boolean(r.archivo), Boolean(r.importado_en), deshechos.has(Number(r.id)));
     return aResumen(r, estado);
   });
 }
@@ -555,7 +551,8 @@ async function validarImportacion(
   const revision = await revisarFilas(sql, lectura.filas, correspondencias, d.regla, ahora, previa.documento);
   const siglas = await validarSiglas(sql, d.siglas, revision);
   const importables = revision.filas.filter((f): f is FilaRevisada & { ficha: FichaImportada } => f.ficha !== null);
-  if (antes && codigosImportables(importables).join("\n") !== codigosImportables(antes.importables).join("\n")) {
+  const hoy = codigosImportables(importables).join("\n");
+  if ((antes && hoy !== codigosImportables(antes.importables).join("\n")) || (d.codigos !== undefined && hoy !== d.codigos)) {
     throw new ErrorIndicador(VISTA_CAMBIADA);
   }
   if (importables.length === 0) throw new ErrorIndicador(SIN_FILAS);

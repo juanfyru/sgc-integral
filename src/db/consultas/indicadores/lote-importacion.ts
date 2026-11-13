@@ -17,6 +17,13 @@ export async function bloquearLote(tx: TransactionSql, loteId: number): Promise<
   await tx`SELECT pg_advisory_xact_lock(hashtext('importaciones_indicadores'), ${loteId}::int)`;
 }
 
+/** El estado de un lote según tenga archivo y sus eventos (un lote deshecho ya se importó). */
+export function estadoDeEventos(conArchivo: boolean, importado: boolean, deshecho: boolean): EstadoLote {
+  if (deshecho) return "deshecho";
+  if (importado) return "importado";
+  return conArchivo ? "por_importar" : "sin_archivo";
+}
+
 /** El estado del lote, de sus eventos y de su archivo; `null` si no existe. */
 export async function estadoDeLote(sql: Cliente, loteId: number): Promise<EstadoLote | null> {
   if (!Number.isSafeInteger(loteId) || loteId <= 0 || loteId > 2_147_483_647) return null;
@@ -26,9 +33,7 @@ export async function estadoDeLote(sql: Cliente, loteId: number): Promise<Estado
       EXISTS (SELECT 1 FROM importacion_eventos e WHERE e.importacion_id = l.id AND e.tipo = 'deshecho') AS deshecho
     FROM importaciones_indicadores l WHERE l.id = ${loteId}`;
   if (!l) return null;
-  if (l.deshecho) return "deshecho";
-  if (l.importado) return "importado";
-  return l.con_archivo ? "por_importar" : "sin_archivo";
+  return estadoDeEventos(l.con_archivo, l.importado, l.deshecho);
 }
 
 /**

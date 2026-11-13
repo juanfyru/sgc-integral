@@ -2,6 +2,7 @@ import { z } from "zod";
 import { JUSTIFICACION_MAXIMA, JUSTIFICACION_MINIMA, PATRON_MES } from "@/lib/indicadores/cierre";
 import { FACTORES_TASA } from "@/lib/indicadores/formula/formas";
 import { fraccion } from "@/lib/indicadores/formula/fraccion";
+import { claveDeCorrespondencia } from "@/lib/indicadores/importacion/formulario";
 import { periodicidadDe } from "@/lib/indicadores/periodos";
 import { SIGNOS } from "@/lib/indicadores/rangos";
 import {
@@ -530,6 +531,8 @@ export const EsquemaImportarLote = EsquemaVistaPreviaImportacion.extend({
   documento: z.string().max(1000, "El documento de la aprobación previa no es válido").optional(),
   aprobadoPor: z.string().max(1000, "Quién aprobó no es válido").optional(),
   fecha: z.string().max(40, "La fecha de la aprobación previa no es válida").optional(),
+  /** Los códigos de las filas que la vista previa mostró como importables (Ruling 38): la consulta los compara. */
+  codigos: z.string().max(200_000, "La vista previa no es válida").optional(),
   siglas: enJson(
     z
       .record(z.string().regex(/^\d{1,15}$/, FORMATO_SIGLAS), z.string().max(10, FORMATO_SIGLAS), { error: FORMATO_SIGLAS })
@@ -565,7 +568,7 @@ export function juntarImportacion(formData: FormData): FormData {
       const destino = Object.hasOwn(CORRESPONDENCIA_DE, corr[1]) ? CORRESPONDENCIA_DE[corr[1]] : null;
       if (destino === null) throw new Error(FORMATO_CORRESPONDENCIAS);
       conCorrespondencias = true;
-      if (valor.trim() !== "") correspondencias[destino][corr[2]] = valor.trim();
+      if (valor.trim() !== "") correspondencias[destino][claveDeCorrespondencia(corr[2])] = valor.trim();
     } else if (sigla && typeof valor === "string") {
       conSiglas = true;
       if (valor.trim() !== "") siglas[sigla[1]] = valor.trim();
