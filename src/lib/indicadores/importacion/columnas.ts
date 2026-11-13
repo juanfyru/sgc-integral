@@ -23,7 +23,7 @@ export type Columna = {
 export const MAXIMO_FILAS_IMPORTACION = 500;
 
 export const VALORES_FORMA = ["Porcentaje", "Tasa", "Promedio o razón", "Conteo", "Fórmula libre"] as const;
-export const VALORES_FACTOR = ["100", "1.000", "10.000", "100.000"] as const;
+export const VALORES_FACTOR = ["100", "1000", "10000", "100000"] as const;
 export const VALORES_JUNTA = ["Se suma", "Último valor", "Promedio"] as const;
 export const VALORES_SENTIDO = ["Ascendente", "Descendente", "Constante"] as const;
 export const VALORES_PERIODICIDAD = ["Mensual", "Bimestral", "Trimestral", "Semestral", "Anual"] as const;
@@ -44,13 +44,13 @@ export const COLUMNAS: readonly Columna[] = [
   { clave: "forma", encabezado: "Forma", obligatoria: true, lista: "formas", ayuda: "Porcentaje (A ÷ B × 100), Tasa (A ÷ B × factor), Promedio o razón (A ÷ B), Conteo (A) o Fórmula libre." },
   { clave: "variableA", encabezado: "Variable A", obligatoria: false, lista: null, ayuda: "Nombre de la variable A (el numerador). Obligatoria en todas las formas." },
   { clave: "variableB", encabezado: "Variable B", obligatoria: false, lista: null, ayuda: "Nombre de la variable B (el denominador). Obligatoria salvo en Conteo." },
-  { clave: "factor", encabezado: "Factor", obligatoria: false, lista: "factores", ayuda: "Solo en Tasa: 100, 1.000, 10.000 o 100.000." },
+  { clave: "factor", encabezado: "Factor", obligatoria: false, lista: "factores", ayuda: "Solo en Tasa: 100, 1000, 10000 o 100000 (sin separadores)." },
   { clave: "formulaLibre", encabezado: "Fórmula libre", obligatoria: false, lista: null, ayuda: "Solo en Fórmula libre: la fórmula con las letras A y B, por ejemplo A / (A + B). Se valida con el intérprete de la app." },
   { clave: "comoSeJuntaA", encabezado: "Cómo se junta A", obligatoria: false, lista: "juntas", ayuda: AYUDA_JUNTA },
   { clave: "comoSeJuntaB", encabezado: "Cómo se junta B", obligatoria: false, lista: "juntas", ayuda: AYUDA_JUNTA },
   { clave: "unidad", encabezado: "Unidad", obligatoria: true, lista: "unidades", ayuda: "Unidad del resultado (lista)." },
-  { clave: "meta", encabezado: "Meta", obligatoria: true, lista: null, ayuda: "Número en la unidad del indicador: 95, no 0,95, si la unidad es porcentaje." },
-  { clave: "metaHasta", encabezado: "Meta hasta", obligatoria: false, lista: null, ayuda: "Solo para «mantenerse en un rango», que no se importa: déjela vacía." },
+  { clave: "meta", encabezado: "Meta", obligatoria: false, lista: null, ayuda: "Número en la unidad del indicador: 95, no 0,95, si la unidad es porcentaje; sin separador de miles (1000, no 1.000). Vacía: el indicador queda sin meta y solo se vigila, sin colores ni alertas." },
+  { clave: "metaHasta", encabezado: "Meta hasta", obligatoria: false, lista: null, ayuda: "Solo se usa con «Constante», que no se importa: déjela vacía." },
   { clave: "sentido", encabezado: "Sentido", obligatoria: true, lista: "sentidos", ayuda: "Ascendente (más es mejor) o Descendente (menos es mejor). «Constante» no se importa." },
   { clave: "periodicidad", encabezado: "Periodicidad", obligatoria: true, lista: "periodicidades", ayuda: "Mensual, Bimestral, Trimestral, Semestral o Anual." },
   { clave: "fuente", encabezado: "Fuente", obligatoria: false, lista: null, ayuda: "De dónde sale el dato (hasta 300 caracteres). Va a cada variable." },
@@ -65,3 +65,9 @@ export const ENCABEZADO_DE: Record<ClaveColumna, string> = Object.fromEntries(CO
   ClaveColumna,
   string
 >;
+
+/** Una fila de la plantilla leída: el número es el de la hoja y las celdas son texto recortado. */
+export type FilaLeida = { numero: number; celdas: Partial<Record<ClaveColumna, string>> };
+
+/** Las columnas cuya obligatoriedad depende de la forma se muestran así en la hoja de instrucciones. */
+export const SEGUN_LA_FORMA: readonly ClaveColumna[] = ["variableA", "variableB"];

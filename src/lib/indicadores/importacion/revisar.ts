@@ -4,14 +4,13 @@
  */
 import { CODIGOS_RESERVADOS, LARGO_CODIGO_INDICADOR, PATRON_CODIGO_INDICADOR } from "@/lib/esquemas/indicadores";
 import { analizar } from "@/lib/indicadores/formula/analizar";
-import { FACTORES_TASA, formulaDeForma } from "@/lib/indicadores/formula/formas";
-import { aDecimal, CERO, CIEN, comparar, fraccion, multiplicar, UNO } from "@/lib/indicadores/formula/fraccion";
+import { FACTORES_TASA, formulaDeForma, letrasDeForma } from "@/lib/indicadores/formula/formas";
+import { aDecimal, CERO, CIEN, comparar, fraccion, multiplicar, UNO, type Fraccion } from "@/lib/indicadores/formula/fraccion";
 import { claveQueContieneMes } from "@/lib/indicadores/periodos";
 import { rangosATexto, rangosDeLaRegla, type RangosEnTexto } from "@/lib/indicadores/rangos";
 import type { Consolidacion, Forma, Periodicidad, Tendencia } from "@/lib/indicadores/tipos";
 import { normalizar } from "@/lib/lote-usuarios";
-import { ENCABEZADO_DE, type ClaveColumna } from "./columnas";
-import type { FilaLeida } from "./leer";
+import { ENCABEZADO_DE, type ClaveColumna, type FilaLeida } from "./columnas";
 
 export type ReglaDeImportacion = { pctAscendente: number; pctDescendente: number };
 export type Pendiente = { tipo: "subproceso" | "cargo" | "tipo" | "unidad"; texto: string };
@@ -50,7 +49,7 @@ export type FichaImportada = {
   formula: string;
   variables: { letra: "A" | "B"; nombre: string; fuente: string | null; consolidacion: Consolidacion }[];
   unidadId: number;
-  meta: string;
+  meta: string | null;
   metaMax: string | null;
   tendencia: Tendencia;
   periodicidad: Periodicidad;
@@ -59,7 +58,7 @@ export type FichaImportada = {
   requisito: string | null;
   inicioMedicion: string;
   estado: "aprobado" | "propuesto";
-  rangos: RangosEnTexto;
+  rangos: RangosEnTexto | null;
   siglaParaSubproceso: string | null;
 };
 
@@ -109,6 +108,18 @@ function decimalSinRelleno(texto: string): string {
   return texto.includes(".") ? texto.replace(/0+$/, "").replace(/\.$/, "") : texto;
 }
 
+/** El texto del archivo repetido en un mensaje: a 80 caracteres con «…». */
+function eco(texto: string): string {
+  return texto.length > 80 ? `${texto.slice(0, 80)}…` : texto;
+}
+
+/** El número guardado: texto decimal con punto y sin ceros de relleno, desde la fracción exacta (hasta 10 decimales). */
+function numeroCanonico(m: Fraccion): string {
+  return decimalSinRelleno(aDecimal(m, 10, "truncar"));
+}
+
+/** «1.000»: un punto que parece separador de miles; Excel y la gente lo leen distinto. */
+const PUNTO_DE_MILES = /^-?\d{1,3}(\.\d{3})+$/;
 
 function revisarFila(f: FilaLeida, c: Catalogos, corr: Correspondencias, regla: ReglaDeImportacion, anio: number, repetidos: Map<string, number[]>): FilaRevisada {
   const problemas: string[] = [];
@@ -133,7 +144,7 @@ function revisarFila(f: FilaLeida, c: Catalogos, corr: Correspondencias, regla: 
     if (c.codigosUsados.has(codigo.toLowerCase())) problemas.push(`El código ${codigo} ya existe en la app`);
     if (codigo.length > LARGO_CODIGO_INDICADOR) problemas.push(`«${ENCABEZADO_DE.codigo}» pasa de ${LARGO_CODIGO_INDICADOR} caracteres`);
     else if (!PATRON_CODIGO_INDICADOR.test(codigo)) problemas.push("El código solo admite letras, números y guiones");
-    else if (CODIGOS_RESERVADOS.includes(codigo.toLowerCase())) problemas.push(`El código «${codigo}» es un nombre reservado: elija otro código`);
+    else if (CODIGOS_RESERVADOS.includes(codigo.toLowerCase())) problemas.push(`El código «${eco(codigo)}» es un nombre reservado: elija otro código`);
   }
   if (t("nombre") === "") falta("nombre");
 
@@ -143,7 +154,7 @@ function revisarFila(f: FilaLeida, c: Catalogos, corr: Correspondencias, regla: 
   else {
     const k = normalizar(t("proceso"));
     proceso = c.procesos.find((p) => normalizar(p.sigla) === k) ?? c.procesos.find((p) => normalizar(p.nombre) === k);
-    if (!proceso) problemas.push(`El proceso «${t("proceso")}» no existe en el mapa`);
+    if (!proceso) problemas.push(`El proceso «${eco(t("proceso"))}» no existe en el mapa`);
   }
   let subproceso: Catalogos["subprocesos"][number] | undefined;
   if (t("subproceso") !== "") {
@@ -153,8 +164,11 @@ function revisarFila(f: FilaLeida, c: Catalogos, corr: Correspondencias, regla: 
     subproceso = candidatos.find((s) => [completo, sinSufijo].includes(normalizar(s.nombre)));
     if (!subproceso) {
       const elegido = [completo, sinSufijo].map((k) => (Object.hasOwn(corr.subprocesos, k) ? corr.subprocesos[k] : undefined)).find((id) => id !== undefined);
-      subproceso = elegido === undefined ? undefined : c.subprocesos.find((s) => s.id === elegido);
-      if (!subproceso) pendiente({ tipo: "subproceso", texto: t("subproceso") });
+      const delCatalogo = elegido === undefined ? undefined : c.subprocesos.find((s) => s.id === elegido);
+      if (delCatalogo && proceso && delCatalogo.procesoId !== proceso.id) {
+        problemas.push(`El subproceso «${eco(t("subproceso"))}» no es del proceso ${proceso.sigla}`);
+      } else if (delCatalogo) subproceso = delCatalogo;
+      else pendiente({ tipo: "subproceso", texto: t("subproceso") });
     }
   }
 
@@ -175,7 +189,7 @@ function revisarFila(f: FilaLeida, c: Catalogos, corr: Correspondencias, regla: 
   if (t("clasificacion") === "") falta("clasificacion");
   else {
     clasificacion = c.clasificaciones.find((x) => normalizar(x.nombre) === normalizar(t("clasificacion")));
-    if (!clasificacion) problemas.push(`La clasificación «${t("clasificacion")}» no existe`);
+    if (!clasificacion) problemas.push(`La clasificación «${eco(t("clasificacion"))}» no existe`);
   }
   let unidad: Catalogos["unidades"][number] | undefined;
   if (t("unidad") === "") falta("unidad");
@@ -194,19 +208,22 @@ function revisarFila(f: FilaLeida, c: Catalogos, corr: Correspondencias, regla: 
   if (t("forma") === "") falta("forma");
   else {
     forma = buscar(FORMAS, t("forma"));
-    if (!forma) problemas.push(`«${t("forma")}» no es una forma: use Porcentaje, Tasa, Promedio o razón, Conteo o Fórmula libre`);
+    if (!forma) problemas.push(`«${eco(t("forma"))}» no es una forma: use Porcentaje, Tasa, Promedio o razón, Conteo o Fórmula libre`);
   }
   let factor: number | null = null;
   let formula: string | null = null;
   let letras: ("A" | "B")[] = ["A", "B"];
+  const nombreDeForma = t("forma");
+  const sobra = (clave: ClaveColumna) => problemas.push(`«${ENCABEZADO_DE[clave]}» no se usa con la forma «${eco(nombreDeForma)}»: déjela vacía`);
   if (forma === "tasa") {
     if (t("factor") === "") falta("factor");
     else {
       const n = Number(t("factor").replace(/[.,\s]/g, ""));
-      if (!FACTORES_TASA.includes(n)) problemas.push(`«${t("factor")}» no es un factor: use 100, 1.000, 10.000 o 100.000`);
+      if (!FACTORES_TASA.includes(n)) problemas.push(`«${eco(t("factor"))}» no es un factor: use 100, 1000, 10000 o 100000`);
       else factor = n;
     }
-  }
+  } else if (forma !== undefined && t("factor") !== "") sobra("factor");
+  if (forma !== undefined && forma !== "libre" && t("formulaLibre") !== "") sobra("formulaLibre");
   if (forma === "libre") {
     if (t("formulaLibre") === "") falta("formulaLibre");
     else {
@@ -224,7 +241,16 @@ function revisarFila(f: FilaLeida, c: Catalogos, corr: Correspondencias, regla: 
     }
   } else if (forma !== undefined && (forma !== "tasa" || factor !== null)) {
     formula = formulaDeForma(forma, factor ?? undefined);
-    letras = forma === "conteo" ? ["A"] : ["A", "B"];
+    letras = letrasDeForma(forma) as ("A" | "B")[];
+  }
+  if (forma === "conteo") {
+    if (t("variableB") !== "") sobra("variableB");
+    if (t("comoSeJuntaB") !== "") sobra("comoSeJuntaB");
+  }
+  if (forma === "libre" && formula !== null) {
+    for (const [letra, clave] of [["A", "variableA"], ["B", "variableB"]] as const) {
+      if (!letras.includes(letra) && t(clave) !== "") sobra(clave);
+    }
   }
   for (const letra of letras) {
     if (forma !== undefined && t(letra === "A" ? "variableA" : "variableB") === "") falta(letra === "A" ? "variableA" : "variableB");
@@ -234,64 +260,67 @@ function revisarFila(f: FilaLeida, c: Catalogos, corr: Correspondencias, regla: 
     if (t(clave) === "") consolidaciones[letra] = "suma";
     else {
       const j = buscar(JUNTAS, t(clave));
-      if (!j) problemas.push(`«${t(clave)}» no es una forma de juntar: use Se suma, Último valor o Promedio`);
+      if (!j) problemas.push(`«${eco(t(clave))}» no es una forma de juntar: use Se suma, Último valor o Promedio`);
       else consolidaciones[letra] = j;
     }
   }
 
   // Meta, sentido y periodicidad
   let metaTexto: string | null = null;
-  if (t("meta") === "") falta("meta");
-  else {
+  let sinMeta = false;
+  if (t("meta") === "") {
+    sinMeta = true;
+    avisos.push("Sin meta: el indicador solo se vigilará, sin colores ni alertas");
+  } else {
     const m = fraccion(t("meta"));
-    if (m === null) problemas.push(`La meta «${t("meta")}» no es un número`);
-    else {
-      metaTexto = t("meta").replace(",", ".");
+    if (m === null) problemas.push(`La meta «${eco(t("meta"))}» no es un número`);
+    else if (PUNTO_DE_MILES.test(t("meta"))) {
+      problemas.push(`La meta «${eco(t("meta"))}» es ambigua: escríbala sin separador de miles (${t("meta").replace(/\./g, "")}) o con coma decimal`);
+    } else {
+      metaTexto = numeroCanonico(m);
       if (unidad && unidad.sufijo.trim() === "%" && comparar(m, CERO) > 0 && comparar(m, UNO) <= 0) {
         const por100 = decimalSinRelleno(aDecimal(multiplicar(m, CIEN), 10, "truncar")).replace(".", ",");
         avisos.push(`La meta ${t("meta")} de un porcentaje parece una fracción: ¿quiso escribir ${por100}?`);
       }
     }
   }
-  let metaMax: string | null = null;
-  if (t("metaHasta") !== "") {
-    if (fraccion(t("metaHasta")) === null) problemas.push(`La meta hasta «${t("metaHasta")}» no es un número`);
-    else metaMax = t("metaHasta").replace(",", ".");
-  }
+  // «Meta hasta» solo es de «Constante», que no se importa: nunca llega a la ficha.
+  if (t("metaHasta") !== "") problemas.push("«Meta hasta» solo se usa con «Constante»: déjela vacía");
+  const metaMax: string | null = null;
   let sentido: Tendencia | undefined;
   if (t("sentido") === "") falta("sentido");
   else {
     sentido = buscar(SENTIDOS, t("sentido"));
-    if (!sentido) problemas.push(`«${t("sentido")}» no es un sentido: use Ascendente, Descendente o Constante`);
+    if (!sentido) problemas.push(`«${eco(t("sentido"))}» no es un sentido: use Ascendente, Descendente o Constante`);
     else if (sentido === "constante") problemas.push("«Mantenerse en un rango» no se importa: cree esa ficha en la app");
   }
   let periodicidad: Periodicidad | undefined;
   if (t("periodicidad") === "") falta("periodicidad");
   else {
     periodicidad = buscar(PERIODICIDADES, t("periodicidad"));
-    if (!periodicidad) problemas.push(`«${t("periodicidad")}» no es una periodicidad: use Mensual, Bimestral, Trimestral, Semestral o Anual`);
+    if (!periodicidad) problemas.push(`«${eco(t("periodicidad"))}» no es una periodicidad: use Mensual, Bimestral, Trimestral, Semestral o Anual`);
   }
   let inicioMes: { anio: number; mes: number } = { anio, mes: 1 };
   if (t("inicioMedicion") !== "") {
     const m = /^(\d{4})-(\d{2})$/.exec(t("inicioMedicion"));
-    if (!m || Number(m[2]) < 1 || Number(m[2]) > 12) problemas.push(`El inicio de medición «${t("inicioMedicion")}» no es AAAA-MM`);
+    if (!m || Number(m[2]) < 1 || Number(m[2]) > 12) problemas.push(`El inicio de medición «${eco(t("inicioMedicion"))}» no es AAAA-MM`);
     else inicioMes = { anio: Number(m[1]), mes: Number(m[2]) };
   }
   let estado: "aprobado" | "propuesto" | undefined;
   if (t("estado") === "") falta("estado");
   else {
     estado = buscar(ESTADOS, t("estado"));
-    if (!estado) problemas.push(`«${t("estado")}» no es un estado: use Aprobado o Propuesto`);
+    if (!estado) problemas.push(`«${eco(t("estado"))}» no es un estado: use Aprobado o Propuesto`);
   }
 
   const nombresDe = (letra: "A" | "B") => t(letra === "A" ? "variableA" : "variableB");
   const sinPendientes = pendientes.length === 0;
   if (
-    !(problemas.length === 0 && sinPendientes && proceso && tipo && clasificacion && unidad && forma && formula !== null && metaTexto !== null && sentido && sentido !== "constante" && periodicidad && estado)
+    !(problemas.length === 0 && sinPendientes && proceso && tipo && clasificacion && unidad && forma && formula !== null && (metaTexto !== null || sinMeta) && sentido && sentido !== "constante" && periodicidad && estado)
   )
     return { numero: f.numero, codigo, ficha: null, problemas, avisos, pendientes };
 
-  const meta = fraccion(metaTexto!)!;
+  const meta = metaTexto === null ? null : fraccion(metaTexto);
   const siglaDelCodigo = /^(.+?)-ID-\d+$/i.exec(codigo)?.[1].toUpperCase() ?? null;
   const siglaParaSubproceso =
     subproceso && subproceso.sigla === null && siglaDelCodigo !== null && normalizar(siglaDelCodigo) !== normalizar(proceso.sigla) ? siglaDelCodigo : null;
@@ -314,7 +343,7 @@ function revisarFila(f: FilaLeida, c: Catalogos, corr: Correspondencias, regla: 
       consolidacion: consolidaciones[letra] ?? "suma",
     })),
     unidadId: unidad.id,
-    meta: metaTexto!,
+    meta: metaTexto,
     metaMax,
     tendencia: sentido as Tendencia,
     periodicidad,
@@ -323,7 +352,7 @@ function revisarFila(f: FilaLeida, c: Catalogos, corr: Correspondencias, regla: 
     requisito: t("referenteNormativo") || null,
     inicioMedicion: claveQueContieneMes(periodicidad, inicioMes.anio, inicioMes.mes),
     estado,
-    rangos: rangosATexto(rangosDeLaRegla(meta, sentido as "ascendente" | "descendente", regla.pctAscendente, regla.pctDescendente)),
+    rangos: meta === null ? null : rangosATexto(rangosDeLaRegla(meta, sentido as "ascendente" | "descendente", regla.pctAscendente, regla.pctDescendente)),
     siglaParaSubproceso,
   };
   return { numero: f.numero, codigo, ficha, problemas, avisos, pendientes };

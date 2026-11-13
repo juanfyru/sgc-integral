@@ -13,6 +13,7 @@ import {
   VALORES_JUNTA,
   VALORES_PERIODICIDAD,
   VALORES_SENTIDO,
+  SEGUN_LA_FORMA,
   type ListaDeColumna,
 } from "./columnas";
 
@@ -68,22 +69,24 @@ export async function plantillaDeImportacion(listas: ListasDePlantilla): Promise
     encabezado.font = { bold: true };
     encabezado.alignment = { vertical: "middle", wrapText: true };
     indicadores.getColumn(columna).width = Math.max(16, c.encabezado.length + 4);
+    // Texto: ningún Excel convierte «1000» o «100.000» según el idioma del equipo.
+    if (c.clave === "factor") indicadores.getColumn(columna).numFmt = "@";
     if (c.lista === null) return;
     const letra = hojaListas.getColumn(columnaDeLista.get(c.lista)!).letter;
     const formula = `Listas!$${letra}$2:$${letra}$${Math.max(valores[c.lista].length, 1) + 1}`;
     const dinamica = DINAMICAS.includes(c.lista);
-    for (let fila = 2; fila <= MAXIMO_FILAS_IMPORTACION + 1; fila++) {
-      indicadores.getCell(fila, columna).dataValidation = {
-        type: "list",
-        allowBlank: true,
-        formulae: [formula],
-        showErrorMessage: true,
-        // Un nombre de un catálogo que no coincide se resuelve en la vista previa: solo se advierte.
-        errorStyle: dinamica ? "warning" : "stop",
-        errorTitle: c.encabezado,
-        error: dinamica ? "El valor no está en la lista; la vista previa le pedirá elegir su correspondencia." : "Elija un valor de la lista.",
-      };
-    }
+    const rango = `${indicadores.getColumn(columna).letter}2:${indicadores.getColumn(columna).letter}${MAXIMO_FILAS_IMPORTACION + 1}`;
+    // Una validación por columna (exceljs la escribe como un rango); su tipado no expone `dataValidations`.
+    (indicadores as unknown as { dataValidations: { add(rango: string, v: ExcelJS.DataValidation): void } }).dataValidations.add(rango, {
+      type: "list",
+      allowBlank: true,
+      formulae: [formula],
+      showErrorMessage: true,
+      // Un nombre de un catálogo que no coincide se resuelve en la vista previa: solo se advierte.
+      errorStyle: dinamica ? "warning" : "stop",
+      errorTitle: c.encabezado,
+      error: dinamica ? "El valor no está en la lista; la vista previa le pedirá elegir su correspondencia." : "Elija un valor de la lista.",
+    });
   });
   indicadores.views = [{ state: "frozen", ySplit: 1 }];
 
@@ -95,7 +98,7 @@ export async function plantillaDeImportacion(listas: ListasDePlantilla): Promise
   });
   COLUMNAS.forEach((c, i) => {
     instrucciones.getCell(i + 2, 1).value = neutralizarFormula(c.encabezado);
-    instrucciones.getCell(i + 2, 2).value = c.obligatoria ? "Sí" : "No";
+    instrucciones.getCell(i + 2, 2).value = neutralizarFormula(SEGUN_LA_FORMA.includes(c.clave) ? "Según la forma" : c.obligatoria ? "Sí" : "No");
     const ayuda = instrucciones.getCell(i + 2, 3);
     ayuda.value = neutralizarFormula(c.ayuda);
     ayuda.alignment = { wrapText: true, vertical: "top" };

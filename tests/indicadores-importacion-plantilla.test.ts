@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
 import { COLUMNAS, MAXIMO_FILAS_IMPORTACION, type ClaveColumna } from "@/lib/indicadores/importacion/columnas";
 import { leerPlantilla } from "@/lib/indicadores/importacion/leer";
@@ -80,7 +81,7 @@ describe("la plantilla de importación", () => {
     expect((hoja.getRow(1).values as unknown[]).slice(1)).toEqual(ENCABEZADOS);
     expect(COLUMNAS.map((c) => c.encabezado)).toEqual(ENCABEZADOS);
     expect(COLUMNAS.filter((c) => c.obligatoria).map((c) => c.clave)).toEqual([
-      "codigo", "nombre", "proceso", "tipo", "clasificacion", "forma", "unidad", "meta", "sentido", "periodicidad", "estado",
+      "codigo", "nombre", "proceso", "tipo", "clasificacion", "forma", "unidad", "sentido", "periodicidad", "estado",
     ]);
     expect(MAXIMO_FILAS_IMPORTACION).toBe(500);
   });
@@ -304,5 +305,137 @@ describe("revisarLote", () => {
     expect(r.ficha?.siglaParaSubproceso).toBe("CNT");
     const [sin] = revisarLote([fila(2)], catalogos(), SIN_CORR, REGLA, 2026);
     expect(sin.ficha?.siglaParaSubproceso).toBeNull();
+  });
+});
+
+describe("libros hostiles", () => {
+  async function conCeldas(poner: (hoja: ExcelJS.Worksheet, col: (c: ClaveColumna) => number) => void): Promise<Buffer> {
+    const wb = await libro(await plantillaDeImportacion(LISTAS));
+    const hoja = wb.getWorksheet("Indicadores")!;
+    poner(hoja, (c) => COLUMNAS.findIndex((x) => x.clave === c) + 1);
+    return Buffer.from((await wb.xlsx.writeBuffer()) as ArrayBuffer);
+  }
+
+  it("una celda combinada solo vale en su maestra: sin filas fantasma ni datos copiados", async () => {
+    const r = await leerPlantilla(
+      await conCeldas((h, col) => {
+        h.getCell(4, col("codigo")).value = "A-ID-1";
+        h.getCell(5, col("codigo")).value = "A-ID-2";
+        h.getCell(4, col("proceso")).value = "CNT";
+        h.mergeCells(4, col("proceso"), 6, col("proceso"));
+      }),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.filas.map((f) => f.numero)).toEqual([4, 5]);
+    expect(r.filas[0].celdas.proceso).toBe("CNT");
+    expect(r.filas[1].celdas.proceso).toBeUndefined();
+  });
+
+  it("dos columnas combinadas en horizontal no copian el valor a la vecina", async () => {
+    const r = await leerPlantilla(
+      await conCeldas((h, col) => {
+        h.getCell(2, col("nombre")).value = "Nombre combinado";
+        h.mergeCells(2, col("nombre"), 2, col("proceso"));
+      }),
+    );
+    expect(r.ok && r.filas[0].celdas).toEqual({ nombre: "Nombre combinado" });
+  });
+
+  it("una fecha que no se puede leer no tumba la lectura", async () => {
+    const r = await leerPlantilla(
+      await conCeldas((h, col) => {
+        h.getCell(2, col("codigo")).value = "A-ID-1";
+        h.getCell(2, col("inicioMedicion")).value = new Date(8.64e15);
+        h.getCell(2, col("inicioMedicion")).value = { formula: "1", result: new Date(Number.NaN) } as unknown as ExcelJS.CellValue;
+      }),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/^La celda Y2 tiene una fecha que no se puede leer$/);
+  });
+
+  it("lee el texto de un hipervínculo, también con texto enriquecido", async () => {
+    const r = await leerPlantilla(
+      await conCeldas((h, col) => {
+        h.getCell(2, col("nombre")).value = { text: "Con enlace", hyperlink: "https://example.org" };
+        h.getCell(2, col("riesgo")).value = {
+          text: { richText: [{ text: "Riesgo " }, { text: "enriquecido" }] },
+          hyperlink: "https://example.org",
+        } as unknown as ExcelJS.CellValue;
+      }),
+    );
+    expect(r.ok && r.filas[0].celdas).toMatchObject({ nombre: "Con enlace", riesgo: "Riesgo enriquecido" });
+  });
+
+  it("la plantilla pone una sola validación por columna y la columna Factor en texto", async () => {
+    const wb = await libro(await plantillaDeImportacion(LISTAS));
+    const hoja = wb.getWorksheet("Indicadores")!;
+    const factor = COLUMNAS.findIndex((c) => c.clave === "factor") + 1;
+    expect(hoja.getColumn(factor).numFmt).toBe("@");
+    const listas = await wb.getWorksheet("Listas")!.getSheetValues().flat();
+    expect(listas).toContain("1000");
+    expect(listas).not.toContain("1.000");
+    const zip = await JSZip.loadAsync(await plantillaDeImportacion(LISTAS));
+    const xml = await zip.file("xl/worksheets/sheet1.xml")!.async("string");
+    const rangos = [...xml.matchAll(/<dataValidation [^>]*sqref="([^"]+)"/g)].map((m) => m[1]);
+    expect(rangos).toHaveLength(COLUMNAS.filter((c) => c.lista !== null).length);
+    expect(rangos.every((r) => /^[A-Z]+2:[A-Z]+501$/.test(r))).toBe(true);
+  });
+
+  it("«Obligatoria» de las variables dice «Según la forma»", async () => {
+    const hoja = (await libro(await plantillaDeImportacion(LISTAS))).getWorksheet("Instrucciones")!;
+    expect(hoja.getCell(COLUMNAS.findIndex((c) => c.clave === "variableA") + 2, 2).value).toBe("Según la forma");
+  });
+});
+
+describe("revisarLote: rigor de la ronda 1", () => {
+  const una = (extra: Partial<Record<ClaveColumna, string>>) => revisarLote([fila(2, extra)], catalogos(), SIN_CORR, REGLA, 2026)[0];
+
+  it("la correspondencia de un subproceso de otro proceso es un problema", () => {
+    const r = revisarLote(
+      [fila(2, { proceso: "LAB", subproceso: "Cartera externa" })],
+      catalogos(),
+      { ...SIN_CORR, subprocesos: { "cartera externa": 11 } },
+      REGLA,
+      2026,
+    )[0];
+    expect(r.problemas).toContain("El subproceso «Cartera externa» no es del proceso LAB");
+    expect(r.ficha).toBeNull();
+  });
+
+  it("lo que sobra de una forma bloquea la fila", () => {
+    expect(una({ forma: "Conteo", variableB: "Algo" }).problemas).toContain("«Variable B» no se usa con la forma «Conteo»: déjela vacía");
+    expect(una({ forma: "Conteo", variableB: "" , comoSeJuntaB: "Promedio" }).problemas).toContain("«Cómo se junta B» no se usa con la forma «Conteo»: déjela vacía");
+    expect(una({ formulaLibre: "A / B" }).problemas).toContain("«Fórmula libre» no se usa con la forma «Porcentaje»: déjela vacía");
+    expect(una({ factor: "1000" }).problemas).toContain("«Factor» no se usa con la forma «Porcentaje»: déjela vacía");
+    const libre = una({ forma: "Fórmula libre", formulaLibre: "A * 2" });
+    expect(libre.problemas).toContain("«Variable B» no se usa con la forma «Fórmula libre»: déjela vacía");
+    expect(libre.ficha).toBeNull();
+  });
+
+  it("«Meta hasta» fuera de «Constante» bloquea y nunca llega a la ficha", () => {
+    const r = una({ metaHasta: "100" });
+    expect(r.problemas).toContain("«Meta hasta» solo se usa con «Constante»: déjela vacía");
+    expect(r.ficha).toBeNull();
+    expect(una({}).ficha?.metaMax).toBeNull();
+  });
+
+  it("una meta con punto de miles es ambigua; la coma decimal y el punto decimal valen", () => {
+    expect(una({ meta: "1.000" }).problemas).toContain("La meta «1.000» es ambigua: escríbala sin separador de miles (1000) o con coma decimal");
+    expect(una({ meta: "1,5" }).ficha?.meta).toBe("1.5");
+    expect(una({ meta: "95.5" }).ficha?.meta).toBe("95.5");
+    expect(una({ meta: "95,50" }).ficha?.meta).toBe("95.5");
+  });
+
+  it("sin meta: ficha sin meta ni rangos y un aviso", () => {
+    const r = una({ meta: "" });
+    expect(r.problemas).toEqual([]);
+    expect(r.avisos).toContain("Sin meta: el indicador solo se vigilará, sin colores ni alertas");
+    expect(r.ficha).toMatchObject({ meta: null, metaMax: null, rangos: null });
+  });
+
+  it("el eco de un texto largo se corta a 80 caracteres", () => {
+    const r = una({ proceso: "z".repeat(200) });
+    expect(r.problemas).toContain(`El proceso «${"z".repeat(80)}…» no existe en el mapa`);
   });
 });
