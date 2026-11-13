@@ -14,7 +14,7 @@ vi.mock("@/app/acciones-indicadores", () => ({
 vi.mock("@/app/admin/acciones-indicadores", () => ({ guardarParametrosAccion: vi.fn() }));
 
 import { FormularioParametros } from "@/componentes/indicadores/admin/FormularioParametros";
-import { rangosDelEditor, type EstadoEditor } from "@/componentes/indicadores/ficha/EditorDeRangos";
+import { estadoDeRangos, rangosDelEditor, type EstadoEditor } from "@/componentes/indicadores/ficha/EditorDeRangos";
 import { campoDeMasOpciones, campoDelError, codigoAlCambiarDeProceso, FormularioFicha } from "@/componentes/indicadores/ficha/FormularioFicha";
 import { EsquemaFicha, type DatosFicha } from "@/lib/esquemas/indicadores";
 import { unidadDeForma } from "@/lib/indicadores/formula/formas";
@@ -71,6 +71,12 @@ const OPCIONES: OpcionesFicha = {
   periodoEnCurso: { mensual: "2026-11", bimestral: "2026-B6", trimestral: "2026-T4", semestral: "2026-S2", anual: "2026" },
 };
 
+/** Un cambio sobre una ficha con versión aprobada: la única que conserva la regla anterior (Ruling 18). */
+const pintarCambio = (valores: Partial<DatosFicha>, errorInicial?: string) =>
+  renderToStaticMarkup(
+    <FormularioFicha opciones={OPCIONES} valores={valores} edicion={{ versionId: 15, cambio: true, codigoFijo: true }} errorInicial={errorInicial} />,
+  );
+
 const pintar = (valores: Partial<DatosFicha> = {}) => renderToStaticMarkup(<FormularioFicha opciones={OPCIONES} valores={valores} />);
 
 /** El valor de un campo oculto, con las entidades de HTML resueltas. */
@@ -115,11 +121,11 @@ describe("FormularioFicha", () => {
 
   it("«Así quedará el semáforo» escribe los rangos en palabras", () => {
     expect(html).toContain("Así quedará el semáforo");
-    expect(html).toContain("Bien desde 80 % · Atención de 56 a 79,9 % · Crítico por debajo de 56 %");
-    // Una regla anterior (sin rangos escritos) no se reescribe sola: se ofrece escribirlos.
-    expect(html).toContain(">Escribir los rangos</button>");
+    // Un borrador inicial con la regla vieja no la conserva: el editor sale a la vista con los rangos equivalentes.
+    expect(html).toContain("Bien: ≥ 80 % · Atención: ≥ 56 % · Crítico: &lt; 56 %");
+    expect(html).toContain('id="rango-bien-signo"');
+    expect(html).not.toContain(">Escribir los rangos</button>");
     expect(html).not.toContain(">Cambiar rangos</summary>");
-    expect(html).not.toContain('id="rango-bien-signo"');
   });
 
   it("«Más opciones» está plegado y trae tipo «Eficacia» y clasificación «Operativo»", () => {
@@ -279,7 +285,7 @@ describe("FormularioFicha", () => {
     expect(libre).toMatch(/<textarea[^>]*name="formula"/);
     expect(libre).toContain("Días de estancia ÷ Egresos");
     expect(pintar({ forma: "tasa" })).toMatch(/<select[^>]*name="factor"/);
-    const constante = pintar({ tendencia: "constante", meta: "98", metaMax: "100", tolerancia: "2" });
+    const constante = pintarCambio({ tendencia: "constante", meta: "98", metaMax: "100", tolerancia: "2" });
     expect(constante).toMatch(/name="metaMax"/);
     expect(constante).toMatch(/name="tolerancia"/);
   });
@@ -391,7 +397,7 @@ describe("FormularioFicha: los rangos escritos (Tarea 5 de la 14A)", () => {
   });
 
   it("una ficha con la regla anterior muestra la regla vieja y «Escribir los rangos», sin el editor", () => {
-    const viejo = pintar({ meta: "80", tendencia: "ascendente", semaforoModo: "relativo", umbralAtencionPct: 70 });
+    const viejo = pintarCambio({ meta: "80", tendencia: "ascendente", semaforoModo: "relativo", umbralAtencionPct: 70 });
     expect(viejo).toContain("Bien desde 80 % · Atención de 56 a 79,9 % · Crítico por debajo de 56 %");
     expect(viejo).toMatch(/<button[^>]*type="button"[^>]*>Escribir los rangos<\/button>/);
     expect(viejo).not.toContain('id="rango-bien-signo"');
@@ -458,13 +464,12 @@ describe("FormularioFicha: los rangos escritos (Tarea 5 de la 14A)", () => {
     expect(h).toMatch(/<fieldset id="ficha-rangos" tabindex="-1" aria-describedby="ficha-rangos-error"/);
     expect(h).toContain(`<p id="ficha-rangos-error" role="alert" class="text-xs text-estado-critico-texto">${mensaje}</p>`);
     expect(h.split(mensaje).length - 1).toBe(1);
-    const viejo = renderToStaticMarkup(
-      <FormularioFicha
-        opciones={OPCIONES}
-        valores={{ meta: "80", semaforoModo: "relativo", umbralAtencionPct: 70 }}
-        errorInicial="Un cambio mayor escribe los rangos del semáforo: complete Bien, Atención y Crítico"
-      />,
+    const viejo = pintarCambio(
+      { meta: "80", semaforoModo: "relativo", umbralAtencionPct: 70 },
+      "Un cambio mayor escribe los rangos del semáforo: complete Bien, Atención y Crítico",
     );
+    // Parte de los rangos equivalentes a la regla vieja (como «Escribir los rangos»), no de filas en blanco.
+    expect(JSON.parse(oculto(viejo, "rangos")!).atencion).toEqual([{ signo: ">=", valor: "56" }]);
     expect(viejo).toContain('id="rango-bien-signo"');
     expect(viejo).toContain('id="ficha-rangos-error"');
   });
@@ -503,5 +508,54 @@ describe("rangosDelEditor", () => {
       sinAtencion: false,
     };
     expect(rangosDelEditor(e).atencion).toEqual([{ signo: "entre", valor: "95", hasta: "98" }]);
+  });
+});
+
+describe("la regla anterior, el foco y las filas que se reabren (ronda 1 de la Tarea 5)", () => {
+  it("un cambio sobre una ficha aprobada con la regla vieja muestra «Escribir los rangos»; un borrador inicial, el editor", () => {
+    const cambio = pintarCambio({ meta: "80", semaforoModo: "relativo", umbralAtencionPct: 70 });
+    expect(cambio).toContain(">Escribir los rangos</button>");
+    expect(cambio).not.toContain('id="rango-bien-signo"');
+    const inicial = pintar({ meta: "80", semaforoModo: "relativo", umbralAtencionPct: 70 });
+    expect(inicial).toContain('id="rango-bien-signo"');
+    expect(inicial).not.toContain(">Escribir los rangos</button>");
+    expect(JSON.parse(oculto(inicial, "rangos")!)).toEqual({
+      bien: [{ signo: ">=", valor: "80" }],
+      atencion: [{ signo: ">=", valor: "56" }],
+      critico: [{ signo: "<", valor: "56" }],
+    });
+    expect(oculto(inicial, "semaforoModo")).toBe("rangos");
+  });
+
+  it("un error que no es de los rangos no abre el editor en un cambio con la regla vieja", () => {
+    const h = pintarCambio({ meta: "80", semaforoModo: "relativo", umbralAtencionPct: 70 }, "El nombre no puede pasar de 200 caracteres");
+    expect(h).toContain(">Escribir los rangos</button>");
+    expect(h).not.toContain('id="rango-bien-signo"');
+  });
+
+  it("el botón «Escribir los rangos» lleva el foco a la primera fila (un efecto con `rango-bien-signo`)", () => {
+    // El efecto no corre en el render estático: se verifica que el destino exista cuando el editor está abierto.
+    const abierto = pintar({ meta: "80", semaforoModo: "relativo", umbralAtencionPct: 70 });
+    expect(abierto).toMatch(/<select[^>]*id="rango-bien-signo"/);
+  });
+
+  it("en «mantenerse en un rango» las filas de Atención vuelven a su lado al reabrir (ida y vuelta)", () => {
+    const filaT = (signo: "<=" | ">=" | "entre" | "<" | ">", valor: string, hasta?: string) => (hasta === undefined ? { signo, valor } : { signo, valor, hasta });
+    for (const atencion of [
+      [filaT("entre", "95", "97.9"), filaT("<=", "102")],
+      [filaT(">=", "95"), filaT("<=", "102")],
+      [filaT("entre", "95", "97.9"), filaT("entre", "100.1", "102")],
+    ]) {
+      const rangos = { bien: [filaT("entre", "98", "100")], atencion, critico: [filaT("<", "95"), filaT(">", "102")] };
+      const e = estadoDeRangos("constante", rangos);
+      expect(e.sinAtencion).toBe(false);
+      expect(e.atencion).toHaveLength(2);
+      expect(e.atencion.every((f) => f.valor !== "")).toBe(true);
+      expect(rangosDelEditor(e)).toEqual(rangos);
+    }
+    // Una sola fila de Atención queda en su lado y la otra en blanco.
+    const una = estadoDeRangos("constante", { bien: [filaT("entre", "98", "100")], atencion: [filaT("<=", "102")], critico: [filaT("<", "95"), filaT(">", "102")] });
+    expect(una.atencion[0].valor).toBe("");
+    expect(una.atencion[1].valor).toBe("102");
   });
 });

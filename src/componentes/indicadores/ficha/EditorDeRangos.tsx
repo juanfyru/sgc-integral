@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { claseControl } from "@/componentes/ui/Campo";
-import type { FilaEnTexto, RangosEnTexto, Signo } from "@/lib/indicadores/rangos";
+import { ladoDeFilaEnTexto, type FilaEnTexto, type RangosEnTexto, type Signo } from "@/lib/indicadores/rangos";
 import type { Tendencia } from "@/lib/indicadores/tipos";
 
 const CONTROL = `${claseControl} w-full min-w-0 max-w-full`;
@@ -47,12 +47,28 @@ export function estadoDeRangos(tendencia: Tendencia, inicial: RangosEnTexto | nu
       sinAtencion: inicial.atencion.length === 0,
     };
   }
-  const centro = Number(inicial.bien[0]?.valor);
-  const estaAbajo = (f: FilaEnTexto) =>
-    f.signo === "<" || f.signo === "<=" ? true : f.signo === ">" || f.signo === ">=" ? false : Number(f.valor) < centro;
+  // El mismo criterio del servidor (`estaPorDebajoDeBien`): el lado lo da el valor frente a Bien, no el signo.
   const ordenar = (filas: FilaEnTexto[], vacias: FilaDelEditor[]): FilaDelEditor[] => {
     const salida = [...vacias];
-    for (const f of filas) salida[estaAbajo(f) ? 0 : 1] = aEditor(f);
+    const puestas = [false, false];
+    const sinLado: FilaEnTexto[] = [];
+    for (const f of filas) {
+      const lado = inicial.bien[0] ? ladoDeFilaEnTexto(f, inicial.bien[0]) : null;
+      const i = lado === "abajo" ? 0 : lado === "arriba" ? 1 : -1;
+      if (i === -1 || puestas[i]) sinLado.push(f);
+      else {
+        salida[i] = aEditor(f);
+        puestas[i] = true;
+      }
+    }
+    // Una fila que no se puede ubicar (o que repite lado) ocupa el lugar libre: nunca pisa a otra ni se pierde.
+    for (const f of sinLado) {
+      const libre = puestas.findIndex((x) => !x);
+      if (libre !== -1) {
+        salida[libre] = aEditor(f);
+        puestas[libre] = true;
+      }
+    }
     return salida;
   };
   return {

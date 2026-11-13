@@ -216,6 +216,24 @@ function puntosDePrueba(tramos: Tramo[]): Fraccion[] {
   return puntos;
 }
 
+/**
+ * En «mantenerse en un rango», de qué lado de Bien está una fila de Atención o de Crítico: por debajo («entre» que
+ * empieza antes de Bien, «≤»/«<» que no pasan de su inicio, «≥»/«>» que empiezan antes de su final) o por encima.
+ * Lo usan el servidor (`errorDeRangos`) y el editor, para que reabrir unos rangos no cambie a nadie de lado.
+ */
+export function estaPorDebajoDeBien(f: FilaDeRango, bien: FilaDeRango): boolean {
+  const aBienHasta = bien.hasta ?? bien.valor;
+  if (f.signo === "entre") return comparar(f.valor, bien.valor) < 0;
+  if (f.signo === "<=" || f.signo === "<") return comparar(f.valor, bien.valor) <= 0;
+  return comparar(f.valor, aBienHasta) < 0;
+}
+
+/** Lo mismo con filas en texto: `null` si alguna no se lee. */
+export function ladoDeFilaEnTexto(f: FilaEnTexto, bien: FilaEnTexto): "abajo" | "arriba" | null {
+  const r = rangosDeTexto({ bien: [bien], atencion: [f], critico: [] });
+  return r === null ? null : estaPorDebajoDeBien(r.atencion[0], r.bien[0]) ? "abajo" : "arriba";
+}
+
 const DENTRO = (a: string, b: string) => `El rango de ${a} queda dentro del de ${b}`;
 
 /** El mensaje que le corresponde a unos rangos que no se pueden guardar, o `null` si sirven. */
@@ -234,13 +252,8 @@ export function errorDeRangos(r: Rangos, tendencia: Tendencia, meta: Fraccion, m
     if (!es(r.critico[0], ">=", ">", "entre")) return "En «menos es mejor», Crítico va con ≥, > o «entre»";
   } else {
     if (r.bien.length !== 1 || r.bien[0].signo !== "entre") return "Para mantenerse en un rango, Bien va con «entre»";
-    const aBien = r.bien[0].valor;
-    const aBienHasta = r.bien[0].hasta ?? aBien;
-    estaAbajo = (f: FilaDeRango) => {
-      if (f.signo === "entre") return comparar(f.valor, aBien) < 0;
-      if (f.signo === "<=" || f.signo === "<") return comparar(f.valor, aBien) <= 0;
-      return comparar(f.valor, aBienHasta) < 0;
-    };
+    const bien = r.bien[0];
+    estaAbajo = (f: FilaDeRango) => estaPorDebajoDeBien(f, bien);
     for (const e of ["atencion", "critico"] as const) {
       const abajo = r[e].filter(estaAbajo);
       if (r[e].length > 2 || abajo.length > 1 || r[e].length - abajo.length > 1) {

@@ -328,8 +328,12 @@ export function FormularioFicha({
   const [tolerancia, setTolerancia] = useState(conComa(valores.tolerancia));
   // La regla anterior (relativa o con límite fijo) de una ficha que ya tiene meta: no se reescribe sola (spec 14A §3.5).
   const modo: ModoSemaforo = valores.semaforoModo ?? "relativo";
-  const esAntigua = valores.rangos === undefined && (valores.meta ?? "").trim() !== "";
+  // Solo una ficha con versión aprobada (un cambio) conserva la regla anterior; un borrador inicial no (Ruling 18): el
+  // servidor nunca la guarda en una ficha nueva, así que ahí el editor aparece de una vez, con los rangos equivalentes.
+  const conReglaAnterior = valores.rangos === undefined && (valores.meta ?? "").trim() !== "";
+  const esAntigua = conReglaAnterior && edicion?.cambio === true;
   const [escribiendo, setEscribiendo] = useState(false);
+  const [enfocar, setEnfocar] = useState<string | null>(null);
   const rangosGuardados = valores.rangos === undefined ? null : (JSON.parse(valores.rangos) as RangosEnTexto);
   const [rangosIniciales, setRangosIniciales] = useState<RangosEnTexto | null>(rangosGuardados);
   const [claveEditor, setClaveEditor] = useState(0);
@@ -357,6 +361,11 @@ export function FormularioFicha({
     Object.fromEntries(Object.entries(valores.prueba?.valores ?? {}).map(([letra, v]) => [letra, conComa(v)])),
   );
 
+  // «Escribir los rangos» desmonta su botón: el foco pasa a la primera fila del editor, no se pierde en la página.
+  useEffect(() => {
+    if (enfocar) document.getElementById(enfocar)?.focus();
+  }, [enfocar, claveEditor]);
+
   const formulaVigente = forma === "libre" ? formula : formulaDeForma(forma, forma === "tasa" ? factor : undefined);
   const analisis = analizar(formulaVigente);
   const nombres = Object.fromEntries(variables.map((v) => [v.letra, v.nombre.trim() || v.letra]));
@@ -373,9 +382,11 @@ export function FormularioFicha({
     limite: !constante && modo === "fijo" ? fraccion(limite.trim()) : null,
     tolerancia: constante ? fraccion(tolerancia.trim()) : null,
   };
-  // Un error de los rangos abre el editor aunque la ficha traiga la regla anterior: ahí se corrige.
   const errorDeRangosDelServidor = estado?.error ? campoDelError(estado.error) === "ficha-rangos" : false;
-  const usaRangos = !esAntigua || escribiendo || errorDeRangosDelServidor;
+  // Un error de los rangos, o una ficha inicial con la regla vieja, abren el editor por el mismo camino de «Escribir los
+  // rangos» (parte de los rangos equivalentes) y queda abierto: `escribiendo` no se deshace.
+  if (conReglaAnterior && !escribiendo && (!esAntigua || errorDeRangosDelServidor)) escribirLosRangos(null);
+  const usaRangos = !esAntigua || escribiendo;
   const regla: Regla = usaRangos
     ? { ...reglaAntigua, modo: "rangos", umbralPct: null, limite: null, tolerancia: null, rangos: rangosDeTexto(rangos) }
     : reglaAntigua;
@@ -420,12 +431,13 @@ export function FormularioFicha({
   }
 
   /** «Escribir los rangos» en una ficha con la regla anterior: el editor parte de los rangos que dan los mismos colores. */
-  function escribirLosRangos() {
+  function escribirLosRangos(foco: string | null) {
     const equivalentes = rangosEquivalentes(reglaAntigua);
     const inicial = equivalentes === null ? null : rangosATexto(equivalentes);
     setRangosIniciales(inicial);
     setRangos(rangosDelEditor(estadoDeRangos(tendencia, inicial)));
     setClaveEditor((c) => c + 1);
+    setEnfocar(foco);
     setEscribiendo(true);
   }
 
@@ -720,7 +732,7 @@ export function FormularioFicha({
             metaEscrita={meta.trim() !== ""}
             accion={
               usaRangos ? null : (
-                <Boton type="button" variante="secundario" tamano="sm" onClick={escribirLosRangos}>
+                <Boton type="button" variante="secundario" tamano="sm" onClick={() => escribirLosRangos("rango-bien-signo")}>
                   Escribir los rangos
                 </Boton>
               )
