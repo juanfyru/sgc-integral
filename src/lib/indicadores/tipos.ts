@@ -80,6 +80,13 @@ export const ETIQUETA_SEMAFORO: Record<Semaforo, string> = {
   critico: "Crítico",
 };
 
+/** «Bien» que no alcanza la meta (rangos propios, spec 14A §3.1): verde con letras, nunca verde a secas. */
+export const NO_ALCANZA_LA_META = "no alcanza la meta";
+export const sinAlcanzarLaMeta = (semaforo: Semaforo | null, cumple: boolean | null | undefined) => semaforo === "bien" && cumple === false;
+/** El nombre del estado de un resultado con su salvedad: «Bien, no alcanza la meta» (nombres accesibles y tablas). */
+export const nombreDeEstado = (semaforo: Semaforo, cumple: boolean | null | undefined) =>
+  sinAlcanzarLaMeta(semaforo, cumple) ? `${ETIQUETA_SEMAFORO[semaforo]}, ${NO_ALCANZA_LA_META}` : ETIQUETA_SEMAFORO[semaforo];
+
 export const NIVELES_ACCESO = ["general", "restringido"] as const;
 export type NivelAcceso = (typeof NIVELES_ACCESO)[number];
 
@@ -137,6 +144,8 @@ export type PuntoDeSerie = {
   texto: string;
   estado: EstadoDePunto;
   nombreEstado: string;
+  /** Bien que no alcanza la meta: el nombre lo dice entero y la impresión lo abrevia con «*». */
+  sinAlcanzar?: boolean;
 };
 
 /**

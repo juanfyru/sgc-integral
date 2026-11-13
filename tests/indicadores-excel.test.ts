@@ -196,6 +196,36 @@ describe("el Excel de un indicador", () => {
       expect(crudas.find((c) => c[0] === "Acumulado del año")!.slice(2, 4)).toEqual([13, 16]);
     }));
 
+  it("un Bien que no alcanza la meta lleva «No» en «Cumple», también en el acumulado; la hoja «Ficha» trae nivel, riesgo y rangos", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const quien = await usuarioDePrueba(tx, { rol: "consulta" });
+      const ind = await indicadorDePrueba(tx, {
+        procesoId: p.id,
+        periodicidad: "trimestral",
+        inicioMedicion: "2026-T1",
+        aprobadaEn: APROBADA,
+        mide: [quien.usuarioId],
+        meta: "95",
+        rangos: {
+          bien: [{ signo: ">=", valor: "91" }],
+          atencion: [{ signo: "entre", valor: "41", hasta: "90" }],
+          critico: [{ signo: "<=", valor: "40" }],
+        },
+        nivel: "Proceso",
+        riesgoAsociado: "Retraso en la entrega de resultados",
+      });
+      await medir(tx, quien, ind, { "2026-T3": { A: "92", B: "100" } });
+      const libro = await leerLibro(await construirExcelDeIndicador((await impresionDelAnio(quien, ind.codigo, 2026, opc(tx)))!, META));
+      const r = libro["Resultados 2026"];
+      expect(fila(r, "Tercer trimestre de 2026")?.slice(4, 8)).toEqual(["92 %", "≥ 95 %", "No", "Bien"]);
+      expect(fila(r, "Acumulado del año")?.slice(4, 8)).toEqual(["92 %", "≥ 95 %", "No", "Bien"]);
+      const ficha = texto(libro.Ficha);
+      expect(ficha).toContain("Nivel | Proceso");
+      expect(ficha).toContain("Riesgo asociado | Retraso en la entrega de resultados");
+      expect(ficha).toContain("Semáforo | Bien: ≥ 91 % · Atención: 41 a 90 % · Crítico: ≤ 40 %");
+    }));
+
   it("la firma de la hoja «Ficha» lleva su día con el formato de la app y su hora, en la zona de la instalación", () =>
     revertida(sql, async (tx) => {
       const p = await proceso(tx);

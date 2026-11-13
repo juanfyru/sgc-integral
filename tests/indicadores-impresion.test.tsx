@@ -282,6 +282,43 @@ describe("FichaImpresa", () => {
       expect(html).not.toContain("<h1");
     }));
 
+  it("un Bien que no alcanza la meta no engaña: lo dice en la tabla, el acumulado y la gráfica, y los rangos salen como se escribieron (spec 14A §3.1)", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const quien = await usuarioDePrueba(tx, { rol: "consulta" });
+      const ind = await indicadorDePrueba(tx, {
+        procesoId: p.id,
+        periodicidad: "trimestral",
+        inicioMedicion: "2026-T1",
+        aprobadaEn: APROBADA,
+        mide: [quien.usuarioId],
+        analiza: [quien.usuarioId],
+        meta: "95",
+        rangos: {
+          bien: [{ signo: ">=", valor: "91" }],
+          atencion: [{ signo: "entre", valor: "41", hasta: "90" }],
+          critico: [{ signo: "<=", valor: "40" }],
+        },
+        nivel: "Proceso",
+        riesgoAsociado: "Retraso en la entrega de resultados",
+      });
+      await medir(tx, quien, ind, { "2026-T3": { A: "92", B: "100" } });
+      const datos = await impresionDelAnio(quien, ind.codigo, 2026, opc(tx));
+      expect(datos).not.toBeNull();
+      const html = renderToStaticMarkup(<FichaImpresa entidad={ENTIDAD} logo={null} {...datos!} />);
+      expect(html).toContain("Bien: ≥ 91 % · Atención: 41 a 90 % · Crítico: ≤ 40 %");
+      expect(html).toMatch(/<th[^>]*>Nivel<\/th><td[^>]*>Proceso<\/td>/);
+      expect(html).toMatch(/<th[^>]*>Riesgo asociado<\/th><td[^>]*>Retraso en la entrega de resultados<\/td>/);
+      const fila = html.slice(html.indexOf("Tercer trimestre de 2026"));
+      expect(fila).toMatch(/92 %<\/td><td[^>]*>≥ 95 %<\/td><td[^>]*>No<\/td><td[^>]*><span data-variante="bien"[^>]*>Bien · no alcanza la meta</);
+      // El acumulado sale del mismo cálculo: 92 % frente a 95 %, Bien y «No».
+      const acumulado = html.slice(html.indexOf("Acumulado del año"));
+      expect(acumulado).toMatch(/<td[^>]*>No<\/td><td[^>]*><span data-variante="bien"[^>]*>Bien · no alcanza la meta</);
+      // La serie de la gráfica lo nombra entero: su tabla equivalente y su nombre accesible.
+      expect(datos!.resultados.serie.find((x) => x.clave === "2026-T3")).toMatchObject({ nombreEstado: "Bien, no alcanza la meta", sinAlcanzar: true });
+      expect(html).toContain("Bien, no alcanza la meta");
+    }));
+
   it("las firmas son las de la tabla firmas: nombre, cargo y fecha", () =>
     revertida(sql, async (tx) => {
       const { ind } = await trimestralMedido(tx);
@@ -512,7 +549,8 @@ describe("FichaImpresa", () => {
   });
 
   it("la ficha impresa y la ficha en pantalla nombran los mismos campos", () => {
-    const ficha = fichaCompleta();
+    const base = fichaCompleta();
+    const ficha = { ...base, contenido: { ...base.contenido, nivel: "Proceso", riesgoAsociado: "Retraso en la entrega" } };
     const pantalla = renderToStaticMarkup(<FichaTecnica ficha={ficha} operacion={null} />);
     const seccion = (inicio: string, fin: string) =>
       [...pantalla.slice(pantalla.indexOf(`>${inicio}<`), pantalla.indexOf(`>${fin}<`)).matchAll(/<dt[^>]*>([^<]+)<\/dt>/g)].map((m) => m[1]);

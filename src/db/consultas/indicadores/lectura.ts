@@ -27,7 +27,8 @@ import { limiteDeCritico, numeroEs, numeroExacto, rangosEnPalabras, type Regla }
 import { comparacion, fraseDeResultado, textoMeta, textoValor, type Unidad } from "@/lib/indicadores/textos";
 import {
   ErrorIndicador,
-  ETIQUETA_SEMAFORO,
+  nombreDeEstado,
+  sinAlcanzarLaMeta,
   type EstadoIndicador,
   type EstadoMedicion,
   type LimiteDeGrafica,
@@ -434,6 +435,8 @@ export async function tablaDelAnio(sesion: SujetoVisibilidad, indicadorId: numbe
 export type ResumenAcumulado = {
   texto: string | null;
   semaforo: Semaforo | null;
+  /** Si el acumulado cumple la meta, calculado por `acumulado` (no del color). */
+  cumple: boolean | null;
   valores: Record<string, string>;
   /** Los mismos valores como números (las celdas del Excel). */
   numeros: Record<string, number>;
@@ -444,7 +447,7 @@ export type ResumenAcumulado = {
   metaEnTexto: string | null;
 };
 
-const SIN_ACUMULADO: ResumenAcumulado = { texto: null, semaforo: null, valores: {}, numeros: {}, rotulo: null, valor: null, meta: null, metaEnTexto: null };
+const SIN_ACUMULADO: ResumenAcumulado = { texto: null, semaforo: null, cumple: null, valores: {}, numeros: {}, rotulo: null, valor: null, meta: null, metaEnTexto: null };
 
 /**
  * El acumulado de un año con los periodos que rigen en él, en orden (`acumulado`, la función pura de la Tarea 4). Manda
@@ -483,6 +486,7 @@ export function resumenAcumulado(leidos: readonly PeriodoLeido[], versiones: rea
   return {
     texto: r.resultado ? textoValor(r.resultado, unidad, regla) : null,
     semaforo: r.semaforo,
+    cumple: r.resultado ? r.cumple : null,
     valores: Object.fromEntries(Object.entries(r.valores).map(([letra, v]) => [letra, numeroEs(v, 4, "truncar")])),
     numeros: Object.fromEntries(Object.entries(r.valores).map(([letra, v]) => [letra, aCelda(v)])),
     rotulo: rotuloDelAcumulado(
@@ -534,7 +538,8 @@ function puntoDe(l: PeriodoLeido): PuntoDeSerie {
       valor: aNumero(l.resultado),
       texto: f.resultado,
       estado: f.semaforo ?? "sin-meta",
-      nombreEstado: f.semaforo ? ETIQUETA_SEMAFORO[f.semaforo] : "Sin meta",
+      nombreEstado: f.semaforo ? nombreDeEstado(f.semaforo, f.cumple) : "Sin meta",
+      ...(sinAlcanzarLaMeta(f.semaforo, f.cumple) ? { sinAlcanzar: true } : {}),
     };
   }
   return { ...base, valor: null, texto: "s. d.", estado: "sin-dato", nombreEstado: nombreSinDato(f) };
@@ -640,6 +645,8 @@ export type UltimoResultado = {
   etiqueta: string;
   resultado: string | null;
   semaforo: Semaforo | null;
+  /** Si cumplió la meta (`cumpleDeMedicion`): Bien con `false` no alcanza la meta. */
+  cumple: boolean | null;
   noAplica: boolean;
   frase: string;
   comparacion: { texto: string; flecha: "sube" | "baja" | "igual"; mejora: boolean | null } | null;
@@ -705,6 +712,7 @@ async function ultimoResultado(sql: Cliente, indicadorId: number, versiones: rea
     etiqueta: conMayuscula(p.etiqueta),
     resultado: resultado ? textoValor(resultado, version.unidad, regla) : null,
     semaforo,
+    cumple: resultado && semaforo ? cumpleDeMedicion(m) : null,
     noAplica,
     frase: fraseDeResultado({ resultado, semaforo, cumple: cumpleDeMedicion(m), noAplica, motivo: texto(m.no_aplica_motivo) }, regla, version.unidad),
     comparacion: comparacionDe(lista, regla.tendencia, version.unidad),

@@ -113,6 +113,8 @@ export function camposDeFicha(ficha: FichaLeida): { identificacion: CampoDeTexto
     ...campo("Requisito", c.requisito ?? NINGUNO),
     ...campo("Tipo", c.tipoNombre ?? NINGUNO),
     ...campo("Clasificación", c.clasificacionNombre ?? NINGUNO),
+    ...campo("Nivel", c.nivel),
+    ...campo("Riesgo asociado", c.riesgoAsociado),
     ...campo("Objetivo que mide", c.objetivoNombre ?? NINGUNO),
     ...campo("Procedimiento", ficha.procedimiento ? `${ficha.procedimiento.codigo} · ${ficha.procedimiento.titulo}` : null),
     ...campo("Punto de control", c.puntoControl),

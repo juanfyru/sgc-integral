@@ -96,6 +96,8 @@ export function FichaTecnica({
         <Dato termino="Requisito">{c.requisito ?? ninguno}</Dato>
         <Dato termino="Tipo">{c.tipoNombre}</Dato>
         <Dato termino="Clasificación">{c.clasificacionNombre}</Dato>
+        {c.nivel ? <Dato termino="Nivel">{c.nivel}</Dato> : null}
+        {c.riesgoAsociado ? <Dato termino="Riesgo asociado">{c.riesgoAsociado}</Dato> : null}
         <Dato termino="Objetivo que mide">{c.objetivoNombre ?? ninguno}</Dato>
         {ficha.procedimiento ? (
           <Dato termino="Procedimiento">

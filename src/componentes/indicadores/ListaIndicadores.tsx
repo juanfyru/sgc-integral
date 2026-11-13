@@ -132,7 +132,7 @@ export function ListaIndicadores({ filas, resumen }: { filas: FilaDeLista[]; res
             </td>
             <td className={`${celdaNumerica} whitespace-nowrap`}>{f.meta ?? "—"}</td>
             <td className={celda}>
-              {sinFicha(f) ? <span className="text-muted-foreground">—</span> : <InsigniaSemaforo semaforo={f.semaforo} noAplica={f.noAplica} conResultado={f.resultado !== null} />}
+              {sinFicha(f) ? <span className="text-muted-foreground">—</span> : <InsigniaSemaforo semaforo={f.semaforo} cumple={f.cumple} noAplica={f.noAplica} conResultado={f.resultado !== null} />}
             </td>
             <td className={celda}>
               <TendenciaDeFila f={f} />

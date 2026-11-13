@@ -231,7 +231,9 @@ export function GraficoTubos({
 
   // Al imprimir, sobre cada columna con valor van su valor y su estado, en dos líneas, con una letra que quepa en la
   // franja (doce meses en una hoja vertical); sobre las demás nada: debajo ya dicen «s. d.», «n. a.» o «—».
-  const impresos = serie.filter((p) => p.valor !== null).flatMap((p) => [p.texto, p.nombreEstado]);
+  // Un Bien que no alcanza la meta se abrevia «Bien*» en la columna impresa; su nombre entero va en la tabla y en el foco.
+  const estadoImpreso = (p: PuntoDeSerie) => (p.sinAlcanzar ? `${p.nombreEstado.split(",")[0]}*` : p.nombreEstado);
+  const impresos = serie.filter((p) => p.valor !== null).flatMap((p) => [p.texto, estadoImpreso(p)]);
   const largo = Math.max(1, ...impresos.map((t) => t.length));
   const letraImpresa = Math.max(4, Math.min(LETRA_IMPRESA, Math.floor(((franja - 2) / (largo * 0.56)) * 10) / 10));
 
@@ -360,7 +362,7 @@ export function GraficoTubos({
                         <text className="tubo-impreso" x={t.centro} y={tope - 4 - letraImpresa * 1.2} textAnchor="middle" fontSize={letraImpresa}>
                           <tspan x={t.centro}>{p.texto}</tspan>
                           <tspan x={t.centro} dy={letraImpresa * 1.2}>
-                            {p.nombreEstado}
+                            {estadoImpreso(p)}
                           </tspan>
                         </text>
                       ) : null}

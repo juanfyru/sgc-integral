@@ -8,6 +8,7 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { escaparLike } from "@/db/consultas/normograma/busqueda";
 import { filtroIndicadores, participaEn, type SujetoVisibilidad } from "@/lib/alcance";
 import { REPORTES_DE_LISTA, SEMAFOROS_DE_LISTA, type ReporteDeLista } from "@/lib/indicadores/filtros";
+import { cumpleDeMedicion } from "@/lib/indicadores/estados";
 import { deTexto } from "@/lib/indicadores/formula/fraccion";
 import { reglaDeTexto } from "@/lib/indicadores/reporte";
 import { textoMeta, textoValor } from "@/lib/indicadores/textos";
@@ -109,6 +110,8 @@ export type FilaDeLista = {
   resultado: string | null;
   meta: string | null;
   semaforo: Semaforo | null;
+  /** Si el último resultado cumplió la meta (`cumpleDeFila`): Bien con `false` no alcanza la meta. */
+  cumple: boolean | null;
   noAplica: boolean;
   /** Los últimos seis periodos, del más antiguo al más reciente; `null` sin dato. */
   tendencia: (number | null)[];
@@ -194,7 +197,7 @@ export async function listarIndicadores(
           // Las trece más recientes de cada uno: la última, sus seis de tendencia y el mismo periodo del año anterior,
           // con margen para las de otra periodicidad, que se saltan.
           sql`SELECT x.* FROM unnest(${sql.array(ids)}::bigint[]) AS u(id) CROSS JOIN LATERAL (
-              SELECT m.id, m.indicador_id, m.periodo, m.hasta, m.estado, m.historica, m.no_aplica, m.resultado_exacto, m.semaforo,
+              SELECT m.id, m.indicador_id, m.periodo, m.hasta, m.estado, m.historica, m.no_aplica, m.resultado_exacto, m.semaforo, m.cumple,
                 m.meta_aplicada, m.meta_max_aplicada, m.requiere_accion,
                 (SELECT json_build_object('meta', im.meta::text, 'metaMax', im.meta_max::text) FROM indicador_metas im
                   WHERE im.indicador_id = m.indicador_id AND im.periodo = m.periodo) AS programada
@@ -233,10 +236,11 @@ export async function listarIndicadores(
     );
     const ultima = lista[0];
     const pend = pendientesDe.get(id);
-    let datos: Pick<FilaDeLista, "resultado" | "meta" | "semaforo" | "noAplica" | "flecha" | "mejora"> = {
+    let datos: Pick<FilaDeLista, "resultado" | "meta" | "semaforo" | "cumple" | "noAplica" | "flecha" | "mejora"> = {
       resultado: null,
       meta: conFicha && vs[0] ? textoMeta(reglaDeTexto(vs[0].regla), vs[0].unidad) : null,
       semaforo: null,
+      cumple: null,
       noAplica: false,
       flecha: null,
       mejora: null,
@@ -257,6 +261,7 @@ export async function listarIndicadores(
         resultado: exacto ? textoValor(exacto, v.unidad, regla) : null,
         meta: textoMeta(regla, v.unidad),
         semaforo: (m.semaforo as Semaforo | null) ?? null,
+        cumple: exacto && m.semaforo ? cumpleDeMedicion(m) : null,
         noAplica: m.no_aplica === true,
         flecha: c?.flecha ?? null,
         mejora: c?.mejora ?? null,
@@ -350,7 +355,7 @@ export async function opcionesDeLista(sesion: SujetoVisibilidad, opciones?: { sq
 /** Lo que la página de un proceso o de un subproceso muestra de cada indicador (spec §12.8). */
 export type FilaDeProceso = Pick<
   FilaDeLista,
-  "id" | "codigo" | "nombre" | "resultado" | "semaforo" | "noAplica" | "periodo" | "etiquetaPeriodo" | "restringido"
+  "id" | "codigo" | "nombre" | "resultado" | "semaforo" | "cumple" | "noAplica" | "periodo" | "etiquetaPeriodo" | "restringido"
 >;
 
 const filaDeProceso = (f: FilaDeLista): FilaDeProceso => ({
@@ -359,6 +364,7 @@ const filaDeProceso = (f: FilaDeLista): FilaDeProceso => ({
   nombre: f.nombre,
   resultado: f.resultado,
   semaforo: f.semaforo,
+  cumple: f.cumple,
   noAplica: f.noAplica,
   periodo: f.periodo,
   etiquetaPeriodo: f.etiquetaPeriodo,

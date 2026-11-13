@@ -247,7 +247,7 @@ export function FichaImpresa(d: DatosDeFichaImpresa) {
                     <td className={`${TD} whitespace-nowrap`}>{f.meta}</td>
                     <td className={TD}>{cumpleEnTexto(f.cumple) || "—"}</td>
                     <td className={`${TD} ficha-color-exacto`}>
-                      {f.estado === "por_venir" ? "Por venir" : <InsigniaSemaforo semaforo={f.semaforo} noAplica={f.noAplica} conResultado={f.resultado !== null} />}
+                      {f.estado === "por_venir" ? "Por venir" : <InsigniaSemaforo semaforo={f.semaforo} cumple={f.cumple} noAplica={f.noAplica} conResultado={f.resultado !== null} />}
                     </td>
                     <td className={TD}>{analisisEnTexto(f)}</td>
                   </tr>
@@ -268,9 +268,9 @@ export function FichaImpresa(d: DatosDeFichaImpresa) {
               ))}
               <td className={`${TD} bg-muted whitespace-nowrap text-right font-bold tabular-nums`}>{a.texto ?? "—"}</td>
               <td className={`${TD} bg-muted whitespace-nowrap`}>{a.metaEnTexto ?? "—"}</td>
-              <td className={`${TD} bg-muted`}>{a.texto ? cumpleEnTexto(a.semaforo ? a.semaforo === "bien" : null) || "—" : "—"}</td>
+              <td className={`${TD} bg-muted`}>{a.texto ? cumpleEnTexto(a.cumple) || "—" : "—"}</td>
               <td className={`${TD} ficha-color-exacto bg-muted`}>
-                <InsigniaSemaforo semaforo={a.semaforo} conResultado={a.texto !== null} />
+                <InsigniaSemaforo semaforo={a.semaforo} cumple={a.cumple} conResultado={a.texto !== null} />
               </td>
               <td className={`${TD} bg-muted`}>
                 {a.rotulo ?? (a.texto ? "Se calcula juntando las variables de los periodos del año, nunca promediando los resultados." : `Aún no hay periodos medidos en ${anio}.`)}

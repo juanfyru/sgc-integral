@@ -14,6 +14,7 @@ const fila = (o: Partial<FilaDeProceso> = {}): FilaDeProceso => ({
   nombre: "Cumplimiento del plan",
   resultado: "92 %",
   semaforo: "bien",
+  cumple: true,
   noAplica: false,
   periodo: "2026-T3",
   etiquetaPeriodo: "Tercer trimestre de 2026",
@@ -22,6 +23,11 @@ const fila = (o: Partial<FilaDeProceso> = {}): FilaDeProceso => ({
 });
 
 describe("IndicadoresDelProceso", () => {
+  it("un Bien que no alcanza la meta lo dice en el estado de la fila", () => {
+    const html = renderToStaticMarkup(<IndicadoresDelProceso procesoId={3} titulo="Indicadores del proceso" propios={[fila({ cumple: false })]} porSubproceso={[]} />);
+    expect(html).toContain("Bien · no alcanza la meta");
+  });
+
   it("sin indicadores visibles no pinta nada, ni el título", () => {
     expect(renderToStaticMarkup(<IndicadoresDelProceso procesoId={3} titulo="Indicadores del proceso" propios={[]} porSubproceso={[]} />)).toBe("");
   });

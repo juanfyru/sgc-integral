@@ -117,6 +117,16 @@ describe("GraficoTubos", () => {
     expect(Number(impreso?.[1]) * 0.56 * "Atención".length).toBeLessThanOrEqual(franja);
   });
 
+  it("un Bien que no alcanza la meta lo dice en la tabla y en el nombre de la columna, y abrevia «Bien*» al imprimir", () => {
+    const serie = doce.map((p) =>
+      p.clave === doce.find((x) => x.estado === "bien")?.clave ? { ...p, nombreEstado: "Bien, no alcanza la meta", sinAlcanzar: true } : p,
+    );
+    const html = principal({ serie });
+    expect(html).toMatch(/<tr><th scope="row">[^<]+<\/th><td>[^<]+<\/td><td>Bien, no alcanza la meta<\/td><\/tr>/);
+    expect(html).toMatch(/aria-label="[^"]*, Bien, no alcanza la meta"/);
+    expect(html).toMatch(/<text class="tubo-impreso"[^>]*><tspan[^>]*>[^<]+<\/tspan><tspan[^>]*>Bien\*<\/tspan><\/text>/);
+  });
+
   it("cada columna se enfoca con el teclado y dice su valor y su estado", () => {
     const html = principal();
     expect(cuenta(html, /tabindex="0"/g)).toBe(12);

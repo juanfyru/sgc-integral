@@ -18,7 +18,7 @@ export function ResultadoPrincipal({ ultimo, periodosSinCumplir }: { ultimo: Ult
       <p className="font-display text-4xl font-semibold leading-none tabular-nums">{ultimo.resultado ?? (ultimo.noAplica ? "n. a." : "s. d.")}</p>
       <div className="flex min-w-0 flex-col gap-1.5">
         <p className="flex flex-wrap items-center gap-1.5">
-          <InsigniaSemaforo semaforo={ultimo.semaforo} noAplica={ultimo.noAplica} conResultado={ultimo.resultado !== null} />
+          <InsigniaSemaforo semaforo={ultimo.semaforo} cumple={ultimo.cumple} noAplica={ultimo.noAplica} conResultado={ultimo.resultado !== null} />
           {ultimo.requiereAccion ? <Insignia variante="neutra">Requiere acción de mejora</Insignia> : null}
           {ultimo.repetido ? <Insignia variante="neutra">{`${periodosSinCumplir} periodos sin cumplir`}</Insignia> : null}
         </p>

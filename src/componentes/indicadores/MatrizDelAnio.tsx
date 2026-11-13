@@ -24,14 +24,31 @@ const GLIFO: Partial<Record<CeldaDeMatriz["estado"], { Icono: LucideIcon; clase:
   critico: { Icono: X, clase: "text-estado-critico-texto" },
 };
 
-function Glifo({ estado }: { estado: CeldaDeMatriz["estado"] }) {
-  const g = GLIFO[estado];
-  return g ? <g.Icono aria-hidden="true" data-glifo={estado} className={`size-3 shrink-0 ${g.clase}`} /> : null;
+/** `bien-sin-alcanzar` es el «✓*» de un Bien que no alcanza la meta: la forma del Bien con un asterisco decorativo. */
+type EstadoDeGlifo = CeldaDeMatriz["estado"] | "bien-sin-alcanzar";
+
+function Glifo({ estado, cumple = null }: { estado: EstadoDeGlifo; cumple?: boolean | null }) {
+  const sinAlcanzar = estado === "bien-sin-alcanzar" || (estado === "bien" && cumple === false);
+  const clave = sinAlcanzar ? "bien" : estado;
+  const g = GLIFO[clave as CeldaDeMatriz["estado"]];
+  if (!g) return null;
+  const icono = <g.Icono aria-hidden="true" data-glifo={sinAlcanzar ? "bien-sin-alcanzar" : estado} className={`size-3 shrink-0 ${g.clase}`} />;
+  return sinAlcanzar ? (
+    <>
+      {icono}
+      <span aria-hidden="true" className={`-ml-0.5 font-bold ${g.clase}`}>
+        *
+      </span>
+    </>
+  ) : (
+    icono
+  );
 }
 
 /** La leyenda de la matriz: cada estado con su franja, su forma y su nombre escrito (el color nunca va solo). */
 export const LEYENDA_DE_MATRIZ = [
   { estado: "bien", clase: "bg-estado-bien", texto: "Bien" },
+  { estado: "bien-sin-alcanzar", clase: "bg-estado-bien", texto: "Bien, sin alcanzar la meta" },
   { estado: "atencion", clase: "bg-estado-atencion", texto: "Atención" },
   { estado: "critico", clase: "bg-estado-critico", texto: "Crítico" },
   { estado: "sin-meta", clase: "bg-tubo-neutro", texto: "Sin meta" },
@@ -75,7 +92,7 @@ function Celda({ c, columnas = c.hastaMes - c.desdeMes + 1 }: { c: CeldaDeMatriz
     <td colSpan={columnas} className="relative border-l border-linea-suave px-1.5 py-2 text-center tabular-nums whitespace-nowrap">
       {c.enlace ? (
         <Link href={c.enlace} aria-label={c.nombre} className={`inline-flex items-center gap-0.5 rounded-sm underline-offset-2 hover:underline ${FOCO} ${texto}`}>
-          <Glifo estado={c.estado} />
+          <Glifo estado={c.estado} cumple={c.cumple} />
           {c.texto}
         </Link>
       ) : c.estado === "vacia" ? (
@@ -83,7 +100,7 @@ function Celda({ c, columnas = c.hastaMes - c.desdeMes + 1 }: { c: CeldaDeMatriz
       ) : (
         <>
           <span aria-hidden="true" className={`inline-flex items-center gap-0.5 ${texto}`}>
-            <Glifo estado={c.estado} />
+            <Glifo estado={c.estado} cumple={c.cumple} />
             {c.texto}
           </span>
           <span className="sr-only">{c.nombre}</span>
