@@ -545,8 +545,12 @@ describe("importar el lote", () => {
         proposito: null,
         rangos: { bien: [{ signo: "<=", valor: "30" }], atencion: [{ signo: "<=", valor: "33" }], critico: [{ signo: ">", valor: "33" }] },
         huella: null,
+        // Ruling 32: una propuesta es un borrador normal; el lote la recuerda por el detalle de su evento.
+        importacion_id: null,
+        aprobacion_previa_documento: null,
+        aprobacion_previa_por: null,
+        aprobacion_previa_fecha: null,
       });
-      expect(Number(p.importacion_id)).toBe(loteId);
       expect(await tx`SELECT 1 FROM indicador_responsables WHERE version_id = ${p.version_id}`).toHaveLength(0);
       expect(await tx`SELECT 1 FROM mediciones WHERE indicador_id = ${p.id}`).toHaveLength(0);
 
@@ -607,6 +611,9 @@ describe("importar el lote", () => {
       const { loteId } = await loteCon(tx, b.admin, [propuesta(b, codigo)]);
       expect(await importarLote(b.admin, loteId, datosImportacion(), firmar(tx))).toEqual({ aprobadas: 0, borradores: 1, omitidas: 0 });
       const p = await indicadorDe(tx, codigo);
+      expect(p).toMatchObject({ version_estado: "borrador", importacion_id: null, aprobacion_previa_documento: null });
+      const [evento] = await tx`SELECT detalle FROM importacion_eventos WHERE importacion_id = ${loteId} AND tipo = 'importado'`;
+      expect(evento.detalle.fichas).toEqual([{ codigo, indicadorId: Number(p.id), versionId: Number(p.version_id), estado: "propuesto" }]);
       const [t] = await tx`SELECT id FROM tipos_indicador WHERE nombre = 'Eficacia'`;
       const [c] = await tx`SELECT id FROM clasificaciones_indicador WHERE nombre = 'Estratégico'`;
       const [u] = await tx`SELECT id FROM unidades_indicador WHERE nombre = 'Número'`;
@@ -642,7 +649,20 @@ describe("importar el lote", () => {
       await enviarAAprobacion(b.admin, { versionId: Number(p.version_id), credenciales: CLAVE }, firmar(tx));
       const gerente = await usuarioDePrueba(tx, { rol: "gerencia" });
       expect(await aprobarFichas(gerente, { versionIds: [Number(p.version_id)], credenciales: CLAVE }, firmar(tx))).toEqual({ aprobadas: 1 });
-      expect(await indicadorDe(tx, codigo)).toMatchObject({ estado: "activo", version_estado: "aprobada" });
+      // Aprobada en la app: una versión aprobada corriente, con sus firmas, no «aprobada antes de SGC Integral».
+      expect(await indicadorDe(tx, codigo)).toMatchObject({
+        estado: "activo",
+        version_estado: "aprobada",
+        importacion_id: null,
+        aprobacion_previa_documento: null,
+        aprobacion_previa_por: null,
+        aprobacion_previa_fecha: null,
+      });
+      const firmas = await tx`SELECT firma, usuario_id FROM firmas WHERE indicador_version_id = ${p.version_id} ORDER BY id`;
+      expect(firmas.map((f) => [f.firma, Number(f.usuario_id)])).toEqual([
+        ["elaboro", b.admin.usuarioId],
+        ["aprobo", gerente.usuarioId],
+      ]);
     }));
 
   it("una fila con un código ya usado se omite y el resto entra", () =>

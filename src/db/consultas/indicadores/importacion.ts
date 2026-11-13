@@ -8,10 +8,12 @@
  * verifica fuera de la transacción y, dentro, con el lote bloqueado (`bloquearLote`, siempre el primer candado), se
  * revisa otra vez antes de escribir nada. Entra todo o nada: las filas sin problemas ni correspondencias pendientes.
  *
- * Cada ficha nace como una ficha nueva (`escribirFichaNueva`) con su lote y su aprobación previa; las «Aprobado» pasan
- * a aprobada en una sola sentencia, con la huella de su contenido firmado y aprobada en el momento de la importación:
- * así los periodos que terminaron antes son históricos (spec §5.8). La constancia de quién importó con su clave es el
- * evento `importado` del lote, no una fila de `firmas` (spec §5.7). No se avisa a nadie: no hay designados.
+ * Cada ficha nace como una ficha nueva (`escribirFichaNueva`). Las «Aprobado» llevan su lote y su aprobación previa y
+ * pasan a aprobada en una sola sentencia, con la huella de su contenido firmado y aprobada en el momento de la
+ * importación: así los periodos que terminaron antes son históricos (spec §5.8). Las «Propuesto» son borradores
+ * normales, sin lote (Ruling 32): siguen el camino de aprobación de la app con sus firmas. El evento `importado` del lote
+ * guarda cada ficha creada (código, indicador, versión y estado) y es la constancia de quién importó con su clave, no una
+ * fila de `firmas` (spec §5.7). No se avisa a nadie: no hay designados.
  */
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -508,7 +510,6 @@ export async function importarLote(
       const v = await validarImportacion(tx, loteId, d, ahora, antes.lectura);
       for (const s of v.siglas) await asignarSiglaASubproceso(tx, s.subprocesoId, s.sigla, sesion.usuarioId);
 
-      const extra = { importacionId: loteId, aprobacionPrevia: v.previa };
       const decimales = new Map(v.revision.catalogos.unidades.map((u) => [u.id, u.decimales]));
       const fichas: { codigo: string; indicadorId: number; versionId: number; estado: FichaImportada["estado"] }[] = [];
       for (const fila of v.importables) {
@@ -519,6 +520,8 @@ export async function importarLote(
         });
         let creada: Awaited<ReturnType<typeof escribirFichaNueva>>;
         try {
+          // Solo la aprobada lleva el lote y la aprobación previa; la propuesta es un borrador normal (Ruling 32).
+          const extra = { importacionId: loteId, aprobacionPrevia: f.estado === "aprobado" ? v.previa : null };
           creada = await escribirFichaNueva(tx, sesion, datos, extra, ahora);
         } catch (err) {
           if (err instanceof ErrorIndicador) throw new ErrorIndicador(`Fila ${fila.numero} (${f.codigo}): ${err.message}`);

@@ -138,7 +138,11 @@ const CAMBIO_MAYOR_SIN_RANGOS = "Un cambio mayor escribe los rangos del semáfor
  */
 export type DatosFichaNueva = Omit<DatosFicha, "proposito"> & { proposito: string | null };
 
-/** Lo que una ficha importada guarda de su lote (spec 14A §5.7): el lote y los datos de la aprobación previa. */
+/**
+ * Una ficha que crea una importación (spec 14A §5.6 y §5.7). Con `aprobacionPrevia`, la versión es la que la importación
+ * aprueba y guarda su lote y los datos de esa aprobación; sin ella (una fila «Propuesto», Ruling 32), es un borrador
+ * normal, sin lote: el lote la recuerda por el detalle de su evento `importado`.
+ */
 export type ExtraImportacion = {
   importacionId: number;
   aprobacionPrevia: { documento: string; aprobadoPor: string; fecha: string } | null;
@@ -504,9 +508,9 @@ export function errorDeFichaImportada(d: DatosFichaNueva): string | null {
 
 /**
  * Escribe, dentro de `tx`, el indicador en `borrador` y su versión 1 con sus filas hijas y sus designados (spec §7.6.1).
- * Sin código, propone el del proceso. Con `extra` (una fila importada, spec 14A §5.6 y §5.7), la versión guarda su lote
- * y su aprobación previa, el objetivo y los cargos pueden faltar, una clasificación que exige norma no la exige y la
- * bitácora la escribe el lote (una entrada por importación, no una por ficha).
+ * Sin código, propone el del proceso. Con `extra` (una fila importada, spec 14A §5.6 y §5.7), el objetivo y los cargos
+ * pueden faltar, una clasificación que exige norma no la exige y la bitácora la escribe el lote (una entrada por
+ * importación, no una por ficha); la versión guarda su lote y su aprobación previa solo si la trae (`ExtraImportacion`).
  */
 export async function escribirFichaNueva(
   tx: TransactionSql,
@@ -532,6 +536,7 @@ export async function escribirFichaNueva(
     throw err;
   }
   const indicadorId = Number(i.id);
+  // Solo la versión que la importación aprueba lleva el lote (Ruling 32); una propuesta es un borrador normal.
   const previa = extra?.aprobacionPrevia ?? null;
   const fila = {
     indicador_id: indicadorId,
@@ -539,8 +544,8 @@ export async function escribirFichaNueva(
     estado: "borrador",
     tipo_cambio: "inicial",
     ...columnasDeContenido(tx, f, nombres),
-    // Solo la versión que crea la importación lleva el lote: `CONTENIDO` no lo copia a un cambio.
-    importacion_id: extra?.importacionId ?? null,
+    // `CONTENIDO` no copia el lote a un cambio.
+    importacion_id: previa === null ? null : extra!.importacionId,
     aprobacion_previa_documento: previa?.documento ?? null,
     aprobacion_previa_por: previa?.aprobadoPor ?? null,
     aprobacion_previa_fecha: previa?.fecha ?? null,
