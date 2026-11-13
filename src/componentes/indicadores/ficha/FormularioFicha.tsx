@@ -333,7 +333,9 @@ export function FormularioFicha({
   const conReglaAnterior = valores.rangos === undefined && (valores.meta ?? "").trim() !== "";
   const esAntigua = conReglaAnterior && edicion?.cambio === true;
   const [escribiendo, setEscribiendo] = useState(false);
-  const [enfocar, setEnfocar] = useState<string | null>(null);
+  // Cuántas veces se pidió llevar el foco a la primera fila: el efecto depende solo de este contador, así que cambiar la
+  // tendencia (que remonta el editor) no vuelve a mover el foco.
+  const [pidioFoco, setPidioFoco] = useState(0);
   const rangosGuardados = valores.rangos === undefined ? null : (JSON.parse(valores.rangos) as RangosEnTexto);
   const [rangosIniciales, setRangosIniciales] = useState<RangosEnTexto | null>(rangosGuardados);
   const [claveEditor, setClaveEditor] = useState(0);
@@ -363,8 +365,8 @@ export function FormularioFicha({
 
   // «Escribir los rangos» desmonta su botón: el foco pasa a la primera fila del editor, no se pierde en la página.
   useEffect(() => {
-    if (enfocar) document.getElementById(enfocar)?.focus();
-  }, [enfocar, claveEditor]);
+    if (pidioFoco > 0) document.getElementById("rango-bien-signo")?.focus();
+  }, [pidioFoco]);
 
   const formulaVigente = forma === "libre" ? formula : formulaDeForma(forma, forma === "tasa" ? factor : undefined);
   const analisis = analizar(formulaVigente);
@@ -437,7 +439,7 @@ export function FormularioFicha({
     setRangosIniciales(inicial);
     setRangos(rangosDelEditor(estadoDeRangos(tendencia, inicial)));
     setClaveEditor((c) => c + 1);
-    setEnfocar(foco);
+    if (foco) setPidioFoco((c) => c + 1);
     setEscribiendo(true);
   }
 
