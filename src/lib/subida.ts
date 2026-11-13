@@ -9,7 +9,8 @@ export const ROLES_ARCHIVO = ["principal", "editable", "anexo"] as const;
 export type RolArchivo = (typeof ROLES_ARCHIVO)[number];
 /**
  * Dónde cuelga una evidencia: una jornada de socialización, un ítem de verificación, una norma (su PDF), una revisión
- * anual, un hallazgo, una medición de indicador (sus soportes) o una constancia de envío externo (`reporte_externo`, 14B).
+ * anual, un hallazgo, una medición de indicador (sus soportes), una constancia de envío externo (`reporte_externo`, 14B)
+ * o la plantilla de un lote de importación de indicadores (`importacion_indicadores`, 14A).
  */
 export const CONTEXTOS_EVIDENCIA = [
   "jornada",
@@ -128,6 +129,10 @@ export const ERROR_SOPORTE = "El soporte debe ser PDF, imagen (PNG, JPG, WebP) o
 /** El archivo de una norma es su texto oficial: solo PDF (spec 13C §10.1). */
 export const CONTEXTOS_SOLO_PDF: readonly ContextoEvidencia[] = ["norma"];
 
+/** Un lote de importación de indicadores recibe solo su plantilla (spec 14A §5.3). */
+export const ERROR_PLANTILLA = "La importación recibe solo la plantilla en Excel (.xlsx)";
+export const CONTEXTOS_SOLO_XLSX: readonly ContextoEvidencia[] = ["importacion_indicadores"];
+
 /**
  * Los dueños de un solo archivo, con la tabla del dueño: el que se sube reemplaza al anterior en la misma transacción y
  * con el dueño bloqueado, así dos subidas a la vez, o una subida y el borrado del dueño, se ordenan (`registrarArchivo`).
@@ -137,18 +142,25 @@ export const CONTEXTOS_UNICOS: Partial<Record<ContextoEvidencia, string>> = { no
 /**
  * Como `validarTipo`, pero una evidencia solo es un PDF o una imagen (nunca SVG, HTML ni Office), y con `soloPdf`
  * solo un PDF: una extensión fuera de la lista o un contenido que no la respalda dan el mismo mensaje. Con `conExcel`
- * (el soporte de una medición) admite además un `.xlsx`, nunca un `.xls`. Es una comprobación por la muestra, y un ZIP renombrado
- * a `.xlsx` también la pasa: `recibirArchivo` comprueba después el archivo completo contra `MIME_XLSX`.
+ * (el soporte de una medición) admite además un `.xlsx`, nunca un `.xls`, y con `soloXlsx` (la plantilla de una importación)
+ * solo un `.xlsx`. Es una comprobación por la muestra, y un ZIP renombrado a `.xlsx` también la pasa: `recibirArchivo`
+ * comprueba después el archivo completo contra `MIME_XLSX`.
  */
 export async function validarTipoEvidencia(
   nombre: string,
   muestra: Uint8Array,
-  opciones?: { soloPdf?: boolean; conExcel?: boolean },
+  opciones?: { soloPdf?: boolean; conExcel?: boolean; soloXlsx?: boolean },
 ): Promise<ResultadoTipo> {
   const punto = nombre.lastIndexOf(".");
   const extension = punto > 0 ? nombre.slice(punto + 1).toLowerCase() : "";
-  const error = opciones?.soloPdf ? ERROR_SOLO_PDF : opciones?.conExcel ? ERROR_SOPORTE : ERROR_EVIDENCIA;
-  const permitidas = opciones?.soloPdf ? ["pdf"] : opciones?.conExcel ? [...EXTENSIONES_EVIDENCIA, "xlsx"] : EXTENSIONES_EVIDENCIA;
+  const error = opciones?.soloXlsx ? ERROR_PLANTILLA : opciones?.soloPdf ? ERROR_SOLO_PDF : opciones?.conExcel ? ERROR_SOPORTE : ERROR_EVIDENCIA;
+  const permitidas = opciones?.soloXlsx
+    ? ["xlsx"]
+    : opciones?.soloPdf
+      ? ["pdf"]
+      : opciones?.conExcel
+        ? [...EXTENSIONES_EVIDENCIA, "xlsx"]
+        : EXTENSIONES_EVIDENCIA;
   if (!permitidas.includes(extension)) return { ok: false, error };
   const tipo = await validarTipo(nombre, muestra);
   return tipo.ok ? tipo : { ok: false, error };

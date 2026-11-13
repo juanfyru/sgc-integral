@@ -10,6 +10,8 @@ import { resolverRutaAlmacen } from "@/lib/almacen";
 import { ErrorPermiso } from "@/lib/permisos";
 import {
   CONTEXTOS_SOLO_PDF,
+  CONTEXTOS_SOLO_XLSX,
+  ERROR_PLANTILLA,
   ERROR_SOPORTE,
   MIME_XLSX,
   sanearNombre,
@@ -74,8 +76,9 @@ export type DestinoVersion = {
   externo?: boolean;
 };
 /**
- * `carpeta` es relativa al almacén: `jornadas/<id>`, `verificaciones/<verificacionId>/items/<itemId>`, `normas/<id>` o `mediciones/<id>`.
- * Una norma recibe solo un PDF, que reemplaza al que tuviera (`registrarArchivo`).
+ * `carpeta` es relativa al almacén: `jornadas/<id>`, `verificaciones/<verificacionId>/items/<itemId>`, `normas/<id>`,
+ * `mediciones/<id>` o `importaciones/<id>`. Una norma recibe solo un PDF, que reemplaza al que tuviera
+ * (`registrarArchivo`); un lote de importación, solo su plantilla en `.xlsx`, una vez.
  */
 export type DestinoEvidencia = { contexto: ContextoEvidencia; contextoId: number; carpeta: string };
 
@@ -125,6 +128,7 @@ export async function recibirArchivo(
     ? await validarTipoEvidencia(nombreCrudo, muestra, {
         soloPdf: CONTEXTOS_SOLO_PDF.includes(destino.contexto),
         conExcel: destino.contexto === "medicion",
+        soloXlsx: CONTEXTOS_SOLO_XLSX.includes(destino.contexto),
       })
     : await validarTipo(nombreCrudo, muestra);
   if (!tipo.ok) {
@@ -172,12 +176,13 @@ export async function recibirArchivo(
     // Lo guardado se firma por su huella: un archivo cortado no debe llegar a tener una.
     if (declarado !== null && total !== declarado) throw new Error("incompleto");
     if (total === 0) throw new Error("vacio");
-    // El `.xlsx` de un soporte se comprueba sobre el archivo completo: la muestra no ve el final de un ZIP. Se lee
-    // entero (como mucho 25 MB, y solo en este caso) y se analiza con `fileTypeFromBuffer`: `fileTypeFromFile` carga
-    // `node:fs/promises` y `strtok3` con un `import()` de especificador no literal, que el empaquetador de Next
-    // reemplaza por un módulo que siempre lanza (ver `tests/file-type-empaquetado.test.ts`).
+    // El `.xlsx` de un soporte o de una plantilla de importación se comprueba sobre el archivo completo: la muestra no ve
+    // el final de un ZIP. Se lee entero (como mucho 25 MB, y solo en estos casos) y se analiza con `fileTypeFromBuffer`:
+    // `fileTypeFromFile` carga `node:fs/promises` y `strtok3` con un `import()` de especificador no literal, que el
+    // empaquetador de Next reemplaza por un módulo que siempre lanza (ver `tests/file-type-empaquetado.test.ts`).
     let mimeGuardado = tipo.mime;
-    if (esEvidencia(destino) && destino.contexto === "medicion" && tipo.extension === "xlsx") {
+    const conXlsx = esEvidencia(destino) && (destino.contexto === "medicion" || CONTEXTOS_SOLO_XLSX.includes(destino.contexto));
+    if (conXlsx && tipo.extension === "xlsx") {
       if ((await fileTypeFromBuffer(await readFile(ruta.absoluta)))?.mime !== MIME_XLSX) throw new Error("no_xlsx");
       mimeGuardado = MIME_XLSX;
     }
@@ -212,7 +217,9 @@ export async function recibirArchivo(
     const mensaje = (err as Error).message;
     if (mensaje === "incompleto") return error(400, "El archivo llegó incompleto. Vuelva a subirlo.");
     if (mensaje === "tamano") return error(413, "El archivo supera el máximo de 25 MB");
-    if (mensaje === "no_xlsx") return error(415, ERROR_SOPORTE);
+    if (mensaje === "no_xlsx") {
+      return error(415, esEvidencia(destino) && CONTEXTOS_SOLO_XLSX.includes(destino.contexto) ? ERROR_PLANTILLA : ERROR_SOPORTE);
+    }
     if (mensaje === "vacio") return error(400, "El archivo está vacío");
     if (mensaje.includes("principal")) return error(409, mensaje);
     console.error("Fallo en la subida:", err);

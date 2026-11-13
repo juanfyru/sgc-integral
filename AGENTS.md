@@ -298,7 +298,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   - **Las rutas que reciben una subida van fuera del `matcher` de `src/proxy.ts`**
     (`admin/api/archivos`, `api/tramites/[id]/archivos`, `api/socializaciones/[id]/archivos`,
     `api/verificaciones/[id]/items/[itemId]/archivos`, `api/externos/[versionId]/archivos`,
-    `api/normas/[id]/archivos`, `api/hallazgos/[id]/archivos` y `api/mediciones/[id]/archivos`, cada una con su caso en
+    `api/normas/[id]/archivos`, `api/hallazgos/[id]/archivos`, `api/mediciones/[id]/archivos` y
+    `api/importaciones-indicadores/[id]/archivo` (la plantilla de un lote, solo `.xlsx` y una vez), cada una con su caso en
     `tests/proxy-matcher.test.ts`), usan `recibirArchivo` y comparan
     `content-length`: el búfer del proxy truncaba las subidas de más de 10 MB y respondía
     201 (F13A-R10).

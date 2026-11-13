@@ -15,7 +15,7 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { filtroAcceso, type SujetoVisibilidad } from "@/lib/alcance";
-import { EsquemaFicha, type DatosFicha } from "@/lib/esquemas/indicadores";
+import { EsquemaFicha, EsquemaFichaImportada, type DatosFicha } from "@/lib/esquemas/indicadores";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { tipoDeCambio, type ContenidoFicha } from "@/lib/indicadores/ficha";
 import { analizar } from "@/lib/indicadores/formula/analizar";
@@ -132,11 +132,23 @@ type Semaforo = {
 const SIN_RANGOS = "Escriba los rangos del semáforo";
 const CAMBIO_MAYOR_SIN_RANGOS = "Un cambio mayor escribe los rangos del semáforo: complete Bien, Atención y Crítico";
 
-/** La ficha que pasó las reglas que no consultan la BD. */
-type FichaRevisada = { d: DatosFicha; formula: string; factor: number | null; semaforo: Semaforo };
+/**
+ * Los datos de una ficha nueva: los del formulario o los de una fila importada, cuyo objetivo puede faltar (spec 14A
+ * §5.2; Ruling 2) y cuyos cargos responsables también (la plantilla no los exige).
+ */
+export type DatosFichaNueva = Omit<DatosFicha, "proposito"> & { proposito: string | null };
 
-function leer(d: DatosFicha): DatosFicha {
-  const r = EsquemaFicha.safeParse(d);
+/** Lo que una ficha importada guarda de su lote (spec 14A §5.7): el lote y los datos de la aprobación previa. */
+export type ExtraImportacion = {
+  importacionId: number;
+  aprobacionPrevia: { documento: string; aprobadoPor: string; fecha: string } | null;
+};
+
+/** La ficha que pasó las reglas que no consultan la BD. */
+type FichaRevisada = { d: DatosFichaNueva; formula: string; factor: number | null; semaforo: Semaforo };
+
+function leer(d: DatosFichaNueva, importada = false): DatosFichaNueva {
+  const r = (importada ? EsquemaFichaImportada : EsquemaFicha).safeParse(d);
   if (!r.success) throw new ErrorIndicador(r.error.issues[0].message);
   return r.data;
 }
@@ -148,8 +160,8 @@ const fr = (v: string | null | undefined) => (v === null || v === undefined ? nu
  * solo un cambio sobre una ficha que aún tiene la regla vieja puede conservarla (`reglaVieja`), y `guardarBorrador` vuelve
  * a exigir los rangos si el cambio resulta mayor.
  */
-function revisar(entrada: DatosFicha, reglaVieja = false): FichaRevisada {
-  const d = leer(entrada);
+function revisar(entrada: DatosFichaNueva, reglaVieja = false, importada = false): FichaRevisada {
+  const d = leer(entrada, importada);
   let formula: string;
   let factor: number | null = null;
   if (d.forma === "libre") {
@@ -208,7 +220,7 @@ function revisar(entrada: DatosFicha, reglaVieja = false): FichaRevisada {
 }
 
 /** Los datos de operación que se van a escribir (solo con el indicador en borrador): el inicio, de la periodicidad. */
-function revisarOperacion(d: DatosFicha): void {
+function revisarOperacion(d: DatosFichaNueva): void {
   if (periodicidadDe(d.inicioMedicion) !== d.periodicidad) {
     throw new ErrorIndicador(`El inicio de medición debe ser un periodo ${ADJETIVO[d.periodicidad]}`);
   }
@@ -253,9 +265,16 @@ async function exigirFila(
 
 /**
  * Catálogos, norma exigida, subproceso del proceso, procedimiento, cargos y, si se van a escribir los datos de operación
- * (`conOperacion`), personas designadas activas.
+ * (`conOperacion`), personas designadas activas. Sin `exigirNorma` (una ficha importada, spec 14A §5.6), una clasificación
+ * que exige norma no la exige todavía: la exigencia rige en su siguiente cambio.
  */
-async function revisarContraLaBase(tx: TransactionSql, f: FichaRevisada, actual: Actual | null, conOperacion: boolean): Promise<Nombres> {
+async function revisarContraLaBase(
+  tx: TransactionSql,
+  f: FichaRevisada,
+  actual: Actual | null,
+  conOperacion: boolean,
+  exigirNorma = true,
+): Promise<Nombres> {
   const { d } = f;
   const proceso = await exigirFila(
     tx`SELECT nombre, activo FROM procesos WHERE id = ${d.procesoId} FOR KEY SHARE`,
@@ -302,7 +321,7 @@ async function revisarContraLaBase(tx: TransactionSql, f: FichaRevisada, actual:
       throw new ErrorIndicador("Solo se pueden citar normas vigentes o modificadas");
     }
   }
-  if (clasificacion.exige_norma === true && d.normaIds.length === 0) {
+  if (exigirNorma && clasificacion.exige_norma === true && d.normaIds.length === 0) {
     throw new ErrorIndicador("Un indicador regulatorio debe citar al menos una norma");
   }
 
@@ -324,7 +343,8 @@ async function revisarContraLaBase(tx: TransactionSql, f: FichaRevisada, actual:
 
   const cargoIds = [...new Set([...d.cargosMedir, ...d.cargosAnalizar])];
   const cargos = new Map<number, string>();
-  const filasCargo = await tx`SELECT id, nombre, activo FROM cargos WHERE id IN ${tx(cargoIds)} FOR KEY SHARE`;
+  // Una ficha importada puede no traer cargo (spec 14A §5.6): `IN ()` no es SQL.
+  const filasCargo = cargoIds.length === 0 ? [] : await tx`SELECT id, nombre, activo FROM cargos WHERE id IN ${tx(cargoIds)} FOR KEY SHARE`;
   for (const c of filasCargo) {
     if (c.activo || actual?.cargoIds.includes(Number(c.id))) cargos.set(Number(c.id), c.nombre as string);
   }
@@ -404,7 +424,7 @@ function columnasDeContenido(tx: TransactionSql, f: FichaRevisada, n: Nombres) {
 }
 
 /** Los valores de ejemplo de las variables declaradas; sin todos, no hay prueba. */
-function pruebaDe(tx: TransactionSql, d: DatosFicha) {
+function pruebaDe(tx: TransactionSql, d: DatosFichaNueva) {
   const valores = d.prueba?.valores ?? {};
   const letras = d.variables.map((v) => v.letra);
   if (!letras.every((l) => Object.hasOwn(valores, l))) return null;
@@ -436,7 +456,7 @@ async function borrarHijos(tx: TransactionSql, versionId: number): Promise<void>
 }
 
 /** «mide» y «analiza»; «seguimiento» y los cambios posteriores son de la designación (Tarea 8). */
-async function escribirDesignados(tx: TransactionSql, indicadorId: number, d: DatosFicha, usuarioId: number, ahora: Date): Promise<void> {
+async function escribirDesignados(tx: TransactionSql, indicadorId: number, d: DatosFichaNueva, usuarioId: number, ahora: Date): Promise<void> {
   await tx`DELETE FROM indicador_designados WHERE indicador_id = ${indicadorId} AND funcion IN ('mide', 'analiza')`;
   for (const [funcion, ids] of [["mide", d.mide], ["analiza", d.analiza]] as const) {
     for (const persona of ids) {
@@ -458,14 +478,92 @@ async function designadosDe(tx: TransactionSql, indicadorId: number): Promise<De
   return { mide: de("mide"), analiza: de("analiza") };
 }
 
-const designadosDeFicha = (d: DatosFicha): Designados => ({ mide: ascendente(d.mide), analiza: ascendente(d.analiza) });
+const designadosDeFicha = (d: DatosFichaNueva): Designados => ({ mide: ascendente(d.mide), analiza: ascendente(d.analiza) });
 
-const operacionDe = (d: DatosFicha): DatosOperacion => ({
+const operacionDe = (d: DatosFichaNueva): DatosOperacion => ({
   plazoReporteDias: d.plazoReporteDias,
   inicioMedicion: d.inicioMedicion,
   soporteObligatorio: d.soporteObligatorio,
   nivelAcceso: d.nivelAcceso,
 });
+
+/**
+ * Lo que una ficha importada no pasaría al crearse (spec 14A §5.3): las reglas de la ficha que no consultan la base, con
+ * la relajación de la importación. `null` si la ficha las cumple; si no, el mensaje, que la vista previa muestra como
+ * problema de su fila. Puro.
+ */
+export function errorDeFichaImportada(d: DatosFichaNueva): string | null {
+  try {
+    revisarOperacion(revisar(d, false, true).d);
+    return null;
+  } catch (err) {
+    if (err instanceof ErrorIndicador) return err.message;
+    throw err;
+  }
+}
+
+/**
+ * Escribe, dentro de `tx`, el indicador en `borrador` y su versión 1 con sus filas hijas y sus designados (spec §7.6.1).
+ * Sin código, propone el del proceso. Con `extra` (una fila importada, spec 14A §5.6 y §5.7), la versión guarda su lote
+ * y su aprobación previa, el objetivo y los cargos pueden faltar, una clasificación que exige norma no la exige y la
+ * bitácora la escribe el lote (una entrada por importación, no una por ficha).
+ */
+export async function escribirFichaNueva(
+  tx: TransactionSql,
+  sesion: SesionFlujo,
+  d: DatosFichaNueva,
+  extra: ExtraImportacion | null,
+  ahora: Date,
+): Promise<{ indicadorId: number; versionId: number; codigo: string }> {
+  const f = revisar(d, false, extra !== null);
+  revisarOperacion(f.d);
+  const nombres = await revisarContraLaBase(tx, f, null, true, extra === null);
+  const codigo = f.d.codigo ?? (await proponerCodigo(f.d.procesoId, f.d.subprocesoId ?? null, { sql: tx }));
+  const o = operacionDe(f.d);
+  let i;
+  try {
+    [i] = await tx`INSERT INTO indicadores
+        (codigo, proceso_id, estado, nivel_acceso, plazo_reporte_dias, inicio_medicion, soporte_obligatorio, creado_por, creado_en)
+      VALUES (${codigo}, ${f.d.procesoId}, 'borrador', ${o.nivelAcceso}, ${o.plazoReporteDias}, ${o.inicioMedicion},
+        ${o.soporteObligatorio}, ${sesion.usuarioId}, ${ahora})
+      RETURNING id`;
+  } catch (err) {
+    if (esCodigoRepetido(err)) throw new ErrorIndicador(`Ya existe un indicador con el código ${codigo}`);
+    throw err;
+  }
+  const indicadorId = Number(i.id);
+  const previa = extra?.aprobacionPrevia ?? null;
+  const fila = {
+    indicador_id: indicadorId,
+    numero: 1,
+    estado: "borrador",
+    tipo_cambio: "inicial",
+    ...columnasDeContenido(tx, f, nombres),
+    // Solo la versión que crea la importación lleva el lote: `CONTENIDO` no lo copia a un cambio.
+    importacion_id: extra?.importacionId ?? null,
+    aprobacion_previa_documento: previa?.documento ?? null,
+    aprobacion_previa_por: previa?.aprobadoPor ?? null,
+    aprobacion_previa_fecha: previa?.fecha ?? null,
+    creado_por: sesion.usuarioId,
+    creado_en: ahora,
+    actualizado_en: ahora,
+  };
+  const [v] = await tx`INSERT INTO indicador_versiones ${tx(fila)} RETURNING id`;
+  const versionId = Number(v.id);
+  await tx`SELECT id FROM indicador_versiones WHERE id = ${versionId} FOR UPDATE`;
+  await escribirHijos(tx, versionId, f, nombres);
+  await escribirDesignados(tx, indicadorId, f.d, sesion.usuarioId, ahora);
+  if (extra === null) {
+    await registrarAuditoria(tx, {
+      usuarioId: sesion.usuarioId,
+      accion: "indicador_creado",
+      entidad: "indicador",
+      entidadId: indicadorId,
+      detalle: { codigo, nombre: f.d.nombre, proceso: nombres.procesoNombre, versionId, operacion: o, designados: designadosDeFicha(f.d) },
+    });
+  }
+  return { indicadorId, versionId, codigo };
+}
 
 /** Crea el indicador en `borrador` y su versión 1 (spec §7.6.1). Sin código, propone el del proceso. */
 export async function crearIndicador(
@@ -474,49 +572,11 @@ export async function crearIndicador(
   opciones?: Opciones,
 ): Promise<{ indicadorId: number; versionId: number; codigo: string }> {
   exigirAdministrar(sesion);
+  // Lo que no consulta la base falla antes de abrir la transacción.
   const f = revisar(d);
   revisarOperacion(f.d);
   const ahora = opciones?.ahora ?? new Date();
-  let codigo = f.d.codigo ?? "";
-  try {
-    return await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
-      const nombres = await revisarContraLaBase(tx, f, null, true);
-      codigo = f.d.codigo ?? (await proponerCodigo(f.d.procesoId, f.d.subprocesoId ?? null, { sql: tx }));
-      const o = operacionDe(f.d);
-      const [i] = await tx`INSERT INTO indicadores
-          (codigo, proceso_id, estado, nivel_acceso, plazo_reporte_dias, inicio_medicion, soporte_obligatorio, creado_por, creado_en)
-        VALUES (${codigo}, ${f.d.procesoId}, 'borrador', ${o.nivelAcceso}, ${o.plazoReporteDias}, ${o.inicioMedicion},
-          ${o.soporteObligatorio}, ${sesion.usuarioId}, ${ahora})
-        RETURNING id`;
-      const indicadorId = Number(i.id);
-      const fila = {
-        indicador_id: indicadorId,
-        numero: 1,
-        estado: "borrador",
-        tipo_cambio: "inicial",
-        ...columnasDeContenido(tx, f, nombres),
-        creado_por: sesion.usuarioId,
-        creado_en: ahora,
-        actualizado_en: ahora,
-      };
-      const [v] = await tx`INSERT INTO indicador_versiones ${tx(fila)} RETURNING id`;
-      const versionId = Number(v.id);
-      await tx`SELECT id FROM indicador_versiones WHERE id = ${versionId} FOR UPDATE`;
-      await escribirHijos(tx, versionId, f, nombres);
-      await escribirDesignados(tx, indicadorId, f.d, sesion.usuarioId, ahora);
-      await registrarAuditoria(tx, {
-        usuarioId: sesion.usuarioId,
-        accion: "indicador_creado",
-        entidad: "indicador",
-        entidadId: indicadorId,
-        detalle: { codigo, nombre: f.d.nombre, proceso: nombres.procesoNombre, versionId, operacion: o, designados: designadosDeFicha(f.d) },
-      });
-      return { indicadorId, versionId, codigo };
-    });
-  } catch (err) {
-    if (esCodigoRepetido(err)) throw new ErrorIndicador(`Ya existe un indicador con el código ${codigo}`);
-    throw err;
-  }
+  return enTransaccion(opciones?.sql ?? obtenerSql(), (tx) => escribirFichaNueva(tx, sesion, f.d, null, ahora));
 }
 
 /** La versión aprobada más reciente del indicador: la ficha vigente (spec §7.6.5). */

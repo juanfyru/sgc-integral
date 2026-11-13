@@ -811,6 +811,20 @@ export function describirEvento(e: EventoAuditoria): string {
       return cod ? `Descartó el indicador ${cod}${conMotivo(d.motivo)}` : `Descartó un indicador${conMotivo(d.motivo)}`;
     case "indicador_borrado":
       return `Borró el indicador${cod ? ` ${cod}` : ""}, que nunca se envió a aprobación`;
+    // ── Indicadores (14A): la importación de fichas aprobadas antes
+    case "preparo_importacion_indicadores":
+      return e.entidadId === null ? "Preparó una importación de indicadores" : `Preparó la importación de indicadores n.º ${e.entidadId}`;
+    case "importo_indicadores": {
+      const aprobadas = numero(d.aprobadas);
+      const borradores = numero(d.borradores);
+      if (aprobadas === null || borradores === null) return "Importó fichas de indicadores";
+      const omitidas = numero(d.omitidas) ?? 0;
+      const lote = e.entidadId === null ? "" : ` en la importación n.º ${e.entidadId}`;
+      const detalle = `${aprobadas} ${aprobadas === 1 ? "aprobada" : "aprobadas"} antes de SGC Integral, ${borradores} en borrador${
+        omitidas > 0 ? `; ${cuenta(omitidas, "fila omitida", "filas omitidas")}` : ""
+      }`;
+      return `Importó ${cuenta(aprobadas + borradores, "ficha", "fichas")} de indicadores${lote} (${detalle})`;
+    }
     // ── Indicadores (14A): las mediciones
     case "medicion_guardada":
       return `Guardó sin reportar los datos de ${medicionDe(cod, d.periodo)}`;
@@ -1053,6 +1067,8 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   indicador_retirado: "Retiró un indicador",
   indicador_descartado: "Descartó un indicador",
   indicador_borrado: "Borró un indicador",
+  preparo_importacion_indicadores: "Preparó una importación de indicadores",
+  importo_indicadores: "Importó fichas de indicadores",
   medicion_reportada: "Reportó una medición de indicador",
   medicion_corregida: "Corrigió una medición de indicador",
   medicion_no_aplica: "Marcó «No aplica» en una medición de indicador",
