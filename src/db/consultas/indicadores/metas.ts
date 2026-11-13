@@ -59,7 +59,7 @@ function justificacionDe(valor: string | undefined, exigida: boolean): string | 
 
 /** El mensaje de una meta que deja la regla de la ficha sin sentido (`errorDeRegla`). */
 function errorDeMeta(version: VersionDeCalculo, error: string): string {
-  if (version.regla.tendencia === "constante") return error;
+  if (version.regla.modo === "rangos" || version.regla.tendencia === "constante") return error;
   if (version.regla.modo === null) return "La ficha no define el semáforo: hace falta una versión nueva de la ficha";
   return version.regla.modo === "fijo" ? LADO_EQUIVOCADO : RELATIVO_NO_SIRVE;
 }

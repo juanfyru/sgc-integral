@@ -18,7 +18,7 @@ import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { puedeMedir, puedeVerIndicador, type Capacidad, type SujetoVisibilidad } from "@/lib/alcance";
 import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
 import { calcular, variacionExcesiva } from "@/lib/indicadores/calculo";
-import { analisisCompleto, analisisExigido, esRepetido } from "@/lib/indicadores/estados";
+import { analisisCompleto, analisisExigido, cumpleDeFila, esRepetido } from "@/lib/indicadores/estados";
 import { aDecimal, aTexto, comparar, deTexto, fraccion, type Fraccion } from "@/lib/indicadores/formula/fraccion";
 import {
   fechaLimiteDeReporte,
@@ -39,6 +39,7 @@ import {
   type CalculoEnTexto,
   type ReglaEnTexto,
 } from "@/lib/indicadores/reporte";
+import type { RangosEnTexto } from "@/lib/indicadores/rangos";
 import { limiteDeCritico, type Regla } from "@/lib/indicadores/semaforo";
 import { fraseDeVariacion, textoValor, type Unidad } from "@/lib/indicadores/textos";
 import {
@@ -129,7 +130,7 @@ export async function versionesAprobadasDe(sql: Cliente, indicadorIds: readonly 
   const salida = new Map<number, VersionDeCalculo[]>();
   if (indicadorIds.length === 0) return salida;
   const filas = await sql`SELECT id, indicador_id, numero, tipo_cambio, rige_desde, aprobada_en, periodicidad, nombre, formula, resultado_min,
-      resultado_max, tendencia, meta, meta_max, semaforo_modo, umbral_atencion_pct, limite_critico, tolerancia, unidad_sufijo, decimales
+      resultado_max, tendencia, meta, meta_max, semaforo_modo, umbral_atencion_pct, limite_critico, tolerancia, rangos, unidad_sufijo, decimales
     FROM indicador_versiones WHERE indicador_id IN ${sql([...new Set(indicadorIds)])} AND estado = 'aprobada'
     ORDER BY indicador_id, numero DESC`;
   if (filas.length === 0) return salida;
@@ -176,6 +177,7 @@ export async function versionesAprobadasDe(sql: Cliente, indicadorIds: readonly 
         umbralPct: f.umbral_atencion_pct === null ? null : Number(f.umbral_atencion_pct),
         limite: texto(f.limite_critico),
         tolerancia: texto(f.tolerancia),
+        rangos: (f.rangos as RangosEnTexto | null) ?? null,
       },
       unidad: { sufijo: (f.unidad_sufijo as string | null) ?? "", decimales: f.decimales === null ? 0 : Number(f.decimales) },
       variables: propias,
@@ -339,6 +341,8 @@ export type Recalculo = {
   indicadorId: number;
   antes: Semaforo | null;
   despues: Semaforo | null;
+  /** Si el resultado alcanza la meta (spec 14A §3.1); `null` sin resultado o sin meta. */
+  cumple: boolean | null;
   estado: EstadoMedicion;
   resultado: Fraccion | null;
   repetido: boolean;
@@ -456,29 +460,31 @@ export async function recalcularMedicion(
   const noAplica = m.no_aplica === true;
   let resultado: Fraccion | null = null;
   let semaforo: Semaforo | null = null;
+  let cumple: boolean | null = null;
   if (m.reportada_en !== null && !noAplica) {
     const r = calcular(ficha, await valoresPorLetra(tx, medicionId, version), regla);
     if (r.resultado) {
       resultado = r.resultado;
       semaforo = r.semaforo;
+      cumple = r.cumple;
     }
   }
 
   // La racha: las anteriores ordinarias medidas, de la más reciente a la más antigua (spec §10.3, F14-DC20 y F14-DC41).
   let repetido = false;
-  if (!historica && semaforo !== null && semaforo !== "bien") {
+  if (!historica && cumple === false) {
     const { incumplimientoPeriodos: n } = await obtenerParametros({ sql: tx });
-    const anteriores = await tx`SELECT semaforo FROM mediciones
+    const anteriores = await tx`SELECT semaforo, cumple FROM mediciones
       WHERE indicador_id = ${indicadorId} AND id <> ${medicionId} AND hasta < ${m.desde}
         AND NOT historica AND NOT no_aplica AND resultado_exacto IS NOT NULL
       ORDER BY hasta DESC LIMIT ${n - 1}`;
     repetido = esRepetido(
-      anteriores.map((a) => (a.semaforo as Semaforo | null) ?? null),
-      semaforo,
+      anteriores.map((a) => cumpleDeFila({ cumple: (a.cumple as boolean | null) ?? null, semaforo: (a.semaforo as Semaforo | null) ?? null })),
+      cumple,
       n,
     );
   }
-  const conAnalisis = analisisCompleto(analisisExigido({ semaforo, repetido, historica, noAplica }), analisisDe(m));
+  const conAnalisis = analisisCompleto(analisisExigido({ semaforo, cumple, repetido, historica, noAplica }), analisisDe(m));
   // El soporte rige hacia adelante: la racha de una siguiente no reabre por él lo que ya estaba reportado.
   const conSoporte =
     m.soporte_obligatorio !== true ||
@@ -495,6 +501,7 @@ export async function recalcularMedicion(
     resultado_exacto: resultado ? aTexto(resultado) : null,
     resultado: resultado ? aDecimal(resultado, 10, "redondear") : null,
     semaforo,
+    cumple,
     meta_aplicada: conDato ? reglaTexto.meta : null,
     meta_max_aplicada: conDato ? reglaTexto.metaMax : null,
     limite_aplicado: limite ? decimalCorto(limite) : null,
@@ -502,10 +509,12 @@ export async function recalcularMedicion(
     incumplimiento_repetido: repetido,
     estado,
   };
+  const cumpleAntes = cumpleDeFila({ cumple: (m.cumple as boolean | null) ?? null, semaforo: (m.semaforo as Semaforo | null) ?? null });
   const columnasCambiaron =
     Number(m.version_id) !== nuevo.version_id ||
     m.resultado_exacto !== nuevo.resultado_exacto ||
     m.semaforo !== nuevo.semaforo ||
+    cumpleAntes !== nuevo.cumple ||
     !igualNumero(m.meta_aplicada, nuevo.meta_aplicada) ||
     !igualNumero(m.meta_max_aplicada, nuevo.meta_max_aplicada) ||
     !igualNumero(m.limite_aplicado, nuevo.limite_aplicado) ||
@@ -514,7 +523,7 @@ export async function recalcularMedicion(
     m.estado !== nuevo.estado;
   if (columnasCambiaron) {
     await tx`UPDATE mediciones SET version_id = ${nuevo.version_id}, resultado_exacto = ${nuevo.resultado_exacto},
-        resultado = ${nuevo.resultado}, semaforo = ${nuevo.semaforo}, meta_aplicada = ${nuevo.meta_aplicada},
+        resultado = ${nuevo.resultado}, semaforo = ${nuevo.semaforo}, cumple = ${nuevo.cumple}, meta_aplicada = ${nuevo.meta_aplicada},
         meta_max_aplicada = ${nuevo.meta_max_aplicada}, limite_aplicado = ${nuevo.limite_aplicado},
         requiere_accion = ${nuevo.requiere_accion}, incumplimiento_repetido = ${nuevo.incumplimiento_repetido}, estado = ${nuevo.estado}
       WHERE id = ${medicionId}`;
@@ -530,14 +539,16 @@ export async function recalcularMedicion(
     semaforo: (m.semaforo as Semaforo | null) ?? null,
     estado: c.estadoAnterior ?? (m.estado as string),
     ...marca(m.incumplimiento_repetido === true),
+    ...(cumpleAntes !== cumple ? { cumple: cumpleAntes } : {}),
   };
-  const despues = { ...objeto(despuesDe), resultado: resultado ? decimalCorto(resultado) : null, semaforo, estado, ...marca(repetido) };
+  const despues = { ...objeto(despuesDe), resultado: resultado ? decimalCorto(resultado) : null, semaforo, estado, ...marca(repetido), ...(cumpleAntes !== cumple ? { cumple } : {}) };
   const cambio = columnasCambiaron || JSON.stringify(antes) !== JSON.stringify(despues);
   const r: Recalculo = {
     medicionId,
     indicadorId,
     antes: (m.semaforo as Semaforo | null) ?? null,
     despues: semaforo,
+    cumple,
     estado,
     resultado,
     repetido,
@@ -548,7 +559,7 @@ export async function recalcularMedicion(
   await tx`INSERT INTO medicion_eventos (medicion_id, tipo, usuario_id, detalle, creado_en)
     VALUES (${medicionId}, ${c.evento}, ${c.actorId}, ${tx.json({ ...resto, antes, despues } as never)}, ${c.ahora})`;
   if (columnasCambiaron) await alRecalcular(tx, r, { ahora: c.ahora, actorId: c.actorId });
-  const cambioLaRacha = m.semaforo !== nuevo.semaforo || m.resultado_exacto !== nuevo.resultado_exacto;
+  const cambioLaRacha = m.semaforo !== nuevo.semaforo || cumpleAntes !== nuevo.cumple || m.resultado_exacto !== nuevo.resultado_exacto;
   if (c.sistema !== "racha" && !historica && cambioLaRacha) {
     await recalcularSiguientes(tx, { id: medicionId, indicadorId, periodo: m.periodo as string, hasta: m.hasta as Date }, c);
   }

@@ -11,7 +11,7 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { puedeAnalizar, type SujetoVisibilidad } from "@/lib/alcance";
-import { analisisCompleto, analisisExigido, MINIMO_ANALISIS, type AnalisisExigido } from "@/lib/indicadores/estados";
+import { analisisCompleto, analisisExigido, cumpleDeMedicion, MINIMO_ANALISIS, type AnalisisExigido } from "@/lib/indicadores/estados";
 import { ErrorIndicador, MAXIMO_TEXTO_MEDICION, type Semaforo } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
 import { analisisDe, conMayuscula, contextoDeMedicion, recalcularMedicion, type Contexto } from "./mediciones";
@@ -32,6 +32,7 @@ const CON_ANALISTA = { exigir: puedeAnalizar };
 function exigidoDe(m: Record<string, unknown>): AnalisisExigido {
   return analisisExigido({
     semaforo: (m.semaforo as Semaforo | null) ?? null,
+    cumple: cumpleDeMedicion(m),
     repetido: m.incumplimiento_repetido === true,
     historica: m.historica === true,
     noAplica: m.no_aplica === true,

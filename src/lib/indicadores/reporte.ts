@@ -140,6 +140,8 @@ export type CalculoEnVivo = {
   /** «60 %», sin contradecir el color. */
   texto: string | null;
   semaforo: Semaforo | null;
+  /** Si el resultado alcanza la meta (spec 14A §3.1). */
+  cumple: boolean | null;
   sinResultado: Motivo | null;
   /** El mensaje de un resultado fuera de los límites del indicador. */
   fueraDeLimites: string | null;
@@ -161,7 +163,7 @@ export function calcularEnVivo(
   const { valores, errores } = leerValores(d.variables, textos);
   const completo = Object.keys(errores).length === 0 && d.variables.every((v) => valores[v.letra] !== null);
   const ficha = fichaDeCalculo(d.calculo);
-  const vacio: CalculoEnVivo = { errores, completo, resultado: null, texto: null, semaforo: null, sinResultado: null, fueraDeLimites: null, variacion: null };
+  const vacio: CalculoEnVivo = { errores, completo, resultado: null, texto: null, semaforo: null, cumple: null, sinResultado: null, fueraDeLimites: null, variacion: null };
   if (!completo || !ficha) return vacio;
   const regla = reglaDeTexto(d.regla);
   const r = calcular(ficha, Object.fromEntries(Object.entries(valores).map(([l, v]) => [l, v ?? undefined])), regla);
@@ -172,6 +174,7 @@ export function calcularEnVivo(
     resultado: r.resultado,
     texto: textoValor(r.resultado, d.unidad, regla),
     semaforo: r.semaforo,
+    cumple: r.cumple,
     fueraDeLimites: r.fueraDeLimites ? fueraDeLimites(textoValor(r.resultado, d.unidad)) : null,
     variacion:
       anterior && variacionExcesiva(r.resultado, anterior.valor, d.variacionPct) ? fraseDeVariacion(r.resultado, anterior, d.unidad) : null,

@@ -5,7 +5,7 @@
  * reapertura) no vuelve a avisar.
  *
  * Nivel de alerta: `critico` con un resultado crítico o con incumplimiento repetido (el color no cambia: lo dice el
- * texto), `atencion` con uno en atención y ninguno en lo demás (bien, sin meta, «no aplica»). Si el nivel cambió y nada se
+ * texto), `atencion` con uno en atención o en bien que no alcanza la meta (spec 14A §3.1) y ninguno en lo demás (bien, sin meta, «no aplica»). Si el nivel cambió y nada se
  * había alertado, es una alerta (`indicadores.alerta`); si ya se había alertado, una corrección (`indicadores.correccion`)
  * a los destinatarios del nivel anterior y del nuevo. «Atención» va a quienes analizan y a quienes hacen seguimiento;
  * «Crítico», además, a los líderes del proceso y a los Admin SGC. Nunca a quien hizo el cambio. Un histórico no alerta ni
@@ -21,6 +21,7 @@ import type { TransactionSql } from "postgres";
 import { adminsActivos, lideresDeProceso } from "@/db/consultas/tramites";
 import { responsablesDeAnalizar } from "@/lib/alcance";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
+import type { RangosEnTexto } from "@/lib/indicadores/rangos";
 import { reglaDeTexto } from "@/lib/indicadores/reporte";
 import { fraseDeResultado, resultadoFrenteAMeta } from "@/lib/indicadores/textos";
 import { ETIQUETA_SEMAFORO, type ModoSemaforo, type Semaforo, type Tendencia } from "@/lib/indicadores/tipos";
@@ -32,7 +33,7 @@ type Nivel = "atencion" | "critico";
 
 /** El nivel de alerta del resultado: el incumplimiento repetido se alerta como crítico (spec §10.3). */
 const nivelDe = (r: Recalculo): Nivel | null =>
-  r.despues === "critico" || r.repetido ? "critico" : r.despues === "atencion" ? "atencion" : null;
+  r.despues === "critico" || r.repetido ? "critico" : r.despues === "atencion" || (r.despues === "bien" && r.cumple === false) ? "atencion" : null;
 
 /** Quienes reciben el nivel: los que analizan y hacen seguimiento; en crítico, además, los líderes del proceso y los Admin SGC. */
 async function destinatarios(tx: TransactionSql, m: { indicadorId: number; procesoId: number }, nivel: Nivel | null): Promise<number[]> {
@@ -45,8 +46,9 @@ async function destinatarios(tx: TransactionSql, m: { indicadorId: number; proce
 }
 
 /** «Crítico», «Atención con 3 periodos sin cumplir», «Bien»; sin semáforo, `sinSemaforo`. */
-function estadoEnPalabras(semaforo: Semaforo | null, repetido: boolean, periodos: number, sinSemaforo: string): string {
+function estadoEnPalabras(semaforo: Semaforo | null, repetido: boolean, periodos: number, sinSemaforo: string, cumple?: boolean | null): string {
   if (semaforo === null) return sinSemaforo;
+  if (semaforo === "bien" && cumple === false) return repetido ? `Bien, sin alcanzar la meta en ${periodos} periodos` : "Bien, sin alcanzar la meta";
   return semaforo === "atencion" && repetido ? `Atención con ${periodos} periodos sin cumplir` : ETIQUETA_SEMAFORO[semaforo];
 }
 
@@ -55,7 +57,7 @@ export async function alRecalcular(tx: TransactionSql, r: Recalculo, c: { ahora:
   const nivel = nivelDe(r);
   const [m] = await tx`SELECT m.periodo, m.no_aplica, m.no_aplica_motivo, m.meta_aplicada, m.meta_max_aplicada, m.alerta_estado,
       i.codigo, i.proceso_id, p.nombre AS proceso, v.nombre, v.tendencia, v.semaforo_modo, v.umbral_atencion_pct, v.limite_critico,
-      v.tolerancia, v.unidad_sufijo, v.decimales
+      v.tolerancia, v.rangos, v.unidad_sufijo, v.decimales
     FROM mediciones m JOIN indicadores i ON i.id = m.indicador_id JOIN procesos p ON p.id = i.proceso_id
     JOIN indicador_versiones v ON v.id = m.version_id
     WHERE m.id = ${r.medicionId}`;
@@ -74,12 +76,13 @@ export async function alRecalcular(tx: TransactionSql, r: Recalculo, c: { ahora:
     umbralPct: m.umbral_atencion_pct === null ? null : Number(m.umbral_atencion_pct),
     limite: texto(m.limite_critico),
     tolerancia: texto(m.tolerancia),
+    rangos: (m.rangos as RangosEnTexto | null) ?? null,
   });
   const unidad = { sufijo: (m.unidad_sufijo as string | null) ?? "", decimales: m.decimales === null ? 0 : Number(m.decimales) };
   const noAplica = m.no_aplica === true;
   const repetidoAntes = guardado === "critico" && r.antes === "atencion";
   const periodos = r.repetido || repetidoAntes ? (await obtenerParametros({ sql: tx })).incumplimientoPeriodos : 0;
-  const estado = estadoEnPalabras(r.despues, r.repetido, periodos, noAplica ? "No aplica" : r.resultado ? "Sin meta" : "Sin dato");
+  const estado = estadoEnPalabras(r.despues, r.repetido, periodos, noAplica ? "No aplica" : r.resultado ? "Sin meta" : "Sin dato", r.cumple);
   const donde = { indicadorId: r.indicadorId, procesoId: Number(m.proceso_id) };
   const sinQuienCambio = (ids: number[]) => [...new Set(ids)].filter((u) => u !== c.actorId);
   // Una sola inserción para todos, con la medición bloqueada (como `avisarA`).
@@ -91,7 +94,7 @@ export async function alRecalcular(tx: TransactionSql, r: Recalculo, c: { ahora:
   };
 
   if (guardado === null) {
-    const frente = resultadoFrenteAMeta({ resultado: r.resultado, semaforo: r.despues }, regla, unidad);
+    const frente = resultadoFrenteAMeta({ resultado: r.resultado, semaforo: r.despues, cumple: r.cumple }, regla, unidad);
     const titulo = `${nombre}: ${frente ? `${frente}, ` : ""}${estado}. ${periodo}`;
     const cuerpo = `${codigo} · ${m.proceso as string}`;
     await avisar("indicadores.alerta", titulo, cuerpo, sinQuienCambio(await destinatarios(tx, donde, nivel)));
@@ -99,7 +102,7 @@ export async function alRecalcular(tx: TransactionSql, r: Recalculo, c: { ahora:
     // El nivel crítico de un incumplimiento repetido se alertó sobre un color en atención.
     const antes = guardado === "critico" ? (repetidoAntes ? estadoEnPalabras("atencion", true, periodos, "") : "Crítico") : "Atención";
     const titulo = `Corrección: ${nombre} pasó de ${antes} a ${estado}. ${periodo}`;
-    const frase = fraseDeResultado({ resultado: r.resultado, semaforo: r.despues, noAplica, motivo: texto(m.no_aplica_motivo) }, regla, unidad);
+    const frase = fraseDeResultado({ resultado: r.resultado, semaforo: r.despues, cumple: r.cumple, noAplica, motivo: texto(m.no_aplica_motivo) }, regla, unidad);
     const cuerpo = `${codigo} · ${frase}`;
     const para = sinQuienCambio([...(await destinatarios(tx, donde, guardado)), ...(await destinatarios(tx, donde, nivel))]);
     await avisar("indicadores.correccion", titulo, cuerpo, para);

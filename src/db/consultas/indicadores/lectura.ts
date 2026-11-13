@@ -17,7 +17,7 @@ import {
 } from "@/lib/alcance";
 import { MESES, periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
 import { acumulado } from "@/lib/indicadores/acumulado";
-import { analisisCompleto, analisisExigido, estadoVisible, type EstadoVisible } from "@/lib/indicadores/estados";
+import { analisisCompleto, analisisExigido, cumpleDeMedicion, estadoVisible, type EstadoVisible } from "@/lib/indicadores/estados";
 import { enPalabras } from "@/lib/indicadores/formula/formas";
 import { aDecimal, aTexto, comparar, deTexto, type Fraccion } from "@/lib/indicadores/formula/fraccion";
 import { clavesDelAnio, mismoDelAnioAnterior, periodicidadDe, versionQueRigeEntre } from "@/lib/indicadores/periodos";
@@ -706,7 +706,7 @@ async function ultimoResultado(sql: Cliente, indicadorId: number, versiones: rea
     resultado: resultado ? textoValor(resultado, version.unidad, regla) : null,
     semaforo,
     noAplica,
-    frase: fraseDeResultado({ resultado, semaforo, noAplica, motivo: texto(m.no_aplica_motivo) }, regla, version.unidad),
+    frase: fraseDeResultado({ resultado, semaforo, cumple: cumpleDeMedicion(m), noAplica, motivo: texto(m.no_aplica_motivo) }, regla, version.unidad),
     comparacion: comparacionDe(lista, regla.tendencia, version.unidad),
     requiereAccion: m.requiere_accion === true,
     repetido: m.incumplimiento_repetido === true,
@@ -799,7 +799,7 @@ function filaDeMedicion(
   const historica = m.historica === true;
   const noAplica = m.no_aplica === true;
   const conAnalisis = analisisCompleto(
-    analisisExigido({ semaforo, repetido: m.incumplimiento_repetido === true, historica, noAplica }),
+    analisisExigido({ semaforo, cumple: cumpleDeMedicion(m), repetido: m.incumplimiento_repetido === true, historica, noAplica }),
     analisisDe(m),
   );
   const datos = noAplica || resultado !== null;
@@ -838,8 +838,8 @@ function filaDeMedicion(
     resultado: resultado ? textoValor(resultado, version.unidad, regla) : null,
     semaforo,
     meta: textoMeta(regla, version.unidad),
-    cumple: resultado && semaforo ? semaforo === "bien" : null,
-    frase: datos ? fraseDeResultado({ resultado, semaforo, noAplica, motivo }, regla, version.unidad) : null,
+    cumple: resultado && semaforo ? cumpleDeMedicion(m) : null,
+    frase: datos ? fraseDeResultado({ resultado, semaforo, cumple: cumpleDeMedicion(m), noAplica, motivo }, regla, version.unidad) : null,
     requiereAccion: m.requiere_accion === true,
     repetido: m.incumplimiento_repetido === true,
     corregida: m.corregida === true,

@@ -4,7 +4,7 @@
  */
 import { aDecimal, comparar, CERO, fraccion, restar, esNegativa, type Fraccion } from "./formula/fraccion";
 import { periodicidadDe } from "./periodos";
-import { numeroEs, numeroExacto, semaforoDe, type Regla } from "./semaforo";
+import { cumpleMeta, numeroEs, numeroExacto, semaforoDe, type Regla } from "./semaforo";
 import type { Semaforo, Tendencia } from "./tipos";
 
 /** El sufijo lleva su espacio inicial cuando lo necesita (« %», « min»). */
@@ -14,16 +14,17 @@ const MAX_DECIMALES = 10;
 
 /**
  * La cifra tal como se muestra: con los decimales de la unidad, sin ceros de relleno y con coma. Con `regla`, nunca
- * contradice el veredicto: si el redondeo cae en otro nivel del semáforo que el valor exacto, se muestra truncado y,
- * si aun así contradice, con los decimales que hagan falta (hasta 10).
+ * contradice el veredicto: si el redondeo cae en otro nivel del semáforo, o del otro lado de la meta (cumple o no), que
+ * el valor exacto, se muestra truncado y, si aun así contradice, con los decimales que hagan falta (hasta 10).
  */
 export function textoValor(v: Fraccion, u: Unidad, regla?: Regla): string {
   const redondeado = numeroEs(v, u.decimales, "redondear");
   const nivel = regla === undefined ? null : semaforoDe(v, regla);
   if (regla === undefined || nivel === null) return `${redondeado}${u.sufijo}`;
+  const cumple = cumpleMeta(v, regla);
   const coincide = (decimal: string) => {
     const p = fraccion(decimal);
-    return p === null || semaforoDe(p, regla) === nivel;
+    return p === null || (semaforoDe(p, regla) === nivel && cumpleMeta(p, regla) === cumple);
   };
   if (coincide(aDecimal(v, u.decimales, "redondear"))) return `${redondeado}${u.sufijo}`;
   for (let k = u.decimales; k <= MAX_DECIMALES; k++) {
@@ -55,11 +56,11 @@ export function textoMeta(r: Regla, u: Unidad): string {
  * El resultado frente a la meta, sin el veredicto: «92 % frente a una meta de 90 %», «97 % fuera del rango de 98 a
  * 100 %». `null` sin resultado, sin semáforo o sin meta. Lo dicen `fraseDeResultado` y las alertas (spec §10.3).
  */
-export function resultadoFrenteAMeta(m: { resultado: Fraccion | null; semaforo: Semaforo | null }, r: Regla, u: Unidad): string | null {
+export function resultadoFrenteAMeta(m: { resultado: Fraccion | null; semaforo: Semaforo | null; cumple: boolean | null }, r: Regla, u: Unidad): string | null {
   const meta = metaEnPalabras(r, u);
   if (m.resultado === null || m.semaforo === null || meta === null) return null;
   if (r.tendencia === "constante" && r.metaMax !== null && comparar(r.metaMax, r.meta!) !== 0) {
-    return `${textoValor(m.resultado, u, r)} ${m.semaforo === "bien" ? "dentro del" : "fuera del"} rango de ${meta}`;
+    return `${textoValor(m.resultado, u, r)} ${m.cumple === true ? "dentro del" : "fuera del"} rango de ${meta}`;
   }
   return `${textoValor(m.resultado, u, r)} frente a una meta de ${meta}`;
 }
@@ -67,9 +68,9 @@ export function resultadoFrenteAMeta(m: { resultado: Fraccion | null; semaforo: 
 /** Un motivo escrito por una persona, cerrado con punto si no termina ya en un signo de puntuación (Tarea 19, D-4). */
 const conPunto = (texto: string) => (/[.!?…;:]["»”)]?$/.test(texto.trim()) ? texto.trim() : `${texto.trim()}.`);
 
-/** La frase de una medición («Cumple: 92 % frente a una meta de 90 %.»). «Atención» es «No cumple»: el color dice el nivel. */
+/** La frase de una medición («Cumple: 92 % frente a una meta de 90 %.»). Cumplir es alcanzar la meta: el color dice el nivel. */
 export function fraseDeResultado(
-  m: { resultado: Fraccion | null; semaforo: Semaforo | null; noAplica: boolean; motivo: string | null },
+  m: { resultado: Fraccion | null; semaforo: Semaforo | null; cumple: boolean | null; noAplica: boolean; motivo: string | null },
   r: Regla,
   u: Unidad,
 ): string {
@@ -77,7 +78,7 @@ export function fraseDeResultado(
   if (m.resultado === null) return m.motivo ? `Sin resultado: ${conPunto(m.motivo)}` : "Sin dato: no se reportó.";
   const frente = resultadoFrenteAMeta(m, r, u);
   if (frente === null) return `${textoValor(m.resultado, u)}, sin meta para este periodo.`;
-  return `${m.semaforo === "bien" ? "Cumple" : "No cumple"}: ${frente}.`;
+  return `${m.cumple === true ? "Cumple" : "No cumple"}: ${frente}.`;
 }
 
 /** La cantidad de un cambio, con los decimales de la unidad o los que hagan falta para que no quede en «0». */

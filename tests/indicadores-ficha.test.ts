@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { analisisCompleto, analisisExigido, esRepetido, estadoVisible, ETIQUETA_ESTADO } from "@/lib/indicadores/estados";
+import { analisisCompleto, analisisExigido, cumpleDeFila, esRepetido, estadoVisible, ETIQUETA_ESTADO } from "@/lib/indicadores/estados";
 import { camposCambiados, CAMPOS_MAYORES, huellaDeFicha, tipoDeCambio, type ContenidoFicha } from "@/lib/indicadores/ficha";
 
 const base = (): ContenidoFicha => ({
@@ -195,13 +195,27 @@ describe("huella de la ficha", () => {
 describe("estados de una medición", () => {
   it("qué análisis se exige", () => {
     const m = { repetido: false, historica: false, noAplica: false };
-    expect(analisisExigido({ ...m, semaforo: "bien" })).toBe("ninguno");
-    expect(analisisExigido({ ...m, semaforo: null })).toBe("ninguno");
-    expect(analisisExigido({ ...m, semaforo: "atencion" })).toBe("simple");
-    expect(analisisExigido({ ...m, semaforo: "critico" })).toBe("dos_partes");
-    expect(analisisExigido({ ...m, semaforo: "atencion", repetido: true })).toBe("dos_partes");
-    expect(analisisExigido({ ...m, semaforo: "critico", historica: true })).toBe("ninguno");
-    expect(analisisExigido({ ...m, semaforo: "critico", noAplica: true })).toBe("ninguno");
+    expect(analisisExigido({ ...m, semaforo: "bien", cumple: true })).toBe("ninguno");
+    expect(analisisExigido({ ...m, semaforo: null, cumple: null })).toBe("ninguno");
+    expect(analisisExigido({ ...m, semaforo: "atencion", cumple: false })).toBe("simple");
+    expect(analisisExigido({ ...m, semaforo: "critico", cumple: false })).toBe("dos_partes");
+    expect(analisisExigido({ ...m, semaforo: "atencion", cumple: false, repetido: true })).toBe("dos_partes");
+    expect(analisisExigido({ ...m, semaforo: "critico", cumple: false, historica: true })).toBe("ninguno");
+    expect(analisisExigido({ ...m, semaforo: "critico", cumple: false, noAplica: true })).toBe("ninguno");
+  });
+  it("un Bien que no cumple pide análisis; uno que cumple, no (spec 14A §3.1)", () => {
+    const m = { repetido: false, historica: false, noAplica: false };
+    expect(analisisExigido({ ...m, semaforo: "bien", cumple: false })).toBe("simple");
+    expect(analisisExigido({ ...m, semaforo: "bien", cumple: true })).toBe("ninguno");
+    expect(analisisExigido({ ...m, semaforo: "bien", cumple: false, repetido: true })).toBe("dos_partes");
+  });
+  it("cumpleDeFila lee las filas anteriores a la 0012 como antes: Bien es cumplir", () => {
+    expect(cumpleDeFila({ cumple: null, semaforo: "bien" })).toBe(true);
+    expect(cumpleDeFila({ cumple: null, semaforo: "atencion" })).toBe(false);
+    expect(cumpleDeFila({ cumple: null, semaforo: "critico" })).toBe(false);
+    expect(cumpleDeFila({ cumple: null, semaforo: null })).toBeNull();
+    expect(cumpleDeFila({ cumple: false, semaforo: "bien" })).toBe(false);
+    expect(cumpleDeFila({ cumple: true, semaforo: "bien" })).toBe(true);
   });
   it("si tiene el análisis que se le exige", () => {
     const vacio = { analisis: null, causa: null, accionPropuesta: null };
@@ -222,11 +236,13 @@ describe("estados de una medición", () => {
     expect(analisisCompleto("dos_partes", { ...dos, causa: "Sin gente" })).toBe(false);
     expect(analisisCompleto("ninguno", { ...vacio, analisis: "Corto" })).toBe(true);
   });
-  it("incumplimiento repetido: N periodos seguidos sin «Bien»", () => {
-    expect(esRepetido(["atencion", "critico"], "atencion", 3)).toBe(true);
-    expect(esRepetido(["bien", "atencion"], "atencion", 3)).toBe(false);
-    expect(esRepetido(["atencion"], "atencion", 3)).toBe(false);
-    expect(esRepetido(["atencion", "atencion"], "bien", 3)).toBe(false);
+  it("incumplimiento repetido: N periodos seguidos sin cumplir", () => {
+    expect(esRepetido([false, false], false, 3)).toBe(true);
+    expect(esRepetido([true, false], false, 3)).toBe(false);
+    expect(esRepetido([false], false, 3)).toBe(false);
+    expect(esRepetido([false, false], true, 3)).toBe(false);
+    expect(esRepetido([false, null], false, 3)).toBe(false);
+    expect(esRepetido([false, false], null, 3)).toBe(false);
   });
   it("el estado que se muestra", () => {
     const m = { estado: "abierta" as const, vence: new Date("2026-04-10T23:59:59Z"), historica: false, datosCompletos: false, faltaDatoAjeno: false, faltaAnalisis: false };

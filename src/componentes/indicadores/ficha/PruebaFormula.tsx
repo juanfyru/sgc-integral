@@ -83,6 +83,7 @@ export function PruebaFormula({
                 {
                   resultado: resultado.resultado,
                   semaforo: resultado.semaforo,
+                  cumple: resultado.cumple,
                   noAplica: false,
                   motivo: resultado.sinResultado ? TEXTO_MOTIVO[resultado.sinResultado] : null,
                 },

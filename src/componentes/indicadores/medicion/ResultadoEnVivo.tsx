@@ -63,7 +63,7 @@ export function ResultadoEnVivo({
       <p className={`${AVISO} border-l-estado-atencion`}>{vivo.sinResultado === "division_por_cero" ? DIVISION_POR_CERO : CIFRA_FUERA_DE_RANGO}</p>
     );
   } else {
-    const frase = fraseDeResultado({ resultado: vivo.resultado, semaforo: vivo.semaforo, noAplica: false, motivo: null }, reglaDeTexto(regla), unidad);
+    const frase = fraseDeResultado({ resultado: vivo.resultado, semaforo: vivo.semaforo, cumple: vivo.cumple, noAplica: false, motivo: null }, reglaDeTexto(regla), unidad);
     acento = ACENTO[vivo.semaforo ?? "ninguno"];
     contenido = (
       <>

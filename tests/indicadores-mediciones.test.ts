@@ -829,3 +829,77 @@ describe("lecturas", () => {
       expect(await medicionParaReportar(mide, "ZZ-NO-EXISTE-1", "2026-T3", opc(tx))).toBeNull();
     }));
 });
+
+/**
+ * «Cumple» y color son dos cosas (spec 14A §3.1): con rangos, meta 100 y Bien desde 91, un 95 es Bien y no cumple. Pide
+ * análisis y cuenta como incumplimiento para la racha. Mensual desde enero de 2026: de enero a septiembre son ordinarios.
+ */
+describe("«cumple» frente a la meta, aparte del color", () => {
+  const RANGOS = {
+    bien: [{ signo: ">=" as const, valor: "91" }],
+    atencion: [{ signo: "entre" as const, valor: "41", hasta: "90" }],
+    critico: [{ signo: "<=" as const, valor: "40" }],
+  };
+  const con95 = { A: "95", B: "100" };
+  const con105 = { A: "105", B: "100" };
+  const mensual = async (tx: TransactionSql) => {
+    await tx`UPDATE configuracion SET valor = '3' WHERE clave = 'ind_incumplimiento_periodos'`;
+    return preparar(tx, { periodicidad: "mensual", inicioMedicion: "2026-01", rangos: RANGOS, meta: "100" });
+  };
+
+  it("un Bien que no cumple queda abierto a la espera del análisis; uno que cumple, reportado", () =>
+    revertida(sql, async (tx) => {
+      const { mide, medicion } = await mensual(tx);
+      const enero = await medicion("2026-01");
+      await reportarCon(tx, mide, enero, con95);
+      const m = await fila(tx, enero);
+      expect([m.semaforo, m.cumple, m.estado, m.requiere_accion]).toEqual(["bien", false, "abierta", false]);
+
+      const febrero = await medicion("2026-02");
+      await reportarCon(tx, mide, febrero, con105);
+      const f = await fila(tx, febrero);
+      expect([f.semaforo, f.cumple, f.estado]).toEqual(["bien", true, "reportada"]);
+
+      // Corregir de 95 a 105 cambia el cumplir, y el evento lo dice.
+      await reportarCon(tx, mide, enero, con105);
+      const e = (await eventos(tx, enero)).at(-1)!;
+      expect(e.detalle).toMatchObject({ antes: { semaforo: "bien", cumple: false }, despues: { semaforo: "bien", cumple: true, estado: "reportada" } });
+    }));
+
+  it("tres periodos seguidos en Bien sin cumplir: incumplimiento repetido", () =>
+    revertida(sql, async (tx) => {
+      const { mide, medicion } = await mensual(tx);
+      for (const periodo of ["2026-01", "2026-02"]) {
+        await reportarCon(tx, mide, await medicion(periodo), con95);
+        expect((await fila(tx, await medicion(periodo))).incumplimiento_repetido).toBe(false);
+      }
+      const marzo = await medicion("2026-03");
+      await reportarCon(tx, mide, marzo, con95);
+      const m = await fila(tx, marzo);
+      expect([m.semaforo, m.cumple, m.incumplimiento_repetido, m.requiere_accion, m.estado]).toEqual(["bien", false, true, true, "abierta"]);
+    }));
+
+  it("una medición anterior a la 0012 (cumple nulo) se lee como antes: Bien cumple y rompe la racha", () =>
+    revertida(sql, async (tx) => {
+      const { mide, medicion } = await mensual(tx);
+      for (const periodo of ["2026-01", "2026-02"]) await reportarCon(tx, mide, await medicion(periodo), con95);
+      // Como si se hubieran escrito antes de la 0012: en Bien, sin `cumple`.
+      await tx`UPDATE mediciones SET cumple = NULL WHERE id IN (${await medicion("2026-01")}, ${await medicion("2026-02")})`;
+      const marzo = await medicion("2026-03");
+      await reportarCon(tx, mide, marzo, con95);
+      const m = await fila(tx, marzo);
+      expect([m.cumple, m.incumplimiento_repetido, m.requiere_accion]).toEqual([false, false, false]);
+    }));
+
+  it("una medición con cumple nulo que no cambia no se reescribe al recalcular", () =>
+    revertida(sql, async (tx) => {
+      const { mide, medicion } = await mensual(tx);
+      const enero = await medicion("2026-01");
+      await reportarCon(tx, mide, enero, con105);
+      await tx`UPDATE mediciones SET cumple = NULL WHERE id = ${enero}`;
+      const antes = (await eventos(tx, enero)).length;
+      const r = await recalcularMedicion(tx, enero, { ahora: AHORA, actorId: mide.usuarioId, evento: "recalculo", sistema: "racha" });
+      expect([r.cambio, r.cumple]).toEqual([false, true]);
+      expect((await eventos(tx, enero)).length).toBe(antes);
+    }));
+});

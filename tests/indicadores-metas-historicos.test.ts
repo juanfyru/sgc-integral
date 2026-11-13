@@ -236,6 +236,24 @@ describe("programarMeta", () => {
     }));
 });
 
+describe("programarMeta con rangos (spec 14A §3.4)", () => {
+  const RANGOS = {
+    bien: [{ signo: ">=" as const, valor: "91" }],
+    atencion: [{ signo: "entre" as const, valor: "41", hasta: "90" }],
+    critico: [{ signo: "<=" as const, valor: "40" }],
+  };
+
+  it("la meta de un periodo tiene que quedar dentro del rango de Bien", () =>
+    revertida(sql, async (tx) => {
+      const { ind, admin } = await preparar(tx, { rangos: RANGOS, meta: "100" });
+      await rechaza(programarMeta(admin, { indicadorId: ind.id, periodo: "2026-T4", meta: "85" }, opc(tx)), "La meta debe quedar dentro del rango de Bien");
+      expect(await meta(tx, ind.id, "2026-T4")).toBeUndefined();
+      // Bien empieza antes de la meta: una meta de 95 cae dentro de Bien y se acepta.
+      await programarMeta(admin, { indicadorId: ind.id, periodo: "2026-T4", meta: "95" }, opc(tx));
+      expect(Number((await meta(tx, ind.id, "2026-T4")).meta)).toBe(95);
+    }));
+});
+
 describe("registrarHistoricos", () => {
   it("los históricos se registran por lote, en la tabla del año", () =>
     revertida(sql, async (tx) => {
