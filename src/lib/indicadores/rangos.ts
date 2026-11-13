@@ -133,32 +133,42 @@ function contenido(a: Tramo, b: Tramo): boolean {
   return true;
 }
 
-/** Una fila de un solo signo que se abre hacia el lado mejor (spec §3.2): llega hasta donde empieza la fila mejor. */
-function seAbreHaciaLoMejor(f: FilaDeRango, tendencia: Tendencia): boolean {
-  if (tendencia === "ascendente") return f.signo === ">=" || f.signo === ">";
-  if (tendencia === "descendente") return f.signo === "<=" || f.signo === "<";
-  return false;
+/**
+ * Una fila de un solo signo que se abre hacia el lado mejor (spec §3.2): llega hasta donde empieza la fila mejor.
+ * En «mantenerse en un rango» el lado mejor es el de Bien: «≥» con su valor por debajo de Bien, «≤» con el suyo por encima.
+ */
+function haciaLoMejor(f: FilaDeRango, tendencia: Tendencia, bien: Tramo | undefined): "arriba" | "abajo" | null {
+  const sube = f.signo === ">=" || f.signo === ">";
+  const baja = f.signo === "<=" || f.signo === "<";
+  if (tendencia === "ascendente") return sube ? "arriba" : null;
+  if (tendencia === "descendente") return baja ? "abajo" : null;
+  if (bien === undefined) return null;
+  if (sube && bien.lo !== null && comparar(f.valor, bien.lo) <= 0) return "arriba";
+  if (baja && bien.hi !== null && comparar(f.valor, bien.hi) >= 0) return "abajo";
+  return null;
 }
 
 /** Los tramos con esa regla aplicada: lo que cada fila cubre de verdad sobre el eje. */
 function efectivas(r: Rangos, tendencia: Tendencia): Fila[] {
   const filas = filasDe(r);
+  const bien = filas.find((y) => y.estado === "bien")?.tramo;
   return filas.map((x) => {
-    if (x.estado === "bien" || !seAbreHaciaLoMejor(x.fila, tendencia)) return x;
+    const lado = x.estado === "bien" ? null : haciaLoMejor(x.fila, tendencia, bien);
+    if (lado === null) return x;
     const mejores = filas.filter((y) => GRAVEDAD[y.estado] < GRAVEDAD[x.estado]);
     const t = { ...x.tramo };
-    if (tendencia === "ascendente" && t.lo !== null) {
+    if (lado === "arriba" && t.lo !== null) {
       for (const y of mejores) {
         if (y.tramo.lo !== null && comparar(y.tramo.lo, t.lo) >= 0 && (t.hi === null || comparar(y.tramo.lo, t.hi) < 0)) {
           t.hi = y.tramo.lo;
-          t.hiAb = true;
+          t.hiAb = !y.tramo.loAb;
         }
       }
-    } else if (tendencia === "descendente" && t.hi !== null) {
+    } else if (lado === "abajo" && t.hi !== null) {
       for (const y of mejores) {
         if (y.tramo.hi !== null && comparar(y.tramo.hi, t.hi) <= 0 && (t.lo === null || comparar(y.tramo.hi, t.lo) > 0)) {
           t.lo = y.tramo.hi;
-          t.loAb = true;
+          t.loAb = !y.tramo.hiAb;
         }
       }
     }
@@ -195,6 +205,7 @@ export function errorDeRangos(r: Rangos, tendencia: Tendencia, meta: Fraccion, m
   if (r.bien.length === 0) return "Escriba el rango de Bien";
   if (r.critico.length === 0) return "Escriba el rango de Crítico";
   const constante = tendencia === "constante";
+  let estaAbajo: (f: FilaDeRango) => boolean = () => false;
   if (!constante && ESTADOS.some((e) => r[e].length > 1)) return "Cada estado lleva una sola fila";
   const es = (f: FilaDeRango, ...signos: Signo[]) => signos.includes(f.signo);
   if (tendencia === "ascendente") {
@@ -206,12 +217,19 @@ export function errorDeRangos(r: Rangos, tendencia: Tendencia, meta: Fraccion, m
   } else {
     if (r.bien.length !== 1 || r.bien[0].signo !== "entre") return "Para mantenerse en un rango, Bien va con «entre»";
     const aBien = r.bien[0].valor;
+    const aBienHasta = r.bien[0].hasta ?? aBien;
+    estaAbajo = (f: FilaDeRango) => {
+      if (f.signo === "entre") return comparar(f.valor, aBien) < 0;
+      if (f.signo === "<=" || f.signo === "<") return comparar(f.valor, aBien) <= 0;
+      return comparar(f.valor, aBienHasta) < 0;
+    };
     for (const e of ["atencion", "critico"] as const) {
-      const abajo = r[e].filter((f) => (f.signo === "entre" ? comparar(f.valor, aBien) < 0 : f.signo === "<=" || f.signo === "<"));
+      const abajo = r[e].filter(estaAbajo);
       if (r[e].length > 2 || abajo.length > 1 || r[e].length - abajo.length > 1) {
         return "Para mantenerse en un rango, Atención y Crítico van a cada lado de Bien";
       }
     }
+
   }
   for (const e of ESTADOS) {
     for (const f of r[e]) {
@@ -229,7 +247,7 @@ export function errorDeRangos(r: Rangos, tendencia: Tendencia, meta: Fraccion, m
     constante: "Para mantenerse en un rango, Bien va en medio, Atención a cada lado y Crítico afuera",
   }[tendencia];
   if (constante) {
-    const ordenadas = [...filas].sort((x, y) => {
+    const ordenadas = efectivas(r, tendencia).sort((x, y) => {
       if (x.tramo.lo === null || y.tramo.lo === null) return x.tramo.lo === y.tramo.lo ? 0 : x.tramo.lo === null ? -1 : 1;
       return comparar(x.tramo.lo, y.tramo.lo) || (x.tramo.hi === null ? 1 : y.tramo.hi === null ? -1 : comparar(x.tramo.hi, y.tramo.hi));
     });
@@ -248,19 +266,22 @@ export function errorDeRangos(r: Rangos, tendencia: Tendencia, meta: Fraccion, m
       if (!bien) return MENSAJE_ORDEN;
     }
   }
+  if (constante && (r.critico.length !== 2 || r.critico.filter(estaAbajo).length !== 1)) {
+    return "Para mantenerse en un rango, Crítico va a cada lado de Bien";
+  }
   const efectivo = efectivas(r, tendencia);
   parejas.sort((x, y) => GRAVEDAD[filas[y[0]].estado] - GRAVEDAD[filas[x[0]].estado] || GRAVEDAD[filas[y[1]].estado] - GRAVEDAD[filas[x[1]].estado]);
   const dentro: [Fila, Fila][] = [];
   for (const [i, j] of parejas) {
     const peor = filas[i], mejor = filas[j];
-    const escrito = interseccion(peor.tramo, mejor.tramo);
+    const escrito = interseccion(peor.tramo, efectivo[j].tramo);
     if (vacio(escrito) || esPunto(escrito)) continue;
     const recortado = efectivo[i].tramo;
-    if (vacio(recortado) || contenido(peor.tramo, mejor.tramo)) {
+    if (vacio(recortado) || contenido(peor.tramo, efectivo[j].tramo)) {
       dentro.push([peor, mejor]);
       continue;
     }
-    const cruce = interseccion(recortado, mejor.tramo);
+    const cruce = interseccion(recortado, efectivo[j].tramo);
     if (!vacio(cruce) && !esPunto(cruce)) return `Los rangos de ${NOMBRE[peor.estado]} y ${NOMBRE[mejor.estado]} se cruzan`;
   }
   if (dentro.length > 0) return DENTRO(NOMBRE[dentro[0][0].estado], NOMBRE[dentro[0][1].estado]);

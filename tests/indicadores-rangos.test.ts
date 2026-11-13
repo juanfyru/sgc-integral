@@ -116,6 +116,29 @@ describe("rangos del semáforo", () => {
     expect(e(t([{ signo: ">=", valor: "91" }], [{ signo: ">=", valor: "41" }], [{ signo: "<", valor: "41" }]), "ascendente", "100")).toBeNull();
     expect(e(t([{ signo: ">=", valor: "95" }], [{ signo: ">=", valor: "85,5" }], [{ signo: "<", valor: "85,5" }]), "ascendente", "95")).toBeNull();
   });
+  it("el recorte respeta si el borde de la fila mejor es abierto o cerrado", () => {
+    const a: RangosEnTexto = { bien: [{ signo: ">", valor: "90" }], atencion: [{ signo: ">=", valor: "90" }], critico: [{ signo: "<", valor: "90" }] };
+    expect(colores(a, "ascendente", ["91", "90", "89"])).toEqual(["bien", "atencion", "critico"]);
+    expect(errorDeRangos(rangosDeTexto(a)!, "ascendente", f("100"), null)).toBeNull();
+    const d: RangosEnTexto = { bien: [{ signo: "<", valor: "30" }], atencion: [{ signo: "<=", valor: "30" }], critico: [{ signo: ">", valor: "30" }] };
+    expect(colores(d, "descendente", ["29", "30", "31"])).toEqual(["bien", "atencion", "critico"]);
+    expect(errorDeRangos(rangosDeTexto(d)!, "descendente", f("20"), null)).toBeNull();
+  });
+  it("mantenerse en un rango: una fila de un solo signo llega hasta Bien, y Crítico va a los dos lados", () => {
+    const t: RangosEnTexto = {
+      bien: [{ signo: "entre", valor: "85", hasta: "95" }],
+      atencion: [{ signo: ">=", valor: "80" }, { signo: "<=", valor: "100" }],
+      critico: [{ signo: "<", valor: "80" }, { signo: ">", valor: "100" }],
+    };
+    expect(errorDeRangos(rangosDeTexto(t)!, "constante", f("85"), f("95"))).toBeNull();
+    expect(colores(t, "constante", ["82", "98", "79", "101", "90"])).toEqual(["atencion", "atencion", "critico", "critico", "bien"]);
+    const sinLado: RangosEnTexto = { bien: [{ signo: "entre", valor: "85", hasta: "95" }], atencion: [], critico: [{ signo: ">", valor: "95" }] };
+    expect(errorDeRangos(rangosDeTexto(sinLado)!, "constante", f("85"), f("95"))).toBe("Para mantenerse en un rango, Crítico va a cada lado de Bien");
+  });
+  it("el caso del hallazgo: Bien entre 91 y 95 · Atención entre 96 y 100 · Crítico ≤ 90", () => {
+    const t: RangosEnTexto = { bien: [{ signo: "entre", valor: "91", hasta: "95" }], atencion: [{ signo: "entre", valor: "96", hasta: "100" }], critico: [{ signo: "<=", valor: "90" }] };
+    expect(errorDeRangos(rangosDeTexto(t)!, "ascendente", f("93"), null)).toBe("En «más es mejor», Crítico va abajo, Atención en medio y Bien arriba");
+  });
   it("límite de crítico", () => {
     expect(limiteDeRangos(rangosDeTexto(asc)!, "ascendente")).toEqual(f("40"));
     expect(limiteDeRangos(rangosDeTexto({ ...asc, critico: [{ signo: "<", valor: "41" }] })!, "ascendente")).toEqual(f("41"));
