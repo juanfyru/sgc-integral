@@ -63,26 +63,54 @@ const esCodigoRepetido = (err: unknown) =>
 // El código
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** El siguiente número por proceso: 1 + el más alto ya usado con `SIGLA-IND-`, en cualquier estado (no se reusan). */
-export function siguientes(sql: Cliente, procesoId?: number) {
-  return sql`
-    SELECT p.id, p.sigla, coalesce(max(substr(i.codigo, length(p.sigla) + 6)::int), 0) + 1 AS siguiente
-    FROM procesos p
+/** `1 +` el número más alto ya usado con `SIGLA-ID-`, en cualquier estado (no se reusan). Los `-IND-` antiguos no cuentan. */
+const SIGUIENTE = (sql: Cliente, tabla: "procesos" | "subprocesos") => sql`
+    SELECT t.id, t.sigla, coalesce(max(substr(i.codigo, length(t.sigla) + 5)::int), 0) + 1 AS siguiente
+    FROM ${sql(tabla)} t
     LEFT JOIN indicadores i
-      ON lower(left(i.codigo, length(p.sigla) + 5)) = lower(p.sigla || '-IND-')
-     AND substr(i.codigo, length(p.sigla) + 6) ~ '^[0-9]{1,6}$'
-    ${procesoId === undefined ? sql`` : sql`WHERE p.id = ${procesoId}`}
-    GROUP BY p.id, p.sigla`;
+      ON lower(left(i.codigo, length(t.sigla) + 4)) = lower(t.sigla || '-ID-')
+     AND substr(i.codigo, length(t.sigla) + 5) ~ '^[0-9]{1,6}$'`;
+
+/** El siguiente número por proceso (`SIGLA-ID-NNN`). */
+export function siguientes(sql: Cliente, procesoId?: number) {
+  return sql`${SIGUIENTE(sql, "procesos")}
+    ${procesoId === undefined ? sql`` : sql`WHERE t.id = ${procesoId}`}
+    GROUP BY t.id, t.sigla`;
 }
 
-export const codigoCon = (sigla: string, n: number) => `${sigla}-IND-${String(n).padStart(2, "0")}`;
+/** El siguiente número por subproceso con sigla. */
+export function siguientesDeSubprocesos(sql: Cliente, subprocesoId?: number) {
+  return sql`${SIGUIENTE(sql, "subprocesos")}
+    WHERE t.sigla IS NOT NULL ${subprocesoId === undefined ? sql`` : sql`AND t.id = ${subprocesoId}`}
+    GROUP BY t.id, t.sigla`;
+}
 
-/** `SIGLA-IND-NN`, con dos cifras al menos (spec §7.1). */
-export async function proponerCodigo(procesoId: number, opciones?: { sql?: Cliente }): Promise<string> {
+export const codigoCon = (sigla: string, n: number) => `${sigla}-ID-${String(n).padStart(3, "0")}`;
+
+/** La sigla que da el código: la del subproceso si tiene, si no la del proceso. */
+export async function proponerCodigo(
+  procesoId: number,
+  subprocesoId?: number | null,
+  opciones?: { sql?: Cliente },
+): Promise<string> {
   const sql = opciones?.sql ?? obtenerSql();
+  if (subprocesoId !== undefined && subprocesoId !== null) {
+    const [delSub] = await siguientesDeSubprocesos(sql, subprocesoId);
+    if (delSub) return codigoCon(delSub.sigla as string, Number(delSub.siguiente));
+  }
   const [fila] = await siguientes(sql, procesoId);
   if (!fila) throw new ErrorIndicador("El proceso no existe");
   return codigoCon(fila.sigla as string, Number(fila.siguiente));
+}
+
+/** La sigla efectiva de una elección de proceso y subproceso (para saber si la propuesta cambia). */
+async function siglaEfectiva(tx: Cliente, procesoId: number, subprocesoId: number | null): Promise<string> {
+  if (subprocesoId !== null) {
+    const [s] = await tx`SELECT sigla FROM subprocesos WHERE id = ${subprocesoId}`;
+    if (s?.sigla) return s.sigla as string;
+  }
+  const [p] = await tx`SELECT sigla FROM procesos WHERE id = ${procesoId}`;
+  return p.sigla as string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -453,7 +481,7 @@ export async function crearIndicador(
   try {
     return await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
       const nombres = await revisarContraLaBase(tx, f, null, true);
-      codigo = f.d.codigo ?? (await proponerCodigo(f.d.procesoId, { sql: tx }));
+      codigo = f.d.codigo ?? (await proponerCodigo(f.d.procesoId, f.d.subprocesoId ?? null, { sql: tx }));
       const o = operacionDe(f.d);
       const [i] = await tx`INSERT INTO indicadores
           (codigo, proceso_id, estado, nivel_acceso, plazo_reporte_dias, inicio_medicion, soporte_obligatorio, creado_por, creado_en)
@@ -551,14 +579,19 @@ export async function guardarBorrador(sesion: SesionFlujo, versionId: number, d:
       let operacion: { antes: DatosOperacion; despues: DatosOperacion } | null = null;
       let designados: { antes: Designados; despues: Designados } | null = null;
       if (enBorrador) {
-        const mismoProceso = f.d.procesoId === Number(ind.proceso_id);
-        // La sigla del proceso decide el código (spec §7.1): al mudarse de proceso, un código con la del anterior se propone de nuevo.
+        // La sigla del subproceso, o la del proceso, decide el código (spec §7.1; 14A §4): al cambiarla, un código con la
+        // anterior (`SIGLA-ID-` o el antiguo `SIGLA-IND-`) se propone de nuevo.
+        const subAntes = v.subproceso_id === null ? null : Number(v.subproceso_id);
+        const subDespues = f.d.subprocesoId ?? null;
+        const siglaAntes = await siglaEfectiva(tx, Number(ind.proceso_id), subAntes);
+        const siglaDespues = await siglaEfectiva(tx, f.d.procesoId, subDespues);
+        const mismaSigla = siglaAntes.toLowerCase() === siglaDespues.toLowerCase();
         let elegido = f.d.codigo;
-        if (!mismoProceso && elegido !== undefined) {
-          const [anterior] = await tx`SELECT sigla FROM procesos WHERE id = ${ind.proceso_id}`;
-          if (elegido.toLowerCase().startsWith(`${anterior.sigla as string}-IND-`.toLowerCase())) elegido = undefined;
+        if (!mismaSigla && elegido !== undefined) {
+          const minuscula = elegido.toLowerCase();
+          if (minuscula.startsWith(`${siglaAntes}-ID-`.toLowerCase()) || minuscula.startsWith(`${siglaAntes}-IND-`.toLowerCase())) elegido = undefined;
         }
-        codigo = elegido ?? (mismoProceso ? codigo : await proponerCodigo(f.d.procesoId, { sql: tx }));
+        codigo = elegido ?? (mismaSigla ? codigo : await proponerCodigo(f.d.procesoId, subDespues, { sql: tx }));
         const antes: DatosOperacion = {
           plazoReporteDias: ind.plazo_reporte_dias as number,
           inicioMedicion: ind.inicio_medicion as string,
@@ -902,11 +935,12 @@ export async function opcionesDeFicha(
   const zona = zonaHoraria();
   const ahora = opciones?.ahora ?? new Date();
   const ids = (...xs: (number | number[] | undefined)[]) => xs.flat().filter((x): x is number => typeof x === "number");
-  const [procesos, subprocesos, propuestos, tipos, clasificaciones, unidades, objetivos, cargos, normas, usuarios, documentos, parametros, entes, lideres] =
+  const [procesos, subprocesos, propuestos, propuestosSub, tipos, clasificaciones, unidades, objetivos, cargos, normas, usuarios, documentos, parametros, entes, lideres] =
     await Promise.all([
       sql`SELECT id, sigla, nombre FROM procesos WHERE activo OR id = ANY(${ids(a.procesoId)}) ORDER BY nombre`,
-      sql`SELECT id, proceso_id, nombre FROM subprocesos WHERE activo OR id = ANY(${ids(a.subprocesoId)}) ORDER BY proceso_id, orden, nombre`,
+      sql`SELECT id, proceso_id, nombre, sigla FROM subprocesos WHERE activo OR id = ANY(${ids(a.subprocesoId)}) ORDER BY proceso_id, orden, nombre`,
       siguientes(sql),
+      siguientesDeSubprocesos(sql),
       listarMaestro("tipos", { sql }),
       listarMaestro("clasificaciones", { sql }),
       listarMaestro("unidades", { sql }),
@@ -947,8 +981,11 @@ export async function opcionesDeFicha(
   }
   return {
     procesos: procesos.map((p) => ({ id: Number(p.id), sigla: p.sigla as string, nombre: p.nombre as string })),
-    subprocesos: subprocesos.map((s) => ({ id: Number(s.id), procesoId: Number(s.proceso_id), nombre: s.nombre as string })),
-    codigosPropuestos: Object.fromEntries(propuestos.map((p) => [Number(p.id), codigoCon(p.sigla as string, Number(p.siguiente))])),
+    subprocesos: subprocesos.map((s) => ({ id: Number(s.id), procesoId: Number(s.proceso_id), nombre: s.nombre as string, sigla: (s.sigla as string | null) ?? null })),
+    codigosPropuestos: {
+      procesos: Object.fromEntries(propuestos.map((p) => [Number(p.id), codigoCon(p.sigla as string, Number(p.siguiente))])),
+      subprocesos: Object.fromEntries(propuestosSub.map((p) => [Number(p.id), codigoCon(p.sigla as string, Number(p.siguiente))])),
+    },
     tipos: tipos.filter(activo(a.tipoId)).map((t) => ({ id: t.id, nombre: t.nombre })),
     clasificaciones: clasificaciones
       .filter(activo(a.clasificacionId))

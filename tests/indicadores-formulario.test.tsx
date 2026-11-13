@@ -15,7 +15,7 @@ vi.mock("@/app/admin/acciones-indicadores", () => ({ guardarParametrosAccion: vi
 
 import { FormularioParametros } from "@/componentes/indicadores/admin/FormularioParametros";
 import { estadoDeRangos, rangosDelEditor, type EstadoEditor } from "@/componentes/indicadores/ficha/EditorDeRangos";
-import { campoDeMasOpciones, campoDelError, codigoAlCambiarDeProceso, FormularioFicha } from "@/componentes/indicadores/ficha/FormularioFicha";
+import { campoDeMasOpciones, campoDelError, codigoAlCambiarDeProceso, codigoPropuestoDe, FormularioFicha, siglaVigenteDe } from "@/componentes/indicadores/ficha/FormularioFicha";
 import { EsquemaFicha, type DatosFicha } from "@/lib/esquemas/indicadores";
 import { unidadDeForma } from "@/lib/indicadores/formula/formas";
 import type { OpcionesFicha } from "@/lib/indicadores/tipos";
@@ -25,8 +25,11 @@ const OPCIONES: OpcionesFicha = {
     { id: 2, sigla: "SGC", nombre: "Sistema de Gestión de Calidad" },
     { id: 13, sigla: "GTH", nombre: "Gestión del Talento Humano" },
   ],
-  subprocesos: [{ id: 40, procesoId: 13, nombre: "Bienestar" }],
-  codigosPropuestos: { 2: "SGC-IND-06", 13: "GTH-IND-01" },
+  subprocesos: [
+    { id: 40, procesoId: 13, nombre: "Bienestar", sigla: null },
+    { id: 41, procesoId: 13, nombre: "Contratación", sigla: "CNT" },
+  ],
+  codigosPropuestos: { procesos: { 2: "SGC-ID-006", 13: "GTH-ID-001" }, subprocesos: { 41: "CNT-ID-001" } },
   tipos: [
     { id: 1, nombre: "Eficacia" },
     { id: 2, nombre: "Eficiencia" },
@@ -142,7 +145,7 @@ describe("FormularioFicha", () => {
   });
 
   it("el código propuesto es el del proceso y el plazo, el del parámetro", () => {
-    expect(control(html, "codigo")).toContain('value="SGC-IND-06"');
+    expect(control(html, "codigo")).toContain('value="SGC-ID-006"');
     expect(control(html, "plazoReporteDias")).toContain('value="10"');
     expect(control(pintar(), "codigo")).toContain('value=""');
   });
@@ -265,12 +268,23 @@ describe("FormularioFicha", () => {
     expect(html).toContain('<datalist id="ficha-entes"><option value="Superintendencia de Salud"></option></datalist>');
   });
 
-  it("al mudarse de proceso, el código se propone de nuevo si nadie lo tocó o si aún lleva la sigla anterior", () => {
-    expect(codigoAlCambiarDeProceso("SGC-IND-06", false, "SGC", "GTH-IND-01")).toBe("GTH-IND-01");
-    expect(codigoAlCambiarDeProceso("sgc-ind-06", true, "SGC", "GTH-IND-01")).toBe("GTH-IND-01");
-    expect(codigoAlCambiarDeProceso("", true, "SGC", "GTH-IND-01")).toBe("GTH-IND-01");
-    expect(codigoAlCambiarDeProceso("CAL-07", true, "SGC", "GTH-IND-01")).toBe("CAL-07");
-    expect(codigoAlCambiarDeProceso("SGCX-IND-02", true, "SGC", "GTH-IND-01")).toBe("SGCX-IND-02");
+  it("al mudarse de proceso o de subproceso, el código se propone de nuevo si nadie lo tocó o si aún lleva la sigla anterior", () => {
+    expect(codigoAlCambiarDeProceso("SGC-ID-006", false, "SGC", "GTH-ID-001")).toBe("GTH-ID-001");
+    expect(codigoAlCambiarDeProceso("sgc-id-006", true, "SGC", "GTH-ID-001")).toBe("GTH-ID-001");
+    expect(codigoAlCambiarDeProceso("SGC-IND-06", true, "SGC", "GTH-ID-001")).toBe("GTH-ID-001");
+    expect(codigoAlCambiarDeProceso("", true, "SGC", "GTH-ID-001")).toBe("GTH-ID-001");
+    expect(codigoAlCambiarDeProceso("CAL-07", true, "SGC", "GTH-ID-001")).toBe("CAL-07");
+    expect(codigoAlCambiarDeProceso("SGCX-ID-002", true, "SGC", "GTH-ID-001")).toBe("SGCX-ID-002");
+  });
+
+  it("el código propuesto es el del subproceso con sigla o, si no, el del proceso", () => {
+    expect(codigoPropuestoDe(OPCIONES, 13, 41)).toBe("CNT-ID-001");
+    expect(codigoPropuestoDe(OPCIONES, 13, 40)).toBe("GTH-ID-001");
+    expect(codigoPropuestoDe(OPCIONES, 13, "")).toBe("GTH-ID-001");
+    expect(codigoPropuestoDe(OPCIONES, "", "")).toBe("");
+    expect(siglaVigenteDe(OPCIONES, 13, 41)).toBe("CNT");
+    expect(siglaVigenteDe(OPCIONES, 13, 40)).toBe("GTH");
+    expect(siglaVigenteDe(OPCIONES, "", "")).toBeNull();
   });
 
   it("la fórmula libre se escribe y se lee en palabras; la tasa pide su factor; la constante, su rango", () => {

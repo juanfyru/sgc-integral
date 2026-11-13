@@ -101,9 +101,9 @@ export type DatosOperacion = {
 /** Lo que el formulario de la ficha ofrece para elegir; lo arma el servidor (`opcionesDeFicha`). */
 export type OpcionesFicha = {
   procesos: { id: number; sigla: string; nombre: string }[];
-  subprocesos: { id: number; procesoId: number; nombre: string }[];
-  /** El código que se propone en cada proceso (`SIGLA-IND-NN`). */
-  codigosPropuestos: Record<number, string>;
+  subprocesos: { id: number; procesoId: number; nombre: string; sigla: string | null }[];
+  /** El código que se propone en cada proceso y en cada subproceso con sigla (`SIGLA-ID-NNN`). */
+  codigosPropuestos: { procesos: Record<number, string>; subprocesos: Record<number, string> };
   tipos: { id: number; nombre: string }[];
   clasificaciones: { id: number; nombre: string; exigeNorma: boolean }[];
   unidades: { id: number; nombre: string; sufijo: string; decimales: number }[];

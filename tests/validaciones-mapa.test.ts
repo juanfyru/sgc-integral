@@ -5,6 +5,8 @@ import {
   validarColor,
   validarIcono,
   validarSigla,
+  validarSiglaOpcional,
+  exigirSiglaNoReservada,
   validarSlug,
 } from "@/lib/validaciones-mapa";
 
@@ -26,6 +28,17 @@ describe("validadores", () => {
     expect(validarSigla("gth")).toBe("GTH");
     expect(() => validarSigla("A")).toThrow(/letras/i);
     expect(() => validarSigla("GTH1")).toThrow(/letras/i);
+  });
+  it("la sigla opcional: vacía es null; si no, la normaliza o rechaza", () => {
+    expect(validarSiglaOpcional("")).toBeNull();
+    expect(validarSiglaOpcional("  ")).toBeNull();
+    expect(validarSiglaOpcional("cnt")).toBe("CNT");
+    expect(() => validarSiglaOpcional("C")).toThrow(/letras/i);
+  });
+  it("IND e ID están reservadas para los indicadores", () => {
+    expect(() => exigirSiglaNoReservada("id")).toThrow("La sigla ID está reservada para los indicadores");
+    expect(() => exigirSiglaNoReservada(" ind ")).toThrow("La sigla IND está reservada para los indicadores");
+    expect(() => exigirSiglaNoReservada("CNT")).not.toThrow();
   });
   it("slug valida el formato kebab", () => {
     expect(validarSlug("consulta-externa")).toBe("consulta-externa");

@@ -11,6 +11,7 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
 }
 
+import { revertida } from "./utiles/transaccion";
 import { obtenerSql } from "@/db/cliente";
 import { asegurarAdmin } from "@/db/consultas/admin";
 import {
@@ -20,6 +21,7 @@ import {
   crearPeriferico,
   crearProceso,
   crearSubproceso,
+  asignarSiglaASubproceso,
   crearTipo,
   editarMacroproceso,
   editarPeriferico,
@@ -323,14 +325,62 @@ describe("subprocesos CRUD", () => {
   it("crea bajo un proceso, aparece en su lista y edita", async () => {
     const [proc] = await sql()`SELECT id FROM procesos ORDER BY orden LIMIT 1`;
     const { id } = await crearSubproceso(
-      { procesoId: proc.id, nombre: "ZZ Subproceso Prueba", slug: "zz-sub-prueba" },
+      { procesoId: proc.id, nombre: "ZZ Subproceso Prueba", slug: "zz-sub-prueba", sigla: null },
       usuarioId,
     );
     const lista = await listarSubprocesos(proc.id);
     expect(lista.some((f) => f.id === id)).toBe(true);
-    await editarSubproceso(id, { procesoId: proc.id, nombre: "ZZ Sub Editado", slug: "zz-sub-prueba" }, usuarioId);
+    await editarSubproceso(id, { procesoId: proc.id, nombre: "ZZ Sub Editado", slug: "zz-sub-prueba", sigla: null }, usuarioId);
     const s = await obtenerSubproceso(id);
     expect(s?.nombre).toBe("ZZ Sub Editado");
     await sql()`DELETE FROM subprocesos WHERE id = ${id}`;
   });
+
+  it("la sigla es opcional, única entre procesos y subprocesos, y IND e ID están reservadas", async () => {
+    const [proc] = await sql()`SELECT id, sigla FROM procesos ORDER BY orden LIMIT 1`;
+    const ids: number[] = [];
+    try {
+      const a = await crearSubproceso({ procesoId: proc.id, nombre: "ZZ Sub A", slug: "zz-sub-sigla-a", sigla: "zqa" }, usuarioId);
+      ids.push(a.id);
+      expect(await obtenerSubproceso(a.id)).toMatchObject({ sigla: "ZQA" });
+      expect((await listarSubprocesos(proc.id)).find((f) => f.id === a.id)?.sigla).toBe("ZQA");
+      const b = await crearSubproceso({ procesoId: proc.id, nombre: "ZZ Sub B", slug: "zz-sub-sigla-b", sigla: null }, usuarioId);
+      ids.push(b.id);
+      expect(await obtenerSubproceso(b.id)).toMatchObject({ sigla: null });
+      // Dos subprocesos con la misma sigla, sin distinguir mayúsculas.
+      await expect(editarSubproceso(b.id, { procesoId: proc.id, nombre: "ZZ Sub B", slug: "zz-sub-sigla-b", sigla: "ZQA" }, usuarioId))
+        .rejects.toThrow("Ya hay un proceso o subproceso con la sigla ZQA");
+      // La sigla de un proceso existente.
+      await expect(editarSubproceso(b.id, { procesoId: proc.id, nombre: "ZZ Sub B", slug: "zz-sub-sigla-b", sigla: proc.sigla.toLowerCase() }, usuarioId))
+        .rejects.toThrow(`Ya hay un proceso o subproceso con la sigla ${proc.sigla}`);
+      // Un proceso con la sigla de un subproceso.
+      const [macro] = await sql()`SELECT id FROM macroprocesos ORDER BY orden LIMIT 1`;
+      await expect(crearProceso({ macroprocesoId: macro.id, nombre: "ZZ P", sigla: "ZQA", icono: "target", descripcion: null, slug: "zz-p-sigla" }, usuarioId))
+        .rejects.toThrow("Ya hay un proceso o subproceso con la sigla ZQA");
+      await expect(editarSubproceso(b.id, { procesoId: proc.id, nombre: "ZZ Sub B", slug: "zz-sub-sigla-b", sigla: "ID" }, usuarioId))
+        .rejects.toThrow("La sigla ID está reservada para los indicadores");
+      await expect(crearTipo({ nombre: "ZZ Tipo ID", sigla: "ID", esDiligenciable: false, autoridad: "operativo", plantillaDocumentoId: null, mesesRevision: 12 }, usuarioId))
+        .rejects.toThrow("La sigla ID está reservada para los indicadores");
+      // Quitar la sigla.
+      await editarSubproceso(a.id, { procesoId: proc.id, nombre: "ZZ Sub A", slug: "zz-sub-sigla-a", sigla: null }, usuarioId);
+      expect(await obtenerSubproceso(a.id)).toMatchObject({ sigla: null });
+    } finally {
+      if (ids.length) await sql()`DELETE FROM subprocesos WHERE id = ANY(${ids})`;
+    }
+  });
+
+  it("asignarSiglaASubproceso valida, audita como editar_subproceso y no pisa la de otro", () =>
+    revertida(sql(), async (tx) => {
+      const [proc] = await tx`SELECT id FROM procesos ORDER BY orden LIMIT 1`;
+      const [s1] = await tx`INSERT INTO subprocesos (proceso_id, nombre, slug, orden) VALUES (${proc.id}, 'ZZ S1', 'zz-asig-1', 91) RETURNING id`;
+      const [s2] = await tx`INSERT INTO subprocesos (proceso_id, nombre, slug, orden) VALUES (${proc.id}, 'ZZ S2', 'zz-asig-2', 92) RETURNING id`;
+      await asignarSiglaASubproceso(tx, Number(s1.id), "zqb", usuarioId);
+      const [f] = await tx`SELECT sigla FROM subprocesos WHERE id = ${s1.id}`;
+      expect(f.sigla).toBe("ZQB");
+      const [aud] = await tx`SELECT accion, detalle FROM auditoria WHERE entidad = 'subprocesos' AND entidad_id = ${s1.id} ORDER BY id DESC LIMIT 1`;
+      expect(aud.accion).toBe("editar_subproceso");
+      expect(aud.detalle).toMatchObject({ sigla: "ZQB" });
+      await expect(asignarSiglaASubproceso(tx, Number(s2.id), "ZQB", usuarioId)).rejects.toThrow("Ya hay un proceso o subproceso con la sigla ZQB");
+      await expect(asignarSiglaASubproceso(tx, Number(s2.id), "ind", usuarioId)).rejects.toThrow("La sigla IND está reservada para los indicadores");
+    }));
 });

@@ -483,7 +483,7 @@ describe("duplicar", () => {
       await tx`INSERT INTO indicador_metas (indicador_id, periodo, meta, programada_por) VALUES (${c.indicadorId}, '2026-06', 95, ${b.admin.usuarioId})`;
       const [otro] = await tx`SELECT id, nombre FROM procesos WHERE sigla = 'GTH'`;
       const res = await duplicar(b.admin, { indicadorId: c.indicadorId, procesoId: Number(otro.id) }, { sql: tx, ahora: AHORA });
-      expect(res.codigo).toMatch(/^GTH-IND-\d{2,}$/);
+      expect(res.codigo).toMatch(/^GTH-ID-\d{3,}$/);
 
       const [nuevo] = await tx`SELECT id, estado, proceso_id, plazo_reporte_dias, soporte_obligatorio, inicio_medicion, creado_por
         FROM indicadores WHERE codigo = ${res.codigo}`;

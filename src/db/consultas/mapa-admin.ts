@@ -5,6 +5,8 @@ import {
   validarBanda,
   validarColor,
   validarSigla,
+  validarSiglaOpcional,
+  exigirSiglaNoReservada,
   validarSlug,
 } from "@/lib/validaciones-mapa";
 
@@ -221,9 +223,38 @@ async function validarAutoridadYPlantilla(tx: TransactionSql, d: DatosTipo): Pro
   if (!vigente) throw new Error("La plantilla debe ser un documento vigente");
 }
 
-/** `IND` es la sigla de los códigos de indicador (spec 14 §7.1): ningún tipo de documento la usa. */
+/** `IND` e `ID` son las siglas de los códigos de indicador: ningún tipo de documento las usa. */
 function exigirSiglaLibre(sigla: string): void {
-  if (sigla.trim().toUpperCase() === "IND") throw new Error("La sigla IND está reservada para los indicadores");
+  exigirSiglaNoReservada(sigla);
+}
+
+/**
+ * La sigla de un proceso o de un subproceso es única entre las dos tablas (14A §4): el índice único de cada tabla no ve
+ * la otra, así que se comprueba aquí, dentro de la misma transacción. `excluir` es la fila que se está editando.
+ */
+async function exigirSiglaDeMapaLibre(
+  tx: TransactionSql,
+  sigla: string,
+  excluir: { proceso?: number; subproceso?: number },
+): Promise<void> {
+  const [hay] = await tx`SELECT 1 AS hay FROM (
+      SELECT id, 'p' AS t FROM procesos WHERE lower(sigla) = lower(${sigla})
+      UNION ALL
+      SELECT id, 's' AS t FROM subprocesos WHERE lower(sigla) = lower(${sigla})
+    ) x
+    WHERE NOT (x.t = 'p' AND x.id = ${excluir.proceso ?? 0})
+      AND NOT (x.t = 's' AND x.id = ${excluir.subproceso ?? 0})
+    LIMIT 1`;
+  if (hay) throw new Error(`Ya hay un proceso o subproceso con la sigla ${sigla}`);
+}
+
+/** Un `23505` de un índice de sigla llega a veces antes que la comprobación: se traduce igual. */
+function traducirSigla(err: unknown, sigla: string | null, alternativa: string): Error {
+  const e = err as { code?: string; constraint_name?: string };
+  if (e.code === "23505" && sigla !== null && /sigla/.test(e.constraint_name ?? "")) {
+    return new Error(`Ya hay un proceso o subproceso con la sigla ${sigla}`);
+  }
+  return traducirUnico(err, alternativa);
 }
 
 export async function crearTipo(
@@ -568,6 +599,7 @@ export type DatosProceso = {
 
 function normalizarProceso(d: DatosProceso) {
   const datos = { ...d, sigla: validarSigla(d.sigla), slug: validarSlug(d.slug) };
+  exigirSiglaNoReservada(datos.sigla);
   if (!datos.nombre.trim()) throw new Error("El nombre es obligatorio");
   return datos;
 }
@@ -580,6 +612,7 @@ export async function crearProceso(
   const sql = obtenerSql();
   try {
     return await sql.begin(async (tx) => {
+      await exigirSiglaDeMapaLibre(tx, datos.sigla, {});
       const orden = await siguienteOrden(tx, "procesos", "macroproceso_id", datos.macroprocesoId);
       const [p] = await tx`INSERT INTO procesos
           (macroproceso_id, nombre, sigla, slug, descripcion, icono, orden)
@@ -592,7 +625,7 @@ export async function crearProceso(
       return { id: p.id };
     });
   } catch (err) {
-    throw traducirUnico(err, "Ya existe un proceso con esa sigla o slug");
+    throw traducirSigla(err, datos.sigla, "Ya existe un proceso con esa sigla o slug");
   }
 }
 
@@ -605,6 +638,7 @@ export async function editarProceso(
   const sql = obtenerSql();
   try {
     await sql.begin(async (tx) => {
+      await exigirSiglaDeMapaLibre(tx, datos.sigla, { proceso: id });
       const [p] = await tx`UPDATE procesos SET nombre = ${datos.nombre},
           sigla = ${datos.sigla}, slug = ${datos.slug}, descripcion = ${datos.descripcion},
           icono = ${datos.icono}
@@ -616,7 +650,7 @@ export async function editarProceso(
       });
     });
   } catch (err) {
-    throw traducirUnico(err, "Ya existe un proceso con esa sigla o slug");
+    throw traducirSigla(err, datos.sigla, "Ya existe un proceso con esa sigla o slug");
   }
 }
 
@@ -625,14 +659,14 @@ export async function editarProceso(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type FilaSubproceso = {
-  id: number; nombre: string; slug: string; orden: number; activo: boolean;
+  id: number; nombre: string; slug: string; sigla: string | null; orden: number; activo: boolean;
   numDocs: number; docsAfectados: string[];
 };
 
 export async function listarSubprocesos(procesoId: number): Promise<FilaSubproceso[]> {
   const sql = obtenerSql();
   const filas = await sql`
-    SELECT s.id, s.nombre, s.slug, s.orden, s.activo,
+    SELECT s.id, s.nombre, s.slug, s.sigla, s.orden, s.activo,
       (SELECT count(*)::int FROM documento_proceso dp WHERE dp.subproceso_id = s.id) AS num_docs,
       coalesce((
         SELECT json_agg(DISTINCT d.codigo ORDER BY d.codigo)
@@ -645,22 +679,23 @@ export async function listarSubprocesos(procesoId: number): Promise<FilaSubproce
     FROM subprocesos s WHERE s.proceso_id = ${procesoId}
     ORDER BY s.orden`;
   return filas.map((f) => ({
-    id: f.id, nombre: f.nombre, slug: f.slug, orden: f.orden, activo: f.activo,
+    id: f.id, nombre: f.nombre, slug: f.slug, sigla: (f.sigla as string | null) ?? null, orden: f.orden, activo: f.activo,
     numDocs: f.num_docs, docsAfectados: f.docs_afectados as string[],
   }));
 }
 
 export async function obtenerSubproceso(id: number) {
   const sql = obtenerSql();
-  const [f] = await sql`SELECT id, proceso_id, nombre, slug FROM subprocesos WHERE id = ${id}`;
+  const [f] = await sql`SELECT id, proceso_id, nombre, slug, sigla FROM subprocesos WHERE id = ${id}`;
   if (!f) return null;
-  return { id: f.id, procesoId: f.proceso_id, nombre: f.nombre, slug: f.slug };
+  return { id: f.id, procesoId: f.proceso_id, nombre: f.nombre, slug: f.slug, sigla: (f.sigla as string | null) ?? null };
 }
 
-export type DatosSubproceso = { procesoId: number; nombre: string; slug: string };
+export type DatosSubproceso = { procesoId: number; nombre: string; slug: string; sigla: string | null };
 
 function normalizarSubproceso(d: DatosSubproceso) {
-  const datos = { ...d, slug: validarSlug(d.slug) };
+  const datos = { ...d, slug: validarSlug(d.slug), sigla: d.sigla === null ? null : validarSiglaOpcional(d.sigla) };
+  if (datos.sigla !== null) exigirSiglaNoReservada(datos.sigla);
   if (!datos.nombre.trim()) throw new Error("El nombre es obligatorio");
   return datos;
 }
@@ -673,9 +708,10 @@ export async function crearSubproceso(
   const sql = obtenerSql();
   try {
     return await sql.begin(async (tx) => {
+      if (datos.sigla !== null) await exigirSiglaDeMapaLibre(tx, datos.sigla, {});
       const orden = await siguienteOrden(tx, "subprocesos", "proceso_id", datos.procesoId);
-      const [s] = await tx`INSERT INTO subprocesos (proceso_id, nombre, slug, orden)
-        VALUES (${datos.procesoId}, ${datos.nombre}, ${datos.slug}, ${orden}) RETURNING id`;
+      const [s] = await tx`INSERT INTO subprocesos (proceso_id, nombre, slug, sigla, orden)
+        VALUES (${datos.procesoId}, ${datos.nombre}, ${datos.slug}, ${datos.sigla}, ${orden}) RETURNING id`;
       await registrarAuditoria(tx, {
         usuarioId, accion: "crear_subproceso", entidad: "subprocesos",
         entidadId: s.id, detalle: datos,
@@ -683,7 +719,7 @@ export async function crearSubproceso(
       return { id: s.id };
     });
   } catch (err) {
-    throw traducirUnico(err, "Ya existe un subproceso con ese slug en este proceso");
+    throw traducirSigla(err, datos.sigla, "Ya existe un subproceso con ese slug en este proceso");
   }
 }
 
@@ -696,7 +732,8 @@ export async function editarSubproceso(
   const sql = obtenerSql();
   try {
     await sql.begin(async (tx) => {
-      const [s] = await tx`UPDATE subprocesos SET nombre = ${datos.nombre}, slug = ${datos.slug}
+      if (datos.sigla !== null) await exigirSiglaDeMapaLibre(tx, datos.sigla, { subproceso: id });
+      const [s] = await tx`UPDATE subprocesos SET nombre = ${datos.nombre}, slug = ${datos.slug}, sigla = ${datos.sigla}
         WHERE id = ${id} RETURNING id`;
       if (!s) throw new Error("El subproceso no existe");
       await registrarAuditoria(tx, {
@@ -705,6 +742,27 @@ export async function editarSubproceso(
       });
     });
   } catch (err) {
-    throw traducirUnico(err, "Ya existe un subproceso con ese slug en este proceso");
+    throw traducirSigla(err, datos.sigla, "Ya existe un subproceso con ese slug en este proceso");
   }
+}
+
+/**
+ * Da la sigla a un subproceso dentro de la transacción de quien llama (la importación de indicadores, 14A §6): las mismas
+ * validaciones del alta y la edición, y la auditoría de `editar_subproceso` con la sigla en el detalle.
+ */
+export async function asignarSiglaASubproceso(
+  tx: TransactionSql,
+  subprocesoId: number,
+  sigla: string,
+  usuarioId: number,
+): Promise<void> {
+  const valida = validarSigla(sigla);
+  exigirSiglaNoReservada(valida);
+  await exigirSiglaDeMapaLibre(tx, valida, { subproceso: subprocesoId });
+  const [s] = await tx`UPDATE subprocesos SET sigla = ${valida} WHERE id = ${subprocesoId} RETURNING id`;
+  if (!s) throw new Error("El subproceso no existe");
+  await registrarAuditoria(tx, {
+    usuarioId, accion: "editar_subproceso", entidad: "subprocesos",
+    entidadId: subprocesoId, detalle: { sigla: valida },
+  });
 }

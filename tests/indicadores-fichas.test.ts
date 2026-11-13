@@ -204,33 +204,57 @@ describe("EsquemaFicha", () => {
 });
 
 describe("la ficha en borrador", () => {
-  it("propone SIGLA-IND-NN, contando también los retirados", () =>
+  it("propone SIGLA-ID-NNN, contando también los retirados y sin mezclar los -IND- antiguos", () =>
     revertida(sql, async (tx) => {
       const sigla = `Z${unico()}`;
       const [macro] = await tx`SELECT id FROM macroprocesos ORDER BY id LIMIT 1`;
       const [p] = await tx`INSERT INTO procesos (macroproceso_id, nombre, sigla, slug, icono, orden)
         VALUES (${macro.id}, 'Proceso de prueba', ${sigla}, ${sigla.toLowerCase()}, 'circle', 99) RETURNING id`;
       const procesoId = Number(p.id);
-      expect(await proponerCodigo(procesoId, { sql: tx })).toBe(`${sigla}-IND-01`);
+      expect(await proponerCodigo(procesoId, null, { sql: tx })).toBe(`${sigla}-ID-001`);
 
       const admin = await sesionAdmin(tx);
       const activo = await indicadorDePrueba(tx, { procesoId });
-      await tx`UPDATE indicadores SET codigo = ${`${sigla}-IND-01`} WHERE id = ${activo.id}`;
+      await tx`UPDATE indicadores SET codigo = ${`${sigla}-ID-001`} WHERE id = ${activo.id}`;
       const retirado = await indicadorDePrueba(tx, { procesoId });
-      await tx`UPDATE indicadores SET codigo = ${`${sigla.toLowerCase()}-ind-02`}, estado = 'retirado',
+      await tx`UPDATE indicadores SET codigo = ${`${sigla.toLowerCase()}-id-004`}, estado = 'retirado',
           baja_por = ${admin.usuarioId}, baja_en = now(), baja_motivo = 'Prueba'
         WHERE id = ${retirado.id}`;
       // Un código que no termina en cifras no cuenta.
       const raro = await indicadorDePrueba(tx, { procesoId });
-      await tx`UPDATE indicadores SET codigo = ${`${sigla}-IND-07B`} WHERE id = ${raro.id}`;
-      expect(await proponerCodigo(procesoId, { sql: tx })).toBe(`${sigla}-IND-03`);
+      await tx`UPDATE indicadores SET codigo = ${`${sigla}-ID-07B`} WHERE id = ${raro.id}`;
+      expect(await proponerCodigo(procesoId, null, { sql: tx })).toBe(`${sigla}-ID-005`);
+      // Un -IND- antiguo no cambia la numeración de -ID-.
+      const antiguo = await indicadorDePrueba(tx, { procesoId });
+      await tx`UPDATE indicadores SET codigo = ${`${sigla}-IND-03`} WHERE id = ${antiguo.id}`;
+      expect(await proponerCodigo(procesoId, null, { sql: tx })).toBe(`${sigla}-ID-005`);
+    }));
+
+  it("con un subproceso con sigla propone la suya; sin ella, la del proceso", () =>
+    revertida(sql, async (tx) => {
+      const [proc] = await tx`SELECT id, sigla FROM procesos WHERE activo ORDER BY id LIMIT 1`;
+      const [con] = await tx`INSERT INTO subprocesos (proceso_id, nombre, slug, sigla, orden) VALUES (${proc.id}, 'ZZ Con sigla', ${`zz-c-${unico()}`}, 'ZQC', 91) RETURNING id`;
+      const [sin] = await tx`INSERT INTO subprocesos (proceso_id, nombre, slug, orden) VALUES (${proc.id}, 'ZZ Sin sigla', ${`zz-s-${unico()}`}, 92) RETURNING id`;
+      expect(await proponerCodigo(Number(proc.id), Number(con.id), { sql: tx })).toBe("ZQC-ID-001");
+      const usado = await indicadorDePrueba(tx, { procesoId: Number(proc.id) });
+      await tx`UPDATE indicadores SET codigo = 'ZQC-ID-004', estado = 'descartado', baja_por = ${(await sesionAdmin(tx)).usuarioId},
+          baja_en = now(), baja_motivo = 'Prueba' WHERE id = ${usado.id}`;
+      expect(await proponerCodigo(Number(proc.id), Number(con.id), { sql: tx })).toBe("ZQC-ID-005");
+      const delProceso = await proponerCodigo(Number(proc.id), null, { sql: tx });
+      expect(delProceso.startsWith(`${proc.sigla}-ID-`)).toBe(true);
+      expect(delProceso).toMatch(/-ID-[0-9]{3}$/);
+      expect(await proponerCodigo(Number(proc.id), Number(sin.id), { sql: tx })).toBe(delProceso);
+      const o = await opcionesDeFicha(await sesionAdmin(tx), { sql: tx });
+      expect(o.codigosPropuestos.subprocesos[Number(con.id)]).toBe("ZQC-ID-005");
+      expect(o.codigosPropuestos.subprocesos[Number(sin.id)]).toBeUndefined();
+      expect(o.codigosPropuestos.procesos[Number(proc.id)]).toBe(delProceso);
     }));
 
   it("crea el indicador en borrador con su versión 1, sus variables y los nombres firmados", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);
       const { indicadorId, versionId, codigo } = await crearIndicador(b.admin, datos(b), { sql: tx });
-      expect(codigo).toMatch(/^SGC-IND-\d{2,}$/);
+      expect(codigo).toMatch(/^SGC-ID-\d{3,}$/);
 
       const [i] = await tx`SELECT * FROM indicadores WHERE id = ${indicadorId}`;
       expect(i).toMatchObject({
@@ -556,8 +580,8 @@ describe("la ficha en borrador", () => {
       const b = await base(tx);
       const [gth] = await tx`SELECT id FROM procesos WHERE sigla = 'GTH'`;
       const creado = await crearIndicador(b.admin, datos(b), { sql: tx });
-      expect(creado.codigo).toMatch(/^SGC-IND-/);
-      const propuesto = await proponerCodigo(Number(gth.id), { sql: tx });
+      expect(creado.codigo).toMatch(/^SGC-ID-\d{3}$/);
+      const propuesto = await proponerCodigo(Number(gth.id), null, { sql: tx });
       await guardarBorrador(b.admin, creado.versionId, datos(b, { procesoId: Number(gth.id), codigo: creado.codigo.toLowerCase() }), { sql: tx });
       const [i] = await tx`SELECT codigo, proceso_id FROM indicadores WHERE id = ${creado.indicadorId}`;
       expect(i).toEqual({ codigo: propuesto, proceso_id: Number(gth.id) });
@@ -746,7 +770,7 @@ describe("la ficha en borrador", () => {
       const o = await opcionesDeFicha(b.admin, { sql: tx, ahora: new Date("2026-11-10T15:00:00Z") });
       expect(o.cargosDeLideres[b.procesoId]).toContain(b.cargoId);
       expect(o.entes).toContain(ente);
-      expect(o.codigosPropuestos[b.procesoId]).toBe(await proponerCodigo(b.procesoId, { sql: tx }));
+      expect(o.codigosPropuestos.procesos[b.procesoId]).toBe(await proponerCodigo(b.procesoId, null, { sql: tx }));
       expect(o.tipos.map((t) => t.nombre)).toContain("Eficacia");
       expect(o.clasificaciones.find((c) => c.nombre === "Regulatorio")?.exigeNorma).toBe(true);
       expect(o.unidades.find((u) => u.nombre === "Porcentaje")).toMatchObject({ sufijo: " %", decimales: 1 });

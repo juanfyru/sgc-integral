@@ -361,7 +361,7 @@ export async function duplicar(
       const desde = Number(ultima.id);
       const mismoProceso = d.procesoId === origen.procesoId;
 
-      codigo = await proponerCodigo(d.procesoId, { sql: tx });
+      codigo = await proponerCodigo(d.procesoId, null, { sql: tx });
       const [o] = await tx`SELECT nivel_acceso, plazo_reporte_dias, inicio_medicion, soporte_obligatorio FROM indicadores WHERE id = ${origen.id}`;
       const [i] = await tx`INSERT INTO indicadores
           (codigo, proceso_id, estado, nivel_acceso, plazo_reporte_dias, inicio_medicion, soporte_obligatorio, creado_por, creado_en)

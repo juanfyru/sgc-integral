@@ -82,13 +82,30 @@ function limpia(v: Variable): Variable {
   };
 }
 
+/** La sigla que da el código de una elección: la del subproceso si tiene, si no la del proceso. */
+export function siglaVigenteDe(opciones: OpcionesFicha, procesoId: number | "", subprocesoId: number | ""): string | null {
+  if (procesoId === "") return null;
+  const delSub = subprocesoId === "" ? null : (opciones.subprocesos.find((s) => s.id === subprocesoId)?.sigla ?? null);
+  return delSub ?? opciones.procesos.find((p) => p.id === procesoId)?.sigla ?? null;
+}
+
+/** El código que se propone para una elección: `SIGLA-ID-NNN` del subproceso con sigla o, si no, del proceso. */
+export function codigoPropuestoDe(opciones: OpcionesFicha, procesoId: number | "", subprocesoId: number | ""): string {
+  if (procesoId === "") return "";
+  const delSub = subprocesoId === "" ? undefined : opciones.codigosPropuestos.subprocesos[subprocesoId];
+  return delSub ?? opciones.codigosPropuestos.procesos[procesoId] ?? "";
+}
+
 /**
- * El código al cambiar de proceso (spec §7.1: la sigla del proceso decide el código): el propuesto del nuevo si nadie
- * lo tocó, si quedó vacío o si aún lleva el prefijo del proceso anterior; si no, el que escribió la persona.
+ * El código al cambiar de proceso o de subproceso (spec §7.1: la sigla decide el código): el propuesto de la elección nueva
+ * si nadie lo tocó, si quedó vacío o si aún lleva el prefijo de la elección anterior (`SIGLA-ID-` o el antiguo
+ * `SIGLA-IND-`); si no, el que escribió la persona.
  */
 export function codigoAlCambiarDeProceso(codigo: string, tocado: boolean, siglaAnterior: string | null, propuesto: string): string {
-  const actual = codigo.trim();
-  const delAnterior = siglaAnterior !== null && actual.toLowerCase().startsWith(`${siglaAnterior}-IND-`.toLowerCase());
+  const actual = codigo.trim().toLowerCase();
+  const delAnterior =
+    siglaAnterior !== null &&
+    (actual.startsWith(`${siglaAnterior}-ID-`.toLowerCase()) || actual.startsWith(`${siglaAnterior}-IND-`.toLowerCase()));
   return !tocado || actual === "" || delAnterior ? propuesto : codigo;
 }
 
@@ -318,7 +335,7 @@ export function FormularioFicha({
   const [procesoId, setProcesoId] = useState<number | "">(valores.procesoId ?? "");
   const [subprocesoId, setSubprocesoId] = useState<number | "">(valores.subprocesoId ?? "");
   const [procedimientoId, setProcedimientoId] = useState<number | "">(valores.procedimientoDocumentoId ?? "");
-  const [codigo, setCodigo] = useState(valores.codigo ?? (valores.procesoId ? (opciones.codigosPropuestos[valores.procesoId] ?? "") : ""));
+  const [codigo, setCodigo] = useState(valores.codigo ?? codigoPropuestoDe(opciones, valores.procesoId ?? "", valores.subprocesoId ?? ""));
   const [codigoTocado, setCodigoTocado] = useState(valores.codigo !== undefined);
   const [periodicidad, setPeriodicidad] = useState<Periodicidad>(valores.periodicidad ?? "trimestral");
   const [inicio, setInicio] = useState(valores.inicioMedicion ?? opciones.periodoEnCurso[valores.periodicidad ?? "trimestral"]);
@@ -443,14 +460,20 @@ export function FormularioFicha({
     setEscribiendo(true);
   }
 
+  function elegirSubproceso(id: number | "") {
+    setSubprocesoId(id);
+    if (!bloqueado) {
+      setCodigo(codigoAlCambiarDeProceso(codigo, codigoTocado, siglaVigenteDe(opciones, procesoId, subprocesoId), codigoPropuestoDe(opciones, procesoId, id)));
+    }
+  }
+
   function elegirProceso(id: number | "") {
     setProcesoId(id);
     setSubprocesoId("");
     if (procedimientoId !== "" && !opciones.documentos.some((d) => d.id === procedimientoId && id !== "" && d.procesoIds.includes(id))) {
       setProcedimientoId("");
     }
-    const propuesto = id === "" ? "" : (opciones.codigosPropuestos[id] ?? "");
-    setCodigo(codigoAlCambiarDeProceso(codigo, codigoTocado, proceso?.sigla ?? null, propuesto));
+    setCodigo(codigoAlCambiarDeProceso(codigo, codigoTocado, siglaVigenteDe(opciones, procesoId, subprocesoId), codigoPropuestoDe(opciones, id, "")));
     // Sin persona designada, los responsables son los cargos de los líderes del proceso nuevo.
     if (!cargosTocados.medir && mide === "") setCargosMedir(cargosPorOmision("", id));
     if (!cargosTocados.analizar && (analiza === "misma" ? mide : analiza) === "") setCargosAnalizar(cargosPorOmision("", id));
@@ -559,7 +582,7 @@ export function FormularioFicha({
               </Campo>
             )}
             <Campo etiqueta="Subproceso" nombre="subprocesoId" id="ficha-subprocesoId" error={errorDe("ficha-subprocesoId")}>
-              <select value={subprocesoId} onChange={(e) => setSubprocesoId(e.target.value ? Number(e.target.value) : "")} className={CONTROL}>
+              <select value={subprocesoId} onChange={(e) => elegirSubproceso(e.target.value ? Number(e.target.value) : "")} className={CONTROL}>
                 <option value="">(ninguno)</option>
                 {subprocesos.map((s) => (
                   <option key={s.id} value={s.id}>
