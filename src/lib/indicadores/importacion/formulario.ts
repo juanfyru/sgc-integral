@@ -19,13 +19,27 @@ export function esImportable(f: Pick<FilaRevisada, "ficha" | "problemas" | "pend
   return f.ficha !== null && f.problemas.length === 0 && f.pendientes.length === 0;
 }
 
-/** Los códigos de las filas importables de la vista, en minúsculas y ordenados, unidos con «\n» (Ruling 38). */
+/**
+ * Una lista de códigos como viaja en un campo del formulario: separada por comas o espacios, sin importar si el envío
+ * (multipart) cambió un salto de línea por otro. Sin vacíos, en minúsculas y ordenada: dos listas con los mismos
+ * códigos dan el mismo resultado (Ruling 40). La usan el cliente y el servidor.
+ */
+export function listaDeCodigos(texto: string): string[] {
+  return texto
+    .split(/[\s,]+/)
+    .filter((c) => c !== "")
+    .map((c) => c.toLowerCase())
+    .sort();
+}
+
+/** Los códigos de las filas importables de la vista, separados por comas (los códigos no llevan comas ni espacios). */
 export function codigosDeLaVista(filas: readonly Pick<FilaRevisada, "ficha" | "problemas" | "pendientes">[]): string {
-  return filas
-    .filter(esImportable)
-    .map((f) => f.ficha!.codigo.toLowerCase())
-    .sort()
-    .join("\n");
+  return listaDeCodigos(
+    filas
+      .filter(esImportable)
+      .map((f) => f.ficha!.codigo)
+      .join(","),
+  ).join(",");
 }
 
 export type EstadoDeLaVista = {

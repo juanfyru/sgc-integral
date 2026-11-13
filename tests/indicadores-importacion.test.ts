@@ -662,6 +662,24 @@ describe("importar el lote", () => {
       expect(await tx`SELECT 1 FROM indicadores WHERE codigo = ${cod1}`).toHaveLength(0);
     }));
 
+  it("los códigos llegan por el formulario con «\r\n» o con comas y la importación los acepta; si la vista quedó vieja, el mensaje es el de la vista y no el de las siglas", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const [cod1, cod2] = [`CNT-ID-${unico()}`, `CNT-ID-${unico()}`];
+      const { loteId } = await loteCon(tx, b.admin, [aprobada(b, cod1), propuesta(b, cod2)]);
+      const orden = [cod1, cod2].map((x) => x.toLowerCase()).sort();
+      // Una sigla que no se puede dar: si se revisara antes que la vista, el mensaje sería el de las siglas.
+      await rechaza(
+        importarLote(b.admin, loteId, datosImportacion({ siglas: { 999999999: "ZZZ" }, codigos: "otro-codigo" }), firmar(tx)),
+        "La vista previa cambió mientras se importaba: revísela y vuelva a importar",
+      );
+      const conCrLf = orden.join("\r\n");
+      expect(await importarLote(b.admin, loteId, datosImportacion({ siglas: { [b.subprocesoId]: "CNT" }, codigos: conCrLf }), firmar(tx))).toMatchObject({
+        aprobadas: 1,
+        borradores: 1,
+      });
+    }));
+
   it("con los códigos que se vieron, la importación sigue igual; sin ellos, también", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);

@@ -24,6 +24,7 @@ import { asignarSiglaASubproceso } from "@/db/consultas/mapa-admin";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { verificarParaFirmar, type CredencialesFirma } from "@/lib/firma";
 import { huellaDeFicha } from "@/lib/indicadores/ficha";
+import { listaDeCodigos } from "@/lib/indicadores/importacion/formulario";
 import type { FilaLeida } from "@/lib/indicadores/importacion/columnas";
 import { leerPlantilla } from "@/lib/indicadores/importacion/leer";
 import type { ListasDePlantilla } from "@/lib/indicadores/importacion/plantilla";
@@ -75,7 +76,7 @@ export type DatosImportacion = {
   aprobacionPrevia: AprobacionPrevia;
   /** Por subproceso, la sigla que se le da (spec §5.3, paso 5). */
   siglas: Record<number, string>;
-  /** Los códigos de las filas importables que la persona vio (minúsculas, ordenados, unidos con salto de línea): si hoy son otros, no se importa. */
+  /** Los códigos de las filas importables que la persona vio (separados por comas o espacios; se comparan como lista): si hoy son otros, no se importa. */
   codigos?: string;
   credenciales: CredencialesFirma;
 };
@@ -517,7 +518,7 @@ type Importacion = {
 
 /** Las filas que se importarían, por su código: lo que la persona vio antes de dar su clave. */
 const codigosImportables = (filas: readonly (FilaRevisada & { ficha: FichaImportada })[]) =>
-  filas.map((f) => f.ficha.codigo.toLowerCase()).sort();
+  listaDeCodigos(filas.map((f) => f.ficha.codigo).join(",")).join(",");
 
 /**
  * Lo que debe cumplirse para importar, sin escribir nada. Dentro de la transacción recibe lo que se revisó antes de la
@@ -549,12 +550,13 @@ async function validarImportacion(
   if (!lectura) throw new ErrorIndicador(SIN_PLANTILLA);
   const correspondencias = normalizarCorrespondencias(d.correspondencias);
   const revision = await revisarFilas(sql, lectura.filas, correspondencias, d.regla, ahora, previa.documento);
-  const siglas = await validarSiglas(sql, d.siglas, revision);
   const importables = revision.filas.filter((f): f is FilaRevisada & { ficha: FichaImportada } => f.ficha !== null);
-  const hoy = codigosImportables(importables).join("\n");
-  if ((antes && hoy !== codigosImportables(antes.importables).join("\n")) || (d.codigos !== undefined && hoy !== d.codigos)) {
+  // La vista que se firmó debe ser la de hoy; va antes que las siglas para que la persona vea este mensaje (Ruling 41).
+  const hoy = codigosImportables(importables);
+  if ((antes && hoy !== codigosImportables(antes.importables)) || (d.codigos !== undefined && hoy !== listaDeCodigos(d.codigos).join(","))) {
     throw new ErrorIndicador(VISTA_CAMBIADA);
   }
+  const siglas = await validarSiglas(sql, d.siglas, revision);
   if (importables.length === 0) throw new ErrorIndicador(SIN_FILAS);
   return { lectura, revision, importables, siglas, previa, correspondencias };
 }

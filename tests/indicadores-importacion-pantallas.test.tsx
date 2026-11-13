@@ -40,7 +40,7 @@ import { ResumenDeImportacion } from "@/componentes/indicadores/importacion/Resu
 import { TablaVistaPrevia } from "@/componentes/indicadores/importacion/TablaVistaPrevia";
 import { FormularioFirma } from "@/componentes/tramites/DialogoFirma";
 import { EsquemaImportarLote, EsquemaVistaPreviaImportacion, juntarImportacion } from "@/lib/esquemas/indicadores";
-import { camposDeLaImportacion, camposDeLaVista, claveDeCorrespondencia, codigosDeLaVista } from "@/lib/indicadores/importacion/formulario";
+import { camposDeLaImportacion, camposDeLaVista, claveDeCorrespondencia, codigosDeLaVista, listaDeCodigos } from "@/lib/indicadores/importacion/formulario";
 import { normalizar } from "@/lib/lote-usuarios";
 import { parsearFormulario } from "@/lib/validacion";
 import type { VistaPrevia } from "@/db/consultas/indicadores/importacion";
@@ -420,6 +420,24 @@ describe("el formulario que viaja al servidor", () => {
       codigos: "gc-id-01\ngc-id-03",
       clave: "secreta",
     });
+  });
+
+  it("sobrevive al envío real del formulario (multipart): con dos o más códigos llegan los mismos", async () => {
+    const dosFilas = vista({ pendientes: [] });
+    dosFilas.filas = [
+      { numero: 2, codigo: "GC-ID-03", ficha: ficha({ codigo: "GC-ID-03" }) as never, problemas: [], avisos: [], pendientes: [] },
+      { numero: 3, codigo: "GC-ID-01", ficha: ficha({ codigo: "GC-ID-01" }) as never, problemas: [], avisos: [], pendientes: [] },
+    ];
+    const campos = { ...camposDeLaImportacion({ ...estado, codigos: codigosDeLaVista(dosFilas.filas) }), clave: "secreta" };
+    const recibido = await new Request("http://localhost/x", { method: "POST", body: formData(campos) }).formData();
+    const d = parsearFormulario(juntarImportacion(recibido), EsquemaImportarLote, { omitir: ["id"] });
+    expect(listaDeCodigos(d.codigos ?? "")).toEqual(["gc-id-01", "gc-id-03"]);
+    expect(listaDeCodigos(d.codigos ?? "")).toEqual(listaDeCodigos(codigosDeLaVista(dosFilas.filas)));
+  });
+
+  it("la lista de códigos no depende del separador, las mayúsculas ni el orden", () => {
+    expect(listaDeCodigos("GC-ID-03,\r\ngc-id-01\n, ")).toEqual(["gc-id-01", "gc-id-03"]);
+    expect(listaDeCodigos("")).toEqual([]);
   });
 
   it("la vista previa manda solo lo que su esquema estricto admite", () => {
