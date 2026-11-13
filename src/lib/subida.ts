@@ -19,6 +19,7 @@ export const CONTEXTOS_EVIDENCIA = [
   "hallazgo",
   "medicion",
   "reporte_externo",
+  "importacion_indicadores",
 ] as const;
 export type ContextoEvidencia = (typeof CONTEXTOS_EVIDENCIA)[number];
 /** Los roles que las listas y las rutas de archivos de un documento ofrecen: las actas quedan fuera. */

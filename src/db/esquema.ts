@@ -79,12 +79,17 @@ export const subprocesos = pgTable(
       .references(() => procesos.id, { onDelete: "restrict" }),
     nombre: text("nombre").notNull(),
     slug: text("slug").notNull(),
+    // Sigla para el código de los indicadores (migración 0012); única sin distinguir mayúsculas.
+    sigla: text("sigla"),
     orden: integer("orden").notNull(),
     activo: boolean("activo").notNull().default(true),
   },
   (t) => [
     unique("subprocesos_proceso_slug_unico").on(t.procesoId, t.slug),
     index("subprocesos_proceso_idx").on(t.procesoId),
+    uniqueIndex("subprocesos_sigla_unica")
+      .on(sql`lower(${t.sigla})`)
+      .where(sql`${t.sigla} IS NOT NULL`),
   ],
 );
 
@@ -286,7 +291,7 @@ export const archivos = pgTable(
     ),
     check(
       "archivos_contexto_valido",
-      sql`${t.contexto} IN ('version', 'jornada', 'verificacion_item', 'norma', 'revision_anual', 'hallazgo', 'medicion', 'reporte_externo')`,
+      sql`${t.contexto} IN ('version', 'jornada', 'verificacion_item', 'norma', 'revision_anual', 'hallazgo', 'medicion', 'reporte_externo', 'importacion_indicadores')`,
     ),
     check(
       "archivos_contexto_coherente",
@@ -1624,6 +1629,30 @@ export const indicadores = pgTable(
   ],
 );
 
+// Solo-inserción (triggers en la migración 0012): el registro de un lote de fichas importadas y sus eventos.
+export const importacionesIndicadores = pgTable("importaciones_indicadores", {
+  id: id(),
+  cargadoPor: refUsuario("cargado_por").notNull(),
+  cargadoEn: marca("cargado_en").notNull().defaultNow(),
+});
+
+export const importacionEventos = pgTable(
+  "importacion_eventos",
+  {
+    id: id(),
+    importacionId: ref("importacion_id", () => importacionesIndicadores.id).notNull(),
+    tipo: text("tipo").notNull(),
+    usuarioId: refUsuario("usuario_id").notNull(),
+    metodo: text("metodo"),
+    detalle: jsonb("detalle").notNull().default(sql`'{}'::jsonb`),
+    creadoEn: creado(),
+  },
+  (t) => [
+    uniqueIndex("importacion_eventos_tipo_unico").on(t.importacionId, t.tipo),
+    check("importacion_eventos_tipo_valido", sql`${t.tipo} IN ('importado', 'deshecho')`),
+  ],
+);
+
 // Aprobada es inmutable (trigger en la migración 0011), con sus variables, responsables y normas.
 export const indicadorVersiones = pgTable(
   "indicador_versiones",
@@ -1665,6 +1694,13 @@ export const indicadorVersiones = pgTable(
     meta: num("meta"),
     metaMax: num("meta_max"),
     semaforoModo: text("semaforo_modo"),
+    rangos: jsonb("rangos"),
+    nivel: text("nivel"),
+    riesgoAsociado: text("riesgo_asociado"),
+    importacionId: ref("importacion_id", () => importacionesIndicadores.id),
+    aprobacionPreviaDocumento: text("aprobacion_previa_documento"),
+    aprobacionPreviaPor: text("aprobacion_previa_por"),
+    aprobacionPreviaFecha: date("aprobacion_previa_fecha"),
     umbralAtencionPct: integer("umbral_atencion_pct"),
     limiteCritico: num("limite_critico"),
     tolerancia: num("tolerancia"),
@@ -1703,7 +1739,12 @@ export const indicadorVersiones = pgTable(
       sql`${t.periodicidad} IN ('mensual', 'bimestral', 'trimestral', 'semestral', 'anual')`,
     ),
     check("indicador_versiones_tendencia_valida", sql`${t.tendencia} IN ('ascendente', 'descendente', 'constante')`),
-    check("indicador_versiones_semaforo_modo_valido", sql`${t.semaforoModo} IN ('relativo', 'fijo')`),
+    check("indicador_versiones_semaforo_modo_valido", sql`${t.semaforoModo} IN ('relativo', 'fijo', 'rangos')`),
+    check("indicador_versiones_rangos_con_modo", sql`(${t.semaforoModo} IS DISTINCT FROM 'rangos') = (${t.rangos} IS NULL)`),
+    check(
+      "indicador_versiones_importada_coherente",
+      sql`${t.importacionId} IS NULL OR ${t.estado} <> 'aprobada' OR (${t.aprobacionPreviaDocumento} IS NOT NULL AND ${t.aprobacionPreviaPor} IS NOT NULL AND ${t.aprobacionPreviaFecha} IS NOT NULL)`,
+    ),
     check("indicador_versiones_decimales_validos", sql`${t.decimales} BETWEEN 0 AND 4`),
     check("indicador_versiones_umbral_valido", sql`${t.umbralAtencionPct} BETWEEN 1 AND 99`),
     check(
@@ -1851,6 +1892,8 @@ export const mediciones = pgTable(
     resultadoExacto: text("resultado_exacto"),
     resultado: num("resultado"),
     semaforo: text("semaforo"),
+    // Nulo en las filas anteriores a la 0012: se lee con `cumpleDeFila`.
+    cumple: boolean("cumple"),
     metaAplicada: num("meta_aplicada"),
     metaMaxAplicada: num("meta_max_aplicada"),
     limiteAplicado: num("limite_aplicado"),

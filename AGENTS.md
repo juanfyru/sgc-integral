@@ -71,7 +71,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
     semillas y creación del rol de la app) y `DATABASE_URL` (rol `sgc_app`, solo DML,
     sin `UPDATE` ni `DELETE` en `auditoria`, `accesos`, `firmas`, `tramite_eventos`,
     `copia_eventos`, `acuse_eventos`, `ratificaciones`, `externo_verificaciones`,
-    `norma_cambios`, `medicion_eventos`, `medicion_observaciones` y `cierres_indicadores`).
+    `norma_cambios`, `medicion_eventos`, `medicion_observaciones`, `cierres_indicadores`,
+    `importaciones_indicadores` e `importacion_eventos`).
     `asegurarRolApp` (`src/db/roles-bd.ts`) crea el rol y aplica sus privilegios en cada
     arranque, después de las migraciones. Los secretos (`APP_SECRETO`, `BD_APP_CLAVE`) se
     generan al instalar; sin un `APP_SECRETO` válido el arranque de producción falla.
@@ -103,7 +104,7 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
 5. **Trazabilidad completa:** toda acción de cualquier usuario queda en bitácora, inmutable en BD,
    con quién, qué y cuándo. `auditoria`, `accesos`, `firmas`, `tramite_eventos`, `copia_eventos`,
    `acuse_eventos`, `ratificaciones`, `externo_verificaciones`, `norma_cambios`,
-   `medicion_eventos` y `medicion_observaciones` son de solo inserción (trigger que rechaza
+   `medicion_eventos`, `medicion_observaciones`, `importaciones_indicadores` e `importacion_eventos` son de solo inserción (trigger que rechaza
    `UPDATE` y `DELETE` incluso al dueño del esquema, más los privilegios de `sgc_app`); los
    usuarios con historia se desactivan, nunca se borran, y una verificación cerrada no se
    modifica. Una revisión anual cerrada tampoco, ni sus procesos ni sus decisiones: el trigger
@@ -228,9 +229,9 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   `<html>` solo tras validar el hex estricto y el contraste P1/P2 (`src/lib/marca.ts`).
 - **Migraciones versionadas con Drizzle Kit**, ejecutadas en el arranque del contenedor.
   Nunca `db push` contra producción. `src/db/esquema.ts` nunca importa con `@/`
-  (drizzle-kit lo carga sin el alias): solo rutas relativas. Al cierre de la 14A son doce
-  (`drizzle/0000` a `drizzle/0011`; la `0011` crea también, vacías, las tablas de la 14B, que la
-  `0012` puede rehacer mientras sigan sin uso, spec 14 §19.5).
+  (drizzle-kit lo carga sin el alias): solo rutas relativas. Al cierre de esta entrega son trece
+  (`drizzle/0000` a `drizzle/0012`; la `0011` crea también, vacías, las tablas de la 14B, que la
+  `0013` puede rehacer mientras sigan sin uso, spec 14 §19.5).
 - **Toda página autenticada lleva o hereda de su layout `force-dynamic`** (`export const
   dynamic = "force-dynamic"`; lo declaran `src/app/layout.tsx` y los layouts de
   `(app)`, `(cuenta)` y `(app)/admin/(panel)`): nunca se prerenderiza, y el build de CI no
