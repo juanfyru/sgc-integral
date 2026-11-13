@@ -383,6 +383,10 @@ describe("subprocesos CRUD", () => {
       expect(aud.detalle).toMatchObject({ sigla: "ZQB" });
       await expect(asignarSiglaASubproceso(tx, Number(s2.id), "ZQB", usuarioId)).rejects.toThrow("Ya hay un proceso o subproceso con la sigla ZQB");
       await expect(asignarSiglaASubproceso(tx, Number(s2.id), "ind", usuarioId)).rejects.toThrow("La sigla IND está reservada para los indicadores");
+      // Solo da sigla a un subproceso que no tiene: una puesta desde el mapa (aquí o en otra transacción que llegó antes) no se pisa.
+      await expect(asignarSiglaASubproceso(tx, Number(s1.id), "ZQC", usuarioId)).rejects.toThrow("El subproceso ya tiene la sigla ZQB");
+      const [igual] = await tx`SELECT sigla FROM subprocesos WHERE id = ${s1.id}`;
+      expect(igual.sigla).toBe("ZQB");
     }));
 
   it("asignarSiglaASubproceso traduce el 23505 del índice cuando la comprobación previa no lo vio", async () => {

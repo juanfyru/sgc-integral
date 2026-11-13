@@ -934,18 +934,21 @@ describe("la importación de indicadores (14A)", () => {
   const x = (accion: string, detalle: Record<string, unknown>, entidadId: number | null = 7) =>
     describirEvento({ accion, entidad: "importacion_indicadores", entidadId, detalle });
 
-  it("preparar un lote dice su número", () => {
-    expect(x("preparo_importacion_indicadores", {})).toBe("Preparó la importación de indicadores n.º 7");
-    expect(x("preparo_importacion_indicadores", {}, null)).toBe("Preparó una importación de indicadores");
+  it("preparar un lote dice su número, que sale del detalle", () => {
+    expect(x("preparo_importacion_indicadores", { loteId: 7 }, null)).toBe("Preparó la importación de indicadores n.º 7");
+    expect(x("preparo_importacion_indicadores", {})).toBe("Preparó una importación de indicadores");
     expect(nombreDeAccion("preparo_importacion_indicadores")).toBe("Preparó una importación de indicadores");
   });
 
   it("importar dice cuántas fichas entraron aprobadas, en borrador y omitidas", () => {
-    expect(x("importo_indicadores", { aprobadas: 2, borradores: 1, omitidas: 0, codigos: ["CNT-ID-001", "CNT-ID-002", "CNT-ID-003"] })).toBe(
+    expect(x("importo_indicadores", { loteId: 7, aprobadas: 2, borradores: 1, omitidas: 0, codigos: ["CNT-ID-001", "CNT-ID-002", "CNT-ID-003"] }, null)).toBe(
       "Importó 3 fichas de indicadores en la importación n.º 7 (2 aprobadas antes de SGC Integral, 1 en borrador)",
     );
-    expect(x("importo_indicadores", { aprobadas: 1, borradores: 0, omitidas: 2 })).toBe(
+    expect(x("importo_indicadores", { loteId: 7, aprobadas: 1, borradores: 0, omitidas: 2 })).toBe(
       "Importó 1 ficha de indicadores en la importación n.º 7 (1 aprobada antes de SGC Integral, 0 en borrador; 2 filas omitidas)",
+    );
+    expect(x("importo_indicadores", { aprobadas: 1, borradores: 1, omitidas: 0 })).toBe(
+      "Importó 2 fichas de indicadores (1 aprobada antes de SGC Integral, 1 en borrador)",
     );
     expect(x("importo_indicadores", {}, null)).toBe("Importó fichas de indicadores");
     expect(nombreDeAccion("importo_indicadores")).toBe("Importó fichas de indicadores");

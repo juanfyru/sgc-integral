@@ -11,12 +11,13 @@ const permitirArchivo = crearLimitador({ limite: 60, ventanaMs: 60_000 });
 
 /**
  * La plantilla que se subió a un lote de importación (spec 14A §5.7: el soporte del lote), a quien administra
- * indicadores. Siempre como descarga, con el MIME guardado, `nosniff` y `no-store`; un lote sin plantilla, 404.
+ * indicadores. Siempre como descarga, con el MIME guardado, `nosniff` y `no-store`. Para los demás, y para un lote sin
+ * plantilla, no existe (404, como todo archivo guardado: AGENTS.md, F13A-R3).
  */
 export async function GET(peticion: NextRequest, { params }: { params: Promise<{ id: string }> }): Promise<Response> {
   const sesion = await sesionDePeticion(peticion);
   if (!sesion) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  if (!puede(sesion, "indicadores.administrar")) return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
+  if (!puede(sesion, "indicadores.administrar")) return respuesta404();
   if (!permitirArchivo(String(sesion.usuarioId))) {
     return NextResponse.json(
       { error: "Demasiadas peticiones, intente de nuevo en un momento" },

@@ -83,6 +83,7 @@ const SIN_FILAS = "No hay filas para importar";
 const ARCHIVO_CAMBIADO = "El archivo de la importación cambió en el almacén: cree una importación nueva con la plantilla";
 const ARCHIVO_AUSENTE = "No se encontró el archivo de la importación en el almacén";
 const SIGLA_FUERA = "Solo se da sigla a un subproceso de la importación que aún no la tiene";
+const VISTA_CAMBIADA = "La vista previa cambió mientras se importaba: revísela y vuelva a importar";
 
 /** Los largos de los datos de la aprobación previa: el documento va también en el sustento de la meta (hasta 500). */
 const LARGO_DOCUMENTO = 120;
@@ -111,7 +112,7 @@ export async function crearLote(sesion: SesionFlujo, opciones?: Opciones): Promi
       accion: "preparo_importacion_indicadores",
       entidad: "importacion_indicadores",
       entidadId: id,
-      detalle: {},
+      detalle: { loteId: id },
     });
     return { id };
   });
@@ -446,17 +447,23 @@ type Importacion = {
   correspondencias: Correspondencias;
 };
 
+/** Las filas que se importarían, por su código: lo que la persona vio antes de dar su clave. */
+const codigosImportables = (filas: readonly (FilaRevisada & { ficha: FichaImportada })[]) =>
+  filas.map((f) => f.ficha.codigo.toLowerCase()).sort();
+
 /**
- * Lo que debe cumplirse para importar, sin escribir nada. Dentro de la transacción recibe la plantilla ya leída
- * (`leida`) y comprueba que el lote sigue teniendo ese mismo archivo.
+ * Lo que debe cumplirse para importar, sin escribir nada. Dentro de la transacción recibe lo que se revisó antes de la
+ * clave (`antes`): comprueba que el lote sigue teniendo el mismo archivo y que las filas importables son las mismas
+ * (Ruling 35: nadie firma un lote distinto del que vio).
  */
 async function validarImportacion(
   sql: Cliente,
   loteId: number,
   d: Omit<DatosImportacion, "credenciales">,
   ahora: Date,
-  leida?: Lectura,
+  antes?: Importacion,
 ): Promise<Importacion> {
+  const leida = antes?.lectura;
   const estado = await estadoDeLote(sql, loteId);
   if (estado === null) throw new ErrorIndicador(NO_EXISTE);
   if (estado === "importado" || estado === "deshecho") throw new ErrorIndicador(YA_SE_HIZO);
@@ -476,6 +483,9 @@ async function validarImportacion(
   const revision = await revisarFilas(sql, lectura.filas, correspondencias, d.regla, ahora, previa.documento);
   const siglas = await validarSiglas(sql, d.siglas, revision);
   const importables = revision.filas.filter((f): f is FilaRevisada & { ficha: FichaImportada } => f.ficha !== null);
+  if (antes && codigosImportables(importables).join("\n") !== codigosImportables(antes.importables).join("\n")) {
+    throw new ErrorIndicador(VISTA_CAMBIADA);
+  }
   if (importables.length === 0) throw new ErrorIndicador(SIN_FILAS);
   return { lectura, revision, importables, siglas, previa, correspondencias };
 }
@@ -507,7 +517,7 @@ export async function importarLote(
   try {
     return await enTransaccion(sql, async (tx) => {
       await bloquearLote(tx, loteId);
-      const v = await validarImportacion(tx, loteId, d, ahora, antes.lectura);
+      const v = await validarImportacion(tx, loteId, d, ahora, antes);
       for (const s of v.siglas) await asignarSiglaASubproceso(tx, s.subprocesoId, s.sigla, sesion.usuarioId);
 
       const decimales = new Map(v.revision.catalogos.unidades.map((u) => [u.id, u.decimales]));
@@ -561,7 +571,7 @@ export async function importarLote(
         accion: "importo_indicadores",
         entidad: "importacion_indicadores",
         entidadId: loteId,
-        detalle: { aprobadas, borradores, omitidas, codigos, documento: v.previa.documento, regla },
+        detalle: { loteId, aprobadas, borradores, omitidas, codigos, documento: v.previa.documento, regla },
       });
       return { aprobadas, borradores, omitidas };
     });

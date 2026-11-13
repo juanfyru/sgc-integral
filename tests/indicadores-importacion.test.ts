@@ -368,9 +368,10 @@ describe("el lote de importación", () => {
       const [l] = await tx`SELECT cargado_por, cargado_en FROM importaciones_indicadores WHERE id = ${id}`;
       expect(Number(l.cargado_por)).toBe(b.admin.usuarioId);
       expect((l.cargado_en as Date).toISOString()).toBe(AHORA.toISOString());
-      const [a] = await tx`SELECT usuario_id, entidad FROM auditoria
+      const [a] = await tx`SELECT usuario_id, entidad, detalle FROM auditoria
         WHERE accion = 'preparo_importacion_indicadores' AND entidad_id = ${id}`;
       expect({ usuario: Number(a.usuario_id), entidad: a.entidad }).toEqual({ usuario: b.admin.usuarioId, entidad: "importacion_indicadores" });
+      expect(a.detalle).toEqual({ loteId: id });
     }));
 
   it("recibe una sola plantilla: su estado pasa de «sin archivo» a «por importar» y un segundo archivo se rechaza", () =>
@@ -577,7 +578,7 @@ describe("importar el lote", () => {
         WHERE (entidad = 'importacion_indicadores' AND entidad_id = ${loteId}) OR (entidad = 'indicador' AND entidad_id IN (${a.id}, ${p.id}))
         ORDER BY id`;
       expect(bitacora.map((x) => x.accion)).toEqual(["preparo_importacion_indicadores", "importo_indicadores"]);
-      expect(bitacora[1].detalle).toMatchObject({ aprobadas: 1, borradores: 1, omitidas: 0, codigos: [cod1, cod2] });
+      expect(bitacora[1].detalle).toMatchObject({ loteId, aprobadas: 1, borradores: 1, omitidas: 0, codigos: [cod1, cod2] });
       // La sigla elegida queda en el subproceso.
       const [s] = await tx`SELECT sigla FROM subprocesos WHERE id = ${b.subprocesoId}`;
       expect(s.sigla).toBe("CNT");
@@ -602,6 +603,24 @@ describe("importar el lote", () => {
       await rechaza(importarLote(b.admin, loteId, datosImportacion(), { sql: tx, ahora: AHORA, verificar }), "Esta importación ya se hizo");
       expect(await tx`SELECT 1 FROM indicadores WHERE codigo = ${codigo}`).toHaveLength(0);
       expect(await tx`SELECT 1 FROM auditoria WHERE accion = 'importo_indicadores' AND entidad_id = ${loteId}`).toHaveLength(0);
+    }));
+
+  it("si las filas importables cambian mientras se verifica la clave, no se importa un lote distinto del que se vio", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const [cod1, cod2] = [`CNT-ID-${unico()}`, `CNT-ID-${unico()}`];
+      const { loteId } = await loteCon(tx, b.admin, [aprobada(b, cod1), propuesta(b, cod2)]);
+      // Alguien desactiva el cargo de la primera fila entre la revisión de afuera y el candado: queda pendiente.
+      const verificar = async () => {
+        await tx`UPDATE cargos SET activo = false WHERE id = ${b.cargoId}`;
+        return { ok: true as const, metodo: "clave" as const };
+      };
+      await rechaza(
+        importarLote(b.admin, loteId, datosImportacion(), { sql: tx, ahora: AHORA, verificar }),
+        "La vista previa cambió mientras se importaba: revísela y vuelva a importar",
+      );
+      expect(await tx`SELECT 1 FROM indicadores WHERE codigo IN (${cod1}, ${cod2})`).toHaveLength(0);
+      expect(await estadoDeLote(tx, loteId)).toBe("por_importar");
     }));
 
   it("una ficha propuesta sigue el camino de aprobación de la app hasta quedar aprobada", () =>

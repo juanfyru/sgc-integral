@@ -813,13 +813,13 @@ export function describirEvento(e: EventoAuditoria): string {
       return `Borró el indicador${cod ? ` ${cod}` : ""}, que nunca se envió a aprobación`;
     // ── Indicadores (14A): la importación de fichas aprobadas antes
     case "preparo_importacion_indicadores":
-      return e.entidadId === null ? "Preparó una importación de indicadores" : `Preparó la importación de indicadores n.º ${e.entidadId}`;
+      return numero(d.loteId) === null ? "Preparó una importación de indicadores" : `Preparó la importación de indicadores n.º ${numero(d.loteId)}`;
     case "importo_indicadores": {
       const aprobadas = numero(d.aprobadas);
       const borradores = numero(d.borradores);
       if (aprobadas === null || borradores === null) return "Importó fichas de indicadores";
       const omitidas = numero(d.omitidas) ?? 0;
-      const lote = e.entidadId === null ? "" : ` en la importación n.º ${e.entidadId}`;
+      const lote = numero(d.loteId) === null ? "" : ` en la importación n.º ${numero(d.loteId)}`;
       const detalle = `${aprobadas} ${aprobadas === 1 ? "aprobada" : "aprobadas"} antes de SGC Integral, ${borradores} en borrador${
         omitidas > 0 ? `; ${cuenta(omitidas, "fila omitida", "filas omitidas")}` : ""
       }`;

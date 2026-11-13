@@ -424,7 +424,7 @@ describe("la plantilla de una importación de indicadores", () => {
     expect(enLote()).toEqual(["matriz-2026.xlsx"]);
   });
 
-  it("la plantilla vacía y la del lote se descargan solo administrando indicadores, siempre como descarga", async () => {
+  it("la plantilla vacía y la del lote se descargan solo administrando indicadores, siempre como descarga; el archivo del lote no existe para los demás", async () => {
     listasDePlantilla.mockResolvedValue(LISTAS);
     const pedir = (url: string) => new NextRequest(url);
     const vacia = () => plantillaDeLaImportacion(pedir("http://sgc.local/admin/indicadores/importar/plantilla"));
@@ -436,7 +436,9 @@ describe("la plantilla de una importación de indicadores", () => {
     expect((await delLote("5")).status).toBe(401);
     sesionDePeticion.mockResolvedValue({ usuarioId: 2, rol: "gerencia" });
     expect((await vacia()).status).toBe(403);
-    expect((await delLote("5")).status).toBe(403);
+    // El GET de un archivo guardado responde 404 a quien no puede verlo (AGENTS.md, F13A-R3).
+    expect((await delLote("5")).status).toBe(404);
+    expect(archivoDeLote).not.toHaveBeenCalled();
 
     sesionDePeticion.mockResolvedValue(ADMIN);
     const plantilla = await vacia();
