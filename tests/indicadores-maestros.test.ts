@@ -138,6 +138,14 @@ describe("maestros de indicadores", () => {
 });
 
 describe("parámetros de indicadores", () => {
+  it("sin el umbral de atención (el formulario ya no lo pide) se conserva el guardado", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      await guardarParametros(admin, { umbralAtencionPct: 80, avisoPrevioDias: 1, plazoReporteDias: 10, incumplimientoPeriodos: 3, variacionConfirmarPct: 30 }, { sql: tx });
+      await guardarParametros(admin, { avisoPrevioDias: 2, plazoReporteDias: 10, incumplimientoPeriodos: 3, variacionConfirmarPct: 30 }, { sql: tx });
+      expect(await obtenerParametros({ sql: tx })).toMatchObject({ umbralAtencionPct: 80, avisoPrevioDias: 2 });
+    }));
+
   it("valores de omisión, rangos y valor inválido en la base", () =>
     revertida(sql, async (tx) => {
       const admin = await sesionAdmin(tx);

@@ -56,7 +56,8 @@ export const ESQUEMAS_MAESTRO = {
 
 export const EsquemaParametrosIndicadores = z
   .object({
-    umbralAtencionPct: entero("El umbral de atención", 1, 99),
+    // Solo fichas anteriores (spec 14A §3.5): el formulario ya no lo pide y, sin él, se conserva el valor guardado.
+    umbralAtencionPct: entero("El umbral de atención", 1, 99).optional(),
     avisoPrevioDias: entero("Los días de aviso previo", 0, 30),
     plazoReporteDias: entero("El plazo para reportar", 0, 90),
     incumplimientoPeriodos: entero("Los periodos de incumplimiento", 2, 12),

@@ -10,7 +10,8 @@ import type { DatosFicha } from "@/lib/esquemas/indicadores";
 import { analizar } from "@/lib/indicadores/formula/analizar";
 import { enPalabras, FACTORES_TASA, formulaDeForma, letrasDeForma, unidadDeForma } from "@/lib/indicadores/formula/formas";
 import { fraccion } from "@/lib/indicadores/formula/fraccion";
-import type { Regla } from "@/lib/indicadores/semaforo";
+import { rangosATexto, rangosDeTexto, type RangosEnTexto } from "@/lib/indicadores/rangos";
+import { rangosEquivalentes, type Regla } from "@/lib/indicadores/semaforo";
 import {
   CONSOLIDACIONES,
   ETIQUETA_PERIODICIDAD,
@@ -23,6 +24,7 @@ import {
   type Periodicidad,
   type Tendencia,
 } from "@/lib/indicadores/tipos";
+import { EditorDeRangos, estadoDeRangos, rangosDelEditor } from "./EditorDeRangos";
 import { PruebaFormula } from "./PruebaFormula";
 import { conMiles, SelectorForma } from "./SelectorForma";
 import { VistaSemaforo } from "./VistaSemaforo";
@@ -186,6 +188,8 @@ const CAMPOS_DE_MAS_OPCIONES: readonly [RegExp, string][] = [
   [/^El periodo de la línea base/, "ficha-lineaBasePeriodo"],
   [/^La nota de la línea base/, "ficha-lineaBaseNota"],
   [/^El sustento de la meta/, "ficha-sustentoMeta"],
+  [/^El nivel$|^El nivel /, "ficha-nivel"],
+  [/^El riesgo asociado/, "ficha-riesgoAsociado"],
   [/^El mínimo del resultado/, "ficha-resultadoMin"],
   [/^El máximo del resultado/, "ficha-resultadoMax"],
   [/^(La descripción de una variable|La unidad de una variable|El mínimo de captura|El máximo de captura|Diga si cada variable|Elija cómo se junta)/, "ficha-detalle-variables"],
@@ -200,7 +204,14 @@ export function campoDeMasOpciones(mensaje: string): string | null {
   return CAMPOS_DE_MAS_OPCIONES.find(([patron]) => patron.test(mensaje))?.[1] ?? null;
 }
 
-/** Los errores del servidor sobre un campo que está a la vista (o en «Cambiar rangos»): el `id` del control o del grupo. */
+/**
+ * Los errores de los rangos escritos (los de `errorDeRangos`, los del contrato de la ficha y «La meta debe quedar dentro
+ * del rango de Bien»): van junto al editor, no junto a la meta.
+ */
+const RANGOS_ESCRITOS =
+  /^(Escriba los rangos del semáforo|Un cambio mayor escribe los rangos|Complete los valores de cada rango|Los rangos del semáforo no tienen|Los valores de los rangos|Un estado admite|Solo «entre» lleva|Escriba el rango de|En «|Cada estado lleva|Para mantenerse en un rango|Los rangos de .+ se cruzan|El rango de .+ queda dentro|Entre .+ queda un hueco|La meta debe quedar dentro del rango de Bien)/;
+
+/** Los errores del servidor sobre un campo que está a la vista: el `id` del control o del grupo. */
 const CAMPOS_A_LA_VISTA: readonly [RegExp, string][] = [
   [
     /^(Escriba la fórmula|La fórmula|La variable [A-Z] (no se usa|está repetida)|Falta (cerrar|un valor|un operador|el paréntesis)|Separe los argumentos|Carácter no admitido|Nombre no reconocido|Número demasiado largo|Cada variable es una sola letra|Hay un paréntesis)/,
@@ -215,6 +226,7 @@ const CAMPOS_A_LA_VISTA: readonly [RegExp, string][] = [
   [/^Elija la periodicidad/, "ficha-periodicidad"],
   [/^El plazo de reporte/, "ficha-plazoReporteDias"],
   [/^Elija la tendencia/, "ficha-tendencia"],
+  [RANGOS_ESCRITOS, "ficha-rangos"],
   [/^El máximo del rango/, "ficha-metaMax"],
   [/^(La meta|Con meta)/, "ficha-meta"],
   [/^La tolerancia/, "ficha-tolerancia"],
@@ -226,7 +238,7 @@ const CAMPOS_A_LA_VISTA: readonly [RegExp, string][] = [
 
 /**
  * El campo al que se refiere un error del servidor al guardar la ficha (Tarea 19, D-13): el mensaje va junto a él, lo
- * describe (`aria-describedby`) y el foco va a él, abriendo «Más opciones» o «Cambiar rangos» si hace falta. `null` si
+ * describe (`aria-describedby`) y el foco va a él, abriendo «Más opciones» si hace falta. `null` si
  * el error no es de un campo: queda al pie del formulario.
  */
 export function campoDelError(mensaje: string): string | null {
@@ -314,9 +326,18 @@ export function FormularioFicha({
   const [meta, setMeta] = useState(conComa(valores.meta));
   const [metaMax, setMetaMax] = useState(conComa(valores.metaMax));
   const [tolerancia, setTolerancia] = useState(conComa(valores.tolerancia));
-  const [modo, setModo] = useState<ModoSemaforo>(valores.semaforoModo ?? "relativo");
-  const [umbral, setUmbral] = useState(String(valores.umbralAtencionPct ?? opciones.umbralAtencionPct));
-  const [limite, setLimite] = useState(conComa(valores.limiteCritico));
+  // La regla anterior (relativa o con límite fijo) de una ficha que ya tiene meta: no se reescribe sola (spec 14A §3.5).
+  const modo: ModoSemaforo = valores.semaforoModo ?? "relativo";
+  const esAntigua = valores.rangos === undefined && (valores.meta ?? "").trim() !== "";
+  const [escribiendo, setEscribiendo] = useState(false);
+  const rangosGuardados = valores.rangos === undefined ? null : (JSON.parse(valores.rangos) as RangosEnTexto);
+  const [rangosIniciales, setRangosIniciales] = useState<RangosEnTexto | null>(rangosGuardados);
+  const [claveEditor, setClaveEditor] = useState(0);
+  const [rangos, setRangos] = useState<RangosEnTexto>(() =>
+    rangosDelEditor(estadoDeRangos(valores.tendencia ?? "ascendente", rangosGuardados)),
+  );
+  const umbral = String(valores.umbralAtencionPct ?? opciones.umbralAtencionPct);
+  const limite = conComa(valores.limiteCritico);
   const [resultadoMin, setResultadoMin] = useState(conComa(valores.resultadoMin));
   const [resultadoMax, setResultadoMax] = useState(conComa(valores.resultadoMax));
   const [unidadId, setUnidadId] = useState<number | "">(unidadInicial ?? "");
@@ -343,7 +364,7 @@ export function FormularioFicha({
   const unidad = opciones.unidades.find((u) => u.id === unidadId);
   const vista = { sufijo: unidad?.sufijo ?? "", decimales };
   const constante = tendencia === "constante";
-  const regla: Regla = {
+  const reglaAntigua: Regla = {
     tendencia,
     meta: fraccion(meta.trim()),
     metaMax: constante ? fraccion(metaMax.trim()) : null,
@@ -352,6 +373,12 @@ export function FormularioFicha({
     limite: !constante && modo === "fijo" ? fraccion(limite.trim()) : null,
     tolerancia: constante ? fraccion(tolerancia.trim()) : null,
   };
+  // Un error de los rangos abre el editor aunque la ficha traiga la regla anterior: ahí se corrige.
+  const errorDeRangosDelServidor = estado?.error ? campoDelError(estado.error) === "ficha-rangos" : false;
+  const usaRangos = !esAntigua || escribiendo || errorDeRangosDelServidor;
+  const regla: Regla = usaRangos
+    ? { ...reglaAntigua, modo: "rangos", umbralPct: null, limite: null, tolerancia: null, rangos: rangosDeTexto(rangos) }
+    : reglaAntigua;
   const clasificacion = opciones.clasificaciones.find((c) => c.id === clasificacionId);
   const subprocesos = opciones.subprocesos.filter((s) => s.procesoId === procesoId);
   const documentos = opciones.documentos.filter((d) => procesoId !== "" && d.procesoIds.includes(procesoId));
@@ -382,6 +409,24 @@ export function FormularioFicha({
       setUnidadId(u);
       if (!decimalesTocados) setDecimales(opciones.unidades.find((x) => x.id === u)?.decimales ?? decimales);
     }
+  }
+
+  function elegirTendencia(t: Tendencia) {
+    setTendencia(t);
+    // Los signos de cada fila dependen de la tendencia: el editor parte de filas vacías de la nueva.
+    setRangosIniciales(null);
+    setRangos(rangosDelEditor(estadoDeRangos(t, null)));
+    setClaveEditor((c) => c + 1);
+  }
+
+  /** «Escribir los rangos» en una ficha con la regla anterior: el editor parte de los rangos que dan los mismos colores. */
+  function escribirLosRangos() {
+    const equivalentes = rangosEquivalentes(reglaAntigua);
+    const inicial = equivalentes === null ? null : rangosATexto(equivalentes);
+    setRangosIniciales(inicial);
+    setRangos(rangosDelEditor(estadoDeRangos(tendencia, inicial)));
+    setClaveEditor((c) => c + 1);
+    setEscribiendo(true);
   }
 
   function elegirProceso(id: number | "") {
@@ -424,8 +469,12 @@ export function FormularioFicha({
   const ausentes = new Set<string>([
     ...(forma === "libre" ? [] : ["ficha-formula"]),
     ...(bloqueado ? ["ficha-procesoId"] : []),
-    ...(constante ? ["ficha-semaforoModo", "ficha-umbralAtencionPct", "ficha-limiteCritico"] : ["ficha-metaMax", "ficha-tolerancia"]),
-    ...(modo === "relativo" ? ["ficha-limiteCritico"] : ["ficha-umbralAtencionPct"]),
+    // Los controles de la regla anterior ya no se pintan: sus errores (solo de fichas viejas) quedan al pie.
+    "ficha-semaforoModo",
+    "ficha-umbralAtencionPct",
+    "ficha-limiteCritico",
+    ...(constante ? [] : ["ficha-metaMax"]),
+    ...(constante && !usaRangos ? [] : ["ficha-tolerancia"]),
     ...(edicion?.cambio ? [] : ["ficha-motivoCambio"]),
     ...(operacionFija ? ["ficha-inicioMedicion", "ficha-nivelAcceso"] : []),
   ]);
@@ -627,7 +676,7 @@ export function FormularioFicha({
             </Campo>
           </div>
           <Campo etiqueta="Tendencia" nombre="tendencia" id="ficha-tendencia" error={errorDe("ficha-tendencia")}>
-            <select value={tendencia} onChange={(e) => setTendencia(e.target.value as Tendencia)} className={CONTROL}>
+            <select value={tendencia} onChange={(e) => elegirTendencia(e.target.value as Tendencia)} className={CONTROL}>
               {TENDENCIAS.map((t) => (
                 <option key={t} value={t}>
                   {ETIQUETA_TENDENCIA[t]}
@@ -636,49 +685,52 @@ export function FormularioFicha({
             </select>
           </Campo>
           {constante ? (
-            <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className={`grid min-w-0 grid-cols-1 gap-4 ${usaRangos ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}>
               <Campo etiqueta="Meta: desde" nombre="meta" id="ficha-meta" error={errorDe("ficha-meta")}>
                 <input inputMode="decimal" value={meta} onChange={(e) => setMeta(e.target.value)} className={CONTROL} />
               </Campo>
               <Campo etiqueta="Meta: hasta" nombre="metaMax" id="ficha-metaMax" error={errorDe("ficha-metaMax")} ayuda="Igual a «desde» si es un solo valor.">
                 <input inputMode="decimal" value={metaMax} onChange={(e) => setMetaMax(e.target.value)} className={CONTROL} />
               </Campo>
-              <Campo etiqueta="Tolerancia" nombre="tolerancia" id="ficha-tolerancia" error={errorDe("ficha-tolerancia")} ayuda="A cada lado del rango; puede ser 0.">
-                <input inputMode="decimal" value={tolerancia} onChange={(e) => setTolerancia(e.target.value)} className={CONTROL} />
-              </Campo>
+              {usaRangos ? null : (
+                <Campo etiqueta="Tolerancia" nombre="tolerancia" id="ficha-tolerancia" error={errorDe("ficha-tolerancia")} ayuda="A cada lado del rango; puede ser 0.">
+                  <input inputMode="decimal" value={tolerancia} onChange={(e) => setTolerancia(e.target.value)} className={CONTROL} />
+                </Campo>
+              )}
             </div>
           ) : (
             <Campo etiqueta="Meta" nombre="meta" id="ficha-meta" error={errorDe("ficha-meta")} ayuda="Opcional: sin meta, el indicador solo se vigila.">
               <input inputMode="decimal" value={meta} onChange={(e) => setMeta(e.target.value)} className={CONTROL} />
             </Campo>
           )}
-          <VistaSemaforo regla={regla} unidad={vista} metaEscrita={meta.trim() !== ""} />
-          {constante ? null : (
-            <details className="rounded-md border border-border px-3 py-2">
-              <summary className={RESUMEN}>Cambiar rangos</summary>
-              <div className="mt-3 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
-                <Campo etiqueta="Modo del semáforo" nombre="semaforoModo" id="ficha-semaforoModo" error={errorDe("ficha-semaforoModo")}>
-                  <select value={modo} onChange={(e) => setModo(e.target.value as ModoSemaforo)} className={CONTROL}>
-                    <option value="relativo">Relativo a la meta</option>
-                    <option value="fijo">Rangos fijos</option>
-                  </select>
-                </Campo>
-                {modo === "relativo" ? (
-                  <Campo
-                    etiqueta="Umbral de atención (%)"
-                    nombre="umbralAtencionPct"
-                    id="ficha-umbralAtencionPct" error={errorDe("ficha-umbralAtencionPct")}
-                    ayuda="El crítico empieza en esta proporción de la meta."
-                  >
-                    <input type="number" min={1} max={99} step={1} value={umbral} onChange={(e) => setUmbral(e.target.value)} className={CONTROL} />
-                  </Campo>
-                ) : (
-                  <Campo etiqueta="Límite de crítico" nombre="limiteCritico" id="ficha-limiteCritico" error={errorDe("ficha-limiteCritico")} ayuda="Desde aquí hacia el lado malo es «Crítico».">
-                    <input inputMode="decimal" value={limite} onChange={(e) => setLimite(e.target.value)} className={CONTROL} />
-                  </Campo>
-                )}
-              </div>
-            </details>
+          {usaRangos ? (
+            <EditorDeRangos
+              key={claveEditor}
+              tendencia={tendencia}
+              inicial={rangosIniciales}
+              error={errorEn === "ficha-rangos" ? (estado?.error ?? null) : null}
+              idError="ficha-rangos"
+              alCambiar={setRangos}
+              enviar={meta.trim() !== ""}
+            />
+          ) : null}
+          <VistaSemaforo
+            regla={regla}
+            unidad={vista}
+            metaEscrita={meta.trim() !== ""}
+            accion={
+              usaRangos ? null : (
+                <Boton type="button" variante="secundario" tamano="sm" onClick={escribirLosRangos}>
+                  Escribir los rangos
+                </Boton>
+              )
+            }
+          />
+          {usaRangos || constante ? null : (
+            <>
+              <input type="hidden" name="semaforoModo" value={modo} />
+              {modo === "relativo" ? <input type="hidden" name="umbralAtencionPct" value={umbral} /> : <input type="hidden" name="limiteCritico" value={limite} />}
+            </>
           )}
           {operacionFija ? (
             <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
@@ -811,6 +863,12 @@ export function FormularioFicha({
             </Campo>
             <Campo etiqueta="Punto de control" nombre="puntoControl" id="ficha-puntoControl" error={errorDe("ficha-puntoControl")} ayuda="Por ejemplo: PC-13.">
               <input maxLength={60} defaultValue={valores.puntoControl ?? ""} className={CONTROL} />
+            </Campo>
+            <Campo etiqueta="Nivel" nombre="nivel" id="ficha-nivel" error={errorDe("ficha-nivel")} ayuda="Opcional: el nivel del indicador en el hospital, por ejemplo «Estratégico».">
+              <input maxLength={60} defaultValue={valores.nivel ?? ""} className={CONTROL} />
+            </Campo>
+            <Campo etiqueta="Riesgo asociado" nombre="riesgoAsociado" id="ficha-riesgoAsociado" error={errorDe("ficha-riesgoAsociado")} ayuda="Opcional: el riesgo del proceso que este indicador vigila.">
+              <input maxLength={300} defaultValue={valores.riesgoAsociado ?? ""} className={CONTROL} />
             </Campo>
           </div>
 

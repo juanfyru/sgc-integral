@@ -282,16 +282,21 @@ export async function obtenerParametros(opciones?: Opciones): Promise<Parametros
   return resultado;
 }
 
-export async function guardarParametros(sesion: SesionFlujo, p: ParametrosIndicadores, opciones?: Opciones): Promise<void> {
+export async function guardarParametros(
+  sesion: SesionFlujo,
+  p: Omit<ParametrosIndicadores, "umbralAtencionPct"> & { umbralAtencionPct?: number },
+  opciones?: Opciones,
+): Promise<void> {
   exigirAdministrar(sesion);
   const nuevos = validar(EsquemaParametrosIndicadores, p);
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
     const actuales = await obtenerParametros({ sql: tx });
     const cambios: Record<string, { antes: string; despues: string }> = {};
     for (const c of CAMPOS_PARAMETROS) {
-      await tx`INSERT INTO configuracion (clave, valor) VALUES (${c.clave}, ${String(nuevos[c.campo])})
+      const valor = nuevos[c.campo] ?? actuales[c.campo];
+      await tx`INSERT INTO configuracion (clave, valor) VALUES (${c.clave}, ${String(valor)})
         ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor`;
-      if (actuales[c.campo] !== nuevos[c.campo]) cambios[c.clave] = { antes: String(actuales[c.campo]), despues: String(nuevos[c.campo]) };
+      if (actuales[c.campo] !== valor) cambios[c.clave] = { antes: String(actuales[c.campo]), despues: String(valor) };
     }
     await registrarAuditoria(tx, {
       usuarioId: sesion.usuarioId,

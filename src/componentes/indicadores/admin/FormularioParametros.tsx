@@ -12,14 +12,13 @@ const CONTROL = `${claseControl} w-full min-w-0 max-w-full`;
 const CAMPOS: ReadonlyArray<{
   campo: keyof ParametrosIndicadores; etiqueta: string; ayuda: string; minimo: number; maximo: number;
 }> = [
-  { campo: "umbralAtencionPct", etiqueta: "Umbral de atención (%)", ayuda: "Por omisión en una ficha nueva, de 1 a 99.", minimo: 1, maximo: 99 },
   { campo: "avisoPrevioDias", etiqueta: "Días de aviso previo", ayuda: "Antes de que venza el plazo de reportar, de 0 a 30.", minimo: 0, maximo: 30 },
   { campo: "plazoReporteDias", etiqueta: "Plazo para reportar (días)", ayuda: "Por omisión en una ficha nueva, de 0 a 90.", minimo: 0, maximo: 90 },
   { campo: "incumplimientoPeriodos", etiqueta: "Periodos seguidos de incumplimiento", ayuda: "Para pedir un plan de acción, de 2 a 12.", minimo: 2, maximo: 12 },
   { campo: "variacionConfirmarPct", etiqueta: "Variación que se debe confirmar (%)", ayuda: "Un resultado que cambia más que esto pide confirmación, de 5 a 500.", minimo: 5, maximo: 500 },
 ];
 
-/** Los cinco parámetros de la configuración de indicadores (spec 14 §12.6). */
+/** Los parámetros de la configuración de indicadores (spec 14 §12.6). */
 export function FormularioParametros({ parametros }: { parametros: ParametrosIndicadores }) {
   const [estado, enviar, pendiente] = useActionState(guardarParametrosAccion, null);
   const v = estado?.valores;
