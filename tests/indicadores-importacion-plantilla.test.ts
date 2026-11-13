@@ -439,3 +439,71 @@ describe("revisarLote: rigor de la ronda 1", () => {
     expect(r.problemas).toContain(`El proceso «${"z".repeat(80)}…» no existe en el mapa`);
   });
 });
+
+describe("ronda 2: celdas con error y residuos", () => {
+  async function leer(poner: (hoja: ExcelJS.Worksheet, col: (c: ClaveColumna) => number) => void) {
+    const wb = await libro(await plantillaDeImportacion(LISTAS));
+    const hoja = wb.getWorksheet("Indicadores")!;
+    poner(hoja, (c) => COLUMNAS.findIndex((x) => x.clave === c) + 1);
+    return leerPlantilla(Buffer.from((await wb.xlsx.writeBuffer()) as ArrayBuffer));
+  }
+  const una = (extra: Partial<Record<ClaveColumna, string>>) => revisarLote([fila(2, extra)], catalogos(), SIN_CORR, REGLA, 2026)[0];
+
+  it("una celda con error de Excel o una fórmula sin resultado bloquea su fila", async () => {
+    const r = await leer((h, col) => {
+      h.getCell(2, col("codigo")).value = "CNT-ID-001";
+      h.getCell(2, col("meta")).value = { error: "#DIV/0!" } as ExcelJS.CellErrorValue;
+      h.getCell(2, col("objetivo")).value = { error: "#REF!" } as ExcelJS.CellErrorValue;
+      h.getCell(2, col("riesgo")).value = { formula: "Otra!A1" } as ExcelJS.CellFormulaValue;
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.filas[0].errores).toEqual({ meta: "#DIV/0!", objetivo: "#REF!", riesgo: "fórmula sin resultado" });
+    const rev = revisarLote([{ ...fila(2), celdas: { ...fila(2).celdas, ...r.filas[0].celdas }, errores: r.filas[0].errores }], catalogos(), SIN_CORR, REGLA, 2026)[0];
+    expect(rev.ficha).toBeNull();
+    expect(rev.problemas).toEqual(
+      expect.arrayContaining([
+        "«Meta» tiene un error de Excel (#DIV/0!): corríjalo en la plantilla",
+        "«Objetivo del indicador» tiene un error de Excel (#REF!): corríjalo en la plantilla",
+        "«Riesgo asociado» tiene un error de Excel (fórmula sin resultado): corríjalo en la plantilla",
+      ]),
+    );
+    expect(rev.avisos).not.toContain("Sin meta: el indicador solo se vigilará, sin colores ni alertas");
+  });
+
+  it("un número enorme con formato de fecha no tumba la lectura", async () => {
+    const r = await leer((h, col) => {
+      h.getCell(2, col("codigo")).value = "A-ID-1";
+      const c = h.getCell(2, col("inicioMedicion"));
+      c.value = 1e15;
+      c.numFmt = "yyyy-mm-dd";
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe("La celda Y2 tiene una fecha que no se puede leer");
+  });
+
+  it("el código largo se repite en el mensaje recortado a 80 caracteres", () => {
+    const largo = "A".repeat(100);
+    const r = revisarLote([fila(2, { codigo: largo })], catalogos([largo.toLowerCase()]), SIN_CORR, REGLA, 2026)[0];
+    expect(r.problemas).toContain(`El código ${"A".repeat(80)}… ya existe en la app`);
+  });
+
+  it("«Factor» se lee estricto", () => {
+    for (const mal of ["1000.0", "100,0", "10 00"]) {
+      expect(una({ forma: "Tasa", factor: mal }).problemas.some((p) => p.includes("no es un factor"))).toBe(true);
+    }
+    for (const bien of ["1000", "1.000", "10 000", "100000"]) expect(una({ forma: "Tasa", factor: bien }).problemas).toEqual([]);
+  });
+
+  it("en «Fórmula libre», «Cómo se junta» de una letra que no se usa es un problema", () => {
+    const r = una({ forma: "Fórmula libre", formulaLibre: "A * 2", variableB: "", comoSeJuntaB: "Promedio" });
+    expect(r.problemas).toContain("«Cómo se junta B» no se usa con la forma «Fórmula libre»: déjela vacía");
+  });
+
+  it("los sobrantes nombran la forma de la lista y «Constante» no recibe el mensaje de «Meta hasta»", () => {
+    expect(una({ forma: "conteo", variableB: "x" }).problemas).toContain("«Variable B» no se usa con la forma «Conteo»: déjela vacía");
+    const c = una({ sentido: "Constante", metaHasta: "100" });
+    expect(c.problemas).not.toContain("«Meta hasta» solo se usa con «Constante»: déjela vacía");
+    expect(c.problemas).toContain("«Mantenerse en un rango» no se importa: cree esa ficha en la app");
+  });
+});

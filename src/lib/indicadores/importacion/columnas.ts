@@ -67,7 +67,12 @@ export const ENCABEZADO_DE: Record<ClaveColumna, string> = Object.fromEntries(CO
 >;
 
 /** Una fila de la plantilla leída: el número es el de la hoja y las celdas son texto recortado. */
-export type FilaLeida = { numero: number; celdas: Partial<Record<ClaveColumna, string>> };
+export type FilaLeida = {
+  numero: number;
+  celdas: Partial<Record<ClaveColumna, string>>;
+  /** Las columnas cuya celda trae un error de Excel (o una fórmula sin resultado): el texto del error. */
+  errores?: Partial<Record<ClaveColumna, string>>;
+};
 
 /** Las columnas cuya obligatoriedad depende de la forma se muestran así en la hoja de instrucciones. */
 export const SEGUN_LA_FORMA: readonly ClaveColumna[] = ["variableA", "variableB"];

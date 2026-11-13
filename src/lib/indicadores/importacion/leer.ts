@@ -11,6 +11,8 @@ export type { FilaLeida };
 export type LecturaDePlantilla = { ok: true; filas: FilaLeida[] } | { ok: false; error: string };
 
 class FechaIlegible extends Error {}
+/** Una celda con error de Excel o con una fórmula que no guardó su resultado. */
+class ErrorDeCelda extends Error {}
 
 function textoDeValor(valor: ExcelJS.CellValue | undefined, clave: ClaveColumna, direccion: string): string {
   if (valor === null || valor === undefined) return "";
@@ -27,14 +29,25 @@ function textoDeValor(valor: ExcelJS.CellValue | undefined, clave: ClaveColumna,
     return clave === "inicioMedicion" ? fecha.slice(0, 7) : fecha;
   }
   if ("richText" in valor) return valor.richText.map((t) => t.text).join("").trim();
-  if ("result" in valor) return valor.result === undefined ? "" : textoDeValor(valor.result as ExcelJS.CellValue, clave, direccion);
+  if ("error" in valor) throw new ErrorDeCelda(String(valor.error));
+  if ("result" in valor) {
+    if (valor.result === undefined || valor.result === null) throw new ErrorDeCelda("fórmula sin resultado");
+    return textoDeValor(valor.result as ExcelJS.CellValue, clave, direccion);
+  }
+  if ("formula" in valor || "sharedFormula" in valor) throw new ErrorDeCelda("fórmula sin resultado");
   if ("text" in valor) return textoDeValor(valor.text as ExcelJS.CellValue, clave, direccion);
   return "";
 }
 
-function textoDeCelda(celda: ExcelJS.Cell, clave: ClaveColumna): string {
+function textoDeCelda(celda: ExcelJS.Cell, clave: ClaveColumna, errores?: Partial<Record<ClaveColumna, string>>): string {
   if (celda.type === ExcelJS.ValueType.Merge) return "";
-  return textoDeValor(celda.value, clave, celda.address);
+  try {
+    return textoDeValor(celda.value, clave, celda.address);
+  } catch (e) {
+    if (!(e instanceof ErrorDeCelda)) throw e;
+    if (errores) errores[clave] = e.message;
+    return "";
+  }
 }
 
 export async function leerPlantilla(bytes: Buffer): Promise<LecturaDePlantilla> {
@@ -63,11 +76,14 @@ export async function leerPlantilla(bytes: Buffer): Promise<LecturaDePlantilla> 
     hoja.eachRow({ includeEmpty: false }, (fila, numero) => {
       if (numero === 1) return;
       const celdas: Partial<Record<ClaveColumna, string>> = {};
+      const errores: Partial<Record<ClaveColumna, string>> = {};
       for (const [clave, columna] of columnaDe) {
-        const t = textoDeCelda(fila.getCell(columna), clave);
+        const t = textoDeCelda(fila.getCell(columna), clave, errores);
         if (t !== "") celdas[clave] = t;
       }
-      if (Object.keys(celdas).length > 0) filas.push({ numero, celdas });
+      if (Object.keys(celdas).length > 0 || Object.keys(errores).length > 0) {
+        filas.push(Object.keys(errores).length > 0 ? { numero, celdas, errores } : { numero, celdas });
+      }
     });
 
     if (filas.length === 0) return { ok: false, error: "La plantilla no tiene filas" };

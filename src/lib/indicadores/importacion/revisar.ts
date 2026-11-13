@@ -83,6 +83,13 @@ const LARGOS: Partial<Record<ClaveColumna, number>> = {
   referenteNormativo: 120,
 };
 
+const NOMBRE_DE_FORMA: Record<Forma, string> = {
+  porcentaje: "Porcentaje",
+  tasa: "Tasa",
+  razon: "Promedio o razón",
+  conteo: "Conteo",
+  libre: "Fórmula libre",
+};
 const FORMAS: Record<string, Forma> = {
   porcentaje: "porcentaje",
   tasa: "tasa",
@@ -140,11 +147,14 @@ function revisarFila(f: FilaLeida, c: Catalogos, corr: Correspondencias, regla: 
   if (codigo === "") falta("codigo");
   else {
     const grupo = repetidos.get(codigo.toLowerCase()) ?? [];
-    if (grupo.length > 1) problemas.push(`El código ${codigo} se repite en las filas ${grupo[0]} y ${grupo[grupo.length - 1]}`);
-    if (c.codigosUsados.has(codigo.toLowerCase())) problemas.push(`El código ${codigo} ya existe en la app`);
+    if (grupo.length > 1) problemas.push(`El código ${eco(codigo)} se repite en las filas ${grupo[0]} y ${grupo[grupo.length - 1]}`);
+    if (c.codigosUsados.has(codigo.toLowerCase())) problemas.push(`El código ${eco(codigo)} ya existe en la app`);
     if (codigo.length > LARGO_CODIGO_INDICADOR) problemas.push(`«${ENCABEZADO_DE.codigo}» pasa de ${LARGO_CODIGO_INDICADOR} caracteres`);
     else if (!PATRON_CODIGO_INDICADOR.test(codigo)) problemas.push("El código solo admite letras, números y guiones");
     else if (CODIGOS_RESERVADOS.includes(codigo.toLowerCase())) problemas.push(`El código «${eco(codigo)}» es un nombre reservado: elija otro código`);
+  }
+  for (const [clave, error] of Object.entries(f.errores ?? {}) as [ClaveColumna, string][]) {
+    problemas.push(`«${ENCABEZADO_DE[clave]}» tiene un error de Excel (${error}): corríjalo en la plantilla`);
   }
   if (t("nombre") === "") falta("nombre");
 
@@ -213,12 +223,12 @@ function revisarFila(f: FilaLeida, c: Catalogos, corr: Correspondencias, regla: 
   let factor: number | null = null;
   let formula: string | null = null;
   let letras: ("A" | "B")[] = ["A", "B"];
-  const nombreDeForma = t("forma");
-  const sobra = (clave: ClaveColumna) => problemas.push(`«${ENCABEZADO_DE[clave]}» no se usa con la forma «${eco(nombreDeForma)}»: déjela vacía`);
+  const sobra = (clave: ClaveColumna) => problemas.push(`«${ENCABEZADO_DE[clave]}» no se usa con la forma «${forma === undefined ? "" : NOMBRE_DE_FORMA[forma]}»: déjela vacía`);
   if (forma === "tasa") {
     if (t("factor") === "") falta("factor");
     else {
-      const n = Number(t("factor").replace(/[.,\s]/g, ""));
+      const escrito = t("factor");
+      const n = /^\d{1,3}([.,\s]\d{3})*$/.test(escrito) || /^\d+$/.test(escrito) ? Number(escrito.replace(/[.,\s]/g, "")) : Number.NaN;
       if (!FACTORES_TASA.includes(n)) problemas.push(`«${eco(t("factor"))}» no es un factor: use 100, 1000, 10000 o 100000`);
       else factor = n;
     }
@@ -248,8 +258,10 @@ function revisarFila(f: FilaLeida, c: Catalogos, corr: Correspondencias, regla: 
     if (t("comoSeJuntaB") !== "") sobra("comoSeJuntaB");
   }
   if (forma === "libre" && formula !== null) {
-    for (const [letra, clave] of [["A", "variableA"], ["B", "variableB"]] as const) {
-      if (!letras.includes(letra) && t(clave) !== "") sobra(clave);
+    for (const [letra, variable, junta] of [["A", "variableA", "comoSeJuntaA"], ["B", "variableB", "comoSeJuntaB"]] as const) {
+      if (letras.includes(letra)) continue;
+      if (t(variable) !== "") sobra(variable);
+      if (t(junta) !== "") sobra(junta);
     }
   }
   for (const letra of letras) {
@@ -270,7 +282,7 @@ function revisarFila(f: FilaLeida, c: Catalogos, corr: Correspondencias, regla: 
   let sinMeta = false;
   if (t("meta") === "") {
     sinMeta = true;
-    avisos.push("Sin meta: el indicador solo se vigilará, sin colores ni alertas");
+    if (f.errores?.meta === undefined) avisos.push("Sin meta: el indicador solo se vigilará, sin colores ni alertas");
   } else {
     const m = fraccion(t("meta"));
     if (m === null) problemas.push(`La meta «${eco(t("meta"))}» no es un número`);
@@ -285,7 +297,6 @@ function revisarFila(f: FilaLeida, c: Catalogos, corr: Correspondencias, regla: 
     }
   }
   // «Meta hasta» solo es de «Constante», que no se importa: nunca llega a la ficha.
-  if (t("metaHasta") !== "") problemas.push("«Meta hasta» solo se usa con «Constante»: déjela vacía");
   const metaMax: string | null = null;
   let sentido: Tendencia | undefined;
   if (t("sentido") === "") falta("sentido");
@@ -294,6 +305,7 @@ function revisarFila(f: FilaLeida, c: Catalogos, corr: Correspondencias, regla: 
     if (!sentido) problemas.push(`«${eco(t("sentido"))}» no es un sentido: use Ascendente, Descendente o Constante`);
     else if (sentido === "constante") problemas.push("«Mantenerse en un rango» no se importa: cree esa ficha en la app");
   }
+  if (t("metaHasta") !== "" && sentido !== "constante") problemas.push("«Meta hasta» solo se usa con «Constante»: déjela vacía");
   let periodicidad: Periodicidad | undefined;
   if (t("periodicidad") === "") falta("periodicidad");
   else {
