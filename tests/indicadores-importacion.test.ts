@@ -36,7 +36,7 @@ import {
   vistaPrevia,
 } from "@/db/consultas/indicadores/importacion";
 import { asegurarMediciones } from "@/db/consultas/indicadores/mediciones";
-import { borrarIndicador, designar } from "@/db/consultas/indicadores/operacion";
+import { borrarIndicador, cambiarOperacion, designar, retirar } from "@/db/consultas/indicadores/operacion";
 import { tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
 import { rutaBaseAlmacen } from "@/lib/almacen";
 import { EsquemaImportarLote, EsquemaVistaPreviaImportacion, juntarImportacion, type DatosFicha } from "@/lib/esquemas/indicadores";
@@ -1081,6 +1081,25 @@ describe("deshacer la importación", () => {
         deshacerImportacion(b.admin, f.loteId, { motivo: MOTIVO, credenciales: CLAVE }, despues(tx)),
         `No se puede deshacer: ${f.cod1} tiene datos reportados`,
       );
+    }));
+
+  it("cambiar los datos de operación de una ficha o retirarla no son datos: se deshace igual", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const f = await importado(tx, b);
+      await asegurarMediciones({ sql: tx, ahora: DESPUES, indicadorId: f.aprobadaId });
+      // El plazo nuevo y el soporte obligatorio llegan a noviembre, abierto y sin datos: no le dejan ningún evento.
+      await cambiarOperacion(
+        b.admin,
+        { indicadorId: f.aprobadaId, plazoReporteDias: 15, inicioMedicion: "2026-01", soporteObligatorio: true, nivelAcceso: "restringido" },
+        { sql: tx, ahora: DESPUES },
+      );
+      expect(await tx`SELECT 1 FROM medicion_eventos e JOIN mediciones m ON m.id = e.medicion_id WHERE m.indicador_id = ${f.aprobadaId}`).toHaveLength(0);
+      expect(await condicionDeDeshacer(tx, f.loteId)).toEqual({ puede: true, impiden: [] });
+      await retirar(b.admin, { indicadorId: f.aprobadaId, motivo: "Ya no se mide así" }, { sql: tx, ahora: DESPUES });
+      expect(await condicionDeDeshacer(tx, f.loteId)).toEqual({ puede: true, impiden: [] });
+      expect(await deshacerImportacion(b.admin, f.loteId, { motivo: MOTIVO, credenciales: CLAVE }, despues(tx))).toEqual({ fichas: 2 });
+      expect(await quedan(tx, f)).toEqual(NADA);
     }));
 
   it("una propuesta que se borró en la app ya no está: se deshace el resto", () =>
