@@ -132,3 +132,8 @@ export function versionQueRigeEntre<T extends { rigeDesde: string | null }>(
 export function contiene(mayor: Periodicidad, menor: Periodicidad): boolean {
   return MESES[mayor] >= MESES[menor] && MESES[mayor] % MESES[menor] === 0;
 }
+
+/** La clave del periodo calendario de esa periodicidad que contiene el mes (1 a 12): sin instante ni zona (importación). */
+export function claveQueContieneMes(p: Periodicidad, anio: number, mes: number): string {
+  return claveDe(p, anio, p === "anual" ? 1 : Math.ceil(mes / MESES[p]));
+}
