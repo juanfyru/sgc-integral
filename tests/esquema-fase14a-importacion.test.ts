@@ -173,17 +173,52 @@ describe("esquema de la migración 0012", () => {
       }));
   });
 
-  it("el registro del lote y sus eventos son de solo inserción (también para el dueño)", () =>
+  it("los CHECK y el índice único de los eventos del lote", () =>
     revertida(sql, async (tx) => {
       const [u] = await tx`SELECT id FROM usuarios ORDER BY id LIMIT 1`;
       const [l] = await tx`INSERT INTO importaciones_indicadores (cargado_por) VALUES (${u.id}) RETURNING id`;
-      const [e] = await tx`INSERT INTO importacion_eventos (importacion_id, tipo, usuario_id, metodo) VALUES (${l.id}, 'importado', ${u.id}, 'clave') RETURNING id`;
-      expect(await intentar(tx, () => tx`UPDATE importaciones_indicadores SET cargado_en = now() WHERE id = ${l.id}`)).toBe("42501");
-      expect(await intentar(tx, () => tx`DELETE FROM importaciones_indicadores WHERE id = ${l.id}`)).toBe("42501");
-      expect(await intentar(tx, () => tx`UPDATE importacion_eventos SET metodo = 'x' WHERE id = ${e.id}`)).toBe("42501");
-      expect(await intentar(tx, () => tx`DELETE FROM importacion_eventos WHERE id = ${e.id}`)).toBe("42501");
+      await tx`INSERT INTO importacion_eventos (importacion_id, tipo, usuario_id, metodo) VALUES (${l.id}, 'importado', ${u.id}, 'clave')`;
       expect(await intentar(tx, () => tx`INSERT INTO importacion_eventos (importacion_id, tipo, usuario_id) VALUES (${l.id}, 'otro', ${u.id})`)).toBe("23514");
       expect(await intentar(tx, () => tx`INSERT INTO importacion_eventos (importacion_id, tipo, usuario_id) VALUES (${l.id}, 'importado', ${u.id})`)).toBe("23505");
       expect(await intentar(tx, () => tx`INSERT INTO importacion_eventos (importacion_id, tipo, usuario_id) VALUES (${l.id}, 'deshecho', ${u.id})`)).toBeNull();
     }));
+
+  // Con la conexión del dueño: el REVOKE de sgc_app no interviene, así que el error es el del trigger.
+  it.skipIf(!process.env.DATABASE_URL_MIGRADOR)("el trigger frena también al dueño en el registro del lote y sus eventos", async () => {
+    const dueno = postgres(process.env.DATABASE_URL_MIGRADOR!, { max: 1, types: TIPOS_SQL });
+    try {
+      await revertida(dueno, async (tx) => {
+        const [u] = await tx`SELECT id FROM usuarios ORDER BY id LIMIT 1`;
+        const [l] = await tx`INSERT INTO importaciones_indicadores (cargado_por) VALUES (${u.id}) RETURNING id`;
+        const [e] = await tx`INSERT INTO importacion_eventos (importacion_id, tipo, usuario_id, metodo) VALUES (${l.id}, 'importado', ${u.id}, 'clave') RETURNING id`;
+        const mensaje = async (consulta: () => PromiseLike<unknown>) => {
+          await tx`SAVEPOINT m`;
+          try {
+            await consulta();
+            await tx`RELEASE SAVEPOINT m`;
+            return null;
+          } catch (err) {
+            await tx`ROLLBACK TO SAVEPOINT m`;
+            return err as { code?: string; message: string };
+          }
+        };
+        const casos = [
+          () => tx`UPDATE importaciones_indicadores SET cargado_en = now() WHERE id = ${l.id}`,
+          () => tx`DELETE FROM importaciones_indicadores WHERE id = ${l.id}`,
+          () => tx`UPDATE importacion_eventos SET metodo = 'x' WHERE id = ${e.id}`,
+          () => tx`DELETE FROM importacion_eventos WHERE id = ${e.id}`,
+        ];
+        for (const caso of casos) {
+          const err = await mensaje(caso);
+          expect(err?.code).toBe("42501");
+          expect(err?.message).not.toMatch(/permission denied|permiso denegado/i);
+        }
+        // Sin el trigger, el dueño sí podría: la prueba mide el trigger y no un permiso.
+        await tx`DROP TRIGGER importaciones_indicadores_inmutable ON importaciones_indicadores`;
+        expect(await mensaje(casos[0])).toBeNull();
+      });
+    } finally {
+      await dueno.end();
+    }
+  });
 });
