@@ -759,7 +759,13 @@ export async function asignarSiglaASubproceso(
   const valida = validarSigla(sigla);
   exigirSiglaNoReservada(valida);
   await exigirSiglaDeMapaLibre(tx, valida, { subproceso: subprocesoId });
-  const [s] = await tx`UPDATE subprocesos SET sigla = ${valida} WHERE id = ${subprocesoId} RETURNING id`;
+  let s;
+  try {
+    [s] = await tx`UPDATE subprocesos SET sigla = ${valida} WHERE id = ${subprocesoId} RETURNING id`;
+  } catch (err) {
+    // Otra transacción pudo dar la misma sigla entre la comprobación y el UPDATE: el índice único la frena.
+    throw traducirSigla(err, valida, "No se pudo asignar la sigla");
+  }
   if (!s) throw new Error("El subproceso no existe");
   await registrarAuditoria(tx, {
     usuarioId, accion: "editar_subproceso", entidad: "subprocesos",

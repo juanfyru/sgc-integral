@@ -109,6 +109,18 @@ export function codigoAlCambiarDeProceso(codigo: string, tocado: boolean, siglaA
   return !tocado || actual === "" || delAnterior ? propuesto : codigo;
 }
 
+/** Como `codigoAlCambiarDeProceso`, pero si la sigla vigente no cambia (sin distinguir mayúsculas) el código no se toca. */
+export function codigoAlCambiarDeEleccion(
+  codigo: string,
+  tocado: boolean,
+  siglaAnterior: string | null,
+  siglaNueva: string | null,
+  propuesto: string,
+): string {
+  if ((siglaAnterior ?? "").toLowerCase() === (siglaNueva ?? "").toLowerCase()) return codigo;
+  return codigoAlCambiarDeProceso(codigo, tocado, siglaAnterior, propuesto);
+}
+
 /** Un dato que aquí solo se muestra: sin `name`, el valor viaja aparte. */
 function SoloLectura({ id, etiqueta, valor, ayuda }: { id: string; etiqueta: string; valor: string; ayuda: string }) {
   return (
@@ -463,7 +475,10 @@ export function FormularioFicha({
   function elegirSubproceso(id: number | "") {
     setSubprocesoId(id);
     if (!bloqueado) {
-      setCodigo(codigoAlCambiarDeProceso(codigo, codigoTocado, siglaVigenteDe(opciones, procesoId, subprocesoId), codigoPropuestoDe(opciones, procesoId, id)));
+      setCodigo(codigoAlCambiarDeEleccion(
+        codigo, codigoTocado, siglaVigenteDe(opciones, procesoId, subprocesoId), siglaVigenteDe(opciones, procesoId, id),
+        codigoPropuestoDe(opciones, procesoId, id),
+      ));
     }
   }
 
@@ -473,7 +488,10 @@ export function FormularioFicha({
     if (procedimientoId !== "" && !opciones.documentos.some((d) => d.id === procedimientoId && id !== "" && d.procesoIds.includes(id))) {
       setProcedimientoId("");
     }
-    setCodigo(codigoAlCambiarDeProceso(codigo, codigoTocado, siglaVigenteDe(opciones, procesoId, subprocesoId), codigoPropuestoDe(opciones, id, "")));
+    setCodigo(codigoAlCambiarDeEleccion(
+      codigo, codigoTocado, siglaVigenteDe(opciones, procesoId, subprocesoId), siglaVigenteDe(opciones, id, ""),
+      codigoPropuestoDe(opciones, id, ""),
+    ));
     // Sin persona designada, los responsables son los cargos de los líderes del proceso nuevo.
     if (!cargosTocados.medir && mide === "") setCargosMedir(cargosPorOmision("", id));
     if (!cargosTocados.analizar && (analiza === "misma" ? mide : analiza) === "") setCargosAnalizar(cargosPorOmision("", id));

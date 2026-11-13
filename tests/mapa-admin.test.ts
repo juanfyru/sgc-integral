@@ -366,6 +366,7 @@ describe("subprocesos CRUD", () => {
       expect(await obtenerSubproceso(a.id)).toMatchObject({ sigla: null });
     } finally {
       if (ids.length) await sql()`DELETE FROM subprocesos WHERE id = ANY(${ids})`;
+      await sql()`DELETE FROM tipos_documento WHERE nombre = 'ZZ Tipo ID'`;
     }
   });
 
@@ -383,4 +384,31 @@ describe("subprocesos CRUD", () => {
       await expect(asignarSiglaASubproceso(tx, Number(s2.id), "ZQB", usuarioId)).rejects.toThrow("Ya hay un proceso o subproceso con la sigla ZQB");
       await expect(asignarSiglaASubproceso(tx, Number(s2.id), "ind", usuarioId)).rejects.toThrow("La sigla IND está reservada para los indicadores");
     }));
+
+  it("asignarSiglaASubproceso traduce el 23505 del índice cuando la comprobación previa no lo vio", async () => {
+    // Dos transacciones a la vez: la segunda pasa la comprobación (aún no ve la fila de la primera) y el índice la frena.
+    const [proc] = await sql()`SELECT id FROM procesos ORDER BY orden LIMIT 1`;
+    const [s1] = await sql()`INSERT INTO subprocesos (proceso_id, nombre, slug, orden) VALUES (${proc.id}, 'ZZ C1', 'zz-carrera-1', 93) RETURNING id`;
+    const [s2] = await sql()`INSERT INTO subprocesos (proceso_id, nombre, slug, orden) VALUES (${proc.id}, 'ZZ C2', 'zz-carrera-2', 94) RETURNING id`;
+    try {
+      let liberar!: () => void;
+      const espera = new Promise<void>((r) => (liberar = r));
+      let primeraLista!: () => void;
+      const lista = new Promise<void>((r) => (primeraLista = r));
+      const primera = sql().begin(async (tx) => {
+        await asignarSiglaASubproceso(tx, Number(s1.id), "ZQE", usuarioId);
+        primeraLista();
+        await espera;
+      });
+      await lista;
+      const segunda = sql().begin((tx) => asignarSiglaASubproceso(tx, Number(s2.id), "ZQE", usuarioId));
+      const resultado = expect(segunda).rejects.toThrow("Ya hay un proceso o subproceso con la sigla ZQE");
+      await new Promise((r) => setTimeout(r, 300));
+      liberar();
+      await primera;
+      await resultado;
+    } finally {
+      await sql()`DELETE FROM subprocesos WHERE id = ANY(${[Number(s1.id), Number(s2.id)]})`;
+    }
+  });
 });

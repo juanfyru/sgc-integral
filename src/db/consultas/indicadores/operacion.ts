@@ -361,7 +361,10 @@ export async function duplicar(
       const desde = Number(ultima.id);
       const mismoProceso = d.procesoId === origen.procesoId;
 
-      codigo = await proponerCodigo(d.procesoId, null, { sql: tx });
+      // En el mismo proceso la copia conserva el subproceso, y con él su sigla.
+      const [delOrigen] = await tx`SELECT subproceso_id FROM indicador_versiones WHERE id = ${desde}`;
+      const subOrigen = mismoProceso && delOrigen?.subproceso_id != null ? Number(delOrigen.subproceso_id) : null;
+      codigo = await proponerCodigo(d.procesoId, subOrigen, { sql: tx });
       const [o] = await tx`SELECT nivel_acceso, plazo_reporte_dias, inicio_medicion, soporte_obligatorio FROM indicadores WHERE id = ${origen.id}`;
       const [i] = await tx`INSERT INTO indicadores
           (codigo, proceso_id, estado, nivel_acceso, plazo_reporte_dias, inicio_medicion, soporte_obligatorio, creado_por, creado_en)

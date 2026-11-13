@@ -476,6 +476,17 @@ describe("los datos de operación en las mediciones abiertas", () => {
 });
 
 describe("duplicar", () => {
+  it("dentro del mismo proceso, el código propuesto lleva la sigla del subproceso de origen", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const [sub] = await tx`INSERT INTO subprocesos (proceso_id, nombre, slug, sigla, orden)
+        VALUES (${b.sgc}, 'ZZ Sub copia', ${`zz-copia-${Date.now()}`}, 'ZQD', 91) RETURNING id`;
+      const origen = await crearIndicador(b.admin, datos(b, { subprocesoId: Number(sub.id) }), { sql: tx, ahora: AHORA });
+      expect(origen.codigo).toBe("ZQD-ID-001");
+      const copia = await duplicar(b.admin, { indicadorId: origen.indicadorId, procesoId: b.sgc }, { sql: tx, ahora: AHORA });
+      expect(copia.codigo).toBe("ZQD-ID-002");
+    }));
+
   it("crea un borrador en versión 1 con el mismo contenido y el código del proceso destino", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);

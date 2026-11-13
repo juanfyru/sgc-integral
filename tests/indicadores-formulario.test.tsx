@@ -15,7 +15,7 @@ vi.mock("@/app/admin/acciones-indicadores", () => ({ guardarParametrosAccion: vi
 
 import { FormularioParametros } from "@/componentes/indicadores/admin/FormularioParametros";
 import { estadoDeRangos, rangosDelEditor, type EstadoEditor } from "@/componentes/indicadores/ficha/EditorDeRangos";
-import { campoDeMasOpciones, campoDelError, codigoAlCambiarDeProceso, codigoPropuestoDe, FormularioFicha, siglaVigenteDe } from "@/componentes/indicadores/ficha/FormularioFicha";
+import { campoDeMasOpciones, campoDelError, codigoAlCambiarDeEleccion, codigoAlCambiarDeProceso, codigoPropuestoDe, FormularioFicha, siglaVigenteDe } from "@/componentes/indicadores/ficha/FormularioFicha";
 import { EsquemaFicha, type DatosFicha } from "@/lib/esquemas/indicadores";
 import { unidadDeForma } from "@/lib/indicadores/formula/formas";
 import type { OpcionesFicha } from "@/lib/indicadores/tipos";
@@ -275,6 +275,17 @@ describe("FormularioFicha", () => {
     expect(codigoAlCambiarDeProceso("", true, "SGC", "GTH-ID-001")).toBe("GTH-ID-001");
     expect(codigoAlCambiarDeProceso("CAL-07", true, "SGC", "GTH-ID-001")).toBe("CAL-07");
     expect(codigoAlCambiarDeProceso("SGCX-ID-002", true, "SGC", "GTH-ID-001")).toBe("SGCX-ID-002");
+  });
+
+  it("si la sigla vigente no cambia, el código se conserva tal cual", () => {
+    // Entre dos subprocesos sin sigla (o de «ninguno» a uno), la sigla sigue siendo la del proceso.
+    expect(codigoAlCambiarDeEleccion("GTH-ID-050", true, "GTH", "gth", "GTH-ID-001")).toBe("GTH-ID-050");
+    expect(codigoAlCambiarDeEleccion("GTH-ID-003", false, "GTH", "GTH", "GTH-ID-004")).toBe("GTH-ID-003");
+    // Si cambia, manda la regla de siempre.
+    expect(codigoAlCambiarDeEleccion("GTH-ID-003", false, "GTH", "CNT", "CNT-ID-001")).toBe("CNT-ID-001");
+    expect(codigoAlCambiarDeEleccion("GTH-ID-050", true, "GTH", "CNT", "CNT-ID-001")).toBe("CNT-ID-001");
+    expect(codigoAlCambiarDeEleccion("CAL-07", true, "GTH", "CNT", "CNT-ID-001")).toBe("CAL-07");
+    expect(codigoAlCambiarDeEleccion("", true, null, "CNT", "CNT-ID-001")).toBe("CNT-ID-001");
   });
 
   it("el código propuesto es el del subproceso con sigla o, si no, el del proceso", () => {
