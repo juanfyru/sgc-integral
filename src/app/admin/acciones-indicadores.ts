@@ -2,7 +2,7 @@
 
 import { idNumerico, mutacion, texto, type EstadoAccion } from "@/app/admin/comun";
 import { ErrorFirma } from "@/db/consultas/flujo/contrato";
-import { crearLote, importarLote, vistaPrevia, type VistaPrevia } from "@/db/consultas/indicadores/importacion";
+import { crearLote, deshacerImportacion, importarLote, vistaPrevia, type VistaPrevia } from "@/db/consultas/indicadores/importacion";
 import {
   activarEnMaestro,
   borrarDeMaestro,
@@ -12,7 +12,7 @@ import {
 } from "@/db/consultas/indicadores/maestros";
 import { contextoDePeticion } from "@/lib/contexto-peticion";
 import { EsquemaSinDatos } from "@/lib/esquemas/documentos";
-import { EsquemaImportarLote, EsquemaVistaPreviaImportacion, juntarImportacion } from "@/lib/esquemas/indicadores";
+import { EsquemaDeshacerImportacion, EsquemaImportarLote, EsquemaVistaPreviaImportacion, juntarImportacion } from "@/lib/esquemas/indicadores";
 import {
   EsquemaActivarMaestro,
   EsquemaMaestro,
@@ -140,6 +140,26 @@ export async function importarLoteAccion(_prev: EstadoAccion, formData: FormData
         { contexto: await contextoDePeticion() },
       );
       return `/admin/indicadores/importar/${loteId}?aprobadas=${aprobadas}&borradores=${borradores}`;
+    } catch (err) {
+      return destinoDeFirma(err);
+    }
+  });
+}
+
+/** Deshace el lote (`id`) con el motivo y la clave de quien lo deshace, y vuelve a su página, que ya lo dice deshecho. */
+export async function deshacerImportacionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  const firma = separarFirma(formData);
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    const d = parsearFormulario(firma, EsquemaDeshacerImportacion, { omitir: ["id"] });
+    const loteId = idNumerico(formData, "id");
+    try {
+      await deshacerImportacion(
+        sesion,
+        loteId,
+        { motivo: d.motivo, credenciales: { clave: d.clave, codigo: d.codigo } },
+        { contexto: await contextoDePeticion() },
+      );
+      return `/admin/indicadores/importar/${loteId}`;
     } catch (err) {
       return destinoDeFirma(err);
     }

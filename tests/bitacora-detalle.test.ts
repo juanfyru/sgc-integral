@@ -953,4 +953,16 @@ describe("la importación de indicadores (14A)", () => {
     expect(x("importo_indicadores", {}, null)).toBe("Importó fichas de indicadores");
     expect(nombreDeAccion("importo_indicadores")).toBe("Importó fichas de indicadores");
   });
+
+  it("deshacer dice el lote, cuántas fichas borró y el motivo, todo del detalle", () => {
+    expect(
+      x("deshizo_importacion_indicadores", { loteId: 7, motivo: "Las metas iban como fracción", codigos: ["CNT-ID-001", "CNT-ID-002"], fichas: 2 }, null),
+    ).toBe("Deshizo la importación de indicadores n.º 7 y borró 2 fichas: Las metas iban como fracción");
+    expect(x("deshizo_importacion_indicadores", { loteId: 7, fichas: 1 })).toBe("Deshizo la importación de indicadores n.º 7 y borró 1 ficha");
+    expect(x("deshizo_importacion_indicadores", { motivo: "Sentido al revés en todas" })).toBe(
+      "Deshizo una importación de indicadores: Sentido al revés en todas",
+    );
+    expect(x("deshizo_importacion_indicadores", {})).toBe("Deshizo una importación de indicadores");
+    expect(nombreDeAccion("deshizo_importacion_indicadores")).toBe("Deshizo una importación de indicadores");
+  });
 });

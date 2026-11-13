@@ -115,7 +115,16 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
    ni sus variables, responsables y normas (`sgc_impedir_si_version_aprobada`, también al insertar
    hijas); y un cierre del mes (`cierres_indicadores`) no se modifica ni se borra (trigger
    `sgc_impedir_modificacion` y el `REVOKE` de `sgc_app`, con su caso en
-   `tests/privilegios-bd.test.ts`; la reapertura no lo toca). Cada acción de la bitácora
+   `tests/privilegios-bd.test.ts`; la reapertura no lo toca). **Única excepción de las fichas aprobadas
+   (spec 14A §5.9):** una versión aprobada que entró con un lote de importación solo se borra, con sus
+   variables, responsables y normas, al «Deshacer la importación» (`deshacerImportacion`,
+   `src/db/consultas/indicadores/importacion.ts`), y solo mientras ninguna ficha del lote tenga datos
+   reportados, personas designadas ni otra versión, ni una propuesta editada o enviada a aprobación
+   después de importarse (`condicionDeDeshacer`, revisada otra vez con las filas bloqueadas). El trigger la deja borrar si la transacción lleva la marca
+   `sgc.deshacer_importacion` con el id de su lote, que se pone en ese único lugar y local a la
+   transacción (`set_config(…, true)`: una marca de sesión quedaría en la conexión del pool; lo exige
+   `tests/indicadores-importacion.test.ts`). El lote y sus eventos no se tocan: deshacer les añade el
+   suyo. Cada acción de la bitácora
    tiene su frase legible y su nombre de filtro en `src/lib/bitacora-detalle.ts`
    (`describirEvento`, `nombreDeAccion`), armada solo con el `detalle` de la fila.
    `tests/bitacora-detalle.test.ts` lo exige para las acciones con nombre literal en las llamadas

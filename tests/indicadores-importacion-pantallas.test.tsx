@@ -10,6 +10,7 @@ const c = vi.hoisted(() => ({
   vistaPrevia: vi.fn(),
   resumenDeLote: vi.fn(),
   lotesRecientes: vi.fn(),
+  condicionDeDeshacer: vi.fn(),
 }));
 
 vi.mock("@/lib/paginas", () => ({
@@ -26,20 +27,24 @@ vi.mock("@/app/admin/acciones-indicadores", () => ({
   crearLoteAccion: vi.fn(),
   vistaPreviaAccion: vi.fn(),
   importarLoteAccion: vi.fn(),
+  deshacerImportacionAccion: vi.fn(),
 }));
 vi.mock("@/db/consultas/indicadores/importacion", () => ({
   vistaPrevia: c.vistaPrevia,
   resumenDeLote: c.resumenDeLote,
   lotesRecientes: c.lotesRecientes,
+  condicionDeDeshacer: c.condicionDeDeshacer,
 }));
+vi.mock("@/db/cliente", () => ({ obtenerSql: () => ({}) }));
 
 import PaginaImportar from "@/app/(app)/admin/(panel)/indicadores/importar/page";
 import PaginaLote from "@/app/(app)/admin/(panel)/indicadores/importar/[id]/page";
+import { CamposDeDeshacer } from "@/componentes/indicadores/importacion/DialogoDeshacer";
 import { FormularioImportacion } from "@/componentes/indicadores/importacion/FormularioImportacion";
 import { ResumenDeImportacion } from "@/componentes/indicadores/importacion/ResumenDeImportacion";
 import { TablaVistaPrevia } from "@/componentes/indicadores/importacion/TablaVistaPrevia";
 import { FormularioFirma } from "@/componentes/tramites/DialogoFirma";
-import { EsquemaImportarLote, EsquemaVistaPreviaImportacion, juntarImportacion } from "@/lib/esquemas/indicadores";
+import { EsquemaDeshacerImportacion, EsquemaImportarLote, EsquemaVistaPreviaImportacion, juntarImportacion } from "@/lib/esquemas/indicadores";
 import { camposDeLaImportacion, camposDeLaVista, claveDeCorrespondencia, codigosDeLaVista, listaDeCodigos } from "@/lib/indicadores/importacion/formulario";
 import { normalizar } from "@/lib/lote-usuarios";
 import { parsearFormulario } from "@/lib/validacion";
@@ -120,8 +125,10 @@ beforeEach(() => {
   c.vistaPrevia.mockReset();
   c.resumenDeLote.mockReset();
   c.lotesRecientes.mockReset();
+  c.condicionDeDeshacer.mockReset();
   c.resumenDeLote.mockResolvedValue(resumen());
   c.vistaPrevia.mockResolvedValue(vista());
+  c.condicionDeDeshacer.mockResolvedValue({ puede: true, impiden: [] });
 });
 
 describe("la página de un lote por importar", () => {
@@ -279,6 +286,64 @@ describe("la página de un lote ya importado", () => {
     expect(c.vistaPrevia).not.toHaveBeenCalled();
   });
 
+  it("sin datos ni designados, ofrece «Deshacer la importación», que pide el motivo y la clave", async () => {
+    c.resumenDeLote.mockResolvedValue(resumen({ estado: "importado", aprobadas: 2, borradores: 1, importadoEn: new Date("2026-11-11T15:00:00Z") }));
+    const html = await lote();
+    expect(c.condicionDeDeshacer).toHaveBeenCalledWith(expect.anything(), 7);
+    const seccion = /<section[^>]*id="deshacer-importacion"[\s\S]*?<\/section>/.exec(html)?.[0] ?? "";
+    expect(seccion).toMatch(/<button[^>]*aria-haspopup="dialog"[^>]*>Deshacer la importación<\/button>/);
+    expect(seccion).toContain("3 fichas");
+    expect(seccion).not.toContain("No se puede deshacer");
+  });
+
+  it("con fichas que ya tienen datos o designados, no lo ofrece y dice cuáles lo impiden", async () => {
+    c.resumenDeLote.mockResolvedValue(resumen({ estado: "importado", aprobadas: 2, borradores: 0, importadoEn: new Date("2026-11-11T15:00:00Z") }));
+    c.condicionDeDeshacer.mockResolvedValue({
+      puede: false,
+      impiden: [
+        { codigo: "CNT-ID-001", motivo: "tiene datos reportados" },
+        { codigo: "CNT-ID-002", motivo: "tiene personas designadas" },
+      ],
+    });
+    const html = await lote();
+    const seccion = /<section[^>]*id="deshacer-importacion"[\s\S]*?<\/section>/.exec(html)?.[0] ?? "";
+    expect(seccion).toContain("No se puede deshacer: CNT-ID-001 tiene datos reportados");
+    expect(seccion).toContain("No se puede deshacer: CNT-ID-002 tiene personas designadas");
+    expect(seccion).not.toContain('aria-haspopup="dialog"');
+  });
+
+  it("un lote por importar o deshecho no pregunta si se puede deshacer", async () => {
+    await lote();
+    c.resumenDeLote.mockResolvedValue(resumen({ estado: "deshecho" }));
+    const html = await lote();
+    expect(html).not.toContain('id="deshacer-importacion"');
+    expect(c.condicionDeDeshacer).not.toHaveBeenCalled();
+  });
+
+  it("el diálogo dice qué se borra y qué queda, y pide un motivo de 10 a 500 caracteres antes de la clave", () => {
+    const html = renderToStaticMarkup(
+      <FormularioFirma
+        titulo="Deshacer la importación n.º 7"
+        etiquetaBoton="Deshacer la importación"
+        accion={vi.fn()}
+        ocultos={{ id: "7" }}
+        pideCodigo={false}
+        alCancelar={() => {}}
+      >
+        <CamposDeDeshacer fichas={3} />
+      </FormularioFirma>,
+    );
+    expect(html).toContain("3 fichas");
+    expect(html).toMatch(/<textarea[^>]*name="motivo"/);
+    const motivo = /<textarea[^>]*name="motivo"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(motivo).toContain('minLength="10"');
+    expect(motivo).toContain('maxLength="500"');
+    expect(motivo).toMatch(/\srequired[\s=>]/);
+    expect(html).toContain("Su clave");
+    expect(html.indexOf('name="motivo"')).toBeLessThan(html.indexOf('name="clave"'));
+    expect(html).toContain("Firmar y deshacer la importación");
+  });
+
   it("un lote sin plantilla (la subida falló) ofrece una importación nueva", async () => {
     c.resumenDeLote.mockResolvedValue(resumen({ estado: "sin_archivo", archivo: null }));
     const html = await lote();
@@ -433,6 +498,18 @@ describe("el formulario que viaja al servidor", () => {
     const d = parsearFormulario(juntarImportacion(recibido), EsquemaImportarLote, { omitir: ["id"] });
     expect(listaDeCodigos(d.codigos ?? "")).toEqual(["gc-id-01", "gc-id-03"]);
     expect(listaDeCodigos(d.codigos ?? "")).toEqual(listaDeCodigos(codigosDeLaVista(dosFilas.filas)));
+  });
+
+  it("deshacer lee el motivo recortado y la clave; el id del lote viaja aparte y un motivo corto no pasa", () => {
+    const campos = { id: "7", motivo: "  Las metas iban como fracción  ", clave: "secreta" };
+    expect(parsearFormulario(formData(campos), EsquemaDeshacerImportacion, { omitir: ["id"] })).toEqual({
+      motivo: "Las metas iban como fracción",
+      clave: "secreta",
+    });
+    expect(() => parsearFormulario(formData({ ...campos, motivo: "corto" }), EsquemaDeshacerImportacion, { omitir: ["id"] })).toThrow(
+      "El motivo debe tener al menos 10 caracteres",
+    );
+    expect(() => parsearFormulario(formData({ ...campos, otro: "x" }), EsquemaDeshacerImportacion, { omitir: ["id"] })).toThrow();
   });
 
   it("la lista de códigos no depende del separador, las mayúsculas ni el orden", () => {

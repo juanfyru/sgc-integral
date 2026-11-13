@@ -5,7 +5,7 @@
  * `plantillaDeImportacion` y se escribe en una carpeta de prueba del almacén que se borra al final.
  */
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import ExcelJS from "exceljs";
 import type { TransactionSql } from "postgres";
@@ -19,12 +19,15 @@ import { obtenerSql } from "@/db/cliente";
 import { registrarArchivo } from "@/db/consultas/admin";
 import { ErrorFirma, ErrorTramite, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { aprobarFichas, enviarAAprobacion } from "@/db/consultas/indicadores/aprobacion";
-import { contenidoDeVersion, errorDeFichaImportada, guardarBorrador } from "@/db/consultas/indicadores/fichas";
+import { abrirCambio, contenidoDeVersion, errorDeFichaImportada, guardarBorrador } from "@/db/consultas/indicadores/fichas";
+import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
 import {
   archivoDeLote,
   autorizarArchivoDeLote,
+  condicionDeDeshacer,
   crearLote,
   datosDeFichaImportada,
+  deshacerImportacion,
   estadoDeLote,
   importarLote,
   lotesRecientes,
@@ -32,6 +35,8 @@ import {
   listasDePlantilla,
   vistaPrevia,
 } from "@/db/consultas/indicadores/importacion";
+import { asegurarMediciones } from "@/db/consultas/indicadores/mediciones";
+import { borrarIndicador, designar } from "@/db/consultas/indicadores/operacion";
 import { tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
 import { rutaBaseAlmacen } from "@/lib/almacen";
 import { EsquemaImportarLote, EsquemaVistaPreviaImportacion, juntarImportacion, type DatosFicha } from "@/lib/esquemas/indicadores";
@@ -224,6 +229,41 @@ async function rechaza(promesa: Promise<unknown>, mensaje: string, clase: new (.
   );
   expect(err).toBeInstanceOf(clase);
   expect((err as Error).message).toBe(mensaje);
+}
+
+/** La ficha de la fila «Propuesto» completada en la app: con propósito y cargos, lista para enviarse a aprobación. */
+async function propuestaCompleta(tx: TransactionSql, b: Base, codigo: string): Promise<DatosFicha> {
+  const [t] = await tx`SELECT id FROM tipos_indicador WHERE nombre = 'Eficacia'`;
+  const [c] = await tx`SELECT id FROM clasificaciones_indicador WHERE nombre = 'Estratégico'`;
+  const [u] = await tx`SELECT id FROM unidades_indicador WHERE nombre = 'Número'`;
+  return {
+    procesoId: b.procesoId,
+    subprocesoId: b.subprocesoId,
+    codigo,
+    nombre: "Glosas contables",
+    proposito: "Saber cuántas glosas contables hay",
+    tipoId: Number(t.id),
+    clasificacionId: Number(c.id),
+    forma: "conteo",
+    variables: [{ letra: "A", nombre: "Glosas del trimestre", consolidacion: "suma", admiteNegativos: false }],
+    unidadId: Number(u.id),
+    decimales: 0,
+    periodicidad: "trimestral",
+    tendencia: "descendente",
+    meta: "30",
+    semaforoModo: "rangos",
+    rangos: JSON.stringify({ bien: [{ signo: "<=", valor: "30" }], atencion: [{ signo: "<=", valor: "33" }], critico: [{ signo: ">", valor: "33" }] }),
+    cargosMedir: [b.cargoId],
+    cargosAnalizar: [b.cargoId],
+    normaIds: [],
+    plazoReporteDias: 10,
+    inicioMedicion: "2026-T1",
+    soporteObligatorio: false,
+    nivelAcceso: "general",
+    mide: [],
+    analiza: [],
+    prueba: { valores: { A: "12" } },
+  };
 }
 
 const indicadorDe = async (tx: TransactionSql, codigo: string) => {
@@ -720,38 +760,7 @@ describe("importar el lote", () => {
       expect(p).toMatchObject({ version_estado: "borrador", importacion_id: null, aprobacion_previa_documento: null });
       const [evento] = await tx`SELECT detalle FROM importacion_eventos WHERE importacion_id = ${loteId} AND tipo = 'importado'`;
       expect(evento.detalle.fichas).toEqual([{ codigo, indicadorId: Number(p.id), versionId: Number(p.version_id), estado: "propuesto" }]);
-      const [t] = await tx`SELECT id FROM tipos_indicador WHERE nombre = 'Eficacia'`;
-      const [c] = await tx`SELECT id FROM clasificaciones_indicador WHERE nombre = 'Estratégico'`;
-      const [u] = await tx`SELECT id FROM unidades_indicador WHERE nombre = 'Número'`;
-      const completa: DatosFicha = {
-        procesoId: b.procesoId,
-        subprocesoId: b.subprocesoId,
-        codigo,
-        nombre: "Glosas contables",
-        proposito: "Saber cuántas glosas contables hay",
-        tipoId: Number(t.id),
-        clasificacionId: Number(c.id),
-        forma: "conteo",
-        variables: [{ letra: "A", nombre: "Glosas del trimestre", consolidacion: "suma", admiteNegativos: false }],
-        unidadId: Number(u.id),
-        decimales: 0,
-        periodicidad: "trimestral",
-        tendencia: "descendente",
-        meta: "30",
-        semaforoModo: "rangos",
-        rangos: JSON.stringify({ bien: [{ signo: "<=", valor: "30" }], atencion: [{ signo: "<=", valor: "33" }], critico: [{ signo: ">", valor: "33" }] }),
-        cargosMedir: [b.cargoId],
-        cargosAnalizar: [b.cargoId],
-        normaIds: [],
-        plazoReporteDias: 10,
-        inicioMedicion: "2026-T1",
-        soporteObligatorio: false,
-        nivelAcceso: "general",
-        mide: [],
-        analiza: [],
-        prueba: { valores: { A: "12" } },
-      };
-      await guardarBorrador(b.admin, Number(p.version_id), completa, { sql: tx, ahora: AHORA });
+      await guardarBorrador(b.admin, Number(p.version_id), await propuestaCompleta(tx, b, codigo), { sql: tx, ahora: AHORA });
       await enviarAAprobacion(b.admin, { versionId: Number(p.version_id), credenciales: CLAVE }, firmar(tx));
       const gerente = await usuarioDePrueba(tx, { rol: "gerencia" });
       expect(await aprobarFichas(gerente, { versionIds: [Number(p.version_id)], credenciales: CLAVE }, firmar(tx))).toEqual({ aprobadas: 1 });
@@ -827,4 +836,360 @@ describe("importar el lote", () => {
       await rechaza(importarLote(b.admin, loteId, datosImportacion({ credenciales: { clave: "mala" } }), firmar(tx)), "Clave o código incorrectos", ErrorFirma);
       expect(await estadoDeLote(tx, loteId)).toBe("por_importar");
     }));
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Deshacer la importación (spec §5.9; Tarea 11)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MOTIVO = "Las metas se escribieron como fracción en la plantilla";
+/** Después de la importación: noviembre ya terminó y es el primer periodo ordinario de la ficha aprobada. */
+const DESPUES = new Date("2026-12-05T15:00:00Z");
+const despues = (tx: TransactionSql) => ({ sql: tx, ahora: DESPUES, verificar: firmaDePrueba });
+
+type Importado = {
+  loteId: number;
+  bytes: Buffer;
+  cod1: string;
+  cod2: string;
+  aprobadaId: number;
+  aprobadaVersion: number;
+  propuestaId: number;
+  propuestaVersion: number;
+};
+
+/** Un lote importado: una ficha «Aprobado», con sus históricos, y una «Propuesto»; el subproceso recibe la sigla CNT. */
+async function importado(tx: TransactionSql, b: Base): Promise<Importado> {
+  const [cod1, cod2] = [`CNT-ID-${unico()}`, `CNT-ID-${unico()}`];
+  const { loteId, bytes } = await loteCon(tx, b.admin, [aprobada(b, cod1), propuesta(b, cod2)]);
+  await importarLote(b.admin, loteId, datosImportacion({ siglas: { [b.subprocesoId]: "CNT" } }), firmar(tx));
+  const a = await indicadorDe(tx, cod1);
+  const p = await indicadorDe(tx, cod2);
+  return {
+    loteId,
+    bytes,
+    cod1,
+    cod2,
+    aprobadaId: Number(a.id),
+    aprobadaVersion: Number(a.version_id),
+    propuestaId: Number(p.id),
+    propuestaVersion: Number(p.version_id),
+  };
+}
+
+/** Una verificación de la clave que recuerda si se pidió. */
+function clavePedida() {
+  const c = { pedida: false, verificar: async () => ((c.pedida = true), { ok: true as const, metodo: "clave" as const }) };
+  return c;
+}
+
+class Deshecho extends Error {}
+
+/** Corre `fn` en un punto de guardado que siempre se revierte: cada caso parte del mismo lote recién importado. */
+async function aparte(tx: TransactionSql, fn: (sp: TransactionSql) => Promise<void>): Promise<void> {
+  try {
+    await tx.savepoint(async (sp) => {
+      await fn(sp);
+      throw new Deshecho();
+    });
+  } catch (err) {
+    if (!(err instanceof Deshecho)) throw err;
+  }
+}
+
+/** Lo que queda de las fichas del lote, en cada tabla que deshacer vacía. */
+async function quedan(tx: TransactionSql, f: Importado) {
+  const ids = [f.aprobadaId, f.propuestaId];
+  const versiones = [f.aprobadaVersion, f.propuestaVersion];
+  const cuenta = async (consulta: Promise<readonly unknown[]>) => (await consulta).length;
+  return {
+    indicadores: await cuenta(tx`SELECT 1 FROM indicadores WHERE id IN ${tx(ids)}`),
+    versiones: await cuenta(tx`SELECT 1 FROM indicador_versiones WHERE indicador_id IN ${tx(ids)}`),
+    variables: await cuenta(tx`SELECT 1 FROM indicador_variables WHERE version_id IN ${tx(versiones)}`),
+    responsables: await cuenta(tx`SELECT 1 FROM indicador_responsables WHERE version_id IN ${tx(versiones)}`),
+    mediciones: await cuenta(tx`SELECT 1 FROM mediciones WHERE indicador_id IN ${tx(ids)}`),
+    metas: await cuenta(tx`SELECT 1 FROM indicador_metas WHERE indicador_id IN ${tx(ids)}`),
+  };
+}
+
+const NADA = { indicadores: 0, versiones: 0, variables: 0, responsables: 0, mediciones: 0, metas: 0 };
+
+describe("deshacer la importación", () => {
+  it("borra las fichas del lote con sus periodos abiertos sin datos y sus metas, deja el registro y libera los códigos", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const f = await importado(tx, b);
+      // Pasado noviembre se abre su periodo ordinario y sale su aviso; y alguien programó la meta de enero: nada de eso es un dato.
+      await asegurarMediciones({ sql: tx, ahora: DESPUES, indicadorId: f.aprobadaId });
+      await tx`UPDATE mediciones SET aviso_previo_en = ${DESPUES} WHERE indicador_id = ${f.aprobadaId} AND periodo = '2026-11'`;
+      await tx`INSERT INTO indicador_metas (indicador_id, periodo, meta, programada_por, programada_en)
+        VALUES (${f.aprobadaId}, '2027-01', 96, ${b.admin.usuarioId}, ${DESPUES})`;
+      expect(await quedan(tx, f)).toEqual({ indicadores: 2, versiones: 2, variables: 3, responsables: 2, mediciones: 11, metas: 1 });
+      expect(await condicionDeDeshacer(tx, f.loteId)).toEqual({ puede: true, impiden: [] });
+
+      expect(await deshacerImportacion(b.admin, f.loteId, { motivo: `  ${MOTIVO}  `, credenciales: CLAVE }, despues(tx))).toEqual({ fichas: 2 });
+
+      expect(await quedan(tx, f)).toEqual(NADA);
+      // El registro del lote: el evento «importado» sigue y se le añade «deshecho» con quién, cuándo, el motivo y los códigos.
+      const eventos = await tx`SELECT tipo, usuario_id, metodo, detalle, creado_en FROM importacion_eventos WHERE importacion_id = ${f.loteId} ORDER BY id`;
+      expect(eventos.map((e) => e.tipo)).toEqual(["importado", "deshecho"]);
+      expect(eventos[1]).toMatchObject({ metodo: "clave", detalle: { motivo: MOTIVO, codigos: [f.cod1, f.cod2] } });
+      expect(Number(eventos[1].usuario_id)).toBe(b.admin.usuarioId);
+      expect((eventos[1].creado_en as Date).toISOString()).toBe(DESPUES.toISOString());
+      const bitacora = await tx`SELECT usuario_id, entidad, detalle FROM auditoria
+        WHERE accion = 'deshizo_importacion_indicadores' AND entidad_id = ${f.loteId}`;
+      expect(bitacora).toHaveLength(1);
+      expect({ usuario: Number(bitacora[0].usuario_id), entidad: bitacora[0].entidad }).toEqual({
+        usuario: b.admin.usuarioId,
+        entidad: "importacion_indicadores",
+      });
+      expect(bitacora[0].detalle).toEqual({ loteId: f.loteId, motivo: MOTIVO, codigos: [f.cod1, f.cod2], fichas: 2 });
+      // La sigla que se le dio al subproceso queda, y la plantilla subida sigue como soporte del lote.
+      const [s] = await tx`SELECT sigla FROM subprocesos WHERE id = ${b.subprocesoId}`;
+      expect(s.sigla).toBe("CNT");
+      expect(await archivoDeLote(b.admin, f.loteId, { sql: tx })).not.toBeNull();
+      expect(await estadoDeLote(tx, f.loteId)).toBe("deshecho");
+      expect(await resumenDeLote(b.admin, f.loteId, { sql: tx })).toMatchObject({ estado: "deshecho" });
+      expect((await lotesRecientes(b.admin, { sql: tx })).find((l) => l.id === f.loteId)).toMatchObject({ estado: "deshecho" });
+      expect(await condicionDeDeshacer(tx, f.loteId)).toEqual({ puede: false, impiden: [] });
+
+      // La misma plantilla entra otra vez, con los mismos códigos, en un lote nuevo.
+      const otro = await crearLote(b.admin, { sql: tx, ahora: DESPUES });
+      await subir(tx, b.admin, otro.id, f.bytes);
+      expect(await importarLote(b.admin, otro.id, datosImportacion(), despues(tx))).toEqual({ aprobadas: 1, borradores: 1, omitidas: 0 });
+      const otra = await indicadorDe(tx, f.cod1);
+      expect(otra).toMatchObject({ estado: "activo", version_estado: "aprobada" });
+      expect(Number(otra.importacion_id)).toBe(otro.id);
+    }));
+
+  it("una medición reportada lo impide: la condición dice qué ficha y por qué, y no se pide la clave", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const f = await importado(tx, b);
+      expect(
+        await registrarHistoricos(b.admin, { indicadorId: f.aprobadaId, filas: [{ periodo: "2026-03", valores: { A: "8", B: "10" } }] }, { sql: tx, ahora: AHORA }),
+      ).toEqual({ registrados: 1 });
+      expect(await condicionDeDeshacer(tx, f.loteId)).toEqual({ puede: false, impiden: [{ codigo: f.cod1, motivo: "tiene datos reportados" }] });
+      const c = clavePedida();
+      await rechaza(
+        deshacerImportacion(b.admin, f.loteId, { motivo: MOTIVO, credenciales: CLAVE }, { sql: tx, ahora: AHORA, verificar: c.verificar }),
+        `No se puede deshacer: ${f.cod1} tiene datos reportados`,
+      );
+      expect(c.pedida).toBe(false);
+      expect((await quedan(tx, f)).indicadores).toBe(2);
+      expect(await estadoDeLote(tx, f.loteId)).toBe("importado");
+    }));
+
+  it("cualquier dato de una medición cuenta: «no aplica», la fecha de reporte, un análisis, un valor, una observación, un evento o un soporte", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const f = await importado(tx, b);
+      const [m] = await tx`SELECT id, version_id FROM mediciones WHERE indicador_id = ${f.aprobadaId} AND periodo = '2026-02'`;
+      const casos: [string, (sp: TransactionSql) => Promise<unknown>][] = [
+        ["no aplica", (sp) => sp`UPDATE mediciones SET no_aplica = true, no_aplica_motivo = 'No hubo cierres ese mes' WHERE id = ${m.id}`],
+        ["reportada_en", (sp) => sp`UPDATE mediciones SET reportada_en = ${AHORA} WHERE id = ${m.id}`],
+        ["análisis", (sp) => sp`UPDATE mediciones SET analisis = 'El cierre salió tarde por la auditoría' WHERE id = ${m.id}`],
+        [
+          "valor",
+          (sp) => sp`INSERT INTO medicion_valores (medicion_id, variable_id, valor)
+            SELECT ${m.id}, id, 1 FROM indicador_variables WHERE version_id = ${m.version_id} ORDER BY letra LIMIT 1`,
+        ],
+        ["observación", (sp) => sp`INSERT INTO medicion_observaciones (medicion_id, usuario_id, texto) VALUES (${m.id}, ${b.admin.usuarioId}, 'Revisar el dato')`],
+        ["evento", (sp) => sp`INSERT INTO medicion_eventos (medicion_id, tipo, usuario_id) VALUES (${m.id}, 'cierre', ${b.admin.usuarioId})`],
+        [
+          "soporte",
+          (sp) => sp`INSERT INTO archivos (contexto, contexto_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
+            VALUES ('medicion', ${m.id}, 'evidencia', ${`zz-soporte-${unico()}.pdf`}, 'cierre.pdf', 'pdf', 'application/pdf', 10, 'h')`,
+        ],
+      ];
+      for (const [nombre, escribir] of casos) {
+        await aparte(tx, async (sp) => {
+          await escribir(sp);
+          expect({ nombre, condicion: await condicionDeDeshacer(sp, f.loteId) }).toEqual({
+            nombre,
+            condicion: { puede: false, impiden: [{ codigo: f.cod1, motivo: "tiene datos reportados" }] },
+          });
+        });
+      }
+      // Sin nada de eso, sí se puede.
+      expect(await condicionDeDeshacer(tx, f.loteId)).toEqual({ puede: true, impiden: [] });
+    }));
+
+  it("una persona designada lo impide", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const f = await importado(tx, b);
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [b.procesoId] });
+      await designar(b.admin, { indicadorId: f.propuestaId, funcion: "mide", usuarioIds: [lider.usuarioId] }, { sql: tx, ahora: AHORA });
+      expect(await condicionDeDeshacer(tx, f.loteId)).toEqual({ puede: false, impiden: [{ codigo: f.cod2, motivo: "tiene personas designadas" }] });
+      await rechaza(
+        deshacerImportacion(b.admin, f.loteId, { motivo: MOTIVO, credenciales: CLAVE }, firmar(tx)),
+        `No se puede deshacer: ${f.cod2} tiene personas designadas`,
+      );
+    }));
+
+  it("una versión posterior de una ficha aprobada lo impide, aunque sea un borrador de cambio", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const f = await importado(tx, b);
+      await abrirCambio(b.admin, f.aprobadaId, { sql: tx, ahora: DESPUES });
+      expect(await condicionDeDeshacer(tx, f.loteId)).toEqual({ puede: false, impiden: [{ codigo: f.cod1, motivo: "tiene una versión posterior" }] });
+      await rechaza(
+        deshacerImportacion(b.admin, f.loteId, { motivo: MOTIVO, credenciales: CLAVE }, despues(tx)),
+        `No se puede deshacer: ${f.cod1} tiene una versión posterior`,
+      );
+    }));
+
+  it("una propuesta modificada después de importarse lo impide; una enviada a aprobación lo dice así", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const f = await importado(tx, b);
+      await guardarBorrador(b.admin, f.propuestaVersion, await propuestaCompleta(tx, b, f.cod2), { sql: tx, ahora: DESPUES });
+      expect(await condicionDeDeshacer(tx, f.loteId)).toEqual({
+        puede: false,
+        impiden: [{ codigo: f.cod2, motivo: "la propuesta se modificó después de importarse" }],
+      });
+      await rechaza(
+        deshacerImportacion(b.admin, f.loteId, { motivo: MOTIVO, credenciales: CLAVE }, despues(tx)),
+        `No se puede deshacer: ${f.cod2} la propuesta se modificó después de importarse`,
+      );
+      // Enviada, tiene la firma «Elaboró», que no se borra: lo dice una sola vez, por la firma.
+      await enviarAAprobacion(b.admin, { versionId: f.propuestaVersion, credenciales: CLAVE }, despues(tx));
+      expect(await condicionDeDeshacer(tx, f.loteId)).toEqual({
+        puede: false,
+        impiden: [{ codigo: f.cod2, motivo: "la propuesta ya se envió a aprobación" }],
+      });
+    }));
+
+  it("los impedimentos van en el orden de las fichas y el mensaje dice el primero", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const f = await importado(tx, b);
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [b.procesoId] });
+      await guardarBorrador(b.admin, f.propuestaVersion, await propuestaCompleta(tx, b, f.cod2), { sql: tx, ahora: DESPUES });
+      await designar(b.admin, { indicadorId: f.aprobadaId, funcion: "analiza", usuarioIds: [lider.usuarioId] }, { sql: tx, ahora: DESPUES });
+      await registrarHistoricos(b.admin, { indicadorId: f.aprobadaId, filas: [{ periodo: "2026-03", valores: { A: "8", B: "10" } }] }, { sql: tx, ahora: DESPUES });
+      expect(await condicionDeDeshacer(tx, f.loteId)).toEqual({
+        puede: false,
+        impiden: [
+          { codigo: f.cod1, motivo: "tiene datos reportados" },
+          { codigo: f.cod1, motivo: "tiene personas designadas" },
+          { codigo: f.cod2, motivo: "la propuesta se modificó después de importarse" },
+        ],
+      });
+      await rechaza(
+        deshacerImportacion(b.admin, f.loteId, { motivo: MOTIVO, credenciales: CLAVE }, despues(tx)),
+        `No se puede deshacer: ${f.cod1} tiene datos reportados`,
+      );
+    }));
+
+  it("una propuesta que se borró en la app ya no está: se deshace el resto", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const f = await importado(tx, b);
+      await borrarIndicador(b.admin, f.propuestaId, { sql: tx, ahora: AHORA });
+      expect(await condicionDeDeshacer(tx, f.loteId)).toEqual({ puede: true, impiden: [] });
+      expect(await deshacerImportacion(b.admin, f.loteId, { motivo: MOTIVO, credenciales: CLAVE }, despues(tx))).toEqual({ fichas: 1 });
+      expect(await quedan(tx, f)).toEqual(NADA);
+      const [e] = await tx`SELECT detalle FROM importacion_eventos WHERE importacion_id = ${f.loteId} AND tipo = 'deshecho'`;
+      expect(e.detalle).toEqual({ motivo: MOTIVO, codigos: [f.cod1] });
+    }));
+
+  it("deshacer dos veces: la segunda dice «ya se deshizo», también si la otra entra mientras se verifica la clave", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const f = await importado(tx, b);
+      await aparte(tx, async (sp) => {
+        await deshacerImportacion(b.admin, f.loteId, { motivo: MOTIVO, credenciales: CLAVE }, despues(sp));
+        const c = clavePedida();
+        await rechaza(
+          deshacerImportacion(b.admin, f.loteId, { motivo: MOTIVO, credenciales: CLAVE }, { sql: sp, ahora: DESPUES, verificar: c.verificar }),
+          "Esta importación ya se deshizo",
+        );
+        expect(c.pedida).toBe(false);
+        expect(await sp`SELECT 1 FROM importacion_eventos WHERE importacion_id = ${f.loteId} AND tipo = 'deshecho'`).toHaveLength(1);
+      });
+      // El otro «deshacer» confirma su evento entre la revisión de afuera y el candado del lote.
+      const verificar = async () => {
+        await tx`INSERT INTO importacion_eventos (importacion_id, tipo, usuario_id, metodo) VALUES (${f.loteId}, 'deshecho', ${b.admin.usuarioId}, 'clave')`;
+        return { ok: true as const, metodo: "clave" as const };
+      };
+      await rechaza(
+        deshacerImportacion(b.admin, f.loteId, { motivo: MOTIVO, credenciales: CLAVE }, { sql: tx, ahora: DESPUES, verificar }),
+        "Esta importación ya se deshizo",
+      );
+      expect((await quedan(tx, f)).indicadores).toBe(2);
+      expect(await tx`SELECT 1 FROM auditoria WHERE accion = 'deshizo_importacion_indicadores' AND entidad_id = ${f.loteId}`).toHaveLength(0);
+    }));
+
+  it("si alguien designa a una persona mientras se verifica la clave, la revisión dentro del candado lo ve y no borra nada", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const f = await importado(tx, b);
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [b.procesoId] });
+      const verificar = async () => {
+        await tx`INSERT INTO indicador_designados (indicador_id, usuario_id, funcion, creado_por)
+          VALUES (${f.aprobadaId}, ${lider.usuarioId}, 'mide', ${b.admin.usuarioId})`;
+        return { ok: true as const, metodo: "clave" as const };
+      };
+      await rechaza(
+        deshacerImportacion(b.admin, f.loteId, { motivo: MOTIVO, credenciales: CLAVE }, { sql: tx, ahora: DESPUES, verificar }),
+        `No se puede deshacer: ${f.cod1} tiene personas designadas`,
+      );
+      expect((await quedan(tx, f)).indicadores).toBe(2);
+      expect(await estadoDeLote(tx, f.loteId)).toBe("importado");
+    }));
+
+  it("el motivo, el permiso, el lote y la clave se revisan, y sin la clave correcta no se borra nada", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const f = await importado(tx, b);
+      const c = clavePedida();
+      const opciones = { sql: tx, ahora: DESPUES, verificar: c.verificar };
+      const con = (motivo: string, loteId = f.loteId) => deshacerImportacion(b.admin, loteId, { motivo, credenciales: CLAVE }, opciones);
+
+      await rechaza(con("   corto   "), "El motivo debe tener al menos 10 caracteres");
+      await rechaza(con("x".repeat(501)), "El motivo no puede pasar de 500 caracteres");
+      // El motivo va antes que el lote.
+      await rechaza(con("corto", 999_999_999), "El motivo debe tener al menos 10 caracteres");
+      await rechaza(con(MOTIVO, 999_999_999), "La importación no existe");
+      expect(await condicionDeDeshacer(tx, 999_999_999)).toEqual({ puede: false, impiden: [] });
+      const porImportar = await loteCon(tx, b.admin, [aprobada(b, `CNT-ID-${unico()}`)]);
+      expect(await condicionDeDeshacer(tx, porImportar.loteId)).toEqual({ puede: false, impiden: [] });
+      await rechaza(con(MOTIVO, porImportar.loteId), "Esta importación no se ha hecho");
+      const sinArchivo = await crearLote(b.admin, { sql: tx, ahora: AHORA });
+      await rechaza(con(MOTIVO, sinArchivo.id), "Esta importación no se ha hecho");
+      expect(c.pedida).toBe(false);
+
+      const gerente = await usuarioDePrueba(tx, { rol: "gerencia" });
+      await rechaza(deshacerImportacion(gerente, f.loteId, { motivo: MOTIVO, credenciales: CLAVE }, opciones), new ErrorPermiso().message, ErrorPermiso);
+      await rechaza(
+        deshacerImportacion(b.admin, f.loteId, { motivo: MOTIVO, credenciales: { clave: "mala" } }, despues(tx)),
+        "Clave o código incorrectos",
+        ErrorFirma,
+      );
+      expect((await quedan(tx, f)).indicadores).toBe(2);
+      expect(await estadoDeLote(tx, f.loteId)).toBe("importado");
+    }));
+});
+
+describe("la marca de transacción que deja borrar una versión importada", () => {
+  const raiz = path.resolve(import.meta.dirname, "..");
+  const fuentes = readdirSync(path.join(raiz, "src"), { recursive: true, withFileTypes: true })
+    .filter((e) => e.isFile() && /\.(ts|tsx|js|mjs|cjs|sql)$/.test(e.name))
+    .map((e) => path.join(e.parentPath, e.name));
+
+  it("la pone un solo lugar de src/, el que deshace la importación, y solo para su transacción", () => {
+    const llamadas = fuentes.flatMap((archivo) =>
+      [...readFileSync(archivo, "utf8").matchAll(/set_config\(\s*['"]sgc\.deshacer_importacion['"]\s*,(.*)$/gm)].map((m) => ({
+        archivo: path.relative(raiz, archivo).replaceAll("\\", "/"),
+        resto: m[1],
+      })),
+    );
+    expect(llamadas.map((l) => l.archivo)).toEqual(["src/db/consultas/indicadores/importacion.ts"]);
+    // `true`: la marca dura la transacción; sin él quedaría en la conexión del pool para quien la use después.
+    expect(llamadas[0].resto).toMatch(/,\s*true\s*\)/);
+    // Tampoco con SET, que también duraría la sesión entera.
+    expect(fuentes.filter((archivo) => /\bSET\s+(?:SESSION\s+|LOCAL\s+)?sgc\.deshacer_importacion\b/i.test(readFileSync(archivo, "utf8")))).toEqual([]);
+  });
 });

@@ -14,9 +14,14 @@
  * normales, sin lote (Ruling 32): siguen el camino de aprobación de la app con sus firmas. El evento `importado` del lote
  * guarda cada ficha creada (código, indicador, versión y estado) y es la constancia de quién importó con su clave, no una
  * fila de `firmas` (spec §5.7). No se avisa a nadie: no hay designados.
+ *
+ * Deshacer (spec §5.9) es del lote entero y solo mientras ninguna de sus fichas tenga trabajo hecho en la app
+ * (`condicionDeDeshacer`). Borra las fichas que el evento `importado` recuerda, por su id, y es el único camino que borra
+ * una versión aprobada: la marca de transacción con el id del lote, que el trigger de la 0012 lee, se pone solo aquí.
  */
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { ErrorFirma, enTransaccion, type OpcionesFlujo, type SesionFlujo } from "@/db/consultas/flujo/contrato";
@@ -47,7 +52,7 @@ import { zonaHoraria } from "@/lib/zona-horaria";
 import { contenidoDeVersion, errorDeFichaImportada, escribirFichaNueva, type DatosFichaNueva } from "./fichas";
 import { bloquearLote, estadoDeEventos, estadoDeLote, type EstadoLote } from "./lote-importacion";
 import { obtenerParametros } from "./maestros";
-import { asegurarMediciones } from "./mediciones";
+import { asegurarMediciones, conDatos } from "./mediciones";
 
 export { bloquearLote, estadoDeLote, type EstadoLote } from "./lote-importacion";
 
@@ -649,6 +654,205 @@ export async function importarLote(
   } catch (err) {
     // Otra importación del mismo lote entró antes: el evento es único por lote y tipo.
     if (esDe(err, "importacion_eventos_tipo_unico")) throw new ErrorIndicador(YA_SE_HIZO);
+    throw err;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Deshacer la importación (spec §5.9)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const NO_SE_HA_HECHO = "Esta importación no se ha hecho";
+const YA_SE_DESHIZO = "Esta importación ya se deshizo";
+const MOTIVO_MINIMO = 10;
+const MOTIVO_MAXIMO = 500;
+
+/** Por qué una ficha del lote ya no se puede borrar (spec §5.9; las dos de las propuestas, Ruling 42). */
+const IMPIDE = {
+  datos: "tiene datos reportados",
+  designadas: "tiene personas designadas",
+  posterior: "tiene una versión posterior",
+  enviada: "la propuesta ya se envió a aprobación",
+  modificada: "la propuesta se modificó después de importarse",
+} as const;
+
+export type Impedimento = { codigo: string; motivo: string };
+export type CondicionDeDeshacer = { puede: boolean; impiden: Impedimento[] };
+
+/** Una ficha que creó la importación, como la recuerda el evento `importado` (spec §5.7). */
+type FichaDelLote = { indicadorId: number; versionId: number; estado: FichaImportada["estado"] };
+type Importada = { en: Date; fichas: FichaDelLote[] };
+/** Una ficha del lote que sigue en la app (una propuesta borrada en la app ya no está), con su código de hoy. */
+type FichaQueSigue = FichaDelLote & { codigo: string };
+
+const idValido = (v: unknown) => {
+  const n = Number(v);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+};
+
+/** El evento `importado` del lote: cuándo fue y qué fichas creó. `null` si el lote no se ha importado. */
+async function importadaDelLote(sql: Cliente, loteId: number): Promise<Importada | null> {
+  const [e] = await sql`SELECT detalle, creado_en FROM importacion_eventos WHERE importacion_id = ${loteId} AND tipo = 'importado'`;
+  if (!e) return null;
+  const lista = (e.detalle as { fichas?: unknown } | null)?.fichas;
+  const fichas = (Array.isArray(lista) ? lista : []).flatMap((f): FichaDelLote[] => {
+    const x = (f ?? {}) as Record<string, unknown>;
+    const indicadorId = idValido(x.indicadorId);
+    const versionId = idValido(x.versionId);
+    if (indicadorId === null || versionId === null) return [];
+    return [{ indicadorId, versionId, estado: x.estado === "aprobado" ? "aprobado" : "propuesto" }];
+  });
+  return { en: e.creado_en as Date, fichas };
+}
+
+/**
+ * Lo que impide deshacer, ficha por ficha y en el orden del lote (spec §5.9). Cuenta como dato de una medición todo lo
+ * que `conDatos` cuenta (valores, «no aplica», análisis, eventos, observaciones y soportes) y la fecha de reporte; una
+ * versión posterior es cualquier otra versión del indicador, en cualquier estado. De una propuesta, que es un borrador
+ * normal: enviarla deja la firma «Elaboró», que no se borra (aunque la devuelvan sigue firmada), y editarla después de
+ * importarla es trabajo que se perdería. Abrir periodos sin datos, sus avisos y las metas programadas no impiden nada.
+ */
+async function revisarDeshacer(sql: Cliente, importada: Importada): Promise<{ impiden: Impedimento[]; siguen: FichaQueSigue[] }> {
+  const { fichas, en } = importada;
+  const filas = await sql`SELECT x.indicador_id, i.codigo,
+      EXISTS (SELECT 1 FROM mediciones m WHERE m.indicador_id = i.id AND (m.reportada_en IS NOT NULL OR ${conDatos(sql)})) AS datos,
+      EXISTS (SELECT 1 FROM indicador_designados d WHERE d.indicador_id = i.id) AS designadas,
+      EXISTS (SELECT 1 FROM indicador_versiones v WHERE v.indicador_id = i.id AND v.id <> x.version_id) AS posterior,
+      EXISTS (SELECT 1 FROM firmas f JOIN indicador_versiones v ON v.id = f.indicador_version_id WHERE v.indicador_id = i.id) AS enviada,
+      EXISTS (SELECT 1 FROM indicador_versiones v WHERE v.id = x.version_id AND v.actualizado_en > ${en}) AS modificada
+    FROM unnest(${sql.array(fichas.map((f) => f.indicadorId))}::bigint[], ${sql.array(fichas.map((f) => f.versionId))}::bigint[])
+      AS x(indicador_id, version_id)
+    JOIN indicadores i ON i.id = x.indicador_id`;
+  const porId = new Map(filas.map((r) => [Number(r.indicador_id), r]));
+  const impiden: Impedimento[] = [];
+  const siguen: FichaQueSigue[] = [];
+  for (const f of fichas) {
+    const r = porId.get(f.indicadorId);
+    if (!r) continue;
+    const codigo = r.codigo as string;
+    siguen.push({ ...f, codigo });
+    const motivos: string[] = [];
+    if (r.datos) motivos.push(IMPIDE.datos);
+    if (r.designadas) motivos.push(IMPIDE.designadas);
+    if (f.estado === "propuesto" && r.enviada) {
+      // Enviarla ya la cambió (y una versión posterior solo sale de una aprobada): basta con decirlo una vez.
+      motivos.push(IMPIDE.enviada);
+    } else {
+      if (r.posterior) motivos.push(IMPIDE.posterior);
+      if (f.estado === "propuesto" && r.modificada) motivos.push(IMPIDE.modificada);
+    }
+    impiden.push(...motivos.map((motivo) => ({ codigo, motivo })));
+  }
+  return { impiden, siguen };
+}
+
+/**
+ * Si el lote se puede deshacer y, si no, qué fichas lo impiden y por qué (spec §5.9). Un lote que no está importado (sin
+ * hacer, deshecho o inexistente) no se puede deshacer y no tiene impedimentos que mostrar.
+ */
+export async function condicionDeDeshacer(sql: Cliente, loteId: number): Promise<CondicionDeDeshacer> {
+  if ((await estadoDeLote(sql, loteId)) !== "importado") return { puede: false, impiden: [] };
+  const importada = await importadaDelLote(sql, loteId);
+  if (!importada) return { puede: false, impiden: [] };
+  const { impiden } = await revisarDeshacer(sql, importada);
+  return { puede: impiden.length === 0, impiden };
+}
+
+/** El motivo, recortado: de 10 a 500 caracteres. */
+function motivoDeDeshacer(v: unknown): string {
+  const t = typeof v === "string" ? v.trim() : "";
+  if (t.length < MOTIVO_MINIMO) throw new ErrorIndicador(`El motivo debe tener al menos ${MOTIVO_MINIMO} caracteres`);
+  if (t.length > MOTIVO_MAXIMO) throw new ErrorIndicador(`El motivo no puede pasar de ${MOTIVO_MAXIMO} caracteres`);
+  return t;
+}
+
+/** Lo que debe cumplirse para deshacer, sin escribir nada: el lote importado y ninguna ficha con impedimentos. */
+async function validarDeshacer(sql: Cliente, loteId: number): Promise<FichaQueSigue[]> {
+  const estado = await estadoDeLote(sql, loteId);
+  if (estado === null) throw new ErrorIndicador(NO_EXISTE);
+  if (estado === "deshecho") throw new ErrorIndicador(YA_SE_DESHIZO);
+  const importada = estado === "importado" ? await importadaDelLote(sql, loteId) : null;
+  if (!importada) throw new ErrorIndicador(NO_SE_HA_HECHO);
+  const { impiden, siguen } = await revisarDeshacer(sql, importada);
+  if (impiden.length > 0) throw new ErrorIndicador(`No se puede deshacer: ${impiden[0].codigo} ${impiden[0].motivo}`);
+  return siguen;
+}
+
+/**
+ * Las filas que deshacer revisa y borra, bloqueadas en el orden del módulo (el indicador, sus versiones y sus mediciones,
+ * por id): quien designa, reporta, sube un soporte, observa o firma la ficha espera a que esto termine, y lo que haga
+ * después ya no encuentra la ficha.
+ */
+async function bloquearFichas(tx: TransactionSql, fichas: readonly FichaDelLote[]): Promise<void> {
+  const ids = fichas.map((f) => f.indicadorId);
+  if (ids.length === 0) return;
+  await tx`SELECT id FROM indicadores WHERE id IN ${tx(ids)} ORDER BY id FOR UPDATE`;
+  await tx`SELECT id FROM indicador_versiones WHERE indicador_id IN ${tx(ids)} ORDER BY id FOR UPDATE`;
+  await tx`SELECT id FROM mediciones WHERE indicador_id IN ${tx(ids)} ORDER BY id FOR UPDATE`;
+}
+
+/**
+ * Deshace la importación del lote (spec §5.9), con motivo y la clave de quien la deshace (F13A-R4): borra sus fichas
+ * (mediciones sin datos, metas programadas, variables, responsables, normas, versiones e indicadores) y libera sus
+ * códigos. Quedan el registro del lote con su evento `deshecho` (quién, cuándo, motivo y códigos), la bitácora, la
+ * plantilla subida y las siglas que se dieron a los subprocesos. Devuelve cuántas fichas borró.
+ */
+export async function deshacerImportacion(
+  sesion: SesionFlujo,
+  loteId: number,
+  d: { motivo: string; credenciales: CredencialesFirma },
+  opciones: OpcionesFlujo = {},
+): Promise<{ fichas: number }> {
+  exigirAdministrar(sesion);
+  const motivo = motivoDeDeshacer(d.motivo);
+  const sql = opciones.sql ?? obtenerSql();
+  const ahora = opciones.ahora ?? new Date();
+  const contexto = opciones.contexto ?? { ip: null, userAgent: null };
+
+  await validarDeshacer(sql, loteId);
+  const verificar = opciones.verificar ?? verificarParaFirmar;
+  const r = await verificar(sesion, d.credenciales, contexto, ahora);
+  if (!r.ok) throw new ErrorFirma(r.mensaje, r.sesionCerrada, r.bloqueada);
+
+  try {
+    return await enTransaccion(sql, async (tx) => {
+      await bloquearLote(tx, loteId);
+      const importada = await importadaDelLote(tx, loteId);
+      if (importada) await bloquearFichas(tx, importada.fichas);
+      // Con todo bloqueado, otra vez: alguien pudo reportar, designar o deshacer mientras se verificaba la clave.
+      const siguen = await validarDeshacer(tx, loteId);
+      const ids = siguen.map((f) => f.indicadorId);
+      const versiones = siguen.map((f) => f.versionId);
+
+      // La marca que deja borrar las versiones aprobadas de este lote: dura lo que esta transacción (spec §5.9).
+      await tx`SELECT set_config('sgc.deshacer_importacion', ${String(loteId)}, true)`;
+      if (ids.length > 0) {
+        // Solo las mediciones sin datos: una con datos no se borra nunca, y su indicador tampoco (la FK lo impide).
+        await tx`DELETE FROM mediciones m WHERE m.indicador_id IN ${tx(ids)}
+          AND NOT (m.reportada_en IS NOT NULL OR ${conDatos(tx)})`;
+        await tx`DELETE FROM indicador_metas WHERE indicador_id IN ${tx(ids)}`;
+        await tx`DELETE FROM indicador_variables WHERE version_id IN ${tx(versiones)}`;
+        await tx`DELETE FROM indicador_responsables WHERE version_id IN ${tx(versiones)}`;
+        await tx`DELETE FROM indicador_normas WHERE version_id IN ${tx(versiones)}`;
+        await tx`DELETE FROM indicador_versiones WHERE id IN ${tx(versiones)}`;
+        await tx`DELETE FROM indicadores WHERE id IN ${tx(ids)}`;
+      }
+
+      const codigos = siguen.map((f) => f.codigo);
+      await tx`INSERT INTO importacion_eventos (importacion_id, tipo, usuario_id, metodo, detalle, creado_en)
+        VALUES (${loteId}, 'deshecho', ${sesion.usuarioId}, ${r.metodo}, ${tx.json({ motivo, codigos } as never)}, ${ahora})`;
+      await registrarAuditoria(tx, {
+        usuarioId: sesion.usuarioId,
+        accion: "deshizo_importacion_indicadores",
+        entidad: "importacion_indicadores",
+        entidadId: loteId,
+        detalle: { loteId, motivo, codigos, fichas: siguen.length },
+      });
+      return { fichas: siguen.length };
+    });
+  } catch (err) {
+    // Otro «deshacer» del mismo lote entró antes: el evento es único por lote y tipo.
+    if (esDe(err, "importacion_eventos_tipo_unico")) throw new ErrorIndicador(YA_SE_DESHIZO);
     throw err;
   }
 }

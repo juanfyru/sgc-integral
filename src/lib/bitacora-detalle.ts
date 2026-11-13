@@ -825,6 +825,12 @@ export function describirEvento(e: EventoAuditoria): string {
       }`;
       return `Importó ${cuenta(aprobadas + borradores, "ficha", "fichas")} de indicadores${lote} (${detalle})`;
     }
+    case "deshizo_importacion_indicadores": {
+      const lote = numero(d.loteId);
+      const fichas = numero(d.fichas);
+      const cual = lote === null ? "una importación de indicadores" : `la importación de indicadores n.º ${lote}`;
+      return `Deshizo ${cual}${fichas === null ? "" : ` y borró ${cuenta(fichas, "ficha", "fichas")}`}${conMotivo(d.motivo)}`;
+    }
     // ── Indicadores (14A): las mediciones
     case "medicion_guardada":
       return `Guardó sin reportar los datos de ${medicionDe(cod, d.periodo)}`;
@@ -1069,6 +1075,7 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   indicador_borrado: "Borró un indicador",
   preparo_importacion_indicadores: "Preparó una importación de indicadores",
   importo_indicadores: "Importó fichas de indicadores",
+  deshizo_importacion_indicadores: "Deshizo una importación de indicadores",
   medicion_reportada: "Reportó una medición de indicador",
   medicion_corregida: "Corrigió una medición de indicador",
   medicion_no_aplica: "Marcó «No aplica» en una medición de indicador",

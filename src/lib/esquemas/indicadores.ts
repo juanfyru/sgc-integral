@@ -542,6 +542,9 @@ export const EsquemaImportarLote = EsquemaVistaPreviaImportacion.extend({
   ...firma,
 }).strict();
 
+/** Deshacer el lote (spec 14A §5.9): el motivo, de 10 a 500 caracteres, y la clave. El `id` del lote viaja aparte. */
+export const EsquemaDeshacerImportacion = z.object({ motivo: textoAcotado("El motivo", 10, 500), ...firma }).strict();
+
 const CORRESPONDENCIA_DE: Record<string, "subprocesos" | "cargos" | "tipos" | "unidades"> = {
   subproceso: "subprocesos",
   cargo: "cargos",

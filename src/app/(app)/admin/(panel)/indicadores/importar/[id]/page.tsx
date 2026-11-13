@@ -1,12 +1,21 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { DialogoDeshacer } from "@/componentes/indicadores/importacion/DialogoDeshacer";
 import { FormularioImportacion } from "@/componentes/indicadores/importacion/FormularioImportacion";
 import { ESTADO_DE_LOTE } from "@/componentes/indicadores/importacion/estados";
 import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
-import { resumenDeLote, vistaPrevia, type ResumenDeLote, type VistaPrevia } from "@/db/consultas/indicadores/importacion";
+import { obtenerSql } from "@/db/cliente";
+import {
+  condicionDeDeshacer,
+  resumenDeLote,
+  vistaPrevia,
+  type CondicionDeDeshacer,
+  type ResumenDeLote,
+  type VistaPrevia,
+} from "@/db/consultas/indicadores/importacion";
 import { fechaYHora } from "@/lib/indicadores/ficha-en-texto";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import { exigirPermiso } from "@/lib/paginas";
@@ -52,6 +61,50 @@ function Resultado({ lote }: { lote: ResumenDeLote }) {
   );
 }
 
+/**
+ * «Deshacer la importación» (spec 14A §5.9): se ofrece mientras ninguna ficha tenga trabajo hecho en la app; si alguna lo
+ * tiene, dice cuáles y por qué, y no se ofrece.
+ */
+function Deshacer({
+  lote,
+  condicion,
+  pideCodigo,
+}: {
+  lote: ResumenDeLote;
+  condicion: CondicionDeDeshacer;
+  pideCodigo: boolean;
+}) {
+  const fichas = lote.aprobadas + lote.borradores;
+  return (
+    <section id="deshacer-importacion" className="flex flex-col items-start gap-3" aria-labelledby="titulo-deshacer">
+      <h2 id="titulo-deshacer" className="font-display text-lg font-semibold">
+        Deshacer la importación
+      </h2>
+      {condicion.puede ? (
+        <>
+          <p className="max-w-prose text-sm text-muted-foreground">
+            {`Si la importación salió mal, se deshace entera: se borran ${fichas === 1 ? "su ficha" : `sus ${cuenta(fichas, "ficha", "fichas")}`} y la plantilla corregida se puede importar otra vez con los mismos códigos. Se puede mientras ninguna ficha tenga datos reportados, personas designadas ni otra versión, y ninguna propuesta se haya editado o enviado a aprobación.`}
+          </p>
+          <DialogoDeshacer loteId={lote.id} fichas={fichas} pideCodigo={pideCodigo} />
+        </>
+      ) : (
+        <>
+          <p className="max-w-prose text-sm text-muted-foreground">
+            Ya no se puede deshacer: el trabajo hecho en la app sobre estas fichas no se borra.
+          </p>
+          {condicion.impiden.length > 0 ? (
+            <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
+              {condicion.impiden.map((i) => (
+                <li key={`${i.codigo}-${i.motivo}`}>{`No se puede deshacer: ${i.codigo} ${i.motivo}`}</li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      )}
+    </section>
+  );
+}
+
 /** La importación de un lote (spec 14A §5.3): por importar, ya importada, deshecha o sin plantilla. */
 export default async function PaginaLoteDeImportacion({
   params,
@@ -81,6 +134,7 @@ export default async function PaginaLoteDeImportacion({
     }
     if (vista === null && problema === null) notFound();
   }
+  const condicion = lote.estado === "importado" ? await condicionDeDeshacer(obtenerSql(), loteId) : null;
 
   const estado = ESTADO_DE_LOTE[lote.estado];
   return (
@@ -111,11 +165,10 @@ export default async function PaginaLoteDeImportacion({
         </div>
       ) : null}
 
-      {lote.estado === "importado" ? (
+      {lote.estado === "importado" && condicion ? (
         <>
           <Resultado lote={lote} />
-          {/* La Tarea 11 pone aquí «Deshacer la importación». */}
-          <div id="deshacer-importacion" />
+          <Deshacer lote={lote} condicion={condicion} pideCodigo={sesion.totpActivo} />
         </>
       ) : null}
 
