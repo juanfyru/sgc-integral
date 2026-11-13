@@ -2,7 +2,7 @@
  * Los rangos del semáforo escritos por estado (spec fase 14A §3.2 a §3.4): una fila por estado con un signo y uno o dos
  * valores. Todo con fracciones exactas. Sin Node ni BD, y sin importar `semaforo.ts` (que sí importa este archivo).
  */
-import { aDecimal, comparar, dividir, entero, fraccion, multiplicar, restar, CIEN, type Fraccion } from "./formula/fraccion";
+import { aDecimal, comparar, dividir, entero, fraccion, multiplicar, restar, sumar, CIEN, type Fraccion } from "./formula/fraccion";
 import type { Semaforo, Tendencia } from "./tipos";
 
 export const SIGNOS = [">=", ">", "<=", "<", "entre"] as const;
@@ -143,8 +143,8 @@ function haciaLoMejor(f: FilaDeRango, tendencia: Tendencia, bien: Tramo | undefi
   if (tendencia === "ascendente") return sube ? "arriba" : null;
   if (tendencia === "descendente") return baja ? "abajo" : null;
   if (bien === undefined) return null;
-  if (sube && bien.lo !== null && comparar(f.valor, bien.lo) <= 0) return "arriba";
-  if (baja && bien.hi !== null && comparar(f.valor, bien.hi) >= 0) return "abajo";
+  if (sube && bien.lo !== null && comparar(f.valor, bien.lo) < 0) return "arriba";
+  if (baja && bien.hi !== null && comparar(f.valor, bien.hi) > 0) return "abajo";
   return null;
 }
 
@@ -187,15 +187,33 @@ export function semaforoDeRangos(v: Fraccion, r: Rangos, tendencia: Tendencia): 
   for (const x of filas) {
     if (x.tramo.hi !== null && comparar(x.tramo.hi, v) <= 0) {
       const c = abajo === null ? 1 : comparar(x.tramo.hi, abajo.tramo.hi!);
-      if (c > 0 || (c === 0 && GRAVEDAD[x.estado] > GRAVEDAD[abajo!.estado])) abajo = x;
+      if (c > 0 || (c === 0 && GRAVEDAD[x.estado] < GRAVEDAD[abajo!.estado])) abajo = x;
     }
     if (x.tramo.lo !== null && comparar(x.tramo.lo, v) >= 0) {
       const c = arriba === null ? -1 : comparar(x.tramo.lo, arriba.tramo.lo!);
-      if (c < 0 || (c === 0 && GRAVEDAD[x.estado] > GRAVEDAD[arriba!.estado])) arriba = x;
+      if (c < 0 || (c === 0 && GRAVEDAD[x.estado] < GRAVEDAD[arriba!.estado])) arriba = x;
     }
   }
   if (abajo !== null && arriba !== null) return GRAVEDAD[abajo.estado] >= GRAVEDAD[arriba.estado] ? abajo.estado : arriba.estado;
-  return (abajo ?? arriba)?.estado ?? "critico";
+  // Más allá de la fila de una punta: el color de la fila que está en esa punta del eje (spec §3.3).
+  if (abajo === null) return tendencia === "descendente" ? "bien" : "critico";
+  return tendencia === "ascendente" ? "bien" : "critico";
+}
+
+/** Los bordes de los tramos, un punto entre cada dos y uno más allá de cada punta: basta para saber si una fila aún cubre algo. */
+function puntosDePrueba(tramos: Tramo[]): Fraccion[] {
+  const bordes: Fraccion[] = [];
+  for (const t of tramos) {
+    if (t.lo !== null) bordes.push(t.lo);
+    if (t.hi !== null) bordes.push(t.hi);
+  }
+  bordes.sort((a, b) => comparar(a, b));
+  const unicos = bordes.filter((b, i) => i === 0 || comparar(b, bordes[i - 1]) !== 0);
+  if (unicos.length === 0) return [];
+  const dos = entero(2);
+  const puntos = [...unicos, restar(unicos[0], entero(1)), sumar(unicos[unicos.length - 1], entero(1))];
+  for (let i = 0; i + 1 < unicos.length; i++) puntos.push(dividir(sumar(unicos[i], unicos[i + 1]), dos)!);
+  return puntos;
 }
 
 const DENTRO = (a: string, b: string) => `El rango de ${a} queda dentro del de ${b}`;
@@ -283,6 +301,17 @@ export function errorDeRangos(r: Rangos, tendencia: Tendencia, meta: Fraccion, m
     }
     const cruce = interseccion(recortado, efectivo[j].tramo);
     if (!vacio(cruce) && !esPunto(cruce)) return `Los rangos de ${NOMBRE[peor.estado]} y ${NOMBRE[mejor.estado]} se cruzan`;
+  }
+  for (let i = 0; i < filas.length; i++) {
+    const peor = efectivo[i];
+    const mejores = efectivo.filter((y) => GRAVEDAD[y.estado] < GRAVEDAD[peor.estado]);
+    if (mejores.length === 0 || vacio(peor.tramo)) continue;
+    const visible = puntosDePrueba([peor.tramo, ...mejores.map((y) => y.tramo)]).some(
+      (v) => contiene(peor.tramo, v) && !mejores.some((y) => contiene(y.tramo, v)),
+    );
+    if (visible) continue;
+    const tapadora = mejores.find((y) => !vacio(interseccion(peor.tramo, y.tramo))) ?? mejores[0];
+    dentro.push([filas[i], tapadora]);
   }
   if (dentro.length > 0) return DENTRO(NOMBRE[dentro[0][0].estado], NOMBRE[dentro[0][1].estado]);
   const eje = efectivas(r, tendencia).sort((a, b) => {

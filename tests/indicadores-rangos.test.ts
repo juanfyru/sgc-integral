@@ -139,6 +139,31 @@ describe("rangos del semáforo", () => {
     const t: RangosEnTexto = { bien: [{ signo: "entre", valor: "91", hasta: "95" }], atencion: [{ signo: "entre", valor: "96", hasta: "100" }], critico: [{ signo: "<=", valor: "90" }] };
     expect(errorDeRangos(rangosDeTexto(t)!, "ascendente", f("93"), null)).toBe("En «más es mejor», Crítico va abajo, Atención en medio y Bien arriba");
   });
+  it("mantenerse en un rango con un Bien de un solo punto", () => {
+    const E = (valor: string, hasta: string) => ({ signo: "entre" as const, valor, hasta });
+    const S = (signo: ">=" | ">" | "<=" | "<", valor: string) => ({ signo, valor });
+    const e = (t: RangosEnTexto, meta: string) => errorDeRangos(rangosDeTexto(t)!, "constante", f(meta), f(meta));
+    const a: RangosEnTexto = { bien: [E("98", "98")], atencion: [E("98", "100")], critico: [S("<", "98"), S(">", "100")] };
+    expect(e(a, "98")).toBeNull();
+    expect(colores(a, "constante", ["97", "98", "99", "101"])).toEqual(["critico", "bien", "atencion", "critico"]);
+    const HUECO = "Entre Crítico y Bien queda un hueco de más de una unidad";
+    expect(e({ bien: [E("79", "79")], atencion: [], critico: [S("<", "79"), S(">", "100")] }, "79")).toBe(HUECO);
+    expect(e({ bien: [E("75", "75")], atencion: [], critico: [S("<=", "75"), S(">=", "85")] }, "75")).toBe(HUECO);
+    expect(e({ bien: [E("79", "79")], atencion: [], critico: [E("84", "90"), S("<=", "79")] }, "79")).toBe(HUECO);
+  });
+  it("más allá de la fila de una punta, el color es el de la punta del eje", () => {
+    const t: RangosEnTexto = { bien: [{ signo: "entre", valor: "80", hasta: "80" }], atencion: [], critico: [{ signo: "<", valor: "80" }] };
+    expect(colores(t, "ascendente", ["100", "80", "79"])).toEqual(["bien", "bien", "critico"]);
+    const d: RangosEnTexto = { bien: [{ signo: "entre", valor: "30", hasta: "30" }], atencion: [], critico: [{ signo: ">", valor: "30" }] };
+    expect(colores(d, "descendente", ["0", "30", "31"])).toEqual(["bien", "bien", "critico"]);
+  });
+  it("una fila que nunca se ve queda «dentro» de la mejor", () => {
+    const E = (valor: string, hasta: string) => ({ signo: "entre" as const, valor, hasta });
+    const k: RangosEnTexto = { bien: [E("80", "84")], atencion: [E("85", "101")], critico: [E("90", "90"), { signo: "<", valor: "79" }] };
+    expect(errorDeRangos(rangosDeTexto(k)!, "constante", f("80"), f("84"))).toBe("El rango de Crítico queda dentro del de Atención");
+    const p: RangosEnTexto = { bien: [{ signo: ">=", valor: "75" }], atencion: [E("75", "75")], critico: [{ signo: "<=", valor: "75" }] };
+    expect(errorDeRangos(rangosDeTexto(p)!, "ascendente", f("80"), null)).toBe("El rango de Atención queda dentro del de Bien");
+  });
   it("límite de crítico", () => {
     expect(limiteDeRangos(rangosDeTexto(asc)!, "ascendente")).toEqual(f("40"));
     expect(limiteDeRangos(rangosDeTexto({ ...asc, critico: [{ signo: "<", valor: "41" }] })!, "ascendente")).toEqual(f("41"));
