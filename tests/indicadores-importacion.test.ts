@@ -27,6 +27,8 @@ import {
   datosDeFichaImportada,
   estadoDeLote,
   importarLote,
+  lotesRecientes,
+  resumenDeLote,
   listasDePlantilla,
   vistaPrevia,
 } from "@/db/consultas/indicadores/importacion";
@@ -399,6 +401,42 @@ describe("el lote de importación", () => {
       expect(await autorizarArchivoDeLote(id, b.admin, { sql: tx })).toEqual({ ok: false, estado: 409 });
       // Dos subidas a la vez pasan las dos la autorización: el registro, con el lote bloqueado, deja entrar solo una.
       await rechaza(subir(tx, b.admin, id, bytes), "La importación ya tiene su plantilla", ErrorTramite);
+    }));
+});
+
+describe("la lista y el resumen de los lotes", () => {
+  it("dicen el estado y, ya importado, las cifras del evento; a quien no administra no le dicen nada", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [b.procesoId] });
+      const vacio = await crearLote(b.admin, { sql: tx, ahora: AHORA });
+      const { loteId } = await loteCon(tx, b.admin, [aprobada(b, `CNT-ID-${unico()}`), propuesta(b, `CNT-ID-${unico()}`)]);
+
+      expect(await resumenDeLote(b.admin, vacio.id, { sql: tx })).toMatchObject({ id: vacio.id, estado: "sin_archivo", archivo: null, aprobadas: 0 });
+      expect(await resumenDeLote(b.admin, loteId, { sql: tx })).toMatchObject({ estado: "por_importar", aprobadas: 0, borradores: 0, importadoEn: null });
+      expect(await resumenDeLote(b.admin, 999_999_999, { sql: tx })).toBeNull();
+      expect(await resumenDeLote(lider, loteId, { sql: tx })).toBeNull();
+      expect(await lotesRecientes(lider, { sql: tx })).toEqual([]);
+
+      await importarLote(b.admin, loteId, datosImportacion({ siglas: { [b.subprocesoId]: "CNT" } }), firmar(tx));
+      const resumen = await resumenDeLote(b.admin, loteId, { sql: tx });
+      expect(resumen).toMatchObject({ estado: "importado", aprobadas: 1, borradores: 1, omitidas: 0 });
+      expect(resumen?.archivo).toMatch(/\.xlsx$/);
+      expect(resumen?.importadoEn?.toISOString()).toBe(AHORA.toISOString());
+
+      const lista = await lotesRecientes(b.admin, { sql: tx });
+      expect(lista.length).toBeLessThanOrEqual(50);
+      expect(lista.find((l) => l.id === loteId)).toMatchObject({ estado: "importado", aprobadas: 1, borradores: 1, cargadoPor: expect.any(String) });
+      expect(lista.find((l) => l.id === vacio.id)).toMatchObject({ estado: "sin_archivo", archivo: null });
+    }));
+
+  it("la vista previa trae los procesos y la unidad con su sufijo, para pintar el nombre y los rangos", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const { loteId } = await loteCon(tx, b.admin, [aprobada(b, `CNT-ID-${unico()}`)]);
+      const v = await vistaPrevia(b.admin, loteId, { correspondencias: SIN_CORR, regla: REGLA }, { sql: tx, ahora: AHORA });
+      expect(v?.opciones.procesos.some((p) => p.id === b.procesoId)).toBe(true);
+      expect(v?.opciones.unidades[0]).toMatchObject({ sufijo: expect.any(String), decimales: expect.any(Number) });
     }));
 });
 

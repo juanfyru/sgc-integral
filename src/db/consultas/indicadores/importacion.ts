@@ -44,7 +44,7 @@ import { fechaEnZona } from "@/lib/tramites/plazos";
 import { exigirSiglaNoReservada, validarSigla } from "@/lib/validaciones-mapa";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { contenidoDeVersion, errorDeFichaImportada, escribirFichaNueva, type DatosFichaNueva } from "./fichas";
-import { bloquearLote, estadoDeLote } from "./lote-importacion";
+import { bloquearLote, estadoDeLote, type EstadoLote } from "./lote-importacion";
 import { obtenerParametros } from "./maestros";
 import { asegurarMediciones } from "./mediciones";
 
@@ -63,7 +63,9 @@ export type VistaPrevia = {
     subprocesos: { id: number; procesoId: number; proceso: string; nombre: string }[];
     cargos: { id: number; nombre: string }[];
     tipos: { id: number; nombre: string }[];
-    unidades: { id: number; nombre: string }[];
+    unidades: { id: number; nombre: string; sufijo: string; decimales: number }[];
+    /** Para el nombre del proceso de cada fila (una ficha sin subproceso no lo trae por el subproceso). */
+    procesos: { id: number; sigla: string; nombre: string }[];
   };
 };
 
@@ -149,6 +151,75 @@ export async function archivoDeLote(sesion: SujetoPermiso, loteId: number, opcio
   if (!Number.isSafeInteger(loteId) || loteId <= 0) return null;
   const a = await archivoDelLote(opciones?.sql ?? obtenerSql(), loteId);
   return a ? { ruta: a.ruta, mime: a.mime, nombreOriginal: a.nombreOriginal } : null;
+}
+
+export type ResumenDeLote = {
+  id: number;
+  cargadoEn: Date;
+  cargadoPor: string;
+  estado: EstadoLote;
+  archivo: string | null;
+  /** Las cifras salen del evento `importado`, nunca de la dirección: cero mientras no se importa. */
+  aprobadas: number;
+  borradores: number;
+  omitidas: number;
+  importadoEn: Date | null;
+};
+
+function aResumen(r: Record<string, unknown>, estado: EstadoLote): ResumenDeLote {
+  const detalle = (r.detalle ?? {}) as { fichas?: { estado: string }[]; omitidas?: number };
+  const fichas = detalle.fichas ?? [];
+  const aprobadas = fichas.filter((f) => f.estado === "aprobado").length;
+  return {
+    id: Number(r.id),
+    cargadoEn: r.cargado_en as Date,
+    cargadoPor: r.cargado_por as string,
+    estado,
+    archivo: (r.archivo as string | null) ?? null,
+    aprobadas,
+    borradores: fichas.length - aprobadas,
+    omitidas: Number(detalle.omitidas ?? 0),
+    importadoEn: (r.importado_en as Date | null) ?? null,
+  };
+}
+
+const SELECCION_DE_LOTE = (sql: Cliente) => sql`SELECT l.id, l.cargado_en, u.nombre AS cargado_por,
+    (SELECT a.nombre_original FROM archivos a WHERE a.contexto = 'importacion_indicadores' AND a.contexto_id = l.id ORDER BY a.id LIMIT 1) AS archivo,
+    ev.detalle, ev.creado_en AS importado_en
+  FROM importaciones_indicadores l
+  JOIN usuarios u ON u.id = l.cargado_por
+  LEFT JOIN importacion_eventos ev ON ev.importacion_id = l.id AND ev.tipo = 'importado'`;
+
+/** Un lote con su estado y sus cifras, para su página; `null` si no existe o la persona no administra indicadores. */
+export async function resumenDeLote(sesion: SujetoPermiso, loteId: number, opciones?: { sql?: Cliente }): Promise<ResumenDeLote | null> {
+  if (!puede(sesion, "indicadores.administrar")) return null;
+  const sql = opciones?.sql ?? obtenerSql();
+  const estado = await estadoDeLote(sql, loteId);
+  if (estado === null) return null;
+  const [r] = await sql`${SELECCION_DE_LOTE(sql)} WHERE l.id = ${loteId}`;
+  return r ? aResumen(r, estado) : null;
+}
+
+/** Los 50 lotes más recientes, con su estado y, si ya se importaron, cuántas fichas entraron. */
+export async function lotesRecientes(sesion: SujetoPermiso, opciones?: { sql?: Cliente }): Promise<ResumenDeLote[]> {
+  if (!puede(sesion, "indicadores.administrar")) return [];
+  const sql = opciones?.sql ?? obtenerSql();
+  const filas = await sql`${SELECCION_DE_LOTE(sql)}
+    ORDER BY l.cargado_en DESC, l.id DESC LIMIT 50`;
+  const ids = filas.map((f) => Number(f.id));
+  const deshechos = ids.length
+    ? new Set((await sql`SELECT importacion_id FROM importacion_eventos WHERE tipo = 'deshecho' AND importacion_id IN ${sql(ids)}`).map((e) => Number(e.importacion_id)))
+    : new Set<number>();
+  return filas.map((r) => {
+    const estado: EstadoLote = deshechos.has(Number(r.id))
+      ? "deshecho"
+      : r.importado_en
+        ? "importado"
+        : r.archivo
+          ? "por_importar"
+          : "sin_archivo";
+    return aResumen(r, estado);
+  });
 }
 
 type Lectura = { archivo: ArchivoDelLote; filas: FilaLeida[] };
@@ -342,7 +413,8 @@ function opcionesDe(c: CatalogosDeImportacion): VistaPrevia["opciones"] {
     subprocesos: c.subprocesos.map((s) => ({ id: s.id, procesoId: s.procesoId, proceso: c.procesoDe.get(s.procesoId) ?? "", nombre: s.nombre })),
     cargos: c.cargos.map((x) => ({ id: x.id, nombre: x.nombre })),
     tipos: c.tipos.map((x) => ({ id: x.id, nombre: x.nombre })),
-    unidades: c.unidades.map((x) => ({ id: x.id, nombre: x.nombre })),
+    unidades: c.unidades.map((x) => ({ id: x.id, nombre: x.nombre, sufijo: x.sufijo, decimales: x.decimales })),
+    procesos: c.procesos.map((x) => ({ id: x.id, sigla: x.sigla, nombre: x.nombre })),
   };
 }
 
