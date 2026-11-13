@@ -75,6 +75,47 @@ describe("rangos del semáforo", () => {
     expect(errorDeRangos(rangosDeTexto({ ...d, bien: [{ signo: "<=", valor: "30" }], critico: [{ signo: "<", valor: "40" }] })!, "descendente", f("30"), null))
       .toBe("En «menos es mejor», Crítico va con ≥, > o «entre»");
   });
+  it("el orden sobre el eje sigue la tendencia, también con «entre»", () => {
+    const e = (bien: [string, string], atencion: [string, string] | null, critico: [string, string], meta: string, tendencia: "ascendente" | "descendente") =>
+      errorDeRangos(
+        rangosDeTexto({
+          bien: [{ signo: "entre", valor: bien[0], hasta: bien[1] }],
+          atencion: atencion ? [{ signo: "entre", valor: atencion[0], hasta: atencion[1] }] : [],
+          critico: [{ signo: "entre", valor: critico[0], hasta: critico[1] }],
+        })!,
+        tendencia,
+        f(meta),
+        null,
+      );
+    const MAS = "En «más es mejor», Crítico va abajo, Atención en medio y Bien arriba";
+    expect(e(["50", "100"], null, ["101", "200"], "60", "ascendente")).toBe(MAS);
+    expect(e(["0", "40"], null, ["41", "100"], "20", "ascendente")).toBe(MAS);
+    expect(e(["91", "95"], ["96", "100"], ["0", "90"], "93", "ascendente")).toBe(MAS);
+    expect(e(["10", "30"], null, ["0", "9"], "20", "descendente")).toBe("En «menos es mejor», Bien va abajo, Atención en medio y Crítico arriba");
+    const c = errorDeRangos(
+      rangosDeTexto({
+        bien: [{ signo: "entre", valor: "85", hasta: "95" }],
+        atencion: [{ signo: "entre", valor: "70", hasta: "79" }],
+        critico: [{ signo: "entre", valor: "80", hasta: "84" }],
+      })!,
+      "constante",
+      f("85"),
+      f("95"),
+    );
+    expect(c).toBe("Para mantenerse en un rango, Bien va en medio, Atención a cada lado y Crítico afuera");
+  });
+  it("una fila de un solo signo hacia lo mejor no entra en un Bien que ya empezó", () => {
+    const t = (bien: RangosEnTexto["bien"], atencion: RangosEnTexto["atencion"], critico: RangosEnTexto["critico"]): RangosEnTexto => ({ bien, atencion, critico });
+    const e = (x: RangosEnTexto, tendencia: "ascendente" | "descendente", meta: string) => errorDeRangos(rangosDeTexto(x)!, tendencia, f(meta), null);
+    const CRUCE = "Los rangos de Atención y Bien se cruzan";
+    expect(e(t([{ signo: "entre", valor: "91", hasta: "100" }], [{ signo: ">=", valor: "95" }], [{ signo: "<=", valor: "90" }]), "ascendente", "95")).toBe(CRUCE);
+    expect(e(t([{ signo: "entre", valor: "50", hasta: "100" }], [{ signo: ">=", valor: "60" }], [{ signo: "<", valor: "50" }]), "ascendente", "70")).toBe(CRUCE);
+    expect(e(t([{ signo: "entre", valor: "50", hasta: "100" }], [{ signo: ">=", valor: "50" }], [{ signo: "<", valor: "50" }]), "ascendente", "70"))
+      .toBe("El rango de Atención queda dentro del de Bien");
+    expect(e(t([{ signo: "entre", valor: "10", hasta: "30" }], [{ signo: "<=", valor: "20" }], [{ signo: ">", valor: "30" }]), "descendente", "20")).toBe(CRUCE);
+    expect(e(t([{ signo: ">=", valor: "91" }], [{ signo: ">=", valor: "41" }], [{ signo: "<", valor: "41" }]), "ascendente", "100")).toBeNull();
+    expect(e(t([{ signo: ">=", valor: "95" }], [{ signo: ">=", valor: "85,5" }], [{ signo: "<", valor: "85,5" }]), "ascendente", "95")).toBeNull();
+  });
   it("límite de crítico", () => {
     expect(limiteDeRangos(rangosDeTexto(asc)!, "ascendente")).toEqual(f("40"));
     expect(limiteDeRangos(rangosDeTexto({ ...asc, critico: [{ signo: "<", valor: "41" }] })!, "ascendente")).toEqual(f("41"));

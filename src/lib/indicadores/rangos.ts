@@ -221,17 +221,47 @@ export function errorDeRangos(r: Rangos, tendencia: Tendencia, meta: Fraccion, m
     }
   }
   const filas = filasDe(r);
-  const parejas: [Fila, Fila][] = [];
-  for (const peor of filas) {
-    for (const mejor of filas) if (GRAVEDAD[peor.estado] > GRAVEDAD[mejor.estado]) parejas.push([peor, mejor]);
+  const parejas: [number, number][] = [];
+  filas.forEach((peor, i) => filas.forEach((mejor, j) => { if (GRAVEDAD[peor.estado] > GRAVEDAD[mejor.estado]) parejas.push([i, j]); }));
+  const MENSAJE_ORDEN = {
+    ascendente: "En «más es mejor», Crítico va abajo, Atención en medio y Bien arriba",
+    descendente: "En «menos es mejor», Bien va abajo, Atención en medio y Crítico arriba",
+    constante: "Para mantenerse en un rango, Bien va en medio, Atención a cada lado y Crítico afuera",
+  }[tendencia];
+  if (constante) {
+    const ordenadas = [...filas].sort((x, y) => {
+      if (x.tramo.lo === null || y.tramo.lo === null) return x.tramo.lo === y.tramo.lo ? 0 : x.tramo.lo === null ? -1 : 1;
+      return comparar(x.tramo.lo, y.tramo.lo) || (x.tramo.hi === null ? 1 : y.tramo.hi === null ? -1 : comparar(x.tramo.hi, y.tramo.hi));
+    });
+    const centro = ordenadas.findIndex((x) => x.estado === "bien");
+    for (let i = 0; i + 1 < ordenadas.length; i++) {
+      const g = GRAVEDAD[ordenadas[i].estado], h = GRAVEDAD[ordenadas[i + 1].estado];
+      if (i + 1 <= centro ? g < h : g > h) return MENSAJE_ORDEN;
+    }
+  } else {
+    for (const [i, j] of parejas) {
+      const cruce = interseccion(filas[i].tramo, filas[j].tramo);
+      if (!vacio(cruce) && !esPunto(cruce)) continue;
+      const { tramo: w } = filas[i];
+      const { tramo: m } = filas[j];
+      const bien = tendencia === "ascendente" ? w.hi !== null && m.lo !== null && comparar(w.hi, m.lo) <= 0 : w.lo !== null && m.hi !== null && comparar(w.lo, m.hi) >= 0;
+      if (!bien) return MENSAJE_ORDEN;
+    }
   }
-  parejas.sort((a, b) => GRAVEDAD[b[0].estado] - GRAVEDAD[a[0].estado] || GRAVEDAD[b[1].estado] - GRAVEDAD[a[1].estado]);
+  const efectivo = efectivas(r, tendencia);
+  parejas.sort((x, y) => GRAVEDAD[filas[y[0]].estado] - GRAVEDAD[filas[x[0]].estado] || GRAVEDAD[filas[y[1]].estado] - GRAVEDAD[filas[x[1]].estado]);
   const dentro: [Fila, Fila][] = [];
-  for (const [peor, mejor] of parejas) {
-    const cruce = interseccion(peor.tramo, mejor.tramo);
-    if (vacio(cruce) || esPunto(cruce)) continue;
-    if (contenido(peor.tramo, mejor.tramo)) dentro.push([peor, mejor]);
-    else if (!seAbreHaciaLoMejor(peor.fila, tendencia)) return `Los rangos de ${NOMBRE[peor.estado]} y ${NOMBRE[mejor.estado]} se cruzan`;
+  for (const [i, j] of parejas) {
+    const peor = filas[i], mejor = filas[j];
+    const escrito = interseccion(peor.tramo, mejor.tramo);
+    if (vacio(escrito) || esPunto(escrito)) continue;
+    const recortado = efectivo[i].tramo;
+    if (vacio(recortado) || contenido(peor.tramo, mejor.tramo)) {
+      dentro.push([peor, mejor]);
+      continue;
+    }
+    const cruce = interseccion(recortado, mejor.tramo);
+    if (!vacio(cruce) && !esPunto(cruce)) return `Los rangos de ${NOMBRE[peor.estado]} y ${NOMBRE[mejor.estado]} se cruzan`;
   }
   if (dentro.length > 0) return DENTRO(NOMBRE[dentro[0][0].estado], NOMBRE[dentro[0][1].estado]);
   const eje = efectivas(r, tendencia).sort((a, b) => {
