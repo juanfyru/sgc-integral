@@ -756,7 +756,8 @@ describe("las páginas", () => {
       expect(html).toContain(`<option value="${anio}" selected="">${anio}</option>`);
       expect(html).toContain(`value="${anio}-T1"`);
       // La tarjeta del objetivo: su estado y su indicador, con la salvedad del Bien que no alcanza la meta.
-      const tarjeta = html.slice(html.indexOf(enunciado));
+      const desde = html.indexOf(enunciado);
+      const tarjeta = html.slice(desde, html.indexOf("</article>", desde));
       expect(tarjeta).toMatch(/data-variante="critico"[^>]*>No cumplido</);
       expect(tarjeta).toContain(`href="/indicadores/${ind.codigo}"`);
       expect(tarjeta).toContain(">Bien · no alcanza la meta<");
