@@ -653,8 +653,8 @@ describe("la vista «Reportes al ente» (anexo 14B, §8)", () => {
     registro: {
       hoy: "2026-11-14",
       resultados: new Map([
-        [13, { texto: "86,7 %", exacto: "260/3", parcial: true, faltan: [], sinCerrar: ["septiembre de 2026"] }],
-        [12, { texto: null, exacto: null, parcial: true, faltan: ["abril de 2026", "mayo de 2026", "junio de 2026"], sinCerrar: ["abril de 2026", "mayo de 2026", "junio de 2026"] }],
+        [13, { texto: "86,7 %", exacto: "260/3", parcial: true, faltan: [], sinCerrar: ["septiembre de 2026"], desde: null }],
+        [12, { texto: null, exacto: null, parcial: true, faltan: ["abril de 2026", "mayo de 2026", "junio de 2026"], sinCerrar: ["abril de 2026", "mayo de 2026", "junio de 2026"], desde: null }],
       ]),
     },
     ...o,

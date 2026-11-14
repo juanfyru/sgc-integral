@@ -350,7 +350,7 @@ export function agrupar<T>(filas: readonly T[], clave: (f: T) => number): Map<nu
 export type Base = { id: number; inicio: string | null; soporteObligatorio: boolean; versiones: VersionDeCalculo[] };
 
 /** Los indicadores de `ids` con sus versiones aprobadas, en tres lecturas. */
-async function basesDe(sql: Cliente, ids: readonly number[]): Promise<Base[]> {
+export async function basesDe(sql: Cliente, ids: readonly number[]): Promise<Base[]> {
   if (ids.length === 0) return [];
   const [filas, versiones] = await Promise.all([
     sql`SELECT id, inicio_medicion, soporte_obligatorio FROM indicadores WHERE id IN ${sql([...ids])}`,
@@ -498,15 +498,38 @@ export type ResumenAcumulado = {
   meta: { valor: number; texto: string } | null;
   /** La meta contra la que se juzga, como la columna «Meta» de la tabla: «≥ 90 %», «sin meta». */
   metaEnTexto: string | null;
+  /** La fracción exacta del resultado («260/3»), la que congela una constancia de envío al ente; `null` sin resultado. */
+  exacto: string | null;
+  /** Las claves de los periodos terminados de la racha que no tienen dato (las que nombra el rótulo). */
+  faltan: string[];
+  /**
+   * La clave del periodo desde el que acumula cuando la racha que manda no empieza en el primero de los periodos (la ficha
+   * cambió de fórmula o de variables entre ellos: «Acumulado desde julio, versión 2»); `null` si los cubre desde el primero.
+   */
+  desde: string | null;
 };
 
-const SIN_ACUMULADO: ResumenAcumulado = { texto: null, semaforo: null, cumple: null, valores: {}, numeros: {}, rotulo: null, valor: null, meta: null, metaEnTexto: null };
+const SIN_ACUMULADO: ResumenAcumulado = {
+  texto: null,
+  semaforo: null,
+  cumple: null,
+  valores: {},
+  numeros: {},
+  rotulo: null,
+  valor: null,
+  meta: null,
+  metaEnTexto: null,
+  exacto: null,
+  faltan: [],
+  desde: null,
+};
 
 /**
  * El acumulado de un año con los periodos que rigen en él, en orden (`acumulado`, la función pura de la Tarea 4). Manda
  * la racha (`rachasDe`) del último periodo terminado del año, no la de la ficha vigente: un año anterior se acumula con la
- * suya. Se juzga contra la meta del último periodo medido de esa racha. Es el mismo cálculo en la página y en la columna
- * «Año» de la matriz.
+ * suya. Se juzga contra la meta del último periodo medido de esa racha. Es el mismo cálculo en la página, en la columna
+ * «Año» de la matriz y en el resultado del periodo externo de una constancia de envío al ente (`resultadoDelPeriodoExterno`,
+ * sobre los periodos que el periodo externo contiene).
  */
 export function resumenAcumulado(leidos: readonly PeriodoLeido[], versiones: readonly VersionDeCalculo[], ahora: Date): ResumenAcumulado {
   const terminados = leidos.filter((l) => l.periodo.hasta.getTime() < ahora.getTime());
@@ -536,6 +559,7 @@ export function resumenAcumulado(leidos: readonly PeriodoLeido[], versiones: rea
   );
   const unidad = ultimo.version.unidad;
   const desdeOtraRacha = terminados.some((l) => rachaDe(l) !== racha) && r.desde !== null;
+  const faltan = r.faltan.map(clave);
   return {
     texto: r.resultado ? textoValor(r.resultado, unidad, regla) : null,
     semaforo: r.semaforo,
@@ -543,12 +567,15 @@ export function resumenAcumulado(leidos: readonly PeriodoLeido[], versiones: rea
     valores: Object.fromEntries(Object.entries(r.valores).map(([letra, v]) => [letra, numeroEs(v, 4, "truncar")])),
     numeros: Object.fromEntries(Object.entries(r.valores).map(([letra, v]) => [letra, aCelda(v)])),
     rotulo: rotuloDelAcumulado(
-      r.faltan.map(clave),
+      faltan,
       desdeOtraRacha ? { clave: clave(r.desde!), numero: rachas.get(ultimo.version.id)?.numero ?? ultimo.version.numero } : null,
     ),
     valor: r.resultado ? aNumero(r.resultado) : null,
     meta: regla.meta ? { valor: aNumero(regla.meta), texto: `Meta ${numeroExacto(regla.meta, unidad.decimales)}${unidad.sufijo}` } : null,
     metaEnTexto: textoMeta(regla, unidad),
+    exacto: r.resultado ? aTexto(r.resultado) : null,
+    faltan,
+    desde: desdeOtraRacha ? clave(r.desde!) : null,
   };
 }
 

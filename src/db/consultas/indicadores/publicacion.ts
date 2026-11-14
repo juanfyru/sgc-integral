@@ -18,7 +18,7 @@
  */
 import type { TransactionSql } from "postgres";
 import { registrarAuditoria } from "@/db/consultas/admin";
-import { seReportaAlEnte } from "@/lib/indicadores/constancias";
+import { enteDeVersion, seReportaAlEnte, type EnteDeVersion } from "@/lib/indicadores/constancias";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import { quitarConstanciasSinSoporte, recalcularPorSoporte } from "./operacion";
 
@@ -41,16 +41,6 @@ export const esCalculoRepetido = (err: unknown) =>
 /** Lo que la publicación cambió en los datos de operación: quien llama lo deja en el detalle de su entrada de bitácora. */
 export type Publicado = { medidoresQuitados: number; soporteApagado: boolean; medicionesRecalculadas: number };
 
-/** Lo que una versión dice del ente, tal como lo lee `seReportaAlEnte`. */
-type EnteDeVersion = { ente: string | null; periodicidadExterna: string | null; plazoExternoDias: number | null; periodicidad: string | null };
-
-const enteDe = (v: Record<string, unknown>): EnteDeVersion => ({
-  ente: (v.ente as string | null) ?? null,
-  periodicidadExterna: (v.periodicidad_externa as string | null) ?? null,
-  plazoExternoDias: v.plazo_externo_dias === null || v.plazo_externo_dias === undefined ? null : Number(v.plazo_externo_dias),
-  periodicidad: (v.periodicidad as string | null) ?? null,
-});
-
 const mismoEnte = (a: EnteDeVersion, b: EnteDeVersion) =>
   a.ente?.trim() === b.ente?.trim() && a.periodicidadExterna === b.periodicidadExterna && a.plazoExternoDias === b.plazoExternoDias;
 
@@ -67,7 +57,7 @@ async function alPublicarElEnte(tx: TransactionSql, d: Publicacion, nueva: EnteD
   const [anterior] = await tx`SELECT ente, periodicidad_externa, plazo_externo_dias, periodicidad FROM indicador_versiones
     WHERE indicador_id = ${d.indicadorId} AND estado = 'aprobada' AND numero < ${numero} AND id <> ${d.versionId}
     ORDER BY numero DESC LIMIT 1`;
-  const previa = anterior ? enteDe(anterior) : null;
+  const previa = anterior ? enteDeVersion(anterior) : null;
   if (previa && seReportaAlEnte(previa) && mismoEnte(previa, nueva)) return;
   await tx`UPDATE indicadores SET ente_desde = ${d.ahora} WHERE id = ${d.indicadorId}`;
 }
@@ -82,7 +72,7 @@ export async function alPublicarVersion(tx: TransactionSql, d: Publicacion): Pro
   const calculo = (v.calculo as string | null) ?? null;
   await tx`UPDATE indicadores SET calculo = ${calculo}, calculo_alcance = ${(v.calculo_alcance as string | null) ?? null}
     WHERE id = ${d.indicadorId}`;
-  await alPublicarElEnte(tx, d, enteDe(v), Number(v.numero));
+  await alPublicarElEnte(tx, d, enteDeVersion(v), Number(v.numero));
   const hecho: Publicado = { medidoresQuitados: 0, soporteApagado: false, medicionesRecalculadas: 0 };
   if (calculo === null) return hecho;
 

@@ -33,16 +33,27 @@ export function enteCompleto(v: { ente: string | null; periodicidadExterna: stri
   return !falta(v.ente) && !falta(v.periodicidadExterna) && !falta(v.plazoExternoDias);
 }
 
+/** Lo que una versión dice del ente, como lo leen `enteCompleto` y `seReportaAlEnte`. */
+export type EnteDeVersion = { ente: string | null; periodicidadExterna: string | null; plazoExternoDias: number | null; periodicidad: string | null };
+
+/**
+ * Lo que dice del ente una fila de `indicador_versiones`, por sus columnas `ente`, `periodicidad_externa`,
+ * `plazo_externo_dias` y `periodicidad` (la leen `alPublicarVersion`, `asegurarConstancias` y `enteDeLaFicha`).
+ */
+export function enteDeVersion(v: Record<string, unknown>): EnteDeVersion {
+  return {
+    ente: (v.ente as string | null | undefined) ?? null,
+    periodicidadExterna: (v.periodicidad_externa as string | null | undefined) ?? null,
+    plazoExternoDias: v.plazo_externo_dias === null || v.plazo_externo_dias === undefined ? null : Number(v.plazo_externo_dias),
+    periodicidad: (v.periodicidad as string | null | undefined) ?? null,
+  };
+}
+
 /**
  * La versión genera constancias: el ente completo y una periodicidad externa que contiene a la de medición. Una aprobada
  * antes de la 14B puede tener las dos periodicidades al revés: no genera nada hasta que un cambio lo corrija.
  */
-export function seReportaAlEnte(v: {
-  ente: string | null;
-  periodicidadExterna: string | null;
-  plazoExternoDias: number | null;
-  periodicidad: string | null;
-}): boolean {
+export function seReportaAlEnte(v: EnteDeVersion): boolean {
   return enteCompleto(v) && v.periodicidad !== null && contiene(v.periodicidadExterna as Periodicidad, v.periodicidad as Periodicidad);
 }
 

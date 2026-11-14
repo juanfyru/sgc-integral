@@ -8,11 +8,12 @@
  *    (`jefesDe`) de quienes tienen la tarea, uno por subalterno, sin código, nombre ni enlace del indicador, que puede ser
  *    restringido. Lo que el Admin SGC tiene de respaldo (sin designado ni líder) no se escala.
  *
- * La mecánica de la pasada de las mediciones (`vencimientos.ts`), en paralelo y sin tocarla: candidatas por marca nula, lo
- * que puede fallar (responsables, líderes, jefes) buscado antes del candado, un indicador a la vez (el que falla se registra
- * y se salta), y en una transacción corta por paso el candado (`FOR UPDATE SKIP LOCKED`), lo releído, los avisos y las
- * marcas. Sin destinatario no hay aviso ni marca, y sin jefe no hay escalamiento ni marca. Sin fila en `auditoria`: el
- * rastro son los avisos y las marcas. `avisados` cuenta las constancias avisadas y `escalados`, las escaladas.
+ * La mecánica de la pasada de las mediciones (`vencimientos.ts`), con el mismo `correrPaso` (`pasada.ts`): candidatas por
+ * marca nula, lo que puede fallar (responsables, líderes, jefes) buscado antes del candado, un indicador a la vez (el que
+ * falla se registra y se salta), y en una transacción corta por paso el candado (`FOR UPDATE SKIP LOCKED`), lo releído, los
+ * avisos y las marcas. Sin destinatario no hay aviso ni marca, y sin jefe no hay escalamiento ni marca. Sin fila en
+ * `auditoria`: el rastro son los avisos y las marcas. `avisados` cuenta las constancias avisadas y `escalados`, las
+ * escaladas.
  */
 import type { PendingQuery, Row, TransactionSql } from "postgres";
 import type { Cliente } from "@/db/cliente";
@@ -20,9 +21,9 @@ import { avisarA, jefesDe } from "@/db/consultas/avisos-vencimiento";
 import { enTransaccion } from "@/db/consultas/flujo/contrato";
 import { lideresDeProceso } from "@/db/consultas/tramites";
 import { responsablesDeMedir, sinResponsable } from "@/lib/alcance";
-import { MESES } from "@/lib/indicadores-documentales/periodo";
 import { cuenta } from "@/lib/plural";
 import { estadoPlazo, fechaEnZona } from "@/lib/tramites/plazos";
+import { correrPaso, diaYMes } from "./pasada";
 
 type Contexto = { sql: Cliente; ahora: Date; zona: string; escalamientoDias: number };
 type Resultado = { avisados: number; escalados: number };
@@ -52,12 +53,6 @@ type Paso = {
 const reportes = (n: number) => cuenta(n, "reporte al ente", "reportes al ente");
 const dias = (n: number) => cuenta(n, "día", "días");
 const ENLACE = "/indicadores?envio=pendiente";
-
-/** «15 de octubre», el día en la zona de la instalación. */
-function diaYMes(d: Date, zona: string): string {
-  const [, mes, dia] = fechaEnZona(d, zona).split("-").map(Number);
-  return `${dia} de ${MESES[mes - 1]}`;
-}
 
 /** «El plazo venció el 15 de octubre.»; con fechas distintas, la del más atrasado. */
 function cuandoVencio(cs: Pendiente[], zona: string): string {
@@ -204,20 +199,13 @@ const ESCALAMIENTO: Paso = {
   marcar: (tx, ids, ahora) => tx`UPDATE reportes_externos SET escalado_en = ${ahora} WHERE id = ANY(${ids})`,
 };
 
-/** Un paso: las candidatas, lo que necesitan (antes del candado) y, en su transacción, el candado, lo releído, los avisos y las marcas. */
-async function correr(ctx: Contexto, paso: Paso): Promise<number> {
-  const candidatas = await leer(ctx.sql, ctx, paso);
-  if (candidatas.length === 0) return 0;
-  const resueltos = await resolver(ctx, paso, candidatas);
-  const ids = candidatas.filter((c) => resueltos.has(c.indicadorId)).map((c) => c.id);
-  if (ids.length === 0) return 0;
-  return enTransaccion(ctx.sql, async (tx) => {
-    // Lo que otra pasada ya avisó, o lo que se registró entre la lista y el candado, no se avisa.
-    const bajoCandado = await leer(tx, ctx, paso, ids);
-    if (bajoCandado.length === 0) return 0;
-    const avisadas = await paso.avisar(tx, bajoCandado, resueltos, ctx);
-    if (avisadas.length > 0) await paso.marcar(tx, avisadas, ctx.ahora);
-    return avisadas.length;
+/** Un paso, con la mecánica de `correrPaso` (la misma de las mediciones): sus candidatas, releídas bajo el candado, y su `resolver`. */
+function correr(ctx: Contexto, paso: Paso): Promise<number> {
+  return correrPaso(ctx, {
+    leer: (sql, c, ids) => leer(sql, c, paso, ids),
+    resolver: (c, candidatas) => resolver(c, paso, candidatas),
+    avisar: paso.avisar,
+    marcar: paso.marcar,
   });
 }
 

@@ -29,7 +29,6 @@ import type { ConfigDocumental } from "@/db/consultas/config-documental";
 import { enTransaccion } from "@/db/consultas/flujo/contrato";
 import { lideresDeProceso } from "@/db/consultas/tramites";
 import { responsablesDeAnalizar, responsablesDeMedir, sinResponsable } from "@/lib/alcance";
-import { MESES } from "@/lib/indicadores-documentales/periodo";
 import { tocaAvisoPrevio } from "@/lib/indicadores/periodos";
 import { cuenta } from "@/lib/plural";
 import { estadoPlazo, fechaEnZona } from "@/lib/tramites/plazos";
@@ -39,6 +38,7 @@ import { constanciasVencidas } from "./constancias-vencidas";
 import { tomarFotos } from "./fotos";
 import { obtenerParametros } from "./maestros";
 import { asegurarMediciones } from "./mediciones";
+import { correrPaso, diaYMes } from "./pasada";
 import { columnasDePendiente, esPendiente, queFalta, type FaltaDePersona as Falta } from "./tareas";
 
 type Contexto = { sql: Cliente; ahora: Date; zona: string; escalamientoDias: number; avisoPrevioDias: number };
@@ -75,12 +75,6 @@ const DIA_MS = 86_400_000;
 const dias = (n: number) => cuenta(n, "día", "días");
 const indicadores = (n: number) => cuenta(n, "indicador", "indicadores");
 const FUNCION: Record<Falta, "mide" | "analiza"> = { reporte: "mide", analisis: "analiza" };
-
-/** «10 de abril», el día en la zona de la instalación. */
-function diaYMes(d: Date, zona: string): string {
-  const [, mes, dia] = fechaEnZona(d, zona).split("-").map(Number);
-  return `${dia} de ${MESES[mes - 1]}`;
-}
 
 /** «2 indicadores por reportar», «1 indicador por analizar», «2 indicadores por reportar y 1 por analizar». */
 function queTiene(ms: Medicion[]): string {
@@ -307,20 +301,13 @@ const ESCALAMIENTO: Paso = {
   marcar: (tx, ids, ahora) => tx`UPDATE mediciones SET escalado_en = ${ahora} WHERE id = ANY(${ids})`,
 };
 
-/** Un paso: las candidatas, lo que necesitan (antes del candado) y, en su transacción, el candado, lo releído, los avisos y las marcas. */
-async function correr(c: Contexto, paso: Paso): Promise<number> {
-  const candidatas = await leer(c.sql, c, paso);
-  if (candidatas.length === 0) return 0;
-  const resueltos = await resolver(c, paso, candidatas);
-  const ids = candidatas.filter((m) => resueltos.has(m.indicadorId)).map((m) => m.id);
-  if (ids.length === 0) return 0;
-  return enTransaccion(c.sql, async (tx) => {
-    // Lo que otra pasada ya avisó, o lo que se reportó entre la lista y el candado, no se avisa.
-    const bajoCandado = await leer(tx, c, paso, ids);
-    if (bajoCandado.length === 0) return 0;
-    const avisadas = await paso.avisar(tx, bajoCandado, resueltos, c);
-    if (avisadas.length > 0) await paso.marcar(tx, avisadas, c.ahora);
-    return avisadas.length;
+/** Un paso, con la mecánica de `correrPaso` (la misma de las constancias): sus candidatas, releídas bajo el candado, y su `resolver`. */
+function correr(c: Contexto, paso: Paso): Promise<number> {
+  return correrPaso(c, {
+    leer: (sql, ctx, ids) => leer(sql, ctx, paso, ids),
+    resolver: (ctx, candidatas) => resolver(ctx, paso, candidatas),
+    avisar: paso.avisar,
+    marcar: paso.marcar,
   });
 }
 

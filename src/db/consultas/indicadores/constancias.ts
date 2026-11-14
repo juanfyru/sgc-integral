@@ -29,21 +29,24 @@ import {
 } from "@/lib/alcance";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { MESES, periodoDe } from "@/lib/indicadores-documentales/periodo";
-import { acumulado } from "@/lib/indicadores/acumulado";
-import { enteCompleto, envioValido, esFechaValida, justificacionValida, seReportaAlEnte, type Envio } from "@/lib/indicadores/constancias";
-import { aTexto } from "@/lib/indicadores/formula/fraccion";
+import {
+  enteCompleto,
+  enteDeVersion,
+  envioValido,
+  esFechaValida,
+  justificacionValida,
+  seReportaAlEnte,
+  type Envio,
+} from "@/lib/indicadores/constancias";
 import { fechaLimiteDeReporte, periodoQueContiene, periodosTerminados } from "@/lib/indicadores/periodos";
-import { fichaDeCalculo } from "@/lib/indicadores/reporte";
-import { rachasDe } from "@/lib/indicadores/resultados";
 import { rutaDeIndicador } from "@/lib/indicadores/rutas";
-import { textoValor } from "@/lib/indicadores/textos";
 import { ErrorIndicador, SIN_RESPONSABLE, type Periodicidad } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
 import type { Tarea } from "@/lib/tareas";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
-import { leerPeriodos, type Base } from "./lectura";
-import { conMayuscula, texto, versionesAprobadasDe } from "./mediciones";
+import { basesDe, leerPeriodos, resumenAcumulado } from "./lectura";
+import { conMayuscula } from "./mediciones";
 import type { Soporte } from "./soportes";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
@@ -56,14 +59,6 @@ const SIN_SOPORTE = "Adjunte al menos un soporte antes de registrar";
 const SIN_CAMBIOS = "No hay cambios que corregir";
 const SOPORTE_NO_EXISTE = "El soporte no existe";
 const SOPORTE_DE_REGISTRADA = "Un soporte de una constancia registrada no se quita";
-
-/** Lo que la ficha vigente dice del ente, como lo lee `seReportaAlEnte`. */
-const enteDeVersion = (v: Record<string, unknown>) => ({
-  ente: (v.ente as string | null) ?? null,
-  periodicidadExterna: (v.periodicidad_externa as string | null) ?? null,
-  plazoExternoDias: v.plazo_externo_dias === null || v.plazo_externo_dias === undefined ? null : Number(v.plazo_externo_dias),
-  periodicidad: (v.periodicidad as string | null) ?? null,
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Cuándo nacen
@@ -168,21 +163,24 @@ export type ResultadoExterno = {
   faltan: string[];
   /** Las de los que no están cerrados. */
   sinCerrar: string[];
+  /**
+   * La etiqueta del periodo de medición desde el que acumula cuando no cubre el periodo externo desde su primer periodo de
+   * medición (la ficha cambió de fórmula o de variables dentro de él: «agosto de 2026»); `null` en lo demás.
+   */
+  desde: string | null;
 };
 
 /**
- * El resultado del periodo externo (anexo §8): el acumulado de §8.10 (`acumulado`, con la preparación de
- * `resumenAcumulado`: la racha del último periodo terminado, la consolidación de sus variables y la regla del último
- * medido) sobre los periodos de medición que el periodo externo contiene, de la periodicidad que rige (`leerPeriodos`).
- * Es parcial si falta el dato de alguno o alguno no está cerrado; se puede registrar igual.
+ * El resultado del periodo externo (anexo §8): el acumulado de §8.10 de la página del indicador (`resumenAcumulado`, el
+ * mismo cálculo y la misma racha) sobre los periodos de medición que el periodo externo contiene, de la periodicidad que
+ * rige (`leerPeriodos`). Es parcial si falta el dato de alguno, alguno no está cerrado o acumula desde una racha que empezó
+ * dentro del periodo (`desde`): lo que se le dijo al ente cubre solo una parte; se puede registrar igual.
  */
 export async function resultadoDelPeriodoExterno(sql: Cliente, indicadorId: number, periodo: string, ahora: Date): Promise<ResultadoExterno> {
   const zona = zonaHoraria();
   const externo = periodoDe(periodo, zona);
-  const [i] = await sql`SELECT inicio_medicion, soporte_obligatorio FROM indicadores WHERE id = ${indicadorId}`;
-  if (!externo || !i) throw new ErrorIndicador(NO_EXISTE);
-  const versiones = (await versionesAprobadasDe(sql, [indicadorId])).get(indicadorId) ?? [];
-  const base: Base = { id: indicadorId, inicio: texto(i.inicio_medicion), soporteObligatorio: i.soporte_obligatorio === true, versiones };
+  const [base] = await basesDe(sql, [indicadorId]);
+  if (!externo || !base) throw new ErrorIndicador(NO_EXISTE);
   const anio = Number(periodo.slice(0, 4));
   const dentro = ((await leerPeriodos(sql, [base], { desde: anio, hasta: anio }, ahora)).get(indicadorId) ?? []).filter(
     (l) =>
@@ -191,38 +189,17 @@ export async function resultadoDelPeriodoExterno(sql: Cliente, indicadorId: numb
       l.periodo.hasta.getTime() <= externo.hasta.getTime(),
   );
   const sinCerrar = dentro.filter((l) => l.fila.estado !== "cerrada").map((l) => l.periodo.etiqueta);
-  const terminados = dentro.filter((l) => l.periodo.hasta.getTime() < ahora.getTime());
-  const ultimo = terminados.at(-1);
-  const ficha = ultimo ? fichaDeCalculo(ultimo.version.calculo) : null;
-  if (!ultimo || !ficha) return { texto: null, exacto: null, parcial: sinCerrar.length > 0, faltan: [], sinCerrar };
-
-  const rachas = rachasDe(versiones);
-  const rachaDe = (l: (typeof dentro)[number]) => rachas.get(l.version.id)?.id ?? l.version.id;
-  const racha = rachaDe(ultimo);
-  const medido = [...terminados].reverse().find((l) => rachaDe(l) === racha && l.resultado !== null);
-  const regla = (medido ?? ultimo).regla;
-  // Como en `resumenAcumulado`: con el inicio del periodo delante, el orden es el del calendario.
-  const orden = (l: (typeof dentro)[number]) => `${l.periodo.desde.toISOString()}#${l.periodo.clave}`;
-  const clave = (o: string) => o.slice(o.indexOf("#") + 1);
-  const r = acumulado(
-    dentro
-      .filter((l) => l.fila.medicionId !== null)
-      .map((l) => ({ clave: orden(l), versionId: rachaDe(l), noAplica: l.fila.noAplica, valores: l.resultado !== null ? l.valores : null })),
-    {
-      versionId: racha,
-      calculo: ficha,
-      consolidacion: Object.fromEntries(ultimo.version.variables.map((v) => [v.letra, v.consolidacion])),
-      esperados: terminados.map(orden),
-      regla,
-    },
-  );
-  const faltan = r.faltan.map(clave).map((k) => periodoDe(k, zona)?.etiqueta ?? k);
+  const a = resumenAcumulado(dentro, base.versiones, ahora);
+  const etiqueta = (clave: string) => periodoDe(clave, zona)?.etiqueta ?? clave;
+  const faltan = a.faltan.map(etiqueta);
+  const desde = a.desde === null ? null : etiqueta(a.desde);
   return {
-    texto: r.resultado ? textoValor(r.resultado, ultimo.version.unidad, regla) : null,
-    exacto: r.resultado ? aTexto(r.resultado) : null,
-    parcial: faltan.length > 0 || sinCerrar.length > 0,
+    texto: a.texto,
+    exacto: a.exacto,
+    parcial: faltan.length > 0 || sinCerrar.length > 0 || desde !== null,
     faltan,
     sinCerrar,
+    desde,
   };
 }
 
@@ -242,17 +219,18 @@ type ConstanciaBloqueada = { id: number; indicadorId: number; codigo: string; pe
 
 /**
  * La constancia con sus candados (el indicador `FOR SHARE` y la constancia `FOR UPDATE`, en ese orden) y lo que exige
- * tocarla: quien no ve el indicador recibe «no existe»; quien lo ve y no puede registrar, `ErrorPermiso`; un indicador
- * retirado ya no admite reportes.
+ * tocarla: quien no ve el indicador recibe «no existe»; quien lo ve y no puede registrar, `ErrorPermiso`. El retiro no lo
+ * impide: lo que se conservó al retirar (una registrada, o una pendiente que ya tiene su soporte) es evidencia, y un
+ * radicado mal escrito se corrige o un envío ya soportado se termina de registrar. Lo que el retiro sí impide es subir
+ * soportes nuevos (`bloquearParaSoporteDeConstancia`), y las tareas y los avisos son solo de indicadores activos.
  */
 async function constanciaBloqueada(tx: Cliente, sesion: SujetoVisibilidad, reporteId: number): Promise<ConstanciaBloqueada> {
-  const [i] = await tx`SELECT id, codigo, estado FROM indicadores
+  const [i] = await tx`SELECT id, codigo FROM indicadores
     WHERE id = (SELECT indicador_id FROM reportes_externos WHERE id = ${reporteId}) FOR SHARE`;
   const [r] = await tx`SELECT id, periodo, ente, estado, to_char(fecha_envio, 'YYYY-MM-DD') AS fecha_envio, radicado, nota
     FROM reportes_externos WHERE id = ${reporteId} FOR UPDATE`;
   if (!i || !r || !(await puedeVerIndicador(Number(i.id), sesion, { sql: tx }))) throw new ErrorIndicador(NO_EXISTE);
   if (!(await puedeRegistrarConstancia(Number(i.id), sesion, { sql: tx }))) throw new ErrorPermiso();
-  if (i.estado !== "activo") throw new ErrorIndicador(RETIRADO);
   return {
     id: Number(r.id),
     indicadorId: Number(i.id),
@@ -274,7 +252,7 @@ function exigirEnvio(d: { fechaEnvio: string; radicado: string; nota?: string },
 /**
  * Registra el envío de una constancia pendiente (anexo §8): fecha de envío (no futura), radicado, nota opcional y al menos un
  * soporte ya adjunto. Congela el resultado del periodo externo en la constancia (su texto y, en el detalle, su fracción
- * exacta y qué periodos faltaban o no estaban cerrados), con el evento `registro` y la bitácora.
+ * exacta, qué periodos faltaban o no estaban cerrados y desde cuál acumulaba), con el evento `registro` y la bitácora.
  */
 export async function registrarConstancia(
   sesion: SesionFlujo,
@@ -291,7 +269,7 @@ export async function registrarConstancia(
     const [s] = await tx`SELECT count(*)::int AS n FROM archivos WHERE contexto = 'reporte_externo' AND contexto_id = ${c.id}`;
     if (Number(s.n) === 0) throw new ErrorIndicador(SIN_SOPORTE);
     const r = await resultadoDelPeriodoExterno(tx, c.indicadorId, c.periodo, ahora);
-    const detalle = { exacto: r.exacto, parcial: r.parcial, faltan: r.faltan, sinCerrar: r.sinCerrar };
+    const detalle = { exacto: r.exacto, parcial: r.parcial, faltan: r.faltan, sinCerrar: r.sinCerrar, desde: r.desde };
     await tx`UPDATE reportes_externos SET estado = 'registrada', fecha_envio = ${envio.fechaEnvio}, radicado = ${envio.radicado},
         nota = ${envio.nota}, resultado_enviado = ${r.texto}, resultado_detalle = ${tx.json(detalle)},
         registrada_por = ${sesion.usuarioId}, registrada_en = ${ahora}

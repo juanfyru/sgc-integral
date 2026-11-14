@@ -35,6 +35,7 @@ import {
 } from "@/db/consultas/indicadores/constancias";
 import { constanciasVencidas } from "@/db/consultas/indicadores/constancias-vencidas";
 import { abrirCambio, crearIndicador, fichaParaEditar, guardarBorrador } from "@/db/consultas/indicadores/fichas";
+import { resultadosDelAnio } from "@/db/consultas/indicadores/lectura";
 import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
 import { retirar } from "@/db/consultas/indicadores/operacion";
 import { alPublicarVersion } from "@/db/consultas/indicadores/publicacion";
@@ -283,6 +284,7 @@ describe("cuándo nace una constancia", () => {
       const admin = await sesionAdmin(tx);
       const importadaEn = new Date("2026-03-02T15:00:00Z");
       const lote = await loteImportado(tx, { usuarioId: admin.usuarioId, importadoEn: importadaEn });
+      // Por SQL y sin ente: la importación real no puede traerlo (su plantilla no tiene esas columnas); se pone después.
       const ind = await indicadorDePrueba(tx, { importacionId: lote, periodicidad: "mensual", inicioMedicion: "2024-01", aprobadaEn: importadaEn });
       await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: ind.id });
       expect(await asegurarConstancias({ sql: tx, ahora: AHORA, indicadorId: ind.id })).toBe(0);
@@ -411,6 +413,98 @@ describe("cuándo nace una constancia", () => {
       });
       expect(await asegurarConstancias({ sql: tx, ahora: ENERO, indicadorId: b.id })).toBe(0);
     }));
+
+  it("quitar el ente y volver a ponerlo cuenta desde la nueva publicación y no abre lo que terminó entretanto", () =>
+    revertida(sql, async (tx) => {
+      const proceso = await procesoNuevo(tx);
+      const admin = await sesionAdmin(tx);
+      const ind = await conEnte(tx, proceso.id);
+      const mayo = new Date("2026-05-10T15:00:00Z");
+      expect(await asegurarConstancias({ sql: tx, ahora: mayo, indicadorId: ind.id })).toBe(1);
+      await publicarCambio(tx, { indicadorId: ind.id, usuarioId: admin.usuarioId, ahora: mayo, ente: null });
+      expect(await enteDesde(tx, ind.id)).toBeNull();
+      expect(await constanciasDeBD(tx, ind.id)).toEqual([]);
+
+      // De vuelta en noviembre: el segundo y el tercer trimestre terminaron sin ente y no se abren.
+      await publicarCambio(tx, { indicadorId: ind.id, usuarioId: admin.usuarioId, ahora: AHORA, ente: SUPERSALUD });
+      expect(await enteDesde(tx, ind.id)).toEqual(AHORA);
+      expect(await asegurarConstancias({ sql: tx, ahora: AHORA, indicadorId: ind.id })).toBe(0);
+      expect(await constanciasDeBD(tx, ind.id)).toEqual([]);
+      expect(await asegurarConstancias({ sql: tx, ahora: ENERO, indicadorId: ind.id })).toBe(1);
+      expect((await constanciasDeBD(tx, ind.id)).map((c) => c.periodo)).toEqual(["2026-T4"]);
+    }));
+});
+
+/**
+ * Una versión 2 aprobada que rige desde `rigeDesde` con otra fórmula y una variable más (un cambio mayor que parte el
+ * acumulado, spec §8.10), con el mismo ente de la versión 1, como en `tests/indicadores-lectura.test.ts`.
+ */
+async function versionConOtraFormula(tx: TransactionSql, d: { indicadorId: number; usuarioId: number; rigeDesde: string; aprobadaEn: Date }) {
+  const [v2] = await tx`INSERT INTO indicador_versiones (indicador_id, numero, estado, tipo_cambio, nombre, forma, formula, periodicidad,
+      tendencia, meta, semaforo_modo, umbral_atencion_pct, unidad_sufijo, decimales, ente, periodicidad_externa, plazo_externo_dias, creado_por)
+    VALUES (${d.indicadorId}, 2, 'borrador', 'mayor', 'Con recuperados', 'libre', '(A + C) / B * 100', 'mensual', 'ascendente', 90,
+      'relativo', 70, ' %', 1, ${ENTE}, 'trimestral', 15, ${d.usuarioId}) RETURNING id`;
+  await tx`SELECT id FROM indicador_versiones WHERE id = ${v2.id} FOR UPDATE`;
+  for (const [orden, letra, nombre] of [[1, "A", "Casos que cumplen"], [2, "B", "Casos evaluados"], [3, "C", "Casos recuperados"]] as const) {
+    await tx`INSERT INTO indicador_variables (version_id, letra, nombre, orden) VALUES (${v2.id}, ${letra}, ${nombre}, ${orden})`;
+  }
+  await tx`UPDATE indicador_versiones SET estado = 'aprobada', elaborada_por = ${d.usuarioId}, huella = ${"2".repeat(64)},
+      rige_desde = ${d.rigeDesde}, aprobada_por = ${d.usuarioId}, aprobada_en = ${d.aprobadaEn}
+    WHERE id = ${v2.id}`;
+}
+
+describe("el resultado del periodo externo", () => {
+  /** Un indicador mensual desde julio de 2026 que se reporta trimestral: al 5 de octubre, el tercer trimestre terminó entero. */
+  const desdeJulio = async (tx: TransactionSql, mide: SesionFlujo) =>
+    conEnte(tx, (await procesoNuevo(tx)).id, { inicioMedicion: "2026-07", aprobadaEn: new Date("2026-06-15T15:00:00Z"), mide: [mide.usuarioId] });
+  const reportarEnOctubre = (tx: TransactionSql, sesion: SesionFlujo, medicionId: number, valores: Record<string, string>) =>
+    reportar(sesion, { medicionId, valores, parcial: false, confirmado: true }, { sql: tx, ahora: OCTUBRE });
+
+  it("un cambio mayor que abre una racha nueva dentro del trimestre lo deja parcial, desde donde empieza la racha, y así se congela", () =>
+    revertida(sql, async (tx) => {
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const admin = await sesionAdmin(tx);
+      const ind = await desdeJulio(tx, mide);
+      await versionConOtraFormula(tx, { indicadorId: ind.id, usuarioId: admin.usuarioId, rigeDesde: "2026-08", aprobadaEn: new Date("2026-07-20T15:00:00Z") });
+      await asegurarMediciones({ sql: tx, ahora: OCTUBRE, indicadorId: ind.id });
+      await asegurarConstancias({ sql: tx, ahora: OCTUBRE, indicadorId: ind.id });
+      await reportarEnOctubre(tx, mide, await medicionDe(tx, ind.id, "2026-07"), { A: "9", B: "10" });
+      for (const p of ["2026-08", "2026-09"]) await reportarEnOctubre(tx, mide, await medicionDe(tx, ind.id, p), { A: "4", B: "10", C: "4" });
+      // Todo cerrado y con dato: lo único parcial es que julio quedó con la fórmula anterior.
+      await tx`UPDATE mediciones SET estado = 'cerrada' WHERE indicador_id = ${ind.id}`;
+
+      const r = await resultadoDelPeriodoExterno(tx, ind.id, "2026-T3", OCTUBRE);
+      expect(r).toEqual({ texto: "80 %", exacto: "80/1", parcial: true, faltan: [], sinCerrar: [], desde: "agosto de 2026" });
+      // La página del indicador dice lo mismo: «Acumulado desde agosto, versión 2».
+      const pagina = (await resultadosDelAnio(admin, ind.id, 2026, { sql: tx, ahora: OCTUBRE })).acumulado;
+      expect(pagina).toMatchObject({ texto: r.texto, exacto: r.exacto, rotulo: "Acumulado desde agosto, versión 2" });
+
+      const t3 = await idDe(tx, ind.id, "2026-T3");
+      await soporte(tx, t3);
+      await registrarConstancia(mide, { reporteId: t3, fechaEnvio: "2026-10-05", radicado: "SNS-2026-0003" }, { sql: tx, ahora: OCTUBRE });
+      const [fila] = await tx`SELECT resultado_enviado, resultado_detalle FROM reportes_externos WHERE id = ${t3}`;
+      expect(fila).toEqual({
+        resultado_enviado: "80 %",
+        resultado_detalle: { exacto: "80/1", parcial: true, faltan: [], sinCerrar: [], desde: "agosto de 2026" },
+      });
+      expect((await constanciasDe(mide, ind.id, { sql: tx, ahora: OCTUBRE }))?.[0]).toMatchObject({ periodo: "2026-T3", parcial: true });
+    }));
+
+  it("sin cambio de racha, desde es nulo y el resultado es el mismo acumulado que muestra la página del indicador", () =>
+    revertida(sql, async (tx) => {
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const admin = await sesionAdmin(tx);
+      const ind = await desdeJulio(tx, mide);
+      await asegurarMediciones({ sql: tx, ahora: OCTUBRE, indicadorId: ind.id });
+      const valores = { "2026-07": { A: "9", B: "10" }, "2026-08": { A: "7", B: "10" }, "2026-09": { A: "10", B: "10" } };
+      for (const [p, v] of Object.entries(valores)) await reportarEnOctubre(tx, mide, await medicionDe(tx, ind.id, p), v);
+
+      const r = await resultadoDelPeriodoExterno(tx, ind.id, "2026-T3", OCTUBRE);
+      expect(r).toMatchObject({ texto: "86,7 %", exacto: "260/3", faltan: [], desde: null });
+      // Al 5 de octubre, el año de la página son esos mismos tres meses: el mismo texto y la misma fracción exacta.
+      const pagina = (await resultadosDelAnio(admin, ind.id, 2026, { sql: tx, ahora: OCTUBRE })).acumulado;
+      expect({ texto: pagina.texto, exacto: pagina.exacto }).toEqual({ texto: r.texto, exacto: r.exacto });
+    }));
 });
 
 describe("registrar y corregir", () => {
@@ -437,6 +531,7 @@ describe("registrar y corregir", () => {
         parcial: true,
         faltan: [],
         sinCerrar: ["septiembre de 2026"],
+        desde: null,
       });
       expect(await resultadoDelPeriodoExterno(tx, ind.id, "2026-T2", AHORA)).toEqual({
         texto: null,
@@ -444,6 +539,7 @@ describe("registrar y corregir", () => {
         parcial: true,
         faltan: ["abril de 2026", "mayo de 2026", "junio de 2026"],
         sinCerrar: ["abril de 2026", "mayo de 2026", "junio de 2026"],
+        desde: null,
       });
 
       await rechaza(registrarConstancia(mide, { ...envio, fechaEnvio: "2026-11-15" }, opciones), "La fecha de envío no puede ser futura");
@@ -463,7 +559,7 @@ describe("registrar y corregir", () => {
         radicado: "SNS-2026-0042",
         nota: "Cargado en la plataforma del ente",
         resultado_enviado: "86,7 %",
-        resultado_detalle: { exacto: "260/3", parcial: true, faltan: [], sinCerrar: ["septiembre de 2026"] },
+        resultado_detalle: { exacto: "260/3", parcial: true, faltan: [], sinCerrar: ["septiembre de 2026"], desde: null },
         registrada_por: mide.usuarioId,
         registrada_en: AHORA,
         corregida: false,
@@ -516,6 +612,36 @@ describe("registrar y corregir", () => {
       expect(quienes.map((f) => Number(f.registrada_por))).toEqual([mide.usuarioId, lider.usuarioId, admin.usuarioId]);
     }));
 
+  it("en un indicador retirado, quien administra corrige una registrada y registra una pendiente con soporte", () =>
+    revertida(sql, async (tx) => {
+      const proceso = await procesoNuevo(tx);
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const solo = await usuarioDePrueba(tx, { rol: "consulta" });
+      const admin = await sesionAdmin(tx);
+      const ind = await conEnte(tx, proceso.id, { mide: [mide.usuarioId] });
+      await asegurarConstancias({ sql: tx, ahora: AHORA, indicadorId: ind.id });
+      const [t1, t2] = await Promise.all(["2026-T1", "2026-T2"].map((p) => idDe(tx, ind.id, p)));
+      const opciones = { sql: tx, ahora: AHORA };
+      await soporte(tx, t1);
+      await registrarConstancia(mide, { reporteId: t1, fechaEnvio: "2026-04-10", radicado: "SNS-2026-001" }, opciones);
+      await soporte(tx, t2);
+      await retirar(admin, { indicadorId: ind.id, motivo: "Ya no se mide" }, opciones);
+      // Lo que se conservó es evidencia: el retiro no la congela a medias. Ya no es tarea de nadie.
+      expect((await tareasDeIndicadores(mide, opciones)).tareas.filter((t) => t.id.startsWith("constancia:"))).toEqual([]);
+
+      await corregirConstancia(admin, { reporteId: t1, fechaEnvio: "2026-04-10", radicado: "SNS-2026-0010", justificacion: "Al radicado le faltaba un cero" }, opciones);
+      await registrarConstancia(admin, { reporteId: t2, fechaEnvio: "2026-07-10", radicado: "SNS-2026-0020" }, opciones);
+      const filas = await tx`SELECT periodo, estado, radicado, corregida, registrada_por FROM reportes_externos WHERE indicador_id = ${ind.id} ORDER BY hasta`;
+      expect(filas).toEqual([
+        { periodo: "2026-T1", estado: "registrada", radicado: "SNS-2026-0010", corregida: true, registrada_por: mide.usuarioId },
+        { periodo: "2026-T2", estado: "registrada", radicado: "SNS-2026-0020", corregida: false, registrada_por: admin.usuarioId },
+      ]);
+      // Quien solo lo ve sigue sin poder.
+      await expect(
+        corregirConstancia(solo, { reporteId: t2, fechaEnvio: "2026-07-11", radicado: "SNS-2026-0021", justificacion: "Una justificación cualquiera" }, opciones),
+      ).rejects.toBeInstanceOf(ErrorPermiso);
+    }));
+
   it("corregir exige justificación, no cambia el resultado y deja el antes y el después", () =>
     revertida(sql, async (tx) => {
       const proceso = await procesoNuevo(tx);
@@ -552,7 +678,7 @@ describe("registrar y corregir", () => {
         radicado: "SNS-2026-0024",
         nota: "Radicado por correo",
         resultado_enviado: "90 %",
-        resultado_detalle: { exacto: "90/1", parcial: true, faltan: [], sinCerrar: ["julio de 2026", "agosto de 2026", "septiembre de 2026"] },
+        resultado_detalle: { exacto: "90/1", parcial: true, faltan: [], sinCerrar: ["julio de 2026", "agosto de 2026", "septiembre de 2026"], desde: null },
         registrada_por: mide.usuarioId,
         registrada_en: AHORA,
         corregida: true,
