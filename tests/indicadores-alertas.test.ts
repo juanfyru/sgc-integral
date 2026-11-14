@@ -299,3 +299,73 @@ describe("alertas de resultado", () => {
       expect(await alertaGuardada(tx, medicionId)).toBe("critico");
     }));
 });
+
+describe("alertas de un Bien que no cumple (spec 14A §3.1)", () => {
+  const RANGOS = {
+    bien: [{ signo: ">=" as const, valor: "91" }],
+    atencion: [{ signo: "entre" as const, valor: "41", hasta: "90" }],
+    critico: [{ signo: "<=" as const, valor: "40" }],
+  };
+
+  it("avisa a quien analiza y a quien hace seguimiento como un Atención, y no a los líderes", () =>
+    revertida(sql, async (tx) => {
+      const e = await entorno(tx);
+      const { ind, nombre, medicionId } = await e.nuevo({ rangos: RANGOS, meta: "100" });
+      await reportarCon(tx, e.mide, medicionId, { A: "95", B: "100" });
+
+      const [m] = await tx`SELECT semaforo, cumple, estado FROM mediciones WHERE id = ${medicionId}`;
+      expect(m).toMatchObject({ semaforo: "bien", cumple: false, estado: "abierta" });
+      const avisos = await alertas(tx, medicionId);
+      expect(quienes(avisos)).toEqual(ordenados([e.analiza.usuarioId, e.sigue.usuarioId]));
+      expect(avisos[0]).toMatchObject({
+        tipo: "indicadores.alerta",
+        titulo: `${nombre}: 95 % frente a una meta de 100 %, Bien, sin alcanzar la meta. Segundo trimestre de 2026`,
+        cuerpo: `${ind.codigo} · ${e.proceso.nombre}`,
+      });
+      expect(await alertaGuardada(tx, medicionId)).toBe("atencion");
+
+      // Corregido a un resultado que cumple: corrección a los mismos, y la medición queda reportada.
+      await reportarCon(tx, e.mide, medicionId, { A: "105", B: "100" });
+      const [c] = await tx`SELECT cumple, estado FROM mediciones WHERE id = ${medicionId}`;
+      expect(c).toMatchObject({ cumple: true, estado: "reportada" });
+      const despues = (await alertas(tx, medicionId)).slice(avisos.length);
+      expect(despues[0].tipo).toBe("indicadores.correccion");
+      expect(await alertaGuardada(tx, medicionId)).toBeNull();
+    }));
+
+  it("un Bien que cumple no avisa", () =>
+    revertida(sql, async (tx) => {
+      const e = await entorno(tx);
+      const { medicionId } = await e.nuevo({ rangos: RANGOS, meta: "100" });
+      await reportarCon(tx, e.mide, medicionId, { A: "105", B: "100" });
+      const [m] = await tx`SELECT semaforo, cumple, estado FROM mediciones WHERE id = ${medicionId}`;
+      expect(m).toMatchObject({ semaforo: "bien", cumple: true, estado: "reportada" });
+      expect(await alertas(tx, medicionId)).toEqual([]);
+      expect(await alertaGuardada(tx, medicionId)).toBeNull();
+    }));
+
+  it("la corrección dice el estado anterior verdadero: «Bien, sin alcanzar la meta», no «Atención»", () =>
+    revertida(sql, async (tx) => {
+      const e = await entorno(tx);
+      const { nombre, medicionId } = await e.nuevo({ rangos: RANGOS, meta: "100" });
+      await reportarCon(tx, e.mide, medicionId, { A: "95", B: "100" });
+      const antes = (await alertas(tx, medicionId)).length;
+      await reportarCon(tx, e.mide, medicionId, { A: "105", B: "100" });
+      const [c] = (await alertas(tx, medicionId)).slice(antes);
+      expect(c.titulo).toBe(`Corrección: ${nombre} pasó de Bien, sin alcanzar la meta a Bien. Segundo trimestre de 2026`);
+    }));
+
+  it("un Bien sin cumplir repetido que se corrige no dice «Crítico»: dice el estado con sus periodos", () =>
+    revertida(sql, async (tx) => {
+      const e = await entorno(tx);
+      const { nombre, medicion } = await e.nuevo({ rangos: RANGOS, meta: "100", periodicidad: "mensual", inicioMedicion: "2026-01", aprobadaEn: new Date("2026-01-05T15:00:00Z") }, "2026-01");
+      for (const mes of ["2026-01", "2026-02", "2026-03"]) await reportarCon(tx, e.mide, await medicion(mes), { A: "95", B: "100" });
+      const marzo = await medicion("2026-03");
+      expect(await alertaGuardada(tx, marzo)).toBe("critico");
+      const antes = (await alertas(tx, marzo)).length;
+      await reportarCon(tx, e.mide, marzo, { A: "105", B: "100" });
+      const [c] = (await alertas(tx, marzo)).slice(antes);
+      expect(c.tipo).toBe("indicadores.correccion");
+      expect(c.titulo).toBe(`Corrección: ${nombre} pasó de Bien, sin alcanzar la meta en 3 periodos a Bien. Marzo de 2026`);
+    }));
+});

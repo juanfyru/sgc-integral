@@ -5,7 +5,7 @@
 import type { Nodo } from "./formula/analizar";
 import { comparar, CERO, entero, fraccion, multiplicar, restar, esNegativa, type Fraccion } from "./formula/fraccion";
 import { evaluar, type Motivo } from "./formula/evaluar";
-import { semaforoDe, type Regla } from "./semaforo";
+import { cumpleMeta, semaforoDe, type Regla } from "./semaforo";
 import type { Semaforo } from "./tipos";
 
 export type FichaDeCalculo = {
@@ -19,15 +19,24 @@ export function calcular(
   f: FichaDeCalculo,
   valores: Record<string, Fraccion | undefined>,
   regla: Regla,
-): { completo: boolean; resultado: Fraccion | null; sinResultado: Motivo | null; semaforo: Semaforo | null; fueraDeLimites: boolean } {
+): {
+  completo: boolean;
+  resultado: Fraccion | null;
+  sinResultado: Motivo | null;
+  semaforo: Semaforo | null;
+  /** Alcanzar la meta, y nada más (spec 14A §3.1); `null` sin semáforo. */
+  cumple: boolean | null;
+  fueraDeLimites: boolean;
+} {
   const completo = f.letras.every((letra) => Object.hasOwn(valores, letra) && valores[letra] !== undefined);
-  if (!completo) return { completo: false, resultado: null, sinResultado: null, semaforo: null, fueraDeLimites: false };
+  if (!completo) return { completo: false, resultado: null, sinResultado: null, semaforo: null, cumple: null, fueraDeLimites: false };
   const evaluacion = evaluar(f.arbol, valores);
-  if (!evaluacion.ok) return { completo: true, resultado: null, sinResultado: evaluacion.motivo, semaforo: null, fueraDeLimites: false };
+  if (!evaluacion.ok) return { completo: true, resultado: null, sinResultado: evaluacion.motivo, semaforo: null, cumple: null, fueraDeLimites: false };
   const resultado = evaluacion.valor;
   const fueraDeLimites =
     (f.resultadoMin !== null && comparar(resultado, f.resultadoMin) < 0) || (f.resultadoMax !== null && comparar(resultado, f.resultadoMax) > 0);
-  return { completo: true, resultado, sinResultado: null, semaforo: semaforoDe(resultado, regla), fueraDeLimites };
+  const semaforo = semaforoDe(resultado, regla);
+  return { completo: true, resultado, sinResultado: null, semaforo, cumple: semaforo === null ? null : cumpleMeta(resultado, regla), fueraDeLimites };
 }
 
 /** ¿El resultado se movió más de `pct` % frente al anterior? Pide confirmación antes de reportar. Si el anterior fue 0, cualquier cambio cuenta. */

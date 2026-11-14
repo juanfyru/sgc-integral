@@ -3,6 +3,7 @@ import { acumulado, type PeriodoMedido } from "@/lib/indicadores/acumulado";
 import { calcular, variacionExcesiva, type FichaDeCalculo } from "@/lib/indicadores/calculo";
 import { analizar } from "@/lib/indicadores/formula/analizar";
 import { comparar, fraccion } from "@/lib/indicadores/formula/fraccion";
+import { rangosDeTexto } from "@/lib/indicadores/rangos";
 import type { Regla } from "@/lib/indicadores/semaforo";
 
 const f = (t: string) => fraccion(t)!;
@@ -25,6 +26,32 @@ describe("cálculo de una medición", () => {
     expect(calcular(porcentaje(), { A: f("3") }, asc)).toMatchObject({ completo: false, resultado: null });
     expect(calcular(porcentaje(), { A: f("3"), B: f("0") }, asc)).toMatchObject({ completo: true, resultado: null, sinResultado: "division_por_cero", semaforo: null });
     expect(calcular(porcentaje(), { A: f("6"), B: f("5") }, asc).fueraDeLimites).toBe(true);
+  });
+  it("calcular y acumulado devuelven si cumple la meta, aparte del color", () => {
+    const rangos: Regla = {
+      ...asc,
+      meta: f("100"),
+      modo: "rangos",
+      umbralPct: null,
+      rangos: rangosDeTexto({ bien: [{ signo: ">=", valor: "91" }], atencion: [{ signo: "entre", valor: "41", hasta: "90" }], critico: [{ signo: "<=", valor: "40" }] }),
+    };
+    expect(calcular(porcentaje(), { A: f("19"), B: f("20") }, rangos)).toMatchObject({ semaforo: "bien", cumple: false });
+    expect(calcular(porcentaje(), { A: f("20"), B: f("20") }, rangos)).toMatchObject({ semaforo: "bien", cumple: true });
+    expect(calcular(porcentaje(), { A: f("3"), B: f("5") }, rangos)).toMatchObject({ semaforo: "atencion", cumple: false });
+    expect(calcular(porcentaje(), { A: f("3"), B: f("0") }, rangos).cumple).toBeNull();
+    expect(calcular(porcentaje(), { A: f("19"), B: f("20") }, { ...rangos, meta: null }).cumple).toBeNull();
+    // Una regla heredada: el cumplir y el color coinciden.
+    expect(calcular(porcentaje(), { A: f("9"), B: f("10") }, asc)).toMatchObject({ semaforo: "bien", cumple: true });
+    const ficha = {
+      versionId: 1,
+      calculo: porcentaje(),
+      consolidacion: { A: "suma", B: "suma" } as const,
+      esperados: [] as string[],
+      regla: rangos,
+    };
+    expect(acumulado([p("2026-T1", "19", "20")], ficha)).toMatchObject({ semaforo: "bien", cumple: false });
+    expect(acumulado([p("2026-T1", "20", "20")], ficha)).toMatchObject({ semaforo: "bien", cumple: true });
+    expect(acumulado([], ficha).cumple).toBeNull();
   });
   it("variación que pide confirmación", () => {
     expect(variacionExcesiva(f("60"), f("83"), 30)).toBe(false);

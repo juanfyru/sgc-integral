@@ -3,6 +3,7 @@
  * revierte (`revertida`): lo que crea aquí no sobrevive al test.
  */
 import type { TransactionSql } from "postgres";
+import type { RangosEnTexto } from "@/lib/indicadores/rangos";
 import type { Periodicidad, Tendencia } from "@/lib/indicadores/tipos";
 import { usuarioDePrueba } from "./tramites";
 
@@ -37,6 +38,14 @@ export type OpcionesIndicadorDePrueba = {
   /** Con «fijo», el límite de crítico es `limite`; sin valor, «relativo» con el umbral. */
   modo?: "relativo" | "fijo";
   limite?: string;
+  /** Con rangos, `semaforo_modo = 'rangos'` y la regla sale de ellos (sin umbral ni límite). */
+  rangos?: RangosEnTexto;
+  nivel?: string;
+  /** Un lote de importación de la transacción: la versión nace con su lote y su aprobación previa. */
+  importacionId?: number;
+  /** Con `importacionId`: la aprobación previa que lleva la versión; sin valor, «Acta 1 de 2025». */
+  aprobacionPrevia?: { documento: string; aprobadoPor: string; fecha: string };
+  riesgoAsociado?: string;
   clasificacion?: "Estratégico" | "Operativo" | "Regulatorio";
   /** Clave de periodo desde la que se mide y rige la versión 1; sin valor, enero de 2026 en la periodicidad. */
   inicioMedicion?: string;
@@ -94,11 +103,15 @@ export async function indicadorDePrueba(
       (indicador_id, numero, estado, tipo_cambio, nombre, proposito, tipo_id, tipo_nombre,
        clasificacion_id, clasificacion_nombre, proceso_nombre, origen_dato, calculo, forma, factor, formula,
        unidad_id, unidad_nombre, unidad_sufijo, decimales, periodicidad, tendencia, meta,
-       semaforo_modo, umbral_atencion_pct, limite_critico, resultado_max, creado_por)
+       semaforo_modo, umbral_atencion_pct, limite_critico, rangos, resultado_max, nivel, riesgo_asociado,
+       importacion_id, aprobacion_previa_documento, aprobacion_previa_por, aprobacion_previa_fecha, creado_por)
     SELECT ${indicadorId}, 1, 'borrador', 'inicial', ${`Indicador de prueba ${codigo}`}, 'Medir el cumplimiento de la prueba',
       t.id, t.nombre, c.id, c.nombre, ${proceso.nombre as string}, 'manual', 'Porcentaje de cumplimiento', 'porcentaje', NULL, 'A / B * 100',
       un.id, un.nombre, un.sufijo, 1, ${o.periodicidad ?? "mensual"}, ${o.tendencia ?? "ascendente"}, ${meta},
-      ${o.modo ?? "relativo"}, ${o.modo === "fijo" ? null : (o.umbralPct ?? 70)}, ${o.limite ?? null}, ${o.resultadoMax ?? null}, ${elaboradaPor}
+      ${o.rangos ? "rangos" : (o.modo ?? "relativo")}, ${o.rangos || o.modo === "fijo" ? null : (o.umbralPct ?? 70)}, ${o.limite ?? null},
+      ${o.rangos ? tx.json(o.rangos as never) : null}, ${o.resultadoMax ?? null}, ${o.nivel ?? null}, ${o.riesgoAsociado ?? null},
+      ${o.importacionId ?? null}, ${o.importacionId ? (o.aprobacionPrevia?.documento ?? "Acta 1 de 2025") : null}, ${o.importacionId ? (o.aprobacionPrevia?.aprobadoPor ?? "Comité de calidad") : null},
+      ${o.importacionId ? (o.aprobacionPrevia?.fecha ?? "2025-01-15") : null}, ${elaboradaPor}
     FROM tipos_indicador t, clasificaciones_indicador c, unidades_indicador un
     WHERE t.nombre = 'Eficacia' AND c.nombre = ${clasificacion} AND un.nombre = 'Porcentaje'
     RETURNING id`;
@@ -134,6 +147,14 @@ export async function indicadorDePrueba(
   }
 
   return { id: indicadorId, codigo, versionId, variables, procesoId };
+}
+
+/** Un lote de importación con su evento «importado» (quién y cuándo), dentro de la transacción de la prueba. */
+export async function loteImportado(tx: TransactionSql, d: { usuarioId: number; importadoEn: Date }): Promise<number> {
+  const [l] = await tx`INSERT INTO importaciones_indicadores (cargado_por, cargado_en) VALUES (${d.usuarioId}, ${d.importadoEn}) RETURNING id`;
+  await tx`INSERT INTO importacion_eventos (importacion_id, tipo, usuario_id, metodo, detalle, creado_en)
+    VALUES (${l.id}, 'importado', ${d.usuarioId}, 'clave', '{}'::jsonb, ${d.importadoEn})`;
+  return Number(l.id);
 }
 
 /**

@@ -4,7 +4,7 @@
  */
 import { evaluar, type Motivo } from "./formula/evaluar";
 import { dividir, entero, sumar, CERO, type Fraccion } from "./formula/fraccion";
-import { semaforoDe, type Regla } from "./semaforo";
+import { cumpleMeta, semaforoDe, type Regla } from "./semaforo";
 import type { FichaDeCalculo } from "./calculo";
 import type { Consolidacion, Semaforo } from "./tipos";
 
@@ -20,7 +20,7 @@ function juntar(consolidacion: Consolidacion, valores: Fraccion[]): Fraccion {
 export function acumulado(
   periodos: PeriodoMedido[],
   f: { versionId: number; calculo: FichaDeCalculo; consolidacion: Record<string, Consolidacion>; esperados: string[]; regla: Regla },
-): { resultado: Fraccion | null; valores: Record<string, Fraccion>; semaforo: Semaforo | null; faltan: string[]; desde: string | null; sinResultado: Motivo | null } {
+): { resultado: Fraccion | null; valores: Record<string, Fraccion>; semaforo: Semaforo | null; cumple: boolean | null; faltan: string[]; desde: string | null; sinResultado: Motivo | null } {
   const ordenados = [...periodos].sort((a, b) => (a.clave < b.clave ? -1 : a.clave > b.clave ? 1 : 0));
   const deLaVersion = ordenados.filter((p) => p.versionId === f.versionId);
   const desde = deLaVersion.length > 0 ? deLaVersion[0].clave : null;
@@ -41,9 +41,11 @@ export function acumulado(
     const reunidos = medidos.flatMap((p) => (p.valores !== null && Object.hasOwn(p.valores, letra) ? [p.valores[letra]] : []));
     if (reunidos.length > 0) valores[letra] = juntar(f.consolidacion[letra] ?? "suma", reunidos);
   }
-  if (medidos.length === 0) return { resultado: null, valores, semaforo: null, faltan, desde, sinResultado: null };
+  if (medidos.length === 0) return { resultado: null, valores, semaforo: null, cumple: null, faltan, desde, sinResultado: null };
 
   const evaluacion = evaluar(f.calculo.arbol, valores);
-  if (!evaluacion.ok) return { resultado: null, valores, semaforo: null, faltan, desde, sinResultado: evaluacion.motivo };
-  return { resultado: evaluacion.valor, valores, semaforo: semaforoDe(evaluacion.valor, f.regla), faltan, desde, sinResultado: null };
+  if (!evaluacion.ok) return { resultado: null, valores, semaforo: null, cumple: null, faltan, desde, sinResultado: evaluacion.motivo };
+  const semaforo = semaforoDe(evaluacion.valor, f.regla);
+  const cumple = semaforo === null ? null : cumpleMeta(evaluacion.valor, f.regla);
+  return { resultado: evaluacion.valor, valores, semaforo, cumple, faltan, desde, sinResultado: null };
 }

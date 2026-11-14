@@ -2,7 +2,9 @@ import { z } from "zod";
 import { JUSTIFICACION_MAXIMA, JUSTIFICACION_MINIMA, PATRON_MES } from "@/lib/indicadores/cierre";
 import { FACTORES_TASA } from "@/lib/indicadores/formula/formas";
 import { fraccion } from "@/lib/indicadores/formula/fraccion";
+import { claveDeCorrespondencia } from "@/lib/indicadores/importacion/formulario";
 import { periodicidadDe } from "@/lib/indicadores/periodos";
+import { SIGNOS } from "@/lib/indicadores/rangos";
 import {
   CONSOLIDACIONES,
   FORMAS,
@@ -116,6 +118,45 @@ const EsquemaPrueba = z
   })
   .strict();
 
+const FORMATO_RANGOS = "Los rangos del semáforo no tienen un formato válido";
+const NUMERO_RANGOS = "Los valores de los rangos deben ser números";
+
+/** Un renglón de los rangos: el signo y uno o dos números (el segundo solo con «entre»). */
+const EsquemaFilaDeRango = z
+  .object({
+    signo: z.enum(SIGNOS, { error: FORMATO_RANGOS }),
+    valor: numero(NUMERO_RANGOS),
+    hasta: numero(NUMERO_RANGOS).optional(),
+  })
+  .strict()
+  .refine((f) => (f.signo === "entre") === (f.hasta !== undefined), "Solo «entre» lleva dos valores, y los lleva");
+
+const filasDeRango = z.array(EsquemaFilaDeRango, { error: FORMATO_RANGOS }).max(4, "Un estado admite hasta cuatro renglones");
+
+/** Los rangos por estado (spec 14A §3.2); la regla entre ellos la revisa `errorDeRangos`. */
+export const EsquemaRangos = z.object({ bien: filasDeRango, atencion: filasDeRango, critico: filasDeRango }).strict();
+
+/** Los rangos viajan como el JSON de `RangosEnTexto` en un solo campo; vacío es «no vino». Devuelve el JSON normalizado. */
+const rangosEnJson = z
+  .string({ error: FORMATO_RANGOS })
+  .transform((v, ctx) => {
+    if (v.trim() === "") return undefined;
+    let leido: unknown;
+    try {
+      leido = JSON.parse(v);
+    } catch {
+      ctx.addIssue({ code: "custom", message: FORMATO_RANGOS });
+      return z.NEVER;
+    }
+    const r = EsquemaRangos.safeParse(leido);
+    if (!r.success) {
+      ctx.addIssue({ code: "custom", message: r.error.issues[0].message });
+      return z.NEVER;
+    }
+    return JSON.stringify(r.data);
+  })
+  .optional();
+
 export const EsquemaFicha = z
   .object({
     procesoId: id("Elija el proceso"),
@@ -154,6 +195,7 @@ export const EsquemaFicha = z
     meta: numero("La meta debe ser un número").optional(),
     metaMax: numero("El máximo del rango debe ser un número").optional(),
     semaforoModo: z.enum(MODOS_SEMAFORO, { error: "Elija el modo del semáforo" }).optional(),
+    rangos: rangosEnJson,
     umbralAtencionPct: entero("El umbral de atención", 1, 99).optional(),
     limiteCritico: numero("El límite de crítico debe ser un número").optional(),
     tolerancia: numero("La tolerancia debe ser un número").optional(),
@@ -167,6 +209,8 @@ export const EsquemaFicha = z
       .optional(),
     lineaBaseNota: opcional("La nota de la línea base", 500),
     sustentoMeta: opcional("El sustento de la meta", 500),
+    nivel: opcional("El nivel", 60),
+    riesgoAsociado: opcional("El riesgo asociado", 300),
     cargosMedir: listaDeIds("Los cargos responsables de medir no son válidos", "Elija hasta 20 cargos", "Elija al menos un cargo responsable de medir"),
     cargosAnalizar: listaDeIds("Los cargos responsables de analizar no son válidos", "Elija hasta 20 cargos", "Elija al menos un cargo responsable de analizar"),
     normaIds: listaDeIds("Las normas no son válidas", "Elija hasta 20 normas").optional().transform((v) => v ?? []),
@@ -418,5 +462,122 @@ export function juntarHistoricos(formData: FormData): FormData {
     if (f.noAplica && motivo) f.motivo = motivo;
   }
   if (filas.size > 0) salida.set("filas", JSON.stringify([...filas].map(([periodo, f]) => ({ periodo, ...f }))));
+  return salida;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// La importación de fichas (spec 14A §5.3 a §5.6)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Una lista de ids sin repetidos que puede ir vacía, ya leída (la importación no la manda como JSON). */
+const idsQuePuedenFaltar = (mensaje: string) =>
+  z.array(id(mensaje), { error: mensaje }).max(20, "Elija hasta 20 cargos").transform((xs) => [...new Set(xs)]);
+
+/**
+ * La ficha de una fila importada (spec 14A §5.6): como `EsquemaFicha`, pero el objetivo del indicador y los cargos
+ * responsables pueden faltar, porque la plantilla no los exige. Solo la usa la importación: el formulario sigue con
+ * `EsquemaFicha`, y la ficha propuesta los pide al editarse.
+ */
+export const EsquemaFichaImportada = EsquemaFicha.extend({
+  proposito: z
+    .string({ error: "El objetivo del indicador no es válido" })
+    .trim()
+    .max(1000, "El objetivo del indicador no puede pasar de 1000 caracteres")
+    .nullable()
+    .transform((v) => v || null),
+  cargosMedir: idsQuePuedenFaltar("Los cargos responsables de medir no son válidos"),
+  cargosAnalizar: idsQuePuedenFaltar("Los cargos responsables de analizar no son válidos"),
+});
+
+const FORMATO_CORRESPONDENCIAS = "Las correspondencias no tienen un formato válido";
+const FORMATO_SIGLAS = "Las siglas elegidas no tienen un formato válido";
+
+const idElegido = z.union(
+  [
+    z.number().int(FORMATO_CORRESPONDENCIAS).positive(FORMATO_CORRESPONDENCIAS),
+    z.string().regex(/^[1-9]\d{0,14}$/, FORMATO_CORRESPONDENCIAS).transform(Number),
+  ],
+  { error: FORMATO_CORRESPONDENCIAS },
+);
+
+/** Un texto del archivo (normalizado) → el id elegido en el catálogo; tantas como filas puede traer una plantilla. */
+const correspondenciasDe = z
+  .record(z.string().max(300, FORMATO_CORRESPONDENCIAS), idElegido, { error: FORMATO_CORRESPONDENCIAS })
+  .refine((v) => Object.keys(v).length <= 500, FORMATO_CORRESPONDENCIAS)
+  .optional()
+  .transform((v) => v ?? {});
+
+export const EsquemaCorrespondencias = z
+  .object({ subprocesos: correspondenciasDe, cargos: correspondenciasDe, tipos: correspondenciasDe, unidades: correspondenciasDe })
+  .strict();
+
+/**
+ * La vista previa de un lote (spec 14A §5.3, pasos 3 a 5): las correspondencias elegidas y los dos porcentajes de la regla,
+ * como texto (la consulta dice si son válidos). El `id` del lote viaja aparte.
+ */
+export const EsquemaVistaPreviaImportacion = z
+  .object({
+    correspondencias: enJson(EsquemaCorrespondencias, FORMATO_CORRESPONDENCIAS).optional(),
+    pctAscendente: z.string().trim().max(20, "El porcentaje de la regla no es válido").optional(),
+    pctDescendente: z.string().trim().max(20, "El porcentaje de la regla no es válido").optional(),
+  })
+  .strict();
+
+/**
+ * Importar el lote (spec 14A §5.3, paso 6): lo de la vista previa, los datos de la aprobación previa (la consulta los
+ * exige con sus mensajes), las siglas elegidas por subproceso y la clave. El `id` del lote viaja aparte.
+ */
+export const EsquemaImportarLote = EsquemaVistaPreviaImportacion.extend({
+  documento: z.string().max(1000, "El documento de la aprobación previa no es válido").optional(),
+  aprobadoPor: z.string().max(1000, "Quién aprobó no es válido").optional(),
+  fecha: z.string().max(40, "La fecha de la aprobación previa no es válida").optional(),
+  /** Los códigos de las filas que la vista previa mostró como importables (Ruling 38): la consulta los compara. */
+  codigos: z.string().max(200_000, "La vista previa no es válida").optional(),
+  siglas: enJson(
+    z
+      .record(z.string().regex(/^\d{1,15}$/, FORMATO_SIGLAS), z.string().max(10, FORMATO_SIGLAS), { error: FORMATO_SIGLAS })
+      .refine((v) => Object.keys(v).length <= 500, FORMATO_SIGLAS),
+    FORMATO_SIGLAS,
+  ).optional(),
+  ...firma,
+}).strict();
+
+/** Deshacer el lote (spec 14A §5.9): el motivo, de 10 a 500 caracteres, y la clave. El `id` del lote viaja aparte. */
+export const EsquemaDeshacerImportacion = z.object({ motivo: textoAcotado("El motivo", 10, 500), ...firma }).strict();
+
+const CORRESPONDENCIA_DE: Record<string, "subprocesos" | "cargos" | "tipos" | "unidades"> = {
+  subproceso: "subprocesos",
+  cargo: "cargos",
+  tipo: "tipos",
+  unidad: "unidades",
+};
+
+/**
+ * El formulario de la importación manda un `<select>` por correspondencia pendiente (`corr:<tipo>:<texto>`, el texto
+ * normalizado como en la vista previa) y un campo por sigla elegida (`sigla:<id del subproceso>`), para que funcione
+ * igual antes de hidratar; aquí se juntan en `correspondencias` y `siglas` (JSON), como los leen los esquemas de la
+ * importación. Un valor vacío es «sin elegir». Lo demás pasa igual.
+ */
+export function juntarImportacion(formData: FormData): FormData {
+  const salida = new FormData();
+  const correspondencias: Record<string, Record<string, string>> = { subprocesos: {}, cargos: {}, tipos: {}, unidades: {} };
+  const siglas: Record<string, string> = {};
+  let conCorrespondencias = false;
+  let conSiglas = false;
+  for (const [campo, valor] of formData) {
+    const corr = /^corr:([a-z]+):([\s\S]+)$/.exec(campo);
+    const sigla = /^sigla:(.+)$/.exec(campo);
+    if (corr && typeof valor === "string") {
+      const destino = Object.hasOwn(CORRESPONDENCIA_DE, corr[1]) ? CORRESPONDENCIA_DE[corr[1]] : null;
+      if (destino === null) throw new Error(FORMATO_CORRESPONDENCIAS);
+      conCorrespondencias = true;
+      if (valor.trim() !== "") correspondencias[destino][claveDeCorrespondencia(corr[2])] = valor.trim();
+    } else if (sigla && typeof valor === "string") {
+      conSiglas = true;
+      if (valor.trim() !== "") siglas[sigla[1]] = valor.trim();
+    } else salida.append(campo, valor);
+  }
+  if (conCorrespondencias) salida.set("correspondencias", JSON.stringify(correspondencias));
+  if (conSiglas) salida.set("siglas", JSON.stringify(siglas));
   return salida;
 }

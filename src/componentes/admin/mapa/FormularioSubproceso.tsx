@@ -15,7 +15,7 @@ export function FormularioSubproceso({
   accion: (estado: EstadoAccion, formData: FormData) => Promise<EstadoAccion>;
   procesoId: number;
   id?: number;
-  valores?: { nombre: string; slug: string };
+  valores?: { nombre: string; slug: string; sigla: string | null };
 }) {
   const [estado, enviar, pendiente] = useActionState(accion, null);
   const v = estado?.valores;
@@ -30,6 +30,19 @@ export function FormularioSubproceso({
       <label className="flex flex-col gap-1 text-sm font-medium">
         Nombre
         <input name="nombre" required defaultValue={val("nombre") ?? valores?.nombre} className={claseCampo} />
+      </label>
+      <label className="flex flex-col gap-1 text-sm font-medium">
+        Sigla (opcional)
+        <input
+          name="sigla"
+          maxLength={4}
+          defaultValue={val("sigla") ?? valores?.sigla ?? ""}
+          aria-describedby="ayuda-sigla-subproceso"
+          className={`${claseCampo} font-mono uppercase`}
+        />
+        <span id="ayuda-sigla-subproceso" className="text-xs font-normal text-muted-foreground">
+          De 2 a 4 letras; da el código de sus indicadores (CNT-ID-001)
+        </span>
       </label>
       <details>
         <summary className="cursor-pointer text-sm text-muted-foreground">Opciones avanzadas</summary>

@@ -3,29 +3,47 @@
  * handler del panel. Escribe en un almacén temporal y no toca la BD.
  */
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { NextRequest } from "next/server";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { registrarArchivo, obtenerVersionParaSubida, exigirEscrituraEnVersion, exigirInterno, sesionDePeticion } = vi.hoisted(() => ({
+const {
+  registrarArchivo,
+  obtenerVersionParaSubida,
+  exigirEscrituraEnVersion,
+  exigirInterno,
+  sesionDePeticion,
+  autorizarArchivoDeLote,
+  listasDePlantilla,
+  archivoDeLote,
+} = vi.hoisted(() => ({
   registrarArchivo: vi.fn(),
   obtenerVersionParaSubida: vi.fn(),
   exigirEscrituraEnVersion: vi.fn(),
   exigirInterno: vi.fn(),
   sesionDePeticion: vi.fn(),
+  autorizarArchivoDeLote: vi.fn(),
+  listasDePlantilla: vi.fn(),
+  archivoDeLote: vi.fn(),
 }));
 
 vi.mock("@/db/cliente", () => ({ obtenerSql: () => "conexión" }));
 vi.mock("@/db/consultas/admin", () => ({ registrarArchivo, obtenerVersionParaSubida, exigirEscrituraEnVersion }));
 vi.mock("@/db/consultas/origen", () => ({ exigirInterno }));
 vi.mock("@/lib/sesion-actual", () => ({ sesionDePeticion }));
+vi.mock("@/db/consultas/indicadores/importacion", () => ({ autorizarArchivoDeLote, listasDePlantilla, archivoDeLote }));
 
 import { POST as subirAlPanel } from "@/app/admin/api/archivos/route";
+import { GET as plantillaDeLaImportacion } from "@/app/(app)/admin/(panel)/indicadores/importar/plantilla/route";
+import { GET as archivoDeLaImportacion } from "@/app/(app)/admin/(panel)/indicadores/importar/[id]/archivo/route";
+import { POST as subirALaImportacion } from "@/app/api/importaciones-indicadores/[id]/archivo/route";
 import { ErrorTramite } from "@/db/consultas/flujo/contrato";
 import { recibirArchivo } from "@/lib/recepcion-archivo";
-import { TAMANO_MAXIMO_BYTES } from "@/lib/subida";
+import { plantillaDeImportacion } from "@/lib/indicadores/importacion/plantilla";
+import { ERROR_PLANTILLA, MIME_XLSX, TAMANO_MAXIMO_BYTES } from "@/lib/subida";
+import JSZip from "jszip";
 import { pngDePrueba } from "./png-prueba";
 
 const PDF = new TextEncoder().encode("%PDF-1.4\n%contenido de prueba\n%%EOF");
@@ -66,6 +84,7 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(path.join(almacen, "documentos"), { recursive: true, force: true });
   rmSync(path.join(almacen, "jornadas"), { recursive: true, force: true });
+  rmSync(path.join(almacen, "importaciones"), { recursive: true, force: true });
 });
 
 describe("recibirArchivo", () => {
@@ -334,5 +353,110 @@ describe("recibirArchivo de una evidencia", () => {
     await recibirArchivo(peticion(PDF), { ...DESTINO, contexto: "version" }, 3);
     expect(registrarArchivo.mock.calls[0][0].ruta).toBe(`${CARPETA}/informe-final.pdf`);
     expect(registrarArchivo.mock.calls[0][0].versionId).toBe(4);
+  });
+});
+
+describe("la plantilla de una importación de indicadores", () => {
+  const LISTAS = { procesos: ["SGC"], subprocesos: [], tipos: ["Eficacia"], clasificaciones: ["Estratégico"], unidades: ["Porcentaje"] };
+  const URL_SUBIDA = "http://sgc.local/api/importaciones-indicadores/5/archivo";
+  const subir = (cuerpo: BodyInit, nombre = "Matriz 2026.xlsx", id = "5") =>
+    subirALaImportacion(peticion(cuerpo, { "x-nombre-archivo": encodeURIComponent(nombre) }, URL_SUBIDA), { params: Promise.resolve({ id }) });
+  const ADMIN = { usuarioId: 1, rol: "admin_sgc" };
+  const enLote = () => {
+    const carpeta = path.join(almacen, "importaciones", "5");
+    return existsSync(carpeta) ? readdirSync(carpeta) : [];
+  };
+
+  beforeEach(() => {
+    sesionDePeticion.mockResolvedValue(ADMIN);
+    autorizarArchivoDeLote.mockResolvedValue({ ok: true });
+  });
+
+  it("sin sesión 401, sin administrar indicadores 403, con otro origen 403, sin leer el archivo", async () => {
+    sesionDePeticion.mockResolvedValue(null);
+    expect((await subir(PDF)).status).toBe(401);
+    sesionDePeticion.mockResolvedValue({ usuarioId: 2, rol: "lider_proceso" });
+    expect((await subir(PDF)).status).toBe(403);
+    sesionDePeticion.mockResolvedValue(ADMIN);
+    const ajena = peticion(PDF, { origin: "https://malo.com", host: "sgc.local" }, URL_SUBIDA);
+    expect((await subirALaImportacion(ajena, { params: Promise.resolve({ id: "5" }) })).status).toBe(403);
+    expect(autorizarArchivoDeLote).not.toHaveBeenCalled();
+    expect(registrarArchivo).not.toHaveBeenCalled();
+  });
+
+  it("un lote que no existe 404 y uno que ya tiene su plantilla 409, antes de recibir el cuerpo", async () => {
+    expect((await subir(PDF, "a.xlsx", "x")).status).toBe(404);
+    autorizarArchivoDeLote.mockResolvedValue({ ok: false, estado: 404 });
+    expect((await subir(PDF)).status).toBe(404);
+    autorizarArchivoDeLote.mockResolvedValue({ ok: false, estado: 409 });
+    const res = await subir(PDF);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "La importación ya tiene su plantilla" });
+    expect(registrarArchivo).not.toHaveBeenCalled();
+  });
+
+  it("recibe solo un .xlsx: un PDF, o un ZIP renombrado, responde 415 con su mensaje y no deja archivo", async () => {
+    const pdf = await subir(PDF, "matriz.pdf");
+    expect(pdf.status).toBe(415);
+    expect(await pdf.json()).toEqual({ error: ERROR_PLANTILLA });
+    const zip = new JSZip();
+    zip.file("hoja.txt", "no es un libro");
+    const renombrado = await subir(new Uint8Array(await zip.generateAsync({ type: "uint8array" })), "matriz.xlsx");
+    expect(renombrado.status).toBe(415);
+    expect(await renombrado.json()).toEqual({ error: ERROR_PLANTILLA });
+    expect(registrarArchivo).not.toHaveBeenCalled();
+    expect(enLote()).toEqual([]);
+  });
+
+  it("guarda la plantilla en importaciones/<id> y la registra como el archivo del lote", async () => {
+    const xlsx = await plantillaDeImportacion(LISTAS);
+    const res = await subir(new Uint8Array(xlsx));
+    expect(res.status).toBe(201);
+    expect(registrarArchivo).toHaveBeenCalledWith(
+      {
+        versionId: null, contexto: "importacion_indicadores", contextoId: 5, rol: "evidencia", ruta: "importaciones/5/matriz-2026.xlsx",
+        nombreOriginal: "Matriz 2026.xlsx", extension: "xlsx", mime: MIME_XLSX, tamanoBytes: xlsx.byteLength,
+        hashSha256: createHash("sha256").update(xlsx).digest("hex"),
+      },
+      1,
+    );
+    expect(autorizarArchivoDeLote).toHaveBeenCalledWith(5, ADMIN);
+    expect(enLote()).toEqual(["matriz-2026.xlsx"]);
+  });
+
+  it("la plantilla vacía y la del lote se descargan solo administrando indicadores, siempre como descarga; el archivo del lote no existe para los demás", async () => {
+    listasDePlantilla.mockResolvedValue(LISTAS);
+    const pedir = (url: string) => new NextRequest(url);
+    const vacia = () => plantillaDeLaImportacion(pedir("http://sgc.local/admin/indicadores/importar/plantilla"));
+    const delLote = (id: string) =>
+      archivoDeLaImportacion(pedir(`http://sgc.local/admin/indicadores/importar/${id}/archivo`), { params: Promise.resolve({ id }) });
+
+    sesionDePeticion.mockResolvedValue(null);
+    expect((await vacia()).status).toBe(401);
+    expect((await delLote("5")).status).toBe(401);
+    sesionDePeticion.mockResolvedValue({ usuarioId: 2, rol: "gerencia" });
+    expect((await vacia()).status).toBe(403);
+    // El GET de un archivo guardado responde 404 a quien no puede verlo (AGENTS.md, F13A-R3).
+    expect((await delLote("5")).status).toBe(404);
+    expect(archivoDeLote).not.toHaveBeenCalled();
+
+    sesionDePeticion.mockResolvedValue(ADMIN);
+    const plantilla = await vacia();
+    expect(plantilla.status).toBe(200);
+    expect(plantilla.headers.get("content-type")).toBe(MIME_XLSX);
+    expect(plantilla.headers.get("content-disposition")).toBe('attachment; filename="plantilla-importacion-indicadores.xlsx"');
+
+    archivoDeLote.mockResolvedValue(null);
+    expect((await delLote("5")).status).toBe(404);
+    expect((await delLote("x")).status).toBe(404);
+    const carpeta = path.join(almacen, "importaciones", "5");
+    mkdirSync(carpeta, { recursive: true });
+    writeFileSync(path.join(carpeta, "matriz.xlsx"), "contenido");
+    archivoDeLote.mockResolvedValue({ ruta: "importaciones/5/matriz.xlsx", mime: MIME_XLSX, nombreOriginal: "Matriz 2026.xlsx" });
+    const archivo = await delLote("5");
+    expect(archivo.status).toBe(200);
+    expect(archivo.headers.get("content-disposition")).toMatch(/^attachment; /);
+    expect(archivo.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(archivoDeLote).toHaveBeenLastCalledWith(ADMIN, 5);
   });
 });

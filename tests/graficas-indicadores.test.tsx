@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { LeyendaDeGrafica } from "@/componentes/indicadores/LeyendaDeGrafica";
 import { BarraEstados } from "@/componentes/ui/BarraEstados";
 import { llevarALaColumnaInicial } from "@/componentes/ui/DesplazableDeTubos";
 import { GraficoTubos } from "@/componentes/ui/GraficoTubos";
@@ -115,6 +116,25 @@ describe("GraficoTubos", () => {
     const impreso = /<text class="tubo-impreso"[^>]*font-size="([\d.]+)"/.exec(html);
     const franja = atributo(/<rect class="tubo-zona"[^>]*>/.exec(html)![0], "width");
     expect(Number(impreso?.[1]) * 0.56 * "Atención".length).toBeLessThanOrEqual(franja);
+  });
+
+  it("un Bien que no alcanza la meta lo dice en la tabla y en el nombre de la columna, y abrevia «Bien*» al imprimir", () => {
+    const serie = doce.map((p) =>
+      p.clave === doce.find((x) => x.estado === "bien")?.clave ? { ...p, nombreEstado: "Bien, no alcanza la meta", sinAlcanzar: true, nombreImpreso: "Bien*" } : p,
+    );
+    const html = principal({ serie });
+    expect(html).toMatch(/<tr><th scope="row">[^<]+<\/th><td>[^<]+<\/td><td>Bien, no alcanza la meta<\/td><\/tr>/);
+    expect(html).toMatch(/aria-label="[^"]*, Bien, no alcanza la meta"/);
+    expect(html).toMatch(/<text class="tubo-impreso"[^>]*><tspan[^>]*>[^<]+<\/tspan><tspan[^>]*>Bien\*<\/tspan><\/text>/);
+  });
+
+  it("el acumulado que no alcanza la meta lo dice en su insignia, y la leyenda explica el «Bien*» impreso", () => {
+    const html = renderToStaticMarkup(<TuboAcumulado valor={92} texto="92 %" estado="bien" cumple={false} meta={{ valor: 95, texto: "Meta 95 %" }} unidad={UNIDAD} />);
+    expect(html).toMatch(/data-variante="bien"[^>]*>Bien · no alcanza la meta</);
+    expect(renderToStaticMarkup(<TuboAcumulado valor={96} texto="96 %" estado="bien" cumple meta={{ valor: 95, texto: "Meta 95 %" }} unidad={UNIDAD} />)).toMatch(/>Bien</);
+    // Solo en papel, como el «Bien*» de la columna: en pantalla no hay asterisco que explicar.
+    expect(renderToStaticMarkup(<LeyendaDeGrafica conMeta conLimite={false} conAsterisco />)).toContain('<li class="tubo-impreso">Bien*: Bien, sin alcanzar la meta</li>');
+    expect(renderToStaticMarkup(<LeyendaDeGrafica conMeta conLimite={false} />)).not.toContain("Bien*");
   });
 
   it("cada columna se enfoca con el teclado y dice su valor y su estado", () => {
@@ -485,6 +505,11 @@ describe("las piezas pequeñas", () => {
     expect(renderToStaticMarkup(<BarraEstados bien={0} atencion={0} critico={0} sinDato={0} />)).not.toContain("NaN");
     expect(barra).toMatch(/^<div class="tubo-color-exacto /);
     // «No aplica» va aparte de «sin dato», escrito y con su propio segmento rayado (ronda 1 de la Tarea 19, D-11).
+    // Cuántos Bien no alcanzan la meta, escrito junto a los Bien (spec 14A §3.1); sin ninguno, no se dice nada.
+    expect(sinEtiquetas(renderToStaticMarkup(<BarraEstados bien={12} bienSinAlcanzar={3} atencion={1} critico={0} sinDato={0} />))).toContain(
+      "12 bien (3 sin alcanzar la meta), 1 en atención",
+    );
+    expect(sinEtiquetas(renderToStaticMarkup(<BarraEstados bien={12} bienSinAlcanzar={0} atencion={1} critico={0} sinDato={0} />))).not.toContain("sin alcanzar");
     const conNoAplica = renderToStaticMarkup(<BarraEstados bien={7} atencion={1} critico={1} sinDato={0} noAplica={1} />);
     expect(sinEtiquetas(conNoAplica)).toBe("7 bien, 1 en atención, 1 crítico, 0 sin dato, 1 no aplica");
     expect(conNoAplica).toContain('<span class="barra-no-aplica" style="width:10%"');

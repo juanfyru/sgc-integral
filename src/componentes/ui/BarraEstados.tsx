@@ -2,7 +2,8 @@
  * Cuántos indicadores hay en cada estado (spec §11, encima de la lista): una barra de proporciones y, debajo, la misma
  * cuenta escrita, que es la que se lee («19 bien, 7 en atención, 3 críticos, 3 sin dato»). La barra no se lee aparte.
  * «No aplica» se cuenta aparte de «sin dato» y, si hay, se escribe («1 no aplica»); su segmento va en el tono neutro con
- * rayas, para no confundirse con el de «sin dato» por el color solo (Tarea 19, D-11).
+ * rayas, para no confundirse con el de «sin dato» por el color solo (Tarea 19, D-11). Los Bien que no alcanzan la meta
+ * van en el segmento de Bien y la cuenta lo escribe («12 bien (3 sin alcanzar la meta)»; spec 14A §3.1).
  */
 export function BarraEstados({
   bien,
@@ -10,8 +11,10 @@ export function BarraEstados({
   critico,
   sinDato,
   noAplica = 0,
+  bienSinAlcanzar = 0,
 }: {
   bien: number;
+  bienSinAlcanzar?: number;
   atencion: number;
   critico: number;
   sinDato: number;
@@ -20,7 +23,7 @@ export function BarraEstados({
   const total = bien + atencion + critico + sinDato + noAplica;
   // Clases literales: Tailwind solo genera las que ve escritas completas.
   const partes = [
-    { cuantos: bien, clase: "bg-estado-bien", texto: `${bien} bien` },
+    { cuantos: bien, clase: "bg-estado-bien", texto: bienSinAlcanzar > 0 ? `${bien} bien (${bienSinAlcanzar} sin alcanzar la meta)` : `${bien} bien` },
     { cuantos: atencion, clase: "bg-estado-atencion", texto: `${atencion} en atención` },
     { cuantos: critico, clase: "bg-estado-critico", texto: `${critico} ${critico === 1 ? "crítico" : "críticos"}` },
     { cuantos: sinDato, clase: "bg-estado-sin-dato", texto: `${sinDato} sin dato` },

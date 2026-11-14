@@ -2,7 +2,8 @@
  * Meta y semáforo de un indicador (spec §7.5). Todo se decide con fracciones exactas, nunca con el número
  * redondeado. Sin Node ni BD: lo importan componentes de cliente.
  */
-import { aDecimal, CERO, CIEN, comparar, dividir, entero, fraccion, multiplicar, restar, UNO, type Fraccion } from "./formula/fraccion";
+import { aDecimal, CERO, CIEN, comparar, dividir, entero, fraccion, multiplicar, restar, sumar, UNO, type Fraccion } from "./formula/fraccion";
+import { errorDeRangos, limiteDeRangos, semaforoDeRangos, type FilaDeRango, type Rangos } from "./rangos";
 import type { Semaforo, Tendencia, ModoSemaforo } from "./tipos";
 import type { Unidad } from "./textos";
 
@@ -14,6 +15,8 @@ export type Regla = {
   umbralPct: number | null;
   limite: Fraccion | null;
   tolerancia: Fraccion | null;
+  /** Los rangos escritos por estado; solo con `modo === "rangos"`. */
+  rangos?: Rangos | null;
 };
 
 /** `aDecimal` sin ceros de relleno y con coma decimal: «89,9», «63», «-2,5». */
@@ -34,6 +37,7 @@ export function numeroExacto(a: Fraccion, decimales: number): string {
 /** Desde aquí hacia el lado malo es «Crítico»; `null` si la regla no lo define (sin meta, constante o incompleta). */
 export function limiteDeCritico(r: Regla): Fraccion | null {
   if (r.meta === null || r.tendencia === "constante" || r.modo === null) return null;
+  if (r.modo === "rangos") return r.rangos ? limiteDeRangos(r.rangos, r.tendencia) : null;
   if (r.modo === "fijo") return r.limite;
   if (r.umbralPct === null || !Number.isInteger(r.umbralPct) || r.umbralPct < 1 || r.umbralPct > 99) return null;
   const umbral = entero(r.umbralPct);
@@ -45,6 +49,7 @@ export function limiteDeCritico(r: Regla): Fraccion | null {
 /** `null` es «sin meta» (o una regla que no alcanza a decidir). */
 export function semaforoDe(resultado: Fraccion, r: Regla): Semaforo | null {
   if (r.meta === null) return null;
+  if (r.modo === "rangos") return r.rangos ? semaforoDeRangos(resultado, r.rangos, r.tendencia) : null;
   if (r.tendencia === "constante") {
     const maximo = r.metaMax ?? r.meta;
     const tolerancia = r.tolerancia ?? CERO;
@@ -69,6 +74,10 @@ export function semaforoDe(resultado: Fraccion, r: Regla): Semaforo | null {
 /** El mensaje que le corresponde a una regla que no se puede guardar, o `null` si sirve (o no hay meta). */
 export function errorDeRegla(r: Regla): string | null {
   if (r.meta === null) return null;
+  if (r.tendencia === "constante" && r.metaMax !== null && comparar(r.metaMax, r.meta) < 0 && r.modo === "rangos") {
+    return "El máximo del rango no puede quedar por debajo del mínimo";
+  }
+  if (r.modo === "rangos") return r.rangos ? errorDeRangos(r.rangos, r.tendencia, r.meta, r.metaMax) : "Escriba los rangos del semáforo";
   if (r.tendencia === "constante") {
     if (r.metaMax !== null && comparar(r.metaMax, r.meta) < 0) return "El máximo del rango no puede quedar por debajo del mínimo";
     if (r.tolerancia !== null && comparar(r.tolerancia, CERO) < 0) return "La tolerancia no puede ser negativa";
@@ -98,7 +107,9 @@ export function errorDeRegla(r: Regla): string | null {
 
 /** Los rangos escritos en palabras («Bien desde 90 % · Atención de 63 a 89,9 % · Crítico por debajo de 63 %»). */
 export function rangosEnPalabras(r: Regla, u: Unidad): string | null {
-  if (r.meta === null || errorDeRegla(r) !== null) return null;
+  if (r.meta === null) return null;
+  if (r.modo === "rangos") return r.rangos ? rangosEscritos(r.rangos, u) : null;
+  if (errorDeRegla(r) !== null) return null;
   const n = (a: Fraccion) => numeroExacto(a, u.decimales);
   const con = (a: Fraccion) => `${n(a)}${u.sufijo}`;
   const esPorcentaje = u.sufijo.trim() === "%";
@@ -120,4 +131,50 @@ export function rangosEnPalabras(r: Regla, u: Unidad): string | null {
     return `Bien desde ${con(r.meta)} · Atención de ${n(limite)} ${tope} · Crítico por debajo de ${con(limite)}`;
   }
   return `Bien hasta ${con(r.meta)} · Atención de más de ${n(r.meta)} a ${con(limite)} · Crítico por encima de ${con(limite)}`;
+}
+
+/** Una fila como se escribió: «≥ 91 %», «41 a 90 %». */
+function filaEnPalabras(f: FilaDeRango, u: Unidad): string {
+  const n = (a: Fraccion) => numeroExacto(a, u.decimales);
+  if (f.signo === "entre") return `${n(f.valor)} a ${n(f.hasta ?? f.valor)}${u.sufijo}`;
+  const signo = { ">=": "≥", ">": ">", "<=": "≤", "<": "<" }[f.signo];
+  return `${signo} ${n(f.valor)}${u.sufijo}`;
+}
+
+/** «Bien: ≥ 91 % · Atención: 41 a 90 % · Crítico: ≤ 40 %»; sin Atención, ese tramo no se escribe. */
+function rangosEscritos(r: Rangos, u: Unidad): string {
+  const tramo = (nombre: string, filas: FilaDeRango[]) => (filas.length === 0 ? null : `${nombre}: ${filas.map((f) => filaEnPalabras(f, u)).join(" y ")}`);
+  return [tramo("Bien", r.bien), tramo("Atención", r.atencion), tramo("Crítico", r.critico)].filter((t) => t !== null).join(" · ");
+}
+
+/** «Cumple» es alcanzar la meta (spec 14A §3.1), no el color. `null` sin meta. */
+export function cumpleMeta(v: Fraccion, r: Regla): boolean | null {
+  if (r.meta === null) return null;
+  if (r.tendencia === "ascendente") return comparar(v, r.meta) >= 0;
+  if (r.tendencia === "descendente") return comparar(v, r.meta) <= 0;
+  return comparar(v, r.meta) >= 0 && comparar(v, r.metaMax ?? r.meta) <= 0;
+}
+
+/** Los rangos que dan los mismos colores que una regla relativa o fija (la regla de una versión ya aprobada). */
+export function rangosEquivalentes(r: Regla): Rangos | null {
+  if (r.modo === "rangos") return r.rangos ?? null;
+  if (r.meta === null) return null;
+  const fila = (signo: FilaDeRango["signo"], valor: Fraccion, hasta: Fraccion | null = null): FilaDeRango => ({ signo, valor, hasta });
+  if (r.tendencia === "constante") {
+    const maximo = r.metaMax ?? r.meta;
+    const t = r.tolerancia ?? CERO;
+    const hayAtencion = comparar(t, CERO) > 0;
+    const abajo = restar(r.meta, t);
+    const arriba = sumar(maximo, t);
+    return {
+      bien: [fila("entre", r.meta, maximo)],
+      atencion: hayAtencion ? [fila("entre", abajo, r.meta), fila("entre", maximo, arriba)] : [],
+      critico: [fila("<", abajo), fila(">", arriba)],
+    };
+  }
+  const limite = limiteDeCritico(r);
+  if (limite === null) return null;
+  return r.tendencia === "ascendente"
+    ? { bien: [fila(">=", r.meta)], atencion: [fila(">=", limite)], critico: [fila("<", limite)] }
+    : { bien: [fila("<=", r.meta)], atencion: [fila("<=", limite)], critico: [fila(">", limite)] };
 }

@@ -16,7 +16,7 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { esAprobadorDe, filtroIndicadores, responsableDe, type Responsabilidad } from "@/lib/alcance";
 import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
-import { analisisCompleto, analisisExigido } from "@/lib/indicadores/estados";
+import { analisisCompleto, analisisExigido, cumpleDeMedicion } from "@/lib/indicadores/estados";
 import { versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import type { Periodicidad, Semaforo } from "@/lib/indicadores/tipos";
 import { puede } from "@/lib/permisos";
@@ -35,7 +35,7 @@ export type Falta = "reporte" | "analisis";
  * depende de cuántas haya.
  */
 export const columnasDePendiente = (sql: Cliente) =>
-  sql`m.id, m.indicador_id, m.periodo, m.vence_en, m.reportada_en, m.semaforo, m.incumplimiento_repetido, m.analisis, m.causa,
+  sql`m.id, m.indicador_id, m.periodo, m.vence_en, m.reportada_en, m.semaforo, m.cumple, m.incumplimiento_repetido, m.analisis, m.causa,
     m.accion_propuesta, i.soporte_obligatorio,
     EXISTS (SELECT 1 FROM archivos pa WHERE pa.contexto = 'medicion' AND pa.contexto_id = m.id) AS con_soporte,
     (SELECT coalesce(json_agg(json_build_object('rigeDesde', pv.rige_desde, 'periodicidad', pv.periodicidad, 'nombre', pv.nombre)
@@ -69,6 +69,7 @@ export function queFalta(filas: readonly Row[]): Map<number, Pendiente> {
     if (!periodo || !version || esDeOtraPeriodicidad(clave, version)) continue;
     const exigido = analisisExigido({
       semaforo: (f.semaforo as Semaforo | null) ?? null,
+      cumple: cumpleDeMedicion(f),
       repetido: f.incumplimiento_repetido === true,
       historica: false,
       noAplica: false,

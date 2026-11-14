@@ -221,6 +221,7 @@ function parsearSubproceso(formData: FormData) {
     procesoId: idNumerico(formData, "procesoId"),
     nombre,
     slug: slugManual || generarSlug(nombre),
+    sigla: textoONulo(formData, "sigla"),
   };
 }
 

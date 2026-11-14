@@ -1,6 +1,7 @@
 "use client";
 
 import { claseControl } from "@/componentes/ui/Campo";
+import { InsigniaSemaforo } from "@/componentes/indicadores/InsigniaSemaforo";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { calcular } from "@/lib/indicadores/calculo";
 import { analizar } from "@/lib/indicadores/formula/analizar";
@@ -8,7 +9,6 @@ import { TEXTO_MOTIVO } from "@/lib/indicadores/formula/evaluar";
 import { fraccion, type Fraccion } from "@/lib/indicadores/formula/fraccion";
 import type { Regla } from "@/lib/indicadores/semaforo";
 import { fraseDeResultado, type Unidad } from "@/lib/indicadores/textos";
-import { ETIQUETA_SEMAFORO } from "@/lib/indicadores/tipos";
 
 const CONTROL = `${claseControl} w-full min-w-0`;
 
@@ -83,6 +83,7 @@ export function PruebaFormula({
                 {
                   resultado: resultado.resultado,
                   semaforo: resultado.semaforo,
+                  cumple: resultado.cumple,
                   noAplica: false,
                   motivo: resultado.sinResultado ? TEXTO_MOTIVO[resultado.sinResultado] : null,
                 },
@@ -91,7 +92,7 @@ export function PruebaFormula({
               )}
             </span>
             {resultado.semaforo ? (
-              <Insignia variante={resultado.semaforo}>{ETIQUETA_SEMAFORO[resultado.semaforo]}</Insignia>
+              <InsigniaSemaforo semaforo={resultado.semaforo} cumple={resultado.cumple} />
             ) : resultado.resultado !== null ? (
               <Insignia variante="sin-dato">Sin meta</Insignia>
             ) : null}

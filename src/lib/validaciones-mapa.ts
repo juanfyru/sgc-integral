@@ -18,6 +18,17 @@ export function validarSigla(v: string): string {
   return s;
 }
 
+/** La sigla de un subproceso es opcional: vacía no es un error, es «sin sigla». */
+export function validarSiglaOpcional(v: string): string | null {
+  return v.trim() === "" ? null : validarSigla(v);
+}
+
+/** `IND` e `ID` son las siglas de los códigos de indicador (spec 14 §7.1; 14A §4): ningún proceso, subproceso ni tipo las usa. */
+export function exigirSiglaNoReservada(sigla: string): void {
+  const s = sigla.trim().toUpperCase();
+  if (s === "IND" || s === "ID") throw new Error(`La sigla ${s} está reservada para los indicadores`);
+}
+
 export function validarSlug(v: string): string {
   const s = v.trim().toLowerCase();
   if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(s)) {

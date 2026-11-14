@@ -99,7 +99,7 @@ describe("analizar", () => {
     revertida(sql, async (tx) => {
       const { ind, mide, analiza, medicion } = await preparar(tx);
       const t3 = await medicion("2026-T3");
-      expect(await reportarCon(tx, mide, t3, { A: "4", B: "5" })).toEqual({ ok: true, estado: "abierta", semaforo: "atencion" });
+      expect(await reportarCon(tx, mide, t3, { A: "4", B: "5" })).toEqual({ ok: true, estado: "abierta", semaforo: "atencion", cumple: false });
       await rechaza(analizar(analiza, { medicionId: t3, analisis: "123456789" }, opc(tx)), SIMPLE);
       await rechaza(analizar(analiza, { medicionId: t3, analisis: "   " }, opc(tx)), SIMPLE);
       await rechaza(analizar(analiza, { medicionId: t3 }, opc(tx)), SIMPLE);
@@ -129,7 +129,7 @@ describe("analizar", () => {
     revertida(sql, async (tx) => {
       const { mide, analiza, medicion } = await preparar(tx);
       const t3 = await medicion("2026-T3");
-      expect(await reportarCon(tx, mide, t3, { A: "3", B: "5" })).toEqual({ ok: true, estado: "abierta", semaforo: "critico" });
+      expect(await reportarCon(tx, mide, t3, { A: "3", B: "5" })).toEqual({ ok: true, estado: "abierta", semaforo: "critico", cumple: false });
       await rechaza(analizar(analiza, { medicionId: t3, causa: "Dos auditores internos en incapacidad" }, opc(tx)), DOS_PARTES);
       // El análisis simple no basta, ni una parte de menos de 10 caracteres.
       await rechaza(analizar(analiza, { medicionId: t3, analisis: "Dos auditores internos en incapacidad" }, opc(tx)), DOS_PARTES);
@@ -168,7 +168,7 @@ describe("analizar", () => {
     revertida(sql, async (tx) => {
       const { mide, analiza, medicion } = await preparar(tx);
       const t3 = await medicion("2026-T3");
-      expect(await reportarCon(tx, mide, t3, { A: "5", B: "5" })).toEqual({ ok: true, estado: "reportada", semaforo: "bien" });
+      expect(await reportarCon(tx, mide, t3, { A: "5", B: "5" })).toEqual({ ok: true, estado: "reportada", semaforo: "bien", cumple: true });
       // Opcional: sin mínimo de caracteres.
       await analizar(analiza, { medicionId: t3, analisis: "Cumplido" }, opc(tx));
       let m = await fila(tx, t3);

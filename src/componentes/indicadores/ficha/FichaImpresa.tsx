@@ -10,6 +10,7 @@ import {
   cumpleEnTexto,
   fechaDeFirma,
   firmasDeFicha,
+  fraseDeImportada,
   marcasDeFila,
   periodoEnPalabras,
   rigeDesdeEnTexto,
@@ -157,11 +158,18 @@ export function FichaImpresa(d: DatosDeFichaImpresa) {
       </Bloque>
 
       <Bloque id={id("firmas")} titulo="Firmas" corto>
-        <div className="ficha-firmas grid gap-2 pt-2 sm:grid-cols-2">
-          {firmasDeFicha(ficha).map((f) => (
-            <Firma key={f.rol} f={f} />
-          ))}
-        </div>
+        {ficha.importada ? (
+          <div className={`ficha-firma flex min-w-0 flex-col gap-0.5 ${BORDE} mt-2 px-2 py-2`}>
+            <span className="font-semibold">Aprobación previa</span>
+            <span className="break-words">{fraseDeImportada(ficha.importada)}</span>
+          </div>
+        ) : (
+          <div className="ficha-firmas grid gap-2 pt-2 sm:grid-cols-2">
+            {firmasDeFicha(ficha).map((f) => (
+              <Firma key={f.rol} f={f} />
+            ))}
+          </div>
+        )}
       </Bloque>
 
       <Bloque id={id("cambios")} titulo="Control de cambios" corto>
@@ -184,9 +192,11 @@ export function FichaImpresa(d: DatosDeFichaImpresa) {
                   {v.tipoCambio === "inicial" ? "Primera versión de la ficha" : v.cambios.join(", ")}
                   {v.motivo && v.tipoCambio !== "inicial" ? <span className="block text-muted-foreground">{`Motivo: ${v.motivo}`}</span> : null}
                 </td>
-                <td className={TD}>{v.elaboro ? `${v.elaboro}${v.elaboradaEn ? ` · ${textoFecha(v.elaboradaEn, zona)}` : ""}` : "(sin firma)"}</td>
+                <td className={TD}>{v.importada ? "—" : v.elaboro ? `${v.elaboro}${v.elaboradaEn ? ` · ${textoFecha(v.elaboradaEn, zona)}` : ""}` : "(sin firma)"}</td>
                 <td className={TD}>
-                  {v.tipoCambio === "menor"
+                  {v.importada
+                    ? "Importada"
+                    : v.tipoCambio === "menor"
                     ? "No requiere: cambio menor"
                     : v.aprobo
                       ? `${v.aprobo}${v.aprobadaEn ? ` · ${textoFecha(v.aprobadaEn, zona)}` : ""}`
@@ -247,7 +257,7 @@ export function FichaImpresa(d: DatosDeFichaImpresa) {
                     <td className={`${TD} whitespace-nowrap`}>{f.meta}</td>
                     <td className={TD}>{cumpleEnTexto(f.cumple) || "—"}</td>
                     <td className={`${TD} ficha-color-exacto`}>
-                      {f.estado === "por_venir" ? "Por venir" : <InsigniaSemaforo semaforo={f.semaforo} noAplica={f.noAplica} conResultado={f.resultado !== null} />}
+                      {f.estado === "por_venir" ? "Por venir" : <InsigniaSemaforo semaforo={f.semaforo} cumple={f.cumple} noAplica={f.noAplica} conResultado={f.resultado !== null} />}
                     </td>
                     <td className={TD}>{analisisEnTexto(f)}</td>
                   </tr>
@@ -268,9 +278,9 @@ export function FichaImpresa(d: DatosDeFichaImpresa) {
               ))}
               <td className={`${TD} bg-muted whitespace-nowrap text-right font-bold tabular-nums`}>{a.texto ?? "—"}</td>
               <td className={`${TD} bg-muted whitespace-nowrap`}>{a.metaEnTexto ?? "—"}</td>
-              <td className={`${TD} bg-muted`}>{a.texto ? cumpleEnTexto(a.semaforo ? a.semaforo === "bien" : null) || "—" : "—"}</td>
+              <td className={`${TD} bg-muted`}>{a.texto ? cumpleEnTexto(a.cumple) || "—" : "—"}</td>
               <td className={`${TD} ficha-color-exacto bg-muted`}>
-                <InsigniaSemaforo semaforo={a.semaforo} conResultado={a.texto !== null} />
+                <InsigniaSemaforo semaforo={a.semaforo} cumple={a.cumple} conResultado={a.texto !== null} />
               </td>
               <td className={`${TD} bg-muted`}>
                 {a.rotulo ?? (a.texto ? "Se calcula juntando las variables de los periodos del año, nunca promediando los resultados." : `Aún no hay periodos medidos en ${anio}.`)}
@@ -282,7 +292,7 @@ export function FichaImpresa(d: DatosDeFichaImpresa) {
 
       <Bloque id={id("grafica")} titulo="Representación gráfica">
         <div className="ficha-grafica flex min-w-0 flex-col gap-2 pt-2">
-          <LeyendaDeGrafica conMeta={metaDeGrafica(r.grafica) !== undefined} conLimite={r.grafica.limite !== null} />
+          <LeyendaDeGrafica conMeta={metaDeGrafica(r.grafica) !== undefined} conLimite={r.grafica.limite !== null} conAsterisco={r.serie.some((p) => p.sinAlcanzar)} />
           <GraficoTubos
             serie={r.serie}
             titulo={`Resultado de ${anio}`}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { analisisCompleto, analisisExigido, esRepetido, estadoVisible, ETIQUETA_ESTADO } from "@/lib/indicadores/estados";
+import { analisisCompleto, analisisExigido, cumpleDeFila, cumpleDeMedicion, esRepetido, estadoVisible, ETIQUETA_ESTADO } from "@/lib/indicadores/estados";
 import { camposCambiados, CAMPOS_MAYORES, huellaDeFicha, tipoDeCambio, type ContenidoFicha } from "@/lib/indicadores/ficha";
 
 const base = (): ContenidoFicha => ({
@@ -42,6 +42,9 @@ const base = (): ContenidoFicha => ({
   periodicidadExterna: null,
   plazoExternoDias: null,
   dimensionId: null,
+  rangos: null,
+  nivel: null,
+  riesgoAsociado: null,
   variables: [
     {
       letra: "A",
@@ -102,6 +105,8 @@ describe("tipo de cambio de una ficha", () => {
     ["el nombre de la unidad (mismo id)", (c) => (c.unidadNombre = "Porcentaje (%)")],
     ["el sufijo de la unidad (mismo id)", (c) => (c.unidadSufijo = "%")],
     ["el ente", (c) => (c.ente = "Secretaría")],
+    ["el nivel", (c) => (c.nivel = "Estratégico")],
+    ["el riesgo asociado", (c) => (c.riesgoAsociado = "Demora en la atención")],
   ];
   const mayores: [string, (c: ContenidoFicha) => void][] = [
     ["clasificación (otro id)", (c) => ((c.clasificacionId = 2), (c.clasificacionNombre = "Estratégico"))],
@@ -119,6 +124,13 @@ describe("tipo de cambio de una ficha", () => {
     ["límite", (c) => (c.limiteCritico = "50")],
     ["tolerancia", (c) => (c.tolerancia = "3")],
     ["origen del dato", (c) => (c.origenDato = "automatico")],
+    [
+      "los rangos",
+      (c) => {
+        c.semaforoModo = "rangos";
+        c.rangos = { bien: [{ signo: ">=", valor: "90" }], atencion: [{ signo: ">=", valor: "63" }], critico: [{ signo: "<", valor: "63" }] };
+      },
+    ],
   ];
   it.each(menores)("cambiar %s es menor", (_, cambiar) => {
     const nuevo = base();
@@ -129,6 +141,16 @@ describe("tipo de cambio de una ficha", () => {
     const nuevo = base();
     cambiar(nuevo);
     expect(tipoDeCambio(base(), nuevo)).toBe("mayor");
+  });
+  it("con el mismo modo «rangos», cambiar solo un valor de los rangos es mayor", () => {
+    const rangos = (corte: string) => ({ bien: [{ signo: ">=" as const, valor: "90" }], atencion: [{ signo: ">=" as const, valor: corte }], critico: [{ signo: "<" as const, valor: corte }] });
+    const a = base();
+    a.semaforoModo = "rangos";
+    a.rangos = rangos("63");
+    const b = structuredClone(a);
+    b.rangos = rangos("60");
+    expect(tipoDeCambio(a, b)).toBe("mayor");
+    expect(camposCambiados(a, b)).toEqual(["Rangos del semáforo"]);
   });
   it("sin cambios es «ninguno»; uno mayor entre varios menores lo hace mayor", () => {
     expect(tipoDeCambio(base(), base())).toBe("ninguno");
@@ -185,6 +207,21 @@ describe("huella de la ficha", () => {
     nuevo.meta = "90.00";
     expect(huellaDeFicha(nuevo)).toBe(huellaDeFicha(base()));
   });
+  it("una ficha sin rangos, nivel ni riesgo conserva la huella que tenía antes de la 14A (R2)", () => {
+    // Calculada con el código de `main`, antes de añadir esos campos al contenido.
+    expect(huellaDeFicha(base())).toBe("0e7ed850fc2aa4ae7120c36e348a737454eb558dd141fca98e4ec2860e3425e0");
+  });
+  it("rangos, nivel y riesgo asociado, cuando existen, entran a la huella", () => {
+    for (const cambiar of [
+      (c: ContenidoFicha) => (c.nivel = "Estratégico"),
+      (c: ContenidoFicha) => (c.riesgoAsociado = "Demora"),
+      (c: ContenidoFicha) => (c.rangos = { bien: [{ signo: ">=", valor: "90" }], atencion: [], critico: [{ signo: "<", valor: "90" }] }),
+    ]) {
+      const nuevo = base();
+      cambiar(nuevo);
+      expect(huellaDeFicha(nuevo)).not.toBe(huellaDeFicha(base()));
+    }
+  });
   it("cambia si cambia el nombre firmado de la unidad", () => {
     const nuevo = base();
     nuevo.unidadNombre = "Porcentaje (%)";
@@ -195,13 +232,33 @@ describe("huella de la ficha", () => {
 describe("estados de una medición", () => {
   it("qué análisis se exige", () => {
     const m = { repetido: false, historica: false, noAplica: false };
-    expect(analisisExigido({ ...m, semaforo: "bien" })).toBe("ninguno");
-    expect(analisisExigido({ ...m, semaforo: null })).toBe("ninguno");
-    expect(analisisExigido({ ...m, semaforo: "atencion" })).toBe("simple");
-    expect(analisisExigido({ ...m, semaforo: "critico" })).toBe("dos_partes");
-    expect(analisisExigido({ ...m, semaforo: "atencion", repetido: true })).toBe("dos_partes");
-    expect(analisisExigido({ ...m, semaforo: "critico", historica: true })).toBe("ninguno");
-    expect(analisisExigido({ ...m, semaforo: "critico", noAplica: true })).toBe("ninguno");
+    expect(analisisExigido({ ...m, semaforo: "bien", cumple: true })).toBe("ninguno");
+    expect(analisisExigido({ ...m, semaforo: null, cumple: null })).toBe("ninguno");
+    expect(analisisExigido({ ...m, semaforo: "atencion", cumple: false })).toBe("simple");
+    expect(analisisExigido({ ...m, semaforo: "critico", cumple: false })).toBe("dos_partes");
+    expect(analisisExigido({ ...m, semaforo: "atencion", cumple: false, repetido: true })).toBe("dos_partes");
+    expect(analisisExigido({ ...m, semaforo: "critico", cumple: false, historica: true })).toBe("ninguno");
+    expect(analisisExigido({ ...m, semaforo: "critico", cumple: false, noAplica: true })).toBe("ninguno");
+  });
+  it("un Bien que no cumple pide análisis; uno que cumple, no (spec 14A §3.1)", () => {
+    const m = { repetido: false, historica: false, noAplica: false };
+    expect(analisisExigido({ ...m, semaforo: "bien", cumple: false })).toBe("simple");
+    expect(analisisExigido({ ...m, semaforo: "bien", cumple: true })).toBe("ninguno");
+    expect(analisisExigido({ ...m, semaforo: "bien", cumple: false, repetido: true })).toBe("dos_partes");
+  });
+  it("cumpleDeMedicion: solo null deriva del semáforo; una fila sin la columna es un error de la consulta", () => {
+    expect(cumpleDeMedicion({ cumple: null, semaforo: "bien" })).toBe(true);
+    expect(cumpleDeMedicion({ cumple: false, semaforo: "bien" })).toBe(false);
+    expect(cumpleDeMedicion({ cumple: null, semaforo: null })).toBeNull();
+    expect(() => cumpleDeMedicion({ semaforo: "bien" })).toThrow(/columna `cumple`/);
+  });
+  it("cumpleDeFila lee las filas anteriores a la 0012 como antes: Bien es cumplir", () => {
+    expect(cumpleDeFila({ cumple: null, semaforo: "bien" })).toBe(true);
+    expect(cumpleDeFila({ cumple: null, semaforo: "atencion" })).toBe(false);
+    expect(cumpleDeFila({ cumple: null, semaforo: "critico" })).toBe(false);
+    expect(cumpleDeFila({ cumple: null, semaforo: null })).toBeNull();
+    expect(cumpleDeFila({ cumple: false, semaforo: "bien" })).toBe(false);
+    expect(cumpleDeFila({ cumple: true, semaforo: "bien" })).toBe(true);
   });
   it("si tiene el análisis que se le exige", () => {
     const vacio = { analisis: null, causa: null, accionPropuesta: null };
@@ -222,11 +279,13 @@ describe("estados de una medición", () => {
     expect(analisisCompleto("dos_partes", { ...dos, causa: "Sin gente" })).toBe(false);
     expect(analisisCompleto("ninguno", { ...vacio, analisis: "Corto" })).toBe(true);
   });
-  it("incumplimiento repetido: N periodos seguidos sin «Bien»", () => {
-    expect(esRepetido(["atencion", "critico"], "atencion", 3)).toBe(true);
-    expect(esRepetido(["bien", "atencion"], "atencion", 3)).toBe(false);
-    expect(esRepetido(["atencion"], "atencion", 3)).toBe(false);
-    expect(esRepetido(["atencion", "atencion"], "bien", 3)).toBe(false);
+  it("incumplimiento repetido: N periodos seguidos sin cumplir", () => {
+    expect(esRepetido([false, false], false, 3)).toBe(true);
+    expect(esRepetido([true, false], false, 3)).toBe(false);
+    expect(esRepetido([false], false, 3)).toBe(false);
+    expect(esRepetido([false, false], true, 3)).toBe(false);
+    expect(esRepetido([false, null], false, 3)).toBe(false);
+    expect(esRepetido([false, false], null, 3)).toBe(false);
   });
   it("el estado que se muestra", () => {
     const m = { estado: "abierta" as const, vence: new Date("2026-04-10T23:59:59Z"), historica: false, datosCompletos: false, faltaDatoAjeno: false, faltaAnalisis: false };

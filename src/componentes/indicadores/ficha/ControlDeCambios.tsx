@@ -50,10 +50,12 @@ export function ControlDeCambios({ versiones, vigente }: { versiones: VersionRes
             {v.motivo && v.tipoCambio !== "inicial" ? <span className="block text-muted-foreground">{`Motivo: ${v.motivo}`}</span> : null}
           </td>
           <td className={celda}>
-            <Quien nombre={v.elaboro} fecha={v.elaboradaEn} />
+            {v.importada ? <span className="text-muted-foreground">—</span> : <Quien nombre={v.elaboro} fecha={v.elaboradaEn} />}
           </td>
           <td className={celda}>
-            {v.tipoCambio === "menor" ? (
+            {v.importada ? (
+              <span className="block">Importada</span>
+            ) : v.tipoCambio === "menor" ? (
               <span className="text-muted-foreground">No requiere: cambio menor</span>
             ) : (
               <Quien nombre={v.aprobo} fecha={v.aprobadaEn} />

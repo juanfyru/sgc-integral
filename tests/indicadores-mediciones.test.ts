@@ -235,7 +235,7 @@ describe("reportar", () => {
     revertida(sql, async (tx) => {
       const { ind, mide, medicion } = await preparar(tx);
       const t3 = await medicion("2026-T3");
-      expect(await reportarCon(tx, mide, t3, { A: "3", B: "5" })).toEqual({ ok: true, estado: "abierta", semaforo: "critico" });
+      expect(await reportarCon(tx, mide, t3, { A: "3", B: "5" })).toEqual({ ok: true, estado: "abierta", semaforo: "critico", cumple: false });
       const m = await fila(tx, t3);
       expect({
         resultado_exacto: m.resultado_exacto,
@@ -275,7 +275,7 @@ describe("reportar", () => {
     revertida(sql, async (tx) => {
       const { mide, medicion } = await preparar(tx);
       const t3 = await medicion("2026-T3");
-      expect(await reportarCon(tx, mide, t3, { A: "5", B: "5" })).toEqual({ ok: true, estado: "reportada", semaforo: "bien" });
+      expect(await reportarCon(tx, mide, t3, { A: "5", B: "5" })).toEqual({ ok: true, estado: "reportada", semaforo: "bien", cumple: true });
       const m = await fila(tx, t3);
       expect([m.estado, m.semaforo, m.requiere_accion]).toEqual(["reportada", "bien", false]);
     }));
@@ -286,12 +286,12 @@ describe("reportar", () => {
       const t3 = await medicion("2026-T3");
       const guardar = (v: Record<string, string>) => reportar(mide, { medicionId: t3, valores: v, parcial: true, confirmado: false }, opc(tx));
       const guardadas = () => bitacora(tx, "medicion_guardada", t3);
-      expect(await guardar({ A: "3" })).toEqual({ ok: true, estado: "abierta", semaforo: null });
+      expect(await guardar({ A: "3" })).toEqual({ ok: true, estado: "abierta", semaforo: null, cumple: null });
       expect(await valores(tx, t3)).toEqual({ A: 3 });
       let m = await fila(tx, t3);
       expect([m.resultado_exacto, m.semaforo, m.estado, m.reportada_en]).toEqual([null, null, "abierta", null]);
       // Completo pero sin reportar: tampoco se calcula ni da color.
-      expect(await guardar({ A: "3", B: "5" })).toEqual({ ok: true, estado: "abierta", semaforo: null });
+      expect(await guardar({ A: "3", B: "5" })).toEqual({ ok: true, estado: "abierta", semaforo: null, cumple: null });
       m = await fila(tx, t3);
       expect([m.resultado_exacto, m.semaforo, m.estado]).toEqual([null, null, "abierta"]);
       // Un borrador no deja evento en el historial de la medición ni pasa por «Reportó»: tiene su propia acción.
@@ -395,7 +395,7 @@ describe("reportar", () => {
       });
       expect(await valores(tx, t3)).toEqual({});
       expect(await eventos(tx, t3)).toHaveLength(0);
-      expect(await pedir(true)).toEqual({ ok: true, estado: "abierta", semaforo: "critico" });
+      expect(await pedir(true)).toEqual({ ok: true, estado: "abierta", semaforo: "critico", cumple: false });
       expect(await valores(tx, t3)).toEqual({ A: 2, B: 5 });
     }));
 
@@ -471,7 +471,7 @@ describe("reportar", () => {
       expect((await fila(tx, t2)).estado).toBe("reportada");
       await soporte(tx, t3);
       expect(await contarSoportes(tx, t3)).toBe(1);
-      expect(await reportarCon(tx, mide, t3, { A: "5", B: "5" })).toEqual({ ok: true, estado: "reportada", semaforo: "bien" });
+      expect(await reportarCon(tx, mide, t3, { A: "5", B: "5" })).toEqual({ ok: true, estado: "reportada", semaforo: "bien", cumple: true });
       // Un histórico no lo exige.
       const filas = [{ periodo: "2025-T4", valores: { A: "5", B: "5" } }];
       expect(await registrarHistoricos(mide, { indicadorId: ind.id, filas }, opc(tx))).toEqual({ registrados: 1 });
@@ -532,7 +532,7 @@ describe("reportar", () => {
       const t3 = await medicion("2026-T3");
       await reportarCon(tx, mide, t3, { A: "5", B: "5" });
       expect((await fila(tx, t3)).estado).toBe("reportada");
-      expect(await reportarCon(tx, mide, t3, { A: "4", B: "5" })).toEqual({ ok: true, estado: "abierta", semaforo: "atencion" });
+      expect(await reportarCon(tx, mide, t3, { A: "4", B: "5" })).toEqual({ ok: true, estado: "abierta", semaforo: "atencion", cumple: false });
       const lista = await eventos(tx, t3);
       expect(lista.map((e) => e.tipo)).toEqual(["reporte", "correccion"]);
       expect(lista[1].detalle).toMatchObject({
@@ -551,7 +551,7 @@ describe("reportar", () => {
       const { mide, medicion } = await preparar(tx);
       const t3 = await medicion("2026-T3");
       await reportarCon(tx, mide, t3, { A: "5", B: "5" });
-      expect(await reportarCon(tx, mide, t3, { A: "5,0", B: "5" })).toEqual({ ok: true, estado: "reportada", semaforo: "bien" });
+      expect(await reportarCon(tx, mide, t3, { A: "5,0", B: "5" })).toEqual({ ok: true, estado: "reportada", semaforo: "bien", cumple: true });
       expect(await eventos(tx, t3)).toHaveLength(1);
       expect(await bitacora(tx, "medicion_reportada", t3)).toHaveLength(1);
       expect(await bitacora(tx, "medicion_corregida", t3)).toHaveLength(0);
@@ -585,7 +585,7 @@ describe("reportar", () => {
       const { ind, mide, medicion } = await preparar(tx);
       const t3 = await medicion("2026-T3");
       await tx`INSERT INTO indicador_metas (indicador_id, periodo, meta, programada_por) VALUES (${ind.id}, '2026-T3', 50, ${admin.usuarioId})`;
-      expect(await reportarCon(tx, mide, t3, { A: "3", B: "5" })).toEqual({ ok: true, estado: "reportada", semaforo: "bien" });
+      expect(await reportarCon(tx, mide, t3, { A: "3", B: "5" })).toEqual({ ok: true, estado: "reportada", semaforo: "bien", cumple: true });
       const m = await fila(tx, t3);
       expect([Number(m.meta_aplicada), Number(m.limite_aplicado)]).toEqual([50, 35]);
     }));
@@ -827,5 +827,79 @@ describe("lecturas", () => {
       expect(await medicionParaReportar(mide, ind.codigo, "2026-13", opc(tx))).toBeNull();
       expect(await medicionParaReportar(await usuarioDePrueba(tx, { rol: "consulta" }), ind.codigo, "2026-T3", opc(tx))).toBeNull();
       expect(await medicionParaReportar(mide, "ZZ-NO-EXISTE-1", "2026-T3", opc(tx))).toBeNull();
+    }));
+});
+
+/**
+ * «Cumple» y color son dos cosas (spec 14A §3.1): con rangos, meta 100 y Bien desde 91, un 95 es Bien y no cumple. Pide
+ * análisis y cuenta como incumplimiento para la racha. Mensual desde enero de 2026: de enero a septiembre son ordinarios.
+ */
+describe("«cumple» frente a la meta, aparte del color", () => {
+  const RANGOS = {
+    bien: [{ signo: ">=" as const, valor: "91" }],
+    atencion: [{ signo: "entre" as const, valor: "41", hasta: "90" }],
+    critico: [{ signo: "<=" as const, valor: "40" }],
+  };
+  const con95 = { A: "95", B: "100" };
+  const con105 = { A: "105", B: "100" };
+  const mensual = async (tx: TransactionSql) => {
+    await tx`UPDATE configuracion SET valor = '3' WHERE clave = 'ind_incumplimiento_periodos'`;
+    return preparar(tx, { periodicidad: "mensual", inicioMedicion: "2026-01", rangos: RANGOS, meta: "100" });
+  };
+
+  it("un Bien que no cumple queda abierto a la espera del análisis; uno que cumple, reportado", () =>
+    revertida(sql, async (tx) => {
+      const { mide, medicion } = await mensual(tx);
+      const enero = await medicion("2026-01");
+      await reportarCon(tx, mide, enero, con95);
+      const m = await fila(tx, enero);
+      expect([m.semaforo, m.cumple, m.estado, m.requiere_accion]).toEqual(["bien", false, "abierta", false]);
+
+      const febrero = await medicion("2026-02");
+      await reportarCon(tx, mide, febrero, con105);
+      const f = await fila(tx, febrero);
+      expect([f.semaforo, f.cumple, f.estado]).toEqual(["bien", true, "reportada"]);
+
+      // Corregir de 95 a 105 cambia el cumplir, y el evento lo dice.
+      await reportarCon(tx, mide, enero, con105);
+      const e = (await eventos(tx, enero)).at(-1)!;
+      expect(e.detalle).toMatchObject({ antes: { semaforo: "bien", cumple: false }, despues: { semaforo: "bien", cumple: true, estado: "reportada" } });
+    }));
+
+  it("tres periodos seguidos en Bien sin cumplir: incumplimiento repetido", () =>
+    revertida(sql, async (tx) => {
+      const { mide, medicion } = await mensual(tx);
+      for (const periodo of ["2026-01", "2026-02"]) {
+        await reportarCon(tx, mide, await medicion(periodo), con95);
+        expect((await fila(tx, await medicion(periodo))).incumplimiento_repetido).toBe(false);
+      }
+      const marzo = await medicion("2026-03");
+      await reportarCon(tx, mide, marzo, con95);
+      const m = await fila(tx, marzo);
+      expect([m.semaforo, m.cumple, m.incumplimiento_repetido, m.requiere_accion, m.estado]).toEqual(["bien", false, true, true, "abierta"]);
+    }));
+
+  it("una medición anterior a la 0012 (cumple nulo) se lee como antes: Bien cumple y rompe la racha", () =>
+    revertida(sql, async (tx) => {
+      const { mide, medicion } = await mensual(tx);
+      for (const periodo of ["2026-01", "2026-02"]) await reportarCon(tx, mide, await medicion(periodo), con95);
+      // Como si se hubieran escrito antes de la 0012: en Bien, sin `cumple`.
+      await tx`UPDATE mediciones SET cumple = NULL WHERE id IN (${await medicion("2026-01")}, ${await medicion("2026-02")})`;
+      const marzo = await medicion("2026-03");
+      await reportarCon(tx, mide, marzo, con95);
+      const m = await fila(tx, marzo);
+      expect([m.cumple, m.incumplimiento_repetido, m.requiere_accion]).toEqual([false, false, false]);
+    }));
+
+  it("una medición con cumple nulo que no cambia no se reescribe al recalcular", () =>
+    revertida(sql, async (tx) => {
+      const { mide, medicion } = await mensual(tx);
+      const enero = await medicion("2026-01");
+      await reportarCon(tx, mide, enero, con105);
+      await tx`UPDATE mediciones SET cumple = NULL WHERE id = ${enero}`;
+      const antes = (await eventos(tx, enero)).length;
+      const r = await recalcularMedicion(tx, enero, { ahora: AHORA, actorId: mide.usuarioId, evento: "recalculo", sistema: "racha" });
+      expect([r.cambio, r.cumple]).toEqual([false, true]);
+      expect((await eventos(tx, enero)).length).toBe(antes);
     }));
 });

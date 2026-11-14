@@ -22,6 +22,7 @@ import {
   estadoEnTexto,
   fechaDeFirma,
   firmasDeFicha,
+  fraseDeImportada,
   marcasDeFila,
   rigeDesdeEnTexto,
   semaforoDeResultado,
@@ -87,11 +88,13 @@ export async function construirExcelDeIndicador(d: ImpresionDelAnio, meta: MetaH
   const { ficha, resultados: r } = d;
   const { identificacion, estructura } = camposDeFicha(ficha);
   const aprobada = d.versiones.find((v) => v.id === ficha.versionId)?.aprobadaEn ?? ficha.firmas.aprobo?.fecha ?? null;
-  const firmas = firmasDeFicha(ficha).map((f) => ({
-    seccion: "Firmas",
-    termino: f.rol,
-    valor: f.nombre ? [f.nombre, f.cargo, f.fecha ? fechaDeFirma(f.fecha) : null].filter(Boolean).join(" · ") : (f.nota ?? ""),
-  }));
+  const firmas = ficha.importada
+    ? [{ seccion: "Firmas", termino: "Aprobación previa", valor: fraseDeImportada(ficha.importada) }]
+    : firmasDeFicha(ficha).map((f) => ({
+        seccion: "Firmas",
+        termino: f.rol,
+        valor: f.nombre ? [f.nombre, f.cargo, f.fecha ? fechaDeFirma(f.fecha) : null].filter(Boolean).join(" · ") : (f.nota ?? ""),
+      }));
   const filasDeFicha: FilaDeFicha[] = [
     { seccion: "Encabezado", termino: "Código", valor: d.codigo },
     { seccion: "Encabezado", termino: "Versión", valor: String(ficha.numero) },
@@ -126,8 +129,8 @@ export async function construirExcelDeIndicador(d: ImpresionDelAnio, meta: MetaH
     valores: a.numeros,
     resultado: a.texto,
     meta: a.metaEnTexto,
-    cumple: a.texto ? cumpleEnTexto(a.semaforo ? a.semaforo === "bien" : null) : "",
-    semaforo: semaforoDeResultado(a.semaforo, false, a.texto !== null),
+    cumple: a.texto ? cumpleEnTexto(a.cumple) : "",
+    semaforo: semaforoDeResultado(a.semaforo, false, a.texto !== null, a.cumple),
     estado: "",
     analisis: "",
     marcas: a.rotulo ?? "",

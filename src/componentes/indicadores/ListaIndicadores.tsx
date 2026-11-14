@@ -91,7 +91,7 @@ function TendenciaDeFila({ f }: { f: FilaDeLista }) {
 export function BarraDeLista({ resumen }: { resumen: ResumenDeLista }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <BarraEstados bien={resumen.bien} atencion={resumen.atencion} critico={resumen.critico} sinDato={resumen.sinDato} noAplica={resumen.noAplica} />
+      <BarraEstados bien={resumen.bien} bienSinAlcanzar={resumen.bienSinAlcanzar} atencion={resumen.atencion} critico={resumen.critico} sinDato={resumen.sinDato} noAplica={resumen.noAplica} />
       <p className="text-sm text-muted-foreground">
         {resumen.vencidos === 0 ? "Ningún reporte vencido." : `${cuenta(resumen.vencidos, "reporte vencido", "reportes vencidos")}.`}
       </p>
@@ -132,7 +132,7 @@ export function ListaIndicadores({ filas, resumen }: { filas: FilaDeLista[]; res
             </td>
             <td className={`${celdaNumerica} whitespace-nowrap`}>{f.meta ?? "—"}</td>
             <td className={celda}>
-              {sinFicha(f) ? <span className="text-muted-foreground">—</span> : <InsigniaSemaforo semaforo={f.semaforo} noAplica={f.noAplica} conResultado={f.resultado !== null} />}
+              {sinFicha(f) ? <span className="text-muted-foreground">—</span> : <InsigniaSemaforo semaforo={f.semaforo} cumple={f.cumple} noAplica={f.noAplica} conResultado={f.resultado !== null} />}
             </td>
             <td className={celda}>
               <TendenciaDeFila f={f} />

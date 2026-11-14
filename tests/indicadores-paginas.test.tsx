@@ -137,8 +137,8 @@ async function borrador(tx: TransactionSql, admin: SesionFlujo, parcial: Partial
     periodicidad: "trimestral",
     tendencia: "ascendente",
     meta: "80",
-    semaforoModo: "relativo",
-    umbralAtencionPct: 70,
+    semaforoModo: "rangos",
+    rangos: JSON.stringify({ bien: [{ signo: ">=", valor: "80" }], atencion: [{ signo: ">=", valor: "56" }], critico: [{ signo: "<", valor: "56" }] }),
     cargosMedir: [Number(cargo.id)],
     cargosAnalizar: [Number(cargo.id)],
     normaIds: [],
@@ -259,7 +259,7 @@ describe("las páginas de la ficha de indicador", () => {
       expect(ficha).toContain("Ficha nueva en borrador");
       expect(ficha).toMatch(/aria-current="page"[^>]*>Ficha técnica</);
       expect(ficha).toContain("(Cumplidas ÷ Programadas) × 100");
-      expect(ficha).toContain("Bien desde 80 %");
+      expect(ficha).toContain("Bien: ≥ 80 %");
       expect(ficha).toContain(">Elaboró<");
       expect(ficha).toContain(">Datos de operación<");
       expect(ficha).toContain("vigente desde el primer trimestre de 2026");
@@ -438,6 +438,26 @@ describe("el cierre del mes", () => {
       }
     }), 20_000);
 
+  it("/indicadores/[codigo]: el acumulado del año que no alcanza la meta no pinta un Bien a secas", () =>
+    enTransaccion(async (tx) => {
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const ind = await indicadorDePrueba(tx, {
+        inicioMedicion: "2003-01",
+        aprobadaEn: new Date("2002-12-15T15:00:00Z"),
+        mide: [mide.usuarioId],
+        meta: "95",
+        rangos: { bien: [{ signo: ">=", valor: "91" }], atencion: [{ signo: "entre", valor: "41", hasta: "90" }], critico: [{ signo: "<=", valor: "40" }] },
+      });
+      await asegurarMediciones({ sql: tx, indicadorId: ind.id });
+      const [enero] = await tx`SELECT id FROM mediciones WHERE indicador_id = ${ind.id} AND periodo = '2003-01'`;
+      await reportar(mide, { medicionId: Number(enero.id), valores: { A: "92", B: "100" }, parcial: false, confirmado: true }, { sql: tx });
+      contexto.sesion = valida(mide);
+      const html = await pagina(ind.codigo, { vista: "resultados", anio: "2003" });
+      const desde = html.indexOf('id="indicador-acumulado"');
+      const acumulado = html.slice(desde, html.indexOf("</section>", desde));
+      expect(acumulado).toMatch(/data-variante="bien"[^>]*>Bien · no alcanza la meta</);
+    }), 20_000);
+
   it("/indicadores/[codigo]: quien administra reabre lo cerrado y cierra de nuevo lo reabierto; «Corregida» lleva su historial", () =>
     enTransaccion(async (tx) => {
       const admin = await sesionAdmin(tx);
@@ -597,6 +617,11 @@ describe("los botones de imprimir y de Excel (Tarea 16)", () => {
       // Al imprimir la matriz no salen los filtros ni las pestañas.
       expect(matriz).toMatch(/<form[^>]*aria-label="Filtrar la matriz"[^>]*class="[^"]*print:hidden/);
       expect(matriz).toMatch(/<div class="print:hidden"><nav/);
+      // El filtro de subproceso: el selector con el valor elegido y el enlace del Excel con él.
+      const conSub = renderToStaticMarkup(await PaginaMatriz({ searchParams: Promise.resolve({ anio: "2026", subproceso: "4" }) }));
+      expect(conSub).toMatch(/<label[^>]*for="matriz-subproceso"[^>]*>Subproceso<\/label>/);
+      expect(conSub).toContain('name="subproceso"');
+      expect(conSub).toContain('href="/indicadores/excel?subproceso=4&amp;retirados=1&amp;anio=2026"');
     }));
 });
 

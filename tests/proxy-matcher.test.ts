@@ -42,6 +42,8 @@ describe("rutas que reciben el cuerpo de una subida", () => {
     "/api/hallazgos/5/archivos",
     "/api/mediciones/5/archivos",
     "/api/mediciones/5/archivos?x=1",
+    "/api/importaciones-indicadores/1/archivo",
+    "/api/importaciones-indicadores/12/archivo?x=1",
   ])("%s queda fuera del proxy", (url) => expect(pasa(url)).toBe(false));
 
   it.each([
@@ -78,6 +80,12 @@ describe("rutas que reciben el cuerpo de una subida", () => {
     "/api/mediciones/x/archivos",
     "/api/mediciones/5",
     "/indicadores/SGC-IND-01/soportes/7/soporte.pdf",
+    "/api/importaciones-indicadores/1/archivo/7",
+    "/api/importaciones-indicadores/x/archivo",
+    "/api/importaciones-indicadores/1/archivos",
+    "/api/importaciones-indicadores/1",
+    "/admin/indicadores/importar/1/archivo",
+    "/admin/indicadores/importar/plantilla",
   ])("%s sigue pasando por el proxy", (url) => expect(pasa(url)).toBe(true));
 });
 

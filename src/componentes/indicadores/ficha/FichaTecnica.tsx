@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { etiquetaDePeriodo, type FichaLeida, type FirmaDeFicha, type OperacionLeida } from "@/db/consultas/indicadores/aprobacion";
-import { cifraDeFicha as cifra, CONSOLIDACION, fechaYHora, FORMA, ORIGEN, reglaDeFicha, TENDENCIA, unidadDeFicha } from "@/lib/indicadores/ficha-en-texto";
+import { cifraDeFicha as cifra, CONSOLIDACION, fechaYHora, FORMA, fraseDeImportada, ORIGEN, reglaDeFicha, TENDENCIA, unidadDeFicha } from "@/lib/indicadores/ficha-en-texto";
 import { enPalabras } from "@/lib/indicadores/formula/formas";
 import { rangosEnPalabras } from "@/lib/indicadores/semaforo";
 import { textoMeta } from "@/lib/indicadores/textos";
@@ -96,6 +96,8 @@ export function FichaTecnica({
         <Dato termino="Requisito">{c.requisito ?? ninguno}</Dato>
         <Dato termino="Tipo">{c.tipoNombre}</Dato>
         <Dato termino="Clasificación">{c.clasificacionNombre}</Dato>
+        {c.nivel ? <Dato termino="Nivel">{c.nivel}</Dato> : null}
+        {c.riesgoAsociado ? <Dato termino="Riesgo asociado">{c.riesgoAsociado}</Dato> : null}
         <Dato termino="Objetivo que mide">{c.objetivoNombre ?? ninguno}</Dato>
         {ficha.procedimiento ? (
           <Dato termino="Procedimiento">
@@ -164,16 +166,22 @@ export function FichaTecnica({
       </Seccion>
 
       <Seccion id={id("firmas")} nivel={nivel} titulo="Firmas">
-        <Dato termino="Elaboró">{ficha.firmas.elaboro ? textoFirma(ficha.firmas.elaboro) : <span className="text-muted-foreground">Sin enviar</span>}</Dato>
-        <Dato termino="Revisó y aprobó">
-          {aprobo === null ? (
-            <span className="text-muted-foreground">Sin enviar</span>
-          ) : typeof aprobo === "string" ? (
-            <span className="text-muted-foreground">{aprobo}</span>
-          ) : (
-            textoFirma(aprobo)
-          )}
-        </Dato>
+        {ficha.importada ? (
+          <Dato termino="Aprobación previa">{fraseDeImportada(ficha.importada)}</Dato>
+        ) : (
+          <>
+            <Dato termino="Elaboró">{ficha.firmas.elaboro ? textoFirma(ficha.firmas.elaboro) : <span className="text-muted-foreground">Sin enviar</span>}</Dato>
+            <Dato termino="Revisó y aprobó">
+              {aprobo === null ? (
+                <span className="text-muted-foreground">Sin enviar</span>
+              ) : typeof aprobo === "string" ? (
+                <span className="text-muted-foreground">{aprobo}</span>
+              ) : (
+                textoFirma(aprobo)
+              )}
+            </Dato>
+          </>
+        )}
         {ficha.rigeDesde ? <Dato termino="Rige desde">{etiquetaDePeriodo(ficha.rigeDesde)}</Dato> : null}
         {ficha.motivo && ficha.tipoCambio !== "inicial" ? <Dato termino="Motivo del cambio">{ficha.motivo}</Dato> : null}
       </Seccion>

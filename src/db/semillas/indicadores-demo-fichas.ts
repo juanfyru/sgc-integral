@@ -5,6 +5,9 @@
  * Los textos son del dominio, no de la entidad. `indicadores-demo.ts` las crea y las mueve por las funciones del dominio.
  */
 import type { DatosFicha } from "../../lib/esquemas/indicadores";
+import { aDecimal, fraccion } from "../../lib/indicadores/formula/fraccion";
+import { rangosATexto, type FilaEnTexto, type RangosEnTexto } from "../../lib/indicadores/rangos";
+import { rangosEquivalentes } from "../../lib/indicadores/semaforo";
 import type { Consolidacion, Periodicidad } from "../../lib/indicadores/tipos";
 
 export type ClaveObjetivo = "eficacia" | "informacion" | "competencia" | "oportunidad" | "finanzas";
@@ -69,6 +72,8 @@ export type FichaDemo = {
    * como la propone el formulario (spec §7.2: una de las dos formas es obligatoria).
    */
   lineaBase?: { valor: string; periodo: string };
+  /** Los rangos escritos a mano; sin ellos, los equivalentes al umbral de la configuración (`rangosDeLaFicha`). */
+  rangos?: RangosEnTexto;
 };
 
 /** Los ids de lo que la ficha cita, que salen de la base sembrada. */
@@ -103,7 +108,31 @@ const variable = (letra: "A" | "B", v: VariableDemo) => ({
   admiteNegativos: false,
 });
 
-/** El formulario de la ficha, como lo dejaría la persona: el semáforo relativo con el umbral de la configuración (70 %). */
+/** Los rangos que dan los colores del umbral de la configuración (70 %): lo que la persona escribiría en los tres estados. */
+function rangosDeLaFicha(f: FichaDemo): string {
+  if (f.rangos) return JSON.stringify(f.rangos);
+  const equivalentes = rangosEquivalentes({
+    tendencia: f.tendencia,
+    meta: fraccion(f.meta),
+    metaMax: null,
+    modo: "relativo",
+    umbralPct: 70,
+    limite: null,
+    tolerancia: null,
+  });
+  if (equivalentes === null) throw new Error(`La ficha ${f.codigo} de la demo no tiene unos rangos equivalentes`);
+  // Como los escribiría una persona: lo que no termina en cuatro decimales se redondea a los decimales de la ficha.
+  const redondeado = (t: string): string => {
+    if ((t.split(".")[1] ?? "").length <= 4) return t;
+    const r = aDecimal(fraccion(t)!, f.decimales, "redondear");
+    return r.includes(".") ? r.replace(/0+$/, "").replace(/\.$/, "") : r;
+  };
+  const fila = (x: FilaEnTexto): FilaEnTexto => (x.hasta === undefined ? { ...x, valor: redondeado(x.valor) } : { ...x, valor: redondeado(x.valor), hasta: redondeado(x.hasta) });
+  const t = rangosATexto(equivalentes);
+  return JSON.stringify({ bien: t.bien.map(fila), atencion: t.atencion.map(fila), critico: t.critico.map(fila) });
+}
+
+/** El formulario de la ficha, como lo dejaría la persona: los rangos del semáforo, con el umbral de la configuración (70 %). */
 export function datosDeFicha(cat: Catalogo, f: FichaDemo, op: OperacionDemo): DatosFicha {
   const cargo = cat.cargo(f.cargo);
   return {
@@ -125,8 +154,8 @@ export function datosDeFicha(cat: Catalogo, f: FichaDemo, op: OperacionDemo): Da
     periodicidad: f.periodicidad,
     tendencia: f.tendencia,
     meta: f.meta,
-    semaforoModo: "relativo",
-    umbralAtencionPct: 70,
+    semaforoModo: "rangos",
+    rangos: rangosDeLaFicha(f),
     cargosMedir: [cargo],
     cargosAnalizar: [cargo],
     normaIds: f.norma ? [cat.norma(f.norma)] : [],
@@ -548,5 +577,43 @@ export const GRF_01: FichaDemo = {
     fuente: "Estado de cartera de tesorería",
     unidad: "pesos",
   },
+  cargo: "Subgerente Administrativo",
+};
+
+/**
+ * En el subproceso «Gestión Contable» (sigla `CNT`), con el código de la 14A (`SIGLA-ID-NNN`) y los rangos escritos por
+ * estado: Bien desde 91 aunque la meta sea 100. Un resultado de 95 es «Bien» sin alcanzar la meta (spec 14A §3).
+ */
+export const CNT_01: FichaDemo = {
+  codigo: "CNT-ID-001",
+  proceso: "GRF",
+  subproceso: "gestion-contable",
+  nombre: "Oportunidad en el cierre contable",
+  proposito: "Medir qué parte de las conciliaciones y los registros contables del mes queda lista dentro del plazo del cierre.",
+  tipo: "Eficacia",
+  clasificacion: "Estratégico",
+  objetivo: "finanzas",
+  forma: "porcentaje",
+  unidad: "Porcentaje",
+  decimales: 1,
+  periodicidad: "mensual",
+  tendencia: "ascendente",
+  meta: "100",
+  rangos: {
+    bien: [{ signo: ">=", valor: "91" }],
+    atencion: [{ signo: "entre", valor: "41", hasta: "90" }],
+    critico: [{ signo: "<=", valor: "40" }],
+  },
+  a: {
+    nombre: "Cierres contables entregados a tiempo",
+    descripcion: "Conciliaciones y registros del mes entregados dentro del plazo del cierre",
+    fuente: "Calendario de cierre y software contable",
+  },
+  b: {
+    nombre: "Cierres contables programados",
+    descripcion: "Conciliaciones y registros que el calendario de cierre exige en el mes",
+    fuente: "Calendario de cierre contable",
+  },
+  prueba: ["19", "20"],
   cargo: "Subgerente Administrativo",
 };

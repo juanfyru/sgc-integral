@@ -39,7 +39,7 @@ function Tabla({ titulo, filas }: { titulo: string; filas: FilaDeProceso[] }) {
           <td className={`${celda} whitespace-nowrap`}>{f.etiquetaPeriodo ?? <span className="text-muted-foreground">—</span>}</td>
           <td className={`${celdaNumerica} whitespace-nowrap`}>{f.resultado ?? <span className="text-muted-foreground">{f.noAplica ? "n. a." : "sin dato"}</span>}</td>
           <td className={celda}>
-            <InsigniaSemaforo semaforo={f.semaforo} noAplica={f.noAplica} conResultado={f.resultado !== null} />
+            <InsigniaSemaforo semaforo={f.semaforo} cumple={f.cumple} noAplica={f.noAplica} conResultado={f.resultado !== null} />
           </td>
         </tr>
       ))}

@@ -106,6 +106,11 @@ function cambiosDe(e: EventoDeMedicion, unidad: Unidad, nombres: Readonly<Record
     const s = (v: unknown) => (typeof v === "string" && v in ETIQUETA_SEMAFORO ? ETIQUETA_SEMAFORO[v as Semaforo] : null);
     cambio("Semáforo", s(antes.semaforo), s(despues.semaforo), "sin semáforo");
   }
+  // Con rangos propios, Bien puede no alcanzar la meta: el semáforo no cambia y el cumplimiento sí (spec 14A §3.1).
+  if (distinto(antes.cumple, despues.cumple)) {
+    const s = (v: unknown) => (v === true ? "Sí" : v === false ? "No" : null);
+    cambio("Cumple", s(antes.cumple), s(despues.cumple), "—");
+  }
   if (distinto(antes.estado, despues.estado)) {
     const s = (v: unknown) => (typeof v === "string" ? (ESTADO[v] ?? v) : null);
     cambio("Estado", s(antes.estado), s(despues.estado), "—");

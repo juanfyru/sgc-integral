@@ -929,3 +929,40 @@ describe("los Excel de indicadores (14A)", () => {
     expect(nombreDeAccion("exporto_resultados_indicadores")).toBe("Emitió los resultados de los indicadores");
   });
 });
+
+describe("la importación de indicadores (14A)", () => {
+  const x = (accion: string, detalle: Record<string, unknown>, entidadId: number | null = 7) =>
+    describirEvento({ accion, entidad: "importacion_indicadores", entidadId, detalle });
+
+  it("preparar un lote dice su número, que sale del detalle", () => {
+    expect(x("preparo_importacion_indicadores", { loteId: 7 }, null)).toBe("Preparó la importación de indicadores n.º 7");
+    expect(x("preparo_importacion_indicadores", {})).toBe("Preparó una importación de indicadores");
+    expect(nombreDeAccion("preparo_importacion_indicadores")).toBe("Preparó una importación de indicadores");
+  });
+
+  it("importar dice cuántas fichas entraron aprobadas, en borrador y omitidas", () => {
+    expect(x("importo_indicadores", { loteId: 7, aprobadas: 2, borradores: 1, omitidas: 0, codigos: ["CNT-ID-001", "CNT-ID-002", "CNT-ID-003"] }, null)).toBe(
+      "Importó 3 fichas de indicadores en la importación n.º 7 (2 aprobadas antes de SGC Integral, 1 en borrador)",
+    );
+    expect(x("importo_indicadores", { loteId: 7, aprobadas: 1, borradores: 0, omitidas: 2 })).toBe(
+      "Importó 1 ficha de indicadores en la importación n.º 7 (1 aprobada antes de SGC Integral, 0 en borrador; 2 filas omitidas)",
+    );
+    expect(x("importo_indicadores", { aprobadas: 1, borradores: 1, omitidas: 0 })).toBe(
+      "Importó 2 fichas de indicadores (1 aprobada antes de SGC Integral, 1 en borrador)",
+    );
+    expect(x("importo_indicadores", {}, null)).toBe("Importó fichas de indicadores");
+    expect(nombreDeAccion("importo_indicadores")).toBe("Importó fichas de indicadores");
+  });
+
+  it("deshacer dice el lote, cuántas fichas borró y el motivo, todo del detalle", () => {
+    expect(
+      x("deshizo_importacion_indicadores", { loteId: 7, motivo: "Las metas iban como fracción", codigos: ["CNT-ID-001", "CNT-ID-002"], fichas: 2 }, null),
+    ).toBe("Deshizo la importación de indicadores n.º 7 y borró 2 fichas: Las metas iban como fracción");
+    expect(x("deshizo_importacion_indicadores", { loteId: 7, fichas: 1 })).toBe("Deshizo la importación de indicadores n.º 7 y borró 1 ficha");
+    expect(x("deshizo_importacion_indicadores", { motivo: "Sentido al revés en todas" })).toBe(
+      "Deshizo una importación de indicadores: Sentido al revés en todas",
+    );
+    expect(x("deshizo_importacion_indicadores", {})).toBe("Deshizo una importación de indicadores");
+    expect(nombreDeAccion("deshizo_importacion_indicadores")).toBe("Deshizo una importación de indicadores");
+  });
+});

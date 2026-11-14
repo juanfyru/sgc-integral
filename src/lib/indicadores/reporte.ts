@@ -7,6 +7,7 @@ import { calcular, variacionExcesiva, type FichaDeCalculo } from "./calculo";
 import { analizar } from "./formula/analizar";
 import type { Motivo } from "./formula/evaluar";
 import { aDecimal, comparar, deTexto, esNegativa, fraccion, type Fraccion } from "./formula/fraccion";
+import { rangosDeTexto, type RangosEnTexto } from "./rangos";
 import { numeroExacto, type Regla } from "./semaforo";
 import { fraseDeVariacion, textoValor, type Unidad } from "./textos";
 import type { EstadoMedicion, ModoSemaforo, Semaforo, Tendencia } from "./tipos";
@@ -20,6 +21,7 @@ export type ReglaEnTexto = {
   umbralPct: number | null;
   limite: string | null;
   tolerancia: string | null;
+  rangos?: RangosEnTexto | null;
 };
 
 /** La fórmula de una versión y sus límites del resultado. */
@@ -53,6 +55,7 @@ export function reglaDeTexto(r: ReglaEnTexto): Regla {
     umbralPct: r.umbralPct,
     limite: fr(r.limite),
     tolerancia: fr(r.tolerancia),
+    ...(r.rangos ? { rangos: rangosDeTexto(r.rangos) } : {}),
   };
 }
 
@@ -112,11 +115,11 @@ export const decimalCorto = (v: Fraccion): string => sinCeros(aDecimal(v, 10, "r
 
 /**
  * A dónde se vuelve tras reportar (Tarea 19, D-12): a `volver` (la página del indicador) y, si el periodo quedó abierto
- * pidiendo su análisis (Atención o Crítico), a su tabla del año con `foco=analisis`: la página lleva el foco al formulario
+ * pidiendo su análisis (no cumple la meta, sea cual sea su color), a su tabla del año con `foco=analisis`: la página lleva el foco al formulario
  * del análisis. Un periodo que no es una clave válida, o un `volver` que ya trae consulta, vuelve tal cual.
  */
-export function destinoTrasReportar(volver: string, periodo: string, r: { estado: EstadoMedicion; semaforo: Semaforo | null }): string {
-  const pideAnalisis = r.estado === "abierta" && (r.semaforo === "atencion" || r.semaforo === "critico");
+export function destinoTrasReportar(volver: string, periodo: string, r: { estado: EstadoMedicion; cumple: boolean | null }): string {
+  const pideAnalisis = r.estado === "abierta" && r.cumple === false;
   if (!pideAnalisis || !/^\d{4}(-(\d{2}|[BTS]\d))?$/.test(periodo) || volver.includes("?") || volver.includes("#")) return volver;
   return `${volver}?vista=resultados&anio=${periodo.slice(0, 4)}&foco=analisis#analisis`;
 }
@@ -137,6 +140,8 @@ export type CalculoEnVivo = {
   /** «60 %», sin contradecir el color. */
   texto: string | null;
   semaforo: Semaforo | null;
+  /** Si el resultado alcanza la meta (spec 14A §3.1). */
+  cumple: boolean | null;
   sinResultado: Motivo | null;
   /** El mensaje de un resultado fuera de los límites del indicador. */
   fueraDeLimites: string | null;
@@ -158,7 +163,7 @@ export function calcularEnVivo(
   const { valores, errores } = leerValores(d.variables, textos);
   const completo = Object.keys(errores).length === 0 && d.variables.every((v) => valores[v.letra] !== null);
   const ficha = fichaDeCalculo(d.calculo);
-  const vacio: CalculoEnVivo = { errores, completo, resultado: null, texto: null, semaforo: null, sinResultado: null, fueraDeLimites: null, variacion: null };
+  const vacio: CalculoEnVivo = { errores, completo, resultado: null, texto: null, semaforo: null, cumple: null, sinResultado: null, fueraDeLimites: null, variacion: null };
   if (!completo || !ficha) return vacio;
   const regla = reglaDeTexto(d.regla);
   const r = calcular(ficha, Object.fromEntries(Object.entries(valores).map(([l, v]) => [l, v ?? undefined])), regla);
@@ -169,6 +174,7 @@ export function calcularEnVivo(
     resultado: r.resultado,
     texto: textoValor(r.resultado, d.unidad, regla),
     semaforo: r.semaforo,
+    cumple: r.cumple,
     fueraDeLimites: r.fueraDeLimites ? fueraDeLimites(textoValor(r.resultado, d.unidad)) : null,
     variacion:
       anterior && variacionExcesiva(r.resultado, anterior.valor, d.variacionPct) ? fraseDeVariacion(r.resultado, anterior, d.unidad) : null,

@@ -47,7 +47,7 @@ export const ETIQUETA_PERIODICIDAD: Record<Periodicidad, string> = {
 export const TENDENCIAS = ["ascendente", "descendente", "constante"] as const;
 export type Tendencia = (typeof TENDENCIAS)[number];
 
-export const MODOS_SEMAFORO = ["relativo", "fijo"] as const;
+export const MODOS_SEMAFORO = ["relativo", "fijo", "rangos"] as const;
 export type ModoSemaforo = (typeof MODOS_SEMAFORO)[number];
 
 export const CONSOLIDACIONES = ["suma", "ultimo", "promedio"] as const;
@@ -80,6 +80,13 @@ export const ETIQUETA_SEMAFORO: Record<Semaforo, string> = {
   critico: "Crítico",
 };
 
+/** «Bien» que no alcanza la meta (rangos propios, spec 14A §3.1): verde con letras, nunca verde a secas. */
+export const NO_ALCANZA_LA_META = "no alcanza la meta";
+export const sinAlcanzarLaMeta = (semaforo: Semaforo | null, cumple: boolean | null | undefined) => semaforo === "bien" && cumple === false;
+/** El nombre del estado de un resultado con su salvedad: «Bien, no alcanza la meta» (nombres accesibles y tablas). */
+export const nombreDeEstado = (semaforo: Semaforo, cumple: boolean | null | undefined) =>
+  sinAlcanzarLaMeta(semaforo, cumple) ? `${ETIQUETA_SEMAFORO[semaforo]}, ${NO_ALCANZA_LA_META}` : ETIQUETA_SEMAFORO[semaforo];
+
 export const NIVELES_ACCESO = ["general", "restringido"] as const;
 export type NivelAcceso = (typeof NIVELES_ACCESO)[number];
 
@@ -94,9 +101,9 @@ export type DatosOperacion = {
 /** Lo que el formulario de la ficha ofrece para elegir; lo arma el servidor (`opcionesDeFicha`). */
 export type OpcionesFicha = {
   procesos: { id: number; sigla: string; nombre: string }[];
-  subprocesos: { id: number; procesoId: number; nombre: string }[];
-  /** El código que se propone en cada proceso (`SIGLA-IND-NN`). */
-  codigosPropuestos: Record<number, string>;
+  subprocesos: { id: number; procesoId: number; nombre: string; sigla: string | null }[];
+  /** El código que se propone en cada proceso y en cada subproceso con sigla (`SIGLA-ID-NNN`). */
+  codigosPropuestos: { procesos: Record<number, string>; subprocesos: Record<number, string> };
   tipos: { id: number; nombre: string }[];
   clasificaciones: { id: number; nombre: string; exigeNorma: boolean }[];
   unidades: { id: number; nombre: string; sufijo: string; decimales: number }[];
@@ -137,6 +144,10 @@ export type PuntoDeSerie = {
   texto: string;
   estado: EstadoDePunto;
   nombreEstado: string;
+  /** Bien que no alcanza la meta: el nombre lo dice entero y la impresión lo abrevia con «*». */
+  sinAlcanzar?: boolean;
+  /** Lo que la columna impresa escribe en vez de `nombreEstado` cuando es largo: «Bien*». */
+  nombreImpreso?: string;
 };
 
 /**

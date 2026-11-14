@@ -57,7 +57,7 @@ function Estado({ f, historial, periodosSinCumplir }: { f: FilaDelAnio; historia
   const estado = etiqueta === null ? null : `${etiqueta}${f.vencida ? " · vencida" : ""}`;
   return (
     <div className="flex flex-col items-start gap-1">
-      <InsigniaSemaforo semaforo={f.semaforo} noAplica={f.noAplica} conResultado={f.resultado !== null} />
+      <InsigniaSemaforo semaforo={f.semaforo} cumple={f.cumple} noAplica={f.noAplica} conResultado={f.resultado !== null} />
       {estado ? <span className="text-xs text-muted-foreground">{estado}</span> : null}
       {marcas.map((m) => (
         <Insignia key={m} variante="neutra">

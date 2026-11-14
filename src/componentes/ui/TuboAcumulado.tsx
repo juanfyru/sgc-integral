@@ -1,4 +1,5 @@
 import type { Unidad } from "@/lib/indicadores/textos";
+import { NO_ALCANZA_LA_META } from "@/lib/indicadores/tipos";
 import { Insignia, type VarianteInsignia } from "./Insignia";
 import { claseDeRelleno, escala, NOMBRE_DE_ESTADO, type EstadoDePunto } from "./geometria-tubos";
 
@@ -25,12 +26,15 @@ export function TuboAcumulado({
   valor,
   texto,
   estado,
+  cumple = null,
   meta,
   unidad,
 }: {
   valor: number | null;
   texto: string;
   estado: EstadoDePunto;
+  /** Bien con `false` no alcanza la meta: la insignia lo dice. */
+  cumple?: boolean | null;
   meta?: { valor: number; texto: string };
   unidad?: Pick<Unidad, "sufijo">;
 }) {
@@ -46,7 +50,7 @@ export function TuboAcumulado({
     <div className="tubo-color-exacto flex min-w-0 flex-col gap-2">
       <p className="flex flex-wrap items-center gap-2">
         <span className="font-display text-2xl font-semibold tabular-nums">{texto}</span>
-        <Insignia variante={INSIGNIA[estado]}>{NOMBRE_DE_ESTADO[estado]}</Insignia>
+        <Insignia variante={INSIGNIA[estado]}>{estado === "bien" && cumple === false ? `${NOMBRE_DE_ESTADO[estado]} · ${NO_ALCANZA_LA_META}` : NOMBRE_DE_ESTADO[estado]}</Insignia>
       </p>
       <div className={`relative ${meta ? "pb-5" : ""}`}>
         <div aria-hidden="true" className="h-3.5 overflow-hidden rounded-full bg-tubo-pista">

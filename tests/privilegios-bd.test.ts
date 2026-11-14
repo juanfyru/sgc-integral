@@ -56,6 +56,15 @@ describe.skipIf(!process.env.DATABASE_URL_MIGRADOR)("rol sgc_app", () => {
     expect(await codigoDeError(app`UPDATE cierres_indicadores SET cerrado_en = cerrado_en WHERE id = -1`)).toBe("42501");
     expect(await codigoDeError(app`DELETE FROM cierres_indicadores WHERE id = -1`)).toBe("42501");
   });
+  // Los lotes de importación de indicadores (0012): sin filas, el 42501 es del privilegio.
+  it("no puede modificar ni borrar importaciones_indicadores", async () => {
+    expect(await codigoDeError(app`UPDATE importaciones_indicadores SET cargado_en = cargado_en WHERE id = -1`)).toBe("42501");
+    expect(await codigoDeError(app`DELETE FROM importaciones_indicadores WHERE id = -1`)).toBe("42501");
+  });
+  it("no puede modificar ni borrar importacion_eventos", async () => {
+    expect(await codigoDeError(app`UPDATE importacion_eventos SET creado_en = creado_en WHERE id = -1`)).toBe("42501");
+    expect(await codigoDeError(app`DELETE FROM importacion_eventos WHERE id = -1`)).toBe("42501");
+  });
   it("sí puede insertar, leer y borrar en tablas operativas", async () => {
     const [u] = await app`INSERT INTO usuarios (usuario, nombre, hash_clave) VALUES (${'zz_priv_u_' + Date.now()}, 'x', 'h') RETURNING id`;
     expect(u.id).toBeGreaterThan(0);

@@ -132,3 +132,17 @@ export function versionQueRigeEntre<T extends { rigeDesde: string | null }>(
 export function contiene(mayor: Periodicidad, menor: Periodicidad): boolean {
   return MESES[mayor] >= MESES[menor] && MESES[mayor] % MESES[menor] === 0;
 }
+
+/** La clave del periodo calendario de esa periodicidad que contiene el mes (1 a 12): sin instante ni zona (importación). */
+export function claveQueContieneMes(p: Periodicidad, anio: number, mes: number): string {
+  return claveDe(p, anio, p === "anual" ? 1 : Math.ceil(mes / MESES[p]));
+}
+
+/**
+ * Cuántos periodos de esa periodicidad van del que contiene `desde` al que contiene `hasta`, sin contar este (meses de 1 a
+ * 12; sin instante ni zona): los que terminaron antes del mes de `hasta` (importación, spec 14A §5.8).
+ */
+export function periodosAntesDelMes(p: Periodicidad, desde: { anio: number; mes: number }, hasta: { anio: number; mes: number }): number {
+  const indice = (m: { anio: number; mes: number }) => Math.floor((m.anio * 12 + m.mes - 1) / MESES[p]);
+  return Math.max(0, indice(hasta) - indice(desde));
+}

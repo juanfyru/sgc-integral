@@ -106,6 +106,7 @@ const FILA: FilaDeLista = {
   meta: "≥ 90 %",
   semaforo: "critico",
   noAplica: false,
+  cumple: false,
   tendencia: [100, 83.3, 60],
   flecha: "baja",
   mejora: false,
@@ -120,6 +121,7 @@ const ULTIMO: UltimoResultado = {
   noAplica: false,
   frase: "No cumple: 60 % frente a una meta de 90 %.",
   comparacion: { texto: "23,3 puntos menos que en el segundo trimestre", flecha: "baja", mejora: false },
+  cumple: false,
   requiereAccion: true,
   repetido: false,
 };
@@ -131,6 +133,7 @@ const celda = (desdeMes: number, hastaMes: number, o: Partial<CeldaDeMatriz>): C
   estado: "futuro",
   nombre: "por venir",
   enlace: null,
+  cumple: null,
   ...o,
 });
 
@@ -146,10 +149,10 @@ describe("los componentes", () => {
     const filas: FilaDeLista[] = [
       FILA,
       { ...FILA, id: 2, codigo: "GTH-IND-03", nombre: "Rotación de personal", restringido: true, resultado: null, semaforo: null, tendencia: [null], flecha: null, mejora: null, reporte: { texto: "Vencido hace 6 días", vencida: true } },
-      { ...FILA, id: 3, codigo: "AIN-IND-01", nombre: "Tiempo de espera", semaforo: "bien", resultado: "28 min", subproceso: "Urgencias", flecha: "baja", mejora: true },
+      { ...FILA, id: 3, codigo: "AIN-IND-01", nombre: "Tiempo de espera", semaforo: "bien", cumple: true, resultado: "28 min", subproceso: "Urgencias", flecha: "baja", mejora: true },
     ];
     const html = renderToStaticMarkup(
-      <ListaIndicadores filas={filas} resumen={{ bien: 19, atencion: 7, critico: 3, sinDato: 3, noAplica: 0, vencidos: 2 }} />,
+      <ListaIndicadores filas={filas} resumen={{ bien: 19, bienSinAlcanzar: 0, atencion: 7, critico: 3, sinDato: 3, noAplica: 0, vencidos: 2 }} />,
     );
     expect(html).toContain("19 bien, ");
     expect(html).toContain("7 en atención, ");
@@ -272,11 +275,91 @@ describe("los componentes", () => {
     expect(leyenda).toContain("<span>Por venir</span>");
   });
 
+  it("Bien que no alcanza la meta lo dice con letras, con la misma variante de color (spec 14A §3.1)", () => {
+    const sin = renderToStaticMarkup(<InsigniaSemaforo semaforo="bien" cumple={false} />);
+    expect(sin).toMatch(/data-variante="bien"[^>]*>Bien · no alcanza la meta</);
+    for (const cumple of [true, null, undefined]) {
+      expect(renderToStaticMarkup(<InsigniaSemaforo semaforo="bien" cumple={cumple} />)).toMatch(/data-variante="bien"[^>]*>Bien</);
+    }
+    // Solo Bien lo dice: Atención y Crítico ya son «no cumple».
+    expect(renderToStaticMarkup(<InsigniaSemaforo semaforo="atencion" cumple={false} />)).toMatch(/>Atención</);
+  });
+
+  it("la lista, el resultado principal y la tabla del año escriben «Bien · no alcanza la meta» y «No» en «Cumple»", () => {
+    const lista = renderToStaticMarkup(
+      <ListaIndicadores
+        filas={[{ ...FILA, semaforo: "bien", cumple: false, resultado: "92 %" }]}
+        resumen={{ bien: 1, bienSinAlcanzar: 0, atencion: 0, critico: 0, sinDato: 0, noAplica: 0, vencidos: 0 }}
+      />,
+    );
+    expect(lista).toContain("Bien · no alcanza la meta");
+    const principal = renderToStaticMarkup(<ResultadoPrincipal ultimo={{ ...ULTIMO, semaforo: "bien", cumple: false, resultado: "92 %" }} periodosSinCumplir={3} />);
+    expect(principal).toContain("Bien · no alcanza la meta");
+    const fila: FilaDelAnio = {
+      periodo: "2026-T3",
+      etiqueta: "Tercer trimestre de 2026",
+      version: 1,
+      medicionId: 5,
+      estado: "reportada",
+      vencida: false,
+      vence: null,
+      historica: false,
+      noAplica: false,
+      motivo: null,
+      valores: [],
+      resultado: "92 %",
+      semaforo: "bien",
+      meta: "≥ 95 %",
+      cumple: false,
+      frase: null,
+      requiereAccion: false,
+      repetido: false,
+      corregida: false,
+      metaTardia: false,
+      sinAnalisis: false,
+      analisis: null,
+      causa: null,
+      accionPropuesta: null,
+    };
+    const tabla = renderToStaticMarkup(<TablaDelAnio filas={[fila]} variables={[]} anio={2026} codigo="ZZ-1" puedeMedir={false} />);
+    expect(tabla).toContain("Bien · no alcanza la meta");
+    expect(tabla).toMatch(/<td class="[^"]*">No<\/td>/);
+  });
+
+  it("la matriz marca con «✓*» el Bien que no alcanza la meta, lo nombra así y la leyenda lo explica", () => {
+    const enlace = "/indicadores/X?vista=resultados&anio=2026#periodo-2026-T1";
+    const procesos: MatrizLeida["procesos"] = [
+      {
+        id: 1,
+        nombre: "Gestión",
+        filas: [
+          {
+            codigo: "A-1",
+            nombre: "A-1",
+            retirado: false,
+            celdas: [
+              celda(1, 3, { texto: "92 %", estado: "bien", cumple: false, nombre: "primer trimestre: 92 %, Bien, no alcanza la meta", enlace }),
+              celda(4, 6, { texto: "96 %", estado: "bien", cumple: true, nombre: "segundo trimestre: 96 %, Bien", enlace }),
+            ],
+            anio: celda(1, 12, { texto: "94 %", estado: "bien", cumple: false, nombre: "Año 2026: 94 %, Bien, no alcanza la meta", enlace }),
+          },
+        ],
+      },
+    ];
+    const html = renderToStaticMarkup(<MatrizDelAnio anio={2026} procesos={procesos} />);
+    expect(html).toContain('aria-label="primer trimestre: 92 %, Bien, no alcanza la meta"');
+    expect(html.match(/data-glifo="bien-sin-alcanzar"/g)).toHaveLength(2);
+    expect(html.match(/data-glifo="bien"/g)).toHaveLength(1);
+    expect(html).toMatch(/data-glifo="bien-sin-alcanzar"[^>]*>(?:(?!<\/svg>)[^])*<\/svg><span aria-hidden="true"[^>]*>\*<\/span>/);
+    const leyenda = renderToStaticMarkup(<LeyendaDeMatriz />);
+    expect(leyenda).toMatch(/data-glifo="bien-sin-alcanzar"[^]*?<span>Bien, sin alcanzar la meta<\/span>/);
+  });
+
   it("la lista escribe la flecha aunque la miniatura tenga un solo periodo", () => {
     const html = renderToStaticMarkup(
       <ListaIndicadores
         filas={[{ ...FILA, tendencia: [null, null, null, null, null, 87], semaforo: "bien", resultado: "87 %", flecha: "sube", mejora: true }]}
-        resumen={{ bien: 1, atencion: 0, critico: 0, sinDato: 0, noAplica: 0, vencidos: 0 }}
+        resumen={{ bien: 1, bienSinAlcanzar: 0, atencion: 0, critico: 0, sinDato: 0, noAplica: 0, vencidos: 0 }}
       />,
     );
     expect(html).toContain("un solo periodo");

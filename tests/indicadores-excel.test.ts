@@ -36,7 +36,7 @@ import { retirar } from "@/db/consultas/indicadores/operacion";
 import type { MetaHoja } from "@/lib/distribucion/hoja-excel";
 import { construirExcelDeIndicador, construirExcelDeResultados } from "@/lib/indicadores/excel";
 import { crearSesion } from "@/lib/sesion";
-import { indicadorDePrueba, versionTrimestral, type IndicadorDePrueba, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
+import { indicadorDePrueba, loteImportado, versionTrimestral, type IndicadorDePrueba, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -147,6 +147,20 @@ const fila = (h: Hoja, primera: string) => h.filas.find((f) => f[0] === primera)
 const cabecera = (h: Hoja, primera: string) => h.filas.find((f) => f[0] === primera)!;
 
 describe("el Excel de un indicador", () => {
+  it("la hoja «Ficha» de una ficha importada dice de dónde viene su aprobación, sin firmas «Elaboró»", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const importador = await usuarioDePrueba(tx, { rol: "admin_sgc" });
+      const importacionId = await loteImportado(tx, { usuarioId: importador.usuarioId, importadoEn: new Date("2026-10-14T15:30:00Z") });
+      const { ind, quien } = await trimestralMedido(tx, p.id, { importacionId, aprobacionPrevia: { documento: "SGC-TI-002 v1", aprobadoPor: "Gerente", fecha: "2026-09-11" } });
+      const d = await impresionDelAnio(quien, ind.codigo, 2026, opc(tx));
+      const ficha = (await leerLibro(await construirExcelDeIndicador(d!, META))).Ficha;
+      expect(texto(ficha)).toContain(
+        `Firmas | Aprobación previa | Aprobada antes de la implementación de SGC Integral: SGC-TI-002 v1, aprobó Gerente el 11 sep 2026. Importó ${importador.nombre} el 14 oct 2026, `,
+      );
+      expect(texto(ficha)).not.toContain("Elaboró");
+    }));
+
   it("el Excel de un indicador trae la hoja «Ficha» y la hoja «Resultados 2026», con el acumulado", () =>
     revertida(sql, async (tx) => {
       const p = await proceso(tx);
@@ -194,6 +208,36 @@ describe("el Excel de un indicador", () => {
       const t2 = crudas.find((c) => c[0] === "Segundo trimestre de 2026")!;
       expect(t2.slice(2, 6)).toEqual([5, 6, "83,3 %", "≥ 90 %"]);
       expect(crudas.find((c) => c[0] === "Acumulado del año")!.slice(2, 4)).toEqual([13, 16]);
+    }));
+
+  it("un Bien que no alcanza la meta lleva «No» en «Cumple», también en el acumulado; la hoja «Ficha» trae nivel, riesgo y rangos", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const quien = await usuarioDePrueba(tx, { rol: "consulta" });
+      const ind = await indicadorDePrueba(tx, {
+        procesoId: p.id,
+        periodicidad: "trimestral",
+        inicioMedicion: "2026-T1",
+        aprobadaEn: APROBADA,
+        mide: [quien.usuarioId],
+        meta: "95",
+        rangos: {
+          bien: [{ signo: ">=", valor: "91" }],
+          atencion: [{ signo: "entre", valor: "41", hasta: "90" }],
+          critico: [{ signo: "<=", valor: "40" }],
+        },
+        nivel: "Proceso",
+        riesgoAsociado: "Retraso en la entrega de resultados",
+      });
+      await medir(tx, quien, ind, { "2026-T3": { A: "92", B: "100" } });
+      const libro = await leerLibro(await construirExcelDeIndicador((await impresionDelAnio(quien, ind.codigo, 2026, opc(tx)))!, META));
+      const r = libro["Resultados 2026"];
+      expect(fila(r, "Tercer trimestre de 2026")?.slice(4, 8)).toEqual(["92 %", "≥ 95 %", "No", "Bien · no alcanza la meta"]);
+      expect(fila(r, "Acumulado del año")?.slice(4, 8)).toEqual(["92 %", "≥ 95 %", "No", "Bien · no alcanza la meta"]);
+      const ficha = texto(libro.Ficha);
+      expect(ficha).toContain("Nivel | Proceso");
+      expect(ficha).toContain("Riesgo asociado | Retraso en la entrega de resultados");
+      expect(ficha).toContain("Semáforo | Bien: ≥ 91 % · Atención: 41 a 90 % · Crítico: ≤ 40 %");
     }));
 
   it("la firma de la hoja «Ficha» lleva su día con el formato de la app y su hora, en la zona de la instalación", () =>

@@ -1,6 +1,8 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-11-12**, al cerrar la 14A en su rama. La **Fase 14A —
+> Se actualiza al cierre de cada fase. Última actualización: **2026-11-13**, al cerrar la **entrega complementaria de la 14A:
+> rangos, códigos e importación** (rama `f14a-rangos-importacion`, sobre `main` con la 14A ya fusionada; sin publicar ni fusionar;
+> ver su sección, arriba de «Qué probar y cómo (Fase 14A)»). Antes, al cerrar la 14A en su rama: la **Fase 14A —
 > Indicadores, el indicador de punta a punta** está terminada en la rama `fase-14a-indicadores` (90 confirmaciones sobre
 > `bced185`, sin publicar ni fusionar), con el recorrido del controlador hecho y sus defectos corregidos y la ola final de
 > la revisión de toda la rama aplicada, y espera el recorrido del usuario; después viene la **Fase 14B** (datos compartidos,
@@ -263,6 +265,233 @@
    preferencias de trabajo del usuario (decide por listas numeradas; recomendaciones con
    base ISO, Regulación o Práctica). Este archivo es el contexto durable de la variante.
 
+## Entrega complementaria de la 14A: rangos, códigos e importación
+
+Spec: `docs/superpowers/specs/2026-11-13-fase14a-rangos-e-importacion-design.md` (amplía el de la Fase 14); plan:
+`docs/superpowers/plans/2026-11-13-fase14a-rangos-e-importacion.md`. La rama `f14a-rangos-importacion` (39 confirmaciones
+sobre `main`, `4afd205`, que ya trae la 14A fusionada) se trabajó en el mismo worktree `F:\sgc-integral-f14a`, contra la base
+aparte `sgc_f14a`; **no está publicada ni fusionada** y espera el recorrido del usuario. Nació de lo que el hospital ya
+tiene: una matriz institucional de 258 indicadores aprobada por el Gerente (`SGC-TI-002`, versión 1, 11/09/2026) y
+fichas con rangos escritos a criterio del creador (`crítico 0-40, atención 41-90, bien 91-100, meta 100`), con códigos de
+la forma `CNT-ID-001` (sigla del subproceso). **Sin dependencias npm nuevas.** Una migración, la `0012`; trece en total
+(`drizzle/0000` a `drizzle/0012`).
+**Verificado el 2026-11-13, al cierre de la ola final**, por el guard, sobre `sgc_f14a` recién sembrada: `npm run lint` limpio;
+`SEMILLA_RECIEN=1 npm test`, 240 archivos y 5997 pruebas en verde con 1 saltada (la de siempre, de ratificaciones); `npm run
+build` sin URL de base en verde.
+
+### Hecho (entrega complementaria de la 14A)
+
+- **Rangos del semáforo por estado (Parte A, forma B).** La ficha escribe una fila por estado con un signo (`≥`, `>`, `≤`,
+  `<` o «entre») y uno o dos números; Bien puede empezar antes de la meta. Reglas puras en `src/lib/indicadores/rangos.ts` y
+  `semaforo.ts` (fracciones exactas; «entre» incluye sus dos extremos; más allá de la punta manda el rango de la punta; un
+  hueco de más de una unidad, rangos cruzados, orden contrario a la tendencia o una meta fuera de Bien se rechazan con su
+  mensaje junto al campo). `EditorDeRangos` en el formulario, con «Este indicador no usa Atención» y, en «constante», Bien en
+  medio. Las versiones aprobadas conservan su regla vieja (un umbral sobre la meta; su huella no cambia) hasta su próximo
+  cambio mayor; el parámetro «Umbral de atención» ya no está en la configuración.
+- **`cumple` distinto de Bien.** La medición guarda `cumple` (alcanzó la meta) junto al semáforo; una medición anterior a la
+  `0012` lo tiene nulo y se lee como antes (`cumpleDeFila`). Un **«Bien que no cumple»** lleva su nombre («Bien · no alcanza
+  la meta» en la insignia; «Bien, no alcanza la meta» en el nombre accesible y la tabla; «✓\*» en la matriz, «Bien\*» impreso), pide análisis y avisa como un Atención, y cuenta en la racha. Solo
+  `recalcularMedicion` lo escribe.
+- **Sigla de los subprocesos y códigos del hospital (Parte B).** `subprocesos.sigla`, opcional y única entre procesos y
+  subprocesos; la propone, al crear una ficha, `SIGLA-ID-NNN` (tres cifras, por sigla, sin reusarse) con la del subproceso o,
+  si no tiene, la del proceso; `ID` queda reservada como `IND`. Los `-IND-` antiguos siguen valiendo. **Nivel** y **Riesgo
+  asociado** son campos de texto opcionales de la ficha.
+- **Importación (Parte C).** `/admin/indicadores/importar`: plantilla propia de 26 columnas (hoja «Indicadores», instrucciones y
+  listas), subida de una plantilla por lote (`POST /api/importaciones-indicadores/[id]/archivo`, fuera del `matcher`),
+  vista previa por fila con problemas, avisos y correspondencias de subproceso, cargo, tipo y unidad, aprobación previa y regla
+  de rangos por lote, siglas por dar, e importación todo o nada con la clave de quien importa. Las «Aprobado» entran aprobadas
+  (`importacion_id` y `aprobacion_previa_*`, sin firma «Aprobó» ni aviso; la constancia con clave es el evento `importado`) y
+  los periodos anteriores quedan históricos; las «Propuesto», en borrador. **Deshacer** el lote entero con motivo y clave
+  mientras nada tenga trabajo hecho en la app, con la única excepción estrecha del trigger de las versiones aprobadas
+  (`sgc.deshacer_importacion`). Tablas `importaciones_indicadores` e `importacion_eventos`, de solo inserción; contexto de
+  archivo `importacion_indicadores`. La ficha importada dice «Aprobada antes de la implementación de SGC Integral», con el
+  documento, quien aprobó, la fecha y quién importó.
+- **La demo.** `CNT-ID-001` «Oportunidad en el cierre contable» (mensual, meta 100, Bien ≥ 91 · Atención entre 41 y 90 ·
+  Crítico ≤ 40) en Gestión Contable, que ahora tiene la sigla `CNT`: un periodo en 95 (verde que no cumple, con su análisis) y
+  otro en 100. Y un lote importado de dos fichas, con su plantilla real en el almacén: `TSR-ID-001` «Oportunidad en el pago a
+  proveedores» (aprobada, Gestión Tesorería, que recibe la sigla `TSR`) y `GRF-ID-001` «Ejecución del presupuesto de gastos»
+  (propuesta, borrador), con la aprobación previa «SGC-TI-002 v1», «Gerente», 2026-09-11. **`SGC-IND-06` cambió respecto de la
+  demo de la 14A:** su meta programada del tercer trimestre es ahora 90 (antes 70, que quedaría fuera de su Bien ≥ 80), y su 17
+  de 20 = 85 % queda en **Bien sin alcanzar la meta**, con su análisis (sin él quedaría abierta y vencida). Código nuevo de la
+  semilla: `src/db/semillas/indicadores-demo-importacion.ts`.
+- **Ola final de la revisión de toda la rama** (2026-11-13; hallazgos y decisiones en
+  `.superpowers/sdd/2026-11-13-fase14a-rangos-e-importacion/ola-final.md`): un cambio mayor no se envía ni se aprueba con una
+  meta programada fuera de su Bien (F14AC-R15); «Inicio de medición» de la plantilla tiene ventana y aviso de históricos, y la
+  vista previa muestra el inicio, la periodicidad y la fórmula con los nombres de sus variables (F14AC-R14); la sigla del
+  código solo se ofrece si el mapa la aceptaría, los errores de las siglas nombran el subproceso y deshacer revisa que el
+  registro del lote liste todas sus versiones (F14AC-R16); la etiqueta del límite con un borde cerrado dice «Crítico hasta
+  40 %»; la barra de la lista cuenta los Bien sin cumplir; el renglón «Bien\*» de la leyenda solo se imprime; `SGC-IND-06`
+  trae su análisis; un test fija que renombrar una ficha con la regla vieja se envía y se aprueba sin rangos (Review Focus 3).
+- **Documentación:** `AGENTS.md` (regla 5 con sus dos excepciones nombradas, contextos de `archivos`, código de la ficha,
+  la importación, `cumple`), el capítulo 8 del manual (secciones 2.1, 2.3, 2.5, 6.1, 6.5, 6.9 y la nueva 6.10) y la fila de
+  `PLAN.md`.
+
+### Qué probar y cómo (entrega complementaria de la 14A)
+
+Los ocho pasos de §8 del spec, sobre la demo que la semilla deja y sus usuarios (clave de la demo `Demo-SGC-2026-clave`, la de la
+tabla de «Qué probar y cómo (Fase 14A)»; nunca otras credenciales). **No lo ha recorrido todavía el usuario.**
+
+0. **Preparar.** En la carpeta de la rama, `npm run db:preparar` (aplica la `0012` a su base) o la imagen, que la aplica sola;
+   **reinicie `npm run dev`**; resiembre justo antes de empezar: `npm run db:seed && npm run admin:asegurar`. Entre como
+   `coordinadora.sgc` (Administrador del SGC); `gerente` y `lider.cex` para lo que sigue.
+1. **Rangos escritos (§8.1).** **Indicadores** → `CNT-ID-001`: la ficha dice «Bien ≥ 91 · Atención entre 41 y 90 · Crítico ≤ 40»,
+   meta 100. Su primer periodo reportado (septiembre, si siembra el 2026-11-13) está en 95: **«Bien · no alcanza la meta»** (verde
+   con letras, «✓\*» en la matriz), con su análisis, y el siguiente, en 100, cumple. La punteada de la gráfica dice «Crítico
+   hasta 40 %» (el 40 es Crítico: «≤ 40»). En la lista, la barra dice entre paréntesis cuántos Bien no alcanzan la meta
+   («… bien (1 sin alcanzar la meta)», el de `SGC-IND-06`: el último periodo de `CNT-ID-001` cumple). Cree una ficha nueva con
+   esos rangos y reporte 95, 90,5 (Atención) y 105 (Bien, cumple): el 95 pide análisis.
+2. **Menos es mejor sin Atención (§8.2).** Ficha nueva «menos es mejor» con **Este indicador no usa Atención**
+   («Bien ≤ 30 · Crítico > 30»); reporte 31 dos periodos seguidos y mire la racha («2 periodos sin cumplir»).
+3. **Rangos inválidos (§8.3).** En el formulario, rangos cruzados, un hueco de 40 a 60 o una meta fuera de Bien: el SGC lo
+   rechaza junto al campo.
+4. **Sigla del subproceso (§8.4).** **Administración** → **Mapa de procesos** → Gestión Contable ya tiene `CNT` (la de la demo);
+   dele una sigla de 2 a 4 letras a otro subproceso y cree una ficha en él: el código propuesto es `SIGLA-ID-001`.
+5. **Importar (§8.5).** **Administración** → **Configuración de indicadores** → **Importar indicadores**: **Descargar la plantilla**,
+   llénela con unas filas de la matriz (una con un subproceso de nombre distinto, una «Propuesto», una con código repetido),
+   súbala en **Nueva importación**, mire la vista previa, resuelva la correspondencia, escriba la aprobación previa y pulse
+   **Importar** con su clave. Use códigos que la demo no tenga (`TSR-ID-001`, `GRF-ID-001` y `CNT-ID-001` ya están ocupados
+   por la demo). La vista previa dice la periodicidad, el **Inicio** y la fórmula con los nombres de sus variables; un
+   «Inicio de medición» fuera de la ventana (de enero de hace cinco años al mes de la importación; por ejemplo `1026-09`)
+   bloquea la fila, uno con más de 24 periodos históricos lo avisa, y una sigla del código que el mapa no aceptaría (ocupada,
+   reservada o de más de cuatro letras) no se ofrece: la fila lo avisa.
+6. **La ficha importada (§8.6).** `TSR-ID-001` (la del lote de la demo, o la suya): «Aprobada antes de la implementación de SGC
+   Integral», con el documento, quien aprobó, la fecha y quién importó; sus rangos son los de la regla del lote (Atención desde
+   el 90 % de la meta); sin tareas vencidas; `TSR-ID-001` de la demo se importa con inicio en el mes en curso y no tiene periodos históricos: para ver los históricos «Por registrar», importe un lote propio con «Inicio de medición» anterior.
+7. **Deshacer (§8.7).** En la página del lote que acaba de importar, **Deshacer la importación** con motivo y clave: las fichas
+   desaparecen, los códigos quedan libres, la bitácora lo cuenta y la misma plantilla corregida entra otra vez. Con una ficha
+   del lote ya reportada o con un periodo cerrado («tiene periodos cerrados o con datos»), o con una propuesta enviada a
+   aprobación, el botón no se ofrece y la página dice por qué.
+8. **Lo anterior no cambió (§8.8).** Las fichas de la demo de la 14A (`SGC-IND-01`, `AIN-IND-01`, `CEX-IND-01`…) siguen con su
+   color de siempre: la semilla las crea ahora con los rangos equivalentes a su regla (70 % de la meta). **Del recorrido de la
+   14A cambiaron** el paso 0 (`SGC-IND-06`: meta programada de 90 y un Bien sin cumplir, con su análisis), el 2 (una ficha
+   nueva escribe sus rangos y su código propuesto es `SGC-ID-001`), el 4 (los códigos `SGC-ID-00…`), el 10 (una meta
+   programada debe caer dentro de Bien) y el 13 (en el resumen del cierre, los Bien sin cumplir ya analizados no salen como
+   «sin análisis»). Un cambio mayor no se envía ni se aprueba mientras una meta programada desde su «Rige desde» quede fuera
+   de su Bien («La meta programada del … queda fuera del rango de Bien de esta versión: reprográmela antes de enviar»).
+   **La regla vieja no se ve en esta demo** (todas sus fichas tienen rangos). Para verla, si quiere (no hace falta para
+   cerrar la entrega): con `main` (`4afd205`) siembre una base de prueba (`npm run db:seed && npm run admin:asegurar`),
+   cambie a esta rama sobre esa misma base y corra `npm run db:preparar` (aplica la `0012`); reinicie `npm run dev`. `SGC-IND-01` y `AIN-IND-01` siguen con los
+   mismos colores y frases; renombre una ficha (**Abrir un cambio**, otro nombre, **Publicar el cambio menor**): se envía
+   sin escribir rangos y conserva su regla; abra otro cambio: la ficha muestra su regla anterior con **Escribir los rangos**
+   (que parte de los equivalentes), y si sube la meta sin escribirlos, el SGC responde «Un cambio mayor escribe los rangos
+   del semáforo: complete Bien, Atención y Crítico».
+
+### Avisos para el usuario (entrega complementaria de la 14A)
+
+1. **La migración `0012` es aditiva** (columnas `cumple`, `rangos`, `nivel`, `riesgo_asociado`, `sigla`, `importacion_id` y `aprobacion_previa_*`, las tablas del
+   lote y la excepción estrecha del trigger de las versiones aprobadas). Antes de `npm run dev` corra **`npm run db:preparar`**, o use
+   la imagen, que la aplica sola al arrancar. Las mediciones y fichas que ya tiene se leen igual que antes.
+2. **La plantilla y cómo pasar la matriz del hospital.** Descárguela de **Importar indicadores**; no se lee la matriz tal cual.
+   Separe **Variable A** y **Variable B** (la fórmula de la matriz va partida; la forma y el factor salen de la unidad); ponga el
+   **proceso por su sigla** y el **subproceso por su nombre del mapa** (lo que no coincida se resuelve en la vista previa); escriba
+   la **meta en la unidad** (95, no 0,95, y sin punto de miles); llene **Cómo se junta** con «Último valor» para poblaciones,
+   inventarios y totales del Listado Maestro (algo que se cuenta en un momento) y déjelo vacío para lo que se suma. Hasta 500 filas.
+   Un `.xlsx` que no es la plantilla (o que cambió sus encabezados) deja el lote inservible: cree otra importación.
+3. **La regla de los rangos de lo importado.** La matriz no trae rangos por indicador: cada ficha con meta toma la regla general
+   del lote, **Atención desde el 90 % de la meta** (ascendente) y **hasta el 110 %** (descendente), con Bien desde la meta; se
+   puede cambiar en la vista previa. Una ficha sin meta entra sin rangos ni alertas.
+4. **`ID` reservada.** Igual que `IND`, la sigla `ID` no se acepta en procesos, subprocesos ni tipos de documento. Un proceso o
+   un tipo de documento que ya tuviera `ID` o `IND` no se podrá editar sin cambiarla.
+5. **Las fichas aprobadas antes conservan su regla** (un umbral sobre la meta, 70 % por omisión) hasta su próximo cambio mayor, que
+   pide escribir los rangos; «Crear a partir de este» sobre una de ellas también los pide.
+6. **Lo importado no designa a nadie para medir:** las fichas aprobadas quedan activas, con sus cargos responsables y sin
+   personas; el Administrador del SGC las designa después (la importación no genera tareas ni avisos).
+7. **El lote es todo o nada para las filas sin problemas y se deshace entero**, y la misma plantilla corregida puede entrar
+   otra vez. La plantilla subida queda en el volumen `almacen`, bajo `importaciones/<lote>/`, y entra en el respaldo con él.
+
+### Decisiones adicionales (entrega complementaria de la 14A)
+
+F14AC-D1 a D15 son las del §9 del spec de la entrega (2026-11-13); F14AC-R1 a R12 son las resoluciones del controlador durante la
+ejecución que cambian lo que el usuario ve o lo que el spec decía (entre paréntesis, el «Ruling» de la bitácora de ejecución,
+`.superpowers/sdd/2026-11-13-fase14a-rangos-e-importacion/progress.md`). Mandan sobre el plan.
+
+| # | Decisión y porqué |
+|---|---|
+| F14AC-D1 | Un Bien que no cumple avisa como Atención (no escala a líderes ni al Administrador; si se repite, escala como un Atención repetido, F14AC-R3): el verde no es una falla, pero la meta no se alcanzó y alguien debe mirarlo |
+| F14AC-D2 | «Entre» incluye sus dos extremos y más allá de la punta manda el rango de la punta: así ningún número cae sin color |
+| F14AC-D3 | Un hueco de más de una unidad entre rangos es un error: un valor sin color sería peor que un rechazo |
+| F14AC-D4 | Las metas programadas por periodo deben caer dentro de Bien y los rangos no se mueven con ellas: la meta del periodo no reescribe la regla firmada |
+| F14AC-D5 | Las versiones aprobadas conservan su regla vieja; la forma B rige para fichas nuevas y cambios mayores: no se reescribe lo aprobado ni su huella |
+| F14AC-D6 | «Mantenerse en un rango» usa la forma B, con Atención y Crítico a cada lado de Bien |
+| F14AC-D7 | Sigla de subproceso opcional y única; código `SIGLA-ID-NNN` con tres cifras; `ID` reservada, como `IND`: así el código de la ficha no se confunde con el de un documento |
+| F14AC-D8 | Plantilla propia en vez de leer la matriz tal cual; la aprobación previa y la regla de rangos van por lote: la matriz no es una estructura estable y no trae rangos |
+| F14AC-D9 | Importación todo o nada para las filas sin problemas, con la clave de quien importa: una importación es una decisión firmada |
+| F14AC-D10 | Los periodos que terminaron antes de la importación son históricos: no generan tareas, avisos ni marcas |
+| F14AC-D11 | Nivel y riesgo asociado como campos de texto de la ficha: son lo que la matriz del hospital trae y no justifican un catálogo |
+| F14AC-D12 | No se designan personas al importar; los cargos sí: la matriz trae cargos, no personas |
+| F14AC-D13 | Una fila de Atención con un solo signo llega hasta donde empieza Bien y las filas se guardan como se escribieron: la ficha firmada muestra lo que la persona escribió |
+| F14AC-D14 | «Cómo se junta» de cada variable es una columna opcional de la plantilla («se suma» por omisión), con su explicación: poblaciones y totales no se suman |
+| F14AC-D15 | Deshacer es del lote entero; la constancia de quién importó va en un registro del lote (no en `firmas`) para que deshacer sea posible; la excepción al trigger es la más estrecha posible |
+| F14AC-R1 (5) | Los mensajes de orden son «En «más es mejor», Crítico va abajo, Atención en medio y Bien arriba» y sus espejos, y se revisan después del «entre» invertido y antes de «se cruzan»: el spec §3.4 lo exigía y el brief no traía texto |
+| F14AC-R2 (7, 8) | En «constante», una fila de un solo signo que se abre hacia Bien llega hasta la fila mejor de su lado y Crítico va a los dos lados de Bien: sin ese lado, la regla de la punta pintaría Bien fuera del rango |
+| F14AC-R3 (13) | Un Bien sin cumplir repetido escala a nivel crítico (avisa a líderes y Administrador), como hoy un Atención repetido: el Atención repetido ya se trata como crítico para las alertas |
+| F14AC-R4 (14) | La demo programa una meta dentro de Bien (`SGC-IND-06`: 90 sobre Bien ≥ 80) con un resultado en Bien sin alcanzarla: muestra a la vez la meta ajustada y el «Bien que no cumple» |
+| F14AC-R5 (16, 18) | «Crear a partir de este» sobre una ficha de regla vieja pide escribir los rangos, y un borrador viejo que sería ficha nueva o cambio mayor no se envía sin ellos; «regla anterior» solo se ofrece si la ficha tiene versión aprobada |
+| F14AC-R6 (19) | El Excel del indicador, la insignia en vivo, la prueba de la fórmula y la leyenda impresa llevan la salvedad del Bien sin cumplir: ningún verde engaña, tampoco en las salidas |
+| F14AC-R7 (23, 24) | «Laboratorio Clínico (LAB)» solo se empareja con un subproceso llamado así (si no, va a correspondencias) y la plantilla exige las 26 columnas, también las opcionales: una columna faltante es señal de un archivo ajeno |
+| F14AC-R8 (25, 26, 27) | Los datos que sobran para la forma (Variable B en Conteo, Factor o Fórmula libre sin usar), una meta con punto de miles («1.000») y una celda sin resultado bloquean la fila (nada aprobado se pierde en silencio); la meta vacía se admite (la ficha solo se vigila) con un aviso en la vista previa |
+| F14AC-R9 (30) | Una celda con error de Excel o una fórmula sin resultado bloquea la fila con su mensaje: leerla vacía crearía una ficha sin meta |
+| F14AC-R10 (32) | Los «Propuesto» son borradores normales, sin `importacion_id` ni aprobación previa; el lote los recuerda por el `detalle` del evento `importado`: si no, una propuesta aprobada en la app saldría como «aprobada antes de SGC Integral» |
+| F14AC-R11 (34, 35, 38, 40) | El archivo del lote responde 404 a quien no administra indicadores; si el conjunto importable cambió entre la vista y la clave, se aborta con «La vista previa cambió mientras se importaba: revísela y vuelva a importar»; el formulario manda los códigos de la vista y se comparan como lista (el envío multipart cambia LF por CRLF): nadie firma un lote distinto del que vio |
+| F14AC-R13 (3) | «Importó … el …» de la ficha importada sale del evento `importado` (quien confirmó con la clave), no de quien subió el archivo: la constancia con clave es la del evento |
+| F14AC-R12 (42) | Una propuesta del lote impide deshacer si ya se envió a aprobación o se aprobó, o si se modificó después de importarse: deshacer no debe borrar trabajo hecho en la app |
+| F14AC-R14 (46) | «Inicio de medición» de la plantilla se acepta de enero de cinco años antes al mes de la importación («El inicio de medición «…» está fuera de la ventana de AAAA-01 a AAAA-MM»); con más de 24 periodos históricos, «Abre N periodos históricos por registrar»; la vista previa muestra el inicio: un error de digitación no puede dejar una ficha aprobada que nunca se mide ni mil históricos |
+| F14AC-R15 (ola final) | Enviar y aprobar un cambio mayor revisan, de solo lectura y otra vez con el indicador bloqueado (el candado de `programarMeta`), que las metas programadas desde su «Rige desde», de su periodicidad, caigan dentro de su Bien: `programarMeta` solo las revisó contra la versión que regía, y un 92 con Bien ≥ 95 saldría Atención «frente a una meta de 90» |
+| F14AC-R16 (ola final) | La sigla del código se ofrece a un subproceso solo si el mapa la aceptaría (formato, no reservada, libre también entre los inactivos) y no la proponen dos subprocesos ni dos siglas uno; si no, la fila lo avisa. Deshacer dice «tiene periodos cerrados o con datos» y rechaza un lote cuyo registro no lista todas las versiones que llevan su id |
+
+### Deuda técnica (entrega complementaria de la 14A)
+
+Todos menores; son los «minor (deferred)» de la bitácora de ejecución que siguen abiertos, por módulo. Pasan también a «Deuda
+técnica conocida».
+
+- **Para la 14B:** al dar escritura a `impactos_indicadores`, `reportes_externos` o a variables con `indicador_origen_id`,
+  **añada su motivo a `condicionDeDeshacer`** (hoy un lote con una de esas filas abortaría con 23503 sin borrar nada).
+  Retirar una ficha del lote o cambiar sus datos de operación no impide deshacer; los avisos enviados quedan apuntando a filas
+  borradas.
+- **Reglas puras de los rangos:** una fila de un solo signo de Atención en «constante» se rechaza con «se cruzan» (mensaje confuso,
+  rechazar es seguro); `rangosATexto` trunca a 10 decimales los límites periódicos (R6 de la bitácora; la copia va a aprobación);
+  la condición «máximo por debajo del mínimo» está duplicada en `errorDeRegla`; `rangosEnPalabras` en modo rangos escribe
+  rangos inválidos; en «constante», una fila de un solo punto metida dentro de una fila peor se acepta y deja colores no
+  monótonos (84 atención, 84,5 crítico), y faltan tests del desempate «gana el mejor»; `rangos.ts` no tuvo fase RED propia.
+  **Residuo R3-3:** `errorDeRangos` salta las filas de tramo vacío (`|| vacio(peor.tramo)`, en el repaso de las filas que
+  nunca se ven), así que con Bien de un punto y Atención de un punto se acepta un Crítico que nunca pinta (los colores siguen
+  monótonos).
+- **Esquema y migración:** dos FK de 66 bytes se truncan (NOTICE, como en la 0008 a la 0011); el JSDoc de `CONTEXTOS_EVIDENCIA`
+  está desactualizado; el trigger de hijas solo se prueba en `indicador_variables` (no en responsables
+  ni normas) y el control negativo del trigger (`DROP TRIGGER`) solo cubre `importaciones_indicadores`, no `importacion_eventos`.
+- **Cálculo y alertas:** `estadoEnPalabras` con `cumple?` opcional al final (`alertas.ts:49`); faltan tests de `sin_analisis` al
+  cierre y de `falta: "analisis"` en tareas para un
+  Bien sin cumplir; ninguna prueba con base verifica que la lista, «Último resultado» y la matriz llevan `cumple` hasta la vista;
+  la redacción «sin alcanzar la meta» (leyenda, alertas) frente a «no alcanza la meta» (insignia) la fijó el brief.
+- **Ficha y formulario:** faltan tests de la regla vieja con `fijo` y con constante/tolerancia y de un borrador nunca aprobado que
+  manda `relativo`; con rangos, un `semaforoModo` viejo se ignora sin
+  aviso; `rangosEnJson` sin `.max()` antes de `JSON.parse`; en «constante», dejar en blanco los dos lados de Atención equivale a
+  «no usa Atención» sin marcar la casilla; cambiar la tendencia borra los números y los rangos escritos; el mensaje del servidor
+  de una fila vacía («Los valores de los rangos deben ser números») no coincide con el de la vista; el movimiento de foco no
+  tiene prueba (sin entorno DOM).
+- **Siglas del mapa:** una carrera proceso↔subproceso con la misma sigla (READ COMMITTED; un `pg_advisory_xact_lock` en
+  `exigirSiglaDeMapaLibre` la cerraría); la bitácora de `asignarSiglaASubproceso` guarda solo `{sigla}`; el test de la carrera
+  del 23505 confirma una sigla en un subproceso propio (slugs `zz-carrera-*`) y la borra en `finally`.
+- **Plantilla y vista previa:** «1.000.000» en Meta dice «no es un número» en vez de «es ambigua» y «0.500» se marca ambigua;
+  la columna Meta no va en formato texto (en un Excel en inglés «1.000» se vuelve 1 antes de llegar a la app); un código repetido
+  tres o más veces nombra solo la primera y la última fila; una fila con error en una columna obligatoria suma el «falta».
+- **Importar y deshacer:** una sigla elegida no se ata a la que propone la fila; `vistaPreviaAccion` pasa por `mutacion()` (gasta
+  el limitador); la ruta de subida carga `exceljs` por importar `autorizarArchivoDeLote`; `extra!` en `escribirFichaNueva` y sin
+  test de una falla a mitad del bucle; la comparación del Ruling 35 solo mira códigos (no un cambio de estado o de subproceso de
+  la misma fila); `normalizar` del servidor usa la copia de `formulario.ts`; si la red se corta después de guardar el archivo,
+  el reintento de `SubirPlantilla` recibe 409 y no navega al lote ya cargado; el «N fichas» de la página y del diálogo cuenta del evento (una de más si una propuesta se borró en la app); el diálogo no
+  menciona que también se borran las metas programadas, y «La importación no existe» sirve para un id forjado; el 23505 del
+  deshecho solo se prueba por mutación; la rama del 23505 del evento `importado` no tiene prueba de carrera real.
+- **Formulario de rangos (Tarea 5, más):** `JSON.parse` de los rangos corre en cada render (`FormularioFicha.tsx`).
+- **Metas programadas y cambio mayor (ola final):** `programarMeta` revisa la meta contra la versión que rige hoy; si el Bien de
+  esa versión y el del cambio mayor no se tocan (dos «entre» sin parte común, o un cambio de tendencia), ninguna meta pasa las dos
+  revisiones y el cambio no se puede enviar sin devolverlo y escribir otros rangos (no hay un «quitar la meta programada»). En la
+  aprobación en bloque, el mensaje de la meta no nombra la ficha (los demás de `validarAprobacion` sí).
+- **Importación (ola final):** el tope de 500 filas cuenta las filas con algún valor (`actualRowCount`), también las de solo
+  espacios o de celdas combinadas, que la lectura salta.
+- **Ficha importada:** si falta el evento `importado`, la versión importada se mostraría «Sin firma» (un `LEFT JOIN` y una frase
+  sin «Importó…» sería más honesto) y el control de cambios impreso dice «Importada» sin documento ni fecha.
+
 ## Qué probar y cómo (Fase 14A)
 
 Recorrido de los veinte pasos de la 14A de §24 del spec de la fase
@@ -297,7 +526,8 @@ y la pantalla de reporte solo con el teclado); lo que no salió como decía se c
      dos primeros trimestres; el semestre o el año en el 03 y el 04). El tercer trimestre, reportado: **`SGC-IND-01` 3 de 5
      = 60 % Crítico**, con causa, acción propuesta, «Requiere acción de mejora», la alerta sin leer de `gerente` y una
      **observación de `control.interno` sin respuesta**; `SGC-IND-02` 6 de 8 = 75 % **Atención** con su análisis; `SGC-IND-06`
-     en Bien con una **meta programada** de 70 (la ficha dice 80); `SGC-IND-08` **«No aplica»** con su motivo; `SGC-IND-05`
+     17 de 20 = 85 % en **Bien sin alcanzar la meta programada de 90** (la ficha dice 80 y su Bien empieza en 80), con su
+     análisis; `SGC-IND-08` **«No aplica»** con su motivo; `SGC-IND-05`
      con **tres versiones** (la 1 con meta 85; la 2, cambio mayor a 90, aprobada por `gerente` y vigente desde el cuarto
      trimestre; la 3, cambio menor de la fuente de una variable, sin aprobador). `SGC-IND-09` **retirado**.
    - **`AIN-IND-01` «Tiempo de espera en triage II»** (Urgencias, minutos, «Promedio o razón», menor es mejor, meta 30,
@@ -325,11 +555,13 @@ y la pantalla de reporte solo con el teclado); lo que no salió como decía se c
    reciba el aviso por proceso.
 2. **Crear una ficha «Porcentaje» (§24.1; `coordinadora.sgc`).** **Indicadores** → **Nuevo indicador** → **¿Cómo se
    calcula?** **Porcentaje**, en el proceso SGC (sin líder: la aprobará Gerencia), mensual, ascendente, meta 90, con sus dos
-   variables y sus fuentes. El código propuesto es `SGC-IND-10` (el 09 está ocupado por el retirado). En **Quién mide**
+   variables y sus fuentes, y sus **rangos del semáforo** (desde la entrega complementaria, una ficha nueva los escribe):
+   **Bien ≥ 90**, **Atención ≥ 63** y **Crítico < 63**. El código propuesto es `SGC-ID-001` (la forma de los códigos del
+   hospital; los `SGC-IND-NN` de la demo siguen valiendo). En **Quién mide**
    elíjase usted (con «(el líder del proceso)» y un proceso sin líder, los cargos responsables quedan vacíos: al guardar, el
    error abre **Más opciones** y sale junto a la lista de cargos, con el foco en ella); en **Más opciones**, **Inicio de
-   medición** en enero, para el paso 6. **Así quedará el semáforo**: «Bien desde 90 % · Atención de 63 a 89,9 % · Crítico
-   por debajo de 63 %». **Prueba** con 9 y 10: «Cumple: 90 % frente
+   medición** en enero, para el paso 6. **Así quedará el semáforo**: «Bien: ≥ 90 % · Atención: ≥ 63 % · Crítico: < 63 %».
+   **Prueba** con 9 y 10: «Cumple: 90 % frente
    a una meta de 90 %.» y «Bien». **Guardar borrador** → en la página de edición, **Enviar a aprobación** con su clave: la
    ventana muestra la versión, el tipo («Ficha nueva») y la huella; la ficha queda **Por aprobar**.
 3. **Fórmula libre (§24.2).** Otra ficha en SGC con **Fórmula libre** y tres variables. Escriba `max(A, B)`: debajo sale
@@ -337,7 +569,7 @@ y la pantalla de reporte solo con el teclado); lo que no salió como decía se c
    paréntesis»; una letra sin declarar, al guardar, «La fórmula usa la variable D, que no está declarada», junto a la
    fórmula y con el foco en ella. Corríjala (por ejemplo `(A + B) ÷ C × 100`, con **En palabras** debajo), pruébela y
    envíela. Cree y envíe además **una tercera** ficha cualquiera en SGC: es la que se devuelve en el paso 4.
-4. **Aprobar en bloque y devolver (§24.3; `gerente`).** **Mis tareas**: tres «Aprobar la ficha de SGC-IND-1…» y sus avisos
+4. **Aprobar en bloque y devolver (§24.3; `gerente`).** **Mis tareas**: tres «Aprobar la ficha de SGC-ID-00…» y sus avisos
    «Ficha por aprobar: …». **Indicadores** → **Por aprobar · 3**: marque dos y **Aprobar las seleccionadas** con una sola
    clave («Se aprobaron 2 fichas.»); en la tercera, **Devolver** con una nota: la página lo confirma («Se devolvió la ficha
    de … a borrador, con su nota.»). `coordinadora.sgc` recibe «Devolvieron la ficha de …» con la nota y la tarea «Ficha
@@ -378,7 +610,8 @@ y la pantalla de reporte solo con el teclado); lo que no salió como decía se c
    por una columna, enfóquela con **Tab** y tóquela en el celular: la tarjeta dice periodo, valor, estado y meta.
    **Ver:** 2 años y Todo.
 10. **Metas por periodo (§24.10; `coordinadora.sgc`).** `AIN-IND-01` → **Administrar** → **Programar metas**: diciembre
-    (aún no termina) se cambia sin más («Meta guardada.»); octubre (terminado y sin cerrar) pide **Justificación**, queda
+    (aún no termina) se cambia sin más («Meta guardada.») a una meta dentro de su Bien (≤ 30 min, por ejemplo 28; con 35,
+    «La meta debe quedar dentro del rango de Bien»); octubre (terminado y sin cerrar) pide **Justificación**, queda
     marcado «Meta ajustada después del periodo» y se recalcula (si cambia el color, avisa como una corrección).
 11. **Observaciones y lo que no ve Consulta (§24.11).** Como `control.interno`, `AIN-IND-01` → **Observaciones** → periodo
     septiembre → **Dejar la observación**. `jefe.urgencias` recibe «Observación en AIN-IND-01» y la tarea «Responder la
@@ -394,7 +627,8 @@ y la pantalla de reporte solo con el teclado); lo que no salió como decía se c
     el resumen**: cuántas se cerrarán, las reportadas, las que quedarán sin dato y quién debía medirlas, las «no aplica»,
     las que no tienen análisis, **Por proceso**, las observaciones sin respuesta (no lo impiden) y **No se cierran** (los
     históricos sin registrar del paso 6). Con la demo, después del paso 7 no queda nada sin dato ni sin análisis
-    (septiembre de AIN, la única medición por reportar, ya se reportó y se analizó): esas secciones salen en cero
+    (septiembre de AIN, la única medición por reportar, ya se reportó y se analizó; los Bien sin alcanzar la meta de
+    `SGC-IND-06` y `CNT-ID-001` traen su análisis desde la siembra): esas secciones salen en cero
     («Ninguna medición quedará sin dato.»); para ver «quién debía medirlas», mire el resumen antes del paso 7, sin
     cerrar. **Cerrar septiembre de 2026** → **Cerrar el mes**, sin clave. Como `jefe.urgencias`, septiembre ya no tiene
     **Corregir** y su pantalla de reporte dice «La medición está cerrada: pida al Administrador del SGC que la reabra.».
@@ -2590,8 +2824,12 @@ el mecanismo es de Claude), **Regulación** o **Práctica**.
 | F14A-R51 (ola final, C1) | Una norma que cita una ficha de indicador (de cualquier versión, también un borrador) o un impacto de indicador tiene historia: no se borra, se retira, con el mensaje legible «La norma tiene historia: retírela». El servidor decide si ofrece «Borrar la norma» con la misma regla (`historiaDeNorma`, que también cuenta las relaciones eliminadas), no la ficha con lo que muestra | D47 (13C); Práctica | El Admin veía el error crudo de la llave foránea en inglés |
 | F14A-R52 (ola final, I1) | Cambiar el plazo de reporte mueve la fecha límite de las mediciones sin cerrar y no históricas y limpia los avisos que ya no son ciertos: el de vencido y el escalamiento si la fecha nueva aún no llega (se avisan otra vez cuando venza), el previo si la fecha quedó más lejos que los días del aviso previo; los que siguen siendo ciertos se conservan. «Soporte obligatorio» **rige hacia adelante** (residuos de la ola final): desactivarlo recalcula todas las mediciones en curso (la que solo esperaba el soporte queda reportada y deja de ser tarea); activarlo, solo las que siguen en plazo (una reportada sin soporte vuelve a abierta para pedirlo), y lo reportado a tiempo cuyo plazo ya pasó se queda reportado, sin volverse vencido ni escalarse; tampoco lo reabre después la racha de los siguientes. La bitácora cuenta cuántas tocó | Spec 3.16, §7.3, §8.2, §10.2; Práctica | Ampliar el plazo no evitaba el aviso de vencido ni el cierre en «sin dato»; desmarcar el soporte dejaba la tarea, y marcarlo volvía vencido lo reportado a tiempo, con aviso al jefe |
 | F14A-R53 (ola final, I2) | Corregir, reabrir, reportar tarde, marcar «no aplica» o reprogramar la meta de un periodo que cambia de semáforo o de resultado recalcula el incumplimiento repetido de los periodos siguientes que su racha alcanza (los n − 1 primeros medidos), con el evento `recalculo` a nombre de quien actuó, que dice qué pasó con la marca; el historial lo cuenta como «Se recalculó por la racha de periodos anteriores». Los cerrados no cambian (se reabren a mano); cada siguiente conserva la versión con que se calculó, la falta de un soporte que se volvió obligatorio después no la reabre, y sus avisos siguen el último nivel alertado | Spec §10.3; Práctica | Una marca «Requiere acción de mejora» que ya no era cierta, o una que faltaba |
+| Pedido del usuario (2026-11-13) | La matriz del año filtra también por subproceso (año, proceso, subproceso y clasificación): el de la versión aprobada vigente del indicador, como la lista; rige en pantalla, al imprimir y en el Excel | Práctica |
 
 ## Deuda técnica conocida
+
+**De la entrega complementaria de la 14A** (rangos, códigos e importación; menores, por módulo): está en su sección, «Deuda técnica
+(entrega complementaria de la 14A)», con la nota para la 14B de `condicionDeDeshacer`.
 
 **De la Fase 14A** (todos menores; son los «minor (deferred)» de la bitácora de ejecución que siguen abiertos y lo que la
 revisión final de toda la rama (2026-11-12) adjudicó como deuda, agrupados por módulo; los que una tarea posterior o la ola

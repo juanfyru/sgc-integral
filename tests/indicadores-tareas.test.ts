@@ -421,6 +421,9 @@ describe("agrupación", () => {
 });
 
 /** Una ficha operativa del proceso, trimestral desde 2026-T4, ya probada con valores de ejemplo. */
+/** Los rangos de la ficha de prueba (meta 90, ascendente): lo que antes era «relativo» con umbral 70 %. */
+const RANGOS_90 = JSON.stringify({ bien: [{ signo: ">=", valor: "90" }], atencion: [{ signo: ">=", valor: "63" }], critico: [{ signo: "<", valor: "63" }] });
+
 async function datosFicha(tx: TransactionSql, procesoId: number): Promise<DatosFicha> {
   const [t] = await tx`SELECT id FROM tipos_indicador WHERE nombre = 'Eficacia'`;
   const [op] = await tx`SELECT id FROM clasificaciones_indicador WHERE nombre = 'Operativo'`;
@@ -443,8 +446,8 @@ async function datosFicha(tx: TransactionSql, procesoId: number): Promise<DatosF
     periodicidad: "trimestral",
     tendencia: "ascendente",
     meta: "90",
-    semaforoModo: "relativo",
-    umbralAtencionPct: 70,
+    semaforoModo: "rangos",
+    rangos: RANGOS_90,
     cargosMedir: [Number(c.id)],
     cargosAnalizar: [Number(c.id)],
     normaIds: [],

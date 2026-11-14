@@ -3,7 +3,7 @@
  * Excel de un indicador, y lo que comparten con la pantalla (los nombres de la forma, la tendencia y la consolidación, las
  * marcas de una fila, las columnas de las variables). Funciones puras: sin Node ni BD.
  */
-import type { FichaLeida, FirmaDeFicha, OperacionLeida } from "@/db/consultas/indicadores/aprobacion";
+import type { FichaLeida, FirmaDeFicha, ImportadaDe, OperacionLeida } from "@/db/consultas/indicadores/aprobacion";
 import type { FilaDelAnio } from "@/db/consultas/indicadores/lectura";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { cuenta } from "@/lib/plural";
@@ -13,9 +13,10 @@ import { ETIQUETA_ESTADO } from "./estados";
 import type { ContenidoFicha } from "./ficha";
 import { enPalabras } from "./formula/formas";
 import { fraccion } from "./formula/fraccion";
+import { rangosDeTexto } from "./rangos";
 import { numeroExacto, rangosEnPalabras, type Regla } from "./semaforo";
 import { textoMeta, type Unidad } from "./textos";
-import { ETIQUETA_PERIODICIDAD, ETIQUETA_SEMAFORO, type ModoSemaforo, type Periodicidad, type Semaforo, type Tendencia } from "./tipos";
+import { ETIQUETA_PERIODICIDAD, ETIQUETA_SEMAFORO, NO_ALCANZA_LA_META, sinAlcanzarLaMeta, type ModoSemaforo, type Periodicidad, type Semaforo, type Tendencia } from "./tipos";
 
 export const FORMA: Record<string, string> = {
   porcentaje: "Porcentaje",
@@ -44,6 +45,7 @@ export function reglaDeFicha(c: ContenidoFicha): Regla {
     umbralPct: c.umbralAtencionPct,
     limite: fr(c.limiteCritico),
     tolerancia: fr(c.tolerancia),
+    rangos: c.rangos ? rangosDeTexto(c.rangos) : null,
   };
 }
 
@@ -111,6 +113,8 @@ export function camposDeFicha(ficha: FichaLeida): { identificacion: CampoDeTexto
     ...campo("Requisito", c.requisito ?? NINGUNO),
     ...campo("Tipo", c.tipoNombre ?? NINGUNO),
     ...campo("Clasificación", c.clasificacionNombre ?? NINGUNO),
+    ...campo("Nivel", c.nivel),
+    ...campo("Riesgo asociado", c.riesgoAsociado),
     ...campo("Objetivo que mide", c.objetivoNombre ?? NINGUNO),
     ...campo("Procedimiento", ficha.procedimiento ? `${ficha.procedimiento.codigo} · ${ficha.procedimiento.titulo}` : null),
     ...campo("Punto de control", c.puntoControl),
@@ -177,6 +181,10 @@ export const fechaYHora = (fecha: Date): string => `${textoFecha(fecha, zonaHora
 /** La fecha de una firma: `fechaYHora`. */
 export const fechaDeFirma = fechaYHora;
 
+/** La frase de una ficha importada como «Aprobado» (spec 14A §5.7): va donde irían «Elaboró» y «Revisó y aprobó». */
+export const fraseDeImportada = (i: ImportadaDe): string =>
+  `Aprobada antes de la implementación de SGC Integral: ${i.documento}, aprobó ${i.aprobadoPor} el ${textoFecha(i.fecha, zonaHoraria())}. Importó ${i.importadoPor} el ${fechaYHora(i.importadoEn)}.`;
+
 /** «Elaboró» y «Revisó y aprobó» de una versión aprobada (spec §7.8.3); un cambio menor no requiere aprobación. */
 export function firmasDeFicha(ficha: FichaLeida): [FirmaEnTexto, FirmaEnTexto] {
   return [
@@ -211,14 +219,14 @@ export function marcasDeFila(f: ConMarcas, periodosSinCumplir: number): string[]
 }
 
 /** El estado escrito de un resultado, nunca solo el color; vacío en lo que no ha llegado. */
-export function semaforoEnTexto(f: Pick<FilaDelAnio, "estado" | "semaforo" | "noAplica" | "resultado">): string {
+export function semaforoEnTexto(f: Pick<FilaDelAnio, "estado" | "semaforo" | "noAplica" | "resultado" | "cumple">): string {
   if (f.estado === "por_venir") return "";
-  return semaforoDeResultado(f.semaforo, f.noAplica, f.resultado !== null);
+  return semaforoDeResultado(f.semaforo, f.noAplica, f.resultado !== null, f.cumple);
 }
 
 /** «Bien», «Atención», «Crítico»; sin semáforo, «No aplica», «Sin meta» (hay resultado) o «Sin dato». */
-export function semaforoDeResultado(semaforo: Semaforo | null, noAplica: boolean, conResultado: boolean): string {
-  if (semaforo) return ETIQUETA_SEMAFORO[semaforo];
+export function semaforoDeResultado(semaforo: Semaforo | null, noAplica: boolean, conResultado: boolean, cumple: boolean | null = null): string {
+  if (semaforo) return sinAlcanzarLaMeta(semaforo, cumple) ? `${ETIQUETA_SEMAFORO[semaforo]} · ${NO_ALCANZA_LA_META}` : ETIQUETA_SEMAFORO[semaforo];
   return noAplica ? "No aplica" : conResultado ? "Sin meta" : "Sin dato";
 }
 

@@ -27,21 +27,42 @@ export function estadoVisible(
   return { estado: "por_reportar", vencida };
 }
 
-/** Atención pide un análisis; Crítico, o Atención repetida, pide dos partes (causa y acción). Históricos y «no aplica», ninguno. */
+/**
+ * Un periodo que no cumple la meta pide un análisis, aunque su color sea Bien (spec 14A §3.1); Crítico, o un
+ * incumplimiento repetido, pide dos partes (causa y acción). Históricos, «no aplica» y sin semáforo, ninguno.
+ */
 export function analisisExigido(m: {
   semaforo: Semaforo | null;
+  cumple: boolean | null;
   repetido: boolean;
   historica: boolean;
   noAplica: boolean;
 }): AnalisisExigido {
-  if (m.historica || m.noAplica || m.semaforo === null || m.semaforo === "bien") return "ninguno";
+  if (m.historica || m.noAplica || m.semaforo === null || m.cumple !== false) return "ninguno";
   return m.semaforo === "critico" || m.repetido ? "dos_partes" : "simple";
 }
 
-/** `anteriores` va del más reciente al más antiguo, ya sin «no aplica», «sin dato» ni históricos. */
-export function esRepetido(anteriores: (Semaforo | null)[], actual: Semaforo | null, n: number): boolean {
-  if (actual === null || actual === "bien" || anteriores.length < n - 1) return false;
-  return anteriores.slice(0, n - 1).every((s) => s !== null && s !== "bien");
+/** `anteriores` (si cumplieron) va del más reciente al más antiguo, ya sin «no aplica», «sin dato» ni históricos. */
+export function esRepetido(anteriores: (boolean | null)[], actual: boolean | null, n: number): boolean {
+  if (actual !== false || anteriores.length < n - 1) return false;
+  return anteriores.slice(0, n - 1).every((c) => c === false);
+}
+
+/**
+ * `cumpleDeFila` sobre una fila de `mediciones` tal como la devuelve la base. Solo un `cumple` nulo (una fila anterior a la
+ * 0012) se deriva del semáforo; que la columna falte es un error de la consulta, no una fila vieja.
+ */
+export function cumpleDeMedicion(m: Record<string, unknown>): boolean | null {
+  if (m.cumple === undefined) throw new Error("La consulta de la medición no trae la columna `cumple`");
+  return cumpleDeFila({ cumple: m.cumple as boolean | null, semaforo: (m.semaforo as Semaforo | null | undefined) ?? null });
+}
+
+/**
+ * Si una medición cumplió la meta. Las filas escritas antes de la migración 0012 no tienen `cumple`: para ellas Bien es
+ * cumplir (su regla no tenía otra forma de no cumplir en verde).
+ */
+export function cumpleDeFila(f: { cumple: boolean | null; semaforo: Semaforo | null }): boolean | null {
+  return f.cumple ?? (f.semaforo === null ? null : f.semaforo === "bien");
 }
 
 /** Lo mínimo que lleva cada parte exigida del análisis (spec §8.4), sin contar los espacios de los extremos. */

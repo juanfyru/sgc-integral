@@ -1,3 +1,4 @@
+import { InsigniaSemaforo } from "@/componentes/indicadores/InsigniaSemaforo";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { enPalabras } from "@/lib/indicadores/formula/formas";
 import {
@@ -10,7 +11,7 @@ import {
   type VariableDeCaptura,
 } from "@/lib/indicadores/reporte";
 import { fraseDeResultado, type Unidad } from "@/lib/indicadores/textos";
-import { ETIQUETA_SEMAFORO, type Semaforo } from "@/lib/indicadores/tipos";
+import type { Semaforo } from "@/lib/indicadores/tipos";
 
 const AVISO = "rounded-md border border-l-4 border-border bg-card px-3 py-2 text-sm";
 
@@ -63,14 +64,14 @@ export function ResultadoEnVivo({
       <p className={`${AVISO} border-l-estado-atencion`}>{vivo.sinResultado === "division_por_cero" ? DIVISION_POR_CERO : CIFRA_FUERA_DE_RANGO}</p>
     );
   } else {
-    const frase = fraseDeResultado({ resultado: vivo.resultado, semaforo: vivo.semaforo, noAplica: false, motivo: null }, reglaDeTexto(regla), unidad);
+    const frase = fraseDeResultado({ resultado: vivo.resultado, semaforo: vivo.semaforo, cumple: vivo.cumple, noAplica: false, motivo: null }, reglaDeTexto(regla), unidad);
     acento = ACENTO[vivo.semaforo ?? "ninguno"];
     contenido = (
       <>
         <p className="flex flex-wrap items-center gap-3">
           <span className="text-3xl font-bold tabular-nums">{vivo.texto}</span>
           {vivo.semaforo ? (
-            <Insignia variante={vivo.semaforo}>{ETIQUETA_SEMAFORO[vivo.semaforo]}</Insignia>
+            <InsigniaSemaforo semaforo={vivo.semaforo} cumple={vivo.cumple} />
           ) : (
             <Insignia variante="sin-dato">Sin meta</Insignia>
           )}
@@ -83,7 +84,7 @@ export function ResultadoEnVivo({
             El resultado queda en crítico: el análisis es obligatorio, en dos partes, y la medición quedará marcada «Requiere acción de
             mejora».
           </p>
-        ) : vivo.semaforo === "atencion" ? (
+        ) : vivo.cumple === false ? (
           <p className={`${AVISO} border-l-estado-atencion`}>No cumple: después de reportar, el análisis es obligatorio.</p>
         ) : null}
       </>

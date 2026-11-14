@@ -107,7 +107,7 @@ export function VistaResultados(d: DatosDeResultados) {
                   ))}
                 </nav>
               </div>
-              <LeyendaDeGrafica conMeta={meta !== undefined} conLimite={r.grafica.limite !== null} />
+              <LeyendaDeGrafica conMeta={meta !== undefined} conLimite={r.grafica.limite !== null} conAsterisco={r.serie.some((p) => p.sinAlcanzar)} />
               <GraficoTubos
                 serie={r.serie}
                 titulo={titulo}
@@ -129,6 +129,7 @@ export function VistaResultados(d: DatosDeResultados) {
                   valor={r.acumulado.valor}
                   texto={r.acumulado.texto}
                   estado={r.acumulado.semaforo ?? "sin-meta"}
+                  cumple={r.acumulado.cumple}
                   meta={r.acumulado.meta ?? undefined}
                   unidad={r.grafica.unidad}
                 />

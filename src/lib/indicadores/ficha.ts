@@ -11,6 +11,7 @@
  */
 import { createHash } from "node:crypto";
 import { aTexto, fraccion } from "./formula/fraccion";
+import type { RangosEnTexto } from "./rangos";
 
 export type VariableDeFicha = {
   letra: string;
@@ -68,6 +69,10 @@ export type ContenidoFicha = {
   periodicidadExterna: string | null;
   plazoExternoDias: number | null;
   dimensionId: number | null;
+  /** Los rangos del semáforo escritos por estado; solo con `semaforoModo` «rangos». */
+  rangos: RangosEnTexto | null;
+  nivel: string | null;
+  riesgoAsociado: string | null;
   variables: VariableDeFicha[];
   responsables: { cargoNombre: string; funcion: string }[];
   normas: { normaNombre: string }[];
@@ -98,6 +103,7 @@ export const CAMPOS_MAYORES: readonly Campo[] = [
   "limiteCritico",
   "tolerancia",
   "dimensionId",
+  "rangos",
 ];
 
 const ETIQUETAS: Record<Campo, string> = {
@@ -140,6 +146,9 @@ const ETIQUETAS: Record<Campo, string> = {
   periodicidadExterna: "Periodicidad externa",
   plazoExternoDias: "Plazo externo",
   dimensionId: "Dimensión",
+  rangos: "Rangos del semáforo",
+  nivel: "Nivel",
+  riesgoAsociado: "Riesgo asociado",
 };
 
 /** El nombre firmado que depende de un id de catálogo: si el id cambió, el cambio ya se dijo con el id. */
@@ -159,6 +168,9 @@ const NUMEROS: ReadonlySet<string> = new Set([
   "lineaBaseValor",
   "capturaMin",
   "capturaMax",
+  // Los números de los rangos («90» y «90.0» son el mismo).
+  "valor",
+  "hasta",
 ]);
 
 /** Lo que las variables dicen de su estructura (cuántas, de dónde sale cada una y cómo se junta): cambio mayor. */
@@ -243,5 +255,7 @@ export function huellaDeFicha(c: ContenidoFicha): string {
   const firmado: Record<string, unknown> = { ...conOrden(c) };
   delete firmado.clasificacionId;
   delete firmado.unidadId;
+  // Una versión anterior a la 14A no los tiene: su huella no puede cambiar.
+  for (const nuevo of ["rangos", "nivel", "riesgoAsociado"] as const) if (firmado[nuevo] == null) delete firmado[nuevo];
   return createHash("sha256").update(json(firmado)).digest("hex");
 }

@@ -24,7 +24,7 @@ import { avisarA } from "@/db/consultas/avisos-vencimiento";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { puedeMedir, puedeVerIndicador, puedeVerSoportes, responsablesDeMedir, type SujetoVisibilidad } from "@/lib/alcance";
 import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
-import { analisisCompleto, analisisExigido } from "@/lib/indicadores/estados";
+import { analisisCompleto, analisisExigido, cumpleDeMedicion } from "@/lib/indicadores/estados";
 import { JUSTIFICACION_MAXIMA, JUSTIFICACION_MINIMA, mesPorOmisionDe, PATRON_MES } from "@/lib/indicadores/cierre";
 import { historialDeCorreccion, type EntradaDeHistorial, type EventoDeMedicion } from "@/lib/indicadores/historial";
 import { versionQueRigeEntre } from "@/lib/indicadores/periodos";
@@ -161,6 +161,7 @@ function grupoDe(m: Record<string, unknown>): Grupo {
   if (m.resultado_exacto === null || m.resultado_exacto === undefined) return "sin_dato";
   const exigido = analisisExigido({
     semaforo: (m.semaforo as Semaforo | null) ?? null,
+    cumple: cumpleDeMedicion(m),
     repetido: m.incumplimiento_repetido === true,
     historica: m.historica === true,
     noAplica: false,
@@ -188,7 +189,7 @@ async function clasificar(sql: Cliente, hasta: Date, ahora: Date, bloquear: bool
     if (bloqueados.length === 0) return salida;
   }
   const filas = await sql`SELECT m.id, m.indicador_id, m.periodo, m.desde, m.estado, m.historica, m.no_aplica, m.reportada_en, m.vence_en,
-      m.resultado_exacto, m.semaforo, m.incumplimiento_repetido, m.analisis, m.causa, m.accion_propuesta,
+      m.resultado_exacto, m.semaforo, m.cumple, m.incumplimiento_repetido, m.analisis, m.causa, m.accion_propuesta,
       i.codigo, p.id AS proceso_id, p.nombre AS proceso
     FROM mediciones m JOIN indicadores i ON i.id = m.indicador_id JOIN procesos p ON p.id = i.proceso_id
     WHERE m.hasta <= ${hasta} AND m.estado <> 'cerrada'

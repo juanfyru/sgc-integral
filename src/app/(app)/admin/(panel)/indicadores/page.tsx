@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { FormularioParametros } from "@/componentes/indicadores/admin/FormularioParametros";
 import { TablaMaestro } from "@/componentes/indicadores/admin/TablaMaestro";
+import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { listarMaestro, obtenerParametros } from "@/db/consultas/indicadores/maestros";
 import { exigirPermiso } from "@/lib/paginas";
@@ -18,7 +20,14 @@ export default async function PaginaConfiguracionIndicadores() {
   ]);
   return (
     <div className="flex flex-col gap-8">
-      <EncabezadoPagina titulo="Configuración de indicadores" />
+      <EncabezadoPagina
+        titulo="Configuración de indicadores"
+        acciones={
+          <Link href="/admin/indicadores/importar" className={claseBoton("secundario")}>
+            Importar indicadores
+          </Link>
+        }
+      />
       <TablaMaestro
         maestro="tipos"
         filas={tipos}

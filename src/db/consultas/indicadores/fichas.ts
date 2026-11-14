@@ -15,13 +15,14 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { filtroAcceso, type SujetoVisibilidad } from "@/lib/alcance";
-import { EsquemaFicha, type DatosFicha } from "@/lib/esquemas/indicadores";
+import { EsquemaFicha, EsquemaFichaImportada, type DatosFicha } from "@/lib/esquemas/indicadores";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { tipoDeCambio, type ContenidoFicha } from "@/lib/indicadores/ficha";
 import { analizar } from "@/lib/indicadores/formula/analizar";
 import { formulaDeForma } from "@/lib/indicadores/formula/formas";
 import { comparar, fraccion } from "@/lib/indicadores/formula/fraccion";
 import { clavesDelAnio, periodicidadDe, periodoQueContiene } from "@/lib/indicadores/periodos";
+import { rangosATexto, rangosDeTexto, type RangosEnTexto } from "@/lib/indicadores/rangos";
 import { errorDeRegla } from "@/lib/indicadores/semaforo";
 import {
   ErrorIndicador,
@@ -62,26 +63,54 @@ const esCodigoRepetido = (err: unknown) =>
 // El código
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** El siguiente número por proceso: 1 + el más alto ya usado con `SIGLA-IND-`, en cualquier estado (no se reusan). */
-export function siguientes(sql: Cliente, procesoId?: number) {
-  return sql`
-    SELECT p.id, p.sigla, coalesce(max(substr(i.codigo, length(p.sigla) + 6)::int), 0) + 1 AS siguiente
-    FROM procesos p
+/** `1 +` el número más alto ya usado con `SIGLA-ID-`, en cualquier estado (no se reusan). Los `-IND-` antiguos no cuentan. */
+const SIGUIENTE = (sql: Cliente, tabla: "procesos" | "subprocesos") => sql`
+    SELECT t.id, t.sigla, coalesce(max(substr(i.codigo, length(t.sigla) + 5)::int), 0) + 1 AS siguiente
+    FROM ${sql(tabla)} t
     LEFT JOIN indicadores i
-      ON lower(left(i.codigo, length(p.sigla) + 5)) = lower(p.sigla || '-IND-')
-     AND substr(i.codigo, length(p.sigla) + 6) ~ '^[0-9]{1,6}$'
-    ${procesoId === undefined ? sql`` : sql`WHERE p.id = ${procesoId}`}
-    GROUP BY p.id, p.sigla`;
+      ON lower(left(i.codigo, length(t.sigla) + 4)) = lower(t.sigla || '-ID-')
+     AND substr(i.codigo, length(t.sigla) + 5) ~ '^[0-9]{1,6}$'`;
+
+/** El siguiente número por proceso (`SIGLA-ID-NNN`). */
+export function siguientes(sql: Cliente, procesoId?: number) {
+  return sql`${SIGUIENTE(sql, "procesos")}
+    ${procesoId === undefined ? sql`` : sql`WHERE t.id = ${procesoId}`}
+    GROUP BY t.id, t.sigla`;
 }
 
-export const codigoCon = (sigla: string, n: number) => `${sigla}-IND-${String(n).padStart(2, "0")}`;
+/** El siguiente número por subproceso con sigla. */
+export function siguientesDeSubprocesos(sql: Cliente, subprocesoId?: number) {
+  return sql`${SIGUIENTE(sql, "subprocesos")}
+    WHERE t.sigla IS NOT NULL ${subprocesoId === undefined ? sql`` : sql`AND t.id = ${subprocesoId}`}
+    GROUP BY t.id, t.sigla`;
+}
 
-/** `SIGLA-IND-NN`, con dos cifras al menos (spec §7.1). */
-export async function proponerCodigo(procesoId: number, opciones?: { sql?: Cliente }): Promise<string> {
+export const codigoCon = (sigla: string, n: number) => `${sigla}-ID-${String(n).padStart(3, "0")}`;
+
+/** La sigla que da el código: la del subproceso si tiene, si no la del proceso. */
+export async function proponerCodigo(
+  procesoId: number,
+  subprocesoId?: number | null,
+  opciones?: { sql?: Cliente },
+): Promise<string> {
   const sql = opciones?.sql ?? obtenerSql();
+  if (subprocesoId !== undefined && subprocesoId !== null) {
+    const [delSub] = await siguientesDeSubprocesos(sql, subprocesoId);
+    if (delSub) return codigoCon(delSub.sigla as string, Number(delSub.siguiente));
+  }
   const [fila] = await siguientes(sql, procesoId);
   if (!fila) throw new ErrorIndicador("El proceso no existe");
   return codigoCon(fila.sigla as string, Number(fila.siguiente));
+}
+
+/** La sigla efectiva de una elección de proceso y subproceso (para saber si la propuesta cambia). */
+async function siglaEfectiva(tx: Cliente, procesoId: number, subprocesoId: number | null): Promise<string> {
+  if (subprocesoId !== null) {
+    const [s] = await tx`SELECT sigla FROM subprocesos WHERE id = ${subprocesoId}`;
+    if (s?.sigla) return s.sigla as string;
+  }
+  const [p] = await tx`SELECT sigla FROM procesos WHERE id = ${procesoId}`;
+  return p.sigla as string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -92,26 +121,51 @@ export async function proponerCodigo(procesoId: number, opciones?: { sql?: Clien
 type Semaforo = {
   meta: string | null;
   metaMax: string | null;
-  semaforoModo: "relativo" | "fijo" | null;
+  semaforoModo: "relativo" | "fijo" | "rangos" | null;
   umbralAtencionPct: number | null;
   limiteCritico: string | null;
   tolerancia: string | null;
+  /** Solo con el modo «rangos»; la columna `rangos` de la versión. */
+  rangos: RangosEnTexto | null;
+};
+
+const SIN_RANGOS = "Escriba los rangos del semáforo";
+const CAMBIO_MAYOR_SIN_RANGOS = "Un cambio mayor escribe los rangos del semáforo: complete Bien, Atención y Crítico";
+
+/**
+ * Los datos de una ficha nueva: los del formulario o los de una fila importada, cuyo objetivo puede faltar (spec 14A
+ * §5.2; Ruling 2) y cuyos cargos responsables también (la plantilla no los exige).
+ */
+export type DatosFichaNueva = Omit<DatosFicha, "proposito"> & { proposito: string | null };
+
+/**
+ * Una ficha que crea una importación (spec 14A §5.6 y §5.7). Con `aprobacionPrevia`, la versión es la que la importación
+ * aprueba y guarda su lote y los datos de esa aprobación; sin ella (una fila «Propuesto», Ruling 32), es un borrador
+ * normal, sin lote: el lote la recuerda por el detalle de su evento `importado`.
+ */
+export type ExtraImportacion = {
+  importacionId: number;
+  aprobacionPrevia: { documento: string; aprobadoPor: string; fecha: string } | null;
 };
 
 /** La ficha que pasó las reglas que no consultan la BD. */
-type FichaRevisada = { d: DatosFicha; formula: string; factor: number | null; semaforo: Semaforo };
+type FichaRevisada = { d: DatosFichaNueva; formula: string; factor: number | null; semaforo: Semaforo };
 
-function leer(d: DatosFicha): DatosFicha {
-  const r = EsquemaFicha.safeParse(d);
+function leer(d: DatosFichaNueva, importada = false): DatosFichaNueva {
+  const r = (importada ? EsquemaFichaImportada : EsquemaFicha).safeParse(d);
   if (!r.success) throw new ErrorIndicador(r.error.issues[0].message);
   return r.data;
 }
 
 const fr = (v: string | null | undefined) => (v === null || v === undefined ? null : fraccion(v));
 
-/** Fórmula, variables declaradas contra usadas y regla del semáforo. */
-function revisar(entrada: DatosFicha): FichaRevisada {
-  const d = leer(entrada);
+/**
+ * Fórmula, variables declaradas contra usadas y regla del semáforo. Una meta lleva siempre sus rangos (spec 14A §3.5);
+ * solo un cambio sobre una ficha que aún tiene la regla vieja puede conservarla (`reglaVieja`), y `guardarBorrador` vuelve
+ * a exigir los rangos si el cambio resulta mayor.
+ */
+function revisar(entrada: DatosFichaNueva, reglaVieja = false, importada = false): FichaRevisada {
+  const d = leer(entrada, importada);
   let formula: string;
   let factor: number | null = null;
   if (d.forma === "libre") {
@@ -139,14 +193,19 @@ function revisar(entrada: DatosFicha): FichaRevisada {
 
   const conMeta = d.meta !== undefined;
   const constante = d.tendencia === "constante";
-  const modo = conMeta && !constante ? (d.semaforoModo ?? null) : null;
+  const conRangos = conMeta && d.rangos !== undefined;
+  if (conMeta && !conRangos && (!reglaVieja || d.semaforoModo === "rangos")) throw new ErrorIndicador(SIN_RANGOS);
+  const rangos = conRangos ? rangosDeTexto(JSON.parse(d.rangos!) as RangosEnTexto) : null;
+  if (conRangos && rangos === null) throw new ErrorIndicador("Complete los valores de cada rango");
+  const modo = conRangos ? "rangos" : conMeta && !constante ? ((d.semaforoModo as "relativo" | "fijo" | undefined) ?? null) : null;
   const semaforo: Semaforo = {
     meta: d.meta ?? null,
     metaMax: conMeta && constante ? (d.metaMax ?? null) : null,
     semaforoModo: modo,
     umbralAtencionPct: modo === "relativo" ? (d.umbralAtencionPct ?? null) : null,
     limiteCritico: modo === "fijo" ? (d.limiteCritico ?? null) : null,
-    tolerancia: conMeta && constante ? (d.tolerancia ?? null) : null,
+    tolerancia: conMeta && constante && !conRangos ? (d.tolerancia ?? null) : null,
+    rangos: conRangos ? rangosATexto(rangos!) : null,
   };
   const error = errorDeRegla({
     tendencia: d.tendencia,
@@ -156,6 +215,7 @@ function revisar(entrada: DatosFicha): FichaRevisada {
     umbralPct: semaforo.umbralAtencionPct,
     limite: fr(semaforo.limiteCritico),
     tolerancia: fr(semaforo.tolerancia),
+    rangos,
   });
   if (error) throw new ErrorIndicador(error);
   const [rMin, rMax] = [fr(d.resultadoMin), fr(d.resultadoMax)];
@@ -164,7 +224,7 @@ function revisar(entrada: DatosFicha): FichaRevisada {
 }
 
 /** Los datos de operación que se van a escribir (solo con el indicador en borrador): el inicio, de la periodicidad. */
-function revisarOperacion(d: DatosFicha): void {
+function revisarOperacion(d: DatosFichaNueva): void {
   if (periodicidadDe(d.inicioMedicion) !== d.periodicidad) {
     throw new ErrorIndicador(`El inicio de medición debe ser un periodo ${ADJETIVO[d.periodicidad]}`);
   }
@@ -209,9 +269,16 @@ async function exigirFila(
 
 /**
  * Catálogos, norma exigida, subproceso del proceso, procedimiento, cargos y, si se van a escribir los datos de operación
- * (`conOperacion`), personas designadas activas.
+ * (`conOperacion`), personas designadas activas. Sin `exigirNorma` (una ficha importada, spec 14A §5.6), una clasificación
+ * que exige norma no la exige todavía: la exigencia rige en su siguiente cambio.
  */
-async function revisarContraLaBase(tx: TransactionSql, f: FichaRevisada, actual: Actual | null, conOperacion: boolean): Promise<Nombres> {
+async function revisarContraLaBase(
+  tx: TransactionSql,
+  f: FichaRevisada,
+  actual: Actual | null,
+  conOperacion: boolean,
+  exigirNorma = true,
+): Promise<Nombres> {
   const { d } = f;
   const proceso = await exigirFila(
     tx`SELECT nombre, activo FROM procesos WHERE id = ${d.procesoId} FOR KEY SHARE`,
@@ -258,7 +325,7 @@ async function revisarContraLaBase(tx: TransactionSql, f: FichaRevisada, actual:
       throw new ErrorIndicador("Solo se pueden citar normas vigentes o modificadas");
     }
   }
-  if (clasificacion.exige_norma === true && d.normaIds.length === 0) {
+  if (exigirNorma && clasificacion.exige_norma === true && d.normaIds.length === 0) {
     throw new ErrorIndicador("Un indicador regulatorio debe citar al menos una norma");
   }
 
@@ -280,7 +347,8 @@ async function revisarContraLaBase(tx: TransactionSql, f: FichaRevisada, actual:
 
   const cargoIds = [...new Set([...d.cargosMedir, ...d.cargosAnalizar])];
   const cargos = new Map<number, string>();
-  const filasCargo = await tx`SELECT id, nombre, activo FROM cargos WHERE id IN ${tx(cargoIds)} FOR KEY SHARE`;
+  // Una ficha importada puede no traer cargo (spec 14A §5.6): `IN ()` no es SQL.
+  const filasCargo = cargoIds.length === 0 ? [] : await tx`SELECT id, nombre, activo FROM cargos WHERE id IN ${tx(cargoIds)} FOR KEY SHARE`;
   for (const c of filasCargo) {
     if (c.activo || actual?.cargoIds.includes(Number(c.id))) cargos.set(Number(c.id), c.nombre as string);
   }
@@ -342,6 +410,9 @@ function columnasDeContenido(tx: TransactionSql, f: FichaRevisada, n: Nombres) {
     umbral_atencion_pct: semaforo.umbralAtencionPct,
     limite_critico: semaforo.limiteCritico,
     tolerancia: semaforo.tolerancia,
+    rangos: semaforo.rangos ? tx.json(semaforo.rangos as never) : null,
+    nivel: d.nivel ?? null,
+    riesgo_asociado: d.riesgoAsociado ?? null,
     resultado_min: d.resultadoMin ?? null,
     resultado_max: d.resultadoMax ?? null,
     linea_base_valor: d.lineaBaseValor ?? null,
@@ -357,7 +428,7 @@ function columnasDeContenido(tx: TransactionSql, f: FichaRevisada, n: Nombres) {
 }
 
 /** Los valores de ejemplo de las variables declaradas; sin todos, no hay prueba. */
-function pruebaDe(tx: TransactionSql, d: DatosFicha) {
+function pruebaDe(tx: TransactionSql, d: DatosFichaNueva) {
   const valores = d.prueba?.valores ?? {};
   const letras = d.variables.map((v) => v.letra);
   if (!letras.every((l) => Object.hasOwn(valores, l))) return null;
@@ -389,7 +460,7 @@ async function borrarHijos(tx: TransactionSql, versionId: number): Promise<void>
 }
 
 /** «mide» y «analiza»; «seguimiento» y los cambios posteriores son de la designación (Tarea 8). */
-async function escribirDesignados(tx: TransactionSql, indicadorId: number, d: DatosFicha, usuarioId: number, ahora: Date): Promise<void> {
+async function escribirDesignados(tx: TransactionSql, indicadorId: number, d: DatosFichaNueva, usuarioId: number, ahora: Date): Promise<void> {
   await tx`DELETE FROM indicador_designados WHERE indicador_id = ${indicadorId} AND funcion IN ('mide', 'analiza')`;
   for (const [funcion, ids] of [["mide", d.mide], ["analiza", d.analiza]] as const) {
     for (const persona of ids) {
@@ -411,14 +482,93 @@ async function designadosDe(tx: TransactionSql, indicadorId: number): Promise<De
   return { mide: de("mide"), analiza: de("analiza") };
 }
 
-const designadosDeFicha = (d: DatosFicha): Designados => ({ mide: ascendente(d.mide), analiza: ascendente(d.analiza) });
+const designadosDeFicha = (d: DatosFichaNueva): Designados => ({ mide: ascendente(d.mide), analiza: ascendente(d.analiza) });
 
-const operacionDe = (d: DatosFicha): DatosOperacion => ({
+const operacionDe = (d: DatosFichaNueva): DatosOperacion => ({
   plazoReporteDias: d.plazoReporteDias,
   inicioMedicion: d.inicioMedicion,
   soporteObligatorio: d.soporteObligatorio,
   nivelAcceso: d.nivelAcceso,
 });
+
+/**
+ * Lo que una ficha importada no pasaría al crearse (spec 14A §5.3): las reglas de la ficha que no consultan la base, con
+ * la relajación de la importación. `null` si la ficha las cumple; si no, el mensaje, que la vista previa muestra como
+ * problema de su fila. Puro.
+ */
+export function errorDeFichaImportada(d: DatosFichaNueva): string | null {
+  try {
+    revisarOperacion(revisar(d, false, true).d);
+    return null;
+  } catch (err) {
+    if (err instanceof ErrorIndicador) return err.message;
+    throw err;
+  }
+}
+
+/**
+ * Escribe, dentro de `tx`, el indicador en `borrador` y su versión 1 con sus filas hijas y sus designados (spec §7.6.1).
+ * Sin código, propone el del proceso. Con `extra` (una fila importada, spec 14A §5.6 y §5.7), el objetivo y los cargos
+ * pueden faltar, una clasificación que exige norma no la exige y la bitácora la escribe el lote (una entrada por
+ * importación, no una por ficha); la versión guarda su lote y su aprobación previa solo si la trae (`ExtraImportacion`).
+ */
+export async function escribirFichaNueva(
+  tx: TransactionSql,
+  sesion: SesionFlujo,
+  d: DatosFichaNueva,
+  extra: ExtraImportacion | null,
+  ahora: Date,
+): Promise<{ indicadorId: number; versionId: number; codigo: string }> {
+  const f = revisar(d, false, extra !== null);
+  revisarOperacion(f.d);
+  const nombres = await revisarContraLaBase(tx, f, null, true, extra === null);
+  const codigo = f.d.codigo ?? (await proponerCodigo(f.d.procesoId, f.d.subprocesoId ?? null, { sql: tx }));
+  const o = operacionDe(f.d);
+  let i;
+  try {
+    [i] = await tx`INSERT INTO indicadores
+        (codigo, proceso_id, estado, nivel_acceso, plazo_reporte_dias, inicio_medicion, soporte_obligatorio, creado_por, creado_en)
+      VALUES (${codigo}, ${f.d.procesoId}, 'borrador', ${o.nivelAcceso}, ${o.plazoReporteDias}, ${o.inicioMedicion},
+        ${o.soporteObligatorio}, ${sesion.usuarioId}, ${ahora})
+      RETURNING id`;
+  } catch (err) {
+    if (esCodigoRepetido(err)) throw new ErrorIndicador(`Ya existe un indicador con el código ${codigo}`);
+    throw err;
+  }
+  const indicadorId = Number(i.id);
+  // Solo la versión que la importación aprueba lleva el lote (Ruling 32); una propuesta es un borrador normal.
+  const previa = extra?.aprobacionPrevia ?? null;
+  const fila = {
+    indicador_id: indicadorId,
+    numero: 1,
+    estado: "borrador",
+    tipo_cambio: "inicial",
+    ...columnasDeContenido(tx, f, nombres),
+    // `CONTENIDO` no copia el lote a un cambio.
+    importacion_id: previa === null ? null : extra!.importacionId,
+    aprobacion_previa_documento: previa?.documento ?? null,
+    aprobacion_previa_por: previa?.aprobadoPor ?? null,
+    aprobacion_previa_fecha: previa?.fecha ?? null,
+    creado_por: sesion.usuarioId,
+    creado_en: ahora,
+    actualizado_en: ahora,
+  };
+  const [v] = await tx`INSERT INTO indicador_versiones ${tx(fila)} RETURNING id`;
+  const versionId = Number(v.id);
+  await tx`SELECT id FROM indicador_versiones WHERE id = ${versionId} FOR UPDATE`;
+  await escribirHijos(tx, versionId, f, nombres);
+  await escribirDesignados(tx, indicadorId, f.d, sesion.usuarioId, ahora);
+  if (extra === null) {
+    await registrarAuditoria(tx, {
+      usuarioId: sesion.usuarioId,
+      accion: "indicador_creado",
+      entidad: "indicador",
+      entidadId: indicadorId,
+      detalle: { codigo, nombre: f.d.nombre, proceso: nombres.procesoNombre, versionId, operacion: o, designados: designadosDeFicha(f.d) },
+    });
+  }
+  return { indicadorId, versionId, codigo };
+}
 
 /** Crea el indicador en `borrador` y su versión 1 (spec §7.6.1). Sin código, propone el del proceso. */
 export async function crearIndicador(
@@ -427,49 +577,11 @@ export async function crearIndicador(
   opciones?: Opciones,
 ): Promise<{ indicadorId: number; versionId: number; codigo: string }> {
   exigirAdministrar(sesion);
+  // Lo que no consulta la base falla antes de abrir la transacción.
   const f = revisar(d);
   revisarOperacion(f.d);
   const ahora = opciones?.ahora ?? new Date();
-  let codigo = f.d.codigo ?? "";
-  try {
-    return await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
-      const nombres = await revisarContraLaBase(tx, f, null, true);
-      codigo = f.d.codigo ?? (await proponerCodigo(f.d.procesoId, { sql: tx }));
-      const o = operacionDe(f.d);
-      const [i] = await tx`INSERT INTO indicadores
-          (codigo, proceso_id, estado, nivel_acceso, plazo_reporte_dias, inicio_medicion, soporte_obligatorio, creado_por, creado_en)
-        VALUES (${codigo}, ${f.d.procesoId}, 'borrador', ${o.nivelAcceso}, ${o.plazoReporteDias}, ${o.inicioMedicion},
-          ${o.soporteObligatorio}, ${sesion.usuarioId}, ${ahora})
-        RETURNING id`;
-      const indicadorId = Number(i.id);
-      const fila = {
-        indicador_id: indicadorId,
-        numero: 1,
-        estado: "borrador",
-        tipo_cambio: "inicial",
-        ...columnasDeContenido(tx, f, nombres),
-        creado_por: sesion.usuarioId,
-        creado_en: ahora,
-        actualizado_en: ahora,
-      };
-      const [v] = await tx`INSERT INTO indicador_versiones ${tx(fila)} RETURNING id`;
-      const versionId = Number(v.id);
-      await tx`SELECT id FROM indicador_versiones WHERE id = ${versionId} FOR UPDATE`;
-      await escribirHijos(tx, versionId, f, nombres);
-      await escribirDesignados(tx, indicadorId, f.d, sesion.usuarioId, ahora);
-      await registrarAuditoria(tx, {
-        usuarioId: sesion.usuarioId,
-        accion: "indicador_creado",
-        entidad: "indicador",
-        entidadId: indicadorId,
-        detalle: { codigo, nombre: f.d.nombre, proceso: nombres.procesoNombre, versionId, operacion: o, designados: designadosDeFicha(f.d) },
-      });
-      return { indicadorId, versionId, codigo };
-    });
-  } catch (err) {
-    if (esCodigoRepetido(err)) throw new ErrorIndicador(`Ya existe un indicador con el código ${codigo}`);
-    throw err;
-  }
+  return enTransaccion(opciones?.sql ?? obtenerSql(), (tx) => escribirFichaNueva(tx, sesion, f.d, null, ahora));
 }
 
 /** La versión aprobada más reciente del indicador: la ficha vigente (spec §7.6.5). */
@@ -486,9 +598,9 @@ async function idVigente(sql: Cliente, indicadorId: number): Promise<number | nu
  */
 export async function guardarBorrador(sesion: SesionFlujo, versionId: number, d: DatosFicha, opciones?: Opciones): Promise<void> {
   exigirAdministrar(sesion);
-  const f = revisar(d);
+  const entrada = leer(d);
   const ahora = opciones?.ahora ?? new Date();
-  let codigo = f.d.codigo ?? "";
+  let codigo = entrada.codigo ?? "";
   try {
     await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
       const [ref] = await tx`SELECT indicador_id FROM indicador_versiones WHERE id = ${versionId}`;
@@ -501,6 +613,10 @@ export async function guardarBorrador(sesion: SesionFlujo, versionId: number, d:
       if (!v || Number(v.indicador_id) !== Number(ind.id)) throw new ErrorIndicador(FICHA_NO_EXISTE);
       if (v.estado !== "borrador") throw new ErrorIndicador(SOLO_BORRADOR);
       const indicadorId = Number(ind.id);
+      // La regla vieja (relativo, fijo o la tolerancia de una constante) solo la conserva un cambio sobre una ficha que la tiene.
+      const vigente = await idVigente(tx, indicadorId);
+      const [reglaDeLaVigente] = vigente === null ? [] : await tx`SELECT meta, semaforo_modo FROM indicador_versiones WHERE id = ${vigente}`;
+      const f = revisar(entrada, reglaDeLaVigente !== undefined && reglaDeLaVigente.meta !== null && reglaDeLaVigente.semaforo_modo !== "rangos");
       const enBorrador = ind.estado === "borrador";
       if (!enBorrador) {
         // F14-DC18 y DC40: el subproceso sí cambia (cambio menor); el proceso y el código, no.
@@ -528,14 +644,19 @@ export async function guardarBorrador(sesion: SesionFlujo, versionId: number, d:
       let operacion: { antes: DatosOperacion; despues: DatosOperacion } | null = null;
       let designados: { antes: Designados; despues: Designados } | null = null;
       if (enBorrador) {
-        const mismoProceso = f.d.procesoId === Number(ind.proceso_id);
-        // La sigla del proceso decide el código (spec §7.1): al mudarse de proceso, un código con la del anterior se propone de nuevo.
+        // La sigla del subproceso, o la del proceso, decide el código (spec §7.1; 14A §4): al cambiarla, un código con la
+        // anterior (`SIGLA-ID-` o el antiguo `SIGLA-IND-`) se propone de nuevo.
+        const subAntes = v.subproceso_id === null ? null : Number(v.subproceso_id);
+        const subDespues = f.d.subprocesoId ?? null;
+        const siglaAntes = await siglaEfectiva(tx, Number(ind.proceso_id), subAntes);
+        const siglaDespues = await siglaEfectiva(tx, f.d.procesoId, subDespues);
+        const mismaSigla = siglaAntes.toLowerCase() === siglaDespues.toLowerCase();
         let elegido = f.d.codigo;
-        if (!mismoProceso && elegido !== undefined) {
-          const [anterior] = await tx`SELECT sigla FROM procesos WHERE id = ${ind.proceso_id}`;
-          if (elegido.toLowerCase().startsWith(`${anterior.sigla as string}-IND-`.toLowerCase())) elegido = undefined;
+        if (!mismaSigla && elegido !== undefined) {
+          const minuscula = elegido.toLowerCase();
+          if (minuscula.startsWith(`${siglaAntes}-ID-`.toLowerCase()) || minuscula.startsWith(`${siglaAntes}-IND-`.toLowerCase())) elegido = undefined;
         }
-        codigo = elegido ?? (mismoProceso ? codigo : await proponerCodigo(f.d.procesoId, { sql: tx }));
+        codigo = elegido ?? (mismaSigla ? codigo : await proponerCodigo(f.d.procesoId, subDespues, { sql: tx }));
         const antes: DatosOperacion = {
           plazoReporteDias: ind.plazo_reporte_dias as number,
           inicioMedicion: ind.inicio_medicion as string,
@@ -559,9 +680,9 @@ export async function guardarBorrador(sesion: SesionFlujo, versionId: number, d:
       await escribirHijos(tx, versionId, f, nombres);
 
       // Un cambio sobre una ficha aprobada es mayor o menor según lo que cambió (spec §7.2); lo decide el sistema.
-      const vigente = await idVigente(tx, indicadorId);
       if (vigente !== null) {
         const tipo = tipoDeCambio(await contenidoDeVersion(tx, vigente), await contenidoDeVersion(tx, versionId));
+        if (tipo === "mayor" && f.semaforo.meta !== null && f.semaforo.semaforoModo !== "rangos") throw new ErrorIndicador(CAMBIO_MAYOR_SIN_RANGOS);
         await tx`UPDATE indicador_versiones SET tipo_cambio = ${tipo === "mayor" ? "mayor" : "menor"} WHERE id = ${versionId}`;
       }
 
@@ -593,7 +714,7 @@ export const CONTENIDO = [
   "origen_dato", "calculo", "calculo_alcance", "forma", "factor", "formula", "unidad_id", "unidad_nombre", "unidad_sufijo",
   "decimales", "periodicidad", "tendencia", "meta", "meta_max", "semaforo_modo", "umbral_atencion_pct", "limite_critico",
   "tolerancia", "resultado_min", "resultado_max", "linea_base_valor", "linea_base_periodo", "linea_base_nota", "sustento_meta",
-  "ente", "periodicidad_externa", "plazo_externo_dias", "dimension_id", "prueba",
+  "ente", "periodicidad_externa", "plazo_externo_dias", "dimension_id", "prueba", "rangos", "nivel", "riesgo_asociado",
 ].join(", ");
 
 export const COLUMNAS_VARIABLE = [
@@ -690,6 +811,9 @@ export async function contenidoDeVersion(sql: Cliente, versionId: number): Promi
     meta: v.meta,
     metaMax: v.meta_max,
     semaforoModo: v.semaforo_modo,
+    rangos: (v.rangos as RangosEnTexto | null) ?? null,
+    nivel: v.nivel,
+    riesgoAsociado: v.riesgo_asociado,
     umbralAtencionPct: v.umbral_atencion_pct,
     limiteCritico: v.limite_critico,
     tolerancia: v.tolerancia,
@@ -779,6 +903,9 @@ async function valoresDeVersion(sql: Cliente, versionId: number, indicador: Reco
     meta: texto(v.meta),
     metaMax: texto(v.meta_max),
     semaforoModo: v.semaforo_modo ?? undefined,
+    rangos: v.rangos === null ? undefined : JSON.stringify(v.rangos),
+    nivel: texto(v.nivel),
+    riesgoAsociado: texto(v.riesgo_asociado),
     umbralAtencionPct: entero(v.umbral_atencion_pct),
     limiteCritico: texto(v.limite_critico),
     tolerancia: texto(v.tolerancia),
@@ -873,11 +1000,12 @@ export async function opcionesDeFicha(
   const zona = zonaHoraria();
   const ahora = opciones?.ahora ?? new Date();
   const ids = (...xs: (number | number[] | undefined)[]) => xs.flat().filter((x): x is number => typeof x === "number");
-  const [procesos, subprocesos, propuestos, tipos, clasificaciones, unidades, objetivos, cargos, normas, usuarios, documentos, parametros, entes, lideres] =
+  const [procesos, subprocesos, propuestos, propuestosSub, tipos, clasificaciones, unidades, objetivos, cargos, normas, usuarios, documentos, parametros, entes, lideres] =
     await Promise.all([
       sql`SELECT id, sigla, nombre FROM procesos WHERE activo OR id = ANY(${ids(a.procesoId)}) ORDER BY nombre`,
-      sql`SELECT id, proceso_id, nombre FROM subprocesos WHERE activo OR id = ANY(${ids(a.subprocesoId)}) ORDER BY proceso_id, orden, nombre`,
+      sql`SELECT id, proceso_id, nombre, sigla FROM subprocesos WHERE activo OR id = ANY(${ids(a.subprocesoId)}) ORDER BY proceso_id, orden, nombre`,
       siguientes(sql),
+      siguientesDeSubprocesos(sql),
       listarMaestro("tipos", { sql }),
       listarMaestro("clasificaciones", { sql }),
       listarMaestro("unidades", { sql }),
@@ -918,8 +1046,11 @@ export async function opcionesDeFicha(
   }
   return {
     procesos: procesos.map((p) => ({ id: Number(p.id), sigla: p.sigla as string, nombre: p.nombre as string })),
-    subprocesos: subprocesos.map((s) => ({ id: Number(s.id), procesoId: Number(s.proceso_id), nombre: s.nombre as string })),
-    codigosPropuestos: Object.fromEntries(propuestos.map((p) => [Number(p.id), codigoCon(p.sigla as string, Number(p.siguiente))])),
+    subprocesos: subprocesos.map((s) => ({ id: Number(s.id), procesoId: Number(s.proceso_id), nombre: s.nombre as string, sigla: (s.sigla as string | null) ?? null })),
+    codigosPropuestos: {
+      procesos: Object.fromEntries(propuestos.map((p) => [Number(p.id), codigoCon(p.sigla as string, Number(p.siguiente))])),
+      subprocesos: Object.fromEntries(propuestosSub.map((p) => [Number(p.id), codigoCon(p.sigla as string, Number(p.siguiente))])),
+    },
     tipos: tipos.filter(activo(a.tipoId)).map((t) => ({ id: t.id, nombre: t.nombre })),
     clasificaciones: clasificaciones
       .filter(activo(a.clasificacionId))

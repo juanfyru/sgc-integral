@@ -759,4 +759,21 @@ describe("el historial de «Corregida»", () => {
       ["Se recalculó por el cambio del plazo", []],
     ]);
   });
+
+  it("dice cuándo cambia si la medición cumple la meta, aunque el semáforo siga en Bien (F14A-R53)", () => {
+    const bien = { resultado: "92", semaforo: "bien", estado: "reportada" };
+    const h = historialDeCorreccion(
+      [
+        evento(1, "reapertura", { justificacion: JUSTIFICACION, antes: { estado: "cerrada" }, despues: { estado: "reportada" } }, "Admin"),
+        evento(2, "meta", { antes: { ...bien, meta: "90", cumple: true }, despues: { ...bien, meta: "95", cumple: false } }, "Admin"),
+        evento(3, "recalculo", { causa: "racha", antes: { ...bien, cumple: false }, despues: { ...bien, cumple: true } }),
+        evento(4, "correccion", { antes: { ...bien, resultado: "91" }, despues: { ...bien, resultado: "92" } }, "Admin"),
+      ],
+      { unidad, nombres, conSoportes: false },
+    );
+    expect(h[1].cambios).toEqual(["Meta: 90 % → 95 %", "Cumple: Sí → No"]);
+    expect(h[2].cambios).toEqual(["Cumple: No → Sí"]);
+    // Sin cambio de `cumple`, no hay línea.
+    expect(h[3].cambios).toEqual(["Resultado: 91 % → 92 %"]);
+  });
 });

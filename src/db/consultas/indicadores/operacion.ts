@@ -13,7 +13,10 @@ import { registrarAuditoria } from "@/db/consultas/admin";
 import { avisarA } from "@/db/consultas/avisos-vencimiento";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
+import { fraccion } from "@/lib/indicadores/formula/fraccion";
 import { clavesDelAnio, fechaLimiteDeReporte, marcasQueSiguen, periodicidadDe, versionQueRigeEntre } from "@/lib/indicadores/periodos";
+import { rangosATexto } from "@/lib/indicadores/rangos";
+import { rangosEquivalentes } from "@/lib/indicadores/semaforo";
 import {
   AVISO_DESIGNACION,
   ErrorIndicador,
@@ -22,7 +25,9 @@ import {
   type DatosOperacion,
   type EstadoIndicador,
   type FuncionDesignado,
+  type ModoSemaforo,
   type Periodicidad,
+  type Tendencia,
 } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede, type SujetoPermiso } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
@@ -356,7 +361,10 @@ export async function duplicar(
       const desde = Number(ultima.id);
       const mismoProceso = d.procesoId === origen.procesoId;
 
-      codigo = await proponerCodigo(d.procesoId, { sql: tx });
+      // En el mismo proceso la copia conserva el subproceso, y con él su sigla.
+      const [delOrigen] = await tx`SELECT subproceso_id FROM indicador_versiones WHERE id = ${desde}`;
+      const subOrigen = mismoProceso && delOrigen?.subproceso_id != null ? Number(delOrigen.subproceso_id) : null;
+      codigo = await proponerCodigo(d.procesoId, subOrigen, { sql: tx });
       const [o] = await tx`SELECT nivel_acceso, plazo_reporte_dias, inicio_medicion, soporte_obligatorio FROM indicadores WHERE id = ${origen.id}`;
       const [i] = await tx`INSERT INTO indicadores
           (codigo, proceso_id, estado, nivel_acceso, plazo_reporte_dias, inicio_medicion, soporte_obligatorio, creado_por, creado_en)
@@ -376,6 +384,24 @@ export async function duplicar(
       await tx`SELECT id FROM indicador_versiones WHERE id = ${versionId} FOR UPDATE`;
       await tx`UPDATE indicador_versiones SET proceso_nombre = ${proceso.nombre as string}
         WHERE id = ${versionId}`;
+      // La regla vieja no se copia: la copia lleva los rangos que dan los mismos colores (spec 14A §3.5).
+      const [regla] = await tx`SELECT tendencia, meta, meta_max, semaforo_modo, umbral_atencion_pct, limite_critico, tolerancia
+        FROM indicador_versiones WHERE id = ${versionId}`;
+      if (regla.meta !== null && regla.semaforo_modo !== "rangos") {
+        const equivalentes = rangosEquivalentes({
+          tendencia: regla.tendencia as Tendencia,
+          meta: fraccion(regla.meta as string),
+          metaMax: regla.meta_max === null ? null : fraccion(regla.meta_max as string),
+          modo: regla.semaforo_modo as ModoSemaforo | null,
+          umbralPct: regla.umbral_atencion_pct as number | null,
+          limite: regla.limite_critico === null ? null : fraccion(regla.limite_critico as string),
+          tolerancia: regla.tolerancia === null ? null : fraccion(regla.tolerancia as string),
+        });
+        if (equivalentes === null) throw new ErrorIndicador("Escriba los rangos del semáforo");
+        await tx`UPDATE indicador_versiones SET semaforo_modo = 'rangos', rangos = ${tx.json(rangosATexto(equivalentes) as never)},
+            umbral_atencion_pct = NULL, limite_critico = NULL, tolerancia = NULL
+          WHERE id = ${versionId}`;
+      }
       if (!mismoProceso) {
         await tx`UPDATE indicador_versiones SET subproceso_id = NULL, subproceso_nombre = NULL, procedimiento_documento_id = NULL
           WHERE id = ${versionId}`;

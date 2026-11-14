@@ -17,6 +17,7 @@ import {
 } from "./codigos";
 import { exigirHallazgoNoCerrado, exigirVerificacionAbierta } from "./distribucion/verificacion-abierta";
 import { bloquearParaSoporte, dejarSoporteSubido } from "./indicadores/soportes";
+import { exigirLoteSinArchivo } from "./indicadores/lote-importacion";
 import { alDejarDeSerVigente } from "./distribucion/version-vigencia";
 import { obtenerConfigDocumental } from "./config-documental";
 import { ErrorTramite, enTransaccion } from "./flujo/contrato";
@@ -780,6 +781,8 @@ export async function registrarArchivo(
         if (datos.contexto === "hallazgo") await exigirHallazgoNoCerrado(tx, datos.contextoId);
         // El soporte de una medición: el indicador y la medición bloqueados antes de escribir la fila hija.
         if (datos.contexto === "medicion") await bloquearParaSoporte(tx, datos.contextoId);
+        // La plantilla de un lote de importación: una sola, mientras el lote no tenga otra (spec 14A §5.7).
+        if (datos.contexto === "importacion_indicadores") await exigirLoteSinArchivo(tx, datos.contextoId);
         // Un dueño de un solo archivo (`CONTEXTOS_UNICOS`): bloqueado, dos subidas a la vez o su borrado se ordenan,
         // y el nuevo reemplaza al anterior en esta misma transacción.
         const tablaDelDueno = CONTEXTOS_UNICOS[datos.contexto as ContextoEvidencia];

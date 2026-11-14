@@ -21,7 +21,11 @@ import { aprobadoresDeFicha, filtroAcceso, puedeAprobarFicha, puedeVerIndicador,
 import { verificarParaFirmar, type CredencialesFirma } from "@/lib/firma";
 import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
 import { camposCambiados, huellaDeFicha, tipoDeCambio, type ContenidoFicha } from "@/lib/indicadores/ficha";
+import { fraccion } from "@/lib/indicadores/formula/fraccion";
 import { periodicidadDe, periodosTerminados, periodoQueContiene, versionQueRigeEntre } from "@/lib/indicadores/periodos";
+import type { RangosEnTexto } from "@/lib/indicadores/rangos";
+import { reglaDeTexto, type ReglaEnTexto } from "@/lib/indicadores/reporte";
+import { errorDeRegla, numeroExacto } from "@/lib/indicadores/semaforo";
 import {
   AVISO_DESIGNACION,
   ErrorIndicador,
@@ -29,7 +33,9 @@ import {
   MAXIMO_EN_BLOQUE,
   type DatosOperacion,
   type EstadoVersion,
+  type ModoSemaforo,
   type Periodicidad,
+  type Tendencia,
   type TipoCambio,
 } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede, type SujetoPermiso } from "@/lib/permisos";
@@ -241,6 +247,52 @@ export async function opcionesDeRige(
   return { porOmision, opciones: claves.map((clave) => ({ clave, etiqueta: etiquetaDePeriodo(clave) })) };
 }
 
+/** «del cuarto trimestre de 2026», «de noviembre de 2026», «de 2026». */
+function delPeriodo(clave: string): string {
+  const etiqueta = periodoDe(clave, zonaHoraria())?.etiqueta ?? clave;
+  const p = periodicidadDe(clave);
+  return p === "mensual" || p === "anual" || p === null ? `de ${etiqueta}` : `del ${etiqueta}`;
+}
+
+/**
+ * Las metas programadas que regirá un cambio mayor caen dentro de su Bien (spec 14A §3.4): las de los periodos de su
+ * periodicidad desde su «rige desde» (las de antes las rige la versión anterior, y las de otra periodicidad ya no se
+ * miden). `programarMeta` solo las revisó contra la versión que regía al programarlas. De solo lectura: quien llama tiene
+ * el indicador `FOR UPDATE` dentro de la transacción, el candado de `programarMeta`.
+ */
+async function exigirMetasDentroDeBien(sql: Cliente, versionId: number, rigeDesde: string, antesDe: "enviar" | "aprobar"): Promise<void> {
+  const zona = zonaHoraria();
+  const desde = periodoDe(rigeDesde, zona);
+  const [v] = await sql`SELECT indicador_id, periodicidad, tendencia, meta, meta_max, semaforo_modo, umbral_atencion_pct, limite_critico,
+      tolerancia, rangos, unidad_sufijo, decimales
+    FROM indicador_versiones WHERE id = ${versionId}`;
+  if (!v || !desde) return;
+  const texto = (x: unknown) => (x === null || x === undefined ? null : String(x));
+  const regla: ReglaEnTexto = {
+    tendencia: v.tendencia as Tendencia,
+    meta: texto(v.meta),
+    metaMax: texto(v.meta_max),
+    modo: (v.semaforo_modo as ModoSemaforo | null) ?? null,
+    umbralPct: v.umbral_atencion_pct === null ? null : Number(v.umbral_atencion_pct),
+    limite: texto(v.limite_critico),
+    tolerancia: texto(v.tolerancia),
+    rangos: (v.rangos as RangosEnTexto | null) ?? null,
+  };
+  const unidad = { sufijo: (v.unidad_sufijo as string | null) ?? "", decimales: v.decimales === null ? 0 : Number(v.decimales) };
+  const metas = (await sql`SELECT periodo, meta, meta_max FROM indicador_metas WHERE indicador_id = ${v.indicador_id}`)
+    .map((m) => ({ clave: m.periodo as string, periodo: periodoDe(m.periodo as string, zona), meta: texto(m.meta), metaMax: texto(m.meta_max) }))
+    .filter((m) => m.periodo !== null && periodicidadDe(m.clave) === v.periodicidad && m.periodo.desde.getTime() >= desde.desde.getTime())
+    .sort((a, b) => a.periodo!.desde.getTime() - b.periodo!.desde.getTime());
+  for (const m of metas) {
+    if (errorDeRegla(reglaDeTexto({ ...regla, meta: m.meta, metaMax: m.metaMax })) === null) continue;
+    const n = (x: string) => numeroExacto(fraccion(x)!, unidad.decimales);
+    const valor = m.meta === null ? "sin meta" : m.metaMax !== null && m.metaMax !== m.meta ? `${n(m.meta)} a ${n(m.metaMax)}${unidad.sufijo}` : `${n(m.meta)}${unidad.sufijo}`;
+    throw new ErrorIndicador(
+      `La meta programada ${delPeriodo(m.clave)} (${valor}) queda fuera del rango de Bien de esta versión: reprográmela antes de ${antesDe}`,
+    );
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Enviar
 // ─────────────────────────────────────────────────────────────────────────────
@@ -259,7 +311,7 @@ type Envio = {
 
 /** Lo que debe cumplirse para enviar, sin escribir nada. El tipo de cambio lo decide el sistema contra la vigente. */
 async function validarEnvio(sql: Cliente, d: DatosEnvio, ahora: Date): Promise<Envio> {
-  const [v] = await sql`SELECT v.indicador_id, v.numero, v.estado, v.prueba, v.motivo_cambio, v.periodicidad,
+  const [v] = await sql`SELECT v.indicador_id, v.numero, v.estado, v.prueba, v.motivo_cambio, v.periodicidad, v.meta, v.semaforo_modo,
       i.codigo, i.estado AS indicador_estado, i.inicio_medicion,
       EXISTS (SELECT 1 FROM clasificaciones_indicador c WHERE c.id = v.clasificacion_id) AS con_clasificacion
     FROM indicador_versiones v JOIN indicadores i ON i.id = v.indicador_id
@@ -280,6 +332,11 @@ async function validarEnvio(sql: Cliente, d: DatosEnvio, ahora: Date): Promise<E
     if (t === "ninguno") throw new ErrorIndicador("No hay cambios que enviar");
     tipo = t;
   }
+  // Una ficha nueva y un cambio mayor solo usan los rangos (spec 14A §3.5); la regla vieja solo la conserva un cambio menor.
+  if (v.meta !== null && v.semaforo_modo !== "rangos") {
+    if (tipo === "inicial") throw new ErrorIndicador("Escriba los rangos del semáforo");
+    if (tipo === "mayor") throw new ErrorIndicador("Un cambio mayor escribe los rangos del semáforo: complete Bien, Atención y Crítico");
+  }
   const motivo = d.motivo?.trim() || (v.motivo_cambio as string | null)?.trim() || null;
   if (tipo !== "inicial" && !motivo) throw new ErrorIndicador("Escriba el motivo del cambio");
   if (motivo && motivo.length > 500) throw new ErrorIndicador("El motivo del cambio no puede pasar de 500 caracteres");
@@ -294,6 +351,7 @@ async function validarEnvio(sql: Cliente, d: DatosEnvio, ahora: Date): Promise<E
     const periodicidad = v.periodicidad as Periodicidad;
     rigeDesde = d.rigeDesde ?? (await rigeDesdePorOmision(sql, indicadorId, periodicidad, ahora));
     await validarRige(sql, indicadorId, rigeDesde, periodicidad, ahora, true);
+    await exigirMetasDentroDeBien(sql, d.versionId, rigeDesde, "enviar");
   }
   if (!rigeDesde) throw new ErrorIndicador("Elija el inicio de medición antes de enviar la ficha");
   return { indicadorId, codigo: v.codigo as string, numero: Number(v.numero), tipo, rigeDesde, motivo, contenido };
@@ -435,6 +493,8 @@ async function validarAprobacion(sql: Cliente, sesion: SujetoVisibilidad, ids: r
         if (!(err instanceof ErrorIndicador)) throw err;
         throw new ErrorIndicador(`La ficha ${codigo} ya no puede regir ${desdePeriodo(rigeDesde)}: devuélvala para que elijan otro periodo`);
       }
+      // Fuera del `try`: su mensaje es el suyo. Una meta pudo programarse después de enviarla.
+      await exigirMetasDentroDeBien(sql, id, rigeDesde, "aprobar");
     }
     salida.push({
       versionId: id,
@@ -761,6 +821,34 @@ export async function versionesVisibles(
 
 export type FirmaDeFicha = { nombre: string; cargo: string | null; fecha: Date };
 
+/**
+ * De dónde viene la aprobación de una versión que se importó como «Aprobado» (spec 14A §5.7): el documento donde se
+ * aprobó, quién y qué día (un día del calendario, `AAAA-MM-DD`), y quién importó y cuándo (el evento «importado» del
+ * lote, no `cargado_por`). Solo ellas lo tienen: una propuesta que se aprueba después en la app lleva sus firmas.
+ */
+export type ImportadaDe = { documento: string; aprobadoPor: string; fecha: string; importadoPor: string; importadoEn: Date };
+
+async function importadasDe(sql: Cliente, ids: number[]): Promise<Map<number, ImportadaDe>> {
+  const porVersion = new Map<number, ImportadaDe>();
+  if (ids.length === 0) return porVersion;
+  const filas = await sql`SELECT v.id, v.aprobacion_previa_documento AS documento, v.aprobacion_previa_por AS aprobado_por,
+      to_char(v.aprobacion_previa_fecha, 'YYYY-MM-DD') AS fecha, u.nombre AS importado_por, e.creado_en AS importado_en
+    FROM indicador_versiones v
+    JOIN importacion_eventos e ON e.importacion_id = v.importacion_id AND e.tipo = 'importado'
+    JOIN usuarios u ON u.id = e.usuario_id
+    WHERE v.id IN ${sql(ids)} AND v.aprobacion_previa_documento IS NOT NULL`;
+  for (const f of filas) {
+    porVersion.set(Number(f.id), {
+      documento: f.documento as string,
+      aprobadoPor: f.aprobado_por as string,
+      fecha: f.fecha as string,
+      importadoPor: f.importado_por as string,
+      importadoEn: new Date(f.importado_en as string),
+    });
+  }
+  return porVersion;
+}
+
 export type FichaLeida = {
   versionId: number;
   indicadorId: number;
@@ -779,6 +867,8 @@ export type FichaLeida = {
   firmas: { elaboro: FirmaDeFicha | null; aprobo: FirmaDeFicha | null };
   /** La persona puede aprobarla ahora. */
   aprueba: boolean;
+  /** Solo la que se importó como «Aprobado»: de dónde viene su aprobación, en lugar de sus firmas. */
+  importada: ImportadaDe | null;
 };
 
 const firmaDe = (f: Record<string, unknown> | undefined): FirmaDeFicha | null =>
@@ -821,6 +911,7 @@ export async function fichaDeVersion(sesion: SujetoVisibilidad, versionId: numbe
       aprobo: v.estado === "aprobada" ? firmaDe(firmas.find((f) => f.firma === "aprobo")) : null,
     },
     aprueba: visible.aprueba,
+    importada: (await importadasDe(sql, [versionId])).get(versionId) ?? null,
   };
 }
 
@@ -863,6 +954,8 @@ export type VersionResumen = {
   /** `null` en un cambio menor: no requiere aprobación. */
   aprobo: string | null;
   aprobadaEn: Date | null;
+  /** Solo la que se importó como «Aprobado»: el control de cambios dice «Importada» en lugar del aprobador. */
+  importada: ImportadaDe | null;
 };
 
 /**
@@ -882,6 +975,7 @@ export async function versionesDe(indicadorId: number, opciones?: { sql?: Client
     ORDER BY v.numero`;
   const contenidos: ContenidoFicha[] = [];
   for (const f of filas) contenidos.push(await contenidoDeVersion(sql, Number(f.id)));
+  const importadas = await importadasDe(sql, filas.map((f) => Number(f.id)));
   return filas
     .map((f, i) => ({
       id: Number(f.id),
@@ -894,6 +988,7 @@ export async function versionesDe(indicadorId: number, opciones?: { sql?: Client
       elaboradaEn: fecha(f.elaboro_en ?? f.elaborada_en),
       aprobo: (f.aprobo as string | null) ?? null,
       aprobadaEn: fecha(f.aprobo_en ?? f.aprobada_en),
+      importada: importadas.get(Number(f.id)) ?? null,
     }))
     .reverse();
 }

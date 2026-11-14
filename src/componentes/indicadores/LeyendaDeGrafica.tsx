@@ -17,7 +17,7 @@ export function metaDeGrafica(g: ResultadosDelAnio["grafica"]) {
 }
 
 /** La leyenda de la gráfica principal, con texto: el color de cada estado, la meta y el límite de crítico. */
-export function LeyendaDeGrafica({ conLimite, conMeta }: { conLimite: boolean; conMeta: boolean }) {
+export function LeyendaDeGrafica({ conLimite, conMeta, conAsterisco = false }: { conLimite: boolean; conMeta: boolean; conAsterisco?: boolean }) {
   const estados = [
     { clase: "bg-estado-bien", texto: "Bien" },
     { clase: "bg-estado-atencion", texto: "Atención" },
@@ -31,6 +31,8 @@ export function LeyendaDeGrafica({ conLimite, conMeta }: { conLimite: boolean; c
           {e.texto}
         </li>
       ))}
+      {/* Solo en papel, como el «Bien*» escrito sobre la columna (`tubo-impreso`): en pantalla no hay asterisco. */}
+      {conAsterisco ? <li className="tubo-impreso">Bien*: Bien, sin alcanzar la meta</li> : null}
       {conMeta ? (
         <li className="inline-flex items-center gap-1.5">
           <span aria-hidden="true" className="w-4 border-t-2 border-foreground" />
