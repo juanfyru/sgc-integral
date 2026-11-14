@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { programarMetaAccion } from "@/app/acciones-indicadores";
+import { programarMetaAccion, quitarMetaProgramadaAccion } from "@/app/acciones-indicadores";
 import type { EstadoConAviso } from "@/app/admin/comun";
 import { Boton } from "@/componentes/ui/Boton";
 import { claseControl } from "@/componentes/ui/Campo";
@@ -30,6 +30,10 @@ function FilaDeMeta({ indicadorId, m }: { indicadorId: number; m: MetaDelPeriodo
   const [estado, enviar, pendiente] = useActionState(async (_previo: EstadoConAviso, formData: FormData): Promise<EstadoConAviso> => {
     const r = await programarMetaAccion(null, formData);
     return r === null ? { ok: true, aviso: "Meta guardada." } : r;
+  }, null);
+  const [estadoQuitar, quitar, quitando] = useActionState(async (_previo: EstadoConAviso, formData: FormData): Promise<EstadoConAviso> => {
+    const r = await quitarMetaProgramadaAccion(null, formData);
+    return r === null ? { ok: true, aviso: "Meta quitada: rige la de la ficha." } : r;
   }, null);
   const v = estado && !estado.ok ? (estado.valores ?? {}) : {};
   const valor = (campo: string, porOmision: string) => (typeof v[campo] === "string" ? (v[campo] as string) : porOmision);
@@ -109,6 +113,39 @@ function FilaDeMeta({ indicadorId, m }: { indicadorId: number; m: MetaDelPeriodo
             </div>
           </form>
         )}
+        {!m.cerrada && m.programada !== null ? (
+          <form action={quitar} className="mt-3 flex flex-col gap-2 border-t border-border pt-3">
+            <input type="hidden" name="id" value={indicadorId} />
+            <input type="hidden" name="periodo" value={m.periodo} />
+            {m.pideJustificacion ? (
+              <>
+                <label htmlFor={id("justificacion-quitar")} className="text-xs">
+                  Justificación para quitarla (el periodo ya terminó)
+                </label>
+                <textarea
+                  id={id("justificacion-quitar")}
+                  name="justificacion"
+                  required
+                  minLength={10}
+                  maxLength={500}
+                  rows={2}
+                  className={CONTROL}
+                />
+              </>
+            ) : null}
+            {estadoQuitar ? (
+              <p role={estadoQuitar.ok ? "status" : "alert"} className={`text-xs ${estadoQuitar.ok ? "text-estado-bien-texto" : "text-estado-critico-texto"}`}>
+                {estadoQuitar.ok ? estadoQuitar.aviso : estadoQuitar.error}
+              </p>
+            ) : null}
+            <div>
+              <Boton type="submit" tamano="sm" variante="secundario" pendiente={quitando}>
+                {quitando ? "Quitando…" : "Quitar"}
+                <span className="sr-only">{` la meta programada de ${m.etiqueta.toLowerCase()}`}</span>
+              </Boton>
+            </div>
+          </form>
+        ) : null}
       </td>
     </tr>
   );

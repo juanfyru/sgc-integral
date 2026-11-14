@@ -438,6 +438,10 @@ ejecución que cambian lo que el usuario ve o lo que el spec decía (entre paré
 | F14AC-R14 (46) | «Inicio de medición» de la plantilla se acepta de enero de cinco años antes al mes de la importación («El inicio de medición «…» está fuera de la ventana de AAAA-01 a AAAA-MM»); con más de 24 periodos históricos, «Abre N periodos históricos por registrar»; la vista previa muestra el inicio: un error de digitación no puede dejar una ficha aprobada que nunca se mide ni mil históricos |
 | F14AC-R15 (ola final) | Enviar y aprobar un cambio mayor revisan, de solo lectura y otra vez con el indicador bloqueado (el candado de `programarMeta`), que las metas programadas desde su «Rige desde», de su periodicidad, caigan dentro de su Bien: `programarMeta` solo las revisó contra la versión que regía, y un 92 con Bien ≥ 95 saldría Atención «frente a una meta de 90» |
 | F14AC-R16 (ola final) | La sigla del código se ofrece a un subproceso solo si el mapa la aceptaría (formato, no reservada, libre también entre los inactivos) y no la proponen dos subprocesos ni dos siglas uno; si no, la fila lo avisa. Deshacer dice «tiene periodos cerrados o con datos» y rechaza un lote cuyo registro no lista todas las versiones que llevan su id |
+| F14AC-R17 (deuda) | Una etiqueta del límite de la gráfica es «Crítico hasta/desde» solo si el propio borde pinta Crítico (`semaforoDeRangos(limite)`); con un borde compartido que gana la fila mejor («Atención ≥ 63 · Crítico ≤ 63») dice «por debajo de 63 %» | Mirar la fila de Crítico tal como se escribió rotulaba «Crítico hasta 63 %» un valor que es Atención: la cifra contradecía el color |
+| F14AC-R18 (deuda) | Existe `quitarMetaProgramada` (`metas.ts`, acción `indicador_meta_quitada`, botón «Quitar» en «Programar metas»): mismas reglas que `programarMeta` (permiso, candado del indicador, cerrado, justificación y marca si el periodo terminó, histórico sin ellas); borra la fila y recalcula con el evento `meta`; no valida la meta, porque volver a la de la ficha siempre sirve | Sin ella, un cambio mayor con otro Bien (o sin meta) no se podía enviar sin devolverlo: ninguna meta programada pasaba las dos revisiones |
+| F14AC-R19 (deuda) | Una versión sin meta con metas programadas desde su «Rige desde» dice «Esta versión no tiene meta y hay metas programadas desde …: quítelas en «Programar metas» antes de enviar/aprobar»; con meta y una programada fuera de Bien, el mensaje termina «reprográmela o quítela antes de …» | El mensaje anterior («queda fuera del rango de Bien de esta versión») era falso si la versión no tiene Bien y no daba salida |
+| F14AC-R20 (deuda) | `reglaDelPeriodo` aplica una meta programada solo si la versión que calcula tiene meta, y `programarMeta` rechaza programar en un periodo cuya versión no la tiene («Este indicador no tiene meta en ese periodo: no se le programan metas»). Ninguna de las dos defensas existía: con `semaforo_modo` distinto de nulo, `errorDeRegla` devuelve nulo si no hay meta y la programación pasaba | Una fila que quedó de una versión anterior no debe volver a dar meta a una versión que no la tiene |
 
 ### Deuda técnica (entrega complementaria de la 14A)
 
@@ -483,10 +487,8 @@ técnica conocida».
   menciona que también se borran las metas programadas, y «La importación no existe» sirve para un id forjado; el 23505 del
   deshecho solo se prueba por mutación; la rama del 23505 del evento `importado` no tiene prueba de carrera real.
 - **Formulario de rangos (Tarea 5, más):** `JSON.parse` de los rangos corre en cada render (`FormularioFicha.tsx`).
-- **Metas programadas y cambio mayor (ola final):** `programarMeta` revisa la meta contra la versión que rige hoy; si el Bien de
-  esa versión y el del cambio mayor no se tocan (dos «entre» sin parte común, o un cambio de tendencia), ninguna meta pasa las dos
-  revisiones y el cambio no se puede enviar sin devolverlo y escribir otros rangos (no hay un «quitar la meta programada»). En la
-  aprobación en bloque, el mensaje de la meta no nombra la ficha (los demás de `validarAprobacion` sí).
+- **Aprobación en bloque (ola final):** el mensaje de una meta programada fuera de Bien no nombra la ficha (los demás de
+  `validarAprobacion` sí).
 - **Importación (ola final):** el tope de 500 filas cuenta las filas con algún valor (`actualRowCount`), también las de solo
   espacios o de celdas combinadas, que la lectura salta.
 - **Ficha importada:** si falta el evento `importado`, la versión importada se mostraría «Sin firma» (un `LEFT JOIN` y una frase

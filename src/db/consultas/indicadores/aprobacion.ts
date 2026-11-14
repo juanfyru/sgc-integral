@@ -254,6 +254,9 @@ function delPeriodo(clave: string): string {
   return p === "mensual" || p === "anual" || p === null ? `de ${etiqueta}` : `del ${etiqueta}`;
 }
 
+/** «desde el cuarto trimestre de 2026», «desde noviembre de 2026», «desde 2026». */
+const desdeElPeriodo = (clave: string): string => delPeriodo(clave).replace(/^del /, "desde el ").replace(/^de /, "desde ");
+
 /**
  * Las metas programadas que regirá un cambio mayor caen dentro de su Bien (spec 14A §3.4): las de los periodos de su
  * periodicidad desde su «rige desde» (las de antes las rige la versión anterior, y las de otra periodicidad ya no se
@@ -283,12 +286,17 @@ async function exigirMetasDentroDeBien(sql: Cliente, versionId: number, rigeDesd
     .map((m) => ({ clave: m.periodo as string, periodo: periodoDe(m.periodo as string, zona), meta: texto(m.meta), metaMax: texto(m.meta_max) }))
     .filter((m) => m.periodo !== null && periodicidadDe(m.clave) === v.periodicidad && m.periodo.desde.getTime() >= desde.desde.getTime())
     .sort((a, b) => a.periodo!.desde.getTime() - b.periodo!.desde.getTime());
+  if (regla.meta === null && metas.length > 0) {
+    throw new ErrorIndicador(
+      `Esta versión no tiene meta y hay metas programadas ${desdeElPeriodo(metas[0].clave)}: quítelas en «Programar metas» antes de ${antesDe}`,
+    );
+  }
   for (const m of metas) {
     if (errorDeRegla(reglaDeTexto({ ...regla, meta: m.meta, metaMax: m.metaMax })) === null) continue;
     const n = (x: string) => numeroExacto(fraccion(x)!, unidad.decimales);
     const valor = m.meta === null ? "sin meta" : m.metaMax !== null && m.metaMax !== m.meta ? `${n(m.meta)} a ${n(m.metaMax)}${unidad.sufijo}` : `${n(m.meta)}${unidad.sufijo}`;
     throw new ErrorIndicador(
-      `La meta programada ${delPeriodo(m.clave)} (${valor}) queda fuera del rango de Bien de esta versión: reprográmela antes de ${antesDe}`,
+      `La meta programada ${delPeriodo(m.clave)} (${valor}) queda fuera del rango de Bien de esta versión: reprográmela o quítela antes de ${antesDe}`,
     );
   }
 }

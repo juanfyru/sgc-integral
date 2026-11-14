@@ -534,9 +534,14 @@ describe("FormularioAnalisis y DialogoMetas", () => {
     expect(html).toContain("Meta ajustada después del periodo");
     expect(html).toMatch(/<input(?=[^>]*name="meta")(?=[^>]*value="80,5")[^>]*>/);
     expect(html).toMatch(/<input(?=[^>]*name="meta")(?=[^>]*value="90")[^>]*>/);
-    expect(html.split('name="justificacion"').length - 1).toBe(1);
-    expect(html.split('name="periodo"').length - 1).toBe(2);
+    // Cambiar y quitar la meta de un periodo terminado piden, cada uno, su justificación; T3 tiene dos formularios.
+    expect(html.split('name="justificacion"').length - 1).toBe(2);
+    expect(html.split('name="periodo"').length - 1).toBe(3);
     expect(html).not.toContain('name="metaMax"');
+    // «Quitar» solo en el periodo con meta programada, con su nombre accesible; el terminado pide su justificación.
+    expect(html.split(">Quitar<").length - 1).toBe(1);
+    expect(html).toContain("la meta programada de tercer trimestre de 2026");
+    expect(html).toContain("Justificación para quitarla (el periodo ya terminó)");
   });
 });
 

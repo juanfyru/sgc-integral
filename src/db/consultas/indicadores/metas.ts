@@ -37,6 +37,8 @@ type Opciones = { sql?: Cliente; ahora?: Date };
 const NO_SE_MIDE = "Ese periodo no se mide en este indicador";
 const TARDIA = "Ese periodo ya terminó: escriba la justificación del cambio de meta";
 const CERRADA = "La medición de ese periodo está cerrada: reábrala para cambiar su meta";
+const SIN_META_EN_EL_PERIODO = "Este indicador no tiene meta en ese periodo: no se le programan metas";
+const SIN_PROGRAMADA = "Ese periodo no tiene una meta programada";
 const LADO_EQUIVOCADO = "Con esa meta el límite de crítico queda del lado equivocado: hace falta una versión nueva de la ficha";
 const RELATIVO_NO_SIRVE = "Con esa meta el semáforo relativo no se puede calcular: hace falta una versión nueva de la ficha con rangos fijos";
 
@@ -104,6 +106,7 @@ export async function programarMeta(
     const version = versionQueRigeEntre(versiones, periodo, zona)!;
     const [m] = await tx`SELECT id, estado, historica FROM mediciones WHERE indicador_id = ${i.id} AND periodo = ${periodo.clave} FOR UPDATE`;
     if (m?.estado === "cerrada") throw new ErrorIndicador(CERRADA);
+    if (version.regla.meta === null) throw new ErrorIndicador(SIN_META_EN_EL_PERIODO);
     const tardia = m !== undefined && m.historica !== true && periodo.hasta.getTime() < ahora.getTime();
     const justificacion = justificacionDe(d.justificacion, tardia);
     if (metaMax !== null && version.regla.tendencia !== "constante") {
@@ -136,6 +139,65 @@ export async function programarMeta(
       entidad: "indicador",
       entidadId: Number(i.id),
       detalle: { codigo: i.codigo, periodo: periodo.clave, antes, despues, tardia, ...(justificacion ? { justificacion } : {}) },
+    });
+  });
+}
+
+/**
+ * Quita la meta programada de un periodo: el periodo vuelve a la meta de la ficha que lo rige (spec 14A §3.4). Mismas reglas
+ * que `programarMeta` (permiso, candado del indicador, periodo cerrado, justificación y marca de un cambio tardío), salvo
+ * que no valida la meta: volver a la de la ficha siempre es válido. La medición, si existe, se recalcula (evento `meta`).
+ */
+export async function quitarMetaProgramada(
+  sesion: SesionFlujo,
+  d: { indicadorId: number; periodo: string; justificacion?: string },
+  opciones?: Opciones,
+): Promise<void> {
+  if (!puede(sesion, "indicadores.administrar")) throw new ErrorPermiso();
+  const sql = opciones?.sql ?? obtenerSql();
+  const ahora = opciones?.ahora ?? new Date();
+  const zona = zonaHoraria();
+  const periodo = typeof d.periodo === "string" && periodicidadDe(d.periodo) !== null ? periodoDe(d.periodo, zona) : null;
+  if (!periodo) throw new ErrorIndicador(NO_SE_MIDE);
+  await asegurarMediciones({ sql, ahora, indicadorId: d.indicadorId });
+
+  await enTransaccion(sql, async (tx) => {
+    const [i] = await tx`SELECT id, codigo, estado, inicio_medicion FROM indicadores WHERE id = ${d.indicadorId} FOR UPDATE`;
+    if (!i) throw new ErrorIndicador("El indicador no existe");
+    if (i.estado !== "activo") {
+      throw new ErrorIndicador(i.estado === "retirado" ? "El indicador está retirado: ya no admite cambios de meta" : "El indicador no tiene una ficha aprobada");
+    }
+    const versiones = await versionesAprobadas(tx, Number(i.id));
+    const anio = Number(periodo.clave.slice(0, 4));
+    if (!i.inicio_medicion || !periodosDelAnio(versiones, i.inicio_medicion as string, anio, zona).some((p) => p.clave === periodo.clave)) {
+      throw new ErrorIndicador(NO_SE_MIDE);
+    }
+    const version = versionQueRigeEntre(versiones, periodo, zona)!;
+    const [m] = await tx`SELECT id, estado, historica FROM mediciones WHERE indicador_id = ${i.id} AND periodo = ${periodo.clave} FOR UPDATE`;
+    if (m?.estado === "cerrada") throw new ErrorIndicador(CERRADA);
+    const [programada] = await tx`SELECT meta, meta_max FROM indicador_metas WHERE indicador_id = ${i.id} AND periodo = ${periodo.clave} FOR UPDATE`;
+    if (!programada) throw new ErrorIndicador(SIN_PROGRAMADA);
+    const tardia = m !== undefined && m.historica !== true && periodo.hasta.getTime() < ahora.getTime();
+    const justificacion = justificacionDe(d.justificacion, tardia);
+    const antes: Meta = { meta: normal(programada.meta === null ? null : String(programada.meta)), metaMax: normal(programada.meta_max === null ? null : String(programada.meta_max)) };
+    const despues: Meta = { meta: normal(version.regla.meta), metaMax: normal(version.regla.metaMax) };
+
+    await tx`DELETE FROM indicador_metas WHERE indicador_id = ${i.id} AND periodo = ${periodo.clave}`;
+    if (m) {
+      if (tardia) await tx`UPDATE mediciones SET meta_tardia = true WHERE id = ${m.id} AND NOT meta_tardia`;
+      await recalcularMedicion(tx, Number(m.id), {
+        ahora,
+        actorId: sesion.usuarioId,
+        evento: "meta",
+        detalle: { antes, despues, ...(justificacion ? { justificacion } : {}) },
+      });
+    }
+    await registrarAuditoria(tx, {
+      usuarioId: sesion.usuarioId,
+      accion: "indicador_meta_quitada",
+      entidad: "indicador",
+      entidadId: Number(i.id),
+      detalle: { codigo: i.codigo, periodo: periodo.clave, antes, ...(justificacion ? { justificacion } : {}) },
     });
   });
 }

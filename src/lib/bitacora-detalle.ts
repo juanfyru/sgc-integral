@@ -889,6 +889,11 @@ export function describirEvento(e: EventoAuditoria): string {
       const cambio = antes && despues ? `: ${antes} → ${despues}` : "";
       return `Programó la meta de ${medicionDe(cod, d.periodo)}${cambio}${d.tardia === true ? ", después de terminado el periodo" : ""}${conMotivo(d.justificacion)}`;
     }
+    case "indicador_meta_quitada": {
+      if (!cod) return "Quitó la meta programada de un periodo de un indicador";
+      const antes = metaDeBitacora(d.antes);
+      return `Quitó la meta programada de ${medicionDe(cod, d.periodo)}${antes ? ` (${antes})` : ""}${conMotivo(d.justificacion)}`;
+    }
     // ── Indicadores (14A): los Excel
     case "exporto_ficha_indicador":
       return `Emitió el Excel de la ficha y los resultados de ${cod ?? "un indicador"}${numero(d.anio) === null ? "" : ` (${numero(d.anio)})`}`;
@@ -1086,6 +1091,7 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   medicion_observacion_respondida: "Respondió una observación de una medición de indicador",
   medicion_historica_registrada: "Registró o corrigió un histórico de indicador",
   indicador_meta_programada: "Programó la meta de un periodo de un indicador",
+  indicador_meta_quitada: "Quitó la meta programada de un periodo de un indicador",
   indicadores_mes_cerrado: "Cerró un mes de los indicadores",
   medicion_reabierta: "Reabrió una medición de indicador",
   medicion_cerrada_de_nuevo: "Cerró de nuevo una medición de indicador",

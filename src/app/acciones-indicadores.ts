@@ -12,7 +12,7 @@ import { cerrarDeNuevo, cerrarMes, reabrirMedicion } from "@/db/consultas/indica
 import { abrirCambio, crearIndicador, guardarBorrador } from "@/db/consultas/indicadores/fichas";
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
 import { marcarNoAplica, quitarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
-import { programarMeta } from "@/db/consultas/indicadores/metas";
+import { programarMeta, quitarMetaProgramada } from "@/db/consultas/indicadores/metas";
 import { observar, responder } from "@/db/consultas/indicadores/observaciones";
 import {
   borrarIndicador,
@@ -40,6 +40,7 @@ import {
   EsquemaNoAplica,
   EsquemaObservacion,
   EsquemaOperacion,
+  EsquemaQuitarMeta,
   EsquemaReapertura,
   EsquemaReporte,
   EsquemaRespuesta,
@@ -297,6 +298,14 @@ export async function programarMetaAccion(_prev: EstadoAccion, formData: FormDat
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     const d = parsearFormulario(formData, EsquemaMeta, { omitir: ["id"] });
     await programarMeta(sesion, { indicadorId: idNumerico(formData, "id"), ...d });
+  });
+}
+
+/** `id` es el del indicador. Quita la meta programada de un periodo: vuelve a regir la de la ficha. */
+export async function quitarMetaProgramadaAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    const d = parsearFormulario(formData, EsquemaQuitarMeta, { omitir: ["id"] });
+    await quitarMetaProgramada(sesion, { indicadorId: idNumerico(formData, "id"), ...d });
   });
 }
 

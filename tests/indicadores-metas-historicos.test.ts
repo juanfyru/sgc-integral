@@ -18,8 +18,8 @@ import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
 import { proximaPorReportar, tablaDelAnio } from "@/db/consultas/indicadores/lectura";
-import { asegurarMediciones, marcarNoAplica, quitarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
-import { metasDelAnio, programarMeta } from "@/db/consultas/indicadores/metas";
+import { asegurarMediciones, marcarNoAplica, quitarNoAplica, reglaDelPeriodo, reportar, versionesAprobadas } from "@/db/consultas/indicadores/mediciones";
+import { metasDelAnio, programarMeta, quitarMetaProgramada } from "@/db/consultas/indicadores/metas";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
 import { indicadorDePrueba, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
@@ -233,6 +233,94 @@ describe("programarMeta", () => {
       // Los históricos no piden justificación.
       expect((await metasDelAnio(ind.id, 2025, opc(tx))).map((f) => f.pideJustificacion)).toEqual([false, false, false, false]);
       expect(await metasDelAnio(ind.id, 2024, opc(tx))).toEqual([]);
+    }));
+});
+
+
+describe("quitarMetaProgramada", () => {
+  it("la meta de un periodo que no ha terminado se quita sin justificación y deja su rastro", () =>
+    revertida(sql, async (tx) => {
+      const { ind, mide, admin } = await preparar(tx);
+      await programarMeta(admin, { indicadorId: ind.id, periodo: "2026-T4", meta: "95" }, opc(tx));
+      await sinPermiso(quitarMetaProgramada(mide, { indicadorId: ind.id, periodo: "2026-T4" }, opc(tx)));
+      expect(await meta(tx, ind.id, "2026-T4")).toBeDefined();
+      await quitarMetaProgramada(admin, { indicadorId: ind.id, periodo: "2026-T4" }, opc(tx));
+      expect(await meta(tx, ind.id, "2026-T4")).toBeUndefined();
+      const [b] = await bitacora(tx, "indicador_meta_quitada", "indicador", ind.id);
+      expect(Number(b.usuario_id)).toBe(admin.usuarioId);
+      expect(b.detalle).toEqual({ codigo: ind.codigo, periodo: "2026-T4", antes: { meta: "95", metaMax: null } });
+      // El periodo ya no tiene meta programada, y uno que no se mide tampoco se quita.
+      await rechaza(quitarMetaProgramada(admin, { indicadorId: ind.id, periodo: "2026-T4" }, opc(tx)), "Ese periodo no tiene una meta programada");
+      await rechaza(quitarMetaProgramada(admin, { indicadorId: ind.id, periodo: "2026-11" }, opc(tx)), "Ese periodo no se mide en este indicador");
+      expect((await metasDelAnio(ind.id, 2026, opc(tx))).find((m) => m.periodo === "2026-T4")).toMatchObject({ programada: null, heredada: "90" });
+    }));
+
+  it("después de terminado pide justificación, deja la marca y recalcula con la meta de la ficha", () =>
+    revertida(sql, async (tx) => {
+      const { ind, mide, admin, id } = await preparar(tx);
+      const t3 = await id("2026-T3");
+      await reportarCon(tx, mide, t3, { A: "4", B: "5" });
+      await programarMeta(admin, { indicadorId: ind.id, periodo: "2026-T3", meta: "80", justificacion: JUSTIFICACION }, opc(tx));
+      expect((await fila(tx, t3)).semaforo).toBe("bien");
+
+      await rechaza(quitarMetaProgramada(admin, { indicadorId: ind.id, periodo: "2026-T3" }, opc(tx)), TARDIA);
+      await rechaza(quitarMetaProgramada(admin, { indicadorId: ind.id, periodo: "2026-T3", justificacion: "Corta" }, opc(tx)), TARDIA);
+      expect(await meta(tx, ind.id, "2026-T3")).toBeDefined();
+
+      await quitarMetaProgramada(admin, { indicadorId: ind.id, periodo: "2026-T3", justificacion: "La Secretaría retiró el ajuste" }, opc(tx));
+      expect(await meta(tx, ind.id, "2026-T3")).toBeUndefined();
+      const m = await fila(tx, t3);
+      expect([m.meta_tardia, m.semaforo, Number(m.meta_aplicada)]).toEqual([true, "atencion", 90]);
+      const ultimo = (await eventos(tx, t3)).at(-1)!;
+      expect(ultimo.tipo).toBe("meta");
+      expect(Number(ultimo.usuario_id)).toBe(admin.usuarioId);
+      expect(ultimo.detalle).toMatchObject({
+        justificacion: "La Secretaría retiró el ajuste",
+        antes: { meta: "80", semaforo: "bien" },
+        despues: { meta: "90", semaforo: "atencion" },
+      });
+      const [b] = await bitacora(tx, "indicador_meta_quitada", "indicador", ind.id);
+      expect(b.detalle).toMatchObject({ periodo: "2026-T3", antes: { meta: "80" }, justificacion: "La Secretaría retiró el ajuste" });
+    }));
+
+  it("un histórico se quita sin justificación ni marca", () =>
+    revertida(sql, async (tx) => {
+      const { ind, admin, medicion } = await preparar(tx);
+      await programarMeta(admin, { indicadorId: ind.id, periodo: "2025-T4", meta: "80" }, opc(tx));
+      await quitarMetaProgramada(admin, { indicadorId: ind.id, periodo: "2025-T4" }, opc(tx));
+      expect(await meta(tx, ind.id, "2025-T4")).toBeUndefined();
+      const m = await medicion("2025-T4");
+      if (m) expect((await fila(tx, m)).meta_tardia).toBe(false);
+      const [b] = await bitacora(tx, "indicador_meta_quitada", "indicador", ind.id);
+      expect(b.detalle).not.toHaveProperty("justificacion");
+    }));
+
+  it("no se quita la meta de una medición cerrada", () =>
+    revertida(sql, async (tx) => {
+      const { ind, admin, id } = await preparar(tx);
+      await programarMeta(admin, { indicadorId: ind.id, periodo: "2026-T2", meta: "80", justificacion: JUSTIFICACION }, opc(tx));
+      await tx`UPDATE mediciones SET estado = 'cerrada' WHERE id = ${await id("2026-T2")}`;
+      await rechaza(
+        quitarMetaProgramada(admin, { indicadorId: ind.id, periodo: "2026-T2", justificacion: JUSTIFICACION }, opc(tx)),
+        "La medición de ese periodo está cerrada: reábrala para cambiar su meta",
+      );
+      expect(await meta(tx, ind.id, "2026-T2")).toBeDefined();
+    }));
+});
+
+describe("una versión sin meta no admite metas programadas", () => {
+  it("programarMeta lo rechaza y el cálculo ignora una meta programada que quedó", () =>
+    revertida(sql, async (tx) => {
+      const { ind, admin } = await preparar(tx, { meta: null });
+      await rechaza(
+        programarMeta(admin, { indicadorId: ind.id, periodo: "2026-T4", meta: "80" }, opc(tx)),
+        "Este indicador no tiene meta en ese periodo: no se le programan metas",
+      );
+      expect(await meta(tx, ind.id, "2026-T4")).toBeUndefined();
+      // Una fila que quedó de una versión anterior no vuelve a dar meta a la versión que no la tiene.
+      await tx`INSERT INTO indicador_metas (indicador_id, periodo, meta, programada_por, programada_en) VALUES (${ind.id}, '2026-T4', 85, ${admin.usuarioId}, ${AHORA})`;
+      const [v] = await versionesAprobadas(tx, ind.id);
+      expect((await reglaDelPeriodo(tx, ind.id, "2026-T4", v)).meta).toBeNull();
     }));
 });
 
