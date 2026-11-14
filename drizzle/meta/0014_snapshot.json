@@ -5617,6 +5617,10 @@
           "name": "indicador_versiones_automatica_coherente",
           "value": "(\"indicador_versiones\".\"origen_dato\" = 'automatico') = (\"indicador_versiones\".\"calculo\" IS NOT NULL AND \"indicador_versiones\".\"calculo_alcance\" IS NOT NULL)"
         },
+        "indicador_versiones_calculo_coherente": {
+          "name": "indicador_versiones_calculo_coherente",
+          "value": "(\"indicador_versiones\".\"calculo\" IS NULL) = (\"indicador_versiones\".\"calculo_alcance\" IS NULL)"
+        },
         "indicador_versiones_alcance_valido": {
           "name": "indicador_versiones_alcance_valido",
           "value": "\"indicador_versiones\".\"calculo_alcance\" IN ('entidad', 'proceso', 'calidad', 'institucional', 'todos')"

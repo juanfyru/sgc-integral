@@ -1746,6 +1746,7 @@ export const indicadorVersiones = pgTable(
       "indicador_versiones_automatica_coherente",
       sql`(${t.origenDato} = 'automatico') = (${t.calculo} IS NOT NULL AND ${t.calculoAlcance} IS NOT NULL)`,
     ),
+    check("indicador_versiones_calculo_coherente", sql`(${t.calculo} IS NULL) = (${t.calculoAlcance} IS NULL)`),
     check(
       "indicador_versiones_alcance_valido",
       sql`${t.calculoAlcance} IN ('entidad', 'proceso', 'calidad', 'institucional', 'todos')`,

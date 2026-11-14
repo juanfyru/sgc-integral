@@ -125,7 +125,7 @@ describe("esquema de las migraciones 0013 y 0014", () => {
     expect(filas.map((f) => f.indexname as string).sort()).toEqual([...nombres].sort());
   });
 
-  it("una versión automática exige cálculo y alcance, y el alcance es de su lista", () =>
+  it("una versión automática exige cálculo y alcance, una manual no lleva ninguno, y el alcance es de su lista", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);
       const indicadorId = await indicador(tx, b);
@@ -136,13 +136,16 @@ describe("esquema de las migraciones 0013 y 0014", () => {
             (s) => s`INSERT INTO indicador_versiones ${s({ indicador_id: indicadorId, numero: numero++, tipo_cambio: "inicial", creado_por: b.usuarioId, estado: "descartada", ...campos } as never)}`,
           ),
         );
-      const coherente = rechazo("indicador_versiones_automatica_coherente");
-      expect(await crear({ origen_dato: "automatico" })).toEqual(coherente);
-      expect(await crear({ origen_dato: "automatico", calculo: "acuses" })).toEqual(coherente);
-      expect(await crear({ origen_dato: "automatico", calculo_alcance: "entidad" })).toEqual(coherente);
-      // Con alcance: el CHECK compara «automática» con «cálculo y alcance»; sin alcance, una manual con cálculo entra.
-      expect(await crear({ origen_dato: "manual", calculo: "acuses", calculo_alcance: "entidad" })).toEqual(coherente);
-      expect(await crear({ origen_dato: "manual", calculo_alcance: "otro" })).toEqual(rechazo("indicador_versiones_alcance_valido"));
+      // Cada caso viola una sola restricción, para que el nombre que devuelve la base sea el de esa.
+      const automatica = rechazo("indicador_versiones_automatica_coherente");
+      expect(await crear({ origen_dato: "automatico" })).toEqual(automatica);
+      expect(await crear({ origen_dato: "manual", calculo: "acuses", calculo_alcance: "entidad" })).toEqual(automatica);
+      const par = rechazo("indicador_versiones_calculo_coherente");
+      expect(await crear({ origen_dato: "manual", calculo: "acuses" })).toEqual(par);
+      expect(await crear({ origen_dato: "manual", calculo_alcance: "entidad" })).toEqual(par);
+      // Una automática con solo uno de los dos viola ambas: basta con que no entre.
+      expect((await crear({ origen_dato: "automatico", calculo: "acuses" }))?.codigo).toBe("23514");
+      expect((await crear({ origen_dato: "automatico", calculo_alcance: "entidad" }))?.codigo).toBe("23514");
       expect(await crear({ origen_dato: "automatico", calculo: "acuses", calculo_alcance: "otro" })).toEqual(
         rechazo("indicador_versiones_alcance_valido"),
       );
