@@ -19,7 +19,6 @@ import { obtenerSql } from "@/db/cliente";
 import { tomarCalculo, type PeticionDeCalculo } from "@/db/consultas/indicadores/calculos";
 import { objetivosDelPeriodo, periodosDeObjetivos, type ObjetivoLeido } from "@/db/consultas/indicadores/objetivos";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
-import { objetivosCumplidos } from "@/lib/indicadores/objetivos";
 import { fechaLimiteDeReporte } from "@/lib/indicadores/periodos";
 import type { Semaforo } from "@/lib/indicadores/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -39,8 +38,8 @@ afterAll(async () => {
 let consecutivo = 0;
 const unico = () => `${Date.now() % 100_000_000}${(consecutivo += 1)}`;
 
-async function objetivo(tx: TransactionSql, clase: "calidad" | "institucional" = "calidad", activo = true): Promise<number> {
-  const [o] = await tx`INSERT INTO objetivos (clase, enunciado, orden, activo) VALUES (${clase}, ${`Objetivo de prueba ${unico()}`}, 900, ${activo}) RETURNING id`;
+async function objetivo(tx: TransactionSql, clase: "calidad" | "institucional" = "calidad", activo = true, orden = 900): Promise<number> {
+  const [o] = await tx`INSERT INTO objetivos (clase, enunciado, orden, activo) VALUES (${clase}, ${`Objetivo de prueba ${unico()}`}, ${orden}, ${activo}) RETURNING id`;
   return Number(o.id);
 }
 
@@ -165,6 +164,7 @@ describe("objetivosDelPeriodo", () => {
       resultado: expect.stringMatching(/^95\s?%$/),
       semaforo: "bien",
       cumple: true,
+      cuenta: true,
     });
     expect(c.indicadores.find((i) => i.codigo === conMetaAntes.codigo)?.periodo).toBe("Febrero de 2094");
 
@@ -176,10 +176,18 @@ describe("objetivosDelPeriodo", () => {
     expect(s.estado).toBe("sin_medicion");
     // El indicador sale, sin resultado del periodo.
     expect(s.indicadores).toEqual([expect.objectContaining({ codigo: fuera.codigo, periodo: null, resultado: null, semaforo: null, cumple: null })]);
+  }));
 
-    // Por clase y orden: los de calidad antes que los institucionales.
-    const clases = lista.map((o) => o.clase);
-    expect(clases.indexOf("institucional") === -1 || clases.lastIndexOf("calidad") < clases.indexOf("institucional")).toBe(true);
+  it("por clase (los de calidad primero) y, dentro de cada clase, por orden", () => revertida(sql, async (tx) => {
+    const { admin } = await preparar(tx);
+    // El de menor orden se crea después, para que el orden no coincida con el de los ids; el institucional tiene el menor
+    // orden de los tres y va después igual.
+    const calidadSegundo = await objetivo(tx, "calidad", true, 950);
+    const calidadPrimero = await objetivo(tx, "calidad", true, 940);
+    const institucional = await objetivo(tx, "institucional", true, 930);
+    const propios = [calidadSegundo, calidadPrimero, institucional];
+    const lista = await objetivosDelPeriodo(admin, "2094-T1", { sql: tx });
+    expect(lista.map((o) => o.id).filter((id) => propios.includes(id))).toEqual([calidadPrimero, calidadSegundo, institucional]);
   }));
 
   it("solo los indicadores que la persona ve, y el estado se calcula sin los que no ve", () => revertida(sql, async (tx) => {
@@ -210,18 +218,48 @@ describe("objetivosDelPeriodo", () => {
     expect(el(delAdmin, soloRestringido).estado).toBe("no_cumplido");
   }));
 
-  it("el indicador que calcula «Objetivos cumplidos» sale bajo su objetivo como cualquier otro", () => revertida(sql, async (tx) => {
+  it("el indicador que calcula «Objetivos cumplidos» sale bajo su objetivo con su resultado, pero no cuenta para su estado", () => revertida(sql, async (tx) => {
     const { admin, de } = await preparar(tx);
-    const o = await objetivo(tx);
-    await medida(tx, await de(o), "2094-03", BIEN);
-    const calcula = await de(o);
-    await medida(tx, calcula, "2094-03", NO_CUMPLE);
-    await liberarCalculo(tx, "objetivos_cumplidos", "todos");
-    await tx`UPDATE indicadores SET calculo = 'objetivos_cumplidos', calculo_alcance = 'todos' WHERE id = ${calcula.id}`;
+    const resumen = async (ind: IndicadorDePrueba, alcance: "todos" | "calidad") => {
+      await liberarCalculo(tx, "objetivos_cumplidos", alcance);
+      await tx`UPDATE indicadores SET calculo = 'objetivos_cumplidos', calculo_alcance = ${alcance} WHERE id = ${ind.id}`;
+    };
+    // Con otro indicador que cumple: el que resume no cumple, y el objetivo se cumple.
+    const acompanado = await objetivo(tx);
+    const cumple = await de(acompanado);
+    await medida(tx, cumple, "2094-03", BIEN);
+    const resume = await de(acompanado);
+    await medida(tx, resume, "2094-03", NO_CUMPLE);
+    await resumen(resume, "todos");
+    // Como único indicador de su objetivo (con otro alcance: hay a lo sumo uno activo por cálculo y alcance): sin medición.
+    const solo = await objetivo(tx);
+    const resumeSolo = await de(solo);
+    await medida(tx, resumeSolo, "2094-03", NO_CUMPLE);
+    await resumen(resumeSolo, "calidad");
 
-    const leido = el(await objetivosDelPeriodo(admin, "2094-T1", { sql: tx }), o);
-    expect(leido.indicadores.map((i) => i.codigo)).toContain(calcula.codigo);
-    expect(leido.estado).toBe("no_cumplido");
+    const lista = await objetivosDelPeriodo(admin, "2094-T1", { sql: tx });
+    const a = el(lista, acompanado);
+    expect(a.estado).toBe("cumplido");
+    expect(a.indicadores.find((i) => i.codigo === resume.codigo)).toEqual(
+      expect.objectContaining({ periodo: "Marzo de 2094", resultado: expect.stringMatching(/^95\s?%$/), semaforo: "critico", cumple: false, cuenta: false }),
+    );
+    expect(a.indicadores.find((i) => i.codigo === cumple.codigo)).toEqual(expect.objectContaining({ semaforo: "bien", cumple: true, cuenta: true }));
+    const s = el(lista, solo);
+    expect(s.estado).toBe("sin_medicion");
+    expect(s.indicadores).toEqual([
+      expect.objectContaining({ codigo: resumeSolo.codigo, periodo: "Marzo de 2094", semaforo: "critico", cumple: false, cuenta: false }),
+    ]);
+
+    // La fila lo dice debajo del nombre, en texto atenuado, y solo la suya.
+    const renglon = "No cuenta para el estado de este objetivo: es el indicador que resume los objetivos.";
+    const html = renderToStaticMarkup(createElement(Objetivos, { objetivos: [a] }));
+    expect(html.split(renglon)).toHaveLength(2);
+    const fila = (codigo: string) => {
+      const desde = html.lastIndexOf("<tr", html.indexOf(`>${codigo}<`));
+      return html.slice(desde, html.indexOf("</tr>", desde));
+    };
+    expect(fila(resume.codigo)).toMatch(new RegExp(`<span class="[^"]*\\btext-muted-foreground\\b[^"]*">${renglon}</span>`));
+    expect(fila(cumple.codigo)).not.toContain(renglon);
   }));
 
   it("sin ninguna medición que cuente, muestra la última del periodo con resultado y sin meta, que no cuenta para el estado", () => revertida(sql, async (tx) => {
@@ -270,9 +308,19 @@ describe("objetivosDelPeriodo", () => {
 
     // Uno sin meta tampoco cuenta en la página.
     await medida(tx, await de(await objetivo(tx)), "2094-03", SIN_META);
+    // Ni la ficha que resume los objetivos, que apunta al cumplido y no cumple.
+    const resume = await de(cumplido);
+    await medida(tx, resume, "2094-03", NO_CUMPLE);
+    await liberarCalculo(tx, "objetivos_cumplidos", "todos");
+    await tx`UPDATE indicadores SET calculo = 'objetivos_cumplidos', calculo_alcance = 'todos' WHERE id = ${resume.id}`;
 
     const lista = await objetivosDelPeriodo(admin, "2094-T1", { sql: tx });
-    const pagina = objetivosCumplidos(lista.map((o) => o.indicadores.map((i) => i.cumple)));
+    expect(el(lista, cumplido).indicadores.map((i) => i.codigo)).toContain(resume.codigo);
+    // Lo que dice la página es el estado de cada objetivo.
+    const pagina = {
+      cumplidos: lista.filter((o) => o.estado === "cumplido").length,
+      conMedicion: lista.filter((o) => o.estado !== "sin_medicion").length,
+    };
     const calculo = await tomarCalculo(tx, peticionDeObjetivos("2094-T1"));
     expect(calculo).toEqual({ A: String(pagina.cumplidos), B: String(pagina.conMedicion) });
     expect(pagina).toEqual({ cumplidos: 1, conMedicion: 2 });

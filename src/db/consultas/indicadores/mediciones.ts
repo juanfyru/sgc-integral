@@ -214,6 +214,23 @@ export async function versionDelPeriodo(sql: Cliente, indicadorId: number, perio
   return p ? versionQueRigeEntre(await versionesAprobadas(sql, indicadorId), p, zona) : null;
 }
 
+/**
+ * La regla con que se muestra el resultado de una medición leída junto con su meta programada (la columna `programada`,
+ * `{ meta, metaMax }` en texto, de `indicador_metas`): la meta congelada en la medición; si no la tiene, la programada del
+ * periodo si la versión que lo rige tiene meta (como `reglaDelPeriodo`); si no, la de esa versión. Con ella `textoValor`
+ * redondea sin contradecir el semáforo. La usan la lista y la página «Objetivos».
+ */
+export function reglaMostrada(m: Record<string, unknown>, v: VersionDeCalculo): Regla {
+  const programada = m.programada as { meta: string | null; metaMax: string | null } | null;
+  return reglaDeTexto(
+    m.meta_aplicada !== null
+      ? { ...v.regla, meta: texto(m.meta_aplicada), metaMax: texto(m.meta_max_aplicada) }
+      : programada && v.regla.meta !== null
+        ? { ...v.regla, meta: programada.meta, metaMax: programada.metaMax }
+        : v.regla,
+  );
+}
+
 /** La meta programada del periodo (spec §8.9) reemplaza la de la ficha, si la versión que calcula tiene meta. */
 export async function reglaDelPeriodo(sql: Cliente, indicadorId: number, periodo: string, v: VersionDeCalculo): Promise<ReglaEnTexto> {
   const [p] = await sql`SELECT meta, meta_max FROM indicador_metas WHERE indicador_id = ${indicadorId} AND periodo = ${periodo}`;

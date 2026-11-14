@@ -18,7 +18,7 @@ import { cuenta } from "@/lib/plural";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { agrupar, aNumero, comparacionDe, conResultado, vigentes, type Opciones } from "./lectura";
-import { asegurarMediciones, conMayuscula, texto, versionesAprobadasDe, type VersionDeCalculo } from "./mediciones";
+import { asegurarMediciones, conMayuscula, reglaMostrada, texto, versionesAprobadasDe, type VersionDeCalculo } from "./mediciones";
 import { columnasDePendiente, esPendiente, queFalta, type FaltaDePersona } from "./tareas";
 
 /** Los valores de los filtros de estado viven en `src/lib/indicadores/filtros.ts`, con sus nombres. */
@@ -275,14 +275,7 @@ export async function listarIndicadores(
     };
     if (ultima) {
       const { m, v } = ultima;
-      const programada = m.programada as { meta: string | null; metaMax: string | null } | null;
-      const regla = reglaDeTexto(
-        m.meta_aplicada !== null
-          ? { ...v.regla, meta: texto(m.meta_aplicada), metaMax: texto(m.meta_max_aplicada) }
-          : programada && v.regla.meta !== null
-            ? { ...v.regla, meta: programada.meta, metaMax: programada.metaMax }
-            : v.regla,
-      );
+      const regla = reglaMostrada(m, v);
       const exacto = typeof m.resultado_exacto === "string" ? deTexto(m.resultado_exacto) : null;
       const c = comparacionDe(lista, regla.tendencia, v.unidad);
       datos = {

@@ -1,23 +1,26 @@
 /**
  * Los objetivos y lo que les aportan sus indicadores en un periodo (anexo 14B, §5.2 y §7). Aquí vive, una sola vez, la
- * regla de qué medición se toma de cada indicador (`aportesDelPeriodo`): la usan el cálculo «Objetivos cumplidos»
- * (`calculos.ts`, que cuenta todo, también lo restringido, sin la ficha que pide el cálculo) y la página «Objetivos» (los
- * indicadores que la persona ve). Solo lee.
+ * regla de qué medición se toma de cada indicador y de qué indicador cuenta para su objetivo (`aportesDelPeriodo` y
+ * `cumplenPorObjetivo`): la usan el cálculo «Objetivos cumplidos» (`calculos.ts`, que cuenta todo, también lo restringido,
+ * sin la ficha que pide el cálculo) y la página «Objetivos» (los indicadores que la persona ve). Solo lee.
  */
 import type { PendingQuery, Row } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { filtroIndicadores, type SujetoVisibilidad } from "@/lib/alcance";
 import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
+import type { ClaveDeCalculo } from "@/lib/indicadores/calculos/registro";
 import { cumpleDeFila } from "@/lib/indicadores/estados";
 import { deTexto } from "@/lib/indicadores/formula/fraccion";
 import { estadoDeObjetivo, type EstadoDeObjetivo } from "@/lib/indicadores/objetivos";
 import { versionQueRigeEntre } from "@/lib/indicadores/periodos";
-import { reglaDeTexto } from "@/lib/indicadores/reporte";
 import { textoValor } from "@/lib/indicadores/textos";
 import type { Semaforo } from "@/lib/indicadores/tipos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
-import { conMayuscula, esDeOtraPeriodicidad, texto, versionesAprobadasDe, type VersionDeCalculo } from "./mediciones";
+import { conMayuscula, esDeOtraPeriodicidad, reglaMostrada, versionesAprobadasDe, type VersionDeCalculo } from "./mediciones";
+
+/** El cálculo que resume los objetivos: la ficha que lo usa no cuenta para ningún objetivo (§5.2). */
+const RESUME_LOS_OBJETIVOS: ClaveDeCalculo = "objetivos_cumplidos";
 
 /** Una medición del periodo con la versión que rige su periodo. */
 export type MedicionDelPeriodo = { medicion: Row; periodo: Periodo; version: VersionDeCalculo };
@@ -33,6 +36,11 @@ export type AporteAObjetivo = {
   /** El de la ficha vigente. */
   nombre: string;
   proceso: string;
+  /**
+   * Si cuenta para el estado de su objetivo: no la cuenta el indicador cuya ficha vigente calcula «Objetivos cumplidos»
+   * (§5.2: «no entran los indicadores cuya ficha vigente usa este mismo cálculo»). Sale igual, con su medición.
+   */
+  cuenta: boolean;
   tomada: MedicionTomada | null;
   /**
    * Sin medición tomada, la última del periodo con resultado, sin «no aplica» y de la periodicidad que rige, que no tiene
@@ -55,7 +63,7 @@ export async function aportesDelPeriodo(
   donde: PendingQuery<Row[]>,
 ): Promise<AporteAObjetivo[]> {
   // Las candidatas de cada indicador, de la más reciente a la más antigua: la regla de la versión que rige se aplica aquí.
-  const filas = await sql`SELECT i.id AS indicador_id, i.codigo, p.nombre AS proceso, va.objetivo_id, va.nombre,
+  const filas = await sql`SELECT i.id AS indicador_id, i.codigo, i.calculo, p.nombre AS proceso, va.objetivo_id, va.nombre,
       m.id AS medicion_id, m.periodo, m.cumple, m.semaforo, m.resultado_exacto, m.meta_aplicada, m.meta_max_aplicada,
       (SELECT json_build_object('meta', im.meta::text, 'metaMax', im.meta_max::text) FROM indicador_metas im
         WHERE im.indicador_id = m.indicador_id AND im.periodo = m.periodo) AS programada
@@ -81,6 +89,7 @@ export async function aportesDelPeriodo(
         codigo: f.codigo as string,
         nombre: (f.nombre as string | null) ?? "",
         proceso: f.proceso as string,
+        cuenta: f.calculo !== RESUME_LOS_OBJETIVOS,
         tomada: null,
         sinMeta: null,
       };
@@ -103,6 +112,19 @@ export async function aportesDelPeriodo(
 }
 
 /**
+ * Lo que decide el estado de cada objetivo (§5.2), por objetivo: el `cumple` de la medición tomada de cada indicador que
+ * cuenta (`null` sin medición tomada). Es la entrada de `estadoDeObjetivo` en la página y de `objetivosCumplidos` en el
+ * cálculo. Un objetivo sin indicadores que cuenten no está.
+ */
+export function cumplenPorObjetivo(aportes: readonly AporteAObjetivo[]): Map<number, (boolean | null)[]> {
+  const porObjetivo = new Map<number, (boolean | null)[]>();
+  for (const a of aportes) {
+    if (a.cuenta) porObjetivo.set(a.objetivoId, [...(porObjetivo.get(a.objetivoId) ?? []), a.tomada?.cumple ?? null]);
+  }
+  return porObjetivo;
+}
+
+/**
  * Lo que la página muestra de cada indicador de un objetivo: su medición tomada o, sin ella, la última sin meta (con
  * `semaforo` y `cumple` nulos); sin ninguna de las dos, periodo, resultado y estado nulos.
  */
@@ -116,6 +138,8 @@ export type IndicadorDeObjetivo = {
   resultado: string | null;
   semaforo: Semaforo | null;
   cumple: boolean | null;
+  /** Si cuenta para el estado del objetivo (`AporteAObjetivo.cuenta`): la fila dice por qué no. */
+  cuenta: boolean;
 };
 
 export type ObjetivoLeido = {
@@ -127,12 +151,11 @@ export type ObjetivoLeido = {
 };
 
 /**
- * El resultado como lo escribe la lista (`listarIndicadores`): con la regla del periodo (la meta congelada en la medición o,
- * si no la tiene, la programada) y la unidad de la versión que lo rige. El de una medición sin meta, sin regla: no hay
- * color que contradecir.
+ * El resultado como lo escribe la lista (`listarIndicadores`): con `reglaMostrada` y la unidad de la versión que rige el
+ * periodo. El de una medición sin meta, sin regla: no hay color que contradecir.
  */
 function indicadorDeObjetivo(a: AporteAObjetivo): IndicadorDeObjetivo {
-  const base = { codigo: a.codigo, nombre: a.nombre, proceso: a.proceso };
+  const base = { codigo: a.codigo, nombre: a.nombre, proceso: a.proceso, cuenta: a.cuenta };
   if (!a.tomada) {
     if (!a.sinMeta) return { ...base, periodo: null, resultado: null, semaforo: null, cumple: null };
     const { medicion, periodo, version } = a.sinMeta;
@@ -145,18 +168,10 @@ function indicadorDeObjetivo(a: AporteAObjetivo): IndicadorDeObjetivo {
     };
   }
   const { medicion: m, periodo, version: v, cumple } = a.tomada;
-  const programada = m.programada as { meta: string | null; metaMax: string | null } | null;
-  const regla = reglaDeTexto(
-    m.meta_aplicada !== null
-      ? { ...v.regla, meta: texto(m.meta_aplicada), metaMax: texto(m.meta_max_aplicada) }
-      : programada && v.regla.meta !== null
-        ? { ...v.regla, meta: programada.meta, metaMax: programada.metaMax }
-        : v.regla,
-  );
   return {
     ...base,
     periodo: conMayuscula(periodo.etiqueta),
-    resultado: textoValor(deTexto(m.resultado_exacto as string), v.unidad, regla),
+    resultado: textoValor(deTexto(m.resultado_exacto as string), v.unidad, reglaMostrada(m, v)),
     semaforo: (m.semaforo as Semaforo | null) ?? null,
     cumple,
   };
@@ -166,8 +181,8 @@ function indicadorDeObjetivo(a: AporteAObjetivo): IndicadorDeObjetivo {
  * Los objetivos activos de la página «Objetivos» (§7), por clase (los de calidad primero) y orden; de cada uno, los
  * indicadores activos que la persona ve (`filtroIndicadores`) cuya ficha vigente lo apunta, con la medición que se toma en
  * el periodo (`aportesDelPeriodo`, la regla del cálculo «Objetivos cumplidos»), y su estado con `estadoDeObjetivo` sobre
- * ellos. No dice si hay indicadores que la persona no ve. `periodo` es una clave que entiende `periodoDe`; la lectura no
- * depende del reloj.
+ * los que cuentan (`cumplenPorObjetivo`). No dice si hay indicadores que la persona no ve. `periodo` es una clave que
+ * entiende `periodoDe`; la lectura no depende del reloj.
  */
 export async function objetivosDelPeriodo(
   sesion: SujetoVisibilidad,
@@ -183,16 +198,14 @@ export async function objetivosDelPeriodo(
   ]);
   const porObjetivo = new Map<number, IndicadorDeObjetivo[]>();
   for (const a of aportes) porObjetivo.set(a.objetivoId, [...(porObjetivo.get(a.objetivoId) ?? []), indicadorDeObjetivo(a)]);
-  return objetivos.map((o) => {
-    const indicadores = porObjetivo.get(Number(o.id)) ?? [];
-    return {
-      id: Number(o.id),
-      clase: o.clase as ObjetivoLeido["clase"],
-      enunciado: o.enunciado as string,
-      estado: estadoDeObjetivo(indicadores.map((i) => i.cumple)),
-      indicadores,
-    };
-  });
+  const cumplen = cumplenPorObjetivo(aportes);
+  return objetivos.map((o) => ({
+    id: Number(o.id),
+    clase: o.clase as ObjetivoLeido["clase"],
+    enunciado: o.enunciado as string,
+    estado: estadoDeObjetivo(cumplen.get(Number(o.id)) ?? []),
+    indicadores: porObjetivo.get(Number(o.id)) ?? [],
+  }));
 }
 
 /** El orden de los periodos de un año en el selector: el año, sus semestres y sus trimestres, los más recientes antes. */

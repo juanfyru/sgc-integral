@@ -539,9 +539,9 @@ describe("los componentes", () => {
         enunciado: "Mejorar la oportunidad de la atención",
         estado: "no_cumplido",
         indicadores: [
-          { codigo: "SGC-IND-01", nombre: "Cumplimiento del programa de auditorías", proceso: "Sistema de Gestión de Calidad", periodo: "Tercer trimestre de 2026", resultado: "60 %", semaforo: "critico", cumple: false },
-          { codigo: "AIN-ID-002", nombre: "Oportunidad de la cita", proceso: "Atención integral", periodo: "Septiembre de 2026", resultado: "88 %", semaforo: "bien", cumple: false },
-          { codigo: "AIN-ID-003", nombre: "Quejas resueltas", proceso: "Atención integral", periodo: null, resultado: null, semaforo: null, cumple: null },
+          { codigo: "SGC-IND-01", nombre: "Cumplimiento del programa de auditorías", proceso: "Sistema de Gestión de Calidad", periodo: "Tercer trimestre de 2026", resultado: "60 %", semaforo: "critico", cumple: false, cuenta: true },
+          { codigo: "AIN-ID-002", nombre: "Oportunidad de la cita", proceso: "Atención integral", periodo: "Septiembre de 2026", resultado: "88 %", semaforo: "bien", cumple: false, cuenta: true },
+          { codigo: "AIN-ID-003", nombre: "Quejas resueltas", proceso: "Atención integral", periodo: null, resultado: null, semaforo: null, cumple: null, cuenta: true },
         ],
       },
       { id: 2, clase: "calidad", enunciado: "Fortalecer la cultura de seguridad", estado: "sin_medicion", indicadores: [] },
@@ -550,7 +550,7 @@ describe("los componentes", () => {
         clase: "institucional",
         enunciado: "Sostener las finanzas",
         estado: "cumplido",
-        indicadores: [{ codigo: "GFI-ID-001", nombre: "Recaudo", proceso: "Gestión financiera", periodo: "2026", resultado: "97 %", semaforo: "bien", cumple: true }],
+        indicadores: [{ codigo: "GFI-ID-001", nombre: "Recaudo", proceso: "Gestión financiera", periodo: "2026", resultado: "97 %", semaforo: "bien", cumple: true, cuenta: true }],
       },
     ];
     const html = renderToStaticMarkup(<Objetivos objetivos={objetivos} />);

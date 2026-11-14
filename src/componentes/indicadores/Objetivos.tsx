@@ -24,6 +24,12 @@ const CLASES: { clase: ObjetivoLeido["clase"]; titulo: string }[] = [
   { clase: "institucional", titulo: "Objetivos institucionales" },
 ];
 
+/**
+ * Lo que dice la fila del indicador que resume los objetivos (§5.2): su insignia puede no coincidir con el estado del
+ * objetivo, porque no cuenta para él.
+ */
+const NO_CUENTA = "No cuenta para el estado de este objetivo: es el indicador que resume los objetivos.";
+
 /** El color del estado de un objetivo; el texto va siempre con él. */
 const VARIANTE: Record<EstadoDeObjetivo, VarianteInsignia> = {
   cumplido: "bien",
@@ -34,7 +40,8 @@ const VARIANTE: Record<EstadoDeObjetivo, VarianteInsignia> = {
 /**
  * Un objetivo en su tarjeta (anexo 14B, §7): su enunciado, su estado escrito y la tabla de sus indicadores, cada uno con
  * la medición que se tomó en el periodo (código enlazado, nombre, proceso, periodo y resultado con su estado y la salvedad
- * «no alcanza la meta»). Sin indicadores que la persona vea, lo dice.
+ * «no alcanza la meta»); el que no cuenta para el estado del objetivo lo dice debajo de su nombre. Sin indicadores que la
+ * persona vea, lo dice.
  */
 function TarjetaObjetivo({ objetivo: o }: { objetivo: ObjetivoLeido }) {
   const titulo = `objetivo-${o.id}`;
@@ -57,7 +64,12 @@ function TarjetaObjetivo({ objetivo: o }: { objetivo: ObjetivoLeido }) {
                   {i.codigo}
                 </Link>
               </td>
-              <td className={`${celda} min-w-48 break-words`}>{i.nombre || "(sin nombre)"}</td>
+              <td className={`${celda} min-w-48`}>
+                <span className="flex flex-col gap-1">
+                  <span className="break-words">{i.nombre || "(sin nombre)"}</span>
+                  {i.cuenta ? null : <span className="text-xs text-muted-foreground">{NO_CUENTA}</span>}
+                </span>
+              </td>
               <td className={`${celda} min-w-32`}>{i.proceso}</td>
               <td className={`${celda} whitespace-nowrap`}>{i.periodo ?? <span className="text-muted-foreground">—</span>}</td>
               <td className={`${celdaNumerica} whitespace-nowrap`}>{i.resultado ?? <span className="text-muted-foreground">sin dato</span>}</td>

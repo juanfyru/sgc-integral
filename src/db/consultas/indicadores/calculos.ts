@@ -22,7 +22,7 @@ import { versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import type { OrigenDato, Periodicidad } from "@/lib/indicadores/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { esDeOtraPeriodicidad } from "./mediciones";
-import { aportesDelPeriodo } from "./objetivos";
+import { aportesDelPeriodo, cumplenPorObjetivo } from "./objetivos";
 
 export type PeticionDeCalculo = {
   clave: ClaveDeCalculo;
@@ -118,20 +118,13 @@ async function reportesDelPeriodo(sql: Cliente, p: PeticionDeCalculo): Promise<V
 
 /**
  * «Objetivos cumplidos» (§5.2): de cada objetivo activo de la clase del alcance, la medición que se toma de cada uno de sus
- * indicadores en el periodo (`aportesDelPeriodo`, la misma regla de la página «Objetivos»). No cuentan la ficha que pide
- * el cálculo ni las que también calculan «Objetivos cumplidos».
+ * indicadores que cuentan en el periodo (`aportesDelPeriodo` y `cumplenPorObjetivo`, la misma regla de la página
+ * «Objetivos», que deja fuera las fichas que también calculan «Objetivos cumplidos»). Tampoco cuenta la ficha que pide el
+ * cálculo.
  */
 async function objetivosCumplidosDelPeriodo(sql: Cliente, p: PeticionDeCalculo): Promise<ValoresDeCalculo> {
   const deLaClase = p.alcance === "todos" ? sql`true` : sql`o.clase = ${p.alcance}`;
-  const aportes = await aportesDelPeriodo(
-    sql,
-    p.periodo,
-    sql`${deLaClase} AND i.id <> ${p.indicadorId} AND i.calculo IS DISTINCT FROM 'objetivos_cumplidos'`,
-  );
-  const porObjetivo = new Map<number, boolean[]>();
-  for (const { objetivoId, tomada } of aportes) {
-    if (tomada) porObjetivo.set(objetivoId, [...(porObjetivo.get(objetivoId) ?? []), tomada.cumple]);
-  }
-  const { cumplidos, conMedicion } = objetivosCumplidos([...porObjetivo.values()]);
+  const aportes = await aportesDelPeriodo(sql, p.periodo, sql`${deLaClase} AND i.id <> ${p.indicadorId}`);
+  const { cumplidos, conMedicion } = objetivosCumplidos([...cumplenPorObjetivo(aportes).values()]);
   return { A: String(cumplidos), B: String(conMedicion) };
 }
