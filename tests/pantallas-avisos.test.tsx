@@ -95,6 +95,18 @@ describe("guardar la configuración documental", () => {
     expect(datos.metas).toEqual({ dentroPlazoPct: 80, aprobacionDias: 30, vencidos: 0, acusesPct: 80, externosPct: 80, etapasPlazoPct: 80 });
   });
 
+  it("una meta que fija una ficha llega deshabilitada, sin valor: la acción la acepta y la deja sin valor (anexo 14B, §6)", async () => {
+    const f = formulario();
+    f.delete("metaEtapasPlazoPct");
+    f.delete("umbralConformidadPct");
+    expect(await guardarConfigDocumentalAccion(null, f)).toBeUndefined();
+    const datos = guardarConfigDocumental.mock.lastCall?.[0];
+    expect(datos.metas.etapasPlazoPct).toBeUndefined();
+    expect(datos.metas.acusesPct).toBe(80);
+    expect(datos.distribucion.umbralConformidadPct).toBeUndefined();
+    expect(datos.distribucion.plazoAcuseDias).toBe(10);
+  });
+
   it.each(["5,5", "5.5"])("el margen «%s» vale 5,5", async (margen) => {
     await guardarConfigDocumentalAccion(null, formulario({ margenSuperiorCm: margen, margenInferiorCm: margen }));
     expect(formatoGuardado()).toMatchObject({ margenSuperiorCm: 5.5, margenInferiorCm: 5.5 });

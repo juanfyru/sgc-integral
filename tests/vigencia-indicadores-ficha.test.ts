@@ -99,7 +99,7 @@ describe("la tarjeta de Vigencia usa la meta de la ficha de su cálculo", () => 
     }
   }));
 
-  it("con una ficha de etapas de la entidad con meta 80, la tarjeta la usa; con un proceso elegido, la del proceso si la hay", () => revertida(sql, async (tx) => {
+  it("con una ficha de etapas de la entidad con meta 70, la tarjeta la usa; con un proceso elegido, la del proceso si la hay", () => revertida(sql, async (tx) => {
     const gth = await procesoId(tx, "GTH");
     await sinFichas(tx, [gth]);
     await etapasEn2091(tx);
