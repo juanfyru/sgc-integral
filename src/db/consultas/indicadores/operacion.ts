@@ -15,7 +15,7 @@ import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { calculoDe } from "@/lib/indicadores/calculos/registro";
 import { fraccion } from "@/lib/indicadores/formula/fraccion";
-import { cuentaDesdeLaFoto, fechaLimiteDesdeLaFoto } from "@/lib/indicadores/fotos";
+import { fechaLimiteDesdeLaFoto } from "@/lib/indicadores/fotos";
 import { clavesDelAnio, fechaLimiteDeReporte, marcasQueSiguen, periodicidadDe, versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import { rangosATexto } from "@/lib/indicadores/rangos";
 import { rangosEquivalentes } from "@/lib/indicadores/semaforo";
@@ -291,33 +291,35 @@ export async function cambiarOperacion(
   });
 }
 
-/** Las mediciones que todavía siguen su curso: sin cerrar y no históricas (un histórico no tiene plazo ni avisos), bloqueadas. */
+/**
+ * Las mediciones que todavía siguen su curso: sin cerrar y no históricas (un histórico no tiene plazo ni avisos), bloqueadas.
+ * `plazo_desde` es la hora de la foto que les movió la fecha límite (el evento `foto` con `venceEn`, anexo 14B §5.4), o nulo.
+ */
 const enCurso = (tx: TransactionSql, indicadorId: number) =>
-  tx`SELECT id, periodo, vence_en, foto_en, aviso_previo_en, aviso_vencido_en, escalado_en FROM mediciones
-    WHERE indicador_id = ${indicadorId} AND estado <> 'cerrada' AND NOT historica
-    ORDER BY desde, id FOR UPDATE`;
+  tx`SELECT m.id, m.periodo, m.vence_en, m.aviso_previo_en, m.aviso_vencido_en, m.escalado_en,
+      (SELECT e.creado_en FROM medicion_eventos e
+        WHERE e.medicion_id = m.id AND e.tipo = 'foto' AND e.detalle->>'venceEn' IS NOT NULL ORDER BY e.id LIMIT 1) AS plazo_desde
+    FROM mediciones m
+    WHERE m.indicador_id = ${indicadorId} AND m.estado <> 'cerrada' AND NOT m.historica
+    ORDER BY m.desde, m.id FOR UPDATE OF m`;
 
 /**
- * El plazo nuevo en las mediciones en curso: la fecha límite (`fechaLimiteDeReporte`, como al abrir el periodo; la de un
- * cálculo de flujo ya fotografiado, desde su foto, como la dejó la foto: anexo 14B §5.4) y las marcas de aviso que ya no
- * son ciertas con ella (`marcasQueSiguen`), para que la pasada vuelva a avisar cuando toque. Quien llama tiene el indicador
+ * El plazo nuevo en las mediciones en curso: la fecha límite (`fechaLimiteDeReporte`, como al abrir el periodo; la de una
+ * a la que su foto le movió el plazo, desde esa foto, como la dejó: anexo 14B §5.4) y las marcas de aviso que ya no son
+ * ciertas con ella (`marcasQueSiguen`), para que la pasada vuelva a avisar cuando toque. Quien llama tiene el indicador
  * `FOR UPDATE`. Devuelve cuántas cambiaron de fecha.
  */
 async function moverFechasLimite(tx: TransactionSql, indicadorId: number, plazo: number, ahora: Date): Promise<number> {
   const zona = zonaHoraria();
   const { avisoPrevioDias } = await obtenerParametros({ sql: tx });
-  const versiones = await versionesAprobadas(tx, indicadorId);
   let movidas = 0;
   for (const m of await enCurso(tx, indicadorId)) {
     const periodo = periodoDe(m.periodo as string, zona);
     if (!periodo) continue;
-    const rige = versionQueRigeEntre(versiones, periodo, zona);
-    const clase = rige?.calculoAutomatico ? (calculoDe(rige.calculoAutomatico.clave)?.clase ?? null) : null;
-    const fotoEn = m.foto_en === null ? null : new Date(m.foto_en as string);
     const vence =
-      fotoEn !== null && cuentaDesdeLaFoto({ clase, historica: false, fotoEn })
-        ? fechaLimiteDesdeLaFoto(fotoEn, plazo, zona)
-        : fechaLimiteDeReporte(periodo, plazo, zona);
+      m.plazo_desde === null
+        ? fechaLimiteDeReporte(periodo, plazo, zona)
+        : fechaLimiteDesdeLaFoto(new Date(m.plazo_desde as string), plazo, zona);
     const siguen = marcasQueSiguen(vence, ahora, avisoPrevioDias, zona);
     await tx`UPDATE mediciones SET vence_en = ${vence},
         aviso_previo_en = ${siguen.previo ? (m.aviso_previo_en as Date | null) : null},

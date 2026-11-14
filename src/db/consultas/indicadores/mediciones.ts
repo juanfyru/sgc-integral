@@ -455,6 +455,9 @@ const objeto = (v: unknown): Record<string, unknown> =>
  * - `"soporte"` (`cambiarOperacion` al cambiar «soporte obligatorio») aplica el soporte como está, porque es su causa:
  *   quien llama elige a qué mediciones (al activarlo, solo a las que siguen en plazo).
  * Una acción sobre la medición (reportar, corregir, analizar, la meta, un soporte, reabrir) aplica la regla viva.
+ *
+ * `c.conElResultado`, si algo cambió, corre con el resultado ya escrito y antes del evento, en la misma transacción; lo que
+ * devuelve va al detalle del evento. La foto lo usa para mover el plazo solo cuando pide un análisis (anexo 14B, §5.4).
  */
 export async function recalcularMedicion(
   tx: TransactionSql,
@@ -466,6 +469,7 @@ export async function recalcularMedicion(
     detalle?: Record<string, unknown>;
     estadoAnterior?: EstadoMedicion;
     sistema?: "racha" | "soporte";
+    conElResultado?: (r: Recalculo) => Promise<Record<string, unknown>>;
   },
 ): Promise<Recalculo> {
   const zona = zonaHoraria();
@@ -587,8 +591,9 @@ export async function recalcularMedicion(
     cambio,
   };
   if (!cambio) return r;
+  const delLlamador = c.conElResultado ? await c.conElResultado(r) : {};
   await tx`INSERT INTO medicion_eventos (medicion_id, tipo, usuario_id, detalle, creado_en)
-    VALUES (${medicionId}, ${c.evento}, ${c.actorId}, ${tx.json({ ...resto, antes, despues } as never)}, ${c.ahora})`;
+    VALUES (${medicionId}, ${c.evento}, ${c.actorId}, ${tx.json({ ...resto, ...delLlamador, antes, despues } as never)}, ${c.ahora})`;
   if (columnasCambiaron) await alRecalcular(tx, r, { ahora: c.ahora, actorId: c.actorId });
   const cambioLaRacha = m.semaforo !== nuevo.semaforo || cumpleAntes !== nuevo.cumple || m.resultado_exacto !== nuevo.resultado_exacto;
   if (c.sistema !== "racha" && !historica && cambioLaRacha) {

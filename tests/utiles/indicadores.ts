@@ -200,15 +200,21 @@ export async function loteImportado(tx: TransactionSql, d: { usuarioId: number; 
 }
 
 /**
- * Calla la pasada de los indicadores sobre lo que trae la base (la demo, el punto de control): marca como avisadas y
- * escaladas sus mediciones abiertas y deja sin inicio de medición a sus indicadores activos, para que no abra periodos
- * nuevos. `revisarVencimientos` los recorre todos y un test cuenta solo lo suyo. Se llama antes de crear los datos del
- * test, dentro de la transacción que se revierte.
+ * Calla la pasada de los indicadores (y el cierre) sobre lo que trae la base (la demo, el punto de control): marca como
+ * avisadas y escaladas sus mediciones abiertas; da por fotografiadas (`foto_en`, sin valores) las de sus automáticos que
+ * esperan la foto, para que `tomarFotos` no las calcule (anexo 14B, §5.4); y deja sin inicio de medición a sus indicadores
+ * activos, para que no abra periodos nuevos. `revisarVencimientos` los recorre todos y un test cuenta solo lo suyo. Se llama
+ * antes de crear los datos del test, dentro de la transacción que se revierte.
  */
 export async function silenciarIndicadores(tx: TransactionSql): Promise<void> {
   await tx`UPDATE mediciones SET aviso_previo_en = coalesce(aviso_previo_en, now()), aviso_vencido_en = coalesce(aviso_vencido_en, now()),
       escalado_en = coalesce(escalado_en, now())
     WHERE estado <> 'cerrada' AND (aviso_previo_en IS NULL OR aviso_vencido_en IS NULL OR escalado_en IS NULL)`;
+  // Lo que `tomarFotos` busca: abierta, sin foto, sin datos ni «no aplica», de un indicador con alguna versión automática.
+  await tx`UPDATE mediciones m SET foto_en = now()
+    WHERE m.estado = 'abierta' AND m.foto_en IS NULL AND m.reportada_en IS NULL AND NOT m.no_aplica
+      AND EXISTS (SELECT 1 FROM indicador_versiones v
+        WHERE v.indicador_id = m.indicador_id AND v.estado = 'aprobada' AND v.origen_dato = 'automatico')`;
   await tx`UPDATE indicadores SET inicio_medicion = NULL WHERE estado = 'activo' AND inicio_medicion IS NOT NULL`;
 }
 
@@ -266,8 +272,8 @@ export async function versionAutomatica(
 /**
  * La foto del sistema (anexo 14B, §5.4) con los valores que pide la prueba, sin esperar su momento ni tomar el cálculo: la
  * escribe `escribirFoto`, lo mismo que escribe `tomarFotos` (valores sin quien los reportó, la medición reportada y
- * fotografiada a `ahora`, la fecha límite de un cálculo de flujo contada desde la foto y el cálculo único con el evento
- * `foto`, sin usuario).
+ * fotografiada a `ahora`, la fecha límite de un cálculo de flujo contada desde la foto si pide un análisis, y el cálculo
+ * único con el evento `foto`, sin usuario).
  */
 export async function fotoDePrueba(tx: TransactionSql, medicionId: number, valores: Partial<Record<"A" | "B", string>>, ahora: Date): Promise<void> {
   const [m] = await tx`SELECT m.id, m.indicador_id, m.periodo, m.historica, i.plazo_reporte_dias

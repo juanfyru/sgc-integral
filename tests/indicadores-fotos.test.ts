@@ -29,6 +29,7 @@ vi.mock("@/db/consultas/indicadores/calculos", async (original) => {
 });
 
 import { obtenerSql } from "@/db/cliente";
+import { CONFIG_DOCUMENTAL_DEFECTO } from "@/db/consultas/config-documental";
 import { tomarCalculo } from "@/db/consultas/indicadores/calculos";
 import { cerrarMes, reabrirMedicion, resumenDeCierre } from "@/db/consultas/indicadores/cierre";
 import { tomarFotos, volverACalcular } from "@/db/consultas/indicadores/fotos";
@@ -38,6 +39,7 @@ import { matrizDelAnio } from "@/db/consultas/indicadores/matriz";
 import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
 import { cambiarOperacion } from "@/db/consultas/indicadores/operacion";
 import { tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
+import { revisarVencimientosDeIndicadores } from "@/db/consultas/indicadores/vencimientos";
 import { describirEvento } from "@/lib/bitacora-detalle";
 import type { AlcanceDeCalculo, ClaveDeCalculo } from "@/lib/indicadores/calculos/registro";
 import { construirExcelDeIndicador } from "@/lib/indicadores/excel";
@@ -47,7 +49,7 @@ import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
 import { fechaLimite } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
-import { indicadorDePrueba, versionAutomatica, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
+import { indicadorDePrueba, silenciarIndicadores, versionAutomatica, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -214,7 +216,7 @@ describe("tomarFotos", () => {
       expect(await eventos(tx, marzo)).toHaveLength(1);
     }));
 
-  it("flujo: la foto da otro plazo al análisis, contado desde ella; estado: el plazo no cambia", () =>
+  it("flujo: la foto que pide un análisis le da otro plazo, contado desde ella; la que cumple o no aplica, y la de estado, no", () =>
     revertida(sql, async (tx) => {
       const flujo = await automatico(tx, "etapas");
       simular(flujo.ind.id, { A: "3", B: "4" });
@@ -222,9 +224,25 @@ describe("tomarFotos", () => {
       await tx`UPDATE mediciones SET aviso_previo_en = ${abril(8)} WHERE id = ${marzo}`;
       await fotos(tx, abril(11), flujo.ind.id);
       const m = await fila(tx, marzo);
+      expect(m.estado).toBe("abierta");
       expect(m.vence_en).toEqual(fechaLimite(abril(11), 10, ZONA));
       expect([m.aviso_previo_en, m.aviso_vencido_en, m.escalado_en]).toEqual([null, null, null]);
       expect((await eventos(tx, marzo))[0].detalle.venceEn).toBe(fechaLimite(abril(11), 10, ZONA).toISOString());
+
+      // Cumple la meta, o no hay nada que medir: queda reportada con su fecha y sus marcas.
+      for (const valores of [
+        { A: "9", B: "10" },
+        { A: "0", B: "0" },
+      ]) {
+        const x = await automatico(tx, "etapas");
+        simular(x.ind.id, valores);
+        const id = await x.medicion();
+        await tx`UPDATE mediciones SET aviso_previo_en = ${abril(8)} WHERE id = ${id}`;
+        await fotos(tx, abril(11), x.ind.id);
+        const f = await fila(tx, id);
+        expect([f.estado, f.foto_en, f.vence_en, f.aviso_previo_en]).toEqual(["reportada", abril(11), VENCE_MARZO, abril(8)]);
+        expect((await eventos(tx, id))[0].detalle).not.toHaveProperty("venceEn");
+      }
 
       const estado = await automatico(tx, "dentro_plazo");
       simular(estado.ind.id, { A: "9", B: "10" });
@@ -445,6 +463,23 @@ describe("tomarFotos", () => {
       expect((await fila(tx, await buena.medicion())).foto_en).toEqual(abril(11));
     }));
 
+  it("las pruebas silencian las fotos ajenas: tras silenciarIndicadores la pasada no fotografía lo que ya había, sí lo del test", () =>
+    revertida(sql, async (tx) => {
+      const ajeno = await automatico(tx, "etapas");
+      simular(ajeno.ind.id, { A: "1", B: "1" });
+      await silenciarIndicadores(tx);
+      const propio = await automatico(tx, "etapas");
+      simular(propio.ind.id, { A: "1", B: "1" });
+
+      await revisarVencimientosDeIndicadores({ sql: tx, ahora: abril(11), config: CONFIG_DOCUMENTAL_DEFECTO });
+      expect(vi.mocked(tomarCalculo).mock.calls.map((c) => c[1].indicadorId)).toEqual([propio.ind.id]);
+      const a = await fila(tx, await ajeno.medicion());
+      expect([a.reportada_en, a.resultado_exacto, a.estado]).toEqual([null, null, "abierta"]);
+      expect(await valores(tx, await ajeno.medicion())).toHaveLength(0);
+      expect(await eventos(tx, await ajeno.medicion())).toHaveLength(0);
+      expect((await fila(tx, await propio.medicion())).foto_en).toEqual(abril(11));
+    }));
+
   it("con el tope por indicador, el resto queda para la siguiente pasada", () =>
     revertida(sql, async (tx) => {
       const o = { inicioMedicion: "2003-01", aprobadaEn: new Date("2003-03-15T15:00:00Z"), abrirA: abril(2) };
@@ -571,18 +606,29 @@ describe("volver a calcular", () => {
       expect(await tx`SELECT 1 FROM auditoria WHERE accion = 'medicion_foto_recalculada' AND entidad_id IN ${tx([otra, cerrada])}`).toHaveLength(0);
     }));
 
-  it("cambiar el plazo de reporte después de la foto lo cuenta desde la foto", () =>
+  it("cambiar el plazo de reporte después de la foto lo cuenta desde la foto que lo movió; si no lo movió, desde el periodo", () =>
     revertida(sql, async (tx) => {
       const admin = await sesionAdmin(tx);
-      const { ind, medicion } = await automatico(tx, "etapas");
-      simular(ind.id, { A: "1", B: "4" });
-      await fotos(tx, abril(11), ind.id);
-      await cambiarOperacion(
-        admin,
-        { indicadorId: ind.id, plazoReporteDias: 5, inicioMedicion: MARZO, soporteObligatorio: false, nivelAcceso: "general" },
-        { sql: tx, ahora: abril(12) },
-      );
-      expect((await fila(tx, await medicion())).vence_en).toEqual(fechaLimite(abril(11), 5, ZONA));
+      const plazo5 = (indicadorId: number) =>
+        cambiarOperacion(
+          admin,
+          { indicadorId, plazoReporteDias: 5, inicioMedicion: MARZO, soporteObligatorio: false, nivelAcceso: "general" },
+          { sql: tx, ahora: abril(14) },
+        );
+      const pide = await automatico(tx, "etapas");
+      simular(pide.ind.id, { A: "1", B: "4" });
+      await fotos(tx, abril(11), pide.ind.id);
+      // Volver a calcular cambia la hora de la foto, no el día desde el que corre el plazo.
+      simular(pide.ind.id, { A: "2", B: "4" });
+      expect(await volverACalcular(admin, await pide.medicion(), { sql: tx, ahora: abril(13) })).toEqual({ cambio: true });
+      await plazo5(pide.ind.id);
+      expect((await fila(tx, await pide.medicion())).vence_en).toEqual(fechaLimite(abril(11), 5, ZONA));
+
+      const cumple = await automatico(tx, "etapas");
+      simular(cumple.ind.id, { A: "9", B: "10" });
+      await fotos(tx, abril(11), cumple.ind.id);
+      await plazo5(cumple.ind.id);
+      expect((await fila(tx, await cumple.medicion())).vence_en).toEqual(fechaLimite(new Date("2003-03-31T17:00:00Z"), 5, ZONA));
     }));
 });
 
@@ -594,22 +640,33 @@ describe("el cierre y las lecturas", () => {
       expect(base, "el año de las pruebas no debe alcanzar mediciones de la base").toMatchObject({ aCerrar: 0, enPlazo: 0 });
       const estado = await automatico(tx, "dentro_plazo");
       simular(estado.ind.id, { A: "9", B: "10" });
-      const flujo = await automatico(tx, "etapas");
-      simular(flujo.ind.id, { A: "9", B: "10" });
+      const cumple = await automatico(tx, "etapas");
+      simular(cumple.ind.id, { A: "9", B: "10" });
+      const noCumple = await automatico(tx, "etapas");
+      simular(noCumple.ind.id, { A: "1", B: "4" });
 
-      // El resumen toma las dos: la de estado se cerrará reportada; la de flujo recibe el plazo de su análisis.
+      // El resumen toma las tres: la de estado y la de flujo que cumple se cerrarán reportadas; la de flujo que no cumple
+      // recibe el plazo de su análisis y sigue en plazo.
       const r = await resumenDeCierre(admin, MARZO, { sql: tx, ahora: abril(20) });
-      expect(r).toMatchObject({ aCerrar: 1, reportadas: 1, sinDato: [], enPlazo: 1 });
+      expect(r).toMatchObject({ aCerrar: 2, reportadas: 2, sinDato: [], enPlazo: 1 });
       expect((await fila(tx, await estado.medicion())).foto_en).toEqual(abril(20));
-      expect((await fila(tx, await flujo.medicion())).vence_en).toEqual(fechaLimite(abril(20), 10, ZONA));
+      expect((await fila(tx, await cumple.medicion())).vence_en).toEqual(VENCE_MARZO);
+      expect((await fila(tx, await noCumple.medicion())).vence_en).toEqual(fechaLimite(abril(20), 10, ZONA));
 
       // El cierre también las toma antes de clasificar: una que aparece después del resumen.
       const tardia = await automatico(tx, "dentro_plazo", { abrirA: abril(20) });
       simular(tardia.ind.id, { A: "10", B: "10" });
-      expect(await cerrarMes(admin, MARZO, { sql: tx, ahora: abril(20) })).toMatchObject({ cerradas: 2 });
+      expect(await cerrarMes(admin, MARZO, { sql: tx, ahora: abril(20) })).toMatchObject({ cerradas: 3 });
       const t = await fila(tx, await tardia.medicion());
       expect([t.foto_en, t.estado, t.resultado_exacto]).toEqual([abril(20), "cerrada", "100/1"]);
-      expect((await fila(tx, await flujo.medicion())).estado).toBe("reportada");
+      // La de flujo que cumple se cierra en ese mismo cierre; la que no cumple, no.
+      expect((await fila(tx, await cumple.medicion())).estado).toBe("cerrada");
+      expect((await fila(tx, await noCumple.medicion())).estado).toBe("abierta");
+
+      // La alcanza un cierre posterior, pasada su fecha nueva: abril, cerrado el 15 de mayo.
+      await cerrarMes(admin, "2003-04", { sql: tx, ahora: new Date("2003-05-15T15:00:00Z") });
+      const n = await fila(tx, await noCumple.medicion());
+      expect([n.estado, n.sin_analisis]).toEqual(["cerrada", true]);
     }));
 
   it("una medición fotografiada, sin usuario, sale en la tabla del año, la matriz, el Excel del indicador y el impreso", () =>

@@ -8,9 +8,10 @@
  *   atrás, sin esperar. La toman la pasada de vencimientos y, antes de clasificar, el resumen y el cierre del mes; no la
  *   apertura de periodos, que corre al leer.
  * - **Sin nada que medir** (`fotoDe`): «No aplica» con el motivo del cálculo, sin valores.
- * - **El plazo del análisis:** la foto de flujo de una medición ordinaria llega cuando vence su plazo; la fecha límite se
- *   cuenta otra vez desde la foto, con el mismo plazo de reporte, y las marcas de aviso se limpian: el análisis no nace
- *   vencido. La de estado no mueve nada.
+ * - **El plazo del análisis:** la foto de flujo de una medición ordinaria llega cuando vence su plazo; si pide un análisis
+ *   (la medición queda abierta), la fecha límite se cuenta otra vez desde la foto, con el mismo plazo de reporte, y las
+ *   marcas de aviso se limpian: el análisis no nace vencido. El evento `foto` lo dice (`venceEn`). La que cumple la meta o
+ *   queda «No aplica» queda reportada con su fecha, y la de estado no mueve nada.
  * - **«Volver a calcular»** (quien administra, solo un cálculo de flujo ya fotografiado, hasta el cierre y nunca sobre una
  *   reabierta): toma otra vez el cálculo; si cambió, reescribe los valores o «no aplica», deja el evento `foto` con el antes
  *   y el después y la bitácora, y sigue las reglas de una corrección. No mueve la fecha límite.
@@ -31,7 +32,7 @@ import {
   type ClaveDeCalculo,
   type DefinicionDeCalculo,
 } from "@/lib/indicadores/calculos/registro";
-import { cuandoSeToma, cuentaDesdeLaFoto, fechaLimiteDesdeLaFoto } from "@/lib/indicadores/fotos";
+import { cuandoSeToma, fechaLimiteDesdeLaFoto, laFotoMueveElPlazo } from "@/lib/indicadores/fotos";
 import { fraccion, type Fraccion } from "@/lib/indicadores/formula/fraccion";
 import { versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import { reglaDeTexto, valorEnTexto } from "@/lib/indicadores/reporte";
@@ -143,9 +144,10 @@ function enTexto(
 
 /**
  * Escribe la foto de una medición que la espera, con los candados tomados: sus valores (o «no aplica» con el motivo del
- * cálculo), quién y cuándo (`reportada_por` nulo: el sistema), cuándo se tomó (`foto_en`) y, en un cálculo de flujo de una
- * medición ordinaria, la fecha límite del análisis contada desde la foto, con las marcas de aviso limpias. Después el cálculo
- * único, con el evento `foto` sin usuario. Lo usan `tomarFotos` y las pruebas que simulan una foto.
+ * cálculo), quién y cuándo (`reportada_por` nulo: el sistema) y cuándo se tomó (`foto_en`). Después el cálculo único, con el
+ * evento `foto` sin usuario; con el resultado ya calculado, si la foto de un cálculo de flujo de una medición ordinaria pide
+ * un análisis (`laFotoMueveElPlazo`), la fecha límite contada desde la foto, las marcas de aviso limpias y `venceEn` en el
+ * evento. Lo usan `tomarFotos` y las pruebas que simulan una foto.
  */
 export async function escribirFoto(
   tx: TransactionSql,
@@ -156,14 +158,17 @@ export async function escribirFoto(
   const valores = "valores" in c.foto ? valoresExactos(c.version, c.foto.valores) : null;
   const motivo = "noAplica" in c.foto ? c.foto.noAplica : null;
   await escribirValoresDelSistema(tx, m.id, c.version, valores, c.ahora);
-  const vence = cuentaDesdeLaFoto({ clase: c.definicion.clase, historica: m.historica, fotoEn: c.ahora })
-    ? fechaLimiteDesdeLaFoto(c.ahora, c.plazoDias, zonaHoraria())
-    : null;
   await tx`UPDATE mediciones SET reportada_en = ${c.ahora}, reportada_por = NULL, foto_en = ${c.ahora},
       no_aplica = ${motivo !== null}, no_aplica_motivo = ${motivo}
-      ${vence ? tx`, vence_en = ${vence}, aviso_previo_en = NULL, aviso_vencido_en = NULL, escalado_en = NULL` : tx``}
     WHERE id = ${m.id}`;
   const despues = enTexto(c.version, valores, motivo);
+  const moverElPlazo = async (r: Recalculo): Promise<Record<string, unknown>> => {
+    if (!laFotoMueveElPlazo({ clase: c.definicion.clase, historica: m.historica, estadoTrasLaFoto: r.estado })) return {};
+    const vence = fechaLimiteDesdeLaFoto(c.ahora, c.plazoDias, zonaHoraria());
+    await tx`UPDATE mediciones SET vence_en = ${vence}, aviso_previo_en = NULL, aviso_vencido_en = NULL, escalado_en = NULL
+      WHERE id = ${m.id}`;
+    return { venceEn: vence.toISOString() };
+  };
   return recalcularMedicion(tx, m.id, {
     ahora: c.ahora,
     actorId: null,
@@ -172,10 +177,10 @@ export async function escribirFoto(
       calculo: c.definicion.clave,
       alcance: c.alcance,
       ...(motivo !== null ? { noAplica: motivo } : { valores: Object.fromEntries(c.version.calculo.letras.map((l) => [l, despues[l]])) }),
-      ...(vence ? { venceEn: vence.toISOString() } : {}),
       antes,
       despues,
     },
+    conElResultado: moverElPlazo,
   });
 }
 

@@ -43,16 +43,20 @@ export function cuandoSeToma(
 }
 
 /**
- * La fecha límite de una medición ordinaria de un cálculo de flujo, desde su foto: el plazo de reporte corre una vez para
+ * La fecha límite del análisis que pide una foto de flujo, contada desde ella: el plazo de reporte corre una vez para
  * esperar los datos y otra, desde la foto, para analizarlos. Fin del día, en la zona, de la foto más el plazo.
  */
 export function fechaLimiteDesdeLaFoto(fotoEn: Date, plazoDias: number, zona: string): Date {
   return fechaLimite(fotoEn, plazoDias, zona);
 }
 
-/** ¿La fecha límite de esta medición cuenta desde su foto? La de flujo ordinaria, ya fotografiada. */
-export function cuentaDesdeLaFoto(m: { clase: Clase | null; historica: boolean; fotoEn: Date | null }): boolean {
-  return m.clase === "flujo" && !m.historica && m.fotoEn !== null;
+/**
+ * ¿La foto mueve la fecha límite? Solo la de un cálculo de flujo en una medición ordinaria que, con la foto, queda abierta:
+ * pide un análisis y llegó cuando su plazo ya había vencido. La que cumple la meta o queda «No aplica» queda reportada y
+ * conserva su fecha; la de estado llega al terminar el periodo, con el plazo entero por delante.
+ */
+export function laFotoMueveElPlazo(m: { clase: Clase; historica: boolean; estadoTrasLaFoto: "abierta" | "reportada" | "cerrada" }): boolean {
+  return m.clase === "flujo" && !m.historica && m.estadoTrasLaFoto === "abierta";
 }
 
 /** «1 de abril», el día en la zona. */
