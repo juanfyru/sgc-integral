@@ -19,6 +19,7 @@ import { aprobarFichas, enviarAAprobacion, previaDeEnvio } from "@/db/consultas/
 import { abrirCambio, crearIndicador, fichaParaEditar, guardarBorrador } from "@/db/consultas/indicadores/fichas";
 import { versionesAprobadas } from "@/db/consultas/indicadores/mediciones";
 import { cambiarOperacion, designar, duplicar } from "@/db/consultas/indicadores/operacion";
+import { esCalculoRepetido, yaHayUnaActiva } from "@/db/consultas/indicadores/publicacion";
 import { EsquemaFicha, type DatosFicha } from "@/lib/esquemas/indicadores";
 import type { AlcanceDeCalculo, ClaveDeCalculo } from "@/lib/indicadores/calculos/registro";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
@@ -289,6 +290,13 @@ describe("la ficha automática en el servidor", () => {
       await guardarBorrador(b.admin, cambio.versionId, manual(b, { codigo, motivoCambio: "Lo vuelve a digitar una persona" }), { sql: tx, ahora: AHORA });
       expect(await versionDe(tx, cambio.versionId)).toMatchObject({ origen_dato: "manual", calculo: null, calculo_alcance: null, tipo_cambio: "mayor" });
       expect((await variablesDe(tx, cambio.versionId)).map((v) => v.origen)).toEqual(["propia", "propia"]);
+
+      // Publicada, el indicador ya no guarda el cálculo: otra ficha puede tomar ese cálculo y alcance.
+      await enviarAAprobacion(b.admin, { versionId: cambio.versionId, credenciales: CLAVE }, firmar(tx));
+      await aprobarFichas(b.gerente, { versionIds: [cambio.versionId], credenciales: CLAVE }, firmar(tx));
+      expect(await indicadorDe(tx, indicadorId)).toMatchObject({ estado: "activo", calculo: null, calculo_alcance: null });
+      const relevo = await enviada(tx, b, automatica(b, "externos", "proceso"));
+      expect((await versionDe(tx, relevo.versionId)).estado).toBe("por_aprobar");
     }));
 
   it("a lo sumo una ficha activa por cálculo y alcance", () =>
@@ -354,6 +362,34 @@ describe("la ficha automática en el servidor", () => {
       expect((await versionDe(tx, versionId)).rige_desde).toBe("2026-11");
       const [m] = await tx`SELECT count(*)::int AS n FROM mediciones WHERE indicador_id = ${indicadorId}`;
       expect(m.n).toBe(0);
+    }));
+
+  it("el periodo en curso es el de la aprobación, no el del envío", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const diciembre = { sql: tx, ahora: new Date("2026-12-03T15:00:00Z"), verificar: firmaDePrueba };
+      // Una ficha nueva enviada en noviembre y aprobada en diciembre empieza en diciembre.
+      const nueva = await enviada(tx, b, automatica(b, "dentro_plazo", "entidad"));
+      expect((await versionDe(tx, nueva.versionId)).rige_desde).toBe("2026-11");
+      await aprobarFichas(b.gerente, { versionIds: [nueva.versionId], credenciales: CLAVE }, diciembre);
+      expect(await indicadorDe(tx, nueva.indicadorId)).toMatchObject({ estado: "activo", inicio_medicion: "2026-12" });
+      expect((await versionDe(tx, nueva.versionId)).rige_desde).toBe("2026-12");
+      const [m] = await tx`SELECT count(*)::int AS n FROM mediciones WHERE indicador_id = ${nueva.indicadorId}`;
+      expect(m.n).toBe(0);
+
+      // Un cambio mayor que se envió para regir desde noviembre ya no puede hacerlo en diciembre: se devuelve.
+      const { indicadorId, codigo } = await aprobada(tx, b, manual(b));
+      const { versionId } = await abrirCambio(b.admin, indicadorId, { sql: tx, ahora: AHORA });
+      await guardarBorrador(b.admin, versionId, automatica(b, "acuses", "entidad", { codigo, motivoCambio: "Lo calcula el sistema" }), {
+        sql: tx,
+        ahora: AHORA,
+      });
+      await enviarAAprobacion(b.admin, { versionId, credenciales: CLAVE }, firmar(tx));
+      await rechaza(
+        aprobarFichas(b.gerente, { versionIds: [versionId], credenciales: CLAVE }, diciembre),
+        `La ficha ${codigo} ya no puede regir desde noviembre de 2026: devuélvala para que elijan otro periodo`,
+      );
+      expect((await versionDe(tx, versionId)).estado).toBe("por_aprobar");
     }));
 
   it("uno que se llena hacia atrás conserva su inicio y abre sus históricos", () =>
@@ -520,5 +556,19 @@ describe("la ficha automática en el servidor", () => {
         const variables = await variablesDe(tx, ind.versionId);
         expect(variables.map((v) => [v.letra, v.origen])).toEqual(letras.map((l) => [l, "automatica"]));
       }
+    }));
+
+  it("el choque con el índice único se reconoce por su nombre (dos aprobaciones a la vez)", () =>
+    revertida(sql, async (tx) => {
+      await base(tx);
+      await indicadorDePrueba(tx, { calculo: { clave: "etapas", alcance: "entidad" } });
+      // En un punto de guardado: el error no deja la transacción de la prueba inservible.
+      const err = await tx.savepoint((sp) => indicadorDePrueba(sp, { calculo: { clave: "etapas", alcance: "entidad" } })).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(esCalculoRepetido(err)).toBe(true);
+      expect(yaHayUnaActiva()).toBe("Ya hay una ficha activa para ese cálculo y alcance");
+      expect(esCalculoRepetido(new ErrorIndicador("otro"))).toBe(false);
     }));
 });
