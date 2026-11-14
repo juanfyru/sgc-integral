@@ -103,7 +103,7 @@ export async function construirExcelDeIndicador(d: ImpresionDelAnio, meta: MetaH
     ...enSeccion("Identificación", identificacion),
     ...enSeccion("Estructura de medición", estructura),
     ...firmas,
-    ...enSeccion("Datos de operación", camposDeOperacion(d.operacion)),
+    ...enSeccion("Datos de operación", camposDeOperacion(d.operacion, ficha.contenido)),
   ];
   const wb = new ExcelJS.Workbook();
   agregarHoja(wb, "Ficha", "Ficha técnica de indicador", FICHA, filasDeFicha, meta);

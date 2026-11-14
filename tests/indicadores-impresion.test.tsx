@@ -42,9 +42,9 @@ import { impresionDelAnio } from "@/db/consultas/indicadores/impresion";
 import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
 import { observar } from "@/db/consultas/indicadores/observaciones";
 import { retirar } from "@/db/consultas/indicadores/operacion";
-import { fichaDeVersion, versionesDe, type FichaLeida } from "@/db/consultas/indicadores/aprobacion";
+import { fichaDeVersion, versionesDe, type FichaLeida, type OperacionLeida } from "@/db/consultas/indicadores/aprobacion";
 import { construirExcelDeIndicador } from "@/lib/indicadores/excel";
-import { camposDeFicha, fechaYHora } from "@/lib/indicadores/ficha-en-texto";
+import { camposDeFicha, camposDeOperacion, fechaYHora } from "@/lib/indicadores/ficha-en-texto";
 import type { SesionValida } from "@/lib/sesion";
 import { indicadorDePrueba, loteImportado, versionTrimestral, type IndicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
@@ -595,6 +595,55 @@ describe("FichaImpresa", () => {
     expect(camposDeFicha(base).estructura.map((c) => c.termino)).toContain("Responsables de medir");
   });
 
+  it("los datos de operación de un automático dicen que nadie mide, no muestran el soporte y, en uno de flujo, rotulan la espera (14B, Tarea 4)", () => {
+    const base = fichaCompleta();
+    const operacion: OperacionLeida = {
+      plazoReporteDias: 5,
+      inicioMedicion: "2026-T1",
+      soporteObligatorio: true,
+      nivelAcceso: "general",
+      mide: ["Persona Que Medía"],
+      analiza: ["Persona Que Analiza"],
+      seguimiento: ["Persona Que Sigue"],
+    };
+    const con = (calculo: string | null): FichaLeida => ({
+      ...base,
+      contenido: { ...base.contenido, origenDato: calculo ? "automatico" : "manual", calculo, calculoAlcance: calculo ? "entidad" : null },
+    });
+    const enPantalla = (f: FichaLeida) => {
+      const html = renderToStaticMarkup(<FichaTecnica ficha={f} operacion={operacion} />);
+      return html.slice(html.indexOf(">Datos de operación<"));
+    };
+    const enTexto = (f: FichaLeida) => camposDeOperacion(operacion, f.contenido).map((c) => `${c.termino}: ${c.valor}`).join("\n");
+
+    // «Acuses» es de flujo; «Documentos dentro de su plazo», de estado.
+    for (const calculo of ["acuses", "dentro_plazo"]) {
+      const ficha = con(calculo);
+      for (const h of [enPantalla(ficha), enTexto(ficha)]) {
+        expect(h, calculo).toContain("Nadie: lo calcula el sistema");
+        expect(h, calculo).not.toContain("Persona Que Medía");
+        expect(h, calculo).not.toContain("El líder del proceso");
+        expect(h, calculo).not.toContain("Soporte obligatorio");
+        expect(h, calculo).toContain("Persona Que Analiza");
+        expect(h, calculo).toContain("Persona Que Sigue");
+      }
+    }
+    expect(enTexto(con("acuses"))).toContain("Días de espera antes de calcular: 5 días después del cierre del periodo");
+    expect(enTexto(con("acuses"))).not.toContain("Plazo de reporte");
+    expect(enPantalla(con("acuses"))).toContain(">Días de espera antes de calcular<");
+    expect(enTexto(con("dentro_plazo"))).toContain("Plazo de reporte: 5 días después del cierre del periodo");
+    expect(enTexto(con("dentro_plazo"))).not.toContain("Días de espera");
+    expect(enPantalla(con("dentro_plazo"))).toContain(">Plazo de reporte<");
+
+    // Una manual sigue como siempre.
+    const manual = con(null);
+    expect(enTexto(manual)).toContain("Quién mide: Persona Que Medía");
+    expect(enTexto(manual)).toContain("Plazo de reporte: 5 días después del cierre del periodo");
+    expect(enTexto(manual)).toContain("Soporte obligatorio: Sí: cada reporte lleva su soporte");
+    for (const t of ["Persona Que Medía", ">Plazo de reporte<", ">Soporte obligatorio<"]) expect(enPantalla(manual)).toContain(t);
+    expect(enPantalla(manual)).not.toContain("Nadie: lo calcula el sistema");
+  });
+
   it("el impreso y el Excel de un automático dicen su cálculo y su alcance, sin responsables de medir (14B, Tarea 4)", () =>
     revertida(sql, async (tx) => {
       const p = await proceso(tx);
@@ -620,6 +669,26 @@ describe("FichaImpresa", () => {
       libro.getWorksheet("Ficha")!.eachRow((fila) => filas.push((fila.values as unknown[]).slice(1).map((v) => String(v ?? "")).join(" | ")));
       expect(filas).toContain(`Estructura de medición | Cómo se obtiene el dato | ${frase}`);
       expect(filas.join("\n")).not.toContain("Responsables de medir");
+
+      // Sus datos de operación: nadie mide, sin soporte y, en un cálculo de flujo, la espera antes de calcular.
+      const operacion = html.slice(html.indexOf(">Datos de operación<"), html.indexOf(">Seguimiento y medición"));
+      expect(operacion).toContain("Nadie: lo calcula el sistema");
+      expect(operacion).toContain("Días de espera antes de calcular");
+      expect(operacion).not.toContain("Soporte obligatorio");
+      // Uno de estado conserva el rótulo del plazo.
+      const deEstado = await indicadorDePrueba(tx, {
+        procesoId: p.id,
+        periodicidad: "trimestral",
+        inicioMedicion: "2026-T1",
+        aprobadaEn: APROBADA,
+        calculo: { clave: "dentro_plazo", alcance: "proceso" },
+      });
+      const impresoDeEstado = await impreso(tx, admin, deEstado);
+      const operacionDeEstado = impresoDeEstado.slice(impresoDeEstado.indexOf(">Datos de operación<"), impresoDeEstado.indexOf(">Seguimiento y medición"));
+      expect(operacionDeEstado).toContain("Nadie: lo calcula el sistema");
+      expect(operacionDeEstado).toContain(">Plazo de reporte<");
+      expect(operacionDeEstado).not.toContain("Días de espera antes de calcular");
+      expect(operacionDeEstado).not.toContain("Soporte obligatorio");
     }));
 
   it("no imprime soportes ni observaciones, ni el nombre de la entidad escrito en el código", () =>

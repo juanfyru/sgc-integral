@@ -58,6 +58,13 @@ export type Consolidacion = (typeof CONSOLIDACIONES)[number];
 export const ORIGENES_DATO = ["manual", "automatico"] as const;
 export type OrigenDato = (typeof ORIGENES_DATO)[number];
 
+/**
+ * Los datos de operación de un indicador automático (anexo 14B, §5.3): nadie mide y, en un cálculo de flujo, el plazo de
+ * reporte son los días que el sistema espera tras el fin del periodo para calcularlo. Los dicen el formulario y la ficha.
+ */
+export const NADIE_MIDE = "Nadie: lo calcula el sistema";
+export const ESPERA_ANTES_DE_CALCULAR = "Días de espera antes de calcular";
+
 export const ORIGENES_VARIABLE = ["propia", "compartida", "automatica", "indicador"] as const;
 export type OrigenVariable = (typeof ORIGENES_VARIABLE)[number];
 

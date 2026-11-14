@@ -17,7 +17,18 @@ import { fraccion } from "./formula/fraccion";
 import { rangosDeTexto } from "./rangos";
 import { numeroExacto, rangosEnPalabras, type Regla } from "./semaforo";
 import { textoMeta, type Unidad } from "./textos";
-import { ETIQUETA_PERIODICIDAD, ETIQUETA_SEMAFORO, NO_ALCANZA_LA_META, sinAlcanzarLaMeta, type ModoSemaforo, type Periodicidad, type Semaforo, type Tendencia } from "./tipos";
+import {
+  ESPERA_ANTES_DE_CALCULAR,
+  ETIQUETA_PERIODICIDAD,
+  ETIQUETA_SEMAFORO,
+  NADIE_MIDE,
+  NO_ALCANZA_LA_META,
+  sinAlcanzarLaMeta,
+  type ModoSemaforo,
+  type Periodicidad,
+  type Semaforo,
+  type Tendencia,
+} from "./tipos";
 
 export const FORMA: Record<string, string> = {
   porcentaje: "Porcentaje",
@@ -168,15 +179,33 @@ export function camposDeFicha(ficha: FichaLeida): { identificacion: CampoDeTexto
   return { identificacion, estructura };
 }
 
-/** Los datos de operación (spec §7.3), que no se versionan ni se firman. */
-export function camposDeOperacion(o: OperacionLeida): CampoDeTexto[] {
+/**
+ * Lo que dicen los datos de operación según el origen de la versión que se muestra (anexo 14B, §5.3). En una automática,
+ * «Quién mide» dice que nadie (sin nombrar personas ni el respaldo del líder), «Soporte obligatorio» no se muestra y, en un
+ * cálculo de flujo, el plazo se rotula como la espera antes de calcular; en uno de estado sigue siendo el plazo de reporte
+ * (la fecha límite del análisis). Una sola regla para la ficha en pantalla, el impreso y el Excel.
+ */
+export function operacionSegunOrigen(c: Pick<ContenidoFicha, "origenDato" | "calculo">): {
+  /** El texto fijo de «Quién mide»; `null` si nombra a las personas designadas. */
+  mide: string | null;
+  conSoporte: boolean;
+  rotuloPlazo: string;
+} {
+  const plazo = "Plazo de reporte";
+  if (!esAutomatica(c)) return { mide: null, conSoporte: true, rotuloPlazo: plazo };
+  return { mide: NADIE_MIDE, conSoporte: false, rotuloPlazo: calculoDe(c.calculo)?.clase === "flujo" ? ESPERA_ANTES_DE_CALCULAR : plazo };
+}
+
+/** Los datos de operación (spec §7.3), que no se versionan ni se firman, según el origen de la versión que se muestra. */
+export function camposDeOperacion(o: OperacionLeida, c: Pick<ContenidoFicha, "origenDato" | "calculo">): CampoDeTexto[] {
+  const segun = operacionSegunOrigen(c);
   return [
-    { termino: "Quién mide", valor: o.mide.length > 0 ? o.mide.join(", ") : "El líder del proceso" },
+    { termino: "Quién mide", valor: segun.mide ?? (o.mide.length > 0 ? o.mide.join(", ") : "El líder del proceso") },
     { termino: "Quién analiza", valor: o.analiza.length > 0 ? o.analiza.join(", ") : "El líder del proceso" },
     { termino: "Quién hace seguimiento", valor: o.seguimiento.length > 0 ? o.seguimiento.join(", ") : NINGUNO },
-    { termino: "Plazo de reporte", valor: `${o.plazoReporteDias} días después del cierre del periodo` },
+    { termino: segun.rotuloPlazo, valor: `${o.plazoReporteDias} días después del cierre del periodo` },
     { termino: "Inicio de medición", valor: o.inicioMedicion ? periodoEnPalabras(o.inicioMedicion) : NINGUNO },
-    { termino: "Soporte obligatorio", valor: o.soporteObligatorio ? "Sí: cada reporte lleva su soporte" : "No" },
+    ...(segun.conSoporte ? [{ termino: "Soporte obligatorio", valor: o.soporteObligatorio ? "Sí: cada reporte lleva su soporte" : "No" }] : []),
     { termino: "Nivel de acceso", valor: o.nivelAcceso === "restringido" ? "Restringido" : "General" },
   ];
 }

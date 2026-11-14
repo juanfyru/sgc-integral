@@ -338,6 +338,48 @@ describe("el Excel de un indicador", () => {
         expect(todo).not.toMatch(/Soportes|Observaci/);
       }
     }));
+
+  it("los datos de operación de un automático dicen que lo calcula el sistema; los de un manual, lo de siempre (14B, Tarea 4)", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const admin = await sesionAdmin(tx);
+      const quien = await usuarioDePrueba(tx, { rol: "consulta" });
+      const hojaFicha = async (o: OpcionesIndicadorDePrueba) => {
+        // Con una persona designada para medir y el soporte marcado: en un automático no se nombran.
+        const ind = await indicadorDePrueba(tx, {
+          procesoId: p.id,
+          periodicidad: "trimestral",
+          inicioMedicion: "2026-T1",
+          aprobadaEn: APROBADA,
+          mide: [quien.usuarioId],
+          analiza: [quien.usuarioId],
+          soporteObligatorio: true,
+          ...o,
+        });
+        const d = await impresionDelAnio(admin, ind.codigo, 2026, opc(tx));
+        return texto((await leerLibro(await construirExcelDeIndicador(d!, META))).Ficha);
+      };
+
+      // «Acuses» es de flujo: el plazo es la espera antes de calcular.
+      const flujo = await hojaFicha({ calculo: { clave: "acuses", alcance: "proceso" } });
+      expect(flujo).toContain("Datos de operación | Quién mide | Nadie: lo calcula el sistema");
+      expect(flujo).toContain(`Datos de operación | Quién analiza | ${quien.nombre}`);
+      expect(flujo).toContain("Datos de operación | Días de espera antes de calcular | ");
+      expect(flujo).not.toContain("Plazo de reporte");
+      expect(flujo).not.toContain("Soporte obligatorio");
+      // «Documentos dentro de su plazo» es de estado: conserva el rótulo del plazo.
+      const estado = await hojaFicha({ calculo: { clave: "dentro_plazo", alcance: "proceso" } });
+      expect(estado).toContain("Datos de operación | Quién mide | Nadie: lo calcula el sistema");
+      expect(estado).toContain("Datos de operación | Plazo de reporte | ");
+      expect(estado).not.toContain("Días de espera antes de calcular");
+      expect(estado).not.toContain("Soporte obligatorio");
+      // Un manual, como siempre.
+      const manual = await hojaFicha({});
+      expect(manual).toContain(`Datos de operación | Quién mide | ${quien.nombre}`);
+      expect(manual).toContain("Datos de operación | Plazo de reporte | ");
+      expect(manual).toContain("Datos de operación | Soporte obligatorio | Sí: cada reporte lleva su soporte");
+      expect(manual).not.toContain("Nadie: lo calcula el sistema");
+    }));
 });
 
 describe("el Excel de resultados", () => {

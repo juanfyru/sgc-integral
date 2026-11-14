@@ -8,6 +8,7 @@ import {
   fechaYHora,
   FORMA,
   fraseDeImportada,
+  operacionSegunOrigen,
   origenEnTexto,
   reglaDeFicha,
   TENDENCIA,
@@ -87,6 +88,8 @@ export function FichaTecnica({
   const c = ficha.contenido;
   const u = unidadDeFicha(c);
   const regla = reglaDeFicha(c);
+  // Los datos de operación según el origen de esta versión: en una automática nadie mide (anexo 14B, §5.3).
+  const segun = operacionSegunOrigen(c);
   const nombres = Object.fromEntries(c.variables.map((v) => [v.letra, v.nombre?.trim() || v.letra]));
   const medir = c.responsables.filter((r) => r.funcion === "medir").map((r) => r.cargoNombre);
   const analizar = c.responsables.filter((r) => r.funcion === "analizar").map((r) => r.cargoNombre);
@@ -199,12 +202,12 @@ export function FichaTecnica({
 
       {operacion ? (
         <Seccion id={id("operacion")} nivel={nivel} titulo="Datos de operación" descripcion="No son contenido de la ficha: no crean versión ni se firman.">
-          <Dato termino="Quién mide">{operacion.mide.length > 0 ? operacion.mide.join(", ") : "El líder del proceso"}</Dato>
+          <Dato termino="Quién mide">{segun.mide ?? (operacion.mide.length > 0 ? operacion.mide.join(", ") : "El líder del proceso")}</Dato>
           <Dato termino="Quién analiza">{operacion.analiza.length > 0 ? operacion.analiza.join(", ") : "El líder del proceso"}</Dato>
           <Dato termino="Quién hace seguimiento">{operacion.seguimiento.length > 0 ? operacion.seguimiento.join(", ") : ninguno}</Dato>
-          <Dato termino="Plazo de reporte">{`${operacion.plazoReporteDias} días después del cierre del periodo`}</Dato>
+          <Dato termino={segun.rotuloPlazo}>{`${operacion.plazoReporteDias} días después del cierre del periodo`}</Dato>
           <Dato termino="Inicio de medición">{operacion.inicioMedicion ? etiquetaDePeriodo(operacion.inicioMedicion) : ninguno}</Dato>
-          <Dato termino="Soporte obligatorio">{operacion.soporteObligatorio ? "Sí: cada reporte lleva su soporte" : "No"}</Dato>
+          {segun.conSoporte ? <Dato termino="Soporte obligatorio">{operacion.soporteObligatorio ? "Sí: cada reporte lleva su soporte" : "No"}</Dato> : null}
           <Dato termino="Nivel de acceso">
             <Insignia variante="neutra">{operacion.nivelAcceso === "restringido" ? "Restringido" : "General"}</Insignia>
           </Dato>

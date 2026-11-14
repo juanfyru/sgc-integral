@@ -210,7 +210,7 @@ export function FichaImpresa(d: DatosDeFichaImpresa) {
 
       <Bloque id={id("operacion")} titulo="Datos de operación" corto>
         <p className="py-1 text-xs text-muted-foreground">No son contenido de la ficha: no crean versión ni se firman.</p>
-        <Campos nombre="Datos de operación" campos={camposDeOperacion(d.operacion)} />
+        <Campos nombre="Datos de operación" campos={camposDeOperacion(d.operacion, ficha.contenido)} />
       </Bloque>
 
       <Bloque id={id("seguimiento")} titulo={`Seguimiento y medición · ${anio}`}>

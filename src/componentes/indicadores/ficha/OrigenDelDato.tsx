@@ -4,7 +4,7 @@ import { Check } from "lucide-react";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import type { DatosFicha } from "@/lib/esquemas/indicadores";
 import { enPalabras, formulaDeForma } from "@/lib/indicadores/formula/formas";
-import type { Forma, OpcionesFicha } from "@/lib/indicadores/tipos";
+import { ESPERA_ANTES_DE_CALCULAR, type Forma, type OpcionesFicha } from "@/lib/indicadores/tipos";
 
 /**
  * «Cómo se obtiene el dato» (anexo 14B, §5.3): lo digita una persona o lo calcula el sistema. Con el sistema, se elige uno
@@ -57,7 +57,7 @@ export const formaDelCalculo = (c: CalculoDeFicha) => c.forma as Exclude<Forma, 
  */
 export function plazoDelCalculo(c: CalculoDeFicha): { etiqueta: string; ayuda: string } {
   return c.clase === "flujo"
-    ? { etiqueta: "Días de espera antes de calcular", ayuda: "El sistema calcula el periodo cuando pasan estos días desde su fin. Con 0, al terminar el periodo." }
+    ? { etiqueta: ESPERA_ANTES_DE_CALCULAR, ayuda: "El sistema calcula el periodo cuando pasan estos días desde su fin. Con 0, al terminar el periodo." }
     : { etiqueta: ROTULO_PLAZO, ayuda: "Es la fecha límite del análisis. La foto se toma al terminar el periodo." };
 }
 
