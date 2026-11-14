@@ -219,6 +219,7 @@ export async function indicadoresDocumentales(
       .sort((a, b) => (a.valor ?? 101) - (b.valor ?? 101) || a.proceso.localeCompare(b.proceso, "es")),
     vencidos,
     tramites: { publicados: publicados.length, enCurso: Number(abiertos.n) },
+    conformidadDelPeriodo: conformidadPeriodo,
   };
 }
 

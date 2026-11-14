@@ -116,4 +116,9 @@ export type ResultadoIndicadores = {
   }[];
   vencidos: VencidoIndicador[];
   tramites: { publicados: number; enCurso: number };
+  /**
+   * La conformidad en puntos de uso del periodo: las verificaciones conformes cerradas en él sobre las cerradas, con la
+   * cifra truncada del texto «en el periodo: …» de la tarjeta. La toma el cálculo `conformidad_periodo` (anexo 14B, §5.5).
+   */
+  conformidadDelPeriodo: Medicion;
 };

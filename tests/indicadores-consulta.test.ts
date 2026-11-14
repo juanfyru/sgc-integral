@@ -290,6 +290,23 @@ describe("indicadoresDocumentales", () => {
     expect(de(r, "conformidad").detalle).toBe("en el periodo: 66 % de 3 verificaciones cerradas");
   }));
 
+  it("la conformidad del periodo sale también como dato, con las cifras del texto «en el periodo: …» de la tarjeta", () => revertida(sql, async (tx) => {
+    const lider = await usuarioDePrueba(tx, { rol: "lider_proceso" });
+    const admin = await sesionAdmin(tx);
+    for (const respuesta of ["conforme", "conforme", "no_conforme"] as const) {
+      const punto = await puntoDePrueba(tx, { responsable: lider });
+      await verificarPunto(tx, { verificador: admin, punto, ahora, respuesta });
+    }
+    const r = (await indicadoresDocumentales(lider, { periodo: "2026" }, { sql: tx, ahora }))!;
+    expect(r.conformidadDelPeriodo).toEqual({ valor: 66, numerador: 2, denominador: 3 });
+    const { valor, denominador } = r.conformidadDelPeriodo;
+    expect(de(r, "conformidad").detalle).toBe(`en el periodo: ${valor} % de ${denominador} verificaciones cerradas`);
+
+    const vacio = (await indicadoresDocumentales(admin, { periodo: "2000" }, { sql: tx, ahora }))!;
+    expect(vacio.conformidadDelPeriodo).toEqual({ valor: null, numerador: 0, denominador: 0 });
+    expect(de(vacio, "conformidad").detalle).toBe("en el periodo: sin verificaciones cerradas");
+  }));
+
   it("con un proceso elegido, la aprobación y las etapas en plazo cuentan solo los trámites de ese proceso", () => revertida(sql, async (tx) => {
     const gth = await procesoId(tx, "GTH");
     const cex = await procesoId(tx, "CEX");
@@ -363,6 +380,7 @@ describe("construirExcelIndicadores", () => {
         proceso: "Gestión del Talento Humano", proximaRevision: finDeFecha("2026-01-10", ZONA), dias: 302, tramite: "SOL-2026-004",
       }],
       tramites: { publicados: 18, enCurso: 4 },
+      conformidadDelPeriodo: { valor: null, numerador: 0, denominador: 0 },
     };
     const libro = new ExcelJS.Workbook();
     const buffer = await construirExcelIndicadores(r, { hospital: "+Hospital de prueba", generadoEn: "9 nov 2026", proceso: "todos", zona: ZONA });
