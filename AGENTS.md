@@ -104,40 +104,41 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
 5. **Trazabilidad completa:** toda acción de cualquier usuario queda en bitácora, inmutable en BD,
    con quién, qué y cuándo. `auditoria`, `accesos`, `firmas`, `tramite_eventos`, `copia_eventos`,
    `acuse_eventos`, `ratificaciones`, `externo_verificaciones`, `norma_cambios`,
-   `medicion_eventos`, `medicion_observaciones`, `importaciones_indicadores` e `importacion_eventos` son de solo inserción (trigger que rechaza
-   `UPDATE` y `DELETE` incluso al dueño del esquema, más los privilegios de `sgc_app`); los
-   usuarios con historia se desactivan, nunca se borran, y una verificación cerrada no se
-   modifica. Una revisión anual cerrada tampoco, ni sus procesos ni sus decisiones: el trigger
-   `sgc_impedir_si_revision_cerrada` rechaza `UPDATE` y `DELETE` sobre ellas y la inserción de
-   filas hijas. Lo mismo en los indicadores: una medición cerrada no cambia salvo su reapertura,
-   que deja quién, cuándo y por qué (`sgc_impedir_si_medicion_cerrada`, sobre `mediciones` y
-   `medicion_valores`, también al insertar valores); una versión aprobada de una ficha no cambia,
-   ni sus variables, responsables y normas (`sgc_impedir_si_version_aprobada`, también al insertar
-   hijas); y un cierre del mes (`cierres_indicadores`) no se modifica ni se borra (trigger
-   `sgc_impedir_modificacion` y el `REVOKE` de `sgc_app`, con su caso en
-   `tests/privilegios-bd.test.ts`; la reapertura no lo toca). **Única excepción de las fichas aprobadas
-   (spec 14A §5.9):** una versión aprobada que entró con un lote de importación solo se borra, con sus
-   variables, responsables y normas, al «Deshacer la importación» (`deshacerImportacion`,
-   `src/db/consultas/indicadores/importacion.ts`), y solo mientras ninguna ficha del lote tenga datos
-   reportados, personas designadas ni otra versión, ni una propuesta editada o enviada a aprobación
-   después de importarse (`condicionDeDeshacer`, revisada otra vez con las filas bloqueadas). El trigger la deja borrar si la transacción lleva la marca
-   `sgc.deshacer_importacion` con el id de su lote, que se pone en ese único lugar y local a la
-   transacción (`set_config(…, true)`: una marca de sesión quedaría en la conexión del pool; lo exige
-   `tests/indicadores-importacion.test.ts`). El lote y sus eventos no se tocan: deshacer les añade el
-   suyo. Cada acción de la bitácora
-   tiene su frase legible y su nombre de filtro en `src/lib/bitacora-detalle.ts`
-   (`describirEvento`, `nombreDeAccion`), armada solo con el `detalle` de la fila.
-   `tests/bitacora-detalle.test.ts` lo exige para las acciones con nombre literal en las llamadas
-   a `registrarAuditoria` de `src/` (lee el texto: también los dos lados de un ternario) y para
-   las armadas con una variable o una plantilla que lista a mano (`ACCIONES_ARMADAS`). Las
-   plantillas `tramite_*` y las de los catálogos del mapa (`reordenar_`, `activar_`, `desactivar_`
-   y `borrar_` más el catálogo, `mapa-admin.ts`) tienen frase por su camino genérico y el test no
-   las vigila. Una acción nueva que se arme con una variable entra a `ACCIONES_ARMADAS`.
-   **Única excepción documentada (F12-D35):** las preferencias de interfaz de cada
-   persona (el tema) y las marcas de notificación leída no se auditan: no son evidencia de 7.5
-   y llenarían la bitácora de ruido. El acuse de lectura, que F12-D35 dejó pendiente, sí se
-   audita (`acuse_lectura`) y tiene su historial inmutable en `acuse_eventos`. Cualquier otra
-   acción sin auditar se propone antes.
+   `medicion_eventos`, `medicion_observaciones`, `importaciones_indicadores` e
+   `importacion_eventos` son de solo inserción (trigger que rechaza `UPDATE` y `DELETE` incluso al
+   dueño del esquema, más los privilegios de `sgc_app`); los usuarios con historia se desactivan,
+   nunca se borran, y una verificación cerrada no se modifica. Una revisión anual cerrada tampoco,
+   ni sus procesos ni sus decisiones: el trigger `sgc_impedir_si_revision_cerrada` rechaza `UPDATE`
+   y `DELETE` sobre ellas y la inserción de filas hijas. Lo mismo en los indicadores: una medición
+   cerrada no cambia salvo su reapertura, que deja quién, cuándo y por qué
+   (`sgc_impedir_si_medicion_cerrada`, sobre `mediciones` y `medicion_valores`, también al insertar
+   valores); una versión aprobada de una ficha no cambia, ni sus variables, responsables y normas
+   (`sgc_impedir_si_version_aprobada`, también al insertar hijas); y un cierre del mes
+   (`cierres_indicadores`) no se modifica ni se borra (trigger `sgc_impedir_modificacion` y el
+   `REVOKE` de `sgc_app`, con su caso en `tests/privilegios-bd.test.ts`; la reapertura no lo toca).
+   Cada acción de la bitácora tiene su frase legible y su nombre de filtro en
+   `src/lib/bitacora-detalle.ts` (`describirEvento`, `nombreDeAccion`), armada solo con el
+   `detalle` de la fila. `tests/bitacora-detalle.test.ts` lo exige para las acciones con nombre
+   literal en las llamadas a `registrarAuditoria` de `src/` (lee el texto: también los dos lados de
+   un ternario) y para las armadas con una variable o una plantilla que lista a mano
+   (`ACCIONES_ARMADAS`). Las plantillas `tramite_*` y las de los catálogos del mapa (`reordenar_`,
+   `activar_`, `desactivar_` y `borrar_` más el catálogo, `mapa-admin.ts`) tienen frase por su
+   camino genérico y el test no las vigila. Una acción nueva que se arme con una variable entra a
+   `ACCIONES_ARMADAS`. Hay dos excepciones nombradas, una a la inmutabilidad y otra a la bitácora:
+   - **Las fichas aprobadas de un lote de importación (spec 14A §5.9):** una versión aprobada que
+     entró con un lote solo se borra, con sus variables, responsables y normas, al «Deshacer la
+     importación» (`deshacerImportacion`, `src/db/consultas/indicadores/importacion.ts`), y solo
+     mientras ninguna ficha del lote tenga datos reportados, personas designadas ni otra versión,
+     ni una propuesta editada o enviada a aprobación después de importarse
+     (`condicionDeDeshacer`, revisada otra vez con las filas bloqueadas). El trigger la deja borrar
+     si la transacción lleva la marca `sgc.deshacer_importacion` con el id de su lote, que se pone
+     en ese único lugar y local a la transacción (`set_config(…, true)`: una marca de sesión
+     quedaría en la conexión del pool; lo exige `tests/indicadores-importacion.test.ts`). El lote y
+     sus eventos no se tocan: deshacer les añade el suyo.
+   - **Lo que no se audita (F12-D35):** las preferencias de interfaz de cada persona (el tema) y
+     las marcas de notificación leída: no son evidencia de 7.5 y llenarían la bitácora de ruido. El
+     acuse de lectura, que F12-D35 dejó pendiente, sí se audita (`acuse_lectura`) y tiene su
+     historial inmutable en `acuse_eventos`. Cualquier otra acción sin auditar se propone antes.
 6. **El MIME se detecta de los magic bytes en la carga** (no de la extensión del nombre)
    y se guarda en BD. El ícono de formato se deriva del MIME guardado. De `file-type`, en `src/`
    solo se importa `fileTypeFromBuffer` (F14A-R41): `fileTypeFromFile` carga sus módulos con un
@@ -345,10 +346,10 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   punto» (`exigirSinOtroAdmin` al abrir y al cerrar la verificación del punto del que uno es
   responsable).
 - **`archivos` admite dueños distintos de una versión** (`contexto`: `version`, `jornada`,
-  `verificacion_item`, `norma`, `revision_anual`, `hallazgo`, `medicion` y `reporte_externo`, con
-  `contexto_id`; los ocho del `CHECK` `archivos_contexto_valido` de `src/db/esquema.ts`, y
-  `CONTEXTOS_EVIDENCIA` de `src/lib/subida.ts` son los siete que reciben evidencias, todos menos
-  `version`; `reporte_externo` es de la 14B y aún no tiene ruta): el control
+  `verificacion_item`, `norma`, `revision_anual`, `hallazgo`, `medicion`, `reporte_externo` e
+  `importacion_indicadores`, con `contexto_id`; los nueve del `CHECK` `archivos_contexto_valido` de
+  `src/db/esquema.ts`, y `CONTEXTOS_EVIDENCIA` de `src/lib/subida.ts` son los ocho que reciben
+  evidencias, todos menos `version`; `reporte_externo` es de la 14B y aún no tiene ruta): el control
   de acceso de un archivo es el de su
   dueño, y las consultas heredadas siguen filtrando por `version_id`. El PDF de una norma se
   lee como la norma; la foto de la corrección de un hallazgo, como el hallazgo (`filtroPuntos`);
@@ -357,7 +358,9 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   descarga (`src/db/consultas/indicadores/soportes.ts`);
   el informe de una revisión anual (rol `evidencia`, `version_id` nula, uno por año en
   `informes/revision-<año>.pdf`) solo lo descargan Admin SGC, Gerencia y Control Interno
-  (`puedeVerInformeAnual`), y los demás reciben 404.
+  (`puedeVerInformeAnual`), y los demás reciben 404; la plantilla de un lote de importación de
+  indicadores (`importacion_indicadores`, una por lote y solo `.xlsx`) solo la sube y la descarga
+  quien tiene `indicadores.administrar`, siempre como descarga, y quien no puede verla recibe 404.
 - **Una versión deja de ser vigente solo por `aplicarPublicacion`, `anularVigenteEn` o
   `deshacerCarga`**, y los tres llaman `alDejarDeSerVigente`: marca sus copias controladas
   como «por recoger», supera sus acuses pendientes y su socialización requerida. Ninguna otra
@@ -389,8 +392,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   de `asegurarActa` (F13A-R17), y un cambio de su invariante va en los dos.
 - **Tests contra la BD de desarrollo:** todo usuario de prueba que genere filas en
   `auditoria`, `accesos`, `firmas`, `tramite_eventos`, `copia_eventos`, `acuse_eventos`,
-  `ratificaciones`, `externo_verificaciones`, `norma_cambios`, `medicion_eventos` o
-  `medicion_observaciones` usa un nombre único por corrida
+  `ratificaciones`, `externo_verificaciones`, `norma_cambios`, `medicion_eventos`,
+  `medicion_observaciones`, `importaciones_indicadores` o `importacion_eventos` usa un nombre único por corrida
   (`zz_<algo>_${Date.now()}`) y no se borra (FK `RESTRICT` y trigger de solo inserción).
   Nunca `DELETE` ni `UPDATE` sobre esas tablas en una limpieza. Un test que escribe datos
   capaces de bloquear la migración o el arranque, o de romper otros tests (un usuario duplicado, la
@@ -400,8 +403,9 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   cierra dentro de la transacción revertida, en un año lejano, y antes cierra la que esté
   abierta (`sinRevisionAbierta`, `tests/utiles/vigencia.ts`). Tampoco deja confirmado un cierre
   del mes de indicadores (no se borra y su mes es único) ni una ficha aprobada (su versión ya no
-  cambia y su firma no se borra): los hace dentro de una transacción que se revierte, y los del
-  cierre, en un año lejano del pasado con `ahora` inyectado.
+  cambia y su firma no se borra) ni un lote de importación importado (no se borra): los hace dentro
+  de una transacción que se revierte, y los del cierre, en un año lejano del pasado con `ahora`
+  inyectado.
 - **Transiciones del trámite:** la firma se verifica fuera de la transacción y lo que puede
   fallar va antes, en un validador de solo lectura (F13A-R4); `opciones.ahora` es la hora de
   todo lo escrito (F13A-P1). `transicionar` guarda en el `detalle` de cada evento que cambia de
@@ -428,13 +432,30 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   acta y `listarFirmas` filtran por trámite y no las ven.
 - **La ficha de un indicador** (`src/db/consultas/indicadores/`, spec 14 §7): la sigla `IND` está
   reservada y no es un tipo de documento (`mapa-admin.ts` la rechaza), para que `SGC-IND-01` no
-  se confunda con un `PROCESO-TIPO-NN`. Una versión guarda, junto a la referencia, el nombre con
+  se confunda con un `PROCESO-TIPO-NN`; desde la entrega complementaria (spec 14A) la sigla `ID`
+  también está reservada y el código de una ficha nueva es `SIGLA-ID-NNN` (tres cifras, contado por
+  sigla y sin reusarse), con la sigla del subproceso si la tiene (opcional y única entre procesos y
+  subprocesos, de 2 a 4 letras; el subproceso la recibe al editarlo en el mapa o al importar un
+  lote, `asignarSiglaASubproceso`) y, si no, la del proceso; los `-IND-` antiguos siguen valiendo. Una versión guarda, junto a la referencia, el nombre con
   que se firmó cada catálogo que cita (tipo, clasificación, unidad, objetivo, proceso, subproceso,
   cargos y normas), y la huella va sobre esos textos: renombrar un cargo, una unidad o un proceso
   no cambia una ficha aprobada. Un indicador enviado alguna vez a aprobación no se borra: se
   descarta y su código sigue ocupado. Los **históricos** (periodos que terminaron antes de la
   primera aprobación) no generan tareas, avisos ni la marca «Requiere acción de mejora», y no
   cuentan ni rompen la racha del incumplimiento repetido.
+  **Importar un lote** (spec 14A §5, `importacion.ts`): la plantilla es la de la app
+  (`plantillaDeImportacion`, 26 columnas en `columnas.ts`), una por lote y en el almacén; la vista
+  previa revisa cada fila (`revisarLote`) y pide las correspondencias de subproceso, cargo, tipo y
+  unidad; importar pide la clave (F13A-R4: validador de solo lectura, `verificar` fuera de la
+  transacción y todo repetido dentro con el lote bloqueado) y es todo o nada para las filas sin
+  problemas. Cada lote lleva su aprobación previa (documento, quien aprobó y fecha) y una regla de
+  rangos única (Atención desde el 90 % de la meta en ascendente y hasta el 110 % en descendente,
+  por omisión); las «Aprobado» entran aprobadas con `importacion_id` y `aprobacion_previa_*`, sin
+  firma «Aprobó» ni aviso (la constancia con clave es el evento `importado`, no `firmas`); las
+  «Propuesto» son borradores normales, sin esas columnas; los periodos que terminaron antes de
+  importar son históricos. «Deshacer» es del lote entero y su única excepción al trigger de las
+  versiones aprobadas es la de la regla 5; una tabla de la 14B que cuelgue de una ficha del lote
+  añade su motivo a `condicionDeDeshacer`.
 - **Fórmulas:** una fórmula de indicador solo se evalúa con el intérprete de
   `src/lib/indicadores/formula/` (gramática cerrada, fracciones exactas con `bigint`, límites de
   longitud, profundidad y cifras); nunca `eval`, `Function` ni SQL armado con texto del usuario.
@@ -450,7 +471,10 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   recálculo que no nace de un cambio en la medición (esos dos) es de sistema (`sistema: "racha"` o
   `"soporte"`): no la mueve de la versión con que se congeló al reportarla, su evento dice qué pasó
   con la marca, y el de la racha no reabre por falta de soporte lo ya reportado. **El soporte
-  obligatorio rige hacia adelante:** activarlo solo alcanza las mediciones aún en plazo.
+  obligatorio rige hacia adelante:** activarlo solo alcanza las mediciones aún en plazo. También
+  escribe `cumple`: alcanzar la meta no es lo mismo que estar en Bien, porque con rangos escritos
+  (forma B, spec 14A §3) Bien puede empezar antes de la meta; una medición anterior a la `0012`
+  tiene `cumple` nulo y se lee como antes (Bien ⇔ cumple, `cumpleDeFila`).
 - **El cumplimiento de un porcentaje con meta se decide con la razón exacta, en enteros**
   (`cumplePorcentaje`, `src/lib/indicadores-documentales/metas.ts`; `conformidad`,
   `src/lib/distribucion/verificacion.ts`), nunca con el entero que se muestra. `conformidad()`
@@ -461,7 +485,9 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   vale para todo indicador, no solo los porcentajes: el semáforo compara la fracción exacta
   (`Fraccion`, `src/lib/indicadores/formula/fraccion.ts`) y la cifra que se muestra nunca lo
   contradice (`textoValor`, `src/lib/indicadores/textos.ts`: redondea a los decimales de la ficha
-  y, si eso contradijera el color, trunca, con más decimales si hace falta).
+  y, si eso contradijera el color, trunca, con más decimales si hace falta). «Cumple» es alcanzar
+  la meta y se decide con la misma razón exacta (`cumpleMeta`); un Bien que no la alcanza lleva su
+  etiqueta propia, avisa como un Atención y pide análisis (spec 14A §3.1).
 - **Tests y demo:** `tramiteEn` crea su documento: ningún test abre un trámite sobre uno de
   la demo. `tests/semilla-tramites.test.ts` lee el estado de la demo y salta con mensaje si
   ya avanzó; `SEMILLA_RECIEN=1 npm test` exige la demo recién sembrada.

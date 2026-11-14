@@ -113,6 +113,7 @@ la clasificación y la versión de la ficha vigente. Tiene hasta cuatro pestaña
 | Lo que dice | Qué significa |
 |---|---|
 | **Bien** | Cumple la meta. Es lo único que cuenta como «Cumple» |
+| **Bien, no alcanza la meta** | Está en verde, pero por debajo de la meta (sección «Bien sin alcanzar la meta», abajo) |
 | **Atención** | No cumple, pero está cerca: pide un análisis |
 | **Crítico** | Está lejos de la meta: pide causa y acción propuesta |
 | **Sin dato** («s. d.») | No se reportó. **No es cero**: se ve vacío y no entra al acumulado |
@@ -134,6 +135,14 @@ La ficha dice cómo se reparten los colores, en palabras: «Bien desde 90 % · A
 89,9 % · Crítico por debajo de 63 %». **La cifra nunca contradice el color:** el SGC decide con el
 valor exacto y, si al redondear la cifra pareciera cumplir sin cumplir, la muestra sin redondear
 hacia arriba (89,96 % con meta de 90 % se ve «89,9 %», no «90,0 %»).
+
+**Bien sin alcanzar la meta.** En algunos indicadores quien creó la ficha escribió sus propios
+rangos y dejó que Bien empiece antes de la meta (por ejemplo, meta 100, «Bien desde 91»). Un
+resultado de 95 es entonces **verde pero no cumple la meta**: nunca se ve como un verde a secas.
+Dice **Bien, no alcanza la meta** (en la matriz es un ✓ con asterisco y en la ficha impresa, «Bien\*»,
+con la explicación al pie), no cuenta como «Cumple», **pide análisis como una Atención** y avisa como una Atención: no
+escala a los líderes ni al Administrador del SGC. La gráfica y la racha de periodos sin cumplir
+también lo tratan así. Una medición anterior a esta función se lee como siempre: Bien es Cumple.
 
 ### 2.4 La frase y la comparación
 
@@ -318,8 +327,8 @@ que mide) o, sin designado, el líder del proceso.
 
 | Resultado | Análisis |
 |---|---|
-| Bien, o sin meta | Opcional |
-| Atención | Obligatorio, de al menos 10 caracteres |
+| Bien que alcanza la meta, o sin meta | Opcional |
+| Atención, o Bien que no alcanza la meta | Obligatorio, de al menos 10 caracteres |
 | Crítico, o varios periodos seguidos sin cumplir | En dos partes: **Causa de la desviación** y **Acción propuesta**, de al menos 10 caracteres cada una. La medición queda marcada «Requiere acción de mejora» |
 | No aplica | No se pide: basta el motivo |
 
@@ -359,7 +368,7 @@ seguimiento**) ve los de su indicador.
 | Resultado | Reciben la alerta |
 |---|---|
 | Bien, sin meta o no aplica | Nadie |
-| Atención | Quien analiza y quien hace seguimiento |
+| Atención, o Bien que no alcanza la meta | Quien analiza y quien hace seguimiento |
 | Crítico (o varios periodos sin cumplir) | Además, los líderes del proceso y el Administrador del SGC |
 
 La alerta dice el resultado en palabras: «Cumplimiento del Programa de Auditorías Internas: 60 %
@@ -423,23 +432,33 @@ En **Indicadores**, pulse **Nuevo indicador**.
    | **Fórmula libre** | Usted la escribe (sección 6.2) | De la A a la Z |
 
 2. Llene lo que está a la vista: **Nombre**, **Proceso** y **Subproceso**, **Código** (el SGC
-   propone el siguiente número del proceso; un código ya usado no se repite, aunque su indicador se
-   haya retirado o descartado), **Objetivo del indicador**, cada variable con su nombre y su fuente,
+   propone el siguiente número con la forma del hospital, `SIGLA-ID-NNN`: con la sigla del
+   subproceso si la tiene, como `CNT-ID-001` en Gestión Contable, y si no, con la del proceso; un
+   código ya usado no se repite, aunque su indicador se haya retirado o descartado; los códigos
+   antiguos `SGC-IND-01` siguen valiendo), **Objetivo del indicador**, cada variable con su nombre y su fuente,
    **Periodicidad**, **Tendencia** (ascendente: mayor es mejor; descendente: menor es mejor;
    constante: mantenerse en un rango), **Meta**, **Quién mide** y **Quién analiza**.
-3. **Así quedará el semáforo** escribe los rangos en cuanto pone la meta. Por defecto el límite de
-   crítico sigue a la meta con un umbral de atención de 70 %: con una meta de 90 % (mayor es
-   mejor), «Bien desde 90 % · Atención de 63 a 89,9 % · Crítico por debajo de 63 %». **Cambiar
-   rangos** permite otro **Umbral de atención (%)** o **Rangos fijos** con su **Límite de
-   crítico** (cuando la meta es 0 y menos es mejor, solo rangos fijos). Sin meta, el indicador
-   queda «Sin meta», sin colores ni alertas.
+3. **Rangos del semáforo:** usted escribe los rangos de cada estado, una fila por estado con un
+   signo (`≥`, `>`, `≤`, `<` o «entre») y uno o dos números. Por ejemplo, con meta 100 y mayor es
+   mejor: «Bien ≥ 91 · Atención entre 41 y 90 · Crítico ≤ 40». «Entre» incluye sus dos extremos y,
+   más allá de la punta, manda el rango de la punta. Debajo, el SGC los dice en palabras y la
+   prueba usa lo escrito. El SGC rechaza, junto al campo, los rangos que se cruzan, los que dejan
+   un hueco de más de una unidad entre uno y otro, los que están en el orden contrario a la
+   tendencia y una meta que queda fuera de Bien (la meta puede ser más estricta que el inicio de
+   Bien, nunca más floja). **Este indicador no usa Atención** deja solo Bien y Crítico («Bien ≤ 30
+   · Crítico > 30» si menos es mejor). En «constante» (mantenerse en un rango), Bien va en medio y
+   Atención y Crítico a cada lado. Sin meta, el indicador queda «Sin meta», sin colores ni
+   alertas. Las fichas aprobadas antes de esta función conservan su regla (un umbral sobre la
+   meta) hasta su próximo cambio mayor, que pide escribir los rangos.
 4. **Prueba:** escriba valores de ejemplo y vea el resultado, el color y la frase. Es obligatoria
    antes de enviar.
 5. **Más opciones** trae lo demás de la ficha, con valores por defecto que puede cambiar: tipo
    (Eficacia), clasificación (Operativo: decide quién aprueba), unidad y decimales, requisito
    («NTC ISO 9001:2015, numeral 9.2»), objetivo que mide, procedimiento y punto de control
    («PC-13»), normas que lo exigen (obligatoria en un regulatorio; solo normas vigentes o
-   modificadas), cargos responsables de medir y de analizar, línea base, sustento de la meta,
+   modificadas), **Nivel** (Estructura, Proceso o Resultado, como lo llama el hospital) y **Riesgo
+   asociado** (texto libre; opcionales), cargos responsables de medir y de analizar, línea base,
+   sustento de la meta,
    límites del resultado, qué incluye y qué excluye cada variable y cómo se junta al pasar a un
    periodo mayor (se suma, último valor o promedio), **Inicio de medición** (puede ser anterior a
    hoy: así se abren los históricos), **Nivel de acceso**, soporte obligatorio y, si se reporta a
@@ -586,16 +605,69 @@ Barra lateral → **Administración** → **Configuración de indicadores**:
   **Objetivos** (de calidad o institucionales, a los que una ficha puede aportar). Cada uno se
   crea, se edita, se activa o desactiva y se borra solo si ninguna ficha lo usa. Renombrar uno no
   cambia las fichas ya aprobadas (sección 6.3).
-- **Parámetros**: **Umbral de atención (%)** (70), **Días de aviso previo** (3), **Plazo para
-  reportar (días)** (10), **Periodos seguidos de incumplimiento** (3) y **Variación que se debe
-  confirmar (%)** (30). Pulse **Guardar los parámetros**. El umbral y el plazo son los que trae
-  una ficha nueva; las ya creadas conservan los suyos.
+- **Parámetros**: **Días de aviso previo** (3), **Plazo para reportar (días)** (10), **Periodos
+  seguidos de incumplimiento** (3) y **Variación que se debe confirmar (%)** (30). Pulse **Guardar
+  los parámetros**. El plazo es el que trae una ficha nueva; las ya creadas conservan el suyo. Ya
+  no hay un umbral de atención general: cada ficha escribe sus rangos (sección 6.1).
 
 Los días para avisar al jefe de un reporte vencido son los **Días para avisar al jefe** de la
 **Configuración documental** (Capítulo 5, sección 14.1).
 
-La sigla **IND** está reservada: **Tipos de documento** no la admite, para que un indicador no se
-confunda con un documento.
+Las siglas **IND** e **ID** están reservadas: **Tipos de documento** y las siglas de proceso y
+subproceso no las admiten, para que un indicador no se confunda con un documento. Si un proceso o
+un tipo de documento ya tenía una de ellas, sigue funcionando, pero no se podrá editar sin
+cambiarla.
+
+**La sigla del subproceso.** En **Administración** → **Mapa de procesos**, al crear o editar un
+subproceso aparece **Sigla (opcional)**, de 2 a 4 letras, que no puede repetirse entre procesos y
+subprocesos. Con ella, las fichas nuevas de ese subproceso proponen su código con esa sigla
+(`CNT-ID-001`). Un subproceso sin sigla usa la de su proceso.
+
+### 6.10 Importar indicadores
+
+Para cargar de una vez los indicadores que el hospital ya tenía aprobados (por ejemplo, la matriz
+institucional aprobada por el Gerente), sin digitarlos uno por uno ni aprobarlos de nuevo. Barra
+lateral → **Administración** → **Configuración de indicadores** → **Importar indicadores**. Solo
+lo hace quien administra indicadores.
+
+1. **Descargue la plantilla** con **Descargar la plantilla**. Trae la hoja «Indicadores» con 26
+   columnas, una hoja de instrucciones y listas desplegables con los procesos, subprocesos, tipos,
+   clasificaciones y unidades de hoy.
+2. **Pase la matriz a la plantilla**, una fila por indicador, sin cambiar los encabezados ni el
+   orden de las columnas (hasta 500 filas). Lo que la matriz trae junto se separa: la fórmula va
+   en **Variable A** y **Variable B**, y la forma y el factor salen de la unidad. El proceso va
+   por su sigla; el subproceso, por el nombre del mapa (si no coincide, se resuelve después). La
+   meta va en la unidad del indicador: **95, no 0,95**, y sin separador de miles. **Cómo se junta
+   A** y **B** se llena para una población, un inventario o un total del Listado Maestro (algo que
+   se cuenta en un momento): **Último valor**; vacío, se suma. **Estado** es **Aprobado** (ya
+   aprobado antes de SGC Integral) o **Propuesto** (entra como borrador y sigue el camino de
+   aprobación). El código es `SIGLA-ID-NNN`; si su sigla no es la del proceso, la importación
+   ofrece dársela al subproceso.
+3. En **Nueva importación**, elija **Plantilla llena (.xlsx)** y súbala. Una importación lleva una
+   sola plantilla; si le falta algo o no es la plantilla, cree otra.
+4. En la página de la importación, **Aprobación previa**: el **Documento** que las aprobó (por
+   ejemplo `SGC-TI-002 v1`), **Quién aprobó** y la **Fecha**. Es una vez para todo el lote y queda
+   en cada ficha aprobada.
+5. **La regla de los rangos:** la matriz no trae rangos por indicador, así que cada ficha con meta
+   toma la regla general: **Atención desde el 90 % de la meta** si es ascendente y **hasta el
+   110 %** si es descendente (puede cambiar los dos números). Bien empieza en la meta.
+6. **Vista previa.** Cada fila dice si está lista o qué problema tiene (un código repetido o ya
+   usado, una meta escrita como fracción, una celda con error…). Una fila con problemas no se
+   importa; el resto sí. Donde un subproceso, cargo, tipo o unidad no coincide con el de la app,
+   la vista pide **elegir a cuál corresponde**; la elección vale para todas las filas con ese
+   texto. Pulse **Actualizar la vista previa** después de cada cambio.
+7. **Importar.** Firme con su clave (y el código del autenticador si lo tiene). Es todo o nada
+   para las filas listas. Las **Aprobado** quedan activas con su ficha aprobada y la leyenda
+   «Aprobada antes de la implementación de SGC Integral» con el documento, quien aprobó y la
+   fecha; los periodos que terminaron antes de importar quedan como históricos **Por registrar**,
+   sin tareas ni avisos. Las **Propuesto** quedan en borrador. No se designa a nadie para medir:
+   hágalo después (sección 6.4); los cargos sí se importan.
+8. **Deshacer.** Si se equivocó, la página del lote ofrece **Deshacer la importación** con un
+   motivo y su clave: las fichas desaparecen, sus códigos quedan libres y la bitácora lo cuenta;
+   la plantilla corregida puede importarse otra vez. Se deshace el lote entero y solo mientras
+   ninguna de sus fichas tenga datos reportados, personas designadas ni una versión posterior, y
+   mientras ninguna propuesta se haya editado o enviado a aprobación: entonces el botón no se
+   ofrece y la página dice por qué.
 
 ## 7. Qué cambia respecto del Excel de indicadores
 
