@@ -25,6 +25,11 @@ const enTexto = (m: MetaDelPeriodo) =>
     ? "—"
     : `${conComa(m.programada)}${m.programadaMax !== null && m.programadaMax !== m.programada ? ` a ${conComa(m.programadaMax)}` : ""}${m.sufijo}`;
 
+/** A dónde va el foco tras quitar una meta: el campo de meta de la fila o, si la fila no lo tiene, su región de aviso. */
+export function destinoDelFoco<T>(periodo: string, buscar: (id: string) => T | null): T | null {
+  return buscar(`meta-${periodo}-meta`) ?? buscar(`meta-${periodo}-aviso`);
+}
+
 /** Una fila: su formulario guarda la meta de ese periodo y dice el resultado ahí mismo. */
 function FilaDeMeta({ indicadorId, m }: { indicadorId: number; m: MetaDelPeriodo }) {
   // Un solo aviso por fila, fuera de los formularios: «Quitar» desmonta el suyo al tener éxito y el aviso no se perdería.
@@ -40,8 +45,8 @@ function FilaDeMeta({ indicadorId, m }: { indicadorId: number; m: MetaDelPeriodo
     setAviso(null);
     const r = await quitarMetaProgramadaAccion(null, formData);
     setAviso(r === null ? { ok: true, texto: "Meta quitada: rige la de la ficha." } : { ok: false, texto: r.error });
-    // El formulario de «Quitar» se desmonta: el foco pasa al campo de meta de la fila.
-    if (r === null) setTimeout(() => document.getElementById(id("meta"))?.focus(), 0);
+    // El formulario de «Quitar» se desmonta: el foco pasa al campo de meta de la fila o a su aviso.
+    if (r === null) setTimeout(() => destinoDelFoco(m.periodo, (x) => document.getElementById(x))?.focus(), 0);
     return r === null ? { ok: true, aviso: "Meta quitada: rige la de la ficha." } : r;
   }, null);
   const v = estado && !estado.ok ? (estado.valores ?? {}) : {};
@@ -148,7 +153,7 @@ function FilaDeMeta({ indicadorId, m }: { indicadorId: number; m: MetaDelPeriodo
             </div>
           </form>
         ) : null}
-        <p id={id("aviso")} aria-live="polite" role={aviso && !aviso.ok ? "alert" : "status"} className={`mt-2 text-xs ${aviso?.ok === false ? "text-estado-critico-texto" : "text-estado-bien-texto"}`}>
+        <p id={id("aviso")} tabIndex={-1} aria-live="polite" role={aviso && !aviso.ok ? "alert" : "status"} className={`mt-2 text-xs ${aviso?.ok === false ? "text-estado-critico-texto" : "text-estado-bien-texto"}`}>
           {aviso?.texto}
         </p>
       </td>
