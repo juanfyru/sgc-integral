@@ -6,14 +6,17 @@
  */
 import { existsSync } from "node:fs";
 import type { TransactionSql } from "postgres";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, describe, expect, it } from "vitest";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
 }
 
+import { Objetivos } from "@/componentes/indicadores/Objetivos";
 import { obtenerSql } from "@/db/cliente";
-import { tomarCalculo } from "@/db/consultas/indicadores/calculos";
+import { tomarCalculo, type PeticionDeCalculo } from "@/db/consultas/indicadores/calculos";
 import { objetivosDelPeriodo, periodosDeObjetivos, type ObjetivoLeido } from "@/db/consultas/indicadores/objetivos";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { objetivosCumplidos } from "@/lib/indicadores/objetivos";
@@ -78,6 +81,19 @@ const el = (lista: ObjetivoLeido[], id: number): ObjetivoLeido => {
   return o;
 };
 const codigos = (o: ObjetivoLeido) => o.indicadores.map((i) => i.codigo).sort();
+
+/** La petición del cálculo «Objetivos cumplidos» de todos los objetivos, sin ficha que la pida. */
+function peticionDeObjetivos(periodo: string): PeticionDeCalculo {
+  const p = periodoDe(periodo, ZONA)!;
+  return {
+    clave: "objetivos_cumplidos",
+    alcance: "todos",
+    procesoId: 0,
+    indicadorId: 0,
+    periodo: { clave: p.clave, desde: p.desde, hasta: p.hasta },
+    ahora: REPORTADA,
+  };
+}
 
 describe("periodosDeObjetivos", () => {
   it("del año en curso y del anterior: el año, sus semestres y sus trimestres, del más reciente al más antiguo", () => {
@@ -208,6 +224,41 @@ describe("objetivosDelPeriodo", () => {
     expect(leido.estado).toBe("no_cumplido");
   }));
 
+  it("sin ninguna medición que cuente, muestra la última del periodo con resultado y sin meta, que no cuenta para el estado", () => revertida(sql, async (tx) => {
+    const { admin, de } = await preparar(tx);
+    // Su único indicador se midió en febrero y en marzo, sin meta: sale marzo, «Sin meta», y el objetivo sigue sin medición.
+    const soloSinMeta = await objetivo(tx);
+    const sinMeta = await de(soloSinMeta);
+    await medida(tx, sinMeta, "2094-02", SIN_META);
+    await medida(tx, sinMeta, "2094-03", SIN_META);
+    // Con otro que alcanza la meta, cumplido: el sin meta no lo cambia.
+    const conOtro = await objetivo(tx);
+    const sinMetaAcompanado = await de(conOtro);
+    await medida(tx, sinMetaAcompanado, "2094-03", SIN_META);
+    await medida(tx, await de(conOtro), "2094-02", BIEN);
+
+    const lista = await objetivosDelPeriodo(admin, "2094-T1", { sql: tx });
+    const solo = el(lista, soloSinMeta);
+    expect(solo.indicadores).toEqual([
+      expect.objectContaining({ codigo: sinMeta.codigo, periodo: "Marzo de 2094", resultado: expect.stringMatching(/^95\s?%$/), semaforo: null, cumple: null }),
+    ]);
+    expect(solo.estado).toBe("sin_medicion");
+    const acompanado = el(lista, conOtro);
+    expect(acompanado.estado).toBe("cumplido");
+    expect(acompanado.indicadores.find((i) => i.codigo === sinMetaAcompanado.codigo)).toEqual(
+      expect.objectContaining({ periodo: "Marzo de 2094", resultado: expect.stringMatching(/^95\s?%$/), semaforo: null, cumple: null }),
+    );
+
+    // La fila lo dice: «Sin meta», nunca «Sin dato» ni «sin dato».
+    const html = renderToStaticMarkup(createElement(Objetivos, { objetivos: [solo] }));
+    expect(html).toMatch(/data-variante="sin-dato"[^>]*>Sin meta</);
+    expect(html).toMatch(/>95\s?%</);
+    expect(html).not.toMatch(/sin dato/i);
+
+    // El cálculo no cuenta al sin meta: solo el objetivo con el otro indicador tiene medición, y se cumple.
+    expect(await tomarCalculo(tx, peticionDeObjetivos("2094-T1"))).toEqual({ A: "1", B: "1" });
+  }));
+
   it("para quien ve todo, coincide con el cálculo «Objetivos cumplidos»", () => revertida(sql, async (tx) => {
     const { admin, de } = await preparar(tx);
     const cumplido = await objetivo(tx);
@@ -217,17 +268,12 @@ describe("objetivosDelPeriodo", () => {
     await medida(tx, await de(noCumplido, { nivelAcceso: "restringido" }), "2094-03", BIEN);
     await medida(tx, await de(await objetivo(tx)), "2093-12", BIEN);
 
+    // Uno sin meta tampoco cuenta en la página.
+    await medida(tx, await de(await objetivo(tx)), "2094-03", SIN_META);
+
     const lista = await objetivosDelPeriodo(admin, "2094-T1", { sql: tx });
     const pagina = objetivosCumplidos(lista.map((o) => o.indicadores.map((i) => i.cumple)));
-    const p = periodoDe("2094-T1", ZONA)!;
-    const calculo = await tomarCalculo(tx, {
-      clave: "objetivos_cumplidos",
-      alcance: "todos",
-      procesoId: 0,
-      indicadorId: 0,
-      periodo: { clave: p.clave, desde: p.desde, hasta: p.hasta },
-      ahora: REPORTADA,
-    });
+    const calculo = await tomarCalculo(tx, peticionDeObjetivos("2094-T1"));
     expect(calculo).toEqual({ A: String(pagina.cumplidos), B: String(pagina.conMedicion) });
     expect(pagina).toEqual({ cumplidos: 1, conMedicion: 2 });
   }));

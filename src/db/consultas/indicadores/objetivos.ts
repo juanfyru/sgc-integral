@@ -19,8 +19,11 @@ import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { conMayuscula, esDeOtraPeriodicidad, texto, versionesAprobadasDe, type VersionDeCalculo } from "./mediciones";
 
-/** La medición que se toma de un indicador en el periodo, con la versión que rige su periodo y si alcanzó la meta. */
-export type MedicionTomada = { medicion: Row; periodo: Periodo; version: VersionDeCalculo; cumple: boolean };
+/** Una medición del periodo con la versión que rige su periodo. */
+export type MedicionDelPeriodo = { medicion: Row; periodo: Periodo; version: VersionDeCalculo };
+
+/** La medición que se toma de un indicador en el periodo y si alcanzó la meta. */
+export type MedicionTomada = MedicionDelPeriodo & { cumple: boolean };
 
 /** Un indicador que aporta a un objetivo y su medición tomada en el periodo, o `null` si ninguna cuenta. */
 export type AporteAObjetivo = {
@@ -31,6 +34,11 @@ export type AporteAObjetivo = {
   nombre: string;
   proceso: string;
   tomada: MedicionTomada | null;
+  /**
+   * Sin medición tomada, la última del periodo con resultado, sin «no aplica» y de la periodicidad que rige, que no tiene
+   * meta: la página la muestra («Sin meta») y no cuenta para el objetivo. `null` si hay medición tomada o ninguna así.
+   */
+  sinMeta: MedicionDelPeriodo | null;
 };
 
 /**
@@ -38,7 +46,8 @@ export type AporteAObjetivo = {
  * `donde` (sobre `i`, el indicador, y `o`, el objetivo), su última medición que termina en el periodo entre las que
  * cuentan: con resultado, sin «no aplica», con meta (`cumpleDeFila` no nulo: una anterior a la `0012` cuenta por su
  * semáforo) y de la periodicidad de la versión que rige su periodo (`esDeOtraPeriodicidad`: la que dejó un cambio mayor ya
- * no se mide). Un indicador sin ninguna que cuente sale con `tomada` nula. En el orden de los códigos.
+ * no se mide). Un indicador sin ninguna que cuente sale con `tomada` nula y, si tiene alguna sin meta, la última en
+ * `sinMeta`. En el orden de los códigos.
  */
 export async function aportesDelPeriodo(
   sql: Cliente,
@@ -73,27 +82,35 @@ export async function aportesDelPeriodo(
         nombre: (f.nombre as string | null) ?? "",
         proceso: f.proceso as string,
         tomada: null,
+        sinMeta: null,
       };
       aportes.set(indicadorId, aporte);
     }
     if (aporte.tomada || f.medicion_id === null) continue;
-    const cumple = cumpleDeFila({ cumple: (f.cumple as boolean | null) ?? null, semaforo: (f.semaforo as Semaforo | null) ?? null });
-    if (cumple === null) continue;
     const clave = f.periodo as string;
     const p = periodoDe(clave, zona);
     const version = p ? versionQueRigeEntre(versiones.get(indicadorId) ?? [], p, zona) : null;
     if (!p || !version || esDeOtraPeriodicidad(clave, version)) continue;
+    const cumple = cumpleDeFila({ cumple: (f.cumple as boolean | null) ?? null, semaforo: (f.semaforo as Semaforo | null) ?? null });
+    if (cumple === null) {
+      aporte.sinMeta ??= { medicion: f, periodo: p, version };
+      continue;
+    }
     aporte.tomada = { medicion: f, periodo: p, version, cumple };
+    aporte.sinMeta = null;
   }
   return [...aportes.values()];
 }
 
-/** Lo que la página muestra de cada indicador de un objetivo; sin medición tomada, periodo, resultado y estado nulos. */
+/**
+ * Lo que la página muestra de cada indicador de un objetivo: su medición tomada o, sin ella, la última sin meta (con
+ * `semaforo` y `cumple` nulos); sin ninguna de las dos, periodo, resultado y estado nulos.
+ */
 export type IndicadorDeObjetivo = {
   codigo: string;
   nombre: string;
   proceso: string;
-  /** «Marzo de 2026»: el periodo de la medición tomada. */
+  /** «Marzo de 2026»: el periodo de la medición que se muestra. */
   periodo: string | null;
   /** «95 %»: nunca contradice el color. */
   resultado: string | null;
@@ -111,11 +128,22 @@ export type ObjetivoLeido = {
 
 /**
  * El resultado como lo escribe la lista (`listarIndicadores`): con la regla del periodo (la meta congelada en la medición o,
- * si no la tiene, la programada) y la unidad de la versión que lo rige.
+ * si no la tiene, la programada) y la unidad de la versión que lo rige. El de una medición sin meta, sin regla: no hay
+ * color que contradecir.
  */
 function indicadorDeObjetivo(a: AporteAObjetivo): IndicadorDeObjetivo {
   const base = { codigo: a.codigo, nombre: a.nombre, proceso: a.proceso };
-  if (!a.tomada) return { ...base, periodo: null, resultado: null, semaforo: null, cumple: null };
+  if (!a.tomada) {
+    if (!a.sinMeta) return { ...base, periodo: null, resultado: null, semaforo: null, cumple: null };
+    const { medicion, periodo, version } = a.sinMeta;
+    return {
+      ...base,
+      periodo: conMayuscula(periodo.etiqueta),
+      resultado: textoValor(deTexto(medicion.resultado_exacto as string), version.unidad),
+      semaforo: null,
+      cumple: null,
+    };
+  }
   const { medicion: m, periodo, version: v, cumple } = a.tomada;
   const programada = m.programada as { meta: string | null; metaMax: string | null } | null;
   const regla = reglaDeTexto(
