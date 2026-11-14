@@ -17,7 +17,7 @@ import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { filtroAcceso, type SujetoVisibilidad } from "@/lib/alcance";
 import { EsquemaFicha, EsquemaFichaImportada, type DatosFicha } from "@/lib/esquemas/indicadores";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
-import { alcanceAdmitido, CALCULOS, calculoDe, CLAVES_DE_CALCULO, ETIQUETA_ALCANCE } from "@/lib/indicadores/calculos/registro";
+import { alcanceAdmitido, CALCULOS, calculoDe, CLAVES_DE_CALCULO, ETIQUETA_ALCANCE, type AlcanceDeCalculo, type ClaveDeCalculo } from "@/lib/indicadores/calculos/registro";
 import { tipoDeCambio, type ContenidoFicha } from "@/lib/indicadores/ficha";
 import { analizar } from "@/lib/indicadores/formula/analizar";
 import { formulaDeForma } from "@/lib/indicadores/formula/formas";
@@ -1049,7 +1049,7 @@ export async function opcionesDeFicha(
   const zona = zonaHoraria();
   const ahora = opciones?.ahora ?? new Date();
   const ids = (...xs: (number | number[] | undefined)[]) => xs.flat().filter((x): x is number => typeof x === "number");
-  const [procesos, subprocesos, propuestos, propuestosSub, tipos, clasificaciones, unidades, objetivos, cargos, normas, usuarios, documentos, parametros, entes, lideres] =
+  const [procesos, subprocesos, propuestos, propuestosSub, tipos, clasificaciones, unidades, objetivos, cargos, normas, usuarios, documentos, parametros, entes, lideres, activos] =
     await Promise.all([
       sql`SELECT id, sigla, nombre FROM procesos WHERE activo OR id = ANY(${ids(a.procesoId)}) ORDER BY nombre`,
       sql`SELECT id, proceso_id, nombre, sigla FROM subprocesos WHERE activo OR id = ANY(${ids(a.subprocesoId)}) ORDER BY proceso_id, orden, nombre`,
@@ -1082,6 +1082,9 @@ export async function opcionesDeFicha(
         JOIN procesos p ON p.id = up.proceso_id AND p.activo
         JOIN cargos c ON c.id = u.cargo_id AND c.activo
         GROUP BY up.proceso_id`,
+      // Los cálculos ya ocupados (anexo 14B, §5.3), como los cuenta `otraActivaConElCalculo`: sin el indicador que se edita.
+      sql`SELECT calculo, calculo_alcance, proceso_id FROM indicadores
+        WHERE estado = 'activo' AND calculo IS NOT NULL AND lower(codigo) <> lower(${a.codigo ?? ""})`,
     ]);
   const activo = (actual: number | undefined) => (f: { id: number; activo: boolean }) => f.activo || f.id === actual;
   const anio = Number(fechaEnZona(ahora, zona).slice(0, 4));
@@ -1138,5 +1141,10 @@ export async function opcionesDeFicha(
         variables: c.variables.map((v) => ({ ...v })),
       };
     }),
+    calculosActivos: activos.map((c) => ({
+      calculo: c.calculo as ClaveDeCalculo,
+      alcance: c.calculo_alcance as AlcanceDeCalculo,
+      procesoId: Number(c.proceso_id),
+    })),
   };
 }

@@ -147,6 +147,11 @@ export type OpcionesFicha = {
     alcances: { clave: AlcanceDeCalculo; etiqueta: string }[];
     variables: VariableDeCalculo[];
   }[];
+  /**
+   * Los cálculos y alcances que ya tienen una ficha activa, sin la del indicador que se edita: el formulario avisa antes de
+   * enviar (anexo 14B, §5.3). `procesoId` solo cuenta con alcance «proceso».
+   */
+  calculosActivos: { calculo: ClaveDeCalculo; alcance: AlcanceDeCalculo; procesoId: number }[];
 };
 
 /** El estado de un periodo en las gráficas (spec §11): el del semáforo, o por qué no tiene uno. */

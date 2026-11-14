@@ -552,15 +552,75 @@ describe("FichaImpresa", () => {
   it("la ficha impresa y la ficha en pantalla nombran los mismos campos", () => {
     const base = fichaCompleta();
     const ficha = { ...base, contenido: { ...base.contenido, nivel: "Proceso", riesgoAsociado: "Retraso en la entrega" } };
-    const pantalla = renderToStaticMarkup(<FichaTecnica ficha={ficha} operacion={null} />);
-    const seccion = (inicio: string, fin: string) =>
-      [...pantalla.slice(pantalla.indexOf(`>${inicio}<`), pantalla.indexOf(`>${fin}<`)).matchAll(/<dt[^>]*>([^<]+)<\/dt>/g)].map((m) => m[1]);
-    const { identificacion, estructura } = camposDeFicha(ficha);
-    // La impresa da una fila por variable; la pantalla, una lista en «Variables».
-    const rotulos = (campos: { termino: string }[]) => [...new Set(campos.map((c) => (/^Variable [A-Z]$/.test(c.termino) ? "Variables" : c.termino)))];
-    expect(rotulos(identificacion)).toEqual(seccion("Identificación", "Estructura de medición"));
-    expect(rotulos(estructura)).toEqual(seccion("Estructura de medición", "Firmas"));
+    const automatica = { ...ficha, contenido: { ...ficha.contenido, origenDato: "automatico", calculo: "acuses", calculoAlcance: "entidad" } };
+    for (const f of [ficha, automatica]) {
+      const pantalla = renderToStaticMarkup(<FichaTecnica ficha={f} operacion={null} />);
+      const seccion = (inicio: string, fin: string) =>
+        [...pantalla.slice(pantalla.indexOf(`>${inicio}<`), pantalla.indexOf(`>${fin}<`)).matchAll(/<dt[^>]*>([^<]+)<\/dt>/g)].map((m) => m[1]);
+      const { identificacion, estructura } = camposDeFicha(f);
+      // La impresa da una fila por variable; la pantalla, una lista en «Variables».
+      const rotulos = (campos: { termino: string }[]) => [...new Set(campos.map((c) => (/^Variable [A-Z]$/.test(c.termino) ? "Variables" : c.termino)))];
+      expect(rotulos(identificacion)).toEqual(seccion("Identificación", "Estructura de medición"));
+      expect(rotulos(estructura)).toEqual(seccion("Estructura de medición", "Firmas"));
+    }
   });
+
+  it("una ficha automática dice cómo se obtiene el dato con su cálculo y su alcance, y no nombra responsables de medir (14B, Tarea 4)", () => {
+    const base = fichaCompleta();
+    const ficha: FichaLeida = {
+      ...base,
+      contenido: {
+        ...base.contenido,
+        origenDato: "automatico",
+        calculo: "acuses",
+        calculoAlcance: "entidad",
+        responsables: [{ cargoNombre: "Gerente", funcion: "analizar" }],
+      },
+    };
+    const frase = "Lo calcula el sistema · Acuses de lectura confirmados · Toda la entidad";
+    const pantalla = renderToStaticMarkup(<FichaTecnica ficha={ficha} operacion={null} />);
+    expect(pantalla).toContain(frase);
+    expect(pantalla).not.toContain("Responsables de medir");
+    expect(pantalla).toContain("Responsables de analizar");
+    const { estructura } = camposDeFicha(ficha);
+    expect(estructura.find((c) => c.termino === "Cómo se obtiene el dato")?.valor).toBe(frase);
+    expect(estructura.map((c) => c.termino)).not.toContain("Responsables de medir");
+    // Con alcance «proceso», el de la propia ficha.
+    const deProceso: FichaLeida = { ...ficha, contenido: { ...ficha.contenido, calculo: "vencidos", calculoAlcance: "proceso" } };
+    expect(renderToStaticMarkup(<FichaTecnica ficha={deProceso} operacion={null} />)).toContain(
+      "Lo calcula el sistema · Documentos con revisión vencida · El proceso de la ficha",
+    );
+    // Una manual sigue igual.
+    expect(camposDeFicha(base).estructura.find((c) => c.termino === "Cómo se obtiene el dato")?.valor).toBe("Lo digita una persona");
+    expect(camposDeFicha(base).estructura.map((c) => c.termino)).toContain("Responsables de medir");
+  });
+
+  it("el impreso y el Excel de un automático dicen su cálculo y su alcance, sin responsables de medir (14B, Tarea 4)", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const ind = await indicadorDePrueba(tx, {
+        procesoId: p.id,
+        periodicidad: "trimestral",
+        inicioMedicion: "2026-T1",
+        aprobadaEn: APROBADA,
+        calculo: { clave: "acuses", alcance: "entidad" },
+      });
+      const admin = await sesionAdmin(tx);
+      const frase = "Lo calcula el sistema · Acuses de lectura confirmados · Toda la entidad";
+      const html = await impreso(tx, admin, ind);
+      const estructura = html.slice(html.indexOf(">Estructura de medición<"), html.indexOf(">Firmas<"));
+      expect(estructura).toContain(frase);
+      expect(estructura).not.toContain("Responsables de medir");
+      expect(estructura).toContain("Responsables de analizar");
+
+      const datos = await impresionDelAnio(admin, ind.codigo, 2026, opc(tx));
+      const libro = new ExcelJS.Workbook();
+      await libro.xlsx.load((await construirExcelDeIndicador(datos!, META)) as unknown as ArrayBuffer);
+      const filas: string[] = [];
+      libro.getWorksheet("Ficha")!.eachRow((fila) => filas.push((fila.values as unknown[]).slice(1).map((v) => String(v ?? "")).join(" | ")));
+      expect(filas).toContain(`Estructura de medición | Cómo se obtiene el dato | ${frase}`);
+      expect(filas.join("\n")).not.toContain("Responsables de medir");
+    }));
 
   it("no imprime soportes ni observaciones, ni el nombre de la entidad escrito en el código", () =>
     revertida(sql, async (tx) => {

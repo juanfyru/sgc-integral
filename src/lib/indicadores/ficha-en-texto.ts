@@ -9,6 +9,7 @@ import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { cuenta } from "@/lib/plural";
 import { textoFecha } from "@/lib/vigencia/plazo";
 import { horaLocal, zonaHoraria } from "@/lib/zona-horaria";
+import { calculoDe, ETIQUETA_ALCANCE } from "./calculos/registro";
 import { ETIQUETA_ESTADO } from "./estados";
 import type { ContenidoFicha } from "./ficha";
 import { enPalabras } from "./formula/formas";
@@ -32,6 +33,20 @@ export const TENDENCIA: Record<string, string> = {
 };
 export const CONSOLIDACION: Record<string, string> = { suma: "Se suma", ultimo: "Último valor", promedio: "Promedio" };
 export const ORIGEN: Record<string, string> = { manual: "Lo digita una persona", automatico: "Lo calcula el sistema" };
+
+/** Una ficha que calcula el sistema (anexo 14B, §5.3): nadie la mide, así que no lleva responsables de medir. */
+export const esAutomatica = (c: Pick<ContenidoFicha, "origenDato">) => c.origenDato === "automatico";
+
+/**
+ * «Cómo se obtiene el dato»: «Lo digita una persona» o, en una automática, «Lo calcula el sistema · *nombre del cálculo* ·
+ * *alcance*». La misma frase en la pantalla, el impreso y el Excel.
+ */
+export function origenEnTexto(c: Pick<ContenidoFicha, "origenDato" | "calculo" | "calculoAlcance">): string {
+  const origen = ORIGEN[c.origenDato] ?? c.origenDato;
+  if (!esAutomatica(c)) return origen;
+  const alcance = c.calculoAlcance && Object.hasOwn(ETIQUETA_ALCANCE, c.calculoAlcance) ? ETIQUETA_ALCANCE[c.calculoAlcance as keyof typeof ETIQUETA_ALCANCE] : c.calculoAlcance;
+  return [origen, calculoDe(c.calculo)?.nombre ?? c.calculo, alcance].filter(Boolean).join(" · ");
+}
 
 const fr = (v: string | null) => (v === null ? null : fraccion(v));
 
@@ -134,7 +149,7 @@ export function camposDeFicha(ficha: FichaLeida): { identificacion: CampoDeTexto
   ];
 
   const estructura: CampoDeTexto[] = [
-    ...campo("Cómo se obtiene el dato", ORIGEN[c.origenDato] ?? c.origenDato),
+    ...campo("Cómo se obtiene el dato", origenEnTexto(c)),
     ...campo("Cómo se calcula", c.forma ? (FORMA[c.forma] ?? c.forma) : NINGUNO),
     ...campo("Fórmula", c.formula ? enPalabras(c.formula, nombres) : null, c.formula),
     ...c.variables.flatMap((v) => campo(`Variable ${v.letra}`, v.nombre ?? v.letra, detalleDeVariable(v))),
@@ -147,7 +162,7 @@ export function camposDeFicha(ficha: FichaLeida): { identificacion: CampoDeTexto
     ...campo("Línea base", lineaBase ?? c.lineaBaseNota ?? NINGUNO),
     ...campo("Nota de la línea base", lineaBase ? c.lineaBaseNota : null),
     ...campo("Sustento de la meta", c.sustentoMeta),
-    ...campo("Responsables de medir", medir.length > 0 ? medir.join(", ") : NINGUNO),
+    ...(esAutomatica(c) ? [] : campo("Responsables de medir", medir.length > 0 ? medir.join(", ") : NINGUNO)),
     ...campo("Responsables de analizar", analizar.length > 0 ? analizar.join(", ") : NINGUNO),
   ];
   return { identificacion, estructura };

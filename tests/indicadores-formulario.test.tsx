@@ -17,8 +17,26 @@ import { FormularioParametros } from "@/componentes/indicadores/admin/Formulario
 import { estadoDeRangos, rangosDelEditor, type EstadoEditor } from "@/componentes/indicadores/ficha/EditorDeRangos";
 import { campoDeMasOpciones, campoDelError, codigoAlCambiarDeEleccion, codigoAlCambiarDeProceso, codigoPropuestoDe, FormularioFicha, siglaVigenteDe } from "@/componentes/indicadores/ficha/FormularioFicha";
 import { EsquemaFicha, type DatosFicha } from "@/lib/esquemas/indicadores";
+import { CALCULOS, CLAVES_DE_CALCULO, ETIQUETA_ALCANCE } from "@/lib/indicadores/calculos/registro";
 import { unidadDeForma } from "@/lib/indicadores/formula/formas";
 import type { OpcionesFicha } from "@/lib/indicadores/tipos";
+
+/** Los cálculos del registro tal como los arma `opcionesDeFicha`. */
+const CALCULOS_DEL_REGISTRO: OpcionesFicha["calculos"] = CLAVES_DE_CALCULO.map((clave) => {
+  const c = CALCULOS[clave];
+  return {
+    clave,
+    nombre: c.nombre,
+    clase: c.clase,
+    forma: c.forma,
+    tendencia: c.tendencia,
+    reconstruible: c.reconstruible,
+    exigeMeta: c.exigeMeta,
+    unidadSugerida: c.unidadSugerida,
+    alcances: c.alcances.map((a) => ({ clave: a, etiqueta: ETIQUETA_ALCANCE[a] })),
+    variables: c.variables.map((v) => ({ ...v })),
+  };
+});
 
 const OPCIONES: OpcionesFicha = {
   procesos: [
@@ -72,7 +90,8 @@ const OPCIONES: OpcionesFicha = {
     anual: [{ clave: "2026", etiqueta: "2026" }],
   },
   periodoEnCurso: { mensual: "2026-11", bimestral: "2026-B6", trimestral: "2026-T4", semestral: "2026-S2", anual: "2026" },
-  calculos: [],
+  calculos: CALCULOS_DEL_REGISTRO,
+  calculosActivos: [],
 };
 
 /** Un cambio sobre una ficha con versión aprobada: la única que conserva la regla anterior (Ruling 18). */
@@ -586,5 +605,241 @@ describe("la regla anterior, el foco y las filas que se reabren (ronda 1 de la T
     const una = estadoDeRangos("constante", { bien: [filaT("entre", "98", "100")], atencion: [filaT("<=", "102")], critico: [filaT("<", "95"), filaT(">", "102")] });
     expect(una.atencion[0].valor).toBe("");
     expect(una.atencion[1].valor).toBe("102");
+  });
+});
+
+describe("FormularioFicha: «Lo calcula el sistema» (14B, Tarea 4)", () => {
+  /** Con la unidad «Días» en el maestro y dos cálculos que ya tienen ficha activa. */
+  const OPCIONES_AUTO: OpcionesFicha = {
+    ...OPCIONES,
+    unidades: [...OPCIONES.unidades, { id: 3, nombre: "Días", sufijo: " días", decimales: 1 }],
+    calculosActivos: [
+      { calculo: "conformidad_fecha", alcance: "entidad", procesoId: 2 },
+      { calculo: "vencidos", alcance: "proceso", procesoId: 13 },
+    ],
+  };
+  // Sin interacción (el render es estático): «elegir» es pintar el formulario con lo elegido.
+  const automatico = (calculo?: string, mas: Partial<DatosFicha> = {}, opciones = OPCIONES_AUTO) =>
+    renderToStaticMarkup(<FormularioFicha opciones={opciones} valores={{ procesoId: 2, origenDato: "automatico", calculo, ...mas }} />);
+  const radioOrigen = (h: string, valor: string) => h.match(new RegExp(`<input(?=[^>]*name="origenDato")(?=[^>]*value="${valor}")[^>]*>`))?.[0] ?? "";
+  const html = pintar({ procesoId: 2, meta: "80", tendencia: "ascendente", umbralAtencionPct: 70 });
+
+  it("«Cómo se obtiene el dato» va en «Más opciones», con sus dos opciones; una ficha nace con «Lo digita una persona»", () => {
+    const manual = pintar();
+    const mas = masOpciones(manual);
+    expect(mas).toContain("Cómo se obtiene el dato");
+    expect(mas).toContain(">Lo digita una persona<");
+    expect(mas).toContain(">Lo calcula el sistema<");
+    expect(radioOrigen(manual, "manual")).toContain('checked=""');
+    expect(radioOrigen(manual, "automatico")).not.toContain('checked=""');
+    // Sin «Lo calcula el sistema» no hay cálculo que elegir ni que enviar.
+    expect(manual).not.toContain('name="calculo"');
+    expect(manual).not.toContain('name="calculoAlcance"');
+    expect(manual).not.toContain("Lo pone el cálculo");
+  });
+
+  it("al elegir «Lo calcula el sistema» aparecen «Cálculo» y «Alcance» y desaparecen las variables, la prueba y quién mide", () => {
+    const h = automatico("acuses", { calculoAlcance: "entidad" });
+    expect(radioOrigen(h, "automatico")).toContain('checked=""');
+    const mas = masOpciones(h);
+    expect(mas).toContain(">Cálculo</label>");
+    expect(mas).toContain(">Alcance</label>");
+    expect(mas).toMatch(/<select[^>]*name="calculo"[^>]*>(?:(?!<\/select>)[\s\S])*<option value="acuses" selected="">Acuses de lectura confirmados<\/option>/);
+    for (const ausente of [
+      'id="ficha-variables"',
+      ">Variables</legend>",
+      ">Prueba</legend>",
+      "¿Cómo se calcula?",
+      'name="factor"',
+      'name="formula"',
+      "Quién mide",
+      "La misma persona que mide",
+      "Cargos responsables de medir",
+      "Cada reporte debe llevar su soporte",
+      "Detalle de las variables",
+      'id="ficha-tendencia"',
+    ]) {
+      expect(h, ausente).not.toContain(ausente);
+    }
+    expect(h).toContain('id="ficha-analiza"');
+    expect(mas).toContain("Cargos responsables de analizar");
+  });
+
+  it("«Lo pone el cálculo» dice la fórmula en palabras, las variables con su descripción y la tendencia, a la vista", () => {
+    const h = automatico("acuses", { calculoAlcance: "entidad" });
+    const lopone = h.slice(h.indexOf("Lo pone el cálculo"), h.indexOf(">Nombre<"));
+    expect(lopone).toContain("(Acuses confirmados ÷ Acuses confirmados y pendientes) × 100");
+    expect(lopone).toContain("A · Acuses confirmados");
+    expect(lopone).toContain("Cuenta los acuses de lectura pedidos en el periodo que la persona ya confirmó");
+    expect(lopone).toContain("B · Acuses confirmados y pendientes");
+    expect(lopone).toContain("Ascendente (mayor es mejor)");
+    expect(masOpciones(h)).not.toContain("Lo pone el cálculo");
+    // Sin cálculo elegido, dice dónde elegirlo.
+    expect(automatico()).toContain("Elija el cálculo en «Más opciones», en «Cómo se obtiene el dato».");
+    // La tendencia es la del cálculo, no la que traiga el formulario.
+    expect(automatico("aprobacion", { tendencia: "ascendente", calculoAlcance: "entidad" })).toContain("Descendente (menor es mejor)");
+  });
+
+  it("solo ofrece los alcances del cálculo; con uno solo, ya está elegido", () => {
+    const unico = automatico("conformidad_fecha");
+    expect(unico).not.toMatch(/<select[^>]*name="calculoAlcance"/);
+    expect(unico).toMatch(/<input(?=[^>]*id="ficha-calculoAlcance")(?=[^>]*readOnly="")(?=[^>]*value="Toda la entidad")[^>]*>/);
+    expect(oculto(unico, "calculoAlcance")).toBe("entidad");
+    const dos = automatico("acuses");
+    const opciones = dos.match(/<select[^>]*name="calculoAlcance"[^>]*>([\s\S]*?)<\/select>/)?.[1] ?? "";
+    expect([...opciones.matchAll(/>([^<]+)<\/option>/g)].map((m) => m[1])).toEqual(["Elija el alcance", "Toda la entidad", "El proceso de la ficha"]);
+    expect(opciones).toContain('<option value="" selected="">Elija el alcance</option>');
+    const objetivos = automatico("objetivos_cumplidos", { calculoAlcance: "calidad" }).match(/<select[^>]*name="calculoAlcance"[^>]*>([\s\S]*?)<\/select>/)?.[1] ?? "";
+    expect(objetivos).toContain('<option value="calidad" selected="">Objetivos de calidad</option>');
+    expect(objetivos).toContain(">Todos los objetivos</option>");
+    expect(objetivos).not.toContain("Toda la entidad");
+  });
+
+  it("el plazo y el inicio de medición dicen lo que hacen en cada clase de cálculo", () => {
+    const flujo = automatico("aprobacion", { calculoAlcance: "entidad" });
+    expect(flujo).toContain(">Días de espera antes de calcular</label>");
+    expect(flujo).toContain("El sistema calcula el periodo cuando pasan estos días desde su fin. Con 0, al terminar el periodo.");
+    expect(flujo).not.toContain("Plazo de reporte (días)");
+    // «Tiempo de aprobación» se llena hacia atrás: el inicio se elige y la ayuda lo dice.
+    expect(flujo).toMatch(/<select[^>]*name="inicioMedicion"/);
+    expect(flujo).toContain("El sistema calcula solo los periodos anteriores.");
+
+    const estado = automatico("dentro_plazo", { calculoAlcance: "entidad" });
+    expect(estado).toContain(">Plazo de reporte (días)</label>");
+    expect(estado).toContain("Es la fecha límite del análisis. La foto se toma al terminar el periodo.");
+    // No se llena hacia atrás: no hay inicio que elegir; viaja el periodo en curso, que el servidor fija al aprobar.
+    expect(estado).not.toMatch(/<select[^>]*name="inicioMedicion"/);
+    expect(estado).toContain("Empieza en el periodo en curso cuando se apruebe.");
+    expect(oculto(estado, "inicioMedicion")).toBe("2026-T4");
+    expect(oculto(automatico("dentro_plazo", { calculoAlcance: "entidad", periodicidad: "mensual" }), "inicioMedicion")).toBe("2026-11");
+    // «Acuses» es de flujo pero no se llena hacia atrás.
+    const acuses = automatico("acuses", { calculoAlcance: "entidad" });
+    expect(acuses).toContain(">Días de espera antes de calcular</label>");
+    expect(acuses).toContain("Empieza en el periodo en curso cuando se apruebe.");
+    // Una ficha manual sigue como siempre.
+    expect(html).toContain(">Plazo de reporte (días)</label>");
+    expect(html).toContain("Después del cierre del periodo.");
+    expect(html).toMatch(/<select[^>]*name="inicioMedicion"/);
+  });
+
+  it("envía origenDato, calculo y calculoAlcance, y lo que el esquema exige con lo del registro", () => {
+    const h = automatico("aprobacion", { calculoAlcance: "proceso", mide: [7], analiza: [7], cargosMedir: [4], soporteObligatorio: true, prueba: { valores: { A: "1", B: "2" } } });
+    const enviados = nombres(h);
+    for (const n of ["origenDato", "calculo", "calculoAlcance", "forma", "variables", "tendencia", "inicioMedicion", "cargosAnalizar"]) expect(enviados, n).toContain(n);
+    for (const n of ["factor", "formula", "prueba", "soporteObligatorio"]) expect(enviados, n).not.toContain(n);
+    expect(control(h, "calculoAlcance")).toMatch(/<select/);
+    expect(h).toMatch(/<select[^>]*name="calculoAlcance"[^>]*>(?:(?!<\/select>)[\s\S])*<option value="proceso" selected="">/);
+    expect(oculto(h, "forma")).toBe("razon");
+    expect(oculto(h, "tendencia")).toBe("descendente");
+    const variables = EsquemaFicha.shape.variables.safeParse(oculto(h, "variables"));
+    expect(variables.success).toBe(true);
+    expect(variables.data?.map((v) => [v.letra, v.nombre, v.descripcion, v.consolidacion])).toEqual(
+      CALCULOS.aprobacion.variables.map((v) => [v.letra, v.nombre, v.descripcion, v.consolidacion]),
+    );
+    // Nadie mide: ni persona ni cargo. Quien medía y analizaba sigue analizando.
+    expect(JSON.parse(oculto(h, "mide")!)).toEqual([]);
+    expect(JSON.parse(oculto(h, "cargosMedir")!)).toEqual([]);
+    expect(JSON.parse(oculto(h, "analiza")!)).toEqual([7]);
+    expect(h).toMatch(/<select id="ficha-analiza"[^>]*>(?:(?!<\/select>)[\s\S])*<option value="7" selected="">Coordinadora del SGC<\/option>/);
+  });
+
+  it("todo control de una ficha automática tiene su etiqueta y envía un campo del esquema", () => {
+    const claves = Object.keys(EsquemaFicha.shape);
+    for (const h of [automatico(), automatico("conformidad_fecha", { meta: "90" }), automatico("acuses"), automatico("aprobacion", { calculoAlcance: "entidad" })]) {
+      for (const c of h.match(/<(?:input|select|textarea)\b[^>]*>/g) ?? []) {
+        if (/type="hidden"/.test(c)) continue;
+        if (/aria-label="[^"]+"/.test(c)) continue;
+        const id = /\sid="([^"]+)"/.exec(c)?.[1];
+        expect(id, c).toBeTruthy();
+        expect(h, c).toContain(`for="${id}"`);
+      }
+      for (const n of nombres(h)) expect(claves, n).toContain(n);
+    }
+  });
+
+  it("si el cálculo y el alcance ya tienen ficha activa, lo avisa junto al selector", () => {
+    const aviso = "Ya hay una ficha activa para ese cálculo y alcance.";
+    expect(masOpciones(automatico("conformidad_fecha"))).toContain(aviso);
+    // Con alcance «proceso», solo la del mismo proceso.
+    expect(automatico("vencidos", { calculoAlcance: "proceso" })).not.toContain(aviso);
+    expect(automatico("vencidos", { calculoAlcance: "proceso", procesoId: 13 })).toContain(aviso);
+    expect(automatico("vencidos", { calculoAlcance: "entidad" })).not.toContain(aviso);
+    expect(automatico("acuses", { calculoAlcance: "entidad" })).not.toContain(aviso);
+    // Una ficha manual no avisa nada.
+    expect(renderToStaticMarkup(<FormularioFicha opciones={OPCIONES_AUTO} valores={{ procesoId: 2, calculo: "conformidad_fecha", calculoAlcance: "entidad" }} />)).not.toContain(aviso);
+  });
+
+  it("la unidad nace en la sugerida por el cálculo si existe en el maestro; una elegida a mano se conserva", () => {
+    const unidad = (h: string) => h.match(/<select[^>]*id="ficha-unidadId"[^>]*>(?:(?!<\/select>)[\s\S])*?<option value="(\d+)" selected="">/)?.[1];
+    expect(unidad(automatico("aprobacion"))).toBe("3");
+    expect(automatico("aprobacion")).toMatch(/<select[^>]*id="ficha-decimales"[^>]*>(?:(?!<\/select>)[\s\S])*<option value="1" selected="">1<\/option>/);
+    expect(unidad(automatico("vencidos"))).toBe("2");
+    expect(unidad(automatico("acuses"))).toBe("1");
+    // Sin «Días» en el maestro, la que sugiere su forma (un promedio, «Número»).
+    expect(unidad(automatico("aprobacion", {}, { ...OPCIONES_AUTO, unidades: OPCIONES.unidades }))).toBe("2");
+    expect(unidad(automatico("aprobacion", { unidadId: 1 }))).toBe("1");
+  });
+
+  it("un cálculo que exige meta lo dice en la meta", () => {
+    expect(automatico("conformidad_fecha")).toContain("Obligatoria en este cálculo: con ella se juzga la conformidad en Distribución.");
+    expect(automatico("acuses")).toContain("Opcional: sin meta, el indicador solo se vigila.");
+  });
+
+  it("en un cambio, la ayuda dice que cambiar el origen es un cambio mayor, y no muestra quién mide ni el soporte", () => {
+    const cambio = renderToStaticMarkup(
+      <FormularioFicha
+        opciones={OPCIONES_AUTO}
+        valores={{ procesoId: 2, origenDato: "automatico", calculo: "aprobacion", calculoAlcance: "entidad", plazoReporteDias: 5, inicioMedicion: "2026-T3", soporteObligatorio: true, mide: [8], analiza: [7] }}
+        edicion={{ versionId: 15, cambio: true, codigoFijo: true }}
+      />,
+    );
+    expect(masOpciones(cambio)).toContain("Cambiarlo es un cambio mayor.");
+    expect(masOpciones(pintar())).not.toContain("Cambiarlo es un cambio mayor.");
+    expect(cambio).toContain(">Días de espera antes de calcular</label>");
+    expect(control(cambio, "plazoReporteDias")).toMatch(/readonly=""/i);
+    expect(cambio).not.toContain('id="ficha-mide"');
+    expect(cambio).not.toContain('id="ficha-soporteObligatorio"');
+    expect(cambio).not.toContain('name="soporteObligatorio"');
+    expect(JSON.parse(oculto(cambio, "mide")!)).toEqual([]);
+    expect(JSON.parse(oculto(cambio, "analiza")!)).toEqual([7]);
+    expect(cambio).toContain('<input type="hidden" name="inicioMedicion" value="2026-T3"/>');
+  });
+
+  it("los mensajes del servidor sobre el cálculo van a su campo y abren «Más opciones»", () => {
+    expect(campoDeMasOpciones("Elija el cálculo que hace el sistema")).toBe("ficha-calculo");
+    expect(campoDeMasOpciones("Ese cálculo no admite ese alcance")).toBe("ficha-calculoAlcance");
+    expect(campoDeMasOpciones("Ya hay una ficha activa para ese cálculo y alcance: SGC-ID-004")).toBe("ficha-calculo");
+    expect(campoDeMasOpciones("Ya hay una ficha activa para ese cálculo y alcance")).toBe("ficha-calculo");
+    expect(campoDeMasOpciones("Un cálculo que no se llena hacia atrás rige desde el periodo en curso")).toBe("ficha-inicioMedicion");
+    // La meta está a la vista: no abre nada.
+    expect(campoDeMasOpciones("Este cálculo exige una meta: con ella se juzga la conformidad en Distribución")).toBeNull();
+    expect(campoDelError("Este cálculo exige una meta: con ella se juzga la conformidad en Distribución")).toBe("ficha-meta");
+    expect(campoDelError("Elija el cálculo que hace el sistema")).toBe("ficha-calculo");
+
+    const sinCalculo = renderToStaticMarkup(
+      <FormularioFicha opciones={OPCIONES_AUTO} valores={{ procesoId: 2, origenDato: "automatico" }} errorInicial="Elija el cálculo que hace el sistema" />,
+    );
+    expect(masOpciones(sinCalculo)).toContain('<p id="ficha-calculo-error" role="alert"');
+    expect(sinCalculo.split("Elija el cálculo que hace el sistema").length - 1).toBe(1);
+    const alcance = renderToStaticMarkup(
+      <FormularioFicha opciones={OPCIONES_AUTO} valores={{ procesoId: 2, origenDato: "automatico", calculo: "conformidad_fecha" }} errorInicial="Ese cálculo no admite ese alcance" />,
+    );
+    expect(masOpciones(alcance)).toContain('<p id="ficha-calculoAlcance-error" role="alert"');
+    const meta = renderToStaticMarkup(
+      <FormularioFicha
+        opciones={OPCIONES_AUTO}
+        valores={{ procesoId: 2, origenDato: "automatico", calculo: "conformidad_fecha" }}
+        errorInicial="Este cálculo exige una meta: con ella se juzga la conformidad en Distribución"
+      />,
+    );
+    expect(meta).toContain('<p id="ficha-meta-error" role="alert"');
+    // En una ficha manual el cálculo no se pinta: el mensaje queda al pie.
+    const manual = renderToStaticMarkup(<FormularioFicha opciones={OPCIONES_AUTO} errorInicial="Elija el cálculo que hace el sistema" />);
+    expect(manual).toContain('<p role="alert" class="text-sm text-estado-critico-texto">Elija el cálculo que hace el sistema</p>');
+    // En una automática, lo de las variables (que no se pintan) también.
+    const variables = renderToStaticMarkup(
+      <FormularioFicha opciones={OPCIONES_AUTO} valores={{ procesoId: 2, origenDato: "automatico", calculo: "acuses" }} errorInicial="El nombre de cada variable debe tener al menos 1 carácter" />,
+    );
+    expect(variables).toContain('<p role="alert" class="text-sm text-estado-critico-texto">El nombre de cada variable debe tener al menos 1 carácter</p>');
   });
 });

@@ -1,7 +1,18 @@
 import Link from "next/link";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { etiquetaDePeriodo, type FichaLeida, type FirmaDeFicha, type OperacionLeida } from "@/db/consultas/indicadores/aprobacion";
-import { cifraDeFicha as cifra, CONSOLIDACION, fechaYHora, FORMA, fraseDeImportada, ORIGEN, reglaDeFicha, TENDENCIA, unidadDeFicha } from "@/lib/indicadores/ficha-en-texto";
+import {
+  cifraDeFicha as cifra,
+  CONSOLIDACION,
+  esAutomatica,
+  fechaYHora,
+  FORMA,
+  fraseDeImportada,
+  origenEnTexto,
+  reglaDeFicha,
+  TENDENCIA,
+  unidadDeFicha,
+} from "@/lib/indicadores/ficha-en-texto";
 import { enPalabras } from "@/lib/indicadores/formula/formas";
 import { rangosEnPalabras } from "@/lib/indicadores/semaforo";
 import { textoMeta } from "@/lib/indicadores/textos";
@@ -121,7 +132,7 @@ export function FichaTecnica({
       </Seccion>
 
       <Seccion id={id("estructura")} nivel={nivel} titulo="Estructura de medición">
-        <Dato termino="Cómo se obtiene el dato">{ORIGEN[c.origenDato] ?? c.origenDato}</Dato>
+        <Dato termino="Cómo se obtiene el dato">{origenEnTexto(c)}</Dato>
         <Dato termino="Cómo se calcula">{c.forma ? (FORMA[c.forma] ?? c.forma) : ninguno}</Dato>
         {c.formula ? (
           <Dato termino="Fórmula">
@@ -161,7 +172,7 @@ export function FichaTecnica({
         <Dato termino="Línea base">{lineaBase ?? c.lineaBaseNota ?? ninguno}</Dato>
         {lineaBase && c.lineaBaseNota ? <Dato termino="Nota de la línea base">{c.lineaBaseNota}</Dato> : null}
         {c.sustentoMeta ? <Dato termino="Sustento de la meta">{c.sustentoMeta}</Dato> : null}
-        <Dato termino="Responsables de medir">{medir.length > 0 ? medir.join(", ") : ninguno}</Dato>
+        {esAutomatica(c) ? null : <Dato termino="Responsables de medir">{medir.length > 0 ? medir.join(", ") : ninguno}</Dato>}
         <Dato termino="Responsables de analizar">{analizar.length > 0 ? analizar.join(", ") : ninguno}</Dato>
       </Seccion>
 

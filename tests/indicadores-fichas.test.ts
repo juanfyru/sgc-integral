@@ -803,4 +803,21 @@ describe("la ficha en borrador", () => {
       expect((await opcionesDeFicha(b.admin, { sql: tx, actuales: { cargosMedir: [b.cargoId] } })).cargos.map((c) => c.id)).toContain(b.cargoId);
       await rechaza(crearIndicador(b.admin, datos(b), { sql: tx }), "Los cargos responsables deben existir y estar activos");
     }));
+
+  it("opcionesDeFicha dice qué cálculo y alcance ya tienen ficha activa, sin contar la ficha que se edita (14B, Tarea 4)", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const entidad = await indicadorDePrueba(tx, { procesoId: b.procesoId, calculo: { clave: "acuses", alcance: "entidad" } });
+      await indicadorDePrueba(tx, { procesoId: b.procesoId, calculo: { clave: "vencidos", alcance: "proceso" } });
+      // Un borrador no ocupa su cálculo: solo los indicadores activos (el índice `indicadores_calculo_unico`).
+      await indicadorDePrueba(tx, { procesoId: b.procesoId, estado: "borrador", calculo: { clave: "etapas", alcance: "proceso" } });
+      const o = await opcionesDeFicha(b.admin, { sql: tx });
+      expect(o.calculosActivos).toContainEqual({ calculo: "acuses", alcance: "entidad", procesoId: b.procesoId });
+      expect(o.calculosActivos).toContainEqual({ calculo: "vencidos", alcance: "proceso", procesoId: b.procesoId });
+      expect(o.calculosActivos).not.toContainEqual({ calculo: "etapas", alcance: "proceso", procesoId: b.procesoId });
+      // Al editar la ficha de un indicador, el suyo no cuenta: no se avisa contra sí mismo.
+      const editando = await opcionesDeFicha(b.admin, { sql: tx, actuales: { codigo: entidad.codigo.toLowerCase() } });
+      expect(editando.calculosActivos).not.toContainEqual({ calculo: "acuses", alcance: "entidad", procesoId: b.procesoId });
+      expect(editando.calculosActivos).toContainEqual({ calculo: "vencidos", alcance: "proceso", procesoId: b.procesoId });
+    }));
 });
