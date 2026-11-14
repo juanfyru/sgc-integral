@@ -18,6 +18,7 @@ import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { aprobarFichas, enviarAAprobacion, previaDeEnvio } from "@/db/consultas/indicadores/aprobacion";
 import { abrirCambio, crearIndicador, fichaParaEditar, guardarBorrador } from "@/db/consultas/indicadores/fichas";
 import { asegurarMediciones, reportar, versionesAprobadas } from "@/db/consultas/indicadores/mediciones";
+import { programarMeta } from "@/db/consultas/indicadores/metas";
 import { cambiarOperacion, designar, duplicar } from "@/db/consultas/indicadores/operacion";
 import { esCalculoRepetido, yaHayUnaActiva } from "@/db/consultas/indicadores/publicacion";
 import { EsquemaFicha, type DatosFicha } from "@/lib/esquemas/indicadores";
@@ -452,6 +453,30 @@ describe("la ficha automática en el servidor", () => {
         { periodo: "2026-09", historica: true },
         { periodo: "2026-10", historica: true },
       ]);
+    }));
+
+  it("una meta programada con decimales no pasa a regir un cálculo con tarjeta: el cambio que lo vuelve automático no se envía (anexo 14B, §6)", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      await liberarCalculo(tx, "dentro_plazo", "entidad");
+      const { indicadorId, codigo } = await aprobada(tx, b, manual(b));
+      // Mientras es manual, una meta programada con decimales vale.
+      await programarMeta(b.admin, { indicadorId, periodo: "2026-12", meta: "92,5" }, { sql: tx, ahora: AHORA });
+      const { versionId } = await abrirCambio(b.admin, indicadorId, { sql: tx, ahora: AHORA });
+      await guardarBorrador(b.admin, versionId, automatica(b, "dentro_plazo", "entidad", { codigo, motivoCambio: "Lo calcula el sistema" }), {
+        sql: tx,
+        ahora: AHORA,
+      });
+      // Rige desde noviembre: la de diciembre la regiría la versión automática.
+      await rechaza(
+        enviarAAprobacion(b.admin, { versionId, credenciales: CLAVE }, firmar(tx)),
+        "La meta de este cálculo debe ser un número entero: es la que muestran Vigencia y Distribución. La meta programada de diciembre de 2026 (92,5 %) no lo es: reprográmela o quítela antes de enviar",
+      );
+      expect((await versionDe(tx, versionId)).estado).toBe("borrador");
+      // Entera, pasa.
+      await programarMeta(b.admin, { indicadorId, periodo: "2026-12", meta: "93" }, { sql: tx, ahora: AHORA });
+      await enviarAAprobacion(b.admin, { versionId, credenciales: CLAVE }, firmar(tx));
+      expect(await versionDe(tx, versionId)).toMatchObject({ estado: "por_aprobar", rige_desde: "2026-11" });
     }));
 
   it("pasar de manual a un cálculo que no se llena hacia atrás rige desde el periodo en curso", () =>

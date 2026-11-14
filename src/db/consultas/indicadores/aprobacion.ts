@@ -20,7 +20,7 @@ import { ErrorFirma, enTransaccion, type OpcionesFlujo, type SesionFlujo } from 
 import { aprobadoresDeFicha, filtroAcceso, puedeAprobarFicha, puedeVerIndicador, type SujetoVisibilidad } from "@/lib/alcance";
 import { verificarParaFirmar, type CredencialesFirma } from "@/lib/firma";
 import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
-import { calculoDe, type DefinicionDeCalculo } from "@/lib/indicadores/calculos/registro";
+import { calculoDe, META_ENTERA, metaNoEntera, type DefinicionDeCalculo } from "@/lib/indicadores/calculos/registro";
 import { camposCambiados, huellaDeFicha, tipoDeCambio, type ContenidoFicha } from "@/lib/indicadores/ficha";
 import { fraccion } from "@/lib/indicadores/formula/fraccion";
 import { periodicidadDe, periodosTerminados, periodoQueContiene, versionQueRigeEntre } from "@/lib/indicadores/periodos";
@@ -262,14 +262,16 @@ const desdeElPeriodo = (clave: string): string => delPeriodo(clave).replace(/^de
 /**
  * Las metas programadas que regirá un cambio mayor caen dentro de su Bien (spec 14A §3.4): las de los periodos de su
  * periodicidad desde su «rige desde» (las de antes las rige la versión anterior, y las de otra periodicidad ya no se
- * miden). `programarMeta` solo las revisó contra la versión que regía al programarlas. De solo lectura: quien llama tiene
- * el indicador `FOR UPDATE` dentro de la transacción, el candado de `programarMeta`.
+ * miden). `programarMeta` solo las revisó contra la versión que regía al programarlas. Si la versión es de un cálculo
+ * con tarjeta de Vigencia, además deben ser enteras (`metaNoEntera`, anexo 14B §6): una meta decimal programada mientras
+ * el indicador era manual no pasa a regir la tarjeta. De solo lectura: quien llama tiene el indicador `FOR UPDATE` dentro
+ * de la transacción, el candado de `programarMeta`.
  */
 async function exigirMetasDentroDeBien(sql: Cliente, versionId: number, rigeDesde: string, antesDe: "enviar" | "aprobar"): Promise<void> {
   const zona = zonaHoraria();
   const desde = periodoDe(rigeDesde, zona);
   const [v] = await sql`SELECT indicador_id, periodicidad, tendencia, meta, meta_max, semaforo_modo, umbral_atencion_pct, limite_critico,
-      tolerancia, rangos, unidad_sufijo, decimales
+      tolerancia, rangos, unidad_sufijo, decimales, origen_dato, calculo
     FROM indicador_versiones WHERE id = ${versionId}`;
   if (!v || !desde) return;
   const texto = (x: unknown) => (x === null || x === undefined ? null : String(x));
@@ -293,10 +295,14 @@ async function exigirMetasDentroDeBien(sql: Cliente, versionId: number, rigeDesd
       `Esta versión no tiene meta y hay metas programadas ${desdeElPeriodo(metas[0].clave)}: quítelas en «Programar metas» antes de ${antesDe}`,
     );
   }
+  const calculo = v.origen_dato === "automatico" ? calculoDe(v.calculo) : null;
   for (const m of metas) {
-    if (errorDeRegla(reglaDeTexto({ ...regla, meta: m.meta, metaMax: m.metaMax })) === null) continue;
     const n = (x: string) => numeroExacto(fraccion(x)!, unidad.decimales);
     const valor = m.meta === null ? "sin meta" : m.metaMax !== null && m.metaMax !== m.meta ? `${n(m.meta)} a ${n(m.metaMax)}${unidad.sufijo}` : `${n(m.meta)}${unidad.sufijo}`;
+    if (calculo && metaNoEntera(calculo, m.meta)) {
+      throw new ErrorIndicador(`${META_ENTERA}. La meta programada ${delPeriodo(m.clave)} (${valor}) no lo es: reprográmela o quítela antes de ${antesDe}`);
+    }
+    if (errorDeRegla(reglaDeTexto({ ...regla, meta: m.meta, metaMax: m.metaMax })) === null) continue;
     throw new ErrorIndicador(
       `La meta programada ${delPeriodo(m.clave)} (${valor}) queda fuera del rango de Bien de esta versión: reprográmela o quítela antes de ${antesDe}`,
     );
