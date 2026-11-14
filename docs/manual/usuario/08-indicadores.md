@@ -113,7 +113,7 @@ la clasificación y la versión de la ficha vigente. Tiene hasta cuatro pestaña
 | Lo que dice | Qué significa |
 |---|---|
 | **Bien** | Cumple la meta. Es lo único que cuenta como «Cumple» |
-| **Bien, no alcanza la meta** | Está en verde, pero por debajo de la meta (sección «Bien sin alcanzar la meta», abajo) |
+| **Bien · no alcanza la meta** | Está en verde, pero por debajo de la meta (sección «Bien sin alcanzar la meta», abajo) |
 | **Atención** | No cumple, pero está cerca: pide un análisis |
 | **Crítico** | Está lejos de la meta: pide causa y acción propuesta |
 | **Sin dato** («s. d.») | No se reportó. **No es cero**: se ve vacío y no entra al acumulado |
@@ -139,9 +139,9 @@ hacia arriba (89,96 % con meta de 90 % se ve «89,9 %», no «90,0 %»).
 **Bien sin alcanzar la meta.** En algunos indicadores quien creó la ficha escribió sus propios
 rangos y dejó que Bien empiece antes de la meta (por ejemplo, meta 100, «Bien desde 91»). Un
 resultado de 95 es entonces **verde pero no cumple la meta**: nunca se ve como un verde a secas.
-Dice **Bien, no alcanza la meta** (en la matriz es un ✓ con asterisco y en la ficha impresa, «Bien\*»,
+Dice **Bien · no alcanza la meta** (en la matriz es un ✓ con asterisco y en la ficha impresa, «Bien\*»,
 con la explicación al pie), no cuenta como «Cumple», **pide análisis como una Atención** y avisa como una Atención: no
-escala a los líderes ni al Administrador del SGC. La gráfica y la racha de periodos sin cumplir
+escala a los líderes ni al Administrador del SGC, salvo que se repita varios periodos seguidos: entonces escala como un Atención repetido. La gráfica y la racha de periodos sin cumplir
 también lo tratan así. Una medición anterior a esta función se lee como siempre: Bien es Cumple.
 
 ### 2.4 La frase y la comparación

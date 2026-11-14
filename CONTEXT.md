@@ -288,8 +288,8 @@ la forma `CNT-ID-001` (sigla del subproceso). **Sin dependencias npm nuevas.** U
   medio. Las versiones aprobadas conservan su regla vieja (un umbral sobre la meta; su huella no cambia) hasta su próximo
   cambio mayor; el parámetro «Umbral de atención» ya no está en la configuración.
 - **`cumple` distinto de Bien.** La medición guarda `cumple` (alcanzó la meta) junto al semáforo; una medición anterior a la
-  `0012` lo tiene nulo y se lee como antes (`cumpleDeFila`). Un **«Bien que no cumple»** lleva su nombre («Bien, no alcanza
-  la meta»; «✓\*» en la matriz, «Bien\*» impreso), pide análisis y avisa como un Atención, y cuenta en la racha. Solo
+  `0012` lo tiene nulo y se lee como antes (`cumpleDeFila`). Un **«Bien que no cumple»** lleva su nombre («Bien · no alcanza
+  la meta» en la insignia; «Bien, no alcanza la meta» en el nombre accesible y la tabla; «✓\*» en la matriz, «Bien\*» impreso), pide análisis y avisa como un Atención, y cuenta en la racha. Solo
   `recalcularMedicion` lo escribe.
 - **Sigla de los subprocesos y códigos del hospital (Parte B).** `subprocesos.sigla`, opcional y única entre procesos y
   subprocesos; la propone, al crear una ficha, `SIGLA-ID-NNN` (tres cifras, por sigla, sin reusarse) con la del subproceso o,
@@ -323,7 +323,7 @@ tabla de «Qué probar y cómo (Fase 14A)»; nunca otras credenciales). **No lo 
    **reinicie `npm run dev`**; resiembre justo antes de empezar: `npm run db:seed && npm run admin:asegurar`. Entre como
    `coordinadora.sgc` (Administrador del SGC); `gerente` y `lider.cex` para lo que sigue.
 1. **Rangos escritos (§8.1).** **Indicadores** → `CNT-ID-001`: la ficha dice «Bien ≥ 91 · Atención entre 41 y 90 · Crítico ≤ 40»,
-   meta 100. Su primer periodo reportado (septiembre, si siembra el 2026-11-13) está en 95: **«Bien, no alcanza la meta»** (verde
+   meta 100. Su primer periodo reportado (septiembre, si siembra el 2026-11-13) está en 95: **«Bien · no alcanza la meta»** (verde
    con letras, «✓\*» en la matriz), con su análisis, y el siguiente, en 100, cumple. Cree una ficha nueva con esos rangos y
    reporte 95, 90,5 (Atención) y 105 (Bien, cumple): el 95 pide análisis.
 2. **Menos es mejor sin Atención (§8.2).** Ficha nueva «menos es mejor» con **Este indicador no usa Atención**
@@ -339,7 +339,7 @@ tabla de «Qué probar y cómo (Fase 14A)»; nunca otras credenciales). **No lo 
    por la demo).
 6. **La ficha importada (§8.6).** `TSR-ID-001` (la del lote de la demo, o la suya): «Aprobada antes de la implementación de SGC
    Integral», con el documento, quien aprobó, la fecha y quién importó; sus rangos son los de la regla del lote (Atención desde
-   el 90 % de la meta); sin tareas vencidas; los periodos anteriores, como históricos «Por registrar».
+   el 90 % de la meta); sin tareas vencidas; `TSR-ID-001` de la demo se importa con inicio en el mes en curso y no tiene periodos históricos: para ver los históricos «Por registrar», importe un lote propio con «Inicio de medición» anterior.
 7. **Deshacer (§8.7).** En la página del lote que acaba de importar, **Deshacer la importación** con motivo y clave: las fichas
    desaparecen, los códigos quedan libres, la bitácora lo cuenta y la misma plantilla corregida entra otra vez. Con una ficha
    del lote ya reportada (o con una propuesta enviada a aprobación), el botón no se ofrece y la página dice por qué.
@@ -377,7 +377,7 @@ ejecución que cambian lo que el usuario ve o lo que el spec decía (entre paré
 
 | # | Decisión y porqué |
 |---|---|
-| F14AC-D1 | Un Bien que no cumple avisa como Atención (no escala a líderes ni al Administrador): el verde no es una falla, pero la meta no se alcanzó y alguien debe mirarlo |
+| F14AC-D1 | Un Bien que no cumple avisa como Atención (no escala a líderes ni al Administrador; si se repite, escala como un Atención repetido, F14AC-R3): el verde no es una falla, pero la meta no se alcanzó y alguien debe mirarlo |
 | F14AC-D2 | «Entre» incluye sus dos extremos y más allá de la punta manda el rango de la punta: así ningún número cae sin color |
 | F14AC-D3 | Un hueco de más de una unidad entre rangos es un error: un valor sin color sería peor que un rechazo |
 | F14AC-D4 | Las metas programadas por periodo deben caer dentro de Bien y los rangos no se mueven con ellas: la meta del periodo no reescribe la regla firmada |
@@ -403,6 +403,7 @@ ejecución que cambian lo que el usuario ve o lo que el spec decía (entre paré
 | F14AC-R9 (30) | Una celda con error de Excel o una fórmula sin resultado bloquea la fila con su mensaje: leerla vacía crearía una ficha sin meta |
 | F14AC-R10 (32) | Los «Propuesto» son borradores normales, sin `importacion_id` ni aprobación previa; el lote los recuerda por el `detalle` del evento `importado`: si no, una propuesta aprobada en la app saldría como «aprobada antes de SGC Integral» |
 | F14AC-R11 (34, 35, 38, 40) | El archivo del lote responde 404 a quien no administra indicadores; si el conjunto importable cambió entre la vista y la clave, se aborta con «La vista previa cambió mientras se importaba: revísela y vuelva a importar»; el formulario manda los códigos de la vista y se comparan como lista (el envío multipart cambia LF por CRLF): nadie firma un lote distinto del que vio |
+| F14AC-R13 (3) | «Importó … el …» de la ficha importada sale del evento `importado` (quien confirmó con la clave), no de quien subió el archivo: la constancia con clave es la del evento |
 | F14AC-R12 (42) | Una propuesta del lote impide deshacer si ya se envió a aprobación o se aprobó, o si se modificó después de importarse: deshacer no debe borrar trabajo hecho en la app |
 
 ### Deuda técnica (entrega complementaria de la 14A)
@@ -448,6 +449,8 @@ técnica conocida».
   el «N fichas» de la página y del diálogo cuenta del evento (una de más si una propuesta se borró en la app); el diálogo no
   menciona que también se borran las metas programadas, y «La importación no existe» sirve para un id forjado; el 23505 del
   deshecho solo se prueba por mutación; la rama del 23505 del evento `importado` no tiene prueba de carrera real.
+- **Reglas puras (Tarea 1, más):** con Bien y Atención de un punto se acepta un Crítico que nunca pinta (colores monótonos).
+- **Formulario de rangos (Tarea 5, más):** el comentario de foco menciona «Cambiar rangos», que ya no existe, y `JSON.parse` de los rangos corre en cada render (`FormularioFicha.tsx`).
 - **Ficha importada:** si falta el evento `importado`, la versión importada se mostraría «Sin firma» (un `LEFT JOIN` y una frase
   sin «Importó…» sería más honesto) y el control de cambios impreso dice «Importada» sin documento ni fecha.
 - **Documentación:** la regla 5 de `AGENTS.md` quedó con sus dos excepciones nombradas (resuelto aquí).
