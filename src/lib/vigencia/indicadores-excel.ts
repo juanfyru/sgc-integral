@@ -17,6 +17,8 @@ const INDICADORES: Array<Columna<IndicadorMedido>> = [
   { cab: "Numerador", ancho: 12, valor: (i) => i.numerador },
   { cab: "Denominador", ancho: 13, valor: (i) => i.denominador },
   { cab: "Detalle", ancho: 56, valor: (i) => i.detalle },
+  // La ficha cuya meta se aplica; vacía sin ficha o para quien no puede verla (anexo 14B, §6).
+  { cab: "Ficha", ancho: 16, valor: (i) => i.ficha?.codigo ?? null },
 ];
 
 /** `meta`: la de documentos dentro del plazo, para que la cifra no contradiga el veredicto. */

@@ -21,6 +21,9 @@ const centimetros = (que: string) =>
     .regex(/^\d{1,2}([.,]\d)?$/, `${que} debe ser un número con un decimal como máximo`)
     .transform((valor) => Number(valor.replace(",", ".")));
 
+/** Una meta que fija la ficha de su cálculo llega deshabilitada, sin valor: el guardado conserva la guardada. */
+const fijable = (que: string) => entero(que).optional();
+
 const EsquemaConfigDocumental = z
   .object({
     formatoCodigo: z.string().min(1, "El formato del código es obligatorio"),
@@ -42,7 +45,7 @@ const EsquemaConfigDocumental = z
     plazoSocializacionDias: entero("El plazo de socialización"),
     plazoCorreccionDias: entero("El plazo de corrección"),
     verificacionCadaDias: entero("Los días entre verificaciones"),
-    umbralConformidadPct: entero("El umbral de conformidad"),
+    umbralConformidadPct: fijable("El umbral de conformidad"),
     selloFranjaCm: centimetros("El alto de la franja del sello"),
     selloQrCm: centimetros("El tamaño del código QR"),
     atencionDias: entero("Los días de aviso de la revisión"),
@@ -53,12 +56,12 @@ const EsquemaConfigDocumental = z
     formatoInformeDocumentoId: z.string().regex(/^\d{1,15}$/, "El documento del formato del informe no es válido").transform(Number).optional(),
     informeMargenSuperiorCm: centimetros("El espacio del encabezado del informe"),
     informeMargenInferiorCm: centimetros("El espacio del pie del informe"),
-    metaDentroPlazoPct: entero("La meta de documentos dentro de plazo"),
-    metaAprobacionDias: entero("La meta de días de aprobación"),
-    metaVencidos: entero("La meta de documentos vencidos"),
-    metaAcusesPct: entero("La meta de acuses de lectura"),
-    metaExternosPct: entero("La meta de externos verificados"),
-    metaEtapasPlazoPct: entero("La meta de etapas a tiempo"),
+    metaDentroPlazoPct: fijable("La meta de documentos dentro de plazo"),
+    metaAprobacionDias: fijable("La meta de días de aprobación"),
+    metaVencidos: fijable("La meta de documentos vencidos"),
+    metaAcusesPct: fijable("La meta de acuses de lectura"),
+    metaExternosPct: fijable("La meta de externos verificados"),
+    metaEtapasPlazoPct: fijable("La meta de etapas a tiempo"),
   })
   .strict();
 

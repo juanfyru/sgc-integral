@@ -82,6 +82,7 @@ const medido = (clave: IndicadorMedido["clave"], m: Partial<IndicadorMedido>): I
   meta: 0,
   cumple: null,
   detalle: null,
+  ficha: null,
   ...m,
 });
 

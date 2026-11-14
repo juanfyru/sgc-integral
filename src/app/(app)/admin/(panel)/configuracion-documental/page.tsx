@@ -4,6 +4,7 @@ import { ListaItemsVerificacion } from "@/componentes/admin/config-documental/Li
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { documentosParaFormato, revisarFormatoActa, type EstadoFormato } from "@/db/consultas/formato-acta";
+import { metasQueFijaUnaFicha } from "@/db/consultas/indicadores/fichas-de-calculo";
 import { listarItemsVerificacion } from "@/db/consultas/revision";
 import { exigirPermiso } from "@/lib/paginas";
 
@@ -21,7 +22,7 @@ async function estadoDelFormato(documentoId: number | null): Promise<EstadoForma
 
 export default async function PaginaConfiguracionDocumental() {
   await exigirPermiso("tramites.gestionar");
-  const [config, items] = await Promise.all([obtenerConfigDocumental(), listarItemsVerificacion()]);
+  const [config, items, fijadas] = await Promise.all([obtenerConfigDocumental(), listarItemsVerificacion(), metasQueFijaUnaFicha()]);
   const documentoFormato = config.formatoActa.documentoId;
   const documentoInforme = config.vigencia.formatoInforme.documentoId;
   const [documentosFormato, estadoFormato] = await Promise.all([
@@ -36,7 +37,13 @@ export default async function PaginaConfiguracionDocumental() {
   return (
     <div className="flex flex-col gap-8">
       <EncabezadoPagina titulo="Configuración documental" />
-      <FormularioConfigDocumental config={config} documentosFormato={documentosFormato} documentosInforme={documentosInforme} estadoFormato={estadoFormato} />
+      <FormularioConfigDocumental
+        config={config}
+        documentosFormato={documentosFormato}
+        documentosInforme={documentosInforme}
+        estadoFormato={estadoFormato}
+        fijadas={fijadas}
+      />
       <section className="flex max-w-3xl flex-col gap-4" aria-labelledby="titulo-lista-verificacion">
         <h2 id="titulo-lista-verificacion" className="text-base font-semibold">
           Lista de verificación

@@ -16,15 +16,19 @@ const COLUMNAS: readonly ColumnaTabla[] = [
   { clave: "accion", etiqueta: "Verificar", oculta: true },
 ];
 
-/** La cifra de conformidad: el porcentaje y el umbral van en texto, la insignia solo los refuerza. */
+/**
+ * La cifra de conformidad: el porcentaje y el umbral van en texto, la insignia solo los refuerza. Si el umbral lo fija
+ * una ficha que la persona puede ver, el texto la nombra.
+ */
 export function TarjetaConformidad({ etiqueta, c }: { etiqueta: string; c: ConformidadActual }) {
   const estado = c.cumple === null ? "sin-dato" : c.cumple ? "bien" : "critico";
+  const umbral = c.ficha === null ? `Umbral ${c.umbral} %` : `Umbral ${c.umbral} % · lo fija la ficha ${c.ficha}`;
   return (
     <div className="flex flex-col gap-2">
       <TarjetaCifra
         etiqueta={etiqueta}
         valor={c.porcentaje === null ? "Sin datos" : `${c.porcentaje} %`}
-        detalle={`Umbral ${c.umbral} % · ${c.puntos} ${c.puntos === 1 ? "verificación" : "verificaciones"}`}
+        detalle={`${umbral} · ${c.puntos} ${c.puntos === 1 ? "verificación" : "verificaciones"}`}
         estado={estado}
       />
       <div>

@@ -2,6 +2,7 @@ import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { revisarFormatoActa } from "@/db/consultas/formato-acta";
+import { metasQueFijaUnaFicha } from "@/db/consultas/indicadores/fichas-de-calculo";
 import { validarFormato } from "@/lib/tramites/codigo";
 
 export type ConfigDocumental = {
@@ -226,10 +227,14 @@ export type DatosConfigDocumental = {
   escalamientoDias: number;
   publicacionDirecta: boolean;
   formatoActa: ConfigDocumental["formatoActa"];
-  distribucion: Distribucion;
-  /** Ausentes, la pantalla de otra sección no los toca: se conservan los valores guardados. */
+  /** El umbral de conformidad puede faltar si lo fija una ficha: la pantalla lo muestra deshabilitado y no lo envía. */
+  distribucion: Omit<Distribucion, "umbralConformidadPct"> & { umbralConformidadPct?: number };
+  /**
+   * Ausentes, la pantalla de otra sección no los toca: se conservan los valores guardados. Una meta que fija una ficha
+   * también puede faltar.
+   */
   vigencia?: Vigencia;
-  metas?: Metas;
+  metas?: Partial<Metas>;
 };
 
 function enteroEntre(valor: unknown, minimo: number, maximo: number, que: string): number {
@@ -275,7 +280,8 @@ const NOMBRE_PLAZO: Record<keyof ConfigDocumental["plazos"], string> = {
  * (comparadas por su valor efectivo: una clave ausente vale lo que vale por defecto). Cerrar la
  * publicación directa no toca nada más: `descartarBorrador` sigue disponible con la carga cerrada.
  * El formato del acta solo se revisa si cambió: uno que dejó de servir, y que la pantalla ya avisa,
- * no impide guardar un plazo.
+ * no impide guardar un plazo. Una meta que fija la ficha de su cálculo (`metasQueFijaUnaFicha`, anexo 14B §6) no se
+ * escribe, venga lo que venga: conserva su valor guardado.
  */
 export function guardarConfigDocumental(datos: DatosConfigDocumental, actorId: number): Promise<void> {
   return obtenerSql().begin((tx) => guardarConfigDocumentalEn(tx, datos, actorId));
@@ -283,6 +289,8 @@ export function guardarConfigDocumental(datos: DatosConfigDocumental, actorId: n
 
 /** El cuerpo de `guardarConfigDocumental` sobre una transacción ya abierta (los tests la revierten). */
 export async function guardarConfigDocumentalEn(tx: TransactionSql, datos: DatosConfigDocumental, actorId: number): Promise<void> {
+  const fijadas = await metasQueFijaUnaFicha({ sql: tx });
+  const fijada = (campo: string) => Object.hasOwn(fijadas, campo);
   const formato = typeof datos.formatoCodigo === "string" ? datos.formatoCodigo.trim() : "";
   const motivo = validarFormato(formato);
   if (motivo) throw new Error(motivo);
@@ -301,7 +309,9 @@ export async function guardarConfigDocumentalEn(tx: TransactionSql, datos: Datos
   nuevos.formato_acta_documento_id = documentoFormato === null ? "" : String(documentoFormato);
   nuevos.formato_acta_margen_superior_cm = String(margenSuperiorCm);
   nuevos.formato_acta_margen_inferior_cm = String(margenInferiorCm);
-  for (const c of CAMPOS_DISTRIBUCION) nuevos[c.clave] = String(numeroDeDistribucion(datos.distribucion?.[c.campo], c));
+  for (const c of CAMPOS_DISTRIBUCION) {
+    if (!fijada(c.campo)) nuevos[c.clave] = String(numeroDeDistribucion(datos.distribucion?.[c.campo], c));
+  }
   const informe = datos.vigencia?.formatoInforme;
   if (datos.vigencia) {
     for (const c of CAMPOS_VIGENCIA) nuevos[c.clave] = String(numeroDeCampo(datos.vigencia[c.campo], c));
@@ -314,7 +324,9 @@ export async function guardarConfigDocumentalEn(tx: TransactionSql, datos: Datos
     nuevos.formato_informe_margen_superior_cm = String(superior);
     nuevos.formato_informe_margen_inferior_cm = String(inferior);
   }
-  if (datos.metas) for (const c of CAMPOS_METAS) nuevos[c.clave] = String(numeroDeCampo(datos.metas[c.campo], c));
+  if (datos.metas) {
+    for (const c of CAMPOS_METAS) if (!fijada(c.campo)) nuevos[c.clave] = String(numeroDeCampo(datos.metas[c.campo], c));
+  }
 
   {
     const actual = await obtenerConfigDocumental({ sql: tx });

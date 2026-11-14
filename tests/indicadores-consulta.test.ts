@@ -367,8 +367,8 @@ describe("construirExcelIndicadores", () => {
       periodo: { clave: "2026", desde: finDeFecha("2025-12-31", ZONA), hasta: finDeFecha("2026-12-31", ZONA), etiqueta: "2026" },
       procesoId: null,
       indicadores: [
-        { clave: "dentro_plazo", nombre: "Documentos dentro de su plazo de revisión", unidad: "pct", valor: 94, numerador: 94, denominador: 100, meta: 95, cumple: false, detalle: "2 documentos sin fecha de revisión" },
-        { clave: "acuses", nombre: "Acuses de lectura confirmados", unidad: "pct", valor: null, numerador: 0, denominador: 0, meta: 90, cumple: null, detalle: null },
+        { clave: "dentro_plazo", nombre: "Documentos dentro de su plazo de revisión", unidad: "pct", valor: 94, numerador: 94, denominador: 100, meta: 95, cumple: false, detalle: "2 documentos sin fecha de revisión", ficha: { codigo: "SGC-ID-001" } },
+        { clave: "acuses", nombre: "Acuses de lectura confirmados", unidad: "pct", valor: null, numerador: 0, denominador: 0, meta: 90, cumple: null, detalle: null, ficha: null },
       ],
       vencidosPorProceso: [{ procesoId: 1, sigla: "GTH", proceso: "Gestión del Talento Humano", vencidos: 1 }],
       dentroPorProceso: [
@@ -393,8 +393,9 @@ describe("construirExcelIndicadores", () => {
     expect(libro.worksheets.map((h) => h.name)).toEqual(["Indicadores", "Por proceso", "Vencidos"]);
     for (const hoja of ["Indicadores", "Por proceso", "Vencidos"]) expect(filas(hoja)[0][0]).toBe("'+Hospital de prueba");
     expect(filas("Indicadores")[3][0]).toBe("Periodo: 2026 · Proceso: todos — Trámites publicados en el periodo: 18 · en curso: 4 — Los de estado, a la fecha de generación");
-    expect(filas("Indicadores")[4]).toEqual(["Indicador", "Valor", "Meta", "Cumple", "Numerador", "Denominador", "Detalle"]);
-    expect(filas("Indicadores")[5]).toEqual(["Documentos dentro de su plazo de revisión", "94 %", "≥ 95 %", "No cumple", 94, 100, "2 documentos sin fecha de revisión"]);
+    expect(filas("Indicadores")[4]).toEqual(["Indicador", "Valor", "Meta", "Cumple", "Numerador", "Denominador", "Detalle", "Ficha"]);
+    // La ficha cuya meta se aplica (anexo 14B, §6); vacía sin ficha o para quien no la ve.
+    expect(filas("Indicadores")[5]).toEqual(["Documentos dentro de su plazo de revisión", "94 %", "≥ 95 %", "No cumple", 94, 100, "2 documentos sin fecha de revisión", "SGC-ID-001"]);
     expect(filas("Indicadores")[6].slice(0, 4)).toEqual(["Acuses de lectura confirmados", "Sin dato", "≥ 90 %", "Sin dato"]);
     expect(filas("Por proceso")[5]).toEqual(["GTH", "Gestión del Talento Humano", 14, 11, 1, 2, "85 %", "No cumple"]);
     // 18 de 19 no alcanza la meta de 95: la cifra no se redondea a ella.

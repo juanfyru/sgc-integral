@@ -5,11 +5,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { obtenerConfigDocumental, documentosParaFormato, revisarFormatoActa, listarItemsVerificacion } = vi.hoisted(() => ({
+const { obtenerConfigDocumental, documentosParaFormato, revisarFormatoActa, listarItemsVerificacion, metasQueFijaUnaFicha } = vi.hoisted(() => ({
   obtenerConfigDocumental: vi.fn(),
   documentosParaFormato: vi.fn(),
   revisarFormatoActa: vi.fn(),
   listarItemsVerificacion: vi.fn(),
+  metasQueFijaUnaFicha: vi.fn(),
 }));
 
 vi.mock("@/app/admin/acciones-config-documental", () => ({
@@ -23,6 +24,7 @@ vi.mock("@/lib/paginas", () => ({ exigirPermiso: async () => ({ usuarioId: 1 }) 
 vi.mock("@/db/consultas/config-documental", () => ({ obtenerConfigDocumental }));
 vi.mock("@/db/consultas/formato-acta", () => ({ documentosParaFormato, revisarFormatoActa }));
 vi.mock("@/db/consultas/revision", () => ({ listarItemsVerificacion }));
+vi.mock("@/db/consultas/indicadores/fichas-de-calculo", () => ({ metasQueFijaUnaFicha }));
 
 import PaginaConfiguracionDocumental from "@/app/(app)/admin/(panel)/configuracion-documental/page";
 
@@ -53,6 +55,7 @@ beforeEach(() => {
   documentosParaFormato.mockResolvedValue([{ id: 31, codigo: "SGC-FO-06", titulo: "Acta de control documental" }]);
   revisarFormatoActa.mockResolvedValue({ estado: "sin_formato" });
   listarItemsVerificacion.mockResolvedValue([]);
+  metasQueFijaUnaFicha.mockResolvedValue({});
 });
 
 describe("Distribución", () => {
@@ -114,6 +117,22 @@ describe("Vigencia e Indicadores documentales", () => {
     expect(entrada(html, "metaEtapasPlazoPct")).toMatch(/value="90"/);
     expect(html).toContain("Documentos dentro de plazo (%)");
     expect(html).toContain("Días de aprobación (máximo)");
+  });
+
+  it("una meta que fija una ficha va deshabilitada, con el valor guardado, y su ayuda nombra la ficha (anexo 14B, §6)", async () => {
+    metasQueFijaUnaFicha.mockResolvedValue({ etapasPlazoPct: "SGC-ID-004", umbralConformidadPct: "SGC-ID-005" });
+    const html = await pagina();
+    for (const [nombre, codigo, valor] of [["metaEtapasPlazoPct", "SGC-ID-004", "90"], ["umbralConformidadPct", "SGC-ID-005", "95"]]) {
+      const control = entrada(html, nombre)!;
+      expect(control).toMatch(/disabled=""/);
+      expect(control).not.toMatch(/required=""/);
+      expect(control).toMatch(new RegExp(`value="${valor}"`));
+      expect(html).toContain(`<p id="${nombre}-ayuda" class="text-xs text-muted-foreground">La fija la ficha ${codigo}</p>`);
+    }
+    // Las demás siguen editables, con su ayuda.
+    expect(entrada(html, "metaAcusesPct")).not.toMatch(/disabled=""/);
+    expect(entrada(html, "metaAcusesPct")).toMatch(/required=""/);
+    expect(html).toContain("Porcentaje de acuses de lectura confirmados (50 a 100).");
   });
 
   it("el documento del informe guardado se pide aparte y sigue elegido", async () => {

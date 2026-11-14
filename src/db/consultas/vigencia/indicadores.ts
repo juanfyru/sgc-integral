@@ -9,9 +9,10 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { resumenAcuses } from "@/db/consultas/distribucion/acuses";
 import { estadoDePuntos, historialVerificaciones } from "@/db/consultas/distribucion/verificaciones-resumen";
+import { fichasActivasDeLosCalculos } from "@/db/consultas/indicadores/fichas-de-calculo";
 import { porcentajeDeConformidad } from "@/lib/distribucion/verificacion";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { alcanceProcesos, enAlcance, filtroAcceso, type Alcance } from "@/lib/alcance";
+import { alcanceProcesos, enAlcance, filtroAcceso, puedeVerIndicador, type Alcance } from "@/lib/alcance";
 import {
   dentroDelPlazo,
   etapasEnPlazo,
@@ -34,6 +35,7 @@ import {
 } from "@/lib/indicadores-documentales/metas";
 import { periodoActual, periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { textoDias } from "@/lib/indicadores-documentales/textos";
+import { CALCULOS, CLAVES_DE_CALCULO, alcanceAdmitido, type AlcanceDeCalculo } from "@/lib/indicadores/calculos/registro";
 import { puede } from "@/lib/permisos";
 import { cuenta } from "@/lib/plural";
 import { EVENTOS_SIN_CAMBIO_DE_ETAPA } from "@/lib/tramites/dia-de-etapa";
@@ -74,11 +76,40 @@ function condicionTramites(sql: Cliente, sesion: SesionFlujo, alcance: Alcance, 
     AND (t.documento_id IS NULL OR EXISTS (SELECT 1 FROM documentos d WHERE d.id = t.documento_id AND ${filtroAcceso(sql, sesion)}))`;
 }
 
+type MetaDeFicha = { meta: number; ficha: { codigo: string } | null };
+
+/**
+ * La meta que fija a cada tarjeta la ficha activa de su cálculo con el alcance del filtro (anexo 14B, §6): sin proceso,
+ * la de la entidad; con proceso, la de ese proceso. Solo las fichas con meta; el código, solo para quien puede verla. La
+ * conformidad no pasa por aquí: la tarjeta copia la de Distribución (`metaDeConformidad`).
+ */
+async function metasDeFichas(
+  sql: Cliente,
+  sesion: SesionFlujo,
+  c: { procesoId: number | undefined; ahora: Date },
+): Promise<Map<Indicador, MetaDeFicha>> {
+  const alcance: AlcanceDeCalculo = c.procesoId === undefined ? "entidad" : "proceso";
+  const claves = CLAVES_DE_CALCULO.filter((k) => {
+    const tarjeta = CALCULOS[k].documental;
+    return tarjeta !== null && tarjeta !== "conformidad" && alcanceAdmitido(CALCULOS[k], alcance);
+  });
+  const fichas = await fichasActivasDeLosCalculos(sql, { claves, alcance, procesoId: c.procesoId ?? null, ahora: c.ahora });
+  const salida = new Map<Indicador, MetaDeFicha>();
+  for (const [clave, f] of fichas) {
+    const tarjeta = CALCULOS[clave].documental;
+    if (tarjeta === null || f.meta === null) continue;
+    const visible = await puedeVerIndicador(f.indicadorId, sesion, { sql });
+    salida.set(tarjeta, { meta: Number(f.meta), ficha: visible ? { codigo: f.codigo } : null });
+  }
+  return salida;
+}
+
 /**
  * Los indicadores que la persona puede ver (`documentos.indicadores`), en el periodo elegido; un periodo que no se
  * entiende es el actual. El líder ve solo sus procesos y los totales de ellos: un `procesoId` fuera de su alcance es
  * `null`, como la falta del permiso. Acuses y puntos de uso salen de las consultas de la 13B con la sesión, con el
- * alcance que ya aplican; los puntos de uso no se desglosan por proceso.
+ * alcance que ya aplican; los puntos de uso no se desglosan por proceso. La meta de una tarjeta es la de la ficha activa
+ * de su cálculo, si la tiene (`metasDeFichas`), o la de Configuración documental.
  */
 export async function indicadoresDocumentales(
   sesion: SesionFlujo,
@@ -97,7 +128,7 @@ export async function indicadoresDocumentales(
   const hasta = new Date(periodo.hasta.getTime() + 1);
   const deTramites = condicionTramites(sql, sesion, alcance, procesoId);
 
-  const [config, filas, publicados, cierres, [abiertos], acuses, puntos, verificadas] = await Promise.all([
+  const [config, filas, publicados, cierres, [abiertos], acuses, puntos, verificadas, deFichas] = await Promise.all([
     obtenerConfigDocumental({ sql }),
     listarSemaforo(sesion, { estado: "todos", procesoId }, { sql, ahora }),
     sql`SELECT t.creado_en AS solicitado_en, t.cerrado_en AS publicado_en,
@@ -110,15 +141,18 @@ export async function indicadoresDocumentales(
     sql`SELECT count(*)::int AS n FROM tramites t WHERE t.etapa = ANY(${ETAPAS_ABIERTAS}) AND ${deTramites}`,
     resumenAcuses(sesion, { desde: periodo.desde, hasta, procesoId }, { sql }),
     estadoDePuntos(sesion, { sql, ahora }),
-    historialVerificaciones(sesion, { desde: periodo.desde, hasta }, { sql }),
+    historialVerificaciones(sesion, { desde: periodo.desde, hasta }, { sql, ahora }),
+    metasDeFichas(sql, sesion, { procesoId, ahora }),
   ]);
 
   const metas = { metas: config.metas, umbralConformidadPct: config.distribucion.umbralConformidadPct };
+  const metaDeLaTarjeta = (clave: Indicador) => deFichas.get(clave)?.meta ?? metaDe(clave, metas);
   // Un porcentaje cumple con la razón exacta, no con el entero que se muestra (94,7 % no alcanza 95).
   const medir = (clave: Indicador, m: Medicion, detalle: string | null): IndicadorMedido => {
-    const meta = metaDe(clave, metas);
+    const meta = metaDeLaTarjeta(clave);
     const veredicto = UNIDAD[clave] === "pct" ? cumplePorcentaje(clave, m, meta) : cumple(clave, m.valor, meta);
-    return { clave, nombre: NOMBRE_INDICADOR[clave], unidad: UNIDAD[clave], ...m, meta, cumple: veredicto, detalle };
+    const ficha = deFichas.get(clave)?.ficha ?? null;
+    return { clave, nombre: NOMBRE_INDICADOR[clave], unidad: UNIDAD[clave], ...m, meta, cumple: veredicto, detalle, ficha };
   };
 
   // Por la fecha, como el porcentaje del semáforo: un documento en trámite sigue vencido o no por debajo.
@@ -185,18 +219,21 @@ export async function indicadoresDocumentales(
         ? null
         : `${cuenta(acuses.versiones.length, "versión publicada", "versiones publicadas")} en el periodo`,
     ),
-    // La cifra, el veredicto y el umbral son los de la 13B (spec 13C §11.1): el mismo que dice Distribución.
+    // La cifra, el veredicto, el umbral y su ficha son los de la 13B (spec 13C §11.1): lo mismo que dice Distribución,
+    // también con un proceso elegido (los puntos de uso no se desglosan por proceso).
     {
       ...medir("conformidad", conformidadActual, textoConformidad(conformidadPeriodo, procesoId !== undefined)),
       valor: puntos.conformidad.porcentaje,
       meta: puntos.conformidad.umbral,
       cumple: puntos.conformidad.cumple,
+      ficha: puntos.conformidad.ficha === null ? null : { codigo: puntos.conformidad.ficha },
     },
     medir("externos", externos, externos.sinDato > 0 ? `${cuenta(externos.sinDato, "externo", "externos")} sin fecha de verificación` : null),
     medir("etapas", etapas, etapas.sinDato > 0 ? `${cuenta(etapas.sinDato, "etapa", "etapas")} sin dato` : null),
   ];
 
-  const metaDentro = metaDe("dentro_plazo", metas);
+  // La de la tarjeta: la página y el Excel leen la tabla por proceso con ella.
+  const metaDentro = metaDeLaTarjeta("dentro_plazo");
   return {
     periodo,
     procesoId: procesoId ?? null,

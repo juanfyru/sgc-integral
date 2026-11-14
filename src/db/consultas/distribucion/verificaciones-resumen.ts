@@ -1,6 +1,7 @@
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
+import { metaDeConformidad } from "@/db/consultas/indicadores/fichas-de-calculo";
 import { filtroPuntos } from "@/lib/alcance";
 import { conformidad } from "@/lib/distribucion/verificacion";
 
@@ -20,7 +21,11 @@ export type EstadoPunto = {
   vencida: boolean;
 };
 
-export type ConformidadActual = { porcentaje: number | null; cumple: boolean | null; umbral: number; puntos: number };
+/**
+ * `umbral`: el de la ficha activa del cálculo `conformidad_fecha`, si tiene meta, o el de Configuración documental
+ * (`metaDeConformidad`). `ficha`: el código de esa ficha, solo si la persona puede verla.
+ */
+export type ConformidadActual = { porcentaje: number | null; cumple: boolean | null; umbral: number; puntos: number; ficha: string | null };
 
 /** Una fila por punto activo del alcance, y la conformidad de la última verificación cerrada de cada uno. */
 export async function estadoDePuntos(
@@ -30,6 +35,7 @@ export async function estadoDePuntos(
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
   const { distribucion } = await obtenerConfigDocumental({ sql });
+  const { umbral, ficha } = await metaDeConformidad(distribucion.umbralConformidadPct, sesion, { sql, ahora });
   const filas = await sql`
     SELECT pu.id, pu.nombre, pu.sede, ur.nombre AS responsable,
            u.cerrada_en, u.conforme,
@@ -62,11 +68,7 @@ export async function estadoDePuntos(
   const verificados = puntos.filter((p) => p.ultima).map((p) => ({ conforme: p.ultima!.conforme }));
   return {
     puntos,
-    conformidad: {
-      ...conformidad(verificados, distribucion.umbralConformidadPct),
-      umbral: distribucion.umbralConformidadPct,
-      puntos: verificados.length,
-    },
+    conformidad: { ...conformidad(verificados, umbral), umbral, puntos: verificados.length, ficha },
   };
 }
 
@@ -102,6 +104,7 @@ export async function historialVerificaciones(
 ): Promise<{ filas: FilaHistorial[]; conformidad: ConformidadActual }> {
   const sql = opciones?.sql ?? obtenerSql();
   const { distribucion } = await obtenerConfigDocumental({ sql });
+  const { umbral, ficha } = await metaDeConformidad(distribucion.umbralConformidadPct, sesion, { sql, ahora: opciones?.ahora });
   const filas = await sql`
     SELECT ve.id, ve.punto_uso_id, ve.punto_nombre, pu.sede, ve.cerrada_en, uc.nombre AS verifico, ve.conforme, ve.propio_punto,
            (SELECT count(*)::int FROM verificacion_items i WHERE i.verificacion_id = ve.id AND i.respuesta = 'conforme') AS conformes,
@@ -127,11 +130,7 @@ export async function historialVerificaciones(
   }));
   return {
     filas: resultado,
-    conformidad: {
-      ...conformidad(resultado, distribucion.umbralConformidadPct),
-      umbral: distribucion.umbralConformidadPct,
-      puntos: resultado.length,
-    },
+    conformidad: { ...conformidad(resultado, umbral), umbral, puntos: resultado.length, ficha },
   };
 }
 

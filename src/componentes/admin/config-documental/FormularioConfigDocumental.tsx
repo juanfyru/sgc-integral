@@ -8,6 +8,7 @@ import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import type { ConfigDocumental } from "@/db/consultas/config-documental";
 import type { EstadoFormato } from "@/db/consultas/formato-acta";
+import type { CampoDeMetaDocumental } from "@/db/consultas/indicadores/fichas-de-calculo";
 import { FORMATO_CODIGO_DEFECTO, generarCodigo, validarFormato } from "@/lib/tramites/codigo";
 
 const PLAZOS: { campo: string; clave: keyof ConfigDocumental["plazos"]; etiqueta: string }[] = [
@@ -64,6 +65,12 @@ const METAS: { clave: keyof ConfigDocumental["metas"]; etiqueta: string; ayuda: 
   { clave: "etapasPlazoPct", etiqueta: "Etapas del trámite a tiempo (%)", ayuda: "Porcentaje de etapas del trámite cerradas dentro de su plazo (50 a 100).", minimo: 50, maximo: 100 },
 ];
 
+/** El código de la ficha que fija cada campo (`metasQueFijaUnaFicha`). */
+type Fijadas = Partial<Record<CampoDeMetaDocumental, string>>;
+
+/** La ficha que fija el campo, si la hay: entonces va deshabilitado (no se envía) y su ayuda la nombra. */
+const fichaDe = (fijadas: Fijadas, clave: string): string | undefined => fijadas[clave as CampoDeMetaDocumental];
+
 /** El nombre del campo del formulario: `metaAcusesPct` para `acusesPct`. */
 const campoMeta = (clave: string) => `meta${clave[0].toUpperCase()}${clave.slice(1)}`;
 
@@ -116,6 +123,7 @@ export function FormularioConfigDocumental({
   documentosFormato,
   documentosInforme,
   estadoFormato,
+  fijadas,
 }: {
   config: ConfigDocumental;
   /** Trae el documento guardado aunque ya no sirva: así sigue elegido y guardar otra sección no lo quita. */
@@ -123,6 +131,8 @@ export function FormularioConfigDocumental({
   /** Lo mismo para el formato del informe de vigencia: trae el documento guardado aunque ya no sirva. */
   documentosInforme: { id: number; codigo: string; titulo: string }[];
   estadoFormato: EstadoFormato;
+  /** Las metas que fija la ficha de su cálculo (anexo 14B, §6): en solo lectura, y el guardado conserva las guardadas. */
+  fijadas: Fijadas;
 }) {
   const [estado, enviar, pendiente] = useActionState(guardarConfigDocumentalAccion, null);
   const v = estado?.valores;
@@ -291,20 +301,24 @@ export function FormularioConfigDocumental({
 
       <Seccion titulo="Distribución">
         <div className="grid gap-4 sm:grid-cols-2">
-          {DIAS_DISTRIBUCION.map((d) => (
-            <Campo key={d.clave} etiqueta={d.etiqueta} nombre={d.clave} ayuda={d.ayuda}>
-              <input
-                type="number"
-                inputMode="numeric"
-                min={d.minimo}
-                max={d.maximo}
-                step={1}
-                required
-                defaultValue={val(d.clave) ?? config.distribucion[d.clave]}
-                className={claseControl}
-              />
-            </Campo>
-          ))}
+          {DIAS_DISTRIBUCION.map((d) => {
+            const ficha = fichaDe(fijadas, d.clave);
+            return (
+              <Campo key={d.clave} etiqueta={d.etiqueta} nombre={d.clave} ayuda={ficha !== undefined ? `La fija la ficha ${ficha}` : d.ayuda}>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={d.minimo}
+                  max={d.maximo}
+                  step={1}
+                  required={ficha === undefined}
+                  disabled={ficha !== undefined}
+                  defaultValue={ficha !== undefined ? config.distribucion[d.clave] : (val(d.clave) ?? config.distribucion[d.clave])}
+                  className={`${claseControl} disabled:cursor-not-allowed disabled:bg-muted`}
+                />
+              </Campo>
+            );
+          })}
           {CM_DISTRIBUCION.map((d) => (
             <Campo key={d.clave} etiqueta={d.etiqueta} nombre={d.clave} ayuda={d.ayuda}>
               <input
@@ -399,20 +413,24 @@ export function FormularioConfigDocumental({
           Las metas con que se comparan los indicadores de documentos. La meta de conformidad es el umbral de conformidad de Distribución.
         </p>
         <div className="grid gap-4 sm:grid-cols-2">
-          {METAS.map((d) => (
-            <Campo key={d.clave} etiqueta={d.etiqueta} nombre={campoMeta(d.clave)} ayuda={d.ayuda}>
-              <input
-                type="number"
-                inputMode="numeric"
-                min={d.minimo}
-                max={d.maximo}
-                step={1}
-                required
-                defaultValue={val(campoMeta(d.clave)) ?? config.metas[d.clave]}
-                className={claseControl}
-              />
-            </Campo>
-          ))}
+          {METAS.map((d) => {
+            const ficha = fichaDe(fijadas, d.clave);
+            return (
+              <Campo key={d.clave} etiqueta={d.etiqueta} nombre={campoMeta(d.clave)} ayuda={ficha !== undefined ? `La fija la ficha ${ficha}` : d.ayuda}>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={d.minimo}
+                  max={d.maximo}
+                  step={1}
+                  required={ficha === undefined}
+                  disabled={ficha !== undefined}
+                  defaultValue={ficha !== undefined ? config.metas[d.clave] : (val(campoMeta(d.clave)) ?? config.metas[d.clave])}
+                  className={`${claseControl} disabled:cursor-not-allowed disabled:bg-muted`}
+                />
+              </Campo>
+            );
+          })}
         </div>
       </Seccion>
 

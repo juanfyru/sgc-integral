@@ -77,10 +77,13 @@ export type IndicadorMedido = {
   valor: number | null;
   numerador: number;
   denominador: number;
+  /** La de Configuración documental o, si la ficha activa de su cálculo tiene meta, la que rige hoy esa ficha. */
   meta: number;
   cumple: boolean | null;
   /** «mediana 21 días · desde la solicitud: 27 días», «3 etapas sin dato»… */
   detalle: string | null;
+  /** La ficha cuya meta se aplica, solo si la persona puede verla; con `null`, la meta de la ficha se aplica igual. */
+  ficha: { codigo: string } | null;
 };
 
 /** Un documento con la revisión vencida que la persona ve; `tramite` es el número del trámite abierto, si lo tiene. */
