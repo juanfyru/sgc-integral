@@ -128,9 +128,10 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
    - **Las fichas aprobadas de un lote de importación (spec 14A §5.9):** una versión aprobada que
      entró con un lote solo se borra, con sus variables, responsables y normas, al «Deshacer la
      importación» (`deshacerImportacion`, `src/db/consultas/indicadores/importacion.ts`), y solo
-     mientras ninguna ficha del lote tenga datos reportados, personas designadas ni otra versión,
-     ni una propuesta editada o enviada a aprobación después de importarse
-     (`condicionDeDeshacer`, revisada otra vez con las filas bloqueadas). El trigger la deja borrar
+     mientras ninguna ficha del lote tenga periodos cerrados o con datos, personas designadas ni otra
+     versión, ni una propuesta editada o enviada a aprobación después de importarse
+     (`condicionDeDeshacer`, revisada otra vez con las filas bloqueadas), y toda versión que lleve el
+     id del lote esté en el registro de su evento `importado`. El trigger la deja borrar
      si la transacción lleva la marca `sgc.deshacer_importacion` con el id de su lote, que se pone
      en ese único lugar y local a la transacción (`set_config(…, true)`: una marca de sesión
      quedaría en la conexión del pool; lo exige `tests/indicadores-importacion.test.ts`). El lote y

@@ -246,7 +246,8 @@ function historicosDelSgc(cal: CalendarioDeIndicadores): Record<string, FilaHist
  * tercera: los dos trimestres anteriores (el semestre o el año, en `SGC-IND-03` y `SGC-IND-04`) quedan históricos y la
  * coordinadora los registra desde el Excel. La de rotación de personal la aprueba `lider.gth` el mismo día. El día
  * siguiente al fin del trimestre se reportan: `SGC-IND-01` en Crítico, con causa, acción y la observación de Control
- * Interno; `SGC-IND-02` en Atención con su análisis; `SGC-IND-06` con la meta que se le programó; `SGC-IND-08` «no
+ * Interno; `SGC-IND-02` en Atención con su análisis; `SGC-IND-06` en Bien sin alcanzar la meta que se le programó (90),
+ * con su análisis; `SGC-IND-08` «no
  * aplica»; y el semestre y el año de `SGC-IND-03` y `SGC-IND-04` si terminaron con el trimestre. `SGC-IND-09` se retira.
  */
 function sgcYTalentoHumano(cal: CalendarioDeIndicadores, zona: string, en: En): void {
@@ -312,6 +313,17 @@ function sgcYTalentoHumano(cal: CalendarioDeIndicadores, zona: string, en: En): 
     textos: {
       analisis:
         "Dos de las ocho acciones correctivas evaluadas no eliminaron la causa: el hallazgo de almacenamiento de Gestión de Bienes y Servicios se repitió y se rehízo su análisis de causa con el proceso.",
+    },
+  });
+  // El «Bien que no cumple» pide análisis: sin él quedaría abierta y vencida.
+  en(enDia(siguiente, 2, 12), {
+    tipo: "analizar",
+    quien: "coordinadora",
+    codigo: "SGC-IND-06",
+    periodo: ultimo.clave,
+    textos: {
+      analisis:
+        "Se ejecutaron 17 de las 20 capacitaciones programadas (85 %): tres sesiones de inducción en calidad se aplazaron por la jornada de vacunación y se reprogramaron para el trimestre siguiente, así que no se alcanzó la meta de 90 % fijada para el trimestre.",
     },
   });
   en(enDia(siguiente, 3, 11), {

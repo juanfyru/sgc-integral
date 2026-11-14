@@ -73,7 +73,8 @@ búsqueda ni la página del proceso, y su dirección dice «Página no encontrad
 Barra lateral → **Indicadores**. Arriba, una barra con cuántos indicadores hay en cada color y su
 lectura en texto («19 bien, 7 en atención, 3 críticos, 3 sin dato») y cuántos reportes están
 vencidos. Los «No aplica» se cuentan aparte, con su tramo rayado, y el texto los nombra cuando hay
-(«1 no aplica»). Debajo, una fila por indicador con el **último periodo terminado**:
+(«1 no aplica»). Los Bien que no alcanzan la meta van en el verde y el texto dice cuántos son
+(«12 bien (3 sin alcanzar la meta)»). Debajo, una fila por indicador con el **último periodo terminado**:
 
 | Columna | Qué dice |
 |---|---|
@@ -160,7 +161,8 @@ sentido del indicador (en tiempos de espera, bajar es mejorar).
 
 Un tubo por periodo: el tubo vacío es la escala completa y el relleno llega hasta el resultado, con
 el color de su estado. La meta es una línea con su etiqueta y el límite de crítico, una línea
-punteada. Un periodo **sin dato** o **no aplica** es un tubo vacío con «s. d.» o «n. a.» debajo
+punteada con su frase: «Crítico por debajo de 63 %» o, si la ficha escribió Crítico con «≤» o
+«entre» (el límite es Crítico), «Crítico hasta 40 %» («Crítico desde 34 min» en menos es mejor). Un periodo **sin dato** o **no aplica** es un tubo vacío con «s. d.» o «n. a.» debajo
 (un hueco, nunca un cero); uno que aún no llega se ve más tenue, con «—». El valor va escrito
 debajo de cada periodo.
 
@@ -501,7 +503,10 @@ elige:
   del semáforo o la clasificación. Va a aprobación como una ficha nueva y pide **Rige desde**: un
   periodo que todavía no tenga mediciones reportadas, a más tardar el que está en curso. Las
   mediciones anteriores conservan la versión con que se calcularon. Si todos los periodos ya
-  empezados están reportados, la ventana dice desde cuándo se podrá enviar. Si el cambio pasa a
+  empezados están reportados, la ventana dice desde cuándo se podrá enviar. Si hay metas
+  programadas (sección 6.5) desde el **Rige desde** que quedan fuera del Bien de los rangos nuevos,
+  el SGC no lo envía ni lo aprueba («La meta programada del … queda fuera del rango de Bien de esta
+  versión: reprográmela antes de enviar»): reprográmela primero. Si el cambio pasa a
   otra periodicidad, el primer periodo nuevo tiene que empezar donde empieza uno de la anterior,
   para que ningún mes se mida dos veces (de bimestral a trimestral, en enero o en julio).
 - **Cambio menor:** corrige el texto sin cambiar la medida: el nombre, el objetivo, la descripción
@@ -549,8 +554,10 @@ bitácora.
 - Uno **cerrado**: solo reabriéndolo (sección 6.6).
 - Los históricos se programan sin justificación ni marca.
 
-Con rangos fijos, una meta que deje el límite de crítico del lado equivocado se rechaza: hace falta
-una versión nueva de la ficha.
+Con los rangos escritos, la meta programada tiene que caer dentro de Bien («La meta debe quedar
+dentro del rango de Bien»): los rangos no se mueven con la meta del periodo, y otros rangos piden un
+cambio mayor de la ficha. En una ficha aprobada con la regla anterior, una meta que deje el límite
+de crítico del lado equivocado se rechaza: hace falta una versión nueva de la ficha.
 
 ### 6.6 Cerrar el mes y reabrir
 
@@ -641,8 +648,11 @@ lo hace quien administra indicadores.
    A** y **B** se llena para una población, un inventario o un total del Listado Maestro (algo que
    se cuenta en un momento): **Último valor**; vacío, se suma. **Estado** es **Aprobado** (ya
    aprobado antes de SGC Integral) o **Propuesto** (entra como borrador y sigue el camino de
-   aprobación). El código es `SIGLA-ID-NNN`; si su sigla no es la del proceso, la importación
-   ofrece dársela al subproceso.
+   aprobación). **Inicio de medición** (AAAA-MM) va de enero de cinco años antes al mes de la
+   importación; vacío, enero del año de la importación. El código es `SIGLA-ID-NNN`; si su sigla no
+   es la del proceso y el subproceso aún no tiene una, la importación ofrece dársela, siempre que el
+   mapa la acepte (de 2 a 4 letras, no reservada, libre y propuesta para un solo subproceso); si no,
+   la fila lo avisa.
 3. En **Nueva importación**, elija **Plantilla llena (.xlsx)** y súbala. Una importación lleva una
    sola plantilla; si le falta algo o no es la plantilla, cree otra.
 4. En la página de la importación, **Aprobación previa**: el **Documento** que las aprobó (por
@@ -651,9 +661,11 @@ lo hace quien administra indicadores.
 5. **La regla de los rangos:** la matriz no trae rangos por indicador, así que cada ficha con meta
    toma la regla general: **Atención desde el 90 % de la meta** si es ascendente y **hasta el
    110 %** si es descendente (puede cambiar los dos números). Bien empieza en la meta.
-6. **Vista previa.** Cada fila dice si está lista o qué problema tiene (un código repetido o ya
-   usado, una meta escrita como fracción, una celda con error…). Una fila con problemas no se
-   importa; el resto sí. Donde un subproceso, cargo, tipo o unidad no coincide con el de la app,
+6. **Vista previa.** Cada fila dice qué crearía (la fórmula con los nombres de sus variables, la
+   periodicidad, el inicio, la meta y los rangos) y si está lista o qué problema tiene (un código
+   repetido o ya usado, una meta escrita como fracción, una celda con error, un inicio de medición
+   fuera de la ventana…). Con más de 24 periodos históricos por registrar, lo avisa. Una fila con
+   problemas no se importa; el resto sí. Donde un subproceso, cargo, tipo o unidad no coincide con el de la app,
    la vista pide **elegir a cuál corresponde**; la elección vale para todas las filas con ese
    texto. Pulse **Actualizar la vista previa** después de cada cambio.
 7. **Importar.** Firme con su clave (y el código del autenticador si lo tiene). Es todo o nada
@@ -665,7 +677,8 @@ lo hace quien administra indicadores.
 8. **Deshacer.** Si se equivocó, la página del lote ofrece **Deshacer la importación** con un
    motivo y su clave: las fichas desaparecen, sus códigos quedan libres y la bitácora lo cuenta;
    la plantilla corregida puede importarse otra vez. Se deshace el lote entero y solo mientras
-   ninguna de sus fichas tenga datos reportados, personas designadas ni una versión posterior, y
+   ninguna de sus fichas tenga periodos cerrados o con datos, personas designadas ni una versión
+   posterior, y
    mientras ninguna propuesta se haya editado o enviado a aprobación: entonces el botón no se
    ofrece y la página dice por qué.
 

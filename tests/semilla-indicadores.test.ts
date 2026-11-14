@@ -353,8 +353,10 @@ describe("indicadores sembrados", () => {
     expect(Number((await vigente(capacitacion.id)).meta)).toBe(80);
     const conMeta = await medicion("SGC-IND-06", t3.clave);
     expect(Number(conMeta.meta_aplicada)).toBe(90);
-    // 17/20 = 85 %: Bien (desde 80) sin alcanzar la meta de 90, y sin la marca de tardía.
-    expect(conMeta).toMatchObject({ semaforo: "bien", cumple: false, meta_tardia: false });
+    // 17/20 = 85 %: Bien (desde 80) sin alcanzar la meta de 90, y sin la marca de tardía. Pide análisis y lo tiene: queda
+    // reportada, no abierta y vencida por falta de análisis.
+    expect(conMeta).toMatchObject({ semaforo: "bien", cumple: false, meta_tardia: false, estado: "reportada" });
+    expect(largo(conMeta.analisis)).toBeGreaterThanOrEqual(10);
 
     // La observación de Control Interno, sin respuesta; quien tiene rol Consulta no la ve.
     const critica = await medicion("SGC-IND-01", t3.clave);
