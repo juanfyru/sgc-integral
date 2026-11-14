@@ -107,11 +107,15 @@ export async function metaDeConformidad(
 /** Los cálculos que gobiernan una tarjeta de Vigencia (`documental` en el registro). */
 const CALCULOS_DOCUMENTALES = CLAVES_DE_CALCULO.filter((k) => CALCULOS[k].documental !== null);
 
+/** El campo que fija una ficha: su código y la meta que rige hoy. */
+export type MetaFijada = { codigo: string; meta: string };
+
 /**
  * Los campos de Configuración documental que fija una ficha (§6): de cada cálculo con tarjeta, el código de su ficha
- * activa de la entidad, si tiene meta. La pantalla los muestra en solo lectura y el guardado conserva su valor.
+ * activa de la entidad y la meta que rige hoy, si la tiene. La pantalla muestra esa meta en solo lectura y el guardado
+ * conserva el valor guardado del campo.
  */
-export async function metasQueFijaUnaFicha(opciones?: Opciones): Promise<Partial<Record<CampoDeMetaDocumental, string>>> {
+export async function metasQueFijaUnaFicha(opciones?: Opciones): Promise<Partial<Record<CampoDeMetaDocumental, MetaFijada>>> {
   const sql = opciones?.sql ?? obtenerSql();
   const fichas = await fichasActivasDeLosCalculos(sql, {
     claves: CALCULOS_DOCUMENTALES,
@@ -119,10 +123,10 @@ export async function metasQueFijaUnaFicha(opciones?: Opciones): Promise<Partial
     procesoId: null,
     ahora: opciones?.ahora ?? new Date(),
   });
-  const salida: Partial<Record<CampoDeMetaDocumental, string>> = {};
+  const salida: Partial<Record<CampoDeMetaDocumental, MetaFijada>> = {};
   for (const [clave, ficha] of fichas) {
     const tarjeta = CALCULOS[clave].documental;
-    if (tarjeta !== null && ficha.meta !== null) salida[CAMPO_DE_TARJETA[tarjeta]] = ficha.codigo;
+    if (tarjeta !== null && ficha.meta !== null) salida[CAMPO_DE_TARJETA[tarjeta]] = { codigo: ficha.codigo, meta: ficha.meta };
   }
   return salida;
 }

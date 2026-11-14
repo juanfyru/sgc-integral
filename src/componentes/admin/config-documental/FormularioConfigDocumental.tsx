@@ -8,7 +8,7 @@ import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import type { ConfigDocumental } from "@/db/consultas/config-documental";
 import type { EstadoFormato } from "@/db/consultas/formato-acta";
-import type { CampoDeMetaDocumental } from "@/db/consultas/indicadores/fichas-de-calculo";
+import type { CampoDeMetaDocumental, MetaFijada } from "@/db/consultas/indicadores/fichas-de-calculo";
 import { FORMATO_CODIGO_DEFECTO, generarCodigo, validarFormato } from "@/lib/tramites/codigo";
 
 const PLAZOS: { campo: string; clave: keyof ConfigDocumental["plazos"]; etiqueta: string }[] = [
@@ -65,11 +65,14 @@ const METAS: { clave: keyof ConfigDocumental["metas"]; etiqueta: string; ayuda: 
   { clave: "etapasPlazoPct", etiqueta: "Etapas del trámite a tiempo (%)", ayuda: "Porcentaje de etapas del trámite cerradas dentro de su plazo (50 a 100).", minimo: 50, maximo: 100 },
 ];
 
-/** El código de la ficha que fija cada campo (`metasQueFijaUnaFicha`). */
-type Fijadas = Partial<Record<CampoDeMetaDocumental, string>>;
+/** La ficha que fija cada campo y la meta que rige hoy (`metasQueFijaUnaFicha`). */
+type Fijadas = Partial<Record<CampoDeMetaDocumental, MetaFijada>>;
 
-/** La ficha que fija el campo, si la hay: entonces va deshabilitado (no se envía) y su ayuda la nombra. */
-const fichaDe = (fijadas: Fijadas, clave: string): string | undefined => fijadas[clave as CampoDeMetaDocumental];
+/**
+ * La ficha que fija el campo, si la hay: entonces va deshabilitado (no se envía), muestra la meta de la ficha y su ayuda
+ * la nombra. El guardado conserva el valor guardado del campo.
+ */
+const fichaDe = (fijadas: Fijadas, clave: string): MetaFijada | undefined => fijadas[clave as CampoDeMetaDocumental];
 
 /** El nombre del campo del formulario: `metaAcusesPct` para `acusesPct`. */
 const campoMeta = (clave: string) => `meta${clave[0].toUpperCase()}${clave.slice(1)}`;
@@ -131,7 +134,7 @@ export function FormularioConfigDocumental({
   /** Lo mismo para el formato del informe de vigencia: trae el documento guardado aunque ya no sirva. */
   documentosInforme: { id: number; codigo: string; titulo: string }[];
   estadoFormato: EstadoFormato;
-  /** Las metas que fija la ficha de su cálculo (anexo 14B, §6): en solo lectura, y el guardado conserva las guardadas. */
+  /** Las metas que fija la ficha de su cálculo (anexo 14B, §6): se ven en solo lectura y el guardado conserva las guardadas. */
   fijadas: Fijadas;
 }) {
   const [estado, enviar, pendiente] = useActionState(guardarConfigDocumentalAccion, null);
@@ -304,7 +307,7 @@ export function FormularioConfigDocumental({
           {DIAS_DISTRIBUCION.map((d) => {
             const ficha = fichaDe(fijadas, d.clave);
             return (
-              <Campo key={d.clave} etiqueta={d.etiqueta} nombre={d.clave} ayuda={ficha !== undefined ? `La fija la ficha ${ficha}` : d.ayuda}>
+              <Campo key={d.clave} etiqueta={d.etiqueta} nombre={d.clave} ayuda={ficha !== undefined ? `La fija la ficha ${ficha.codigo}` : d.ayuda}>
                 <input
                   type="number"
                   inputMode="numeric"
@@ -313,7 +316,7 @@ export function FormularioConfigDocumental({
                   step={1}
                   required={ficha === undefined}
                   disabled={ficha !== undefined}
-                  defaultValue={ficha !== undefined ? config.distribucion[d.clave] : (val(d.clave) ?? config.distribucion[d.clave])}
+                  defaultValue={ficha !== undefined ? Number(ficha.meta) : (val(d.clave) ?? config.distribucion[d.clave])}
                   className={`${claseControl} disabled:cursor-not-allowed disabled:bg-muted`}
                 />
               </Campo>
@@ -416,7 +419,7 @@ export function FormularioConfigDocumental({
           {METAS.map((d) => {
             const ficha = fichaDe(fijadas, d.clave);
             return (
-              <Campo key={d.clave} etiqueta={d.etiqueta} nombre={campoMeta(d.clave)} ayuda={ficha !== undefined ? `La fija la ficha ${ficha}` : d.ayuda}>
+              <Campo key={d.clave} etiqueta={d.etiqueta} nombre={campoMeta(d.clave)} ayuda={ficha !== undefined ? `La fija la ficha ${ficha.codigo}` : d.ayuda}>
                 <input
                   type="number"
                   inputMode="numeric"
@@ -425,7 +428,7 @@ export function FormularioConfigDocumental({
                   step={1}
                   required={ficha === undefined}
                   disabled={ficha !== undefined}
-                  defaultValue={ficha !== undefined ? config.metas[d.clave] : (val(campoMeta(d.clave)) ?? config.metas[d.clave])}
+                  defaultValue={ficha !== undefined ? Number(ficha.meta) : (val(campoMeta(d.clave)) ?? config.metas[d.clave])}
                   className={`${claseControl} disabled:cursor-not-allowed disabled:bg-muted`}
                 />
               </Campo>

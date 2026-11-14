@@ -25,13 +25,12 @@ import { fichaActivaDelCalculo, metaDeConformidad, metasQueFijaUnaFicha } from "
 import { indicadoresDocumentales } from "@/db/consultas/vigencia/indicadores";
 import { INDICADORES, metaDe, type Indicador, type IndicadorMedido, type ResultadoIndicadores } from "@/lib/indicadores-documentales/metas";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
-import { CALCULOS, CLAVES_DE_CALCULO } from "@/lib/indicadores/calculos/registro";
 import { periodoQueContiene } from "@/lib/indicadores/periodos";
 import { FORMATO_CODIGO_DEFECTO } from "@/lib/tramites/codigo";
 import { construirExcelIndicadores } from "@/lib/vigencia/indicadores-excel";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { puntoDePrueba, verificarPunto } from "./utiles/distribucion";
-import { indicadorDePrueba, liberarCalculo } from "./utiles/indicadores";
+import { indicadorDePrueba, liberarCalculo, sinFichasDocumentales } from "./utiles/indicadores";
 import { sesionAdmin, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -48,18 +47,6 @@ const procesoId = async (tx: TransactionSql, sigla: string) => Number((await tx`
 const de = (r: ResultadoIndicadores, clave: Indicador): IndicadorMedido => r.indicadores.find((i) => i.clave === clave)!;
 const fijarConfig = (tx: TransactionSql, clave: string, valor: string) =>
   tx`INSERT INTO configuracion (clave, valor) VALUES (${clave}, ${valor}) ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor`;
-
-/** Los cálculos con tarjeta de Vigencia: los que una ficha puede gobernar. */
-const DOCUMENTALES = CLAVES_DE_CALCULO.filter((k) => CALCULOS[k].documental !== null);
-
-/** Ninguna ficha activa de los documentales, de la entidad ni del proceso dado. */
-async function sinFichas(tx: TransactionSql, procesos: number[] = []): Promise<void> {
-  for (const clave of DOCUMENTALES) {
-    await liberarCalculo(tx, clave, "entidad");
-    if (!CALCULOS[clave].alcances.includes("proceso")) continue;
-    for (const p of procesos) await liberarCalculo(tx, clave, "proceso", p);
-  }
-}
 
 /**
  * Tres etapas cerradas en plazo y una tarde, en marzo de 2091, de un trámite de GTH: 75 %. Con la meta de
@@ -86,7 +73,7 @@ const leer = async (tx: TransactionSql, sesion: SesionFlujo, procesoId?: number)
 describe("la tarjeta de Vigencia usa la meta de la ficha de su cálculo", () => {
   it("sin ficha, las metas de Configuración documental y ninguna ficha en las siete", () => revertida(sql, async (tx) => {
     const gth = await procesoId(tx, "GTH");
-    await sinFichas(tx, [gth]);
+    await sinFichasDocumentales(tx, [gth]);
     const admin = await sesionAdmin(tx);
     const config = await obtenerConfigDocumental({ sql: tx });
     const metas = { metas: config.metas, umbralConformidadPct: config.distribucion.umbralConformidadPct };
@@ -101,7 +88,7 @@ describe("la tarjeta de Vigencia usa la meta de la ficha de su cálculo", () => 
 
   it("con una ficha de etapas de la entidad con meta 70, la tarjeta la usa; con un proceso elegido, la del proceso si la hay", () => revertida(sql, async (tx) => {
     const gth = await procesoId(tx, "GTH");
-    await sinFichas(tx, [gth]);
+    await sinFichasDocumentales(tx, [gth]);
     await etapasEn2091(tx);
     const admin = await sesionAdmin(tx);
     expect(de(await leer(tx, admin), "etapas")).toMatchObject({ numerador: 3, denominador: 4, meta: 90, cumple: false, ficha: null });
@@ -127,7 +114,7 @@ describe("la tarjeta de Vigencia usa la meta de la ficha de su cálculo", () => 
   }));
 
   it("la meta programada para el periodo en curso manda sobre la de la ficha; sin meta en la ficha, no manda ninguna", () => revertida(sql, async (tx) => {
-    await sinFichas(tx);
+    await sinFichasDocumentales(tx);
     await etapasEn2091(tx);
     const admin = await sesionAdmin(tx);
     const ficha = await indicadorDePrueba(tx, { calculo: { clave: "etapas", alcance: "entidad" }, meta: "80" });
@@ -155,7 +142,7 @@ describe("la tarjeta de Vigencia usa la meta de la ficha de su cálculo", () => 
 
   it("una ficha restringida: quien no la ve no recibe su código, ni en la tarjeta ni en Distribución, y la meta se aplica igual", () => revertida(sql, async (tx) => {
     const cex = await procesoId(tx, "CEX");
-    await sinFichas(tx);
+    await sinFichasDocumentales(tx);
     await etapasEn2091(tx);
     const admin = await sesionAdmin(tx);
     // Un líder de otro proceso: tiene la pestaña de indicadores, pero no ve un restringido de GTH.
@@ -206,7 +193,7 @@ describe("la tarjeta de Vigencia usa la meta de la ficha de su cálculo", () => 
 
 describe("la conformidad en puntos de uso: metaDeConformidad", () => {
   it("sin ficha, el umbral de Configuración documental; con la ficha de conformidad a la fecha, su meta, en Distribución y en Vigencia", () => revertida(sql, async (tx) => {
-    await sinFichas(tx);
+    await sinFichasDocumentales(tx);
     await fijarConfig(tx, "umbral_conformidad_pct", "60");
     const admin = await sesionAdmin(tx);
     // Sin procesos, el líder ve solo los puntos de los que es responsable: los del test. Dos conformes de tres: 66 %.
@@ -250,15 +237,22 @@ describe("Configuración documental: el campo que fija una ficha", () => {
     metas: c.metas,
   });
 
-  it("dice qué ficha fija cada campo, y el guardado no lo cambia, venga lo que venga", () => revertida(sql, async (tx) => {
-    await sinFichas(tx);
+  it("dice qué ficha fija cada campo y con qué meta, y el guardado no lo cambia, venga lo que venga", () => revertida(sql, async (tx) => {
+    await sinFichasDocumentales(tx);
     const admin = await sesionAdmin(tx);
     expect(await metasQueFijaUnaFicha({ sql: tx, ahora })).toEqual({});
     const etapas = await indicadorDePrueba(tx, { calculo: { clave: "etapas", alcance: "entidad" }, meta: "80" });
     const conformidad = await indicadorDePrueba(tx, { calculo: { clave: "conformidad_fecha", alcance: "entidad" }, meta: "90" });
     // Una ficha de un proceso no fija nada de Configuración documental.
     await indicadorDePrueba(tx, { calculo: { clave: "acuses", alcance: "proceso" }, meta: "85" });
-    expect(await metasQueFijaUnaFicha({ sql: tx, ahora })).toEqual({ etapasPlazoPct: etapas.codigo, umbralConformidadPct: conformidad.codigo });
+    expect(await metasQueFijaUnaFicha({ sql: tx, ahora })).toEqual({
+      etapasPlazoPct: { codigo: etapas.codigo, meta: "80" },
+      umbralConformidadPct: { codigo: conformidad.codigo, meta: "90" },
+    });
+    // La meta que rige hoy: la programada para el periodo en curso manda.
+    await tx`INSERT INTO indicador_metas (indicador_id, periodo, meta, programada_por)
+      VALUES (${etapas.id}, ${periodoQueContiene("mensual", ahora, ZONA).clave}, 75, ${admin.usuarioId})`;
+    expect((await metasQueFijaUnaFicha({ sql: tx, ahora })).etapasPlazoPct).toEqual({ codigo: etapas.codigo, meta: "75" });
 
     await fijarConfig(tx, "meta_etapas_plazo_pct", "85");
     await fijarConfig(tx, "umbral_conformidad_pct", "70");

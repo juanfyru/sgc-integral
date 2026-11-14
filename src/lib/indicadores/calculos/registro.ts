@@ -250,6 +250,19 @@ export function calculoDe(clave: unknown): DefinicionDeCalculo | null {
   return (CLAVES_DE_CALCULO as readonly string[]).includes(clave) ? CALCULOS[clave as ClaveDeCalculo] : null;
 }
 
+export const META_ENTERA = "La meta de este cálculo debe ser un número entero: es la que muestran Vigencia y Distribución";
+
+/**
+ * Un cálculo con tarjeta de Vigencia (`documental`): la meta de su ficha rige también la tarjeta, Distribución y
+ * Configuración documental (anexo 14B, §6), que deciden en enteros (AGENTS.md), así que la exige entera, también la que
+ * se programa para un periodo.
+ */
+export function metaNoEntera(def: DefinicionDeCalculo, meta: string | null | undefined): boolean {
+  if (def.documental === null || meta === null || meta === undefined) return false;
+  const f = fraccion(meta);
+  return f !== null && f.d !== BigInt(1);
+}
+
 export function alcanceAdmitido(def: DefinicionDeCalculo, alcance: unknown): alcance is AlcanceDeCalculo {
   return typeof alcance === "string" && (def.alcances as readonly string[]).includes(alcance);
 }

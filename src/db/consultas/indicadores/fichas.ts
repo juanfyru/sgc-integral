@@ -17,7 +17,17 @@ import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { filtroAcceso, type SujetoVisibilidad } from "@/lib/alcance";
 import { EsquemaFicha, EsquemaFichaImportada, type DatosFicha } from "@/lib/esquemas/indicadores";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
-import { alcanceAdmitido, CALCULOS, calculoDe, CLAVES_DE_CALCULO, ETIQUETA_ALCANCE, type AlcanceDeCalculo, type ClaveDeCalculo } from "@/lib/indicadores/calculos/registro";
+import {
+  alcanceAdmitido,
+  CALCULOS,
+  calculoDe,
+  CLAVES_DE_CALCULO,
+  ETIQUETA_ALCANCE,
+  META_ENTERA,
+  metaNoEntera,
+  type AlcanceDeCalculo,
+  type ClaveDeCalculo,
+} from "@/lib/indicadores/calculos/registro";
 import { tipoDeCambio, type ContenidoFicha } from "@/lib/indicadores/ficha";
 import { analizar } from "@/lib/indicadores/formula/analizar";
 import { formulaDeForma } from "@/lib/indicadores/formula/formas";
@@ -178,6 +188,7 @@ function conOrigen(d: DatosFichaNueva, importada: boolean): DatosFichaNueva {
   if (!def) throw new ErrorIndicador("Elija el cálculo que hace el sistema");
   if (!alcanceAdmitido(def, d.calculoAlcance)) throw new ErrorIndicador("Ese cálculo no admite ese alcance");
   if (def.exigeMeta && d.meta === undefined) throw new ErrorIndicador("Este cálculo exige una meta: con ella se juzga la conformidad en Distribución");
+  if (metaNoEntera(def, d.meta)) throw new ErrorIndicador(META_ENTERA);
   return {
     ...d,
     calculo: def.clave,

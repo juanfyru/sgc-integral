@@ -119,10 +119,14 @@ describe("Vigencia e Indicadores documentales", () => {
     expect(html).toContain("Días de aprobación (máximo)");
   });
 
-  it("una meta que fija una ficha va deshabilitada, con el valor guardado, y su ayuda nombra la ficha (anexo 14B, §6)", async () => {
-    metasQueFijaUnaFicha.mockResolvedValue({ etapasPlazoPct: "SGC-ID-004", umbralConformidadPct: "SGC-ID-005" });
+  it("una meta que fija una ficha va deshabilitada, con la meta de la ficha que rige, y su ayuda nombra la ficha (anexo 14B, §6)", async () => {
+    // Guardadas en Configuración documental: etapas 90 y umbral 95. Las fichas rigen 80 y 88.
+    metasQueFijaUnaFicha.mockResolvedValue({
+      etapasPlazoPct: { codigo: "SGC-ID-004", meta: "80" },
+      umbralConformidadPct: { codigo: "SGC-ID-005", meta: "88" },
+    });
     const html = await pagina();
-    for (const [nombre, codigo, valor] of [["metaEtapasPlazoPct", "SGC-ID-004", "90"], ["umbralConformidadPct", "SGC-ID-005", "95"]]) {
+    for (const [nombre, codigo, valor] of [["metaEtapasPlazoPct", "SGC-ID-004", "80"], ["umbralConformidadPct", "SGC-ID-005", "88"]]) {
       const control = entrada(html, nombre)!;
       expect(control).toMatch(/disabled=""/);
       expect(control).not.toMatch(/required=""/);

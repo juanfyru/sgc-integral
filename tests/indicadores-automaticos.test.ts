@@ -274,6 +274,25 @@ describe("la ficha automática en el servidor", () => {
       expect((await versionDe(tx, versionId)).calculo).toBe("conformidad_fecha");
     }));
 
+  it("un cálculo con tarjeta de Vigencia exige una meta entera; uno sin tarjeta admite decimales (anexo 14B, §6)", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      await liberarCalculo(tx, "acuses", "entidad");
+      await liberarCalculo(tx, "reportes_a_tiempo", "entidad");
+      const RANGOS_92 = JSON.stringify({ bien: [{ signo: ">=", valor: "92.5" }], atencion: [{ signo: ">=", valor: "63" }], critico: [{ signo: "<", valor: "63" }] });
+      const conDecimales: Partial<DatosFicha> = { meta: "92,5", rangos: RANGOS_92 };
+      await rechaza(
+        crearIndicador(b.admin, automatica(b, "acuses", "entidad", conDecimales), { sql: tx }),
+        "La meta de este cálculo debe ser un número entero: es la que muestran Vigencia y Distribución",
+      );
+      const { versionId } = await crearIndicador(b.admin, automatica(b, "reportes_a_tiempo", "entidad", conDecimales), { sql: tx });
+      expect((await tx`SELECT meta FROM indicador_versiones WHERE id = ${versionId}`)[0].meta).toBe("92.5");
+      // Una meta entera escrita con decimales en cero vale.
+      await crearIndicador(b.admin, automatica(b, "acuses", "entidad", { meta: "90,0" }), { sql: tx });
+      // Una manual tampoco tiene la restricción.
+      await crearIndicador(b.admin, manual(b, conDecimales), { sql: tx });
+    }));
+
   it("guardar el borrador de un automático lo deja automático", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);

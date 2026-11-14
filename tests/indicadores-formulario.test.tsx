@@ -17,7 +17,7 @@ import { FormularioParametros } from "@/componentes/indicadores/admin/Formulario
 import { estadoDeRangos, rangosDelEditor, type EstadoEditor } from "@/componentes/indicadores/ficha/EditorDeRangos";
 import { campoDeMasOpciones, campoDelError, codigoAlCambiarDeEleccion, codigoAlCambiarDeProceso, codigoPropuestoDe, FormularioFicha, siglaVigenteDe } from "@/componentes/indicadores/ficha/FormularioFicha";
 import { EsquemaFicha, type DatosFicha } from "@/lib/esquemas/indicadores";
-import { CALCULOS, CLAVES_DE_CALCULO, ETIQUETA_ALCANCE } from "@/lib/indicadores/calculos/registro";
+import { CALCULOS, CLAVES_DE_CALCULO, ETIQUETA_ALCANCE, META_ENTERA } from "@/lib/indicadores/calculos/registro";
 import { unidadDeForma } from "@/lib/indicadores/formula/formas";
 import type { OpcionesFicha } from "@/lib/indicadores/tipos";
 
@@ -815,6 +815,9 @@ describe("FormularioFicha: «Lo calcula el sistema» (14B, Tarea 4)", () => {
     expect(campoDeMasOpciones("Este cálculo exige una meta: con ella se juzga la conformidad en Distribución")).toBeNull();
     expect(campoDelError("Este cálculo exige una meta: con ella se juzga la conformidad en Distribución")).toBe("ficha-meta");
     expect(campoDelError("Elija el cálculo que hace el sistema")).toBe("ficha-calculo");
+    // La meta entera de un cálculo con tarjeta de Vigencia (anexo 14B, §6) también va a la meta, sin abrir nada.
+    expect(campoDelError(META_ENTERA)).toBe("ficha-meta");
+    expect(campoDeMasOpciones(META_ENTERA)).toBeNull();
 
     const sinCalculo = renderToStaticMarkup(
       <FormularioFicha opciones={OPCIONES_AUTO} valores={{ procesoId: 2, origenDato: "automatico" }} errorInicial="Elija el cálculo que hace el sistema" />,

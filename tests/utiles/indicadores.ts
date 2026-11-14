@@ -5,7 +5,7 @@
 import type { TransactionSql } from "postgres";
 import { escribirFoto } from "@/db/consultas/indicadores/fotos";
 import { versionDelPeriodo } from "@/db/consultas/indicadores/mediciones";
-import { CALCULOS, calculoDe, type AlcanceDeCalculo, type ClaveDeCalculo } from "@/lib/indicadores/calculos/registro";
+import { CALCULOS, CLAVES_DE_CALCULO, calculoDe, type AlcanceDeCalculo, type ClaveDeCalculo } from "@/lib/indicadores/calculos/registro";
 import { formulaDeForma } from "@/lib/indicadores/formula/formas";
 import type { RangosEnTexto } from "@/lib/indicadores/rangos";
 import type { Periodicidad, Tendencia } from "@/lib/indicadores/tipos";
@@ -92,6 +92,21 @@ export async function liberarCalculo(tx: TransactionSql, clave: ClaveDeCalculo, 
   await tx`UPDATE indicadores SET calculo = NULL, calculo_alcance = NULL
     WHERE estado = 'activo' AND calculo = ${clave} AND calculo_alcance = ${alcance}
       AND (calculo_alcance <> 'proceso' OR proceso_id = ${procesoId ?? 0})`;
+}
+
+/**
+ * Sin fichas activas de los cálculos con tarjeta de Vigencia (`documental` en el registro; anexo 14B, §6): de la entidad
+ * y, con alcance «proceso», de los procesos dados. Para que una prueba que lee las metas de Configuración documental, el
+ * umbral de conformidad o las tarjetas de Vigencia no dependa de las fichas automáticas que traiga la demo. Solo dentro de
+ * `revertida`.
+ */
+export async function sinFichasDocumentales(tx: TransactionSql, procesos: number[] = []): Promise<void> {
+  for (const clave of CLAVES_DE_CALCULO) {
+    if (CALCULOS[clave].documental === null) continue;
+    await liberarCalculo(tx, clave, "entidad");
+    if (!CALCULOS[clave].alcances.includes("proceso")) continue;
+    for (const p of procesos) await liberarCalculo(tx, clave, "proceso", p);
+  }
 }
 
 /**

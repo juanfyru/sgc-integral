@@ -30,6 +30,7 @@ import {
 import { listarItemsVerificacion } from "@/db/consultas/revision";
 import { FORMATO_CODIGO_DEFECTO } from "@/lib/tramites/codigo";
 import { documentoConArchivo, pdfContenidoCorrupto, pdfDeFormato, pdfProtegido, pdfSinContenido } from "./utiles/formato";
+import { sinFichasDocumentales } from "./utiles/indicadores";
 import { sesionAdmin } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -268,6 +269,8 @@ describe("distribución", () => {
 
   it("guarda, valida y audita el antes y el después", () => revertida(sql, async (tx) => {
     const { usuarioId } = await sesionAdmin(tx);
+    // Una ficha de conformidad a la fecha fijaría el umbral (anexo 14B, §6): la prueba es la del umbral guardado.
+    await sinFichasDocumentales(tx);
     await tx`DELETE FROM configuracion WHERE clave = ANY(${CLAVES})`;
     const antes = await obtenerConfigDocumental({ sql: tx });
     const distribucion = { ...antes.distribucion, plazoAcuseDias: 20, selloQrCm: 2 };
@@ -296,8 +299,11 @@ describe("distribución", () => {
 
 describe("vigencia y metas", () => {
   const CLAVES = "'revision_%' OR clave LIKE 'meta_%' OR clave LIKE 'externos_%' OR clave LIKE 'impacto_%' OR clave LIKE 'formato_informe_%'";
-  const limpiar = (tx: TransactionSql) =>
-    tx.unsafe(`DELETE FROM configuracion WHERE clave LIKE ${CLAVES}`);
+  /** Sin metas guardadas y sin fichas que las fijen (anexo 14B, §6). */
+  const limpiar = async (tx: TransactionSql) => {
+    await sinFichasDocumentales(tx);
+    await tx.unsafe(`DELETE FROM configuracion WHERE clave LIKE ${CLAVES}`);
+  };
   const valorDe = async (tx: TransactionSql, clave: string) =>
     (await tx`SELECT valor FROM configuracion WHERE clave = ${clave}`)[0]?.valor;
 

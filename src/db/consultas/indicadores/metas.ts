@@ -13,6 +13,7 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
+import { calculoDe, META_ENTERA, metaNoEntera } from "@/lib/indicadores/calculos/registro";
 import { comparar, fraccion, type Fraccion } from "@/lib/indicadores/formula/fraccion";
 import { periodicidadDe, versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import { decimalCorto, reglaDeTexto } from "@/lib/indicadores/reporte";
@@ -107,6 +108,9 @@ export async function programarMeta(
     const [m] = await tx`SELECT id, estado, historica FROM mediciones WHERE indicador_id = ${i.id} AND periodo = ${periodo.clave} FOR UPDATE`;
     if (m?.estado === "cerrada") throw new ErrorIndicador(CERRADA);
     if (version.regla.meta === null) throw new ErrorIndicador(SIN_META_EN_EL_PERIODO);
+    // La versión que rige el periodo es de un cálculo con tarjeta: su meta la usan también Vigencia y Distribución.
+    const calculo = version.calculoAutomatico ? calculoDe(version.calculoAutomatico.clave) : null;
+    if (calculo && metaNoEntera(calculo, decimalCorto(meta))) throw new ErrorIndicador(META_ENTERA);
     const tardia = m !== undefined && m.historica !== true && periodo.hasta.getTime() < ahora.getTime();
     const justificacion = justificacionDe(d.justificacion, tardia);
     if (metaMax !== null && version.regla.tendencia !== "constante") {

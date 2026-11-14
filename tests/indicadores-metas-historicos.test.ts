@@ -238,6 +238,24 @@ describe("programarMeta", () => {
 });
 
 
+describe("programarMeta en un cálculo con tarjeta de Vigencia (anexo 14B, §6)", () => {
+  it("la meta programada de un indicador de acuses debe ser entera; la de uno manual, no", () =>
+    revertida(sql, async (tx) => {
+      const { ind, admin } = await preparar(tx, { calculo: { clave: "acuses", alcance: "entidad" }, abrir: false });
+      await rechaza(
+        programarMeta(admin, { indicadorId: ind.id, periodo: "2026-T4", meta: "92,5" }, opc(tx)),
+        "La meta de este cálculo debe ser un número entero: es la que muestran Vigencia y Distribución",
+      );
+      expect(await meta(tx, ind.id, "2026-T4")).toBeUndefined();
+      await programarMeta(admin, { indicadorId: ind.id, periodo: "2026-T4", meta: "92" }, opc(tx));
+      expect(Number((await meta(tx, ind.id, "2026-T4")).meta)).toBe(92);
+
+      const manual = await preparar(tx, { abrir: false });
+      await programarMeta(manual.admin, { indicadorId: manual.ind.id, periodo: "2026-T4", meta: "92,5" }, opc(tx));
+      expect(Number((await meta(tx, manual.ind.id, "2026-T4")).meta)).toBe(92.5);
+    }));
+});
+
 describe("quitarMetaProgramada", () => {
   it("la meta de un periodo que no ha terminado se quita sin justificación y deja su rastro", () =>
     revertida(sql, async (tx) => {

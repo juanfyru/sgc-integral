@@ -27,6 +27,7 @@ import { zonaHoraria } from "@/lib/zona-horaria";
 import { textoValor } from "@/lib/indicadores-documentales/textos";
 import { puntoDePrueba, verificarPunto } from "./utiles/distribucion";
 import { opc, sesionAdmin, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
+import { sinFichasDocumentales } from "./utiles/indicadores";
 import { revertida } from "./utiles/transaccion";
 import { externoDePrueba, sinFechaDeRevision, vigenteFuera } from "./utiles/vigencia";
 
@@ -69,6 +70,8 @@ describe("indicadoresDocumentales", () => {
   it("dentro del plazo y vencidos salen del semáforo a la fecha; el líder solo ve sus procesos", () => revertida(sql, async (tx) => {
     const gth = await procesoId(tx, "GTH");
     const cex = await procesoId(tx, "CEX");
+    // Las metas de Configuración documental mandan solo sin una ficha del cálculo (anexo 14B, §6).
+    await sinFichasDocumentales(tx, [gth, cex]);
     await fijarMeta(tx, "meta_vencidos", "0");
     const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [gth] });
     const antes = (await indicadoresDocumentales(lider, { periodo: "2026" }, { sql: tx, ahora }))!;
@@ -251,6 +254,7 @@ describe("indicadoresDocumentales", () => {
 
   it("una meta cambiada en configuración cambia el cumplimiento", () => revertida(sql, async (tx) => {
     const gth = await procesoId(tx, "GTH");
+    await sinFichasDocumentales(tx, [gth]);
     const admin = await sesionAdmin(tx);
     await interno(tx, "GTH", "2025-01-10");
     await fijarMeta(tx, "meta_vencidos", "0");
@@ -275,6 +279,8 @@ describe("indicadoresDocumentales", () => {
     // Sin procesos, el líder ve solo los puntos de los que es responsable: los del test.
     const lider = await usuarioDePrueba(tx, { rol: "lider_proceso" });
     const admin = await sesionAdmin(tx);
+    // Sin la ficha de conformidad a la fecha, que fijaría el umbral (anexo 14B, §6).
+    await sinFichasDocumentales(tx);
     await fijarMeta(tx, "umbral_conformidad_pct", "67");
     for (const respuesta of ["conforme", "conforme", "no_conforme"] as const) {
       const punto = await puntoDePrueba(tx, { responsable: lider });
