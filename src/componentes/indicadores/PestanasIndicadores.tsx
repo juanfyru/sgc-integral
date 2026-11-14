@@ -4,6 +4,7 @@ import { puede, type SujetoPermiso } from "@/lib/permisos";
 const PESTANAS = [
   { clave: "lista", etiqueta: "Lista", href: "/indicadores" },
   { clave: "matriz", etiqueta: "Matriz del año", href: "/indicadores/matriz" },
+  { clave: "objetivos", etiqueta: "Objetivos", href: "/indicadores/objetivos" },
   { clave: "por-aprobar", etiqueta: "Por aprobar", href: "/indicadores/por-aprobar" },
   { clave: "cierre", etiqueta: "Cierre del mes", href: "/indicadores/cierre" },
 ] as const;
@@ -13,12 +14,14 @@ export type PestanaIndicadores = (typeof PESTANAS)[number]["clave"];
 type Regla = (sujeto: SujetoPermiso, opciones: { aprueba: boolean }) => boolean;
 
 /**
- * Quién ve cada pestaña (spec §6.4). La lista y la matriz, toda sesión: cada una muestra solo lo que la persona ve.
+ * Quién ve cada pestaña (spec §6.4). La lista, la matriz y los objetivos (anexo 14B, §7), toda sesión: cada una muestra
+ * solo lo que la persona ve.
  * `aprueba` es tener `indicadores.aprobar` (`apruebaFichas`).
  */
 const QUIEN_LA_VE: Record<PestanaIndicadores, Regla> = {
   lista: () => true,
   matriz: () => true,
+  objetivos: () => true,
   "por-aprobar": (sujeto, { aprueba }) => aprueba || puede(sujeto, "indicadores.administrar"),
   cierre: (sujeto) => puede(sujeto, "indicadores.administrar"),
 };

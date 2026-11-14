@@ -61,10 +61,12 @@ vi.mock("@/app/acciones-indicadores", () => ({
 
 import PaginaIndicador from "@/app/(app)/indicadores/[codigo]/page";
 import PaginaMatriz from "@/app/(app)/indicadores/matriz/page";
+import PaginaObjetivos from "@/app/(app)/indicadores/objetivos/page";
 import PaginaIndicadores from "@/app/(app)/indicadores/page";
 import { InsigniaSemaforo } from "@/componentes/indicadores/InsigniaSemaforo";
 import { ListaIndicadores } from "@/componentes/indicadores/ListaIndicadores";
 import { LeyendaDeMatriz, MatrizDelAnio } from "@/componentes/indicadores/MatrizDelAnio";
+import { Objetivos } from "@/componentes/indicadores/Objetivos";
 import { columnasDeVariables, TablaDelAnio } from "@/componentes/indicadores/medicion/TablaDelAnio";
 import { ResultadoPrincipal } from "@/componentes/indicadores/ResultadoPrincipal";
 import { obtenerSql } from "@/db/cliente";
@@ -73,7 +75,12 @@ import type { FilaDelAnio, UltimoResultado } from "@/db/consultas/indicadores/le
 import type { FilaDeLista } from "@/db/consultas/indicadores/lista";
 import type { CeldaDeMatriz, MatrizLeida } from "@/db/consultas/indicadores/matriz";
 import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
+import type { ObjetivoLeido } from "@/db/consultas/indicadores/objetivos";
+import { periodoDe } from "@/lib/indicadores-documentales/periodo";
+import { fechaLimiteDeReporte } from "@/lib/indicadores/periodos";
 import type { SesionValida } from "@/lib/sesion";
+import { fechaEnZona } from "@/lib/tramites/plazos";
+import { zonaHoraria } from "@/lib/zona-horaria";
 import { indicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
@@ -523,6 +530,52 @@ describe("los componentes", () => {
     expect(lista(true)).toContain(">Automático<");
     expect(lista(false)).not.toContain("Automático");
   });
+
+  it("Objetivos: por clase, cada objetivo en su tarjeta con su estado escrito y su tabla de indicadores (anexo 14B, §7)", () => {
+    const objetivos: ObjetivoLeido[] = [
+      {
+        id: 1,
+        clase: "calidad",
+        enunciado: "Mejorar la oportunidad de la atención",
+        estado: "no_cumplido",
+        indicadores: [
+          { codigo: "SGC-IND-01", nombre: "Cumplimiento del programa de auditorías", proceso: "Sistema de Gestión de Calidad", periodo: "Tercer trimestre de 2026", resultado: "60 %", semaforo: "critico", cumple: false },
+          { codigo: "AIN-ID-002", nombre: "Oportunidad de la cita", proceso: "Atención integral", periodo: "Septiembre de 2026", resultado: "88 %", semaforo: "bien", cumple: false },
+          { codigo: "AIN-ID-003", nombre: "Quejas resueltas", proceso: "Atención integral", periodo: null, resultado: null, semaforo: null, cumple: null },
+        ],
+      },
+      { id: 2, clase: "calidad", enunciado: "Fortalecer la cultura de seguridad", estado: "sin_medicion", indicadores: [] },
+      {
+        id: 3,
+        clase: "institucional",
+        enunciado: "Sostener las finanzas",
+        estado: "cumplido",
+        indicadores: [{ codigo: "GFI-ID-001", nombre: "Recaudo", proceso: "Gestión financiera", periodo: "2026", resultado: "97 %", semaforo: "bien", cumple: true }],
+      },
+    ];
+    const html = renderToStaticMarkup(<Objetivos objetivos={objetivos} />);
+    // Por clase, con su título, los de calidad antes.
+    expect(html).toMatch(/<h2[^>]*>Objetivos de calidad<\/h2>[\s\S]*<h2[^>]*>Objetivos institucionales<\/h2>/);
+    // Cada tarjeta, con su enunciado y su estado escrito, nunca solo el color.
+    expect(html).toMatch(/<h3[^>]*>Mejorar la oportunidad de la atención<\/h3>/);
+    expect(html).toMatch(/data-variante="critico"[^>]*>No cumplido</);
+    expect(html).toMatch(/data-variante="sin-dato"[^>]*>Sin medición</);
+    expect(html).toMatch(/data-variante="bien"[^>]*>Cumplido</);
+    // La tabla: código enlazado, nombre, proceso, periodo y el resultado con su estado y la salvedad.
+    expect(html).toContain('href="/indicadores/SGC-IND-01"');
+    expect(html).toContain(">Oportunidad de la cita<");
+    expect(html).toContain(">Atención integral<");
+    expect(html).toContain(">Septiembre de 2026<");
+    expect(html).toContain(">88 %<");
+    expect(html).toContain(">Bien · no alcanza la meta<");
+    expect(html).toMatch(/data-variante="sin-dato"[^>]*>Sin dato</);
+    // Sin indicadores visibles, lo dice, sin tabla.
+    expect(html).toContain("Sin indicadores que mostrar");
+    // Cada tabla es una región enfocable con su propio nombre.
+    const regiones = [...html.matchAll(/role="region" aria-label="([^"]+)" tabindex="0"/g)].map((m) => m[1]);
+    expect(regiones).toHaveLength(2);
+    expect(new Set(regiones).size).toBe(2);
+  });
 });
 
 const valida = (s: SesionFlujo): SesionValida => ({
@@ -548,6 +601,7 @@ const pagina = async (codigo: string, sp: Record<string, string> = {}) =>
   renderToStaticMarkup(await PaginaIndicador({ params: Promise.resolve({ codigo }), searchParams: Promise.resolve(sp) }));
 const listaPagina = async (sp: Record<string, string> = {}) => renderToStaticMarkup(await PaginaIndicadores({ searchParams: Promise.resolve(sp) }));
 const matrizPagina = async (sp: Record<string, string> = {}) => renderToStaticMarkup(await PaginaMatriz({ searchParams: Promise.resolve(sp) }));
+const objetivosPagina = async (sp: Record<string, string | string[]> = {}) => renderToStaticMarkup(await PaginaObjetivos({ searchParams: Promise.resolve(sp) }));
 
 /** Un solo `h1` por página, y cada región desplazable con nombre y enfocable. */
 function estructuraAccesible(html: string) {
@@ -673,6 +727,51 @@ describe("las páginas", () => {
       await expect(matrizPagina({ anio: "2999" })).rejects.toThrow("NO_ENCONTRADA");
       // Un año sin nada medido: el estado vacío.
       expect(await matrizPagina({ anio: "2026", proceso: String(ind.procesoId), clasificacion: "999999" })).toContain("Ningún indicador");
+    }));
+
+  it("/indicadores/objetivos: la pestaña después de la matriz, el selector de periodo y la tarjeta de cada objetivo (anexo 14B, §7)", () =>
+    enTransaccion(async (tx) => {
+      // La página lee el reloj: el caso mide en enero del año en curso, que siempre está dentro del año.
+      const zona = zonaHoraria();
+      const anio = fechaEnZona(new Date(), zona).slice(0, 4);
+      const enunciado = `Objetivo de la página ${Date.now()}`;
+      const [o] = await tx`INSERT INTO objetivos (clase, enunciado, orden) VALUES ('calidad', ${enunciado}, 900) RETURNING id`;
+      const ind = await indicadorDePrueba(tx, { periodicidad: "mensual", inicioMedicion: `${anio}-01`, objetivoId: Number(o.id) });
+      const p = periodoDe(`${anio}-01`, zona)!;
+      await tx`INSERT INTO mediciones (indicador_id, version_id, periodo, desde, hasta, vence_en, estado, resultado_exacto, resultado, semaforo, cumple,
+          meta_aplicada, reportada_en)
+        VALUES (${ind.id}, ${ind.versionId}, ${p.clave}, ${p.desde}, ${p.hasta}, ${fechaLimiteDeReporte(p, 10, zona)}, 'reportada', '95/1', 95, 'bien',
+          false, 90, now())`;
+      contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "consulta" }));
+
+      const html = await objetivosPagina();
+      estructuraAccesible(html);
+      expect(html).toMatch(new RegExp(`<h1[^>]*>Objetivos · ${anio}</h1>`));
+      // La pestaña, para toda sesión, después de «Matriz del año».
+      expect(html).toMatch(/aria-current="page"[^>]*>Objetivos</);
+      expect(html.indexOf(">Matriz del año<")).toBeLessThan(html.indexOf('href="/indicadores/objetivos"'));
+      // El selector de periodo en un formulario GET, con el año en curso elegido.
+      expect(html).toMatch(/<form(?=[^>]*method="get")(?=[^>]*action="\/indicadores\/objetivos")[^>]*>/);
+      expect(html).toMatch(/<select[^>]*name="periodo"/);
+      expect(html).toContain(`<option value="${anio}" selected="">${anio}</option>`);
+      expect(html).toContain(`value="${anio}-T1"`);
+      // La tarjeta del objetivo: su estado y su indicador, con la salvedad del Bien que no alcanza la meta.
+      const tarjeta = html.slice(html.indexOf(enunciado));
+      expect(tarjeta).toMatch(/data-variante="critico"[^>]*>No cumplido</);
+      expect(tarjeta).toContain(`href="/indicadores/${ind.codigo}"`);
+      expect(tarjeta).toContain(">Bien · no alcanza la meta<");
+
+      // Un periodo que no se ofrece (o repetido) es el año en curso; uno ofrecido, el suyo.
+      for (const periodo of ["abc", "2999", "1999-T1", [`${anio}-T1`, `${anio}-T2`]]) {
+        expect(await objetivosPagina({ periodo })).toContain(`>Objetivos · ${anio}</h1>`);
+      }
+      expect(await objetivosPagina({ periodo: `${anio}-T1` })).toContain(`>Objetivos · Primer trimestre de ${anio}</h1>`);
+
+      // Sin objetivos activos, el estado vacío.
+      await tx`UPDATE objetivos SET activo = false WHERE activo`;
+      const vacia = await objetivosPagina();
+      expect(vacia).toContain(">Aún no hay objetivos</h2>");
+      expect(vacia).toContain("Se crean en Configuración de indicadores.");
     }));
 
   it("quien administra ve el borrador en la lista, con su enlace", () =>

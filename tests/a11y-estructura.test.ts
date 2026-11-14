@@ -52,6 +52,8 @@ describe("estructura de accesibilidad (Fase 9)", () => {
     "src/app/(app)/indicadores/page.tsx",
     "src/app/(app)/indicadores/[codigo]/page.tsx",
     "src/app/(app)/indicadores/matriz/page.tsx",
+    // Fase 14B, Tarea 9: la página «Objetivos».
+    "src/app/(app)/indicadores/objetivos/page.tsx",
     // Tarea 16: la ficha impresa (su encabezado no se imprime; la hoja titula sus bloques con h2).
     "src/app/(app)/indicadores/[codigo]/imprimir/page.tsx",
   ])("%s titula con EncabezadoPagina", (ruta) => {
@@ -61,6 +63,7 @@ describe("estructura de accesibilidad (Fase 9)", () => {
   it.each([
     "src/componentes/indicadores/ListaIndicadores.tsx",
     "src/componentes/indicadores/medicion/TablaDelAnio.tsx",
+    "src/componentes/indicadores/Objetivos.tsx",
   ])("la tabla de %s es una TablaDatos (región enfocable con nombre)", (ruta) => {
     expect(readFileSync(path.join(raiz, ruta), "utf8")).toContain("<TablaDatos");
   });

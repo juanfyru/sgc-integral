@@ -7,7 +7,8 @@
  * sistema del rol Administrador del SGC: cuenta todo, también lo restringido, y la cifra de la ficha es por construcción la
  * que ese rol ve en la tarjeta. Esa sesión es privada de este archivo y nunca sirve filas a una persona. «Reportes a
  * tiempo» y «Objetivos cumplidos» (§5.2) cuentan aquí, con sus reglas puras de `src/lib/indicadores/`, todos los
- * indicadores (también los restringidos): entregan un conteo, no nombres.
+ * indicadores (también los restringidos): entregan un conteo, no nombres. Qué medición se toma de cada indicador para
+ * «Objetivos cumplidos» lo dice `aportesDelPeriodo` (`objetivos.ts`), que comparte con la página «Objetivos».
  */
 import type { Cliente } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
@@ -16,12 +17,12 @@ import type { ResultadoIndicadores } from "@/lib/indicadores-documentales/metas"
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { alcanceAdmitido, CALCULOS, type AlcanceDeCalculo, type ClaveDeCalculo } from "@/lib/indicadores/calculos/registro";
 import { reportesATiempo, type MedicionParaPlazo } from "@/lib/indicadores/calculos/reportes-a-tiempo";
-import { cumpleDeFila } from "@/lib/indicadores/estados";
 import { objetivosCumplidos } from "@/lib/indicadores/objetivos";
 import { versionQueRigeEntre } from "@/lib/indicadores/periodos";
-import type { OrigenDato, Periodicidad, Semaforo } from "@/lib/indicadores/tipos";
+import type { OrigenDato, Periodicidad } from "@/lib/indicadores/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { esDeOtraPeriodicidad } from "./mediciones";
+import { aportesDelPeriodo } from "./objetivos";
 
 export type PeticionDeCalculo = {
   clave: ClaveDeCalculo;
@@ -56,7 +57,7 @@ export async function tomarCalculo(sql: Cliente, p: PeticionDeCalculo, memo?: Ma
   const def = CALCULOS[p.clave];
   if (!def || !alcanceAdmitido(def, p.alcance)) throw new Error(`El cálculo «${p.clave}» no admite el alcance «${p.alcance}»`);
   if (p.clave === "reportes_a_tiempo") return reportesDelPeriodo(sql, p);
-  if (p.clave === "objetivos_cumplidos") return objetivosDelPeriodo(sql, p);
+  if (p.clave === "objetivos_cumplidos") return objetivosCumplidosDelPeriodo(sql, p);
 
   const r = await deLaVigencia(sql, p, memo);
   if (p.clave === "conformidad_periodo") {
@@ -116,42 +117,21 @@ async function reportesDelPeriodo(sql: Cliente, p: PeticionDeCalculo): Promise<V
 }
 
 /**
- * «Objetivos cumplidos» (§5.2): de cada indicador activo cuya ficha vigente (la aprobada de mayor número) apunta a un
- * objetivo activo de la clase del alcance, su última medición que termina en el periodo entre las que cuentan: con
- * resultado, sin «no aplica», con meta (`cumpleDeFila` no nulo: una anterior a la `0012` cuenta por su semáforo) y de la
- * periodicidad de la versión que rige su periodo (`esDeOtraPeriodicidad`: la que dejó un cambio mayor ya no se mide). No
- * cuentan la ficha que pide el cálculo ni las que también calculan «Objetivos cumplidos».
+ * «Objetivos cumplidos» (§5.2): de cada objetivo activo de la clase del alcance, la medición que se toma de cada uno de sus
+ * indicadores en el periodo (`aportesDelPeriodo`, la misma regla de la página «Objetivos»). No cuentan la ficha que pide
+ * el cálculo ni las que también calculan «Objetivos cumplidos».
  */
-async function objetivosDelPeriodo(sql: Cliente, p: PeticionDeCalculo): Promise<ValoresDeCalculo> {
+async function objetivosCumplidosDelPeriodo(sql: Cliente, p: PeticionDeCalculo): Promise<ValoresDeCalculo> {
   const deLaClase = p.alcance === "todos" ? sql`true` : sql`o.clase = ${p.alcance}`;
-  // Las candidatas de cada indicador, de la más reciente a la más antigua: la regla de la versión que rige se aplica aquí.
-  const filas = await sql`SELECT i.id AS indicador_id, va.objetivo_id, vs.versiones, m.periodo, m.cumple, m.semaforo
-    FROM indicadores i
-    CROSS JOIN LATERAL (SELECT v.objetivo_id FROM indicador_versiones v
-      WHERE v.indicador_id = i.id AND v.estado = 'aprobada' ORDER BY v.numero DESC LIMIT 1) va
-    JOIN objetivos o ON o.id = va.objetivo_id AND o.activo AND ${deLaClase}
-    CROSS JOIN LATERAL (SELECT coalesce(json_agg(json_build_object('rigeDesde', v.rige_desde, 'periodicidad', v.periodicidad)
-        ORDER BY v.numero DESC), '[]'::json) AS versiones
-      FROM indicador_versiones v WHERE v.indicador_id = i.id AND v.estado = 'aprobada') vs
-    JOIN mediciones m ON m.indicador_id = i.id AND m.hasta >= ${p.periodo.desde} AND m.hasta <= ${p.periodo.hasta}
-      AND m.resultado_exacto IS NOT NULL AND NOT m.no_aplica
-    WHERE i.estado = 'activo' AND i.id <> ${p.indicadorId} AND i.calculo IS DISTINCT FROM 'objetivos_cumplidos'
-    ORDER BY i.id, m.hasta DESC, m.id DESC`;
-  const zona = zonaHoraria();
-  const tomadas = new Map<number, { objetivoId: number; cumple: boolean }>();
-  for (const f of filas) {
-    const indicadorId = Number(f.indicador_id);
-    if (tomadas.has(indicadorId)) continue;
-    const cumple = cumpleDeFila({ cumple: (f.cumple as boolean | null) ?? null, semaforo: (f.semaforo as Semaforo | null) ?? null });
-    if (cumple === null) continue;
-    const clave = f.periodo as string;
-    const periodo = periodoDe(clave, zona);
-    const version = periodo ? versionQueRigeEntre(f.versiones as Omit<VersionQueRige, "origenDato">[], periodo, zona) : null;
-    if (!version || esDeOtraPeriodicidad(clave, version)) continue;
-    tomadas.set(indicadorId, { objetivoId: Number(f.objetivo_id), cumple });
-  }
+  const aportes = await aportesDelPeriodo(
+    sql,
+    p.periodo,
+    sql`${deLaClase} AND i.id <> ${p.indicadorId} AND i.calculo IS DISTINCT FROM 'objetivos_cumplidos'`,
+  );
   const porObjetivo = new Map<number, boolean[]>();
-  for (const { objetivoId, cumple } of tomadas.values()) porObjetivo.set(objetivoId, [...(porObjetivo.get(objetivoId) ?? []), cumple]);
+  for (const { objetivoId, tomada } of aportes) {
+    if (tomada) porObjetivo.set(objetivoId, [...(porObjetivo.get(objetivoId) ?? []), tomada.cumple]);
+  }
   const { cumplidos, conMedicion } = objetivosCumplidos([...porObjetivo.values()]);
   return { A: String(cumplidos), B: String(conMedicion) };
 }

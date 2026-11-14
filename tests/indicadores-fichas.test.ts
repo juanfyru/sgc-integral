@@ -197,8 +197,8 @@ describe("EsquemaFicha", () => {
     expect(falla({ prueba: JSON.stringify({ valores: { A: "nueve" } }) })).toBe("Los valores de la prueba deben ser números");
     expect(falla({ codigo: "SGC IND/01" })).toBe("El código solo admite letras, números y guiones");
     // Los segmentos que son páginas de /indicadores no pueden ser códigos, sin distinguir mayúsculas.
-    const reservado = "«nuevo», «matriz», «por-aprobar», «cierre» y «excel» son nombres reservados: elija otro código";
-    for (const codigo of ["nuevo", "Matriz", "POR-APROBAR", "cierre", "Excel"]) expect(falla({ codigo })).toBe(reservado);
+    const reservado = "«nuevo», «matriz», «por-aprobar», «cierre», «excel» y «objetivos» son nombres reservados: elija otro código";
+    for (const codigo of ["nuevo", "Matriz", "POR-APROBAR", "cierre", "Excel", "Objetivos"]) expect(falla({ codigo })).toBe(reservado);
     expect(parsearFormulario(formulario({ ...minimo, codigo: "NUEVO-1" }), EsquemaFicha).codigo).toBe("NUEVO-1");
   });
 });
@@ -408,6 +408,12 @@ describe("la ficha en borrador", () => {
       );
       // En el mismo proceso, el que ya tenía sigue valiendo.
       await guardarBorrador(b.admin, conProcedimiento.versionId, datos(b, { procedimientoDocumentoId: propio.id }), { sql: tx });
+
+      // «objetivos» es la página de los objetivos (anexo 14B, §7), no un código.
+      await rechaza(
+        crearIndicador(b.admin, datos(b, { codigo: "objetivos" }), { sql: tx }),
+        "«nuevo», «matriz», «por-aprobar», «cierre», «excel» y «objetivos» son nombres reservados: elija otro código",
+      );
 
       const codigo = `SGC-IND-9${unico()}`;
       const creado = await crearIndicador(b.admin, datos(b, { codigo }), { sql: tx });
