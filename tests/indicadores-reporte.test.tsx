@@ -540,6 +540,15 @@ describe("FormularioAnalisis y DialogoMetas", () => {
     expect(html).not.toContain('name="metaMax"');
     // «Quitar» solo en el periodo con meta programada, con su nombre accesible; el terminado pide su justificación.
     expect(html.split(">Quitar<").length - 1).toBe(1);
+    // El aviso de cada fila vive fuera de los formularios (el de «Quitar» se desmonta al tener éxito).
+    expect(html.split('aria-live="polite"').length - 1).toBe(3);
+    expect(html).toContain('id="meta-2026-T3-aviso"');
+    // Un periodo sin meta en la ficha no ofrece «Guardar», sino la razón.
+    const sinMeta = renderToStaticMarkup(
+      <DialogoMetas abierto alCerrar={() => {}} indicadorId={7} codigo="SGC-IND-01" anio={2026} metas={[fila({ heredada: null, textoHeredada: "sin meta" })]} />,
+    );
+    expect(sinMeta).toContain("Este indicador no tiene meta en ese periodo: no se le programan metas.");
+    expect(sinMeta).not.toContain('name="meta"');
     expect(html).toContain("la meta programada de tercer trimestre de 2026");
     expect(html).toContain("Justificación para quitarla (el periodo ya terminó)");
   });

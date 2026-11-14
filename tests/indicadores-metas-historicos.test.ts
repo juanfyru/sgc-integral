@@ -19,6 +19,7 @@ import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
 import { proximaPorReportar, tablaDelAnio } from "@/db/consultas/indicadores/lectura";
 import { asegurarMediciones, marcarNoAplica, quitarNoAplica, reglaDelPeriodo, reportar, versionesAprobadas } from "@/db/consultas/indicadores/mediciones";
+import { listarIndicadores } from "@/db/consultas/indicadores/lista";
 import { metasDelAnio, programarMeta, quitarMetaProgramada } from "@/db/consultas/indicadores/metas";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
@@ -289,8 +290,7 @@ describe("quitarMetaProgramada", () => {
       await programarMeta(admin, { indicadorId: ind.id, periodo: "2025-T4", meta: "80" }, opc(tx));
       await quitarMetaProgramada(admin, { indicadorId: ind.id, periodo: "2025-T4" }, opc(tx));
       expect(await meta(tx, ind.id, "2025-T4")).toBeUndefined();
-      const m = await medicion("2025-T4");
-      if (m) expect((await fila(tx, m)).meta_tardia).toBe(false);
+      expect((await fila(tx, (await medicion("2025-T4"))!)).meta_tardia).toBe(false);
       const [b] = await bitacora(tx, "indicador_meta_quitada", "indicador", ind.id);
       expect(b.detalle).not.toHaveProperty("justificacion");
     }));
@@ -321,6 +321,18 @@ describe("una versión sin meta no admite metas programadas", () => {
       await tx`INSERT INTO indicador_metas (indicador_id, periodo, meta, programada_por, programada_en) VALUES (${ind.id}, '2026-T4', 85, ${admin.usuarioId}, ${AHORA})`;
       const [v] = await versionesAprobadas(tx, ind.id);
       expect((await reglaDelPeriodo(tx, ind.id, "2026-T4", v)).meta).toBeNull();
+    }));
+
+  it("la tabla del año y la lista tampoco muestran una meta programada que quedó en una versión sin meta", () =>
+    revertida(sql, async (tx) => {
+      const { ind, mide, admin, id } = await preparar(tx, { meta: null });
+      await tx`INSERT INTO indicador_metas (indicador_id, periodo, meta, programada_por, programada_en) VALUES (${ind.id}, '2026-T4', 85, ${admin.usuarioId}, ${AHORA})`;
+      await id("2026-T4");
+      const t4 = (await tablaDelAnio(mide, ind.id, 2026, opc(tx)))[3];
+      expect(t4.periodo).toBe("2026-T4");
+      expect(t4.meta).toBe("sin meta");
+      const fila = (await listarIndicadores(admin, {}, opc(tx))).filas.find((f) => f.codigo === ind.codigo)!;
+      expect(fila.meta).toBe("sin meta");
     }));
 });
 

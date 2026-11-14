@@ -252,7 +252,7 @@ export async function listarIndicadores(
       const regla = reglaDeTexto(
         m.meta_aplicada !== null
           ? { ...v.regla, meta: texto(m.meta_aplicada), metaMax: texto(m.meta_max_aplicada) }
-          : programada
+          : programada && v.regla.meta !== null
             ? { ...v.regla, meta: programada.meta, metaMax: programada.metaMax }
             : v.regla,
       );
