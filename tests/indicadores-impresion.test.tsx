@@ -42,11 +42,11 @@ import { impresionDelAnio } from "@/db/consultas/indicadores/impresion";
 import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
 import { observar } from "@/db/consultas/indicadores/observaciones";
 import { retirar } from "@/db/consultas/indicadores/operacion";
-import type { FichaLeida } from "@/db/consultas/indicadores/aprobacion";
+import { fichaDeVersion, versionesDe, type FichaLeida } from "@/db/consultas/indicadores/aprobacion";
 import { construirExcelDeIndicador } from "@/lib/indicadores/excel";
 import { camposDeFicha, fechaYHora } from "@/lib/indicadores/ficha-en-texto";
 import type { SesionValida } from "@/lib/sesion";
-import { indicadorDePrueba, versionTrimestral, type IndicadorDePrueba } from "./utiles/indicadores";
+import { indicadorDePrueba, loteImportado, versionTrimestral, type IndicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -149,6 +149,7 @@ function fichaCompleta(): FichaLeida {
     procedimiento: { id: 9, codigo: "SGC-PR-01", titulo: "Auditorías internas" },
     firmas: { elaboro: null, aprobo: null },
     aprueba: false,
+    importada: null,
   };
 }
 
@@ -536,7 +537,7 @@ describe("FichaImpresa", () => {
     const pantalla = renderToStaticMarkup(<FichaTecnica ficha={ficha} operacion={null} />);
     const cambios = renderToStaticMarkup(
       <ControlDeCambios
-        versiones={[{ id: 1, numero: 1, tipoCambio: "inicial", rigeDesde: "2026-T1", motivo: null, cambios: [], elaboro: "Persona A", elaboradaEn: firmado, aprobo: "Persona B", aprobadaEn: aprobado }]}
+        versiones={[{ id: 1, numero: 1, tipoCambio: "inicial", rigeDesde: "2026-T1", motivo: null, cambios: [], elaboro: "Persona A", elaboradaEn: firmado, aprobo: "Persona B", aprobadaEn: aprobado, importada: null }]}
         vigente={1}
       />,
     );
@@ -578,6 +579,63 @@ describe("FichaImpresa", () => {
       expect(fuente).not.toMatch(/Hospital|E\.S\.E|Suaza|Fátima/i);
       // La gráfica impresa no arrastra la vista de resultados (sus formularios y la edición de históricos).
       expect(fuente).not.toContain("vistas/VistaResultados");
+    }));
+});
+
+describe("una ficha importada dice de dónde viene su aprobación (14A, Tarea 12)", () => {
+  const FRASE = "Aprobada antes de la implementación de SGC Integral: SGC-TI-002 v1, aprobó Gerente el 11 sep 2026. Importó ";
+
+  /** Un indicador importado como «Aprobado»: su lote con el evento «importado» de `quien`, el 14 de oct de 2026. */
+  async function importada(tx: TransactionSql) {
+    const p = await proceso(tx);
+    const quien = await usuarioDePrueba(tx, { rol: "consulta" });
+    const importador = await usuarioDePrueba(tx, { rol: "admin_sgc" });
+    const importadoEn = new Date("2026-10-14T15:30:00Z");
+    const importacionId = await loteImportado(tx, { usuarioId: importador.usuarioId, importadoEn });
+    const ind = await indicadorDePrueba(tx, {
+      procesoId: p.id, periodicidad: "trimestral", inicioMedicion: "2026-T1", aprobadaEn: APROBADA, mide: [quien.usuarioId], importacionId,
+      aprobacionPrevia: { documento: "SGC-TI-002 v1", aprobadoPor: "Gerente", fecha: "2026-09-11" },
+    });
+    return { ind, quien, importador, importadoEn };
+  }
+
+  it("la ficha impresa dice la frase en lugar de las firmas «Elaboró» y «Revisó y aprobó»", () =>
+    revertida(sql, async (tx) => {
+      const { ind, quien, importador, importadoEn } = await importada(tx);
+      const html = await impreso(tx, quien, ind);
+      const firmas = html.slice(html.indexOf(">Firmas<"), html.indexOf(">Control de cambios<"));
+      expect(firmas).toContain(`${FRASE}${importador.nombre} el ${fechaYHora(importadoEn)}.`);
+      expect(firmas).not.toContain("Elaboró");
+      expect(firmas).not.toContain("Revisó y aprobó");
+      const cambios = html.slice(html.indexOf(">Control de cambios<"), html.indexOf(">Datos de operación<"));
+      expect(cambios).toContain("Importada");
+      expect(cambios).not.toContain("(sin firma)");
+    }));
+
+  it("la ficha en pantalla y el control de cambios hacen lo mismo", () =>
+    revertida(sql, async (tx) => {
+      const { ind, quien, importador, importadoEn } = await importada(tx);
+      const ficha = (await fichaDeVersion(quien, ind.versionId, { sql: tx }))!;
+      expect(ficha.importada).toEqual({
+        documento: "SGC-TI-002 v1", aprobadoPor: "Gerente", fecha: "2026-09-11", importadoPor: importador.nombre, importadoEn,
+      });
+      const pantalla = renderToStaticMarkup(<FichaTecnica ficha={ficha} operacion={null} />);
+      expect(pantalla).toContain(`${FRASE}${importador.nombre} el ${fechaYHora(importadoEn)}.`);
+      expect(pantalla).not.toContain("Elaboró");
+      const versiones = await versionesDe(ind.id, { sql: tx });
+      expect(versiones[0].importada?.documento).toBe("SGC-TI-002 v1");
+      const cambios = renderToStaticMarkup(<ControlDeCambios versiones={versiones} vigente={ind.versionId} />);
+      expect(cambios).toContain("Importada");
+      expect(cambios).not.toContain("(sin firma)");
+    }));
+
+  it("una ficha que no se importó como aprobada sigue con sus firmas", () =>
+    revertida(sql, async (tx) => {
+      const { ind, quien } = await trimestralMedido(tx);
+      const ficha = (await fichaDeVersion(quien, ind.versionId, { sql: tx }))!;
+      expect(ficha.importada).toBeNull();
+      expect(renderToStaticMarkup(<FichaTecnica ficha={ficha} operacion={null} />)).toContain("Elaboró");
+      expect((await versionesDe(ind.id, { sql: tx }))[0].importada).toBeNull();
     }));
 });
 

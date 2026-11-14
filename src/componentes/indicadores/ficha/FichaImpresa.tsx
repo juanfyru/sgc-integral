@@ -10,6 +10,7 @@ import {
   cumpleEnTexto,
   fechaDeFirma,
   firmasDeFicha,
+  fraseDeImportada,
   marcasDeFila,
   periodoEnPalabras,
   rigeDesdeEnTexto,
@@ -157,11 +158,18 @@ export function FichaImpresa(d: DatosDeFichaImpresa) {
       </Bloque>
 
       <Bloque id={id("firmas")} titulo="Firmas" corto>
-        <div className="ficha-firmas grid gap-2 pt-2 sm:grid-cols-2">
-          {firmasDeFicha(ficha).map((f) => (
-            <Firma key={f.rol} f={f} />
-          ))}
-        </div>
+        {ficha.importada ? (
+          <div className={`ficha-firma flex min-w-0 flex-col gap-0.5 ${BORDE} mt-2 px-2 py-2`}>
+            <span className="font-semibold">Aprobación previa</span>
+            <span className="break-words">{fraseDeImportada(ficha.importada)}</span>
+          </div>
+        ) : (
+          <div className="ficha-firmas grid gap-2 pt-2 sm:grid-cols-2">
+            {firmasDeFicha(ficha).map((f) => (
+              <Firma key={f.rol} f={f} />
+            ))}
+          </div>
+        )}
       </Bloque>
 
       <Bloque id={id("cambios")} titulo="Control de cambios" corto>
@@ -184,9 +192,11 @@ export function FichaImpresa(d: DatosDeFichaImpresa) {
                   {v.tipoCambio === "inicial" ? "Primera versión de la ficha" : v.cambios.join(", ")}
                   {v.motivo && v.tipoCambio !== "inicial" ? <span className="block text-muted-foreground">{`Motivo: ${v.motivo}`}</span> : null}
                 </td>
-                <td className={TD}>{v.elaboro ? `${v.elaboro}${v.elaboradaEn ? ` · ${textoFecha(v.elaboradaEn, zona)}` : ""}` : "(sin firma)"}</td>
+                <td className={TD}>{v.importada ? "—" : v.elaboro ? `${v.elaboro}${v.elaboradaEn ? ` · ${textoFecha(v.elaboradaEn, zona)}` : ""}` : "(sin firma)"}</td>
                 <td className={TD}>
-                  {v.tipoCambio === "menor"
+                  {v.importada
+                    ? "Importada"
+                    : v.tipoCambio === "menor"
                     ? "No requiere: cambio menor"
                     : v.aprobo
                       ? `${v.aprobo}${v.aprobadaEn ? ` · ${textoFecha(v.aprobadaEn, zona)}` : ""}`

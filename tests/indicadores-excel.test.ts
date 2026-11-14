@@ -36,7 +36,7 @@ import { retirar } from "@/db/consultas/indicadores/operacion";
 import type { MetaHoja } from "@/lib/distribucion/hoja-excel";
 import { construirExcelDeIndicador, construirExcelDeResultados } from "@/lib/indicadores/excel";
 import { crearSesion } from "@/lib/sesion";
-import { indicadorDePrueba, versionTrimestral, type IndicadorDePrueba, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
+import { indicadorDePrueba, loteImportado, versionTrimestral, type IndicadorDePrueba, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -147,6 +147,20 @@ const fila = (h: Hoja, primera: string) => h.filas.find((f) => f[0] === primera)
 const cabecera = (h: Hoja, primera: string) => h.filas.find((f) => f[0] === primera)!;
 
 describe("el Excel de un indicador", () => {
+  it("la hoja «Ficha» de una ficha importada dice de dónde viene su aprobación, sin firmas «Elaboró»", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const importador = await usuarioDePrueba(tx, { rol: "admin_sgc" });
+      const importacionId = await loteImportado(tx, { usuarioId: importador.usuarioId, importadoEn: new Date("2026-10-14T15:30:00Z") });
+      const { ind, quien } = await trimestralMedido(tx, p.id, { importacionId, aprobacionPrevia: { documento: "SGC-TI-002 v1", aprobadoPor: "Gerente", fecha: "2026-09-11" } });
+      const d = await impresionDelAnio(quien, ind.codigo, 2026, opc(tx));
+      const ficha = (await leerLibro(await construirExcelDeIndicador(d!, META))).Ficha;
+      expect(texto(ficha)).toContain(
+        `Firmas | Aprobación previa | Aprobada antes de la implementación de SGC Integral: SGC-TI-002 v1, aprobó Gerente el 11 sep 2026. Importó ${importador.nombre} el 14 oct 2026, `,
+      );
+      expect(texto(ficha)).not.toContain("Elaboró");
+    }));
+
   it("el Excel de un indicador trae la hoja «Ficha» y la hoja «Resultados 2026», con el acumulado", () =>
     revertida(sql, async (tx) => {
       const p = await proceso(tx);

@@ -3,7 +3,7 @@
  * Excel de un indicador, y lo que comparten con la pantalla (los nombres de la forma, la tendencia y la consolidación, las
  * marcas de una fila, las columnas de las variables). Funciones puras: sin Node ni BD.
  */
-import type { FichaLeida, FirmaDeFicha, OperacionLeida } from "@/db/consultas/indicadores/aprobacion";
+import type { FichaLeida, FirmaDeFicha, ImportadaDe, OperacionLeida } from "@/db/consultas/indicadores/aprobacion";
 import type { FilaDelAnio } from "@/db/consultas/indicadores/lectura";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { cuenta } from "@/lib/plural";
@@ -180,6 +180,10 @@ export const fechaYHora = (fecha: Date): string => `${textoFecha(fecha, zonaHora
 
 /** La fecha de una firma: `fechaYHora`. */
 export const fechaDeFirma = fechaYHora;
+
+/** La frase de una ficha importada como «Aprobado» (spec 14A §5.7): va donde irían «Elaboró» y «Revisó y aprobó». */
+export const fraseDeImportada = (i: ImportadaDe): string =>
+  `Aprobada antes de la implementación de SGC Integral: ${i.documento}, aprobó ${i.aprobadoPor} el ${textoFecha(i.fecha, zonaHoraria())}. Importó ${i.importadoPor} el ${fechaYHora(i.importadoEn)}.`;
 
 /** «Elaboró» y «Revisó y aprobó» de una versión aprobada (spec §7.8.3); un cambio menor no requiere aprobación. */
 export function firmasDeFicha(ficha: FichaLeida): [FirmaEnTexto, FirmaEnTexto] {

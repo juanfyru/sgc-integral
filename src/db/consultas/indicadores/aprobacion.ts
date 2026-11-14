@@ -766,6 +766,34 @@ export async function versionesVisibles(
 
 export type FirmaDeFicha = { nombre: string; cargo: string | null; fecha: Date };
 
+/**
+ * De dónde viene la aprobación de una versión que se importó como «Aprobado» (spec 14A §5.7): el documento donde se
+ * aprobó, quién y qué día (un día del calendario, `AAAA-MM-DD`), y quién importó y cuándo (el evento «importado» del
+ * lote, no `cargado_por`). Solo ellas lo tienen: una propuesta que se aprueba después en la app lleva sus firmas.
+ */
+export type ImportadaDe = { documento: string; aprobadoPor: string; fecha: string; importadoPor: string; importadoEn: Date };
+
+async function importadasDe(sql: Cliente, ids: number[]): Promise<Map<number, ImportadaDe>> {
+  const porVersion = new Map<number, ImportadaDe>();
+  if (ids.length === 0) return porVersion;
+  const filas = await sql`SELECT v.id, v.aprobacion_previa_documento AS documento, v.aprobacion_previa_por AS aprobado_por,
+      to_char(v.aprobacion_previa_fecha, 'YYYY-MM-DD') AS fecha, u.nombre AS importado_por, e.creado_en AS importado_en
+    FROM indicador_versiones v
+    JOIN importacion_eventos e ON e.importacion_id = v.importacion_id AND e.tipo = 'importado'
+    JOIN usuarios u ON u.id = e.usuario_id
+    WHERE v.id IN ${sql(ids)} AND v.aprobacion_previa_documento IS NOT NULL`;
+  for (const f of filas) {
+    porVersion.set(Number(f.id), {
+      documento: f.documento as string,
+      aprobadoPor: f.aprobado_por as string,
+      fecha: f.fecha as string,
+      importadoPor: f.importado_por as string,
+      importadoEn: new Date(f.importado_en as string),
+    });
+  }
+  return porVersion;
+}
+
 export type FichaLeida = {
   versionId: number;
   indicadorId: number;
@@ -784,6 +812,8 @@ export type FichaLeida = {
   firmas: { elaboro: FirmaDeFicha | null; aprobo: FirmaDeFicha | null };
   /** La persona puede aprobarla ahora. */
   aprueba: boolean;
+  /** Solo la que se importó como «Aprobado»: de dónde viene su aprobación, en lugar de sus firmas. */
+  importada: ImportadaDe | null;
 };
 
 const firmaDe = (f: Record<string, unknown> | undefined): FirmaDeFicha | null =>
@@ -826,6 +856,7 @@ export async function fichaDeVersion(sesion: SujetoVisibilidad, versionId: numbe
       aprobo: v.estado === "aprobada" ? firmaDe(firmas.find((f) => f.firma === "aprobo")) : null,
     },
     aprueba: visible.aprueba,
+    importada: (await importadasDe(sql, [versionId])).get(versionId) ?? null,
   };
 }
 
@@ -868,6 +899,8 @@ export type VersionResumen = {
   /** `null` en un cambio menor: no requiere aprobación. */
   aprobo: string | null;
   aprobadaEn: Date | null;
+  /** Solo la que se importó como «Aprobado»: el control de cambios dice «Importada» en lugar del aprobador. */
+  importada: ImportadaDe | null;
 };
 
 /**
@@ -887,6 +920,7 @@ export async function versionesDe(indicadorId: number, opciones?: { sql?: Client
     ORDER BY v.numero`;
   const contenidos: ContenidoFicha[] = [];
   for (const f of filas) contenidos.push(await contenidoDeVersion(sql, Number(f.id)));
+  const importadas = await importadasDe(sql, filas.map((f) => Number(f.id)));
   return filas
     .map((f, i) => ({
       id: Number(f.id),
@@ -899,6 +933,7 @@ export async function versionesDe(indicadorId: number, opciones?: { sql?: Client
       elaboradaEn: fecha(f.elaboro_en ?? f.elaborada_en),
       aprobo: (f.aprobo as string | null) ?? null,
       aprobadaEn: fecha(f.aprobo_en ?? f.aprobada_en),
+      importada: importadas.get(Number(f.id)) ?? null,
     }))
     .reverse();
 }
