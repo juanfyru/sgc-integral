@@ -5,7 +5,9 @@
  * del calendario de la siembra (`calendarioDeIndicadores`), contado desde su reloj. Como el resto de la demo, se salta si
  * ya se usó (ver `utiles/demo.ts`); `SEMILLA_RECIEN=1` lo exige.
  */
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { afterAll, describe, expect, it, type TestContext } from "vitest";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
@@ -19,6 +21,7 @@ import { mesPorOmision } from "@/db/consultas/indicadores/cierre";
 import { listarMaestro } from "@/db/consultas/indicadores/maestros";
 import { observacionesDe } from "@/db/consultas/indicadores/observaciones";
 import { calendarioDeIndicadores } from "@/db/semillas/indicadores-demo-agenda";
+import { resolverRutaAlmacen } from "@/lib/almacen";
 import { aprobadoresDeFicha, puedeMedir, puedeVerIndicador } from "@/lib/alcance";
 import { estadoVisible } from "@/lib/indicadores/estados";
 import { exigirDemo, sembradaEn } from "./utiles/demo";
@@ -43,8 +46,11 @@ const DEL_SGC: [string, string, string, string, number, string, string][] = [
   ["SGC-IND-08", "Oportunidad de Cierre de No Conformidades", "No conformidades cerradas a tiempo", "No conformidades con plazo vencido o cerradas", 75, "trimestral", "Efectividad"],
 ];
 
-/** Los catorce indicadores sembrados con el estado en que se sembraron. */
+/** Los diecisiete indicadores sembrados con el estado en que se sembraron (con el de rangos y los dos del lote importado). */
 const SEMBRADOS: Record<string, string> = {
+  "CNT-ID-001": "activo",
+  "TSR-ID-001": "activo",
+  "GRF-ID-001": "borrador",
   "AIN-IND-01": "activo",
   "CEX-IND-01": "activo",
   "GRF-IND-01": "borrador",
@@ -58,7 +64,7 @@ const SEMBRADOS: Record<string, string> = {
  * Si lo sembrado en los indicadores sigue como se sembró: cada paso sembrado ocurrió antes del reloj de la siembra, y lo
  * que se hace después (reportar, analizar, observar, cambiar una ficha, programar una meta, designar, retirar, cerrar un
  * mes) queda con su hora. Mira solo los indicadores sembrados: los que se crean después no cambian lo sembrado. Lo que no
- * deja hora se compara con las cifras sembradas, como `SEMBRADO` en `utiles/demo.ts`: los catorce códigos con su estado
+ * deja hora se compara con las cifras sembradas, como `SEMBRADO` en `utiles/demo.ts`: los diecisiete códigos con su estado
  * (un borrador se puede borrar), el único restringido y los cinco objetivos activos.
  */
 async function indicadoresComoSeSembraron(): Promise<{ intacta: boolean; motivo: string }> {
@@ -431,4 +437,47 @@ describe("indicadores sembrados", () => {
     // Si alguien los leyó, la demo ya se usó.
     exigirDemo(ctx, importan.flat().every((a) => !a.leida), "se leyeron avisos de los indicadores de la demo");
   });
+  it("CNT-ID-001 tiene sus rangos, un periodo en Bien que no cumple con su análisis y otro que cumple", async (ctx) => {
+    await exigirIndicadores(ctx);
+    const [sub] = await sql`SELECT sigla FROM subprocesos WHERE nombre = 'Gestión Contable'`;
+    expect(sub?.sigla).toBe("CNT");
+    const i = await indicador("CNT-ID-001");
+    expect(i.estado).toBe("activo");
+    const v = await vigente(i.id);
+    expect(v).toMatchObject({ nombre: "Oportunidad en el cierre contable", periodicidad: "mensual", semaforo_modo: "rangos" });
+    expect(Number(v.meta)).toBe(100);
+    expect(v.rangos).toEqual({
+      bien: [{ signo: ">=", valor: "91" }],
+      atencion: [{ signo: "entre", valor: "41", hasta: "90" }],
+      critico: [{ signo: "<=", valor: "40" }],
+    });
+    const filas = await sql`SELECT periodo, semaforo, cumple, resultado, analisis FROM mediciones
+      WHERE indicador_id = ${i.id} AND estado = 'reportada' ORDER BY periodo`;
+    expect(filas).toHaveLength(2);
+    expect(filas.map((m) => [Number(m.resultado), m.semaforo, m.cumple])).toEqual([[95, "bien", false], [100, "bien", true]]);
+    expect(largo(filas[0].analisis)).toBeGreaterThan(20);
+  });
+
+  it("el lote importado trae una ficha aprobada con su importación y una propuesta sin ella", async (ctx) => {
+    await exigirIndicadores(ctx);
+    const aprobada = await indicador("TSR-ID-001");
+    const va = await vigente(aprobada.id);
+    expect(va.importacion_id).not.toBeNull();
+    expect(va).toMatchObject({ aprobacion_previa_documento: "SGC-TI-002 v1", aprobacion_previa_por: "Gerente" });
+    const propuesta = await indicador("GRF-ID-001");
+    const [vp] = await versiones(propuesta.id);
+    expect(vp).toMatchObject({ estado: "borrador", importacion_id: null });
+    const [e] = await sql`SELECT detalle FROM importacion_eventos WHERE importacion_id = ${va.importacion_id} AND tipo = 'importado'`;
+    expect((e.detalle as { fichas: { codigo: string; estado: string }[] }).fichas.map((f) => [f.codigo, f.estado])).toEqual([
+      ["TSR-ID-001", "aprobado"],
+      ["GRF-ID-001", "propuesto"],
+    ]);
+    const [sub] = await sql`SELECT sigla FROM subprocesos WHERE nombre = 'Gestión Tesorería'`;
+    expect(sub?.sigla).toBe("TSR");
+    // La plantilla del lote está en el almacén con la huella de su fila.
+    const [a] = await sql`SELECT ruta, hash_sha256 FROM archivos WHERE contexto = 'importacion_indicadores' AND contexto_id = ${va.importacion_id}`;
+    const bytes = await readFile(resolverRutaAlmacen(a.ruta as string)!);
+    expect(createHash("sha256").update(bytes).digest("hex")).toBe(a.hash_sha256);
+  });
+
 });

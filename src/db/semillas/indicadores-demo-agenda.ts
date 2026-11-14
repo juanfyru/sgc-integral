@@ -16,6 +16,7 @@ import { minutosDespues, momentoHace } from "./distribucion-demo";
 import {
   AIN_01,
   CEX_01,
+  CNT_01,
   DEL_SGC,
   FUENTE_PRECISADA,
   GRF_01,
@@ -127,6 +128,7 @@ export function agendaDeIndicadores(ahora: Date, zona: string = zonaHoraria()): 
   const en = (momento: Date, hecho: Hecho) => agenda.push({ momento, hecho });
   urgenciasYConsultaExterna(cal, en);
   sgcYTalentoHumano(cal, zona, en);
+  contabilidad(cal, en);
   en(cal.cierre, { tipo: "cerrarMes", mes: cal.meses[3].clave });
   fichasRecientes(cal, ahora, en);
   return agenda
@@ -198,6 +200,29 @@ function urgenciasYConsultaExterna(cal: CalendarioDeIndicadores, en: En): void {
   });
   en(enDia(m[2], 16, 15), { tipo: "reportar", quien: "liderCex", codigo: CEX_01.codigo, periodo: m[4].clave, valores: ["1798", "620"], esperado: "bien" });
   en(enDia(m[2], 17, 9), { tipo: "cerrarDeNuevo", codigo: CEX_01.codigo, periodo: m[4].clave });
+}
+
+/**
+ * `CNT-ID-001` (la de los rangos por estado), mensual: la crea y la envía la coordinadora y Gerencia la aprueba antes de
+ * que empiece `meses[2]`, el primer mes que mide. Reporta `meses[2]` en 95, «Bien» que no alcanza la meta de 100 (con su
+ * análisis), y `meses[1]` en 100.
+ */
+function contabilidad(cal: CalendarioDeIndicadores, en: En): void {
+  const m = cal.meses;
+  crearYEnviar(en, enDia(m[3], 20, 9), CNT_01, m[2].clave, "coordinadora");
+  en(enDia(m[3], 22, 10), { tipo: "aprobar", quien: "gerente", codigos: [CNT_01.codigo] });
+  en(enDia(m[1], 3, 11), { tipo: "reportar", quien: "coordinadora", codigo: CNT_01.codigo, periodo: m[2].clave, valores: ["95", "100"], esperado: "bien" });
+  en(enDia(m[1], 4, 10), {
+    tipo: "analizar",
+    quien: "coordinadora",
+    codigo: CNT_01.codigo,
+    periodo: m[2].clave,
+    textos: {
+      analisis:
+        "El cierre quedó en 95 %: la conciliación de las cuentas por pagar llegó dos días tarde porque el proveedor del software demoró el reporte de cartera.",
+    },
+  });
+  en(enDia(m[0], 3, 13), { tipo: "reportar", quien: "coordinadora", codigo: CNT_01.codigo, periodo: m[1].clave, valores: ["100", "100"], esperado: "bien" });
 }
 
 /** Los históricos de cada ficha del SGC: los dos trimestres (o el semestre o el año) que terminaron antes de aprobarse. */

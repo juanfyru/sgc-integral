@@ -15,7 +15,8 @@
 import type { Sql } from "postgres";
 import type { Semaforo } from "../../lib/indicadores/tipos";
 import { zonaHoraria } from "../../lib/zona-horaria";
-import type { SesionFlujo } from "../consultas/flujo/contrato";
+import { enTransaccion, type SesionFlujo } from "../consultas/flujo/contrato";
+import { asignarSiglaASubproceso } from "../consultas/mapa-admin";
 import { analizar } from "../consultas/indicadores/analisis";
 import { aprobarFichas, enviarAAprobacion } from "../consultas/indicadores/aprobacion";
 import { cerrarDeNuevo, cerrarMes, reabrirMedicion } from "../consultas/indicadores/cierre";
@@ -26,9 +27,10 @@ import { asegurarMediciones, marcarNoAplica, reportar } from "../consultas/indic
 import { programarMeta } from "../consultas/indicadores/metas";
 import { observar } from "../consultas/indicadores/observaciones";
 import { designar, retirar } from "../consultas/indicadores/operacion";
-import { minutosDespues, sesionDe, type ContextoDistribucion } from "./distribucion-demo";
-import { agendaDeIndicadores, type FilaHistorica, type Hecho, type Quien } from "./indicadores-demo-agenda";
+import { momentoHace, minutosDespues, sesionDe, type ContextoDistribucion } from "./distribucion-demo";
+import { agendaDeIndicadores, calendarioDeIndicadores, type FilaHistorica, type Hecho, type Quien } from "./indicadores-demo-agenda";
 import { datosDeFicha, OBJETIVOS, type Catalogo, type ClaveObjetivo, type FichaDemo, type OperacionDemo } from "./indicadores-demo-fichas";
+import { sembrarLoteImportado } from "./indicadores-demo-importacion";
 import { FIRMA, firmaDeLaDemo } from "./vigencia-demo";
 
 const USUARIO: Record<Quien, string> = {
@@ -58,6 +60,9 @@ export async function sembrarIndicadores(sql: Sql, c: ContextoDistribucion): Pro
   }
   // Los periodos que terminaron hasta hoy, como los abre la primera lectura (spec §8.1).
   await asegurarMediciones({ sql, ahora: c.ahora });
+  // El lote importado entra ayer, en el mes en curso: sus fichas aprobadas aún no tienen periodos terminados.
+  const cal = calendarioDeIndicadores(c.ahora, zonaHoraria());
+  await sembrarLoteImportado(sql, s.sesion.coordinadora, cal.mesEnCurso.clave, momentoHace(1, c.ahora));
   await leerAvisosResueltos(sql);
 }
 
@@ -103,6 +108,11 @@ async function prepararSiembra(sql: Sql, c: ContextoDistribucion): Promise<Siemb
     const { id } = await guardarEnMaestro(sesion.coordinadora, "objetivos", { clase: o.clase, enunciado: o.enunciado }, { sql });
     objetivos.set(o.clave, id);
   }
+
+  // La sigla del subproceso «Gestión Contable»: da el código `CNT-ID-001` de la ficha de los rangos (spec 14A §6).
+  const [contable] = await sql`SELECT id FROM subprocesos WHERE nombre = 'Gestión Contable'`;
+  if (!contable) throw new Error("La demo no trae el subproceso Gestión Contable");
+  await enTransaccion(sql, (tx) => asignarSiglaASubproceso(tx, Number(contable.id), "CNT", sesion.coordinadora.usuarioId));
 
   const exigir = (mapa: ReadonlyMap<string, number>, clave: string, que: string) => {
     const id = mapa.get(clave);
