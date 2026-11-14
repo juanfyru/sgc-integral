@@ -567,6 +567,48 @@ describe("volver a calcular", () => {
       expect(historial[2].cambios).toContain("Etapas en plazo: 3 → 2");
     }));
 
+  it("volver a calcular: si ahora pide un análisis y ninguna foto movió el plazo, lo cuenta desde el recálculo", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const analiza = await usuarioDePrueba(tx, { rol: "consulta" });
+      const { ind, medicion } = await automatico(tx, "etapas", { analiza: [analiza.usuarioId] });
+      simular(ind.id, { A: "9", B: "10" });
+      const marzo = await medicion();
+      await fotos(tx, abril(11), ind.id);
+      expect([(await fila(tx, marzo)).estado, (await fila(tx, marzo)).vence_en]).toEqual(["reportada", VENCE_MARZO]);
+      await tx`UPDATE mediciones SET aviso_previo_en = ${abril(8)}, aviso_vencido_en = ${abril(11)}, escalado_en = ${abril(11)} WHERE id = ${marzo}`;
+
+      simular(ind.id, { A: "1", B: "4" });
+      expect(await volverACalcular(admin, marzo, { sql: tx, ahora: abril(13) })).toEqual({ cambio: true });
+      const m = await fila(tx, marzo);
+      const nuevaFecha = fechaLimite(abril(13), 10, ZONA);
+      expect([m.estado, m.vence_en, m.aviso_previo_en, m.aviso_vencido_en, m.escalado_en]).toEqual(["abierta", nuevaFecha, null, null, null]);
+      expect((await eventos(tx, marzo)).at(-1)!.detalle).toMatchObject({ recalculo: true, venceEn: nuevaFecha.toISOString() });
+
+      // La pasada siguiente no lo da por vencido.
+      await revisarVencimientosDeIndicadores({ sql: tx, ahora: abril(14), config: CONFIG_DOCUMENTAL_DEFECTO });
+      const vencidos = await tx`SELECT 1 FROM notificaciones WHERE usuario_id = ${analiza.usuarioId} AND tipo IN ('indicadores.vencido', 'indicadores.escalado')`;
+      expect(vencidos).toHaveLength(0);
+      expect((await fila(tx, marzo)).aviso_vencido_en).toBeNull();
+    }));
+
+  it("volver a calcular: si una foto ya movió el plazo, no lo mueve otra vez", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const { ind, medicion } = await automatico(tx, "etapas");
+      simular(ind.id, { A: "1", B: "4" });
+      const marzo = await medicion();
+      await fotos(tx, abril(11), ind.id);
+      const movida = fechaLimite(abril(11), 10, ZONA);
+      expect((await fila(tx, marzo)).vence_en).toEqual(movida);
+
+      simular(ind.id, { A: "2", B: "4" });
+      expect(await volverACalcular(admin, marzo, { sql: tx, ahora: abril(13) })).toEqual({ cambio: true });
+      const m = await fila(tx, marzo);
+      expect([m.estado, m.vence_en]).toEqual(["abierta", movida]);
+      expect((await eventos(tx, marzo)).at(-1)!.detalle).not.toHaveProperty("venceEn");
+    }));
+
   it("volver a calcular: rechaza la cerrada, la reabierta, la de estado y a quien no administra", () =>
     revertida(sql, async (tx) => {
       const admin = await sesionAdmin(tx);

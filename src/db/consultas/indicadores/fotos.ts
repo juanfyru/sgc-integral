@@ -14,7 +14,9 @@
  *   queda «No aplica» queda reportada con su fecha, y la de estado no mueve nada.
  * - **«Volver a calcular»** (quien administra, solo un cálculo de flujo ya fotografiado, hasta el cierre y nunca sobre una
  *   reabierta): toma otra vez el cálculo; si cambió, reescribe los valores o «no aplica», deja el evento `foto` con el antes
- *   y el después y la bitácora, y sigue las reglas de una corrección. No mueve la fecha límite.
+ *   y el después y la bitácora, y sigue las reglas de una corrección. Mueve la fecha límite una sola vez: si ahora pide un
+ *   análisis y ninguna foto anterior la movió (ningún evento `foto` con `venceEn`), con la misma regla, desde el recálculo;
+ *   así no sirve para estirar el plazo.
  *
  * Candados: el indicador `FOR SHARE`, después la medición `FOR UPDATE`, todo releído bajo ellos; una transacción por
  * medición: la que falla se registra y se salta.
@@ -143,6 +145,24 @@ function enTexto(
 }
 
 /**
+ * El gancho de `recalcularMedicion` que mueve el plazo si la foto pide un análisis (`laFotoMueveElPlazo`): la fecha límite
+ * contada desde `desde` con el plazo de reporte, las tres marcas de aviso limpias y `venceEn` en el evento.
+ */
+function moverElPlazoSiPide(
+  tx: TransactionSql,
+  m: { id: number; historica: boolean },
+  c: { clase: DefinicionDeCalculo["clase"]; plazoDias: number; desde: Date },
+): (r: Recalculo) => Promise<Record<string, unknown>> {
+  return async (r) => {
+    if (!laFotoMueveElPlazo({ clase: c.clase, historica: m.historica, estadoTrasLaFoto: r.estado })) return {};
+    const vence = fechaLimiteDesdeLaFoto(c.desde, c.plazoDias, zonaHoraria());
+    await tx`UPDATE mediciones SET vence_en = ${vence}, aviso_previo_en = NULL, aviso_vencido_en = NULL, escalado_en = NULL
+      WHERE id = ${m.id}`;
+    return { venceEn: vence.toISOString() };
+  };
+}
+
+/**
  * Escribe la foto de una medición que la espera, con los candados tomados: sus valores (o «no aplica» con el motivo del
  * cálculo), quién y cuándo (`reportada_por` nulo: el sistema) y cuándo se tomó (`foto_en`). Después el cálculo único, con el
  * evento `foto` sin usuario; con el resultado ya calculado, si la foto de un cálculo de flujo de una medición ordinaria pide
@@ -162,13 +182,6 @@ export async function escribirFoto(
       no_aplica = ${motivo !== null}, no_aplica_motivo = ${motivo}
     WHERE id = ${m.id}`;
   const despues = enTexto(c.version, valores, motivo);
-  const moverElPlazo = async (r: Recalculo): Promise<Record<string, unknown>> => {
-    if (!laFotoMueveElPlazo({ clase: c.definicion.clase, historica: m.historica, estadoTrasLaFoto: r.estado })) return {};
-    const vence = fechaLimiteDesdeLaFoto(c.ahora, c.plazoDias, zonaHoraria());
-    await tx`UPDATE mediciones SET vence_en = ${vence}, aviso_previo_en = NULL, aviso_vencido_en = NULL, escalado_en = NULL
-      WHERE id = ${m.id}`;
-    return { venceEn: vence.toISOString() };
-  };
   return recalcularMedicion(tx, m.id, {
     ahora: c.ahora,
     actorId: null,
@@ -180,7 +193,7 @@ export async function escribirFoto(
       antes,
       despues,
     },
-    conElResultado: moverElPlazo,
+    conElResultado: moverElPlazoSiPide(tx, m, { clase: c.definicion.clase, plazoDias: c.plazoDias, desde: c.ahora }),
   });
 }
 
@@ -294,8 +307,10 @@ function exigirRecalculable(ctx: Contexto): { definicion: DefinicionDeCalculo; a
  * «Volver a calcular» (anexo 14B, §5.4): quien administra toma otra vez el cálculo de flujo de una medición ya fotografiada,
  * mientras no se haya cerrado ni reabierto. Si los valores o «no aplica» cambiaron, los reescribe, actualiza la hora de la
  * foto, recalcula con el evento `foto` (`recalculo: true`, el antes y el después) y deja la bitácora
- * (`medicion_foto_recalculada`, con el resultado de antes y el de después); las alertas, como en una corrección. Si nada
- * cambió, no escribe nada. Valida fuera de la transacción lo que puede y lo repite dentro, con los candados.
+ * (`medicion_foto_recalculada`, con el resultado de antes y el de después); las alertas, como en una corrección. Si ahora
+ * pide un análisis y ninguna foto anterior movió el plazo, lo mueve desde el recálculo (`moverElPlazoSiPide`); si una ya lo
+ * movió, no lo mueve otra vez. Si nada cambió, no escribe nada. Valida fuera de la transacción lo que puede y lo repite
+ * dentro, con los candados.
  */
 export async function volverACalcular(
   sesion: SesionFlujo,
@@ -312,7 +327,7 @@ export async function volverACalcular(
     const ctx = await contextoDeMedicion(tx, sesion, medicionId, true, COMO_ADMINISTRADOR);
     const { definicion, alcance } = exigirRecalculable(ctx);
     const { medicion: m, version, indicador } = ctx;
-    const [i] = await tx`SELECT proceso_id FROM indicadores WHERE id = ${indicador.id}`;
+    const [i] = await tx`SELECT proceso_id, plazo_reporte_dias FROM indicadores WHERE id = ${indicador.id}`;
     const foto = fotoDe(
       definicion,
       await tomarCalculo(tx, {
@@ -335,7 +350,18 @@ export async function volverACalcular(
     const resultadoAntes = m.no_aplica === true ? NO_APLICA : (resultadoEnTexto(m.resultado_exacto, version, regla) ?? SIN_RESULTADO);
     await escribirValoresDelSistema(tx, m.id, version, valores, ahora);
     await tx`UPDATE mediciones SET foto_en = ${ahora}, no_aplica = ${motivo !== null}, no_aplica_motivo = ${motivo} WHERE id = ${m.id}`;
-    const r = await recalcularMedicion(tx, m.id, { ahora, actorId: sesion.usuarioId, evento: "foto", detalle: { recalculo: true, antes, despues } });
+    // Una foto anterior ya movió el plazo: volver a calcular no lo estira.
+    const [yaMovido] = await tx`SELECT 1 AS hay FROM medicion_eventos
+      WHERE medicion_id = ${m.id} AND tipo = 'foto' AND detalle->>'venceEn' IS NOT NULL LIMIT 1`;
+    const r = await recalcularMedicion(tx, m.id, {
+      ahora,
+      actorId: sesion.usuarioId,
+      evento: "foto",
+      detalle: { recalculo: true, antes, despues },
+      conElResultado: yaMovido
+        ? undefined
+        : moverElPlazoSiPide(tx, { id: m.id, historica: m.historica === true }, { clase: definicion.clase, plazoDias: Number(i.plazo_reporte_dias), desde: ahora }),
+    });
     const resultadoDespues = motivo !== null ? NO_APLICA : r.resultado ? textoValor(r.resultado, version.unidad, regla) : SIN_RESULTADO;
     await registrarAuditoria(tx, {
       usuarioId: sesion.usuarioId,
