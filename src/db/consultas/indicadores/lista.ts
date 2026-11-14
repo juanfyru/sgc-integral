@@ -122,7 +122,8 @@ export type FilaDeLista = {
 };
 
 /** `noAplica` va aparte de `sinDato`: «No aplica» no es «Sin dato» (spec §8.5; Tarea 19, D-11). */
-export type ResumenDeLista = { bien: number; atencion: number; critico: number; sinDato: number; noAplica: number; vencidos: number };
+/** `bienSinAlcanzar` son los Bien que no alcanzan la meta: van también en `bien` (spec 14A §3.1). */
+export type ResumenDeLista = { bien: number; bienSinAlcanzar: number; atencion: number; critico: number; sinDato: number; noAplica: number; vencidos: number };
 
 type Pendientes = { porReportar: boolean; faltaAnalisis: boolean; vencidas: number; masAntigua: { vence: Date; falta: Falta } | null };
 
@@ -304,11 +305,13 @@ export async function listarIndicadores(
     return x.requiereAccion;
   };
   const filtradas = todas.filter(pasaReporte);
-  const resumen: ResumenDeLista = { bien: 0, atencion: 0, critico: 0, sinDato: 0, noAplica: 0, vencidos: 0 };
+  const resumen: ResumenDeLista = { bien: 0, bienSinAlcanzar: 0, atencion: 0, critico: 0, sinDato: 0, noAplica: 0, vencidos: 0 };
   for (const x of filtradas) {
     if (!x.conFicha) continue;
-    if (x.fila.semaforo === "bien") resumen.bien += 1;
-    else if (x.fila.semaforo === "atencion") resumen.atencion += 1;
+    if (x.fila.semaforo === "bien") {
+      resumen.bien += 1;
+      if (x.fila.cumple === false) resumen.bienSinAlcanzar += 1;
+    } else if (x.fila.semaforo === "atencion") resumen.atencion += 1;
     else if (x.fila.semaforo === "critico") resumen.critico += 1;
     else if (x.fila.noAplica) resumen.noAplica += 1;
     else resumen.sinDato += 1;

@@ -21,7 +21,11 @@ import { aprobadoresDeFicha, filtroAcceso, puedeAprobarFicha, puedeVerIndicador,
 import { verificarParaFirmar, type CredencialesFirma } from "@/lib/firma";
 import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
 import { camposCambiados, huellaDeFicha, tipoDeCambio, type ContenidoFicha } from "@/lib/indicadores/ficha";
+import { fraccion } from "@/lib/indicadores/formula/fraccion";
 import { periodicidadDe, periodosTerminados, periodoQueContiene, versionQueRigeEntre } from "@/lib/indicadores/periodos";
+import type { RangosEnTexto } from "@/lib/indicadores/rangos";
+import { reglaDeTexto, type ReglaEnTexto } from "@/lib/indicadores/reporte";
+import { errorDeRegla, numeroExacto } from "@/lib/indicadores/semaforo";
 import {
   AVISO_DESIGNACION,
   ErrorIndicador,
@@ -29,7 +33,9 @@ import {
   MAXIMO_EN_BLOQUE,
   type DatosOperacion,
   type EstadoVersion,
+  type ModoSemaforo,
   type Periodicidad,
+  type Tendencia,
   type TipoCambio,
 } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede, type SujetoPermiso } from "@/lib/permisos";
@@ -241,6 +247,52 @@ export async function opcionesDeRige(
   return { porOmision, opciones: claves.map((clave) => ({ clave, etiqueta: etiquetaDePeriodo(clave) })) };
 }
 
+/** «del cuarto trimestre de 2026», «de noviembre de 2026», «de 2026». */
+function delPeriodo(clave: string): string {
+  const etiqueta = periodoDe(clave, zonaHoraria())?.etiqueta ?? clave;
+  const p = periodicidadDe(clave);
+  return p === "mensual" || p === "anual" || p === null ? `de ${etiqueta}` : `del ${etiqueta}`;
+}
+
+/**
+ * Las metas programadas que regirá un cambio mayor caen dentro de su Bien (spec 14A §3.4): las de los periodos de su
+ * periodicidad desde su «rige desde» (las de antes las rige la versión anterior, y las de otra periodicidad ya no se
+ * miden). `programarMeta` solo las revisó contra la versión que regía al programarlas. De solo lectura: quien llama tiene
+ * el indicador `FOR UPDATE` dentro de la transacción, el candado de `programarMeta`.
+ */
+async function exigirMetasDentroDeBien(sql: Cliente, versionId: number, rigeDesde: string, antesDe: "enviar" | "aprobar"): Promise<void> {
+  const zona = zonaHoraria();
+  const desde = periodoDe(rigeDesde, zona);
+  const [v] = await sql`SELECT indicador_id, periodicidad, tendencia, meta, meta_max, semaforo_modo, umbral_atencion_pct, limite_critico,
+      tolerancia, rangos, unidad_sufijo, decimales
+    FROM indicador_versiones WHERE id = ${versionId}`;
+  if (!v || !desde) return;
+  const texto = (x: unknown) => (x === null || x === undefined ? null : String(x));
+  const regla: ReglaEnTexto = {
+    tendencia: v.tendencia as Tendencia,
+    meta: texto(v.meta),
+    metaMax: texto(v.meta_max),
+    modo: (v.semaforo_modo as ModoSemaforo | null) ?? null,
+    umbralPct: v.umbral_atencion_pct === null ? null : Number(v.umbral_atencion_pct),
+    limite: texto(v.limite_critico),
+    tolerancia: texto(v.tolerancia),
+    rangos: (v.rangos as RangosEnTexto | null) ?? null,
+  };
+  const unidad = { sufijo: (v.unidad_sufijo as string | null) ?? "", decimales: v.decimales === null ? 0 : Number(v.decimales) };
+  const metas = (await sql`SELECT periodo, meta, meta_max FROM indicador_metas WHERE indicador_id = ${v.indicador_id}`)
+    .map((m) => ({ clave: m.periodo as string, periodo: periodoDe(m.periodo as string, zona), meta: texto(m.meta), metaMax: texto(m.meta_max) }))
+    .filter((m) => m.periodo !== null && periodicidadDe(m.clave) === v.periodicidad && m.periodo.desde.getTime() >= desde.desde.getTime())
+    .sort((a, b) => a.periodo!.desde.getTime() - b.periodo!.desde.getTime());
+  for (const m of metas) {
+    if (errorDeRegla(reglaDeTexto({ ...regla, meta: m.meta, metaMax: m.metaMax })) === null) continue;
+    const n = (x: string) => numeroExacto(fraccion(x)!, unidad.decimales);
+    const valor = m.meta === null ? "sin meta" : m.metaMax !== null && m.metaMax !== m.meta ? `${n(m.meta)} a ${n(m.metaMax)}${unidad.sufijo}` : `${n(m.meta)}${unidad.sufijo}`;
+    throw new ErrorIndicador(
+      `La meta programada ${delPeriodo(m.clave)} (${valor}) queda fuera del rango de Bien de esta versión: reprográmela antes de ${antesDe}`,
+    );
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Enviar
 // ─────────────────────────────────────────────────────────────────────────────
@@ -299,6 +351,7 @@ async function validarEnvio(sql: Cliente, d: DatosEnvio, ahora: Date): Promise<E
     const periodicidad = v.periodicidad as Periodicidad;
     rigeDesde = d.rigeDesde ?? (await rigeDesdePorOmision(sql, indicadorId, periodicidad, ahora));
     await validarRige(sql, indicadorId, rigeDesde, periodicidad, ahora, true);
+    await exigirMetasDentroDeBien(sql, d.versionId, rigeDesde, "enviar");
   }
   if (!rigeDesde) throw new ErrorIndicador("Elija el inicio de medición antes de enviar la ficha");
   return { indicadorId, codigo: v.codigo as string, numero: Number(v.numero), tipo, rigeDesde, motivo, contenido };
@@ -440,6 +493,8 @@ async function validarAprobacion(sql: Cliente, sesion: SujetoVisibilidad, ids: r
         if (!(err instanceof ErrorIndicador)) throw err;
         throw new ErrorIndicador(`La ficha ${codigo} ya no puede regir ${desdePeriodo(rigeDesde)}: devuélvala para que elijan otro periodo`);
       }
+      // Fuera del `try`: su mensaje es el suyo. Una meta pudo programarse después de enviarla.
+      await exigirMetasDentroDeBien(sql, id, rigeDesde, "aprobar");
     }
     salida.push({
       versionId: id,

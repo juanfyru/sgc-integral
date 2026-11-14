@@ -570,8 +570,9 @@ export async function recalcularMedicion(
 }
 
 /**
- * El incumplimiento repetido de una medición sale del semáforo de las n − 1 anteriores medidas (spec §10.3): cuando una
- * cambia de semáforo o de resultado (se corrige, se reabre, se reporta tarde, se marca «no aplica»), se recalculan las
+ * El incumplimiento repetido de una medición sale de si cumplieron la meta las n − 1 anteriores medidas (spec §10.3; con
+ * `cumple`, spec 14A §3.1: un Bien que no la alcanza también cuenta): cuando una cambia de semáforo, de `cumple` o de
+ * resultado (se corrige, se reabre, se reporta tarde, se marca «no aplica»), se recalculan las
  * siguientes medidas del indicador cuya racha la alcanza, que son las n − 1 primeras, con el evento `recalculo`, el mismo
  * actor y la misma hora. Las cerradas cuentan pero no cambian: son evidencia cerrada (el trigger lo impide y se reabren a
  * mano); las históricas no tienen racha, y una de otra periodicidad no se calcula (`esDeOtraPeriodicidad`). Se bloquean en

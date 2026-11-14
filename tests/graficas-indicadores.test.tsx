@@ -132,7 +132,8 @@ describe("GraficoTubos", () => {
     const html = renderToStaticMarkup(<TuboAcumulado valor={92} texto="92 %" estado="bien" cumple={false} meta={{ valor: 95, texto: "Meta 95 %" }} unidad={UNIDAD} />);
     expect(html).toMatch(/data-variante="bien"[^>]*>Bien · no alcanza la meta</);
     expect(renderToStaticMarkup(<TuboAcumulado valor={96} texto="96 %" estado="bien" cumple meta={{ valor: 95, texto: "Meta 95 %" }} unidad={UNIDAD} />)).toMatch(/>Bien</);
-    expect(renderToStaticMarkup(<LeyendaDeGrafica conMeta conLimite={false} conAsterisco />)).toContain("Bien*: Bien, sin alcanzar la meta");
+    // Solo en papel, como el «Bien*» de la columna: en pantalla no hay asterisco que explicar.
+    expect(renderToStaticMarkup(<LeyendaDeGrafica conMeta conLimite={false} conAsterisco />)).toContain('<li class="tubo-impreso">Bien*: Bien, sin alcanzar la meta</li>');
     expect(renderToStaticMarkup(<LeyendaDeGrafica conMeta conLimite={false} />)).not.toContain("Bien*");
   });
 
@@ -504,6 +505,11 @@ describe("las piezas pequeñas", () => {
     expect(renderToStaticMarkup(<BarraEstados bien={0} atencion={0} critico={0} sinDato={0} />)).not.toContain("NaN");
     expect(barra).toMatch(/^<div class="tubo-color-exacto /);
     // «No aplica» va aparte de «sin dato», escrito y con su propio segmento rayado (ronda 1 de la Tarea 19, D-11).
+    // Cuántos Bien no alcanzan la meta, escrito junto a los Bien (spec 14A §3.1); sin ninguno, no se dice nada.
+    expect(sinEtiquetas(renderToStaticMarkup(<BarraEstados bien={12} bienSinAlcanzar={3} atencion={1} critico={0} sinDato={0} />))).toContain(
+      "12 bien (3 sin alcanzar la meta), 1 en atención",
+    );
+    expect(sinEtiquetas(renderToStaticMarkup(<BarraEstados bien={12} bienSinAlcanzar={0} atencion={1} critico={0} sinDato={0} />))).not.toContain("sin alcanzar");
     const conNoAplica = renderToStaticMarkup(<BarraEstados bien={7} atencion={1} critico={1} sinDato={0} noAplica={1} />);
     expect(sinEtiquetas(conNoAplica)).toBe("7 bien, 1 en atención, 1 crítico, 0 sin dato, 1 no aplica");
     expect(conNoAplica).toContain('<span class="barra-no-aplica" style="width:10%"');

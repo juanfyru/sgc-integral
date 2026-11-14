@@ -6,6 +6,7 @@
 import { MESES, periodoDe } from "@/lib/indicadores-documentales/periodo";
 import type { Fraccion } from "./formula/fraccion";
 import { periodicidadDe } from "./periodos";
+import { limiteDeRangosCerrado } from "./rangos";
 import { numeroExacto, type Regla } from "./semaforo";
 import type { Unidad } from "./textos";
 import type { Consolidacion, LimiteDeGrafica } from "./tipos";
@@ -90,9 +91,14 @@ export function rotuloDelAcumulado(faltan: readonly string[], desde: { clave: st
   return parcial ? `Acumulado parcial: ${parcial}` : null;
 }
 
-/** «Crítico por debajo de 63 %» (mayor es mejor) o «Crítico por encima de 40 min» (menor es mejor). */
-export function textoDelLimite(limite: Fraccion, regla: Pick<Regla, "tendencia">, u: Unidad): string {
-  const lado = regla.tendencia === "descendente" ? "por encima de" : "por debajo de";
+/**
+ * «Crítico por debajo de 63 %» (mayor es mejor) o «Crítico por encima de 40 min» (menor es mejor). Con los rangos
+ * escritos, si el límite es de Crítico («Crítico ≤ 40»), «Crítico hasta 40 %» o, en menor es mejor, «Crítico desde 34 min».
+ */
+export function textoDelLimite(limite: Fraccion, regla: Pick<Regla, "tendencia"> & Partial<Pick<Regla, "modo" | "rangos">>, u: Unidad): string {
+  const descendente = regla.tendencia === "descendente";
+  const cerrado = regla.modo === "rangos" && regla.rangos ? limiteDeRangosCerrado(regla.rangos, regla.tendencia) : false;
+  const lado = cerrado ? (descendente ? "desde" : "hasta") : descendente ? "por encima de" : "por debajo de";
   return `Crítico ${lado} ${numeroExacto(limite, u.decimales)}${u.sufijo}`;
 }
 

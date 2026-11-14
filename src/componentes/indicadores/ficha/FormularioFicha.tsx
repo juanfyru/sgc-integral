@@ -306,8 +306,8 @@ export function FormularioFicha({
     errorInicial ? { ok: false as const, error: errorInicial } : null,
   );
   const masOpciones = useRef<HTMLDetailsElement>(null);
-  // Un error sobre un campo: el foco va a él, abriendo antes los plegables que lo contienen («Más opciones», «Cambiar
-  // rangos»), para que la persona lo vea junto a su mensaje.
+  // Un error sobre un campo: el foco va a él, abriendo antes los plegables que lo contienen («Más opciones»), para que la
+  // persona lo vea junto a su mensaje.
   useEffect(() => {
     const id = estado?.error ? campoDelError(estado.error) : null;
     if (!id) return;
@@ -919,7 +919,7 @@ export function FormularioFicha({
             <Campo etiqueta="Punto de control" nombre="puntoControl" id="ficha-puntoControl" error={errorDe("ficha-puntoControl")} ayuda="Por ejemplo: PC-13.">
               <input maxLength={60} defaultValue={valores.puntoControl ?? ""} className={CONTROL} />
             </Campo>
-            <Campo etiqueta="Nivel" nombre="nivel" id="ficha-nivel" error={errorDe("ficha-nivel")} ayuda="Opcional: el nivel del indicador en el hospital, por ejemplo «Estratégico».">
+            <Campo etiqueta="Nivel" nombre="nivel" id="ficha-nivel" error={errorDe("ficha-nivel")} ayuda="Opcional: el nivel del indicador en el hospital (Estructura, Proceso o Resultado), por ejemplo «Proceso».">
               <input maxLength={60} defaultValue={valores.nivel ?? ""} className={CONTROL} />
             </Campo>
             <Campo etiqueta="Riesgo asociado" nombre="riesgoAsociado" id="ficha-riesgoAsociado" error={errorDe("ficha-riesgoAsociado")} ayuda="Opcional: el riesgo del proceso que este indicador vigila.">

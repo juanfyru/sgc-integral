@@ -29,8 +29,9 @@ import {
   versionQueRige,
   versionVigente,
 } from "@/db/consultas/indicadores/aprobacion";
-import { abrirCambio, contenidoDeVersion, crearIndicador, guardarBorrador } from "@/db/consultas/indicadores/fichas";
+import { abrirCambio, contenidoDeVersion, crearIndicador, fichaParaEditar, guardarBorrador } from "@/db/consultas/indicadores/fichas";
 import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
+import { programarMeta } from "@/db/consultas/indicadores/metas";
 import type { DatosFicha } from "@/lib/esquemas/indicadores";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { huellaDeFicha } from "@/lib/indicadores/ficha";
@@ -38,6 +39,7 @@ import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import type { Verificador } from "@/lib/firma";
 import { ErrorPermiso } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
+import { indicadorDePrueba } from "./utiles/indicadores";
 import { documentoLibre, sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 import { firmaDePrueba } from "./utiles/vigencia";
@@ -984,5 +986,116 @@ describe("enviar con la regla vieja del semáforo", () => {
         enviarAAprobacion(b.admin, { versionId: mayor, credenciales: CLAVE }, firmar(tx)),
         "Un cambio mayor escribe los rangos del semáforo: complete Bien, Atención y Crítico",
       );
+    }));
+
+  it("un cambio que solo renombra una ficha con la regla vieja se guarda, se envía y queda aprobado sin rangos (Review Focus 3)", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      // Una ficha aprobada antes de la 0012: regla relativa (umbral 70 %), sin rangos, con sus cargos responsables.
+      const ind = await indicadorDePrueba(tx, { procesoId: b.sgc, estado: "borrador" });
+      const [cargo] = await tx`SELECT nombre FROM cargos WHERE id = ${b.cargoId}`;
+      for (const funcion of ["medir", "analizar"]) {
+        await tx`INSERT INTO indicador_responsables (version_id, cargo_id, cargo_nombre, funcion) VALUES (${ind.versionId}, ${b.cargoId}, ${cargo.nombre}, ${funcion})`;
+      }
+      const gerente = await usuarioDePrueba(tx, { rol: "gerencia" });
+      await tx`UPDATE indicador_versiones SET estado = 'aprobada', elaborada_por = ${b.admin.usuarioId}, elaborada_en = ${AHORA},
+          huella = ${"0".repeat(64)}, rige_desde = '2026-01', aprobada_por = ${gerente.usuarioId}, aprobada_en = ${AHORA}
+        WHERE id = ${ind.versionId}`;
+      await tx`UPDATE indicadores SET estado = 'activo' WHERE id = ${ind.id}`;
+      // Con una meta programada: un cambio menor conserva la regla y no revisa las metas contra rangos que no tiene.
+      await programarMeta(b.admin, { indicadorId: ind.id, periodo: "2027-01", meta: "85" }, { sql: tx, ahora: AHORA });
+      const { versionId } = await abrirCambio(b.admin, ind.id, { sql: tx });
+      const valores = (await fichaParaEditar(b.admin, ind.codigo, { sql: tx }))!.valores as DatosFicha;
+      expect(valores).toMatchObject({ semaforoModo: "relativo", umbralAtencionPct: 70, meta: "90" });
+      expect(valores.rangos).toBeUndefined();
+
+      await guardarBorrador(b.admin, versionId, { ...valores, nombre: "Otro nombre de la ficha", prueba: { valores: { A: "9", B: "10" } } }, { sql: tx });
+      expect(await enviarAAprobacion(b.admin, { versionId, motivo: "Aclarar el nombre", credenciales: CLAVE }, firmar(tx))).toEqual({
+        codigo: ind.codigo,
+        menor: true,
+      });
+      const [v] = await tx`SELECT estado, tipo_cambio, nombre, semaforo_modo, rangos, umbral_atencion_pct FROM indicador_versiones WHERE id = ${versionId}`;
+      expect(v).toEqual({
+        estado: "aprobada",
+        tipo_cambio: "menor",
+        nombre: "Otro nombre de la ficha",
+        semaforo_modo: "relativo",
+        rangos: null,
+        umbral_atencion_pct: 70,
+      });
+      expect(await versionVigente(tx, ind.id)).toEqual({ id: versionId, numero: 2 });
+    }));
+});
+
+describe("las metas programadas y los rangos de un cambio mayor (spec 14A §3.4)", () => {
+  /** Bien ≥ 95: lo que deja fuera una meta de 92 programada con la versión 1 (Bien ≥ 90). */
+  const RANGOS_95 = rangosDe(95);
+  const fuera = (accion: "enviar" | "aprobar") =>
+    `La meta programada del primer trimestre de 2027 (92 %) queda fuera del rango de Bien de esta versión: reprográmela antes de ${accion}`;
+
+  /** La ficha aprobada con el primer y el segundo trimestre reportados: un cambio mayor rige desde el tercero. */
+  async function conMetas(tx: TransactionSql) {
+    const b = await base(tx);
+    const d = datos(b);
+    const ind = await aprobado(tx, b, d);
+    const meta = (periodo: string, valor: string) =>
+      programarMeta(b.admin, { indicadorId: ind.indicadorId, periodo, meta: valor }, { sql: tx, ahora: AHORA });
+    // Dentro de Bien ≥ 90, la de la versión 1. La del segundo trimestre, antes de reportarlo (programarla lo recalcula).
+    await meta("2026-T2", "91");
+    await meta("2027-T1", "92");
+    await medicion(tx, ind.indicadorId, ind.versionId, "2026-T1");
+    await medicion(tx, ind.indicadorId, ind.versionId, "2026-T2");
+    const v2 = await cambio(tx, b, ind.indicadorId, { ...d, meta: "95", rangos: RANGOS_95, motivoCambio: "La revisión por la dirección subió la meta" });
+    return { b, ind, v2, meta };
+  }
+
+  it("enviar el cambio mayor revisa las metas programadas desde su «rige desde» contra su Bien", () =>
+    revertida(sql, async (tx) => {
+      const { b, v2, meta } = await conMetas(tx);
+      let verificaciones = 0;
+      const contar: Verificador = async (...args) => ((verificaciones += 1), firmaDePrueba(...args));
+      const enviar = () => enviarAAprobacion(b.admin, { versionId: v2, credenciales: CLAVE }, firmar(tx, contar));
+
+      // La del segundo trimestre (91) queda antes del «rige desde» (el tercero): la rige la versión 1 y no se revisa.
+      await rechaza(enviar(), fuera("enviar"));
+      expect(verificaciones).toBe(0);
+      expect(await firmasDe(tx, v2)).toEqual([]);
+
+      // Reprogramada dentro de los dos Bien, se envía.
+      await meta("2027-T1", "96");
+      expect(await enviar()).toMatchObject({ menor: false });
+      const [v] = await tx`SELECT estado, rige_desde FROM indicador_versiones WHERE id = ${v2}`;
+      expect(v).toEqual({ estado: "por_aprobar", rige_desde: "2026-T3" });
+    }));
+
+  it("aprobar el cambio mayor vuelve a revisar las metas programadas después de enviarlo", () =>
+    revertida(sql, async (tx) => {
+      const { b, ind, v2, meta } = await conMetas(tx);
+      await meta("2027-T1", "96");
+      await enviarAAprobacion(b.admin, { versionId: v2, credenciales: CLAVE }, firmar(tx));
+      // Con la versión 1 rigiendo todavía, 92 cabe en su Bien: se programa.
+      await meta("2027-T1", "92");
+      await rechaza(aprobarFichas(ind.gerente, { versionIds: [v2], credenciales: CLAVE }, firmar(tx)), fuera("aprobar"));
+      expect((await firmasDe(tx, v2)).filter((f) => f.firma === "aprobo")).toEqual([]);
+
+      await meta("2027-T1", "96");
+      expect(await aprobarFichas(ind.gerente, { versionIds: [v2], credenciales: CLAVE }, firmar(tx))).toEqual({ aprobadas: 1 });
+    }));
+
+  it("una meta programada mientras se pide la clave de quien aprueba: lo rechaza la comprobación dentro de la transacción", () =>
+    revertida(sql, async (tx) => {
+      const { b, ind, v2, meta } = await conMetas(tx);
+      await meta("2027-T1", "96");
+      await enviarAAprobacion(b.admin, { versionId: v2, credenciales: CLAVE }, firmar(tx));
+      let verificaciones = 0;
+      const mientrasTanto: Verificador = async (...args) => {
+        verificaciones += 1;
+        await meta("2027-T1", "92");
+        return firmaDePrueba(...args);
+      };
+      await rechaza(aprobarFichas(ind.gerente, { versionIds: [v2], credenciales: CLAVE }, firmar(tx, mientrasTanto)), fuera("aprobar"));
+      expect(verificaciones).toBe(1);
+      const [v] = await tx`SELECT estado FROM indicador_versiones WHERE id = ${v2}`;
+      expect(v.estado).toBe("por_aprobar");
     }));
 });

@@ -1653,7 +1653,8 @@ export const importacionEventos = pgTable(
   ],
 );
 
-// Aprobada es inmutable (trigger en la migración 0011), con sus variables, responsables y normas.
+// Aprobada es inmutable, con sus variables, responsables y normas: trigger `sgc_impedir_si_version_aprobada` (de la 0011;
+// la función vigente es la de la 0012, con su única excepción: deshacer un lote de importación, spec 14A §5.9).
 export const indicadorVersiones = pgTable(
   "indicador_versiones",
   {

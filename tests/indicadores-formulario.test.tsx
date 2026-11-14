@@ -455,8 +455,11 @@ describe("FormularioFicha: los rangos escritos (Tarea 5 de la 14A)", () => {
   });
 
   it("«Más opciones» trae Nivel y Riesgo asociado, con lo guardado", () => {
-    const mas = masOpciones(pintar({ nivel: "Estratégico", riesgoAsociado: "Caída de la adherencia" }));
-    expect(mas).toMatch(/<input(?=[^>]*id="ficha-nivel")(?=[^>]*name="nivel")(?=[^>]*value="Estratégico")[^>]*>/);
+    const mas = masOpciones(pintar({ nivel: "Proceso", riesgoAsociado: "Caída de la adherencia" }));
+    expect(mas).toMatch(/<input(?=[^>]*id="ficha-nivel")(?=[^>]*name="nivel")(?=[^>]*value="Proceso")[^>]*>/);
+    // El ejemplo de la ayuda es un nivel de la matriz del hospital, no una clasificación («Estratégico» lo es).
+    expect(mas).toContain("Opcional: el nivel del indicador en el hospital (Estructura, Proceso o Resultado), por ejemplo «Proceso».");
+    expect(mas).not.toContain("«Estratégico»");
     expect(mas).toMatch(/id="ficha-riesgoAsociado"/);
     expect(mas).toContain("Caída de la adherencia");
     expect(campoDeMasOpciones("El nivel no puede pasar de 60 caracteres")).toBe("ficha-nivel");

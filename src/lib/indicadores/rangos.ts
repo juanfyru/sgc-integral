@@ -354,6 +354,14 @@ export function limiteDeRangos(r: Rangos, tendencia: Tendencia): Fraccion | null
   return tendencia === "ascendente" ? t.hi : t.lo;
 }
 
+/** Si ese borde es de Crítico («≤ 40», «entre 0 y 40», «≥ 34»): entonces no se rotula «por debajo de» ni «por encima de». */
+export function limiteDeRangosCerrado(r: Rangos, tendencia: Tendencia): boolean {
+  const f = r.critico[0];
+  if (f === undefined || tendencia === "constante") return false;
+  const t = tramoDe(f);
+  return tendencia === "ascendente" ? t.hi !== null && !t.hiAb : t.lo !== null && !t.loAb;
+}
+
 /** La regla general aprobada («Alerta ≥ 90 % de la meta», «≤ 110 %») escrita en filas (spec §5.5). */
 export function rangosDeLaRegla(meta: Fraccion, tendencia: "ascendente" | "descendente", pctAscendente: number, pctDescendente: number): Rangos {
   const pct = entero(tendencia === "ascendente" ? pctAscendente : pctDescendente);

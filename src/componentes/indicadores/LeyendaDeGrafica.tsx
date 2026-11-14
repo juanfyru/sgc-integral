@@ -31,7 +31,8 @@ export function LeyendaDeGrafica({ conLimite, conMeta, conAsterisco = false }: {
           {e.texto}
         </li>
       ))}
-      {conAsterisco ? <li>Bien*: Bien, sin alcanzar la meta</li> : null}
+      {/* Solo en papel, como el «Bien*» escrito sobre la columna (`tubo-impreso`): en pantalla no hay asterisco. */}
+      {conAsterisco ? <li className="tubo-impreso">Bien*: Bien, sin alcanzar la meta</li> : null}
       {conMeta ? (
         <li className="inline-flex items-center gap-1.5">
           <span aria-hidden="true" className="w-4 border-t-2 border-foreground" />
