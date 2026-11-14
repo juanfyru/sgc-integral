@@ -280,22 +280,44 @@ async function conObjetivo(tx: TransactionSql, objetivoId: number, elaboradaPor:
   return ind;
 }
 
-/** Una medición reportada del indicador en `periodo`, con su resultado, su semáforo y si alcanzó la meta. */
+/**
+ * Una medición reportada del indicador en `periodo`, con su resultado, su semáforo y si alcanzó la meta; sin semáforo ni
+ * `cumple`, de una ficha sin meta. Con la versión 1 salvo que se diga otra.
+ */
 async function medida(
   tx: TransactionSql,
   ind: IndicadorDePrueba,
   periodo: string,
-  r: { semaforo: Semaforo; cumple: boolean | null; noAplica?: boolean },
+  r: { semaforo: Semaforo | null; cumple: boolean | null; noAplica?: boolean; versionId?: number },
 ): Promise<void> {
   const p = periodoDe(periodo, ZONA)!;
+  const sinMeta = r.semaforo === null && r.cumple === null;
   await tx`INSERT INTO mediciones (indicador_id, version_id, periodo, desde, hasta, vence_en, estado, no_aplica, resultado_exacto, resultado,
       semaforo, cumple, meta_aplicada, reportada_en)
-    VALUES (${ind.id}, ${ind.versionId}, ${periodo}, ${p.desde}, ${p.hasta}, ${fechaLimiteDeReporte(p, 10, ZONA)}, 'reportada', ${r.noAplica ?? false},
-      ${r.noAplica ? null : "95/1"}, ${r.noAplica ? null : 95}, ${r.noAplica ? null : r.semaforo}, ${r.noAplica ? null : r.cumple}, 90, ${A_TIEMPO})`;
+    VALUES (${ind.id}, ${r.versionId ?? ind.versionId}, ${periodo}, ${p.desde}, ${p.hasta}, ${fechaLimiteDeReporte(p, 10, ZONA)}, 'reportada',
+      ${r.noAplica ?? false}, ${r.noAplica ? null : "95/1"}, ${r.noAplica ? null : 95}, ${r.noAplica ? null : r.semaforo},
+      ${r.noAplica ? null : r.cumple}, ${sinMeta ? null : 90}, ${A_TIEMPO})`;
+}
+
+/**
+ * Una versión 2 trimestral aprobada que rige desde el primer trimestre de 2094 y sigue apuntando al objetivo, como la deja
+ * un cambio mayor de periodicidad sin quitar las mediciones mensuales con datos: quedan «de otra periodicidad».
+ * `versionTrimestral` no lleva objetivo.
+ */
+async function aTrimestral(tx: TransactionSql, ind: IndicadorDePrueba, objetivoId: number, usuarioId: number): Promise<number> {
+  const [v2] = await tx`INSERT INTO indicador_versiones (indicador_id, numero, estado, tipo_cambio, nombre, objetivo_id, objetivo_nombre, forma,
+      formula, periodicidad, tendencia, meta, semaforo_modo, umbral_atencion_pct, unidad_sufijo, decimales, creado_por)
+    VALUES (${ind.id}, 2, 'borrador', 'mayor', 'Trimestral', ${objetivoId}, (SELECT enunciado FROM objetivos WHERE id = ${objetivoId}),
+      'porcentaje', 'A / B * 100', 'trimestral', 'ascendente', 90, 'relativo', 70, ' %', 1, ${usuarioId}) RETURNING id`;
+  await tx`UPDATE indicador_versiones SET estado = 'aprobada', elaborada_por = ${usuarioId}, huella = ${"1".repeat(64)}, rige_desde = '2094-T1',
+      aprobada_por = ${usuarioId}, aprobada_en = ${A_TIEMPO}
+    WHERE id = ${v2.id}`;
+  return Number(v2.id);
 }
 
 const BIEN = { semaforo: "bien", cumple: true } as const;
 const NO_CUMPLE = { semaforo: "critico", cumple: false } as const;
+const SIN_META = { semaforo: null, cumple: null } as const;
 
 describe("tomarCalculo: objetivos cumplidos", () => {
   it("un objetivo se cumple si las últimas mediciones del periodo de sus indicadores alcanzan todas la meta; cuenta los de la clase del alcance", () => revertida(sql, async (tx) => {
@@ -354,5 +376,27 @@ describe("tomarCalculo: objetivos cumplidos", () => {
     await medida(tx, await conObjetivo(tx, await objetivo(tx, "calidad"), elabora.usuarioId), "2094-03", { semaforo: "bien", cumple: null });
     await medida(tx, await conObjetivo(tx, await objetivo(tx, "calidad"), elabora.usuarioId), "2094-03", { semaforo: "atencion", cumple: null });
     expect(await tomarCalculo(tx, peticion("objetivos_cumplidos", "calidad", { procesoId: gth, periodo: "2094-T1" }))).toEqual({ A: "1", B: "2" });
+  }));
+
+  it("de cada indicador toma la última medición del periodo que cuenta: con meta y de la periodicidad de la ficha que la rige", () => revertida(sql, async (tx) => {
+    const gth = await procesoId(tx, "GTH");
+    const elabora = await sesionAdmin(tx);
+    const de = (o: number) => conObjetivo(tx, o, elabora.usuarioId);
+
+    // La de marzo no tiene meta: manda febrero, que cumple.
+    const conMetaAntes = await de(await objetivo(tx, "calidad"));
+    await medida(tx, conMetaAntes, "2094-02", BIEN);
+    await medida(tx, conMetaAntes, "2094-03", SIN_META);
+    // Desde el primer trimestre lo rige una ficha trimestral: la mensual de mayo, con resultado y sin cumplir, quedó de otra
+    // periodicidad y no se toma; manda la del trimestre, que cumple.
+    const trimestralObjetivo = await objetivo(tx, "calidad");
+    const cambio = await de(trimestralObjetivo);
+    const v2 = await aTrimestral(tx, cambio, trimestralObjetivo, elabora.usuarioId);
+    await medida(tx, cambio, "2094-T1", { ...BIEN, versionId: v2 });
+    await medida(tx, cambio, "2094-05", NO_CUMPLE);
+    // Sin ninguna con meta en el año: su objetivo no tiene medición.
+    await medida(tx, await de(await objetivo(tx, "calidad")), "2094-03", SIN_META);
+
+    expect(await tomarCalculo(tx, peticion("objetivos_cumplidos", "calidad", { procesoId: gth, periodo: "2094" }))).toEqual({ A: "2", B: "2" });
   }));
 });
