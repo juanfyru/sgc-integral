@@ -15,6 +15,9 @@ type EnteDeFicha = {
 
 const falta = (v: unknown) => v === undefined || v === null || (typeof v === "string" && v.trim() === "");
 
+/** Lo que dice `errorDeEnte` de las periodicidades al revés, y la vista de una ficha antigua que las trae así. */
+export const PERIODICIDAD_EXTERNA_NO_CONTIENE = "La periodicidad del ente debe ser la de medición o una que la contenga";
+
 /**
  * Por qué la ficha no se puede guardar con lo que dice del ente, o `null` si vale: sin ente no lleva periodicidad externa
  * ni plazo; con ente, los dos, y la periodicidad externa es la de medición o una que la contiene (un mensual puede
@@ -24,7 +27,7 @@ export function errorDeEnte(d: EnteDeFicha & { periodicidad: Periodicidad }): st
   if (falta(d.ente)) return falta(d.periodicidadExterna) && falta(d.plazoExternoDias) ? null : "Escriba el ente al que se reporta";
   if (falta(d.periodicidadExterna)) return "Diga con qué periodicidad se reporta al ente";
   if (falta(d.plazoExternoDias)) return "Diga el plazo del ente en días";
-  if (!contiene(d.periodicidadExterna!, d.periodicidad)) return "La periodicidad del ente debe ser la de medición o una que la contenga";
+  if (!contiene(d.periodicidadExterna!, d.periodicidad)) return PERIODICIDAD_EXTERNA_NO_CONTIENE;
   return null;
 }
 
@@ -95,15 +98,17 @@ function enumerar(partes: readonly string[]): string {
 
 /**
  * El aviso de un resultado parcial antes de registrar (anexo §8): qué periodos de medición faltan y cuáles, con su dato, no
- * están cerrados (uno sin dato no se repite como abierto). Se puede registrar así.
+ * están cerrados (uno sin dato no se repite como abierto) y, primero, desde qué periodo acumula si la ficha cambió de versión
+ * dentro del periodo externo (`desde`, de `resultadoDelPeriodoExterno`), separados por « / ». Se puede registrar así.
  */
-export function avisoDeParcial(r: { faltan: readonly string[]; sinCerrar: readonly string[] }): string {
+export function avisoDeParcial(r: { faltan: readonly string[]; sinCerrar: readonly string[]; desde: string | null }): string {
   const abiertos = r.sinCerrar.filter((p) => !r.faltan.includes(p));
   const partes = [
+    r.desde ? `solo acumula desde ${r.desde} (la ficha cambió de versión)` : null,
     r.faltan.length > 0 ? `${r.faltan.length === 1 ? "falta" : "faltan"} ${enumerar(r.faltan)}` : null,
     abiertos.length > 0 ? `${abiertos.length === 1 ? "no está cerrado" : "no están cerrados"} ${enumerar(abiertos)}` : null,
   ].filter((p): p is string => p !== null);
-  return `El resultado es parcial: ${partes.join("; ")}. Puede registrarlo así.`;
+  return `El resultado es parcial: ${partes.join(" / ")}. Puede registrarlo así.`;
 }
 
 /** La justificación de una corrección, recortada, o el mensaje de por qué no vale. */

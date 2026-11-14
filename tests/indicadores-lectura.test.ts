@@ -450,6 +450,18 @@ describe("la lista", () => {
       // La barra cuenta solo lo que deja el filtro.
       const { resumen } = await lista(tx, admin, { procesoId: p.id, envio: "pendiente" });
       expect(resumen.bien + resumen.atencion + resumen.critico + resumen.sinDato + resumen.noAplica).toBe(2);
+
+      // Dos pendientes cuando el plazo del ente bajó: lo ya nacido conserva su fecha, y la del periodo más nuevo vence antes
+      // (aquí, ya venció). Basta con que alguna haya vencido para que la fila lo diga: el aviso de vencido enlaza a esta lista.
+      const dos = await conEnte(60, { ente: { nombre: "Superintendencia Nacional de Salud", periodicidad: "trimestral", plazoDias: 60, desde: new Date("2026-04-05T15:00:00Z") } });
+      await asegurarConstancias({ sql: tx, ahora: AHORA, indicadorId: dos.id });
+      await tx`UPDATE reportes_externos SET vence_en = ${new Date("2026-12-31T04:59:59.999Z")} WHERE indicador_id = ${dos.id} AND periodo = '2026-T2'`;
+      await tx`UPDATE reportes_externos SET vence_en = ${new Date("2026-10-16T04:59:59.999Z")} WHERE indicador_id = ${dos.id} AND periodo = '2026-T3'`;
+      expect((await tx`SELECT periodo, estado FROM reportes_externos WHERE indicador_id = ${dos.id} ORDER BY hasta`).map((r) => [r.periodo, r.estado])).toEqual([
+        ["2026-T2", "pendiente"],
+        ["2026-T3", "pendiente"],
+      ]);
+      expect((await lista(tx, admin, { procesoId: p.id })).filas.find((f) => f.id === dos.id)?.envio).toBe("vencido");
     }));
 });
 

@@ -44,12 +44,31 @@ function QuitarSoporte({ soporte }: { soporte: Soporte }) {
   );
 }
 
+/** Lo que dice la vista, donde iría la zona de carga, cuando el indicador está retirado. */
+const RETIRADO_EN_REGISTRO = "El indicador está retirado: no se pueden adjuntar ni quitar soportes. Puede registrar el envío con los que ya tiene.";
+const RETIRADO_EN_CORRECCION = "El indicador está retirado: no se pueden adjuntar soportes nuevos.";
+
 /**
  * Los soportes de una constancia, como los de una medición (`medicion/Soportes`): cada uno, un enlace de descarga con su
  * formato y su tamaño, y la zona de carga de las evidencias (PDF o imagen, nunca Excel), que sube por
- * `/api/reportes-externos/<id>/archivos`. Solo en una pendiente se quitan (`quitables`).
+ * `/api/reportes-externos/<id>/archivos` y se nombra con el periodo de su constancia. Solo en una pendiente se quitan. Con el
+ * indicador retirado (`editables` falso) no se adjuntan ni se quitan: en lugar de la zona de carga, la vista lo dice.
  */
-function SoportesDeConstancia({ constanciaId, codigo, soportes, quitables }: { constanciaId: number; codigo: string; soportes: Soporte[]; quitables: boolean }) {
+function SoportesDeConstancia({
+  constancia,
+  codigo,
+  soportes,
+  pendiente,
+  editables,
+}: {
+  constancia: { id: number; etiqueta: string };
+  codigo: string;
+  soportes: Soporte[];
+  /** De una pendiente (se quitan) o de una registrada (no). */
+  pendiente: boolean;
+  editables: boolean;
+}) {
+  const quitables = pendiente && editables;
   return (
     <div className="flex min-w-0 flex-col gap-3">
       <p className="text-sm font-medium">Soportes del envío</p>
@@ -70,12 +89,22 @@ function SoportesDeConstancia({ constanciaId, codigo, soportes, quitables }: { c
       ) : (
         <p className="text-sm text-muted-foreground">Sin soportes adjuntos.</p>
       )}
-      <p className="text-sm text-muted-foreground">
-        {quitables
-          ? "Un soporte puede ser un PDF o una imagen: la constancia del ente, el radicado o la captura del cargue. Se puede quitar mientras el envío no esté registrado. Solo lo ven quienes ven los soportes del indicador."
-          : "Puede adjuntar el documento correcto. Los soportes de un envío registrado no se quitan. Solo los ven quienes ven los soportes del indicador."}
-      </p>
-      <ZonaCarga direccion={`/api/reportes-externos/${constanciaId}/archivos`} evidencia />
+      {editables ? (
+        <>
+          <p className="text-sm text-muted-foreground">
+            {pendiente
+              ? "Un soporte puede ser un PDF o una imagen: la constancia del ente, el radicado o la captura del cargue. Se puede quitar mientras el envío no esté registrado. Solo lo ven quienes ven los soportes del indicador."
+              : "Puede adjuntar el documento correcto. Los soportes de un envío registrado no se quitan. Solo los ven quienes ven los soportes del indicador."}
+          </p>
+          <ZonaCarga
+            direccion={`/api/reportes-externos/${constancia.id}/archivos`}
+            evidencia
+            nombre={`Zona de carga de los soportes del reporte de ${constancia.etiqueta.toLowerCase()}: arrastre archivos o presione para elegirlos`}
+          />
+        </>
+      ) : (
+        <p className="text-sm text-muted-foreground">{pendiente ? RETIRADO_EN_REGISTRO : RETIRADO_EN_CORRECCION}</p>
+      )}
     </div>
   );
 }
@@ -100,7 +129,8 @@ function CamposDelEnvio({ prefijo, id, hoy, estado, constancia }: { prefijo: str
 /**
  * «Registrar el envío» de una constancia pendiente (anexo 14B, §8): antes, el resultado del periodo que se congela al
  * registrar y, si es parcial, qué falta (se puede registrar así); los soportes, con su zona de carga (registrar exige al
- * menos uno); y la fecha, el radicado y la nota. Sin clave. Registrada, la sección se va: el foco pasa al título.
+ * menos uno; en un indicador retirado, con los que ya tiene); y la fecha, el radicado y la nota. Sin clave. Registrada, la
+ * sección se va: el foco pasa al título.
  */
 export function RegistrarEnvio({
   constancia,
@@ -109,6 +139,7 @@ export function RegistrarEnvio({
   resultado,
   aviso,
   hoy,
+  soportesEditables,
 }: {
   constancia: { id: number; etiqueta: string };
   codigo: string;
@@ -119,6 +150,8 @@ export function RegistrarEnvio({
   aviso: string | null;
   /** `AAAA-MM-DD`, el límite de la fecha de envío. */
   hoy: string;
+  /** Se adjuntan y se quitan soportes: solo con el indicador activo. */
+  soportesEditables: boolean;
 }) {
   const [hecho, setHecho] = useState(false);
   const [estado, enviar, pendiente] = useAccionDeDialogo(registrarConstanciaAccion, () => setHecho(true));
@@ -132,7 +165,7 @@ export function RegistrarEnvio({
         {aviso ? <p className="rounded-md bg-estado-atencion-fondo px-3 py-2 text-sm text-estado-atencion-texto">{aviso}</p> : null}
         <p className="text-xs text-muted-foreground">Al registrar, este resultado queda congelado en la constancia: una corrección posterior de las mediciones no lo cambia.</p>
       </div>
-      <SoportesDeConstancia constanciaId={id} codigo={codigo} soportes={soportes} quitables />
+      <SoportesDeConstancia constancia={constancia} codigo={codigo} soportes={soportes} pendiente editables={soportesEditables} />
       <form action={enviar} className="flex min-w-0 flex-col gap-3">
         <input type="hidden" name="id" value={id} />
         <CamposDelEnvio prefijo="envio" id={id} hoy={hoy} estado={estado} constancia={null} />
@@ -150,19 +183,22 @@ export function RegistrarEnvio({
 
 /**
  * «Corregir» una constancia registrada (anexo 14B, §8): la fecha, el radicado o la nota, con su justificación; no recalcula
- * el resultado enviado. Admite un soporte más (el documento correcto), y los que tiene no se quitan. Un desplegable que se
- * cierra cuando la corrección se guarda.
+ * el resultado enviado. Admite un soporte más (el documento correcto) mientras el indicador esté activo, y los que tiene no
+ * se quitan. Un desplegable, con su propio nombre accesible, que se cierra cuando la corrección se guarda.
  */
 export function CorregirEnvio({
   constancia,
   codigo,
   soportes,
   hoy,
+  soportesEditables,
 }: {
   constancia: ConstanciaDelFormulario;
   codigo: string;
   soportes: Soporte[];
   hoy: string;
+  /** Se adjuntan soportes: solo con el indicador activo. */
+  soportesEditables: boolean;
 }) {
   const [estado, enviar, pendiente] = useActionState<EstadoAccion, FormData>(corregirConstanciaAccion, null);
   const desplegable = useRef<HTMLDetailsElement>(null);
@@ -173,13 +209,18 @@ export function CorregirEnvio({
   }, [pendiente, estado]);
   const { id, etiqueta } = constancia;
   return (
-    <details id={`constancia-${id}`} ref={desplegable} className="min-w-0 scroll-mt-24 rounded-lg border border-border px-4 py-3">
+    <details
+      id={`constancia-${id}`}
+      ref={desplegable}
+      aria-label={`Corregir el envío · ${etiqueta}`}
+      className="min-w-0 scroll-mt-24 rounded-lg border border-border px-4 py-3"
+    >
       <summary className={`cursor-pointer rounded-sm text-sm font-medium ${FOCO}`}>{`Corregir el envío · ${etiqueta}`}</summary>
       <div className="mt-3 flex min-w-0 flex-col gap-4">
         <p className="text-sm text-muted-foreground">
           La corrección no recalcula el resultado enviado. Queda en el historial con lo que había, lo que quedó y su justificación.
         </p>
-        <SoportesDeConstancia constanciaId={id} codigo={codigo} soportes={soportes} quitables={false} />
+        <SoportesDeConstancia constancia={constancia} codigo={codigo} soportes={soportes} pendiente={false} editables={soportesEditables} />
         <form action={enviar} className="flex min-w-0 flex-col gap-3">
           <input type="hidden" name="id" value={id} />
           <CamposDelEnvio prefijo="corregir" id={id} hoy={hoy} estado={estado} constancia={constancia} />

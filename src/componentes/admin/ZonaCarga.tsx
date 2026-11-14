@@ -33,18 +33,21 @@ const ERROR_SOPORTE = "El soporte debe ser PDF, imagen (PNG, JPG, WebP) o Excel 
 /**
  * `evidencia`: archivos de respaldo de una jornada, sin rol de archivo y limitados a PDF e imágenes. `soloPdf`: un
  * solo PDF sin rol (el de una norma; el servidor lo valida por sus bytes y reemplaza el anterior). `soporte`: como la
- * evidencia, y además un Excel `.xlsx` (el soporte de una medición de indicador).
+ * evidencia, y además un Excel `.xlsx` (el soporte de una medición de indicador). `nombre` reemplaza el nombre accesible de
+ * la zona cuando la página tiene varias (cada una dice de qué es).
  */
 export function ZonaCarga({
   direccion,
   evidencia = false,
   soloPdf = false,
   soporte = false,
+  nombre,
 }: {
   direccion: string;
   evidencia?: boolean;
   soloPdf?: boolean;
   soporte?: boolean;
+  nombre?: string;
 }) {
   const router = useRouter();
   const [rol, setRol] = useState<RolArchivo>("principal");
@@ -123,7 +126,7 @@ export function ZonaCarga({
       <div
         role="button"
         tabIndex={0}
-        aria-label={soloPdf ? "Zona de carga: arrastre el PDF o presione para elegirlo" : "Zona de carga: arrastre archivos o presione para elegirlos"}
+        aria-label={nombre ?? (soloPdf ? "Zona de carga: arrastre el PDF o presione para elegirlo" : "Zona de carga: arrastre archivos o presione para elegirlos")}
         onClick={() => entradaRef.current?.click()}
         onKeyDown={(e) => e.key === "Enter" && entradaRef.current?.click()}
         onDragOver={(e) => { e.preventDefault(); setArrastrando(true); }}

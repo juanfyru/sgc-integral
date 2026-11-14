@@ -77,6 +77,7 @@ import { obtenerSql } from "@/db/cliente";
 import { registrarArchivo } from "@/db/consultas/admin";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import type { Constancia } from "@/db/consultas/indicadores/constancias";
+import { PERIODICIDAD_EXTERNA_NO_CONTIENE } from "@/lib/indicadores/constancias";
 import type { FilaDelAnio, UltimoResultado } from "@/db/consultas/indicadores/lectura";
 import type { FilaDeLista } from "@/db/consultas/indicadores/lista";
 import type { CeldaDeMatriz, MatrizLeida } from "@/db/consultas/indicadores/matriz";
@@ -652,8 +653,9 @@ describe("la vista «Reportes al ente» (anexo 14B, §8)", () => {
     ]),
     registro: {
       hoy: "2026-11-14",
+      soportesEditables: true,
       resultados: new Map([
-        [13, { texto: "86,7 %", exacto: "260/3", parcial: true, faltan: [], sinCerrar: ["septiembre de 2026"], desde: null }],
+        [13, { texto: "86,7 %", exacto: "260/3", parcial: true, faltan: [], sinCerrar: ["septiembre de 2026"], desde: "agosto de 2026" }],
         [12, { texto: null, exacto: null, parcial: true, faltan: ["abril de 2026", "mayo de 2026", "junio de 2026"], sinCerrar: ["abril de 2026", "mayo de 2026", "junio de 2026"], desde: null }],
       ]),
     },
@@ -695,7 +697,10 @@ describe("la vista «Reportes al ente» (anexo 14B, §8)", () => {
     expect(html).toContain('href="#constancia-13"');
     // El resultado del periodo, antes de registrar, y el aviso de parcial.
     expect(html).toContain("Resultado del periodo: 86,7 %");
-    expect(html).toContain("El resultado es parcial: no está cerrado septiembre de 2026. Puede registrarlo así.");
+    // La ficha cambió de versión dentro del periodo: desde dónde acumula va primero.
+    expect(html).toContain(
+      "El resultado es parcial: solo acumula desde agosto de 2026 (la ficha cambió de versión) / no está cerrado septiembre de 2026. Puede registrarlo así.",
+    );
     expect(html).toContain("Resultado del periodo: sin resultado");
     expect(html).toContain("El resultado es parcial: faltan abril de 2026, mayo de 2026 y junio de 2026. Puede registrarlo así.");
     // Los campos, con un id por constancia, y la fecha de envío que no puede ser futura.
@@ -711,6 +716,14 @@ describe("la vista «Reportes al ente» (anexo 14B, §8)", () => {
     // Un soporte de una pendiente se quita; uno de una registrada, no.
     expect(html).toContain('aria-label="Quitar el soporte radicado-t3.pdf"');
     expect(html).not.toContain('aria-label="Quitar el soporte radicado-t1.pdf"');
+    // Cada zona de carga y cada «Corregir» se nombran con el periodo de su constancia: no se repite un nombre.
+    const zonas = [...html.matchAll(/role="button"[^>]*aria-label="([^"]*Zona de carga[^"]*)"|aria-label="([^"]*Zona de carga[^"]*)"[^>]*role="button"/g)].map((m) => m[1] ?? m[2]);
+    expect(zonas).toEqual([
+      "Zona de carga de los soportes del reporte de tercer trimestre de 2026: arrastre archivos o presione para elegirlos",
+      "Zona de carga de los soportes del reporte de segundo trimestre de 2026: arrastre archivos o presione para elegirlos",
+      "Zona de carga de los soportes del reporte de primer trimestre de 2026: arrastre archivos o presione para elegirlos",
+    ]);
+    expect(html).toMatch(/<details[^>]*aria-label="Corregir el envío · Primer trimestre de 2026"/);
     // «Corregir» la registrada: con lo que tiene y la justificación.
     expect(html).toMatch(/<summary[^>]*>Corregir/);
     expect(html).toMatch(/id="corregir-radicado-11"[^>]*name="radicado"[^>]*value="SNS-2026-0001"|value="SNS-2026-0001"[^>]*id="corregir-radicado-11"/);
@@ -732,12 +745,41 @@ describe("la vista «Reportes al ente» (anexo 14B, §8)", () => {
     expect(html).not.toContain("Zona de carga");
   });
 
-  it("la ficha con el ente incompleto lo dice; sin constancias, también", () => {
-    const html = renderToStaticMarkup(
+  it("en un indicador retirado, quien registra recibe los formularios sin zona de carga ni «Quitar», y lo dice", () => {
+    const html = renderToStaticMarkup(<ReportesAlEnte {...datos({ registro: { ...datos().registro!, soportesEditables: false } })} />);
+    expect(html).toMatch(/<h3[^>]*>Registrar el envío · Tercer trimestre de 2026</);
+    expect(html).toMatch(/<summary[^>]*>Corregir el envío · Primer trimestre de 2026</);
+    expect(html).toMatch(/id="envio-fecha-13"/);
+    expect(html).toMatch(/id="corregir-justificacion-11"/);
+    expect(html).not.toContain("Zona de carga");
+    expect(html).not.toContain("Quitar el soporte");
+    // Los soportes que tiene siguen como descarga.
+    expect(html).toContain('href="/indicadores/CEX-ID-001/soportes/70/radicado-t3.pdf"');
+    // Donde iría la zona de carga, lo que el retiro impide.
+    expect(html.match(/El indicador está retirado: no se pueden adjuntar ni quitar soportes\. Puede registrar el envío con los que ya tiene\./g)).toHaveLength(2);
+    expect(html.match(/El indicador está retirado: no se pueden adjuntar soportes nuevos\./g)).toHaveLength(1);
+  });
+
+  it("la ficha con el ente incompleto lo dice, y sin constancias no promete que nazcan", () => {
+    for (const ente of [
+      { ente: ENTE, seReporta: false, incompleto: true, conConstancias: false },
+      { ente: ENTE, seReporta: false, incompleto: false, conConstancias: false },
+    ]) {
+      const html = renderToStaticMarkup(<ReportesAlEnte {...datos({ ente, constancias: [], soportes: new Map(), historial: new Map() })} />);
+      expect(html).toContain(">Aún no hay constancias.</p>");
+      expect(html).not.toContain("la primera nace");
+    }
+    const incompleto = renderToStaticMarkup(
       <ReportesAlEnte {...datos({ ente: { ente: ENTE, seReporta: false, incompleto: true, conConstancias: false }, constancias: [], soportes: new Map(), historial: new Map() })} />,
     );
-    expect(html).toContain("Complete el ente, su periodicidad y su plazo en la ficha para llevar las constancias.");
-    expect(html).toContain("Aún no hay constancias");
+    expect(incompleto).toContain("Complete el ente, su periodicidad y su plazo en la ficha para llevar las constancias.");
+    const alReves = renderToStaticMarkup(
+      <ReportesAlEnte {...datos({ ente: { ente: ENTE, seReporta: false, incompleto: false, conConstancias: false }, constancias: [], soportes: new Map(), historial: new Map() })} />,
+    );
+    expect(alReves).toContain(`${PERIODICIDAD_EXTERNA_NO_CONTIENE}: corríjala en la ficha para llevar las constancias.`);
+    // Con la ficha que se reporta, el vacío dice cuándo nace la primera.
+    const alDia = renderToStaticMarkup(<ReportesAlEnte {...datos({ constancias: [], soportes: new Map(), historial: new Map() })} />);
+    expect(alDia).toContain("Aún no hay constancias: la primera nace cuando termina el primer periodo del ente.");
   });
 });
 
@@ -898,15 +940,23 @@ describe("las páginas", () => {
       expect(gerencia).not.toContain("Registrar el envío");
       expect(gerencia).not.toContain("Corregir el envío");
 
-      // Retirado (la constancia con soporte se conserva): quien mide ya no recibe formularios.
+      // Retirado (la constancia con soporte se conserva): quien administra la termina de registrar, sin adjuntar ni quitar.
       await tx`UPDATE indicadores SET estado = 'retirado', baja_por = ${mide.usuarioId}, baja_en = now(), baja_motivo = 'Ya no se mide' WHERE id = ${ind.id}`;
-      contexto.sesion = valida(mide);
+      contexto.sesion = valida(await sesionAdmin(tx));
       const retirado = await pagina(ind.codigo, { vista: "reportes" });
       expect(retirado).toContain("Primer trimestre de 2026");
       expect(retirado).toContain(">Soportes</th>");
-      expect(retirado).not.toContain("Registrar el envío");
-      expect(retirado).not.toContain("Corregir el envío");
+      expect(retirado).toMatch(/<h3[^>]*>Registrar el envío · Primer trimestre de 2026</);
+      expect(retirado).toContain("El indicador está retirado: no se pueden adjuntar ni quitar soportes. Puede registrar el envío con los que ya tiene.");
       expect(retirado).not.toContain("Zona de carga");
+      expect(retirado).not.toContain("Quitar el soporte");
+      // Gerencia sigue sin formularios.
+      contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "gerencia" }));
+      const gerenciaRetirado = await pagina(ind.codigo, { vista: "reportes" });
+      expect(gerenciaRetirado).toContain(">Soportes</th>");
+      expect(gerenciaRetirado).not.toContain("Registrar el envío");
+      expect(gerenciaRetirado).not.toContain("El indicador está retirado: no se pueden");
+      contexto.sesion = valida(mide);
 
       // Sin ente ni constancias: ni pestaña ni vista.
       const sinEnte = await indicadorDePrueba(tx, { periodicidad: "mensual", inicioMedicion: "2026-01", aprobadaEn: new Date("2026-01-10T15:00:00Z") });

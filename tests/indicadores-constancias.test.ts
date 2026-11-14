@@ -946,12 +946,12 @@ describe("el soporte de una constancia", () => {
       }
       expect(await autorizarSoporteDeConstancia(restringido.t2, restringido.mide, o)).toEqual({ ok: true });
 
-      // Retirado (la constancia con un soporte se conserva): ya no admite reportes ni soportes.
+      // Retirado (la constancia con un soporte se conserva): se puede terminar de registrar, pero no admite soportes nuevos.
       await registrarArchivo(archivoDeConstancia(t1), mide.usuarioId, o);
       await retirar(admin, { indicadorId: ind.id, motivo: "Ya no se mide" }, { sql: tx, ahora: AHORA });
       expect(await autorizarSoporteDeConstancia(t1, mide, o)).toEqual({ ok: false, estado: 409 });
       expect(await autorizarSoporteDeConstancia(t1, admin, o)).toEqual({ ok: false, estado: 409 });
-      await rechaza(registrarArchivo(archivoDeConstancia(t1, "otro.pdf"), mide.usuarioId, o), "El indicador está retirado: ya no admite reportes");
+      await rechaza(registrarArchivo(archivoDeConstancia(t1, "otro.pdf"), mide.usuarioId, o), "El indicador está retirado: ya no admite soportes nuevos");
       expect(await soportesDeBD(tx, t1)).toEqual(["radicado.pdf"]);
     }));
 
@@ -1014,9 +1014,9 @@ describe("el soporte de una constancia", () => {
       await rechaza(quitarSoporteDeConstancia(mide, { archivoId: 999_999_999 }, o), "El soporte no existe");
       expect(await soportesDeBD(tx, t3)).toEqual(["radicado.pdf"]);
 
-      // Retirado: ya no admite reportes, ni quitar soportes.
+      // Retirado: sus soportes ya no se quitan (sin el único soporte, la pendiente conservada no se registraría nunca).
       await retirar(await sesionAdmin(tx), { indicadorId: ind.id, motivo: "Ya no se mide" }, { sql: tx, ahora: AHORA });
-      await rechaza(quitarSoporteDeConstancia(mide, { archivoId: deT3 }, o), "El indicador está retirado: ya no admite reportes");
+      await rechaza(quitarSoporteDeConstancia(mide, { archivoId: deT3 }, o), "El indicador está retirado: sus soportes ya no se quitan");
       expect(await soportesDeBD(tx, t3)).toEqual(["radicado.pdf"]);
     }));
 
@@ -1099,16 +1099,26 @@ describe("el soporte de una constancia", () => {
       expect(await enteDeLaFicha(viejo.id, { sql: tx })).toEqual({ ente: ENTE, seReporta: false, incompleto: true, conConstancias: false });
     }));
 
-  it("avisoDeParcial dice qué falta y qué no está cerrado, sin repetir un periodo en las dos listas", () => {
-    expect(avisoDeParcial({ faltan: [], sinCerrar: ["septiembre de 2026"] })).toBe("El resultado es parcial: no está cerrado septiembre de 2026. Puede registrarlo así.");
-    expect(avisoDeParcial({ faltan: ["marzo de 2026"], sinCerrar: ["febrero de 2026", "marzo de 2026"] })).toBe(
-      "El resultado es parcial: falta marzo de 2026; no está cerrado febrero de 2026. Puede registrarlo así.",
+  it("avisoDeParcial dice desde dónde acumula, qué falta y qué no está cerrado, sin repetir un periodo en las dos listas", () => {
+    // Sin `desde`, como antes.
+    expect(avisoDeParcial({ faltan: [], sinCerrar: ["septiembre de 2026"], desde: null })).toBe(
+      "El resultado es parcial: no está cerrado septiembre de 2026. Puede registrarlo así.",
     );
-    expect(avisoDeParcial({ faltan: ["abril de 2026", "mayo de 2026", "junio de 2026"], sinCerrar: ["abril de 2026", "mayo de 2026", "junio de 2026"] })).toBe(
-      "El resultado es parcial: faltan abril de 2026, mayo de 2026 y junio de 2026. Puede registrarlo así.",
+    expect(avisoDeParcial({ faltan: ["marzo de 2026"], sinCerrar: ["febrero de 2026", "marzo de 2026"], desde: null })).toBe(
+      "El resultado es parcial: falta marzo de 2026 / no está cerrado febrero de 2026. Puede registrarlo así.",
     );
-    expect(avisoDeParcial({ faltan: [], sinCerrar: ["julio de 2026", "agosto de 2026"] })).toBe(
+    expect(
+      avisoDeParcial({ faltan: ["abril de 2026", "mayo de 2026", "junio de 2026"], sinCerrar: ["abril de 2026", "mayo de 2026", "junio de 2026"], desde: null }),
+    ).toBe("El resultado es parcial: faltan abril de 2026, mayo de 2026 y junio de 2026. Puede registrarlo así.");
+    expect(avisoDeParcial({ faltan: [], sinCerrar: ["julio de 2026", "agosto de 2026"], desde: null })).toBe(
       "El resultado es parcial: no están cerrados julio de 2026 y agosto de 2026. Puede registrarlo así.",
+    );
+    // Parcial solo por el cambio de versión dentro del periodo, y con algo que falta: `desde` va primero.
+    expect(avisoDeParcial({ faltan: [], sinCerrar: [], desde: "agosto de 2026" })).toBe(
+      "El resultado es parcial: solo acumula desde agosto de 2026 (la ficha cambió de versión). Puede registrarlo así.",
+    );
+    expect(avisoDeParcial({ faltan: ["junio de 2026"], sinCerrar: ["junio de 2026"], desde: "abril de 2026" })).toBe(
+      "El resultado es parcial: solo acumula desde abril de 2026 (la ficha cambió de versión) / falta junio de 2026. Puede registrarlo así.",
     );
   });
 });

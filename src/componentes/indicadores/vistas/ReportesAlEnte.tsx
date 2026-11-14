@@ -2,7 +2,7 @@ import { Insignia, type VarianteInsignia } from "@/componentes/ui/Insignia";
 import { celda, TablaDatos, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
 import type { Constancia, EnteDeLaFicha, EventoDeConstancia, ResultadoExterno } from "@/db/consultas/indicadores/constancias";
 import type { Soporte } from "@/db/consultas/indicadores/soportes";
-import { avisoDeParcial } from "@/lib/indicadores/constancias";
+import { avisoDeParcial, PERIODICIDAD_EXTERNA_NO_CONTIENE } from "@/lib/indicadores/constancias";
 import { fechaYHora } from "@/lib/indicadores/ficha-en-texto";
 import { enlaceDeSoporte } from "@/lib/indicadores/soportes";
 import { textoFecha } from "@/lib/vigencia/plazo";
@@ -20,10 +20,11 @@ export type DatosDeReportes = {
   /** El historial de cada constancia, con la misma regla. */
   historial: Map<number, EventoDeConstancia[]> | null;
   /**
-   * Lo que pide registrar y corregir, solo a quien puede (ve el indicador activo y lo mide, o administra indicadores): el
-   * día de hoy (la fecha de envío no puede ser futura) y el resultado del periodo de cada pendiente.
+   * Lo que pide registrar y corregir, solo a quien puede (ve el indicador y lo mide, o administra indicadores): el día de
+   * hoy (la fecha de envío no puede ser futura), si se pueden adjuntar y quitar soportes (solo en un indicador activo: el
+   * retiro no impide terminar de registrar ni corregir lo conservado) y el resultado del periodo de cada pendiente.
    */
-  registro: { hoy: string; resultados: Map<number, ResultadoExterno> } | null;
+  registro: { hoy: string; soportesEditables: boolean; resultados: Map<number, ResultadoExterno> } | null;
 };
 
 const TITULO = "Constancias de envío";
@@ -113,7 +114,7 @@ function presentacion(e: EnteDeLaFicha): { texto: string; aviso: string | null }
   if (!e.seReporta) {
     return {
       texto: `Se reporta a ${e.ente}.`,
-      aviso: "La periodicidad del ente debe ser la de medición o una que la contenga: corríjala en la ficha para llevar las constancias.",
+      aviso: `${PERIODICIDAD_EXTERNA_NO_CONTIENE}: corríjala en la ficha para llevar las constancias.`,
     };
   }
   return { texto: `Se reporta a ${e.ente}. Cada periodo del ente pide su constancia de envío: la fecha, el radicado y al menos un soporte.`, aviso: null };
@@ -158,7 +159,10 @@ export function ReportesAlEnte({ codigo, ente, constancias, soportes, historial,
         </Recuadro>
       ) : null}
       {constancias.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Aún no hay constancias: la primera nace cuando termina el primer periodo del ente.</p>
+        // Con la ficha que no genera constancias (el ente incompleto o al revés) no se promete que nazcan.
+        <p className="text-sm text-muted-foreground">
+          {ente.seReporta ? "Aún no hay constancias: la primera nace cuando termina el primer periodo del ente." : "Aún no hay constancias."}
+        </p>
       ) : (
         <>
           <div className="hidden md:block">
@@ -243,6 +247,7 @@ export function ReportesAlEnte({ codigo, ente, constancias, soportes, historial,
                 resultado={`Resultado del periodo: ${r?.texto ?? "sin resultado"}`}
                 aviso={r?.parcial ? avisoDeParcial(r) : null}
                 hoy={registro.hoy}
+                soportesEditables={registro.soportesEditables}
               />
             );
           })}
@@ -257,6 +262,7 @@ export function ReportesAlEnte({ codigo, ente, constancias, soportes, historial,
               codigo={codigo}
               soportes={soportesDe(c)}
               hoy={registro.hoy}
+              soportesEditables={registro.soportesEditables}
             />
           ))}
         </div>

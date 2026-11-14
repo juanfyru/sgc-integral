@@ -14,13 +14,11 @@
  * `retirar` quitan las pendientes con `quitarConstanciasSinSoporte` (`operacion.ts`), sin importar este archivo.
  */
 import { unlink } from "node:fs/promises";
-import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import {
   filtroIndicadores,
-  puedeMedir,
   puedeVerIndicador,
   puedeVerSoportes,
   responsableDe,
@@ -45,14 +43,22 @@ import { ErrorPermiso, puede } from "@/lib/permisos";
 import type { Tarea } from "@/lib/tareas";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
+import { CONSTANCIA_NO_EXISTE as NO_EXISTE, puedeRegistrarConstancia } from "./constancias-soporte";
 import { basesDe, leerPeriodos, resumenAcumulado } from "./lectura";
 import { conMayuscula } from "./mediciones";
 import type { Soporte } from "./soportes";
 
+export {
+  autorizarSoporteDeConstancia,
+  bloquearParaSoporteDeConstancia,
+  dejarSoporteDeConstanciaSubido,
+  puedeRegistrarConstancia,
+} from "./constancias-soporte";
+
 type Opciones = { sql?: Cliente; ahora?: Date };
 
-const NO_EXISTE = "La constancia no existe";
-const RETIRADO = "El indicador está retirado: ya no admite reportes";
+/** Lo que el retiro impide de los soportes que ya tiene: si se quitara el único de una pendiente, no se registraría nunca. */
+const RETIRADO_SOPORTES_FIJOS = "El indicador está retirado: sus soportes ya no se quitan";
 const YA_REGISTRADA = "La constancia ya está registrada: corríjala";
 const SIN_REGISTRAR = "La constancia aún no está registrada: regístrela";
 const SIN_SOPORTE = "Adjunte al menos un soporte antes de registrar";
@@ -207,13 +213,8 @@ export async function resultadoDelPeriodoExterno(sql: Cliente, indicadorId: numb
 // Registrar y corregir
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Quien ve el indicador y puede medirlo (`puedeMedir`) o administra indicadores. */
-export async function puedeRegistrarConstancia(indicadorId: number, sujeto: SujetoVisibilidad, opciones?: { sql?: Cliente }): Promise<boolean> {
-  const sql = opciones?.sql ?? obtenerSql();
-  if (!(await puedeVerIndicador(indicadorId, sujeto, { sql }))) return false;
-  if (puede(sujeto, "indicadores.administrar")) return true;
-  return (await puedeMedir(indicadorId, sujeto, { sql })).puede;
-}
+// `puedeRegistrarConstancia` (quien ve el indicador y puede medirlo, o administra indicadores) vive en
+// `constancias-soporte.ts` y se reexporta arriba.
 
 type ConstanciaBloqueada = { id: number; indicadorId: number; codigo: string; periodo: string; ente: string; estado: string; envio: Envio };
 
@@ -422,63 +423,16 @@ export async function tareasDeConstancias(sql: Cliente, sesion: SesionFlujo): Pr
 // Los soportes de una constancia
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Quién puede subir un soporte a la constancia, antes de recibir el cuerpo: 404 si no existe o la persona no ve su
- * indicador, 403 si lo ve y no puede registrarla, 409 si el indicador ya no está activo (la transacción de
- * `registrarArchivo` lo vuelve a exigir con los candados). Una constancia registrada también admite soportes: no se quitan,
- * pero una corrección puede necesitar el documento correcto.
- */
-export async function autorizarSoporteDeConstancia(
-  reporteId: number,
-  sesion: SujetoVisibilidad,
-  opciones?: { sql?: Cliente },
-): Promise<{ ok: true } | { ok: false; estado: 403 | 404 | 409 }> {
-  const sql = opciones?.sql ?? obtenerSql();
-  if (!Number.isSafeInteger(reporteId) || reporteId <= 0) return { ok: false, estado: 404 };
-  const [r] = await sql`SELECT r.indicador_id, i.estado FROM reportes_externos r JOIN indicadores i ON i.id = r.indicador_id WHERE r.id = ${reporteId}`;
-  if (!r) return { ok: false, estado: 404 };
-  const indicadorId = Number(r.indicador_id);
-  if (!(await puedeVerIndicador(indicadorId, sesion, { sql }))) return { ok: false, estado: 404 };
-  if (!(await puedeRegistrarConstancia(indicadorId, sesion, { sql }))) return { ok: false, estado: 403 };
-  if (r.estado !== "activo") return { ok: false, estado: 409 };
-  return { ok: true };
-}
-
-/**
- * Los candados de quien sube un soporte a una constancia (`registrarArchivo`), antes de escribir nada: el indicador
- * `FOR SHARE` y activo, después la constancia `FOR UPDATE`. Quien llama ya comprobó a la persona
- * (`autorizarSoporteDeConstancia`); `dejarSoporteDeConstanciaSubido` la vuelve a comprobar con los candados tomados.
- */
-export async function bloquearParaSoporteDeConstancia(tx: TransactionSql, reporteId: number): Promise<void> {
-  const [i] = await tx`SELECT estado FROM indicadores
-    WHERE id = (SELECT indicador_id FROM reportes_externos WHERE id = ${reporteId}) FOR SHARE`;
-  const [r] = await tx`SELECT id FROM reportes_externos WHERE id = ${reporteId} FOR UPDATE`;
-  if (!i || !r) throw new ErrorIndicador(NO_EXISTE);
-  if (i.estado !== "activo") throw new ErrorIndicador(RETIRADO);
-}
-
-/**
- * El evento `soporte` de una subida (`{ nombre, accion: "subido" }`), con la fila de `archivos` ya escrita y los candados de
- * `bloquearParaSoporteDeConstancia`. La persona se vuelve a comprobar: su designación pudo cambiar tras autorizar.
- */
-export async function dejarSoporteDeConstanciaSubido(
-  tx: TransactionSql,
-  c: { reporteId: number; usuarioId: number; nombre: string; ahora: Date },
-): Promise<void> {
-  const [u] = await tx`SELECT rol, ver_historial FROM usuarios WHERE id = ${c.usuarioId}`;
-  const [r] = await tx`SELECT indicador_id FROM reportes_externos WHERE id = ${c.reporteId}`;
-  const sujeto = u ? { usuarioId: c.usuarioId, rol: u.rol, verHistorial: u.ver_historial === true } : null;
-  if (!sujeto || !r || !(await puedeRegistrarConstancia(Number(r.indicador_id), sujeto, { sql: tx }))) throw new ErrorPermiso();
-  await tx`INSERT INTO reporte_externo_eventos (reporte_id, tipo, usuario_id, detalle, creado_en)
-    VALUES (${c.reporteId}, 'soporte', ${c.usuarioId}, ${tx.json({ nombre: c.nombre, accion: "subido" })}, ${c.ahora})`;
-}
+// `autorizarSoporteDeConstancia`, `bloquearParaSoporteDeConstancia` y `dejarSoporteDeConstanciaSubido` viven en
+// `constancias-soporte.ts` (los usa `registrarArchivo` sin cargar este archivo) y se reexportan arriba.
 
 /**
  * Quita un soporte de una constancia **pendiente** (anexo §8: el de una registrada no se quita): borra la fila y deja el
  * evento `soporte` (`accion: "quitado"`) y la bitácora; el archivo del almacén se borra después de confirmar, y uno ya
  * ausente no es un error. Quien no ve el indicador ni sus soportes recibe lo mismo que si el soporte no existiera; quien los
- * ve y no puede registrar, «sin permiso»; con el indicador retirado, ya no admite reportes. El evento queda: una pendiente
- * con historia no se quita al dejar de pedirse (`quitarConstanciasSinSoporte`).
+ * ve y no puede registrar, «sin permiso». Con el indicador retirado sus soportes ya no se quitan: si se quitara el único de
+ * una pendiente conservada, no podría registrarse nunca. El evento queda: una pendiente con historia no se quita al dejar de
+ * pedirse (`quitarConstanciasSinSoporte`).
  */
 export async function quitarSoporteDeConstancia(sesion: SesionFlujo, d: { archivoId: number }, opciones?: Opciones): Promise<void> {
   if (!puede(sesion, "indicadores.medir")) throw new ErrorPermiso();
@@ -497,7 +451,7 @@ export async function quitarSoporteDeConstancia(sesion: SesionFlujo, d: { archiv
       throw new ErrorIndicador(SOPORTE_NO_EXISTE);
     }
     if (!(await puedeRegistrarConstancia(indicadorId, sesion, { sql: tx }))) throw new ErrorPermiso();
-    if (i.estado !== "activo") throw new ErrorIndicador(RETIRADO);
+    if (i.estado !== "activo") throw new ErrorIndicador(RETIRADO_SOPORTES_FIJOS);
     if (r.estado !== "pendiente") throw new ErrorIndicador(SOPORTE_DE_REGISTRADA);
     const [archivo] = await tx`SELECT ruta, nombre_original FROM archivos
       WHERE id = ${d.archivoId} AND contexto = 'reporte_externo' AND contexto_id = ${reporteId} AND rol = 'evidencia' FOR UPDATE`;

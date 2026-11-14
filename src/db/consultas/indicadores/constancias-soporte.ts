@@ -1,0 +1,74 @@
+/**
+ * Quién registra una constancia de envío al ente y lo que la subida de su soporte necesita (anexo 14B, §8), aparte de
+ * `constancias.ts` para que `registrarArchivo` (`admin.ts`) lo use sin cargar la lectura de los periodos: `constancias.ts`
+ * importa `lectura.ts`, que llega a `aprobacion.ts` y de ahí a los avisos y a `estructura.ts`, que importa `admin.ts`. Este
+ * módulo solo depende de `alcance`, `permisos` y los tipos de indicadores, y `constancias.ts` reexporta lo suyo.
+ */
+import type { TransactionSql } from "postgres";
+import { obtenerSql, type Cliente } from "@/db/cliente";
+import { puedeMedir, puedeVerIndicador, type SujetoVisibilidad } from "@/lib/alcance";
+import { ErrorIndicador } from "@/lib/indicadores/tipos";
+import { ErrorPermiso, puede } from "@/lib/permisos";
+
+export const CONSTANCIA_NO_EXISTE = "La constancia no existe";
+/** Lo que el retiro sí impide: subir soportes nuevos (registrar y corregir lo conservado, no). */
+export const RETIRADO_SIN_SOPORTES_NUEVOS = "El indicador está retirado: ya no admite soportes nuevos";
+
+/** Quien ve el indicador y puede medirlo (`puedeMedir`) o administra indicadores. */
+export async function puedeRegistrarConstancia(indicadorId: number, sujeto: SujetoVisibilidad, opciones?: { sql?: Cliente }): Promise<boolean> {
+  const sql = opciones?.sql ?? obtenerSql();
+  if (!(await puedeVerIndicador(indicadorId, sujeto, { sql }))) return false;
+  if (puede(sujeto, "indicadores.administrar")) return true;
+  return (await puedeMedir(indicadorId, sujeto, { sql })).puede;
+}
+
+/**
+ * Quién puede subir un soporte a la constancia, antes de recibir el cuerpo: 404 si no existe o la persona no ve su
+ * indicador, 403 si lo ve y no puede registrarla, 409 si el indicador ya no está activo (la transacción de
+ * `registrarArchivo` lo vuelve a exigir con los candados). Una constancia registrada también admite soportes: no se quitan,
+ * pero una corrección puede necesitar el documento correcto.
+ */
+export async function autorizarSoporteDeConstancia(
+  reporteId: number,
+  sesion: SujetoVisibilidad,
+  opciones?: { sql?: Cliente },
+): Promise<{ ok: true } | { ok: false; estado: 403 | 404 | 409 }> {
+  const sql = opciones?.sql ?? obtenerSql();
+  if (!Number.isSafeInteger(reporteId) || reporteId <= 0) return { ok: false, estado: 404 };
+  const [r] = await sql`SELECT r.indicador_id, i.estado FROM reportes_externos r JOIN indicadores i ON i.id = r.indicador_id WHERE r.id = ${reporteId}`;
+  if (!r) return { ok: false, estado: 404 };
+  const indicadorId = Number(r.indicador_id);
+  if (!(await puedeVerIndicador(indicadorId, sesion, { sql }))) return { ok: false, estado: 404 };
+  if (!(await puedeRegistrarConstancia(indicadorId, sesion, { sql }))) return { ok: false, estado: 403 };
+  if (r.estado !== "activo") return { ok: false, estado: 409 };
+  return { ok: true };
+}
+
+/**
+ * Los candados de quien sube un soporte a una constancia (`registrarArchivo`), antes de escribir nada: el indicador
+ * `FOR SHARE` y activo, después la constancia `FOR UPDATE`. Quien llama ya comprobó a la persona
+ * (`autorizarSoporteDeConstancia`); `dejarSoporteDeConstanciaSubido` la vuelve a comprobar con los candados tomados.
+ */
+export async function bloquearParaSoporteDeConstancia(tx: TransactionSql, reporteId: number): Promise<void> {
+  const [i] = await tx`SELECT estado FROM indicadores
+    WHERE id = (SELECT indicador_id FROM reportes_externos WHERE id = ${reporteId}) FOR SHARE`;
+  const [r] = await tx`SELECT id FROM reportes_externos WHERE id = ${reporteId} FOR UPDATE`;
+  if (!i || !r) throw new ErrorIndicador(CONSTANCIA_NO_EXISTE);
+  if (i.estado !== "activo") throw new ErrorIndicador(RETIRADO_SIN_SOPORTES_NUEVOS);
+}
+
+/**
+ * El evento `soporte` de una subida (`{ nombre, accion: "subido" }`), con la fila de `archivos` ya escrita y los candados de
+ * `bloquearParaSoporteDeConstancia`. La persona se vuelve a comprobar: su designación pudo cambiar tras autorizar.
+ */
+export async function dejarSoporteDeConstanciaSubido(
+  tx: TransactionSql,
+  c: { reporteId: number; usuarioId: number; nombre: string; ahora: Date },
+): Promise<void> {
+  const [u] = await tx`SELECT rol, ver_historial FROM usuarios WHERE id = ${c.usuarioId}`;
+  const [r] = await tx`SELECT indicador_id FROM reportes_externos WHERE id = ${c.reporteId}`;
+  const sujeto = u ? { usuarioId: c.usuarioId, rol: u.rol, verHistorial: u.ver_historial === true } : null;
+  if (!sujeto || !r || !(await puedeRegistrarConstancia(Number(r.indicador_id), sujeto, { sql: tx }))) throw new ErrorPermiso();
+  await tx`INSERT INTO reporte_externo_eventos (reporte_id, tipo, usuario_id, detalle, creado_en)
+    VALUES (${c.reporteId}, 'soporte', ${c.usuarioId}, ${tx.json({ nombre: c.nombre, accion: "subido" })}, ${c.ahora})`;
+}

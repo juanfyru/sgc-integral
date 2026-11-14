@@ -612,7 +612,7 @@ describe("POST /api/reportes-externos/[id]/archivos", () => {
       await tx`UPDATE indicadores SET estado = 'retirado', baja_por = ${admin.sesion.usuarioId}, baja_en = now(), baja_motivo = 'Ya no se mide' WHERE id = ${ind.id}`;
       const retirado = await subirAConstancia(mide.token, t3, "otro.pdf", pdf);
       expect(retirado.status).toBe(409);
-      expect(await retirado.json()).toEqual({ error: "El indicador está retirado: ya no admite reportes" });
+      expect(await retirado.json()).toEqual({ error: "El indicador está retirado: ya no admite soportes nuevos" });
       expect(await archivosDeConstancia(tx, t3)).toHaveLength(1);
     }));
 

@@ -197,8 +197,8 @@ export async function datosDeObservaciones(c: ContextoDeVista, sp: Parametros, r
 /**
  * «Reportes al ente» (anexo 14B, §8): antes de leer se abren los periodos y las constancias que hayan terminado, como en
  * «Resultados» (la tarea de la constancia enlaza directo aquí). Los soportes y el historial, a quien ve los soportes; el
- * resultado del periodo de cada pendiente, que el formulario muestra antes de registrar, solo a quien puede registrar con el
- * indicador activo.
+ * resultado del periodo de cada pendiente, que el formulario muestra antes de registrar, solo a quien puede registrar. En un
+ * retirado se sigue registrando y corrigiendo lo conservado, sin adjuntar ni quitar soportes (`soportesEditables`).
  */
 export async function datosDeReportes(c: ContextoDeVista, ente: EnteDeLaFicha): Promise<DatosDeReportes> {
   const { sesion, indicador, ahora } = c;
@@ -211,13 +211,13 @@ export async function datosDeReportes(c: ContextoDeVista, ente: EnteDeLaFicha): 
     historialDeConstancias(sesion, indicador.id),
   ]);
   if (!constancias) notFound();
+  // El retiro no impide terminar de registrar ni corregir lo conservado; sí adjuntar o quitar soportes.
   let registro: DatosDeReportes["registro"] = null;
-  if (indicador.estado === "activo" && (await puedeRegistrarConstancia(indicador.id, sesion))) {
-    const resultados = new Map<number, ResultadoExterno>();
-    for (const k of constancias.filter((x) => x.estado === "pendiente")) {
-      resultados.set(k.id, await resultadoDelPeriodoExterno(sql, indicador.id, k.periodo, ahora));
-    }
-    registro = { hoy: fechaEnZona(ahora, zonaHoraria()), resultados };
+  if (await puedeRegistrarConstancia(indicador.id, sesion)) {
+    const pendientes = constancias.filter((x) => x.estado === "pendiente");
+    const leidos = await Promise.all(pendientes.map((k) => resultadoDelPeriodoExterno(sql, indicador.id, k.periodo, ahora)));
+    const resultados = new Map<number, ResultadoExterno>(pendientes.map((k, i) => [k.id, leidos[i]]));
+    registro = { hoy: fechaEnZona(ahora, zonaHoraria()), soportesEditables: indicador.estado === "activo", resultados };
   }
   return { codigo: indicador.codigo, ente, constancias, soportes, historial, registro };
 }

@@ -16,7 +16,7 @@ import {
   type DestinoDeCodigo,
 } from "./codigos";
 import { exigirHallazgoNoCerrado, exigirVerificacionAbierta } from "./distribucion/verificacion-abierta";
-import { bloquearParaSoporteDeConstancia, dejarSoporteDeConstanciaSubido } from "./indicadores/constancias";
+import { bloquearParaSoporteDeConstancia, dejarSoporteDeConstanciaSubido } from "./indicadores/constancias-soporte";
 import { bloquearParaSoporte, dejarSoporteSubido } from "./indicadores/soportes";
 import { exigirLoteSinArchivo } from "./indicadores/lote-importacion";
 import { alDejarDeSerVigente } from "./distribucion/version-vigencia";

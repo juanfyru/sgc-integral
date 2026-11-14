@@ -126,8 +126,10 @@ export type FilaDeLista = {
   /** «Reportado», «Por reportar», «Falta el análisis», «Falta un dato», «Vencido hace 6 días». */
   reporte: { texto: string; vencida: boolean };
   /**
-   * La constancia de envío al ente pendiente más antigua de un indicador activo (anexo 14B, §8): `vencido` si su fecha límite
-   * ya pasó; `null` sin pendientes. Un retirado ya no admite reportes: no se marca.
+   * La constancia de envío al ente pendiente de un indicador activo con la fecha límite más antigua (anexo 14B, §8; un cambio
+   * de plazo no mueve la de lo ya nacido, así que no tiene por qué ser la del periodo más antiguo): `vencido` si alguna
+   * pendiente ya venció; `null` sin pendientes. Una pendiente conservada de un retirado no se persigue desde la lista (ni
+   * desde las tareas ni los avisos): se termina desde la página del indicador.
    */
   envio: "pendiente" | "vencido" | null;
 };
@@ -211,7 +213,7 @@ export async function listarIndicadores(
       SELECT numero, estado, nombre, periodicidad FROM indicador_versiones WHERE indicador_id = i.id ORDER BY numero DESC LIMIT 1
     ) vu ON ${administra}
     LEFT JOIN LATERAL (
-      SELECT vence_en FROM reportes_externos WHERE indicador_id = i.id AND estado = 'pendiente' ORDER BY hasta, id LIMIT 1
+      SELECT vence_en FROM reportes_externos WHERE indicador_id = i.id AND estado = 'pendiente' ORDER BY vence_en, hasta, id LIMIT 1
     ) env ON i.estado = 'activo'
     WHERE ${filtroIndicadores(sql, sesion)} AND i.estado IN ${sql(estados)}
       ${filtro.envio ? sql`AND env.vence_en IS NOT NULL` : sql``}
