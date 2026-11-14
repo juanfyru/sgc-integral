@@ -227,6 +227,12 @@ describe("huella de la ficha", () => {
     nuevo.unidadNombre = "Porcentaje (%)";
     expect(huellaDeFicha(nuevo)).not.toBe(huellaDeFicha(base()));
   });
+  it("una ficha automática firma su cálculo y su alcance (anexo 14B, §5.3)", () => {
+    const automatica = (alcance: string): ContenidoFicha => ({ ...base(), origenDato: "automatico", calculo: "acuses", calculoAlcance: alcance });
+    expect(huellaDeFicha(automatica("entidad"))).toMatch(/^[0-9a-f]{64}$/);
+    expect(huellaDeFicha(automatica("entidad"))).not.toBe(huellaDeFicha(automatica("proceso")));
+    expect(huellaDeFicha(automatica("entidad"))).not.toBe(huellaDeFicha(base()));
+  });
 });
 
 describe("estados de una medición", () => {

@@ -771,6 +771,17 @@ describe("la ficha de indicador", () => {
     expect(nombreDeAccion("indicador_designados")).toBe("Cambió las personas designadas de un indicador");
     expect(nombreDeAccion("indicador_retirado")).toBe("Retiró un indicador");
   });
+
+  it("dice a cuántas personas quitó de «mide» al publicarse una ficha automática (anexo 14B, §5.3)", () => {
+    expect(frase("indicador_medidores_quitados", { codigo: "SGC-ID-007", cuantos: 2 })).toBe(
+      "Quitó a 2 personas de «mide» en SGC-ID-007: ahora lo calcula el sistema",
+    );
+    expect(frase("indicador_medidores_quitados", { codigo: "SGC-ID-007", cuantos: 1 })).toBe(
+      "Quitó a 1 persona de «mide» en SGC-ID-007: ahora lo calcula el sistema",
+    );
+    expect(frase("indicador_medidores_quitados", {})).toBe("Quitó a quienes miden un indicador: ahora lo calcula el sistema");
+    expect(nombreDeAccion("indicador_medidores_quitados")).toBe("Quitó a quienes miden un indicador que calcula el sistema");
+  });
 });
 
 describe("la medición de un indicador", () => {

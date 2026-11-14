@@ -47,6 +47,7 @@ import {
   type Consolidacion,
   type EstadoMedicion,
   type ModoSemaforo,
+  type OrigenDato,
   type Periodicidad,
   type Semaforo,
   type Tendencia,
@@ -110,6 +111,13 @@ export type VersionDeCalculo = {
   aprobadaEn: Date | null;
   periodicidad: Periodicidad | null;
   nombre: string | null;
+  /** De dónde sale el dato (anexo 14B, §5.3): lo digita una persona o lo calcula el sistema. */
+  origenDato: OrigenDato;
+  /**
+   * El cálculo que hace el sistema y su alcance, en una versión automática; `null` en una manual. No se llama `calculo`:
+   * ese nombre ya es el de la fórmula y sus letras.
+   */
+  calculoAutomatico: { clave: string; alcance: string } | null;
   calculo: CalculoEnTexto;
   /** La regla de la ficha; la meta programada del periodo la reemplaza (`reglaDelPeriodo`). */
   regla: ReglaEnTexto;
@@ -129,8 +137,9 @@ export async function versionesAprobadas(sql: Cliente, indicadorId: number): Pro
 export async function versionesAprobadasDe(sql: Cliente, indicadorIds: readonly number[]): Promise<Map<number, VersionDeCalculo[]>> {
   const salida = new Map<number, VersionDeCalculo[]>();
   if (indicadorIds.length === 0) return salida;
-  const filas = await sql`SELECT id, indicador_id, numero, tipo_cambio, rige_desde, aprobada_en, periodicidad, nombre, formula, resultado_min,
-      resultado_max, tendencia, meta, meta_max, semaforo_modo, umbral_atencion_pct, limite_critico, tolerancia, rangos, unidad_sufijo, decimales
+  const filas = await sql`SELECT id, indicador_id, numero, tipo_cambio, rige_desde, aprobada_en, periodicidad, nombre, origen_dato, calculo,
+      calculo_alcance, formula, resultado_min, resultado_max, tendencia, meta, meta_max, semaforo_modo, umbral_atencion_pct, limite_critico,
+      tolerancia, rangos, unidad_sufijo, decimales
     FROM indicador_versiones WHERE indicador_id IN ${sql([...new Set(indicadorIds)])} AND estado = 'aprobada'
     ORDER BY indicador_id, numero DESC`;
   if (filas.length === 0) return salida;
@@ -163,6 +172,11 @@ export async function versionesAprobadasDe(sql: Cliente, indicadorIds: readonly 
       aprobadaEn: f.aprobada_en ? new Date(f.aprobada_en as string) : null,
       periodicidad: (f.periodicidad as Periodicidad | null) ?? null,
       nombre: texto(f.nombre),
+      origenDato: f.origen_dato === "automatico" ? "automatico" : "manual",
+      calculoAutomatico:
+        f.origen_dato === "automatico" && f.calculo !== null && f.calculo_alcance !== null
+          ? { clave: f.calculo as string, alcance: f.calculo_alcance as string }
+          : null,
       calculo: {
         formula: (f.formula as string | null) ?? "",
         letras: propias.map((v) => v.letra),

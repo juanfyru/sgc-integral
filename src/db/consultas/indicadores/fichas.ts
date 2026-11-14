@@ -17,6 +17,7 @@ import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { filtroAcceso, type SujetoVisibilidad } from "@/lib/alcance";
 import { EsquemaFicha, EsquemaFichaImportada, type DatosFicha } from "@/lib/esquemas/indicadores";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
+import { alcanceAdmitido, CALCULOS, calculoDe, CLAVES_DE_CALCULO, ETIQUETA_ALCANCE } from "@/lib/indicadores/calculos/registro";
 import { tipoDeCambio, type ContenidoFicha } from "@/lib/indicadores/ficha";
 import { analizar } from "@/lib/indicadores/formula/analizar";
 import { formulaDeForma } from "@/lib/indicadores/formula/formas";
@@ -159,13 +160,53 @@ function leer(d: DatosFichaNueva, importada = false): DatosFichaNueva {
 
 const fr = (v: string | null | undefined) => (v === null || v === undefined ? null : fraccion(v));
 
+/** La fuente de las variables de una ficha automática: nadie las digita. */
+const FUENTE_AUTOMATICA = "La calcula el sistema";
+
+/**
+ * De dónde sale el dato (anexo 14B, §5.3). Una ficha automática toma del registro su forma, su fórmula, sus variables (con
+ * el nombre y la descripción del registro, que quedan firmados) y su tendencia, sin importar lo que traiga el formulario;
+ * nadie la mide, no lleva soporte obligatorio y no se prueba con valores. Una manual no lleva cálculo y exige un cargo
+ * que mida (una importada, no: la plantilla no lo trae). Lo que devuelve vuelve a pasar igual.
+ */
+function conOrigen(d: DatosFichaNueva, importada: boolean): DatosFichaNueva {
+  if (d.origenDato !== "automatico") {
+    if (!importada && d.cargosMedir.length === 0) throw new ErrorIndicador("Elija al menos un cargo responsable de medir");
+    return { ...d, origenDato: "manual", calculo: undefined, calculoAlcance: undefined };
+  }
+  const def = calculoDe(d.calculo);
+  if (!def) throw new ErrorIndicador("Elija el cálculo que hace el sistema");
+  if (!alcanceAdmitido(def, d.calculoAlcance)) throw new ErrorIndicador("Ese cálculo no admite ese alcance");
+  if (def.exigeMeta && d.meta === undefined) throw new ErrorIndicador("Este cálculo exige una meta: con ella se juzga la conformidad en Distribución");
+  return {
+    ...d,
+    calculo: def.clave,
+    forma: def.forma,
+    formula: undefined,
+    factor: undefined,
+    tendencia: def.tendencia,
+    variables: def.variables.map((v) => ({
+      letra: v.letra,
+      nombre: v.nombre,
+      descripcion: v.descripcion,
+      fuente: FUENTE_AUTOMATICA,
+      consolidacion: v.consolidacion,
+      admiteNegativos: false,
+    })),
+    cargosMedir: [],
+    mide: [],
+    soporteObligatorio: false,
+    prueba: undefined,
+  };
+}
+
 /**
  * Fórmula, variables declaradas contra usadas y regla del semáforo. Una meta lleva siempre sus rangos (spec 14A §3.5);
  * solo un cambio sobre una ficha que aún tiene la regla vieja puede conservarla (`reglaVieja`), y `guardarBorrador` vuelve
  * a exigir los rangos si el cambio resulta mayor.
  */
 function revisar(entrada: DatosFichaNueva, reglaVieja = false, importada = false): FichaRevisada {
-  const d = leer(entrada, importada);
+  const d = conOrigen(leer(entrada, importada), importada);
   let formula: string;
   let factor: number | null = null;
   if (d.forma === "libre") {
@@ -395,6 +436,10 @@ function columnasDeContenido(tx: TransactionSql, f: FichaRevisada, n: Nombres) {
     subproceso_nombre: n.subprocesoNombre,
     procedimiento_documento_id: d.procedimientoDocumentoId ?? null,
     punto_control: d.puntoControl ?? null,
+    // Siempre las tres: volver a manual deja el cálculo y el alcance en nulo (CHECK de la 0013).
+    origen_dato: d.origenDato ?? "manual",
+    calculo: d.calculo ?? null,
+    calculo_alcance: d.calculoAlcance ?? null,
     forma: d.forma,
     factor: f.factor,
     formula: f.formula,
@@ -436,11 +481,12 @@ function pruebaDe(tx: TransactionSql, d: DatosFichaNueva) {
 }
 
 async function escribirHijos(tx: TransactionSql, versionId: number, f: FichaRevisada, n: Nombres): Promise<void> {
+  const origen = f.d.origenDato === "automatico" ? "automatica" : "propia";
   for (const [orden, v] of f.d.variables.entries()) {
     await tx`INSERT INTO indicador_variables
         (version_id, letra, nombre, descripcion, fuente, unidad, consolidacion, origen, captura_min, captura_max, admite_negativos, orden)
       VALUES (${versionId}, ${v.letra}, ${v.nombre}, ${v.descripcion ?? null}, ${v.fuente ?? null}, ${v.unidad ?? null},
-        ${v.consolidacion}, 'propia', ${v.capturaMin ?? null}, ${v.capturaMax ?? null}, ${v.admiteNegativos}, ${orden + 1})`;
+        ${v.consolidacion}, ${origen}, ${v.capturaMin ?? null}, ${v.capturaMax ?? null}, ${v.admiteNegativos}, ${orden + 1})`;
   }
   for (const [funcion, ids] of [["medir", f.d.cargosMedir], ["analizar", f.d.cargosAnalizar]] as const) {
     for (const cargoId of ids) {
@@ -882,6 +928,9 @@ async function valoresDeVersion(sql: Cliente, versionId: number, indicador: Reco
     objetivoId: entero(v.objetivo_id),
     procedimientoDocumentoId: entero(v.procedimiento_documento_id),
     puntoControl: texto(v.punto_control),
+    origenDato: v.origen_dato ?? undefined,
+    calculo: texto(v.calculo),
+    calculoAlcance: texto(v.calculo_alcance),
     forma: v.forma ?? undefined,
     factor: entero(v.factor),
     formula: v.forma === "libre" ? texto(v.formula) : undefined,
@@ -1074,5 +1123,20 @@ export async function opcionesDeFicha(
     anio,
     periodos,
     periodoEnCurso,
+    calculos: CLAVES_DE_CALCULO.map((clave) => {
+      const c = CALCULOS[clave];
+      return {
+        clave,
+        nombre: c.nombre,
+        clase: c.clase,
+        forma: c.forma,
+        tendencia: c.tendencia,
+        reconstruible: c.reconstruible,
+        exigeMeta: c.exigeMeta,
+        unidadSugerida: c.unidadSugerida,
+        alcances: c.alcances.map((a) => ({ clave: a, etiqueta: ETIQUETA_ALCANCE[a] })),
+        variables: c.variables.map((v) => ({ ...v })),
+      };
+    }),
   };
 }

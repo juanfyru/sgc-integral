@@ -3,6 +3,8 @@
  * revierte (`revertida`): lo que crea aquí no sobrevive al test.
  */
 import type { TransactionSql } from "postgres";
+import { CALCULOS, type AlcanceDeCalculo, type ClaveDeCalculo } from "@/lib/indicadores/calculos/registro";
+import { formulaDeForma } from "@/lib/indicadores/formula/formas";
 import type { RangosEnTexto } from "@/lib/indicadores/rangos";
 import type { Periodicidad, Tendencia } from "@/lib/indicadores/tipos";
 import { usuarioDePrueba } from "./tramites";
@@ -60,6 +62,12 @@ export type OpcionesIndicadorDePrueba = {
   variables?: Partial<Record<"A" | "B", VariableDePrueba>>;
   /** El máximo del resultado (límites del indicador); sin valor, ninguno. */
   resultadoMax?: string;
+  /**
+   * Una versión automática (anexo 14B, §5.3): la forma, la fórmula, la tendencia y las variables del registro (origen
+   * `automatica`). Aprobada, el indicador guarda el cálculo y el alcance, como `alPublicarVersion`; el alcance «proceso» es el
+   * del indicador. Un cálculo sin B (un conteo) deja `variables.B` en 0.
+   */
+  calculo?: { clave: ClaveDeCalculo; alcance: AlcanceDeCalculo };
 };
 
 export type VariableDePrueba = {
@@ -90,6 +98,8 @@ export async function indicadorDePrueba(
   const elaboradaPor = o.elaboradaPor ?? (await usuarioDePrueba(tx, { rol: "admin_sgc" })).usuarioId;
   const clasificacion = o.clasificacion ?? "Operativo";
   const meta = o.meta === undefined ? "90" : o.meta;
+  const calculo = o.calculo ? CALCULOS[o.calculo.clave] : null;
+  const forma = calculo?.forma ?? "porcentaje";
 
   const [indicador] = await tx`INSERT INTO indicadores
       (codigo, proceso_id, estado, nivel_acceso, inicio_medicion, soporte_obligatorio, creado_por)
@@ -101,13 +111,14 @@ export async function indicadorDePrueba(
   // Como el flujo real (`crearIndicador`): sin factor fuera de la tasa y con el sufijo de la unidad del catálogo.
   const [version] = await tx`INSERT INTO indicador_versiones
       (indicador_id, numero, estado, tipo_cambio, nombre, proposito, tipo_id, tipo_nombre,
-       clasificacion_id, clasificacion_nombre, proceso_nombre, origen_dato, calculo, forma, factor, formula,
+       clasificacion_id, clasificacion_nombre, proceso_nombre, origen_dato, calculo, calculo_alcance, forma, factor, formula,
        unidad_id, unidad_nombre, unidad_sufijo, decimales, periodicidad, tendencia, meta,
        semaforo_modo, umbral_atencion_pct, limite_critico, rangos, resultado_max, nivel, riesgo_asociado,
        importacion_id, aprobacion_previa_documento, aprobacion_previa_por, aprobacion_previa_fecha, creado_por)
     SELECT ${indicadorId}, 1, 'borrador', 'inicial', ${`Indicador de prueba ${codigo}`}, 'Medir el cumplimiento de la prueba',
-      t.id, t.nombre, c.id, c.nombre, ${proceso.nombre as string}, 'manual', NULL, 'porcentaje', NULL, 'A / B * 100',
-      un.id, un.nombre, un.sufijo, 1, ${o.periodicidad ?? "mensual"}, ${o.tendencia ?? "ascendente"}, ${meta},
+      t.id, t.nombre, c.id, c.nombre, ${proceso.nombre as string}, ${calculo ? "automatico" : "manual"}, ${o.calculo?.clave ?? null},
+      ${o.calculo?.alcance ?? null}, ${forma}, NULL, ${formulaDeForma(forma)},
+      un.id, un.nombre, un.sufijo, 1, ${o.periodicidad ?? "mensual"}, ${calculo?.tendencia ?? o.tendencia ?? "ascendente"}, ${meta},
       ${o.rangos ? "rangos" : (o.modo ?? "relativo")}, ${o.rangos || o.modo === "fijo" ? null : (o.umbralPct ?? 70)}, ${o.limite ?? null},
       ${o.rangos ? tx.json(o.rangos as never) : null}, ${o.resultadoMax ?? null}, ${o.nivel ?? null}, ${o.riesgoAsociado ?? null},
       ${o.importacionId ?? null}, ${o.importacionId ? (o.aprobacionPrevia?.documento ?? "Acta 1 de 2025") : null}, ${o.importacionId ? (o.aprobacionPrevia?.aprobadoPor ?? "Comité de calidad") : null},
@@ -120,13 +131,22 @@ export async function indicadorDePrueba(
   await tx`SELECT id FROM indicador_versiones WHERE id = ${versionId} FOR UPDATE`;
 
   const variables: Record<"A" | "B", number> = { A: 0, B: 0 };
-  for (const [orden, letra, nombre] of [[1, "A", "Casos que cumplen"], [2, "B", "Casos evaluados"]] as const) {
-    const x = o.variables?.[letra] ?? {};
+  const declaradas = calculo
+    ? calculo.variables.map((v, i) => ({ orden: i + 1, letra: v.letra, nombre: v.nombre, descripcion: v.descripcion, consolidacion: v.consolidacion }))
+    : ([[1, "A", "Casos que cumplen"], [2, "B", "Casos evaluados"]] as const).map(([orden, letra, nombre]) => ({
+        orden,
+        letra,
+        nombre,
+        descripcion: null,
+        consolidacion: "suma",
+      }));
+  for (const d of declaradas) {
+    const x: VariableDePrueba = calculo ? {} : (o.variables?.[d.letra] ?? {});
     const [v] = await tx`INSERT INTO indicador_variables
         (version_id, letra, nombre, descripcion, fuente, captura_min, captura_max, consolidacion, origen, orden)
-      VALUES (${versionId}, ${letra}, ${x.nombre ?? nombre}, ${x.descripcion ?? null}, ${x.fuente ?? null},
-        ${x.capturaMin ?? null}, ${x.capturaMax ?? null}, 'suma', 'propia', ${orden}) RETURNING id`;
-    variables[letra] = Number(v.id);
+      VALUES (${versionId}, ${d.letra}, ${x.nombre ?? d.nombre}, ${x.descripcion ?? d.descripcion}, ${x.fuente ?? (calculo ? "La calcula el sistema" : null)},
+        ${x.capturaMin ?? null}, ${x.capturaMax ?? null}, ${d.consolidacion}, ${calculo ? "automatica" : "propia"}, ${d.orden}) RETURNING id`;
+    variables[d.letra] = Number(v.id);
   }
 
   const designados: [string, number[] | undefined][] = [["mide", o.mide], ["analiza", o.analiza], ["seguimiento", o.seguimiento]];
@@ -144,6 +164,9 @@ export async function indicadorDePrueba(
         elaborada_en = ${aprobadaEn}, huella = ${"0".repeat(64)}, rige_desde = ${inicio},
         aprobada_por = ${aprobadora.usuarioId}, aprobada_en = ${aprobadaEn}
       WHERE id = ${versionId}`;
+    if (o.calculo) {
+      await tx`UPDATE indicadores SET calculo = ${o.calculo.clave}, calculo_alcance = ${o.calculo.alcance} WHERE id = ${indicadorId}`;
+    }
   }
 
   return { id: indicadorId, codigo, versionId, variables, procesoId };

@@ -72,6 +72,7 @@ const OPCIONES: OpcionesFicha = {
     anual: [{ clave: "2026", etiqueta: "2026" }],
   },
   periodoEnCurso: { mensual: "2026-11", bimestral: "2026-B6", trimestral: "2026-T4", semestral: "2026-S2", anual: "2026" },
+  calculos: [],
 };
 
 /** Un cambio sobre una ficha con versión aprobada: la única que conserva la regla anterior (Ruling 18). */

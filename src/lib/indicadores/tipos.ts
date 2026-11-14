@@ -3,6 +3,7 @@
  * migración 0011. Sin importaciones que arrastren el cliente de la BD: los componentes de cliente importan de aquí.
  */
 import { ErrorTramite } from "@/db/consultas/flujo/contrato";
+import type { AlcanceDeCalculo, ClaveDeCalculo, VariableDeCalculo } from "./calculos/registro";
 
 /** Error de negocio del módulo: su mensaje se le muestra a la persona. */
 export class ErrorIndicador extends ErrorTramite {
@@ -52,6 +53,10 @@ export type ModoSemaforo = (typeof MODOS_SEMAFORO)[number];
 
 export const CONSOLIDACIONES = ["suma", "ultimo", "promedio"] as const;
 export type Consolidacion = (typeof CONSOLIDACIONES)[number];
+
+/** De dónde sale el dato de una ficha: lo digita una persona o lo calcula el sistema (anexo 14B, §5.3). */
+export const ORIGENES_DATO = ["manual", "automatico"] as const;
+export type OrigenDato = (typeof ORIGENES_DATO)[number];
 
 export const ORIGENES_VARIABLE = ["propia", "compartida", "automatica", "indicador"] as const;
 export type OrigenVariable = (typeof ORIGENES_VARIABLE)[number];
@@ -129,6 +134,19 @@ export type OpcionesFicha = {
   /** Los periodos que se ofrecen como inicio de medición, en cada periodicidad. */
   periodos: Record<Periodicidad, { clave: string; etiqueta: string }[]>;
   periodoEnCurso: Record<Periodicidad, string>;
+  /** Los cálculos que el sistema hace (el registro de `src/lib/indicadores/calculos/registro.ts`), con sus alcances. */
+  calculos: {
+    clave: ClaveDeCalculo;
+    nombre: string;
+    clase: "estado" | "flujo";
+    forma: string;
+    tendencia: string;
+    reconstruible: boolean;
+    exigeMeta: boolean;
+    unidadSugerida: string;
+    alcances: { clave: AlcanceDeCalculo; etiqueta: string }[];
+    variables: VariableDeCalculo[];
+  }[];
 };
 
 /** El estado de un periodo en las gráficas (spec §11): el del semáforo, o por qué no tiene uno. */

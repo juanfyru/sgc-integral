@@ -65,13 +65,20 @@ function motivoValido(motivo: string): string {
   return m;
 }
 
-type FilaIndicador = { id: number; codigo: string; estado: EstadoIndicador; procesoId: number };
+/** `calculo`: el de la ficha vigente si es automática (anexo 14B, §5.3); `null` si la digita una persona o no se ha aprobado. */
+type FilaIndicador = { id: number; codigo: string; estado: EstadoIndicador; procesoId: number; calculo: string | null };
 
 /** El indicador bloqueado `FOR UPDATE`; el primer candado de toda operación. */
 async function bloquearIndicador(tx: TransactionSql, indicadorId: number): Promise<FilaIndicador> {
-  const [i] = await tx`SELECT id, codigo, estado, proceso_id FROM indicadores WHERE id = ${indicadorId} FOR UPDATE`;
+  const [i] = await tx`SELECT id, codigo, estado, proceso_id, calculo FROM indicadores WHERE id = ${indicadorId} FOR UPDATE`;
   if (!i) throw new ErrorIndicador(INDICADOR_NO_EXISTE);
-  return { id: Number(i.id), codigo: i.codigo as string, estado: i.estado as EstadoIndicador, procesoId: Number(i.proceso_id) };
+  return {
+    id: Number(i.id),
+    codigo: i.codigo as string,
+    estado: i.estado as EstadoIndicador,
+    procesoId: Number(i.proceso_id),
+    calculo: (i.calculo as string | null) ?? null,
+  };
 }
 
 /** Un retirado o un descartado ya no admite cambios de personas ni de operación. */
@@ -125,6 +132,8 @@ export async function designar(
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
     const i = await bloquearIndicador(tx, d.indicadorId);
     exigirAbierto(i);
+    // Quitar a alguien de «mide» sigue valiendo; designarlo, no.
+    if (d.funcion === "mide" && i.calculo !== null && ids.length > 0) throw new ErrorIndicador("Este indicador lo calcula el sistema: nadie lo mide");
     const actuales = (await tx`SELECT usuario_id FROM indicador_designados WHERE indicador_id = ${i.id} AND funcion = ${d.funcion}`).map((f) =>
       Number(f.usuario_id),
     );
@@ -206,6 +215,7 @@ export async function cambiarOperacion(
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
     const i = await bloquearIndicador(tx, d.indicadorId);
     exigirAbierto(i);
+    if (soporte && i.calculo !== null) throw new ErrorIndicador("Un indicador que calcula el sistema no lleva soporte");
     // La periodicidad de la ficha que rige; sin ficha aprobada, la de la última versión (puede estar incompleta).
     const vigente = await versionVigente(tx, i.id);
     const [v] = vigente
@@ -384,6 +394,12 @@ export async function duplicar(
       await tx`SELECT id FROM indicador_versiones WHERE id = ${versionId} FOR UPDATE`;
       await tx`UPDATE indicador_versiones SET proceso_nombre = ${proceso.nombre as string}
         WHERE id = ${versionId}`;
+      // La copia de un automático nace manual (anexo 14B, §5.3): sin cálculo, con sus variables como propias y sin «mide».
+      const [fuente] = await tx`SELECT origen_dato FROM indicador_versiones WHERE id = ${desde}`;
+      const deAutomatico = fuente.origen_dato === "automatico";
+      if (deAutomatico) {
+        await tx`UPDATE indicador_versiones SET origen_dato = 'manual', calculo = NULL, calculo_alcance = NULL WHERE id = ${versionId}`;
+      }
       // La regla vieja no se copia: la copia lleva los rangos que dan los mismos colores (spec 14A §3.5).
       const [regla] = await tx`SELECT tendencia, meta, meta_max, semaforo_modo, umbral_atencion_pct, limite_critico, tolerancia
         FROM indicador_versiones WHERE id = ${versionId}`;
@@ -411,6 +427,7 @@ export async function duplicar(
          SELECT $2, ${COLUMNAS_VARIABLE} FROM indicador_variables WHERE version_id = $1 ORDER BY orden, letra`,
         [desde, versionId],
       );
+      if (deAutomatico) await tx`UPDATE indicador_variables SET origen = 'propia' WHERE version_id = ${versionId} AND origen = 'automatica'`;
       await tx`INSERT INTO indicador_responsables (version_id, cargo_id, cargo_nombre, funcion)
         SELECT ${versionId}, cargo_id, cargo_nombre, funcion FROM indicador_responsables WHERE version_id = ${desde} ORDER BY id`;
       await tx`INSERT INTO indicador_normas (version_id, norma_id, norma_nombre)
@@ -418,7 +435,7 @@ export async function duplicar(
       await tx`INSERT INTO indicador_designados (indicador_id, usuario_id, funcion, creado_por, creado_en)
         SELECT ${indicadorId}, d.usuario_id, d.funcion, ${sesion.usuarioId}, ${ahora}
         FROM indicador_designados d JOIN usuarios u ON u.id = d.usuario_id AND u.activo
-        WHERE d.indicador_id = ${origen.id}`;
+        WHERE d.indicador_id = ${origen.id} ${deAutomatico ? tx`AND d.funcion <> 'mide'` : tx``}`;
 
       await registrarAuditoria(tx, {
         usuarioId: sesion.usuarioId,

@@ -14,6 +14,7 @@ import {
   MAXIMO_TEXTO_MEDICION,
   MODOS_SEMAFORO,
   NIVELES_ACCESO,
+  ORIGENES_DATO,
   PERIODICIDADES,
   TENDENCIAS,
 } from "@/lib/indicadores/tipos";
@@ -176,6 +177,11 @@ export const EsquemaFicha = z
     objetivoId: id("El objetivo que mide no es válido").optional(),
     procedimientoDocumentoId: id("El procedimiento no es válido").optional(),
     puntoControl: opcional("El punto de control", 60),
+    // Sin valor, «manual» (anexo 14B, §5.3). Con «automatico», la consulta valida la clave y el alcance contra el registro
+    // de cálculos y pone la forma, la fórmula, las variables y la tendencia del cálculo.
+    origenDato: z.enum(ORIGENES_DATO, { error: "Elija cómo se obtiene el dato" }).optional(),
+    calculo: opcional("El cálculo", 40),
+    calculoAlcance: opcional("El alcance del cálculo", 20),
     forma: z.enum(FORMAS, { error: "Elija cómo se calcula" }),
     factor: entero("El factor de la tasa", 1, 100_000)
       .refine((f) => FACTORES_TASA.includes(f), "El factor de la tasa debe ser 100, 1.000, 10.000 o 100.000")
@@ -211,7 +217,8 @@ export const EsquemaFicha = z
     sustentoMeta: opcional("El sustento de la meta", 500),
     nivel: opcional("El nivel", 60),
     riesgoAsociado: opcional("El riesgo asociado", 300),
-    cargosMedir: listaDeIds("Los cargos responsables de medir no son válidos", "Elija hasta 20 cargos", "Elija al menos un cargo responsable de medir"),
+    // Una ficha automática no tiene quién mida: «Elija al menos un cargo responsable de medir» lo exige la consulta a una manual.
+    cargosMedir: listaDeIds("Los cargos responsables de medir no son válidos", "Elija hasta 20 cargos").optional().transform((v) => v ?? []),
     cargosAnalizar: listaDeIds("Los cargos responsables de analizar no son válidos", "Elija hasta 20 cargos", "Elija al menos un cargo responsable de analizar"),
     normaIds: listaDeIds("Las normas no son válidas", "Elija hasta 20 normas").optional().transform((v) => v ?? []),
     ente: opcional("El ente al que se reporta", 150),

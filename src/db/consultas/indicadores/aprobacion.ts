@@ -20,6 +20,7 @@ import { ErrorFirma, enTransaccion, type OpcionesFlujo, type SesionFlujo } from 
 import { aprobadoresDeFicha, filtroAcceso, puedeAprobarFicha, puedeVerIndicador, type SujetoVisibilidad } from "@/lib/alcance";
 import { verificarParaFirmar, type CredencialesFirma } from "@/lib/firma";
 import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
+import { calculoDe, type DefinicionDeCalculo } from "@/lib/indicadores/calculos/registro";
 import { camposCambiados, huellaDeFicha, tipoDeCambio, type ContenidoFicha } from "@/lib/indicadores/ficha";
 import { fraccion } from "@/lib/indicadores/formula/fraccion";
 import { periodicidadDe, periodosTerminados, periodoQueContiene, versionQueRigeEntre } from "@/lib/indicadores/periodos";
@@ -42,6 +43,7 @@ import { ErrorPermiso, puede, type SujetoPermiso } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { contenidoDeVersion } from "./fichas";
 import { asegurarMediciones, quitarMedicionesDeOtraPeriodicidad } from "./mediciones";
+import { alPublicarVersion, esCalculoRepetido, yaHayUnaActiva } from "./publicacion";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -302,6 +304,34 @@ async function exigirMetasDentroDeBien(sql: Cliente, versionId: number, rigeDesd
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// La ficha automática (anexo 14B, §5.3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SOLO_EN_CURSO = "Un cálculo que no se llena hacia atrás rige desde el periodo en curso";
+
+/** El cálculo de una versión automática (columnas `origen_dato`, `calculo` y `calculo_alcance`); `null` si es manual. */
+function calculoDeFila(v: Record<string, unknown>): { def: DefinicionDeCalculo; alcance: string } | null {
+  if (v.origen_dato !== "automatico") return null;
+  const def = calculoDe(v.calculo);
+  return def ? { def, alcance: v.calculo_alcance as string } : null;
+}
+
+/**
+ * Otro indicador activo con el mismo cálculo y alcance (con alcance «proceso», en el mismo proceso): su código, o `null`.
+ * El índice único parcial `indicadores_calculo_unico` es la garantía de fondo.
+ */
+async function otraActivaConElCalculo(
+  sql: Cliente,
+  c: { indicadorId: number; procesoId: number; calculo: string; alcance: string },
+): Promise<string | null> {
+  const [o] = await sql`SELECT codigo FROM indicadores
+    WHERE estado = 'activo' AND calculo = ${c.calculo} AND calculo_alcance = ${c.alcance}
+      AND (calculo_alcance <> 'proceso' OR proceso_id = ${c.procesoId}) AND id <> ${c.indicadorId}
+    ORDER BY id LIMIT 1`;
+  return o ? (o.codigo as string) : null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Enviar
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -320,18 +350,29 @@ type Envio = {
 /** Lo que debe cumplirse para enviar, sin escribir nada. El tipo de cambio lo decide el sistema contra la vigente. */
 async function validarEnvio(sql: Cliente, d: DatosEnvio, ahora: Date): Promise<Envio> {
   const [v] = await sql`SELECT v.indicador_id, v.numero, v.estado, v.prueba, v.motivo_cambio, v.periodicidad, v.meta, v.semaforo_modo,
-      i.codigo, i.estado AS indicador_estado, i.inicio_medicion,
+      v.origen_dato, v.calculo, v.calculo_alcance, i.codigo, i.estado AS indicador_estado, i.inicio_medicion, i.proceso_id,
       EXISTS (SELECT 1 FROM clasificaciones_indicador c WHERE c.id = v.clasificacion_id) AS con_clasificacion
     FROM indicador_versiones v JOIN indicadores i ON i.id = v.indicador_id
     WHERE v.id = ${d.versionId}`;
   if (!v || v.indicador_estado === "descartado") throw new ErrorIndicador(FICHA_NO_EXISTE);
   if (v.indicador_estado === "retirado") throw new ErrorIndicador("Un indicador retirado no admite cambios en su ficha");
   if (v.estado !== "borrador") throw new ErrorIndicador("Solo se envía una ficha en borrador");
-  if (v.prueba === null) throw new ErrorIndicador("Pruebe la fórmula con valores de ejemplo antes de enviarla");
+  // Una ficha automática no se prueba con valores: su fórmula es la del cálculo.
+  const automatica = calculoDeFila(v);
+  if (v.prueba === null && !automatica) throw new ErrorIndicador("Pruebe la fórmula con valores de ejemplo antes de enviarla");
   // Sin clasificación no hay quién apruebe (`aprobadoresDeFicha`).
   if (!v.con_clasificacion) throw new ErrorIndicador("Elija la clasificación antes de enviar la ficha");
 
   const indicadorId = Number(v.indicador_id);
+  if (automatica) {
+    const otra = await otraActivaConElCalculo(sql, {
+      indicadorId,
+      procesoId: Number(v.proceso_id),
+      calculo: automatica.def.clave,
+      alcance: automatica.alcance,
+    });
+    if (otra) throw new ErrorIndicador(yaHayUnaActiva(otra));
+  }
   const contenido = await contenidoDeVersion(sql, d.versionId);
   const vigente = await versionVigente(sql, indicadorId);
   let tipo: TipoCambio = "inicial";
@@ -349,15 +390,19 @@ async function validarEnvio(sql: Cliente, d: DatosEnvio, ahora: Date): Promise<E
   if (tipo !== "inicial" && !motivo) throw new ErrorIndicador("Escriba el motivo del cambio");
   if (motivo && motivo.length > 500) throw new ErrorIndicador("El motivo del cambio no puede pasar de 500 caracteres");
 
+  // Un cálculo que no se llena hacia atrás empieza en el periodo en curso (anexo 14B, §5.3): una ficha nueva lo fija al
+  // aprobarse (`validarAprobacion`) y un cambio mayor no puede regir antes.
+  const enCurso = automatica && !automatica.def.reconstruible ? periodoQueContiene(v.periodicidad as Periodicidad, ahora, zonaHoraria()).clave : null;
   let rigeDesde: string | null;
   if (tipo === "inicial") {
-    rigeDesde = v.inicio_medicion as string | null;
+    rigeDesde = enCurso ?? (v.inicio_medicion as string | null);
   } else if (tipo === "menor") {
     const [r] = await sql`SELECT rige_desde FROM indicador_versiones WHERE id = ${vigente!.id}`;
     rigeDesde = r.rige_desde as string;
   } else {
     const periodicidad = v.periodicidad as Periodicidad;
-    rigeDesde = d.rigeDesde ?? (await rigeDesdePorOmision(sql, indicadorId, periodicidad, ahora));
+    rigeDesde = d.rigeDesde ?? enCurso ?? (await rigeDesdePorOmision(sql, indicadorId, periodicidad, ahora));
+    if (enCurso !== null && rigeDesde !== enCurso) throw new ErrorIndicador(SOLO_EN_CURSO);
     await validarRige(sql, indicadorId, rigeDesde, periodicidad, ahora, true);
     await exigirMetasDentroDeBien(sql, d.versionId, rigeDesde, "enviar");
   }
@@ -408,7 +453,17 @@ export async function enviarAAprobacion(
       contexto,
       ahora,
     });
-    if (!menor) {
+    // Un cambio menor queda publicado aquí, sin aprobador: quien lo envía es quien lo elabora.
+    if (menor) {
+      await alPublicarVersion(tx, {
+        indicadorId: e.indicadorId,
+        versionId: d.versionId,
+        elaboradaPor: sesion.usuarioId,
+        elaboradaEn: ahora,
+        actorId: sesion.usuarioId,
+        ahora,
+      });
+    } else {
       const aprobadores = await aprobadoresDeFicha(d.versionId, { sql: tx });
       if (aprobadores.length > 0) {
         const cuerpo = `${e.tipo === "inicial" ? "Ficha nueva" : `Cambio mayor, versión ${e.numero}`}: la elaboró ${sesion.nombre}.`;
@@ -458,7 +513,16 @@ type PorAprobar = {
   huella: string;
   rigeDesde: string;
   elaboradaPor: number | null;
+  elaboradaEn: Date | null;
+  /** El inicio de medición que se fija al aprobar (la versión inicial de un cálculo que no se llena hacia atrás); si no, `null`. */
+  inicioEnCurso: string | null;
+  /** El cálculo y el alcance de una ficha automática, con el proceso (el alcance «proceso» es el suyo). */
+  calculo: { clave: string; alcance: string; procesoId: number } | null;
 };
+
+/** Dos fichas automáticas que no pueden estar activas a la vez: el mismo cálculo y alcance (con «proceso», el mismo proceso). */
+const mismoCalculo = (a: PorAprobar["calculo"], b: PorAprobar["calculo"]) =>
+  a !== null && b !== null && a.clave === b.clave && a.alcance === b.alcance && (a.alcance !== "proceso" || a.procesoId === b.procesoId);
 
 /** Si la versión se envió alguna vez (está aprobada o lleva una firma «Elaboró»): su aprobador ya supo de ella. */
 const fueEnviada = (sql: Cliente) => sql`(v.estado = 'aprobada' OR EXISTS (
@@ -477,7 +541,8 @@ const yaNo = (v: Record<string, unknown>) => new ErrorIndicador(v.enviada === tr
  */
 async function validarAprobacion(sql: Cliente, sesion: SujetoVisibilidad, ids: readonly number[], ahora: Date): Promise<PorAprobar[]> {
   const filas = await sql`SELECT v.id, v.indicador_id, v.numero, v.estado, v.tipo_cambio, v.nombre, v.huella, v.rige_desde,
-      v.elaborada_por, v.periodicidad, i.codigo, i.estado AS indicador_estado, i.inicio_medicion, ${fueEnviada(sql)} AS enviada
+      v.elaborada_por, v.elaborada_en, v.periodicidad, v.origen_dato, v.calculo, v.calculo_alcance, i.codigo, i.estado AS indicador_estado,
+      i.inicio_medicion, i.proceso_id, ${fueEnviada(sql)} AS enviada
     FROM indicador_versiones v JOIN indicadores i ON i.id = v.indicador_id
     WHERE v.id IN ${sql(ids)}`;
   const salida: PorAprobar[] = [];
@@ -490,23 +555,36 @@ async function validarAprobacion(sql: Cliente, sesion: SujetoVisibilidad, ids: r
       throw new ErrorIndicador(`La ficha ${codigo} cambió después de la firma de quien la elaboró`);
     }
     const tipo = v.tipo_cambio as TipoCambio;
+    const indicadorId = Number(v.indicador_id);
+    const procesoId = Number(v.proceso_id);
+    const automatica = calculoDeFila(v);
+    if (automatica) {
+      const otra = await otraActivaConElCalculo(sql, { indicadorId, procesoId, calculo: automatica.def.clave, alcance: automatica.alcance });
+      if (otra) throw new ErrorIndicador(yaHayUnaActiva(otra));
+    }
+    // Un cálculo que no se llena hacia atrás empieza en el periodo en curso al aprobarse (anexo 14B, §5.3).
+    const enCurso = automatica && !automatica.def.reconstruible ? periodoQueContiene(v.periodicidad as Periodicidad, ahora, zonaHoraria()).clave : null;
     // La versión inicial rige desde el inicio de medición de hoy; un cambio mayor, desde lo elegido, si sigue sin reporte.
     let rigeDesde = v.rige_desde as string;
     if (tipo === "inicial") {
-      rigeDesde = (v.inicio_medicion as string | null) ?? rigeDesde;
+      rigeDesde = enCurso ?? (v.inicio_medicion as string | null) ?? rigeDesde;
     } else if (tipo === "mayor") {
+      const yaNoRige = () =>
+        new ErrorIndicador(`La ficha ${codigo} ya no puede regir ${desdePeriodo(rigeDesde)}: devuélvala para que elijan otro periodo`);
+      // Si el periodo en curso ya no es el elegido al enviar, un cálculo que no se llena hacia atrás no puede regir desde él.
+      if (enCurso !== null && rigeDesde !== enCurso) throw yaNoRige();
       try {
-        await validarRige(sql, Number(v.indicador_id), rigeDesde, v.periodicidad as Periodicidad, ahora, false);
+        await validarRige(sql, indicadorId, rigeDesde, v.periodicidad as Periodicidad, ahora, false);
       } catch (err) {
         if (!(err instanceof ErrorIndicador)) throw err;
-        throw new ErrorIndicador(`La ficha ${codigo} ya no puede regir ${desdePeriodo(rigeDesde)}: devuélvala para que elijan otro periodo`);
+        throw yaNoRige();
       }
       // Fuera del `try`: su mensaje es el suyo. Una meta pudo programarse después de enviarla.
       await exigirMetasDentroDeBien(sql, id, rigeDesde, "aprobar");
     }
     salida.push({
       versionId: id,
-      indicadorId: Number(v.indicador_id),
+      indicadorId,
       codigo,
       numero: Number(v.numero),
       nombre: v.nombre as string | null,
@@ -514,7 +592,15 @@ async function validarAprobacion(sql: Cliente, sesion: SujetoVisibilidad, ids: r
       huella: v.huella as string,
       rigeDesde,
       elaboradaPor: v.elaborada_por === null ? null : Number(v.elaborada_por),
+      elaboradaEn: fecha(v.elaborada_en),
+      inicioEnCurso: tipo === "inicial" ? enCurso : null,
+      calculo: automatica ? { clave: automatica.def.clave, alcance: automatica.alcance, procesoId } : null,
     });
+  }
+  // A lo sumo una activa por cálculo y alcance también dentro del bloque: si dos lo comparten, no se aprueba ninguna.
+  for (const [k, a] of salida.entries()) {
+    const b = salida.slice(k + 1).find((x) => mismoCalculo(a.calculo, x.calculo));
+    if (b) throw new ErrorIndicador(`Las fichas ${a.codigo} y ${b.codigo} usan el mismo cálculo y alcance: solo una puede quedar activa`);
   }
   return salida;
 }
@@ -547,6 +633,8 @@ export async function aprobarFichas(
     await bloquear(tx, ids);
     const fichas = await validarAprobacion(tx, sesion, ids, ahora);
     for (const f of fichas) {
+      // Antes de aprobar la versión: después, el inicio de medición ya rige sus periodos.
+      if (f.inicioEnCurso !== null) await tx`UPDATE indicadores SET inicio_medicion = ${f.inicioEnCurso} WHERE id = ${f.indicadorId}`;
       await tx`UPDATE indicador_versiones SET estado = 'aprobada', aprobada_por = ${sesion.usuarioId}, aprobada_en = ${ahora},
           rige_desde = ${f.rigeDesde}, actualizado_en = ${ahora}
         WHERE id = ${f.versionId}`;
@@ -560,6 +648,15 @@ export async function aprobarFichas(
         hashSha256: f.huella,
         metodo: r.metodo,
         contexto,
+        ahora,
+      });
+      // Antes de quitar mediciones y abrir periodos: el indicador ya sabe de dónde sale su dato.
+      await alPublicarVersion(tx, {
+        indicadorId: f.indicadorId,
+        versionId: f.versionId,
+        elaboradaPor: f.elaboradaPor,
+        elaboradaEn: f.elaboradaEn,
+        actorId: sesion.usuarioId,
         ahora,
       });
       // Un cambio mayor de periodicidad deja vacías de la periodicidad vieja en su tramo: se quitan (las que tienen datos, no).
@@ -618,6 +715,10 @@ export async function aprobarFichas(
       });
     }
     return { aprobadas: fichas.length };
+  }).catch((err: unknown) => {
+    // Dos aprobaciones a la vez del mismo cálculo y alcance: la segunda choca con el índice único, ya fuera de la transacción.
+    if (esCalculoRepetido(err)) throw new ErrorIndicador(yaHayUnaActiva());
+    throw err;
   });
 }
 
@@ -1033,24 +1134,29 @@ export async function previaDeEnvio(sesion: SujetoPermiso, versionId: number, op
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
   const [v] = await sql`SELECT v.indicador_id, v.numero, v.estado, v.prueba, v.motivo_cambio, v.nota_devolucion, v.periodicidad,
-      i.inicio_medicion
+      v.origen_dato, v.calculo, v.calculo_alcance, i.inicio_medicion
     FROM indicador_versiones v JOIN indicadores i ON i.id = v.indicador_id WHERE v.id = ${versionId}`;
   if (!v || v.estado !== "borrador") return null;
   const indicadorId = Number(v.indicador_id);
   const contenido = await contenidoDeVersion(sql, versionId);
   const vigente = await versionVigente(sql, indicadorId);
   const tipo = vigente ? tipoDeCambio(await contenidoDeVersion(sql, vigente.id), contenido) : "inicial";
+  const periodicidad = v.periodicidad as Periodicidad | null;
+  // Como `validarEnvio`: una ficha automática no se prueba, y un cálculo que no se llena hacia atrás rige desde el periodo en curso.
+  const automatica = calculoDeFila(v);
+  const enCurso = automatica && !automatica.def.reconstruible && periodicidad ? periodoQueContiene(periodicidad, ahora, zonaHoraria()).clave : null;
   let rigeDesde: string | null = null;
-  if (tipo === "inicial") rigeDesde = (v.inicio_medicion as string | null) ?? null;
+  if (tipo === "inicial") rigeDesde = enCurso ?? (v.inicio_medicion as string | null) ?? null;
   if (tipo === "menor") {
     const [r] = await sql`SELECT rige_desde FROM indicador_versiones WHERE id = ${vigente!.id}`;
     rigeDesde = r.rige_desde as string;
   }
-  const periodicidad = v.periodicidad as Periodicidad | null;
   let rige: PreviaDeEnvio["rige"] = null;
   let enviableDesde: string | null = null;
   if (tipo === "mayor" && periodicidad) {
-    rige = await opcionesDeRige(sql, indicadorId, periodicidad, ahora);
+    rige = enCurso
+      ? { porOmision: enCurso, opciones: [{ clave: enCurso, etiqueta: etiquetaDePeriodo(enCurso) }] }
+      : await opcionesDeRige(sql, indicadorId, periodicidad, ahora);
     // El de por omisión es el más temprano posible: si no pasa, ningún otro de la lista pasa.
     try {
       await validarRige(sql, indicadorId, rige.porOmision, periodicidad, ahora, true);
@@ -1066,7 +1172,7 @@ export async function previaDeEnvio(sesion: SujetoPermiso, versionId: number, op
     tipo,
     cambios: vigente ? await cambiosFrenteALaVigente(sql, indicadorId, versionId) : [],
     huella: huellaDeFicha(contenido),
-    probada: v.prueba !== null,
+    probada: v.prueba !== null || automatica !== null,
     motivo: (v.motivo_cambio as string | null) ?? null,
     notaDevolucion: (v.nota_devolucion as string | null) ?? null,
     rigeDesde,

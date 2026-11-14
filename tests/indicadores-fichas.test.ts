@@ -781,6 +781,19 @@ describe("la ficha en borrador", () => {
       expect(o.periodos.trimestral.map((p) => p.clave)).toEqual(["2025-T1", "2025-T2", "2025-T3", "2025-T4", "2026-T1", "2026-T2", "2026-T3", "2026-T4"]);
       expect(o.periodos.trimestral.at(-1)).toEqual({ clave: "2026-T4", etiqueta: "Cuarto trimestre de 2026" });
       expect(o.cargos.map((c) => c.id)).toContain(b.cargoId);
+      // Los diez cálculos del registro, con sus alcances en palabras (anexo 14B, §5.1).
+      expect(o.calculos).toHaveLength(10);
+      expect(o.calculos.find((c) => c.clave === "conformidad_fecha")).toMatchObject({
+        nombre: "Conformidad en puntos de uso, a la fecha",
+        clase: "estado",
+        forma: "porcentaje",
+        tendencia: "ascendente",
+        reconstruible: false,
+        exigeMeta: true,
+        unidadSugerida: "Porcentaje",
+        alcances: [{ clave: "entidad", etiqueta: "Toda la entidad" }],
+      });
+      expect(o.calculos.find((c) => c.clave === "aprobacion")?.variables.map((v) => v.letra)).toEqual(["A", "B"]);
 
       // Un cargo inactivo deja de ofrecerse, salvo en la versión que ya lo usa.
       await tx`UPDATE cargos SET activo = false WHERE id = ${b.cargoId}`;

@@ -803,6 +803,12 @@ export function describirEvento(e: EventoAuditoria): string {
         enMediciones.length > 0 ? ` (${enMediciones.join("; ")})` : ""
       }`;
     }
+    case "indicador_medidores_quitados": {
+      const cuantos = numero(d.cuantos);
+      return cuantos === null || !cod
+        ? "Quitó a quienes miden un indicador: ahora lo calcula el sistema"
+        : `Quitó a ${cuenta(cuantos, "persona", "personas")} de «mide» en ${cod}: ahora lo calcula el sistema`;
+    }
     case "indicador_duplicado":
       return `Creó el indicador${cod ? ` ${cod}` : ""} a partir de ${texto(d.origen) ?? "otro indicador"}`;
     case "indicador_retirado":
@@ -1074,6 +1080,7 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   indicador_borrador_descartado: "Descartó el borrador de una ficha de indicador",
   indicador_designados: "Cambió las personas designadas de un indicador",
   indicador_operacion: "Cambió los datos de operación de un indicador",
+  indicador_medidores_quitados: "Quitó a quienes miden un indicador que calcula el sistema",
   indicador_duplicado: "Creó un indicador a partir de otro",
   indicador_retirado: "Retiró un indicador",
   indicador_descartado: "Descartó un indicador",
