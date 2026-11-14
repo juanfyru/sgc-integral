@@ -41,6 +41,9 @@ export default async function PaginaReportar({ params }: { params: Promise<{ cod
   // Quien puede medir ve los soportes del indicador (spec §6.4); la lista se lee solo para quien los ve.
   const soportes = (await soportesDe(sesion, datos.medicionId)) ?? [];
   const plazo = datos.historica ? "Registro histórico" : `Plazo hasta el ${datos.vence}${datos.vencida ? " (vencido)" : ""}`;
+  // Nadie reporta un automático: ni el título ni la miga lo dicen.
+  const titulo = datos.automatica ? "Calculado por el sistema · " : "Reportar · ";
+  const miga = datos.automatica ? "Calculado por el sistema · " : "Reportar: ";
   const cerrada = (
     <p className="rounded-lg border border-l-4 border-border border-l-mod-indicadores bg-muted px-4 py-3 text-sm">
       La medición está cerrada: pida al Administrador del SGC que la reabra.
@@ -53,11 +56,11 @@ export default async function PaginaReportar({ params }: { params: Promise<{ cod
         migas={[
           { nombre: "Indicadores", href: "/indicadores" },
           { nombre: indicador.codigo, href: volver },
-          { nombre: `Reportar: ${datos.etiqueta.toLowerCase()}` },
+          { nombre: `${miga}${datos.etiqueta.toLowerCase()}` },
         ]}
         codigo={datos.codigo}
         insignias={datos.historica ? <Insignia variante="neutra">Histórico</Insignia> : undefined}
-        titulo={`Reportar · ${datos.nombre}`}
+        titulo={`${titulo}${datos.nombre}`}
         descripcion={`${datos.etiqueta} · ${plazo}`}
       />
       {datos.sinMedidor ? (

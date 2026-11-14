@@ -126,8 +126,9 @@ function ListaDeSoportes({ codigo, soportes }: { codigo: string; soportes: Sopor
  * La tabla del año (spec §8.5, §8.3 y §12.3; maqueta 2): una fila por periodo con sus valores, el resultado, la meta, la
  * columna «Cumple», el estado con sus marcas y el análisis; los soportes, en su columna, solo para quien los ve (`soportes`
  * es `null` para los demás, y entonces no hay columna). Quien puede medir tiene en cada periodo abierto
- * el enlace para reportarlo o corregirlo (un histórico se registra en el modo edición, spec §8.8); quien puede analizar,
- * el de escribir o editar el análisis de lo que tiene resultado. Quien administra reabre una cerrada (`puedeReabrir`) y
+ * el enlace para reportarlo o corregirlo (un histórico se registra en el modo edición, spec §8.8), salvo en uno que
+ * calcula el sistema (`automatica`, anexo 14B §4), que quien puede analizar abre con «Ver» en su pantalla de solo lectura;
+ * quien puede analizar tiene además el de escribir o editar el análisis de lo que tiene resultado. Quien administra reabre una cerrada (`puedeReabrir`) y
  * cierra de nuevo una reabierta (`puedeCerrarDeNuevo`, spec §8.7); una corregida lleva su historial (`historial`). Las
  * marcas acompañan al estado (spec §8.5): «Histórico», «Corregida», «Requiere acción de mejora», «Meta ajustada después del
  * periodo», «N periodos sin cumplir» y «Periodicidad anterior», que no se toca (la dejó un cambio mayor). Cada fila lleva
@@ -198,7 +199,9 @@ export function TablaDelAnio({
         }
         // Una medición de otra periodicidad no se toca: nadie puede reportarla, analizarla ni reabrirla.
         const tocable = f.medicionId !== null && f.deOtraPeriodicidad !== true;
-        const reportable = puedeMedir && tocable && f.estado !== "cerrada" && !f.historica;
+        // La que calcula el sistema no se reporta ni se corrige: quien la analiza la ve en su pantalla de solo lectura.
+        const reportable = puedeMedir && tocable && !f.automatica && f.estado !== "cerrada" && !f.historica;
+        const deSoloLectura = puedeAnalizar && tocable && f.automatica;
         const analizable = puedeAnalizar && tocable && f.estado !== "cerrada" && f.resultado !== null && !f.noAplica;
         const conAnalisis = f.analisis !== null || f.causa !== null || f.accionPropuesta !== null;
         const reabrible = puedeReabrir && tocable && f.estado === "cerrada";
@@ -232,6 +235,12 @@ export function TablaDelAnio({
                   {reportable ? (
                     <Link href={`${rutaDeIndicador(codigo)}/reportar/${f.periodo}`} className={ENLACE}>
                       {f.estado === "por_reportar" ? "Reportar" : "Corregir"}
+                      <span className="sr-only">{` ${f.etiqueta}`}</span>
+                    </Link>
+                  ) : null}
+                  {deSoloLectura ? (
+                    <Link href={`${rutaDeIndicador(codigo)}/reportar/${f.periodo}`} className={ENLACE}>
+                      Ver
                       <span className="sr-only">{` ${f.etiqueta}`}</span>
                     </Link>
                   ) : null}

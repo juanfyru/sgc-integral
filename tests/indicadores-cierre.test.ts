@@ -37,6 +37,7 @@ import { programarMeta } from "@/db/consultas/indicadores/metas";
 import { observar } from "@/db/consultas/indicadores/observaciones";
 import { retirar } from "@/db/consultas/indicadores/operacion";
 import { quitarSoporte } from "@/db/consultas/indicadores/soportes";
+import { responsablesDeAnalizar } from "@/lib/alcance";
 import { describirEvento } from "@/lib/bitacora-detalle";
 import { fraseDelCierre, frasesDeNoSeCierran, mesPorOmisionDe } from "@/lib/indicadores/cierre";
 import { historialDeCorreccion, type EventoDeMedicion } from "@/lib/indicadores/historial";
@@ -565,7 +566,11 @@ describe("la reapertura", () => {
       await reabrirMedicion(admin, { medicionId: huerfano.marzo, justificacion: JUSTIFICACION }, opc(tx, dia(21)));
       const [h] = (await eventos(tx, huerfano.marzo)).filter((f) => f.tipo === "reapertura");
       expect(h.detalle).not.toHaveProperty("sinMedidor");
-      expect((await avisos(tx, conFoto.marzo)).map((a) => Number(a.usuario_id))).not.toContain(mide.usuarioId);
+      // Su aviso va a quienes lo analizan de respaldo (los Admin SGC activos), salvo a quien reabre.
+      const deHuerfano = (await avisos(tx, huerfano.marzo)).map((a) => Number(a.usuario_id));
+      expect(deHuerfano).toEqual((await responsablesDeAnalizar(huerfano.ind.id, { sql: tx })).filter((u) => u !== admin.usuarioId));
+      expect(deHuerfano).not.toContain(admin.usuarioId);
+      expect(deHuerfano).not.toContain(mide.usuarioId);
     }));
 
   it("la reabierta se corrige y se cierra de nuevo, a mano o con el siguiente cierre", () =>

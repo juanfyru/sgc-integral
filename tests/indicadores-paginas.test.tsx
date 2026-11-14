@@ -561,6 +561,7 @@ describe("el resumen del cierre y la tabla del año, sin navegador", () => {
       analisis: null,
       causa: null,
       accionPropuesta: null,
+      automatica: false,
       ...o,
     });
     const historial = new Map([

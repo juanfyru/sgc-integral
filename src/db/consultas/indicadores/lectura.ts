@@ -296,6 +296,11 @@ export type FilaDelAnio = {
    * se muestra, marcada, pero no se reporta, ni se analiza ni se reabre.
    */
   deOtraPeriodicidad?: boolean;
+  /**
+   * La versión que rige el periodo de la fila la calcula el sistema (anexo 14B, §4), no la ficha vigente: nadie la
+   * reporta, la corrige ni la registra como histórico.
+   */
+  automatica: boolean;
 };
 
 export const anioValido = (anio: number) => Number.isInteger(anio) && anio >= 1900 && anio <= 9999;
@@ -818,6 +823,7 @@ function filaSinMedicion(p: Periodo, version: VersionDeCalculo, regla: Regla, ah
     analisis: null,
     causa: null,
     accionPropuesta: null,
+    automatica: version.origenDato === "automatico",
   };
 }
 
@@ -889,5 +895,6 @@ function filaDeMedicion(
     analisis: (m.analisis as string | null) ?? null,
     causa: (m.causa as string | null) ?? null,
     accionPropuesta: (m.accion_propuesta as string | null) ?? null,
+    automatica,
   };
 }

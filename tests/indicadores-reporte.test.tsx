@@ -85,7 +85,7 @@ import {
 import { destinoTrasReportar } from "@/lib/indicadores/reporte";
 import type { SesionValida } from "@/lib/sesion";
 import { parsearFormulario } from "@/lib/validacion";
-import { fotoDePrueba, indicadorDePrueba } from "./utiles/indicadores";
+import { fotoDePrueba, indicadorDePrueba, versionAutomatica } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -414,6 +414,11 @@ describe("las páginas", () => {
       contexto.sesion = valida(analiza);
       const sinFoto = await reporte(ind.codigo, "2026-T1");
       expect(sinFoto).toContain("Este indicador lo calcula el sistema. Nadie digita sus datos.");
+      // Ni el título ni la miga dicen «Reportar»: nadie lo reporta.
+      expect(sinFoto).toContain(`Calculado por el sistema · Indicador de prueba ${ind.codigo}`);
+      expect(sinFoto).toContain("Calculado por el sistema · primer trimestre de 2026");
+      expect(sinFoto).not.toContain("Reportar ·");
+      expect(sinFoto).not.toContain("Reportar:");
       // Mientras falta el dato no hay nada que digitar ni que analizar, y el plazo no se dice vencido.
       expect(sinFoto).not.toContain("<input");
       expect(sinFoto).not.toContain("<textarea");
@@ -775,6 +780,60 @@ describe("las páginas de la Tarea 10", () => {
       contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "consulta" }));
       expect(await pagina(ind.codigo, { anio: "2025" })).not.toContain("historicos=editar");
       await expect(pagina(ind.codigo, { anio: "2025", historicos: "editar" })).rejects.toThrow("NO_ENCONTRADA");
+    }));
+
+  it("/indicadores/[codigo]: en un automático la tabla no ofrece reportar, corregir ni registrar históricos; a quien analiza, «Ver»", () =>
+    enTransaccion(async (tx) => {
+      // `mide` sigue designado como antes del paso a automático: pasa `puedeMedir` y aun así no digita.
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const analiza = await usuarioDePrueba(tx, { rol: "consulta" });
+      const ind = await indicadorDePrueba(tx, {
+        ...historico,
+        mide: [mide.usuarioId],
+        analiza: [analiza.usuarioId],
+        calculo: { clave: "dentro_plazo", alcance: "entidad" },
+      });
+      contexto.sesion = valida(mide);
+      const de2026 = await pagina(ind.codigo, { anio: "2026" });
+      expect(de2026).toContain("Primer trimestre de 2026");
+      expect(de2026).not.toContain("/reportar/");
+      // Todos sus históricos los calcula el sistema: no hay nada que registrar.
+      const de2025 = await pagina(ind.codigo, { anio: "2025" });
+      expect(de2025).not.toContain("historicos=editar");
+      expect(de2025).not.toContain("Registrar históricos de 2025");
+      await expect(pagina(ind.codigo, { anio: "2025", historicos: "editar" })).rejects.toThrow("NO_ENCONTRADA");
+      contexto.sesion = valida(await sesionAdmin(tx));
+      await expect(pagina(ind.codigo, { anio: "2025", historicos: "editar" })).rejects.toThrow("NO_ENCONTRADA");
+
+      // Quien analiza ve cada periodo en la pantalla de solo lectura.
+      contexto.sesion = valida(analiza);
+      const deAnalista = await pagina(ind.codigo, { anio: "2026" });
+      expect(deAnalista).toMatch(new RegExp(`href="/indicadores/${ind.codigo}/reportar/2026-T1"[^>]*>Ver<`));
+      expect(deAnalista).not.toContain(">Reportar<span");
+      expect(deAnalista).not.toContain(">Corregir<span");
+    }));
+
+  it("/indicadores/[codigo]: tras pasar a automático, «Registrar históricos» pide solo los periodos que rige la ficha manual", () =>
+    enTransaccion(async (tx) => {
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const admin = await sesionAdmin(tx);
+      const ind = await indicadorDePrueba(tx, { ...historico, mide: [mide.usuarioId] });
+      // Desde el cuarto trimestre de 2025 lo calcula el sistema; los dos trimestres de 2025 siguen siendo históricos.
+      await versionAutomatica(tx, {
+        indicadorId: ind.id,
+        usuarioId: admin.usuarioId,
+        rigeDesde: "2025-T4",
+        aprobadaEn: new Date("2026-01-20T15:00:00Z"),
+        periodicidad: "trimestral",
+        calculo: { clave: "aprobacion", alcance: "entidad" },
+      });
+      contexto.sesion = valida(mide);
+      const de2025 = await pagina(ind.codigo, { anio: "2025" });
+      expect(de2025).toContain(">Registrar históricos de 2025</a>");
+      const edicion = await pagina(ind.codigo, { anio: "2025", historicos: "editar" });
+      for (const campo of ["h_2025-T3_A", "h_2025-T3_B"]) expect(edicion).toContain(`name="${campo}"`);
+      expect(edicion).not.toContain('name="h_2025-T4_A"');
+      expect(edicion).not.toContain('name="na_2025-T4"');
     }));
 
   it("/indicadores/[codigo]: tras un cambio mayor que añade una variable, cada histórico pide solo las de su ficha", () =>

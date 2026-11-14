@@ -349,7 +349,7 @@ describe("la lista", () => {
         expect(await codigos(tx, admin, { procesoId: p.id, reporte }), reporte).toEqual([]);
       }
       const [t3] = (await resultadosDelAnio(admin, auto.id, 2026, opc(tx))).filas;
-      expect(t3).toMatchObject({ periodo: "2026-T3", estado: "falta_dato", vencida: false });
+      expect(t3).toMatchObject({ periodo: "2026-T3", estado: "falta_dato", vencida: false, automatica: true });
       // Un histórico que espera su cálculo tampoco está «Por registrar»: nadie lo registra.
       const deHistorico = await proceso(tx);
       const historico = await trimestral(tx, deHistorico.id, { inicioMedicion: "2026-T3", calculo, aprobadaEn: new Date("2026-10-05T15:00:00Z") });
@@ -373,10 +373,11 @@ describe("la lista", () => {
       expect(deCambio.filas[0].reporte).toMatchObject({ vencida: true });
       expect(deCambio.filas[0].reporte.texto).toMatch(/^Vencido hace \d+ días$/);
       const anio = (await resultadosDelAnio(admin, cambio.id, 2026, opc(tx))).filas;
-      expect(anio.map((f) => [f.periodo, f.estado, f.vencida])).toEqual([
-        ["2026-T2", "por_reportar", true],
-        ["2026-T3", "falta_dato", false],
-        ["2026-T4", "por_venir", false],
+      // `automatica` es la versión que rige cada periodo, no la ficha vigente.
+      expect(anio.map((f) => [f.periodo, f.estado, f.vencida, f.automatica])).toEqual([
+        ["2026-T2", "por_reportar", true, false],
+        ["2026-T3", "falta_dato", false, true],
+        ["2026-T4", "por_venir", false, true],
       ]);
     }));
 });

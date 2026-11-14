@@ -320,6 +320,7 @@ describe("los componentes", () => {
       analisis: null,
       causa: null,
       accionPropuesta: null,
+      automatica: false,
     };
     const tabla = renderToStaticMarkup(<TablaDelAnio filas={[fila]} variables={[]} anio={2026} codigo="ZZ-1" puedeMedir={false} />);
     expect(tabla).toContain("Bien · no alcanza la meta");
@@ -393,6 +394,7 @@ describe("los componentes", () => {
       analisis: null,
       causa: null,
       accionPropuesta: null,
+      automatica: false,
     });
     const filas = [
       fila("2026-05", [
@@ -420,6 +422,59 @@ describe("los componentes", () => {
     expect(html).not.toContain("(Atenciones)");
     // Mayo no tiene C: «—».
     expect(html).toMatch(/<td class="[^"]*">—<\/td>/);
+  });
+
+  it("la tabla del año no ofrece reportar ni corregir lo que calcula el sistema; a quien analiza, «Ver»", () => {
+    const fila = (periodo: string, o: Partial<FilaDelAnio>): FilaDelAnio => ({
+      periodo,
+      etiqueta: periodo,
+      version: 1,
+      medicionId: Number(periodo.slice(-1)),
+      estado: "por_reportar",
+      vencida: false,
+      vence: "10 de octubre de 2026",
+      historica: false,
+      noAplica: false,
+      motivo: null,
+      valores: [],
+      resultado: null,
+      semaforo: null,
+      meta: "≥ 90 %",
+      cumple: null,
+      frase: null,
+      requiereAccion: false,
+      repetido: false,
+      corregida: false,
+      metaTardia: false,
+      sinAnalisis: false,
+      analisis: null,
+      causa: null,
+      accionPropuesta: null,
+      automatica: false,
+      ...o,
+    });
+    // Manual el primero; desde el segundo lo calcula el sistema: uno sin dato y otro ya calculado.
+    const filas = [
+      fila("2026-T1", {}),
+      fila("2026-T2", { automatica: true, estado: "falta_dato" }),
+      fila("2026-T3", { automatica: true, estado: "reportada", resultado: "95 %", semaforo: "bien", cumple: true }),
+    ];
+    const tabla = (puedeAnalizar: boolean) =>
+      renderToStaticMarkup(<TablaDelAnio filas={filas} variables={[]} anio={2026} codigo="ZZ-1" puedeMedir puedeAnalizar={puedeAnalizar} />);
+
+    const deQuienMide = tabla(false);
+    expect(deQuienMide).toContain('href="/indicadores/ZZ-1/reportar/2026-T1"');
+    expect(deQuienMide).not.toContain("/reportar/2026-T2");
+    expect(deQuienMide).not.toContain("/reportar/2026-T3");
+    expect(deQuienMide).not.toContain(">Corregir<");
+    expect(deQuienMide).not.toContain(">Ver<");
+
+    const deQuienAnaliza = tabla(true);
+    expect(deQuienAnaliza).toMatch(/href="\/indicadores\/ZZ-1\/reportar\/2026-T1"[^>]*>Reportar</);
+    for (const periodo of ["2026-T2", "2026-T3"]) {
+      expect(deQuienAnaliza).toMatch(new RegExp(`href="/indicadores/ZZ-1/reportar/${periodo}"[^>]*>Ver<span class="sr-only"> ${periodo}</span>`));
+    }
+    expect(deQuienAnaliza).not.toContain(">Corregir<");
   });
 });
 

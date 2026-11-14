@@ -115,10 +115,11 @@ export async function datosDeResultados(
     if (falta) analisis = await datosDeAnalisis(sesion, falta.medicionId!);
   }
 
-  // Los históricos del año, a quien los registra (spec §8.8): el modo edición existe si alguno sigue abierto.
+  // Los históricos del año, a quien los registra (spec §8.8): el modo edición existe si alguno sigue abierto. Los que
+  // calcula el sistema (la versión que rige su periodo es automática, anexo 14B §4) no se digitan: no entran.
   const registra = activo && (await puedeRegistrarHistoricos(indicador.id, sesion)).puede;
   const editables: FilaHistoricaVista[] = filas
-    .filter((f) => f.historica && f.medicionId !== null && f.deOtraPeriodicidad !== true)
+    .filter((f) => f.historica && f.medicionId !== null && f.deOtraPeriodicidad !== true && !f.automatica)
     .map((f) => ({
       periodo: f.periodo,
       etiqueta: f.etiqueta,
