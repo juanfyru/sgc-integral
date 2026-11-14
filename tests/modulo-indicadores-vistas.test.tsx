@@ -74,6 +74,7 @@ import { columnasDeVariables, TablaDelAnio } from "@/componentes/indicadores/med
 import { ResultadoPrincipal } from "@/componentes/indicadores/ResultadoPrincipal";
 import { ReportesAlEnte, type DatosDeReportes } from "@/componentes/indicadores/vistas/ReportesAlEnte";
 import { obtenerSql } from "@/db/cliente";
+import { registrarArchivo } from "@/db/consultas/admin";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import type { Constancia } from "@/db/consultas/indicadores/constancias";
 import type { FilaDelAnio, UltimoResultado } from "@/db/consultas/indicadores/lectura";
@@ -869,6 +870,43 @@ describe("las páginas", () => {
       expect(ajena).not.toContain("Registrar el envío");
       expect(ajena).not.toContain(">Soportes</th>");
       expect(ajena).not.toContain("Ver el historial");
+
+      // Gerencia ve los soportes y el historial, y no registra: sin formularios.
+      const [t1] = await tx`SELECT id FROM reportes_externos WHERE indicador_id = ${ind.id} AND periodo = '2026-T1'`;
+      await registrarArchivo(
+        {
+          versionId: null,
+          rol: "evidencia",
+          contexto: "reporte_externo",
+          contextoId: Number(t1.id),
+          ruta: `reportes-externos/${t1.id}/radicado.pdf`,
+          nombreOriginal: "radicado.pdf",
+          extension: "pdf",
+          mime: "application/pdf",
+          tamanoBytes: 4,
+          hashSha256: "c".repeat(64),
+        },
+        mide.usuarioId,
+        { sql: tx },
+      );
+      contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "gerencia" }));
+      const gerencia = await pagina(ind.codigo, { vista: "reportes" });
+      expect(gerencia).toContain(">Soportes</th>");
+      expect(gerencia).toContain(`href="/indicadores/${ind.codigo}/soportes/`);
+      expect(gerencia).toContain("Ver el historial");
+      expect(gerencia).toContain("Subió el soporte «radicado.pdf»");
+      expect(gerencia).not.toContain("Registrar el envío");
+      expect(gerencia).not.toContain("Corregir el envío");
+
+      // Retirado (la constancia con soporte se conserva): quien mide ya no recibe formularios.
+      await tx`UPDATE indicadores SET estado = 'retirado', baja_por = ${mide.usuarioId}, baja_en = now(), baja_motivo = 'Ya no se mide' WHERE id = ${ind.id}`;
+      contexto.sesion = valida(mide);
+      const retirado = await pagina(ind.codigo, { vista: "reportes" });
+      expect(retirado).toContain("Primer trimestre de 2026");
+      expect(retirado).toContain(">Soportes</th>");
+      expect(retirado).not.toContain("Registrar el envío");
+      expect(retirado).not.toContain("Corregir el envío");
+      expect(retirado).not.toContain("Zona de carga");
 
       // Sin ente ni constancias: ni pestaña ni vista.
       const sinEnte = await indicadorDePrueba(tx, { periodicidad: "mensual", inicioMedicion: "2026-01", aprobadaEn: new Date("2026-01-10T15:00:00Z") });
