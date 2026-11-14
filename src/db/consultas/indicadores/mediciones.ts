@@ -188,10 +188,10 @@ export async function versionesAprobadasDe(sql: Cliente, indicadorIds: readonly 
   return salida;
 }
 
-/** La meta programada del periodo (spec §8.9) reemplaza la de la ficha. */
+/** La meta programada del periodo (spec §8.9) reemplaza la de la ficha, si la versión que calcula tiene meta. */
 export async function reglaDelPeriodo(sql: Cliente, indicadorId: number, periodo: string, v: VersionDeCalculo): Promise<ReglaEnTexto> {
   const [p] = await sql`SELECT meta, meta_max FROM indicador_metas WHERE indicador_id = ${indicadorId} AND periodo = ${periodo}`;
-  return p ? { ...v.regla, meta: texto(p.meta), metaMax: texto(p.meta_max) } : v.regla;
+  return p && v.regla.meta !== null ? { ...v.regla, meta: texto(p.meta), metaMax: texto(p.meta_max) } : v.regla;
 }
 
 /** La primera versión aprobada: con su aprobación, lo que terminó antes es histórico (spec §8.8). */

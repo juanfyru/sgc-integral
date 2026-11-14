@@ -83,6 +83,25 @@ describe("el texto del límite con los rangos escritos (spec 14A §3.5)", () => 
     );
   });
 
+  it("un borde compartido que gana la fila mejor se rotula «por debajo de» o «por encima de»: ese número no es de Crítico", () => {
+    // «Atención ≥ 63 · Crítico ≤ 63»: el 63 es Atención.
+    expect(texto(conRangos("ascendente", "90", { bien: [{ signo: ">=", valor: "90" }], atencion: [{ signo: ">=", valor: "63" }], critico: [{ signo: "<=", valor: "63" }] }))).toBe(
+      "Crítico por debajo de 63 %",
+    );
+    // «Bien ≥ 90 · Crítico ≤ 90» con meta 90: el 90 es Bien.
+    expect(texto(conRangos("ascendente", "90", { bien: [{ signo: ">=", valor: "90" }], atencion: [], critico: [{ signo: "<=", valor: "90" }] }))).toBe(
+      "Crítico por debajo de 90 %",
+    );
+    // En «menos es mejor»: «Atención ≤ 43 · Crítico ≥ 43».
+    expect(texto(conRangos("descendente", "30", { bien: [{ signo: "<=", valor: "30" }], atencion: [{ signo: "<=", valor: "43" }], critico: [{ signo: ">=", valor: "43" }] }), MINUTOS)).toBe(
+      "Crítico por encima de 43 min",
+    );
+    // Con borde propio sigue siendo «desde».
+    expect(texto(conRangos("descendente", "30", { bien: [{ signo: "<=", valor: "30" }], atencion: [], critico: [{ signo: ">=", valor: "34" }] }), MINUTOS)).toBe(
+      "Crítico desde 34 min",
+    );
+  });
+
   it("un borde abierto sigue diciendo «por debajo de» o «por encima de», como la regla vieja", () => {
     expect(texto(conRangos("ascendente", "95", { bien: [{ signo: ">=", valor: "95" }], atencion: [{ signo: ">=", valor: "85.5" }], critico: [{ signo: "<", valor: "85.5" }] }), { sufijo: " %", decimales: 1 })).toBe(
       "Crítico por debajo de 85,5 %",

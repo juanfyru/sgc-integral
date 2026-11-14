@@ -354,12 +354,14 @@ export function limiteDeRangos(r: Rangos, tendencia: Tendencia): Fraccion | null
   return tendencia === "ascendente" ? t.hi : t.lo;
 }
 
-/** Si ese borde es de Crítico («≤ 40», «entre 0 y 40», «≥ 34»): entonces no se rotula «por debajo de» ni «por encima de». */
+/**
+ * Si ese borde es de Crítico («≤ 40», «entre 0 y 40», «≥ 34»): entonces no se rotula «por debajo de» ni «por encima de».
+ * Se decide con el color del propio borde: en un borde compartido («Atención ≥ 63 · Crítico ≤ 63») gana la fila mejor y
+ * el 63 no es Crítico.
+ */
 export function limiteDeRangosCerrado(r: Rangos, tendencia: Tendencia): boolean {
-  const f = r.critico[0];
-  if (f === undefined || tendencia === "constante") return false;
-  const t = tramoDe(f);
-  return tendencia === "ascendente" ? t.hi !== null && !t.hiAb : t.lo !== null && !t.loAb;
+  const limite = limiteDeRangos(r, tendencia);
+  return limite !== null && semaforoDeRangos(limite, r, tendencia) === "critico";
 }
 
 /** La regla general aprobada («Alerta ≥ 90 % de la meta», «≤ 110 %») escrita en filas (spec §5.5). */

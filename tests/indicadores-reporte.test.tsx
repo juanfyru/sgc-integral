@@ -59,7 +59,7 @@ vi.mock("@/app/acciones-indicadores", () => ({
 
 import PaginaIndicador from "@/app/(app)/indicadores/[codigo]/page";
 import PaginaReportar from "@/app/(app)/indicadores/[codigo]/reportar/[periodo]/page";
-import { DialogoMetas } from "@/componentes/indicadores/medicion/DialogoMetas";
+import { destinoDelFoco, DialogoMetas } from "@/componentes/indicadores/medicion/DialogoMetas";
 import { FormularioAnalisis } from "@/componentes/indicadores/medicion/FormularioAnalisis";
 import { FormularioReporte } from "@/componentes/indicadores/medicion/FormularioReporte";
 import { SeccionDeAnalisis } from "@/componentes/indicadores/vistas/VistaResultados";
@@ -534,9 +534,27 @@ describe("FormularioAnalisis y DialogoMetas", () => {
     expect(html).toContain("Meta ajustada después del periodo");
     expect(html).toMatch(/<input(?=[^>]*name="meta")(?=[^>]*value="80,5")[^>]*>/);
     expect(html).toMatch(/<input(?=[^>]*name="meta")(?=[^>]*value="90")[^>]*>/);
-    expect(html.split('name="justificacion"').length - 1).toBe(1);
-    expect(html.split('name="periodo"').length - 1).toBe(2);
+    // Cambiar y quitar la meta de un periodo terminado piden, cada uno, su justificación; T3 tiene dos formularios.
+    expect(html.split('name="justificacion"').length - 1).toBe(2);
+    expect(html.split('name="periodo"').length - 1).toBe(3);
     expect(html).not.toContain('name="metaMax"');
+    // «Quitar» solo en el periodo con meta programada, con su nombre accesible; el terminado pide su justificación.
+    expect(html.split(">Quitar<").length - 1).toBe(1);
+    // El aviso de cada fila vive fuera de los formularios (el de «Quitar» se desmonta al tener éxito).
+    expect(html.split('aria-live="polite"').length - 1).toBe(3);
+    expect(html).toContain('id="meta-2026-T3-aviso"');
+    expect(html.split('tabindex="-1"').length - 1).toBe(3);
+    // El foco tras quitar va al campo de meta y, si la fila no lo tiene, a su región de aviso.
+    expect(destinoDelFoco("2026-T3", (x) => x)).toBe("meta-2026-T3-meta");
+    expect(destinoDelFoco("2026-T3", (x) => (x.endsWith("-aviso") ? x : null))).toBe("meta-2026-T3-aviso");
+    // Un periodo sin meta en la ficha no ofrece «Guardar», sino la razón.
+    const sinMeta = renderToStaticMarkup(
+      <DialogoMetas abierto alCerrar={() => {}} indicadorId={7} codigo="SGC-IND-01" anio={2026} metas={[fila({ heredada: null, textoHeredada: "sin meta" })]} />,
+    );
+    expect(sinMeta).toContain("Este indicador no tiene meta en ese periodo: no se le programan metas.");
+    expect(sinMeta).not.toContain('name="meta"');
+    expect(html).toContain("la meta programada de tercer trimestre de 2026");
+    expect(html).toContain("Justificación para quitarla (el periodo ya terminó)");
   });
 });
 

@@ -31,7 +31,7 @@ import {
 } from "@/db/consultas/indicadores/aprobacion";
 import { abrirCambio, contenidoDeVersion, crearIndicador, fichaParaEditar, guardarBorrador } from "@/db/consultas/indicadores/fichas";
 import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
-import { programarMeta } from "@/db/consultas/indicadores/metas";
+import { programarMeta, quitarMetaProgramada } from "@/db/consultas/indicadores/metas";
 import type { DatosFicha } from "@/lib/esquemas/indicadores";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { huellaDeFicha } from "@/lib/indicadores/ficha";
@@ -1031,7 +1031,7 @@ describe("las metas programadas y los rangos de un cambio mayor (spec 14A §3.4)
   /** Bien ≥ 95: lo que deja fuera una meta de 92 programada con la versión 1 (Bien ≥ 90). */
   const RANGOS_95 = rangosDe(95);
   const fuera = (accion: "enviar" | "aprobar") =>
-    `La meta programada del primer trimestre de 2027 (92 %) queda fuera del rango de Bien de esta versión: reprográmela antes de ${accion}`;
+    `La meta programada del primer trimestre de 2027 (92 %) queda fuera del rango de Bien de esta versión: reprográmela o quítela antes de ${accion}`;
 
   /** La ficha aprobada con el primer y el segundo trimestre reportados: un cambio mayor rige desde el tercero. */
   async function conMetas(tx: TransactionSql) {
@@ -1066,6 +1066,47 @@ describe("las metas programadas y los rangos de un cambio mayor (spec 14A §3.4)
       expect(await enviar()).toMatchObject({ menor: false });
       const [v] = await tx`SELECT estado, rige_desde FROM indicador_versiones WHERE id = ${v2}`;
       expect(v).toEqual({ estado: "por_aprobar", rige_desde: "2026-T3" });
+    }));
+
+  it("un cambio mayor sin meta, con metas programadas: pide quitarlas y, quitadas, se envía y se aprueba", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const d = datos(b);
+      const ind = await aprobado(tx, b, d);
+      await programarMeta(b.admin, { indicadorId: ind.indicadorId, periodo: "2027-T1", meta: "92" }, { sql: tx, ahora: AHORA });
+      const v2 = await cambio(tx, b, ind.indicadorId, {
+        ...d,
+        meta: undefined,
+        semaforoModo: undefined,
+        rangos: undefined,
+        motivoCambio: "El indicador deja de tener meta: solo se vigila",
+      });
+      const mensaje = (accion: "enviar" | "aprobar") =>
+        `Esta versión no tiene meta y hay metas programadas desde el primer trimestre de 2027: quítelas en «Programar metas» antes de ${accion}`;
+      await rechaza(enviarAAprobacion(b.admin, { versionId: v2, credenciales: CLAVE }, firmar(tx)), mensaje("enviar"));
+      await quitarMetaProgramada(b.admin, { indicadorId: ind.indicadorId, periodo: "2027-T1" }, { sql: tx, ahora: AHORA });
+      expect(await enviarAAprobacion(b.admin, { versionId: v2, credenciales: CLAVE }, firmar(tx))).toMatchObject({ menor: false });
+      await programarMeta(b.admin, { indicadorId: ind.indicadorId, periodo: "2027-T1", meta: "92" }, { sql: tx, ahora: AHORA });
+      await rechaza(aprobarFichas(ind.gerente, { versionIds: [v2], credenciales: CLAVE }, firmar(tx)), mensaje("aprobar"));
+      await quitarMetaProgramada(b.admin, { indicadorId: ind.indicadorId, periodo: "2027-T1" }, { sql: tx, ahora: AHORA });
+      expect(await aprobarFichas(ind.gerente, { versionIds: [v2], credenciales: CLAVE }, firmar(tx))).toEqual({ aprobadas: 1 });
+    }));
+
+  it("un Bien nuevo disjunto del viejo: la meta programada se reprograma o se quita, y quitada se envía y se aprueba", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const entre = (lo: string, hi: string) =>
+        JSON.stringify({ bien: [{ signo: "entre", valor: lo, hasta: hi }], atencion: [{ signo: ">=", valor: "63" }], critico: [{ signo: "<", valor: "63" }] });
+      const d = datos(b, { meta: "85", rangos: entre("80", "90") });
+      const ind = await aprobado(tx, b, d);
+      await programarMeta(b.admin, { indicadorId: ind.indicadorId, periodo: "2027-T1", meta: "87" }, { sql: tx, ahora: AHORA });
+      const v2 = await cambio(tx, b, ind.indicadorId, { ...d, meta: "97", rangos: entre("95", "100"), motivoCambio: "La dirección subió el rango de Bien" });
+      const mensaje = (accion: "enviar" | "aprobar") =>
+        `La meta programada del primer trimestre de 2027 (87 %) queda fuera del rango de Bien de esta versión: reprográmela o quítela antes de ${accion}`;
+      await rechaza(enviarAAprobacion(b.admin, { versionId: v2, credenciales: CLAVE }, firmar(tx)), mensaje("enviar"));
+      await quitarMetaProgramada(b.admin, { indicadorId: ind.indicadorId, periodo: "2027-T1" }, { sql: tx, ahora: AHORA });
+      expect(await enviarAAprobacion(b.admin, { versionId: v2, credenciales: CLAVE }, firmar(tx))).toMatchObject({ menor: false });
+      expect(await aprobarFichas(ind.gerente, { versionIds: [v2], credenciales: CLAVE }, firmar(tx))).toEqual({ aprobadas: 1 });
     }));
 
   it("aprobar el cambio mayor vuelve a revisar las metas programadas después de enviarlo", () =>

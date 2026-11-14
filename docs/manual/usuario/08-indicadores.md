@@ -506,7 +506,10 @@ elige:
   empezados están reportados, la ventana dice desde cuándo se podrá enviar. Si hay metas
   programadas (sección 6.5) desde el **Rige desde** que quedan fuera del Bien de los rangos nuevos,
   el SGC no lo envía ni lo aprueba («La meta programada del … queda fuera del rango de Bien de esta
-  versión: reprográmela antes de enviar»): reprográmela primero. Si el cambio pasa a
+  versión: reprográmela o quítela antes de enviar»): reprográmela o quítela primero. Lo mismo si la
+  versión nueva no tiene meta («Esta versión no tiene meta y hay metas programadas desde …: quítelas
+  en «Programar metas» antes de enviar»): entre en **Programar metas** y pulse **Quitar** en cada
+  periodo que lo pide (sección 6.5). Si el cambio pasa a
   otra periodicidad, el primer periodo nuevo tiene que empezar donde empieza uno de la anterior,
   para que ningún mes se mida dos veces (de bimestral a trimestral, en enero o en julio).
 - **Cambio menor:** corrige el texto sin cambiar la medida: el nombre, el objetivo, la descripción
@@ -553,6 +556,11 @@ bitácora.
   como una corrección.
 - Uno **cerrado**: solo reabriéndolo (sección 6.6).
 - Los históricos se programan sin justificación ni marca.
+- **Quitar:** en un periodo con meta programada, el botón **Quitar** (su nombre dice «Quitar la meta
+  programada de …») la borra y el periodo vuelve a la meta de la ficha. Sigue las mismas reglas que
+  cambiarla: libre si el periodo no ha terminado, con justificación y la marca «Meta ajustada después
+  del periodo» si ya terminó, sin ellas en un histórico y no disponible en uno cerrado. La medición se
+  recalcula y la bitácora guarda la meta que tenía. A un indicador sin meta no se le programan metas.
 
 Con los rangos escritos, la meta programada tiene que caer dentro de Bien («La meta debe quedar
 dentro del rango de Bien»): los rangos no se mueven con la meta del periodo, y otros rangos piden un

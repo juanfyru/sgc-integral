@@ -376,7 +376,7 @@ export async function leerPeriodos(
       const reglaTexto: ReglaEnTexto =
         m && m.meta_aplicada !== null
           ? { ...version.regla, meta: texto(m.meta_aplicada), metaMax: texto(m.meta_max_aplicada) }
-          : programada
+          : programada && version.regla.meta !== null
             ? { ...version.regla, meta: texto(programada.meta), metaMax: texto(programada.meta_max) }
             : version.regla;
       const regla = reglaDeTexto(reglaTexto);

@@ -901,6 +901,18 @@ describe("la medición de un indicador", () => {
     expect(meta({})).toBe("Programó la meta de un periodo de un indicador");
     expect(nombreDeAccion("indicador_meta_programada")).toBe("Programó la meta de un periodo de un indicador");
   });
+
+  it("quitar la meta programada de un periodo", () => {
+    const quito = (detalle: Record<string, unknown>) => describirEvento({ accion: "indicador_meta_quitada", entidad: "indicador", entidadId: 1, detalle });
+    expect(quito({ codigo: "SGC-IND-01", periodo: "2026-T4", antes: { meta: "90", metaMax: null } })).toBe(
+      "Quitó la meta programada de SGC-IND-01, cuarto trimestre de 2026 (90)",
+    );
+    expect(quito({ codigo: "SGC-IND-01", periodo: "2026-T3", antes: { meta: "96.5", metaMax: null }, justificacion: "La Secretaría retiró el ajuste" })).toBe(
+      "Quitó la meta programada de SGC-IND-01, tercer trimestre de 2026 (96,5): La Secretaría retiró el ajuste",
+    );
+    expect(quito({})).toBe("Quitó la meta programada de un periodo de un indicador");
+    expect(nombreDeAccion("indicador_meta_quitada")).toBe("Quitó la meta programada de un periodo de un indicador");
+  });
 });
 
 describe("los Excel de indicadores (14A)", () => {

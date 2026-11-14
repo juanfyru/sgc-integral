@@ -1,7 +1,7 @@
 "use client";
 
-import { useActionState } from "react";
-import { programarMetaAccion } from "@/app/acciones-indicadores";
+import { useActionState, useState } from "react";
+import { programarMetaAccion, quitarMetaProgramadaAccion } from "@/app/acciones-indicadores";
 import type { EstadoConAviso } from "@/app/admin/comun";
 import { Boton } from "@/componentes/ui/Boton";
 import { claseControl } from "@/componentes/ui/Campo";
@@ -25,15 +25,33 @@ const enTexto = (m: MetaDelPeriodo) =>
     ? "—"
     : `${conComa(m.programada)}${m.programadaMax !== null && m.programadaMax !== m.programada ? ` a ${conComa(m.programadaMax)}` : ""}${m.sufijo}`;
 
+/** A dónde va el foco tras quitar una meta: el campo de meta de la fila o, si la fila no lo tiene, su región de aviso. */
+export function destinoDelFoco<T>(periodo: string, buscar: (id: string) => T | null): T | null {
+  return buscar(`meta-${periodo}-meta`) ?? buscar(`meta-${periodo}-aviso`);
+}
+
 /** Una fila: su formulario guarda la meta de ese periodo y dice el resultado ahí mismo. */
 function FilaDeMeta({ indicadorId, m }: { indicadorId: number; m: MetaDelPeriodo }) {
+  // Un solo aviso por fila, fuera de los formularios: «Quitar» desmonta el suyo al tener éxito y el aviso no se perdería.
+  const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
+  const id = (campo: string) => `meta-${m.periodo}-${campo}`;
   const [estado, enviar, pendiente] = useActionState(async (_previo: EstadoConAviso, formData: FormData): Promise<EstadoConAviso> => {
+    setAviso(null);
     const r = await programarMetaAccion(null, formData);
+    setAviso(r === null ? { ok: true, texto: "Meta guardada." } : { ok: false, texto: r.error });
     return r === null ? { ok: true, aviso: "Meta guardada." } : r;
+  }, null);
+  const [estadoQuitar, quitar, quitando] = useActionState(async (_previo: EstadoConAviso, formData: FormData): Promise<EstadoConAviso> => {
+    setAviso(null);
+    const r = await quitarMetaProgramadaAccion(null, formData);
+    setAviso(r === null ? { ok: true, texto: "Meta quitada: rige la de la ficha." } : { ok: false, texto: r.error });
+    // El formulario de «Quitar» se desmonta: el foco pasa al campo de meta de la fila o a su aviso.
+    if (r === null) setTimeout(() => destinoDelFoco(m.periodo, (x) => document.getElementById(x))?.focus(), 0);
+    return r === null ? { ok: true, aviso: "Meta quitada: rige la de la ficha." } : r;
   }, null);
   const v = estado && !estado.ok ? (estado.valores ?? {}) : {};
   const valor = (campo: string, porOmision: string) => (typeof v[campo] === "string" ? (v[campo] as string) : porOmision);
-  const id = (campo: string) => `meta-${m.periodo}-${campo}`;
+  const vQuitar = estadoQuitar && !estadoQuitar.ok ? (estadoQuitar.valores ?? {}) : {};
   const marcas = [m.historica ? "Histórico" : null, m.tardia ? "Meta ajustada después del periodo" : null].filter((x): x is string => x !== null);
   return (
     <tr>
@@ -50,6 +68,8 @@ function FilaDeMeta({ indicadorId, m }: { indicadorId: number; m: MetaDelPeriodo
       <td className={`${celda} min-w-56`}>
         {m.cerrada ? (
           <span className="text-muted-foreground">Cerrada: reábrala para cambiar su meta.</span>
+        ) : m.heredada === null ? (
+          <span className="text-muted-foreground">Este indicador no tiene meta en ese periodo: no se le programan metas.</span>
         ) : (
           <form action={enviar} className="flex flex-col gap-2">
             <input type="hidden" name="id" value={indicadorId} />
@@ -96,11 +116,6 @@ function FilaDeMeta({ indicadorId, m }: { indicadorId: number; m: MetaDelPeriodo
                 />
               </>
             ) : null}
-            {estado ? (
-              <p role={estado.ok ? "status" : "alert"} className={`text-xs ${estado.ok ? "text-estado-bien-texto" : "text-estado-critico-texto"}`}>
-                {estado.ok ? estado.aviso : estado.error}
-              </p>
-            ) : null}
             <div>
               <Boton type="submit" tamano="sm" variante="secundario" pendiente={pendiente}>
                 {pendiente ? "Guardando…" : "Guardar"}
@@ -109,6 +124,38 @@ function FilaDeMeta({ indicadorId, m }: { indicadorId: number; m: MetaDelPeriodo
             </div>
           </form>
         )}
+        {!m.cerrada && m.programada !== null ? (
+          <form action={quitar} className="mt-3 flex flex-col gap-2 border-t border-border pt-3">
+            <input type="hidden" name="id" value={indicadorId} />
+            <input type="hidden" name="periodo" value={m.periodo} />
+            {m.pideJustificacion ? (
+              <>
+                <label htmlFor={id("justificacion-quitar")} className="text-xs">
+                  Justificación para quitarla (el periodo ya terminó)
+                </label>
+                <textarea
+                  id={id("justificacion-quitar")}
+                  name="justificacion"
+                  required
+                  minLength={10}
+                  maxLength={500}
+                  rows={2}
+                  defaultValue={typeof vQuitar.justificacion === "string" ? vQuitar.justificacion : ""}
+                  className={CONTROL}
+                />
+              </>
+            ) : null}
+            <div>
+              <Boton type="submit" tamano="sm" variante="secundario" pendiente={quitando}>
+                {quitando ? "Quitando…" : "Quitar"}
+                <span className="sr-only">{` la meta programada de ${m.etiqueta.toLowerCase()}`}</span>
+              </Boton>
+            </div>
+          </form>
+        ) : null}
+        <p id={id("aviso")} tabIndex={-1} aria-live="polite" role={aviso && !aviso.ok ? "alert" : "status"} className={`mt-2 text-xs ${aviso?.ok === false ? "text-estado-critico-texto" : "text-estado-bien-texto"}`}>
+          {aviso?.texto}
+        </p>
       </td>
     </tr>
   );

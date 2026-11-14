@@ -411,6 +411,17 @@ export const EsquemaMeta = z
   })
   .strict();
 
+/** Quitar la meta programada de un periodo: el periodo y, si ya terminó, la justificación. */
+export const EsquemaQuitarMeta = z
+  .object({
+    periodo: z
+      .string({ error: "Elija el periodo" })
+      .trim()
+      .refine((v) => periodicidadDe(v) !== null, "El periodo no es válido"),
+    justificacion: opcional("La justificación", 500),
+  })
+  .strict();
+
 /**
  * Los históricos de la tabla del año (spec §8.8): una fila por periodo con sus valores por letra o «no aplica» con su
  * motivo (la consulta lo valida, como `marcarNoAplica`), en JSON.
