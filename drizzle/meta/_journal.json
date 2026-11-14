@@ -92,6 +92,20 @@
       "when": 1794594198439,
       "tag": "0012_fase14a-rangos-importacion",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794670891933,
+      "tag": "0013_fase14b-automaticos-regulatorios",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794670929677,
+      "tag": "0014_fase14b-quita-calculo-fotos",
+      "breakpoints": true
     }
   ]
 }

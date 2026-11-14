@@ -65,6 +65,11 @@ describe.skipIf(!process.env.DATABASE_URL_MIGRADOR)("rol sgc_app", () => {
     expect(await codigoDeError(app`UPDATE importacion_eventos SET creado_en = creado_en WHERE id = -1`)).toBe("42501");
     expect(await codigoDeError(app`DELETE FROM importacion_eventos WHERE id = -1`)).toBe("42501");
   });
+  // El historial de las constancias de envío (0013): sin filas, el 42501 es del privilegio.
+  it("no puede modificar ni borrar reporte_externo_eventos", async () => {
+    expect(await codigoDeError(app`UPDATE reporte_externo_eventos SET creado_en = creado_en WHERE id = -1`)).toBe("42501");
+    expect(await codigoDeError(app`DELETE FROM reporte_externo_eventos WHERE id = -1`)).toBe("42501");
+  });
   it("sí puede insertar, leer y borrar en tablas operativas", async () => {
     const [u] = await app`INSERT INTO usuarios (usuario, nombre, hash_clave) VALUES (${'zz_priv_u_' + Date.now()}, 'x', 'h') RETURNING id`;
     expect(u.id).toBeGreaterThan(0);

@@ -778,6 +778,7 @@ export const firmas = pgTable(
     check("firmas_metodo_valido", sql`${t.metodo} IN ('clave', 'clave_totp')`),
     index("firmas_tramite_idx").on(t.tramiteId),
     index("firmas_version_idx").on(t.versionId),
+    index("firmas_indicador_version_idx").on(t.indicadorVersionId),
   ],
 );
 
@@ -1613,6 +1614,12 @@ export const indicadores = pgTable(
     bajaPor: refUsuario("baja_por"),
     bajaEn: marca("baja_en"),
     bajaMotivo: text("baja_motivo"),
+    // El cálculo y el alcance de la ficha vigente, si es automática. A lo sumo un activo por cálculo y alcance (con
+    // alcance «proceso», por proceso): índice único parcial `indicadores_calculo_unico`, en la migración 0013.
+    calculo: text("calculo"),
+    calculoAlcance: text("calculo_alcance"),
+    // Desde cuándo la ficha vigente se reporta a su ente con su periodicidad y su plazo.
+    enteDesde: marca("ente_desde"),
     creadoPor: refUsuario("creado_por").notNull(),
     creadoEn: creado(),
   },
@@ -1626,6 +1633,7 @@ export const indicadores = pgTable(
       "indicadores_baja_coherente",
       sql`(${t.estado} IN ('retirado', 'descartado')) = (${t.bajaPor} IS NOT NULL AND ${t.bajaEn} IS NOT NULL AND ${t.bajaMotivo} IS NOT NULL)`,
     ),
+    check("indicadores_calculo_coherente", sql`(${t.calculo} IS NULL) = (${t.calculoAlcance} IS NULL)`),
   ],
 );
 
@@ -1734,6 +1742,14 @@ export const indicadorVersiones = pgTable(
     check("indicador_versiones_estado_valido", sql`${t.estado} IN ('borrador', 'por_aprobar', 'aprobada', 'descartada')`),
     check("indicador_versiones_tipo_cambio_valido", sql`${t.tipoCambio} IN ('inicial', 'mayor', 'menor')`),
     check("indicador_versiones_origen_dato_valido", sql`${t.origenDato} IN ('manual', 'automatico')`),
+    check(
+      "indicador_versiones_automatica_coherente",
+      sql`(${t.origenDato} = 'automatico') = (${t.calculo} IS NOT NULL AND ${t.calculoAlcance} IS NOT NULL)`,
+    ),
+    check(
+      "indicador_versiones_alcance_valido",
+      sql`${t.calculoAlcance} IN ('entidad', 'proceso', 'calidad', 'institucional', 'todos')`,
+    ),
     check("indicador_versiones_forma_valida", sql`${t.forma} IN ('porcentaje', 'tasa', 'razon', 'conteo', 'libre')`),
     check(
       "indicador_versiones_periodicidad_valida",
@@ -1918,11 +1934,14 @@ export const mediciones = pgTable(
     avisoVencidoEn: marca("aviso_vencido_en"),
     escaladoEn: marca("escalado_en"),
     alertaEstado: text("alerta_estado"),
+    // Cuándo el sistema tomó la foto de una medición automática.
+    fotoEn: marca("foto_en"),
   },
   (t) => [
     unique("mediciones_periodo_unico").on(t.indicadorId, t.periodo),
     index("mediciones_estado_vence_idx").on(t.estado, t.venceEn),
     index("mediciones_indicador_hasta_idx").on(t.indicadorId, t.hasta),
+    index("mediciones_cierre_idx").on(t.cierreId),
     check("mediciones_estado_valido", sql`${t.estado} IN ('abierta', 'reportada', 'cerrada')`),
     check("mediciones_semaforo_valido", sql`${t.semaforo} IN ('bien', 'atencion', 'critico')`),
   ],
@@ -1961,7 +1980,7 @@ export const medicionEventos = pgTable(
     index("medicion_eventos_medicion_idx").on(t.medicionId, t.creadoEn),
     check(
       "medicion_eventos_tipo_valido",
-      sql`${t.tipo} IN ('reporte', 'correccion', 'analisis', 'no_aplica', 'meta', 'soporte', 'cierre', 'reapertura', 'recalculo', 'historico')`,
+      sql`${t.tipo} IN ('reporte', 'correccion', 'analisis', 'no_aplica', 'meta', 'soporte', 'cierre', 'reapertura', 'recalculo', 'historico', 'foto')`,
     ),
   ],
 );
@@ -1977,10 +1996,14 @@ export const medicionObservaciones = pgTable(
     respondeA: ref("responde_a", (): AnyPgColumn => medicionObservaciones.id),
     creadoEn: creado(),
   },
-  (t) => [index("medicion_observaciones_medicion_idx").on(t.medicionId, t.creadoEn)],
+  (t) => [
+    index("medicion_observaciones_medicion_idx").on(t.medicionId, t.creadoEn),
+    index("medicion_observaciones_responde_idx").on(t.respondeA),
+  ],
 );
 
-// Las tablas siguientes son de la 14B: nacen vacías y la migración 0012 puede rehacerlas (spec §19.5).
+// Las dos tablas siguientes son de la 14C, como `variables_compartidas`, `dimensiones` y `dimension_categorias`: nacen
+// vacías y la migración 0015 puede rehacerlas (spec 14 §19.5).
 export const variableResponsables = pgTable(
   "variable_responsables",
   {
@@ -2011,48 +2034,62 @@ export const variableValores = pgTable(
   (t) => [uniqueIndex("variable_valores_unico_idx").on(t.variableId, t.periodo, t.categoriaId)],
 );
 
-export const calculoFotos = pgTable(
-  "calculo_fotos",
-  {
-    id: id(),
-    calculo: text("calculo").notNull(),
-    // Alcance: un proceso, una clase de objetivo, o ambos nulos para la entidad.
-    procesoId: ref("proceso_id", () => procesos.id),
-    claseObjetivo: text("clase_objetivo"),
-    periodo: text("periodo").notNull(),
-    numerador: num("numerador"),
-    denominador: num("denominador"),
-    valor: num("valor"),
-    tomadaEn: marca("tomada_en").notNull().defaultNow(),
-    historica: boolean("historica").notNull().default(false),
-    cierreId: ref("cierre_id", () => cierresIndicadores.id),
-  },
-  // La migración lo crea con NULLS NOT DISTINCT.
-  (t) => [uniqueIndex("calculo_fotos_unico_idx").on(t.calculo, t.procesoId, t.claseObjetivo, t.periodo)],
-);
-
+// La constancia del envío de un periodo externo a su ente (14B; la 0013 la rehizo sobre la tabla vacía de la 0011).
 export const reportesExternos = pgTable(
   "reportes_externos",
   {
     id: id(),
     indicadorId: ref("indicador_id", () => indicadores.id).notNull(),
     periodo: text("periodo").notNull(),
-    desde: date("desde").notNull(),
-    hasta: date("hasta").notNull(),
+    desde: marca("desde").notNull(),
+    hasta: marca("hasta").notNull(),
     venceEn: marca("vence_en").notNull(),
+    // El nombre del ente de cuando nació la constancia.
+    ente: text("ente").notNull(),
     estado: text("estado").notNull().default("pendiente"),
     fechaEnvio: date("fecha_envio"),
     radicado: text("radicado"),
     resultadoEnviado: text("resultado_enviado"),
+    resultadoDetalle: jsonb("resultado_detalle"),
     nota: text("nota"),
     registradaPor: refUsuario("registrada_por"),
     registradaEn: marca("registrada_en"),
+    corregida: boolean("corregida").notNull().default(false),
+    // Sin uso: las constancias no tienen aviso previo (quitarla haría preguntar a drizzle-kit).
     avisoPrevioEn: marca("aviso_previo_en"),
     avisoVencidoEn: marca("aviso_vencido_en"),
+    escaladoEn: marca("escalado_en"),
+    creadoEn: creado(),
   },
-  (t) => [unique("reportes_externos_unico").on(t.indicadorId, t.periodo)],
+  (t) => [
+    unique("reportes_externos_unico").on(t.indicadorId, t.periodo),
+    index("reportes_externos_estado_vence_idx").on(t.estado, t.venceEn),
+    check("reportes_externos_estado_valido", sql`${t.estado} IN ('pendiente', 'registrada')`),
+    check(
+      "reportes_externos_registrada_coherente",
+      sql`(${t.estado} = 'registrada') = (${t.fechaEnvio} IS NOT NULL AND ${t.radicado} IS NOT NULL AND ${t.registradaPor} IS NOT NULL AND ${t.registradaEn} IS NOT NULL)`,
+    ),
+  ],
 );
 
+// Solo-inserción (trigger en la migración 0013 y REVOKE en roles-bd.ts): el registro, cada corrección y los soportes.
+export const reporteExternoEventos = pgTable(
+  "reporte_externo_eventos",
+  {
+    id: id(),
+    reporteId: ref("reporte_id", () => reportesExternos.id).notNull(),
+    tipo: text("tipo").notNull(),
+    usuarioId: refUsuario("usuario_id").notNull(),
+    detalle: jsonb("detalle").notNull().default(sql`'{}'::jsonb`),
+    creadoEn: creado(),
+  },
+  (t) => [
+    index("reporte_externo_eventos_reporte_idx").on(t.reporteId, t.creadoEn),
+    check("reporte_externo_eventos_tipo_valido", sql`${t.tipo} IN ('registro', 'correccion', 'soporte')`),
+  ],
+);
+
+// La revisión de un indicador por el cambio de estado de una norma que su ficha vigente cita (14B; la 0013 la rehizo).
 export const impactosIndicadores = pgTable(
   "impactos_indicadores",
   {
@@ -2069,6 +2106,16 @@ export const impactosIndicadores = pgTable(
     nota: text("nota"),
     resueltoPor: refUsuario("resuelto_por"),
     resueltoEn: marca("resuelto_en"),
+    creadoEn: creado(),
   },
-  (t) => [unique("impactos_indicadores_unico").on(t.normaCambioId, t.indicadorId)],
+  (t) => [
+    unique("impactos_indicadores_unico").on(t.normaCambioId, t.indicadorId),
+    index("impactos_indicadores_indicador_idx").on(t.indicadorId, t.estado),
+    check("impactos_indicadores_estado_valido", sql`${t.estado} IN ('pendiente', 'resuelto')`),
+    check("impactos_indicadores_resolucion_valida", sql`${t.resolucion} IN ('no_afecta', 'nueva_version', 'retiro')`),
+    check(
+      "impactos_indicadores_resuelto_coherente",
+      sql`(${t.estado} = 'resuelto') = (${t.resolucion} IS NOT NULL AND ${t.resueltoPor} IS NOT NULL AND ${t.resueltoEn} IS NOT NULL)`,
+    ),
+  ],
 );

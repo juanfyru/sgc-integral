@@ -171,5 +171,6 @@ export const TIPOS_EVENTO = [
   "reapertura",
   "recalculo",
   "historico",
+  "foto",
 ] as const;
 export type TipoEvento = (typeof TIPOS_EVENTO)[number];

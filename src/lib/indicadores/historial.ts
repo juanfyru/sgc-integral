@@ -73,6 +73,8 @@ function queHizo(e: EventoDeMedicion): string {
     }
     case "recalculo":
       return `Se recalculó${MOTIVO_DE_RECALCULO[String(e.detalle.causa)] ?? ""}`;
+    case "foto":
+      return "Tomó la foto";
   }
 }
 
