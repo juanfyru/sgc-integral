@@ -51,7 +51,6 @@ export default async function PaginaIndicadores({
   // El Semáforo muestra «Vencida» solo lo que no está en trámite: lo demás lo cuenta aparte.
   const enSemaforo = r.vencidos.filter((v) => v.tramite === null).length;
   const enTramite = r.vencidos.length - enSemaforo;
-  const metaDentro = r.indicadores.find((i) => i.clave === "dentro_plazo")?.meta ?? 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -69,7 +68,7 @@ export default async function PaginaIndicadores({
 
       <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end lg:justify-between">
         <p className="text-sm text-muted-foreground">
-          {`Periodo: ${r.periodo.etiqueta} · Proceso: ${nombreProceso} · las metas se fijan en Configuración documental`}
+          {`Periodo: ${r.periodo.etiqueta} · Proceso: ${nombreProceso} · las metas se fijan en Configuración documental o en la ficha del indicador que la tarjeta enlaza`}
         </p>
         <FiltroPeriodo periodo={r.periodo.clave} procesoId={r.procesoId} procesos={procesos} ahora={ahora} />
       </div>
@@ -96,7 +95,7 @@ export default async function PaginaIndicadores({
       {/* Uno debajo del otro, a todo el ancho; lado a lado solo desde 2xl, y cada uno con su altura. */}
       <div className="grid grid-cols-1 items-start gap-6 2xl:grid-cols-2">
         <BarrasPorProceso filas={r.vencidosPorProceso} />
-        <TablaPorProceso filas={r.dentroPorProceso} meta={metaDentro} />
+        <TablaPorProceso filas={r.dentroPorProceso} />
       </div>
 
       <p className="text-sm text-muted-foreground">

@@ -21,21 +21,22 @@ const INDICADORES: Array<Columna<IndicadorMedido>> = [
   { cab: "Ficha", ancho: 16, valor: (i) => i.ficha?.codigo ?? null },
 ];
 
-/** `meta`: la de documentos dentro del plazo, para que la cifra no contradiga el veredicto. */
-const porProceso = (meta: number): Array<Columna<FilaProceso>> => [
+/** Cada fila con su meta (la de la cadena de su proceso), y la cifra redondeada contra ella: no contradice el veredicto. */
+const POR_PROCESO: Array<Columna<FilaProceso>> = [
   { cab: "Sigla", ancho: 8, valor: (p) => p.sigla },
   { cab: "Proceso", ancho: 36, valor: (p) => p.proceso },
   { cab: "Vigentes", ancho: 10, valor: (p) => p.vigentes },
   { cab: "Dentro del plazo", ancho: 16, valor: (p) => p.alDia },
   { cab: "Sin fecha de revisión", ancho: 20, valor: (p) => p.sinFecha },
   { cab: "Vencidos", ancho: 10, valor: (p) => p.vigentes - p.sinFecha - p.alDia },
+  { cab: "Meta", ancho: 12, valor: (p) => textoMeta({ clave: "dentro_plazo", unidad: "pct", meta: p.meta }) },
   {
     cab: "Porcentaje",
     ancho: 12,
     valor: (p) =>
       p.valor === null
         ? null
-        : textoPorcentaje("dentro_plazo", { valor: p.valor, numerador: p.alDia, denominador: p.vigentes - p.sinFecha, cumple: p.cumple }, meta),
+        : textoPorcentaje("dentro_plazo", { valor: p.valor, numerador: p.alDia, denominador: p.vigentes - p.sinFecha, cumple: p.cumple }, p.meta),
   },
   { cab: "Cumple", ancho: 12, valor: (p) => mayuscula(textoCumple(p.cumple)) },
 ];
@@ -65,8 +66,7 @@ export async function construirExcelIndicadores(r: ResultadoIndicadores, meta: M
     ...base,
     detalle: `${filtro} — Trámites publicados en el periodo: ${r.tramites.publicados} · en curso: ${r.tramites.enCurso} — Los de estado, a la fecha de generación`,
   });
-  const metaDentro = r.indicadores.find((i) => i.clave === "dentro_plazo")?.meta ?? 0;
-  agregarHoja(wb, "Por proceso", "Documentos dentro del plazo y vencidos, por proceso", porProceso(metaDentro), r.dentroPorProceso, {
+  agregarHoja(wb, "Por proceso", "Documentos dentro del plazo y vencidos, por proceso", POR_PROCESO, r.dentroPorProceso, {
     ...base,
     detalle: `${filtro} — A la fecha de generación`,
   });

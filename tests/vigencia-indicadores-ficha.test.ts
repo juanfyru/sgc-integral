@@ -16,6 +16,7 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 }
 
 import { TarjetaConformidad } from "@/componentes/distribucion/verificaciones/EstadoPuntos";
+import { TablaPorProceso } from "@/componentes/vigencia/indicadores/TablaPorProceso";
 import { TarjetasIndicadores } from "@/componentes/vigencia/indicadores/TarjetasIndicadores";
 import { obtenerSql } from "@/db/cliente";
 import { guardarConfigDocumentalEn, obtenerConfigDocumental, type ConfigDocumental } from "@/db/consultas/config-documental";
@@ -31,7 +32,7 @@ import { construirExcelIndicadores } from "@/lib/vigencia/indicadores-excel";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { puntoDePrueba, verificarPunto } from "./utiles/distribucion";
 import { indicadorDePrueba, liberarCalculo, sinFichasDocumentales } from "./utiles/indicadores";
-import { sesionAdmin, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
+import { documentoLibre, sesionAdmin, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
 const sql = obtenerSql();
@@ -86,7 +87,7 @@ describe("la tarjeta de Vigencia usa la meta de la ficha de su cálculo", () => 
     }
   }));
 
-  it("con una ficha de etapas de la entidad con meta 70, la tarjeta la usa; con un proceso elegido, la del proceso si la hay", () => revertida(sql, async (tx) => {
+  it("con una ficha de etapas de la entidad con meta 70, la tarjeta la usa; con un proceso elegido, la del proceso y, sin ella, la de la entidad", () => revertida(sql, async (tx) => {
     const gth = await procesoId(tx, "GTH");
     await sinFichasDocumentales(tx, [gth]);
     await etapasEn2091(tx);
@@ -102,15 +103,35 @@ describe("la tarjeta de Vigencia usa la meta de la ficha de su cálculo", () => 
     expect(html).toContain(`Ver ficha ${entidad.codigo}`);
     expect(html).toContain(`href="/indicadores/${encodeURIComponent(entidad.codigo)}?vista=ficha"`);
 
-    // La ficha es de la entidad: con un proceso elegido, la meta de Configuración documental.
-    expect(de(await leer(tx, admin, gth), "etapas")).toMatchObject({ numerador: 3, denominador: 4, meta: 90, cumple: false, ficha: null });
+    // Con un proceso elegido, la cadena (ronda 1): la ficha del proceso → la de la entidad → Configuración documental. Sin
+    // ficha de GTH, la de la entidad, no los 90 guardados en Configuración documental (que ya nadie ve).
+    expect(de(await leer(tx, admin, gth), "etapas")).toMatchObject({ numerador: 3, denominador: 4, meta: 70, cumple: true, ficha: { codigo: entidad.codigo } });
     const delProceso = await indicadorDePrueba(tx, { procesoId: gth, calculo: { clave: "etapas", alcance: "proceso" }, meta: "60" });
     expect(de(await leer(tx, admin, gth), "etapas")).toMatchObject({ meta: 60, cumple: true, ficha: { codigo: delProceso.codigo } });
-    // La del proceso no gobierna la tarjeta de la entidad, ni la de otro proceso.
+    // La del proceso no gobierna la tarjeta de la entidad, ni la de otro proceso: esa sigue con la de la entidad.
     expect(de(await leer(tx, admin), "etapas")).toMatchObject({ meta: 70, ficha: { codigo: entidad.codigo } });
     const cex = await procesoId(tx, "CEX");
     await liberarCalculo(tx, "etapas", "proceso", cex);
-    expect(de(await leer(tx, admin, cex), "etapas")).toMatchObject({ meta: 90, ficha: null });
+    expect(de(await leer(tx, admin, cex), "etapas")).toMatchObject({ meta: 70, ficha: { codigo: entidad.codigo } });
+  }));
+
+  it("la cadena con un proceso elegido: sin ficha del proceso, la de la entidad, con su código solo para quien la ve; una del proceso sin meta no la corta", () => revertida(sql, async (tx) => {
+    const gth = await procesoId(tx, "GTH");
+    const cex = await procesoId(tx, "CEX");
+    await sinFichasDocumentales(tx, [gth, cex]);
+    await etapasEn2091(tx);
+    const admin = await sesionAdmin(tx);
+    // Un líder de GTH elige su proceso, pero no ve un restringido de CEX.
+    const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [gth] });
+    expect(de(await leer(tx, lider, gth), "etapas")).toMatchObject({ numerador: 3, denominador: 4, meta: 90, cumple: false, ficha: null });
+    const entidad = await indicadorDePrueba(tx, { procesoId: cex, calculo: { clave: "etapas", alcance: "entidad" }, meta: "70", nivelAcceso: "restringido" });
+    expect(de(await leer(tx, admin, gth), "etapas")).toMatchObject({ meta: 70, cumple: true, ficha: { codigo: entidad.codigo } });
+    expect(de(await leer(tx, lider, gth), "etapas")).toMatchObject({ meta: 70, cumple: true, ficha: null });
+    // Una ficha de GTH sin meta no corta la cadena: sigue la de la entidad.
+    const sinMeta = await indicadorDePrueba(tx, { procesoId: gth, calculo: { clave: "etapas", alcance: "proceso" }, meta: null });
+    expect(await fichaActivaDelCalculo(tx, { clave: "etapas", alcance: "proceso", procesoId: gth, ahora })).toMatchObject({ codigo: sinMeta.codigo, meta: null });
+    expect(de(await leer(tx, admin, gth), "etapas")).toMatchObject({ meta: 70, cumple: true, ficha: { codigo: entidad.codigo } });
+    expect(de(await leer(tx, lider, gth), "etapas")).toMatchObject({ meta: 70, cumple: true, ficha: null });
   }));
 
   it("la meta programada para el periodo en curso manda sobre la de la ficha; sin meta en la ficha, no manda ninguna", () => revertida(sql, async (tx) => {
@@ -188,6 +209,87 @@ describe("la tarjeta de Vigencia usa la meta de la ficha de su cálculo", () => 
     expect(renderToStaticMarkup(createElement(TarjetaConformidad, { etiqueta: "Conformidad actual", c: deAdminEnPuntos }))).toContain(
       `Umbral 90 % · lo fija la ficha ${conformidad.codigo}`,
     );
+  }));
+});
+
+describe("dentro del plazo, por proceso: cada fila con la meta de la cadena de su proceso", () => {
+  /** Un proceso que solo existe en la transacción, con 20 vigentes: 17 dentro del plazo y 3 vencidos (85 %). */
+  async function procesoAl85(tx: TransactionSql): Promise<{ id: number; sigla: string }> {
+    const sigla = `Z${Date.now() % 100_000_000}`;
+    const [macro] = await tx`SELECT id FROM macroprocesos ORDER BY id LIMIT 1`;
+    const [p] = await tx`INSERT INTO procesos (macroproceso_id, nombre, sigla, slug, icono, orden)
+      VALUES (${macro.id}, ${`Proceso ${sigla}`}, ${sigla}, ${sigla.toLowerCase()}, 'circle', 99) RETURNING id`;
+    for (let k = 0; k < 20; k++) {
+      const d = await documentoLibre(tx, { proceso: sigla, tipo: "PR" });
+      // Aprobado fuera, con revisión cada año: a `ahora`, vencido si se aprobó en enero de 2025.
+      await tx`UPDATE documento_versiones SET fecha_aprobacion = ${k < 17 ? "2026-06-01" : "2025-01-10"}, origen_aprobacion = 'fuera',
+          publicado_en = now() - interval '1 day'
+        WHERE documento_id = ${d.id} AND estado = 'vigente'`;
+      await tx`UPDATE documentos SET meses_revision = 12 WHERE id = ${d.id}`;
+    }
+    return { id: Number(p.id), sigla };
+  }
+
+  it("la fila del proceso, sin filtro, trae la misma meta y el mismo veredicto que la tarjeta con ese proceso elegido", () => revertida(sql, async (tx) => {
+    const p = await procesoAl85(tx);
+    await sinFichasDocumentales(tx, [p.id]);
+    await fijarConfig(tx, "meta_dentro_plazo_pct", "95");
+    const admin = await sesionAdmin(tx);
+    const invariante = async (meta: number, cumple: boolean) => {
+      const fila = (await leer(tx, admin)).dentroPorProceso.find((f) => f.procesoId === p.id);
+      const tarjeta = de(await leer(tx, admin, p.id), "dentro_plazo");
+      expect(fila).toMatchObject({ vigentes: 20, alDia: 17, sinFecha: 0, valor: 85, meta, cumple });
+      expect(tarjeta).toMatchObject({ numerador: 17, denominador: 20, meta, cumple });
+    };
+
+    // (c) Sin ninguna ficha: la de Configuración documental.
+    await invariante(95, false);
+    // (b) Solo con la ficha de la entidad: la de la entidad, en la fila y en la tarjeta.
+    await indicadorDePrueba(tx, { calculo: { clave: "dentro_plazo", alcance: "entidad" }, meta: "80" });
+    await invariante(80, true);
+    // Una ficha del proceso sin meta no corta la cadena.
+    await indicadorDePrueba(tx, { procesoId: p.id, calculo: { clave: "dentro_plazo", alcance: "proceso" }, meta: null });
+    await invariante(80, true);
+    // (a) Con ficha del proceso con meta: la del proceso.
+    await indicadorDePrueba(tx, { procesoId: p.id, calculo: { clave: "dentro_plazo", alcance: "proceso" }, meta: "90" });
+    await invariante(90, false);
+  }));
+
+  it("la tabla y el Excel muestran la meta de cada fila", () => revertida(sql, async (tx) => {
+    const p = await procesoAl85(tx);
+    await sinFichasDocumentales(tx, [p.id]);
+    await fijarConfig(tx, "meta_dentro_plazo_pct", "95");
+    await indicadorDePrueba(tx, { calculo: { clave: "dentro_plazo", alcance: "entidad" }, meta: "80" });
+    await indicadorDePrueba(tx, { procesoId: p.id, calculo: { clave: "dentro_plazo", alcance: "proceso" }, meta: "90" });
+    const admin = await sesionAdmin(tx);
+    const r = await leer(tx, admin);
+    // Otro proceso sin ficha propia (se libera la suya, si la demo la trae): la de la entidad.
+    const otra = r.dentroPorProceso.find((f) => f.procesoId !== p.id)!;
+    await liberarCalculo(tx, "dentro_plazo", "proceso", otra.procesoId);
+    const r2 = await leer(tx, admin);
+    expect(r2.dentroPorProceso.find((f) => f.procesoId === otra.procesoId)!.meta).toBe(80);
+
+    const html = renderToStaticMarkup(createElement(TablaPorProceso, { filas: r2.dentroPorProceso }));
+    const tabla = html.slice(0, html.indexOf("<ul"));
+    expect(tabla.indexOf(">Meta<")).toBeGreaterThan(tabla.indexOf(">Sin fecha de revisión<"));
+    expect(tabla.indexOf(">Meta<")).toBeLessThan(tabla.indexOf(">Porcentaje<"));
+    const filaDe = (texto: string, sigla: string) => texto.split("<tr").find((t) => t.includes(`${sigla} · `))!;
+    expect(filaDe(tabla, p.sigla)).toContain(">≥ 90 %<");
+    expect(filaDe(tabla, p.sigla)).toContain("85 % · no cumple");
+    expect(filaDe(tabla, otra.sigla)).toContain(">≥ 80 %<");
+    // En las tarjetas del celular, el renglón gris termina con la meta.
+    const tarjeta = html.slice(html.indexOf("<ul")).split("<li").find((t) => t.includes(`${p.sigla} · `))!;
+    expect(tarjeta).toContain("17 de 20 dentro del plazo · meta ≥ 90 %</p>");
+
+    const libro = new ExcelJS.Workbook();
+    await libro.xlsx.load((await construirExcelIndicadores(r2, { hospital: "Entidad", generadoEn: "hoy", proceso: "todos", zona: ZONA })) as unknown as ArrayBuffer);
+    const filas: unknown[][] = [];
+    libro.getWorksheet("Por proceso")!.eachRow((f) => filas.push((f.values as unknown[]).slice(1)));
+    const cabecera = filas.find((f) => f[0] === "Sigla")!;
+    expect(cabecera.slice(5, 8)).toEqual(["Vencidos", "Meta", "Porcentaje"]);
+    const meta = cabecera.indexOf("Meta");
+    expect(filas.find((f) => f[0] === p.sigla)!.slice(meta, meta + 3)).toEqual(["≥ 90 %", "85 %", "No cumple"]);
+    expect(filas.find((f) => f[0] === otra.sigla)![meta]).toBe("≥ 80 %");
   }));
 });
 

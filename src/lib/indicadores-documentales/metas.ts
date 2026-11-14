@@ -106,7 +106,10 @@ export type ResultadoIndicadores = {
   procesoId: number | null;
   indicadores: IndicadorMedido[];
   vencidosPorProceso: { procesoId: number; sigla: string; proceso: string; vencidos: number }[];
-  /** `alDia`: dentro del plazo; `sinFecha`: vigentes sin próxima revisión, fuera del porcentaje. */
+  /**
+   * `alDia`: dentro del plazo; `sinFecha`: vigentes sin próxima revisión, fuera del porcentaje. `meta`: la de la cadena
+   * de su proceso (su ficha → la de la entidad → Configuración documental), la misma de la tarjeta con ese proceso elegido.
+   */
   dentroPorProceso: {
     procesoId: number;
     sigla: string;
@@ -114,6 +117,7 @@ export type ResultadoIndicadores = {
     vigentes: number;
     alDia: number;
     valor: number | null;
+    meta: number;
     cumple: boolean | null;
     sinFecha: number;
   }[];

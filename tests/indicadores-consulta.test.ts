@@ -378,8 +378,8 @@ describe("construirExcelIndicadores", () => {
       ],
       vencidosPorProceso: [{ procesoId: 1, sigla: "GTH", proceso: "Gestión del Talento Humano", vencidos: 1 }],
       dentroPorProceso: [
-        { procesoId: 1, sigla: "GTH", proceso: "Gestión del Talento Humano", vigentes: 14, alDia: 11, valor: 85, cumple: false, sinFecha: 1 },
-        { procesoId: 2, sigla: "SGC", proceso: "Sistema de Gestión de Calidad", vigentes: 19, alDia: 18, valor: 95, cumple: false, sinFecha: 0 },
+        { procesoId: 1, sigla: "GTH", proceso: "Gestión del Talento Humano", vigentes: 14, alDia: 11, valor: 85, meta: 90, cumple: false, sinFecha: 1 },
+        { procesoId: 2, sigla: "SGC", proceso: "Sistema de Gestión de Calidad", vigentes: 19, alDia: 18, valor: 95, meta: 95, cumple: false, sinFecha: 0 },
       ],
       vencidos: [{
         documentoId: 9, codigo: "GTH-PR-09", titulo: "=HYPERLINK(\"http://x\")", origen: "interno", procesoId: 1, sigla: "GTH",
@@ -403,9 +403,11 @@ describe("construirExcelIndicadores", () => {
     // La ficha cuya meta se aplica (anexo 14B, §6); vacía sin ficha o para quien no la ve.
     expect(filas("Indicadores")[5]).toEqual(["Documentos dentro de su plazo de revisión", "94 %", "≥ 95 %", "No cumple", 94, 100, "2 documentos sin fecha de revisión", "SGC-ID-001"]);
     expect(filas("Indicadores")[6].slice(0, 4)).toEqual(["Acuses de lectura confirmados", "Sin dato", "≥ 90 %", "Sin dato"]);
-    expect(filas("Por proceso")[5]).toEqual(["GTH", "Gestión del Talento Humano", 14, 11, 1, 2, "85 %", "No cumple"]);
-    // 18 de 19 no alcanza la meta de 95: la cifra no se redondea a ella.
-    expect(filas("Por proceso")[6]).toEqual(["SGC", "Sistema de Gestión de Calidad", 19, 18, 0, 1, "94,7 %", "No cumple"]);
+    // Cada fila con su meta (la de la cadena de su proceso), entre «Vencidos» y «Porcentaje».
+    expect(filas("Por proceso")[4]).toEqual(["Sigla", "Proceso", "Vigentes", "Dentro del plazo", "Sin fecha de revisión", "Vencidos", "Meta", "Porcentaje", "Cumple"]);
+    expect(filas("Por proceso")[5]).toEqual(["GTH", "Gestión del Talento Humano", 14, 11, 1, 2, "≥ 90 %", "85 %", "No cumple"]);
+    // 18 de 19 no alcanza la meta de 95 de su fila: la cifra no se redondea a ella.
+    expect(filas("Por proceso")[6]).toEqual(["SGC", "Sistema de Gestión de Calidad", 19, 18, 0, 1, "≥ 95 %", "94,7 %", "No cumple"]);
     expect(filas("Vencidos")[5]).toEqual(["GTH-PR-09", "'=HYPERLINK(\"http://x\")", "Interno", "GTH · Gestión del Talento Humano", "2026-01-10", 302, "SOL-2026-004"]);
   });
 });

@@ -4,6 +4,7 @@
  * este módulo lee `indicadores`, `indicador_versiones` e `indicador_metas` por SQL directo y no importa los cálculos, las
  * mediciones, Vigencia, Distribución ni Configuración documental.
  */
+import type { PendingQuery, Row } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { puedeVerIndicador, type SujetoVisibilidad } from "@/lib/alcance";
 import type { Indicador } from "@/lib/indicadores-documentales/metas";
@@ -37,22 +38,19 @@ const CAMPO_DE_TARJETA: Record<Indicador, CampoDeMetaDocumental> = {
   etapas: "etapasPlazoPct",
 };
 
+type FilaDeFicha = FichaActivaDelCalculo & { calculo: ClaveDeCalculo; procesoId: number };
+
 /**
- * Las fichas activas de esos cálculos con ese alcance (con alcance «proceso», las de ese proceso), en una consulta; a lo
- * sumo una por cálculo (`indicadores_calculo_unico`). La versión vigente es la aprobada de mayor número, y su meta, la que
- * rige el periodo en curso de su periodicidad: la meta programada del periodo la reemplaza solo si la versión tiene meta.
- * Es la regla de `reglaDelPeriodo` (`mediciones.ts`), repetida aquí en SQL porque este módulo no puede importarla.
+ * Las fichas activas que cumplen `donde` (sobre `indicadores i`), con la meta que rige hoy. La versión vigente es la
+ * aprobada de mayor número, y su meta, la que rige el periodo en curso de su periodicidad: la meta programada del periodo
+ * la reemplaza solo si la versión tiene meta. Es la regla de `reglaDelPeriodo` (`mediciones.ts`), repetida aquí en SQL
+ * porque este módulo no puede importarla; la usan todas las lecturas de este módulo.
  */
-export async function fichasActivasDeLosCalculos(
-  sql: Cliente,
-  c: { claves: readonly ClaveDeCalculo[]; alcance: AlcanceDeCalculo; procesoId: number | null; ahora: Date },
-): Promise<Map<ClaveDeCalculo, FichaActivaDelCalculo>> {
-  const salida = new Map<ClaveDeCalculo, FichaActivaDelCalculo>();
-  if (c.claves.length === 0 || (c.alcance === "proceso" && c.procesoId === null)) return salida;
+async function fichasConSuMeta(sql: Cliente, donde: PendingQuery<Row[]>, ahora: Date): Promise<FilaDeFicha[]> {
   const zona = zonaHoraria();
-  const enCurso = PERIODICIDADES.map((p) => sql`WHEN ${p} THEN ${periodoQueContiene(p, c.ahora, zona).clave}`);
+  const enCurso = PERIODICIDADES.map((p) => sql`WHEN ${p} THEN ${periodoQueContiene(p, ahora, zona).clave}`);
   const filas = await sql`
-    SELECT i.id, i.codigo, i.calculo,
+    SELECT i.id, i.codigo, i.calculo, i.proceso_id,
            CASE WHEN v.meta IS NOT NULL AND im.id IS NOT NULL THEN im.meta ELSE v.meta END AS meta
     FROM indicadores i
     JOIN LATERAL (
@@ -61,16 +59,43 @@ export async function fichasActivasDeLosCalculos(
     ) v ON true
     LEFT JOIN indicador_metas im
       ON im.indicador_id = i.id AND im.periodo = (CASE v.periodicidad ${enCurso.reduce((a, b) => sql`${a} ${b}`)} END)
-    WHERE i.estado = 'activo' AND i.calculo IN ${sql([...c.claves])} AND i.calculo_alcance = ${c.alcance}
-      AND ${c.alcance === "proceso" ? sql`i.proceso_id = ${c.procesoId}` : sql`true`}`;
-  for (const f of filas) {
-    salida.set(f.calculo as ClaveDeCalculo, {
-      indicadorId: Number(f.id),
-      codigo: f.codigo as string,
-      meta: f.meta === null ? null : String(f.meta),
-    });
-  }
-  return salida;
+    WHERE i.estado = 'activo' AND ${donde}`;
+  return filas.map((f) => ({
+    indicadorId: Number(f.id),
+    codigo: f.codigo as string,
+    meta: f.meta === null ? null : String(f.meta),
+    calculo: f.calculo as ClaveDeCalculo,
+    procesoId: Number(f.proceso_id),
+  }));
+}
+
+const soloFicha = (f: FilaDeFicha): FichaActivaDelCalculo => ({ indicadorId: f.indicadorId, codigo: f.codigo, meta: f.meta });
+
+/**
+ * Las fichas activas de esos cálculos con ese alcance (con alcance «proceso», las de ese proceso), en una consulta; a lo
+ * sumo una por cálculo (`indicadores_calculo_unico`), con la meta que rige hoy (`fichasConSuMeta`).
+ */
+export async function fichasActivasDeLosCalculos(
+  sql: Cliente,
+  c: { claves: readonly ClaveDeCalculo[]; alcance: AlcanceDeCalculo; procesoId: number | null; ahora: Date },
+): Promise<Map<ClaveDeCalculo, FichaActivaDelCalculo>> {
+  if (c.claves.length === 0 || (c.alcance === "proceso" && c.procesoId === null)) return new Map();
+  const donde = sql`i.calculo IN ${sql([...c.claves])} AND i.calculo_alcance = ${c.alcance}
+    AND ${c.alcance === "proceso" ? sql`i.proceso_id = ${c.procesoId}` : sql`true`}`;
+  return new Map((await fichasConSuMeta(sql, donde, c.ahora)).map((f) => [f.calculo, soloFicha(f)]));
+}
+
+/**
+ * Las fichas activas de alcance «proceso» de un cálculo, de todos los procesos, en una consulta: la llave es el proceso
+ * (a lo sumo una por proceso, `indicadores_calculo_unico`), con la meta que rige hoy. Las filas de «Dentro del plazo, por
+ * proceso» toman de aquí la meta de su proceso.
+ */
+export async function fichasPorProcesoDelCalculo(
+  sql: Cliente,
+  c: { clave: ClaveDeCalculo; ahora: Date },
+): Promise<Map<number, FichaActivaDelCalculo>> {
+  const donde = sql`i.calculo = ${c.clave} AND i.calculo_alcance = 'proceso'`;
+  return new Map((await fichasConSuMeta(sql, donde, c.ahora)).map((f) => [f.procesoId, soloFicha(f)]));
 }
 
 /** La ficha activa de ese cálculo y alcance, con la meta que rige su periodo en curso; `null` si no la hay. */

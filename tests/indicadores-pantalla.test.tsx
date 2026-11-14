@@ -180,12 +180,24 @@ describe("BarrasPorProceso", () => {
 
 describe("TablaPorProceso", () => {
   const filas: ResultadoIndicadores["dentroPorProceso"] = [
-    { procesoId: 1, sigla: "GTH", proceso: "Gestión del Talento Humano", vigentes: 14, alDia: 11, valor: 79, cumple: false, sinFecha: 0 },
-    { procesoId: 2, sigla: "SGC", proceso: "Sistema de Gestión de Calidad", vigentes: 9, alDia: 9, valor: 100, cumple: true, sinFecha: 0 },
-    { procesoId: 3, sigla: "GBS", proceso: "Gestión de Bienes y Servicios", vigentes: 1, alDia: 0, valor: null, cumple: null, sinFecha: 1 },
-    { procesoId: 4, sigla: "CEX", proceso: "Consulta Externa", vigentes: 19, alDia: 18, valor: 95, cumple: false, sinFecha: 0 },
+    { procesoId: 1, sigla: "GTH", proceso: "Gestión del Talento Humano", vigentes: 14, alDia: 11, valor: 79, meta: 95, cumple: false, sinFecha: 0 },
+    // La meta de la cadena de su proceso: SGC tiene ficha propia con meta 90.
+    { procesoId: 2, sigla: "SGC", proceso: "Sistema de Gestión de Calidad", vigentes: 9, alDia: 9, valor: 100, meta: 90, cumple: true, sinFecha: 0 },
+    { procesoId: 3, sigla: "GBS", proceso: "Gestión de Bienes y Servicios", vigentes: 1, alDia: 0, valor: null, meta: 95, cumple: null, sinFecha: 1 },
+    { procesoId: 4, sigla: "CEX", proceso: "Consulta Externa", vigentes: 19, alDia: 18, valor: 95, meta: 95, cumple: false, sinFecha: 0 },
   ];
-  const html = renderToStaticMarkup(<TablaPorProceso filas={filas} meta={95} />);
+  const html = renderToStaticMarkup(<TablaPorProceso filas={filas} />);
+
+  it("cada fila dice su meta: en la columna «Meta» de la tabla y al final del renglón gris de su tarjeta", () => {
+    const tabla = html.slice(0, html.indexOf("<ul"));
+    const fila = (sigla: string) => tabla.split("<tr").find((t) => t.includes(`${sigla} · `))!;
+    expect(fila("GTH")).toContain(">≥ 95 %<");
+    expect(fila("SGC")).toContain(">≥ 90 %<");
+    const tarjetas = html.slice(html.indexOf("<ul"));
+    expect(tarjetas).toContain("11 de 14 dentro del plazo · meta ≥ 95 %</p>");
+    expect(tarjetas).toContain("9 de 9 dentro del plazo · meta ≥ 90 %</p>");
+    expect(tarjetas).toContain("0 de 0 dentro del plazo · 1 sin fecha de revisión · meta ≥ 95 %</p>");
+  });
 
   it("dice el porcentaje y si cumple con texto, en la tabla y en las tarjetas del celular", () => {
     expect(html.match(/79 % · no cumple/g)).toHaveLength(2);

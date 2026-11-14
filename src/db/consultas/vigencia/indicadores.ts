@@ -9,7 +9,11 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { resumenAcuses } from "@/db/consultas/distribucion/acuses";
 import { estadoDePuntos, historialVerificaciones } from "@/db/consultas/distribucion/verificaciones-resumen";
-import { fichasActivasDeLosCalculos } from "@/db/consultas/indicadores/fichas-de-calculo";
+import {
+  fichasActivasDeLosCalculos,
+  fichasPorProcesoDelCalculo,
+  type FichaActivaDelCalculo,
+} from "@/db/consultas/indicadores/fichas-de-calculo";
 import { porcentajeDeConformidad } from "@/lib/distribucion/verificacion";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { alcanceProcesos, enAlcance, filtroAcceso, puedeVerIndicador, type Alcance } from "@/lib/alcance";
@@ -35,7 +39,7 @@ import {
 } from "@/lib/indicadores-documentales/metas";
 import { periodoActual, periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { textoDias } from "@/lib/indicadores-documentales/textos";
-import { CALCULOS, CLAVES_DE_CALCULO, alcanceAdmitido, type AlcanceDeCalculo } from "@/lib/indicadores/calculos/registro";
+import { CALCULOS, CLAVES_DE_CALCULO, alcanceAdmitido, type AlcanceDeCalculo, type ClaveDeCalculo } from "@/lib/indicadores/calculos/registro";
 import { puede } from "@/lib/permisos";
 import { cuenta } from "@/lib/plural";
 import { EVENTOS_SIN_CAMBIO_DE_ETAPA } from "@/lib/tramites/dia-de-etapa";
@@ -78,30 +82,40 @@ function condicionTramites(sql: Cliente, sesion: SesionFlujo, alcance: Alcance, 
 
 type MetaDeFicha = { meta: number; ficha: { codigo: string } | null };
 
+/** Los cálculos que gobiernan una tarjeta con ese alcance; la conformidad copia la de Distribución (`metaDeConformidad`). */
+const calculosDeTarjetas = (alcance: AlcanceDeCalculo) =>
+  CLAVES_DE_CALCULO.filter((k) => {
+    const tarjeta = CALCULOS[k].documental;
+    return tarjeta !== null && tarjeta !== "conformidad" && alcanceAdmitido(CALCULOS[k], alcance);
+  });
+
 /**
- * La meta que fija a cada tarjeta la ficha activa de su cálculo con el alcance del filtro (anexo 14B, §6): sin proceso,
- * la de la entidad; con proceso, la de ese proceso. Solo las fichas con meta; el código, solo para quien puede verla. La
- * conformidad no pasa por aquí: la tarjeta copia la de Distribución (`metaDeConformidad`).
+ * La meta que fija a cada tarjeta una ficha activa de su cálculo (anexo 14B, §6), por la cadena (ronda 1 de la Tarea 8):
+ * con un proceso elegido, la ficha de ese proceso; si no la hay, la de la entidad; si tampoco, Configuración documental
+ * (quien llama). Sin proceso, la de la entidad. Una ficha sin meta no corta la cadena. El código, solo para quien puede
+ * ver la ficha que se aplica. `dentroDeLaEntidad` es la meta de la ficha de la entidad de «dentro del plazo», el eslabón
+ * de las filas por proceso que no tienen ficha propia.
  */
 async function metasDeFichas(
   sql: Cliente,
   sesion: SesionFlujo,
   c: { procesoId: number | undefined; ahora: Date },
-): Promise<Map<Indicador, MetaDeFicha>> {
-  const alcance: AlcanceDeCalculo = c.procesoId === undefined ? "entidad" : "proceso";
-  const claves = CLAVES_DE_CALCULO.filter((k) => {
-    const tarjeta = CALCULOS[k].documental;
-    return tarjeta !== null && tarjeta !== "conformidad" && alcanceAdmitido(CALCULOS[k], alcance);
-  });
-  const fichas = await fichasActivasDeLosCalculos(sql, { claves, alcance, procesoId: c.procesoId ?? null, ahora: c.ahora });
-  const salida = new Map<Indicador, MetaDeFicha>();
-  for (const [clave, f] of fichas) {
-    const tarjeta = CALCULOS[clave].documental;
-    if (tarjeta === null || f.meta === null) continue;
-    const visible = await puedeVerIndicador(f.indicadorId, sesion, { sql });
-    salida.set(tarjeta, { meta: Number(f.meta), ficha: visible ? { codigo: f.codigo } : null });
+): Promise<{ tarjetas: Map<Indicador, MetaDeFicha>; dentroDeLaEntidad: number | null }> {
+  const [entidad, delProceso] = await Promise.all([
+    fichasActivasDeLosCalculos(sql, { claves: calculosDeTarjetas("entidad"), alcance: "entidad", procesoId: null, ahora: c.ahora }),
+    c.procesoId === undefined
+      ? new Map<ClaveDeCalculo, FichaActivaDelCalculo>()
+      : fichasActivasDeLosCalculos(sql, { claves: calculosDeTarjetas("proceso"), alcance: "proceso", procesoId: c.procesoId, ahora: c.ahora }),
+  ]);
+  const tarjetas = new Map<Indicador, MetaDeFicha>();
+  for (const clave of calculosDeTarjetas("entidad")) {
+    const ficha = [delProceso.get(clave), entidad.get(clave)].find((f) => f !== undefined && f.meta !== null);
+    if (!ficha) continue;
+    const visible = await puedeVerIndicador(ficha.indicadorId, sesion, { sql });
+    tarjetas.set(CALCULOS[clave].documental!, { meta: Number(ficha.meta), ficha: visible ? { codigo: ficha.codigo } : null });
   }
-  return salida;
+  const dentro = entidad.get("dentro_plazo")?.meta ?? null;
+  return { tarjetas, dentroDeLaEntidad: dentro === null ? null : Number(dentro) };
 }
 
 /**
@@ -128,7 +142,7 @@ export async function indicadoresDocumentales(
   const hasta = new Date(periodo.hasta.getTime() + 1);
   const deTramites = condicionTramites(sql, sesion, alcance, procesoId);
 
-  const [config, filas, publicados, cierres, [abiertos], acuses, puntos, verificadas, deFichas] = await Promise.all([
+  const [config, filas, publicados, cierres, [abiertos], acuses, puntos, verificadas, deFichas, dentroDeProcesos] = await Promise.all([
     obtenerConfigDocumental({ sql }),
     listarSemaforo(sesion, { estado: "todos", procesoId }, { sql, ahora }),
     sql`SELECT t.creado_en AS solicitado_en, t.cerrado_en AS publicado_en,
@@ -143,15 +157,16 @@ export async function indicadoresDocumentales(
     estadoDePuntos(sesion, { sql, ahora }),
     historialVerificaciones(sesion, { desde: periodo.desde, hasta }, { sql, ahora }),
     metasDeFichas(sql, sesion, { procesoId, ahora }),
+    fichasPorProcesoDelCalculo(sql, { clave: "dentro_plazo", ahora }),
   ]);
 
   const metas = { metas: config.metas, umbralConformidadPct: config.distribucion.umbralConformidadPct };
-  const metaDeLaTarjeta = (clave: Indicador) => deFichas.get(clave)?.meta ?? metaDe(clave, metas);
+  const metaDeLaTarjeta = (clave: Indicador) => deFichas.tarjetas.get(clave)?.meta ?? metaDe(clave, metas);
   // Un porcentaje cumple con la razón exacta, no con el entero que se muestra (94,7 % no alcanza 95).
   const medir = (clave: Indicador, m: Medicion, detalle: string | null): IndicadorMedido => {
     const meta = metaDeLaTarjeta(clave);
     const veredicto = UNIDAD[clave] === "pct" ? cumplePorcentaje(clave, m, meta) : cumple(clave, m.valor, meta);
-    const ficha = deFichas.get(clave)?.ficha ?? null;
+    const ficha = deFichas.tarjetas.get(clave)?.ficha ?? null;
     return { clave, nombre: NOMBRE_INDICADOR[clave], unidad: UNIDAD[clave], ...m, meta, cumple: veredicto, detalle, ficha };
   };
 
@@ -232,8 +247,13 @@ export async function indicadoresDocumentales(
     medir("etapas", etapas, etapas.sinDato > 0 ? `${cuenta(etapas.sinDato, "etapa", "etapas")} sin dato` : null),
   ];
 
-  // La de la tarjeta: la página y el Excel leen la tabla por proceso con ella.
-  const metaDentro = metaDeLaTarjeta("dentro_plazo");
+  // Cada fila, con la cadena de su proceso: su ficha con meta → la de la entidad → Configuración documental. Es la meta de
+  // la tarjeta con ese proceso elegido. Las filas no muestran el código de ninguna ficha: no hace falta mirar si la ve.
+  const dentroDeLaEntidad = deFichas.dentroDeLaEntidad ?? metaDe("dentro_plazo", metas);
+  const metaDentroDe = (proceso: number) => {
+    const delProceso = dentroDeProcesos.get(proceso)?.meta ?? null;
+    return delProceso === null ? dentroDeLaEntidad : Number(delProceso);
+  };
   return {
     periodo,
     procesoId: procesoId ?? null,
@@ -242,16 +262,20 @@ export async function indicadoresDocumentales(
       .filter((p) => p.vencidos > 0)
       .map((p) => ({ procesoId: p.procesoId, sigla: p.sigla, proceso: p.proceso, vencidos: p.vencidos })),
     dentroPorProceso: porProceso
-      .map((p) => ({
-        procesoId: p.procesoId,
-        sigla: p.sigla,
-        proceso: p.proceso,
-        vigentes: p.vigentes,
-        alDia: p.dentro.numerador,
-        valor: p.dentro.valor,
-        cumple: cumplePorcentaje("dentro_plazo", p.dentro, metaDentro),
-        sinFecha: p.sinDato,
-      }))
+      .map((p) => {
+        const meta = metaDentroDe(p.procesoId);
+        return {
+          procesoId: p.procesoId,
+          sigla: p.sigla,
+          proceso: p.proceso,
+          vigentes: p.vigentes,
+          alDia: p.dentro.numerador,
+          valor: p.dentro.valor,
+          meta,
+          cumple: cumplePorcentaje("dentro_plazo", p.dentro, meta),
+          sinFecha: p.sinDato,
+        };
+      })
       // Lo que más falta, primero; sin dato, al final.
       .sort((a, b) => (a.valor ?? 101) - (b.valor ?? 101) || a.proceso.localeCompare(b.proceso, "es")),
     vencidos,
