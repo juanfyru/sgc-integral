@@ -72,6 +72,11 @@ export type OpcionesIndicadorDePrueba = {
   calculo?: { clave: ClaveDeCalculo; alcance: AlcanceDeCalculo };
   /** El objetivo al que apunta la versión 1 (con su enunciado de hoy); sin valor, ninguno. */
   objetivoId?: number;
+  /**
+   * El ente al que se reporta la versión 1 (anexo 14B, §8). Aprobada, el indicador lo cuenta desde `desde` (sin valor, desde
+   * la aprobación), como lo dejaría `alPublicarVersion`; con `desde: null`, como una ficha aprobada antes de la 14B.
+   */
+  ente?: { nombre: string; periodicidad: Periodicidad; plazoDias: number; desde?: Date | null };
 };
 
 export type VariableDePrueba = {
@@ -147,7 +152,8 @@ export async function indicadorDePrueba(
        clasificacion_id, clasificacion_nombre, proceso_nombre, objetivo_id, objetivo_nombre, origen_dato, calculo, calculo_alcance, forma, factor, formula,
        unidad_id, unidad_nombre, unidad_sufijo, decimales, periodicidad, tendencia, meta,
        semaforo_modo, umbral_atencion_pct, limite_critico, rangos, resultado_max, nivel, riesgo_asociado,
-       importacion_id, aprobacion_previa_documento, aprobacion_previa_por, aprobacion_previa_fecha, creado_por)
+       importacion_id, aprobacion_previa_documento, aprobacion_previa_por, aprobacion_previa_fecha,
+       ente, periodicidad_externa, plazo_externo_dias, creado_por)
     SELECT ${indicadorId}, 1, 'borrador', 'inicial', ${`Indicador de prueba ${codigo}`}, 'Medir el cumplimiento de la prueba',
       t.id, t.nombre, c.id, c.nombre, ${proceso.nombre as string}, ${o.objetivoId ?? null},
       (SELECT enunciado FROM objetivos WHERE id = ${o.objetivoId ?? null}), ${calculo ? "automatico" : "manual"}, ${o.calculo?.clave ?? null},
@@ -156,7 +162,8 @@ export async function indicadorDePrueba(
       ${o.rangos ? "rangos" : (o.modo ?? "relativo")}, ${o.rangos || o.modo === "fijo" ? null : (o.umbralPct ?? 70)}, ${o.limite ?? null},
       ${o.rangos ? tx.json(o.rangos as never) : null}, ${o.resultadoMax ?? null}, ${o.nivel ?? null}, ${o.riesgoAsociado ?? null},
       ${o.importacionId ?? null}, ${o.importacionId ? (o.aprobacionPrevia?.documento ?? "Acta 1 de 2025") : null}, ${o.importacionId ? (o.aprobacionPrevia?.aprobadoPor ?? "Comité de calidad") : null},
-      ${o.importacionId ? (o.aprobacionPrevia?.fecha ?? "2025-01-15") : null}, ${elaboradaPor}
+      ${o.importacionId ? (o.aprobacionPrevia?.fecha ?? "2025-01-15") : null},
+      ${o.ente?.nombre ?? null}, ${o.ente?.periodicidad ?? null}, ${o.ente?.plazoDias ?? null}, ${elaboradaPor}
     FROM tipos_indicador t, clasificaciones_indicador c, unidades_indicador un
     WHERE t.nombre = 'Eficacia' AND c.nombre = ${clasificacion} AND un.nombre = 'Porcentaje'
     RETURNING id`;
@@ -201,6 +208,9 @@ export async function indicadorDePrueba(
     if (o.calculo) {
       await tx`UPDATE indicadores SET calculo = ${o.calculo.clave}, calculo_alcance = ${o.calculo.alcance} WHERE id = ${indicadorId}`;
     }
+    if (o.ente && o.ente.desde !== null) {
+      await tx`UPDATE indicadores SET ente_desde = ${o.ente.desde ?? aprobadaEn} WHERE id = ${indicadorId}`;
+    }
   }
 
   return { id: indicadorId, codigo, versionId, variables, procesoId };
@@ -217,14 +227,17 @@ export async function loteImportado(tx: TransactionSql, d: { usuarioId: number; 
 /**
  * Calla la pasada de los indicadores (y el cierre) sobre lo que trae la base (la demo, el punto de control): marca como
  * avisadas y escaladas sus mediciones abiertas; da por fotografiadas (`foto_en`, sin valores) las de sus automáticos que
- * esperan la foto, para que `tomarFotos` no las calcule (anexo 14B, §5.4); y deja sin inicio de medición a sus indicadores
- * activos, para que no abra periodos nuevos. `revisarVencimientos` los recorre todos y un test cuenta solo lo suyo. Se llama
- * antes de crear los datos del test, dentro de la transacción que se revierte.
+ * esperan la foto, para que `tomarFotos` no las calcule (anexo 14B, §5.4); marca como avisadas y escaladas sus constancias
+ * de envío pendientes; y deja sin inicio de medición a sus indicadores activos, para que no abra periodos nuevos ni
+ * constancias nuevas (`asegurarConstancias` solo mira los que tienen inicio). `revisarVencimientos` los recorre todos y un
+ * test cuenta solo lo suyo. Se llama antes de crear los datos del test, dentro de la transacción que se revierte.
  */
 export async function silenciarIndicadores(tx: TransactionSql): Promise<void> {
   await tx`UPDATE mediciones SET aviso_previo_en = coalesce(aviso_previo_en, now()), aviso_vencido_en = coalesce(aviso_vencido_en, now()),
       escalado_en = coalesce(escalado_en, now())
     WHERE estado <> 'cerrada' AND (aviso_previo_en IS NULL OR aviso_vencido_en IS NULL OR escalado_en IS NULL)`;
+  await tx`UPDATE reportes_externos SET aviso_vencido_en = coalesce(aviso_vencido_en, now()), escalado_en = coalesce(escalado_en, now())
+    WHERE estado = 'pendiente' AND (aviso_vencido_en IS NULL OR escalado_en IS NULL)`;
   // Lo que `tomarFotos` busca: abierta, sin foto, sin datos ni «no aplica», de un indicador con alguna versión automática.
   await tx`UPDATE mediciones m SET foto_en = now()
     WHERE m.estado = 'abierta' AND m.foto_en IS NULL AND m.reportada_en IS NULL AND NOT m.no_aplica

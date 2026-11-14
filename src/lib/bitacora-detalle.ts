@@ -207,6 +207,15 @@ function medicionDe(codigo: string | null, periodo: unknown): string {
   return `${codigo}${etiqueta ? `, ${etiqueta}` : ""}`;
 }
 
+/** «el reporte a Supersalud de SGC-ID-001, cuarto trimestre de 2026»; sin datos, «el reporte al ente de un indicador». */
+function reporteAlEnte(codigo: string | null, d: Record<string, unknown>): string {
+  const ente = texto(d.ente);
+  const clave = texto(d.periodo);
+  const etiqueta = clave ? (periodoDe(clave, zonaHoraria())?.etiqueta ?? clave) : null;
+  const de = codigo ? `${codigo}${etiqueta ? `, ${etiqueta}` : ""}` : `un indicador${etiqueta ? ` (${etiqueta})` : ""}`;
+  return `el reporte ${ente ? `a ${ente}` : "al ente"} de ${de}`;
+}
+
 /** La etiqueta de `valor` en `mapa`, tal cual (con su mayúscula), o null si no es una de sus claves. */
 function etiquetaTal(mapa: Record<string, string>, valor: unknown): string | null {
   const clave = texto(valor);
@@ -926,6 +935,24 @@ export function describirEvento(e: EventoAuditoria): string {
       const despues = texto(d.despues);
       return `Volvió a calcular ${medicionDe(cod, d.periodo)}${antes && despues ? `: de ${antes} a ${despues}` : ""}`;
     }
+    // ── Indicadores (14B): las constancias de envío al ente
+    case "constancia_registrada": {
+      const radicado = texto(d.radicado);
+      const resultado = texto(d.resultado);
+      return `Registró ${reporteAlEnte(cod, d)}${radicado ? ` (radicado ${radicado})` : ""}${resultado ? `: ${resultado}` : ""}`;
+    }
+    case "constancia_corregida": {
+      const antes = objeto(d.antes) ?? {};
+      const despues = objeto(d.despues) ?? {};
+      const cambio = (campo: string, nombre: string) =>
+        texto(antes[campo]) !== texto(despues[campo]) ? `${nombre} ${texto(antes[campo]) ?? "sin dato"} → ${texto(despues[campo]) ?? "sin dato"}` : null;
+      const cambios = [
+        cambio("radicado", "radicado"),
+        cambio("fechaEnvio", "fecha de envío"),
+        texto(antes.nota) !== texto(despues.nota) ? "nota" : null,
+      ].filter((p): p is string => p !== null);
+      return `Corrigió ${reporteAlEnte(cod, d)}${cambios.length > 0 ? ` (${cambios.join("; ")})` : ""}${conMotivo(d.justificacion)}`;
+    }
     case "indicador_meta_programada": {
       if (!cod) return "Programó la meta de un periodo de un indicador";
       const antes = metaDeBitacora(d.antes);
@@ -1141,6 +1168,8 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   medicion_reabierta: "Reabrió una medición de indicador",
   medicion_cerrada_de_nuevo: "Cerró de nuevo una medición de indicador",
   medicion_foto_recalculada: "Volvió a calcular una medición de indicador",
+  constancia_registrada: "Registró el reporte de un indicador a un ente",
+  constancia_corregida: "Corrigió el reporte de un indicador a un ente",
   tipo_norma_creado: "Creó un tipo de norma",
   tipo_norma_editado: "Renombró un tipo de norma",
   tipo_norma_movido: "Movió un tipo de norma",

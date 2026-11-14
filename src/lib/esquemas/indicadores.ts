@@ -1,5 +1,14 @@
 import { z } from "zod";
 import { JUSTIFICACION_MAXIMA, JUSTIFICACION_MINIMA, PATRON_MES } from "@/lib/indicadores/cierre";
+import {
+  esFechaValida,
+  FECHA_INVALIDA,
+  JUSTIFICACION_MAXIMA_CONSTANCIA,
+  JUSTIFICACION_MINIMA_CONSTANCIA,
+  NOTA_MAXIMA,
+  RADICADO_MAXIMO,
+  SIN_RADICADO,
+} from "@/lib/indicadores/constancias";
 import { FACTORES_TASA } from "@/lib/indicadores/formula/formas";
 import { fraccion } from "@/lib/indicadores/formula/fraccion";
 import { claveDeCorrespondencia } from "@/lib/indicadores/importacion/formulario";
@@ -417,6 +426,23 @@ export const EsquemaMeta = z
     justificacion: opcional("La justificación", 500),
   })
   .strict();
+
+/**
+ * Registrar el envío de una constancia al ente (anexo 14B, §8): la fecha de envío, el radicado y una nota opcional; el `id`
+ * de la constancia viaja aparte. La consulta vuelve a validar los dos primeros (la fecha, contra el día de hoy en la zona).
+ */
+export const EsquemaRegistrarConstancia = z
+  .object({
+    fechaEnvio: z.string({ error: FECHA_INVALIDA }).trim().refine(esFechaValida, FECHA_INVALIDA),
+    radicado: z.string({ error: SIN_RADICADO }).trim().min(1, SIN_RADICADO).max(RADICADO_MAXIMO, SIN_RADICADO),
+    nota: opcional("La nota", NOTA_MAXIMA),
+  })
+  .strict();
+
+/** Corregir una constancia registrada: lo mismo que al registrarla, con la justificación (de 10 a 500 caracteres). */
+export const EsquemaCorregirConstancia = EsquemaRegistrarConstancia.extend({
+  justificacion: textoAcotado("La justificación", JUSTIFICACION_MINIMA_CONSTANCIA, JUSTIFICACION_MAXIMA_CONSTANCIA),
+}).strict();
 
 /** Quitar la meta programada de un periodo: el periodo y, si ya terminó, la justificación. */
 export const EsquemaQuitarMeta = z

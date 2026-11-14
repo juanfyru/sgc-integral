@@ -31,6 +31,16 @@ describe("toda acción del panel declara su permiso", () => {
   }
 });
 
+describe("las constancias de envío al ente las registra quien mide (anexo 14B, §8)", () => {
+  const src = readFileSync("src/app/acciones-indicadores.ts", "utf8");
+  for (const nombre of ["registrarConstanciaAccion", "corregirConstanciaAccion"]) {
+    it(nombre, () => {
+      const accion = exportadas(src).find((a) => a.nombre === nombre);
+      expect(accion?.cuerpo).toMatch(/mutacion\(\s*formData,\s*"indicadores\.medir"/);
+    });
+  }
+});
+
 describe("toda acción de cuenta exige sesión salvo ingresar", () => {
   const src = readFileSync("src/app/acciones-cuenta.ts", "utf8");
   for (const { nombre, cuerpo } of exportadas(src)) {

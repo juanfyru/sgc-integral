@@ -770,7 +770,8 @@ describe("la ficha en borrador", () => {
       const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [b.procesoId] });
       await expect(opcionesDeFicha(lider, { sql: tx })).rejects.toBeInstanceOf(ErrorPermiso);
       const ente = `ZZ Ente ${unico()}`;
-      await crearIndicador(b.admin, datos(b, { ente: `  ${ente} ` }), { sql: tx });
+      // «Se reporta a un ente» es un estado completo (anexo 14B, §8): con su periodicidad y su plazo.
+      await crearIndicador(b.admin, datos(b, { ente: `  ${ente} `, periodicidadExterna: "trimestral", plazoExternoDias: 15 }), { sql: tx });
       // Los cargos de los líderes activos de cada proceso: los responsables por omisión sin persona designada.
       await tx`UPDATE usuarios SET cargo_id = ${b.cargoId} WHERE id = ${lider.usuarioId}`;
       const o = await opcionesDeFicha(b.admin, { sql: tx, ahora: new Date("2026-11-10T15:00:00Z") });

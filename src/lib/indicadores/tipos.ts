@@ -65,6 +65,9 @@ export type OrigenDato = (typeof ORIGENES_DATO)[number];
 export const NADIE_MIDE = "Nadie: lo calcula el sistema";
 export const ESPERA_ANTES_DE_CALCULAR = "Días de espera antes de calcular";
 
+/** El detalle de una tarea que el Admin SGC tiene de respaldo (spec 14 §6.1): sin designado ni líder en la función. */
+export const SIN_RESPONSABLE = "Sin responsable: designe a alguien";
+
 export const ORIGENES_VARIABLE = ["propia", "compartida", "automatica", "indicador"] as const;
 export type OrigenVariable = (typeof ORIGENES_VARIABLE)[number];
 

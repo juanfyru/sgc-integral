@@ -1,15 +1,16 @@
 /**
  * Las tareas de los indicadores en «Mis tareas» (spec 14 §10.1, F14-DC21 y F14-DC32) y la insignia de la entrada
- * «Indicadores»: reportar y analizar las mediciones a cargo de la persona, responder las observaciones sin respuesta,
- * aprobar las fichas que le tocan y retomar las devueltas. Una consulta por tipo de tarea, acotada a la persona con las
- * reglas de `src/lib/alcance.ts` (`responsableDe`, el criterio de `responsablesDeMedir` y `responsablesDeAnalizar`;
- * `esAprobadorDe`, el de `aprobadoresDeFicha`; y `filtroIndicadores`).
+ * «Indicadores»: reportar y analizar las mediciones a cargo de la persona, registrar sus reportes al ente (anexo 14B, §8:
+ * `tareasDeConstancias`), responder las observaciones sin respuesta, aprobar las fichas que le tocan y retomar las
+ * devueltas. Una consulta por tipo de tarea, acotada a la persona con las reglas de `src/lib/alcance.ts` (`responsableDe`,
+ * el criterio de `responsablesDeMedir` y `responsablesDeAnalizar`; `esAprobadorDe`, el de `aprobadoresDeFicha`; y
+ * `filtroIndicadores`).
  *
- * Solo lee: corre en cada página del cascarón y no abre periodos. Los abre la pasada de vencimientos que el propio cascarón
- * dispara (`after()`, cada diez minutos como mucho) y las páginas del módulo: una tarea nueva aparece, a lo sumo, en la
- * carga siguiente. No son tarea los históricos, los «no aplica», las mediciones cerradas, las de otra periodicidad (nadie
- * puede reportarlas) ni las de un indicador retirado; una observación sí, aunque su medición esté cerrada o el indicador
- * retirado: se sigue respondiendo (spec §8.6).
+ * Solo lee: corre en cada página del cascarón y no abre periodos ni constancias. Los abre la pasada de vencimientos que el
+ * propio cascarón dispara (`after()`, cada diez minutos como mucho) y las páginas del módulo: una tarea nueva aparece, a lo
+ * sumo, en la carga siguiente. No son tarea los históricos, los «no aplica», las mediciones cerradas, las de otra
+ * periodicidad (nadie puede reportarlas) ni las de un indicador retirado; una observación sí, aunque su medición esté
+ * cerrada o el indicador retirado: se sigue respondiendo (spec §8.6).
  */
 import type { Row } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
@@ -18,11 +19,12 @@ import { esAprobadorDe, filtroIndicadores, responsableDe, type Responsabilidad }
 import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
 import { analisisCompleto, analisisExigido, cumpleDeMedicion } from "@/lib/indicadores/estados";
 import { versionQueRigeEntre } from "@/lib/indicadores/periodos";
-import type { OrigenDato, Periodicidad, Semaforo } from "@/lib/indicadores/tipos";
+import { SIN_RESPONSABLE, type OrigenDato, type Periodicidad, type Semaforo } from "@/lib/indicadores/tipos";
 import { puede } from "@/lib/permisos";
 import type { Tarea } from "@/lib/tareas";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { enlaceDeVersion } from "./aprobacion";
+import { tareasDeConstancias } from "./constancias";
 import { analisisDe, conMayuscula, esDeOtraPeriodicidad } from "./mediciones";
 import { enlaceDeObservaciones } from "./observaciones";
 
@@ -91,7 +93,6 @@ export function queFalta(filas: readonly Row[]): Map<number, Pendiente> {
   return salida;
 }
 
-const SIN_RESPONSABLE = "Sin responsable: designe a alguien";
 const FALTA_SOPORTE = "Falta el soporte obligatorio";
 
 /**
@@ -200,7 +201,9 @@ async function deFichasDevueltas(sql: Cliente, sesion: SesionFlujo): Promise<Tar
 
 /**
  * Las tareas de los indicadores de la persona y `vencidas`, la insignia de «Indicadores» (F14-DC32): las mediciones a su
- * cargo, por reportar o por analizar, que pasaron su fecha límite (una medición cuenta una vez aunque tenga las dos).
+ * cargo, por reportar o por analizar, que pasaron su fecha límite (una medición cuenta una vez aunque tenga las dos), y
+ * las constancias de envío al ente a su cargo ya vencidas (anexo 14B, §8: `tareasDeConstancias`), que se cuentan aparte:
+ * el número de una constancia puede ser el de una medición.
  */
 export async function tareasDeIndicadores(
   sesion: SesionFlujo,
@@ -208,14 +211,15 @@ export async function tareasDeIndicadores(
 ): Promise<{ tareas: Tarea[]; vencidas: number }> {
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
-  const [mediciones, observaciones, porAprobar, devueltas] = await Promise.all([
+  const [mediciones, constancias, observaciones, porAprobar, devueltas] = await Promise.all([
     deMediciones(sql, sesion),
+    tareasDeConstancias(sql, sesion),
     deObservaciones(sql, sesion),
     deFichasPorAprobar(sql, sesion),
     deFichasDevueltas(sql, sesion),
   ]);
-  const vencidas = new Set(
-    mediciones.filter((t) => t.vence !== null && t.vence.getTime() < ahora.getTime()).map((t) => t.id.slice(t.id.indexOf(":") + 1)),
-  ).size;
-  return { tareas: [...mediciones, ...observaciones, ...porAprobar, ...devueltas], vencidas };
+  const vencida = (t: Tarea) => t.vence !== null && t.vence.getTime() < ahora.getTime();
+  const vencidas =
+    new Set(mediciones.filter(vencida).map((t) => t.id.slice(t.id.indexOf(":") + 1))).size + constancias.filter(vencida).length;
+  return { tareas: [...mediciones, ...constancias, ...observaciones, ...porAprobar, ...devueltas], vencidas };
 }

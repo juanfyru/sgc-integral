@@ -93,8 +93,9 @@ const indicadoresPor = (que: string) => (miembros: Tarea[], ahora: Date) => {
  * viene una por proceso), la de los impactos normativos (`impacto:`: no hay una página que liste los pendientes, cada
  * tarea ya dice cuántos documentos tiene; Ruling 63) ni la de adoptar una edición nueva (`adopcion:`: la matriz de
  * externos no las reúne ni las filtra), ni las demás, que son pocas. De los indicadores (spec 14 §10.1) se agrupan
- * reportar y analizar, que llevan a la lista filtrada por lo que falta y por «Donde participo», y las fichas por aprobar;
- * no las observaciones ni las fichas devueltas (`ficha-devuelta:` no empieza por `ficha:`).
+ * reportar y analizar, que llevan a la lista filtrada por lo que falta y por «Donde participo», los reportes al ente por
+ * registrar (anexo 14B, §8), que llevan a la lista filtrada por el envío pendiente, y las fichas por aprobar; no las
+ * observaciones ni las fichas devueltas (`ficha-devuelta:` no empieza por `ficha:`).
  */
 const GRUPOS: readonly Grupo[] = [
   // Una lectura vence siempre después de pedirse: el detalle de la 13B no cambia.
@@ -129,6 +130,14 @@ const GRUPOS: readonly Grupo[] = [
     titulo: indicadoresPor("analizar"),
     detalle: masculino,
     enlace: () => "/indicadores?reporte=falta-analisis&participo=1",
+  },
+  {
+    prefijo: "constancia:",
+    id: "reportes-al-ente",
+    modulo: "indicadores",
+    titulo: (m) => `${m.length} reportes al ente por registrar`,
+    detalle: masculino,
+    enlace: () => "/indicadores?envio=pendiente&participo=1",
   },
   {
     prefijo: "ficha:",

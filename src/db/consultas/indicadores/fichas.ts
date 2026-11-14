@@ -28,6 +28,7 @@ import {
   type AlcanceDeCalculo,
   type ClaveDeCalculo,
 } from "@/lib/indicadores/calculos/registro";
+import { errorDeEnte } from "@/lib/indicadores/constancias";
 import { tipoDeCambio, type ContenidoFicha } from "@/lib/indicadores/ficha";
 import { analizar } from "@/lib/indicadores/formula/analizar";
 import { formulaDeForma } from "@/lib/indicadores/formula/formas";
@@ -212,12 +213,15 @@ function conOrigen(d: DatosFichaNueva, importada: boolean): DatosFichaNueva {
 }
 
 /**
- * Fórmula, variables declaradas contra usadas y regla del semáforo. Una meta lleva siempre sus rangos (spec 14A §3.5);
- * solo un cambio sobre una ficha que aún tiene la regla vieja puede conservarla (`reglaVieja`), y `guardarBorrador` vuelve
- * a exigir los rangos si el cambio resulta mayor.
+ * El ente (anexo 14B, §8: «se reporta a un ente» es un estado completo, `errorDeEnte`), fórmula, variables declaradas
+ * contra usadas y regla del semáforo. Una meta lleva siempre sus rangos (spec 14A §3.5); solo un cambio sobre una ficha que
+ * aún tiene la regla vieja puede conservarla (`reglaVieja`), y `guardarBorrador` vuelve a exigir los rangos si el cambio
+ * resulta mayor.
  */
 function revisar(entrada: DatosFichaNueva, reglaVieja = false, importada = false): FichaRevisada {
   const d = conOrigen(leer(entrada, importada), importada);
+  const ente = errorDeEnte(d);
+  if (ente) throw new ErrorIndicador(ente);
   let formula: string;
   let factor: number | null = null;
   if (d.forma === "libre") {

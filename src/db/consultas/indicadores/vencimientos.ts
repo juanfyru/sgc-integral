@@ -34,6 +34,8 @@ import { tocaAvisoPrevio } from "@/lib/indicadores/periodos";
 import { cuenta } from "@/lib/plural";
 import { estadoPlazo, fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
+import { asegurarConstancias } from "./constancias";
+import { constanciasVencidas } from "./constancias-vencidas";
 import { tomarFotos } from "./fotos";
 import { obtenerParametros } from "./maestros";
 import { asegurarMediciones } from "./mediciones";
@@ -335,8 +337,10 @@ async function abrirPeriodos(sql: Cliente, ahora: Date): Promise<void> {
 }
 
 /**
- * La pasada de los indicadores (spec 14 §10.2): abre los periodos, toma las fotos (después de abrir y antes de los avisos)
- * y manda los avisos. Un paso que falla se registra y los demás siguen.
+ * La pasada de los indicadores (spec 14 §10.2): abre los periodos, toma las fotos (después de abrir y antes de los avisos),
+ * abre las constancias de envío al ente (anexo 14B, §8: `asegurarConstancias`) y manda los avisos: los de las mediciones y,
+ * después, los de las constancias (`constanciasVencidas`), que suman a sus cuentas. Un paso que falla se registra y los
+ * demás siguen.
  */
 export async function revisarVencimientosDeIndicadores(opciones: { sql: Cliente; ahora: Date; config: ConfigDocumental }): Promise<Resultado> {
   const { sql, ahora } = opciones;
@@ -345,6 +349,11 @@ export async function revisarVencimientosDeIndicadores(opciones: { sql: Cliente;
     await tomarFotos({ sql, ahora });
   } catch (err) {
     console.error("No se pudieron tomar las fotos de los indicadores automáticos:", err);
+  }
+  try {
+    await asegurarConstancias({ sql, ahora });
+  } catch (err) {
+    console.error("No se pudieron abrir las constancias de envío de los indicadores:", err);
   }
   const { avisoPrevioDias } = await obtenerParametros({ sql });
   const c: Contexto = { sql, ahora, zona: zonaHoraria(), escalamientoDias: opciones.config.escalamientoDias, avisoPrevioDias };
@@ -359,6 +368,13 @@ export async function revisarVencimientosDeIndicadores(opciones: { sql: Cliente;
     } catch (err) {
       console.error(`No se pudo revisar ${paso.nombre} de los indicadores:`, err);
     }
+  }
+  try {
+    const constancias = await constanciasVencidas({ sql, ahora, zona: c.zona, escalamientoDias: c.escalamientoDias });
+    total.avisados += constancias.avisados;
+    total.escalados += constancias.escalados;
+  } catch (err) {
+    console.error("No se pudieron revisar los vencimientos de las constancias de envío:", err);
   }
   return total;
 }

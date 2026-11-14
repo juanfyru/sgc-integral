@@ -65,8 +65,10 @@ export type FichaDemo = {
   norma?: string;
   /** El código del documento del proceso que es su procedimiento. */
   procedimiento?: string;
+  /** «Se reporta a un ente» es un estado completo (anexo 14B, §8): con el ente van su periodicidad y su plazo en días. */
   ente?: string;
   periodicidadExterna?: Periodicidad;
+  plazoExternoDias?: number;
   /**
    * La línea base, donde la hay (valor y periodo); sin ella, la ficha dice «Sin línea base: <año> es el año de referencia»,
    * como la propone el formulario (spec §7.2: una de las dos formas es obligatoria).
@@ -161,6 +163,7 @@ export function datosDeFicha(cat: Catalogo, f: FichaDemo, op: OperacionDemo): Da
     normaIds: f.norma ? [cat.norma(f.norma)] : [],
     ...(f.ente ? { ente: f.ente } : {}),
     ...(f.periodicidadExterna ? { periodicidadExterna: f.periodicidadExterna } : {}),
+    ...(f.plazoExternoDias !== undefined ? { plazoExternoDias: f.plazoExternoDias } : {}),
     ...(op.motivoCambio ? { motivoCambio: op.motivoCambio } : {}),
     ...(f.prueba ? { prueba: { valores: { A: f.prueba[0], B: f.prueba[1] } } } : {}),
     ...(f.lineaBase
@@ -486,6 +489,7 @@ export const CEX_01: FichaDemo = {
   norma: "Resolución 256 de 2016",
   ente: "Ministerio de Salud y Protección Social",
   periodicidadExterna: "semestral",
+  plazoExternoDias: 30,
 };
 
 /** Restringido: solo lo ven Admin SGC, Gerencia, Control Interno, los asignados a GTH y sus designados (spec §6.4). */

@@ -366,6 +366,22 @@ export async function recalcularPorSoporte(
   return recalculadas;
 }
 
+/**
+ * Las constancias de envío que dejan de pedirse (anexo 14B, §8): la ficha ya no se reporta a un ente o el indicador se
+ * retira. Se quitan las pendientes sin ningún soporte ni evento; las registradas y las que ya tienen un soporte o un evento
+ * se conservan (un evento no se puede borrar: la llave foránea y el trigger de `reporte_externo_eventos` lo impiden). Vive
+ * aquí y no en `constancias.ts`, que importa las lecturas: `alPublicarVersion` y `retirar` la llaman sin cerrar otro ciclo
+ * de importaciones. Quien llama tiene el indicador `FOR UPDATE`. Devuelve cuántas quitó.
+ */
+export async function quitarConstanciasSinSoporte(tx: TransactionSql, indicadorId: number): Promise<number> {
+  const quitadas = await tx`DELETE FROM reportes_externos r
+    WHERE r.indicador_id = ${indicadorId} AND r.estado = 'pendiente'
+      AND NOT EXISTS (SELECT 1 FROM archivos a WHERE a.contexto = 'reporte_externo' AND a.contexto_id = r.id)
+      AND NOT EXISTS (SELECT 1 FROM reporte_externo_eventos e WHERE e.reporte_id = r.id)
+    RETURNING r.id`;
+  return quitadas.length;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Duplicar
 // ─────────────────────────────────────────────────────────────────────────────
@@ -503,8 +519,9 @@ async function descartarEnCurso(tx: TransactionSql, indicadorId: number, ahora: 
 
 /**
  * Retira un indicador activo (spec §7.7): queda `retirado` con su fecha y su motivo; sus mediciones abiertas sin ningún
- * dato se quitan (no tienen historia) y las que tienen datos siguen su curso; el cambio en curso se descarta y se avisa
- * a los designados. Es definitivo: para volver a medirlo se duplica.
+ * dato se quitan (no tienen historia) y las que tienen datos siguen su curso, y lo mismo sus constancias de envío
+ * pendientes sin soporte (anexo 14B, §8: `quitarConstanciasSinSoporte`); el cambio en curso se descarta y se avisa a los
+ * designados. Es definitivo: para volver a medirlo se duplica.
  */
 export async function retirar(sesion: SesionFlujo, d: { indicadorId: number; motivo: string }, opciones?: Opciones): Promise<void> {
   exigirAdministrar(sesion);
@@ -517,6 +534,7 @@ export async function retirar(sesion: SesionFlujo, d: { indicadorId: number; mot
     const quitadas = await tx`DELETE FROM mediciones m
       WHERE m.indicador_id = ${i.id} AND NOT ${conDatos(tx)}
       RETURNING m.id`;
+    const constanciasQuitadas = await quitarConstanciasSinSoporte(tx, i.id);
     await tx`UPDATE indicadores SET estado = 'retirado', baja_por = ${sesion.usuarioId}, baja_en = ${ahora}, baja_motivo = ${motivo}
       WHERE id = ${i.id}`;
     const designados = await tx`SELECT DISTINCT d.usuario_id FROM indicador_designados d JOIN usuarios u ON u.id = d.usuario_id AND u.activo
@@ -540,7 +558,7 @@ export async function retirar(sesion: SesionFlujo, d: { indicadorId: number; mot
       accion: "indicador_retirado",
       entidad: "indicador",
       entidadId: i.id,
-      detalle: { codigo: i.codigo, nombre, motivo, medicionesQuitadas: quitadas.length, versionesDescartadas: descartadas },
+      detalle: { codigo: i.codigo, nombre, motivo, medicionesQuitadas: quitadas.length, constanciasQuitadas, versionesDescartadas: descartadas },
     });
   });
 }

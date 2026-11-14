@@ -487,6 +487,22 @@ describe("agrupación", () => {
       detalle: "El más próximo vence el 19 de octubre de 2026",
     });
   });
+
+  it("los reportes al ente por registrar se agrupan y llevan a la lista con el envío pendiente (anexo 14B, §8)", () => {
+    const vencida = new Date("2026-10-01T04:59:59.999Z");
+    const reportes = [...varias("constancia", 5, new Date("2026-10-20T04:59:59.999Z")), { ...varias("constancia", 1, vencida)[0], id: "constancia:9" }];
+    expect(agruparTareas(reportes, 5, AHORA_G)).toEqual([
+      {
+        id: "reportes-al-ente",
+        modulo: "indicadores",
+        titulo: "6 reportes al ente por registrar",
+        detalle: "El más atrasado venció el 30 de septiembre de 2026",
+        vence: vencida,
+        enlace: "/indicadores?envio=pendiente&participo=1",
+      },
+    ]);
+    expect(agruparTareas(varias("constancia", 5), 5, AHORA_G)).toHaveLength(5);
+  });
 });
 
 /** Una ficha operativa del proceso, trimestral desde 2026-T4, ya probada con valores de ejemplo. */

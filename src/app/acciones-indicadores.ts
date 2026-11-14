@@ -9,6 +9,7 @@ import { ErrorFirma } from "@/db/consultas/flujo/contrato";
 import { analizar } from "@/db/consultas/indicadores/analisis";
 import { aprobarFichas, descartarBorrador, devolverFicha, enviarAAprobacion } from "@/db/consultas/indicadores/aprobacion";
 import { cerrarDeNuevo, cerrarMes, reabrirMedicion } from "@/db/consultas/indicadores/cierre";
+import { corregirConstancia, registrarConstancia } from "@/db/consultas/indicadores/constancias";
 import { abrirCambio, crearIndicador, guardarBorrador } from "@/db/consultas/indicadores/fichas";
 import { volverACalcular } from "@/db/consultas/indicadores/fotos";
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
@@ -30,6 +31,7 @@ import {
   analisisDelFormulario,
   EsquemaAprobarFichas,
   EsquemaCierreMes,
+  EsquemaCorregirConstancia,
   EsquemaDesignar,
   EsquemaDevolverFicha,
   EsquemaDuplicar,
@@ -43,6 +45,7 @@ import {
   EsquemaOperacion,
   EsquemaQuitarMeta,
   EsquemaReapertura,
+  EsquemaRegistrarConstancia,
   EsquemaReporte,
   EsquemaRespuesta,
   juntarHistoricos,
@@ -357,6 +360,25 @@ export async function cerrarDeNuevoAccion(_prev: EstadoAccion, formData: FormDat
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
     await cerrarDeNuevo(sesion, idNumerico(formData, "id"));
+  });
+}
+
+/**
+ * `id` es el de la constancia de envío al ente (anexo 14B, §8). Registra el envío sin clave (F14-DC33); no navega: la vista
+ * se repinta. Que la persona pueda registrarla (ve el indicador y lo mide, o administra) lo exige la consulta.
+ */
+export async function registrarConstanciaAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.medir", async (_usuarioId, _formData, sesion) => {
+    const d = parsearFormulario(formData, EsquemaRegistrarConstancia, { omitir: ["id"] });
+    await registrarConstancia(sesion, { reporteId: idNumerico(formData, "id"), ...d });
+  });
+}
+
+/** `id` es el de la constancia registrada. La corrige con justificación y sin clave; no navega. */
+export async function corregirConstanciaAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.medir", async (_usuarioId, _formData, sesion) => {
+    const d = parsearFormulario(formData, EsquemaCorregirConstancia, { omitir: ["id"] });
+    await corregirConstancia(sesion, { reporteId: idNumerico(formData, "id"), ...d });
   });
 }
 

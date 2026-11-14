@@ -803,6 +803,38 @@ describe("la ficha de indicador", () => {
   });
 });
 
+describe("las constancias de envío al ente (14B)", () => {
+  const frase = (accion: string, detalle: Record<string, unknown>) =>
+    describirEvento({ accion, entidad: "reporte_externo", entidadId: 1, detalle });
+  const de = { codigo: "CEX-IND-01", periodo: "2026-S2", ente: "Ministerio de Salud y Protección Social" };
+  it("dice qué indicador, qué periodo, a qué ente, con qué radicado y qué resultado", () => {
+    expect(frase("constancia_registrada", { ...de, radicado: "MSPS-2027-0042", fechaEnvio: "2027-01-20", resultado: "3,2 días" })).toBe(
+      "Registró el reporte a Ministerio de Salud y Protección Social de CEX-IND-01, segundo semestre de 2026 (radicado MSPS-2027-0042): 3,2 días",
+    );
+    // Sin resultado (nada medido en el periodo), sin él.
+    expect(frase("constancia_registrada", { ...de, radicado: "MSPS-1", fechaEnvio: "2027-01-20", resultado: null })).toBe(
+      "Registró el reporte a Ministerio de Salud y Protección Social de CEX-IND-01, segundo semestre de 2026 (radicado MSPS-1)",
+    );
+    expect(frase("constancia_registrada", {})).toBe("Registró el reporte al ente de un indicador");
+    expect(nombreDeAccion("constancia_registrada")).toBe("Registró el reporte de un indicador a un ente");
+  });
+  it("la corrección dice qué cambió y por qué", () => {
+    const antes = { fechaEnvio: "2027-01-20", radicado: "MSPS-2027-0042", nota: null };
+    expect(
+      frase("constancia_corregida", { ...de, justificacion: "El radicado tenía las cifras invertidas", antes, despues: { ...antes, radicado: "MSPS-2027-0024" } }),
+    ).toBe(
+      "Corrigió el reporte a Ministerio de Salud y Protección Social de CEX-IND-01, segundo semestre de 2026 (radicado MSPS-2027-0042 → MSPS-2027-0024): El radicado tenía las cifras invertidas",
+    );
+    expect(
+      frase("constancia_corregida", { ...de, justificacion: "Se envió un día antes", antes, despues: { fechaEnvio: "2027-01-19", radicado: "MSPS-2027-0042", nota: "Por correo" } }),
+    ).toBe(
+      "Corrigió el reporte a Ministerio de Salud y Protección Social de CEX-IND-01, segundo semestre de 2026 (fecha de envío 2027-01-20 → 2027-01-19; nota): Se envió un día antes",
+    );
+    expect(frase("constancia_corregida", {})).toBe("Corrigió el reporte al ente de un indicador");
+    expect(nombreDeAccion("constancia_corregida")).toBe("Corrigió el reporte de un indicador a un ente");
+  });
+});
+
 describe("la medición de un indicador", () => {
   const frase = (accion: string, detalle: Record<string, unknown>) =>
     describirEvento({ accion, entidad: "medicion", entidadId: 1, detalle });

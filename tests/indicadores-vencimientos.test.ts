@@ -403,6 +403,36 @@ describe("revisarVencimientosDeIndicadores", () => {
       expect(await marcas(tx, await id(MARZO))).toEqual({ aviso_previo_en: null, aviso_vencido_en: null, escalado_en: null });
     }));
 
+  it("abre las constancias de envío al ente y suma sus avisos y escalamientos a los de las mediciones (anexo 14B, §8)", () =>
+    revertida(sql, async (tx) => {
+      const { proceso } = await entorno(tx);
+      const jefe = await usuarioDePrueba(tx, { rol: "consulta" });
+      const mide = await usuarioDePrueba(tx, { rol: "consulta", jefeId: jefe.usuarioId });
+      // Marzo vence el 10 de abril; el primer trimestre, que se reporta al ente con 10 días de plazo, también.
+      const { ind } = await indicador(tx, proceso.id, {
+        mide: [mide.usuarioId],
+        ente: { nombre: "Superintendencia Nacional de Salud", periodicidad: "trimestral", plazoDias: 10 },
+      });
+      const tipos = async (usuarioId: number) => (await avisosDe(tx, usuarioId)).map((x) => x.tipo);
+      const deEnvio = async (usuarioId: number) =>
+        (await tx`SELECT tipo FROM notificaciones WHERE usuario_id = ${usuarioId} AND tipo LIKE 'indicadores.envio%' ORDER BY id`).map((f) => f.tipo);
+
+      expect(await pasada(tx, abril(12))).toEqual({ avisados: 2, escalados: 0 });
+      expect((await tx`SELECT periodo, aviso_vencido_en FROM reportes_externos WHERE indicador_id = ${ind.id}`)).toEqual([
+        { periodo: "2003-T1", aviso_vencido_en: abril(12) },
+      ]);
+      expect(await tipos(mide.usuarioId)).toEqual(["indicadores.vencido"]);
+      expect(await deEnvio(mide.usuarioId)).toEqual(["indicadores.envio_vencido"]);
+
+      expect(await pasada(tx, abril(15))).toEqual({ avisados: 0, escalados: 2 });
+      expect(await tipos(jefe.usuarioId)).toEqual(["indicadores.escalado"]);
+      expect(await deEnvio(jefe.usuarioId)).toEqual(["indicadores.envio_escalado"]);
+      // La pasada de las mediciones no cambia: la del ente va aparte, con sus propias marcas.
+      const [marzo] = await tx`SELECT id FROM mediciones WHERE indicador_id = ${ind.id}`;
+      expect((await marcas(tx, Number(marzo.id))).escalado_en).toEqual(abril(15));
+      expect((await tx`SELECT escalado_en FROM reportes_externos WHERE indicador_id = ${ind.id}`)[0].escalado_en).toEqual(abril(15));
+    }));
+
   it("revisarVencimientos la corre después de las demás y suma lo suyo", () =>
     revertida(sql, async (tx) => {
       const { proceso } = await entorno(tx);

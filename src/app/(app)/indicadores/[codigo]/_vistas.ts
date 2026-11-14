@@ -21,6 +21,7 @@ import {
   type VersionVisible,
 } from "@/db/consultas/indicadores/aprobacion";
 import { historialDeCorregidas } from "@/db/consultas/indicadores/cierre";
+import { asegurarConstancias } from "@/db/consultas/indicadores/constancias";
 import { obtenerIndicador, resultadosDelAnio } from "@/db/consultas/indicadores/lectura";
 import { obtenerParametros } from "@/db/consultas/indicadores/maestros";
 import { asegurarMediciones } from "@/db/consultas/indicadores/mediciones";
@@ -75,9 +76,9 @@ function avisoDeHistoricos(r: Parametros["registrados"]): { texto: string; exito
 }
 
 /**
- * «Resultados»: antes de leer se abren los periodos que hayan terminado (F14-DC12). El rango de la gráfica (`?rango=dos`,
- * `?rango=todo`), el análisis pedido (`?analizar=`) y el modo edición de históricos (`?historicos=editar`) existen solo
- * cuando la persona puede usarlos; si no, «no encontrada».
+ * «Resultados»: antes de leer se abren los periodos que hayan terminado (F14-DC12) y las constancias de envío al ente (anexo
+ * 14B, §8). El rango de la gráfica (`?rango=dos`, `?rango=todo`), el análisis pedido (`?analizar=`) y el modo edición de
+ * históricos (`?historicos=editar`) existen solo cuando la persona puede usarlos; si no, «no encontrada».
  */
 export async function datosDeResultados(
   c: ContextoDeVista,
@@ -88,6 +89,7 @@ export async function datosDeResultados(
   if (rango === undefined) notFound();
   const { sesion, indicador, ahora } = c;
   await asegurarMediciones({ indicadorId: indicador.id, ahora });
+  await asegurarConstancias({ sql: obtenerSql(), ahora, indicadorId: indicador.id });
   const vista = await obtenerIndicador(sesion, indicador.codigo);
   if (!vista) notFound();
   const desde = rango === "dos" ? a.anio - 1 : rango === "todo" ? a.primerAnio : a.anio;
