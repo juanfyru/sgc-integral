@@ -3,8 +3,9 @@
  * revierte (`revertida`): lo que crea aquí no sobrevive al test.
  */
 import type { TransactionSql } from "postgres";
-import { recalcularMedicion } from "@/db/consultas/indicadores/mediciones";
-import { CALCULOS, type AlcanceDeCalculo, type ClaveDeCalculo } from "@/lib/indicadores/calculos/registro";
+import { escribirFoto } from "@/db/consultas/indicadores/fotos";
+import { versionDelPeriodo } from "@/db/consultas/indicadores/mediciones";
+import { CALCULOS, calculoDe, type AlcanceDeCalculo, type ClaveDeCalculo } from "@/lib/indicadores/calculos/registro";
 import { formulaDeForma } from "@/lib/indicadores/formula/formas";
 import type { RangosEnTexto } from "@/lib/indicadores/rangos";
 import type { Periodicidad, Tendencia } from "@/lib/indicadores/tipos";
@@ -69,6 +70,8 @@ export type OpcionesIndicadorDePrueba = {
    * del indicador. Un cálculo sin B (un conteo) deja `variables.B` en 0.
    */
   calculo?: { clave: ClaveDeCalculo; alcance: AlcanceDeCalculo };
+  /** El objetivo al que apunta la versión 1 (con su enunciado de hoy); sin valor, ninguno. */
+  objetivoId?: number;
 };
 
 export type VariableDePrueba = {
@@ -126,12 +129,13 @@ export async function indicadorDePrueba(
   // Como el flujo real (`crearIndicador`): sin factor fuera de la tasa y con el sufijo de la unidad del catálogo.
   const [version] = await tx`INSERT INTO indicador_versiones
       (indicador_id, numero, estado, tipo_cambio, nombre, proposito, tipo_id, tipo_nombre,
-       clasificacion_id, clasificacion_nombre, proceso_nombre, origen_dato, calculo, calculo_alcance, forma, factor, formula,
+       clasificacion_id, clasificacion_nombre, proceso_nombre, objetivo_id, objetivo_nombre, origen_dato, calculo, calculo_alcance, forma, factor, formula,
        unidad_id, unidad_nombre, unidad_sufijo, decimales, periodicidad, tendencia, meta,
        semaforo_modo, umbral_atencion_pct, limite_critico, rangos, resultado_max, nivel, riesgo_asociado,
        importacion_id, aprobacion_previa_documento, aprobacion_previa_por, aprobacion_previa_fecha, creado_por)
     SELECT ${indicadorId}, 1, 'borrador', 'inicial', ${`Indicador de prueba ${codigo}`}, 'Medir el cumplimiento de la prueba',
-      t.id, t.nombre, c.id, c.nombre, ${proceso.nombre as string}, ${calculo ? "automatico" : "manual"}, ${o.calculo?.clave ?? null},
+      t.id, t.nombre, c.id, c.nombre, ${proceso.nombre as string}, ${o.objetivoId ?? null},
+      (SELECT enunciado FROM objetivos WHERE id = ${o.objetivoId ?? null}), ${calculo ? "automatico" : "manual"}, ${o.calculo?.clave ?? null},
       ${o.calculo?.alcance ?? null}, ${forma}, NULL, ${formulaDeForma(forma)},
       un.id, un.nombre, un.sufijo, 1, ${o.periodicidad ?? "mensual"}, ${calculo?.tendencia ?? o.tendencia ?? "ascendente"}, ${meta},
       ${o.rangos ? "rangos" : (o.modo ?? "relativo")}, ${o.rangos || o.modo === "fijo" ? null : (o.umbralPct ?? 70)}, ${o.limite ?? null},
@@ -260,18 +264,21 @@ export async function versionAutomatica(
 }
 
 /**
- * Lo que dejará la foto del sistema (Tarea 7) en una medición, para las pruebas: los valores de su versión sin quien los
- * reportó, la medición reportada y fotografiada a `ahora`, y el cálculo único con el evento `foto`, sin usuario.
+ * La foto del sistema (anexo 14B, §5.4) con los valores que pide la prueba, sin esperar su momento ni tomar el cálculo: la
+ * escribe `escribirFoto`, lo mismo que escribe `tomarFotos` (valores sin quien los reportó, la medición reportada y
+ * fotografiada a `ahora`, la fecha límite de un cálculo de flujo contada desde la foto y el cálculo único con el evento
+ * `foto`, sin usuario).
  */
 export async function fotoDePrueba(tx: TransactionSql, medicionId: number, valores: Partial<Record<"A" | "B", string>>, ahora: Date): Promise<void> {
-  const variables = await tx`SELECT iv.id, iv.letra FROM mediciones m JOIN indicador_variables iv ON iv.version_id = m.version_id
-    WHERE m.id = ${medicionId}`;
-  for (const v of variables) {
-    const valor = valores[v.letra as "A" | "B"];
-    if (valor === undefined) continue;
-    await tx`INSERT INTO medicion_valores (medicion_id, variable_id, valor, reportado_por, reportado_en)
-      VALUES (${medicionId}, ${v.id}, ${valor}, NULL, ${ahora})`;
-  }
-  await tx`UPDATE mediciones SET reportada_en = ${ahora}, reportada_por = NULL, foto_en = ${ahora} WHERE id = ${medicionId}`;
-  await recalcularMedicion(tx, medicionId, { ahora, actorId: null, evento: "foto" });
+  const [m] = await tx`SELECT m.id, m.indicador_id, m.periodo, m.historica, i.plazo_reporte_dias
+    FROM mediciones m JOIN indicadores i ON i.id = m.indicador_id WHERE m.id = ${medicionId} FOR UPDATE OF m`;
+  const version = await versionDelPeriodo(tx, Number(m.indicador_id), m.periodo as string);
+  const definicion = version?.calculoAutomatico ? calculoDe(version.calculoAutomatico.clave) : null;
+  if (!version || !definicion) throw new Error("La foto de prueba es solo para un periodo que calcula el sistema");
+  const foto = { valores: Object.fromEntries(Object.entries(valores).filter((e): e is [string, string] => e[1] !== undefined)) };
+  await escribirFoto(
+    tx,
+    { id: medicionId, historica: m.historica === true },
+    { version, definicion, alcance: version.calculoAutomatico!.alcance, plazoDias: Number(m.plazo_reporte_dias), foto, ahora },
+  );
 }

@@ -56,6 +56,7 @@ vi.mock("@/app/acciones-indicadores", () => ({
   cerrarMesAccion: vi.fn(),
   reabrirMedicionAccion: vi.fn(),
   cerrarDeNuevoAccion: vi.fn(),
+  volverACalcularAccion: vi.fn(),
 }));
 
 import PaginaIndicador from "@/app/(app)/indicadores/[codigo]/page";
@@ -98,6 +99,7 @@ const FILA: FilaDeLista = {
   periodicidad: "trimestral",
   restringido: false,
   retirado: false,
+  automatico: false,
   estado: "activo",
   cambioEnCurso: null,
   periodo: "2026-T3",
@@ -321,6 +323,9 @@ describe("los componentes", () => {
       causa: null,
       accionPropuesta: null,
       automatica: false,
+      fotoEn: null,
+      seCalcula: null,
+      recalculable: false,
     };
     const tabla = renderToStaticMarkup(<TablaDelAnio filas={[fila]} variables={[]} anio={2026} codigo="ZZ-1" puedeMedir={false} />);
     expect(tabla).toContain("Bien · no alcanza la meta");
@@ -395,6 +400,9 @@ describe("los componentes", () => {
       causa: null,
       accionPropuesta: null,
       automatica: false,
+      fotoEn: null,
+      seCalcula: null,
+      recalculable: false,
     });
     const filas = [
       fila("2026-05", [
@@ -451,6 +459,9 @@ describe("los componentes", () => {
       causa: null,
       accionPropuesta: null,
       automatica: false,
+      fotoEn: null,
+      seCalcula: null,
+      recalculable: false,
       ...o,
     });
     // Manual el primero; desde el segundo lo calcula el sistema: uno sin dato y otro ya calculado.
@@ -475,6 +486,42 @@ describe("los componentes", () => {
       expect(deQuienAnaliza).toMatch(new RegExp(`href="/indicadores/ZZ-1/reportar/${periodo}"[^>]*>Ver<span class="sr-only"> ${periodo}</span>`));
     }
     expect(deQuienAnaliza).not.toContain(">Corregir<");
+
+    // Cuándo calcula el sistema (anexo 14B, §5.4): la fecha de la foto o la de la espera; mientras espera, esa es su fecha.
+    const conFotos = [
+      fila("2026-T2", { automatica: true, estado: "falta_dato", seCalcula: new Date("2026-07-11T04:59:59.999Z") }),
+      fila("2026-T3", {
+        automatica: true,
+        estado: "falta_analisis",
+        resultado: "50 %",
+        semaforo: "critico",
+        cumple: false,
+        fotoEn: new Date("2026-10-11T12:12:00Z"),
+        recalculable: true,
+      }),
+    ];
+    const conFoto = (administra: boolean) =>
+      renderToStaticMarkup(
+        <TablaDelAnio filas={conFotos} variables={[]} anio={2026} codigo="ZZ-1" puedeMedir={false} puedeAnalizar puedeVolverACalcular={administra} />,
+      );
+    const deQuienAdministra = conFoto(true);
+    expect(deQuienAdministra).toContain("Se calcula el 10 de julio");
+    expect(deQuienAdministra).toContain("Calculado por el sistema · foto del 11 de octubre, 7:12 a. m.");
+    // El plazo del análisis sale con la foto; el de la espera no se repite.
+    expect(deQuienAdministra.match(/Plazo hasta el/g)).toHaveLength(1);
+    // «Volver a calcular» solo en la foto de flujo sin cerrar ni reabrir, y solo a quien administra.
+    expect(deQuienAdministra.match(/>Volver a calcular</g)).toHaveLength(1);
+    expect(deQuienAdministra).toMatch(/>Volver a calcular<span class="sr-only"> 2026-T3<\/span>/);
+    expect(conFoto(false)).not.toContain("Volver a calcular");
+  });
+
+  it("la lista marca con «Automático» el indicador que calcula el sistema", () => {
+    const lista = (automatico: boolean) =>
+      renderToStaticMarkup(
+        <ListaIndicadores filas={[{ ...FILA, automatico }]} resumen={{ bien: 0, bienSinAlcanzar: 0, atencion: 1, critico: 0, sinDato: 0, noAplica: 0, vencidos: 0 }} />,
+      );
+    expect(lista(true)).toContain(">Automático<");
+    expect(lista(false)).not.toContain("Automático");
   });
 });
 

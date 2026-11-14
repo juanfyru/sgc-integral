@@ -39,6 +39,7 @@ import { ErrorIndicador, type Semaforo, type TipoEvento } from "@/lib/indicadore
 import { ErrorPermiso, puede, type SujetoPermiso } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
+import { tomarFotos } from "./fotos";
 import {
   analisisDe,
   asegurarMediciones,
@@ -282,7 +283,9 @@ async function nombresDe(sql: Cliente, ids: number[]): Promise<string[]> {
 /**
  * Abre (F14-DC12) los periodos terminados de los indicadores activos que el cierre de `periodo` puede alcanzar (los que se
  * miden desde ese mes o antes), uno por uno (`indicadorIds`): el que falla se registra y el resumen o el cierre siguen; su
- * periodo lo alcanza un cierre posterior, cuando se abra.
+ * periodo lo alcanza un cierre posterior, cuando se abra. Después toma las fotos pendientes de los automáticos (anexo 14B,
+ * §4 y §5.4), antes de clasificar: una medición no se cierra «Sin dato» si su foto ya tocaba. La foto de flujo cuenta el
+ * plazo del análisis desde ella, así que la que se toma aquí sigue en plazo y la alcanza un cierre posterior.
  */
 async function abrirPeriodosDelCierre(sql: Cliente, periodo: Periodo, ahora: Date): Promise<void> {
   const zona = zonaHoraria();
@@ -292,12 +295,18 @@ async function abrirPeriodosDelCierre(sql: Cliente, periodo: Periodo, ahora: Dat
     return inicio !== null && inicio.desde.getTime() <= periodo.hasta.getTime();
   });
   await asegurarMediciones({ sql, ahora, indicadorIds: alcanzables.map((f) => Number(f.id)) });
+  try {
+    await tomarFotos({ sql, ahora });
+  } catch (err) {
+    console.error("No se pudieron tomar las fotos de los indicadores automáticos antes del cierre:", err);
+  }
 }
 
 /**
  * El resumen previo del cierre de `mes` (spec §9.2): cuántas mediciones se cerrarán y cómo, las que quedarán sin dato
  * con quién debía medirlas («El sistema», en una automática), las observaciones sin respuesta y los dos grupos que no se
- * cierran. Abre antes los periodos que hayan terminado (F14-DC12, `abrirPeriodosDelCierre`). No escribe nada más.
+ * cierran. Abre antes los periodos que hayan terminado y toma las fotos pendientes (F14-DC12 y anexo 14B §4,
+ * `abrirPeriodosDelCierre`). No escribe nada más.
  */
 export async function resumenDeCierre(sesion: SujetoPermiso, mes: string, opciones?: Opciones): Promise<ResumenDeCierre> {
   exigirAdministrar(sesion);

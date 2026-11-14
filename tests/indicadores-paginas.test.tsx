@@ -54,6 +54,7 @@ vi.mock("@/app/acciones-indicadores", () => ({
   cerrarMesAccion: vi.fn(),
   reabrirMedicionAccion: vi.fn(),
   cerrarDeNuevoAccion: vi.fn(),
+  volverACalcularAccion: vi.fn(),
 }));
 
 import PaginaCierre from "@/app/(app)/indicadores/cierre/page";
@@ -562,6 +563,9 @@ describe("el resumen del cierre y la tabla del año, sin navegador", () => {
       causa: null,
       accionPropuesta: null,
       automatica: false,
+      fotoEn: null,
+      seCalcula: null,
+      recalculable: false,
       ...o,
     });
     const historial = new Map([

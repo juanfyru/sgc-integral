@@ -920,6 +920,12 @@ export function describirEvento(e: EventoAuditoria): string {
       const etiqueta = mes ? (periodoDe(mes, zonaHoraria())?.etiqueta ?? mes) : null;
       return `Cerró de nuevo ${medicionDe(cod, d.periodo)}${etiqueta ? ` (cierre de ${etiqueta})` : ""}`;
     }
+    // ── Indicadores (14B): la foto de un automático
+    case "medicion_foto_recalculada": {
+      const antes = texto(d.antes);
+      const despues = texto(d.despues);
+      return `Volvió a calcular ${medicionDe(cod, d.periodo)}${antes && despues ? `: de ${antes} a ${despues}` : ""}`;
+    }
     case "indicador_meta_programada": {
       if (!cod) return "Programó la meta de un periodo de un indicador";
       const antes = metaDeBitacora(d.antes);
@@ -1134,6 +1140,7 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   indicadores_mes_cerrado: "Cerró un mes de los indicadores",
   medicion_reabierta: "Reabrió una medición de indicador",
   medicion_cerrada_de_nuevo: "Cerró de nuevo una medición de indicador",
+  medicion_foto_recalculada: "Volvió a calcular una medición de indicador",
   tipo_norma_creado: "Creó un tipo de norma",
   tipo_norma_editado: "Renombró un tipo de norma",
   tipo_norma_movido: "Movió un tipo de norma",

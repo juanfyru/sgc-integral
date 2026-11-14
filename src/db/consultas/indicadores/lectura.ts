@@ -17,7 +17,9 @@ import {
 } from "@/lib/alcance";
 import { MESES, periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
 import { acumulado } from "@/lib/indicadores/acumulado";
+import { calculoDe } from "@/lib/indicadores/calculos/registro";
 import { analisisCompleto, analisisExigido, cumpleDeMedicion, estadoVisible, type EstadoVisible } from "@/lib/indicadores/estados";
+import { cuandoSeToma, sePuedeVolverACalcular, textoDeEspera, textoDeFoto } from "@/lib/indicadores/fotos";
 import { enPalabras } from "@/lib/indicadores/formula/formas";
 import { aDecimal, aTexto, comparar, deTexto, type Fraccion } from "@/lib/indicadores/formula/fraccion";
 import { clavesDelAnio, mismoDelAnioAnterior, periodicidadDe, versionQueRigeEntre } from "@/lib/indicadores/periodos";
@@ -109,6 +111,12 @@ export type DatosDeReporte = {
    * datos y la abre quien puede analizar el indicador, no quien lo mide.
    */
   automatica: boolean;
+  /** «foto del 1 de abril, 7:12 a. m.»: cuándo tomó el sistema los datos de un automático; `null` sin foto. */
+  foto: string | null;
+  /** «Se calcula el 10 de abril»: cuándo los tomará, en uno que los espera; `null` si no los espera o nunca los tomará. */
+  seCalcula: string | null;
+  /** Su foto se puede volver a calcular (`sePuedeVolverACalcular`); el botón es de quien administra. */
+  recalculable: boolean;
   variables: VariableDeReporte[];
   calculo: CalculoEnTexto;
   formulaEnPalabras: string;
@@ -169,6 +177,8 @@ async function datosDeReporte(sql: Cliente, ctx: Contexto, ahora: Date): Promise
   const automatica = version.origenDato === "automatico";
   // Mientras falta el dato que calcula el sistema, nadie está atrasado (anexo 14B, §4).
   const faltaDato = automatica && m.reportada_en === null && m.no_aplica !== true;
+  const zona = zonaHoraria();
+  const foto = laFoto(m, ctx.periodo, version, ahora);
   return {
     medicionId: m.id,
     indicadorId: indicador.id,
@@ -187,6 +197,9 @@ async function datosDeReporte(sql: Cliente, ctx: Contexto, ahora: Date): Promise
     soportes: await contarSoportes(sql, m.id),
     sinMedidor: !automatica && ctx.capacidad.sinMedidor,
     automatica,
+    foto: foto.fotoEn ? textoDeFoto(foto.fotoEn, zona) : null,
+    seCalcula: foto.seCalcula ? textoDeEspera(foto.seCalcula, zona) : null,
+    recalculable: foto.recalculable,
     variables: version.variables.map((v) => ({
       letra: v.letra,
       nombre: v.nombre,
@@ -301,6 +314,12 @@ export type FilaDelAnio = {
    * reporta, la corrige ni la registra como histórico.
    */
   automatica: boolean;
+  /** Cuándo tomó el sistema los datos de un automático (anexo 14B, §5.4); `null` sin foto. */
+  fotoEn: Date | null;
+  /** Cuándo los tomará, en uno que los espera; `null` si no los espera o nunca los tomará (`cuandoSeToma`). */
+  seCalcula: Date | null;
+  /** Su foto se puede volver a calcular (`sePuedeVolverACalcular`): de flujo, sin cerrar ni reabrir. */
+  recalculable: boolean;
 };
 
 export const anioValido = (anio: number) => Number.isInteger(anio) && anio >= 1900 && anio <= 9999;
@@ -824,7 +843,32 @@ function filaSinMedicion(p: Periodo, version: VersionDeCalculo, regla: Regla, ah
     causa: null,
     accionPropuesta: null,
     automatica: version.origenDato === "automatico",
+    fotoEn: null,
+    seCalcula: null,
+    recalculable: false,
   };
+}
+
+/**
+ * Lo que la tabla del año y la pantalla de reportar dicen de la foto de una medición (anexo 14B, §5.4): cuándo se tomó,
+ * cuándo se tomará si la espera (abierta, sin datos ni «no aplica») y si se puede volver a calcular. Manda la versión que
+ * rige el periodo.
+ */
+function laFoto(m: Record<string, unknown>, p: Periodo, version: VersionDeCalculo, ahora: Date): Pick<FilaDelAnio, "fotoEn" | "seCalcula" | "recalculable"> {
+  const fotoEn = m.foto_en ? new Date(m.foto_en as string) : null;
+  const calculo = version.origenDato === "automatico" && version.calculoAutomatico ? calculoDe(version.calculoAutomatico.clave) : null;
+  if (!calculo) return { fotoEn, seCalcula: null, recalculable: false };
+  const espera = fotoEn === null && m.estado === "abierta" && m.reportada_en === null && m.no_aplica !== true && version.periodicidad !== null;
+  const seCalcula = espera
+    ? cuandoSeToma(
+        calculo,
+        { hasta: p.hasta, venceEn: new Date(m.vence_en as string), historica: m.historica === true, periodicidad: version.periodicidad! },
+        ahora,
+        zonaHoraria(),
+      )
+    : null;
+  const reabierta = m.reabierta_en !== null && m.reabierta_en !== undefined;
+  return { fotoEn, seCalcula, recalculable: sePuedeVolverACalcular({ clase: calculo.clase, fotoEn, cerrada: m.estado === "cerrada", reabierta }) };
 }
 
 function filaDeMedicion(
@@ -896,5 +940,6 @@ function filaDeMedicion(
     causa: (m.causa as string | null) ?? null,
     accionPropuesta: (m.accion_propuesta as string | null) ?? null,
     automatica,
+    ...laFoto(m, p, version, ahora),
   };
 }

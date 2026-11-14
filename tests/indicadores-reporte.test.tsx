@@ -55,10 +55,12 @@ vi.mock("@/app/acciones-indicadores", () => ({
   cerrarMesAccion: vi.fn(),
   reabrirMedicionAccion: vi.fn(),
   cerrarDeNuevoAccion: vi.fn(),
+  volverACalcularAccion: vi.fn(),
 }));
 
 import PaginaIndicador from "@/app/(app)/indicadores/[codigo]/page";
 import PaginaReportar from "@/app/(app)/indicadores/[codigo]/reportar/[periodo]/page";
+import { DatosDelSistema } from "@/componentes/indicadores/medicion/DatosDelSistema";
 import { destinoDelFoco, DialogoMetas } from "@/componentes/indicadores/medicion/DialogoMetas";
 import { FormularioAnalisis } from "@/componentes/indicadores/medicion/FormularioAnalisis";
 import { FormularioReporte } from "@/componentes/indicadores/medicion/FormularioReporte";
@@ -120,6 +122,9 @@ const DATOS: DatosDeReporte = {
   soportes: 0,
   sinMedidor: false,
   automatica: false,
+  foto: null,
+  seCalcula: null,
+  recalculable: false,
   variables: [
     {
       letra: "A",
@@ -167,6 +172,34 @@ const enVivo = (valores: Record<string, string>) =>
       variacionPct={DATOS.variacionPct}
     />,
   );
+
+describe("DatosDelSistema (anexo 14B, §5.4)", () => {
+  const delSistema = (o: Partial<DatosDeReporte>, administra = false) =>
+    renderToStaticMarkup(<DatosDelSistema datos={{ ...DATOS, automatica: true, soporteObligatorio: false, ...o }} administra={administra} />);
+  const conFoto: Partial<DatosDeReporte> = {
+    reportada: true,
+    foto: "foto del 11 de octubre, 7:12 a. m.",
+    recalculable: true,
+    resultado: "1234567/20000",
+    semaforo: "bien",
+    cumple: true,
+    variables: DATOS.variables.map((v, k) => ({ ...v, valor: k === 0 ? "1234.5678" : "20" })),
+  };
+
+  it("dice cuándo se tomaron los datos o cuándo se tomarán, con los valores como la tabla del año", () => {
+    const html = delSistema(conFoto);
+    expect(html).toContain("Calculado por el sistema · foto del 11 de octubre, 7:12 a. m.");
+    expect(html).toContain(">1234,5678<");
+    expect(html).toContain(">20<");
+    expect(delSistema({ seCalcula: "Se calcula el 10 de octubre" })).toContain("Se calcula el 10 de octubre");
+  });
+
+  it("«Volver a calcular» solo a quien administra y solo en una foto que se puede volver a calcular", () => {
+    expect(delSistema(conFoto, true)).toMatch(/>Volver a calcular<span class="sr-only"> Tercer trimestre de 2026<\/span>/);
+    expect(delSistema(conFoto, false)).not.toContain("Volver a calcular");
+    expect(delSistema({ ...conFoto, recalculable: false }, true)).not.toContain("Volver a calcular");
+  });
+});
 
 describe("FormularioReporte y ResultadoEnVivo", () => {
   it("pinta un campo por variable con su nombre, su descripción y su fuente", () => {
@@ -430,6 +463,9 @@ describe("las páginas", () => {
       await fotoDePrueba(tx, Number(t1.id), { A: "1", B: "2" }, new Date("2026-04-01T12:00:00Z"));
       const conFoto = await reporte(ind.codigo, "2026-T1");
       expect(conFoto).toContain("Este indicador lo calcula el sistema. Nadie digita sus datos.");
+      expect(conFoto).toContain("Calculado por el sistema · foto del 1 de abril, 7:00 a. m.");
+      // Una foto de estado se toma una sola vez: no se vuelve a calcular.
+      expect(conFoto).not.toContain("Volver a calcular");
       expect(conFoto).toContain("Documentos vigentes dentro de su plazo");
       expect(conFoto).toContain("Documentos vigentes con fecha de revisión");
       expect(conFoto).toContain(">50 %<");

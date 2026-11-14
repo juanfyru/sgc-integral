@@ -542,10 +542,12 @@ describe("la reapertura", () => {
       const { admin, mide, nuevo } = await entorno(tx);
       const analiza = await usuarioDePrueba(tx, { rol: "consulta" });
       const automatico = { calculo: { clave: "dentro_plazo", alcance: "proceso" } as const, analiza: [analiza.usuarioId] };
-      // `mide` sigue designado como antes del paso a automático: ya no es quien debía el dato.
-      const sinFoto = await nuevo(automatico);
+      // `mide` sigue designado como antes del paso a automático: ya no es quien debía el dato. Desde febrero: el resumen
+      // toma la foto de marzo (el periodo más reciente que terminó) y la de febrero ya no le toca a nadie (anexo 14B, §5.4).
+      const sinFoto = await nuevo({ ...automatico, inicioMedicion: "2003-02" });
       const r = await resumenDeCierre(admin, MARZO, opc(tx));
-      expect(r.sinDato).toMatchObject([{ codigo: sinFoto.ind.codigo, quien: ["El sistema"] }]);
+      expect(r.sinDato).toMatchObject([{ codigo: sinFoto.ind.codigo, periodo: "2003-02", quien: ["El sistema"] }]);
+      expect((await fila(tx, sinFoto.marzo)).foto_en).toEqual(AHORA);
 
       // Otro proceso para el segundo: a lo sumo una ficha activa por cálculo y alcance en cada proceso.
       const otro = await procesoSinLider(tx);

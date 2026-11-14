@@ -250,7 +250,7 @@ describe("la lista", () => {
       const [actual] = await tx`SELECT nombre FROM indicador_versiones WHERE id = ${cambio.versionId}`;
       expect(actual.nombre).toBe(`Indicador de prueba ${general.codigo}`);
       const conCambio = (await lista(tx, admin, { procesoId: p.id })).filas.find((f) => f.codigo === general.codigo);
-      expect(conCambio).toMatchObject({ nombre: `Indicador de prueba ${general.codigo}`, cambioEnCurso: "borrador" });
+      expect(conCambio).toMatchObject({ nombre: `Indicador de prueba ${general.codigo}`, cambioEnCurso: "borrador", automatico: false });
       expect((await lista(tx, consulta, { procesoId: p.id })).filas[0].cambioEnCurso).toBeNull();
     }));
 
@@ -344,12 +344,16 @@ describe("la lista", () => {
 
       const { filas, resumen } = await lista(tx, admin, { procesoId: p.id });
       expect(filas).toMatchObject([{ codigo: auto.codigo, periodo: "2026-T3", semaforo: null, reporte: { texto: "Falta un dato", vencida: false } }]);
+      // La lista lo marca «Automático» (lo calcula el sistema).
+      expect(filas[0].automatico).toBe(true);
       expect(resumen).toMatchObject({ sinDato: 1, vencidos: 0 });
       for (const reporte of ["vencida", "por-reportar", "falta-analisis"] as const) {
         expect(await codigos(tx, admin, { procesoId: p.id, reporte }), reporte).toEqual([]);
       }
       const [t3] = (await resultadosDelAnio(admin, auto.id, 2026, opc(tx))).filas;
       expect(t3).toMatchObject({ periodo: "2026-T3", estado: "falta_dato", vencida: false, automatica: true });
+      // De estado: el sistema lo calcula al terminar el periodo, en la primera revisión (anexo 14B, §5.4).
+      expect(t3).toMatchObject({ fotoEn: null, seCalcula: new Date("2026-10-01T04:59:59.999Z"), recalculable: false });
       // Un histórico que espera su cálculo tampoco está «Por registrar»: nadie lo registra.
       const deHistorico = await proceso(tx);
       const historico = await trimestral(tx, deHistorico.id, { inicioMedicion: "2026-T3", calculo, aprobadaEn: new Date("2026-10-05T15:00:00Z") });
@@ -369,6 +373,7 @@ describe("la lista", () => {
       });
       await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: cambio.id });
       const deCambio = await lista(tx, admin, { procesoId: otroProceso.id });
+      expect(deCambio.filas[0].automatico).toBe(true);
       expect(deCambio.resumen.vencidos).toBe(1);
       expect(deCambio.filas[0].reporte).toMatchObject({ vencida: true });
       expect(deCambio.filas[0].reporte.texto).toMatch(/^Vencido hace \d+ días$/);
@@ -379,6 +384,7 @@ describe("la lista", () => {
         ["2026-T3", "falta_dato", false, true],
         ["2026-T4", "por_venir", false, true],
       ]);
+      expect(anio.map((f) => f.seCalcula === null)).toEqual([true, false, true]);
     }));
 });
 

@@ -1,8 +1,9 @@
 /**
  * Los recordatorios de los indicadores (spec 14 §10.2, F14-DC34): la pasada que `revisarVencimientos` suma después de la
- * de vigencia. Abre los periodos que terminaron (`asegurarMediciones`, indicador por indicador) y, sobre las mediciones
- * ordinarias abiertas (`esPendiente`, sin las de otra periodicidad ni las que esperan el dato del sistema: `queFalta`),
- * manda:
+ * de vigencia. Abre los periodos que terminaron (`asegurarMediciones`, indicador por indicador), toma las fotos de los
+ * automáticos que ya tocan (`tomarFotos`, anexo 14B §5.4: un resultado que no cumple avisa y pide el análisis en la misma
+ * pasada) y, sobre las mediciones ordinarias abiertas (`esPendiente`, sin las de otra periodicidad ni las que esperan el
+ * dato del sistema: `queFalta`), manda:
  *
  * 1. El aviso previo (`aviso_previo_en`), cuando faltan los días del parámetro para la fecha límite: uno por persona.
  * 2. El de vencido (`aviso_vencido_en`), pasada la fecha límite: uno por persona a quienes miden (o a quienes analizan,
@@ -33,6 +34,7 @@ import { tocaAvisoPrevio } from "@/lib/indicadores/periodos";
 import { cuenta } from "@/lib/plural";
 import { estadoPlazo, fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
+import { tomarFotos } from "./fotos";
 import { obtenerParametros } from "./maestros";
 import { asegurarMediciones } from "./mediciones";
 import { columnasDePendiente, esPendiente, queFalta, type FaltaDePersona as Falta } from "./tareas";
@@ -332,10 +334,18 @@ async function abrirPeriodos(sql: Cliente, ahora: Date): Promise<void> {
   }
 }
 
-/** La pasada de los indicadores (spec 14 §10.2). Un paso que falla se registra y los demás siguen. */
+/**
+ * La pasada de los indicadores (spec 14 §10.2): abre los periodos, toma las fotos (después de abrir y antes de los avisos)
+ * y manda los avisos. Un paso que falla se registra y los demás siguen.
+ */
 export async function revisarVencimientosDeIndicadores(opciones: { sql: Cliente; ahora: Date; config: ConfigDocumental }): Promise<Resultado> {
   const { sql, ahora } = opciones;
   await abrirPeriodos(sql, ahora);
+  try {
+    await tomarFotos({ sql, ahora });
+  } catch (err) {
+    console.error("No se pudieron tomar las fotos de los indicadores automáticos:", err);
+  }
   const { avisoPrevioDias } = await obtenerParametros({ sql });
   const c: Contexto = { sql, ahora, zona: zonaHoraria(), escalamientoDias: opciones.config.escalamientoDias, avisoPrevioDias };
   const total: Resultado = { avisados: 0, escalados: 0 };

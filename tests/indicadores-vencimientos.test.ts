@@ -1,7 +1,8 @@
 /**
  * Los recordatorios de los indicadores (Fase 14A, Tarea 13; spec §10.2, F14-DC34): la pasada abre los periodos que
- * terminaron, manda el aviso previo, el de vencido y el escalamiento al jefe, cada uno una sola vez (marcas en la medición)
- * y sin fila en `auditoria`. Contra la BD de desarrollo, dentro de una transacción que se revierte.
+ * terminaron, toma las fotos de los automáticos (14B), manda el aviso previo, el de vencido y el escalamiento al jefe, cada
+ * uno una sola vez (marcas en la medición) y sin fila en `auditoria`. Contra la BD de desarrollo, dentro de una transacción
+ * que se revierte.
  *
  * La pasada recorre todo el sistema. Para no alcanzar nada de la base, los casos viven en 2003, antes de todo inicio de
  * medición de la base, con `ahora` en ese año. Los indicadores de prueba son mensuales, de forma «porcentaje», con inicio en
@@ -21,6 +22,8 @@ import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { asegurarMediciones, marcarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
 import { revisarVencimientosDeIndicadores } from "@/db/consultas/indicadores/vencimientos";
 import { revisarVencimientos } from "@/db/consultas/vencimientos";
+import { fechaLimite } from "@/lib/tramites/plazos";
+import { zonaHoraria } from "@/lib/zona-horaria";
 import { indicadorDePrueba, versionAutomatica, versionTrimestral, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
@@ -322,7 +325,9 @@ describe("revisarVencimientosDeIndicadores", () => {
   it("un automático sin datos no tiene aviso previo, ni de vencido, ni escalamiento: ni al líder ni al Admin SGC de respaldo", () =>
     revertida(sql, async (tx) => {
       const { proceso } = await entorno(tx);
-      const automatico = { calculo: { clave: "dentro_plazo", alcance: "proceso" } } as const;
+      // De estado, desde febrero: la pasada toma la foto de marzo, el periodo más reciente que terminó, y la de febrero ya no
+      // le toca a nadie (anexo 14B, §5.4). Febrero sigue sin datos, con su plazo vencido el 10 de marzo.
+      const automatico = { calculo: { clave: "dentro_plazo", alcance: "proceso" }, inicioMedicion: "2003-02" } as const;
       const jefe = await usuarioDePrueba(tx, { rol: "consulta" });
       const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [proceso.id], jefeId: jefe.usuarioId });
       const analiza = await usuarioDePrueba(tx, { rol: "consulta", jefeId: jefe.usuarioId });
@@ -331,12 +336,44 @@ describe("revisarVencimientosDeIndicadores", () => {
       const sinLider = await procesoNuevo(tx);
       const admin = await usuarioDePrueba(tx, { rol: "admin_sgc", jefeId: jefe.usuarioId });
       const huerfano = await indicador(tx, sinLider.id, automatico);
+      const febrero = async (ind: { id: number }) =>
+        Number((await tx`SELECT id FROM mediciones WHERE indicador_id = ${ind.id} AND periodo = '2003-02'`)[0].id);
 
       for (const d of [8, 12, 20]) expect(await pasada(tx, abril(d)), `${d} de abril`).toEqual({ avisados: 0, escalados: 0 });
       for (const x of [conLider, huerfano]) {
-        expect(await marcas(tx, await x.medicion())).toEqual({ aviso_previo_en: null, aviso_vencido_en: null, escalado_en: null });
+        const f = await febrero(x.ind);
+        expect((await tx`SELECT reportada_en, foto_en FROM mediciones WHERE id = ${f}`)[0]).toEqual({ reportada_en: null, foto_en: null });
+        expect(await marcas(tx, f)).toEqual({ aviso_previo_en: null, aviso_vencido_en: null, escalado_en: null });
       }
       for (const u of [lider, analiza, admin, jefe]) expect(await avisosDe(tx, u.usuarioId)).toEqual([]);
+    }));
+
+  it("la pasada toma la foto y, si no cumple, avisa a quien analiza; su análisis vence contando desde la foto, sin vencido ni escalamiento", () =>
+    revertida(sql, async (tx) => {
+      const { proceso } = await entorno(tx);
+      const jefe = await usuarioDePrueba(tx, { rol: "consulta" });
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const analiza = await usuarioDePrueba(tx, { rol: "consulta", jefeId: jefe.usuarioId });
+      // Una manual del proceso con febrero sin reportar (vence el 10 de marzo): «Reportes a tiempo» del proceso cuenta en
+      // marzo 0 de 1, con el cálculo real.
+      await indicadorDePrueba(tx, { procesoId: proceso.id, inicioMedicion: "2003-02", aprobadaEn: APROBADA, mide: [mide.usuarioId] });
+      const { medicion } = await indicador(tx, proceso.id, { calculo: { clave: "reportes_a_tiempo", alcance: "proceso" }, analiza: [analiza.usuarioId] }, false);
+
+      await pasada(tx, abril(11));
+      const [m] = await tx`SELECT foto_en, semaforo, estado, vence_en FROM mediciones WHERE id = ${await medicion()}`;
+      const nuevaFecha = fechaLimite(abril(11), 10, zonaHoraria());
+      expect(m).toEqual({ foto_en: abril(11), semaforo: "critico", estado: "abierta", vence_en: nuevaFecha });
+      const alertas = await tx`SELECT usuario_id FROM notificaciones
+        WHERE tipo = 'indicadores.alerta' AND entidad = 'medicion' AND entidad_id = ${await medicion()}`;
+      expect(alertas.map((a) => Number(a.usuario_id))).toContain(analiza.usuarioId);
+      // Con la fecha nueva, la misma pasada no lo da por vencido ni lo escala.
+      expect(await avisosDe(tx, analiza.usuarioId)).toEqual([]);
+      expect(await avisosDe(tx, jefe.usuarioId)).toEqual([]);
+      expect(await marcas(tx, await medicion())).toEqual({ aviso_previo_en: null, aviso_vencido_en: null, escalado_en: null });
+
+      // Pasada la fecha nueva, el análisis sí vence.
+      await pasada(tx, abril(22));
+      expect((await avisosDe(tx, analiza.usuarioId)).map((a) => a.titulo)).toEqual(["Tiene 1 indicador por analizar con el plazo vencido"]);
     }));
 
   it("manda la versión que rige el periodo: lo anterior al paso a automático se sigue avisando y escalando", () =>

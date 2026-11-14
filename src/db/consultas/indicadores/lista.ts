@@ -99,6 +99,8 @@ export type FilaDeLista = {
   periodicidad: Periodicidad | null;
   restringido: boolean;
   retirado: boolean;
+  /** La ficha vigente la calcula el sistema (anexo 14B, §5.3): la marca «Automático». */
+  automatico: boolean;
   /** Quien administra ve también borradores y descartados: sin ficha aprobada, sin periodo y fuera de la barra. */
   estado: EstadoIndicador;
   /** Un cambio sobre la ficha aprobada, que solo se le muestra a quien administra. */
@@ -303,6 +305,7 @@ export async function listarIndicadores(
       periodicidad: ((f.periodicidad_vigente ?? f.periodicidad_ultima) as Periodicidad | null) ?? null,
       restringido: f.nivel_acceso === "restringido",
       retirado: f.estado === "retirado",
+      automatico: vs[0]?.origenDato === "automatico",
       estado: f.estado as EstadoIndicador,
       cambioEnCurso:
         administra && conFicha && Number(f.numero_ultima) > Number(f.numero_vigente) && (f.estado_ultima === "borrador" || f.estado_ultima === "por_aprobar")

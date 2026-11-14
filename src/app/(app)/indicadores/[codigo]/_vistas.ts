@@ -151,7 +151,7 @@ export async function datosDeResultados(
     historicos: registra ? { editables, editando, variables: conLetrasDe(vigentes, editables) } : null,
     aviso: avisoDeHistoricos(sp.registrados),
     soportes,
-    cierre: { reabre: c.administra && activo, cierraDeNuevo: c.administra, historial },
+    cierre: { reabre: c.administra && activo, cierraDeNuevo: c.administra, recalcula: c.administra && activo, historial },
   };
 }
 

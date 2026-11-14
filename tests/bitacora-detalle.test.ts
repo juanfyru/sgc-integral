@@ -869,6 +869,16 @@ describe("la medición de un indicador", () => {
     expect(nombreDeAccion("medicion_cerrada_de_nuevo")).toBe("Cerró de nuevo una medición de indicador");
   });
 
+  it("volver a calcular la foto de un automático (14B, Tarea 7)", () => {
+    const de = { codigo: "SGC-ID-001", indicadorId: 9, periodo: "2026-03" };
+    expect(frase("medicion_foto_recalculada", { ...de, antes: "75 %", despues: "50 %" })).toBe("Volvió a calcular SGC-ID-001, marzo de 2026: de 75 % a 50 %");
+    expect(frase("medicion_foto_recalculada", { ...de, antes: "50 %", despues: "No aplica" })).toBe(
+      "Volvió a calcular SGC-ID-001, marzo de 2026: de 50 % a No aplica",
+    );
+    expect(frase("medicion_foto_recalculada", {})).toBe("Volvió a calcular la medición de un indicador");
+    expect(nombreDeAccion("medicion_foto_recalculada")).toBe("Volvió a calcular una medición de indicador");
+  });
+
   it("quitar un soporte (Tarea 11)", () => {
     expect(frase("medicion_soporte_quitado", { codigo: "SGC-IND-01", periodo: "2026-T3", nombre: "Informe.pdf" })).toBe(
       "Quitó el soporte «Informe.pdf» de SGC-IND-01, tercer trimestre de 2026",

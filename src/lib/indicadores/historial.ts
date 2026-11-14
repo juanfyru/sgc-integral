@@ -74,7 +74,8 @@ function queHizo(e: EventoDeMedicion): string {
     case "recalculo":
       return `Se recalculó${MOTIVO_DE_RECALCULO[String(e.detalle.causa)] ?? ""}`;
     case "foto":
-      return "Tomó la foto";
+      // La foto la toma el sistema; con `recalculo`, quien administra la volvió a tomar (anexo 14B, §5.4).
+      return e.detalle.recalculo === true ? "Se volvió a calcular" : "El sistema tomó la foto";
   }
 }
 

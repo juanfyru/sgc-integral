@@ -13,6 +13,7 @@ import { asegurarMediciones } from "@/db/consultas/indicadores/mediciones";
 import { soportesDe } from "@/db/consultas/indicadores/soportes";
 import { periodicidadDe } from "@/lib/indicadores/periodos";
 import { exigirSesion } from "@/lib/paginas";
+import { puede } from "@/lib/permisos";
 import { exigirIndicador, rutaDeIndicador } from "../../../_comun";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +27,8 @@ const ENLACE = `rounded-sm text-marca underline-offset-2 hover:underline ${FOCO}
  * Quien no ve el indicador, no puede medirlo o pide un periodo sin medición recibe «no encontrado». Un histórico no se
  * reporta aquí: se registra en la tabla del año (spec §8.8). Debajo van los soportes y, con resultado, quien puede analizar tiene el análisis.
  * La de un automático (anexo 14B, §4) es de solo lectura y la abre quien puede analizarlo: nadie digita sus datos ni sube
- * soportes; con los datos del sistema, sus valores y, si el resultado lo pide, el análisis.
+ * soportes; dice cuándo se tomaron o se tomarán, con los datos del sistema muestra sus valores y, si el resultado lo pide, el
+ * análisis; a quien además administra, «Volver a calcular» una foto de flujo (§5.4).
  */
 export default async function PaginaReportar({ params }: { params: Promise<{ codigo: string; periodo: string }> }) {
   const sesion = await exigirSesion();
@@ -71,7 +73,7 @@ export default async function PaginaReportar({ params }: { params: Promise<{ cod
       {datos.automatica ? (
         <>
           {datos.estado === "cerrada" ? cerrada : null}
-          <DatosDelSistema datos={datos} />
+          <DatosDelSistema datos={datos} administra={puede(sesion, "indicadores.administrar")} />
         </>
       ) : datos.estado === "cerrada" ? (
         cerrada

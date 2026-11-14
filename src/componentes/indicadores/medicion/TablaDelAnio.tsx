@@ -6,10 +6,13 @@ import type { FilaDelAnio } from "@/db/consultas/indicadores/lectura";
 import type { Soporte } from "@/db/consultas/indicadores/soportes";
 import { ETIQUETA_ESTADO } from "@/lib/indicadores/estados";
 import { analisisDeFila, marcasDeFila } from "@/lib/indicadores/ficha-en-texto";
+import { textoDeEspera, textoDeFoto } from "@/lib/indicadores/fotos";
 import type { EntradaDeHistorial } from "@/lib/indicadores/historial";
 import { rutaDeIndicador } from "@/lib/indicadores/rutas";
 import { enlaceDeSoporte } from "@/lib/indicadores/soportes";
+import { zonaHoraria } from "@/lib/zona-horaria";
 import { InsigniaSemaforo } from "../InsigniaSemaforo";
+import { VolverACalcular } from "./VolverACalcular";
 
 /** Las columnas de las variables viven con los textos de la ficha: la impresa y el Excel las usan también. */
 export { columnasDeVariables } from "@/lib/indicadores/ficha-en-texto";
@@ -131,7 +134,10 @@ function ListaDeSoportes({ codigo, soportes }: { codigo: string; soportes: Sopor
  * quien puede analizar tiene además el de escribir o editar el análisis de lo que tiene resultado. Quien administra reabre una cerrada (`puedeReabrir`) y
  * cierra de nuevo una reabierta (`puedeCerrarDeNuevo`, spec §8.7); una corregida lleva su historial (`historial`). Las
  * marcas acompañan al estado (spec §8.5): «Histórico», «Corregida», «Requiere acción de mejora», «Meta ajustada después del
- * periodo», «N periodos sin cumplir» y «Periodicidad anterior», que no se toca (la dejó un cambio mayor). Cada fila lleva
+ * periodo», «N periodos sin cumplir» y «Periodicidad anterior», que no se toca (la dejó un cambio mayor). Una fila que
+ * calcula el sistema dice cuándo se tomaron sus datos («Calculado por el sistema · foto del …») o cuándo se tomarán («Se
+ * calcula el …»), y quien administra (`puedeVolverACalcular`) vuelve a calcular la foto de un cálculo de flujo sin cerrar ni
+ * reabrir (anexo 14B, §5.4). Cada fila lleva
  * el ancla `periodo-<clave>`: la matriz del año enlaza a ella. Las columnas de las variables son las que pasa quien llama
  * (`columnasDeVariables`: la unión de las letras del año); un periodo cuya ficha no tiene una, la deja en «—».
  */
@@ -145,6 +151,7 @@ export function TablaDelAnio({
   soportes = null,
   puedeReabrir = false,
   puedeCerrarDeNuevo = false,
+  puedeVolverACalcular = false,
   historial = null,
   periodosSinCumplir = 3,
 }: {
@@ -158,12 +165,15 @@ export function TablaDelAnio({
   soportes?: Map<number, Soporte[]> | null;
   puedeReabrir?: boolean;
   puedeCerrarDeNuevo?: boolean;
+  /** Quien administra un indicador activo vuelve a calcular la foto de un cálculo de flujo (anexo 14B, §5.4). */
+  puedeVolverACalcular?: boolean;
   /** El historial de cada medición corregida, por medición. */
   historial?: Map<number, EntradaDeHistorial[]> | null;
   /** El parámetro del incumplimiento repetido (spec §10.3), para la marca «3 periodos sin cumplir». */
   periodosSinCumplir?: number;
 }) {
-  const conAcciones = puedeMedir || puedeAnalizar || puedeReabrir || puedeCerrarDeNuevo;
+  const conAcciones = puedeMedir || puedeAnalizar || puedeReabrir || puedeCerrarDeNuevo || puedeVolverACalcular;
+  const zona = zonaHoraria();
   const columnas: ColumnaTabla[] = [
     { clave: "periodo", etiqueta: "Periodo" },
     ...variables.map((v) => ({ clave: `var-${v.letra}`, etiqueta: v.nombre, numerica: true })),
@@ -178,12 +188,16 @@ export function TablaDelAnio({
   return (
     <TablaDatos titulo={`Resultados de ${anio}`} columnas={columnas} filas={filas.length} vacio={`No hay periodos que medir en ${anio}.`}>
       {filas.map((f) => {
+        // Lo que calcula el sistema: cuándo tomó sus datos o cuándo los tomará. Mientras los espera, esa es su fecha.
+        const delSistema = f.fotoEn ? `Calculado por el sistema · ${textoDeFoto(f.fotoEn, zona)}` : f.seCalcula ? textoDeEspera(f.seCalcula, zona) : null;
+        const esperaLaFoto = f.automatica && f.fotoEn === null;
         const cabecera = (
           <th scope="row" className={`${celda} text-left font-medium`}>
             {f.etiqueta}
-            {f.vence && f.estado !== "cerrada" && f.estado !== "reportada" && !f.historica && !f.deOtraPeriodicidad ? (
+            {f.vence && f.estado !== "cerrada" && f.estado !== "reportada" && !f.historica && !f.deOtraPeriodicidad && !esperaLaFoto ? (
               <span className="block text-xs font-normal text-muted-foreground">{`Plazo hasta el ${f.vence}`}</span>
             ) : null}
+            {delSistema ? <span className="block text-xs font-normal text-muted-foreground">{delSistema}</span> : null}
           </th>
         );
         const ancla = `periodo-${f.periodo}`;
@@ -207,6 +221,7 @@ export function TablaDelAnio({
         const reabrible = puedeReabrir && tocable && f.estado === "cerrada";
         // Corregida y sin cerrar: solo la reapertura marca «corregida».
         const reabierta = puedeCerrarDeNuevo && tocable && f.corregida && f.estado !== "cerrada";
+        const recalculable = puedeVolverACalcular && tocable && f.recalculable;
         return (
           <tr key={f.periodo} id={ancla} className="scroll-mt-24">
             {cabecera}
@@ -252,6 +267,7 @@ export function TablaDelAnio({
                   ) : null}
                   {reabrible ? <DialogoReabrir medicionId={f.medicionId!} codigo={codigo} etiqueta={f.etiqueta} /> : null}
                   {reabierta ? <CerrarDeNuevo medicionId={f.medicionId!} etiqueta={f.etiqueta} /> : null}
+                  {recalculable ? <VolverACalcular medicionId={f.medicionId!} etiqueta={f.etiqueta} /> : null}
                 </div>
               </td>
             ) : null}

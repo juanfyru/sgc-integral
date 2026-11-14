@@ -43,8 +43,11 @@ export type DatosDeResultados = {
   aviso: { texto: string; exito: boolean } | null;
   /** Los soportes de cada medición del año, solo a quien ve los soportes del indicador (`null` para los demás). */
   soportes: Map<number, Soporte[]> | null;
-  /** Reabrir y cerrar de nuevo (quien administra) y el historial de cada medición corregida (spec §8.7). */
-  cierre: { reabre: boolean; cierraDeNuevo: boolean; historial: Map<number, EntradaDeHistorial[]> };
+  /**
+   * Reabrir, cerrar de nuevo y volver a calcular la foto de un automático (quien administra; anexo 14B, §5.4) y el historial
+   * de cada medición corregida (spec §8.7).
+   */
+  cierre: { reabre: boolean; cierraDeNuevo: boolean; recalcula: boolean; historial: Map<number, EntradaDeHistorial[]> };
 };
 
 const CAJA = "flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3";
@@ -222,6 +225,7 @@ export function VistaResultados(d: DatosDeResultados) {
             soportes={d.soportes}
             puedeReabrir={d.cierre.reabre}
             puedeCerrarDeNuevo={d.cierre.cierraDeNuevo}
+            puedeVolverACalcular={d.cierre.recalcula}
             historial={d.cierre.historial}
             periodosSinCumplir={d.periodosSinCumplir}
           />

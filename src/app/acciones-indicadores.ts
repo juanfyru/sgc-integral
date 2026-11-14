@@ -4,12 +4,13 @@
 // de persona la vuelve a comprobar la consulta. Las de los maestros viven en `src/app/admin/acciones-indicadores.ts`.
 
 import { rutaDeEdicion, rutaDeIndicador } from "@/app/(app)/indicadores/_comun";
-import { idNumerico, mutacion, valoresDeFormulario, type EstadoAccion } from "@/app/admin/comun";
+import { idNumerico, mutacion, valoresDeFormulario, type EstadoAccion, type EstadoConAviso } from "@/app/admin/comun";
 import { ErrorFirma } from "@/db/consultas/flujo/contrato";
 import { analizar } from "@/db/consultas/indicadores/analisis";
 import { aprobarFichas, descartarBorrador, devolverFicha, enviarAAprobacion } from "@/db/consultas/indicadores/aprobacion";
 import { cerrarDeNuevo, cerrarMes, reabrirMedicion } from "@/db/consultas/indicadores/cierre";
 import { abrirCambio, crearIndicador, guardarBorrador } from "@/db/consultas/indicadores/fichas";
+import { volverACalcular } from "@/db/consultas/indicadores/fotos";
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
 import { marcarNoAplica, quitarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
 import { programarMeta, quitarMetaProgramada } from "@/db/consultas/indicadores/metas";
@@ -357,4 +358,18 @@ export async function cerrarDeNuevoAccion(_prev: EstadoAccion, formData: FormDat
     parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
     await cerrarDeNuevo(sesion, idNumerico(formData, "id"));
   });
+}
+
+/**
+ * `id` es el de la medición. Vuelve a calcular la foto de un cálculo de flujo (anexo 14B, §5.4), sin clave; no navega: la
+ * tabla o la pantalla se repintan, y el botón dice si los datos cambiaron.
+ */
+export async function volverACalcularAccion(_prev: EstadoConAviso, formData: FormData): Promise<EstadoConAviso> {
+  let cambio = false;
+  const estado = await mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
+    ({ cambio } = await volverACalcular(sesion, idNumerico(formData, "id")));
+  });
+  if (estado) return estado;
+  return { ok: true, aviso: cambio ? "Se volvió a calcular: los datos cambiaron." : "Se volvió a calcular: los datos son los mismos." };
 }
