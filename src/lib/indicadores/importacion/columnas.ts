@@ -57,7 +57,7 @@ export const COLUMNAS: readonly Columna[] = [
   { clave: "cargo", encabezado: "Cargo responsable de medir", obligatoria: false, lista: null, ayuda: "Cargo de la estructura. Entra como responsable de medir y de analizar; si no coincide, la vista previa pide elegirlo." },
   { clave: "riesgo", encabezado: "Riesgo asociado", obligatoria: false, lista: null, ayuda: "Riesgo que el indicador vigila (hasta 300 caracteres)." },
   { clave: "referenteNormativo", encabezado: "Referente normativo", obligatoria: false, lista: null, ayuda: "Norma o requisito que sustenta el indicador (hasta 120 caracteres)." },
-  { clave: "inicioMedicion", encabezado: "Inicio de medición", obligatoria: false, lista: null, ayuda: "Mes en que empieza a medirse, AAAA-MM (por ejemplo 2026-09). Vacío: enero del año de la importación." },
+  { clave: "inicioMedicion", encabezado: "Inicio de medición", obligatoria: false, lista: null, ayuda: "Mes en que empieza a medirse, AAAA-MM (por ejemplo 2026-09), desde enero de cinco años antes del de la importación hasta el mes de la importación. Vacío: enero del año de la importación." },
   { clave: "estado", encabezado: "Estado", obligatoria: true, lista: "estados", ayuda: "Aprobado (ya aprobado antes de la app) o Propuesto (queda en borrador y sigue el camino de aprobación)." },
 ];
 

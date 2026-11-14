@@ -1,19 +1,23 @@
 /**
  * La revisión de las filas de la plantilla (spec fase 14A §5.3 a §5.6): decide, fila por fila, qué ficha se crearía y qué
- * problemas, avisos y correspondencias pendientes tiene. Puro: sin base ni reloj; el año lo trae quien llama.
+ * problemas, avisos y correspondencias pendientes tiene. Puro: sin base ni reloj; el mes de la importación lo trae quien llama.
  */
 import { CODIGOS_RESERVADOS, LARGO_CODIGO_INDICADOR, PATRON_CODIGO_INDICADOR } from "@/lib/esquemas/indicadores";
 import { analizar } from "@/lib/indicadores/formula/analizar";
 import { FACTORES_TASA, formulaDeForma, letrasDeForma } from "@/lib/indicadores/formula/formas";
 import { aDecimal, CERO, CIEN, comparar, fraccion, multiplicar, UNO, type Fraccion } from "@/lib/indicadores/formula/fraccion";
-import { claveQueContieneMes } from "@/lib/indicadores/periodos";
+import { dos } from "@/lib/indicadores-documentales/periodo";
+import { claveQueContieneMes, periodosAntesDelMes } from "@/lib/indicadores/periodos";
 import { rangosATexto, rangosDeLaRegla, type RangosEnTexto } from "@/lib/indicadores/rangos";
 import type { Consolidacion, Forma, Periodicidad, Tendencia } from "@/lib/indicadores/tipos";
 import { normalizar } from "@/lib/lote-usuarios";
+import { exigirSiglaNoReservada, validarSigla } from "@/lib/validaciones-mapa";
 import { ENCABEZADO_DE, type ClaveColumna, type FilaLeida } from "./columnas";
 
 export type ReglaDeImportacion = { pctAscendente: number; pctDescendente: number };
 export type Pendiente = { tipo: "subproceso" | "cargo" | "tipo" | "unidad"; texto: string };
+/** El mes de la importación, en la zona de la instalación: de él salen la ventana del inicio y los históricos. */
+export type MesDeImportacion = { anio: number; mes: number };
 
 type Catalogo = { id: number; nombre: string };
 export type Catalogos = {
@@ -25,7 +29,41 @@ export type Catalogos = {
   cargos: Catalogo[];
   /** Códigos de indicador ya usados en la app, en minúsculas. */
   codigosUsados: ReadonlySet<string>;
+  /**
+   * Las siglas de todos los procesos y subprocesos, también los inactivos, en minúsculas (la unicidad del mapa las cubre a
+   * todas). Sin ella, las de los catálogos de arriba.
+   */
+  siglasEnUso?: ReadonlySet<string>;
 };
+
+/** Los años antes del de la importación desde los que se acepta el inicio de medición (Ruling 46). */
+const ANIOS_DE_VENTANA = 5;
+/** Con más periodos históricos que estos por registrar, la fila lo avisa. */
+const HISTORICOS_SIN_AVISO = 24;
+
+/**
+ * Por qué una sigla no se puede dar a un subproceso, por las reglas del mapa (`validarSigla`, `exigirSiglaNoReservada`), o
+ * `null` si sirve. Lo dicen la vista previa y la importación.
+ */
+export function motivoDeSigla(texto: string): string | null {
+  let sigla: string;
+  try {
+    sigla = validarSigla(texto);
+  } catch {
+    return "debe tener de 2 a 4 letras (A–Z)";
+  }
+  try {
+    exigirSiglaNoReservada(sigla);
+  } catch {
+    return "está reservada para los indicadores";
+  }
+  return null;
+}
+
+/** «El código trae la sigla CNT, que no se puede dar al subproceso Laboratorio: ya la usa otro proceso o subproceso». */
+const SIGLA_NO_SE_OFRECE = (sigla: string, subproceso: string, motivo: string) =>
+  `El código trae la sigla ${sigla}, que no se puede dar al subproceso ${subproceso}: ${motivo}`;
+const SIGLA_OCUPADA = "ya la usa otro proceso o subproceso";
 
 /** Clave: el texto del archivo normalizado con `normalizar`. */
 export type Correspondencias = {
@@ -128,7 +166,14 @@ function numeroCanonico(m: Fraccion): string {
 /** «1.000»: un punto que parece separador de miles; Excel y la gente lo leen distinto. */
 const PUNTO_DE_MILES = /^-?\d{1,3}(\.\d{3})+$/;
 
-function revisarFila(f: FilaLeida, c: Catalogos, corr: Correspondencias, regla: ReglaDeImportacion, anio: number, repetidos: Map<string, number[]>): FilaRevisada {
+function revisarFila(
+  f: FilaLeida,
+  c: Catalogos,
+  corr: Correspondencias,
+  regla: ReglaDeImportacion,
+  hoy: MesDeImportacion,
+  repetidos: Map<string, number[]>,
+): FilaRevisada {
   const problemas: string[] = [];
   const avisos: string[] = [];
   const pendientes: Pendiente[] = [];
@@ -312,11 +357,27 @@ function revisarFila(f: FilaLeida, c: Catalogos, corr: Correspondencias, regla: 
     periodicidad = buscar(PERIODICIDADES, t("periodicidad"));
     if (!periodicidad) problemas.push(`«${eco(t("periodicidad"))}» no es una periodicidad: use Mensual, Bimestral, Trimestral, Semestral o Anual`);
   }
-  let inicioMes: { anio: number; mes: number } = { anio, mes: 1 };
+  let inicioMes: MesDeImportacion | null = { anio: hoy.anio, mes: 1 };
   if (t("inicioMedicion") !== "") {
     const m = /^(\d{4})-(\d{2})$/.exec(t("inicioMedicion"));
-    if (!m || Number(m[2]) < 1 || Number(m[2]) > 12) problemas.push(`El inicio de medición «${eco(t("inicioMedicion"))}» no es AAAA-MM`);
-    else inicioMes = { anio: Number(m[1]), mes: Number(m[2]) };
+    if (!m || Number(m[2]) < 1 || Number(m[2]) > 12) {
+      problemas.push(`El inicio de medición «${eco(t("inicioMedicion"))}» no es AAAA-MM`);
+      inicioMes = null;
+    } else {
+      // De enero de cinco años antes al mes de la importación (Ruling 46): un error de digitación no deja una ficha aprobada
+      // que nunca se mide ni mil periodos históricos.
+      const escrito = { anio: Number(m[1]), mes: Number(m[2]) };
+      const mes = (x: MesDeImportacion) => x.anio * 12 + x.mes;
+      const desde = { anio: hoy.anio - ANIOS_DE_VENTANA, mes: 1 };
+      if (mes(escrito) < mes(desde) || mes(escrito) > mes(hoy)) {
+        problemas.push(`El inicio de medición «${eco(t("inicioMedicion"))}» está fuera de la ventana de ${desde.anio}-01 a ${hoy.anio}-${dos(hoy.mes)}`);
+        inicioMes = null;
+      } else inicioMes = escrito;
+    }
+  }
+  if (periodicidad && inicioMes) {
+    const historicos = periodosAntesDelMes(periodicidad, inicioMes, hoy);
+    if (historicos > HISTORICOS_SIN_AVISO) avisos.push(`Abre ${historicos} periodos históricos por registrar`);
   }
   let estado: "aprobado" | "propuesto" | undefined;
   if (t("estado") === "") falta("estado");
@@ -328,14 +389,21 @@ function revisarFila(f: FilaLeida, c: Catalogos, corr: Correspondencias, regla: 
   const nombresDe = (letra: "A" | "B") => t(letra === "A" ? "variableA" : "variableB");
   const sinPendientes = pendientes.length === 0;
   if (
-    !(problemas.length === 0 && sinPendientes && proceso && tipo && clasificacion && unidad && forma && formula !== null && (metaTexto !== null || sinMeta) && sentido && sentido !== "constante" && periodicidad && estado)
+    !(problemas.length === 0 && sinPendientes && proceso && tipo && clasificacion && unidad && forma && formula !== null && (metaTexto !== null || sinMeta) && sentido && sentido !== "constante" && periodicidad && inicioMes && estado)
   )
     return { numero: f.numero, codigo, ficha: null, problemas, avisos, pendientes };
 
   const meta = metaTexto === null ? null : fraccion(metaTexto);
+  // La sigla del código se ofrece a un subproceso sin sigla solo si el mapa la aceptaría (B-m1); la del proceso es lo normal.
   const siglaDelCodigo = /^(.+?)-ID-\d+$/i.exec(codigo)?.[1].toUpperCase() ?? null;
-  const siglaParaSubproceso =
-    subproceso && subproceso.sigla === null && siglaDelCodigo !== null && normalizar(siglaDelCodigo) !== normalizar(proceso.sigla) ? siglaDelCodigo : null;
+  let siglaParaSubproceso: string | null = null;
+  if (subproceso && subproceso.sigla === null && siglaDelCodigo !== null && normalizar(siglaDelCodigo) !== normalizar(proceso.sigla)) {
+    const enUso =
+      c.siglasEnUso ?? new Set([...c.procesos.map((p) => p.sigla.toLowerCase()), ...c.subprocesos.flatMap((s) => (s.sigla ? [s.sigla.toLowerCase()] : []))]);
+    const motivo = motivoDeSigla(siglaDelCodigo) ?? (enUso.has(siglaDelCodigo.toLowerCase()) ? SIGLA_OCUPADA : null);
+    if (motivo === null) siglaParaSubproceso = siglaDelCodigo;
+    else avisos.push(SIGLA_NO_SE_OFRECE(siglaDelCodigo, subproceso.nombre, motivo));
+  }
   const ficha: FichaImportada = {
     codigo,
     nombre: t("nombre"),
@@ -370,11 +438,41 @@ function revisarFila(f: FilaLeida, c: Catalogos, corr: Correspondencias, regla: 
   return { numero: f.numero, codigo, ficha, problemas, avisos, pendientes };
 }
 
-export function revisarLote(filas: FilaLeida[], c: Catalogos, corr: Correspondencias, regla: ReglaDeImportacion, anio: number): FilaRevisada[] {
+/**
+ * Una sigla que proponen dos subprocesos, o dos siglas para un mismo subproceso, no se ofrecen: el mapa no admitiría las dos
+ * y la persona no sabría cuál se queda. Cada fila afectada lo avisa.
+ */
+function sinSiglasEnConflicto(filas: FilaRevisada[], c: Catalogos): FilaRevisada[] {
+  const subprocesosDe = new Map<string, Set<number>>();
+  const siglasDe = new Map<number, Set<string>>();
+  for (const f of filas) {
+    const sigla = f.ficha?.siglaParaSubproceso;
+    const id = f.ficha?.subprocesoId;
+    if (!sigla || id === null || id === undefined) continue;
+    subprocesosDe.set(sigla, new Set([...(subprocesosDe.get(sigla) ?? []), id]));
+    siglasDe.set(id, new Set([...(siglasDe.get(id) ?? []), sigla]));
+  }
+  const nombre = (id: number) => c.subprocesos.find((s) => s.id === id)?.nombre ?? `n.º ${id}`;
+  return filas.map((f) => {
+    const sigla = f.ficha?.siglaParaSubproceso;
+    const id = f.ficha?.subprocesoId;
+    if (!f.ficha || !sigla || id === null || id === undefined) return f;
+    const otros = [...(subprocesosDe.get(sigla) ?? [])].filter((x) => x !== id);
+    const otras = [...(siglasDe.get(id) ?? [])].filter((x) => x !== sigla);
+    if (otros.length === 0 && otras.length === 0) return f;
+    const motivo = otros.length > 0 ? `la propone también el subproceso ${nombre(otros[0])}` : `otra fila le propone la sigla ${otras[0]}`;
+    return { ...f, ficha: { ...f.ficha, siglaParaSubproceso: null }, avisos: [...f.avisos, SIGLA_NO_SE_OFRECE(sigla, nombre(id), motivo)] };
+  });
+}
+
+export function revisarLote(filas: FilaLeida[], c: Catalogos, corr: Correspondencias, regla: ReglaDeImportacion, hoy: MesDeImportacion): FilaRevisada[] {
   const repetidos = new Map<string, number[]>();
   for (const f of filas) {
     const codigo = (f.celdas.codigo ?? "").trim().toLowerCase();
     if (codigo !== "") repetidos.set(codigo, [...(repetidos.get(codigo) ?? []), f.numero]);
   }
-  return filas.map((f) => revisarFila(f, c, corr, regla, anio, repetidos));
+  return sinSiglasEnConflicto(
+    filas.map((f) => revisarFila(f, c, corr, regla, hoy, repetidos)),
+    c,
+  );
 }

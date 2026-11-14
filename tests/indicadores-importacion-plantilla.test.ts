@@ -48,6 +48,8 @@ const catalogos = (usados: string[] = []): Catalogos => ({
 
 const SIN_CORR: Correspondencias = { subprocesos: {}, cargos: {}, tipos: {}, unidades: {} };
 const REGLA = { pctAscendente: 90, pctDescendente: 110 };
+/** El mes de la importación: la ventana del inicio de medición va de enero de 2021 a noviembre de 2026 (Ruling 46). */
+const HOY = { anio: 2026, mes: 11 };
 
 function fila(numero: number, extra: Partial<Record<ClaveColumna, string>> = {}) {
   return {
@@ -161,11 +163,28 @@ describe("leerPlantilla", () => {
     const muchas = Array.from({ length: 501 }, (_, i) => ({ codigo: `A-ID-${i}` }));
     expect(await leerPlantilla(await conFilas(muchas))).toEqual({ ok: false, error: "La plantilla tiene más de 500 filas" });
   });
+
+  it("el tope de 500 filas se mira antes de leer las celdas (ola final B-m4)", async () => {
+    const wb = await libro(await plantillaDeImportacion(LISTAS));
+    const hoja = wb.getWorksheet("Indicadores")!;
+    const columna = (c: ClaveColumna) => COLUMNAS.findIndex((x) => x.clave === c) + 1;
+    for (let i = 0; i < 501; i++) hoja.getCell(i + 2, columna("codigo")).value = `A-ID-${i}`;
+    // Una celda que, leída, tumbaría la lectura con otro mensaje: no se llega a leer.
+    hoja.getCell(503, columna("inicioMedicion")).value = { formula: "1", result: new Date(Number.NaN) } as unknown as ExcelJS.CellValue;
+    expect(await leerPlantilla(Buffer.from((await wb.xlsx.writeBuffer()) as ArrayBuffer))).toEqual({ ok: false, error: "La plantilla tiene más de 500 filas" });
+    // Las filas con formato y sin valores no cuentan: 500 filas escritas en una hoja con formato hasta la 900 sí se leen.
+    const otra = await libro(await plantillaDeImportacion(LISTAS));
+    const h = otra.getWorksheet("Indicadores")!;
+    for (let i = 0; i < 500; i++) h.getCell(i + 2, columna("codigo")).value = `A-ID-${i}`;
+    for (let r = 502; r <= 900; r++) h.getCell(r, columna("nombre")).font = { bold: true };
+    const leida = await leerPlantilla(Buffer.from((await otra.xlsx.writeBuffer()) as ArrayBuffer));
+    expect(leida.ok && leida.filas.length).toBe(500);
+  });
 });
 
 describe("revisarLote", () => {
   it("arma la ficha de un porcentaje con la regla de rangos", () => {
-    const [r] = revisarLote([fila(2)], catalogos(), SIN_CORR, REGLA, 2026);
+    const [r] = revisarLote([fila(2)], catalogos(), SIN_CORR, REGLA, HOY);
     expect(r.problemas).toEqual([]);
     expect(r.pendientes).toEqual([]);
     expect(r.ficha).toMatchObject({
@@ -193,23 +212,23 @@ describe("revisarLote", () => {
   });
 
   it("empareja «Laboratorio Clínico (LAB)» con el subproceso «Laboratorio Clínico» (sin el sufijo)", () => {
-    const [r] = revisarLote([fila(2, { proceso: "LAB", subproceso: "Laboratorio Clínico (LAB)" })], catalogos(), SIN_CORR, REGLA, 2026);
+    const [r] = revisarLote([fila(2, { proceso: "LAB", subproceso: "Laboratorio Clínico (LAB)" })], catalogos(), SIN_CORR, REGLA, HOY);
     expect(r.ficha?.subprocesoId).toBe(10);
     expect(r.pendientes).toEqual([]);
   });
 
   it("un subproceso desconocido queda pendiente y sin ficha; la correspondencia lo resuelve", () => {
     const f = fila(2, { subproceso: "Cartera" });
-    const [r] = revisarLote([f], catalogos(), SIN_CORR, REGLA, 2026);
+    const [r] = revisarLote([f], catalogos(), SIN_CORR, REGLA, HOY);
     expect(r.ficha).toBeNull();
     expect(r.pendientes).toEqual([{ tipo: "subproceso", texto: "Cartera" }]);
-    const [ok] = revisarLote([f], catalogos(), { ...SIN_CORR, subprocesos: { cartera: 11 } }, REGLA, 2026);
+    const [ok] = revisarLote([f], catalogos(), { ...SIN_CORR, subprocesos: { cartera: 11 } }, REGLA, HOY);
     expect(ok.ficha?.subprocesoId).toBe(11);
     expect(ok.pendientes).toEqual([]);
   });
 
   it("tipo, unidad y cargo desconocidos quedan pendientes", () => {
-    const [r] = revisarLote([fila(2, { tipo: "Otro", unidad: "Veces", cargo: "Jefe de cartera" })], catalogos(), SIN_CORR, REGLA, 2026);
+    const [r] = revisarLote([fila(2, { tipo: "Otro", unidad: "Veces", cargo: "Jefe de cartera" })], catalogos(), SIN_CORR, REGLA, HOY);
     expect(r.pendientes).toEqual([
       { tipo: "tipo", texto: "Otro" },
       { tipo: "unidad", texto: "Veces" },
@@ -219,7 +238,7 @@ describe("revisarLote", () => {
 
   it("un código repetido en el archivo o ya usado es un problema", () => {
     const filas = [fila(2), fila(3, { codigo: "CNT-ID-002" }), fila(5)];
-    const r = revisarLote(filas, catalogos(["cnt-id-002"]), SIN_CORR, REGLA, 2026);
+    const r = revisarLote(filas, catalogos(["cnt-id-002"]), SIN_CORR, REGLA, HOY);
     expect(r[0].problemas).toContain("El código CNT-ID-001 se repite en las filas 2 y 5");
     expect(r[2].problemas).toContain("El código CNT-ID-001 se repite en las filas 2 y 5");
     expect(r[1].problemas).toContain("El código CNT-ID-002 ya existe en la app");
@@ -227,26 +246,26 @@ describe("revisarLote", () => {
   });
 
   it("una meta de porcentaje escrita como fracción avisa pero no bloquea", () => {
-    const [r] = revisarLote([fila(2, { meta: "0,95" })], catalogos(), SIN_CORR, REGLA, 2026);
+    const [r] = revisarLote([fila(2, { meta: "0,95" })], catalogos(), SIN_CORR, REGLA, HOY);
     expect(r.avisos).toContain("La meta 0,95 de un porcentaje parece una fracción: ¿quiso escribir 95?");
     expect(r.ficha).not.toBeNull();
-    const [sin] = revisarLote([fila(2, { meta: "95" })], catalogos(), SIN_CORR, REGLA, 2026);
+    const [sin] = revisarLote([fila(2, { meta: "95" })], catalogos(), SIN_CORR, REGLA, HOY);
     expect(sin.avisos).toEqual([]);
   });
 
   it("«Constante» no se importa", () => {
-    const [r] = revisarLote([fila(2, { sentido: "Constante" })], catalogos(), SIN_CORR, REGLA, 2026);
+    const [r] = revisarLote([fila(2, { sentido: "Constante" })], catalogos(), SIN_CORR, REGLA, HOY);
     expect(r.problemas).toContain("«Mantenerse en un rango» no se importa: cree esa ficha en la app");
     expect(r.ficha).toBeNull();
   });
 
   it("«Propuesto» y el inicio vacío o escrito", () => {
-    const [p] = revisarLote([fila(2, { estado: "Propuesto" })], catalogos(), SIN_CORR, REGLA, 2026);
+    const [p] = revisarLote([fila(2, { estado: "Propuesto" })], catalogos(), SIN_CORR, REGLA, HOY);
     expect(p.ficha?.estado).toBe("propuesto");
     expect(p.ficha?.inicioMedicion).toBe("2026-T1");
-    const [i] = revisarLote([fila(2, { inicioMedicion: "2026-09" })], catalogos(), SIN_CORR, REGLA, 2026);
+    const [i] = revisarLote([fila(2, { inicioMedicion: "2026-09" })], catalogos(), SIN_CORR, REGLA, HOY);
     expect(i.ficha?.inicioMedicion).toBe("2026-T3");
-    const [mal] = revisarLote([fila(2, { inicioMedicion: "septiembre" })], catalogos(), SIN_CORR, REGLA, 2026);
+    const [mal] = revisarLote([fila(2, { inicioMedicion: "septiembre" })], catalogos(), SIN_CORR, REGLA, HOY);
     expect(mal.problemas).toContain("El inicio de medición «septiembre» no es AAAA-MM");
   });
 
@@ -256,7 +275,7 @@ describe("revisarLote", () => {
       catalogos(),
       SIN_CORR,
       REGLA,
-      2026,
+      HOY,
     );
     expect(r.problemas).toEqual(
       expect.arrayContaining([
@@ -271,29 +290,29 @@ describe("revisarLote", () => {
   });
 
   it("un texto que pasa del largo del esquema es un problema (no se recorta)", () => {
-    const [r] = revisarLote([fila(2, { nombre: "x".repeat(201), referenteNormativo: "y".repeat(121) })], catalogos(), SIN_CORR, REGLA, 2026);
+    const [r] = revisarLote([fila(2, { nombre: "x".repeat(201), referenteNormativo: "y".repeat(121) })], catalogos(), SIN_CORR, REGLA, HOY);
     expect(r.problemas).toContain("«Nombre» pasa de 200 caracteres");
     expect(r.problemas).toContain("«Referente normativo» pasa de 120 caracteres");
   });
 
   it("tasa con factor, fórmula libre y conteo", () => {
-    const [t] = revisarLote([fila(2, { forma: "Tasa", factor: "1.000" })], catalogos(), SIN_CORR, REGLA, 2026);
+    const [t] = revisarLote([fila(2, { forma: "Tasa", factor: "1.000" })], catalogos(), SIN_CORR, REGLA, HOY);
     expect(t.ficha?.formula).toBe("A / B * 1000");
     expect(t.ficha?.factor).toBe(1000);
-    const [sinFactor] = revisarLote([fila(2, { forma: "Tasa" })], catalogos(), SIN_CORR, REGLA, 2026);
+    const [sinFactor] = revisarLote([fila(2, { forma: "Tasa" })], catalogos(), SIN_CORR, REGLA, HOY);
     expect(sinFactor.problemas).toContain("Falta «Factor»");
-    const [l] = revisarLote([fila(2, { forma: "Fórmula libre", formulaLibre: "A / (A + B)" })], catalogos(), SIN_CORR, REGLA, 2026);
+    const [l] = revisarLote([fila(2, { forma: "Fórmula libre", formulaLibre: "A / (A + B)" })], catalogos(), SIN_CORR, REGLA, HOY);
     expect(l.ficha?.formula).toBe("A / (A + B)");
-    const [mala] = revisarLote([fila(2, { forma: "Fórmula libre", formulaLibre: "A / / B" })], catalogos(), SIN_CORR, REGLA, 2026);
+    const [mala] = revisarLote([fila(2, { forma: "Fórmula libre", formulaLibre: "A / / B" })], catalogos(), SIN_CORR, REGLA, HOY);
     expect(mala.ficha).toBeNull();
     expect(mala.problemas.length).toBeGreaterThan(0);
-    const [c] = revisarLote([fila(2, { forma: "Conteo", variableB: "" })], catalogos(), SIN_CORR, REGLA, 2026);
+    const [c] = revisarLote([fila(2, { forma: "Conteo", variableB: "" })], catalogos(), SIN_CORR, REGLA, HOY);
     expect(c.ficha?.formula).toBe("A");
     expect(c.ficha?.variables).toHaveLength(1);
   });
 
   it("«Cómo se junta» y la fuente van a cada variable", () => {
-    const [r] = revisarLote([fila(2, { comoSeJuntaA: "Último valor", comoSeJuntaB: "Promedio", fuente: "Listado Maestro" })], catalogos(), SIN_CORR, REGLA, 2026);
+    const [r] = revisarLote([fila(2, { comoSeJuntaA: "Último valor", comoSeJuntaB: "Promedio", fuente: "Listado Maestro" })], catalogos(), SIN_CORR, REGLA, HOY);
     expect(r.ficha?.variables.map((v) => [v.consolidacion, v.fuente])).toEqual([
       ["ultimo", "Listado Maestro"],
       ["promedio", "Listado Maestro"],
@@ -301,10 +320,69 @@ describe("revisarLote", () => {
   });
 
   it("ofrece la sigla del código al subproceso que no la tiene", () => {
-    const [r] = revisarLote([fila(2, { codigo: "CNT-ID-003", proceso: "LAB", subproceso: "Laboratorio Clínico" })], catalogos(), SIN_CORR, REGLA, 2026);
-    expect(r.ficha?.siglaParaSubproceso).toBe("CNT");
-    const [sin] = revisarLote([fila(2)], catalogos(), SIN_CORR, REGLA, 2026);
+    const [r] = revisarLote([fila(2, { codigo: "LCL-ID-003", proceso: "LAB", subproceso: "Laboratorio Clínico" })], catalogos(), SIN_CORR, REGLA, HOY);
+    expect(r.ficha?.siglaParaSubproceso).toBe("LCL");
+    expect(r.avisos).toEqual([]);
+    const [sin] = revisarLote([fila(2)], catalogos(), SIN_CORR, REGLA, HOY);
     expect(sin.ficha?.siglaParaSubproceso).toBeNull();
+    // La sigla del proceso en el código es lo de siempre: no se ofrece ni se avisa.
+    const [delProceso] = revisarLote([fila(2, { codigo: "LAB-ID-003", proceso: "LAB", subproceso: "Laboratorio Clínico" })], catalogos(), SIN_CORR, REGLA, HOY);
+    expect(delProceso.ficha?.siglaParaSubproceso).toBeNull();
+    expect(delProceso.avisos).toEqual([]);
+  });
+
+  it("una sigla del código que no serviría en el mapa no se ofrece: la fila lo avisa (ola final B-m1)", () => {
+    const labo = (codigo: string) =>
+      revisarLote([fila(2, { codigo, proceso: "LAB", subproceso: "Laboratorio Clínico" })], catalogos(), SIN_CORR, REGLA, HOY)[0];
+    const casos: [string, string][] = [
+      ["CNT-ID-003", "El código trae la sigla CNT, que no se puede dar al subproceso Laboratorio Clínico: ya la usa otro proceso o subproceso"],
+      ["IND-ID-003", "El código trae la sigla IND, que no se puede dar al subproceso Laboratorio Clínico: está reservada para los indicadores"],
+      ["LABCL-ID-003", "El código trae la sigla LABCL, que no se puede dar al subproceso Laboratorio Clínico: debe tener de 2 a 4 letras (A–Z)"],
+    ];
+    for (const [codigo, aviso] of casos) {
+      const r = labo(codigo);
+      expect(r.ficha, codigo).not.toBeNull();
+      expect(r.ficha?.siglaParaSubproceso, codigo).toBeNull();
+      expect(r.avisos, codigo).toEqual([aviso]);
+    }
+    // Una sigla de un proceso o subproceso inactivo (que la vista previa no lista) también está ocupada.
+    const conInactiva = { ...catalogos(), siglasEnUso: new Set(["cnt", "lab", "lcl"]) };
+    const [inactiva] = revisarLote([fila(2, { codigo: "LCL-ID-003", proceso: "LAB", subproceso: "Laboratorio Clínico" })], conInactiva, SIN_CORR, REGLA, HOY);
+    expect(inactiva.ficha?.siglaParaSubproceso).toBeNull();
+    expect(inactiva.avisos).toEqual(["El código trae la sigla LCL, que no se puede dar al subproceso Laboratorio Clínico: ya la usa otro proceso o subproceso"]);
+  });
+
+  it("una sigla que proponen dos subprocesos, o dos siglas para uno, no se ofrecen", () => {
+    const c = { ...catalogos(), subprocesos: [...catalogos().subprocesos, { id: 12, procesoId: 1, nombre: "Cartera", sigla: null }] };
+    const dos = revisarLote(
+      [
+        fila(2, { codigo: "LCL-ID-001", proceso: "LAB", subproceso: "Laboratorio Clínico" }),
+        fila(3, { codigo: "LCL-ID-002", proceso: "CNT", subproceso: "Cartera" }),
+        fila(4, { codigo: "CRT-ID-001", proceso: "CNT", subproceso: "Cartera" }),
+      ],
+      c,
+      SIN_CORR,
+      REGLA,
+      HOY,
+    );
+    expect(dos.map((r) => r.ficha?.siglaParaSubproceso)).toEqual([null, null, null]);
+    expect(dos[0].avisos).toEqual(["El código trae la sigla LCL, que no se puede dar al subproceso Laboratorio Clínico: la propone también el subproceso Cartera"]);
+    expect(dos[1].avisos).toEqual([
+      "El código trae la sigla LCL, que no se puede dar al subproceso Cartera: la propone también el subproceso Laboratorio Clínico",
+    ]);
+    expect(dos[2].avisos).toEqual(["El código trae la sigla CRT, que no se puede dar al subproceso Cartera: otra fila le propone la sigla LCL"]);
+    // Dos filas del mismo subproceso con la misma sigla: se ofrece, sin aviso.
+    const iguales = revisarLote(
+      [fila(2, { codigo: "CRT-ID-001", proceso: "CNT", subproceso: "Cartera" }), fila(3, { codigo: "CRT-ID-002", proceso: "CNT", subproceso: "Cartera" })],
+      c,
+      SIN_CORR,
+      REGLA,
+      HOY,
+    );
+    expect(iguales.map((r) => [r.ficha?.siglaParaSubproceso, r.avisos])).toEqual([
+      ["CRT", []],
+      ["CRT", []],
+    ]);
   });
 });
 
@@ -385,11 +463,46 @@ describe("libros hostiles", () => {
   it("«Obligatoria» de las variables dice «Según la forma»", async () => {
     const hoja = (await libro(await plantillaDeImportacion(LISTAS))).getWorksheet("Instrucciones")!;
     expect(hoja.getCell(COLUMNAS.findIndex((c) => c.clave === "variableA") + 2, 2).value).toBe("Según la forma");
+    // La ventana del inicio de medición (Ruling 46) está en la instrucción de su columna.
+    expect(String(hoja.getCell(COLUMNAS.findIndex((c) => c.clave === "inicioMedicion") + 2, 3).value)).toContain(
+      "desde enero de cinco años antes del de la importación hasta el mes de la importación",
+    );
+  });
+});
+
+describe("revisarLote: la ventana del inicio de medición (Ruling 46)", () => {
+  const una = (extra: Partial<Record<ClaveColumna, string>>) => revisarLote([fila(2, extra)], catalogos(), SIN_CORR, REGLA, HOY)[0];
+
+  it("solo entra de enero de cinco años antes al mes de la importación", () => {
+    for (const inicio of ["1026-09", "1900-01", "2062-09", "2020-12", "2026-12"]) {
+      const r = una({ inicioMedicion: inicio });
+      expect(r.ficha, inicio).toBeNull();
+      expect(r.problemas, inicio).toEqual([`El inicio de medición «${inicio}» está fuera de la ventana de 2021-01 a 2026-11`]);
+    }
+    expect(una({ inicioMedicion: "2021-01" }).ficha?.inicioMedicion).toBe("2021-T1");
+    expect(una({ inicioMedicion: "2026-11" }).ficha?.inicioMedicion).toBe("2026-T4");
+    // En enero, la ventana termina en enero.
+    expect(revisarLote([fila(2, { inicioMedicion: "2027-02" })], catalogos(), SIN_CORR, REGLA, { anio: 2027, mes: 1 })[0].problemas).toEqual([
+      "El inicio de medición «2027-02» está fuera de la ventana de 2022-01 a 2027-01",
+    ]);
+  });
+
+  it("con más de 24 periodos históricos por registrar, avisa cuántos abre", () => {
+    const historicos = (r: ReturnType<typeof una>) => r.avisos.filter((a) => a.startsWith("Abre "));
+    // Mensual desde enero de 2024, importada en noviembre de 2026: de enero de 2024 a octubre de 2026, 34 meses.
+    const mensual = una({ periodicidad: "Mensual", inicioMedicion: "2024-01" });
+    expect(mensual.ficha).not.toBeNull();
+    expect(historicos(mensual)).toEqual(["Abre 34 periodos históricos por registrar"]);
+    expect(historicos(una({ periodicidad: "Mensual", inicioMedicion: "2024-10" }))).toEqual(["Abre 25 periodos históricos por registrar"]);
+    // 24 o menos no se avisan: el mes en curso no ha terminado y no es histórico.
+    expect(historicos(una({ periodicidad: "Mensual", inicioMedicion: "2024-11" }))).toEqual([]);
+    // Trimestral desde 2021: de 2021-T1 a 2026-T3, 23 trimestres.
+    expect(historicos(una({ inicioMedicion: "2021-01" }))).toEqual([]);
   });
 });
 
 describe("revisarLote: rigor de la ronda 1", () => {
-  const una = (extra: Partial<Record<ClaveColumna, string>>) => revisarLote([fila(2, extra)], catalogos(), SIN_CORR, REGLA, 2026)[0];
+  const una = (extra: Partial<Record<ClaveColumna, string>>) => revisarLote([fila(2, extra)], catalogos(), SIN_CORR, REGLA, HOY)[0];
 
   it("la correspondencia de un subproceso de otro proceso es un problema", () => {
     const r = revisarLote(
@@ -397,7 +510,7 @@ describe("revisarLote: rigor de la ronda 1", () => {
       catalogos(),
       { ...SIN_CORR, subprocesos: { "cartera externa": 11 } },
       REGLA,
-      2026,
+      HOY,
     )[0];
     expect(r.problemas).toContain("El subproceso «Cartera externa» no es del proceso LAB");
     expect(r.ficha).toBeNull();
@@ -447,7 +560,7 @@ describe("ronda 2: celdas con error y residuos", () => {
     poner(hoja, (c) => COLUMNAS.findIndex((x) => x.clave === c) + 1);
     return leerPlantilla(Buffer.from((await wb.xlsx.writeBuffer()) as ArrayBuffer));
   }
-  const una = (extra: Partial<Record<ClaveColumna, string>>) => revisarLote([fila(2, extra)], catalogos(), SIN_CORR, REGLA, 2026)[0];
+  const una = (extra: Partial<Record<ClaveColumna, string>>) => revisarLote([fila(2, extra)], catalogos(), SIN_CORR, REGLA, HOY)[0];
 
   it("una celda con error de Excel o una fórmula sin resultado bloquea su fila", async () => {
     const r = await leer((h, col) => {
@@ -459,7 +572,7 @@ describe("ronda 2: celdas con error y residuos", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.filas[0].errores).toEqual({ meta: "#DIV/0!", objetivo: "#REF!", riesgo: "fórmula sin resultado" });
-    const rev = revisarLote([{ ...fila(2), celdas: { ...fila(2).celdas, ...r.filas[0].celdas }, errores: r.filas[0].errores }], catalogos(), SIN_CORR, REGLA, 2026)[0];
+    const rev = revisarLote([{ ...fila(2), celdas: { ...fila(2).celdas, ...r.filas[0].celdas }, errores: r.filas[0].errores }], catalogos(), SIN_CORR, REGLA, HOY)[0];
     expect(rev.ficha).toBeNull();
     expect(rev.problemas).toEqual(
       expect.arrayContaining([
@@ -484,7 +597,7 @@ describe("ronda 2: celdas con error y residuos", () => {
 
   it("el código largo se repite en el mensaje recortado a 80 caracteres", () => {
     const largo = "A".repeat(100);
-    const r = revisarLote([fila(2, { codigo: largo })], catalogos([largo.toLowerCase()]), SIN_CORR, REGLA, 2026)[0];
+    const r = revisarLote([fila(2, { codigo: largo })], catalogos([largo.toLowerCase()]), SIN_CORR, REGLA, HOY)[0];
     expect(r.problemas).toContain(`El código ${"A".repeat(80)}… ya existe en la app`);
   });
 

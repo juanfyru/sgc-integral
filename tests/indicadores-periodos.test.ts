@@ -3,6 +3,7 @@ import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import {
   anterior,
   claveQueContieneMes,
+  periodosAntesDelMes,
   clavesDelAnio,
   contiene,
   fechaLimiteDeReporte,
@@ -120,6 +121,19 @@ describe("periodos de indicadores", () => {
     expect(contiene("trimestral", "bimestral")).toBe(false);
     expect(contiene("mensual", "anual")).toBe(false);
     expect(contiene("anual", "anual")).toBe(true);
+  });
+});
+
+describe("periodosAntesDelMes", () => {
+  it("cuenta los periodos que terminaron antes del que contiene el mes (los históricos de una importación)", () => {
+    const nov = { anio: 2026, mes: 11 };
+    expect(periodosAntesDelMes("mensual", { anio: 2024, mes: 1 }, nov)).toBe(34);
+    expect(periodosAntesDelMes("mensual", nov, nov)).toBe(0);
+    expect(periodosAntesDelMes("trimestral", { anio: 2026, mes: 2 }, nov)).toBe(3);
+    expect(periodosAntesDelMes("bimestral", { anio: 2026, mes: 1 }, nov)).toBe(5);
+    expect(periodosAntesDelMes("semestral", { anio: 2021, mes: 1 }, nov)).toBe(11);
+    expect(periodosAntesDelMes("anual", { anio: 2021, mes: 7 }, nov)).toBe(5);
+    expect(periodosAntesDelMes("mensual", { anio: 2027, mes: 1 }, nov)).toBe(0);
   });
 });
 

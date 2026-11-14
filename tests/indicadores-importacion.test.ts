@@ -49,6 +49,7 @@ import { normalizar } from "@/lib/lote-usuarios";
 import { ErrorPermiso } from "@/lib/permisos";
 import { MIME_XLSX } from "@/lib/subida";
 import { parsearFormulario } from "@/lib/validacion";
+import { indicadorDePrueba, loteImportado } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 import { firmaDePrueba } from "./utiles/vigencia";
@@ -780,6 +781,21 @@ describe("importar el lote", () => {
       ]);
     }));
 
+  it("el aviso de los históricos dice cuántos periodos abre la importación (Ruling 46)", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const codigo = `CNT-ID-${unico()}`;
+      const fuera = `CNT-ID-${unico()}`;
+      const { loteId } = await loteCon(tx, b.admin, [aprobada(b, codigo, { inicioMedicion: "2024-01" }), aprobada(b, fuera, { inicioMedicion: "1026-09" })]);
+      const v = (await vistaPrevia(b.admin, loteId, { correspondencias: SIN_CORR, regla: REGLA }, { sql: tx, ahora: AHORA }))!;
+      expect(v.filas[0].avisos).toContain("Abre 34 periodos históricos por registrar");
+      expect(v.filas[1].problemas).toEqual(["El inicio de medición «1026-09» está fuera de la ventana de 2021-01 a 2026-11"]);
+      expect(await importarLote(b.admin, loteId, datosImportacion(), firmar(tx))).toEqual({ aprobadas: 1, borradores: 0, omitidas: 1 });
+      const [{ n }] = await tx`SELECT count(*)::int AS n FROM mediciones m JOIN indicadores i ON i.id = m.indicador_id
+        WHERE i.codigo = ${codigo} AND m.historica`;
+      expect(n).toBe(34);
+    }));
+
   it("una fila con un código ya usado se omite y el resto entra", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);
@@ -821,8 +837,22 @@ describe("importar el lote", () => {
         "El porcentaje de Atención en descendente debe ser un entero entre 101 y 999",
       );
       await rechaza(
-        importarLote(b.admin, loteId, datosImportacion({ siglas: { [b.subprocesoId]: "CNT", 1: "XYZ" } }), opciones),
-        "Solo se da sigla a un subproceso de la importación que aún no la tiene",
+        importarLote(b.admin, loteId, datosImportacion({ siglas: { [b.subprocesoId]: "CNT", 999_999_999: "XYZ" } }), opciones),
+        "No se puede dar la sigla XYZ al subproceso n.º 999999999: solo se da a un subproceso de la importación que aún no la tiene",
+      );
+      // Los errores de las siglas nombran el subproceso (ola final B-m1).
+      await rechaza(
+        importarLote(b.admin, loteId, datosImportacion({ siglas: { [b.subprocesoId]: "C1" } }), opciones),
+        `No se puede dar la sigla C1 al subproceso ${b.subproceso}: debe tener de 2 a 4 letras (A–Z)`,
+      );
+      await rechaza(
+        importarLote(b.admin, loteId, datosImportacion({ siglas: { [b.subprocesoId]: "ID" } }), opciones),
+        `No se puede dar la sigla ID al subproceso ${b.subproceso}: está reservada para los indicadores`,
+      );
+      const [ocupada] = await tx`SELECT sigla FROM procesos WHERE activo ORDER BY id LIMIT 1`;
+      await rechaza(
+        importarLote(b.admin, loteId, datosImportacion({ siglas: { [b.subprocesoId]: String(ocupada.sigla) } }), opciones),
+        `No se puede dar la sigla ${String(ocupada.sigla).toUpperCase()} al subproceso ${b.subproceso}: ya la usa otro proceso o subproceso`,
       );
       await rechaza(importarLote(b.admin, 999_999_999, datosImportacion(), opciones), "La importación no existe");
       const sinArchivo = await crearLote(b.admin, { sql: tx, ahora: AHORA });
@@ -969,18 +999,18 @@ describe("deshacer la importación", () => {
       expect(
         await registrarHistoricos(b.admin, { indicadorId: f.aprobadaId, filas: [{ periodo: "2026-03", valores: { A: "8", B: "10" } }] }, { sql: tx, ahora: AHORA }),
       ).toEqual({ registrados: 1 });
-      expect(await condicionDeDeshacer(tx, f.loteId)).toEqual({ puede: false, impiden: [{ codigo: f.cod1, motivo: "tiene datos reportados" }] });
+      expect(await condicionDeDeshacer(tx, f.loteId)).toEqual({ puede: false, impiden: [{ codigo: f.cod1, motivo: "tiene periodos cerrados o con datos" }] });
       const c = clavePedida();
       await rechaza(
         deshacerImportacion(b.admin, f.loteId, { motivo: MOTIVO, credenciales: CLAVE }, { sql: tx, ahora: AHORA, verificar: c.verificar }),
-        `No se puede deshacer: ${f.cod1} tiene datos reportados`,
+        `No se puede deshacer: ${f.cod1} tiene periodos cerrados o con datos`,
       );
       expect(c.pedida).toBe(false);
       expect((await quedan(tx, f)).indicadores).toBe(2);
       expect(await estadoDeLote(tx, f.loteId)).toBe("importado");
     }));
 
-  it("cualquier dato de una medición cuenta: «no aplica», la fecha de reporte, un análisis, un valor, una observación, un evento o un soporte", () =>
+  it("cualquier dato de una medición cuenta: «no aplica», la fecha de reporte, un análisis, un valor, una observación, un evento, un soporte o el cierre", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);
       const f = await importado(tx, b);
@@ -996,6 +1026,8 @@ describe("deshacer la importación", () => {
         ],
         ["observación", (sp) => sp`INSERT INTO medicion_observaciones (medicion_id, usuario_id, texto) VALUES (${m.id}, ${b.admin.usuarioId}, 'Revisar el dato')`],
         ["evento", (sp) => sp`INSERT INTO medicion_eventos (medicion_id, tipo, usuario_id) VALUES (${m.id}, 'cierre', ${b.admin.usuarioId})`],
+        // Un periodo cerrado sin dato (el cierre del mes lo deja así) no es un dato reportado, pero es evidencia cerrada.
+        ["cerrada sin dato", (sp) => sp`UPDATE mediciones SET estado = 'cerrada' WHERE id = ${m.id}`],
         [
           "soporte",
           (sp) => sp`INSERT INTO archivos (contexto, contexto_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
@@ -1007,12 +1039,30 @@ describe("deshacer la importación", () => {
           await escribir(sp);
           expect({ nombre, condicion: await condicionDeDeshacer(sp, f.loteId) }).toEqual({
             nombre,
-            condicion: { puede: false, impiden: [{ codigo: f.cod1, motivo: "tiene datos reportados" }] },
+            condicion: { puede: false, impiden: [{ codigo: f.cod1, motivo: "tiene periodos cerrados o con datos" }] },
           });
         });
       }
       // Sin nada de eso, sí se puede.
       expect(await condicionDeDeshacer(tx, f.loteId)).toEqual({ puede: true, impiden: [] });
+    }));
+
+  it("si alguna versión del lote no está en el registro del evento, no se deshace nada (ola final B-m6)", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      // Un lote cuyo evento «importado» no lista sus fichas, con una versión aprobada que sí lleva su id.
+      const loteId = await loteImportado(tx, { usuarioId: b.admin.usuarioId, importadoEn: AHORA });
+      const ind = await indicadorDePrueba(tx, { procesoId: b.procesoId, importacionId: loteId });
+      expect(await estadoDeLote(tx, loteId)).toBe("importado");
+      const c = clavePedida();
+      await rechaza(
+        deshacerImportacion(b.admin, loteId, { motivo: MOTIVO, credenciales: CLAVE }, { sql: tx, ahora: DESPUES, verificar: c.verificar }),
+        "Esta importación no se puede deshacer: el registro del lote no cuadra con sus fichas",
+      );
+      expect(c.pedida).toBe(false);
+      expect(await estadoDeLote(tx, loteId)).toBe("importado");
+      const [v] = await tx`SELECT estado FROM indicador_versiones WHERE id = ${ind.versionId}`;
+      expect(v.estado).toBe("aprobada");
     }));
 
   it("una persona designada lo impide", () =>
@@ -1072,14 +1122,14 @@ describe("deshacer la importación", () => {
       expect(await condicionDeDeshacer(tx, f.loteId)).toEqual({
         puede: false,
         impiden: [
-          { codigo: f.cod1, motivo: "tiene datos reportados" },
+          { codigo: f.cod1, motivo: "tiene periodos cerrados o con datos" },
           { codigo: f.cod1, motivo: "tiene personas designadas" },
           { codigo: f.cod2, motivo: "la propuesta se modificó después de importarse" },
         ],
       });
       await rechaza(
         deshacerImportacion(b.admin, f.loteId, { motivo: MOTIVO, credenciales: CLAVE }, despues(tx)),
-        `No se puede deshacer: ${f.cod1} tiene datos reportados`,
+        `No se puede deshacer: ${f.cod1} tiene periodos cerrados o con datos`,
       );
     }));
 

@@ -34,6 +34,7 @@ import type { FilaLeida } from "@/lib/indicadores/importacion/columnas";
 import { leerPlantilla } from "@/lib/indicadores/importacion/leer";
 import type { ListasDePlantilla } from "@/lib/indicadores/importacion/plantilla";
 import {
+  motivoDeSigla,
   revisarLote,
   type Catalogos,
   type Correspondencias,
@@ -47,7 +48,7 @@ import { normalizar } from "@/lib/lote-usuarios";
 import { ErrorPermiso, puede, type SujetoPermiso } from "@/lib/permisos";
 import type { ArchivoServible } from "@/lib/servir-archivo";
 import { fechaEnZona } from "@/lib/tramites/plazos";
-import { exigirSiglaNoReservada, validarSigla } from "@/lib/validaciones-mapa";
+import { validarSigla } from "@/lib/validaciones-mapa";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { contenidoDeVersion, errorDeFichaImportada, escribirFichaNueva, type DatosFichaNueva } from "./fichas";
 import { bloquearLote, estadoDeEventos, estadoDeLote, type EstadoLote } from "./lote-importacion";
@@ -92,7 +93,9 @@ const SIN_PLANTILLA = "Suba primero la plantilla de la importación";
 const SIN_FILAS = "No hay filas para importar";
 const ARCHIVO_CAMBIADO = "El archivo de la importación cambió en el almacén: cree una importación nueva con la plantilla";
 const ARCHIVO_AUSENTE = "No se encontró el archivo de la importación en el almacén";
-const SIGLA_FUERA = "Solo se da sigla a un subproceso de la importación que aún no la tiene";
+/** «No se puede dar la sigla CNT al subproceso Gestión Contable: ya la usa otro proceso o subproceso». */
+const SIGLA_NO_SE_DA = (sigla: string, subproceso: string, motivo: string) => `No se puede dar la sigla ${sigla} al subproceso ${subproceso}: ${motivo}`;
+const SIGLA_FUERA = "solo se da a un subproceso de la importación que aún no la tiene";
 const VISTA_CAMBIADA = "La vista previa cambió mientras se importaba: revísela y vuelva a importar";
 
 /** Los largos de los datos de la aprobación previa: el documento va también en el sustento de la meta (hasta 500). */
@@ -271,7 +274,7 @@ type CatalogosDeImportacion = Catalogos & { procesoDe: Map<number, string> };
 
 /** Los catálogos activos y los códigos ya usados en la app (en cualquier estado), como los lee `revisarLote`. */
 async function catalogosDeImportacion(sql: Cliente): Promise<CatalogosDeImportacion> {
-  const [procesos, subprocesos, tipos, clasificaciones, unidades, cargos, codigos] = await Promise.all([
+  const [procesos, subprocesos, tipos, clasificaciones, unidades, cargos, codigos, siglas] = await Promise.all([
     sql`SELECT id, sigla, nombre FROM procesos WHERE activo ORDER BY orden, id`,
     sql`SELECT s.id, s.proceso_id, s.nombre, s.sigla FROM subprocesos s JOIN procesos p ON p.id = s.proceso_id AND p.activo
       WHERE s.activo ORDER BY p.orden, s.orden, s.id`,
@@ -280,6 +283,7 @@ async function catalogosDeImportacion(sql: Cliente): Promise<CatalogosDeImportac
     sql`SELECT id, nombre, sufijo, decimales FROM unidades_indicador WHERE activo ORDER BY orden, id`,
     sql`SELECT id, nombre FROM cargos WHERE activo ORDER BY nombre, id`,
     sql`SELECT lower(codigo) AS codigo FROM indicadores`,
+    sql`SELECT lower(sigla) AS sigla FROM procesos UNION SELECT lower(sigla) FROM subprocesos WHERE sigla IS NOT NULL`,
   ]);
   const catalogo = (filas: readonly Record<string, unknown>[]) => filas.map((f) => ({ id: Number(f.id), nombre: f.nombre as string }));
   return {
@@ -295,6 +299,7 @@ async function catalogosDeImportacion(sql: Cliente): Promise<CatalogosDeImportac
     unidades: unidades.map((u) => ({ id: Number(u.id), nombre: u.nombre as string, sufijo: (u.sufijo as string | null) ?? "", decimales: Number(u.decimales ?? 0) })),
     cargos: catalogo(cargos),
     codigosUsados: new Set(codigos.map((c) => c.codigo as string)),
+    siglasEnUso: new Set(siglas.map((x) => x.sigla as string)),
     procesoDe: new Map(procesos.map((p) => [Number(p.id), p.sigla as string])),
   };
 }
@@ -385,7 +390,7 @@ export function datosDeFichaImportada(
 type Revision = { catalogos: CatalogosDeImportacion; filas: FilaRevisada[]; plazoReporteDias: number };
 
 /**
- * `revisarLote` con los catálogos y los códigos de hoy, en el año de la importación, y después las reglas de la ficha de
+ * `revisarLote` con los catálogos y los códigos de hoy, en el mes de la importación, y después las reglas de la ficha de
  * la app (`errorDeFichaImportada`): lo que la ficha no admitiría queda como problema de su fila, no rompe el lote.
  */
 async function revisarFilas(
@@ -397,9 +402,10 @@ async function revisarFilas(
   documento: string,
 ): Promise<Revision> {
   const [catalogos, parametros] = await Promise.all([catalogosDeImportacion(sql), obtenerParametros({ sql })]);
-  const anio = Number(fechaEnZona(ahora, zonaHoraria()).slice(0, 4));
+  const hoy = fechaEnZona(ahora, zonaHoraria());
+  const mes = { anio: Number(hoy.slice(0, 4)), mes: Number(hoy.slice(5, 7)) };
   const decimales = new Map(catalogos.unidades.map((u) => [u.id, u.decimales]));
-  const filas = revisarLote(leidas, catalogos, corr, regla, anio).map((f) => {
+  const filas = revisarLote(leidas, catalogos, corr, regla, mes).map((f) => {
     if (f.ficha === null) return f;
     const error = errorDeFichaImportada(
       datosDeFichaImportada(f.ficha, regla, documento, { decimales: decimales.get(f.ficha.unidadId) ?? 0, plazoReporteDias: parametros.plazoReporteDias }),
@@ -481,7 +487,7 @@ type SiglaElegida = { subprocesoId: number; sigla: string };
 /**
  * Las siglas elegidas (spec §5.3, paso 5): solo a un subproceso de una fila que se importa, que aún no tiene sigla y
  * cuya fila la propone; una que ya tiene la misma no se vuelve a dar. La sigla, como en el mapa: de 2 a 4 letras, no
- * reservada y libre entre procesos y subprocesos.
+ * reservada y libre entre procesos y subprocesos. Cada error nombra el subproceso.
  */
 async function validarSiglas(sql: Cliente, pedidas: Record<number, string> | undefined, r: Revision): Promise<SiglaElegida[]> {
   const proponen = new Set(r.filas.flatMap((f) => (f.ficha?.siglaParaSubproceso && f.ficha.subprocesoId !== null ? [f.ficha.subprocesoId] : [])));
@@ -490,23 +496,20 @@ async function validarSiglas(sql: Cliente, pedidas: Record<number, string> | und
     .map(([id, sigla]) => ({ subprocesoId: Number(id), texto: String(sigla) }))
     .sort((a, b) => a.subprocesoId - b.subprocesoId);
   for (const { subprocesoId, texto } of entradas) {
-    let sigla: string;
-    try {
-      sigla = validarSigla(texto);
-      exigirSiglaNoReservada(sigla);
-    } catch (err) {
-      throw new ErrorIndicador((err as Error).message);
-    }
     const sub = r.catalogos.subprocesos.find((s) => s.id === subprocesoId);
+    const nombre = sub?.nombre ?? `n.º ${subprocesoId}`;
+    const invalida = motivoDeSigla(texto);
+    if (invalida !== null) throw new ErrorIndicador(SIGLA_NO_SE_DA(texto.trim(), nombre, invalida));
+    const sigla = validarSigla(texto);
     if (sub?.sigla && sub.sigla.toLowerCase() === sigla.toLowerCase()) continue;
-    if (!sub || sub.sigla !== null || !proponen.has(sub.id)) throw new ErrorIndicador(SIGLA_FUERA);
+    if (!sub || sub.sigla !== null || !proponen.has(sub.id)) throw new ErrorIndicador(SIGLA_NO_SE_DA(sigla, nombre, SIGLA_FUERA));
     const ocupada =
       elegidas.some((e) => e.sigla.toLowerCase() === sigla.toLowerCase()) ||
       (
         await sql`SELECT 1 FROM procesos WHERE lower(sigla) = lower(${sigla})
           UNION ALL SELECT 1 FROM subprocesos WHERE lower(sigla) = lower(${sigla}) AND id <> ${subprocesoId} LIMIT 1`
       ).length > 0;
-    if (ocupada) throw new ErrorIndicador(`Ya hay un proceso o subproceso con la sigla ${sigla}`);
+    if (ocupada) throw new ErrorIndicador(SIGLA_NO_SE_DA(sigla, nombre, "ya la usa otro proceso o subproceso"));
     elegidas.push({ subprocesoId, sigla });
   }
   return elegidas;
@@ -663,13 +666,15 @@ export async function importarLote(
 // ─────────────────────────────────────────────────────────────────────────────
 
 const NO_SE_HA_HECHO = "Esta importación no se ha hecho";
+const NO_CUADRA = "Esta importación no se puede deshacer: el registro del lote no cuadra con sus fichas";
 const YA_SE_DESHIZO = "Esta importación ya se deshizo";
 const MOTIVO_MINIMO = 10;
 const MOTIVO_MAXIMO = 500;
 
 /** Por qué una ficha del lote ya no se puede borrar (spec §5.9; las dos de las propuestas, Ruling 42). */
 const IMPIDE = {
-  datos: "tiene datos reportados",
+  // Un periodo cerrado sin dato (lo deja así el cierre del mes) es evidencia cerrada, aunque no tenga datos reportados.
+  datos: "tiene periodos cerrados o con datos",
   designadas: "tiene personas designadas",
   posterior: "tiene una versión posterior",
   enviada: "la propuesta ya se envió a aprobación",
@@ -766,13 +771,21 @@ function motivoDeDeshacer(v: unknown): string {
   return t;
 }
 
-/** Lo que debe cumplirse para deshacer, sin escribir nada: el lote importado y ninguna ficha con impedimentos. */
+/**
+ * Lo que debe cumplirse para deshacer, sin escribir nada: el lote importado, que toda versión que lleva su id esté en el
+ * registro del evento `importado` (la única lista de lo que se borra: una que faltara quedaría huérfana de su lote) y
+ * ninguna ficha con impedimentos.
+ */
 async function validarDeshacer(sql: Cliente, loteId: number): Promise<FichaQueSigue[]> {
   const estado = await estadoDeLote(sql, loteId);
   if (estado === null) throw new ErrorIndicador(NO_EXISTE);
   if (estado === "deshecho") throw new ErrorIndicador(YA_SE_DESHIZO);
   const importada = estado === "importado" ? await importadaDelLote(sql, loteId) : null;
   if (!importada) throw new ErrorIndicador(NO_SE_HA_HECHO);
+  const registradas = importada.fichas.map((f) => f.versionId);
+  const [fuera] = await sql`SELECT 1 FROM indicador_versiones
+    WHERE importacion_id = ${loteId} AND NOT (id = ANY(${sql.array(registradas)}::bigint[])) LIMIT 1`;
+  if (fuera) throw new ErrorIndicador(NO_CUADRA);
   const { impiden, siguen } = await revisarDeshacer(sql, importada);
   if (impiden.length > 0) throw new ErrorIndicador(`No se puede deshacer: ${impiden[0].codigo} ${impiden[0].motivo}`);
   return siguen;

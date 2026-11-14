@@ -150,8 +150,8 @@ describe("la página de un lote por importar", () => {
     expect(html).toContain("GC-ID-01");
     expect(html).toContain("Documentos vigentes");
     expect(html).toContain("Gestión de calidad › Laboratorio");
-    // La forma con su fórmula, en la misma celda.
-    expect(html).toMatch(/Porcentaje<\/span><span[^>]*>\(A \/ B\) \* 100/);
+    // La forma con su fórmula, en la misma celda, con los nombres de sus variables (ola final B-m2).
+    expect(html).toMatch(/Porcentaje<\/span><span[^>]*>\(A: Vigentes ÷ B: Listado maestro\) × 100/);
     // Los rangos en palabras, en la celda de rangos (no un «Atención» cualquiera de la página).
     expect(html).toMatch(/<td[^>]*>Bien: ≥ 95 %[^<]*Atención: 85,5 a 94,99 %[^<]*Crítico: &lt; 85,5 %<\/td>/);
     expect(html).toMatch(/<td[^>]*>95 %<\/td>/);
@@ -301,13 +301,13 @@ describe("la página de un lote ya importado", () => {
     c.condicionDeDeshacer.mockResolvedValue({
       puede: false,
       impiden: [
-        { codigo: "CNT-ID-001", motivo: "tiene datos reportados" },
+        { codigo: "CNT-ID-001", motivo: "tiene periodos cerrados o con datos" },
         { codigo: "CNT-ID-002", motivo: "tiene personas designadas" },
       ],
     });
     const html = await lote();
     const seccion = /<section[^>]*id="deshacer-importacion"[\s\S]*?<\/section>/.exec(html)?.[0] ?? "";
-    expect(seccion).toContain("No se puede deshacer: CNT-ID-001 tiene datos reportados");
+    expect(seccion).toContain("No se puede deshacer: CNT-ID-001 tiene periodos cerrados o con datos");
     expect(seccion).toContain("No se puede deshacer: CNT-ID-002 tiene personas designadas");
     expect(seccion).not.toContain('aria-haspopup="dialog"');
   });
@@ -409,6 +409,20 @@ describe("TablaVistaPrevia", () => {
     const html = renderToStaticMarkup(<TablaVistaPrevia vista={vista()} />);
     expect(html).toMatch(/A: suma de los periodos/);
     expect(html).toMatch(/B: el del último periodo/);
+  });
+
+  it("dice la fórmula con los nombres de sus variables, la periodicidad y el inicio de medición (Ruling 46, ola final B-m2)", () => {
+    const html = renderToStaticMarkup(<TablaVistaPrevia vista={vista()} />);
+    expect(html).toContain("(A: Vigentes ÷ B: Listado maestro) × 100");
+    expect(html).toMatch(/<th[^>]*>Periodicidad<\/th>/);
+    expect(html).toMatch(/<th[^>]*>Inicio<\/th>/);
+    expect(html).toMatch(/<td[^>]*>Mensual<\/td>/);
+    expect(html).toMatch(/<td[^>]*>Enero de 2026<\/td>/);
+    const v = vista();
+    v.filas = [{ numero: 2, codigo: "T-ID-01", ficha: ficha({ periodicidad: "trimestral", inicioMedicion: "2026-T3" }) as never, problemas: [], avisos: [], pendientes: [] }];
+    const trimestral = renderToStaticMarkup(<TablaVistaPrevia vista={v} />);
+    expect(trimestral).toMatch(/<td[^>]*>Trimestral<\/td>/);
+    expect(trimestral).toMatch(/<td[^>]*>Tercer trimestre de 2026<\/td>/);
   });
 
   it("el promedio se dice «el promedio de los periodos»", () => {

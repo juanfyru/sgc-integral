@@ -117,8 +117,8 @@ export async function vistaPreviaAccion(_prev: EstadoVistaPrevia, formData: Form
 }
 
 /**
- * Importa el lote (`id`) con la clave de quien importa y vuelve a su página con cuántas fichas entraron aprobadas y
- * cuántas en borrador (`aprobadas=N&borradores=M`), para que la pantalla lo confirme.
+ * Importa el lote (`id`) con la clave de quien importa y vuelve a su página, que confirma cuántas fichas entraron
+ * aprobadas y cuántas en borrador leyéndolo del evento `importado` del lote (nunca de la dirección).
  */
 export async function importarLoteAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   const firma = separarFirma(formData);
@@ -126,7 +126,7 @@ export async function importarLoteAccion(_prev: EstadoAccion, formData: FormData
     const d = parsearFormulario(juntarImportacion(firma), EsquemaImportarLote, { omitir: ["id"] });
     const loteId = idNumerico(formData, "id");
     try {
-      const { aprobadas, borradores } = await importarLote(
+      await importarLote(
         sesion,
         loteId,
         {
@@ -139,7 +139,7 @@ export async function importarLoteAccion(_prev: EstadoAccion, formData: FormData
         },
         { contexto: await contextoDePeticion() },
       );
-      return `/admin/indicadores/importar/${loteId}?aprobadas=${aprobadas}&borradores=${borradores}`;
+      return `/admin/indicadores/importar/${loteId}`;
     } catch (err) {
       return destinoDeFirma(err);
     }

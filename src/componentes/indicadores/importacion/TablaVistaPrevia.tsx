@@ -2,12 +2,13 @@ import { celda, TablaDatos, type ColumnaTabla } from "@/componentes/ui/TablaDato
 import { Insignia } from "@/componentes/ui/Insignia";
 import type { VistaPrevia } from "@/db/consultas/indicadores/importacion";
 import { fraccion } from "@/lib/indicadores/formula/fraccion";
-import { FORMA } from "@/lib/indicadores/ficha-en-texto";
+import { FORMA, periodoEnPalabras } from "@/lib/indicadores/ficha-en-texto";
+import { enPalabras } from "@/lib/indicadores/formula/formas";
 import { esImportable } from "@/lib/indicadores/importacion/formulario";
 import type { FichaImportada } from "@/lib/indicadores/importacion/revisar";
 import { rangosDeTexto } from "@/lib/indicadores/rangos";
 import { numeroExacto, rangosEnPalabras } from "@/lib/indicadores/semaforo";
-import type { Consolidacion } from "@/lib/indicadores/tipos";
+import { ETIQUETA_PERIODICIDAD, type Consolidacion } from "@/lib/indicadores/tipos";
 
 const COLUMNAS: readonly ColumnaTabla[] = [
   { clave: "fila", etiqueta: "Fila", numerica: true },
@@ -15,6 +16,8 @@ const COLUMNAS: readonly ColumnaTabla[] = [
   { clave: "nombre", etiqueta: "Nombre" },
   { clave: "proceso", etiqueta: "Proceso › subproceso" },
   { clave: "formula", etiqueta: "Forma y fórmula" },
+  { clave: "periodicidad", etiqueta: "Periodicidad" },
+  { clave: "inicio", etiqueta: "Inicio" },
   { clave: "meta", etiqueta: "Meta", numerica: true },
   { clave: "rangos", etiqueta: "Rangos" },
   { clave: "acumulado", etiqueta: "Cómo quedará el acumulado del año" },
@@ -38,6 +41,10 @@ function formaEnPalabras(f: FichaImportada): string {
   const forma = FORMA[f.forma] ?? f.forma;
   return f.forma === "tasa" && f.factor !== null ? `${forma} (× ${conMiles(f.factor)})` : forma;
 }
+
+/** La fórmula con los nombres de sus variables: «(A: Vigentes ÷ B: Listado Maestro) × 100». */
+const formulaConNombres = (f: FichaImportada) =>
+  enPalabras(f.formula, Object.fromEntries(f.variables.map((v) => [v.letra, `${v.letra}: ${v.nombre}`])));
 
 /** La meta con los decimales y el sufijo de su unidad; con tope, «meta hasta …». */
 function metaEnTexto(f: FichaImportada, u: { sufijo: string; decimales: number }): { meta: string; hasta: string | null } {
@@ -115,12 +122,14 @@ export function TablaVistaPrevia({ vista, desactualizada = false }: { vista: Vis
               {f ? (
                 <>
                   <span className="block font-medium">{formaEnPalabras(f)}</span>
-                  <span className="block break-words font-mono text-xs">{f.formula}</span>
+                  <span className="block break-words text-xs">{formulaConNombres(f)}</span>
                 </>
               ) : (
                 "—"
               )}
             </td>
+            <td className={`${celda} whitespace-nowrap`}>{f ? ETIQUETA_PERIODICIDAD[f.periodicidad] : "—"}</td>
+            <td className={`${celda} min-w-32`}>{f ? periodoEnPalabras(f.inicioMedicion) : "—"}</td>
             <td className={`${celda} text-right tabular-nums`}>
               {f ? (
                 <>

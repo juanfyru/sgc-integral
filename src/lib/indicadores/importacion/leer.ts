@@ -72,6 +72,10 @@ export async function leerPlantilla(bytes: Buffer): Promise<LecturaDePlantilla> 
       if (!columnaDe.has(c.clave)) return { ok: false, error: `La hoja «Indicadores» no tiene la columna «${c.encabezado}»` };
     }
 
+    // El tope antes de leer las celdas: cuenta las filas con algún valor (sin leerlas), menos la de encabezados. Una fila
+    // que solo tiene formato no cuenta.
+    if (hoja.actualRowCount - 1 > MAXIMO_FILAS_IMPORTACION) return { ok: false, error: `La plantilla tiene más de ${MAXIMO_FILAS_IMPORTACION} filas` };
+
     const filas: FilaLeida[] = [];
     hoja.eachRow({ includeEmpty: false }, (fila, numero) => {
       if (numero === 1) return;
