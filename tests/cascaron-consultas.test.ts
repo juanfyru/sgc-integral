@@ -4,8 +4,9 @@
  * `vigencia.ver` no paga ninguna consulta de vigencia. Las tareas de impactos normativos (Tarea 9) y las de la revisión
  * anual (Tarea 10) son una sola consulta acotada cada una, solo para quien lidera procesos o es Admin SGC; las de validar
  * la corrección de un hallazgo (Tarea 13), una sola consulta y solo para quien realiza verificaciones. Las de los
- * indicadores (Fase 14A, Tarea 13), una para las mediciones y otra para las observaciones de toda persona, más una para
- * quien aprueba fichas y otra para quien administra, sin importar cuántas haya. Se cuentan
+ * indicadores (Fase 14A, Tarea 13), una para las mediciones, otra para las constancias de envío al ente (14B, Tarea 10) y
+ * otra para las observaciones de toda persona, más una para quien aprueba fichas y otra para quien administra, sin
+ * importar cuántas haya. Se cuentan
  * las sentencias que se ejecutan (no los fragmentos),
  * con el cascarón real contra la BD de desarrollo, dentro de una transacción que se revierte.
  */
@@ -114,11 +115,15 @@ const deImpactos = (s: string[]) => s.filter((t) => t.includes("count(*)::int AS
 const deRevision = (s: string[]) => s.filter((t) => t.includes("JOIN revision_anual_procesos rap ON rap.revision_id = ra.id")).length;
 /** `tareasDeValidacion`: la única sentencia que busca los hallazgos por validar. */
 const deValidacion = (s: string[]) => s.filter((t) => t.includes("h.estado = 'por_validar' AND h.corregido_por IS DISTINCT FROM")).length;
-/** `tareasDeIndicadores`: las mediciones a cargo, las observaciones sin respuesta, las fichas por aprobar y las devueltas. */
+/**
+ * `tareasDeIndicadores`: las mediciones a cargo, las constancias de envío al ente por registrar, las observaciones sin
+ * respuesta, las fichas por aprobar y las devueltas.
+ */
 const deIndicadores = (s: string[]) =>
   s.filter(
     (t) =>
       t.includes("AS mide,") ||
+      t.includes("FROM reportes_externos r JOIN indicadores i") ||
       t.includes("FROM medicion_observaciones o") ||
       t.includes("fv.estado = 'por_aprobar'") ||
       t.includes("fv.nota_devolucion IS NOT NULL"),
@@ -199,30 +204,30 @@ describe("el costo del cascarón por render", () => {
         for (const nombre of ["líder", "Consulta sin externos", "Consulta responsable técnico"]) expect(cuentas[nombre].validacion, nombre).toBe(0);
         // La tarea de corregir un hallazgo no carga sus fotos (F-M10): el hallazgo abierto no suma sentencias de evidencias.
         for (const [nombre, c] of Object.entries(cuentas)) expect(c.evidencias, nombre).toBe(0);
-        // Las de los indicadores (Fase 14A): mediciones y observaciones para todos; las fichas por aprobar para quien aprueba
-        // (Gerencia y el líder) y las devueltas para quien administra.
+        // Las de los indicadores (Fase 14A): mediciones, constancias de envío al ente (14B) y observaciones para todos; las
+        // fichas por aprobar para quien aprueba (Gerencia y el líder) y las devueltas para quien administra.
         expect(Object.fromEntries(Object.entries(cuentas).map(([nombre, c]) => [nombre, c.indicadores]))).toEqual({
-          "Admin SGC": 3,
-          líder: 3,
-          Gerencia: 3,
-          "Control Interno": 2,
-          "Consulta sin externos": 2,
-          "Consulta responsable técnico": 2,
-          "Consulta con hallazgo abierto": 2,
+          "Admin SGC": 4,
+          líder: 4,
+          Gerencia: 4,
+          "Control Interno": 3,
+          "Consulta sin externos": 3,
+          "Consulta responsable técnico": 3,
+          "Consulta con hallazgo abierto": 3,
         });
         // El total por render (Tarea 13): una sentencia más que en la Tarea 10 para el Admin SGC (la de validar hallazgos),
         // ninguna para los demás; la de los hallazgos abiertos es la misma con o sin hallazgos (F-M10). Gerencia y Control
         // Interno bajan de 11 a 10 con el conteo (F-I3); el layout y la página comparten las demás lecturas por petición
         // (`tests/cascaron-peticion.test.ts`), lo que este test no ve porque aquí `React.cache` no guarda nada. Con los
-        // indicadores (Fase 14A), las de arriba.
+        // indicadores (Fase 14A), las de arriba; la 14B suma una para todos, la de las constancias de envío al ente.
         expect(Object.fromEntries(Object.entries(cuentas).map(([nombre, c]) => [nombre, c.total]))).toEqual({
-          "Admin SGC": 19,
-          líder: 19,
-          Gerencia: 13,
-          "Control Interno": 12,
-          "Consulta sin externos": 11,
-          "Consulta responsable técnico": 13,
-          "Consulta con hallazgo abierto": 11,
+          "Admin SGC": 20,
+          líder: 20,
+          Gerencia: 14,
+          "Control Interno": 13,
+          "Consulta sin externos": 12,
+          "Consulta responsable técnico": 14,
+          "Consulta con hallazgo abierto": 12,
         });
       } finally {
         await e.limpiar();
