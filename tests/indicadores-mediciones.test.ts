@@ -29,7 +29,7 @@ import {
 import { medicionParaReportar, proximaPorReportar, tablaDelAnio } from "@/db/consultas/indicadores/lectura";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
-import { indicadorDePrueba, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
+import { fotoDePrueba, indicadorDePrueba, versionAutomatica, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -901,5 +901,98 @@ describe("«cumple» frente a la meta, aparte del color", () => {
       const r = await recalcularMedicion(tx, enero, { ahora: AHORA, actorId: mide.usuarioId, evento: "recalculo", sistema: "racha" });
       expect([r.cambio, r.cumple]).toEqual([false, true]);
       expect((await eventos(tx, enero)).length).toBe(antes);
+    }));
+});
+
+/**
+ * Nadie mide un automático (anexo 14B, §4): las acciones que digitan rechazan una medición cuya versión que rige el periodo
+ * calcula el sistema. Manda esa versión, no la ficha vigente: lo anterior al paso a automático se sigue reportando.
+ */
+describe("un indicador que calcula el sistema", () => {
+  const AUTOMATICO = { calculo: { clave: "dentro_plazo", alcance: "entidad" } } as const;
+  const NO_SE_DIGITA = "Este indicador lo calcula el sistema: sus datos no se digitan";
+  const TARDE = new Date("2026-10-20T15:00:00Z");
+
+  it("reportar, guardar sin reportar, «no aplica», quitarlo y registrar históricos lo rechazan; «Reportar» no se ofrece", () =>
+    revertida(sql, async (tx) => {
+      // Quien estaba designado para medir (antes del paso a automático) pasa la condición de persona y aun así no digita.
+      const { ind, mide, medicion } = await preparar(tx, AUTOMATICO);
+      const t3 = await medicion("2026-T3");
+      await rechaza(reportarCon(tx, mide, t3, { A: "5", B: "6" }), NO_SE_DIGITA);
+      await rechaza(reportar(mide, { medicionId: t3, valores: { A: "5" }, parcial: true, confirmado: false }, opc(tx)), NO_SE_DIGITA);
+      await rechaza(marcarNoAplica(mide, { medicionId: t3, motivo: "Sin casos en el trimestre" }, opc(tx)), NO_SE_DIGITA);
+      await rechaza(
+        registrarHistoricos(mide, { indicadorId: ind.id, filas: [{ periodo: "2025-T3", valores: { A: "1", B: "2" } }] }, opc(tx)),
+        NO_SE_DIGITA,
+      );
+      expect(await valores(tx, t3)).toEqual({});
+      // El «no aplica» que deja el sistema tampoco se quita a mano.
+      await tx`UPDATE mediciones SET no_aplica = true, no_aplica_motivo = 'No había documentos vigentes con fecha de revisión', reportada_en = ${AHORA}
+        WHERE id = ${t3}`;
+      await rechaza(quitarNoAplica(mide, t3, opc(tx)), NO_SE_DIGITA);
+      expect(await proximaPorReportar(mide, ind.id, { sql: tx })).toBeNull();
+    }));
+
+  it("manda la versión que rige el periodo: lo anterior al paso a automático se sigue reportando", () =>
+    revertida(sql, async (tx) => {
+      const { ind, mide, medicion } = await preparar(tx);
+      const admin = await sesionAdmin(tx);
+      await versionAutomatica(tx, {
+        indicadorId: ind.id,
+        usuarioId: admin.usuarioId,
+        rigeDesde: "2026-T3",
+        aprobadaEn: new Date("2026-07-01T15:00:00Z"),
+        periodicidad: "trimestral",
+        calculo: AUTOMATICO.calculo,
+      });
+      expect(await reportarCon(tx, mide, await medicion("2026-T2"), { A: "5", B: "5" })).toMatchObject({ ok: true, estado: "reportada" });
+      await rechaza(reportarCon(tx, mide, await medicion("2026-T3"), { A: "5", B: "5" }), NO_SE_DIGITA);
+      expect(await proximaPorReportar(mide, ind.id, { sql: tx })).toEqual({ periodo: "2026-T1", etiqueta: "primer trimestre de 2026" });
+    }));
+
+  it("el soporte obligatorio no aplica: con el resultado del sistema que cumple queda reportada", () =>
+    revertida(sql, async (tx) => {
+      const { medicion } = await preparar(tx, { ...AUTOMATICO, soporteObligatorio: true });
+      const t3 = await medicion("2026-T3");
+      await fotoDePrueba(tx, t3, { A: "19", B: "20" }, AHORA);
+      expect(await contarSoportes(tx, t3)).toBe(0);
+      const m = await fila(tx, t3);
+      expect([m.semaforo, m.cumple, m.estado]).toEqual(["bien", true, "reportada"]);
+    }));
+
+  it("medicionParaReportar: de solo lectura, para quien analiza; sin «vencida» mientras falta el dato ni la marca de respaldo", () =>
+    revertida(sql, async (tx) => {
+      const analiza = await usuarioDePrueba(tx, { rol: "consulta" });
+      const { ind, mide, medicion } = await preparar(tx, { ...AUTOMATICO, analiza: [analiza.usuarioId] });
+      expect(await medicionParaReportar(analiza, ind.codigo, "2026-T3", opc(tx, TARDE))).toMatchObject({
+        automatica: true,
+        reportada: false,
+        vencida: false,
+        sinMedidor: false,
+      });
+      // Quien solo estaba designado para medir ya no tiene nada que hacer en ella.
+      expect(await medicionParaReportar(mide, ind.codigo, "2026-T3", opc(tx, TARDE))).toBeNull();
+      // Con la foto, sus valores y su resultado; pasado el plazo sin análisis, vencida.
+      await fotoDePrueba(tx, await medicion("2026-T3"), { A: "1", B: "2" }, AHORA);
+      expect(await medicionParaReportar(analiza, ind.codigo, "2026-T3", opc(tx, TARDE))).toMatchObject({
+        automatica: true,
+        reportada: true,
+        vencida: true,
+        semaforo: "critico",
+        cumple: false,
+        variables: [{ letra: "A", valor: "1" }, { letra: "B", valor: "2" }],
+      });
+
+      // Sin líder ni designado, el Admin SGC lo analiza de respaldo: la pantalla no le dice que lo mide.
+      const admin = await sesionAdmin(tx);
+      const huerfano = await indicadorDePrueba(tx, {
+        ...AUTOMATICO,
+        procesoId: await procesoSinLider(tx),
+        periodicidad: "trimestral",
+        inicioMedicion: "2026-T3",
+        aprobadaEn: APROBADA,
+      });
+      await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: huerfano.id });
+      expect(await medicionParaReportar(admin, huerfano.codigo, "2026-T3", opc(tx, TARDE))).toMatchObject({ automatica: true, sinMedidor: false });
     }));
 });

@@ -177,6 +177,24 @@ describe("POST /api/mediciones/[id]/archivos: quién sube", () => {
       await tx`UPDATE indicadores SET estado = 'retirado', baja_por = ${admin.sesion.usuarioId}, baja_en = now(), baja_motivo = 'Ya no se mide' WHERE id = ${ind.id}`;
       expect(await autorizarSoporte(medicion, mide.sesion, { sql: tx })).toEqual({ ok: false, estado: 409 });
     }));
+
+  it("en una medición que calcula el sistema no se sube ni se quita un soporte: 409", () =>
+    entorno(
+      async ({ tx, medicion, mide }) => {
+        // `mide` sigue designado como antes del paso a automático: pasa la condición de persona, y aun así nadie digita.
+        expect(await autorizarSoporte(medicion, mide.sesion, { sql: tx })).toEqual({ ok: false, estado: 409 });
+        const [a] = await tx`INSERT INTO archivos (version_id, contexto, contexto_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
+          VALUES (NULL, 'medicion', ${medicion}, 'evidencia', ${`mediciones/${medicion}/viejo.pdf`}, 'viejo.pdf', 'pdf', 'application/pdf', 4, ${"d".repeat(64)})
+          RETURNING id`;
+        const err = await quitarSoporte(mide.sesion, { archivoId: Number(a.id) }, { sql: tx }).then(
+          () => null,
+          (e: unknown) => e,
+        );
+        expect((err as Error | null)?.message).toBe("Este indicador lo calcula el sistema: sus datos no se digitan");
+        expect(await archivosDe(tx, medicion)).toHaveLength(1);
+      },
+      { calculo: { clave: "dentro_plazo", alcance: "entidad" } },
+    ));
 });
 
 describe("POST /api/mediciones/[id]/archivos: qué se guarda", () => {

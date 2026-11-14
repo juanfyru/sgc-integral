@@ -18,7 +18,7 @@ import { esAprobadorDe, filtroIndicadores, responsableDe, type Responsabilidad }
 import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
 import { analisisCompleto, analisisExigido, cumpleDeMedicion } from "@/lib/indicadores/estados";
 import { versionQueRigeEntre } from "@/lib/indicadores/periodos";
-import type { Periodicidad, Semaforo } from "@/lib/indicadores/tipos";
+import type { OrigenDato, Periodicidad, Semaforo } from "@/lib/indicadores/tipos";
 import { puede } from "@/lib/permisos";
 import type { Tarea } from "@/lib/tareas";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -26,8 +26,14 @@ import { enlaceDeVersion } from "./aprobacion";
 import { analisisDe, conMayuscula, esDeOtraPeriodicidad } from "./mediciones";
 import { enlaceDeObservaciones } from "./observaciones";
 
-/** Lo que le falta a una medición ordinaria abierta: el reporte (los datos o el soporte obligatorio) o el análisis. */
-export type Falta = "reporte" | "analisis";
+/**
+ * Lo que le falta a una medición ordinaria abierta: el reporte (los datos o el soporte obligatorio), el análisis o, en una
+ * que calcula el sistema, el dato que nadie digita (anexo 14B, §4: «Falta un dato», que no es tarea de nadie).
+ */
+export type Falta = "reporte" | "analisis" | "dato";
+
+/** Lo que falta y alguien tiene a cargo: el reporte o el análisis. */
+export type FaltaDePersona = Exclude<Falta, "dato">;
 
 /**
  * Las columnas de `mediciones m` e `indicadores i` que lee `queFalta`, con las versiones aprobadas del indicador (de mayor
@@ -38,7 +44,8 @@ export const columnasDePendiente = (sql: Cliente) =>
   sql`m.id, m.indicador_id, m.periodo, m.vence_en, m.reportada_en, m.semaforo, m.cumple, m.incumplimiento_repetido, m.analisis, m.causa,
     m.accion_propuesta, i.soporte_obligatorio,
     EXISTS (SELECT 1 FROM archivos pa WHERE pa.contexto = 'medicion' AND pa.contexto_id = m.id) AS con_soporte,
-    (SELECT coalesce(json_agg(json_build_object('rigeDesde', pv.rige_desde, 'periodicidad', pv.periodicidad, 'nombre', pv.nombre)
+    (SELECT coalesce(json_agg(json_build_object('rigeDesde', pv.rige_desde, 'periodicidad', pv.periodicidad, 'nombre', pv.nombre,
+          'origenDato', pv.origen_dato)
         ORDER BY pv.numero DESC), '[]'::json)
       FROM indicador_versiones pv WHERE pv.indicador_id = m.indicador_id AND pv.estado = 'aprobada') AS versiones`;
 
@@ -51,13 +58,14 @@ export const esPendiente = (sql: Cliente) => sql`m.estado = 'abierta' AND NOT m.
  */
 export type Pendiente = { falta: Falta; faltaSoporte: boolean; periodo: Periodo; nombre: string | null };
 
-type VersionDePendiente = { rigeDesde: string | null; periodicidad: Periodicidad | null; nombre: string | null };
+type VersionDePendiente = { rigeDesde: string | null; periodicidad: Periodicidad | null; nombre: string | null; origenDato: OrigenDato };
 
 /**
  * Lo que le falta a cada medición de `filas` (leídas con `columnasDePendiente`): con los datos, el análisis exigido si no
- * está (la regla del estado guardado, `analisisCompleto`) y el soporte obligatorio si no lo tiene; sin ellos, el reporte.
- * Con el periodo y el nombre de la versión que lo rige. Sin las de otra periodicidad (`esDeOtraPeriodicidad`): no se
- * miden. No consulta nada.
+ * está (la regla del estado guardado, `analisisCompleto`) y el soporte obligatorio si no lo tiene; sin ellos, el reporte o,
+ * si la versión que rige el periodo es automática, el dato (`"dato"`), que no digita nadie. Un automático no lleva soporte
+ * obligatorio (como en `recalcularMedicion`). Con el periodo y el nombre de la versión que lo rige. Sin las de otra
+ * periodicidad (`esDeOtraPeriodicidad`): no se miden. No consulta nada.
  */
 export function queFalta(filas: readonly Row[]): Map<number, Pendiente> {
   const salida = new Map<number, Pendiente>();
@@ -75,8 +83,9 @@ export function queFalta(filas: readonly Row[]): Map<number, Pendiente> {
       noAplica: false,
     });
     const conDatos = f.reportada_en !== null;
-    const falta: Falta = conDatos && !analisisCompleto(exigido, analisisDe(f)) ? "analisis" : "reporte";
-    const faltaSoporte = conDatos && f.soporte_obligatorio === true && f.con_soporte !== true;
+    const automatica = version.origenDato === "automatico";
+    const falta: Falta = conDatos && !analisisCompleto(exigido, analisisDe(f)) ? "analisis" : !conDatos && automatica ? "dato" : "reporte";
+    const faltaSoporte = conDatos && !automatica && f.soporte_obligatorio === true && f.con_soporte !== true;
     salida.set(Number(f.id), { falta, faltaSoporte, periodo, nombre: version.nombre });
   }
   return salida;
@@ -87,7 +96,7 @@ const FALTA_SOPORTE = "Falta el soporte obligatorio";
 
 /**
  * Las de reportar y analizar: las mediciones de las que la persona es responsable de lo que les falta. Con el análisis y
- * el soporte pendientes, las dos: «Analizar» a quien analiza y «Reportar» a quien mide.
+ * el soporte pendientes, las dos: «Analizar» a quien analiza y «Reportar» a quien mide. «Falta un dato» no es tarea.
  */
 async function deMediciones(sql: Cliente, sesion: SesionFlujo): Promise<Tarea[]> {
   const filas = await sql`SELECT * FROM (
@@ -105,7 +114,7 @@ async function deMediciones(sql: Cliente, sesion: SesionFlujo): Promise<Tarea[]>
     if (!p) continue;
     const codigo = f.codigo as string;
     const indicador = p.nombre ? `${codigo} ${p.nombre}` : codigo;
-    const tarea = (falta: Falta, quien: Responsabilidad, detalle: string): Tarea => ({
+    const tarea = (falta: FaltaDePersona, quien: Responsabilidad, detalle: string): Tarea => ({
       id: `${falta === "reporte" ? "medir" : "analizar"}:${f.id}`,
       modulo: "indicadores",
       titulo: `${falta === "reporte" ? "Reportar" : "Analizar"} ${indicador}, ${p.periodo.etiqueta}`,

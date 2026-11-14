@@ -1,7 +1,8 @@
 /**
  * Los recordatorios de los indicadores (spec 14 §10.2, F14-DC34): la pasada que `revisarVencimientos` suma después de la
  * de vigencia. Abre los periodos que terminaron (`asegurarMediciones`, indicador por indicador) y, sobre las mediciones
- * ordinarias abiertas (`esPendiente`, sin las de otra periodicidad: `queFalta`), manda:
+ * ordinarias abiertas (`esPendiente`, sin las de otra periodicidad ni las que esperan el dato del sistema: `queFalta`),
+ * manda:
  *
  * 1. El aviso previo (`aviso_previo_en`), cuando faltan los días del parámetro para la fecha límite: uno por persona.
  * 2. El de vencido (`aviso_vencido_en`), pasada la fecha límite: uno por persona a quienes miden (o a quienes analizan,
@@ -34,11 +35,12 @@ import { estadoPlazo, fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { obtenerParametros } from "./maestros";
 import { asegurarMediciones } from "./mediciones";
-import { columnasDePendiente, esPendiente, queFalta, type Falta } from "./tareas";
+import { columnasDePendiente, esPendiente, queFalta, type FaltaDePersona as Falta } from "./tareas";
 
 type Contexto = { sql: Cliente; ahora: Date; zona: string; escalamientoDias: number; avisoPrevioDias: number };
 type Resultado = { avisados: number; escalados: number };
 
+/** Lo que falta es siempre de alguien: «Falta un dato» (un automático que espera su cálculo) no entra a ningún paso. */
 type Medicion = { id: number; indicadorId: number; procesoId: number; proceso: string; vence: Date; falta: Falta };
 
 /**
@@ -105,7 +107,7 @@ async function leer(sql: Cliente, c: Contexto, paso: Paso, ids?: number[]): Prom
   const pendientes = queFalta(filas);
   return filas.flatMap((f) => {
     const p = pendientes.get(Number(f.id));
-    if (!p) return [];
+    if (!p || p.falta === "dato") return [];
     const m: Medicion = {
       id: Number(f.id),
       indicadorId: Number(f.indicador_id),

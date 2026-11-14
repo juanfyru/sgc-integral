@@ -85,7 +85,7 @@ import {
 import { destinoTrasReportar } from "@/lib/indicadores/reporte";
 import type { SesionValida } from "@/lib/sesion";
 import { parsearFormulario } from "@/lib/validacion";
-import { indicadorDePrueba } from "./utiles/indicadores";
+import { fotoDePrueba, indicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -119,6 +119,7 @@ const DATOS: DatosDeReporte = {
   soporteObligatorio: true,
   soportes: 0,
   sinMedidor: false,
+  automatica: false,
   variables: [
     {
       letra: "A",
@@ -148,6 +149,7 @@ const DATOS: DatosDeReporte = {
   rangos: "Bien desde 90 % · Atención de 63 a 89,9 % · Crítico por debajo de 63 %",
   resultado: null,
   semaforo: null,
+  cumple: null,
   anterior: { clave: "2026-T2", etiqueta: "segundo trimestre de 2026", resultado: "250/3" },
   variacionPct: 30,
 };
@@ -397,6 +399,45 @@ describe("las páginas", () => {
       // Cerrada, los soportes se ven pero ya no se suben ni se quitan.
       expect(cerrada).toContain(">Soportes</h2>");
       expect(cerrada).not.toContain("Arrastre los archivos aquí");
+    }));
+
+  it("/indicadores/[codigo]/reportar/[periodo] de un automático: de solo lectura, con los valores de la foto y el análisis para quien analiza", () =>
+    enTransaccion(async (tx) => {
+      const analiza = await usuarioDePrueba(tx, { rol: "consulta" });
+      const ind = await indicadorDePrueba(tx, {
+        periodicidad: "trimestral",
+        inicioMedicion: "2026-T1",
+        aprobadaEn: APROBADA,
+        analiza: [analiza.usuarioId],
+        calculo: { clave: "dentro_plazo", alcance: "entidad" },
+      });
+      contexto.sesion = valida(analiza);
+      const sinFoto = await reporte(ind.codigo, "2026-T1");
+      expect(sinFoto).toContain("Este indicador lo calcula el sistema. Nadie digita sus datos.");
+      // Mientras falta el dato no hay nada que digitar ni que analizar, y el plazo no se dice vencido.
+      expect(sinFoto).not.toContain("<input");
+      expect(sinFoto).not.toContain("<textarea");
+      expect(sinFoto).not.toContain("(vencido)");
+      expect(sinFoto).not.toContain(">Soportes</h2>");
+      expect(sinFoto).not.toContain("Sin responsable");
+
+      const [t1] = await tx`SELECT id FROM mediciones WHERE indicador_id = ${ind.id} AND periodo = '2026-T1'`;
+      await fotoDePrueba(tx, Number(t1.id), { A: "1", B: "2" }, new Date("2026-04-01T12:00:00Z"));
+      const conFoto = await reporte(ind.codigo, "2026-T1");
+      expect(conFoto).toContain("Este indicador lo calcula el sistema. Nadie digita sus datos.");
+      expect(conFoto).toContain("Documentos vigentes dentro de su plazo");
+      expect(conFoto).toContain("Documentos vigentes con fecha de revisión");
+      expect(conFoto).toContain(">50 %<");
+      expect(conFoto).toContain(">Crítico<");
+      expect(conFoto).not.toContain('name="valor_A"');
+      expect(conFoto).not.toContain(">Reportar</button>");
+      expect(conFoto).not.toContain(">No aplica en este periodo</summary>");
+      // Quien analiza escribe el análisis que el resultado exige.
+      expect(conFoto).toContain(">Análisis</h2>");
+      expect(conFoto).toContain("Guardar el análisis");
+
+      contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "consulta" }));
+      await expect(reporte(ind.codigo, "2026-T1")).rejects.toThrow("NO_ENCONTRADA");
     }));
 
   it("/indicadores/[codigo]: los soportes salen en la tabla del año solo para quien los ve, y se descargan", () =>

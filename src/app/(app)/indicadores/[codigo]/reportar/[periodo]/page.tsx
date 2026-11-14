@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { DatosDelSistema } from "@/componentes/indicadores/medicion/DatosDelSistema";
 import { FormularioAnalisis } from "@/componentes/indicadores/medicion/FormularioAnalisis";
 import { FormularioReporte } from "@/componentes/indicadores/medicion/FormularioReporte";
 import { Soportes } from "@/componentes/indicadores/medicion/Soportes";
@@ -24,6 +25,8 @@ const ENLACE = `rounded-sm text-marca underline-offset-2 hover:underline ${FOCO}
  * Reportar una medición (spec §8.2 y §12.5, maqueta 3). Antes de leer abre los periodos que hayan terminado (F14-DC12).
  * Quien no ve el indicador, no puede medirlo o pide un periodo sin medición recibe «no encontrado». Un histórico no se
  * reporta aquí: se registra en la tabla del año (spec §8.8). Debajo van los soportes y, con resultado, quien puede analizar tiene el análisis.
+ * La de un automático (anexo 14B, §4) es de solo lectura y la abre quien puede analizarlo: nadie digita sus datos ni sube
+ * soportes; con los datos del sistema, sus valores y, si el resultado lo pide, el análisis.
  */
 export default async function PaginaReportar({ params }: { params: Promise<{ codigo: string; periodo: string }> }) {
   const sesion = await exigirSesion();
@@ -38,6 +41,11 @@ export default async function PaginaReportar({ params }: { params: Promise<{ cod
   // Quien puede medir ve los soportes del indicador (spec §6.4); la lista se lee solo para quien los ve.
   const soportes = (await soportesDe(sesion, datos.medicionId)) ?? [];
   const plazo = datos.historica ? "Registro histórico" : `Plazo hasta el ${datos.vence}${datos.vencida ? " (vencido)" : ""}`;
+  const cerrada = (
+    <p className="rounded-lg border border-l-4 border-border border-l-mod-indicadores bg-muted px-4 py-3 text-sm">
+      La medición está cerrada: pida al Administrador del SGC que la reabra.
+    </p>
+  );
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -57,10 +65,13 @@ export default async function PaginaReportar({ params }: { params: Promise<{ cod
           Sin responsable: nadie más puede medir este indicador. El reporte queda marcado; designe a alguien que lo mida.
         </p>
       ) : null}
-      {datos.estado === "cerrada" ? (
-        <p className="rounded-lg border border-l-4 border-border border-l-mod-indicadores bg-muted px-4 py-3 text-sm">
-          La medición está cerrada: pida al Administrador del SGC que la reabra.
-        </p>
+      {datos.automatica ? (
+        <>
+          {datos.estado === "cerrada" ? cerrada : null}
+          <DatosDelSistema datos={datos} />
+        </>
+      ) : datos.estado === "cerrada" ? (
+        cerrada
       ) : datos.historica ? (
         <p className="rounded-lg border border-l-4 border-border border-l-mod-indicadores bg-muted px-4 py-3 text-sm">
           {"Ese periodo es histórico: se registra en la tabla del año. "}
@@ -71,18 +82,21 @@ export default async function PaginaReportar({ params }: { params: Promise<{ cod
       ) : (
         <FormularioReporte datos={datos} volver={volver} />
       )}
-      <section aria-labelledby="reporte-soportes" className="flex min-w-0 flex-col gap-3">
-        <h2 id="reporte-soportes" className="text-lg font-semibold">
-          Soportes
-        </h2>
-        <Soportes
-          medicionId={datos.medicionId}
-          codigo={datos.codigo}
-          soportes={soportes}
-          editable={datos.estado !== "cerrada"}
-          obligatorio={datos.soporteObligatorio && !datos.historica}
-        />
-      </section>
+      {/* Un automático no lleva soportes: la sección sale solo si quedó alguno, y sin subir ni quitar. */}
+      {datos.automatica && soportes.length === 0 ? null : (
+        <section aria-labelledby="reporte-soportes" className="flex min-w-0 flex-col gap-3">
+          <h2 id="reporte-soportes" className="text-lg font-semibold">
+            Soportes
+          </h2>
+          <Soportes
+            medicionId={datos.medicionId}
+            codigo={datos.codigo}
+            soportes={soportes}
+            editable={!datos.automatica && datos.estado !== "cerrada"}
+            obligatorio={datos.soporteObligatorio && !datos.historica}
+          />
+        </section>
+      )}
       {analisis ? (
         <section aria-labelledby="reporte-analisis" className="flex min-w-0 flex-col gap-3">
           <h2 id="reporte-analisis" className="text-lg font-semibold">

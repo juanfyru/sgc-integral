@@ -43,7 +43,7 @@ import { historialDeCorreccion, type EventoDeMedicion } from "@/lib/indicadores/
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
-import { indicadorDePrueba, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
+import { fotoDePrueba, indicadorDePrueba, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -534,6 +534,38 @@ describe("la reapertura", () => {
       expect(b.detalle).toMatchObject({ sinMedidor: true });
       expect(b.detalle).not.toHaveProperty("propioMedidor");
       expect(describirEvento({ accion: "medicion_reabierta", entidad: "medicion", entidadId: x.marzo, detalle: b.detalle })).not.toContain("que también mide");
+    }));
+
+  it("un automático: el resumen dice que lo debía «El sistema» y reabrirlo avisa a quien analiza, no a quien medía", () =>
+    revertida(sql, async (tx) => {
+      const { admin, mide, nuevo } = await entorno(tx);
+      const analiza = await usuarioDePrueba(tx, { rol: "consulta" });
+      const automatico = { calculo: { clave: "dentro_plazo", alcance: "proceso" } as const, analiza: [analiza.usuarioId] };
+      // `mide` sigue designado como antes del paso a automático: ya no es quien debía el dato.
+      const sinFoto = await nuevo(automatico);
+      const r = await resumenDeCierre(admin, MARZO, opc(tx));
+      expect(r.sinDato).toMatchObject([{ codigo: sinFoto.ind.codigo, quien: ["El sistema"] }]);
+
+      // Otro proceso para el segundo: a lo sumo una ficha activa por cálculo y alcance en cada proceso.
+      const otro = await procesoSinLider(tx);
+      const conFoto = await nuevo({ ...automatico, procesoId: otro.id });
+      await fotoDePrueba(tx, conFoto.marzo, { A: "9", B: "10" }, dia(11));
+      await cerrarMes(admin, MARZO, opc(tx));
+      await reabrirMedicion(admin, { medicionId: conFoto.marzo, justificacion: JUSTIFICACION }, opc(tx, dia(21)));
+      expect((await fila(tx, conFoto.marzo)).estado).toBe("reportada");
+      const lista = await avisos(tx, conFoto.marzo);
+      expect(lista.map((a) => Number(a.usuario_id))).toEqual([analiza.usuarioId]);
+      // Nadie lo mide: ni «que también mide» ni la marca de respaldo.
+      const [e] = (await eventos(tx, conFoto.marzo)).filter((f) => f.tipo === "reapertura");
+      expect(e.detalle).not.toHaveProperty("propioMedidor");
+      expect(e.detalle).not.toHaveProperty("sinMedidor");
+      // En un proceso sin líder ni designados, tampoco se marca que el Admin SGC la midió de respaldo.
+      const huerfano = await nuevo({ calculo: automatico.calculo, procesoId: (await procesoSinLider(tx)).id, mide: [] });
+      await tx`UPDATE mediciones SET estado = 'cerrada' WHERE id = ${huerfano.marzo}`;
+      await reabrirMedicion(admin, { medicionId: huerfano.marzo, justificacion: JUSTIFICACION }, opc(tx, dia(21)));
+      const [h] = (await eventos(tx, huerfano.marzo)).filter((f) => f.tipo === "reapertura");
+      expect(h.detalle).not.toHaveProperty("sinMedidor");
+      expect((await avisos(tx, conFoto.marzo)).map((a) => Number(a.usuario_id))).not.toContain(mide.usuarioId);
     }));
 
   it("la reabierta se corrige y se cierra de nuevo, a mano o con el siguiente cierre", () =>

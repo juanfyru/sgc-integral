@@ -2,7 +2,8 @@
  * Los soportes de una medición (spec 14 §6.4, §8.2 y §8.7; Tarea 11 de la 14A): los archivos que respaldan un dato.
  * Son filas de `archivos` con contexto `medicion` y rol `evidencia`. Los ven solo quienes ven soportes
  * (`puedeVerSoportes`, más estricto que ver el indicador) y los suben y quitan, antes del cierre, quienes pueden medir el
- * indicador activo. Cada subida y cada quitada dejan su evento `soporte` en la medición, en la misma transacción que la
+ * indicador activo; en una medición automática, nadie (anexo 14B, §4). Cada subida y cada quitada dejan su evento
+ * `soporte` en la medición, en la misma transacción que la
  * fila de `archivos`, y recalculan: con «soporte obligatorio», quitar el último devuelve la medición a `abierta` y
  * subir el primero la deja `reportada`.
  *
@@ -19,7 +20,7 @@ import { resolverRutaAlmacen } from "@/lib/almacen";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
 import type { ArchivoServible } from "@/lib/servir-archivo";
-import { contarSoportes, contextoDeMedicion, type CondicionDePersona, NO_EXISTE, recalcularMedicion } from "./mediciones";
+import { contarSoportes, contextoDeMedicion, type CondicionDePersona, NO_EXISTE, recalcularMedicion, versionDelPeriodo } from "./mediciones";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -38,8 +39,9 @@ const enSoporte = (f: Record<string, unknown>): Soporte => ({
 
 /**
  * Quién puede subir un soporte a la medición, antes de recibir el cuerpo: 404 si no existe o la persona no ve su
- * indicador, 403 si lo ve y no puede medirlo, 409 si la medición está cerrada o el indicador ya no está activo (la
- * transacción de `registrarArchivo` lo vuelve a exigir con los candados).
+ * indicador, 403 si lo ve y no puede medirlo, 409 si la medición está cerrada, el indicador ya no está activo (la
+ * transacción de `registrarArchivo` lo vuelve a exigir con los candados) o la versión que rige su periodo la calcula el
+ * sistema (anexo 14B, §4: nadie digita un automático).
  */
 export async function autorizarSoporte(
   medicionId: number,
@@ -48,13 +50,14 @@ export async function autorizarSoporte(
 ): Promise<{ ok: true; indicadorId: number } | { ok: false; estado: 403 | 404 | 409 }> {
   const sql = opciones?.sql ?? obtenerSql();
   if (!Number.isSafeInteger(medicionId) || medicionId <= 0) return { ok: false, estado: 404 };
-  const [m] = await sql`SELECT m.estado, m.indicador_id, i.estado AS estado_indicador FROM mediciones m
+  const [m] = await sql`SELECT m.estado, m.indicador_id, m.periodo, i.estado AS estado_indicador FROM mediciones m
     JOIN indicadores i ON i.id = m.indicador_id WHERE m.id = ${medicionId}`;
   if (!m) return { ok: false, estado: 404 };
   const indicadorId = Number(m.indicador_id);
   if (!(await puedeVerIndicador(indicadorId, sesion, { sql }))) return { ok: false, estado: 404 };
   if (!(await puedeMedir(indicadorId, sesion, { sql })).puede) return { ok: false, estado: 403 };
   if (m.estado === "cerrada" || m.estado_indicador !== "activo") return { ok: false, estado: 409 };
+  if ((await versionDelPeriodo(sql, indicadorId, m.periodo as string))?.origenDato === "automatico") return { ok: false, estado: 409 };
   return { ok: true, indicadorId };
 }
 

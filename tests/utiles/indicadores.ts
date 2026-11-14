@@ -3,6 +3,7 @@
  * revierte (`revertida`): lo que crea aquí no sobrevive al test.
  */
 import type { TransactionSql } from "postgres";
+import { recalcularMedicion } from "@/db/consultas/indicadores/mediciones";
 import { CALCULOS, type AlcanceDeCalculo, type ClaveDeCalculo } from "@/lib/indicadores/calculos/registro";
 import { formulaDeForma } from "@/lib/indicadores/formula/formas";
 import type { RangosEnTexto } from "@/lib/indicadores/rangos";
@@ -227,4 +228,50 @@ export async function versionTrimestral(
       rige_desde = ${d.rigeDesde}, aprobada_por = ${d.usuarioId}, aprobada_en = ${d.aprobadaEn}
     WHERE id = ${v2.id}`;
   return Number(v2.id);
+}
+
+/**
+ * Una versión 2 automática aprobada que rige desde `rigeDesde`, como la deja pasar una ficha manual a automática (anexo
+ * 14B, §5.3): la forma, la fórmula, la tendencia y las variables del registro, de la periodicidad dada, y el indicador con
+ * su cálculo y su alcance. Las mediciones anteriores siguen con la versión 1. Solo dentro de `revertida`: antes libera el
+ * cálculo (`liberarCalculo`).
+ */
+export async function versionAutomatica(
+  tx: TransactionSql,
+  d: { indicadorId: number; usuarioId: number; rigeDesde: string; aprobadaEn: Date; periodicidad: Periodicidad; calculo: { clave: ClaveDeCalculo; alcance: AlcanceDeCalculo } },
+): Promise<number> {
+  const calculo = CALCULOS[d.calculo.clave];
+  const [i] = await tx`SELECT proceso_id FROM indicadores WHERE id = ${d.indicadorId}`;
+  await liberarCalculo(tx, d.calculo.clave, d.calculo.alcance, Number(i.proceso_id));
+  const [v2] = await tx`INSERT INTO indicador_versiones (indicador_id, numero, estado, tipo_cambio, nombre, origen_dato, calculo,
+      calculo_alcance, forma, formula, periodicidad, tendencia, meta, semaforo_modo, umbral_atencion_pct, unidad_sufijo, decimales, creado_por)
+    VALUES (${d.indicadorId}, 2, 'borrador', 'mayor', 'Automático', 'automatico', ${d.calculo.clave}, ${d.calculo.alcance}, ${calculo.forma},
+      ${formulaDeForma(calculo.forma)}, ${d.periodicidad}, ${calculo.tendencia}, 90, 'relativo', 70, ' %', 1, ${d.usuarioId}) RETURNING id`;
+  await tx`SELECT id FROM indicador_versiones WHERE id = ${v2.id} FOR UPDATE`;
+  for (const [k, v] of calculo.variables.entries()) {
+    await tx`INSERT INTO indicador_variables (version_id, letra, nombre, descripcion, fuente, consolidacion, origen, orden)
+      VALUES (${v2.id}, ${v.letra}, ${v.nombre}, ${v.descripcion}, 'La calcula el sistema', ${v.consolidacion}, 'automatica', ${k + 1})`;
+  }
+  await tx`UPDATE indicador_versiones SET estado = 'aprobada', elaborada_por = ${d.usuarioId}, huella = ${"2".repeat(64)},
+      rige_desde = ${d.rigeDesde}, aprobada_por = ${d.usuarioId}, aprobada_en = ${d.aprobadaEn}
+    WHERE id = ${v2.id}`;
+  await tx`UPDATE indicadores SET calculo = ${d.calculo.clave}, calculo_alcance = ${d.calculo.alcance} WHERE id = ${d.indicadorId}`;
+  return Number(v2.id);
+}
+
+/**
+ * Lo que dejará la foto del sistema (Tarea 7) en una medición, para las pruebas: los valores de su versión sin quien los
+ * reportó, la medición reportada y fotografiada a `ahora`, y el cálculo único con el evento `foto`, sin usuario.
+ */
+export async function fotoDePrueba(tx: TransactionSql, medicionId: number, valores: Partial<Record<"A" | "B", string>>, ahora: Date): Promise<void> {
+  const variables = await tx`SELECT iv.id, iv.letra FROM mediciones m JOIN indicador_variables iv ON iv.version_id = m.version_id
+    WHERE m.id = ${medicionId}`;
+  for (const v of variables) {
+    const valor = valores[v.letra as "A" | "B"];
+    if (valor === undefined) continue;
+    await tx`INSERT INTO medicion_valores (medicion_id, variable_id, valor, reportado_por, reportado_en)
+      VALUES (${medicionId}, ${v.id}, ${valor}, NULL, ${ahora})`;
+  }
+  await tx`UPDATE mediciones SET reportada_en = ${ahora}, reportada_por = NULL, foto_en = ${ahora} WHERE id = ${medicionId}`;
+  await recalcularMedicion(tx, medicionId, { ahora, actorId: null, evento: "foto" });
 }

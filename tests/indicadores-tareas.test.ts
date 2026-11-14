@@ -28,7 +28,7 @@ import { tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
 import { aprobadoresDeFicha, responsablesDeMedir } from "@/lib/alcance";
 import type { DatosFicha } from "@/lib/esquemas/indicadores";
 import { agruparTareas, misTareas, type Tarea } from "@/lib/tareas";
-import { indicadorDePrueba, versionTrimestral, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
+import { fotoDePrueba, indicadorDePrueba, versionAutomatica, versionTrimestral, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 import { firmaDePrueba } from "./utiles/vigencia";
@@ -273,6 +273,75 @@ describe("tareas de medir y analizar", () => {
       expect(r.vencidas).toBe(2);
       expect((await misTareas(persona, opc(tx, despues))).vencidasIndicadores).toBe(2);
       expect((await misTareas(persona, opc(tx, AHORA))).vencidasIndicadores).toBe(0);
+    }));
+});
+
+describe("un indicador que calcula el sistema (anexo 14B, §4): «Falta un dato»", () => {
+  const AUTOMATICO = { calculo: { clave: "dentro_plazo", alcance: "proceso" } } as const;
+  const TARDE = new Date("2026-10-20T15:00:00Z");
+
+  it("una medición abierta sin datos no es tarea de nadie: ni del líder del proceso ni del Admin SGC de respaldo", () =>
+    revertida(sql, async (tx) => {
+      const proceso = await procesoNuevo(tx);
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [proceso.id] });
+      const analiza = await usuarioDePrueba(tx, { rol: "consulta" });
+      const { medicion } = await indicador(tx, proceso.id, { ...AUTOMATICO, analiza: [analiza.usuarioId] });
+      const t3 = await medicion(T3);
+      for (const s of [lider, analiza]) expect(await deIndicadores(tx, s, TARDE)).toEqual({ tareas: [], vencidas: 0 });
+
+      // Sin designado ni líder, el Admin SGC tendría la tarea de respaldo: un automático tampoco se la da.
+      const sinLider = await procesoNuevo(tx);
+      const admin = await sesionAdmin(tx);
+      const huerfano = await indicador(tx, sinLider.id, AUTOMATICO);
+      const deAdmin = await deIndicadores(tx, admin, TARDE);
+      const propias = [`medir:${t3}`, `analizar:${t3}`, `medir:${await huerfano.medicion(T3)}`, `analizar:${await huerfano.medicion(T3)}`];
+      expect(ids(deAdmin.tareas).filter((id) => propias.includes(id))).toEqual([]);
+      expect((await misTareas(lider, opc(tx, TARDE))).vencidasIndicadores).toBe(0);
+    }));
+
+  it("con el resultado del sistema que no cumple y sin análisis, «Analizar» sale a quien analiza; nadie tiene «Reportar»", () =>
+    revertida(sql, async (tx) => {
+      const proceso = await procesoNuevo(tx);
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [proceso.id] });
+      const analiza = await usuarioDePrueba(tx, { rol: "consulta" });
+      const { ind, nombre, medicion } = await indicador(tx, proceso.id, { ...AUTOMATICO, analiza: [analiza.usuarioId] });
+      const t3 = await medicion(T3);
+      await fotoDePrueba(tx, t3, { A: "1", B: "2" }, AHORA);
+      // Un soporte obligatorio que quedara puesto no le pide «Reportar» a nadie: un automático no lleva soporte.
+      await tx`UPDATE indicadores SET soporte_obligatorio = true WHERE id = ${ind.id}`;
+
+      expect((await deIndicadores(tx, analiza)).tareas).toEqual([
+        {
+          id: `analizar:${t3}`,
+          modulo: "indicadores",
+          titulo: `Analizar ${ind.codigo} ${nombre}, tercer trimestre de 2026`,
+          detalle: proceso.nombre,
+          vence: VENCE_T3,
+          enlace: `/indicadores/${ind.codigo}/reportar/2026-T3`,
+        },
+      ]);
+      expect(await deIndicadores(tx, lider)).toEqual({ tareas: [], vencidas: 0 });
+      // El análisis se escribe como en cualquier indicador, y la tarea se va.
+      await analizar(analiza, { medicionId: t3, causa: CAUSA, accionPropuesta: ACCION }, opc(tx));
+      expect(await deIndicadores(tx, analiza)).toEqual({ tareas: [], vencidas: 0 });
+    }));
+
+  it("manda la versión que rige el periodo: lo anterior al paso a automático sigue siendo tarea de quien mide", () =>
+    revertida(sql, async (tx) => {
+      const proceso = await procesoNuevo(tx);
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [proceso.id] });
+      const ind = await indicadorDePrueba(tx, { procesoId: proceso.id, periodicidad: "trimestral", inicioMedicion: "2026-T2", aprobadaEn: APROBADA });
+      await versionAutomatica(tx, {
+        indicadorId: ind.id,
+        usuarioId: lider.usuarioId,
+        rigeDesde: T3,
+        aprobadaEn: new Date("2026-07-01T15:00:00Z"),
+        periodicidad: "trimestral",
+        calculo: AUTOMATICO.calculo,
+      });
+      await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: ind.id });
+      const [t2] = await tx`SELECT id FROM mediciones WHERE indicador_id = ${ind.id} AND periodo = '2026-T2'`;
+      expect(await deIndicadores(tx, lider)).toMatchObject({ tareas: [{ id: `medir:${t2.id}` }], vencidas: 1 });
     }));
 });
 

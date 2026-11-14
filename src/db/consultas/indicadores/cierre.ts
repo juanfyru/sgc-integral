@@ -22,7 +22,14 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { avisarA } from "@/db/consultas/avisos-vencimiento";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { puedeMedir, puedeVerIndicador, puedeVerSoportes, responsablesDeMedir, type SujetoVisibilidad } from "@/lib/alcance";
+import {
+  puedeMedir,
+  puedeVerIndicador,
+  puedeVerSoportes,
+  responsablesDeAnalizar,
+  responsablesDeMedir,
+  type SujetoVisibilidad,
+} from "@/lib/alcance";
 import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
 import { analisisCompleto, analisisExigido, cumpleDeMedicion } from "@/lib/indicadores/estados";
 import { JUSTIFICACION_MAXIMA, JUSTIFICACION_MINIMA, mesPorOmisionDe, PATRON_MES } from "@/lib/indicadores/cierre";
@@ -70,7 +77,7 @@ export type ResumenDeCierre = {
   yaCerrado: boolean;
   aCerrar: number;
   reportadas: number;
-  /** Las que quedarán «Sin dato», con quién debía medirlas; por proceso, código y periodo. */
+  /** Las que quedarán «Sin dato», con quién debía medirlas («El sistema», en una automática); por proceso, código y periodo. */
   sinDato: { codigo: string; nombre: string; proceso: string; periodo: string; quien: string[] }[];
   noAplica: number;
   sinAnalisis: number;
@@ -142,7 +149,12 @@ type Alcanzada = {
   periodo: string;
   estado: string;
   grupo: Grupo;
+  /** La versión que rige su periodo la calcula el sistema: su dato no lo debía nadie (anexo 14B, §4). */
+  automatica: boolean;
 };
+
+/** Quién debía el dato de una medición automática que se cierra «Sin dato». */
+const EL_SISTEMA = "El sistema";
 
 type Clasificacion = {
   alcanzadas: Alcanzada[];
@@ -221,6 +233,7 @@ async function clasificar(sql: Cliente, hasta: Date, ahora: Date, bloquear: bool
       periodo: clave,
       estado: m.estado as string,
       grupo: grupoDe(m),
+      automatica: version.origenDato === "automatico",
     });
   }
   return salida;
@@ -283,8 +296,8 @@ async function abrirPeriodosDelCierre(sql: Cliente, periodo: Periodo, ahora: Dat
 
 /**
  * El resumen previo del cierre de `mes` (spec §9.2): cuántas mediciones se cerrarán y cómo, las que quedarán sin dato
- * con quién debía medirlas, las observaciones sin respuesta y los dos grupos que no se cierran. Abre antes los periodos
- * que hayan terminado (F14-DC12, `abrirPeriodosDelCierre`). No escribe nada más.
+ * con quién debía medirlas («El sistema», en una automática), las observaciones sin respuesta y los dos grupos que no se
+ * cierran. Abre antes los periodos que hayan terminado (F14-DC12, `abrirPeriodosDelCierre`). No escribe nada más.
  */
 export async function resumenDeCierre(sesion: SujetoPermiso, mes: string, opciones?: Opciones): Promise<ResumenDeCierre> {
   exigirAdministrar(sesion);
@@ -298,13 +311,14 @@ export async function resumenDeCierre(sesion: SujetoPermiso, mes: string, opcion
   const sinDato: ResumenDeCierre["sinDato"] = [];
   for (const a of c.alcanzadas) {
     if (a.grupo !== "sin_dato") continue;
-    if (!quien.has(a.indicadorId)) quien.set(a.indicadorId, await nombresDe(sql, await responsablesDeMedir(a.indicadorId, { sql })));
+    // Por medición: un indicador que pasó a automático tiene periodos de antes, que debía quien mide.
+    if (!a.automatica && !quien.has(a.indicadorId)) quien.set(a.indicadorId, await nombresDe(sql, await responsablesDeMedir(a.indicadorId, { sql })));
     sinDato.push({
       codigo: a.codigo,
       nombre: c.versiones.get(a.indicadorId)?.[0]?.nombre ?? a.codigo,
       proceso: a.proceso,
       periodo: a.periodo,
-      quien: quien.get(a.indicadorId)!,
+      quien: a.automatica ? [EL_SISTEMA] : quien.get(a.indicadorId)!,
     });
   }
   sinDato.sort((x, y) => x.proceso.localeCompare(y.proceso, "es") || x.codigo.localeCompare(y.codigo, "es") || x.periodo.localeCompare(y.periodo));
@@ -399,9 +413,12 @@ export async function cierres(opciones?: { sql?: Cliente }): Promise<{ id: numbe
 // Reabrir y cerrar de nuevo
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** El permiso ya se exigió: quien administra reabre sin ser quien mide (`contextoDeMedicion` pide medir por omisión). */
+/**
+ * El permiso ya se exigió: quien administra reabre sin ser quien mide (`contextoDeMedicion` pide medir por omisión).
+ * Reabrir no digita datos: también reabre la de un automático.
+ */
 const ADMINISTRA: CondicionDePersona = async () => ({ puede: true, sinMedidor: false });
-const COMO_ADMINISTRADOR = { admiteCerrada: true, exigir: ADMINISTRA };
+const COMO_ADMINISTRADOR = { admiteCerrada: true, exigir: ADMINISTRA, digita: false };
 
 function justificacionDe(valor: unknown): string {
   const t = typeof valor === "string" ? valor.trim() : "";
@@ -420,8 +437,9 @@ const idValido = (id: number) => Number.isSafeInteger(id) && id > 0;
  * Reabre una medición cerrada (spec §8.7, F14-DC31) con justificación y sin clave: queda «Corregida», vuelve a
  * `reportada` o a `abierta` (lo decide `recalcularMedicion`, con el evento `reapertura` cuyo estado de antes es
  * `cerrada`) y se avisa a quienes miden, salvo a quien reabre. Si quien reabre está designado para medir el indicador, el
- * evento y la bitácora lo marcan (`propioMedidor`); si solo mide como respaldo porque nadie más puede, `sinMedidor`. Un
- * indicador retirado no se reabre: nadie podría corregirlo.
+ * evento y la bitácora lo marcan (`propioMedidor`); si solo mide como respaldo porque nadie más puede, `sinMedidor`. En
+ * una automática (la versión que rige su periodo la calcula el sistema) no mide nadie: el aviso va a quienes analizan y no
+ * lleva ninguna de las dos marcas (anexo 14B, §4). Un indicador retirado no se reabre: nadie podría corregirlo.
  */
 export async function reabrirMedicion(sesion: SesionFlujo, d: { medicionId: number; justificacion: string }, opciones?: Opciones): Promise<void> {
   exigirAdministrar(sesion);
@@ -442,9 +460,11 @@ export async function reabrirMedicion(sesion: SesionFlujo, d: { medicionId: numb
     await tx`UPDATE mediciones SET estado = 'abierta', reabierta_por = ${sesion.usuarioId}, reabierta_en = ${ahora},
         reabierta_motivo = ${justificacion}, corregida = true, cierre_id = NULL, sin_analisis = false
       WHERE id = ${m.id}`;
-    // Quien administra mide si está designado (`propioMedidor`) o, sin nadie más, como respaldo (`sinMedidor`).
-    const capacidad = await puedeMedir(ctx.indicador.id, sesion, { sql: tx });
-    const marca = !capacidad.puede ? {} : capacidad.sinMedidor ? { sinMedidor: true } : { propioMedidor: true };
+    // Quien administra mide si está designado (`propioMedidor`) o, sin nadie más, como respaldo (`sinMedidor`); un
+    // automático no lo mide nadie.
+    const automatica = ctx.version.origenDato === "automatico";
+    const capacidad = automatica ? null : await puedeMedir(ctx.indicador.id, sesion, { sql: tx });
+    const marca = !capacidad?.puede ? {} : capacidad.sinMedidor ? { sinMedidor: true } : { propioMedidor: true };
     // El estado de antes es el verdadero (`cerrada`), no el provisional del UPDATE: el evento queda siempre.
     const r = await recalcularMedicion(tx, m.id, {
       ahora,
@@ -455,7 +475,8 @@ export async function reabrirMedicion(sesion: SesionFlujo, d: { medicionId: numb
     });
     const codigo = ctx.indicador.codigo;
     const periodo = m.periodo as string;
-    const destinatarios = (await responsablesDeMedir(ctx.indicador.id, { sql: tx })).filter((u) => u !== sesion.usuarioId);
+    const responsables = automatica ? responsablesDeAnalizar : responsablesDeMedir;
+    const destinatarios = (await responsables(ctx.indicador.id, { sql: tx })).filter((u) => u !== sesion.usuarioId);
     if (destinatarios.length > 0) {
       await avisarA(
         tx,

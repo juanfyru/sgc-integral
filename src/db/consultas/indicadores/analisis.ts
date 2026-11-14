@@ -26,7 +26,8 @@ export type TextosDeAnalisis = { analisis: string | null; causa: string | null; 
 
 type DatosDeAnalizar = { medicionId: number; analisis?: string; causa?: string; accionPropuesta?: string };
 
-const CON_ANALISTA = { exigir: puedeAnalizar };
+/** El análisis no digita datos: también se escribe en un automático (anexo 14B, §4). */
+const CON_ANALISTA = { exigir: puedeAnalizar, digita: false };
 
 /** Lo que se le exige a la medición tal como está guardada (su semáforo y su racha). */
 function exigidoDe(m: Record<string, unknown>): AnalisisExigido {

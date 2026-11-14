@@ -8,7 +8,7 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { escaparLike } from "@/db/consultas/normograma/busqueda";
 import { filtroIndicadores, participaEn, type SujetoVisibilidad } from "@/lib/alcance";
 import { REPORTES_DE_LISTA, SEMAFOROS_DE_LISTA, type ReporteDeLista } from "@/lib/indicadores/filtros";
-import { cumpleDeMedicion } from "@/lib/indicadores/estados";
+import { cumpleDeMedicion, ETIQUETA_ESTADO } from "@/lib/indicadores/estados";
 import { deTexto } from "@/lib/indicadores/formula/fraccion";
 import { reglaDeTexto } from "@/lib/indicadores/reporte";
 import { textoMeta, textoValor } from "@/lib/indicadores/textos";
@@ -19,7 +19,7 @@ import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { agrupar, aNumero, comparacionDe, conResultado, vigentes, type Opciones } from "./lectura";
 import { asegurarMediciones, conMayuscula, texto, versionesAprobadasDe, type VersionDeCalculo } from "./mediciones";
-import { columnasDePendiente, esPendiente, queFalta, type Falta } from "./tareas";
+import { columnasDePendiente, esPendiente, queFalta, type FaltaDePersona } from "./tareas";
 
 /** Los valores de los filtros de estado viven en `src/lib/indicadores/filtros.ts`, con sus nombres. */
 export { REPORTES_DE_LISTA, SEMAFOROS_DE_LISTA };
@@ -117,7 +117,7 @@ export type FilaDeLista = {
   tendencia: (number | null)[];
   flecha: "sube" | "baja" | "igual" | null;
   mejora: boolean | null;
-  /** «Reportado», «Por reportar», «Falta el análisis», «Vencido hace 6 días». */
+  /** «Reportado», «Por reportar», «Falta el análisis», «Falta un dato», «Vencido hace 6 días». */
   reporte: { texto: string; vencida: boolean };
 };
 
@@ -125,24 +125,44 @@ export type FilaDeLista = {
 /** `bienSinAlcanzar` son los Bien que no alcanzan la meta: van también en `bien` (spec 14A §3.1). */
 export type ResumenDeLista = { bien: number; bienSinAlcanzar: number; atencion: number; critico: number; sinDato: number; noAplica: number; vencidos: number };
 
-type Pendientes = { porReportar: boolean; faltaAnalisis: boolean; vencidas: number; masAntigua: { vence: Date; falta: Falta } | null };
+/** `faltaDato`: una medición espera el dato que calcula el sistema (anexo 14B, §4); no cuenta como por reportar ni vencida. */
+type Pendientes = {
+  porReportar: boolean;
+  faltaAnalisis: boolean;
+  faltaDato: boolean;
+  vencidas: number;
+  masAntigua: { vence: Date; falta: FaltaDePersona } | null;
+};
 
 /** Días de calendario, en la zona, entre dos instantes. */
 const diasEntre = (desde: Date, hasta: Date, zona: string) =>
   Math.round((Date.parse(fechaEnZona(hasta, zona)) - Date.parse(fechaEnZona(desde, zona))) / 86_400_000);
 
-/** Lo que dice la columna «Reporte»: lo que más urge de lo pendiente o, sin pendientes, cómo quedó el último periodo. */
-function textoDeReporte(p: Pendientes | undefined, ultima: Row | undefined, ahora: Date, zona: string): FilaDeLista["reporte"] {
+const FALTA_UN_DATO = ETIQUETA_ESTADO.falta_dato;
+
+/**
+ * Lo que dice la columna «Reporte»: lo que más urge de lo pendiente o, sin pendientes, cómo quedó el último periodo
+ * (`ultima`, con la versión que lo rige: uno abierto de un automático espera su dato, no a quien lo reporte).
+ */
+function textoDeReporte(
+  p: Pendientes | undefined,
+  ultima: { m: Row; v: VersionDeCalculo } | undefined,
+  ahora: Date,
+  zona: string,
+): FilaDeLista["reporte"] {
   if (p?.masAntigua) {
     const hace = `hace ${cuenta(diasEntre(p.masAntigua.vence, ahora, zona), "día", "días")}`;
     return { texto: p.masAntigua.falta === "analisis" ? `Análisis vencido ${hace}` : `Vencido ${hace}`, vencida: true };
   }
   if (p?.porReportar) return { texto: "Por reportar", vencida: false };
   if (p?.faltaAnalisis) return { texto: "Falta el análisis", vencida: false };
+  if (p?.faltaDato) return { texto: FALTA_UN_DATO, vencida: false };
   if (!ultima) return { texto: "—", vencida: false };
-  if (ultima.estado === "cerrada") return { texto: "Cerrado", vencida: false };
-  if (ultima.estado === "reportada") return { texto: "Reportado", vencida: false };
-  return { texto: ultima.historica === true ? "Por registrar" : "Por reportar", vencida: false };
+  const { m } = ultima;
+  if (m.estado === "cerrada") return { texto: "Cerrado", vencida: false };
+  if (m.estado === "reportada") return { texto: "Reportado", vencida: false };
+  if (ultima.v.origenDato === "automatico" && m.reportada_en === null && m.no_aplica !== true) return { texto: FALTA_UN_DATO, vencida: false };
+  return { texto: m.historica === true ? "Por registrar" : "Por reportar", vencida: false };
 }
 
 /**
@@ -198,7 +218,7 @@ export async function listarIndicadores(
           // Las trece más recientes de cada uno: la última, sus seis de tendencia y el mismo periodo del año anterior,
           // con margen para las de otra periodicidad, que se saltan.
           sql`SELECT x.* FROM unnest(${sql.array(ids)}::bigint[]) AS u(id) CROSS JOIN LATERAL (
-              SELECT m.id, m.indicador_id, m.periodo, m.hasta, m.estado, m.historica, m.no_aplica, m.resultado_exacto, m.semaforo, m.cumple,
+              SELECT m.id, m.indicador_id, m.periodo, m.hasta, m.estado, m.historica, m.no_aplica, m.reportada_en, m.resultado_exacto, m.semaforo, m.cumple,
                 m.meta_aplicada, m.meta_max_aplicada, m.requiere_accion,
                 (SELECT json_build_object('meta', im.meta::text, 'metaMax', im.meta_max::text) FROM indicador_metas im
                   WHERE im.indicador_id = m.indicador_id AND im.periodo = m.periodo) AS programada
@@ -214,7 +234,13 @@ export async function listarIndicadores(
     const falta = faltas.get(Number(m.id));
     if (!falta) continue;
     const id = Number(m.indicador_id);
-    const acc = pendientesDe.get(id) ?? { porReportar: false, faltaAnalisis: false, vencidas: 0, masAntigua: null };
+    const acc = pendientesDe.get(id) ?? { porReportar: false, faltaAnalisis: false, faltaDato: false, vencidas: 0, masAntigua: null };
+    pendientesDe.set(id, acc);
+    // Lo que espera el dato del sistema no es de nadie: ni por reportar ni vencido.
+    if (falta.falta === "dato") {
+      acc.faltaDato = true;
+      continue;
+    }
     if (falta.falta === "reporte" || falta.faltaSoporte) acc.porReportar = true;
     if (falta.falta === "analisis") acc.faltaAnalisis = true;
     const vence = new Date(m.vence_en as string);
@@ -222,7 +248,6 @@ export async function listarIndicadores(
       acc.vencidas += 1;
       if (!acc.masAntigua || vence.getTime() < acc.masAntigua.vence.getTime()) acc.masAntigua = { vence, falta: falta.falta };
     }
-    pendientesDe.set(id, acc);
   }
   const recientesDe = agrupar(recientes, (m) => Number(m.indicador_id));
 
@@ -290,7 +315,7 @@ export async function listarIndicadores(
         .slice(0, 6)
         .reverse()
         .map(({ m }) => (conResultado(m) ? aNumero(deTexto(m.resultado_exacto as string)) : null)),
-      reporte: textoDeReporte(pend, ultima?.m, ahora, zona),
+      reporte: textoDeReporte(pend, ultima, ahora, zona),
     };
     const requiereAccion = ultima?.m.requiere_accion === true;
     return { fila, conFicha, pend, requiereAccion };

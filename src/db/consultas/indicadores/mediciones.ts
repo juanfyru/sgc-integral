@@ -68,6 +68,8 @@ const FICHA_CAMBIO = "La ficha del indicador cambió: recargue la página";
 const OTRA_PERIODICIDAD = "Ese periodo ya no se mide: la ficha que lo rige es de otra periodicidad";
 /** Un histórico entra solo por la tabla del año (`registrarHistoricos`, spec §8.8). */
 const ES_HISTORICO = "Ese periodo es histórico: regístrelo en la tabla del año";
+/** Nadie mide un automático (anexo 14B, §4): lo que digita rechaza la medición cuya versión que rige el periodo lo es. */
+const NO_SE_DIGITA = "Este indicador lo calcula el sistema: sus datos no se digitan";
 
 /**
  * Una medición abierta de la periodicidad vieja que quedó dentro del tramo de un cambio mayor de periodicidad (los meses
@@ -200,6 +202,16 @@ export async function versionesAprobadasDe(sql: Cliente, indicadorIds: readonly 
     salida.set(id, [...(salida.get(id) ?? []), version]);
   }
   return salida;
+}
+
+/**
+ * La versión aprobada que rige el periodo `periodo` del indicador (`versionQueRigeEntre`), o `null`: la que dice si una
+ * medición es automática (anexo 14B, §4), no la ficha vigente.
+ */
+export async function versionDelPeriodo(sql: Cliente, indicadorId: number, periodo: string): Promise<VersionDeCalculo | null> {
+  const zona = zonaHoraria();
+  const p = periodoDe(periodo, zona);
+  return p ? versionQueRigeEntre(await versionesAprobadas(sql, indicadorId), p, zona) : null;
 }
 
 /** La meta programada del periodo (spec §8.9) reemplaza la de la ficha, si la versión que calcula tiene meta. */
@@ -501,8 +513,10 @@ export async function recalcularMedicion(
     );
   }
   const conAnalisis = analisisCompleto(analisisExigido({ semaforo, cumple, repetido, historica, noAplica }), analisisDe(m));
-  // El soporte rige hacia adelante: la racha de una siguiente no reabre por él lo que ya estaba reportado.
+  // El soporte rige hacia adelante: la racha de una siguiente no reabre por él lo que ya estaba reportado. Un automático no
+  // lleva soporte (anexo 14B, §5.3): nadie podría adjuntarlo.
   const conSoporte =
+    version.origenDato === "automatico" ||
     m.soporte_obligatorio !== true ||
     historica ||
     noAplica ||
@@ -645,15 +659,17 @@ export type CondicionDePersona = (indicadorId: number, sujeto: SujetoVisibilidad
 /**
  * Lo que debe cumplirse para tocar una medición: que la persona la vea (si no, «no existe»), que cumpla la condición de
  * persona (`exigir`; por omisión, poder medir el indicador), que este siga activo y que la medición no esté cerrada
- * (salvo con `admiteCerrada`, para leerla). Con `bloquear`, dentro de la transacción: el indicador `FOR SHARE` y la
- * medición `FOR UPDATE`, en ese orden.
+ * (salvo con `admiteCerrada`, para leerla). Con `digita` (por omisión), que la versión que rige el periodo no sea
+ * automática: nadie digita los datos de un automático (anexo 14B, §4). Pasan `digita: false` quienes no los digitan
+ * (analizar, reabrir, las lecturas). Con `bloquear`, dentro de la transacción: el indicador `FOR SHARE` y la medición
+ * `FOR UPDATE`, en ese orden.
  */
 export async function contextoDeMedicion(
   sql: Cliente,
   sesion: SujetoVisibilidad,
   medicionId: number,
   bloquear: boolean,
-  opciones?: { admiteCerrada?: boolean; exigir?: CondicionDePersona },
+  opciones?: { admiteCerrada?: boolean; exigir?: CondicionDePersona; digita?: boolean },
 ): Promise<Contexto> {
   const [i] = bloquear
     ? await sql`SELECT id, codigo, estado, soporte_obligatorio FROM indicadores
@@ -674,6 +690,7 @@ export async function contextoDeMedicion(
   const version = periodo ? versionQueRigeEntre(await versionesAprobadas(sql, indicadorId), periodo, zona) : null;
   if (!periodo || !version) throw new ErrorIndicador(NO_EXISTE);
   if (esDeOtraPeriodicidad(m.periodo as string, version)) throw new ErrorIndicador(OTRA_PERIODICIDAD);
+  if (opciones?.digita !== false && version.origenDato === "automatico") throw new ErrorIndicador(NO_SE_DIGITA);
   return {
     medicion: { ...m, id: Number(m.id) },
     indicador: { id: indicadorId, codigo: i.codigo as string, soporteObligatorio: i.soporte_obligatorio === true },

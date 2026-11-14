@@ -16,7 +16,13 @@ import { filtroDeConsulta, listarIndicadores, type FiltroDeLista } from "@/db/co
 import { matrizDelAnio, type CeldaDeMatriz } from "@/db/consultas/indicadores/matriz";
 import { asegurarMediciones, marcarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
 import { retirar } from "@/db/consultas/indicadores/operacion";
-import { indicadorDePrueba, versionTrimestral, type IndicadorDePrueba, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
+import {
+  indicadorDePrueba,
+  versionAutomatica,
+  versionTrimestral,
+  type IndicadorDePrueba,
+  type OpcionesIndicadorDePrueba,
+} from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -326,6 +332,52 @@ describe("la lista", () => {
       // La tendencia no lleva julio como periodo vigente.
       expect(filas[0].tendencia.at(-2)).toBeCloseTo(90, 3);
       expect(resumen.critico).toBe(0);
+    }));
+
+  it("un automático sin datos dice «Falta un dato», sin «Vencida», y no cuenta entre los vencidos; lo anterior al paso a automático, sí", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const admin = await sesionAdmin(tx);
+      const calculo = { clave: "dentro_plazo", alcance: "proceso" } as const;
+      const auto = await trimestral(tx, p.id, { inicioMedicion: "2026-T3", calculo });
+      await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: auto.id });
+
+      const { filas, resumen } = await lista(tx, admin, { procesoId: p.id });
+      expect(filas).toMatchObject([{ codigo: auto.codigo, periodo: "2026-T3", semaforo: null, reporte: { texto: "Falta un dato", vencida: false } }]);
+      expect(resumen).toMatchObject({ sinDato: 1, vencidos: 0 });
+      for (const reporte of ["vencida", "por-reportar", "falta-analisis"] as const) {
+        expect(await codigos(tx, admin, { procesoId: p.id, reporte }), reporte).toEqual([]);
+      }
+      const [t3] = (await resultadosDelAnio(admin, auto.id, 2026, opc(tx))).filas;
+      expect(t3).toMatchObject({ periodo: "2026-T3", estado: "falta_dato", vencida: false });
+      // Un histórico que espera su cálculo tampoco está «Por registrar»: nadie lo registra.
+      const deHistorico = await proceso(tx);
+      const historico = await trimestral(tx, deHistorico.id, { inicioMedicion: "2026-T3", calculo, aprobadaEn: new Date("2026-10-05T15:00:00Z") });
+      await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: historico.id });
+      expect((await lista(tx, admin, { procesoId: deHistorico.id })).filas[0].reporte).toEqual({ texto: "Falta un dato", vencida: false });
+
+      // Manual en el segundo trimestre y automático desde el tercero: el segundo sigue por reportar y vencido.
+      const otroProceso = await proceso(tx);
+      const cambio = await trimestral(tx, otroProceso.id, { inicioMedicion: "2026-T2" });
+      await versionAutomatica(tx, {
+        indicadorId: cambio.id,
+        usuarioId: admin.usuarioId,
+        rigeDesde: "2026-T3",
+        aprobadaEn: new Date("2026-07-01T15:00:00Z"),
+        periodicidad: "trimestral",
+        calculo,
+      });
+      await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: cambio.id });
+      const deCambio = await lista(tx, admin, { procesoId: otroProceso.id });
+      expect(deCambio.resumen.vencidos).toBe(1);
+      expect(deCambio.filas[0].reporte).toMatchObject({ vencida: true });
+      expect(deCambio.filas[0].reporte.texto).toMatch(/^Vencido hace \d+ días$/);
+      const anio = (await resultadosDelAnio(admin, cambio.id, 2026, opc(tx))).filas;
+      expect(anio.map((f) => [f.periodo, f.estado, f.vencida])).toEqual([
+        ["2026-T2", "por_reportar", true],
+        ["2026-T3", "falta_dato", false],
+        ["2026-T4", "por_venir", false],
+      ]);
     }));
 });
 

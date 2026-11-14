@@ -21,7 +21,7 @@ import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { asegurarMediciones, marcarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
 import { revisarVencimientosDeIndicadores } from "@/db/consultas/indicadores/vencimientos";
 import { revisarVencimientos } from "@/db/consultas/vencimientos";
-import { indicadorDePrueba, versionTrimestral, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
+import { indicadorDePrueba, versionAutomatica, versionTrimestral, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -317,6 +317,53 @@ describe("revisarVencimientosDeIndicadores", () => {
       expect((await avisosDe(tx, jefe.usuarioId)).map((x) => x.tipo)).toEqual(["indicadores.escalado"]);
       // Lo hace el sistema: sin fila en `auditoria`.
       expect(await tx`SELECT 1 FROM auditoria WHERE entidad = 'medicion' AND entidad_id = ${ordinaria}`).toHaveLength(0);
+    }));
+
+  it("un automático sin datos no tiene aviso previo, ni de vencido, ni escalamiento: ni al líder ni al Admin SGC de respaldo", () =>
+    revertida(sql, async (tx) => {
+      const { proceso } = await entorno(tx);
+      const automatico = { calculo: { clave: "dentro_plazo", alcance: "proceso" } } as const;
+      const jefe = await usuarioDePrueba(tx, { rol: "consulta" });
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [proceso.id], jefeId: jefe.usuarioId });
+      const analiza = await usuarioDePrueba(tx, { rol: "consulta", jefeId: jefe.usuarioId });
+      const conLider = await indicador(tx, proceso.id, { ...automatico, analiza: [analiza.usuarioId] });
+      // Sin líder ni designado: el Admin SGC lo tendría de respaldo.
+      const sinLider = await procesoNuevo(tx);
+      const admin = await usuarioDePrueba(tx, { rol: "admin_sgc", jefeId: jefe.usuarioId });
+      const huerfano = await indicador(tx, sinLider.id, automatico);
+
+      for (const d of [8, 12, 20]) expect(await pasada(tx, abril(d)), `${d} de abril`).toEqual({ avisados: 0, escalados: 0 });
+      for (const x of [conLider, huerfano]) {
+        expect(await marcas(tx, await x.medicion())).toEqual({ aviso_previo_en: null, aviso_vencido_en: null, escalado_en: null });
+      }
+      for (const u of [lider, analiza, admin, jefe]) expect(await avisosDe(tx, u.usuarioId)).toEqual([]);
+    }));
+
+  it("manda la versión que rige el periodo: lo anterior al paso a automático se sigue avisando y escalando", () =>
+    revertida(sql, async (tx) => {
+      const { proceso, admin } = await entorno(tx);
+      const jefe = await usuarioDePrueba(tx, { rol: "consulta" });
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [proceso.id], jefeId: jefe.usuarioId });
+      // Manual desde febrero; desde marzo lo calcula el sistema.
+      const ind = await indicadorDePrueba(tx, { procesoId: proceso.id, inicioMedicion: "2003-02", aprobadaEn: APROBADA });
+      await versionAutomatica(tx, {
+        indicadorId: ind.id,
+        usuarioId: admin.usuarioId,
+        rigeDesde: MARZO,
+        aprobadaEn: new Date("2003-02-20T15:00:00Z"),
+        periodicidad: "mensual",
+        calculo: { clave: "dentro_plazo", alcance: "proceso" },
+      });
+      await asegurarMediciones({ sql: tx, ahora: abril(5), indicadorId: ind.id });
+      const id = async (periodo: string) => Number((await tx`SELECT id FROM mediciones WHERE indicador_id = ${ind.id} AND periodo = ${periodo}`)[0].id);
+
+      expect(await pasada(tx, abril(12))).toEqual({ avisados: 1, escalados: 1 });
+      expect((await avisosDe(tx, lider.usuarioId)).map((x) => x.titulo)).toEqual(["Tiene 1 indicador por reportar con el plazo vencido"]);
+      expect((await avisosDe(tx, jefe.usuarioId)).map((x) => x.cuerpo)).toEqual([
+        `1 reporte de indicadores a cargo de ${lider.nombre} sigue vencido. Venció hace 33 días.`,
+      ]);
+      expect(await marcas(tx, await id("2003-02"))).toMatchObject({ aviso_vencido_en: abril(12), escalado_en: abril(12) });
+      expect(await marcas(tx, await id(MARZO))).toEqual({ aviso_previo_en: null, aviso_vencido_en: null, escalado_en: null });
     }));
 
   it("revisarVencimientos la corre después de las demás y suma lo suyo", () =>
