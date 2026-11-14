@@ -1105,7 +1105,7 @@ describe("el soporte de una constancia", () => {
       "El resultado es parcial: no está cerrado septiembre de 2026. Puede registrarlo así.",
     );
     expect(avisoDeParcial({ faltan: ["marzo de 2026"], sinCerrar: ["febrero de 2026", "marzo de 2026"], desde: null })).toBe(
-      "El resultado es parcial: falta marzo de 2026 / no está cerrado febrero de 2026. Puede registrarlo así.",
+      "El resultado es parcial: falta marzo de 2026; no está cerrado febrero de 2026. Puede registrarlo así.",
     );
     expect(
       avisoDeParcial({ faltan: ["abril de 2026", "mayo de 2026", "junio de 2026"], sinCerrar: ["abril de 2026", "mayo de 2026", "junio de 2026"], desde: null }),
@@ -1118,7 +1118,7 @@ describe("el soporte de una constancia", () => {
       "El resultado es parcial: solo acumula desde agosto de 2026 (la ficha cambió de versión). Puede registrarlo así.",
     );
     expect(avisoDeParcial({ faltan: ["junio de 2026"], sinCerrar: ["junio de 2026"], desde: "abril de 2026" })).toBe(
-      "El resultado es parcial: solo acumula desde abril de 2026 (la ficha cambió de versión) / falta junio de 2026. Puede registrarlo así.",
+      "El resultado es parcial: solo acumula desde abril de 2026 (la ficha cambió de versión); falta junio de 2026. Puede registrarlo así.",
     );
   });
 });

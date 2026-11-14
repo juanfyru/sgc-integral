@@ -699,7 +699,7 @@ describe("la vista «Reportes al ente» (anexo 14B, §8)", () => {
     expect(html).toContain("Resultado del periodo: 86,7 %");
     // La ficha cambió de versión dentro del periodo: desde dónde acumula va primero.
     expect(html).toContain(
-      "El resultado es parcial: solo acumula desde agosto de 2026 (la ficha cambió de versión) / no está cerrado septiembre de 2026. Puede registrarlo así.",
+      "El resultado es parcial: solo acumula desde agosto de 2026 (la ficha cambió de versión); no está cerrado septiembre de 2026. Puede registrarlo así.",
     );
     expect(html).toContain("Resultado del periodo: sin resultado");
     expect(html).toContain("El resultado es parcial: faltan abril de 2026, mayo de 2026 y junio de 2026. Puede registrarlo así.");
