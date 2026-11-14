@@ -1204,7 +1204,8 @@ Como §8.2. Debe poder hacerse a 390 px y solo con teclado.
 
 ### 12.7 Matriz del año (`/indicadores/matriz`, maqueta 5)
 
-[Usuario, 12.3.] Filtros: año, proceso y clasificación. Una fila por indicador visible que se midió
+[Usuario, 12.3.] Filtros: año, proceso, subproceso [Usuario, 2026-11-13] y clasificación (el subproceso y la clasificación son los de la
+versión aprobada vigente, como en la lista; rigen en pantalla, al imprimir y en «Excel»). Una fila por indicador visible que se midió
 ese año, agrupadas por proceso; doce columnas de mes más «Año» (el acumulado). Un periodo que dura
 varios meses ocupa sus celdas unidas. Cada celda lleva el valor y una franja con el color del
 estado, y su nombre accesible lo dice entero («marzo: 86 %, Bien»); «s. d.» y «n. a.» en gris. La

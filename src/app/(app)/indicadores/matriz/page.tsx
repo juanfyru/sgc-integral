@@ -30,7 +30,7 @@ const ANCHO = "w-full sm:w-auto sm:max-w-64";
  * La matriz del año (spec §12.7, maqueta 5), para toda persona con sesión: los indicadores que ve y que se miden en el año
  * elegido, agrupados por proceso, con una celda por periodo enlazada a su medición y la columna del acumulado. Filtros en
  * un formulario `GET`: año (`?anio=AAAA`, por omisión el en curso; otro formato o un año que no ha llegado, «no
- * encontrada»), proceso y clasificación (un valor que no se entiende se ignora).
+ * encontrada»), proceso, subproceso y clasificación (un valor que no se entiende se ignora).
  */
 export default async function PaginaMatriz({ searchParams }: { searchParams: Promise<Parametros> }) {
   const sesion = await exigirSesion();
@@ -38,20 +38,22 @@ export default async function PaginaMatriz({ searchParams }: { searchParams: Pro
   const anioEnCurso = Number(fechaEnZona(new Date(), zonaHoraria()).slice(0, 4));
   const anio = anioDeConsulta(sp.anio, anioEnCurso);
   if (anio === null) notFound();
-  const { procesoId, clasificacionId } = filtroDeConsulta({ proceso: sp.proceso, clasificacion: sp.clasificacion });
-  const [opciones, matriz] = await Promise.all([opcionesDeLista(sesion), matrizDelAnio(sesion, { anio, procesoId, clasificacionId })]);
+  const { procesoId, subprocesoId, clasificacionId } = filtroDeConsulta({ proceso: sp.proceso, subproceso: sp.subproceso, clasificacion: sp.clasificacion });
+  const [opciones, matriz] = await Promise.all([opcionesDeLista(sesion), matrizDelAnio(sesion, { anio, procesoId, subprocesoId, clasificacionId })]);
   const anios = [...new Set([...opciones.anios, anioEnCurso, anio])].sort((a, b) => b - a);
   const filas = matriz.procesos.reduce((n, p) => n + p.filas.length, 0);
   const proceso = procesoId === undefined ? null : (opciones.procesos.find((p) => p.id === procesoId)?.nombre ?? null);
-  // «Excel» con el año, el proceso y la clasificación de la matriz (spec §12.7) y los retirados: la matriz trae los
+  const subproceso = subprocesoId === undefined ? null : (opciones.subprocesos.find((s) => s.id === subprocesoId)?.nombre ?? null);
+  const alcance = subproceso ? (proceso ? `${proceso} › ${subproceso}` : subproceso) : (proceso ?? "Todos los procesos");
+  // «Excel» con el año, el proceso, el subproceso y la clasificación de la matriz (spec §12.7) y los retirados: la matriz trae los
   // retirados medidos ese año; el Excel es el de la lista, un superconjunto. Es una descarga auditada, sin precarga.
-  const excel = `/indicadores/excel?${consultaDeFiltro({ procesoId, clasificacionId, retirados: true })}&anio=${anio}`;
+  const excel = `/indicadores/excel?${consultaDeFiltro({ procesoId, subprocesoId, clasificacionId, retirados: true })}&anio=${anio}`;
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
       <EncabezadoPagina
         titulo={`Matriz del año · ${anio}`}
-        descripcion={`${proceso ?? "Todos los procesos"} · ${cuenta(filas, "indicador", "indicadores")}`}
+        descripcion={`${alcance} · ${cuenta(filas, "indicador", "indicadores")}`}
         acciones={
           <>
             <BotonImprimir />
@@ -81,6 +83,22 @@ export default async function PaginaMatriz({ searchParams }: { searchParams: Pro
               {`${p.sigla} · ${p.nombre}`}
             </option>
           ))}
+        </Selector>
+        <Selector className={ANCHO} id="matriz-subproceso" nombre="subproceso" etiqueta="Subproceso" valor={subprocesoId === undefined ? "" : String(subprocesoId)}>
+          <option value="">Todos</option>
+          {opciones.procesos
+            .filter((p) => opciones.subprocesos.some((s) => s.procesoId === p.id))
+            .map((p) => (
+              <optgroup key={p.id} label={p.nombre}>
+                {opciones.subprocesos
+                  .filter((s) => s.procesoId === p.id)
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.nombre}
+                    </option>
+                  ))}
+              </optgroup>
+            ))}
         </Selector>
         <Selector className={ANCHO} id="matriz-clasificacion" nombre="clasificacion" etiqueta="Clasificación" valor={clasificacionId === undefined ? "" : String(clasificacionId)}>
           <option value="">Todas</option>

@@ -193,7 +193,7 @@ celda lleva el valor, una franja con el color y una figura por estado (una marca
 triángulo para Atención y una equis para Crítico), para que se distinga también sin color; «s. d.»
 y «n. a.» van en gris. Un indicador retirado lleva la marca «Retirado» y, después del retiro, sus
 periodos quedan vacíos, como los de antes de su inicio: ya no se miden. Pulse una celda para ir a
-esa medición. Filtre por **Año**, **Proceso** y **Clasificación**. **Imprimir** la saca en papel y
+esa medición. Filtre por **Año**, **Proceso**, **Subproceso** y **Clasificación**. **Imprimir** la saca en papel y
 **Excel** la descarga.
 
 ### 2.8 Imprimir la ficha y los Excel
