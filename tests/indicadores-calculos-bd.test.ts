@@ -111,6 +111,13 @@ describe("tomarCalculo: los ocho documentales", () => {
     expect(Number(deLaTarjeta(soloGth, "vencidos").A)).toBeGreaterThan(0);
     // En texto con punto decimal: lo que lee `fotoDe`.
     for (const t of tomados) for (const v of Object.values(t)) expect(v).toMatch(/^\d+(\.\d+)?$/);
+
+    // Los de estado se miden a la hora de la petición, como la tarjeta: en 2090 todo lo que tiene fecha ya venció.
+    const lejos = new Date("2090-01-15T15:00:00Z");
+    const enLejos = (await indicadoresDocumentales(admin, { periodo: "2090" }, { sql: tx, ahora: lejos }))!;
+    const vencidosLejos = await tomarCalculo(tx, peticion("vencidos", "entidad", { procesoId: gth, periodo: "2090", ahora: lejos }));
+    expect(vencidosLejos).toEqual(deLaTarjeta(enLejos, "vencidos"));
+    expect(Number(vencidosLejos.A)).toBeGreaterThan(Number(deLaTarjeta(todo, "vencidos").A));
   }));
 
   it("cuenta un documento restringido vencido que un líder de otro proceso no vería", () => revertida(sql, async (tx) => {
@@ -219,13 +226,17 @@ describe("tomarCalculo: reportes de indicadores a tiempo", () => {
       tx`UPDATE indicadores SET estado = 'retirado', baja_por = ${elabora.usuarioId}, baja_en = ${new Date(cuando)}, baja_motivo = 'Ya no se mide'
         WHERE id = ${ind.id}`;
 
-    // Retirado el 1 de marzo sin reportar febrero: no cuenta. Retirado el 12, ya vencido: cuenta, y tarde.
+    // Retirado el 1 de marzo sin reportar febrero: no cuenta. Retirado el 12, ya vencido: cuenta, y tarde. Retirado el 7
+    // después de reportar a tiempo: cuenta, a tiempo.
     const retiradoAntes = await manual();
     await medicion(tx, retiradoAntes, "2094-02");
     await retirar(retiradoAntes, "2094-03-01T15:00:00Z");
     const retiradoDespues = await manual();
     await medicion(tx, retiradoDespues, "2094-02");
     await retirar(retiradoDespues, "2094-03-12T15:00:00Z");
+    const retiradoReportado = await manual();
+    await enviar(await medicion(tx, retiradoReportado, "2094-02"), { A: "9", B: "10" }, A_TIEMPO);
+    await retirar(retiradoReportado, "2094-03-07T15:00:00Z");
     // Febrero lo rige ya una versión trimestral: la medición mensual quedó de otra periodicidad.
     const trimestral = await manual();
     await medicion(tx, trimestral, "2094-02");
@@ -242,7 +253,7 @@ describe("tomarCalculo: reportes de indicadores a tiempo", () => {
       calculo: { clave: "etapas", alcance: "proceso" },
     });
 
-    expect(await tomarCalculo(tx, peticion("reportes_a_tiempo", "proceso", { procesoId: gth, periodo: "2094-03" }))).toEqual({ A: "1", B: "2" });
+    expect(await tomarCalculo(tx, peticion("reportes_a_tiempo", "proceso", { procesoId: gth, periodo: "2094-03" }))).toEqual({ A: "2", B: "3" });
   }));
 });
 
@@ -303,6 +314,14 @@ describe("tomarCalculo: objetivos cumplidos", () => {
     await medida(tx, otroCalculo, "2094-03", NO_CUMPLE);
     await liberarCalculo(tx, "objetivos_cumplidos", "todos");
     await tx`UPDATE indicadores SET calculo = 'objetivos_cumplidos', calculo_alcance = 'todos' WHERE id = ${otroCalculo.id}`;
+    // Tampoco uno retirado, ni uno cuya ficha vigente (una versión 2 sin objetivo) ya no apunta a él.
+    const retirado = await de(cumplido);
+    await medida(tx, retirado, "2094-03", NO_CUMPLE);
+    await tx`UPDATE indicadores SET estado = 'retirado', baja_por = ${elabora.usuarioId}, baja_en = ${A_TIEMPO}, baja_motivo = 'Ya no se mide'
+      WHERE id = ${retirado.id}`;
+    const cambioDeFicha = await de(cumplido);
+    await medida(tx, cambioDeFicha, "2094-03", NO_CUMPLE);
+    await versionTrimestral(tx, { indicadorId: cambioDeFicha.id, usuarioId: elabora.usuarioId, rigeDesde: "2094-T2", aprobadaEn: A_TIEMPO });
 
     // No cumplido: «Bien» que no alcanza la meta (rangos escritos, spec 14A §3).
     await medida(tx, await de(await objetivo(tx, "calidad")), "2094-03", { semaforo: "bien", cumple: false });
