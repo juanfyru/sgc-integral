@@ -780,6 +780,25 @@ describe("la ficha de indicador", () => {
       "Quitó a 1 persona de «mide» en SGC-ID-007: ahora lo calcula el sistema",
     );
     expect(frase("indicador_medidores_quitados", {})).toBe("Quitó a quienes miden un indicador: ahora lo calcula el sistema");
+    // Lo que la publicación movió de los datos de operación.
+    expect(frase("indicador_aprobado", { codigo: "SGC-ID-007", numero: 1, inicioMedicion: { antes: "2026-01", despues: "2026-11" } })).toBe(
+      "Aprobó la ficha de SGC-ID-007 (versión 1). El inicio de medición pasó de enero de 2026 a noviembre de 2026.",
+    );
+    expect(frase("indicador_aprobado", { codigo: "SGC-ID-007", numero: 1, inicioMedicion: { antes: "2026-T1", despues: "2026-T4" } })).toBe(
+      "Aprobó la ficha de SGC-ID-007 (versión 1). El inicio de medición pasó del primer trimestre de 2026 al cuarto trimestre de 2026.",
+    );
+    expect(frase("indicador_aprobado", { codigo: "SGC-ID-007", numero: 2, soporteApagado: true, medicionesRecalculadas: 2 })).toBe(
+      "Aprobó la ficha de SGC-ID-007 (versión 2). Se apagó el soporte obligatorio (2 mediciones recalculadas).",
+    );
+    expect(
+      frase("indicador_aprobado", { codigo: "SGC-ID-007", numero: 1, inicioMedicion: { antes: "2026", despues: "2027" }, soporteApagado: true, medicionesRecalculadas: 0 }),
+    ).toBe("Aprobó la ficha de SGC-ID-007 (versión 1). El inicio de medición pasó de 2026 a 2027. Se apagó el soporte obligatorio.");
+    expect(frase("indicador_cambio_menor", { codigo: "SGC-ID-007", numero: 3, motivo: "Aclarar el nombre", soporteApagado: true, medicionesRecalculadas: 1 })).toBe(
+      "Publicó un cambio menor en la ficha de SGC-ID-007 (versión 3): Aclarar el nombre. Se apagó el soporte obligatorio (1 medición recalculada).",
+    );
+    expect(frase("indicador_cambio_menor", { codigo: "SGC-ID-007", numero: 3, motivo: "Aclarar el nombre.", soporteApagado: true })).toBe(
+      "Publicó un cambio menor en la ficha de SGC-ID-007 (versión 3): Aclarar el nombre. Se apagó el soporte obligatorio.",
+    );
     expect(nombreDeAccion("indicador_medidores_quitados")).toBe("Quitó a quienes miden un indicador que calcula el sistema");
   });
 });

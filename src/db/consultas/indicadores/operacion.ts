@@ -227,10 +227,18 @@ export async function cambiarOperacion(
       throw new ErrorIndicador(`El inicio de medición debe ser un periodo ${ADJETIVO[rige]}`);
     }
     const [actual] = await tx`SELECT plazo_reporte_dias, inicio_medicion, soporte_obligatorio, nivel_acceso FROM indicadores WHERE id = ${i.id}`;
-    // Un cálculo que no se llena hacia atrás empieza donde se aprobó (anexo 14B, §5.3): antes no hay nada que el sistema pueda medir.
+    // Un cálculo que no se llena hacia atrás empieza donde rige (anexo 14B, §5.3): un inicio más temprano no abre periodos que
+    // regiría una versión de ese cálculo antes de su «rige desde», porque nadie los fotografía ni los mide. Decide la versión
+    // que rige el inicio nuevo (antes de todas, la más antigua), no la vigente: cambiar el inicio no mueve ningún «rige desde».
     const inicioActual = actual.inicio_medicion ? periodoDe(actual.inicio_medicion as string, zonaHoraria()) : null;
-    if (calculoDe(i.calculo)?.reconstruible === false && inicioActual && nuevo.desde.getTime() < inicioActual.desde.getTime()) {
-      throw new ErrorIndicador("Este cálculo no se llena hacia atrás: su inicio de medición no puede adelantarse");
+    if (inicioActual && nuevo.desde.getTime() < inicioActual.desde.getTime()) {
+      const zona = zonaHoraria();
+      const rigeElNuevo = versionQueRigeEntre(await versionesAprobadas(tx, i.id), nuevo, zona);
+      const calculo = rigeElNuevo?.calculoAutomatico ? calculoDe(rigeElNuevo.calculoAutomatico.clave) : null;
+      const desde = rigeElNuevo?.rigeDesde ? periodoDe(rigeElNuevo.rigeDesde, zona) : null;
+      if (calculo?.reconstruible === false && desde && nuevo.desde.getTime() < desde.desde.getTime()) {
+        throw new ErrorIndicador("Este cálculo no se llena hacia atrás: su inicio de medición no puede adelantarse");
+      }
     }
     const antes: DatosOperacion = {
       plazoReporteDias: Number(actual.plazo_reporte_dias),
@@ -434,7 +442,10 @@ export async function duplicar(
          SELECT $2, ${COLUMNAS_VARIABLE} FROM indicador_variables WHERE version_id = $1 ORDER BY orden, letra`,
         [desde, versionId],
       );
-      if (deAutomatico) await tx`UPDATE indicador_variables SET origen = 'propia' WHERE version_id = ${versionId} AND origen = 'automatica'`;
+      // Su fuente era «La calcula el sistema»: en la copia, que se digita, sería falsa y quedaría firmada.
+      if (deAutomatico) {
+        await tx`UPDATE indicador_variables SET origen = 'propia', fuente = NULL WHERE version_id = ${versionId} AND origen = 'automatica'`;
+      }
       await tx`INSERT INTO indicador_responsables (version_id, cargo_id, cargo_nombre, funcion)
         SELECT ${versionId}, cargo_id, cargo_nombre, funcion FROM indicador_responsables WHERE version_id = ${desde} ORDER BY id`;
       await tx`INSERT INTO indicador_normas (version_id, norma_id, norma_nombre)

@@ -22,6 +22,7 @@ import { cambiarOperacion, designar, duplicar } from "@/db/consultas/indicadores
 import { esCalculoRepetido, yaHayUnaActiva } from "@/db/consultas/indicadores/publicacion";
 import { EsquemaFicha, type DatosFicha } from "@/lib/esquemas/indicadores";
 import type { AlcanceDeCalculo, ClaveDeCalculo } from "@/lib/indicadores/calculos/registro";
+import { describirEvento } from "@/lib/bitacora-detalle";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import { indicadorDePrueba, liberarCalculo } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
@@ -146,6 +147,11 @@ const variablesDe = (tx: TransactionSql, versionId: number) =>
   tx`SELECT letra, nombre, descripcion, fuente, unidad, consolidacion, origen, captura_min, captura_max, admite_negativos
     FROM indicador_variables WHERE version_id = ${versionId} ORDER BY orden, letra`;
 
+/** Las entradas `indicador_aprobado` del indicador, de la más reciente a la primera. */
+const aprobacionEnBitacora = async (tx: TransactionSql, indicadorId: number) =>
+  (await tx`SELECT detalle FROM auditoria WHERE accion = 'indicador_aprobado' AND entidad = 'indicador' AND entidad_id = ${indicadorId}
+    ORDER BY id DESC`) as unknown as { detalle: Record<string, unknown> }[];
+
 const mideDe = async (tx: TransactionSql, indicadorId: number) =>
   (await tx`SELECT usuario_id FROM indicador_designados WHERE indicador_id = ${indicadorId} AND funcion = 'mide' ORDER BY usuario_id`).map((f) =>
     Number(f.usuario_id),
@@ -258,7 +264,7 @@ describe("la ficha automática en el servidor", () => {
       const b = await base(tx);
       await liberarCalculo(tx, "conformidad_fecha", "entidad");
       await liberarCalculo(tx, "conformidad_periodo", "entidad");
-            await rechaza(
+      await rechaza(
         crearIndicador(b.admin, automatica(b, "conformidad_fecha", "entidad", SIN_META), { sql: tx }),
         "Este cálculo exige una meta: con ella se juzga la conformidad en Distribución",
       );
@@ -371,6 +377,13 @@ describe("la ficha automática en el servidor", () => {
       expect((await versionDe(tx, versionId)).rige_desde).toBe("2026-11");
       const [m] = await tx`SELECT count(*)::int AS n FROM mediciones WHERE indicador_id = ${indicadorId}`;
       expect(m.n).toBe(0);
+      // La aprobación movió un dato de operación: la bitácora lo dice.
+      const [aprobado] = await aprobacionEnBitacora(tx, indicadorId);
+      expect(aprobado.detalle.inicioMedicion).toEqual({ antes: "2026-01", despues: "2026-11" });
+      expect(aprobado.detalle).not.toHaveProperty("soporteApagado");
+      expect(describirEvento({ accion: "indicador_aprobado", entidad: "indicador", entidadId: indicadorId, detalle: aprobado.detalle })).toMatch(
+        /\(versión 1\)\. El inicio de medición pasó de enero de 2026 a noviembre de 2026\.$/,
+      );
     }));
 
   it("el periodo en curso es el de la aprobación, no el del envío", () =>
@@ -410,6 +423,10 @@ describe("la ficha automática en el servidor", () => {
       const { indicadorId, versionId } = await aprobada(tx, b, automatica(b, "etapas", "entidad", { inicioMedicion: "2026-08" }));
       expect(await indicadorDe(tx, indicadorId)).toMatchObject({ estado: "activo", inicio_medicion: "2026-08" });
       expect((await versionDe(tx, versionId)).rige_desde).toBe("2026-08");
+      // Sin datos de operación movidos, la bitácora no inventa ninguno.
+      const [aprobado] = await aprobacionEnBitacora(tx, indicadorId);
+      expect(aprobado.detalle).not.toHaveProperty("inicioMedicion");
+      expect(aprobado.detalle).not.toHaveProperty("soporteApagado");
       const mediciones = await tx`SELECT periodo, historica FROM mediciones WHERE indicador_id = ${indicadorId} ORDER BY desde`;
       expect(mediciones).toEqual([
         { periodo: "2026-08", historica: true },
@@ -519,6 +536,26 @@ describe("la ficha automática en el servidor", () => {
       const [bitacora] = await tx`SELECT usuario_id, detalle FROM auditoria
         WHERE accion = 'indicador_medidores_quitados' AND entidad = 'indicador' AND entidad_id = ${indicadorId}`;
       expect({ usuario: Number(bitacora.usuario_id), detalle: bitacora.detalle }).toEqual({ usuario: b.admin.usuarioId, detalle: { codigo, cuantos: 1 } });
+      // Sin soporte que apagar, el cambio menor no dice nada de él.
+      const [menor] = await tx`SELECT detalle FROM auditoria WHERE accion = 'indicador_cambio_menor' AND entidad = 'indicador' AND entidad_id = ${indicadorId}`;
+      expect(menor.detalle).not.toHaveProperty("soporteApagado");
+
+      // Un soporte obligatorio que quedara de antes de la 14B: el siguiente cambio menor lo apaga y lo dice.
+      await tx`UPDATE indicadores SET soporte_obligatorio = true WHERE id = ${indicadorId}`;
+      const otro = await abrirCambio(b.admin, indicadorId, { sql: tx, ahora: AHORA });
+      const deOtro = await fichaParaEditar(b.admin, codigo, { sql: tx });
+      await guardarBorrador(b.admin, otro.versionId, EsquemaFicha.parse({ ...deOtro!.valores, nombre: "Externos verificados al día", motivoCambio: "Otro nombre." }), {
+        sql: tx,
+        ahora: AHORA,
+      });
+      await enviarAAprobacion(b.admin, { versionId: otro.versionId, credenciales: CLAVE }, firmar(tx));
+      expect((await indicadorDe(tx, indicadorId)).soporte_obligatorio).toBe(false);
+      const [ultimo] = await tx`SELECT detalle FROM auditoria WHERE accion = 'indicador_cambio_menor' AND entidad = 'indicador' AND entidad_id = ${indicadorId}
+        ORDER BY id DESC LIMIT 1`;
+      expect(ultimo.detalle).toMatchObject({ soporteApagado: true, medicionesRecalculadas: 0 });
+      expect(describirEvento({ accion: "indicador_cambio_menor", entidad: "indicador", entidadId: indicadorId, detalle: ultimo.detalle })).toBe(
+        `Publicó un cambio menor en la ficha de ${codigo} (versión 3): Otro nombre. Se apagó el soporte obligatorio.`,
+      );
     }));
 
   it("«Crear a partir de este» sobre un automático nace manual", () =>
@@ -537,9 +574,10 @@ describe("la ficha automática en el servidor", () => {
       const versionId = Number(copia.version_id);
       expect(await versionDe(tx, versionId)).toMatchObject({ origen_dato: "manual", calculo: null, calculo_alcance: null, estado: "borrador" });
       const variables = await variablesDe(tx, versionId);
-      expect(variables.map((v) => [v.letra, v.nombre, v.origen])).toEqual([
-        ["A", "Acuses confirmados", "propia"],
-        ["B", "Acuses confirmados y pendientes", "propia"],
+      // Sin la fuente del automático («La calcula el sistema»), que en la copia sería falsa.
+      expect(variables.map((v) => [v.letra, v.nombre, v.origen, v.fuente])).toEqual([
+        ["A", "Acuses confirmados", "propia", null],
+        ["B", "Acuses confirmados y pendientes", "propia", null],
       ]);
       expect(await mideDe(tx, Number(copia.id))).toEqual([]);
       const [analiza] = await tx`SELECT count(*)::int AS n FROM indicador_designados WHERE indicador_id = ${copia.id} AND funcion = 'analiza'`;
@@ -573,13 +611,51 @@ describe("la ficha automática en el servidor", () => {
         cambiarOperacion(b.admin, { ...operacion, indicadorId: estado.indicadorId, inicioMedicion: "2026-10" }, { sql: tx, ahora: AHORA }),
         "Este cálculo no se llena hacia atrás: su inicio de medición no puede adelantarse",
       );
-      // Hacia adelante, con las reglas de siempre.
+      // Hacia adelante, con las reglas de siempre; y de vuelta hasta el periodo en que rige, no antes.
       await cambiarOperacion(b.admin, { ...operacion, indicadorId: estado.indicadorId, inicioMedicion: "2026-12" }, { sql: tx, ahora: AHORA });
       expect((await indicadorDe(tx, estado.indicadorId)).inicio_medicion).toBe("2026-12");
+      await cambiarOperacion(b.admin, { ...operacion, indicadorId: estado.indicadorId, inicioMedicion: "2026-11" }, { sql: tx, ahora: AHORA });
+      expect((await indicadorDe(tx, estado.indicadorId)).inicio_medicion).toBe("2026-11");
+      await rechaza(
+        cambiarOperacion(b.admin, { ...operacion, indicadorId: estado.indicadorId, inicioMedicion: "2026-10" }, { sql: tx, ahora: AHORA }),
+        "Este cálculo no se llena hacia atrás: su inicio de medición no puede adelantarse",
+      );
 
       const flujo = await aprobada(tx, b, automatica(b, "etapas", "entidad", { inicioMedicion: "2026-08" }));
       await cambiarOperacion(b.admin, { ...operacion, indicadorId: flujo.indicadorId, inicioMedicion: "2026-07" }, { sql: tx, ahora: AHORA });
       expect((await indicadorDe(tx, flujo.indicadorId)).inicio_medicion).toBe("2026-07");
+    }));
+
+  it("decide la versión que rige el inicio nuevo, no la vigente", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      await liberarCalculo(tx, "acuses", "entidad");
+      await liberarCalculo(tx, "dentro_plazo", "entidad");
+      const operacion = { plazoReporteDias: 10, soporteObligatorio: false, nivelAcceso: "general" as const };
+      const motivo = { motivoCambio: "Cambia de dónde sale el dato" };
+
+      // Manual desde enero y automática (no se llena hacia atrás) desde noviembre: diciembre de 2025 lo rige la manual.
+      const deManual = await aprobada(tx, b, manual(b));
+      const aAcuses = await abrirCambio(b.admin, deManual.indicadorId, { sql: tx, ahora: AHORA });
+      await guardarBorrador(b.admin, aAcuses.versionId, automatica(b, "acuses", "entidad", { codigo: deManual.codigo, ...motivo }), { sql: tx, ahora: AHORA });
+      await enviarAAprobacion(b.admin, { versionId: aAcuses.versionId, credenciales: CLAVE }, firmar(tx));
+      await aprobarFichas(b.gerente, { versionIds: [aAcuses.versionId], credenciales: CLAVE }, firmar(tx));
+      expect(await indicadorDe(tx, deManual.indicadorId)).toMatchObject({ calculo: "acuses", inicio_medicion: "2026-01" });
+      await cambiarOperacion(b.admin, { ...operacion, indicadorId: deManual.indicadorId, inicioMedicion: "2025-12" }, { sql: tx, ahora: AHORA });
+      expect((await indicadorDe(tx, deManual.indicadorId)).inicio_medicion).toBe("2025-12");
+
+      // Automática desde noviembre y manual desde diciembre: la vigente es manual, pero junio lo regiría la automática.
+      const diciembre = { sql: tx, ahora: new Date("2026-12-03T15:00:00Z"), verificar: firmaDePrueba };
+      const deEstado = await aprobada(tx, b, automatica(b, "dentro_plazo", "entidad"));
+      const aManual = await abrirCambio(b.admin, deEstado.indicadorId, { sql: tx, ahora: diciembre.ahora });
+      await guardarBorrador(b.admin, aManual.versionId, manual(b, { codigo: deEstado.codigo, ...motivo }), { sql: tx, ahora: diciembre.ahora });
+      await enviarAAprobacion(b.admin, { versionId: aManual.versionId, rigeDesde: "2026-12", credenciales: CLAVE }, diciembre);
+      await aprobarFichas(b.gerente, { versionIds: [aManual.versionId], credenciales: CLAVE }, diciembre);
+      expect(await indicadorDe(tx, deEstado.indicadorId)).toMatchObject({ calculo: null, inicio_medicion: "2026-11" });
+      await rechaza(
+        cambiarOperacion(b.admin, { ...operacion, indicadorId: deEstado.indicadorId, inicioMedicion: "2026-06" }, diciembre),
+        "Este cálculo no se llena hacia atrás: su inicio de medición no puede adelantarse",
+      );
     }));
 
   it("al pasar a automático se apaga el soporte obligatorio: la medición que solo lo esperaba queda reportada", () =>
@@ -618,6 +694,13 @@ describe("la ficha automática en el servidor", () => {
       const [recalculo] = await tx`SELECT usuario_id, detalle FROM medicion_eventos WHERE medicion_id = ${medicionId} AND tipo = 'recalculo'
         ORDER BY id DESC LIMIT 1`;
       expect(recalculo).toMatchObject({ usuario_id: b.gerente.usuarioId, detalle: { causa: "soporte_obligatorio", despues: { estado: "reportada" } } });
+      // La aprobación apagó un dato de operación: la bitácora lo dice (el inicio no se movió: «etapas» se llena hacia atrás).
+      const [aprobado] = await aprobacionEnBitacora(tx, creado.indicadorId);
+      expect(aprobado.detalle).toMatchObject({ soporteApagado: true, medicionesRecalculadas: 1 });
+      expect(aprobado.detalle).not.toHaveProperty("inicioMedicion");
+      expect(describirEvento({ accion: "indicador_aprobado", entidad: "indicador", entidadId: 1, detalle: aprobado.detalle })).toBe(
+        `Aprobó la ficha de ${creado.codigo} (versión 2). Se apagó el soporte obligatorio (1 medición recalculada).`,
+      );
     }));
 
   it("el indicador de prueba con cálculo nace automático, con las variables del registro", () =>

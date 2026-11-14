@@ -43,7 +43,7 @@ import { ErrorPermiso, puede, type SujetoPermiso } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { contenidoDeVersion } from "./fichas";
 import { asegurarMediciones, quitarMedicionesDeOtraPeriodicidad } from "./mediciones";
-import { alPublicarVersion, esCalculoRepetido, yaHayUnaActiva } from "./publicacion";
+import { alPublicarVersion, esCalculoRepetido, yaHayUnaActiva, type Publicado } from "./publicacion";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -307,6 +307,13 @@ async function exigirMetasDentroDeBien(sql: Cliente, versionId: number, rigeDesd
 // La ficha automática (anexo 14B, §5.3)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Lo que la publicación cambió en los datos de operación (regla 5 de AGENTS.md: la aprobación no los cambia sin rastro), para
+ * el detalle de `indicador_aprobado` o `indicador_cambio_menor`: nada si no apagó el soporte obligatorio.
+ */
+const rastroDePublicacion = (p: Publicado | null) =>
+  p?.soporteApagado ? { soporteApagado: true, medicionesRecalculadas: p.medicionesRecalculadas } : {};
+
 const SOLO_EN_CURSO = "Un cálculo que no se llena hacia atrás rige desde el periodo en curso";
 
 /** El cálculo de una versión automática (columnas `origen_dato`, `calculo` y `calculo_alcance`); `null` si es manual. */
@@ -454,8 +461,9 @@ export async function enviarAAprobacion(
       ahora,
     });
     // Un cambio menor queda publicado aquí, sin aprobador: quien lo envía es quien lo elabora.
+    let publicado: Publicado | null = null;
     if (menor) {
-      await alPublicarVersion(tx, {
+      publicado = await alPublicarVersion(tx, {
         indicadorId: e.indicadorId,
         versionId: d.versionId,
         elaboradaPor: sesion.usuarioId,
@@ -493,6 +501,7 @@ export async function enviarAAprobacion(
         tipoCambio: e.tipo,
         rigeDesde: e.rigeDesde,
         motivo: e.motivo,
+        ...rastroDePublicacion(publicado),
       },
     });
     return { codigo: e.codigo, menor };
@@ -634,7 +643,12 @@ export async function aprobarFichas(
     const fichas = await validarAprobacion(tx, sesion, ids, ahora);
     for (const f of fichas) {
       // Antes de aprobar la versión: después, el inicio de medición ya rige sus periodos.
-      if (f.inicioEnCurso !== null) await tx`UPDATE indicadores SET inicio_medicion = ${f.inicioEnCurso} WHERE id = ${f.indicadorId}`;
+      let inicioMovido: { antes: string | null; despues: string } | null = null;
+      if (f.inicioEnCurso !== null) {
+        const [antes] = await tx`SELECT inicio_medicion FROM indicadores WHERE id = ${f.indicadorId}`;
+        await tx`UPDATE indicadores SET inicio_medicion = ${f.inicioEnCurso} WHERE id = ${f.indicadorId}`;
+        if (antes.inicio_medicion !== f.inicioEnCurso) inicioMovido = { antes: (antes.inicio_medicion as string | null) ?? null, despues: f.inicioEnCurso };
+      }
       await tx`UPDATE indicador_versiones SET estado = 'aprobada', aprobada_por = ${sesion.usuarioId}, aprobada_en = ${ahora},
           rige_desde = ${f.rigeDesde}, actualizado_en = ${ahora}
         WHERE id = ${f.versionId}`;
@@ -651,7 +665,7 @@ export async function aprobarFichas(
         ahora,
       });
       // Antes de quitar mediciones y abrir periodos: el indicador ya sabe de dónde sale su dato.
-      await alPublicarVersion(tx, {
+      const publicado = await alPublicarVersion(tx, {
         indicadorId: f.indicadorId,
         versionId: f.versionId,
         elaboradaPor: f.elaboradaPor,
@@ -711,6 +725,8 @@ export async function aprobarFichas(
           tipoCambio: f.tipo,
           rigeDesde: f.rigeDesde,
           ...(f.tipo === "mayor" ? { medicionesQuitadas } : {}),
+          ...(inicioMovido ? { inicioMedicion: inicioMovido } : {}),
+          ...rastroDePublicacion(publicado),
         },
       });
     }

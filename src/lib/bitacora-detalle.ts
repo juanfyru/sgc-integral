@@ -443,6 +443,34 @@ function hallazgosDeLaVerificacion(d: Record<string, unknown>): string {
   return partes.length > 0 ? `; ${partes.join(" y ")}` : "";
 }
 
+/** «enero de 2026» o «el primer trimestre de 2026»: los meses y los años van sin artículo. */
+function periodoEnFrase(clave: string): string {
+  const etiqueta = periodoDe(clave, zonaHoraria())?.etiqueta ?? clave;
+  return /^\d{4}(-\d{2})?$/.test(clave) ? etiqueta : `el ${etiqueta}`;
+}
+
+/**
+ * Lo que la publicación de una ficha cambió en sus datos de operación (anexo 14B, §5.3): el inicio de medición que fijó y
+ * el soporte obligatorio que apagó. Vacío si no cambió nada; si no, frases completas tras un punto.
+ */
+function operacionAlPublicar(d: Record<string, unknown>): string {
+  const inicio = objeto(d.inicioMedicion);
+  const antes = texto(inicio?.antes);
+  const despues = texto(inicio?.despues);
+  const de = (x: string) => (x.startsWith("el ") ? `del ${x.slice(3)}` : `de ${x}`);
+  const a = (x: string) => (x.startsWith("el ") ? `al ${x.slice(3)}` : `a ${x}`);
+  const recalculadas = numero(d.medicionesRecalculadas) ?? 0;
+  const frases = [
+    despues
+      ? `El inicio de medición pasó ${antes ? `${de(periodoEnFrase(antes))} ` : ""}${a(periodoEnFrase(despues))}.`
+      : null,
+    d.soporteApagado === true
+      ? `Se apagó el soporte obligatorio${recalculadas > 0 ? ` (${cuenta(recalculadas, "medición recalculada", "mediciones recalculadas")})` : ""}.`
+      : null,
+  ].filter((f): f is string => f !== null);
+  return frases.length > 0 ? `. ${frases.join(" ")}` : "";
+}
+
 /** Acciones de mapa dinámicas: <verbo>_<singular>. */
 const ACCION_DE_MAPA = /^(reordenar|activar|desactivar|borrar|crear|editar)_(.+)$/;
 const VERBOS_DE_MAPA: Record<string, string> = {
@@ -768,10 +796,14 @@ export function describirEvento(e: EventoAuditoria): string {
       const tipo = d.tipoCambio === "inicial" ? "ficha nueva" : d.tipoCambio === "mayor" ? `cambio mayor${rige}` : null;
       return `Envió a aprobación la ficha de ${cod ?? "un indicador"}${entreParentesis([numero(d.numero) === null ? null : `versión ${numero(d.numero)}`, tipo])}`;
     }
-    case "indicador_cambio_menor":
-      return `Publicó un cambio menor en la ficha de ${cod ?? "un indicador"}${numero(d.numero) === null ? "" : ` (versión ${numero(d.numero)})`}${conMotivo(d.motivo)}`;
+    case "indicador_cambio_menor": {
+      const frase = `Publicó un cambio menor en la ficha de ${cod ?? "un indicador"}${numero(d.numero) === null ? "" : ` (versión ${numero(d.numero)})`}${conMotivo(d.motivo)}`;
+      const operacion = operacionAlPublicar(d);
+      // Un motivo que ya termina en punto no lleva otro.
+      return frase.endsWith(".") && operacion ? `${frase}${operacion.slice(1)}` : `${frase}${operacion}`;
+    }
     case "indicador_aprobado":
-      return `Aprobó la ficha de ${cod ?? "un indicador"}${numero(d.numero) === null ? "" : ` (versión ${numero(d.numero)})`}`;
+      return `Aprobó la ficha de ${cod ?? "un indicador"}${numero(d.numero) === null ? "" : ` (versión ${numero(d.numero)})`}${operacionAlPublicar(d)}`;
     case "indicador_devuelto":
       return `Devolvió la ficha de ${cod ?? "un indicador"}${numero(d.numero) === null ? "" : ` (versión ${numero(d.numero)})`}${conMotivo(d.nota)}`;
     case "indicador_borrador_descartado":
