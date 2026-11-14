@@ -9,10 +9,10 @@ export const dynamic = "force-dynamic";
 const permitirArchivo = crearLimitador({ limite: 60, ventanaMs: 60_000 });
 
 /**
- * Entrega el soporte de una medición a quien ve los soportes del indicador (spec 14 §6.4): Admin SGC, Gerencia, Control
- * Interno, el líder del proceso y los designados. Para los demás, aunque vean el indicador, y si el archivo no es un soporte
- * de una medición de ese indicador, 404. Siempre como descarga (un `.xlsx` no se interpreta en el navegador), con el MIME
- * guardado, `nosniff` y `no-store`. El último segmento es cosmético.
+ * Entrega el soporte de una medición o de una constancia de envío al ente (anexo 14B, §8) a quien ve los soportes del
+ * indicador (spec 14 §6.4): Admin SGC, Gerencia, Control Interno, el líder del proceso y los designados. Para los demás,
+ * aunque vean el indicador, y si el archivo no es un soporte de ese indicador, 404. Siempre como descarga (un `.xlsx` no se
+ * interpreta en el navegador), con el MIME guardado, `nosniff` y `no-store`. El último segmento es cosmético.
  */
 export async function GET(
   peticion: NextRequest,

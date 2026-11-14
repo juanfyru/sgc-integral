@@ -31,6 +31,8 @@ export type FiltroDeLista = {
   tipoId?: number;
   semaforo?: Semaforo | "sin-dato";
   reporte?: ReporteDeLista;
+  /** Con alguna constancia de envío al ente pendiente, vencida o no (anexo 14B, §8). */
+  envio?: "pendiente";
   participo?: boolean;
   texto?: string;
   retirados?: boolean;
@@ -49,8 +51,8 @@ const entre = <T extends string>(valores: readonly T[], v: string | string[] | u
 /**
  * Los filtros de la lista desde la consulta de la página (spec §12.2): `proceso`, `subproceso`, `clasificacion` y `tipo`
  * (ids), `semaforo` (`bien`, `atencion`, `critico`, `sin-dato`), `reporte` (`por-reportar`, `falta-analisis`, `vencida`,
- * `requiere-accion`), `participo=1`, `texto` (o `q`, hasta 100 caracteres) y `retirados=1`. Son los nombres de los enlaces
- * de «Mis tareas» y de los avisos (Tarea 13). Lo que no se entiende se ignora.
+ * `requiere-accion`), `envio=pendiente` (anexo 14B, §8), `participo=1`, `texto` (o `q`, hasta 100 caracteres) y
+ * `retirados=1`. Son los nombres de los enlaces de «Mis tareas» y de los avisos (Tarea 13). Lo que no se entiende se ignora.
  */
 export function filtroDeConsulta(q: Consulta): FiltroDeLista {
   const f: FiltroDeLista = {};
@@ -60,6 +62,7 @@ export function filtroDeConsulta(q: Consulta): FiltroDeLista {
   if (semaforo) f.semaforo = semaforo;
   const reporte = entre(REPORTES_DE_LISTA, q.reporte);
   if (reporte) f.reporte = reporte;
+  if (primero(q.envio) === "pendiente") f.envio = "pendiente";
   if (marcado(q.participo)) f.participo = true;
   const texto = (primero(q.texto) ?? primero(q.q))?.trim().slice(0, 100);
   if (texto) f.texto = texto;
@@ -80,6 +83,7 @@ export function consultaDeFiltro(f: FiltroDeLista): string {
     ["tipo", f.tipoId],
     ["semaforo", f.semaforo],
     ["reporte", f.reporte],
+    ["envio", f.envio],
     ["participo", f.participo ? "1" : undefined],
     ["texto", f.texto],
     ["retirados", f.retirados ? "1" : undefined],
@@ -121,6 +125,11 @@ export type FilaDeLista = {
   mejora: boolean | null;
   /** «Reportado», «Por reportar», «Falta el análisis», «Falta un dato», «Vencido hace 6 días». */
   reporte: { texto: string; vencida: boolean };
+  /**
+   * La constancia de envío al ente pendiente más antigua de un indicador activo (anexo 14B, §8): `vencido` si su fecha límite
+   * ya pasó; `null` sin pendientes. Un retirado ya no admite reportes: no se marca.
+   */
+  envio: "pendiente" | "vencido" | null;
 };
 
 /** `noAplica` va aparte de `sinDato`: «No aplica» no es «Sin dato» (spec §8.5; Tarea 19, D-11). */
@@ -173,7 +182,8 @@ function textoDeReporte(
  * de estados. Antes de leer las mediciones abre los periodos terminados de los indicadores activos que lee (`asegurarMediciones`). El filtro de reporte mira toda medición
  * pendiente, no solo la del último periodo: es el de los enlaces de «Mis tareas». La barra (`resumen`) cuenta las filas con
  * ficha aprobada que dejan los demás filtros, antes del de semáforo. Las mediciones de otra periodicidad no cuentan como
- * periodo vigente. Cinco lecturas además de abrir periodos, sin importar cuántos indicadores haya.
+ * periodo vigente. La marca y el filtro de envío al ente (anexo 14B, §8) salen de la lectura de los indicadores. Cinco
+ * lecturas además de abrir periodos, sin importar cuántos indicadores haya.
  */
 export async function listarIndicadores(
   sesion: SujetoVisibilidad,
@@ -190,7 +200,7 @@ export async function listarIndicadores(
     SELECT i.id, i.codigo, i.estado, i.nivel_acceso, p.nombre AS proceso,
       va.id AS vigente_id, va.numero AS numero_vigente, va.nombre AS nombre_vigente, va.periodicidad AS periodicidad_vigente,
       va.subproceso_id, va.subproceso_nombre, vu.numero AS numero_ultima, vu.estado AS estado_ultima, vu.nombre AS nombre_ultima,
-      vu.periodicidad AS periodicidad_ultima
+      vu.periodicidad AS periodicidad_ultima, env.vence_en AS envio_vence
     FROM indicadores i
     JOIN procesos p ON p.id = i.proceso_id
     LEFT JOIN LATERAL (
@@ -200,7 +210,11 @@ export async function listarIndicadores(
     LEFT JOIN LATERAL (
       SELECT numero, estado, nombre, periodicidad FROM indicador_versiones WHERE indicador_id = i.id ORDER BY numero DESC LIMIT 1
     ) vu ON ${administra}
+    LEFT JOIN LATERAL (
+      SELECT vence_en FROM reportes_externos WHERE indicador_id = i.id AND estado = 'pendiente' ORDER BY hasta, id LIMIT 1
+    ) env ON i.estado = 'activo'
     WHERE ${filtroIndicadores(sql, sesion)} AND i.estado IN ${sql(estados)}
+      ${filtro.envio ? sql`AND env.vence_en IS NOT NULL` : sql``}
       ${filtro.procesoId ? sql`AND i.proceso_id = ${filtro.procesoId}` : sql``}
       ${filtro.subprocesoId ? sql`AND va.subproceso_id = ${filtro.subprocesoId}` : sql``}
       ${filtro.clasificacionId ? sql`AND va.clasificacion_id = ${filtro.clasificacionId}` : sql``}
@@ -312,6 +326,7 @@ export async function listarIndicadores(
         .reverse()
         .map(({ m }) => (conResultado(m) ? aNumero(deTexto(m.resultado_exacto as string)) : null)),
       reporte: textoDeReporte(pend, ultima, ahora, zona),
+      envio: f.envio_vence === null || f.envio_vence === undefined ? null : new Date(f.envio_vence as string).getTime() < ahora.getTime() ? "vencido" : "pendiente",
     };
     const requiereAccion = ultima?.m.requiere_accion === true;
     return { fila, conFicha, pend, requiereAccion };

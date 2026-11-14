@@ -308,7 +308,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   - **Las rutas que reciben una subida van fuera del `matcher` de `src/proxy.ts`**
     (`admin/api/archivos`, `api/tramites/[id]/archivos`, `api/socializaciones/[id]/archivos`,
     `api/verificaciones/[id]/items/[itemId]/archivos`, `api/externos/[versionId]/archivos`,
-    `api/normas/[id]/archivos`, `api/hallazgos/[id]/archivos`, `api/mediciones/[id]/archivos` y
+    `api/normas/[id]/archivos`, `api/hallazgos/[id]/archivos`, `api/mediciones/[id]/archivos`,
+    `api/reportes-externos/[id]/archivos` (el soporte de una constancia de envío al ente) y
     `api/importaciones-indicadores/[id]/archivo` (la plantilla de un lote, solo `.xlsx` y una vez), cada una con su caso en
     `tests/proxy-matcher.test.ts`), usan `recibirArchivo` y comparan
     `content-length`: el búfer del proxy truncaba las subidas de más de 10 MB y respondía
@@ -349,13 +350,15 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   `verificacion_item`, `norma`, `revision_anual`, `hallazgo`, `medicion`, `reporte_externo` e
   `importacion_indicadores`, con `contexto_id`; los nueve del `CHECK` `archivos_contexto_valido` de
   `src/db/esquema.ts`, y `CONTEXTOS_EVIDENCIA` de `src/lib/subida.ts` son los ocho que reciben
-  evidencias, todos menos `version`; `reporte_externo` es de la 14B y aún no tiene ruta): el control
+  evidencias, todos menos `version`): el control
   de acceso de un archivo es el de su
   dueño, y las consultas heredadas siguen filtrando por `version_id`. El PDF de una norma se
   lee como la norma; la foto de la corrección de un hallazgo, como el hallazgo (`filtroPuntos`);
   el soporte de una medición (PDF, imagen o `.xlsx` detectado como hoja de cálculo, nunca `.xls`) solo lo
   ve quien ve soportes (`puedeVerSoportes`, no quien solo ve el indicador: 404) y siempre se sirve como
-  descarga (`src/db/consultas/indicadores/soportes.ts`);
+  descarga (`src/db/consultas/indicadores/soportes.ts`); el de una constancia de envío al ente
+  (`reporte_externo`: PDF o imagen, subido por `api/reportes-externos/[id]/archivos`) sigue la misma regla y se sirve
+  por la misma ruta de soportes del indicador (`soporteServible`), y no se quita de una constancia registrada;
   el informe de una revisión anual (rol `evidencia`, `version_id` nula, uno por año en
   `informes/revision-<año>.pdf`) solo lo descargan Admin SGC, Gerencia y Control Interno
   (`puedeVerInformeAnual`), y los demás reciben 404; la plantilla de un lote de importación de

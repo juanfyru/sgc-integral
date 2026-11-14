@@ -182,6 +182,7 @@ export function detalleDeFiltros(anio: number, f: FiltroDeLista, o: Pick<Opcione
     f.semaforo ? `Semáforo: ${ETIQUETA_SEMAFORO_DE_LISTA[f.semaforo]}` : null,
     f.reporte ? `Reporte: ${ETIQUETA_REPORTE_DE_LISTA[f.reporte]}` : null,
     f.participo ? "Donde participo" : null,
+    f.envio ? "Con un envío al ente pendiente" : null,
     f.texto ? `Texto: «${f.texto}»` : null,
     f.retirados ? "Incluye retirados" : null,
   ]

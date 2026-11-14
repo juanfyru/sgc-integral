@@ -20,8 +20,18 @@ import {
   type FichaLeida,
   type VersionVisible,
 } from "@/db/consultas/indicadores/aprobacion";
+import type { DatosDeReportes } from "@/componentes/indicadores/vistas/ReportesAlEnte";
 import { historialDeCorregidas } from "@/db/consultas/indicadores/cierre";
-import { asegurarConstancias } from "@/db/consultas/indicadores/constancias";
+import {
+  asegurarConstancias,
+  constanciasDe,
+  historialDeConstancias,
+  puedeRegistrarConstancia,
+  resultadoDelPeriodoExterno,
+  soportesDeConstancias,
+  type EnteDeLaFicha,
+  type ResultadoExterno,
+} from "@/db/consultas/indicadores/constancias";
 import { obtenerIndicador, resultadosDelAnio } from "@/db/consultas/indicadores/lectura";
 import { obtenerParametros } from "@/db/consultas/indicadores/maestros";
 import { asegurarMediciones } from "@/db/consultas/indicadores/mediciones";
@@ -32,7 +42,8 @@ import type { EstadoIndicador, Periodicidad } from "@/lib/indicadores/tipos";
 import { cuenta } from "@/lib/plural";
 import type { SesionValida } from "@/lib/sesion";
 import { fechaYHora } from "@/lib/indicadores/ficha-en-texto";
-import { fechaHoraLarga } from "@/lib/zona-horaria";
+import { fechaEnZona } from "@/lib/tramites/plazos";
+import { fechaHoraLarga, zonaHoraria } from "@/lib/zona-horaria";
 
 type Parametros = Record<string, string | string[] | undefined>;
 
@@ -181,6 +192,34 @@ export async function datosDeObservaciones(c: ContextoDeVista, sp: Parametros, r
     puedeObservar: await puedeObservar(indicador.id, sesion),
     puedeResponder: c.administra || (await puedeAnalizar(indicador.id, sesion)).puede,
   };
+}
+
+/**
+ * «Reportes al ente» (anexo 14B, §8): antes de leer se abren los periodos y las constancias que hayan terminado, como en
+ * «Resultados» (la tarea de la constancia enlaza directo aquí). Los soportes y el historial, a quien ve los soportes; el
+ * resultado del periodo de cada pendiente, que el formulario muestra antes de registrar, solo a quien puede registrar con el
+ * indicador activo.
+ */
+export async function datosDeReportes(c: ContextoDeVista, ente: EnteDeLaFicha): Promise<DatosDeReportes> {
+  const { sesion, indicador, ahora } = c;
+  const sql = obtenerSql();
+  await asegurarMediciones({ indicadorId: indicador.id, ahora });
+  await asegurarConstancias({ sql, ahora, indicadorId: indicador.id });
+  const [constancias, soportes, historial] = await Promise.all([
+    constanciasDe(sesion, indicador.id, { ahora }),
+    soportesDeConstancias(sesion, indicador.id),
+    historialDeConstancias(sesion, indicador.id),
+  ]);
+  if (!constancias) notFound();
+  let registro: DatosDeReportes["registro"] = null;
+  if (indicador.estado === "activo" && (await puedeRegistrarConstancia(indicador.id, sesion))) {
+    const resultados = new Map<number, ResultadoExterno>();
+    for (const k of constancias.filter((x) => x.estado === "pendiente")) {
+      resultados.set(k.id, await resultadoDelPeriodoExterno(sql, indicador.id, k.periodo, ahora));
+    }
+    registro = { hoy: fechaEnZona(ahora, zonaHoraria()), resultados };
+  }
+  return { codigo: indicador.codigo, ente, constancias, soportes, historial, registro };
 }
 
 /** «Ficha técnica»: lo que «Aprobar» firma, si la versión está por aprobar, y los datos de operación a quien los ve. */

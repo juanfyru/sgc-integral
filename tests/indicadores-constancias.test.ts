@@ -17,15 +17,21 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 }
 
 import { obtenerSql } from "@/db/cliente";
+import { registrarArchivo } from "@/db/consultas/admin";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { aprobarFichas, enviarAAprobacion } from "@/db/consultas/indicadores/aprobacion";
 import {
   asegurarConstancias,
+  autorizarSoporteDeConstancia,
   constanciasDe,
   corregirConstancia,
+  enteDeLaFicha,
+  historialDeConstancias,
   puedeRegistrarConstancia,
+  quitarSoporteDeConstancia,
   registrarConstancia,
   resultadoDelPeriodoExterno,
+  soportesDeConstancias,
 } from "@/db/consultas/indicadores/constancias";
 import { constanciasVencidas } from "@/db/consultas/indicadores/constancias-vencidas";
 import { abrirCambio, crearIndicador, fichaParaEditar, guardarBorrador } from "@/db/consultas/indicadores/fichas";
@@ -37,7 +43,7 @@ import * as demo from "@/db/semillas/indicadores-demo-fichas";
 import type { FichaDemo } from "@/db/semillas/indicadores-demo-fichas";
 import { responsablesDeMedir } from "@/lib/alcance";
 import { EsquemaFicha, type DatosFicha } from "@/lib/esquemas/indicadores";
-import { enteCompleto, errorDeEnte, seReportaAlEnte } from "@/lib/indicadores/constancias";
+import { avisoDeParcial, enteCompleto, errorDeEnte, seReportaAlEnte } from "@/lib/indicadores/constancias";
 import { ErrorIndicador, type Periodicidad } from "@/lib/indicadores/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -753,4 +759,230 @@ describe("tareas, vencimientos y visibilidad", () => {
       }
       expect(await tx`SELECT 1 FROM notificaciones WHERE usuario_id = ${mide.usuarioId} AND tipo = 'indicadores.envio_vencido'`).toHaveLength(1);
     }));
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tarea 11: el soporte de la constancia, la vista y su historial
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Un indicador que se reporta al ente con sus constancias de 2026 abiertas (T1 a T3) y quien mide designado. */
+async function conConstancias(tx: TransactionSql, o: OpcionesIndicadorDePrueba = {}) {
+  const proceso = await procesoNuevo(tx);
+  const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+  const ind = await conEnte(tx, proceso.id, { mide: [mide.usuarioId], ...o });
+  await asegurarConstancias({ sql: tx, ahora: AHORA, indicadorId: ind.id });
+  const [t1, t2, t3] = await Promise.all(["2026-T1", "2026-T2", "2026-T3"].map((p) => idDe(tx, ind.id, p)));
+  return { proceso, mide, ind, t1, t2, t3 };
+}
+
+/** La fila de `archivos` de un soporte como la deja `recibirArchivo` (el archivo del almacén no hace falta). */
+const archivoDeConstancia = (reporteId: number, nombre = "radicado.pdf") => ({
+  versionId: null,
+  rol: "evidencia",
+  contexto: "reporte_externo",
+  contextoId: reporteId,
+  ruta: `reportes-externos/${reporteId}/${unico()}-${nombre.toLowerCase()}`,
+  nombreOriginal: nombre,
+  extension: "pdf",
+  mime: "application/pdf",
+  tamanoBytes: 4,
+  hashSha256: "c".repeat(64),
+});
+
+const eventosDe = (tx: TransactionSql, reporteId: number) =>
+  tx`SELECT tipo, usuario_id, detalle FROM reporte_externo_eventos WHERE reporte_id = ${reporteId} ORDER BY id`;
+const soportesDeBD = async (tx: TransactionSql, reporteId: number) =>
+  (await tx`SELECT nombre_original FROM archivos WHERE contexto = 'reporte_externo' AND contexto_id = ${reporteId} ORDER BY id`).map(
+    (f) => f.nombre_original as string,
+  );
+
+describe("el soporte de una constancia", () => {
+  it("autorizarSoporteDeConstancia: 404 a quien no ve el indicador, 403 a quien lo ve y no registra, 409 con el indicador retirado", () =>
+    revertida(sql, async (tx) => {
+      const { mide, ind, t1, t2 } = await conConstancias(tx);
+      const ajeno = await usuarioDePrueba(tx, { rol: "consulta" });
+      const gerente = await usuarioDePrueba(tx, { rol: "gerencia" });
+      const admin = await sesionAdmin(tx);
+      const o = { sql: tx };
+      // Quien mide y quien administra indicadores registran: suben.
+      expect(await autorizarSoporteDeConstancia(t2, mide, o)).toEqual({ ok: true });
+      expect(await autorizarSoporteDeConstancia(t2, admin, o)).toEqual({ ok: true });
+      // Lo ven (es general) y no registran: «sin permiso».
+      expect(await autorizarSoporteDeConstancia(t2, ajeno, o)).toEqual({ ok: false, estado: 403 });
+      expect(await autorizarSoporteDeConstancia(t2, gerente, o)).toEqual({ ok: false, estado: 403 });
+      for (const id of [999_999_999, 0, -1]) expect(await autorizarSoporteDeConstancia(id, mide, o)).toEqual({ ok: false, estado: 404 });
+
+      // Restringido: quien no lo ve recibe «no encontrado», nunca «sin permiso».
+      const restringido = await conConstancias(tx, { nivelAcceso: "restringido" });
+      const liderDeOtro = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [(await procesoNuevo(tx)).id] });
+      for (const quien of [ajeno, liderDeOtro, mide]) {
+        expect(await autorizarSoporteDeConstancia(restringido.t2, quien, o)).toEqual({ ok: false, estado: 404 });
+      }
+      expect(await autorizarSoporteDeConstancia(restringido.t2, restringido.mide, o)).toEqual({ ok: true });
+
+      // Retirado (la constancia con un soporte se conserva): ya no admite reportes ni soportes.
+      await registrarArchivo(archivoDeConstancia(t1), mide.usuarioId, o);
+      await retirar(admin, { indicadorId: ind.id, motivo: "Ya no se mide" }, { sql: tx, ahora: AHORA });
+      expect(await autorizarSoporteDeConstancia(t1, mide, o)).toEqual({ ok: false, estado: 409 });
+      expect(await autorizarSoporteDeConstancia(t1, admin, o)).toEqual({ ok: false, estado: 409 });
+      await rechaza(registrarArchivo(archivoDeConstancia(t1, "otro.pdf"), mide.usuarioId, o), "El indicador está retirado: ya no admite reportes");
+      expect(await soportesDeBD(tx, t1)).toEqual(["radicado.pdf"]);
+    }));
+
+  it("registrarArchivo deja el evento «soporte» subido; a una registrada también se sube; quien ya no registra, ErrorPermiso", () =>
+    revertida(sql, async (tx) => {
+      const { mide, t3 } = await conConstancias(tx);
+      const ajeno = await usuarioDePrueba(tx, { rol: "consulta" });
+      const o = { sql: tx };
+      const { id } = await registrarArchivo(archivoDeConstancia(t3), mide.usuarioId, o);
+      expect(await eventosDe(tx, t3)).toEqual([{ tipo: "soporte", usuario_id: mide.usuarioId, detalle: { nombre: "radicado.pdf", accion: "subido" } }]);
+      const [bitacora] = await tx`SELECT detalle FROM auditoria WHERE accion = 'subir_archivo' AND entidad_id = ${id}`;
+      expect(bitacora.detalle).toEqual({ contexto: "reporte_externo", contextoId: t3, rol: "evidencia", nombre: "radicado.pdf" });
+
+      // Registrada, todavía admite el documento correcto: una corrección puede necesitarlo.
+      await registrarConstancia(mide, { reporteId: t3, fechaEnvio: "2026-11-10", radicado: "SNS-1" }, { sql: tx, ahora: AHORA });
+      await registrarArchivo(archivoDeConstancia(t3, "corregido.pdf"), mide.usuarioId, o);
+      expect((await eventosDe(tx, t3)).map((e) => [e.tipo, (e.detalle as { accion?: string }).accion ?? null])).toEqual([
+        ["soporte", "subido"],
+        ["registro", null],
+        ["soporte", "subido"],
+      ]);
+
+      // La persona se vuelve a comprobar con los candados tomados: quien no registra no deja fila ni evento.
+      await expect(registrarArchivo(archivoDeConstancia(t3, "ajeno.pdf"), ajeno.usuarioId, o)).rejects.toBeInstanceOf(ErrorPermiso);
+      await rechaza(registrarArchivo(archivoDeConstancia(999_999_999), mide.usuarioId, o), "La constancia no existe");
+      expect(await soportesDeBD(tx, t3)).toEqual(["radicado.pdf", "corregido.pdf"]);
+      expect(await eventosDe(tx, t3)).toHaveLength(3);
+    }));
+
+  it("quitarSoporteDeConstancia: de una pendiente sí, con su evento y la bitácora; de una registrada no", () =>
+    revertida(sql, async (tx) => {
+      const { mide, ind, t2, t3 } = await conConstancias(tx);
+      const o = { sql: tx };
+      const borrador = await registrarArchivo(archivoDeConstancia(t2, "borrador.pdf"), mide.usuarioId, o);
+      await registrarArchivo(archivoDeConstancia(t2), mide.usuarioId, o);
+
+      await quitarSoporteDeConstancia(mide, { archivoId: borrador.id }, { sql: tx, ahora: AHORA });
+      expect(await soportesDeBD(tx, t2)).toEqual(["radicado.pdf"]);
+      expect((await eventosDe(tx, t2)).at(-1)).toEqual({ tipo: "soporte", usuario_id: mide.usuarioId, detalle: { nombre: "borrador.pdf", accion: "quitado" } });
+      const [bitacora] = await tx`SELECT entidad, detalle FROM auditoria WHERE accion = 'constancia_soporte_quitado' AND entidad_id = ${t2}`;
+      expect(bitacora).toEqual({ entidad: "reporte_externo", detalle: { codigo: ind.codigo, periodo: "2026-T2", ente: ENTE, nombre: "borrador.pdf" } });
+      // Ya no existe: quitarlo otra vez dice eso.
+      await rechaza(quitarSoporteDeConstancia(mide, { archivoId: borrador.id }, o), "El soporte no existe");
+
+      // Registrada, su soporte no se quita.
+      await registrarConstancia(mide, { reporteId: t2, fechaEnvio: "2026-11-10", radicado: "SNS-2" }, { sql: tx, ahora: AHORA });
+      const [queda] = await tx`SELECT id FROM archivos WHERE contexto = 'reporte_externo' AND contexto_id = ${t2}`;
+      await rechaza(quitarSoporteDeConstancia(mide, { archivoId: Number(queda.id) }, o), "Un soporte de una constancia registrada no se quita");
+      expect(await soportesDeBD(tx, t2)).toEqual(["radicado.pdf"]);
+
+      // Quien no ve los soportes recibe lo mismo que si no existiera; quien los ve y no registra, «sin permiso».
+      const { id: deT3 } = await registrarArchivo(archivoDeConstancia(t3), mide.usuarioId, o);
+      await rechaza(quitarSoporteDeConstancia(await usuarioDePrueba(tx, { rol: "consulta" }), { archivoId: deT3 }, o), "El soporte no existe");
+      await expect(quitarSoporteDeConstancia(await usuarioDePrueba(tx, { rol: "gerencia" }), { archivoId: deT3 }, o)).rejects.toBeInstanceOf(ErrorPermiso);
+      // Un archivo que no es el soporte de una constancia (el de una medición con el mismo número de dueño) tampoco.
+      const [m] = await tx`INSERT INTO archivos (version_id, contexto, contexto_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
+        VALUES (NULL, 'medicion', ${t3}, 'evidencia', ${`mediciones/${t3}/${unico()}.pdf`}, 'medicion.pdf', 'pdf', 'application/pdf', 4, ${"e".repeat(64)})
+        RETURNING id`;
+      await rechaza(quitarSoporteDeConstancia(mide, { archivoId: Number(m.id) }, o), "El soporte no existe");
+      await rechaza(quitarSoporteDeConstancia(mide, { archivoId: 999_999_999 }, o), "El soporte no existe");
+      expect(await soportesDeBD(tx, t3)).toEqual(["radicado.pdf"]);
+
+      // Retirado: ya no admite reportes, ni quitar soportes.
+      await retirar(await sesionAdmin(tx), { indicadorId: ind.id, motivo: "Ya no se mide" }, { sql: tx, ahora: AHORA });
+      await rechaza(quitarSoporteDeConstancia(mide, { archivoId: deT3 }, o), "El indicador está retirado: ya no admite reportes");
+      expect(await soportesDeBD(tx, t3)).toEqual(["radicado.pdf"]);
+    }));
+
+  it("soportesDeConstancias e historialDeConstancias: null a un rol Consulta sin designación; a quien ve soportes, por constancia", () =>
+    revertida(sql, async (tx) => {
+      const { mide, ind, t2, t3 } = await conConstancias(tx);
+      const o = { sql: tx };
+      await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: ind.id });
+      for (const p of ["2026-07", "2026-08", "2026-09"]) await reportarCon(tx, mide, await medicionDe(tx, ind.id, p), { A: "9", B: "10" });
+      const quitado = await registrarArchivo(archivoDeConstancia(t3, "borrador.pdf"), mide.usuarioId, o);
+      await quitarSoporteDeConstancia(mide, { archivoId: quitado.id }, o);
+      const { id: radicado } = await registrarArchivo(archivoDeConstancia(t3), mide.usuarioId, o);
+      await registrarConstancia(mide, { reporteId: t3, fechaEnvio: "2026-11-10", radicado: "SNS-2026-0042", nota: "Por la plataforma" }, { sql: tx, ahora: AHORA });
+      await corregirConstancia(
+        mide,
+        { reporteId: t3, fechaEnvio: "2026-11-09", radicado: "SNS-2026-0024", nota: "Por la plataforma", justificacion: "El radicado tenía las cifras invertidas" },
+        { sql: tx, ahora: AHORA },
+      );
+
+      const consulta = await usuarioDePrueba(tx, { rol: "consulta" });
+      expect(await constanciasDe(consulta, ind.id, { sql: tx, ahora: AHORA })).toHaveLength(3);
+      expect(await soportesDeConstancias(consulta, ind.id, o)).toBeNull();
+      expect(await historialDeConstancias(consulta, ind.id, o)).toBeNull();
+
+      const soportes = await soportesDeConstancias(mide, ind.id, o);
+      expect(soportes?.get(t3)).toEqual([{ id: radicado, nombre: "radicado.pdf", mime: "application/pdf", tamano: 4 }]);
+      expect(soportes?.get(t2)).toBeUndefined();
+
+      const historial = await historialDeConstancias(mide, ind.id, o);
+      expect(historial?.get(t2)).toBeUndefined();
+      expect(historial?.get(t3)).toEqual([
+        { tipo: "soporte", quien: mide.nombre, cuando: expect.any(Date), texto: "Subió el soporte «borrador.pdf»" },
+        { tipo: "soporte", quien: mide.nombre, cuando: expect.any(Date), texto: "Quitó el soporte «borrador.pdf»" },
+        { tipo: "soporte", quien: mide.nombre, cuando: expect.any(Date), texto: "Subió el soporte «radicado.pdf»" },
+        {
+          tipo: "registro",
+          quien: mide.nombre,
+          cuando: AHORA,
+          texto: "Registró el envío del 10 de noviembre de 2026 con el radicado SNS-2026-0042: 90 % (parcial). Nota: Por la plataforma",
+        },
+        {
+          tipo: "correccion",
+          quien: mide.nombre,
+          cuando: AHORA,
+          texto:
+            "Corrigió el envío (radicado SNS-2026-0042 → SNS-2026-0024; fecha de envío 10 de noviembre de 2026 → 9 de noviembre de 2026). Por qué: El radicado tenía las cifras invertidas",
+        },
+      ]);
+    }));
+
+  it("enteDeLaFicha: el ente de la ficha vigente, si se reporta, si está incompleto y si el indicador ya tiene constancias", () =>
+    revertida(sql, async (tx) => {
+      const proceso = await procesoNuevo(tx);
+      const ind = await conEnte(tx, proceso.id);
+      expect(await enteDeLaFicha(ind.id, { sql: tx })).toEqual({ ente: ENTE, seReporta: true, incompleto: false, conConstancias: false });
+      await asegurarConstancias({ sql: tx, ahora: AHORA, indicadorId: ind.id });
+      expect(await enteDeLaFicha(ind.id, { sql: tx })).toEqual({ ente: ENTE, seReporta: true, incompleto: false, conConstancias: true });
+
+      // Quitar el ente conserva lo que tiene soporte: la vista sigue por sus constancias.
+      const admin = await sesionAdmin(tx);
+      await soporte(tx, await idDe(tx, ind.id, "2026-T1"));
+      await publicarCambio(tx, { indicadorId: ind.id, usuarioId: admin.usuarioId, ahora: AHORA, ente: null });
+      expect(await enteDeLaFicha(ind.id, { sql: tx })).toEqual({ ente: null, seReporta: false, incompleto: false, conConstancias: true });
+
+      // Sin ente ni constancias.
+      expect(await enteDeLaFicha((await indicadorDePrueba(tx, { procesoId: proceso.id })).id, { sql: tx })).toEqual({
+        ente: null,
+        seReporta: false,
+        incompleto: false,
+        conConstancias: false,
+      });
+
+      // Aprobada antes de la 14B con el ente sin plazo: incompleta, no se reporta.
+      const viejo = await indicadorDePrueba(tx, { procesoId: proceso.id, estado: "borrador", ente: SUPERSALUD });
+      await tx`UPDATE indicador_versiones SET plazo_externo_dias = NULL WHERE id = ${viejo.versionId}`;
+      await tx`UPDATE indicador_versiones SET estado = 'aprobada', elaborada_por = creado_por, elaborada_en = ${AHORA}, huella = ${"0".repeat(64)},
+          rige_desde = '2026-01', aprobada_por = ${admin.usuarioId}, aprobada_en = ${AHORA}
+        WHERE id = ${viejo.versionId}`;
+      await tx`UPDATE indicadores SET estado = 'activo' WHERE id = ${viejo.id}`;
+      expect(await enteDeLaFicha(viejo.id, { sql: tx })).toEqual({ ente: ENTE, seReporta: false, incompleto: true, conConstancias: false });
+    }));
+
+  it("avisoDeParcial dice qué falta y qué no está cerrado, sin repetir un periodo en las dos listas", () => {
+    expect(avisoDeParcial({ faltan: [], sinCerrar: ["septiembre de 2026"] })).toBe("El resultado es parcial: no está cerrado septiembre de 2026. Puede registrarlo así.");
+    expect(avisoDeParcial({ faltan: ["marzo de 2026"], sinCerrar: ["febrero de 2026", "marzo de 2026"] })).toBe(
+      "El resultado es parcial: falta marzo de 2026; no está cerrado febrero de 2026. Puede registrarlo así.",
+    );
+    expect(avisoDeParcial({ faltan: ["abril de 2026", "mayo de 2026", "junio de 2026"], sinCerrar: ["abril de 2026", "mayo de 2026", "junio de 2026"] })).toBe(
+      "El resultado es parcial: faltan abril de 2026, mayo de 2026 y junio de 2026. Puede registrarlo así.",
+    );
+    expect(avisoDeParcial({ faltan: [], sinCerrar: ["julio de 2026", "agosto de 2026"] })).toBe(
+      "El resultado es parcial: no están cerrados julio de 2026 y agosto de 2026. Puede registrarlo así.",
+    );
+  });
 });

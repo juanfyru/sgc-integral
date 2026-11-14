@@ -34,7 +34,7 @@ import { asegurarMediciones, marcarNoAplica, reportar } from "@/db/consultas/ind
 import { observar } from "@/db/consultas/indicadores/observaciones";
 import { retirar } from "@/db/consultas/indicadores/operacion";
 import type { MetaHoja } from "@/lib/distribucion/hoja-excel";
-import { construirExcelDeIndicador, construirExcelDeResultados } from "@/lib/indicadores/excel";
+import { construirExcelDeIndicador, construirExcelDeResultados, detalleDeFiltros } from "@/lib/indicadores/excel";
 import { crearSesion } from "@/lib/sesion";
 import { indicadorDePrueba, loteImportado, versionTrimestral, type IndicadorDePrueba, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
@@ -526,4 +526,12 @@ describe("GET /indicadores/[codigo]/excel y GET /indicadores/excel", () => {
         { accion: "exporto_resultados_indicadores", entidad: "indicador", entidadId: null, detalle: { anio: 2026, filtros: { procesoId: p.id, semaforo: "critico" } } },
       ]);
     }));
+});
+
+describe("la línea de filtros del Excel de resultados", () => {
+  it("nombra el filtro de las constancias de envío al ente (anexo 14B, §8)", () => {
+    const catalogos = { procesos: [], subprocesos: [], clasificaciones: [], tipos: [] };
+    expect(detalleDeFiltros(2026, { envio: "pendiente", participo: true }, catalogos)).toBe("Año: 2026 · Donde participo · Con un envío al ente pendiente");
+    expect(detalleDeFiltros(2026, {}, catalogos)).toBe("Año: 2026");
+  });
 });

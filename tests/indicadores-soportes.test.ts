@@ -29,13 +29,15 @@ vi.mock("@/db/cliente", async (original) => {
 
 import { GET as verSoporte } from "@/app/(app)/indicadores/[codigo]/soportes/[archivoId]/[[...nombre]]/route";
 import { POST as subirSoporte } from "@/app/api/mediciones/[id]/archivos/route";
+import { POST as subirSoporteDeConstancia } from "@/app/api/reportes-externos/[id]/archivos/route";
 import { obtenerSql } from "@/db/cliente";
+import { asegurarConstancias } from "@/db/consultas/indicadores/constancias";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { registrarArchivo } from "@/db/consultas/admin";
 import { ErrorTramite } from "@/db/consultas/flujo/contrato";
 import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
-import { autorizarSoporte, quitarSoporte, soportesDe, soportesDeVarias } from "@/db/consultas/indicadores/soportes";
+import { autorizarSoporte, quitarSoporte, soportesDe, soportesDeVarias, soporteServible } from "@/db/consultas/indicadores/soportes";
 import { ErrorPermiso } from "@/lib/permisos";
 import { crearSesion } from "@/lib/sesion";
 import { ERROR_SOPORTE } from "@/lib/subida";
@@ -515,4 +517,171 @@ describe("con «soporte obligatorio»", () => {
       },
       { soporteObligatorio: true },
     ));
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// El soporte de una constancia de envío al ente (anexo 14B, §8; Tarea 11)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** El 14 de noviembre de 2026: ya terminaron los tres primeros trimestres. */
+const NOVIEMBRE = new Date("2026-11-14T15:00:00Z");
+
+/**
+ * Un mensual que se reporta trimestral a un ente con sus constancias de 2026 abiertas (la del tercer trimestre es `t3`), quien
+ * lo mide, quien solo lo ve, un gerente (ve los soportes y no registra), el Admin SGC y un almacén vacío.
+ */
+async function entornoDeConstancia(
+  fn: (e: {
+    tx: TransactionSql;
+    almacen: string;
+    ind: Awaited<ReturnType<typeof indicadorDePrueba>>;
+    t3: number;
+    mide: Awaited<ReturnType<typeof conToken>>;
+    ajeno: Awaited<ReturnType<typeof conToken>>;
+    gerente: Awaited<ReturnType<typeof conToken>>;
+    admin: Awaited<ReturnType<typeof conToken>>;
+  }) => Promise<void>,
+  o: OpcionesIndicadorDePrueba = {},
+) {
+  const almacenPrevio = process.env.ALMACEN_RUTA;
+  const almacen = mkdtempSync(path.join(tmpdir(), "sgc-constancias-"));
+  process.env.ALMACEN_RUTA = almacen;
+  try {
+    await revertida(sql, async (tx) => {
+      enCurso.sql = tx;
+      try {
+        const mide = await conToken(tx, "consulta");
+        const ajeno = await conToken(tx, "consulta");
+        const gerente = await conToken(tx, "gerencia");
+        const admin = await conToken(tx, "admin_sgc");
+        const ind = await indicadorDePrueba(tx, {
+          periodicidad: "mensual",
+          inicioMedicion: "2026-01",
+          aprobadaEn: new Date("2026-01-10T15:00:00Z"),
+          ente: { nombre: "Superintendencia Nacional de Salud", periodicidad: "trimestral", plazoDias: 15 },
+          mide: [mide.sesion.usuarioId],
+          ...o,
+        });
+        await asegurarConstancias({ sql: tx, ahora: NOVIEMBRE, indicadorId: ind.id });
+        const [r] = await tx`SELECT id FROM reportes_externos WHERE indicador_id = ${ind.id} AND periodo = '2026-T3'`;
+        await fn({ tx, almacen, ind, t3: Number(r.id), mide, ajeno, gerente, admin });
+      } finally {
+        enCurso.sql = null;
+      }
+    });
+  } finally {
+    if (almacenPrevio === undefined) delete process.env.ALMACEN_RUTA;
+    else process.env.ALMACEN_RUTA = almacenPrevio;
+    rmSync(almacen, { recursive: true, force: true });
+  }
+}
+
+const subirAConstancia = (token: string | null, reporteId: number | string, nombre: string, bytes: Uint8Array, cabeceras: Record<string, string> = {}) =>
+  subirSoporteDeConstancia(peticionDeSubida(nombre, bytes, { host: "localhost:3002", ...(token ? cookie(token) : {}), ...cabeceras }), {
+    params: Promise.resolve({ id: String(reporteId) }),
+  });
+
+const archivosDeConstancia = (tx: TransactionSql, reporteId: number) =>
+  tx`SELECT id, contexto, contexto_id, rol, ruta, nombre_original, mime FROM archivos WHERE contexto = 'reporte_externo' AND contexto_id = ${reporteId} ORDER BY id`;
+
+const enAlmacenDeConstancia = (almacen: string, reporteId: number) => {
+  const carpeta = path.join(almacen, "reportes-externos", String(reporteId));
+  return existsSync(carpeta) ? readdirSync(carpeta) : [];
+};
+
+describe("POST /api/reportes-externos/[id]/archivos", () => {
+  it("401 sin sesión, 403 con un Origin ajeno, 404 a un id que no existe, 403 a quien lo ve y no registra, 409 con el indicador retirado", () =>
+    entornoDeConstancia(async ({ tx, ind, t3, mide, ajeno, gerente, admin, almacen }) => {
+      const pdf = await PDF();
+      expect((await subirAConstancia(null, t3, "radicado.pdf", pdf)).status).toBe(401);
+      const origen = await subirAConstancia(mide.token, t3, "radicado.pdf", pdf, { origin: "https://malo.com" });
+      expect(origen.status).toBe(403);
+      expect(await origen.json()).toEqual({ error: "Origen no permitido" });
+      for (const id of ["999999999", "abc", "99999999999999999999", "0"]) {
+        const r = await subirAConstancia(mide.token, id, "radicado.pdf", pdf);
+        expect(r.status, id).toBe(404);
+        expect(await r.json()).toEqual({ error: "La constancia no existe" });
+      }
+      // Ve el indicador (general) y no registra: quien solo lo ve y el gerente.
+      for (const quien of [ajeno, gerente]) expect((await subirAConstancia(quien.token, t3, "radicado.pdf", pdf)).status).toBe(403);
+      expect(await archivosDeConstancia(tx, t3)).toHaveLength(0);
+      expect(enAlmacenDeConstancia(almacen, t3)).toEqual([]);
+
+      // Retirado con un soporte (la constancia se conserva): 409.
+      expect((await subirAConstancia(mide.token, t3, "radicado.pdf", pdf)).status).toBe(201);
+      await tx`UPDATE indicadores SET estado = 'retirado', baja_por = ${admin.sesion.usuarioId}, baja_en = now(), baja_motivo = 'Ya no se mide' WHERE id = ${ind.id}`;
+      const retirado = await subirAConstancia(mide.token, t3, "otro.pdf", pdf);
+      expect(retirado.status).toBe(409);
+      expect(await retirado.json()).toEqual({ error: "El indicador está retirado: ya no admite reportes" });
+      expect(await archivosDeConstancia(tx, t3)).toHaveLength(1);
+    }));
+
+  it("a quien no ve el indicador (restringido, de otro proceso) le responde 404, no 403", () =>
+    entornoDeConstancia(
+      async ({ t3, mide, ajeno }) => {
+        expect((await subirAConstancia(ajeno.token, t3, "radicado.pdf", await PDF())).status).toBe(404);
+        expect((await subirAConstancia(mide.token, t3, "radicado.pdf", await PDF())).status).toBe(201);
+      },
+      { nivelAcceso: "restringido" },
+    ));
+
+  it("guarda un PDF o una imagen en reportes-externos/<id> con su fila y el evento «soporte»; un .xlsx, no: 415", () =>
+    entornoDeConstancia(async ({ tx, t3, mide, admin, almacen }) => {
+      const pdf = await subirAConstancia(mide.token, t3, "Radicado Supersalud.pdf", await PDF());
+      expect(pdf.status).toBe(201);
+      // Quien administra indicadores también registra: sube.
+      expect((await subirAConstancia(admin.token, t3, "pantallazo.png", pngDePrueba(8, 8))).status).toBe(201);
+      expect(await archivosDeConstancia(tx, t3)).toEqual([
+        expect.objectContaining({ contexto: "reporte_externo", rol: "evidencia", ruta: `reportes-externos/${t3}/radicado-supersalud.pdf`, mime: "application/pdf" }),
+        expect.objectContaining({ contexto: "reporte_externo", rol: "evidencia", ruta: `reportes-externos/${t3}/pantallazo.png`, mime: "image/png" }),
+      ]);
+      expect(enAlmacenDeConstancia(almacen, t3).sort()).toEqual(["pantallazo.png", "radicado-supersalud.pdf"]);
+      expect(await tx`SELECT tipo, usuario_id, detalle FROM reporte_externo_eventos WHERE reporte_id = ${t3} ORDER BY id`).toEqual([
+        { tipo: "soporte", usuario_id: mide.sesion.usuarioId, detalle: { nombre: "Radicado Supersalud.pdf", accion: "subido" } },
+        { tipo: "soporte", usuario_id: admin.sesion.usuarioId, detalle: { nombre: "pantallazo.png", accion: "subido" } },
+      ]);
+
+      const hoja = await subirAConstancia(mide.token, t3, "datos.xlsx", await xlsxDePrueba());
+      expect(hoja.status).toBe(415);
+      expect(await hoja.json()).toEqual({ error: "La evidencia debe ser PDF o imagen (PNG, JPG, WebP)" });
+      expect(await archivosDeConstancia(tx, t3)).toHaveLength(2);
+    }));
+});
+
+describe("el soporte de una constancia en la ruta de soportes del indicador", () => {
+  it("soporteServible: lo recibe quien ve soportes; null a quien solo ve el indicador y con el código de otro indicador", () =>
+    entornoDeConstancia(async ({ tx, ind, t3, mide, ajeno, gerente, admin }) => {
+      const { id } = (await (await subirAConstancia(mide.token, t3, "Radicado.pdf", await PDF())).json()) as { id: number };
+      for (const quien of [mide, gerente, admin]) {
+        expect(await soporteServible(quien.sesion, ind.codigo, id, { sql: tx })).toEqual({
+          ruta: `reportes-externos/${t3}/radicado.pdf`,
+          mime: "application/pdf",
+          nombreOriginal: "Radicado.pdf",
+        });
+      }
+      expect(await soporteServible(ajeno.sesion, ind.codigo, id, { sql: tx })).toBeNull();
+      const otro = await indicadorDePrueba(tx, { mide: [mide.sesion.usuarioId] });
+      expect(await soporteServible(mide.sesion, otro.codigo, id, { sql: tx })).toBeNull();
+      // Un soporte de medición con el número de la constancia como dueño no se sirve como soporte de la constancia.
+      const [m] = await tx`INSERT INTO archivos (version_id, contexto, contexto_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
+        VALUES (NULL, 'medicion', ${t3}, 'evidencia', ${`mediciones/${t3}/x.pdf`}, 'x.pdf', 'pdf', 'application/pdf', 4, ${"a".repeat(64)}) RETURNING id`;
+      expect(await soporteServible(admin.sesion, ind.codigo, Number(m.id), { sql: tx })).toBeNull();
+    }));
+
+  it("GET: siempre como descarga a quien ve soportes; 404 a quien solo ve el indicador y en la dirección de otro indicador", () =>
+    entornoDeConstancia(async ({ tx, ind, t3, mide, ajeno, gerente }) => {
+      const { id } = (await (await subirAConstancia(mide.token, t3, "Radicado.pdf", await PDF())).json()) as { id: number };
+      expect((await ver(null, ind.codigo, id)).status).toBe(401);
+      for (const token of [mide.token, gerente.token]) {
+        const r = await ver(token, ind.codigo, id);
+        expect(r.status).toBe(200);
+        expect(r.headers.get("Content-Type")).toBe("application/pdf");
+        expect(r.headers.get("Content-Disposition")).toMatch(/^attachment; filename="Radicado.pdf"/);
+        expect(r.headers.get("X-Content-Type-Options")).toBe("nosniff");
+        expect(r.headers.get("Cache-Control")).toBe("no-store");
+      }
+      expect((await ver(ajeno.token, ind.codigo, id)).status).toBe(404);
+      const otro = await indicadorDePrueba(tx, { mide: [mide.sesion.usuarioId] });
+      expect((await ver(mide.token, otro.codigo, id)).status).toBe(404);
+    }));
 });

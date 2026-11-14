@@ -8,10 +8,12 @@ import { ESTADO_VERSION, VistaFicha } from "@/componentes/indicadores/vistas/Vis
 import { VistaObservaciones } from "@/componentes/indicadores/vistas/VistaObservaciones";
 import { VistaResultados } from "@/componentes/indicadores/vistas/VistaResultados";
 import { VistaVersiones } from "@/componentes/indicadores/vistas/VistaVersiones";
+import { ReportesAlEnte } from "@/componentes/indicadores/vistas/ReportesAlEnte";
 import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { desdePeriodo, fichaDeVersion, operacionDeIndicador, type VersionVisible } from "@/db/consultas/indicadores/aprobacion";
+import { enteDeLaFicha } from "@/db/consultas/indicadores/constancias";
 import { proximaPorReportar } from "@/db/consultas/indicadores/lectura";
 import { metasDelAnio } from "@/db/consultas/indicadores/metas";
 import { resumenDeObservaciones } from "@/db/consultas/indicadores/observaciones";
@@ -25,7 +27,7 @@ import { fechaEnZona } from "@/lib/tramites/plazos";
 import { fechaYHora } from "@/lib/indicadores/ficha-en-texto";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { exigirFichaDeIndicador, rutaDeEdicion, rutaDeIndicador } from "../_comun";
-import { datosDeFicha, datosDeObservaciones, datosDeResultados, datosDeVersiones, type ContextoDeVista } from "./_vistas";
+import { datosDeFicha, datosDeObservaciones, datosDeReportes, datosDeResultados, datosDeVersiones, type ContextoDeVista } from "./_vistas";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Indicador" };
@@ -37,12 +39,20 @@ type Parametros = Record<string, string | string[] | undefined>;
 /**
  * La vista pedida; cualquier otra cosa es «no encontrada». Por omisión, «Resultados» si la persona ve el indicador y hay
  * una ficha aprobada; si no (un borrador, un descartado o quien solo debe aprobar la ficha), o si se pide una versión
- * (`?version=N`), «Ficha técnica». «Observaciones», solo para quien ve los soportes (spec §6.4).
+ * (`?version=N`), «Ficha técnica». «Observaciones», solo para quien ve los soportes (spec §6.4); «Reportes al ente», solo
+ * si la ficha vigente tiene ente o el indicador tiene constancias (anexo 14B, §8).
  */
-function vistaDe(v: Parametros["vista"], conResultados: boolean, conVersion: boolean, conObservaciones: boolean): PestanaDeIndicador | null {
+function vistaDe(
+  v: Parametros["vista"],
+  conResultados: boolean,
+  conVersion: boolean,
+  conObservaciones: boolean,
+  conReportes: boolean,
+): PestanaDeIndicador | null {
   if (v === undefined) return conResultados && !conVersion ? "resultados" : "ficha";
   if (v === "resultados") return conResultados ? "resultados" : null;
   if (v === "observaciones") return conObservaciones ? "observaciones" : null;
+  if (v === "reportes") return conReportes ? "reportes" : null;
   return v === "ficha" || v === "versiones" ? v : null;
 }
 
@@ -77,8 +87,9 @@ function versionMostrada(versiones: VersionVisible[], pedida: Parametros["versio
 /**
  * La página de un indicador (spec §12.3, maqueta 2): el encabezado con la ficha vigente, sus botones y las pestañas
  * «Resultados» (la de por omisión con ficha aprobada; `?anio=AAAA`, `?rango=`), «Ficha técnica» (`?vista=ficha`, con
- * `?version=N` para otra versión que la persona pueda abrir), «Versiones» y, para quien ve los soportes, «Observaciones»
- * (`?vista=observaciones&periodo=`). La página decide la sesión, quién ve qué y la vista; cada vista lee lo suyo
+ * `?version=N` para otra versión que la persona pueda abrir), «Versiones», para quien ve los soportes, «Observaciones»
+ * (`?vista=observaciones&periodo=`) y, si la ficha se reporta a un ente o hay constancias, «Reportes al ente»
+ * (`?vista=reportes`, anexo 14B §8). La página decide la sesión, quién ve qué y la vista; cada vista lee lo suyo
  * (`_vistas.ts`) y se pinta con su componente. Quien debe aprobar la ficha por aprobar de un indicador que aún no existe
  * para él solo abre esa versión (spec §6.4); para los demás, «no encontrada».
  */
@@ -91,7 +102,10 @@ export default async function PaginaIndicador({ params, searchParams }: { params
   const conResultados = ve && vigente !== null;
   // La pestaña «Observaciones», con su número, a quien ve los soportes (spec §6.4).
   const obs = conResultados ? await resumenDeObservaciones(sesion, indicador.id) : null;
-  const vista = vistaDe(sp.vista, conResultados, sp.version !== undefined, obs !== null);
+  // «Reportes al ente», a quien ve el indicador, si su ficha vigente tiene ente o ya tiene constancias (anexo 14B, §8).
+  const ente = conResultados ? await enteDeLaFicha(indicador.id) : null;
+  const conReportes = ente !== null && (ente.ente !== null || ente.conConstancias);
+  const vista = vistaDe(sp.vista, conResultados, sp.version !== undefined, obs !== null, conReportes);
   if (vista === null || (vista === "versiones" && !ve)) notFound();
   const ahora = new Date();
   const anioEnCurso = Number(fechaEnZona(ahora, zonaHoraria()).slice(0, 4));
@@ -116,6 +130,8 @@ export default async function PaginaIndicador({ params, searchParams }: { params
       <VistaResultados {...await datosDeResultados(contexto, sp, { anio, primerAnio, anioEnCurso })} />
     ) : vista === "observaciones" && obs ? (
       <VistaObservaciones {...await datosDeObservaciones(contexto, sp, obs)} />
+    ) : vista === "reportes" && ente ? (
+      <ReportesAlEnte {...await datosDeReportes(contexto, ente)} />
     ) : vista === "ficha" ? (
       <VistaFicha {...await datosDeFicha(contexto)} />
     ) : (
@@ -190,7 +206,14 @@ export default async function PaginaIndicador({ params, searchParams }: { params
           ) : undefined
         }
       />
-      <PestanasDeIndicador codigo={codigo} activa={vista} conVersiones={ve} conResultados={conResultados} observaciones={obs?.total ?? null} />
+      <PestanasDeIndicador
+        codigo={codigo}
+        activa={vista}
+        conVersiones={ve}
+        conResultados={conResultados}
+        observaciones={obs?.total ?? null}
+        conReportes={conReportes}
+      />
       {baja ? (
         <Recuadro>
           <p>{`${indicador.estado === "retirado" ? "Retirado" : "Descartado"} el ${fechaYHora(baja.en)}${baja.por ? ` por ${baja.por}` : ""}.`}</p>

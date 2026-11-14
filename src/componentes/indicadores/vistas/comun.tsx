@@ -12,15 +12,19 @@ export function Recuadro({ children }: { children: React.ReactNode }) {
   );
 }
 
-export type PestanaDeIndicador = "resultados" | "ficha" | "versiones" | "observaciones";
+export type PestanaDeIndicador = "resultados" | "ficha" | "versiones" | "observaciones" | "reportes";
 
-/** Las pestañas de la página de un indicador (spec §12.3): «Observaciones», con su número, solo para quien las ve. */
+/**
+ * Las pestañas de la página de un indicador (spec §12.3): «Observaciones», con su número, solo para quien las ve; «Reportes
+ * al ente» (anexo 14B, §8), si la ficha vigente se reporta a un ente o el indicador tiene constancias.
+ */
 export function PestanasDeIndicador({
   codigo,
   activa,
   conVersiones,
   conResultados,
   observaciones,
+  conReportes = false,
 }: {
   codigo: string;
   activa: PestanaDeIndicador;
@@ -28,12 +32,14 @@ export function PestanasDeIndicador({
   conResultados: boolean;
   /** Cuántas observaciones tiene, para quien las ve; `null` sin la pestaña. */
   observaciones: number | null;
+  conReportes?: boolean;
 }) {
   const pestanas: { clave: PestanaDeIndicador; etiqueta: string }[] = [];
   if (conResultados) pestanas.push({ clave: "resultados", etiqueta: "Resultados" });
   pestanas.push({ clave: "ficha", etiqueta: "Ficha técnica" });
   if (conVersiones) pestanas.push({ clave: "versiones", etiqueta: "Versiones" });
   if (observaciones !== null) pestanas.push({ clave: "observaciones", etiqueta: `Observaciones · ${observaciones}` });
+  if (conReportes) pestanas.push({ clave: "reportes", etiqueta: "Reportes al ente" });
   return (
     <nav aria-label="Vistas del indicador">
       <ul className="flex list-none flex-wrap gap-1 border-b border-border">

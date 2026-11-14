@@ -833,6 +833,13 @@ describe("las constancias de envío al ente (14B)", () => {
     expect(frase("constancia_corregida", {})).toBe("Corrigió el reporte al ente de un indicador");
     expect(nombreDeAccion("constancia_corregida")).toBe("Corrigió el reporte de un indicador a un ente");
   });
+  it("quitar un soporte de una constancia pendiente dice cuál y de qué reporte", () => {
+    expect(frase("constancia_soporte_quitado", { ...de, nombre: "borrador.pdf" })).toBe(
+      "Quitó el soporte «borrador.pdf» del reporte a Ministerio de Salud y Protección Social de CEX-IND-01, segundo semestre de 2026",
+    );
+    expect(frase("constancia_soporte_quitado", {})).toBe("Quitó el soporte «?» del reporte al ente de un indicador");
+    expect(nombreDeAccion("constancia_soporte_quitado")).toBe("Quitó un soporte del reporte de un indicador a un ente");
+  });
 });
 
 describe("la medición de un indicador", () => {
@@ -1010,6 +1017,10 @@ describe("los Excel de indicadores (14A)", () => {
       "Emitió los resultados de los indicadores de 2025 (de un subproceso, de una clasificación, de un tipo, con semáforo «Sin dato», con reporte «Vencido», donde participa, con el texto «auditoría», con los retirados)",
     );
     expect(x("exporto_resultados_indicadores", {})).toBe("Emitió los resultados de los indicadores");
+    // El filtro de los enlaces de las constancias de envío al ente (anexo 14B, §8).
+    expect(x("exporto_resultados_indicadores", { anio: 2026, filtros: { envio: "pendiente", participo: true } })).toBe(
+      "Emitió los resultados de los indicadores de 2026 (con un envío al ente pendiente, donde participa)",
+    );
     expect(nombreDeAccion("exporto_resultados_indicadores")).toBe("Emitió los resultados de los indicadores");
   });
 });

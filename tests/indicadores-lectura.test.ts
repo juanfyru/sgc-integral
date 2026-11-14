@@ -10,9 +10,10 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { analizar } from "@/db/consultas/indicadores/analisis";
+import { asegurarConstancias, registrarConstancia } from "@/db/consultas/indicadores/constancias";
 import { abrirCambio } from "@/db/consultas/indicadores/fichas";
 import { obtenerIndicador, resultadosDelAnio } from "@/db/consultas/indicadores/lectura";
-import { filtroDeConsulta, listarIndicadores, type FiltroDeLista } from "@/db/consultas/indicadores/lista";
+import { consultaDeFiltro, filtroDeConsulta, listarIndicadores, type FiltroDeLista } from "@/db/consultas/indicadores/lista";
 import { matrizDelAnio, type CeldaDeMatriz } from "@/db/consultas/indicadores/matriz";
 import { asegurarMediciones, marcarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
 import { retirar } from "@/db/consultas/indicadores/operacion";
@@ -131,6 +132,17 @@ describe("filtroDeConsulta", () => {
     expect(filtroDeConsulta({ proceso: "x", semaforo: "verde", reporte: "todo", participo: "no", texto: "   ", retirados: "0", tipo: "-1" })).toEqual({});
     expect(filtroDeConsulta({ proceso: ["7", "8"] })).toEqual({ procesoId: 7 });
     expect(filtroDeConsulta({ texto: "x".repeat(300) }).texto).toHaveLength(100);
+  });
+
+  it("envio=pendiente, el de los enlaces de las constancias de envío al ente, va y vuelve con los demás", () => {
+    expect(filtroDeConsulta({ envio: "pendiente", participo: "1" })).toEqual({ envio: "pendiente", participo: true });
+    expect(filtroDeConsulta({ envio: "pendiente", proceso: "12" })).toEqual({ envio: "pendiente", procesoId: 12 });
+    expect(filtroDeConsulta({ envio: "vencido" })).toEqual({});
+    expect(consultaDeFiltro({ procesoId: 12, envio: "pendiente" })).toBe("proceso=12&envio=pendiente");
+    expect(filtroDeConsulta(Object.fromEntries(new URLSearchParams(consultaDeFiltro({ envio: "pendiente", participo: true }))))).toEqual({
+      envio: "pendiente",
+      participo: true,
+    });
   });
 });
 
@@ -385,6 +397,59 @@ describe("la lista", () => {
         ["2026-T4", "por_venir", false, true],
       ]);
       expect(anio.map((f) => f.seCalcula === null)).toEqual([true, false, true]);
+    }));
+
+  it("envio: la marca de la constancia pendiente (vencida o no) de cada indicador activo, y el filtro envio=pendiente", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const admin = await sesionAdmin(tx);
+      // Desde julio solo nace el tercer trimestre; con 15 días venció el 15 de octubre, con 30 vence el 30.
+      const desde = new Date("2026-07-05T15:00:00Z");
+      const conEnte = (plazoDias: number, o: OpcionesIndicadorDePrueba = {}) =>
+        indicadorDePrueba(tx, {
+          procesoId: p.id,
+          periodicidad: "mensual",
+          inicioMedicion: "2026-01",
+          aprobadaEn: APROBADA,
+          ente: { nombre: "Superintendencia Nacional de Salud", periodicidad: "trimestral", plazoDias, desde },
+          ...o,
+        });
+      const vencida = await conEnte(15, { mide: [mide.usuarioId] });
+      const pendiente = await conEnte(30);
+      const registrada = await conEnte(15, { mide: [mide.usuarioId] });
+      const retirado = await conEnte(15);
+      const sinEnte = await trimestral(tx, p.id);
+      for (const i of [vencida, pendiente, registrada, retirado]) await asegurarConstancias({ sql: tx, ahora: AHORA, indicadorId: i.id });
+      const t3 = async (i: { id: number }) => Number((await tx`SELECT id FROM reportes_externos WHERE indicador_id = ${i.id} AND periodo = '2026-T3'`)[0].id);
+      const soporte = async (reporteId: number) =>
+        tx`INSERT INTO archivos (contexto, contexto_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
+          VALUES ('reporte_externo', ${reporteId}, 'evidencia', ${`reportes-externos/${reporteId}/r.pdf`}, 'r.pdf', 'pdf', 'application/pdf', 4, ${"a".repeat(64)})`;
+      await soporte(await t3(registrada));
+      await registrarConstancia(mide, { reporteId: await t3(registrada), fechaEnvio: "2026-10-10", radicado: "SNS-1" }, opc(tx));
+      // Retirado con un soporte: la pendiente se conserva, pero ya no admite reportes y no se marca.
+      await soporte(await t3(retirado));
+      await retirar(admin, { indicadorId: retirado.id, motivo: "Ya no se mide" }, opc(tx));
+
+      const filas = (await lista(tx, admin, { procesoId: p.id, retirados: true })).filas;
+      const envio = Object.fromEntries(filas.map((f) => [f.codigo, f.envio]));
+      expect(envio).toEqual({
+        [vencida.codigo]: "vencido",
+        [pendiente.codigo]: "pendiente",
+        [registrada.codigo]: null,
+        [retirado.codigo]: null,
+        [sinEnte.codigo]: null,
+      });
+      // Un día antes de vencer, la del plazo de 15 días aún está pendiente.
+      const antes = (await listarIndicadores(admin, { procesoId: p.id }, opc(tx, new Date("2026-10-15T15:00:00Z")))).filas;
+      expect(antes.find((f) => f.id === vencida.id)?.envio).toBe("pendiente");
+
+      // El filtro: con alguna pendiente, vencida o no; se combina con los demás (los enlaces de las tareas y los avisos).
+      expect(await codigos(tx, admin, { procesoId: p.id, envio: "pendiente", retirados: true })).toEqual([vencida.codigo, pendiente.codigo].sort());
+      expect(await codigos(tx, mide, { procesoId: p.id, envio: "pendiente", participo: true })).toEqual([vencida.codigo]);
+      // La barra cuenta solo lo que deja el filtro.
+      const { resumen } = await lista(tx, admin, { procesoId: p.id, envio: "pendiente" });
+      expect(resumen.bien + resumen.atencion + resumen.critico + resumen.sinDato + resumen.noAplica).toBe(2);
     }));
 });
 

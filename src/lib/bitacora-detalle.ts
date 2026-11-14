@@ -238,6 +238,7 @@ function filtrosDeLista(v: unknown): (string | null)[] {
     numero(f.tipoId) === null ? null : "de un tipo",
     semaforo ? `con semáforo «${semaforo}»` : null,
     reporte ? `con reporte «${reporte}»` : null,
+    f.envio === "pendiente" ? "con un envío al ente pendiente" : null,
     f.participo === true ? "donde participa" : null,
     texto(f.texto) ? `con el texto «${texto(f.texto)}»` : null,
     f.retirados === true ? "con los retirados" : null,
@@ -953,6 +954,9 @@ export function describirEvento(e: EventoAuditoria): string {
       ].filter((p): p is string => p !== null);
       return `Corrigió ${reporteAlEnte(cod, d)}${cambios.length > 0 ? ` (${cambios.join("; ")})` : ""}${conMotivo(d.justificacion)}`;
     }
+    case "constancia_soporte_quitado":
+      // «el reporte…» con la preposición: «del reporte…».
+      return `Quitó el soporte «${texto(d.nombre) ?? "?"}» d${reporteAlEnte(cod, d)}`;
     case "indicador_meta_programada": {
       if (!cod) return "Programó la meta de un periodo de un indicador";
       const antes = metaDeBitacora(d.antes);
@@ -1170,6 +1174,7 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   medicion_foto_recalculada: "Volvió a calcular una medición de indicador",
   constancia_registrada: "Registró el reporte de un indicador a un ente",
   constancia_corregida: "Corrigió el reporte de un indicador a un ente",
+  constancia_soporte_quitado: "Quitó un soporte del reporte de un indicador a un ente",
   tipo_norma_creado: "Creó un tipo de norma",
   tipo_norma_editado: "Renombró un tipo de norma",
   tipo_norma_movido: "Movió un tipo de norma",

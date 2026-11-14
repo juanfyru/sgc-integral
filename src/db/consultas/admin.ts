@@ -16,6 +16,7 @@ import {
   type DestinoDeCodigo,
 } from "./codigos";
 import { exigirHallazgoNoCerrado, exigirVerificacionAbierta } from "./distribucion/verificacion-abierta";
+import { bloquearParaSoporteDeConstancia, dejarSoporteDeConstanciaSubido } from "./indicadores/constancias";
 import { bloquearParaSoporte, dejarSoporteSubido } from "./indicadores/soportes";
 import { exigirLoteSinArchivo } from "./indicadores/lote-importacion";
 import { alDejarDeSerVigente } from "./distribucion/version-vigencia";
@@ -781,6 +782,8 @@ export async function registrarArchivo(
         if (datos.contexto === "hallazgo") await exigirHallazgoNoCerrado(tx, datos.contextoId);
         // El soporte de una medición: el indicador y la medición bloqueados antes de escribir la fila hija.
         if (datos.contexto === "medicion") await bloquearParaSoporte(tx, datos.contextoId);
+        // El de una constancia de envío al ente: el indicador y la constancia, en ese orden.
+        if (datos.contexto === "reporte_externo") await bloquearParaSoporteDeConstancia(tx, datos.contextoId);
         // La plantilla de un lote de importación: una sola, mientras el lote no tenga otra (spec 14A §5.7).
         if (datos.contexto === "importacion_indicadores") await exigirLoteSinArchivo(tx, datos.contextoId);
         // Un dueño de un solo archivo (`CONTEXTOS_UNICOS`): bloqueado, dos subidas a la vez o su borrado se ordenan,
@@ -804,6 +807,9 @@ export async function registrarArchivo(
         });
         if (datos.contexto === "medicion") {
           await dejarSoporteSubido(tx, { medicionId: datos.contextoId, usuarioId, nombre: datos.nombreOriginal, ahora: new Date() });
+        }
+        if (datos.contexto === "reporte_externo") {
+          await dejarSoporteDeConstanciaSubido(tx, { reporteId: datos.contextoId, usuarioId, nombre: datos.nombreOriginal, ahora: new Date() });
         }
         const reemplazados = unico
           ? await tx`DELETE FROM archivos

@@ -100,8 +100,9 @@ export async function soportesDeVarias(
 
 /**
  * El archivo de un soporte, si la persona ve los soportes del indicador `codigo` (sin distinguir mayúsculas) y el archivo
- * es un soporte de una de sus mediciones; `null` en cualquier otro caso (el handler responde 404, aunque la persona vea
- * el indicador).
+ * es un soporte de una de sus mediciones o de una de sus constancias de envío al ente (anexo 14B, §8); `null` en cualquier
+ * otro caso (el handler responde 404, aunque la persona vea el indicador). Cada contexto se une con su propia tabla: el
+ * mismo número de dueño puede ser una medición y una constancia.
  */
 export async function soporteServible(
   sesion: SujetoVisibilidad,
@@ -110,9 +111,11 @@ export async function soporteServible(
   opciones?: Opciones,
 ): Promise<ArchivoServible | null> {
   const sql = opciones?.sql ?? obtenerSql();
-  const [f] = await sql`SELECT a.ruta, a.mime, a.nombre_original, m.indicador_id FROM archivos a
-    JOIN mediciones m ON m.id = a.contexto_id JOIN indicadores i ON i.id = m.indicador_id
-    WHERE a.id = ${archivoId} AND a.contexto = 'medicion' AND a.rol = 'evidencia' AND lower(i.codigo) = lower(${codigo})`;
+  const [f] = await sql`SELECT a.ruta, a.mime, a.nombre_original, i.id AS indicador_id FROM archivos a
+    LEFT JOIN mediciones m ON a.contexto = 'medicion' AND m.id = a.contexto_id
+    LEFT JOIN reportes_externos r ON a.contexto = 'reporte_externo' AND r.id = a.contexto_id
+    JOIN indicadores i ON i.id = coalesce(m.indicador_id, r.indicador_id)
+    WHERE a.id = ${archivoId} AND a.contexto IN ('medicion', 'reporte_externo') AND a.rol = 'evidencia' AND lower(i.codigo) = lower(${codigo})`;
   if (!f) return null;
   const indicadorId = Number(f.indicador_id);
   if (!(await puedeVerIndicador(indicadorId, sesion, { sql })) || !(await puedeVerSoportes(indicadorId, sesion, { sql }))) return null;

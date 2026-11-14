@@ -29,11 +29,14 @@ const sinFicha = (f: FilaDeLista) => f.estado === "borrador" || f.estado === "de
 
 /**
  * Las marcas del indicador junto a su nombre (spec §12.2): «Restringido», «Automático» (lo calcula el sistema, anexo 14B
- * §5.3), «Retirado» y, para quien administra, su borrador.
+ * §5.3), «Retirado», «Envío pendiente» o «Envío vencido» (su constancia de envío al ente, anexo 14B §8) y, para quien
+ * administra, su borrador.
  */
 function Marcas({ f }: { f: FilaDeLista }) {
-  const marcas: { texto: string; variante: "neutra" | "sin-dato" | "atencion" }[] = [];
+  const marcas: { texto: string; variante: "neutra" | "sin-dato" | "atencion" | "critico" }[] = [];
   if (f.restringido) marcas.push({ texto: "Restringido", variante: "neutra" });
+  if (f.envio === "vencido") marcas.push({ texto: "Envío vencido", variante: "critico" });
+  if (f.envio === "pendiente") marcas.push({ texto: "Envío pendiente", variante: "atencion" });
   if (f.automatico) marcas.push({ texto: "Automático", variante: "neutra" });
   if (f.retirado) marcas.push({ texto: "Retirado", variante: "sin-dato" });
   if (f.estado === "borrador") marcas.push({ texto: "Borrador", variante: "atencion" });

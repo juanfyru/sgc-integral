@@ -77,6 +77,24 @@ export function envioValido(d: { fechaEnvio: string; radicado: string; nota?: st
   return { fechaEnvio: fecha, radicado, nota: nota || null };
 }
 
+/** «a», «a y b», «a, b y c». */
+function enumerar(partes: readonly string[]): string {
+  return partes.length <= 1 ? (partes[0] ?? "") : `${partes.slice(0, -1).join(", ")} y ${partes[partes.length - 1]}`;
+}
+
+/**
+ * El aviso de un resultado parcial antes de registrar (anexo §8): qué periodos de medición faltan y cuáles, con su dato, no
+ * están cerrados (uno sin dato no se repite como abierto). Se puede registrar así.
+ */
+export function avisoDeParcial(r: { faltan: readonly string[]; sinCerrar: readonly string[] }): string {
+  const abiertos = r.sinCerrar.filter((p) => !r.faltan.includes(p));
+  const partes = [
+    r.faltan.length > 0 ? `${r.faltan.length === 1 ? "falta" : "faltan"} ${enumerar(r.faltan)}` : null,
+    abiertos.length > 0 ? `${abiertos.length === 1 ? "no está cerrado" : "no están cerrados"} ${enumerar(abiertos)}` : null,
+  ].filter((p): p is string => p !== null);
+  return `El resultado es parcial: ${partes.join("; ")}. Puede registrarlo así.`;
+}
+
 /** La justificación de una corrección, recortada, o el mensaje de por qué no vale. */
 export function justificacionValida(j: string): { ok: true; texto: string } | { ok: false; mensaje: string } {
   const t = typeof j === "string" ? j.trim() : "";

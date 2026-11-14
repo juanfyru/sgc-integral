@@ -57,6 +57,9 @@ vi.mock("@/app/acciones-indicadores", () => ({
   reabrirMedicionAccion: vi.fn(),
   cerrarDeNuevoAccion: vi.fn(),
   volverACalcularAccion: vi.fn(),
+  registrarConstanciaAccion: vi.fn(),
+  corregirConstanciaAccion: vi.fn(),
+  quitarSoporteDeConstanciaAccion: vi.fn(),
 }));
 
 import PaginaIndicador from "@/app/(app)/indicadores/[codigo]/page";
@@ -69,8 +72,10 @@ import { LeyendaDeMatriz, MatrizDelAnio } from "@/componentes/indicadores/Matriz
 import { Objetivos } from "@/componentes/indicadores/Objetivos";
 import { columnasDeVariables, TablaDelAnio } from "@/componentes/indicadores/medicion/TablaDelAnio";
 import { ResultadoPrincipal } from "@/componentes/indicadores/ResultadoPrincipal";
+import { ReportesAlEnte, type DatosDeReportes } from "@/componentes/indicadores/vistas/ReportesAlEnte";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
+import type { Constancia } from "@/db/consultas/indicadores/constancias";
 import type { FilaDelAnio, UltimoResultado } from "@/db/consultas/indicadores/lectura";
 import type { FilaDeLista } from "@/db/consultas/indicadores/lista";
 import type { CeldaDeMatriz, MatrizLeida } from "@/db/consultas/indicadores/matriz";
@@ -120,6 +125,7 @@ const FILA: FilaDeLista = {
   flecha: "baja",
   mejora: false,
   reporte: { texto: "Reportado", vencida: false },
+  envio: null,
 };
 
 const ULTIMO: UltimoResultado = {
@@ -531,6 +537,16 @@ describe("los componentes", () => {
     expect(lista(false)).not.toContain("Automático");
   });
 
+  it("la lista dice «Envío pendiente» y «Envío vencido» con una insignia de texto (anexo 14B, §8)", () => {
+    const lista = (envio: FilaDeLista["envio"]) =>
+      renderToStaticMarkup(
+        <ListaIndicadores filas={[{ ...FILA, envio }]} resumen={{ bien: 0, bienSinAlcanzar: 0, atencion: 0, critico: 1, sinDato: 0, noAplica: 0, vencidos: 0 }} />,
+      );
+    expect(lista("pendiente")).toMatch(/data-variante="atencion"[^>]*>Envío pendiente</);
+    expect(lista("vencido")).toMatch(/data-variante="critico"[^>]*>Envío vencido</);
+    expect(lista(null)).not.toContain("Envío");
+  });
+
   it("Objetivos: por clase, cada objetivo en su tarjeta con su estado escrito y su tabla de indicadores (anexo 14B, §7)", () => {
     const objetivos: ObjetivoLeido[] = [
       {
@@ -575,6 +591,152 @@ describe("los componentes", () => {
     const regiones = [...html.matchAll(/role="region" aria-label="([^"]+)" tabindex="0"/g)].map((m) => m[1]);
     expect(regiones).toHaveLength(2);
     expect(new Set(regiones).size).toBe(2);
+  });
+});
+
+describe("la vista «Reportes al ente» (anexo 14B, §8)", () => {
+  const ENTE = "Superintendencia Nacional de Salud";
+  const base: Constancia = {
+    id: 13,
+    periodo: "2026-T3",
+    etiqueta: "Tercer trimestre de 2026",
+    ente: ENTE,
+    venceEn: new Date("2026-12-01T04:59:59.999Z"),
+    estado: "pendiente",
+    vencida: false,
+    fechaEnvio: null,
+    radicado: null,
+    resultadoEnviado: null,
+    parcial: false,
+    nota: null,
+    registradaPor: null,
+    registradaEn: null,
+    corregida: false,
+  };
+  const pendiente = base;
+  const vencida: Constancia = { ...base, id: 12, periodo: "2026-T2", etiqueta: "Segundo trimestre de 2026", venceEn: new Date("2026-07-16T04:59:59.999Z"), vencida: true };
+  const corregida: Constancia = {
+    ...base,
+    id: 11,
+    periodo: "2026-T1",
+    etiqueta: "Primer trimestre de 2026",
+    venceEn: new Date("2026-04-16T04:59:59.999Z"),
+    estado: "registrada",
+    fechaEnvio: "2026-04-10",
+    radicado: "SNS-2026-0001",
+    resultadoEnviado: "86,7 %",
+    parcial: true,
+    nota: "Por correo",
+    registradaPor: "Ana Pérez",
+    registradaEn: new Date("2026-04-10T15:00:00Z"),
+    corregida: true,
+  };
+  const soporte = (id: number, nombre: string) => ({ id, nombre, mime: "application/pdf", tamano: 2048 });
+  const datos = (o: Partial<DatosDeReportes> = {}): DatosDeReportes => ({
+    codigo: "CEX-ID-001",
+    ente: { ente: ENTE, seReporta: true, incompleto: false, conConstancias: true },
+    constancias: [pendiente, vencida, corregida],
+    soportes: new Map([
+      [13, [soporte(70, "radicado-t3.pdf")]],
+      [11, [soporte(71, "radicado-t1.pdf")]],
+    ]),
+    historial: new Map([
+      [
+        11,
+        [
+          { tipo: "registro", quien: "Ana Pérez", cuando: new Date("2026-04-10T15:00:00Z"), texto: "Registró el envío del 10 de abril de 2026 con el radicado SNS-2026-0010: 86,7 % (parcial)" },
+          { tipo: "correccion", quien: "Ana Pérez", cuando: new Date("2026-04-11T15:00:00Z"), texto: "Corrigió el envío (radicado SNS-2026-0010 → SNS-2026-0001). Por qué: Las cifras estaban invertidas" },
+        ],
+      ],
+    ]),
+    registro: {
+      hoy: "2026-11-14",
+      resultados: new Map([
+        [13, { texto: "86,7 %", exacto: "260/3", parcial: true, faltan: [], sinCerrar: ["septiembre de 2026"] }],
+        [12, { texto: null, exacto: null, parcial: true, faltan: ["abril de 2026", "mayo de 2026", "junio de 2026"], sinCerrar: ["abril de 2026", "mayo de 2026", "junio de 2026"] }],
+      ]),
+    },
+    ...o,
+  });
+
+  it("una pendiente, una vencida y una registrada corregida: su estado escrito, sus datos, sus soportes y su historial", () => {
+    const html = renderToStaticMarkup(<ReportesAlEnte {...datos()} />);
+    expect(html).toContain(">Reportes al ente</h2>");
+    expect(html).toContain(`Se reporta a ${ENTE}.`);
+    // El estado, siempre con texto.
+    expect(html).toMatch(/data-variante="atencion"[^>]*>Pendiente</);
+    expect(html).toMatch(/data-variante="critico"[^>]*>Vencida</);
+    expect(html).toMatch(/data-variante="bien"[^>]*>Registrada · corregida</);
+    // La fecha límite, cuándo se envió, el radicado, el resultado (con «parcial») y quién lo registró.
+    expect(html).toContain("30 nov 2026");
+    expect(html).toContain("15 jul 2026");
+    expect(html).toContain("10 abr 2026");
+    expect(html).toContain("SNS-2026-0001");
+    expect(html).toContain("86,7 % (parcial)");
+    expect(html).toContain("Ana Pérez");
+    // Tabla con su región en pantalla ancha; en el celular, una tarjeta por constancia.
+    expect(html).toMatch(/role="region" aria-label="Constancias de envío" tabindex="0"/);
+    expect(html).toContain(">Soportes</th>");
+    expect(html).toMatch(/<ul[^>]*aria-label="Constancias de envío"/);
+    // Los soportes, siempre como descarga por la ruta de soportes del indicador, y el historial.
+    expect(html).toContain('href="/indicadores/CEX-ID-001/soportes/70/radicado-t3.pdf"');
+    expect(html).toContain('href="/indicadores/CEX-ID-001/soportes/71/radicado-t1.pdf"');
+    expect(html).toContain("Ver el historial");
+    expect(html).toContain("Corrigió el envío (radicado SNS-2026-0010 → SNS-2026-0001). Por qué: Las cifras estaban invertidas");
+  });
+
+  it("a quien registra: «Registrar el envío» de cada pendiente con el resultado del periodo y, si es parcial, el aviso; «Corregir» de la registrada", () => {
+    const html = renderToStaticMarkup(<ReportesAlEnte {...datos()} />);
+    expect(html.match(/>Registrar el envío</g)?.length).toBeGreaterThanOrEqual(2);
+    expect(html).toContain('id="constancia-13"');
+    expect(html).toContain('id="constancia-12"');
+    expect(html).toContain('id="constancia-11"');
+    expect(html).toContain('href="#constancia-13"');
+    // El resultado del periodo, antes de registrar, y el aviso de parcial.
+    expect(html).toContain("Resultado del periodo: 86,7 %");
+    expect(html).toContain("El resultado es parcial: no está cerrado septiembre de 2026. Puede registrarlo así.");
+    expect(html).toContain("Resultado del periodo: sin resultado");
+    expect(html).toContain("El resultado es parcial: faltan abril de 2026, mayo de 2026 y junio de 2026. Puede registrarlo así.");
+    // Los campos, con un id por constancia, y la fecha de envío que no puede ser futura.
+    for (const id of [13, 12]) {
+      expect(html).toMatch(new RegExp(`<input[^>]*id="envio-fecha-${id}"[^>]*name="fechaEnvio"`));
+      expect(html).toMatch(new RegExp(`id="envio-radicado-${id}"[^>]*name="radicado"`));
+      expect(html).toMatch(new RegExp(`id="envio-nota-${id}"[^>]*name="nota"`));
+    }
+    expect(html).toMatch(/<input[^>]*type="date"[^>]*max="2026-11-14"/);
+    // La zona de carga es la de las evidencias: PDF o imagen, nunca Excel.
+    expect(html).toContain("o haga clic para elegirlos (PDF o imagen, máx. 25 MB c/u)");
+    expect(html).not.toContain(".xlsx");
+    // Un soporte de una pendiente se quita; uno de una registrada, no.
+    expect(html).toContain('aria-label="Quitar el soporte radicado-t3.pdf"');
+    expect(html).not.toContain('aria-label="Quitar el soporte radicado-t1.pdf"');
+    // «Corregir» la registrada: con lo que tiene y la justificación.
+    expect(html).toMatch(/<summary[^>]*>Corregir/);
+    expect(html).toMatch(/id="corregir-radicado-11"[^>]*name="radicado"[^>]*value="SNS-2026-0001"|value="SNS-2026-0001"[^>]*id="corregir-radicado-11"/);
+    expect(html).toMatch(/id="corregir-justificacion-11"[^>]*name="justificacion"/);
+    // Un solo h2 de la vista y sus subtítulos debajo.
+    expect(html.match(/<h2[\s>]/g)).toHaveLength(1);
+  });
+
+  it("quien no ve soportes no recibe archivos ni historial; quien no registra, ningún formulario", () => {
+    const html = renderToStaticMarkup(<ReportesAlEnte {...datos({ soportes: null, historial: null, registro: null })} />);
+    expect(html).toMatch(/data-variante="bien"[^>]*>Registrada · corregida</);
+    expect(html).toContain("SNS-2026-0001");
+    expect(html).not.toContain("/soportes/");
+    expect(html).not.toContain(">Soportes</th>");
+    expect(html).not.toContain("Ver el historial");
+    expect(html).not.toContain("<form");
+    expect(html).not.toContain("Registrar el envío");
+    expect(html).not.toContain("Corregir");
+    expect(html).not.toContain("Zona de carga");
+  });
+
+  it("la ficha con el ente incompleto lo dice; sin constancias, también", () => {
+    const html = renderToStaticMarkup(
+      <ReportesAlEnte {...datos({ ente: { ente: ENTE, seReporta: false, incompleto: true, conConstancias: false }, constancias: [], soportes: new Map(), historial: new Map() })} />,
+    );
+    expect(html).toContain("Complete el ente, su periodicidad y su plazo en la ficha para llevar las constancias.");
+    expect(html).toContain("Aún no hay constancias");
   });
 });
 
@@ -676,6 +838,44 @@ describe("las páginas", () => {
       expect(observaciones).toContain(">Observaciones</h2>");
     }));
 
+  it("/indicadores/[codigo]?vista=reportes: la pestaña sale con el ente en la ficha o con constancias; sin ellos, «no encontrada»", () =>
+    enTransaccion(async (tx) => {
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const ind = await indicadorDePrueba(tx, {
+        periodicidad: "mensual",
+        inicioMedicion: "2026-01",
+        aprobadaEn: new Date("2026-01-10T15:00:00Z"),
+        ente: { nombre: "Superintendencia Nacional de Salud", periodicidad: "trimestral", plazoDias: 15 },
+        mide: [mide.usuarioId],
+      });
+      contexto.sesion = valida(mide);
+      const resultados = await pagina(ind.codigo);
+      expect(resultados).toContain(`href="/indicadores/${ind.codigo}?vista=reportes"`);
+      expect(resultados).toContain(">Reportes al ente</a>");
+
+      // La vista abre antes las constancias (la tarea enlaza aquí): el primer trimestre de 2026 ya terminó.
+      const html = await pagina(ind.codigo, { vista: "reportes" });
+      estructuraAccesible(html);
+      expect(html).toMatch(/aria-current="page"[^>]*>Reportes al ente</);
+      expect(html).toContain(">Reportes al ente</h2>");
+      expect(html).toContain("Primer trimestre de 2026");
+      expect(html).toContain("Registrar el envío");
+      expect(html).toContain("Resultado del periodo:");
+
+      // Quien solo ve el indicador ve la tabla, sin formularios, soportes ni historial.
+      contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "consulta" }));
+      const ajena = await pagina(ind.codigo, { vista: "reportes" });
+      expect(ajena).toContain("Primer trimestre de 2026");
+      expect(ajena).not.toContain("Registrar el envío");
+      expect(ajena).not.toContain(">Soportes</th>");
+      expect(ajena).not.toContain("Ver el historial");
+
+      // Sin ente ni constancias: ni pestaña ni vista.
+      const sinEnte = await indicadorDePrueba(tx, { periodicidad: "mensual", inicioMedicion: "2026-01", aprobadaEn: new Date("2026-01-10T15:00:00Z") });
+      expect(await pagina(sinEnte.codigo)).not.toContain("?vista=reportes");
+      await expect(pagina(sinEnte.codigo, { vista: "reportes" })).rejects.toThrow("NO_ENCONTRADA");
+    }));
+
   it("/indicadores: la lista con su barra, sus filtros en un formulario GET y lo que la persona ve", () =>
     enTransaccion(async (tx) => {
       const { mide, ind } = await conResultados(tx);
@@ -686,9 +886,12 @@ describe("las páginas", () => {
       expect(html).toMatch(/<form(?=[^>]*method="get")(?=[^>]*action="\/indicadores")[^>]*>/);
       // A 390 px, dos selectores por fila; desde `sm`, la fila que se envuelve.
       expect(html).toMatch(/<form(?=[^>]*class="[^"]*\bgrid-cols-2\b)(?=[^>]*class="[^"]*\bsm:flex\b)[^>]*action="\/indicadores"/);
-      for (const nombre of ["proceso", "subproceso", "clasificacion", "tipo", "semaforo", "reporte", "participo", "texto", "retirados"]) {
+      for (const nombre of ["proceso", "subproceso", "clasificacion", "tipo", "semaforo", "reporte", "participo", "texto", "retirados", "envio"]) {
         expect(html).toMatch(new RegExp(`name="${nombre}"`));
       }
+      // El filtro de los enlaces de las constancias de envío al ente sigue elegido al volver a filtrar.
+      expect(html).toMatch(/<input(?=[^>]*name="envio")(?=[^>]*value="pendiente")(?![^>]*checked)[^>]*>/);
+      expect(await listaPagina({ envio: "pendiente", texto: ind.codigo })).toMatch(/<input(?=[^>]*name="envio")(?=[^>]*value="pendiente")(?=[^>]*checked="")[^>]*>/);
       expect(html).toContain(ind.codigo);
       expect(html).not.toContain(restringido.codigo);
       expect(html).toMatch(/aria-current="page"[^>]*>Lista</);

@@ -18,10 +18,10 @@ const REPORTES = REPORTES_DE_LISTA.map((valor) => ({ valor, etiqueta: ETIQUETA_R
 /** En pantallas angostas, dos selectores por fila; desde `sm`, cada uno con su ancho en la fila que se envuelve. */
 const ANCHO = "sm:w-auto sm:max-w-56";
 
-function Casilla({ id, nombre, etiqueta, marcada }: { id: string; nombre: string; etiqueta: string; marcada: boolean }) {
+function Casilla({ id, nombre, valor = "1", etiqueta, marcada }: { id: string; nombre: string; valor?: string; etiqueta: string; marcada: boolean }) {
   return (
     <div className="flex items-center gap-2 py-2">
-      <input id={id} type="checkbox" name={nombre} value="1" defaultChecked={marcada} className={`size-4 accent-marca ${FOCO}`} />
+      <input id={id} type="checkbox" name={nombre} value={valor} defaultChecked={marcada} className={`size-4 accent-marca ${FOCO}`} />
       <label htmlFor={id} className="text-sm">
         {etiqueta}
       </label>
@@ -32,7 +32,8 @@ function Casilla({ id, nombre, etiqueta, marcada }: { id: string; nombre: string
 /**
  * Los filtros de la lista (spec §12.2, maqueta 4) en una fila que se envuelve (a 390 px, dos selectores por fila):
  * proceso y subproceso, clasificación, tipo,
- * estado del semáforo, estado del reporte, «Donde participo», texto e «Incluir retirados». Es un formulario `GET` con los
+ * estado del semáforo, estado del reporte, «Donde participo», «Envío al ente pendiente» (el filtro de los enlaces de las
+ * constancias, anexo 14B §8), texto e «Incluir retirados». Es un formulario `GET` con los
  * nombres que lee `filtroDeConsulta`: funciona antes de hidratar y deja la URL para compartir.
  */
 export function FiltrosIndicadores({ filtro, opciones }: { filtro: FiltroDeLista; opciones: OpcionesDeLista }) {
@@ -117,6 +118,7 @@ export function FiltrosIndicadores({ filtro, opciones }: { filtro: FiltroDeLista
         />
       </div>
       <Casilla id="filtro-participo" nombre="participo" etiqueta="Donde participo" marcada={filtro.participo === true} />
+      <Casilla id="filtro-envio" nombre="envio" valor="pendiente" etiqueta="Envío al ente pendiente" marcada={filtro.envio === "pendiente"} />
       <Casilla id="filtro-retirados" nombre="retirados" etiqueta="Incluir retirados" marcada={filtro.retirados === true} />
       <Boton type="submit" variante="secundario" className="justify-self-start">
         Filtrar

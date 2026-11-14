@@ -13,13 +13,24 @@
  * Las importaciones van en un solo sentido: esto lee los periodos con `lectura.ts`, y por eso `alPublicarVersion` y
  * `retirar` quitan las pendientes con `quitarConstanciasSinSoporte` (`operacion.ts`), sin importar este archivo.
  */
+import { unlink } from "node:fs/promises";
+import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { filtroIndicadores, puedeMedir, puedeVerIndicador, responsableDe, type Responsabilidad, type SujetoVisibilidad } from "@/lib/alcance";
-import { periodoDe } from "@/lib/indicadores-documentales/periodo";
+import {
+  filtroIndicadores,
+  puedeMedir,
+  puedeVerIndicador,
+  puedeVerSoportes,
+  responsableDe,
+  type Responsabilidad,
+  type SujetoVisibilidad,
+} from "@/lib/alcance";
+import { resolverRutaAlmacen } from "@/lib/almacen";
+import { MESES, periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { acumulado } from "@/lib/indicadores/acumulado";
-import { envioValido, justificacionValida, seReportaAlEnte, type Envio } from "@/lib/indicadores/constancias";
+import { enteCompleto, envioValido, esFechaValida, justificacionValida, seReportaAlEnte, type Envio } from "@/lib/indicadores/constancias";
 import { aTexto } from "@/lib/indicadores/formula/fraccion";
 import { fechaLimiteDeReporte, periodoQueContiene, periodosTerminados } from "@/lib/indicadores/periodos";
 import { fichaDeCalculo } from "@/lib/indicadores/reporte";
@@ -33,6 +44,7 @@ import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { leerPeriodos, type Base } from "./lectura";
 import { conMayuscula, texto, versionesAprobadasDe } from "./mediciones";
+import type { Soporte } from "./soportes";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -42,6 +54,8 @@ const YA_REGISTRADA = "La constancia ya está registrada: corríjala";
 const SIN_REGISTRAR = "La constancia aún no está registrada: regístrela";
 const SIN_SOPORTE = "Adjunte al menos un soporte antes de registrar";
 const SIN_CAMBIOS = "No hay cambios que corregir";
+const SOPORTE_NO_EXISTE = "El soporte no existe";
+const SOPORTE_DE_REGISTRADA = "Un soporte de una constancia registrada no se quita";
 
 /** Lo que la ficha vigente dice del ente, como lo lee `seReportaAlEnte`. */
 const enteDeVersion = (v: Record<string, unknown>) => ({
@@ -424,4 +438,224 @@ export async function tareasDeConstancias(sql: Cliente, sesion: SesionFlujo): Pr
       enlace: `${rutaDeIndicador(codigo)}?vista=reportes`,
     };
   });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Los soportes de una constancia
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Quién puede subir un soporte a la constancia, antes de recibir el cuerpo: 404 si no existe o la persona no ve su
+ * indicador, 403 si lo ve y no puede registrarla, 409 si el indicador ya no está activo (la transacción de
+ * `registrarArchivo` lo vuelve a exigir con los candados). Una constancia registrada también admite soportes: no se quitan,
+ * pero una corrección puede necesitar el documento correcto.
+ */
+export async function autorizarSoporteDeConstancia(
+  reporteId: number,
+  sesion: SujetoVisibilidad,
+  opciones?: { sql?: Cliente },
+): Promise<{ ok: true } | { ok: false; estado: 403 | 404 | 409 }> {
+  const sql = opciones?.sql ?? obtenerSql();
+  if (!Number.isSafeInteger(reporteId) || reporteId <= 0) return { ok: false, estado: 404 };
+  const [r] = await sql`SELECT r.indicador_id, i.estado FROM reportes_externos r JOIN indicadores i ON i.id = r.indicador_id WHERE r.id = ${reporteId}`;
+  if (!r) return { ok: false, estado: 404 };
+  const indicadorId = Number(r.indicador_id);
+  if (!(await puedeVerIndicador(indicadorId, sesion, { sql }))) return { ok: false, estado: 404 };
+  if (!(await puedeRegistrarConstancia(indicadorId, sesion, { sql }))) return { ok: false, estado: 403 };
+  if (r.estado !== "activo") return { ok: false, estado: 409 };
+  return { ok: true };
+}
+
+/**
+ * Los candados de quien sube un soporte a una constancia (`registrarArchivo`), antes de escribir nada: el indicador
+ * `FOR SHARE` y activo, después la constancia `FOR UPDATE`. Quien llama ya comprobó a la persona
+ * (`autorizarSoporteDeConstancia`); `dejarSoporteDeConstanciaSubido` la vuelve a comprobar con los candados tomados.
+ */
+export async function bloquearParaSoporteDeConstancia(tx: TransactionSql, reporteId: number): Promise<void> {
+  const [i] = await tx`SELECT estado FROM indicadores
+    WHERE id = (SELECT indicador_id FROM reportes_externos WHERE id = ${reporteId}) FOR SHARE`;
+  const [r] = await tx`SELECT id FROM reportes_externos WHERE id = ${reporteId} FOR UPDATE`;
+  if (!i || !r) throw new ErrorIndicador(NO_EXISTE);
+  if (i.estado !== "activo") throw new ErrorIndicador(RETIRADO);
+}
+
+/**
+ * El evento `soporte` de una subida (`{ nombre, accion: "subido" }`), con la fila de `archivos` ya escrita y los candados de
+ * `bloquearParaSoporteDeConstancia`. La persona se vuelve a comprobar: su designación pudo cambiar tras autorizar.
+ */
+export async function dejarSoporteDeConstanciaSubido(
+  tx: TransactionSql,
+  c: { reporteId: number; usuarioId: number; nombre: string; ahora: Date },
+): Promise<void> {
+  const [u] = await tx`SELECT rol, ver_historial FROM usuarios WHERE id = ${c.usuarioId}`;
+  const [r] = await tx`SELECT indicador_id FROM reportes_externos WHERE id = ${c.reporteId}`;
+  const sujeto = u ? { usuarioId: c.usuarioId, rol: u.rol, verHistorial: u.ver_historial === true } : null;
+  if (!sujeto || !r || !(await puedeRegistrarConstancia(Number(r.indicador_id), sujeto, { sql: tx }))) throw new ErrorPermiso();
+  await tx`INSERT INTO reporte_externo_eventos (reporte_id, tipo, usuario_id, detalle, creado_en)
+    VALUES (${c.reporteId}, 'soporte', ${c.usuarioId}, ${tx.json({ nombre: c.nombre, accion: "subido" })}, ${c.ahora})`;
+}
+
+/**
+ * Quita un soporte de una constancia **pendiente** (anexo §8: el de una registrada no se quita): borra la fila y deja el
+ * evento `soporte` (`accion: "quitado"`) y la bitácora; el archivo del almacén se borra después de confirmar, y uno ya
+ * ausente no es un error. Quien no ve el indicador ni sus soportes recibe lo mismo que si el soporte no existiera; quien los
+ * ve y no puede registrar, «sin permiso»; con el indicador retirado, ya no admite reportes. El evento queda: una pendiente
+ * con historia no se quita al dejar de pedirse (`quitarConstanciasSinSoporte`).
+ */
+export async function quitarSoporteDeConstancia(sesion: SesionFlujo, d: { archivoId: number }, opciones?: Opciones): Promise<void> {
+  if (!puede(sesion, "indicadores.medir")) throw new ErrorPermiso();
+  const sql = opciones?.sql ?? obtenerSql();
+  const ahora = opciones?.ahora ?? new Date();
+  const [destino] = await sql`SELECT contexto_id FROM archivos WHERE id = ${d.archivoId} AND contexto = 'reporte_externo' AND rol = 'evidencia'`;
+  if (!destino) throw new ErrorIndicador(SOPORTE_NO_EXISTE);
+  const reporteId = Number(destino.contexto_id);
+  const ruta = await enTransaccion(sql, async (tx) => {
+    // El indicador y la constancia, bloqueados en ese orden, antes de tocar la fila hija.
+    const [i] = await tx`SELECT id, codigo, estado FROM indicadores
+      WHERE id = (SELECT indicador_id FROM reportes_externos WHERE id = ${reporteId}) FOR SHARE`;
+    const [r] = await tx`SELECT periodo, ente, estado FROM reportes_externos WHERE id = ${reporteId} FOR UPDATE`;
+    const indicadorId = Number(i?.id);
+    if (!i || !r || !(await puedeVerIndicador(indicadorId, sesion, { sql: tx })) || !(await puedeVerSoportes(indicadorId, sesion, { sql: tx }))) {
+      throw new ErrorIndicador(SOPORTE_NO_EXISTE);
+    }
+    if (!(await puedeRegistrarConstancia(indicadorId, sesion, { sql: tx }))) throw new ErrorPermiso();
+    if (i.estado !== "activo") throw new ErrorIndicador(RETIRADO);
+    if (r.estado !== "pendiente") throw new ErrorIndicador(SOPORTE_DE_REGISTRADA);
+    const [archivo] = await tx`SELECT ruta, nombre_original FROM archivos
+      WHERE id = ${d.archivoId} AND contexto = 'reporte_externo' AND contexto_id = ${reporteId} AND rol = 'evidencia' FOR UPDATE`;
+    if (!archivo) throw new ErrorIndicador(SOPORTE_NO_EXISTE);
+    const nombre = archivo.nombre_original as string;
+    await tx`DELETE FROM archivos WHERE id = ${d.archivoId}`;
+    await tx`INSERT INTO reporte_externo_eventos (reporte_id, tipo, usuario_id, detalle, creado_en)
+      VALUES (${reporteId}, 'soporte', ${sesion.usuarioId}, ${tx.json({ nombre, accion: "quitado" })}, ${ahora})`;
+    await registrarAuditoria(tx, {
+      usuarioId: sesion.usuarioId,
+      accion: "constancia_soporte_quitado",
+      entidad: "reporte_externo",
+      entidadId: reporteId,
+      detalle: { codigo: i.codigo as string, periodo: r.periodo as string, ente: r.ente as string, nombre },
+    });
+    return archivo.ruta as string;
+  });
+  const absoluta = resolverRutaAlmacen(ruta);
+  if (absoluta) await unlink(absoluta).catch(() => {});
+}
+
+/**
+ * Los soportes de las constancias del indicador en una sola lectura, por constancia y de los más antiguos a los más
+ * recientes; `null` si la persona no ve los soportes del indicador (como los de una medición, spec 14 §6.4).
+ */
+export async function soportesDeConstancias(
+  sesion: SujetoVisibilidad,
+  indicadorId: number,
+  opciones?: { sql?: Cliente },
+): Promise<Map<number, Soporte[]> | null> {
+  const sql = opciones?.sql ?? obtenerSql();
+  if (!(await puedeVerIndicador(indicadorId, sesion, { sql })) || !(await puedeVerSoportes(indicadorId, sesion, { sql }))) return null;
+  const filas = await sql`SELECT a.id, a.contexto_id, a.nombre_original, a.mime, a.tamano_bytes FROM archivos a
+    JOIN reportes_externos r ON r.id = a.contexto_id
+    WHERE a.contexto = 'reporte_externo' AND a.rol = 'evidencia' AND r.indicador_id = ${indicadorId}
+    ORDER BY a.creado_en, a.id`;
+  const porConstancia = new Map<number, Soporte[]>();
+  for (const f of filas) {
+    const id = Number(f.contexto_id);
+    const soporte: Soporte = { id: Number(f.id), nombre: f.nombre_original as string, mime: f.mime as string, tamano: Number(f.tamano_bytes) };
+    porConstancia.set(id, [...(porConstancia.get(id) ?? []), soporte]);
+  }
+  return porConstancia;
+}
+
+/** Una línea del historial de una constancia, ya en texto. */
+export type EventoDeConstancia = { tipo: string; quien: string; cuando: Date; texto: string };
+
+const textoDe = (v: unknown): string | null => (typeof v === "string" && v.trim() !== "" ? v : null);
+const objetoDe = (v: unknown): Record<string, unknown> => (typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+
+/** «10 de noviembre de 2026» de una fecha `AAAA-MM-DD`; otra cosa, tal cual. */
+function diaLargo(v: unknown): string | null {
+  const t = textoDe(v);
+  if (!t || !esFechaValida(t)) return t;
+  const [anio, mes, dia] = t.split("-").map(Number);
+  return `${dia} de ${MESES[mes - 1]} de ${anio}`;
+}
+
+/** Lo que dice cada evento de `reporte_externo_eventos`, solo con su detalle. */
+function textoDeEvento(tipo: string, d: Record<string, unknown>): string {
+  if (tipo === "soporte") {
+    const que = d.accion === "quitado" ? "Quitó" : "Subió";
+    const nombre = textoDe(d.nombre);
+    return nombre ? `${que} el soporte «${nombre}»` : `${que} un soporte`;
+  }
+  if (tipo === "registro") {
+    const fecha = diaLargo(d.fechaEnvio);
+    const radicado = textoDe(d.radicado);
+    const nota = textoDe(d.nota);
+    const resultado = `${textoDe(d.resultado) ?? "sin resultado"}${d.parcial === true ? " (parcial)" : ""}`;
+    return `Registró el envío${fecha ? ` del ${fecha}` : ""}${radicado ? ` con el radicado ${radicado}` : ""}: ${resultado}${nota ? `. Nota: ${nota}` : ""}`;
+  }
+  const antes = objetoDe(d.antes);
+  const despues = objetoDe(d.despues);
+  const cambio = (campo: string, nombre: string, leer: (v: unknown) => string | null) =>
+    leer(antes[campo]) !== leer(despues[campo]) ? `${nombre} ${leer(antes[campo]) ?? "sin dato"} → ${leer(despues[campo]) ?? "sin dato"}` : null;
+  const cambios = [
+    cambio("radicado", "radicado", textoDe),
+    cambio("fechaEnvio", "fecha de envío", diaLargo),
+    textoDe(antes.nota) !== textoDe(despues.nota) ? "nota" : null,
+  ].filter((c): c is string => c !== null);
+  const porque = textoDe(d.justificacion);
+  return `Corrigió el envío${cambios.length > 0 ? ` (${cambios.join("; ")})` : ""}${porque ? `. Por qué: ${porque}` : ""}`;
+}
+
+/**
+ * El historial de cada constancia del indicador (anexo §8): el registro, cada corrección con su antes y su después y los
+ * soportes subidos y quitados, de `reporte_externo_eventos`, en orden; `null` a quien no ve los soportes.
+ */
+export async function historialDeConstancias(
+  sesion: SujetoVisibilidad,
+  indicadorId: number,
+  opciones?: { sql?: Cliente },
+): Promise<Map<number, EventoDeConstancia[]> | null> {
+  const sql = opciones?.sql ?? obtenerSql();
+  if (!(await puedeVerIndicador(indicadorId, sesion, { sql })) || !(await puedeVerSoportes(indicadorId, sesion, { sql }))) return null;
+  const filas = await sql`SELECT e.reporte_id, e.tipo, e.detalle, e.creado_en, u.nombre FROM reporte_externo_eventos e
+    JOIN reportes_externos r ON r.id = e.reporte_id LEFT JOIN usuarios u ON u.id = e.usuario_id
+    WHERE r.indicador_id = ${indicadorId}
+    ORDER BY e.reporte_id, e.id`;
+  const porConstancia = new Map<number, EventoDeConstancia[]>();
+  for (const f of filas) {
+    const id = Number(f.reporte_id);
+    const tipo = f.tipo as string;
+    const evento = { tipo, quien: (f.nombre as string | null) ?? "", cuando: new Date(f.creado_en as string), texto: textoDeEvento(tipo, objetoDe(f.detalle)) };
+    porConstancia.set(id, [...(porConstancia.get(id) ?? []), evento]);
+  }
+  return porConstancia;
+}
+
+/** Lo que la página del indicador sabe del ente de su ficha vigente para la vista «Reportes al ente». */
+export type EnteDeLaFicha = {
+  /** El ente de la ficha vigente; `null` sin ente o sin ficha aprobada. */
+  ente: string | null;
+  /** La ficha genera constancias (`seReportaAlEnte`). */
+  seReporta: boolean;
+  /** Escribe el ente sin su periodicidad o sin su plazo (una aprobada antes de la 14B): no genera constancias. */
+  incompleto: boolean;
+  /** El indicador tiene alguna constancia, de esta ficha o de una anterior. */
+  conConstancias: boolean;
+};
+
+/**
+ * El ente de la ficha vigente y si el indicador tiene constancias, en una lectura: la vista «Reportes al ente» aparece si la
+ * ficha tiene ente o el indicador tiene constancias. Quien llama ya decidió que la persona ve el indicador.
+ */
+export async function enteDeLaFicha(indicadorId: number, opciones?: { sql?: Cliente }): Promise<EnteDeLaFicha> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [f] = await sql`SELECT va.ente, va.periodicidad_externa, va.plazo_externo_dias, va.periodicidad,
+      EXISTS (SELECT 1 FROM reportes_externos r WHERE r.indicador_id = ${indicadorId}) AS con_constancias
+    FROM (SELECT 1) x LEFT JOIN LATERAL (
+      SELECT ente, periodicidad_externa, plazo_externo_dias, periodicidad FROM indicador_versiones
+      WHERE indicador_id = ${indicadorId} AND estado = 'aprobada' ORDER BY numero DESC LIMIT 1
+    ) va ON true`;
+  const v = enteDeVersion(f);
+  const ente = v.ente?.trim() || null;
+  return { ente, seReporta: seReportaAlEnte(v), incompleto: ente !== null && !enteCompleto(v), conConstancias: f.con_constancias === true };
 }

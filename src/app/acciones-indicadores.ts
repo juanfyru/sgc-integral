@@ -9,7 +9,7 @@ import { ErrorFirma } from "@/db/consultas/flujo/contrato";
 import { analizar } from "@/db/consultas/indicadores/analisis";
 import { aprobarFichas, descartarBorrador, devolverFicha, enviarAAprobacion } from "@/db/consultas/indicadores/aprobacion";
 import { cerrarDeNuevo, cerrarMes, reabrirMedicion } from "@/db/consultas/indicadores/cierre";
-import { corregirConstancia, registrarConstancia } from "@/db/consultas/indicadores/constancias";
+import { corregirConstancia, quitarSoporteDeConstancia, registrarConstancia } from "@/db/consultas/indicadores/constancias";
 import { abrirCambio, crearIndicador, guardarBorrador } from "@/db/consultas/indicadores/fichas";
 import { volverACalcular } from "@/db/consultas/indicadores/fotos";
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
@@ -379,6 +379,17 @@ export async function corregirConstanciaAccion(_prev: EstadoAccion, formData: Fo
   return mutacion(formData, "indicadores.medir", async (_usuarioId, _formData, sesion) => {
     const d = parsearFormulario(formData, EsquemaCorregirConstancia, { omitir: ["id"] });
     await corregirConstancia(sesion, { reporteId: idNumerico(formData, "id"), ...d });
+  });
+}
+
+/**
+ * `id` es el del soporte (la fila de `archivos`) de una constancia pendiente. No navega: la vista se repinta sin él. El de
+ * una registrada no se quita; quién puede quitarlo lo comprueba la consulta.
+ */
+export async function quitarSoporteDeConstanciaAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.medir", async (_usuarioId, _formData, sesion) => {
+    parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
+    await quitarSoporteDeConstancia(sesion, { archivoId: idNumerico(formData, "id") });
   });
 }
 
