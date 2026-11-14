@@ -6,11 +6,13 @@
  *
  * El indicador guarda el cálculo y el alcance de su ficha vigente: el índice único parcial `indicadores_calculo_unico`
  * deja a lo sumo una ficha activa por cálculo y alcance (con alcance «proceso», por proceso), y quien llama convierte su
- * `23505` en un mensaje legible. Una ficha automática no la mide nadie ni lleva soporte obligatorio.
+ * `23505` en un mensaje legible. Una ficha automática no la mide nadie ni lleva soporte obligatorio: si lo tenía, se apaga
+ * y las mediciones en curso se recalculan como al desmarcarlo en «Datos de operación» (`recalcularPorSoporte`).
  */
 import type { TransactionSql } from "postgres";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
+import { recalcularPorSoporte } from "./operacion";
 
 export type Publicacion = {
   indicadorId: number;
@@ -29,7 +31,7 @@ export const esCalculoRepetido = (err: unknown) =>
   (err as { code?: string }).code === "23505" && (err as { constraint_name?: string }).constraint_name === "indicadores_calculo_unico";
 
 export async function alPublicarVersion(tx: TransactionSql, d: Publicacion): Promise<void> {
-  const [v] = await tx`SELECT v.calculo, v.calculo_alcance, i.codigo FROM indicador_versiones v
+  const [v] = await tx`SELECT v.calculo, v.calculo_alcance, i.codigo, i.soporte_obligatorio FROM indicador_versiones v
     JOIN indicadores i ON i.id = v.indicador_id
     WHERE v.id = ${d.versionId} AND v.indicador_id = ${d.indicadorId}`;
   if (!v) throw new ErrorIndicador("La ficha no existe");
@@ -39,7 +41,11 @@ export async function alPublicarVersion(tx: TransactionSql, d: Publicacion): Pro
   if (calculo === null) return;
 
   const quitados = await tx`DELETE FROM indicador_designados WHERE indicador_id = ${d.indicadorId} AND funcion = 'mide' RETURNING usuario_id`;
-  await tx`UPDATE indicadores SET soporte_obligatorio = false WHERE id = ${d.indicadorId}`;
+  if (v.soporte_obligatorio === true) {
+    // Como al desmarcarlo en «Datos de operación» (F14A-R52): la que solo esperaba el soporte queda reportada.
+    await tx`UPDATE indicadores SET soporte_obligatorio = false WHERE id = ${d.indicadorId}`;
+    await recalcularPorSoporte(tx, d.indicadorId, { ahora: d.ahora, actorId: d.actorId, activado: false });
+  }
   if (quitados.length > 0) {
     await registrarAuditoria(tx, {
       usuarioId: d.actorId,

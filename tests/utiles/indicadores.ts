@@ -79,9 +79,22 @@ export type VariableDePrueba = {
 };
 
 /**
+ * Libera, para la prueba, un cálculo y su alcance (con alcance «proceso», en ese proceso): deja sin cálculo a los
+ * indicadores activos que lo tienen, como la demo, para que el índice `indicadores_calculo_unico` no choque con ellos. Solo
+ * dentro de `revertida`: la transacción se revierte y la demo queda como estaba.
+ */
+export async function liberarCalculo(tx: TransactionSql, clave: ClaveDeCalculo, alcance: AlcanceDeCalculo, procesoId?: number): Promise<void> {
+  if (alcance === "proceso" && procesoId === undefined) throw new Error("Con alcance «proceso», diga el proceso");
+  await tx`UPDATE indicadores SET calculo = NULL, calculo_alcance = NULL
+    WHERE estado = 'activo' AND calculo = ${clave} AND calculo_alcance = ${alcance}
+      AND (calculo_alcance <> 'proceso' OR proceso_id = ${procesoId ?? 0})`;
+}
+
+/**
  * Inserta por SQL un indicador de forma «porcentaje» (`A / B * 100`) con su versión 1 y sus variables A y B. La versión
  * nace en borrador y, salvo con `estado: "borrador"`, se pasa a aprobada al final: los triggers de la 0011 rechazan
- * filas hijas bajo una versión aprobada. Quien aprueba es un usuario de Gerencia creado aquí.
+ * filas hijas bajo una versión aprobada. Quien aprueba es un usuario de Gerencia creado aquí. Solo dentro de `revertida`:
+ * con `calculo`, antes libera ese cálculo y alcance (`liberarCalculo`).
  */
 export async function indicadorDePrueba(
   tx: TransactionSql,
@@ -100,6 +113,7 @@ export async function indicadorDePrueba(
   const meta = o.meta === undefined ? "90" : o.meta;
   const calculo = o.calculo ? CALCULOS[o.calculo.clave] : null;
   const forma = calculo?.forma ?? "porcentaje";
+  if (o.calculo && aprobada) await liberarCalculo(tx, o.calculo.clave, o.calculo.alcance, procesoId);
 
   const [indicador] = await tx`INSERT INTO indicadores
       (codigo, proceso_id, estado, nivel_acceso, inicio_medicion, soporte_obligatorio, creado_por)

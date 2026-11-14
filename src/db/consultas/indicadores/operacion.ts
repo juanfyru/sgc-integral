@@ -13,6 +13,7 @@ import { registrarAuditoria } from "@/db/consultas/admin";
 import { avisarA } from "@/db/consultas/avisos-vencimiento";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
+import { calculoDe } from "@/lib/indicadores/calculos/registro";
 import { fraccion } from "@/lib/indicadores/formula/fraccion";
 import { clavesDelAnio, fechaLimiteDeReporte, marcasQueSiguen, periodicidadDe, versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import { rangosATexto } from "@/lib/indicadores/rangos";
@@ -226,6 +227,11 @@ export async function cambiarOperacion(
       throw new ErrorIndicador(`El inicio de medición debe ser un periodo ${ADJETIVO[rige]}`);
     }
     const [actual] = await tx`SELECT plazo_reporte_dias, inicio_medicion, soporte_obligatorio, nivel_acceso FROM indicadores WHERE id = ${i.id}`;
+    // Un cálculo que no se llena hacia atrás empieza donde se aprobó (anexo 14B, §5.3): antes no hay nada que el sistema pueda medir.
+    const inicioActual = actual.inicio_medicion ? periodoDe(actual.inicio_medicion as string, zonaHoraria()) : null;
+    if (calculoDe(i.calculo)?.reconstruible === false && inicioActual && nuevo.desde.getTime() < inicioActual.desde.getTime()) {
+      throw new ErrorIndicador("Este cálculo no se llena hacia atrás: su inicio de medición no puede adelantarse");
+    }
     const antes: DatosOperacion = {
       plazoReporteDias: Number(actual.plazo_reporte_dias),
       inicioMedicion: (actual.inicio_medicion as string | null) ?? "",
@@ -312,9 +318,10 @@ async function moverFechasLimite(tx: TransactionSql, indicadorId: number, plazo:
  * finales, punto 1): al **activarlo** solo alcanza las que siguen en plazo (`vence_en >= ahora`), y una ya reportada sin
  * soporte vuelve a abierta para pedirlo; las que ya vencieron se quedan como están (se reportaron cuando no se pedía y no
  * se vuelven vencidas). Al **desactivarlo**, todas: una que solo esperaba el soporte queda reportada. Las de otra
- * periodicidad no se calculan. Devuelve cuántas cambiaron.
+ * periodicidad no se calculan. Devuelve cuántas cambiaron. Quien llama tiene el indicador `FOR UPDATE` y ya escribió el valor
+ * nuevo en `indicadores` (`recalcularMedicion` lo lee de ahí): `cambiarOperacion` y `alPublicarVersion`.
  */
-async function recalcularPorSoporte(
+export async function recalcularPorSoporte(
   tx: TransactionSql,
   indicadorId: number,
   c: { ahora: Date; actorId: number; activado: boolean },

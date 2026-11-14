@@ -17,13 +17,13 @@ import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { aprobarFichas, enviarAAprobacion, previaDeEnvio } from "@/db/consultas/indicadores/aprobacion";
 import { abrirCambio, crearIndicador, fichaParaEditar, guardarBorrador } from "@/db/consultas/indicadores/fichas";
-import { versionesAprobadas } from "@/db/consultas/indicadores/mediciones";
+import { asegurarMediciones, reportar, versionesAprobadas } from "@/db/consultas/indicadores/mediciones";
 import { cambiarOperacion, designar, duplicar } from "@/db/consultas/indicadores/operacion";
 import { esCalculoRepetido, yaHayUnaActiva } from "@/db/consultas/indicadores/publicacion";
 import { EsquemaFicha, type DatosFicha } from "@/lib/esquemas/indicadores";
 import type { AlcanceDeCalculo, ClaveDeCalculo } from "@/lib/indicadores/calculos/registro";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
-import { indicadorDePrueba } from "./utiles/indicadores";
+import { indicadorDePrueba, liberarCalculo } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 import { firmaDePrueba } from "./utiles/vigencia";
@@ -47,8 +47,6 @@ const RANGOS_90 = JSON.stringify({ bien: [{ signo: ">=", valor: "90" }], atencio
 type Base = { admin: SesionFlujo; gerente: SesionFlujo; sgc: number; tipoId: number; estrategico: number; porcentaje: number; cargoId: number };
 
 async function base(tx: TransactionSql): Promise<Base> {
-  // Las pruebas de unicidad no dependen de lo que la demo traiga con cálculo.
-  await tx`UPDATE indicadores SET calculo = NULL, calculo_alcance = NULL WHERE calculo IS NOT NULL`;
   const [p] = await tx`SELECT id FROM procesos WHERE sigla = 'SGC'`;
   const [t] = await tx`SELECT id FROM tipos_indicador WHERE nombre = 'Eficacia'`;
   const [es] = await tx`SELECT id FROM clasificaciones_indicador WHERE nombre = 'Estratégico'`;
@@ -157,6 +155,7 @@ describe("la ficha automática en el servidor", () => {
   it("una ficha automática toma del registro la forma, las variables y la tendencia", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);
+      await liberarCalculo(tx, "acuses", "entidad");
       const persona = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [b.sgc] });
       // Lo que el formulario mande de forma, fórmula, variables, tendencia, medición y soporte no cuenta: lo pone el registro.
       const { indicadorId, versionId } = await crearIndicador(
@@ -223,6 +222,7 @@ describe("la ficha automática en el servidor", () => {
   it("no exige la prueba ni un cargo de medir; un manual sí", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);
+      await liberarCalculo(tx, "etapas", "entidad");
       const auto = await crearIndicador(b.admin, automatica(b, "etapas", "entidad"), { sql: tx, ahora: AHORA });
       const previa = await previaDeEnvio(b.admin, auto.versionId, { sql: tx, ahora: AHORA });
       expect(previa?.probada).toBe(true);
@@ -256,6 +256,8 @@ describe("la ficha automática en el servidor", () => {
   it("conformidad a la fecha exige meta", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);
+      await liberarCalculo(tx, "conformidad_fecha", "entidad");
+      await liberarCalculo(tx, "conformidad_periodo", "entidad");
             await rechaza(
         crearIndicador(b.admin, automatica(b, "conformidad_fecha", "entidad", SIN_META), { sql: tx }),
         "Este cálculo exige una meta: con ella se juzga la conformidad en Distribución",
@@ -269,6 +271,7 @@ describe("la ficha automática en el servidor", () => {
   it("guardar el borrador de un automático lo deja automático", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);
+      await liberarCalculo(tx, "externos", "proceso", b.sgc);
       const { versionId, codigo, indicadorId } = await crearIndicador(b.admin, automatica(b, "externos", "proceso"), { sql: tx, ahora: AHORA });
       // Lo que el formulario vuelve a enviar trae el origen, el cálculo y el alcance.
       const ficha = await fichaParaEditar(b.admin, codigo, { sql: tx });
@@ -302,6 +305,9 @@ describe("la ficha automática en el servidor", () => {
   it("a lo sumo una ficha activa por cálculo y alcance", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);
+      await liberarCalculo(tx, "etapas", "entidad");
+      await liberarCalculo(tx, "aprobacion", "entidad");
+      await liberarCalculo(tx, "etapas", "proceso", b.sgc);
       const primera = await aprobada(tx, b, automatica(b, "etapas", "entidad"));
       expect(await indicadorDe(tx, primera.indicadorId)).toMatchObject({ estado: "activo", calculo: "etapas", calculo_alcance: "entidad" });
 
@@ -337,6 +343,8 @@ describe("la ficha automática en el servidor", () => {
   it("dos fichas del mismo cálculo aprobadas en el mismo bloque: no se aprueba ninguna y el mensaje es legible", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);
+      await liberarCalculo(tx, "vencidos", "entidad");
+      await liberarCalculo(tx, "vencidos", "proceso", b.sgc);
       const a = await enviada(tx, b, automatica(b, "vencidos", "entidad", SIN_META));
       const c = await enviada(tx, b, automatica(b, "vencidos", "entidad", SIN_META));
       await rechaza(
@@ -357,6 +365,7 @@ describe("la ficha automática en el servidor", () => {
   it("un cálculo que no se llena hacia atrás empieza en el periodo en curso al aprobarse", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);
+      await liberarCalculo(tx, "dentro_plazo", "entidad");
       const { indicadorId, versionId } = await aprobada(tx, b, automatica(b, "dentro_plazo", "entidad", { inicioMedicion: "2026-01" }));
       expect(await indicadorDe(tx, indicadorId)).toMatchObject({ estado: "activo", inicio_medicion: "2026-11", calculo: "dentro_plazo" });
       expect((await versionDe(tx, versionId)).rige_desde).toBe("2026-11");
@@ -367,6 +376,8 @@ describe("la ficha automática en el servidor", () => {
   it("el periodo en curso es el de la aprobación, no el del envío", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);
+      await liberarCalculo(tx, "dentro_plazo", "entidad");
+      await liberarCalculo(tx, "acuses", "entidad");
       const diciembre = { sql: tx, ahora: new Date("2026-12-03T15:00:00Z"), verificar: firmaDePrueba };
       // Una ficha nueva enviada en noviembre y aprobada en diciembre empieza en diciembre.
       const nueva = await enviada(tx, b, automatica(b, "dentro_plazo", "entidad"));
@@ -395,6 +406,7 @@ describe("la ficha automática en el servidor", () => {
   it("uno que se llena hacia atrás conserva su inicio y abre sus históricos", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);
+      await liberarCalculo(tx, "etapas", "entidad");
       const { indicadorId, versionId } = await aprobada(tx, b, automatica(b, "etapas", "entidad", { inicioMedicion: "2026-08" }));
       expect(await indicadorDe(tx, indicadorId)).toMatchObject({ estado: "activo", inicio_medicion: "2026-08" });
       expect((await versionDe(tx, versionId)).rige_desde).toBe("2026-08");
@@ -409,6 +421,7 @@ describe("la ficha automática en el servidor", () => {
   it("pasar de manual a un cálculo que no se llena hacia atrás rige desde el periodo en curso", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);
+      await liberarCalculo(tx, "acuses", "entidad");
       const { indicadorId, codigo } = await aprobada(tx, b, manual(b));
       const { versionId } = await abrirCambio(b.admin, indicadorId, { sql: tx, ahora: AHORA });
       await guardarBorrador(b.admin, versionId, automatica(b, "acuses", "entidad", { codigo, motivoCambio: "Lo calcula el sistema" }), {
@@ -444,6 +457,8 @@ describe("la ficha automática en el servidor", () => {
   it("al aprobarse quita a quienes miden y lo deja en la bitácora; designar «mide» se rechaza", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);
+      await liberarCalculo(tx, "etapas", "entidad");
+      await liberarCalculo(tx, "externos", "entidad");
       const uno = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [b.sgc] });
       const dos = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [b.sgc] });
       const { indicadorId, codigo } = await aprobada(tx, b, manual(b, { mide: [uno.usuarioId, dos.usuarioId], analiza: [uno.usuarioId], soporteObligatorio: true }));
@@ -486,6 +501,7 @@ describe("la ficha automática en el servidor", () => {
   it("un cambio menor publicado también pasa por la publicación: el cálculo sigue y nadie queda midiendo", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);
+      await liberarCalculo(tx, "externos", "entidad");
       const persona = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [b.sgc] });
       const { indicadorId, codigo } = await aprobada(tx, b, automatica(b, "externos", "entidad"));
       // Un «mide» que quedara de antes de la 14B: la publicación del cambio menor lo quita.
@@ -508,6 +524,7 @@ describe("la ficha automática en el servidor", () => {
   it("«Crear a partir de este» sobre un automático nace manual", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);
+      await liberarCalculo(tx, "acuses", "entidad");
       const persona = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [b.sgc] });
       const origen = await aprobada(tx, b, automatica(b, "acuses", "entidad", { analiza: [persona.usuarioId] }));
       // Un «mide» que quedara de antes tampoco se copia.
@@ -532,6 +549,7 @@ describe("la ficha automática en el servidor", () => {
   it("soporte obligatorio no aplica", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);
+      await liberarCalculo(tx, "etapas", "entidad");
       const { indicadorId } = await aprobada(tx, b, automatica(b, "etapas", "entidad", { inicioMedicion: "2026-08" }));
       const operacion = { indicadorId, plazoReporteDias: 10, inicioMedicion: "2026-08", nivelAcceso: "general" as const };
       await rechaza(
@@ -541,6 +559,65 @@ describe("la ficha automática en el servidor", () => {
       // Lo demás de la operación sí cambia.
       await cambiarOperacion(b.admin, { ...operacion, plazoReporteDias: 5, soporteObligatorio: false }, { sql: tx, ahora: AHORA });
       expect(await indicadorDe(tx, indicadorId)).toMatchObject({ soporte_obligatorio: false });
+    }));
+
+  it("un cálculo que no se llena hacia atrás no adelanta su inicio de medición; uno que sí, lo adelanta", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      await liberarCalculo(tx, "dentro_plazo", "entidad");
+      await liberarCalculo(tx, "etapas", "entidad");
+      const operacion = { plazoReporteDias: 10, soporteObligatorio: false, nivelAcceso: "general" as const };
+      const estado = await aprobada(tx, b, automatica(b, "dentro_plazo", "entidad"));
+      expect((await indicadorDe(tx, estado.indicadorId)).inicio_medicion).toBe("2026-11");
+      await rechaza(
+        cambiarOperacion(b.admin, { ...operacion, indicadorId: estado.indicadorId, inicioMedicion: "2026-10" }, { sql: tx, ahora: AHORA }),
+        "Este cálculo no se llena hacia atrás: su inicio de medición no puede adelantarse",
+      );
+      // Hacia adelante, con las reglas de siempre.
+      await cambiarOperacion(b.admin, { ...operacion, indicadorId: estado.indicadorId, inicioMedicion: "2026-12" }, { sql: tx, ahora: AHORA });
+      expect((await indicadorDe(tx, estado.indicadorId)).inicio_medicion).toBe("2026-12");
+
+      const flujo = await aprobada(tx, b, automatica(b, "etapas", "entidad", { inicioMedicion: "2026-08" }));
+      await cambiarOperacion(b.admin, { ...operacion, indicadorId: flujo.indicadorId, inicioMedicion: "2026-07" }, { sql: tx, ahora: AHORA });
+      expect((await indicadorDe(tx, flujo.indicadorId)).inicio_medicion).toBe("2026-07");
+    }));
+
+  it("al pasar a automático se apaga el soporte obligatorio: la medición que solo lo esperaba queda reportada", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      await liberarCalculo(tx, "etapas", "entidad");
+      const persona = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [b.sgc] });
+      const dia = (d: number, mes = 11) => new Date(`2026-${String(mes).padStart(2, "0")}-${String(d).padStart(2, "0")}T15:00:00Z`);
+      const octubre = { sql: tx, ahora: dia(5, 10), verificar: firmaDePrueba };
+      // Manual desde octubre, aprobada el 5 de octubre: la medición de octubre no es histórica.
+      const creado = await crearIndicador(b.admin, manual(b, { inicioMedicion: "2026-10", mide: [persona.usuarioId] }), { sql: tx, ahora: dia(5, 10) });
+      await enviarAAprobacion(b.admin, { versionId: creado.versionId, credenciales: CLAVE }, octubre);
+      await aprobarFichas(b.gerente, { versionIds: [creado.versionId], credenciales: CLAVE }, octubre);
+      await asegurarMediciones({ sql: tx, ahora: dia(3), indicadorId: creado.indicadorId });
+      const [m] = await tx`SELECT id, historica FROM mediciones WHERE indicador_id = ${creado.indicadorId} AND periodo = '2026-10'`;
+      expect(m.historica).toBe(false);
+      const medicionId = Number(m.id);
+      await reportar(persona, { medicionId, valores: { A: "9", B: "10" }, parcial: false, confirmado: true }, { sql: tx, ahora: dia(3) });
+      // Con el soporte obligatorio, en plazo, vuelve a abierta: solo le falta el soporte.
+      const operacion = { indicadorId: creado.indicadorId, plazoReporteDias: 10, inicioMedicion: "2026-10", nivelAcceso: "general" as const };
+      await cambiarOperacion(b.admin, { ...operacion, soporteObligatorio: true }, { sql: tx, ahora: dia(4) });
+      const estadoDe = async () => (await tx`SELECT estado FROM mediciones WHERE id = ${medicionId}`)[0].estado as string;
+      expect(await estadoDe()).toBe("abierta");
+
+      const { versionId } = await abrirCambio(b.admin, creado.indicadorId, { sql: tx, ahora: AHORA });
+      await guardarBorrador(b.admin, versionId, automatica(b, "etapas", "entidad", { codigo: creado.codigo, motivoCambio: "Lo calcula el sistema" }), {
+        sql: tx,
+        ahora: AHORA,
+      });
+      await enviarAAprobacion(b.admin, { versionId, credenciales: CLAVE }, firmar(tx));
+      // Enviar no lo toca: solo la publicación.
+      expect(await estadoDe()).toBe("abierta");
+      await aprobarFichas(b.gerente, { versionIds: [versionId], credenciales: CLAVE }, firmar(tx));
+      expect(await indicadorDe(tx, creado.indicadorId)).toMatchObject({ soporte_obligatorio: false, calculo: "etapas" });
+      expect(await estadoDe()).toBe("reportada");
+      const [recalculo] = await tx`SELECT usuario_id, detalle FROM medicion_eventos WHERE medicion_id = ${medicionId} AND tipo = 'recalculo'
+        ORDER BY id DESC LIMIT 1`;
+      expect(recalculo).toMatchObject({ usuario_id: b.gerente.usuarioId, detalle: { causa: "soporte_obligatorio", despues: { estado: "reportada" } } });
     }));
 
   it("el indicador de prueba con cálculo nace automático, con las variables del registro", () =>
@@ -556,17 +633,30 @@ describe("la ficha automática en el servidor", () => {
         const variables = await variablesDe(tx, ind.versionId);
         expect(variables.map((v) => [v.letra, v.origen])).toEqual(letras.map((l) => [l, "automatica"]));
       }
+      // Libera el cálculo que va a usar: una ficha activa con ese cálculo y alcance (como las de la demo) se queda sin él.
+      const antes = await indicadorDePrueba(tx, { calculo: { clave: "conformidad_fecha", alcance: "entidad" } });
+      const despues = await indicadorDePrueba(tx, { calculo: { clave: "conformidad_fecha", alcance: "entidad" } });
+      expect(await indicadorDe(tx, antes.id)).toMatchObject({ estado: "activo", calculo: null, calculo_alcance: null });
+      expect(await indicadorDe(tx, despues.id)).toMatchObject({ calculo: "conformidad_fecha", calculo_alcance: "entidad" });
+      // Con alcance «proceso», solo en su proceso.
+      const otroProceso = await procesoNuevo(tx);
+      const enGth = await indicadorDePrueba(tx, { calculo: { clave: "etapas", alcance: "proceso" } });
+      await indicadorDePrueba(tx, { calculo: { clave: "etapas", alcance: "proceso" }, procesoId: otroProceso });
+      expect(await indicadorDe(tx, enGth.id)).toMatchObject({ calculo: "etapas", calculo_alcance: "proceso" });
     }));
 
   it("el choque con el índice único se reconoce por su nombre (dos aprobaciones a la vez)", () =>
     revertida(sql, async (tx) => {
       await base(tx);
       await indicadorDePrueba(tx, { calculo: { clave: "etapas", alcance: "entidad" } });
+      const otro = await indicadorDePrueba(tx, { calculo: { clave: "etapas", alcance: "proceso" } });
       // En un punto de guardado: el error no deja la transacción de la prueba inservible.
-      const err = await tx.savepoint((sp) => indicadorDePrueba(sp, { calculo: { clave: "etapas", alcance: "entidad" } })).then(
-        () => null,
-        (e: unknown) => e,
-      );
+      const err = await tx
+        .savepoint((sp) => sp`UPDATE indicadores SET calculo_alcance = 'entidad' WHERE id = ${otro.id}`)
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
       expect(esCalculoRepetido(err)).toBe(true);
       expect(yaHayUnaActiva()).toBe("Ya hay una ficha activa para ese cálculo y alcance");
       expect(esCalculoRepetido(new ErrorIndicador("otro"))).toBe(false);
