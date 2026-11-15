@@ -13,7 +13,7 @@ import { corregirConstancia, quitarSoporteDeConstancia, registrarConstancia } fr
 import { abrirCambio, crearIndicador, guardarBorrador } from "@/db/consultas/indicadores/fichas";
 import { volverACalcular } from "@/db/consultas/indicadores/fotos";
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
-import { legibleSiInterbloqueo, resolverImpactoNoAfecta } from "@/db/consultas/indicadores/impactos";
+import { legibleSiInterbloqueo, resolverImpactoNoAfecta, sinInterbloqueoCrudo } from "@/db/consultas/indicadores/impactos";
 import { marcarNoAplica, quitarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
 import { programarMeta, quitarMetaProgramada } from "@/db/consultas/indicadores/metas";
 import { observar, responder } from "@/db/consultas/indicadores/observaciones";
@@ -77,14 +77,9 @@ function destinoDeFirma(err: unknown): string {
   throw err;
 }
 
-/**
- * Quien guarda, envía o aprueba una ficha bloquea el indicador y después lee sus normas; quien cambia el estado de una
- * norma la bloquea y después abre las revisiones de los indicadores que la citan (anexo 14B, §9). Si se cruzan, PostgreSQL
- * cancela una con `40P01`: a la persona le llega un mensaje legible, sin reintentar.
- */
-const sinInterbloqueoCrudo = (err: unknown): never => {
-  throw legibleSiInterbloqueo(err);
-};
+// Quien guarda, envía o aprueba una ficha bloquea el indicador y después lee sus normas; quien cambia el estado de una norma
+// la bloquea y después abre las revisiones de los indicadores que la citan (anexo 14B, §9). Si se cruzan, PostgreSQL cancela
+// una con `40P01`: a la persona le llega un mensaje legible, sin reintentar (`sinInterbloqueoCrudo`, `legibleSiInterbloqueo`).
 
 /** Crea el indicador en borrador y lleva a su ficha para seguir editándola. */
 export async function crearIndicadorAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {

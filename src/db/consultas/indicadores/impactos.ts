@@ -51,12 +51,24 @@ const estadoEnTexto = (estado: EstadoNorma) => ETIQUETA_ESTADO_NORMA[estado].toL
 
 export const INTERBLOQUEO_NORMA_O_FICHA = "Otra persona estaba cambiando esa norma o esa ficha al mismo tiempo: inténtelo de nuevo";
 
+/** La llave de una revisión hacia su indicador: la que rompe «Deshacer la importación» si borra la ficha a la vez. */
+const LLAVE_HACIA_EL_INDICADOR = "impactos_indicadores_indicador_id_indicadores_id_fk";
+
 /**
- * El `40P01` de PostgreSQL (quien cambia el estado de la norma y quien guarda, envía o aprueba una ficha que la cita, a la
- * vez) como un error de negocio legible; cualquier otro error, tal cual. Lo usan las acciones, que no reintentan.
+ * Los cruces entre quien cambia el estado de una norma y quien toca una ficha que la cita, como un error de negocio
+ * legible: el `40P01` de PostgreSQL (con quien guarda, envía o aprueba la ficha) y el `23503` de la llave
+ * `LLAVE_HACIA_EL_INDICADOR` (con quien deshace la importación que creó la ficha: la revisión nace para un indicador que se
+ * está borrando), solo de esa llave. Cualquier otro error, tal cual. Lo usan las acciones, que no reintentan.
  */
 export function legibleSiInterbloqueo(err: unknown): unknown {
-  return (err as { code?: string } | null)?.code === "40P01" ? new ErrorIndicador(INTERBLOQUEO_NORMA_O_FICHA) : err;
+  const e = err as { code?: string; constraint_name?: string } | null;
+  const cruce = e?.code === "40P01" || (e?.code === "23503" && e.constraint_name === LLAVE_HACIA_EL_INDICADOR);
+  return cruce ? new ErrorIndicador(INTERBLOQUEO_NORMA_O_FICHA) : err;
+}
+
+/** Para el `.catch` de una acción: lanza lo que decide `legibleSiInterbloqueo`. */
+export function sinInterbloqueoCrudo(err: unknown): never {
+  throw legibleSiInterbloqueo(err);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

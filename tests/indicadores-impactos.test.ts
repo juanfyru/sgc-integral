@@ -82,10 +82,11 @@ import {
   INTERBLOQUEO_NORMA_O_FICHA,
   legibleSiInterbloqueo,
   resolverImpactoNoAfecta,
+  sinInterbloqueoCrudo,
   tareasDeImpactosDeIndicadores,
 } from "@/db/consultas/indicadores/impactos";
 import { condicionDeDeshacer, deshacerImportacion } from "@/db/consultas/indicadores/importacion";
-import { borrarIndicador, retirar } from "@/db/consultas/indicadores/operacion";
+import { borrarIndicador, duplicar, retirar } from "@/db/consultas/indicadores/operacion";
 import { alPublicarVersion } from "@/db/consultas/indicadores/publicacion";
 import { tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
 import { revisarVencimientosDeIndicadores } from "@/db/consultas/indicadores/vencimientos";
@@ -440,6 +441,31 @@ describe("cómo se resuelven", () => {
       await rechaza(crearIndicador(b.admin, datos(b, { normaIds: [n.id] }), { sql: tx, ahora: T2 }), "Solo se pueden citar normas vigentes o modificadas");
     }));
 
+  it("«ya citada» es lo que cita la ficha vigente, no lo que trae el borrador: ni la copia ni un guardado anterior la dejan pasar", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const n = await normaDePrueba(tx, b.admin);
+      // (a) «Crear a partir de este» copia la cita de una norma ya derogada: la copia no tiene vigente y no se guarda citándola.
+      const original = await aprobada(tx, b, datos(b, { normaIds: [n.id] }));
+      const m = await normaDePrueba(tx, b.admin);
+      const conM = await aprobada(tx, b, datos(b));
+      const v2 = await cambio(tx, b.admin, conM.indicadorId, datos(b, { normaIds: [m.id] }), T1);
+      await derogar(tx, b.admin, n.id);
+      await derogar(tx, b.admin, m.id);
+      const { codigo } = await duplicar(b.admin, { indicadorId: original.indicadorId, procesoId: b.sgc }, { sql: tx, ahora: T2 });
+      const [copia] = await tx`SELECT v.id FROM indicador_versiones v JOIN indicadores i ON i.id = v.indicador_id WHERE i.codigo = ${codigo}`;
+      expect((await tx`SELECT norma_id FROM indicador_normas WHERE version_id = ${copia.id}`).map((f) => Number(f.norma_id))).toEqual([n.id]);
+      await rechaza(
+        guardarBorrador(b.admin, Number(copia.id), datos(b, { normaIds: [n.id] }), { sql: tx, ahora: T2 }),
+        "Solo se pueden citar normas vigentes o modificadas",
+      );
+      // (b) Un borrador de cambio que ya traía guardada una norma que después se derogó, si la vigente no la cita.
+      await rechaza(guardarBorrador(b.admin, v2, datos(b, { normaIds: [m.id] }), { sql: tx, ahora: T2 }), "Solo se pueden citar normas vigentes o modificadas");
+      // Sin ella, los dos se guardan.
+      await guardarBorrador(b.admin, Number(copia.id), datos(b), { sql: tx, ahora: T2 });
+      await guardarBorrador(b.admin, v2, datos(b, { nombre: "Capacitaciones del plan cumplidas" }), { sql: tx, ahora: T2 });
+    }));
+
   it("una versión enviada después del impacto lo resuelve al aprobarse, a nombre de quien la elaboró", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);
@@ -692,7 +718,7 @@ describe("la tarea, los vencimientos y la visibilidad", () => {
       const { cambioId } = await derogar(tx, admin, n.id);
       const [fila] = await impactosDelIndicador(tx, general.id);
       const frase = `${n.nombre} pasó a derogada el 11 nov 2026. Hay que revisar esta ficha antes del ${textoFecha(fila.vence_en as Date, zonaHoraria())}.`;
-      const ADMINISTRA = "También se resuelve al aprobar una versión nueva de la ficha o al retirar el indicador.";
+      const ADMINISTRA = "También se resuelve al aprobar una versión de la ficha enviada después de este cambio, o al retirar el indicador.";
 
       // Quien administra: el aviso, «No afecta» con su nota y la frase de las otras salidas.
       const delAdmin = await pintar(tx, admin, paginaIndicador(general.codigo));
@@ -718,6 +744,13 @@ describe("la tarea, los vencimientos y la visibilidad", () => {
       expect(await pintar(tx, consulta, paginaIndicador(restringido.codigo))).toBe("NO_ENCONTRADA");
       expect(await impactosPendientesDe(consulta, restringido.id, { sql: tx })).toEqual([]);
       expect(await impactosPendientesDe(admin, restringido.id, { sql: tx })).toHaveLength(1);
+      // Un retirado con una revisión pendiente (la carrera entre el retiro y la derogación): solo «No afecta», sin la frase.
+      await tx`UPDATE indicadores SET estado = 'retirado', baja_por = ${admin.usuarioId}, baja_en = ${T2}, baja_motivo = 'Se dejó de medir'
+        WHERE id = ${restringido.id}`;
+      const retirado = await pintar(tx, admin, paginaIndicador(restringido.codigo));
+      expect(sinEtiquetas(retirado)).toContain(frase);
+      expect(retirado).toMatch(/<label for="impacto-indicador-\d+-nota"[^>]*>Por qué no afecta<\/label>/);
+      expect(sinEtiquetas(retirado)).not.toContain("También se resuelve");
 
       // La página de impactos de la 13C gana la sección «Indicadores», en lectura, con lo que la persona ve.
       const delLider = await pintar(tx, liderGth, paginaImpactos(cambioId!, Number(gth.id)));
@@ -810,6 +843,19 @@ describe("lo que no es de la base", () => {
     expect(INTERBLOQUEO_NORMA_O_FICHA).toBe("Otra persona estaba cambiando esa norma o esa ficha al mismo tiempo: inténtelo de nuevo");
     const otro = Object.assign(new Error("duplicate key"), { code: "23505" });
     expect(legibleSiInterbloqueo(otro)).toBe(otro);
+    // La carrera con «Deshacer la importación»: la llave de la revisión hacia su indicador, y solo esa (por su nombre).
+    const sinIndicador = Object.assign(new Error("violates foreign key constraint"), {
+      code: "23503",
+      constraint_name: "impactos_indicadores_indicador_id_indicadores_id_fk",
+    });
+    expect((legibleSiInterbloqueo(sinIndicador) as Error).message).toBe(INTERBLOQUEO_NORMA_O_FICHA);
+    const otraLlave = Object.assign(new Error("violates foreign key constraint"), { code: "23503", constraint_name: "impactos_indicadores_norma_id_normas_id_fk" });
+    expect(legibleSiInterbloqueo(otraLlave)).toBe(otraLlave);
+    expect(legibleSiInterbloqueo(Object.assign(new Error("x"), { code: "23503" }))).toBeInstanceOf(Error);
+    expect((legibleSiInterbloqueo(Object.assign(new Error("x"), { code: "23503" })) as Error).message).toBe("x");
+    // `sinInterbloqueoCrudo` lanza lo mismo que decide `legibleSiInterbloqueo`.
+    expect(() => sinInterbloqueoCrudo(sinIndicador)).toThrow(INTERBLOQUEO_NORMA_O_FICHA);
+    expect(() => sinInterbloqueoCrudo(otraLlave)).toThrow(otraLlave);
   });
 
   it("más de cinco revisiones se agrupan en una tarea que lleva a la lista filtrada", () => {
@@ -826,7 +872,9 @@ describe("lo que no es de la base", () => {
     const ajena: Tarea = { id: "impacto:1:2", modulo: "documentos", titulo: "Revisar el impacto", detalle: null, vence, enlace: "/normograma/impactos/1?proceso=2" };
     const r = agruparTareas([...tareas, ajena], 5, new Date("2026-11-20T15:00:00Z"));
     expect(r).toHaveLength(2);
-    expect(r[0]).toMatchObject({ modulo: "indicadores", titulo: "6 indicadores por revisar por un cambio de norma", enlace: "/indicadores?impacto=1" });
+    expect(r[0]).toMatchObject({ modulo: "indicadores", titulo: "6 revisiones de indicadores por un cambio de norma", enlace: "/indicadores?impacto=1" });
     expect(r[1]).toEqual(ajena);
+    // Cuenta revisiones (un indicador con dos normas cambiadas suma dos), con su singular.
+    expect(agruparTareas(tareas.slice(0, 1), 0, new Date("2026-11-20T15:00:00Z"))[0].titulo).toBe("1 revisión de un indicador por un cambio de norma");
   });
 });

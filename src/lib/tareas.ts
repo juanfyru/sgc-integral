@@ -145,7 +145,8 @@ const GRUPOS: readonly Grupo[] = [
     prefijo: "impacto-indicador:",
     id: "indicadores-por-revisar-norma",
     modulo: "indicadores",
-    titulo: (m) => `${m.length} indicadores por revisar por un cambio de norma`,
+    // Cuenta revisiones: un indicador con dos normas cambiadas suma dos.
+    titulo: (m) => `${cuenta(m.length, "revisión de un indicador", "revisiones de indicadores")} por un cambio de norma`,
     detalle: masculino,
     enlace: () => "/indicadores?impacto=1",
   },

@@ -5,7 +5,7 @@
 // impactos, de `normograma.procesos`, con el alcance sobre el proceso que comprueba el dominio.
 
 import { idNumerico, mutacion, type EstadoAccion } from "@/app/admin/comun";
-import { legibleSiInterbloqueo } from "@/db/consultas/indicadores/impactos";
+import { sinInterbloqueoCrudo } from "@/db/consultas/indicadores/impactos";
 import {
   asociarProceso,
   desasociarProceso,
@@ -53,14 +53,9 @@ export async function editarNormaAccion(_prev: EstadoAccion, formData: FormData)
   });
 }
 
-/**
- * Cambiar el estado de una norma bloquea la norma y después abre las revisiones de los indicadores que la citan (anexo
- * 14B, §9); quien guarda una de esas fichas lo hace al revés. Si se cruzan, PostgreSQL cancela una con `40P01`: a la persona
- * le llega un mensaje legible, sin reintentar.
- */
-const sinInterbloqueoCrudo = (err: unknown): never => {
-  throw legibleSiInterbloqueo(err);
-};
+// Cambiar el estado de una norma bloquea la norma y después abre las revisiones de los indicadores que la citan (anexo 14B,
+// §9). Si se cruza con quien guarda una de esas fichas (`40P01`) o con quien deshace la importación que la creó (`23503`
+// de la revisión hacia su indicador), a la persona le llega un mensaje legible, sin reintentar (`sinInterbloqueoCrudo`).
 
 /** «Cambiar estado», con fecha y nota; no navega (la ficha se vuelve a pintar). */
 export async function cambiarEstadoNormaAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {

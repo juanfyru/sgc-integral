@@ -219,7 +219,7 @@ export default async function PaginaIndicador({ params, searchParams }: { params
         observaciones={obs?.total ?? null}
         conReportes={conReportes}
       />
-      <AvisoDeImpacto impactos={impactos} administra={administra} />
+      <AvisoDeImpacto impactos={impactos} administra={administra} activo={indicador.estado === "activo"} />
       {baja ? (
         <Recuadro>
           <p>{`${indicador.estado === "retirado" ? "Retirado" : "Descartado"} el ${fechaYHora(baja.en)}${baja.por ? ` por ${baja.por}` : ""}.`}</p>

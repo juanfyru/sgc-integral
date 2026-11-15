@@ -11,9 +11,11 @@ const estadoEnTexto = (estado: string) => ETIQUETA_ESTADO_NORMA[estado as Estado
  * «Revisión por cambio normativo» (anexo 14B, §9): las revisiones pendientes del indicador, en todas las vistas de su
  * página, a quien ve el indicador (quien llama ya lo decidió: `impactosPendientesDe` no las da a los demás). Cada una dice
  * qué norma cambió, a qué estado, cuándo y hasta cuándo hay que revisar la ficha; vencida, lo dice en texto. A quien
- * administra indicadores, «No afecta» con su nota y las otras dos salidas.
+ * administra indicadores, «No afecta» con su nota y, en un indicador activo, las otras dos salidas (una versión enviada
+ * antes del cambio no lo resuelve: F14B-DC23). En uno retirado (la carrera entre el retiro y la derogación) solo queda
+ * «No afecta».
  */
-export function AvisoDeImpacto({ impactos, administra }: { impactos: ImpactoDeIndicador[]; administra: boolean }) {
+export function AvisoDeImpacto({ impactos, administra, activo }: { impactos: ImpactoDeIndicador[]; administra: boolean; activo: boolean }) {
   if (impactos.length === 0) return null;
   const zona = zonaHoraria();
   return (
@@ -40,7 +42,9 @@ export function AvisoDeImpacto({ impactos, administra }: { impactos: ImpactoDeIn
           </li>
         ))}
       </ul>
-      {administra ? <p className="text-muted-foreground">También se resuelve al aprobar una versión nueva de la ficha o al retirar el indicador.</p> : null}
+      {administra && activo ? (
+        <p className="text-muted-foreground">También se resuelve al aprobar una versión de la ficha enviada después de este cambio, o al retirar el indicador.</p>
+      ) : null}
     </section>
   );
 }

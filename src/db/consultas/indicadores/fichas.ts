@@ -287,8 +287,10 @@ function revisarOperacion(d: DatosFichaNueva): void {
 }
 
 /**
- * Las referencias que ya tiene la versión: un elemento que se desactivó después sigue valiendo en ella, y una norma que
- * ya citaba, aunque se haya derogado o retirado.
+ * Las referencias que ya tiene la versión: un elemento que se desactivó después sigue valiendo en ella. Las normas, en
+ * cambio, son las que cita la ficha **vigente** (anexo 14B, §9): una que ella ya citaba vale aunque se haya derogado o
+ * retirado; una que solo trae el borrador (copiada por «Crear a partir de este» o añadida en un guardado anterior) es una
+ * cita nueva.
  */
 type Actual = {
   procesoId: number;
@@ -299,7 +301,8 @@ type Actual = {
   objetivoId: number | null;
   procedimientoDocumentoId: number | null;
   cargoIds: number[];
-  normaIds: number[];
+  /** Las que cita la versión vigente; ninguna si el indicador aún no tiene una aprobada. */
+  normaIdsVigente: number[];
 };
 
 /** Los nombres firmados, copiados de los catálogos al guardar. */
@@ -380,8 +383,8 @@ async function revisarContraLaBase(
       WHERE n.id IN ${tx(d.normaIds)} FOR KEY SHARE OF n`;
     if (filas.length !== d.normaIds.length) throw new ErrorIndicador("La norma no existe");
     for (const n of filas) normas.set(Number(n.id), n.nombre as string);
-    // Una que la versión ya citaba vale en cualquier estado (anexo 14B, §9): solo una cita nueva exige que la norma rija.
-    const nueva = (n: (typeof filas)[number]) => !actual?.normaIds.includes(Number(n.id));
+    // Una que la ficha vigente ya citaba vale en cualquier estado (anexo 14B, §9): solo una cita nueva exige que la norma rija.
+    const nueva = (n: (typeof filas)[number]) => !actual?.normaIdsVigente.includes(Number(n.id));
     if (filas.some((n) => nueva(n) && n.estado !== "vigente" && n.estado !== "modificada")) {
       throw new ErrorIndicador("Solo se pueden citar normas vigentes o modificadas");
     }
@@ -693,7 +696,8 @@ export async function guardarBorrador(sesion: SesionFlujo, versionId: number, d:
         revisarOperacion(f.d);
       }
       const cargosActuales = await tx`SELECT DISTINCT cargo_id FROM indicador_responsables WHERE version_id = ${versionId}`;
-      const normasActuales = await tx`SELECT norma_id FROM indicador_normas WHERE version_id = ${versionId}`;
+      // Las que la ficha vigente ya cita, no las que trae el borrador (anexo 14B, §9).
+      const normasDeLaVigente = vigente === null ? [] : await tx`SELECT norma_id FROM indicador_normas WHERE version_id = ${vigente}`;
       const nombres = await revisarContraLaBase(tx, f, {
         procesoId: Number(ind.proceso_id),
         subprocesoId: v.subproceso_id === null ? null : Number(v.subproceso_id),
@@ -703,7 +707,7 @@ export async function guardarBorrador(sesion: SesionFlujo, versionId: number, d:
         objetivoId: v.objetivo_id === null ? null : Number(v.objetivo_id),
         procedimientoDocumentoId: v.procedimiento_documento_id === null ? null : Number(v.procedimiento_documento_id),
         cargoIds: cargosActuales.map((c) => Number(c.cargo_id)),
-        normaIds: normasActuales.map((n) => Number(n.norma_id)),
+        normaIdsVigente: normasDeLaVigente.map((n) => Number(n.norma_id)),
       }, enBorrador);
 
       codigo = ind.codigo as string;
