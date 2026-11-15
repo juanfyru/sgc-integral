@@ -682,6 +682,8 @@ const IMPIDE = {
   // Las tablas de la 14B que cuelgan de una ficha (anexo 14B, §8 y §9): resueltas o no, son historia del indicador.
   impactos: "tiene revisiones por cambio de norma",
   reportes: "tiene reportes al ente",
+  // Un compuesto de la 14C (anexo 14C, §6.6), aunque sea un borrador: su variable apunta a la ficha.
+  tomada: "otra ficha toma el resultado de una ficha del lote",
 } as const;
 
 export type Impedimento = { codigo: string; motivo: string };
@@ -719,8 +721,10 @@ async function importadaDelLote(sql: Cliente, loteId: number): Promise<Importada
  * versión posterior es cualquier otra versión del indicador, en cualquier estado. De una propuesta, que es un borrador
  * normal: enviarla deja la firma «Elaboró», que no se borra (aunque la devuelvan sigue firmada), y editarla después de
  * importarla es trabajo que se perdería. Una revisión por cambio de norma o un reporte al ente (anexo 14B, §8 y §9), aunque
- * esté resuelto, es historia del indicador: también lo impide. Abrir periodos sin datos, sus avisos y las metas programadas
- * no impiden nada.
+ * esté resuelto, es historia del indicador: también lo impide. Y otra ficha que toma su resultado (anexo 14C, §6.6), en
+ * cualquier estado: un borrador, una versión descartada o reemplazada, un compuesto retirado; es lo que la llave foránea de
+ * `indicador_variables.indicador_origen_id` impediría borrar con un `23503`. Abrir periodos sin datos, sus avisos y las metas
+ * programadas no impiden nada.
  */
 async function revisarDeshacer(sql: Cliente, importada: Importada): Promise<{ impiden: Impedimento[]; siguen: FichaQueSigue[] }> {
   const { fichas, en } = importada;
@@ -731,7 +735,9 @@ async function revisarDeshacer(sql: Cliente, importada: Importada): Promise<{ im
       EXISTS (SELECT 1 FROM firmas f JOIN indicador_versiones v ON v.id = f.indicador_version_id WHERE v.indicador_id = i.id) AS enviada,
       EXISTS (SELECT 1 FROM indicador_versiones v WHERE v.id = x.version_id AND v.actualizado_en > ${en}) AS modificada,
       EXISTS (SELECT 1 FROM impactos_indicadores ii WHERE ii.indicador_id = i.id) AS impactos,
-      EXISTS (SELECT 1 FROM reportes_externos r WHERE r.indicador_id = i.id) AS reportes
+      EXISTS (SELECT 1 FROM reportes_externos r WHERE r.indicador_id = i.id) AS reportes,
+      EXISTS (SELECT 1 FROM indicador_variables tv JOIN indicador_versiones tvv ON tvv.id = tv.version_id
+        WHERE tv.indicador_origen_id = i.id AND tvv.indicador_id <> i.id) AS tomada
     FROM unnest(${sql.array(fichas.map((f) => f.indicadorId))}::bigint[], ${sql.array(fichas.map((f) => f.versionId))}::bigint[])
       AS x(indicador_id, version_id)
     JOIN indicadores i ON i.id = x.indicador_id`;
@@ -755,6 +761,7 @@ async function revisarDeshacer(sql: Cliente, importada: Importada): Promise<{ im
     }
     if (r.impactos) motivos.push(IMPIDE.impactos);
     if (r.reportes) motivos.push(IMPIDE.reportes);
+    if (r.tomada) motivos.push(IMPIDE.tomada);
     impiden.push(...motivos.map((motivo) => ({ codigo, motivo })));
   }
   return { impiden, siguen };

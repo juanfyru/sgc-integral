@@ -8,6 +8,13 @@
  * repetidas antes de escribir nada. Una versión pasa a `aprobada` en una sola sentencia: el trigger de la 0011 rechaza
  * cualquier cambio posterior.
  *
+ * Los orígenes de cada variable se vuelven a mirar al enviar y al aprobar (`revisarOrigenes`, anexo 14C, §6.1): entre
+ * guardar y aprobar el componente pudo retirarse, perder la meta o restringirse. Y del lado del componente (§6.6), una
+ * versión que ya no sirve a quien lo toma (`aQuienesDejaDeServir`) se rechaza con `cambieAntes`. Sin ciclos no hay índice
+ * que lo garantice: lo garantiza la aprobación, con las fichas del bloque juntas (`revisarEnBloque`) y con las dos
+ * transacciones que envían o publican serializadas por un candado consultivo (`serializarAprobaciones`), que toman antes que
+ * cualquier fila.
+ *
  * Una medición «reportada» es la que está `reportada` o `cerrada`, o la abierta con sus datos reportados (`reportada_en`)
  * o «no aplica»: ya tiene un dato que cuenta y ninguna versión nueva puede regirla (F14-DC17).
  */
@@ -23,6 +30,7 @@ import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo"
 import { calculoDe, META_ENTERA, metaNoEntera, type DefinicionDeCalculo } from "@/lib/indicadores/calculos/registro";
 import { camposCambiados, huellaDeFicha, tipoDeCambio, type ContenidoFicha } from "@/lib/indicadores/ficha";
 import { fraccion } from "@/lib/indicadores/formula/fraccion";
+import { alguienMide } from "@/lib/indicadores/origen";
 import { periodicidadDe, periodosTerminados, periodoQueContiene, versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import type { RangosEnTexto } from "@/lib/indicadores/rangos";
 import { reglaDeTexto, type ReglaEnTexto } from "@/lib/indicadores/reporte";
@@ -35,12 +43,23 @@ import {
   type DatosOperacion,
   type EstadoVersion,
   type ModoSemaforo,
+  type OrigenDato,
   type Periodicidad,
   type Tendencia,
   type TipoCambio,
 } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede, type SujetoPermiso } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
+import {
+  aQuienesDejaDeServir,
+  cambieAntes,
+  origenesDeVersion,
+  quienesToman,
+  revisarEnBloque,
+  revisarOrigenes,
+  type FichaConOrigenes,
+  type Toman,
+} from "./componentes";
 import { contenidoDeVersion } from "./fichas";
 import { asegurarMediciones, quitarMedicionesDeOtraPeriodicidad } from "./mediciones";
 import { alPublicarVersion, esCalculoRepetido, yaHayUnaActiva, type Publicado } from "./publicacion";
@@ -80,6 +99,16 @@ function exigirAdministrar(sesion: SujetoPermiso): void {
 }
 
 const fecha = (v: unknown): Date | null => (v === null || v === undefined ? null : new Date(v as string));
+
+/**
+ * El candado consultivo de transacción que serializa las que envían o publican fichas (anexo 14C, §6.1): sin él, dos
+ * aprobaciones a la vez bloquean cada una solo sus indicadores, leen la vigente vieja de la otra y pueden cerrar un ciclo
+ * entre las dos. Va antes que cualquier fila, en las dos transacciones, para no invertir el orden de candados. Enviar lo toma
+ * siempre: se sabe si es un cambio menor (que publica) solo con la versión ya bloqueada.
+ */
+async function serializarAprobaciones(tx: TransactionSql): Promise<void> {
+  await tx`SELECT pg_advisory_xact_lock(hashtext('sgc.indicadores.compuestos'))`;
+}
 
 /** Los indicadores de las versiones y después las versiones, `FOR UPDATE` en orden de id. */
 async function bloquear(tx: TransactionSql, versionIds: readonly number[]): Promise<void> {
@@ -366,8 +395,24 @@ type Envio = {
   contenido: ContenidoFicha;
 };
 
+/**
+ * Del lado del componente (anexo 14C, §6.6): la versión que se envía o se aprueba ya no sirve a quien toma el indicador (le
+ * quita la meta y alguien toma su cumplimiento, o pasa a una periodicidad que la de alguno no contiene). `enElBloque` son los
+ * que la toman desde otra ficha del mismo bloque de aprobación. El mensaje lleva el código solo a quien lo ve.
+ */
+async function exigirQueSigaSirviendo(
+  sql: Cliente,
+  sesion: SujetoVisibilidad,
+  version: { indicadorId: number; periodicidad: Periodicidad; conMeta: boolean },
+  enElBloque: readonly Toman[] = [],
+): Promise<void> {
+  const toman = [...(await quienesToman(sql, version.indicadorId)), ...enElBloque];
+  const noSirve = aQuienesDejaDeServir(version, toman);
+  if (noSirve.length > 0) throw new ErrorIndicador(await cambieAntes(sesion, noSirve, { sql }));
+}
+
 /** Lo que debe cumplirse para enviar, sin escribir nada. El tipo de cambio lo decide el sistema contra la vigente. */
-async function validarEnvio(sql: Cliente, d: DatosEnvio, ahora: Date): Promise<Envio> {
+async function validarEnvio(sql: Cliente, sesion: SujetoVisibilidad, d: DatosEnvio, ahora: Date): Promise<Envio> {
   const [v] = await sql`SELECT v.indicador_id, v.numero, v.estado, v.prueba, v.motivo_cambio, v.periodicidad, v.meta, v.semaforo_modo,
       v.origen_dato, v.calculo, v.calculo_alcance, i.codigo, i.estado AS indicador_estado, i.inicio_medicion, i.proceso_id,
       EXISTS (SELECT 1 FROM clasificaciones_indicador c WHERE c.id = v.clasificacion_id) AS con_clasificacion
@@ -376,9 +421,13 @@ async function validarEnvio(sql: Cliente, d: DatosEnvio, ahora: Date): Promise<E
   if (!v || v.indicador_estado === "descartado") throw new ErrorIndicador(FICHA_NO_EXISTE);
   if (v.indicador_estado === "retirado") throw new ErrorIndicador("Un indicador retirado no admite cambios en su ficha");
   if (v.estado !== "borrador") throw new ErrorIndicador("Solo se envía una ficha en borrador");
-  // Una ficha automática no se prueba con valores: su fórmula es la del cálculo.
+  // Solo se prueba con valores lo que alguien digita: ni una automática (su fórmula es la del cálculo) ni una manual sin
+  // variables propias (anexo 14C, §3.1).
+  const origenes = await origenesDeVersion(sql, d.versionId);
   const automatica = calculoDeFila(v);
-  if (v.prueba === null && !automatica) throw new ErrorIndicador("Pruebe la fórmula con valores de ejemplo antes de enviarla");
+  if (v.prueba === null && alguienMide({ origenDato: v.origen_dato as OrigenDato, variables: origenes.variables })) {
+    throw new ErrorIndicador("Pruebe la fórmula con valores de ejemplo antes de enviarla");
+  }
   // Sin clasificación no hay quién apruebe (`aprobadoresDeFicha`).
   if (!v.con_clasificacion) throw new ErrorIndicador("Elija la clasificación antes de enviar la ficha");
 
@@ -406,6 +455,11 @@ async function validarEnvio(sql: Cliente, d: DatosEnvio, ahora: Date): Promise<E
     if (tipo === "inicial") throw new ErrorIndicador("Escriba los rangos del semáforo");
     if (tipo === "mayor") throw new ErrorIndicador("Un cambio mayor escribe los rangos del semáforo: complete Bien, Atención y Crítico");
   }
+  // Lo que se guardó pudo dejar de valer: el componente se retiró, perdió la meta o se restringió (anexo 14C, §6.1).
+  const deLosOrigenes = await revisarOrigenes(sql, origenes);
+  if (deLosOrigenes) throw new ErrorIndicador(deLosOrigenes);
+  // Quien envía administra indicadores y los ve todos: el mensaje lleva el código.
+  await exigirQueSigaSirviendo(sql, sesion, { indicadorId, periodicidad: v.periodicidad as Periodicidad, conMeta: v.meta !== null });
   // Un cambio menor se publica aquí, sin aprobación: lo que `validarAprobacion` exige a las citas nuevas (anexo 14B, §9).
   if (tipo === "menor") {
     const queNoRige = await normaNuevaQueNoRige(sql, d.versionId, indicadorId);
@@ -451,14 +505,15 @@ export async function enviarAAprobacion(
   const ahora = opciones.ahora ?? new Date();
   const contexto = opciones.contexto ?? { ip: null, userAgent: null };
 
-  await validarEnvio(sql, d, ahora);
+  await validarEnvio(sql, sesion, d, ahora);
   const verificar = opciones.verificar ?? verificarParaFirmar;
   const r = await verificar(sesion, d.credenciales, contexto, ahora);
   if (!r.ok) throw new ErrorFirma(r.mensaje, r.sesionCerrada, r.bloqueada);
 
   return enTransaccion(sql, async (tx) => {
+    await serializarAprobaciones(tx);
     await bloquear(tx, [d.versionId]);
-    const e = await validarEnvio(tx, d, ahora);
+    const e = await validarEnvio(tx, sesion, d, ahora);
     const huella = huellaDeFicha(e.contenido);
     const menor = e.tipo === "menor";
     // `elaborada_por` va antes de buscar a los aprobadores: quien elabora nunca aprueba (spec §6.3).
@@ -582,16 +637,33 @@ async function normaNuevaQueNoRige(sql: Cliente, versionId: number, indicadorId:
 const yaNo = (v: Record<string, unknown>) => new ErrorIndicador(v.enviada === true ? yaNoPorAprobar(v.codigo as string) : NO_LE_TOCA);
 
 /**
+ * Los que toman a `indicadorId` desde otra ficha del mismo bloque: su vigente aún no lo cita, así que `quienesToman` no los
+ * ve, y se aprobarían juntos.
+ */
+function tomanEnElBloque(indicadorId: number, bloque: readonly { codigo: string; origenes: FichaConOrigenes }[]): Toman[] {
+  return bloque.flatMap(({ codigo, origenes: o }) =>
+    o.indicadorId === null || o.indicadorId === indicadorId
+      ? []
+      : o.variables
+          .filter((x) => x.origen === "indicador" && x.indicadorOrigenId === indicadorId && x.toma !== null)
+          .map((x) => ({ indicadorId: o.indicadorId!, codigo, toma: x.toma!, periodicidad: o.periodicidad, restringido: o.restringido, enBorrador: true })),
+  );
+}
+
+/**
  * Lo que debe cumplirse para aprobar, sin escribir nada, en orden de id. Primero si a la persona le toca (quien no es su
  * aprobador recibe siempre el mismo mensaje, sin código), después si sigue por aprobar y si su contenido es el firmado.
+ * Después de revisar cada una, el bloque entero: del lado del componente, con las demás fichas del bloque entre quienes lo
+ * toman, y el grafo con todas juntas (`revisarEnBloque`).
  */
 async function validarAprobacion(sql: Cliente, sesion: SujetoVisibilidad, ids: readonly number[], ahora: Date): Promise<PorAprobar[]> {
   const filas = await sql`SELECT v.id, v.indicador_id, v.numero, v.estado, v.tipo_cambio, v.nombre, v.huella, v.rige_desde,
-      v.elaborada_por, v.elaborada_en, v.periodicidad, v.origen_dato, v.calculo, v.calculo_alcance, i.codigo, i.estado AS indicador_estado,
-      i.inicio_medicion, i.proceso_id, ${fueEnviada(sql)} AS enviada
+      v.elaborada_por, v.elaborada_en, v.periodicidad, v.meta, v.origen_dato, v.calculo, v.calculo_alcance, i.codigo,
+      i.estado AS indicador_estado, i.inicio_medicion, i.proceso_id, ${fueEnviada(sql)} AS enviada
     FROM indicador_versiones v JOIN indicadores i ON i.id = v.indicador_id
     WHERE v.id IN ${sql(ids)}`;
   const salida: PorAprobar[] = [];
+  const bloque: { codigo: string; origenes: FichaConOrigenes; conMeta: boolean }[] = [];
   for (const id of ids) {
     const v = filas.find((f) => Number(f.id) === id);
     if (!v || !(await puedeAprobarFicha(id, sesion, { sql }))) throw new ErrorIndicador(NO_LE_TOCA);
@@ -605,6 +677,12 @@ async function validarAprobacion(sql: Cliente, sesion: SujetoVisibilidad, ids: r
     // Una cita nueva de una norma que dejó de regir mientras la ficha esperaba (anexo 14B, §9).
     const queNoRige = await normaNuevaQueNoRige(sql, id, indicadorId);
     if (queNoRige) throw new ErrorIndicador(`La norma ${queNoRige} ya no está vigente: devuelva la ficha ${codigo}`);
+    // Y un componente que, mientras esperaba, se retiró, perdió la meta o se restringió (anexo 14C, §6.1). Sus mensajes no
+    // nombran ningún indicador: el del dato ya es el nombre de la variable en la ficha que la persona tiene delante.
+    const origenes = await origenesDeVersion(sql, id);
+    const deLosOrigenes = await revisarOrigenes(sql, origenes);
+    if (deLosOrigenes) throw new ErrorIndicador(deLosOrigenes);
+    bloque.push({ codigo, origenes, conMeta: v.meta !== null });
     const procesoId = Number(v.proceso_id);
     const automatica = calculoDeFila(v);
     if (automatica) {
@@ -652,6 +730,13 @@ async function validarAprobacion(sql: Cliente, sesion: SujetoVisibilidad, ids: r
     const b = salida.slice(k + 1).find((x) => mismoCalculo(a.calculo, x.calculo));
     if (b) throw new ErrorIndicador(`Las fichas ${a.codigo} y ${b.codigo} usan el mismo cálculo y alcance: solo una puede quedar activa`);
   }
+  // Del lado del componente: quien aprueba puede no ver al que lo toma (un líder ante un restringido de otro proceso).
+  for (const { origenes, conMeta } of bloque) {
+    const indicadorId = origenes.indicadorId!;
+    await exigirQueSigaSirviendo(sql, sesion, { indicadorId, periodicidad: origenes.periodicidad, conMeta }, tomanEnElBloque(indicadorId, bloque));
+  }
+  const enBloque = await revisarEnBloque(sql, bloque.map((b) => b.origenes));
+  if (enBloque) throw new ErrorIndicador(enBloque);
   return salida;
 }
 
@@ -680,6 +765,7 @@ export async function aprobarFichas(
   if (!r.ok) throw new ErrorFirma(r.mensaje, r.sesionCerrada, r.bloqueada);
 
   return enTransaccion(sql, async (tx) => {
+    await serializarAprobaciones(tx);
     await bloquear(tx, ids);
     const fichas = await validarAprobacion(tx, sesion, ids, ahora);
     for (const f of fichas) {

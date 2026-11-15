@@ -503,15 +503,26 @@ export async function puedeObservar(
 }
 
 /**
+ * La versión `fv` toma una variable de un indicador restringido (anexo 14C, §6.1, decisión 8.1): solo la aprueba Gerencia,
+ * que ve lo restringido. Es la regla de `componentesRestringidos` (`componentes.ts`); se lee al aprobar, no al enviar: si
+ * el componente se restringe con la ficha ya enviada, su aprobación pasa a Gerencia.
+ */
+function tomaUnRestringido(sql: Cliente) {
+  return sql`EXISTS (SELECT 1 FROM indicador_variables tr_v JOIN indicadores tr_i ON tr_i.id = tr_v.indicador_origen_id
+    WHERE tr_v.version_id = fv.id AND tr_i.nivel_acceso = 'restringido')`;
+}
+
+/**
  * Quiénes aprueban una ficha (spec 14 §6.3), según la clasificación de la versión: usuarios activos de Gerencia o
- * líderes activos del proceso; nunca quien la elaboró. Si con `lider` no queda nadie, Gerencia (F14-DC19). Sin
- * clasificación no hay aprobadores.
+ * líderes activos del proceso; nunca quien la elaboró. Si con `lider` no queda nadie, Gerencia (F14-DC19). Una que toma un
+ * indicador restringido la aprueba Gerencia, sea cual sea su clasificación (`tomaUnRestringido`). Sin clasificación no hay
+ * aprobadores.
  */
 export async function aprobadoresDeFicha(versionId: number, opciones?: { sql?: Cliente }): Promise<number[]> {
   const sql = opciones?.sql ?? obtenerSql();
   const filas = await sql`
     WITH v AS (
-      SELECT i.proceso_id, fv.elaborada_por, c.aprueba
+      SELECT i.proceso_id, fv.elaborada_por, c.aprueba, ${tomaUnRestringido(sql)} AS toma_restringido
       FROM indicador_versiones fv
       JOIN indicadores i ON i.id = fv.indicador_id
       JOIN clasificaciones_indicador c ON c.id = fv.clasificacion_id
@@ -520,7 +531,7 @@ export async function aprobadoresDeFicha(versionId: number, opciones?: { sql?: C
     lideres AS (
       SELECT DISTINCT l.id
       FROM v CROSS JOIN LATERAL (${lideresActivos(sql, sql`v.proceso_id`)}) l
-      WHERE v.aprueba = 'lider' AND l.id IS DISTINCT FROM v.elaborada_por
+      WHERE v.aprueba = 'lider' AND NOT v.toma_restringido AND l.id IS DISTINCT FROM v.elaborada_por
     ),
     gerencia AS (
       SELECT g.id FROM v, usuarios g
@@ -548,13 +559,13 @@ export function esAprobadorDe(sql: Cliente, sujeto: SujetoVisibilidad) {
   const clasificacion = (condicion: ReturnType<Cliente>) =>
     sql`EXISTS (SELECT 1 FROM clasificaciones_indicador apr_c WHERE apr_c.id = fv.clasificacion_id AND ${condicion})`;
   if (sujeto.rol === "lider_proceso") {
-    return sql`(${noElaboro} AND ${clasificacion(sql`apr_c.aprueba = 'lider'`)}
+    return sql`(${noElaboro} AND ${clasificacion(sql`apr_c.aprueba = 'lider'`)} AND NOT ${tomaUnRestringido(sql)}
       AND ${sujeto.usuarioId}::bigint IN (${lideresActivos(sql, sql`i.proceso_id`)}))`;
   }
   if (sujeto.rol === "gerencia") {
     const sinLider = sql`NOT EXISTS (SELECT 1 FROM (${lideresActivos(sql, sql`i.proceso_id`)}) apr_l WHERE apr_l.id IS DISTINCT FROM fv.elaborada_por)`;
     return sql`(${noElaboro} AND EXISTS (SELECT 1 FROM usuarios apr_g WHERE apr_g.id = ${sujeto.usuarioId} AND apr_g.activo)
-      AND ${clasificacion(sql`(apr_c.aprueba <> 'lider' OR ${sinLider})`)})`;
+      AND ${clasificacion(sql`(apr_c.aprueba <> 'lider' OR ${sinLider} OR ${tomaUnRestringido(sql)})`)})`;
   }
   return sql`false`;
 }

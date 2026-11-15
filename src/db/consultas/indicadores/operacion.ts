@@ -35,6 +35,7 @@ import { ErrorPermiso, puede, type SujetoPermiso } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { versionVigente } from "./aprobacion";
+import { cambieAntes, componentesRestringidos, quienesToman } from "./componentes";
 import { quitarConstanciasSinSoporte } from "./constancias-soporte";
 import { enCurso, recalcularPorSoporte } from "./en-curso";
 import { codigoCon, COLUMNAS_VARIABLE, CONTENIDO, proponerCodigo, siguientes } from "./fichas";
@@ -202,7 +203,8 @@ export async function designar(
  * versión ni tocan la huella. El inicio de medición es una clave de la periodicidad de la ficha que rige y no puede dejar
  * fuera una medición que ya tiene datos. El plazo nuevo y el soporte llegan a las mediciones sin cerrar y no históricas
  * (ola final, I1): su fecha límite y sus marcas de aviso (`moverFechasLimite`) y su estado (`recalcularPorSoporte`); la
- * bitácora cuenta cuántas tocó.
+ * bitácora cuenta cuántas tocó. El nivel de acceso no deja un compuesto general con un componente restringido (anexo 14C,
+ * §6.6): no se restringe un indicador que toma un compuesto general, ni se abre uno cuya ficha vigente toma un restringido.
  */
 export async function cambiarOperacion(
   sesion: SesionFlujo,
@@ -257,6 +259,15 @@ export async function cambiarOperacion(
       nivelAcceso: d.nivelAcceso,
     };
     if (JSON.stringify(antes) === JSON.stringify(despues)) return;
+    // El nivel de acceso frente a los compuestos (anexo 14C, §6.6): si un componente es restringido, el compuesto también.
+    if (antes.nivelAcceso !== despues.nivelAcceso) {
+      if (despues.nivelAcceso === "restringido") {
+        const generales = (await quienesToman(tx, i.id)).filter((t) => !t.restringido);
+        if (generales.length > 0) throw new ErrorIndicador(await cambieAntes(sesion, generales, { sql: tx }));
+      } else if (vigente && (await componentesRestringidos(tx, vigente.id)).length > 0) {
+        throw new ErrorIndicador("Este indicador toma un indicador restringido: no puede ser general");
+      }
+    }
 
     // Por fechas, no por clave: una ficha anterior pudo tener otra periodicidad.
     const [hayDatos] = await tx`SELECT m.id FROM mediciones m
@@ -470,7 +481,8 @@ async function descartarEnCurso(tx: TransactionSql, indicadorId: number, ahora: 
  * dato se quitan (no tienen historia) y las que tienen datos siguen su curso, y lo mismo sus constancias de envío
  * pendientes sin soporte (anexo 14B, §8: `quitarConstanciasSinSoporte`); sus revisiones por cambio de norma pendientes
  * quedan resueltas por el retiro (anexo 14B, §9); el cambio en curso se descarta y se avisa a los designados. Es
- * definitivo: para volver a medirlo se duplica.
+ * definitivo: para volver a medirlo se duplica. No se retira uno que alimenta a un compuesto activo (anexo 14C, §6.6:
+ * `quienesToman`), que se quedaría esperando un dato que ya no llegaría.
  */
 export async function retirar(sesion: SesionFlujo, d: { indicadorId: number; motivo: string }, opciones?: Opciones): Promise<void> {
   exigirAdministrar(sesion);
@@ -479,6 +491,8 @@ export async function retirar(sesion: SesionFlujo, d: { indicadorId: number; mot
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
     const i = await bloquearIndicador(tx, d.indicadorId);
     if (i.estado !== "activo") throw new ErrorIndicador("Solo se puede retirar un indicador activo");
+    const toman = await quienesToman(tx, i.id);
+    if (toman.length > 0) throw new ErrorIndicador(await cambieAntes(sesion, toman, { sql: tx }));
     const descartadas = await descartarEnCurso(tx, i.id, ahora);
     const quitadas = await tx`DELETE FROM mediciones m
       WHERE m.indicador_id = ${i.id} AND NOT ${conDatos(tx)}

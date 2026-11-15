@@ -7,7 +7,8 @@
  *
  * El indicador guarda el cálculo y el alcance de su ficha vigente: el índice único parcial `indicadores_calculo_unico`
  * deja a lo sumo una ficha activa por cálculo y alcance (con alcance «proceso», por proceso), y quien llama convierte su
- * `23505` en un mensaje legible. Una ficha automática no la mide nadie ni lleva soporte obligatorio: si lo tenía, se apaga
+ * `23505` en un mensaje legible. Una ficha que nadie mide (automática, o manual sin variables propias: anexo 14C, §3.1,
+ * `alguienMide`) no tiene designados «mide» ni lleva soporte obligatorio: los que queden se quitan y, si lo tenía, se apaga
  * y las mediciones en curso se recalculan como al desmarcarlo en «Datos de operación» (`recalcularPorSoporte`).
  *
  * Guarda también desde cuándo la ficha vigente se reporta a su ente (`indicadores.ente_desde`, anexo §8): las constancias
@@ -22,7 +23,8 @@
 import type { TransactionSql } from "postgres";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { enteDeVersion, seReportaAlEnte, type EnteDeVersion } from "@/lib/indicadores/constancias";
-import { ErrorIndicador } from "@/lib/indicadores/tipos";
+import { alguienMide } from "@/lib/indicadores/origen";
+import { ErrorIndicador, type OrigenDato, type OrigenVariable } from "@/lib/indicadores/tipos";
 import { resolverImpactosPorVersion } from "./impactos";
 import { quitarConstanciasSinSoporte } from "./constancias-soporte";
 import { recalcularPorSoporte } from "./en-curso";
@@ -79,8 +81,8 @@ async function alPublicarElEnte(tx: TransactionSql, d: Publicacion, nueva: EnteD
 }
 
 export async function alPublicarVersion(tx: TransactionSql, d: Publicacion): Promise<Publicado> {
-  const [v] = await tx`SELECT v.numero, v.calculo, v.calculo_alcance, v.ente, v.periodicidad_externa, v.plazo_externo_dias, v.periodicidad,
-      i.codigo, i.soporte_obligatorio
+  const [v] = await tx`SELECT v.numero, v.origen_dato, v.calculo, v.calculo_alcance, v.ente, v.periodicidad_externa, v.plazo_externo_dias,
+      v.periodicidad, i.codigo, i.soporte_obligatorio
     FROM indicador_versiones v
     JOIN indicadores i ON i.id = v.indicador_id
     WHERE v.id = ${d.versionId} AND v.indicador_id = ${d.indicadorId}`;
@@ -92,7 +94,12 @@ export async function alPublicarVersion(tx: TransactionSql, d: Publicacion): Pro
   // Para toda ficha, manual o automática: antes del `return` de las manuales.
   const impactosResueltos = await resolverImpactosPorVersion(tx, d);
   const hecho: Publicado = { medidoresQuitados: 0, soporteApagado: false, medicionesRecalculadas: 0, impactosResueltos, constanciasQuitadas };
-  if (calculo === null) return hecho;
+  const variables = await tx`SELECT letra, origen FROM indicador_variables WHERE version_id = ${d.versionId}`;
+  const mide = alguienMide({
+    origenDato: v.origen_dato as OrigenDato,
+    variables: variables.map((x) => ({ letra: x.letra as string, origen: x.origen as OrigenVariable })),
+  });
+  if (mide) return hecho;
 
   const quitados = await tx`DELETE FROM indicador_designados WHERE indicador_id = ${d.indicadorId} AND funcion = 'mide' RETURNING usuario_id`;
   if (v.soporte_obligatorio === true) {

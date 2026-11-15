@@ -2,12 +2,14 @@
  * De dónde salen las variables de una ficha (anexo 14C, §4.2, §5.2 y §6.1): un dato compartido, el resultado de otro
  * indicador o la desagregación por una dimensión. `revisarOrigenes` es la única revisión, para guardar, enviar y aprobar; el
  * grafo de quién toma a quién se arma con las fichas vigentes de los indicadores activos, sustituyendo las que se guardan o
- * se aprueban.
+ * se aprueban (`revisarEnBloque`, con todas las del bloque). Y, del lado del componente (§6.6), quiénes lo toman
+ * (`quienesToman`), a quiénes una versión suya ya no les sirve (`aQuienesDejaDeServir`) y el mensaje que lo dice
+ * (`cambieAntes`), que lleva el código del otro indicador solo a quien puede verlo.
  *
- * Módulo liviano: lo importan `fichas` y la aprobación, así que no importa `lectura`, `fichas`, `aprobacion` ni `operacion`,
- * ni `datos` o `dimensiones` (arrastran la bitácora): lee el dato, el componente, la dimensión y los objetivos por SQL
- * directo. Ningún mensaje nombra al indicador de origen: lo dicen por la letra de la variable. Los del dato llevan su
- * nombre y los de la dimensión, el suyo.
+ * Módulo liviano: lo importan `fichas`, la aprobación y la operación, así que no importa `lectura`, `fichas`, `aprobacion`
+ * ni `operacion`, ni `datos`, `dimensiones` o `mediciones` (arrastran la bitácora): lee el dato, el componente, la dimensión,
+ * los objetivos y las versiones que rigen por SQL directo. Ningún mensaje de `revisarOrigenes` nombra al indicador de
+ * origen: lo dicen por la letra de la variable. Los del dato llevan su nombre y los de la dimensión, el suyo.
  *
  * Candados: el dato, el componente y la dimensión `FOR KEY SHARE`, en orden de id, como las normas de la ficha: quien los
  * cambia (o retira el componente) los toma `FOR UPDATE` y espera. Que guardar una ficha que toma otro indicador lo tome
@@ -16,9 +18,10 @@
  * puede darse entre dos guardados cruzados le llega a la persona legible (`sinInterbloqueoCrudo`).
  */
 import type { Cliente } from "@/db/cliente";
+import { puedeVerIndicador, type SujetoVisibilidad } from "@/lib/alcance";
 import { errorDeDesagregacion, FORMULA_NO_DESAGREGABLE } from "@/lib/indicadores/categorias";
 import { alcanza, caminoDeCiclo, nivelesBajo } from "@/lib/indicadores/grafo";
-import { contiene } from "@/lib/indicadores/periodos";
+import { contiene, versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import {
   ErrorIndicador,
   MAXIMO_NIVELES,
@@ -28,6 +31,7 @@ import {
   type Periodicidad,
   type Toma,
 } from "@/lib/indicadores/tipos";
+import { zonaHoraria } from "@/lib/zona-horaria";
 
 export type ClaseDeObjetivo = "calidad" | "institucional";
 /** A qué objetivos alcanza un cálculo de «Objetivos cumplidos». */
@@ -37,8 +41,12 @@ export type AlcanceDeObjetivos = ClaseDeObjetivo | "todos";
 const FICHA_NUEVA = 0;
 
 const CICLO = "Esta ficha cerraría un ciclo entre indicadores";
+/** El ciclo que solo aparece con las fichas del bloque juntas (`revisarEnBloque`). */
+const CICLO_EN_LA_APROBACION = "Esta aprobación cerraría un ciclo entre indicadores";
+const OBJETIVOS_DE_SU_CLASE = "Esta ficha toma «Objetivos cumplidos»: no puede apuntar a un objetivo de esa misma clase";
 const NIVELES = "Un indicador compuesto admite hasta cinco niveles";
 const DIMENSION_ACTIVA = "Elija una dimensión activa";
+const CAMBIE_ANTES = "Cambie antes el indicador que lo usa";
 
 const ADJETIVO: Record<Periodicidad, string> = {
   mensual: "mensual",
@@ -310,12 +318,12 @@ export async function revisarOrigenes(tx: Cliente, f: FichaConOrigenes, opciones
 
 /**
  * Con el grafo ya sustituido: sin ciclos; a lo sumo `MAXIMO_NIVELES` por debajo de la ficha y de cada indicador que la
- * alcanza (tomar un componente más a mitad de una cadena alarga la de los que están encima); y sin la arista oculta de
- * «Objetivos cumplidos», que cuenta los indicadores que apuntan a un objetivo de su clase. Esa arista cierra un ciclo cuando
- * un indicador que apunta a una clase llega, tomando componentes, a uno que la cuenta. Con esta ficha en él, hay tres
- * formas: la ficha llega a uno que cuenta su clase; uno que la alcanza llega, a través de ella, a uno que cuenta la suya; o
- * la ficha es de «Objetivos cumplidos» y la alcanza uno que apunta a lo que ella cuenta. La ficha dice lo suyo (`f`), las de
- * `clases` lo suyo, y los demás, lo de su ficha vigente.
+ * alcanza (tomar un componente más a mitad de una cadena alarga la de los que están encima); y sin ciclos tampoco con las
+ * aristas ocultas de «Objetivos cumplidos» (`conAristasOcultas`): esa ficha cuenta, sin tomarlos, los indicadores que apuntan
+ * a un objetivo de una clase que ella cuenta, y su resultado depende del de ellos. Los niveles se miden sin esas aristas.
+ * Cuando la ficha llega, tomando componentes, a un «Objetivos cumplidos» que cuenta la clase de su propio objetivo, el
+ * mensaje lo dice; cualquier otro ciclo que cierren las aristas ocultas (con una sola o con varias, de clases distintas) es
+ * el ciclo de siempre. La ficha dice lo suyo (`f`), las de `clases` lo suyo, y los demás, lo de su ficha vigente.
  */
 async function revisarGrafo(tx: Cliente, f: FichaConOrigenes, componentes: number[], opciones?: OpcionesDeRevision): Promise<string | null> {
   const propio = f.indicadorId ?? FICHA_NUEVA;
@@ -335,30 +343,64 @@ async function revisarGrafo(tx: Cliente, f: FichaConOrigenes, componentes: numbe
     else cuentan.set(id, c.cuentaObjetivos);
   }
   if (cuentan.size === 0) return null;
-  const llegaA = (clase: ClaseDeObjetivo) =>
-    alcanza(aristas, propio, new Set([...cuentan].filter(([, a]) => cuentaLaClase(a, clase)).map(([id]) => id)));
-  if (f.objetivoClase !== null && llegaA(f.objetivoClase)) {
-    return "Esta ficha toma «Objetivos cumplidos»: no puede apuntar a un objetivo de esa misma clase";
+  const suya = f.objetivoClase;
+  if (suya !== null && alcanza(aristas, propio, new Set([...cuentan].filter(([, a]) => cuentaLaClase(a, suya)).map(([id]) => id)))) {
+    return OBJETIVOS_DE_SU_CLASE;
   }
-  if (arriba.length === 0) return null;
+  return caminoDeCiclo(await conAristasOcultas(tx, aristas, cuentan, clases), propio) === null ? null : CICLO;
+}
 
-  const claseDe = new Map<number, ClaseDeObjetivo | null>();
-  const deLaVigente = arriba.filter((n) => !clases.has(n));
-  if (deLaVigente.length > 0) {
-    const filas = await tx`SELECT vig.indicador_id, o.clase
-      FROM indicador_versiones vig
-      JOIN objetivos o ON o.id = vig.objetivo_id
-      WHERE vig.indicador_id IN ${tx(deLaVigente)} AND vig.estado = 'aprobada'
-        AND vig.numero = (SELECT max(w.numero) FROM indicador_versiones w WHERE w.indicador_id = vig.indicador_id AND w.estado = 'aprobada')`;
-    for (const x of filas) claseDe.set(Number(x.indicador_id), x.clase as ClaseDeObjetivo);
+/**
+ * El grafo con las aristas ocultas de «Objetivos cumplidos» (anexo 14C, §6.1, con la regla de `aportesDelPeriodo`): de cada
+ * ficha de ese cálculo (`cuentan`, ya con las de `clases`) a cada indicador activo, distinto de ella y que no use ese mismo
+ * cálculo, cuyo objetivo es de una clase que ella cuenta. La clase sale de `clases` (la ficha que se revisa y las del bloque,
+ * aunque su indicador siga en borrador) o de la ficha vigente. No mira si el objetivo está activo: uno inactivo puede volver a
+ * activarse sin que se apruebe ninguna ficha.
+ */
+async function conAristasOcultas(
+  tx: Cliente,
+  aristas: ReadonlyMap<number, readonly number[]>,
+  cuentan: ReadonlyMap<number, AlcanceDeObjetivos>,
+  clases: ReadonlyMap<number, ClasesDeFicha>,
+): Promise<Map<number, number[]>> {
+  const filas = await tx`SELECT vig.indicador_id, o.clase
+    FROM indicadores i
+    JOIN indicador_versiones vig ON vig.indicador_id = i.id AND vig.estado = 'aprobada'
+      AND vig.numero = (SELECT max(w.numero) FROM indicador_versiones w WHERE w.indicador_id = i.id AND w.estado = 'aprobada')
+    JOIN objetivos o ON o.id = vig.objetivo_id
+    WHERE i.estado = 'activo'`;
+  const claseDe = new Map<number, ClaseDeObjetivo>(filas.map((x) => [Number(x.indicador_id), x.clase as ClaseDeObjetivo]));
+  for (const [id, c] of clases) {
+    if (c.objetivoClase === null) claseDe.delete(id);
+    else claseDe.set(id, c.objetivoClase);
   }
-  for (const n of arriba) if (clases.has(n)) claseDe.set(n, clases.get(n)!.objetivoClase);
-  const deArriba = [...new Set([...claseDe.values()].filter((c): c is ClaseDeObjetivo => c !== null))];
-  // Uno que la alcanza llega a lo que ella llega: si apunta a una clase que ella alcanza a contar, el ciclo es suyo.
-  if (deArriba.some(llegaA)) return CICLO;
-  // Ella cuenta a uno que la alcanza.
-  const cuenta = f.cuentaObjetivos;
-  if (cuenta !== null && deArriba.some((c) => cuentaLaClase(cuenta, c))) return CICLO;
+  const conOcultas = new Map<number, number[]>([...aristas].map(([id, hijos]) => [id, [...hijos]]));
+  for (const [id, alcance] of cuentan) {
+    const contados = [...claseDe].filter(([n, clase]) => n !== id && !cuentan.has(n) && cuentaLaClase(alcance, clase)).map(([n]) => n);
+    if (contados.length > 0) conOcultas.set(id, [...(conOcultas.get(id) ?? []), ...contados]);
+  }
+  return conOcultas;
+}
+
+const componentesDe = (f: FichaConOrigenes) =>
+  f.variables.flatMap((v) => (v.origen === "indicador" && v.indicadorOrigenId !== null ? [v.indicadorOrigenId] : []));
+
+/**
+ * Las fichas de un bloque de aprobación juntas (anexo 14C, §6.1): cada una con las demás en lugar de las vigentes de sus
+ * indicadores, con sus componentes (`sustituir`) y con lo que dicen de los objetivos (`clases`), todas, tomen algo o no.
+ * Quien llama ya revisó cada una sola: el ciclo que aparece aquí lo cierra la aprobación. Con una sola ficha, nada.
+ */
+export async function revisarEnBloque(tx: Cliente, fichas: readonly FichaConOrigenes[]): Promise<string | null> {
+  const delBloque = fichas.filter((f): f is FichaConOrigenes & { indicadorId: number } => f.indicadorId !== null);
+  if (delBloque.length < 2) return null;
+  const opciones: OpcionesDeRevision = {
+    sustituir: new Map(delBloque.map((f) => [f.indicadorId, componentesDe(f)])),
+    clases: new Map(delBloque.map((f) => [f.indicadorId, { objetivoClase: f.objetivoClase, cuentaObjetivos: f.cuentaObjetivos }])),
+  };
+  for (const f of delBloque) {
+    const error = await revisarOrigenes(tx, f, opciones);
+    if (error) return error === CICLO ? CICLO_EN_LA_APROBACION : error;
+  }
   return null;
 }
 
@@ -399,4 +441,94 @@ export async function origenesDeVersion(tx: Cliente, versionId: number): Promise
       };
     }),
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Del lado del componente (anexo 14C, §6.6)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Un indicador que toma el resultado de otro: qué toma, con la periodicidad de la versión que lo cita. */
+export type Toman = { indicadorId: number; codigo: string; toma: Toma; periodicidad: Periodicidad; restringido: boolean; enBorrador: boolean };
+
+/**
+ * Quiénes toman el resultado del indicador: los activos cuya ficha vigente lo cita o cuya versión que rige alguna de sus
+ * mediciones ordinarias sin cerrar lo cita (un histórico se digita completo y no lo toma, §3.6), como `enUso` de `datos.ts`
+ * con los datos compartidos. Con `conBorradores`, también los que lo citan en un borrador o en una ficha por aprobar
+ * (`enBorrador`). Una fila por indicador, qué toma y periodicidad, por id de indicador. Solo lee: no bloquea a los otros
+ * indicadores, que pueden ser varios.
+ */
+export async function quienesToman(sql: Cliente, indicadorId: number, opciones?: { conBorradores?: boolean }): Promise<Toman[]> {
+  const enCurso = opciones?.conBorradores
+    ? sql`OR (fv.estado IN ('borrador', 'por_aprobar') AND i.estado IN ('borrador', 'activo'))`
+    : sql``;
+  const citas = await sql`SELECT i.id AS indicador_id, i.codigo, i.nivel_acceso, fv.id AS version_id, fv.estado, fv.periodicidad, iv.toma
+    FROM indicador_variables iv
+    JOIN indicador_versiones fv ON fv.id = iv.version_id
+    JOIN indicadores i ON i.id = fv.indicador_id
+    WHERE iv.indicador_origen_id = ${indicadorId} AND i.id <> ${indicadorId}
+      AND ((fv.estado = 'aprobada' AND i.estado = 'activo') ${enCurso})
+    ORDER BY i.id, fv.id, iv.toma`;
+  // De las aprobadas que lo citan, solo cuentan la vigente y las que rigen una medición sin cerrar.
+  const aprobadasQueCitan = new Map<number, Set<number>>();
+  for (const c of citas) {
+    if (c.estado !== "aprobada") continue;
+    const id = Number(c.indicador_id);
+    aprobadasQueCitan.set(id, (aprobadasQueCitan.get(id) ?? new Set()).add(Number(c.version_id)));
+  }
+  const cuentan = new Set<number>();
+  const zona = zonaHoraria();
+  for (const [id, queLoCitan] of aprobadasQueCitan) {
+    const versiones = (await sql`SELECT id, rige_desde FROM indicador_versiones
+      WHERE indicador_id = ${id} AND estado = 'aprobada' ORDER BY numero DESC`).map((v) => ({ id: Number(v.id), rigeDesde: textoONulo(v.rige_desde) }));
+    if (versiones[0] && queLoCitan.has(versiones[0].id)) cuentan.add(versiones[0].id);
+    const abiertas = await sql`SELECT desde FROM mediciones WHERE indicador_id = ${id} AND estado <> 'cerrada' AND NOT historica`;
+    for (const m of abiertas) {
+      const rige = versionQueRigeEntre(versiones, { desde: new Date(m.desde as string) }, zona);
+      if (rige && queLoCitan.has(rige.id)) cuentan.add(rige.id);
+    }
+  }
+  const salida = new Map<string, Toman>();
+  for (const c of citas) {
+    const enBorrador = c.estado !== "aprobada";
+    if (!enBorrador && !cuentan.has(Number(c.version_id))) continue;
+    const t: Toman = {
+      indicadorId: Number(c.indicador_id),
+      codigo: c.codigo as string,
+      toma: c.toma as Toma,
+      periodicidad: c.periodicidad as Periodicidad,
+      restringido: c.nivel_acceso === "restringido",
+      enBorrador,
+    };
+    salida.set(`${t.indicadorId}|${t.toma}|${t.periodicidad}|${t.enBorrador}`, t);
+  }
+  return [...salida.values()];
+}
+
+/**
+ * A quiénes de `toman` una versión del componente ya no les sirve: no tiene meta y toman su cumplimiento, o se mide con una
+ * periodicidad que la de ellos no contiene.
+ */
+export function aQuienesDejaDeServir(version: { periodicidad: Periodicidad; conMeta: boolean }, toman: readonly Toman[]): Toman[] {
+  return toman.filter((t) => (t.toma === "cumplimiento" && !version.conMeta) || !contiene(t.periodicidad, version.periodicidad));
+}
+
+/**
+ * «Cambie antes el indicador que lo usa», con el código del primero de `toman` que la persona puede ver
+ * (`puedeVerIndicador`); si no ve ninguno, sin código: para quien no puede verlo, no existe.
+ */
+export async function cambieAntes(sujeto: SujetoVisibilidad, toman: readonly Toman[], opciones: { sql: Cliente }): Promise<string> {
+  const vistos = new Set<number>();
+  for (const t of toman) {
+    if (vistos.has(t.indicadorId)) continue;
+    vistos.add(t.indicadorId);
+    if (await puedeVerIndicador(t.indicadorId, sujeto, { sql: opciones.sql })) return `${CAMBIE_ANTES}: ${t.codigo}`;
+  }
+  return CAMBIE_ANTES;
+}
+
+/** Los indicadores restringidos de los que la versión toma una variable, por id (la regla de `aprobadoresDeFicha`). */
+export async function componentesRestringidos(sql: Cliente, versionId: number): Promise<number[]> {
+  const filas = await sql`SELECT DISTINCT i.id FROM indicador_variables v JOIN indicadores i ON i.id = v.indicador_origen_id
+    WHERE v.version_id = ${versionId} AND i.nivel_acceso = 'restringido' ORDER BY i.id`;
+  return filas.map((f) => Number(f.id));
 }
