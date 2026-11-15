@@ -17,7 +17,8 @@
  *
  * Indicadores (spec 14 §6.4) tienen dos excepciones nombradas a esta regla: la lectura de los
  * indicadores generales es de toda sesión, y la designación (`indicador_designados`) da alcance
- * a un indicador sin liderar su proceso. Sus reglas están al final de este archivo.
+ * a un indicador sin liderar su proceso. Sus reglas están al final de este archivo, y después las
+ * de los datos compartidos (anexo 14C, §4.7), donde ser responsable del dato da el mismo alcance.
  */
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { FUNCIONES_DESIGNADO, type FuncionDesignado } from "@/lib/indicadores/tipos";
@@ -369,10 +370,13 @@ function lideresActivos(sql: Cliente, procesoId: ReturnType<Cliente>) {
     WHERE lp.proceso_id = ${procesoId}`;
 }
 
-/** La persona es líder activo del proceso del indicador `i`; falso sin consultar si su rol no es de líder. */
-function esLiderDe(sql: Cliente, sujeto: SujetoVisibilidad) {
+/**
+ * La persona es líder activo del proceso que da `procesoId` (por omisión, el del indicador `i`); falso sin consultar si su
+ * rol no es de líder.
+ */
+function esLiderDe(sql: Cliente, sujeto: SujetoVisibilidad, procesoId: ReturnType<Cliente> = sql`i.proceso_id`) {
   if (sujeto.rol !== "lider_proceso") return sql`false`;
-  return sql`(${sujeto.usuarioId}::bigint IN (${lideresActivos(sql, sql`i.proceso_id`)}))`;
+  return sql`(${sujeto.usuarioId}::bigint IN (${lideresActivos(sql, procesoId)}))`;
 }
 
 /** La persona es un usuario activo designado en el indicador `i` en alguna de las funciones dadas. */
@@ -634,4 +638,84 @@ export function responsableDe(sql: Cliente, sujeto: SujetoVisibilidad, funcion: 
     WHEN ${esLiderDe(sql, sujeto)} THEN 'lider'
     WHEN ${respaldo} THEN 'respaldo'
   END)`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Datos compartidos (anexo 14C, §4.4 y §4.7). Un dato pertenece a un proceso, el «proceso dueño», y lo reportan sus
+// responsables: personas designadas en `variable_responsables`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** La persona es un usuario activo responsable del dato `d`. */
+function esResponsableDelDato(sql: Cliente, sujeto: SujetoVisibilidad) {
+  return sql`EXISTS (
+    SELECT 1 FROM variable_responsables dat_r
+    JOIN usuarios dat_u ON dat_u.id = dat_r.usuario_id AND dat_u.activo
+    WHERE dat_r.variable_id = d.id AND dat_r.usuario_id = ${sujeto.usuarioId})`;
+}
+
+/**
+ * Qué datos compartidos ve una persona, para un `WHERE` sobre `variables_compartidas d` (anexo 14C, §4.7): quien tiene
+ * `indicadores.administrar` y los roles que ven lo restringido (Gerencia y Control Interno), todos; los demás, los de un
+ * proceso del que son líderes activos y aquellos de los que son responsables. Para el resto no existen.
+ */
+export function filtroDatos(sql: Cliente, sujeto: SujetoVisibilidad) {
+  if (puede(sujeto, "indicadores.administrar") || ROLES_VEN_RESTRINGIDO.includes(sujeto.rol)) return sql`true`;
+  return sql`(${esLiderDe(sql, sujeto, sql`d.proceso_id`)} OR ${esResponsableDelDato(sql, sujeto)})`;
+}
+
+/** Quién ve un dato compartido: el que pasa `filtroDatos`. `false` si no existe. */
+export async function puedeVerDato(datoId: number, sujeto: SujetoVisibilidad, opciones?: { sql?: Cliente }): Promise<boolean> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const filas = await sql`SELECT 1 FROM variables_compartidas d WHERE d.id = ${datoId} AND ${filtroDatos(sql, sujeto)}`;
+  return filas.length > 0;
+}
+
+/**
+ * Quién reporta y corrige un dato compartido (anexo 14C, §4.4): la regla de `capacidad`, con los responsables del dato en
+ * lugar de los designados y el proceso dueño en lugar del proceso del indicador. Sus responsables activos y los líderes
+ * activos del proceso dueño; el Admin SGC solo si es uno de sus responsables o si no hay responsable activo ni líder activo
+ * (entonces `sinMedidor`).
+ */
+export async function puedeReportarDato(
+  datoId: number,
+  sujeto: SujetoVisibilidad,
+  opciones?: { sql?: Cliente },
+): Promise<Capacidad> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [f] = await sql`
+    SELECT ${esResponsableDelDato(sql, sujeto)} AS responsable,
+      ${esLiderDe(sql, sujeto, sql`d.proceso_id`)} AS lider,
+      (EXISTS (
+        SELECT 1 FROM variable_responsables rep_r JOIN usuarios rep_u ON rep_u.id = rep_r.usuario_id AND rep_u.activo
+        WHERE rep_r.variable_id = d.id
+      ) OR EXISTS (${lideresActivos(sql, sql`d.proceso_id`)})) AS alguien
+    FROM variables_compartidas d WHERE d.id = ${datoId}`;
+  if (!f) return { puede: false, sinMedidor: false };
+  if (f.responsable || f.lider) return { puede: true, sinMedidor: false };
+  if (sujeto.rol === "admin_sgc" && !f.alguien) return { puede: true, sinMedidor: true };
+  return { puede: false, sinMedidor: false };
+}
+
+/**
+ * Los destinatarios de las tareas y avisos de un dato compartido, como `responsables` de un indicador: sus responsables
+ * activos; si no hay, los líderes activos del proceso dueño; si tampoco, los Admin SGC activos.
+ */
+export async function responsablesDeDato(sql: Cliente, datoId: number): Promise<number[]> {
+  const filas = await sql`
+    WITH res AS (
+      SELECT DISTINCT r.usuario_id AS id
+      FROM variable_responsables r JOIN usuarios u ON u.id = r.usuario_id AND u.activo
+      WHERE r.variable_id = ${datoId}
+    ),
+    lid AS (
+      SELECT DISTINCT l.id
+      FROM variables_compartidas d CROSS JOIN LATERAL (${lideresActivos(sql, sql`d.proceso_id`)}) l
+      WHERE d.id = ${datoId} AND NOT EXISTS (SELECT 1 FROM res)
+    ),
+    adm AS (
+      SELECT id FROM usuarios
+      WHERE rol = 'admin_sgc' AND activo AND NOT EXISTS (SELECT 1 FROM res) AND NOT EXISTS (SELECT 1 FROM lid)
+    )
+    SELECT id FROM res UNION ALL SELECT id FROM lid UNION ALL SELECT id FROM adm ORDER BY id`;
+  return filas.map((f) => Number(f.id));
 }

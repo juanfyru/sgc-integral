@@ -685,6 +685,39 @@ describe("maestros y parámetros de indicadores", () => {
   });
 });
 
+describe("el catálogo de datos compartidos (14C)", () => {
+  const frase = (accion: string, detalle: Record<string, unknown>) =>
+    describirEvento({ accion, entidad: "dato_compartido", entidadId: 1, detalle });
+  it("dicen qué dato y qué cambió", () => {
+    expect(frase("dato_compartido_guardado", { nombre: "Total facturado", proceso: "Gestión financiera", creado: true })).toBe(
+      "Creó el dato compartido «Total facturado» en el proceso Gestión financiera",
+    );
+    expect(
+      frase("dato_compartido_guardado", {
+        nombre: "Total facturado neto",
+        creado: false,
+        antes: { nombre: "Total facturado", plazoReporteDias: 10, fuente: null, capturaMax: null },
+        despues: { nombre: "Total facturado neto", plazoReporteDias: 15, fuente: null, capturaMax: "100" },
+      }),
+    ).toBe("Editó el dato compartido «Total facturado neto»: nombre, máximo de captura, plazo de reporte");
+    expect(frase("dato_compartido_responsables", { nombre: "Total facturado", nombresAntes: ["Ana"], nombresDespues: ["Ana", "Luis"] })).toBe(
+      "Cambió los responsables del dato compartido «Total facturado»: Ana → Ana, Luis",
+    );
+    expect(frase("dato_compartido_activado", { nombre: "Total facturado" })).toBe("Activó el dato compartido «Total facturado»");
+    expect(frase("dato_compartido_desactivado", { nombre: "Total facturado" })).toBe("Desactivó el dato compartido «Total facturado»");
+    expect(frase("dato_compartido_borrado", { nombre: "Total facturado" })).toBe("Borró el dato compartido «Total facturado»");
+    expect(frase("dato_compartido_responsables", {})).toBe("Cambió los responsables de un dato compartido: nadie → nadie");
+  });
+
+  it("tienen su nombre en el filtro", () => {
+    expect(nombreDeAccion("dato_compartido_guardado")).toBe("Guardó un dato compartido");
+    expect(nombreDeAccion("dato_compartido_responsables")).toBe("Cambió los responsables de un dato compartido");
+    expect(nombreDeAccion("dato_compartido_activado")).toBe("Activó un dato compartido");
+    expect(nombreDeAccion("dato_compartido_desactivado")).toBe("Desactivó un dato compartido");
+    expect(nombreDeAccion("dato_compartido_borrado")).toBe("Borró un dato compartido");
+  });
+});
+
 describe("la ficha de indicador", () => {
   const frase = (accion: string, detalle: Record<string, unknown>) =>
     describirEvento({ accion, entidad: "indicador", entidadId: 1, detalle });

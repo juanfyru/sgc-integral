@@ -8,7 +8,7 @@ import { versionDelPeriodo } from "@/db/consultas/indicadores/mediciones";
 import { CALCULOS, CLAVES_DE_CALCULO, calculoDe, type AlcanceDeCalculo, type ClaveDeCalculo } from "@/lib/indicadores/calculos/registro";
 import { formulaDeForma } from "@/lib/indicadores/formula/formas";
 import type { RangosEnTexto } from "@/lib/indicadores/rangos";
-import type { Periodicidad, Tendencia } from "@/lib/indicadores/tipos";
+import type { Consolidacion, Periodicidad, Tendencia } from "@/lib/indicadores/tipos";
 import { usuarioDePrueba } from "./tramites";
 
 let consecutivo = 0;
@@ -87,6 +87,8 @@ export type VariableDePrueba = {
   fuente?: string;
   capturaMin?: string;
   capturaMax?: string;
+  /** El dato compartido que cita la variable (anexo 14C, §4.2): origen «compartida», con la periodicidad del dato. */
+  datoId?: number;
 };
 
 /**
@@ -185,10 +187,13 @@ export async function indicadorDePrueba(
       }));
   for (const d of declaradas) {
     const x: VariableDePrueba = calculo ? {} : (o.variables?.[d.letra] ?? {});
+    const origen = calculo ? "automatica" : x.datoId !== undefined ? "compartida" : "propia";
     const [v] = await tx`INSERT INTO indicador_variables
-        (version_id, letra, nombre, descripcion, fuente, captura_min, captura_max, consolidacion, origen, orden)
+        (version_id, letra, nombre, descripcion, fuente, captura_min, captura_max, consolidacion, origen, variable_compartida_id,
+         dato_periodicidad, orden)
       VALUES (${versionId}, ${d.letra}, ${x.nombre ?? d.nombre}, ${x.descripcion ?? d.descripcion}, ${x.fuente ?? (calculo ? "La calcula el sistema" : null)},
-        ${x.capturaMin ?? null}, ${x.capturaMax ?? null}, ${d.consolidacion}, ${calculo ? "automatica" : "propia"}, ${d.orden}) RETURNING id`;
+        ${x.capturaMin ?? null}, ${x.capturaMax ?? null}, ${d.consolidacion}, ${origen}, ${x.datoId ?? null},
+        (SELECT periodicidad FROM variables_compartidas WHERE id = ${x.datoId ?? null}), ${d.orden}) RETURNING id`;
     variables[d.letra] = Number(v.id);
   }
 
@@ -223,6 +228,33 @@ export async function indicadorDePrueba(
   }
 
   return { id: indicadorId, codigo, versionId, variables, procesoId };
+}
+
+/**
+ * Inserta por SQL un dato compartido activo del catálogo (anexo 14C, §4.1), sin periodos, con sus responsables. Sin valor:
+ * un nombre único, mensual, se suma, plazo de 10 días y sin dimensión. Solo dentro de `revertida`.
+ */
+export async function datoDePrueba(
+  tx: TransactionSql,
+  d: {
+    procesoId: number;
+    nombre?: string;
+    periodicidad?: Periodicidad;
+    consolidacion?: Consolidacion;
+    dimensionId?: number;
+    plazoReporteDias?: number;
+    responsables?: number[];
+  },
+): Promise<number> {
+  consecutivo += 1;
+  const [dato] = await tx`INSERT INTO variables_compartidas (proceso_id, nombre, periodicidad, consolidacion, plazo_reporte_dias, dimension_id)
+    VALUES (${d.procesoId}, ${d.nombre ?? `ZZ Dato ${Date.now() % 100_000_000}-${consecutivo}`}, ${d.periodicidad ?? "mensual"},
+      ${d.consolidacion ?? "suma"}, ${d.plazoReporteDias ?? 10}, ${d.dimensionId ?? null})
+    RETURNING id`;
+  for (const usuarioId of d.responsables ?? []) {
+    await tx`INSERT INTO variable_responsables (variable_id, usuario_id) VALUES (${dato.id}, ${usuarioId})`;
+  }
+  return Number(dato.id);
 }
 
 /** Un lote de importación con su evento «importado» (quién y cuándo), dentro de la transacción de la prueba. */

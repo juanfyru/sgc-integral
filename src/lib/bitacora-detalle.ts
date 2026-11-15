@@ -372,6 +372,24 @@ const CAMPOS_DE_NORMA: Record<string, string> = {
   notas: "notas",
 };
 
+/** Los datos de un dato compartido que se comparan en su edición, en el orden del formulario. */
+const CAMPOS_DE_DATO: Record<string, string> = {
+  procesoId: "proceso",
+  nombre: "nombre",
+  descripcion: "descripción",
+  fuente: "fuente",
+  unidad: "unidad",
+  periodicidad: "periodicidad",
+  consolidacion: "cómo se junta",
+  capturaMin: "mínimo de captura",
+  capturaMax: "máximo de captura",
+  admiteNegativos: "admite negativos",
+  plazoReporteDias: "plazo de reporte",
+  dimensionId: "dimensión",
+};
+
+const elDato = (nombre: string | null) => (nombre ? `el dato compartido «${nombre}»` : "un dato compartido");
+
 /** «: título, tema»: los campos de `nombres` cuyo valor difiere entre `antes` y `despues` (guardados completos). */
 function camposDistintos(antes: unknown, despues: unknown, nombres: Record<string, string>): string {
   const a = objeto(antes);
@@ -814,6 +832,23 @@ export function describirEvento(e: EventoAuditoria): string {
         ? "Guardó los parámetros de indicadores sin cambios"
         : `Guardó los parámetros de indicadores (${cambios} ${cambios === 1 ? "cambio" : "cambios"})`;
     }
+    // ── Indicadores (14C): el catálogo de datos compartidos
+    case "dato_compartido_guardado":
+      return d.creado === true
+        ? `Creó ${elDato(nombre)}${texto(d.proceso) ? ` en el proceso ${texto(d.proceso)}` : ""}`
+        : `Editó ${elDato(nombre)}${camposDistintos(d.antes, d.despues, CAMPOS_DE_DATO)}`;
+    case "dato_compartido_responsables": {
+      const lista = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.length > 0) : []);
+      const antes = lista(d.nombresAntes);
+      const despues = lista(d.nombresDespues);
+      return `Cambió los responsables ${nombre ? `del dato compartido «${nombre}»` : "de un dato compartido"}: ${antes.length > 0 ? antes.join(", ") : "nadie"} → ${despues.length > 0 ? despues.join(", ") : "nadie"}`;
+    }
+    case "dato_compartido_activado":
+      return `Activó ${elDato(nombre)}`;
+    case "dato_compartido_desactivado":
+      return `Desactivó ${elDato(nombre)}`;
+    case "dato_compartido_borrado":
+      return `Borró ${elDato(nombre)}`;
     // ── Indicadores (14A): la ficha
     case "indicador_creado":
       return `Creó el indicador${cod ? ` ${cod}` : ""}${nombre ? ` «${nombre}»` : ""} en borrador`;
@@ -1173,6 +1208,11 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   indicador_maestro_activado: "Activó o desactivó un elemento de los maestros de indicadores",
   indicador_maestro_borrado: "Borró un elemento de los maestros de indicadores",
   indicador_parametros_guardados: "Guardó los parámetros de indicadores",
+  dato_compartido_guardado: "Guardó un dato compartido",
+  dato_compartido_responsables: "Cambió los responsables de un dato compartido",
+  dato_compartido_activado: "Activó un dato compartido",
+  dato_compartido_desactivado: "Desactivó un dato compartido",
+  dato_compartido_borrado: "Borró un dato compartido",
   indicador_creado: "Creó un indicador",
   indicador_borrador_guardado: "Guardó el borrador de una ficha de indicador",
   indicador_cambio_abierto: "Abrió un cambio en una ficha de indicador",

@@ -2,6 +2,7 @@
 
 import { idNumerico, mutacion, texto, type EstadoAccion } from "@/app/admin/comun";
 import { ErrorFirma } from "@/db/consultas/flujo/contrato";
+import { borrarDato, cambiarEstadoDeDato, designarResponsablesDeDato, guardarDato } from "@/db/consultas/indicadores/datos";
 import { crearLote, deshacerImportacion, importarLote, vistaPrevia, type VistaPrevia } from "@/db/consultas/indicadores/importacion";
 import {
   activarEnMaestro,
@@ -13,6 +14,7 @@ import {
 import { contextoDePeticion } from "@/lib/contexto-peticion";
 import { EsquemaSinDatos } from "@/lib/esquemas/documentos";
 import { EsquemaDeshacerImportacion, EsquemaImportarLote, EsquemaVistaPreviaImportacion, juntarImportacion } from "@/lib/esquemas/indicadores";
+import { EsquemaDato, EsquemaEstadoDeDato, EsquemaResponsablesDeDato } from "@/lib/esquemas/indicadores-datos";
 import {
   EsquemaActivarMaestro,
   EsquemaMaestro,
@@ -56,6 +58,43 @@ export async function guardarParametrosAccion(_prev: EstadoAccion, formData: For
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     const parametros = parsearFormulario(formData, EsquemaParametrosIndicadores);
     await guardarParametros(sesion, parametros);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// El catálogo de datos compartidos (anexo 14C, §4.1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** `id`, si viene, es el del dato que se edita (sin él, se crea). */
+export async function guardarDatoCompartido(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    const datos = parsearFormulario(formData, EsquemaDato, { omitir: ["id"] });
+    const id = texto(formData, "id") ? idNumerico(formData, "id") : undefined;
+    await guardarDato(sesion, { ...datos, ...(id ? { id } : {}) });
+  });
+}
+
+/** `id` es el del dato; `usuarioIds`, la lista completa de sus responsables, en JSON. */
+export async function designarResponsablesDelDato(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    const { usuarioIds } = parsearFormulario(formData, EsquemaResponsablesDeDato, { omitir: ["id"] });
+    await designarResponsablesDeDato(sesion, { datoId: idNumerico(formData, "id"), usuarioIds });
+  });
+}
+
+/** `id` es el del dato. */
+export async function cambiarEstadoDelDato(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    const { activa } = parsearFormulario(formData, EsquemaEstadoDeDato, { omitir: ["id"] });
+    await cambiarEstadoDeDato(sesion, { datoId: idNumerico(formData, "id"), activa: activa === "true" });
+  });
+}
+
+/** `id` es el del dato. */
+export async function borrarDatoCompartido(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
+    await borrarDato(sesion, idNumerico(formData, "id"));
   });
 }
 

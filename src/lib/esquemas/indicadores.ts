@@ -39,8 +39,9 @@ import { parsearFormulario, textoAcotado } from "@/lib/validacion";
 export const PATRON_CODIGO_INDICADOR = /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/;
 export const LARGO_CODIGO_INDICADOR = 30;
 /** Los segmentos de `/indicadores/…` que son páginas de la aplicación, no indicadores (sin distinguir mayúsculas). */
-export const CODIGOS_RESERVADOS: readonly string[] = ["nuevo", "matriz", "por-aprobar", "cierre", "excel", "objetivos"];
-const RESERVADO = "«nuevo», «matriz», «por-aprobar», «cierre», «excel» y «objetivos» son nombres reservados: elija otro código";
+export const CODIGOS_RESERVADOS: readonly string[] = ["nuevo", "matriz", "por-aprobar", "cierre", "excel", "objetivos", "datos"];
+const ENTRE_COMILLAS = CODIGOS_RESERVADOS.map((c) => `«${c}»`);
+const RESERVADO = `${ENTRE_COMILLAS.slice(0, -1).join(", ")} y ${ENTRE_COMILLAS.at(-1)} son nombres reservados: elija otro código`;
 
 /** Un entero: texto del formulario o número de la consulta. */
 const entero = (nombre: string, minimo: number, maximo: number) =>
