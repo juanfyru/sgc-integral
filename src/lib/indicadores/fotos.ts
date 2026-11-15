@@ -43,8 +43,9 @@ export function cuandoSeToma(
 }
 
 /**
- * La fecha límite del análisis que pide una foto de flujo, contada desde ella: el plazo de reporte corre una vez para
- * esperar los datos y otra, desde la foto, para analizarlos. Fin del día, en la zona, de la foto más el plazo.
+ * La fecha límite del análisis que pide una foto que mueve su plazo (`laFotoMueveElPlazo`: la de flujo, o la de estado
+ * que llegó con su fecha límite vencida), contada desde ella: el plazo de reporte corre una vez para esperar los datos y
+ * otra, desde la foto, para analizarlos. Fin del día, en la zona, de la foto más el plazo.
  */
 export function fechaLimiteDesdeLaFoto(fotoEn: Date, plazoDias: number, zona: string): Date {
   return fechaLimite(fotoEn, plazoDias, zona);

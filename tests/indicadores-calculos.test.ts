@@ -99,7 +99,7 @@ describe("registro de cálculos", () => {
       "Cuenta, de las mediciones de B, las que se reportaron o se marcaron «no aplica» por primera vez en su fecha límite o antes; la que nunca se reportó no cuenta como a tiempo",
     );
     expect(b.descripcion).toBe(
-      "Cuenta las mediciones con fecha límite en el periodo que digita una persona (no las históricas ni las que calcula el sistema), también las marcadas «no aplica»; no cuenta las de otra periodicidad que dejó un cambio mayor ni las que seguían sin reportar cuando el indicador se retiró antes de su fecha límite",
+      "Cuenta las mediciones que digita una persona (no las históricas ni las que calcula el sistema) con fecha límite en el periodo, también las marcadas «no aplica»; no cuenta las de otra periodicidad que dejó un cambio mayor ni las que seguían sin reportar cuando el indicador se retiró antes de su fecha límite",
     );
   });
 

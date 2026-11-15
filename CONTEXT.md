@@ -702,7 +702,10 @@ desplegable cerrado).
   - `previaDeEnvio` marca como probada una ficha automática y solo ofrece el periodo en curso en un cálculo que no se llena
     hacia atrás (`aprobacion.ts:1189`);
   - si dos fichas de un bloque se pasan el mismo cálculo (una lo deja y la otra lo toma), la segunda se rechaza (se aprueban
-    por separado).
+    por separado);
+  - al retirar un indicador, la bitácora guarda cuántas constancias pendientes sin soporte se quitaron
+    (`constanciasQuitadas` en el detalle de `indicador_retirado`), pero su frase legible no lo dice (la de la aprobación y la
+    del cambio menor sí: `src/lib/bitacora-detalle.ts`).
 - **Pequeñas del código:** `esCalculoRepetido` lee `err.code` sin comprobar nulo (`publicacion.ts:42-43`); `fotoDe` devuelve
   `B: ""` si falta B (`src/lib/indicadores/calculos/registro.ts:284`; nadie lo hace); el gancho `conElResultado` tiene un
   tipo abierto (`mediciones.ts:489`, `:611`); `escribirFoto` (`fotos.ts:176`) y `LO_CALCULA_EL_SISTEMA`

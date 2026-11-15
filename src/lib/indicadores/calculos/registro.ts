@@ -220,7 +220,7 @@ export const CALCULOS: Record<ClaveDeCalculo, DefinicionDeCalculo> = {
       ],
       [
         "Mediciones con fecha límite en el periodo",
-        "Cuenta las mediciones con fecha límite en el periodo que digita una persona (no las históricas ni las que calcula el sistema), también las marcadas «no aplica»; no cuenta las de otra periodicidad que dejó un cambio mayor ni las que seguían sin reportar cuando el indicador se retiró antes de su fecha límite",
+        "Cuenta las mediciones que digita una persona (no las históricas ni las que calcula el sistema) con fecha límite en el periodo, también las marcadas «no aplica»; no cuenta las de otra periodicidad que dejó un cambio mayor ni las que seguían sin reportar cuando el indicador se retiró antes de su fecha límite",
       ],
     ),
     alcances: POR_PROCESO,
