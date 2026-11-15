@@ -3,6 +3,15 @@
 import { idNumerico, mutacion, texto, type EstadoAccion } from "@/app/admin/comun";
 import { ErrorFirma } from "@/db/consultas/flujo/contrato";
 import { borrarDato, cambiarEstadoDeDato, designarResponsablesDeDato, guardarDato } from "@/db/consultas/indicadores/datos";
+import {
+  borrarCategoria,
+  borrarDimension,
+  cambiarEstadoDeCategoria,
+  cambiarEstadoDeDimension,
+  guardarCategoria,
+  guardarDimension,
+  moverCategoria,
+} from "@/db/consultas/indicadores/dimensiones";
 import { crearLote, deshacerImportacion, importarLote, vistaPrevia, type VistaPrevia } from "@/db/consultas/indicadores/importacion";
 import {
   activarEnMaestro,
@@ -17,6 +26,10 @@ import { EsquemaDeshacerImportacion, EsquemaImportarLote, EsquemaVistaPreviaImpo
 import { EsquemaDato, EsquemaEstadoDeDato, EsquemaResponsablesDeDato } from "@/lib/esquemas/indicadores-datos";
 import {
   EsquemaActivarMaestro,
+  EsquemaCategoria,
+  EsquemaDimension,
+  EsquemaEstadoDeDimension,
+  EsquemaMoverCategoria,
   EsquemaMaestro,
   EsquemaParametrosIndicadores,
   ESQUEMAS_MAESTRO,
@@ -95,6 +108,68 @@ export async function borrarDatoCompartido(_prev: EstadoAccion, formData: FormDa
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
     await borrarDato(sesion, idNumerico(formData, "id"));
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dimensiones y categorías (anexo 14C, §5.1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** `id`, si viene, es el de la dimensión que se renombra (sin él, se crea). */
+export async function guardarDimensionDeIndicadores(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    const { nombre } = parsearFormulario(formData, EsquemaDimension, { omitir: ["id"] });
+    const id = texto(formData, "id") ? idNumerico(formData, "id") : undefined;
+    await guardarDimension(sesion, { ...(id ? { id } : {}), nombre });
+  });
+}
+
+/** `dimensionId` es la dimensión de la categoría nueva; `id`, si viene, la categoría que se renombra. */
+export async function guardarCategoriaDeDimension(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    const datos = parsearFormulario(formData, EsquemaCategoria, { omitir: ["id"] });
+    const id = texto(formData, "id") ? idNumerico(formData, "id") : undefined;
+    await guardarCategoria(sesion, { ...(id ? { id } : {}), dimensionId: datos.dimensionId ?? 0, nombre: datos.nombre });
+  });
+}
+
+/** `id` es el de la categoría. */
+export async function moverCategoriaDeDimension(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    const { sentido } = parsearFormulario(formData, EsquemaMoverCategoria, { omitir: ["id"] });
+    await moverCategoria(sesion, { id: idNumerico(formData, "id"), sentido });
+  });
+}
+
+/** `id` es el de la dimensión. */
+export async function cambiarEstadoDeDimensionDeIndicadores(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    const { activo } = parsearFormulario(formData, EsquemaEstadoDeDimension, { omitir: ["id"] });
+    await cambiarEstadoDeDimension(sesion, { id: idNumerico(formData, "id"), activo: activo === "true" });
+  });
+}
+
+/** `id` es el de la categoría. */
+export async function cambiarEstadoDeCategoriaDeDimension(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    const { activo } = parsearFormulario(formData, EsquemaEstadoDeDimension, { omitir: ["id"] });
+    await cambiarEstadoDeCategoria(sesion, { id: idNumerico(formData, "id"), activo: activo === "true" });
+  });
+}
+
+/** `id` es el de la dimensión. */
+export async function borrarDimensionDeIndicadores(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
+    await borrarDimension(sesion, idNumerico(formData, "id"));
+  });
+}
+
+/** `id` es el de la categoría. */
+export async function borrarCategoriaDeDimension(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
+    await borrarCategoria(sesion, idNumerico(formData, "id"));
   });
 }
 

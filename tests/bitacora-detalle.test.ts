@@ -1143,3 +1143,19 @@ describe("la importación de indicadores (14A)", () => {
     expect(nombreDeAccion("deshizo_importacion_indicadores")).toBe("Deshizo una importación de indicadores");
   });
 });
+
+describe("dimensiones y categorías de indicadores (14C)", () => {
+  const frase = (accion: string, detalle: Record<string, unknown>) =>
+    describirEvento({ accion, entidad: "dimension", entidadId: 1, detalle });
+  it("dicen qué dimensión o categoría y de cuál", () => {
+    expect(frase("dimension_guardada", { nombre: "Sede", creada: true })).toBe("Creó la dimensión «Sede»");
+    expect(frase("dimension_guardada", { nombre: "Sede", creada: false, antes: "Sedes" })).toBe("Editó la dimensión «Sede» (antes «Sedes»)");
+    expect(frase("dimension_desactivada", { nombre: "Sede" })).toBe("Desactivó la dimensión «Sede»");
+    expect(frase("categoria_guardada", { nombre: "Norte", dimension: "Sede", creada: true })).toBe("Creó la categoría «Norte» de la dimensión «Sede»");
+    expect(frase("categoria_movida", { nombre: "Norte", dimension: "Sede", sentido: "arriba" })).toBe(
+      "Movió hacia arriba la categoría «Norte» de la dimensión «Sede»",
+    );
+    expect(frase("categoria_borrada", {})).toBe("Borró una categoría");
+    expect(nombreDeAccion("categoria_movida")).toBe("Cambió el orden de una categoría");
+  });
+});

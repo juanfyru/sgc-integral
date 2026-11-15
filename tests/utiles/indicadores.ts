@@ -360,3 +360,23 @@ export async function fotoDePrueba(tx: TransactionSql, medicionId: number, valor
     { version, definicion, alcance: version.calculoAutomatico!.alcance, plazoDias: Number(m.plazo_reporte_dias), foto, ahora },
   );
 }
+
+/**
+ * Inserta por SQL una dimensión activa con sus categorías activas, en ese orden y con `creado_en` un año atrás, para que
+ * entren a cualquier periodo de prueba (anexo 14C, §5.1). Solo dentro de `revertida`.
+ */
+export async function dimensionDePrueba(
+  tx: TransactionSql,
+  nombre: string,
+  categorias: string[],
+): Promise<{ id: number; categorias: number[] }> {
+  const [dimension] = await tx`INSERT INTO dimensiones (nombre, orden)
+    VALUES (${nombre}, (SELECT coalesce(max(orden), 0) + 1 FROM dimensiones)) RETURNING id`;
+  const ids: number[] = [];
+  for (const [i, categoria] of categorias.entries()) {
+    const [c] = await tx`INSERT INTO dimension_categorias (dimension_id, nombre, orden, creado_en)
+      VALUES (${dimension.id}, ${categoria}, ${i + 1}, now() - interval '1 year') RETURNING id`;
+    ids.push(Number(c.id));
+  }
+  return { id: Number(dimension.id), categorias: ids };
+}

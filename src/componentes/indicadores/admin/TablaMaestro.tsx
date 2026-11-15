@@ -14,13 +14,13 @@ import { Insignia } from "@/componentes/ui/Insignia";
 import type { FilaMaestro, Maestro } from "@/db/consultas/indicadores/maestros";
 import { cuenta } from "@/lib/plural";
 
-const CONTROL = `${claseControl} w-full min-w-0 max-w-full`;
+export const CONTROL = `${claseControl} w-full min-w-0 max-w-full`;
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 
 type Accion = (estado: EstadoAccion, formData: FormData) => Promise<EstadoAccion>;
 
 /** Una acción en su propio formulario: el error se dice junto al botón, y los valores escritos no se pierden. */
-function FormularioAccion({
+export function FormularioAccion({
   accion,
   campos,
   boton,
@@ -54,7 +54,7 @@ function FormularioAccion({
   );
 }
 
-function Desplegable({ titulo, children }: { titulo: string; children: React.ReactNode }) {
+export function Desplegable({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
     <details className="min-w-0 rounded-md border border-border p-2">
       <summary className={`cursor-pointer rounded text-sm font-medium ${FOCO}`}>{titulo}</summary>

@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { FormularioParametros } from "@/componentes/indicadores/admin/FormularioParametros";
+import { TablaDimensiones } from "@/componentes/indicadores/admin/TablaDimensiones";
 import { TablaMaestro } from "@/componentes/indicadores/admin/TablaMaestro";
 import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
+import { listarDimensiones } from "@/db/consultas/indicadores/dimensiones";
 import { listarMaestro, obtenerParametros } from "@/db/consultas/indicadores/maestros";
 import { exigirPermiso } from "@/lib/paginas";
 
@@ -11,11 +13,12 @@ export const metadata: Metadata = { title: "Configuración de indicadores — Ad
 
 export default async function PaginaConfiguracionIndicadores() {
   await exigirPermiso("indicadores.administrar");
-  const [tipos, clasificaciones, unidades, objetivos, parametros] = await Promise.all([
+  const [tipos, clasificaciones, unidades, objetivos, dimensiones, parametros] = await Promise.all([
     listarMaestro("tipos"),
     listarMaestro("clasificaciones"),
     listarMaestro("unidades"),
     listarMaestro("objetivos"),
+    listarDimensiones(),
     obtenerParametros(),
   ]);
   return (
@@ -52,6 +55,7 @@ export default async function PaginaConfiguracionIndicadores() {
         titulo="Objetivos"
         descripcion="Los objetivos de calidad e institucionales a los que una ficha puede aportar."
       />
+      <TablaDimensiones dimensiones={dimensiones} />
       <FormularioParametros parametros={parametros} />
     </div>
   );

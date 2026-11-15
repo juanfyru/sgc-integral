@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { id } from "@/lib/esquemas/indicadores";
 import { textoAcotado } from "@/lib/validacion";
 
 /** `parsearFormulario` descarta los campos vacíos; un entero llega como texto del formulario o como número de la consulta. */
@@ -69,3 +70,21 @@ const MAESTROS = ["tipos", "clasificaciones", "unidades", "objetivos"] as const;
 
 export const EsquemaMaestro = z.object({ maestro: z.enum(MAESTROS) }).strict();
 export const EsquemaActivarMaestro = z.object({ maestro: z.enum(MAESTROS), activo: z.enum(["true", "false"]) }).strict();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dimensiones y categorías (anexo 14C, §5.1): los ids de ruta viajan aparte (`omitir: ["id"]`).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const EsquemaDimension = z.object({ nombre: nombre("El nombre de la dimensión") }).strict();
+
+/** La categoría nueva dice su dimensión; la que se edita ya la tiene y solo manda su nombre. */
+export const EsquemaCategoria = z
+  .object({
+    dimensionId: id("La dimensión no es válida").optional(),
+    nombre: nombre("El nombre de la categoría"),
+  })
+  .strict();
+
+export const EsquemaMoverCategoria = z.object({ sentido: z.enum(["arriba", "abajo"], { error: "El sentido no es válido" }) }).strict();
+
+export const EsquemaEstadoDeDimension = z.object({ activo: z.enum(["true", "false"]) }).strict();

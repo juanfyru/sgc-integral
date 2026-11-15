@@ -388,6 +388,9 @@ const CAMPOS_DE_DATO: Record<string, string> = {
   dimensionId: "dimensión",
 };
 
+const laDimension = (nombre: string | null) => (nombre ? `la dimensión «${nombre}»` : "una dimensión de indicadores");
+const laCategoria = (nombre: string | null, d: Record<string, unknown>) =>
+  `${nombre ? `la categoría «${nombre}»` : "una categoría"}${texto(d.dimension) ? ` de la dimensión «${texto(d.dimension)}»` : ""}`;
 const elDato = (nombre: string | null) => (nombre ? `el dato compartido «${nombre}»` : "un dato compartido");
 
 /** «: título, tema»: los campos de `nombres` cuyo valor difiere entre `antes` y `despues` (guardados completos). */
@@ -849,6 +852,29 @@ export function describirEvento(e: EventoAuditoria): string {
       return `Desactivó ${elDato(nombre)}`;
     case "dato_compartido_borrado":
       return `Borró ${elDato(nombre)}`;
+    // ── Indicadores (14C): dimensiones y categorías
+    case "dimension_guardada":
+      return d.creada === true
+        ? `Creó ${laDimension(nombre)}`
+        : `Editó ${laDimension(nombre)}${texto(d.antes) && texto(d.antes) !== nombre ? ` (antes «${texto(d.antes)}»)` : ""}`;
+    case "dimension_activada":
+      return `Activó ${laDimension(nombre)}`;
+    case "dimension_desactivada":
+      return `Desactivó ${laDimension(nombre)}`;
+    case "dimension_borrada":
+      return `Borró ${laDimension(nombre)}`;
+    case "categoria_guardada":
+      return d.creada === true
+        ? `Creó ${laCategoria(nombre, d)}`
+        : `Editó ${laCategoria(nombre, d)}${texto(d.antes) && texto(d.antes) !== nombre ? ` (antes «${texto(d.antes)}»)` : ""}`;
+    case "categoria_movida":
+      return `Movió ${d.sentido === "abajo" ? "hacia abajo" : "hacia arriba"} ${laCategoria(nombre, d)}`;
+    case "categoria_activada":
+      return `Activó ${laCategoria(nombre, d)}`;
+    case "categoria_desactivada":
+      return `Desactivó ${laCategoria(nombre, d)}`;
+    case "categoria_borrada":
+      return `Borró ${laCategoria(nombre, d)}`;
     // ── Indicadores (14A): la ficha
     case "indicador_creado":
       return `Creó el indicador${cod ? ` ${cod}` : ""}${nombre ? ` «${nombre}»` : ""} en borrador`;
@@ -1213,6 +1239,15 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   dato_compartido_activado: "Activó un dato compartido",
   dato_compartido_desactivado: "Desactivó un dato compartido",
   dato_compartido_borrado: "Borró un dato compartido",
+  dimension_guardada: "Guardó una dimensión de indicadores",
+  dimension_activada: "Activó una dimensión de indicadores",
+  dimension_desactivada: "Desactivó una dimensión de indicadores",
+  dimension_borrada: "Borró una dimensión de indicadores",
+  categoria_guardada: "Guardó una categoría de una dimensión",
+  categoria_movida: "Cambió el orden de una categoría",
+  categoria_activada: "Activó una categoría de una dimensión",
+  categoria_desactivada: "Desactivó una categoría de una dimensión",
+  categoria_borrada: "Borró una categoría de una dimensión",
   indicador_creado: "Creó un indicador",
   indicador_borrador_guardado: "Guardó el borrador de una ficha de indicador",
   indicador_cambio_abierto: "Abrió un cambio en una ficha de indicador",
