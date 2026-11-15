@@ -33,7 +33,7 @@ Antes de seguir, vea el Capítulo 5 (cómo se pide y se publica un documento) y 
 - **Normograma:** las leyes, decretos, resoluciones y demás normas que aplican al hospital,
   con los procesos a los que aplican y los documentos que las implementan. Cuando una norma
   se modifica, se deroga o se retira, el SGC abre la revisión de su impacto en esos documentos
-  y procesos.
+  y procesos, y en los indicadores que la citan (Capítulo 8, sección 10).
 - **Indicadores documentales:** siete cifras del proceso documental con su meta: documentos al
   día, tiempo de aprobación, vencidos, acuses, conformidad, externos y etapas a tiempo. El SGC las
   calcula solo, desde los documentos; no son las fichas del módulo **Indicadores** (Capítulo 8).
@@ -545,10 +545,11 @@ del informe y elíjalo**: después del cierre el informe ya no cambia de papel.
   no recupera su estado sola (cámbielo a mano) y los impactos que ya nacieron se resuelven como
   «no afecta».
 - **Retirar…**, con motivo, para una norma registrada por error o que dejó de aplicar: sale de
-  las listas y de la búsqueda, conserva su ficha y, si tiene documentos enlazados o procesos
-  asociados, abre la revisión de su impacto (con **Incluir retiradas**, en los filtros, la
-  vuelve a ver). **Borrar…** solo aparece en una norma sin relaciones (tampoco eliminadas),
-  procesos, documentos, cambios, PDF ni fichas de indicador que la citen, aunque sean borradores.
+  las listas y de la búsqueda, conserva su ficha y, si tiene documentos enlazados, procesos
+  asociados o indicadores que la citan, abre la revisión de su impacto (con **Incluir
+  retiradas**, en los filtros, la vuelve a ver). **Borrar…** solo aparece en una norma sin
+  relaciones (tampoco eliminadas), procesos, documentos, cambios, PDF ni fichas de indicador que
+  la citen, aunque sean borradores.
 - **Tipos de norma**, al pie del normograma: los nueve iniciales (Ley, Decreto, Resolución,
   Circular, Acuerdo, Norma técnica, Sentencia, Directiva, Otro) se renombran, se ordenan y se
   desactivan; **Nuevo tipo de norma** crea otro.

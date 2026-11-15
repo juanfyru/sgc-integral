@@ -599,7 +599,8 @@ cerrado; nunca uno que no ha terminado) y pulse **Ver el resumen**:
 - cuántas mediciones se cerrarán, cuántas reportadas, cuántas **quedarán sin dato** (con quién debía
   medirlas; en un indicador que calcula el sistema dice «El sistema»), cuántas «no aplica» y cuántas
   tienen datos pero les falta el análisis. Antes de contarlas, el resumen y el cierre toman los
-  cálculos del sistema que ya tocaban (sección 7.2);
+  cálculos del sistema que ya tocaban (sección 7.2); si una de esas fotos pide análisis y le da al
+  análisis un plazo contado desde ella, la medición queda en plazo y no se cierra «sin análisis»;
 - el resumen **Por proceso** y las observaciones que siguen sin respuesta (no impiden el cierre);
 - **No se cierran**: las mediciones que siguen dentro de su plazo de reporte (cerrar el 1 de abril
   no deja sin dato lo que tenía plazo hasta el 10) y los históricos sin registrar.
@@ -711,10 +712,11 @@ lo hace quien administra indicadores.
 8. **Deshacer.** Si se equivocó, la página del lote ofrece **Deshacer la importación** con un
    motivo y su clave: las fichas desaparecen, sus códigos quedan libres y la bitácora lo cuenta;
    la plantilla corregida puede importarse otra vez. Se deshace el lote entero y solo mientras
-   ninguna de sus fichas tenga periodos cerrados o con datos, personas designadas ni una versión
-   posterior, y
-   mientras ninguna propuesta se haya editado o enviado a aprobación: entonces el botón no se
-   ofrece y la página dice por qué.
+   ninguna de sus fichas tenga periodos cerrados o con datos, personas designadas, una versión
+   posterior, revisiones por cambio de norma (sección 10) ni reportes al ente (sección 9), aunque
+   estén resueltos o registrados, y mientras ninguna propuesta se haya editado o enviado a
+   aprobación: si no, el botón no se ofrece y la página dice por qué, ficha por ficha («No se
+   puede deshacer: … tiene revisiones por cambio de norma»).
 
 ## 7. Indicadores que calcula el sistema
 
@@ -743,7 +745,7 @@ el de vencidos, una **B**; el resultado sale de las dos, como en un porcentaje o
 | **Conformidad en puntos de uso, del periodo** | Las verificaciones cerradas en el periodo que resultaron conformes | Las verificaciones cerradas en el periodo | Sobre el periodo | Solo toda la entidad |
 | **Externos verificados al día** | Los documentos externos vigentes cuya verificación no ha vencido | Los externos vigentes que tienen fecha de verificación | A una fecha | Toda la entidad o el proceso de la ficha |
 | **Etapas del trámite cerradas en plazo** | Las etapas de trámite cerradas en el periodo dentro de su fecha límite | Las etapas cerradas en el periodo que tenían fecha límite | Sobre el periodo | Toda la entidad o el proceso de la ficha |
-| **Reportes de indicadores a tiempo** | Las mediciones con fecha límite en el periodo cuyo primer reporte (o «no aplica») fue en esa fecha o antes | Las mediciones de indicadores que se digitan cuya fecha límite cae en el periodo | Sobre el periodo | Toda la entidad o el proceso de la ficha |
+| **Reportes de indicadores a tiempo** | De las mediciones de B, las que se reportaron o se marcaron «no aplica» por primera vez en su fecha límite o antes; la que nunca se reportó no cuenta como a tiempo | Las mediciones con fecha límite en el periodo que digita una persona (no las históricas ni las que calcula el sistema), también las marcadas «no aplica»; no cuenta las de otra periodicidad que dejó un cambio mayor ni las que seguían sin reportar cuando el indicador se retiró antes de su fecha límite | Sobre el periodo | Toda la entidad o el proceso de la ficha |
 | **Objetivos cumplidos** | Los objetivos cuyas últimas mediciones del periodo alcanzaron todas la meta | Los objetivos que tuvieron al menos una medición con meta en el periodo | Sobre el periodo | Objetivos de calidad, institucionales o todos |
 
 Algunas precisiones:
@@ -753,9 +755,9 @@ Algunas precisiones:
 - **«El proceso de la ficha»** es el proceso del propio indicador: no se elige otro.
 - **Se cuenta todo**, también lo restringido: el cálculo entrega cifras, no nombres. Una ficha
   restringida sigue siéndolo para quien no la puede ver.
-- **Reportes a tiempo** no cuenta los históricos ni los indicadores que calcula el sistema; un
-  reporte que llegó tarde cuenta tarde aunque después se corrija, y uno que nunca llegó, también.
-  Un indicador retirado antes de su fecha límite no cuenta lo que dejó sin reportar.
+- **Reportes a tiempo** mira el primer reporte (o el primer «no aplica»): uno que llegó tarde
+  cuenta tarde aunque después se corrija, y uno que nunca llegó cuenta en B y no en A. Un indicador
+  retirado antes de su fecha límite no cuenta lo que dejó sin reportar.
 - **Objetivos cumplidos:** de cada indicador del objetivo toma la última medición del periodo que
   tiene resultado y meta (sin «no aplica»); el objetivo se cumple si todas alcanzan la meta (un
   «Bien · no alcanza la meta» no la alcanza). **Un objetivo sin medición no cuenta como no
@@ -794,8 +796,16 @@ contar, en el resumen y en el cierre del mes (sección 6.6). **Una medición cer
 silencio:** lo cerrado queda como se cerró.
 
 Si la foto no cumple la meta, la tarea es de **quien analiza**, con las reglas de siempre (sección
-4). En un cálculo que se mide sobre el periodo, el análisis tiene su plazo completo contado desde la
-foto: como la foto llega cuando vence el plazo de reporte, el análisis no nace vencido.
+4), y el análisis no nace vencido:
+
+- **En un cálculo que se mide sobre el periodo**, el análisis tiene su plazo completo contado desde
+  la foto: la foto llega cuando vence el plazo de reporte.
+- **En uno que se mide a una fecha**, el análisis conserva la fecha límite del periodo (su fin más el
+  plazo) si la foto se tomó a más tardar ese día. Si la foto llegó cuando esa fecha ya había pasado
+  (nadie usó el SGC en esos días, o el plazo es 0), el plazo completo se cuenta desde la foto; con
+  plazo 0, el análisis vence al final del día de la foto.
+
+Si la foto cumple la meta o queda «No aplica», la fecha límite no cambia.
 
 ### 7.3 «No aplica» puesto por el sistema
 
@@ -862,7 +872,9 @@ con valores ni el cargo responsable de medir, ni hay soporte obligatorio.
   anteriores.».
 - **Una sola ficha activa por cálculo y alcance** (con «El proceso de la ficha», una por proceso).
   El formulario lo advierte («Ya hay una ficha activa para ese cálculo y alcance.») y el SGC no la
-  envía ni la aprueba: «Ya hay una ficha activa para ese cálculo y alcance: SGC-ID-002».
+  envía ni la aprueba: «Ya hay una ficha activa para ese cálculo y alcance: SGC-ID-002». El código
+  de la otra ficha solo lo lee quien puede verla: a quien aprueba sin verla (un líder ante una
+  ficha restringida de otro proceso) le llega el mismo mensaje sin el código.
 - **La meta:** en los siete cálculos que también tienen tarjeta en **Vigencia → Indicadores** (todos
   menos conformidad del periodo, reportes a tiempo y objetivos cumplidos), la meta de la ficha es la
   de la tarjeta (Capítulo 7, sección 5.2) y debe ser un número entero, también la que se programe
@@ -891,8 +903,9 @@ sus procesos, y en los acuses la tarjeta de Gerencia cuenta solo las versiones v
 Administrador del SGC y Control Interno ven en la tarjeta la misma cifra que la ficha.
 
 Las dos son la misma medida con distinta precisión: Distribución y la tarjeta de conformidad truncan
-el porcentaje a un entero («50 %») y la ficha lo escribe con los decimales de la ficha («50,0 %»);
-ninguna contradice su color.
+el porcentaje a un entero (18 puntos conformes de 19: «94 %») y la ficha lo escribe con los
+decimales de la ficha («94,7 %», sin ceros de más: un 50 exacto es «50 %» en las dos); ninguna
+contradice su color.
 
 ## 8. Objetivos
 
@@ -941,7 +954,9 @@ Nace una constancia por cada periodo del ente que **termina después** de ese mo
 a una ficha con años de historia, o a una importada, no abre envíos atrasados. **Lo ya nacido no
 cambia:** cada constancia guarda el ente y la fecha límite de cuando nació, aunque después la ficha
 cambie. Si la ficha deja de reportarse a un ente o el indicador se retira, las constancias pendientes
-sin soporte dejan de pedirse; las registradas y las que ya tienen un soporte se conservan.
+sin soporte dejan de pedirse; las registradas y las que ya tienen un soporte se conservan. Una
+pendiente a la que se le subió un soporte y se le quitó guarda ese historial y no se borra: sigue en
+la pestaña, pero ya no es tarea de nadie, no avisa ni marca la lista.
 
 ### 9.2 La tarea, el plazo y los avisos
 
@@ -1020,7 +1035,7 @@ Se resuelve de una de tres maneras:
 
 1. **No afecta:** quien administra los indicadores pulsa **No afecta** en el recuadro, escribe **Por
    qué no afecta** («Al menos 5 caracteres. Queda en la historia del indicador.») y pulsa **Registrar
-   que no afecta**.
+   que no afecta**: el recuadro desaparece y el foco pasa al título de la página.
 2. **Una versión nueva de la ficha:** la primera versión que se envía a aprobación (o el cambio menor
    que se publica) **después** del cambio de la norma la resuelve al quedar aprobada. Una versión que
    ya estaba por aprobar cuando cambió la norma no la resuelve. El recuadro lo recuerda: «También se
@@ -1105,7 +1120,7 @@ puede ver; tampoco los de una constancia de envío o una revisión por cambio de
 | Solo se pueden citar normas vigentes o modificadas | Una norma que la ficha cita por primera vez está derogada o retirada | Cambie la norma por la vigente |
 | La norma … ya no está vigente: devuelva la ficha … | La norma que la versión cita por primera vez dejó de regir mientras esperaba aprobación | Devuélvala; quien la elaboró quita esa norma |
 | Este indicador lo calcula el sistema: sus datos no se digitan | Se intentó reportar o corregir un indicador que calcula el sistema | Nada: espere su foto (sección 7.2) |
-| Ya hay una ficha activa para ese cálculo y alcance: … | Otro indicador activo ya usa ese cálculo con ese alcance | Use ese indicador, o retírelo antes |
+| Ya hay una ficha activa para ese cálculo y alcance: … | Otro indicador activo ya usa ese cálculo con ese alcance (el código sale solo si usted puede ver esa ficha) | Use ese indicador, o retírelo antes |
 | La meta de este cálculo debe ser un número entero: es la que muestran Vigencia y Distribución | Un cálculo con tarjeta en Vigencia no admite metas con decimales | Redondee la meta |
 | La foto de este cálculo se toma una sola vez | Se pidió volver a calcular un cálculo que se mide a una fecha | Nada: ese cálculo no se repite |
 | Adjunte al menos un soporte antes de registrar | Una constancia de envío se registra con su soporte | Adjunte el PDF o la imagen en **Soportes del envío** |

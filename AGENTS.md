@@ -491,7 +491,9 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   toma `tomarCalculo` llamando la consulta de Vigencia con la sesión de sistema (cuenta como el Admin
   SGC). A lo sumo una ficha activa por cálculo y alcance (con alcance «proceso», por proceso): el
   indicador guarda el cálculo y el alcance de su ficha vigente y el índice único parcial
-  `indicadores_calculo_unico` lo garantiza (`alPublicarVersion` los escribe). **Un automático no lo
+  `indicadores_calculo_unico` lo garantiza (`alPublicarVersion` los escribe). El mensaje «Ya hay una
+  ficha activa para ese cálculo y alcance» lleva el código de la otra solo a quien puede verla
+  (`puedeVerIndicador`); a quien no, el mismo mensaje sin el código. **Un automático no lo
   digita nadie:** reportar, «no aplica», históricos y soportes rechazan una medición cuya versión que
   rige es automática; al aprobarse una versión automática se quitan los designados «mide» y se apaga
   el soporte obligatorio. Mientras espera su valor está en **«Falta un dato»**: no es tarea de nadie,
@@ -501,9 +503,13 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   atrás, sin esperar (`cuandoSeToma`, `src/lib/indicadores/fotos.ts`). La toman la pasada de
   vencimientos (después de abrir los periodos) y, antes de clasificar, el resumen y el cierre del mes;
   la apertura de periodos no. Sin nada que medir (B en cero), «No aplica» con el motivo del cálculo
-  (`fotoDe`). La de flujo que deja la medición pidiendo análisis cuenta la fecha límite otra vez
-  desde la foto; «Volver a calcular» (solo flujo, sin cerrar ni reabrir, de quien administra) la
-  mueve una vez como mucho. Una medición cerrada no se recalcula nunca en silencio.
+  (`fotoDe`). La foto que deja la medición pidiendo análisis le cuenta la fecha límite otra vez
+  desde ella, con el mismo plazo, si es de flujo o si esa fecha ya pasó al tomarla (la pasada solo
+  corre cuando alguien usa la aplicación; con plazo 0, siempre), para que el análisis no nazca
+  vencido (`laFotoMueveElPlazo`, `src/lib/indicadores/fotos.ts`). La de estado tomada a tiempo, y
+  la que cumple o queda «No aplica», no la mueven. «Volver a calcular» (solo flujo, sin cerrar ni reabrir,
+  de quien administra) la mueve una vez como mucho. Una medición cerrada no se recalcula nunca en
+  silencio.
 - **Un solo camino de cálculo:** solo `recalcularMedicion`
   (`src/db/consultas/indicadores/mediciones.ts`) escribe el resultado, el semáforo, la meta
   aplicada y el estado de una medición abierta o reportada; reportar, registrar históricos,
@@ -553,9 +559,13 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   después de `indicadores.ente_desde`, que escribe `alPublicarVersion` cuando la versión nueva se
   reporta y cambió lo que dice del ente (una ficha que ya se reportaba antes de la 14B empieza a contar
   en la primera pasada que la ve); lo ya nacido no cambia (guarda su ente y su fecha límite). Dejar de
-  reportarse o retirar el indicador quita solo las pendientes sin soporte
-  (`quitarConstanciasSinSoporte`). Registrar congela el resultado del periodo externo con el mismo
-  acumulado de la página (`resultadoDelPeriodoExterno`, parcial si falta un dato, hay periodos sin
+  reportarse o retirar el indicador quita solo las pendientes sin soporte ni historial
+  (`quitarConstanciasSinSoporte`); la pendiente sin soporte que se conserva porque tiene historial no
+  se pide si la ficha ya no se reporta: ni tarea, ni avisos de vencido y de escalamiento, ni la marca
+  y el filtro de la lista. Las tareas, los avisos y la lista usan el mismo fragmento
+  (`constanciaQueSePide`, `constancias-soporte.ts`: pendiente, de un indicador activo y, con
+  `ente_desde` nulo, solo si tiene soporte); la pendiente con soporte se sigue pidiendo. Registrar
+  congela el resultado del periodo externo con el mismo acumulado de la página (`resultadoDelPeriodoExterno`, parcial si falta un dato, hay periodos sin
   cerrar o acumula desde una versión nueva); corregir exige justificación y no lo recalcula. Registran
   y corrigen, sin clave, quien puede medir y quien administra (`puedeRegistrarConstancia`); el retiro
   no lo impide, pero sí subir o quitar soportes, y el de una registrada no se quita. Su historial es
@@ -585,8 +595,7 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   umbral o las tarjetas), y uno que corre la pasada de vencimientos silencia lo ajeno, también las
   fotos (`silenciarIndicadores`), siempre dentro de su transacción revertida. La semilla siembra por
   las funciones del dominio con `ahora` inyectado (`indicadores-demo-agenda.ts`, pura, y
-  `indicadores-demo-14b.ts`); `registrarArchivo` no recibe la hora, así que la constancia registrada
-  de la demo se registra con la hora del reloj.
+  `indicadores-demo-14b.ts`).
 
 ## Comandos
 

@@ -1,7 +1,7 @@
 # CONTEXT.md — Estado vivo del proyecto
 
 > Se actualiza al cierre de cada fase. Última actualización: **2026-11-14**, al cerrar la **Fase 14B — Lo que el sistema ya
-> sabe y lo regulatorio** en su rama `fase-14b-automaticos-regulatorios` (45 confirmaciones al cerrar la Tarea 13, sobre `main` en `f04b70b`, en el
+> sabe y lo regulatorio** en su rama `fase-14b-automaticos-regulatorios` (45 confirmaciones al cerrar la Tarea 13, más las de la tanda final de corrección, sobre `main` en `f04b70b`, en el
 > worktree `F:\sgc-integral-f14b` y contra la base aparte `sgc_f14b`; **sin publicar ni fusionar**, a la espera de que el
 > usuario la revise; ver su sección, arriba de «Entrega complementaria de la 14A»). Sigue la **Fase 14C** (datos compartidos,
 > desagregación y compuestos, con la `0015`), que cierra la Fase 14 del diseño maestro. La **Fase 14A** (`4afd205`), el
@@ -24,7 +24,8 @@
    La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
    proyecto**.
 1. **Dónde quedamos:** la **Fase 14B — Lo que el sistema ya sabe y lo regulatorio** está terminada en la rama
-   `fase-14b-automaticos-regulatorios` (45 confirmaciones al cerrar la Tarea 13, sobre `main` en `f04b70b`; anexo
+   `fase-14b-automaticos-regulatorios` (45 confirmaciones al cerrar la Tarea 13, más las de la tanda final de corrección,
+   sobre `main` en `f04b70b`; anexo
    `docs/superpowers/specs/2026-11-14-fase14b-automaticos-y-regulatorios-design.md`, que amplía el spec de la Fase 14 y
    manda sobre él donde difieren; plan `docs/superpowers/plans/2026-11-14-fase14b-automaticos-y-regulatorios.md`). **No
    está publicada ni fusionada:** espera la revisión del usuario («Qué probar y cómo (Fase 14B)») y su decisión. Con ella,
@@ -36,11 +37,16 @@
    cambio de norma, resueltas en la página del indicador. **Sin dependencias npm nuevas.** Dos migraciones, la `0013` y la
    `0014`; quince en total (`drizzle/0000` a `drizzle/0014`). Detalle en «Hecho (Fase 14B)»; el recorrido, en «Qué probar
    y cómo (Fase 14B)»; las decisiones, en «Decisiones adicionales (Fase 14B)»; el manual, en el capítulo 8 (secciones 7 a
-   10) y el capítulo 7. **Verificado al cierre de la Tarea 13** (por el guard, sobre `sgc_f14b` recién sembrada): los seis
-   archivos de pruebas de semilla (`tests/semilla-*.test.ts`) con `SEMILLA_RECIEN=1`, 84 pruebas en verde; `npm run lint`
-   limpio. La suite completa, `npm run build`, la
-   `0013` y la `0014` sobre una copia de una base de `main` recién sembrada y el recorrido en el navegador: (lo completa
-   el controlador al cierre). **La base `sgc` del usuario y `F:\sgc-integral` no se tocaron.**
+   10) y el capítulo 7. **Verificado por el controlador antes de la tanda final** (con la demo recién sembrada en
+   `sgc_f14b`, sobre la cabeza `1a8ab5d`): `SEMILLA_RECIEN=1 npm test`, 249 archivos, 6304 pruebas en verde y 1 saltada (la
+   de la línea base), sin `FAIL` ni `stderr`; `npm run lint` limpio; `npm run build` sin `DATABASE_URL` en verde; la `0013`
+   y la `0014` sobre una copia de la base `sgc` de `main` (sobre la cabeza `9f79c00`; desde entonces no cambió ninguna
+   migración): de 13 a 15 migraciones, con los mismos conteos de indicadores, versiones, mediciones y valores y las mismas
+   huellas de mediciones y de versiones; y el recorrido de §11 del anexo en el navegador, pasos 2 a 6 (detalle en «Fase
+   14B», arriba de «Hecho (Fase 14B)»). **Después de la tanda final:** (lo completa el controlador). La tanda final
+   (revisión de la Tarea 13, revisión final de toda la rama y hallazgos del recorrido) corrigió código, interfaz y estos
+   documentos: ver «Decisiones adicionales (Fase 14B)», F14B-R36 a R40. **`F:\sgc-integral` no se tocó, y la base `sgc` del
+   usuario solo se leyó** (`pg_dump` de solo lectura para esa copia, que se borró después).
    **Antes, la Fase 14A y su entrega complementaria:** están en `main` (`4afd205`, `5ce391a`, `d18e60d` y `f04b70b`). La
    **Fase 14A — Indicadores, el indicador de punta a punta** se trabajó en la rama
    `fase-14a-indicadores` (90 confirmaciones sobre `bced185`; spec
@@ -142,15 +148,14 @@
    compartidos, desagregación y compuestos** (spec de la Fase 14, §14 y §18; anexo de la 14B, §3 y §12): variables
    compartidas entre indicadores, el maestro de dimensiones con los indicadores desagregados por categoría y los
    indicadores compuestos, con la migración `0015`, que puede rehacer las tablas de la 14C que siguen vacías y sin uso
-   (`variables_compartidas`, `variable_responsables`, `variable_valores`, `dimensiones`, `dimension_categorias`). Su plan
-   decide primero lo que el §12 del anexo dejó abierto: en el dato compartido, copiar a la medición el valor juntado (con
-   su fracción exacta) o leerlo al vuelo, qué se firma y qué se congela de la variable, su plazo frente al del indicador,
-   el dato que llega a una medición ya cerrada, quién responde sin responsable y la reapertura en cascada; en la
-   desagregación, qué categorías pide un periodo (una foto por medición), el «no aplica» de una categoría, las variables
-   que no se suman entre categorías y el Excel, el impreso y la gráfica por categoría; en los compuestos, el «porcentaje de
-   cumplimiento» de «mantenerse en un rango», el acumulado anual, qué se firma del origen, **la fuga por audiencia** (quién
-   ve el valor de un componente restringido), el compuesto cerrado con el origen abierto, los ciclos y las validaciones
-   inversas. Hereda de la 14B el lugar único de los valores (`medicion_valores`, sin usuario), «Falta un dato», el evento de
+   (`variables_compartidas`, `variable_responsables`, `variable_valores`, `dimensiones`, `dimension_categorias`). **Su
+   primera tarea es deshacer el ciclo de imports `publicacion → operacion → aprobacion → publicacion`** (el único ciclo
+   nuevo de la 14B, hoy inofensivo; `alPublicarVersion` es donde la 14C colgará más pasos, y un ciclo ya rompió una prueba
+   en esta rama). Su plan decide primero lo que el §12 del anexo dejó abierto: **la lista completa está allí** (el dato
+   compartido, la desagregación y los compuestos, cada uno con sus preguntas); entre ellas, copiar a la medición el valor
+   juntado o leerlo al vuelo, el dato que llega a una medición ya cerrada, qué categorías pide un periodo, el «porcentaje de
+   cumplimiento» de «mantenerse en un rango» y **la fuga por audiencia** (quién ve el valor de un componente restringido).
+   Hereda de la 14B el lugar único de los valores (`medicion_valores`, sin usuario), «Falta un dato», el evento de
    sistema y el orden de candados. La Fase 14 del diseño maestro se cierra cuando se fusione la 14C. Enganches que deja la 14A: la marca
    «Requiere acción de mejora» con su causa y su acción propuesta, que la Fase 15 convierte en acción formal; los
    objetivos como maestro; las tareas y avisos de indicadores, que la Fase 16 lleva al correo; los resultados por periodo,
@@ -269,7 +274,8 @@
    avanza otra vez). **También se resembró varias veces en la 13A** (Tareas 2 y 15, sus arreglos y el
    cierre): cada vez se pierden los datos de prueba manual y `admin` se recrea con la `ADMIN_CLAVE`
    de `.env.local` y cambio obligatorio.
-5. **Tests:** al cierre de la 14B, (lo completa el controlador al cierre); la entrega complementaria de la 14A cerró con 5997 en 240 archivos, más 1 saltado (la 14A, con 5696 en 235; la 13C, con 4722 en 197). En serie (`fileParallelism: false`), contra la BD de
+5. **Tests:** al cierre de la 14B, antes de la tanda final, 6304 en 249 archivos, más 1 saltado (el de la línea base);
+   después de la tanda final: (lo completa el controlador). La entrega complementaria de la 14A cerró con 5997 en 240 archivos, más 1 saltado (la 14A, con 5696 en 235; la 13C, con 4722 en 197). En serie (`fileParallelism: false`), contra la BD de
    desarrollo sembrada y **conectados como `sgc_app`**, igual que la app; el test de
    privilegios usa además `DATABASE_URL_MIGRADOR`. Los usuarios de prueba con historia
    (`zz_<algo>_<timestamp>`) se acumulan porque no se pueden borrar (F11-D2); `db:seed` los
@@ -311,7 +317,8 @@
 Anexo: `docs/superpowers/specs/2026-11-14-fase14b-automaticos-y-regulatorios-design.md` (amplía el spec de la Fase 14 y su
 entrega complementaria, y manda sobre los dos donde difieren; las decisiones del usuario del 2026-11-14 están en su §2, las
 de Claude F14B-DC1 a DC23 en su §13); plan: `docs/superpowers/plans/2026-11-14-fase14b-automaticos-y-regulatorios.md`
-(13 tareas). La rama `fase-14b-automaticos-regulatorios` (45 confirmaciones al cerrar la Tarea 13, sobre `main` en `f04b70b`) se trabajó en el
+(13 tareas y una tanda final de corrección). La rama `fase-14b-automaticos-regulatorios` (45 confirmaciones al cerrar la
+Tarea 13, más las de la tanda final, sobre `main` en `f04b70b`) se trabajó en el
 worktree `F:\sgc-integral-f14b` contra la base aparte `sgc_f14b`; **no está publicada ni fusionada**. Nació de la revisión
 del spec contra el código (anexo §1): el módulo suponía que todo valor lo digita quien mide, y un automático habría
 producido tareas y avisos falsos. El usuario partió la antigua 14B en dos (decisión 1.1): esta entrega trae lo automático y
@@ -322,10 +329,33 @@ migraciones: la `0013` (lo que se añade y lo que se rehace: `reportes_externos`
 `mediciones`; el tipo de evento `foto`; los `CHECK` de coherencia de la versión automática; tres índices que la 14A dejó
 como deuda) y la `0014` (solo quita `calculo_fotos`: la foto vive en la medición). Quince en total (`drizzle/0000` a
 `drizzle/0014`).
-**Verificado al cierre:** las pruebas de semilla y el lint, por quien implementó la Tarea 13 (ver el punto de
-reanudación); la suite completa con `SEMILLA_RECIEN=1`, `npm run build` sin URL de base, la `0013` y la `0014` sobre una
-copia de una base de `main` recién sembrada (de trece a quince migraciones, con los indicadores y las mediciones intactos)
-y el recorrido de este documento en el navegador (claro, oscuro y 390 px): (lo completa el controlador al cierre).
+**Verificado por el controlador, antes de la tanda final:**
+
+- **La suite, el lint y el build** (cabeza `1a8ab5d`, demo recién sembrada en `sgc_f14b`): `SEMILLA_RECIEN=1 npm test`,
+  249 archivos, 6304 pruebas en verde y 1 saltada (la misma de la línea base), sin `FAIL` ni `stderr`; `npm run lint`
+  limpio; `npm run build` sin `DATABASE_URL`: compila, TypeScript limpio, con el aviso de Turbopack de siempre.
+- **La `0013` y la `0014` sobre una copia de la base de `main`** (cabeza `9f79c00`; ni la Tarea 13 ni la tanda final
+  cambiaron una migración ni `esquema.ts`): la copia se hizo con `pg_dump` de solo lectura de `sgc`, se migró sin
+  `db:roles` y se borró después. De 13 a 15 migraciones; 14 indicadores, 16 versiones, 35 mediciones y 64 valores antes y
+  después, con las mismas huellas de mediciones (id, resultado, semáforo y estado) y de versiones (id, estado, meta y
+  número); ninguna fila con cálculo ni foto; `calculo_fotos` ya no existe y `reporte_externo_eventos` sí; todas las
+  versiones siguen manuales.
+- **El recorrido de §11 del anexo en el navegador** (`next dev -p 3013` sobre la demo resembrada, sin errores en el
+  registro del servidor), por los pasos de «Qué probar y cómo (Fase 14B)»: el 2 (`SGC-ID-002`: su foto, 1 de 2, 50 %,
+  Crítico, «Requiere acción de mejora» y su análisis, solo **Ver**; la tarjeta de Vigencia, el umbral de Distribución y
+  Configuración documental en solo lectura, cada uno con su ficha); el 3 (`SGC-IND-03`: 2 de 3, 66,7 %, Atención,
+  histórico, **Volver a calcular** sin cambios y **Objetivos** del primer semestre); el 4 (`SGC-ID-001`: los «No aplica»
+  con su foto y octubre en «Falta un dato · Se calcula el 1 de diciembre»); el 5 (`lider.cex`: la insignia, el tercer
+  trimestre vencido con su resultado parcial y el segundo registrado; el registro y la corrección se habían recorrido en
+  el punto de control de la Tarea 11); y el 6 (la norma a modificada y a derogada: nace la revisión, **No afecta** la
+  resuelve y el recuadro desaparece; a 390 px y en tema oscuro, sin desborde). **No se recorrieron:** el paso 1 (crear y
+  aprobar una ficha automática; se vio en el punto de control de las Tareas 4 y 7) y resolver una revisión con una
+  versión nueva (lo cubren las pruebas). Antes, en las rondas de interfaz, el controlador vio **Objetivos** a 390 px (cada
+  indicador, una tarjeta, sin desborde) y **Corregir** de «Reportes al ente» (el desplegable con el foco en su resumen).
+  Los cuatro hallazgos del recorrido (el foco tras «No afecta», el foco al volver a pulsar **Corregir**, el diálogo del
+  normograma que no nombraba los indicadores y «50,0 %» donde la pantalla dice «50 %») los corrigió la tanda final.
+
+**Después de la tanda final:** (lo completa el controlador).
 
 ### Hecho (Fase 14B)
 
@@ -344,7 +374,8 @@ y el recorrido de este documento en el navegador (claro, oscuro y 390 px): (lo c
 - **La ficha automática (Tareas 3 y 4):** en «Más opciones», «Cómo se obtiene el dato»: «Lo digita una persona» o «Lo
   calcula el sistema», con el cálculo y su alcance; «Lo pone el cálculo» muestra la fórmula, las variables y la tendencia,
   que no se editan y quedan firmadas. Sin prueba ni cargo que mida; el plazo se rotula «Días de espera antes de calcular» en
-  los de flujo. Una sola ficha activa por cálculo y alcance (índice único, mensaje con el código de la otra). Al aprobarse,
+  los de flujo. Una sola ficha activa por cálculo y alcance (índice único; el mensaje lleva el código de la otra solo a
+  quien la ve, F14B-R38). Al aprobarse,
   se quitan los designados «mide» y se apaga el soporte obligatorio, con rastro en la bitácora; un cálculo que no se llena
   hacia atrás empieza en el periodo en curso. La huella de las fichas ya aprobadas no cambia (los campos nuevos se omiten
   cuando son nulos).
@@ -352,8 +383,10 @@ y el recorrido de este documento en el navegador (claro, oscuro y 390 px): (lo c
   cierre del mes, antes de clasificar) toma la de estado al terminar el periodo y solo del más reciente, la de flujo al
   vencer el plazo de reporte y la histórica de un cálculo que se llena hacia atrás sin esperar; con el denominador en cero,
   «No aplica» con el motivo del cálculo. Evento `foto` sin usuario («El sistema tomó la foto») y la hora en la tabla del
-  año («Calculado por el sistema · foto del …» o «Se calcula el …»). «Volver a calcular», de quien administra, en los de
-  flujo sin cerrar ni reabrir, con el antes y el después y su bitácora (`medicion_foto_recalculada`).
+  año («Calculado por el sistema · foto del …» o «Se calcula el …»). La foto que deja la medición pidiendo análisis le
+  cuenta la fecha límite otra vez desde ella si es de flujo (F14B-R11) o si su fecha límite ya pasó al tomarla (F14B-R36,
+  de la tanda final). «Volver a calcular», de quien administra, en los de flujo sin cerrar ni reabrir, con el antes y el
+  después y su bitácora (`medicion_foto_recalculada`).
 - **Una sola meta (Tarea 8):** las tarjetas de Vigencia y cada fila de «Dentro del plazo, por proceso» (que ahora muestra
   su meta) siguen la cadena ficha del proceso → ficha de la entidad → Configuración documental, con «Ver ficha …» a quien la
   ve; Distribución juzga la conformidad con `metaDeConformidad()`; Configuración documental muestra en solo lectura la meta
@@ -369,7 +402,8 @@ y el recorrido de este documento en el navegador (claro, oscuro y 390 px): (lo c
   justificación, historial en `reporte_externo_eventos` (solo inserción), vencido, aviso a líderes y escalamiento sin
   nombrar el indicador. Subida por `POST /api/reportes-externos/[id]/archivos` (fuera del `matcher`), soporte servido por la
   ruta de soportes del indicador; pestaña «Reportes al ente», marcas «Envío pendiente» y «Envío vencido», filtro «Envío al
-  ente pendiente»; cuentan en la insignia de «Indicadores».
+  ente pendiente»; cuentan en la insignia de «Indicadores». Cuando la ficha deja de reportarse se quitan las pendientes
+  sin soporte ni historial, y la que tiene historial pero ningún soporte ya no se pide (F14B-R37, de la tanda final).
 - **Revisiones por cambio de norma (Tarea 12):** al pasar una norma a modificada, derogada o retirada nace una revisión por
   cada indicador activo cuya ficha vigente la cita, con aviso a los Administradores del SGC (salvo quien hizo el cambio) y la
   tarea «Revisar … por el cambio de …»; se resuelven en la página del indicador («Revisión por cambio normativo»: «No
@@ -382,6 +416,18 @@ y el recorrido de este documento en el navegador (claro, oscuro y 390 px): (lo c
   las secciones 7 a 10 nuevas («Indicadores que calcula el sistema», «Objetivos», «Reportes al ente» y «Cuando cambia una
   norma») y las correcciones de los capítulos 3, 6 y 7, `AGENTS.md`, este archivo y `PLAN.md` (la fila de la 14B y la nueva
   de la 14C).
+- **Tanda final de corrección** (lo que dejaron la revisión de la Tarea 13, la revisión final de toda la rama y el
+  recorrido en el navegador). **Código:** las descripciones de A y B de «Reportes de indicadores a tiempo», que una ficha
+  firma, dicen que cuenta el «no aplica» y lo que deja fuera (F14B-R39); la foto de estado tardía da al análisis su plazo
+  desde ella (F14B-R36), con la prueba de la medición cerrada sin foto y reabierta; el `<title>` de la pantalla de reportar
+  dice lo mismo que su `h1` («Calculado por el sistema · …» o «Reportar · …»); la constancia pendiente sin soporte de una
+  ficha que ya no se reporta no se pide (F14B-R37) y la bitácora dice cuántas quitó el cambio (F14B-R40); el mensaje de ficha
+  repetida lleva el código solo a quien la ve (F14B-R38); y subir un soporte a una medición que acaba de volverse
+  automática se rechaza también con las filas bloqueadas. **Interfaz:** tras **Registrar que no afecta** el foco va al
+  título de la página del indicador; volver a pulsar **Corregir** con el ancla ya puesta deja el foco en el resumen del
+  desplegable, y un clic con Ctrl, Meta, Mayús o con otro botón que el principal no lo abre; el diálogo **Cambiar estado** del
+  normograma y la explicación de **Retirar…** nombran los indicadores que citan la norma. **Semilla:** la comprobación de
+  la foto en un ayudante (`exigirFoto`) y una prueba de semilla que solo mira lo sembrado. Y estos documentos.
 
 ### Qué probar y cómo (Fase 14B)
 
@@ -400,7 +446,7 @@ mismo, en otros meses).
      mensual, 31 días de espera): julio, agosto y septiembre de 2026 «No aplica» puestos por el sistema (julio ya cerrado por
      el cierre de agosto) y **octubre en «Falta un dato»**, «Se calcula el 1 de diciembre».
    - `SGC-ID-002` «Conformidad en puntos de uso» («Conformidad en puntos de uso, a la fecha», toda la entidad, meta 90,
-     mensual): aprobada en octubre; octubre ya tiene su foto (Farmacia conforme y Urgencias no: 1 de 2, 50,0 %, Crítico),
+     mensual): aprobada en octubre; octubre ya tiene su foto (Farmacia conforme y Urgencias no: 1 de 2, 50 %, Crítico),
      analizada por la coordinadora con su causa y su acción.
    - `CEX-IND-01`: se reporta al Ministerio de Salud y Protección Social cada trimestre, con 30 días de plazo. La constancia
      del **segundo trimestre de 2026** está registrada (enviada el 20 de julio, radicado `MSPS-2026-018734`, 2,3 días, con
@@ -419,7 +465,7 @@ mismo, en otros meses).
    cálculo y alcance: SGC-ID-002». Bórrela (**Administrar** → **Borrar**: nunca se envió).
 2. **La ficha de conformidad.** Abra `SGC-ID-002`: en **Ficha técnica**, «Cómo se obtiene el dato: Lo calcula el sistema ·
    Conformidad en puntos de uso, a la fecha · Toda la entidad». En **Resultados**, la tabla del año: octubre de 2026 con
-   «Calculado por el sistema · foto del …» (el día y la hora de la siembra), 50,0 %, **Crítico**, «Requiere acción de
+   «Calculado por el sistema · foto del …» (el día y la hora de la siembra), 50 %, **Crítico**, «Requiere acción de
    mejora» y su análisis; nadie tiene **Reportar** ni **Corregir** (quien analiza, **Ver**). En **Vigencia** →
    **Indicadores**, la tarjeta «Conformidad en puntos de uso» dice «meta ≥ 90 % · no cumple» y enlaza **Ver ficha
    SGC-ID-002**. En **Distribución** → **Verificaciones**, «Umbral 90 % · lo fija la ficha SGC-ID-002». En
@@ -429,7 +475,8 @@ mismo, en otros meses).
 3. **`SGC-IND-03` y la pestaña Objetivos.** Abra `SGC-IND-03`: **Versiones** muestra la versión 2, cambio mayor, con su
    motivo, que rige desde el primer semestre de 2026; **Ficha técnica**, «Lo calcula el sistema · Objetivos cumplidos ·
    Objetivos de calidad». En la tabla del año, el primer semestre de 2026: 66,7 %, Atención, «Calculado por el sistema · foto
-   del 6 de noviembre, 4:59 p. m.» (hace ocho días). Pulse **Volver a calcular**: debe decir «Se volvió a calcular: los datos
+   del …» con el día y la hora de la foto: ocho días antes de la siembra, una hora después de la aprobación del cambio.
+   Pulse **Volver a calcular**: debe decir «Se volvió a calcular: los datos
    son los mismos.». Después, pestaña **Objetivos**: con 2026 (por omisión), «Mantener la eficacia…» **No cumplido**,
    «Asegurar el control de la información documentada…» **Cumplido**, «Fortalecer la competencia…» **No cumplido** y los dos
    institucionales **Cumplido**. Elija **Primer semestre de 2026** y pulse **Ver**: la eficacia **No cumplido**, la información
@@ -453,24 +500,29 @@ mismo, en otros meses).
    registro y la corrección con el antes y el después.
 6. **Cuando cambia una norma.** Como `coordinadora.sgc`: **Normograma** → «Resolución 256 de 2016» (la cita `CEX-IND-01`;
    para ver también la sección «Indicadores» de la página de impactos, asóciela antes al proceso Consulta Externa). **Cambiar
-   estado** → **Modificada**. Como `admin` (el otro Administrador del SGC; a quien hizo el cambio no le llega), la campana
+   estado** → **Modificada**. Como `admin` (el otro Administrador del SGC: a quien hizo el cambio no le llega; **no usa la
+   clave común**: entra con la `ADMIN_CLAVE` del entorno y pide cambiarla al primer ingreso), la campana
    dice «1 indicador cita Resolución 256 de 2016, que pasó a modificada: revise su ficha»; `coordinadora.sgc` tiene la tarea
    «Revisar CEX-IND-01 por el cambio de Resolución 256 de 2016», y `CEX-IND-01` muestra el recuadro **Revisión por cambio
    normativo** en todas sus pestañas (también a `lider.cex`, sin las salidas). Resuélvala **con una versión nueva**:
    **Administrar** → **Editar ficha** → **Abrir un cambio**, cambie el requisito, escriba el motivo y **Publicar el cambio
    menor**: el recuadro desaparece. Vuelva a la norma: **Cambiar estado** → **Derogada**: nace otra revisión; resuélvala con
-   **No afecta**, una nota de al menos 5 caracteres y **Registrar que no afecta**. Por último abra otro cambio de la ficha,
+   **No afecta**, una nota de al menos 5 caracteres y **Registrar que no afecta**: el recuadro desaparece y el foco pasa al
+   título de la página del indicador. Por último abra otro cambio de la ficha,
    guárdelo sin quitar la norma derogada (debe guardarse) y **Descarte el cambio**.
 
 ### Avisos para el usuario (Fase 14B)
 
 - **La rama no está publicada ni fusionada.** Vive en el worktree `F:\sgc-integral-f14b`; la base de la demo es `sgc_f14b`.
-  `F:\sgc-integral`, su base `sgc` y su `next dev` del 3002 no se tocaron. Al fusionar, la `0013` y la `0014` corren solas
-  en el arranque: rehacen solo tablas de la 14B que están vacías (si alguna tuviera filas, se detienen) y no cambian ningún
-  indicador ni ninguna medición (la prueba sobre una copia de `main`: lo completa el controlador al cierre).
+  `F:\sgc-integral` y su `next dev` del 3002 no se tocaron, y su base `sgc` solo se leyó (un `pg_dump` para la prueba de
+  las migraciones). Al fusionar, la `0013` y la `0014` corren solas en el arranque: rehacen solo tablas de la 14B que están
+  vacías (si alguna tuviera filas, se detienen) y no cambian ningún indicador ni ninguna medición. Lo comprobó el
+  controlador antes de la tanda final sobre una copia de esa base: de 13 a 15 migraciones, con los mismos conteos de
+  indicadores, versiones, mediciones y valores y las mismas huellas de mediciones y de versiones (ver «Fase 14B», arriba).
 - **Decisiones que piden su visto bueno** (están en «Decisiones adicionales (Fase 14B)», con lo que cuesta cambiarlas):
   la cadena de la meta (una tarjeta de un proceso sin ficha propia ya no usa el número guardado de la Configuración
-  documental si hay ficha de la entidad: F14B-R18); el plazo doble del análisis de un automático de flujo (F14B-R11); que
+  documental si hay ficha de la entidad: F14B-R18); el plazo doble del análisis de un automático de flujo (F14B-R11) y,
+  desde la tanda final, el plazo contado desde la foto cuando la de un automático de estado llega tarde (F14B-R36); que
   el retiro de un indicador no impida registrar ni corregir sus constancias conservadas (F14B-R24) y que a una constancia
   registrada se le pueda subir otro soporte (F14B-R27); que el indicador que resume los objetivos se liste en su objetivo
   sin contar (F14B-R20); y que «Cómo se obtiene el dato» viva en «Más opciones» (F14B-R8).
@@ -519,9 +571,9 @@ enviada después del cambio (DC23).
 | F14B-R8 | «Cómo se obtiene el dato», el cálculo y el alcance viven en «Más opciones», con «Lo pone el cálculo» a la vista | Lo avanzado aparece cuando se usa (spec 14 §12.4) | Pequeño: subirlos (lo verá en el recorrido) |
 | F14B-R9 | Los datos de operación de un automático dicen «Nadie: lo calcula el sistema», sin soporte, y el plazo se rotula según el cálculo | Decían «El líder del proceso» y «Soporte obligatorio»: falso | — |
 | F14B-R10 | La tabla del año no ofrece reportar, corregir ni registrar históricos en un periodo que calcula el sistema | «Nadie mide un automático» | — |
-| F14B-R11 | La foto de un cálculo sobre el periodo que pide análisis cuenta la fecha límite otra vez desde la foto; si cumple o queda «No aplica», no la mueve | La foto llega cuando vence el plazo: el análisis nacería vencido, con aviso y escalamiento en la misma pasada | El análisis de un automático de flujo tiene el doble del plazo de reporte; deshacerlo es una regla en `fotos.ts` |
+| F14B-R11 | La foto de un cálculo sobre el periodo que pide análisis cuenta la fecha límite otra vez desde la foto; si cumple o queda «No aplica», no la mueve (la tanda final lo extiende a la foto tardía de un cálculo a una fecha: F14B-R36) | La foto llega cuando vence el plazo: el análisis nacería vencido, con aviso y escalamiento en la misma pasada | El análisis de un automático de flujo tiene el doble del plazo de reporte; deshacerlo es una regla en `fotos.ts` |
 | F14B-R12 | Un histórico automático que aún espera su cálculo cuenta en el resumen del cierre como «histórico sin registrar» | El cierre toma antes las fotos pendientes; solo quedan las que pasan del tope de 12 por pasada | Puede mostrar un número que nadie registra hasta la pasada siguiente |
-| F14B-R13 | Al cambiar el plazo de reporte, una medición de flujo con foto cuenta su fecha límite desde la foto | Mantiene la regla F14B-R11 | — |
+| F14B-R13 | Al cambiar el plazo de reporte, una medición a la que su foto le movió la fecha límite (de flujo o, desde la tanda final, de estado tardía) la cuenta desde esa foto | Mantiene las reglas F14B-R11 y F14B-R36 | — |
 | F14B-R14 | Una medición cerrada sin foto que se reabre vuelve a esperar su foto | Repara una foto que no se pudo tomar | Choca en la letra con «reabrir solo deja cambiar el análisis» |
 | F14B-R15 | «Volver a calcular» mueve la fecha límite del análisis una sola vez | Una foto que deja de cumplir no puede nacer vencida, y el botón no sirve para estirar el plazo | — |
 | F14B-R16 | Las fichas de los siete cálculos con tarjeta exigen meta entera, también las programadas | Vigencia y Distribución deciden en enteros a propósito | Un hospital que quiera 92,5 % en acuses redondea |
@@ -541,44 +593,124 @@ enviada después del cambio (DC23).
 | F14B-R30 | La pasada de las revisiones por norma copia a propósito la de los impactos de la 13C | Volverla genérica tocaba código de la 13C en producción | Un arreglo de esa mecánica va en los dos sitios (Deuda técnica) |
 | F14B-R31 | La revisión de la ficha compara las normas contra la versión vigente; la carrera con «Deshacer la importación» da un mensaje legible; la tarea agrupada cuenta revisiones | — | — |
 | F14B-R32 | Dos ayudantes compartidos en código de la 14A, sin cambiar su comportamiento: «qué meta se muestra» (`reglaMostrada`) y el paso genérico de las pasadas (`correrPaso`) | Había tres copias de la misma regla y dos de la misma mecánica | — |
-| F14B-R33 | **La demo:** `CEX-IND-01` se reporta cada trimestre (antes, semestral) para que siempre haya una constancia registrada y otra vencida; `SGC-ID-001` espera 31 días para que siempre haya un mes en «Falta un dato»; el mes de conformidad se fotografía y se analiza a la hora de la siembra (con las dos verificaciones cerradas, la cifra no depende del día); la constancia registrada se registra con la hora del reloj, porque `registrarArchivo` no recibe la hora de su soporte | Que la demo muestre cada paso de §11 sembrada cualquier día | Otras fechas de la demo: `indicadores-demo-agenda.ts` y su prueba de calendario |
+| F14B-R33 | **La demo:** `CEX-IND-01` se reporta cada trimestre (antes, semestral) para que siempre haya una constancia registrada y otra vencida; `SGC-ID-001` espera 31 días para que siempre haya un mes en «Falta un dato»; el mes de conformidad se fotografía y se analiza a la hora de la siembra (con las dos verificaciones cerradas, la cifra no depende del día; el análisis es para que la demo lo muestre analizado: sembrada después de su fecha límite, la foto ya le da al análisis su plazo desde ella, F14B-R36); la constancia registrada se registra con la hora del reloj, porque `registrarArchivo` no recibe la hora de su soporte | Que la demo muestre cada paso de §11 sembrada cualquier día | Otras fechas de la demo: `indicadores-demo-agenda.ts` y su prueba de calendario |
+| F14B-R34 | Al enviar la ficha inicial de un cálculo que no se reconstruye, su «rige desde» es el periodo en curso del envío, provisional: al aprobarse se fija otra vez en el periodo en curso de la aprobación | Un cálculo que no se llena hacia atrás empieza cuando se aprueba (F14B-DC19) | — |
+| F14B-R35 | En un cambio de la ficha (la operación fija), el inicio de medición sigue en solo lectura, con «Es un dato de operación: se cambia en «Datos de operación», no en la ficha.» y sin «Empieza en el periodo en curso cuando se apruebe.» | El inicio de medición es un dato de operación: no cambia con la ficha | — |
+| F14B-R36 (tanda final) | **La foto que deja la medición pidiendo análisis le cuenta la fecha límite otra vez desde ella si es de flujo o si esa fecha ya pasó al tomarla**; la de un cálculo de estado tomada a tiempo no la mueve, ni la que cumple o queda «No aplica». Con plazo 0, el análisis vence al final del día de la foto. Por eso una foto de estado tardía que pide análisis, tomada por el resumen o el cierre del mes, ya no se cierra «sin análisis»: queda en plazo con su fecha nueva, como la de flujo | La pasada solo corre cuando alguien usa la aplicación: con plazo 0, o tras días sin uso, el análisis nacería vencido, con aviso y escalamiento al jefe por algo que la persona no pudo hacer. Corrige las resoluciones de las Tareas 5 y 7, que suponían que la foto de estado siempre llega con el plazo por delante | Una condición en `laFotoMueveElPlazo` (`src/lib/indicadores/fotos.ts`) |
+| F14B-R37 (tanda final) | **Una constancia pendiente sin ningún soporte de un indicador que ya no se reporta a un ente no se pide:** ni tarea, ni avisos de vencido y de escalamiento, ni la marca y el filtro de la lista. Si tiene historial (un soporte que se subió y se quitó) no se borra y sigue existiendo; la que tiene soporte se sigue pidiendo. La de un indicador retirado tampoco se pide, como antes | El anexo §8 dice que las pendientes sin soporte «dejan de pedirse»; la que tiene soporte se puede terminar de registrar | Una condición en `constanciaQueSePide` (`constancias-soporte.ts`), que usan las tareas, los avisos y la lista |
+| F14B-R38 (tanda final) | El mensaje «Ya hay una ficha activa para ese cálculo y alcance» lleva el código de la otra ficha solo a quien la ve; a quien no, el mismo mensaje sin el código. Al enviar no cambia: envía quien administra, que ve todas | Un líder que aprueba un cálculo de alcance «entidad» no debe leer el código de una ficha restringida de otro proceso | — |
+| F14B-R39 (tanda final) | Las descripciones de A y B de «Reportes de indicadores a tiempo» dicen que el «no aplica» puesto en plazo cuenta como a tiempo, que la medición que nunca se reportó no cuenta como a tiempo y lo que B deja fuera (las de otra periodicidad que dejó un cambio mayor y las que seguían sin reportar cuando el indicador se retiró antes de su fecha límite) | Una ficha aprobada conserva el texto con que se firmó: se corrigió antes de fusionar; la demo firma `SGC-ID-001` con el nuevo | — |
+| F14B-R40 (tanda final) | Quitar el ente con un cambio de la ficha (aprobado o menor) deja en la bitácora cuántas constancias pendientes y sin soporte quitó («Se quitó 1 constancia de envío al ente pendiente y sin soporte.»), solo si quitó alguna | La regla 5: el retiro ya guardaba cuántas quitaba y el cambio de la ficha no | — |
 
 ### Deuda técnica (Fase 14B)
 
-Las «minor (deferred)» de la ejecución, por tema:
+Las «minor (deferred)» de la ejecución y de la tanda final, por tema, con las líneas del código al cierre de la tanda. Un
+archivo sin carpeta es de `src/db/consultas/indicadores/`. Ya no están las que resolvió la tanda final (la descripción de
+A de «Reportes a tiempo», la prueba de la medición cerrada sin foto y reabierta, el `<title>` de la pantalla de solo
+lectura de un automático, el foco al volver a pulsar «Corregir» y los clics con Ctrl o con el botón medio) ni las que
+resolvieron las rondas de corrección (la aserción repetida de la prueba del cierre y el enlace «Corregir» que llevaba a un
+desplegable cerrado).
 
-- **La demo:** la descripción de A de «Reportes a tiempo» (`registro.ts:236`) no menciona el primer «no aplica», y la ficha
-  `SGC-ID-001` de la demo la firma; corregirla antes de usar el cálculo en producción (las fichas ya aprobadas conservan la
-  suya). Sembrar el primer día de un mes falla en el lote importado (de la 14A-C), y una prueba de semilla de la 14A depende
-  del día de siembra (ver «Avisos»). `registrarArchivo` no recibe `ahora`.
-- **Pruebas que faltan:** el `23505` de `indicadores_calculo_unico` de punta a punta en `aprobarFichas` (`aprobacion.ts:718`);
-  «cerrada sin foto y reabierta vuelve a esperar su foto» (`fotos.ts:79`); los `throw` de `calculos.ts:66,81`; el filtro
-  `estado = 'activo'` de `calculosActivos` (`tests/indicadores-fichas.test.ts:812`); indicador inactivo que conserva
-  `calculo`, meta programada no mensual y tarjetas en días o conteo con meta de ficha; el caso mixto del resumen del cierre
-  (`tests/indicadores-cierre.test.ts:568`); el caso HTTP del rechazo de una subida dentro de la transacción; una prueba
-  estructural de que toda acción que guarda fichas convierte el `40P01`; `tests/modulo-indicadores-vistas.test.tsx` sin un
-  rojo propio; las reglas puras de constancias se escribieron antes que sus pruebas.
-- **Repeticiones:** la condición «espera su foto» (`fotos.ts:79,82`, `lectura.ts:861`, `tests/utiles/indicadores.ts:214`), la
-  guarda de `calculoDe` (tres veces), dos `enTexto`, la regla «automática sin reporte» (`tareas.ts:87`, `lectura.ts:171,848`,
-  `lista.ts:164`), la subconsulta de versiones aprobadas (`calculos.ts:97,133`, `tareas.ts:47`), «flujo → Días de espera…» en
-  dos sitios (`OrigenDelDato.tsx:58`, `ficha-en-texto.ts:188`), ayudantes duplicados entre `OrigenDelDato.tsx` y
-  `FormularioFicha.tsx`, `QuitarSoporte` copiado de `medicion/Soportes.tsx`, y la pasada de las revisiones por norma calcada
-  de la de la 13C (F14B-R30).
-- **Tamaño y ciclos:** `aprobacion.ts` y `fichas.ts` pasan de mil líneas y `FormularioFicha.tsx` de 1.290; el import circular
-  `publicacion → operacion → aprobacion → publicacion` (mover `recalcularPorSoporte` y `enCurso`).
-- **Comportamientos menores:** un cambio de ente publicado justo después de terminar un periodo externo que aún no nació lo
-  deja fuera sin aviso (`publicacion.ts:75`, `constancias.ts:103`); el tope de 12 fotos por indicador también rige en el
-  cierre (con más de 12 históricos pendientes, un ordinario podría cerrarse «Sin dato»; se repara reabriendo); la frase de
-  bitácora de «Volver a calcular» es confusa si cambian A y B y no el resultado; «los datos son los mismos» sale con color de
-  éxito; el `<title>` de la pantalla de solo lectura de un automático dice «Reportar una medición»; volver a pulsar
-  «Corregir» con el ancla ya puesta puede dejar el foco en `<body>` en Chromium; el editor ofrece una norma derogada que el
-  borrador trae (al guardar, el mensaje es claro); `metasDeFichas` llama `puedeVerIndicador` por ficha y
-  `metaDeConformidad` corre dos veces por llamada; si dos fichas de un bloque se pasan el mismo cálculo (una lo deja y la
-  otra lo toma), la segunda se rechaza (se aprueban por separado).
-- **Pequeñas del código:** `esCalculoRepetido` lee `err.code` sin comprobar nulo; `fotoDe` devuelve `B: ""` si falta B (nadie
-  lo hace); el gancho `conElResultado` tiene un tipo abierto; `escribirFoto` y `LO_CALCULA_EL_SISTEMA` se exportan sin
-  necesidad; `indicadores.calculo_alcance` no tiene `CHECK` de lista; dos pruebas que tocan filas ajenas o copian a medias
-  (`tests/esquema-fase14b.test.ts:162`, `tests/indicadores-impresion.test.tsx:208`).
+- **La demo:** sembrar el primer día de un mes falla en el lote importado (de la 14A-C), y una prueba de semilla de la 14A
+  depende del día de siembra (ver «Avisos»). `registrarArchivo` no recibe `ahora` (F14B-R33).
+- **Pruebas que faltan:**
+  - el `23505` de `indicadores_calculo_unico` de punta a punta en `aprobarFichas` (`aprobacion.ts:777`; solo se prueba el
+    predicado);
+  - **que el cierre del mes deja «en plazo» una foto de estado tardía que pide análisis** (`cierre.ts:224-227`: el cierre no
+    distingue la clase del cálculo);
+  - los `throw` de la tarjeta que falta y del periodo que la Vigencia no dio (`calculos.ts:67`, `:82`);
+  - el filtro `estado = 'activo'` de `calculosActivos`: la aserción de `tests/indicadores-fichas.test.ts:824` no puede fallar
+    (el borrador nunca tiene `calculo`);
+  - indicador inactivo que conserva `calculo`; meta programada con periodicidad no mensual (el `CASE` tiene cinco ramas);
+    tarjetas en días o conteo con meta de ficha;
+  - el caso mixto del resumen del cierre (los periodos manuales de un indicador que pasó a automático conservan su nombre);
+  - el caso HTTP del rechazo de una subida dentro de la transacción;
+  - una prueba estructural de que toda acción que guarda fichas convierte el `40P01` (`src/app/acciones-indicadores.ts`,
+    `src/app/acciones-normograma.ts`), y ninguna prueba reproduce un `40P01` real;
+  - `tests/indicadores-calculos-bd.test.ts:133-134`: la aserción del líder no prueba la restricción (el líder es de CEX y el
+    documento restringido, de GTH);
+  - los nombres y las descripciones de A y B de los diez cálculos solo se exigen no vacíos (`tests/indicadores-calculos.test.ts:86`):
+    contra su texto exacto se contrastan dos nombres (`:72-74`) y las descripciones de «Reportes a tiempo»;
+  - la importación no tiene un caso propio con el código reservado `objetivos` (la cubre la constante compartida);
+  - `tests/modulo-indicadores-vistas.test.tsx` no tuvo un rojo propio en la Tarea 9, y las reglas puras de constancias
+    (`src/lib/indicadores/constancias.ts`) se escribieron antes que sus pruebas.
+- **Repeticiones:**
+  - la condición «espera su foto» (`fotos.ts:80`, `:83`, `lectura.ts:888`, `tests/utiles/indicadores.ts:255`); la guarda de
+    `calculoDe` (`fotos.ts:96`, `:302`, `lectura.ts:886`); dos `enTexto` (`fotos.ts:136`, `mediciones.ts:439`);
+  - la regla «automática, sin reporte y sin "no aplica"» (`tareas.ts:91`, `lectura.ts:179`, `:925`, `lista.ts:183`);
+  - la subconsulta JSON de versiones aprobadas, dos veces (`calculos.ts:98`, `tareas.ts:51`);
+  - «flujo → Días de espera antes de calcular» en dos sitios (`plazoDelCalculo`,
+    `src/componentes/indicadores/ficha/OrigenDelDato.tsx:58`; `operacionSegunOrigen`, `src/lib/indicadores/ficha-en-texto.ts:188`),
+    y `FichaTecnica.tsx:205,210` (misma carpeta que `OrigenDelDato.tsx`) repite expresiones de `camposDeOperacion`;
+  - ayudantes duplicados entre `OrigenDelDato.tsx` y `FormularioFicha.tsx` (`sinTildes`, `ErrorDeCampo`, `CONTROL`);
+  - `QuitarSoporte` (`src/componentes/indicadores/vistas/FormulariosDeConstancia.tsx:43`) copia `Quitar` de
+    `src/componentes/indicadores/medicion/Soportes.tsx`;
+  - `diaYMes` (`src/lib/indicadores/fotos.ts:72`, `pasada.ts:18`); `ADMINISTRA` (`cierre.ts:430`, `fotos.ts:296`); el
+    `LATERAL` de «la aprobada de mayor número», unas veinte veces; dos redactores del antes y el después de una corrección de
+    constancia (`constancias.ts:516`, `src/lib/bitacora-detalle.ts:972`); la secuencia indicador `FOR SHARE` → fila
+    `FOR UPDATE` → visibilidad, cuatro veces;
+  - la pasada de las revisiones por norma, calcada de la de la 13C (F14B-R30).
+- **Tamaño y ciclos:** `aprobacion.ts` (1.239 líneas) y `fichas.ts` (1.174) pasan de mil y `FormularioFicha.tsx` tiene
+  1.299; «La ficha automática» de `aprobacion.ts` (`calculoDeFila`, `otraActivaConElCalculo`) cabría en `publicacion.ts`; el
+  import circular `publicacion → operacion → aprobacion → publicacion` (mover `recalcularPorSoporte` y `enCurso`), que es la
+  primera tarea de la 14C (punto de reanudación, 2(c)).
+- **Costo:**
+  - `asegurarConstancias` abre una transacción con candado por cada indicador regulatorio en cada pasada
+    (`constancias.ts:141-156`); una constancia vencida de respaldo o sin jefe nunca se marca y se resuelve otra vez en cada
+    pasada (`constancias-vencidas.ts:86-112`, patrón heredado);
+  - «Reportes al ente» hace seis lecturas por cada constancia pendiente (`resultadoDelPeriodoExterno`,
+    `src/app/(app)/indicadores/[codigo]/_vistas.ts:218`);
+  - `metasDeFichas` llama `puedeVerIndicador` por ficha (`src/db/consultas/vigencia/indicadores.ts:114`) y
+    `metaDeConformidad` corre dos veces por llamada a `indicadoresDocumentales`
+    (`src/db/consultas/distribucion/verificaciones-resumen.ts:38`, `:107`);
+  - `medicionParaReportar` lee dos veces las versiones aprobadas (`lectura.ts:153-161`: `versionDelPeriodo` y
+    `contextoDeMedicion`);
+  - el memo de `tomarCalculo` guarda el `ResultadoIndicadores` completo (con la lista de vencidos, también restringidos) y
+    su llave no lleva `ahora` (`calculos.ts:75-83`).
+- **Comportamientos menores:**
+  - un cambio de ente, periodicidad externa o plazo publicado justo después de terminar un periodo externo que aún no nació
+    lo deja fuera sin aviso (`publicacion.ts:76`, `constancias.ts:113`); arreglo: abrir las pendientes con la regla anterior
+    antes de mover `ente_desde`;
+  - **la foto que falla solo deja un `console.error`** (`fotos.ts:279-287`) y el tope de 12 por indicador cuenta las elegidas,
+    no las logradas (`fotos.ts:268-275`): doce antiguas que fallen siempre dejan sin turno a las demás del indicador, y la
+    medición queda en «Falta un dato» con una fecha pasada hasta el resumen del cierre (arreglo: contar las logradas y avisar
+    a los Administradores del SGC pasado un día); el mismo tope rige en el cierre: con más de 12 históricos pendientes, un
+    ordinario podría cerrarse «Sin dato» (se repara reabriendo);
+  - **la constancia pendiente con historial y sin soporte de una ficha que dejó el ente** ya no se pide (F14B-R37), pero la
+    vista «Reportes al ente» (`constanciasDe`, `constancias.ts:356`) la sigue mostrando «Vencida» y ofrece «Registrar el
+    envío». Si la ficha vuelve a reportarse al ente, o si la persona le sube un soporte desde esa vista, vuelve a pedirse ya
+    vencida y, con sus marcas de aviso nulas, **la primera pasada puede avisar de vencido y escalar al jefe a la vez** (el
+    escalamiento no exige el aviso de vencido: `constancias-vencidas.ts:165-168`). Es un caso estrecho (subir y quitar un
+    soporte, quitar el ente); el arreglo pide otra marca, porque contar solo los periodos que terminan después de
+    `ente_desde` rompería «lo ya nacido no cambia» (`publicacion.ts:76`);
+  - si la constancia se borra entre la autorización y la transacción, la subida de su soporte responde 409 y no 404
+    (`bloquearParaSoporteDeConstancia`, `constancias-soporte.ts:70`, como en las mediciones); cada `<details>` de una
+    registrada monta su zona de carga y sus formularios (`CorregirEnvio`, `FormulariosDeConstancia.tsx:208`);
+  - la frase de bitácora de «Volver a calcular» es confusa si cambian A y B y no el resultado («de 75 % a 75 %»,
+    `src/lib/bitacora-detalle.ts:964`); «los datos son los mismos» sale con color de éxito
+    (`src/componentes/indicadores/medicion/VolverACalcular.tsx:27`);
+  - el `<title>` de la pantalla de reportar propaga el `notFound()` desde `generateMetadata`
+    (`src/app/(app)/indicadores/[codigo]/reportar/[periodo]/page.tsx:45-49`) en vez de devolver un título neutro, como
+    `src/app/(app)/tramites/[id]/page.tsx:60-63`;
+  - el editor ofrece una norma derogada que el borrador trae (`fichas.ts:1089`; al guardar, el mensaje es claro);
+  - el aviso `role="status"` de ficha activa no está ligado a los `select` con `aria-describedby` y se monta junto con su
+    texto (`OrigenDelDato.tsx:198`);
+  - `list-none` en la lista de tarjetas de «Objetivos» (`src/componentes/indicadores/Objetivos.tsx:112`; patrón del repo:
+    VoiceOver no la anuncia como lista);
+  - en Configuración documental, un campo que fija una ficha y no llega porque la ficha se desactivó entre pintar y guardar
+    responde el error de rango y no «recargue la página» (`src/app/admin/acciones-config-documental.ts:25`);
+  - `previaDeEnvio` marca como probada una ficha automática y solo ofrece el periodo en curso en un cálculo que no se llena
+    hacia atrás (`aprobacion.ts:1189`);
+  - si dos fichas de un bloque se pasan el mismo cálculo (una lo deja y la otra lo toma), la segunda se rechaza (se aprueban
+    por separado).
+- **Pequeñas del código:** `esCalculoRepetido` lee `err.code` sin comprobar nulo (`publicacion.ts:42-43`); `fotoDe` devuelve
+  `B: ""` si falta B (`src/lib/indicadores/calculos/registro.ts:284`; nadie lo hace); el gancho `conElResultado` tiene un
+  tipo abierto (`mediciones.ts:489`, `:611`); `escribirFoto` (`fotos.ts:176`) y `LO_CALCULA_EL_SISTEMA`
+  (`src/componentes/indicadores/medicion/DatosDelSistema.tsx:9`) se exportan sin necesidad; `programarMeta` pasa la
+  `Fraccion` a texto y de vuelta (`metas.ts:113`; bastaría `meta.d`); `type FaltaDePersona as Falta` esconde el `Falta` de
+  `tareas.ts` (`vencimientos.ts:43`); con una clave fuera del registro, `tomarCalculo` dice que el cálculo «no admite el
+  alcance» (`calculos.ts:58`); `indicadores.calculo_alcance` no tiene `CHECK` de lista; dos pruebas que tocan filas ajenas
+  o copian a medias (`tests/esquema-fase14b.test.ts:162`, `tests/indicadores-impresion.test.tsx:207`).
 
 ## Entrega complementaria de la 14A: rangos, códigos e importación
 
@@ -1730,7 +1862,7 @@ Plan: `docs/superpowers/plans/2026-11-10-fase14a-indicadores.md`; diseño:
 El indicador de punta a punta, del ISO 9001:2015 4.4.1 c), 9.1.1 y 9.1.3: el hospital ya puede llevar sus indicadores como
 los ocho del Excel del usuario. **Sin dependencias npm nuevas** (`exceljs`, `zod` y `pdf-lib` ya estaban; las animaciones
 son CSS, F14-DC23). La rama `fase-14a-indicadores` (90 confirmaciones sobre `bced185`) se trabajó en el worktree
-`F:\sgc-integral-f14a` contra la base aparte `sgc_f14a`; no está publicada ni fusionada.
+`F:\sgc-integral-f14a` contra la base aparte `sgc_f14a`; está fusionada en `main` (`4afd205`).
 
 - **Rutas nuevas:** `/indicadores` (la lista) con las pestañas `/indicadores/matriz`, `/indicadores/por-aprobar` y
   `/indicadores/cierre`; `/indicadores/nuevo`; `/indicadores/[codigo]` (vistas Resultados, Ficha técnica con `?version=N`,
@@ -3165,13 +3297,12 @@ distintas, la racha de los periodos siguientes (F14A-R53), «soporte obligatorio
     padre sin tomarlo antes `FOR UPDATE` puede dar un interbloqueo (40P01). Reportar, «no aplica», metas y soportes siguen
     ese orden.
   - Dos nombres de FK de más de 63 caracteres: Postgres los trunca y `db:preparar` imprime dos NOTICE más.
-  - Sin índices sobre `firmas.indicador_version_id`, `medicion_observaciones.responde_a` ni `mediciones.cierre_id`
-    (revisión final, M2): van en la próxima migración, porque la `0011` ya se aplicó y no se cambia; hoy las consultas que
-    los usarían son baratas.
-  - Para la 14B (la `0012` puede rehacerlas, spec §19.5): `dimension_categorias.activo` frente a «activa» del spec, y
-    `reportes_externos.desde`/`hasta` como `date` frente a `timestamptz` en `mediciones`.
-  - `borrarIndicador` no comprueba `impactos_indicadores` ni `indicador_variables.indicador_origen_id` (14B): daría un
-    23503 crudo.
+  - **Resueltas en la 14B:** los índices sobre `firmas.indicador_version_id`, `medicion_observaciones.responde_a` y
+    `mediciones.cierre_id` (revisión final, M2) los crea la `0013`, que también pasa `reportes_externos.desde`/`hasta` de
+    `date` a `timestamptz`; y `borrarIndicador` ya comprueba `impactos_indicadores` (y `reportes_externos`): no borra un
+    indicador con revisiones por cambio de norma o reportes al ente (`operacion.ts:622-625`).
+  - Para la 14C (la `0015` puede rehacer sus tablas vacías): `dimension_categorias.activo` frente a «activa» del spec.
+  - `borrarIndicador` no comprueba `indicador_variables.indicador_origen_id` (14C): daría un 23503 crudo.
 - **Intérprete y reglas puras:**
   - Mensajes con la causa equivocada para `1,`, `,5` («Separe los argumentos…») y `1.`, `.5`, `1.2.3` («Carácter no
     admitido: «.»»); un carácter astral se describe como medio carácter; `enPalabras` devuelve la fórmula cruda si no se
