@@ -5,7 +5,9 @@ que lo dice cada mes, trimestre o año: cuántas auditorías se hicieron de las 
 minutos esperó un paciente en triage, cuántas citas se dieron a tiempo. Este capítulo explica cómo
 se lee un indicador, cómo se reporta, cómo se analiza un resultado que no cumple y cómo se
 administra su ficha, con una sección por cada papel que usted puede tener. Lea la que le
-corresponde; las secciones 1, 2, 7 y 8 sirven a todos.
+corresponde; las secciones 1, 2, 11 y 12 sirven a todos. Las secciones 7 a 10 explican lo que el SGC
+hace por usted: los indicadores que calcula solo, la página **Objetivos**, los reportes a un ente
+externo y lo que pasa cuando cambia una norma, cada una para todos los papeles que intervienen.
 
 Antes de seguir, vea el Capítulo 3 (la barra lateral, **Mis tareas** y la campana) y el Capítulo 1
 (la clave con que se firma).
@@ -40,16 +42,27 @@ Antes de seguir, vea el Capítulo 3 (la barra lateral, **Mis tareas** y la campa
 - **Histórico:** un periodo que terminó antes de aprobarse la ficha (los datos de antes, que se
   digitan desde el Excel).
 - **Acumulado del año:** el resultado del año, calculado sumando los datos de sus periodos.
+- **Indicador que calcula el sistema** (marca **Automático**): uno cuyos datos no digita nadie: el
+  SGC los toma de lo que ya sabe (los documentos al día, los acuses, los objetivos cumplidos…). Su
+  **foto** es lo que el SGC tomó para un periodo y cuándo lo tomó (sección 7).
+- **Objetivo:** un objetivo de calidad o institucional al que aportan indicadores. Está **Cumplido**
+  si todos sus indicadores medidos en el periodo alcanzan la meta (sección 8).
+- **Constancia de envío:** el registro de que el resultado de un periodo se reportó al ente externo
+  que lo pide, con su fecha, su radicado y su soporte (sección 9).
+- **Revisión por cambio de norma:** la que pide un indicador cuando una norma que su ficha cita se
+  modifica, se deroga o se retira (sección 10).
 
 Dónde está cada cosa:
 
 - **Indicadores**, en la barra lateral, en su propio grupo **Indicadores**, para toda persona con
-  cuenta. Tiene las pestañas **Lista** y **Matriz del año** para todos, **Por aprobar** para quien
-  aprueba fichas (Gerencia y líderes) y para el Administrador del SGC, y **Cierre del mes** para el
-  Administrador del SGC. Junto a **Indicadores** aparece un número con los reportes vencidos que
-  están a su cargo.
-- **Mis tareas**, en **Inicio**: reportar, analizar, responder una observación, aprobar una ficha o
-  retomar una devuelta.
+  cuenta. Tiene las pestañas **Lista**, **Matriz del año** y **Objetivos** para todos, **Por aprobar**
+  para quien aprueba fichas (Gerencia y líderes) y para el Administrador del SGC, y **Cierre del
+  mes** para el Administrador del SGC. Junto a **Indicadores** aparece un número con lo vencido que
+  está a su cargo: los reportes y los análisis, las constancias de envío a un ente y, si usted
+  administra los indicadores, las revisiones por cambio de norma.
+- **Mis tareas**, en **Inicio**: reportar, analizar, responder una observación, aprobar una ficha,
+  retomar una devuelta, registrar el reporte a un ente o revisar un indicador por el cambio de una
+  norma.
 - **Configuración de indicadores**, en el grupo **Administración**, solo para el Administrador del
   SGC (sección 6.9).
 - En la página de cada proceso, la sección **Indicadores del proceso**; en la búsqueda (`Ctrl K` y
@@ -58,8 +71,10 @@ Dónde está cada cosa:
 
 Lo que todavía no hace: no manda correos (los recordatorios y avisos llegan a **Mis tareas** y a la
 campana, y los ve quien entra al SGC; el correo llega con la Fase 16); no abre una acción de mejora
-desde un resultado crítico (deja la marca y el texto para la Fase 15); y ningún dato se calcula
-solo ni se comparte entre indicadores: cada indicador se digita.
+desde un resultado crítico (deja la marca y el texto para la Fase 15); y ningún dato se comparte
+entre indicadores: lo que no calcula el sistema (sección 7) se digita en cada indicador. Los datos
+compartidos entre indicadores, los indicadores por categoría (por servicio, por sexo…) y los
+indicadores que se calculan con otros llegan en la siguiente entrega.
 
 ## 2. Si usted es cualquier persona del hospital: leer un indicador
 
@@ -78,23 +93,25 @@ vencidos. Los «No aplica» se cuentan aparte, con su tramo rayado, y el texto l
 
 | Columna | Qué dice |
 |---|---|
-| **Código** e **Indicador** | El nombre, el proceso › subproceso, la periodicidad y las marcas «Restringido» o «Retirado» |
+| **Código** e **Indicador** | El nombre, el proceso › subproceso, la periodicidad y las marcas «Restringido», «Automático» (lo calcula el sistema), «Retirado», «Envío pendiente» o «Envío vencido» (su constancia de envío a un ente, sección 9) |
 | **Periodo** | El último periodo terminado («T3 2026», «Oct 2026», «2026») |
 | **Resultado** y **Meta** | La cifra y la meta de ese periodo; «sin dato» o «n. a.» si no hay cifra |
 | **Estado** | Bien, Atención, Crítico, Sin dato, No aplica o Sin meta |
 | **Tendencia** | Una gráfica pequeña de los últimos periodos y hacia dónde fue el último valor, con «mejora» o «empeora» |
-| **Reporte** | «Reportado», «Por reportar», «Falta el análisis», «Vencido hace N días» (o «Análisis vencido hace N días»), «Cerrado» o, en un histórico, «Por registrar» |
+| **Reporte** | «Reportado», «Por reportar», «Falta el análisis», «Falta un dato» (un indicador que calcula el sistema y aún espera su cálculo, sección 7), «Vencido hace N días» (o «Análisis vencido hace N días»), «Cerrado» o, en un histórico, «Por registrar» |
 
 Filtros: **Proceso**, **Subproceso**, **Clasificación**, **Tipo**, **Estado** (Bien, Atención,
 Crítico, Sin dato), **Reporte** (Por reportar, Falta el análisis, Vencido, Requiere acción de
 mejora), **Buscar** (código o nombre), **Donde participo** (los que usted mide, analiza o sigue, o
-los de los procesos que lidera) e **Incluir retirados**. **Excel** baja la lista con los filtros
-que tenga puestos (sección 2.8).
+los de los procesos que lidera), **Envío al ente pendiente** (sección 9), **Revisión por cambio de
+norma** (sección 10) e **Incluir retirados**. **Excel** baja la lista con los filtros que tenga
+puestos (sección 2.8).
 
 ### 2.2 La página de un indicador
 
 Pulse el nombre. Arriba, el código, el nombre y una línea con el proceso, la periodicidad, el tipo,
-la clasificación y la versión de la ficha vigente. Tiene hasta cuatro pestañas:
+la clasificación y la versión de la ficha vigente; si una norma que la ficha cita cambió, el recuadro
+**Revisión por cambio normativo** (sección 10). Tiene hasta cinco pestañas:
 
 - **Resultados** (la que abre): el último resultado en grande con su estado, su frase y su
   comparación; la gráfica del año; el **Acumulado del año**; una gráfica pequeña por variable
@@ -107,7 +124,9 @@ la clasificación y la versión de la ficha vigente. Tiene hasta cuatro pestaña
   parte de lo firmado.
 - **Versiones:** el **control de cambios** (qué cambió en cada versión, por qué, desde cuándo rige,
   quién la elaboró y quién la aprobó) y cada versión anterior completa.
-- **Observaciones** (con su número): solo para quien ve los soportes (sección 8).
+- **Observaciones** (con su número): solo para quien ve los soportes (sección 12).
+- **Reportes al ente:** si la ficha se reporta a un ente externo o el indicador tiene constancias de
+  envío (sección 9).
 
 ### 2.3 Los colores, los grises y las marcas
 
@@ -123,7 +142,9 @@ la clasificación y la versión de la ficha vigente. Tiene hasta cuatro pestaña
 
 El estado del **reporte** de cada periodo: **Por reportar**, **Falta el análisis**, **Reportada**,
 **Cerrada** y, cuando pasó el plazo, **Vencida**; un histórico que aún no se digitó dice **Por
-registrar**. Las marcas que pueden acompañarlo:
+registrar**, y un indicador que calcula el sistema y aún no tiene su cálculo, **Falta un dato**
+(sección 7.4). Un «No aplica» puede ponerlo también el sistema, con su motivo (sección 7.3). Las
+marcas que pueden acompañarlo:
 **Histórico**, **Corregida** (con **Ver el historial**: qué había, qué quedó, quién, cuándo y por
 qué), **Requiere acción de mejora**, **Meta ajustada después del periodo** y **N periodos sin
 cumplir** (el indicador no cumple desde hace varios periodos seguidos: el color sigue diciendo el
@@ -230,7 +251,8 @@ Mide quien el Administrador del SGC designó en **Quién mide**, con cualquier r
 tiene a nadie designado, miden los líderes del proceso; y si tampoco hay líder, el Administrador del
 SGC, que solo en ese caso reporta (el reporte queda marcado y la tarea dice «Sin responsable:
 designe a alguien»). El Administrador del SGC no reporta los indicadores que tienen quien los mida:
-quien cierra el mes no produce los datos.
+quien cierra el mes no produce los datos. Un indicador que calcula el sistema no lo mide nadie: no
+da tareas de reportar ni se digita (sección 7).
 
 ### 3.1 Su tarea y su plazo
 
@@ -457,14 +479,16 @@ En **Indicadores**, pulse **Nuevo indicador**.
 5. **Más opciones** trae lo demás de la ficha, con valores por defecto que puede cambiar: tipo
    (Eficacia), clasificación (Operativo: decide quién aprueba), unidad y decimales, requisito
    («NTC ISO 9001:2015, numeral 9.2»), objetivo que mide, procedimiento y punto de control
-   («PC-13»), normas que lo exigen (obligatoria en un regulatorio; solo normas vigentes o
-   modificadas), **Nivel** (Estructura, Proceso o Resultado, como lo llama el hospital) y **Riesgo
+   («PC-13»), normas que lo exigen (obligatoria en un regulatorio; una norma que se cita por primera
+   vez debe estar vigente o modificada, sección 10), **Cómo se obtiene el dato** (**Lo digita una
+   persona** o **Lo calcula el sistema**, sección 7.6), **Nivel** (Estructura, Proceso o Resultado, como lo llama el hospital) y **Riesgo
    asociado** (texto libre; opcionales), cargos responsables de medir y de analizar, línea base,
    sustento de la meta,
    límites del resultado, qué incluye y qué excluye cada variable y cómo se junta al pasar a un
    periodo mayor (se suma, último valor o promedio), **Inicio de medición** (puede ser anterior a
    hoy: así se abren los históricos), **Nivel de acceso**, soporte obligatorio y, si se reporta a
-   un ente, a quién y cada cuánto (por ahora es informativo). Si al guardar hay un error en un
+   un ente, **Se reporta a un ente**, **Periodicidad del ente** y **Plazo del ente (días)** (sección
+   9). Si al guardar hay un error en un
    campo, el mensaje sale junto a ese campo y el cursor va a él; si está en **Más opciones**, la
    sección se abre sola. Al elegir **¿Cómo se calcula?** el SGC sugiere la unidad («Porcentaje»
    para un porcentaje, «Número» para un conteo); puede cambiarla.
@@ -573,7 +597,9 @@ Pestaña **Cierre del mes**. En **Cerrar hasta**, elija el mes (por defecto, el 
 cerrado; nunca uno que no ha terminado) y pulse **Ver el resumen**:
 
 - cuántas mediciones se cerrarán, cuántas reportadas, cuántas **quedarán sin dato** (con quién debía
-  medirlas), cuántas «no aplica» y cuántas tienen datos pero les falta el análisis;
+  medirlas; en un indicador que calcula el sistema dice «El sistema»), cuántas «no aplica» y cuántas
+  tienen datos pero les falta el análisis. Antes de contarlas, el resumen y el cierre toman los
+  cálculos del sistema que ya tocaban (sección 7.2);
 - el resumen **Por proceso** y las observaciones que siguen sin respuesta (no impiden el cierre);
 - **No se cierran**: las mediciones que siguen dentro de su plazo de reporte (cerrar el 1 de abril
   no deja sin dato lo que tenía plazo hasta el 10) y los históricos sin registrar.
@@ -690,7 +716,333 @@ lo hace quien administra indicadores.
    mientras ninguna propuesta se haya editado o enviado a aprobación: entonces el botón no se
    ofrece y la página dice por qué.
 
-## 7. Qué cambia respecto del Excel de indicadores
+## 7. Indicadores que calcula el sistema
+
+Algunas cifras el SGC ya las sabe: cuántos documentos están al día, cuántos acuses se confirmaron,
+cuántos indicadores se reportaron a tiempo, cuántos objetivos se cumplieron. Un indicador puede
+tomarlas de la plataforma en vez de digitarlas. Se ve en la ficha, en **Cómo se obtiene el dato**:
+«Lo calcula el sistema · Objetivos cumplidos · Objetivos de calidad»; en la lista lleva la marca
+**Automático**; y en **Datos de operación**, «Quién mide: Nadie: lo calcula el sistema». Nadie lo
+reporta, nadie recibe la tarea de reportarlo y sus datos no se digitan ni se corrigen a mano («Este
+indicador lo calcula el sistema: sus datos no se digitan»). Lo demás es como en cualquier
+indicador: el resultado, el color, la frase, la gráfica, el acumulado, las alertas, el análisis y
+las observaciones.
+
+### 7.1 Qué cuenta cada cálculo
+
+Hay diez cálculos, siempre los mismos: el SGC no admite otros. Cada uno da una cifra **A** y, salvo
+el de vencidos, una **B**; el resultado sale de las dos, como en un porcentaje o un promedio.
+
+| Cálculo | A | B | Se mide | Alcance |
+|---|---|---|---|---|
+| **Documentos dentro de su plazo de revisión** | Los documentos vigentes cuya revisión no ha vencido | Los documentos vigentes que tienen fecha de próxima revisión | A una fecha | Toda la entidad o el proceso de la ficha |
+| **Documentos con revisión vencida** (menos es mejor) | Los documentos vigentes cuya fecha de revisión ya pasó | — (es un conteo) | A una fecha | Toda la entidad o el proceso de la ficha |
+| **Tiempo de aprobación** (menos es mejor) | Los días entre la aceptación de la solicitud y la publicación, sumados | Los trámites publicados en el periodo | Sobre el periodo | Toda la entidad o el proceso de la ficha |
+| **Acuses de lectura confirmados** | Los acuses pedidos en el periodo que ya se confirmaron | Los acuses pedidos en el periodo, confirmados o pendientes | Sobre el periodo | Toda la entidad o el proceso de la ficha |
+| **Conformidad en puntos de uso, a la fecha** | Los puntos de uso cuya última verificación cerrada resultó conforme | Los puntos de uso que tienen una verificación cerrada | A una fecha | Solo toda la entidad |
+| **Conformidad en puntos de uso, del periodo** | Las verificaciones cerradas en el periodo que resultaron conformes | Las verificaciones cerradas en el periodo | Sobre el periodo | Solo toda la entidad |
+| **Externos verificados al día** | Los documentos externos vigentes cuya verificación no ha vencido | Los externos vigentes que tienen fecha de verificación | A una fecha | Toda la entidad o el proceso de la ficha |
+| **Etapas del trámite cerradas en plazo** | Las etapas de trámite cerradas en el periodo dentro de su fecha límite | Las etapas cerradas en el periodo que tenían fecha límite | Sobre el periodo | Toda la entidad o el proceso de la ficha |
+| **Reportes de indicadores a tiempo** | Las mediciones con fecha límite en el periodo cuyo primer reporte (o «no aplica») fue en esa fecha o antes | Las mediciones de indicadores que se digitan cuya fecha límite cae en el periodo | Sobre el periodo | Toda la entidad o el proceso de la ficha |
+| **Objetivos cumplidos** | Los objetivos cuyas últimas mediciones del periodo alcanzaron todas la meta | Los objetivos que tuvieron al menos una medición con meta en el periodo | Sobre el periodo | Objetivos de calidad, institucionales o todos |
+
+Algunas precisiones:
+
+- **El sentido lo fija el cálculo:** menos es mejor en vencidos y en tiempo de aprobación; mayor es
+  mejor en los demás. No se elige.
+- **«El proceso de la ficha»** es el proceso del propio indicador: no se elige otro.
+- **Se cuenta todo**, también lo restringido: el cálculo entrega cifras, no nombres. Una ficha
+  restringida sigue siéndolo para quien no la puede ver.
+- **Reportes a tiempo** no cuenta los históricos ni los indicadores que calcula el sistema; un
+  reporte que llegó tarde cuenta tarde aunque después se corrija, y uno que nunca llegó, también.
+  Un indicador retirado antes de su fecha límite no cuenta lo que dejó sin reportar.
+- **Objetivos cumplidos:** de cada indicador del objetivo toma la última medición del periodo que
+  tiene resultado y meta (sin «no aplica»); el objetivo se cumple si todas alcanzan la meta (un
+  «Bien · no alcanza la meta» no la alcanza). **Un objetivo sin medición no cuenta como no
+  cumplido:** sale del denominador. No cuenta los indicadores que también calculan «Objetivos
+  cumplidos». Es la misma regla de la página **Objetivos** (sección 8), que solo mira lo que usted
+  ve.
+- **Tiempo de aprobación** da los días sumados y los trámites: el resultado de la ficha es su
+  promedio exacto. La tarjeta de **Vigencia** (Capítulo 7, sección 5.2) muestra el mismo promedio,
+  con la mediana y el tiempo desde la solicitud.
+
+### 7.2 Cuándo se calcula: la foto
+
+El SGC no recalcula estos indicadores a cada rato: toma una **foto** de cada periodo y la deja en la
+medición con su fecha y su hora (solo **Volver a calcular** la repite, sección 7.5). La tabla del año lo dice debajo del periodo:
+«Calculado por el sistema · foto del 1 de abril, 7:12 a. m.»; y el historial de la medición, «El
+sistema tomó la foto».
+
+- **Los que se miden a una fecha** (documentos al día, vencidos, conformidad a la fecha, externos):
+  la foto se toma al terminar el periodo, con lo que hay en ese momento, y solo del periodo más
+  reciente que terminó. Si nadie usa el SGC durante dos periodos seguidos, el más viejo queda
+  **Sin dato**: el SGC no le pone una foto que es de otro momento.
+- **Los que se miden sobre el periodo** (tiempo de aprobación, acuses, conformidad del periodo,
+  etapas, reportes a tiempo, objetivos cumplidos): la foto espera a que venza el plazo de la ficha,
+  que aquí se llama **Días de espera antes de calcular** (10 días por defecto; con 0, al terminar el
+  periodo), para que lleguen los datos que se registran después: los acuses que se confirman tarde,
+  los indicadores que se reportan en los días siguientes al fin del periodo. Mientras tanto la
+  medición dice **Falta un dato** y la tabla dice cuándo se calcula: «Se calcula el 10 de abril».
+- **Los periodos anteriores a la aprobación** (los históricos): los cálculos que se pueden
+  reconstruir (tiempo de aprobación, conformidad del periodo, etapas, reportes a tiempo y objetivos
+  cumplidos) los calculan de una vez, sin esperar; los demás no tienen periodos anteriores: empiezan
+  en el periodo en curso cuando se aprueba la ficha. En etapas, un periodo de antes de que el SGC
+  guardara la fecha límite de cada etapa queda «No aplica».
+
+El SGC toma las fotos cuando alguien usa la plataforma (como mucho cada diez minutos) y, antes de
+contar, en el resumen y en el cierre del mes (sección 6.6). **Una medición cerrada no se recalcula en
+silencio:** lo cerrado queda como se cerró.
+
+Si la foto no cumple la meta, la tarea es de **quien analiza**, con las reglas de siempre (sección
+4). En un cálculo que se mide sobre el periodo, el análisis tiene su plazo completo contado desde la
+foto: como la foto llega cuando vence el plazo de reporte, el análisis no nace vencido.
+
+### 7.3 «No aplica» puesto por el sistema
+
+Si en el periodo no había nada que medir (la cifra **B** es cero), el SGC marca la medición **No
+aplica** con el motivo del cálculo, en lugar de dejarla sin dato:
+
+| Cálculo | Motivo |
+|---|---|
+| Documentos dentro de su plazo de revisión | «No había documentos vigentes con fecha de revisión» |
+| Tiempo de aprobación | «No se publicó ningún trámite en el periodo» |
+| Acuses de lectura confirmados | «No se pidieron acuses de lectura en el periodo» |
+| Conformidad en puntos de uso, a la fecha | «Ningún punto de uso tenía una verificación cerrada» |
+| Conformidad en puntos de uso, del periodo | «No se cerró ninguna verificación en el periodo» |
+| Externos verificados al día | «No había documentos externos vigentes con fecha de verificación» |
+| Etapas del trámite cerradas en plazo | «No se cerró ninguna etapa con fecha límite en el periodo» |
+| Reportes de indicadores a tiempo | «Ninguna medición tenía su fecha límite en el periodo» |
+| Objetivos cumplidos | «Ningún objetivo tuvo medición en el periodo» |
+
+Documentos con revisión vencida es un conteo: cero vencidos es una cifra (y buena), no «no aplica».
+
+### 7.4 «Falta un dato»
+
+Es el estado de una medición que espera la foto del sistema. **No es tarea de nadie:** no da la tarea
+de reportar, ni recordatorios, ni el aviso de vencido, ni el aviso al jefe, y nunca se muestra
+«Vencida» por eso. Cuando llega la foto se calcula el resultado, salen las alertas y, si no cumple,
+la tarea de analizar.
+
+Quien analiza puede abrir el periodo con **Ver** en la tabla del año: la pantalla dice «Este
+indicador lo calcula el sistema. Nadie digita sus datos.», cuándo se calculó o se calculará y, ya
+calculado, el valor de cada variable y el resultado con su estado (o el motivo del «No aplica»).
+
+### 7.5 Volver a calcular (Administrador del SGC)
+
+En un cálculo que se mide sobre el periodo, mientras la medición no se haya cerrado ni reabierto,
+el Administrador del SGC tiene **Volver a calcular** en la tabla del año (y en la pantalla del
+periodo). Sirve si algo del periodo se registró tarde, por ejemplo una verificación que se cerró
+después de la foto. No pide confirmación. Junto al botón aparece «Se volvió a calcular: los datos
+cambiaron.» o «Se volvió a calcular: los datos son los mismos.». Si cambiaron, el historial de la
+medición lo dice («Se volvió a calcular», con lo que había y lo que quedó), queda en la bitácora y,
+si cambia el color, avisa como una corrección. Puede darle al análisis su plazo una sola vez: volver
+a calcular no sirve para estirar un plazo.
+
+No vale en un cálculo que se mide a una fecha («La foto de este cálculo se toma una sola vez»), en
+una medición cerrada o reabierta («La foto quedó congelada con el cierre: reabrirla solo deja cambiar
+el análisis») ni antes de la primera foto («El sistema todavía no ha calculado este periodo»).
+
+### 7.6 Crear una ficha que calcula el sistema (Administrador del SGC)
+
+En **Nuevo indicador** (sección 6.1), abra **Más opciones** y, en **Cómo se obtiene el dato**, elija
+**Lo calcula el sistema** («Lo toma de la plataforma: nadie lo digita.»). Elija el **Cálculo** y su
+**Alcance** (si el cálculo tiene uno solo, ya viene puesto). Donde una ficha manual elige su forma y
+sus variables aparece **Lo pone el cálculo**: el cálculo, la fórmula en palabras, las variables con
+su descripción y la tendencia, que no se editan y quedan firmados en la ficha. Usted llena lo demás:
+el nombre, la unidad (el SGC propone «Porcentaje», «Días» o «Número»), los decimales, la meta, los
+rangos del semáforo, la periodicidad, quién analiza y el resto de la ficha. No se pide la prueba
+con valores ni el cargo responsable de medir, ni hay soporte obligatorio.
+
+- **El plazo:** en un cálculo que se mide sobre el periodo se llama **Días de espera antes de
+  calcular** («El sistema calcula el periodo cuando pasan estos días desde su fin. Con 0, al
+  terminar el periodo.»); en uno que se mide a una fecha, **Plazo de reporte (días)** («Es la fecha
+  límite del análisis. La foto se toma al terminar el periodo.»).
+- **El inicio de medición:** un cálculo que no se reconstruye «Empieza en el periodo en curso cuando
+  se apruebe.»; uno que sí, respeta el inicio que usted elija: «El sistema calcula solo los periodos
+  anteriores.».
+- **Una sola ficha activa por cálculo y alcance** (con «El proceso de la ficha», una por proceso).
+  El formulario lo advierte («Ya hay una ficha activa para ese cálculo y alcance.») y el SGC no la
+  envía ni la aprueba: «Ya hay una ficha activa para ese cálculo y alcance: SGC-ID-002».
+- **La meta:** en los siete cálculos que también tienen tarjeta en **Vigencia → Indicadores** (todos
+  menos conformidad del periodo, reportes a tiempo y objetivos cumplidos), la meta de la ficha es la
+  de la tarjeta (Capítulo 7, sección 5.2) y debe ser un número entero, también la que se programe
+  para un periodo: «La meta de este cálculo debe ser un número entero: es la que muestran Vigencia y
+  Distribución». **Conformidad en puntos de uso, a la fecha** exige meta («Obligatoria en este
+  cálculo: con ella se juzga la conformidad en Distribución.»): con la ficha activa, Distribución
+  juzga la conformidad con esa meta y no con el umbral de la Configuración documental (Capítulo 6,
+  sección 5.6).
+- **Al aprobarse,** el SGC quita a quienes estuvieran designados en **Quién mide** (la bitácora lo
+  dice: «Quitó a 1 persona de «mide» en …: ahora lo calcula el sistema») y apaga el soporte
+  obligatorio. En **Designar personas**, **Quién mide** ya no admite a nadie («Este indicador lo
+  calcula el sistema: nadie lo mide»).
+- **Pasar una ficha manual a automática** (o al revés) es un cambio mayor («Cambiarlo es un cambio
+  mayor.»). En un cálculo que no se reconstruye, rige desde el periodo en curso («Un cálculo que no
+  se llena hacia atrás rige desde el periodo en curso»). Las mediciones anteriores conservan su
+  versión y sus datos digitados.
+- **Crear a partir de este** sobre un indicador que calcula el sistema crea uno manual, con las
+  variables como propias, para digitarlas.
+
+### 7.7 La cifra de la ficha y la de Vigencia
+
+Los siete cálculos documentales los toma el SGC con la mirada del Administrador del SGC: cuentan
+todos los documentos, también los restringidos. Por eso **la cifra de la ficha puede no coincidir con
+la tarjeta de Vigencia que ve alguien con un alcance menor**: un líder de proceso ve en Vigencia solo
+sus procesos, y en los acuses la tarjeta de Gerencia cuenta solo las versiones vigentes. El
+Administrador del SGC y Control Interno ven en la tarjeta la misma cifra que la ficha.
+
+Las dos son la misma medida con distinta precisión: Distribución y la tarjeta de conformidad truncan
+el porcentaje a un entero («50 %») y la ficha lo escribe con los decimales de la ficha («50,0 %»);
+ninguna contradice su color.
+
+## 8. Objetivos
+
+Pestaña **Objetivos**, para toda persona con cuenta: los objetivos de calidad y los institucionales
+(los que el Administrador del SGC crea en **Configuración de indicadores**) y si se cumplieron en un
+periodo. Arriba dice «Un objetivo se cumple si todos sus indicadores medidos en el periodo alcanzan la
+meta.».
+
+1. Elija el **Periodo** y pulse **Ver**: el año en curso (por omisión), sus semestres y trimestres ya
+   empezados, y los del año anterior.
+2. Debajo de **Objetivos de calidad** y **Objetivos institucionales**, cada objetivo con su estado:
+   - **Cumplido:** todos sus indicadores medidos en el periodo alcanzan la meta.
+   - **No cumplido:** alguno no la alcanza (un «Bien · no alcanza la meta» tampoco).
+   - **Sin medición:** ninguno de sus indicadores se midió en el periodo.
+3. Cada objetivo lista sus indicadores (los que usted ve), con su **Código**, **Indicador**,
+   **Proceso**, **Periodo**, **Resultado** y **Estado**: de cada uno, la última medición del periodo
+   con resultado y meta. Uno medido sin meta muestra su resultado y «Sin meta», y no cuenta para el
+   estado del objetivo; uno sin medición dice «sin dato». En el celular, cada indicador es una
+   tarjeta.
+
+El indicador que calcula «Objetivos cumplidos» aparece en su objetivo, si tiene uno, con la nota «No
+cuenta para el estado de este objetivo: es el indicador que resume los objetivos.». La página no dice
+si hay indicadores que usted no ve, y el estado de cada objetivo se decide con los que usted ve: el
+cálculo «Objetivos cumplidos» de una ficha cuenta todos (sección 7.1), así que su cifra puede ser otra.
+Sin objetivos, la página dice «Aún no hay objetivos» y «Se crean en Configuración de indicadores.».
+
+## 9. Reportes al ente
+
+Algunos indicadores se reportan a un ente externo (el Ministerio, la Superintendencia, la secretaría
+de salud). El SGC lleva la **constancia de envío** de cada periodo: cuándo se envió, con qué
+radicado, qué resultado se envió y el soporte.
+
+### 9.1 La ficha que se reporta a un ente
+
+En **Más opciones** de la ficha (sección 6.1) van tres datos, los tres o ninguno: **Se reporta a un
+ente** (el destinatario), **Periodicidad del ente** y **Plazo del ente (días)**. La
+periodicidad del ente es la de medición o una que la contenga: un indicador mensual puede reportarse
+cada trimestre, nunca al revés. Si falta algo, el SGC lo dice: «Escriba el ente al que se reporta»,
+«Diga con qué periodicidad se reporta al ente», «Diga el plazo del ente en días» o «La periodicidad
+del ente debe ser la de medición o una que la contenga». Una ficha aprobada antes con el ente
+incompleto no genera constancias y la vista lo dice («Complete el ente, su periodicidad y su plazo en
+la ficha para llevar las constancias.»); se completa con un cambio menor.
+
+**Desde cuándo:** se cuenta desde que se publica la versión de la ficha que puso o cambió el ente.
+Nace una constancia por cada periodo del ente que **termina después** de ese momento: ponerle el ente
+a una ficha con años de historia, o a una importada, no abre envíos atrasados. **Lo ya nacido no
+cambia:** cada constancia guarda el ente y la fecha límite de cuando nació, aunque después la ficha
+cambie. Si la ficha deja de reportarse a un ente o el indicador se retira, las constancias pendientes
+sin soporte dejan de pedirse; las registradas y las que ya tienen un soporte se conservan.
+
+### 9.2 La tarea, el plazo y los avisos
+
+Cuando termina un periodo del ente, quien mide el indicador (o, como siempre, los líderes del proceso
+y, sin ellos, el Administrador del SGC) recibe la tarea **Registrar el reporte a Ministerio de Salud
+y Protección Social: CEX-IND-01, tercer trimestre de 2026**. Vence el último día del periodo más el
+plazo del ente. No hay aviso previo. Al vencerse llega «Tiene 1 reporte al ente con el plazo vencido»
+a quien tiene la tarea y «1 reporte al ente de Consulta Externa con el plazo vencido» a los líderes
+del proceso; si sigue vencido los **Días para avisar al jefe**, su jefe recibe «Reportes al ente
+vencidos», sin el nombre del indicador. Las vencidas a su cargo cuentan en el número junto a
+**Indicadores**. En la lista, el indicador lleva la marca **Envío pendiente** o, si alguna venció,
+**Envío vencido**, y el filtro **Envío al ente pendiente** los reúne.
+
+### 9.3 La pestaña «Reportes al ente»
+
+En la página del indicador, la pestaña **Reportes al ente** aparece si la ficha se reporta a un ente o
+el indicador ya tiene constancias: «Se reporta a Ministerio de Salud y Protección Social. Cada periodo
+del ente pide su constancia de envío: la fecha, el radicado y al menos un soporte.». La tabla
+**Constancias de envío** tiene una fila por periodo: **Periodo**, **Fecha límite**, **Estado**
+(**Pendiente**, **Vencida**, **Registrada** o **Registrada · corregida**), **Enviado el**,
+**Radicado**, **Resultado enviado** (con «(parcial)» si lo fue), **Registró**, **Soportes** y
+**Acciones**. Los soportes y **Ver el historial** solo los ve quien ve los soportes del indicador
+(sección 12).
+
+**Registrar el envío** (quien puede medir el indicador y el Administrador del SGC, sin clave):
+
+1. En la fila, pulse **Registrar el envío**: se abre su formulario, **Registrar el envío · Tercer
+   trimestre de 2026**.
+2. En **Soportes del envío**, adjunte al menos un PDF o una imagen: «la constancia del ente, el
+   radicado o la captura del cargue». Mientras el envío no esté registrado, **Quitar** retira un
+   soporte.
+3. Lea el **Resultado del periodo**: el acumulado del año (sección 2.6) sobre los periodos de medición
+   que el periodo del ente contiene. Si falta alguno, alguno no está cerrado o la ficha cambió de
+   versión dentro del periodo, lo advierte («El resultado es parcial: falta septiembre de 2026; no
+   está cerrado agosto de 2026. Puede registrarlo así.»).
+4. Escriba la **Fecha de envío** («El día en que se envió al ente; no puede ser futura.»), el
+   **Radicado o número de constancia** y, si quiere, una **Nota**, y pulse **Registrar el envío**.
+
+«Al registrar, este resultado queda congelado en la constancia: una corrección posterior de las
+mediciones no lo cambia.» Es lo que el hospital le dijo al ente.
+
+**Corregir** una registrada: en **Corregir el envío · …**, cambie la fecha, el radicado o la nota,
+escriba la **Justificación** (de 10 a 500 caracteres) y pulse **Guardar la corrección**. «La
+corrección no recalcula el resultado enviado. Queda en el historial con lo que había, lo que quedó y
+su justificación.» A una registrada se le puede adjuntar el documento correcto, pero sus soportes no
+se quitan.
+
+**El historial** de cada constancia es de solo lectura y no se borra: «Subió el soporte «…»»,
+«Registró el envío del 20 de julio de 2026 con el radicado …: 2,3 días», «Corrigió el envío (radicado
+A → B). Por qué: …», cada línea con quién y cuándo; además, todo queda en la bitácora.
+
+Un indicador retirado conserva sus constancias: las registradas se corrigen y una pendiente que ya
+tenía soporte se termina de registrar, pero ya no se adjuntan ni se quitan soportes («El indicador
+está retirado: no se pueden adjuntar ni quitar soportes. Puede registrar el envío con los que ya
+tiene.»).
+
+## 10. Cuando cambia una norma
+
+Cuando una norma que cita la ficha vigente de un indicador activo se **modifica**, se **deroga** o se
+**retira** en el normograma (Capítulo 7, sección 6.6), nace en ese mismo momento una **revisión por
+cambio de norma** de cada indicador que la cita, con el plazo de los impactos normativos (15 días por
+defecto). No bloquea el indicador: se sigue midiendo. Una norma modificada que se vuelve a modificar
+no abre otra revisión.
+
+- **El aviso** llega a los Administradores del SGC, salvo a quien hizo el cambio: «1 indicador cita
+  Resolución 256 de 2016, que pasó a derogada: revise su ficha», con «Cada revisión se resuelve en la
+  página del indicador: no afecta, una versión nueva de la ficha o el retiro.».
+- **La tarea** **Revisar CEX-IND-01 por el cambio de Resolución 256 de 2016** es de quien administra
+  los indicadores y lleva a la página del indicador. En la lista, el filtro **Revisión por cambio de
+  norma** reúne los indicadores con una revisión pendiente.
+- **En la página del indicador**, en todas sus pestañas y para quien ve el indicador, el recuadro
+  **Revisión por cambio normativo**: «Resolución 256 de 2016 pasó a derogada el 14 nov 2026. Hay que
+  revisar esta ficha antes del 29 nov 2026.» y, si se venció, **Plazo vencido**.
+
+Se resuelve de una de tres maneras:
+
+1. **No afecta:** quien administra los indicadores pulsa **No afecta** en el recuadro, escribe **Por
+   qué no afecta** («Al menos 5 caracteres. Queda en la historia del indicador.») y pulsa **Registrar
+   que no afecta**.
+2. **Una versión nueva de la ficha:** la primera versión que se envía a aprobación (o el cambio menor
+   que se publica) **después** del cambio de la norma la resuelve al quedar aprobada. Una versión que
+   ya estaba por aprobar cuando cambió la norma no la resuelve. El recuadro lo recuerda: «También se
+   resuelve al aprobar una versión de la ficha enviada después de este cambio, o al retirar el
+   indicador.»
+3. **El retiro del indicador** resuelve todas sus revisiones pendientes.
+
+Si se vence, los Administradores del SGC reciben «Venció la revisión de 1 indicador por el cambio de
+…» y, días después, sus jefes reciben «Revisiones de indicadores por cambio de norma vencidas», sin el
+nombre del indicador.
+
+**Seguir citando una norma derogada.** «Solo se pueden citar normas vigentes o modificadas» vale para
+una norma que la ficha cita por primera vez. Una ficha puede seguir citando la que ya citaba aunque se
+haya derogado (después de «No afecta», por ejemplo): se guarda igual y la ficha muestra la norma con su
+estado. Si mientras una versión esperaba su aprobación la norma que cita por primera vez dejó de
+regir, no se aprueba («La norma … ya no está vigente: devuelva la ficha …»); un cambio menor así no se
+publica («La norma … ya no está vigente: quítela de la ficha … antes de publicar el cambio»).
+
+En la página de impactos de la norma (Capítulo 7, sección 4.8), la sección **Indicadores** lista en
+lectura los indicadores del proceso que la citaban, con el estado de su revisión.
+
+## 11. Qué cambia respecto del Excel de indicadores
 
 La ficha del SGC sigue la que el hospital propuso en su Excel, con estas diferencias:
 
@@ -706,8 +1058,11 @@ La ficha del SGC sigue la que el hospital propuso en su Excel, con estas diferen
    de quien firmó con su clave.
 6. Lo que no es parte de la ficha (quién mide, el plazo, desde cuándo se mide) va en **Datos de
    operación**, debajo de las firmas.
+7. **Lo que la plataforma ya sabe no se digita:** los indicadores del control de documentos, los
+   reportes a tiempo y los objetivos cumplidos los calcula el SGC (sección 7), y los objetivos se
+   ven cumplidos o no en su propia pestaña (sección 8).
 
-## 8. Quién ve qué
+## 12. Quién ve qué
 
 | Qué | Quién lo ve |
 |---|---|
@@ -717,15 +1072,20 @@ La ficha del SGC sigue la que el hospital propuso en su Excel, con estas diferen
 | Una ficha en borrador o por aprobar | El Administrador del SGC y, mientras está por aprobar, quien debe aprobarla |
 | Un indicador retirado | Como cuando estaba activo, marcado «Retirado» |
 | Un indicador descartado | Solo el Administrador del SGC |
+| Pestaña **Objetivos** | Toda persona con cuenta, con los indicadores que ve |
+| Las constancias de envío de un indicador (pestaña **Reportes al ente**) | Quien ve el indicador; sus soportes y su historial, quien ve los soportes |
+| Registrar y corregir una constancia | Quien puede medir el indicador y el Administrador del SGC |
+| El recuadro **Revisión por cambio normativo** | Quien ve el indicador; sus salidas, el Administrador del SGC |
+| **Volver a calcular** | El Administrador del SGC |
 | Pestaña **Por aprobar** | Quien aprueba fichas y el Administrador del SGC |
 | Pestaña **Cierre del mes** y **Configuración de indicadores** | El Administrador del SGC |
 
 Para quien no puede ver algo, no existe: no sale en las listas, los conteos, la búsqueda, la matriz,
 la página del proceso, los Excel, las tareas ni los avisos, y su dirección dice «Página no
 encontrada». El aviso al jefe por un reporte vencido no nombra el indicador, por si el jefe no lo
-puede ver.
+puede ver; tampoco los de una constancia de envío o una revisión por cambio de norma vencidas.
 
-## 9. Resumen de mensajes
+## 13. Resumen de mensajes
 
 | Mensaje | Qué significa | Qué hacer |
 |---|---|---|
@@ -742,7 +1102,16 @@ puede ver.
 | Pruebe la fórmula con valores de ejemplo antes de enviarla | Falta la prueba | Llene **Prueba** y guarde el borrador |
 | La fórmula usa la variable D, que no está declarada | La fórmula y las variables no coinciden | Declare la variable o corrija la fórmula |
 | Un indicador regulatorio debe citar al menos una norma | La clasificación exige norma | Elija la norma en **Más opciones** |
-| Solo se pueden citar normas vigentes o modificadas | Una norma citada está derogada | Cambie la norma por la vigente |
+| Solo se pueden citar normas vigentes o modificadas | Una norma que la ficha cita por primera vez está derogada o retirada | Cambie la norma por la vigente |
+| La norma … ya no está vigente: devuelva la ficha … | La norma que la versión cita por primera vez dejó de regir mientras esperaba aprobación | Devuélvala; quien la elaboró quita esa norma |
+| Este indicador lo calcula el sistema: sus datos no se digitan | Se intentó reportar o corregir un indicador que calcula el sistema | Nada: espere su foto (sección 7.2) |
+| Ya hay una ficha activa para ese cálculo y alcance: … | Otro indicador activo ya usa ese cálculo con ese alcance | Use ese indicador, o retírelo antes |
+| La meta de este cálculo debe ser un número entero: es la que muestran Vigencia y Distribución | Un cálculo con tarjeta en Vigencia no admite metas con decimales | Redondee la meta |
+| La foto de este cálculo se toma una sola vez | Se pidió volver a calcular un cálculo que se mide a una fecha | Nada: ese cálculo no se repite |
+| Adjunte al menos un soporte antes de registrar | Una constancia de envío se registra con su soporte | Adjunte el PDF o la imagen en **Soportes del envío** |
+| La fecha de envío no puede ser futura / Escriba el radicado o número de constancia | Falta un dato del envío | Corrija la fecha o escriba el radicado |
+| La justificación debe tener al menos 10 caracteres | Falta la razón de la corrección de una constancia | Escriba por qué |
+| Un soporte de una constancia registrada no se quita | El envío ya se registró con ese soporte | Adjunte el correcto; el anterior queda en el historial |
 | Ese periodo ya terminó: escriba la justificación del cambio de meta | La meta de un periodo terminado pide justificación | Escríbala |
 | La justificación debe tener al menos 10 caracteres | Falta la razón de la reapertura o del cambio de meta | Escriba por qué |
 | Ese mes ya está cerrado / Ese mes no ha terminado | El mes elegido no se puede cerrar | Elija otro mes |

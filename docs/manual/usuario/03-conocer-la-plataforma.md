@@ -48,15 +48,15 @@ Cada persona ve solo los enlaces que su rol permite. Un grupo sin enlaces no apa
 
 | Rol | Documentos | Indicadores | Administración |
 |---|---|---|---|
-| Administrador del SGC | Buscar documentos, Trámites, Distribución, Vigencia, Normograma, Gestión de documentos, Listado Maestro, Tipos de documento, Configuración documental, Mapa de procesos | Indicadores, con las pestañas Lista, Matriz del año, Por aprobar y Cierre del mes | Configuración de indicadores, Entidad y marca, Estructura, Puntos de uso, Listas de distribución, Usuarios, Estadísticas, Bitácora, Accesos, Sesiones |
-| Gerencia | Buscar documentos, Trámites, Distribución (solo lectura), Vigencia (solo lectura), Normograma, Listado Maestro (solo vigentes, sin Excel) | Indicadores, con Lista, Matriz del año y Por aprobar | Puntos de uso y Listas de distribución (solo lectura), Estadísticas |
-| Control Interno | Buscar documentos, Distribución (solo lectura), Vigencia (solo lectura), Normograma, Gestión de documentos (solo lectura), Listado Maestro | Indicadores, con Lista y Matriz del año | Puntos de uso y Listas de distribución (solo lectura), Estadísticas, Bitácora, Accesos |
-| Líder de proceso | Buscar documentos, Trámites, Distribución (la de sus procesos), Vigencia (la de sus procesos), Normograma | Indicadores, con Lista, Matriz del año y Por aprobar | Puntos de uso (los de sus procesos) y Listas de distribución, en solo lectura |
-| Consulta | Buscar documentos, Normograma | Indicadores, con Lista y Matriz del año | — |
+| Administrador del SGC | Buscar documentos, Trámites, Distribución, Vigencia, Normograma, Gestión de documentos, Listado Maestro, Tipos de documento, Configuración documental, Mapa de procesos | Indicadores, con las pestañas Lista, Matriz del año, Objetivos, Por aprobar y Cierre del mes | Configuración de indicadores, Entidad y marca, Estructura, Puntos de uso, Listas de distribución, Usuarios, Estadísticas, Bitácora, Accesos, Sesiones |
+| Gerencia | Buscar documentos, Trámites, Distribución (solo lectura), Vigencia (solo lectura), Normograma, Listado Maestro (solo vigentes, sin Excel) | Indicadores, con Lista, Matriz del año, Objetivos y Por aprobar | Puntos de uso y Listas de distribución (solo lectura), Estadísticas |
+| Control Interno | Buscar documentos, Distribución (solo lectura), Vigencia (solo lectura), Normograma, Gestión de documentos (solo lectura), Listado Maestro | Indicadores, con Lista, Matriz del año y Objetivos | Puntos de uso y Listas de distribución (solo lectura), Estadísticas, Bitácora, Accesos |
+| Líder de proceso | Buscar documentos, Trámites, Distribución (la de sus procesos), Vigencia (la de sus procesos), Normograma | Indicadores, con Lista, Matriz del año, Objetivos y Por aprobar | Puntos de uso (los de sus procesos) y Listas de distribución, en solo lectura |
+| Consulta | Buscar documentos, Normograma | Indicadores, con Lista, Matriz del año y Objetivos | — |
 
 Todos ven además **Inicio**. En **Indicadores** cada persona ve solo los indicadores que puede
 ver: los generales y, de los restringidos, los de su proceso o donde está designada (Capítulo 8,
-sección 8). **Trámites** también le aparece a cualquier persona que
+sección 12). **Trámites** también le aparece a cualquier persona que
 participe en un trámite, sea cual sea su rol (Capítulo 5), y **Distribución** a cualquier
 persona que sea responsable de un punto de uso activo, con solo sus puntos (Capítulo 6), y **Vigencia**
 a cualquier persona que sea responsable técnico de un documento externo, con solo la pestaña

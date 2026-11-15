@@ -36,8 +36,9 @@ Antes de seguir, vea el Capítulo 5 (cómo se pide y se publica un documento) y 
   y procesos.
 - **Indicadores documentales:** siete cifras del proceso documental con su meta: documentos al
   día, tiempo de aprobación, vencidos, acuses, conformidad, externos y etapas a tiempo. El SGC las
-  calcula solo, desde los documentos; no son las fichas del módulo **Indicadores** (Capítulo 8),
-  que se reportan periodo a periodo.
+  calcula solo, desde los documentos; no son las fichas del módulo **Indicadores** (Capítulo 8).
+  Pero una ficha puede tomar una de estas cifras como un indicador que calcula el sistema (Capítulo
+  8, sección 7): entonces la meta de la tarjeta es la de esa ficha (sección 5.2).
 
 Dónde está cada cosa:
 
@@ -369,6 +370,13 @@ está asociada al proceso sin documentos enlazados, «El proceso …»). Por cad
 Al resolverse, la marca sale del documento y la tarea desaparece. Si se vence, el SGC le avisa
 y, después, avisa a su jefe.
 
+Si la norma la cita además la ficha de un indicador del proceso, al final de la página aparece la
+sección **Indicadores**, en lectura: «La ficha de cada uno citaba la norma: se revisa en la página del
+indicador.», con el código, el nombre y el estado de su revisión (**Pendiente**, **No afecta**,
+**Versión nueva** o **Retirado**). Solo salen los indicadores que usted ve. Esas revisiones no se
+resuelven aquí sino en la página de cada indicador, y las resuelve quien administra los indicadores
+(Capítulo 8, sección 10).
+
 ### 4.9 Sus indicadores
 
 **Vigencia** → **Indicadores** muestra las tarjetas de sus procesos (sección 5.2). Puede elegir
@@ -415,14 +423,26 @@ quiere, el **Proceso**. Cada tarjeta dice la cifra, la meta y si **cumple**, **n
 | Externos verificados al día | 95 % o más |
 | Etapas del trámite cerradas en plazo (las que avanzan el trámite: retirar, rechazar, cancelar o negar no cuentan) | 90 % o más |
 
+**Una sola meta.** Si el hospital creó una ficha de indicador con el mismo cálculo que una tarjeta
+(Capítulo 8, sección 7), la tarjeta se juzga con la meta de esa ficha (la programada para el periodo
+en curso, si la hay). Se busca en este orden: la ficha del proceso elegido, después la de toda la
+entidad y, sin ficha, la meta de la Configuración documental (sección 6.7). La tarjeta lo dice en su
+insignia («meta ≥ 90 % · no cumple») y, si usted puede ver esa ficha, la enlaza: **Ver ficha
+SGC-ID-002**. A quien no puede verla no se le muestra el código, pero la meta se aplica igual. La de
+conformidad es la de la ficha «Conformidad en puntos de uso, a la fecha», la misma que usa
+Distribución (Capítulo 6, sección 5.6); su renglón «en el periodo» sigue siendo informativo. Sigue
+diciendo **cumple** o **no cumple**: los tres colores quedan en la ficha.
+
 Una octava tarjeta cuenta los trámites publicados en el periodo y los que siguen en curso.
 Debajo están el gráfico **Documentos con revisión vencida, por proceso**, la tabla **Dentro del
-plazo, por proceso** y el enlace **Ver los N vencidos en el Semáforo**, que cuenta solo los que
+plazo, por proceso** (cada fila con su **Meta**: la de la ficha de ese proceso, si la tiene, o la de
+toda la entidad) y el enlace **Ver los N vencidos en el Semáforo**, que cuenta solo los que
 el Semáforo pinta «Vencida»; los que tienen trámite abierto se dicen aparte («1 vencido está en
 trámite: el Semáforo lo muestra en «En trámite».»). Un documento vencido que
 ya tiene trámite abierto cuenta como vencido: el trámite no vuelve al día su revisión, y la
-tarjeta dice cuántos están en trámite. **Descargar Excel** baja las cifras, el detalle por
-proceso y la lista de vencidos. Las metas las fija el Administrador del SGC (sección 6.7).
+tarjeta dice cuántos están en trámite. **Descargar Excel** baja las cifras (con la misma meta),
+el detalle por proceso y la lista de vencidos. Las metas las fija el Administrador del SGC en la
+Configuración documental (sección 6.7) o, si hay ficha, en la ficha.
 
 ## 6. Si usted es Administrador del SGC
 
@@ -518,7 +538,9 @@ del informe y elíjalo**: después del cierre el informe ya no cambia de papel.
 - **Pasar una norma a modificada, derogada o retirada abre la revisión de su impacto:** un
   impacto por documento enlazado y uno por proceso asociado que no tiene documentos enlazados
   (volverla a vigente no abre ninguno). Cada proceso recibe una tarea
-  (sección 4.8); la de un proceso sin líder es suya.
+  (sección 4.8); la de un proceso sin líder es suya. Además abre una revisión en cada indicador
+  activo cuya ficha cita la norma, que se resuelve en la página del indicador (Capítulo 8, sección
+  10).
 - **Eliminar relación…**, con motivo, para una relación registrada por error. La norma afectada
   no recupera su estado sola (cámbielo a mano) y los impactos que ya nacieron se resuelven como
   «no afecta».
@@ -550,8 +572,14 @@ del acta (Capítulo 5, sección 14.3). Guarde y use **Ver informe de ejemplo** p
 espacios: sale con la marca de ejemplo.
 
 Sección **Indicadores documentales**: las metas de la sección 5.2 (la de conformidad es el
-umbral de Distribución). Pulse **Guardar configuración**. Un cambio de meta cambia en el acto el
-color y el texto de su tarjeta.
+**Umbral de conformidad (%)** de la sección **Distribución**). Pulse **Guardar configuración**. Un
+cambio de meta cambia en el acto el color y el texto de su tarjeta.
+
+**Una meta que fija una ficha se ve en solo lectura.** Si hay una ficha activa de toda la entidad con
+ese cálculo y con meta (Capítulo 8, sección 7), el campo muestra la meta de la ficha, no se puede
+editar y dice debajo «La fija la ficha SGC-ID-002». Vale también para el umbral de conformidad, en la
+sección **Distribución**. Guardar la configuración no cambia esa meta: se cambia en la ficha, con un
+cambio mayor. Si la ficha se retira, vuelve a mandar el valor guardado aquí.
 
 ### 6.8 Externos desde Gestión de documentos
 
@@ -587,7 +615,7 @@ cuenta:
 | Revisión anual | Administrador del SGC, Gerencia y Control Interno, toda; el líder, la de sus procesos, y decide |
 | El informe en PDF | Administrador del SGC, Gerencia y Control Interno |
 | Normograma | Toda persona con cuenta; un documento restringido enlazado, solo quien lo ve |
-| Impactos normativos | El líder del proceso afectado y el Administrador del SGC |
+| Impactos normativos | El líder del proceso afectado y el Administrador del SGC; en su sección **Indicadores**, solo los indicadores que cada uno ve |
 | Indicadores | Administrador del SGC, Gerencia y Control Interno, todos; el líder, los de sus procesos |
 
 Para quien no puede ver algo, simplemente no existe: la pantalla dice «Página no encontrada».

@@ -367,7 +367,10 @@ La pestaña muestra la **Conformidad actual** contra el **umbral** (95 % por def
 ejemplo «86 %, por debajo del 95 %»), el historial con filtros, los hallazgos abiertos, por
 validar y cerrados y **Qué falla más en el periodo**. El porcentaje se trunca, nunca se
 redondea hacia arriba: 18 de 19 puntos conformes es 94 %, por debajo de 95. Cada vista tiene
-**Descargar Excel**.
+**Descargar Excel**. Si el hospital tiene una ficha de indicador «Conformidad en puntos de uso, a
+la fecha» activa y con meta (Capítulo 8, sección 7), el umbral es la meta de esa ficha y la
+pestaña lo dice («Umbral 90 % · lo fija la ficha SGC-ID-002»; el código, solo a quien puede ver la
+ficha).
 
 ### 5.7 Asigne procesos a todo el personal
 
@@ -389,7 +392,7 @@ cada persona.
 | Socialización (días) | Plazo para registrar la jornada | 30 |
 | Corregir una no conformidad (días) | Plazo del hallazgo | 5 |
 | Verificar cada (días) | Periodicidad de la verificación | 90 |
-| Umbral de conformidad (%) | Mínimo para dar por buena una verificación (50 a 100) | 95 |
+| Umbral de conformidad (%) | Mínimo para dar por buena una verificación (50 a 100). Con una ficha de conformidad activa, se ve en solo lectura: «La fija la ficha …» (Capítulo 7, sección 6.7) | 95 |
 | Alto de la franja del sello (cm) | De 0,5 a 3,0 | 1,0 |
 | Tamaño del código QR (cm) | De 1,0 a 3,0 | 1,5 |
 
