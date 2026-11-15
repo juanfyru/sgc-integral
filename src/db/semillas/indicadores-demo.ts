@@ -34,7 +34,7 @@ import { observar } from "../consultas/indicadores/observaciones";
 import { designar, retirar } from "../consultas/indicadores/operacion";
 import { momentoHace, minutosDespues, sesionDe, type ContextoDistribucion } from "./distribucion-demo";
 import { agendaDeIndicadores, calendarioDeIndicadores, type FilaHistorica, type Hecho, type Quien } from "./indicadores-demo-agenda";
-import { sembrarFinalDe14B } from "./indicadores-demo-14b";
+import { exigirFoto, sembrarFinalDe14B } from "./indicadores-demo-14b";
 import { datosDeFicha, OBJETIVOS, type Catalogo, type ClaveObjetivo, type FichaDemo, type OperacionDemo } from "./indicadores-demo-fichas";
 import { sembrarLoteImportado } from "./indicadores-demo-importacion";
 import { FIRMA, firmaDeLaDemo } from "./vigencia-demo";
@@ -223,12 +223,7 @@ async function hacer(s: Siembra, h: Hecho, ahora: Date): Promise<void> {
 async function fotosDeLaPasada(s: Siembra, esperado: { codigo: string; periodo: string; semaforo: Semaforo }[], ahora: Date): Promise<void> {
   for (const e of esperado) await asegurarMediciones({ sql: s.sql, ahora, indicadorId: creado(s, e.codigo).indicadorId });
   await tomarFotos({ sql: s.sql, ahora });
-  for (const e of esperado) {
-    const [m] = await s.sql`SELECT foto_en, semaforo FROM mediciones WHERE indicador_id = ${creado(s, e.codigo).indicadorId} AND periodo = ${e.periodo}`;
-    if (!m?.foto_en || m.semaforo !== e.semaforo) {
-      throw new Error(`${e.codigo} ${e.periodo}: la foto debía quedar en ${e.semaforo} y quedó ${m?.foto_en ? m.semaforo : "sin foto"}`);
-    }
-  }
+  for (const e of esperado) await exigirFoto(s.sql, { ...e, indicadorId: creado(s, e.codigo).indicadorId });
 }
 
 /**

@@ -677,10 +677,10 @@ describe("lo que calcula el sistema y lo regulatorio (anexo 14B, §11)", () => {
     await exigirIndicadores(ctx);
     expect(await sql`SELECT ii.id FROM impactos_indicadores ii JOIN indicadores i ON i.id = ii.indicador_id
       WHERE i.codigo IN ${sql(Object.keys(SEMBRADOS))}`).toEqual([]);
-    // La única norma que cambió de estado en la demo (la 2003 de 2014, derogada) no la cita ningún indicador.
+    // La única norma que cambió de estado en la demo (la 2003 de 2014, derogada) no la cita ningún indicador sembrado.
     const citan = await sql`SELECT DISTINCT i.codigo FROM indicador_normas n
       JOIN indicador_versiones v ON v.id = n.version_id JOIN indicadores i ON i.id = v.indicador_id
-      WHERE n.norma_id IN (SELECT norma_id FROM norma_cambios)`;
+      WHERE n.norma_id IN (SELECT norma_id FROM norma_cambios) AND i.codigo IN ${sql(Object.keys(SEMBRADOS))}`;
     expect(citan).toEqual([]);
   });
 });

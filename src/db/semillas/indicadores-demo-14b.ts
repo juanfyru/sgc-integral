@@ -19,6 +19,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Sql } from "postgres";
 import { resolverRutaAlmacen } from "../../lib/almacen";
+import type { Semaforo } from "../../lib/indicadores/tipos";
 import { zonaHoraria } from "../../lib/zona-horaria";
 import { registrarArchivo } from "../consultas/admin";
 import type { SesionFlujo } from "../consultas/flujo/contrato";
@@ -43,16 +44,21 @@ const idDe = async (sql: Sql, codigo: string): Promise<number> => {
   return Number(i.id);
 };
 
+/**
+ * La medición del periodo debe tener su foto y el color esperado: `tomarFotos` registra y salta la que falla, y la semilla
+ * no sigue sin ella. La usan esta pasada y la de la historia (`fotosDeLaPasada`, `indicadores-demo.ts`).
+ */
+export async function exigirFoto(sql: Sql, e: { codigo: string; indicadorId: number; periodo: string; semaforo: Semaforo }): Promise<void> {
+  const [m] = await sql`SELECT foto_en, semaforo FROM mediciones WHERE indicador_id = ${e.indicadorId} AND periodo = ${e.periodo}`;
+  if (!m?.foto_en || m.semaforo !== e.semaforo) {
+    throw new Error(`${e.codigo} ${e.periodo}: la foto debía quedar en ${e.semaforo} y quedó ${m?.foto_en ? m.semaforo : "sin foto"}`);
+  }
+}
+
 /** Lo que la pasada debe haber dejado; si no, la semilla no sigue. */
 async function comprobarFotos(sql: Sql, cal: CalendarioDeIndicadores, ahora: Date): Promise<void> {
-  const unaDe = async (codigo: string, periodo: string) => {
-    const [m] = await sql`SELECT foto_en, semaforo FROM mediciones WHERE indicador_id = ${await idDe(sql, codigo)} AND periodo = ${periodo}`;
-    return m;
-  };
-  const exigir = async (codigo: string, periodo: string, semaforo: string) => {
-    const m = await unaDe(codigo, periodo);
-    if (!m?.foto_en || m.semaforo !== semaforo) throw new Error(`${codigo} ${periodo}: la foto debía quedar en ${semaforo} y quedó ${m?.foto_en ? m.semaforo : "sin foto"}`);
-  };
+  const exigir = async (codigo: string, periodo: string, semaforo: Semaforo) =>
+    exigirFoto(sql, { codigo, indicadorId: await idDe(sql, codigo), periodo, semaforo });
   await exigir(SGC_03.codigo, cal.semestreAutomatico.clave, cal.sgc03.esperado);
   await exigir(SGC_CONFORMIDAD.codigo, cal.mesAnterior.clave, "critico");
 
