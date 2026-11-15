@@ -29,9 +29,13 @@
    `docs/superpowers/specs/2026-11-14-fase14b-automaticos-y-regulatorios-design.md`, que amplía el spec de la Fase 14 y
    manda sobre él donde difieren; plan `docs/superpowers/plans/2026-11-14-fase14b-automaticos-y-regulatorios.md`). **El
    usuario decidió fusionarla el 2026-11-15** (por avance rápido), **publicar `main` en `origin` y borrar la rama** ese mismo
-   día; el worktree `F:\sgc-integral-f14b` (con la cabeza suelta) y la base `sgc_f14b` siguen ahí hasta que él pida
-   borrarlos. **Falta aplicar la `0013` y la `0014` a
-   la base `sgc`** con `npm run db:preparar` en `F:\sgc-integral` (ver «Avisos para el usuario (Fase 14B)»). Con ella,
+   día; el worktree `F:\sgc-integral-f14b` y la base `sgc_f14b` **se borraron el 2026-11-15**, a pedido suyo. **La base
+   `sgc` ya tiene las quince migraciones y los privilegios de la 14B** (comprobado ese día: `db:preparar` ya había corrido).
+   **En curso desde el 2026-11-15: la Fase 14C**, en el worktree `F:\sgc-integral-f14c` (rama
+   `fase-14c-datos-desagregacion-compuestos`, sale de `main` en `44d8b9f`) y contra la base aparte `sgc_f14c`; anexo
+   `docs/superpowers/specs/2026-11-15-fase14c-datos-compartidos-desagregacion-compuestos-design.md` (aprobado por el
+   usuario) y plan `docs/superpowers/plans/2026-11-15-fase14c-datos-desagregacion-compuestos.md` (dieciocho tareas, con
+   subagentes). Con la 14B,
    lo que la plataforma ya sabe deja de digitarse: diez cálculos automáticos (los siete documentales de la 13C, la
    conformidad del periodo, «Reportes de indicadores a tiempo» y «Objetivos cumplidos») con su foto por periodo, «No
    aplica» puesto por el sistema, «Falta un dato» sin tareas ni avisos y «Volver a calcular»; una sola meta entre la ficha,
@@ -145,8 +149,8 @@
    F13A-R35 (404 real en páginas). F13A-R36 ya está resuelta (F13A-AU6). Los archivos reales del
    hospital están en la raíz, sin seguimiento y excluidos en `.git/info/exclude`: nunca entran a un
    commit.
-2. **Lo que sigue:** (a) la revisión del usuario sobre la rama de la 14B («Qué probar y cómo (Fase 14B)», que empieza
-   por resembrar) y su decisión de publicarla y fusionarla; (b) si no se hicieron, los recorridos del usuario de la 14A y
+2. **Lo que sigue:** (a) el recorrido del usuario de la 14B, ya fusionada («Qué probar y cómo (Fase 14B)», que empieza
+   por resembrar); (b) si no se hicieron, los recorridos del usuario de la 14A y
    de su entrega complementaria (ya en `main`) y el de la 13C («Qué probar y cómo» de cada una); (c) la **Fase 14C — Datos
    compartidos, desagregación y compuestos** (spec de la Fase 14, §14 y §18; anexo de la 14B, §3 y §12): variables
    compartidas entre indicadores, el maestro de dimensiones con los indicadores desagregados por categoría y los
@@ -540,9 +544,9 @@ mismo, en otros meses).
   medición. Lo comprobó el controlador antes de la tanda final sobre una copia de esa base: de 13 a 15 migraciones, con los
   mismos conteos de indicadores, versiones, mediciones y valores y las mismas huellas de mediciones y de versiones (ver
   «Fase 14B», arriba). Para ver la demo de la 14B en `sgc` hace falta además `npm run db:seed` (vacía la base y el almacén)
-  y `npm run admin:asegurar`; sin resembrar, sus datos de hoy siguen como están. El worktree `F:\sgc-integral-f14b` (hoy
-  con la cabeza suelta en `edd455c`, sin rama) y la base `sgc_f14b` (la demo de la 14B, lista para el recorrido) siguen ahí:
-  se borran cuando el usuario lo pida.
+  y `npm run admin:asegurar`; sin resembrar, sus datos de hoy siguen como están. **El 2026-11-15 se comprobó que la base
+  `sgc` ya tiene las quince migraciones y los privilegios de la 14B** (este aviso ya está atendido), y ese día se borraron,
+  a pedido del usuario, el worktree `F:\sgc-integral-f14b` y la base `sgc_f14b`.
 - **Decisiones de la ejecución: el usuario les dio su visto bueno el 2026-11-15** («doy visto bueno para las 11»), a las once
   que se le presentaron al cierre: la cadena de la meta; la meta entera en las fichas automáticas con tarjeta de Vigencia; el
   plazo del análisis contado desde la foto cuando el dato llega tarde; qué cuenta en «Objetivos»; cuándo nace una constancia
