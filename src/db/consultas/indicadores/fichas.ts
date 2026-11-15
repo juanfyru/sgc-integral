@@ -54,6 +54,7 @@ import { zonaHoraria } from "@/lib/zona-horaria";
 import {
   citasDeLaVigente,
   componentesCitados,
+  cuentaObjetivosDe,
   datosCitados,
   esCitaNueva,
   revisarOrigenes,
@@ -210,15 +211,16 @@ function variableConOrigen(v: VariableDeDatos): VariableDeDatos {
  * De dónde sale el dato (anexo 14B, §5.3). Una ficha automática toma del registro su forma, su fórmula, sus variables (con
  * el nombre y la descripción del registro, que quedan firmados) y su tendencia, sin importar lo que traiga el formulario;
  * nadie la mide, no lleva soporte obligatorio y no se prueba con valores. Una manual no lleva cálculo y exige un cargo
- * que mida si alguna de sus variables es propia (una importada, no: la plantilla no lo trae; anexo 14C, §3.1). Lo que
- * devuelve vuelve a pasar igual.
+ * que mida si alguna de sus variables es propia (una importada, no: la plantilla no lo trae); sin variables propias, como
+ * una automática, no lleva cargo ni designados para medir (anexo 14C, §3.1). Lo que devuelve vuelve a pasar igual.
  */
 function conOrigen(d: DatosFichaNueva, importada: boolean): DatosFichaNueva {
   if (d.origenDato !== "automatico") {
     const variables = d.variables.map(variableConOrigen);
     const mide = alguienMide({ origenDato: "manual", variables: variables.map((v) => ({ letra: v.letra, origen: v.origen ?? "propia" })) });
     if (!importada && mide && d.cargosMedir.length === 0) throw new ErrorIndicador("Elija al menos un cargo responsable de medir");
-    return { ...d, origenDato: "manual", calculo: undefined, calculoAlcance: undefined, variables };
+    const nadieMide = mide ? {} : { cargosMedir: [], mide: [] };
+    return { ...d, origenDato: "manual", calculo: undefined, calculoAlcance: undefined, variables, ...nadieMide };
   }
   const def = calculoDe(d.calculo);
   if (!def) throw new ErrorIndicador("Elija el cálculo que hace el sistema");
@@ -522,6 +524,7 @@ async function revisarOrigenesAlGuardar(
       restringido: (conOperacion || actual === null ? d.nivelAcceso : actual.nivelAcceso) === "restringido",
       automatica,
       objetivoClase,
+      cuentaObjetivos: automatica ? cuentaObjetivosDe(d.calculo, d.calculoAlcance) : null,
       dimensionId: d.dimensionId ?? null,
       conFuncionesNoSumables: errorDeDesagregacion({ forma: d.forma, formula: f.formula }) !== null,
       variables,

@@ -304,6 +304,30 @@ describe("guardar el origen de cada variable", () => {
         "Elija al menos un cargo responsable de medir",
       );
     }));
+
+  it("una ficha sin variables propias no lleva quien mida, aunque el formulario mande un cargo y una persona", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const persona = await usuarioDePrueba(tx, { rol: "consulta" });
+      const dato = await datoDePrueba(tx, { procesoId: b.procesoId });
+      const comp = await indicadorDePrueba(tx, { procesoId: b.procesoId });
+      const ajenas = [delDato("A", dato), delIndicador("B", comp.id)];
+      const { indicadorId, versionId } = await crearIndicador(b.admin, ficha(b, ajenas, { mide: [persona.usuarioId], analiza: [persona.usuarioId] }), {
+        sql: tx,
+      });
+      const quienes = async () => ({
+        cargos: (await tx`SELECT funcion FROM indicador_responsables WHERE version_id = ${versionId} ORDER BY funcion`).map((r) => r.funcion),
+        designados: (await tx`SELECT funcion FROM indicador_designados WHERE indicador_id = ${indicadorId} ORDER BY funcion`).map((r) => r.funcion),
+      });
+      // `ficha` manda el cargo de medir: no queda, ni la persona que mide; quien analiza, sí.
+      expect(await quienes()).toEqual({ cargos: ["analizar"], designados: ["analiza"] });
+
+      // Con una variable propia vuelve a exigirse, y con el cargo se guarda como hoy.
+      const conPropia = [propia("A"), delIndicador("B", comp.id)];
+      await rechaza(guardarBorrador(b.admin, versionId, ficha(b, conPropia, { cargosMedir: [] }), { sql: tx }), "Elija al menos un cargo responsable de medir");
+      await guardarBorrador(b.admin, versionId, ficha(b, conPropia, { mide: [persona.usuarioId] }), { sql: tx });
+      expect(await quienes()).toEqual({ cargos: ["analizar", "medir"], designados: ["mide"] });
+    }));
 });
 
 describe("lo que se rechaza al guardar", () => {
@@ -355,6 +379,12 @@ describe("lo que se rechaza al guardar", () => {
       const cambio = await cambioSobre(tx, b, mismo);
       await rechaza(
         guardarBorrador(b.admin, cambio.versionId, { ...cambio.valores, variables: [cambio.valores.variables[0], delIndicador("B", mismo.id)] }, { sql: tx }),
+        "Un indicador no puede tomar su propio resultado",
+      );
+      // También uno en borrador, que no está activo: lo que falla es tomarse a sí mismo.
+      const nuevo = await crearIndicador(b.admin, ficha(b, [propia("A"), propia("B")]), { sql: tx });
+      await rechaza(
+        guardarBorrador(b.admin, nuevo.versionId, ficha(b, [propia("A"), delIndicador("B", nuevo.indicadorId)]), { sql: tx }),
         "Un indicador no puede tomar su propio resultado",
       );
 
@@ -462,6 +492,70 @@ describe("lo que se rechaza al guardar", () => {
       );
     }));
 
+  it("«Objetivos cumplidos» visto desde su propia ficha: no puede pasar a contar a uno que lo toma", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const [o] = await tx`INSERT INTO objetivos (clase, enunciado, orden) VALUES ('calidad', ${`ZZ Objetivo ${unico()}`}, 99) RETURNING id`;
+      const calidad = Number(o.id);
+      const comoCumplidos = (valores: DatosFicha, alcance: string): DatosFicha => ({
+        ...valores,
+        origenDato: "automatico",
+        calculo: "objetivos_cumplidos",
+        calculoAlcance: alcance,
+      });
+
+      // O cuenta los institucionales y lo toma X, que apunta a uno de calidad: vale. Pasar O a «todos» o a «calidad», no.
+      const cumplidos = await indicadorDePrueba(tx, { procesoId: b.procesoId, calculo: { clave: "objetivos_cumplidos", alcance: "institucional" } });
+      await indicadorDePrueba(tx, { procesoId: b.procesoId, objetivoId: calidad, variables: { A: { indicadorOrigenId: cumplidos.id } } });
+      const deO = await cambioSobre(tx, b, cumplidos);
+      expect(deO.valores).toMatchObject({ origenDato: "automatico", calculo: "objetivos_cumplidos", calculoAlcance: "institucional" });
+      await guardarBorrador(b.admin, deO.versionId, deO.valores, { sql: tx });
+      for (const alcance of ["todos", "calidad"]) {
+        await rechaza(guardarBorrador(b.admin, deO.versionId, { ...deO.valores, calculoAlcance: alcance }, { sql: tx }), CICLO);
+      }
+      expect(await revisarOrigenes(tx, await origenesDeVersion(tx, deO.versionId))).toBeNull();
+
+      // Un indicador simple que X toma no puede volverse «Objetivos cumplidos» de la clase del objetivo de X.
+      const simple = await indicadorDePrueba(tx, { procesoId: b.procesoId });
+      await indicadorDePrueba(tx, { procesoId: b.procesoId, objetivoId: calidad, variables: { A: { indicadorOrigenId: simple.id } } });
+      const deSimple = await cambioSobre(tx, b, simple);
+      await rechaza(guardarBorrador(b.admin, deSimple.versionId, comoCumplidos(deSimple.valores, "calidad"), { sql: tx }), CICLO);
+      await guardarBorrador(b.admin, deSimple.versionId, comoCumplidos(deSimple.valores, "institucional"), { sql: tx });
+      expect(await origenesDeVersion(tx, deSimple.versionId)).toMatchObject({ automatica: true, cuentaObjetivos: "institucional" });
+    }));
+
+  it("`clases` reemplaza lo que dicen de los objetivos las fichas vigentes de los indicadores que trae", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const [o] = await tx`INSERT INTO objetivos (clase, enunciado, orden) VALUES ('institucional', ${`ZZ Objetivo ${unico()}`}, 99) RETURNING id`;
+      const institucional = Number(o.id);
+      const cumplidos = await indicadorDePrueba(tx, { procesoId: b.procesoId, calculo: { clave: "objetivos_cumplidos", alcance: "calidad" } });
+
+      // X apunta en su vigente a un objetivo institucional y toma S; S empieza a tomar «Objetivos cumplidos» de calidad: vale.
+      const simple = await indicadorDePrueba(tx, { procesoId: b.procesoId });
+      const x = await indicadorDePrueba(tx, { procesoId: b.procesoId, objetivoId: institucional, variables: { A: { indicadorOrigenId: simple.id } } });
+      const deSimple = await cambioSobre(tx, b, simple);
+      await guardarBorrador(b.admin, deSimple.versionId, { ...deSimple.valores, variables: [deSimple.valores.variables[0], delIndicador("B", cumplidos.id)] }, {
+        sql: tx,
+      });
+      const origenes = await origenesDeVersion(tx, deSimple.versionId);
+      expect(await revisarOrigenes(tx, origenes)).toBeNull();
+      // Si X pasa a apuntar a calidad en la misma aprobación, el ciclo se cierra.
+      const xDeCalidad = new Map([[x.id, { objetivoClase: "calidad" as const, cuentaObjetivos: null }]]);
+      expect(await revisarOrigenes(tx, origenes, { clases: xDeCalidad })).toBe(CICLO);
+
+      // Lo mismo con la regla de la ficha: W apunta a calidad y toma V, que toma un simple; si el simple pasa a contar los de
+      // calidad en la misma aprobación, W toma «Objetivos cumplidos».
+      const [oc] = await tx`INSERT INTO objetivos (clase, enunciado, orden) VALUES ('calidad', ${`ZZ Objetivo ${unico()}`}, 99) RETURNING id`;
+      const hoja = await indicadorDePrueba(tx, { procesoId: b.procesoId });
+      const v = await indicadorDePrueba(tx, { procesoId: b.procesoId, variables: { A: { indicadorOrigenId: hoja.id } } });
+      const w = await crearIndicador(b.admin, ficha(b, [propia("A"), delIndicador("B", v.id)], { objetivoId: Number(oc.id) }), { sql: tx });
+      const deW = await origenesDeVersion(tx, w.versionId);
+      expect(await revisarOrigenes(tx, deW)).toBeNull();
+      const hojaCuenta = new Map([[hoja.id, { objetivoClase: null, cuentaObjetivos: "calidad" as const }]]);
+      expect(await revisarOrigenes(tx, deW, { clases: hojaCuenta })).toBe(OBJETIVOS);
+    }));
+
   it("de la desagregación: automática, tomada, dato sin ella o con otra, dimensión inactiva y fórmula con max", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);
@@ -562,6 +656,7 @@ describe("lo que se rechaza al guardar", () => {
         restringido: false,
         automatica: false,
         objetivoClase: null,
+        cuentaObjetivos: null,
         dimensionId: null,
         conFuncionesNoSumables: false,
         variables: [

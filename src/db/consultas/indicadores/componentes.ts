@@ -6,10 +6,14 @@
  *
  * Módulo liviano: lo importan `fichas` y la aprobación, así que no importa `lectura`, `fichas`, `aprobacion` ni `operacion`,
  * ni `datos` o `dimensiones` (arrastran la bitácora): lee el dato, el componente, la dimensión y los objetivos por SQL
- * directo. Los mensajes nombran el dato y el componente: solo los ve quien administra, el único que guarda fichas.
+ * directo. Ningún mensaje nombra al indicador de origen: lo dicen por la letra de la variable. Los del dato llevan su
+ * nombre y los de la dimensión, el suyo.
  *
  * Candados: el dato, el componente y la dimensión `FOR KEY SHARE`, en orden de id, como las normas de la ficha: quien los
- * cambia (o retira el componente) los toma `FOR UPDATE` y espera.
+ * cambia (o retira el componente) los toma `FOR UPDATE` y espera. Que guardar una ficha que toma otro indicador lo tome
+ * `FOR KEY SHARE` (lo impondría igual su llave foránea al insertar la variable) es la excepción nombrada a «un solo
+ * indicador por transacción»: no choca con el `FOR SHARE` del cierre ni de la reapertura en cascada, y el interbloqueo que
+ * puede darse entre dos guardados cruzados le llega a la persona legible (`sinInterbloqueoCrudo`).
  */
 import type { Cliente } from "@/db/cliente";
 import { errorDeDesagregacion, FORMULA_NO_DESAGREGABLE } from "@/lib/indicadores/categorias";
@@ -81,6 +85,10 @@ export async function fichasDeObjetivosCumplidos(sql: Cliente): Promise<Map<numb
 }
 
 const cuentaLaClase = (alcance: AlcanceDeObjetivos, clase: ClaseDeObjetivo) => alcance === "todos" || alcance === clase;
+
+/** El alcance de una ficha de «Objetivos cumplidos», o `null` si su cálculo es otro (o no lo calcula el sistema). */
+export const cuentaObjetivosDe = (calculo: string | null | undefined, alcance: string | null | undefined): AlcanceDeObjetivos | null =>
+  calculo === "objetivos_cumplidos" ? ((alcance as AlcanceDeObjetivos | null | undefined) ?? null) : null;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Lo que se cita
@@ -208,6 +216,8 @@ export type FichaConOrigenes = {
   restringido: boolean;
   automatica: boolean;
   objetivoClase: ClaseDeObjetivo | null;
+  /** El alcance, si la ficha es automática de «Objetivos cumplidos»: cuenta los indicadores que apuntan a esa clase. */
+  cuentaObjetivos: AlcanceDeObjetivos | null;
   dimensionId: number | null;
   /** La fórmula usa min, max o abs (`errorDeDesagregacion`). */
   conFuncionesNoSumables: boolean;
@@ -224,17 +234,23 @@ export type FichaConOrigenes = {
   }[];
 };
 
+/** Lo que una ficha dice de los objetivos: a qué clase apunta y, si es de «Objetivos cumplidos», cuáles cuenta. */
+export type ClasesDeFicha = { objetivoClase: ClaseDeObjetivo | null; cuentaObjetivos: AlcanceDeObjetivos | null };
+
+export type OpcionesDeRevision = {
+  /** Los componentes de estos indicadores, en lugar de los de su ficha vigente. */
+  sustituir?: ReadonlyMap<number, readonly number[]>;
+  /** Lo que estos indicadores dicen de los objetivos, en lugar de lo que dice su ficha vigente. */
+  clases?: ReadonlyMap<number, ClasesDeFicha>;
+};
+
 /**
  * El primer rechazo que aplique a los orígenes de la ficha, o `null`: el dato de cada variable compartida, el indicador de
- * cada variable tomada, el grafo (ciclos, niveles y «Objetivos cumplidos», con las fichas de `sustituir` en lugar de sus
- * vigentes) y la desagregación. Solo una cita nueva exige que el dato, el indicador y la dimensión estén activos; la que la
- * ficha vigente ya traía sigue valiendo.
+ * cada variable tomada, el grafo (ciclos, niveles y «Objetivos cumplidos», con las fichas de `sustituir` y `clases` en lugar
+ * de sus vigentes) y la desagregación. Solo una cita nueva exige que el dato, el indicador y la dimensión estén activos; la
+ * que la ficha vigente ya traía sigue valiendo.
  */
-export async function revisarOrigenes(
-  tx: Cliente,
-  f: FichaConOrigenes,
-  opciones?: { sustituir?: ReadonlyMap<number, readonly number[]> },
-): Promise<string | null> {
+export async function revisarOrigenes(tx: Cliente, f: FichaConOrigenes, opciones?: OpcionesDeRevision): Promise<string | null> {
   const compartidas = f.variables.filter((v) => v.origen === "compartida");
   const tomadas = f.variables.filter((v) => v.origen === "indicador");
 
@@ -254,9 +270,10 @@ export async function revisarOrigenes(
   const componentes = await componentesCitados(tx, tomadas.flatMap((v) => (v.indicadorOrigenId === null ? [] : [v.indicadorOrigenId])));
   for (const v of tomadas) {
     if (v.indicadorOrigenId === null || v.toma === null) return `Elija el indicador del que sale la variable ${v.letra} y qué se toma de él`;
+    // Antes que «activo»: un indicador en borrador que se toma a sí mismo no está activo, pero lo que falla es tomarse.
+    if (v.indicadorOrigenId === f.indicadorId) return "Un indicador no puede tomar su propio resultado";
     const c = componentes.get(v.indicadorOrigenId);
     if (!c || c.vigente === null || (!c.activo && v.citaNueva)) return `El indicador de la variable ${v.letra} debe estar activo y tener ficha vigente`;
-    if (c.id === f.indicadorId) return "Un indicador no puede tomar su propio resultado";
     if (!contiene(f.periodicidad, c.vigente.periodicidad)) {
       return `El indicador de la variable ${v.letra} se mide con una periodicidad más gruesa que la de esta ficha`;
     }
@@ -264,9 +281,10 @@ export async function revisarOrigenes(
     if (c.restringido && !f.restringido) return "Esta ficha toma un indicador restringido: debe ser restringida";
   }
 
-  // Sin variables tomadas la ficha no añade aristas: no cierra ciclos ni alarga cadenas (la importación pasa por aquí por fila).
-  if (tomadas.length > 0) {
-    const error = await revisarGrafo(tx, f, tomadas.map((v) => v.indicadorOrigenId!), opciones?.sustituir);
+  // Sin variables tomadas la ficha no añade aristas: no cierra ciclos ni alarga cadenas (la importación pasa por aquí por
+  // fila). Una de «Objetivos cumplidos» sí puede cerrar el ciclo oculto: con los que la alcanzan y apuntan a lo que cuenta.
+  if (tomadas.length > 0 || (f.cuentaObjetivos !== null && f.indicadorId !== null)) {
+    const error = await revisarGrafo(tx, f, tomadas.map((v) => v.indicadorOrigenId!), opciones);
     if (error) return error;
   }
 
@@ -293,17 +311,15 @@ export async function revisarOrigenes(
 /**
  * Con el grafo ya sustituido: sin ciclos; a lo sumo `MAXIMO_NIVELES` por debajo de la ficha y de cada indicador que la
  * alcanza (tomar un componente más a mitad de una cadena alarga la de los que están encima); y sin la arista oculta de
- * «Objetivos cumplidos», que cuenta los indicadores que apuntan a un objetivo de su clase: la ficha no puede llegar a uno
- * de su clase, ni un indicador que la alcanza llegar, a través de ella, a uno de la suya.
+ * «Objetivos cumplidos», que cuenta los indicadores que apuntan a un objetivo de su clase. Esa arista cierra un ciclo cuando
+ * un indicador que apunta a una clase llega, tomando componentes, a uno que la cuenta. Con esta ficha en él, hay tres
+ * formas: la ficha llega a uno que cuenta su clase; uno que la alcanza llega, a través de ella, a uno que cuenta la suya; o
+ * la ficha es de «Objetivos cumplidos» y la alcanza uno que apunta a lo que ella cuenta. La ficha dice lo suyo (`f`), las de
+ * `clases` lo suyo, y los demás, lo de su ficha vigente.
  */
-async function revisarGrafo(
-  tx: Cliente,
-  f: FichaConOrigenes,
-  componentes: number[],
-  sustituir?: ReadonlyMap<number, readonly number[]>,
-): Promise<string | null> {
+async function revisarGrafo(tx: Cliente, f: FichaConOrigenes, componentes: number[], opciones?: OpcionesDeRevision): Promise<string | null> {
   const propio = f.indicadorId ?? FICHA_NUEVA;
-  const reemplazos = new Map<number, readonly number[]>(sustituir ?? []);
+  const reemplazos = new Map<number, readonly number[]>(opciones?.sustituir ?? []);
   reemplazos.set(propio, componentes);
   const aristas = await aristasDeComponentes(tx, { sustituir: reemplazos });
   if (caminoDeCiclo(aristas, propio) !== null) return CICLO;
@@ -311,27 +327,45 @@ async function revisarGrafo(
   const arriba = [...aristas.keys()].filter((n) => n !== propio && alcanza(aristas, n, destino));
   if ([propio, ...arriba].some((n) => nivelesBajo(aristas, n) > MAXIMO_NIVELES)) return NIVELES;
 
-  const objetivos = await fichasDeObjetivosCumplidos(tx);
-  if (objetivos.size === 0) return null;
+  const cuentan = await fichasDeObjetivosCumplidos(tx);
+  const clases = new Map<number, ClasesDeFicha>(opciones?.clases ?? []);
+  clases.set(propio, { objetivoClase: f.objetivoClase, cuentaObjetivos: f.cuentaObjetivos });
+  for (const [id, c] of clases) {
+    if (c.cuentaObjetivos === null) cuentan.delete(id);
+    else cuentan.set(id, c.cuentaObjetivos);
+  }
+  if (cuentan.size === 0) return null;
   const llegaA = (clase: ClaseDeObjetivo) =>
-    alcanza(aristas, propio, new Set([...objetivos].filter(([, a]) => cuentaLaClase(a, clase)).map(([id]) => id)));
+    alcanza(aristas, propio, new Set([...cuentan].filter(([, a]) => cuentaLaClase(a, clase)).map(([id]) => id)));
   if (f.objetivoClase !== null && llegaA(f.objetivoClase)) {
     return "Esta ficha toma «Objetivos cumplidos»: no puede apuntar a un objetivo de esa misma clase";
   }
   if (arriba.length === 0) return null;
-  // Un indicador que la alcanza llega a lo que ella llega: si apunta a un objetivo de una clase que ella toma, el ciclo es suyo.
-  const clases = await tx`SELECT DISTINCT o.clase
-    FROM indicador_versiones vig
-    JOIN objetivos o ON o.id = vig.objetivo_id
-    WHERE vig.indicador_id IN ${tx(arriba)} AND vig.estado = 'aprobada'
-      AND vig.numero = (SELECT max(w.numero) FROM indicador_versiones w WHERE w.indicador_id = vig.indicador_id AND w.estado = 'aprobada')`;
-  return clases.some((c) => llegaA(c.clase as ClaseDeObjetivo)) ? CICLO : null;
+
+  const claseDe = new Map<number, ClaseDeObjetivo | null>();
+  const deLaVigente = arriba.filter((n) => !clases.has(n));
+  if (deLaVigente.length > 0) {
+    const filas = await tx`SELECT vig.indicador_id, o.clase
+      FROM indicador_versiones vig
+      JOIN objetivos o ON o.id = vig.objetivo_id
+      WHERE vig.indicador_id IN ${tx(deLaVigente)} AND vig.estado = 'aprobada'
+        AND vig.numero = (SELECT max(w.numero) FROM indicador_versiones w WHERE w.indicador_id = vig.indicador_id AND w.estado = 'aprobada')`;
+    for (const x of filas) claseDe.set(Number(x.indicador_id), x.clase as ClaseDeObjetivo);
+  }
+  for (const n of arriba) if (clases.has(n)) claseDe.set(n, clases.get(n)!.objetivoClase);
+  const deArriba = [...new Set([...claseDe.values()].filter((c): c is ClaseDeObjetivo => c !== null))];
+  // Uno que la alcanza llega a lo que ella llega: si apunta a una clase que ella alcanza a contar, el ciclo es suyo.
+  if (deArriba.some(llegaA)) return CICLO;
+  // Ella cuenta a uno que la alcanza.
+  const cuenta = f.cuentaObjetivos;
+  if (cuenta !== null && deArriba.some((c) => cuentaLaClase(cuenta, c))) return CICLO;
+  return null;
 }
 
 /** Los orígenes de una versión guardada, para revisarla al enviarla o aprobarla: la cita nueva, contra la vigente. */
 export async function origenesDeVersion(tx: Cliente, versionId: number): Promise<FichaConOrigenes> {
-  const [v] = await tx`SELECT v.indicador_id, v.periodicidad, v.origen_dato, v.dimension_id, v.forma, v.formula, i.nivel_acceso,
-      o.clase AS objetivo_clase
+  const [v] = await tx`SELECT v.indicador_id, v.periodicidad, v.origen_dato, v.calculo, v.calculo_alcance, v.dimension_id, v.forma,
+      v.formula, i.nivel_acceso, o.clase AS objetivo_clase
     FROM indicador_versiones v
     JOIN indicadores i ON i.id = v.indicador_id
     LEFT JOIN objetivos o ON o.id = v.objetivo_id
@@ -347,6 +381,7 @@ export async function origenesDeVersion(tx: Cliente, versionId: number): Promise
     restringido: v.nivel_acceso === "restringido",
     automatica: v.origen_dato === "automatico",
     objetivoClase: (v.objetivo_clase as ClaseDeObjetivo | null) ?? null,
+    cuentaObjetivos: cuentaObjetivosDe(v.origen_dato === "automatico" ? textoONulo(v.calculo) : null, textoONulo(v.calculo_alcance)),
     dimensionId: idONulo(v.dimension_id),
     conFuncionesNoSumables: errorDeDesagregacion({ forma: v.forma as Forma, formula: textoONulo(v.formula) }) !== null,
     variables: filas.map((x) => {
