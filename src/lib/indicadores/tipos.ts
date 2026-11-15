@@ -162,6 +162,20 @@ export type OpcionesFicha = {
    * enviar (anexo 14B, §5.3). `procesoId` solo cuenta con alcance «proceso».
    */
   calculosActivos: { calculo: ClaveDeCalculo; alcance: AlcanceDeCalculo; procesoId: number }[];
+  /** Los datos compartidos activos (anexo 14C, §4.2): de ellos el servidor copia lo que la variable firma. */
+  datos: {
+    id: number;
+    nombre: string;
+    proceso: string;
+    periodicidad: Periodicidad;
+    consolidacion: Consolidacion;
+    dimensionId: number | null;
+    dimension: string | null;
+  }[];
+  /** Los indicadores activos con ficha vigente que una variable puede tomar (anexo 14C, §6.1), sin el que se edita. */
+  tomables: { id: number; codigo: string; nombre: string; periodicidad: Periodicidad; conMeta: boolean; restringido: boolean }[];
+  /** Las dimensiones activas por las que se puede desagregar (anexo 14C, §5.2). */
+  dimensiones: { id: number; nombre: string }[];
 };
 
 /** El estado de un periodo en las gráficas (spec §11): el del semáforo, o por qué no tiene uno. */

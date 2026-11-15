@@ -72,9 +72,11 @@ function usaFuncion(n: Nodo): boolean {
   }
 }
 
+export const FORMULA_NO_DESAGREGABLE = "Una fórmula con min, max o abs no se puede desagregar";
+
 /** Con min, max o abs el total no se puede sumar por categoría: se dice por el árbol, no por el texto. */
 export function errorDeDesagregacion(d: { forma: Forma; formula: string | null }): string | null {
   if (d.forma !== "libre" || d.formula === null) return null;
   const a = analizar(d.formula);
-  return a.ok && usaFuncion(a.arbol) ? "Una fórmula con min, max o abs no se puede desagregar" : null;
+  return a.ok && usaFuncion(a.arbol) ? FORMULA_NO_DESAGREGABLE : null;
 }

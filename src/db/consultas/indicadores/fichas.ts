@@ -28,11 +28,13 @@ import {
   type AlcanceDeCalculo,
   type ClaveDeCalculo,
 } from "@/lib/indicadores/calculos/registro";
+import { errorDeDesagregacion } from "@/lib/indicadores/categorias";
 import { errorDeEnte } from "@/lib/indicadores/constancias";
 import { tipoDeCambio, type ContenidoFicha } from "@/lib/indicadores/ficha";
 import { analizar } from "@/lib/indicadores/formula/analizar";
 import { formulaDeForma } from "@/lib/indicadores/formula/formas";
 import { comparar, fraccion } from "@/lib/indicadores/formula/fraccion";
+import { alguienMide } from "@/lib/indicadores/origen";
 import { clavesDelAnio, periodicidadDe, periodoQueContiene } from "@/lib/indicadores/periodos";
 import { rangosATexto, rangosDeTexto, type RangosEnTexto } from "@/lib/indicadores/rangos";
 import { errorDeRegla } from "@/lib/indicadores/semaforo";
@@ -42,12 +44,26 @@ import {
   type DatosOperacion,
   type EstadoIndicador,
   type EstadoVersion,
+  type NivelAcceso,
   type OpcionesFicha,
   type Periodicidad,
 } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede, type SujetoPermiso } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
+import {
+  citasDeLaVigente,
+  componentesCitados,
+  datosCitados,
+  esCitaNueva,
+  revisarOrigenes,
+  type CitasDeLaVigente,
+  type ClaseDeObjetivo,
+  type ComponenteCitado,
+  type DatoCitado,
+} from "./componentes";
+import { datosParaFicha } from "./datos";
+import { listarDimensiones } from "./dimensiones";
 import { listarMaestro, obtenerParametros } from "./maestros";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
@@ -174,16 +190,35 @@ const fr = (v: string | null | undefined) => (v === null || v === undefined ? nu
 /** La fuente de las variables de una ficha automática: nadie las digita. */
 const FUENTE_AUTOMATICA = "La calcula el sistema";
 
+type VariableDeDatos = DatosFichaNueva["variables"][number];
+
+/**
+ * Cada variable con solo las referencias de su origen (anexo 14C, §3.1). De una que es un dato compartido quedan la letra,
+ * el dato y lo que el esquema exige (nombre, «cómo se junta» y «admite negativos»): al escribirla, el catálogo pisa todo
+ * lo que la variable firma del dato.
+ */
+function variableConOrigen(v: VariableDeDatos): VariableDeDatos {
+  const origen = v.origen ?? "propia";
+  if (origen === "compartida") {
+    return { letra: v.letra, nombre: v.nombre, consolidacion: v.consolidacion, admiteNegativos: v.admiteNegativos, origen, datoId: v.datoId };
+  }
+  if (origen === "indicador") return { ...v, origen, datoId: undefined };
+  return { ...v, origen, datoId: undefined, indicadorOrigenId: undefined, toma: undefined };
+}
+
 /**
  * De dónde sale el dato (anexo 14B, §5.3). Una ficha automática toma del registro su forma, su fórmula, sus variables (con
  * el nombre y la descripción del registro, que quedan firmados) y su tendencia, sin importar lo que traiga el formulario;
  * nadie la mide, no lleva soporte obligatorio y no se prueba con valores. Una manual no lleva cálculo y exige un cargo
- * que mida (una importada, no: la plantilla no lo trae). Lo que devuelve vuelve a pasar igual.
+ * que mida si alguna de sus variables es propia (una importada, no: la plantilla no lo trae; anexo 14C, §3.1). Lo que
+ * devuelve vuelve a pasar igual.
  */
 function conOrigen(d: DatosFichaNueva, importada: boolean): DatosFichaNueva {
   if (d.origenDato !== "automatico") {
-    if (!importada && d.cargosMedir.length === 0) throw new ErrorIndicador("Elija al menos un cargo responsable de medir");
-    return { ...d, origenDato: "manual", calculo: undefined, calculoAlcance: undefined };
+    const variables = d.variables.map(variableConOrigen);
+    const mide = alguienMide({ origenDato: "manual", variables: variables.map((v) => ({ letra: v.letra, origen: v.origen ?? "propia" })) });
+    if (!importada && mide && d.cargosMedir.length === 0) throw new ErrorIndicador("Elija al menos un cargo responsable de medir");
+    return { ...d, origenDato: "manual", calculo: undefined, calculoAlcance: undefined, variables };
   }
   const def = calculoDe(d.calculo);
   if (!def) throw new ErrorIndicador("Elija el cálculo que hace el sistema");
@@ -293,6 +328,9 @@ function revisarOperacion(d: DatosFichaNueva): void {
  * cita nueva.
  */
 type Actual = {
+  indicadorId: number;
+  /** El del indicador: rige la ficha cuando el formulario no escribe los datos de operación (un cambio sobre una aprobada). */
+  nivelAcceso: NivelAcceso;
   procesoId: number;
   subprocesoId: number | null;
   tipoId: number | null;
@@ -303,6 +341,8 @@ type Actual = {
   cargoIds: number[];
   /** Las que cita la versión vigente; ninguna si el indicador aún no tiene una aprobada. */
   normaIdsVigente: number[];
+  /** Los datos, los indicadores y la dimensión que cita la vigente (anexo 14C): contra ellos una cita es nueva. */
+  citas: CitasDeLaVigente;
 };
 
 /** Los nombres firmados, copiados de los catálogos al guardar. */
@@ -316,6 +356,11 @@ type Nombres = {
   unidadSufijo: string;
   cargos: Map<number, string>;
   normas: Map<number, string>;
+  dimensionNombre: string | null;
+  /** Los datos compartidos que citan las variables, de los que se copia lo que firman (anexo 14C, §4.2). */
+  datos: Map<number, DatoCitado>;
+  /** Los indicadores de los que salen variables: su código y el nombre de su ficha vigente (anexo 14C, §6.1). */
+  componentes: Map<number, ComponenteCitado>;
 };
 
 async function exigirFila(
@@ -330,9 +375,10 @@ async function exigirFila(
 }
 
 /**
- * Catálogos, norma exigida, subproceso del proceso, procedimiento, cargos y, si se van a escribir los datos de operación
- * (`conOperacion`), personas designadas activas. Sin `exigirNorma` (una ficha importada, spec 14A §5.6), una clasificación
- * que exige norma no la exige todavía: la exigencia rige en su siguiente cambio.
+ * Catálogos, norma exigida, subproceso del proceso, procedimiento, cargos, el origen de cada variable y la desagregación
+ * (`revisarOrigenes`) y, si se van a escribir los datos de operación (`conOperacion`), personas designadas activas. Sin
+ * `exigirNorma` (una ficha importada, spec 14A §5.6), una clasificación que exige norma no la exige todavía: la exigencia
+ * rige en su siguiente cambio.
  */
 async function revisarContraLaBase(
   tx: TransactionSql,
@@ -370,7 +416,7 @@ async function revisarContraLaBase(
     d.objetivoId === undefined
       ? null
       : await exigirFila(
-          tx`SELECT enunciado, activo FROM objetivos WHERE id = ${d.objetivoId} FOR KEY SHARE`,
+          tx`SELECT enunciado, clase, activo FROM objetivos WHERE id = ${d.objetivoId} FOR KEY SHARE`,
           actual?.objetivoId ?? null,
           d.objetivoId,
           "El objetivo que mide no existe o está inactivo",
@@ -424,6 +470,8 @@ async function revisarContraLaBase(
     if (activas.length !== personas.length) throw new ErrorIndicador("Las personas designadas deben ser usuarios activos");
   }
 
+  const origenes = await revisarOrigenesAlGuardar(tx, f, actual, conOperacion, objetivo ? (objetivo.clase as ClaseDeObjetivo) : null);
+
   return {
     procesoNombre: proceso.nombre as string,
     subprocesoNombre,
@@ -434,7 +482,62 @@ async function revisarContraLaBase(
     unidadSufijo: unidad.sufijo as string,
     cargos,
     normas,
+    ...origenes,
   };
+}
+
+/**
+ * El origen de cada variable y la desagregación, con la misma revisión que enviar y aprobar (`revisarOrigenes`): el grafo
+ * con este borrador en lugar de la vigente del indicador. Devuelve lo que se copia: del dato, lo que la variable firma; del
+ * indicador de origen, su código y el nombre de su ficha vigente; de la dimensión, su nombre.
+ */
+async function revisarOrigenesAlGuardar(
+  tx: TransactionSql,
+  f: FichaRevisada,
+  actual: Actual | null,
+  conOperacion: boolean,
+  objetivoClase: ClaseDeObjetivo | null,
+): Promise<Pick<Nombres, "dimensionNombre" | "datos" | "componentes">> {
+  const { d } = f;
+  const automatica = d.origenDato === "automatico";
+  const indicadorId = actual?.indicadorId ?? null;
+  const citas = actual?.citas ?? (await citasDeLaVigente(tx, null));
+  const variables = d.variables.map((v) => {
+    const variable = {
+      letra: v.letra,
+      origen: automatica ? ("automatica" as const) : (v.origen ?? "propia"),
+      datoId: v.datoId ?? null,
+      indicadorOrigenId: v.indicadorOrigenId ?? null,
+      toma: v.toma ?? null,
+    };
+    return { ...variable, citaNueva: esCitaNueva(variable, citas), firmado: null };
+  });
+  const componentes = variables.flatMap((v) => (v.origen === "indicador" && v.indicadorOrigenId !== null ? [v.indicadorOrigenId] : []));
+  const error = await revisarOrigenes(
+    tx,
+    {
+      indicadorId,
+      periodicidad: d.periodicidad,
+      // Mientras el indicador está en borrador, el formulario escribe su nivel de acceso; en un cambio, rige el del indicador.
+      restringido: (conOperacion || actual === null ? d.nivelAcceso : actual.nivelAcceso) === "restringido",
+      automatica,
+      objetivoClase,
+      dimensionId: d.dimensionId ?? null,
+      conFuncionesNoSumables: errorDeDesagregacion({ forma: d.forma, formula: f.formula }) !== null,
+      variables,
+    },
+    indicadorId === null ? undefined : { sustituir: new Map([[indicadorId, componentes]]) },
+  );
+  if (error) throw new ErrorIndicador(error);
+
+  const datos = await datosCitados(tx, variables.flatMap((v) => (v.origen === "compartida" && v.datoId !== null ? [v.datoId] : [])));
+  const tomados = await componentesCitados(tx, componentes);
+  let dimensionNombre: string | null = null;
+  if (d.dimensionId !== undefined) {
+    const [dimension] = await tx`SELECT nombre FROM dimensiones WHERE id = ${d.dimensionId}`;
+    dimensionNombre = dimension.nombre as string;
+  }
+  return { dimensionNombre, datos, componentes: tomados };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -490,6 +593,9 @@ function columnasDeContenido(tx: TransactionSql, f: FichaRevisada, n: Nombres) {
     ente: d.ente ?? null,
     periodicidad_externa: d.periodicidadExterna ?? null,
     plazo_externo_dias: d.plazoExternoDias ?? null,
+    // Siempre las dos, también a nulo: así un borrador puede quitarse la desagregación.
+    dimension_id: d.dimensionId ?? null,
+    dimension_nombre: n.dimensionNombre,
     motivo_cambio: d.motivoCambio ?? null,
     prueba: pruebaDe(tx, d),
   };
@@ -503,13 +609,68 @@ function pruebaDe(tx: TransactionSql, d: DatosFichaNueva) {
   return tx.json({ valores: Object.fromEntries(letras.map((l) => [l, valores[l].replace(",", ".")])) });
 }
 
+/**
+ * La fila de una variable, con su origen (anexo 14C, §4.2 y §6.1). De un dato compartido copia del catálogo todo lo que la
+ * variable firma, con la periodicidad del dato; de otro indicador, el código y el nombre de su ficha vigente, y «cómo se
+ * junta» queda en «último» (la columna es obligatoria y una variable tomada no se junta).
+ */
+function filaDeVariable(v: VariableDeDatos, automatica: boolean, n: Nombres) {
+  const sinReferencias = {
+    variable_compartida_id: null,
+    dato_periodicidad: null,
+    indicador_origen_id: null,
+    toma: null,
+    origen_codigo: null,
+    origen_nombre: null,
+  };
+  const origen = automatica ? "automatica" : (v.origen ?? "propia");
+  if (origen === "compartida") {
+    const dato = n.datos.get(v.datoId!)!;
+    return {
+      ...sinReferencias,
+      origen,
+      nombre: dato.nombre,
+      descripcion: dato.descripcion,
+      fuente: dato.fuente,
+      unidad: dato.unidad,
+      consolidacion: dato.consolidacion,
+      captura_min: dato.capturaMin,
+      captura_max: dato.capturaMax,
+      admite_negativos: dato.admiteNegativos,
+      variable_compartida_id: dato.id,
+      dato_periodicidad: dato.periodicidad,
+    };
+  }
+  const propios = {
+    nombre: v.nombre,
+    descripcion: v.descripcion ?? null,
+    fuente: v.fuente ?? null,
+    unidad: v.unidad ?? null,
+    captura_min: v.capturaMin ?? null,
+    captura_max: v.capturaMax ?? null,
+    admite_negativos: v.admiteNegativos,
+  };
+  if (origen === "indicador") {
+    const componente = n.componentes.get(v.indicadorOrigenId!)!;
+    return {
+      ...sinReferencias,
+      ...propios,
+      origen,
+      consolidacion: "ultimo",
+      indicador_origen_id: componente.id,
+      toma: v.toma!,
+      origen_codigo: componente.codigo,
+      origen_nombre: componente.vigente!.nombre,
+    };
+  }
+  return { ...sinReferencias, ...propios, origen, consolidacion: v.consolidacion };
+}
+
 async function escribirHijos(tx: TransactionSql, versionId: number, f: FichaRevisada, n: Nombres): Promise<void> {
-  const origen = f.d.origenDato === "automatico" ? "automatica" : "propia";
+  const automatica = f.d.origenDato === "automatico";
   for (const [orden, v] of f.d.variables.entries()) {
-    await tx`INSERT INTO indicador_variables
-        (version_id, letra, nombre, descripcion, fuente, unidad, consolidacion, origen, captura_min, captura_max, admite_negativos, orden)
-      VALUES (${versionId}, ${v.letra}, ${v.nombre}, ${v.descripcion ?? null}, ${v.fuente ?? null}, ${v.unidad ?? null},
-        ${v.consolidacion}, ${origen}, ${v.capturaMin ?? null}, ${v.capturaMax ?? null}, ${v.admiteNegativos}, ${orden + 1})`;
+    const fila = { version_id: versionId, letra: v.letra, orden: orden + 1, ...filaDeVariable(v, automatica, n) };
+    await tx`INSERT INTO indicador_variables ${tx(fila)}`;
   }
   for (const [funcion, ids] of [["medir", f.d.cargosMedir], ["analizar", f.d.cargosAnalizar]] as const) {
     for (const cargoId of ids) {
@@ -699,6 +860,9 @@ export async function guardarBorrador(sesion: SesionFlujo, versionId: number, d:
       // Las que la ficha vigente ya cita, no las que trae el borrador (anexo 14B, §9).
       const normasDeLaVigente = vigente === null ? [] : await tx`SELECT norma_id FROM indicador_normas WHERE version_id = ${vigente}`;
       const nombres = await revisarContraLaBase(tx, f, {
+        indicadorId,
+        nivelAcceso: ind.nivel_acceso as NivelAcceso,
+        citas: await citasDeLaVigente(tx, indicadorId),
         procesoId: Number(ind.proceso_id),
         subprocesoId: v.subproceso_id === null ? null : Number(v.subproceso_id),
         tipoId: v.tipo_id === null ? null : Number(v.tipo_id),
@@ -784,12 +948,14 @@ export const CONTENIDO = [
   "origen_dato", "calculo", "calculo_alcance", "forma", "factor", "formula", "unidad_id", "unidad_nombre", "unidad_sufijo",
   "decimales", "periodicidad", "tendencia", "meta", "meta_max", "semaforo_modo", "umbral_atencion_pct", "limite_critico",
   "tolerancia", "resultado_min", "resultado_max", "linea_base_valor", "linea_base_periodo", "linea_base_nota", "sustento_meta",
-  "ente", "periodicidad_externa", "plazo_externo_dias", "dimension_id", "prueba", "rangos", "nivel", "riesgo_asociado",
+  "ente", "periodicidad_externa", "plazo_externo_dias", "dimension_id", "dimension_nombre", "prueba", "rangos", "nivel",
+  "riesgo_asociado",
 ].join(", ");
 
 export const COLUMNAS_VARIABLE = [
   "letra", "nombre", "descripcion", "fuente", "unidad", "consolidacion", "origen", "variable_compartida_id",
-  "indicador_origen_id", "toma", "captura_min", "captura_max", "admite_negativos", "orden",
+  "dato_periodicidad", "indicador_origen_id", "toma", "origen_codigo", "origen_nombre", "captura_min", "captura_max",
+  "admite_negativos", "orden",
 ].join(", ");
 
 /**
@@ -850,7 +1016,7 @@ export async function contenidoDeVersion(sql: Cliente, versionId: number): Promi
   const [v] = await sql`SELECT * FROM indicador_versiones WHERE id = ${versionId}`;
   if (!v) throw new ErrorIndicador(FICHA_NO_EXISTE);
   const variables = await sql`SELECT letra, nombre, descripcion, fuente, unidad, consolidacion, origen, variable_compartida_id,
-      indicador_origen_id, toma, captura_min, captura_max, admite_negativos
+      dato_periodicidad, indicador_origen_id, toma, origen_codigo, origen_nombre, captura_min, captura_max, admite_negativos
     FROM indicador_variables WHERE version_id = ${versionId} ORDER BY orden, letra`;
   const responsables = await sql`SELECT cargo_nombre, funcion FROM indicador_responsables WHERE version_id = ${versionId} ORDER BY id`;
   const normas = await sql`SELECT norma_nombre FROM indicador_normas WHERE version_id = ${versionId} ORDER BY id`;
@@ -897,7 +1063,7 @@ export async function contenidoDeVersion(sql: Cliente, versionId: number): Promi
     periodicidadExterna: v.periodicidad_externa,
     plazoExternoDias: v.plazo_externo_dias,
     dimensionId: numeroONulo(v.dimension_id),
-    dimensionNombre: null,
+    dimensionNombre: v.dimension_nombre ?? null,
     variables: variables.map((x) => ({
       letra: x.letra,
       nombre: x.nombre,
@@ -909,9 +1075,9 @@ export async function contenidoDeVersion(sql: Cliente, versionId: number): Promi
       variableCompartidaId: numeroONulo(x.variable_compartida_id),
       indicadorOrigenId: numeroONulo(x.indicador_origen_id),
       toma: x.toma,
-      datoPeriodicidad: null,
-      origenCodigo: null,
-      origenNombre: null,
+      datoPeriodicidad: x.dato_periodicidad ?? null,
+      origenCodigo: x.origen_codigo ?? null,
+      origenNombre: x.origen_nombre ?? null,
       capturaMin: x.captura_min,
       capturaMax: x.captura_max,
       admiteNegativos: x.admite_negativos,
@@ -934,7 +1100,8 @@ export async function indicadorPorCodigo(
 /** Lo que el formulario necesita para volver a pintar una versión: las referencias por id y los datos de operación. */
 async function valoresDeVersion(sql: Cliente, versionId: number, indicador: Record<string, unknown>): Promise<Partial<DatosFicha>> {
   const [v] = await sql`SELECT * FROM indicador_versiones WHERE id = ${versionId}`;
-  const variables = await sql`SELECT letra, nombre, descripcion, fuente, unidad, consolidacion, captura_min, captura_max, admite_negativos
+  const variables = await sql`SELECT letra, nombre, descripcion, fuente, unidad, consolidacion, captura_min, captura_max, admite_negativos,
+      origen, variable_compartida_id, indicador_origen_id, toma
     FROM indicador_variables WHERE version_id = ${versionId} ORDER BY orden, letra`;
   const responsables = await sql`SELECT cargo_id, funcion FROM indicador_responsables WHERE version_id = ${versionId} ORDER BY id`;
   const normas = await sql`SELECT norma_id FROM indicador_normas WHERE version_id = ${versionId} ORDER BY id`;
@@ -972,6 +1139,11 @@ async function valoresDeVersion(sql: Cliente, versionId: number, indicador: Reco
       capturaMin: texto(x.captura_min),
       capturaMax: texto(x.captura_max),
       admiteNegativos: x.admite_negativos as boolean,
+      // Las de una automática las pone el registro con `origenDato`: el formulario no conoce el origen «automatica».
+      origen: x.origen === "compartida" || x.origen === "indicador" ? x.origen : "propia",
+      datoId: entero(x.variable_compartida_id),
+      indicadorOrigenId: entero(x.indicador_origen_id),
+      toma: x.toma ?? undefined,
     })),
     unidadId: entero(v.unidad_id),
     decimales: entero(v.decimales),
@@ -998,6 +1170,7 @@ async function valoresDeVersion(sql: Cliente, versionId: number, indicador: Reco
     ente: texto(v.ente),
     periodicidadExterna: v.periodicidad_externa ?? undefined,
     plazoExternoDias: entero(v.plazo_externo_dias),
+    dimensionId: entero(v.dimension_id),
     motivoCambio: texto(v.motivo_cambio),
     prueba: v.prueba ?? undefined,
     plazoReporteDias: Number(indicador.plazo_reporte_dias),
@@ -1077,8 +1250,27 @@ export async function opcionesDeFicha(
   const zona = zonaHoraria();
   const ahora = opciones?.ahora ?? new Date();
   const ids = (...xs: (number | number[] | undefined)[]) => xs.flat().filter((x): x is number => typeof x === "number");
-  const [procesos, subprocesos, propuestos, propuestosSub, tipos, clasificaciones, unidades, objetivos, cargos, normas, usuarios, documentos, parametros, entes, lideres, activos] =
-    await Promise.all([
+  const [
+    procesos,
+    subprocesos,
+    propuestos,
+    propuestosSub,
+    tipos,
+    clasificaciones,
+    unidades,
+    objetivos,
+    cargos,
+    normas,
+    usuarios,
+    documentos,
+    parametros,
+    entes,
+    lideres,
+    activos,
+    datos,
+    tomables,
+    dimensiones,
+  ] = await Promise.all([
       sql`SELECT id, sigla, nombre FROM procesos WHERE activo OR id = ANY(${ids(a.procesoId)}) ORDER BY nombre`,
       sql`SELECT id, proceso_id, nombre, sigla FROM subprocesos WHERE activo OR id = ANY(${ids(a.subprocesoId)}) ORDER BY proceso_id, orden, nombre`,
       siguientes(sql),
@@ -1113,6 +1305,15 @@ export async function opcionesDeFicha(
       // Los cálculos ya ocupados (anexo 14B, §5.3), como los cuenta `otraActivaConElCalculo`: sin el indicador que se edita.
       sql`SELECT calculo, calculo_alcance, proceso_id FROM indicadores
         WHERE estado = 'activo' AND calculo IS NOT NULL AND lower(codigo) <> lower(${a.codigo ?? ""})`,
+      datosParaFicha(sql),
+      // Lo que una variable puede tomar (anexo 14C, §6.1): un indicador activo con ficha vigente, sin el que se edita.
+      sql`SELECT i.id, i.codigo, i.nivel_acceso, vig.nombre, vig.periodicidad, vig.meta
+        FROM indicadores i
+        JOIN indicador_versiones vig ON vig.indicador_id = i.id AND vig.estado = 'aprobada'
+          AND vig.numero = (SELECT max(w.numero) FROM indicador_versiones w WHERE w.indicador_id = i.id AND w.estado = 'aprobada')
+        WHERE i.estado = 'activo' AND lower(i.codigo) <> lower(${a.codigo ?? ""})
+        ORDER BY i.codigo, i.id`,
+      listarDimensiones({ sql, soloActivas: true }),
     ]);
   const activo = (actual: number | undefined) => (f: { id: number; activo: boolean }) => f.activo || f.id === actual;
   const anio = Number(fechaEnZona(ahora, zona).slice(0, 4));
@@ -1174,5 +1375,15 @@ export async function opcionesDeFicha(
       alcance: c.calculo_alcance as AlcanceDeCalculo,
       procesoId: Number(c.proceso_id),
     })),
+    datos,
+    tomables: tomables.map((t) => ({
+      id: Number(t.id),
+      codigo: t.codigo as string,
+      nombre: (t.nombre as string | null) ?? "",
+      periodicidad: t.periodicidad as Periodicidad,
+      conMeta: t.meta !== null,
+      restringido: t.nivel_acceso === "restringido",
+    })),
+    dimensiones: dimensiones.map((d) => ({ id: d.id, nombre: d.nombre })),
   };
 }

@@ -7,8 +7,9 @@ import { escribirFoto } from "@/db/consultas/indicadores/fotos";
 import { versionDelPeriodo } from "@/db/consultas/indicadores/mediciones";
 import { CALCULOS, CLAVES_DE_CALCULO, calculoDe, type AlcanceDeCalculo, type ClaveDeCalculo } from "@/lib/indicadores/calculos/registro";
 import { formulaDeForma } from "@/lib/indicadores/formula/formas";
+import { contiene } from "@/lib/indicadores/periodos";
 import type { RangosEnTexto } from "@/lib/indicadores/rangos";
-import type { Consolidacion, Periodicidad, Tendencia } from "@/lib/indicadores/tipos";
+import type { Consolidacion, Periodicidad, Tendencia, Toma } from "@/lib/indicadores/tipos";
 import { usuarioDePrueba } from "./tramites";
 
 let consecutivo = 0;
@@ -79,6 +80,8 @@ export type OpcionesIndicadorDePrueba = {
   ente?: { nombre: string; periodicidad: Periodicidad; plazoDias: number; desde?: Date | null };
   /** Las normas que cita la versión 1, con el nombre de hoy (anexo 14B, §9); sin valor, ninguna. */
   normaIds?: number[];
+  /** La dimensión por la que se desagrega la versión 1, con su nombre de hoy (anexo 14C, §5.2); sin valor, ninguna. */
+  dimensionId?: number;
 };
 
 export type VariableDePrueba = {
@@ -87,8 +90,18 @@ export type VariableDePrueba = {
   fuente?: string;
   capturaMin?: string;
   capturaMax?: string;
-  /** El dato compartido que cita la variable (anexo 14C, §4.2): origen «compartida», con la periodicidad del dato. */
+  /**
+   * El dato compartido que cita la variable (anexo 14C, §4.2): origen «compartida» y, como lo escribe el servidor, todo lo
+   * que la variable firma del dato (nombre, descripción, fuente, unidad, «cómo se junta», límites, «admite negativos» y su
+   * periodicidad), sin importar lo demás que traiga esta variable. La periodicidad de la ficha debe contener la del dato.
+   */
   datoId?: number;
+  /**
+   * El indicador del que sale la variable (anexo 14C, §6.1): origen «indicador», con lo que se toma (sin valor, su valor),
+   * «cómo se junta» en «último» y, como lo escribe el servidor, el código del indicador y el nombre de su ficha vigente.
+   */
+  indicadorOrigenId?: number;
+  toma?: Toma;
 };
 
 /**
@@ -157,7 +170,7 @@ export async function indicadorDePrueba(
        unidad_id, unidad_nombre, unidad_sufijo, decimales, periodicidad, tendencia, meta,
        semaforo_modo, umbral_atencion_pct, limite_critico, rangos, resultado_max, nivel, riesgo_asociado,
        importacion_id, aprobacion_previa_documento, aprobacion_previa_por, aprobacion_previa_fecha,
-       ente, periodicidad_externa, plazo_externo_dias, creado_por)
+       ente, periodicidad_externa, plazo_externo_dias, dimension_id, dimension_nombre, creado_por)
     SELECT ${indicadorId}, 1, 'borrador', 'inicial', ${`Indicador de prueba ${codigo}`}, 'Medir el cumplimiento de la prueba',
       t.id, t.nombre, c.id, c.nombre, ${proceso.nombre as string}, ${o.objetivoId ?? null},
       (SELECT enunciado FROM objetivos WHERE id = ${o.objetivoId ?? null}), ${calculo ? "automatico" : "manual"}, ${o.calculo?.clave ?? null},
@@ -167,7 +180,8 @@ export async function indicadorDePrueba(
       ${o.rangos ? tx.json(o.rangos as never) : null}, ${o.resultadoMax ?? null}, ${o.nivel ?? null}, ${o.riesgoAsociado ?? null},
       ${o.importacionId ?? null}, ${o.importacionId ? (o.aprobacionPrevia?.documento ?? "Acta 1 de 2025") : null}, ${o.importacionId ? (o.aprobacionPrevia?.aprobadoPor ?? "Comité de calidad") : null},
       ${o.importacionId ? (o.aprobacionPrevia?.fecha ?? "2025-01-15") : null},
-      ${o.ente?.nombre ?? null}, ${o.ente?.periodicidad ?? null}, ${o.ente?.plazoDias ?? null}, ${elaboradaPor}
+      ${o.ente?.nombre ?? null}, ${o.ente?.periodicidad ?? null}, ${o.ente?.plazoDias ?? null},
+      ${o.dimensionId ?? null}, (SELECT nombre FROM dimensiones WHERE id = ${o.dimensionId ?? null}), ${elaboradaPor}
     FROM tipos_indicador t, clasificaciones_indicador c, unidades_indicador un
     WHERE t.nombre = 'Eficacia' AND c.nombre = ${clasificacion} AND un.nombre = 'Porcentaje'
     RETURNING id`;
@@ -187,13 +201,61 @@ export async function indicadorDePrueba(
       }));
   for (const d of declaradas) {
     const x: VariableDePrueba = calculo ? {} : (o.variables?.[d.letra] ?? {});
-    const origen = calculo ? "automatica" : x.datoId !== undefined ? "compartida" : "propia";
-    const [v] = await tx`INSERT INTO indicador_variables
-        (version_id, letra, nombre, descripcion, fuente, captura_min, captura_max, consolidacion, origen, variable_compartida_id,
-         dato_periodicidad, orden)
-      VALUES (${versionId}, ${d.letra}, ${x.nombre ?? d.nombre}, ${x.descripcion ?? d.descripcion}, ${x.fuente ?? (calculo ? "La calcula el sistema" : null)},
-        ${x.capturaMin ?? null}, ${x.capturaMax ?? null}, ${d.consolidacion}, ${origen}, ${x.datoId ?? null},
-        (SELECT periodicidad FROM variables_compartidas WHERE id = ${x.datoId ?? null}), ${d.orden}) RETURNING id`;
+    const fila = {
+      version_id: versionId,
+      letra: d.letra,
+      orden: d.orden,
+      origen: calculo ? "automatica" : "propia",
+      nombre: x.nombre ?? d.nombre,
+      descripcion: x.descripcion ?? d.descripcion,
+      fuente: x.fuente ?? (calculo ? "La calcula el sistema" : null),
+      unidad: null as string | null,
+      consolidacion: d.consolidacion as string,
+      captura_min: x.capturaMin ?? null,
+      captura_max: x.capturaMax ?? null,
+      admite_negativos: false,
+      variable_compartida_id: null as number | null,
+      dato_periodicidad: null as string | null,
+      indicador_origen_id: null as number | null,
+      toma: null as Toma | null,
+      origen_codigo: null as string | null,
+      origen_nombre: null as string | null,
+    };
+    if (x.datoId !== undefined) {
+      // Como `guardarBorrador`: el catálogo manda sobre lo que la variable firma del dato.
+      const [dato] = await tx`SELECT nombre, descripcion, fuente, unidad, periodicidad, consolidacion, captura_min, captura_max, admite_negativos
+        FROM variables_compartidas WHERE id = ${x.datoId}`;
+      if (!contiene(o.periodicidad ?? "mensual", dato.periodicidad as Periodicidad)) {
+        throw new Error(`Una ficha ${o.periodicidad ?? "mensual"} no puede citar un dato ${dato.periodicidad as string}`);
+      }
+      Object.assign(fila, {
+        origen: "compartida",
+        nombre: dato.nombre,
+        descripcion: dato.descripcion,
+        fuente: dato.fuente,
+        unidad: dato.unidad,
+        consolidacion: dato.consolidacion,
+        captura_min: dato.captura_min,
+        captura_max: dato.captura_max,
+        admite_negativos: dato.admite_negativos,
+        variable_compartida_id: x.datoId,
+        dato_periodicidad: dato.periodicidad,
+      });
+    } else if (x.indicadorOrigenId !== undefined) {
+      const [componente] = await tx`SELECT i.codigo, v.nombre FROM indicadores i
+        JOIN indicador_versiones v ON v.indicador_id = i.id AND v.estado = 'aprobada'
+        WHERE i.id = ${x.indicadorOrigenId} ORDER BY v.numero DESC LIMIT 1`;
+      if (!componente) throw new Error("El indicador de origen no tiene una ficha aprobada");
+      Object.assign(fila, {
+        origen: "indicador",
+        consolidacion: "ultimo",
+        indicador_origen_id: x.indicadorOrigenId,
+        toma: x.toma ?? "valor",
+        origen_codigo: componente.codigo,
+        origen_nombre: componente.nombre,
+      });
+    }
+    const [v] = await tx`INSERT INTO indicador_variables ${tx(fila)} RETURNING id`;
     variables[d.letra] = Number(v.id);
   }
 

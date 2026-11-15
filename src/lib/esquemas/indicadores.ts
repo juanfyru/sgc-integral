@@ -26,6 +26,7 @@ import {
   ORIGENES_DATO,
   PERIODICIDADES,
   TENDENCIAS,
+  TOMAS,
 } from "@/lib/indicadores/tipos";
 import { parsearFormulario, textoAcotado } from "@/lib/validacion";
 
@@ -115,6 +116,12 @@ const EsquemaVariable = z
     capturaMin: numero("El mínimo de captura debe ser un número").optional(),
     capturaMax: numero("El máximo de captura debe ser un número").optional(),
     admiteNegativos: z.boolean({ error: "Diga si cada variable admite negativos" }),
+    // De dónde sale (anexo 14C, §3.1). Con un dato compartido, la consulta copia del catálogo el nombre, la descripción, la
+    // fuente, la unidad, «cómo se junta», los límites y «admite negativos», y lo que traiga el formulario para ellos se ignora.
+    origen: z.enum(["propia", "compartida", "indicador"], { error: "Elija de dónde sale cada variable" }).default("propia"),
+    datoId: id("El dato compartido no es válido").optional(),
+    indicadorOrigenId: id("El indicador del que sale la variable no es válido").optional(),
+    toma: z.enum(TOMAS, { error: "Elija qué se toma del indicador" }).optional(),
   })
   .strict();
 
@@ -234,6 +241,8 @@ export const EsquemaFicha = z
     ente: opcional("El ente al que se reporta", 150),
     periodicidadExterna: z.enum(PERIODICIDADES, { error: "Elija con qué periodicidad se reporta al ente" }).optional(),
     plazoExternoDias: entero("El plazo del ente", 0, 365).optional(),
+    // La desagregación (anexo 14C, §5.2): ninguna o una dimensión.
+    dimensionId: id("La desagregación no es válida").optional(),
     motivoCambio: opcional("El motivo del cambio", 500),
     prueba: enJson(EsquemaPrueba, "La prueba no tiene un formato válido").optional(),
     plazoReporteDias: entero("El plazo de reporte", 0, 90),
@@ -248,7 +257,16 @@ export const EsquemaFicha = z
   })
   .strict();
 
-export type DatosFicha = z.infer<typeof EsquemaFicha>;
+type SalidaFicha = z.infer<typeof EsquemaFicha>;
+type SalidaVariable = SalidaFicha["variables"][number];
+
+/**
+ * Lo que el esquema devuelve, con el origen de cada variable opcional: el esquema lo pone («propia» por omisión), y quien
+ * arma una ficha a mano (el formulario, la importación, la semilla) puede no decirlo. La consulta lee la falta como «propia».
+ */
+export type DatosFicha = Omit<SalidaFicha, "variables"> & {
+  variables: (Omit<SalidaVariable, "origen"> & { origen?: SalidaVariable["origen"] })[];
+};
 
 /** La clave y el código del segundo factor de una firma, como en `EsquemaRatificar`: la clave no se recorta. */
 const firma = {

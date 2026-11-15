@@ -92,6 +92,9 @@ const OPCIONES: OpcionesFicha = {
   periodoEnCurso: { mensual: "2026-11", bimestral: "2026-B6", trimestral: "2026-T4", semestral: "2026-S2", anual: "2026" },
   calculos: CALCULOS_DEL_REGISTRO,
   calculosActivos: [],
+  datos: [],
+  tomables: [],
+  dimensiones: [],
 };
 
 /** Un cambio sobre una ficha con versión aprobada: la única que conserva la regla anterior (Ruling 18). */

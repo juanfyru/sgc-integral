@@ -24,7 +24,7 @@ export type VariableDeFicha = {
   variableCompartidaId: number | null;
   indicadorOrigenId: number | null;
   toma: string | null;
-  /** La periodicidad del dato que toma de otro indicador o de un dato compartido; `null` si no toma. */
+  /** La periodicidad del dato compartido, tal como se firmó; `null` si la variable no es un dato compartido. */
   datoPeriodicidad: string | null;
   /** El código y el nombre del indicador de origen, tal como se firmaron. */
   origenCodigo: string | null;

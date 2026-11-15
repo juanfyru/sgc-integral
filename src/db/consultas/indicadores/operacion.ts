@@ -413,6 +413,14 @@ export async function duplicar(
       if (deAutomatico) {
         await tx`UPDATE indicador_variables SET origen = 'propia', fuente = NULL WHERE version_id = ${versionId} AND origen = 'automatica'`;
       }
+      // La copia de un compuesto o de una ficha con datos compartidos nace con variables propias (anexo 14C, §6.7): conservan
+      // su nombre, su descripción y su unidad, sin el dato ni el indicador del que salían.
+      await tx`UPDATE indicador_variables SET origen = 'propia', variable_compartida_id = NULL, dato_periodicidad = NULL,
+          indicador_origen_id = NULL, toma = NULL, origen_codigo = NULL, origen_nombre = NULL
+        WHERE version_id = ${versionId} AND origen IN ('compartida', 'indicador')`;
+      // La desagregación se conserva si su dimensión sigue activa.
+      await tx`UPDATE indicador_versiones SET dimension_id = NULL, dimension_nombre = NULL
+        WHERE id = ${versionId} AND dimension_id IN (SELECT id FROM dimensiones WHERE NOT activo)`;
       await tx`INSERT INTO indicador_responsables (version_id, cargo_id, cargo_nombre, funcion)
         SELECT ${versionId}, cargo_id, cargo_nombre, funcion FROM indicador_responsables WHERE version_id = ${desde} ORDER BY id`;
       await tx`INSERT INTO indicador_normas (version_id, norma_id, norma_nombre)

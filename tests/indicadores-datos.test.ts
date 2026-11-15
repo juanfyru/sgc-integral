@@ -161,7 +161,7 @@ describe("guardar un dato del catálogo", () => {
       const { id } = await guardarDato(admin, base(p, { dimensionId: dim1 }), { sql: tx });
 
       // Con solo un borrador que lo cita, todo se puede cambiar.
-      await indicadorDePrueba(tx, { procesoId: p, estado: "borrador", variables: { A: { datoId: id } } });
+      await indicadorDePrueba(tx, { procesoId: p, estado: "borrador", dimensionId: dim1, variables: { A: { datoId: id } } });
       const actual = base(p, { periodicidad: "trimestral", consolidacion: "promedio", dimensionId: dim2 });
       await guardarDato(admin, { ...actual, id }, { sql: tx });
       expect(await datoPorId(admin, id, { sql: tx })).toMatchObject({
@@ -171,7 +171,8 @@ describe("guardar un dato del catálogo", () => {
         citado: false,
       });
 
-      await indicadorDePrueba(tx, { procesoId: p, variables: { A: { datoId: id } } });
+      // Coherente con el dato, como la deja el servidor: trimestral y desagregada por su dimensión.
+      await indicadorDePrueba(tx, { procesoId: p, periodicidad: "trimestral", dimensionId: dim2, variables: { A: { datoId: id } } });
       expect((await datoPorId(admin, id, { sql: tx }))?.citado).toBe(true);
       const congelados: Partial<Dato>[] = [{ periodicidad: "mensual" }, { consolidacion: "suma" }, { dimensionId: dim1 }, { dimensionId: undefined }];
       for (const cambio of congelados) {
