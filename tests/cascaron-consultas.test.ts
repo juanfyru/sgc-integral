@@ -5,8 +5,8 @@
  * anual (Tarea 10) son una sola consulta acotada cada una, solo para quien lidera procesos o es Admin SGC; las de validar
  * la corrección de un hallazgo (Tarea 13), una sola consulta y solo para quien realiza verificaciones. Las de los
  * indicadores (Fase 14A, Tarea 13), una para las mediciones, otra para las constancias de envío al ente (14B, Tarea 10) y
- * otra para las observaciones de toda persona, más una para quien aprueba fichas y otra para quien administra, sin
- * importar cuántas haya. Se cuentan
+ * otra para las observaciones de toda persona, más una para quien aprueba fichas y dos para quien administra (las fichas
+ * devueltas y las revisiones por cambio de norma, 14B, Tarea 12), sin importar cuántas haya. Se cuentan
  * las sentencias que se ejecutan (no los fragmentos),
  * con el cascarón real contra la BD de desarrollo, dentro de una transacción que se revierte.
  */
@@ -116,14 +116,15 @@ const deRevision = (s: string[]) => s.filter((t) => t.includes("JOIN revision_an
 /** `tareasDeValidacion`: la única sentencia que busca los hallazgos por validar. */
 const deValidacion = (s: string[]) => s.filter((t) => t.includes("h.estado = 'por_validar' AND h.corregido_por IS DISTINCT FROM")).length;
 /**
- * `tareasDeIndicadores`: las mediciones a cargo, las constancias de envío al ente por registrar, las observaciones sin
- * respuesta, las fichas por aprobar y las devueltas.
+ * `tareasDeIndicadores`: las mediciones a cargo, las constancias de envío al ente por registrar, las revisiones por cambio
+ * de norma (solo quien administra indicadores), las observaciones sin respuesta, las fichas por aprobar y las devueltas.
  */
 const deIndicadores = (s: string[]) =>
   s.filter(
     (t) =>
       t.includes("AS mide,") ||
       t.includes("FROM reportes_externos r JOIN indicadores i") ||
+      t.includes("FROM impactos_indicadores ii JOIN indicadores i") ||
       t.includes("FROM medicion_observaciones o") ||
       t.includes("fv.estado = 'por_aprobar'") ||
       t.includes("fv.nota_devolucion IS NOT NULL"),
@@ -205,9 +206,10 @@ describe("el costo del cascarón por render", () => {
         // La tarea de corregir un hallazgo no carga sus fotos (F-M10): el hallazgo abierto no suma sentencias de evidencias.
         for (const [nombre, c] of Object.entries(cuentas)) expect(c.evidencias, nombre).toBe(0);
         // Las de los indicadores (Fase 14A): mediciones, constancias de envío al ente (14B) y observaciones para todos; las
-        // fichas por aprobar para quien aprueba (Gerencia y el líder) y las devueltas para quien administra.
+        // fichas por aprobar para quien aprueba (Gerencia y el líder), y las devueltas y las revisiones por cambio de norma
+        // (14B, Tarea 12) para quien administra.
         expect(Object.fromEntries(Object.entries(cuentas).map(([nombre, c]) => [nombre, c.indicadores]))).toEqual({
-          "Admin SGC": 4,
+          "Admin SGC": 5,
           líder: 4,
           Gerencia: 4,
           "Control Interno": 3,
@@ -219,9 +221,10 @@ describe("el costo del cascarón por render", () => {
         // ninguna para los demás; la de los hallazgos abiertos es la misma con o sin hallazgos (F-M10). Gerencia y Control
         // Interno bajan de 11 a 10 con el conteo (F-I3); el layout y la página comparten las demás lecturas por petición
         // (`tests/cascaron-peticion.test.ts`), lo que este test no ve porque aquí `React.cache` no guarda nada. Con los
-        // indicadores (Fase 14A), las de arriba; la 14B suma una para todos, la de las constancias de envío al ente.
+        // indicadores (Fase 14A), las de arriba; la 14B suma una para todos, la de las constancias de envío al ente, y otra
+        // para el Admin SGC, la de las revisiones de indicadores por cambio de norma (Tarea 12).
         expect(Object.fromEntries(Object.entries(cuentas).map(([nombre, c]) => [nombre, c.total]))).toEqual({
-          "Admin SGC": 20,
+          "Admin SGC": 21,
           líder: 20,
           Gerencia: 14,
           "Control Interno": 13,
