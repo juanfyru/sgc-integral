@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 import { DatosDelSistema } from "@/componentes/indicadores/medicion/DatosDelSistema";
 import { FormularioAnalisis } from "@/componentes/indicadores/medicion/FormularioAnalisis";
 import { FormularioReporte } from "@/componentes/indicadores/medicion/FormularioReporte";
@@ -17,34 +18,52 @@ import { puede } from "@/lib/permisos";
 import { exigirIndicador, rutaDeIndicador } from "../../../_comun";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Reportar una medición" };
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 const ENLACE = `rounded-sm text-marca underline-offset-2 hover:underline ${FOCO}`;
 
+type Params = { params: Promise<{ codigo: string; periodo: string }> };
+
 /**
- * Reportar una medición (spec §8.2 y §12.5, maqueta 3). Antes de leer abre los periodos que hayan terminado (F14-DC12).
- * Quien no ve el indicador, no puede medirlo o pide un periodo sin medición recibe «no encontrado». Un histórico no se
- * reporta aquí: se registra en la tabla del año (spec §8.8). Debajo van los soportes y, con resultado, quien puede analizar tiene el análisis.
- * La de un automático (anexo 14B, §4) es de solo lectura y la abre quien puede analizarlo: nadie digita sus datos ni sube
- * soportes; dice cuándo se tomaron o se tomarán, con los datos del sistema muestra sus valores y, si el resultado lo pide, el
- * análisis; a quien además administra, «Volver a calcular» una foto de flujo (§5.4).
+ * La medición de la ruta, una sola lectura por petición: la piden el título y la página. Antes de leer abre los periodos
+ * que hayan terminado (F14-DC12). Quien no ve el indicador, no puede medirlo (ni analizar un automático) o pide un periodo
+ * sin medición recibe «no encontrado», también en el título.
  */
-export default async function PaginaReportar({ params }: { params: Promise<{ codigo: string; periodo: string }> }) {
+const medicionDeLaRuta = cache(async (segmento: string, periodo: string) => {
   const sesion = await exigirSesion();
-  const { codigo: segmento, periodo } = await params;
   const indicador = await exigirIndicador(sesion, segmento);
   if (periodicidadDe(periodo) === null) notFound();
   await asegurarMediciones({ indicadorId: indicador.id });
   const datos = await medicionParaReportar(sesion, indicador.codigo, periodo);
   if (!datos) notFound();
+  return { sesion, indicador, datos };
+});
+
+/** El título de la pantalla, el mismo en el `h1` y en la pestaña: nadie reporta un automático. */
+const tituloDe = (datos: { automatica: boolean; nombre: string }) => `${datos.automatica ? "Calculado por el sistema" : "Reportar"} · ${datos.nombre}`;
+
+export async function generateMetadata({ params }: Params): Promise<Metadata> {
+  const { codigo, periodo } = await params;
+  const { datos } = await medicionDeLaRuta(codigo, periodo);
+  return { title: tituloDe(datos) };
+}
+
+/**
+ * Reportar una medición (spec §8.2 y §12.5, maqueta 3). Un histórico no se reporta aquí: se registra en la tabla del año
+ * (spec §8.8). Debajo van los soportes y, con resultado, quien puede analizar tiene el análisis.
+ * La de un automático (anexo 14B, §4) es de solo lectura y la abre quien puede analizarlo: nadie digita sus datos ni sube
+ * soportes; dice cuándo se tomaron o se tomarán, con los datos del sistema muestra sus valores y, si el resultado lo pide, el
+ * análisis; a quien además administra, «Volver a calcular» una foto de flujo (§5.4).
+ */
+export default async function PaginaReportar({ params }: Params) {
+  const { codigo: segmento, periodo } = await params;
+  const { sesion, indicador, datos } = await medicionDeLaRuta(segmento, periodo);
   const volver = rutaDeIndicador(indicador.codigo);
   const analisis = datos.estado !== "cerrada" && !datos.historica ? await datosDeAnalisis(sesion, datos.medicionId) : null;
   // Quien puede medir ve los soportes del indicador (spec §6.4); la lista se lee solo para quien los ve.
   const soportes = (await soportesDe(sesion, datos.medicionId)) ?? [];
   const plazo = datos.historica ? "Registro histórico" : `Plazo hasta el ${datos.vence}${datos.vencida ? " (vencido)" : ""}`;
   // Nadie reporta un automático: ni el título ni la miga lo dicen.
-  const titulo = datos.automatica ? "Calculado por el sistema · " : "Reportar · ";
   const miga = datos.automatica ? "Calculado por el sistema · " : "Reportar: ";
   const cerrada = (
     <p className="rounded-lg border border-l-4 border-border border-l-mod-indicadores bg-muted px-4 py-3 text-sm">
@@ -62,7 +81,7 @@ export default async function PaginaReportar({ params }: { params: Promise<{ cod
         ]}
         codigo={datos.codigo}
         insignias={datos.historica ? <Insignia variante="neutra">Histórico</Insignia> : undefined}
-        titulo={`${titulo}${datos.nombre}`}
+        titulo={tituloDe(datos)}
         descripcion={`${datos.etiqueta} · ${plazo}`}
       />
       {datos.sinMedidor ? (

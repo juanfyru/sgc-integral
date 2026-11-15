@@ -312,11 +312,11 @@ export async function versionAutomatica(
 /**
  * La foto del sistema (anexo 14B, §5.4) con los valores que pide la prueba, sin esperar su momento ni tomar el cálculo: la
  * escribe `escribirFoto`, lo mismo que escribe `tomarFotos` (valores sin quien los reportó, la medición reportada y
- * fotografiada a `ahora`, la fecha límite de un cálculo de flujo contada desde la foto si pide un análisis, y el cálculo
- * único con el evento `foto`, sin usuario).
+ * fotografiada a `ahora`, la fecha límite contada desde la foto si pide un análisis y llegó con el plazo vencido, y el
+ * cálculo único con el evento `foto`, sin usuario).
  */
 export async function fotoDePrueba(tx: TransactionSql, medicionId: number, valores: Partial<Record<"A" | "B", string>>, ahora: Date): Promise<void> {
-  const [m] = await tx`SELECT m.id, m.indicador_id, m.periodo, m.historica, i.plazo_reporte_dias
+  const [m] = await tx`SELECT m.id, m.indicador_id, m.periodo, m.historica, m.vence_en, i.plazo_reporte_dias
     FROM mediciones m JOIN indicadores i ON i.id = m.indicador_id WHERE m.id = ${medicionId} FOR UPDATE OF m`;
   const version = await versionDelPeriodo(tx, Number(m.indicador_id), m.periodo as string);
   const definicion = version?.calculoAutomatico ? calculoDe(version.calculoAutomatico.clave) : null;
@@ -324,7 +324,7 @@ export async function fotoDePrueba(tx: TransactionSql, medicionId: number, valor
   const foto = { valores: Object.fromEntries(Object.entries(valores).filter((e): e is [string, string] => e[1] !== undefined)) };
   await escribirFoto(
     tx,
-    { id: medicionId, historica: m.historica === true },
+    { id: medicionId, historica: m.historica === true, venceEn: new Date(m.vence_en as string) },
     { version, definicion, alcance: version.calculoAutomatico!.alcance, plazoDias: Number(m.plazo_reporte_dias), foto, ahora },
   );
 }

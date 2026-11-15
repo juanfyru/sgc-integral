@@ -43,10 +43,17 @@ export const esCalculoRepetido = (err: unknown) =>
   (err as { code?: string }).code === "23505" && (err as { constraint_name?: string }).constraint_name === "indicadores_calculo_unico";
 
 /**
- * Lo que la publicación cambió en los datos de operación y cuántas revisiones por cambio de norma resolvió (anexo 14B, §9):
- * quien llama lo deja en el detalle de su entrada de bitácora.
+ * Lo que la publicación cambió en los datos de operación, cuántas revisiones por cambio de norma resolvió (anexo 14B, §9) y
+ * cuántas constancias de envío pendientes sin soporte quitó al dejar de reportarse al ente (§8): quien llama lo deja en el
+ * detalle de su entrada de bitácora.
  */
-export type Publicado = { medidoresQuitados: number; soporteApagado: boolean; medicionesRecalculadas: number; impactosResueltos: number };
+export type Publicado = {
+  medidoresQuitados: number;
+  soporteApagado: boolean;
+  medicionesRecalculadas: number;
+  impactosResueltos: number;
+  constanciasQuitadas: number;
+};
 
 const mismoEnte = (a: EnteDeVersion, b: EnteDeVersion) =>
   a.ente?.trim() === b.ente?.trim() && a.periodicidadExterna === b.periodicidadExterna && a.plazoExternoDias === b.plazoExternoDias;
@@ -54,19 +61,20 @@ const mismoEnte = (a: EnteDeVersion, b: EnteDeVersion) =>
 /**
  * `ente_desde` frente a la aprobada anterior (la de mayor número antes que esta): vuelve a contar desde `ahora` si la nueva
  * se reporta y la anterior no, o cambió lo que dice del ente; sin reportarse, nulo y las pendientes sin soporte se quitan.
+ * Devuelve cuántas quitó.
  */
-async function alPublicarElEnte(tx: TransactionSql, d: Publicacion, nueva: EnteDeVersion, numero: number): Promise<void> {
+async function alPublicarElEnte(tx: TransactionSql, d: Publicacion, nueva: EnteDeVersion, numero: number): Promise<number> {
   if (!seReportaAlEnte(nueva)) {
     await tx`UPDATE indicadores SET ente_desde = NULL WHERE id = ${d.indicadorId}`;
-    await quitarConstanciasSinSoporte(tx, d.indicadorId);
-    return;
+    return quitarConstanciasSinSoporte(tx, d.indicadorId);
   }
   const [anterior] = await tx`SELECT ente, periodicidad_externa, plazo_externo_dias, periodicidad FROM indicador_versiones
     WHERE indicador_id = ${d.indicadorId} AND estado = 'aprobada' AND numero < ${numero} AND id <> ${d.versionId}
     ORDER BY numero DESC LIMIT 1`;
   const previa = anterior ? enteDeVersion(anterior) : null;
-  if (previa && seReportaAlEnte(previa) && mismoEnte(previa, nueva)) return;
+  if (previa && seReportaAlEnte(previa) && mismoEnte(previa, nueva)) return 0;
   await tx`UPDATE indicadores SET ente_desde = ${d.ahora} WHERE id = ${d.indicadorId}`;
+  return 0;
 }
 
 export async function alPublicarVersion(tx: TransactionSql, d: Publicacion): Promise<Publicado> {
@@ -79,10 +87,10 @@ export async function alPublicarVersion(tx: TransactionSql, d: Publicacion): Pro
   const calculo = (v.calculo as string | null) ?? null;
   await tx`UPDATE indicadores SET calculo = ${calculo}, calculo_alcance = ${(v.calculo_alcance as string | null) ?? null}
     WHERE id = ${d.indicadorId}`;
-  await alPublicarElEnte(tx, d, enteDeVersion(v), Number(v.numero));
+  const constanciasQuitadas = await alPublicarElEnte(tx, d, enteDeVersion(v), Number(v.numero));
   // Para toda ficha, manual o automática: antes del `return` de las manuales.
   const impactosResueltos = await resolverImpactosPorVersion(tx, d);
-  const hecho: Publicado = { medidoresQuitados: 0, soporteApagado: false, medicionesRecalculadas: 0, impactosResueltos };
+  const hecho: Publicado = { medidoresQuitados: 0, soporteApagado: false, medicionesRecalculadas: 0, impactosResueltos, constanciasQuitadas };
   if (calculo === null) return hecho;
 
   const quitados = await tx`DELETE FROM indicador_designados WHERE indicador_id = ${d.indicadorId} AND funcion = 'mide' RETURNING usuario_id`;

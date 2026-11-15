@@ -51,12 +51,21 @@ export function fechaLimiteDesdeLaFoto(fotoEn: Date, plazoDias: number, zona: st
 }
 
 /**
- * ¿La foto mueve la fecha límite? Solo la de un cálculo de flujo en una medición ordinaria que, con la foto, queda abierta:
- * pide un análisis y llegó cuando su plazo ya había vencido. La que cumple la meta o queda «No aplica» queda reportada y
- * conserva su fecha; la de estado llega al terminar el periodo, con el plazo entero por delante.
+ * ¿La foto mueve la fecha límite? Solo en una medición ordinaria que, con la foto, queda abierta (pide un análisis) y
+ * cuando la foto llegó con su plazo ya vencido: la de flujo, siempre (se toma al vencer el plazo); la de estado, si la
+ * pasada llegó después de su fecha límite (`venceEn` anterior a `fotoEn`; con plazo 0, siempre), porque la pasada solo
+ * corre cuando alguien usa la aplicación. La que cumple la meta o queda «No aplica» queda reportada y conserva su fecha, y
+ * la de estado tomada a tiempo también.
  */
-export function laFotoMueveElPlazo(m: { clase: Clase; historica: boolean; estadoTrasLaFoto: "abierta" | "reportada" | "cerrada" }): boolean {
-  return m.clase === "flujo" && !m.historica && m.estadoTrasLaFoto === "abierta";
+export function laFotoMueveElPlazo(m: {
+  clase: Clase;
+  historica: boolean;
+  estadoTrasLaFoto: "abierta" | "reportada" | "cerrada";
+  venceEn: Date;
+  fotoEn: Date;
+}): boolean {
+  if (m.historica || m.estadoTrasLaFoto !== "abierta") return false;
+  return m.clase === "flujo" || m.venceEn.getTime() < m.fotoEn.getTime();
 }
 
 /** «1 de abril», el día en la zona. */

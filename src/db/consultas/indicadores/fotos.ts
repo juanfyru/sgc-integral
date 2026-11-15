@@ -10,8 +10,9 @@
  * - **Sin nada que medir** (`fotoDe`): «No aplica» con el motivo del cálculo, sin valores.
  * - **El plazo del análisis:** la foto de flujo de una medición ordinaria llega cuando vence su plazo; si pide un análisis
  *   (la medición queda abierta), la fecha límite se cuenta otra vez desde la foto, con el mismo plazo de reporte, y las
- *   marcas de aviso se limpian: el análisis no nace vencido. El evento `foto` lo dice (`venceEn`). La que cumple la meta o
- *   queda «No aplica» queda reportada con su fecha, y la de estado no mueve nada.
+ *   marcas de aviso se limpian: el análisis no nace vencido. El evento `foto` lo dice (`venceEn`). La de estado hace lo
+ *   mismo si la pasada llegó cuando su fecha límite ya había pasado (con plazo 0, siempre); tomada a tiempo, no mueve nada.
+ *   La que cumple la meta o queda «No aplica» queda reportada con su fecha (`laFotoMueveElPlazo`).
  * - **«Volver a calcular»** (quien administra, solo un cálculo de flujo ya fotografiado, hasta el cierre y nunca sobre una
  *   reabierta): toma otra vez el cálculo; si cambió, reescribe los valores o «no aplica», deja el evento `foto` con el antes
  *   y el después y la bitácora, y sigue las reglas de una corrección. Mueve la fecha límite una sola vez: si ahora pide un
@@ -145,16 +146,18 @@ function enTexto(
 }
 
 /**
- * El gancho de `recalcularMedicion` que mueve el plazo si la foto pide un análisis (`laFotoMueveElPlazo`): la fecha límite
- * contada desde `desde` con el plazo de reporte, las tres marcas de aviso limpias y `venceEn` en el evento.
+ * El gancho de `recalcularMedicion` que mueve el plazo si la foto pide un análisis y llegó con el plazo vencido
+ * (`laFotoMueveElPlazo`, con la fecha límite que la medición tenía a la hora de la foto): la fecha límite contada desde
+ * `desde` con el plazo de reporte, las tres marcas de aviso limpias y `venceEn` en el evento.
  */
 function moverElPlazoSiPide(
   tx: TransactionSql,
-  m: { id: number; historica: boolean },
+  m: { id: number; historica: boolean; venceEn: Date },
   c: { clase: DefinicionDeCalculo["clase"]; plazoDias: number; desde: Date },
 ): (r: Recalculo) => Promise<Record<string, unknown>> {
   return async (r) => {
-    if (!laFotoMueveElPlazo({ clase: c.clase, historica: m.historica, estadoTrasLaFoto: r.estado })) return {};
+    const mueve = laFotoMueveElPlazo({ clase: c.clase, historica: m.historica, estadoTrasLaFoto: r.estado, venceEn: m.venceEn, fotoEn: c.desde });
+    if (!mueve) return {};
     const vence = fechaLimiteDesdeLaFoto(c.desde, c.plazoDias, zonaHoraria());
     await tx`UPDATE mediciones SET vence_en = ${vence}, aviso_previo_en = NULL, aviso_vencido_en = NULL, escalado_en = NULL
       WHERE id = ${m.id}`;
@@ -165,13 +168,14 @@ function moverElPlazoSiPide(
 /**
  * Escribe la foto de una medición que la espera, con los candados tomados: sus valores (o «no aplica» con el motivo del
  * cálculo), quién y cuándo (`reportada_por` nulo: el sistema) y cuándo se tomó (`foto_en`). Después el cálculo único, con el
- * evento `foto` sin usuario; con el resultado ya calculado, si la foto de un cálculo de flujo de una medición ordinaria pide
- * un análisis (`laFotoMueveElPlazo`), la fecha límite contada desde la foto, las marcas de aviso limpias y `venceEn` en el
- * evento. Lo usan `tomarFotos` y las pruebas que simulan una foto.
+ * evento `foto` sin usuario; con el resultado ya calculado, si la foto de una medición ordinaria pide un análisis y llegó
+ * con el plazo vencido (`laFotoMueveElPlazo`: la de flujo siempre; la de estado, si `m.venceEn` ya había pasado), la fecha
+ * límite contada desde la foto, las marcas de aviso limpias y `venceEn` en el evento. Lo usan `tomarFotos` y las pruebas que
+ * simulan una foto.
  */
 export async function escribirFoto(
   tx: TransactionSql,
-  m: { id: number; historica: boolean },
+  m: { id: number; historica: boolean; venceEn: Date },
   c: { version: VersionDeCalculo; definicion: DefinicionDeCalculo; alcance: string; plazoDias: number; foto: Foto; ahora: Date },
 ): Promise<Recalculo> {
   const antes = enTexto(c.version, await valoresPorLetra(tx, m.id, c.version), null);
@@ -227,7 +231,7 @@ async function fotografiar(
   const foto = fotoDe(toca.definicion, tomado);
   await escribirFoto(
     tx,
-    { id: medicionId, historica: m.historica === true },
+    { id: medicionId, historica: m.historica === true, venceEn: new Date(m.vence_en as string) },
     { version: toca.version, definicion: toca.definicion, alcance: toca.alcance, plazoDias: Number(i.plazo_reporte_dias), foto, ahora },
   );
   return "noAplica" in foto ? "no_aplica" : "valores";
@@ -360,7 +364,11 @@ export async function volverACalcular(
       detalle: { recalculo: true, antes, despues },
       conElResultado: yaMovido
         ? undefined
-        : moverElPlazoSiPide(tx, { id: m.id, historica: m.historica === true }, { clase: definicion.clase, plazoDias: Number(i.plazo_reporte_dias), desde: ahora }),
+        : moverElPlazoSiPide(
+            tx,
+            { id: m.id, historica: m.historica === true, venceEn: new Date(m.vence_en as string) },
+            { clase: definicion.clase, plazoDias: Number(i.plazo_reporte_dias), desde: ahora },
+          ),
     });
     const resultadoDespues = motivo !== null ? NO_APLICA : r.resultado ? textoValor(r.resultado, version.unidad, regla) : SIN_RESULTADO;
     await registrarAuditoria(tx, {

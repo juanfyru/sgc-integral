@@ -43,7 +43,7 @@ import { ErrorPermiso, puede } from "@/lib/permisos";
 import type { Tarea } from "@/lib/tareas";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
-import { CONSTANCIA_NO_EXISTE as NO_EXISTE, puedeRegistrarConstancia } from "./constancias-soporte";
+import { CONSTANCIA_NO_EXISTE as NO_EXISTE, constanciaQueSePide, puedeRegistrarConstancia } from "./constancias-soporte";
 import { basesDe, leerPeriodos, resumenAcumulado } from "./lectura";
 import { conMayuscula } from "./mediciones";
 import type { Soporte } from "./soportes";
@@ -388,17 +388,18 @@ export async function constanciasDe(sesion: SujetoVisibilidad, indicadorId: numb
 }
 
 /**
- * Las tareas «Registrar el reporte a *ente*: *código*, *periodo*» (anexo §8): las constancias pendientes de indicadores
- * activos que la persona ve y de las que es responsable de medir (`responsableDe`, con el respaldo de siempre: los
- * líderes y, sin ellos, el Admin SGC; un automático no lo mide nadie y cae en ese respaldo). Solo lee: corre en cada página
- * del cascarón y no abre constancias.
+ * Las tareas «Registrar el reporte a *ente*: *código*, *periodo*» (anexo §8): las constancias que se siguen pidiendo
+ * (`constanciaQueSePide`: pendientes de indicadores activos, sin las que no tienen soporte de una ficha que ya no se reporta)
+ * que la persona ve y de las que es responsable de medir (`responsableDe`, con el respaldo de siempre: los líderes y, sin
+ * ellos, el Admin SGC; un automático no lo mide nadie y cae en ese respaldo). Solo lee: corre en cada página del cascarón y
+ * no abre constancias.
  */
 export async function tareasDeConstancias(sql: Cliente, sesion: SesionFlujo): Promise<Tarea[]> {
   const filas = await sql`SELECT * FROM (
       SELECT r.id, r.periodo, r.ente, r.vence_en, i.codigo, i.calculo, p.nombre AS proceso,
         ${responsableDe(sql, sesion, "mide")} AS mide
       FROM reportes_externos r JOIN indicadores i ON i.id = r.indicador_id JOIN procesos p ON p.id = i.proceso_id
-      WHERE r.estado = 'pendiente' AND i.estado = 'activo' AND ${filtroIndicadores(sql, sesion)}
+      WHERE ${constanciaQueSePide(sql)} AND ${filtroIndicadores(sql, sesion)}
     ) x
     WHERE x.mide IS NOT NULL
     ORDER BY x.vence_en, x.id`;

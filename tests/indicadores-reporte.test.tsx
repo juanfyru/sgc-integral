@@ -60,7 +60,7 @@ vi.mock("@/app/acciones-indicadores", () => ({
 }));
 
 import PaginaIndicador from "@/app/(app)/indicadores/[codigo]/page";
-import PaginaReportar from "@/app/(app)/indicadores/[codigo]/reportar/[periodo]/page";
+import PaginaReportar, { generateMetadata as tituloDeReportar } from "@/app/(app)/indicadores/[codigo]/reportar/[periodo]/page";
 import { DatosDelSistema } from "@/componentes/indicadores/medicion/DatosDelSistema";
 import { destinoDelFoco, DialogoMetas } from "@/componentes/indicadores/medicion/DialogoMetas";
 import { FormularioAnalisis } from "@/componentes/indicadores/medicion/FormularioAnalisis";
@@ -401,6 +401,8 @@ const pagina = async (codigo: string, sp: Record<string, string> = {}) =>
   renderToStaticMarkup(await PaginaIndicador({ params: Promise.resolve({ codigo }), searchParams: Promise.resolve(sp) }));
 const reporte = async (codigo: string, periodo: string) =>
   renderToStaticMarkup(await PaginaReportar({ params: Promise.resolve({ codigo, periodo }) }));
+/** El `<title>` de la pantalla de reportar. */
+const tituloDelReporte = async (codigo: string, periodo: string) => (await tituloDeReportar({ params: Promise.resolve({ codigo, periodo }) })).title;
 
 describe("las páginas", () => {
   it("/indicadores/[codigo]/reportar/[periodo]: abre los periodos, pinta el formulario a quien mide y no existe para los demás", () =>
@@ -417,12 +419,18 @@ describe("las páginas", () => {
       expect(html).toContain("Sin soportes adjuntos.");
       expect(html).toContain("Arrastre los archivos aquí");
       expect((await tx`SELECT id FROM mediciones WHERE indicador_id = ${ind.id} AND periodo = '2026-T1'`).length).toBe(1);
+      // El título de la pestaña dice lo que dice el h1.
+      expect(html).toContain(`Reportar · Indicador de prueba ${ind.codigo}`);
+      expect(await tituloDelReporte(ind.codigo, "2026-T1")).toBe(`Reportar · Indicador de prueba ${ind.codigo}`);
 
       await expect(reporte(ind.codigo, "2099-T1")).rejects.toThrow("NO_ENCONTRADA");
       await expect(reporte(ind.codigo, "otra")).rejects.toThrow("NO_ENCONTRADA");
       await expect(reporte("ZZ-NO-EXISTE-1", "2026-T1")).rejects.toThrow("NO_ENCONTRADA");
+      await expect(tituloDelReporte(ind.codigo, "2099-T1")).rejects.toThrow("NO_ENCONTRADA");
       contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "consulta" }));
       await expect(reporte(ind.codigo, "2026-T1")).rejects.toThrow("NO_ENCONTRADA");
+      // Ni el título dice que existe.
+      await expect(tituloDelReporte(ind.codigo, "2026-T1")).rejects.toThrow("NO_ENCONTRADA");
 
       // Cerrada: se dice, sin formulario.
       await tx`UPDATE mediciones SET estado = 'cerrada' WHERE indicador_id = ${ind.id} AND periodo = '2026-T1'`;
@@ -450,6 +458,7 @@ describe("las páginas", () => {
       expect(sinFoto).toContain("Este indicador lo calcula el sistema. Nadie digita sus datos.");
       // Ni el título ni la miga dicen «Reportar»: nadie lo reporta.
       expect(sinFoto).toContain(`Calculado por el sistema · Indicador de prueba ${ind.codigo}`);
+      expect(await tituloDelReporte(ind.codigo, "2026-T1")).toBe(`Calculado por el sistema · Indicador de prueba ${ind.codigo}`);
       expect(sinFoto).toContain("Calculado por el sistema · primer trimestre de 2026");
       expect(sinFoto).not.toContain("Reportar ·");
       expect(sinFoto).not.toContain("Reportar:");

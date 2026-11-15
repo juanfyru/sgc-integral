@@ -20,7 +20,7 @@ import { resolverRutaAlmacen } from "@/lib/almacen";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
 import type { ArchivoServible } from "@/lib/servir-archivo";
-import { contarSoportes, contextoDeMedicion, type CondicionDePersona, NO_EXISTE, recalcularMedicion, versionDelPeriodo } from "./mediciones";
+import { contarSoportes, contextoDeMedicion, type CondicionDePersona, NO_EXISTE, NO_SE_DIGITA, recalcularMedicion, versionDelPeriodo } from "./mediciones";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -124,15 +124,18 @@ export async function soporteServible(
 
 /**
  * Los candados de quien sube un soporte (`registrarArchivo`), antes de escribir nada: el indicador `FOR SHARE` y activo,
- * después la medición `FOR UPDATE` y sin cerrar. Quien llama ya comprobó a la persona (`autorizarSoporte`).
+ * después la medición `FOR UPDATE` y sin cerrar. Quien llama ya comprobó a la persona (`autorizarSoporte`). Con las filas
+ * bloqueadas se repite que la versión que rige el periodo no sea automática: la aprobación que la vuelve automática pudo
+ * llegar entre la autorización y esta transacción (toma el indicador `FOR UPDATE`, así que aquí ya se ve).
  */
 export async function bloquearParaSoporte(tx: TransactionSql, medicionId: number): Promise<void> {
-  const [i] = await tx`SELECT estado FROM indicadores
+  const [i] = await tx`SELECT id, estado FROM indicadores
     WHERE id = (SELECT indicador_id FROM mediciones WHERE id = ${medicionId}) FOR SHARE`;
-  const [m] = await tx`SELECT estado FROM mediciones WHERE id = ${medicionId} FOR UPDATE`;
+  const [m] = await tx`SELECT estado, periodo FROM mediciones WHERE id = ${medicionId} FOR UPDATE`;
   if (!i || !m) throw new ErrorIndicador(NO_EXISTE);
   if (i.estado !== "activo") throw new ErrorIndicador(NO_ACTIVO);
   if (m.estado === "cerrada") throw new ErrorIndicador(CERRADA);
+  if ((await versionDelPeriodo(tx, Number(i.id), m.periodo as string))?.origenDato === "automatico") throw new ErrorIndicador(NO_SE_DIGITA);
 }
 
 /** El evento `soporte` de una subida, con la fila de `archivos` ya escrita y los candados de `bloquearParaSoporte`. */

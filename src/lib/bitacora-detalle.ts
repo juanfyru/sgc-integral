@@ -468,9 +468,21 @@ function revisionesResueltas(d: Record<string, unknown>): string | null {
 }
 
 /**
+ * «Se quitaron 2 constancias de envío al ente pendientes y sin soporte.» (anexo 14B, §8: `constanciasQuitadas`, al dejar la
+ * ficha de reportarse al ente); `null` si no quitó ninguna.
+ */
+function constanciasQuitadas(d: Record<string, unknown>): string | null {
+  const n = numero(d.constanciasQuitadas) ?? 0;
+  if (n <= 0) return null;
+  return n === 1
+    ? "Se quitó 1 constancia de envío al ente pendiente y sin soporte."
+    : `Se quitaron ${n} constancias de envío al ente pendientes y sin soporte.`;
+}
+
+/**
  * Lo que la publicación de una ficha cambió en sus datos de operación (anexo 14B, §5.3): el inicio de medición que fijó y
- * el soporte obligatorio que apagó, y las revisiones por cambio de norma que resolvió (anexo 14B, §9). Vacío si no cambió
- * nada; si no, frases completas tras un punto.
+ * el soporte obligatorio que apagó, las revisiones por cambio de norma que resolvió (anexo 14B, §9) y las constancias de
+ * envío que quitó (§8). Vacío si no cambió nada; si no, frases completas tras un punto.
  */
 function operacionAlPublicar(d: Record<string, unknown>): string {
   const inicio = objeto(d.inicioMedicion);
@@ -487,6 +499,7 @@ function operacionAlPublicar(d: Record<string, unknown>): string {
       ? `Se apagó el soporte obligatorio${recalculadas > 0 ? ` (${cuenta(recalculadas, "medición recalculada", "mediciones recalculadas")})` : ""}.`
       : null,
     revisionesResueltas(d),
+    constanciasQuitadas(d),
   ].filter((f): f is string => f !== null);
   return frases.length > 0 ? `. ${frases.join(" ")}` : "";
 }

@@ -36,6 +36,7 @@ import {
 import { constanciasVencidas } from "@/db/consultas/indicadores/constancias-vencidas";
 import { abrirCambio, crearIndicador, fichaParaEditar, guardarBorrador } from "@/db/consultas/indicadores/fichas";
 import { resultadosDelAnio } from "@/db/consultas/indicadores/lectura";
+import { listarIndicadores } from "@/db/consultas/indicadores/lista";
 import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
 import { retirar } from "@/db/consultas/indicadores/operacion";
 import { alPublicarVersion } from "@/db/consultas/indicadores/publicacion";
@@ -47,6 +48,7 @@ import { EsquemaFicha, type DatosFicha } from "@/lib/esquemas/indicadores";
 import { avisoDeParcial, enteCompleto, errorDeEnte, seReportaAlEnte } from "@/lib/indicadores/constancias";
 import { ErrorIndicador, type Periodicidad } from "@/lib/indicadores/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
+import { describirEvento } from "@/lib/bitacora-detalle";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { indicadorDePrueba, loteImportado, silenciarIndicadores, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
@@ -412,6 +414,49 @@ describe("cuándo nace una constancia", () => {
         constanciasQuitadas: 1,
       });
       expect(await asegurarConstancias({ sql: tx, ahora: ENERO, indicadorId: b.id })).toBe(0);
+    }));
+
+  it("quitar el ente con un cambio menor o con uno mayor deja en la bitácora cuántas constancias quitó; sin ninguna, no lo dice", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const conEnteCompleto = manual(b, { ente: ENTE, periodicidadExterna: "trimestral", plazoExternoDias: 15 });
+      const SIN_ENTE: Partial<DatosFicha> = { ente: undefined, periodicidadExterna: undefined, plazoExternoDias: undefined };
+      const detalleDe = async (accion: string, indicadorId: number) =>
+        ((await tx`SELECT detalle FROM auditoria WHERE accion = ${accion} AND entidad_id = ${indicadorId} ORDER BY id DESC LIMIT 1`)[0]?.detalle ?? null) as
+          | Record<string, unknown>
+          | null;
+
+      // Cambio menor: el cuarto trimestre de 2026 ya nació, pendiente y sin soporte.
+      const menor = await aprobada(tx, b, conEnteCompleto);
+      expect(await asegurarConstancias({ sql: tx, ahora: ENERO, indicadorId: menor.indicadorId })).toBe(1);
+      expect(await cambioMenor(tx, b, menor, SIN_ENTE)).toMatchObject({ menor: true });
+      expect(await constanciasDeBD(tx, menor.indicadorId)).toEqual([]);
+      const deMenor = await detalleDe("indicador_cambio_menor", menor.indicadorId);
+      expect(deMenor).toMatchObject({ constanciasQuitadas: 1 });
+      expect(describirEvento({ accion: "indicador_cambio_menor", entidad: "indicador", entidadId: menor.indicadorId, detalle: deMenor ?? {} })).toContain(
+        "Se quitó 1 constancia de envío al ente pendiente y sin soporte.",
+      );
+
+      // Cambio mayor (la meta sube a 95): lo deja la aprobación.
+      const mayor = await aprobada(tx, b, conEnteCompleto);
+      expect(await asegurarConstancias({ sql: tx, ahora: ENERO, indicadorId: mayor.indicadorId })).toBe(1);
+      const { versionId } = await abrirCambio(b.admin, mayor.indicadorId, { sql: tx, ahora: AHORA });
+      const ficha = await fichaParaEditar(b.admin, mayor.codigo, { sql: tx });
+      await guardarBorrador(
+        b.admin,
+        versionId,
+        EsquemaFicha.parse({ ...ficha!.valores, ...SIN_ENTE, meta: "95", motivoCambio: "Ya no se reporta al ente y la meta sube" }),
+        { sql: tx, ahora: AHORA },
+      );
+      expect(await enviarAAprobacion(b.admin, { versionId, credenciales: CLAVE }, firmar(tx))).toMatchObject({ menor: false });
+      await aprobarFichas(b.gerente, { versionIds: [versionId], credenciales: CLAVE }, firmar(tx));
+      expect(await constanciasDeBD(tx, mayor.indicadorId)).toEqual([]);
+      expect(await detalleDe("indicador_aprobado", mayor.indicadorId)).toMatchObject({ versionId, constanciasQuitadas: 1 });
+
+      // Sin constancias que quitar, la bitácora no lo dice.
+      const sinConstancias = await aprobada(tx, b, conEnteCompleto);
+      await cambioMenor(tx, b, sinConstancias, SIN_ENTE);
+      expect(await detalleDe("indicador_cambio_menor", sinConstancias.indicadorId)).not.toHaveProperty("constanciasQuitadas");
     }));
 
   it("quitar el ente y volver a ponerlo cuenta desde la nueva publicación y no abre lo que terminó entretanto", () =>
@@ -884,6 +929,57 @@ describe("tareas, vencimientos y visibilidad", () => {
         expect(await tx`SELECT 1 FROM notificaciones WHERE usuario_id = ${quien.usuarioId} AND tipo LIKE 'indicadores.envio%'`).toHaveLength(0);
       }
       expect(await tx`SELECT 1 FROM notificaciones WHERE usuario_id = ${mide.usuarioId} AND tipo = 'indicadores.envio_vencido'`).toHaveLength(1);
+    }));
+
+  it("una pendiente sin soporte de una ficha que ya no se reporta sigue existiendo, pero no se pide: ni tarea, ni aviso, ni marca; con soporte, sí", () =>
+    revertida(sql, async (tx) => {
+      await silenciarIndicadores(tx);
+      const zona = zonaHoraria();
+      const pasada = (ahora: Date) => constanciasVencidas({ sql: tx, ahora, zona, escalamientoDias: 3 });
+      const proceso = await procesoNuevo(tx);
+      const admin = await sesionAdmin(tx);
+      const jefe = await usuarioDePrueba(tx, { rol: "consulta" });
+      const mide = await usuarioDePrueba(tx, { rol: "consulta", jefeId: jefe.usuarioId });
+      const desdeJulio = { ...SUPERSALUD, desde: new Date("2026-07-05T15:00:00Z") };
+      // Desde julio: solo nace el tercer trimestre, que vence el 15 de octubre.
+      const sinSoporte = await conEnte(tx, proceso.id, { mide: [mide.usuarioId], ente: desdeJulio });
+      const conSoporte = await conEnte(tx, proceso.id, { mide: [mide.usuarioId], ente: desdeJulio });
+      for (const i of [sinSoporte, conSoporte]) await asegurarConstancias({ sql: tx, ahora: OCTUBRE, indicadorId: i.id });
+      const [quitado, conservado] = await Promise.all([sinSoporte, conSoporte].map((i) => idDe(tx, i.id, "2026-T3")));
+      // A una se le sube un archivo equivocado y se le quita (deja su historial); la otra conserva su soporte.
+      const equivocado = await registrarArchivo(archivoDeConstancia(quitado, "equivocado.pdf"), mide.usuarioId, { sql: tx });
+      await quitarSoporteDeConstancia(mide, { archivoId: equivocado.id }, { sql: tx, ahora: OCTUBRE });
+      await registrarArchivo(archivoDeConstancia(conservado), mide.usuarioId, { sql: tx });
+
+      // Las dos fichas dejan de reportarse al ente con un cambio menor: las dos constancias se conservan, pendientes.
+      for (const i of [sinSoporte, conSoporte]) {
+        await publicarCambio(tx, { indicadorId: i.id, usuarioId: admin.usuarioId, ahora: OCTUBRE, ente: null });
+        expect(await enteDesde(tx, i.id)).toBeNull();
+        expect((await constanciasDeBD(tx, i.id)).map((c) => [c.periodo, c.estado])).toEqual([["2026-T3", "pendiente"]]);
+      }
+
+      // La tarea (y la insignia, vencida): solo la que tiene soporte, que se puede terminar de registrar.
+      const deMide = await tareasDeIndicadores(mide, { sql: tx, ahora: AHORA });
+      expect(deMide.tareas.filter((t) => t.id.startsWith("constancia:")).map((t) => t.id)).toEqual([`constancia:${conservado}`]);
+      expect(deMide.vencidas).toBe(1);
+
+      // Al pasar la fecha, el aviso de vencido y el escalamiento: también solo la que tiene soporte.
+      const avisos = async (usuarioId: number) =>
+        (await tx`SELECT tipo, titulo FROM notificaciones WHERE usuario_id = ${usuarioId} AND tipo LIKE 'indicadores.envio%' ORDER BY id`).map((a) => [a.tipo, a.titulo]);
+      expect(await pasada(new Date("2026-10-17T15:00:00Z"))).toEqual({ avisados: 1, escalados: 0 });
+      expect(await avisos(mide.usuarioId)).toEqual([["indicadores.envio_vencido", "Tiene 1 reporte al ente con el plazo vencido"]]);
+      expect(await pasada(new Date("2026-10-20T15:00:00Z"))).toEqual({ avisados: 0, escalados: 1 });
+      expect((await avisos(jefe.usuarioId)).map(([tipo]) => tipo)).toEqual(["indicadores.envio_escalado"]);
+      const marcas = await tx`SELECT id, aviso_vencido_en, escalado_en FROM reportes_externos WHERE id IN ${tx([quitado, conservado])} ORDER BY id`;
+      expect(marcas.find((m) => Number(m.id) === quitado)).toMatchObject({ aviso_vencido_en: null, escalado_en: null });
+      expect(marcas.find((m) => Number(m.id) === conservado)?.escalado_en).not.toBeNull();
+
+      // La marca y el filtro de la lista: «Envío vencido» solo en la que tiene soporte.
+      const { filas } = await listarIndicadores(mide, { envio: "pendiente" }, { sql: tx, ahora: AHORA });
+      const mias = filas.filter((f) => [sinSoporte.codigo, conSoporte.codigo].includes(f.codigo));
+      expect(mias.map((f) => [f.codigo, f.envio])).toEqual([[conSoporte.codigo, "vencido"]]);
+      const todas = (await listarIndicadores(mide, {}, { sql: tx, ahora: AHORA })).filas.filter((f) => f.codigo === sinSoporte.codigo);
+      expect(todas.map((f) => f.envio)).toEqual([null]);
     }));
 });
 

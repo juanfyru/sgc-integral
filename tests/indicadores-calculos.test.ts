@@ -83,6 +83,26 @@ describe("registro de cálculos", () => {
     ]);
   });
 
+  it("cada variable de los diez cálculos tiene nombre y descripción; las de «Reportes a tiempo» dicen lo que cuentan, también «no aplica»", () => {
+    for (const c of Object.values(CALCULOS)) {
+      for (const v of c.variables) {
+        expect(v.nombre.trim(), `${c.clave} ${v.letra}`).not.toBe("");
+        expect(v.descripcion.trim(), `${c.clave} ${v.letra}`).not.toBe("");
+        // Lo que admite la descripción de una variable en la ficha.
+        expect(v.descripcion.length, `${c.clave} ${v.letra}`).toBeLessThanOrEqual(500);
+      }
+    }
+    const [a, b] = CALCULOS.reportes_a_tiempo.variables;
+    for (const v of [a, b]) expect(v.descripcion, v.letra).toContain("«no aplica»");
+    // Las firma la ficha que los usa (en la demo, SGC-ID-001): un cambio de texto es un cambio de lo firmado.
+    expect(a.descripcion).toBe(
+      "Cuenta, de las mediciones de B, las que se reportaron o se marcaron «no aplica» por primera vez en su fecha límite o antes; la que nunca se reportó no cuenta como a tiempo",
+    );
+    expect(b.descripcion).toBe(
+      "Cuenta las mediciones con fecha límite en el periodo que digita una persona (no las históricas ni las que calcula el sistema), también las marcadas «no aplica»; no cuenta las de otra periodicidad que dejó un cambio mayor ni las que seguían sin reportar cuando el indicador se retiró antes de su fecha límite",
+    );
+  });
+
   it("una clave o un alcance que no es del registro", () => {
     expect(calculoDe("constructor")).toBeNull();
     expect(calculoDe("__proto__")).toBeNull();

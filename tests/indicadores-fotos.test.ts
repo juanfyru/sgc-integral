@@ -216,7 +216,7 @@ describe("tomarFotos", () => {
       expect(await eventos(tx, marzo)).toHaveLength(1);
     }));
 
-  it("flujo: la foto que pide un análisis le da otro plazo, contado desde ella; la que cumple o no aplica, y la de estado, no", () =>
+  it("flujo: la foto que pide un análisis le da otro plazo, contado desde ella; la que cumple o no aplica (también la de estado tardía que cumple), no", () =>
     revertida(sql, async (tx) => {
       const flujo = await automatico(tx, "etapas");
       simular(flujo.ind.id, { A: "3", B: "4" });
@@ -244,6 +244,7 @@ describe("tomarFotos", () => {
         expect((await eventos(tx, id))[0].detalle).not.toHaveProperty("venceEn");
       }
 
+      // De estado, tomada después de su fecha límite (el 11 de abril) y cumpliendo la meta: tampoco.
       const estado = await automatico(tx, "dentro_plazo");
       simular(estado.ind.id, { A: "9", B: "10" });
       await fotos(tx, abril(11), estado.ind.id);
@@ -251,6 +252,89 @@ describe("tomarFotos", () => {
       expect(e.foto_en).toEqual(abril(11));
       expect(e.vence_en).toEqual(VENCE_MARZO);
       expect((await eventos(tx, await estado.medicion()))[0].detalle).not.toHaveProperty("venceEn");
+    }));
+
+  it("estado: la foto tardía que pide un análisis le da otro plazo, contado desde ella; no nace vencida ni se escala", () =>
+    revertida(sql, async (tx) => {
+      const jefe = await usuarioDePrueba(tx, { rol: "consulta" });
+      const analiza = await usuarioDePrueba(tx, { rol: "consulta", jefeId: jefe.usuarioId });
+      const { ind, medicion } = await automatico(tx, "dentro_plazo", { analiza: [analiza.usuarioId] });
+      simular(ind.id, { A: "1", B: "4" });
+      const marzo = await medicion();
+      const config = { ...CONFIG_DOCUMENTAL_DEFECTO, escalamientoDias: 3 };
+      const pasada = (ahora: Date) => revisarVencimientosDeIndicadores({ sql: tx, ahora, config });
+      const deRecordatorio = async (usuarioId: number) =>
+        (await tx`SELECT tipo, titulo FROM notificaciones
+          WHERE usuario_id = ${usuarioId} AND tipo IN ('indicadores.vencido', 'indicadores.escalado') ORDER BY id`).map((a) => [a.tipo, a.titulo]);
+
+      // La pasada llega el 15 de abril, cinco días después de la fecha límite de marzo (el 10).
+      await pasada(abril(15));
+      const nuevaFecha = fechaLimite(abril(15), 10, ZONA);
+      const m = await fila(tx, marzo);
+      expect([m.foto_en, m.semaforo, m.estado, m.vence_en]).toEqual([abril(15), "critico", "abierta", nuevaFecha]);
+      expect([m.aviso_previo_en, m.aviso_vencido_en, m.escalado_en]).toEqual([null, null, null]);
+      expect((await eventos(tx, marzo))[0].detalle.venceEn).toBe(nuevaFecha.toISOString());
+      // En esa misma pasada no está vencido: ni aviso, ni escalamiento, ni cuenta como vencida en sus tareas.
+      expect(await deRecordatorio(analiza.usuarioId)).toEqual([]);
+      expect(await deRecordatorio(jefe.usuarioId)).toEqual([]);
+      expect(await tareasDeIndicadores(analiza, { sql: tx, ahora: abril(15) })).toMatchObject({
+        tareas: [{ id: `analizar:${marzo}`, vence: nuevaFecha }],
+        vencidas: 0,
+      });
+
+      // Pasada la fecha nueva (el 25 de abril), sí vence; y después de los días de Configuración documental, se escala.
+      await pasada(abril(26));
+      expect(await deRecordatorio(analiza.usuarioId)).toEqual([["indicadores.vencido", "Tiene 1 indicador por analizar con el plazo vencido"]]);
+      await pasada(abril(30));
+      expect((await deRecordatorio(jefe.usuarioId)).map(([tipo]) => tipo)).toEqual(["indicadores.escalado"]);
+    }));
+
+  it("estado con plazo 0: la foto siempre llega después de la fecha límite y le da el día de la foto para analizar", () =>
+    revertida(sql, async (tx) => {
+      const analiza = await usuarioDePrueba(tx, { rol: "consulta" });
+      // Sin abrir marzo: su fecha límite se fija al abrirlo, con el plazo de ese momento.
+      const { ind, medicion } = await automatico(tx, "dentro_plazo", { analiza: [analiza.usuarioId], abrirA: new Date("2003-03-20T15:00:00Z") });
+      await tx`UPDATE indicadores SET plazo_reporte_dias = 0 WHERE id = ${ind.id}`;
+      simular(ind.id, { A: "1", B: "4" });
+      const pasada = (ahora: Date) => revisarVencimientosDeIndicadores({ sql: tx, ahora, config: CONFIG_DOCUMENTAL_DEFECTO });
+
+      await pasada(abril(1));
+      const marzo = await medicion();
+      const nuevaFecha = fechaLimite(abril(1), 0, ZONA);
+      const m = await fila(tx, marzo);
+      expect([m.foto_en, m.estado, m.vence_en]).toEqual([abril(1), "abierta", nuevaFecha]);
+      expect((await eventos(tx, marzo))[0].detalle.venceEn).toBe(nuevaFecha.toISOString());
+      expect(await tx`SELECT 1 FROM notificaciones WHERE usuario_id = ${analiza.usuarioId} AND tipo = 'indicadores.vencido'`).toHaveLength(0);
+      expect((await fila(tx, marzo)).aviso_vencido_en).toBeNull();
+
+      await pasada(abril(3));
+      expect(await tx`SELECT 1 FROM notificaciones WHERE usuario_id = ${analiza.usuarioId} AND tipo = 'indicadores.vencido'`).toHaveLength(1);
+    }));
+
+  it("estado: tomada a tiempo, o tardía que cumple la meta o queda «No aplica», conserva su fecha límite", () =>
+    revertida(sql, async (tx) => {
+      // A tiempo (el 5 de abril, antes del 10) y pide un análisis: el plazo que le queda es el suyo.
+      const aTiempo = await automatico(tx, "dentro_plazo");
+      simular(aTiempo.ind.id, { A: "1", B: "4" });
+      await fotos(tx, abril(5), aTiempo.ind.id);
+      const a = await fila(tx, await aTiempo.medicion());
+      expect([a.foto_en, a.estado, a.vence_en]).toEqual([abril(5), "abierta", VENCE_MARZO]);
+      expect((await eventos(tx, await aTiempo.medicion()))[0].detalle).not.toHaveProperty("venceEn");
+
+      // Tardía (el 15 de abril) que cumple la meta o no tiene nada que medir: queda reportada con su fecha y sus marcas.
+      for (const valores of [
+        { A: "9", B: "10" },
+        { A: "0", B: "0" },
+      ]) {
+        const x = await automatico(tx, "dentro_plazo");
+        simular(x.ind.id, valores);
+        const id = await x.medicion();
+        await tx`UPDATE mediciones SET aviso_previo_en = ${abril(8)} WHERE id = ${id}`;
+        await fotos(tx, abril(15), x.ind.id);
+        const f = await fila(tx, id);
+        expect([f.estado, f.foto_en, f.vence_en, f.aviso_previo_en], JSON.stringify(valores)).toEqual(["reportada", abril(15), VENCE_MARZO, abril(8)]);
+        expect((await eventos(tx, id))[0].detalle).not.toHaveProperty("venceEn");
+      }
     }));
 
   it("estado: en la primera revisión después del fin del periodo", () =>
@@ -709,6 +793,36 @@ describe("el cierre y las lecturas", () => {
       await cerrarMes(admin, "2003-04", { sql: tx, ahora: new Date("2003-05-15T15:00:00Z") });
       const n = await fila(tx, await noCumple.medicion());
       expect([n.estado, n.sin_analisis]).toEqual(["cerrada", true]);
+    }));
+
+  it("una cerrada «Sin dato» porque su foto falló vuelve a ser candidata al reabrirse: la pasada le toma la foto y le mueve el plazo", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const { ind, medicion } = await automatico(tx, "etapas");
+      const marzo = await medicion();
+      simular(ind.id, () => {
+        throw new Error("La Vigencia no dio el periodo «2003-03»");
+      });
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        // El cierre toma antes las fotos pendientes: la de marzo falla y se cierra sin dato.
+        await cerrarMes(admin, MARZO, { sql: tx, ahora: abril(20) });
+        expect(error).toHaveBeenCalledWith(`No se pudo tomar la foto de la medición ${marzo}:`, expect.any(Error));
+      } finally {
+        error.mockRestore();
+      }
+      const cerrada = await fila(tx, marzo);
+      expect([cerrada.estado, cerrada.foto_en, cerrada.reportada_en]).toEqual(["cerrada", null, null]);
+
+      await reabrirMedicion(admin, { medicionId: marzo, justificacion: "El cálculo falló el día del cierre" }, { sql: tx, ahora: abril(21) });
+      expect((await fila(tx, marzo)).estado).toBe("abierta");
+      simulado.de = null;
+      simular(ind.id, { A: "1", B: "4" });
+      expect(await fotos(tx, abril(22), ind.id)).toEqual({ tomadas: 1, noAplica: 0 });
+      const m = await fila(tx, marzo);
+      const nuevaFecha = fechaLimite(abril(22), 10, ZONA);
+      expect([m.foto_en, m.estado, m.vence_en, m.aviso_vencido_en, m.escalado_en]).toEqual([abril(22), "abierta", nuevaFecha, null, null]);
+      expect((await eventos(tx, marzo)).at(-1)!.detalle).toMatchObject({ calculo: "etapas", venceEn: nuevaFecha.toISOString() });
     }));
 
   it("una medición fotografiada, sin usuario, sale en la tabla del año, la matriz, el Excel del indicador y el impreso", () =>

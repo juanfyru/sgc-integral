@@ -17,6 +17,7 @@ import { puede } from "@/lib/permisos";
 import { cuenta } from "@/lib/plural";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
+import { constanciaQueSePide } from "./constancias-soporte";
 import { agrupar, aNumero, comparacionDe, conResultado, vigentes, type Opciones } from "./lectura";
 import { asegurarMediciones, conMayuscula, reglaMostrada, texto, versionesAprobadasDe, type VersionDeCalculo } from "./mediciones";
 import { columnasDePendiente, esPendiente, queFalta, type FaltaDePersona } from "./tareas";
@@ -218,8 +219,9 @@ export async function listarIndicadores(
       SELECT numero, estado, nombre, periodicidad FROM indicador_versiones WHERE indicador_id = i.id ORDER BY numero DESC LIMIT 1
     ) vu ON ${administra}
     LEFT JOIN LATERAL (
-      SELECT vence_en FROM reportes_externos WHERE indicador_id = i.id AND estado = 'pendiente' ORDER BY vence_en, hasta, id LIMIT 1
-    ) env ON i.estado = 'activo'
+      SELECT r.vence_en FROM reportes_externos r WHERE r.indicador_id = i.id AND ${constanciaQueSePide(sql)}
+      ORDER BY r.vence_en, r.hasta, r.id LIMIT 1
+    ) env ON true
     WHERE ${filtroIndicadores(sql, sesion)} AND i.estado IN ${sql(estados)}
       ${filtro.envio ? sql`AND env.vence_en IS NOT NULL` : sql``}
       ${filtro.impacto ? sql`AND EXISTS (SELECT 1 FROM impactos_indicadores ii WHERE ii.indicador_id = i.id AND ii.estado = 'pendiente')` : sql``}

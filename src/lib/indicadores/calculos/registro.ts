@@ -214,8 +214,14 @@ export const CALCULOS: Record<ClaveDeCalculo, DefinicionDeCalculo> = {
     forma: "porcentaje",
     variables: variables(
       "suma",
-      ["Mediciones reportadas dentro de su plazo", "Cuenta las mediciones con fecha límite en el periodo cuyo primer reporte fue en esa fecha o antes"],
-      ["Mediciones con fecha límite en el periodo", "Cuenta las mediciones ordinarias de indicadores digitados cuya fecha límite cae en el periodo"],
+      [
+        "Mediciones reportadas dentro de su plazo",
+        "Cuenta, de las mediciones de B, las que se reportaron o se marcaron «no aplica» por primera vez en su fecha límite o antes; la que nunca se reportó no cuenta como a tiempo",
+      ],
+      [
+        "Mediciones con fecha límite en el periodo",
+        "Cuenta las mediciones con fecha límite en el periodo que digita una persona (no las históricas ni las que calcula el sistema), también las marcadas «no aplica»; no cuenta las de otra periodicidad que dejó un cambio mayor ni las que seguían sin reportar cuando el indicador se retiró antes de su fecha límite",
+      ],
     ),
     alcances: POR_PROCESO,
     tendencia: "ascendente",

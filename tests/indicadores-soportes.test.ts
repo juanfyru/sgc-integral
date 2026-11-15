@@ -37,13 +37,13 @@ import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { registrarArchivo } from "@/db/consultas/admin";
 import { ErrorTramite } from "@/db/consultas/flujo/contrato";
 import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
-import { autorizarSoporte, quitarSoporte, soportesDe, soportesDeVarias, soporteServible } from "@/db/consultas/indicadores/soportes";
+import { autorizarSoporte, bloquearParaSoporte, quitarSoporte, soportesDe, soportesDeVarias, soporteServible } from "@/db/consultas/indicadores/soportes";
 import { ErrorPermiso } from "@/lib/permisos";
 import { crearSesion } from "@/lib/sesion";
 import { ERROR_SOPORTE } from "@/lib/subida";
 import { pngDePrueba } from "./png-prueba";
 import { peticionDeSubida } from "./utiles/distribucion";
-import { indicadorDePrueba, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
+import { indicadorDePrueba, versionAutomatica, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
 import { pdfDePrueba } from "./utiles/pdf";
 import { usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
@@ -389,6 +389,30 @@ describe("registrarArchivo (la transacción de la subida)", () => {
       expect(err).toBeInstanceOf(ErrorTramite);
       expect((err as Error).message).toBe("Ya hay un soporte con ese nombre en esta medición");
       expect(await archivosDe(tx, medicion)).toHaveLength(1);
+    }));
+
+  it("con la versión que rige ya automática (la aprobación llegó después de autorizar la subida) rechaza, sin fila ni evento", () =>
+    entorno(async ({ tx, ind, medicion, mide, admin }) => {
+      expect(await autorizarSoporte(medicion, mide.sesion, { sql: tx })).toMatchObject({ ok: true });
+      // Entre la autorización y la transacción de la subida, se aprueba el paso a automático desde ese periodo.
+      await versionAutomatica(tx, {
+        indicadorId: ind.id,
+        usuarioId: admin.sesion.usuarioId,
+        rigeDesde: "2026-T2",
+        aprobadaEn: new Date("2026-03-20T15:00:00Z"),
+        periodicidad: "trimestral",
+        calculo: { clave: "dentro_plazo", alcance: "entidad" },
+      });
+      const NO_SE_DIGITA = "Este indicador lo calcula el sistema: sus datos no se digitan";
+      await expect(tx.savepoint((sp) => bloquearParaSoporte(sp, medicion))).rejects.toThrow(NO_SE_DIGITA);
+      const err = await registrarArchivo(archivo(medicion), mide.sesion.usuarioId, { sql: tx }).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(ErrorIndicador);
+      expect((err as Error).message).toBe(NO_SE_DIGITA);
+      expect(await archivosDe(tx, medicion)).toHaveLength(0);
+      expect(await eventos(tx, medicion)).toHaveLength(0);
     }));
 
   it("con la medición cerrada, el indicador retirado o la medición inexistente rechaza, sin fila de archivos ni evento", () =>

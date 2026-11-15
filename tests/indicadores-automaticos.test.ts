@@ -366,6 +366,29 @@ describe("la ficha automática en el servidor", () => {
       );
     }));
 
+  it("al aprobar, el código de la otra ficha activa con el cálculo solo lo lee quien la ve", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      await liberarCalculo(tx, "etapas", "entidad");
+      const [operativo] = await tx`SELECT id FROM clasificaciones_indicador WHERE nombre = 'Operativo'`;
+      const delLider = await procesoNuevo(tx);
+      const otro = await procesoNuevo(tx);
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [delLider] });
+      const liderDeLosDos = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [delLider, otro] });
+      // Operativa: la aprueban los líderes de su proceso. Se envió cuando no había otra activa con el cálculo.
+      const operativa = await enviada(tx, b, automatica(b, "etapas", "entidad", { procesoId: delLider, clasificacionId: Number(operativo.id) }));
+      // Después queda activa una restringida de otro proceso con el mismo cálculo y alcance.
+      const restringida = await indicadorDePrueba(tx, { procesoId: otro, nivelAcceso: "restringido", calculo: { clave: "etapas", alcance: "entidad" } });
+
+      // Quien no la ve recibe el mismo mensaje sin el código; quien la ve, con él.
+      await rechaza(aprobarFichas(lider, { versionIds: [operativa.versionId], credenciales: CLAVE }, firmar(tx)), "Ya hay una ficha activa para ese cálculo y alcance");
+      await rechaza(
+        aprobarFichas(liderDeLosDos, { versionIds: [operativa.versionId], credenciales: CLAVE }, firmar(tx)),
+        `Ya hay una ficha activa para ese cálculo y alcance: ${restringida.codigo}`,
+      );
+      expect((await versionDe(tx, operativa.versionId)).estado).toBe("por_aprobar");
+    }));
+
   it("dos fichas del mismo cálculo aprobadas en el mismo bloque: no se aprueba ninguna y el mensaje es legible", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);

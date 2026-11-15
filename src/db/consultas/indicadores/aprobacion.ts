@@ -315,12 +315,15 @@ async function exigirMetasDentroDeBien(sql: Cliente, versionId: number, rigeDesd
 
 /**
  * Lo que la publicación cambió en los datos de operación (regla 5 de AGENTS.md: la aprobación no los cambia sin rastro), para
- * el detalle de `indicador_aprobado` o `indicador_cambio_menor`: nada si no apagó el soporte obligatorio.
+ * el detalle de `indicador_aprobado` o `indicador_cambio_menor`: nada si no apagó el soporte obligatorio, no resolvió
+ * revisiones ni quitó constancias.
  */
 const rastroDePublicacion = (p: Publicado | null) => ({
   ...(p?.soporteApagado ? { soporteApagado: true, medicionesRecalculadas: p.medicionesRecalculadas } : {}),
   // Las revisiones por cambio de norma que resolvió la versión nueva (anexo 14B, §9).
   ...(p && p.impactosResueltos > 0 ? { impactosResueltos: p.impactosResueltos } : {}),
+  // Las constancias pendientes sin soporte que quitó al dejar de reportarse al ente (§8), como lo deja el retiro.
+  ...(p && p.constanciasQuitadas > 0 ? { constanciasQuitadas: p.constanciasQuitadas } : {}),
 });
 
 const SOLO_EN_CURSO = "Un cálculo que no se llena hacia atrás rige desde el periodo en curso";
@@ -333,18 +336,18 @@ function calculoDeFila(v: Record<string, unknown>): { def: DefinicionDeCalculo; 
 }
 
 /**
- * Otro indicador activo con el mismo cálculo y alcance (con alcance «proceso», en el mismo proceso): su código, o `null`.
- * El índice único parcial `indicadores_calculo_unico` es la garantía de fondo.
+ * Otro indicador activo con el mismo cálculo y alcance (con alcance «proceso», en el mismo proceso): su id y su código, o
+ * `null`. El índice único parcial `indicadores_calculo_unico` es la garantía de fondo.
  */
 async function otraActivaConElCalculo(
   sql: Cliente,
   c: { indicadorId: number; procesoId: number; calculo: string; alcance: string },
-): Promise<string | null> {
-  const [o] = await sql`SELECT codigo FROM indicadores
+): Promise<{ id: number; codigo: string } | null> {
+  const [o] = await sql`SELECT id, codigo FROM indicadores
     WHERE estado = 'activo' AND calculo = ${c.calculo} AND calculo_alcance = ${c.alcance}
       AND (calculo_alcance <> 'proceso' OR proceso_id = ${c.procesoId}) AND id <> ${c.indicadorId}
     ORDER BY id LIMIT 1`;
-  return o ? (o.codigo as string) : null;
+  return o ? { id: Number(o.id), codigo: o.codigo as string } : null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -387,7 +390,8 @@ async function validarEnvio(sql: Cliente, d: DatosEnvio, ahora: Date): Promise<E
       calculo: automatica.def.clave,
       alcance: automatica.alcance,
     });
-    if (otra) throw new ErrorIndicador(yaHayUnaActiva(otra));
+    // Quien envía administra indicadores y los ve todos: el código va siempre.
+    if (otra) throw new ErrorIndicador(yaHayUnaActiva(otra.codigo));
   }
   const contenido = await contenidoDeVersion(sql, d.versionId);
   const vigente = await versionVigente(sql, indicadorId);
@@ -605,7 +609,8 @@ async function validarAprobacion(sql: Cliente, sesion: SujetoVisibilidad, ids: r
     const automatica = calculoDeFila(v);
     if (automatica) {
       const otra = await otraActivaConElCalculo(sql, { indicadorId, procesoId, calculo: automatica.def.clave, alcance: automatica.alcance });
-      if (otra) throw new ErrorIndicador(yaHayUnaActiva(otra));
+      // Quien aprueba puede no ver esa ficha (un líder ante una restringida de otro proceso): sin el código, el mismo mensaje.
+      if (otra) throw new ErrorIndicador(yaHayUnaActiva((await puedeVerIndicador(otra.id, sesion, { sql })) ? otra.codigo : undefined));
     }
     // Un cálculo que no se llena hacia atrás empieza en el periodo en curso al aprobarse (anexo 14B, §5.3).
     const enCurso = automatica && !automatica.def.reconstruible ? periodoQueContiene(v.periodicidad as Periodicidad, ahora, zonaHoraria()).clave : null;

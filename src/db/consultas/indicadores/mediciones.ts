@@ -69,7 +69,7 @@ const OTRA_PERIODICIDAD = "Ese periodo ya no se mide: la ficha que lo rige es de
 /** Un histórico entra solo por la tabla del año (`registrarHistoricos`, spec §8.8). */
 const ES_HISTORICO = "Ese periodo es histórico: regístrelo en la tabla del año";
 /** Nadie mide un automático (anexo 14B, §4): lo que digita rechaza la medición cuya versión que rige el periodo lo es. */
-const NO_SE_DIGITA = "Este indicador lo calcula el sistema: sus datos no se digitan";
+export const NO_SE_DIGITA = "Este indicador lo calcula el sistema: sus datos no se digitan";
 
 /**
  * Una medición abierta de la periodicidad vieja que quedó dentro del tramo de un cambio mayor de periodicidad (los meses

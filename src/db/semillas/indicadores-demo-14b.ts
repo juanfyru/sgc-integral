@@ -6,8 +6,9 @@
  * - **Las fotos:** las que la historia no tomó (las del mes de conformidad y de «Reportes a tiempo», y la de `SGC-IND-03`
  *   si su hora no llegó). `tomarFotos` registra y salta la que falla: aquí se comprueba lo que dejó, como `reportarPeriodo`.
  * - **Conformidad:** el mes anterior sale en «Crítico» (Farmacia conforme y Urgencias no: 1 de 2, 50 % frente a 90) y la
- *   coordinadora lo analiza a la misma hora, con su causa y su acción: sin eso nacería con el análisis vencido, porque la
- *   foto de estado no mueve la fecha límite y la siembra la toma días después del fin del mes.
+ *   coordinadora lo analiza a la misma hora, con su causa y su acción, para que la demo lo muestre ya analizado. Sin el
+ *   análisis tampoco nacería vencido: si la siembra toma la foto después de la fecha límite del mes, la foto la cuenta otra
+ *   vez desde ella (`laFotoMueveElPlazo`).
  * - **Constancias:** nacen las de los trimestres terminados desde que `CEX-IND-01` se reporta (`asegurarConstancias`) y
  *   `lider.cex` registra la de `constanciasDeLaDemo` con su radicado y un PDF de soporte. `registrarArchivo` no recibe la
  *   hora (escribe el evento `soporte` con la del reloj): el registro va después, también con la hora del reloj, para que el

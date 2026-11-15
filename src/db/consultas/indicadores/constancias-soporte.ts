@@ -14,6 +14,20 @@ export const CONSTANCIA_NO_EXISTE = "La constancia no existe";
 /** Lo que el retiro sí impide: subir soportes nuevos (registrar y corregir lo conservado, no). */
 export const RETIRADO_SIN_SOPORTES_NUEVOS = "El indicador está retirado: ya no admite soportes nuevos";
 
+/** La constancia `r` (`reportes_externos r`) no tiene ningún soporte adjunto, para un `WHERE`. */
+export const constanciaSinSoporte = (sql: Cliente) =>
+  sql`NOT EXISTS (SELECT 1 FROM archivos a WHERE a.contexto = 'reporte_externo' AND a.contexto_id = r.id)`;
+
+/**
+ * La constancia `r` se sigue pidiendo (anexo 14B, §8), para un `WHERE` sobre `reportes_externos r` y su indicador
+ * `indicadores i`: pendiente, de un indicador activo y, si la ficha ya no se reporta a un ente (`ente_desde` nulo), solo si
+ * ya tiene un soporte (se puede terminar de registrar). La pendiente sin soporte que quedó porque tiene historial (no se
+ * borra: `quitarConstanciasSinSoporte`) sigue existiendo, pero ya no se pide. La usan las tareas, los avisos de vencido y
+ * de escalamiento y la marca y el filtro de la lista.
+ */
+export const constanciaQueSePide = (sql: Cliente) =>
+  sql`(r.estado = 'pendiente' AND i.estado = 'activo' AND (i.ente_desde IS NOT NULL OR NOT ${constanciaSinSoporte(sql)}))`;
+
 /** Quien ve el indicador y puede medirlo (`puedeMedir`) o administra indicadores. */
 export async function puedeRegistrarConstancia(indicadorId: number, sujeto: SujetoVisibilidad, opciones?: { sql?: Cliente }): Promise<boolean> {
   const sql = opciones?.sql ?? obtenerSql();

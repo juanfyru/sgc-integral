@@ -875,6 +875,16 @@ describe("las revisiones de indicadores por cambio de norma (14B)", () => {
     expect(frase("indicador_retirado", { codigo: "SGC-ID-007", motivo: "Ya no se mide", impactosResueltos: 0 })).toBe("Retiró el indicador SGC-ID-007: Ya no se mide");
     expect(frase("indicador_aprobado", { codigo: "SGC-ID-007", numero: 2 })).toBe("Aprobó la ficha de SGC-ID-007 (versión 2)");
   });
+  it("aprobar o publicar un cambio menor que quita el ente dicen cuántas constancias pendientes sin soporte quitó (`constanciasQuitadas`)", () => {
+    expect(frase("indicador_aprobado", { codigo: "CEX-IND-01", numero: 2, constanciasQuitadas: 1 })).toBe(
+      "Aprobó la ficha de CEX-IND-01 (versión 2). Se quitó 1 constancia de envío al ente pendiente y sin soporte.",
+    );
+    expect(frase("indicador_cambio_menor", { codigo: "CEX-IND-01", numero: 3, motivo: "Ya no se reporta.", constanciasQuitadas: 2, impactosResueltos: 1 })).toBe(
+      "Publicó un cambio menor en la ficha de CEX-IND-01 (versión 3): Ya no se reporta. Se resolvió 1 revisión por cambio de norma. Se quitaron 2 constancias de envío al ente pendientes y sin soporte.",
+    );
+    // Sin constancias quitadas, la frase de siempre.
+    expect(frase("indicador_aprobado", { codigo: "CEX-IND-01", numero: 2, constanciasQuitadas: 0 })).toBe("Aprobó la ficha de CEX-IND-01 (versión 2)");
+  });
 });
 
 describe("la medición de un indicador", () => {

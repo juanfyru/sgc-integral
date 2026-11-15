@@ -1,6 +1,7 @@
 /**
  * Los recordatorios de las constancias de envío al ente (anexo 14B, §8): vencen, avisan y escalan como una medición, sin
- * aviso previo. Sobre las constancias pendientes de indicadores activos cuya fecha límite ya pasó, dos pasos:
+ * aviso previo. Sobre las constancias que se siguen pidiendo (`constanciaQueSePide`: pendientes de indicadores activos, sin
+ * las que no tienen soporte de una ficha que ya no se reporta) cuya fecha límite ya pasó, dos pasos:
  *
  * 1. El de vencido (`aviso_vencido_en`): uno por persona a quienes tienen la tarea (quienes miden, con el respaldo de
  *    siempre: `responsablesDeMedir`) y otro por proceso a sus líderes, con lo que no les llegó como responsables.
@@ -23,6 +24,7 @@ import { lideresDeProceso } from "@/db/consultas/tramites";
 import { responsablesDeMedir, sinResponsable } from "@/lib/alcance";
 import { cuenta } from "@/lib/plural";
 import { estadoPlazo, fechaEnZona } from "@/lib/tramites/plazos";
+import { constanciaQueSePide } from "./constancias-soporte";
 import { correrPaso, diaYMes } from "./pasada";
 
 type Contexto = { sql: Cliente; ahora: Date; zona: string; escalamientoDias: number };
@@ -65,7 +67,7 @@ function cuandoVencio(cs: Pendiente[], zona: string): string {
 async function leer(sql: Cliente, ctx: Contexto, paso: Paso, ids?: number[]): Promise<Pendiente[]> {
   const filas = await sql`SELECT r.id, r.indicador_id, r.vence_en, i.proceso_id, p.nombre AS proceso
     FROM reportes_externos r JOIN indicadores i ON i.id = r.indicador_id JOIN procesos p ON p.id = i.proceso_id
-    WHERE r.estado = 'pendiente' AND i.estado = 'activo' AND ${paso.sinMarca(sql)} AND r.vence_en < ${ctx.ahora}
+    WHERE ${constanciaQueSePide(sql)} AND ${paso.sinMarca(sql)} AND r.vence_en < ${ctx.ahora}
       ${ids ? sql`AND r.id = ANY(${ids})` : sql``}
     ORDER BY r.id
     ${ids ? sql`FOR UPDATE OF r SKIP LOCKED` : sql``}`;
