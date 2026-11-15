@@ -43,7 +43,7 @@
    y la `0014` sobre una copia de la base `sgc` de `main` (sobre la cabeza `9f79c00`; desde entonces no cambió ninguna
    migración): de 13 a 15 migraciones, con los mismos conteos de indicadores, versiones, mediciones y valores y las mismas
    huellas de mediciones y de versiones; y el recorrido de §11 del anexo en el navegador, pasos 2 a 6 (detalle en «Fase
-   14B», arriba de «Hecho (Fase 14B)»). **Después de la tanda final:** (lo completa el controlador). La tanda final
+   14B», arriba de «Hecho (Fase 14B)»). **Después de la tanda final** (cabeza `3f3bc72`, demo recién sembrada): `SEMILLA_RECIEN=1 npm test`, 249 archivos, 6318 pruebas en verde y 1 saltada (la de la línea base), sin `FAIL` ni `stderr`; `npm run lint` limpio; `npm run build` sin `DATABASE_URL` en verde; y en el navegador, los tres arreglos de interfaz de la tanda (el foco tras «No afecta», el foco al volver a pulsar **Corregir** y el texto del diálogo del normograma) y el título de la pantalla de solo lectura de un automático. La tanda final
    (revisión de la Tarea 13, revisión final de toda la rama y hallazgos del recorrido) corrigió código, interfaz y estos
    documentos: ver «Decisiones adicionales (Fase 14B)», F14B-R36 a R40. **`F:\sgc-integral` no se tocó, y la base `sgc` del
    usuario solo se leyó** (`pg_dump` de solo lectura para esa copia, que se borró después).
@@ -275,7 +275,7 @@
    cierre): cada vez se pierden los datos de prueba manual y `admin` se recrea con la `ADMIN_CLAVE`
    de `.env.local` y cambio obligatorio.
 5. **Tests:** al cierre de la 14B, antes de la tanda final, 6304 en 249 archivos, más 1 saltado (el de la línea base);
-   después de la tanda final: (lo completa el controlador). La entrega complementaria de la 14A cerró con 5997 en 240 archivos, más 1 saltado (la 14A, con 5696 en 235; la 13C, con 4722 en 197). En serie (`fileParallelism: false`), contra la BD de
+   después de la tanda final: 6318 pruebas en verde en 249 archivos, más 1 saltada. La entrega complementaria de la 14A cerró con 5997 en 240 archivos, más 1 saltado (la 14A, con 5696 en 235; la 13C, con 4722 en 197). En serie (`fileParallelism: false`), contra la BD de
    desarrollo sembrada y **conectados como `sgc_app`**, igual que la app; el test de
    privilegios usa además `DATABASE_URL_MIGRADOR`. Los usuarios de prueba con historia
    (`zz_<algo>_<timestamp>`) se acumulan porque no se pueden borrar (F11-D2); `db:seed` los
@@ -355,7 +355,7 @@ como deuda) y la `0014` (solo quita `calculo_fotos`: la foto vive en la medició
   Los cuatro hallazgos del recorrido (el foco tras «No afecta», el foco al volver a pulsar **Corregir**, el diálogo del
   normograma que no nombraba los indicadores y «50,0 %» donde la pantalla dice «50 %») los corrigió la tanda final.
 
-**Después de la tanda final:** (lo completa el controlador).
+**Después de la tanda final** (cabeza `3f3bc72`, demo recién sembrada): `SEMILLA_RECIEN=1 npm test` dio 249 archivos, 6318 pruebas en verde y 1 saltada (la de la línea base), sin `FAIL` ni `stderr`; `npm run lint`, limpio; `npm run build` sin `DATABASE_URL`, en verde. En el navegador se comprobaron los arreglos de interfaz de la tanda: tras **Registrar que no afecta** el foco queda en el título del indicador; volver a pulsar **Corregir** después de cerrar el desplegable a mano lo abre con el foco en su resumen; el diálogo **Cambiar estado** del normograma nombra los indicadores; y la pantalla de solo lectura de un automático lleva en la pestaña el mismo título que en la página (un periodo que no existe muestra «Página no encontrada» dentro de la aplicación).
 
 ### Hecho (Fase 14B)
 
