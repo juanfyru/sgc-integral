@@ -26,6 +26,7 @@ import { tomarCalculo } from "@/db/consultas/indicadores/calculos";
 import { reabrirMedicion } from "@/db/consultas/indicadores/cierre";
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
 import { medicionParaReportar, proximaPorReportar, tablaDelAnio } from "@/db/consultas/indicadores/lectura";
+import { listarIndicadores } from "@/db/consultas/indicadores/lista";
 import {
   asegurarMediciones,
   marcarNoAplica,
@@ -451,6 +452,28 @@ describe("un indicador sin variables propias: no lo mide nadie", () => {
       const [evento] = await tx`SELECT detalle FROM medicion_eventos WHERE medicion_id = ${medicion} AND tipo = 'reapertura'`;
       expect(evento.detalle).not.toHaveProperty("sinMedidor");
       expect(evento.detalle).not.toHaveProperty("propioMedidor");
+    }));
+});
+
+describe("la columna «Reporte» de la lista", () => {
+  it("sin pendientes (un retirado), el periodo abierto que espera el dato dice «Falta un dato»; un histórico sin propias, «Por registrar»", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const { mide, ind, medicion } = await mixto(tx);
+      await reportarCon(tx, mide, medicion, { A: "38529000" });
+      // De cada uno sin propias queda un solo periodo, el último que la lista lee: septiembre (ordinario) o junio (histórico).
+      const nadie = await sinVariablesPropias(tx);
+      await tx`DELETE FROM mediciones WHERE indicador_id = ${nadie.ind.id} AND periodo <> '2026-09'`;
+      const historico = await sinVariablesPropias(tx);
+      await tx`DELETE FROM mediciones WHERE indicador_id = ${historico.ind.id} AND periodo <> '2026-06'`;
+      for (const id of [ind.id, nadie.ind.id, historico.ind.id]) {
+        await tx`UPDATE indicadores SET estado = 'retirado', baja_por = ${admin.usuarioId}, baja_en = ${AHORA}, baja_motivo = 'Ya no se mide' WHERE id = ${id}`;
+      }
+      const reporte = async (codigo: string) =>
+        (await listarIndicadores(admin, { retirados: true, texto: codigo }, opc(tx))).filas.find((f) => f.codigo === codigo)?.reporte;
+      expect(await reporte(ind.codigo)).toEqual({ texto: "Falta un dato", vencida: false });
+      expect(await reporte(nadie.ind.codigo)).toEqual({ texto: "Falta un dato", vencida: false });
+      expect(await reporte(historico.ind.codigo)).toEqual({ texto: "Por registrar", vencida: false });
     }));
 });
 

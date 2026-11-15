@@ -69,11 +69,12 @@ import { SeccionDeAnalisis } from "@/componentes/indicadores/vistas/VistaResulta
 import { cerrarTrasGuardar } from "@/componentes/indicadores/medicion/cerrar-tras-guardar";
 import { Observaciones } from "@/componentes/indicadores/medicion/Observaciones";
 import { ResultadoEnVivo } from "@/componentes/indicadores/medicion/ResultadoEnVivo";
+import { TablaDelAnio } from "@/componentes/indicadores/medicion/TablaDelAnio";
 import { obtenerSql } from "@/db/cliente";
 import type { DatosDeAnalisis } from "@/db/consultas/indicadores/analisis";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
-import type { DatosDeReporte, VariableAjena } from "@/db/consultas/indicadores/lectura";
+import type { DatosDeReporte, FilaDelAnio, VariableAjena } from "@/db/consultas/indicadores/lectura";
 import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
 import type { MetaDelPeriodo } from "@/db/consultas/indicadores/metas";
 import { observar } from "@/db/consultas/indicadores/observaciones";
@@ -1086,6 +1087,54 @@ describe("la variable que no digita quien mide (anexo 14C, §3.1)", () => {
       ">Falta un dato. «Total facturado en el mes» lo reporta Facturación; vence el 10 de noviembre de 2026. El resultado se calcula solo cuando el dato llegue.</p>",
     );
     expect(html).not.toContain("Usted ya puede reportar lo suyo");
+  });
+
+  it("la tabla del año: lo que nadie mide no ofrece «Reportar» ni «Corregir»; quien analiza lo abre con «Ver», salvo un histórico", () => {
+    const fila = (o: Partial<FilaDelAnio>): FilaDelAnio => ({
+      periodo: "2026-09",
+      etiqueta: "Septiembre de 2026",
+      version: 1,
+      medicionId: 41,
+      estado: "falta_dato",
+      vencida: false,
+      vence: "10 de octubre de 2026",
+      historica: false,
+      noAplica: false,
+      motivo: null,
+      valores: [],
+      resultado: null,
+      semaforo: null,
+      meta: "≥ 90 %",
+      cumple: null,
+      frase: null,
+      requiereAccion: false,
+      repetido: false,
+      corregida: false,
+      metaTardia: false,
+      sinAnalisis: false,
+      analisis: null,
+      causa: null,
+      accionPropuesta: null,
+      automatica: false,
+      fotoEn: null,
+      seCalcula: null,
+      recalculable: false,
+      ...o,
+    });
+    const tabla = (filas: FilaDelAnio[]) =>
+      renderToStaticMarkup(<TablaDelAnio filas={filas} variables={[]} anio={2026} codigo="ZZ-1" puedeMedir puedeAnalizar />);
+    const html = tabla([
+      fila({ nadieLoMide: true }),
+      fila({ nadieLoMide: true, periodo: "2026-08", etiqueta: "Agosto de 2026", medicionId: 42, estado: "reportada", resultado: "90 %" }),
+      fila({ nadieLoMide: true, periodo: "2026-06", etiqueta: "Junio de 2026", medicionId: 43, estado: "por_reportar", historica: true }),
+    ]);
+    expect(html).not.toContain("Reportar<span");
+    expect(html).not.toContain("Corregir<span");
+    expect(html).toContain('>Ver<span class="sr-only"> Septiembre de 2026</span>');
+    expect(html).toContain('>Ver<span class="sr-only"> Agosto de 2026</span>');
+    expect(html).not.toContain('>Ver<span class="sr-only"> Junio de 2026</span>');
+    // Sin la marca, quien mide reporta la misma fila.
+    expect(tabla([fila({ estado: "por_reportar" })])).toContain('>Reportar<span class="sr-only"> Septiembre de 2026</span>');
   });
 
   it("las páginas: el mixto se reporta con el dato fijo; el que nadie mide lo abre quien analiza, de solo lectura y sin «Reportar»", () =>
