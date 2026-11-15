@@ -33,6 +33,8 @@ export type FiltroDeLista = {
   reporte?: ReporteDeLista;
   /** Con alguna constancia de envío al ente pendiente, vencida o no (anexo 14B, §8). */
   envio?: "pendiente";
+  /** Con alguna revisión por cambio de norma pendiente (anexo 14B, §9). */
+  impacto?: true;
   participo?: boolean;
   texto?: string;
   retirados?: boolean;
@@ -51,8 +53,9 @@ const entre = <T extends string>(valores: readonly T[], v: string | string[] | u
 /**
  * Los filtros de la lista desde la consulta de la página (spec §12.2): `proceso`, `subproceso`, `clasificacion` y `tipo`
  * (ids), `semaforo` (`bien`, `atencion`, `critico`, `sin-dato`), `reporte` (`por-reportar`, `falta-analisis`, `vencida`,
- * `requiere-accion`), `envio=pendiente` (anexo 14B, §8), `participo=1`, `texto` (o `q`, hasta 100 caracteres) y
- * `retirados=1`. Son los nombres de los enlaces de «Mis tareas» y de los avisos (Tarea 13). Lo que no se entiende se ignora.
+ * `requiere-accion`), `envio=pendiente` (anexo 14B, §8), `impacto=1` (anexo 14B, §9), `participo=1`, `texto` (o `q`,
+ * hasta 100 caracteres) y `retirados=1`. Son los nombres de los enlaces de «Mis tareas» y de los avisos (Tarea 13). Lo que
+ * no se entiende se ignora.
  */
 export function filtroDeConsulta(q: Consulta): FiltroDeLista {
   const f: FiltroDeLista = {};
@@ -63,6 +66,7 @@ export function filtroDeConsulta(q: Consulta): FiltroDeLista {
   const reporte = entre(REPORTES_DE_LISTA, q.reporte);
   if (reporte) f.reporte = reporte;
   if (primero(q.envio) === "pendiente") f.envio = "pendiente";
+  if (marcado(q.impacto)) f.impacto = true;
   if (marcado(q.participo)) f.participo = true;
   const texto = (primero(q.texto) ?? primero(q.q))?.trim().slice(0, 100);
   if (texto) f.texto = texto;
@@ -84,6 +88,7 @@ export function consultaDeFiltro(f: FiltroDeLista): string {
     ["semaforo", f.semaforo],
     ["reporte", f.reporte],
     ["envio", f.envio],
+    ["impacto", f.impacto ? "1" : undefined],
     ["participo", f.participo ? "1" : undefined],
     ["texto", f.texto],
     ["retirados", f.retirados ? "1" : undefined],
@@ -217,6 +222,7 @@ export async function listarIndicadores(
     ) env ON i.estado = 'activo'
     WHERE ${filtroIndicadores(sql, sesion)} AND i.estado IN ${sql(estados)}
       ${filtro.envio ? sql`AND env.vence_en IS NOT NULL` : sql``}
+      ${filtro.impacto ? sql`AND EXISTS (SELECT 1 FROM impactos_indicadores ii WHERE ii.indicador_id = i.id AND ii.estado = 'pendiente')` : sql``}
       ${filtro.procesoId ? sql`AND i.proceso_id = ${filtro.procesoId}` : sql``}
       ${filtro.subprocesoId ? sql`AND va.subproceso_id = ${filtro.subprocesoId}` : sql``}
       ${filtro.clasificacionId ? sql`AND va.clasificacion_id = ${filtro.clasificacionId}` : sql``}

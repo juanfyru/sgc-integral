@@ -286,7 +286,10 @@ function revisarOperacion(d: DatosFichaNueva): void {
   }
 }
 
-/** Las referencias que ya tiene la versión: un elemento que se desactivó después sigue valiendo en ella. */
+/**
+ * Las referencias que ya tiene la versión: un elemento que se desactivó después sigue valiendo en ella, y una norma que
+ * ya citaba, aunque se haya derogado o retirado.
+ */
 type Actual = {
   procesoId: number;
   subprocesoId: number | null;
@@ -377,7 +380,9 @@ async function revisarContraLaBase(
       WHERE n.id IN ${tx(d.normaIds)} FOR KEY SHARE OF n`;
     if (filas.length !== d.normaIds.length) throw new ErrorIndicador("La norma no existe");
     for (const n of filas) normas.set(Number(n.id), n.nombre as string);
-    if (filas.some((n) => n.estado !== "vigente" && n.estado !== "modificada")) {
+    // Una que la versión ya citaba vale en cualquier estado (anexo 14B, §9): solo una cita nueva exige que la norma rija.
+    const nueva = (n: (typeof filas)[number]) => !actual?.normaIds.includes(Number(n.id));
+    if (filas.some((n) => nueva(n) && n.estado !== "vigente" && n.estado !== "modificada")) {
       throw new ErrorIndicador("Solo se pueden citar normas vigentes o modificadas");
     }
   }

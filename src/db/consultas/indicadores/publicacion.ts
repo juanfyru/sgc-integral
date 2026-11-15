@@ -15,11 +15,15 @@
  * cambió el ente, la periodicidad externa o el plazo frente a la aprobada anterior (o la anterior no se reportaba), cuenta
  * desde ahora: añadir el ente a una ficha con años de historia no abre envíos vencidos. Si no se reporta, deja de contar y
  * sus constancias pendientes sin soporte dejan de pedirse (`quitarConstanciasSinSoporte`). Lo ya nacido no cambia.
+ *
+ * Y resuelve, con la versión nueva, las revisiones por cambio de norma que nacieron antes de que se enviara o publicara
+ * (anexo 14B, §9: `resolverImpactosPorVersion`), sea la ficha manual o automática.
  */
 import type { TransactionSql } from "postgres";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { enteDeVersion, seReportaAlEnte, type EnteDeVersion } from "@/lib/indicadores/constancias";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
+import { resolverImpactosPorVersion } from "./impactos";
 import { quitarConstanciasSinSoporte, recalcularPorSoporte } from "./operacion";
 
 export type Publicacion = {
@@ -38,8 +42,11 @@ export const yaHayUnaActiva = (codigo?: string) => `Ya hay una ficha activa para
 export const esCalculoRepetido = (err: unknown) =>
   (err as { code?: string }).code === "23505" && (err as { constraint_name?: string }).constraint_name === "indicadores_calculo_unico";
 
-/** Lo que la publicación cambió en los datos de operación: quien llama lo deja en el detalle de su entrada de bitácora. */
-export type Publicado = { medidoresQuitados: number; soporteApagado: boolean; medicionesRecalculadas: number };
+/**
+ * Lo que la publicación cambió en los datos de operación y cuántas revisiones por cambio de norma resolvió (anexo 14B, §9):
+ * quien llama lo deja en el detalle de su entrada de bitácora.
+ */
+export type Publicado = { medidoresQuitados: number; soporteApagado: boolean; medicionesRecalculadas: number; impactosResueltos: number };
 
 const mismoEnte = (a: EnteDeVersion, b: EnteDeVersion) =>
   a.ente?.trim() === b.ente?.trim() && a.periodicidadExterna === b.periodicidadExterna && a.plazoExternoDias === b.plazoExternoDias;
@@ -73,7 +80,9 @@ export async function alPublicarVersion(tx: TransactionSql, d: Publicacion): Pro
   await tx`UPDATE indicadores SET calculo = ${calculo}, calculo_alcance = ${(v.calculo_alcance as string | null) ?? null}
     WHERE id = ${d.indicadorId}`;
   await alPublicarElEnte(tx, d, enteDeVersion(v), Number(v.numero));
-  const hecho: Publicado = { medidoresQuitados: 0, soporteApagado: false, medicionesRecalculadas: 0 };
+  // Para toda ficha, manual o automática: antes del `return` de las manuales.
+  const impactosResueltos = await resolverImpactosPorVersion(tx, d);
+  const hecho: Publicado = { medidoresQuitados: 0, soporteApagado: false, medicionesRecalculadas: 0, impactosResueltos };
   if (calculo === null) return hecho;
 
   const quitados = await tx`DELETE FROM indicador_designados WHERE indicador_id = ${d.indicadorId} AND funcion = 'mide' RETURNING usuario_id`;

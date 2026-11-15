@@ -12,11 +12,13 @@ import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { analizar } from "@/db/consultas/indicadores/analisis";
 import { asegurarConstancias, registrarConstancia } from "@/db/consultas/indicadores/constancias";
 import { abrirCambio } from "@/db/consultas/indicadores/fichas";
+import { resolverImpactoNoAfecta } from "@/db/consultas/indicadores/impactos";
 import { obtenerIndicador, resultadosDelAnio } from "@/db/consultas/indicadores/lectura";
 import { consultaDeFiltro, filtroDeConsulta, listarIndicadores, type FiltroDeLista } from "@/db/consultas/indicadores/lista";
 import { matrizDelAnio, type CeldaDeMatriz } from "@/db/consultas/indicadores/matriz";
 import { asegurarMediciones, marcarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
 import { retirar } from "@/db/consultas/indicadores/operacion";
+import { cambiarEstadoNorma } from "@/db/consultas/normograma/normas";
 import {
   indicadorDePrueba,
   versionAutomatica,
@@ -24,6 +26,7 @@ import {
   type IndicadorDePrueba,
   type OpcionesIndicadorDePrueba,
 } from "./utiles/indicadores";
+import { normaDePrueba } from "./utiles/normograma";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -462,6 +465,23 @@ describe("la lista", () => {
         ["2026-T3", "pendiente"],
       ]);
       expect((await lista(tx, admin, { procesoId: p.id })).filas.find((f) => f.id === dos.id)?.envio).toBe("vencido");
+    }));
+
+  it("impacto=1: los que tienen una revisión por cambio de norma pendiente (anexo 14B, §9), y va y vuelve por la URL", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const admin = await sesionAdmin(tx);
+      const norma = await normaDePrueba(tx, admin);
+      const cita = await indicadorDePrueba(tx, { procesoId: p.id, normaIds: [norma.id], aprobadaEn: APROBADA });
+      const resuelta = await indicadorDePrueba(tx, { procesoId: p.id, normaIds: [norma.id], aprobadaEn: APROBADA });
+      await indicadorDePrueba(tx, { procesoId: p.id, aprobadaEn: APROBADA });
+      await cambiarEstadoNorma(admin, { normaId: norma.id, estado: "derogada", fecha: "2026-10-01", nota: null }, opc(tx));
+      const [r] = await tx`SELECT id FROM impactos_indicadores WHERE indicador_id = ${resuelta.id}`;
+      await resolverImpactoNoAfecta(admin, { impactoId: Number(r.id), nota: "La ficha no cambia" }, opc(tx));
+      expect(await codigos(tx, admin, { procesoId: p.id, impacto: true })).toEqual([cita.codigo]);
+      expect(filtroDeConsulta({ impacto: "1", proceso: "12" })).toEqual({ impacto: true, procesoId: 12 });
+      expect(filtroDeConsulta({ impacto: "no" })).toEqual({});
+      expect(consultaDeFiltro({ procesoId: 12, impacto: true })).toBe("proceso=12&impacto=1");
     }));
 });
 

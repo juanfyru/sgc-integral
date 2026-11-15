@@ -183,6 +183,7 @@ export function detalleDeFiltros(anio: number, f: FiltroDeLista, o: Pick<Opcione
     f.reporte ? `Reporte: ${ETIQUETA_REPORTE_DE_LISTA[f.reporte]}` : null,
     f.participo ? "Donde participo" : null,
     f.envio ? "Con un envío al ente pendiente" : null,
+    f.impacto ? "Con una revisión por cambio de norma pendiente" : null,
     f.texto ? `Texto: «${f.texto}»` : null,
     f.retirados ? "Incluye retirados" : null,
   ]

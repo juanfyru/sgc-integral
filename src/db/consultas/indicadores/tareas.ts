@@ -1,7 +1,8 @@
 /**
  * Las tareas de los indicadores en «Mis tareas» (spec 14 §10.1, F14-DC21 y F14-DC32) y la insignia de la entrada
  * «Indicadores»: reportar y analizar las mediciones a cargo de la persona, registrar sus reportes al ente (anexo 14B, §8:
- * `tareasDeConstancias`), responder las observaciones sin respuesta, aprobar las fichas que le tocan y retomar las
+ * `tareasDeConstancias`), revisar las fichas por un cambio de norma (anexo 14B, §9: `tareasDeImpactosDeIndicadores`, de
+ * quien administra indicadores), responder las observaciones sin respuesta, aprobar las fichas que le tocan y retomar las
  * devueltas. Una consulta por tipo de tarea, acotada a la persona con las reglas de `src/lib/alcance.ts` (`responsableDe`,
  * el criterio de `responsablesDeMedir` y `responsablesDeAnalizar`; `esAprobadorDe`, el de `aprobadoresDeFicha`; y
  * `filtroIndicadores`).
@@ -25,6 +26,7 @@ import type { Tarea } from "@/lib/tareas";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { enlaceDeVersion } from "./aprobacion";
 import { tareasDeConstancias } from "./constancias";
+import { tareasDeImpactosDeIndicadores } from "./impactos";
 import { analisisDe, conMayuscula, esDeOtraPeriodicidad } from "./mediciones";
 import { enlaceDeObservaciones } from "./observaciones";
 
@@ -202,8 +204,9 @@ async function deFichasDevueltas(sql: Cliente, sesion: SesionFlujo): Promise<Tar
 /**
  * Las tareas de los indicadores de la persona y `vencidas`, la insignia de «Indicadores» (F14-DC32): las mediciones a su
  * cargo, por reportar o por analizar, que pasaron su fecha límite (una medición cuenta una vez aunque tenga las dos), y
- * las constancias de envío al ente a su cargo ya vencidas (anexo 14B, §8: `tareasDeConstancias`), que se cuentan aparte:
- * el número de una constancia puede ser el de una medición.
+ * las constancias de envío al ente a su cargo ya vencidas (anexo 14B, §8: `tareasDeConstancias`) y, de quien administra
+ * indicadores, las revisiones por cambio de norma ya vencidas (anexo 14B, §9: `tareasDeImpactosDeIndicadores`), que se
+ * cuentan aparte: el número de una constancia o de una revisión puede ser el de una medición.
  */
 export async function tareasDeIndicadores(
   sesion: SesionFlujo,
@@ -211,15 +214,18 @@ export async function tareasDeIndicadores(
 ): Promise<{ tareas: Tarea[]; vencidas: number }> {
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
-  const [mediciones, constancias, observaciones, porAprobar, devueltas] = await Promise.all([
+  const [mediciones, constancias, impactos, observaciones, porAprobar, devueltas] = await Promise.all([
     deMediciones(sql, sesion),
     tareasDeConstancias(sql, sesion),
+    tareasDeImpactosDeIndicadores(sql, sesion),
     deObservaciones(sql, sesion),
     deFichasPorAprobar(sql, sesion),
     deFichasDevueltas(sql, sesion),
   ]);
   const vencida = (t: Tarea) => t.vence !== null && t.vence.getTime() < ahora.getTime();
   const vencidas =
-    new Set(mediciones.filter(vencida).map((t) => t.id.slice(t.id.indexOf(":") + 1))).size + constancias.filter(vencida).length;
-  return { tareas: [...mediciones, ...constancias, ...observaciones, ...porAprobar, ...devueltas], vencidas };
+    new Set(mediciones.filter(vencida).map((t) => t.id.slice(t.id.indexOf(":") + 1))).size +
+    constancias.filter(vencida).length +
+    impactos.filter(vencida).length;
+  return { tareas: [...mediciones, ...constancias, ...impactos, ...observaciones, ...porAprobar, ...devueltas], vencidas };
 }

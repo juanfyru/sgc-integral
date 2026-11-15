@@ -36,6 +36,7 @@ import { zonaHoraria } from "@/lib/zona-horaria";
 import { asegurarConstancias } from "./constancias";
 import { constanciasVencidas } from "./constancias-vencidas";
 import { tomarFotos } from "./fotos";
+import { impactosDeIndicadoresVencidos } from "./impactos";
 import { obtenerParametros } from "./maestros";
 import { asegurarMediciones } from "./mediciones";
 import { correrPaso, diaYMes } from "./pasada";
@@ -325,9 +326,9 @@ async function abrirPeriodos(sql: Cliente, ahora: Date): Promise<void> {
 
 /**
  * La pasada de los indicadores (spec 14 §10.2): abre los periodos, toma las fotos (después de abrir y antes de los avisos),
- * abre las constancias de envío al ente (anexo 14B, §8: `asegurarConstancias`) y manda los avisos: los de las mediciones y,
- * después, los de las constancias (`constanciasVencidas`), que suman a sus cuentas. Un paso que falla se registra y los
- * demás siguen.
+ * abre las constancias de envío al ente (anexo 14B, §8: `asegurarConstancias`) y manda los avisos: los de las mediciones,
+ * después los de las constancias (`constanciasVencidas`) y al final los de las revisiones por cambio de norma (anexo 14B,
+ * §9: `impactosDeIndicadoresVencidos`), que suman a sus cuentas. Un paso que falla se registra y los demás siguen.
  */
 export async function revisarVencimientosDeIndicadores(opciones: { sql: Cliente; ahora: Date; config: ConfigDocumental }): Promise<Resultado> {
   const { sql, ahora } = opciones;
@@ -362,6 +363,13 @@ export async function revisarVencimientosDeIndicadores(opciones: { sql: Cliente;
     total.escalados += constancias.escalados;
   } catch (err) {
     console.error("No se pudieron revisar los vencimientos de las constancias de envío:", err);
+  }
+  try {
+    const impactos = await impactosDeIndicadoresVencidos({ sql, ahora, escalamientoDias: c.escalamientoDias });
+    total.avisados += impactos.avisados;
+    total.escalados += impactos.escalados;
+  } catch (err) {
+    console.error("No se pudieron revisar los vencimientos de las revisiones de indicadores por cambio de norma:", err);
   }
   return total;
 }

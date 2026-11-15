@@ -111,13 +111,14 @@ import { EnlazarDocumento } from "@/componentes/normograma/EnlazarDocumento";
 import { FormularioNorma } from "@/componentes/normograma/FormularioNorma";
 import { NormasAplicables } from "@/componentes/normograma/NormasAplicables";
 import { NormasEnlazadas } from "@/componentes/normograma/NormasEnlazadas";
+import { PaginaImpactos } from "@/componentes/normograma/PaginaImpactos";
 import { TablaNormas, type FilaDeTabla } from "@/componentes/normograma/TablaNormas";
 import { BloqueSolicitud } from "@/componentes/tramites/BloqueSolicitud";
 import { BloqueVigencia } from "@/componentes/vigencia/BloqueVigencia";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { asociarProceso, enlazarDocumento, normasDeProceso } from "@/db/consultas/normograma/asociaciones";
-import { resolverImpacto } from "@/db/consultas/normograma/impactos";
+import { impactosDe, resolverImpacto } from "@/db/consultas/normograma/impactos";
 import { cambiarEstadoNorma, retirarNorma } from "@/db/consultas/normograma/normas";
 import { eliminarRelacion, registrarRelacion } from "@/db/consultas/normograma/relaciones";
 import { obtenerTramite, origenDeTramite } from "@/db/consultas/tramites";
@@ -726,6 +727,40 @@ describe("la página de impactos", () => {
       } finally {
         await visible.limpiar();
         await oculto.limpiar();
+      }
+    }));
+
+  it("la sección «Indicadores» (anexo 14B, §9) va en lectura con los que citaban la norma en el proceso; sin ellos, la página es la de la 13C", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const liderCex = await sesionDe(tx, "lider.cex");
+      const cex = await procesoDe(tx, "CEX");
+      const n = await normaDePrueba(tx, admin);
+      const otra = await normaDePrueba(tx, admin);
+      const interno = await vigenteFuera(tx, { fechaAprobacion: "2026-10-01", proceso: "CEX" });
+      try {
+        for (const normaId of [n.id, otra.id]) await enlazarDocumento(admin, { normaId, documentoId: interno.id }, { sql: tx });
+        const ind = await indicadorDePrueba(tx, { procesoId: cex.id, normaIds: [n.id] });
+        const conIndicador = await cambiarEstadoNorma(admin, { normaId: n.id, estado: "derogada", fecha: "2026-11-01", nota: null }, { sql: tx, ahora });
+        const sinIndicador = await cambiarEstadoNorma(admin, { normaId: otra.id, estado: "derogada", fecha: "2026-11-01", nota: null }, { sql: tx, ahora });
+
+        const html = await pintar(tx, liderCex, pagina(conIndicador.cambioId!, cex.id));
+        expect(sinEtiquetas(html)).toContain("Indicadores La ficha de cada uno citaba la norma: se revisa en la página del indicador.");
+        expect(sinEtiquetas(html)).toContain(`${ind.codigo} Indicador de prueba ${ind.codigo} Pendiente`);
+        expect(html).toContain(`href="/indicadores/${encodeURIComponent(ind.codigo)}"`);
+        // En lectura: la sección no trae formularios; «No afecta…» sigue siendo solo el del documento.
+        expect(html.slice(html.indexOf('aria-labelledby="impactos-indicadores"'))).not.toContain("<form");
+        expect(veces(sinEtiquetas(html), "No afecta…")).toBe(1);
+
+        // Sin indicadores que la citen, ni la sección: la página pinta lo mismo que sin el dato de los indicadores.
+        const sin = await pintar(tx, liderCex, pagina(sinIndicador.cambioId!, cex.id));
+        expect(sin).not.toContain("impactos-indicadores");
+        const impactos = (await impactosDe(sinIndicador.cambioId!, cex.id, liderCex, { sql: tx }))!;
+        expect(renderToStaticMarkup(<PaginaImpactos impactos={impactos} indicadores={[]} ahora={ahora} />)).toBe(
+          renderToStaticMarkup(<PaginaImpactos impactos={impactos} ahora={ahora} />),
+        );
+      } finally {
+        await interno.limpiar();
       }
     }));
 

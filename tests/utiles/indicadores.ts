@@ -77,6 +77,8 @@ export type OpcionesIndicadorDePrueba = {
    * la aprobación), como lo dejaría `alPublicarVersion`; con `desde: null`, como una ficha aprobada antes de la 14B.
    */
   ente?: { nombre: string; periodicidad: Periodicidad; plazoDias: number; desde?: Date | null };
+  /** Las normas que cita la versión 1, con el nombre de hoy (anexo 14B, §9); sin valor, ninguna. */
+  normaIds?: number[];
 };
 
 export type VariableDePrueba = {
@@ -190,6 +192,13 @@ export async function indicadorDePrueba(
     variables[d.letra] = Number(v.id);
   }
 
+  if (o.normaIds && o.normaIds.length > 0) {
+    await tx`INSERT INTO indicador_normas (version_id, norma_id, norma_nombre)
+      SELECT ${versionId}, n.id, concat_ws(' ', tn.nombre, n.numero, 'de', n.anio::text)
+      FROM normas n JOIN tipos_norma tn ON tn.id = n.tipo_norma_id
+      WHERE n.id = ANY(${o.normaIds}) ORDER BY n.id`;
+  }
+
   const designados: [string, number[] | undefined][] = [["mide", o.mide], ["analiza", o.analiza], ["seguimiento", o.seguimiento]];
   for (const [funcion, usuarios] of designados) {
     for (const usuarioId of usuarios ?? []) {
@@ -228,7 +237,8 @@ export async function loteImportado(tx: TransactionSql, d: { usuarioId: number; 
  * Calla la pasada de los indicadores (y el cierre) sobre lo que trae la base (la demo, el punto de control): marca como
  * avisadas y escaladas sus mediciones abiertas; da por fotografiadas (`foto_en`, sin valores) las de sus automáticos que
  * esperan la foto, para que `tomarFotos` no las calcule (anexo 14B, §5.4); marca como avisadas y escaladas sus constancias
- * de envío pendientes; y deja sin inicio de medición a sus indicadores activos, para que no abra periodos nuevos ni
+ * de envío pendientes y sus revisiones por cambio de norma pendientes (anexo 14B, §9); y deja sin inicio de medición a sus
+ * indicadores activos, para que no abra periodos nuevos ni
  * constancias nuevas (`asegurarConstancias` solo mira los que tienen inicio). `revisarVencimientos` los recorre todos y un
  * test cuenta solo lo suyo. Se llama antes de crear los datos del test, dentro de la transacción que se revierte.
  */
@@ -237,6 +247,8 @@ export async function silenciarIndicadores(tx: TransactionSql): Promise<void> {
       escalado_en = coalesce(escalado_en, now())
     WHERE estado <> 'cerrada' AND (aviso_previo_en IS NULL OR aviso_vencido_en IS NULL OR escalado_en IS NULL)`;
   await tx`UPDATE reportes_externos SET aviso_vencido_en = coalesce(aviso_vencido_en, now()), escalado_en = coalesce(escalado_en, now())
+    WHERE estado = 'pendiente' AND (aviso_vencido_en IS NULL OR escalado_en IS NULL)`;
+  await tx`UPDATE impactos_indicadores SET aviso_vencido_en = coalesce(aviso_vencido_en, now()), escalado_en = coalesce(escalado_en, now())
     WHERE estado = 'pendiente' AND (aviso_vencido_en IS NULL OR escalado_en IS NULL)`;
   // Lo que `tomarFotos` busca: abierta, sin foto, sin datos ni «no aplica», de un indicador con alguna versión automática.
   await tx`UPDATE mediciones m SET foto_en = now()

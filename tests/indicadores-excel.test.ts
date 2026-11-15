@@ -532,6 +532,8 @@ describe("la línea de filtros del Excel de resultados", () => {
   it("nombra el filtro de las constancias de envío al ente (anexo 14B, §8)", () => {
     const catalogos = { procesos: [], subprocesos: [], clasificaciones: [], tipos: [] };
     expect(detalleDeFiltros(2026, { envio: "pendiente", participo: true }, catalogos)).toBe("Año: 2026 · Donde participo · Con un envío al ente pendiente");
+    // Y el de las revisiones por cambio de norma (anexo 14B, §9).
+    expect(detalleDeFiltros(2026, { impacto: true }, catalogos)).toBe("Año: 2026 · Con una revisión por cambio de norma pendiente");
     expect(detalleDeFiltros(2026, {}, catalogos)).toBe("Año: 2026");
   });
 });

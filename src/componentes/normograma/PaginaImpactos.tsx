@@ -3,8 +3,10 @@ import { resolverImpactoAccion } from "@/app/acciones-normograma";
 import { claseBoton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
-import { Insignia } from "@/componentes/ui/Insignia";
+import { Insignia, type VarianteInsignia } from "@/componentes/ui/Insignia";
+import type { IndicadorDelCambio } from "@/db/consultas/indicadores/impactos";
 import type { Impacto } from "@/db/consultas/normograma/impactos";
+import { rutaDeIndicador } from "@/lib/indicadores/rutas";
 import { cuenta } from "@/lib/plural";
 import { ETIQUETA_ESTADO_NORMA, ETIQUETA_RESOLUCION, fechaDeNorma } from "@/lib/normograma/tipos";
 import { estadoPlazo } from "@/lib/tramites/plazos";
@@ -172,13 +174,51 @@ function Documento({ impacto: i }: { impacto: Impacto }) {
   );
 }
 
+const ETIQUETA_DE_REVISION: Record<string, { texto: string; variante: VarianteInsignia }> = {
+  no_afecta: { texto: "No afecta", variante: "bien" },
+  nueva_version: { texto: "Versión nueva", variante: "bien" },
+  retiro: { texto: "Retirado", variante: "sin-dato" },
+};
+
+/**
+ * Los indicadores del proceso cuya ficha vigente citaba la norma (anexo 14B, §9), en lectura: el código enlazado a su
+ * página, donde se revisa, el nombre y cómo está la revisión. Solo los que la persona ve; sin ninguno, no se pinta.
+ */
+function Indicadores({ indicadores }: { indicadores: IndicadorDelCambio[] }) {
+  return (
+    <section aria-labelledby="impactos-indicadores" className="flex min-w-0 max-w-4xl flex-col gap-3">
+      <h2 id="impactos-indicadores" className="text-lg font-semibold">
+        Indicadores
+      </h2>
+      <p className="text-sm text-muted-foreground">La ficha de cada uno citaba la norma: se revisa en la página del indicador.</p>
+      <ul className="flex min-w-0 list-none flex-col gap-2" aria-label="Indicadores que citan la norma">
+        {indicadores.map((i) => {
+          const estado = i.estado === "pendiente" ? { texto: "Pendiente", variante: "atencion" as const } : (ETIQUETA_DE_REVISION[i.resolucion ?? ""] ?? null);
+          return (
+            <li key={i.codigo} className="flex min-w-0 flex-wrap items-start justify-between gap-2 rounded-xl border border-border bg-card p-4">
+              <p className="min-w-0 flex-1">
+                <Link href={rutaDeIndicador(i.codigo)} className={`${ENLACE} font-mono text-xs font-medium`}>
+                  {i.codigo}
+                </Link>{" "}
+                <span className="break-words">{i.nombre}</span>
+              </p>
+              {estado ? <Insignia variante={estado.variante}>{estado.texto}</Insignia> : null}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 /**
  * La tarea de impacto de un cambio normativo en un proceso (spec 13C §10.5, maqueta 8): los documentos enlazados con su
  * versión vigente y, por cada pendiente, «Abrir solicitud de cambio» (o enlazar el trámite en curso), «Verificar el
  * externo» si es externo, o «No afecta…» con nota; el impacto de proceso admite «Abrir solicitud de creación». Quien
- * llama ya decidió que la persona ve el impacto: los documentos que no ve no llegan.
+ * llama ya decidió que la persona ve el impacto: los documentos que no ve no llegan. Con `indicadores` (anexo 14B, §9), al
+ * final la sección «Indicadores», en lectura, con los que la persona ve.
  */
-export function PaginaImpactos({ impactos, ahora = new Date() }: { impactos: Impacto[]; ahora?: Date }) {
+export function PaginaImpactos({ impactos, indicadores = [], ahora = new Date() }: { impactos: Impacto[]; indicadores?: IndicadorDelCambio[]; ahora?: Date }) {
   const zona = zonaHoraria();
   const { cambio, proceso } = impactos[0];
   const pendientes = impactos.filter((i) => i.estado === "pendiente").length;
@@ -210,6 +250,7 @@ export function PaginaImpactos({ impactos, ahora = new Date() }: { impactos: Imp
           </li>
         ))}
       </ul>
+      {indicadores.length > 0 ? <Indicadores indicadores={indicadores} /> : null}
     </div>
   );
 }

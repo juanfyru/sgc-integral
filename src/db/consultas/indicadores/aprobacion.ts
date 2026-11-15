@@ -317,8 +317,11 @@ async function exigirMetasDentroDeBien(sql: Cliente, versionId: number, rigeDesd
  * Lo que la publicación cambió en los datos de operación (regla 5 de AGENTS.md: la aprobación no los cambia sin rastro), para
  * el detalle de `indicador_aprobado` o `indicador_cambio_menor`: nada si no apagó el soporte obligatorio.
  */
-const rastroDePublicacion = (p: Publicado | null) =>
-  p?.soporteApagado ? { soporteApagado: true, medicionesRecalculadas: p.medicionesRecalculadas } : {};
+const rastroDePublicacion = (p: Publicado | null) => ({
+  ...(p?.soporteApagado ? { soporteApagado: true, medicionesRecalculadas: p.medicionesRecalculadas } : {}),
+  // Las revisiones por cambio de norma que resolvió la versión nueva (anexo 14B, §9).
+  ...(p && p.impactosResueltos > 0 ? { impactosResueltos: p.impactosResueltos } : {}),
+});
 
 const SOLO_EN_CURSO = "Un cálculo que no se llena hacia atrás rige desde el periodo en curso";
 
@@ -544,6 +547,24 @@ const fueEnviada = (sql: Cliente) => sql`(v.estado = 'aprobada' OR EXISTS (
   SELECT 1 FROM firmas env_f WHERE env_f.indicador_version_id = v.id AND env_f.firma = 'elaboro'))`;
 
 /**
+ * La primera norma que la versión cita por primera vez (no la cita la ficha vigente; en una ficha nueva, todas) y que ya
+ * no está vigente ni modificada (anexo 14B, §9), con el nombre con que se firmó; `null` si no hay. Una que la vigente ya
+ * citaba sigue valiendo en cualquier estado. Se leen `FOR KEY SHARE`: dentro de la transacción de aprobar, una
+ * derogación no entra entre esta comprobación y la aprobación (esperaría, y la revisión de la ficha nacería después).
+ */
+async function normaNuevaQueNoRige(sql: Cliente, versionId: number, indicadorId: number): Promise<string | null> {
+  const vigente = await versionVigente(sql, indicadorId);
+  const filas = await sql`SELECT vn.norma_nombre, n.estado
+    FROM indicador_normas vn JOIN normas n ON n.id = vn.norma_id
+    WHERE vn.version_id = ${versionId}
+      ${vigente ? sql`AND NOT EXISTS (SELECT 1 FROM indicador_normas pn WHERE pn.version_id = ${vigente.id} AND pn.norma_id = vn.norma_id)` : sql``}
+    ORDER BY vn.id
+    FOR KEY SHARE OF n`;
+  const fila = filas.find((f) => f.estado !== "vigente" && f.estado !== "modificada");
+  return fila ? (fila.norma_nombre as string) : null;
+}
+
+/**
  * Por qué no se puede aprobar ni devolver una versión que ya no está por aprobar. El código solo se dice de una que se
  * envió alguna vez; de un borrador que nunca se envió o de uno descartado así, el mismo mensaje que a quien no le toca:
  * `aprobadoresDeFicha` no mira el estado y el código de un borrador no debe salir por aquí (spec §6.4).
@@ -571,6 +592,9 @@ async function validarAprobacion(sql: Cliente, sesion: SujetoVisibilidad, ids: r
     }
     const tipo = v.tipo_cambio as TipoCambio;
     const indicadorId = Number(v.indicador_id);
+    // Una cita nueva de una norma que dejó de regir mientras la ficha esperaba (anexo 14B, §9).
+    const queNoRige = await normaNuevaQueNoRige(sql, id, indicadorId);
+    if (queNoRige) throw new ErrorIndicador(`La norma ${queNoRige} ya no está vigente: devuelva la ficha ${codigo}`);
     const procesoId = Number(v.proceso_id);
     const automatica = calculoDeFila(v);
     if (automatica) {

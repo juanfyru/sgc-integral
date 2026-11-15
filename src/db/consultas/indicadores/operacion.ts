@@ -36,6 +36,7 @@ import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { versionVigente } from "./aprobacion";
 import { codigoCon, COLUMNAS_VARIABLE, CONTENIDO, proponerCodigo, siguientes } from "./fichas";
+import { resolverImpactosPorRetiro } from "./impactos";
 import { obtenerParametros } from "./maestros";
 import { conDatos, esDeOtraPeriodicidad, recalcularMedicion, versionesAprobadas } from "./mediciones";
 
@@ -520,8 +521,9 @@ async function descartarEnCurso(tx: TransactionSql, indicadorId: number, ahora: 
 /**
  * Retira un indicador activo (spec §7.7): queda `retirado` con su fecha y su motivo; sus mediciones abiertas sin ningún
  * dato se quitan (no tienen historia) y las que tienen datos siguen su curso, y lo mismo sus constancias de envío
- * pendientes sin soporte (anexo 14B, §8: `quitarConstanciasSinSoporte`); el cambio en curso se descarta y se avisa a los
- * designados. Es definitivo: para volver a medirlo se duplica.
+ * pendientes sin soporte (anexo 14B, §8: `quitarConstanciasSinSoporte`); sus revisiones por cambio de norma pendientes
+ * quedan resueltas por el retiro (anexo 14B, §9); el cambio en curso se descarta y se avisa a los designados. Es
+ * definitivo: para volver a medirlo se duplica.
  */
 export async function retirar(sesion: SesionFlujo, d: { indicadorId: number; motivo: string }, opciones?: Opciones): Promise<void> {
   exigirAdministrar(sesion);
@@ -535,6 +537,7 @@ export async function retirar(sesion: SesionFlujo, d: { indicadorId: number; mot
       WHERE m.indicador_id = ${i.id} AND NOT ${conDatos(tx)}
       RETURNING m.id`;
     const constanciasQuitadas = await quitarConstanciasSinSoporte(tx, i.id);
+    const impactosResueltos = await resolverImpactosPorRetiro(tx, { indicadorId: i.id, usuarioId: sesion.usuarioId, ahora });
     await tx`UPDATE indicadores SET estado = 'retirado', baja_por = ${sesion.usuarioId}, baja_en = ${ahora}, baja_motivo = ${motivo}
       WHERE id = ${i.id}`;
     const designados = await tx`SELECT DISTINCT d.usuario_id FROM indicador_designados d JOIN usuarios u ON u.id = d.usuario_id AND u.activo
@@ -558,7 +561,15 @@ export async function retirar(sesion: SesionFlujo, d: { indicadorId: number; mot
       accion: "indicador_retirado",
       entidad: "indicador",
       entidadId: i.id,
-      detalle: { codigo: i.codigo, nombre, motivo, medicionesQuitadas: quitadas.length, constanciasQuitadas, versionesDescartadas: descartadas },
+      detalle: {
+        codigo: i.codigo,
+        nombre,
+        motivo,
+        medicionesQuitadas: quitadas.length,
+        constanciasQuitadas,
+        versionesDescartadas: descartadas,
+        ...(impactosResueltos > 0 ? { impactosResueltos } : {}),
+      },
     });
   });
 }
@@ -596,13 +607,21 @@ export async function descartarIndicador(sesion: SesionFlujo, d: { indicadorId: 
   });
 }
 
-/** Borra un indicador en borrador que nunca se envió a aprobación, con sus versiones, sus filas hijas y sus designados. */
+/**
+ * Borra un indicador en borrador que nunca se envió a aprobación, con sus versiones, sus filas hijas y sus designados. Uno
+ * con revisiones por cambio de norma o reportes al ente (anexo 14B, §8 y §9) no se borra: un borrador nunca enviado no
+ * debería tenerlos, y si los tiene son historia.
+ */
 export async function borrarIndicador(sesion: SesionFlujo, indicadorId: number, opciones?: Opciones): Promise<void> {
   exigirAdministrar(sesion);
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
     const i = await bloquearIndicador(tx, indicadorId);
     if (i.estado !== "borrador") throw new ErrorIndicador("Solo se puede borrar un indicador en borrador");
     if (await seEnvioAlgunaVez(tx, i.id)) throw new ErrorIndicador("Este indicador ya se envió a aprobación: descártelo");
+    const [historia] = await tx`SELECT
+        EXISTS (SELECT 1 FROM impactos_indicadores WHERE indicador_id = ${i.id})
+        OR EXISTS (SELECT 1 FROM reportes_externos WHERE indicador_id = ${i.id}) AS tiene`;
+    if (historia.tiene) throw new ErrorIndicador("El indicador tiene revisiones por cambio de norma o reportes al ente: no se puede borrar");
     const nombre = await nombreDe(tx, i.id);
     const versiones = (await tx`SELECT id FROM indicador_versiones WHERE indicador_id = ${i.id} ORDER BY id FOR UPDATE`).map((v) => Number(v.id));
     if (versiones.length > 0) {

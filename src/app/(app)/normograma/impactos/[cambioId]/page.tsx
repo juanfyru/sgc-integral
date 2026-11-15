@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { PaginaImpactos } from "@/componentes/normograma/PaginaImpactos";
+import { indicadoresDelCambio } from "@/db/consultas/indicadores/impactos";
 import { impactosDe } from "@/db/consultas/normograma/impactos";
 import { exigirSesion } from "@/lib/paginas";
 
@@ -10,7 +11,8 @@ export const metadata: Metadata = { title: "Revisión por cambio normativo" };
 /**
  * La tarea de impacto de un cambio normativo en un proceso (spec 13C §10.5): `?proceso=` es el id del proceso, como lo
  * escriben la tarea y el aviso. La ven el líder del proceso y el Admin SGC (`puedeVerImpacto`, dentro de `impactosDe`);
- * para los demás, como para un cambio o un proceso sin impactos, es «no encontrada».
+ * para los demás, como para un cambio o un proceso sin impactos, es «no encontrada». Si el cambio abrió revisiones en
+ * indicadores del proceso, la sección «Indicadores» las lista en lectura (anexo 14B, §9).
  */
 export default async function PaginaImpactosDelCambio({
   params,
@@ -24,6 +26,8 @@ export default async function PaginaImpactosDelCambio({
   if (!/^\d{1,15}$/.test(cambioId) || typeof proceso !== "string" || !/^\d{1,15}$/.test(proceso)) notFound();
   const impactos = await impactosDe(Number(cambioId), Number(proceso), sesion);
   if (!impactos) notFound();
+  // La sección «Indicadores» (anexo 14B, §9), en lectura y con los que la persona ve.
+  const indicadores = await indicadoresDelCambio(sesion, Number(cambioId), Number(proceso));
 
-  return <PaginaImpactos impactos={impactos} />;
+  return <PaginaImpactos impactos={impactos} indicadores={indicadores} />;
 }

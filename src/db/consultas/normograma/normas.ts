@@ -1,14 +1,16 @@
 /**
  * El catálogo de normas (spec 13C §10.1, §10.2 y §10.7). Lo administra quien tiene `normograma.administrar`; lo lee
  * toda sesión. Cada cambio de estado queda en `norma_cambios` (solo inserción) en la misma transacción que el cambio
- * y que sus impactos documentales. Nada se borra salvo una norma sin historia: las demás se retiran. Las lecturas (la
- * ficha y las listas) viven en `lectura.ts` y se reexportan desde aquí.
+ * y que sus impactos (los documentales y, anexo 14B §9, las revisiones de los indicadores que la citan). Nada se borra
+ * salvo una norma sin historia: las demás se retiran. Las lecturas (la ficha y las listas) viven en `lectura.ts` y se
+ * reexportan desde aquí.
  */
 import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
+import { crearImpactosDeIndicadores } from "@/db/consultas/indicadores/impactos";
 import {
   acotado,
   ErrorNormograma,
@@ -167,27 +169,37 @@ export async function editarNorma(sesion: SesionFlujo, id: number, d: DatosNorma
   }
 }
 
+/** Lo que devuelven las funciones públicas del cambio de estado: lo mismo desde la 13C. */
+export type CambioDeEstado = { cambioId: number | null; impactos: number };
+
+/** Lo de la 13C, sin la cuenta de los indicadores: las funciones públicas devuelven lo que devolvían. */
+export const soloLo13C = ({ cambioId, impactos }: CambioDeEstado): CambioDeEstado => ({ cambioId, impactos });
+
 /**
  * El cambio de estado dentro de una transacción abierta (también la de `registrarRelacion`): la norma bloqueada, su
- * fila en `norma_cambios` y, si pasa a modificada, derogada o retirada, sus impactos. Si el estado no cambia, nada.
+ * fila en `norma_cambios` y, si pasa a modificada, derogada o retirada, sus impactos: los documentales de la 13C y, aparte,
+ * las revisiones de los indicadores cuya ficha vigente la cita (anexo 14B, §9: `impactosDeIndicadores`). Si el estado no
+ * cambia, nada.
  */
 export async function cambiarEstadoEn(
   tx: TransactionSql,
   sesion: SesionFlujo,
   d: { normaId: number; estado: EstadoNorma; fecha: string; nota: string | null; relacionId: number | null },
   c: { ahora: Date; plazoDias: number },
-): Promise<{ cambioId: number | null; impactos: number }> {
+): Promise<CambioDeEstado & { impactosDeIndicadores: number }> {
   const [n] = await tx`SELECT n.estado, ${nombreSql(tx)} AS nombre
     FROM normas n JOIN tipos_norma tn ON tn.id = n.tipo_norma_id WHERE n.id = ${d.normaId} FOR UPDATE OF n`;
   if (!n) throw new ErrorNormograma(NORMA_NO_EXISTE);
-  if (n.estado === d.estado) return { cambioId: null, impactos: 0 };
+  if (n.estado === d.estado) return { cambioId: null, impactos: 0, impactosDeIndicadores: 0 };
   await tx`UPDATE normas SET estado = ${d.estado}, estado_en = ${d.fecha}, actualizado_en = ${c.ahora} WHERE id = ${d.normaId}`;
   const [cambio] = await tx`INSERT INTO norma_cambios (norma_id, estado_anterior, estado_nuevo, fecha, relacion_id, usuario_id, nota, creado_en)
     VALUES (${d.normaId}, ${n.estado}, ${d.estado}, ${d.fecha}, ${d.relacionId}, ${sesion.usuarioId}, ${d.nota}, ${c.ahora})
     RETURNING id`;
   const cambioId = Number(cambio.id);
-  const impactos = ESTADOS_CON_IMPACTO.includes(d.estado)
-    ? await crearImpactos(tx, { cambioId, normaId: d.normaId, ahora: c.ahora, plazoDias: c.plazoDias })
+  const abre = ESTADOS_CON_IMPACTO.includes(d.estado);
+  const impactos = abre ? await crearImpactos(tx, { cambioId, normaId: d.normaId, ahora: c.ahora, plazoDias: c.plazoDias }) : 0;
+  const impactosDeIndicadores = abre
+    ? await crearImpactosDeIndicadores(tx, { cambioId, normaId: d.normaId, usuarioId: sesion.usuarioId, ahora: c.ahora, plazoDias: c.plazoDias })
     : 0;
   const retiro = d.estado === "retirada";
   await registrarAuditoria(tx, {
@@ -204,9 +216,10 @@ export async function cambiarEstadoEn(
       cambioId,
       relacionId: d.relacionId,
       impactos,
+      ...(impactosDeIndicadores > 0 ? { impactosDeIndicadores } : {}),
     },
   });
-  return { cambioId, impactos };
+  return { cambioId, impactos, impactosDeIndicadores };
 }
 
 /** El plazo de respuesta de los impactos, de la configuración documental (15 días por defecto). */
@@ -219,7 +232,7 @@ export async function cambiarEstadoNorma(
   sesion: SesionFlujo,
   d: { normaId: number; estado: EstadoNorma; fecha: string; nota: string | null },
   opciones?: Opciones,
-): Promise<{ cambioId: number | null; impactos: number }> {
+): Promise<CambioDeEstado> {
   exigirAdministrar(sesion);
   if (d.estado === "retirada") throw new ErrorNormograma("Para retirar una norma use «Retirar», que pide el motivo");
   if (!(ESTADOS_A_MANO as readonly string[]).includes(d.estado)) throw new ErrorNormograma("Elija el estado de la norma");
@@ -228,7 +241,9 @@ export async function cambiarEstadoNorma(
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
   const plazoDias = await plazoDeImpactos(sql);
-  return enTransaccion(sql, (tx) => cambiarEstadoEn(tx, sesion, { normaId: d.normaId, estado: d.estado, fecha, nota, relacionId: null }, { ahora, plazoDias }));
+  return soloLo13C(
+    await enTransaccion(sql, (tx) => cambiarEstadoEn(tx, sesion, { normaId: d.normaId, estado: d.estado, fecha, nota, relacionId: null }, { ahora, plazoDias })),
+  );
 }
 
 /** Retira con motivo (spec 13C §10.7): sale de las listas y de la búsqueda, queda en su ficha y también abre impactos. */
@@ -236,15 +251,17 @@ export async function retirarNorma(
   sesion: SesionFlujo,
   d: { normaId: number; motivo: string },
   opciones?: Opciones,
-): Promise<{ cambioId: number | null; impactos: number }> {
+): Promise<CambioDeEstado> {
   exigirAdministrar(sesion);
   const motivo = acotado(d.motivo, "El motivo", 5, 500);
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
   const plazoDias = await plazoDeImpactos(sql);
   const fecha = fechaEnZona(ahora, zonaHoraria());
-  return enTransaccion(sql, (tx) =>
-    cambiarEstadoEn(tx, sesion, { normaId: d.normaId, estado: "retirada", fecha, nota: motivo, relacionId: null }, { ahora, plazoDias }),
+  return soloLo13C(
+    await enTransaccion(sql, (tx) =>
+      cambiarEstadoEn(tx, sesion, { normaId: d.normaId, estado: "retirada", fecha, nota: motivo, relacionId: null }, { ahora, plazoDias }),
+    ),
   );
 }
 

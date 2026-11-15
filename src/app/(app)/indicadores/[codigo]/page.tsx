@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FileSpreadsheet, Printer } from "lucide-react";
 import { MenuAdministrar } from "@/componentes/indicadores/admin/MenuAdministrar";
+import { AvisoDeImpacto } from "@/componentes/indicadores/AvisoDeImpacto";
 import { PestanasDeIndicador, Recuadro, type PestanaDeIndicador } from "@/componentes/indicadores/vistas/comun";
 import { ESTADO_VERSION, VistaFicha } from "@/componentes/indicadores/vistas/VistaFicha";
 import { VistaObservaciones } from "@/componentes/indicadores/vistas/VistaObservaciones";
@@ -14,6 +15,7 @@ import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { desdePeriodo, fichaDeVersion, operacionDeIndicador, type VersionVisible } from "@/db/consultas/indicadores/aprobacion";
 import { enteDeLaFicha } from "@/db/consultas/indicadores/constancias";
+import { impactosPendientesDe } from "@/db/consultas/indicadores/impactos";
 import { proximaPorReportar } from "@/db/consultas/indicadores/lectura";
 import { metasDelAnio } from "@/db/consultas/indicadores/metas";
 import { resumenDeObservaciones } from "@/db/consultas/indicadores/observaciones";
@@ -89,7 +91,8 @@ function versionMostrada(versiones: VersionVisible[], pedida: Parametros["versio
  * «Resultados» (la de por omisión con ficha aprobada; `?anio=AAAA`, `?rango=`), «Ficha técnica» (`?vista=ficha`, con
  * `?version=N` para otra versión que la persona pueda abrir), «Versiones», para quien ve los soportes, «Observaciones»
  * (`?vista=observaciones&periodo=`) y, si la ficha se reporta a un ente o hay constancias, «Reportes al ente»
- * (`?vista=reportes`, anexo 14B §8). La página decide la sesión, quién ve qué y la vista; cada vista lee lo suyo
+ * (`?vista=reportes`, anexo 14B §8); en todas, si hay revisiones por cambio de norma pendientes, «Revisión por cambio
+ * normativo» (anexo 14B, §9). La página decide la sesión, quién ve qué y la vista; cada vista lee lo suyo
  * (`_vistas.ts`) y se pinta con su componente. Quien debe aprobar la ficha por aprobar de un indicador que aún no existe
  * para él solo abre esa versión (spec §6.4); para los demás, «no encontrada».
  */
@@ -123,6 +126,8 @@ export default async function PaginaIndicador({ params, searchParams }: { params
 
   const administra = puede(sesion, "indicadores.administrar");
   const codigo = indicador.codigo;
+  // «Revisión por cambio normativo» (anexo 14B, §9), en todas las vistas, a quien ve el indicador.
+  const impactos = ve ? await impactosPendientesDe(sesion, indicador.id) : [];
   const contexto: ContextoDeVista = { sesion, indicador, ve, versiones, vigente, ficha, administra, ahora };
   // La vista elegida lee lo suyo; «Resultados» abre antes los periodos que hayan terminado (F14-DC12).
   const cuerpo =
@@ -214,6 +219,7 @@ export default async function PaginaIndicador({ params, searchParams }: { params
         observaciones={obs?.total ?? null}
         conReportes={conReportes}
       />
+      <AvisoDeImpacto impactos={impactos} administra={administra} />
       {baja ? (
         <Recuadro>
           <p>{`${indicador.estado === "retirado" ? "Retirado" : "Descartado"} el ${fechaYHora(baja.en)}${baja.por ? ` por ${baja.por}` : ""}.`}</p>

@@ -13,6 +13,7 @@ import { corregirConstancia, quitarSoporteDeConstancia, registrarConstancia } fr
 import { abrirCambio, crearIndicador, guardarBorrador } from "@/db/consultas/indicadores/fichas";
 import { volverACalcular } from "@/db/consultas/indicadores/fotos";
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
+import { legibleSiInterbloqueo, resolverImpactoNoAfecta } from "@/db/consultas/indicadores/impactos";
 import { marcarNoAplica, quitarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
 import { programarMeta, quitarMetaProgramada } from "@/db/consultas/indicadores/metas";
 import { observar, responder } from "@/db/consultas/indicadores/observaciones";
@@ -40,6 +41,7 @@ import {
   EsquemaHistoricos,
   EsquemaMeta,
   EsquemaMotivoDeBaja,
+  EsquemaNoAfectaImpacto,
   EsquemaNoAplica,
   EsquemaObservacion,
   EsquemaOperacion,
@@ -75,11 +77,20 @@ function destinoDeFirma(err: unknown): string {
   throw err;
 }
 
+/**
+ * Quien guarda, envía o aprueba una ficha bloquea el indicador y después lee sus normas; quien cambia el estado de una
+ * norma la bloquea y después abre las revisiones de los indicadores que la citan (anexo 14B, §9). Si se cruzan, PostgreSQL
+ * cancela una con `40P01`: a la persona le llega un mensaje legible, sin reintentar.
+ */
+const sinInterbloqueoCrudo = (err: unknown): never => {
+  throw legibleSiInterbloqueo(err);
+};
+
 /** Crea el indicador en borrador y lleva a su ficha para seguir editándola. */
 export async function crearIndicadorAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     const d = parsearFormulario(formData, EsquemaFicha);
-    const { codigo } = await crearIndicador(sesion, d);
+    const { codigo } = await crearIndicador(sesion, d).catch(sinInterbloqueoCrudo);
     return rutaDeEdicion(codigo);
   });
 }
@@ -88,7 +99,7 @@ export async function crearIndicadorAccion(_prev: EstadoAccion, formData: FormDa
 export async function guardarBorradorAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     const d = parsearFormulario(formData, EsquemaFicha, { omitir: ["id"] });
-    await guardarBorrador(sesion, idNumerico(formData, "id"), d);
+    await guardarBorrador(sesion, idNumerico(formData, "id"), d).catch(sinInterbloqueoCrudo);
     return d.codigo ? rutaDeEdicion(d.codigo) : "/indicadores";
   });
 }
@@ -97,7 +108,7 @@ export async function guardarBorradorAccion(_prev: EstadoAccion, formData: FormD
 export async function abrirCambioAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
-    await abrirCambio(sesion, idNumerico(formData, "id"));
+    await abrirCambio(sesion, idNumerico(formData, "id")).catch(sinInterbloqueoCrudo);
   });
 }
 
@@ -122,7 +133,7 @@ export async function enviarAAprobacionAccion(_prev: EstadoAccion, formData: For
       );
       return rutaDeIndicador(codigo);
     } catch (err) {
-      return destinoDeFirma(err);
+      return destinoDeFirma(legibleSiInterbloqueo(err));
     }
   });
 }
@@ -145,7 +156,7 @@ export async function aprobarFichasAccion(_prev: EstadoAccion, formData: FormDat
       const destino = rutaInterna(firma.get("volver"), POR_APROBAR);
       return `${destino}${destino.includes("?") ? "&" : "?"}aprobadas=${aprobadas}`;
     } catch (err) {
-      return destinoDeFirma(err);
+      return destinoDeFirma(legibleSiInterbloqueo(err));
     }
   });
 }
@@ -191,7 +202,7 @@ export async function cambiarOperacionAccion(_prev: EstadoAccion, formData: Form
 export async function duplicarAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     const d = parsearFormulario(formData, EsquemaDuplicar, { omitir: ["id"] });
-    const { codigo } = await duplicar(sesion, { indicadorId: idNumerico(formData, "id"), procesoId: d.procesoId });
+    const { codigo } = await duplicar(sesion, { indicadorId: idNumerico(formData, "id"), procesoId: d.procesoId }).catch(sinInterbloqueoCrudo);
     return rutaDeEdicion(codigo);
   });
 }
@@ -201,6 +212,17 @@ export async function retirarAccion(_prev: EstadoAccion, formData: FormData): Pr
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     const { motivo } = parsearFormulario(formData, EsquemaMotivoDeBaja, { omitir: ["id"] });
     await retirar(sesion, { indicadorId: idNumerico(formData, "id"), motivo });
+  });
+}
+
+/**
+ * «No afecta» en una revisión por cambio de norma (anexo 14B, §9), con su nota; no navega: la página del indicador se
+ * vuelve a pintar sin la revisión.
+ */
+export async function resolverImpactoNoAfectaAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    const d = parsearFormulario(formData, EsquemaNoAfectaImpacto);
+    await resolverImpactoNoAfecta(sesion, d);
   });
 }
 

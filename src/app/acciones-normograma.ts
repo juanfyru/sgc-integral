@@ -5,6 +5,7 @@
 // impactos, de `normograma.procesos`, con el alcance sobre el proceso que comprueba el dominio.
 
 import { idNumerico, mutacion, type EstadoAccion } from "@/app/admin/comun";
+import { legibleSiInterbloqueo } from "@/db/consultas/indicadores/impactos";
 import {
   asociarProceso,
   desasociarProceso,
@@ -52,11 +53,20 @@ export async function editarNormaAccion(_prev: EstadoAccion, formData: FormData)
   });
 }
 
+/**
+ * Cambiar el estado de una norma bloquea la norma y después abre las revisiones de los indicadores que la citan (anexo
+ * 14B, §9); quien guarda una de esas fichas lo hace al revés. Si se cruzan, PostgreSQL cancela una con `40P01`: a la persona
+ * le llega un mensaje legible, sin reintentar.
+ */
+const sinInterbloqueoCrudo = (err: unknown): never => {
+  throw legibleSiInterbloqueo(err);
+};
+
 /** «Cambiar estado», con fecha y nota; no navega (la ficha se vuelve a pintar). */
 export async function cambiarEstadoNormaAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "normograma.administrar", async (_usuarioId, _formData, sesion) => {
     const d = parsearFormulario(formData, EsquemaEstadoNorma);
-    await cambiarEstadoNorma(sesion, d);
+    await cambiarEstadoNorma(sesion, d).catch(sinInterbloqueoCrudo);
   });
 }
 
@@ -65,7 +75,7 @@ export async function retirarNormaAccion(_prev: EstadoAccion, formData: FormData
   return mutacion(formData, "normograma.administrar", async (_usuarioId, _formData, sesion) => {
     const { motivo } = parsearFormulario(formData, EsquemaMotivo, { omitir: ["id"] });
     const normaId = idNumerico(formData, "id");
-    await retirarNorma(sesion, { normaId, motivo });
+    await retirarNorma(sesion, { normaId, motivo }).catch(sinInterbloqueoCrudo);
     return fichaDeNorma(normaId);
   });
 }
@@ -82,7 +92,7 @@ export async function borrarNormaAccion(_prev: EstadoAccion, formData: FormData)
 export async function registrarRelacionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "normograma.administrar", async (_usuarioId, _formData, sesion) => {
     const d = parsearFormulario(formData, EsquemaRelacion);
-    await registrarRelacion(sesion, d);
+    await registrarRelacion(sesion, d).catch(sinInterbloqueoCrudo);
   });
 }
 

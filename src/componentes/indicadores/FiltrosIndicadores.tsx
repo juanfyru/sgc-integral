@@ -33,7 +33,8 @@ function Casilla({ id, nombre, valor = "1", etiqueta, marcada }: { id: string; n
  * Los filtros de la lista (spec §12.2, maqueta 4) en una fila que se envuelve (a 390 px, dos selectores por fila):
  * proceso y subproceso, clasificación, tipo,
  * estado del semáforo, estado del reporte, «Donde participo», «Envío al ente pendiente» (el filtro de los enlaces de las
- * constancias, anexo 14B §8), texto e «Incluir retirados». Es un formulario `GET` con los
+ * constancias, anexo 14B §8), «Revisión por cambio de norma» (el de los avisos y la tarea agrupada de las revisiones,
+ * anexo 14B §9), texto e «Incluir retirados». Es un formulario `GET` con los
  * nombres que lee `filtroDeConsulta`: funciona antes de hidratar y deja la URL para compartir.
  */
 export function FiltrosIndicadores({ filtro, opciones }: { filtro: FiltroDeLista; opciones: OpcionesDeLista }) {
@@ -119,6 +120,7 @@ export function FiltrosIndicadores({ filtro, opciones }: { filtro: FiltroDeLista
       </div>
       <Casilla id="filtro-participo" nombre="participo" etiqueta="Donde participo" marcada={filtro.participo === true} />
       <Casilla id="filtro-envio" nombre="envio" valor="pendiente" etiqueta="Envío al ente pendiente" marcada={filtro.envio === "pendiente"} />
+      <Casilla id="filtro-impacto" nombre="impacto" etiqueta="Revisión por cambio de norma" marcada={filtro.impacto === true} />
       <Casilla id="filtro-retirados" nombre="retirados" etiqueta="Incluir retirados" marcada={filtro.retirados === true} />
       <Boton type="submit" variante="secundario" className="justify-self-start">
         Filtrar

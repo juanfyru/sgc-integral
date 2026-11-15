@@ -679,6 +679,9 @@ const IMPIDE = {
   posterior: "tiene una versión posterior",
   enviada: "la propuesta ya se envió a aprobación",
   modificada: "la propuesta se modificó después de importarse",
+  // Las tablas de la 14B que cuelgan de una ficha (anexo 14B, §8 y §9): resueltas o no, son historia del indicador.
+  impactos: "tiene revisiones por cambio de norma",
+  reportes: "tiene reportes al ente",
 } as const;
 
 export type Impedimento = { codigo: string; motivo: string };
@@ -715,7 +718,9 @@ async function importadaDelLote(sql: Cliente, loteId: number): Promise<Importada
  * que `conDatos` cuenta (valores, «no aplica», análisis, eventos, observaciones y soportes) y la fecha de reporte; una
  * versión posterior es cualquier otra versión del indicador, en cualquier estado. De una propuesta, que es un borrador
  * normal: enviarla deja la firma «Elaboró», que no se borra (aunque la devuelvan sigue firmada), y editarla después de
- * importarla es trabajo que se perdería. Abrir periodos sin datos, sus avisos y las metas programadas no impiden nada.
+ * importarla es trabajo que se perdería. Una revisión por cambio de norma o un reporte al ente (anexo 14B, §8 y §9), aunque
+ * esté resuelto, es historia del indicador: también lo impide. Abrir periodos sin datos, sus avisos y las metas programadas
+ * no impiden nada.
  */
 async function revisarDeshacer(sql: Cliente, importada: Importada): Promise<{ impiden: Impedimento[]; siguen: FichaQueSigue[] }> {
   const { fichas, en } = importada;
@@ -724,7 +729,9 @@ async function revisarDeshacer(sql: Cliente, importada: Importada): Promise<{ im
       EXISTS (SELECT 1 FROM indicador_designados d WHERE d.indicador_id = i.id) AS designadas,
       EXISTS (SELECT 1 FROM indicador_versiones v WHERE v.indicador_id = i.id AND v.id <> x.version_id) AS posterior,
       EXISTS (SELECT 1 FROM firmas f JOIN indicador_versiones v ON v.id = f.indicador_version_id WHERE v.indicador_id = i.id) AS enviada,
-      EXISTS (SELECT 1 FROM indicador_versiones v WHERE v.id = x.version_id AND v.actualizado_en > ${en}) AS modificada
+      EXISTS (SELECT 1 FROM indicador_versiones v WHERE v.id = x.version_id AND v.actualizado_en > ${en}) AS modificada,
+      EXISTS (SELECT 1 FROM impactos_indicadores ii WHERE ii.indicador_id = i.id) AS impactos,
+      EXISTS (SELECT 1 FROM reportes_externos r WHERE r.indicador_id = i.id) AS reportes
     FROM unnest(${sql.array(fichas.map((f) => f.indicadorId))}::bigint[], ${sql.array(fichas.map((f) => f.versionId))}::bigint[])
       AS x(indicador_id, version_id)
     JOIN indicadores i ON i.id = x.indicador_id`;
@@ -746,6 +753,8 @@ async function revisarDeshacer(sql: Cliente, importada: Importada): Promise<{ im
       if (r.posterior) motivos.push(IMPIDE.posterior);
       if (f.estado === "propuesto" && r.modificada) motivos.push(IMPIDE.modificada);
     }
+    if (r.impactos) motivos.push(IMPIDE.impactos);
+    if (r.reportes) motivos.push(IMPIDE.reportes);
     impiden.push(...motivos.map((motivo) => ({ codigo, motivo })));
   }
   return { impiden, siguen };

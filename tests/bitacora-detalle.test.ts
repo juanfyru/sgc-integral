@@ -842,6 +842,21 @@ describe("las constancias de envío al ente (14B)", () => {
   });
 });
 
+describe("las revisiones de indicadores por cambio de norma (14B)", () => {
+  const frase = (accion: string, detalle: Record<string, unknown>) => describirEvento({ accion, entidad: "indicador", entidadId: 1, detalle });
+  it("«No afecta» dice qué cambio, qué indicador y por qué", () => {
+    const d = { impactoId: 3, cambioId: 9, codigo: "CEX-IND-01", norma: "Resolución 3100 de 2019", resolucion: "no_afecta", nota: "La meta no depende de la norma" };
+    expect(frase("impacto_indicador_resuelto", d)).toBe(
+      "Registró que el cambio de Resolución 3100 de 2019 no afecta a CEX-IND-01: La meta no depende de la norma",
+    );
+    expect(frase("impacto_indicador_resuelto", { resolucion: "no_afecta" })).toBe("Registró que un cambio de norma no afecta a un indicador");
+    expect(frase("impacto_indicador_resuelto", { codigo: "CEX-IND-01", norma: "Resolución 3100 de 2019" })).toBe(
+      "Resolvió la revisión de CEX-IND-01 por el cambio de Resolución 3100 de 2019",
+    );
+    expect(nombreDeAccion("impacto_indicador_resuelto")).toBe("Registró que un cambio de norma no afecta a un indicador");
+  });
+});
+
 describe("la medición de un indicador", () => {
   const frase = (accion: string, detalle: Record<string, unknown>) =>
     describirEvento({ accion, entidad: "medicion", entidadId: 1, detalle });
@@ -1020,6 +1035,10 @@ describe("los Excel de indicadores (14A)", () => {
     // El filtro de los enlaces de las constancias de envío al ente (anexo 14B, §8).
     expect(x("exporto_resultados_indicadores", { anio: 2026, filtros: { envio: "pendiente", participo: true } })).toBe(
       "Emitió los resultados de los indicadores de 2026 (con un envío al ente pendiente, donde participa)",
+    );
+    // El de las revisiones por cambio de norma (anexo 14B, §9).
+    expect(x("exporto_resultados_indicadores", { anio: 2026, filtros: { impacto: true } })).toBe(
+      "Emitió los resultados de los indicadores de 2026 (con una revisión por cambio de norma pendiente)",
     );
     expect(nombreDeAccion("exporto_resultados_indicadores")).toBe("Emitió los resultados de los indicadores");
   });

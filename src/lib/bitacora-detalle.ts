@@ -239,6 +239,7 @@ function filtrosDeLista(v: unknown): (string | null)[] {
     semaforo ? `con semáforo «${semaforo}»` : null,
     reporte ? `con reporte «${reporte}»` : null,
     f.envio === "pendiente" ? "con un envío al ente pendiente" : null,
+    f.impacto === true ? "con una revisión por cambio de norma pendiente" : null,
     f.participo === true ? "donde participa" : null,
     texto(f.texto) ? `con el texto «${texto(f.texto)}»` : null,
     f.retirados === true ? "con los retirados" : null,
@@ -957,6 +958,13 @@ export function describirEvento(e: EventoAuditoria): string {
     case "constancia_soporte_quitado":
       // «el reporte…» con la preposición: «del reporte…».
       return `Quitó el soporte «${texto(d.nombre) ?? "?"}» d${reporteAlEnte(cod, d)}`;
+    // ── Indicadores (14B): las revisiones por cambio de norma («No afecta»; las demás salidas van en la entrada de quien las causa)
+    case "impacto_indicador_resuelto": {
+      const norma = texto(d.norma) ? `el cambio de ${texto(d.norma)}` : "un cambio de norma";
+      return d.resolucion === "no_afecta"
+        ? `Registró que ${norma} no afecta a ${cod ?? "un indicador"}${conMotivo(d.nota)}`
+        : `Resolvió la revisión de ${cod ?? "un indicador"} por ${norma}`;
+    }
     case "indicador_meta_programada": {
       if (!cod) return "Programó la meta de un periodo de un indicador";
       const antes = metaDeBitacora(d.antes);
@@ -1175,6 +1183,7 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   constancia_registrada: "Registró el reporte de un indicador a un ente",
   constancia_corregida: "Corrigió el reporte de un indicador a un ente",
   constancia_soporte_quitado: "Quitó un soporte del reporte de un indicador a un ente",
+  impacto_indicador_resuelto: "Registró que un cambio de norma no afecta a un indicador",
   tipo_norma_creado: "Creó un tipo de norma",
   tipo_norma_editado: "Renombró un tipo de norma",
   tipo_norma_movido: "Movió un tipo de norma",

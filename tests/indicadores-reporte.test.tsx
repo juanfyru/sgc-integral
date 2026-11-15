@@ -56,6 +56,7 @@ vi.mock("@/app/acciones-indicadores", () => ({
   reabrirMedicionAccion: vi.fn(),
   cerrarDeNuevoAccion: vi.fn(),
   volverACalcularAccion: vi.fn(),
+  resolverImpactoNoAfectaAccion: vi.fn(),
 }));
 
 import PaginaIndicador from "@/app/(app)/indicadores/[codigo]/page";

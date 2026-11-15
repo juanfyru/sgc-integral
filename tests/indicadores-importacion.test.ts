@@ -1078,6 +1078,25 @@ describe("deshacer la importación", () => {
       );
     }));
 
+  it("un reporte al ente lo impide (anexo 14B, §8), después de los demás motivos de la ficha", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const f = await importado(tx, b);
+      await tx`INSERT INTO reportes_externos (indicador_id, periodo, desde, hasta, vence_en, ente)
+        VALUES (${f.aprobadaId}, '2026-S1', ${new Date("2026-01-01T05:00:00Z")}, ${new Date("2026-07-01T04:59:59.999Z")}, ${DESPUES}, 'Supersalud')`;
+      expect(await condicionDeDeshacer(tx, f.loteId)).toEqual({ puede: false, impiden: [{ codigo: f.cod1, motivo: "tiene reportes al ente" }] });
+      await rechaza(
+        deshacerImportacion(b.admin, f.loteId, { motivo: MOTIVO, credenciales: CLAVE }, despues(tx)),
+        `No se puede deshacer: ${f.cod1} tiene reportes al ente`,
+      );
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [b.procesoId] });
+      await designar(b.admin, { indicadorId: f.aprobadaId, funcion: "analiza", usuarioIds: [lider.usuarioId] }, { sql: tx, ahora: DESPUES });
+      expect((await condicionDeDeshacer(tx, f.loteId)).impiden).toEqual([
+        { codigo: f.cod1, motivo: "tiene personas designadas" },
+        { codigo: f.cod1, motivo: "tiene reportes al ente" },
+      ]);
+    }));
+
   it("una versión posterior de una ficha aprobada lo impide, aunque sea un borrador de cambio", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);

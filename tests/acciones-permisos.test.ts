@@ -41,6 +41,14 @@ describe("las constancias de envío al ente las registra quien mide (anexo 14B, 
   }
 });
 
+describe("«No afecta» en una revisión por cambio de norma lo registra quien administra indicadores (anexo 14B, §9)", () => {
+  const src = readFileSync("src/app/acciones-indicadores.ts", "utf8");
+  it("resolverImpactoNoAfectaAccion", () => {
+    const accion = exportadas(src).find((a) => a.nombre === "resolverImpactoNoAfectaAccion");
+    expect(accion?.cuerpo).toMatch(/mutacion\(\s*formData,\s*"indicadores\.administrar"/);
+  });
+});
+
 describe("toda acción de cuenta exige sesión salvo ingresar", () => {
   const src = readFileSync("src/app/acciones-cuenta.ts", "utf8");
   for (const { nombre, cuerpo } of exportadas(src)) {

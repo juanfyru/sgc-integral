@@ -21,7 +21,7 @@ import {
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { nombreSql } from "./busqueda";
-import { cambiarEstadoEn, exigirAdministrar, NORMA_NO_EXISTE, plazoDeImpactos } from "./normas";
+import { cambiarEstadoEn, exigirAdministrar, NORMA_NO_EXISTE, plazoDeImpactos, soloLo13C } from "./normas";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -79,20 +79,23 @@ export async function registrarRelacion(
         RETURNING id`;
       const relacionId = Number(r.id);
       const estado = ESTADO_TRAS_RELACION[d.tipo];
-      // «modifica a» sobre una ya modificada no cambia su estado: `cambiarEstadoEn` no escribe nada.
+      // «modifica a» sobre una ya modificada no cambia su estado: `cambiarEstadoEn` no escribe nada. Lo que devuelve es lo
+      // de la 13C: las revisiones de los indicadores las cuenta la bitácora del cambio de estado.
       const cambio = estado === null
         ? { cambioId: null, impactos: 0 }
-        : await cambiarEstadoEn(
-            tx,
-            sesion,
-            {
-              normaId: d.afectadaId,
-              estado,
-              fecha: fechaDada ?? nueva.fecha_expedicion ?? fechaEnZona(ahora, zonaHoraria()),
-              nota: null,
-              relacionId,
-            },
-            { ahora, plazoDias },
+        : soloLo13C(
+            await cambiarEstadoEn(
+              tx,
+              sesion,
+              {
+                normaId: d.afectadaId,
+                estado,
+                fecha: fechaDada ?? nueva.fecha_expedicion ?? fechaEnZona(ahora, zonaHoraria()),
+                nota: null,
+                relacionId,
+              },
+              { ahora, plazoDias },
+            ),
           );
       await auditarEnLasDos(tx, sesion.usuarioId, "norma_relacion", {
         normaId: d.normaId,

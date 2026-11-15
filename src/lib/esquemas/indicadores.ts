@@ -285,6 +285,11 @@ export const EsquemaAprobarFichas = z
 /** Devolver con nota, sin clave (spec §7.6.3); el `id` de la versión viaja aparte. */
 export const EsquemaDevolverFicha = z.object({ nota: textoAcotado("La nota", 5, 1000) }).strict();
 
+/** «No afecta» en una revisión por cambio de norma (anexo 14B, §9): la revisión y la nota, de 5 a 500 caracteres. */
+export const EsquemaNoAfectaImpacto = z
+  .object({ impactoId: id("La revisión no es válida"), nota: textoAcotado("La nota", 5, 500) })
+  .strict();
+
 /** Designar personas (spec §7.3): la función y la lista completa de quienes la tienen; el `id` del indicador viaja aparte. */
 export const EsquemaDesignar = z
   .object({

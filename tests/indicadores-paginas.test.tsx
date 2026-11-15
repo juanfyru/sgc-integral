@@ -55,6 +55,7 @@ vi.mock("@/app/acciones-indicadores", () => ({
   reabrirMedicionAccion: vi.fn(),
   cerrarDeNuevoAccion: vi.fn(),
   volverACalcularAccion: vi.fn(),
+  resolverImpactoNoAfectaAccion: vi.fn(),
 }));
 
 import PaginaCierre from "@/app/(app)/indicadores/cierre/page";

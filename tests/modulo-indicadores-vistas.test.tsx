@@ -60,6 +60,7 @@ vi.mock("@/app/acciones-indicadores", () => ({
   registrarConstanciaAccion: vi.fn(),
   corregirConstanciaAccion: vi.fn(),
   quitarSoporteDeConstanciaAccion: vi.fn(),
+  resolverImpactoNoAfectaAccion: vi.fn(),
 }));
 
 import PaginaIndicador from "@/app/(app)/indicadores/[codigo]/page";
