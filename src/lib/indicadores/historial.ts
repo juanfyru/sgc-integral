@@ -76,6 +76,10 @@ function queHizo(e: EventoDeMedicion): string {
     case "foto":
       // La foto la toma el sistema; con `recalculo`, quien administra la volvió a tomar (anexo 14B, §5.4).
       return e.detalle.recalculo === true ? "Se volvió a calcular" : "El sistema tomó la foto";
+    case "propagacion":
+      return "El sistema actualizó un valor";
+    case "categorias":
+      return "Actualizó las categorías";
   }
 }
 

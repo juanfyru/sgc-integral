@@ -38,7 +38,7 @@ const TABLAS_14A = ["tipos_indicador", "clasificaciones_indicador", "unidades_in
   "indicador_versiones", "indicador_variables", "indicador_responsables", "indicador_normas", "indicador_designados",
   "indicador_metas", "mediciones", "medicion_valores", "medicion_eventos", "medicion_observaciones", "cierres_indicadores"];
 const TABLAS_14B = ["variables_compartidas", "variable_responsables", "variable_valores", "dimensiones",
-  "dimension_categorias", "reportes_externos", "reporte_externo_eventos", "impactos_indicadores"];
+  "dimension_categorias", "reportes_externos", "reporte_externo_eventos", "impactos_indicadores", "variable_eventos"];
 
 const TRIGGERS = [
   "medicion_eventos_inmutable", "medicion_observaciones_inmutable", "cierres_indicadores_inmutable",
@@ -90,11 +90,11 @@ describe("esquema de la Fase 14", () => {
     await dueno?.end();
   });
 
-  it("existen las 24 tablas de la fase", async () => {
+  it("existen las 25 tablas de la fase", async () => {
     const filas = await sql`SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`;
     const nombres = new Set(filas.map((f) => f.table_name as string));
     for (const t of [...TABLAS_14A, ...TABLAS_14B]) expect(nombres.has(t), t).toBe(true);
-    expect(TABLAS_14A.length + TABLAS_14B.length).toBe(24);
+    expect(TABLAS_14A.length + TABLAS_14B.length).toBe(25);
   });
 
   it("indicadores: estado, nivel de acceso, plazo y baja coherente", () =>
@@ -169,7 +169,7 @@ describe("esquema de la Fase 14", () => {
       expect(await fallaCon(crear("B", { consolidacion: "maximo" }))).toBe("23514");
       expect(await fallaCon(crear("B", { origen: "otro" }))).toBe("23514");
       expect(await fallaCon(crear("B", { toma: "otro" }))).toBe("23514");
-      await crear("B", { origen: "indicador", toma: "cumplimiento", consolidacion: "promedio" });
+      await crear("B", { origen: "indicador", indicador_origen_id: indicadorId, toma: "cumplimiento", consolidacion: "promedio" });
       const [a] = await tx`SELECT consolidacion, origen FROM indicador_variables WHERE version_id = ${versionId} AND letra = 'A'`;
       expect(a).toEqual({ consolidacion: "suma", origen: "propia" });
     }));
@@ -209,7 +209,7 @@ describe("esquema de la Fase 14", () => {
         ),
       ).toBe("23505");
       const [v] = await tx`INSERT INTO indicador_variables (version_id, letra) VALUES (${versionId}, 'A') RETURNING id`;
-      const [d] = await tx`INSERT INTO dimensiones (nombre) VALUES (${"zz_dim_" + Date.now()}) RETURNING id`;
+      const [d] = await tx`INSERT INTO dimensiones (nombre, orden) VALUES (${"zz_dim_" + Date.now()}, 1) RETURNING id`;
       const [cat] = await tx`INSERT INTO dimension_categorias (dimension_id, nombre, orden) VALUES (${d.id}, 'Urgencias', 1) RETURNING id`;
       const valor = (categoria: number | null) =>
         tx.savepoint((s) => s`INSERT INTO medicion_valores (medicion_id, variable_id, categoria_id, valor) VALUES (${medicionId}, ${v.id}, ${categoria}, 5)`);

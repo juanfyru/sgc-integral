@@ -291,7 +291,7 @@ export const archivos = pgTable(
     ),
     check(
       "archivos_contexto_valido",
-      sql`${t.contexto} IN ('version', 'jornada', 'verificacion_item', 'norma', 'revision_anual', 'hallazgo', 'medicion', 'reporte_externo', 'importacion_indicadores')`,
+      sql`${t.contexto} IN ('version', 'jornada', 'verificacion_item', 'norma', 'revision_anual', 'hallazgo', 'medicion', 'reporte_externo', 'importacion_indicadores', 'dato_compartido')`,
     ),
     check(
       "archivos_contexto_coherente",
@@ -1586,18 +1586,32 @@ export const objetivos = pgTable(
   (t) => [check("objetivos_clase_valida", sql`${t.clase} IN ('calidad', 'institucional')`)],
 );
 
-export const dimensiones = pgTable("dimensiones", {
-  id: id(),
-  nombre: text("nombre").notNull().unique(),
-});
+export const dimensiones = pgTable(
+  "dimensiones",
+  {
+    id: id(),
+    nombre: text("nombre").notNull(),
+    orden: integer("orden").notNull(),
+    activo: boolean("activo").notNull().default(true),
+  },
+  (t) => [uniqueIndex("dimensiones_nombre_idx").on(sql`lower(${t.nombre})`)],
+);
 
-export const dimensionCategorias = pgTable("dimension_categorias", {
-  id: id(),
-  dimensionId: ref("dimension_id", () => dimensiones.id).notNull(),
-  nombre: text("nombre").notNull(),
-  orden: integer("orden").notNull(),
-  activo: boolean("activo").notNull().default(true),
-});
+export const dimensionCategorias = pgTable(
+  "dimension_categorias",
+  {
+    id: id(),
+    dimensionId: ref("dimension_id", () => dimensiones.id).notNull(),
+    nombre: text("nombre").notNull(),
+    orden: integer("orden").notNull(),
+    activo: boolean("activo").notNull().default(true),
+    creadoEn: creado(),
+    // Desde cuándo un periodo nuevo ya no la pide.
+    desactivadaEn: marca("desactivada_en"),
+  },
+  // Única dentro de su dimensión sin distinguir mayúsculas; también es el índice por dimensión.
+  (t) => [uniqueIndex("dimension_categorias_nombre_idx").on(t.dimensionId, sql`lower(${t.nombre})`)],
+);
 
 export const indicadores = pgTable(
   "indicadores",
@@ -1723,6 +1737,8 @@ export const indicadorVersiones = pgTable(
     periodicidadExterna: text("periodicidad_externa"),
     plazoExternoDias: integer("plazo_externo_dias"),
     dimensionId: ref("dimension_id", () => dimensiones.id),
+    // El nombre con que se firmó la dimensión.
+    dimensionNombre: text("dimension_nombre"),
     prueba: jsonb("prueba"),
     notaDevolucion: text("nota_devolucion"),
     huella: text("huella"),
@@ -1769,6 +1785,8 @@ export const indicadorVersiones = pgTable(
       "indicador_versiones_aprobada_coherente",
       sql`${t.estado} <> 'aprobada' OR (${t.elaboradaPor} IS NOT NULL AND ${t.huella} IS NOT NULL AND ${t.rigeDesde} IS NOT NULL AND (${t.tipoCambio} = 'menor' OR ${t.aprobadaPor} IS NOT NULL))`,
     ),
+    check("indicador_versiones_dimension_manual", sql`${t.dimensionId} IS NULL OR ${t.origenDato} = 'manual'`),
+    check("indicador_versiones_dimension_coherente", sql`(${t.dimensionId} IS NULL) = (${t.dimensionNombre} IS NULL)`),
   ],
 );
 
@@ -1781,16 +1799,26 @@ export const variablesCompartidas = pgTable(
     descripcion: text("descripcion"),
     fuente: text("fuente"),
     unidad: text("unidad"),
-    periodicidad: text("periodicidad"),
-    consolidacion: text("consolidacion"),
+    periodicidad: text("periodicidad").notNull(),
+    consolidacion: text("consolidacion").notNull(),
     capturaMin: num("captura_min"),
     capturaMax: num("captura_max"),
     admiteNegativos: boolean("admite_negativos").notNull().default(false),
-    plazoReporteDias: integer("plazo_reporte_dias"),
+    plazoReporteDias: integer("plazo_reporte_dias").notNull(),
     dimensionId: ref("dimension_id", () => dimensiones.id),
     activa: boolean("activa").notNull().default(true),
+    creadoPor: refUsuario("creado_por"),
+    creadoEn: creado(),
   },
-  (t) => [unique("variables_compartidas_unica").on(t.procesoId, t.nombre)],
+  (t) => [
+    uniqueIndex("variables_compartidas_nombre_idx").on(t.procesoId, sql`lower(${t.nombre})`),
+    check(
+      "variables_compartidas_periodicidad_valida",
+      sql`${t.periodicidad} IN ('mensual', 'bimestral', 'trimestral', 'semestral', 'anual')`,
+    ),
+    check("variables_compartidas_consolidacion_valida", sql`${t.consolidacion} IN ('suma', 'ultimo', 'promedio')`),
+    check("variables_compartidas_plazo_valido", sql`${t.plazoReporteDias} BETWEEN 0 AND 90`),
+  ],
 );
 
 export const indicadorVariables = pgTable(
@@ -1806,7 +1834,12 @@ export const indicadorVariables = pgTable(
     consolidacion: text("consolidacion").notNull().default("suma"),
     origen: text("origen").notNull().default("propia"),
     variableCompartidaId: ref("variable_compartida_id", () => variablesCompartidas.id),
+    // La periodicidad del dato citado, firmada.
+    datoPeriodicidad: text("dato_periodicidad"),
     indicadorOrigenId: ref("indicador_origen_id", () => indicadores.id),
+    // El código y el nombre del componente, firmados.
+    origenCodigo: text("origen_codigo"),
+    origenNombre: text("origen_nombre"),
     toma: text("toma"),
     capturaMin: num("captura_min"),
     capturaMax: num("captura_max"),
@@ -1815,10 +1848,16 @@ export const indicadorVariables = pgTable(
   },
   (t) => [
     unique("indicador_variables_letra_unica").on(t.versionId, t.letra),
+    index("indicador_variables_dato_idx").on(t.variableCompartidaId),
+    index("indicador_variables_origen_idx").on(t.indicadorOrigenId),
     check("indicador_variables_letra_valida", sql`${t.letra} ~ '^[A-Z]$'`),
     check("indicador_variables_consolidacion_valida", sql`${t.consolidacion} IN ('suma', 'ultimo', 'promedio')`),
     check("indicador_variables_origen_valido", sql`${t.origen} IN ('propia', 'compartida', 'automatica', 'indicador')`),
     check("indicador_variables_toma_valida", sql`${t.toma} IN ('valor', 'cumplimiento')`),
+    check(
+      "indicador_variables_origen_coherente",
+      sql`(${t.origen} = 'compartida') = (${t.variableCompartidaId} IS NOT NULL) AND (${t.origen} = 'indicador') = (${t.indicadorOrigenId} IS NOT NULL) AND (${t.origen} = 'indicador') = (${t.toma} IS NOT NULL)`,
+    ),
   ],
 );
 
@@ -1937,6 +1976,9 @@ export const mediciones = pgTable(
     alertaEstado: text("alerta_estado"),
     // Cuándo el sistema tomó la foto de una medición automática.
     fotoEn: marca("foto_en"),
+    // Las categorías que pide la medición, si la ficha tiene dimensión, y cuántas quedaron en Crítico.
+    categorias: jsonb("categorias"),
+    categoriasEnCritico: integer("categorias_en_critico"),
   },
   (t) => [
     unique("mediciones_periodo_unico").on(t.indicadorId, t.periodo),
@@ -1956,13 +1998,18 @@ export const medicionValores = pgTable(
     variableId: ref("variable_id", () => indicadorVariables.id).notNull(),
     categoriaId: ref("categoria_id", () => dimensionCategorias.id),
     valor: num("valor"),
+    // La fracción exacta como «n/d», como `mediciones.resultado_exacto`.
+    valorExacto: text("valor_exacto"),
     noAplica: boolean("no_aplica").notNull().default(false),
     noAplicaMotivo: text("no_aplica_motivo"),
     reportadoPor: refUsuario("reportado_por"),
     reportadoEn: marca("reportado_en"),
   },
-  // La migración lo crea con NULLS NOT DISTINCT: un valor sin categoría también es único.
-  (t) => [uniqueIndex("medicion_valores_unico_idx").on(t.medicionId, t.variableId, t.categoriaId)],
+  (t) => [
+    // La migración 0011 lo crea con NULLS NOT DISTINCT: un valor sin categoría también es único.
+    uniqueIndex("medicion_valores_unico_idx").on(t.medicionId, t.variableId, t.categoriaId),
+    index("medicion_valores_categoria_idx").on(t.categoriaId),
+  ],
 );
 
 // Solo-inserción (trigger y REVOKE en roles-bd.ts).
@@ -1981,7 +2028,7 @@ export const medicionEventos = pgTable(
     index("medicion_eventos_medicion_idx").on(t.medicionId, t.creadoEn),
     check(
       "medicion_eventos_tipo_valido",
-      sql`${t.tipo} IN ('reporte', 'correccion', 'analisis', 'no_aplica', 'meta', 'soporte', 'cierre', 'reapertura', 'recalculo', 'historico', 'foto')`,
+      sql`${t.tipo} IN ('reporte', 'correccion', 'analisis', 'no_aplica', 'meta', 'soporte', 'cierre', 'reapertura', 'recalculo', 'historico', 'foto', 'propagacion', 'categorias')`,
     ),
   ],
 );
@@ -2003,36 +2050,82 @@ export const medicionObservaciones = pgTable(
   ],
 );
 
-// Las dos tablas siguientes son de la 14C, como `variables_compartidas`, `dimensiones` y `dimension_categorias`: nacen
-// vacías y la migración 0015 puede rehacerlas (spec 14 §19.5).
+// Las tablas siguientes son de la 14C, como `variables_compartidas`, `dimensiones` y `dimension_categorias`: nacieron
+// vacías en la 0011 y la 0015 las alteró en su sitio (anexo 14C, §8).
 export const variableResponsables = pgTable(
   "variable_responsables",
   {
     id: id(),
     variableId: ref("variable_id", () => variablesCompartidas.id).notNull(),
     usuarioId: refUsuario("usuario_id").notNull(),
+    designadoPor: refUsuario("designado_por"),
+    designadoEn: marca("designado_en").notNull().defaultNow(),
   },
-  (t) => [unique("variable_responsables_unico").on(t.variableId, t.usuarioId)],
+  (t) => [
+    unique("variable_responsables_unico").on(t.variableId, t.usuarioId),
+    index("variable_responsables_usuario_idx").on(t.usuarioId),
+  ],
 );
 
+// Una fila es un periodo del dato.
 export const variableValores = pgTable(
   "variable_valores",
   {
     id: id(),
     variableId: ref("variable_id", () => variablesCompartidas.id).notNull(),
     periodo: text("periodo").notNull(),
+    desde: marca("desde").notNull(),
+    hasta: marca("hasta").notNull(),
+    // Sin uso y siempre nula, como `aviso_previo_en` en `reportes_externos`: los valores por categoría van en `por_categoria`.
     categoriaId: ref("categoria_id", () => dimensionCategorias.id),
+    // Con dimensión, la suma de las categorías.
     valor: num("valor"),
+    // `{"<categoriaId>": "<valor>"}`, si el dato tiene dimensión.
+    porCategoria: jsonb("por_categoria"),
+    // Las categorías que pide el periodo.
+    categorias: jsonb("categorias"),
     estado: text("estado").notNull().default("pendiente"),
-    venceEn: marca("vence_en"),
+    venceEn: marca("vence_en").notNull(),
     reportadoPor: refUsuario("reportado_por"),
     reportadoEn: marca("reportado_en"),
+    corregido: boolean("corregido").notNull().default(false),
+    reabiertoPor: refUsuario("reabierto_por"),
+    reabiertoEn: marca("reabierto_en"),
+    reaperturaJustificacion: text("reapertura_justificacion"),
     avisoPrevioEn: marca("aviso_previo_en"),
     avisoVencidoEn: marca("aviso_vencido_en"),
+    escaladoEn: marca("escalado_en"),
     cierreId: ref("cierre_id", () => cierresIndicadores.id),
+    creadoEn: creado(),
   },
-  // La migración lo crea con NULLS NOT DISTINCT.
-  (t) => [uniqueIndex("variable_valores_unico_idx").on(t.variableId, t.periodo, t.categoriaId)],
+  (t) => [
+    // La migración 0011 lo crea con NULLS NOT DISTINCT.
+    uniqueIndex("variable_valores_unico_idx").on(t.variableId, t.periodo, t.categoriaId),
+    index("variable_valores_estado_vence_idx").on(t.estado, t.venceEn),
+    check("variable_valores_estado_valido", sql`${t.estado} IN ('pendiente', 'reportado', 'cerrado')`),
+    check(
+      "variable_valores_reportado_coherente",
+      sql`${t.estado} <> 'reportado' OR (${t.valor} IS NOT NULL AND ${t.reportadoEn} IS NOT NULL)`,
+    ),
+  ],
+);
+
+// Solo-inserción (trigger en la migración 0015 y REVOKE en roles-bd.ts): el historial de un periodo del dato.
+export const variableEventos = pgTable(
+  "variable_eventos",
+  {
+    id: id(),
+    valorId: ref("valor_id", () => variableValores.id).notNull(),
+    tipo: text("tipo").notNull(),
+    // Nulo cuando lo hizo el sistema.
+    usuarioId: refUsuario("usuario_id"),
+    detalle: jsonb("detalle").notNull().default(sql`'{}'::jsonb`),
+    creadoEn: creado(),
+  },
+  (t) => [
+    index("variable_eventos_valor_idx").on(t.valorId, t.creadoEn),
+    check("variable_eventos_tipo_valido", sql`${t.tipo} IN ('reporte', 'correccion', 'soporte', 'cierre', 'reapertura')`),
+  ],
 );
 
 // La constancia del envío de un periodo externo a su ente (14B; la 0013 la rehizo sobre la tabla vacía de la 0011).

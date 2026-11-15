@@ -91,8 +91,8 @@ export async function limpiarTodo(db: Db): Promise<void> {
       indicador_versiones, indicador_variables, indicador_responsables, indicador_normas,
       indicador_designados, indicador_metas, mediciones, medicion_valores, medicion_eventos,
       medicion_observaciones, cierres_indicadores, variables_compartidas, variable_responsables,
-      variable_valores, dimensiones, dimension_categorias, reportes_externos, reporte_externo_eventos,
-      impactos_indicadores
+      variable_valores, variable_eventos, dimensiones, dimension_categorias, reportes_externos,
+      reporte_externo_eventos, impactos_indicadores
     RESTART IDENTITY CASCADE
   `);
 }

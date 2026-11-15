@@ -205,5 +205,7 @@ export const TIPOS_EVENTO = [
   "recalculo",
   "historico",
   "foto",
+  "propagacion",
+  "categorias",
 ] as const;
 export type TipoEvento = (typeof TIPOS_EVENTO)[number];
