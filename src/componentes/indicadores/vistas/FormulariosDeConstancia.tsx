@@ -21,6 +21,12 @@ const CONTROL = `${claseControl} w-full min-w-0`;
 /** Lo que el formulario necesita de la constancia. */
 export type ConstanciaDelFormulario = { id: number; etiqueta: string; fechaEnvio: string | null; radicado: string | null; nota: string | null };
 
+/** El `id` del formulario de la constancia: el ancla de los enlaces «Registrar el envío» y «Corregir» de la tabla. */
+export const anclaDeConstancia = (id: number) => `constancia-${id}`;
+
+/** El `hash` de la página (`location.hash`, con su «#») es el de esta constancia. */
+export const esAnclaDeConstancia = (hash: string, id: number) => hash === `#${anclaDeConstancia(id)}`;
+
 /** Lo enviado que volvió con un error, o lo que la constancia ya tenía. */
 const valorPrevio = (estado: EstadoAccion, campo: string, inicial: string | null) => {
   const v = estado?.valores?.[campo];
@@ -153,12 +159,16 @@ export function RegistrarEnvio({
   /** Se adjuntan y se quitan soportes: solo con el indicador activo. */
   soportesEditables: boolean;
 }) {
-  const [hecho, setHecho] = useState(false);
-  const [estado, enviar, pendiente] = useAccionDeDialogo(registrarConstanciaAccion, () => setHecho(true));
-  useTituloAlDesaparecer(hecho);
   const { id, etiqueta } = constancia;
+  const [hecho, setHecho] = useState(false);
+  const [estado, enviar, pendiente] = useAccionDeDialogo(registrarConstanciaAccion, () => {
+    // Registrada, la sección se va y en su lugar nace «Corregir» con el mismo `id`: sin el ancla vieja, no se abre sola.
+    if (esAnclaDeConstancia(window.location.hash, id)) window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    setHecho(true);
+  });
+  useTituloAlDesaparecer(hecho);
   return (
-    <section id={`constancia-${id}`} aria-labelledby={`constancia-${id}-titulo`} className="flex min-w-0 scroll-mt-24 flex-col gap-4 rounded-lg border border-border px-4 py-3">
+    <section id={anclaDeConstancia(id)} aria-labelledby={`constancia-${id}-titulo`} className="flex min-w-0 scroll-mt-24 flex-col gap-4 rounded-lg border border-border px-4 py-3">
       <h3 id={`constancia-${id}-titulo`} className="font-semibold">{`Registrar el envío · ${etiqueta}`}</h3>
       <div className="flex flex-col gap-2">
         <p className="text-sm">{resultado}</p>
@@ -184,7 +194,9 @@ export function RegistrarEnvio({
 /**
  * «Corregir» una constancia registrada (anexo 14B, §8): la fecha, el radicado o la nota, con su justificación; no recalcula
  * el resultado enviado. Admite un soporte más (el documento correcto) mientras el indicador esté activo, y los que tiene no
- * se quitan. Un desplegable, con su propio nombre accesible, que se cierra cuando la corrección se guarda.
+ * se quitan. Un desplegable, con su propio nombre accesible: se abre, con el foco en su `<summary>`, al llegar a su ancla
+ * (el enlace «Corregir» de la fila, la página abierta con ese `hash` o un `hashchange`; cerrado a mano, no se reabre solo
+ * mientras el `hash` no cambie), y se cierra cuando la corrección se guarda, dejando el foco en su `<summary>`.
  */
 export function CorregirEnvio({
   constancia,
@@ -202,20 +214,47 @@ export function CorregirEnvio({
 }) {
   const [estado, enviar, pendiente] = useActionState<EstadoAccion, FormData>(corregirConstanciaAccion, null);
   const desplegable = useRef<HTMLDetailsElement>(null);
+  const resumen = useRef<HTMLElement>(null);
   const enviaba = useRef(false);
+  const { id, etiqueta } = constancia;
+  // Guardada, se cierra; el foco que estaba en el botón, ya oculto, pasa a su <summary> y no cae en <body>.
   useEffect(() => {
-    if (desplegable.current) cerrarTrasGuardar(desplegable.current, { enviaba: enviaba.current, pendiente, estado });
+    if (desplegable.current && cerrarTrasGuardar(desplegable.current, { enviaba: enviaba.current, pendiente, estado })) resumen.current?.focus();
     enviaba.current = pendiente;
   }, [pendiente, estado]);
-  const { id, etiqueta } = constancia;
+  // Al llegar a su ancla se abre: al montarse, con cada `hashchange` y al pulsar un enlace a ella (con el `hash` ya puesto, el
+  // navegador no avisa del cambio). Nada más: lo que la persona cierra no se reabre solo. El navegador desplaza hasta el
+  // ancla; `focus` solo ajusta si hace falta, con el `scroll-behavior` de la página (que `globals.css` apaga con
+  // `prefers-reduced-motion`).
+  useEffect(() => {
+    const abrir = () => {
+      if (!desplegable.current) return;
+      desplegable.current.open = true;
+      resumen.current?.focus();
+    };
+    const alLlegar = () => {
+      if (esAnclaDeConstancia(window.location.hash, id)) abrir();
+    };
+    const alPulsar = (e: MouseEvent) => {
+      const enlace = e.target instanceof Element ? e.target.closest("a[href]") : null;
+      if (enlace?.getAttribute("href") === `#${anclaDeConstancia(id)}`) abrir();
+    };
+    alLlegar();
+    window.addEventListener("hashchange", alLlegar);
+    document.addEventListener("click", alPulsar);
+    return () => {
+      window.removeEventListener("hashchange", alLlegar);
+      document.removeEventListener("click", alPulsar);
+    };
+  }, [id]);
   return (
     <details
-      id={`constancia-${id}`}
+      id={anclaDeConstancia(id)}
       ref={desplegable}
       aria-label={`Corregir el envío · ${etiqueta}`}
       className="min-w-0 scroll-mt-24 rounded-lg border border-border px-4 py-3"
     >
-      <summary className={`cursor-pointer rounded-sm text-sm font-medium ${FOCO}`}>{`Corregir el envío · ${etiqueta}`}</summary>
+      <summary ref={resumen} className={`cursor-pointer rounded-sm text-sm font-medium ${FOCO}`}>{`Corregir el envío · ${etiqueta}`}</summary>
       <div className="mt-3 flex min-w-0 flex-col gap-4">
         <p className="text-sm text-muted-foreground">
           La corrección no recalcula el resultado enviado. Queda en el historial con lo que había, lo que quedó y su justificación.

@@ -73,6 +73,7 @@ import { LeyendaDeMatriz, MatrizDelAnio } from "@/componentes/indicadores/Matriz
 import { Objetivos } from "@/componentes/indicadores/Objetivos";
 import { columnasDeVariables, TablaDelAnio } from "@/componentes/indicadores/medicion/TablaDelAnio";
 import { ResultadoPrincipal } from "@/componentes/indicadores/ResultadoPrincipal";
+import { anclaDeConstancia, esAnclaDeConstancia } from "@/componentes/indicadores/vistas/FormulariosDeConstancia";
 import { ReportesAlEnte, type DatosDeReportes } from "@/componentes/indicadores/vistas/ReportesAlEnte";
 import { obtenerSql } from "@/db/cliente";
 import { registrarArchivo } from "@/db/consultas/admin";
@@ -783,6 +784,32 @@ describe("la vista «Reportes al ente» (anexo 14B, §8)", () => {
     expect(html).toMatch(/id="corregir-justificacion-11"[^>]*name="justificacion"/);
     // Un solo h2 de la vista y sus subtítulos debajo.
     expect(html.match(/<h2[\s>]/g)).toHaveLength(1);
+  });
+
+  it("el enlace «Corregir» de la fila apunta al <details> de su constancia, cuyo <summary> recibe el foco", () => {
+    const html = renderToStaticMarkup(<ReportesAlEnte {...datos()} />);
+    // Los enlaces de la tabla y de la tarjeta del celular llevan al `id` del desplegable (o de la sección de registro).
+    const destinos = [...html.matchAll(/<a[^>]*href="#(constancia-\d+)"/g)].map((m) => m[1]);
+    expect(destinos.sort()).toEqual(["constancia-11", "constancia-11", "constancia-12", "constancia-12", "constancia-13", "constancia-13"]);
+    for (const d of new Set(destinos)) expect(html.match(new RegExp(`id="${d}"`, "g"))).toHaveLength(1);
+    const desplegable = /<details(?=[^>]*id="constancia-11")[^>]*>\s*<summary([^>]*)>Corregir el envío · Primer trimestre de 2026<\/summary>/.exec(html);
+    expect(desplegable).not.toBeNull();
+    // El <summary> es enfocable (no lo saca del orden de tabulación) y su foco se ve.
+    expect(desplegable![1]).not.toContain("tabindex");
+    expect(desplegable![1]).toContain("focus-visible:outline-2");
+    // Cerrado al pintar: lo abre el efecto al llegar por el ancla.
+    expect(html).not.toMatch(/<details[^>]*id="constancia-11"[^>]*open/);
+  });
+
+  it("esAnclaDeConstancia: el hash de la constancia, y solo ese", () => {
+    expect(anclaDeConstancia(11)).toBe("constancia-11");
+    expect(esAnclaDeConstancia("#constancia-11", 11)).toBe(true);
+    expect(esAnclaDeConstancia("#constancia-110", 11)).toBe(false);
+    expect(esAnclaDeConstancia("#constancia-11", 110)).toBe(false);
+    expect(esAnclaDeConstancia("#constancia-1", 11)).toBe(false);
+    expect(esAnclaDeConstancia("constancia-11", 11)).toBe(false);
+    expect(esAnclaDeConstancia("", 11)).toBe(false);
+    expect(esAnclaDeConstancia("#indicador-reportes", 11)).toBe(false);
   });
 
   it("quien no ve soportes no recibe archivos ni historial; quien no registra, ningún formulario", () => {
