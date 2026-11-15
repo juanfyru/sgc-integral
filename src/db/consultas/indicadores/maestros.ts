@@ -14,6 +14,7 @@ import {
   ESQUEMAS_MAESTRO,
 } from "@/lib/esquemas/indicadores-maestros";
 import { ErrorPermiso, puede } from "@/lib/permisos";
+import { cambiarClaseCierraCiclo } from "./componentes";
 
 type Opciones = { sql?: Cliente };
 
@@ -149,6 +150,10 @@ export async function guardarEnMaestro(
   const entidad = TABLA[m].tabla;
 
   return enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+    // La clase de un objetivo decide qué cuenta «Objetivos cumplidos» (anexo 14C, §6.1): cambiarla no puede cerrar un ciclo
+    // oculto. El candado de las aprobaciones va primero, como en ellas; se toma en toda edición de un objetivo porque si la
+    // clase cambia se sabe solo con la fila bloqueada.
+    if (m === "objetivos" && id !== null) await tx`SELECT pg_advisory_xact_lock(hashtext('sgc.indicadores.compuestos'))`;
     await bloquear(tx, m);
     if (m !== "objetivos") await exigirNombreLibre(tx, m, String(datos.nombre), id);
     let antes: Record<string, unknown> | null = null;
@@ -180,7 +185,11 @@ export async function guardarEnMaestro(
         await tx`UPDATE unidades_indicador SET nombre = ${datos.nombre as string}, sufijo = ${datos.sufijo as string},
           decimales = ${datos.decimales as number} WHERE id = ${id}`;
       } else {
-        await tx`UPDATE objetivos SET clase = ${datos.clase as string}, enunciado = ${datos.enunciado as string} WHERE id = ${id}`;
+        const clase = datos.clase as ClaseObjetivo;
+        if (antes.clase !== clase && (await cambiarClaseCierraCiclo(tx, id, clase))) {
+          throw new ErrorIndicador("Cambiar la clase de este objetivo cerraría un ciclo entre indicadores: cambie antes las fichas que lo citan");
+        }
+        await tx`UPDATE objetivos SET clase = ${clase}, enunciado = ${datos.enunciado as string} WHERE id = ${id}`;
       }
     }
     await registrarAuditoria(tx, {

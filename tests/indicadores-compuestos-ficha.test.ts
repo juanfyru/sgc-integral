@@ -18,6 +18,7 @@ import { aprobarFichas, enviarAAprobacion } from "@/db/consultas/indicadores/apr
 import { componentesRestringidos, quienesToman } from "@/db/consultas/indicadores/componentes";
 import { abrirCambio, contenidoDeVersion, crearIndicador, fichaParaEditar, guardarBorrador } from "@/db/consultas/indicadores/fichas";
 import { condicionDeDeshacer, deshacerImportacion } from "@/db/consultas/indicadores/importacion";
+import { guardarEnMaestro } from "@/db/consultas/indicadores/maestros";
 import { cambiarOperacion, retirar } from "@/db/consultas/indicadores/operacion";
 import { tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
 import type { DatosFicha } from "@/lib/esquemas/indicadores";
@@ -203,6 +204,27 @@ async function conNivel(tx: TransactionSql, indicadorId: number, nivelAcceso: Ni
 const gerenciasActivas = async (tx: TransactionSql) =>
   (await tx`SELECT id FROM usuarios WHERE rol = 'gerencia' AND activo ORDER BY id`).map((f) => Number(f.id));
 
+/**
+ * `tx` y sus puntos de guardado, anotando en `sentencias` el texto de cada plantilla que pasa por ellos, en orden: para fijar
+ * en qué orden toma sus candados una transacción sin abrir otra que espere.
+ */
+function espiar(tx: TransactionSql, sentencias: string[]): TransactionSql {
+  return new Proxy(tx, {
+    apply(objetivo, esto, args: unknown[]) {
+      const plantilla = args[0];
+      if (Array.isArray(plantilla) && "raw" in plantilla) sentencias.push((plantilla as readonly string[]).join("?"));
+      return Reflect.apply(objetivo as unknown as (...a: unknown[]) => unknown, esto, args);
+    },
+    get(objetivo, clave) {
+      if (clave === "savepoint") {
+        return (fn: (sp: TransactionSql) => Promise<unknown>) => objetivo.savepoint((sp) => fn(espiar(sp, sentencias)));
+      }
+      const valor = Reflect.get(objetivo, clave) as unknown;
+      return typeof valor === "function" ? valor.bind(objetivo) : valor;
+    },
+  });
+}
+
 /** Pide el candado de las aprobaciones desde otra conexión del grupo, fuera de la transacción de la prueba. */
 async function candadoLibre(): Promise<boolean> {
   const [f] = await sql`SELECT pg_try_advisory_xact_lock(hashtext('sgc.indicadores.compuestos')) AS libre`;
@@ -237,14 +259,34 @@ describe("quién aprueba un compuesto con un componente restringido (anexo §6.1
       expect(await tareasDe(b.gerente)).not.toContain(`ficha:${conGeneral.versionId}`);
 
       // El componente se restringe con la ficha ya enviada: sin reenviarla, la aprueba Gerencia y no el líder.
+      const avisos = async () =>
+        tx`SELECT usuario_id, titulo, cuerpo FROM notificaciones
+          WHERE tipo = 'indicadores.por_aprobar' AND entidad = 'indicador' AND entidad_id = ${conGeneral.indicadorId} ORDER BY usuario_id, id`;
+      expect((await avisos()).map((a) => Number(a.usuario_id))).toEqual([lider.usuarioId]);
       await cambiarOperacion(b.admin, await conNivel(tx, general.id, "restringido"), { sql: tx, ahora: AHORA });
-      expect(await aprobadoresDeFicha(conGeneral.versionId, { sql: tx })).toEqual(await gerenciasActivas(tx));
+      const gerencias = await gerenciasActivas(tx);
+      expect(await aprobadoresDeFicha(conGeneral.versionId, { sql: tx })).toEqual(gerencias);
       expect(await puedeAprobarFicha(conGeneral.versionId, lider, { sql: tx })).toBe(false);
       expect(await tareasDe(lider)).not.toContain(`ficha:${conGeneral.versionId}`);
       expect(await tareasDe(b.gerente)).toContain(`ficha:${conGeneral.versionId}`);
+      // Y quienes pasan a aprobarla reciben el aviso que sale al enviarla; el líder no recibe otro.
+      const avisados = await avisos();
+      expect(avisados.map((a) => Number(a.usuario_id))).toEqual([lider.usuarioId, ...gerencias].sort((x, y) => x - y));
+      expect(new Set(avisados.map((a) => `${a.titulo as string} | ${a.cuerpo as string}`))).toEqual(
+        new Set([`Ficha por aprobar: ${conGeneral.codigo} · Atención integral | Ficha nueva: la elaboró ${b.admin.nombre}.`]),
+      );
       await rechaza(aprobar(tx, lider, [conGeneral.versionId]), NO_LE_TOCA);
-      await aprobar(tx, b.gerente, [conGeneral.versionId]);
+
+      // Quién firma se decide con los componentes ya tomados: dentro de la transacción, después del candado consultivo, los
+      // componentes se toman `FOR KEY SHARE` antes de la primera consulta de los aprobadores (quien restringe uno, espera).
+      const sentencias: string[] = [];
+      await aprobar(espiar(tx, sentencias), b.gerente, [conGeneral.versionId]);
       expect(await estadoDe(tx, conGeneral.versionId)).toBe("aprobada");
+      const enLaTransaccion = sentencias.slice(sentencias.findIndex((s) => s.includes("pg_advisory_xact_lock")));
+      const tomaComponentes = enLaTransaccion.findIndex((s) => /FROM indicadores\b[\s\S]*FOR KEY SHARE/.test(s));
+      const quienAprueba = enLaTransaccion.findIndex((s) => s.includes("clasificaciones_indicador c ON c.id = fv.clasificacion_id"));
+      expect(tomaComponentes).toBeGreaterThan(0);
+      expect(quienAprueba).toBeGreaterThan(tomaComponentes);
     }));
 });
 
@@ -344,6 +386,50 @@ describe("el ciclo oculto de «Objetivos cumplidos» con dos aristas ocultas", (
       // Apuntando a uno institucional y tomando un indicador simple, sí.
       await crearIndicador(b.admin, ficha(b, [propia("A"), delIndicador("B", simple.id)], { objetivoId: institucional }), { sql: tx });
     }));
+
+  it("una ficha que solo llega a un ciclo ajeno no lo cierra: no se rechaza", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const [o] = await tx`INSERT INTO objetivos (clase, enunciado, orden) VALUES ('institucional', ${`ZZ Objetivo ${unico()}`}, 99) RETURNING id`;
+      const deCalidad = await indicadorDePrueba(tx, { procesoId: b.procesoId, calculo: { clave: "objetivos_cumplidos", alcance: "calidad" } });
+      const z = await indicadorDePrueba(tx, { procesoId: b.procesoId, objetivoId: Number(o.id), variables: { A: { indicadorOrigenId: deCalidad.id } } });
+      // El ciclo se cierra por SQL, sin pasar por el maestro: Z → «Objetivos cumplidos» de calidad ⇒ Z.
+      await tx`UPDATE objetivos SET clase = 'calidad' WHERE id = ${o.id}`;
+      // W toma a Z: llega al ciclo, pero no forma parte de él.
+      await crearIndicador(b.admin, ficha(b, [propia("A"), delIndicador("B", z.id)]), { sql: tx });
+      // Una que apunta a calidad y toma a Z, sí lo cierra (tomando un «Objetivos cumplidos» de su clase).
+      const [oc] = await tx`INSERT INTO objetivos (clase, enunciado, orden) VALUES ('calidad', ${`ZZ Objetivo ${unico()}`}, 99) RETURNING id`;
+      await rechaza(
+        crearIndicador(b.admin, ficha(b, [propia("A"), delIndicador("B", z.id)], { objetivoId: Number(oc.id) }), { sql: tx }),
+        "Esta ficha toma «Objetivos cumplidos»: no puede apuntar a un objetivo de esa misma clase",
+      );
+    }));
+});
+
+describe("el maestro no cierra un ciclo oculto al cambiar la clase de un objetivo", () => {
+  it("si la clase nueva lo cerraría, rechaza; si no, la cambia; el enunciado solo, siempre", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const objetivo = async () =>
+        Number((await tx`INSERT INTO objetivos (clase, enunciado, orden) VALUES ('institucional', ${`ZZ Objetivo ${unico()}`}, 99) RETURNING id`)[0].id);
+      const deX = await objetivo();
+      const otro = await objetivo();
+      const deCalidad = await indicadorDePrueba(tx, { procesoId: b.procesoId, calculo: { clave: "objetivos_cumplidos", alcance: "calidad" } });
+      // X apunta a deX y llega, a través de Y, al «Objetivos cumplidos» de calidad; otro indicador apunta a `otro` y no toma nada.
+      const y = await indicadorDePrueba(tx, { procesoId: b.procesoId, variables: { A: { indicadorOrigenId: deCalidad.id } } });
+      await indicadorDePrueba(tx, { procesoId: b.procesoId, objetivoId: deX, variables: { A: { indicadorOrigenId: y.id } } });
+      await indicadorDePrueba(tx, { procesoId: b.procesoId, objetivoId: otro });
+      const claseDe = async (id: number) => (await tx`SELECT clase FROM objetivos WHERE id = ${id}`)[0].clase as string;
+      const guardar = (id: number, clase: "calidad" | "institucional", enunciado = `ZZ Enunciado ${unico()}`) =>
+        guardarEnMaestro(b.admin, "objetivos", { id, clase, enunciado }, { sql: tx });
+
+      // De calidad, X ⇒ … ⇒ «Objetivos cumplidos» de calidad ⇒ X.
+      await rechaza(guardar(deX, "calidad"), "Cambiar la clase de este objetivo cerraría un ciclo entre indicadores: cambie antes las fichas que lo citan");
+      expect(await claseDe(deX)).toBe("institucional");
+      await guardar(deX, "institucional");
+      await guardar(otro, "calidad");
+      expect(await claseDe(otro)).toBe("calidad");
+    }));
 });
 
 describe("la prueba «a la vez»: el candado consultivo de las aprobaciones", () => {
@@ -410,6 +496,21 @@ describe("del lado del componente", () => {
       await enviar(tx, b, await cambioMayor(tx, b, otro, trimestral));
     }));
 
+  it("un bloque con el cambio de C que le quita la meta y el de X que pasa a tomar su cumplimiento: no se aprueba ninguno", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const c = await indicadorDePrueba(tx, { procesoId: b.procesoId, clasificacion: "Estratégico" });
+      const x = await indicadorDePrueba(tx, { procesoId: b.procesoId, clasificacion: "Estratégico" });
+      // Cada uno vale contra la vigente del otro: X se guarda y se envía con la meta de C, y C, sin nadie que tome su cumplimiento.
+      const deC = await cambioMayor(tx, b, c, sinMeta);
+      const deX = await cambioMayor(tx, b, x, (v) => ({ ...v, variables: [v.variables[0], delIndicador("B", c.id, "cumplimiento")] }));
+      await enviar(tx, b, deC);
+      await enviar(tx, b, deX);
+
+      await rechaza(aprobar(tx, b.gerente, [deC, deX]), `${CAMBIE_ANTES}: ${x.codigo}`);
+      expect([await estadoDe(tx, deC), await estadoDe(tx, deX)]).toEqual(["por_aprobar", "por_aprobar"]);
+    }));
+
   for (const [caso, cambio, toma] of [
     ["le quita la meta", sinMeta, "cumplimiento"],
     ["lo pasa a trimestral", trimestral, "valor"],
@@ -461,7 +562,7 @@ describe("nadie mide un compuesto sin variables propias", () => {
       const funciones = (await tx`SELECT funcion FROM indicador_designados WHERE indicador_id = ${ind.id}`).map((d) => d.funcion);
       expect(funciones).not.toContain("mide");
       const [quitados] = await tx`SELECT detalle FROM auditoria WHERE accion = 'indicador_medidores_quitados' AND entidad_id = ${ind.id}`;
-      expect(quitados.detalle).toEqual({ codigo: ind.codigo, cuantos: 1 });
+      expect(quitados.detalle).toEqual({ codigo: ind.codigo, cuantos: 1, motivo: "sin_variables_propias" });
       const [aprobado] = await tx`SELECT detalle FROM auditoria WHERE accion = 'indicador_aprobado' AND entidad_id = ${ind.id}`;
       expect(aprobado.detalle).toMatchObject({ soporteApagado: true });
     }));
@@ -546,6 +647,30 @@ describe("el nivel de acceso", () => {
       // Con el componente general, sí.
       await tx`UPDATE indicadores SET nivel_acceso = 'general' WHERE id = ${comp.id}`;
       await cambiarOperacion(b.admin, await conNivel(tx, compuesto.id, "general"), { sql: tx, ahora: AHORA });
+    }));
+
+  it("abrir mira también la versión que rige una medición sin cerrar, como restringir: la anterior que tomaba al restringido", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const comp = await indicadorDePrueba(tx, { procesoId: b.procesoId, nivelAcceso: "restringido" });
+      const compuesto = await indicadorDePrueba(tx, {
+        procesoId: b.procesoId,
+        nivelAcceso: "restringido",
+        variables: { A: { indicadorOrigenId: comp.id } },
+      });
+      // Su versión 2 ya no lo toma, pero la de enero sigue abierta con la versión 1, que sí.
+      await versionTrimestral(tx, { indicadorId: compuesto.id, usuarioId: b.admin.usuarioId, rigeDesde: "2026-T2", aprobadaEn: AHORA });
+      const enero = periodoDe("2026-01", zonaHoraria())!;
+      const [m] = await tx`INSERT INTO mediciones (indicador_id, version_id, periodo, desde, hasta, vence_en)
+        VALUES (${compuesto.id}, ${compuesto.versionId}, '2026-01', ${enero.desde}, ${enero.hasta}, ${enero.hasta}) RETURNING id`;
+      // La ficha que rige es trimestral: el inicio de medición se manda en su periodicidad.
+      const abrir = async () =>
+        cambiarOperacion(b.admin, { ...(await conNivel(tx, compuesto.id, "general")), inicioMedicion: "2026-T1" }, { sql: tx, ahora: AHORA });
+      await rechaza(abrir(), TOMA_RESTRINGIDO);
+      // Cerrada la de enero, ninguna versión que rige toma al restringido.
+      await tx`UPDATE mediciones SET estado = 'cerrada' WHERE id = ${m.id}`;
+      await abrir();
+      expect((await tx`SELECT nivel_acceso FROM indicadores WHERE id = ${compuesto.id}`)[0].nivel_acceso).toBe("general");
     }));
 });
 

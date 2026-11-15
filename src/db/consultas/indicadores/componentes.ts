@@ -4,9 +4,10 @@
  * grafo de quién toma a quién se arma con las fichas vigentes de los indicadores activos, sustituyendo las que se guardan o
  * se aprueban (`revisarEnBloque`, con todas las del bloque). Y, del lado del componente (§6.6), quiénes lo toman
  * (`quienesToman`), a quiénes una versión suya ya no les sirve (`aQuienesDejaDeServir`) y el mensaje que lo dice
- * (`cambieAntes`), que lleva el código del otro indicador solo a quien puede verlo.
+ * (`cambieAntes`), que lleva el código del otro indicador solo a quien puede verlo. Y si cambiar la clase de un objetivo en
+ * el maestro cerraría un ciclo oculto de «Objetivos cumplidos» (`cambiarClaseCierraCiclo`).
  *
- * Módulo liviano: lo importan `fichas`, la aprobación y la operación, así que no importa `lectura`, `fichas`, `aprobacion`
+ * Módulo liviano: lo importan `fichas`, la aprobación, la operación y los maestros, así que no importa `lectura`, `fichas`, `aprobacion`
  * ni `operacion`, ni `datos`, `dimensiones` o `mediciones` (arrastran la bitácora): lee el dato, el componente, la dimensión,
  * los objetivos y las versiones que rigen por SQL directo. Ningún mensaje de `revisarOrigenes` nombra al indicador de
  * origen: lo dicen por la letra de la variable. Los del dato llevan su nombre y los de la dimensión, el suyo.
@@ -323,7 +324,9 @@ export async function revisarOrigenes(tx: Cliente, f: FichaConOrigenes, opciones
  * a un objetivo de una clase que ella cuenta, y su resultado depende del de ellos. Los niveles se miden sin esas aristas.
  * Cuando la ficha llega, tomando componentes, a un «Objetivos cumplidos» que cuenta la clase de su propio objetivo, el
  * mensaje lo dice; cualquier otro ciclo que cierren las aristas ocultas (con una sola o con varias, de clases distintas) es
- * el ciclo de siempre. La ficha dice lo suyo (`f`), las de `clases` lo suyo, y los demás, lo de su ficha vigente.
+ * el ciclo de siempre. Solo cuenta un ciclo oculto que pasa por la ficha: todo ciclo que ella crea tiene una arista que la
+ * toca, y uno ajeno al que solo llega no es suyo (el maestro no deja cerrarlos: `cambiarClaseCierraCiclo`). La ficha dice
+ * lo suyo (`f`), las de `clases` lo suyo, y los demás, lo de su ficha vigente.
  */
 async function revisarGrafo(tx: Cliente, f: FichaConOrigenes, componentes: number[], opciones?: OpcionesDeRevision): Promise<string | null> {
   const propio = f.indicadorId ?? FICHA_NUEVA;
@@ -347,7 +350,33 @@ async function revisarGrafo(tx: Cliente, f: FichaConOrigenes, componentes: numbe
   if (suya !== null && alcanza(aristas, propio, new Set([...cuentan].filter(([, a]) => cuentaLaClase(a, suya)).map(([id]) => id)))) {
     return OBJETIVOS_DE_SU_CLASE;
   }
-  return caminoDeCiclo(await conAristasOcultas(tx, aristas, cuentan, clases), propio) === null ? null : CICLO;
+  return alcanza(await conAristasOcultas(tx, aristas, cuentan, clases), propio, destino) ? CICLO : null;
+}
+
+/** Los indicadores activos cuya ficha vigente apunta al objetivo. */
+async function apuntanAlObjetivo(tx: Cliente, objetivoId: number): Promise<number[]> {
+  const filas = await tx`SELECT i.id FROM indicadores i
+    JOIN indicador_versiones vig ON vig.indicador_id = i.id AND vig.estado = 'aprobada'
+      AND vig.numero = (SELECT max(w.numero) FROM indicador_versiones w WHERE w.indicador_id = i.id AND w.estado = 'aprobada')
+    WHERE i.estado = 'activo' AND vig.objetivo_id = ${objetivoId}
+    ORDER BY i.id`;
+  return filas.map((f) => Number(f.id));
+}
+
+/**
+ * ¿Darle al objetivo la clase `clase` cerraría un ciclo oculto de «Objetivos cumplidos»? Con las fichas vigentes y la clase
+ * nueva para todo indicador activo que apunta al objetivo: alguno de ellos queda en un ciclo que pasa por él. Un ciclo nuevo
+ * solo puede nacer de una arista oculta nueva, y todas llegan a uno de ellos. Quien llama tiene el candado consultivo de
+ * las aprobaciones (`maestros.ts`): ninguna ficha se aprueba entre esta revisión y el cambio.
+ */
+export async function cambiarClaseCierraCiclo(tx: Cliente, objetivoId: number, clase: ClaseDeObjetivo): Promise<boolean> {
+  const afectados = await apuntanAlObjetivo(tx, objetivoId);
+  if (afectados.length === 0) return false;
+  const cuentan = await fichasDeObjetivosCumplidos(tx);
+  if (cuentan.size === 0) return false;
+  const clases = new Map<number, ClasesDeFicha>(afectados.map((id) => [id, { objetivoClase: clase, cuentaObjetivos: cuentan.get(id) ?? null }]));
+  const conOcultas = await conAristasOcultas(tx, await aristasDeComponentes(tx), cuentan, clases);
+  return afectados.some((id) => alcanza(conOcultas, id, new Set([id])));
 }
 
 /**
@@ -451,11 +480,29 @@ export async function origenesDeVersion(tx: Cliente, versionId: number): Promise
 export type Toman = { indicadorId: number; codigo: string; toma: Toma; periodicidad: Periodicidad; restringido: boolean; enBorrador: boolean };
 
 /**
- * Quiénes toman el resultado del indicador: los activos cuya ficha vigente lo cita o cuya versión que rige alguna de sus
- * mediciones ordinarias sin cerrar lo cita (un histórico se digita completo y no lo toma, §3.6), como `enUso` de `datos.ts`
- * con los datos compartidos. Con `conBorradores`, también los que lo citan en un borrador o en una ficha por aprobar
- * (`enBorrador`). Una fila por indicador, qué toma y periodicidad, por id de indicador. Solo lee: no bloquea a los otros
- * indicadores, que pueden ser varios.
+ * Las versiones aprobadas del indicador que rigen hoy algo suyo, por id: la vigente y la que rige cada medición ordinaria
+ * sin cerrar (un histórico se digita completo y no toma nada de otro, §3.6), como `enUso` de `datos.ts` con los datos
+ * compartidos. Es el conjunto de `quienesToman` y de abrir un compuesto (`cambiarOperacion`): los dos sentidos del nivel de
+ * acceso miran las mismas versiones.
+ */
+export async function versionesQueRigen(sql: Cliente, indicadorId: number): Promise<number[]> {
+  const versiones = (await sql`SELECT id, rige_desde FROM indicador_versiones
+    WHERE indicador_id = ${indicadorId} AND estado = 'aprobada' ORDER BY numero DESC`).map((v) => ({ id: Number(v.id), rigeDesde: textoONulo(v.rige_desde) }));
+  if (versiones.length === 0) return [];
+  const rigen = new Set([versiones[0].id]);
+  const zona = zonaHoraria();
+  for (const m of await sql`SELECT desde FROM mediciones WHERE indicador_id = ${indicadorId} AND estado <> 'cerrada' AND NOT historica`) {
+    const rige = versionQueRigeEntre(versiones, { desde: new Date(m.desde as string) }, zona);
+    if (rige) rigen.add(rige.id);
+  }
+  return [...rigen].sort((a, b) => a - b);
+}
+
+/**
+ * Quiénes toman el resultado del indicador: los activos con una versión que rige hoy algo suyo (`versionesQueRigen`: la
+ * vigente o la de una medición ordinaria sin cerrar) que lo cita. Con `conBorradores`, también los que lo citan en un
+ * borrador o en una ficha por aprobar (`enBorrador`). Una fila por indicador, qué toma y periodicidad, por id de indicador.
+ * Solo lee: no bloquea a los otros indicadores, que pueden ser varios.
  */
 export async function quienesToman(sql: Cliente, indicadorId: number, opciones?: { conBorradores?: boolean }): Promise<Toman[]> {
   const enCurso = opciones?.conBorradores
@@ -468,25 +515,10 @@ export async function quienesToman(sql: Cliente, indicadorId: number, opciones?:
     WHERE iv.indicador_origen_id = ${indicadorId} AND i.id <> ${indicadorId}
       AND ((fv.estado = 'aprobada' AND i.estado = 'activo') ${enCurso})
     ORDER BY i.id, fv.id, iv.toma`;
-  // De las aprobadas que lo citan, solo cuentan la vigente y las que rigen una medición sin cerrar.
-  const aprobadasQueCitan = new Map<number, Set<number>>();
-  for (const c of citas) {
-    if (c.estado !== "aprobada") continue;
-    const id = Number(c.indicador_id);
-    aprobadasQueCitan.set(id, (aprobadasQueCitan.get(id) ?? new Set()).add(Number(c.version_id)));
-  }
+  // De las aprobadas que lo citan, solo cuentan las que rigen hoy algo del indicador.
+  const conAprobadas = new Set(citas.filter((c) => c.estado === "aprobada").map((c) => Number(c.indicador_id)));
   const cuentan = new Set<number>();
-  const zona = zonaHoraria();
-  for (const [id, queLoCitan] of aprobadasQueCitan) {
-    const versiones = (await sql`SELECT id, rige_desde FROM indicador_versiones
-      WHERE indicador_id = ${id} AND estado = 'aprobada' ORDER BY numero DESC`).map((v) => ({ id: Number(v.id), rigeDesde: textoONulo(v.rige_desde) }));
-    if (versiones[0] && queLoCitan.has(versiones[0].id)) cuentan.add(versiones[0].id);
-    const abiertas = await sql`SELECT desde FROM mediciones WHERE indicador_id = ${id} AND estado <> 'cerrada' AND NOT historica`;
-    for (const m of abiertas) {
-      const rige = versionQueRigeEntre(versiones, { desde: new Date(m.desde as string) }, zona);
-      if (rige && queLoCitan.has(rige.id)) cuentan.add(rige.id);
-    }
-  }
+  for (const id of conAprobadas) for (const v of await versionesQueRigen(sql, id)) cuentan.add(v);
   const salida = new Map<string, Toman>();
   for (const c of citas) {
     const enBorrador = c.estado !== "aprobada";
@@ -527,13 +559,16 @@ export async function cambieAntes(sujeto: SujetoVisibilidad, toman: readonly Tom
 }
 
 /**
- * Los indicadores restringidos de los que la versión toma una variable, por id (la regla de `aprobadoresDeFicha`). Toma
- * todos sus componentes `FOR KEY SHARE`, como `componentesCitados`, y filtra después: quien restringe uno lo tiene
- * `FOR UPDATE` y esta lectura lo espera (con el filtro en el `WHERE`, uno que se está restringiendo no se esperaría).
+ * Los indicadores restringidos de los que la versión (o alguna de las versiones) toma una variable, por id (la regla de
+ * `aprobadoresDeFicha`). Toma todos sus componentes `FOR KEY SHARE`, como `componentesCitados`, y filtra después: quien
+ * restringe uno lo tiene `FOR UPDATE` y esta lectura lo espera (con el filtro en el `WHERE`, uno que se está restringiendo no
+ * se esperaría).
  */
-export async function componentesRestringidos(sql: Cliente, versionId: number): Promise<number[]> {
+export async function componentesRestringidos(sql: Cliente, versiones: number | readonly number[]): Promise<number[]> {
+  const ids = typeof versiones === "number" ? [versiones] : [...versiones];
+  if (ids.length === 0) return [];
   const filas = await sql`SELECT id, nivel_acceso FROM indicadores
-    WHERE id IN (SELECT indicador_origen_id FROM indicador_variables WHERE version_id = ${versionId})
+    WHERE id IN (SELECT indicador_origen_id FROM indicador_variables WHERE version_id IN ${sql(ids)})
     ORDER BY id FOR KEY SHARE`;
   return filas.filter((f) => f.nivel_acceso === "restringido").map((f) => Number(f.id));
 }

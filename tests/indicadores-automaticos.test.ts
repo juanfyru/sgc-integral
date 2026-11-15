@@ -565,7 +565,7 @@ describe("la ficha automática en el servidor", () => {
       const bitacora = await tx`SELECT usuario_id, detalle FROM auditoria
         WHERE accion = 'indicador_medidores_quitados' AND entidad = 'indicador' AND entidad_id = ${indicadorId}`;
       expect(bitacora.map((f) => ({ usuario: Number(f.usuario_id), detalle: f.detalle }))).toEqual([
-        { usuario: b.gerente.usuarioId, detalle: { codigo, cuantos: 2 } },
+        { usuario: b.gerente.usuarioId, detalle: { codigo, cuantos: 2, motivo: "automatica" } },
       ]);
 
       await rechaza(
@@ -602,7 +602,10 @@ describe("la ficha automática en el servidor", () => {
       expect(await mideDe(tx, indicadorId)).toEqual([]);
       const [bitacora] = await tx`SELECT usuario_id, detalle FROM auditoria
         WHERE accion = 'indicador_medidores_quitados' AND entidad = 'indicador' AND entidad_id = ${indicadorId}`;
-      expect({ usuario: Number(bitacora.usuario_id), detalle: bitacora.detalle }).toEqual({ usuario: b.admin.usuarioId, detalle: { codigo, cuantos: 1 } });
+      expect({ usuario: Number(bitacora.usuario_id), detalle: bitacora.detalle }).toEqual({
+        usuario: b.admin.usuarioId,
+        detalle: { codigo, cuantos: 1, motivo: "automatica" },
+      });
       // Sin soporte que apagar, el cambio menor no dice nada de él.
       const [menor] = await tx`SELECT detalle FROM auditoria WHERE accion = 'indicador_cambio_menor' AND entidad = 'indicador' AND entidad_id = ${indicadorId}`;
       expect(menor.detalle).not.toHaveProperty("soporteApagado");

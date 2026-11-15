@@ -115,7 +115,8 @@ export async function alPublicarVersion(tx: TransactionSql, d: Publicacion): Pro
       accion: "indicador_medidores_quitados",
       entidad: "indicador",
       entidadId: d.indicadorId,
-      detalle: { codigo: v.codigo as string, cuantos: quitados.length },
+      // El motivo distingue la frase de la bitácora: la calcula el sistema, o ya no tiene variables propias (anexo 14C, §3.1).
+      detalle: { codigo: v.codigo as string, cuantos: quitados.length, motivo: calculo !== null ? "automatica" : "sin_variables_propias" },
     });
   }
   return hecho;

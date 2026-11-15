@@ -805,14 +805,22 @@ describe("la ficha de indicador", () => {
     expect(nombreDeAccion("indicador_retirado")).toBe("Retiró un indicador");
   });
 
-  it("dice a cuántas personas quitó de «mide» al publicarse una ficha automática (anexo 14B, §5.3)", () => {
+  it("dice a cuántas personas quitó de «mide» al publicarse una ficha que nadie digita, y por qué (anexo 14B, §5.3; 14C, §3.1)", () => {
+    // Sin motivo (anteriores a la 14C) o automática: la calcula el sistema.
     expect(frase("indicador_medidores_quitados", { codigo: "SGC-ID-007", cuantos: 2 })).toBe(
       "Quitó a 2 personas de «mide» en SGC-ID-007: ahora lo calcula el sistema",
     );
-    expect(frase("indicador_medidores_quitados", { codigo: "SGC-ID-007", cuantos: 1 })).toBe(
+    expect(frase("indicador_medidores_quitados", { codigo: "SGC-ID-007", cuantos: 1, motivo: "automatica" })).toBe(
       "Quitó a 1 persona de «mide» en SGC-ID-007: ahora lo calcula el sistema",
     );
     expect(frase("indicador_medidores_quitados", {})).toBe("Quitó a quienes miden un indicador: ahora lo calcula el sistema");
+    // Un compuesto manual sin variables propias no lo calcula el sistema: ya no tiene datos que alguien digite.
+    expect(frase("indicador_medidores_quitados", { codigo: "SGC-ID-008", cuantos: 1, motivo: "sin_variables_propias" })).toBe(
+      "Quitó a 1 persona de «mide» en SGC-ID-008: ya no tiene datos propios",
+    );
+    expect(frase("indicador_medidores_quitados", { motivo: "sin_variables_propias" })).toBe(
+      "Quitó a quienes miden un indicador: ya no tiene datos propios",
+    );
     // Lo que la publicación movió de los datos de operación.
     expect(frase("indicador_aprobado", { codigo: "SGC-ID-007", numero: 1, inicioMedicion: { antes: "2026-01", despues: "2026-11" } })).toBe(
       "Aprobó la ficha de SGC-ID-007 (versión 1). El inicio de medición pasó de enero de 2026 a noviembre de 2026.",
@@ -832,7 +840,7 @@ describe("la ficha de indicador", () => {
     expect(frase("indicador_cambio_menor", { codigo: "SGC-ID-007", numero: 3, motivo: "Aclarar el nombre.", soporteApagado: true })).toBe(
       "Publicó un cambio menor en la ficha de SGC-ID-007 (versión 3): Aclarar el nombre. Se apagó el soporte obligatorio.",
     );
-    expect(nombreDeAccion("indicador_medidores_quitados")).toBe("Quitó a quienes miden un indicador que calcula el sistema");
+    expect(nombreDeAccion("indicador_medidores_quitados")).toBe("Quitó a quienes miden un indicador que nadie digita");
   });
 });
 

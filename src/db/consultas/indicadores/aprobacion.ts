@@ -118,6 +118,40 @@ async function bloquear(tx: TransactionSql, versionIds: readonly number[]): Prom
   await tx`SELECT id FROM indicador_versiones WHERE id IN ${tx(versionIds)} ORDER BY id FOR UPDATE`;
 }
 
+/**
+ * Los indicadores de los que las versiones toman una variable, `FOR KEY SHARE` en orden de id, después de `bloquear` (el
+ * orden de `guardarBorrador`): quién aprueba depende de su nivel de acceso (`aprobadoresDeFicha`, decisión 8.1), y quien
+ * restringe uno lo toma `FOR UPDATE`. Así se decide quién firma con su nivel quieto hasta la firma.
+ */
+async function bloquearComponentes(tx: TransactionSql, versionIds: readonly number[]): Promise<void> {
+  await tx`SELECT id FROM indicadores
+    WHERE id IN (SELECT indicador_origen_id FROM indicador_variables WHERE version_id IN ${tx(versionIds)})
+    ORDER BY id FOR KEY SHARE`;
+}
+
+/** Lo que el aviso «por aprobar» dice de una ficha enviada. */
+export type FichaPorAvisar = { indicadorId: number; codigo: string; numero: number; nombre: string | null; tipo: TipoCambio; elaboro: string };
+
+/**
+ * El aviso «por aprobar» (spec §7.6.1): a los aprobadores dados, con quién la elaboró. Lo manda el envío y, cuando un
+ * componente se restringe con la ficha ya enviada (anexo 14C, §6.1), `cambiarOperacion` a quienes pasan a aprobarla.
+ */
+export async function avisarPorAprobar(tx: TransactionSql, f: FichaPorAvisar, aprobadores: readonly number[]): Promise<void> {
+  if (aprobadores.length === 0) return;
+  const cuerpo = `${f.tipo === "inicial" ? "Ficha nueva" : `Cambio mayor, versión ${f.numero}`}: la elaboró ${f.elaboro}.`;
+  await avisarA(
+    tx,
+    {
+      tipo: "indicadores.por_aprobar",
+      titulo: `Ficha por aprobar: ${f.codigo} · ${f.nombre ?? ""}`.trim(),
+      enlace: enlaceDeVersion(f.codigo, f.numero),
+      entidad: "indicador",
+      entidadId: f.indicadorId,
+    },
+    aprobadores.map((usuarioId) => ({ usuarioId, cuerpo })),
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Qué versión rige
 // ─────────────────────────────────────────────────────────────────────────────
@@ -545,21 +579,8 @@ export async function enviarAAprobacion(
         ahora,
       });
     } else {
-      const aprobadores = await aprobadoresDeFicha(d.versionId, { sql: tx });
-      if (aprobadores.length > 0) {
-        const cuerpo = `${e.tipo === "inicial" ? "Ficha nueva" : `Cambio mayor, versión ${e.numero}`}: la elaboró ${sesion.nombre}.`;
-        await avisarA(
-          tx,
-          {
-            tipo: "indicadores.por_aprobar",
-            titulo: `Ficha por aprobar: ${e.codigo} · ${e.contenido.nombre ?? ""}`.trim(),
-            enlace: enlaceDeVersion(e.codigo, e.numero),
-            entidad: "indicador",
-            entidadId: e.indicadorId,
-          },
-          aprobadores.map((usuarioId) => ({ usuarioId, cuerpo })),
-        );
-      }
+      const ficha = { indicadorId: e.indicadorId, codigo: e.codigo, numero: e.numero, nombre: e.contenido.nombre, tipo: e.tipo, elaboro: sesion.nombre };
+      await avisarPorAprobar(tx, ficha, await aprobadoresDeFicha(d.versionId, { sql: tx }));
     }
     await registrarAuditoria(tx, {
       usuarioId: sesion.usuarioId,
@@ -767,6 +788,7 @@ export async function aprobarFichas(
   return enTransaccion(sql, async (tx) => {
     await serializarAprobaciones(tx);
     await bloquear(tx, ids);
+    await bloquearComponentes(tx, ids);
     const fichas = await validarAprobacion(tx, sesion, ids, ahora);
     for (const f of fichas) {
       // Antes de aprobar la versión: después, el inicio de medición ya rige sus periodos.

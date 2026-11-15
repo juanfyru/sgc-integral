@@ -31,11 +31,12 @@ import {
   type Periodicidad,
   type Tendencia,
 } from "@/lib/indicadores/tipos";
+import { aprobadoresDeFicha } from "@/lib/alcance";
 import { ErrorPermiso, puede, type SujetoPermiso } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
-import { versionVigente } from "./aprobacion";
-import { cambieAntes, componentesRestringidos, quienesToman } from "./componentes";
+import { avisarPorAprobar, versionVigente, type FichaPorAvisar } from "./aprobacion";
+import { cambieAntes, componentesRestringidos, quienesToman, versionesQueRigen } from "./componentes";
 import { quitarConstanciasSinSoporte } from "./constancias-soporte";
 import { enCurso, recalcularPorSoporte } from "./en-curso";
 import { codigoCon, COLUMNAS_VARIABLE, CONTENIDO, proponerCodigo, siguientes } from "./fichas";
@@ -198,6 +199,34 @@ export async function designar(
 // Datos de operación
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Una ficha por aprobar que toma el indicador, con quienes podían aprobarla antes del cambio. */
+type FichaQueLoToma = FichaPorAvisar & { versionId: number; aprobadores: number[] };
+
+/** Las fichas por aprobar que toman una variable del indicador, por id, con sus aprobadores de hoy (`aprobadoresDeFicha`). */
+async function fichasPorAprobarQueLoToman(tx: TransactionSql, indicadorId: number): Promise<FichaQueLoToma[]> {
+  const filas = await tx`SELECT DISTINCT fv.id, fv.numero, fv.nombre, fv.tipo_cambio, i.id AS indicador_id, i.codigo, u.nombre AS elaboro
+    FROM indicador_variables iv
+    JOIN indicador_versiones fv ON fv.id = iv.version_id AND fv.estado = 'por_aprobar'
+    JOIN indicadores i ON i.id = fv.indicador_id
+    LEFT JOIN usuarios u ON u.id = fv.elaborada_por
+    WHERE iv.indicador_origen_id = ${indicadorId}
+    ORDER BY fv.id`;
+  const fichas: FichaQueLoToma[] = [];
+  for (const f of filas) {
+    fichas.push({
+      versionId: Number(f.id),
+      indicadorId: Number(f.indicador_id),
+      codigo: f.codigo as string,
+      numero: Number(f.numero),
+      nombre: (f.nombre as string | null) ?? null,
+      tipo: f.tipo_cambio as FichaPorAvisar["tipo"],
+      elaboro: (f.elaboro as string | null) ?? "",
+      aprobadores: await aprobadoresDeFicha(Number(f.id), { sql: tx }),
+    });
+  }
+  return fichas;
+}
+
 /**
  * Cambia el plazo de reporte, el inicio de medición, el soporte obligatorio y el nivel de acceso (spec §7.3): no crean
  * versión ni tocan la huella. El inicio de medición es una clave de la periodicidad de la ficha que rige y no puede dejar
@@ -259,12 +288,15 @@ export async function cambiarOperacion(
       nivelAcceso: d.nivelAcceso,
     };
     if (JSON.stringify(antes) === JSON.stringify(despues)) return;
-    // El nivel de acceso frente a los compuestos (anexo 14C, §6.6): si un componente es restringido, el compuesto también.
+    // El nivel de acceso frente a los compuestos (anexo 14C, §6.5 y §6.6): si un componente es restringido, el compuesto
+    // también. Los dos sentidos miran las mismas versiones: la vigente y las que rigen una medición sin cerrar.
+    let porAprobar: FichaQueLoToma[] = [];
     if (antes.nivelAcceso !== despues.nivelAcceso) {
       if (despues.nivelAcceso === "restringido") {
         const generales = (await quienesToman(tx, i.id)).filter((t) => !t.restringido);
         if (generales.length > 0) throw new ErrorIndicador(await cambieAntes(sesion, generales, { sql: tx }));
-      } else if (vigente && (await componentesRestringidos(tx, vigente.id)).length > 0) {
+        porAprobar = await fichasPorAprobarQueLoToman(tx, i.id);
+      } else if ((await componentesRestringidos(tx, await versionesQueRigen(tx, i.id))).length > 0) {
         throw new ErrorIndicador("Este indicador toma un indicador restringido: no puede ser general");
       }
     }
@@ -282,6 +314,10 @@ export async function cambiarOperacion(
     await tx`UPDATE indicadores SET plazo_reporte_dias = ${despues.plazoReporteDias}, inicio_medicion = ${despues.inicioMedicion},
         soporte_obligatorio = ${despues.soporteObligatorio}, nivel_acceso = ${despues.nivelAcceso}
       WHERE id = ${i.id}`;
+    // Restringido, una ficha que lo toma la aprueba Gerencia (anexo 14C, §6.1): quien pasa a aprobarla recibe el aviso de enviar.
+    for (const f of porAprobar) {
+      await avisarPorAprobar(tx, f, (await aprobadoresDeFicha(f.versionId, { sql: tx })).filter((u) => !f.aprobadores.includes(u)));
+    }
     const conFechaNueva = antes.plazoReporteDias !== despues.plazoReporteDias ? await moverFechasLimite(tx, i.id, despues.plazoReporteDias, ahora) : 0;
     // Después del plazo: al activarlo, el soporte solo alcanza lo que sigue en plazo con la fecha límite nueva.
     const recalculadas =
