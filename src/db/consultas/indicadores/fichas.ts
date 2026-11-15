@@ -64,7 +64,6 @@ import {
   type DatoCitado,
 } from "./componentes";
 import { datosParaFicha } from "./datos";
-import { listarDimensiones } from "./dimensiones";
 import { listarMaestro, obtenerParametros } from "./maestros";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
@@ -1253,6 +1252,10 @@ export async function opcionesDeFicha(
   const zona = zonaHoraria();
   const ahora = opciones?.ahora ?? new Date();
   const ids = (...xs: (number | number[] | undefined)[]) => xs.flat().filter((x): x is number => typeof x === "number");
+  const citados = {
+    datos: ids(...(a.variables ?? []).map((v) => (v.origen === "compartida" ? v.datoId : undefined))),
+    componentes: ids(...(a.variables ?? []).map((v) => (v.origen === "indicador" ? v.indicadorOrigenId : undefined))),
+  };
   const [
     procesos,
     subprocesos,
@@ -1308,15 +1311,16 @@ export async function opcionesDeFicha(
       // Los cálculos ya ocupados (anexo 14B, §5.3), como los cuenta `otraActivaConElCalculo`: sin el indicador que se edita.
       sql`SELECT calculo, calculo_alcance, proceso_id FROM indicadores
         WHERE estado = 'activo' AND calculo IS NOT NULL AND lower(codigo) <> lower(${a.codigo ?? ""})`,
-      datosParaFicha(sql),
-      // Lo que una variable puede tomar (anexo 14C, §6.1): un indicador activo con ficha vigente, sin el que se edita.
-      sql`SELECT i.id, i.codigo, i.nivel_acceso, vig.nombre, vig.periodicidad, vig.meta
+      datosParaFicha(sql, citados.datos),
+      // Lo que una variable puede tomar (anexo 14C, §6.1): un indicador activo con ficha vigente, sin el que se edita; y, como
+      // las demás citas viejas, el que la versión ya toma aunque se haya retirado.
+      sql`SELECT i.id, i.codigo, i.estado, i.nivel_acceso, vig.nombre, vig.periodicidad, vig.meta
         FROM indicadores i
         JOIN indicador_versiones vig ON vig.indicador_id = i.id AND vig.estado = 'aprobada'
           AND vig.numero = (SELECT max(w.numero) FROM indicador_versiones w WHERE w.indicador_id = i.id AND w.estado = 'aprobada')
-        WHERE i.estado = 'activo' AND lower(i.codigo) <> lower(${a.codigo ?? ""})
+        WHERE (i.estado = 'activo' OR i.id = ANY(${citados.componentes})) AND lower(i.codigo) <> lower(${a.codigo ?? ""})
         ORDER BY i.codigo, i.id`,
-      listarDimensiones({ sql, soloActivas: true }),
+      sql`SELECT id, nombre, activo FROM dimensiones WHERE activo OR id = ANY(${ids(a.dimensionId)}) ORDER BY orden, id`,
     ]);
   const activo = (actual: number | undefined) => (f: { id: number; activo: boolean }) => f.activo || f.id === actual;
   const anio = Number(fechaEnZona(ahora, zona).slice(0, 4));
@@ -1386,7 +1390,8 @@ export async function opcionesDeFicha(
       periodicidad: t.periodicidad as Periodicidad,
       conMeta: t.meta !== null,
       restringido: t.nivel_acceso === "restringido",
+      ...(t.estado === "activo" ? {} : { retirado: true as const }),
     })),
-    dimensiones: dimensiones.map((d) => ({ id: d.id, nombre: d.nombre })),
+    dimensiones: dimensiones.map((d) => ({ id: Number(d.id), nombre: d.nombre as string, ...(d.activo === true ? {} : { inactiva: true as const }) })),
   };
 }

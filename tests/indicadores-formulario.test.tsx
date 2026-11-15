@@ -16,10 +16,11 @@ vi.mock("@/app/admin/acciones-indicadores", () => ({ guardarParametrosAccion: vi
 import { FormularioParametros } from "@/componentes/indicadores/admin/FormularioParametros";
 import { estadoDeRangos, rangosDelEditor, type EstadoEditor } from "@/componentes/indicadores/ficha/EditorDeRangos";
 import { campoDeMasOpciones, campoDelError, codigoAlCambiarDeEleccion, codigoAlCambiarDeProceso, codigoPropuestoDe, FormularioFicha, siglaVigenteDe } from "@/componentes/indicadores/ficha/FormularioFicha";
+import { cambioDeDato, cambioDeIndicador, cambioDeOrigen, ORIGENES_DE_VARIABLE, origenConTecla } from "@/componentes/indicadores/ficha/OrigenDeVariable";
 import { EsquemaFicha, type DatosFicha } from "@/lib/esquemas/indicadores";
 import { CALCULOS, CLAVES_DE_CALCULO, ETIQUETA_ALCANCE, META_ENTERA } from "@/lib/indicadores/calculos/registro";
 import { unidadDeForma } from "@/lib/indicadores/formula/formas";
-import type { OpcionesFicha } from "@/lib/indicadores/tipos";
+import { AVISO_DESAGREGACION, avisoDeDeduccion, NADIE_MIDE_AJENO, type OpcionesFicha } from "@/lib/indicadores/tipos";
 
 /** Los cálculos del registro tal como los arma `opcionesDeFicha`. */
 const CALCULOS_DEL_REGISTRO: OpcionesFicha["calculos"] = CLAVES_DE_CALCULO.map((clave) => {
@@ -847,5 +848,375 @@ describe("FormularioFicha: «Lo calcula el sistema» (14B, Tarea 4)", () => {
       <FormularioFicha opciones={OPCIONES_AUTO} valores={{ procesoId: 2, origenDato: "automatico", calculo: "acuses" }} errorInicial="El nombre de cada variable debe tener al menos 1 carácter" />,
     );
     expect(variables).toContain('<p role="alert" class="text-sm text-estado-critico-texto">El nombre de cada variable debe tener al menos 1 carácter</p>');
+  });
+});
+
+describe("FormularioFicha: el origen de cada variable y la desagregación (14C, Tarea 8)", () => {
+  /** Dos datos (uno ya inactivo, citado por el borrador), tres indicadores (uno restringido, uno retirado) y dos dimensiones. */
+  const OPCIONES_14C: OpcionesFicha = {
+    ...OPCIONES,
+    datos: [
+      { id: 50, nombre: "Partos atendidos", proceso: "Gestión del Talento Humano", periodicidad: "mensual", consolidacion: "suma", unidad: "partos", dimensionId: null, dimension: null },
+      { id: 51, nombre: "Camas disponibles", proceso: "Sistema de Gestión de Calidad", periodicidad: "trimestral", consolidacion: "ultimo", unidad: null, dimensionId: null, dimension: null, inactivo: true },
+    ],
+    tomables: [
+      { id: 70, codigo: "SGC-ID-001", nombre: "Satisfacción del usuario", periodicidad: "mensual", conMeta: true, restringido: false },
+      { id: 71, codigo: "GTH-ID-002", nombre: "Ausentismo laboral", periodicidad: "trimestral", conMeta: true, restringido: true },
+      { id: 72, codigo: "SGC-ID-003", nombre: "Quejas resueltas", periodicidad: "trimestral", conMeta: false, restringido: false, retirado: true },
+    ],
+    dimensiones: [
+      { id: 3, nombre: "Sede" },
+      { id: 4, nombre: "Servicio", inactiva: true },
+    ],
+  };
+  type Variable = DatosFicha["variables"][number];
+  const propia = (letra: string, mas: Partial<Variable> = {}): Variable => ({ letra, nombre: `Propia ${letra}`, consolidacion: "suma", admiteNegativos: false, ...mas });
+  const delDato = (letra: string, datoId: number): Variable => ({
+    letra,
+    nombre: "Partos atendidos",
+    consolidacion: "suma",
+    admiteNegativos: false,
+    origen: "compartida",
+    datoId,
+  });
+  /** Como la devuelve `valoresDeVersion`: «cómo se junta» queda en «último», la columna es obligatoria. */
+  const tomada = (letra: string, indicadorOrigenId: number, toma: "valor" | "cumplimiento" = "valor"): Variable => ({
+    letra,
+    nombre: `Tomada ${letra}`,
+    consolidacion: "ultimo",
+    admiteNegativos: false,
+    origen: "indicador",
+    indicadorOrigenId,
+    toma,
+  });
+  const BASE: Partial<DatosFicha> = {
+    procesoId: 2,
+    nombre: "Atención integral",
+    proposito: "Saber cuántas atenciones integrales se prestan",
+    forma: "libre",
+    meta: "80",
+    tendencia: "ascendente",
+    cargosMedir: [4],
+    cargosAnalizar: [4],
+  };
+  const conVariables = (variables: Variable[], mas: Partial<DatosFicha> = {}): Partial<DatosFicha> => ({
+    ...BASE,
+    formula: variables.map((v) => v.letra).join(" + "),
+    variables,
+    ...mas,
+  });
+  const pintar14c = (valores: Partial<DatosFicha>, edicion?: { versionId: number; cambio: boolean; codigoFijo: boolean }) =>
+    renderToStaticMarkup(<FormularioFicha opciones={OPCIONES_14C} valores={valores} edicion={edicion} />);
+  /** La etiqueta de apertura del control con ese `id`. */
+  const porId = (h: string, id: string) => h.match(new RegExp(`<(?:input|select|textarea)\\b(?=[^>]*\\sid="${id}")[^>]*>`))?.[0] ?? "";
+  /** Las opciones de la lista con ese `id`: su valor, su texto y si está elegida. */
+  const opcionesDe = (h: string, id: string) => {
+    const lista = h.match(new RegExp(`<select\\b(?=[^>]*\\sid="${id}")[^>]*>([\\s\\S]*?)</select>`))?.[1] ?? "";
+    return [...lista.matchAll(/<option\b([^>]*)>([^<]*)<\/option>/g)].map((m) => ({
+      valor: /\svalue="([^"]*)"/.exec(m[1])?.[1] ?? "",
+      texto: m[2],
+      elegida: /\sselected=""/.test(m[1]),
+    }));
+  };
+  const desescapar = (t: string) => t.replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+  /**
+   * Lo que el navegador enviaría con el formulario tal como se pinta, sin tocar nada, leído como `parsearFormulario`: cada
+   * control con nombre que no esté deshabilitado (las casillas y los radios, solo marcados; una lista, su opción elegida o
+   * la primera), sin los vacíos ni el `id` de la ruta (que la acción omite); un nombre repetido, como lista.
+   */
+  function enviado(h: string): Record<string, string | string[]> {
+    const pares: [string, string][] = [];
+    for (const [, a] of h.matchAll(/<input\b([^>]*)>/g)) {
+      const nombre = /\sname="([^"]+)"/.exec(a)?.[1];
+      if (!nombre || /\sdisabled=""/.test(a)) continue;
+      const tipo = /\stype="([^"]+)"/.exec(a)?.[1] ?? "text";
+      const marcable = tipo === "checkbox" || tipo === "radio";
+      if (marcable && !/\schecked=""/.test(a)) continue;
+      pares.push([nombre, desescapar(/\svalue="([^"]*)"/.exec(a)?.[1] ?? (marcable ? "on" : ""))]);
+    }
+    for (const [, a, cuerpo] of h.matchAll(/<select\b([^>]*)>([\s\S]*?)<\/select>/g)) {
+      const nombre = /\sname="([^"]+)"/.exec(a)?.[1];
+      if (!nombre || /\sdisabled=""/.test(a)) continue;
+      const opciones = [...cuerpo.matchAll(/<option\b([^>]*)>/g)].map((m) => m[1]);
+      const elegida = opciones.find((o) => /\sselected=""/.test(o)) ?? opciones[0] ?? "";
+      pares.push([nombre, desescapar(/\svalue="([^"]*)"/.exec(elegida)?.[1] ?? "")]);
+    }
+    for (const [, a, cuerpo] of h.matchAll(/<textarea\b([^>]*)>([\s\S]*?)<\/textarea>/g)) {
+      const nombre = /\sname="([^"]+)"/.exec(a)?.[1];
+      if (nombre) pares.push([nombre, desescapar(cuerpo)]);
+    }
+    const objeto: Record<string, string | string[]> = {};
+    for (const clave of new Set(pares.map(([n]) => n).filter((n) => n !== "id"))) {
+      const valores = pares.filter(([n, v]) => n === clave && v !== "").map(([, v]) => v);
+      if (valores.length > 0) objeto[clave] = valores.length === 1 ? valores[0] : valores;
+    }
+    return objeto;
+  }
+
+  it("cada variable pinta sus tres orígenes en un grupo con su leyenda, con «Propia» por omisión, y el grupo no viaja", () => {
+    const h = pintar14c(conVariables([propia("A"), propia("B")]));
+    expect(ORIGENES_DE_VARIABLE.map((o) => o.nombre)).toEqual(["Propia", "Dato compartido", "Resultado de otro indicador"]);
+    for (const letra of ["A", "B"]) {
+      expect(h).toMatch(new RegExp(`<fieldset id="ficha-variable-${letra}-origen"[^>]*><legend[^>]*>De dónde sale ${letra}</legend>`));
+      for (const o of ORIGENES_DE_VARIABLE) {
+        const radio = porId(h, `ficha-variable-${letra}-origen-${o.valor}`);
+        expect(radio, o.valor).toContain('type="radio"');
+        // El valor va en el JSON de `variables`: el radio no tiene nombre, así el esquema estricto no lo ve.
+        expect(radio, o.valor).not.toMatch(/\sname=/);
+        expect(h).toMatch(new RegExp(`for="ficha-variable-${letra}-origen-${o.valor}"[^>]*>(?:(?!</label>)[\\s\\S])*${o.nombre}`));
+      }
+      // Una sola parada del tabulador por grupo, en la elegida; las flechas recorren las demás.
+      expect(porId(h, `ficha-variable-${letra}-origen-propia`)).toMatch(/checked=""/);
+      expect(porId(h, `ficha-variable-${letra}-origen-propia`)).toMatch(/tabindex="0"/i);
+      expect(porId(h, `ficha-variable-${letra}-origen-compartida`)).toMatch(/tabindex="-1"/i);
+      expect(porId(h, `ficha-variable-${letra}-origen-indicador`)).not.toMatch(/checked=""/);
+    }
+    const variables = JSON.parse(oculto(h, "variables")!) as Variable[];
+    expect(variables.map((v) => v.origen)).toEqual(["propia", "propia"]);
+    // Una ficha sin `origen` (anterior a la 14C) nace en «Propia».
+    expect(porId(pintar14c({ ...BASE, forma: "porcentaje" }), "ficha-variable-A-origen-propia")).toMatch(/checked=""/);
+  });
+
+  it("elegir el origen, el dato o el indicador cambia la variable: se sueltan las referencias que no usa y viene lo del dato", () => {
+    const v = (x: Variable) => ({ ...x, origen: x.origen ?? ("propia" as const) });
+    const { datos, tomables } = OPCIONES_14C;
+    // A un dato: su nombre y «cómo se junta»; sin dato elegido todavía, nada más.
+    expect(cambioDeOrigen(v(propia("A")), "compartida", datos)).toEqual({ origen: "compartida", indicadorOrigenId: undefined, toma: undefined });
+    expect(cambioDeDato(51, datos)).toEqual({ datoId: 51, nombre: "Camas disponibles", consolidacion: "ultimo" });
+    expect(cambioDeDato(undefined, datos)).toEqual({ datoId: undefined });
+    expect(cambioDeOrigen(v(tomada("A", 70)), "compartida", datos)).toEqual({ origen: "compartida", indicadorOrigenId: undefined, toma: undefined });
+    // A un indicador: su valor por omisión; el nombre del indicador si la variable no tenía.
+    expect(cambioDeOrigen(v(delDato("A", 50)), "indicador", datos)).toEqual({ origen: "indicador", datoId: undefined, toma: "valor" });
+    expect(cambioDeIndicador(v(propia("A", { nombre: " " })), 70, tomables)).toEqual({ indicadorOrigenId: 70, nombre: "Satisfacción del usuario" });
+    expect(cambioDeIndicador(v(propia("A")), 70, tomables)).toEqual({ indicadorOrigenId: 70 });
+    // Del cumplimiento de uno con meta a uno sin meta: su valor.
+    expect(cambioDeIndicador(v(tomada("A", 70, "cumplimiento")), 72, tomables)).toEqual({ indicadorOrigenId: 72, toma: "valor" });
+    // De vuelta a propia: sin referencias; desde un indicador, «se suma» en lugar del «último» que puso el servidor.
+    expect(cambioDeOrigen(v(tomada("A", 70)), "propia", datos)).toEqual({
+      origen: "propia",
+      datoId: undefined,
+      indicadorOrigenId: undefined,
+      toma: undefined,
+      consolidacion: "suma",
+    });
+    expect(cambioDeOrigen(v(delDato("A", 50)), "propia", datos)).toEqual({ origen: "propia", datoId: undefined, indicadorOrigenId: undefined, toma: undefined });
+  });
+
+  it("las flechas pasan al origen siguiente o al anterior, dando la vuelta; otra tecla no cambia nada", () => {
+    expect(origenConTecla("propia", "ArrowRight")).toBe("compartida");
+    expect(origenConTecla("compartida", "ArrowDown")).toBe("indicador");
+    expect(origenConTecla("indicador", "ArrowRight")).toBe("propia");
+    expect(origenConTecla("propia", "ArrowLeft")).toBe("indicador");
+    expect(origenConTecla("compartida", "ArrowUp")).toBe("propia");
+    expect(origenConTecla("propia", "Tab")).toBeNull();
+    expect(origenConTecla("propia", "a")).toBeNull();
+  });
+
+  it("al elegir «Dato compartido», el nombre queda de solo lectura, sale la lista de datos y, del catálogo, la unidad y cómo se junta", () => {
+    const h = pintar14c(conVariables([delDato("A", 50), propia("B")]));
+    expect(porId(h, "ficha-variable-A-origen-compartida")).toMatch(/checked=""/);
+    expect(h).toContain('for="ficha-variable-A-dato"');
+    expect(opcionesDe(h, "ficha-variable-A-dato")).toEqual([
+      { valor: "", texto: "Elija el dato", elegida: false },
+      { valor: "50", texto: "Partos atendidos · Gestión del Talento Humano · Mensual", elegida: true },
+      { valor: "51", texto: "Camas disponibles · Sistema de Gestión de Calidad · Trimestral (inactivo)", elegida: false },
+    ]);
+    expect(porId(h, "ficha-variable-A-dato")).toMatch(/required=""/);
+    expect(porId(h, "ficha-variable-A")).toMatch(/readOnly=""/);
+    expect(porId(h, "ficha-variable-A")).toContain('value="Partos atendidos"');
+    expect(porId(h, "ficha-variable-A-dato-unidad")).toMatch(/readOnly=""/);
+    expect(porId(h, "ficha-variable-A-dato-unidad")).toContain('value="partos"');
+    expect(porId(h, "ficha-variable-A-dato-consolidacion")).toContain('value="Se suma"');
+    // Lo demás también lo pone el dato: ni fuente ni detalle editable.
+    expect(porId(h, "ficha-variable-A-fuente")).toBe("");
+    const mas = masOpciones(h);
+    for (const campo of ["descripcion", "unidad", "consolidacion", "min", "max", "negativos"]) expect(porId(mas, `ficha-variable-A-${campo}`), campo).toBe("");
+    expect(mas).toContain("Lo pone el dato compartido");
+    // La variable propia sigue igual.
+    expect(porId(h, "ficha-variable-B")).not.toMatch(/readOnly=""/);
+    expect(porId(h, "ficha-variable-B-fuente")).not.toBe("");
+    expect(porId(mas, "ficha-variable-B-consolidacion")).not.toBe("");
+    // Sin dato elegido, la lista pide uno.
+    const sinDato = pintar14c(conVariables([{ ...delDato("A", 50), datoId: undefined, nombre: "" }, propia("B")]));
+    expect(opcionesDe(sinDato, "ficha-variable-A-dato")[0]).toEqual({ valor: "", texto: "Elija el dato", elegida: true });
+  });
+
+  it("al elegir «Resultado de otro indicador» salen la lista de indicadores y qué se toma, y desaparece «cómo se junta»", () => {
+    const h = pintar14c(conVariables([tomada("A", 70, "cumplimiento"), propia("B")]));
+    expect(porId(h, "ficha-variable-A-origen-indicador")).toMatch(/checked=""/);
+    expect(opcionesDe(h, "ficha-variable-A-indicador")).toEqual([
+      { valor: "", texto: "Elija el indicador", elegida: false },
+      { valor: "70", texto: "SGC-ID-001 Satisfacción del usuario", elegida: true },
+      { valor: "71", texto: "GTH-ID-002 Ausentismo laboral", elegida: false },
+      { valor: "72", texto: "SGC-ID-003 Quejas resueltas (retirado)", elegida: false },
+    ]);
+    expect(porId(h, "ficha-variable-A-indicador")).toMatch(/required=""/);
+    expect(opcionesDe(h, "ficha-variable-A-toma").map(({ texto, elegida }) => [texto, elegida])).toEqual([
+      ["Su valor", false],
+      ["Su porcentaje de cumplimiento", true],
+    ]);
+    // El nombre de la variable lo escribe quien elabora; la fuente no aplica.
+    expect(porId(h, "ficha-variable-A")).not.toMatch(/readOnly=""/);
+    expect(porId(h, "ficha-variable-A-fuente")).toBe("");
+    const mas = masOpciones(h);
+    expect(porId(mas, "ficha-variable-A-consolidacion")).toBe("");
+    expect(mas).not.toContain("Cómo se junta A");
+    expect(porId(mas, "ficha-variable-A-descripcion")).not.toBe("");
+    expect(porId(mas, "ficha-variable-B-consolidacion")).not.toBe("");
+    // Un indicador sin meta no da su cumplimiento.
+    const sinMeta = pintar14c(conVariables([tomada("A", 72), propia("B")]));
+    expect(opcionesDe(sinMeta, "ficha-variable-A-toma")).toEqual([
+      { valor: "valor", texto: "Su valor", elegida: true },
+      { valor: "cumplimiento", texto: "Su porcentaje de cumplimiento", elegida: false },
+    ]);
+    expect(sinMeta).toMatch(/<option value="cumplimiento" disabled="">Su porcentaje de cumplimiento<\/option>/);
+    expect(h).not.toMatch(/<option value="cumplimiento" disabled="">/);
+  });
+
+  it("con todas las variables ajenas se lee NADIE_MIDE_AJENO donde irían quién mide y su cargo, y no se pide la prueba", () => {
+    const ajenas = pintar14c(conVariables([delDato("A", 50), tomada("B", 70)], { mide: [7], analiza: [7], soporteObligatorio: true, prueba: { valores: { A: "1", B: "2" } } }));
+    expect(ajenas.split(NADIE_MIDE_AJENO).length - 1).toBe(2);
+    expect(masOpciones(ajenas)).toContain(NADIE_MIDE_AJENO);
+    expect(ajenas).not.toContain('<select id="ficha-mide"');
+    expect(ajenas).not.toContain('id="ficha-cargo-medir"');
+    expect(ajenas).not.toContain(">Prueba</legend>");
+    expect(ajenas).not.toContain("La misma persona que mide");
+    expect(ajenas).not.toContain("Cada reporte debe llevar su soporte");
+    const enviados = nombres(ajenas);
+    for (const n of ["prueba", "soporteObligatorio"]) expect(enviados, n).not.toContain(n);
+    expect(JSON.parse(oculto(ajenas, "mide")!)).toEqual([]);
+    expect(JSON.parse(oculto(ajenas, "cargosMedir")!)).toEqual([]);
+    // Quien medía y analizaba sigue analizando.
+    expect(JSON.parse(oculto(ajenas, "analiza")!)).toEqual([7]);
+    // En un cambio, los datos de operación también lo dicen.
+    const cambio = pintar14c(conVariables([delDato("A", 50), tomada("B", 70)], { mide: [8], analiza: [7] }), { versionId: 15, cambio: true, codigoFijo: true });
+    expect(cambio).toContain(NADIE_MIDE_AJENO);
+    expect(cambio).not.toContain("Auxiliar de calidad");
+    expect(cambio).not.toContain('id="ficha-soporteObligatorio"');
+
+    // Con una sola propia, alguien mide: todo vuelve.
+    const mixta = pintar14c(conVariables([delDato("A", 50), propia("B")]));
+    expect(mixta).not.toContain(NADIE_MIDE_AJENO);
+    expect(mixta).toContain('<select id="ficha-mide"');
+    expect(mixta).toContain('id="ficha-cargo-medir"');
+    expect(mixta).toContain(">Prueba</legend>");
+    expect(JSON.parse(oculto(mixta, "cargosMedir")!)).toEqual([4]);
+  });
+
+  it("«Desagregación» va en «Más opciones»: ninguna o una dimensión; con una elegida se lee el aviso", () => {
+    const sin = masOpciones(pintar14c(conVariables([propia("A")])));
+    expect(sin).toContain(">Desagregación</label>");
+    expect(opcionesDe(sin, "ficha-dimensionId")).toEqual([
+      { valor: "", texto: "(ninguna)", elegida: true },
+      { valor: "3", texto: "Sede", elegida: false },
+      { valor: "4", texto: "Servicio (inactiva)", elegida: false },
+    ]);
+    expect(sin).not.toContain(AVISO_DESAGREGACION);
+    const con = masOpciones(pintar14c(conVariables([propia("A")], { dimensionId: 3 })));
+    expect(opcionesDe(con, "ficha-dimensionId").find((o) => o.elegida)?.valor).toBe("3");
+    expect(con).toContain(AVISO_DESAGREGACION);
+    expect(porId(con, "ficha-dimensionId")).toContain('aria-describedby="ficha-dimensionId-ayuda"');
+    // Una ficha automática no se desagrega: no se pinta ni viaja.
+    const automatica = renderToStaticMarkup(
+      <FormularioFicha opciones={OPCIONES_14C} valores={{ procesoId: 2, origenDato: "automatico", calculo: "acuses", calculoAlcance: "entidad", dimensionId: 3 }} />,
+    );
+    expect(automatica).not.toContain("ficha-dimensionId");
+    expect(nombres(automatica)).not.toContain("dimensionId");
+  });
+
+  it("con un indicador restringido elegido sale el aviso de deducción con su nombre, en una insignia de atención", () => {
+    const h = pintar14c(conVariables([tomada("A", 71), propia("B")], { nivelAcceso: "restringido" }));
+    const aviso = avisoDeDeduccion("Ausentismo laboral");
+    expect(aviso).toBe("Quien vea este indicador podrá deducir el resultado de «Ausentismo laboral» si es el único componente que no puede ver");
+    expect(h).toMatch(new RegExp(`data-variante="atencion"[^>]*>(?:<svg[\\s\\S]*?</svg>)?${aviso}</span>`));
+    expect(pintar14c(conVariables([tomada("A", 70), propia("B")]))).not.toContain("podrá deducir");
+  });
+
+  it("ida y vuelta: lo que se envía sin tocar nada conserva los tres orígenes, sus referencias y la dimensión", () => {
+    const variables = [delDato("A", 50), tomada("B", 70, "cumplimiento"), propia("C", { consolidacion: "promedio", fuente: "Historias clínicas", descripcion: "Las atenciones del mes" })];
+    for (const edicion of [undefined, { versionId: 15, cambio: true, codigoFijo: true }]) {
+      // Un cambio trae sus datos de operación, como los devuelve `valoresDeVersion`.
+      const h = pintar14c(conVariables(variables, { dimensionId: 3, motivoCambio: "Desagregar por sede", inicioMedicion: "2026-T3", nivelAcceso: "general" }), edicion);
+      const r = EsquemaFicha.safeParse(enviado(h));
+      expect(r.success, r.error?.issues[0]?.message).toBe(true);
+      expect(r.data!.dimensionId).toBe(3);
+      expect(r.data!.variables).toEqual([
+        { letra: "A", nombre: "Partos atendidos", consolidacion: "suma", admiteNegativos: false, origen: "compartida", datoId: 50 },
+        { letra: "B", nombre: "Tomada B", consolidacion: "ultimo", admiteNegativos: false, origen: "indicador", indicadorOrigenId: 70, toma: "cumplimiento" },
+        {
+          letra: "C",
+          nombre: "Propia C",
+          descripcion: "Las atenciones del mes",
+          fuente: "Historias clínicas",
+          consolidacion: "promedio",
+          admiteNegativos: false,
+          origen: "propia",
+        },
+      ]);
+    }
+  });
+
+  it("ida y vuelta de una cita vieja: el dato inactivo, el indicador retirado y la dimensión inactiva se ven marcados y se envían igual", () => {
+    const h = pintar14c(conVariables([{ ...delDato("A", 51), nombre: "Camas disponibles", consolidacion: "ultimo" }, tomada("B", 72), propia("C")], { dimensionId: 4 }));
+    expect(opcionesDe(h, "ficha-variable-A-dato").find((o) => o.elegida)?.texto).toBe("Camas disponibles · Sistema de Gestión de Calidad · Trimestral (inactivo)");
+    expect(opcionesDe(h, "ficha-variable-B-indicador").find((o) => o.elegida)?.texto).toBe("SGC-ID-003 Quejas resueltas (retirado)");
+    expect(opcionesDe(h, "ficha-dimensionId").find((o) => o.elegida)?.texto).toBe("Servicio (inactiva)");
+    const r = EsquemaFicha.safeParse(enviado(h));
+    expect(r.success, r.error?.issues[0]?.message).toBe(true);
+    expect(r.data!.dimensionId).toBe(4);
+    expect(r.data!.variables.map((v) => [v.letra, v.origen, v.datoId, v.indicadorOrigenId, v.toma])).toEqual([
+      ["A", "compartida", 51, undefined, undefined],
+      ["B", "indicador", undefined, 72, "valor"],
+      ["C", "propia", undefined, undefined, undefined],
+    ]);
+  });
+
+  it("una variable propia no envía referencias, aunque traiga ids viejos", () => {
+    const h = pintar14c(conVariables([propia("A", { datoId: 50, indicadorOrigenId: 70, toma: "valor" }), propia("B")]));
+    expect(JSON.parse(oculto(h, "variables")!)).toEqual([
+      { letra: "A", nombre: "Propia A", consolidacion: "suma", admiteNegativos: false, origen: "propia" },
+      { letra: "B", nombre: "Propia B", consolidacion: "suma", admiteNegativos: false, origen: "propia" },
+    ]);
+  });
+
+  it("todo control de una ficha con datos, componentes y desagregación tiene su etiqueta, envía un campo del esquema y no repite `id`", () => {
+    const claves = [...Object.keys(EsquemaFicha.shape), "id"];
+    const variantes = [
+      pintar14c(conVariables([delDato("A", 50), tomada("B", 71), propia("C")], { dimensionId: 3, nivelAcceso: "restringido" })),
+      pintar14c(conVariables([delDato("A", 50), tomada("B", 70)])),
+      pintar14c(conVariables([delDato("A", 50), tomada("B", 70)], { mide: [8] }), { versionId: 15, cambio: true, codigoFijo: true }),
+      pintar14c({ ...BASE, forma: "porcentaje", variables: [delDato("A", 50), tomada("B", 72)] }),
+    ];
+    for (const h of variantes) {
+      for (const c of h.match(/<(?:input|select|textarea)\b[^>]*>/g) ?? []) {
+        if (/type="hidden"/.test(c)) continue;
+        if (/aria-label="[^"]+"/.test(c)) continue;
+        const id = /\sid="([^"]+)"/.exec(c)?.[1];
+        expect(id, c).toBeTruthy();
+        expect(h, c).toContain(`for="${id}"`);
+      }
+      for (const n of nombres(h)) expect(claves, n).toContain(n);
+      const ids = [...h.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
+      expect(ids.filter((x, i) => ids.indexOf(x) !== i)).toEqual([]);
+    }
+  });
+
+  it("los mensajes del servidor sobre los orígenes y la desagregación van a su campo", () => {
+    expect(campoDelError("Elija un dato compartido activo para la variable A")).toBe("ficha-variables");
+    expect(campoDelError("Elija el indicador del que sale la variable B y qué se toma de él")).toBe("ficha-variables");
+    expect(campoDelError("El indicador de la variable B debe estar activo y tener ficha vigente")).toBe("ficha-variables");
+    expect(campoDelError("No se puede tomar el cumplimiento de un indicador sin meta (variable B)")).toBe("ficha-variables");
+    expect(campoDelError("Esta ficha cerraría un ciclo entre indicadores")).toBe("ficha-variables");
+    expect(campoDeMasOpciones("Elija una dimensión activa")).toBe("ficha-dimensionId");
+    expect(campoDeMasOpciones("Un indicador desagregado no puede tomar el resultado de otro indicador")).toBe("ficha-dimensionId");
+    expect(campoDeMasOpciones("El dato «Partos» está desagregado por Sede: desagregue el indicador por ella")).toBe("ficha-dimensionId");
+    expect(campoDeMasOpciones("El dato «Partos» no está desagregado por Sede")).toBe("ficha-dimensionId");
+    expect(campoDeMasOpciones("Una fórmula con min, max o abs no se puede desagregar")).toBe("ficha-dimensionId");
+    expect(campoDeMasOpciones("Esta ficha toma un indicador restringido: debe ser restringida")).toBe("ficha-nivelAcceso");
+    const h = renderToStaticMarkup(
+      <FormularioFicha opciones={OPCIONES_14C} valores={conVariables([propia("A")], { dimensionId: 4 })} errorInicial="Elija una dimensión activa" />,
+    );
+    expect(masOpciones(h)).toContain('<p id="ficha-dimensionId-error" role="alert"');
+    expect(h.split("Elija una dimensión activa").length - 1).toBe(1);
   });
 });

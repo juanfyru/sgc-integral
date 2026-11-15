@@ -14,7 +14,7 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { aprobarFichas, enviarAAprobacion } from "@/db/consultas/indicadores/aprobacion";
+import { aprobarFichas, enviarAAprobacion, fichasPorAprobar } from "@/db/consultas/indicadores/aprobacion";
 import { componentesRestringidos, quienesToman } from "@/db/consultas/indicadores/componentes";
 import { abrirCambio, contenidoDeVersion, crearIndicador, fichaParaEditar, guardarBorrador } from "@/db/consultas/indicadores/fichas";
 import { condicionDeDeshacer, deshacerImportacion } from "@/db/consultas/indicadores/importacion";
@@ -287,6 +287,26 @@ describe("quién aprueba un compuesto con un componente restringido (anexo §6.1
       const quienAprueba = enLaTransaccion.findIndex((s) => s.includes("clasificaciones_indicador c ON c.id = fv.clasificacion_id"));
       expect(tomaComponentes).toBeGreaterThan(0);
       expect(quienAprueba).toBeGreaterThan(tomaComponentes);
+    }));
+
+  it("«Por aprobar» nombra cada componente restringido para el aviso de deducción, según su nivel de hoy (Tarea 8)", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const restringido = await indicadorDePrueba(tx, { procesoId: b.procesoId, nivelAcceso: "restringido" });
+      const general = await indicadorDePrueba(tx, { procesoId: b.procesoId });
+      const compuesto = await crearIndicador(
+        b.admin,
+        ficha(b, [propia("A"), delIndicador("B", restringido.id), delIndicador("C", general.id), delIndicador("D", restringido.id, "cumplimiento")], {
+          nivelAcceso: "restringido",
+        }),
+        { sql: tx },
+      );
+      await enviar(tx, b, compuesto.versionId);
+      const restringidosDe = async () => (await fichasPorAprobar(b.gerente, { sql: tx })).find((f) => f.versionId === compuesto.versionId)?.restringidos;
+      // Uno solo aunque dos variables lo tomen; con el nombre que firmó la ficha.
+      expect(await restringidosDe()).toEqual([`Indicador de prueba ${restringido.codigo}`]);
+      await cambiarOperacion(b.admin, await conNivel(tx, general.id, "restringido"), { sql: tx, ahora: AHORA });
+      expect(await restringidosDe()).toEqual([`Indicador de prueba ${restringido.codigo}`, `Indicador de prueba ${general.codigo}`]);
     }));
 });
 

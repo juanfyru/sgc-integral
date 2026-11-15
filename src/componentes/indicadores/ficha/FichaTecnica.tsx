@@ -3,7 +3,8 @@ import { Insignia } from "@/componentes/ui/Insignia";
 import { etiquetaDePeriodo, type FichaLeida, type FirmaDeFicha, type OperacionLeida } from "@/db/consultas/indicadores/aprobacion";
 import {
   cifraDeFicha as cifra,
-  CONSOLIDACION,
+  desagregacionEnTexto,
+  detalleDeVariable,
   esAutomatica,
   fechaYHora,
   FORMA,
@@ -11,13 +12,14 @@ import {
   operacionSegunOrigen,
   origenEnTexto,
   reglaDeFicha,
+  sinVariablesPropias,
   TENDENCIA,
   unidadDeFicha,
 } from "@/lib/indicadores/ficha-en-texto";
 import { enPalabras } from "@/lib/indicadores/formula/formas";
 import { rangosEnPalabras } from "@/lib/indicadores/semaforo";
 import { textoMeta } from "@/lib/indicadores/textos";
-import { ETIQUETA_PERIODICIDAD, type Periodicidad } from "@/lib/indicadores/tipos";
+import { ETIQUETA_PERIODICIDAD, NADIE_MIDE_AJENO, type Periodicidad } from "@/lib/indicadores/tipos";
 import { cuenta } from "@/lib/plural";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
@@ -100,6 +102,7 @@ export function FichaTecnica({
   const aprobo =
     ficha.firmas.aprobo ??
     (ficha.estado === "aprobada" && ficha.tipoCambio === "menor" ? "No requiere: es un cambio menor" : ficha.estado === "por_aprobar" ? "Pendiente" : null);
+  const desagregacion = desagregacionEnTexto(c);
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -148,26 +151,14 @@ export function FichaTecnica({
             {c.variables.map((v) => (
               <li key={v.letra}>
                 <span className="font-medium">{`${v.letra} · ${v.nombre ?? ""}`}</span>
-                <span className="block text-muted-foreground">
-                  {[
-                    v.descripcion,
-                    v.fuente ? `Fuente: ${v.fuente}` : null,
-                    v.unidad ? `Unidad: ${v.unidad}` : null,
-                    CONSOLIDACION[v.consolidacion] ?? v.consolidacion,
-                    v.capturaMin !== null || v.capturaMax !== null
-                      ? `Se captura ${[v.capturaMin !== null ? `desde ${v.capturaMin.replace(".", ",")}` : null, v.capturaMax !== null ? `hasta ${v.capturaMax.replace(".", ",")}` : null].filter(Boolean).join(" ")}`
-                      : null,
-                    v.admiteNegativos ? "Admite negativos" : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </span>
+                <span className="block text-muted-foreground">{detalleDeVariable(v)}</span>
               </li>
             ))}
           </ul>
         </Dato>
         <Dato termino="Unidad del resultado">{`${c.unidadNombre ?? ""}${u.sufijo.trim() ? ` (${u.sufijo.trim()})` : ""} · ${cuenta(c.decimales ?? 0, "decimal", "decimales")}`}</Dato>
         <Dato termino="Periodicidad">{c.periodicidad ? (ETIQUETA_PERIODICIDAD[c.periodicidad as Periodicidad] ?? c.periodicidad) : ninguno}</Dato>
+        {desagregacion ? <Dato termino="Desagregación">{desagregacion}</Dato> : null}
         <Dato termino="Tendencia">{c.tendencia ? (TENDENCIA[c.tendencia] ?? c.tendencia) : ninguno}</Dato>
         <Dato termino="Meta">{regla.meta === null ? "Sin meta: cada medición queda «Sin meta», sin color ni alertas" : textoMeta(regla, u)}</Dato>
         {regla.meta !== null ? <Dato termino="Semáforo">{rangosEnPalabras(regla, u) ?? ninguno}</Dato> : null}
@@ -175,7 +166,9 @@ export function FichaTecnica({
         <Dato termino="Línea base">{lineaBase ?? c.lineaBaseNota ?? ninguno}</Dato>
         {lineaBase && c.lineaBaseNota ? <Dato termino="Nota de la línea base">{c.lineaBaseNota}</Dato> : null}
         {c.sustentoMeta ? <Dato termino="Sustento de la meta">{c.sustentoMeta}</Dato> : null}
-        {esAutomatica(c) ? null : <Dato termino="Responsables de medir">{medir.length > 0 ? medir.join(", ") : ninguno}</Dato>}
+        {esAutomatica(c) ? null : (
+          <Dato termino="Responsables de medir">{sinVariablesPropias(c) ? NADIE_MIDE_AJENO : medir.length > 0 ? medir.join(", ") : ninguno}</Dato>
+        )}
         <Dato termino="Responsables de analizar">{analizar.length > 0 ? analizar.join(", ") : ninguno}</Dato>
       </Seccion>
 

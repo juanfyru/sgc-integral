@@ -290,9 +290,12 @@ describe("activar y desactivar un dato", () => {
         proceso: proceso.nombre,
         periodicidad: "trimestral",
         consolidacion: "ultimo",
+        unidad: null,
         dimensionId: dim,
         dimension: dimension.nombre,
       });
+      // El que la ficha que se edita ya cita sigue, marcado (Tarea 8).
+      expect((await datosParaFicha(tx, [dato])).find((x) => x.id === dato)).toMatchObject({ inactivo: true });
 
       await cambiarEstadoDeDato(admin, { datoId: dato, activa: true }, { sql: tx });
       expect(ids(await datosParaFicha(tx))).toContain(dato);

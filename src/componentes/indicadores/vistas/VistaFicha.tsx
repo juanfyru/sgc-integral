@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { FichaTecnica } from "@/componentes/indicadores/ficha/FichaTecnica";
-import { AprobarFicha, DevolverFicha, type FilaPorAprobar } from "@/componentes/indicadores/ficha/ListaPorAprobar";
+import { AprobarFicha, AvisosDeDeduccion, DevolverFicha, type FilaPorAprobar } from "@/componentes/indicadores/ficha/ListaPorAprobar";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { desdePeriodo, enlaceDeVersion, type FichaLeida, type OperacionLeida, type VersionVisible } from "@/db/consultas/indicadores/aprobacion";
 import { rutaDeEdicion, rutaDeIndicador } from "@/lib/indicadores/rutas";
@@ -91,6 +91,7 @@ function EstadoDeLaVersion({ ficha, codigo, vigente, enCurso, administra, porApr
       </p>
       {porAprobar?.elaboro ? <p>{`La envió ${porAprobar.elaboro} el ${porAprobar.enviada}.`}</p> : null}
       {ficha.rigeDesde && ficha.tipoCambio === "mayor" ? <p>{`Regirá ${desdePeriodo(ficha.rigeDesde)}.`}</p> : null}
+      <AvisosDeDeduccion nombres={porAprobar?.restringidos ?? []} />
       {ficha.aprueba && porAprobar ? (
         <div className="flex flex-wrap items-start gap-2">
           <AprobarFicha ficha={porAprobar} volver={rutaDeIndicador(codigo)} pideCodigo={pideCodigo} />

@@ -11,7 +11,7 @@ import { textoFecha } from "@/lib/vigencia/plazo";
 import { horaLocal, zonaHoraria } from "@/lib/zona-horaria";
 import { calculoDe, ETIQUETA_ALCANCE } from "./calculos/registro";
 import { ETIQUETA_ESTADO } from "./estados";
-import type { ContenidoFicha } from "./ficha";
+import type { ContenidoFicha, VariableDeFicha } from "./ficha";
 import { enPalabras } from "./formula/formas";
 import { fraccion } from "./formula/fraccion";
 import { rangosDeTexto } from "./rangos";
@@ -22,6 +22,7 @@ import {
   ETIQUETA_PERIODICIDAD,
   ETIQUETA_SEMAFORO,
   NADIE_MIDE,
+  NADIE_MIDE_AJENO,
   NO_ALCANZA_LA_META,
   sinAlcanzarLaMeta,
   type ModoSemaforo,
@@ -47,6 +48,10 @@ export const ORIGEN: Record<string, string> = { manual: "Lo digita una persona",
 
 /** Una ficha que calcula el sistema (anexo 14B, §5.3): nadie la mide, así que no lleva responsables de medir. */
 export const esAutomatica = (c: Pick<ContenidoFicha, "origenDato">) => c.origenDato === "automatico";
+
+/** Una ficha manual sin variables propias (anexo 14C, §3.1): sus datos llegan de datos compartidos y de otros indicadores. */
+export const sinVariablesPropias = (c: Pick<ContenidoFicha, "origenDato" | "variables">) =>
+  !esAutomatica(c) && c.variables.every((v) => v.origen !== "propia");
 
 /**
  * «Cómo se obtiene el dato»: «Lo digita una persona» o, en una automática, «Lo calcula el sistema · *nombre del cálculo* ·
@@ -94,23 +99,55 @@ export type CampoDeTexto = { termino: string; valor: string; detalle?: string };
 
 const NINGUNO = "(ninguno)";
 
-/** La línea de una variable: qué incluye, de dónde sale, su unidad, cómo se junta en el año y sus límites de captura. */
-function detalleDeVariable(v: ContenidoFicha["variables"][number]): string {
+/**
+ * De dónde sale una variable que no digita quien mide (anexo 14C, §4.2 y §6.1), tal como la ficha lo firmó: «Dato compartido ·
+ * Mensual · se suma» o «Resultado de SGC-ID-004 Satisfacción del usuario: su valor». `null` en una propia o una del cálculo.
+ */
+export function origenDeVariableEnTexto(v: VariableDeFicha): string | null {
+  if (v.origen === "compartida") {
+    const periodicidad = v.datoPeriodicidad ? (ETIQUETA_PERIODICIDAD[v.datoPeriodicidad as Periodicidad] ?? v.datoPeriodicidad) : null;
+    return ["Dato compartido", periodicidad, (CONSOLIDACION[v.consolidacion] ?? v.consolidacion).toLowerCase()].filter(Boolean).join(" · ");
+  }
+  if (v.origen === "indicador") {
+    const componente = [v.origenCodigo, v.origenNombre].filter(Boolean).join(" ");
+    return `Resultado de ${componente}: ${v.toma === "cumplimiento" ? "su porcentaje de cumplimiento" : "su valor"}`;
+  }
+  return null;
+}
+
+/**
+ * La línea de una variable: de dónde sale, qué incluye, su fuente, su unidad, cómo se junta en el año y sus límites de
+ * captura. «Cómo se junta» solo en la que no dice su origen: el de un dato ya lo dice, y una tomada no se junta (anexo 14C,
+ * §6.4). La misma en la pantalla, el impreso y el Excel.
+ */
+export function detalleDeVariable(v: VariableDeFicha): string {
+  const origen = origenDeVariableEnTexto(v);
   const captura =
     v.capturaMin !== null || v.capturaMax !== null
       ? `Se captura ${[v.capturaMin !== null ? `desde ${v.capturaMin.replace(".", ",")}` : null, v.capturaMax !== null ? `hasta ${v.capturaMax.replace(".", ",")}` : null].filter(Boolean).join(" ")}`
       : null;
   return [
+    origen,
     v.descripcion,
     v.fuente ? `Fuente: ${v.fuente}` : null,
     v.unidad ? `Unidad: ${v.unidad}` : null,
-    CONSOLIDACION[v.consolidacion] ?? v.consolidacion,
+    origen === null ? (CONSOLIDACION[v.consolidacion] ?? v.consolidacion) : null,
     captura,
     v.admiteNegativos ? "Admite negativos" : null,
   ]
     .filter(Boolean)
     .join(" · ");
 }
+
+/** «Responsables de medir»: los cargos que firmó la ficha o, en una sin variables propias, que nadie mide. */
+function responsablesDeMedir(c: Pick<ContenidoFicha, "origenDato" | "variables" | "responsables">): string {
+  if (sinVariablesPropias(c)) return NADIE_MIDE_AJENO;
+  const medir = c.responsables.filter((r) => r.funcion === "medir").map((r) => r.cargoNombre);
+  return medir.length > 0 ? medir.join(", ") : NINGUNO;
+}
+
+/** «Desagregación»: «Por Sede»; `null` sin desagregar. */
+export const desagregacionEnTexto = (c: Pick<ContenidoFicha, "dimensionNombre">) => (c.dimensionNombre ? `Por ${c.dimensionNombre}` : null);
 
 /**
  * La identificación y la estructura de medición de una versión firmada (spec §7.2), en texto: la fórmula en palabras
@@ -122,7 +159,6 @@ export function camposDeFicha(ficha: FichaLeida): { identificacion: CampoDeTexto
   const u = unidadDeFicha(c);
   const regla = reglaDeFicha(c);
   const nombres = Object.fromEntries(c.variables.map((v) => [v.letra, v.nombre?.trim() || v.letra]));
-  const medir = c.responsables.filter((r) => r.funcion === "medir").map((r) => r.cargoNombre);
   const analizar = c.responsables.filter((r) => r.funcion === "analizar").map((r) => r.cargoNombre);
   const lineaBase = c.lineaBaseValor !== null ? `${cifraDeFicha(c.lineaBaseValor, u)}${c.lineaBasePeriodo ? ` (${c.lineaBasePeriodo})` : ""}` : null;
   const limites = [c.resultadoMin !== null ? `desde ${cifraDeFicha(c.resultadoMin, u)}` : null, c.resultadoMax !== null ? `hasta ${cifraDeFicha(c.resultadoMax, u)}` : null]
@@ -166,6 +202,7 @@ export function camposDeFicha(ficha: FichaLeida): { identificacion: CampoDeTexto
     ...c.variables.flatMap((v) => campo(`Variable ${v.letra}`, v.nombre ?? v.letra, detalleDeVariable(v))),
     ...campo("Unidad del resultado", `${c.unidadNombre ?? ""}${u.sufijo.trim() ? ` (${u.sufijo.trim()})` : ""} · ${cuenta(c.decimales ?? 0, "decimal", "decimales")}`),
     ...campo("Periodicidad", periodicidad),
+    ...campo("Desagregación", desagregacionEnTexto(c)),
     ...campo("Tendencia", c.tendencia ? (TENDENCIA[c.tendencia] ?? c.tendencia) : NINGUNO),
     ...campo("Meta", regla.meta === null ? "Sin meta: cada medición queda «Sin meta», sin color ni alertas" : textoMeta(regla, u)),
     ...campo("Semáforo", regla.meta === null ? null : (rangosEnPalabras(regla, u) ?? NINGUNO)),
@@ -173,7 +210,7 @@ export function camposDeFicha(ficha: FichaLeida): { identificacion: CampoDeTexto
     ...campo("Línea base", lineaBase ?? c.lineaBaseNota ?? NINGUNO),
     ...campo("Nota de la línea base", lineaBase ? c.lineaBaseNota : null),
     ...campo("Sustento de la meta", c.sustentoMeta),
-    ...(esAutomatica(c) ? [] : campo("Responsables de medir", medir.length > 0 ? medir.join(", ") : NINGUNO)),
+    ...(esAutomatica(c) ? [] : campo("Responsables de medir", responsablesDeMedir(c))),
     ...campo("Responsables de analizar", analizar.length > 0 ? analizar.join(", ") : NINGUNO),
   ];
   return { identificacion, estructura };
@@ -183,21 +220,23 @@ export function camposDeFicha(ficha: FichaLeida): { identificacion: CampoDeTexto
  * Lo que dicen los datos de operación según el origen de la versión que se muestra (anexo 14B, §5.3). En una automática,
  * «Quién mide» dice que nadie (sin nombrar personas ni el respaldo del líder), «Soporte obligatorio» no se muestra y, en un
  * cálculo de flujo, el plazo se rotula como la espera antes de calcular; en uno de estado sigue siendo el plazo de reporte
- * (la fecha límite del análisis). Una sola regla para la ficha en pantalla, el impreso y el Excel.
+ * (la fecha límite del análisis). Una manual sin variables propias tampoco la mide nadie ni lleva soporte (anexo 14C, §3.1).
+ * Una sola regla para la ficha en pantalla, el impreso y el Excel.
  */
-export function operacionSegunOrigen(c: Pick<ContenidoFicha, "origenDato" | "calculo">): {
+export function operacionSegunOrigen(c: Pick<ContenidoFicha, "origenDato" | "calculo" | "variables">): {
   /** El texto fijo de «Quién mide»; `null` si nombra a las personas designadas. */
   mide: string | null;
   conSoporte: boolean;
   rotuloPlazo: string;
 } {
   const plazo = "Plazo de reporte";
+  if (sinVariablesPropias(c)) return { mide: NADIE_MIDE_AJENO, conSoporte: false, rotuloPlazo: plazo };
   if (!esAutomatica(c)) return { mide: null, conSoporte: true, rotuloPlazo: plazo };
   return { mide: NADIE_MIDE, conSoporte: false, rotuloPlazo: calculoDe(c.calculo)?.clase === "flujo" ? ESPERA_ANTES_DE_CALCULAR : plazo };
 }
 
 /** Los datos de operación (spec §7.3), que no se versionan ni se firman, según el origen de la versión que se muestra. */
-export function camposDeOperacion(o: OperacionLeida, c: Pick<ContenidoFicha, "origenDato" | "calculo">): CampoDeTexto[] {
+export function camposDeOperacion(o: OperacionLeida, c: Pick<ContenidoFicha, "origenDato" | "calculo" | "variables">): CampoDeTexto[] {
   const segun = operacionSegunOrigen(c);
   return [
     { termino: "Quién mide", valor: segun.mide ?? (o.mide.length > 0 ? o.mide.join(", ") : "El líder del proceso") },

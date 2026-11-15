@@ -16,6 +16,7 @@ import {
   enlaceDeVersion,
   fichaDeVersion,
   operacionDeIndicador,
+  restringidosQueToma,
   versionesDe,
   type FichaLeida,
   type VersionVisible,
@@ -240,6 +241,7 @@ export async function datosDeFicha(c: ContextoDeVista): Promise<DatosDeFicha> {
       elaboro: ficha.firmas.elaboro?.nombre ?? "",
       enviada: ficha.firmas.elaboro ? fechaYHora(ficha.firmas.elaboro.fecha) : "",
       enlace: enlaceDeVersion(codigo, ficha.numero),
+      restringidos: await restringidosQueToma(obtenerSql(), ficha.versionId),
     };
   }
   return {

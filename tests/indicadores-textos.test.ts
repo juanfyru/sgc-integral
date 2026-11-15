@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import type { VariableDeFicha } from "@/lib/indicadores/ficha";
+import { origenDeVariableEnTexto } from "@/lib/indicadores/ficha-en-texto";
 import { dividir, entero, fraccion } from "@/lib/indicadores/formula/fraccion";
 import { rangosDeTexto } from "@/lib/indicadores/rangos";
 import type { Regla } from "@/lib/indicadores/semaforo";
@@ -106,5 +108,43 @@ describe("textos de indicadores", () => {
       mejora: false,
     });
     expect(comparacion(f("5"), { valor: f("2"), etiqueta: "marzo" }, null, "ascendente", { sufijo: "", decimales: 0 })!.texto).toBe("3 más que en marzo");
+  });
+});
+
+describe("de dónde sale una variable de la ficha (14C, Tarea 8)", () => {
+  const variable = (v: Partial<VariableDeFicha>): VariableDeFicha => ({
+    letra: "A",
+    nombre: "Partos atendidos",
+    descripcion: null,
+    fuente: null,
+    unidad: null,
+    consolidacion: "suma",
+    origen: "propia",
+    variableCompartidaId: null,
+    indicadorOrigenId: null,
+    toma: null,
+    datoPeriodicidad: null,
+    origenCodigo: null,
+    origenNombre: null,
+    capturaMin: null,
+    capturaMax: null,
+    admiteNegativos: false,
+    ...v,
+  });
+
+  it("una propia o una del cálculo no dicen nada; un dato, su periodicidad y cómo se junta; un componente, qué se toma de cuál", () => {
+    expect(origenDeVariableEnTexto(variable({}))).toBeNull();
+    expect(origenDeVariableEnTexto(variable({ origen: "automatica" }))).toBeNull();
+    const dato = (datoPeriodicidad: string, consolidacion: string) =>
+      origenDeVariableEnTexto(variable({ origen: "compartida", variableCompartidaId: 5, datoPeriodicidad, consolidacion }));
+    expect(dato("mensual", "suma")).toBe("Dato compartido · Mensual · se suma");
+    expect(dato("trimestral", "ultimo")).toBe("Dato compartido · Trimestral · último valor");
+    expect(dato("semestral", "promedio")).toBe("Dato compartido · Semestral · promedio");
+    const tomada = (toma: string) =>
+      origenDeVariableEnTexto(
+        variable({ origen: "indicador", indicadorOrigenId: 9, toma, consolidacion: "ultimo", origenCodigo: "SGC-ID-004", origenNombre: "Satisfacción del usuario" }),
+      );
+    expect(tomada("valor")).toBe("Resultado de SGC-ID-004 Satisfacción del usuario: su valor");
+    expect(tomada("cumplimiento")).toBe("Resultado de SGC-ID-004 Satisfacción del usuario: su porcentaje de cumplimiento");
   });
 });

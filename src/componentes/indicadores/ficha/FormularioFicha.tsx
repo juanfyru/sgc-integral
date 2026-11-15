@@ -15,6 +15,7 @@ import { rangosEquivalentes, type Regla } from "@/lib/indicadores/semaforo";
 import {
   CONSOLIDACIONES,
   ETIQUETA_PERIODICIDAD,
+  NADIE_MIDE_AJENO,
   PERIODICIDADES,
   TENDENCIAS,
   type Consolidacion,
@@ -24,6 +25,7 @@ import {
   type Periodicidad,
   type Tendencia,
 } from "@/lib/indicadores/tipos";
+import { CampoDesagregacion } from "./CampoDesagregacion";
 import { EditorDeRangos, estadoDeRangos, rangosDelEditor } from "./EditorDeRangos";
 import {
   alcanceDelCalculo,
@@ -41,11 +43,13 @@ import {
   variablesDelCalculo,
   type CalculoDeFicha,
 } from "./OrigenDelDato";
+import { ETIQUETA_CONSOLIDACION, OrigenDeVariable, type VariableDelFormulario } from "./OrigenDeVariable";
 import { PruebaFormula } from "./PruebaFormula";
 import { conMiles, SelectorForma } from "./SelectorForma";
 import { VistaSemaforo } from "./VistaSemaforo";
 
-type Variable = DatosFicha["variables"][number];
+/** Una variable del formulario: con su origen siempre dicho, así `limpia` no puede olvidarlo al enviarla. */
+type Variable = VariableDelFormulario;
 
 /** Editar un borrador: su versión; `cambio` si ya hay una ficha aprobada; `codigoFijo` si el proceso y el código ya no cambian. */
 export type EdicionFicha = { versionId: number; cambio: boolean; codigoFijo: boolean };
@@ -59,7 +63,6 @@ const ETIQUETA_TENDENCIA: Record<Tendencia, string> = {
   descendente: "Descendente (menor es mejor)",
   constante: "Constante (mantenerse en un rango)",
 };
-const ETIQUETA_CONSOLIDACION: Record<Consolidacion, string> = { suma: "Se suma", ultimo: "Último valor", promedio: "Promedio" };
 /** Qué es cada variable en las formas que la arman solas (spec §7.4). */
 const PAPEL: Record<Exclude<Forma, "libre">, readonly string[]> = {
   porcentaje: ["Numerador", "Denominador"],
@@ -75,27 +78,46 @@ const porNombre = (lista: readonly { id: number; nombre: string }[], nombre: str
   (lista.find((x) => sinTildes(x.nombre) === sinTildes(nombre)) ?? lista[0])?.id;
 /** «80.5» de la BD se escribe «80,5». */
 const conComa = (v: string | undefined) => (v === undefined ? "" : v.replace(".", ","));
-const variableNueva = (letra: string): Variable => ({ letra, nombre: "", consolidacion: "suma", admiteNegativos: false });
+const variableNueva = (letra: string): Variable => ({ letra, nombre: "", consolidacion: "suma", admiteNegativos: false, origen: "propia" });
+/** Una variable de la ficha guardada o del registro de cálculos: sin origen, «propia» (una ficha anterior a la 14C). */
+const conOrigen = (v: DatosFicha["variables"][number]): Variable => ({ ...v, origen: v.origen ?? "propia" });
 
 function variablesDeForma(forma: Forma, actuales: readonly Variable[]): Variable[] {
   if (forma === "libre") return actuales.length > 0 ? [...actuales] : [variableNueva("A")];
   return letrasDeForma(forma).map((letra) => actuales.find((v) => v.letra === letra) ?? variableNueva(letra));
 }
 
-/** Lo que viaja en el campo oculto `variables`: sin los textos vacíos, que el esquema lee como «no vino». */
-function limpia(v: Variable): Variable {
+/**
+ * Lo que viaja en el campo oculto `variables`: sin los textos vacíos, que el esquema lee como «no vino», y con lo que pide su
+ * origen. De un dato, su referencia y lo que el esquema exige (el nombre y «cómo se junta» del catálogo): el servidor copia
+ * lo demás. De otro indicador, cuál y qué se toma, y lo propio menos la fuente, que no se pide. De una propia, ninguna
+ * referencia.
+ */
+function limpia(v: Variable, datos: OpcionesFicha["datos"]): Variable {
   const opcional = (t: string | undefined) => (t && t.trim() ? t.trim() : undefined);
-  return {
+  if (v.origen === "compartida") {
+    const dato = datos.find((d) => d.id === v.datoId);
+    return {
+      letra: v.letra,
+      nombre: (dato?.nombre ?? v.nombre).trim(),
+      consolidacion: dato?.consolidacion ?? v.consolidacion,
+      admiteNegativos: v.admiteNegativos,
+      origen: "compartida",
+      datoId: v.datoId,
+    };
+  }
+  const propios = {
     letra: v.letra,
     nombre: v.nombre.trim(),
     descripcion: opcional(v.descripcion),
-    fuente: opcional(v.fuente),
     unidad: opcional(v.unidad),
     consolidacion: v.consolidacion,
     capturaMin: opcional(v.capturaMin),
     capturaMax: opcional(v.capturaMax),
     admiteNegativos: v.admiteNegativos,
   };
+  if (v.origen === "indicador") return { ...propios, origen: "indicador", indicadorOrigenId: v.indicadorOrigenId, toma: v.toma ?? "valor" };
+  return { ...propios, fuente: opcional(v.fuente), origen: "propia" };
 }
 
 /** La sigla que da el código de una elección: la del subproceso si tiene, si no la del proceso. */
@@ -147,6 +169,16 @@ function SoloLectura({ id, etiqueta, valor, ayuda }: { id: string; etiqueta: str
 }
 
 const EN_OPERACION = "Es un dato de operación: se cambia en «Datos de operación», no en la ficha.";
+
+/** Lo que no se elige porque no aplica (quién mide una ficha sin variables propias): su rótulo y el texto, sin control. */
+function TextoFijo({ etiqueta, texto }: { etiqueta: string; texto: string }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <p className="text-sm font-medium">{etiqueta}</p>
+      <p className="text-sm">{texto}</p>
+    </div>
+  );
+}
 
 function Etiquetado({ id, etiqueta, ayuda, children }: { id: string; etiqueta: string; ayuda?: string; children: React.ReactNode }) {
   return (
@@ -223,7 +255,7 @@ const CAMPOS_DE_MAS_OPCIONES: readonly [RegExp, string][] = [
   [/^(Elija la unidad del resultado|La unidad no existe)/, "ficha-unidadId"],
   [/^Los decimales/, "ficha-decimales"],
   [/^El requisito/, "ficha-requisito"],
-  [/^El objetivo que mide/, "ficha-objetivoId"],
+  [/^(El objetivo que mide|Esta ficha toma «Objetivos cumplidos»)/, "ficha-objetivoId"],
   [/^El procedimiento/, "ficha-procedimientoDocumentoId"],
   [/^El punto de control/, "ficha-puntoControl"],
   [/^(Las normas|Elija hasta 20 normas|Un indicador regulatorio|Solo se pueden citar normas|La norma no existe)/, "ficha-norma"],
@@ -241,7 +273,11 @@ const CAMPOS_DE_MAS_OPCIONES: readonly [RegExp, string][] = [
   [/^(Elija el inicio de medición$|El inicio de medición|Un cálculo que no se llena hacia atrás)/, "ficha-inicioMedicion"],
   [/^(Elija el cálculo que hace el sistema|Ya hay una ficha activa para ese cálculo y alcance)/, "ficha-calculo"],
   [/^Ese cálculo no admite ese alcance/, "ficha-calculoAlcance"],
-  [/^Elija el nivel de acceso/, "ficha-nivelAcceso"],
+  [/^(Elija el nivel de acceso|Esta ficha toma un indicador restringido)/, "ficha-nivelAcceso"],
+  [
+    /^(La desagregación|Elija una dimensión activa|Un indicador que calcula el sistema no se desagrega|Un indicador desagregado|El dato «[^»]+» (está|no está) desagregado|Una fórmula con min, max o abs)/,
+    "ficha-dimensionId",
+  ],
   [/^El ente/, "ficha-ente"],
   [/^Elija con qué periodicidad se reporta al ente/, "ficha-periodicidadExterna"],
   [/^El plazo del ente/, "ficha-plazoExternoDias"],
@@ -265,7 +301,10 @@ const CAMPOS_A_LA_VISTA: readonly [RegExp, string][] = [
     "ficha-formula",
   ],
   [/^(Ya existe un indicador con el código|El código)/, "ficha-codigo"],
-  [/^(El nombre de cada variable|Declare al menos una variable|Una ficha admite hasta|Las variables no tienen|Cada variable lleva una letra)/, "ficha-variables"],
+  [
+    /^(El nombre de cada variable|Declare al menos una variable|Una ficha admite hasta|Las variables no tienen|Cada variable lleva una letra|Elija de dónde sale cada variable|El dato compartido no es válido|Elija un dato compartido activo|El dato «[^»]+» es |El indicador del que sale la variable|Elija qué se toma|Elija el indicador del que sale|Un indicador no puede tomar su propio resultado|El indicador de la variable|No se puede tomar el cumplimiento|Esta ficha cerraría un ciclo|Un indicador compuesto admite)/,
+    "ficha-variables",
+  ],
   [/^El nombre/, "ficha-nombre"],
   [/^(Elija el proceso$|El proceso no existe)/, "ficha-procesoId"],
   [/^El subproceso/, "ficha-subprocesoId"],
@@ -369,7 +408,8 @@ export function FormularioFicha({
   const [forma, setForma] = useState<Forma>(formaInicial);
   const [factor, setFactor] = useState(valores.factor ?? 1000);
   const [formula, setFormula] = useState(valores.formula ?? "");
-  const [variables, setVariables] = useState<Variable[]>(() => variablesDeForma(formaInicial, valores.variables ?? []));
+  const [variables, setVariables] = useState<Variable[]>(() => variablesDeForma(formaInicial, (valores.variables ?? []).map(conOrigen)));
+  const [dimensionId, setDimensionId] = useState<number | "">(valores.dimensionId ?? "");
   const [procesoId, setProcesoId] = useState<number | "">(valores.procesoId ?? "");
   const [subprocesoId, setSubprocesoId] = useState<number | "">(valores.subprocesoId ?? "");
   const [procedimientoId, setProcedimientoId] = useState<number | "">(valores.procedimientoDocumentoId ?? "");
@@ -464,8 +504,12 @@ export function FormularioFicha({
   // Un cálculo que no se llena hacia atrás empieza en el periodo en curso al aprobarse: no hay inicio que elegir.
   const inicioEnCurso = delCalculo !== null && !delCalculo.reconstruible;
   const ocupado = delCalculo !== null && calculoOcupado(opciones.calculosActivos, calculo, calculoAlcance, procesoId);
-  const analizaElegida = automatico && analiza === "misma" ? mide : analiza;
-  const listaMide = automatico ? [] : operacionFija ? (valores.mide ?? []) : mide === "" ? [] : [mide];
+  // Una manual sin variables propias tampoco la mide nadie (anexo 14C, §3.1): como un automático, sin quién mida, sin cargo
+  // de medir, sin soporte obligatorio ni prueba; quien estaba elegido para medir sigue analizando.
+  const sinPropias = !automatico && variables.every((v) => v.origen !== "propia");
+  const nadieMide = automatico || sinPropias;
+  const analizaElegida = nadieMide && analiza === "misma" ? mide : analiza;
+  const listaMide = nadieMide ? [] : operacionFija ? (valores.mide ?? []) : mide === "" ? [] : [mide];
   const listaAnaliza = operacionFija ? (valores.analiza ?? []) : analizaElegida === "misma" ? listaMide : analizaElegida === "" ? [] : [analizaElegida];
   const nombresDe = (ids: readonly number[]) =>
     ids.length === 0 ? "(el líder del proceso)" : ids.map((id) => opciones.usuarios.find((u) => u.id === id)?.nombre ?? `Usuario ${id}`).join(", ");
@@ -589,8 +633,11 @@ export function FormularioFicha({
     ...(constante && !usaRangos ? [] : ["ficha-tolerancia"]),
     ...(edicion?.cambio ? [] : ["ficha-motivoCambio"]),
     ...(operacionFija ? ["ficha-inicioMedicion", "ficha-nivelAcceso"] : []),
-    // Lo que el cálculo pone no se pinta en un automático; el cálculo y su alcance, solo en él.
-    ...(automatico ? ["ficha-variables", "ficha-formula", "ficha-tendencia", "ficha-cargo-medir", "ficha-detalle-variables"] : ["ficha-calculo", "ficha-calculoAlcance"]),
+    // Lo que el cálculo pone no se pinta en un automático, que tampoco se desagrega; el cálculo y su alcance, solo en él.
+    ...(automatico
+      ? ["ficha-variables", "ficha-formula", "ficha-tendencia", "ficha-detalle-variables", "ficha-dimensionId"]
+      : ["ficha-calculo", "ficha-calculoAlcance"]),
+    ...(nadieMide ? ["ficha-cargo-medir"] : []),
   ]);
   const campoConError = estado?.error ? campoDelError(estado.error) : null;
   const errorEn = campoConError !== null && !ausentes.has(campoConError) ? campoConError : null;
@@ -599,8 +646,12 @@ export function FormularioFicha({
   return (
     <form action={enviar} onSubmit={enviarSinReiniciar(enviar)} className="flex min-w-0 flex-col gap-6">
       {edicion ? <input type="hidden" name="id" value={edicion.versionId} /> : null}
-      <input type="hidden" name="variables" value={JSON.stringify((delCalculo ? variablesDelCalculo(delCalculo) : variables).map(limpia))} />
-      <input type="hidden" name="cargosMedir" value={JSON.stringify(automatico ? [] : cargosMedir)} />
+      <input
+        type="hidden"
+        name="variables"
+        value={JSON.stringify((delCalculo ? variablesDelCalculo(delCalculo).map(conOrigen) : variables).map((v) => limpia(v, opciones.datos)))}
+      />
+      <input type="hidden" name="cargosMedir" value={JSON.stringify(nadieMide ? [] : cargosMedir)} />
       <input type="hidden" name="cargosAnalizar" value={JSON.stringify(cargosAnalizar)} />
       <input type="hidden" name="normaIds" value={JSON.stringify(normaIds)} />
       <input type="hidden" name="mide" value={JSON.stringify(listaMide)} />
@@ -610,7 +661,7 @@ export function FormularioFicha({
         <>
           <input type="hidden" name="inicioMedicion" value={valores.inicioMedicion ?? ""} />
           <input type="hidden" name="nivelAcceso" value={valores.nivelAcceso ?? "general"} />
-          {valores.soporteObligatorio && !automatico ? <input type="hidden" name="soporteObligatorio" value="on" /> : null}
+          {valores.soporteObligatorio && !nadieMide ? <input type="hidden" name="soporteObligatorio" value="on" /> : null}
         </>
       ) : null}
       {automatico ? (
@@ -712,26 +763,13 @@ export function FormularioFicha({
                 <ErrorDeCampo id="ficha-variables" error={errorDe("ficha-variables")} />
                 {variables.map((v, i) => (
                   <div key={v.letra} className="grid min-w-0 grid-cols-1 gap-2 rounded-md border border-border p-3 sm:grid-cols-2">
-                    <Etiquetado id={`ficha-variable-${v.letra}`} etiqueta={etiqueta(v, i)}>
-                      <input
-                        id={`ficha-variable-${v.letra}`}
-                        maxLength={150}
-                        value={v.nombre}
-                        placeholder="Qué se cuenta en el periodo"
-                        onChange={(e) => cambiarVariable(v.letra, { nombre: e.target.value })}
-                        className={CONTROL}
-                      />
-                    </Etiquetado>
-                    <Etiquetado id={`ficha-variable-${v.letra}-fuente`} etiqueta={`Fuente de ${v.letra}`}>
-                      <input
-                        id={`ficha-variable-${v.letra}-fuente`}
-                        maxLength={300}
-                        value={v.fuente ?? ""}
-                        placeholder="De dónde sale el dato"
-                        onChange={(e) => cambiarVariable(v.letra, { fuente: e.target.value })}
-                        className={CONTROL}
-                      />
-                    </Etiquetado>
+                    <OrigenDeVariable
+                      variable={v}
+                      etiqueta={etiqueta(v, i)}
+                      datos={opciones.datos}
+                      tomables={opciones.tomables}
+                      alCambiar={(cambio) => cambiarVariable(v.letra, cambio)}
+                    />
                     {forma === "libre" && variables.length > 1 ? (
                       <div className="sm:col-span-2">
                         <Boton variante="fantasma" tamano="sm" onClick={() => setVariables((vs) => vs.filter((x) => x.letra !== v.letra))}>
@@ -870,12 +908,18 @@ export function FormularioFicha({
           )}
           {operacionFija ? (
             <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
-              {automatico ? null : <SoloLectura id="ficha-mide" etiqueta="Quién mide" valor={nombresDe(listaMide)} ayuda={EN_OPERACION} />}
+              {automatico ? null : sinPropias ? (
+                <TextoFijo etiqueta="Quién mide" texto={NADIE_MIDE_AJENO} />
+              ) : (
+                <SoloLectura id="ficha-mide" etiqueta="Quién mide" valor={nombresDe(listaMide)} ayuda={EN_OPERACION} />
+              )}
               <SoloLectura id="ficha-analiza" etiqueta="Quién analiza" valor={nombresDe(listaAnaliza)} ayuda={EN_OPERACION} />
             </div>
           ) : (
             <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
-              {automatico ? null : (
+              {automatico ? null : sinPropias ? (
+                <TextoFijo etiqueta="Quién mide" texto={NADIE_MIDE_AJENO} />
+              ) : (
                 <Etiquetado id="ficha-mide" etiqueta="Quién mide" ayuda="Sin persona, mide el líder del proceso.">
                   <select id="ficha-mide" value={mide} onChange={(e) => elegirMide(e.target.value ? Number(e.target.value) : "")} className={CONTROL}>
                     <option value="">(el líder del proceso)</option>
@@ -894,7 +938,7 @@ export function FormularioFicha({
                   onChange={(e) => elegirAnaliza(e.target.value === "misma" ? "misma" : e.target.value ? Number(e.target.value) : "")}
                   className={CONTROL}
                 >
-                  {automatico ? null : <option value="misma">La misma persona que mide</option>}
+                  {nadieMide ? null : <option value="misma">La misma persona que mide</option>}
                   <option value="">(el líder del proceso)</option>
                   {opciones.usuarios.map((u) => (
                     <option key={u.id} value={u.id}>
@@ -905,7 +949,7 @@ export function FormularioFicha({
               </Etiquetado>
             </div>
           )}
-          {automatico ? null : (
+          {nadieMide ? null : (
             <PruebaFormula
               formula={formulaVigente}
               variables={variables.map((v, i) => ({ letra: v.letra, etiqueta: etiqueta(v, i) }))}
@@ -946,6 +990,11 @@ export function FormularioFicha({
             ocupado={ocupado}
             errorDe={errorDe}
           />
+          {automatico ? null : (
+            <div className="min-w-0 sm:max-w-md">
+              <CampoDesagregacion dimensiones={opciones.dimensiones} valor={dimensionId} alElegir={setDimensionId} error={errorDe("ficha-dimensionId")} />
+            </div>
+          )}
           <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
             <Campo etiqueta="Tipo" nombre="tipoId" id="ficha-tipoId" error={errorDe("ficha-tipoId")}>
               <select defaultValue={valores.tipoId ?? porNombre(opciones.tipos, "Eficacia")} className={CONTROL}>
@@ -1035,7 +1084,9 @@ export function FormularioFicha({
           />
 
           <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
-            {automatico ? null : (
+            {automatico ? null : sinPropias ? (
+              <TextoFijo etiqueta="Cargos responsables de medir" texto={NADIE_MIDE_AJENO} />
+            ) : (
               <Casillas
                 prefijo="ficha-cargo-medir"
                 error={errorDe("ficha-cargo-medir")}
@@ -1099,75 +1150,85 @@ export function FormularioFicha({
             >
               <legend className="mb-1 text-sm font-medium">Detalle de las variables</legend>
               <ErrorDeCampo id="ficha-detalle-variables" error={errorDe("ficha-detalle-variables")} />
-              {variables.map((v, i) => (
-                <div key={v.letra} className="grid min-w-0 grid-cols-1 gap-2 rounded-md border border-border p-3 sm:grid-cols-2">
-                  <p className="text-sm font-medium sm:col-span-2">{etiqueta(v, i)}</p>
-                  <Etiquetado id={`ficha-variable-${v.letra}-descripcion`} etiqueta={`Qué incluye y qué excluye ${v.letra}`}>
-                    <textarea
-                      id={`ficha-variable-${v.letra}-descripcion`}
-                      maxLength={500}
-                      rows={2}
-                      value={v.descripcion ?? ""}
-                      onChange={(e) => cambiarVariable(v.letra, { descripcion: e.target.value })}
-                      className={CONTROL}
-                    />
-                  </Etiquetado>
-                  <Etiquetado id={`ficha-variable-${v.letra}-unidad`} etiqueta={`Unidad de ${v.letra}`}>
-                    <input
-                      id={`ficha-variable-${v.letra}-unidad`}
-                      maxLength={40}
-                      value={v.unidad ?? ""}
-                      onChange={(e) => cambiarVariable(v.letra, { unidad: e.target.value })}
-                      className={CONTROL}
-                    />
-                  </Etiquetado>
-                  <Etiquetado id={`ficha-variable-${v.letra}-consolidacion`} etiqueta={`Cómo se junta ${v.letra} en un periodo mayor`}>
-                    <select
-                      id={`ficha-variable-${v.letra}-consolidacion`}
-                      value={v.consolidacion}
-                      onChange={(e) => cambiarVariable(v.letra, { consolidacion: e.target.value as Consolidacion })}
-                      className={CONTROL}
-                    >
-                      {CONSOLIDACIONES.map((c) => (
-                        <option key={c} value={c}>
-                          {ETIQUETA_CONSOLIDACION[c]}
-                        </option>
-                      ))}
-                    </select>
-                  </Etiquetado>
-                  <div className="grid min-w-0 grid-cols-2 gap-2">
-                    <Etiquetado id={`ficha-variable-${v.letra}-min`} etiqueta={`Mínimo de ${v.letra}`}>
-                      <input
-                        id={`ficha-variable-${v.letra}-min`}
-                        inputMode="decimal"
-                        value={conComa(v.capturaMin)}
-                        onChange={(e) => cambiarVariable(v.letra, { capturaMin: e.target.value })}
+              {variables.map((v, i) =>
+                v.origen === "compartida" ? (
+                  <div key={v.letra} className="flex min-w-0 flex-col gap-1 rounded-md border border-border p-3">
+                    <p className="text-sm font-medium">{etiqueta(v, i)}</p>
+                    <p className="text-xs text-muted-foreground">Lo pone el dato compartido: qué incluye, la unidad, cómo se junta y los límites.</p>
+                  </div>
+                ) : (
+                  <div key={v.letra} className="grid min-w-0 grid-cols-1 gap-2 rounded-md border border-border p-3 sm:grid-cols-2">
+                    <p className="text-sm font-medium sm:col-span-2">{etiqueta(v, i)}</p>
+                    <Etiquetado id={`ficha-variable-${v.letra}-descripcion`} etiqueta={`Qué incluye y qué excluye ${v.letra}`}>
+                      <textarea
+                        id={`ficha-variable-${v.letra}-descripcion`}
+                        maxLength={500}
+                        rows={2}
+                        value={v.descripcion ?? ""}
+                        onChange={(e) => cambiarVariable(v.letra, { descripcion: e.target.value })}
                         className={CONTROL}
                       />
                     </Etiquetado>
-                    <Etiquetado id={`ficha-variable-${v.letra}-max`} etiqueta={`Máximo de ${v.letra}`}>
+                    <Etiquetado id={`ficha-variable-${v.letra}-unidad`} etiqueta={`Unidad de ${v.letra}`}>
                       <input
-                        id={`ficha-variable-${v.letra}-max`}
-                        inputMode="decimal"
-                        value={conComa(v.capturaMax)}
-                        onChange={(e) => cambiarVariable(v.letra, { capturaMax: e.target.value })}
+                        id={`ficha-variable-${v.letra}-unidad`}
+                        maxLength={40}
+                        value={v.unidad ?? ""}
+                        onChange={(e) => cambiarVariable(v.letra, { unidad: e.target.value })}
                         className={CONTROL}
                       />
                     </Etiquetado>
+                    {/* Una variable tomada no se junta: vale el acumulado propio de su indicador (anexo 14C, §6.4). */}
+                    {v.origen === "indicador" ? null : (
+                      <Etiquetado id={`ficha-variable-${v.letra}-consolidacion`} etiqueta={`Cómo se junta ${v.letra} en un periodo mayor`}>
+                        <select
+                          id={`ficha-variable-${v.letra}-consolidacion`}
+                          value={v.consolidacion}
+                          onChange={(e) => cambiarVariable(v.letra, { consolidacion: e.target.value as Consolidacion })}
+                          className={CONTROL}
+                        >
+                          {CONSOLIDACIONES.map((c) => (
+                            <option key={c} value={c}>
+                              {ETIQUETA_CONSOLIDACION[c]}
+                            </option>
+                          ))}
+                        </select>
+                      </Etiquetado>
+                    )}
+                    <div className="grid min-w-0 grid-cols-2 gap-2">
+                      <Etiquetado id={`ficha-variable-${v.letra}-min`} etiqueta={`Mínimo de ${v.letra}`}>
+                        <input
+                          id={`ficha-variable-${v.letra}-min`}
+                          inputMode="decimal"
+                          value={conComa(v.capturaMin)}
+                          onChange={(e) => cambiarVariable(v.letra, { capturaMin: e.target.value })}
+                          className={CONTROL}
+                        />
+                      </Etiquetado>
+                      <Etiquetado id={`ficha-variable-${v.letra}-max`} etiqueta={`Máximo de ${v.letra}`}>
+                        <input
+                          id={`ficha-variable-${v.letra}-max`}
+                          inputMode="decimal"
+                          value={conComa(v.capturaMax)}
+                          onChange={(e) => cambiarVariable(v.letra, { capturaMax: e.target.value })}
+                          className={CONTROL}
+                        />
+                      </Etiquetado>
+                    </div>
+                    <div className="flex items-center gap-2 sm:col-span-2">
+                      <input
+                        type="checkbox"
+                        id={`ficha-variable-${v.letra}-negativos`}
+                        checked={v.admiteNegativos}
+                        onChange={(e) => cambiarVariable(v.letra, { admiteNegativos: e.target.checked })}
+                      />
+                      <label htmlFor={`ficha-variable-${v.letra}-negativos`} className="text-sm">
+                        {`${v.letra} admite negativos`}
+                      </label>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 sm:col-span-2">
-                    <input
-                      type="checkbox"
-                      id={`ficha-variable-${v.letra}-negativos`}
-                      checked={v.admiteNegativos}
-                      onChange={(e) => cambiarVariable(v.letra, { admiteNegativos: e.target.checked })}
-                    />
-                    <label htmlFor={`ficha-variable-${v.letra}-negativos`} className="text-sm">
-                      {`${v.letra} admite negativos`}
-                    </label>
-                  </div>
-                </div>
-              ))}
+                ),
+              )}
             </fieldset>
           )}
 
@@ -1180,7 +1241,7 @@ export function FormularioFicha({
                 valor={valores.nivelAcceso === "restringido" ? "Restringido" : "General"}
                 ayuda={EN_OPERACION}
               />
-              {automatico ? null : (
+              {nadieMide ? null : (
                 <SoloLectura id="ficha-soporteObligatorio" etiqueta="Soporte obligatorio" valor={valores.soporteObligatorio ? "Sí" : "No"} ayuda={EN_OPERACION} />
               )}
             </div>
@@ -1224,7 +1285,7 @@ export function FormularioFicha({
                   </select>
                 </Campo>
               </div>
-              {automatico ? null : (
+              {nadieMide ? null : (
                 <div className="flex items-center gap-2">
                   <input type="checkbox" id="ficha-soporteObligatorio" name="soporteObligatorio" defaultChecked={valores.soporteObligatorio ?? false} />
                   <label htmlFor="ficha-soporteObligatorio" className="text-sm">

@@ -65,6 +65,17 @@ export type OrigenDato = (typeof ORIGENES_DATO)[number];
 export const NADIE_MIDE = "Nadie: lo calcula el sistema";
 export const ESPERA_ANTES_DE_CALCULAR = "Días de espera antes de calcular";
 
+/** Quién mide una ficha manual sin variables propias (anexo 14C, §3.1): sus datos llegan de otros datos e indicadores. */
+export const NADIE_MIDE_AJENO = "Nadie: sus datos llegan de otras fuentes";
+
+/** Lo que el formulario advierte al desagregar (anexo 14C, §5.2). */
+export const AVISO_DESAGREGACION =
+  "El total se calcula sumando cada variable entre las categorías. Desagregue solo indicadores cuyas variables sean cantidades que se suman (casos, pacientes, pesos)";
+
+/** La advertencia al elaborar y al aprobar un compuesto que toma un indicador restringido (anexo 14C, §6.1). */
+export const avisoDeDeduccion = (nombre: string) =>
+  `Quien vea este indicador podrá deducir el resultado de «${nombre}» si es el único componente que no puede ver`;
+
 /** El detalle de una tarea que el Admin SGC tiene de respaldo (spec 14 §6.1): sin designado ni líder en la función. */
 export const SIN_RESPONSABLE = "Sin responsable: designe a alguien";
 
@@ -162,20 +173,28 @@ export type OpcionesFicha = {
    * enviar (anexo 14B, §5.3). `procesoId` solo cuenta con alcance «proceso».
    */
   calculosActivos: { calculo: ClaveDeCalculo; alcance: AlcanceDeCalculo; procesoId: number }[];
-  /** Los datos compartidos activos (anexo 14C, §4.2): de ellos el servidor copia lo que la variable firma. */
+  /**
+   * Los datos compartidos activos (anexo 14C, §4.2): de ellos el servidor copia lo que la variable firma. Al editar, también
+   * los que la versión ya cita aunque se hayan desactivado, con `inactivo` (una cita vieja sigue valiendo).
+   */
   datos: {
     id: number;
     nombre: string;
     proceso: string;
     periodicidad: Periodicidad;
     consolidacion: Consolidacion;
+    unidad: string | null;
     dimensionId: number | null;
     dimension: string | null;
+    inactivo?: true;
   }[];
-  /** Los indicadores activos con ficha vigente que una variable puede tomar (anexo 14C, §6.1), sin el que se edita. */
-  tomables: { id: number; codigo: string; nombre: string; periodicidad: Periodicidad; conMeta: boolean; restringido: boolean }[];
-  /** Las dimensiones activas por las que se puede desagregar (anexo 14C, §5.2). */
-  dimensiones: { id: number; nombre: string }[];
+  /**
+   * Los indicadores activos con ficha vigente que una variable puede tomar (anexo 14C, §6.1), sin el que se edita. Al editar,
+   * también los que la versión ya cita aunque se hayan retirado, con `retirado`.
+   */
+  tomables: { id: number; codigo: string; nombre: string; periodicidad: Periodicidad; conMeta: boolean; restringido: boolean; retirado?: true }[];
+  /** Las dimensiones activas por las que se puede desagregar (anexo 14C, §5.2) y, al editar, la ya citada, con `inactiva`. */
+  dimensiones: { id: number; nombre: string; inactiva?: true }[];
 };
 
 /** El estado de un periodo en las gráficas (spec §11): el del semáforo, o por qué no tiene uno. */

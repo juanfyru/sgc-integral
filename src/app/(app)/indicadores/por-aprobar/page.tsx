@@ -78,6 +78,7 @@ export default async function PaginaPorAprobar({
     elaboro: f.elaboro,
     enviada: fechaYHora(f.enviadaEn),
     enlace: enlaceDeVersion(f.codigo, f.numero),
+    restringidos: f.restringidos,
   }));
   const borradores = enCurso.filter((f) => f.estado === "borrador");
   const enviadas = enCurso.filter((f) => f.estado === "por_aprobar");

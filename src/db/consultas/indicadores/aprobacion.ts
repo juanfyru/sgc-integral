@@ -986,7 +986,27 @@ export type FichaPorAprobar = {
   motivo: string | null;
   elaboro: string;
   enviadaEn: Date;
+  /** Los componentes restringidos que toma, por el nombre que firmó: quien aprueba lee el aviso de deducción (anexo 14C, §6.1). */
+  restringidos: string[];
 };
+
+/**
+ * Los indicadores restringidos hoy de los que la versión toma alguna variable, una vez cada uno y en el orden de sus
+ * variables, con el nombre que firmó la ficha: los del aviso de deducción al aprobar (anexo 14C, §6.1). Una lectura, sin
+ * candados: quién aprueba lo decide `aprobadoresDeFicha` con los suyos.
+ */
+export async function restringidosQueToma(sql: Cliente, versionId: number): Promise<string[]> {
+  const filas = await sql`SELECT v.indicador_origen_id, v.origen_nombre, i.codigo
+    FROM indicador_variables v JOIN indicadores i ON i.id = v.indicador_origen_id
+    WHERE v.version_id = ${versionId} AND i.nivel_acceso = 'restringido'
+    ORDER BY v.orden, v.letra`;
+  const nombres = new Map<number, string>();
+  for (const f of filas) {
+    const id = Number(f.indicador_origen_id);
+    if (!nombres.has(id)) nombres.set(id, (f.origen_nombre as string | null) ?? (f.codigo as string));
+  }
+  return [...nombres.values()];
+}
 
 /** Lo que cambió una versión frente a la vigente del indicador; vacío si no hay vigente o si es ella. */
 export async function cambiosFrenteALaVigente(sql: Cliente, indicadorId: number, versionId: number): Promise<string[]> {
@@ -1021,6 +1041,7 @@ export async function fichasPorAprobar(sesion: SujetoVisibilidad, opciones?: { s
       motivo: (f.motivo_cambio as string | null) ?? null,
       elaboro: (f.elaboro as string | null) ?? "",
       enviadaEn: new Date(f.elaborada_en as string),
+      restringidos: await restringidosQueToma(sql, versionId),
     });
   }
   return salida;

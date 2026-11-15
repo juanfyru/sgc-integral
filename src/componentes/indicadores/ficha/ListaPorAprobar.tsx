@@ -12,6 +12,7 @@ import { useTituloAlDesaparecer } from "@/componentes/ui/foco";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { celda, TablaDatos } from "@/componentes/ui/TablaDatos";
 import type { TipoCambio } from "@/lib/indicadores/tipos";
+import { AvisoDeDeduccion } from "./OrigenDeVariable";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 
@@ -28,7 +29,24 @@ export type FilaPorAprobar = {
   elaboro: string;
   enviada: string;
   enlace: string;
+  /** Los componentes restringidos que toma (`restringidosQueToma`): cada uno, con su aviso de deducción. */
+  restringidos: string[];
 };
+
+/** El aviso de deducción de cada componente restringido que toma la ficha (anexo 14C, §6.1), para quien la aprueba. */
+export function AvisosDeDeduccion({ nombres }: { nombres: readonly string[] }) {
+  if (nombres.length === 0) return null;
+  return (
+    <ul className="mt-1 flex list-none flex-col items-start gap-1">
+      {nombres.map((n, i) => (
+        // Dos componentes pueden llamarse igual: la posición distingue la clave.
+        <li key={`${i}-${n}`}>
+          <AvisoDeDeduccion nombre={n} />
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 const COLUMNAS = [
   { clave: "elegir", etiqueta: "Elegir", oculta: true },
@@ -185,6 +203,7 @@ export function ListaPorAprobar({ fichas, pideCodigo }: { fichas: FilaPorAprobar
                 {f.nombre || f.codigo}
               </Link>
               <span className="block text-xs text-muted-foreground">{`${f.proceso} · versión ${f.numero}`}</span>
+              <AvisosDeDeduccion nombres={f.restringidos} />
             </td>
             <td className={celda}>
               {f.tipoCambio === "inicial" ? (

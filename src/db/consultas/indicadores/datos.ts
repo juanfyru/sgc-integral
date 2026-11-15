@@ -141,16 +141,32 @@ export async function datoPorId(
   return dato ?? null;
 }
 
-/** Los datos activos que ofrece el formulario de la ficha, que es de quien administra (anexo 14C, §4.2). */
-export async function datosParaFicha(sql: Cliente): Promise<
-  { id: number; nombre: string; proceso: string; periodicidad: Periodicidad; consolidacion: Consolidacion; dimensionId: number | null; dimension: string | null }[]
+/**
+ * Los datos activos que ofrece el formulario de la ficha, que es de quien administra (anexo 14C, §4.2), y los de `citados`
+ * aunque ya no lo estén, con `inactivo`: una cita vieja sigue valiendo y el formulario la muestra.
+ */
+export async function datosParaFicha(
+  sql: Cliente,
+  citados: readonly number[] = [],
+): Promise<
+  {
+    id: number;
+    nombre: string;
+    proceso: string;
+    periodicidad: Periodicidad;
+    consolidacion: Consolidacion;
+    unidad: string | null;
+    dimensionId: number | null;
+    dimension: string | null;
+    inactivo?: true;
+  }[]
 > {
   const filas = await sql`
-    SELECT d.id, d.nombre, p.nombre AS proceso, d.periodicidad, d.consolidacion, d.dimension_id, dim.nombre AS dimension
+    SELECT d.id, d.nombre, p.nombre AS proceso, d.periodicidad, d.consolidacion, d.unidad, d.dimension_id, dim.nombre AS dimension, d.activa
     FROM variables_compartidas d
     JOIN procesos p ON p.id = d.proceso_id
     LEFT JOIN dimensiones dim ON dim.id = d.dimension_id
-    WHERE d.activa
+    WHERE d.activa OR d.id = ANY(${[...citados]})
     ORDER BY p.nombre, lower(d.nombre), d.id`;
   return filas.map((f) => ({
     id: Number(f.id),
@@ -158,8 +174,10 @@ export async function datosParaFicha(sql: Cliente): Promise<
     proceso: f.proceso as string,
     periodicidad: f.periodicidad as Periodicidad,
     consolidacion: f.consolidacion as Consolidacion,
+    unidad: texto(f.unidad),
     dimensionId: f.dimension_id === null ? null : Number(f.dimension_id),
     dimension: texto(f.dimension),
+    ...(f.activa === true ? {} : { inactivo: true as const }),
   }));
 }
 

@@ -35,6 +35,8 @@ import ExcelJS from "exceljs";
 import { FichaImpresa } from "@/componentes/indicadores/ficha/FichaImpresa";
 import { ControlDeCambios } from "@/componentes/indicadores/ficha/ControlDeCambios";
 import { FichaTecnica } from "@/componentes/indicadores/ficha/FichaTecnica";
+import { ListaPorAprobar, type FilaPorAprobar } from "@/componentes/indicadores/ficha/ListaPorAprobar";
+import { VistaFicha } from "@/componentes/indicadores/vistas/VistaFicha";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { analizar } from "@/db/consultas/indicadores/analisis";
@@ -45,8 +47,9 @@ import { retirar } from "@/db/consultas/indicadores/operacion";
 import { fichaDeVersion, versionesDe, type FichaLeida, type OperacionLeida } from "@/db/consultas/indicadores/aprobacion";
 import { construirExcelDeIndicador } from "@/lib/indicadores/excel";
 import { camposDeFicha, camposDeOperacion, fechaYHora } from "@/lib/indicadores/ficha-en-texto";
+import { avisoDeDeduccion, NADIE_MIDE_AJENO } from "@/lib/indicadores/tipos";
 import type { SesionValida } from "@/lib/sesion";
-import { indicadorDePrueba, loteImportado, versionTrimestral, type IndicadorDePrueba } from "./utiles/indicadores";
+import { dimensionDePrueba, indicadorDePrueba, loteImportado, versionTrimestral, type IndicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -154,6 +157,32 @@ function fichaCompleta(): FichaLeida {
     firmas: { elaboro: null, aprobo: null },
     aprueba: false,
     importada: null,
+  };
+}
+
+/** Una ficha sin variables propias (anexo 14C): A sale de un dato compartido mensual y B, del valor de otro indicador. */
+function fichaDe14c(): FichaLeida {
+  const base = fichaCompleta();
+  const [a, b] = base.contenido.variables;
+  return {
+    ...base,
+    contenido: {
+      ...base.contenido,
+      variables: [
+        { ...a, nombre: "Partos atendidos", fuente: "Registro de partos", origen: "compartida", variableCompartidaId: 5, datoPeriodicidad: "mensual", consolidacion: "suma" },
+        {
+          ...b,
+          nombre: "Satisfacción",
+          origen: "indicador",
+          indicadorOrigenId: 9,
+          toma: "valor",
+          consolidacion: "ultimo",
+          origenCodigo: "SGC-ID-004",
+          origenNombre: "Satisfacción del usuario",
+        },
+      ],
+      responsables: [{ cargoNombre: "Gerente", funcion: "analizar" }],
+    },
   };
 }
 
@@ -557,7 +586,8 @@ describe("FichaImpresa", () => {
     const base = fichaCompleta();
     const ficha = { ...base, contenido: { ...base.contenido, nivel: "Proceso", riesgoAsociado: "Retraso en la entrega" } };
     const automatica = { ...ficha, contenido: { ...ficha.contenido, origenDato: "automatico", calculo: "acuses", calculoAlcance: "entidad" } };
-    for (const f of [ficha, automatica]) {
+    const desagregada = { ...ficha, contenido: { ...ficha.contenido, dimensionId: 3, dimensionNombre: "Sede" } };
+    for (const f of [ficha, automatica, desagregada, fichaDe14c()]) {
       const pantalla = renderToStaticMarkup(<FichaTecnica ficha={f} operacion={null} />);
       const seccion = (inicio: string, fin: string) =>
         [...pantalla.slice(pantalla.indexOf(`>${inicio}<`), pantalla.indexOf(`>${fin}<`)).matchAll(/<dt[^>]*>([^<]+)<\/dt>/g)].map((m) => m[1]);
@@ -568,6 +598,68 @@ describe("FichaImpresa", () => {
       expect(rotulos(estructura)).toEqual(seccion("Estructura de medición", "Firmas"));
     }
   });
+
+  it("de dónde sale cada variable y la desagregación, con las mismas frases en pantalla y en el texto de la impresa y el Excel (14C, Tarea 8)", () => {
+    const base = fichaDe14c();
+    const ficha: FichaLeida = { ...base, contenido: { ...base.contenido, dimensionId: 3, dimensionNombre: "Sede" } };
+    const { estructura } = camposDeFicha(ficha);
+    const campo = (termino: string) => estructura.find((c) => c.termino === termino);
+    expect(campo("Desagregación")?.valor).toBe("Por Sede");
+    // El dato ya dice cómo se junta y un componente no se junta: ninguno repite «Se suma» ni «Último valor».
+    expect(campo("Variable A")).toEqual({ termino: "Variable A", valor: "Partos atendidos", detalle: "Dato compartido · Mensual · se suma · Fuente: Registro de partos" });
+    expect(campo("Variable B")).toEqual({ termino: "Variable B", valor: "Satisfacción", detalle: "Resultado de SGC-ID-004 Satisfacción del usuario: su valor" });
+    // Sin variables propias nadie mide: donde iría el cargo que mide.
+    expect(campo("Responsables de medir")?.valor).toBe(NADIE_MIDE_AJENO);
+    const pantalla = renderToStaticMarkup(<FichaTecnica ficha={ficha} operacion={null} />);
+    for (const t of [">Desagregación<", ">Por Sede<", "Dato compartido · Mensual · se suma · Fuente: Registro de partos", "Resultado de SGC-ID-004 Satisfacción del usuario: su valor", NADIE_MIDE_AJENO]) {
+      expect(pantalla, t).toContain(t);
+    }
+    expect(pantalla).not.toContain("Último valor");
+    // Sin desagregación no hay campo; una propia sigue diciendo cómo se junta y nombrando sus responsables de medir.
+    const manual = camposDeFicha(fichaCompleta()).estructura;
+    expect(manual.map((c) => c.termino)).not.toContain("Desagregación");
+    expect(manual.find((c) => c.termino === "Variable A")?.detalle).toBe("Se suma");
+    expect(manual.find((c) => c.termino === "Responsables de medir")?.valor).toBe("Líder de Calidad");
+    expect(renderToStaticMarkup(<FichaTecnica ficha={fichaCompleta()} operacion={null} />)).not.toContain(">Desagregación<");
+  });
+
+  it("los datos de operación de una ficha sin variables propias dicen que nadie mide y no muestran el soporte (14C, Tarea 8)", () => {
+    const operacion: OperacionLeida = {
+      plazoReporteDias: 5,
+      inicioMedicion: "2026-T1",
+      soporteObligatorio: true,
+      nivelAcceso: "general",
+      mide: ["Persona Que Medía"],
+      analiza: ["Persona Que Analiza"],
+      seguimiento: [],
+    };
+    const ficha = fichaDe14c();
+    const texto = camposDeOperacion(operacion, ficha.contenido).map((c) => `${c.termino}: ${c.valor}`).join("\n");
+    const html = renderToStaticMarkup(<FichaTecnica ficha={ficha} operacion={operacion} />);
+    const pantalla = html.slice(html.indexOf(">Datos de operación<"));
+    for (const h of [texto, pantalla]) {
+      expect(h).toContain(NADIE_MIDE_AJENO);
+      expect(h).not.toContain("Persona Que Medía");
+      expect(h).not.toContain("Soporte obligatorio");
+      expect(h).toContain("Persona Que Analiza");
+    }
+    expect(texto).toContain(`Quién mide: ${NADIE_MIDE_AJENO}`);
+    expect(texto).toContain("Plazo de reporte: 5 días después del cierre del periodo");
+    // Un mixto, con una propia, sigue nombrando a quien mide.
+    const mixta = { ...ficha.contenido, variables: [ficha.contenido.variables[0], fichaCompleta().contenido.variables[1]] };
+    expect(camposDeOperacion(operacion, mixta).map((c) => c.valor)).toContain("Persona Que Medía");
+  });
+
+  it("la ficha impresa de un desagregado trae «Desagregación: Por Sede» (14C, Tarea 8)", () =>
+    revertida(sql, async (tx) => {
+      const [existente] = await tx`SELECT id, nombre FROM dimensiones WHERE lower(nombre) = 'sede'`;
+      const sede = existente ? { id: Number(existente.id), nombre: existente.nombre as string } : { id: (await dimensionDePrueba(tx, "Sede", ["Norte", "Sur"])).id, nombre: "Sede" };
+      const p = await proceso(tx);
+      const ind = await indicadorDePrueba(tx, { procesoId: p.id, periodicidad: "trimestral", inicioMedicion: "2026-T1", aprobadaEn: APROBADA, dimensionId: sede.id });
+      const html = await impreso(tx, await sesionAdmin(tx), ind);
+      expect(html).toMatch(new RegExp(`<th[^>]*>Desagregación</th><td[^>]*>Por ${sede.nombre}<`));
+      expect(sede.nombre.toLowerCase()).toBe("sede");
+    }));
 
   it("una ficha automática dice cómo se obtiene el dato con su cálculo y su alcance, y no nombra responsables de medir (14B, Tarea 4)", () => {
     const base = fichaCompleta();
@@ -806,4 +898,44 @@ describe("/indicadores/[codigo]/imprimir", () => {
         contexto.sql = null;
       }
     }));
+});
+
+describe("el aviso de deducción al aprobar un compuesto con un componente restringido (14C, Tarea 8)", () => {
+  const fila = (restringidos: string[], versionId = 1): FilaPorAprobar => ({
+    versionId,
+    codigo: `SGC-ID-00${versionId}`,
+    nombre: "Atención integral",
+    proceso: "Gestión de calidad",
+    numero: 1,
+    tipoCambio: "inicial",
+    cambios: [],
+    motivo: null,
+    elaboro: "Ana Elaboradora",
+    enviada: "8 jul 2026, 09:05",
+    enlace: `/indicadores/sgc-id-00${versionId}?version=1`,
+    restringidos,
+  });
+  const insignia = (nombre: string) => new RegExp(`data-variante="atencion"[^>]*>(?:<svg[\\s\\S]*?</svg>)?${avisoDeDeduccion(nombre)}</span>`);
+
+  it("«Por aprobar» lo dice en la fila de la ficha, con el nombre de cada componente restringido, en una insignia de atención", () => {
+    const html = renderToStaticMarkup(<ListaPorAprobar fichas={[fila(["Ausentismo laboral", "Quejas resueltas"]), fila([], 2)]} pideCodigo={false} />);
+    expect(html).toMatch(insignia("Ausentismo laboral"));
+    expect(html).toMatch(insignia("Quejas resueltas"));
+    expect(html.split("podrá deducir").length - 1).toBe(2);
+  });
+
+  it("la ficha por aprobar lo dice junto a «Aprobar»; la ficha técnica, que ven otros, no", () => {
+    const ficha: FichaLeida = { ...fichaDe14c(), estado: "por_aprobar", aprueba: true };
+    const html = renderToStaticMarkup(
+      <VistaFicha ficha={ficha} codigo="SGC-ID-001" vigente={null} enCurso={null} administra={false} porAprobar={fila(["Ausentismo laboral"])} pideCodigo={false} operacion={null} />,
+    );
+    expect(html).toMatch(insignia("Ausentismo laboral"));
+    expect(html.indexOf("podrá deducir")).toBeLessThan(html.indexOf(">Identificación<"));
+    expect(renderToStaticMarkup(<FichaTecnica ficha={ficha} operacion={null} />)).not.toContain("podrá deducir");
+    // Sin componentes restringidos, nada.
+    const sin = renderToStaticMarkup(
+      <VistaFicha ficha={ficha} codigo="SGC-ID-001" vigente={null} enCurso={null} administra={false} porAprobar={fila([])} pideCodigo={false} operacion={null} />,
+    );
+    expect(sin).not.toContain("podrá deducir");
+  });
 });

@@ -813,4 +813,45 @@ describe("lo que el formulario ofrece", () => {
       expect(o.dimensiones).toContainEqual({ id: dimension.id, nombre });
       expect(ids(o.dimensiones)).not.toContain(apagada.id);
     }));
+
+  it("lo que el borrador ya cita sigue entre las opciones aunque ya no esté activo, con su marca, y el dato trae su unidad (Tarea 8)", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const dato = await datoDePrueba(tx, { procesoId: b.procesoId, periodicidad: "trimestral" });
+      await tx`UPDATE variables_compartidas SET unidad = 'partos' WHERE id = ${dato}`;
+      const componente = await indicadorDePrueba(tx, { procesoId: b.procesoId, periodicidad: "trimestral", nivelAcceso: "restringido" });
+      const sede = await dimensionDePrueba(tx, `ZZ Sede ${unico()}`, ["Norte"]);
+      const [{ nombre }] = await tx`SELECT nombre FROM dimensiones WHERE id = ${sede.id}`;
+      const actuales: Partial<DatosFicha> = { codigo: "ZZ-OTRO", dimensionId: sede.id, variables: [delDato("A", dato), delIndicador("B", componente.id)] };
+      const ids = (xs: readonly { id: number }[]) => xs.map((x) => x.id);
+
+      // Activos: sin marca.
+      const activos = await opcionesDeFicha(b.admin, { sql: tx, actuales });
+      expect(activos.datos.find((x) => x.id === dato)).toMatchObject({ periodicidad: "trimestral", unidad: "partos" });
+      expect(activos.datos.find((x) => x.id === dato)).not.toHaveProperty("inactivo");
+      expect(activos.tomables.find((x) => x.id === componente.id)).not.toHaveProperty("retirado");
+      expect(activos.dimensiones).toContainEqual({ id: sede.id, nombre });
+
+      await tx`UPDATE variables_compartidas SET activa = false WHERE id = ${dato}`;
+      await retirar(tx, componente.id, b.admin.usuarioId);
+      await tx`UPDATE dimensiones SET activo = false WHERE id = ${sede.id}`;
+      const o = await opcionesDeFicha(b.admin, { sql: tx, actuales });
+      expect(o.datos.find((x) => x.id === dato)).toMatchObject({ periodicidad: "trimestral", unidad: "partos", inactivo: true });
+      expect(o.tomables.find((x) => x.id === componente.id)).toEqual({
+        id: componente.id,
+        codigo: componente.codigo,
+        nombre: `Indicador de prueba ${componente.codigo}`,
+        periodicidad: "trimestral",
+        conMeta: true,
+        restringido: true,
+        retirado: true,
+      });
+      expect(o.dimensiones).toContainEqual({ id: sede.id, nombre, inactiva: true });
+
+      // Sin citarlos, no se ofrecen.
+      const sinCitas = await opcionesDeFicha(b.admin, { sql: tx });
+      expect(ids(sinCitas.datos)).not.toContain(dato);
+      expect(ids(sinCitas.tomables)).not.toContain(componente.id);
+      expect(ids(sinCitas.dimensiones)).not.toContain(sede.id);
+    }));
 });
