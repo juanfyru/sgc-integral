@@ -42,6 +42,7 @@ const base = (): ContenidoFicha => ({
   periodicidadExterna: null,
   plazoExternoDias: null,
   dimensionId: null,
+  dimensionNombre: null,
   rangos: null,
   nivel: null,
   riesgoAsociado: null,
@@ -57,6 +58,9 @@ const base = (): ContenidoFicha => ({
       variableCompartidaId: null,
       indicadorOrigenId: null,
       toma: null,
+      datoPeriodicidad: null,
+      origenCodigo: null,
+      origenNombre: null,
       capturaMin: "0",
       capturaMax: null,
       admiteNegativos: false,
@@ -72,6 +76,9 @@ const base = (): ContenidoFicha => ({
       variableCompartidaId: null,
       indicadorOrigenId: null,
       toma: null,
+      datoPeriodicidad: null,
+      origenCodigo: null,
+      origenNombre: null,
       capturaMin: "0",
       capturaMax: null,
       admiteNegativos: false,
@@ -107,6 +114,9 @@ describe("tipo de cambio de una ficha", () => {
     ["el ente", (c) => (c.ente = "Secretaría")],
     ["el nivel", (c) => (c.nivel = "Estratégico")],
     ["el riesgo asociado", (c) => (c.riesgoAsociado = "Demora en la atención")],
+    ["el nombre de la desagregación (mismo id)", (c) => (c.dimensionNombre = "Sede")],
+    ["el nombre del indicador de origen de una variable", (c) => (c.variables[0].origenNombre = "X")],
+    ["el código del indicador de origen de una variable", (c) => (c.variables[0].origenCodigo = "SGC-ID-001")],
   ];
   const mayores: [string, (c: ContenidoFicha) => void][] = [
     ["clasificación (otro id)", (c) => ((c.clasificacionId = 2), (c.clasificacionNombre = "Estratégico"))],
@@ -124,6 +134,7 @@ describe("tipo de cambio de una ficha", () => {
     ["límite", (c) => (c.limiteCritico = "50")],
     ["tolerancia", (c) => (c.tolerancia = "3")],
     ["origen del dato", (c) => (c.origenDato = "automatico")],
+    ["periodicidad del dato de una variable", (c) => (c.variables[0].datoPeriodicidad = "mensual")],
     [
       "los rangos",
       (c) => {
@@ -221,6 +232,15 @@ describe("huella de la ficha", () => {
       cambiar(nuevo);
       expect(huellaDeFicha(nuevo)).not.toBe(huellaDeFicha(base()));
     }
+  });
+  it("la desagregación y el origen de una variable, cuando existen, entran a la huella", () => {
+    const sede = base();
+    sede.dimensionNombre = "Sede";
+    const origen = base();
+    origen.variables[0].origenNombre = "X";
+    expect(huellaDeFicha(sede)).not.toBe(huellaDeFicha(base()));
+    expect(huellaDeFicha(origen)).not.toBe(huellaDeFicha(base()));
+    expect(huellaDeFicha(sede)).not.toBe(huellaDeFicha(origen));
   });
   it("cambia si cambia el nombre firmado de la unidad", () => {
     const nuevo = base();

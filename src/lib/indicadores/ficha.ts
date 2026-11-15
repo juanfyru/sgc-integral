@@ -24,6 +24,11 @@ export type VariableDeFicha = {
   variableCompartidaId: number | null;
   indicadorOrigenId: number | null;
   toma: string | null;
+  /** La periodicidad del dato que toma de otro indicador o de un dato compartido; `null` si no toma. */
+  datoPeriodicidad: string | null;
+  /** El código y el nombre del indicador de origen, tal como se firmaron. */
+  origenCodigo: string | null;
+  origenNombre: string | null;
   capturaMin: string | null;
   capturaMax: string | null;
   admiteNegativos: boolean;
@@ -69,6 +74,8 @@ export type ContenidoFicha = {
   periodicidadExterna: string | null;
   plazoExternoDias: number | null;
   dimensionId: number | null;
+  /** El nombre de la desagregación tal como se firmó. */
+  dimensionNombre: string | null;
   /** Los rangos del semáforo escritos por estado; solo con `semaforoModo` «rangos». */
   rangos: RangosEnTexto | null;
   nivel: string | null;
@@ -146,6 +153,7 @@ const ETIQUETAS: Record<Campo, string> = {
   periodicidadExterna: "Periodicidad externa",
   plazoExternoDias: "Plazo externo",
   dimensionId: "Dimensión",
+  dimensionNombre: "Desagregación",
   rangos: "Rangos del semáforo",
   nivel: "Nivel",
   riesgoAsociado: "Riesgo asociado",
@@ -156,6 +164,7 @@ const DEPENDE_DE: Partial<Record<Campo, Campo>> = {
   clasificacionNombre: "clasificacionId",
   unidadNombre: "unidadId",
   unidadSufijo: "unidadId",
+  dimensionNombre: "dimensionId",
 };
 
 const NUMEROS: ReadonlySet<string> = new Set([
@@ -174,9 +183,9 @@ const NUMEROS: ReadonlySet<string> = new Set([
 ]);
 
 /** Lo que las variables dicen de su estructura (cuántas, de dónde sale cada una y cómo se junta): cambio mayor. */
-const ESTRUCTURA_DE_VARIABLE = ["letra", "origen", "consolidacion", "variableCompartidaId", "indicadorOrigenId", "toma"] as const;
+const ESTRUCTURA_DE_VARIABLE = ["letra", "origen", "consolidacion", "variableCompartidaId", "indicadorOrigenId", "toma", "datoPeriodicidad"] as const;
 /** El resto de una variable: cambio menor. */
-const DETALLE_DE_VARIABLE = ["nombre", "descripcion", "fuente", "unidad", "capturaMin", "capturaMax", "admiteNegativos"] as const;
+const DETALLE_DE_VARIABLE = ["nombre", "descripcion", "fuente", "unidad", "capturaMin", "capturaMax", "admiteNegativos", "origenCodigo", "origenNombre"] as const;
 
 /** «90.0000» de la BD y «90» del formulario son el mismo número. */
 function normalizado(clave: string, valor: unknown): unknown {
@@ -256,6 +265,12 @@ export function huellaDeFicha(c: ContenidoFicha): string {
   delete firmado.clasificacionId;
   delete firmado.unidadId;
   // Una versión anterior a la 14A no los tiene: su huella no puede cambiar.
-  for (const nuevo of ["rangos", "nivel", "riesgoAsociado"] as const) if (firmado[nuevo] == null) delete firmado[nuevo];
+  for (const nuevo of ["rangos", "nivel", "riesgoAsociado", "dimensionNombre"] as const) if (firmado[nuevo] == null) delete firmado[nuevo];
+  // Lo mismo con lo que la 14C añadió a cada variable.
+  firmado.variables = (firmado.variables as VariableDeFicha[]).map((v) => {
+    const copia: Record<string, unknown> = { ...v };
+    for (const nuevo of ["datoPeriodicidad", "origenCodigo", "origenNombre"] as const) if (copia[nuevo] == null) delete copia[nuevo];
+    return copia;
+  });
   return createHash("sha256").update(json(firmado)).digest("hex");
 }

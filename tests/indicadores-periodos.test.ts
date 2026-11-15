@@ -5,6 +5,7 @@ import {
   claveQueContieneMes,
   periodosAntesDelMes,
   clavesDelAnio,
+  clavesFinas,
   contiene,
   fechaLimiteDeReporte,
   marcasQueSiguen,
@@ -147,3 +148,16 @@ describe("claveQueContieneMes", () => {
     expect(claveQueContieneMes("anual", 2026, 11)).toBe("2026");
   });
 });
+
+describe("claves finas de un periodo", () => {
+  it("las que forman el periodo, en orden", () => {
+    expect(clavesFinas("2026-T1", "mensual")).toEqual(["2026-01", "2026-02", "2026-03"]);
+    expect(clavesFinas("2026", "trimestral")).toEqual(["2026-T1", "2026-T2", "2026-T3", "2026-T4"]);
+    expect(clavesFinas("2026-S2", "bimestral")).toEqual(["2026-B4", "2026-B5", "2026-B6"]);
+    expect(clavesFinas("2026-03", "mensual")).toEqual(["2026-03"]);
+  });
+  it("lanza si la fina no cabe en la gruesa", () => {
+    expect(() => clavesFinas("2026-T1", "bimestral")).toThrow();
+  });
+});
+

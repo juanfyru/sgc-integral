@@ -11,10 +11,16 @@ import type { Consolidacion, Semaforo } from "./tipos";
 /** `valores` es `null` cuando el periodo no tiene dato («sin dato»); un periodo «no aplica» no aporta valores. */
 export type PeriodoMedido = { clave: string; versionId: number; noAplica: boolean; valores: Record<string, Fraccion> | null };
 
-function juntar(consolidacion: Consolidacion, valores: Fraccion[]): Fraccion {
+export function juntar(consolidacion: Consolidacion, valores: Fraccion[]): Fraccion {
   if (consolidacion === "ultimo") return valores[valores.length - 1];
   const suma = valores.reduce(sumar, CERO);
   return consolidacion === "promedio" ? dividir(suma, entero(valores.length))! : suma;
+}
+
+/** Junta los valores de un dato entre periodos; `null` si no hay ninguno o falta alguno. */
+export function juntadoONada(consolidacion: Consolidacion, valores: readonly (Fraccion | null)[]): Fraccion | null {
+  if (valores.length === 0 || valores.some((v) => v === null)) return null;
+  return juntar(consolidacion, valores as Fraccion[]);
 }
 
 export function acumulado(

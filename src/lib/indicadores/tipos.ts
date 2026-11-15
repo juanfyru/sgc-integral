@@ -209,3 +209,21 @@ export const TIPOS_EVENTO = [
   "categorias",
 ] as const;
 export type TipoEvento = (typeof TIPOS_EVENTO)[number];
+
+/** Qué toma una variable de un indicador de origen: su valor o su porcentaje de cumplimiento (anexo 14C). */
+export const TOMAS = ["valor", "cumplimiento"] as const;
+export type Toma = (typeof TOMAS)[number];
+
+/** Los motivos con que el sistema deja en «No aplica» una medición o una categoría (anexo 14C). */
+export const MOTIVO_COMPONENTE_NO_APLICA = "Un componente no aplicó en el periodo";
+export const MOTIVO_NADA_QUE_MEDIR = "No hubo nada que medir en el periodo";
+export const MOTIVO_DATO_SIN_CATEGORIA = "El dato no trae esta categoría";
+export const MOTIVO_TODAS_NO_APLICAN = "Ninguna categoría aplicó en el periodo";
+
+/** Lo que ve quien no puede ver un indicador restringido del que otro depende. */
+export const COMPONENTE_OCULTO = "Indicador restringido";
+export const VALOR_OCULTO = "No disponible";
+export const RESULTADO_OCULTO = "Resultado de un indicador restringido";
+
+/** Cuántos niveles de indicadores que toman de otros se admiten. */
+export const MAXIMO_NIVELES = 5;

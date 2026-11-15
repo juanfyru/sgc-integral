@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { acumulado, type PeriodoMedido } from "@/lib/indicadores/acumulado";
+import { acumulado, juntadoONada, type PeriodoMedido } from "@/lib/indicadores/acumulado";
 import { calcular, variacionExcesiva, type FichaDeCalculo } from "@/lib/indicadores/calculo";
 import { analizar } from "@/lib/indicadores/formula/analizar";
-import { comparar, fraccion } from "@/lib/indicadores/formula/fraccion";
+import { comparar, deTexto, entero, fraccion } from "@/lib/indicadores/formula/fraccion";
 import { rangosDeTexto } from "@/lib/indicadores/rangos";
 import type { Regla } from "@/lib/indicadores/semaforo";
 
@@ -126,5 +126,18 @@ describe("acumulado", () => {
   it("una división por cero del acumulado se reporta como motivo", () => {
     const r = acumulado([p("2026-T1", "5", "0")], { versionId: 1, calculo: porcentaje(), consolidacion: { A: "suma", B: "suma" }, esperados: [], regla: asc });
     expect(r).toMatchObject({ resultado: null, sinResultado: "division_por_cero", semaforo: null });
+  });
+});
+
+describe("juntar un dato entre periodos", () => {
+  const lista = [2, 2, 3].map(entero);
+  it("promedio exacto, suma y último", () => {
+    expect(juntadoONada("promedio", lista)).toEqual(deTexto("7/3"));
+    expect(juntadoONada("suma", lista)).toEqual(entero(7));
+    expect(juntadoONada("ultimo", lista)).toEqual(entero(3));
+  });
+  it("null si la lista está vacía o falta alguno", () => {
+    expect(juntadoONada("suma", [])).toBeNull();
+    expect(juntadoONada("suma", [entero(1), null])).toBeNull();
   });
 });

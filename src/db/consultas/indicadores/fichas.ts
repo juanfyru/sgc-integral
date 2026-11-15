@@ -897,6 +897,7 @@ export async function contenidoDeVersion(sql: Cliente, versionId: number): Promi
     periodicidadExterna: v.periodicidad_externa,
     plazoExternoDias: v.plazo_externo_dias,
     dimensionId: numeroONulo(v.dimension_id),
+    dimensionNombre: null,
     variables: variables.map((x) => ({
       letra: x.letra,
       nombre: x.nombre,
@@ -908,6 +909,9 @@ export async function contenidoDeVersion(sql: Cliente, versionId: number): Promi
       variableCompartidaId: numeroONulo(x.variable_compartida_id),
       indicadorOrigenId: numeroONulo(x.indicador_origen_id),
       toma: x.toma,
+      datoPeriodicidad: null,
+      origenCodigo: null,
+      origenNombre: null,
       capturaMin: x.captura_min,
       capturaMax: x.captura_max,
       admiteNegativos: x.admite_negativos,

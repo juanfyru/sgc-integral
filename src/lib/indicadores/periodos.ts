@@ -133,6 +133,17 @@ export function contiene(mayor: Periodicidad, menor: Periodicidad): boolean {
   return MESES[mayor] >= MESES[menor] && MESES[mayor] % MESES[menor] === 0;
 }
 
+/** Las claves de la periodicidad `fina` que forman el periodo `gruesa`, en orden. */
+export function clavesFinas(gruesa: string, fina: Periodicidad): string[] {
+  const periodicidad = periodicidadDe(gruesa);
+  if (periodicidad === null || !contiene(periodicidad, fina)) throw new Error(`El periodo «${gruesa}» no se forma con periodos de esa periodicidad`);
+  const anio = partes(gruesa)!.anio;
+  const [primero, ultimo] = mesesDe(gruesa);
+  const claves: string[] = [];
+  for (let mes = primero; mes <= ultimo; mes += MESES[fina]) claves.push(claveQueContieneMes(fina, anio, mes));
+  return claves;
+}
+
 /** La clave del periodo calendario de esa periodicidad que contiene el mes (1 a 12): sin instante ni zona (importación). */
 export function claveQueContieneMes(p: Periodicidad, anio: number, mes: number): string {
   return claveDe(p, anio, p === "anual" ? 1 : Math.ceil(mes / MESES[p]));
