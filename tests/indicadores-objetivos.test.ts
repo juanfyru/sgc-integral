@@ -250,16 +250,20 @@ describe("objetivosDelPeriodo", () => {
       expect.objectContaining({ codigo: resumeSolo.codigo, periodo: "Marzo de 2094", semaforo: "critico", cumple: false, cuenta: false }),
     ]);
 
-    // La fila lo dice debajo del nombre, en texto atenuado, y solo la suya.
+    // La fila lo dice debajo del nombre, en texto atenuado, y solo la suya: en la tabla y en la lista del celular.
     const renglon = "No cuenta para el estado de este objetivo: es el indicador que resume los objetivos.";
     const html = renderToStaticMarkup(createElement(Objetivos, { objetivos: [a] }));
-    expect(html.split(renglon)).toHaveLength(2);
-    const fila = (codigo: string) => {
-      const desde = html.lastIndexOf("<tr", html.indexOf(`>${codigo}<`));
-      return html.slice(desde, html.indexOf("</tr>", desde));
-    };
-    expect(fila(resume.codigo)).toMatch(new RegExp(`<span class="[^"]*\\btext-muted-foreground\\b[^"]*">${renglon}</span>`));
-    expect(fila(cumple.codigo)).not.toContain(renglon);
+    const tabla = html.slice(html.indexOf("<table"), html.indexOf("</table>"));
+    const listaCelular = html.slice(html.indexOf("<ul"), html.indexOf("</ul>"));
+    for (const [vista, etiqueta] of [[tabla, "<tr"], [listaCelular, "<li"]] as const) {
+      expect(vista.split(renglon)).toHaveLength(2);
+      const de = (codigo: string) => {
+        const desde = vista.lastIndexOf(etiqueta, vista.indexOf(`>${codigo}<`));
+        return vista.slice(desde, vista.indexOf(etiqueta === "<tr" ? "</tr>" : "</li>", desde));
+      };
+      expect(de(resume.codigo)).toMatch(new RegExp(`<span class="[^"]*\\btext-muted-foreground\\b[^"]*">${renglon}</span>`));
+      expect(de(cumple.codigo)).not.toContain(renglon);
+    }
   }));
 
   it("sin ninguna medición que cuente, muestra la última del periodo con resultado y sin meta, que no cuenta para el estado", () => revertida(sql, async (tx) => {

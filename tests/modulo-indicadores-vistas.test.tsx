@@ -595,6 +595,58 @@ describe("los componentes", () => {
     expect(regiones).toHaveLength(2);
     expect(new Set(regiones).size).toBe(2);
   });
+
+  it("Objetivos en el celular: la tabla desde md y, por debajo, una lista con todo lo de cada indicador a la vista", () => {
+    const renglon = "No cuenta para el estado de este objetivo: es el indicador que resume los objetivos.";
+    const objetivo: ObjetivoLeido = {
+      id: 7,
+      clase: "calidad",
+      enunciado: "Mejorar la oportunidad de la atención",
+      estado: "no_cumplido",
+      indicadores: [
+        { codigo: "SGC-IND-01", nombre: "Cumplimiento del programa de auditorías", proceso: "Sistema de Gestión de Calidad", periodo: "Tercer trimestre de 2026", resultado: "60 %", semaforo: "critico", cumple: false, cuenta: true },
+        { codigo: "AIN-ID-002", nombre: "Oportunidad de la cita", proceso: "Atención integral", periodo: "Septiembre de 2026", resultado: "88 %", semaforo: "bien", cumple: false, cuenta: true },
+        { codigo: "AIN-ID-003", nombre: "Quejas resueltas", proceso: "Atención integral", periodo: null, resultado: null, semaforo: null, cumple: null, cuenta: true },
+        { codigo: "SGC-ID-009", nombre: "Objetivos cumplidos", proceso: "Sistema de Gestión de Calidad", periodo: "2026", resultado: "50 %", semaforo: "atencion", cumple: false, cuenta: false },
+      ],
+    };
+    const html = renderToStaticMarkup(<Objetivos objetivos={[objetivo]} />);
+    const titulo = "Indicadores del objetivo: Mejorar la oportunidad de la atención";
+
+    // Desde md, la tabla de siempre; por debajo, la lista, con el mismo nombre.
+    expect(html).toMatch(new RegExp(`<div class="hidden md:block"><div role="region" aria-label="${titulo}"`));
+    const lista = new RegExp(`<ul(?=[^>]*\\bmd:hidden\\b)(?=[^>]*aria-label="${titulo}")[^>]*>([\\s\\S]*?)</ul>`).exec(html)?.[1] ?? "";
+    const elementos = [...lista.matchAll(/<li[^>]*>[\s\S]*?<\/li>/g)].map((m) => m[0]);
+    expect(elementos).toHaveLength(4);
+    const cuerpo = html.slice(html.indexOf("<tbody"), html.indexOf("</tbody>"));
+    const filas = [...cuerpo.matchAll(/<tr>[\s\S]*?<\/tr>/g)].map((m) => m[0]);
+    expect(filas).toHaveLength(4);
+
+    // Cada elemento: el código enlazado, el nombre, el proceso, el periodo, el resultado y su estado escrito.
+    const [critico, bienSinAlcanzar, sinMedicion, resume] = elementos;
+    expect(critico).toContain('href="/indicadores/SGC-IND-01">SGC-IND-01</a>');
+    expect(critico).toContain(">Cumplimiento del programa de auditorías<");
+    expect(critico).toContain(">Sistema de Gestión de Calidad<");
+    expect(critico).toContain(">Tercer trimestre de 2026<");
+    expect(critico).toContain(">60 %<");
+    expect(critico).toMatch(/data-variante="critico"[^>]*>Crítico</);
+    expect(bienSinAlcanzar).toContain('href="/indicadores/AIN-ID-002">AIN-ID-002</a>');
+    expect(bienSinAlcanzar).toContain(">88 %<");
+    expect(bienSinAlcanzar).toMatch(/data-variante="bien"[^>]*>Bien · no alcanza la meta</);
+    // Sin medición: el periodo no se pinta y el resultado dice «sin dato».
+    expect(sinMedicion).toContain('href="/indicadores/AIN-ID-003">AIN-ID-003</a>');
+    expect(sinMedicion).not.toContain(">Periodo<");
+    expect(sinMedicion).toContain(">sin dato<");
+    expect(sinMedicion).toMatch(/data-variante="sin-dato"[^>]*>Sin dato</);
+    expect(resume).toContain('href="/indicadores/SGC-ID-009">SGC-ID-009</a>');
+    expect(resume).toContain(">50 %<");
+    expect(resume).toMatch(/data-variante="atencion"[^>]*>Atención</);
+    // El renglón del que no cuenta, en la lista y en la tabla, y solo en su elemento y en su fila.
+    expect(elementos.map((e) => e.includes(renglon))).toEqual([false, false, false, true]);
+    expect(filas.map((f) => f.includes(renglon))).toEqual([false, false, false, true]);
+    // Cada dato con su nombre escrito, para quien no ve las columnas.
+    for (const dato of ["Proceso", "Periodo", "Resultado", "Estado"]) expect(critico).toContain(`<dt class="text-muted-foreground">${dato}</dt>`);
+  });
 });
 
 describe("la vista «Reportes al ente» (anexo 14B, §8)", () => {
