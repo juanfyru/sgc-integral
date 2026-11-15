@@ -22,7 +22,8 @@ import { analisisCompleto, analisisExigido, cumpleDeMedicion, estadoVisible, typ
 import { cuandoSeToma, sePuedeVolverACalcular, textoDeEspera, textoDeFoto } from "@/lib/indicadores/fotos";
 import { enPalabras } from "@/lib/indicadores/formula/formas";
 import { aDecimal, aTexto, comparar, deTexto, type Fraccion } from "@/lib/indicadores/formula/fraccion";
-import { clavesDelAnio, mismoDelAnioAnterior, periodicidadDe, versionQueRigeEntre } from "@/lib/indicadores/periodos";
+import { faltaSegunOrigen, letrasAjenas } from "@/lib/indicadores/origen";
+import { clavesDelAnio, clavesFinas, contiene, mismoDelAnioAnterior, periodicidadDe, versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import { fichaDeCalculo, reglaDeTexto, valorEnTexto, type CalculoEnTexto, type ReglaEnTexto } from "@/lib/indicadores/reporte";
 import { anioDeClave, etiquetaDeComparacion, limiteDeLaGrafica, rachasDe, rotuloDelAcumulado, textoDelLimite } from "@/lib/indicadores/resultados";
 import { limiteDeCritico, numeroEs, numeroExacto, rangosEnPalabras, type Regla } from "@/lib/indicadores/semaforo";
@@ -52,6 +53,7 @@ import {
   contextoDeMedicion,
   elegirValores,
   esDeOtraPeriodicidad,
+  mide,
   reglaDelPeriodo,
   texto,
   tramos,
@@ -73,6 +75,27 @@ function diaEnPalabras(d: Date): string {
   return `${dia} de ${MESES[mes - 1]} de ${anio}`;
 }
 
+/**
+ * Una variable que no digita quien mide (anexo 14C, §3.1): sale de un dato compartido o de otro indicador, y en la pantalla
+ * de reportar aparece fija. `nombre` es el que firmó la ficha: el del dato o el del indicador (con su `codigo`); `proceso`, el
+ * dueño del dato. `valor` es el que ya tiene la medición. De un dato, quién lo reportó y cuándo salen de sus periodos
+ * (`variable_valores`), y `venceEn` es la fecha límite del periodo del dato que sigue pendiente; los `…El` son esas fechas
+ * en palabras, en la zona de la instalación.
+ */
+export type VariableAjena = {
+  clase: "dato" | "indicador";
+  fuenteId: number;
+  nombre: string;
+  proceso: string | null;
+  codigo: string | null;
+  valor: string | null;
+  reporto: string | null;
+  reportadoEn: Date | null;
+  reportadoEl: string | null;
+  venceEn: Date | null;
+  venceEl: string | null;
+};
+
 export type VariableDeReporte = {
   letra: string;
   nombre: string;
@@ -83,6 +106,8 @@ export type VariableDeReporte = {
   admiteNegativos: boolean;
   /** Lo guardado, con punto decimal; `null` si no hay. */
   valor: string | null;
+  /** De dónde llega, si no la digita quien mide; `null` en una propia (y en las de un automático). */
+  ajena: VariableAjena | null;
 };
 
 /** Lo que la pantalla de reporte necesita (spec §8.2 y §12.5), todo en texto para el navegador. */
@@ -104,8 +129,13 @@ export type DatosDeReporte = {
   reportada: boolean;
   soporteObligatorio: boolean;
   soportes: number;
-  /** El Admin SGC mide porque nadie más puede (spec §6.1). Nunca en un automático: no lo mide nadie. */
+  /** El Admin SGC mide porque nadie más puede (spec §6.1). Nunca en lo que no mide nadie (`mide`). */
   sinMedidor: boolean;
+  /**
+   * Alguien digita algo en la versión que rige el periodo (anexo 14C, §3.1): una ficha manual con variables propias. Sin
+   * ellas, como en un automático, nadie la reporta: la pantalla es de solo lectura y la abre quien puede analizar.
+   */
+  mide: boolean;
   /**
    * La versión que rige el periodo la calcula el sistema (anexo 14B, §4): la pantalla es de solo lectura, nadie digita sus
    * datos y la abre quien puede analizar el indicador, no quien lo mide.
@@ -135,8 +165,8 @@ export type DatosDeReporte = {
 
 /**
  * La medición de `periodo` del indicador `codigo` para reportarla; `null` si no existe o la persona no puede medirla. La de
- * un automático (la versión que rige el periodo la calcula el sistema) no se digita: se lee, y la abre quien puede
- * analizarla.
+ * un periodo que nadie mide (la versión que lo rige la calcula el sistema o no tiene variables propias) no se digita: se
+ * lee, y la abre quien puede analizarla.
  */
 export async function medicionParaReportar(
   sesion: SujetoVisibilidad,
@@ -150,14 +180,14 @@ export async function medicionParaReportar(
   const [m] = await sql`SELECT m.id FROM mediciones m JOIN indicadores i ON i.id = m.indicador_id
     WHERE lower(i.codigo) = lower(${codigo}) AND m.periodo = ${periodo}`;
   if (!m) return null;
-  const exigir: CondicionDePersona = async (indicadorId, sujeto, o) =>
-    (await versionDelPeriodo(o.sql, indicadorId, periodo))?.origenDato === "automatico"
-      ? puedeAnalizar(indicadorId, sujeto, o)
-      : puedeMedir(indicadorId, sujeto, o);
+  const exigir: CondicionDePersona = async (indicadorId, sujeto, o) => {
+    const version = await versionDelPeriodo(o.sql, indicadorId, periodo);
+    return version && !mide(version) ? puedeAnalizar(indicadorId, sujeto, o) : puedeMedir(indicadorId, sujeto, o);
+  };
   let ctx: Contexto;
   try {
-    // Una medición cerrada se muestra (sin formulario) a quien podría medirla (en un automático, analizarla); lo demás no
-    // existe para la persona.
+    // Una medición cerrada se muestra (sin formulario) a quien podría medirla (en lo que nadie mide, analizarla); lo demás
+    // no existe para la persona.
     ctx = await contextoDeMedicion(sql, sesion, Number(m.id), false, { admiteCerrada: true, digita: false, exigir });
   } catch (err) {
     if (err instanceof ErrorIndicador || err instanceof ErrorPermiso) return null;
@@ -175,8 +205,10 @@ async function datosDeReporte(sql: Cliente, ctx: Contexto, ahora: Date): Promise
   const vence = new Date(m.vence_en as string);
   const nombres = Object.fromEntries(version.variables.map((v) => [v.letra, v.nombre]));
   const automatica = version.origenDato === "automatico";
-  // Mientras falta el dato que calcula el sistema, nadie está atrasado (anexo 14B, §4).
-  const faltaDato = automatica && m.reportada_en === null && m.no_aplica !== true;
+  const alguienMide = mide(version);
+  // Mientras falta el dato que calcula el sistema o uno ajeno, nadie está atrasado (anexo 14B, §4; anexo 14C, §3.1).
+  const faltaDato = esperaUnDato(m, version, guardados);
+  const ajenas = await ajenasDeReporte(sql, m.periodo as string, version, guardados);
   const zona = zonaHoraria();
   const foto = laFoto(m, ctx.periodo, version, ahora);
   return {
@@ -193,9 +225,10 @@ async function datosDeReporte(sql: Cliente, ctx: Contexto, ahora: Date): Promise
     noAplica: m.no_aplica === true,
     motivo: (m.no_aplica_motivo as string | null) ?? null,
     reportada: m.reportada_en !== null,
-    soporteObligatorio: indicador.soporteObligatorio && !automatica,
+    soporteObligatorio: indicador.soporteObligatorio && alguienMide,
     soportes: await contarSoportes(sql, m.id),
-    sinMedidor: !automatica && ctx.capacidad.sinMedidor,
+    sinMedidor: alguienMide && ctx.capacidad.sinMedidor,
+    mide: alguienMide,
     automatica,
     foto: foto.fotoEn ? textoDeFoto(foto.fotoEn, zona) : null,
     seCalcula: foto.seCalcula ? textoDeEspera(foto.seCalcula, zona) : null,
@@ -209,6 +242,7 @@ async function datosDeReporte(sql: Cliente, ctx: Contexto, ahora: Date): Promise
       capturaMax: v.capturaMax,
       admiteNegativos: v.admiteNegativos,
       valor: guardados[v.letra] ? valorEnTexto(guardados[v.letra]) : null,
+      ajena: ajenas.get(v.letra) ?? null,
     })),
     calculo: version.calculo,
     formulaEnPalabras: enPalabras(version.calculo.formula, nombres),
@@ -224,8 +258,84 @@ async function datosDeReporte(sql: Cliente, ctx: Contexto, ahora: Date): Promise
 }
 
 /**
+ * ¿La medición espera un valor que no digita quien la mide? El cálculo de un automático (anexo 14B, §4) o, en una ficha
+ * manual, un valor ajeno con lo propio ya reportado, o lo que sea, si nadie la mide (anexo 14C, §3.1): «Falta un dato», que
+ * nunca está vencido. Un histórico de una ficha manual no espera nada: se registra completo (§3.6).
+ */
+function esperaUnDato(m: Record<string, unknown>, version: VersionDeCalculo, valores: Readonly<Record<string, Fraccion>>): boolean {
+  if (m.no_aplica === true) return false;
+  if (version.origenDato === "automatico") return m.reportada_en === null;
+  if (m.historica === true) return false;
+  const faltanAjenas = letrasAjenas(version.variables).some((l) => !valores[l]);
+  return faltaSegunOrigen({ mide: mide(version), reportada: m.reportada_en !== null, faltanAjenas, analisisCompleto: true }) === "dato";
+}
+
+/**
+ * Las variables ajenas de la versión, por letra (`VariableAjena`): la de un dato, con los periodos del dato que forman el de
+ * la medición (`clavesFinas`); la de otro indicador, con su código y su nombre firmados.
+ */
+async function ajenasDeReporte(
+  sql: Cliente,
+  periodo: string,
+  version: VersionDeCalculo,
+  guardados: Readonly<Record<string, Fraccion>>,
+): Promise<Map<string, VariableAjena>> {
+  const salida = new Map<string, VariableAjena>();
+  const ajenas = version.variables.filter((v) => v.origen === "compartida" || v.origen === "indicador");
+  if (ajenas.length === 0) return salida;
+  const filas = await sql`SELECT iv.letra, iv.origen_codigo, iv.origen_nombre, p.nombre AS proceso
+    FROM indicador_variables iv
+    LEFT JOIN variables_compartidas vc ON vc.id = iv.variable_compartida_id
+    LEFT JOIN procesos p ON p.id = vc.proceso_id
+    WHERE iv.id IN ${sql(ajenas.map((v) => v.id))}`;
+  const firmado = new Map(filas.map((f) => [f.letra as string, f]));
+  const sinFuente = { reporto: null, reportadoEn: null, reportadoEl: null, venceEn: null, venceEl: null };
+  for (const v of ajenas) {
+    const f = firmado.get(v.letra);
+    const valor = guardados[v.letra] ? valorEnTexto(guardados[v.letra]) : null;
+    if (v.origen === "indicador") {
+      salida.set(v.letra, {
+        clase: "indicador",
+        fuenteId: v.indicadorOrigenId!,
+        nombre: texto(f?.origen_nombre) ?? v.nombre,
+        proceso: null,
+        codigo: texto(f?.origen_codigo),
+        valor,
+        ...sinFuente,
+      });
+      continue;
+    }
+    const gruesa = periodicidadDe(periodo);
+    const fina = v.datoPeriodicidad ?? gruesa;
+    const claves = gruesa && fina && contiene(gruesa, fina) ? clavesFinas(periodo, fina) : [periodo];
+    const periodos = await sql`SELECT vv.estado, vv.vence_en, vv.reportado_en, u.nombre AS reporto
+      FROM variable_valores vv LEFT JOIN usuarios u ON u.id = vv.reportado_por
+      WHERE vv.variable_id = ${v.datoId!} AND vv.categoria_id IS NULL AND vv.periodo IN ${sql(claves)}`;
+    const instante = (x: unknown) => new Date(x as string).getTime();
+    const ultimo = periodos.filter((x) => x.reportado_en !== null).sort((a, b) => instante(b.reportado_en) - instante(a.reportado_en))[0];
+    const pendiente = periodos.filter((x) => x.estado === "pendiente").sort((a, b) => instante(a.vence_en) - instante(b.vence_en))[0];
+    const reportadoEn = ultimo ? new Date(ultimo.reportado_en as string) : null;
+    const venceEn = pendiente ? new Date(pendiente.vence_en as string) : null;
+    salida.set(v.letra, {
+      clase: "dato",
+      fuenteId: v.datoId!,
+      nombre: v.nombre,
+      proceso: texto(f?.proceso),
+      codigo: null,
+      valor,
+      reporto: ultimo ? texto(ultimo.reporto) : null,
+      reportadoEn,
+      reportadoEl: reportadoEn ? diaEnPalabras(reportadoEn) : null,
+      venceEn,
+      venceEl: venceEn ? diaEnPalabras(venceEn) : null,
+    });
+  }
+  return salida;
+}
+
+/**
  * La medición abierta más antigua que la persona puede reportar del indicador (la del botón «Reportar»), o `null`. La de
- * un periodo que rige una versión automática no se reporta: la calcula el sistema.
+ * un periodo que nadie mide (la versión que lo rige es automática o no tiene variables propias) no se reporta.
  */
 export async function proximaPorReportar(
   sesion: SujetoVisibilidad,
@@ -245,7 +355,7 @@ export async function proximaPorReportar(
     const clave = f.periodo as string;
     const periodo = periodoDe(clave, zona);
     const version = periodo ? versionQueRigeEntre(versiones, periodo, zona) : null;
-    if (periodo && version && !esDeOtraPeriodicidad(clave, version) && version.origenDato !== "automatico") {
+    if (periodo && version && !esDeOtraPeriodicidad(clave, version) && mide(version)) {
       return { periodo: clave, etiqueta: periodo.etiqueta };
     }
   }
@@ -314,6 +424,11 @@ export type FilaDelAnio = {
    * reporta, la corrige ni la registra como histórico.
    */
   automatica: boolean;
+  /**
+   * La versión que rige el periodo es manual y no tiene variables propias (anexo 14C, §3.1): como en un automático, nadie la
+   * reporta ni la corrige (quien analiza la ve en su pantalla de solo lectura), pero sus históricos sí se registran.
+   */
+  nadieLoMide?: true;
   /** Cuándo tomó el sistema los datos de un automático (anexo 14B, §5.4); `null` sin foto. */
   fotoEn: Date | null;
   /** Cuándo los tomará, en uno que los espera; `null` si no los espera o nunca los tomará (`cuandoSeToma`). */
@@ -814,7 +929,7 @@ export async function obtenerIndicador(sesion: SujetoVisibilidad, codigo: string
   const ficha = vigente ? await fichaDeVersion(sesion, vigente.id, { sql }) : null;
   if (!ficha) return null;
   const activo = i.estado === "activo";
-  const [operacion, versiones, mide, analiza, observa, soportes] = await Promise.all([
+  const [operacion, versiones, medir, analiza, observa, soportes] = await Promise.all([
     operacionDeIndicador(i.id, { sql }),
     versionesAprobadas(sql, i.id),
     activo ? puedeMedir(i.id, sesion, { sql }) : null,
@@ -830,7 +945,7 @@ export async function obtenerIndicador(sesion: SujetoVisibilidad, codigo: string
     operacion,
     ultimo: await ultimoResultado(sql, i.id, versiones),
     permisos: {
-      puedeMedir: mide?.puede === true,
+      puedeMedir: medir?.puede === true,
       puedeAnalizar: analiza?.puede === true,
       puedeObservar: observa,
       veSoportes: soportes,
@@ -918,11 +1033,13 @@ function filaDeMedicion(
   );
   const datos = noAplica || resultado !== null;
   const automatica = version.origenDato === "automatico";
-  // Con los datos y el análisis, lo que deja abierta una medición es el soporte que falta: se muestra por reportar. Un
-  // automático no lleva soporte (`recalcularMedicion`).
-  const faltaSoporte = datos && conAnalisis && m.estado === "abierta" && soporteObligatorio && !automatica && !historica && !noAplica;
-  // Un automático sin datos espera el cálculo del sistema (anexo 14B, §4): «Falta un dato», que nunca está vencido.
-  const faltaDatoAjeno = automatica && m.reportada_en === null && !noAplica;
+  const alguienMide = mide(version);
+  // Con los datos y el análisis, lo que deja abierta una medición es el soporte que falta: se muestra por reportar. Lo que
+  // nadie mide no lleva soporte (`recalcularMedicion`).
+  const faltaSoporte = datos && conAnalisis && m.estado === "abierta" && soporteObligatorio && alguienMide && !historica && !noAplica;
+  // Un automático sin datos espera el cálculo del sistema (anexo 14B, §4) y una ficha manual, el valor ajeno que no digita
+  // quien la mide (anexo 14C, §3.1): «Falta un dato», que nunca está vencido.
+  const faltaDatoAjeno = esperaUnDato(m, version, valores);
   const vence = new Date(m.vence_en as string);
   const visible = estadoVisible(
     {
@@ -967,6 +1084,7 @@ function filaDeMedicion(
     causa: (m.causa as string | null) ?? null,
     accionPropuesta: (m.accion_propuesta as string | null) ?? null,
     automatica,
+    ...(!automatica && !alguienMide ? { nadieLoMide: true as const } : {}),
     ...laFoto(m, p, version, ahora),
   };
 }

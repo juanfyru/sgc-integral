@@ -18,6 +18,7 @@ import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { alcanceAdmitido, CALCULOS, type AlcanceDeCalculo, type ClaveDeCalculo } from "@/lib/indicadores/calculos/registro";
 import { reportesATiempo, type MedicionParaPlazo } from "@/lib/indicadores/calculos/reportes-a-tiempo";
 import { objetivosCumplidos } from "@/lib/indicadores/objetivos";
+import { alguienMide } from "@/lib/indicadores/origen";
 import { versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import type { OrigenDato, Periodicidad } from "@/lib/indicadores/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -84,18 +85,20 @@ async function deLaVigencia(sql: Cliente, p: PeticionDeCalculo, memo?: Map<strin
   return r;
 }
 
-type VersionQueRige = { rigeDesde: string | null; periodicidad: Periodicidad | null; origenDato: OrigenDato };
+type VersionQueRige = { rigeDesde: string | null; periodicidad: Periodicidad | null; origenDato: OrigenDato; propias: string[] };
 
 /**
  * «Reportes de indicadores a tiempo» (§5.2): las mediciones ordinarias con fecha límite en el periodo, de la versión que
- * rige su periodo si es manual y de su periodicidad, sin las que seguían sin reportar cuando el indicador se retiró antes
- * de su fecha límite. El primer reporte es el primer evento `reporte` o `no_aplica`, no `reportada_en`: una corrección
- * puede borrarla.
+ * rige su periodo si alguien la mide (manual y con variables propias: un indicador sin ellas queda fuera, como un
+ * automático; anexo 14C §3.1, F14C-DC22) y de su periodicidad, sin las que seguían sin reportar cuando el indicador se
+ * retiró antes de su fecha límite. El primer reporte es el primer evento `reporte` o `no_aplica`, no `reportada_en`: una
+ * corrección puede borrarla. En un mixto es el de quien mide al entregar lo suyo, aunque el dato llegue después.
  */
 async function reportesDelPeriodo(sql: Cliente, p: PeticionDeCalculo): Promise<ValoresDeCalculo> {
   const delProceso = p.alcance === "proceso" ? sql`i.proceso_id = ${p.procesoId}` : sql`true`;
   const filas = await sql`SELECT m.periodo, m.vence_en, primero.en AS primer_reporte_en,
-      (SELECT coalesce(json_agg(json_build_object('rigeDesde', v.rige_desde, 'periodicidad', v.periodicidad, 'origenDato', v.origen_dato)
+      (SELECT coalesce(json_agg(json_build_object('rigeDesde', v.rige_desde, 'periodicidad', v.periodicidad, 'origenDato', v.origen_dato,
+            'propias', (SELECT coalesce(json_agg(vp.letra), '[]'::json) FROM indicador_variables vp WHERE vp.version_id = v.id AND vp.origen = 'propia'))
           ORDER BY v.numero DESC), '[]'::json)
         FROM indicador_versiones v WHERE v.indicador_id = m.indicador_id AND v.estado = 'aprobada') AS versiones
     FROM mediciones m
@@ -109,7 +112,8 @@ async function reportesDelPeriodo(sql: Cliente, p: PeticionDeCalculo): Promise<V
     const clave = f.periodo as string;
     const periodo = periodoDe(clave, zona);
     const version = periodo ? versionQueRigeEntre(f.versiones as VersionQueRige[], periodo, zona) : null;
-    if (!version || esDeOtraPeriodicidad(clave, version) || version.origenDato !== "manual") return [];
+    const mide = version && alguienMide({ origenDato: version.origenDato, variables: version.propias.map((letra) => ({ letra, origen: "propia" as const })) });
+    if (!version || esDeOtraPeriodicidad(clave, version) || !mide) return [];
     return [{ venceEn: new Date(f.vence_en as Date), primerReporteEn: f.primer_reporte_en === null ? null : new Date(f.primer_reporte_en as Date) }];
   });
   const { aTiempo, total } = reportesATiempo(medidas);

@@ -185,11 +185,14 @@ export async function designarAccion(_prev: EstadoAccion, formData: FormData): P
   });
 }
 
-/** `id` es el del indicador. No crea versión ni cambia la huella de la ficha. */
+/**
+ * `id` es el del indicador. No crea versión ni cambia la huella de la ficha. Abrir un compuesto toma sus componentes con
+ * candado mientras tiene bloqueado el indicador (anexo 14C, §6.6): un cruce con una aprobación llega legible.
+ */
 export async function cambiarOperacionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     const d = parsearFormulario(formData, EsquemaOperacion, { omitir: ["id"] });
-    await cambiarOperacion(sesion, { indicadorId: idNumerico(formData, "id"), ...d });
+    await cambiarOperacion(sesion, { indicadorId: idNumerico(formData, "id"), ...d }).catch(sinInterbloqueoCrudo);
   });
 }
 

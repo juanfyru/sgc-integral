@@ -10,6 +10,7 @@ import { filtroIndicadores, participaEn, type SujetoVisibilidad } from "@/lib/al
 import { REPORTES_DE_LISTA, SEMAFOROS_DE_LISTA, type ReporteDeLista } from "@/lib/indicadores/filtros";
 import { cumpleDeMedicion, ETIQUETA_ESTADO } from "@/lib/indicadores/estados";
 import { deTexto } from "@/lib/indicadores/formula/fraccion";
+import { letrasAjenas } from "@/lib/indicadores/origen";
 import { reglaDeTexto } from "@/lib/indicadores/reporte";
 import { textoMeta, textoValor } from "@/lib/indicadores/textos";
 import type { EstadoIndicador, Periodicidad, Semaforo } from "@/lib/indicadores/tipos";
@@ -19,7 +20,7 @@ import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { constanciaQueSePide } from "./constancias-soporte";
 import { agrupar, aNumero, comparacionDe, conResultado, vigentes, type Opciones } from "./lectura";
-import { asegurarMediciones, conMayuscula, reglaMostrada, texto, versionesAprobadasDe, type VersionDeCalculo } from "./mediciones";
+import { asegurarMediciones, conMayuscula, mide, reglaMostrada, texto, versionesAprobadasDe, type VersionDeCalculo } from "./mediciones";
 import { columnasDePendiente, esPendiente, queFalta, type FaltaDePersona } from "./tareas";
 
 /** Los valores de los filtros de estado viven en `src/lib/indicadores/filtros.ts`, con sus nombres. */
@@ -160,8 +161,20 @@ const diasEntre = (desde: Date, hasta: Date, zona: string) =>
 const FALTA_UN_DATO = ETIQUETA_ESTADO.falta_dato;
 
 /**
+ * ¿El periodo abierto espera un valor que no digita quien lo mide, y no a quien lo reporte? El de un automático, su foto
+ * (anexo 14B, §4); el de una ficha manual con variables ajenas, el valor ajeno, con lo propio ya reportado o sin nadie que
+ * lo mida (anexo 14C, §3.1). Un histórico de una ficha manual se registra completo: no espera nada.
+ */
+function esperaUnDato(m: Row, v: VersionDeCalculo): boolean {
+  if (m.no_aplica === true) return false;
+  if (v.origenDato === "automatico") return m.reportada_en === null;
+  if (m.historica === true || letrasAjenas(v.variables).length === 0 || m.resultado_exacto !== null) return false;
+  return !mide(v) || m.reportada_en !== null;
+}
+
+/**
  * Lo que dice la columna «Reporte»: lo que más urge de lo pendiente o, sin pendientes, cómo quedó el último periodo
- * (`ultima`, con la versión que lo rige: uno abierto de un automático espera su dato, no a quien lo reporte).
+ * (`ultima`, con la versión que lo rige: uno abierto que espera un dato no espera a quien lo reporte, `esperaUnDato`).
  */
 function textoDeReporte(
   p: Pendientes | undefined,
@@ -180,7 +193,7 @@ function textoDeReporte(
   const { m } = ultima;
   if (m.estado === "cerrada") return { texto: "Cerrado", vencida: false };
   if (m.estado === "reportada") return { texto: "Reportado", vencida: false };
-  if (ultima.v.origenDato === "automatico" && m.reportada_en === null && m.no_aplica !== true) return { texto: FALTA_UN_DATO, vencida: false };
+  if (esperaUnDato(m, ultima.v)) return { texto: FALTA_UN_DATO, vencida: false };
   return { texto: m.historica === true ? "Por registrar" : "Por reportar", vencida: false };
 }
 

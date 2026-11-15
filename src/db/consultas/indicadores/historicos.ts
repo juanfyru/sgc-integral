@@ -1,7 +1,9 @@
 /**
  * Los históricos de un indicador (spec 14 §8.8 y F14-DC41, Tarea 10 de la 14A): los periodos que terminaron antes de
  * aprobarse la primera versión de la ficha. Entran solo por aquí, en la tabla del año y por lote; `reportar` los rechaza.
- * Los registra el Admin SGC o quien puede medir (`puedeRegistrarHistoricos`). Cada fila se valida como un reporte
+ * Los registra el Admin SGC o quien puede medir (`puedeRegistrarHistoricos`), también en un indicador sin variables propias,
+ * y se digitan completos: también las variables de un dato compartido o de otro indicador (anexo 14C, §3.6; la historia no
+ * se propaga). Cada fila se valida como un reporte
  * (`planDeReporte`, sin la confirmación por variación y sin exigir soporte) y se escribe como él (`escribirReporte`), o
  * se marca «no aplica» con su motivo (`escribirNoAplica`, sin tocar sus valores), con el evento `historico` la primera vez
  * y `correccion` después. No piden análisis, no llevan «Requiere acción de mejora»
@@ -82,7 +84,8 @@ export async function registrarHistoricos(
     for (const fila of mediciones) {
       const periodo = fila.periodo as string;
       const pedida = llenas.find((f) => f.periodo === periodo)!;
-      const ctx = await contextoDeMedicion(tx, sesion, Number(fila.id), true, { exigir: puedeRegistrarHistoricos });
+      // Un indicador sin variables propias también tiene históricos (anexo 14C, §3.6): solo se rechaza el automático.
+      const ctx = await contextoDeMedicion(tx, sesion, Number(fila.id), true, { exigir: puedeRegistrarHistoricos, digita: "historico" });
       if (ctx.medicion.historica !== true) throw new ErrorIndicador(NO_HISTORICO);
       // Lo que no sirve de la fila dice su periodo; la división por cero, cómo salir desde la tabla del año.
       const enLaFila = async <T>(paso: () => T | Promise<T>): Promise<T> => {

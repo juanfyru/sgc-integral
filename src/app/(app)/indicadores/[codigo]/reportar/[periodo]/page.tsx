@@ -26,8 +26,8 @@ type Params = { params: Promise<{ codigo: string; periodo: string }> };
 
 /**
  * La medición de la ruta, una sola lectura por petición: la piden el título y la página. Antes de leer abre los periodos
- * que hayan terminado (F14-DC12). Quien no ve el indicador, no puede medirlo (ni analizar un automático) o pide un periodo
- * sin medición recibe «no encontrado», también en el título.
+ * que hayan terminado (F14-DC12). Quien no ve el indicador, no puede medirlo (ni analizar lo que nadie mide) o pide un
+ * periodo sin medición recibe «no encontrado», también en el título.
  */
 const medicionDeLaRuta = cache(async (segmento: string, periodo: string) => {
   const sesion = await exigirSesion();
@@ -39,8 +39,11 @@ const medicionDeLaRuta = cache(async (segmento: string, periodo: string) => {
   return { sesion, indicador, datos };
 });
 
-/** El título de la pantalla, el mismo en el `h1` y en la pestaña: nadie reporta un automático. */
-const tituloDe = (datos: { automatica: boolean; nombre: string }) => `${datos.automatica ? "Calculado por el sistema" : "Reportar"} · ${datos.nombre}`;
+/** Lo que es la pantalla: nadie reporta un automático ni un indicador sin variables propias (anexo 14C, §3.1). */
+const queEs = (datos: { automatica: boolean; mide: boolean }) => (datos.automatica ? "Calculado por el sistema" : datos.mide ? "Reportar" : "Datos del periodo");
+
+/** El título de la pantalla, el mismo en el `h1` y en la pestaña. */
+const tituloDe = (datos: { automatica: boolean; mide: boolean; nombre: string }) => `${queEs(datos)} · ${datos.nombre}`;
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { codigo, periodo } = await params;
@@ -53,7 +56,9 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
  * (spec §8.8). Debajo van los soportes y, con resultado, quien puede analizar tiene el análisis.
  * La de un automático (anexo 14B, §4) es de solo lectura y la abre quien puede analizarlo: nadie digita sus datos ni sube
  * soportes; dice cuándo se tomaron o se tomarán, con los datos del sistema muestra sus valores y, si el resultado lo pide, el
- * análisis; a quien además administra, «Volver a calcular» una foto de flujo (§5.4).
+ * análisis; a quien además administra, «Volver a calcular» una foto de flujo (§5.4). La de un indicador sin variables
+ * propias (anexo 14C, §3.1) también: muestra lo que llegó de sus datos y de sus componentes, y lo que falta. En un mixto,
+ * quien mide digita lo suyo y lo ajeno aparece fijo (maqueta 14).
  */
 export default async function PaginaReportar({ params }: Params) {
   const { codigo: segmento, periodo } = await params;
@@ -63,8 +68,10 @@ export default async function PaginaReportar({ params }: Params) {
   // Quien puede medir ve los soportes del indicador (spec §6.4); la lista se lee solo para quien los ve.
   const soportes = (await soportesDe(sesion, datos.medicionId)) ?? [];
   const plazo = datos.historica ? "Registro histórico" : `Plazo hasta el ${datos.vence}${datos.vencida ? " (vencido)" : ""}`;
-  // Nadie reporta un automático: ni el título ni la miga lo dicen.
-  const miga = datos.automatica ? "Calculado por el sistema · " : "Reportar: ";
+  // Nadie reporta lo que nadie mide: ni el título ni la miga lo dicen.
+  const miga = datos.mide ? "Reportar: " : `${queEs(datos)} · `;
+  // Lo que nadie digita se lee; los históricos de una ficha manual se registran en la tabla del año.
+  const deSoloLectura = datos.automatica || (!datos.mide && !datos.historica);
   const cerrada = (
     <p className="rounded-lg border border-l-4 border-border border-l-mod-indicadores bg-muted px-4 py-3 text-sm">
       La medición está cerrada: pida al Administrador del SGC que la reabra.
@@ -89,7 +96,7 @@ export default async function PaginaReportar({ params }: Params) {
           Sin responsable: nadie más puede medir este indicador. El reporte queda marcado; designe a alguien que lo mida.
         </p>
       ) : null}
-      {datos.automatica ? (
+      {deSoloLectura ? (
         <>
           {datos.estado === "cerrada" ? cerrada : null}
           <DatosDelSistema datos={datos} administra={puede(sesion, "indicadores.administrar")} />
@@ -106,8 +113,8 @@ export default async function PaginaReportar({ params }: Params) {
       ) : (
         <FormularioReporte datos={datos} volver={volver} />
       )}
-      {/* Un automático no lleva soportes: la sección sale solo si quedó alguno, y sin subir ni quitar. */}
-      {datos.automatica && soportes.length === 0 ? null : (
+      {/* Lo que nadie mide no lleva soportes: la sección sale solo si quedó alguno, y sin subir ni quitar. */}
+      {!datos.mide && soportes.length === 0 ? null : (
         <section aria-labelledby="reporte-soportes" className="flex min-w-0 flex-col gap-3">
           <h2 id="reporte-soportes" className="text-lg font-semibold">
             Soportes
@@ -116,7 +123,7 @@ export default async function PaginaReportar({ params }: Params) {
             medicionId={datos.medicionId}
             codigo={datos.codigo}
             soportes={soportes}
-            editable={!datos.automatica && datos.estado !== "cerrada"}
+            editable={datos.mide && datos.estado !== "cerrada"}
             obligatorio={datos.soporteObligatorio && !datos.historica}
           />
         </section>

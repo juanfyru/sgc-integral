@@ -8,6 +8,7 @@ import { Campo, claseControl } from "@/componentes/ui/Campo";
 import type { DatosDeReporte } from "@/db/consultas/indicadores/lectura";
 import { calcularEnVivo, type EstadoReporte } from "@/lib/indicadores/reporte";
 import { cuenta } from "@/lib/plural";
+import { AvisosDeFalta, VariableFija } from "./DatosDelSistema";
 import { ResultadoEnVivo } from "./ResultadoEnVivo";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
@@ -108,9 +109,11 @@ function QuitarNoAplica({ medicionId, motivo }: { medicionId: number; motivo: st
 }
 
 /**
- * Reportar una medición (spec §8.2 y §12.5, maqueta 3): un campo por variable con su nombre, su descripción y su fuente;
- * el resultado, el color y la frase mientras se digita; la confirmación de un salto grande; «Guardar sin reportar»,
- * «Reportar» (o, ya reportada, «Guardar la corrección») y «No aplica en este periodo». Sirve a 390 px y con teclado.
+ * Reportar una medición (spec §8.2 y §12.5, maqueta 3): un campo por variable propia con su nombre, su descripción y su
+ * fuente; cada variable ajena, fija, con su valor o el aviso de que aún no llega (anexo 14C, §3.1, maqueta 14); el
+ * resultado, el color y la frase mientras se digita, con lo ajeno que ya llegó; la confirmación de un salto grande;
+ * «Guardar sin reportar», «Reportar» («Reportar lo mío» mientras falte un valor ajeno; ya reportada, «Guardar la
+ * corrección») y «No aplica en este periodo». Sirve a 390 px y con teclado.
  */
 export function FormularioReporte({ datos, volver }: { datos: DatosDeReporte; volver: string }) {
   const [valores, setValores] = useState<Record<string, string>>(() =>
@@ -121,7 +124,10 @@ export function FormularioReporte({ datos, volver }: { datos: DatosDeReporte; vo
 
   if (datos.noAplica) return <QuitarNoAplica medicionId={datos.medicionId} motivo={datos.motivo} />;
 
-  const vivo = calcularEnVivo(datos, valores);
+  // Lo ajeno entra al cálculo en vivo tal como llegó, sin campo: no lo limitan las reglas de captura de quien mide.
+  const variables = datos.variables.map((v) => (v.ajena ? { ...v, capturaMin: null, capturaMax: null, admiteNegativos: true } : v));
+  const faltaAjeno = datos.variables.some((v) => v.ajena !== null && v.ajena.valor === null);
+  const vivo = calcularEnVivo({ ...datos, variables }, valores);
   const pregunta = vivo.variacion ?? (estado && !estado.ok ? (estado.confirmar ?? null) : null);
   const alCambiar = (letra: string, valor: string) => {
     setValores((actuales) => ({ ...actuales, [letra]: valor }));
@@ -138,8 +144,9 @@ export function FormularioReporte({ datos, volver }: { datos: DatosDeReporte; vo
           <fieldset className="flex min-w-0 flex-col gap-3">
             <legend className="sr-only">Datos del periodo</legend>
             {datos.variables.map((v) => {
-              const error = vivo.errores[v.letra];
               const id = `reporte-${v.letra}`;
+              if (v.ajena) return <VariableFija key={v.letra} variable={v} id={id} />;
+              const error = vivo.errores[v.letra];
               const descritoPor = [v.descripcion || v.fuente ? `${id}-ayuda` : null, error ? `${id}-error` : null].filter(Boolean).join(" ") || undefined;
               return (
                 <div key={v.letra} className="flex min-w-0 flex-col gap-1">
@@ -175,13 +182,15 @@ export function FormularioReporte({ datos, volver }: { datos: DatosDeReporte; vo
             calculo={datos.calculo}
             regla={datos.regla}
             unidad={datos.unidad}
-            variables={datos.variables}
+            variables={variables}
             valores={valores}
             rangos={datos.rangos}
             anterior={datos.anterior}
             variacionPct={datos.variacionPct}
           />
         </div>
+
+        <AvisosDeFalta variables={datos.variables} mide />
 
         {pregunta ? (
           <div className={AVISO}>
@@ -220,7 +229,7 @@ export function FormularioReporte({ datos, volver }: { datos: DatosDeReporte; vo
                 Guardar sin reportar
               </Boton>
               <Boton type="submit" name="intencion" value="reportar" onClick={anotarBoton} pendiente={pendiente}>
-                Reportar
+                {faltaAjeno ? "Reportar lo mío" : "Reportar"}
               </Boton>
             </>
           )}

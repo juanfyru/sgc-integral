@@ -127,7 +127,7 @@ describe("programarMeta", () => {
     revertida(sql, async (tx) => {
       const { ind, mide, admin, id } = await preparar(tx);
       const t3 = await id("2026-T3");
-      expect(await reportarCon(tx, mide, t3, { A: "4", B: "5" })).toEqual({ ok: true, estado: "abierta", semaforo: "atencion", cumple: false });
+      expect(await reportarCon(tx, mide, t3, { A: "4", B: "5" })).toEqual({ ok: true, estado: "abierta", semaforo: "atencion", cumple: false, faltaDato: false });
       await rechaza(programarMeta(admin, { indicadorId: ind.id, periodo: "2026-T3", meta: "80" }, opc(tx)), TARDIA);
       await rechaza(programarMeta(admin, { indicadorId: ind.id, periodo: "2026-T3", meta: "80", justificacion: "Corta" }, opc(tx)), TARDIA);
       await rechaza(

@@ -10,6 +10,11 @@
  * «Reportada» es un hecho guardado (`reportada_en`): «Guardar sin reportar» conserva lo digitado sin calcular aunque esté
  * completo. Los valores se leen por la letra de la variable en la versión que rige: un cambio menor da otros ids a las
  * mismas letras.
+ *
+ * Quién pone cada variable (anexo 14C, §3.1): la persona digita las propias; las ajenas (un dato compartido o el resultado
+ * de otro indicador) las copia el sistema, y la persona no las digita ni las borra. En un histórico se digitan todas
+ * (§3.6). Reportar lo propio pone `reportada_en` aunque falte lo ajeno: la medición queda en «Falta un dato» y el resultado
+ * sale cuando llega. Un indicador sin variables propias no lo mide nadie (`mide`), como un automático.
  */
 import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
@@ -20,6 +25,7 @@ import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo"
 import { calcular, variacionExcesiva } from "@/lib/indicadores/calculo";
 import { analisisCompleto, analisisExigido, cumpleDeFila, esRepetido } from "@/lib/indicadores/estados";
 import { aDecimal, aTexto, comparar, deTexto, fraccion, type Fraccion } from "@/lib/indicadores/formula/fraccion";
+import { alguienMide, letrasAjenas } from "@/lib/indicadores/origen";
 import {
   fechaLimiteDeReporte,
   periodicidadDe,
@@ -48,10 +54,12 @@ import {
   type EstadoMedicion,
   type ModoSemaforo,
   type OrigenDato,
+  type OrigenVariable,
   type Periodicidad,
   type Semaforo,
   type Tendencia,
   type TipoEvento,
+  type Toma,
 } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -70,6 +78,10 @@ const OTRA_PERIODICIDAD = "Ese periodo ya no se mide: la ficha que lo rige es de
 const ES_HISTORICO = "Ese periodo es histórico: regístrelo en la tabla del año";
 /** Nadie mide un automático (anexo 14B, §4): lo que digita rechaza la medición cuya versión que rige el periodo lo es. */
 export const NO_SE_DIGITA = "Este indicador lo calcula el sistema: sus datos no se digitan";
+/** Ni un indicador sin variables propias (anexo 14C, §3.1): sus datos llegan de datos compartidos o de otros indicadores. */
+export const NADIE_LO_MIDE = "Este indicador no tiene datos propios: nadie lo digita";
+/** El valor de una variable ajena no se digita: lo pone el sistema (anexo 14C, §3.1). */
+export const noSeDigitaDesdeAqui = (nombre: string) => `«${nombre}» no se digita desde aquí: llega de otra fuente`;
 
 /**
  * Una medición abierta de la periodicidad vieja que quedó dentro del tramo de un cambio mayor de periodicidad (los meses
@@ -103,6 +115,14 @@ type VariableDeVersion = {
   admiteNegativos: boolean;
   /** Cómo se junta en el acumulado del año (spec §8.10). */
   consolidacion: Consolidacion;
+  /** Quién la pone (anexo 14C, §3.1): la persona (`propia`), un dato compartido, otro indicador o el cálculo del sistema. */
+  origen: OrigenVariable;
+  /** El dato compartido que cita y la periodicidad firmada del dato; `null` si no es un dato. */
+  datoId: number | null;
+  datoPeriodicidad: Periodicidad | null;
+  /** El indicador del que sale y lo que toma de él; `null` si no sale de otro indicador. */
+  indicadorOrigenId: number | null;
+  toma: Toma | null;
 };
 
 export type VersionDeCalculo = {
@@ -125,7 +145,22 @@ export type VersionDeCalculo = {
   regla: ReglaEnTexto;
   unidad: Unidad;
   variables: VariableDeVersion[];
+  /** La dimensión por la que se desagrega (anexo 14C, §5.2); `null` sin desagregación. */
+  dimensionId: number | null;
 };
+
+/** ¿Alguien digita algo en esta versión? Una ficha manual con alguna variable propia (anexo 14C, §3.1; `alguienMide`). */
+export const mide = (v: VersionDeCalculo): boolean => alguienMide(v);
+
+/** Las letras ajenas de la versión que aún no tienen valor en la medición. */
+const faltanAjenas = (v: VersionDeCalculo, valores: Readonly<Record<string, Fraccion>>) => letrasAjenas(v.variables).some((l) => !valores[l]);
+
+/**
+ * Las variables que la persona digita en la medición: en un histórico, todas, también las ajenas (anexo 14C, §3.6: la
+ * historia no se propaga); si no, solo las propias.
+ */
+const variablesQueDigita = (v: VersionDeCalculo, historica: boolean): VariableDeVersion[] =>
+  historica ? v.variables : v.variables.filter((x) => x.origen === "propia");
 
 /** Las versiones aprobadas del indicador, de mayor a menor número (el orden de `versionQueRigeEntre`). */
 export async function versionesAprobadas(sql: Cliente, indicadorId: number): Promise<VersionDeCalculo[]> {
@@ -141,11 +176,12 @@ export async function versionesAprobadasDe(sql: Cliente, indicadorIds: readonly 
   if (indicadorIds.length === 0) return salida;
   const filas = await sql`SELECT id, indicador_id, numero, tipo_cambio, rige_desde, aprobada_en, periodicidad, nombre, origen_dato, calculo,
       calculo_alcance, formula, resultado_min, resultado_max, tendencia, meta, meta_max, semaforo_modo, umbral_atencion_pct, limite_critico,
-      tolerancia, rangos, unidad_sufijo, decimales
+      tolerancia, rangos, unidad_sufijo, decimales, dimension_id
     FROM indicador_versiones WHERE indicador_id IN ${sql([...new Set(indicadorIds)])} AND estado = 'aprobada'
     ORDER BY indicador_id, numero DESC`;
   if (filas.length === 0) return salida;
-  const variables = await sql`SELECT id, version_id, letra, nombre, descripcion, fuente, captura_min, captura_max, admite_negativos, consolidacion
+  const variables = await sql`SELECT id, version_id, letra, nombre, descripcion, fuente, captura_min, captura_max, admite_negativos, consolidacion,
+      origen, variable_compartida_id, dato_periodicidad, indicador_origen_id, toma
     FROM indicador_variables WHERE version_id IN ${sql(filas.map((f) => Number(f.id)))} ORDER BY orden, letra`;
   const porVersion = new Map<number, (typeof variables)[number][]>();
   for (const v of variables) {
@@ -154,7 +190,7 @@ export async function versionesAprobadasDe(sql: Cliente, indicadorIds: readonly 
     else porVersion.set(Number(v.version_id), [v]);
   }
   for (const f of filas) {
-    const propias = (porVersion.get(Number(f.id)) ?? [])
+    const deLaVersion = (porVersion.get(Number(f.id)) ?? [])
       .map((v) => ({
         id: Number(v.id),
         letra: v.letra as string,
@@ -165,6 +201,11 @@ export async function versionesAprobadasDe(sql: Cliente, indicadorIds: readonly 
         capturaMax: texto(v.captura_max),
         admiteNegativos: v.admite_negativos === true,
         consolidacion: ((v.consolidacion as Consolidacion | null) ?? "suma") as Consolidacion,
+        origen: ((v.origen as OrigenVariable | null) ?? "propia") as OrigenVariable,
+        datoId: v.variable_compartida_id === null ? null : Number(v.variable_compartida_id),
+        datoPeriodicidad: (v.dato_periodicidad as Periodicidad | null) ?? null,
+        indicadorOrigenId: v.indicador_origen_id === null ? null : Number(v.indicador_origen_id),
+        toma: (v.toma as Toma | null) ?? null,
       }));
     const version: VersionDeCalculo = {
       id: Number(f.id),
@@ -181,7 +222,7 @@ export async function versionesAprobadasDe(sql: Cliente, indicadorIds: readonly 
           : null,
       calculo: {
         formula: (f.formula as string | null) ?? "",
-        letras: propias.map((v) => v.letra),
+        letras: deLaVersion.map((v) => v.letra),
         resultadoMin: texto(f.resultado_min),
         resultadoMax: texto(f.resultado_max),
       },
@@ -196,7 +237,8 @@ export async function versionesAprobadasDe(sql: Cliente, indicadorIds: readonly 
         rangos: (f.rangos as RangosEnTexto | null) ?? null,
       },
       unidad: { sufijo: (f.unidad_sufijo as string | null) ?? "", decimales: f.decimales === null ? 0 : Number(f.decimales) },
-      variables: propias,
+      variables: deLaVersion,
+      dimensionId: f.dimension_id === null ? null : Number(f.dimension_id),
     };
     const id = Number(f.indicador_id);
     salida.set(id, [...(salida.get(id) ?? []), version]);
@@ -410,11 +452,11 @@ export type ValorGuardado = { variable_id: unknown; letra: unknown; valor: unkno
  * versión; si no, los de otra versión (un cambio menor da otros ids a las mismas letras), el más reciente.
  */
 export function elegirValores(filas: readonly ValorGuardado[], v: VersionDeCalculo): Record<string, Fraccion> {
-  const propias = new Set(v.variables.map((x) => x.id));
+  const deLaVersion = new Set(v.variables.map((x) => x.id));
   const instante = (f: ValorGuardado) => (f.reportado_en === null || f.reportado_en === undefined ? -Infinity : new Date(f.reportado_en as string).getTime());
   const ordenadas = [...filas].sort(
     (a, b) =>
-      Number(propias.has(Number(b.variable_id))) - Number(propias.has(Number(a.variable_id))) ||
+      Number(deLaVersion.has(Number(b.variable_id))) - Number(deLaVersion.has(Number(a.variable_id))) ||
       instante(b) - instante(a) ||
       Number(b.id) - Number(a.id),
   );
@@ -534,10 +576,11 @@ export async function recalcularMedicion(
     );
   }
   const conAnalisis = analisisCompleto(analisisExigido({ semaforo, cumple, repetido, historica, noAplica }), analisisDe(m));
-  // El soporte rige hacia adelante: la racha de una siguiente no reabre por él lo que ya estaba reportado. Un automático no
-  // lleva soporte (anexo 14B, §5.3): nadie podría adjuntarlo.
+  // El soporte rige hacia adelante: la racha de una siguiente no reabre por él lo que ya estaba reportado. Lo que nadie mide
+  // (un automático, anexo 14B §5.3, o un indicador sin variables propias, anexo 14C §3.1) no lleva soporte: nadie podría
+  // adjuntarlo.
   const conSoporte =
-    version.origenDato === "automatico" ||
+    !mide(version) ||
     m.soporte_obligatorio !== true ||
     historica ||
     noAplica ||
@@ -681,17 +724,18 @@ export type CondicionDePersona = (indicadorId: number, sujeto: SujetoVisibilidad
 /**
  * Lo que debe cumplirse para tocar una medición: que la persona la vea (si no, «no existe»), que cumpla la condición de
  * persona (`exigir`; por omisión, poder medir el indicador), que este siga activo y que la medición no esté cerrada
- * (salvo con `admiteCerrada`, para leerla). Con `digita` (por omisión), que la versión que rige el periodo no sea
- * automática: nadie digita los datos de un automático (anexo 14B, §4). Pasan `digita: false` quienes no los digitan
- * (analizar, reabrir, las lecturas). Con `bloquear`, dentro de la transacción: el indicador `FOR SHARE` y la medición
- * `FOR UPDATE`, en ese orden.
+ * (salvo con `admiteCerrada`, para leerla). Con `digita` (por omisión), que alguien mida la versión que rige el periodo:
+ * nadie digita los datos de un automático (anexo 14B, §4: `NO_SE_DIGITA`) ni los de un indicador sin variables propias
+ * (anexo 14C, §3.1: `NADIE_LO_MIDE`). Con `digita: "historico"` solo se rechaza el automático: los históricos de una ficha
+ * manual se digitan completos (§3.6). Pasan `digita: false` quienes no los digitan (analizar, reabrir, las lecturas). Con
+ * `bloquear`, dentro de la transacción: el indicador `FOR SHARE` y la medición `FOR UPDATE`, en ese orden.
  */
 export async function contextoDeMedicion(
   sql: Cliente,
   sesion: SujetoVisibilidad,
   medicionId: number,
   bloquear: boolean,
-  opciones?: { admiteCerrada?: boolean; exigir?: CondicionDePersona; digita?: boolean },
+  opciones?: { admiteCerrada?: boolean; exigir?: CondicionDePersona; digita?: boolean | "historico" },
 ): Promise<Contexto> {
   const [i] = bloquear
     ? await sql`SELECT id, codigo, estado, soporte_obligatorio FROM indicadores
@@ -712,7 +756,9 @@ export async function contextoDeMedicion(
   const version = periodo ? versionQueRigeEntre(await versionesAprobadas(sql, indicadorId), periodo, zona) : null;
   if (!periodo || !version) throw new ErrorIndicador(NO_EXISTE);
   if (esDeOtraPeriodicidad(m.periodo as string, version)) throw new ErrorIndicador(OTRA_PERIODICIDAD);
-  if (opciones?.digita !== false && version.origenDato === "automatico") throw new ErrorIndicador(NO_SE_DIGITA);
+  const digita = opciones?.digita ?? true;
+  if (digita !== false && version.origenDato === "automatico") throw new ErrorIndicador(NO_SE_DIGITA);
+  if (digita === true && !mide(version)) throw new ErrorIndicador(NADIE_LO_MIDE);
   return {
     medicion: { ...m, id: Number(m.id) },
     indicador: { id: indicadorId, codigo: i.codigo as string, soporteObligatorio: i.soporte_obligatorio === true },
@@ -742,6 +788,11 @@ type DatosDeReportar = { medicionId: number; valores: Record<string, string>; pa
  * Lo que se va a escribir, sin escribir nada: los valores leídos y validados (spec §7.4) y, en un reporte, el cálculo,
  * los límites del resultado, la división por cero, el soporte obligatorio y la confirmación por variación. Lo comparten
  * `reportar` y `registrarHistoricos` (que no pide la confirmación, y a un histórico no se le exige el soporte).
+ *
+ * La persona digita solo las variables propias (anexo 14C, §3.1): un valor para una ajena se rechaza
+ * (`noSeDigitaDesdeAqui`) y un reporte exige solo las propias. Lo ajeno que ya llegó entra al cálculo; si falta, no hay
+ * resultado que validar ni salto que confirmar, pero el soporte obligatorio se pide igual. En un histórico se digitan y se
+ * exigen todas (§3.6). `valores` trae solo las letras que la persona digita.
  */
 export async function planDeReporte(
   sql: Cliente,
@@ -752,54 +803,75 @@ export async function planDeReporte(
   for (const letra of Object.keys(d.valores)) {
     if (!version.calculo.letras.includes(letra)) throw new ErrorIndicador(FICHA_CAMBIO);
   }
-  const { valores, errores } = leerValores(version.variables, d.valores);
-  const primerError = version.variables.map((v) => errores[v.letra]).find((e) => e !== undefined);
+  const digita = variablesQueDigita(version, m.historica === true);
+  for (const v of version.variables) {
+    const digitado = d.valores[v.letra];
+    if (!digita.includes(v) && typeof digitado === "string" && digitado.trim() !== "") throw new ErrorIndicador(noSeDigitaDesdeAqui(v.nombre));
+  }
+  const { valores, errores } = leerValores(digita, d.valores);
+  const primerError = digita.map((v) => errores[v.letra]).find((e) => e !== undefined);
   if (primerError) throw new ErrorIndicador(primerError);
   if (d.parcial) {
     if (m.reportada_en !== null || m.no_aplica === true) throw new ErrorIndicador(YA_REPORTADA);
     return { valores, confirmar: null };
   }
-  const falta = version.variables.find((v) => valores[v.letra] === null);
+  const falta = digita.find((v) => valores[v.letra] === null);
   if (falta) throw new ErrorIndicador(`Falta el valor de «${falta.nombre}»`);
 
-  const regla = reglaDeTexto(await reglaDelPeriodo(sql, ctx.indicador.id, m.periodo as string, version));
-  const ficha = fichaDeCalculo(version.calculo);
-  if (!ficha) throw new ErrorIndicador(FICHA_CAMBIO);
-  const r = calcular(ficha, Object.fromEntries(Object.entries(valores).map(([l, v]) => [l, v ?? undefined])), regla);
-  if (r.sinResultado === "division_por_cero") throw new ErrorIndicador(DIVISION_POR_CERO);
-  if (!r.resultado) throw new ErrorIndicador(CIFRA_FUERA_DE_RANGO);
-  if (r.fueraDeLimites) throw new ErrorIndicador(fueraDeLimites(textoValor(r.resultado, version.unidad)));
+  const guardados = digita.length < version.variables.length ? await valoresPorLetra(sql, m.id, version) : {};
+  const todos: Record<string, Fraccion | undefined> = Object.fromEntries(
+    version.variables.map((v) => [v.letra, (digita.includes(v) ? valores[v.letra] : guardados[v.letra]) ?? undefined]),
+  );
+  const completo = version.variables.every((v) => todos[v.letra] !== undefined);
+  let resultado: Fraccion | null = null;
+  if (completo) {
+    const regla = reglaDeTexto(await reglaDelPeriodo(sql, ctx.indicador.id, m.periodo as string, version));
+    const ficha = fichaDeCalculo(version.calculo);
+    if (!ficha) throw new ErrorIndicador(FICHA_CAMBIO);
+    const r = calcular(ficha, todos, regla);
+    if (r.sinResultado === "division_por_cero") throw new ErrorIndicador(DIVISION_POR_CERO);
+    if (!r.resultado) throw new ErrorIndicador(CIFRA_FUERA_DE_RANGO);
+    if (r.fueraDeLimites) throw new ErrorIndicador(fueraDeLimites(textoValor(r.resultado, version.unidad)));
+    resultado = r.resultado;
+  }
   if (ctx.indicador.soporteObligatorio && m.historica !== true && (await contarSoportes(sql, m.id)) === 0) {
     throw new ErrorIndicador("Este indicador exige un soporte: adjúntelo antes de reportar");
   }
-  if (!d.confirmado) {
+  if (resultado && !d.confirmado) {
     const anterior = await anteriorConResultado(sql, ctx.indicador.id, m.desde);
     const { variacionConfirmarPct } = await obtenerParametros({ sql });
-    if (anterior && variacionExcesiva(r.resultado, anterior.valor, variacionConfirmarPct)) {
-      return { valores, confirmar: fraseDeVariacion(r.resultado, anterior, version.unidad) };
+    if (anterior && variacionExcesiva(resultado, anterior.valor, variacionConfirmarPct)) {
+      return { valores, confirmar: fraseDeVariacion(resultado, anterior, version.unidad) };
     }
   }
   return { valores, confirmar: null };
 }
 
-/** Deja los valores de la versión que rige: quita los de otra versión y los vaciados, inserta o cambia los demás. */
+/**
+ * Deja los valores que la persona digita en la versión que rige (`variablesQueDigita`): quita los de otra versión y los
+ * vaciados, inserta o cambia los demás. Nunca toca una fila de una variable ajena, ni de esta versión ni de otra (anexo 14C,
+ * §3.1: cada escritor toca lo suyo); en un histórico, que se digita completo, sí las de otra versión.
+ */
 async function escribirValores(
   tx: TransactionSql,
-  medicionId: number,
+  medicion: { id: number; historica: boolean },
   version: VersionDeCalculo,
   valores: Readonly<Record<string, Fraccion | null>>,
   usuarioId: number,
   ahora: Date,
 ): Promise<void> {
-  const propias = version.variables.map((v) => v.id);
-  await tx`DELETE FROM medicion_valores WHERE medicion_id = ${medicionId} AND categoria_id IS NULL AND NOT (variable_id = ANY(${propias}))`;
+  const medicionId = medicion.id;
+  const deLaVersion = version.variables.map((v) => v.id);
+  await tx`DELETE FROM medicion_valores mv WHERE mv.medicion_id = ${medicionId} AND mv.categoria_id IS NULL
+    AND NOT (mv.variable_id = ANY(${deLaVersion}))
+    ${medicion.historica ? tx`` : tx`AND NOT EXISTS (SELECT 1 FROM indicador_variables iv WHERE iv.id = mv.variable_id AND iv.origen IN ('compartida', 'indicador'))`}`;
   const actuales = new Map(
     (await tx`SELECT variable_id, valor FROM medicion_valores WHERE medicion_id = ${medicionId} AND categoria_id IS NULL`).map((f) => [
       Number(f.variable_id),
       fr(f.valor),
     ]),
   );
-  for (const v of version.variables) {
+  for (const v of variablesQueDigita(version, medicion.historica)) {
     const nuevo = valores[v.letra] ?? null;
     const hay = actuales.has(v.id);
     if (nuevo === null) {
@@ -822,7 +894,13 @@ async function escribirValores(
 export const resultadoEnTexto = (exacto: unknown, version: VersionDeCalculo, regla: Regla): string | null =>
   typeof exacto === "string" ? textoValor(deTexto(exacto), version.unidad, regla) : null;
 
-export type ResultadoDeReporte = { ok: true; estado: EstadoMedicion; semaforo: Semaforo | null; cumple: boolean | null } | { ok: false; confirmar: string };
+/**
+ * Lo que dejó un reporte; con `faltaDato`, quien mide ya entregó lo suyo y la medición espera un valor ajeno («Reportar lo
+ * mío», anexo 14C, §3.1): el resultado sale cuando llegue.
+ */
+export type ResultadoDeReporte =
+  | { ok: true; estado: EstadoMedicion; semaforo: Semaforo | null; cumple: boolean | null; faltaDato: boolean }
+  | { ok: false; confirmar: string };
 
 /** ¿La medición se reportó alguna vez? Lo dice su historial: un reporte, un «no aplica» o un registro histórico. */
 async function seReportoAlgunaVez(tx: TransactionSql, medicionId: number): Promise<boolean> {
@@ -838,6 +916,11 @@ export type ReporteEscrito = { r: Recalculo; primera: boolean; detalle: { antes:
  * Escribe un reporte ya validado por `planDeReporte`, con los candados de `contextoDeMedicion` tomados: los valores, la
  * marca de reportada (quién y cuándo, la primera vez) y, si estaba, quita «no aplica»; después recalcula. Deja el evento
  * `primerEvento` si la medición nunca se reportó y `correccion` si ya. Lo comparten `reportar` y `registrarHistoricos`.
+ *
+ * `valores` trae solo lo que la persona digita (`planDeReporte`): el antes y el después del evento llevan lo ajeno tal como
+ * está a los dos lados. En una versión con variables ajenas, el primer reporte deja también la marca `reportada`: sin el
+ * dato no cambia ninguna columna calculada y, sin ella, «Reportar lo mío» tras «Guardar sin reportar» lo mismo no dejaría
+ * el evento `reporte` (el que cuenta «Reportes a tiempo», F14C-DC41).
  */
 export async function escribirReporte(
   tx: TransactionSql,
@@ -846,19 +929,21 @@ export async function escribirReporte(
   c: { usuarioId: number; ahora: Date; primerEvento: TipoEvento },
 ): Promise<ReporteEscrito> {
   const { medicion: m, version } = ctx;
-  const antes = enTexto(version, await valoresPorLetra(tx, m.id, version));
-  const despues = enTexto(version, valores);
+  const guardados = await valoresPorLetra(tx, m.id, version);
+  const antes = enTexto(version, guardados);
+  const despues = enTexto(version, { ...guardados, ...valores });
   const primera = !(await seReportoAlgunaVez(tx, m.id));
-  await escribirValores(tx, m.id, version, valores, c.usuarioId, c.ahora);
+  await escribirValores(tx, { id: m.id, historica: m.historica === true }, version, valores, c.usuarioId, c.ahora);
   if (m.reportada_en === null || m.no_aplica === true) {
     await tx`UPDATE mediciones SET reportada_por = coalesce(reportada_por, ${c.usuarioId}), reportada_en = coalesce(reportada_en, ${c.ahora}),
         no_aplica = false, no_aplica_motivo = NULL
       WHERE id = ${m.id}`;
   }
   const conMotivo = m.no_aplica === true ? { motivo: m.no_aplica_motivo as string | null } : {};
+  const marca = (v: boolean) => (m.reportada_en === null && letrasAjenas(version.variables).length > 0 ? { reportada: v } : {});
   const detalle = {
-    antes: { ...antes, noAplica: m.no_aplica === true, ...conMotivo },
-    despues: { ...despues, noAplica: false, ...(m.no_aplica === true ? { motivo: null } : {}) },
+    antes: { ...antes, noAplica: m.no_aplica === true, ...conMotivo, ...marca(false) },
+    despues: { ...despues, noAplica: false, ...(m.no_aplica === true ? { motivo: null } : {}), ...marca(true) },
     ...(ctx.capacidad.sinMedidor ? { sinMedidor: true as const } : {}),
   };
   const r = await recalcularMedicion(tx, m.id, { ahora: c.ahora, actorId: c.usuarioId, evento: primera ? c.primerEvento : "correccion", detalle });
@@ -893,10 +978,11 @@ export async function reportar(sesion: SesionFlujo, d: DatosDeReportar, opciones
     const { medicion: m, version } = ctx;
     const base = { codigo: ctx.indicador.codigo, indicadorId: ctx.indicador.id, periodo: m.periodo };
     if (d.parcial) {
-      const antes = enTexto(version, await valoresPorLetra(tx, m.id, version));
-      const despues = enTexto(version, plan.valores);
+      const guardados = await valoresPorLetra(tx, m.id, version);
+      const antes = enTexto(version, guardados);
+      const despues = enTexto(version, { ...guardados, ...plan.valores });
       if (JSON.stringify(antes) !== JSON.stringify(despues)) {
-        await escribirValores(tx, m.id, version, plan.valores, sesion.usuarioId, ahora);
+        await escribirValores(tx, { id: m.id, historica: false }, version, plan.valores, sesion.usuarioId, ahora);
         await registrarAuditoria(tx, {
           usuarioId: sesion.usuarioId,
           accion: "medicion_guardada",
@@ -905,7 +991,14 @@ export async function reportar(sesion: SesionFlujo, d: DatosDeReportar, opciones
           detalle: { ...base, antes, despues, ...(ctx.capacidad.sinMedidor ? { sinMedidor: true } : {}) },
         });
       }
-      return { ok: true as const, estado: m.estado as EstadoMedicion, semaforo: (m.semaforo as Semaforo | null) ?? null, cumple: cumpleDeFila({ cumple: (m.cumple as boolean | null | undefined) ?? null, semaforo: (m.semaforo as Semaforo | null) ?? null }) };
+      return {
+        ok: true as const,
+        estado: m.estado as EstadoMedicion,
+        semaforo: (m.semaforo as Semaforo | null) ?? null,
+        cumple: cumpleDeFila({ cumple: (m.cumple as boolean | null | undefined) ?? null, semaforo: (m.semaforo as Semaforo | null) ?? null }),
+        // Sin reportar, lo que falta es lo propio, no el dato.
+        faltaDato: false,
+      };
     }
 
     const { r, primera, detalle } = await escribirReporte(tx, ctx, plan.valores, { usuarioId: sesion.usuarioId, ahora, primerEvento: "reporte" });
@@ -925,7 +1018,8 @@ export async function reportar(sesion: SesionFlujo, d: DatosDeReportar, opciones
         },
       });
     }
-    return { ok: true as const, estado: r.estado, semaforo: r.despues, cumple: r.cumple };
+    const faltaDato = r.resultado === null && letrasAjenas(version.variables).length > 0 && faltanAjenas(version, await valoresPorLetra(tx, m.id, version));
+    return { ok: true as const, estado: r.estado, semaforo: r.despues, cumple: r.cumple, faltaDato };
   });
 }
 

@@ -42,7 +42,7 @@ import { enCurso, recalcularPorSoporte } from "./en-curso";
 import { codigoCon, COLUMNAS_VARIABLE, CONTENIDO, proponerCodigo, siguientes } from "./fichas";
 import { resolverImpactosPorRetiro } from "./impactos";
 import { obtenerParametros } from "./maestros";
-import { conDatos, versionesAprobadas } from "./mediciones";
+import { conDatos, mide, NADIE_LO_MIDE, versionesAprobadas } from "./mediciones";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -86,6 +86,16 @@ async function bloquearIndicador(tx: TransactionSql, indicadorId: number): Promi
     procesoId: Number(i.proceso_id),
     calculo: (i.calculo as string | null) ?? null,
   };
+}
+
+/**
+ * ¿Nadie mide la ficha vigente (la aprobada de mayor número) porque es manual y no tiene variables propias? (anexo 14C,
+ * §3.1). Sin ficha aprobada, no: lo que diga el borrador se aplica al aprobarlo (`alPublicarVersion`). Del automático se
+ * ocupa antes `calculo`, con su propio mensaje.
+ */
+async function nadieMideLaVigente(tx: TransactionSql, indicadorId: number): Promise<boolean> {
+  const [vigente] = await versionesAprobadas(tx, indicadorId);
+  return vigente !== undefined && vigente.origenDato === "manual" && !mide(vigente);
 }
 
 /** Un retirado o un descartado ya no admite cambios de personas ni de operación. */
@@ -139,8 +149,9 @@ export async function designar(
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
     const i = await bloquearIndicador(tx, d.indicadorId);
     exigirAbierto(i);
-    // Quitar a alguien de «mide» sigue valiendo; designarlo, no.
+    // Quitar a alguien de «mide» sigue valiendo; designarlo, no, en lo que nadie mide.
     if (d.funcion === "mide" && i.calculo !== null && ids.length > 0) throw new ErrorIndicador("Este indicador lo calcula el sistema: nadie lo mide");
+    if (d.funcion === "mide" && ids.length > 0 && (await nadieMideLaVigente(tx, i.id))) throw new ErrorIndicador(NADIE_LO_MIDE);
     const actuales = (await tx`SELECT usuario_id FROM indicador_designados WHERE indicador_id = ${i.id} AND funcion = ${d.funcion}`).map((f) =>
       Number(f.usuario_id),
     );
@@ -252,6 +263,7 @@ export async function cambiarOperacion(
     const i = await bloquearIndicador(tx, d.indicadorId);
     exigirAbierto(i);
     if (soporte && i.calculo !== null) throw new ErrorIndicador("Un indicador que calcula el sistema no lleva soporte");
+    if (soporte && (await nadieMideLaVigente(tx, i.id))) throw new ErrorIndicador(NADIE_LO_MIDE);
     // La periodicidad de la ficha que rige; sin ficha aprobada, la de la última versión (puede estar incompleta).
     const vigente = await versionVigente(tx, i.id);
     const [v] = vigente

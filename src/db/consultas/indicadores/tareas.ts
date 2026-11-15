@@ -19,6 +19,7 @@ import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { esAprobadorDe, filtroIndicadores, responsableDe, type Responsabilidad } from "@/lib/alcance";
 import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
 import { analisisCompleto, analisisExigido, cumpleDeMedicion } from "@/lib/indicadores/estados";
+import { alguienMide, faltaSegunOrigen } from "@/lib/indicadores/origen";
 import { versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import { SIN_RESPONSABLE, type OrigenDato, type Periodicidad, type Semaforo } from "@/lib/indicadores/tipos";
 import { puede } from "@/lib/permisos";
@@ -31,8 +32,9 @@ import { analisisDe, conMayuscula, esDeOtraPeriodicidad } from "./mediciones";
 import { enlaceDeObservaciones } from "./observaciones";
 
 /**
- * Lo que le falta a una medición ordinaria abierta: el reporte (los datos o el soporte obligatorio), el análisis o, en una
- * que calcula el sistema, el dato que nadie digita (anexo 14B, §4: «Falta un dato», que no es tarea de nadie).
+ * Lo que le falta a una medición ordinaria abierta: el reporte (los datos propios o el soporte obligatorio), el análisis o
+ * el dato que nadie de la medición digita: el cálculo del sistema (anexo 14B, §4) o un valor ajeno, de un dato compartido
+ * o de otro indicador (anexo 14C, §3.1). «Falta un dato» no es tarea de nadie.
  */
 export type Falta = "reporte" | "analisis" | "dato";
 
@@ -41,15 +43,22 @@ export type FaltaDePersona = Exclude<Falta, "dato">;
 
 /**
  * Las columnas de `mediciones m` e `indicadores i` que lee `queFalta`, con las versiones aprobadas del indicador (de mayor
- * a menor número, el orden de `versionQueRigeEntre`) y si tiene algún soporte en la misma fila: el costo en sentencias no
- * depende de cuántas haya.
+ * a menor número, el orden de `versionQueRigeEntre`, cada una con sus letras propias y ajenas), las letras con valor de la
+ * medición (`con_valor`, sin categoría) y si tiene algún soporte, en la misma fila: el costo en sentencias no depende de
+ * cuántas haya.
  */
 export const columnasDePendiente = (sql: Cliente) =>
   sql`m.id, m.indicador_id, m.periodo, m.vence_en, m.reportada_en, m.semaforo, m.cumple, m.incumplimiento_repetido, m.analisis, m.causa,
     m.accion_propuesta, i.soporte_obligatorio,
     EXISTS (SELECT 1 FROM archivos pa WHERE pa.contexto = 'medicion' AND pa.contexto_id = m.id) AS con_soporte,
+    (SELECT coalesce(json_agg(DISTINCT pl.letra), '[]'::json) FROM medicion_valores pmv JOIN indicador_variables pl ON pl.id = pmv.variable_id
+      WHERE pmv.medicion_id = m.id AND pmv.categoria_id IS NULL AND pmv.valor IS NOT NULL) AS con_valor,
     (SELECT coalesce(json_agg(json_build_object('rigeDesde', pv.rige_desde, 'periodicidad', pv.periodicidad, 'nombre', pv.nombre,
-          'origenDato', pv.origen_dato)
+          'origenDato', pv.origen_dato,
+          'propias', (SELECT coalesce(json_agg(pp.letra ORDER BY pp.letra), '[]'::json) FROM indicador_variables pp
+            WHERE pp.version_id = pv.id AND pp.origen = 'propia'),
+          'ajenas', (SELECT coalesce(json_agg(pa2.letra ORDER BY pa2.letra), '[]'::json) FROM indicador_variables pa2
+            WHERE pa2.version_id = pv.id AND pa2.origen IN ('compartida', 'indicador')))
         ORDER BY pv.numero DESC), '[]'::json)
       FROM indicador_versiones pv WHERE pv.indicador_id = m.indicador_id AND pv.estado = 'aprobada') AS versiones`;
 
@@ -62,14 +71,22 @@ export const esPendiente = (sql: Cliente) => sql`m.estado = 'abierta' AND NOT m.
  */
 export type Pendiente = { falta: Falta; faltaSoporte: boolean; periodo: Periodo; nombre: string | null };
 
-type VersionDePendiente = { rigeDesde: string | null; periodicidad: Periodicidad | null; nombre: string | null; origenDato: OrigenDato };
+type VersionDePendiente = {
+  rigeDesde: string | null;
+  periodicidad: Periodicidad | null;
+  nombre: string | null;
+  origenDato: OrigenDato;
+  propias: string[];
+  ajenas: string[];
+};
 
 /**
- * Lo que le falta a cada medición de `filas` (leídas con `columnasDePendiente`): con los datos, el análisis exigido si no
- * está (la regla del estado guardado, `analisisCompleto`) y el soporte obligatorio si no lo tiene; sin ellos, el reporte o,
- * si la versión que rige el periodo es automática, el dato (`"dato"`), que no digita nadie. Un automático no lleva soporte
- * obligatorio (como en `recalcularMedicion`). Con el periodo y el nombre de la versión que lo rige. Sin las de otra
- * periodicidad (`esDeOtraPeriodicidad`): no se miden. No consulta nada.
+ * Lo que le falta a cada medición de `filas` (leídas con `columnasDePendiente`), por variable (`faltaSegunOrigen`, anexo
+ * 14C §3.1): si alguien la mide y no reportó lo suyo, el reporte; si lo suyo está (o nadie la mide) y falta un valor ajeno
+ * o el sistema aún no la reporta, el dato (`"dato"`), que no es de nadie; con todo, el análisis exigido si no está (la regla
+ * del estado guardado, `analisisCompleto`). Un automático cuenta como uno que nadie mide y cuyo único valor ajeno es su
+ * foto. El soporte obligatorio falta solo en lo que alguien mide (como en `recalcularMedicion`). Con el periodo y el nombre
+ * de la versión que lo rige. Sin las de otra periodicidad (`esDeOtraPeriodicidad`): no se miden. No consulta nada.
  */
 export function queFalta(filas: readonly Row[]): Map<number, Pendiente> {
   const salida = new Map<number, Pendiente>();
@@ -86,10 +103,13 @@ export function queFalta(filas: readonly Row[]): Map<number, Pendiente> {
       historica: false,
       noAplica: false,
     });
-    const conDatos = f.reportada_en !== null;
+    const reportada = f.reportada_en !== null;
     const automatica = version.origenDato === "automatico";
-    const falta: Falta = conDatos && !analisisCompleto(exigido, analisisDe(f)) ? "analisis" : !conDatos && automatica ? "dato" : "reporte";
-    const faltaSoporte = conDatos && !automatica && f.soporte_obligatorio === true && f.con_soporte !== true;
+    const mide = alguienMide({ origenDato: version.origenDato, variables: (version.propias ?? []).map((letra) => ({ letra, origen: "propia" as const })) });
+    const conValor = new Set((f.con_valor as string[] | null) ?? []);
+    const faltanAjenas = automatica ? !reportada : (version.ajenas ?? []).some((l) => !conValor.has(l));
+    const falta: Falta = faltaSegunOrigen({ mide, reportada, faltanAjenas, analisisCompleto: analisisCompleto(exigido, analisisDe(f)) });
+    const faltaSoporte = reportada && mide && f.soporte_obligatorio === true && f.con_soporte !== true;
     salida.set(Number(f.id), { falta, faltaSoporte, periodo, nombre: version.nombre });
   }
   return salida;

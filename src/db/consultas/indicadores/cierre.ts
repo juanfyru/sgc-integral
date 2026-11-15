@@ -45,6 +45,7 @@ import {
   asegurarMediciones,
   contextoDeMedicion,
   esDeOtraPeriodicidad,
+  mide,
   NO_EXISTE,
   recalcularMedicion,
   versionesAprobadas,
@@ -472,9 +473,9 @@ export async function reabrirMedicion(sesion: SesionFlujo, d: { medicionId: numb
         reabierta_motivo = ${justificacion}, corregida = true, cierre_id = NULL, sin_analisis = false
       WHERE id = ${m.id}`;
     // Quien administra mide si está designado (`propioMedidor`) o, sin nadie más, como respaldo (`sinMedidor`); un
-    // automático no lo mide nadie.
-    const automatica = ctx.version.origenDato === "automatico";
-    const capacidad = automatica ? null : await puedeMedir(ctx.indicador.id, sesion, { sql: tx });
+    // automático o un indicador sin variables propias no lo mide nadie (anexo 14C, §3.1).
+    const nadieLoMide = !mide(ctx.version);
+    const capacidad = nadieLoMide ? null : await puedeMedir(ctx.indicador.id, sesion, { sql: tx });
     const marca = !capacidad?.puede ? {} : capacidad.sinMedidor ? { sinMedidor: true } : { propioMedidor: true };
     // El estado de antes es el verdadero (`cerrada`), no el provisional del UPDATE: el evento queda siempre.
     const r = await recalcularMedicion(tx, m.id, {
@@ -486,7 +487,7 @@ export async function reabrirMedicion(sesion: SesionFlujo, d: { medicionId: numb
     });
     const codigo = ctx.indicador.codigo;
     const periodo = m.periodo as string;
-    const responsables = automatica ? responsablesDeAnalizar : responsablesDeMedir;
+    const responsables = nadieLoMide ? responsablesDeAnalizar : responsablesDeMedir;
     const destinatarios = (await responsables(ctx.indicador.id, { sql: tx })).filter((u) => u !== sesion.usuarioId);
     if (destinatarios.length > 0) {
       await avisarA(

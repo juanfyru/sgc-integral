@@ -2,10 +2,10 @@
  * Los soportes de una medición (spec 14 §6.4, §8.2 y §8.7; Tarea 11 de la 14A): los archivos que respaldan un dato.
  * Son filas de `archivos` con contexto `medicion` y rol `evidencia`. Los ven solo quienes ven soportes
  * (`puedeVerSoportes`, más estricto que ver el indicador) y los suben y quitan, antes del cierre, quienes pueden medir el
- * indicador activo; en una medición automática, nadie (anexo 14B, §4). Cada subida y cada quitada dejan su evento
- * `soporte` en la medición, en la misma transacción que la
- * fila de `archivos`, y recalculan: con «soporte obligatorio», quitar el último devuelve la medición a `abierta` y
- * subir el primero la deja `reportada`.
+ * indicador activo; en una medición que nadie mide (automática, anexo 14B §4, o de un indicador sin variables propias,
+ * anexo 14C §3.1: su evidencia son los soportes de sus datos y de sus componentes), nadie. Cada subida y cada quitada
+ * dejan su evento `soporte` en la medición, en la misma transacción que la fila de `archivos`, y recalculan: con «soporte
+ * obligatorio», quitar el último devuelve la medición a `abierta` y subir el primero la deja `reportada`.
  *
  * Candados, como en `mediciones.ts`: el indicador `FOR SHARE` (vuelve a exigirse que esté activo), la medición `FOR UPDATE`
  * y solo después la fila de `archivos` y el evento.
@@ -20,7 +20,17 @@ import { resolverRutaAlmacen } from "@/lib/almacen";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
 import type { ArchivoServible } from "@/lib/servir-archivo";
-import { contarSoportes, contextoDeMedicion, type CondicionDePersona, NO_EXISTE, NO_SE_DIGITA, recalcularMedicion, versionDelPeriodo } from "./mediciones";
+import {
+  contarSoportes,
+  contextoDeMedicion,
+  type CondicionDePersona,
+  mide,
+  NADIE_LO_MIDE,
+  NO_EXISTE,
+  NO_SE_DIGITA,
+  recalcularMedicion,
+  versionDelPeriodo,
+} from "./mediciones";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -40,8 +50,8 @@ const enSoporte = (f: Record<string, unknown>): Soporte => ({
 /**
  * Quién puede subir un soporte a la medición, antes de recibir el cuerpo: 404 si no existe o la persona no ve su
  * indicador, 403 si lo ve y no puede medirlo, 409 si la medición está cerrada, el indicador ya no está activo (la
- * transacción de `registrarArchivo` lo vuelve a exigir con los candados) o la versión que rige su periodo la calcula el
- * sistema (anexo 14B, §4: nadie digita un automático).
+ * transacción de `registrarArchivo` lo vuelve a exigir con los candados) o nadie mide la versión que rige su periodo (un
+ * automático, anexo 14B §4, o una ficha sin variables propias, anexo 14C §3.1).
  */
 export async function autorizarSoporte(
   medicionId: number,
@@ -57,7 +67,8 @@ export async function autorizarSoporte(
   if (!(await puedeVerIndicador(indicadorId, sesion, { sql }))) return { ok: false, estado: 404 };
   if (!(await puedeMedir(indicadorId, sesion, { sql })).puede) return { ok: false, estado: 403 };
   if (m.estado === "cerrada" || m.estado_indicador !== "activo") return { ok: false, estado: 409 };
-  if ((await versionDelPeriodo(sql, indicadorId, m.periodo as string))?.origenDato === "automatico") return { ok: false, estado: 409 };
+  const version = await versionDelPeriodo(sql, indicadorId, m.periodo as string);
+  if (version && !mide(version)) return { ok: false, estado: 409 };
   return { ok: true, indicadorId };
 }
 
@@ -125,8 +136,9 @@ export async function soporteServible(
 /**
  * Los candados de quien sube un soporte (`registrarArchivo`), antes de escribir nada: el indicador `FOR SHARE` y activo,
  * después la medición `FOR UPDATE` y sin cerrar. Quien llama ya comprobó a la persona (`autorizarSoporte`). Con las filas
- * bloqueadas se repite que la versión que rige el periodo no sea automática: la aprobación que la vuelve automática pudo
- * llegar entre la autorización y esta transacción (toma el indicador `FOR UPDATE`, así que aquí ya se ve).
+ * bloqueadas se repite que alguien mida la versión que rige el periodo: la aprobación que la vuelve automática (o la deja
+ * sin variables propias) pudo llegar entre la autorización y esta transacción (toma el indicador `FOR UPDATE`, así que aquí
+ * ya se ve).
  */
 export async function bloquearParaSoporte(tx: TransactionSql, medicionId: number): Promise<void> {
   const [i] = await tx`SELECT id, estado FROM indicadores
@@ -135,7 +147,9 @@ export async function bloquearParaSoporte(tx: TransactionSql, medicionId: number
   if (!i || !m) throw new ErrorIndicador(NO_EXISTE);
   if (i.estado !== "activo") throw new ErrorIndicador(NO_ACTIVO);
   if (m.estado === "cerrada") throw new ErrorIndicador(CERRADA);
-  if ((await versionDelPeriodo(tx, Number(i.id), m.periodo as string))?.origenDato === "automatico") throw new ErrorIndicador(NO_SE_DIGITA);
+  const version = await versionDelPeriodo(tx, Number(i.id), m.periodo as string);
+  if (version?.origenDato === "automatico") throw new ErrorIndicador(NO_SE_DIGITA);
+  if (version && !mide(version)) throw new ErrorIndicador(NADIE_LO_MIDE);
 }
 
 /** El evento `soporte` de una subida, con la fila de `archivos` ya escrita y los candados de `bloquearParaSoporte`. */

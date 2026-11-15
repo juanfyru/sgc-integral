@@ -73,7 +73,7 @@ import { obtenerSql } from "@/db/cliente";
 import type { DatosDeAnalisis } from "@/db/consultas/indicadores/analisis";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
-import type { DatosDeReporte } from "@/db/consultas/indicadores/lectura";
+import type { DatosDeReporte, VariableAjena } from "@/db/consultas/indicadores/lectura";
 import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
 import type { MetaDelPeriodo } from "@/db/consultas/indicadores/metas";
 import { observar } from "@/db/consultas/indicadores/observaciones";
@@ -88,7 +88,7 @@ import {
 import { destinoTrasReportar } from "@/lib/indicadores/reporte";
 import type { SesionValida } from "@/lib/sesion";
 import { parsearFormulario } from "@/lib/validacion";
-import { fotoDePrueba, indicadorDePrueba, versionAutomatica } from "./utiles/indicadores";
+import { datoDePrueba, fotoDePrueba, indicadorDePrueba, versionAutomatica } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -122,6 +122,7 @@ const DATOS: DatosDeReporte = {
   soporteObligatorio: true,
   soportes: 0,
   sinMedidor: false,
+  mide: true,
   automatica: false,
   foto: null,
   seCalcula: null,
@@ -136,6 +137,7 @@ const DATOS: DatosDeReporte = {
       capturaMax: null,
       admiteNegativos: false,
       valor: null,
+      ajena: null,
     },
     {
       letra: "B",
@@ -146,6 +148,7 @@ const DATOS: DatosDeReporte = {
       capturaMax: null,
       admiteNegativos: false,
       valor: null,
+      ajena: null,
     },
   ],
   calculo: { formula: "A / B * 100", letras: ["A", "B"], resultadoMin: null, resultadoMax: null },
@@ -992,4 +995,138 @@ describe("tras reportar un periodo que pide análisis, el foco va al análisis (
     expect(con).toContain('<span hidden="" data-enfocar="analisis"></span>');
     expect(con).toContain(">Análisis: tercer trimestre de 2026</h2>");
   });
+});
+
+/**
+ * La medición variable por variable (anexo 14C, §3.1, maqueta 14): lo ajeno aparece fijo, con de dónde llega, su valor y
+ * quién lo reportó; mientras falta, el aviso de «Falta un dato» y «Reportar lo mío». Un indicador sin variables propias no
+ * lo mide nadie: su pantalla es de solo lectura.
+ */
+describe("la variable que no digita quien mide (anexo 14C, §3.1)", () => {
+  const AJENA_DATO: VariableAjena = {
+    clase: "dato",
+    fuenteId: 9,
+    nombre: "Total facturado en el mes",
+    proceso: "Facturación",
+    codigo: null,
+    valor: null,
+    reporto: null,
+    reportadoEn: null,
+    reportadoEl: null,
+    venceEn: new Date("2026-11-11T04:59:59.999Z"),
+    venceEl: "10 de noviembre de 2026",
+  };
+  const conDato = (ajena: Partial<VariableAjena> = {}): DatosDeReporte => ({
+    ...DATOS,
+    soporteObligatorio: false,
+    variables: [
+      { ...DATOS.variables[0], nombre: "Valor glosado en el mes" },
+      { ...DATOS.variables[1], nombre: "Total facturado en el mes", descripcion: null, fuente: null, ajena: { ...AJENA_DATO, ...ajena } },
+    ],
+  });
+  const formulario = (datos: DatosDeReporte) => renderToStaticMarkup(<FormularioReporte datos={datos} volver="/indicadores/FAC-ID-001" />);
+  const FALTA_EL_DATO =
+    "Falta un dato. «Total facturado en el mes» lo reporta Facturación; vence el 10 de noviembre de 2026. Usted ya puede reportar lo suyo: el resultado se calcula solo cuando el dato llegue.";
+
+  it("sin el dato: lo propio tiene su campo, el dato aparece fijo sin campo, con el aviso y «Reportar lo mío»", () => {
+    const html = formulario(conDato());
+    expect(html).toMatch(/<input(?=[^>]*name="valor_A")[^>]*>/);
+    expect(html).not.toContain('name="valor_B"');
+    expect(html).toMatch(/<div role="group" aria-labelledby="reporte-B-etiqueta"/);
+    expect(html).toContain(">Total facturado en el mes</span>");
+    expect(html).toContain(">Dato compartido</span>");
+    expect(html).toContain(">Aún no lo reportan</p>");
+    expect(html).toContain(`>${FALTA_EL_DATO}</p>`);
+    expect(html).toMatch(/<button(?=[^>]*value="reportar")[^>]*>Reportar lo mío<\/button>/);
+    expect(html).toContain(">Guardar sin reportar</button>");
+    // Sin fecha límite del dato (su periodo aún no se abre), el aviso no la inventa.
+    expect(formulario(conDato({ venceEn: null, venceEl: null }))).toContain(
+      ">Falta un dato. «Total facturado en el mes» lo reporta Facturación. Usted ya puede reportar lo suyo: el resultado se calcula solo cuando el dato llegue.</p>",
+    );
+  });
+
+  it("con el dato puesto: su valor, quién lo reportó y cuándo, «Reportar», y el resultado en vivo lo usa", () => {
+    const datos = conDato({ valor: "1284300000", reporto: "Luisa Rojas", reportadoEn: new Date("2026-11-05T15:00:00Z"), reportadoEl: "5 de noviembre de 2026", venceEn: null, venceEl: null });
+    // El valor de la medición es el que llegó del dato: los dos vienen iguales de `datosDeReporte`.
+    const html = formulario({ ...datos, variables: [{ ...datos.variables[0], valor: "38529000" }, { ...datos.variables[1], valor: "1284300000" }], anterior: null });
+    expect(html).toContain(">1284300000</p>");
+    expect(html).toContain(">Lo reportó Luisa Rojas el 5 de noviembre de 2026. No se cambia desde aquí.</p>");
+    expect(html).not.toContain("Falta un dato.");
+    expect(html).toMatch(/<button(?=[^>]*value="reportar")[^>]*>Reportar<\/button>/);
+    expect(html).not.toContain("Reportar lo mío");
+    expect(html).toContain(">3 %<");
+  });
+
+  it("de otro indicador: «De otro indicador» y, sin resultado, de cuál sale", () => {
+    const html = formulario({
+      ...DATOS,
+      variables: [
+        DATOS.variables[0],
+        {
+          ...DATOS.variables[1],
+          ajena: { ...AJENA_DATO, clase: "indicador", fuenteId: 3, nombre: "Programa de Auditorías Internas", proceso: null, codigo: "SGC-IND-01", venceEn: null, venceEl: null },
+        },
+      ],
+    });
+    expect(html).toContain(">De otro indicador</span>");
+    expect(html).toContain(">Aún no tiene resultado</p>");
+    expect(html).toContain(">Falta un dato. Sale de SGC-IND-01 Programa de Auditorías Internas, que aún no tiene resultado.</p>");
+    expect(html).not.toContain('name="valor_B"');
+  });
+
+  it("sin variables propias: de solo lectura, sin «lo calcula el sistema» y sin pedirle a nadie que reporte lo suyo", () => {
+    const datos = conDato();
+    const html = renderToStaticMarkup(
+      <DatosDelSistema datos={{ ...datos, mide: false, variables: [{ ...datos.variables[1], letra: "A" }, datos.variables[1]] }} />,
+    );
+    expect(html).toContain("Este indicador no tiene datos propios: llegan de datos compartidos o de otros indicadores.");
+    expect(html).not.toContain("lo calcula el sistema");
+    expect(html).not.toContain("<input");
+    expect(html).toContain(
+      ">Falta un dato. «Total facturado en el mes» lo reporta Facturación; vence el 10 de noviembre de 2026. El resultado se calcula solo cuando el dato llegue.</p>",
+    );
+    expect(html).not.toContain("Usted ya puede reportar lo suyo");
+  });
+
+  it("las páginas: el mixto se reporta con el dato fijo; el que nadie mide lo abre quien analiza, de solo lectura y sin «Reportar»", () =>
+    enTransaccion(async (tx) => {
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const analiza = await usuarioDePrueba(tx, { rol: "consulta" });
+      const [gth] = await tx`SELECT id FROM procesos WHERE sigla = 'GTH'`;
+      const dato = await datoDePrueba(tx, { procesoId: Number(gth.id), nombre: `Total facturado ${Date.now()}` });
+      const otro = await datoDePrueba(tx, { procesoId: Number(gth.id) });
+      const mixto = await indicadorDePrueba(tx, {
+        periodicidad: "mensual",
+        inicioMedicion: "2026-09",
+        aprobadaEn: new Date("2026-08-15T15:00:00Z"),
+        mide: [mide.usuarioId],
+        variables: { B: { datoId: dato } },
+      });
+      contexto.sesion = valida(mide);
+      const html = await reporte(mixto.codigo, "2026-09");
+      expect(html).toContain(`Reportar · Indicador de prueba ${mixto.codigo}`);
+      expect(html).toMatch(/<input(?=[^>]*name="valor_A")[^>]*>/);
+      expect(html).not.toContain('name="valor_B"');
+      expect(html).toContain(">Dato compartido</span>");
+      expect(html).toContain(">Reportar lo mío</button>");
+      expect(html).toContain("Arrastre los archivos aquí");
+
+      const nadie = await indicadorDePrueba(tx, {
+        periodicidad: "mensual",
+        inicioMedicion: "2026-09",
+        aprobadaEn: new Date("2026-08-15T15:00:00Z"),
+        analiza: [analiza.usuarioId],
+        variables: { A: { datoId: otro }, B: { datoId: dato } },
+      });
+      contexto.sesion = valida(analiza);
+      const soloLectura = await reporte(nadie.codigo, "2026-09");
+      expect(soloLectura).toContain(`Datos del periodo · Indicador de prueba ${nadie.codigo}`);
+      expect(await tituloDelReporte(nadie.codigo, "2026-09")).toBe(`Datos del periodo · Indicador de prueba ${nadie.codigo}`);
+      expect(soloLectura).toContain("Este indicador no tiene datos propios: llegan de datos compartidos o de otros indicadores.");
+      expect(soloLectura).not.toContain("<input");
+      expect(soloLectura).not.toContain("Reportar ·");
+      expect(soloLectura).not.toContain("Reportar:");
+      expect(soloLectura).not.toContain(">Soportes</h2>");
+      expect(soloLectura).not.toContain("(vencido)");
+    }));
 });
