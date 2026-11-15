@@ -529,6 +529,24 @@ describe("lo que se rechaza al guardar", () => {
       );
     }));
 
+  it("una cita vieja sigue valiendo: el componente que la vigente ya tomaba, aunque se haya retirado", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const comp = await indicadorDePrueba(tx, { procesoId: b.procesoId });
+      const compuesto = await indicadorDePrueba(tx, { procesoId: b.procesoId, variables: { A: { indicadorOrigenId: comp.id } } });
+      await retirar(tx, comp.id, b.admin.usuarioId);
+      const cambio = await cambioSobre(tx, b, compuesto);
+      expect(cambio.valores.variables[0]).toMatchObject({ origen: "indicador", indicadorOrigenId: comp.id, toma: "valor" });
+      await guardarBorrador(b.admin, cambio.versionId, cambio.valores, { sql: tx });
+      const origenes = await origenesDeVersion(tx, cambio.versionId);
+      expect(origenes.variables[0]).toMatchObject({ letra: "A", origen: "indicador", indicadorOrigenId: comp.id, citaNueva: false });
+      expect(await revisarOrigenes(tx, origenes)).toBeNull();
+      expect((await contenidoDeVersion(tx, cambio.versionId)).variables[0]).toMatchObject({
+        origenCodigo: comp.codigo,
+        origenNombre: `Indicador de prueba ${comp.codigo}`,
+      });
+    }));
+
   it("«El dato cambió»: al enviar o aprobar, el dato de una cita nueva ya no es el que la ficha copió", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);
