@@ -357,6 +357,18 @@ como deuda) y la `0014` (solo quita `calculo_fotos`: la foto vive en la medició
 
 **Después de la tanda final** (cabeza `3f3bc72`, demo recién sembrada): `SEMILLA_RECIEN=1 npm test` dio 249 archivos, 6318 pruebas en verde y 1 saltada (la de la línea base), sin `FAIL` ni `stderr`; `npm run lint`, limpio; `npm run build` sin `DATABASE_URL`, en verde. En el navegador se comprobaron los arreglos de interfaz de la tanda: tras **Registrar que no afecta** el foco queda en el título del indicador; volver a pulsar **Corregir** después de cerrar el desplegable a mano lo abre con el foco en su resumen; el diálogo **Cambiar estado** del normograma nombra los indicadores; y la pantalla de solo lectura de un automático lleva en la pestaña el mismo título que en la página (un periodo que no existe muestra «Página no encontrada» dentro de la aplicación).
 
+**Lo que quedaba del paso 6** (cabeza `768cef8`, demo resembrada): con la Resolución 256 de 2016 asociada a Consulta
+Externa y pasada a «Modificada», **Indicadores** con el filtro de revisión por cambio de norma (`/indicadores?impacto=1`)
+lista `CEX-IND-01`; `coordinadora.sgc` tiene en su inicio la tarea «Revisar CEX-IND-01 por el cambio de Resolución 256 de
+2016», que lleva a la ficha; y la página de impactos de la norma para Consulta Externa muestra la sección «Indicadores»
+con `CEX-IND-01` «Pendiente», enlazado. **No se vio en el navegador:** el aviso al otro Administrador del SGC (hay que
+entrar como `admin` y cambiar su clave; lo cubren las pruebas), el paso 1 sobre esta cabeza (crear y aprobar una ficha
+automática; se recorrió a mitad de la fase) y resolver una revisión con una versión nueva (lo cubren las pruebas).
+
+**El espacio de trabajo de la ejecución no se borró** (`.superpowers/sdd/2026-11-14-fase14b-automaticos-y-regulatorios/`,
+ignorado por git, dentro del worktree): ahí vive `con-f14b.sh`, que usa el paso 0 de «Qué probar y cómo (Fase 14B)», y el
+libro `progress.md` con cada resolución y cada pendiente. Se puede borrar cuando la rama se fusione.
+
 ### Hecho (Fase 14B)
 
 - **Base común (Tareas 1 y 5):** lo que nadie digita lo escribe el sistema en `medicion_valores`, sin usuario, y lo calcula
@@ -645,7 +657,7 @@ desplegable cerrado).
   - ayudantes duplicados entre `OrigenDelDato.tsx` y `FormularioFicha.tsx` (`sinTildes`, `ErrorDeCampo`, `CONTROL`);
   - `QuitarSoporte` (`src/componentes/indicadores/vistas/FormulariosDeConstancia.tsx:43`) copia `Quitar` de
     `src/componentes/indicadores/medicion/Soportes.tsx`;
-  - `diaYMes` (`src/lib/indicadores/fotos.ts:72`, `pasada.ts:18`); `ADMINISTRA` (`cierre.ts:430`, `fotos.ts:296`); el
+  - `diaYMes` (`src/lib/indicadores/fotos.ts:73`, `pasada.ts:18`); `ADMINISTRA` (`cierre.ts:431`, `fotos.ts:296`); el
     `LATERAL` de «la aprobada de mayor número», unas veinte veces; dos redactores del antes y el después de una corrección de
     constancia (`constancias.ts:516`, `src/lib/bitacora-detalle.ts:972`); la secuencia indicador `FOR SHARE` → fila
     `FOR UPDATE` → visibilidad, cuatro veces;
@@ -1128,7 +1140,7 @@ ella, con un aviso en la salida. `npm run db:seed && npm run admin:asegurar` la 
 
 ### Avisos para el usuario (Fase 14A)
 
-1. **La rama trabajó sobre una base aparte, `sgc_f14a`** (con su almacén `almacen-f14a`), en el worktree
+1. *(Escrito antes de fusionar la 14A; hoy está en `main` y su migración `0011` ya corre en el arranque.)* **La rama trabajó sobre una base aparte, `sgc_f14a`** (con su almacén `almacen-f14a`), en el worktree
    `F:\sgc-integral-f14a`, por decisión del usuario del 2026-11-10 («Worktree aparte»; precedente F13C-R20). **Su base `sgc`
    y su `next dev` no se tocaron.** La migración `0011` se aplicará a su base cuando arranque la app de la rama (o con
    `npm run db:preparar`): es aditiva y siembra los tres maestros (tipos, clasificaciones y unidades) y los cinco
