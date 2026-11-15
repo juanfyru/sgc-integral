@@ -4,7 +4,7 @@
  * páginas contra la BD de desarrollo, dentro de una transacción que se revierte (el cliente de la app se sustituye por
  * ella).
  */
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import type { TransactionSql } from "postgres";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -73,7 +73,7 @@ import { LeyendaDeMatriz, MatrizDelAnio } from "@/componentes/indicadores/Matriz
 import { Objetivos } from "@/componentes/indicadores/Objetivos";
 import { columnasDeVariables, TablaDelAnio } from "@/componentes/indicadores/medicion/TablaDelAnio";
 import { ResultadoPrincipal } from "@/componentes/indicadores/ResultadoPrincipal";
-import { anclaDeConstancia, esAnclaDeConstancia } from "@/componentes/indicadores/vistas/FormulariosDeConstancia";
+import { anclaDeConstancia, esAnclaDeConstancia, esClicDeNavegacion } from "@/componentes/indicadores/vistas/FormulariosDeConstancia";
 import { ReportesAlEnte, type DatosDeReportes } from "@/componentes/indicadores/vistas/ReportesAlEnte";
 import { obtenerSql } from "@/db/cliente";
 import { registrarArchivo } from "@/db/consultas/admin";
@@ -810,6 +810,18 @@ describe("la vista «Reportes al ente» (anexo 14B, §8)", () => {
     expect(esAnclaDeConstancia("constancia-11", 11)).toBe(false);
     expect(esAnclaDeConstancia("", 11)).toBe(false);
     expect(esAnclaDeConstancia("#indicador-reportes", 11)).toBe(false);
+  });
+
+  it("«Corregir» con el `hash` ya puesto: solo un clic que sigue el enlace en esta pestaña abre el desplegable, y su foco espera al salto", () => {
+    const clic = { defaultPrevented: false, button: 0, ctrlKey: false, metaKey: false, shiftKey: false };
+    expect(esClicDeNavegacion(clic)).toBe(true);
+    // Abrir en otra pestaña o ventana (Ctrl, Meta, Mayús, el botón del medio) o un clic que otro escucha ya atendió: no.
+    for (const otro of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { button: 1 }, { defaultPrevented: true }]) {
+      expect(esClicDeNavegacion({ ...clic, ...otro }), JSON.stringify(otro)).toBe(false);
+    }
+    // Sin DOM: el foco del clic va después de que el navegador procese el salto al fragmento (se comprueba en navegador).
+    const fuente = readFileSync("src/componentes/indicadores/vistas/FormulariosDeConstancia.tsx", "utf8");
+    expect(fuente).toContain("setTimeout(enfocar, 0)");
   });
 
   it("quien no ve soportes no recibe archivos ni historial; quien no registra, ningún formulario", () => {

@@ -27,6 +27,13 @@ export const anclaDeConstancia = (id: number) => `constancia-${id}`;
 /** El `hash` de la página (`location.hash`, con su «#») es el de esta constancia. */
 export const esAnclaDeConstancia = (hash: string, id: number) => hash === `#${anclaDeConstancia(id)}`;
 
+/**
+ * Un clic que sigue el enlace en esta pestaña: con el botón principal, sin Ctrl, Meta ni Mayús (que lo abren en otra pestaña
+ * o ventana) y sin que otro escucha lo haya atendido.
+ */
+export const esClicDeNavegacion = (e: Pick<MouseEvent, "defaultPrevented" | "button" | "ctrlKey" | "metaKey" | "shiftKey">) =>
+  !e.defaultPrevented && e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey;
+
 /** Lo enviado que volvió con un error, o lo que la constancia ya tenía. */
 const valorPrevio = (estado: EstadoAccion, campo: string, inicial: string | null) => {
   const v = estado?.valores?.[campo];
@@ -228,16 +235,20 @@ export function CorregirEnvio({
   // `prefers-reduced-motion`).
   useEffect(() => {
     const abrir = () => {
-      if (!desplegable.current) return;
+      if (!desplegable.current) return false;
       desplegable.current.open = true;
-      resumen.current?.focus();
+      return true;
     };
+    const enfocar = () => resumen.current?.focus();
     const alLlegar = () => {
-      if (esAnclaDeConstancia(window.location.hash, id)) abrir();
+      if (esAnclaDeConstancia(window.location.hash, id) && abrir()) enfocar();
     };
     const alPulsar = (e: MouseEvent) => {
+      if (!esClicDeNavegacion(e)) return;
       const enlace = e.target instanceof Element ? e.target.closest("a[href]") : null;
-      if (enlace?.getAttribute("href") === `#${anclaDeConstancia(id)}`) abrir();
+      // Este escucha corre antes de que el navegador procese el salto al fragmento, que se llevaría el foco a <body>: el foco
+      // va después.
+      if (enlace?.getAttribute("href") === `#${anclaDeConstancia(id)}` && abrir()) setTimeout(enfocar, 0);
     };
     alLlegar();
     window.addEventListener("hashchange", alLlegar);

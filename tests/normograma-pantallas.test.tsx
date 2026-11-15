@@ -264,6 +264,10 @@ describe("los formularios envían solo lo que su esquema estricto acepta", () =>
     expect(estado).toContain('value="derogada"');
     expect(estado).not.toContain('value="retirada"');
     expect(estado).not.toContain('value="vigente"');
+    // Elegido «Modificada», dice dónde se abre la revisión del impacto: también en los indicadores que la citan (anexo 14B, §9).
+    expect(estado).toContain(
+      "Abre la revisión del impacto en cada documento enlazado, en cada proceso asociado y en cada indicador que la cita, con su tarea y su aviso.",
+    );
 
     const relacion = renderToStaticMarkup(
       <FormularioRelacion normaId={7} nombre="Resolución 3100 de 2019" normas={[{ id: 8, nombre: "Resolución 2003 de 2014", titulo: "Anterior" }]} alCerrar={() => {}} />,
@@ -436,6 +440,8 @@ describe("la ficha de la norma", () => {
           expect(texto).toContain(accion);
         }
         expect(texto).not.toContain("Borrar…");
+        // Retirar también abre la revisión en los indicadores que la citan (anexo 14B, §9).
+        expect(texto).toContain("Si tiene documentos enlazados, procesos asociados o indicadores que la citan, se abre la revisión de su impacto.");
 
         // Con PDF: un <a> en otra pestaña (como los demás archivos), no un enlace del enrutador, que pediría el archivo dos veces.
         const [archivo] = await tx`INSERT INTO archivos (contexto, contexto_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)

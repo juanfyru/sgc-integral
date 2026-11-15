@@ -254,7 +254,7 @@ export function SeccionAdministrar({ norma: n }: { norma: Norma }) {
         boton="Retirar la norma"
         campos={{ id: n.id }}
         desplegable="Retirar…"
-        explicacion="Para una norma registrada por error o que dejó de aplicar al hospital: sale de las listas y de la búsqueda y conserva su ficha. Si tiene documentos enlazados o procesos asociados, se abre la revisión de su impacto. No se deshace."
+        explicacion="Para una norma registrada por error o que dejó de aplicar al hospital: sale de las listas y de la búsqueda y conserva su ficha. Si tiene documentos enlazados, procesos asociados o indicadores que la citan, se abre la revisión de su impacto. No se deshace."
         variante="peligro"
       >
         <Motivo id={`norma-${n.id}-motivo`} ayuda="Entre 5 y 500 caracteres. Queda en el historial y en la bitácora." />

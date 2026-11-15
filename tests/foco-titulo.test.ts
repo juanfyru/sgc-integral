@@ -40,12 +40,19 @@ describe("los controles que desaparecen", () => {
     ["src/componentes/tramites/DialogoFirma.tsx", "useTituloAlDesaparecer(abierto)"],
     ["src/componentes/tramites/AccionesSolicitud.tsx", "useTituloAlDesaparecer(abierto)"],
     ["src/componentes/admin/EliminarArchivo.tsx", "useTituloAlDesaparecer(quitado)"],
+    // «Registrar el envío» y «No afecta» (anexo 14B, §8 y §9): resueltos, su sección se va de la página del indicador.
+    ["src/componentes/indicadores/vistas/FormulariosDeConstancia.tsx", "useTituloAlDesaparecer(hecho)"],
+    ["src/componentes/indicadores/FormularioNoAfecta.tsx", "useTituloAlDesaparecer(hecho)"],
   ])("%s entrega el foco", (ruta, llamada) => {
     expect(readFileSync(ruta, "utf8")).toContain(llamada);
   });
 
   it("la página del panel que usa «Quitar» tiene un título que puede recibirlo", () => {
     expect(readFileSync("src/app/(app)/admin/(panel)/documentos/[codigo]/page.tsx", "utf8")).toContain("tituloEnfocable");
+  });
+
+  it("la página del indicador, la de «Registrar el envío» y «No afecta», también", () => {
+    expect(readFileSync("src/app/(app)/indicadores/[codigo]/page.tsx", "utf8")).toContain("tituloEnfocable");
   });
 });
 

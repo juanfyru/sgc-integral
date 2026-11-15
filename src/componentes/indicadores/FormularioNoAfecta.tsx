@@ -1,11 +1,12 @@
 "use client";
 
-import { useActionState } from "react";
+import { useState } from "react";
 import { resolverImpactoNoAfectaAccion } from "@/app/acciones-indicadores";
-import type { EstadoAccion } from "@/app/admin/comun";
 import { enviarSinReiniciar } from "@/componentes/admin/sin-reiniciar";
+import { useAccionDeDialogo } from "@/componentes/indicadores/admin/useAccionDeDialogo";
 import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
+import { useTituloAlDesaparecer } from "@/componentes/ui/foco";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 const CONTROL = `${claseControl} w-full min-w-0 max-w-full`;
@@ -13,10 +14,12 @@ const CONTROL = `${claseControl} w-full min-w-0 max-w-full`;
 /**
  * «No afecta» de una revisión por cambio de norma (anexo 14B, §9): se despliega (dos gestos deliberados) y pide la nota, de
  * 5 a 500 caracteres; el error queda junto a la nota y asociado a ella. Resuelta, la página se vuelve a pintar sin la
- * revisión.
+ * revisión y el foco, que se iba con ella, pasa al título de la página (como «Registrar el envío»), aunque queden otras.
  */
 export function FormularioNoAfecta({ impactoId, norma }: { impactoId: number; norma: string }) {
-  const [estado, enviar, pendiente] = useActionState<EstadoAccion, FormData>(resolverImpactoNoAfectaAccion, null);
+  const [hecho, setHecho] = useState(false);
+  const [estado, enviar, pendiente] = useAccionDeDialogo(resolverImpactoNoAfectaAccion, () => setHecho(true));
+  useTituloAlDesaparecer(hecho);
   const previa = estado?.valores?.nota;
   return (
     <details className="min-w-0 max-w-xl rounded-md border border-border bg-card p-2">

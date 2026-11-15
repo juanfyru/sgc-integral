@@ -51,7 +51,7 @@ export function FormularioEstado({ normaId, nombre, estado, hoy, alCerrar }: Pro
       </Campo>
       {ESTADOS_CON_IMPACTO.includes(elegido) ? (
         <p className="rounded-md bg-estado-atencion-fondo px-3 py-2 text-sm text-estado-atencion-texto">
-          Abre la revisión del impacto en cada documento enlazado y en cada proceso asociado, con su tarea y su aviso.
+          Abre la revisión del impacto en cada documento enlazado, en cada proceso asociado y en cada indicador que la cita, con su tarea y su aviso.
         </p>
       ) : null}
       <Campo etiqueta="Fecha del estado" nombre="fecha">
