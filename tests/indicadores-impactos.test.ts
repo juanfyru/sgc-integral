@@ -387,6 +387,7 @@ describe("cómo se resuelven", () => {
       const n = await normaDePrueba(tx, b.admin);
       const d = datos(b, { normaIds: [n.id] });
       const ind = await aprobada(tx, b, d);
+      const restringido = await indicadorDePrueba(tx, { nivelAcceso: "restringido", normaIds: [n.id], aprobadaEn: T0 });
       await derogar(tx, b.admin, n.id);
 
       const pendientes = await impactosPendientesDe(b.admin, ind.indicadorId, { sql: tx, ahora: T2 });
@@ -401,6 +402,11 @@ describe("cómo se resuelven", () => {
       await rechaza(resolverImpactoNoAfecta(b.admin, { impactoId, nota: "x".repeat(501) }, { sql: tx, ahora: T2 }), "La nota no puede pasar de 500 caracteres");
       await expect(resolverImpactoNoAfecta(ind.gerente, { impactoId, nota: "La ficha no cambia" }, { sql: tx, ahora: T2 })).rejects.toThrow(ErrorPermiso);
       await rechaza(resolverImpactoNoAfecta(b.admin, { impactoId: 987_654_321, nota: "La ficha no cambia" }, { sql: tx, ahora: T2 }), "El impacto no existe");
+      // Quien no ve el indicador recibe «no existe», no «sin permiso»: la condición de persona va antes que el permiso.
+      const consulta = await usuarioDePrueba(tx, { rol: "consulta" });
+      const [deRestringido] = await impactosDelIndicador(tx, restringido.id);
+      await rechaza(resolverImpactoNoAfecta(consulta, { impactoId: deRestringido.id, nota: "La ficha no cambia" }, { sql: tx, ahora: T2 }), "El impacto no existe");
+      await expect(resolverImpactoNoAfecta(consulta, { impactoId, nota: "La ficha no cambia" }, { sql: tx, ahora: T2 })).rejects.toThrow(ErrorPermiso);
 
       await resolverImpactoNoAfecta(b.admin, { impactoId, nota: "  La meta y la fórmula siguen igual  " }, { sql: tx, ahora: T2 });
       expect(await impactosDelIndicador(tx, ind.indicadorId)).toMatchObject([

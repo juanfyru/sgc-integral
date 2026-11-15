@@ -179,16 +179,19 @@ export async function indicadoresDelCambio(sesion: SujetoVisibilidad, cambioId: 
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * «No afecta» (anexo 14B, §9), con una nota de 5 a 500 caracteres, solo para quien administra indicadores: la revisión
- * `FOR UPDATE` (solo ella) y `pendiente`; queda resuelta a nombre de quien la registra, con su entrada de bitácora.
+ * «No afecta» (anexo 14B, §9), con una nota de 5 a 500 caracteres, solo para quien administra indicadores. Como las
+ * constancias (`constanciaBloqueada`): el indicador `FOR SHARE` y después la revisión `FOR UPDATE`; si no existe o la persona
+ * no ve su indicador, «no existe» (para ella no existe); después, el permiso; y debe seguir `pendiente`. Queda resuelta a
+ * nombre de quien la registra, con su entrada de bitácora.
  */
 export async function resolverImpactoNoAfecta(sesion: SesionFlujo, d: { impactoId: number; nota: string }, opciones?: Opciones): Promise<void> {
-  if (!puede(sesion, "indicadores.administrar")) throw new ErrorPermiso();
   const nota = typeof d.nota === "string" ? d.nota.trim() : "";
   if (nota.length < 5) throw new ErrorIndicador("La nota debe tener al menos 5 caracteres");
   if (nota.length > 500) throw new ErrorIndicador("La nota no puede pasar de 500 caracteres");
   const ahora = opciones?.ahora ?? new Date();
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+    const [ind] = await tx`SELECT id FROM indicadores
+      WHERE id = (SELECT indicador_id FROM impactos_indicadores WHERE id = ${d.impactoId}) FOR SHARE`;
     const [i] = await tx`SELECT ii.id, ii.indicador_id, ii.norma_cambio_id, ii.estado, ind.codigo, ${nombreSql(tx)} AS norma
       FROM impactos_indicadores ii
       JOIN indicadores ind ON ind.id = ii.indicador_id
@@ -196,7 +199,8 @@ export async function resolverImpactoNoAfecta(sesion: SesionFlujo, d: { impactoI
       JOIN tipos_norma tn ON tn.id = n.tipo_norma_id
       WHERE ii.id = ${d.impactoId}
       FOR UPDATE OF ii`;
-    if (!i) throw new ErrorIndicador(IMPACTO_NO_EXISTE);
+    if (!ind || !i || !(await puedeVerIndicador(Number(ind.id), sesion, { sql: tx }))) throw new ErrorIndicador(IMPACTO_NO_EXISTE);
+    if (!puede(sesion, "indicadores.administrar")) throw new ErrorPermiso();
     if (i.estado !== "pendiente") throw new ErrorIndicador(IMPACTO_RESUELTO);
     await tx`UPDATE impactos_indicadores SET estado = 'resuelto', resolucion = 'no_afecta', nota = ${nota},
         resuelto_por = ${sesion.usuarioId}, resuelto_en = ${ahora}
