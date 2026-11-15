@@ -163,8 +163,8 @@
    objetivos como maestro; las tareas y avisos de indicadores, que la Fase 16 lleva al correo; los resultados por periodo,
    la matriz y el Excel, para el tablero y los reportes de la Fase 17; de la 14B, las constancias de envío y las revisiones
    por cambio de norma (evidencia para la Fase 17 y avisos para el correo de la 16) y los automáticos, que el tablero de la
-   17 puede leer sin digitar nada. Insumos que dependen del usuario: las decisiones de la 14B que piden su visto bueno
-   («Avisos para el usuario (Fase 14B)»), las fichas reales
+   17 puede leer sin digitar nada. Insumos que dependen del usuario (las decisiones de la 14B ya tienen su visto bueno,
+   2026-11-15: «Avisos para el usuario (Fase 14B)»): las fichas reales
    de sus indicadores (el Excel `INDICADORES_PROCESO_SGC_OK.xlsx` trae las ocho del SGC), la regla del cambio mayor a una
    periodicidad más gruesa (F14A-R15) y, de antes, spec maestro §11 (SMTP, versión de Windows del servidor, planta de
    cargos real, plantilla del plan de mejoramiento, total de cuentas), la lista de verificación real (SGC-FO-03), el
@@ -540,7 +540,13 @@ mismo, en otros meses).
   «Fase 14B», arriba). Para ver la demo de la 14B en `sgc` hace falta además `npm run db:seed` (vacía la base y el almacén)
   y `npm run admin:asegurar`; sin resembrar, sus datos de hoy siguen como están. El worktree `F:\sgc-integral-f14b`, su
   rama y la base `sgc_f14b` (la demo de la 14B, lista para el recorrido) siguen ahí: se borran cuando el usuario lo pida.
-- **Decisiones que piden su visto bueno** (están en «Decisiones adicionales (Fase 14B)», con lo que cuesta cambiarlas):
+- **Decisiones de la ejecución: el usuario les dio su visto bueno el 2026-11-15** («doy visto bueno para las 11»), a las once
+  que se le presentaron al cierre: la cadena de la meta; la meta entera en las fichas automáticas con tarjeta de Vigencia; el
+  plazo del análisis contado desde la foto cuando el dato llega tarde; qué cuenta en «Objetivos»; cuándo nace una constancia
+  y qué se congela; el retiro y los soportes de una constancia; la pendiente sin soporte que deja de pedirse; la cita nueva a
+  una norma que ya no rige; el código de una ficha repetida solo para quien la ve; «Cómo se obtiene el dato» en «Más
+  opciones»; y el código de fases anteriores tocado sin cambiar su comportamiento. Ya no están pendientes. Las que más
+  pesaban (están en «Decisiones adicionales (Fase 14B)», con lo que cuesta cambiarlas):
   la cadena de la meta (una tarjeta de un proceso sin ficha propia ya no usa el número guardado de la Configuración
   documental si hay ficha de la entidad: F14B-R18); el plazo doble del análisis de un automático de flujo (F14B-R11) y,
   desde la tanda final, el plazo contado desde la foto cuando la de un automático de estado llega tarde (F14B-R36); que
