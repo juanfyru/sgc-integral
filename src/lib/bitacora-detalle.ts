@@ -460,9 +460,17 @@ function periodoEnFrase(clave: string): string {
   return /^\d{4}(-\d{2})?$/.test(clave) ? etiqueta : `el ${etiqueta}`;
 }
 
+/** «Se resolvieron 2 revisiones por cambio de norma.» (anexo 14B, §9: `impactosResueltos`); `null` si no resolvió ninguna. */
+function revisionesResueltas(d: Record<string, unknown>): string | null {
+  const n = numero(d.impactosResueltos) ?? 0;
+  if (n <= 0) return null;
+  return n === 1 ? "Se resolvió 1 revisión por cambio de norma." : `Se resolvieron ${n} revisiones por cambio de norma.`;
+}
+
 /**
  * Lo que la publicación de una ficha cambió en sus datos de operación (anexo 14B, §5.3): el inicio de medición que fijó y
- * el soporte obligatorio que apagó. Vacío si no cambió nada; si no, frases completas tras un punto.
+ * el soporte obligatorio que apagó, y las revisiones por cambio de norma que resolvió (anexo 14B, §9). Vacío si no cambió
+ * nada; si no, frases completas tras un punto.
  */
 function operacionAlPublicar(d: Record<string, unknown>): string {
   const inicio = objeto(d.inicioMedicion);
@@ -478,6 +486,7 @@ function operacionAlPublicar(d: Record<string, unknown>): string {
     d.soporteApagado === true
       ? `Se apagó el soporte obligatorio${recalculadas > 0 ? ` (${cuenta(recalculadas, "medición recalculada", "mediciones recalculadas")})` : ""}.`
       : null,
+    revisionesResueltas(d),
   ].filter((f): f is string => f !== null);
   return frases.length > 0 ? `. ${frases.join(" ")}` : "";
 }
@@ -854,8 +863,12 @@ export function describirEvento(e: EventoAuditoria): string {
     }
     case "indicador_duplicado":
       return `Creó el indicador${cod ? ` ${cod}` : ""} a partir de ${texto(d.origen) ?? "otro indicador"}`;
-    case "indicador_retirado":
-      return cod ? `Retiró el indicador ${cod}${conMotivo(d.motivo)}` : `Retiró un indicador${conMotivo(d.motivo)}`;
+    case "indicador_retirado": {
+      const frase = cod ? `Retiró el indicador ${cod}${conMotivo(d.motivo)}` : `Retiró un indicador${conMotivo(d.motivo)}`;
+      const revisiones = revisionesResueltas(d);
+      // Un motivo que ya termina en punto no lleva otro.
+      return revisiones ? `${frase}${frase.endsWith(".") ? "" : "."} ${revisiones}` : frase;
+    }
     case "indicador_descartado":
       return cod ? `Descartó el indicador ${cod}${conMotivo(d.motivo)}` : `Descartó un indicador${conMotivo(d.motivo)}`;
     case "indicador_borrado":

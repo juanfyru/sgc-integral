@@ -495,6 +495,38 @@ describe("cómo se resuelven", () => {
       expect(await impactosDelIndicador(tx, manual.id)).toMatchObject([{ estado: "resuelto", resolucion: "nueva_version", version_id: automatica }]);
     }));
 
+  it("un cambio menor que cita por primera vez una norma que dejó de regir no se publica; sin ella, o con una que ya citaba, sí", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const vieja = await normaDePrueba(tx, b.admin);
+      const nueva = await normaDePrueba(tx, b.admin);
+      const d = datos(b, { normaIds: [vieja.id] });
+      const ind = await aprobada(tx, b, d);
+      // Citar una norma más es un cambio menor: se guarda mientras rige, y después se deroga (y la que ya citaba, también).
+      const renombrada = { ...d, nombre: "Capacitaciones del plan cumplidas" };
+      const v2 = await cambio(tx, b.admin, ind.indicadorId, { ...renombrada, normaIds: [vieja.id, nueva.id] }, T1);
+      await derogar(tx, b.admin, nueva.id, T2);
+      await derogar(tx, b.admin, vieja.id, T2);
+      let pedida = false;
+      const publicar = () =>
+        enviarAAprobacion(b.admin, { versionId: v2, motivo: "Aclarar el nombre", credenciales: CLAVE }, {
+          sql: tx,
+          ahora: T3,
+          verificar: async () => ((pedida = true), { ok: true as const, metodo: "clave" as const }),
+        });
+      await rechaza(publicar(), `La norma ${nueva.nombre} ya no está vigente: quítela de la ficha ${ind.codigo} antes de publicar el cambio`);
+      expect(pedida).toBe(false);
+      expect((await tx`SELECT estado FROM indicador_versiones WHERE id = ${v2}`)[0].estado).toBe("borrador");
+      expect(await tx`SELECT 1 FROM firmas WHERE indicador_version_id = ${v2}`).toHaveLength(0);
+      expect(await versionVigente(tx, ind.indicadorId)).toEqual({ id: ind.versionId, numero: 1 });
+
+      // Sin la cita nueva se publica, citando la que la ficha vigente ya tenía aunque esté derogada.
+      await guardarBorrador(b.admin, v2, renombrada, { sql: tx, ahora: T3 });
+      expect(await publicar()).toEqual({ codigo: ind.codigo, menor: true });
+      expect(await versionVigente(tx, ind.indicadorId)).toEqual({ id: v2, numero: 2 });
+      expect((await tx`SELECT norma_id FROM indicador_normas WHERE version_id = ${v2}`).map((f) => Number(f.norma_id))).toEqual([vieja.id]);
+    }));
+
   it("una versión que ya estaba por aprobar cuando cambió la norma no lo resuelve", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);

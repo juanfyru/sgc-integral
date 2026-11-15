@@ -402,6 +402,11 @@ async function validarEnvio(sql: Cliente, d: DatosEnvio, ahora: Date): Promise<E
     if (tipo === "inicial") throw new ErrorIndicador("Escriba los rangos del semáforo");
     if (tipo === "mayor") throw new ErrorIndicador("Un cambio mayor escribe los rangos del semáforo: complete Bien, Atención y Crítico");
   }
+  // Un cambio menor se publica aquí, sin aprobación: lo que `validarAprobacion` exige a las citas nuevas (anexo 14B, §9).
+  if (tipo === "menor") {
+    const queNoRige = await normaNuevaQueNoRige(sql, d.versionId, indicadorId);
+    if (queNoRige) throw new ErrorIndicador(`La norma ${queNoRige} ya no está vigente: quítela de la ficha ${v.codigo as string} antes de publicar el cambio`);
+  }
   const motivo = d.motivo?.trim() || (v.motivo_cambio as string | null)?.trim() || null;
   if (tipo !== "inicial" && !motivo) throw new ErrorIndicador("Escriba el motivo del cambio");
   if (motivo && motivo.length > 500) throw new ErrorIndicador("El motivo del cambio no puede pasar de 500 caracteres");
@@ -549,8 +554,9 @@ const fueEnviada = (sql: Cliente) => sql`(v.estado = 'aprobada' OR EXISTS (
 /**
  * La primera norma que la versión cita por primera vez (no la cita la ficha vigente; en una ficha nueva, todas) y que ya
  * no está vigente ni modificada (anexo 14B, §9), con el nombre con que se firmó; `null` si no hay. Una que la vigente ya
- * citaba sigue valiendo en cualquier estado. Se leen `FOR KEY SHARE`: dentro de la transacción de aprobar, una
- * derogación no entra entre esta comprobación y la aprobación (esperaría, y la revisión de la ficha nacería después).
+ * citaba sigue valiendo en cualquier estado. La piden los dos caminos que publican: la aprobación y el envío de un cambio
+ * menor. Se leen `FOR KEY SHARE`: dentro de su transacción, una derogación no entra entre esta comprobación y la
+ * publicación (esperaría, y la revisión de la ficha nacería después).
  */
 async function normaNuevaQueNoRige(sql: Cliente, versionId: number, indicadorId: number): Promise<string | null> {
   const vigente = await versionVigente(sql, indicadorId);

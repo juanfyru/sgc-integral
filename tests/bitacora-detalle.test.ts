@@ -855,6 +855,26 @@ describe("las revisiones de indicadores por cambio de norma (14B)", () => {
     );
     expect(nombreDeAccion("impacto_indicador_resuelto")).toBe("Registró que un cambio de norma no afecta a un indicador");
   });
+  it("aprobar, publicar un cambio menor o retirar dicen cuántas revisiones resolvieron (`impactosResueltos`)", () => {
+    expect(frase("indicador_aprobado", { codigo: "SGC-ID-007", numero: 2, impactosResueltos: 1 })).toBe(
+      "Aprobó la ficha de SGC-ID-007 (versión 2). Se resolvió 1 revisión por cambio de norma.",
+    );
+    expect(frase("indicador_aprobado", { codigo: "SGC-ID-007", numero: 2, soporteApagado: true, impactosResueltos: 2 })).toBe(
+      "Aprobó la ficha de SGC-ID-007 (versión 2). Se apagó el soporte obligatorio. Se resolvieron 2 revisiones por cambio de norma.",
+    );
+    expect(frase("indicador_cambio_menor", { codigo: "SGC-ID-007", numero: 3, motivo: "Aclarar el nombre.", impactosResueltos: 1 })).toBe(
+      "Publicó un cambio menor en la ficha de SGC-ID-007 (versión 3): Aclarar el nombre. Se resolvió 1 revisión por cambio de norma.",
+    );
+    expect(frase("indicador_retirado", { codigo: "SGC-ID-007", motivo: "Ya no se mide", impactosResueltos: 2 })).toBe(
+      "Retiró el indicador SGC-ID-007: Ya no se mide. Se resolvieron 2 revisiones por cambio de norma.",
+    );
+    expect(frase("indicador_retirado", { codigo: "SGC-ID-007", motivo: "Ya no se mide.", impactosResueltos: 1 })).toBe(
+      "Retiró el indicador SGC-ID-007: Ya no se mide. Se resolvió 1 revisión por cambio de norma.",
+    );
+    // Sin revisiones resueltas, la frase de siempre.
+    expect(frase("indicador_retirado", { codigo: "SGC-ID-007", motivo: "Ya no se mide", impactosResueltos: 0 })).toBe("Retiró el indicador SGC-ID-007: Ya no se mide");
+    expect(frase("indicador_aprobado", { codigo: "SGC-ID-007", numero: 2 })).toBe("Aprobó la ficha de SGC-ID-007 (versión 2)");
+  });
 });
 
 describe("la medición de un indicador", () => {
