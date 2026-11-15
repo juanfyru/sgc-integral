@@ -19,13 +19,18 @@ const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visib
 
 type Accion = (estado: EstadoAccion, formData: FormData) => Promise<EstadoAccion>;
 
-/** Una acción en su propio formulario: el error se dice junto al botón, y los valores escritos no se pierden. */
+/**
+ * Una acción en su propio formulario: el error se dice junto al botón, y los valores escritos no se pierden. `idBoton` y
+ * `alEnviar` son para quien deba devolver el foco tras la acción (el botón se deshabilita mientras espera y lo pierde).
+ */
 export function FormularioAccion({
   accion,
   campos,
   boton,
   etiquetaAria,
   variante = "primario",
+  idBoton,
+  alEnviar,
   children,
 }: {
   accion: Accion;
@@ -33,16 +38,26 @@ export function FormularioAccion({
   boton: string;
   etiquetaAria?: string;
   variante?: VarianteBoton;
+  idBoton?: string;
+  alEnviar?: () => void;
   children?: React.ReactNode;
 }) {
   const [estado, enviar, pendiente] = useActionState(accion, null);
+  const enviarAccion = enviarSinReiniciar(enviar);
   return (
-    <form action={enviar} onSubmit={enviarSinReiniciar(enviar)} className="flex min-w-0 flex-col items-start gap-2">
+    <form
+      action={enviar}
+      onSubmit={(e) => {
+        alEnviar?.();
+        enviarAccion(e);
+      }}
+      className="flex min-w-0 flex-col items-start gap-2"
+    >
       {Object.entries(campos).map(([nombre, valor]) => (
         <input key={nombre} type="hidden" name={nombre} value={valor} />
       ))}
       {children ? <div className="flex w-full min-w-0 flex-col gap-3">{children}</div> : null}
-      <Boton type="submit" variante={variante} tamano="sm" pendiente={pendiente} aria-label={etiquetaAria}>
+      <Boton id={idBoton} type="submit" variante={variante} tamano="sm" pendiente={pendiente} aria-label={etiquetaAria}>
         {pendiente ? "Procesando…" : boton}
       </Boton>
       {estado ? (

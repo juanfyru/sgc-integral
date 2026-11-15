@@ -8,6 +8,7 @@ import { Boton, claseBoton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import type { DatosFicha } from "@/lib/esquemas/indicadores";
 import { analizar } from "@/lib/indicadores/formula/analizar";
+import { alguienMide } from "@/lib/indicadores/origen";
 import { enPalabras, FACTORES_TASA, formulaDeForma, letrasDeForma, unidadDeForma } from "@/lib/indicadores/formula/formas";
 import { fraccion } from "@/lib/indicadores/formula/fraccion";
 import { rangosATexto, rangosDeTexto, type RangosEnTexto } from "@/lib/indicadores/rangos";
@@ -43,7 +44,7 @@ import {
   variablesDelCalculo,
   type CalculoDeFicha,
 } from "./OrigenDelDato";
-import { ETIQUETA_CONSOLIDACION, OrigenDeVariable, type VariableDelFormulario } from "./OrigenDeVariable";
+import { ETIQUETA_CONSOLIDACION, nombreDeVariable, OrigenDeVariable, type VariableDelFormulario } from "./OrigenDeVariable";
 import { PruebaFormula } from "./PruebaFormula";
 import { conMiles, SelectorForma } from "./SelectorForma";
 import { VistaSemaforo } from "./VistaSemaforo";
@@ -79,8 +80,16 @@ const porNombre = (lista: readonly { id: number; nombre: string }[], nombre: str
 /** «80.5» de la BD se escribe «80,5». */
 const conComa = (v: string | undefined) => (v === undefined ? "" : v.replace(".", ","));
 const variableNueva = (letra: string): Variable => ({ letra, nombre: "", consolidacion: "suma", admiteNegativos: false, origen: "propia" });
-/** Una variable de la ficha guardada o del registro de cálculos: sin origen, «propia» (una ficha anterior a la 14C). */
-const conOrigen = (v: DatosFicha["variables"][number]): Variable => ({ ...v, origen: v.origen ?? "propia" });
+/**
+ * Una variable de la ficha guardada o del registro de cálculos: sin origen, «propia» (una ficha anterior a la 14C). De una
+ * tomada no se hereda el «último» que guarda el servidor (la columna es obligatoria y una tomada no se junta): si vuelve a
+ * ser propia, nace en «se suma».
+ */
+export const conOrigen = (v: DatosFicha["variables"][number]): Variable => ({
+  ...v,
+  origen: v.origen ?? "propia",
+  ...(v.origen === "indicador" ? { consolidacion: "suma" as const } : {}),
+});
 
 function variablesDeForma(forma: Forma, actuales: readonly Variable[]): Variable[] {
   if (forma === "libre") return actuales.length > 0 ? [...actuales] : [variableNueva("A")];
@@ -88,10 +97,11 @@ function variablesDeForma(forma: Forma, actuales: readonly Variable[]): Variable
 }
 
 /**
- * Lo que viaja en el campo oculto `variables`: sin los textos vacíos, que el esquema lee como «no vino», y con lo que pide su
- * origen. De un dato, su referencia y lo que el esquema exige (el nombre y «cómo se junta» del catálogo): el servidor copia
- * lo demás. De otro indicador, cuál y qué se toma, y lo propio menos la fuente, que no se pide. De una propia, ninguna
- * referencia.
+ * Lo que viaja en el campo oculto `variables`: sin los textos vacíos, que el esquema lee como «no vino», y solo lo que pide
+ * el origen elegido (el estado conserva lo de los otros). De un dato, su referencia y lo que el esquema exige (el nombre y
+ * «cómo se junta» del catálogo): el servidor copia lo demás. De otro indicador, cuál y qué se toma, su nombre, qué incluye y
+ * su unidad: nadie lo digita, así que ni fuente ni límites ni negativos, y «cómo se junta» en «último», como lo guarda el
+ * servidor. De una propia, ninguna referencia.
  */
 function limpia(v: Variable, datos: OpcionesFicha["datos"]): Variable {
   const opcional = (t: string | undefined) => (t && t.trim() ? t.trim() : undefined);
@@ -99,25 +109,26 @@ function limpia(v: Variable, datos: OpcionesFicha["datos"]): Variable {
     const dato = datos.find((d) => d.id === v.datoId);
     return {
       letra: v.letra,
-      nombre: (dato?.nombre ?? v.nombre).trim(),
+      nombre: nombreDeVariable(v, datos).trim(),
       consolidacion: dato?.consolidacion ?? v.consolidacion,
       admiteNegativos: v.admiteNegativos,
       origen: "compartida",
       datoId: v.datoId,
     };
   }
-  const propios = {
-    letra: v.letra,
-    nombre: v.nombre.trim(),
-    descripcion: opcional(v.descripcion),
-    unidad: opcional(v.unidad),
+  const comunes = { letra: v.letra, nombre: v.nombre.trim(), descripcion: opcional(v.descripcion), unidad: opcional(v.unidad) };
+  if (v.origen === "indicador") {
+    return { ...comunes, consolidacion: "ultimo", admiteNegativos: false, origen: "indicador", indicadorOrigenId: v.indicadorOrigenId, toma: v.toma ?? "valor" };
+  }
+  return {
+    ...comunes,
+    fuente: opcional(v.fuente),
     consolidacion: v.consolidacion,
     capturaMin: opcional(v.capturaMin),
     capturaMax: opcional(v.capturaMax),
     admiteNegativos: v.admiteNegativos,
+    origen: "propia",
   };
-  if (v.origen === "indicador") return { ...propios, origen: "indicador", indicadorOrigenId: v.indicadorOrigenId, toma: v.toma ?? "valor" };
-  return { ...propios, fuente: opcional(v.fuente), origen: "propia" };
 }
 
 /** La sigla que da el código de una elección: la del subproceso si tiene, si no la del proceso. */
@@ -410,6 +421,8 @@ export function FormularioFicha({
   const [formula, setFormula] = useState(valores.formula ?? "");
   const [variables, setVariables] = useState<Variable[]>(() => variablesDeForma(formaInicial, (valores.variables ?? []).map(conOrigen)));
   const [dimensionId, setDimensionId] = useState<number | "">(valores.dimensionId ?? "");
+  // Lo que la versión que se edita ya cita en cada letra: solo ahí se ofrecen un dato inactivo o un indicador retirado.
+  const citadas = new Map((valores.variables ?? []).map((v) => [v.letra, { datoId: v.datoId, indicadorOrigenId: v.indicadorOrigenId }]));
   const [procesoId, setProcesoId] = useState<number | "">(valores.procesoId ?? "");
   const [subprocesoId, setSubprocesoId] = useState<number | "">(valores.subprocesoId ?? "");
   const [procedimientoId, setProcedimientoId] = useState<number | "">(valores.procedimientoDocumentoId ?? "");
@@ -468,7 +481,7 @@ export function FormularioFicha({
 
   const formulaVigente = forma === "libre" ? formula : formulaDeForma(forma, forma === "tasa" ? factor : undefined);
   const analisis = analizar(formulaVigente);
-  const nombres = Object.fromEntries(variables.map((v) => [v.letra, v.nombre.trim() || v.letra]));
+  const nombres = Object.fromEntries(variables.map((v) => [v.letra, nombreDeVariable(v, opciones.datos).trim() || v.letra]));
   const etiqueta = (v: Variable, i: number) => (forma === "libre" ? `Variable ${v.letra}` : `${v.letra} · ${PAPEL[forma][i]}`);
   const unidad = opciones.unidades.find((u) => u.id === unidadId);
   const vista = { sufijo: unidad?.sufijo ?? "", decimales };
@@ -506,7 +519,8 @@ export function FormularioFicha({
   const ocupado = delCalculo !== null && calculoOcupado(opciones.calculosActivos, calculo, calculoAlcance, procesoId);
   // Una manual sin variables propias tampoco la mide nadie (anexo 14C, §3.1): como un automático, sin quién mida, sin cargo
   // de medir, sin soporte obligatorio ni prueba; quien estaba elegido para medir sigue analizando.
-  const sinPropias = !automatico && variables.every((v) => v.origen !== "propia");
+  const todasAjenas = !alguienMide({ origenDato: "manual", variables });
+  const sinPropias = !automatico && todasAjenas;
   const nadieMide = automatico || sinPropias;
   const analizaElegida = nadieMide && analiza === "misma" ? mide : analiza;
   const listaMide = nadieMide ? [] : operacionFija ? (valores.mide ?? []) : mide === "" ? [] : [mide];
@@ -765,6 +779,7 @@ export function FormularioFicha({
                   <div key={v.letra} className="grid min-w-0 grid-cols-1 gap-2 rounded-md border border-border p-3 sm:grid-cols-2">
                     <OrigenDeVariable
                       variable={v}
+                      citada={citadas.get(v.letra)}
                       etiqueta={etiqueta(v, i)}
                       datos={opciones.datos}
                       tomables={opciones.tomables}
@@ -980,6 +995,7 @@ export function FormularioFicha({
         <div className="mt-3 flex min-w-0 flex-col gap-5">
           <OrigenDelDato
             automatico={automatico}
+            sinPropias={todasAjenas}
             alElegirOrigen={elegirOrigen}
             cambio={edicion?.cambio === true}
             calculos={opciones.calculos}
@@ -1178,54 +1194,59 @@ export function FormularioFicha({
                         className={CONTROL}
                       />
                     </Etiquetado>
-                    {/* Una variable tomada no se junta: vale el acumulado propio de su indicador (anexo 14C, §6.4). */}
+                    {/*
+                      Una variable tomada no la digita nadie y no se junta (vale el acumulado propio de su indicador, anexo
+                      14C §6.4): ni «cómo se junta», ni límites de captura, ni negativos.
+                    */}
                     {v.origen === "indicador" ? null : (
-                      <Etiquetado id={`ficha-variable-${v.letra}-consolidacion`} etiqueta={`Cómo se junta ${v.letra} en un periodo mayor`}>
-                        <select
-                          id={`ficha-variable-${v.letra}-consolidacion`}
-                          value={v.consolidacion}
-                          onChange={(e) => cambiarVariable(v.letra, { consolidacion: e.target.value as Consolidacion })}
-                          className={CONTROL}
-                        >
-                          {CONSOLIDACIONES.map((c) => (
-                            <option key={c} value={c}>
-                              {ETIQUETA_CONSOLIDACION[c]}
-                            </option>
-                          ))}
-                        </select>
-                      </Etiquetado>
+                      <>
+                        <Etiquetado id={`ficha-variable-${v.letra}-consolidacion`} etiqueta={`Cómo se junta ${v.letra} en un periodo mayor`}>
+                          <select
+                            id={`ficha-variable-${v.letra}-consolidacion`}
+                            value={v.consolidacion}
+                            onChange={(e) => cambiarVariable(v.letra, { consolidacion: e.target.value as Consolidacion })}
+                            className={CONTROL}
+                          >
+                            {CONSOLIDACIONES.map((c) => (
+                              <option key={c} value={c}>
+                                {ETIQUETA_CONSOLIDACION[c]}
+                              </option>
+                            ))}
+                          </select>
+                        </Etiquetado>
+                        <div className="grid min-w-0 grid-cols-2 gap-2">
+                          <Etiquetado id={`ficha-variable-${v.letra}-min`} etiqueta={`Mínimo de ${v.letra}`}>
+                            <input
+                              id={`ficha-variable-${v.letra}-min`}
+                              inputMode="decimal"
+                              value={conComa(v.capturaMin)}
+                              onChange={(e) => cambiarVariable(v.letra, { capturaMin: e.target.value })}
+                              className={CONTROL}
+                            />
+                          </Etiquetado>
+                          <Etiquetado id={`ficha-variable-${v.letra}-max`} etiqueta={`Máximo de ${v.letra}`}>
+                            <input
+                              id={`ficha-variable-${v.letra}-max`}
+                              inputMode="decimal"
+                              value={conComa(v.capturaMax)}
+                              onChange={(e) => cambiarVariable(v.letra, { capturaMax: e.target.value })}
+                              className={CONTROL}
+                            />
+                          </Etiquetado>
+                        </div>
+                        <div className="flex items-center gap-2 sm:col-span-2">
+                          <input
+                            type="checkbox"
+                            id={`ficha-variable-${v.letra}-negativos`}
+                            checked={v.admiteNegativos}
+                            onChange={(e) => cambiarVariable(v.letra, { admiteNegativos: e.target.checked })}
+                          />
+                          <label htmlFor={`ficha-variable-${v.letra}-negativos`} className="text-sm">
+                            {`${v.letra} admite negativos`}
+                          </label>
+                        </div>
+                      </>
                     )}
-                    <div className="grid min-w-0 grid-cols-2 gap-2">
-                      <Etiquetado id={`ficha-variable-${v.letra}-min`} etiqueta={`Mínimo de ${v.letra}`}>
-                        <input
-                          id={`ficha-variable-${v.letra}-min`}
-                          inputMode="decimal"
-                          value={conComa(v.capturaMin)}
-                          onChange={(e) => cambiarVariable(v.letra, { capturaMin: e.target.value })}
-                          className={CONTROL}
-                        />
-                      </Etiquetado>
-                      <Etiquetado id={`ficha-variable-${v.letra}-max`} etiqueta={`Máximo de ${v.letra}`}>
-                        <input
-                          id={`ficha-variable-${v.letra}-max`}
-                          inputMode="decimal"
-                          value={conComa(v.capturaMax)}
-                          onChange={(e) => cambiarVariable(v.letra, { capturaMax: e.target.value })}
-                          className={CONTROL}
-                        />
-                      </Etiquetado>
-                    </div>
-                    <div className="flex items-center gap-2 sm:col-span-2">
-                      <input
-                        type="checkbox"
-                        id={`ficha-variable-${v.letra}-negativos`}
-                        checked={v.admiteNegativos}
-                        onChange={(e) => cambiarVariable(v.letra, { admiteNegativos: e.target.checked })}
-                      />
-                      <label htmlFor={`ficha-variable-${v.letra}-negativos`} className="text-sm">
-                        {`${v.letra} admite negativos`}
-                      </label>
-                    </div>
                   </div>
                 ),
               )}

@@ -5,12 +5,15 @@
  */
 import { existsSync } from "node:fs";
 import type { TransactionSql } from "postgres";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, describe, expect, it } from "vitest";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
 }
 
+import { botonTrasMover, idDeMover, TablaDimensiones } from "@/componentes/indicadores/admin/TablaDimensiones";
 import { obtenerSql } from "@/db/cliente";
 import {
   borrarCategoria,
@@ -22,6 +25,8 @@ import {
   listarDimensiones,
   maestroDeCategorias,
   moverCategoria,
+  type Categoria,
+  type Dimension,
 } from "@/db/consultas/indicadores/dimensiones";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
@@ -242,4 +247,38 @@ describe("permiso y bitácora", () => {
       expect(filas[4].detalle).toMatchObject({ nombre: "Sur", sentido: "arriba" });
       expect(filas[10].detalle).toMatchObject({ categorias: 1 });
     }));
+});
+
+describe("el foco tras mover una categoría (Tarea 8, ronda 1)", () => {
+  it("queda en el mismo botón si sigue existiendo; si la categoría quedó en un extremo, en el otro", () => {
+    // Cuatro categorías: subir la tercera (posición 1 ahora) deja «Subir»; subir la segunda (ahora primera), «Bajar».
+    expect(botonTrasMover(1, 4, "arriba")).toBe("arriba");
+    expect(botonTrasMover(0, 4, "arriba")).toBe("abajo");
+    expect(botonTrasMover(2, 4, "abajo")).toBe("abajo");
+    expect(botonTrasMover(3, 4, "abajo")).toBe("arriba");
+    // Con dos, cada una tiene un solo botón: el otro.
+    expect(botonTrasMover(0, 2, "arriba")).toBe("abajo");
+    expect(botonTrasMover(1, 2, "abajo")).toBe("arriba");
+    // Con una sola no hay botón de mover.
+    expect(botonTrasMover(0, 1, "arriba")).toBeNull();
+  });
+
+  it("cada botón de mover tiene el `id` al que vuelve el foco: «Subir» salvo en la primera y «Bajar» salvo en la última", () => {
+    const categoria = (id: number, nombre: string, orden: number): Categoria => ({ id, dimensionId: 1, nombre, orden, activo: true, usada: false });
+    const dimension: Dimension = {
+      id: 1,
+      nombre: "Sede",
+      orden: 1,
+      activo: true,
+      usada: false,
+      categorias: [categoria(11, "Norte", 1), categoria(12, "Centro", 2), categoria(13, "Sur", 3)],
+    };
+    const html = renderToStaticMarkup(createElement(TablaDimensiones, { dimensiones: [dimension] }));
+    const ids = [...html.matchAll(/<button\b[^>]*\sid="(categoria-\d+-(?:subir|bajar))"[^>]*>/g)].map((m) => m[1]);
+    expect(ids).toEqual(["categoria-11-bajar", "categoria-12-subir", "categoria-12-bajar", "categoria-13-subir"]);
+    expect(idDeMover(12, "arriba")).toBe("categoria-12-subir");
+    expect(idDeMover(12, "abajo")).toBe("categoria-12-bajar");
+    // Cada uno conserva su nombre accesible.
+    expect(html).toMatch(/<button\b(?=[^>]*\sid="categoria-12-subir")(?=[^>]*aria-label="Subir la categoría Centro")[^>]*>/);
+  });
 });

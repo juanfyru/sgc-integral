@@ -67,6 +67,8 @@ export const ESPERA_ANTES_DE_CALCULAR = "Días de espera antes de calcular";
 
 /** Quién mide una ficha manual sin variables propias (anexo 14C, §3.1): sus datos llegan de otros datos e indicadores. */
 export const NADIE_MIDE_AJENO = "Nadie: sus datos llegan de otras fuentes";
+/** «Cómo se obtiene el dato» de esa misma ficha: nadie lo digita, aunque tampoco lo calcule el sistema. */
+export const ORIGEN_AJENO = "Llega de datos compartidos o de otros indicadores";
 
 /** Lo que el formulario advierte al desagregar (anexo 14C, §5.2). */
 export const AVISO_DESAGREGACION =

@@ -14,6 +14,7 @@ import { ETIQUETA_ESTADO } from "./estados";
 import type { ContenidoFicha, VariableDeFicha } from "./ficha";
 import { enPalabras } from "./formula/formas";
 import { fraccion } from "./formula/fraccion";
+import { alguienMide } from "./origen";
 import { rangosDeTexto } from "./rangos";
 import { numeroExacto, rangosEnPalabras, type Regla } from "./semaforo";
 import { textoMeta, type Unidad } from "./textos";
@@ -24,8 +25,10 @@ import {
   NADIE_MIDE,
   NADIE_MIDE_AJENO,
   NO_ALCANZA_LA_META,
+  ORIGEN_AJENO,
   sinAlcanzarLaMeta,
   type ModoSemaforo,
+  type OrigenVariable,
   type Periodicidad,
   type Semaforo,
   type Tendencia,
@@ -49,15 +52,20 @@ export const ORIGEN: Record<string, string> = { manual: "Lo digita una persona",
 /** Una ficha que calcula el sistema (anexo 14B, §5.3): nadie la mide, así que no lleva responsables de medir. */
 export const esAutomatica = (c: Pick<ContenidoFicha, "origenDato">) => c.origenDato === "automatico";
 
-/** Una ficha manual sin variables propias (anexo 14C, §3.1): sus datos llegan de datos compartidos y de otros indicadores. */
+/**
+ * Una ficha manual sin variables propias (anexo 14C, §3.1): sus datos llegan de datos compartidos y de otros indicadores. La
+ * regla de quién mide es la de `alguienMide`.
+ */
 export const sinVariablesPropias = (c: Pick<ContenidoFicha, "origenDato" | "variables">) =>
-  !esAutomatica(c) && c.variables.every((v) => v.origen !== "propia");
+  !esAutomatica(c) && !alguienMide({ origenDato: "manual", variables: c.variables.map((v) => ({ letra: v.letra, origen: v.origen as OrigenVariable })) });
 
 /**
- * «Cómo se obtiene el dato»: «Lo digita una persona» o, en una automática, «Lo calcula el sistema · *nombre del cálculo* ·
- * *alcance*». La misma frase en la pantalla, el impreso y el Excel.
+ * «Cómo se obtiene el dato»: «Lo digita una persona»; en una manual sin variables propias, que llega de datos compartidos o de
+ * otros indicadores (`ORIGEN_AJENO`); o, en una automática, «Lo calcula el sistema · *nombre del cálculo* · *alcance*». La
+ * misma frase en la pantalla, el impreso y el Excel.
  */
-export function origenEnTexto(c: Pick<ContenidoFicha, "origenDato" | "calculo" | "calculoAlcance">): string {
+export function origenEnTexto(c: Pick<ContenidoFicha, "origenDato" | "calculo" | "calculoAlcance" | "variables">): string {
+  if (sinVariablesPropias(c)) return ORIGEN_AJENO;
   const origen = ORIGEN[c.origenDato] ?? c.origenDato;
   if (!esAutomatica(c)) return origen;
   const alcance = c.calculoAlcance && Object.hasOwn(ETIQUETA_ALCANCE, c.calculoAlcance) ? ETIQUETA_ALCANCE[c.calculoAlcance as keyof typeof ETIQUETA_ALCANCE] : c.calculoAlcance;

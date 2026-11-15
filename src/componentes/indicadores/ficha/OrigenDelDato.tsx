@@ -4,7 +4,7 @@ import { Check } from "lucide-react";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import type { DatosFicha } from "@/lib/esquemas/indicadores";
 import { enPalabras, formulaDeForma } from "@/lib/indicadores/formula/formas";
-import { ESPERA_ANTES_DE_CALCULAR, type Forma, type OpcionesFicha } from "@/lib/indicadores/tipos";
+import { ESPERA_ANTES_DE_CALCULAR, ORIGEN_AJENO, type Forma, type OpcionesFicha } from "@/lib/indicadores/tipos";
 
 /**
  * «Cómo se obtiene el dato» (anexo 14B, §5.3): lo digita una persona o lo calcula el sistema. Con el sistema, se elige uno
@@ -80,9 +80,13 @@ const ORIGENES = [
   { valor: "automatico", nombre: "Lo calcula el sistema", detalle: "Lo toma de la plataforma: nadie lo digita." },
 ] as const;
 
-/** La sección de «Más opciones»: el origen del dato y, con el sistema, el cálculo y su alcance. */
+/**
+ * La sección de «Más opciones»: el origen del dato y, con el sistema, el cálculo y su alcance. Si ninguna variable es propia,
+ * la opción manual dice de dónde llega (`ORIGEN_AJENO`), como la ficha técnica: nadie lo digita.
+ */
 export function OrigenDelDato({
   automatico,
+  sinPropias = false,
   alElegirOrigen,
   cambio,
   calculos,
@@ -94,6 +98,8 @@ export function OrigenDelDato({
   errorDe,
 }: {
   automatico: boolean;
+  /** Ninguna variable de la ficha es propia. */
+  sinPropias?: boolean;
   alElegirOrigen: (automatico: boolean) => void;
   /** Un cambio sobre una ficha aprobada: conserva el origen y cambiarlo es un cambio mayor. */
   cambio: boolean;
@@ -119,6 +125,7 @@ export function OrigenDelDato({
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {ORIGENES.map((o) => {
           const elegida = (o.valor === "automatico") === automatico;
+          const ajeno = o.valor === "manual" && sinPropias;
           return (
             <div key={o.valor} className="min-w-0">
               <input
@@ -138,9 +145,9 @@ export function OrigenDelDato({
               >
                 <span className="flex items-center gap-1 font-semibold">
                   {elegida ? <Check aria-hidden="true" className="size-4 shrink-0" /> : null}
-                  <span>{o.nombre}</span>
+                  <span>{ajeno ? ORIGEN_AJENO : o.nombre}</span>
                 </span>
-                <span className="text-xs text-muted-foreground">{o.detalle}</span>
+                {ajeno ? null : <span className="text-xs text-muted-foreground">{o.detalle}</span>}
               </label>
             </div>
           );

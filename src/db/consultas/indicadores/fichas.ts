@@ -195,14 +195,15 @@ type VariableDeDatos = DatosFichaNueva["variables"][number];
 /**
  * Cada variable con solo las referencias de su origen (anexo 14C, §3.1). De una que es un dato compartido quedan la letra,
  * el dato y lo que el esquema exige (nombre, «cómo se junta» y «admite negativos»): al escribirla, el catálogo pisa todo
- * lo que la variable firma del dato.
+ * lo que la variable firma del dato. Una tomada de otro indicador no la digita nadie: sin límites de captura y sin admitir
+ * negativos, traiga lo que traiga el formulario.
  */
 function variableConOrigen(v: VariableDeDatos): VariableDeDatos {
   const origen = v.origen ?? "propia";
   if (origen === "compartida") {
     return { letra: v.letra, nombre: v.nombre, consolidacion: v.consolidacion, admiteNegativos: v.admiteNegativos, origen, datoId: v.datoId };
   }
-  if (origen === "indicador") return { ...v, origen, datoId: undefined };
+  if (origen === "indicador") return { ...v, origen, datoId: undefined, capturaMin: undefined, capturaMax: undefined, admiteNegativos: false };
   return { ...v, origen, datoId: undefined, indicadorOrigenId: undefined, toma: undefined };
 }
 
@@ -613,8 +614,9 @@ function pruebaDe(tx: TransactionSql, d: DatosFichaNueva) {
 
 /**
  * La fila de una variable, con su origen (anexo 14C, §4.2 y §6.1). De un dato compartido copia del catálogo todo lo que la
- * variable firma, con la periodicidad del dato; de otro indicador, el código y el nombre de su ficha vigente, y «cómo se
- * junta» queda en «último» (la columna es obligatoria y una variable tomada no se junta).
+ * variable firma, con la periodicidad del dato; de otro indicador, el código y el nombre de su ficha vigente, «cómo se
+ * junta» queda en «último» (la columna es obligatoria y una variable tomada no se junta) y, como nadie la digita, sin límites
+ * de captura ni negativos.
  */
 function filaDeVariable(v: VariableDeDatos, automatica: boolean, n: Nombres) {
   const sinReferencias = {
@@ -657,6 +659,9 @@ function filaDeVariable(v: VariableDeDatos, automatica: boolean, n: Nombres) {
     return {
       ...sinReferencias,
       ...propios,
+      captura_min: null,
+      captura_max: null,
+      admite_negativos: false,
       origen,
       consolidacion: "ultimo",
       indicador_origen_id: componente.id,

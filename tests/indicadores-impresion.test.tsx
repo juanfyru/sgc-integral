@@ -47,9 +47,9 @@ import { retirar } from "@/db/consultas/indicadores/operacion";
 import { fichaDeVersion, versionesDe, type FichaLeida, type OperacionLeida } from "@/db/consultas/indicadores/aprobacion";
 import { construirExcelDeIndicador } from "@/lib/indicadores/excel";
 import { camposDeFicha, camposDeOperacion, fechaYHora } from "@/lib/indicadores/ficha-en-texto";
-import { avisoDeDeduccion, NADIE_MIDE_AJENO } from "@/lib/indicadores/tipos";
+import { avisoDeDeduccion, NADIE_MIDE_AJENO, ORIGEN_AJENO } from "@/lib/indicadores/tipos";
 import type { SesionValida } from "@/lib/sesion";
-import { dimensionDePrueba, indicadorDePrueba, loteImportado, versionTrimestral, type IndicadorDePrueba } from "./utiles/indicadores";
+import { datoDePrueba, dimensionDePrueba, indicadorDePrueba, loteImportado, versionTrimestral, type IndicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -608,13 +608,22 @@ describe("FichaImpresa", () => {
     // El dato ya dice cómo se junta y un componente no se junta: ninguno repite «Se suma» ni «Último valor».
     expect(campo("Variable A")).toEqual({ termino: "Variable A", valor: "Partos atendidos", detalle: "Dato compartido · Mensual · se suma · Fuente: Registro de partos" });
     expect(campo("Variable B")).toEqual({ termino: "Variable B", valor: "Satisfacción", detalle: "Resultado de SGC-ID-004 Satisfacción del usuario: su valor" });
-    // Sin variables propias nadie mide: donde iría el cargo que mide.
+    // Sin variables propias nadie mide: donde iría el cargo que mide; y el dato llega de otras fuentes (ronda 1).
     expect(campo("Responsables de medir")?.valor).toBe(NADIE_MIDE_AJENO);
+    expect(campo("Cómo se obtiene el dato")?.valor).toBe(ORIGEN_AJENO);
     const pantalla = renderToStaticMarkup(<FichaTecnica ficha={ficha} operacion={null} />);
-    for (const t of [">Desagregación<", ">Por Sede<", "Dato compartido · Mensual · se suma · Fuente: Registro de partos", "Resultado de SGC-ID-004 Satisfacción del usuario: su valor", NADIE_MIDE_AJENO]) {
+    for (const t of [
+      ">Desagregación<",
+      ">Por Sede<",
+      "Dato compartido · Mensual · se suma · Fuente: Registro de partos",
+      "Resultado de SGC-ID-004 Satisfacción del usuario: su valor",
+      NADIE_MIDE_AJENO,
+      `>${ORIGEN_AJENO}<`,
+    ]) {
       expect(pantalla, t).toContain(t);
     }
     expect(pantalla).not.toContain("Último valor");
+    expect(pantalla).not.toContain("Lo digita una persona");
     // Sin desagregación no hay campo; una propia sigue diciendo cómo se junta y nombrando sus responsables de medir.
     const manual = camposDeFicha(fichaCompleta()).estructura;
     expect(manual.map((c) => c.termino)).not.toContain("Desagregación");
@@ -659,6 +668,29 @@ describe("FichaImpresa", () => {
       const html = await impreso(tx, await sesionAdmin(tx), ind);
       expect(html).toMatch(new RegExp(`<th[^>]*>Desagregación</th><td[^>]*>Por ${sede.nombre}<`));
       expect(sede.nombre.toLowerCase()).toBe("sede");
+    }));
+
+  it("el impreso y el Excel de una ficha sin variables propias dicen que el dato llega de otras fuentes; un mixto, que lo digita una persona (ronda 1)", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const admin = await sesionAdmin(tx);
+      const dato = await datoDePrueba(tx, { procesoId: p.id });
+      const componente = await indicadorDePrueba(tx, { procesoId: p.id, aprobadaEn: APROBADA });
+      const base = { procesoId: p.id, periodicidad: "trimestral" as const, inicioMedicion: "2026-T1", aprobadaEn: APROBADA };
+      const ajena = await indicadorDePrueba(tx, { ...base, variables: { A: { datoId: dato }, B: { indicadorOrigenId: componente.id } } });
+      const mixta = await indicadorDePrueba(tx, { ...base, variables: { A: { datoId: dato } } });
+      const fichaDelExcel = async (ind: IndicadorDePrueba) => {
+        const libro = new ExcelJS.Workbook();
+        await libro.xlsx.load((await construirExcelDeIndicador((await impresionDelAnio(admin, ind.codigo, 2026, opc(tx)))!, META)) as unknown as ArrayBuffer);
+        const filas: string[] = [];
+        libro.getWorksheet("Ficha")!.eachRow((fila) => filas.push((fila.values as unknown[]).slice(1).map((v) => String(v ?? "")).join(" | ")));
+        return filas;
+      };
+      const comoSeObtiene = (html: string) => html.match(/<th[^>]*>Cómo se obtiene el dato<\/th><td[^>]*>([^<]*)</)?.[1];
+      expect(comoSeObtiene(await impreso(tx, admin, ajena))).toBe(ORIGEN_AJENO);
+      expect(await fichaDelExcel(ajena)).toContain(`Estructura de medición | Cómo se obtiene el dato | ${ORIGEN_AJENO}`);
+      expect(comoSeObtiene(await impreso(tx, admin, mixta))).toBe("Lo digita una persona");
+      expect(await fichaDelExcel(mixta)).toContain("Estructura de medición | Cómo se obtiene el dato | Lo digita una persona");
     }));
 
   it("una ficha automática dice cómo se obtiene el dato con su cálculo y su alcance, y no nombra responsables de medir (14B, Tarea 4)", () => {

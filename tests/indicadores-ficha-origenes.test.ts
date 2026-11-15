@@ -291,6 +291,31 @@ describe("guardar el origen de cada variable", () => {
       expect((await contenidoDeVersion(tx, versionId)).variables[1].origenNombre).toBe("Nombre nuevo del componente");
     }));
 
+  it("una tomada no la digita nadie: sin límites de captura ni negativos, mande lo que mande el formulario; lo suyo sí lo guarda (Tarea 8, ronda 1)", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const comp = await indicadorDePrueba(tx, { procesoId: b.procesoId });
+      const conLimites = {
+        ...delIndicador("B", comp.id),
+        descripcion: "La satisfacción del trimestre",
+        unidad: "puntos",
+        capturaMin: "1",
+        capturaMax: "9",
+        admiteNegativos: true,
+      };
+      const filaDeB = async (versionId: number) =>
+        (await tx`SELECT descripcion, unidad, captura_min, captura_max, admite_negativos, consolidacion
+          FROM indicador_variables WHERE version_id = ${versionId} AND letra = 'B'`)[0];
+      const esperada = { descripcion: "La satisfacción del trimestre", unidad: "puntos", captura_min: null, captura_max: null, admite_negativos: false, consolidacion: "ultimo" };
+      const { versionId } = await crearIndicador(b.admin, ficha(b, [propia("A", "Propia A"), conLimites]), { sql: tx });
+      expect(await filaDeB(versionId)).toEqual(esperada);
+      // Al guardar el borrador, igual; y una propia sí conserva los suyos.
+      await guardarBorrador(b.admin, versionId, ficha(b, [{ ...propia("A"), capturaMin: "0", capturaMax: "50", admiteNegativos: true }, conLimites]), { sql: tx });
+      expect(await filaDeB(versionId)).toEqual(esperada);
+      const [a] = await tx`SELECT captura_min, captura_max, admite_negativos FROM indicador_variables WHERE version_id = ${versionId} AND letra = 'A'`;
+      expect(a).toEqual({ captura_min: "0", captura_max: "50", admite_negativos: true });
+    }));
+
   it("una ficha manual con todas sus variables ajenas no exige cargo de medir; con alguna propia, sí", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);

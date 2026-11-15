@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import {
   borrarCategoriaDeDimension,
   borrarDimensionDeIndicadores,
@@ -17,12 +18,59 @@ import { CONTROL, Desplegable, FormularioAccion } from "./TablaMaestro";
 
 const AYUDA_NOMBRE = "Entre 2 y 80 caracteres.";
 
+export type Sentido = "arriba" | "abajo";
+
+/** El `id` del botón «Subir» o «Bajar» de una categoría. */
+export const idDeMover = (categoriaId: number, sentido: Sentido) => `categoria-${categoriaId}-${sentido === "arriba" ? "subir" : "bajar"}`;
+
+/**
+ * El botón de mover que recibe el foco tras mover una categoría a `posicion` (desde 0) entre `total`: el mismo, si sigue
+ * existiendo; si no (la categoría quedó en un extremo), el otro. «Subir» existe salvo en la primera y «Bajar», salvo en la
+ * última; con una sola categoría, ninguno.
+ */
+export function botonTrasMover(posicion: number, total: number, sentido: Sentido): Sentido | null {
+  const existe = (s: Sentido) => (s === "arriba" ? posicion > 0 : posicion < total - 1);
+  const otro: Sentido = sentido === "arriba" ? "abajo" : "arriba";
+  return existe(sentido) ? sentido : existe(otro) ? otro : null;
+}
+
+/**
+ * Lleva el foco al botón `id` en cuanto exista y esté habilitado: el de la acción sigue deshabilitado mientras termina, y
+ * el navegador no enfoca un botón deshabilitado. Lo intenta unos cuantos cuadros, nada más.
+ */
+function enfocarCuandoSePueda(id: string, intentos = 10) {
+  const boton = document.getElementById(id);
+  if (boton instanceof HTMLButtonElement && !boton.disabled) {
+    boton.focus();
+    return;
+  }
+  if (intentos > 0) requestAnimationFrame(() => enfocarCuandoSePueda(id, intentos - 1));
+}
+
 /**
  * El maestro de dimensiones (anexo 14C, §5.1): cada dimensión con sus categorías anidadas. Lo que ya se usó no se
  * borra: se desactiva y los periodos nuevos dejan de pedirlo. Cada acción lleva su texto y se maneja con el teclado;
- * a ancho de teléfono las categorías son una lista vertical y sus botones se envuelven.
+ * a ancho de teléfono las categorías son una lista vertical y sus botones se envuelven. Tras «Subir» o «Bajar», el foco
+ * sigue en la categoría que se movió (`botonTrasMover`): el botón se deshabilita mientras espera y la fila cambia de lugar,
+ * y sin esto quien usa el teclado volvería al principio de la página.
  */
 export function TablaDimensiones({ dimensiones }: { dimensiones: Dimension[] }) {
+  const movida = useRef<{ categoriaId: number; sentido: Sentido; desde: number } | null>(null);
+  // Las dimensiones llegan de nuevo cuando la acción termina: si la categoría cambió de lugar, el foco va a su botón.
+  useEffect(() => {
+    const pedido = movida.current;
+    if (!pedido) return;
+    movida.current = null;
+    const dimension = dimensiones.find((d) => d.categorias.some((c) => c.id === pedido.categoriaId));
+    const posicion = dimension?.categorias.findIndex((c) => c.id === pedido.categoriaId) ?? -1;
+    if (!dimension || posicion === pedido.desde) return;
+    const sentido = botonTrasMover(posicion, dimension.categorias.length, pedido.sentido);
+    if (sentido) enfocarCuandoSePueda(idDeMover(pedido.categoriaId, sentido));
+  }, [dimensiones]);
+  const mover = (categoriaId: number, sentido: Sentido, desde: number) => () => {
+    movida.current = { categoriaId, sentido, desde };
+  };
+
   return (
     <section aria-labelledby="titulo-dimensiones" className="flex min-w-0 flex-col gap-4 rounded-xl border border-border bg-card p-4">
       <div>
@@ -95,6 +143,8 @@ export function TablaDimensiones({ dimensiones }: { dimensiones: Dimension[] }) 
                             boton="Subir"
                             etiquetaAria={`Subir la categoría ${c.nombre}`}
                             variante="secundario"
+                            idBoton={idDeMover(c.id, "arriba")}
+                            alEnviar={mover(c.id, "arriba", i)}
                           />
                         ) : null}
                         {i < d.categorias.length - 1 ? (
@@ -104,6 +154,8 @@ export function TablaDimensiones({ dimensiones }: { dimensiones: Dimension[] }) 
                             boton="Bajar"
                             etiquetaAria={`Bajar la categoría ${c.nombre}`}
                             variante="secundario"
+                            idBoton={idDeMover(c.id, "abajo")}
+                            alEnviar={mover(c.id, "abajo", i)}
                           />
                         ) : null}
                         <FormularioAccion

@@ -38,27 +38,19 @@ export function origenConTecla(actual: OrigenDeFormulario, tecla: string): Orige
   return ORIGENES_DE_VARIABLE[(i + paso + n) % n].valor;
 }
 
-/** Lo que una variable copia de un dato al elegirlo: el nombre y «cómo se junta» (el esquema los pide; el servidor los vuelve a copiar). */
-function delDato(datos: OpcionesFicha["datos"], datoId: number | undefined): Partial<VariableDelFormulario> {
-  const dato = datos.find((d) => d.id === datoId);
-  return dato ? { datoId: dato.id, nombre: dato.nombre, consolidacion: dato.consolidacion } : {};
-}
-
 /**
- * Lo que cambia en la variable al elegir su origen: se sueltan las referencias que el nuevo no usa. Una que vuelve a ser
- * propia desde un indicador vuelve a «se suma» (el «último» de una tomada lo pone el servidor y no es de quien mide).
+ * Lo que cambia en la variable al elegir su origen: solo el origen. Lo que se había elegido en los otros (el dato, el
+ * indicador, qué se toma, el nombre y «cómo se junta» de la propia) se conserva en el estado, para que pasar por otra opción
+ * con las flechas y volver no lo pierda; `limpia` envía solo lo del origen elegido. El «último» que el servidor guarda en
+ * una tomada no llega al estado (`conOrigen`), así que volver de un indicador a propia no lo hereda.
  */
-export function cambioDeOrigen(v: VariableDelFormulario, origen: OrigenDeFormulario, datos: OpcionesFicha["datos"]): Partial<VariableDelFormulario> {
-  if (origen === "propia") {
-    return { origen, datoId: undefined, indicadorOrigenId: undefined, toma: undefined, ...(v.origen === "indicador" ? { consolidacion: "suma" as const } : {}) };
-  }
-  if (origen === "compartida") return { origen, indicadorOrigenId: undefined, toma: undefined, ...delDato(datos, v.datoId) };
-  return { origen, datoId: undefined, toma: v.toma ?? "valor" };
-}
+export const cambioDeOrigen = (origen: OrigenDeFormulario): Partial<VariableDelFormulario> => ({ origen });
 
-/** Elegir el dato de una variable: su nombre y «cómo se junta» vienen con él. */
-export const cambioDeDato = (datoId: number | undefined, datos: OpcionesFicha["datos"]): Partial<VariableDelFormulario> =>
-  datoId === undefined ? { datoId: undefined } : { datoId, ...delDato(datos, datoId) };
+/** El nombre con que se lee la variable: el de su dato, si es un dato compartido; si no, el que se le escribió. */
+export function nombreDeVariable(v: VariableDelFormulario, datos: OpcionesFicha["datos"]): string {
+  if (v.origen !== "compartida") return v.nombre;
+  return datos.find((d) => d.id === v.datoId)?.nombre ?? (v.datoId !== undefined ? v.nombre : "");
+}
 
 /**
  * Elegir el indicador de una variable: si aún no tiene nombre, toma el del indicador; y si se tomaba el cumplimiento de uno
@@ -102,16 +94,20 @@ function Rotulado({ id, etiqueta, ayuda, children }: { id: string; etiqueta: str
  * Una variable en «Variables»: de dónde sale (un grupo de opciones que se recorre con las flechas, como un grupo de radios:
  * una sola parada del tabulador, en la elegida) y lo que ese origen pide. Propia: su nombre y su fuente. Dato compartido: el
  * dato y, en solo lectura, su nombre, su unidad y «cómo se junta». Resultado de otro indicador: el indicador, qué se toma y
- * el nombre de la variable; con uno restringido, el aviso de deducción.
+ * el nombre de la variable; con uno restringido, el aviso de deducción, que se anuncia (`aria-live`). Un dato inactivo o un
+ * indicador retirado solo se ofrecen en la variable que ya los citaba: elegirlos como cita nueva no vale.
  */
 export function OrigenDeVariable({
   variable: v,
+  citada,
   etiqueta,
   datos,
   tomables,
   alCambiar,
 }: {
   variable: VariableDelFormulario;
+  /** Lo que la versión que se edita ya citaba en esta letra: la cita vieja que sigue valiendo aunque esté inactiva. */
+  citada?: { datoId?: number; indicadorOrigenId?: number };
   /** El rótulo de su nombre: «Variable A» o «A · Numerador». */
   etiqueta: string;
   datos: OpcionesFicha["datos"];
@@ -121,7 +117,9 @@ export function OrigenDeVariable({
   const id = `ficha-variable-${v.letra}`;
   const dato = v.origen === "compartida" ? (datos.find((d) => d.id === v.datoId) ?? null) : null;
   const tomable = v.origen === "indicador" ? (tomables.find((t) => t.id === v.indicadorOrigenId) ?? null) : null;
-  const elegir = (origen: OrigenDeFormulario) => alCambiar(cambioDeOrigen(v, origen, datos));
+  const datosOfrecidos = datos.filter((d) => !d.inactivo || d.id === v.datoId || d.id === citada?.datoId);
+  const tomablesOfrecidos = tomables.filter((t) => !t.retirado || t.id === v.indicadorOrigenId || t.id === citada?.indicadorOrigenId);
+  const elegir = (origen: OrigenDeFormulario) => alCambiar(cambioDeOrigen(origen));
   const conTecla = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const siguiente = origenConTecla(v.origen, e.key);
     if (!siguiente) return;
@@ -198,9 +196,9 @@ export function OrigenDeVariable({
         <>
           <div className="min-w-0 sm:col-span-2">
             <Rotulado id={`${id}-dato`} etiqueta={`Dato compartido de ${v.letra}`}>
-              <select id={`${id}-dato`} required value={v.datoId ?? ""} onChange={(e) => alCambiar(cambioDeDato(numero(e.target.value), datos))} className={CONTROL}>
+              <select id={`${id}-dato`} required value={v.datoId ?? ""} onChange={(e) => alCambiar({ datoId: numero(e.target.value) })} className={CONTROL}>
                 <option value="">Elija el dato</option>
-                {datos.map((d) => (
+                {datosOfrecidos.map((d) => (
                   <option key={d.id} value={d.id}>
                     {`${d.nombre} · ${d.proceso} · ${ETIQUETA_PERIODICIDAD[d.periodicidad]}${d.inactivo ? " (inactivo)" : ""}`}
                   </option>
@@ -209,7 +207,7 @@ export function OrigenDeVariable({
             </Rotulado>
           </div>
           <Rotulado id={id} etiqueta={etiqueta} ayuda="Lo pone el dato compartido.">
-            <input id={id} readOnly value={dato?.nombre ?? (v.datoId !== undefined ? v.nombre : "")} aria-describedby={`${id}-ayuda`} className={CONTROL} />
+            <input id={id} readOnly value={nombreDeVariable(v, datos)} aria-describedby={`${id}-ayuda`} className={CONTROL} />
           </Rotulado>
           <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
             <Rotulado id={`${id}-dato-unidad`} etiqueta={`Unidad de ${v.letra}`}>
@@ -233,7 +231,7 @@ export function OrigenDeVariable({
               className={CONTROL}
             >
               <option value="">Elija el indicador</option>
-              {tomables.map((t) => (
+              {tomablesOfrecidos.map((t) => (
                 <option key={t.id} value={t.id}>
                   {`${t.codigo} ${t.nombre}${t.retirado ? " (retirado)" : ""}`}
                 </option>
@@ -259,13 +257,13 @@ export function OrigenDeVariable({
             </select>
           </Rotulado>
           {nombre}
-          {tomable?.restringido ? (
-            <p className="min-w-0 sm:col-span-2">
-              <AvisoDeDeduccion nombre={tomable.nombre} />
-            </p>
-          ) : null}
         </>
       ) : null}
+
+      {/* Siempre presente, para que el aviso se anuncie al elegir el componente y no solo se vea. */}
+      <div id={`${id}-aviso`} aria-live="polite" className="min-w-0 sm:col-span-2">
+        {tomable?.restringido ? <AvisoDeDeduccion nombre={tomable.nombre} /> : null}
+      </div>
     </>
   );
 }

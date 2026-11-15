@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { VariableDeFicha } from "@/lib/indicadores/ficha";
-import { origenDeVariableEnTexto } from "@/lib/indicadores/ficha-en-texto";
+import { origenDeVariableEnTexto, origenEnTexto } from "@/lib/indicadores/ficha-en-texto";
+import { ORIGEN_AJENO } from "@/lib/indicadores/tipos";
 import { dividir, entero, fraccion } from "@/lib/indicadores/formula/fraccion";
 import { rangosDeTexto } from "@/lib/indicadores/rangos";
 import type { Regla } from "@/lib/indicadores/semaforo";
@@ -146,5 +147,19 @@ describe("de dónde sale una variable de la ficha (14C, Tarea 8)", () => {
       );
     expect(tomada("valor")).toBe("Resultado de SGC-ID-004 Satisfacción del usuario: su valor");
     expect(tomada("cumplimiento")).toBe("Resultado de SGC-ID-004 Satisfacción del usuario: su porcentaje de cumplimiento");
+  });
+
+  it("«Cómo se obtiene el dato» de una manual sin variables propias: llega de otras fuentes; con una propia, lo digita una persona (ronda 1)", () => {
+    expect(ORIGEN_AJENO).toBe("Llega de datos compartidos o de otros indicadores");
+    const dato = variable({ letra: "A", origen: "compartida", variableCompartidaId: 5, datoPeriodicidad: "mensual" });
+    const tomada = variable({ letra: "B", origen: "indicador", indicadorOrigenId: 9, toma: "valor", origenCodigo: "SGC-ID-004", origenNombre: "Satisfacción" });
+    const ficha = (origenDato: string, variables: VariableDeFicha[], calculo: string | null = null) =>
+      origenEnTexto({ origenDato, calculo, calculoAlcance: calculo ? "entidad" : null, variables });
+    expect(ficha("manual", [dato, tomada])).toBe(ORIGEN_AJENO);
+    expect(ficha("manual", [dato])).toBe(ORIGEN_AJENO);
+    expect(ficha("manual", [dato, variable({ letra: "C" })])).toBe("Lo digita una persona");
+    expect(ficha("manual", [variable({})])).toBe("Lo digita una persona");
+    // Una automática sigue diciendo su cálculo, aunque ninguna de sus variables sea propia.
+    expect(ficha("automatico", [variable({ origen: "automatica" })], "acuses")).toBe("Lo calcula el sistema · Acuses de lectura confirmados · Toda la entidad");
   });
 });

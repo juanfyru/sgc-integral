@@ -15,12 +15,21 @@ vi.mock("@/app/admin/acciones-indicadores", () => ({ guardarParametrosAccion: vi
 
 import { FormularioParametros } from "@/componentes/indicadores/admin/FormularioParametros";
 import { estadoDeRangos, rangosDelEditor, type EstadoEditor } from "@/componentes/indicadores/ficha/EditorDeRangos";
-import { campoDeMasOpciones, campoDelError, codigoAlCambiarDeEleccion, codigoAlCambiarDeProceso, codigoPropuestoDe, FormularioFicha, siglaVigenteDe } from "@/componentes/indicadores/ficha/FormularioFicha";
-import { cambioDeDato, cambioDeIndicador, cambioDeOrigen, ORIGENES_DE_VARIABLE, origenConTecla } from "@/componentes/indicadores/ficha/OrigenDeVariable";
+import {
+  campoDeMasOpciones,
+  campoDelError,
+  codigoAlCambiarDeEleccion,
+  codigoAlCambiarDeProceso,
+  codigoPropuestoDe,
+  conOrigen,
+  FormularioFicha,
+  siglaVigenteDe,
+} from "@/componentes/indicadores/ficha/FormularioFicha";
+import { cambioDeIndicador, cambioDeOrigen, nombreDeVariable, ORIGENES_DE_VARIABLE, origenConTecla } from "@/componentes/indicadores/ficha/OrigenDeVariable";
 import { EsquemaFicha, type DatosFicha } from "@/lib/esquemas/indicadores";
 import { CALCULOS, CLAVES_DE_CALCULO, ETIQUETA_ALCANCE, META_ENTERA } from "@/lib/indicadores/calculos/registro";
 import { unidadDeForma } from "@/lib/indicadores/formula/formas";
-import { AVISO_DESAGREGACION, avisoDeDeduccion, NADIE_MIDE_AJENO, type OpcionesFicha } from "@/lib/indicadores/tipos";
+import { AVISO_DESAGREGACION, avisoDeDeduccion, NADIE_MIDE_AJENO, ORIGEN_AJENO, type OpcionesFicha } from "@/lib/indicadores/tipos";
 
 /** Los cálculos del registro tal como los arma `opcionesDeFicha`. */
 const CALCULOS_DEL_REGISTRO: OpcionesFicha["calculos"] = CLAVES_DE_CALCULO.map((clave) => {
@@ -977,29 +986,34 @@ describe("FormularioFicha: el origen de cada variable y la desagregación (14C, 
     expect(porId(pintar14c({ ...BASE, forma: "porcentaje" }), "ficha-variable-A-origen-propia")).toMatch(/checked=""/);
   });
 
-  it("elegir el origen, el dato o el indicador cambia la variable: se sueltan las referencias que no usa y viene lo del dato", () => {
-    const v = (x: Variable) => ({ ...x, origen: x.origen ?? ("propia" as const) });
+  it("elegir el origen cambia solo el origen: pasar por otra opción con las flechas y volver no pierde lo elegido (ronda 1)", () => {
     const { datos, tomables } = OPCIONES_14C;
-    // A un dato: su nombre y «cómo se junta»; sin dato elegido todavía, nada más.
-    expect(cambioDeOrigen(v(propia("A")), "compartida", datos)).toEqual({ origen: "compartida", indicadorOrigenId: undefined, toma: undefined });
-    expect(cambioDeDato(51, datos)).toEqual({ datoId: 51, nombre: "Camas disponibles", consolidacion: "ultimo" });
-    expect(cambioDeDato(undefined, datos)).toEqual({ datoId: undefined });
-    expect(cambioDeOrigen(v(tomada("A", 70)), "compartida", datos)).toEqual({ origen: "compartida", indicadorOrigenId: undefined, toma: undefined });
-    // A un indicador: su valor por omisión; el nombre del indicador si la variable no tenía.
-    expect(cambioDeOrigen(v(delDato("A", 50)), "indicador", datos)).toEqual({ origen: "indicador", datoId: undefined, toma: "valor" });
+    const v = (x: Variable) => ({ ...x, origen: x.origen ?? ("propia" as const) });
+    expect(cambioDeOrigen("compartida")).toEqual({ origen: "compartida" });
+    expect(cambioDeOrigen("propia")).toEqual({ origen: "propia" });
+    // Una propia con lo suyo que elige un dato, pasa por «Resultado de otro indicador» y elige uno, y vuelve: lo conserva todo.
+    let x = v(propia("A", { nombre: "Partos del mes", consolidacion: "promedio", fuente: "Libro de partos" }));
+    for (const paso of [cambioDeOrigen("compartida"), { datoId: 50 }, cambioDeOrigen("indicador"), cambioDeIndicador(x, 70, tomables), cambioDeOrigen("propia")]) {
+      x = { ...x, ...paso };
+    }
+    expect(x).toMatchObject({ origen: "propia", nombre: "Partos del mes", consolidacion: "promedio", fuente: "Libro de partos", datoId: 50, indicadorOrigenId: 70 });
+    // Al volver a cada origen, lo de ese origen sigue ahí; y lo que se lee como nombre es el del dato, si es un dato.
+    expect(nombreDeVariable({ ...x, ...cambioDeOrigen("compartida") }, datos)).toBe("Partos atendidos");
+    expect(nombreDeVariable(x, datos)).toBe("Partos del mes");
+    expect(nombreDeVariable({ ...x, origen: "compartida", datoId: undefined }, datos)).toBe("");
+    // Elegir el indicador: el nombre del indicador si la variable no tenía; del cumplimiento de uno con meta a uno sin meta, su valor.
     expect(cambioDeIndicador(v(propia("A", { nombre: " " })), 70, tomables)).toEqual({ indicadorOrigenId: 70, nombre: "Satisfacción del usuario" });
     expect(cambioDeIndicador(v(propia("A")), 70, tomables)).toEqual({ indicadorOrigenId: 70 });
-    // Del cumplimiento de uno con meta a uno sin meta: su valor.
     expect(cambioDeIndicador(v(tomada("A", 70, "cumplimiento")), 72, tomables)).toEqual({ indicadorOrigenId: 72, toma: "valor" });
-    // De vuelta a propia: sin referencias; desde un indicador, «se suma» en lugar del «último» que puso el servidor.
-    expect(cambioDeOrigen(v(tomada("A", 70)), "propia", datos)).toEqual({
-      origen: "propia",
-      datoId: undefined,
-      indicadorOrigenId: undefined,
-      toma: undefined,
-      consolidacion: "suma",
-    });
-    expect(cambioDeOrigen(v(delDato("A", 50)), "propia", datos)).toEqual({ origen: "propia", datoId: undefined, indicadorOrigenId: undefined, toma: undefined });
+  });
+
+  it("una tomada cargada no deja en el estado el «último» del servidor (si vuelve a ser propia, nace en «se suma») y se envía en «último»", () => {
+    expect(conOrigen(tomada("A", 70))).toMatchObject({ origen: "indicador", consolidacion: "suma", indicadorOrigenId: 70 });
+    // Una propia en «último» lo conserva; una sin origen (anterior a la 14C) es propia.
+    expect(conOrigen(propia("A", { consolidacion: "ultimo" }))).toMatchObject({ origen: "propia", consolidacion: "ultimo" });
+    expect(conOrigen({ ...propia("A"), origen: undefined }).origen).toBe("propia");
+    const enviada = (JSON.parse(oculto(pintar14c(conVariables([tomada("A", 70), propia("B")])), "variables")!) as Variable[])[0];
+    expect(enviada).toMatchObject({ origen: "indicador", consolidacion: "ultimo" });
   });
 
   it("las flechas pasan al origen siguiente o al anterior, dando la vuelta; otra tecla no cambia nada", () => {
@@ -1016,10 +1030,10 @@ describe("FormularioFicha: el origen de cada variable y la desagregación (14C, 
     const h = pintar14c(conVariables([delDato("A", 50), propia("B")]));
     expect(porId(h, "ficha-variable-A-origen-compartida")).toMatch(/checked=""/);
     expect(h).toContain('for="ficha-variable-A-dato"');
+    // El dato inactivo no se ofrece: esta variable no lo citaba (ronda 1).
     expect(opcionesDe(h, "ficha-variable-A-dato")).toEqual([
       { valor: "", texto: "Elija el dato", elegida: false },
       { valor: "50", texto: "Partos atendidos · Gestión del Talento Humano · Mensual", elegida: true },
-      { valor: "51", texto: "Camas disponibles · Sistema de Gestión de Calidad · Trimestral (inactivo)", elegida: false },
     ]);
     expect(porId(h, "ficha-variable-A-dato")).toMatch(/required=""/);
     expect(porId(h, "ficha-variable-A")).toMatch(/readOnly=""/);
@@ -1044,11 +1058,11 @@ describe("FormularioFicha: el origen de cada variable y la desagregación (14C, 
   it("al elegir «Resultado de otro indicador» salen la lista de indicadores y qué se toma, y desaparece «cómo se junta»", () => {
     const h = pintar14c(conVariables([tomada("A", 70, "cumplimiento"), propia("B")]));
     expect(porId(h, "ficha-variable-A-origen-indicador")).toMatch(/checked=""/);
+    // El retirado no se ofrece: esta variable no lo citaba (ronda 1).
     expect(opcionesDe(h, "ficha-variable-A-indicador")).toEqual([
       { valor: "", texto: "Elija el indicador", elegida: false },
       { valor: "70", texto: "SGC-ID-001 Satisfacción del usuario", elegida: true },
       { valor: "71", texto: "GTH-ID-002 Ausentismo laboral", elegida: false },
-      { valor: "72", texto: "SGC-ID-003 Quejas resueltas (retirado)", elegida: false },
     ]);
     expect(porId(h, "ficha-variable-A-indicador")).toMatch(/required=""/);
     expect(opcionesDe(h, "ficha-variable-A-toma").map(({ texto, elegida }) => [texto, elegida])).toEqual([
@@ -1061,8 +1075,23 @@ describe("FormularioFicha: el origen de cada variable y la desagregación (14C, 
     const mas = masOpciones(h);
     expect(porId(mas, "ficha-variable-A-consolidacion")).toBe("");
     expect(mas).not.toContain("Cómo se junta A");
+    // Nadie la digita: sin límites de captura ni negativos (ronda 1); sí qué incluye y su unidad.
+    for (const campo of ["min", "max", "negativos"]) expect(porId(mas, `ficha-variable-A-${campo}`), campo).toBe("");
+    expect(mas).not.toContain("A admite negativos");
     expect(porId(mas, "ficha-variable-A-descripcion")).not.toBe("");
-    expect(porId(mas, "ficha-variable-B-consolidacion")).not.toBe("");
+    expect(porId(mas, "ficha-variable-A-unidad")).not.toBe("");
+    for (const campo of ["consolidacion", "min", "max", "negativos"]) expect(porId(mas, `ficha-variable-B-${campo}`), campo).not.toBe("");
+    // Lo que traiga de límites no se envía.
+    const conLimites = pintar14c(conVariables([{ ...tomada("A", 70), capturaMin: "1", capturaMax: "9", admiteNegativos: true }, propia("B")]));
+    expect((JSON.parse(oculto(conLimites, "variables")!) as Variable[])[0]).toEqual({
+      letra: "A",
+      nombre: "Tomada A",
+      consolidacion: "ultimo",
+      admiteNegativos: false,
+      origen: "indicador",
+      indicadorOrigenId: 70,
+      toma: "valor",
+    });
     // Un indicador sin meta no da su cumplimiento.
     const sinMeta = pintar14c(conVariables([tomada("A", 72), propia("B")]));
     expect(opcionesDe(sinMeta, "ficha-variable-A-toma")).toEqual([
@@ -1094,28 +1123,34 @@ describe("FormularioFicha: el origen de cada variable y la desagregación (14C, 
     expect(cambio).not.toContain("Auxiliar de calidad");
     expect(cambio).not.toContain('id="ficha-soporteObligatorio"');
 
+    // «Cómo se obtiene el dato» no dice que lo digita una persona: llega de otras fuentes (ronda 1).
+    expect(masOpciones(ajenas)).toMatch(new RegExp(`for="ficha-origen-manual"[^>]*>(?:(?!</label>)[\\s\\S])*${ORIGEN_AJENO}`));
+    expect(ajenas).not.toContain("Lo digita una persona");
+
     // Con una sola propia, alguien mide: todo vuelve.
     const mixta = pintar14c(conVariables([delDato("A", 50), propia("B")]));
     expect(mixta).not.toContain(NADIE_MIDE_AJENO);
+    expect(mixta).not.toContain(ORIGEN_AJENO);
+    expect(masOpciones(mixta)).toContain(">Lo digita una persona<");
     expect(mixta).toContain('<select id="ficha-mide"');
     expect(mixta).toContain('id="ficha-cargo-medir"');
     expect(mixta).toContain(">Prueba</legend>");
     expect(JSON.parse(oculto(mixta, "cargosMedir")!)).toEqual([4]);
   });
 
-  it("«Desagregación» va en «Más opciones»: ninguna o una dimensión; con una elegida se lee el aviso", () => {
-    const sin = masOpciones(pintar14c(conVariables([propia("A")])));
-    expect(sin).toContain(">Desagregación</label>");
-    expect(opcionesDe(sin, "ficha-dimensionId")).toEqual([
+  it("«Desagregación» va en «Más opciones»: ninguna o una dimensión, con el aviso siempre debajo, para leerlo antes de elegir", () => {
+    for (const dimensionId of [undefined, 3]) {
+      const mas = masOpciones(pintar14c(conVariables([propia("A")], { dimensionId })));
+      expect(mas).toContain(">Desagregación</label>");
+      expect(opcionesDe(mas, "ficha-dimensionId").find((o) => o.elegida)?.valor).toBe(dimensionId === undefined ? "" : "3");
+      expect(mas).toContain(`<p id="ficha-dimensionId-ayuda" class="text-xs text-muted-foreground">${AVISO_DESAGREGACION}</p>`);
+      expect(porId(mas, "ficha-dimensionId")).toContain('aria-describedby="ficha-dimensionId-ayuda"');
+    }
+    expect(opcionesDe(masOpciones(pintar14c(conVariables([propia("A")]))), "ficha-dimensionId")).toEqual([
       { valor: "", texto: "(ninguna)", elegida: true },
       { valor: "3", texto: "Sede", elegida: false },
       { valor: "4", texto: "Servicio (inactiva)", elegida: false },
     ]);
-    expect(sin).not.toContain(AVISO_DESAGREGACION);
-    const con = masOpciones(pintar14c(conVariables([propia("A")], { dimensionId: 3 })));
-    expect(opcionesDe(con, "ficha-dimensionId").find((o) => o.elegida)?.valor).toBe("3");
-    expect(con).toContain(AVISO_DESAGREGACION);
-    expect(porId(con, "ficha-dimensionId")).toContain('aria-describedby="ficha-dimensionId-ayuda"');
     // Una ficha automática no se desagrega: no se pinta ni viaja.
     const automatica = renderToStaticMarkup(
       <FormularioFicha opciones={OPCIONES_14C} valores={{ procesoId: 2, origenDato: "automatico", calculo: "acuses", calculoAlcance: "entidad", dimensionId: 3 }} />,
@@ -1124,12 +1159,16 @@ describe("FormularioFicha: el origen de cada variable y la desagregación (14C, 
     expect(nombres(automatica)).not.toContain("dimensionId");
   });
 
-  it("con un indicador restringido elegido sale el aviso de deducción con su nombre, en una insignia de atención", () => {
+  it("con un indicador restringido elegido sale el aviso de deducción con su nombre, en una insignia de atención que se anuncia", () => {
     const h = pintar14c(conVariables([tomada("A", 71), propia("B")], { nivelAcceso: "restringido" }));
     const aviso = avisoDeDeduccion("Ausentismo laboral");
     expect(aviso).toBe("Quien vea este indicador podrá deducir el resultado de «Ausentismo laboral» si es el único componente que no puede ver");
-    expect(h).toMatch(new RegExp(`data-variante="atencion"[^>]*>(?:<svg[\\s\\S]*?</svg>)?${aviso}</span>`));
-    expect(pintar14c(conVariables([tomada("A", 70), propia("B")]))).not.toContain("podrá deducir");
+    // Dentro de una región `aria-live` que ya estaba: se anuncia al elegir el componente (ronda 1).
+    expect(h).toMatch(new RegExp(`<div id="ficha-variable-A-aviso" aria-live="polite"[^>]*><span data-variante="atencion"[^>]*>(?:<svg[\\s\\S]*?</svg>)?${aviso}</span></div>`));
+    // La región está en toda variable, vacía hasta que haga falta.
+    const general = pintar14c(conVariables([tomada("A", 70), propia("B")]));
+    expect(general).not.toContain("podrá deducir");
+    for (const letra of ["A", "B"]) expect(general).toMatch(new RegExp(`<div id="ficha-variable-${letra}-aviso" aria-live="polite"[^>]*></div>`));
   });
 
   it("ida y vuelta: lo que se envía sin tocar nada conserva los tres orígenes, sus referencias y la dimensión", () => {
@@ -1157,10 +1196,19 @@ describe("FormularioFicha: el origen de cada variable y la desagregación (14C, 
   });
 
   it("ida y vuelta de una cita vieja: el dato inactivo, el indicador retirado y la dimensión inactiva se ven marcados y se envían igual", () => {
-    const h = pintar14c(conVariables([{ ...delDato("A", 51), nombre: "Camas disponibles", consolidacion: "ultimo" }, tomada("B", 72), propia("C")], { dimensionId: 4 }));
+    const h = pintar14c(
+      conVariables([{ ...delDato("A", 51), nombre: "Camas disponibles", consolidacion: "ultimo" }, tomada("B", 72), propia("C"), delDato("D", 50), tomada("E", 70)], {
+        dimensionId: 4,
+      }),
+    );
     expect(opcionesDe(h, "ficha-variable-A-dato").find((o) => o.elegida)?.texto).toBe("Camas disponibles · Sistema de Gestión de Calidad · Trimestral (inactivo)");
     expect(opcionesDe(h, "ficha-variable-B-indicador").find((o) => o.elegida)?.texto).toBe("SGC-ID-003 Quejas resueltas (retirado)");
     expect(opcionesDe(h, "ficha-dimensionId").find((o) => o.elegida)?.texto).toBe("Servicio (inactiva)");
+    // Solo en la variable que los cita: en las demás no se ofrecen, porque ahí serían una cita nueva (ronda 1).
+    expect(opcionesDe(h, "ficha-variable-D-dato").map((o) => o.valor)).toEqual(["", "50"]);
+    expect(opcionesDe(h, "ficha-variable-E-indicador").map((o) => o.valor)).toEqual(["", "70", "71"]);
+    expect(opcionesDe(h, "ficha-variable-A-dato").map((o) => o.valor)).toEqual(["", "50", "51"]);
+    expect(opcionesDe(h, "ficha-variable-B-indicador").map((o) => o.valor)).toEqual(["", "70", "71", "72"]);
     const r = EsquemaFicha.safeParse(enviado(h));
     expect(r.success, r.error?.issues[0]?.message).toBe(true);
     expect(r.data!.dimensionId).toBe(4);
@@ -1168,6 +1216,8 @@ describe("FormularioFicha: el origen de cada variable y la desagregación (14C, 
       ["A", "compartida", 51, undefined, undefined],
       ["B", "indicador", undefined, 72, "valor"],
       ["C", "propia", undefined, undefined, undefined],
+      ["D", "compartida", 50, undefined, undefined],
+      ["E", "indicador", undefined, 70, "valor"],
     ]);
   });
 
