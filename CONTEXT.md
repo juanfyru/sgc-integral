@@ -3,7 +3,7 @@
 > Se actualiza al cierre de cada fase. Última actualización: **2026-11-15**, al fusionar en `main` la **Fase 14B — Lo que el sistema ya
 > sabe y lo regulatorio** (rama `fase-14b-automaticos-regulatorios`, 45 confirmaciones al cerrar la Tarea 13 más las de la tanda final de corrección, sobre `main` en `f04b70b`; se trabajó en el
 > worktree `F:\sgc-integral-f14b` y contra la base aparte `sgc_f14b`; **fusionada en `main` el 2026-11-15 por decisión del
-> usuario, en local y por avance rápido, sin publicar en `origin`**; ver su sección, arriba de «Entrega complementaria de la 14A»). Sigue la **Fase 14C** (datos compartidos,
+> usuario, por avance rápido, y publicada en `origin` ese mismo día; la rama se borró**; ver su sección, arriba de «Entrega complementaria de la 14A»). Sigue la **Fase 14C** (datos compartidos,
 > desagregación y compuestos, con la `0015`), que cierra la Fase 14 del diseño maestro. La **Fase 14A** (`4afd205`), el
 > filtro de subproceso de la matriz (`5ce391a`), la **entrega complementaria de la 14A: rangos, códigos e importación**
 > (`d18e60d`) y la corrección `f14a-deuda-rangos` (`f04b70b`) **están en `main`**, publicado. La **Fase 13C — Vigencia, externos y normograma**
@@ -28,8 +28,9 @@
    sobre `main` en `f04b70b`; anexo
    `docs/superpowers/specs/2026-11-14-fase14b-automaticos-y-regulatorios-design.md`, que amplía el spec de la Fase 14 y
    manda sobre él donde difieren; plan `docs/superpowers/plans/2026-11-14-fase14b-automaticos-y-regulatorios.md`). **El
-   usuario decidió fusionarla el 2026-11-15** (en local, por avance rápido; **`main` no se ha publicado en `origin`**, y la
-   rama, su worktree y la base `sgc_f14b` siguen ahí hasta que él pida borrarlos). **Falta aplicar la `0013` y la `0014` a
+   usuario decidió fusionarla el 2026-11-15** (por avance rápido), **publicar `main` en `origin` y borrar la rama** ese mismo
+   día; el worktree `F:\sgc-integral-f14b` (con la cabeza suelta) y la base `sgc_f14b` siguen ahí hasta que él pida
+   borrarlos. **Falta aplicar la `0013` y la `0014` a
    la base `sgc`** con `npm run db:preparar` en `F:\sgc-integral` (ver «Avisos para el usuario (Fase 14B)»). Con ella,
    lo que la plataforma ya sabe deja de digitarse: diez cálculos automáticos (los siete documentales de la 13C, la
    conformidad del periodo, «Reportes de indicadores a tiempo» y «Objetivos cumplidos») con su foto por periodo, «No
@@ -321,8 +322,8 @@ entrega complementaria, y manda sobre los dos donde difieren; las decisiones del
 de Claude F14B-DC1 a DC23 en su §13); plan: `docs/superpowers/plans/2026-11-14-fase14b-automaticos-y-regulatorios.md`
 (13 tareas y una tanda final de corrección). La rama `fase-14b-automaticos-regulatorios` (45 confirmaciones al cerrar la
 Tarea 13, más las de la tanda final, sobre `main` en `f04b70b`) se trabajó en el
-worktree `F:\sgc-integral-f14b` contra la base aparte `sgc_f14b`; **el usuario la fusionó en `main` el 2026-11-15 (en
-local; sin publicar en `origin`)**. Nació de la revisión
+worktree `F:\sgc-integral-f14b` contra la base aparte `sgc_f14b`; **el usuario la fusionó en `main` el 2026-11-15,
+publicó `main` en `origin` y borró la rama**. Nació de la revisión
 del spec contra el código (anexo §1): el módulo suponía que todo valor lo digita quien mide, y un automático habría
 producido tareas y avisos falsos. El usuario partió la antigua 14B en dos (decisión 1.1): esta entrega trae lo automático y
 lo regulatorio, y la **14C** los datos compartidos, la desagregación y los compuestos. **Sin dependencias npm nuevas.** Dos
@@ -528,8 +529,9 @@ mismo, en otros meses).
 
 ### Avisos para el usuario (Fase 14B)
 
-- **La rama está fusionada en `main` desde el 2026-11-15, en local y sin publicar en `origin`** (decisión del usuario; por
-  avance rápido, así que `main` es el mismo árbol que se verificó). Mientras se construyó, `F:\sgc-integral` y su `next dev`
+- **La rama está fusionada en `main` desde el 2026-11-15, y `main` está publicado en `origin`** (decisiones del usuario; por
+  avance rápido, así que `main` es el mismo árbol que se verificó). La rama `fase-14b-automaticos-regulatorios` se borró
+  después de fusionarla (nunca se publicó). Mientras se construyó, `F:\sgc-integral` y su `next dev`
   del 3002 no se tocaron, y su base `sgc` solo se leyó (un `pg_dump` para la prueba de las migraciones). **Después de la
   fusión hay que aplicar la `0013` y la `0014` a la base `sgc`:** en desarrollo no corren solas (`npm run dev` no migra;
   en la imagen sí, al arrancar): `npm run db:preparar` en `F:\sgc-integral`, y reiniciar `next dev`. Hasta entonces, las
@@ -538,8 +540,9 @@ mismo, en otros meses).
   medición. Lo comprobó el controlador antes de la tanda final sobre una copia de esa base: de 13 a 15 migraciones, con los
   mismos conteos de indicadores, versiones, mediciones y valores y las mismas huellas de mediciones y de versiones (ver
   «Fase 14B», arriba). Para ver la demo de la 14B en `sgc` hace falta además `npm run db:seed` (vacía la base y el almacén)
-  y `npm run admin:asegurar`; sin resembrar, sus datos de hoy siguen como están. El worktree `F:\sgc-integral-f14b`, su
-  rama y la base `sgc_f14b` (la demo de la 14B, lista para el recorrido) siguen ahí: se borran cuando el usuario lo pida.
+  y `npm run admin:asegurar`; sin resembrar, sus datos de hoy siguen como están. El worktree `F:\sgc-integral-f14b` (hoy
+  con la cabeza suelta en `edd455c`, sin rama) y la base `sgc_f14b` (la demo de la 14B, lista para el recorrido) siguen ahí:
+  se borran cuando el usuario lo pida.
 - **Decisiones de la ejecución: el usuario les dio su visto bueno el 2026-11-15** («doy visto bueno para las 11»), a las once
   que se le presentaron al cierre: la cadena de la meta; la meta entera en las fichas automáticas con tarjeta de Vigencia; el
   plazo del análisis contado desde la foto cuando el dato llega tarde; qué cuenta en «Objetivos»; cuándo nace una constancia
