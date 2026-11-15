@@ -107,11 +107,15 @@ async function indicadoresComoSeSembraron(): Promise<{ intacta: boolean; motivo:
     .filter((clave) => Number(c[clave]) > 0)
     .map((clave) => `${c[clave]} ${clave} posteriores a la siembra`);
   if (c.restringidos !== "GTH-IND-01") cambios.push(`los restringidos son «${c.restringidos}» (se sembró solo GTH-IND-01)`);
-  const [r] = await sql`SELECT
-      (SELECT count(*)::int FROM reportes_externos WHERE estado = 'registrada') AS registradas,
-      (SELECT count(*)::int FROM reportes_externos WHERE estado = 'pendiente') AS pendientes,
-      (SELECT count(*)::int FROM reporte_externo_eventos) AS eventos,
-      (SELECT count(*)::int FROM impactos_indicadores) AS impactos`;
+  // Solo las de los indicadores sembrados: lo que otro test deje en los suyos no cambia lo sembrado.
+  const [r] = await sql`
+    WITH ind AS (SELECT id FROM indicadores WHERE codigo IN ${sql(Object.keys(SEMBRADOS))}),
+      rep AS (SELECT id, estado FROM reportes_externos WHERE indicador_id IN (SELECT id FROM ind))
+    SELECT
+      (SELECT count(*)::int FROM rep WHERE estado = 'registrada') AS registradas,
+      (SELECT count(*)::int FROM rep WHERE estado = 'pendiente') AS pendientes,
+      (SELECT count(*)::int FROM reporte_externo_eventos WHERE reporte_id IN (SELECT id FROM rep)) AS eventos,
+      (SELECT count(*)::int FROM impactos_indicadores WHERE indicador_id IN (SELECT id FROM ind)) AS impactos`;
   // Una registrada con su soporte (dos eventos: el soporte y el registro); las demás, pendientes; ninguna revisión por norma.
   const sembradas: [string, number, string][] = [
     ["registradas", 1, "constancias registradas"],
@@ -671,7 +675,8 @@ describe("lo que calcula el sistema y lo regulatorio (anexo 14B, §11)", () => {
 
   it("no hay revisiones de indicadores por cambio de norma: el recorrido las provoca", async (ctx) => {
     await exigirIndicadores(ctx);
-    expect(await sql`SELECT id FROM impactos_indicadores`).toEqual([]);
+    expect(await sql`SELECT ii.id FROM impactos_indicadores ii JOIN indicadores i ON i.id = ii.indicador_id
+      WHERE i.codigo IN ${sql(Object.keys(SEMBRADOS))}`).toEqual([]);
     // La única norma que cambió de estado en la demo (la 2003 de 2014, derogada) no la cita ningún indicador.
     const citan = await sql`SELECT DISTINCT i.codigo FROM indicador_normas n
       JOIN indicador_versiones v ON v.id = n.version_id JOIN indicadores i ON i.id = v.indicador_id

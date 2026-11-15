@@ -128,8 +128,9 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
    - **Las fichas aprobadas de un lote de importación (spec 14A §5.9):** una versión aprobada que
      entró con un lote solo se borra, con sus variables, responsables y normas, al «Deshacer la
      importación» (`deshacerImportacion`, `src/db/consultas/indicadores/importacion.ts`), y solo
-     mientras ninguna ficha del lote tenga periodos cerrados o con datos, personas designadas ni otra
-     versión, ni una propuesta editada o enviada a aprobación después de importarse
+     mientras ninguna ficha del lote tenga periodos cerrados o con datos, personas designadas, otra
+     versión, revisiones por cambio de norma (`impactos_indicadores`) ni constancias de envío al ente
+     (`reportes_externos`), ni una propuesta editada o enviada a aprobación después de importarse
      (`condicionDeDeshacer`, revisada otra vez con las filas bloqueadas), y toda versión que lleve el
      id del lote esté en el registro de su evento `importado`. El trigger la deja borrar
      si la transacción lleva la marca `sgc.deshacer_importacion` con el id de su lote, que se pone
@@ -200,11 +201,25 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   `src/db/consultas/normograma/` y `src/lib/normograma/`. Los indicadores documentales viven en
   `src/lib/indicadores-documentales/` (funciones puras y tipos) y
   `src/db/consultas/vigencia/indicadores.ts` (solo trae filas), y se calculan solo en
-  `/vigencia/indicadores` y su Excel, nunca en el cascarón. El módulo de **Indicadores** (Fase 14)
+  `/vigencia/indicadores`, su Excel y la foto de un indicador automático (`tomarCalculo`), nunca en
+  el cascarón. El módulo de **Indicadores** (Fase 14)
   vive en `app/(app)/indicadores`, `app/acciones-indicadores.ts` (las de sus maestros y
   parámetros, en `app/admin/acciones-indicadores.ts`), `src/db/consultas/indicadores/`,
-  `src/lib/indicadores/` (reglas puras: fórmula, periodos, semáforo, textos, acumulado, estados) y
-  `src/componentes/indicadores/`; su configuración, en `app/(app)/admin/(panel)/indicadores`.
+  `src/lib/indicadores/` (reglas puras: fórmula, periodos, semáforo, textos, acumulado, estados,
+  la foto y los objetivos; el registro de los diez cálculos automáticos, en
+  `src/lib/indicadores/calculos/`) y `src/componentes/indicadores/`; su configuración, en
+  `app/(app)/admin/(panel)/indicadores`. Lo de la 14B, en `src/db/consultas/indicadores/`:
+  `calculos.ts` (el camino de sistema, `tomarCalculo`), `fotos.ts` (`tomarFotos` y `volverACalcular`),
+  `publicacion.ts` (`alPublicarVersion`: lo que pasa cuando una versión queda aprobada; lo llaman
+  `aprobarFichas` y el cambio menor de `enviarAAprobacion`, y la importación de lotes **no**),
+  `fichas-de-calculo.ts` (la ficha activa de un cálculo y la meta que rige hoy; lo importan Vigencia,
+  Distribución y Configuración documental, y a Vigencia la importa `calculos.ts`, así que lee por SQL
+  directo y no importa los cálculos, las mediciones, Vigencia, Distribución ni Configuración
+  documental), `objetivos.ts`
+  (la regla única de qué medición cuenta para un objetivo), `constancias.ts`, `constancias-soporte.ts`
+  (módulo liviano: lo importa `admin.ts`, así que no importa `lectura`, `aprobacion` ni `fichas`),
+  `constancias-vencidas.ts`, `pasada.ts` (el paso genérico de las pasadas de avisos, `correrPaso`) e
+  `impactos.ts` (también liviano: lo importan el normograma, `publicacion.ts` y `operacion.ts`).
   **Ojo con los nombres de la 13C, que no son este módulo:** `/vigencia/indicadores`, el permiso
   `documentos.indicadores`, `src/lib/indicadores-documentales/`,
   `src/db/consultas/vigencia/indicadores.ts` y la acción de bitácora `exporto_indicadores`. La
@@ -257,6 +272,9 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   `src/lib/alcance.ts` (`filtroIndicadores` para un `WHERE`, `puedeVerIndicador`,
   `puedeVerSoportes`, `puedeMedir`, `puedeAnalizar`, `puedeRegistrarHistoricos`, `puedeObservar`,
   `aprobadoresDeFicha`, `puedeAprobarFicha`, `esAprobadorDe`, `responsableDe` y `participaEn`).
+  La sesión de sistema de los automáticos (rol `admin_sgc`, `usuarioId` 0) no es una excepción: vive
+  dentro de `tomarCalculo` (`calculos.ts`), no se exporta y nunca sirve filas a una persona, solo
+  cuenta (anexo 14B, §5.5).
 - **Accesibilidad no negociable:** navegable por teclado, foco visible, contraste AA,
   SVG del mapa con roles/etiquetas ARIA. El ícono de formato de archivo nunca es la
   única señal (siempre etiqueta textual + tamaño, `aria-label`), ni el color de un
@@ -276,7 +294,9 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
     `exigirVigencia` en `app/(app)/vigencia/_comun.ts`, la pestaña visible, la revisión, el externo,
     la norma o el impacto que la persona ve; `exigirIndicador` y `exigirFichaDeIndicador` en
     `app/(app)/indicadores/_comun.ts`), nunca `exigirPermiso`: quien no la ve recibe «no
-    encontrado». La configuración de indicadores (`/admin/indicadores`) va con `exigirPermiso`. Los
+    encontrado». «Objetivos» (`/indicadores/objetivos`) es de toda sesión (`exigirSesion()`) y solo
+    muestra los indicadores que la persona ve, sin decir si hay otros; `objetivos` es un código de
+    indicador reservado (`CODIGOS_RESERVADOS`). La configuración de indicadores (`/admin/indicadores`) va con `exigirPermiso`. Los
     catálogos de puntos de uso y listas de distribución viven en `app/(app)/admin/(catalogos)`,
     fuera del guard del panel: cada página llama `exigirSesion()` y `exigirCatalogo()` (en solo
     lectura sin `distribucion.gestionar`), y las de alta, además, `exigirGestion()`
@@ -457,16 +477,40 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   firma «Aprobó» ni aviso (la constancia con clave es el evento `importado`, no `firmas`); las
   «Propuesto» son borradores normales, sin esas columnas; los periodos que terminaron antes de
   importar son históricos. «Deshacer» es del lote entero y su única excepción al trigger de las
-  versiones aprobadas es la de la regla 5; una tabla de la 14B que cuelgue de una ficha del lote
-  añade su motivo a `condicionDeDeshacer`.
+  versiones aprobadas es la de la regla 5; las tablas de la 14B que cuelgan de una ficha
+  (`impactos_indicadores` y `reportes_externos`) ya están en `condicionDeDeshacer`, y una de la 14C
+  que cuelgue de una ficha del lote añade allí su motivo. Lo importado es siempre manual y sin ente
+  (la plantilla no los trae): ponérselos después es un cambio, que sí pasa por `alPublicarVersion`.
 - **Fórmulas:** una fórmula de indicador solo se evalúa con el intérprete de
   `src/lib/indicadores/formula/` (gramática cerrada, fracciones exactas con `bigint`, límites de
   longitud, profundidad y cifras); nunca `eval`, `Function` ni SQL armado con texto del usuario.
+- **Lo que calcula el sistema** (anexo 14B, §4 y §5): los cálculos automáticos son la lista fija del
+  registro (`CALCULOS`, `src/lib/indicadores/calculos/registro.ts`, diez); el formulario manda una
+  clave y un alcance y el servidor los valida contra él y pone la forma, la fórmula, las variables y
+  la tendencia del registro. Ninguna fórmula ni texto de la persona llega a SQL. Los documentales los
+  toma `tomarCalculo` llamando la consulta de Vigencia con la sesión de sistema (cuenta como el Admin
+  SGC). A lo sumo una ficha activa por cálculo y alcance (con alcance «proceso», por proceso): el
+  indicador guarda el cálculo y el alcance de su ficha vigente y el índice único parcial
+  `indicadores_calculo_unico` lo garantiza (`alPublicarVersion` los escribe). **Un automático no lo
+  digita nadie:** reportar, «no aplica», históricos y soportes rechazan una medición cuya versión que
+  rige es automática; al aprobarse una versión automática se quitan los designados «mide» y se apaga
+  el soporte obligatorio. Mientras espera su valor está en **«Falta un dato»**: no es tarea de nadie,
+  no avisa, no vence ni escala (`queFalta`, `tareas.ts`; los pasos de `vencimientos.ts`). **La foto**
+  (`fotos.ts`): la de un cálculo de estado, al terminar el periodo y solo del más reciente que
+  terminó; la de flujo, al vencer el plazo de reporte; la histórica de un cálculo que se llena hacia
+  atrás, sin esperar (`cuandoSeToma`, `src/lib/indicadores/fotos.ts`). La toman la pasada de
+  vencimientos (después de abrir los periodos) y, antes de clasificar, el resumen y el cierre del mes;
+  la apertura de periodos no. Sin nada que medir (B en cero), «No aplica» con el motivo del cálculo
+  (`fotoDe`). La de flujo que deja la medición pidiendo análisis cuenta la fecha límite otra vez
+  desde la foto; «Volver a calcular» (solo flujo, sin cerrar ni reabrir, de quien administra) la
+  mueve una vez como mucho. Una medición cerrada no se recalcula nunca en silencio.
 - **Un solo camino de cálculo:** solo `recalcularMedicion`
   (`src/db/consultas/indicadores/mediciones.ts`) escribe el resultado, el semáforo, la meta
   aplicada y el estado de una medición abierta o reportada; reportar, registrar históricos,
-  corregir, marcar «no aplica», reprogramar la meta, subir o quitar un soporte y reabrir pasan por
-  ella, con la fila bloqueada. El cierre del mes y «Cerrar de nuevo»
+  corregir, marcar «no aplica», reprogramar la meta, subir o quitar un soporte, reabrir y la foto
+  pasan por ella, con la fila bloqueada. **No refresca valores por sí misma:** calcula con los que la
+  medición tiene, y los que nadie digita los escriben solo `tomarFotos` y `volverACalcular`
+  (`fotos.ts`), en `medicion_valores` y sin usuario (`reportado_por` nulo). El cierre del mes y «Cerrar de nuevo»
   solo la pasan a `cerrada` (`src/db/consultas/indicadores/cierre.ts`). Cuando cambia el semáforo o
   el resultado de una medición ordinaria, ella misma recalcula la racha de las n − 1 siguientes
   medidas sin cerrar (`recalcularSiguientes`, evento `recalculo`, F14A-R53), y cambiar el plazo o
@@ -491,9 +535,58 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   y, si eso contradijera el color, trunca, con más decimales si hace falta). «Cumple» es alcanzar
   la meta y se decide con la misma razón exacta (`cumpleMeta`); un Bien que no la alcanza lleva su
   etiqueta propia, avisa como un Atención y pide análisis (spec 14A §3.1).
+- **Una sola meta** (anexo 14B, §6; `fichas-de-calculo.ts`): la meta de una tarjeta de Vigencia y de
+  cada fila de «Dentro del plazo, por proceso» sigue la cadena ficha activa del proceso → ficha activa
+  de la entidad → Configuración documental, con la meta que rige el periodo en curso de la ficha (la
+  programada, si la hay); el Excel de la pestaña usa lo mismo. Distribución juzga la conformidad con
+  `metaDeConformidad()`: la meta de la ficha activa de `conformidad_fecha` de la entidad o, sin ella,
+  el umbral de Configuración documental; la usan `estadoDePuntos` e `historialVerificaciones` y, por
+  ellos, la tarjeta. El informe de la revisión anual **no** usa el umbral ni guarda veredicto. El
+  código de la ficha solo se muestra a quien puede verla (la meta se aplica igual). Configuración
+  documental muestra en solo lectura la meta que fija una ficha de la entidad
+  (`metasQueFijaUnaFicha`) y el guardado conserva el valor guardado. Las fichas de los siete cálculos
+  con tarjeta exigen meta entera (`metaNoEntera`, también en las metas programadas), porque Vigencia
+  y Distribución deciden en enteros; la de `conformidad_fecha` exige meta.
+- **Constancias de envío al ente** (anexo 14B, §8; `constancias.ts`): «se reporta a un ente» es un
+  estado completo (ente, periodicidad externa que contiene a la de medición y plazo, `errorDeEnte`).
+  Nacen (`asegurarConstancias`, desde la pasada y la página) para los periodos externos que terminan
+  después de `indicadores.ente_desde`, que escribe `alPublicarVersion` cuando la versión nueva se
+  reporta y cambió lo que dice del ente (una ficha que ya se reportaba antes de la 14B empieza a contar
+  en la primera pasada que la ve); lo ya nacido no cambia (guarda su ente y su fecha límite). Dejar de
+  reportarse o retirar el indicador quita solo las pendientes sin soporte
+  (`quitarConstanciasSinSoporte`). Registrar congela el resultado del periodo externo con el mismo
+  acumulado de la página (`resultadoDelPeriodoExterno`, parcial si falta un dato, hay periodos sin
+  cerrar o acumula desde una versión nueva); corregir exige justificación y no lo recalcula. Registran
+  y corrigen, sin clave, quien puede medir y quien administra (`puedeRegistrarConstancia`); el retiro
+  no lo impide, pero sí subir o quitar soportes, y el de una registrada no se quita. Su historial es
+  `reporte_externo_eventos` (regla 5). Vencen, avisan y escalan en su propia pasada
+  (`constanciasVencidas`, con `correrPaso` de `pasada.ts`), sin aviso previo y sin nombrar el
+  indicador al jefe.
+- **Revisiones de indicadores por cambio de norma** (anexo 14B, §9; `impactos.ts`, tabla
+  `impactos_indicadores`): nacen en la transacción del cambio de estado de la norma
+  (`crearImpactosDeIndicadores`, desde `cambiarEstadoEn`), una por indicador activo cuya ficha vigente
+  la cita, y se resuelven **en la página del indicador**, no en la de impactos de la 13C (que las
+  muestra en lectura, `indicadoresDelCambio`): «No afecta» con nota (`resolverImpactoNoAfecta`), la
+  primera versión enviada (o el cambio menor publicado) después de nacer la revisión, al aprobarse
+  (`resolverImpactosPorVersion`, desde `alPublicarVersion`), o el retiro (`resolverImpactosPorRetiro`).
+  Son tarea de quien administra indicadores y vencen en su propia pasada
+  (`impactosDeIndicadoresVencidos`, calcada a propósito de la de la 13C: un arreglo de esa mecánica va
+  en las dos). Solo una cita **nueva** exige norma vigente o modificada (`revisarContraLaBase` compara
+  contra la versión vigente); al aprobar, o al publicar un cambio menor, una cita nueva de una norma
+  que dejó de regir se rechaza (`normaNuevaQueNoRige`). Crear las revisiones no toma candados
+  explícitos sobre `indicadores`: el `40P01` que puede cruzarse con quien guarda una ficha lo vuelven
+  legible las acciones (`legibleSiInterbloqueo`).
 - **Tests y demo:** `tramiteEn` crea su documento: ningún test abre un trámite sobre uno de
   la demo. `tests/semilla-tramites.test.ts` lee el estado de la demo y salta con mensaje si
-  ya avanzó; `SEMILLA_RECIEN=1 npm test` exige la demo recién sembrada.
+  ya avanzó; `SEMILLA_RECIEN=1 npm test` exige la demo recién sembrada. La demo trae fichas
+  automáticas activas (`objetivos_cumplidos` de calidad en `SGC-IND-03`, `reportes_a_tiempo` del SGC
+  y `conformidad_fecha` de la entidad): un test que crea una ficha automática libera antes ese cálculo
+  y alcance (`liberarCalculo`; `sinFichasDocumentales` si lee metas de Configuración documental, el
+  umbral o las tarjetas), y uno que corre la pasada de vencimientos silencia lo ajeno, también las
+  fotos (`silenciarIndicadores`), siempre dentro de su transacción revertida. La semilla siembra por
+  las funciones del dominio con `ahora` inyectado (`indicadores-demo-agenda.ts`, pura, y
+  `indicadores-demo-14b.ts`); `registrarArchivo` no recibe la hora, así que la constancia registrada
+  de la demo se registra con la hora del reloj.
 
 ## Comandos
 
