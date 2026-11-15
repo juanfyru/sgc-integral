@@ -6,11 +6,14 @@
  *
  * La regla de los periodos: lo que terminó hace más que su plazo de reporte (`PLAZO_DE_REPORTE`) ya se reportó; lo que
  * terminó hace menos, queda por reportar, sin vencer. Las dos excepciones son a propósito, en urgencias: un mes vencido
- * (`meses[2]`) y uno que nadie reportó y que el cierre deja sin dato (`meses[4]`).
+ * (`meses[2]`) y uno que nadie reportó y que el cierre deja sin dato (`meses[4]`). Lo que calcula el sistema (anexo 14B,
+ * §11: `SGC-IND-03` desde su versión 2 y las fichas `SGC-ID-001` y `SGC-ID-002`) no lo reporta nadie: lo fotografía la
+ * pasada (`fotos`) o, al final de la siembra, `tomarFotos`.
  */
 import { periodoDe, type Periodo } from "../../lib/indicadores-documentales/periodo";
-import { anterior, periodoQueContiene } from "../../lib/indicadores/periodos";
+import { anterior, fechaLimiteDeReporte, periodoQueContiene, periodosTerminados } from "../../lib/indicadores/periodos";
 import type { Periodicidad, Semaforo } from "../../lib/indicadores/tipos";
+import { fechaEnZona } from "../../lib/tramites/plazos";
 import { zonaHoraria } from "../../lib/zona-horaria";
 import { minutosDespues, momentoHace } from "./distribucion-demo";
 import {
@@ -22,10 +25,14 @@ import {
   GRF_01,
   GTH_01,
   GTH_02,
+  MOTIVO_SGC_03_AUTOMATICA,
   PLAZO_DE_REPORTE,
   SGC_03,
+  SGC_03_AUTOMATICA,
   SGC_04,
   SGC_05,
+  SGC_CONFORMIDAD,
+  SGC_REPORTES,
   type FichaDemo,
 } from "./indicadores-demo-fichas";
 
@@ -63,8 +70,27 @@ export type CalendarioDeIndicadores = {
   trimestreEnCurso: Periodo;
   /** La aprobación en bloque de las fichas del SGC, en la tercera semana del último trimestre sembrado. */
   aprobacionSgc: Date;
+  /** La aprobación de los dos mensuales (urgencias y consulta externa), en `meses[6]`: desde ella `CEX-IND-01` se reporta al ente. */
+  aprobacionMensuales: Date;
   /** El cierre de `meses[3]`, a mediados de `meses[2]`. */
   cierre: Date;
+  /** El mes anterior al de la siembra: en él se aprueba `SGC-ID-002` (conformidad) y es el mes que ya fotografió. */
+  mesAnterior: Periodo;
+  /** Cuatro meses antes del de la siembra: en él se aprueba y empieza `SGC-ID-001` («Reportes a tiempo» del SGC). */
+  mesDeReportes: Periodo;
+  /**
+   * Desde dónde rige la versión 2 de `SGC-IND-03`, la automática: el último semestre que terminó hace más que el plazo de
+   * reporte. Si el semestre de la aprobación del SGC aún no había terminado, es el histórico (`semestreHistorico`) y su
+   * cambio se hace después del cierre (que lo cerraría ya fotografiado: «Volver a calcular» no vale sobre una cerrada); si
+   * ya terminó, es ese, ordinario, y su cambio se hace al día siguiente de terminar, antes de que un cierre lo deje sin dato.
+   */
+  semestreAutomatico: Periodo;
+  /**
+   * El cambio mayor de `SGC-IND-03`: lo abre y lo envía la coordinadora en `cambio`, Gerencia lo aprueba en `aprobacion` y la
+   * pasada de `foto` lo calcula (`null` si esa hora no ha llegado: lo calcula `tomarFotos` al final de la siembra), con el
+   * color `esperado`. `analisis`: cuándo analiza la coordinadora el «Crítico» del semestre ordinario, si llegó su foto.
+   */
+  sgc03: { cambio: Date; aprobacion: Date; foto: Date | null; esperado: Semaforo; analisis: Date | null };
 };
 
 export function calendarioDeIndicadores(ahora: Date, zona: string = zonaHoraria()): CalendarioDeIndicadores {
@@ -77,16 +103,90 @@ export function calendarioDeIndicadores(ahora: Date, zona: string = zonaHoraria(
   const aprobacionSgc = enDia(ultimo, 14, 10);
   const meses = [elQueContiene("mensual", limite, zona)];
   for (let k = 1; k <= 6; k++) meses.push(elAnterior(meses[k - 1], zona));
+  const mesEnCurso = elQueContiene("mensual", ahora, zona);
+  const semestreHistorico = elAnterior(elQueContiene("semestral", aprobacionSgc, zona), zona);
+  const semestreAutomatico = elAnterior(elQueContiene("semestral", limite, zona), zona);
+  let mesDeReportes = mesEnCurso;
+  for (let k = 0; k < 4; k++) mesDeReportes = elAnterior(mesDeReportes, zona);
   return {
     trimestres: [primero, medio, ultimo],
     trimestreSiguiente: siguiente,
-    semestreHistorico: elAnterior(elQueContiene("semestral", aprobacionSgc, zona), zona),
+    semestreHistorico,
     anioHistorico: elAnterior(elQueContiene("anual", aprobacionSgc, zona), zona),
     meses,
-    mesEnCurso: elQueContiene("mensual", ahora, zona),
+    mesEnCurso,
     trimestreEnCurso: elQueContiene("trimestral", ahora, zona),
     aprobacionSgc,
+    aprobacionMensuales: enDia(meses[6], 2, 10),
     cierre: enDia(meses[2], 14, 17),
+    mesAnterior: elAnterior(mesEnCurso, zona),
+    mesDeReportes,
+    semestreAutomatico,
+    sgc03: cambioDeSgc03(semestreAutomatico.clave === semestreHistorico.clave, siguiente, ahora),
+  };
+}
+
+/**
+ * Las horas del cambio mayor de `SGC-IND-03` (ver `semestreAutomatico`). Con el semestre histórico: hace nueve días, después
+ * del cierre; lo aprueba Gerencia al día siguiente y la pasada lo calcula una hora después, sin esperar (un histórico de un
+ * cálculo que se llena hacia atrás). Sale en «Atención»: de los tres objetivos de calidad cumplen dos (de la última medición
+ * histórica del semestre, auditorías 5 de 6 no alcanza el 90; documentos 46 de 50, riesgos 7 de 9 y capacitación 4 de 4,
+ * sí), 66,7 % frente a 80. Con el semestre ordinario: el día siguiente a terminar, después de los reportes de la
+ * coordinadora; la pasada lo calcula cuando vence su plazo de reporte (el día 11, a las 7:12 a. m.) y sale en «Crítico»: de
+ * los tres objetivos cumple uno (auditorías en Crítico y capacitación en Bien sin alcanzar su meta programada de 90 no
+ * cumplen; documentos y riesgos, sí), 33,3 %. Ese «Crítico» lo analiza la coordinadora al día siguiente.
+ */
+function cambioDeSgc03(historico: boolean, siguiente: Periodo, ahora: Date): CalendarioDeIndicadores["sgc03"] {
+  if (historico) {
+    const aprobacion = momentoHace(8, ahora);
+    return { cambio: momentoHace(9, ahora), aprobacion, foto: minutosDespues(aprobacion, 60), esperado: "atencion", analisis: null };
+  }
+  const foto = enDia(siguiente, 10, 7.2);
+  const analisis = enDia(siguiente, 11, 10);
+  const llego = foto.getTime() < ahora.getTime();
+  return {
+    cambio: enDia(siguiente, 1, 15),
+    aprobacion: enDia(siguiente, 2, 9),
+    foto: llego ? foto : null,
+    esperado: "critico",
+    analisis: llego && analisis.getTime() < ahora.getTime() ? analisis : null,
+  };
+}
+
+/** Lo que la demo deja de las constancias de envío de `CEX-IND-01` (anexo 14B, §8). */
+export type PlanDeConstancias = {
+  /** Las que nacen a la hora de la siembra, de la más antigua a la más reciente: los trimestres que terminaron desde que se reporta. */
+  periodos: { clave: string; vence: Date }[];
+  /** La que registra `lider.cex`, con su soporte, la fecha en que dice que la envió y su radicado. */
+  registrada: string;
+  fechaEnvio: string;
+  radicado: string;
+};
+
+/**
+ * Las constancias de `CEX-IND-01` a la hora de la siembra: una por trimestre que terminó después de su aprobación (con
+ * ella empezó a reportarse al ente, `ente_desde`), cada una con su fecha límite de 30 días. Desde `meses[6]` siempre han
+ * terminado al menos dos trimestres y al menos uno ya venció. Se registra la más antigua si quedan otras vencidas; si solo
+ * venció la más antigua, se registra la siguiente (enviada antes de vencer) y la vencida queda para el recorrido. La fecha
+ * de envío es veinte días después del fin del trimestre, o ayer si ese día no ha llegado.
+ */
+export function constanciasDeLaDemo(ahora: Date, zona: string = zonaHoraria()): PlanDeConstancias {
+  const { aprobacionMensuales: desde } = calendarioDeIndicadores(ahora, zona);
+  const externa = CEX_01.periodicidadExterna!;
+  const periodos = periodosTerminados(externa, periodoQueContiene(externa, desde, zona).clave, ahora, zona)
+    .filter((p) => p.hasta.getTime() > desde.getTime())
+    .map((p) => ({ periodo: p, vence: fechaLimiteDeReporte(p, CEX_01.plazoExternoDias!, zona) }));
+  if (periodos.length < 2) throw new Error(`La demo esperaba al menos dos trimestres de CEX-IND-01 terminados y hay ${periodos.length}`);
+  const vencidas = periodos.filter((c) => c.vence.getTime() < ahora.getTime()).length;
+  if (vencidas === 0) throw new Error("La demo esperaba al menos una constancia de CEX-IND-01 vencida");
+  const registrada = periodos[vencidas >= 2 ? 0 : 1].periodo;
+  const enviada = new Date(Math.max(registrada.hasta.getTime(), Math.min(registrada.hasta.getTime() + 20 * MS_DIA, momentoHace(1, ahora).getTime())));
+  const fechaEnvio = fechaEnZona(enviada, zona);
+  return {
+    periodos: periodos.map((c) => ({ clave: c.periodo.clave, vence: c.vence })),
+    registrada: registrada.clave,
+    fechaEnvio,
+    radicado: `MSPS-${fechaEnvio.slice(0, 4)}-018734`,
   };
 }
 
@@ -116,8 +216,13 @@ export type Hecho =
   | { tipo: "cerrarMes"; mes: string }
   | { tipo: "reabrir"; codigo: string; periodo: string; justificacion: string }
   | { tipo: "cerrarDeNuevo"; codigo: string; periodo: string }
-  /** Un cambio sobre la ficha vigente: abre la versión siguiente, la guarda y la envía (el sistema decide si es mayor). */
-  | { tipo: "cambiar"; codigo: string; ficha: FichaDemo; motivo: string };
+  /**
+   * Un cambio sobre la ficha vigente: abre la versión siguiente, la guarda y la envía (el sistema decide si es mayor); un
+   * cambio mayor rige desde `rigeDesde` o, sin él, desde el periodo por omisión.
+   */
+  | { tipo: "cambiar"; codigo: string; ficha: FichaDemo; motivo: string; rigeDesde?: string }
+  /** La pasada de esa hora toma las fotos que tocan (`tomarFotos`); cada medición de `esperado` debe quedar con ese color. */
+  | { tipo: "fotos"; esperado: { codigo: string; periodo: string; semaforo: Semaforo }[] };
 
 export type Paso = { momento: Date; hecho: Hecho };
 
@@ -131,6 +236,7 @@ export function agendaDeIndicadores(ahora: Date, zona: string = zonaHoraria()): 
   contabilidad(cal, en);
   en(cal.cierre, { tipo: "cerrarMes", mes: cal.meses[3].clave });
   fichasRecientes(cal, ahora, en);
+  automaticosDelSgc(cal, en);
   return agenda
     .map((p, i) => ({ p, i }))
     .sort((x, y) => x.p.momento.getTime() - y.p.momento.getTime() || x.i - y.i)
@@ -156,7 +262,7 @@ function urgenciasYConsultaExterna(cal: CalendarioDeIndicadores, en: En): void {
   const m = cal.meses;
   crearYEnviar(en, enDia(m[6], 0, 9), AIN_01, m[6].clave, "jefeUrgencias");
   crearYEnviar(en, enDia(m[6], 0, 11), CEX_01, m[6].clave, "liderCex");
-  en(enDia(m[6], 2, 10), { tipo: "aprobar", quien: "gerente", codigos: [AIN_01.codigo, CEX_01.codigo] });
+  en(cal.aprobacionMensuales, { tipo: "aprobar", quien: "gerente", codigos: [AIN_01.codigo, CEX_01.codigo] });
 
   const urgencias = (k: number, valores: [string, string], esperado: Semaforo) =>
     en(enDia(m[k - 1], 2, 9), { tipo: "reportar", quien: "jefeUrgencias", codigo: AIN_01.codigo, periodo: m[k].clave, valores, esperado });
@@ -225,13 +331,19 @@ function contabilidad(cal: CalendarioDeIndicadores, en: En): void {
   en(enDia(m[0], 3, 13), { tipo: "reportar", quien: "coordinadora", codigo: CNT_01.codigo, periodo: m[1].clave, valores: ["100", "100"], esperado: "bien" });
 }
 
-/** Los históricos de cada ficha del SGC: los dos trimestres (o el semestre o el año) que terminaron antes de aprobarse. */
+/**
+ * Los históricos de cada ficha del SGC: los dos trimestres (o el semestre o el año) que terminaron antes de aprobarse. El
+ * semestre de `SGC-IND-03` no se registra si es el que después calcula el sistema (`semestreAutomatico`): su versión 2 no
+ * podría regir desde un periodo con datos.
+ */
 function historicosDelSgc(cal: CalendarioDeIndicadores): Record<string, FilaHistorica[]> {
   const [t1, t2] = cal.trimestres.map((t) => t.clave);
+  const semestre = cal.semestreHistorico.clave;
+  const objetivos: Record<string, FilaHistorica[]> = semestre === cal.semestreAutomatico.clave ? {} : { "SGC-IND-03": [[semestre, "4", "5", "bien"]] };
   return {
     "SGC-IND-01": [[t1, "5", "5", "bien"], [t2, "5", "6", "atencion"]],
     "SGC-IND-02": [[t1, "4", "5", "bien"], [t2, "3", "4", "atencion"]],
-    "SGC-IND-03": [[cal.semestreHistorico.clave, "4", "5", "bien"]],
+    ...objetivos,
     "SGC-IND-04": [[cal.anioHistorico.clave, "1", "1", "bien"]],
     "SGC-IND-05": [[t1, "44", "50", "bien"], [t2, "46", "50", "bien"]],
     "SGC-IND-06": [[t1, "3", "4", "atencion"], [t2, "4", "4", "bien"]],
@@ -248,7 +360,7 @@ function historicosDelSgc(cal: CalendarioDeIndicadores): Record<string, FilaHist
  * siguiente al fin del trimestre se reportan: `SGC-IND-01` en Crítico, con causa, acción y la observación de Control
  * Interno; `SGC-IND-02` en Atención con su análisis; `SGC-IND-06` en Bien sin alcanzar la meta que se le programó (90),
  * con su análisis; `SGC-IND-08` «no
- * aplica»; y el semestre y el año de `SGC-IND-03` y `SGC-IND-04` si terminaron con el trimestre. `SGC-IND-09` se retira.
+ * aplica»; y el año de `SGC-IND-04` si terminó con el trimestre. `SGC-IND-09` se retira.
  */
 function sgcYTalentoHumano(cal: CalendarioDeIndicadores, zona: string, en: En): void {
   const ultimo = cal.trimestres[2];
@@ -277,10 +389,9 @@ function sgcYTalentoHumano(cal: CalendarioDeIndicadores, zona: string, en: En): 
     ["SGC-IND-06", ultimo.clave, ["17", "20"], "bien"],
     ["SGC-IND-07", ultimo.clave, ["8", "10"], "bien"],
   ];
-  // El semestre y el año de la aprobación, si terminaron con el último trimestre sembrado (ya pasó su plazo).
-  const semestre = elQueContiene("semestral", cal.aprobacionSgc, zona);
+  // El año de la aprobación, si terminó con el último trimestre sembrado (ya pasó su plazo). El semestre de `SGC-IND-03`, en
+  // ese caso, ya no lo reporta nadie: es el que calcula el sistema desde su versión 2 (`semestreAutomatico`).
   const anio = elQueContiene("anual", cal.aprobacionSgc, zona);
-  if (semestre.hasta.getTime() === ultimo.hasta.getTime()) reportes.push([SGC_03.codigo, semestre.clave, ["5", "6"], "bien"]);
   if (anio.hasta.getTime() === ultimo.hasta.getTime()) reportes.push([SGC_04.codigo, anio.clave, ["1", "1"], "bien"]);
   reportes.forEach(([codigo, clave, valores, esperado], i) =>
     en(minutosDespues(enDia(siguiente, 1, 9), i * 15), { tipo: "reportar", quien: "coordinadora", codigo, periodo: clave, valores, esperado }),
@@ -362,4 +473,39 @@ function fichasRecientes(cal: CalendarioDeIndicadores, ahora: Date, en: En): voi
   });
   crearYEnviar(en, momentoHace(3, ahora), GTH_02, cal.trimestreEnCurso.clave, "liderGth");
   en(momentoHace(2, ahora), { tipo: "crear", ficha: GRF_01, inicio: cal.mesEnCurso.clave, responsable: null });
+}
+
+/**
+ * Lo que calcula el sistema en el SGC (anexo 14B, §11). `SGC-ID-001` («Reportes de indicadores a tiempo» del proceso,
+ * mensual, 31 días de plazo) se crea y se aprueba en `mesDeReportes`, desde el que mide. `SGC-ID-002` («Conformidad en
+ * puntos de uso, a la fecha», de toda la entidad, meta 90) se aprueba en `mesAnterior`: es el periodo en curso al aprobarse
+ * y el que fotografía la siembra. `SGC-IND-03` pasa a «Objetivos cumplidos» de calidad con un cambio mayor que rige desde
+ * `semestreAutomatico` (ver `cambioDeSgc03`); la coordinadora analiza su «Crítico» si el semestre es ordinario. El mes de
+ * conformidad lo fotografía y lo analiza el final de la siembra (`indicadores-demo.ts`).
+ */
+function automaticosDelSgc(cal: CalendarioDeIndicadores, en: En): void {
+  crearYEnviar(en, enDia(cal.mesDeReportes, 1, 9), SGC_REPORTES, cal.mesDeReportes.clave, "coordinadora");
+  en(enDia(cal.mesDeReportes, 2, 10), { tipo: "aprobar", quien: "gerente", codigos: [SGC_REPORTES.codigo] });
+  crearYEnviar(en, enDia(cal.mesAnterior, 1, 9), SGC_CONFORMIDAD, cal.mesAnterior.clave, "coordinadora");
+  en(enDia(cal.mesAnterior, 2, 10), { tipo: "aprobar", quien: "gerente", codigos: [SGC_CONFORMIDAD.codigo] });
+
+  const { cambio, aprobacion, foto, esperado, analisis } = cal.sgc03;
+  const semestre = cal.semestreAutomatico.clave;
+  en(cambio, { tipo: "cambiar", codigo: SGC_03.codigo, ficha: SGC_03_AUTOMATICA, motivo: MOTIVO_SGC_03_AUTOMATICA, rigeDesde: semestre });
+  en(aprobacion, { tipo: "aprobar", quien: "gerente", codigos: [SGC_03.codigo] });
+  if (foto) en(foto, { tipo: "fotos", esperado: [{ codigo: SGC_03.codigo, periodo: semestre, semaforo: esperado }] });
+  if (analisis) {
+    en(analisis, {
+      tipo: "analizar",
+      quien: "coordinadora",
+      codigo: SGC_03.codigo,
+      periodo: semestre,
+      textos: {
+        causa:
+          "De los tres objetivos de calidad solo se cumplió el de información documentada: las auditorías internas quedaron en Crítico y la capacitación en calidad no alcanzó la meta programada del trimestre.",
+        accionPropuesta:
+          "Llevar a la revisión por la dirección el plan de auditorías con los dos auditores nuevos y la reprogramación de las capacitaciones aplazadas.",
+      },
+    });
+  }
 }

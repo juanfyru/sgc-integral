@@ -1,9 +1,11 @@
 /**
  * Los indicadores de la demo (spec 14 §22) contra la base sembrada: los ocho del SGC aprobados por Gerencia con sus
  * firmas, los de urgencias, talento humano, consulta externa y cartera, los estados de las fichas, los de las mediciones,
- * la meta programada, la observación sin respuesta, el cierre, la reapertura y los objetivos. Solo lee. Los periodos salen
- * del calendario de la siembra (`calendarioDeIndicadores`), contado desde su reloj. Como el resto de la demo, se salta si
- * ya se usó (ver `utiles/demo.ts`); `SEMILLA_RECIEN=1` lo exige.
+ * la meta programada, la observación sin respuesta, el cierre, la reapertura y los objetivos. Y los de la 14B (anexo §11):
+ * `SGC-IND-03` calculado por el sistema desde su versión 2, la ficha de conformidad que da la meta a Distribución, la de
+ * «Reportes a tiempo» con un periodo «No aplica» y otro en «Falta un dato», y las constancias de `CEX-IND-01`. Solo lee. Los
+ * periodos salen del calendario de la siembra (`calendarioDeIndicadores`), contado desde su reloj. Como el resto de la
+ * demo, se salta si ya se usó (ver `utiles/demo.ts`); `SEMILLA_RECIEN=1` lo exige.
  */
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -20,9 +22,13 @@ import { indicadoresQueExige } from "@/db/consultas/indicadores/busqueda";
 import { mesPorOmision } from "@/db/consultas/indicadores/cierre";
 import { listarMaestro } from "@/db/consultas/indicadores/maestros";
 import { observacionesDe } from "@/db/consultas/indicadores/observaciones";
-import { calendarioDeIndicadores } from "@/db/semillas/indicadores-demo-agenda";
+import { metaDeConformidad } from "@/db/consultas/indicadores/fichas-de-calculo";
+import { tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
+import { calendarioDeIndicadores, constanciasDeLaDemo } from "@/db/semillas/indicadores-demo-agenda";
+import { SGC_CONFORMIDAD, SGC_REPORTES } from "@/db/semillas/indicadores-demo-fichas";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { aprobadoresDeFicha, puedeMedir, puedeVerIndicador } from "@/lib/alcance";
+import { CALCULOS } from "@/lib/indicadores/calculos/registro";
 import { estadoVisible } from "@/lib/indicadores/estados";
 import { exigirDemo, sembradaEn } from "./utiles/demo";
 import { sesionDe } from "./utiles/tramites";
@@ -46,11 +52,16 @@ const DEL_SGC: [string, string, string, string, number, string, string][] = [
   ["SGC-IND-08", "Oportunidad de Cierre de No Conformidades", "No conformidades cerradas a tiempo", "No conformidades con plazo vencido o cerradas", 75, "trimestral", "Efectividad"],
 ];
 
-/** Los diecisiete indicadores sembrados con el estado en que se sembraron (con el de rangos y los dos del lote importado). */
+/**
+ * Los diecinueve indicadores sembrados con el estado en que se sembraron (con el de rangos, los dos del lote importado y,
+ * desde la 14B, las dos fichas automáticas nuevas del SGC).
+ */
 const SEMBRADOS: Record<string, string> = {
   "CNT-ID-001": "activo",
   "TSR-ID-001": "activo",
   "GRF-ID-001": "borrador",
+  [SGC_REPORTES.codigo]: "activo",
+  [SGC_CONFORMIDAD.codigo]: "activo",
   "AIN-IND-01": "activo",
   "CEX-IND-01": "activo",
   "GRF-IND-01": "borrador",
@@ -64,11 +75,14 @@ const SEMBRADOS: Record<string, string> = {
  * Si lo sembrado en los indicadores sigue como se sembró: cada paso sembrado ocurrió antes del reloj de la siembra, y lo
  * que se hace después (reportar, analizar, observar, cambiar una ficha, programar una meta, designar, retirar, cerrar un
  * mes) queda con su hora. Mira solo los indicadores sembrados: los que se crean después no cambian lo sembrado. Lo que no
- * deja hora se compara con las cifras sembradas, como `SEMBRADO` en `utiles/demo.ts`: los diecisiete códigos con su estado
- * (un borrador se puede borrar), el único restringido y los cinco objetivos activos.
+ * deja hora se compara con las cifras sembradas, como `SEMBRADO` en `utiles/demo.ts`: los diecinueve códigos con su estado
+ * (un borrador se puede borrar), el único restringido y los cinco objetivos activos. Las constancias de envío también se
+ * cuentan, no se fechan: el soporte de la registrada lo sube `registrarArchivo`, que escribe su evento con la hora del
+ * reloj, y por eso la siembra la registra después, también con la hora del reloj (`sembrarConstancias`).
  */
 async function indicadoresComoSeSembraron(): Promise<{ intacta: boolean; motivo: string }> {
   const t = await sembradaEn(sql);
+  const plan = constanciasDeLaDemo(t);
   const estados = new Map((await sql`SELECT codigo, estado FROM indicadores WHERE codigo IN ${sql(Object.keys(SEMBRADOS))}`).map((f) => [
     f.codigo as string,
     f.estado as string,
@@ -93,6 +107,21 @@ async function indicadoresComoSeSembraron(): Promise<{ intacta: boolean; motivo:
     .filter((clave) => Number(c[clave]) > 0)
     .map((clave) => `${c[clave]} ${clave} posteriores a la siembra`);
   if (c.restringidos !== "GTH-IND-01") cambios.push(`los restringidos son «${c.restringidos}» (se sembró solo GTH-IND-01)`);
+  const [r] = await sql`SELECT
+      (SELECT count(*)::int FROM reportes_externos WHERE estado = 'registrada') AS registradas,
+      (SELECT count(*)::int FROM reportes_externos WHERE estado = 'pendiente') AS pendientes,
+      (SELECT count(*)::int FROM reporte_externo_eventos) AS eventos,
+      (SELECT count(*)::int FROM impactos_indicadores) AS impactos`;
+  // Una registrada con su soporte (dos eventos: el soporte y el registro); las demás, pendientes; ninguna revisión por norma.
+  const sembradas: [string, number, string][] = [
+    ["registradas", 1, "constancias registradas"],
+    ["pendientes", plan.periodos.length - 1, "constancias pendientes"],
+    ["eventos", 2, "eventos de constancias"],
+    ["impactos", 0, "revisiones de indicadores por cambio de norma"],
+  ];
+  for (const [clave, n, nombre] of sembradas) {
+    if (Number(r[clave]) !== n) cambios.push(`${r[clave]} ${nombre} (se sembraron ${n})`);
+  }
   for (const [codigo, estado] of Object.entries(SEMBRADOS)) {
     if (estados.get(codigo) !== estado) cambios.push(`${codigo} está ${estados.get(codigo) ?? "borrado"} (se sembró ${estado})`);
   }
@@ -162,11 +191,21 @@ describe("indicadores sembrados", () => {
       });
       expect(Number(v.meta), codigo).toBe(meta);
       const variables = await sql`SELECT letra, nombre FROM indicador_variables WHERE version_id = ${v.id} ORDER BY letra`;
-      expect(variables.map((x) => [x.letra, x.nombre]), codigo).toEqual([["A", a], ["B", b]]);
-      expect(await designados(i.id, "mide"), codigo).toEqual(["coordinadora.sgc"]);
+      const [v1] = await versiones(i.id);
+      const v1Variables = await sql`SELECT letra, nombre FROM indicador_variables WHERE version_id = ${v1.id} ORDER BY letra`;
+      // Las del Excel quedan en la versión 1. `SGC-IND-03` lo calcula el sistema desde su versión 2 (anexo 14B, §11): su
+      // vigente lleva las variables del registro de cálculos y nadie la mide (la aprobación quitó a quien medía).
+      expect(v1Variables.map((x) => [x.letra, x.nombre]), codigo).toEqual([["A", a], ["B", b]]);
+      if (codigo === "SGC-IND-03") {
+        const registro = CALCULOS.objetivos_cumplidos.variables.map((x) => [x.letra, x.nombre]);
+        expect(variables.map((x) => [x.letra, x.nombre]), codigo).toEqual(registro);
+        expect(await designados(i.id, "mide"), codigo).toEqual([]);
+      } else {
+        expect(variables.map((x) => [x.letra, x.nombre]), codigo).toEqual([["A", a], ["B", b]]);
+        expect(await designados(i.id, "mide"), codigo).toEqual(["coordinadora.sgc"]);
+      }
 
       // La ficha impresa y el Excel leen las firmas de la versión: «Elaboró» sobre su huella y «Aprobó».
-      const [v1] = await versiones(i.id);
       expect(v1, codigo).toMatchObject({ numero: 1, tipo_cambio: "inicial", estado: "aprobada" });
       const ficha = await fichaDeVersion(admin, v1.id, { sql });
       expect(ficha?.firmas.elaboro?.nombre, codigo).toBe(admin.nombre);
@@ -278,6 +317,9 @@ describe("indicadores sembrados", () => {
     expect(ficha3?.firmas.aprobo).toBeNull();
     // Las mediciones viejas conservan su versión.
     for (const t of cal.trimestres) expect(Number((await medicion("SGC-IND-05", t.clave)).version_id), t.clave).toBe(v1.id);
+    // Sigue manual (anexo 14B, decisión 5.3 del usuario): la conformidad en puntos de uso tiene su ficha aparte.
+    expect([v1, v2, v3].map((v) => [v.origen_dato, v.calculo])).toEqual([["manual", null], ["manual", null], ["manual", null]]);
+    expect(conCambios.calculo).toBeNull();
   });
 
   it("el año de la demo tiene históricos, un «Bien», un «Atención» con análisis, un «Crítico» con causa y acción, un sin dato, una vencida y un «no aplica»", async (ctx) => {
@@ -481,5 +523,159 @@ describe("indicadores sembrados", () => {
     const bytes = await readFile(resolverRutaAlmacen(a.ruta as string)!);
     expect(createHash("sha256").update(bytes).digest("hex")).toBe(a.hash_sha256);
   });
+});
 
+/** Los eventos `foto` de la medición: los escribe el sistema, sin usuario. */
+const fotosDe = async (medicionId: number) =>
+  sql`SELECT usuario_id, detalle FROM medicion_eventos WHERE medicion_id = ${medicionId} AND tipo = 'foto' ORDER BY id`;
+
+/** El indicador activo de la demo cuya ficha vigente usa el cálculo con ese alcance. */
+async function delCalculo(calculo: string, alcance: string) {
+  const filas = await sql`SELECT i.*, p.sigla FROM indicadores i JOIN procesos p ON p.id = i.proceso_id
+    WHERE i.estado = 'activo' AND i.calculo = ${calculo} AND i.calculo_alcance = ${alcance}`;
+  expect(filas, `${calculo} / ${alcance}`).toHaveLength(1);
+  return filas[0];
+}
+
+describe("lo que calcula el sistema y lo regulatorio (anexo 14B, §11)", () => {
+  it("SGC-IND-03 lo calcula el sistema desde su versión 2, con «Objetivos cumplidos» de calidad, y su semestre ya tiene la foto", async (ctx) => {
+    await exigirIndicadores(ctx);
+    const cal = calendarioDeIndicadores(await sembradaEn(sql));
+    const i = await indicador("SGC-IND-03");
+    expect(i).toMatchObject({ calculo: "objetivos_cumplidos", calculo_alcance: "calidad" });
+    const [v1, v2, otra] = await versiones(i.id);
+    expect(otra).toBeUndefined();
+    expect(v1).toMatchObject({ numero: 1, tipo_cambio: "inicial", estado: "aprobada", origen_dato: "manual", calculo: null });
+    expect(v2).toMatchObject({
+      numero: 2,
+      tipo_cambio: "mayor",
+      estado: "aprobada",
+      origen_dato: "automatico",
+      calculo: "objetivos_cumplidos",
+      calculo_alcance: "calidad",
+      rige_desde: cal.semestreAutomatico.clave,
+    });
+    expect(largo(v2.motivo_cambio)).toBeGreaterThan(0);
+    // La versión manual no dejó datos desde ese semestre: la automática no podría regir desde un periodo con datos.
+    const [{ manuales }] = await sql`SELECT count(*)::int AS manuales FROM mediciones
+      WHERE indicador_id = ${i.id} AND hasta >= ${cal.semestreAutomatico.desde} AND reportada_por IS NOT NULL`;
+    expect(manuales).toBe(0);
+
+    // El semestre, con la foto del sistema: sin usuario, con los objetivos cumplidos de los que tuvieron medición (A de B).
+    // Con el histórico, cumplen dos de tres (Atención); con el ordinario, uno de tres (Crítico): `cambioDeSgc03`.
+    const m = await medicion("SGC-IND-03", cal.semestreAutomatico.clave);
+    expect(m.foto_en).not.toBeNull();
+    expect(m).toMatchObject({ version_id: v2.id, reportada_por: null, no_aplica: false, semaforo: cal.sgc03.esperado, reabierta_en: null });
+    expect(m.historica).toBe(cal.semestreAutomatico.clave === cal.semestreHistorico.clave);
+    expect(await valores(m.id)).toEqual({ A: cal.sgc03.esperado === "atencion" ? 2 : 1, B: 3 });
+    // Sin cerrar: «Volver a calcular» vale sobre ella (anexo 14B, §5.4).
+    expect(m.estado).not.toBe("cerrada");
+    const fotos = await fotosDe(m.id);
+    expect(fotos.map((f) => [f.usuario_id, f.detalle.calculo, f.detalle.alcance])).toEqual([[null, "objetivos_cumplidos", "calidad"]]);
+  });
+
+  it("la ficha de «Conformidad en puntos de uso» es de toda la entidad, con meta 90, y su mes anterior ya tiene la foto", async (ctx) => {
+    await exigirIndicadores(ctx);
+    const sembrada = await sembradaEn(sql);
+    const cal = calendarioDeIndicadores(sembrada);
+    const i = await delCalculo("conformidad_fecha", "entidad");
+    expect(i).toMatchObject({ codigo: SGC_CONFORMIDAD.codigo, sigla: "SGC", inicio_medicion: cal.mesAnterior.clave });
+    const v = await vigente(i.id);
+    expect(v).toMatchObject({ numero: 1, origen_dato: "automatico", periodicidad: "mensual", tendencia: "ascendente" });
+    expect(Number(v.meta)).toBe(90);
+    // Nadie la mide; Gerencia la aprobó en el mes anterior a la siembra, que es desde cuando mide.
+    expect(await designados(i.id, "mide")).toEqual([]);
+    const aprobada = new Date(v.aprobada_en).getTime();
+    expect(aprobada >= cal.mesAnterior.desde.getTime() && aprobada <= cal.mesAnterior.hasta.getTime()).toBe(true);
+
+    // El mes anterior, fotografiado: Farmacia conforme y Urgencias no (su verificación dejó el hallazgo abierto), 1 de 2.
+    // 50 % frente a 90 es Crítico: la coordinadora lo analizó con su causa y su acción.
+    const m = await medicion(i.codigo as string, cal.mesAnterior.clave);
+    expect(m.foto_en).not.toBeNull();
+    expect(await valores(m.id)).toEqual({ A: 1, B: 2 });
+    expect(m).toMatchObject({ reportada_por: null, semaforo: "critico", cumple: false, requiere_accion: true, estado: "reportada" });
+    expect(largo(m.causa)).toBeGreaterThanOrEqual(10);
+    expect(largo(m.accion_propuesta)).toBeGreaterThanOrEqual(10);
+    expect((await fotosDe(m.id)).map((f) => f.usuario_id)).toEqual([null]);
+
+    // Una sola meta (anexo 14B, §6): Distribución juzga la conformidad con la de la ficha, no con el 95 de la configuración.
+    const admin = await sesionDe(sql, "coordinadora.sgc");
+    expect(await metaDeConformidad(95, admin, { sql, ahora: sembrada })).toEqual({ umbral: 90, ficha: SGC_CONFORMIDAD.codigo });
+  });
+
+  it("«Reportes a tiempo» del SGC trae un mes «No aplica» puesto por el sistema y otro en «Falta un dato», sin tarea ni aviso", async (ctx) => {
+    await exigirIndicadores(ctx);
+    const sembrada = await sembradaEn(sql);
+    const i = await delCalculo("reportes_a_tiempo", "proceso");
+    expect(i).toMatchObject({ codigo: SGC_REPORTES.codigo, sigla: "SGC", plazo_reporte_dias: 31 });
+    const filas = await sql`SELECT * FROM mediciones WHERE indicador_id = ${i.id} ORDER BY desde`;
+
+    // Los meses sin fechas límite de los indicadores del SGC: «No aplica» con el motivo del cálculo, sin usuario.
+    const noAplica = filas.filter((m) => m.no_aplica);
+    expect(noAplica.length).toBeGreaterThan(0);
+    for (const m of noAplica) {
+      expect(m.foto_en, m.periodo).not.toBeNull();
+      expect(m, m.periodo).toMatchObject({ reportada_por: null, no_aplica_motivo: CALCULOS.reportes_a_tiempo.sinDatos, semaforo: null });
+      expect((await fotosDe(m.id)).map((f) => f.usuario_id), m.periodo).toEqual([null]);
+    }
+    // Lo que el sistema ya calculó con datos no pidió análisis: los del SGC se reportaron a tiempo.
+    for (const m of filas.filter((x) => x.foto_en !== null && !x.no_aplica)) expect(m, m.periodo).toMatchObject({ semaforo: "bien", cumple: true });
+
+    // El mes anterior espera su foto: abierto, sin datos y dentro de su plazo (31 días).
+    const esperan = filas.filter((m) => m.foto_en === null);
+    expect(esperan.length).toBeGreaterThan(0);
+    for (const m of esperan) {
+      expect(m, m.periodo).toMatchObject({ estado: "abierta", reportada_en: null, no_aplica: false, historica: false });
+      expect(new Date(m.vence_en).getTime(), m.periodo).toBeGreaterThan(sembrada.getTime());
+    }
+    // Nadie tiene la tarea de reportarla ni aviso de ella (anexo 14B, §4: «Falta un dato»).
+    const deEsperan = new Set(esperan.flatMap((m) => [`medir:${m.id}`, `analizar:${m.id}`]));
+    for (const usuario of ["coordinadora.sgc", "gerente", "control.interno"]) {
+      const { tareas } = await tareasDeIndicadores(await sesionDe(sql, usuario), { sql, ahora: sembrada });
+      expect(tareas.filter((t) => deEsperan.has(t.id)), usuario).toEqual([]);
+    }
+    const avisos = await sql`SELECT n.tipo FROM notificaciones n WHERE n.entidad = 'medicion' AND n.entidad_id IN ${sql(esperan.map((m) => Number(m.id)))}`;
+    expect(avisos).toEqual([]);
+  });
+
+  it("CEX-IND-01 se reporta al ente cada trimestre: una constancia registrada con su radicado y su soporte, y otra vencida", async (ctx) => {
+    await exigirIndicadores(ctx);
+    const sembrada = await sembradaEn(sql);
+    const plan = constanciasDeLaDemo(sembrada);
+    const cex = await indicador("CEX-IND-01");
+    expect(await vigente(cex.id)).toMatchObject({ ente: "Ministerio de Salud y Protección Social", periodicidad_externa: "trimestral", plazo_externo_dias: 30 });
+    const constancias = await sql`SELECT *, to_char(fecha_envio, 'YYYY-MM-DD') AS envio FROM reportes_externos
+      WHERE indicador_id = ${cex.id} ORDER BY hasta`;
+    expect(constancias.map((c) => [c.periodo, new Date(c.vence_en).getTime()])).toEqual(plan.periodos.map((p) => [p.clave, p.vence.getTime()]));
+
+    const registradas = constancias.filter((c) => c.estado === "registrada");
+    expect(registradas.map((c) => c.periodo)).toEqual([plan.registrada]);
+    const [r] = registradas;
+    expect(r).toMatchObject({ radicado: plan.radicado, envio: plan.fechaEnvio, ente: "Ministerio de Salud y Protección Social", corregida: false });
+    expect(r.resultado_enviado).toMatch(/días$/);
+    expect(Number(r.registrada_por)).toBe((await sesionDe(sql, "lider.cex")).usuarioId);
+    // Su soporte: un PDF en el almacén, con la huella de su fila; y su historial, el soporte y el registro.
+    const soportes = await sql`SELECT ruta, mime, hash_sha256 FROM archivos WHERE contexto = 'reporte_externo' AND contexto_id = ${r.id}`;
+    expect(soportes.map((s) => s.mime)).toEqual(["application/pdf"]);
+    const bytes = await readFile(resolverRutaAlmacen(soportes[0].ruta as string)!);
+    expect(createHash("sha256").update(bytes).digest("hex")).toBe(soportes[0].hash_sha256);
+    const eventos = await sql`SELECT tipo FROM reporte_externo_eventos WHERE reporte_id = ${r.id} ORDER BY id`;
+    expect(eventos.map((e) => e.tipo)).toEqual(["soporte", "registro"]);
+
+    // Al menos una pendiente ya venció: la tarea «Registrar el reporte…» de quien mide.
+    const vencidas = constancias.filter((c) => c.estado === "pendiente" && new Date(c.vence_en).getTime() < sembrada.getTime());
+    expect(vencidas.length).toBeGreaterThan(0);
+    const { tareas } = await tareasDeIndicadores(await sesionDe(sql, "lider.cex"), { sql, ahora: sembrada });
+    for (const c of vencidas) expect(tareas.map((t) => t.id), c.periodo).toContain(`constancia:${c.id}`);
+  });
+
+  it("no hay revisiones de indicadores por cambio de norma: el recorrido las provoca", async (ctx) => {
+    await exigirIndicadores(ctx);
+    expect(await sql`SELECT id FROM impactos_indicadores`).toEqual([]);
+    // La única norma que cambió de estado en la demo (la 2003 de 2014, derogada) no la cita ningún indicador.
+    const citan = await sql`SELECT DISTINCT i.codigo FROM indicador_normas n
+      JOIN indicador_versiones v ON v.id = n.version_id JOIN indicadores i ON i.id = v.indicador_id
+      WHERE n.norma_id IN (SELECT norma_id FROM norma_cambios)`;
+    expect(citan).toEqual([]);
+  });
 });

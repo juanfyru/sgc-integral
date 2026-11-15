@@ -11,6 +11,10 @@
  * las funciones del dominio, con esa hora (`opciones.ahora`) y las firmas con la clave de la demo (`firmaDeLaDemo`): cada
  * versión aprobada tiene sus filas de `firmas`. La bitácora y los avisos llevan la hora de la siembra: `registrarAuditoria`
  * y `avisarA` no reciben otra. Al final, los avisos de lo que la historia ya resolvió quedan leídos.
+ *
+ * Desde la 14B (anexo §11), la historia trae lo que calcula el sistema (la pasada de fotos de una hora, `fotos`) y, al
+ * final, `indicadores-demo-14b.ts` toma las fotos que tocan a la hora de la siembra, analiza el mes de conformidad y deja
+ * las constancias de `CEX-IND-01`.
  */
 import type { Sql } from "postgres";
 import type { Semaforo } from "../../lib/indicadores/tipos";
@@ -21,6 +25,7 @@ import { analizar } from "../consultas/indicadores/analisis";
 import { aprobarFichas, enviarAAprobacion } from "../consultas/indicadores/aprobacion";
 import { cerrarDeNuevo, cerrarMes, reabrirMedicion } from "../consultas/indicadores/cierre";
 import { abrirCambio, crearIndicador, guardarBorrador } from "../consultas/indicadores/fichas";
+import { tomarFotos } from "../consultas/indicadores/fotos";
 import { registrarHistoricos } from "../consultas/indicadores/historicos";
 import { guardarEnMaestro } from "../consultas/indicadores/maestros";
 import { asegurarMediciones, marcarNoAplica, reportar } from "../consultas/indicadores/mediciones";
@@ -29,6 +34,7 @@ import { observar } from "../consultas/indicadores/observaciones";
 import { designar, retirar } from "../consultas/indicadores/operacion";
 import { momentoHace, minutosDespues, sesionDe, type ContextoDistribucion } from "./distribucion-demo";
 import { agendaDeIndicadores, calendarioDeIndicadores, type FilaHistorica, type Hecho, type Quien } from "./indicadores-demo-agenda";
+import { sembrarFinalDe14B } from "./indicadores-demo-14b";
 import { datosDeFicha, OBJETIVOS, type Catalogo, type ClaveObjetivo, type FichaDemo, type OperacionDemo } from "./indicadores-demo-fichas";
 import { sembrarLoteImportado } from "./indicadores-demo-importacion";
 import { FIRMA, firmaDeLaDemo } from "./vigencia-demo";
@@ -63,6 +69,7 @@ export async function sembrarIndicadores(sql: Sql, c: ContextoDistribucion): Pro
   // El lote importado entra ayer, en el mes en curso: sus fichas aprobadas aún no tienen periodos terminados.
   const cal = calendarioDeIndicadores(c.ahora, zonaHoraria());
   await sembrarLoteImportado(sql, s.sesion.coordinadora, cal.mesEnCurso.clave, momentoHace(1, c.ahora));
+  await sembrarFinalDe14B(sql, { coordinadora: s.sesion.coordinadora, liderCex: s.sesion.liderCex }, c.ahora);
   await leerAvisosResueltos(sql);
 }
 
@@ -199,16 +206,37 @@ async function hacer(s: Siembra, h: Hecho, ahora: Date): Promise<void> {
       await cerrarDeNuevo(coordinadora, await medicionDe(s, h.codigo, h.periodo, ahora), opciones);
       return;
     case "cambiar":
-      await cambiarFicha(s, h.codigo, h.ficha, h.motivo, ahora);
+      await cambiarFicha(s, h.codigo, h.ficha, h.motivo, ahora, h.rigeDesde);
+      return;
+    case "fotos":
+      await fotosDeLaPasada(s, h.esperado, ahora);
       return;
   }
 }
 
 /**
- * Un cambio sobre la ficha vigente (spec §7.6.5): abre la versión siguiente, guarda el formulario con lo que cambia y la
- * envía. El sistema decide si es mayor (queda por aprobar) o menor (queda aprobada sin aprobador).
+ * La pasada de esa hora toma las fotos que tocan (anexo 14B, §5.4) de las mediciones abiertas, y se comprueba el color de
+ * las esperadas: `tomarFotos` registra y salta la que falla, y la semilla no debe seguir sin ella. Los periodos de las
+ * esperadas se abren antes, como al leer su página; los demás, no: el mes de conformidad debe fotografiarse a la hora de
+ * la siembra, con las dos verificaciones ya cerradas (`indicadores-demo-14b.ts`).
  */
-async function cambiarFicha(s: Siembra, codigo: string, ficha: FichaDemo, motivoCambio: string, momento: Date): Promise<void> {
+async function fotosDeLaPasada(s: Siembra, esperado: { codigo: string; periodo: string; semaforo: Semaforo }[], ahora: Date): Promise<void> {
+  for (const e of esperado) await asegurarMediciones({ sql: s.sql, ahora, indicadorId: creado(s, e.codigo).indicadorId });
+  await tomarFotos({ sql: s.sql, ahora });
+  for (const e of esperado) {
+    const [m] = await s.sql`SELECT foto_en, semaforo FROM mediciones WHERE indicador_id = ${creado(s, e.codigo).indicadorId} AND periodo = ${e.periodo}`;
+    if (!m?.foto_en || m.semaforo !== e.semaforo) {
+      throw new Error(`${e.codigo} ${e.periodo}: la foto debía quedar en ${e.semaforo} y quedó ${m?.foto_en ? m.semaforo : "sin foto"}`);
+    }
+  }
+}
+
+/**
+ * Un cambio sobre la ficha vigente (spec §7.6.5): abre la versión siguiente, guarda el formulario con lo que cambia y la
+ * envía. El sistema decide si es mayor (queda por aprobar, y rige desde `rigeDesde` o desde el periodo por omisión) o
+ * menor (queda aprobada sin aprobador).
+ */
+async function cambiarFicha(s: Siembra, codigo: string, ficha: FichaDemo, motivoCambio: string, momento: Date, rigeDesde?: string): Promise<void> {
   const actual = creado(s, codigo);
   const coordinadora = s.sesion.coordinadora;
   const { versionId } = await abrirCambio(coordinadora, actual.indicadorId, { sql: s.sql, ahora: momento });
@@ -216,7 +244,7 @@ async function cambiarFicha(s: Siembra, codigo: string, ficha: FichaDemo, motivo
   await guardarBorrador(coordinadora, versionId, datosDeFicha(s.cat, ficha, op), { sql: s.sql, ahora: minutosDespues(momento, 10) });
   await enviarAAprobacion(
     coordinadora,
-    { versionId, credenciales: FIRMA },
+    { versionId, credenciales: FIRMA, ...(rigeDesde ? { rigeDesde } : {}) },
     { sql: s.sql, ahora: minutosDespues(momento, 30), verificar: firmaDeLaDemo },
   );
   s.creados.set(codigo, { ...actual, versionId, op });

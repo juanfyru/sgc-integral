@@ -2,9 +2,13 @@
  * Las fichas de los indicadores de la demo (spec 14 §22) y los objetivos que miden: los ocho del Excel del usuario
  * (`SGC-IND-01` a `SGC-IND-08`, con su nombre, su objetivo, su fórmula, sus variables con su fuente, su meta y su
  * periodicidad), uno más del SGC que se retira y los ficticios de urgencias, talento humano, consulta externa y cartera.
+ * Desde la 14B (anexo §11), también las que calcula el sistema: la versión 2 de `SGC-IND-03` («Objetivos cumplidos», de
+ * calidad) y dos fichas nuevas del SGC, la de «Reportes de indicadores a tiempo» del proceso y la de «Conformidad en
+ * puntos de uso, a la fecha» de toda la entidad.
  * Los textos son del dominio, no de la entidad. `indicadores-demo.ts` las crea y las mueve por las funciones del dominio.
  */
 import type { DatosFicha } from "../../lib/esquemas/indicadores";
+import { CALCULOS, type AlcanceDeCalculo, type ClaveDeCalculo } from "../../lib/indicadores/calculos/registro";
 import { aDecimal, fraccion } from "../../lib/indicadores/formula/fraccion";
 import { rangosATexto, type FilaEnTexto, type RangosEnTexto } from "../../lib/indicadores/rangos";
 import { rangosEquivalentes } from "../../lib/indicadores/semaforo";
@@ -76,6 +80,13 @@ export type FichaDemo = {
   lineaBase?: { valor: string; periodo: string };
   /** Los rangos escritos a mano; sin ellos, los equivalentes al umbral de la configuración (`rangosDeLaFicha`). */
   rangos?: RangosEnTexto;
+  /**
+   * «Lo calcula el sistema» (anexo 14B, §5.3): el cálculo y su alcance. La forma, las variables y la tendencia las pone el
+   * registro (`automatica`); nadie la mide ni la prueba con valores.
+   */
+  calculo?: { clave: ClaveDeCalculo; alcance: AlcanceDeCalculo };
+  /** El plazo de reporte, si no es el de todas (`PLAZO_DE_REPORTE`): en un cálculo de flujo, cuánto espera el sistema. */
+  plazoReporte?: number;
 };
 
 /** Los ids de lo que la ficha cita, que salen de la base sembrada. */
@@ -134,9 +145,17 @@ function rangosDeLaFicha(f: FichaDemo): string {
   return JSON.stringify({ bien: t.bien.map(fila), atencion: t.atencion.map(fila), critico: t.critico.map(fila) });
 }
 
-/** El formulario de la ficha, como lo dejaría la persona: los rangos del semáforo, con el umbral de la configuración (70 %). */
+/**
+ * El formulario de la ficha, como lo dejaría la persona: los rangos del semáforo, con el umbral de la configuración (70 %).
+ * Una automática manda el cálculo y su alcance, sin cargo que mida, sin personas que midan y sin prueba.
+ */
 export function datosDeFicha(cat: Catalogo, f: FichaDemo, op: OperacionDemo): DatosFicha {
   const cargo = cat.cargo(f.cargo);
+  const deDondeSale = f.calculo
+    ? { origenDato: "automatico" as const, calculo: f.calculo.clave, calculoAlcance: f.calculo.alcance }
+    : f.prueba
+      ? { prueba: { valores: { A: f.prueba[0], B: f.prueba[1] } } }
+      : {};
   return {
     procesoId: cat.proceso(f.proceso),
     ...(f.subproceso ? { subprocesoId: cat.subproceso(f.proceso, f.subproceso) } : {}),
@@ -158,24 +177,36 @@ export function datosDeFicha(cat: Catalogo, f: FichaDemo, op: OperacionDemo): Da
     meta: f.meta,
     semaforoModo: "rangos",
     rangos: rangosDeLaFicha(f),
-    cargosMedir: [cargo],
+    cargosMedir: f.calculo ? [] : [cargo],
     cargosAnalizar: [cargo],
     normaIds: f.norma ? [cat.norma(f.norma)] : [],
     ...(f.ente ? { ente: f.ente } : {}),
     ...(f.periodicidadExterna ? { periodicidadExterna: f.periodicidadExterna } : {}),
     ...(f.plazoExternoDias !== undefined ? { plazoExternoDias: f.plazoExternoDias } : {}),
     ...(op.motivoCambio ? { motivoCambio: op.motivoCambio } : {}),
-    ...(f.prueba ? { prueba: { valores: { A: f.prueba[0], B: f.prueba[1] } } } : {}),
+    ...deDondeSale,
     ...(f.lineaBase
       ? { lineaBaseValor: f.lineaBase.valor, lineaBasePeriodo: f.lineaBase.periodo }
       : { lineaBaseNota: `Sin línea base: ${op.inicio.slice(0, 4)} es el año de referencia` }),
-    plazoReporteDias: PLAZO_DE_REPORTE,
+    plazoReporteDias: f.plazoReporte ?? PLAZO_DE_REPORTE,
     inicioMedicion: op.inicio,
     soporteObligatorio: false,
     nivelAcceso: f.nivelAcceso ?? "general",
-    mide: op.mide,
+    mide: f.calculo ? [] : op.mide,
     analiza: op.analiza,
   };
+}
+
+/**
+ * Lo que el registro de cálculos fija en una ficha automática (anexo 14B, §5.3): la forma, la tendencia y las variables con
+ * su nombre y su descripción. La consulta las vuelve a poner del registro; aquí van para que la ficha de la demo diga lo
+ * mismo que quedará firmado.
+ */
+function automatica(f: Omit<FichaDemo, "forma" | "tendencia" | "a" | "b" | "prueba"> & { calculo: NonNullable<FichaDemo["calculo"]> }): FichaDemo {
+  const def = CALCULOS[f.calculo.clave];
+  if (def.forma !== "porcentaje") throw new Error(`La demo solo siembra cálculos de porcentaje: ${def.clave} no lo es`);
+  const [a, b] = def.variables.map((v) => ({ nombre: v.nombre, descripcion: v.descripcion, fuente: "La calcula el sistema", consolidacion: v.consolidacion }));
+  return { ...f, forma: "porcentaje", tendencia: def.tendencia, a, b };
 }
 
 // ── Sistema de Gestión de Calidad ───────────────────────────────────────────────────────────────────────────────────
@@ -288,6 +319,63 @@ export const SGC_04 = delSgc({
     fuente: "Programa anual del sistema de gestión de calidad",
   },
   prueba: ["1", "1"],
+});
+
+/**
+ * La versión 2 de `SGC-IND-03` (anexo 14B, §11): un cambio mayor que la pasa a «Lo calcula el sistema» con «Objetivos
+ * cumplidos» de los objetivos de calidad. Conserva el nombre, la meta, la periodicidad y el cargo que analiza.
+ */
+export const SGC_03_AUTOMATICA: FichaDemo = automatica({
+  ...SGC_03,
+  calculo: { clave: "objetivos_cumplidos", alcance: "calidad" },
+});
+
+/** El motivo del cambio mayor de `SGC-IND-03`. */
+export const MOTIVO_SGC_03_AUTOMATICA =
+  "El sistema ya calcula los objetivos de calidad cumplidos con las mediciones de sus indicadores: deja de contarse a mano en la matriz de objetivos.";
+
+/**
+ * «Reportes de indicadores a tiempo» del proceso SGC (anexo 14B, §5.2), mensual. Los indicadores del SGC son trimestrales,
+ * semestrales y anuales: en los meses sin fechas límite el sistema la marca «No aplica». Su plazo de reporte es de 31 días:
+ * el sistema espera un mes después de cada mes para calcularla, y el mes anterior a la siembra siempre está en «Falta un
+ * dato».
+ */
+export const SGC_REPORTES: FichaDemo = automatica({
+  codigo: "SGC-ID-001",
+  proceso: "SGC",
+  nombre: "Oportunidad en el reporte de los indicadores del SGC",
+  proposito: "Medir qué parte de las mediciones de los indicadores del proceso se reportan dentro de su fecha límite.",
+  requisito: "NTC ISO 9001:2015 - Numeral 9.1.1",
+  tipo: "Eficiencia",
+  clasificacion: "Estratégico",
+  calculo: { clave: "reportes_a_tiempo", alcance: "proceso" },
+  unidad: "Porcentaje",
+  decimales: 1,
+  periodicidad: "mensual",
+  meta: "90",
+  cargo: "Líder de Calidad",
+  plazoReporte: 31,
+});
+
+/**
+ * «Conformidad en puntos de uso, a la fecha» de toda la entidad (anexo 14B, §6), mensual y con meta 90: desde que se
+ * aprueba, su meta es el umbral con que Distribución y Vigencia juzgan la conformidad (`metaDeConformidad`), en vez del 95
+ * de Configuración documental.
+ */
+export const SGC_CONFORMIDAD: FichaDemo = automatica({
+  codigo: "SGC-ID-002",
+  proceso: "SGC",
+  nombre: "Conformidad en puntos de uso",
+  proposito: "Medir qué parte de los puntos de uso verificados estaba conforme en su última verificación: solo la versión vigente en circulación.",
+  requisito: "NTC ISO 9001:2015 - Numeral 7.5.3",
+  tipo: "Eficacia",
+  clasificacion: "Estratégico",
+  calculo: { clave: "conformidad_fecha", alcance: "entidad" },
+  unidad: "Porcentaje",
+  decimales: 1,
+  periodicidad: "mensual",
+  meta: "90",
+  cargo: "Líder de Calidad",
 });
 
 /** Nace con meta 85; el cambio mayor de la versión 2 la sube a la del Excel (90). */
@@ -453,7 +541,11 @@ export const AIN_01: FichaDemo = {
   cargo: "Enfermera Jefe",
 };
 
-/** Regulatorio: cita la Resolución 256 de 2016, que ya está en el normograma de la demo (spec §22). */
+/**
+ * Regulatorio: cita la Resolución 256 de 2016, que ya está en el normograma de la demo (spec §22). Se reporta al ente cada
+ * trimestre, con 30 días de plazo (anexo 14B, §8): desde su aprobación han terminado al menos dos trimestres, y la demo
+ * deja uno registrado y otro vencido (`constanciasDeLaDemo`).
+ */
 export const CEX_01: FichaDemo = {
   codigo: "CEX-IND-01",
   lineaBase: { valor: "3.4", periodo: "2025" },
@@ -488,7 +580,7 @@ export const CEX_01: FichaDemo = {
   cargo: "Médico Coordinador",
   norma: "Resolución 256 de 2016",
   ente: "Ministerio de Salud y Protección Social",
-  periodicidadExterna: "semestral",
+  periodicidadExterna: "trimestral",
   plazoExternoDias: 30,
 };
 
