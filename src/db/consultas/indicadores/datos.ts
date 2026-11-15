@@ -21,7 +21,7 @@ import { versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import { ErrorIndicador, type Consolidacion, type Periodicidad } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
-import { esDeOtraPeriodicidad, texto, versionesAprobadas } from "./mediciones";
+import { texto, versionesAprobadas } from "./mediciones";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -368,8 +368,8 @@ export async function designarResponsablesDeDato(
 
 /**
  * Un indicador activo usa el dato (anexo 14C, §4.1): lo cita su ficha vigente, o lo cita la versión que rige alguna de sus
- * mediciones ordinarias sin cerrar (un histórico se digita completo y no lo usa; una de otra periodicidad no se mide). Solo
- * lee: no bloquea indicadores ni mediciones, que pueden ser varios.
+ * mediciones ordinarias sin cerrar (un histórico se digita completo y no lo usa, anexo 14C §3.6). Solo lee: no bloquea
+ * indicadores ni mediciones, que pueden ser varios.
  */
 async function enUso(tx: TransactionSql, datoId: number): Promise<boolean> {
   const citas = await tx`SELECT DISTINCT fv.indicador_id, fv.id AS version_id
@@ -387,11 +387,11 @@ async function enUso(tx: TransactionSql, datoId: number): Promise<boolean> {
     // De mayor a menor número: la primera es la vigente.
     const versiones = await versionesAprobadas(tx, indicadorId);
     if (versiones[0] && queLoCitan.has(versiones[0].id)) return true;
-    const abiertas = await tx`SELECT periodo, desde FROM mediciones
+    const abiertas = await tx`SELECT desde FROM mediciones
       WHERE indicador_id = ${indicadorId} AND estado <> 'cerrada' AND NOT historica`;
     for (const m of abiertas) {
       const rige = versionQueRigeEntre(versiones, { desde: new Date(m.desde as string) }, zona);
-      if (rige && queLoCitan.has(rige.id) && !esDeOtraPeriodicidad(m.periodo as string, rige)) return true;
+      if (rige && queLoCitan.has(rige.id)) return true;
     }
   }
   return false;
