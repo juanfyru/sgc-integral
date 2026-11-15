@@ -35,11 +35,12 @@ import { ErrorPermiso, puede, type SujetoPermiso } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { versionVigente } from "./aprobacion";
-import { constanciaSinSoporte } from "./constancias-soporte";
+import { quitarConstanciasSinSoporte } from "./constancias-soporte";
+import { enCurso, recalcularPorSoporte } from "./en-curso";
 import { codigoCon, COLUMNAS_VARIABLE, CONTENIDO, proponerCodigo, siguientes } from "./fichas";
 import { resolverImpactosPorRetiro } from "./impactos";
 import { obtenerParametros } from "./maestros";
-import { conDatos, esDeOtraPeriodicidad, recalcularMedicion, versionesAprobadas } from "./mediciones";
+import { conDatos, versionesAprobadas } from "./mediciones";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -294,18 +295,6 @@ export async function cambiarOperacion(
 }
 
 /**
- * Las mediciones que todavía siguen su curso: sin cerrar y no históricas (un histórico no tiene plazo ni avisos), bloqueadas.
- * `plazo_desde` es la hora de la foto que les movió la fecha límite (el evento `foto` con `venceEn`, anexo 14B §5.4), o nulo.
- */
-const enCurso = (tx: TransactionSql, indicadorId: number) =>
-  tx`SELECT m.id, m.periodo, m.vence_en, m.aviso_previo_en, m.aviso_vencido_en, m.escalado_en,
-      (SELECT e.creado_en FROM medicion_eventos e
-        WHERE e.medicion_id = m.id AND e.tipo = 'foto' AND e.detalle->>'venceEn' IS NOT NULL ORDER BY e.id LIMIT 1) AS plazo_desde
-    FROM mediciones m
-    WHERE m.indicador_id = ${indicadorId} AND m.estado <> 'cerrada' AND NOT m.historica
-    ORDER BY m.desde, m.id FOR UPDATE OF m`;
-
-/**
  * El plazo nuevo en las mediciones en curso: la fecha límite (`fechaLimiteDeReporte`, como al abrir el periodo; la de una
  * a la que su foto le movió el plazo, desde esa foto, como la dejó: anexo 14B §5.4) y las marcas de aviso que ya no son
  * ciertas con ella (`marcasQueSiguen`), para que la pasada vuelva a avisar cuando toque. Quien llama tiene el indicador
@@ -331,57 +320,6 @@ async function moverFechasLimite(tx: TransactionSql, indicadorId: number, plazo:
     movidas += 1;
   }
   return movidas;
-}
-
-/**
- * «Soporte obligatorio» cambió: las mediciones en curso se recalculan (evento `recalculo`, la misma persona y la misma
- * hora, recálculo de sistema `"soporte"`: con la versión con que se calcularon). El soporte rige hacia adelante (residuos
- * finales, punto 1): al **activarlo** solo alcanza las que siguen en plazo (`vence_en >= ahora`), y una ya reportada sin
- * soporte vuelve a abierta para pedirlo; las que ya vencieron se quedan como están (se reportaron cuando no se pedía y no
- * se vuelven vencidas). Al **desactivarlo**, todas: una que solo esperaba el soporte queda reportada. Las de otra
- * periodicidad no se calculan. Devuelve cuántas cambiaron. Quien llama tiene el indicador `FOR UPDATE` y ya escribió el valor
- * nuevo en `indicadores` (`recalcularMedicion` lo lee de ahí): `cambiarOperacion` y `alPublicarVersion`.
- */
-export async function recalcularPorSoporte(
-  tx: TransactionSql,
-  indicadorId: number,
-  c: { ahora: Date; actorId: number; activado: boolean },
-): Promise<number> {
-  const zona = zonaHoraria();
-  const versiones = await versionesAprobadas(tx, indicadorId);
-  let recalculadas = 0;
-  for (const m of await enCurso(tx, indicadorId)) {
-    if (c.activado && new Date(m.vence_en as string).getTime() < c.ahora.getTime()) continue;
-    const clave = m.periodo as string;
-    const periodo = periodoDe(clave, zona);
-    const version = periodo ? versionQueRigeEntre(versiones, periodo, zona) : null;
-    if (!version || esDeOtraPeriodicidad(clave, version)) continue;
-    const r = await recalcularMedicion(tx, Number(m.id), {
-      ahora: c.ahora,
-      actorId: c.actorId,
-      evento: "recalculo",
-      detalle: { causa: "soporte_obligatorio" },
-      sistema: "soporte",
-    });
-    if (r.cambio) recalculadas += 1;
-  }
-  return recalculadas;
-}
-
-/**
- * Las constancias de envío que dejan de pedirse (anexo 14B, §8): la ficha ya no se reporta a un ente o el indicador se
- * retira. Se quitan las pendientes sin ningún soporte ni evento; las registradas y las que ya tienen un soporte o un evento
- * se conservan (un evento no se puede borrar: la llave foránea y el trigger de `reporte_externo_eventos` lo impiden), y la
- * pendiente sin soporte que se conserva ya no se pide (`constanciaQueSePide`). Vive
- * aquí y no en `constancias.ts`, que importa las lecturas: `alPublicarVersion` y `retirar` la llaman sin cerrar otro ciclo
- * de importaciones. Quien llama tiene el indicador `FOR UPDATE`. Devuelve cuántas quitó.
- */
-export async function quitarConstanciasSinSoporte(tx: TransactionSql, indicadorId: number): Promise<number> {
-  const quitadas = await tx`DELETE FROM reportes_externos r
-    WHERE r.indicador_id = ${indicadorId} AND r.estado = 'pendiente' AND ${constanciaSinSoporte(tx)}
-      AND NOT EXISTS (SELECT 1 FROM reporte_externo_eventos e WHERE e.reporte_id = r.id)
-    RETURNING r.id`;
-  return quitadas.length;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

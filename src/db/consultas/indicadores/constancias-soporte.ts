@@ -86,3 +86,20 @@ export async function dejarSoporteDeConstanciaSubido(
   await tx`INSERT INTO reporte_externo_eventos (reporte_id, tipo, usuario_id, detalle, creado_en)
     VALUES (${c.reporteId}, 'soporte', ${c.usuarioId}, ${tx.json({ nombre: c.nombre, accion: "subido" })}, ${c.ahora})`;
 }
+
+
+/**
+ * Las constancias de envío que dejan de pedirse (anexo 14B, §8): la ficha ya no se reporta a un ente o el indicador se
+ * retira. Se quitan las pendientes sin ningún soporte ni evento; las registradas y las que ya tienen un soporte o un evento
+ * se conservan (un evento no se puede borrar: la llave foránea y el trigger de `reporte_externo_eventos` lo impiden), y la
+ * pendiente sin soporte que se conserva ya no se pide (`constanciaQueSePide`). Vive
+ * aquí y no en `constancias.ts`, que importa las lecturas: `alPublicarVersion` y `retirar` la llaman sin cerrar otro ciclo
+ * de importaciones. Quien llama tiene el indicador `FOR UPDATE`. Devuelve cuántas quitó.
+ */
+export async function quitarConstanciasSinSoporte(tx: TransactionSql, indicadorId: number): Promise<number> {
+  const quitadas = await tx`DELETE FROM reportes_externos r
+    WHERE r.indicador_id = ${indicadorId} AND r.estado = 'pendiente' AND ${constanciaSinSoporte(tx)}
+      AND NOT EXISTS (SELECT 1 FROM reporte_externo_eventos e WHERE e.reporte_id = r.id)
+    RETURNING r.id`;
+  return quitadas.length;
+}

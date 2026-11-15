@@ -24,7 +24,8 @@ import { registrarAuditoria } from "@/db/consultas/admin";
 import { enteDeVersion, seReportaAlEnte, type EnteDeVersion } from "@/lib/indicadores/constancias";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import { resolverImpactosPorVersion } from "./impactos";
-import { quitarConstanciasSinSoporte, recalcularPorSoporte } from "./operacion";
+import { quitarConstanciasSinSoporte } from "./constancias-soporte";
+import { recalcularPorSoporte } from "./en-curso";
 
 export type Publicacion = {
   indicadorId: number;
