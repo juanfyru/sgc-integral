@@ -526,9 +526,14 @@ export async function cambieAntes(sujeto: SujetoVisibilidad, toman: readonly Tom
   return CAMBIE_ANTES;
 }
 
-/** Los indicadores restringidos de los que la versión toma una variable, por id (la regla de `aprobadoresDeFicha`). */
+/**
+ * Los indicadores restringidos de los que la versión toma una variable, por id (la regla de `aprobadoresDeFicha`). Toma
+ * todos sus componentes `FOR KEY SHARE`, como `componentesCitados`, y filtra después: quien restringe uno lo tiene
+ * `FOR UPDATE` y esta lectura lo espera (con el filtro en el `WHERE`, uno que se está restringiendo no se esperaría).
+ */
 export async function componentesRestringidos(sql: Cliente, versionId: number): Promise<number[]> {
-  const filas = await sql`SELECT DISTINCT i.id FROM indicador_variables v JOIN indicadores i ON i.id = v.indicador_origen_id
-    WHERE v.version_id = ${versionId} AND i.nivel_acceso = 'restringido' ORDER BY i.id`;
-  return filas.map((f) => Number(f.id));
+  const filas = await sql`SELECT id, nivel_acceso FROM indicadores
+    WHERE id IN (SELECT indicador_origen_id FROM indicador_variables WHERE version_id = ${versionId})
+    ORDER BY id FOR KEY SHARE`;
+  return filas.filter((f) => f.nivel_acceso === "restringido").map((f) => Number(f.id));
 }
