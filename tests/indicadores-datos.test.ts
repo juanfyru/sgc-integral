@@ -22,6 +22,7 @@ import {
   listarDatos,
 } from "@/db/consultas/indicadores/datos";
 import { puedeReportarDato, puedeVerDato, responsablesDeDato, type SujetoVisibilidad } from "@/lib/alcance";
+import { EsquemaResponsablesDeDato } from "@/lib/esquemas/indicadores-datos";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
@@ -373,6 +374,14 @@ describe("los responsables de un dato", () => {
       ).rejects.toThrow(new ErrorIndicador("Solo se puede designar a usuarios activos"));
       const veintiuno = Array.from({ length: 21 }, (_, i) => i + 1);
       await expect(designarResponsablesDeDato(admin, { datoId: dato, usuarioIds: veintiuno }, { sql: tx })).rejects.toThrow(
+        new ErrorIndicador("Elija hasta 20 personas"),
+      );
+      // El tope cuenta antes de quitar los repetidos, como `EsquemaResponsablesDeDato` (`listaDeIds`).
+      const conRepetido = [...veintiuno.slice(0, 20), 1];
+      expect(EsquemaResponsablesDeDato.safeParse({ usuarioIds: JSON.stringify(conRepetido) }).error?.issues[0].message).toBe(
+        "Elija hasta 20 personas",
+      );
+      await expect(designarResponsablesDeDato(admin, { datoId: dato, usuarioIds: conRepetido }, { sql: tx })).rejects.toThrow(
         new ErrorIndicador("Elija hasta 20 personas"),
       );
 

@@ -44,7 +44,7 @@ const ENTRE_COMILLAS = CODIGOS_RESERVADOS.map((c) => `«${c}»`);
 const RESERVADO = `${ENTRE_COMILLAS.slice(0, -1).join(", ")} y ${ENTRE_COMILLAS.at(-1)} son nombres reservados: elija otro código`;
 
 /** Un entero: texto del formulario o número de la consulta. */
-const entero = (nombre: string, minimo: number, maximo: number) =>
+export const entero = (nombre: string, minimo: number, maximo: number) =>
   z
     .union([z.number(), z.string().regex(/^\d{1,15}$/)], { error: `${nombre} debe ser un número entero` })
     .transform(Number)
@@ -56,14 +56,14 @@ const entero = (nombre: string, minimo: number, maximo: number) =>
         .max(maximo, `${nombre} debe estar entre ${minimo} y ${maximo}`),
     );
 
-const id = (mensaje: string) =>
+export const id = (mensaje: string) =>
   z
     .union([z.number(), z.string().regex(/^\d{1,15}$/)], { error: mensaje })
     .transform(Number)
     .pipe(z.number().int(mensaje).positive(mensaje));
 
 /** Un número escrito con coma o punto; se guarda con punto («80,5» → «80.5»). */
-const numero = (mensaje: string) =>
+export const numero = (mensaje: string) =>
   z
     .string({ error: mensaje })
     .trim()
@@ -71,7 +71,7 @@ const numero = (mensaje: string) =>
     .transform((v) => v.replace(",", "."));
 
 /** Texto opcional recortado; vacío es «no vino». */
-const opcional = (nombre: string, maximo: number) =>
+export const opcional = (nombre: string, maximo: number) =>
   z
     .string()
     .trim()
@@ -80,7 +80,7 @@ const opcional = (nombre: string, maximo: number) =>
     .optional();
 
 /** Una casilla del formulario llega como «on» (o no llega); la consulta la recibe como booleano. */
-const casilla = z
+export const casilla = z
   .union([z.boolean(), z.literal("on")])
   .optional()
   .transform((v) => v === true || v === "on");
@@ -99,7 +99,7 @@ function enJson<T extends z.ZodType>(esquema: T, formatoInvalido: string) {
 }
 
 /** Una lista de ids sin repetidos, de hasta 20 elementos. */
-const listaDeIds = (formatoInvalido: string, tope: string, alMenosUno?: string) => {
+export const listaDeIds = (formatoInvalido: string, tope: string, alMenosUno?: string) => {
   const lista = z.array(id(formatoInvalido), { error: alMenosUno ?? formatoInvalido }).max(20, tope);
   return enJson((alMenosUno ? lista.min(1, alMenosUno) : lista).transform((xs) => [...new Set(xs)]), formatoInvalido);
 };

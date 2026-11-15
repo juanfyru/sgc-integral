@@ -328,8 +328,9 @@ export async function designarResponsablesDeDato(
   opciones?: Opciones,
 ): Promise<void> {
   exigirAdministrar(sesion);
+  // El tope cuenta antes de quitar los repetidos, como `EsquemaResponsablesDeDato`.
+  if (d.usuarioIds.length > MAXIMO_RESPONSABLES) throw new ErrorIndicador(`Elija hasta ${MAXIMO_RESPONSABLES} personas`);
   const ids = [...new Set(d.usuarioIds)];
-  if (ids.length > MAXIMO_RESPONSABLES) throw new ErrorIndicador(`Elija hasta ${MAXIMO_RESPONSABLES} personas`);
   if (!ids.every((x) => Number.isInteger(x) && x > 0)) throw new ErrorIndicador("Las personas elegidas no son válidas");
   const ahora = opciones?.ahora ?? new Date();
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
