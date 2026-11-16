@@ -2,8 +2,8 @@
 
 > Se actualiza al cierre de cada fase. Última actualización: **2026-11-16**, al terminar de construir la **Fase 14C — Datos
 > compartidos, desagregación y compuestos** (rama `fase-14c-datos-desagregacion-compuestos`, sobre `main` en `44d8b9f`, en el
-> worktree `F:\sgc-integral-f14c` y contra la base aparte `sgc_f14c`; **sin fusionar**: con su verificación de cierre hecha,
-> espera el visto bueno del usuario a las decisiones de la ejecución y su decisión de fusionar; ver su sección, arriba de la de la
+> worktree `F:\sgc-integral-f14c` y contra la base aparte `sgc_f14c`; **fusionada en `main` el 2026-11-16 por decisión del
+> usuario, por avance rápido, sin publicar en `origin`**, con su visto bueno a las 57 decisiones de la ejecución; ver su sección, arriba de la de la
 > 14B). Con ella se cierra la Fase 14 del diseño maestro. Antes, la **Fase 14B — Lo que el sistema ya
 > sabe y lo regulatorio** (rama `fase-14b-automaticos-regulatorios`, 45 confirmaciones al cerrar la Tarea 13 más las de la tanda final de corrección, sobre `main` en `f04b70b`; se trabajó en el
 > worktree `F:\sgc-integral-f14b` y contra la base aparte `sgc_f14b`; **fusionada en `main` el 2026-11-15 por decisión del
@@ -26,9 +26,11 @@
    con sus funcionalidades, y construir aquí otra con **funcionalidades más completas**.
    La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
    proyecto**.
-1. **Dónde quedamos:** la **Fase 14C — Datos compartidos, desagregación y compuestos** está construida (las dieciocho
-   tareas del plan) en la rama `fase-14c-datos-desagregacion-compuestos` (sale de `main` en `44d8b9f`), en el worktree
-   `F:\sgc-integral-f14c` y contra la base aparte `sgc_f14c`, **sin fusionar**. Con ella, un dato que usan varios
+1. **Dónde quedamos:** la **Fase 14C — Datos compartidos, desagregación y compuestos** está terminada y **fusionada en
+   `main`** (el 2026-11-16, por decisión del usuario y por avance rápido; **`main` no se ha publicado en `origin`**). Se
+   construyó (las dieciocho tareas del plan) en la rama `fase-14c-datos-desagregacion-compuestos` (salía de `main` en
+   `44d8b9f`), en el worktree `F:\sgc-integral-f14c` y contra la base aparte `sgc_f14c`; **la rama, el worktree y esa base
+   se conservan** hasta que el usuario pida borrarlos. Con ella, un dato que usan varios
    indicadores se reporta una vez y el SGC lo pone en cada uno; un indicador se mide por sede o por servicio, con su
    total y el color de cada categoría; y un indicador compuesto toma el resultado o el cumplimiento de otros, con lo que
    se oculta a quien no ve un componente restringido; el cierre del mes espera a las fuentes y la reapertura va en
@@ -36,9 +38,12 @@
    a `drizzle/0016`). Detalle en «Hecho (Fase 14C)»; el recorrido, en «Qué probar y cómo (Fase 14C)»; las decisiones, en
    «Decisiones adicionales (Fase 14C)»; el manual, en el capítulo 8 (secciones 11 a 13 y 6.6). La **verificación de
    cierre está hecha** (en «Fase 14C», con sus cifras), con la revisión final de toda la rama, su ola de corrección y sus
-   residuos. **Falta:** el visto bueno del usuario a las 57 decisiones pendientes (las 39 de la ejecución, las 3 de la
-   Tarea 18 y las 15 de la revisión final), sus cuatro preguntas y su decisión de fusionar. **`F:\sgc-integral` no se tocó,
-   y la base `sgc` del usuario solo se lee.**
+   residuos. **El usuario dio su visto bueno a las 57 decisiones de la ejecución el 2026-11-16** («las 57 quedan»: las 39
+   de la ejecución, las 3 de la Tarea 18 y las 15 de la revisión final) y respondió las cuatro preguntas (1 sí, 2 sí, 3
+   sí, 4 dejar). **Falta:** aplicar la `0015` y la `0016` a la base `sgc` (`npm run db:preparar` en `F:\sgc-integral` y
+   reiniciar `next dev`; lo hace el usuario: hasta entonces las páginas de indicadores fallan ahí), publicar `main` cuando
+   el usuario lo pida y las tres entregas que aprobó (punto 2). **Mientras se construyó, `F:\sgc-integral` no se tocó, y
+   la base `sgc` del usuario solo se leyó.**
    **Antes, la Fase 14B — Lo que el sistema ya sabe y lo regulatorio** está terminada y **fusionada en `main`**
    (rama `fase-14b-automaticos-regulatorios`: 45 confirmaciones al cerrar la Tarea 13, más las de la tanda final de corrección,
    sobre `main` en `f04b70b`; anexo
@@ -164,11 +169,12 @@
    F13A-R35 (404 real en páginas). F13A-R36 ya está resuelta (F13A-AU6). Los archivos reales del
    hospital están en la raíz, sin seguimiento y excluidos en `.git/info/exclude`: nunca entran a un
    commit.
-2. **Lo que sigue:** (a) el visto bueno del usuario a las 57 decisiones pendientes de la **14C** y sus cuatro preguntas
-   (las 39 de la ejecución, las 3 de la Tarea 18 y las 15 de la revisión final, en «Decisiones adicionales (Fase 14C)»), su
-   recorrido («Qué probar y cómo (Fase 14C)», que empieza por resembrar en `sgc_f14c`) y su decisión de fusionar;
-   después de fusionar, aplicar la `0015` y la `0016` a la base `sgc` («Avisos para el usuario (Fase 14C)»). La Fase
-   14 del diseño maestro se cierra al fusionar la 14C. (b) el
+2. **Lo que sigue:** (a) de la **14C**, ya fusionada: aplicar la `0015` y la `0016` a la base `sgc` («Avisos para el
+   usuario (Fase 14C)»), el recorrido del usuario («Qué probar y cómo (Fase 14C)») y lo que **el usuario aprobó el
+   2026-11-16** al cerrar la fase («Decisiones adicionales (Fase 14C)», al final): rechazar el punto de miles también en
+   los formularios de los indicadores (una entrega pequeña aparte: toca el lector de números de la 14A), guardar desde
+   cuándo es obligatorio el soporte de un indicador (una columna y una migración, la `0017`) y avisar a quien administra
+   cuando un periodo de un dato nace sin categorías. Con la 14C fusionada se cierra la Fase 14 del diseño maestro. (b) el
    recorrido del usuario de la 14B, ya fusionada («Qué probar y cómo (Fase 14B)»); (c) si no se hicieron, los recorridos
    del usuario de la 14A y de su entrega complementaria (ya en `main`) y el de la 13C («Qué probar y cómo» de cada una); y
    (d) la **Fase 15 — Planes de mejoramiento**. Enganches que deja la 14C: los datos compartidos y los compuestos, que el
@@ -353,9 +359,10 @@ del 2026-11-15 están en su §2, las de Claude F14C-DC1 a DC42 en su §13; **el 
 `fase-14c-datos-desagregacion-compuestos` (sale de `main` en `44d8b9f`; 82 confirmaciones antes de las de esta verificación
 de cierre, que son solo de documentos: 53 al cerrar la Tarea 18 y su ronda de corrección, 23 de la ola final y 6 de sus
 residuos) se trabaja en el
-worktree `F:\sgc-integral-f14c` contra la base aparte `sgc_f14c`. **La rama no está fusionada:** con la verificación de
-cierre hecha, espera el visto bueno del usuario a las decisiones de la ejecución («Decisiones adicionales (Fase 14C)») y
-su decisión de fusionar. Con ella se cierra la Fase 14 del diseño maestro. **Sin
+worktree `F:\sgc-integral-f14c` contra la base aparte `sgc_f14c`. **El usuario dio su visto bueno a las 57 decisiones de
+la ejecución el 2026-11-16** («las 57 quedan»; «Decisiones adicionales (Fase 14C)») **y pidió fusionarla en `main` ese
+mismo día** (por avance rápido, sin publicar en `origin`; después de la confirmación que lo registra hay 85 sobre
+`44d8b9f`). La rama, el worktree y la base `sgc_f14c` se conservan hasta que pida borrarlos. Con ella se cierra la Fase 14 del diseño maestro. **Sin
 dependencias npm nuevas.** Dos migraciones: la `0015` (altera en su sitio las cinco tablas vacías de la 14C:
 `variables_compartidas`, `variable_responsables`, `variable_valores`, `dimensiones` y `dimension_categorias`, y añade a
 las de la 14A y la 14B solo columnas, índices y `CHECK` nuevos: el origen de cada variable, la fracción exacta, la lista
@@ -596,14 +603,16 @@ pendiente es el último que cierra un trimestre después del mes cerrado; si no 
 
 ### Avisos para el usuario (Fase 14C)
 
-- **La rama no está fusionada.** Mientras se construyó, `F:\sgc-integral`, su base `sgc` y su `next dev` del 3002 no se
-  tocaron (la verificación de cierre solo lee `sgc`, con un `pg_dump`). **Después de fusionar hay que aplicar la `0015` y
-  la `0016` a la base `sgc`:** `npm run db:preparar` en `F:\sgc-integral` y reiniciar `next dev` (en desarrollo no
-  migran solas; la imagen sí, al arrancar). Hasta entonces las páginas de indicadores fallan. Para ver la demo de la 14C
-  en `sgc` hace falta además `npm run db:seed` (vacía la base y el almacén) y `npm run admin:asegurar`.
-- **Las 57 decisiones pendientes esperan su visto bueno** («Decisiones adicionales (Fase 14C)»): las 39 de la ejecución,
-  las 3 de la Tarea 18 y las 15 de la revisión final y su ola de corrección; ninguna la tomó usted. Hay además cuatro
-  preguntas para que decida aparte. Las que más pesan: el aviso a los responsables al reabrir un dato sin mover su fecha
+- **La rama está fusionada en `main` desde el 2026-11-16** (su decisión; por avance rápido) **y `main` no se ha publicado
+  en `origin`.** La rama, el worktree `F:\sgc-integral-f14c` y la base `sgc_f14c` se conservan hasta que pida borrarlos.
+  Mientras se construyó, `F:\sgc-integral`, su base `sgc` y su `next dev` del 3002 no se tocaron (la verificación de
+  cierre solo leyó `sgc`, con un `pg_dump`). **Hay que aplicar la `0015` y la `0016` a la base `sgc`:** `npm run
+  db:preparar` en `F:\sgc-integral` y reiniciar `next dev` (en desarrollo no migran solas; la imagen sí, al arrancar).
+  Hasta entonces las páginas de indicadores fallan. Para ver la demo de la 14C en `sgc` hace falta además `npm run
+  db:seed` (vacía la base y el almacén) y `npm run admin:asegurar`.
+- **Usted dio su visto bueno a las 57 decisiones de la ejecución el 2026-11-16** («las 57 quedan»; «Decisiones
+  adicionales (Fase 14C)»): las 39 de la ejecución, las 3 de la Tarea 18 y las 15 de la revisión final y su ola de
+  corrección; y respondió las cuatro preguntas (están al final de esa sección). Las que más pesan: el aviso a los responsables al reabrir un dato sin mover su fecha
   límite (6); que un resultado fuera de límites no bloquee «Reportar lo mío» (8); que el sistema reponga el plazo cuando
   quita su propio «No aplica» (10); los textos que dicen desde cuándo acumula un componente (27) y el acumulado «parcial»
   de un compuesto (28); el motivo de «No aplica» que nombra solo a un componente que usted ve (30); que cierres y
@@ -637,8 +646,8 @@ pendiente es el último que cierra un trimestre después del mes cerrado; si no 
 son las «D» que el usuario aceptó el 2026-11-15 («las D quedan»), y DC17 a DC42 entraron con el anexo, que el usuario
 aprobó ese mismo día («acept»).
 
-**Las de la ejecución, pendientes del visto bueno del usuario.** Las tomó quien coordinó la ejecución del plan cuando el
-anexo o el plan callaban, se contradecían o un revisor halló un defecto; **ninguna la aprobó el usuario**. Cada una dice
+**Las de la ejecución: el usuario les dio su visto bueno el 2026-11-16** («las 57 quedan»). Las tomó quien coordinó la
+ejecución del plan cuando el anexo o el plan callaban, se contradecían o un revisor halló un defecto. Cada una dice
 qué se decidió, porque qué, y su base (ISO 9001:2015 con su numeral, la decisión del usuario de la que se deriva, o
 Práctica). Las que el usuario cambie son un ajuste pequeño salvo donde se dice otra cosa. El detalle está en el registro
 de la ejecución (`progress.md` del espacio de trabajo, líneas «Ruling»).
@@ -756,7 +765,7 @@ de la ejecución (`progress.md` del espacio de trabajo, líneas «Ruling»).
     sistema no la filtra; el diálogo lo advierte. Si quien administra nombra en ella un indicador restringido, lo nombra.
     Base: ISO 7.5.3 (la reapertura deja quién, cuándo y por qué).
 
-**F. La demo (Tarea 18)** (de quien la implementó, también pendientes del visto bueno)
+**F. La demo (Tarea 18)** (de quien la implementó)
 
 40. **`SGC-ID-004` es del proceso SGC, con `lider.cex` en seguimiento**, y no de Consulta Externa. Porque `consulta` está
     asignada a Consulta Externa y lo vería. Base: Práctica.
@@ -766,8 +775,7 @@ de la ejecución (`progress.md` del espacio de trabajo, líneas «Ruling»).
 42. **`coordinadora.sgc` hace seguimiento de `CEX-ID-003`.** Porque quien reporta no recibe el aviso de su propio reporte
     y la demo debía dejar a la vista el aviso de la sede en Crítico. Base: Práctica.
 
-**G. De la revisión final de toda la rama y su ola de corrección** (las tomó quien coordinó; también pendientes del visto
-bueno)
+**G. De la revisión final de toda la rama y su ola de corrección** (las tomó quien coordinó)
 
 43. **El cierre del mes no cierra el periodo de un dato ya reportado que sigue dentro de su plazo;** las mediciones que lo
     usan esperan al cierre siguiente. Porque el anexo lo dice así (§3.5) y el plan lo había reducido a los periodos sin
@@ -826,18 +834,20 @@ bueno)
 57. **Lo que queda como deuda técnica con nombre, sin arreglar** («Deuda técnica (Fase 14C)»): nada de ello da un dato
     incorrecto ni una fuga. Base: Práctica.
 
-**Para que el usuario decida aparte** (con la recomendación de quien coordinó):
+**Lo que el usuario decidió aparte el 2026-11-16** («P1 sí, P2 sí, P3 sí, P4 dejar»; cada pregunta iba con la
+recomendación de quien coordinó, y las tres primeras quedan por construir):
 
 1. **¿El mismo rechazo del punto de miles en los formularios de los indicadores?** Hoy «1.731» se lee ahí como 1,731,
    desde la 14A. Recomendación: sí, en una entrega pequeña aparte, porque toca el lector de números que comparte todo el
-   módulo. Base: ISO 9.1.1.
+   módulo. Base: ISO 9.1.1. **Decisión del usuario: sí.**
 2. **¿Guardar desde cuándo es obligatorio el soporte de un indicador?** Con esa fecha la decisión 49 sería exacta y se
    cerraría el caso heredado de la 14A. Es una columna y una migración. Recomendación: sí, en la fase siguiente. Base:
-   Práctica.
+   Práctica. **Decisión del usuario: sí.**
 3. **¿Un aviso a quien administra cuando un periodo de un dato nace sin categorías?** Recomendación: sí, es pequeño. Base:
-   ISO 5.3 (responsabilidades comunicadas).
+   ISO 5.3 (responsabilidades comunicadas). **Decisión del usuario: sí.**
 4. **Cambiar el dato de una variable no parte el acumulado del año** (sí lo parte cambiar de componente, decisión 29).
-   Recomendación: dejarlo, porque el dato nuevo mide lo mismo con otra fuente. Base: Práctica.
+   Recomendación: dejarlo, porque el dato nuevo mide lo mismo con otra fuente. Base: Práctica. **Decisión del usuario:
+   dejarlo.**
 
 ### Deuda técnica (Fase 14C)
 
