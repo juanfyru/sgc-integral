@@ -50,7 +50,7 @@ import PaginaDato from "@/app/(app)/indicadores/datos/[id]/page";
 import PaginaDatos from "@/app/(app)/indicadores/datos/page";
 import { cifraDeDato, conPuntoDeMiles } from "@/componentes/indicadores/datos/comun";
 import { CamposDelDato } from "@/componentes/indicadores/datos/FormularioDato";
-import { preguntaVigente } from "@/componentes/indicadores/datos/ReportarDato";
+import { preguntaVigente, ReportarElPendiente } from "@/componentes/indicadores/datos/ReportarDato";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import type { DatoCompartido } from "@/db/consultas/indicadores/datos";
@@ -301,6 +301,16 @@ describe("el campo del valor y la pregunta de la variación (ola final, O7)", ()
     expect(preguntaVigente({ ok: false, error: "El periodo está cerrado", valores: { id: "7" } }, null, 7)).toBeNull();
     expect(preguntaVigente({ ok: true, aviso: "Se reportó el dato." }, null, 7)).toBeNull();
     expect(preguntaVigente(null, null, 7)).toBeNull();
+  });
+});
+
+describe("el formulario del periodo pendiente sigue montado sin pendientes (ola final, O14)", () => {
+  it("sin periodo y sin nada recién reportado no pinta nada; con periodo, el formulario de siempre", () => {
+    expect(renderToStaticMarkup(<ReportarElPendiente datoId={7} periodo={null} soportes={[]} />)).toBe("");
+    const periodo = { id: 3, etiqueta: "octubre de 2026", vence: "10 de noviembre", vencido: false, reportado: false, valor: null, porCategoria: null, categorias: null };
+    const html = renderToStaticMarkup(<ReportarElPendiente datoId={7} periodo={periodo} soportes={[]} />);
+    expect(html).toContain("Reportar · octubre de 2026");
+    expect(html).toContain("Reportar el dato");
   });
 });
 

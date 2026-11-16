@@ -3,7 +3,7 @@ import { paraReportar } from "@/componentes/indicadores/datos/comun";
 import { FichaDelDato } from "@/componentes/indicadores/datos/FichaDelDato";
 import { BorrarDato, EditarDato, EstadoDelDato, ResponsablesDelDato } from "@/componentes/indicadores/datos/FormularioDato";
 import { HistorialDelDato } from "@/componentes/indicadores/datos/HistorialDelDato";
-import { ReportarDato } from "@/componentes/indicadores/datos/ReportarDato";
+import { ReportarElPendiente } from "@/componentes/indicadores/datos/ReportarDato";
 import { apruebaFichas, PestanasIndicadores, pestanasVisibles } from "@/componentes/indicadores/PestanasIndicadores";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
@@ -81,8 +81,13 @@ export default async function PaginaDato({ params }: { params: Promise<{ id: str
         numeros={{ datos: pestana.porReportar }}
       />
       <div className={`grid min-w-0 grid-cols-1 gap-6 ${reporta && pedido ? "lg:grid-cols-2" : ""}`}>
-        {reporta && pedido ? (
-          <ReportarDato datoId={dato.id} periodo={paraReportar(pedido, ahora)} soportes={soportes?.get(pedido.id) ?? []} />
+        {/* Siempre montado para quien reporta: al reportar el último pendiente, su aviso se queda a la vista. */}
+        {reporta ? (
+          <ReportarElPendiente
+            datoId={dato.id}
+            periodo={pedido ? paraReportar(pedido, ahora) : null}
+            soportes={pedido ? (soportes?.get(pedido.id) ?? []) : []}
+          />
         ) : null}
         <section aria-labelledby="ficha-del-dato" className="flex min-w-0 flex-col gap-3">
           <h2 id="ficha-del-dato" className="text-base font-semibold">

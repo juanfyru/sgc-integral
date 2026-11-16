@@ -162,7 +162,7 @@ function Mensaje({ estado }: { estado: EstadoReporte }) {
  * mucho del periodo anterior, que vale para el valor por el que se preguntó (al cambiar un valor, la pregunta y su marca se
  * van, y la marca viaja con ese valor: `confirmadoValor`); y sus soportes. No tiene «no aplica». Con `alReportar`, avisa cuando sale bien (el diálogo de
  * un periodo se cierra); dentro de un diálogo, el título ya lo lleva el diálogo y aquí no se repite para el lector de
- * pantalla. Un periodo de un dato con dimensión que nació sin categorías no pinta campos: dice que el Administrador del SGC
+ * pantalla. Con `alTerminar`, entrega el aviso de lo que salió bien a quien lo va a seguir mostrando (`ReportarElPendiente`). Un periodo de un dato con dimensión que nació sin categorías no pinta campos: dice que el Administrador del SGC
  * debe actualizarlas (`PERIODO_SIN_CATEGORIAS`, el mismo texto con que el servidor lo rechaza). El servidor valida todo otra vez.
  */
 export function ReportarDato({
@@ -170,15 +170,20 @@ export function ReportarDato({
   periodo,
   soportes,
   alReportar,
+  alTerminar,
 }: {
   datoId: number;
   periodo: PeriodoParaReportar;
   soportes: Soporte[];
   alReportar?: () => void;
+  alTerminar?: (aviso: string) => void;
 }) {
   const [estado, enviar, pendiente] = useActionState(async (previo: EstadoReporte, datos: FormData): Promise<EstadoReporte> => {
     const resultado = await reportarDatoCompartido(previo, datos);
-    if (resultado?.ok) alReportar?.();
+    if (resultado?.ok) {
+      alReportar?.();
+      alTerminar?.(resultado.aviso);
+    }
     return resultado;
   }, null);
   const prefijo = `dato${useId().replace(/[^\w-]/g, "")}`;
@@ -284,6 +289,21 @@ export function ReportarDato({
       </form>
     </section>
   );
+}
+
+/**
+ * El formulario del periodo pendiente más antiguo que se pide, en la página del dato (`periodo`; `null` si no queda ninguno).
+ * Sigue montado cuando ya no hay nada que reportar: al reportar el último, el formulario se va con la página que se repinta, y
+ * su aviso («Se reportó el dato.») se queda a la vista en vez de desaparecer con él.
+ */
+export function ReportarElPendiente({ datoId, periodo, soportes }: { datoId: number; periodo: PeriodoParaReportar | null; soportes: Soporte[] }) {
+  const [aviso, setAviso] = useState<string | null>(null);
+  if (periodo) return <ReportarDato datoId={datoId} periodo={periodo} soportes={soportes} alTerminar={setAviso} />;
+  return aviso ? (
+    <p role="status" className={`${CAJA} text-sm text-estado-bien-texto`}>
+      {`${aviso} No queda ningún periodo por reportar.`}
+    </p>
+  ) : null;
 }
 
 /** «Reportar» o «Corregir» en la fila de un periodo: el mismo formulario en un diálogo, que se cierra cuando sale bien. */
