@@ -20,12 +20,13 @@ import { versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import { fichaDeCalculo, valorEnTexto } from "@/lib/indicadores/reporte";
 import { numeroExacto } from "@/lib/indicadores/semaforo";
 import { textoValor } from "@/lib/indicadores/textos";
-import { ErrorIndicador, type Semaforo } from "@/lib/indicadores/tipos";
+import { ErrorIndicador, MOTIVO_DATO_SIN_CATEGORIA, type Semaforo } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { maestroDeCategorias } from "./dimensiones";
 import {
   celdasPorCategoria,
+  detalleDeCategorias,
   esDeOtraPeriodicidad,
   listaDe,
   listasDeCategorias,
@@ -33,6 +34,7 @@ import {
   reglaMostrada,
   valoresPorLetra,
   versionesAprobadas,
+  type CambioDeFila,
   type VersionDeCalculo,
 } from "./mediciones";
 
@@ -181,19 +183,26 @@ async function esDeLaDimension(tx: TransactionSql, lista: readonly CategoriaDeMe
 }
 
 /**
- * Al aprobarse un cambio mayor que rige desde `rigeDesde` (anexo 14C, §5.3): en cada medición abierta sin reportar de su tramo
- * cuya lista no es de la dimensión de la versión que ahora rige su periodo, rehace la lista (o la quita, si ya no se
- * desagrega) y borra sus celdas y su total, que eran de la dimensión anterior. Si borró valores, deja el evento `categorias`
- * del sistema con la lista de antes y la de después; sin valores no deja rastro en la medición (la aprobación queda en la
- * bitácora). Una reportada, una histórica o una de otra periodicidad no se toca, ni una cuya lista ya es de esa dimensión:
- * un cambio mayor que no cambia la dimensión no rehace nada. Quien llama tiene el indicador `FOR UPDATE`. Devuelve cuántas
- * rehízo.
+ * Al aprobarse un cambio mayor que rige desde `rigeDesde` (anexo 14C, §5.3), en cada medición abierta sin reportar de su
+ * tramo (una reportada, una histórica o una de otra periodicidad no se toca):
+ * - si su lista no es de la dimensión de la versión que ahora rige su periodo, rehace la lista (o la quita, si ya no se
+ *   desagrega) y borra sus celdas y su total, que eran de la dimensión anterior; si borró valores, deja el evento `categorias`
+ *   del sistema con la lista de antes y la de después (sin valores no deja rastro en la medición: la aprobación queda en la
+ *   bitácora);
+ * - si la lista ya es de esa dimensión pero la versión que rige no trae ningún dato compartido, quita los «No aplica» de fila
+ *   con `MOTIVO_DATO_SIN_CATEGORIA`: la propagación ya no vuelve a esa medición y la persona no podría medir esas filas. Deja
+ *   el evento `categorias` del sistema con las filas que cambiaron. Si la versión sigue trayendo un dato por categoría, la
+ *   propagación sigue a cargo.
+ * Un cambio mayor que no cambia la dimensión ni deja de traer el dato no toca nada; si ni la versión nueva ni la anterior se
+ * desagregan, ni siquiera lee las mediciones. Quien llama tiene el indicador `FOR UPDATE`. Devuelve cuántas listas cambió.
  */
 export async function rehacerCategorias(tx: TransactionSql, indicadorId: number, rigeDesde: string, ahora: Date = new Date()): Promise<number> {
   const zona = zonaHoraria();
   const desde = periodoDe(rigeDesde, zona);
   if (!desde) return 0;
   const versiones = await versionesAprobadas(tx, indicadorId);
+  // De mayor a menor número: la que se acaba de aprobar y la anterior. Sin dimensión en ninguna, no hay listas que tocar.
+  if ((versiones[0]?.dimensionId ?? null) === null && (versiones[1]?.dimensionId ?? null) === null) return 0;
   const filas = await tx`SELECT * FROM mediciones
     WHERE indicador_id = ${indicadorId} AND desde >= ${desde.desde} AND estado = 'abierta' AND reportada_en IS NULL
       AND NOT no_aplica AND NOT historica
@@ -205,7 +214,20 @@ export async function rehacerCategorias(tx: TransactionSql, indicadorId: number,
     const rige = periodo ? versionQueRigeEntre(versiones, periodo, zona) : null;
     if (!periodo || !rige || esDeOtraPeriodicidad(m.periodo as string, rige)) continue;
     const lista = listaDe(m);
-    if (await esDeLaDimension(tx, lista, rige.dimensionId)) continue;
+    if (await esDeLaDimension(tx, lista, rige.dimensionId)) {
+      if (lista === null || rige.variables.some((v) => v.origen === "compartida")) continue;
+      const filasSinDato: CambioDeFila[] = lista
+        .filter((c) => c.noAplica === MOTIVO_DATO_SIN_CATEGORIA)
+        .map((c) => ({ categoria: c, antes: c.noAplica, despues: null }));
+      if (filasSinDato.length === 0) continue;
+      const nueva = lista.map((c) => (c.noAplica === MOTIVO_DATO_SIN_CATEGORIA ? { ...c, noAplica: null } : c));
+      await tx`UPDATE mediciones SET categorias = ${tx.json(nueva as never)} WHERE id = ${m.id}`;
+      const detalle = { causa: "sin_dato", categorias: detalleDeCategorias(lista, [], filasSinDato) };
+      await tx`INSERT INTO medicion_eventos (medicion_id, tipo, usuario_id, detalle, creado_en)
+        VALUES (${m.id}, 'categorias', NULL, ${tx.json(detalle as never)}, ${ahora})`;
+      rehechas += 1;
+      continue;
+    }
     const [nueva] = await listasDeCategorias(tx, [{ dimensionId: rige.dimensionId, periodo }]);
     const quitados = await tx`DELETE FROM medicion_valores WHERE medicion_id = ${m.id} RETURNING id`;
     await tx`UPDATE mediciones SET categorias = ${nueva === null ? null : tx.json(nueva as never)}, categorias_en_critico = NULL WHERE id = ${m.id}`;

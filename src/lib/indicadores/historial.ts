@@ -104,6 +104,8 @@ function queHizo(e: EventoDeMedicion, nombres: Readonly<Record<string, string>>)
     case "categorias": {
       // El sistema la rehace cuando un cambio mayor cambia la dimensión; quien administra le añade las que faltaban.
       if (e.detalle.causa === "dimension") return "El sistema rehízo las categorías por el cambio de desagregación";
+      // Un cambio mayor que ya no trae el dato por categoría: el «No aplica» que el sistema puso por él ya no lo quitaría nadie.
+      if (e.detalle.causa === "sin_dato") return "El sistema quitó el «No aplica» de las categorías: la ficha ya no trae el dato";
       const agregadas = (Array.isArray(e.detalle.agregadas) ? e.detalle.agregadas : []).map((c) => texto(objeto(c).nombre)).filter((n) => n !== null);
       if (agregadas.length === 0) return "Actualizó las categorías";
       return `Añadió ${agregadas.length === 1 ? "1 categoría" : `${agregadas.length} categorías`}: ${agregadas.join(", ")}`;

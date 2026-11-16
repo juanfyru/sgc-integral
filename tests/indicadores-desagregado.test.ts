@@ -20,7 +20,7 @@ import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { actualizarCategorias, desgloseDe, rehacerCategorias } from "@/db/consultas/indicadores/categorias";
 import { reabrirMedicion } from "@/db/consultas/indicadores/cierre";
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
-import { asegurarMediciones, quitarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
+import { asegurarMediciones, quitarNoAplica, recalcularMedicion, reportar } from "@/db/consultas/indicadores/mediciones";
 import { propagar, valorDeDato } from "@/db/consultas/indicadores/propagacion";
 import { columnasDePendiente, queFalta } from "@/db/consultas/indicadores/tareas";
 import { adminsActivos } from "@/db/consultas/tramites";
@@ -311,27 +311,77 @@ describe("reportar la rejilla", () => {
       expect((await valoresDe(tx, e.octubre)).celdas.filter((c) => c.categoria === ids[0]).map((c) => c.letra)).toEqual(["B"]);
     }));
 
-  it("el total no lo pisa nadie: guardar una celda después de reportar deja el total hasta el siguiente reporte", () =>
+  it("el total no lo pisa nadie: sin reportar no se escribe; ya reportada no se guarda sin reportar; corregir lo deja del sistema", () =>
+    revertida(sql, async (tx) => {
+      const e = await entorno(tx);
+      const ids = e.sede.categorias;
+      await rejilla(tx, e.mide, e.octubre, maqueta(ids), true);
+      expect((await valoresDe(tx, e.octubre)).total).toEqual([]);
+      await rejilla(tx, e.mide, e.octubre, []);
+      const reportado = await valoresDe(tx, e.octubre);
+
+      // Ya reportada, «Guardar sin reportar» se rechaza como en cualquier medición y no escribe nada.
+      await rechaza(
+        rejilla(tx, e.otro, e.octubre, [{ categoriaId: ids[0], valores: { A: "150" } }], true),
+        "La medición ya se reportó: corrija los datos y pulse «Reportar»",
+      );
+      expect(await valoresDe(tx, e.octubre)).toEqual(reportado);
+
+      // Una corrección cambia la celda y el sistema reescribe el total: sigue sin usuario.
+      await rejilla(tx, e.otro, e.octubre, [{ categoriaId: ids[0], valores: { A: "150" } }]);
+      const v = await valoresDe(tx, e.octubre);
+      expect(v.total.map((t) => [t.letra, t.valor, t.por])).toEqual([
+        ["A", 243, null],
+        ["B", 320, null],
+      ]);
+      expect(v.celdas.find((c) => c.categoria === ids[0] && c.letra === "A")).toMatchObject({ valor: 150, por: e.otro.usuarioId });
+      expect((await fila(tx, e.octubre)).semaforo).toBe("atencion");
+      const correccion = (await eventos(tx, e.octubre)).at(-1)!;
+      expect(correccion).toMatchObject({ tipo: "correccion", usuario_id: e.otro.usuarioId });
+      expect(correccion.detalle.categorias).toEqual([{ id: ids[0], nombre: "Sede principal", antes: { A: "182" }, despues: { A: "150" } }]);
+    }));
+
+  it("un cambio menor (otros ids, mismas letras) no borra el total al corregir, ni duplica celdas", () =>
     revertida(sql, async (tx) => {
       const e = await entorno(tx);
       const ids = e.sede.categorias;
       await rejilla(tx, e.mide, e.octubre, maqueta(ids));
-      await rejilla(tx, e.otro, e.octubre, [{ categoriaId: ids[0], valores: { A: "150" } }], true);
+      await versionNueva(tx, {
+        indicadorId: e.ind.id,
+        usuarioId: e.admin.usuarioId,
+        tipoCambio: "menor",
+        rigeDesde: "2026-07",
+        aprobadaEn: AHORA,
+        dimensionId: e.sede.id,
+        meta: "85",
+        limite: "70",
+      });
+      await rejilla(tx, e.mide, e.octubre, []);
       let v = await valoresDe(tx, e.octubre);
       expect(v.total.map((t) => [t.letra, t.valor, t.por])).toEqual([
         ["A", 275, null],
         ["B", 320, null],
       ]);
-      expect(v.celdas.find((c) => c.categoria === ids[0] && c.letra === "A")).toMatchObject({ valor: 150, por: e.otro.usuarioId });
-      expect(Number((await fila(tx, e.octubre)).resultado)).toBeCloseTo(85.9375, 6);
+      let m = await fila(tx, e.octubre);
+      expect(Number(m.resultado)).toBeCloseTo(85.9375, 6);
+      expect(m).toMatchObject({ estado: "reportada", semaforo: "bien", categorias_en_critico: 1 });
+      const correcciones = await tx`SELECT 1 FROM notificaciones WHERE entidad = 'medicion' AND entidad_id = ${e.octubre} AND tipo = 'indicadores.correccion'`;
+      expect(correcciones).toHaveLength(0);
 
-      await rejilla(tx, e.mide, e.octubre, []);
+      // Corregir una celda de A: el total de A cambia, el de B sigue, y ninguna celda queda dos veces.
+      await rejilla(tx, e.mide, e.octubre, [{ categoriaId: ids[0], valores: { A: "183" } }]);
       v = await valoresDe(tx, e.octubre);
       expect(v.total.map((t) => [t.letra, t.valor])).toEqual([
-        ["A", 243],
+        ["A", 276],
         ["B", 320],
       ]);
-      expect((await fila(tx, e.octubre)).semaforo).toBe("atencion");
+      const repetidas = await tx`SELECT mv.categoria_id, iv.letra, count(*)::int AS n FROM medicion_valores mv
+        JOIN indicador_variables iv ON iv.id = mv.variable_id WHERE mv.medicion_id = ${e.octubre}
+        GROUP BY mv.categoria_id, iv.letra HAVING count(*) > 1`;
+      expect(repetidas).toEqual([]);
+      expect(v.celdas.find((c) => c.categoria === ids[0] && c.letra === "A")!.valor).toBe(183);
+      m = await fila(tx, e.octubre);
+      expect(Number(m.resultado)).toBeCloseTo((276 / 320) * 100, 6);
     }));
 
   it("corregir una celda sin cambiar el total deja la corrección con las dos sedes, su antes y su después", () =>
@@ -509,8 +559,118 @@ describe("un dato compartido por categoría (anexo §5.7)", () => {
       await tx`UPDATE variable_valores SET por_categoria = ${tx.json(Object.fromEntries(Object.entries(porCategoria)))} WHERE id = ${id}`;
       return id;
     };
-    return { ind, mide, medicion, datoA, datoB, s1, s2, S3, S4, mes };
+    return { ind, mide, admin, sedeId: sede.id, medicion, datoA, datoB, s1, s2, S3, S4, mes };
   }
+
+  /** Los tres meses del dato B (auditados) por sede, sin S4: S3 solo en marzo. Devuelve los ids de los periodos. */
+  const mesesDeB = async (p: Awaited<ReturnType<typeof porSede>>) => [
+    await p.mes(p.datoB, "2026-01", { [p.s1]: "20", [p.s2]: "40" }),
+    await p.mes(p.datoB, "2026-02", { [p.s1]: "20", [p.s2]: "40" }),
+    await p.mes(p.datoB, "2026-03", { [p.s1]: "20", [p.s2]: "40", [p.S3]: "10" }),
+  ];
+  const pendienteDe = async (tx: TransactionSql, medicionId: number) =>
+    queFalta(await tx`SELECT ${columnasDePendiente(tx)} FROM mediciones m JOIN indicadores i ON i.id = m.indicador_id WHERE m.id = ${medicionId}`).get(
+      medicionId,
+    )?.falta;
+
+  it("un mixto reportado cuya fila deja de ser «No aplica» por el dato vuelve a pedir su reporte, y el plazo no lo deja vencido", () =>
+    revertida(sql, async (tx) => {
+      const p = await porSede(tx, true);
+      const A_TIEMPO = new Date("2026-04-05T15:00:00Z");
+      const meses = await mesesDeB(p);
+      // El «No aplica» del sistema en S4 llega antes de la fecha límite (el 10 de abril).
+      await propagar({ sql: tx, ahora: A_TIEMPO, indicadorIds: [p.ind.id] });
+      expect((await fila(tx, p.medicion)).categorias.find((c: { id: number }) => c.id === p.S4).noAplica).toBe(MOTIVO_DATO_SIN_CATEGORIA);
+      const propias = [
+        { categoriaId: p.s1, valores: { A: "30" } },
+        { categoriaId: p.s2, valores: { A: "60" } },
+        { categoriaId: p.S3, valores: { A: "5" } },
+      ];
+      expect(await rejilla(tx, p.mide, p.medicion, propias, false, A_TIEMPO)).toMatchObject({ ok: true, faltaDato: false });
+      expect((await valoresDe(tx, p.medicion)).total.map((t) => t.valor)).toEqual([95, 190]);
+
+      // Marzo pasa a traer S4: la fila ya no es «No aplica» y le faltan sus celdas propias.
+      await tx`UPDATE variable_valores SET categorias = categorias || ${tx.json([{ id: p.S4, nombre: "S4", orden: 4, noAplica: null }])},
+          por_categoria = por_categoria || ${tx.json({ [p.S4]: "8" })}
+        WHERE id = ${meses[2]}`;
+      await propagar({ sql: tx, ahora: AHORA_T, indicadorIds: [p.ind.id] });
+      const m = await fila(tx, p.medicion);
+      expect(m).toMatchObject({ reportada_en: null, reportada_por: null, estado: "abierta", resultado_exacto: null });
+      expect((await valoresDe(tx, p.medicion)).total).toEqual([]);
+      expect(await pendienteDe(tx, p.medicion)).toBe("reporte");
+      expect(new Date(m.vence_en as string).getTime()).toBeGreaterThan(AHORA_T.getTime());
+      const ultimo = (await eventos(tx, p.medicion)).at(-1)!;
+      expect(ultimo).toMatchObject({ tipo: "propagacion", usuario_id: null });
+      expect(ultimo.detalle.categorias).toContainEqual({ id: p.S4, nombre: "S4", antes: { B: null, noAplica: MOTIVO_DATO_SIN_CATEGORIA }, despues: { B: "8", noAplica: null } });
+
+      // Al reportar la celda que falta, el total vuelve.
+      await rejilla(tx, p.mide, p.medicion, [{ categoriaId: p.S4, valores: { A: "4" } }], false, AHORA_T);
+      expect((await valoresDe(tx, p.medicion)).total.map((t) => t.valor)).toEqual([99, 198]);
+      expect((await fila(tx, p.medicion)).reportada_por).toBe(p.mide.usuarioId);
+    }));
+
+  it("un cambio mayor que conserva la dimensión y deja de traer el dato quita el «No aplica» que el sistema puso en una fila", () =>
+    revertida(sql, async (tx) => {
+      const p = await porSede(tx, true);
+      await mesesDeB(p);
+      await propagar({ sql: tx, ahora: AHORA_T, indicadorIds: [p.ind.id] });
+      expect((await fila(tx, p.medicion)).reportada_en).toBeNull();
+      await versionNueva(tx, {
+        indicadorId: p.ind.id,
+        usuarioId: p.admin.usuarioId,
+        tipoCambio: "mayor",
+        rigeDesde: "2026-T1",
+        aprobadaEn: AHORA_T,
+        periodicidad: "trimestral",
+        dimensionId: p.sedeId,
+      });
+      expect(await rehacerCategorias(tx, p.ind.id, "2026-T1", AHORA_T)).toBe(1);
+      const lista = (await fila(tx, p.medicion)).categorias as { id: number; noAplica: string | null }[];
+      expect(lista.map((c) => c.id)).toEqual([p.s1, p.s2, p.S3, p.S4]);
+      expect(lista.every((c) => c.noAplica === null)).toBe(true);
+      const ultimo = (await eventos(tx, p.medicion)).at(-1)!;
+      expect(ultimo).toMatchObject({ tipo: "categorias", usuario_id: null });
+      // Ahora S4 se mide como las demás.
+      const todas = [p.s1, p.s2, p.S3, p.S4].map((categoriaId) => ({ categoriaId, valores: { A: "1", B: "2" } }));
+      expect(await rejilla(tx, p.mide, p.medicion, todas, false, AHORA_T)).toMatchObject({ ok: true });
+      expect(await rehacerCategorias(tx, p.ind.id, "2026-T1", AHORA_T)).toBe(0);
+    }));
+
+  it("después de un cambio menor, corregir y propagar un mixto conserva los dos totales", () =>
+    revertida(sql, async (tx) => {
+      const p = await porSede(tx, true);
+      const meses = await mesesDeB(p);
+      await propagar({ sql: tx, ahora: AHORA_T, indicadorIds: [p.ind.id] });
+      const propias = [
+        { categoriaId: p.s1, valores: { A: "30" } },
+        { categoriaId: p.s2, valores: { A: "60" } },
+        { categoriaId: p.S3, valores: { A: "5" } },
+      ];
+      await rejilla(tx, p.mide, p.medicion, propias, false, AHORA_T);
+      await versionNueva(tx, {
+        indicadorId: p.ind.id,
+        usuarioId: p.admin.usuarioId,
+        tipoCambio: "menor",
+        rigeDesde: "2026-T1",
+        aprobadaEn: AHORA_T,
+        periodicidad: "trimestral",
+        dimensionId: p.sedeId,
+        variables: { A: { nombre: "Adherentes" }, B: { datoId: p.datoB } },
+      });
+      // Una acción sobre la medición (como reprogramar su meta) la pasa a la versión que rige, sin reescribir el total.
+      await recalcularMedicion(tx, p.medicion, { ahora: AHORA_T, actorId: p.admin.usuarioId, evento: "meta" });
+      await tx`UPDATE variable_valores SET por_categoria = por_categoria || ${tx.json({ [p.s1]: "30" })}, valor = valor + 10 WHERE id = ${meses[2]}`;
+      await propagar({ sql: tx, ahora: AHORA_T, indicadorIds: [p.ind.id] });
+      expect((await valoresDe(tx, p.medicion)).total.map((t) => [t.letra, t.valor])).toEqual([
+        ["A", 95],
+        ["B", 200],
+      ]);
+      const repetidas = await tx`SELECT mv.categoria_id, iv.letra FROM medicion_valores mv
+        JOIN indicador_variables iv ON iv.id = mv.variable_id WHERE mv.medicion_id = ${p.medicion}
+        GROUP BY mv.categoria_id, iv.letra HAVING count(*) > 1`;
+      expect(repetidas).toEqual([]);
+      expect(Number((await fila(tx, p.medicion)).resultado)).toBeCloseTo(47.5, 6);
+    }));
 
   it("el trimestre suma los meses de cada sede; la creada en marzo se junta solo con marzo; la que no viene queda «No aplica»", () =>
     revertida(sql, async (tx) => {
@@ -703,6 +863,17 @@ describe("el historial de un desagregado", () => {
     expect(dos.que).toBe("Añadió 2 categorías: Puesto 7, Puesto 8");
     expect(rehecha).toMatchObject({ que: "El sistema rehízo las categorías por el cambio de desagregación", quien: "El sistema" });
     expect(rehecha.cambios).toEqual(["Categorías: Norte, Sur → Urgencias"]);
+  });
+
+  it("el «No aplica» de fila que quita un cambio mayor sin el dato lo dice el sistema, fila por fila", () => {
+    const [limpia] = historial(
+      evento(2, "categorias", {
+        causa: "sin_dato",
+        categorias: [{ id: 4, nombre: "S4", antes: { noAplica: MOTIVO_DATO_SIN_CATEGORIA }, despues: { noAplica: null } }],
+      }, null),
+    );
+    expect(limpia).toMatchObject({ que: "El sistema quitó el «No aplica» de las categorías: la ficha ya no trae el dato", quien: "El sistema" });
+    expect(limpia.cambios).toEqual([`S4 · No aplica: «${MOTIVO_DATO_SIN_CATEGORIA}» → No`]);
   });
 
   it("una corrección nombra cada celda y cada «No aplica» de fila que cambió, aunque el total no cambie", () => {

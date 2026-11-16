@@ -466,7 +466,7 @@ function planear(m: Row, version: VersionDeCalculo, guardados: Readonly<Record<s
 }
 
 /** Lo que la propagación le cambia a una medición desagregada (`planearRejilla`). */
-type PlanDeRejilla = {
+type PropagacionDeRejilla = {
   cambios: CambioDeCelda[];
   filas: CambioDeFila[];
   /** La lista con los «No aplica» de fila de después. */
@@ -475,6 +475,11 @@ type PlanDeRejilla = {
   total?: Record<string, Fraccion> | null;
   /** La medición queda reportada por el sistema: nadie la mide y ya tiene todo (o ninguna fila aplica). */
   reportar: boolean;
+  /**
+   * Las filas (sus ids) que dejaron de ser «No aplica» del sistema sin las celdas propias que quien mide no les debía: si no
+   * está vacía, se le devuelve el reporte, como al quitarse el contagio en `planear`.
+   */
+  sinLoPropio: number[];
   /** El «No aplica» del sistema de la medición que se pone (con su motivo) o se quita (`motivo: null`); `null` si no cambia. */
   noAplica: { motivo: string | null } | null;
 };
@@ -487,7 +492,10 @@ type PlanDeRejilla = {
  * persona puso en una fila. Después el total, como en un reporte, solo en una medición reportada o en una que no mide nadie:
  * la suma de las filas que aplican (`totalDeRejilla`), ninguno si falta algo, y el «No aplica» del sistema de la medición
  * (`MOTIVO_TODAS_NO_APLICAN` si ninguna fila aplica; `MOTIVO_NADA_QUE_MEDIR` si el total divide por cero), que se quita cuando
- * deja de ser cierto; el de una persona no se toca. `celdas` y `guardado` son sus celdas y su total por letra de `version`.
+ * deja de ser cierto; el de una persona no se toca. En un mixto reportado, una fila que deja de ser «No aplica» del sistema
+ * sin sus celdas propias (quien mide no se las debía) le devuelve el reporte (`sinLoPropio`): la medición vuelve a «Por
+ * reportar» en vez de quedar sin total y sin nadie que la complete. `celdas` y `guardado` son sus celdas y su total por letra
+ * de `version`.
  */
 function planearRejilla(
   m: Row,
@@ -495,7 +503,7 @@ function planearRejilla(
   celdas: ReadonlyMap<number, Readonly<Record<string, Fraccion>>>,
   guardado: Readonly<Record<string, Fraccion>>,
   deDatos: readonly Row[],
-): PlanDeRejilla | null {
+): PropagacionDeRejilla | null {
   const lista = listaDe(m)!;
   const nuevas = new Map([...celdas].map(([id, v]) => [id, { ...v }]));
   const nueva = lista.map((c) => ({ ...c }));
@@ -522,7 +530,7 @@ function planearRejilla(
     nueva[k].noAplica = debido;
   }
 
-  const plan: PlanDeRejilla = { cambios, filas, lista: nueva, reportar: false, noAplica: null };
+  const plan: PropagacionDeRejilla = { cambios, filas, lista: nueva, reportar: false, sinLoPropio: [], noAplica: null };
   const ficha = fichaDeCalculo(version.calculo);
   const reportada = m.reportada_en !== null;
   if (ficha && (reportada || !mide(version))) {
@@ -532,6 +540,12 @@ function planearRejilla(
     const motivo = m.no_aplica === true ? ((m.no_aplica_motivo as string | null) ?? null) : null;
     const delSistema = motivo === MOTIVO_TODAS_NO_APLICAN || motivo === MOTIVO_NADA_QUE_MEDIR ? motivo : null;
     const dePersona = m.no_aplica === true && delSistema === null;
+    const propias = version.variables.filter((v) => !esAjena(v.origen)).map((v) => v.letra);
+    if (reportada && mide(version) && !dePersona) {
+      plan.sinLoPropio = filas
+        .filter((f) => f.antes === MOTIVO_DATO_SIN_CATEGORIA && f.despues === null && propias.some((l) => nuevas.get(f.categoria.id)?.[l] === undefined))
+        .map((f) => f.categoria.id);
+    }
     plan.reportar = !reportada && !dePersona && (t.clase === "total" || t.clase === "ninguna_aplica");
     const debido =
       t.clase === "ninguna_aplica"
@@ -591,6 +605,20 @@ function pideAnalisis(d: { semaforo: Semaforo | null; cumple: boolean | null; re
 async function contagioATiempo(tx: TransactionSql, medicionId: number, venceEn: Date): Promise<boolean> {
   const [c] = await tx`SELECT max(creado_en) AS en FROM medicion_eventos
     WHERE medicion_id = ${medicionId} AND tipo = 'propagacion' AND detalle ? 'componente'`;
+  return c?.en !== null && c?.en !== undefined && new Date(c.en as Date).getTime() <= venceEn.getTime();
+}
+
+/**
+ * ¿El «No aplica» del sistema de alguna de las filas `categorias` (el último evento `propagacion` que se lo puso) llegó en la
+ * fecha límite o antes? La regla de `contagioATiempo` para la fila de un desagregado: si llegó después, quien mide ya debía
+ * su reporte.
+ */
+async function sinCategoriaATiempo(tx: TransactionSql, medicionId: number, categorias: readonly number[], venceEn: Date): Promise<boolean> {
+  const [c] = await tx`SELECT max(e.creado_en) AS en FROM medicion_eventos e
+    CROSS JOIN LATERAL jsonb_array_elements(coalesce(e.detalle -> 'categorias', '[]'::jsonb)) AS f(fila)
+    WHERE e.medicion_id = ${medicionId} AND e.tipo = 'propagacion'
+      AND (f.fila ->> 'id')::bigint = ANY(${categorias as number[]}::bigint[])
+      AND f.fila -> 'despues' ->> 'noAplica' = ${MOTIVO_DATO_SIN_CATEGORIA}`;
   return c?.en !== null && c?.en !== undefined && new Date(c.en as Date).getTime() <= venceEn.getTime();
 }
 
@@ -674,8 +702,9 @@ async function propagarEn(tx: TransactionSql, medicionId: number, ahora: Date): 
 /**
  * La propagación de una medición desagregada (`planearRejilla`), con los candados ya tomados: las celdas de los datos por
  * categoría, sin usuario (`escribirCelda`); la lista con los «No aplica» de fila; el total, que escribe el sistema
- * (`escribirTotal`); el reporte del sistema y su «No aplica»; y el cálculo único con el evento `propagacion`, sin usuario, que
- * lleva en `fuentes` el total de cada dato que cambió y en `categorias` cada celda y cada «No aplica» de fila que cambió.
+ * (`escribirTotal`); el reporte del sistema, o el que se le devuelve a quien mide (con la regla del plazo de
+ * `plazoPorLaFuente`), y el «No aplica» del sistema; y el cálculo único con el evento `propagacion`, sin usuario, que lleva en
+ * `fuentes` el total de cada dato que cambió y en `categorias` cada celda y cada «No aplica» de fila que cambió.
  */
 async function propagarRejilla(tx: TransactionSql, i: Row, m: Row, version: VersionDeCalculo, ahora: Date): Promise<"valores" | "no_aplica" | null> {
   const medicionId = Number(m.id);
@@ -687,14 +716,19 @@ async function propagarRejilla(tx: TransactionSql, i: Row, m: Row, version: Vers
     await escribirCelda(tx, { id: medicionId, indicadorId: Number(i.id) }, c.categoria.id, c.variable, c.despues, { usuarioId: null, ahora });
   }
   if (plan.filas.length > 0) await tx`UPDATE mediciones SET categorias = ${tx.json(plan.lista as never)} WHERE id = ${medicionId}`;
-  if (plan.total !== undefined) await escribirTotal(tx, medicionId, version, plan.total, guardados, ahora);
+  if (plan.total !== undefined) await escribirTotal(tx, medicionId, version, plan.total, ahora);
   if (plan.reportar) await tx`UPDATE mediciones SET reportada_en = ${ahora}, reportada_por = NULL WHERE id = ${medicionId}`;
+  const quitarReporte = plan.sinLoPropio.length > 0;
+  if (quitarReporte) await tx`UPDATE mediciones SET reportada_en = NULL, reportada_por = NULL WHERE id = ${medicionId}`;
   if (plan.noAplica) {
     await tx`UPDATE mediciones SET no_aplica = ${plan.noAplica.motivo !== null}, no_aplica_motivo = ${plan.noAplica.motivo} WHERE id = ${medicionId}`;
   }
   const noAplica = plan.noAplica ? plan.noAplica.motivo !== null : m.no_aplica === true;
+  // El reporte que se le devuelve a quien mide: si el «No aplica» de esas filas había llegado a tiempo, no le debía nada.
+  const devuelveATiempo = quitarReporte && (await sinCategoriaATiempo(tx, medicionId, plan.sinLoPropio, new Date(m.vence_en as string)));
   const total = plan.total === undefined ? guardados : (plan.total ?? {});
   const marca = (no: boolean, motivo: unknown) => (plan.noAplica ? { noAplica: no, motivo: (motivo as string | null) ?? null } : {});
+  const reporte = (v: boolean) => (quitarReporte ? { reportada: v } : {});
   const enTotal = (valores: Readonly<Record<string, Fraccion>>, letra: string) => (valores[letra] ? valorEnTexto(valores[letra]) : null);
   const categorias = detalleDeCategorias(listaDe(m)!, plan.cambios, plan.filas);
   await recalcularMedicion(tx, medicionId, {
@@ -707,10 +741,10 @@ async function propagarRejilla(tx: TransactionSql, i: Row, m: Row, version: Vers
         .filter((v) => v.origen === "compartida" && enTotal(guardados, v.letra) !== enTotal(total, v.letra))
         .map((v) => ({ letra: v.letra, clase: "dato", id: v.datoId, antes: enTotal(guardados, v.letra), despues: enTotal(total, v.letra) })),
       ...(categorias.length > 0 ? { categorias } : {}),
-      antes: { ...enTexto(version, guardados), ...marca(m.no_aplica === true, m.no_aplica_motivo) },
-      despues: { ...enTexto(version, total), ...marca(noAplica, plan.noAplica?.motivo) },
+      antes: { ...enTexto(version, guardados), ...marca(m.no_aplica === true, m.no_aplica_motivo), ...reporte(true) },
+      despues: { ...enTexto(version, total), ...marca(noAplica, plan.noAplica?.motivo), ...reporte(false) },
     },
-    conElResultado: plazoPorLaFuente(tx, i, m, { noAplica, devuelveATiempo: false, ahora }),
+    conElResultado: plazoPorLaFuente(tx, i, m, { noAplica, devuelveATiempo, ahora }),
   });
   return plan.noAplica?.motivo ? "no_aplica" : "valores";
 }

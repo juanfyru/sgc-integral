@@ -250,7 +250,7 @@ export async function descartarIndicadorAccion(_prev: EstadoAccion, formData: Fo
  */
 export async function reportarAccion(_prev: EstadoReporte, formData: FormData): Promise<EstadoReporte> {
   // `mutacion` solo devuelve un destino: lo demás que dice `reportar` sale por aquí.
-  const dicho: { confirmar: string | null; parcial: boolean; reportada: boolean } = { confirmar: null, parcial: false, reportada: false };
+  const dicho: { confirmar: string | null; parcial: boolean } = { confirmar: null, parcial: false };
   const estado = await mutacion(formData, "indicadores.medir", async (_usuarioId, _formData, sesion) => {
     const d = parsearFormulario(juntarValoresDeReporte(formData), EsquemaReporte, { omitir: ["id", "volver", "periodo"] });
     dicho.parcial = d.intencion === "parcial";
@@ -265,17 +265,13 @@ export async function reportarAccion(_prev: EstadoReporte, formData: FormData): 
       dicho.confirmar = r.confirmar;
       return;
     }
-    // Un desagregado ya reportado también guarda sin reportar (anexo 14C, §5.4): su total queda hasta el siguiente reporte.
-    dicho.reportada = r.estado === "reportada";
     if (dicho.parcial) return;
     await propagarSinFallar();
     // Si el periodo quedó pidiendo su análisis, la página a la que se vuelve lleva el foco a él (Tarea 19, D-12).
     return destinoTrasReportar(rutaInterna(formData.get("volver"), "/indicadores"), String(formData.get("periodo") ?? ""), r);
   });
   if (dicho.confirmar) return { ok: false, error: dicho.confirmar, confirmar: dicho.confirmar, valores: valoresDeFormulario(formData) };
-  if (estado === null && dicho.parcial) {
-    return { ok: true, aviso: dicho.reportada ? "Se guardó sin reportar: el total cambia cuando vuelva a reportar." : "Se guardó sin reportar: la medición sigue abierta." };
-  }
+  if (estado === null && dicho.parcial) return { ok: true, aviso: "Se guardó sin reportar: la medición sigue abierta." };
   return estado;
 }
 

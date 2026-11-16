@@ -641,28 +641,37 @@ export async function escribirCelda(
 
 /**
  * El total de una medición desagregada (anexo 14C, §5.5): por cada letra de la versión, la fila sin categoría con la suma,
- * sin usuario (lo escribe solo el sistema) y solo si cambió; quita las filas sin categoría de otras variables. Sin total
- * (`null`), quita todas las filas sin categoría. `actual` es el total guardado (`valoresPorLetra`).
+ * en la variable de esa versión y sin usuario (lo escribe solo el sistema); quita las filas sin categoría de otras
+ * variables. Compara contra las filas de las variables de la versión, no contra lo que da `valoresPorLetra`: tras un cambio
+ * menor (otros ids, mismas letras) el total guardado está en las variables de la versión anterior, que se quitan, y cada
+ * letra se vuelve a escribir en la suya aunque la suma no cambie. Sin total (`null`), quita todas las filas sin categoría.
  */
 export async function escribirTotal(
   tx: TransactionSql,
   medicionId: number,
   v: VersionDeCalculo,
   total: Readonly<Record<string, Fraccion>> | null,
-  actual: Readonly<Record<string, Fraccion>>,
   ahora: Date,
 ): Promise<void> {
   if (total === null) {
     await tx`DELETE FROM medicion_valores WHERE medicion_id = ${medicionId} AND categoria_id IS NULL`;
     return;
   }
-  await tx`DELETE FROM medicion_valores WHERE medicion_id = ${medicionId} AND categoria_id IS NULL
-    AND NOT (variable_id = ANY(${v.variables.map((x) => x.id)}))`;
+  const ids = v.variables.map((x) => x.id);
+  await tx`DELETE FROM medicion_valores WHERE medicion_id = ${medicionId} AND categoria_id IS NULL AND NOT (variable_id = ANY(${ids}))`;
+  const actuales = new Map(
+    (await tx`SELECT variable_id, valor, valor_exacto FROM medicion_valores
+      WHERE medicion_id = ${medicionId} AND categoria_id IS NULL AND variable_id = ANY(${ids})`).map((f) => [
+      Number(f.variable_id),
+      typeof f.valor_exacto === "string" ? deTexto(f.valor_exacto) : fr(f.valor),
+    ]),
+  );
   for (const x of v.variables) {
     const nuevo = total[x.letra];
+    const actual = actuales.get(x.id) ?? null;
     if (!nuevo) {
-      await tx`DELETE FROM medicion_valores WHERE medicion_id = ${medicionId} AND variable_id = ${x.id} AND categoria_id IS NULL`;
-    } else if (!actual[x.letra] || comparar(actual[x.letra], nuevo) !== 0) {
+      if (actuales.has(x.id)) await tx`DELETE FROM medicion_valores WHERE medicion_id = ${medicionId} AND variable_id = ${x.id} AND categoria_id IS NULL`;
+    } else if (!actual || comparar(actual, nuevo) !== 0) {
       await escribirFila(tx, medicionId, x.id, null, nuevo, { usuarioId: null, ahora });
     }
   }
@@ -1114,8 +1123,8 @@ function motivoDeFila(motivo: string, categoria: string): string {
  * El plan de reporte de una medición desagregada (anexo 14C, §5.4), sin escribir nada. Las filas traen solo categorías de su
  * lista y letras de la versión (si no, `FICHA_CAMBIO`); la persona digita solo las propias, cada celda con sus límites de
  * captura, y un total digitado es otro formulario. Un «No aplica» que puso el sistema en una fila no lo cambia la persona.
- * «Guardar sin reportar» escribe lo que llegó, también después de reportar: el total se queda como estaba hasta el siguiente
- * reporte. Reportar exige cada fila con sus celdas propias o «No aplica» (`faltanCategorias`); con todo (también lo ajeno) da
+ * «Guardar sin reportar» escribe lo que llegó, sin el total, y como en cualquier medición solo antes de reportar
+ * (`YA_REPORTADA`; también con la medición entera «No aplica»): ya reportada, se corrige pulsando «Reportar». Reportar exige cada fila con sus celdas propias o «No aplica» (`faltanCategorias`); con todo (también lo ajeno) da
  * el total, y sobre él valen la división por cero, los límites del resultado, el soporte obligatorio y la confirmación por
  * variación; si a alguna fila solo le falta lo ajeno, se reporta lo propio y el total espera al dato («Reportar lo mío»).
  */
@@ -1165,7 +1174,10 @@ async function planDeRejilla(
     filas.push({ categoria: c, antes: c.noAplica, despues: motivo });
     nueva.find((x) => x.id === c.id)!.noAplica = motivo;
   }
-  if (d.parcial) return { valores: {}, confirmar: null, rejilla: { cambios, filas, lista: nueva, total: null } };
+  if (d.parcial) {
+    if (m.reportada_en !== null || m.no_aplica === true) throw new ErrorIndicador(YA_REPORTADA);
+    return { valores: {}, confirmar: null, rejilla: { cambios, filas, lista: nueva, total: null } };
+  }
 
   if (nueva.length === 0) throw new ErrorIndicador(SIN_CATEGORIAS);
   const propias = version.variables.filter((v) => v.origen === "propia");
@@ -1420,7 +1432,7 @@ async function escribirReporteDeRejilla(
   const primera = !(await seReportoAlgunaVez(tx, m.id));
   const categorias = await escribirCeldas(tx, ctx, plan, c);
   const total = t.clase === "total" ? t.valores : null;
-  await escribirTotal(tx, m.id, version, total, guardados, c.ahora);
+  await escribirTotal(tx, m.id, version, total, c.ahora);
   const ninguna = t.clase === "ninguna_aplica";
   const motivo = ninguna ? MOTIVO_TODAS_NO_APLICAN : null;
   await tx`UPDATE mediciones SET reportada_por = coalesce(reportada_por, ${c.usuarioId}), reportada_en = coalesce(reportada_en, ${c.ahora}),
@@ -1455,7 +1467,7 @@ function noHistorica(ctx: Contexto): Contexto {
  *
  * Una medición desagregada (con lista) se reporta por su rejilla, con las celdas, la lista y el total en esta misma
  * transacción antes de recalcular (`escribirReporteDeRejilla`); su «Guardar sin reportar» escribe solo las celdas y los «No
- * aplica» de fila que llegaron, también ya reportada, y su bitácora lleva las categorías que cambiaron.
+ * aplica» de fila que llegaron, nunca el total, y su bitácora lleva las categorías que cambiaron.
  */
 export async function reportar(sesion: SesionFlujo, d: DatosDeReportar, opciones?: Opciones): Promise<ResultadoDeReporte> {
   if (!puede(sesion, "indicadores.medir")) throw new ErrorPermiso();
