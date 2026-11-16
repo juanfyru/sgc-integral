@@ -687,6 +687,11 @@ export async function desagregacionDelAnio(
   anio: number,
 ): Promise<{ medidos: { medicionId: number; periodo: string }[]; dimension: string | null }> {
   if (!anioValido(anio)) return { medidos: [], dimension: null };
+  // Sin ninguna versión aprobada desagregada no hay lista que medir ni dimensión: la vista «Resultados» de casi todos los
+  // indicadores corta aquí, con una lectura.
+  const [alguna] = await sql`SELECT EXISTS (SELECT 1 FROM indicador_versiones
+    WHERE indicador_id = ${indicadorId} AND estado = 'aprobada' AND dimension_id IS NOT NULL) AS hay`;
+  if (alguna?.hay !== true) return { medidos: [], dimension: null };
   const [base] = await basesDe(sql, [indicadorId]);
   const zona = zonaHoraria();
   const periodos = base?.inicio ? periodosDelAnio(base.versiones, base.inicio, anio, zona) : [];

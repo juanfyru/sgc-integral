@@ -11,6 +11,7 @@ import {
   moverCategoriaDeDimension,
 } from "@/app/admin/acciones-indicadores";
 import { Campo } from "@/componentes/ui/Campo";
+import { enfocarCuandoSePueda } from "@/componentes/ui/foco";
 import { Insignia } from "@/componentes/ui/Insignia";
 import type { Dimension } from "@/db/consultas/indicadores/dimensiones";
 import { cuenta } from "@/lib/plural";
@@ -32,19 +33,6 @@ export function botonTrasMover(posicion: number, total: number, sentido: Sentido
   const existe = (s: Sentido) => (s === "arriba" ? posicion > 0 : posicion < total - 1);
   const otro: Sentido = sentido === "arriba" ? "abajo" : "arriba";
   return existe(sentido) ? sentido : existe(otro) ? otro : null;
-}
-
-/**
- * Lleva el foco al botón `id` en cuanto exista y esté habilitado: el de la acción sigue deshabilitado mientras termina, y
- * el navegador no enfoca un botón deshabilitado. Lo intenta unos cuantos cuadros, nada más.
- */
-function enfocarCuandoSePueda(id: string, intentos = 10) {
-  const boton = document.getElementById(id);
-  if (boton instanceof HTMLButtonElement && !boton.disabled) {
-    boton.focus();
-    return;
-  }
-  if (intentos > 0) requestAnimationFrame(() => enfocarCuandoSePueda(id, intentos - 1));
 }
 
 /**

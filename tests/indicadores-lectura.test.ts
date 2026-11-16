@@ -20,17 +20,21 @@ import { asegurarMediciones, marcarNoAplica, reportar } from "@/db/consultas/ind
 import { retirar } from "@/db/consultas/indicadores/operacion";
 import { cambiarEstadoNorma } from "@/db/consultas/normograma/normas";
 import {
+  datoDePrueba,
   desagregadoDePrueba,
   dimensionDePrueba,
   filasDeMaqueta,
   indicadorDePrueba,
   nadaQueMedir,
+  periodoDeDatoDePrueba,
   versionAutomatica,
   versionNueva,
   versionTrimestral,
   type IndicadorDePrueba,
   type OpcionesIndicadorDePrueba,
 } from "./utiles/indicadores";
+import { propagar } from "@/db/consultas/indicadores/propagacion";
+import { estadoDelTotal } from "@/lib/indicadores/categorias";
 import { MOTIVO_NADA_QUE_MEDIR } from "@/lib/indicadores/tipos";
 import { normaDePrueba } from "./utiles/normograma";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
@@ -930,5 +934,30 @@ describe("lo que se ve de un desagregado (14C, Tarea 15; anexo 14C §5.6)", () =
       await versionNueva(tx, { indicadorId: antes.id, usuarioId: admin.usuarioId, tipoCambio: "mayor", rigeDesde: "2026-T1", aprobadaEn: new Date("2025-12-20T15:00:00Z"), periodicidad: "trimestral", dimensionId: sede.id });
       expect(await desagregacionDelAnio(tx, antes.id, 2025)).toEqual({ medidos: [], dimension: null });
       expect((await desagregacionDelAnio(tx, antes.id, 2026)).dimension).toBe(`Servicio ${p.id}`);
+      // Un indicador que nunca se desagregó (ronda 2: corta sin leer sus periodos).
+      const nunca = await trimestral(tx, p.id);
+      expect(await desagregacionDelAnio(tx, nunca.id, 2026)).toEqual({ medidos: [], dimension: null });
+    }));
+
+  it("por la propagación real: un desagregado que nadie mide, con el dato en 0 ÷ 0 en todas las sedes, queda «No aplica» y entra al desglose (ronda 2)", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const sede = await dimensionDePrueba(tx, `Sede ${p.id}`, ["Norte", "Sur"]);
+      const [norte, sur] = sede.categorias;
+      const datoA = await datoDePrueba(tx, { procesoId: p.id, nombre: `Adherentes ${p.id}`, dimensionId: sede.id, periodicidad: "trimestral" });
+      const datoB = await datoDePrueba(tx, { procesoId: p.id, nombre: `Auditados ${p.id}`, dimensionId: sede.id, periodicidad: "trimestral" });
+      const ind = await trimestral(tx, p.id, { meta: "85", modo: "fijo", limite: "70", dimensionId: sede.id, variables: { A: { datoId: datoA }, B: { datoId: datoB } } });
+      await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: ind.id });
+      for (const datoId of [datoA, datoB]) {
+        const id = await periodoDeDatoDePrueba(tx, { datoId, periodo: "2026-T1", valor: "0", ahora: AHORA });
+        await tx`UPDATE variable_valores SET por_categoria = ${tx.json({ [norte]: "0", [sur]: "0" })} WHERE id = ${id}`;
+      }
+      await propagar({ sql: tx, ahora: AHORA, indicadorIds: [ind.id] });
+      const [m] = await tx`SELECT no_aplica, no_aplica_motivo FROM mediciones WHERE indicador_id = ${ind.id} AND periodo = '2026-T1'`;
+      expect(m).toMatchObject({ no_aplica: true, no_aplica_motivo: MOTIVO_NADA_QUE_MEDIR });
+      const [t1] = await desgloseDelAnio(tx, ind.id, 2026);
+      expect(t1).toMatchObject({ periodo: "2026-T1", noAplica: MOTIVO_NADA_QUE_MEDIR });
+      expect(t1.filas.map((f) => f.estado)).toEqual(["sin_casos", "sin_casos"]);
+      expect(estadoDelTotal(t1)).toEqual({ punto: "no-aplica", texto: "No aplica" });
     }));
 });

@@ -5,7 +5,7 @@
  * Crítico» de la lista y la tabla del año. En render estático con datos de muestra, sin BD.
  */
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/app/acciones-indicadores", () => ({
   reportarAccion: vi.fn(),
@@ -18,6 +18,8 @@ vi.mock("@/app/acciones-indicadores", () => ({
 }));
 
 import { ListaIndicadores } from "@/componentes/indicadores/ListaIndicadores";
+import { ActualizarCategorias } from "@/componentes/indicadores/medicion/ActualizarCategorias";
+import { enfocarCuandoSePueda } from "@/componentes/ui/foco";
 import { FormularioReporte } from "@/componentes/indicadores/medicion/FormularioReporte";
 import { RejillaDeCategorias } from "@/componentes/indicadores/medicion/RejillaDeCategorias";
 import { TablaDelAnio } from "@/componentes/indicadores/medicion/TablaDelAnio";
@@ -207,7 +209,8 @@ describe("RejillaDeCategorias (maquetas 9 y 10)", () => {
     const estado: EstadoReporte = {
       ok: false,
       error: "Puesto de salud 2: «Pacientes auditados» debe ser un número",
-      valores: { c_11_A: "999", o_11_A: "182", ona_11: "1", omotivo_11: "otra cosa", na_12: "1", ona_12: "0", motivo_12: "Sin pacientes este mes", omotivo_12: "" },
+      // Un original enviado distinto del de la base («150») y del digitado («999»): el `o_` pintado debe ser el de la base.
+      valores: { c_11_A: "999", o_11_A: "150", ona_11: "1", omotivo_11: "otra cosa", na_12: "1", ona_12: "0", motivo_12: "Sin pacientes este mes", omotivo_12: "" },
     };
     const html = rejilla({}, estado);
     expect(valorDe(campo(html, "c_11_A"))).toBe("999");
@@ -261,8 +264,30 @@ describe("RejillaDeCategorias (maquetas 9 y 10)", () => {
     expect(enElPie).toMatch(/<input(?=[^>]*type="checkbox")(?=[^>]*name="confirmado")(?=[^>]*id="rejilla-confirmado")[^>]*>/);
     expect(enElPie).toContain("Sí, los datos son correctos");
     expect(html.slice(0, pie)).not.toContain('name="confirmado"');
+    // La casilla dice qué confirma: la pregunta es su descripción (ronda 2).
+    expect(enElPie).toMatch(/<input(?=[^>]*name="confirmado")(?=[^>]*aria-describedby="rejilla-pregunta")[^>]*>/);
+    expect(enElPie).toMatch(new RegExp(`<p[^>]*id="rejilla-pregunta"[^>]*>${pregunta.replace(/[().?]/g, "\\$&")}</p>`));
     // El pie toma su alto en una variable: lo que recibe el foco se desplaza por encima de él.
     expect(html).toContain("scroll-mb-[calc(var(--alto-pie,10rem)_+_0.5rem)]");
+  });
+
+  it("al volver con la confirmación, las celdas siguen con lo digitado y los originales con la base (ronda 2)", () => {
+    const pregunta = "El resultado (98,4 %) se aleja más de 30 % del segundo trimestre de 2026 (50 %). ¿Los datos son correctos?";
+    const html = rejilla({}, { ok: false, error: pregunta, confirmar: pregunta, valores: { c_11_A: "199", o_11_A: "150", c_12_A: "43", o_12_A: "43" } });
+    expect(valorDe(campo(html, "c_11_A"))).toBe("199");
+    expect(valorDe(campo(html, "o_11_A"))).toBe("182");
+    expect(valorDe(campo(html, "c_12_A"))).toBe("43");
+    expect(html.slice(html.indexOf('data-pie="rejilla"'))).toContain(pregunta);
+  });
+
+  it("a 390 px el resultado de una fila puede partirse en la tarjeta; desde 640 px, no (ronda 2)", () => {
+    const html = rejilla();
+    const celdas = [...html.matchAll(/<td class="order-2 [^"]*"/g)].map((m) => m[0]);
+    expect(celdas).toHaveLength(6);
+    for (const c of celdas) {
+      expect(c).toContain("sm:whitespace-nowrap");
+      expect(c).not.toMatch(/[" ]whitespace-nowrap/);
+    }
   });
 
   it("en el teléfono, el pie dice lo que diría el resultado del total: la división por cero y el análisis obligatorio (ronda 1, M3)", () => {
@@ -274,6 +299,45 @@ describe("RejillaDeCategorias (maquetas 9 y 10)", () => {
     // «No aplica en este periodo» se abre solo cuando el total divide por cero, como en el formulario de siempre.
     expect(formulario({ categorias: ceros })).toMatch(/<details open=""/);
     expect(formulario()).not.toMatch(/<details open=""/);
+  });
+});
+
+describe("el foco tras «Actualizar categorías» (ronda 2, como «Subir» y «Bajar» de las dimensiones)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("vuelve al botón en cuanto deja de estar deshabilitado; si el botón no está, al aviso", () => {
+    class BotonFalso {
+      disabled = true;
+      focus = vi.fn();
+    }
+    const cuadros: (() => void)[] = [];
+    const elementos: Record<string, unknown> = {};
+    vi.stubGlobal("HTMLButtonElement", BotonFalso);
+    vi.stubGlobal("requestAnimationFrame", (f: () => void) => cuadros.push(f));
+    vi.stubGlobal("document", { getElementById: (id: string) => elementos[id] ?? null });
+    const boton = new BotonFalso();
+    const aviso = { focus: vi.fn() };
+    elementos.boton = boton;
+    elementos.aviso = aviso;
+    // Mientras la acción termina, el botón sigue deshabilitado: espera un cuadro.
+    enfocarCuandoSePueda("boton", "aviso");
+    expect(boton.focus).not.toHaveBeenCalled();
+    boton.disabled = false;
+    cuadros.shift()!();
+    expect(boton.focus).toHaveBeenCalledTimes(1);
+    expect(aviso.focus).not.toHaveBeenCalled();
+    // Sin el botón, después de sus intentos, el aviso.
+    delete elementos.boton;
+    enfocarCuandoSePueda("boton", "aviso", 2);
+    while (cuadros.length > 0) cuadros.shift()!();
+    expect(aviso.focus).toHaveBeenCalledTimes(1);
+  });
+
+  it("el botón tiene el `id` al que vuelve el foco", () => {
+    const html = renderToStaticMarkup(<ActualizarCategorias medicionId={90} etiqueta="Octubre de 2026" />);
+    expect(html).toMatch(/<button(?=[^>]*\sid="[^"]+")(?=[^>]*type="submit")[^>]*>Actualizar categorías</);
   });
 });
 
@@ -430,8 +494,9 @@ describe("la marca «n en Crítico» (anexo 14C, §5.6)", () => {
     );
     expect(veces(html, ">1 en Crítico<")).toBe(1);
     expect(html).toContain('aria-label="1 categoría de Sede en Crítico"');
-    // El nombre de la dimensión, también a la vista (ronda 1, D2).
+    // El nombre de la dimensión, también a la vista (ronda 1, D2). Solo la insignia no se parte: el nombre es texto libre.
     expect(veces(html, ">por Sede<")).toBe(1);
+    expect(html).toMatch(/<span role="img"(?=[^>]*class="[^"]*flex-wrap)(?![^>]*whitespace-nowrap)[^>]*><span class="whitespace-nowrap"><span data-variante="critico"/);
     expect(html).not.toContain("0 en Crítico");
   });
 

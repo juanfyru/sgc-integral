@@ -10,7 +10,10 @@ import type { RangoDeGrafica } from "./VistaResultados";
 
 /** Lo que la sección «Por {dimensión}» muestra: los periodos medidos del año (en orden) y el desglose del elegido. */
 export type DatosDeDesglose = {
-  /** El nombre con que se firmó la dimensión del periodo elegido (o, sin periodos medidos, el de la ficha vigente). */
+  /**
+   * El nombre con que se firmó la dimensión del periodo elegido (o, sin periodos medidos, el de la última versión desagregada
+   * que rige el año: `desagregacionDelAnio`).
+   */
   dimension: string;
   periodos: { periodo: string; etiqueta: string }[];
   elegido: Desglose | null;

@@ -31,7 +31,7 @@ import {
   semaforoEnTexto,
   type CampoDeTexto,
 } from "./ficha-en-texto";
-import { estadoDeCategoria, estadoDelTotal } from "./categorias";
+import { estadoDeCategoria } from "./categorias";
 import { ETIQUETA_REPORTE_DE_LISTA, ETIQUETA_SEMAFORO_DE_LISTA } from "./filtros";
 
 const MES_CORTO = MESES.map((m) => m.charAt(0).toUpperCase() + m.slice(1, 3));
@@ -96,32 +96,22 @@ function columnasPorCategoria(variables: { letra: string; nombre: string }[]): A
 }
 
 /**
- * Las filas de la hoja por categoría (anexo 14C, §5.6): por periodo medido, una por categoría en el orden de su lista y la de su
- * «Total» (la suma de las que aplican; «No aplica» con su motivo si la medición entera quedó así).
+ * Las filas de la hoja por categoría (anexo 14C, §5.6): una por periodo medido y categoría, en el orden de su lista. El total
+ * de cada periodo vive en la hoja «Resultados <año>».
  */
 function filasPorCategoria(desgloses: readonly Desglose[]): FilaDeCategoria[] {
-  return desgloses.flatMap((d) => {
-    const periodo = periodoEnPalabras(d.periodo);
-    const categorias = d.filas.map((f) => {
+  return desgloses.flatMap((d) =>
+    d.filas.map((f) => {
       const e = estadoDeCategoria({ estado: f.estado, semaforo: f.semaforo, cumple: f.cumple, conResultado: f.resultado !== null });
       return {
-        periodo,
+        periodo: periodoEnPalabras(d.periodo),
         categoria: f.categoria.nombre,
         valores: f.numeros,
         resultado: f.resultado,
         estado: f.estado === "no_aplica" && f.categoria.noAplica ? `${e.texto}: ${f.categoria.noAplica}` : e.texto,
       };
-    });
-    const e = estadoDelTotal(d);
-    const total: FilaDeCategoria = {
-      periodo,
-      categoria: "Total",
-      valores: d.total?.numeros ?? {},
-      resultado: d.total?.resultado ?? null,
-      estado: d.noAplica ? `${e.texto}: ${d.noAplica}` : e.texto,
-    };
-    return [...categorias, total];
-  });
+    }),
+  );
 }
 
 /**
@@ -129,7 +119,7 @@ function filasPorCategoria(desgloses: readonly Desglose[]): FilaDeCategoria[] {
  * sus firmas y los datos de operación, y la hoja «Resultados <año>», con una fila por periodo (periodo, versión con que se
  * calculó, cada variable, resultado, meta, «Cumple», semáforo, estado, análisis y marcas) y la del «Acumulado del año». Un
  * desagregado trae además la hoja «Por categoría <año>» (anexo 14C, §5.6): una fila por periodo medido y categoría, con cada
- * variable, el resultado y el estado de la categoría, y la del total de cada periodo.
+ * variable, el resultado y el estado de la categoría (el total de cada periodo, en «Resultados <año>»).
  */
 export async function construirExcelDeIndicador(d: ImpresionDelAnio, meta: MetaHoja): Promise<Buffer> {
   const zona = zonaHoraria();

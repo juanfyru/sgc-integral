@@ -295,7 +295,8 @@ export function RejillaDeCategorias({
                       );
                     })
                   )}
-                  <td className={`order-2 self-center justify-self-end whitespace-nowrap sm:order-none ${CELDA}`}>
+                  {/* En la tarjeta, una insignia larga («Bien · no alcanza la meta») puede partirse; en la tabla, no. */}
+                  <td className={`order-2 self-center justify-self-end sm:order-none sm:whitespace-nowrap ${CELDA}`}>
                     <ResultadoDeFila f={f} />
                   </td>
                   <td className={`order-4 col-span-2 sm:order-none ${CELDA}`}>
@@ -383,13 +384,16 @@ export function RejillaDeCategorias({
         {pregunta ? (
           <div className={`${AVISO} border-l-estado-atencion`}>
             {/* Desde 640 px, el resultado del total ya dice la variación. */}
-            <p className={total?.variacion ? "sm:hidden" : ""}>{pregunta}</p>
+            <p id="rejilla-pregunta" className={total?.variacion ? "sm:hidden" : undefined}>
+              {pregunta}
+            </p>
             <label className="flex items-start gap-2">
               <input
                 ref={casilla}
                 id="rejilla-confirmado"
                 type="checkbox"
                 name="confirmado"
+                aria-describedby="rejilla-pregunta"
                 checked={confirmado}
                 onChange={(e) => alConfirmar(e.target.checked)}
                 className={`mt-0.5 size-4 ${FOCO}`}

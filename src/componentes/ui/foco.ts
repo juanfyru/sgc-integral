@@ -1,5 +1,23 @@
 import { useEffect, useRef } from "react";
 
+/**
+ * Lleva el foco al botón `id` en cuanto exista y esté habilitado: el de una acción sigue deshabilitado mientras termina, el
+ * navegador no enfoca un botón deshabilitado y el foco caería en <body>. Lo intenta unos cuantos cuadros; si el botón no
+ * llega a estar, lo recibe `respaldo` (un aviso con `tabIndex={-1}`), si existe.
+ */
+export function enfocarCuandoSePueda(id: string, respaldo?: string, intentos = 10) {
+  const boton = document.getElementById(id);
+  if (boton instanceof HTMLButtonElement && !boton.disabled) {
+    boton.focus();
+    return;
+  }
+  if (intentos > 0) {
+    requestAnimationFrame(() => enfocarCuandoSePueda(id, respaldo, intentos - 1));
+    return;
+  }
+  if (respaldo) document.getElementById(respaldo)?.focus();
+}
+
 /** El control que tenía el foco se fue de la pantalla: para que no caiga en <body>, lo recibe el título. */
 export function enfocarTitulo() {
   if (document.activeElement && document.activeElement !== document.body) return;

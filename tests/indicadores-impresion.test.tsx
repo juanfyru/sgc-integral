@@ -705,11 +705,16 @@ describe("FichaImpresa", () => {
       expect(await impreso(tx, await sesionAdmin(tx), otro)).not.toMatch(/Por [^<]* · Tercer trimestre/);
     }));
 
-  it("el último periodo sin nada que medir es el del desglose impreso, con el total «No aplica»; una fila «No aplica» va sin valores (ronda 1, I2 e I3)", () =>
+  it("el último periodo sin nada que medir es el del desglose impreso, con el total «No aplica»; una fila «No aplica» va sin sus valores guardados (rondas 1 y 2, I2 e I3)", () =>
     revertida(sql, async (tx) => {
       const p = await proceso(tx);
       const { ind, quien, dimension } = await desagregadoDePrueba(tx, { procesoId: p.id, ahora: AHORA, aprobadaEn: APROBADA, reportados: { "2026-T2": "182" } });
+      // La sexta sede tenía valores guardados antes de marcarla «No aplica» (ronda 2): siguen en la base, no en el impreso.
+      const [t3] = await tx`SELECT id FROM mediciones WHERE indicador_id = ${ind.id} AND periodo = '2026-T3'`;
+      await reportar(quien, { medicionId: Number(t3.id), valores: {}, filas: [{ categoriaId: dimension.categorias[5], valores: { A: "7", B: "9" } }], parcial: true, confirmado: true }, opc(tx));
       await nadaQueMedir(tx, quien, ind.id, dimension.categorias, "2026-T3");
+      const [guardadas] = await tx`SELECT count(*)::int AS n FROM medicion_valores WHERE medicion_id = ${t3.id} AND categoria_id = ${dimension.categorias[5]}`;
+      expect(guardadas.n).toBe(2);
       const html = await impreso(tx, quien, ind);
       const desde = html.indexOf(`Por ${dimension.nombre} · Tercer trimestre de 2026`);
       expect(desde).toBeGreaterThan(-1);
@@ -720,6 +725,7 @@ describe("FichaImpresa", () => {
       // La sexta sede, «No aplica»: sin sus valores, con su motivo.
       const sexta = bloque.slice(bloque.indexOf(">Puesto de salud 5<"), bloque.indexOf(">Total<"));
       expect(sexta).not.toMatch(/>\d+</);
+      expect(sexta).not.toMatch(/>[79]</);
       expect(sexta).toContain(OBRAS);
     }));
 
