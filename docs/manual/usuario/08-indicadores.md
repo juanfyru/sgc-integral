@@ -1212,8 +1212,9 @@ datos compartidos.»).
 
 Si a un indicador mixto le activan **soporte obligatorio** mientras espera el dato, quien lo mide
 tiene la tarea **Reportar …** con «Falta el soporte obligatorio» mientras la medición siga en plazo.
-Si el dato llega con el plazo ya vencido, el SGC no le pide ese soporte: lo suyo entró cuando no se
-pedía.
+Si el dato llega con el plazo ya vencido, la medición no queda vencida pidiendo ese soporte: lo suyo
+entró cuando no se pedía. (Si después alguien la corrige o escribe su análisis, el SGC aplica la
+regla de siempre y, si el soporte sigue siendo obligatorio, lo pide entonces.)
 
 Un indicador trimestral (o de otra periodicidad más larga que la del dato) toma el dato **juntado**
 con la regla del dato: la suma de sus meses, el último valor o el promedio. Mientras falte alguno
@@ -1240,7 +1241,8 @@ cambian («Una ficha aprobada ya cita este dato…»): si hace falta otra cosa, 
 demás se edita siempre. **Desactivar el dato** solo se puede si ningún indicador activo lo usa
 («Lo usa un indicador activo: cambie antes su ficha»). **Borrar el dato** solo se ofrece si no
 tiene historia (ninguna ficha lo cita, ni en borrador, y no tiene periodos); si la tiene,
-desactívelo.
+desactívelo. Si la historia aparece mientras usted confirma, el SGC responde «Este dato ya tiene
+historia: desactívelo».
 
 **Las categorías de un periodo.** Un dato por categoría fija la lista de cada periodo cuando el
 periodo se abre, como una medición (sección 12.2). Si un periodo terminó antes de crearse las
@@ -1533,4 +1535,5 @@ puede ver; tampoco los de una constancia de envío o una revisión por cambio de
 | Lo que se reabre cambió mientras se confirmaba: revise la lista y vuelva a intentarlo | Entre la lista y la confirmación cambió algo | Revise la lista, que ya es la de ahora, y confirme otra vez |
 | Otra persona estaba cambiando esa norma o esa ficha al mismo tiempo: inténtelo de nuevo | Dos personas escribieron lo mismo a la vez (también al reportar un dato o actualizar categorías) | Repita la acción |
 | Ya hay un dato con ese nombre en ese proceso / Ya hay una dimensión con ese nombre | El nombre ya existe | Use otro nombre |
+| Este dato ya tiene historia: desactívelo | Se confirmó **Borrar el dato** y, entretanto, una ficha lo citó o se abrió un periodo | Desactívelo en lugar de borrarlo |
 | Ya se usó: desactívela | Una dimensión o categoría con historia | Desactívela en lugar de borrarla |
