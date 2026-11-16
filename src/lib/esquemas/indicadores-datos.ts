@@ -40,7 +40,8 @@ const valorDigitado = z.string({ error: VALOR_INVALIDO }).max(40, "Un valor no p
 /**
  * Reportar o corregir un periodo de un dato compartido (anexo 14C, §4.4): el valor tal como se digitó o, si el periodo se
  * reporta por categoría, uno por categoría en JSON (`porCategoria`, que arma `juntarValoresDeDato`); la consulta los valida
- * con los límites del dato. El `id` del periodo viaja aparte.
+ * con los límites del dato. `confirmadoValor` es el valor por el que se hizo la pregunta de la variación, que el formulario
+ * devuelve junto a la casilla `confirmado`. El `id` del periodo viaja aparte.
  */
 export const EsquemaReporteDeDato = z
   .object({
@@ -62,6 +63,7 @@ export const EsquemaReporteDeDato = z
       )
       .optional(),
     confirmado: casilla,
+    confirmadoValor: valorDigitado.optional(),
   })
   .strict();
 

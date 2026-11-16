@@ -19,6 +19,10 @@ const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visib
 const CONTROL = `${claseControl} w-full min-w-0 max-w-full`;
 const CAJA = "flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3";
 const AVISO = "flex flex-col gap-2 rounded-md border border-l-4 border-border border-l-estado-atencion bg-card px-3 py-2 text-sm";
+/** Las cifras del dato se muestran con punto de miles, pero el campo lo leería como decimal: se dice junto al campo. */
+const SIN_MILES = "Sin puntos de miles; use la coma para los decimales.";
+/** ¿El campo es uno de los valores del dato (el único, o el de una categoría)? */
+const esUnValor = (nombre: string) => nombre === "valor" || nombre.startsWith("categoria_");
 
 /** Lo que la pantalla necesita de un periodo para reportarlo o corregirlo, ya en texto. */
 export type PeriodoParaReportar = {
@@ -128,6 +132,17 @@ export function SoportesDelPeriodo({
   );
 }
 
+/**
+ * La pregunta de la variación que sigue valiendo: la de la última respuesta del servidor (`estado`), si es de este periodo y
+ * la persona no ha cambiado ningún valor desde entonces (`superada` es la respuesta que quedó atrás al cambiarlo). Con el
+ * valor por el que se hizo, que la casilla devuelve al servidor.
+ */
+export function preguntaVigente(estado: EstadoReporte, superada: EstadoReporte, periodoId: number): { texto: string; valor: string } | null {
+  if (!estado || estado === superada || estado.ok || !estado.confirmar || estado.valores?.id !== String(periodoId)) return null;
+  const valor = estado.valores?.confirmadoValor;
+  return { texto: estado.confirmar, valor: typeof valor === "string" ? valor : "" };
+}
+
 function Mensaje({ estado }: { estado: EstadoReporte }) {
   if (!estado || (!estado.ok && estado.confirmar)) return null;
   return estado.ok ? (
@@ -144,7 +159,8 @@ function Mensaje({ estado }: { estado: EstadoReporte }) {
 /**
  * Reportar un periodo de un dato compartido, o corregirlo antes del cierre (anexo 14C, §4.4, maqueta 12): un valor o, si el
  * dato tiene dimensión, uno por cada categoría del periodo (el dato es su suma); la confirmación cuando el valor se aleja
- * mucho del periodo anterior; y sus soportes. No tiene «no aplica». Con `alReportar`, avisa cuando sale bien (el diálogo de
+ * mucho del periodo anterior, que vale para el valor por el que se preguntó (al cambiar un valor, la pregunta y su marca se
+ * van, y la marca viaja con ese valor: `confirmadoValor`); y sus soportes. No tiene «no aplica». Con `alReportar`, avisa cuando sale bien (el diálogo de
  * un periodo se cierra); dentro de un diálogo, el título ya lo lleva el diálogo y aquí no se repite para el lector de
  * pantalla. Un periodo de un dato con dimensión que nació sin categorías no pinta campos: dice que el Administrador del SGC
  * debe actualizarlas (`PERIODO_SIN_CATEGORIAS`, el mismo texto con que el servidor lo rechaza). El servidor valida todo otra vez.
@@ -166,10 +182,13 @@ export function ReportarDato({
     return resultado;
   }, null);
   const prefijo = `dato${useId().replace(/[^\w-]/g, "")}`;
-  // «Sí, el valor es correcto» vale para el valor que se preguntó: cambiar cualquier valor la desmarca.
+  // «Sí, el valor es correcto» vale para el valor que se preguntó: cambiar cualquier valor la desmarca y quita la pregunta,
+  // que ya no habla de lo que hay en el campo (`superada`: la respuesta del servidor que quedó atrás).
   const [confirmado, setConfirmado] = useState(false);
+  const [superada, setSuperada] = useState<EstadoReporte>(null);
   // La pregunta es del periodo en que se hizo: el formulario de otro periodo empieza sin ella.
-  const pregunta = estado && !estado.ok && estado.valores?.id === String(periodo.id) ? (estado.confirmar ?? null) : null;
+  const vigente = preguntaVigente(estado, superada, periodo.id);
+  const pregunta = vigente?.texto ?? null;
   const titulo = `${periodo.reportado ? "Corregir" : "Reportar"} · ${periodo.etiqueta}`;
   const encabezado = alReportar ? (
     <p aria-hidden="true" className="text-sm font-semibold">
@@ -200,19 +219,21 @@ export function ReportarDato({
         action={enviar}
         onSubmit={enviarSinReiniciar(enviar)}
         onChange={(e) => {
-          if (!(e.target instanceof HTMLInputElement) || e.target.name !== "confirmado") setConfirmado(false);
+          if (!(e.target instanceof HTMLInputElement) || !esUnValor(e.target.name)) return;
+          setConfirmado(false);
+          setSuperada(estado);
         }}
         className="flex min-w-0 flex-col gap-3"
       >
         <input type="hidden" name="id" value={periodo.id} />
         {periodo.categorias === null ? (
-          <Campo etiqueta="Valor" nombre="valor" id={`${prefijo}-valor`}>
+          <Campo etiqueta="Valor" nombre="valor" id={`${prefijo}-valor`} ayuda={SIN_MILES}>
             <input required inputMode="decimal" autoComplete="off" defaultValue={conComa(periodo.valor)} className={CONTROL} />
           </Campo>
         ) : (
           <fieldset className="flex min-w-0 flex-col gap-2">
             <legend className="text-sm font-medium">Valor de cada categoría</legend>
-            <p className="text-xs text-muted-foreground">El dato del periodo es la suma de todas.</p>
+            <p className="text-xs text-muted-foreground">{`El dato del periodo es la suma de todas. ${SIN_MILES}`}</p>
             <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
               {periodo.categorias.map((c) => (
                 <Campo key={c.id} etiqueta={c.nombre} nombre={`categoria_${c.id}`} id={`${prefijo}-categoria-${c.id}`}>
@@ -232,6 +253,8 @@ export function ReportarDato({
         {pregunta ? (
           <div className={AVISO}>
             <p>{pregunta}</p>
+            {/* La marca viaja con el valor por el que se preguntó: el servidor no la acepta para otro. */}
+            <input type="hidden" name="confirmadoValor" value={vigente?.valor ?? ""} />
             <label className="flex items-start gap-2">
               <input
                 type="checkbox"

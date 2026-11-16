@@ -444,9 +444,65 @@ describe("reportar un periodo del dato (reportarDato)", () => {
       expect(await reportarCon(tx, responsable, periodoId, { valor: "2000" })).toEqual({
         ok: false,
         confirmar: "El valor sube 1000 frente a septiembre de 2026. ¿Es correcto?",
+        valor: "2000",
       });
       expect(Number((await tx`SELECT valor FROM variable_valores WHERE id = ${periodoId}`)[0].valor)).toBe(1400);
       expect(await reportarCon(tx, responsable, periodoId, { valor: "2000", confirmado: true })).toEqual({ ok: true, corregido: true });
+    }));
+
+  it("la confirmación vale para el valor que se preguntó: con otro valor, vuelve a preguntar por ese", () =>
+    revertida(sql, async (tx) => {
+      await tx`UPDATE configuracion SET valor = '50' WHERE clave = 'ind_variacion_confirmar_pct'`;
+      const { responsable, datoId } = await entorno(tx);
+      await periodoDeDatoDePrueba(tx, { datoId, periodo: "2026-09", valor: "1000", ahora: NOV_20 });
+      const periodoId = await periodoDeDatoDePrueba(tx, { datoId, periodo: "2026-10", ahora: NOV_20 });
+      const valorGuardado = async () => (await tx`SELECT valor FROM variable_valores WHERE id = ${periodoId}`)[0].valor;
+
+      // Se preguntó por 2000; la persona cambia el campo a 5000 y la marca viaja con el valor confirmado: no vale para 5000.
+      const pregunta = await reportarCon(tx, responsable, periodoId, { valor: "2000" });
+      expect(pregunta).toMatchObject({ ok: false, valor: "2000" });
+      expect(await reportarCon(tx, responsable, periodoId, { valor: "5000", confirmado: true, confirmadoValor: "2000" })).toEqual({
+        ok: false,
+        confirmar: "El valor sube 4000 frente a septiembre de 2026. ¿Es correcto?",
+        valor: "5000",
+      });
+      expect(await valorGuardado()).toBeNull();
+      // Una marca sin el valor que confirma tampoco confirma nada.
+      expect(await reportarCon(tx, responsable, periodoId, { valor: "5000", confirmado: true, confirmadoValor: "" })).toMatchObject({ ok: false });
+      // El mismo valor escrito de otra forma sí es el confirmado.
+      expect(await reportarCon(tx, responsable, periodoId, { valor: "2000,00", confirmado: true, confirmadoValor: "2000" })).toEqual({ ok: true, corregido: false });
+      expect(Number(await valorGuardado())).toBe(2000);
+      // Un valor que no pide confirmación pasa aunque llegue una marca vieja.
+      expect(await reportarCon(tx, responsable, periodoId, { valor: "1200", confirmado: true, confirmadoValor: "2000" })).toEqual({ ok: true, corregido: true });
+    }));
+
+  it("un valor con punto de miles se rechaza: «1.600» no es 1,6", () =>
+    revertida(sql, async (tx) => {
+      const MILES = "Escriba el valor sin puntos de miles (1731); para decimales use la coma (1,731)";
+      const { responsable, datoId } = await entorno(tx);
+      const periodoId = await periodoDeDatoDePrueba(tx, { datoId, periodo: "2026-10", ahora: NOV_20 });
+      const intento = (valor: string) => reportarCon(tx, responsable, periodoId, { valor, confirmado: true });
+      for (const valor of ["1.600", "12.500", "1.284.300", " 1.600 "]) await rechaza(intento(valor), ErrorIndicador, MILES);
+      expect(await eventos(tx, periodoId)).toEqual([]);
+      // Lo demás se lee como siempre.
+      for (const [valor, queda] of [["1600", 1600], ["1,6", 1.6], ["0.125", 0.125], ["1600.5", 1600.5]] as const) {
+        expect(await intento(valor), valor).toMatchObject({ ok: true });
+        expect(Number((await tx`SELECT valor FROM variable_valores WHERE id = ${periodoId}`)[0].valor)).toBe(queda);
+      }
+    }));
+
+  it("por categoría, el punto de miles se rechaza diciendo en cuál", () =>
+    revertida(sql, async (tx) => {
+      const dimension = await dimensionDePrueba(tx, `ZZ Sedes ${unico()}`, ["Sede norte", "Sede sur"]);
+      const [norte, sur] = dimension.categorias.map(String);
+      const { responsable, datoId } = await entorno(tx, { dimensionId: dimension.id });
+      const periodoId = await periodoDeDatoDePrueba(tx, { datoId, periodo: "2026-10", ahora: NOV_20 });
+      await rechaza(
+        reportarCon(tx, responsable, periodoId, { porCategoria: { [norte]: "700", [sur]: "1.600" } }),
+        ErrorIndicador,
+        "Sede sur: Escriba el valor sin puntos de miles (1731); para decimales use la coma (1,731)",
+      );
+      expect(await reportarCon(tx, responsable, periodoId, { porCategoria: { [norte]: "700", [sur]: "1600" } })).toEqual({ ok: true, corregido: false });
     }));
 
   it("con dimensión exige el valor de cada categoría del periodo y guarda la suma", () =>
@@ -849,6 +905,14 @@ describe("el formulario del dato (EsquemaReporteDeDato, juntarValoresDeDato)", (
     expect(leer([["id", "7"], ["categoria_12", "700"], ["categoria_13", "584,3"], ["confirmado", "on"]])).toEqual({
       porCategoria: { "12": "700", "13": "584,3" },
       confirmado: true,
+    });
+  });
+
+  it("la casilla viaja con el valor que confirma", () => {
+    expect(leer([["id", "7"], ["valor", "2000"], ["confirmado", "on"], ["confirmadoValor", "2000"]])).toEqual({
+      valor: "2000",
+      confirmado: true,
+      confirmadoValor: "2000",
     });
   });
 

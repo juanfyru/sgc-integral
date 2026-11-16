@@ -50,6 +50,7 @@ import PaginaDato from "@/app/(app)/indicadores/datos/[id]/page";
 import PaginaDatos from "@/app/(app)/indicadores/datos/page";
 import { cifraDeDato, conPuntoDeMiles } from "@/componentes/indicadores/datos/comun";
 import { CamposDelDato } from "@/componentes/indicadores/datos/FormularioDato";
+import { preguntaVigente } from "@/componentes/indicadores/datos/ReportarDato";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import type { DatoCompartido } from "@/db/consultas/indicadores/datos";
@@ -269,6 +270,38 @@ describe("la página de un dato", () => {
       expect(suya).toContain(NOMBRE);
       expect(suya).not.toContain("Reportar el dato");
     }));
+});
+
+describe("el campo del valor y la pregunta de la variación (ola final, O7)", () => {
+  const AYUDA = "Sin puntos de miles; use la coma para los decimales.";
+
+  it("el campo «Valor» dice cómo se escribe; por categoría, lo dice una vez con la suma", () =>
+    enTransaccion(async (tx) => {
+      const { responsable, datoId } = await entorno(tx);
+      expect(await pagina(responsable, datoId)).toMatch(new RegExp(`<p id="[^"]*-valor-ayuda"[^>]*>${AYUDA}</p>`));
+
+      consecutivo += 1;
+      const dimension = await dimensionDePrueba(tx, `ZZ Sedes ${Date.now() % 100_000_000}${consecutivo}`, ["Sede norte", "Sede sur"]);
+      const procesoId = await procesoNuevo(tx);
+      const otro = await datoDePrueba(tx, { procesoId, nombre: `${NOMBRE} por sede`, dimensionId: dimension.id, responsables: [responsable.usuarioId] });
+      await indicadorDePrueba(tx, { procesoId, aprobadaEn: DIC_2025, dimensionId: dimension.id, variables: { B: { datoId: otro } } });
+      expect(await pagina(responsable, otro)).toContain(`El dato del periodo es la suma de todas. ${AYUDA}`);
+    }));
+
+  it("la pregunta vale mientras nadie cambie un valor: después se va, con el valor por el que se hizo", () => {
+    const PREGUNTA = "El valor baja 1677,4 frente a agosto de 2026. ¿Es correcto?";
+    const estado = { ok: false as const, error: PREGUNTA, confirmar: PREGUNTA, valores: { id: "7", valor: "1.6", confirmadoValor: "1.6" } };
+    expect(preguntaVigente(estado, null, 7)).toEqual({ texto: PREGUNTA, valor: "1.6" });
+    // La persona cambió un valor después de esa respuesta: la pregunta ya no habla de lo que hay en el campo.
+    expect(preguntaVigente(estado, estado, 7)).toBeNull();
+    // Otra respuesta del servidor (aunque diga lo mismo) vuelve a preguntar.
+    expect(preguntaVigente({ ...estado }, estado, 7)).toEqual({ texto: PREGUNTA, valor: "1.6" });
+    // La de otro periodo, un error que no es pregunta y un envío que salió bien no preguntan nada.
+    expect(preguntaVigente(estado, null, 8)).toBeNull();
+    expect(preguntaVigente({ ok: false, error: "El periodo está cerrado", valores: { id: "7" } }, null, 7)).toBeNull();
+    expect(preguntaVigente({ ok: true, aviso: "Se reportó el dato." }, null, 7)).toBeNull();
+    expect(preguntaVigente(null, null, 7)).toBeNull();
+  });
 });
 
 describe("lo que ya no se pide y lo que hace quien administra", () => {

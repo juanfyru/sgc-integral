@@ -89,6 +89,13 @@ const CERRADO = "El periodo está cerrado: lo reabre el Administrador del SGC";
 const SIN_CAMBIOS = "No hay cambios que corregir";
 const FORMULARIO_CAMBIO = "El formulario no corresponde a este periodo: recargue la página";
 const SOLO_REABIERTO = "Solo se cierra de nuevo un periodo reabierto";
+/**
+ * Las pantallas del dato muestran sus cifras con punto de miles («1.749»), y el intérprete compartido de los valores lee el
+ * punto como decimal: «1.600» sería 1,6. En los formularios del dato, un valor con esa forma (grupos de tres cifras
+ * separados por puntos, también uno solo) se rechaza antes de leerlo.
+ */
+const CON_PUNTO_DE_MILES = /^-?[1-9]\d{0,2}(\.\d{3})+$/;
+export const SIN_PUNTOS_DE_MILES = "Escriba el valor sin puntos de miles (1731); para decimales use la coma (1,731)";
 const SIN_DIMENSION = "Este dato no se reporta por categorías";
 const SOLO_PENDIENTE = "Solo se actualizan las categorías de un periodo que aún no se ha reportado";
 
@@ -415,8 +422,12 @@ export async function periodoBloqueado(tx: TransactionSql, sesion: SujetoVisibil
 const normal = (t: string) => valorEnTexto(fraccion(t)!);
 const normales = (r: Record<string, string>) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, normal(v)]));
 
-/** Un valor digitado, con las validaciones de una variable (spec §7.4); vacío, «falta». */
-function leer(textoDigitado: string, v: VariableDeCaptura): Fraccion {
+/**
+ * Un valor digitado, con las validaciones de una variable (spec §7.4); vacío, «falta». Antes, sin punto de miles
+ * (`SIN_PUNTOS_DE_MILES`); `deCategoria` dice de cuál es, porque el formulario trae una por categoría.
+ */
+function leer(textoDigitado: string, v: VariableDeCaptura, deCategoria = false): Fraccion {
+  if (CON_PUNTO_DE_MILES.test(textoDigitado.trim())) throw new ErrorIndicador(deCategoria ? `${v.nombre}: ${SIN_PUNTOS_DE_MILES}` : SIN_PUNTOS_DE_MILES);
   const r = leerValor(textoDigitado, v);
   if (!r.ok) throw new ErrorIndicador(r.error);
   if (r.valor === null) throw new ErrorIndicador(`Falta el valor de «${v.nombre}»`);
@@ -442,7 +453,7 @@ function leerReporte(p: PeriodoBloqueado, d: { valor?: string; porCategoria?: Re
   let total = CERO;
   const guardado: Record<string, string> = {};
   for (const c of p.categorias) {
-    const v = leer(porCategoria[String(c.id)] ?? "", captura(c.nombre));
+    const v = leer(porCategoria[String(c.id)] ?? "", captura(c.nombre), true);
     total = sumar(total, v);
     guardado[String(c.id)] = valorEnTexto(v);
   }
@@ -478,17 +489,20 @@ async function confirmacion(tx: TransactionSql, p: PeriodoBloqueado, total: Frac
 /**
  * Reporta un periodo pendiente del dato o lo corrige si ya estaba reportado (anexo 14C, §4.4): el permiso
  * `indicadores.medir` más `puedeReportarDato`, dentro de la transacción con el periodo bloqueado. Valida como una variable
- * (límites de captura, negativos, cuatro decimales) y, sin `confirmado`, no escribe nada y pide confirmar un valor que se
- * aleja del periodo anterior. Un periodo cerrado no se toca: lo reabre el Administrador del SGC. El primer reporte deja
+ * (límites de captura, negativos, cuatro decimales; sin punto de miles) y, sin `confirmado`, no escribe nada y pide confirmar
+ * un valor que se aleja del periodo anterior; la pregunta vuelve con el valor por el que se hizo (`valor`, el total como se
+ * guarda). La confirmación vale para ese valor: con `confirmadoValor` (el que devuelve el formulario junto a la casilla), si
+ * el valor enviado es otro, vuelve a preguntar; sin él (la semilla, los tests), `confirmado` vale para lo que llegue. Un
+ * periodo cerrado no se toca: lo reabre el Administrador del SGC. El primer reporte deja
  * quién y cuándo y el evento `reporte`; una corrección (sin justificación) deja el evento `correccion` con el antes y el
  * después y marca el periodo corregido; el mismo valor otra vez no es una corrección. Sin responsable ni líder activos
  * (`sinMedidor`), el evento lo marca (`sinResponsable`).
  */
 export async function reportarDato(
   sesion: SesionFlujo,
-  d: { periodoId: number; valor?: string; porCategoria?: Record<string, string>; confirmado?: boolean },
+  d: { periodoId: number; valor?: string; porCategoria?: Record<string, string>; confirmado?: boolean; confirmadoValor?: string },
   opciones?: Opciones,
-): Promise<{ ok: true; corregido: boolean } | { ok: false; confirmar: string }> {
+): Promise<{ ok: true; corregido: boolean } | { ok: false; confirmar: string; valor: string }> {
   if (!puede(sesion, "indicadores.medir")) throw new ErrorPermiso();
   const ahora = opciones?.ahora ?? new Date();
   return enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
@@ -497,9 +511,10 @@ export async function reportarDato(
     const { total, guardado } = leerReporte(p, d);
     const antes = p.estado === "reportado" ? p.guardado : null;
     if (antes && mismo(antes, guardado)) throw new ErrorIndicador(SIN_CAMBIOS);
-    if (d.confirmado !== true) {
+    const confirmado = d.confirmado === true && (d.confirmadoValor === undefined || d.confirmadoValor === guardado.valor);
+    if (!confirmado) {
       const confirmar = await confirmacion(tx, p, total);
-      if (confirmar) return { ok: false as const, confirmar };
+      if (confirmar) return { ok: false as const, confirmar, valor: guardado.valor };
     }
 
     const porCategoria = guardado.porCategoria ? tx.json(guardado.porCategoria) : null;

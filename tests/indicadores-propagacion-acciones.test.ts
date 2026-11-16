@@ -74,6 +74,32 @@ describe("reportar un dato compartido", () => {
   });
 });
 
+describe("la confirmación de un dato viaja con el valor que confirma", () => {
+  const PREGUNTA = "El valor sube 1000 frente a septiembre de 2026. ¿Es correcto?";
+
+  it("la pregunta vuelve con el valor por el que se preguntó, para que el formulario lo devuelva con la casilla", async () => {
+    dominio.reportarDato.mockResolvedValue({ ok: false, confirmar: PREGUNTA, valor: "2000" });
+    expect(await reportarDatoCompartido(vacio, formulario({ id: "5", valor: "2000" }))).toEqual({
+      ok: false,
+      error: PREGUNTA,
+      confirmar: PREGUNTA,
+      valores: { id: "5", valor: "2000", confirmadoValor: "2000" },
+    });
+  });
+
+  it("con la casilla, la consulta recibe el valor confirmado; sin él en el formulario, uno que no confirma nada", async () => {
+    dominio.reportarDato.mockResolvedValue({ ok: true, corregido: false });
+    await reportarDatoCompartido(vacio, formulario({ id: "5", valor: "5000", confirmado: "on", confirmadoValor: "2000" }));
+    expect(dominio.reportarDato).toHaveBeenLastCalledWith(quienReporta, expect.objectContaining({ valor: "5000", confirmado: true, confirmadoValor: "2000" }));
+    await reportarDatoCompartido(vacio, formulario({ id: "5", valor: "5000", confirmado: "on" }));
+    expect(dominio.reportarDato).toHaveBeenLastCalledWith(quienReporta, expect.objectContaining({ valor: "5000", confirmado: true, confirmadoValor: "" }));
+    // Sin la casilla no viaja ningún valor confirmado.
+    await reportarDatoCompartido(vacio, formulario({ id: "5", valor: "5000", confirmadoValor: "2000" }));
+    expect(dominio.reportarDato.mock.lastCall?.[1]).toMatchObject({ confirmado: false });
+    expect(dominio.reportarDato.mock.lastCall?.[1].confirmadoValor).toBeUndefined();
+  });
+});
+
 describe("reportar una medición", () => {
   const campos = { id: "3", periodo: "2026-09", volver: "/indicadores/X", valor_A: "5" };
 

@@ -279,11 +279,12 @@ export async function reportarAccion(_prev: EstadoReporte, formData: FormData): 
 /**
  * `id` es el del periodo del dato compartido (anexo 14C, §4.4). Lo reporta o, si ya estaba reportado, lo corrige, y se
  * queda en la página con su aviso. Un valor que se aleja del periodo anterior no escribe nada y vuelve con la pregunta
- * (`confirmar`), que la persona responde con `confirmado`.
+ * (`confirmar`) y el valor por el que se hizo (`valores.confirmadoValor`), que el formulario devuelve con la casilla
+ * `confirmado`: la confirmación vale solo para ese valor (sin él, no confirma nada).
  */
 export async function reportarDatoCompartido(_prev: EstadoReporte, formData: FormData): Promise<EstadoReporte> {
   // `mutacion` solo devuelve un destino: lo demás que dice `reportarDato` sale por aquí.
-  const dicho: { confirmar: string | null; corregido: boolean } = { confirmar: null, corregido: false };
+  const dicho: { confirmar: string | null; valor: string | null; corregido: boolean } = { confirmar: null, valor: null, corregido: false };
   const estado = await mutacion(formData, "indicadores.medir", async (_usuarioId, _formData, sesion) => {
     const d = parsearFormulario(juntarValoresDeDato(formData), EsquemaReporteDeDato, { omitir: ["id"] });
     const r = await reportarDato(sesion, {
@@ -291,16 +292,23 @@ export async function reportarDatoCompartido(_prev: EstadoReporte, formData: For
       valor: d.valor,
       porCategoria: d.porCategoria,
       confirmado: d.confirmado,
+      ...(d.confirmado ? { confirmadoValor: d.confirmadoValor ?? "" } : {}),
     });
     if (!r.ok) {
       dicho.confirmar = r.confirmar;
+      dicho.valor = r.valor;
       return;
     }
     dicho.corregido = r.corregido;
     // Los indicadores que esperaban el dato se calculan sin esperar a la pasada.
     await propagarSinFallar();
   });
-  if (dicho.confirmar) return { ok: false, error: dicho.confirmar, confirmar: dicho.confirmar, valores: valoresDeFormulario(formData) };
+  if (dicho.confirmar) {
+    // El valor por el que se preguntó, y no una confirmación anterior, que ya no vale.
+    const valores = valoresDeFormulario(formData);
+    delete valores.confirmado;
+    return { ok: false, error: dicho.confirmar, confirmar: dicho.confirmar, valores: { ...valores, confirmadoValor: dicho.valor ?? "" } };
+  }
   if (estado === null) return { ok: true, aviso: dicho.corregido ? "Se corrigió el dato." : "Se reportó el dato." };
   return estado;
 }
