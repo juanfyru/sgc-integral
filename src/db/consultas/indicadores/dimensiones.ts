@@ -241,7 +241,10 @@ async function exigirOtraActiva(tx: TransactionSql, c: FilaCategoria): Promise<v
   if (!otra && (await laUsaUnaFichaVigente(tx, c.dimensionId))) throw new ErrorIndicador(SIN_CATEGORIAS);
 }
 
-/** Crea (queda al final de su dimensión) o renombra una categoría; la que se edita no cambia de dimensión. */
+/**
+ * Crea (queda al final de su dimensión) o renombra una categoría; la que se edita no cambia de dimensión. La nueva nace con
+ * la hora de `opciones.ahora` (sin ella, la de la base): desde ella la piden los periodos (`listaDelPeriodo`).
+ */
 export async function guardarCategoria(
   sesion: SesionFlujo,
   d: { id?: number; dimensionId: number; nombre: string },
@@ -269,8 +272,9 @@ export async function guardarCategoria(
     if (otra) throw new ErrorIndicador(CATEGORIA_REPETIDA);
     let id: number;
     if (d.id === undefined) {
-      const [fila] = await tx`INSERT INTO dimension_categorias (dimension_id, nombre, orden)
-        VALUES (${dimensionId}, ${nombre}, (SELECT coalesce(max(orden), 0) + 1 FROM dimension_categorias WHERE dimension_id = ${dimensionId}))
+      const [fila] = await tx`INSERT INTO dimension_categorias (dimension_id, nombre, orden, creado_en)
+        VALUES (${dimensionId}, ${nombre}, (SELECT coalesce(max(orden), 0) + 1 FROM dimension_categorias WHERE dimension_id = ${dimensionId}),
+          ${opciones?.ahora ?? tx`now()`})
         RETURNING id`;
       id = Number(fila.id);
     } else {

@@ -25,7 +25,7 @@ import { observacionesDe } from "@/db/consultas/indicadores/observaciones";
 import { metaDeConformidad } from "@/db/consultas/indicadores/fichas-de-calculo";
 import { tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
 import { calendarioDeIndicadores, constanciasDeLaDemo } from "@/db/semillas/indicadores-demo-agenda";
-import { SGC_CONFORMIDAD, SGC_REPORTES } from "@/db/semillas/indicadores-demo-fichas";
+import { GTH_01, SGC_CONFORMIDAD, SGC_INDICE_RESTRINGIDO, SGC_REPORTES } from "@/db/semillas/indicadores-demo-fichas";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { aprobadoresDeFicha, puedeMedir, puedeVerIndicador } from "@/lib/alcance";
 import { CALCULOS } from "@/lib/indicadores/calculos/registro";
@@ -76,9 +76,10 @@ const SEMBRADOS: Record<string, string> = {
  * que se hace después (reportar, analizar, observar, cambiar una ficha, programar una meta, designar, retirar, cerrar un
  * mes) queda con su hora. Mira solo los indicadores sembrados: los que se crean después no cambian lo sembrado. Lo que no
  * deja hora se compara con las cifras sembradas, como `SEMBRADO` en `utiles/demo.ts`: los diecinueve códigos con su estado
- * (un borrador se puede borrar), el único restringido y los cinco objetivos activos. Las constancias de envío también se
- * cuentan, no se fechan: el soporte de la registrada lo sube `registrarArchivo`, que escribe su evento con la hora del
- * reloj, y por eso la siembra la registra después, también con la hora del reloj (`sembrarConstancias`).
+ * (un borrador se puede borrar), los dos restringidos (el de talento humano y, desde la 14C, el compuesto que lo toma: lo
+ * demás de la 14C lo mira `tests/semilla-indicadores-14c.test.ts`) y los cinco objetivos activos. Las constancias de envío
+ * también se cuentan, no se fechan: el soporte de la registrada lo sube `registrarArchivo`, que escribe su evento con la
+ * hora del reloj, y por eso la siembra la registra después, también con la hora del reloj (`sembrarConstancias`).
  */
 async function indicadoresComoSeSembraron(): Promise<{ intacta: boolean; motivo: string }> {
   const t = await sembradaEn(sql);
@@ -106,7 +107,8 @@ async function indicadoresComoSeSembraron(): Promise<{ intacta: boolean; motivo:
   const cambios = ["versiones", "firmas", "eventos", "observaciones", "metas", "designados", "bajas", "cierres"]
     .filter((clave) => Number(c[clave]) > 0)
     .map((clave) => `${c[clave]} ${clave} posteriores a la siembra`);
-  if (c.restringidos !== "GTH-IND-01") cambios.push(`los restringidos son «${c.restringidos}» (se sembró solo GTH-IND-01)`);
+  const restringidos = `${GTH_01.codigo}, ${SGC_INDICE_RESTRINGIDO.codigo}`;
+  if (c.restringidos !== restringidos) cambios.push(`los restringidos son «${c.restringidos}» (se sembraron ${restringidos})`);
   // Solo las de los indicadores sembrados: lo que otro test deje en los suyos no cambia lo sembrado.
   const [r] = await sql`
     WITH ind AS (SELECT id FROM indicadores WHERE codigo IN ${sql(Object.keys(SEMBRADOS))}),

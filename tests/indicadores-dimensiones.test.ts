@@ -93,6 +93,21 @@ describe("crear y ordenar", () => {
       await expect(guardarCategoria(admin, { dimensionId: id, nombre: "x" }, { sql: tx })).rejects.toBeInstanceOf(ErrorIndicador);
     }));
 
+  it("una categoría nueva nace con la hora de `opciones.ahora`; renombrarla no la cambia (la semilla fecha sus sedes)", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const { id } = await guardarDimension(admin, { nombre: `ZZ Sede ${unico()}` }, { sql: tx });
+      const ahora = new Date("2026-03-02T13:00:00Z");
+      const norte = await guardarCategoria(admin, { dimensionId: id, nombre: "Norte" }, { sql: tx, ahora });
+      const sur = await guardarCategoria(admin, { dimensionId: id, nombre: "Sur" }, { sql: tx });
+      await guardarCategoria(admin, { id: norte.id, dimensionId: id, nombre: "Norte alto" }, { sql: tx, ahora: new Date("2026-09-01T13:00:00Z") });
+      const maestro = await maestroDeCategorias(tx, id);
+      expect(maestro.find((c) => c.id === norte.id)).toMatchObject({ nombre: "Norte alto", creadoEn: ahora });
+      // Sin `ahora`, la hora de la base: la de esta transacción.
+      const [{ inicio }] = await tx`SELECT now() AS inicio`;
+      expect(maestro.find((c) => c.id === sur.id)!.creadoEn).toEqual(inicio);
+    }));
+
   it("subir la tercera la deja segunda; subir la primera no cambia nada", () =>
     revertida(sql, async (tx) => {
       const admin = await sesionAdmin(tx);

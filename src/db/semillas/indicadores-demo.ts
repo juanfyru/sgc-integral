@@ -15,6 +15,12 @@
  * Desde la 14B (anexo §11), la historia trae lo que calcula el sistema (la pasada de fotos de una hora, `fotos`) y, al
  * final, `indicadores-demo-14b.ts` toma las fotos que tocan a la hora de la siembra, analiza el mes de conformidad y deja
  * las constancias de `CEX-IND-01`.
+ *
+ * Desde la 14C (anexo §10), la historia trae también la dimensión «Sede», el dato compartido y sus periodos, las fichas que
+ * los usan, la rejilla de la desagregada y los dos compuestos. Las funciones del dominio no propagan (lo hacen las acciones):
+ * después de cada hecho que cambia una fuente, aquí se abren las mediciones de las fichas con variables ajenas y se propaga a
+ * esa hora (`propagarALaHora`), como lo haría la acción. Al final, `indicadores-demo-14c.ts` hace la pasada de la hora de la
+ * siembra y sube el soporte del dato.
  */
 import type { Sql } from "postgres";
 import type { Semaforo } from "../../lib/indicadores/tipos";
@@ -23,19 +29,40 @@ import { enTransaccion, type SesionFlujo } from "../consultas/flujo/contrato";
 import { asignarSiglaASubproceso } from "../consultas/mapa-admin";
 import { analizar } from "../consultas/indicadores/analisis";
 import { aprobarFichas, enviarAAprobacion } from "../consultas/indicadores/aprobacion";
+import { desgloseDe } from "../consultas/indicadores/categorias";
 import { cerrarDeNuevo, cerrarMes, reabrirMedicion } from "../consultas/indicadores/cierre";
+import { designarResponsablesDeDato, guardarDato } from "../consultas/indicadores/datos";
+import { asegurarPeriodosDeDatos, reportarDato } from "../consultas/indicadores/datos-periodos";
+import { guardarCategoria, guardarDimension } from "../consultas/indicadores/dimensiones";
 import { abrirCambio, crearIndicador, guardarBorrador } from "../consultas/indicadores/fichas";
 import { tomarFotos } from "../consultas/indicadores/fotos";
 import { registrarHistoricos } from "../consultas/indicadores/historicos";
 import { guardarEnMaestro } from "../consultas/indicadores/maestros";
-import { asegurarMediciones, marcarNoAplica, reportar } from "../consultas/indicadores/mediciones";
+import { asegurarMediciones, listaDe, marcarNoAplica, reportar } from "../consultas/indicadores/mediciones";
 import { programarMeta } from "../consultas/indicadores/metas";
 import { observar } from "../consultas/indicadores/observaciones";
 import { designar, retirar } from "../consultas/indicadores/operacion";
+import { propagar } from "../consultas/indicadores/propagacion";
 import { momentoHace, minutosDespues, sesionDe, type ContextoDistribucion } from "./distribucion-demo";
-import { agendaDeIndicadores, calendarioDeIndicadores, type FilaHistorica, type Hecho, type Quien } from "./indicadores-demo-agenda";
+import {
+  agendaDeIndicadores,
+  calendarioDeIndicadores,
+  type FilaDeRejilla,
+  type FilaHistorica,
+  type Hecho,
+  type Quien,
+} from "./indicadores-demo-agenda";
 import { exigirFoto, sembrarFinalDe14B } from "./indicadores-demo-14b";
-import { datosDeFicha, OBJETIVOS, type Catalogo, type ClaveObjetivo, type FichaDemo, type OperacionDemo } from "./indicadores-demo-fichas";
+import { sembrarFinalDe14C } from "./indicadores-demo-14c";
+import {
+  datosDeFicha,
+  OBJETIVOS,
+  type Catalogo,
+  type ClaveObjetivo,
+  type DatoDemo,
+  type FichaDemo,
+  type OperacionDemo,
+} from "./indicadores-demo-fichas";
 import { sembrarLoteImportado } from "./indicadores-demo-importacion";
 import { FIRMA, firmaDeLaDemo } from "./vigencia-demo";
 
@@ -46,6 +73,7 @@ const USUARIO: Record<Quien, string> = {
   liderGth: "lider.gth",
   liderCex: "lider.cex",
   jefeUrgencias: "jefe.urgencias",
+  consulta: "consulta",
 };
 
 /** Lo que comparten los hechos: la conexión, los catálogos, las sesiones y lo que se va creando. */
@@ -55,7 +83,27 @@ type Siembra = {
   sesion: Record<Quien, SesionFlujo>;
   /** Cada indicador creado, por su código, con la versión que se le abrió de último y sus datos de operación. */
   creados: Map<string, { indicadorId: number; versionId: number; op: OperacionDemo }>;
+  /** Los maestros de la 14C ya creados, por su nombre. */
+  datos: Map<string, number>;
+  dimensiones: Map<string, number>;
+  /** Los indicadores con alguna variable ajena (un dato compartido o un componente): los que reciben la propagación. */
+  conFuentes: Set<number>;
 };
+
+/** Los hechos después de los cuales una acción propagaría: cambian un dato, un resultado, una meta o lo que rige. */
+const CAMBIAN_UNA_FUENTE: ReadonlySet<Hecho["tipo"]> = new Set([
+  "aprobar",
+  "cambiar",
+  "historicos",
+  "meta",
+  "reportar",
+  "rejilla",
+  "reportarDato",
+  "noAplica",
+  "reabrir",
+  "cerrarDeNuevo",
+  "fotos",
+]);
 
 export async function sembrarIndicadores(sql: Sql, c: ContextoDistribucion): Promise<void> {
   console.log("Sembrando indicadores, sus mediciones y el cierre del mes…");
@@ -63,6 +111,7 @@ export async function sembrarIndicadores(sql: Sql, c: ContextoDistribucion): Pro
   for (const { momento, hecho } of agendaDeIndicadores(c.ahora, zonaHoraria())) {
     if (momento.getTime() >= c.ahora.getTime()) throw new Error(`Paso de la semilla de indicadores en el futuro: ${momento.toISOString()}`);
     await hacer(s, hecho, momento);
+    if (CAMBIAN_UNA_FUENTE.has(hecho.tipo)) await propagarALaHora(s, momento);
   }
   // Los periodos que terminaron hasta hoy, como los abre la primera lectura (spec §8.1).
   await asegurarMediciones({ sql, ahora: c.ahora });
@@ -70,7 +119,21 @@ export async function sembrarIndicadores(sql: Sql, c: ContextoDistribucion): Pro
   const cal = calendarioDeIndicadores(c.ahora, zonaHoraria());
   await sembrarLoteImportado(sql, s.sesion.coordinadora, cal.mesEnCurso.clave, momentoHace(1, c.ahora));
   await sembrarFinalDe14B(sql, { coordinadora: s.sesion.coordinadora, liderCex: s.sesion.liderCex }, c.ahora);
+  await sembrarFinalDe14C(sql, { consulta: s.sesion.consulta }, c.ahora);
   await leerAvisosResueltos(sql);
+}
+
+/**
+ * Lo que haría la acción después de un hecho que cambia una fuente (anexo 14C, §3.3): abre las mediciones terminadas de los
+ * indicadores con variables ajenas, como al leer su página, y les propaga a esa hora. Una propagación que falla detiene la
+ * semilla: `propagar` la registra y la salta, y la demo no debe seguir sin ella.
+ */
+async function propagarALaHora(s: Siembra, ahora: Date): Promise<void> {
+  if (s.conFuentes.size === 0) return;
+  const indicadorIds = [...s.conFuentes];
+  await asegurarMediciones({ sql: s.sql, ahora, indicadorIds });
+  const r = await propagar({ sql: s.sql, ahora, indicadorIds });
+  if (r.fallidas > 0) throw new Error(`La propagación de las ${ahora.toISOString()} falló en ${r.fallidas} mediciones`);
 }
 
 /**
@@ -128,6 +191,10 @@ async function prepararSiembra(sql: Sql, c: ContextoDistribucion): Promise<Siemb
   };
   const procesos = new Map(Object.entries(c.procesoPorSigla));
   const documentos = new Map(Object.entries(c.documentoPorCodigo));
+  // Lo de la 14C lo va creando la historia: el catálogo lo lee cuando una ficha lo cita.
+  const creados: Siembra["creados"] = new Map();
+  const datos = new Map<string, number>();
+  const dimensiones = new Map<string, number>();
   const cat: Catalogo = {
     proceso: (sigla) => exigir(procesos, sigla, "Proceso"),
     subproceso: (sigla, slug) => exigir(subprocesos, `${sigla}/${slug}`, "Subproceso"),
@@ -138,8 +205,15 @@ async function prepararSiembra(sql: Sql, c: ContextoDistribucion): Promise<Siemb
     norma: (nombre) => exigir(normas, nombre, "Norma"),
     documento: (codigo) => exigir(documentos, codigo, "Documento"),
     objetivo: (clave) => objetivos.get(clave)!,
+    dato: (nombre) => exigir(datos, nombre, "Dato compartido"),
+    dimension: (nombre) => exigir(dimensiones, nombre, "Dimensión"),
+    indicador: (codigo) => {
+      const i = creados.get(codigo);
+      if (!i) throw new Error(`Indicador de la demo aún no creado: ${codigo}`);
+      return i.indicadorId;
+    },
   };
-  return { sql, cat, sesion, creados: new Map() };
+  return { sql, cat, sesion, creados, datos, dimensiones, conFuentes: new Set() };
 }
 
 // ── Cada hecho, por las funciones del dominio ───────────────────────────────────────────────────────────────────────
@@ -160,8 +234,24 @@ async function hacer(s: Siembra, h: Hecho, ahora: Date): Promise<void> {
       const op: OperacionDemo = { inicio: h.inicio, mide: personas, analiza: personas };
       const { indicadorId, versionId } = await crearIndicador(coordinadora, datosDeFicha(s.cat, h.ficha, op), opciones);
       s.creados.set(h.ficha.codigo, { indicadorId, versionId, op });
+      if ("variables" in h.ficha && h.ficha.variables.some((v) => v.origen !== "propia")) s.conFuentes.add(indicadorId);
       return;
     }
+    case "dimension": {
+      const { id } = await guardarDimension(coordinadora, { nombre: h.nombre }, opciones);
+      for (const nombre of h.categorias) await guardarCategoria(coordinadora, { dimensionId: id, nombre }, opciones);
+      s.dimensiones.set(h.nombre, id);
+      return;
+    }
+    case "dato":
+      await crearDato(s, h.dato, h.responsables, ahora);
+      return;
+    case "reportarDato":
+      await reportarElDato(s, s.sesion[h.quien], h.dato, h.periodo, h.valor, ahora);
+      return;
+    case "rejilla":
+      await reportarRejilla(s, s.sesion[h.quien], h, ahora);
+      return;
     case "enviar":
       await enviarAAprobacion(coordinadora, { versionId: creado(s, h.codigo).versionId, credenciales: FIRMA }, conFirma);
       return;
@@ -254,20 +344,87 @@ async function medicionDe(s: Siembra, codigo: string, clave: string, momento: Da
   return Number(m.id);
 }
 
-/** Reporta A y B y comprueba el color que deja: si la semilla se equivoca de umbral, no siembra. */
+/**
+ * Reporta A y B (o, en un mixto, solo lo propio) y comprueba el color que deja, o que queda en «Falta un dato»: si la
+ * semilla se equivoca de umbral o de hora, no siembra.
+ */
 async function reportarPeriodo(
   s: Siembra,
   quien: SesionFlujo,
   codigo: string,
   clave: string,
-  [a, b]: [string, string],
-  esperado: Semaforo,
+  valores: [string, string] | Record<string, string>,
+  esperado: Semaforo | "falta_dato",
   momento: Date,
 ): Promise<void> {
   const medicionId = await medicionDe(s, codigo, clave, momento);
-  const r = await reportar(quien, { medicionId, valores: { A: a, B: b }, parcial: false, confirmado: true }, { sql: s.sql, ahora: momento });
-  if (!r.ok || r.semaforo !== esperado) {
-    throw new Error(`${codigo} ${clave}: se esperaba ${esperado} y quedó ${r.ok ? r.semaforo : `por confirmar (${r.confirmar})`}`);
+  const porLetra = Array.isArray(valores) ? { A: valores[0], B: valores[1] } : valores;
+  const r = await reportar(quien, { medicionId, valores: porLetra, parcial: false, confirmado: true }, { sql: s.sql, ahora: momento });
+  const quedo = r.ok ? (r.faltaDato && r.semaforo === null ? "falta_dato" : r.semaforo) : null;
+  if (quedo !== esperado) {
+    throw new Error(`${codigo} ${clave}: se esperaba ${esperado} y quedó ${r.ok ? quedo : `por confirmar (${r.confirmar})`}`);
+  }
+}
+
+/** La coordinadora crea el dato compartido y designa a quienes responden por él, a la hora del paso. */
+async function crearDato(s: Siembra, d: DatoDemo, responsables: Quien[], ahora: Date): Promise<void> {
+  const opciones = { sql: s.sql, ahora };
+  const { id } = await guardarDato(
+    s.sesion.coordinadora,
+    {
+      procesoId: s.cat.proceso(d.proceso),
+      nombre: d.nombre,
+      descripcion: d.descripcion,
+      fuente: d.fuente,
+      unidad: d.unidad,
+      periodicidad: d.periodicidad,
+      consolidacion: d.consolidacion,
+      admiteNegativos: false,
+      plazoReporteDias: d.plazoReporteDias,
+    },
+    opciones,
+  );
+  await designarResponsablesDeDato(s.sesion.coordinadora, { datoId: id, usuarioIds: responsables.map((q) => s.sesion[q].usuarioId) }, opciones);
+  s.datos.set(d.nombre, id);
+}
+
+/**
+ * Reporta (o corrige) un periodo del dato, abierto como lo abriría su página a esa hora (`asegurarPeriodosDeDatos`): un
+ * periodo se pide desde que alguien lo abre, y no nace vencido.
+ */
+async function reportarElDato(s: Siembra, quien: SesionFlujo, nombre: string, clave: string, valor: string, ahora: Date): Promise<void> {
+  const datoId = s.cat.dato(nombre);
+  await asegurarPeriodosDeDatos({ sql: s.sql, ahora, datoIds: [datoId] });
+  const [p] = await s.sql`SELECT id FROM variable_valores WHERE variable_id = ${datoId} AND periodo = ${clave}`;
+  if (!p) throw new Error(`El dato «${nombre}» no tiene periodo ${clave}`);
+  const r = await reportarDato(quien, { periodoId: Number(p.id), valor, confirmado: true }, { sql: s.sql, ahora });
+  if (!r.ok) throw new Error(`El dato «${nombre}» ${clave} quedó por confirmar: ${r.confirmar}`);
+}
+
+/**
+ * Reporta un desagregado por su rejilla (anexo 14C, §5.4), con cada categoría por su nombre en la lista de la medición, y
+ * comprueba el color del total y las categorías que quedan en Crítico.
+ */
+async function reportarRejilla(
+  s: Siembra,
+  quien: SesionFlujo,
+  h: { codigo: string; periodo: string; filas: FilaDeRejilla[]; esperado: Semaforo; enCritico: string[] },
+  ahora: Date,
+): Promise<void> {
+  const medicionId = await medicionDe(s, h.codigo, h.periodo, ahora);
+  const [m] = await s.sql`SELECT * FROM mediciones WHERE id = ${medicionId}`;
+  const lista = listaDe(m) ?? [];
+  const filas = h.filas.map((f) => {
+    const categoria = lista.find((c) => c.nombre === f.categoria);
+    if (!categoria) throw new Error(`${h.codigo} ${h.periodo}: la lista no trae la categoría ${f.categoria}`);
+    return "noAplica" in f
+      ? { categoriaId: categoria.id, valores: {}, noAplica: f.noAplica }
+      : { categoriaId: categoria.id, valores: { A: f.valores[0], B: f.valores[1] } };
+  });
+  const r = await reportar(quien, { medicionId, valores: {}, parcial: false, confirmado: true, filas }, { sql: s.sql, ahora });
+  const desglose = await desgloseDe(s.sql, medicionId);
+  if (!r.ok || r.semaforo !== h.esperado || JSON.stringify(desglose?.enCritico) !== JSON.stringify(h.enCritico)) {
+    throw new Error(`${h.codigo} ${h.periodo}: se esperaba ${h.esperado} con ${h.enCritico.join(", ") || "ninguna"} en Crítico`);
   }
 }
 

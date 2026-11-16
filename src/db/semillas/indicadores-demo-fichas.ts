@@ -4,7 +4,8 @@
  * periodicidad), uno más del SGC que se retira y los ficticios de urgencias, talento humano, consulta externa y cartera.
  * Desde la 14B (anexo §11), también las que calcula el sistema: la versión 2 de `SGC-IND-03` («Objetivos cumplidos», de
  * calidad) y dos fichas nuevas del SGC, la de «Reportes de indicadores a tiempo» del proceso y la de «Conformidad en
- * puntos de uso, a la fecha» de toda la entidad.
+ * puntos de uso, a la fecha» de toda la entidad. Desde la 14C (anexo §10), el dato compartido, la dimensión «Sede» y las
+ * fichas que los usan (`FichaDemo14C`): las dos que toman el dato, la desagregada por sede y los dos compuestos.
  * Los textos son del dominio, no de la entidad. `indicadores-demo.ts` las crea y las mueve por las funciones del dominio.
  */
 import type { DatosFicha } from "../../lib/esquemas/indicadores";
@@ -12,7 +13,7 @@ import { CALCULOS, type AlcanceDeCalculo, type ClaveDeCalculo } from "../../lib/
 import { aDecimal, fraccion } from "../../lib/indicadores/formula/fraccion";
 import { rangosATexto, type FilaEnTexto, type RangosEnTexto } from "../../lib/indicadores/rangos";
 import { rangosEquivalentes } from "../../lib/indicadores/semaforo";
-import type { Consolidacion, Periodicidad } from "../../lib/indicadores/tipos";
+import type { Consolidacion, Periodicidad, Toma } from "../../lib/indicadores/tipos";
 
 export type ClaveObjetivo = "eficacia" | "informacion" | "competencia" | "oportunidad" | "finanzas";
 
@@ -89,7 +90,33 @@ export type FichaDemo = {
   plazoReporte?: number;
 };
 
-/** Los ids de lo que la ficha cita, que salen de la base sembrada. */
+/**
+ * De dónde sale cada variable de una ficha de la 14C (anexo 14C, §3.1): propia, el dato compartido (por su nombre: el
+ * servidor copia del catálogo lo demás) o el resultado de otro indicador (por su código, con qué se toma).
+ */
+export type VariableDemo14C =
+  | ({ letra: string; origen: "propia" } & VariableDemo)
+  | { letra: string; origen: "compartida"; dato: string }
+  | { letra: string; origen: "indicador"; nombre: string; codigo: string; toma: Toma };
+
+/**
+ * Una ficha de la 14C: sus variables con su origen, la fórmula (con forma «libre») y la desagregación (el nombre de la
+ * dimensión). La prueba lleva un valor por variable, también las ajenas; una ficha sin variables propias no la lleva.
+ */
+export type FichaDemo14C = Omit<FichaDemo, "forma" | "unidad" | "a" | "b" | "prueba" | "calculo"> & {
+  forma: "porcentaje" | "conteo" | "libre";
+  unidad: "Porcentaje" | "Número";
+  formula?: string;
+  variables: VariableDemo14C[];
+  dimension?: string;
+  prueba?: Record<string, string>;
+  calculo?: undefined;
+};
+
+/** Una ficha de la 14C que nadie mide (anexo 14C, §3.1): sin variables propias, como un automático. */
+export const nadieLaMide = (f: FichaDemo | FichaDemo14C): boolean => "variables" in f && f.variables.every((v) => v.origen !== "propia");
+
+/** Los ids de lo que la ficha cita, que salen de la base sembrada (los de la 14C, de lo que la historia ya creó). */
 export type Catalogo = {
   proceso: (sigla: string) => number;
   subproceso: (sigla: string, slug: string) => number;
@@ -100,6 +127,9 @@ export type Catalogo = {
   norma: (nombre: string) => number;
   documento: (codigo: string) => number;
   objetivo: (clave: ClaveObjetivo) => number;
+  dato: (nombre: string) => number;
+  dimension: (nombre: string) => number;
+  indicador: (codigo: string) => number;
 };
 
 /** Lo de operación de la ficha (spec §7.3): desde cuándo se mide y quién mide y analiza. */
@@ -121,8 +151,25 @@ const variable = (letra: "A" | "B", v: VariableDemo) => ({
   admiteNegativos: false,
 });
 
+/** Una variable de la 14C como la manda el formulario. */
+function variable14C(cat: Catalogo, v: VariableDemo14C) {
+  if (v.origen === "propia") return { ...variable(v.letra as "A" | "B", v), letra: v.letra, origen: "propia" as const };
+  if (v.origen === "compartida") {
+    return { letra: v.letra, nombre: v.dato, consolidacion: "suma" as const, admiteNegativos: false, origen: "compartida" as const, datoId: cat.dato(v.dato) };
+  }
+  return {
+    letra: v.letra,
+    nombre: v.nombre,
+    consolidacion: "ultimo" as const,
+    admiteNegativos: false,
+    origen: "indicador" as const,
+    indicadorOrigenId: cat.indicador(v.codigo),
+    toma: v.toma,
+  };
+}
+
 /** Los rangos que dan los colores del umbral de la configuración (70 %): lo que la persona escribiría en los tres estados. */
-function rangosDeLaFicha(f: FichaDemo): string {
+function rangosDeLaFicha(f: Pick<FichaDemo, "codigo" | "rangos" | "tendencia" | "meta" | "decimales">): string {
   if (f.rangos) return JSON.stringify(f.rangos);
   const equivalentes = rangosEquivalentes({
     tendencia: f.tendencia,
@@ -147,15 +194,19 @@ function rangosDeLaFicha(f: FichaDemo): string {
 
 /**
  * El formulario de la ficha, como lo dejaría la persona: los rangos del semáforo, con el umbral de la configuración (70 %).
- * Una automática manda el cálculo y su alcance, sin cargo que mida, sin personas que midan y sin prueba.
+ * Una automática manda el cálculo y su alcance, sin cargo que mida, sin personas que midan y sin prueba; una de la 14C que
+ * nadie mide, tampoco cargo que mida.
  */
-export function datosDeFicha(cat: Catalogo, f: FichaDemo, op: OperacionDemo): DatosFicha {
+export function datosDeFicha(cat: Catalogo, f: FichaDemo | FichaDemo14C, op: OperacionDemo): DatosFicha {
   const cargo = cat.cargo(f.cargo);
+  const de14C = "variables" in f;
+  const prueba = de14C ? f.prueba : f.prueba && { A: f.prueba[0], B: f.prueba[1] };
   const deDondeSale = f.calculo
     ? { origenDato: "automatico" as const, calculo: f.calculo.clave, calculoAlcance: f.calculo.alcance }
-    : f.prueba
-      ? { prueba: { valores: { A: f.prueba[0], B: f.prueba[1] } } }
+    : prueba
+      ? { prueba: { valores: prueba } }
       : {};
+  const nadieMide = f.calculo !== undefined || nadieLaMide(f);
   return {
     procesoId: cat.proceso(f.proceso),
     ...(f.subproceso ? { subprocesoId: cat.subproceso(f.proceso, f.subproceso) } : {}),
@@ -169,7 +220,9 @@ export function datosDeFicha(cat: Catalogo, f: FichaDemo, op: OperacionDemo): Da
     ...(f.procedimiento ? { procedimientoDocumentoId: cat.documento(f.procedimiento) } : {}),
     ...(f.puntoControl ? { puntoControl: f.puntoControl } : {}),
     forma: f.forma,
-    variables: [variable("A", f.a), variable("B", f.b)],
+    ...(de14C && f.formula ? { formula: f.formula } : {}),
+    variables: de14C ? f.variables.map((v) => variable14C(cat, v)) : [variable("A", f.a), variable("B", f.b)],
+    ...(de14C && f.dimension ? { dimensionId: cat.dimension(f.dimension) } : {}),
     unidadId: cat.unidad(f.unidad),
     decimales: f.decimales,
     periodicidad: f.periodicidad,
@@ -177,7 +230,7 @@ export function datosDeFicha(cat: Catalogo, f: FichaDemo, op: OperacionDemo): Da
     meta: f.meta,
     semaforoModo: "rangos",
     rangos: rangosDeLaFicha(f),
-    cargosMedir: f.calculo ? [] : [cargo],
+    cargosMedir: nadieMide ? [] : [cargo],
     cargosAnalizar: [cargo],
     normaIds: f.norma ? [cat.norma(f.norma)] : [],
     ...(f.ente ? { ente: f.ente } : {}),
@@ -192,7 +245,7 @@ export function datosDeFicha(cat: Catalogo, f: FichaDemo, op: OperacionDemo): Da
     inicioMedicion: op.inicio,
     soporteObligatorio: false,
     nivelAcceso: f.nivelAcceso ?? "general",
-    mide: f.calculo ? [] : op.mide,
+    mide: nadieMide ? [] : op.mide,
     analiza: op.analiza,
   };
 }
@@ -712,4 +765,170 @@ export const CNT_01: FichaDemo = {
   },
   prueba: ["19", "20"],
   cargo: "Subgerente Administrativo",
+};
+
+// ── La 14C: el dato compartido, la dimensión «Sede» y las fichas que los usan (anexo 14C, §10) ─────────────────────────
+
+/** Un dato compartido de la demo (anexo 14C, §4.1), con quienes responden por él. */
+export type DatoDemo = {
+  proceso: string;
+  nombre: string;
+  descripcion: string;
+  fuente: string;
+  unidad: string;
+  periodicidad: Periodicidad;
+  consolidacion: Consolidacion;
+  plazoReporteDias: number;
+};
+
+/**
+ * Las consultas de medicina general del mes, de todas las sedes: lo reporta una vez quien responde por él y lo toman el uso
+ * de la agenda (mensual, mixto) y las consultas del trimestre (trimestral, sin variables propias).
+ */
+export const DATO_CONSULTAS: DatoDemo = {
+  proceso: "CEX",
+  nombre: "Consultas de medicina general realizadas",
+  descripcion: "Consultas de medicina general atendidas en el mes en todas las sedes, de primera vez y de control; no incluye las de urgencias.",
+  fuente: "Registro individual de prestación de servicios (RIPS) de consulta externa",
+  unidad: "consultas",
+  periodicidad: "mensual",
+  consolidacion: "suma",
+  plazoReporteDias: PLAZO_DE_REPORTE,
+};
+
+/** La dimensión de la desagregación (anexo 14C, §5.1), con cuatro sedes ficticias. */
+export const SEDE = { nombre: "Sede", categorias: ["Sede principal", "Puesto de salud Norte", "Puesto de salud Sur", "Puesto de salud Oriente"] };
+
+/** Lo común de las fichas de consulta externa de la 14C: operativas (las aprueba el líder), medidas por el médico coordinador. */
+const deConsultaExterna = {
+  proceso: "CEX",
+  subproceso: "medicina-general",
+  clasificacion: "Operativo",
+  decimales: 1,
+  tendencia: "ascendente",
+  cargo: "Médico Coordinador",
+} as const;
+
+/** Mixto: A es el dato compartido y B la digita quien mide (anexo 14C, §3.1). */
+export const CEX_AGENDA: FichaDemo14C = {
+  ...deConsultaExterna,
+  codigo: "CEX-ID-001",
+  nombre: "Uso de la agenda de medicina general",
+  proposito: "Medir qué parte de las consultas de medicina general ofertadas en la agenda se realizó, para ajustar la oferta de cada mes.",
+  tipo: "Eficiencia",
+  forma: "porcentaje",
+  unidad: "Porcentaje",
+  periodicidad: "mensual",
+  meta: "90",
+  variables: [
+    { letra: "A", origen: "compartida", dato: DATO_CONSULTAS.nombre },
+    {
+      letra: "B",
+      origen: "propia",
+      nombre: "Consultas ofertadas en la agenda",
+      descripcion: "Cupos de consulta de medicina general abiertos en la agenda del mes, en todas las sedes",
+      fuente: "Sistema de agendamiento de citas",
+      unidad: "consultas",
+    },
+  ],
+  prueba: { A: "1712", B: "1840" },
+};
+
+/** Sin variables propias: nadie lo mide; se calcula cuando están los tres meses del dato (anexo 14C, §4.5). */
+export const CEX_CONSULTAS_TRIMESTRE: FichaDemo14C = {
+  ...deConsultaExterna,
+  codigo: "CEX-ID-002",
+  nombre: "Consultas de medicina general del trimestre",
+  proposito: "Seguir cada trimestre la producción de consultas de medicina general frente a la meta pactada con las aseguradoras.",
+  tipo: "Eficacia",
+  forma: "conteo",
+  unidad: "Número",
+  decimales: 0,
+  periodicidad: "trimestral",
+  meta: "5000",
+  variables: [{ letra: "A", origen: "compartida", dato: DATO_CONSULTAS.nombre }],
+};
+
+/** Desagregado por sede (anexo 14C, §5): cada fila de la rejilla es una sede y el total lo escribe el sistema. */
+export const CEX_HIPERTENSION: FichaDemo14C = {
+  ...deConsultaExterna,
+  codigo: "CEX-ID-003",
+  nombre: "Adherencia a la guía de hipertensión arterial",
+  proposito: "Medir en cada sede qué parte de los pacientes hipertensos auditados recibió el manejo que pide la guía adoptada.",
+  tipo: "Eficacia",
+  forma: "porcentaje",
+  unidad: "Porcentaje",
+  periodicidad: "mensual",
+  meta: "85",
+  dimension: SEDE.nombre,
+  variables: [
+    {
+      letra: "A",
+      origen: "propia",
+      nombre: "Pacientes con manejo adherente a la guía",
+      descripcion: "Pacientes hipertensos auditados cuya historia cumple los criterios de manejo de la guía",
+      fuente: "Auditoría mensual de historias clínicas",
+      unidad: "pacientes",
+    },
+    {
+      letra: "B",
+      origen: "propia",
+      nombre: "Pacientes hipertensos auditados",
+      descripcion: "Historias de pacientes hipertensos atendidos en el mes que se auditaron en la sede",
+      fuente: "Auditoría mensual de historias clínicas",
+      unidad: "pacientes",
+    },
+  ],
+  prueba: { A: "45", B: "50" },
+};
+
+/** Lo común de los compuestos del SGC de la 14C: estratégicos (aprueba Gerencia), porcentaje de 0 a 100, sin variables propias. */
+const compuestoDelSgc = {
+  proceso: "SGC",
+  clasificacion: "Estratégico",
+  forma: "libre",
+  unidad: "Porcentaje",
+  decimales: 1,
+  periodicidad: "trimestral",
+  tendencia: "ascendente",
+  meta: "90",
+  cargo: "Líder de Calidad",
+} as const;
+
+/** Toma el cumplimiento de cinco indicadores trimestrales del SGC (anexo 14C, §6.2); no el de «no conformidades», que no aplicó. */
+export const SGC_INDICE: FichaDemo14C = {
+  ...compuestoDelSgc,
+  codigo: "SGC-ID-003",
+  nombre: "Índice de desempeño del SGC",
+  proposito: "Seguir en un solo número cuánto se cumplen las metas de los indicadores trimestrales del sistema de gestión de calidad.",
+  requisito: "NTC ISO 9001:2015 - Numeral 9.1.3",
+  tipo: "Eficacia",
+  formula: "(A + B + C + D + E) / 5",
+  variables: [
+    { letra: "A", origen: "indicador", codigo: SGC_01.codigo, toma: "cumplimiento", nombre: "Cumplimiento de la meta de auditorías internas" },
+    { letra: "B", origen: "indicador", codigo: SGC_02.codigo, toma: "cumplimiento", nombre: "Cumplimiento de la meta de acciones correctivas" },
+    { letra: "C", origen: "indicador", codigo: SGC_05.codigo, toma: "cumplimiento", nombre: "Cumplimiento de la meta de información documentada" },
+    { letra: "D", origen: "indicador", codigo: SGC_06.codigo, toma: "cumplimiento", nombre: "Cumplimiento de la meta de capacitación en calidad" },
+    { letra: "E", origen: "indicador", codigo: SGC_07.codigo, toma: "cumplimiento", nombre: "Cumplimiento de la meta de riesgos y oportunidades" },
+  ],
+};
+
+/**
+ * Restringido porque toma uno restringido (anexo 14C, §6.1), y por eso lo aprueba Gerencia. Es del SGC, no de consulta
+ * externa: un restringido lo ve quien está asignado a su proceso, y `consulta` lo está a consulta externa. `lider.cex` lo ve
+ * porque le hace seguimiento; ve el componente de consulta externa (mensual: en el trimestre, su acumulado) y no el de
+ * talento humano.
+ */
+export const SGC_INDICE_RESTRINGIDO: FichaDemo14C = {
+  ...compuestoDelSgc,
+  codigo: "SGC-ID-004",
+  nombre: "Índice de capacidad de atención",
+  proposito: "Seguir en un solo número el cumplimiento de las metas de talento humano y de oportunidad de la cita, para la revisión por la dirección.",
+  tipo: "Efectividad",
+  formula: "(A + B) / 2",
+  nivelAcceso: "restringido",
+  variables: [
+    { letra: "A", origen: "indicador", codigo: GTH_01.codigo, toma: "cumplimiento", nombre: "Cumplimiento de la meta de talento humano" },
+    { letra: "B", origen: "indicador", codigo: CEX_01.codigo, toma: "cumplimiento", nombre: "Cumplimiento de la meta de oportunidad de la cita" },
+  ],
 };

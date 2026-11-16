@@ -9,9 +9,12 @@
  * (`meses[2]`) y uno que nadie reportó y que el cierre deja sin dato (`meses[4]`). Lo que calcula el sistema (anexo 14B,
  * §11: `SGC-IND-03` desde su versión 2 y las fichas `SGC-ID-001` y `SGC-ID-002`) no lo reporta nadie: lo fotografía la
  * pasada (`fotos`) o, al final de la siembra, `tomarFotos`.
+ *
+ * La 14C (anexo §10) añade su historia (`de14C`) con el plan de su dato compartido (`planDe14C`): un mes pendiente, uno
+ * corregido que cierra el cierre del mes, uno con soporte (lo sube el final de la siembra) y un trimestre completo.
  */
 import { periodoDe, type Periodo } from "../../lib/indicadores-documentales/periodo";
-import { anterior, fechaLimiteDeReporte, periodoQueContiene, periodosTerminados } from "../../lib/indicadores/periodos";
+import { anterior, clavesFinas, fechaLimiteDeReporte, periodoQueContiene, periodosTerminados } from "../../lib/indicadores/periodos";
 import type { Periodicidad, Semaforo } from "../../lib/indicadores/tipos";
 import { fechaEnZona } from "../../lib/tramites/plazos";
 import { zonaHoraria } from "../../lib/zona-horaria";
@@ -19,7 +22,11 @@ import { minutosDespues, momentoHace } from "./distribucion-demo";
 import {
   AIN_01,
   CEX_01,
+  CEX_AGENDA,
+  CEX_CONSULTAS_TRIMESTRE,
+  CEX_HIPERTENSION,
   CNT_01,
+  DATO_CONSULTAS,
   DEL_SGC,
   FUENTE_PRECISADA,
   GRF_01,
@@ -27,13 +34,18 @@ import {
   GTH_02,
   MOTIVO_SGC_03_AUTOMATICA,
   PLAZO_DE_REPORTE,
+  SEDE,
   SGC_03,
   SGC_03_AUTOMATICA,
   SGC_04,
   SGC_05,
   SGC_CONFORMIDAD,
+  SGC_INDICE,
+  SGC_INDICE_RESTRINGIDO,
   SGC_REPORTES,
+  type DatoDemo,
   type FichaDemo,
+  type FichaDemo14C,
 } from "./indicadores-demo-fichas";
 
 const MS_HORA = 3_600_000;
@@ -193,14 +205,17 @@ export function constanciasDeLaDemo(ahora: Date, zona: string = zonaHoraria()): 
 // ── Los hechos ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** Las personas de la demo que actúan en la historia. */
-export type Quien = "coordinadora" | "gerente" | "controlInterno" | "liderGth" | "liderCex" | "jefeUrgencias";
+export type Quien = "coordinadora" | "gerente" | "controlInterno" | "liderGth" | "liderCex" | "jefeUrgencias" | "consulta";
 
 /** Una fila histórica: periodo, A, B y el color que debe dejar. */
 export type FilaHistorica = [string, string, string, Semaforo];
 
+/** Una fila de la rejilla de un desagregado (anexo 14C, §5.4): la categoría por su nombre, con A y B o con su «No aplica». */
+export type FilaDeRejilla = { categoria: string; valores: [string, string] } | { categoria: string; noAplica: string };
+
 export type Hecho =
-  /** La coordinadora crea la ficha; `responsable` mide y analiza. */
-  | { tipo: "crear"; ficha: FichaDemo; inicio: string; responsable: Quien | null }
+  /** La coordinadora crea la ficha; `responsable` mide (si la ficha tiene variables propias) y analiza. */
+  | { tipo: "crear"; ficha: FichaDemo | FichaDemo14C; inicio: string; responsable: Quien | null }
   /** La coordinadora la envía a aprobación con su firma «Elaboró». */
   | { tipo: "enviar"; codigo: string }
   /** Firma «Aprobó» en bloque la versión más reciente de cada código. */
@@ -208,7 +223,26 @@ export type Hecho =
   | { tipo: "seguimiento"; codigo: string; quien: Quien }
   | { tipo: "historicos"; codigo: string; filas: FilaHistorica[] }
   | { tipo: "meta"; codigo: string; periodo: string; meta: string }
-  | { tipo: "reportar"; quien: Quien; codigo: string; periodo: string; valores: [string, string]; esperado: Semaforo }
+  /**
+   * Quien mide reporta A y B o, en un mixto, solo lo suyo (`valores` por letra). `esperado` es el color que deja o, si aún
+   * falta lo ajeno, «Falta un dato» (`falta_dato`).
+   */
+  | {
+      tipo: "reportar";
+      quien: Quien;
+      codigo: string;
+      periodo: string;
+      valores: [string, string] | Record<string, string>;
+      esperado: Semaforo | "falta_dato";
+    }
+  /** Quien mide reporta un desagregado por su rejilla: el total queda en `esperado` y en Crítico quedan `enCritico`. */
+  | { tipo: "rejilla"; quien: Quien; codigo: string; periodo: string; filas: FilaDeRejilla[]; esperado: Semaforo; enCritico: string[] }
+  /** La coordinadora crea la dimensión con sus categorías, todas con la hora del paso: desde ella las piden los periodos. */
+  | { tipo: "dimension"; nombre: string; categorias: string[] }
+  /** La coordinadora crea el dato compartido y designa a quienes responden por él (anexo 14C, §4.1). */
+  | { tipo: "dato"; dato: DatoDemo; responsables: Quien[] }
+  /** Quien responde por el dato reporta un periodo o, si ya estaba reportado, lo corrige (anexo 14C, §4.4). */
+  | { tipo: "reportarDato"; quien: Quien; dato: string; periodo: string; valor: string }
   | { tipo: "noAplica"; quien: Quien; codigo: string; periodo: string; motivo: string }
   | { tipo: "analizar"; quien: Quien; codigo: string; periodo: string; textos: { analisis?: string; causa?: string; accionPropuesta?: string } }
   | { tipo: "observar"; quien: Quien; codigo: string; periodo: string; texto: string }
@@ -237,6 +271,7 @@ export function agendaDeIndicadores(ahora: Date, zona: string = zonaHoraria()): 
   en(cal.cierre, { tipo: "cerrarMes", mes: cal.meses[3].clave });
   fichasRecientes(cal, ahora, en);
   automaticosDelSgc(cal, en);
+  de14C(cal, ahora, zona, en);
   return agenda
     .map((p, i) => ({ p, i }))
     .sort((x, y) => x.p.momento.getTime() - y.p.momento.getTime() || x.i - y.i)
@@ -246,7 +281,7 @@ export function agendaDeIndicadores(ahora: Date, zona: string = zonaHoraria()): 
 type En = (momento: Date, hecho: Hecho) => void;
 
 /** Crear y, cinco minutos después, enviar. */
-function crearYEnviar(en: En, momento: Date, ficha: FichaDemo, inicio: string, responsable: Quien): void {
+function crearYEnviar(en: En, momento: Date, ficha: FichaDemo | FichaDemo14C, inicio: string, responsable: Quien): void {
   en(momento, { tipo: "crear", ficha, inicio, responsable });
   en(minutosDespues(momento, 5), { tipo: "enviar", codigo: ficha.codigo });
 }
@@ -508,4 +543,144 @@ function automaticosDelSgc(cal: CalendarioDeIndicadores, en: En): void {
       },
     });
   }
+}
+
+// ── La 14C: el dato compartido, la desagregación y los compuestos (anexo 14C, §10) ─────────────────────────────────────
+
+/** Las consultas de medicina general de cada mes (de enero a diciembre): el dato compartido de la demo. */
+const CONSULTAS_POR_MES = [1712, 1688, 1745, 1726, 1694, 1758, 1703, 1679, 1737, 1749, 1716, 1731];
+/** Las que se ofertaron en la agenda: el uso de la agenda queda en Bien (de 93 % a 96 %) cada mes. */
+const OFERTADAS_POR_MES = [1840, 1800, 1830, 1820, 1790, 1840, 1810, 1780, 1820, 1830, 1800, 1810];
+/** Lo que faltaba en el primer reporte del mes corregido: el RIPS de un puesto de salud, que llegó tarde. */
+export const FALTABA_EN_EL_CORREGIDO = 168;
+
+const numeroDeMes = (p: Periodo) => Number(p.clave.slice(5, 7));
+/** Las consultas del mes (el valor bueno, también el del mes corregido). */
+export const consultasDe = (p: Periodo): number => CONSULTAS_POR_MES[numeroDeMes(p) - 1];
+/** Las consultas ofertadas en la agenda del mes: lo que digita quien mide el uso de la agenda. */
+export const ofertadasDe = (p: Periodo): number => OFERTADAS_POR_MES[numeroDeMes(p) - 1];
+const elSiguienteMes = (p: Periodo, zona: string): Periodo => elQueContiene("mensual", new Date(p.hasta.getTime() + MS_HORA), zona);
+const cierraTrimestre = (p: Periodo) => numeroDeMes(p) % 3 === 0;
+
+/** Lo que la demo deja del dato compartido (anexo 14C, §4), cualquier día que se siembre. */
+export type PlanDe14C = {
+  /** Los meses del dato que se piden, del más antiguo al más reciente: del primero de `trimestreCompleto` al último terminado. */
+  meses: Periodo[];
+  /**
+   * El que queda pendiente: el último mes terminado después del mes cerrado que cierra un trimestre (al reportarlo quedan
+   * calculadas las dos fichas que usan el dato); si no hay ninguno, el último mes terminado.
+   */
+  pendiente: Periodo;
+  /** El mes cerrado (`meses[3]`): su dato llega bajo, lo corrige `lider.cex` antes del cierre y lo cierra el cierre del mes. */
+  corregido: Periodo;
+  /** Los meses posteriores al pendiente: se reportan ayer. Así el pendiente empieza a pedirse ayer y no nace vencido. */
+  tardios: Periodo[];
+  /** El más reciente de los reportados después del mes cerrado: lleva el soporte (lo sube el final de la siembra). */
+  conSoporte: Periodo;
+  /** El trimestre de las consultas del trimestre con sus tres meses antes del cierre (su inicio de medición): cerrado y calculado. */
+  trimestreCompleto: Periodo;
+  /** El trimestre que espera al pendiente, si ya terminó; `null` si el pendiente no cierra un trimestre. */
+  trimestreQueEspera: Periodo | null;
+};
+
+export function planDe14C(ahora: Date, zona: string = zonaHoraria()): PlanDe14C {
+  const cal = calendarioDeIndicadores(ahora, zona);
+  const corregido = cal.meses[3];
+  const despues = periodosTerminados("mensual", cal.meses[2].clave, ahora, zona);
+  const pendiente = despues.filter(cierraTrimestre).at(-1) ?? despues.at(-1)!;
+  const delPendiente = elQueContiene("trimestral", pendiente.desde, zona);
+  const trimestreCompleto = elAnterior(delPendiente, zona);
+  const meses = periodosTerminados("mensual", clavesFinas(trimestreCompleto.clave, "mensual")[0], ahora, zona);
+  return {
+    meses,
+    pendiente,
+    corregido,
+    tardios: meses.filter((m) => m.desde.getTime() > pendiente.desde.getTime()),
+    conSoporte: despues.filter((m) => m.clave !== pendiente.clave).at(-1)!,
+    trimestreCompleto,
+    trimestreQueEspera: cierraTrimestre(pendiente) ? delPendiente : null,
+  };
+}
+
+/** El motivo del «No aplica» de una sede en la segunda rejilla. */
+export const MOTIVO_SEDE_CERRADA = "El puesto de salud estuvo cerrado todo el mes por el arreglo de la planta física: no hubo consulta.";
+
+/** Las filas de la rejilla de `CEX-ID-003` en `meses[2]` y `meses[1]`, con lo que deja cada una. */
+export const REJILLAS: { filas: FilaDeRejilla[]; esperado: Semaforo; enCritico: string[] }[] = [
+  {
+    // 94 de 110 (85,5 %): el total en Bien y el Puesto de salud Oriente en Crítico (55 %), con su aviso.
+    filas: [
+      { categoria: SEDE.categorias[0], valores: ["46", "50"] },
+      { categoria: SEDE.categorias[1], valores: ["18", "20"] },
+      { categoria: SEDE.categorias[2], valores: ["19", "20"] },
+      { categoria: SEDE.categorias[3], valores: ["11", "20"] },
+    ],
+    esperado: "bien",
+    enCritico: [SEDE.categorias[3]],
+  },
+  {
+    // El Norte sin pacientes auditados («Sin casos», lo pone el sistema) y el Sur cerrado («No aplica»): 57 de 64 (89,1 %).
+    filas: [
+      { categoria: SEDE.categorias[0], valores: ["41", "46"] },
+      { categoria: SEDE.categorias[1], valores: ["0", "0"] },
+      { categoria: SEDE.categorias[2], noAplica: MOTIVO_SEDE_CERRADA },
+      { categoria: SEDE.categorias[3], valores: ["16", "18"] },
+    ],
+    esperado: "bien",
+    enCritico: [],
+  },
+];
+
+/**
+ * La historia de la 14C. En `meses[6]` la coordinadora crea la dimensión «Sede» y el dato compartido, del que responden
+ * `consulta` y `lider.cex`, y las dos fichas que lo usan, que aprueba `lider.cex`: el uso de la agenda (mensual, mixto,
+ * desde el mes cerrado) y las consultas del trimestre (trimestral, sin variables propias, desde `trimestreCompleto`).
+ * `consulta` reporta cada mes del dato el día 4 del siguiente, salvo el pendiente y los tardíos (ayer); el del mes cerrado
+ * llega bajo y `lider.cex` lo corrige antes del cierre, con lo que el uso de la agenda pasa de Atención a Bien. `lider.cex`
+ * reporta lo suyo del uso de la agenda el día 5. La desagregada por sede se aprueba en `meses[3]` y se mide desde
+ * `meses[2]` (`REJILLAS`). Los dos compuestos del SGC los aprueba Gerencia en el último trimestre sembrado, después de sus
+ * componentes y antes de que termine; `lider.cex` hace seguimiento del restringido.
+ */
+function de14C(cal: CalendarioDeIndicadores, ahora: Date, zona: string, en: En): void {
+  const plan = planDe14C(ahora, zona);
+  const m = cal.meses;
+  const inicio = enDia(m[6], 0, 8);
+  en(inicio, { tipo: "dimension", nombre: SEDE.nombre, categorias: SEDE.categorias });
+  en(minutosDespues(inicio, 20), { tipo: "dato", dato: DATO_CONSULTAS, responsables: ["consulta", "liderCex"] });
+  crearYEnviar(en, enDia(m[6], 1, 9), CEX_AGENDA, plan.corregido.clave, "liderCex");
+  crearYEnviar(en, enDia(m[6], 1, 10), CEX_CONSULTAS_TRIMESTRE, plan.trimestreCompleto.clave, "liderCex");
+  en(enDia(m[6], 2, 15), { tipo: "aprobar", quien: "liderCex", codigos: [CEX_AGENDA.codigo, CEX_CONSULTAS_TRIMESTRE.codigo] });
+
+  const tardios = plan.tardios.map((p) => p.clave);
+  // Ayer o, si el mes terminó después (una siembra en las primeras horas de un mes), entre su fin y la siembra.
+  const ayer = (mes: Periodo, i: number) =>
+    new Date(Math.max(minutosDespues(momentoHace(1, ahora), 10 * i).getTime(), mes.hasta.getTime() + Math.min(MS_HORA, (ahora.getTime() - mes.hasta.getTime()) / 2)));
+  const dato = DATO_CONSULTAS.nombre;
+  for (const mes of plan.meses) {
+    if (mes.clave === plan.pendiente.clave) continue;
+    const valor = String(consultasDe(mes) - (mes.clave === plan.corregido.clave ? FALTABA_EN_EL_CORREGIDO : 0));
+    const i = tardios.indexOf(mes.clave);
+    const cuando = i >= 0 ? ayer(mes, i) : enDia(elSiguienteMes(mes, zona), 3, 9);
+    en(cuando, { tipo: "reportarDato", quien: "consulta", dato, periodo: mes.clave, valor });
+  }
+  en(enDia(m[2], 7, 10), { tipo: "reportarDato", quien: "liderCex", dato, periodo: plan.corregido.clave, valor: String(consultasDe(plan.corregido)) });
+  for (const k of [3, 2, 1]) {
+    const mes = m[k];
+    const antesDelPendiente = mes.desde.getTime() < plan.pendiente.desde.getTime();
+    const esperado = mes.clave === plan.corregido.clave ? "atencion" : antesDelPendiente ? "bien" : "falta_dato";
+    const valores = { B: String(ofertadasDe(mes)) };
+    en(enDia(m[k - 1], 4, 10), { tipo: "reportar", quien: "liderCex", codigo: CEX_AGENDA.codigo, periodo: mes.clave, valores, esperado });
+  }
+
+  crearYEnviar(en, enDia(m[3], 19, 9), CEX_HIPERTENSION, m[2].clave, "liderCex");
+  en(enDia(m[3], 20, 10), { tipo: "aprobar", quien: "liderCex", codigos: [CEX_HIPERTENSION.codigo] });
+  [m[2], m[1]].forEach((mes, i) =>
+    en(enDia(elSiguienteMes(mes, zona), 3, 11), { tipo: "rejilla", quien: "liderCex", codigo: CEX_HIPERTENSION.codigo, periodo: mes.clave, ...REJILLAS[i] }),
+  );
+
+  const ultimo = cal.trimestres[2];
+  crearYEnviar(en, enDia(ultimo, 25, 9), SGC_INDICE, ultimo.clave, "coordinadora");
+  crearYEnviar(en, enDia(ultimo, 25, 10), SGC_INDICE_RESTRINGIDO, ultimo.clave, "coordinadora");
+  en(enDia(ultimo, 26, 10), { tipo: "aprobar", quien: "gerente", codigos: [SGC_INDICE.codigo, SGC_INDICE_RESTRINGIDO.codigo] });
+  en(enDia(ultimo, 26, 11), { tipo: "seguimiento", codigo: SGC_INDICE_RESTRINGIDO.codigo, quien: "liderCex" });
 }

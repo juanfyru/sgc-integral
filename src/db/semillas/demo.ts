@@ -7,7 +7,8 @@
  * del acta y del informe ya elegidos, trámites en cada etapa (ver
  * `sembrarTramites`), la distribución de la 13B, la vigencia, los externos, el
  * normograma y la revisión anual de la 13C (`sembrarVigencia`) y los indicadores
- * de la 14A (`sembrarIndicadores`).
+ * de la 14A, la 14B y la 14C, con el dato compartido, la desagregación por sede
+ * y los compuestos (`sembrarIndicadores`).
  *
  * Ejecutar: npm run db:seed   (borra y recarga TODO — solo desarrollo/demo)
  */
