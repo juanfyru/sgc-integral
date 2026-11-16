@@ -206,6 +206,13 @@ describe("la página de un dato", () => {
       for (const id of dimension.categorias) expect(html).toContain(`name="categoria_${id}"`);
       expect(html).toContain("Sede norte");
       expect(html).not.toContain('name="valor"');
+      // La ayuda «Sin puntos de miles…» se pinta una vez y cada campo de categoría la referencia (R4).
+      const ayuda = html.match(/<p id="([^"]+-ayuda-categorias)"[^>]*>[^<]*Sin puntos de miles/);
+      expect(ayuda).not.toBeNull();
+      for (const id of dimension.categorias) {
+        const campo = html.match(new RegExp(`<input[^>]*name="categoria_${id}"[^>]*>`))?.[0] ?? "";
+        expect(campo).toContain(`aria-describedby="${ayuda![1]}"`);
+      }
     }));
 
   it("un periodo que nació sin categorías lo dice en vez de pintar un formulario sin campos; quien administra las actualiza desde su fila", () =>

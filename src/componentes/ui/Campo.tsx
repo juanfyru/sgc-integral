@@ -9,6 +9,7 @@ export function Campo({
   id = nombre,
   ayuda,
   error,
+  tambienDescritoPor,
   children,
 }: {
   etiqueta: string;
@@ -17,10 +18,12 @@ export function Campo({
   id?: string;
   ayuda?: string;
   error?: string;
+  /** El `id` de otro elemento que también describe al control (una ayuda compartida por varios campos). */
+  tambienDescritoPor?: string;
   children: React.ReactElement;
 }) {
   const descritoPor =
-    [ayuda ? `${id}-ayuda` : null, error ? `${id}-error` : null]
+    [ayuda ? `${id}-ayuda` : null, error ? `${id}-error` : null, tambienDescritoPor ?? null]
       .filter(Boolean)
       .join(" ") || undefined;
   return (

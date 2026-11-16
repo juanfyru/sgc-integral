@@ -238,10 +238,18 @@ export function ReportarDato({
         ) : (
           <fieldset className="flex min-w-0 flex-col gap-2">
             <legend className="text-sm font-medium">Valor de cada categoría</legend>
-            <p className="text-xs text-muted-foreground">{`El dato del periodo es la suma de todas. ${SIN_MILES}`}</p>
+            <p id={`${prefijo}-ayuda-categorias`} className="text-xs text-muted-foreground">
+              {`El dato del periodo es la suma de todas. ${SIN_MILES}`}
+            </p>
             <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
               {periodo.categorias.map((c) => (
-                <Campo key={c.id} etiqueta={c.nombre} nombre={`categoria_${c.id}`} id={`${prefijo}-categoria-${c.id}`}>
+                <Campo
+                  key={c.id}
+                  etiqueta={c.nombre}
+                  nombre={`categoria_${c.id}`}
+                  id={`${prefijo}-categoria-${c.id}`}
+                  tambienDescritoPor={`${prefijo}-ayuda-categorias`}
+                >
                   <input
                     required
                     inputMode="decimal"
