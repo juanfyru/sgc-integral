@@ -38,7 +38,8 @@
  * mediciones del componente) se lee sin candado: la medición que depende no bloquea la de su fuente. Primero se buscan sin
  * candado las mediciones a las que les cambiaría algo, y cada una va en su transacción: la que falla se registra, cuenta en
  * `fallidas` y la siguiente pasada la intenta otra vez. Corre justo después de la acción que cambia una fuente
- * (`propagarSinFallar`), en la pasada de vencimientos y, antes de clasificar, en el resumen y el cierre del mes.
+ * (`propagarSinFallar`), en la pasada de vencimientos, antes de clasificar en el resumen y el cierre del mes, y cuando un
+ * camino de lectura abre mediciones (`asegurarMedicionesConFuentes`).
  *
  * Módulo liviano: lo importan las acciones, la pasada y el cierre, así que no importa `lectura`, `fichas`, `aprobacion` ni
  * `operacion`. `valorDeComponente` vive aquí y no en `componentes.ts`, que no puede importar `mediciones` (cerraría el ciclo
@@ -72,6 +73,7 @@ import { zonaHoraria } from "@/lib/zona-horaria";
 import { aristasDeComponentes } from "./componentes";
 import {
   analisisDe,
+  asegurarMediciones,
   columnasDeValor,
   elegirValores,
   esDeOtraPeriodicidad,
@@ -654,4 +656,20 @@ export async function propagarSinFallar(opciones?: Opciones): Promise<void> {
   } catch (err) {
     console.error("No se pudieron propagar los valores ajenos:", err);
   }
+}
+
+/**
+ * `asegurarMediciones` para los caminos de lectura (la página del indicador, la de reportar, la lista, la matriz y el
+ * impreso): una medición que se abre toma en seguida lo que sus fuentes ya tienen (un dato reportado antes de que existiera,
+ * un componente que ya tiene resultado), sin esperar a la pasada. Solo si abrió alguna, propaga a esos indicadores y a los
+ * que dependen de ellos (`propagarSinFallar` con `indicadorIds`; sin indicador, a todos); si no abrió nada, no consulta más.
+ * Devuelve cuántas abrió.
+ */
+export async function asegurarMedicionesConFuentes(opciones?: Parameters<typeof asegurarMediciones>[0]): Promise<number> {
+  const abiertas = await asegurarMediciones(opciones);
+  if (abiertas > 0) {
+    const indicadorIds = opciones?.indicadorIds ?? (opciones?.indicadorId !== undefined ? [opciones.indicadorId] : undefined);
+    await propagarSinFallar({ sql: opciones?.sql, ahora: opciones?.ahora, ...(indicadorIds ? { indicadorIds } : {}) });
+  }
+  return abiertas;
 }

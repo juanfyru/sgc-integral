@@ -30,7 +30,8 @@ import {
   reportar,
 } from "@/db/consultas/indicadores/mediciones";
 import { cambiarOperacion } from "@/db/consultas/indicadores/operacion";
-import { propagar, propagarSinFallar, valorDeDato } from "@/db/consultas/indicadores/propagacion";
+import { listarIndicadores } from "@/db/consultas/indicadores/lista";
+import { asegurarMedicionesConFuentes, propagar, propagarSinFallar, valorDeDato } from "@/db/consultas/indicadores/propagacion";
 import { columnasDePendiente, esPendiente, queFalta, tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
 import { revisarVencimientosDeIndicadores } from "@/db/consultas/indicadores/vencimientos";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
@@ -625,6 +626,59 @@ describe("una falla no corta la pasada", () => {
     await expect(propagarSinFallar({ sql: roto })).resolves.toBeUndefined();
     expect(errores).toHaveBeenCalled();
   });
+});
+
+describe("al abrir una medición en un camino de lectura", () => {
+  /**
+   * Un espejo (sus dos variables, datos) y un mixto (A propia, B un dato) mensuales desde septiembre, aprobados antes de
+   * que termine, sin abrir todavía sus mediciones.
+   */
+  async function sinAbrir(tx: TransactionSql) {
+    const procesoId = await procesoNuevo(tx);
+    const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+    const datoA = await datoDePrueba(tx, { procesoId, nombre: `Glosas ${unico()}`, responsables: [responsable.usuarioId] });
+    const datoB = await datoDePrueba(tx, { procesoId, nombre: `Facturado ${unico()}`, responsables: [responsable.usuarioId] });
+    const comun = { procesoId, periodicidad: "mensual" as const, inicioMedicion: "2026-09", aprobadaEn: APROBADA };
+    const espejo = await indicadorDePrueba(tx, { ...comun, variables: { A: { datoId: datoA }, B: { datoId: datoB } } });
+    const mixtoSinAbrir = await indicadorDePrueba(tx, { ...comun, variables: { A: { nombre: GLOSADO }, B: { datoId: datoB } } });
+    return { procesoId, responsable, datoA, datoB, espejo, mixto: mixtoSinAbrir };
+  }
+  const medicionesDe = async (tx: TransactionSql, indicadorId: number) =>
+    (await tx`SELECT id FROM mediciones WHERE indicador_id = ${indicadorId}`).map((f) => Number(f.id));
+
+  it("toma lo que el dato ya tiene: el dato se reportó cuando la medición aún no existía", () =>
+    revertida(sql, async (tx) => {
+      const { responsable, datoA, datoB, espejo, mixto: m } = await sinAbrir(tx);
+      // El responsable reporta septiembre antes de que nadie abra las mediciones: la propagación no tiene dónde escribir.
+      await reportarElDato(tx, responsable, datoA, "2026-09", "10");
+      await reportarElDato(tx, responsable, datoB, "2026-09", "40");
+      await propagarSinFallar({ sql: tx, ahora: AHORA, indicadorIds: [espejo.id, m.id] });
+      expect(await medicionesDe(tx, espejo.id)).toEqual([]);
+
+      // La página del indicador (y la lista, la matriz o el impreso) abre la medición con lo que su fuente ya tiene.
+      expect(await asegurarMedicionesConFuentes({ sql: tx, ahora: AHORA, indicadorId: espejo.id })).toBe(1);
+      const deEspejo = await medicionDe(tx, espejo.id, "2026-09");
+      expect(await valores(tx, deEspejo)).toMatchObject({ A: { valor: "10", por: null }, B: { valor: "40", por: null } });
+      const e = await fila(tx, deEspejo);
+      expect([e.reportada_en, e.reportada_por, e.resultado_exacto]).toEqual([AHORA, null, "25/1"]);
+
+      // Por la lista, con varios a la vez: el mixto trae el dato y sigue esperando lo de quien mide.
+      await listarIndicadores(await sesionAdmin(tx), { procesoId: m.procesoId }, { sql: tx, ahora: AHORA });
+      const deMixto = await medicionDe(tx, m.id, "2026-09");
+      expect((await valores(tx, deMixto)).B).toMatchObject({ valor: "40", por: null });
+      expect([(await fila(tx, deMixto)).reportada_en, await falta(tx, deMixto)]).toEqual([null, "reporte"]);
+    }));
+
+  it("si no abre nada, no propaga", () =>
+    revertida(sql, async (tx) => {
+      const { responsable, datoA, datoB, espejo } = await sinAbrir(tx);
+      await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: espejo.id });
+      await reportarElDato(tx, responsable, datoA, "2026-09", "10");
+      await reportarElDato(tx, responsable, datoB, "2026-09", "40");
+      // La medición ya existía: abrir no tiene nada que hacer, y lo que el dato trae lo lleva la acción o la pasada.
+      expect(await asegurarMedicionesConFuentes({ sql: tx, ahora: AHORA, indicadorId: espejo.id })).toBe(0);
+      expect(await valores(tx, await medicionDe(tx, espejo.id, "2026-09"))).toEqual({});
+    }));
 });
 
 describe("cuándo corre", () => {

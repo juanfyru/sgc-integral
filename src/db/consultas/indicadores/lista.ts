@@ -20,7 +20,8 @@ import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { constanciaQueSePide } from "./constancias-soporte";
 import { agrupar, aNumero, comparacionDe, conResultado, vigentes, type Opciones } from "./lectura";
-import { asegurarMediciones, conMayuscula, mide, reglaMostrada, texto, versionesAprobadasDe, type VersionDeCalculo } from "./mediciones";
+import { conMayuscula, mide, reglaMostrada, texto, versionesAprobadasDe, type VersionDeCalculo } from "./mediciones";
+import { asegurarMedicionesConFuentes } from "./propagacion";
 import { columnasDePendiente, esPendiente, queFalta, type FaltaDePersona } from "./tareas";
 
 /** Los valores de los filtros de estado viven en `src/lib/indicadores/filtros.ts`, con sus nombres. */
@@ -200,7 +201,7 @@ function textoDeReporte(
 /**
  * La lista de «Indicadores» (spec §12.2, maqueta 4): lo que la persona ve (`filtroIndicadores`), cada uno con su último
  * periodo terminado (resultado, meta, estado y los seis últimos valores) y lo pendiente de reportar o analizar, más la barra
- * de estados. Antes de leer las mediciones abre los periodos terminados de los indicadores activos que lee (`asegurarMediciones`). El filtro de reporte mira toda medición
+ * de estados. Antes de leer las mediciones abre los periodos terminados de los indicadores activos que lee (`asegurarMedicionesConFuentes`: con lo que sus fuentes ya tienen). El filtro de reporte mira toda medición
  * pendiente, no solo la del último periodo: es el de los enlaces de «Mis tareas». La barra (`resumen`) cuenta las filas con
  * ficha aprobada que dejan los demás filtros, antes del de semáforo. Las mediciones de otra periodicidad no cuentan como
  * periodo vigente. La marca y el filtro de envío al ente (anexo 14B, §8) salen de la lectura de los indicadores. Cinco
@@ -247,8 +248,8 @@ export async function listarIndicadores(
     ORDER BY i.codigo`;
 
   const ids = indicadores.filter((f) => f.vigente_id !== null).map((f) => Number(f.id));
-  // Abre los periodos terminados solo de los activos que va a leer; sin indicadores no abre nada.
-  await asegurarMediciones({ sql, ahora, indicadorIds: indicadores.filter((f) => f.estado === "activo").map((f) => Number(f.id)) });
+  // Abre los periodos terminados solo de los activos que va a leer, con lo que sus fuentes ya tienen; sin indicadores no abre nada.
+  await asegurarMedicionesConFuentes({ sql, ahora, indicadorIds: indicadores.filter((f) => f.estado === "activo").map((f) => Number(f.id)) });
   const [versiones, recientes, pendientes] =
     ids.length === 0
       ? [new Map<number, VersionDeCalculo[]>(), [], []]

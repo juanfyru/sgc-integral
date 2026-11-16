@@ -169,6 +169,9 @@ describe("la página de un dato", () => {
       expect(html).toContain("antes 1.179.850.000");
       expect(html).toContain(`${responsable.nombre} · 6 oct 2026`);
       expect(html).toContain(`lo corrigió ${otro.nombre} · 9 oct 2026`);
+      // «Lo reportó» con ancho mínimo: a 390 px el nombre no se parte en un renglón por palabra.
+      const nombre = responsable.nombre.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      expect(html).toMatch(new RegExp(`<td class="[^"]*min-w-48[^"]*"><span>${nombre} · 6 oct 2026`));
       expect(html).toContain("Corregido");
       // En el historial del periodo, la corrección con su antes y su después.
       expect(html).toContain("1.179.850.000 → 1.197.850.000");

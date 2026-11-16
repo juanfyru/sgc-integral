@@ -7,6 +7,7 @@ import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import type { DatosDeReporte } from "@/db/consultas/indicadores/lectura";
 import { calcularEnVivo, type EstadoReporte } from "@/lib/indicadores/reporte";
+import { MOTIVOS_DEL_SISTEMA } from "@/lib/indicadores/tipos";
 import { cuenta } from "@/lib/plural";
 import { AvisosDeFalta, VariableFija } from "./DatosDelSistema";
 import { ResultadoEnVivo } from "./ResultadoEnVivo";
@@ -91,19 +92,30 @@ function NoAplica({ medicionId, volver, abierto }: { medicionId: number; volver:
   );
 }
 
+/**
+ * La medición «No aplica»: su motivo y, si lo puso una persona, «Quitar «No aplica»». Uno del sistema (`MOTIVOS_DEL_SISTEMA`)
+ * no se ofrece quitar: lo quita la propagación cuando cambia su fuente, y el servidor lo rechaza.
+ */
 function QuitarNoAplica({ medicionId, motivo }: { medicionId: number; motivo: string | null }) {
   const [estado, enviar, pendiente] = useActionState(quitarNoAplicaAccion, null);
+  const delSistema = motivo !== null && MOTIVOS_DEL_SISTEMA.includes(motivo);
   return (
     <div className={CAJA}>
       <p className="break-words text-sm">{motivo ? `No aplica en este periodo: ${motivo}` : "No aplica en este periodo."}</p>
-      <p className="text-sm text-muted-foreground">Cuenta como reportado. Si sí hubo casos, quítelo y reporte los datos.</p>
-      <form action={enviar} className="flex flex-col items-start gap-2">
-        <input type="hidden" name="id" value={medicionId} />
-        <Mensaje estado={estado} />
-        <Boton type="submit" variante="secundario" pendiente={pendiente}>
-          {pendiente ? "Quitando…" : "Quitar «No aplica»"}
-        </Boton>
-      </form>
+      {delSistema ? (
+        <p className="text-sm text-muted-foreground">Lo marcó el sistema: se quita solo cuando cambie el dato.</p>
+      ) : (
+        <>
+          <p className="text-sm text-muted-foreground">Cuenta como reportado. Si sí hubo casos, quítelo y reporte los datos.</p>
+          <form action={enviar} className="flex flex-col items-start gap-2">
+            <input type="hidden" name="id" value={medicionId} />
+            <Mensaje estado={estado} />
+            <Boton type="submit" variante="secundario" pendiente={pendiente}>
+              {pendiente ? "Quitando…" : "Quitar «No aplica»"}
+            </Boton>
+          </form>
+        </>
+      )}
     </div>
   );
 }

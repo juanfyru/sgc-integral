@@ -87,6 +87,7 @@ import {
   juntarValoresDeReporte,
 } from "@/lib/esquemas/indicadores";
 import { destinoTrasReportar } from "@/lib/indicadores/reporte";
+import { MOTIVOS_DEL_SISTEMA } from "@/lib/indicadores/tipos";
 import type { SesionValida } from "@/lib/sesion";
 import { parsearFormulario } from "@/lib/validacion";
 import { datoDePrueba, fotoDePrueba, indicadorDePrueba, versionAutomatica } from "./utiles/indicadores";
@@ -342,7 +343,19 @@ describe("FormularioReporte y ResultadoEnVivo", () => {
     );
     expect(noAplica).toContain("No aplica en este periodo: No hubo auditorías programadas");
     expect(noAplica).toContain(">Quitar «No aplica»</button>");
+    expect(noAplica).toContain("Cuenta como reportado. Si sí hubo casos, quítelo y reporte los datos.");
     expect(noAplica).not.toContain(">Guardar la corrección</button>");
+  });
+
+  it("un «No aplica» que puso el sistema no ofrece quitarlo: dice que se quita solo", () => {
+    for (const motivo of MOTIVOS_DEL_SISTEMA) {
+      const html = renderToStaticMarkup(<FormularioReporte datos={{ ...DATOS, noAplica: true, motivo, reportada: true }} volver="/x" />);
+      expect(html, motivo).toContain(`No aplica en este periodo: ${motivo}`);
+      expect(html, motivo).toContain("Lo marcó el sistema: se quita solo cuando cambie el dato.");
+      expect(html, motivo).not.toContain("Quitar «No aplica»");
+      expect(html, motivo).not.toContain("<button");
+      expect(html, motivo).not.toContain("Si sí hubo casos");
+    }
   });
 });
 

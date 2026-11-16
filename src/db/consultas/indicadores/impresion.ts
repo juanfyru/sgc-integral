@@ -1,7 +1,8 @@
 /**
  * Lo que la ficha impresa y el Excel de un indicador leen de él (spec §7.8 y §13): la ficha de la versión que regía el
  * año elegido con sus firmas, su control de cambios hasta ella, los datos de operación y los resultados del año. Solo lee,
- * salvo abrir los periodos terminados (`asegurarMediciones`), como la página del indicador.
+ * salvo abrir los periodos terminados con lo que sus fuentes ya tienen (`asegurarMedicionesConFuentes`), como la página del
+ * indicador.
  */
 import { obtenerSql } from "@/db/cliente";
 import type { SujetoVisibilidad } from "@/lib/alcance";
@@ -11,7 +12,8 @@ import { zonaHoraria } from "@/lib/zona-horaria";
 import { fichaDeVersion, versionesDe, type FichaLeida, type OperacionLeida, type VersionResumen } from "./aprobacion";
 import { anioValido, obtenerIndicador, periodosDelAnio, resultadosDelAnio, type Opciones, type ResultadosDelAnio } from "./lectura";
 import { obtenerParametros } from "./maestros";
-import { asegurarMediciones, versionesAprobadas, type VersionDeCalculo } from "./mediciones";
+import { versionesAprobadas, type VersionDeCalculo } from "./mediciones";
+import { asegurarMedicionesConFuentes } from "./propagacion";
 
 export type ImpresionDelAnio = {
   /** El indicador. */
@@ -60,7 +62,7 @@ export async function impresionDelAnio(
   const primerAnio = Math.min(Number(vista.operacion.inicioMedicion.slice(0, 4)) || enCurso, enCurso);
   if (!anioValido(anio) || anio < primerAnio || anio > enCurso) return null;
 
-  await asegurarMediciones({ sql, ahora, indicadorId: vista.id });
+  await asegurarMedicionesConFuentes({ sql, ahora, indicadorId: vista.id });
   const [versiones, resultados, resumen, parametros] = await Promise.all([
     versionesAprobadas(sql, vista.id),
     resultadosDelAnio(sesion, vista.id, anio, { sql, ahora }),

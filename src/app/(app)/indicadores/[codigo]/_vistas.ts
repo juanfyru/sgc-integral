@@ -35,8 +35,8 @@ import {
 } from "@/db/consultas/indicadores/constancias";
 import { obtenerIndicador, resultadosDelAnio } from "@/db/consultas/indicadores/lectura";
 import { obtenerParametros } from "@/db/consultas/indicadores/maestros";
-import { asegurarMediciones } from "@/db/consultas/indicadores/mediciones";
 import { observacionesDe, type ResumenDeObservaciones } from "@/db/consultas/indicadores/observaciones";
+import { asegurarMedicionesConFuentes } from "@/db/consultas/indicadores/propagacion";
 import { soportesDeVarias } from "@/db/consultas/indicadores/soportes";
 import { puedeAnalizar, puedeObservar, puedeRegistrarHistoricos } from "@/lib/alcance";
 import type { EstadoIndicador, Periodicidad } from "@/lib/indicadores/tipos";
@@ -100,7 +100,7 @@ export async function datosDeResultados(
   const rango = sp.rango === undefined ? "anio" : RANGOS.find((x) => x === sp.rango && x !== "anio");
   if (rango === undefined) notFound();
   const { sesion, indicador, ahora } = c;
-  await asegurarMediciones({ indicadorId: indicador.id, ahora });
+  await asegurarMedicionesConFuentes({ indicadorId: indicador.id, ahora });
   await asegurarConstancias({ sql: obtenerSql(), ahora, indicadorId: indicador.id });
   const vista = await obtenerIndicador(sesion, indicador.codigo);
   if (!vista) notFound();
@@ -204,7 +204,7 @@ export async function datosDeObservaciones(c: ContextoDeVista, sp: Parametros, r
 export async function datosDeReportes(c: ContextoDeVista, ente: EnteDeLaFicha): Promise<DatosDeReportes> {
   const { sesion, indicador, ahora } = c;
   const sql = obtenerSql();
-  await asegurarMediciones({ indicadorId: indicador.id, ahora });
+  await asegurarMedicionesConFuentes({ indicadorId: indicador.id, ahora });
   await asegurarConstancias({ sql, ahora, indicadorId: indicador.id });
   const [constancias, soportes, historial] = await Promise.all([
     constanciasDe(sesion, indicador.id, { ahora }),

@@ -10,7 +10,7 @@ import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { datosDeAnalisis } from "@/db/consultas/indicadores/analisis";
 import { medicionParaReportar } from "@/db/consultas/indicadores/lectura";
-import { asegurarMediciones } from "@/db/consultas/indicadores/mediciones";
+import { asegurarMedicionesConFuentes } from "@/db/consultas/indicadores/propagacion";
 import { soportesDe } from "@/db/consultas/indicadores/soportes";
 import { periodicidadDe } from "@/lib/indicadores/periodos";
 import { exigirSesion } from "@/lib/paginas";
@@ -33,7 +33,7 @@ const medicionDeLaRuta = cache(async (segmento: string, periodo: string) => {
   const sesion = await exigirSesion();
   const indicador = await exigirIndicador(sesion, segmento);
   if (periodicidadDe(periodo) === null) notFound();
-  await asegurarMediciones({ indicadorId: indicador.id });
+  await asegurarMedicionesConFuentes({ indicadorId: indicador.id });
   const datos = await medicionParaReportar(sesion, indicador.codigo, periodo);
   if (!datos) notFound();
   return { sesion, indicador, datos };

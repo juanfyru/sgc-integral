@@ -25,7 +25,7 @@ import { tomarCalculo } from "@/db/consultas/indicadores/calculos";
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
 import { asegurarMediciones, marcarNoAplica, NO_APLICA_DEL_SISTEMA, quitarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
 import { programarMeta } from "@/db/consultas/indicadores/metas";
-import { propagar, valorDeComponente } from "@/db/consultas/indicadores/propagacion";
+import { asegurarMedicionesConFuentes, propagar, valorDeComponente } from "@/db/consultas/indicadores/propagacion";
 import { columnasDePendiente, esPendiente, queFalta, tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
 import { revisarVencimientosDeIndicadores } from "@/db/consultas/indicadores/vencimientos";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
@@ -886,6 +886,28 @@ describe("un compuesto mixto", () => {
       expect([m.resultado_exacto, m.semaforo, m.reportada_por]).toEqual(["60/1", "critico", mideC.usuarioId]);
       expect((await valores(tx, deC)).A).toEqual({ valor: "60", exacto: null, por: null });
       expect(await falta(tx, deC)).toBe("analisis");
+    }));
+});
+
+describe("al abrir la medición del compuesto en un camino de lectura", () => {
+  it("toma lo que el componente ya tiene: X tenía resultado cuando la medición del compuesto aún no existía", () =>
+    revertida(sql, async (tx) => {
+      const procesoId = await procesoNuevo(tx);
+      const { ind: x, mide } = await componente(tx, procesoId);
+      const c = await espejo(tx, procesoId, x.id);
+      await abrir(tx, AHORA, x);
+      await reportarAB(tx, mide, await medicionDe(tx, x.id, "2026-09"), "60", "100");
+      await propagarA(tx, AHORA, [x.id]);
+      expect((await tx`SELECT id FROM mediciones WHERE indicador_id = ${c.id}`).length).toBe(0);
+
+      expect(await asegurarMedicionesConFuentes({ sql: tx, ahora: AHORA, indicadorId: c.id })).toBe(1);
+      const deC = await medicionDe(tx, c.id, "2026-09");
+      expect(await valores(tx, deC)).toEqual({
+        A: { valor: "60", exacto: null, por: null },
+        B: { valor: "66.6666", exacto: "200/3", por: null },
+      });
+      const m = await fila(tx, deC);
+      expect([m.reportada_en, m.reportada_por, m.resultado_exacto]).toEqual([AHORA, null, "60/1"]);
     }));
 });
 

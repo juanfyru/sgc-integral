@@ -127,7 +127,8 @@ export function HistorialDelDato({
                 {p.valor === null ? <span className="text-muted-foreground">—</span> : cifraDeDato(p.valor)}
                 {typeof antes === "string" ? <span className="block text-xs text-muted-foreground">{`antes ${cifraDeDato(antes)}`}</span> : null}
               </td>
-              <td className={celda}>
+              {/* Con ancho mínimo: a 390 px el nombre no se parte en un renglón por palabra (la tabla ya se desplaza). */}
+              <td className={`${celda} min-w-48`}>
                 {p.reporto ? (
                   <span>{p.reportadoEn ? `${p.reporto} · ${diaCorto(p.reportadoEn)}` : p.reporto}</span>
                 ) : (

@@ -20,7 +20,8 @@ import {
   type ResumenAcumulado,
 } from "./lectura";
 import { listarIndicadores, type FiltroDeLista } from "./lista";
-import { asegurarMediciones, texto, versionesAprobadasDe, type VersionDeCalculo } from "./mediciones";
+import { texto, versionesAprobadasDe, type VersionDeCalculo } from "./mediciones";
+import { asegurarMedicionesConFuentes } from "./propagacion";
 
 /** Una celda de la matriz (spec §12.7): los meses que ocupa, el valor, su estado, el nombre accesible entero y su enlace. */
 export type CeldaDeMatriz = {
@@ -130,7 +131,7 @@ export async function matrizDelAnio(
       ${f.clasificacionId ? sql`AND va.clasificacion_id = ${f.clasificacionId}` : sql``}
     ORDER BY p.orden, p.nombre, p.id, i.codigo`;
   if (filas.length === 0) return { procesos: [] };
-  await asegurarMediciones({ sql, ahora, indicadorIds: filas.filter((x) => x.estado === "activo").map((x) => Number(x.id)) });
+  await asegurarMedicionesConFuentes({ sql, ahora, indicadorIds: filas.filter((x) => x.estado === "activo").map((x) => Number(x.id)) });
   const versiones = await versionesAprobadasDe(
     sql,
     filas.map((x) => Number(x.id)),
