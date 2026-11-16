@@ -5,7 +5,8 @@
  * vencido (`meses[2]`) y uno sin dato (`meses[4]`); lo que sigue en plazo queda por reportar, sin vencer. Lo que calcula el
  * sistema desde la 14B (anexo §11) no lo reporta nadie: queda aparte (`delSistema`), con sus propias comprobaciones. Lo de la
  * 14C (anexo §10) que nadie mide (sin variables propias) también queda aparte (`sinQuienMida`); su dato compartido, su
- * desagregada y sus compuestos tienen sus comprobaciones, para cada día de un año de siembras.
+ * desagregada y sus compuestos tienen sus comprobaciones en los días donde cambia el calendario (el 1.º a las 00:30 y a
+ * las 10:00, el 2, 9, 10, 11, 12, 16 y el último de cada mes), durante trece meses, más los de `CASOS`.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -395,7 +396,7 @@ function problemaDe14C(ahora: Date): string | null {
 }
 
 describe("la 14C en la agenda (anexo 14C, §10)", () => {
-  it("cualquier día de un año de siembras deja el dato con un pendiente en plazo, un corregido que se cierra y un trimestre completo", () => {
+  it("en los días donde cambia el calendario, durante trece meses, la siembra deja el dato con un pendiente en plazo, un corregido que se cierra y un trimestre completo", () => {
     const problemas = INSTANTES_DE_LA_14C.map((ahora) => [ahora.toISOString(), problemaDe14C(ahora)]).filter(([, p]) => p !== null);
     expect(problemas).toEqual([]);
   }, 30_000);

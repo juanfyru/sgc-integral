@@ -702,7 +702,7 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   tocan), con su evento (con `propioResponsable` si quien reabre también lo reporta), el aviso a sus
   responsables (`indicadores.dato_reabierto`, salvo a quien reabre) y su bitácora (`dato_reabierto`). Una
   constancia de envío al ente no cambia. **Orden de candados del cierre y de la cascada**, el mismo en los
-  dos: **0.** el candado consultivo del cierre (`serializarCierreYReapertura`, `reapertura.ts`), la primera
+  dos: **0.** el candado consultivo del cierre (`serializarCierreYReapertura`, `candado-del-cierre.ts`), la primera
   sentencia de la transacción de todo lo que cierra o reabre (`cerrarMes`, `reabrirEnCascada`, el
   camino directo de `reabrirMedicion`, `cerrarDeNuevo` y `cerrarDeNuevoElDato`; vive en
   `candado-del-cierre.ts`, liviano): es él, y no la relectura con todo bloqueado, lo que impide que un
@@ -850,7 +850,9 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   Sembrada la demo, una lectura no tiene periodos que abrir ni valores que propagar (lo exige
   `tests/semilla-indicadores-14c.test.ts`). Lo de la 14C sale del plan `planDe14C` (el dato
   pendiente, el corregido que cierra el cierre del mes, el del soporte y el trimestre completo), que
-  `tests/semilla-indicadores-calendario.test.ts` comprueba en los días de un año de siembras; la
+  `tests/semilla-indicadores-calendario.test.ts` comprueba en los días donde cambia el calendario (el
+  1.º a las 00:30 y a las 10:00, el 2, 9, 10, 11, 12, 16 y el último de cada mes), durante trece meses,
+  más los `CASOS`; la
   guarda de `tests/semilla-indicadores.test.ts` cuenta dos restringidos (`GTH-IND-01` y el compuesto
   `SGC-ID-004`).
 

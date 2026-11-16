@@ -29,14 +29,15 @@
 1. **Dónde quedamos:** la **Fase 14C — Datos compartidos, desagregación y compuestos** está construida (las dieciocho
    tareas del plan) en la rama `fase-14c-datos-desagregacion-compuestos` (sale de `main` en `44d8b9f`), en el worktree
    `F:\sgc-integral-f14c` y contra la base aparte `sgc_f14c`, **sin fusionar**. Con ella, un dato que usan varios
-   indicadores se reporta una vez y el SGC lo pone en cada uno; un indicador se mide por sede o por servicio, con su total
-   y el color de cada categoría; y un indicador compuesto toma el resultado o el cumplimiento de otros, con lo que se oculta
-   a quien no ve un componente restringido; el cierre del mes espera a las fuentes y la reapertura va en cascada. **Sin
-   dependencias npm nuevas.** Dos migraciones, la `0015` y la `0016`; diecisiete en total (`drizzle/0000` a
-   `drizzle/0016`). Detalle en «Hecho (Fase 14C)»; el recorrido, en «Qué probar y cómo (Fase 14C)»; las decisiones, en
-   «Decisiones adicionales (Fase 14C)»; el manual, en el capítulo 8 (secciones 11 a 13 y 6.6). **Falta:** la verificación
-   de cierre (la escribe el controlador en «Fase 14C»), el visto bueno del usuario a las 39 decisiones de la ejecución y su
-   decisión de fusionar. **`F:\sgc-integral` no se tocó, y la base `sgc` del usuario solo se lee.**
+   indicadores se reporta una vez y el SGC lo pone en cada uno; un indicador se mide por sede o por servicio, con su
+   total y el color de cada categoría; y un indicador compuesto toma el resultado o el cumplimiento de otros, con lo que
+   se oculta a quien no ve un componente restringido; el cierre del mes espera a las fuentes y la reapertura va en
+   cascada. **Sin dependencias npm nuevas.** Dos migraciones, la `0015` y la `0016`; diecisiete en total (`drizzle/0000`
+   a `drizzle/0016`). Detalle en «Hecho (Fase 14C)»; el recorrido, en «Qué probar y cómo (Fase 14C)»; las decisiones, en
+   «Decisiones adicionales (Fase 14C)»; el manual, en el capítulo 8 (secciones 11 a 13 y 6.6). **Falta:** la
+   verificación de cierre (la escribe el controlador en «Fase 14C»), el visto bueno del usuario a las 42 decisiones
+   pendientes (las 39 de la ejecución y las 3 de la Tarea 18) y su decisión de fusionar. **`F:\sgc-integral` no se tocó,
+   y la base `sgc` del usuario solo se lee.**
    **Antes, la Fase 14B — Lo que el sistema ya sabe y lo regulatorio** está terminada y **fusionada en `main`**
    (rama `fase-14b-automaticos-regulatorios`: 45 confirmaciones al cerrar la Tarea 13, más las de la tanda final de corrección,
    sobre `main` en `f04b70b`; anexo
@@ -162,10 +163,11 @@
    F13A-R35 (404 real en páginas). F13A-R36 ya está resuelta (F13A-AU6). Los archivos reales del
    hospital están en la raíz, sin seguimiento y excluidos en `.git/info/exclude`: nunca entran a un
    commit.
-2. **Lo que sigue:** (a) la verificación de cierre de la **14C** (el controlador), el visto bueno del usuario a sus 39
-   decisiones de la ejecución («Decisiones adicionales (Fase 14C)»), su recorrido («Qué probar y cómo (Fase 14C)», que
-   empieza por resembrar en `sgc_f14c`) y su decisión de fusionar; después de fusionar, aplicar la `0015` y la `0016` a la
-   base `sgc` («Avisos para el usuario (Fase 14C)»). La Fase 14 del diseño maestro se cierra al fusionar la 14C. (b) el
+2. **Lo que sigue:** (a) la verificación de cierre de la **14C** (el controlador), el visto bueno del usuario a sus 42
+   decisiones pendientes (las 39 de la ejecución y las 3 de la Tarea 18, en «Decisiones adicionales (Fase 14C)»), su
+   recorrido («Qué probar y cómo (Fase 14C)», que empieza por resembrar en `sgc_f14c`) y su decisión de fusionar;
+   después de fusionar, aplicar la `0015` y la `0016` a la base `sgc` («Avisos para el usuario (Fase 14C)»). La Fase
+   14 del diseño maestro se cierra al fusionar la 14C. (b) el
    recorrido del usuario de la 14B, ya fusionada («Qué probar y cómo (Fase 14B)»); (c) si no se hicieron, los recorridos
    del usuario de la 14A y de su entrega complementaria (ya en `main`) y el de la 13C («Qué probar y cómo» de cada una); y
    (d) la **Fase 15 — Planes de mejoramiento**. Enganches que deja la 14C: los datos compartidos y los compuestos, que el
@@ -346,8 +348,8 @@ la Fase 14, su entrega complementaria y el anexo de la 14B, y manda sobre los tr
 del 2026-11-15 están en su §2, las de Claude F14C-DC1 a DC42 en su §13; **el usuario aprobó el anexo el 2026-11-15**
 («acept»), con sus maquetas 9 a 15 y las decisiones 5.1 y 8.1). Plan:
 `docs/superpowers/plans/2026-11-15-fase14c-datos-desagregacion-compuestos.md` (dieciocho tareas, con subagentes). La rama
-`fase-14c-datos-desagregacion-compuestos` (sale de `main` en `44d8b9f`; 52 confirmaciones al cerrar la Tarea 18, antes de
-la verificación de cierre) se trabaja en el worktree `F:\sgc-integral-f14c` contra la base aparte `sgc_f14c`. **La rama no
+`fase-14c-datos-desagregacion-compuestos` (sale de `main` en `44d8b9f`; 53 confirmaciones al cerrar la Tarea 18 y su
+ronda de corrección 1, antes de la verificación de cierre) se trabaja en el worktree `F:\sgc-integral-f14c` contra la base aparte `sgc_f14c`. **La rama no
 está fusionada:** espera la verificación de cierre, el visto bueno del usuario a las decisiones de la ejecución
 («Decisiones adicionales (Fase 14C)») y su decisión de fusionar. Con ella se cierra la Fase 14 del diseño maestro. **Sin
 dependencias npm nuevas.** Dos migraciones: la `0015` (altera en su sitio las cinco tablas vacías de la 14C:
@@ -406,11 +408,12 @@ de la demo, `npm run lint` y `npm run build`.
   y los avisos sin nombrarlo; el acumulado de un compuesto con el de cada componente («parcial», «Sin acumulado»); el
   «desde cuándo» acumula un componente más fino.
 - **Demo, manual y documentos (Tarea 18):** la demo de la 14C (ver «Qué probar y cómo (Fase 14C)», paso 0, y el punto de
-  reanudación, paso 4), con su test (`tests/semilla-indicadores-14c.test.ts`) y sus comprobaciones en el calendario de la
-  semilla para los días de un año de siembras; `guardarCategoria` fecha la categoría con `opciones.ahora`; el capítulo 8
-  del manual con las secciones 11 a 13 nuevas («Datos compartidos», «Indicadores por sede o por servicio» e «Indicadores
-  compuestos»), el ajuste de 6.6 («Cerrar el mes y reabrir») y las secciones de siempre renumeradas (14 a 16); y
-  `AGENTS.md`, este archivo y `PLAN.md`.
+  reanudación, paso 4), con su test (`tests/semilla-indicadores-14c.test.ts`) y sus comprobaciones en el calendario de
+  la semilla en los días donde cambia el calendario (el 1.º a las 00:30 y a las 10:00, el 2, 9, 10, 11, 12, 16 y el
+  último de cada mes), durante trece meses, más los `CASOS`; `guardarCategoria` fecha la categoría con `opciones.ahora`;
+  el capítulo 8 del manual con las secciones 11 a 13 nuevas («Datos compartidos», «Indicadores por sede o por servicio»
+  e «Indicadores compuestos»), el ajuste de 6.6 («Cerrar el mes y reabrir») y las secciones de siempre renumeradas (14 a
+  16); y `AGENTS.md`, este archivo y `PLAN.md`.
 
 ### Qué probar y cómo (Fase 14C)
 
@@ -456,14 +459,15 @@ pendiente es el último que cierra un trimestre después del mes cerrado; si no 
    septiembre** (paso 0): como `lider.cex`, su tabla del año dice **Falta un dato** en septiembre, sin **Reportar** ni
    vencido, y **Mis tareas** no trae tarea de ese mes.
 2. **Reportar el dato una vez.** Como `consulta`: **Mis tareas** trae «Reportar el dato Consultas de medicina general
-   realizadas, septiembre de 2026», en plazo (`lider.cex` también la tiene: responde por el dato). Ábrala: **Reportar el
-   dato** muestra septiembre. Escriba **1600**, adjunte un PDF en **Soporte (opcional)** y pulse **Reportar**. Debe ver el
-   dato puesto en dos indicadores de distinta periodicidad: `CEX-ID-001` septiembre en 87,9 %, Atención, y `CEX-ID-002`
-   tercer trimestre en 4982, Atención (julio, agosto y septiembre juntados), los dos con su alerta en la campana de
-   `lider.cex`, que los analiza: «Uso de la agenda de medicina general: 87,9 % frente a una meta de 90 %, Atención.
-   Septiembre de 2026» y «Consultas de medicina general del trimestre: 4982 frente a una meta de 5000, Atención. Tercer
-   trimestre de 2026». Como su fecha límite ya había pasado (10 de octubre), el plazo de su análisis cuenta otra vez
-   desde hoy (F14C-DC42).
+   realizadas, septiembre de 2026», en plazo (`lider.cex` también la tiene porque está designado en el dato, como
+   `consulta`: siendo líder del proceso dueño podría reportarlo igual, pero un líder no designado no recibe la tarea
+   mientras haya designados). Ábrala: **Reportar el dato** muestra septiembre. Escriba **1600**, adjunte un PDF en
+   **Soporte (opcional)** y pulse **Reportar**. Debe ver el dato puesto en dos indicadores de distinta periodicidad:
+   `CEX-ID-001` septiembre en 87,9 %, Atención, y `CEX-ID-002` tercer trimestre en 4982, Atención (julio, agosto y
+   septiembre juntados), los dos con su alerta en la campana de `lider.cex`, que los analiza: «Uso de la agenda de
+   medicina general: 87,9 % frente a una meta de 90 %, Atención. Septiembre de 2026» y «Consultas de medicina general
+   del trimestre: 4982 frente a una meta de 5000, Atención. Tercer trimestre de 2026». Como su fecha límite ya había
+   pasado (10 de octubre), el plazo de su análisis cuenta otra vez desde hoy (F14C-DC42).
 3. **Corregir el dato antes del cierre.** En **Periodos del dato**, septiembre → **Corregir** → **1745** → **Guardar la
    corrección**: su historial guarda el antes y el después, con quién y cuándo; `CEX-ID-001` septiembre pasa a 95,9 %,
    Bien, y `CEX-ID-002` el tercer trimestre a 5127, Bien, cada uno con su «Corrección» a `lider.cex` («Corrección: … pasó
@@ -515,12 +519,12 @@ pendiente es el último que cierra un trimestre después del mes cerrado; si no 
   la `0016` a la base `sgc`:** `npm run db:preparar` en `F:\sgc-integral` y reiniciar `next dev` (en desarrollo no
   migran solas; la imagen sí, al arrancar). Hasta entonces las páginas de indicadores fallan. Para ver la demo de la 14C
   en `sgc` hace falta además `npm run db:seed` (vacía la base y el almacén) y `npm run admin:asegurar`.
-- **Las 39 decisiones de la ejecución esperan su visto bueno** («Decisiones adicionales (Fase 14C)»): ninguna la tomó
-  usted. Las que más pesan: el aviso a los responsables al reabrir un dato sin mover su fecha límite (6); que un
-  resultado fuera de límites no bloquee «Reportar lo mío» (8); que el sistema reponga el plazo cuando quita su propio «No
-  aplica» (10); los textos que dicen desde cuándo acumula un componente (27) y el acumulado «parcial» de un compuesto (28);
-  el motivo de «No aplica» que nombra solo a un componente que usted ve (30); y que cierres y reaperturas vayan de a uno
-  (34).
+- **Las 42 decisiones pendientes esperan su visto bueno** («Decisiones adicionales (Fase 14C)»): las 39 de la ejecución
+  y las 3 de la Tarea 18; ninguna la tomó usted. Las que más pesan: el aviso a los responsables al reabrir un dato sin
+  mover su fecha límite (6); que un resultado fuera de límites no bloquee «Reportar lo mío» (8); que el sistema reponga
+  el plazo cuando quita su propio «No aplica» (10); los textos que dicen desde cuándo acumula un componente (27) y el
+  acumulado «parcial» de un compuesto (28); el motivo de «No aplica» que nombra solo a un componente que usted ve (30);
+  y que cierres y reaperturas vayan de a uno (34).
 - **La demo nueva cambia lo que ven algunas cuentas:** `consulta` responde por el dato compartido (su **Mis tareas** trae
   el de septiembre), `lider.cex` hace seguimiento de `SGC-ID-004` y `coordinadora.sgc` de `CEX-ID-003`. «Reportes a tiempo»
   del SGC no cuenta los dos compuestos del SGC: nadie los mide.

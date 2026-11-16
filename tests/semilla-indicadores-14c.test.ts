@@ -9,17 +9,22 @@
  * resto de la demo, se salta si ya se usó (ver `utiles/demo.ts`); `SEMILLA_RECIEN=1` lo exige.
  */
 import { existsSync } from "node:fs";
+import type { TransactionSql } from "postgres";
 import { afterAll, describe, expect, it, type TestContext } from "vitest";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
 }
 
-import { obtenerSql } from "@/db/cliente";
+import { obtenerSql, type Cliente } from "@/db/cliente";
 import { desgloseDe } from "@/db/consultas/indicadores/categorias";
-import { asegurarPeriodosDeDatos, tareasDeDatos } from "@/db/consultas/indicadores/datos-periodos";
+import { designarResponsablesDeDato, guardarDato } from "@/db/consultas/indicadores/datos";
+import { asegurarPeriodosDeDatos, reportarDato, tareasDeDatos } from "@/db/consultas/indicadores/datos-periodos";
 import { revisarFuentes } from "@/db/consultas/indicadores/dependencias";
-import { asegurarMediciones } from "@/db/consultas/indicadores/mediciones";
+import { cambiarEstadoDeCategoria } from "@/db/consultas/indicadores/dimensiones";
+import { abrirCambio } from "@/db/consultas/indicadores/fichas";
+import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
+import { designar } from "@/db/consultas/indicadores/operacion";
 import { propagar, valorDeComponente } from "@/db/consultas/indicadores/propagacion";
 import {
   calendarioDeIndicadores,
@@ -40,7 +45,9 @@ import {
   SGC_INDICE_RESTRINGIDO,
 } from "@/db/semillas/indicadores-demo-fichas";
 import { componentesVisibles, puedeVerIndicador } from "@/lib/alcance";
-import { comparar, deTexto, fraccion } from "@/lib/indicadores/formula/fraccion";
+import { porcentajeDeCumplimiento } from "@/lib/indicadores/cumplimiento";
+import { CERO, comparar, deTexto, dividir, entero, fraccion, sumar } from "@/lib/indicadores/formula/fraccion";
+import { textoValor } from "@/lib/indicadores/textos";
 import type { Toma } from "@/lib/indicadores/tipos";
 import { exigirDemo, sembradaEn } from "./utiles/demo";
 import { sesionDe } from "./utiles/tramites";
@@ -56,54 +63,94 @@ afterAll(async () => {
 /** Los cinco indicadores de la 14C. */
 const DE_LA_14C = [CEX_AGENDA, CEX_CONSULTAS_TRIMESTRE, CEX_HIPERTENSION, SGC_INDICE, SGC_INDICE_RESTRINGIDO].map((f) => f.codigo);
 
-async function datoSembrado() {
-  const [d] = await sql`SELECT id FROM variables_compartidas WHERE nombre = ${DATO_CONSULTAS.nombre}`;
+/**
+ * Las designaciones que siembra la agenda en los cinco de la 14C y en `GTH-IND-01` (el componente que `lider.cex` no debe
+ * ver), «función:usuario» en orden: de ellas dependen quién ve el restringido y quién recibe los avisos.
+ */
+const DESIGNADOS_SEMBRADOS: Record<string, string[]> = {
+  [CEX_AGENDA.codigo]: ["analiza:lider.cex", "mide:lider.cex"],
+  [CEX_CONSULTAS_TRIMESTRE.codigo]: ["analiza:lider.cex"],
+  [CEX_HIPERTENSION.codigo]: ["analiza:lider.cex", "mide:lider.cex", "seguimiento:coordinadora.sgc"],
+  [SGC_INDICE.codigo]: ["analiza:coordinadora.sgc"],
+  [SGC_INDICE_RESTRINGIDO.codigo]: ["analiza:coordinadora.sgc", "seguimiento:lider.cex"],
+  [GTH_01.codigo]: ["analiza:lider.gth", "mide:lider.gth"],
+};
+
+/** Quienes responden por el dato compartido, como los sembró la agenda. */
+const RESPONSABLES_SEMBRADOS = ["consulta", "lider.cex"];
+
+async function datoSembrado(db: Cliente = sql) {
+  const [d] = await db`SELECT id FROM variables_compartidas WHERE nombre = ${DATO_CONSULTAS.nombre}`;
   return d ? Number(d.id) : null;
 }
 
 /** Los periodos del dato, por su clave. */
-async function periodosDelDato(datoId: number) {
-  return new Map((await sql`SELECT * FROM variable_valores WHERE variable_id = ${datoId}`).map((f) => [f.periodo as string, f]));
+async function periodosDelDato(datoId: number, db: Cliente = sql) {
+  return new Map((await db`SELECT * FROM variable_valores WHERE variable_id = ${datoId}`).map((f) => [f.periodo as string, f]));
 }
 
 /**
- * Si lo sembrado en la 14C sigue como se sembró: los cinco indicadores activos y sin nada posterior a la siembra (versiones,
- * eventos de sus mediciones); el dato con sus periodos en el estado del plan y sin eventos posteriores, salvo el del soporte
- * (lo sube `registrarArchivo`, con la hora del reloj); y «Sede» con sus cuatro categorías activas.
+ * Si lo sembrado sigue como se sembró, para todo lo que los casos leen y el recorrido de «Qué probar y cómo (Fase 14C)»
+ * cambia: los cinco indicadores de la 14C activos; en **toda** la demo de indicadores, nada posterior a la siembra
+ * (indicadores o datos nuevos, versiones, firmas, eventos de mediciones, metas programadas, bajas ni cierres: los compuestos
+ * dependen de sus componentes, y la lectura en vacío del último caso, de todo); las designaciones de los cinco y de
+ * `GTH-IND-01` (`DESIGNADOS_SEMBRADOS`); quienes responden por el dato; sus periodos en el estado del plan y sin eventos
+ * posteriores, salvo el del soporte (lo sube `registrarArchivo`, con la hora del reloj); y «Sede» con sus cuatro categorías
+ * activas, ninguna nueva. Lo que no deja hora (quitar una designación o un responsable) se compara con lo sembrado.
  */
-async function comoSeSembro(): Promise<{ intacta: boolean; motivo: string }> {
-  const t = await sembradaEn(sql);
+async function comoSeSembro(db: Cliente = sql): Promise<{ intacta: boolean; motivo: string }> {
+  const t = await sembradaEn(db);
   const plan = planDe14C(t);
   const cambios: string[] = [];
-  const estados = new Map((await sql`SELECT codigo, estado FROM indicadores WHERE codigo IN ${sql(DE_LA_14C)}`).map((f) => [f.codigo, f.estado]));
+  const estados = new Map((await db`SELECT codigo, estado FROM indicadores WHERE codigo IN ${db(DE_LA_14C)}`).map((f) => [f.codigo, f.estado]));
   for (const codigo of DE_LA_14C) if (estados.get(codigo) !== "activo") cambios.push(`${codigo} está ${estados.get(codigo) ?? "borrado"} (se sembró activo)`);
-  const [c] = await sql`
-    WITH ind AS (SELECT id FROM indicadores WHERE codigo IN ${sql(DE_LA_14C)})
-    SELECT
-      (SELECT count(*)::int FROM indicador_versiones WHERE indicador_id IN (SELECT id FROM ind) AND (creado_en > ${t} OR actualizado_en > ${t})) AS versiones,
-      (SELECT count(*)::int FROM medicion_eventos e JOIN mediciones m ON m.id = e.medicion_id
-        WHERE m.indicador_id IN (SELECT id FROM ind) AND e.creado_en > ${t}) AS eventos`;
-  if (c.versiones > 0) cambios.push(`${c.versiones} versiones posteriores a la siembra`);
-  if (c.eventos > 0) cambios.push(`${c.eventos} eventos de mediciones posteriores a la siembra`);
+  const [c] = await db`SELECT
+      (SELECT count(*)::int FROM indicadores WHERE creado_en > ${t}) AS indicadores,
+      (SELECT count(*)::int FROM variables_compartidas WHERE creado_en > ${t}) AS datos,
+      (SELECT count(*)::int FROM indicador_versiones WHERE creado_en > ${t} OR actualizado_en > ${t}) AS versiones,
+      (SELECT count(*)::int FROM firmas WHERE indicador_version_id IS NOT NULL AND creado_en > ${t}) AS firmas,
+      (SELECT count(*)::int FROM medicion_eventos WHERE creado_en > ${t}) AS eventos,
+      (SELECT count(*)::int FROM indicador_metas WHERE programada_en > ${t}) AS metas,
+      (SELECT count(*)::int FROM indicadores WHERE baja_en > ${t}) AS bajas,
+      (SELECT count(*)::int FROM cierres_indicadores WHERE cerrado_en > ${t}) AS cierres`;
+  for (const clave of ["indicadores", "datos", "versiones", "firmas", "eventos", "metas", "bajas", "cierres"]) {
+    if (Number(c[clave]) > 0) cambios.push(`${c[clave]} ${clave} posteriores a la siembra`);
+  }
+  const designados = await db`SELECT i.codigo, d.funcion || ':' || u.usuario AS designado FROM indicador_designados d
+    JOIN indicadores i ON i.id = d.indicador_id JOIN usuarios u ON u.id = d.usuario_id
+    WHERE i.codigo IN ${db(Object.keys(DESIGNADOS_SEMBRADOS))} ORDER BY 1, 2`;
+  for (const [codigo, sembrados] of Object.entries(DESIGNADOS_SEMBRADOS)) {
+    const hoy = designados.filter((d) => d.codigo === codigo).map((d) => d.designado as string);
+    if (hoy.join() !== sembrados.join()) cambios.push(`${codigo} tiene designados ${hoy.join(", ") || "ninguno"} (se sembraron ${sembrados.join(", ")})`);
+  }
 
-  const datoId = await datoSembrado();
+  const datoId = await datoSembrado(db);
   if (datoId === null) {
     cambios.push(`no existe el dato «${DATO_CONSULTAS.nombre}»`);
   } else {
-    const periodos = await periodosDelDato(datoId);
+    const responden = (await db`SELECT u.usuario FROM variable_responsables r JOIN usuarios u ON u.id = r.usuario_id
+      WHERE r.variable_id = ${datoId} AND r.designado_en <= ${t} ORDER BY u.usuario`).map((r) => r.usuario as string);
+    const [{ n: responsables }] = await db`SELECT count(*)::int AS n FROM variable_responsables WHERE variable_id = ${datoId}`;
+    if (responden.join() !== RESPONSABLES_SEMBRADOS.join() || responsables !== RESPONSABLES_SEMBRADOS.length) {
+      cambios.push(`responden por el dato ${responsables} personas (se sembraron ${RESPONSABLES_SEMBRADOS.join(" y ")})`);
+    }
+    const periodos = await periodosDelDato(datoId, db);
     for (const mes of plan.meses) {
       const esperado = mes.clave === plan.pendiente.clave ? "pendiente" : mes.hasta.getTime() <= plan.corregido.hasta.getTime() ? "cerrado" : "reportado";
       const estado = periodos.get(mes.clave)?.estado;
       if (estado !== esperado) cambios.push(`el periodo ${mes.clave} del dato está ${estado ?? "sin abrir"} (se sembró ${esperado})`);
     }
     if (periodos.size !== plan.meses.length) cambios.push(`el dato tiene ${periodos.size} periodos (se sembraron ${plan.meses.length})`);
-    const [e] = await sql`SELECT count(*) FILTER (WHERE ve.tipo <> 'soporte')::int AS otros, count(*) FILTER (WHERE ve.tipo = 'soporte')::int AS soportes
+    const [e] = await db`SELECT count(*) FILTER (WHERE ve.tipo <> 'soporte')::int AS otros, count(*) FILTER (WHERE ve.tipo = 'soporte')::int AS soportes
       FROM variable_eventos ve JOIN variable_valores vv ON vv.id = ve.valor_id WHERE vv.variable_id = ${datoId} AND ve.creado_en > ${t}`;
     if (e.otros > 0 || e.soportes !== 1) cambios.push(`${e.otros + e.soportes} eventos del dato posteriores a la siembra (se sembró el del soporte)`);
   }
-  const [s] = await sql`SELECT count(*)::int AS total, count(*) FILTER (WHERE c.activo)::int AS activas
+  const [s] = await db`SELECT count(*)::int AS total, count(*) FILTER (WHERE c.activo)::int AS activas,
+      count(*) FILTER (WHERE c.creado_en > ${t})::int AS nuevas
     FROM dimension_categorias c JOIN dimensiones d ON d.id = c.dimension_id WHERE d.nombre = ${SEDE.nombre}`;
-  if (s.total !== SEDE.categorias.length || s.activas !== s.total) cambios.push(`«${SEDE.nombre}» tiene ${s.activas} de ${s.total} categorías activas (se sembraron ${SEDE.categorias.length})`);
+  if (s.total !== SEDE.categorias.length || s.activas !== s.total || s.nuevas > 0) {
+    cambios.push(`«${SEDE.nombre}» tiene ${s.activas} de ${s.total} categorías activas (se sembraron ${SEDE.categorias.length})`);
+  }
   return { intacta: cambios.length === 0, motivo: cambios.length === 0 ? "la 14C está como se sembró" : `hay ${cambios.join("; ")}` };
 }
 
@@ -228,10 +275,11 @@ describe("la demo de la 14C", () => {
     const conCritica = await medicion(CEX_HIPERTENSION.codigo, cal.meses[2].clave);
     expect(conCritica).toMatchObject({ semaforo: "bien", cumple: true, categorias_en_critico: 1 });
     expect((await desgloseDe(sql, Number(conCritica.id)))?.enCritico).toEqual([SEDE.categorias[3]]);
-    // El aviso de la sede en Crítico con el total en Bien, a quien hace seguimiento (quien reportó no lo recibe), sin leer.
+    // El aviso de la sede en Crítico con el total en Bien, a quien hace seguimiento (quien reportó no lo recibe). Que siga sin
+    // leer no es de la semilla sino del uso: si `coordinadora.sgc` ya lo abrió, la demo ya se usó (al final del caso).
     const avisos = await sql`SELECT u.usuario, n.titulo, n.leida_en FROM notificaciones n JOIN usuarios u ON u.id = n.usuario_id
       WHERE n.tipo = 'indicadores.alerta' AND n.entidad = 'medicion' AND n.entidad_id = ${conCritica.id}`;
-    expect(avisos.map((a) => [a.usuario, a.leida_en])).toEqual([["coordinadora.sgc", null]]);
+    expect(avisos.map((a) => a.usuario)).toEqual(["coordinadora.sgc"]);
     expect(avisos[0].titulo).toContain(`Bien. En Crítico: ${SEDE.categorias[3]} (55 %).`);
 
     const otra = await medicion(CEX_HIPERTENSION.codigo, cal.meses[1].clave);
@@ -247,6 +295,7 @@ describe("la demo de la 14C", () => {
     // El total lo escribió el sistema: la suma de las sedes que aplican (la «Sin casos» suma sus ceros).
     const total = await valores(Number(otra.id));
     expect([total.A, total.B].map((x) => [x.valor, x.porSistema])).toEqual([[57, true], [64, true]]);
+    exigirDemo(ctx, avisos[0].leida_en === null, "coordinadora.sgc ya leyó el aviso de la sede en Crítico de CEX-ID-003");
   });
 
   it("el compuesto general tiene resultado y lo copiado de cada componente es lo que el componente da", async (ctx) => {
@@ -274,6 +323,28 @@ describe("la demo de la 14C", () => {
       expect(copiado.porSistema, variable.codigo).toBe(true);
       if (fuente.estado === "listo") expect(comparar(copiado.fraccion, fuente.valor), variable.codigo).toBe(0);
     }
+
+    // Aparte de la copia: el resultado es el promedio de los cinco cumplimientos, cada uno calculado aquí con la regla pura
+    // (`porcentajeDeCumplimiento`) desde el resultado, el «cumple» y la meta aplicada de la medición del componente y la
+    // tendencia de su versión. Es la cifra que citan los documentos: «91 %».
+    let suma = CERO;
+    for (const variable of SGC_INDICE.variables) {
+      if (variable.origen !== "indicador") continue;
+      const [c] = await sql`SELECT m.resultado_exacto, m.cumple, m.meta_aplicada, v.tendencia FROM mediciones m
+        JOIN indicadores i ON i.id = m.indicador_id JOIN indicador_versiones v ON v.id = m.version_id
+        WHERE i.codigo = ${variable.codigo} AND m.periodo = ${m.periodo}`;
+      const cumplimiento = porcentajeDeCumplimiento({
+        resultado: deTexto(c.resultado_exacto),
+        cumple: c.cumple,
+        meta: fraccion(String(c.meta_aplicada)),
+        tendencia: c.tendencia,
+      });
+      expect(cumplimiento, variable.codigo).not.toBeNull();
+      suma = sumar(suma, cumplimiento!);
+    }
+    const promedio = dividir(suma, entero(SGC_INDICE.variables.length))!;
+    expect(comparar(deTexto(m.resultado_exacto), promedio)).toBe(0);
+    expect(textoValor(promedio, { sufijo: " %", decimales: SGC_INDICE.decimales })).toBe("91 %");
   });
 
   it("el compuesto restringido lo aprueba Gerencia; `consulta` no lo ve y `lider.cex` lo ve sin ver su componente de talento humano", async (ctx) => {
@@ -309,5 +380,113 @@ describe("la demo de la 14C", () => {
       expect(await asegurarMediciones({ sql: tx, ahora: sembrada })).toBe(0);
       expect(await propagar({ sql: tx, ahora: sembrada })).toEqual({ escritas: 0, noAplica: 0, fallidas: 0 });
     });
+  });
+});
+
+describe("la guarda de la 14C ve lo que cambia el recorrido", () => {
+  /**
+   * Cada paso de «Qué probar y cómo (Fase 14C)» que cambia algo que estos casos leen, hecho con las funciones del dominio en
+   * una transacción que se revierte: después de él, `comoSeSembro` lo nota (y los casos saltan en vez de fallar). El cierre
+   * del mes (paso 4) no se prueba aquí (ningún test deja ni hace un cierre de la demo): lo ve la cuenta de cierres posteriores,
+   * y sus eventos, la de eventos. Leer el aviso de la sede en Crítico lo decide el caso de la desagregada (`exigirDemo`).
+   */
+  it("un dato nuevo, el dato reportado, la rejilla corregida, una sede desactivada, un componente corregido, un cambio de ficha, las designaciones y los responsables", async (ctx) => {
+    await exigir14C(ctx);
+    const plan = planDe14C(await sembradaEn(sql));
+    const cal = calendarioDeIndicadores(await sembradaEn(sql));
+    const pasos: [string, (tx: TransactionSql) => Promise<unknown>, RegExp][] = [
+      [
+        "paso 1: un dato nuevo",
+        async (tx) =>
+          guardarDato(
+            await sesionDe(tx, "coordinadora.sgc"),
+            { procesoId: (await tx`SELECT id FROM procesos WHERE sigla = 'AIN'`)[0].id, nombre: `zz_dato_${Date.now()}`, periodicidad: "mensual", consolidacion: "suma", admiteNegativos: false, plazoReporteDias: 10 },
+            { sql: tx },
+          ),
+        /1 datos posteriores a la siembra/,
+      ],
+      [
+        "pasos 2 y 3: el dato pendiente se reporta",
+        async (tx) =>
+          reportarDato(
+            await sesionDe(tx, "consulta"),
+            { periodoId: Number((await periodosDelDato((await datoSembrado(tx))!, tx)).get(plan.pendiente.clave)!.id), valor: "1600", confirmado: true },
+            { sql: tx },
+          ),
+        new RegExp(`el periodo ${plan.pendiente.clave} del dato está reportado`),
+      ],
+      [
+        "paso 5: la rejilla se corrige",
+        async (tx) => {
+          const m = await tx`SELECT m.id, m.categorias FROM mediciones m JOIN indicadores i ON i.id = m.indicador_id
+            WHERE i.codigo = ${CEX_HIPERTENSION.codigo} AND m.periodo = ${cal.meses[1].clave}`;
+          const principal = (m[0].categorias as { id: number; nombre: string }[]).find((c) => c.nombre === SEDE.categorias[0])!;
+          return reportar(
+            await sesionDe(tx, "lider.cex"),
+            { medicionId: Number(m[0].id), valores: {}, parcial: false, confirmado: true, filas: [{ categoriaId: principal.id, valores: { A: "42" } }] },
+            { sql: tx },
+          );
+        },
+        /eventos posteriores a la siembra/,
+      ],
+      [
+        "paso 6: una sede se desactiva",
+        async (tx) => {
+          const [c] = await tx`SELECT c.id FROM dimension_categorias c JOIN dimensiones d ON d.id = c.dimension_id
+            WHERE d.nombre = ${SEDE.nombre} AND c.nombre = ${SEDE.categorias[2]}`;
+          return cambiarEstadoDeCategoria(await sesionDe(tx, "coordinadora.sgc"), { id: Number(c.id), activo: false }, { sql: tx });
+        },
+        /«Sede» tiene 3 de 4 categorías activas/,
+      ],
+      [
+        "paso 7: un componente se corrige",
+        async (tx) => {
+          const [m] = await tx`SELECT m.id FROM mediciones m JOIN indicadores i ON i.id = m.indicador_id
+            WHERE i.codigo = 'SGC-IND-01' AND m.periodo = ${cal.trimestres[2].clave}`;
+          return reportar(await sesionDe(tx, "coordinadora.sgc"), { medicionId: Number(m.id), valores: { A: "4", B: "5" }, parcial: false, confirmado: true }, { sql: tx });
+        },
+        /eventos posteriores a la siembra/,
+      ],
+      [
+        "paso 10: se abre un cambio de una ficha aprobada",
+        async (tx) => abrirCambio(await sesionDe(tx, "coordinadora.sgc"), (await indicador("SGC-IND-02")).id, { sql: tx }),
+        /versiones posteriores a la siembra/,
+      ],
+      [
+        "alguien designa a `consulta` en el restringido",
+        async (tx) =>
+          designar(
+            await sesionDe(tx, "coordinadora.sgc"),
+            { indicadorId: (await indicador(SGC_INDICE_RESTRINGIDO.codigo)).id, funcion: "seguimiento", usuarioIds: [(await sesionDe(tx, "lider.cex")).usuarioId, (await sesionDe(tx, "consulta")).usuarioId] },
+            { sql: tx },
+          ),
+        new RegExp(`${SGC_INDICE_RESTRINGIDO.codigo} tiene designados`),
+      ],
+      [
+        "alguien quita el seguimiento de `lider.cex`",
+        async (tx) =>
+          designar(await sesionDe(tx, "coordinadora.sgc"), { indicadorId: (await indicador(SGC_INDICE_RESTRINGIDO.codigo)).id, funcion: "seguimiento", usuarioIds: [] }, { sql: tx }),
+        new RegExp(`${SGC_INDICE_RESTRINGIDO.codigo} tiene designados analiza:coordinadora.sgc \\(`),
+      ],
+      [
+        "alguien deja de responder por el dato",
+        async (tx) =>
+          designarResponsablesDeDato(
+            await sesionDe(tx, "coordinadora.sgc"),
+            { datoId: (await datoSembrado(tx))!, usuarioIds: [(await sesionDe(tx, "consulta")).usuarioId] },
+            { sql: tx },
+          ),
+        /responden por el dato 1 personas/,
+      ],
+    ];
+    for (const [nombre, paso, motivo] of pasos) {
+      await revertida(sql, async (tx) => {
+        expect((await comoSeSembro(tx)).intacta, nombre).toBe(true);
+        await paso(tx);
+        const despues = await comoSeSembro(tx);
+        expect(despues.intacta, nombre).toBe(false);
+        expect(despues.motivo, nombre).toMatch(motivo);
+      });
+    }
   });
 });

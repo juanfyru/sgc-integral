@@ -629,8 +629,10 @@ otro indicador, el cierre la cierra solo si lo que usó también está cerrado o
 mismo cierre; si su fuente sigue en plazo, espera al siguiente cierre. Antes de clasificar, el
 cierre lleva a cada medición lo que sus fuentes ya tienen, y una medición cuyo valor copiado no
 coincide con el de su fuente también espera. El cierre **cierra también los periodos de los datos
-compartidos** que terminaron en el mes o antes: los reportados, y los vencidos sin reportar como
-«Sin dato» (con ellos, las mediciones que los esperaban). En **Mediciones que quedarán sin dato**,
+compartidos** que terminaron en el mes o antes: los reportados, y los vencidos sin reportar que
+algún indicador todavía necesita, como «Sin dato» (con ellos, las mediciones que los esperaban). Un
+periodo pendiente que ya ningún indicador necesita («Ya no se pide») no lo cierra nadie ni lo
+debe nadie. En **Mediciones que quedarán sin dato**,
 la columna **Quién debía** nombra a quien mide, a los responsables del dato que faltó o el
 indicador cuyo resultado faltó.
 
@@ -762,9 +764,11 @@ lo hace quien administra indicadores.
    la plantilla corregida puede importarse otra vez. Se deshace el lote entero y solo mientras
    ninguna de sus fichas tenga periodos cerrados o con datos, personas designadas, una versión
    posterior, revisiones por cambio de norma (sección 10) ni reportes al ente (sección 9), aunque
-   estén resueltos o registrados, y mientras ninguna propuesta se haya editado o enviado a
-   aprobación: si no, el botón no se ofrece y la página dice por qué, ficha por ficha («No se
-   puede deshacer: … tiene revisiones por cambio de norma»).
+   estén resueltos o registrados, mientras ninguna propuesta se haya editado o enviado a
+   aprobación, y mientras ninguna otra ficha, aunque sea un borrador, tome el resultado de una ficha
+   del lote (sección 13.4): si no, el botón no se ofrece y la página dice por qué, ficha por ficha
+   («No se puede deshacer: … tiene revisiones por cambio de norma», «… otra ficha toma el resultado
+   de una ficha del lote»).
 
 ## 7. Indicadores que calcula el sistema
 
@@ -1128,13 +1132,19 @@ recuadro para reportarlo y **Periodos del dato**, con cada periodo y su historia
 
 ### 11.2 Si usted responde por un dato
 
-Responden por el dato las personas que el Administrador del SGC designó y los líderes del proceso
-dueño; si no hay ninguno activo, el Administrador del SGC, y la tarea lo dice («Sin responsable:
-designe a alguien»). Cuando termina un periodo que algún indicador necesita, le llega la tarea
-**Reportar el dato
-Consultas de medicina general realizadas, septiembre de 2026**, con su fecha límite (el fin del
-periodo más el plazo del dato), y los mismos recordatorios que un indicador: antes del plazo, al
-vencerse y, unos días después, un aviso a su jefe que no nombra el dato.
+Responden por el dato las personas que el Administrador del SGC designó (en su ficha,
+**Responden**). **A ellas les llegan la tarea y los recordatorios.** Solo si no designó a nadie (o
+ninguna de esas personas sigue activa), les llegan a los líderes del proceso dueño del dato; y solo
+si tampoco hay un líder activo, al Administrador del SGC, con «Sin responsable: designe a alguien».
+Un líder del proceso dueño puede reportar y corregir el dato aunque no esté designado, pero mientras
+haya alguien designado no recibe la tarea: le llega solo el aviso de vencido, si el dato vence.
+
+Cuando termina un periodo que algún indicador necesita, a quien le toca le llega la tarea
+**Reportar el dato Consultas de medicina general realizadas, septiembre de 2026**, con su fecha
+límite (el fin del periodo más el plazo del dato), y los mismos recordatorios que un indicador:
+unos días antes del plazo; al vencerse, que avisa también a los líderes del proceso dueño; y, si
+sigue vencido unos días más, un aviso a su jefe que no nombra el dato (lo que le toca al
+Administrador del SGC por falta de responsable no se avisa a ningún jefe).
 
 1. Abra la tarea o la página del dato. **Reportar el dato** muestra el periodo que se pide, el más
    antiguo primero.
@@ -1412,7 +1422,8 @@ La ficha del SGC sigue la que el hospital propuso en su Excel, con estas diferen
 | El recuadro **Revisión por cambio normativo** | Quien ve el indicador; sus salidas, el Administrador del SGC |
 | **Volver a calcular** | El Administrador del SGC |
 | Pestaña **Datos compartidos** y la página de un dato, con su historial | Administrador del SGC, Gerencia, Control Interno, los líderes del proceso dueño y quienes responden por el dato |
-| Reportar y corregir un dato compartido | Quienes responden por él y los líderes del proceso dueño (el Administrador del SGC, solo si no hay nadie más) |
+| Reportar y corregir un dato compartido | Las personas designadas en el dato y los líderes del proceso dueño (el Administrador del SGC, solo si no hay ningún designado ni líder activo) |
+| La tarea y los recordatorios de un dato | Las personas designadas; si no hay ninguna, los líderes del proceso dueño; si tampoco, el Administrador del SGC |
 | Los soportes de un dato | Quien ve el dato y quien ve los soportes de algún indicador que lo usa |
 | El valor de un dato en un indicador | Quien ve el indicador |
 | El desglose por categoría de un indicador por sede | Quien ve el indicador |
