@@ -414,6 +414,28 @@ de la demo, `npm run lint` y `npm run build`.
   el capítulo 8 del manual con las secciones 11 a 13 nuevas («Datos compartidos», «Indicadores por sede o por servicio»
   e «Indicadores compuestos»), el ajuste de 6.6 («Cerrar el mes y reabrir») y las secciones de siempre renumeradas (14 a
   16); y `AGENTS.md`, este archivo y `PLAN.md`.
+- **La ola final de corrección** (tras la revisión de toda la rama y el recorrido en el navegador; un commit por arreglo):
+  - «Reportes a tiempo» juzga y enventana contra la fecha límite **del reporte**: el evento que mueve la fecha por el
+    análisis guarda la que tenía (`venceAntes`) y el cálculo usa la del primero.
+  - La racha que dispara una propagación recuenta el plazo de la siguiente que pasa a pedir análisis con la fecha vencida
+    (su evento `recalculo` lleva `venceEn` y `venceAntes`).
+  - El cierre no cierra un periodo de un dato ya reportado que sigue dentro de su plazo; las mediciones que lo usan esperan.
+  - Un periodo de un dato que nació sin categorías no se reporta vacío, y quien administra tiene «Actualizar categorías»
+    en un periodo pendiente de un dato con dimensión.
+  - El soporte obligatorio no aparece vencido cuando llega el dato de una medición que lo esperaba; activado dentro del
+    plazo, quien mide tiene su tarea aunque falte el dato.
+  - Los soportes de un dato se ven desde el indicador que lo usa: junto a la variable fija, en «Soportes» de un indicador
+    sin variables propias y en la columna «Soportes» de la tabla del año.
+  - El formulario de un dato rechaza el punto de miles («1.600») y dice cómo se escribe; la confirmación de la variación
+    vale solo para el valor por el que se preguntó.
+  - Lo copiado de otra fuente no se lee como el valor de la letra en la versión nueva, y el historial tapa las cifras de
+    toda fuente cuya letra es oculta para quien lee.
+  - El resumen guardado del cierre, su bitácora, el aviso «Se cerró…» y «Cierres anteriores» cuentan los periodos de datos.
+  - «venció el…» en el aviso de un dato vencido; las acciones de los datos y las categorías traducen un interbloqueo; tras
+    «Lo que se reabre cambió…» la pantalla se repinta; «Borrar el dato» solo si no tiene historia; el aviso «Se reportó el
+    dato.» se queda al reportar el último pendiente; «Crear la categoría» limpia el campo; el histórico de un compuesto
+    admite un componente negativo; el propósito del compuesto restringido de la demo no nombra el área del componente
+    oculto, y el formulario lo advierte; «Reabrir septiembre de 2026», en minúscula.
 
 ### Qué probar y cómo (Fase 14C)
 
@@ -461,7 +483,9 @@ pendiente es el último que cierra un trimestre después del mes cerrado; si no 
 2. **Reportar el dato una vez.** Como `consulta`: **Mis tareas** trae «Reportar el dato Consultas de medicina general
    realizadas, septiembre de 2026», en plazo (`lider.cex` también la tiene porque está designado en el dato, como
    `consulta`: siendo líder del proceso dueño podría reportarlo igual, pero un líder no designado no recibe la tarea
-   mientras haya designados). Ábrala: **Reportar el dato** muestra septiembre. Escriba **1600**, adjunte un PDF en
+   mientras haya designados). Ábrala: **Reportar el dato** muestra septiembre. Bajo el campo dice «Sin puntos de miles;
+   use la coma para los decimales.»: si escribe **1.600**, el SGC lo rechaza («Escriba el valor sin puntos de miles
+   (1731); para decimales use la coma (1,731)»). Escriba **1600**, adjunte un PDF en
    **Soporte (opcional)** y pulse **Reportar**. Debe ver el dato puesto en dos indicadores de distinta periodicidad:
    `CEX-ID-001` septiembre en 87,9 %, Atención, y `CEX-ID-002` tercer trimestre en 4982, Atención (julio, agosto y
    septiembre juntados), los dos con su alerta en la campana de `lider.cex`, que los analiza: «Uso de la agenda de
@@ -473,20 +497,27 @@ pendiente es el último que cierra un trimestre después del mes cerrado; si no 
    Bien, y `CEX-ID-002` el tercer trimestre a 5127, Bien, cada uno con su «Corrección» a `lider.cex` («Corrección: … pasó
    de Atención a Bien. …») y, en el historial de la medición, el cambio puesto por «El sistema».
 4. **Cerrar el mes y reabrir el dato.** Como `coordinadora.sgc`: **Cierre del mes** → **Cerrar hasta** septiembre de 2026 →
-   **Ver el resumen** → **Cerrar el mes**. Se cierran el periodo de septiembre del dato, `CEX-ID-003` septiembre,
-   `AIN-IND-01` septiembre (sin dato) y los trimestrales del tercer trimestre (`SGC-IND-01`, `SGC-ID-003`, `SGC-ID-004`…);
-   **`CEX-ID-001` septiembre y `CEX-ID-002` tercer trimestre no**: el paso 2 les volvió a contar el plazo, siguen en él y
-   quedan para el siguiente cierre. Si hace el paso 7 sin reabrir, hágalo antes de este cierre. Después, en la página del
+   **Ver el resumen** → **Cerrar el mes**. El resumen dice que se cerrarán 16 mediciones (12 reportadas, 1 sin dato y 3
+   «No aplica»): `CEX-ID-003` septiembre, `AIN-IND-01` septiembre (sin dato) y los trimestrales del tercer trimestre
+   (`SGC-IND-01`, `SGC-ID-003`, `SGC-ID-004`…). **El periodo de septiembre del dato no se cierra**: se reportó hoy y sigue
+   dentro de su plazo (hasta el 25 de noviembre), así que su responsable lo puede seguir corrigiendo sin justificación; el
+   resumen lo dice («Ningún periodo de un dato compartido se cierra.» y, en «No se cierran», «1 periodo de un dato
+   compartido sigue dentro de su plazo de reporte: queda para el siguiente cierre.»). **`CEX-ID-001` septiembre y
+   `CEX-ID-002` tercer trimestre tampoco**: el paso 2 les volvió a contar el plazo, siguen en él («2 mediciones siguen
+   dentro de su plazo de reporte…») y quedan para el siguiente cierre, con su dato. Al confirmar: «Se cerró septiembre de
+   2026: 16 mediciones cerradas.», y **Cierres anteriores** muestra septiembre con 16 mediciones y 0 periodos de datos, y
+   agosto con 26 y 5. Si hace el paso 7 sin reabrir, hágalo antes de este cierre. Después, en la página del
    dato, **agosto** → **Reabrir**: el diálogo lista lo que se reabre («CEX-ID-001 Uso de la agenda de medicina general ·
    agosto de 2026», la única medición cerrada que lo usó) y el botón dice «Reabrir el dato y 1 medición»; escriba la
    justificación (al menos 10 caracteres) y confirme. La medición queda **Corregida**, con la justificación en su
    historial; a `lider.cex` le llega su aviso y a `consulta`, «Dato compartido reabierto: …». Ciérrela otra vez con
    **Cerrar de nuevo**: primero el periodo del dato (la medición dice «Su fuente sigue abierta: ciérrela primero»
-   mientras no). (Sin los pasos 2 y 3, septiembre del dato sigue pendiente en plazo y el cierre lo deja, con las dos
+   mientras no). (Sin los pasos 2 y 3, septiembre del dato sigue pendiente en plazo y el cierre lo deja igual, con las dos
    mediciones que lo esperan.)
 5. **La medición por sede.** Como `coordinadora.sgc`: **Administración** → **Configuración de indicadores** →
    **Dimensiones**: «Sede» con sus cuatro categorías (**Nueva dimensión** y **Nueva categoría** crean otras). Abra
-   `CEX-ID-003`: en la lista y en la tabla del año, septiembre con «1 en Crítico» por Sede; la sección **Por Sede** con las
+   `CEX-ID-003`: en su tabla del año, septiembre con «1 en Crítico» por Sede (la lista de **Indicadores** muestra el
+   último periodo, octubre: el «1 en Crítico» de septiembre se ve en la tabla del año); la sección **Por Sede** con las
    barras acostadas de cada sede, la meta como línea y su tabla; elija octubre: Norte «Sin casos» y Sur «No aplica», con
    su estado escrito y «—» por cifra. **Excel** trae la hoja **Por categoría 2026**; **Imprimir ficha**, el desglose del
    último periodo. Para la rejilla,
@@ -508,7 +539,8 @@ pendiente es el último que cierra un trimestre después del mes cerrado; si no 
    existe. Como `gerente`, se ven los dos componentes.
 9. **El bloqueo.** Como `coordinadora.sgc`: `SGC-IND-01` → **Administrar** → **Retirar**: «Cambie antes el indicador que lo
    usa: SGC-ID-003». En `GTH-IND-01`, lo mismo con `SGC-ID-004`. La ficha técnica de `SGC-IND-01` trae **Lo toman**.
-10. **Una ficha aprobada antes de esta entrega.** `SGC-IND-02` → **Versiones**: la misma huella de antes; **Administrar** →
+10. **Una ficha aprobada antes de esta entrega.** `SGC-IND-02` → **Versiones**: su versión aprobada sigue ahí, sin cambios
+    (la huella no se muestra en pantalla: que no cambió lo fija `tests/indicadores-ficha.test.ts`); **Administrar** →
     **Editar ficha** → **Abrir un cambio** → **Guardar borrador** sin tocar nada: se guarda, y sus variables siguen
     «Propia»; descarte el cambio.
 
@@ -685,10 +717,7 @@ demo sembrada (un archivo sin carpeta es de `src/db/consultas/indicadores/`):
   para `coordinadora.sgc`; solo el proceso SGC, con sus dos compuestos, 107 para 13 filas, frente a 30 de Consulta Externa
   para 4 filas sin compuestos (unas 20 por fila de compuesto). La página de `SGC-ID-003` (cinco componentes), en
   «Resultados»: 122 sentencias y unos 210 ms (83 de ellas, `datosDeResultados`), frente a 81 y unos 85 ms de `SGC-IND-01`.
-- El resumen guardado del cierre, «Cierres anteriores» y el mensaje «Se cerró {mes}: n mediciones cerradas» no cuentan los
-  periodos de datos que se cerraron.
 - Cuando faltan a la vez lo propio y el dato, «Quién debía» nombra solo a quien mide.
-- En la pantalla de reportar, «vence el {fecha}» de un dato que ya venció.
 - `lectura.ts` llegó a más de 1500 líneas: el ocultamiento cabría en un módulo propio.
 - Al intentar retirar un indicador que toman varios compuestos, «Cambie antes el indicador que lo usa: …» nombra uno solo;
   tras cambiarlo, el siguiente intento nombra el siguiente.
@@ -696,6 +725,31 @@ demo sembrada (un archivo sin carpeta es de `src/db/consultas/indicadores/`):
   trimestre, y el «desde» solo se lee cuando el componente empieza después. Lo cubren las pruebas de la Tarea 17.
 - **La semilla tarda más:** unos 18 s, frente a unos 12 s antes de la 14C (propaga después de cada paso que cambia una
   fuente, como lo haría la acción).
+
+Lo que la revisión final de toda la rama dejó con nombre y la ola final no arregló:
+
+- La fuente de una reapertura por un dato se oculta a quien mide el indicador y no ve el dato (`fuenteEnTexto` usa
+  `puedeVerDato`, `reapertura.ts`): oculta de más.
+- `reportar` quita un «No aplica» del sistema sin mirar el motivo (la propagación lo vuelve a poner: dos eventos).
+- Lo que copia el sistema cuenta como «datos»: no deja correr el inicio de medición más allá de un periodo que solo tiene lo
+  propagado, ni quita esos meses al pasar de mensual a trimestral.
+- Las propagaciones fallidas solo van a `console.error`: una medición que falle siempre queda en «Falta un dato» sin que
+  nadie vea por qué.
+- La página de un dato lee toda su historia y calcula una lista de reapertura por periodo cerrado (unas 120 sentencias más
+  por año de historia de un dato mensual): conviene resolverlo antes del segundo año (selector de año, o calcular la lista
+  al abrir el diálogo). «Datos compartidos» abre una transacción por dato en cada visita.
+- La confirmación del cierre no compara con lo que mostró la pantalla (como sí hace `vistas` en la reapertura).
+- Un periodo `cerrado` de un dato no tiene trigger: lo protege solo el código.
+- Dejar de pedirse o volver a pedirse un periodo del dato no deja evento.
+- Dos responsables reportan a la vez: el segundo entra como «corrección» del primero sin saberlo.
+- `periodosQuePide` no mira `no_aplica`: un periodo que solo necesita una medición «No aplica» de persona se sigue pidiendo.
+- La bitácora de la corrección de un dato con dimensión solo lleva totales.
+- En `next dev`, la página «no encontrada» de un indicador que existe y no se ve difiere de la de uno que no existe en la
+  traza de pila de desarrollo (`exigirFichaDeIndicador`, dos `notFound()`; código de la 14A): no pasa en producción.
+- «Actualizar categorías» de un periodo de un dato es solo para uno **pendiente**: la sede que se registra tarde con el
+  periodo ya reportado sigue dejando su fila del indicador «No aplica: El dato no trae esta categoría».
+- No queda guardado cuándo se activó «soporte obligatorio»: para una medición que esperaba un dato se decide con su plazo
+  (si el dato llega con el plazo vencido, no se le pide el soporte; ver `recalcularMedicion` y `debeElSoporte`).
 
 ## Fase 14B — Lo que el sistema ya sabe y lo regulatorio
 

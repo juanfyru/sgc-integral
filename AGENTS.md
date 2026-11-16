@@ -410,7 +410,12 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   reportar el dato, cada subida y cada quitada con su evento `soporte` en `variable_eventos`; lo ven quien ve el dato y
   quien ve los soportes de algún indicador con una ficha aprobada que lo cita (`puedeVerSoporteDeDato`,
   `src/db/consultas/indicadores/datos-soporte.ts`), y se sirve siempre como descarga
-  (`/indicadores/datos/[id]/soportes/[archivoId]`); los demás reciben 404;
+  (`/indicadores/datos/[id]/soportes/[archivoId]`); los demás reciben 404. Quien los ve «por el indicador» no
+  tiene la página del dato: los enlaza la pantalla del indicador (`soportesDeDatosDeMediciones`, en ese mismo
+  módulo liviano: por medición ordinaria, solo de las variables que **la versión que rige** toma
+  **directamente** de un dato, nunca a través de un componente, y solo a quien ve ese indicador y pasa
+  `puedeVerSoporteDeDato`), junto a la variable fija en la pantalla de reportar, en «Soportes» de un indicador
+  sin variables propias y en la columna «Soportes» de la tabla del año;
   el informe de una revisión anual (rol `evidencia`, `version_id` nula, uno por año en
   `informes/revision-<año>.pdf`) solo lo descargan Admin SGC, Gerencia y Control Interno
   (`puedeVerInformeAnual`), y los demás reciben 404; la plantilla de un lote de importación de
@@ -588,7 +593,18 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   abrirlo, cuenta desde ese día. Lo reportan y lo corrigen (antes del cierre, sin justificación) sus
   responsables y los líderes del proceso dueño, y el Admin SGC solo si no hay ninguno
   (`puedeReportarDato`, con `indicadores.medir`, comprobado dentro de la transacción); cada cambio deja
-  su antes y su después en `variable_eventos` (regla 5). **Quien abre mediciones en una lectura les
+  su antes y su después en `variable_eventos` (regla 5). El valor de un dato se escribe **sin punto de
+  miles**: las pantallas del dato lo muestran («1.749») y el intérprete compartido leería «1.600» como
+  1,6, así que `reportarDato` lo rechaza antes (`SIN_PUNTOS_DE_MILES`; el intérprete de
+  `src/lib/indicadores/reporte.ts` no se toca). La confirmación de la variación vale para el valor por
+  el que se preguntó (`confirmadoValor`, que el formulario devuelve con la casilla). Un dato con
+  dimensión fija la lista de categorías de cada periodo al abrirlo, como una medición; uno que nació sin
+  ninguna no se reporta vacío (`PERIODO_SIN_CATEGORIAS`), y en un periodo **pendiente** quien administra
+  añade las activas que faltan (`actualizarCategoriasDelDato`: solo añade; candados el dato `FOR SHARE`,
+  el periodo `FOR UPDATE` y el maestro `FOR KEY SHARE`). Su evento es un `correccion` con
+  `detalle.categorias.agregadas` y sin antes ni después de valor (el `CHECK` de `variable_eventos` no
+  tiene otro tipo): quien lea los `correccion` de un dato los distingue por esa clave
+  (`HistorialDelDato`). **Quien abre mediciones en una lectura les
   lleva lo de sus fuentes** (`asegurarMedicionesConFuentes`, `propagacion.ts`: la página del
   indicador, la de reportar, la lista, la matriz y el impreso), y una acción que cambia una fuente
   propaga en cuanto confirma lo suyo.
@@ -613,7 +629,11 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   usuario (`reportado_por` nulo). Cada escritor toca lo suyo: el de la persona, solo sus variables
   propias (en un histórico, todas); la propagación, solo las ajenas. El valor que copia el sistema
   va con cuatro decimales y, si no cabe exacto en ellos, también con su fracción (`valor_exacto`,
-  «n/d»), que solo escribe el sistema y el cálculo prefiere (`elegirValores`). La propagación es una
+  «n/d»), que solo escribe el sistema y el cálculo prefiere (`elegirValores`). Lo que el sistema copió en
+  otra versión solo se lee si salió de **la misma fuente** (el mismo dato, o el mismo componente y la
+  misma toma): cuando un cambio mayor cambia de dónde sale una letra, la fila vieja no es el valor de la
+  fuente nueva ni el «antes» de ningún evento (pudo ser de un componente oculto para quien lee), y la
+  propagación la quita sin más (`filasDeOtraFuente`). La propagación es una
   pasada idempotente con la forma de `tomarFotos` (compara lo copiado con la fuente y solo escribe
   si difiere; una transacción por medición, y la que falla se registra y se reintenta; por nivel de
   dependencia, `nivelesBajo` ascendente, así un compuesto de compuestos queda al día en una
@@ -626,13 +646,27 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   solo la pasan a `cerrada` (`src/db/consultas/indicadores/cierre.ts`). Cuando cambia el semáforo o
   el resultado de una medición ordinaria, ella misma recalcula la racha de las n − 1 siguientes
   medidas sin cerrar (`recalcularSiguientes`, evento `recalculo`, F14A-R53), y cambiar el plazo o
-  «soporte obligatorio» llega a las mediciones en curso (`cambiarOperacion`, F14A-R52). Un
+  «soporte obligatorio» llega a las mediciones en curso (`cambiarOperacion`, F14A-R52). **El plazo que
+  mueve una fuente** (`plazoPorLaFuente`, `mediciones.ts`; anexo 14C §3.4): la medición que un cambio
+  ajeno deja pidiendo el análisis con su fecha ya pasada la cuenta otra vez desde ese día, y su evento
+  guarda la nueva (`venceEn`) y la que tenía (`venceAntes`); lo mismo cada siguiente a la que la racha
+  de **esa propagación** deja pidiéndolo (su `recalculo` los lleva; la racha que nace de quien mide el
+  mismo indicador no mueve nada), y `enCurso` cuenta los tres eventos (`foto`, `propagacion`,
+  `recalculo`) para el plazo nuevo del indicador. La fecha que se mueve porque el reporte vuelve a quien
+  mide (el contagio que llegó a tiempo y se quita) no lleva `venceAntes`. **«Reportes a tiempo» juzga y
+  enventana contra la fecha del reporte**: el `venceAntes` del primer evento que lo lleve o, sin
+  ninguno, `vence_en` (`reportesDelPeriodo`, `calculos.ts`). Un
   recálculo que no nace de un cambio en la medición (esos dos y la propagación) es de sistema
   (`sistema: "racha"`, `"soporte"` o `"fuente"`): no la mueve de la versión con que se congeló al
   reportarla (el de una fuente, solo si ya tenía resultado: `versionesDeCalculo`), su evento dice qué
   pasó con la marca, y el de la racha o el de una fuente no reabre por falta de soporte lo ya
   reportado. **El soporte
-  obligatorio rige hacia adelante:** activarlo solo alcanza las mediciones aún en plazo. También
+  obligatorio rige hacia adelante:** activarlo solo alcanza las mediciones aún en plazo. No queda
+  guardado cuándo se activó, así que para la medición que esperaba un dato con lo propio ya entregado
+  decide su plazo: si el dato llega con el plazo vencido, cuenta como ya reportada y no se le pide; si
+  llega en plazo, se debe. Mientras espera el dato y sigue en plazo, quien mide tiene la tarea del
+  soporte y la lista dice «Por reportar» (`debeElSoporte`, `tareas.ts`); vencido el plazo, bajo «Falta
+  un dato» nada se pide ni vence. También
   escribe `cumple`: alcanzar la meta no es lo mismo que estar en Bien, porque con rangos escritos
   (forma B, spec 14A §3) Bien puede empezar antes de la meta; una medición anterior a la `0012`
   tiene `cumple` nulo y se lee como antes (Bien ⇔ cumple, `cumpleDeFila`).
@@ -675,9 +709,13 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   cerrada no se reabre cuando su fuente se reabre y se corrige, y queda como estaba (a ella tampoco se le
   pide que lo copiado coincida: no recibe la propagación). El cierre abre antes los periodos de los datos
   (`asegurarPeriodosDeDatos`, antes de las fotos) y propaga después; **cierra también los periodos de los
-  datos** que terminaron en el mes o antes (los reportados, aunque ya no se pidan, y los pendientes que se
-  piden y vencieron, sin valor: «Sin dato»), no los pendientes en plazo ni los que ya nadie pide
-  (`se_pide` falso); y **no cierra («espera»)** la medición con una entrada que no está cerrada ni se
+  datos** que terminaron en el mes o antes, **salvo los que siguen dentro de su plazo** (`vence_en >=
+  ahora`, la regla de las mediciones): cierra los reportados, aunque ya no se pidan, y los pendientes que
+  se piden, sin valor («Sin dato»), unos y otros ya vencidos; no los que siguen en plazo, **tampoco si ya
+  están reportados** (hasta el cierre se corrigen sin justificación, y las mediciones que los usan
+  esperan con ellos), ni los pendientes que ya nadie pide (`se_pide` falso). El resumen que el cierre
+  guarda y su bitácora llevan cuántos periodos de datos cerró (`datos`: un cierre no se modifica, y uno
+  anterior a esa cuenta no la trae: quien lo lee no dice nada). Y **no cierra («espera»)** la medición con una entrada que no está cerrada ni se
   cierra en ese mismo cierre, ni la de un indicador activo cuyo valor copiado ya no coincide con su fuente.
   La espera se contagia hacia arriba (por niveles, hasta que no cambie, en memoria y con todo bloqueado
   antes del `UPDATE`), y el resumen la dice (`esperanEntrada`, `datos`). Quién debía lo que quedó «Sin

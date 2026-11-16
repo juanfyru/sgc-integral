@@ -629,10 +629,15 @@ otro indicador, el cierre la cierra solo si lo que usó también está cerrado o
 mismo cierre; si su fuente sigue en plazo, espera al siguiente cierre. Antes de clasificar, el
 cierre lleva a cada medición lo que sus fuentes ya tienen, y una medición cuyo valor copiado no
 coincide con el de su fuente también espera. El cierre **cierra también los periodos de los datos
-compartidos** que terminaron en el mes o antes: los reportados, y los vencidos sin reportar que
-algún indicador todavía necesita, como «Sin dato» (con ellos, las mediciones que los esperaban). Un
+compartidos** que terminaron en el mes o antes, **salvo los que siguen dentro de su plazo**: cierra
+los reportados cuyo plazo ya pasó, y los vencidos sin reportar que algún indicador todavía necesita,
+como «Sin dato» (con ellos, las mediciones que los esperaban). Un periodo que sigue en plazo no se
+cierra aunque ya esté reportado: su responsable lo puede seguir corrigiendo sin justificación
+(sección 11.2), y las mediciones que lo usan esperan con él al siguiente cierre. Un
 periodo pendiente que ya ningún indicador necesita («Ya no se pide») no lo cierra nadie ni lo
-debe nadie. En **Mediciones que quedarán sin dato**,
+debe nadie. El resumen dice cuántos periodos de datos se cierran y cuántos siguen en plazo, y el
+cierre lo deja escrito: «Se cerró septiembre de 2026: 16 mediciones cerradas y 3 periodos de datos
+compartidos.». En **Mediciones que quedarán sin dato**,
 la columna **Quién debía** nombra a quien mide, a los responsables del dato que faltó o el
 indicador cuyo resultado faltó.
 
@@ -645,7 +650,8 @@ Para corregir una medición cerrada, en la tabla del año pulse **Reabrir**, esc
 **Justificación** (al menos 10 caracteres, sin clave) y pulse **Reabrir la medición**: vuelve a
 reportada (o a por reportar, si no tenía datos), queda marcada **Corregida** y se avisa a quien
 mide. Se cierra otra vez con el siguiente cierre del mes o con **Cerrar de nuevo**. **Cierres
-anteriores** lista los meses ya cerrados.
+anteriores** lista los meses ya cerrados, con cuántas mediciones y cuántos periodos de datos cerró
+cada uno (un cierre anterior a esa cuenta deja la casilla en «—»).
 
 **Reabrir en cascada.** Reabrir un periodo cerrado de un dato compartido (en la página del dato,
 **Reabrir**) o la medición cerrada de un indicador que otros toman reabre también las mediciones
@@ -655,7 +661,8 @@ las que **No se reabre** (las de un indicador retirado y las de otra periodicida
 las de un periodo cuya constancia ya se registró ante el ente («Ya se reportó al ente el …»: la
 constancia no cambia). El botón dice lo que hace («Reabrir el dato y 2 mediciones»). Si la lista
 cambió mientras usted confirmaba, nada se reabre: «Lo que se reabre cambió mientras se confirmaba:
-revise la lista y vuelva a intentarlo». Al reabrir un dato se avisa también a sus responsables;
+revise la lista y vuelva a intentarlo»; el diálogo queda abierto con la lista de ahora y lo que
+usted escribió. Al reabrir un dato se avisa también a sus responsables;
 su fecha límite no se mueve. **Cerrar de nuevo** no cierra una medición cuya fuente sigue abierta
 («Su fuente sigue abierta: ciérrela primero»): cierre primero el periodo del dato, también con
 **Cerrar de nuevo**.
@@ -1148,12 +1155,23 @@ Administrador del SGC por falta de responsable no se avisa a ningún jefe).
 
 1. Abra la tarea o la página del dato. **Reportar el dato** muestra el periodo que se pide, el más
    antiguo primero.
-2. Escriba el **Valor**, con coma o punto decimal. Si el dato se reporta por categoría, escriba el
-   **Valor de cada categoría**: el dato del periodo es la suma de todas.
+2. Escriba el **Valor** sin puntos de miles y con coma para los decimales (el campo lo recuerda:
+   «Sin puntos de miles; use la coma para los decimales.»). Las pantallas del dato **muestran** las
+   cifras con punto de miles («1.749»), pero el campo no lo admite: si escribe «1.600», el SGC lo
+   rechaza («Escriba el valor sin puntos de miles (1731); para decimales use la coma (1,731)»), para
+   que no quede guardado 1,6. Si el dato se reporta por categoría, escriba el **Valor de cada
+   categoría**: el dato del periodo es la suma de todas.
 3. Si quiere, adjunte en **Soporte (opcional)** el archivo de donde salió: PDF, imagen o Excel
-   `.xlsx`, como los soportes de una medición (sección 3.4).
+   `.xlsx`, como los soportes de una medición (sección 3.4). Lo ven quienes ven el dato y quienes ven
+   los soportes de un indicador que lo usa (sección 11.3).
 4. Pulse **Reportar**. Si el valor se aleja mucho del periodo anterior, el SGC pregunta: marque
-   **Sí, el valor es correcto** y pulse otra vez.
+   **Sí, el valor es correcto** y pulse otra vez. La confirmación vale para el valor por el que se
+   preguntó: si cambia el valor, la pregunta se va y, si hace falta, el SGC pregunta de nuevo.
+
+Si el recuadro dice **«Este periodo no tiene categorías: pida al Administrador del SGC que las
+actualice»**, el periodo terminó antes de que existieran las categorías de su dimensión y no hay
+qué digitar todavía (sección 11.4). Al reportar el último periodo pendiente, el recuadro se va y
+queda el aviso «Se reportó el dato. No queda ningún periodo por reportar.».
 
 En cuanto usted lo reporta, el SGC lo lleva a cada indicador que lo usa: el que ya tenía lo demás
 queda calculado, con su color y su alerta, igual que si lo hubiera reportado quien lo mide. Un dato
@@ -1161,15 +1179,21 @@ no tiene «No aplica»: si no hubo nada que contar, su valor es 0.
 
 **Corregir antes del cierre:** en **Periodos del dato**, pulse **Corregir**, cambie el valor y
 pulse **Guardar la corrección**. No pide justificación: el historial guarda lo que había, lo que
-quedó, quién y cuándo, y los indicadores que lo usan se recalculan solos (también su alerta).
-Después del cierre del mes el periodo queda cerrado: solo el Administrador del SGC lo reabre, y le
+quedó, quién y cuándo, y los indicadores que lo usan se recalculan solos (también su alerta). Un
+periodo se puede corregir así mientras no se cierre, y el cierre del mes no lo cierra mientras siga
+dentro de su plazo (sección 6.6).
+Después del cierre el periodo queda cerrado: solo el Administrador del SGC lo reabre, y le
 llega el aviso **Dato compartido reabierto: …** para que lo corrija o lo reporte tarde (sección
 6.6).
 
 ### 11.3 Un indicador que usa un dato
 
 En la ficha, la variable dice de qué dato sale. En la pantalla **Reportar**, esa variable aparece ya
-puesta, con quién la reportó y cuándo, y no se cambia desde ahí. Si el indicador tiene también
+puesta, con quién la reportó y cuándo, y no se cambia desde ahí. Debajo, **Soportes del dato** trae
+los archivos que adjuntó quien lo reportó, para descargarlos (con el periodo del dato, si el dato es
+mensual y el indicador trimestral): los ve quien ve el dato y quien ve los soportes de este
+indicador, aunque la página del dato no exista para él. También salen en la columna **Soportes** de
+la tabla del año, con «Dato compartido». Si el indicador tiene también
 variables suyas (un indicador **mixto**):
 
 - reporte lo suyo aunque el dato no haya llegado: el botón dice **Reportar lo mío**. Cuenta como
@@ -1182,7 +1206,14 @@ variables suyas (un indicador **mixto**):
 
 Un indicador cuyas variables salen todas de datos compartidos (o de otros indicadores) no lo mide
 nadie: no da tareas de reportar y se calcula cuando llegan sus datos. Su ficha dice «Llega de datos
-compartidos o de otros indicadores».
+compartidos o de otros indicadores». No se le suben soportes: su evidencia son los de sus datos, y
+su pantalla tiene **Soportes** con ellos («La evidencia de este indicador son los soportes de sus
+datos compartidos.»).
+
+Si a un indicador mixto le activan **soporte obligatorio** mientras espera el dato, quien lo mide
+tiene la tarea **Reportar …** con «Falta el soporte obligatorio» mientras la medición siga en plazo.
+Si el dato llega con el plazo ya vencido, el SGC no le pide ese soporte: lo suyo entró cuando no se
+pedía.
 
 Un indicador trimestral (o de otra periodicidad más larga que la del dato) toma el dato **juntado**
 con la regla del dato: la suma de sus meses, el último valor o el promedio. Mientras falte alguno
@@ -1207,8 +1238,17 @@ mayor. Un indicador por sede solo usa un dato por la misma dimensión.
 Desde que una ficha aprobada cita el dato, su periodicidad, cómo se junta y su desagregación no
 cambian («Una ficha aprobada ya cita este dato…»): si hace falta otra cosa, cree otro dato. Lo
 demás se edita siempre. **Desactivar el dato** solo se puede si ningún indicador activo lo usa
-(«Lo usa un indicador activo: cambie antes su ficha»), y **Borrar el dato**, si no tiene historia
-(«Este dato ya tiene historia: desactívelo»).
+(«Lo usa un indicador activo: cambie antes su ficha»). **Borrar el dato** solo se ofrece si no
+tiene historia (ninguna ficha lo cita, ni en borrador, y no tiene periodos); si la tiene,
+desactívelo.
+
+**Las categorías de un periodo.** Un dato por categoría fija la lista de cada periodo cuando el
+periodo se abre, como una medición (sección 12.2). Si un periodo terminó antes de crearse las
+categorías (pasa al poner en marcha una dimensión), nace sin ninguna y no se puede reportar; y una
+sede registrada tarde no está en los periodos ya abiertos. En la fila de un periodo **pendiente**,
+pulse **Actualizar categorías**: añade al final las que hoy están activas y faltaban, y no quita
+ninguna («Se añadieron 4 categorías.»). Queda en el historial del periodo («Se actualizaron las
+categorías: se añadieron …»). Un periodo ya reportado o cerrado no se actualiza.
 
 **Qué periodos se piden.** Solo los que necesita algún indicador activo, desde el periodo en curso
 al aprobarse su ficha (un indicador anual aprobado en noviembre pide los meses de ese año). Un
@@ -1353,7 +1393,9 @@ esa persona:
 **Lo que el ocultamiento no tapa:** si un compuesto tiene un solo componente que usted no ve, su
 valor se puede despejar del resultado y de la fórmula. Por eso, al elaborar y al aprobar una ficha
 así, la pantalla advierte: «Quien vea este indicador podrá deducir el resultado de «…» si es el
-único componente que no puede ver».
+único componente que no puede ver». Y, al elaborarla: «No lo nombre en el propósito ni en el motivo
+del cambio: esos textos los lee quien ve este indicador.» El nombre de la variable sí se sustituye
+por «Indicador restringido» a quien no ve el componente; el propósito y el motivo del cambio, no.
 
 ### 13.4 En la ficha (Administrador del SGC)
 
@@ -1481,10 +1523,14 @@ puede ver; tampoco los de una constancia de envío o una revisión por cambio de
 | Este «No aplica» lo puso el sistema: se quita solo cuando cambie el dato | Se intentó quitar un «No aplica» que puso el SGC | Nada: se quita solo |
 | La medición ya se reportó: corrija los datos y pulse «Reportar» | Se pulsó **Guardar sin reportar** en una medición ya reportada | Corrija y pulse **Reportar** |
 | Esta medición no tiene categorías: pida al Administrador del SGC que las actualice | La lista del periodo quedó vacía | Pida **Actualizar categorías** |
+| Este periodo no tiene categorías: pida al Administrador del SGC que las actualice | El periodo del dato terminó antes de existir las categorías de su dimensión | Pida **Actualizar categorías** en la página del dato (sección 11.4) |
+| Solo se actualizan las categorías de un periodo que aún no se ha reportado | Se pidió **Actualizar categorías** en un periodo del dato ya reportado o cerrado | Nada: su lista ya no cambia |
+| Escriba el valor sin puntos de miles (1731); para decimales use la coma (1,731) | En el valor de un dato se escribió un punto de miles («1.600») | Escríbalo sin puntos; la coma es para los decimales |
 | Cambie antes el indicador que lo usa | Un compuesto activo usa este indicador | Cambie o retire antes el compuesto |
 | Esta ficha cerraría un ciclo entre indicadores / Un indicador compuesto admite hasta cinco niveles | La cadena de compuestos no es válida | Tome otro indicador |
 | Su fuente sigue abierta: ciérrela primero | Se pidió **Cerrar de nuevo** con un dato o un componente aún abierto | Cierre primero la fuente |
 | Lo copiado de sus fuentes aún no está al día: vuelva a intentarlo en un momento | El SGC aún no llevó el último valor de la fuente | Espere un momento y repita |
-| Lo que se reabre cambió mientras se confirmaba: revise la lista y vuelva a intentarlo | Entre la lista y la confirmación cambió algo | Vuelva a abrir el diálogo |
+| Lo que se reabre cambió mientras se confirmaba: revise la lista y vuelva a intentarlo | Entre la lista y la confirmación cambió algo | Revise la lista, que ya es la de ahora, y confirme otra vez |
+| Otra persona estaba cambiando esa norma o esa ficha al mismo tiempo: inténtelo de nuevo | Dos personas escribieron lo mismo a la vez (también al reportar un dato o actualizar categorías) | Repita la acción |
 | Ya hay un dato con ese nombre en ese proceso / Ya hay una dimensión con ese nombre | El nombre ya existe | Use otro nombre |
 | Ya se usó: desactívela | Una dimensión o categoría con historia | Desactívela en lugar de borrarla |
