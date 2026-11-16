@@ -22,6 +22,7 @@ import { reabrirMedicion } from "@/db/consultas/indicadores/cierre";
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
 import { asegurarMediciones, quitarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
 import { propagar, valorDeDato } from "@/db/consultas/indicadores/propagacion";
+import { columnasDePendiente, queFalta } from "@/db/consultas/indicadores/tareas";
 import { adminsActivos } from "@/db/consultas/tramites";
 import { describirEvento } from "@/lib/bitacora-detalle";
 import { EsquemaReporte, juntarValoresDeReporte } from "@/lib/esquemas/indicadores";
@@ -261,6 +262,24 @@ describe("reportar la rejilla", () => {
       expect(m).toMatchObject({ no_aplica: false, no_aplica_motivo: null, semaforo: "bien" });
       expect(Number(m.resultado)).toBeCloseTo(85.9375, 6);
       expect((await eventos(tx, e.octubre)).map((x) => x.tipo)).toEqual(["reporte", "correccion"]);
+    }));
+
+  it("los límites de captura valen por celda y la confirmación por variación, sobre el total; sin confirmar no se escribe nada", () =>
+    revertida(sql, async (tx) => {
+      const variables = { A: { nombre: "Pacientes con manejo adherente", capturaMax: "150" }, B: { nombre: "Pacientes auditados" } };
+      const e = await entorno(tx, { variables });
+      const ids = e.sede.categorias;
+      await rechaza(rejilla(tx, e.mide, e.octubre, maqueta(ids)), "Sede principal: «Pacientes con manejo adherente» no puede pasar de 150");
+      expect((await valoresDe(tx, e.octubre)).celdas).toEqual([]);
+
+      const septiembre = await medicionDe(tx, e.ind.id, "2026-09");
+      const dentro = maqueta(ids).map((f, i) => (i === 0 ? { ...f, valores: { A: "150", B: "200" } } : f));
+      await rejilla(tx, e.mide, septiembre, dentro);
+      const bajo = dentro.map((f, i) => (i === 0 ? { ...f, valores: { A: "10", B: "200" } } : f));
+      const r = await reportar(e.mide, { medicionId: e.octubre, valores: {}, filas: bajo, parcial: false, confirmado: false }, opc(tx));
+      expect(r.ok).toBe(false);
+      expect((await valoresDe(tx, e.octubre)).celdas).toEqual([]);
+      expect((await fila(tx, e.octubre)).reportada_en).toBeNull();
     }));
 
   it("dos personas guardan sin reportar sedes distintas y no se pisan", () =>
@@ -595,6 +614,9 @@ describe("un dato compartido por categoría (anexo §5.7)", () => {
       );
       expect(lomio).toMatchObject({ ok: true, faltaDato: true });
       expect((await valoresDe(tx, p.medicion)).total).toEqual([]);
+      // Quien mide ya entregó lo suyo: la medición espera el dato, no su reporte (anexo §3.1).
+      const pendiente = await tx`SELECT ${columnasDePendiente(tx)} FROM mediciones m JOIN indicadores i ON i.id = m.indicador_id WHERE m.id = ${p.medicion}`;
+      expect(queFalta(pendiente).get(p.medicion)?.falta).toBe("dato");
       await p.mes(p.datoB, "2026-01", { [p.s1]: "20", [p.s2]: "40" });
       await p.mes(p.datoB, "2026-02", { [p.s1]: "20", [p.s2]: "40" });
       await p.mes(p.datoB, "2026-03", { [p.s1]: "20", [p.s2]: "40", [p.S3]: "10" });
