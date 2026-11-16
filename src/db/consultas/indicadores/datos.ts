@@ -587,16 +587,29 @@ export async function cambiarEstadoDeDato(
 }
 
 /**
- * Borra un dato sin historia, con sus responsables. Lo citado por cualquier versión (también un borrador: la llave foránea
- * no lo deja) o con algún periodo ya tiene historia: se desactiva.
+ * ¿El dato tiene historia? Lo cita alguna versión (también un borrador: la llave foránea no lo deja borrar) o tiene algún
+ * periodo. Con ella no se borra: se desactiva.
+ */
+const conHistoria = (sql: Cliente, datoId: number) => sql`(
+  EXISTS (SELECT 1 FROM indicador_variables WHERE variable_compartida_id = ${datoId})
+  OR EXISTS (SELECT 1 FROM variable_valores WHERE variable_id = ${datoId}))`;
+
+/** ¿Se puede borrar el dato? La regla de `borrarDato`, para que la página ofrezca «Borrar el dato» solo cuando va a servir. */
+export async function datoBorrable(datoId: number, opciones?: { sql?: Cliente }): Promise<boolean> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [h] = await sql`SELECT ${conHistoria(sql, datoId)} AS historia`;
+  return h.historia !== true;
+}
+
+/**
+ * Borra un dato sin historia (`conHistoria`), con sus responsables. Lo citado por cualquier versión o con algún periodo ya
+ * tiene historia: se desactiva.
  */
 export async function borrarDato(sesion: SesionFlujo, datoId: number, opciones?: Opciones): Promise<void> {
   exigirAdministrar(sesion);
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
     const dato = await datoBloqueado(tx, datoId);
-    const [h] = await tx`SELECT
-        EXISTS (SELECT 1 FROM indicador_variables WHERE variable_compartida_id = ${dato.id})
-        OR EXISTS (SELECT 1 FROM variable_valores WHERE variable_id = ${dato.id}) AS historia`;
+    const [h] = await tx`SELECT ${conHistoria(tx, dato.id)} AS historia`;
     if (h.historia === true) throw new ErrorIndicador(CON_HISTORIA);
     const [p] = await tx`SELECT nombre FROM procesos WHERE id = ${dato.procesoId}`;
     await tx`DELETE FROM variable_responsables WHERE variable_id = ${dato.id}`;

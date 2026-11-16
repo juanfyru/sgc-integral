@@ -339,7 +339,8 @@ export function EstadoDelDato({ dato }: { dato: DatoCompartido }) {
 
 /**
  * «Borrar el dato» (anexo 14C, §4.1), para quien administra indicadores: pide confirmarlo, porque no se deshace, y al terminar
- * lleva a «Datos compartidos». Un dato con historia no se borra (se desactiva): el servidor lo rechaza con su mensaje.
+ * lleva a «Datos compartidos». Un dato con historia no se borra (se desactiva): la página no ofrece el botón, y si la
+ * historia aparece mientras tanto, el servidor lo rechaza con su mensaje.
  */
 export function BorrarDato({ dato }: { dato: DatoCompartido }) {
   const [abierto, setAbierto] = useState(false);

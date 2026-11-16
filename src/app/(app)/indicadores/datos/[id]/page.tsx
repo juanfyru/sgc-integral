@@ -7,7 +7,7 @@ import { ReportarDato } from "@/componentes/indicadores/datos/ReportarDato";
 import { apruebaFichas, PestanasIndicadores, pestanasVisibles } from "@/componentes/indicadores/PestanasIndicadores";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
-import { indicadoresQueLoUsan, opcionesDeDato, pestanaDeDatos } from "@/db/consultas/indicadores/datos";
+import { datoBorrable, indicadoresQueLoUsan, opcionesDeDato, pestanaDeDatos } from "@/db/consultas/indicadores/datos";
 import { asegurarPeriodosDeDatos, historialesDeDato, periodosDeDato } from "@/db/consultas/indicadores/datos-periodos";
 import { soportesDeDato } from "@/db/consultas/indicadores/datos-soporte";
 import { reaperturaEnTexto, type ReaperturaEnTexto } from "@/db/consultas/indicadores/reapertura";
@@ -21,8 +21,9 @@ export const metadata: Metadata = { title: "Dato compartido" };
 /**
  * La página de un dato compartido (anexo 14C, §4.4 a §4.7, maqueta 12), para quien lo ve: reportar el periodo que se pide
  * más antiguo (quien responde por él), la ficha del dato, sus periodos con el antes y el después de cada corrección, sus
- * soportes y su historial. Quien administra edita el dato y sus responsables aquí mismo, lo activa o lo desactiva y lo borra
- * (lo que una ficha aprobada congela va de solo lectura), y reabre un periodo cerrado, con la lista de lo que se reabre en
+ * soportes y su historial. Quien administra edita el dato y sus responsables aquí mismo, lo activa o lo desactiva y, si no
+ * tiene historia (`datoBorrable`: ninguna ficha lo cita y no tiene periodos), lo borra (lo que una ficha aprobada congela
+ * va de solo lectura), y reabre un periodo cerrado, con la lista de lo que se reabre en
  * cascada, o cierra de nuevo uno reabierto. Antes de leer abre los periodos que se piden del dato. Para quien no lo ve, no
  * existe.
  */
@@ -31,7 +32,7 @@ export default async function PaginaDato({ params }: { params: Promise<{ id: str
   const { sesion, dato } = await exigirDato(id);
   await asegurarPeriodosDeDatos({ datoIds: [dato.id] });
   const administra = puede(sesion, "indicadores.administrar");
-  const [periodos, historiales, soportes, usan, capacidad, pestana, opciones] = await Promise.all([
+  const [periodos, historiales, soportes, usan, capacidad, pestana, opciones, borrable] = await Promise.all([
     periodosDeDato(sesion, dato.id),
     historialesDeDato(sesion, dato.id),
     soportesDeDato(sesion, dato.id),
@@ -39,6 +40,8 @@ export default async function PaginaDato({ params }: { params: Promise<{ id: str
     puedeReportarDato(dato.id, sesion),
     pestanaDeDatos(sesion),
     administra ? opcionesDeDato(dato) : null,
+    // «Borrar el dato» solo se ofrece si el servidor lo va a aceptar, como «Borrar» en las dimensiones.
+    administra ? datoBorrable(dato.id) : false,
   ]);
   const reporta = capacidad.puede && puede(sesion, "indicadores.medir");
   // Quien administra reabre un periodo cerrado (en cascada: el diálogo lista lo que se reabre, anexo 14C §3.5) y cierra de
@@ -67,7 +70,7 @@ export default async function PaginaDato({ params }: { params: Promise<{ id: str
               <EditarDato dato={dato} opciones={opciones} />
               <ResponsablesDelDato dato={dato} usuarios={opciones.usuarios} />
               <EstadoDelDato dato={dato} />
-              <BorrarDato dato={dato} />
+              {borrable ? <BorrarDato dato={dato} /> : null}
             </>
           ) : null
         }

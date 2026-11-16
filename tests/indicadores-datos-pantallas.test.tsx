@@ -352,12 +352,23 @@ describe("lo que ya no se pide y lo que hace quien administra", () => {
       expect(await pagina(responsable, datoId)).toContain("Ya no se pide");
     }));
 
-  it("quien administra activa o desactiva el dato y lo borra desde su página; quien no administra, no", () =>
+  it("quien administra activa o desactiva el dato y, si no tiene historia, lo borra desde su página; quien no administra, no", () =>
     enTransaccion(async (tx) => {
-      const { responsable, datoId } = await entorno(tx);
-      const delAdmin = await pagina(await sesionAdmin(tx), datoId);
+      const { procesoId, responsable, datoId } = await entorno(tx);
+      const admin = await sesionAdmin(tx);
+      const delAdmin = await pagina(admin, datoId);
       expect(delAdmin).toContain("Desactivar el dato");
-      expect(delAdmin).toContain("Borrar el dato");
+      // Lo cita una ficha aprobada: «Borrar el dato» no se ofrece (el servidor lo rechazaría).
+      expect(delAdmin).not.toContain("Borrar el dato");
+      // Un dato nuevo, sin fichas ni periodos, sí se borra.
+      const nuevo = await datoDePrueba(tx, { procesoId, nombre: `${NOMBRE} nuevo`, responsables: [responsable.usuarioId] });
+      expect(await pagina(admin, nuevo)).toContain("Borrar el dato");
+      // Con un periodo ya no; ni citado solo por un borrador.
+      await periodoDeDatoDePrueba(tx, { datoId: nuevo, periodo: "2026-09", valor: "5", ahora: OCT_6 });
+      expect(await pagina(admin, nuevo)).not.toContain("Borrar el dato");
+      const enBorrador = await datoDePrueba(tx, { procesoId, nombre: `${NOMBRE} en borrador`, responsables: [responsable.usuarioId] });
+      await indicadorDePrueba(tx, { procesoId, estado: "borrador", variables: { B: { datoId: enBorrador } } });
+      expect(await pagina(admin, enBorrador)).not.toContain("Borrar el dato");
       await tx`UPDATE variables_compartidas SET activa = false WHERE id = ${datoId}`;
       expect(await pagina(await sesionAdmin(tx), datoId)).toContain("Activar el dato");
       const suya = await pagina(responsable, datoId);
