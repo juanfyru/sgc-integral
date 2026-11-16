@@ -46,6 +46,7 @@ import {
   periodosTerminados,
   versionQueRigeEntre,
 } from "@/lib/indicadores/periodos";
+import { SIN_PUNTOS_DE_MILES, tienePuntoDeMiles } from "@/lib/indicadores/miles";
 import { leerValor, valorEnTexto, type VariableDeCaptura } from "@/lib/indicadores/reporte";
 import { numeroExacto } from "@/lib/indicadores/semaforo";
 import { ErrorIndicador, PERIODO_SIN_CATEGORIAS, SIN_RESPONSABLE, type Periodicidad } from "@/lib/indicadores/tipos";
@@ -94,8 +95,7 @@ const SOLO_REABIERTO = "Solo se cierra de nuevo un periodo reabierto";
  * punto como decimal: «1.600» sería 1,6. En los formularios del dato, un valor con esa forma (grupos de tres cifras
  * separados por puntos, también uno solo) se rechaza antes de leerlo.
  */
-const CON_PUNTO_DE_MILES = /^-?[1-9]\d{0,2}(\.\d{3})+$/;
-export const SIN_PUNTOS_DE_MILES = "Escriba el valor sin puntos de miles (1731); para decimales use la coma (1,731)";
+export { SIN_PUNTOS_DE_MILES };
 const SIN_DIMENSION = "Este dato no se reporta por categorías";
 const SOLO_PENDIENTE = "Solo se actualizan las categorías de un periodo que aún no se ha reportado";
 
@@ -427,7 +427,7 @@ const normales = (r: Record<string, string>) => Object.fromEntries(Object.entrie
  * (`SIN_PUNTOS_DE_MILES`); `deCategoria` dice de cuál es, porque el formulario trae una por categoría.
  */
 function leer(textoDigitado: string, v: VariableDeCaptura, deCategoria = false): Fraccion {
-  if (CON_PUNTO_DE_MILES.test(textoDigitado.trim())) throw new ErrorIndicador(deCategoria ? `${v.nombre}: ${SIN_PUNTOS_DE_MILES}` : SIN_PUNTOS_DE_MILES);
+  if (tienePuntoDeMiles(textoDigitado)) throw new ErrorIndicador(deCategoria ? `${v.nombre}: ${SIN_PUNTOS_DE_MILES}` : SIN_PUNTOS_DE_MILES);
   const r = leerValor(textoDigitado, v);
   if (!r.ok) throw new ErrorIndicador(r.error);
   if (r.valor === null) throw new ErrorIndicador(`Falta el valor de «${v.nombre}»`);

@@ -6,6 +6,7 @@ import type { EstadoAccion } from "@/app/admin/comun";
 import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import type { DatosDeReporte } from "@/db/consultas/indicadores/lectura";
+import { AYUDA_SIN_MILES } from "@/lib/indicadores/miles";
 import { conCambio, pintadosDe, rejillaCalculada, semilla, type Edicion } from "@/lib/indicadores/rejilla-formulario";
 import { calcularEnVivo, type EstadoReporte } from "@/lib/indicadores/reporte";
 import { MOTIVO_TODAS_NO_APLICAN, MOTIVOS_DEL_SISTEMA } from "@/lib/indicadores/tipos";
@@ -215,7 +216,7 @@ export function FormularioReporte({
               const id = `reporte-${v.letra}`;
               if (v.ajena) return <VariableFija key={v.letra} variable={v} id={id} periodo={datos.periodo} soportes={soportesDeDatos[v.letra]} />;
               const error = vivo.errores[v.letra];
-              const descritoPor = [v.descripcion || v.fuente ? `${id}-ayuda` : null, error ? `${id}-error` : null].filter(Boolean).join(" ") || undefined;
+              const descritoPor = [v.descripcion || v.fuente ? `${id}-ayuda` : null, error ? `${id}-error` : null, `${id}-miles`].filter(Boolean).join(" ");
               return (
                 <div key={v.letra} className="flex min-w-0 flex-col gap-1">
                   <label htmlFor={id} className="text-sm font-medium">
@@ -232,6 +233,9 @@ export function FormularioReporte({
                     aria-invalid={error ? "true" : undefined}
                     className={`${claseControl} w-full min-w-0`}
                   />
+                  <p id={`${id}-miles`} className="text-xs text-muted-foreground">
+                    {AYUDA_SIN_MILES}
+                  </p>
                   {v.descripcion || v.fuente ? (
                     <p id={`${id}-ayuda`} className="text-xs text-muted-foreground">
                       {[v.descripcion, v.fuente ? `Fuente: ${v.fuente}` : null].filter(Boolean).join(" · ")}

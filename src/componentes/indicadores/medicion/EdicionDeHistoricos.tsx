@@ -6,6 +6,7 @@ import { registrarHistoricosAccion } from "@/app/acciones-indicadores";
 import { ErrorAccion } from "@/componentes/tramites/AccionesSolicitud";
 import { Boton, claseBoton } from "@/componentes/ui/Boton";
 import { claseControl } from "@/componentes/ui/Campo";
+import { AYUDA_SIN_MILES } from "@/lib/indicadores/miles";
 import { celda, celdaNumerica, TablaDatos, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
@@ -67,6 +68,9 @@ export function EdicionDeHistoricos({
         soporte son opcionales. Deje en blanco los que no tenga. Una fila en blanco no cambia lo ya registrado. Si en un periodo no
         hubo casos, marque «No aplica» y escriba el motivo.
       </p>
+      <p id="historicos-miles" className="text-sm text-muted-foreground">
+        {AYUDA_SIN_MILES}
+      </p>
       <TablaDatos titulo={`Históricos de ${anio}`} columnas={columnas} filas={filas.length} vacio={`No hay históricos que registrar en ${anio}.`}>
         {filas.map((f) => (
           <tr key={f.periodo}>
@@ -92,6 +96,7 @@ export function EdicionDeHistoricos({
                       aria-label={`${propia.nombre}, ${f.etiqueta.toLowerCase()}`}
                       inputMode="decimal"
                       autoComplete="off"
+                      aria-describedby="historicos-miles"
                       defaultValue={typeof v[campo] === "string" ? (v[campo] as string) : (guardado ?? "")}
                       className={`${claseControl} w-28 min-w-0`}
                     />

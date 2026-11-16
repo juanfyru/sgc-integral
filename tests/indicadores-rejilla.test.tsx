@@ -585,3 +585,13 @@ describe("la marca «n en Crítico» (anexo 14C, §5.6)", () => {
     expect(tabla({ ...base, deOtraPeriodicidad: true }, true)).not.toContain("Actualizar categorías");
   });
 });
+
+describe("la ayuda del punto de miles (complemento 14C, Tarea 1)", () => {
+  it("va una sola vez sobre la tabla y cada campo de valor propio la referencia", () => {
+    const html = rejilla();
+    expect(veces(html, `<p id="rejilla-miles"`)).toBe(1);
+    expect(html).toContain("Sin puntos de miles; use la coma para los decimales.");
+    const celda = campo(html, `c_${SEDES[0].id}_A`);
+    expect(celda).toMatch(/aria-describedby="[^"]*rejilla-miles[^"]*"/);
+  });
+});

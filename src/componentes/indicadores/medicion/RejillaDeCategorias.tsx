@@ -9,6 +9,7 @@ import { estadoDeCategoria, type FilaEnVivo, type TotalEnVivo } from "@/lib/indi
 import { fraccion } from "@/lib/indicadores/formula/fraccion";
 import { rejillaCalculada, type DatosDeRejilla, type Edicion } from "@/lib/indicadores/rejilla-formulario";
 import { CIFRA_FUERA_DE_RANGO, DIVISION_POR_CERO, type CalculoEnVivo, type EstadoReporte } from "@/lib/indicadores/reporte";
+import { AYUDA_SIN_MILES } from "@/lib/indicadores/miles";
 import { numeroEs } from "@/lib/indicadores/semaforo";
 import type { Semaforo } from "@/lib/indicadores/tipos";
 import { cuenta } from "@/lib/plural";
@@ -188,6 +189,9 @@ export function RejillaDeCategorias({
     // la cuadrícula); desde ahí, la tabla a la izquierda y el total, los avisos y los botones a la derecha.
     <div ref={raiz} className="flex min-w-0 flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:grid-rows-[auto_1fr] lg:gap-y-3">
       <div className="min-w-0 sm:overflow-x-auto lg:row-span-2">
+        <p id="rejilla-miles" className="pb-2 text-xs text-muted-foreground">
+          {AYUDA_SIN_MILES}
+        </p>
         <table className="block w-full text-sm sm:table">
           <caption className="sr-only">{`Datos por ${datos.dimension ?? "categoría"}`}</caption>
           <thead className="hidden text-left text-xs font-semibold text-muted-foreground sm:table-header-group">
@@ -280,7 +284,7 @@ export function RejillaDeCategorias({
                             autoComplete="off"
                             aria-label={`${c.nombre}: ${v.nombre}`}
                             aria-invalid={error ? "true" : undefined}
-                            aria-describedby={error ? `${id}-error` : undefined}
+                            aria-describedby={error ? `${id}-error rejilla-miles` : "rejilla-miles"}
                             value={valor(k)}
                             onChange={(e) => alCambiar(k, e.target.value)}
                             className={`${claseControl} w-full min-w-16 text-right tabular-nums ${SOBRE_EL_PIE}`}

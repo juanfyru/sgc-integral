@@ -535,6 +535,8 @@ describe("revisarLote: rigor de la ronda 1", () => {
 
   it("una meta con punto de miles es ambigua; la coma decimal y el punto decimal valen", () => {
     expect(una({ meta: "1.000" }).problemas).toContain("La meta «1.000» es ambigua: escríbala sin separador de miles (1000) o con coma decimal");
+    expect(una({ meta: "1.500" }).problemas).toContain("La meta «1.500» es ambigua: escríbala sin separador de miles (1500) o con coma decimal");
+    expect(una({ meta: "0.125" }).problemas.some((p) => p.includes("ambigua"))).toBe(false);
     expect(una({ meta: "1,5" }).ficha?.meta).toBe("1.5");
     expect(una({ meta: "95.5" }).ficha?.meta).toBe("95.5");
     expect(una({ meta: "95,50" }).ficha?.meta).toBe("95.5");

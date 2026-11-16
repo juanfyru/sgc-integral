@@ -7,6 +7,7 @@ import { calcular, variacionExcesiva, type FichaDeCalculo } from "./calculo";
 import { analizar } from "./formula/analizar";
 import type { Motivo } from "./formula/evaluar";
 import { aDecimal, comparar, deTexto, esNegativa, fraccion, type Fraccion } from "./formula/fraccion";
+import { SIN_PUNTOS_DE_MILES, tienePuntoDeMiles } from "./miles";
 import { rangosDeTexto, type RangosEnTexto } from "./rangos";
 import { numeroExacto, type Regla } from "./semaforo";
 import { fraseDeVariacion, textoValor, type Unidad } from "./textos";
@@ -74,6 +75,7 @@ export function leerValor(texto: string, v: VariableDeCaptura): { ok: true; valo
   const t = texto.trim();
   if (t === "") return { ok: true, valor: null };
   const nombre = `«${v.nombre}»`;
+  if (tienePuntoDeMiles(t)) return { ok: false, error: `${nombre}: ${SIN_PUNTOS_DE_MILES}` };
   if (!NUMERO.test(t)) return { ok: false, error: `${nombre} debe ser un número` };
   if (!ACOTADO.test(t)) return { ok: false, error: `${nombre} admite hasta 15 cifras enteras y 4 decimales` };
   const valor = fraccion(t)!;

@@ -87,7 +87,8 @@ import {
   juntarHistoricos,
   juntarValoresDeReporte,
 } from "@/lib/esquemas/indicadores";
-import { destinoTrasReportar } from "@/lib/indicadores/reporte";
+import { AYUDA_SIN_MILES, SIN_PUNTOS_DE_MILES } from "@/lib/indicadores/miles";
+import { calcularEnVivo, destinoTrasReportar, leerValor } from "@/lib/indicadores/reporte";
 import { MOTIVOS_DEL_SISTEMA } from "@/lib/indicadores/tipos";
 import type { SesionValida } from "@/lib/sesion";
 import { parsearFormulario } from "@/lib/validacion";
@@ -317,7 +318,7 @@ describe("FormularioReporte y ResultadoEnVivo", () => {
       <FormularioReporte datos={{ ...DATOS, variables: [{ ...DATOS.variables[0], valor: "abc" }, DATOS.variables[1]] }} volver="/x" />,
     );
     expect(html).toContain('aria-invalid="true"');
-    expect(html).toContain('aria-describedby="reporte-A-ayuda reporte-A-error"');
+    expect(html).toContain('aria-describedby="reporte-A-ayuda reporte-A-error reporte-A-miles"');
     expect(html).toContain("«Auditorías ejecutadas» debe ser un número");
   });
 
@@ -1480,4 +1481,35 @@ describe("las páginas de un desagregado (14C, Tarea 15)", () => {
       const otro = await indicadorDePrueba(tx, { periodicidad: "trimestral", inicioMedicion: "2026-T1", aprobadaEn: APROBADA });
       expect(await pagina(otro.codigo, { vista: "resultados", anio: "2026" })).not.toMatch(/<h2[^>]*>Por /);
     }));
+});
+
+describe("el punto de miles en lo que se digita (complemento 14C, Tarea 1)", () => {
+  const CASOS = { nombre: "Casos", capturaMin: null, capturaMax: null, admiteNegativos: false, letra: "A" };
+
+  it("leerValor rechaza «1.600» con el nombre de la variable; la coma y el entero siguen bien", () => {
+    expect(leerValor("1.600", CASOS)).toEqual({ ok: false, error: `«Casos»: ${SIN_PUNTOS_DE_MILES}` });
+    expect(leerValor(" 12.500 ", CASOS)).toEqual({ ok: false, error: `«Casos»: ${SIN_PUNTOS_DE_MILES}` });
+    expect(leerValor("1,6", CASOS).ok).toBe(true);
+    expect(leerValor("1600", CASOS).ok).toBe(true);
+    expect(leerValor("1.6", CASOS).ok).toBe(true);
+    expect(leerValor("0.125", CASOS).ok).toBe(true);
+  });
+
+  it("el cálculo en vivo da ese error para la letra del valor", () => {
+    const vivo = calcularEnVivo(
+      { calculo: DATOS.calculo, regla: DATOS.regla, unidad: DATOS.unidad, variables: DATOS.variables, anterior: null, variacionPct: DATOS.variacionPct },
+      { A: "1.600", B: "5" },
+    );
+    expect(vivo.errores.A).toBe(`«${DATOS.variables[0].nombre}»: ${SIN_PUNTOS_DE_MILES}`);
+    expect(vivo.completo).toBe(false);
+  });
+
+  it("cada campo de valor propio del formulario referencia la ayuda en su aria-describedby", () => {
+    const html = renderToStaticMarkup(<FormularioReporte datos={DATOS} volver="/indicadores/SGC-IND-01" />);
+    for (const v of DATOS.variables) {
+      expect(html).toMatch(new RegExp(`<input(?=[^>]*id="reporte-${v.letra}")(?=[^>]*aria-describedby="[^"]*reporte-${v.letra}-miles[^"]*")[^>]*>`));
+      expect(html).toContain(`<p id="reporte-${v.letra}-miles"`);
+    }
+    expect(html).toContain(AYUDA_SIN_MILES);
+  });
 });

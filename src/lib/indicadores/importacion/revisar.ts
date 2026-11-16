@@ -8,6 +8,7 @@ import { FACTORES_TASA, formulaDeForma, letrasDeForma } from "@/lib/indicadores/
 import { aDecimal, CERO, CIEN, comparar, fraccion, multiplicar, UNO, type Fraccion } from "@/lib/indicadores/formula/fraccion";
 import { dos } from "@/lib/indicadores-documentales/periodo";
 import { claveQueContieneMes, periodosAntesDelMes } from "@/lib/indicadores/periodos";
+import { tienePuntoDeMiles } from "@/lib/indicadores/miles";
 import { rangosATexto, rangosDeLaRegla, type RangosEnTexto } from "@/lib/indicadores/rangos";
 import type { Consolidacion, Forma, Periodicidad, Tendencia } from "@/lib/indicadores/tipos";
 import { normalizar } from "@/lib/lote-usuarios";
@@ -164,7 +165,6 @@ function numeroCanonico(m: Fraccion): string {
 }
 
 /** «1.000»: un punto que parece separador de miles; Excel y la gente lo leen distinto. */
-const PUNTO_DE_MILES = /^-?\d{1,3}(\.\d{3})+$/;
 
 function revisarFila(
   f: FilaLeida,
@@ -331,7 +331,7 @@ function revisarFila(
   } else {
     const m = fraccion(t("meta"));
     if (m === null) problemas.push(`La meta «${eco(t("meta"))}» no es un número`);
-    else if (PUNTO_DE_MILES.test(t("meta"))) {
+    else if (tienePuntoDeMiles(t("meta"))) {
       problemas.push(`La meta «${eco(t("meta"))}» es ambigua: escríbala sin separador de miles (${t("meta").replace(/\./g, "")}) o con coma decimal`);
     } else {
       metaTexto = numeroCanonico(m);

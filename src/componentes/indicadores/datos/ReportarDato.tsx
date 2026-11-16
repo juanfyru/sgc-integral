@@ -11,6 +11,7 @@ import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import { Dialogo } from "@/componentes/ui/Dialogo";
 import type { Soporte } from "@/db/consultas/indicadores/soportes";
+import { AYUDA_SIN_MILES } from "@/lib/indicadores/miles";
 import type { EstadoReporte } from "@/lib/indicadores/reporte";
 import { rutaDeSoporteDeDato, rutaDeSubidaDeDato } from "@/lib/indicadores/rutas";
 import { PERIODO_SIN_CATEGORIAS } from "@/lib/indicadores/tipos";
@@ -20,7 +21,7 @@ const CONTROL = `${claseControl} w-full min-w-0 max-w-full`;
 const CAJA = "flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3";
 const AVISO = "flex flex-col gap-2 rounded-md border border-l-4 border-border border-l-estado-atencion bg-card px-3 py-2 text-sm";
 /** Las cifras del dato se muestran con punto de miles, pero el campo lo leería como decimal: se dice junto al campo. */
-const SIN_MILES = "Sin puntos de miles; use la coma para los decimales.";
+const SIN_MILES = AYUDA_SIN_MILES;
 /** ¿El campo es uno de los valores del dato (el único, o el de una categoría)? */
 const esUnValor = (nombre: string) => nombre === "valor" || nombre.startsWith("categoria_");
 
