@@ -11,7 +11,7 @@ import { calcularEnVivo, type EstadoReporte } from "@/lib/indicadores/reporte";
 import { MOTIVO_TODAS_NO_APLICAN, MOTIVOS_DEL_SISTEMA } from "@/lib/indicadores/tipos";
 import { cuenta } from "@/lib/plural";
 import { ActualizarCategorias } from "./ActualizarCategorias";
-import { AvisosDeFalta, VariableFija } from "./DatosDelSistema";
+import { AvisosDeFalta, VariableFija, type SoportesDeDatosPorLetra } from "./DatosDelSistema";
 import { RejillaDeCategorias } from "./RejillaDeCategorias";
 import { ResultadoEnVivo } from "./ResultadoEnVivo";
 
@@ -130,9 +130,20 @@ function QuitarNoAplica({ medicionId, motivo }: { medicionId: number; motivo: st
  * «Guardar sin reportar», «Reportar» («Reportar lo mío» mientras falte un valor ajeno; ya reportada, «Guardar la
  * corrección») y «No aplica en este periodo». Sirve a 390 px y con teclado. Un desagregado manda, en este mismo formulario y
  * a la misma acción, su rejilla por categoría (`RejillaDeCategorias`; ya reportada, solo «Reportar») y, a quien administra,
- * «Actualizar categorías» mientras la medición siga abierta sin reportar.
+ * «Actualizar categorías» mientras la medición siga abierta sin reportar. Junto a la variable que sale de un dato compartido,
+ * sus soportes para quien los ve (`soportesDeDatos`, anexo 14C §4.6).
  */
-export function FormularioReporte({ datos, volver, administra = false }: { datos: DatosDeReporte; volver: string; administra?: boolean }) {
+export function FormularioReporte({
+  datos,
+  volver,
+  administra = false,
+  soportesDeDatos = {},
+}: {
+  datos: DatosDeReporte;
+  volver: string;
+  administra?: boolean;
+  soportesDeDatos?: SoportesDeDatosPorLetra;
+}) {
   const [valores, setValores] = useState<Record<string, string>>(() =>
     Object.fromEntries(datos.variables.map((v) => [v.letra, v.valor === null ? "" : v.valor.replace(".", ",")])),
   );
@@ -202,7 +213,7 @@ export function FormularioReporte({ datos, volver, administra = false }: { datos
             <legend className="sr-only">Datos del periodo</legend>
             {datos.variables.map((v) => {
               const id = `reporte-${v.letra}`;
-              if (v.ajena) return <VariableFija key={v.letra} variable={v} id={id} periodo={datos.periodo} />;
+              if (v.ajena) return <VariableFija key={v.letra} variable={v} id={id} periodo={datos.periodo} soportes={soportesDeDatos[v.letra]} />;
               const error = vivo.errores[v.letra];
               const descritoPor = [v.descripcion || v.fuente ? `${id}-ayuda` : null, error ? `${id}-error` : null].filter(Boolean).join(" ") || undefined;
               return (

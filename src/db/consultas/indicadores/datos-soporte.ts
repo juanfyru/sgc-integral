@@ -7,6 +7,9 @@
  * quitada dejan su evento `soporte` en el historial del periodo (`variable_eventos`); en la bitácora, la subida queda con el
  * `subir_archivo` de `registrarArchivo`, como la de cualquier evidencia, y la quitada con `dato_soporte_quitado`.
  *
+ * Quien ve los soportes «por el indicador» los tiene en la pantalla de ese indicador: `soportesDeDatosDeMediciones` da, por
+ * medición, los soportes de los periodos del dato que forman su periodo, solo de los datos que su ficha cita directamente.
+ *
  * Candados, como al reportar (`periodoBloqueado`): el dato `FOR SHARE`, el periodo `FOR UPDATE` y solo después la fila de
  * `archivos` y el evento.
  *
@@ -20,10 +23,14 @@ import { registrarAuditoria } from "@/db/consultas/admin";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { puedeReportarDato, puedeVerDato, puedeVerIndicador, puedeVerSoportes, type SujetoVisibilidad } from "@/lib/alcance";
 import { resolverRutaAlmacen } from "@/lib/almacen";
+import { periodoDe } from "@/lib/indicadores-documentales/periodo";
+import { clavesFinas, contiene, periodicidadDe, versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
 import type { ArchivoServible } from "@/lib/servir-archivo";
+import { zonaHoraria } from "@/lib/zona-horaria";
 import { periodoBloqueado, type PeriodoBloqueado } from "./datos-periodos";
+import { esDeOtraPeriodicidad, versionesAprobadas } from "./mediciones";
 import type { Soporte } from "./soportes";
 
 export const CERRADO_SIN_SOPORTES = "El periodo está cerrado: ya no admite cambios en sus soportes";
@@ -68,6 +75,91 @@ export async function soportesDeDato(
     porPeriodo.set(id, [...(porPeriodo.get(id) ?? []), soporte]);
   }
   return porPeriodo;
+}
+
+/** Un soporte de un periodo de un dato, para enlazarlo desde un indicador que lo usa: con el dato (su ruta) y la clave de ese periodo. */
+export type SoporteDeDato = Soporte & { datoId: number; periodo: string };
+
+/** Los soportes del dato que una variable de la medición toma directamente: los de los periodos del dato que forman el suyo. */
+export type SoportesDeVariable = { letra: string; datoId: number; soportes: SoporteDeDato[] };
+
+/**
+ * Los soportes de los datos compartidos que respaldan mediciones del indicador `indicadorId` (anexo 14C, §4.6 y §3.1), por
+ * medición: quien ve los soportes de un dato «por el indicador» no tiene la página del dato, y esta es su pantalla. De cada
+ * medición ordinaria, por cada variable que **la versión que rige su periodo** toma **directamente** de un dato (origen
+ * «compartida»: nunca la de un componente ni lo que él tome, así que tampoco una letra oculta), los soportes de los periodos
+ * del dato que forman el de la medición (`clavesFinas`), en orden de periodo. Una entrada sin soportes dice que la persona los
+ * vería y no hay ninguno.
+ *
+ * Solo para quien ve el indicador y, de cada dato, solo si pasa `puedeVerSoporteDeDato` (la regla de la descarga): a los
+ * demás, nada, ni la entrada. No devuelve nada más del dato: su id (para la ruta de descarga, que ya viaja con la variable) y
+ * la clave del periodo. Una medición histórica no trae nada: su valor se digitó, no salió del dato (§3.6).
+ */
+export async function soportesDeDatosDeMediciones(
+  sesion: SujetoVisibilidad,
+  indicadorId: number,
+  medicionIds: readonly number[],
+  opciones?: { sql?: Cliente },
+): Promise<Map<number, SoportesDeVariable[]>> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const salida = new Map<number, SoportesDeVariable[]>();
+  const ids = [...new Set(medicionIds)].filter(esId);
+  if (!esId(indicadorId) || ids.length === 0 || !(await puedeVerIndicador(indicadorId, sesion, { sql }))) return salida;
+  const mediciones = await sql`SELECT id, periodo FROM mediciones
+    WHERE indicador_id = ${indicadorId} AND id IN ${sql(ids)} AND NOT historica ORDER BY desde, id`;
+  if (mediciones.length === 0) return salida;
+  const zona = zonaHoraria();
+  const versiones = await versionesAprobadas(sql, indicadorId);
+  const losVe = new Map<number, boolean>();
+  const pedidos: { medicionId: number; letra: string; datoId: number; claves: string[] }[] = [];
+  for (const m of mediciones) {
+    const clave = m.periodo as string;
+    const periodo = periodoDe(clave, zona);
+    const version = periodo ? versionQueRigeEntre(versiones, periodo, zona) : null;
+    if (!version || version.origenDato !== "manual" || esDeOtraPeriodicidad(clave, version)) continue;
+    for (const v of version.variables) {
+      if (v.origen !== "compartida" || v.datoId === null) continue;
+      if (!losVe.has(v.datoId)) losVe.set(v.datoId, await puedeVerSoporteDeDato(sql, sesion, v.datoId));
+      if (!losVe.get(v.datoId)) continue;
+      const gruesa = periodicidadDe(clave);
+      const fina = v.datoPeriodicidad ?? gruesa;
+      const claves = gruesa && fina && contiene(gruesa, fina) ? clavesFinas(clave, fina) : [clave];
+      pedidos.push({ medicionId: Number(m.id), letra: v.letra, datoId: v.datoId, claves });
+    }
+  }
+  if (pedidos.length === 0) return salida;
+  const filas = await sql`SELECT a.id, a.nombre_original, a.mime, a.tamano_bytes, vv.variable_id, vv.periodo FROM archivos a
+    JOIN variable_valores vv ON vv.id = a.contexto_id
+    WHERE a.contexto = 'dato_compartido' AND a.rol = 'evidencia'
+      AND vv.variable_id IN ${sql([...new Set(pedidos.map((p) => p.datoId))])} AND vv.periodo IN ${sql([...new Set(pedidos.flatMap((p) => p.claves))])}
+    ORDER BY vv.desde, a.creado_en, a.id`;
+  for (const p of pedidos) {
+    const soportes: SoporteDeDato[] = filas
+      .filter((f) => Number(f.variable_id) === p.datoId && p.claves.includes(f.periodo as string))
+      .map((f) => ({
+        id: Number(f.id),
+        nombre: f.nombre_original as string,
+        mime: f.mime as string,
+        tamano: Number(f.tamano_bytes),
+        datoId: p.datoId,
+        periodo: f.periodo as string,
+      }));
+    salida.set(p.medicionId, [...(salida.get(p.medicionId) ?? []), { letra: p.letra, datoId: p.datoId, soportes }]);
+  }
+  return salida;
+}
+
+/** `soportesDeDatosDeMediciones` para una sola medición (la pantalla de reportar): vacío si no existe o la persona no ve su indicador. */
+export async function soportesDeDatosDeMedicion(
+  sesion: SujetoVisibilidad,
+  medicionId: number,
+  opciones?: { sql?: Cliente },
+): Promise<SoportesDeVariable[]> {
+  const sql = opciones?.sql ?? obtenerSql();
+  if (!esId(medicionId)) return [];
+  const [m] = await sql`SELECT indicador_id FROM mediciones WHERE id = ${medicionId}`;
+  if (!m) return [];
+  return (await soportesDeDatosDeMediciones(sesion, Number(m.indicador_id), [medicionId], { sql })).get(medicionId) ?? [];
 }
 
 /**

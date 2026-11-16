@@ -1,8 +1,11 @@
+import { IconoFormato } from "@/componentes/documentos/IconoFormato";
 import { InsigniaSemaforo } from "@/componentes/indicadores/InsigniaSemaforo";
 import { Insignia } from "@/componentes/ui/Insignia";
 import type { DatosDeReporte, VariableAjena, VariableDeReporte } from "@/db/consultas/indicadores/lectura";
 import { deTexto, fraccion } from "@/lib/indicadores/formula/fraccion";
 import { reglaDeTexto } from "@/lib/indicadores/reporte";
+import { rutaDeSoporteDeDato } from "@/lib/indicadores/rutas";
+import type { SoporteDeDatoEnPantalla } from "@/lib/indicadores/soportes";
 import { textoAcumulaDesde } from "@/lib/indicadores/resultados";
 import { numeroEs } from "@/lib/indicadores/semaforo";
 import { textoValor } from "@/lib/indicadores/textos";
@@ -23,6 +26,57 @@ const valorEnPantalla = (valor: string) => {
 };
 
 const deIndicador = (a: VariableAjena) => [a.codigo, a.nombre].filter(Boolean).join(" ");
+
+/** Los soportes de los datos de una medición, por la letra de la variable que toma cada dato; sin la letra, la persona no los ve. */
+export type SoportesDeDatosPorLetra = Readonly<Record<string, SoporteDeDatoEnPantalla[]>>;
+
+const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
+
+/** Los soportes de un dato como enlaces de descarga: nombre, formato y tamaño y, si hace falta, de qué periodo del dato. */
+export function EnlacesDeSoportesDeDato({ soportes, titulo }: { soportes: SoporteDeDatoEnPantalla[]; titulo: string }) {
+  return (
+    <ul aria-label={titulo} className="flex min-w-0 list-none flex-col gap-1 text-sm">
+      {soportes.map((s) => (
+        <li key={s.id} className="flex min-w-0 flex-wrap items-center gap-2">
+          <a href={rutaDeSoporteDeDato(s.datoId, s.id)} className={`min-w-0 break-words rounded-sm text-marca underline-offset-2 hover:underline ${FOCO}`}>
+            {s.nombre}
+          </a>
+          <IconoFormato mime={s.mime} tamanoBytes={s.tamano} />
+          {s.deQue ? <span className="text-xs text-muted-foreground">{s.deQue}</span> : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * La parte de «Soportes» que es de los datos compartidos (anexo 14C, §3.1: la evidencia de un indicador sin variables
+ * propias son los soportes de sus datos): por cada variable que sale de un dato cuyos soportes la persona ve, sus enlaces o
+ * que no tiene ninguno. `variables` da el nombre de cada letra.
+ */
+export function SoportesDeLosDatos({ variables, soportes, sinPropias }: { variables: VariableDeReporte[]; soportes: SoportesDeDatosPorLetra; sinPropias: boolean }) {
+  const grupos = variables.filter((v) => soportes[v.letra] !== undefined);
+  if (grupos.length === 0) return null;
+  return (
+    <div className="flex min-w-0 flex-col gap-3">
+      <p className="text-sm text-muted-foreground">
+        {sinPropias
+          ? "La evidencia de este indicador son los soportes de sus datos compartidos. Los adjunta quien reporta cada dato."
+          : "Los soportes de los datos compartidos que usa este periodo. Los adjunta quien reporta cada dato."}
+      </p>
+      {grupos.map((v) => (
+        <div key={v.letra} className="flex min-w-0 flex-col gap-1">
+          <p className="break-words text-sm font-medium">{v.nombre}</p>
+          {soportes[v.letra].length > 0 ? (
+            <EnlacesDeSoportesDeDato soportes={soportes[v.letra]} titulo={`Soportes de ${v.nombre}`} />
+          ) : (
+            <p className="text-sm text-muted-foreground">Sin soportes adjuntos.</p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /** El aviso de un componente que la persona no ve y aún no tiene resultado (anexo 14C, §6.5): sin nombrarlo. */
 export const FALTA_UN_COMPONENTE = "Falta un dato de un componente.";
@@ -67,9 +121,20 @@ export function AvisosDeFalta({ variables, mide }: { variables: VariableDeReport
  * compartido» o «De otro indicador»), su valor o que aún no llega y, de un dato, quién lo reportó y cuándo. No se cambia
  * desde aquí: no hay campo, y el servidor rechaza un valor para ella. La de un componente que la persona no ve (anexo 14C,
  * §6.5) llega sin nombre ni cifra: «Indicador restringido», con «No disponible» si ya llegó; la de uno más fino que acumula
- * desde después del inicio del periodo dice desde cuándo en su nota de origen (§6.3).
+ * desde después del inicio del periodo dice desde cuándo en su nota de origen (§6.3). Con `soportes` (los del dato, solo a
+ * quien los ve: anexo 14C, §4.6), sus enlaces de descarga debajo.
  */
-export function VariableFija({ variable: v, id, periodo }: { variable: VariableDeReporte; id: string; periodo: string }) {
+export function VariableFija({
+  variable: v,
+  id,
+  periodo,
+  soportes,
+}: {
+  variable: VariableDeReporte;
+  id: string;
+  periodo: string;
+  soportes?: SoporteDeDatoEnPantalla[];
+}) {
   const a = v.ajena;
   if (!a) return null;
   const nota =
@@ -102,6 +167,12 @@ export function VariableFija({ variable: v, id, periodo }: { variable: VariableD
       </p>
       {v.descripcion ? <p className="text-xs text-muted-foreground">{v.descripcion}</p> : null}
       {nota ? <p className="text-xs text-muted-foreground">{nota}</p> : null}
+      {a.clase === "dato" && soportes && soportes.length > 0 ? (
+        <div className="flex min-w-0 flex-col gap-1">
+          <p className="text-xs font-medium">Soportes del dato</p>
+          <EnlacesDeSoportesDeDato soportes={soportes} titulo={`Soportes de ${v.nombre}`} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -112,9 +183,17 @@ export function VariableFija({ variable: v, id, periodo }: { variable: VariableD
  * los tomará («Se calcula el …») y, si ya los tomó, muestra los valores de cada variable y el resultado con su estado, o el
  * motivo de «No aplica» que dejó; a quien administra (`administra`), en un cálculo de flujo sin cerrar ni reabrir, «Volver a
  * calcular». La de un indicador sin variables propias (anexo 14C, §3.1) muestra cada variable fija, con lo que ya llegó, el
- * aviso de lo que falta y, reportada, el resultado.
+ * aviso de lo que falta y, reportada, el resultado; junto a la que sale de un dato, sus soportes (`soportesDeDatos`).
  */
-export function DatosDelSistema({ datos, administra = false }: { datos: DatosDeReporte; administra?: boolean }) {
+export function DatosDelSistema({
+  datos,
+  administra = false,
+  soportesDeDatos = {},
+}: {
+  datos: DatosDeReporte;
+  administra?: boolean;
+  soportesDeDatos?: SoportesDeDatosPorLetra;
+}) {
   const resultado = datos.resultado ? textoValor(deTexto(datos.resultado), datos.unidad, reglaDeTexto(datos.regla)) : null;
   const cuando = datos.foto ? `Calculado por el sistema · ${datos.foto}` : datos.seCalcula;
   const elResultado = (
@@ -136,7 +215,7 @@ export function DatosDelSistema({ datos, administra = false }: { datos: DatosDeR
         <>
           <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
             {datos.variables.map((v) => (
-              <VariableFija key={v.letra} variable={v} id={`reporte-${v.letra}`} periodo={datos.periodo} />
+              <VariableFija key={v.letra} variable={v} id={`reporte-${v.letra}`} periodo={datos.periodo} soportes={soportesDeDatos[v.letra]} />
             ))}
           </div>
           <AvisosDeFalta variables={datos.variables} mide={false} />

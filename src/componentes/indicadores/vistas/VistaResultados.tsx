@@ -14,6 +14,7 @@ import type { DatosDeAnalisis } from "@/db/consultas/indicadores/analisis";
 import type { ResultadosDelAnio, UltimoResultado } from "@/db/consultas/indicadores/lectura";
 import type { ReaperturaEnTexto } from "@/db/consultas/indicadores/reapertura";
 import type { Soporte } from "@/db/consultas/indicadores/soportes";
+import type { SoporteDeDatoEnPantalla } from "@/lib/indicadores/soportes";
 import type { EntradaDeHistorial } from "@/lib/indicadores/historial";
 import { VALOR_OCULTO, type Periodicidad } from "@/lib/indicadores/tipos";
 import { rutaDeIndicador } from "@/lib/indicadores/rutas";
@@ -45,6 +46,8 @@ export type DatosDeResultados = {
   aviso: { texto: string; exito: boolean } | null;
   /** Los soportes de cada medición del año, solo a quien ve los soportes del indicador (`null` para los demás). */
   soportes: Map<number, Soporte[]> | null;
+  /** En esa misma columna, los soportes de los datos compartidos que usó cada medición (anexo 14C, §4.6); vacío para quien no ve la columna. */
+  soportesDeDatos: Map<number, SoporteDeDatoEnPantalla[]>;
   /**
    * Reabrir, cerrar de nuevo, volver a calcular la foto de un automático (quien administra; anexo 14B, §5.4) y actualizar las
    * categorías de un desagregado abierto sin reportar (anexo 14C, §5.3), y el historial de cada medición corregida (spec §8.7).
@@ -250,6 +253,7 @@ export function VistaResultados(d: DatosDeResultados) {
             puedeMedir={d.mide}
             puedeAnalizar={d.analiza}
             soportes={d.soportes}
+            soportesDeDatos={d.soportesDeDatos}
             puedeReabrir={d.cierre.reabre}
             puedeCerrarDeNuevo={d.cierre.cierraDeNuevo}
             puedeVolverACalcular={d.cierre.recalcula}

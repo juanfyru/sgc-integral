@@ -91,7 +91,7 @@ import { destinoTrasReportar } from "@/lib/indicadores/reporte";
 import { MOTIVOS_DEL_SISTEMA } from "@/lib/indicadores/tipos";
 import type { SesionValida } from "@/lib/sesion";
 import { parsearFormulario } from "@/lib/validacion";
-import { datoDePrueba, desagregadoDePrueba, fotoDePrueba, indicadorDePrueba, versionAutomatica } from "./utiles/indicadores";
+import { datoDePrueba, desagregadoDePrueba, fotoDePrueba, indicadorDePrueba, periodoDeDatoDePrueba, versionAutomatica } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -461,6 +461,54 @@ describe("las páginas", () => {
       // Cerrada, los soportes se ven pero ya no se suben ni se quitan.
       expect(cerrada).toContain(">Soportes</h2>");
       expect(cerrada).not.toContain("Arrastre los archivos aquí");
+    }));
+
+  it("/indicadores/[codigo]/reportar/[periodo]: un indicador sin variables propias tiene «Soportes» con los de sus datos; un mixto los tiene junto a la variable", () =>
+    enTransaccion(async (tx) => {
+      const AHORA = new Date("2026-11-03T15:00:00Z");
+      const analiza = await usuarioDePrueba(tx, { rol: "consulta" });
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const procesoId = Number((await tx`SELECT id FROM procesos WHERE sigla = 'GTH'`)[0].id);
+      // El dato es de otro proceso: quien analiza o mide estos indicadores no lo ve.
+      const [otro] = await tx`SELECT id FROM procesos WHERE sigla <> 'GTH' ORDER BY id LIMIT 1`;
+      const datoA = await datoDePrueba(tx, { procesoId: Number(otro.id), nombre: `ZZ Glosas ${Date.now() % 100_000_000}` });
+      const datoB = await datoDePrueba(tx, { procesoId: Number(otro.id), nombre: `ZZ Facturado ${Date.now() % 100_000_000}` });
+      const periodoA = await periodoDeDatoDePrueba(tx, { datoId: datoA, periodo: "2026-10", valor: "30", ahora: AHORA });
+      await periodoDeDatoDePrueba(tx, { datoId: datoB, periodo: "2026-10", valor: "40", ahora: AHORA });
+      const [archivo] = await tx`INSERT INTO archivos (version_id, contexto, contexto_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
+        VALUES (NULL, 'dato_compartido', ${periodoA}, 'evidencia', ${`datos-compartidos/${periodoA}/cierre.pdf`}, 'Cierre de glosas.pdf', 'pdf',
+          'application/pdf', 2048, ${"e".repeat(64)}) RETURNING id`;
+      const enlace = `href="/indicadores/datos/${datoA}/soportes/${Number(archivo.id)}"`;
+      const base = { procesoId, periodicidad: "mensual" as const, inicioMedicion: "2026-10", aprobadaEn: new Date("2026-09-15T15:00:00Z") };
+
+      const sinPropias = await indicadorDePrueba(tx, { ...base, analiza: [analiza.usuarioId], variables: { A: { datoId: datoA }, B: { datoId: datoB } } });
+      contexto.sesion = valida(analiza);
+      const html = await reporte(sinPropias.codigo, "2026-10");
+      expect(html).toContain("Este indicador no tiene datos propios");
+      expect(html).toContain(">Soportes</h2>");
+      expect(html).toContain("La evidencia de este indicador son los soportes de sus datos compartidos.");
+      // Junto a la variable y en «Soportes»; el dato sin soportes lo dice; nadie sube nada aquí.
+      expect(html.split(enlace)).toHaveLength(3);
+      expect(html).toContain(">Cierre de glosas.pdf</a>");
+      expect(html).toContain("Sin soportes adjuntos.");
+      expect(html).not.toContain("Arrastre los archivos aquí");
+      // En la tabla del año, en la columna «Soportes» de quien la ve; quien solo ve el indicador no tiene ni la columna.
+      const anio = await pagina(sinPropias.codigo, { anio: "2026" });
+      expect(anio).toContain(enlace);
+      expect(anio).toContain(">Dato compartido</span>");
+      contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "consulta" }));
+      const sinSoportes = await pagina(sinPropias.codigo, { anio: "2026" });
+      expect(sinSoportes).toContain(`Indicador de prueba ${sinPropias.codigo}`);
+      expect(sinSoportes).not.toContain(`/indicadores/datos/${datoA}/soportes/`);
+
+      const mixto = await indicadorDePrueba(tx, { ...base, mide: [mide.usuarioId], variables: { B: { datoId: datoA } } });
+      contexto.sesion = valida(mide);
+      const suyo = await reporte(mixto.codigo, "2026-10");
+      // Junto a la variable fija, una vez; «Soportes» sigue siendo la de la medición.
+      expect(suyo.split(enlace)).toHaveLength(2);
+      expect(suyo).toContain("Soportes del dato");
+      expect(suyo).not.toContain("La evidencia de este indicador son los soportes de sus datos compartidos.");
+      expect(suyo).toContain("Arrastre los archivos aquí");
     }));
 
   it("/indicadores/[codigo]/reportar/[periodo] de un automático: de solo lectura, con los valores de la foto y el análisis para quien analiza", () =>
@@ -1161,6 +1209,29 @@ describe("la variable que no digita quien mide (anexo 14C, §3.1)", () => {
     expect(html).not.toContain("Usted ya puede reportar lo suyo");
   });
 
+  it("los soportes del dato salen junto a su variable fija como enlaces de descarga, con el periodo si el dato es más fino; sin ellos, nada", () => {
+    const datos = conDato({ valor: "1284300000", reporto: "Ana Ruiz", reportadoEl: "6 de noviembre de 2026" });
+    const soportes = [
+      { id: 71, datoId: 9, nombre: "Cierre de facturación.pdf", mime: "application/pdf", tamano: 2048, deQue: null },
+      { id: 72, datoId: 9, nombre: "Libro auxiliar.xlsx", mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", tamano: 4096, deQue: "octubre de 2026" },
+    ];
+    const html = renderToStaticMarkup(<FormularioReporte datos={datos} volver="/indicadores/FAC-ID-001" soportesDeDatos={{ B: soportes }} />);
+    expect(html).toContain("Soportes del dato");
+    expect(html).toMatch(/<a href="\/indicadores\/datos\/9\/soportes\/71"[^>]*>Cierre de facturación\.pdf<\/a>/);
+    expect(html).toMatch(/<a href="\/indicadores\/datos\/9\/soportes\/72"[^>]*>Libro auxiliar\.xlsx<\/a>/);
+    expect(html).toContain(">octubre de 2026</span>");
+    // El formato y el tamaño, en texto.
+    expect(html).toContain("PDF");
+    // Sin soportes que mostrar (la persona no los ve, o no hay): ni el rótulo.
+    expect(formulario(datos)).not.toContain("Soportes del dato");
+    expect(renderToStaticMarkup(<FormularioReporte datos={datos} volver="/x" soportesDeDatos={{ B: [] }} />)).not.toContain("Soportes del dato");
+    // En lo que nadie mide, también junto a la variable.
+    const sinPropias = renderToStaticMarkup(
+      <DatosDelSistema datos={{ ...datos, mide: false, variables: [datos.variables[1]] }} soportesDeDatos={{ B: soportes }} />,
+    );
+    expect(sinPropias).toContain('href="/indicadores/datos/9/soportes/71"');
+  });
+
   it("la tabla del año: lo que nadie mide no ofrece «Reportar» ni «Corregir»; quien analiza lo abre con «Ver», salvo un histórico", () => {
     const fila = (o: Partial<FilaDelAnio>): FilaDelAnio => ({
       periodo: "2026-09",
@@ -1312,7 +1383,10 @@ describe("la variable que no digita quien mide (anexo 14C, §3.1)", () => {
       expect(soloLectura).not.toContain("<input");
       expect(soloLectura).not.toContain("Reportar ·");
       expect(soloLectura).not.toContain("Reportar:");
-      expect(soloLectura).not.toContain(">Soportes</h2>");
+      // «Soportes» existe con los de sus datos (su evidencia, anexo 14C §3.1 y §4.6), y nadie sube nada aquí.
+      expect(soloLectura).toContain(">Soportes</h2>");
+      expect(soloLectura).toContain("La evidencia de este indicador son los soportes de sus datos compartidos.");
+      expect(soloLectura).not.toContain("Arrastre los archivos aquí");
       expect(soloLectura).not.toContain("(vencido)");
     }));
 });

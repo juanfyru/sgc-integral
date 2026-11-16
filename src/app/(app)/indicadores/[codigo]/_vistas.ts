@@ -34,6 +34,7 @@ import {
   type ResultadoExterno,
 } from "@/db/consultas/indicadores/constancias";
 import { desgloseDe } from "@/db/consultas/indicadores/categorias";
+import { soportesDeDatosDeMediciones } from "@/db/consultas/indicadores/datos-soporte";
 import { loToman } from "@/db/consultas/indicadores/componentes";
 import { desagregacionDelAnio, obtenerIndicador, resultadosDelAnio } from "@/db/consultas/indicadores/lectura";
 import { obtenerParametros } from "@/db/consultas/indicadores/maestros";
@@ -42,6 +43,7 @@ import { asegurarMedicionesConFuentes } from "@/db/consultas/indicadores/propaga
 import { reaperturaEnTexto, type ReaperturaEnTexto } from "@/db/consultas/indicadores/reapertura";
 import { soportesDeVarias } from "@/db/consultas/indicadores/soportes";
 import { puedeAnalizar, puedeObservar, puedeRegistrarHistoricos } from "@/lib/alcance";
+import { soporteDeDatoEnPantalla, type SoporteDeDatoEnPantalla } from "@/lib/indicadores/soportes";
 import type { EstadoIndicador, Periodicidad } from "@/lib/indicadores/tipos";
 import { cuenta } from "@/lib/plural";
 import type { SesionValida } from "@/lib/sesion";
@@ -118,6 +120,17 @@ export async function datosDeResultados(
     historialDeCorregidas(sesion, indicador.id, filas.flatMap((f) => (f.corregida && f.medicionId !== null ? [f.medicionId] : []))),
     obtenerParametros(),
   ]);
+  // En esa misma columna, los soportes de los datos compartidos que usó cada medición (anexo 14C, §4.6): la evidencia de un
+  // indicador sin variables propias son esos (§3.1).
+  const soportesDeDatos = new Map<number, SoporteDeDatoEnPantalla[]>();
+  if (soportes) {
+    const zona = zonaHoraria();
+    const periodoDeMedicion = new Map(filas.flatMap((f) => (f.medicionId === null ? [] : [[f.medicionId, f.periodo] as const])));
+    for (const [medicionId, variables] of await soportesDeDatosDeMediciones(sesion, indicador.id, medidas)) {
+      const deLaMedicion = variables.flatMap((v) => v.soportes.map((s) => soporteDeDatoEnPantalla(s, periodoDeMedicion.get(medicionId) ?? "", zona)));
+      if (deLaMedicion.length > 0) soportesDeDatos.set(medicionId, deLaMedicion);
+    }
+  }
   const { puedeMedir: mide, puedeAnalizar: analiza } = vista.permisos;
   const activo = indicador.estado === "activo";
   // Lo que se reabriría con cada cerrada del año que otras mediciones cerradas usaron (anexo 14C, §3.5), a quien reabre.
@@ -189,6 +202,7 @@ export async function datosDeResultados(
     historicos: registra ? { editables, editando, variables: conLetrasDe(vigentes, editables) } : null,
     aviso: avisoDeHistoricos(sp.registrados),
     soportes,
+    soportesDeDatos,
     cierre: {
       reabre: c.administra && activo,
       cierraDeNuevo: c.administra,

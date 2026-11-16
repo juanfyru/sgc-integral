@@ -30,12 +30,20 @@ vi.mock("@/db/cliente", async (original) => {
 import { GET as verSoporte } from "@/app/(app)/indicadores/datos/[id]/soportes/[archivoId]/route";
 import { DELETE as quitarSoporte, POST as subirSoporte } from "@/app/api/datos-compartidos/[id]/archivos/route";
 import { obtenerSql } from "@/db/cliente";
-import { puedeVerSoporteDeDato, soporteDeDatoServible, soportesDeDato } from "@/db/consultas/indicadores/datos-soporte";
+import {
+  puedeVerSoporteDeDato,
+  soporteDeDatoServible,
+  soportesDeDato,
+  soportesDeDatosDeMedicion,
+  soportesDeDatosDeMediciones,
+} from "@/db/consultas/indicadores/datos-soporte";
+import { asegurarMediciones } from "@/db/consultas/indicadores/mediciones";
+import { puedeVerDato, puedeVerSoportes } from "@/lib/alcance";
 import { describirEvento, nombreDeAccion } from "@/lib/bitacora-detalle";
 import { crearSesion } from "@/lib/sesion";
 import { ERROR_SOPORTE } from "@/lib/subida";
 import { peticionDeSubida } from "./utiles/distribucion";
-import { datoDePrueba, indicadorDePrueba, periodoDeDatoDePrueba } from "./utiles/indicadores";
+import { datoDePrueba, indicadorDePrueba, periodoDeDatoDePrueba, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
 import { pdfDePrueba } from "./utiles/pdf";
 import { usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
@@ -380,6 +388,123 @@ describe("quién ve el soporte de un dato (puedeVerSoporteDeDato, soporteDeDatoS
       const otro = await usuarioDePrueba(tx, { rol: "consulta" });
       await indicadorDePrueba(tx, { procesoId: indicador.procesoId, estado: "borrador", mide: [otro.usuarioId], variables: { B: { datoId } } });
       expect(await puedeVerSoporteDeDato(tx, otro, datoId)).toBe(false);
+    }));
+});
+
+describe("los soportes del dato desde el indicador que lo usa (soportesDeDatosDeMedicion)", () => {
+  const SEP_15 = new Date("2026-09-15T15:00:00Z");
+  const ARCHIVO = "Cierre de facturación octubre.pdf";
+
+  const medicionDe = async (tx: TransactionSql, indicadorId: number, periodo: string) =>
+    Number((await tx`SELECT id FROM mediciones WHERE indicador_id = ${indicadorId} AND periodo = ${periodo}`)[0].id);
+
+  /**
+   * En otro proceso, un indicador desde octubre de 2026 (aprobado en septiembre: octubre es ordinario) que mide alguien que
+   * no ve el dato de `e`; por omisión, un mixto mensual que toma el dato en B. Con sus mediciones abiertas a `ahora`.
+   */
+  async function enOtroProceso(e: Entorno, o: OpcionesIndicadorDePrueba = {}, ahora = AHORA) {
+    const { tx } = e;
+    consecutivo += 1;
+    const sigla = `Z${Date.now() % 100_000_000}${consecutivo}`;
+    const [macro] = await tx`SELECT id FROM macroprocesos ORDER BY id LIMIT 1`;
+    const [p] = await tx`INSERT INTO procesos (macroproceso_id, nombre, sigla, slug, icono, orden)
+      VALUES (${macro.id}, ${`Proceso ${sigla}`}, ${sigla}, ${sigla.toLowerCase()}, 'circle', 99) RETURNING id`;
+    const mide = await conToken(tx, "consulta");
+    const ind = await indicadorDePrueba(tx, {
+      procesoId: Number(p.id),
+      periodicidad: "mensual",
+      inicioMedicion: "2026-10",
+      aprobadaEn: SEP_15,
+      mide: [mide.sesion.usuarioId],
+      variables: { B: { datoId: e.datoId } },
+      ...o,
+    });
+    await asegurarMediciones({ sql: tx, ahora, indicadorId: ind.id });
+    return { procesoId: Number(p.id), mide, ind };
+  }
+
+  it("quien ve los soportes del indicador y no ve el dato recibe los enlaces, y la descarga responde", () =>
+    entorno(async (e) => {
+      const { tx, datoId } = e;
+      const archivoId = await subido(e);
+      const x = await enOtroProceso(e);
+      const octubre = await medicionDe(tx, x.ind.id, "2026-10");
+      // Para ella el dato no existe (no es su responsable ni lidera su proceso), pero mide un indicador que lo usa.
+      expect(await puedeVerDato(datoId, x.mide.sesion, { sql: tx })).toBe(false);
+      expect(await puedeVerSoportes(x.ind.id, x.mide.sesion, { sql: tx })).toBe(true);
+      expect(await soportesDeDatosDeMedicion(x.mide.sesion, octubre, { sql: tx })).toEqual([
+        { letra: "B", datoId, soportes: [{ id: archivoId, nombre: ARCHIVO, mime: "application/pdf", tamano: expect.any(Number), datoId, periodo: "2026-10" }] },
+      ]);
+      const r = await ver(x.mide.token, datoId, archivoId);
+      expect(r.status).toBe(200);
+      expect(r.headers.get("Content-Disposition")).toMatch(/^attachment; /);
+    }));
+
+  it("quien ve el indicador y no sus soportes no recibe nada; quien no ve el indicador, tampoco, aunque vea los del dato por otro", () =>
+    entorno(async (e) => {
+      const { tx, datoId, ve } = e;
+      const archivoId = await subido(e);
+      const x = await enOtroProceso(e);
+      const octubre = await medicionDe(tx, x.ind.id, "2026-10");
+      // `ve` ve el indicador (es general) y no sus soportes: ni la entrada de la variable.
+      expect(await puedeVerSoportes(x.ind.id, ve.sesion, { sql: tx })).toBe(false);
+      expect(await soportesDeDatosDeMedicion(ve.sesion, octubre, { sql: tx })).toEqual([]);
+      expect((await ver(ve.token, datoId, archivoId)).status).toBe(404);
+
+      // Un restringido que también usa el dato: quien no lo ve no recibe nada por él, ni siquiera quien ve los soportes del
+      // dato por el otro indicador.
+      const oculto = await enOtroProceso(e, { nivelAcceso: "restringido" });
+      const suOctubre = await medicionDe(tx, oculto.ind.id, "2026-10");
+      expect(await puedeVerSoporteDeDato(tx, x.mide.sesion, datoId)).toBe(true);
+      expect(await soportesDeDatosDeMedicion(x.mide.sesion, suOctubre, { sql: tx })).toEqual([]);
+      expect(await soportesDeDatosDeMedicion(ve.sesion, suOctubre, { sql: tx })).toEqual([]);
+      expect(await soportesDeDatosDeMedicion(oculto.mide.sesion, suOctubre, { sql: tx })).toHaveLength(1);
+      // Una medición que no existe, o de otro indicador que el que se dice: nada.
+      expect(await soportesDeDatosDeMedicion(x.mide.sesion, 999_999_999, { sql: tx })).toEqual([]);
+      expect(await soportesDeDatosDeMediciones(x.mide.sesion, x.ind.id, [suOctubre], { sql: tx })).toEqual(new Map());
+    }));
+
+  it("un compuesto no enseña los soportes de los datos de su componente", () =>
+    entorno(async (e) => {
+      const { tx } = e;
+      await subido(e);
+      const x = await enOtroProceso(e);
+      // Lo mide la misma persona, que ve los soportes del dato por el componente: el compuesto no cita el dato.
+      const compuesto = await indicadorDePrueba(tx, {
+        procesoId: x.procesoId,
+        periodicidad: "mensual",
+        inicioMedicion: "2026-10",
+        aprobadaEn: SEP_15,
+        mide: [x.mide.sesion.usuarioId],
+        variables: { A: { indicadorOrigenId: x.ind.id, toma: "valor" } },
+      });
+      await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: compuesto.id });
+      const octubre = await medicionDe(tx, compuesto.id, "2026-10");
+      expect(await puedeVerSoportes(compuesto.id, x.mide.sesion, { sql: tx })).toBe(true);
+      expect(await soportesDeDatosDeMedicion(x.mide.sesion, octubre, { sql: tx })).toEqual([]);
+    }));
+
+  it("un dato más fino que el indicador trae los de cada periodo que lo forma, con su periodo; sin soportes, la entrada vacía; un histórico, nada", () =>
+    entorno(async (e) => {
+      const { tx, datoId, periodoId, otroPeriodoId } = e;
+      const deOctubre = await subido(e, ARCHIVO, periodoId);
+      const deSeptiembre = await subido(e, "Cierre de septiembre.pdf", otroPeriodoId);
+      // Trimestral desde el tercer trimestre, aprobado en junio: T3 (julio a septiembre) y T4 son ordinarios.
+      const ENERO = new Date("2027-01-05T15:00:00Z");
+      const t = await enOtroProceso(e, { periodicidad: "trimestral", inicioMedicion: "2026-T3", aprobadaEn: new Date("2026-06-15T15:00:00Z") }, ENERO);
+      const t3 = await medicionDe(tx, t.ind.id, "2026-T3");
+      const t4 = await medicionDe(tx, t.ind.id, "2026-T4");
+      const todas = await soportesDeDatosDeMediciones(t.mide.sesion, t.ind.id, [t3, t4], { sql: tx });
+      expect(todas.get(t3)).toEqual([{ letra: "B", datoId, soportes: [expect.objectContaining({ id: deSeptiembre, periodo: "2026-09" })] }]);
+      expect(todas.get(t4)).toEqual([{ letra: "B", datoId, soportes: [expect.objectContaining({ id: deOctubre, periodo: "2026-10" })] }]);
+
+      // Mensual: noviembre no tiene soportes (la entrada dice que los vería); un histórico (aprobado después) no trae nada.
+      const m = await enOtroProceso(e, {}, ENERO);
+      expect(await soportesDeDatosDeMedicion(m.mide.sesion, await medicionDe(tx, m.ind.id, "2026-11"), { sql: tx })).toEqual([{ letra: "B", datoId, soportes: [] }]);
+      const tarde = await enOtroProceso(e, { aprobadaEn: new Date("2026-12-15T15:00:00Z") }, ENERO);
+      const historico = await medicionDe(tx, tarde.ind.id, "2026-10");
+      expect((await tx`SELECT historica FROM mediciones WHERE id = ${historico}`)[0].historica).toBe(true);
+      expect(await soportesDeDatosDeMedicion(tarde.mide.sesion, historico, { sql: tx })).toEqual([]);
     }));
 });
 

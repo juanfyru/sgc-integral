@@ -2,19 +2,22 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
-import { DatosDelSistema } from "@/componentes/indicadores/medicion/DatosDelSistema";
+import { DatosDelSistema, SoportesDeLosDatos } from "@/componentes/indicadores/medicion/DatosDelSistema";
 import { FormularioAnalisis } from "@/componentes/indicadores/medicion/FormularioAnalisis";
 import { FormularioReporte } from "@/componentes/indicadores/medicion/FormularioReporte";
 import { Soportes } from "@/componentes/indicadores/medicion/Soportes";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { datosDeAnalisis } from "@/db/consultas/indicadores/analisis";
+import { soportesDeDatosDeMedicion } from "@/db/consultas/indicadores/datos-soporte";
 import { medicionParaReportar } from "@/db/consultas/indicadores/lectura";
 import { asegurarMedicionesConFuentes } from "@/db/consultas/indicadores/propagacion";
 import { soportesDe } from "@/db/consultas/indicadores/soportes";
 import { periodicidadDe } from "@/lib/indicadores/periodos";
+import { soporteDeDatoEnPantalla, type SoporteDeDatoEnPantalla } from "@/lib/indicadores/soportes";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
+import { zonaHoraria } from "@/lib/zona-horaria";
 import { exigirIndicador, rutaDeIndicador } from "../../../_comun";
 
 export const dynamic = "force-dynamic";
@@ -60,6 +63,11 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
  * propias (anexo 14C, §3.1) también: muestra lo que llegó de sus datos y de sus componentes, y lo que falta. En un mixto,
  * quien mide digita lo suyo y lo ajeno aparece fijo (maqueta 14). Un desagregado se reporta por su rejilla por categoría
  * (anexo 14C, §5.4, maquetas 9 y 10), y quien administra puede actualizar su lista de categorías.
+ *
+ * Los soportes de un dato compartido que usa el periodo (anexo 14C, §4.6) salen junto a su variable fija, para quien los ve
+ * (`soportesDeDatosDeMedicion`: quien ve el dato o los soportes de un indicador que lo usa); un indicador sin variables
+ * propias, cuya evidencia son esos soportes (§3.1), y un desagregado, que no tiene variables fijas a la vista, los tienen
+ * además en «Soportes».
  */
 export default async function PaginaReportar({ params }: Params) {
   const { codigo: segmento, periodo } = await params;
@@ -68,6 +76,12 @@ export default async function PaginaReportar({ params }: Params) {
   const analisis = datos.estado !== "cerrada" && !datos.historica ? await datosDeAnalisis(sesion, datos.medicionId) : null;
   // Quien puede medir ve los soportes del indicador (spec §6.4); la lista se lee solo para quien los ve.
   const soportes = (await soportesDe(sesion, datos.medicionId)) ?? [];
+  // Los de los datos compartidos que usa el periodo, por la letra de su variable; con el periodo del dato si es más fino.
+  const zona = zonaHoraria();
+  const soportesDeDatos: Record<string, SoporteDeDatoEnPantalla[]> = Object.fromEntries(
+    (await soportesDeDatosDeMedicion(sesion, datos.medicionId)).map((v) => [v.letra, v.soportes.map((s) => soporteDeDatoEnPantalla(s, datos.periodo, zona))]),
+  );
+  const conLosDeDatos = Object.keys(soportesDeDatos).length > 0 && (!datos.mide || datos.categorias !== null);
   const plazo = datos.historica ? "Registro histórico" : `Plazo hasta el ${datos.vence}${datos.vencida ? " (vencido)" : ""}`;
   // Nadie reporta lo que nadie mide: ni el título ni la miga lo dicen.
   const miga = datos.mide ? "Reportar: " : `${queEs(datos)} · `;
@@ -100,7 +114,7 @@ export default async function PaginaReportar({ params }: Params) {
       {deSoloLectura ? (
         <>
           {datos.estado === "cerrada" ? cerrada : null}
-          <DatosDelSistema datos={datos} administra={puede(sesion, "indicadores.administrar")} />
+          <DatosDelSistema datos={datos} administra={puede(sesion, "indicadores.administrar")} soportesDeDatos={soportesDeDatos} />
         </>
       ) : datos.estado === "cerrada" ? (
         cerrada
@@ -112,21 +126,25 @@ export default async function PaginaReportar({ params }: Params) {
           </Link>
         </p>
       ) : (
-        <FormularioReporte datos={datos} volver={volver} administra={puede(sesion, "indicadores.administrar")} />
+        <FormularioReporte datos={datos} volver={volver} administra={puede(sesion, "indicadores.administrar")} soportesDeDatos={soportesDeDatos} />
       )}
-      {/* Lo que nadie mide no lleva soportes: la sección sale solo si quedó alguno, y sin subir ni quitar. */}
-      {!datos.mide && soportes.length === 0 ? null : (
+      {/* Lo que nadie mide no lleva soportes propios (los suyos salen solo si quedó alguno, sin subir ni quitar): su evidencia
+          son los de sus datos compartidos. */}
+      {!datos.mide && soportes.length === 0 && !conLosDeDatos ? null : (
         <section aria-labelledby="reporte-soportes" className="flex min-w-0 flex-col gap-3">
           <h2 id="reporte-soportes" className="text-lg font-semibold">
             Soportes
           </h2>
-          <Soportes
-            medicionId={datos.medicionId}
-            codigo={datos.codigo}
-            soportes={soportes}
-            editable={datos.mide && datos.estado !== "cerrada"}
-            obligatorio={datos.soporteObligatorio && !datos.historica}
-          />
+          {datos.mide || soportes.length > 0 ? (
+            <Soportes
+              medicionId={datos.medicionId}
+              codigo={datos.codigo}
+              soportes={soportes}
+              editable={datos.mide && datos.estado !== "cerrada"}
+              obligatorio={datos.soporteObligatorio && !datos.historica}
+            />
+          ) : null}
+          {conLosDeDatos ? <SoportesDeLosDatos variables={datos.variables} soportes={soportesDeDatos} sinPropias={!datos.mide} /> : null}
         </section>
       )}
       {analisis ? (

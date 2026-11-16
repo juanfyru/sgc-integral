@@ -10,8 +10,8 @@ import { analisisDeFila, marcasDeFila } from "@/lib/indicadores/ficha-en-texto";
 import { textoDeEspera, textoDeFoto } from "@/lib/indicadores/fotos";
 import type { EntradaDeHistorial } from "@/lib/indicadores/historial";
 import { textoAcumulaDesde } from "@/lib/indicadores/resultados";
-import { rutaDeIndicador } from "@/lib/indicadores/rutas";
-import { enlaceDeSoporte } from "@/lib/indicadores/soportes";
+import { rutaDeIndicador, rutaDeSoporteDeDato } from "@/lib/indicadores/rutas";
+import { enlaceDeSoporte, type SoporteDeDatoEnPantalla } from "@/lib/indicadores/soportes";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { InsigniaEnCritico, InsigniaSemaforo } from "../InsigniaSemaforo";
 import { ActualizarCategorias } from "./ActualizarCategorias";
@@ -127,8 +127,12 @@ function ValorDeVariable({
   );
 }
 
-function ListaDeSoportes({ codigo, soportes }: { codigo: string; soportes: Soporte[] }) {
-  if (soportes.length === 0) return <span className="text-muted-foreground">—</span>;
+/**
+ * Los soportes de la medición y, después, los de los datos compartidos que usó (anexo 14C, §4.6), que se descargan por la ruta
+ * del dato y lo dicen («dato compartido», con su periodo si el dato es más fino).
+ */
+function ListaDeSoportes({ codigo, soportes, deDatos }: { codigo: string; soportes: Soporte[]; deDatos: SoporteDeDatoEnPantalla[] }) {
+  if (soportes.length === 0 && deDatos.length === 0) return <span className="text-muted-foreground">—</span>;
   return (
     <ul className="flex list-none flex-col gap-1">
       {soportes.map((s) => (
@@ -136,6 +140,14 @@ function ListaDeSoportes({ codigo, soportes }: { codigo: string; soportes: Sopor
           <a href={enlaceDeSoporte(codigo, s)} className={`break-words ${ENLACE}`}>
             {s.nombre}
           </a>
+        </li>
+      ))}
+      {deDatos.map((s) => (
+        <li key={`dato-${s.id}`}>
+          <a href={rutaDeSoporteDeDato(s.datoId, s.id)} className={`break-words ${ENLACE}`}>
+            {s.nombre}
+          </a>
+          <span className="block text-xs text-muted-foreground">{s.deQue ? `Dato compartido · ${s.deQue}` : "Dato compartido"}</span>
         </li>
       ))}
     </ul>
@@ -169,6 +181,7 @@ export function TablaDelAnio({
   puedeMedir,
   puedeAnalizar = false,
   soportes = null,
+  soportesDeDatos = null,
   puedeReabrir = false,
   puedeCerrarDeNuevo = false,
   puedeVolverACalcular = false,
@@ -185,6 +198,8 @@ export function TablaDelAnio({
   puedeAnalizar?: boolean;
   /** Los soportes de cada medición, solo a quien ve los soportes del indicador. */
   soportes?: Map<number, Soporte[]> | null;
+  /** En esa misma columna, los soportes de los datos compartidos que usó cada medición (anexo 14C, §4.6). */
+  soportesDeDatos?: Map<number, SoporteDeDatoEnPantalla[]> | null;
   puedeReabrir?: boolean;
   puedeCerrarDeNuevo?: boolean;
   /** Quien administra un indicador activo vuelve a calcular la foto de un cálculo de flujo (anexo 14B, §5.4). */
@@ -270,7 +285,11 @@ export function TablaDelAnio({
             </td>
             {soportes ? (
               <td className={`${celda} min-w-32`}>
-                <ListaDeSoportes codigo={codigo} soportes={f.medicionId === null ? [] : (soportes.get(f.medicionId) ?? [])} />
+                <ListaDeSoportes
+                  codigo={codigo}
+                  soportes={f.medicionId === null ? [] : (soportes.get(f.medicionId) ?? [])}
+                  deDatos={f.medicionId === null ? [] : (soportesDeDatos?.get(f.medicionId) ?? [])}
+                />
               </td>
             ) : null}
             {conAcciones ? (
