@@ -1124,9 +1124,10 @@ function motivoDeFila(motivo: string, categoria: string): string {
  * lista y letras de la versión (si no, `FICHA_CAMBIO`); la persona digita solo las propias, cada celda con sus límites de
  * captura, y un total digitado es otro formulario. Un «No aplica» que puso el sistema en una fila no lo cambia la persona.
  * «Guardar sin reportar» escribe lo que llegó, sin el total, y como en cualquier medición solo antes de reportar
- * (`YA_REPORTADA`; también con la medición entera «No aplica»): ya reportada, se corrige pulsando «Reportar». Reportar exige cada fila con sus celdas propias o «No aplica» (`faltanCategorias`); con todo (también lo ajeno) da
- * el total, y sobre él valen la división por cero, los límites del resultado, el soporte obligatorio y la confirmación por
- * variación; si a alguna fila solo le falta lo ajeno, se reporta lo propio y el total espera al dato («Reportar lo mío»).
+ * (`YA_REPORTADA`; también con la medición entera «No aplica»): ya reportada, se corrige pulsando «Reportar». Reportar exige
+ * cada fila con sus celdas propias o «No aplica» (`faltanCategorias`); con todo (también lo ajeno) da el total, y sobre él
+ * valen la división por cero, los límites del resultado, el soporte obligatorio y la confirmación por variación; si a alguna
+ * fila solo le falta lo ajeno, se reporta lo propio y el total espera al dato («Reportar lo mío»).
  */
 async function planDeRejilla(
   sql: Cliente,

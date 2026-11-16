@@ -17,15 +17,17 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
+import { aprobarFichas, enviarAAprobacion } from "@/db/consultas/indicadores/aprobacion";
 import { actualizarCategorias, desgloseDe, rehacerCategorias } from "@/db/consultas/indicadores/categorias";
 import { reabrirMedicion } from "@/db/consultas/indicadores/cierre";
+import { abrirCambio, crearIndicador, guardarBorrador } from "@/db/consultas/indicadores/fichas";
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
 import { asegurarMediciones, quitarNoAplica, recalcularMedicion, reportar } from "@/db/consultas/indicadores/mediciones";
 import { propagar, valorDeDato } from "@/db/consultas/indicadores/propagacion";
 import { columnasDePendiente, queFalta } from "@/db/consultas/indicadores/tareas";
 import { adminsActivos } from "@/db/consultas/tramites";
 import { describirEvento } from "@/lib/bitacora-detalle";
-import { EsquemaReporte, juntarValoresDeReporte } from "@/lib/esquemas/indicadores";
+import { EsquemaReporte, juntarValoresDeReporte, type DatosFicha } from "@/lib/esquemas/indicadores";
 import { historialDeCorreccion } from "@/lib/indicadores/historial";
 import { ErrorIndicador, MOTIVO_DATO_SIN_CATEGORIA, MOTIVO_TODAS_NO_APLICAN, type TipoEvento } from "@/lib/indicadores/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
@@ -40,6 +42,7 @@ import {
 } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
+import { firmaDePrueba } from "./utiles/vigencia";
 
 const sql = obtenerSql();
 
@@ -835,6 +838,164 @@ describe("el aviso de una categoría en Crítico (anexo §5.6, F14C-DC39)", () =
       await rejilla(tx, e.mide, septiembre, atencion);
       const lista = await avisos(tx, septiembre);
       expect(lista[0].titulo).toBe(`${nombre}: 75,9 % frente a una meta de 85 %, Atención. En Crítico: Puesto de salud 3 (55 %). Septiembre de 2026`);
+
+      // La corrección que deja el total en Bien con la sede en Crítico la nombra también.
+      await rejilla(tx, e.mide, septiembre, [{ categoriaId: ids[0], valores: { A: "182" } }]);
+      const correccion = (await avisos(tx, septiembre)).find((a) => a.tipo === "indicadores.correccion")!;
+      expect(correccion.titulo).toBe(
+        `Corrección: ${nombre} pasó de Atención a Bien con 1 categoría en Crítico. En Crítico: Puesto de salud 3 (55 %). Septiembre de 2026`,
+      );
+    }));
+
+  it("el aviso también nace de la propagación: un desagregado que nadie mide, todo del dato", () =>
+    revertida(sql, async (tx) => {
+      const AHORA_T = new Date("2026-04-20T15:00:00Z");
+      const procesoId = await procesoNuevo(tx);
+      const analiza = await usuarioDePrueba(tx, { rol: "consulta" });
+      const sigue = await usuarioDePrueba(tx, { rol: "gerencia" });
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [procesoId] });
+      const sede = await dimensionDePrueba(tx, `Sede ${unico()}`, ["Norte", "Sur"]);
+      const [norte, sur] = sede.categorias;
+      const datoA = await datoDePrueba(tx, { procesoId, nombre: `Adherentes ${unico()}`, dimensionId: sede.id, periodicidad: "trimestral" });
+      const datoB = await datoDePrueba(tx, { procesoId, nombre: `Auditados ${unico()}`, dimensionId: sede.id, periodicidad: "trimestral" });
+      const ind = await indicadorDePrueba(tx, {
+        procesoId,
+        periodicidad: "trimestral",
+        inicioMedicion: "2026-T1",
+        aprobadaEn: new Date("2025-12-15T15:00:00Z"),
+        meta: "85",
+        modo: "fijo",
+        limite: "70",
+        dimensionId: sede.id,
+        analiza: [analiza.usuarioId],
+        seguimiento: [sigue.usuarioId],
+        variables: { A: { datoId: datoA }, B: { datoId: datoB } },
+      });
+      await asegurarMediciones({ sql: tx, ahora: AHORA_T, indicadorId: ind.id });
+      const medicion = await medicionDe(tx, ind.id, "2026-T1");
+      for (const [datoId, valores] of [
+        [datoA, { [norte]: "95", [sur]: "5" }],
+        [datoB, { [norte]: "100", [sur]: "10" }],
+      ] as const) {
+        const id = await periodoDeDatoDePrueba(tx, { datoId, periodo: "2026-T1", valor: "0", ahora: AHORA_T });
+        await tx`UPDATE variable_valores SET por_categoria = ${tx.json(valores)} WHERE id = ${id}`;
+      }
+      await propagar({ sql: tx, ahora: AHORA_T, indicadorIds: [ind.id] });
+      // 100 ÷ 110 = 90,9 %, Bien; Sur, 50 %, Crítico.
+      const lista = await avisos(tx, medicion);
+      expect(quienes(lista)).toEqual([analiza.usuarioId, sigue.usuarioId].sort((a, b) => a - b));
+      expect(lista.map((a) => a.usuarioId)).not.toContain(lider.usuarioId);
+      expect(lista[0]).toMatchObject({ tipo: "indicadores.alerta", titulo: `Indicador de prueba ${ind.codigo}: 90,9 %, Bien. En Crítico: Sur (50 %). Primer trimestre de 2026` });
+      expect(await fila(tx, medicion)).toMatchObject({ categorias_en_critico: 1, alerta_estado: "bien_con_critico", requiere_accion: false });
+    }));
+});
+
+describe("un cambio mayor aprobado por aprobarFichas, de punta a punta", () => {
+  /** La primera versión se aprueba el 20 de agosto: agosto, septiembre y octubre son ordinarios. */
+  const APROBADA_EN = new Date("2026-08-20T15:00:00Z");
+  const HOY = new Date("2026-11-10T15:00:00Z");
+  const CLAVE = { clave: "ok" };
+  const firmar = (tx: TransactionSql, ahora: Date) => ({ sql: tx, ahora, verificar: firmaDePrueba });
+  const RANGOS_85 = JSON.stringify({ bien: [{ signo: ">=", valor: "85" }], atencion: [{ signo: ">=", valor: "70" }], critico: [{ signo: "<", valor: "70" }] });
+  type Variable = DatosFicha["variables"][number];
+  const propia = (letra: string, nombre: string): Variable => ({ letra, nombre, consolidacion: "suma", admiteNegativos: false });
+
+  /** Lo de la prueba: quien administra, Gerencia (aprueba las estratégicas), quien mide y la ficha mensual desde agosto. */
+  async function base(tx: TransactionSql, dimensionId: number, variables: Variable[]) {
+    const [p] = await tx`SELECT id FROM procesos WHERE sigla = 'SGC'`;
+    const [t] = await tx`SELECT id FROM tipos_indicador WHERE nombre = 'Eficacia'`;
+    const [es] = await tx`SELECT id FROM clasificaciones_indicador WHERE nombre = 'Estratégico'`;
+    const [u] = await tx`SELECT id FROM unidades_indicador WHERE nombre = 'Porcentaje'`;
+    const [area] = await tx`SELECT id FROM areas ORDER BY id LIMIT 1`;
+    const [c] = await tx`INSERT INTO cargos (nombre, area_id) VALUES (${`ZZ Cargo ${unico()}`}, ${area.id}) RETURNING id`;
+    const admin = await sesionAdmin(tx);
+    const gerente = await usuarioDePrueba(tx, { rol: "gerencia" });
+    const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+    const d: DatosFicha = {
+      procesoId: Number(p.id),
+      nombre: "Adherencia a la guía de hipertensión",
+      proposito: "Saber si se maneja la hipertensión según la guía",
+      tipoId: Number(t.id),
+      clasificacionId: Number(es.id),
+      forma: "porcentaje",
+      variables,
+      unidadId: Number(u.id),
+      decimales: 1,
+      periodicidad: "mensual",
+      tendencia: "ascendente",
+      meta: "85",
+      semaforoModo: "rangos",
+      rangos: RANGOS_85,
+      cargosMedir: [Number(c.id)],
+      cargosAnalizar: [Number(c.id)],
+      normaIds: [],
+      plazoReporteDias: 10,
+      inicioMedicion: "2026-08",
+      soporteObligatorio: false,
+      nivelAcceso: "general",
+      mide: [mide.usuarioId],
+      analiza: [],
+      prueba: { valores: Object.fromEntries(variables.map((v) => [v.letra, "1"])) },
+      dimensionId,
+    };
+    const creado = await crearIndicador(admin, d, { sql: tx, ahora: APROBADA_EN });
+    await enviarAAprobacion(admin, { versionId: creado.versionId, credenciales: CLAVE }, firmar(tx, APROBADA_EN));
+    await aprobarFichas(gerente, { versionIds: [creado.versionId], credenciales: CLAVE }, firmar(tx, APROBADA_EN));
+    await asegurarMediciones({ sql: tx, ahora: HOY, indicadorId: creado.indicadorId });
+    /** Un cambio mayor con `cambios` que rige desde octubre, enviado y aprobado. */
+    const cambioMayor = async (cambios: Partial<DatosFicha>) => {
+      const { versionId } = await abrirCambio(admin, creado.indicadorId, { sql: tx, ahora: HOY });
+      await guardarBorrador(admin, versionId, { ...d, ...cambios, motivoCambio: "Se cambia la desagregación" }, { sql: tx, ahora: HOY });
+      expect(await enviarAAprobacion(admin, { versionId, rigeDesde: OCTUBRE, credenciales: CLAVE }, firmar(tx, HOY))).toMatchObject({ menor: false });
+      await aprobarFichas(gerente, { versionIds: [versionId], credenciales: CLAVE }, firmar(tx, HOY));
+      const [bitacora] = await tx`SELECT detalle FROM auditoria WHERE accion = 'indicador_aprobado' AND entidad_id = ${creado.indicadorId}
+        ORDER BY id DESC LIMIT 1`;
+      return bitacora.detalle as Record<string, unknown>;
+    };
+    const medicion = (periodo: string) => medicionDe(tx, creado.indicadorId, periodo);
+    return { ...creado, d, mide, cambioMayor, medicion };
+  }
+
+  it("otra dimensión: la abierta con celdas a medias queda con la lista nueva y sin celdas; la reportada no se toca", () =>
+    revertida(sql, async (tx) => {
+      const sede = await dimensionDePrueba(tx, `Sede ${unico()}`, SEDES);
+      const servicio = await dimensionDePrueba(tx, `Servicio ${unico()}`, ["Urgencias", "Consulta externa"]);
+      const b = await base(tx, sede.id, [propia("A", "Pacientes con manejo adherente"), propia("B", "Pacientes auditados")]);
+      const septiembre = await b.medicion("2026-09");
+      const octubre = await b.medicion(OCTUBRE);
+      await rejilla(tx, b.mide, septiembre, maqueta(sede.categorias), false, HOY);
+      await rejilla(tx, b.mide, octubre, maqueta(sede.categorias).slice(0, 2), true, HOY);
+
+      const detalle = await b.cambioMayor({ dimensionId: servicio.id });
+      expect(detalle).toMatchObject({ tipoCambio: "mayor", categoriasRehechas: 1 });
+      expect(((await fila(tx, octubre)).categorias as { nombre: string }[]).map((c) => c.nombre)).toEqual(["Urgencias", "Consulta externa"]);
+      expect(await valoresDe(tx, octubre)).toEqual({ celdas: [], total: [] });
+      expect(((await fila(tx, septiembre)).categorias as { nombre: string }[]).map((c) => c.nombre)).toEqual(SEDES);
+      expect((await valoresDe(tx, septiembre)).celdas).toHaveLength(10);
+    }));
+
+  it("la misma dimensión sin el dato: el «No aplica» que el sistema puso en una fila se quita y la fila se puede medir", () =>
+    revertida(sql, async (tx) => {
+      const sede = await dimensionDePrueba(tx, `Sede ${unico()}`, ["Norte", "Sur"]);
+      const [norte, sur] = sede.categorias;
+      const [p] = await tx`SELECT id FROM procesos WHERE sigla = 'SGC'`;
+      const dato = await datoDePrueba(tx, { procesoId: Number(p.id), nombre: `Auditados ${unico()}`, dimensionId: sede.id });
+      const delDato: Variable = { letra: "B", nombre: "Auditados", consolidacion: "suma", admiteNegativos: false, origen: "compartida", datoId: dato };
+      const b = await base(tx, sede.id, [propia("A", "Adherentes"), delDato]);
+      const octubre = await b.medicion(OCTUBRE);
+      // Octubre del dato trae solo a Norte: Sur queda «No aplica» por el sistema.
+      const periodo = await periodoDeDatoDePrueba(tx, { datoId: dato, periodo: OCTUBRE, valor: "10", ahora: HOY });
+      await tx`UPDATE variable_valores SET categorias = ${tx.json([{ id: norte, nombre: "Norte", orden: 1, noAplica: null }])},
+          por_categoria = ${tx.json({ [norte]: "10" })}
+        WHERE id = ${periodo}`;
+      await propagar({ sql: tx, ahora: HOY, indicadorIds: [b.indicadorId] });
+      expect((await fila(tx, octubre)).categorias.find((c: { id: number }) => c.id === sur).noAplica).toBe(MOTIVO_DATO_SIN_CATEGORIA);
+
+      const detalle = await b.cambioMayor({ variables: [propia("A", "Adherentes"), propia("B", "Auditados")] });
+      expect(detalle).toMatchObject({ tipoCambio: "mayor", categoriasRehechas: 1 });
+      expect(((await fila(tx, octubre)).categorias as { noAplica: string | null }[]).every((c) => c.noAplica === null)).toBe(true);
+      const filas = [norte, sur].map((categoriaId) => ({ categoriaId, valores: { A: "9", B: "10" } }));
+      expect(await rejilla(tx, b.mide, octubre, filas, false, HOY)).toMatchObject({ ok: true, semaforo: "bien" });
     }));
 });
 
@@ -933,5 +1094,104 @@ describe("el formulario de la rejilla (EsquemaReporte, juntarValoresDeReporte)",
     expect(() => leer([["c_norte_A", "1"], ["intencion", "reportar"]])).toThrow("Los valores no tienen un formato válido");
     expect(() => leer([["c_12_AB", "1"], ["intencion", "reportar"]])).toThrow("Los valores no tienen un formato válido");
     expect(() => leer([["na_12", "si"], ["intencion", "reportar"]])).toThrow("Los valores no tienen un formato válido");
+    expect(() => leer([["o_12_AB", "1"], ["intencion", "reportar"]])).toThrow("Los valores no tienen un formato válido");
+    expect(() => leer([["o_norte_A", "1"], ["intencion", "reportar"]])).toThrow("Los valores no tienen un formato válido");
+    expect(() => leer([["ona_12", "x"], ["intencion", "reportar"]])).toThrow("Los valores no tienen un formato válido");
+    expect(() => leer([["o_12_A", "1".repeat(41)], ["intencion", "reportar"]])).toThrow("Un valor no puede pasar de 40 caracteres");
   });
+
+  it("con los originales pintados, una celda que no cambió no entra y «» solo vacía lo que tenía valor", () => {
+    const { filas } = leer([
+      ["c_12_A", "182"],
+      ["o_12_A", "182"],
+      ["c_12_B", ""],
+      ["o_12_B", "200"],
+      ["c_13_A", " 43 "],
+      ["o_13_A", "43"],
+      ["c_13_B", ""],
+      ["o_13_B", ""],
+      ["c_14_A", "7"],
+      ["intencion", "parcial"],
+    ]);
+    expect(filas).toEqual([
+      { categoriaId: 12, valores: { B: "" } },
+      { categoriaId: 13, valores: {} },
+      { categoriaId: 14, valores: { A: "7" } },
+    ]);
+  });
+
+  it("con el estado pintado de la fila, «No aplica» entra solo si cambió", () => {
+    const fila = (campos: [string, string][]) => leer([...campos, ["intencion", "parcial"]]).filas![0];
+    // Desmarcado: estaba «No aplica» y la casilla no llegó.
+    expect(fila([["ona_12", "1"], ["omotivo_12", OBRAS]])).toEqual({ categoriaId: 12, valores: {}, noAplica: null });
+    // Sin marcar antes ni ahora: no se toca.
+    expect(fila([["ona_12", "0"], ["omotivo_12", ""]])).toEqual({ categoriaId: 12, valores: {} });
+    // Marcado antes y ahora con el mismo motivo: no se toca; con otro, el nuevo.
+    expect(fila([["na_12", "1"], ["motivo_12", ` ${OBRAS}`], ["ona_12", "1"], ["omotivo_12", OBRAS]])).toEqual({ categoriaId: 12, valores: {} });
+    expect(fila([["na_12", "1"], ["motivo_12", "Sin pacientes en el mes"], ["ona_12", "1"], ["omotivo_12", OBRAS]])).toEqual({
+      categoriaId: 12,
+      valores: {},
+      noAplica: "Sin pacientes en el mes",
+    });
+    // Marcado ahora: con su motivo. «0» explícito sigue quitándolo.
+    expect(fila([["na_12", "1"], ["motivo_12", OBRAS], ["ona_12", "0"]])).toEqual({ categoriaId: 12, valores: {}, noAplica: OBRAS });
+    expect(fila([["na_12", "0"], ["ona_12", "1"], ["omotivo_12", OBRAS]])).toEqual({ categoriaId: 12, valores: {}, noAplica: null });
+    // Sin originales, como siempre: sin `na` no se toca.
+    expect(fila([["c_12_A", "5"]])).toEqual({ categoriaId: 12, valores: { A: "5" } });
+  });
+});
+
+describe("dos personas con el formulario completo de la rejilla (D9)", () => {
+  /** El formulario entero, como lo pinta la página: todas las celdas con su original y el estado de cada fila. */
+  function formulario(ids: number[], pintado: Map<number, { A?: string; B?: string; noAplica?: string }>, digitado: Map<number, { A?: string; B?: string; noAplica?: string }>) {
+    const fd = new FormData();
+    for (const id of ids) {
+      const antes = pintado.get(id) ?? {};
+      const ahora = digitado.get(id) ?? antes;
+      for (const letra of ["A", "B"] as const) {
+        fd.append(`c_${id}_${letra}`, ahora[letra] ?? "");
+        fd.append(`o_${id}_${letra}`, antes[letra] ?? "");
+      }
+      fd.append(`ona_${id}`, antes.noAplica ? "1" : "0");
+      fd.append(`omotivo_${id}`, antes.noAplica ?? "");
+      if (ahora.noAplica) {
+        fd.append(`na_${id}`, "1");
+        fd.append(`motivo_${id}`, ahora.noAplica);
+      }
+    }
+    fd.append("intencion", "parcial");
+    return parsearFormulario(juntarValoresDeReporte(fd), EsquemaReporte, { omitir: ["id", "volver", "periodo"] });
+  }
+
+  it("la segunda no vacía lo que guardó la primera ni le quita un «No aplica» de fila", () =>
+    revertida(sql, async (tx) => {
+      const e = await entorno(tx);
+      const ids = e.sede.categorias;
+      // Las dos abrieron la rejilla vacía; cada una llena sus sedes y manda el formulario completo.
+      const vacio = new Map<number, { A?: string; B?: string; noAplica?: string }>();
+      const primera = formulario(ids, vacio, new Map([
+        [ids[0], { A: "182", B: "200" }],
+        [ids[1], { A: "43", B: "50" }],
+        [ids[5], { noAplica: OBRAS }],
+      ]));
+      const segunda = formulario(ids, vacio, new Map([
+        [ids[2], { A: "39", B: "50" }],
+        [ids[3], { A: "11", B: "20" }],
+      ]));
+      for (const [sesion, d] of [[e.mide, primera], [e.otro, segunda]] as const) {
+        await reportar(sesion, { medicionId: e.octubre, valores: d.valores, filas: d.filas, parcial: true, confirmado: false }, opc(tx));
+      }
+      const { celdas } = await valoresDe(tx, e.octubre);
+      expect(celdas.map((c) => [c.categoria, c.letra, c.valor, c.por])).toEqual([
+        [ids[0], "A", 182, e.mide.usuarioId],
+        [ids[0], "B", 200, e.mide.usuarioId],
+        [ids[1], "A", 43, e.mide.usuarioId],
+        [ids[1], "B", 50, e.mide.usuarioId],
+        [ids[2], "A", 39, e.otro.usuarioId],
+        [ids[2], "B", 50, e.otro.usuarioId],
+        [ids[3], "A", 11, e.otro.usuarioId],
+        [ids[3], "B", 20, e.otro.usuarioId],
+      ]);
+      expect((await fila(tx, e.octubre)).categorias.find((c: { id: number }) => c.id === ids[5]).noAplica).toBe(OBRAS);
+    }));
 });

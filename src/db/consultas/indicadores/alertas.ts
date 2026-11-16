@@ -110,7 +110,7 @@ export async function alRecalcular(tx: TransactionSql, r: Recalculo, c: { ahora:
     nivel === "bien_con_critico"
       ? bienConCritico(r.enCritico)
       : estadoEnPalabras(r.despues, r.repetido, periodos, noAplica ? "No aplica" : r.resultado ? "Sin meta" : "Sin dato", r.cumple);
-  // La alerta y la corrección hacia Atención o Crítico nombran también las categorías en Crítico (anexo 14C, §5.6).
+  // La alerta y la corrección nombran las categorías que quedan en Crítico (anexo 14C, §5.6); sin ninguna, nada.
   const enCritico = enCriticoEnPalabras(r);
   const donde = { indicadorId: r.indicadorId, procesoId: Number(m.proceso_id) };
   const sinQuienCambio = (ids: number[]) => [...new Set(ids)].filter((u) => u !== c.actorId);
@@ -139,7 +139,7 @@ export async function alRecalcular(tx: TransactionSql, r: Recalculo, c: { ahora:
       guardado === "bien_con_critico"
         ? bienConCritico(r.enCriticoAntes)
         : estadoEnPalabras(r.antes, repetidoAntes, periodos, guardado === "critico" ? "Crítico" : "Atención", r.cumpleAntes);
-    const titulo = `Corrección: ${nombre} pasó de ${antes} a ${estado}.${nivel === "atencion" || nivel === "critico" ? enCritico : ""} ${periodo}`;
+    const titulo = `Corrección: ${nombre} pasó de ${antes} a ${estado}.${enCritico} ${periodo}`;
     const frase = fraseDeResultado({ resultado: r.resultado, semaforo: r.despues, cumple: r.cumple, noAplica, motivo: texto(m.no_aplica_motivo) }, regla, unidad);
     const cuerpo = `${codigo} · ${frase}`;
     const para = sinQuienCambio([...(await destinatarios(tx, donde, guardado)), ...(await destinatarios(tx, donde, nivel))]);

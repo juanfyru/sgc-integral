@@ -571,25 +571,32 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   una versión con dimensión congela al abrirse su lista de categorías (`mediciones.categorias`:
   `listaDelPeriodo`, con el maestro leído `FOR KEY SHARE` en la transacción que la guarda, porque el `jsonb`
   no tiene llave foránea y `borrarCategoria` toma la categoría `FOR UPDATE` antes de ver si está usada);
-  una histórica no lleva lista (se digita el total, §3.6). La lista solo cambia por «Actualizar
-  categorías» (`actualizarCategorias`, de quien administra, en una abierta sin reportar: solo añade) o
-  cuando un cambio mayor cambia la dimensión (`rehacerCategorias`, desde `aprobarFichas`: rehace las
-  abiertas sin reportar de su tramo y borra sus valores); una reabierta conserva la suya. Se reporta
-  una rejilla: cada celda es una fila de `medicion_valores` con `categoria_id` y el «No aplica» de una
-  fila vive en la lista. **El total es la fila sin categoría y lo escribe solo el sistema**
-  (`escribirTotal`, la suma de las filas que no están «No aplica»): la persona escribe solo las celdas
-  que llegan, nunca el total; «Guardar sin reportar» (que en un desagregado vale también ya reportado)
-  deja el total como estaba hasta el siguiente reporte, y con él calculan el semáforo, la racha, la
-  tabla del año, el acumulado y los Excel, sin cambios. Con todas las filas «No aplica», la medición
-  queda «No aplica» con `MOTIVO_TODAS_NO_APLICAN`, que quita el siguiente reporte con una fila medida;
-  una fila que ningún periodo de su dato por categoría trae queda «No aplica» con
-  `MOTIVO_DATO_SIN_CATEGORIA`, que quita la propagación cuando el dato pasa a traerla (nunca el de una
-  persona). `recalcularMedicion` escribe `categorias_en_critico` (las filas completas en Crítico, con la
-  versión y la meta de la medición; nulo sin resultado o sin lista), y el desglose (`desgloseDe`) calcula
-  cada fila al leer: nunca se guarda. **Una categoría en Crítico avisa** aunque el total no avise: con
-  el total en Bien y cumpliendo, el nivel `bien_con_critico` de `alertas.ts` (a quienes reciben los de
-  Atención), y con el total en Atención o Crítico la alerta nombra las categorías; no exige análisis
-  ni pone «Requiere acción de mejora», y entra a la «Corrección» como un nivel más.
+  una histórica no lleva lista (se digita el total, §3.6). **Qué categorías tiene la lista** solo cambia por
+  «Actualizar categorías» (`actualizarCategorias`, de quien administra, en una abierta sin reportar: solo
+  añade) o cuando un cambio mayor cambia la dimensión (`rehacerCategorias`, desde `aprobarFichas`: rehace
+  las abiertas sin reportar de su tramo y borra sus valores); una reabierta conserva la suya. Los «No
+  aplica» de fila los escriben en la lista el reporte, la propagación y `rehacerCategorias`. Se reporta
+  una rejilla: cada celda es una fila de `medicion_valores` con `categoria_id`. **El total es la fila sin
+  categoría y lo escribe solo el sistema** (`escribirTotal`, la suma de las filas que no están «No
+  aplica», en las variables de la versión con que se calcula: tras un cambio menor reescribe cada letra en
+  la suya): la persona escribe solo las celdas que cambió, nunca el total, y qué cambió lo decide el
+  servidor con los originales que pinta el formulario (`o_<categoría>_<letra>`, `ona_` y `omotivo_`;
+  `EsquemaFilaDeRejilla`), así dos personas guardan partes distintas sin pisarse. «Guardar sin reportar»
+  vale solo antes de reportar, como en cualquier medición (`YA_REPORTADA`): ya reportada se corrige con
+  «Reportar», y la corrección deja en su evento cada celda que cambió. Con el total calculan el semáforo,
+  la racha, la tabla del año, el acumulado y los Excel, sin cambios. Con todas las filas «No aplica», la
+  medición queda «No aplica» con `MOTIVO_TODAS_NO_APLICAN`, que quita el siguiente reporte con una fila
+  medida o la propagación; una fila que ningún periodo de su dato por categoría trae queda «No aplica» con
+  `MOTIVO_DATO_SIN_CATEGORIA` (nunca se pisa el de una persona), que quita la propagación cuando el dato
+  pasa a traerla (si a esa fila le faltan las celdas propias de un mixto reportado, se le devuelve el
+  reporte a quien mide, con la regla del plazo de `plazoPorLaFuente`) o `rehacerCategorias` cuando un
+  cambio mayor ya no trae el dato. `recalcularMedicion` escribe `categorias_en_critico` (las filas
+  completas en Crítico, con la versión y la meta de la medición; nulo sin resultado o sin lista), y el
+  desglose (`desgloseDe`) calcula cada fila al leer: nunca se guarda. **Una categoría en Crítico avisa**
+  aunque el total no avise: con el total en Bien y cumpliendo, el nivel `bien_con_critico` de `alertas.ts`
+  (a quienes reciben los de Atención, también cuando lo deja la propagación); la alerta y la «Corrección»
+  nombran las categorías en Crítico; no exige análisis ni pone «Requiere acción de mejora», y entra a la
+  «Corrección» como un nivel más.
 - **El cumplimiento de un porcentaje con meta se decide con la razón exacta, en enteros**
   (`cumplePorcentaje`, `src/lib/indicadores-documentales/metas.ts`; `conformidad`,
   `src/lib/distribucion/verificacion.ts`), nunca con el entero que se muestra. `conformidad()`

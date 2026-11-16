@@ -343,27 +343,42 @@ const valoresDigitados = z
   .record(z.string(), z.string({ error: VALORES_INVALIDOS }).max(40, "Un valor no puede pasar de 40 caracteres"))
   .refine((v) => Object.keys(v).length <= 26 && Object.keys(v).every((l) => /^[A-Z]$/.test(l)), VALORES_INVALIDOS);
 
+const motivoDigitado = z.string({ error: VALORES_INVALIDOS }).max(2000, VALORES_INVALIDOS);
+const marcaDeFila = z.enum(["1", "0"], { error: VALORES_INVALIDOS });
+
 /**
- * Una fila de la rejilla de un desagregado (anexo 14C, §5.4), como la arma `juntarValoresDeReporte`: sus celdas por letra
- * (una que no vino no se toca; «» la vacía) y su «No aplica»: `na` «1» lo pone con `motivo` (la consulta lo valida), «0» lo
- * quita y sin `na` no se toca.
+ * Una fila de la rejilla de un desagregado (anexo 14C, §5.4), como la arma `juntarValoresDeReporte`, y lo que la persona
+ * cambió en ella, que se decide aquí y no en el navegador (D9: dos personas guardan partes distintas sin pisarse, también
+ * con el formulario completo y sin JavaScript):
+ * - las celdas por letra (una que no vino no se toca; «» la vacía); una cuyo texto es el que se pintó (`originales`, sin
+ *   los espacios de los extremos) no cambió y no entra;
+ * - el «No aplica»: `na` «1» lo pone con `motivo` (la consulta lo valida) y «0» lo quita. Con el estado con que se pintó la
+ *   fila (`ona`, y `omotivo`): sin `na` y pintada «1», la persona lo desmarcó y se quita; sin `na` y pintada «0», o `na` «1»
+ *   pintada «1» con el mismo motivo, no cambió. Sin `ona`, una fila sin `na` no se toca.
+ * Los originales se validan como lo demás y solo deciden qué entra: nunca se escriben.
  */
 const EsquemaFilaDeRejilla = z
   .object(
     {
       categoriaId: z.number({ error: VALORES_INVALIDOS }).int(VALORES_INVALIDOS).positive(VALORES_INVALIDOS),
       valores: valoresDigitados,
-      na: z.enum(["1", "0"], { error: VALORES_INVALIDOS }).optional(),
-      motivo: z.string({ error: VALORES_INVALIDOS }).max(2000, VALORES_INVALIDOS).optional(),
+      originales: valoresDigitados.optional(),
+      na: marcaDeFila.optional(),
+      motivo: motivoDigitado.optional(),
+      ona: marcaDeFila.optional(),
+      omotivo: motivoDigitado.optional(),
     },
     { error: VALORES_INVALIDOS },
   )
   .strict()
-  .transform(({ categoriaId, valores, na, motivo }) => ({
-    categoriaId,
-    valores,
-    ...(na === undefined ? {} : { noAplica: na === "1" ? (motivo ?? "") : null }),
-  }));
+  .transform(({ categoriaId, valores, originales, na, motivo, ona, omotivo }) => {
+    const cambiadas = Object.fromEntries(
+      Object.entries(valores).filter(([letra, v]) => originales?.[letra] === undefined || originales[letra].trim() !== v.trim()),
+    );
+    const mismoMotivo = (omotivo ?? "").trim() === (motivo ?? "").trim();
+    const noAplica = na === "0" ? null : na === "1" ? (ona === "1" && mismoMotivo ? undefined : (motivo ?? "")) : ona === "1" ? null : undefined;
+    return { categoriaId, valores: cambiadas, ...(noAplica === undefined ? {} : { noAplica }) };
+  });
 
 /**
  * Reportar, guardar sin reportar o corregir una medición (spec §8.2): los valores por letra, en JSON, tal como se
@@ -386,14 +401,18 @@ export const EsquemaNoAplica = z.object({ motivo: textoAcotado("El motivo", 5, 5
 /**
  * El formulario de reporte manda cada variable en su propio campo (`valor_A` … `valor_Z`), para que funcione igual antes
  * de hidratar; aquí se juntan en `valores` (JSON), como los lee `EsquemaReporte`. La rejilla de un desagregado manda cada
- * celda en `c_<categoría>_<letra>` (vacía es vaciarla), y por fila `na_<categoría>` («1» la marca «No aplica», «0» se lo
- * quita) y `motivo_<categoría>`; se juntan en `filas`, una por categoría en el orden en que llegan, sin que una celda vacía
- * se pierda. Lo demás pasa igual.
+ * celda en `c_<categoría>_<letra>` (vacía es vaciarla) con el texto con que se pintó en `o_<categoría>_<letra>`, y por fila
+ * `na_<categoría>` («1» la marca «No aplica», «0» se lo quita) y `motivo_<categoría>`, con su estado pintado en
+ * `ona_<categoría>` y `omotivo_<categoría>`; se juntan en `filas`, una por categoría en el orden en que llegan, sin que una
+ * celda vacía se pierda. Qué cambió lo decide `EsquemaFilaDeRejilla`. Lo demás pasa igual.
  */
 export function juntarValoresDeReporte(formData: FormData): FormData {
   const salida = new FormData();
   const valores: Record<string, string> = {};
-  const filas = new Map<string, { categoriaId: number | string; valores: Record<string, string>; na?: string; motivo?: string }>();
+  const filas = new Map<
+    string,
+    { categoriaId: number | string; valores: Record<string, string>; originales?: Record<string, string>; na?: string; motivo?: string; ona?: string; omotivo?: string }
+  >();
   // Un id que no es un número llega tal cual: el esquema lo rechaza.
   const fila = (id: string) => {
     if (!filas.has(id)) filas.set(id, { categoriaId: /^\d{1,15}$/.test(id) ? Number(id) : id, valores: {} });
@@ -406,12 +425,20 @@ export function juntarValoresDeReporte(formData: FormData): FormData {
     }
     const letra = /^valor_(.+)$/.exec(campo)?.[1];
     const celda = /^c_([^_]*)_(.*)$/.exec(campo);
+    const original = /^o_([^_]*)_(.*)$/.exec(campo);
     const na = /^na_(.*)$/.exec(campo)?.[1];
     const motivo = /^motivo_(.*)$/.exec(campo)?.[1];
+    const ona = /^ona_(.*)$/.exec(campo)?.[1];
+    const omotivo = /^omotivo_(.*)$/.exec(campo)?.[1];
     if (letra !== undefined) valores[letra] = valor;
     else if (celda) fila(celda[1]).valores[celda[2]] = valor;
-    else if (na !== undefined) fila(na).na = valor;
+    else if (original) {
+      const f = fila(original[1]);
+      f.originales = { ...f.originales, [original[2]]: valor };
+    } else if (na !== undefined) fila(na).na = valor;
     else if (motivo !== undefined) fila(motivo).motivo = valor;
+    else if (ona !== undefined) fila(ona).ona = valor;
+    else if (omotivo !== undefined) fila(omotivo).omotivo = valor;
     else salida.append(campo, valor);
   }
   if (Object.keys(valores).length > 0 || filas.size > 0) salida.set("valores", JSON.stringify(valores));
