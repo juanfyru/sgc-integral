@@ -451,7 +451,7 @@ describe("FormularioReporte con una rejilla", () => {
   });
 
   it("«Actualizar categorías», solo a quien administra y en una medición abierta sin reportar", () => {
-    expect(formulario({}, true)).toMatch(/<button[^>]*type="submit"[^>]*>Actualizar categorías<span class="sr-only"> · Octubre de 2026<\/span><\/button>/);
+    expect(formulario({}, true)).toMatch(/<button[^>]*type="submit"[^>]*>Actualizar categorías<span class="sr-only"> · octubre de 2026<\/span><\/button>/);
     expect(formulario({}, false)).not.toContain("Actualizar categorías");
     expect(formulario({ reportada: true, estado: "reportada" }, true)).not.toContain("Actualizar categorías");
     expect(formulario({ categorias: null, dimension: null }, true)).not.toContain("Actualizar categorías");
@@ -578,7 +578,7 @@ describe("la marca «n en Crítico» (anexo 14C, §5.6)", () => {
     const tabla = (f: FilaDelAnio, puede: boolean) =>
       renderToStaticMarkup(<TablaDelAnio filas={[f]} variables={[]} anio={2026} codigo="PYP-ID-003" puedeMedir={false} puedeActualizarCategorias={puede} />);
     const html = tabla(base, true);
-    expect(html).toMatch(/<button[^>]*type="submit"[^>]*>Actualizar categorías<span class="sr-only"> · Octubre de 2026<\/span><\/button>/);
+    expect(html).toMatch(/<button[^>]*type="submit"[^>]*>Actualizar categorías<span class="sr-only"> · octubre de 2026<\/span><\/button>/);
     expect(html).toContain('<input type="hidden" name="id" value="90"/>');
     expect(tabla(base, false)).not.toContain("Actualizar categorías");
     expect(tabla({ ...base, actualizable: false }, true)).not.toContain("Actualizar categorías");

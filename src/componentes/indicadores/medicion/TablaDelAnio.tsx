@@ -28,7 +28,7 @@ function Historial({ etiqueta, entradas }: { etiqueta: string; entradas: Entrada
   return (
     <details className="text-xs">
       <summary className={`cursor-pointer rounded-sm text-marca underline-offset-2 hover:underline ${FOCO}`}>
-        Ver el historial<span className="sr-only">{` de ${etiqueta}`}</span>
+        Ver el historial<span className="sr-only">{` de ${etiqueta.toLowerCase()}`}</span>
       </summary>
       {/* Al menos 18 rem: la columna del estado se ensancha solo mientras el historial está abierto. */}
       <ol className="mt-1 flex min-w-72 max-w-sm list-none flex-col gap-2">
@@ -298,19 +298,19 @@ export function TablaDelAnio({
                   {reportable ? (
                     <Link href={`${rutaDeIndicador(codigo)}/reportar/${f.periodo}`} className={ENLACE}>
                       {f.estado === "por_reportar" ? "Reportar" : "Corregir"}
-                      <span className="sr-only">{` ${f.etiqueta}`}</span>
+                      <span className="sr-only">{` ${f.etiqueta.toLowerCase()}`}</span>
                     </Link>
                   ) : null}
                   {deSoloLectura ? (
                     <Link href={`${rutaDeIndicador(codigo)}/reportar/${f.periodo}`} className={ENLACE}>
                       Ver
-                      <span className="sr-only">{` ${f.etiqueta}`}</span>
+                      <span className="sr-only">{` ${f.etiqueta.toLowerCase()}`}</span>
                     </Link>
                   ) : null}
                   {analizable ? (
                     <Link href={`${rutaDeIndicador(codigo)}?vista=resultados&anio=${anio}&analizar=${f.periodo}#analisis`} className={ENLACE}>
                       {conAnalisis ? "Editar el análisis" : "Analizar"}
-                      <span className="sr-only">{` ${f.etiqueta}`}</span>
+                      <span className="sr-only">{` ${f.etiqueta.toLowerCase()}`}</span>
                     </Link>
                   ) : null}
                   {reabrible ? (

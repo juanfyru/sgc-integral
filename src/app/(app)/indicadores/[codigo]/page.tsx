@@ -67,7 +67,7 @@ function anioDe(a: Parametros["anio"], enCurso: number): number | null {
 /** «Reportar el tercer trimestre de 2026», «Reportar marzo de 2026», «Reportar 2026». */
 function etiquetaDeReportar(periodo: string, etiqueta: string): string {
   const p = periodicidadDe(periodo);
-  return p === "mensual" || p === "anual" ? `Reportar ${etiqueta}` : `Reportar el ${etiqueta}`;
+  return p === "mensual" || p === "anual" ? `Reportar ${etiqueta.toLowerCase()}` : `Reportar el ${etiqueta.toLowerCase()}`;
 }
 
 const vigenteDe = (versiones: VersionVisible[]) => [...versiones].reverse().find((v) => v.estado === "aprobada") ?? null;

@@ -511,7 +511,7 @@ describe("los componentes", () => {
     const deQuienAnaliza = tabla(true);
     expect(deQuienAnaliza).toMatch(/href="\/indicadores\/ZZ-1\/reportar\/2026-T1"[^>]*>Reportar</);
     for (const periodo of ["2026-T2", "2026-T3"]) {
-      expect(deQuienAnaliza).toMatch(new RegExp(`href="/indicadores/ZZ-1/reportar/${periodo}"[^>]*>Ver<span class="sr-only"> ${periodo}</span>`));
+      expect(deQuienAnaliza).toMatch(new RegExp(`href="/indicadores/ZZ-1/reportar/${periodo}"[^>]*>Ver<span class="sr-only"> ${periodo.toLowerCase()}</span>`));
     }
     expect(deQuienAnaliza).not.toContain(">Corregir<");
 
@@ -539,7 +539,7 @@ describe("los componentes", () => {
     expect(deQuienAdministra.match(/Plazo hasta el/g)).toHaveLength(1);
     // «Volver a calcular» solo en la foto de flujo sin cerrar ni reabrir, y solo a quien administra.
     expect(deQuienAdministra.match(/>Volver a calcular</g)).toHaveLength(1);
-    expect(deQuienAdministra).toMatch(/>Volver a calcular<span class="sr-only"> 2026-T3<\/span>/);
+    expect(deQuienAdministra).toMatch(/>Volver a calcular<span class="sr-only"> 2026-t3<\/span>/);
     expect(conFoto(false)).not.toContain("Volver a calcular");
   });
 

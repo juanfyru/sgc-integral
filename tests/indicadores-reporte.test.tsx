@@ -204,7 +204,7 @@ describe("DatosDelSistema (anexo 14B, §5.4)", () => {
   });
 
   it("«Volver a calcular» solo a quien administra y solo en una foto que se puede volver a calcular", () => {
-    expect(delSistema(conFoto, true)).toMatch(/>Volver a calcular<span class="sr-only"> Tercer trimestre de 2026<\/span>/);
+    expect(delSistema(conFoto, true)).toMatch(/>Volver a calcular<span class="sr-only"> tercer trimestre de 2026<\/span>/);
     expect(delSistema(conFoto, false)).not.toContain("Volver a calcular");
     expect(delSistema({ ...conFoto, recalculable: false }, true)).not.toContain("Volver a calcular");
   });
@@ -1285,11 +1285,11 @@ describe("la variable que no digita quien mide (anexo 14C, §3.1)", () => {
     ]);
     expect(html).not.toContain("Reportar<span");
     expect(html).not.toContain("Corregir<span");
-    expect(html).toContain('>Ver<span class="sr-only"> Septiembre de 2026</span>');
-    expect(html).toContain('>Ver<span class="sr-only"> Agosto de 2026</span>');
-    expect(html).not.toContain('>Ver<span class="sr-only"> Junio de 2026</span>');
+    expect(html).toContain('>Ver<span class="sr-only"> septiembre de 2026</span>');
+    expect(html).toContain('>Ver<span class="sr-only"> agosto de 2026</span>');
+    expect(html).not.toContain('>Ver<span class="sr-only"> junio de 2026</span>');
     // Sin la marca, quien mide reporta la misma fila.
-    expect(tabla([fila({ estado: "por_reportar" })])).toContain('>Reportar<span class="sr-only"> Septiembre de 2026</span>');
+    expect(tabla([fila({ estado: "por_reportar" })])).toContain('>Reportar<span class="sr-only"> septiembre de 2026</span>');
   });
 
   it("la tabla del año: junto a la cifra de una variable tomada que acumula desde después, desde cuándo (anexo 14C, §6.3)", () => {
@@ -1425,7 +1425,7 @@ describe("las páginas de un desagregado (14C, Tarea 15)", () => {
       const admin = await sesionAdmin(tx);
       await tx`INSERT INTO indicador_designados (indicador_id, usuario_id, funcion, creado_por) VALUES (${ind.id}, ${admin.usuarioId}, 'mide', ${admin.usuarioId})`;
       contexto.sesion = valida(admin);
-      expect(await reporte(ind.codigo, "2026-T1")).toMatch(/>Actualizar categorías<span class="sr-only"> · Primer trimestre de 2026<\/span><\/button>/);
+      expect(await reporte(ind.codigo, "2026-T1")).toMatch(/>Actualizar categorías<span class="sr-only"> · primer trimestre de 2026<\/span><\/button>/);
       expect(await reporte(ind.codigo, "2026-T3")).not.toContain("Actualizar categorías");
     }));
 
@@ -1443,7 +1443,7 @@ describe("las páginas de un desagregado (14C, Tarea 15)", () => {
       const html = await pagina(ind.codigo, { vista: "resultados", anio: "2026" });
       // Solo la medición abierta sin reportar (el primer trimestre) lo ofrece.
       expect(html.match(/>Actualizar categorías<span class="sr-only"> · ([^<]*)<\/span>/g)).toEqual([
-        '>Actualizar categorías<span class="sr-only"> · Primer trimestre de 2026</span>',
+        '>Actualizar categorías<span class="sr-only"> · primer trimestre de 2026</span>',
       ]);
       // Quien mide, sin administrar, no.
       contexto.sesion = valida(quien);

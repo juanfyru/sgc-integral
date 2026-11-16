@@ -125,7 +125,7 @@ export function SoportesDelPeriodo({
             Un PDF, una imagen o un Excel (.xlsx). Se puede quitar mientras el periodo no esté cerrado. Lo ven quienes ven el dato y quienes ven
             los soportes de los indicadores que lo usan.
           </p>
-          <ZonaCarga direccion={rutaDeSubidaDeDato(periodoId)} soporte nombre={`Zona de carga de los soportes de ${etiqueta}`} />
+          <ZonaCarga direccion={rutaDeSubidaDeDato(periodoId)} soporte nombre={`Zona de carga de los soportes de ${etiqueta.toLowerCase()}`} />
         </>
       ) : null}
     </div>
@@ -312,7 +312,7 @@ export function AccionDelPeriodo({ datoId, periodo, soportes }: { datoId: number
   const verbo = periodo.reportado ? "Corregir" : "Reportar";
   return (
     <>
-      <Boton variante="secundario" tamano="sm" onClick={() => setAbierto(true)} aria-label={`${verbo} ${periodo.etiqueta}`}>
+      <Boton variante="secundario" tamano="sm" onClick={() => setAbierto(true)} aria-label={`${verbo} ${periodo.etiqueta.toLowerCase()}`}>
         {verbo}
       </Boton>
       <Dialogo abierto={abierto} alCerrar={() => setAbierto(false)} titulo={`${verbo} · ${periodo.etiqueta}`} className={CLASE_DIALOGO}>

@@ -16,7 +16,7 @@ export function VolverACalcular({ medicionId, etiqueta }: { medicionId: number; 
       <input type="hidden" name="id" value={medicionId} />
       <Boton type="submit" variante="secundario" tamano="sm" pendiente={pendiente} className="whitespace-nowrap">
         {pendiente ? "Calculando…" : "Volver a calcular"}
-        <span className="sr-only">{` ${etiqueta}`}</span>
+        <span className="sr-only">{` ${etiqueta.toLowerCase()}`}</span>
       </Boton>
       {estado && !estado.ok ? (
         <p role="alert" className="text-xs text-estado-critico-texto">

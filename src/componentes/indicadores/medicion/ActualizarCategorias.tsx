@@ -49,7 +49,7 @@ function Formulario({ id, etiqueta, accion, explica, conExplicacion }: { id: num
         className="whitespace-nowrap"
       >
         Actualizar categorías
-        <span className="sr-only">{` · ${etiqueta}`}</span>
+        <span className="sr-only">{` · ${etiqueta.toLowerCase()}`}</span>
       </Boton>
       {estado && !estado.ok ? (
         <p id={aviso} tabIndex={-1} role="alert" className="text-xs text-estado-critico-texto">
