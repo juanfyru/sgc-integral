@@ -38,7 +38,7 @@ import {
   soportesDeDatosDeMediciones,
 } from "@/db/consultas/indicadores/datos-soporte";
 import { asegurarMediciones } from "@/db/consultas/indicadores/mediciones";
-import { puedeVerDato, puedeVerSoportes } from "@/lib/alcance";
+import { puedeVerDato, puedeVerIndicador, puedeVerSoportes } from "@/lib/alcance";
 import { describirEvento, nombreDeAccion } from "@/lib/bitacora-detalle";
 import { crearSesion } from "@/lib/sesion";
 import { ERROR_SOPORTE } from "@/lib/subida";
@@ -462,6 +462,22 @@ describe("los soportes del dato desde el indicador que lo usa (soportesDeDatosDe
       // Una medición que no existe, o de otro indicador que el que se dice: nada.
       expect(await soportesDeDatosDeMedicion(x.mide.sesion, 999_999_999, { sql: tx })).toEqual([]);
       expect(await soportesDeDatosDeMediciones(x.mide.sesion, x.ind.id, [suOctubre], { sql: tx })).toEqual(new Map());
+    }));
+
+  it("quien ve el dato y el indicador general, pero no los soportes del indicador, no recibe nada de la función (R5)", () =>
+    entorno(async (e) => {
+      const { tx, datoId, responsable } = e;
+      await subido(e);
+      // El indicador de otro proceso, general: lo ve cualquiera; sus soportes, solo quien lo mide, lo analiza o lo administra.
+      const x = await enOtroProceso(e);
+      const octubre = await medicionDe(tx, x.ind.id, "2026-10");
+      expect(await puedeVerIndicador(x.ind.id, responsable.sesion, { sql: tx })).toBe(true);
+      expect(await puedeVerSoportes(x.ind.id, responsable.sesion, { sql: tx })).toBe(false);
+      // Ve el dato por otra vía (es su responsable): la regla del dato por sí sola le daría los enlaces.
+      expect(await puedeVerSoporteDeDato(tx, responsable.sesion, datoId)).toBe(true);
+      expect(await soportesDeDatosDeMediciones(responsable.sesion, x.ind.id, [octubre], { sql: tx })).toEqual(new Map());
+      // Quien sí ve los soportes del indicador los recibe.
+      expect((await soportesDeDatosDeMediciones(x.mide.sesion, x.ind.id, [octubre], { sql: tx })).get(octubre)).toHaveLength(1);
     }));
 
   it("un compuesto no enseña los soportes de los datos de su componente", () =>

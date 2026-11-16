@@ -91,7 +91,7 @@ export type SoportesDeVariable = { letra: string; datoId: number; soportes: Sopo
  * del dato que forman el de la medición (`clavesFinas`), en orden de periodo. Una entrada sin soportes dice que la persona los
  * vería y no hay ninguno.
  *
- * Solo para quien ve el indicador y, de cada dato, solo si pasa `puedeVerSoporteDeDato` (la regla de la descarga): a los
+ * Solo para quien ve el indicador **y sus soportes** (`puedeVerSoportes`) y, de cada dato, solo si pasa `puedeVerSoporteDeDato` (la regla de la descarga): a los
  * demás, nada, ni la entrada. No devuelve nada más del dato: su id (para la ruta de descarga, que ya viaja con la variable) y
  * la clave del periodo. Una medición histórica no trae nada: su valor se digitó, no salió del dato (§3.6).
  */
@@ -105,6 +105,8 @@ export async function soportesDeDatosDeMediciones(
   const salida = new Map<number, SoportesDeVariable[]>();
   const ids = [...new Set(medicionIds)].filter(esId);
   if (!esId(indicadorId) || ids.length === 0 || !(await puedeVerIndicador(indicadorId, sesion, { sql }))) return salida;
+  // Sin los soportes del indicador, nada: ver el dato por otra vía (ser su responsable) no los abre desde aquí.
+  if (!(await puedeVerSoportes(indicadorId, sesion, { sql }))) return salida;
   const mediciones = await sql`SELECT id, periodo FROM mediciones
     WHERE indicador_id = ${indicadorId} AND id IN ${sql(ids)} AND NOT historica ORDER BY desde, id`;
   if (mediciones.length === 0) return salida;

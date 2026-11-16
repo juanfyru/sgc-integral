@@ -413,9 +413,10 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   (`/indicadores/datos/[id]/soportes/[archivoId]`); los demás reciben 404. Quien los ve «por el indicador» no
   tiene la página del dato: los enlaza la pantalla del indicador (`soportesDeDatosDeMediciones`, en ese mismo
   módulo liviano: por medición ordinaria, solo de las variables que **la versión que rige** toma
-  **directamente** de un dato, nunca a través de un componente, y solo a quien ve ese indicador y pasa
-  `puedeVerSoporteDeDato`), junto a la variable fija en la pantalla de reportar, en «Soportes» de un indicador
-  sin variables propias y en la columna «Soportes» de la tabla del año;
+  **directamente** de un dato, nunca a través de un componente, y solo a quien ve ese indicador **y sus
+  soportes** (`puedeVerSoportes`: la función lo exige ella misma) y pasa `puedeVerSoporteDeDato`), junto a la
+  variable fija en la pantalla de reportar de un indicador mixto, en «Soportes» de un indicador sin variables
+  propias (una sola vez, no también junto a la variable) y en la columna «Soportes» de la tabla del año;
   el informe de una revisión anual (rol `evidencia`, `version_id` nula, uno por año en
   `informes/revision-<año>.pdf`) solo lo descargan Admin SGC, Gerencia y Control Interno
   (`puedeVerInformeAnual`), y los demás reciben 404; la plantilla de un lote de importación de
