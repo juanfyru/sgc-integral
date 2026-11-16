@@ -404,6 +404,130 @@ describe("un componente que es compuesto", () => {
       expect(await valorPara(tx, b.id, "valor", deC)).toEqual({ estado: "no_aplica", mediciones: deB });
       expect([(await fila(tx, deC)).no_aplica, (await fila(tx, deC)).no_aplica_motivo]).toEqual([true, MOTIVO_COMPONENTE_NO_APLICA]);
     }));
+
+  it("con B medido y su componente «No aplica» en esos meses (aún sin propagar a B), B tampoco aplica, con sus mediciones", () =>
+    revertida(sql, async (tx) => {
+      const procesoId = await procesoNuevo(tx);
+      const { ind: x, mide } = await componente(tx, procesoId, { inicioMedicion: "2026-07", aprobadaEn: JUNIO });
+      const b = await espejo(tx, procesoId, x.id, { inicioMedicion: "2026-07", aprobadaEn: JUNIO });
+      const c = await espejo(tx, procesoId, b.id, { periodicidad: "trimestral", inicioMedicion: "2026-T3", aprobadaEn: JUNIO });
+      await abrir(tx, AHORA, x, b, c);
+      const meses = ["2026-07", "2026-08", "2026-09"];
+      const deX = await Promise.all(meses.map((p) => medicionDe(tx, x.id, p)));
+      const deB = await Promise.all(meses.map((p) => medicionDe(tx, b.id, p)));
+      for (const id of deX) await reportarAB(tx, mide, id, "4", "4");
+      await propagarA(tx, AHORA, [x.id]);
+      // X deja de aplicar en los tres meses y nadie propaga: B sigue medido.
+      for (const id of deX) await marcarNoAplica(mide, { medicionId: id, motivo: MOTIVO_DE_X }, { sql: tx, ahora: TARDE });
+      expect((await fila(tx, deB[2])).resultado_exacto).toBe("100/1");
+      expect(await valorPara(tx, b.id, "valor", await medicionDe(tx, c.id, "2026-T3"))).toEqual({ estado: "no_aplica", mediciones: deB });
+    }));
+
+  it("lo que B toma se acumula solo sobre los meses que B usa: con un cambio mayor de B desde septiembre, C recibe septiembre", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const procesoId = await procesoNuevo(tx);
+      const { ind: x, mide } = await componente(tx, procesoId, { inicioMedicion: "2026-07", aprobadaEn: JUNIO });
+      const b = await espejo(tx, procesoId, x.id, { inicioMedicion: "2026-07", aprobadaEn: JUNIO });
+      // Otra fórmula desde septiembre: la racha de B al final del trimestre es solo septiembre.
+      await versionNueva(tx, {
+        indicadorId: b.id,
+        usuarioId: admin.usuarioId,
+        tipoCambio: "mayor",
+        rigeDesde: "2026-09",
+        aprobadaEn: AGOSTO,
+        formula: "A * 1",
+        variables: { A: { indicadorOrigenId: x.id, toma: "valor" }, B: { indicadorOrigenId: x.id, toma: "cumplimiento" } },
+      });
+      const c = await espejo(tx, procesoId, b.id, { periodicidad: "trimestral", inicioMedicion: "2026-T3", aprobadaEn: JUNIO });
+      await abrir(tx, AHORA, x, b, c);
+      const deX = await Promise.all(["2026-07", "2026-08", "2026-09"].map((p) => medicionDe(tx, x.id, p)));
+      for (const [i, [A, B]] of [["1", "2"], ["4", "4"], ["4", "4"]].entries()) await reportarAB(tx, mide, deX[i], A, B);
+      await propagarA(tx, AHORA, [x.id]);
+
+      const septiembreDeB = await medicionDe(tx, b.id, "2026-09");
+      const deC = await medicionDe(tx, c.id, "2026-T3");
+      // No el acumulado de X de julio a septiembre (90): el de septiembre, lo que B muestra para septiembre.
+      expect(await valorPara(tx, b.id, "valor", deC)).toEqual({ estado: "listo", valor: "100/1", mediciones: [septiembreDeB], desde: "2026-09" });
+      expect((await valores(tx, deC)).A).toEqual({ valor: "100", exacto: null, por: null });
+    }));
+
+  it("B empieza en febrero y X se mide desde enero: C no lleva enero, ni lo espera si no se reportó", () =>
+    revertida(sql, async (tx) => {
+      const ABRIL = new Date("2026-04-05T15:00:00Z");
+      const DICIEMBRE = new Date("2025-12-15T15:00:00Z");
+      const procesoId = await procesoNuevo(tx);
+      const { ind: x, mide } = await componente(tx, procesoId, { inicioMedicion: "2026-01", aprobadaEn: DICIEMBRE });
+      const b = await espejo(tx, procesoId, x.id, { inicioMedicion: "2026-02", aprobadaEn: DICIEMBRE });
+      const c = await espejo(tx, procesoId, b.id, { periodicidad: "trimestral", inicioMedicion: "2026-T1", aprobadaEn: DICIEMBRE });
+      await abrir(tx, ABRIL, x, b, c);
+      const [enero, febrero, marzo] = await Promise.all(["2026-01", "2026-02", "2026-03"].map((p) => medicionDe(tx, x.id, p)));
+      const deB = await Promise.all(["2026-02", "2026-03"].map((p) => medicionDe(tx, b.id, p)));
+      const deC = await medicionDe(tx, c.id, "2026-T1");
+      await reportarAB(tx, mide, febrero, "4", "4", ABRIL);
+      await reportarAB(tx, mide, marzo, "4", "4", ABRIL);
+      await propagarA(tx, ABRIL, [x.id]);
+      // Enero de X sin reportar: B no lo usa, así que C no lo espera.
+      expect(await valorPara(tx, b.id, "valor", deC)).toEqual({ estado: "listo", valor: "100/1", mediciones: deB, desde: "2026-02" });
+      expect((await valores(tx, deC)).A).toEqual({ valor: "100", exacto: null, por: null });
+
+      // Con enero de X en 1 de 2 (el trimestre de X sería 90), C sigue sin llevarlo.
+      await reportarAB(tx, mide, enero, "1", "2", ABRIL);
+      await propagarA(tx, ABRIL, [x.id]);
+      expect(await valorPara(tx, b.id, "valor", deC)).toEqual({ estado: "listo", valor: "100/1", mediciones: deB, desde: "2026-02" });
+      expect((await valores(tx, deC)).A).toEqual({ valor: "100", exacto: null, por: null });
+    }));
+
+  it("un mes de B que su medidor marcó «No aplica» tampoco entra en la letra tomada", () =>
+    revertida(sql, async (tx) => {
+      const procesoId = await procesoNuevo(tx);
+      const { ind: x, mide } = await componente(tx, procesoId, { inicioMedicion: "2026-07", aprobadaEn: JUNIO });
+      // B, mixto: A toma el valor de X, B la digita quien mide B; su fórmula es «A».
+      const mideB = await usuarioDePrueba(tx, { rol: "consulta" });
+      const b = await indicadorDePrueba(tx, {
+        procesoId,
+        periodicidad: "mensual",
+        inicioMedicion: "2026-07",
+        aprobadaEn: JUNIO,
+        formula: "A",
+        mide: [mideB.usuarioId],
+        variables: { A: { indicadorOrigenId: x.id, toma: "valor" }, B: { nombre: "Casos evaluados" } },
+      });
+      const c = await espejo(tx, procesoId, b.id, { periodicidad: "trimestral", inicioMedicion: "2026-T3", aprobadaEn: JUNIO });
+      await abrir(tx, AHORA, x, b, c);
+      const meses = ["2026-07", "2026-08", "2026-09"];
+      const deX = await Promise.all(meses.map((p) => medicionDe(tx, x.id, p)));
+      const deB = await Promise.all(meses.map((p) => medicionDe(tx, b.id, p)));
+      for (const [i, [A, B]] of [["1", "2"], ["4", "4"], ["4", "4"]].entries()) await reportarAB(tx, mide, deX[i], A, B);
+      for (const id of deB) await reportar(mideB, { medicionId: id, valores: { B: "1" }, parcial: false, confirmado: true }, { sql: tx, ahora: AHORA });
+      await marcarNoAplica(mideB, { medicionId: deB[1], motivo: "El servicio no operó en el mes" }, { sql: tx, ahora: AHORA });
+      await propagarA(tx, AHORA, [x.id]);
+      expect([(await fila(tx, deB[1])).no_aplica, (await fila(tx, deB[1])).no_aplica_motivo]).toEqual([true, "El servicio no operó en el mes"]);
+
+      // X sobre julio y septiembre: 5 de 6, no sus tres meses (90).
+      const deC = await medicionDe(tx, c.id, "2026-T3");
+      expect(await valorPara(tx, b.id, "valor", deC)).toEqual({ estado: "listo", valor: "250/3", mediciones: deB, desde: null });
+      expect((await valores(tx, deC)).A).toEqual({ valor: "83.3333", exacto: "250/3", por: null });
+    }));
+
+  it("el «desde» del componente interior gana si es el más tardío", () =>
+    revertida(sql, async (tx) => {
+      const ENERO = new Date("2027-01-05T15:00:00Z");
+      const APROBADAS = new Date("2026-08-05T15:00:00Z");
+      const procesoId = await procesoNuevo(tx);
+      // Julio de X terminó antes de aprobarse su ficha: es un histórico que nadie registra.
+      const { ind: x, mide } = await componente(tx, procesoId, { inicioMedicion: "2026-07", aprobadaEn: APROBADAS });
+      const b = await espejo(tx, procesoId, x.id, { periodicidad: "trimestral", inicioMedicion: "2026-T3", aprobadaEn: APROBADAS });
+      const c = await espejo(tx, procesoId, b.id, { periodicidad: "semestral", inicioMedicion: "2026-S2", aprobadaEn: APROBADAS });
+      await abrir(tx, ENERO, x, b, c);
+      expect((await fila(tx, await medicionDe(tx, x.id, "2026-07"))).historica).toBe(true);
+      for (const mes of ["2026-08", "2026-09", "2026-10", "2026-11", "2026-12"]) await reportarAB(tx, mide, await medicionDe(tx, x.id, mes), "4", "4", ENERO);
+      await propagarA(tx, ENERO, [x.id]);
+
+      const deB = await Promise.all(["2026-T3", "2026-T4"].map((p) => medicionDe(tx, b.id, p)));
+      // B cubre el semestre entero (su «desde» propio no se pone); X, desde agosto.
+      expect(await valorPara(tx, b.id, "valor", await medicionDe(tx, c.id, "2026-S2"))).toEqual({ estado: "listo", valor: "100/1", mediciones: deB, desde: "2026-08" });
+    }));
 });
 
 describe("históricos del componente", () => {
@@ -564,6 +688,28 @@ describe("el contagio del «No aplica»", () => {
       expect([m.aviso_vencido_en, m.escalado_en]).toEqual([null, null]);
       const avisos = await tx`SELECT tipo FROM notificaciones WHERE entidad = 'medicion' AND entidad_id = ${deC}`;
       expect(avisos.map((a) => a.tipo)).not.toContain("indicadores.vencido");
+    }));
+
+  it("si el contagio llegó después de la fecha límite, al quitarse no mueve la fecha ni borra los avisos: quien mide ya debía su reporte", () =>
+    revertida(sql, async (tx) => {
+      await silenciarIndicadores(tx);
+      const { ind: x, mide, deX, deC } = await mixto(tx);
+      const vencia = (await fila(tx, deC)).vence_en as Date;
+      // Quien mide el compuesto no reportó: la pasada lo avisa vencido.
+      await revisarVencimientosDeIndicadores({ sql: tx, ahora: new Date("2026-10-16T15:00:00Z"), config });
+      const avisado = await fila(tx, deC);
+      expect(avisado.aviso_vencido_en).not.toBeNull();
+
+      // El contagio llega tarde y después se quita.
+      await marcarNoAplica(mide, { medicionId: deX, motivo: MOTIVO_DE_X }, { sql: tx, ahora: TARDE });
+      expect(await propagarA(tx, TARDE, [x.id])).toEqual({ escritas: 0, noAplica: 1, fallidas: 0 });
+      await quitarNoAplica(mide, deX, { sql: tx, ahora: DESPUES });
+      expect(await propagarA(tx, DESPUES, [x.id])).toEqual({ escritas: 1, noAplica: 0, fallidas: 0 });
+
+      const m = await fila(tx, deC);
+      expect([m.no_aplica, m.reportada_en]).toEqual([false, null]);
+      expect([m.vence_en, m.aviso_vencido_en, m.escalado_en]).toEqual([vencia, avisado.aviso_vencido_en, avisado.escalado_en]);
+      expect((await eventos(tx, deC)).at(-1)!.detalle).not.toHaveProperty("venceEn");
     }));
 
   it("una persona no quita el «No aplica» que puso el contagio", () =>

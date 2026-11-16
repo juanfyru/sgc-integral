@@ -425,8 +425,9 @@ export async function versionTrimestral(
  * La versión siguiente del indicador, aprobada y rigiendo desde `rigeDesde`, como la deja aprobar un cambio menor o mayor,
  * sin tocar las mediciones: de la periodicidad dada (sin valor, mensual), forma «porcentaje» (`A / B * 100`, o la fórmula
  * dada, tal cual; meta 90, umbral 70) y sus variables A y B, propias (con el nombre dado o su letra) o, con `datoId`, de un
- * dato compartido, con lo que firman del dato (su nombre, su periodicidad y «cómo se junta»), como `indicadorDePrueba`. Solo
- * dentro de `revertida`.
+ * dato compartido, con lo que firman del dato (su nombre, su periodicidad y «cómo se junta»), como `indicadorDePrueba`; o,
+ * con `indicadorOrigenId`, tomadas de otro indicador (lo que se toma, sin valor, su valor; «cómo se junta» en «último»).
+ * Solo dentro de `revertida`.
  */
 export async function versionNueva(
   tx: TransactionSql,
@@ -438,7 +439,7 @@ export async function versionNueva(
     aprobadaEn: Date;
     periodicidad?: Periodicidad;
     formula?: string;
-    variables?: Partial<Record<"A" | "B", { nombre?: string; datoId?: number }>>;
+    variables?: Partial<Record<"A" | "B", { nombre?: string; datoId?: number; indicadorOrigenId?: number; toma?: Toma }>>;
   },
 ): Promise<{ versionId: number; variables: { A: number; B: number } }> {
   const [{ numero }] = await tx`SELECT coalesce(max(numero), 0) + 1 AS numero FROM indicador_versiones WHERE indicador_id = ${d.indicadorId}`;
@@ -457,8 +458,15 @@ export async function versionNueva(
       ? await tx`INSERT INTO indicador_variables (version_id, letra, nombre, orden, origen, consolidacion, variable_compartida_id, dato_periodicidad)
           VALUES (${versionId}, ${letra}, ${dato.nombre as string}, ${orden}, 'compartida', ${dato.consolidacion as string}, ${x.datoId!},
             ${dato.periodicidad as string}) RETURNING id`
-      : await tx`INSERT INTO indicador_variables (version_id, letra, nombre, orden) VALUES (${versionId}, ${letra}, ${x.nombre ?? letra}, ${orden})
-          RETURNING id`;
+      : x.indicadorOrigenId !== undefined
+        ? await tx`INSERT INTO indicador_variables (version_id, letra, nombre, orden, origen, consolidacion, indicador_origen_id, toma,
+              origen_codigo, origen_nombre)
+            SELECT ${versionId}, ${letra}, ${x.nombre ?? letra}, ${orden}, 'indicador', 'ultimo', i.id, ${x.toma ?? "valor"}, i.codigo, v.nombre
+            FROM indicadores i JOIN indicador_versiones v ON v.indicador_id = i.id AND v.estado = 'aprobada'
+            WHERE i.id = ${x.indicadorOrigenId} ORDER BY v.numero DESC LIMIT 1
+            RETURNING id`
+        : await tx`INSERT INTO indicador_variables (version_id, letra, nombre, orden) VALUES (${versionId}, ${letra}, ${x.nombre ?? letra}, ${orden})
+            RETURNING id`;
     variables[letra] = Number(fila.id);
   }
   await tx`UPDATE indicador_versiones SET estado = 'aprobada', elaborada_por = ${d.usuarioId}, huella = ${"3".repeat(64)},

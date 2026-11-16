@@ -30,7 +30,7 @@
  * - **El plazo** (§3.4): si la medición pasa de no pedir el análisis a pedirlo y su fecha límite ya pasó (o el plazo es 0),
  *   se cuenta otra vez desde hoy con el mismo plazo (`laFuenteMueveElPlazo`), con las marcas de aviso limpias y `venceEn` en
  *   el evento. Vale igual para un dato y para un componente, y cuando el contagio se quita y un mixto vuelve a pedir el
- *   reporte de quien mide.
+ *   reporte de quien mide, si el contagio había llegado a tiempo (`contagioATiempo`); si llegó tarde, nada se toca.
  * - **El evento es del sistema** (`propagacion`, sin usuario): qué cambió de cada fuente (`detalle.fuentes`, con la letra,
  *   la clase, el id del dato o del indicador y el antes y el después) y los valores de todas las letras a los dos lados.
  *
@@ -177,8 +177,11 @@ const conDato = (m: Row) => m.no_aplica === true || typeof m.resultado_exacto ==
  *   registró se saltan. Si todos los de la versión que rige al final del tramo (su racha, `rachasDe`) son «No aplica»,
  *   `no_aplica`. Si no, su acumulado propio (`acumulado`, como `resumenAcumulado`: se juntan sus variables y se aplica su
  *   fórmula, saltando los «No aplica»), que cubre solo esa racha; su cumplimiento, contra la meta aplicada del último periodo
- *   medido. Si el componente es a su vez compuesto, cada variable que él toma vale el acumulado de su propio componente en
- *   el mismo tramo (`fijos` de `acumulado`, §6.4), nunca lo copiado mes a mes; si ese da `falta` o `no_aplica`, este también.
+ *   medido. Si el componente es a su vez compuesto, cada variable que él toma vale el acumulado de su propio componente
+ *   sobre exactamente los periodos suyos que entran a ese acumulado (`fijos` de `acumulado`, §6.4: el mismo tramo), nunca lo
+ *   copiado mes a mes: sin los que él saltó (históricos sin registrar, «No aplica», los de antes de su inicio o de otra
+ *   racha), así la letra tomada cubre los mismos meses que las suyas y que su `desde`. Si ese da `falta` o `no_aplica`, este
+ *   también; y solo da `falta` por un periodo que cae dentro de uno que este usa.
  *   `desde` es la clave del primer periodo que entró cuando no empieza con el periodo del compuesto (un componente que empezó
  *   a medirse a mitad de él, un histórico sin registrar o un cambio de fórmula), o la del componente interior, la más tardía.
  * `mediciones` son las que entraron al valor, o las que lo dejaron «No aplica»: la del periodo o las de la racha, también
@@ -188,31 +191,56 @@ export function valorDeComponente(
   sql: Cliente,
   d: { indicadorId: number; toma: Toma; periodo: string; desde: Date; hasta: Date },
 ): Promise<ValorDeComponente> {
-  return valorDeComponenteSin(sql, d, new Set());
+  return valorSobre(sql, { indicadorId: d.indicadorId, toma: d.toma, sobre: [{ clave: d.periodo, desde: d.desde, hasta: d.hasta }] }, new Set());
 }
 
-/** `valorDeComponente` sin volver a pasar por los indicadores de `camino` (un ciclo, que la ficha no admite, no se recorre). */
-async function valorDeComponenteSin(
+/** Un periodo de quien toma al componente: el del compuesto o, para un componente interior, uno que usa el intermedio. */
+type Cubierto = { clave: string; desde: Date; hasta: Date };
+
+/**
+ * `valorDeComponente` sobre los periodos `sobre` de quien lo toma, en orden de calendario: el del compuesto o, dentro del
+ * acumulado de un componente compuesto, los suyos que entran a ese acumulado. Sin volver a pasar por los indicadores de
+ * `camino` (un ciclo, que la ficha no admite, no se recorre).
+ */
+async function valorSobre(
   sql: Cliente,
-  d: { indicadorId: number; toma: Toma; periodo: string; desde: Date; hasta: Date },
+  d: { indicadorId: number; toma: Toma; sobre: readonly Cubierto[] },
   camino: ReadonlySet<number>,
 ): Promise<ValorDeComponente> {
-  if (camino.has(d.indicadorId)) return FALTA;
+  if (camino.has(d.indicadorId) || d.sobre.length === 0) return FALTA;
   const zona = zonaHoraria();
-  const gruesa = periodicidadDe(d.periodo);
   const [indicador] = await sql`SELECT inicio_medicion FROM indicadores WHERE id = ${d.indicadorId}`;
   const inicio = texto(indicador?.inicio_medicion);
   const versiones = await versionesAprobadas(sql, d.indicadorId);
-  if (!gruesa || !inicio || versiones.length === 0) return FALTA;
+  if (!inicio || versiones.length === 0) return FALTA;
 
-  const dentro = (p: Periodo, t: { desde: number; hasta: number }) =>
-    p.desde.getTime() >= t.desde && p.desde.getTime() < t.hasta && p.desde.getTime() >= d.desde.getTime() && p.hasta.getTime() <= d.hasta.getTime();
-  const esperados = tramos(versiones, inicio, zona)
-    .flatMap((t) => (contiene(gruesa, t.periodicidad) ? clavesFinas(d.periodo, t.periodicidad).map((c) => periodoDe(c, zona)!).filter((p) => dentro(p, t)) : []))
-    .sort((a, b) => a.desde.getTime() - b.desde.getTime());
+  // Sus periodos dentro de los cubiertos, de la periodicidad que rige cada tramo del componente desde su inicio.
+  const deSusTramos = tramos(versiones, inicio, zona);
+  const vistos = new Set<string>();
+  const esperados: Periodo[] = [];
+  for (const c of d.sobre) {
+    const gruesa = periodicidadDe(c.clave);
+    if (!gruesa) return FALTA;
+    for (const t of deSusTramos) {
+      if (!contiene(gruesa, t.periodicidad)) continue;
+      for (const clave of clavesFinas(c.clave, t.periodicidad)) {
+        const p = periodoDe(clave, zona)!;
+        const enSuTramo = p.desde.getTime() >= t.desde && p.desde.getTime() < t.hasta;
+        const enElCubierto = p.desde.getTime() >= c.desde.getTime() && p.hasta.getTime() <= c.hasta.getTime();
+        if (enSuTramo && enElCubierto && !vistos.has(clave)) {
+          vistos.add(clave);
+          esperados.push(p);
+        }
+      }
+    }
+  }
+  esperados.sort((a, b) => a.desde.getTime() - b.desde.getTime());
   if (esperados.length === 0) return FALTA;
 
-  const filas = await sql`SELECT * FROM mediciones WHERE indicador_id = ${d.indicadorId} AND desde >= ${d.desde} AND hasta <= ${d.hasta}`;
+  const inicioCubierto = Math.min(...d.sobre.map((c) => c.desde.getTime()));
+  const finCubierto = Math.max(...d.sobre.map((c) => c.hasta.getTime()));
+  const filas = await sql`SELECT * FROM mediciones
+    WHERE indicador_id = ${d.indicadorId} AND desde >= ${new Date(inicioCubierto)} AND hasta <= ${new Date(finCubierto)}`;
   const porClave = new Map(filas.map((m) => [m.periodo as string, m]));
   const aprobada = primeraAprobada(versiones)?.aprobadaEn ?? null;
   const entran: { periodo: Periodo; m: Row; rige: VersionDeCalculo }[] = [];
@@ -228,7 +256,7 @@ async function valorDeComponenteSin(
   }
   if (entran.length === 0) return FALTA;
 
-  if (esperados.length === 1 && esperados[0].clave === d.periodo) {
+  if (d.sobre.length === 1 && esperados.length === 1 && esperados[0].clave === d.sobre[0].clave) {
     const { m, rige } = entran[0];
     if (m.no_aplica === true) return { estado: "no_aplica", mediciones: [Number(m.id)] };
     const calculada = versiones.find((v) => v.id === Number(m.version_id)) ?? rige;
@@ -248,14 +276,16 @@ async function valorDeComponenteSin(
   const ficha = fichaDeCalculo(rigeAlFinal.calculo);
   if (!ficha || medidos.length === 0) return FALTA;
 
-  // Un componente compuesto: lo que él toma vale el acumulado de su componente en el tramo, no lo copiado mes a mes.
+  // Un componente compuesto: lo que él toma vale el acumulado de su componente sobre los periodos suyos que entran aquí
+  // (los medidos de la racha), no lo copiado mes a mes.
   const fijos: Record<string, Fraccion> = {};
   const desdes: string[] = [];
   const conEl = new Set([...camino, d.indicadorId]);
+  const suyos: Cubierto[] = medidos.map((e) => e.periodo);
   for (const v of rigeAlFinal.variables) {
     if (v.origen !== "indicador") continue;
     if (v.indicadorOrigenId === null || v.toma === null) return FALTA;
-    const interior = await valorDeComponenteSin(sql, { ...d, indicadorId: v.indicadorOrigenId, toma: v.toma }, conEl);
+    const interior = await valorSobre(sql, { indicadorId: v.indicadorOrigenId, toma: v.toma, sobre: suyos }, conEl);
     if (interior.estado === "falta") return FALTA;
     if (interior.estado === "no_aplica") return { estado: "no_aplica", mediciones };
     fijos[v.letra] = interior.valor;
@@ -278,8 +308,8 @@ async function valorDeComponenteSin(
   );
   const valor = r.resultado ? deLaToma(d.toma, r.resultado, r.cumple, regla) : null;
   if (!valor) return FALTA;
-  // El primero que entró, si empieza después que el periodo del compuesto; y el más tardío de los interiores.
-  if (r.desde !== null && new Date(r.desde.slice(0, r.desde.indexOf("#"))).getTime() > d.desde.getTime()) {
+  // El primero que entró, si empieza después que lo cubierto (el periodo del compuesto); y el más tardío de los interiores.
+  if (r.desde !== null && new Date(r.desde.slice(0, r.desde.indexOf("#"))).getTime() > inicioCubierto) {
     desdes.push(r.desde.slice(r.desde.indexOf("#") + 1));
   }
   const inicioDe = (clave: string) => periodoDe(clave, zona)?.desde.getTime() ?? 0;
@@ -432,6 +462,16 @@ function pideAnalisis(d: { semaforo: Semaforo | null; cumple: boolean | null; re
 }
 
 /**
+ * ¿El último contagio de la medición (`propagacion` con `detalle.componente`) llegó en su fecha límite o antes? La misma
+ * condición de «Reportes a tiempo» (`reportesDelPeriodo`): si llegó después, quien mide ya debía su reporte.
+ */
+async function contagioATiempo(tx: TransactionSql, medicionId: number, venceEn: Date): Promise<boolean> {
+  const [c] = await tx`SELECT max(creado_en) AS en FROM medicion_eventos
+    WHERE medicion_id = ${medicionId} AND tipo = 'propagacion' AND detalle ? 'componente'`;
+  return c?.en !== null && c?.en !== undefined && new Date(c.en as Date).getTime() <= venceEn.getTime();
+}
+
+/**
  * La propagación de una medición en su transacción, con los candados (el indicador `FOR SHARE` y la medición `FOR UPDATE`) y
  * todo releído bajo ellos (la fuente, sin candado): «valores», «no_aplica» (quedó en el «No aplica» del sistema) o `null` si
  * ya no le tocaba o nada difería.
@@ -457,6 +497,8 @@ async function propagarEn(tx: TransactionSql, medicionId: number, ahora: Date): 
     await tx`UPDATE mediciones SET no_aplica = ${plan.noAplica.motivo !== null}, no_aplica_motivo = ${plan.noAplica.motivo} WHERE id = ${medicionId}`;
   }
   const noAplica = plan.noAplica ? plan.noAplica.motivo !== null : m.no_aplica === true;
+  // El contagio que se quita le devuelve a quien mide un mixto el reporte: si había llegado a tiempo, no le debía nada.
+  const devuelveATiempo = plan.quitarReporte && mide(version) && (await contagioATiempo(tx, medicionId, new Date(m.vence_en as string)));
   const marca = (no: boolean, motivo: unknown) => (plan.noAplica ? { noAplica: no, motivo: (motivo as string | null) ?? null } : {});
   const semaforo = (m.semaforo as Semaforo | null) ?? null;
   const pedia = pideAnalisis(
@@ -482,13 +524,13 @@ async function propagarEn(tx: TransactionSql, medicionId: number, ahora: Date): 
       despues: { ...enTexto(version, plan.valores), ...marca(noAplica, plan.noAplica?.motivo) },
     },
     // Un cambio ajeno que la deja pidiendo el análisis con la fecha ya pasada no la deja vencida (anexo 14C, §3.4); ni el
-    // contagio que se quita y le devuelve el reporte a quien mide un mixto: nadie amanece vencido por lo que cambió otro.
+    // contagio que llegó a tiempo y, al quitarse, le devuelve el reporte a quien mide un mixto: nadie amanece vencido por lo
+    // que cambió otro. Si el contagio llegó tarde, la fecha y las marcas de aviso no se tocan: ya debía su reporte.
     conElResultado: async (r) => {
       const pide = pideAnalisis({ semaforo: r.despues, cumple: r.cumple, repetido: r.repetido, noAplica }, m);
       const plazo = { venceEn: new Date(m.vence_en as string), ahora, plazoDias: Number(i.plazo_reporte_dias), zona };
       const vence =
-        laFuenteMueveElPlazo({ pedia, pide, ...plazo }) ??
-        (plan.quitarReporte && mide(version) ? laFuenteMueveElPlazo({ pedia: false, pide: true, ...plazo }) : null);
+        laFuenteMueveElPlazo({ pedia, pide, ...plazo }) ?? (devuelveATiempo ? laFuenteMueveElPlazo({ pedia: false, pide: true, ...plazo }) : null);
       if (!vence) return {};
       await tx`UPDATE mediciones SET vence_en = ${vence}, aviso_previo_en = NULL, aviso_vencido_en = NULL, escalado_en = NULL
         WHERE id = ${medicionId}`;
