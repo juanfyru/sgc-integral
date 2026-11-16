@@ -12,9 +12,11 @@
  *   cierre (un dato o un componente en plazo, o uno que a su vez espera: la espera se contagia hacia arriba, por niveles y
  *   hasta que no cambie), ni la de un indicador activo cuyo valor copiado ya no coincide con el de su fuente. La de un
  *   indicador retirado no recibe la propagación: no se le pide que coincida.
- * - **El cierre cierra los periodos de los datos** que terminaron en el mes o antes: los reportados, y los pendientes que se
- *   piden y ya vencieron, sin valor («Sin dato»); un pendiente en plazo espera, y uno que ya nadie pide (`se_pide` falso) no
- *   lo cierra nadie ni lo debe nadie.
+ * - **El cierre cierra los periodos de los datos** que terminaron en el mes o antes, salvo los que siguen dentro de su plazo
+ *   (anexo 14C, §3.5): los reportados cuyo plazo ya pasó, y los pendientes que se piden y ya vencieron, sin valor («Sin
+ *   dato»). El que sigue en plazo espera, también si ya está reportado: su responsable lo corrige sin justificación hasta el
+ *   cierre (§4.4), y las mediciones que lo usan esperan con él. Uno que ya nadie pide (`se_pide` falso) no lo cierra nadie ni
+ *   lo debe nadie.
  * - Cerrar no es un cálculo: escribe `estado`, `cierre_id` y `sin_analisis` sin pasar por `recalcularMedicion`.
  * - Un cierre no se modifica (trigger): su resumen se calcula antes de insertarlo, sobre las mediciones ya bloqueadas, y
  *   el `UPDATE … RETURNING` debe alcanzar exactamente las que cuenta.
@@ -108,7 +110,7 @@ export type ResumenDeCierre = {
   porProceso: CuentasDeProceso[];
   /**
    * Los periodos de los datos compartidos que terminaron en el mes o antes (anexo 14C, §3.5): los que se cierran (con los que
-   * se cierran sin valor) y los pendientes que siguen en plazo.
+   * se cierran sin valor) y los que siguen dentro de su plazo, pendientes o ya reportados.
    */
   datos: { seCierran: number; sinDato: number; esperan: number };
   /** No se cierran: esperan una fuente que no está cerrada ni se cierra con este cierre, o lo copiado de ella no coincide. */
@@ -222,9 +224,11 @@ function grupoDe(m: Record<string, unknown>): Grupo {
 
 /**
  * Los periodos de los datos que terminaron en `hasta` o antes y siguen sin cerrar (con `bloquear`, `FOR UPDATE` y por id: el
- * primer candado del cierre): los que se cierran (reportados, y pendientes que se piden y vencieron, sin valor) y cuántos
- * pendientes que se piden siguen en plazo. Un pendiente que ya nadie pide no se cierra ni cuenta (anexo 14C, nota 1 de la
- * Tarea 16): nadie lo debe y ninguna medición lo tiene de entrada.
+ * primer candado del cierre): los que se cierran (reportados, y pendientes que se piden, sin valor, unos y otros con su plazo
+ * ya vencido) y cuántos siguen dentro de su plazo (`vence_en >= ahora`, la regla de las mediciones): los pendientes que se
+ * piden y también los ya reportados, que hasta el cierre se corrigen sin justificación (anexo 14C, §3.5 y §4.4). Un pendiente
+ * que ya nadie pide no se cierra ni cuenta (anexo 14C, nota 1 de la Tarea 16): nadie lo debe y ninguna medición lo tiene de
+ * entrada.
  */
 async function periodosDeDatosDelCierre(sql: Cliente, hasta: Date, ahora: Date, bloquear: boolean): Promise<Clasificacion["datos"]> {
   const filas = await sql`SELECT id, estado, se_pide, vence_en FROM variable_valores WHERE hasta <= ${hasta} AND estado <> 'cerrado'
@@ -232,10 +236,10 @@ async function periodosDeDatosDelCierre(sql: Cliente, hasta: Date, ahora: Date, 
   const salida: Clasificacion["datos"] = { cierran: [], esperan: 0 };
   for (const p of filas) {
     const id = Number(p.id);
-    if (p.estado === "reportado") salida.cierran.push({ id, estado: "reportado", sinDato: false });
-    else if (p.se_pide !== true) continue;
-    else if (new Date(p.vence_en as string).getTime() >= ahora.getTime()) salida.esperan += 1;
-    else salida.cierran.push({ id, estado: p.estado as string, sinDato: true });
+    const reportado = p.estado === "reportado";
+    if (!reportado && p.se_pide !== true) continue;
+    if (new Date(p.vence_en as string).getTime() >= ahora.getTime()) salida.esperan += 1;
+    else salida.cierran.push({ id, estado: p.estado as string, sinDato: !reportado });
   }
   return salida;
 }

@@ -1,7 +1,7 @@
 /**
  * El cierre del mes conoce las entradas de cada medición (anexo 14C, §3.5; Tarea 16 de la 14C): «una medición cerrada tiene
  * cerradas todas sus entradas». El cierre cierra también los periodos de los datos compartidos que terminaron en el mes o
- * antes (salvo los pendientes que siguen en plazo y los que ya nadie pide), no cierra lo que espera una fuente abierta (y esa
+ * antes (salvo los que siguen en plazo, pendientes o ya reportados, y los que ya nadie pide), no cierra lo que espera una fuente abierta (y esa
  * espera se contagia hacia arriba) y, antes de clasificar, propaga lo que nadie propagó.
  *
  * Contra la BD de desarrollo, dentro de una transacción que se revierte: ningún test deja un cierre confirmado. Como en
@@ -154,6 +154,45 @@ describe("el cierre cierra los periodos de los datos", () => {
       const m3 = await fila(tx, await medicionDe(tx, conVencido.id, MARZO));
       expect([m3.estado, m3.resultado_exacto]).toEqual(["cerrada", null]);
       expect((await fila(tx, await medicionDe(tx, conEnPlazo.id, MARZO))).estado).toBe("abierta");
+    }));
+});
+
+describe("un periodo de un dato ya reportado que sigue dentro de su plazo", () => {
+  it("no se cierra: se corrige sin justificación, lo que lo usa espera y el resumen lo dice; pasado el plazo, se cierran los dos", () =>
+    revertida(sql, async (tx) => {
+      const { admin, mide, responsable, nuevo, dato, abrirDato, reportarElDato, reportarLoPropio } = await entorno(tx);
+      const enPlazo = await dato("ZZ Reportado en plazo", 30);
+      const [d] = await tx`SELECT nombre FROM variables_compartidas WHERE id = ${enPlazo}`;
+      const mixto = await nuevo({ variables: { B: { datoId: enPlazo } } });
+      const p = await abrirDato(enPlazo);
+      const marzo = await medicionDe(tx, mixto.id, MARZO);
+      await reportarLoPropio(mide, marzo, { A: "9" });
+      await reportarElDato(p, "10");
+      // Reportado el 20 de abril, con plazo hasta el 30; la medición de marzo ya venció (el 10 de abril).
+      const antes = await periodoDelDato(tx, p);
+      expect(antes.estado).toBe("reportado");
+      expect((antes.vence_en as Date).getTime()).toBeGreaterThan(AHORA.getTime());
+      expect(((await fila(tx, marzo)).vence_en as Date).getTime()).toBeLessThan(AHORA.getTime());
+
+      const r = await resumenDeCierre(admin, MARZO, opc(tx));
+      expect(r.datos).toEqual({ seCierran: 0, sinDato: 0, esperan: 1 });
+      expect(r.aCerrar).toBe(0);
+      expect(r.esperanEntrada).toEqual([{ codigo: mixto.codigo, periodo: MARZO, espera: `El dato «${d.nombre as string}», marzo de 2003` }]);
+
+      await cerrarMes(admin, MARZO, opc(tx));
+      expect((await periodoDelDato(tx, p)).estado).toBe("reportado");
+      expect((await eventosDelDato(tx, p)).filter((x) => x.tipo === "cierre")).toHaveLength(0);
+      const m = await fila(tx, marzo);
+      expect([m.estado, m.resultado_exacto]).toEqual(["reportada", "90/1"]);
+
+      // Sigue abierto: su responsable lo corrige antes del cierre, sin justificación (anexo 14C, §4.4).
+      expect(await reportarDato(responsable, { periodoId: p, valor: "9.5", confirmado: true }, opc(tx))).toEqual({ ok: true, corregido: true });
+
+      // El cierre siguiente, pasado el 30 de abril, cierra el periodo del dato y la medición que lo usa, con el valor corregido.
+      await cerrarMes(admin, ABRIL, opc(tx, EN_MAYO));
+      expect((await periodoDelDato(tx, p)).estado).toBe("cerrado");
+      const cerrada = await fila(tx, marzo);
+      expect([cerrada.estado, cerrada.resultado_exacto]).toEqual(["cerrada", "1800/19"]);
     }));
 });
 
