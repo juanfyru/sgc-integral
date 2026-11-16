@@ -26,7 +26,8 @@ import {
   siglaVigenteDe,
 } from "@/componentes/indicadores/ficha/FormularioFicha";
 import { cambioDeIndicador, cambioDeOrigen, nombreDeVariable, ORIGENES_DE_VARIABLE, origenConTecla } from "@/componentes/indicadores/ficha/OrigenDeVariable";
-import { EsquemaFicha, type DatosFicha } from "@/lib/esquemas/indicadores";
+import { EsquemaFicha, EsquemaFichaDeLaPersona, type DatosFicha } from "@/lib/esquemas/indicadores";
+import { parsearFormulario } from "@/lib/validacion";
 import { CALCULOS, CLAVES_DE_CALCULO, ETIQUETA_ALCANCE, META_ENTERA } from "@/lib/indicadores/calculos/registro";
 import { unidadDeForma } from "@/lib/indicadores/formula/formas";
 import { AVISO_DE_NO_NOMBRARLO, AVISO_DESAGREGACION, avisoDeDeduccion, NADIE_MIDE_AJENO, ORIGEN_AJENO, type OpcionesFicha } from "@/lib/indicadores/tipos";
@@ -1272,5 +1273,54 @@ describe("FormularioFicha: el origen de cada variable y la desagregación (14C, 
     );
     expect(masOpciones(h)).toContain('<p id="ficha-dimensionId-error" role="alert"');
     expect(h.split("Elija una dimensión activa").length - 1).toBe(1);
+  });
+});
+
+describe("FormularioFicha: un valor guardado con tres decimales que nadie tocó (complemento de la 14C, Tarea 2)", () => {
+  const RANGOS_2375 = JSON.stringify({
+    bien: [{ signo: ">=", valor: "2.375" }],
+    atencion: [{ signo: "entre", valor: "1.5", hasta: "2.374" }],
+    critico: [{ signo: "<", valor: "1.5" }],
+  });
+  const VARIABLES = [
+    { letra: "A", nombre: "Ejecutadas", consolidacion: "suma" as const, admiteNegativos: false, capturaMin: "2.375", capturaMax: "5000.5" },
+    { letra: "B", nombre: "Programadas", consolidacion: "suma" as const, admiteNegativos: false },
+  ];
+  const guardada = () =>
+    pintarCambio({ forma: "porcentaje", meta: "100", tendencia: "ascendente", rangos: RANGOS_2375, semaforoModo: "rangos", variables: VARIABLES });
+  /** Lo que el formulario manda al servidor: los dos campos ocultos que llevan los valores, más lo mínimo que el esquema exige. */
+  const alServidor = (h: string) => {
+    const fd = new FormData();
+    const base: Record<string, string> = {
+      procesoId: "2", nombre: "Cumplimiento", proposito: "Saber si se cumple", tipoId: "1", clasificacionId: "2", forma: "porcentaje",
+      unidadId: "1", decimales: "1", periodicidad: "trimestral", tendencia: "ascendente", meta: "100", cargosMedir: "[4]",
+      cargosAnalizar: "[4]", normaIds: "[]", plazoReporteDias: "10", inicioMedicion: "2026-T1", nivelAcceso: "general", mide: "[7]", analiza: "[7]",
+      semaforoModo: "rangos", rangos: oculto(h, "rangos")!, variables: oculto(h, "variables")!,
+    };
+    for (const [k, v] of Object.entries(base)) fd.set(k, v);
+    return fd;
+  };
+
+  it("el campo oculto de los rangos lleva el texto con coma, no con punto", () => {
+    const rangos = oculto(guardada(), "rangos")!;
+    expect(rangos).not.toMatch(/\d\.\d/);
+    expect(JSON.parse(rangos)).toEqual({
+      bien: [{ signo: ">=", valor: "2,375" }],
+      atencion: [{ signo: "entre", valor: "1,5", hasta: "2,374" }],
+      critico: [{ signo: "<", valor: "1,5" }],
+    });
+  });
+
+  it("los límites de captura viajan con coma desde el principio (en el campo `variables` que el formulario envía)", () => {
+    // `renderToStaticMarkup` no deja teclear: lo que viaja al enviar es la función `limpia` sobre el estado inicial.
+    const [a] = JSON.parse(oculto(guardada(), "variables")!) as { capturaMin?: string; capturaMax?: string }[];
+    expect([a.capturaMin, a.capturaMax]).toEqual(["2,375", "5000,5"]);
+  });
+
+  it("con esos valores enviados tal cual, el esquema los acepta y los guarda con punto", () => {
+    const d = parsearFormulario(alServidor(guardada()), EsquemaFichaDeLaPersona);
+    expect(JSON.parse(d.rangos!).bien[0].valor).toBe("2.375");
+    expect(JSON.parse(d.rangos!).atencion[0].hasta).toBe("2.374");
+    expect([d.variables[0].capturaMin, d.variables[0].capturaMax]).toEqual(["2.375", "5000.5"]);
   });
 });

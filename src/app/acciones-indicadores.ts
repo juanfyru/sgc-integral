@@ -42,7 +42,7 @@ import {
   EsquemaDevolverFicha,
   EsquemaDuplicar,
   EsquemaEnviarFicha,
-  EsquemaFicha,
+  EsquemaFichaDeLaPersona,
   EsquemaHistoricos,
   EsquemaMeta,
   EsquemaMotivoDeBaja,
@@ -97,7 +97,7 @@ function destinoDeFirma(err: unknown): string {
 /** Crea el indicador en borrador y lleva a su ficha para seguir editándola. */
 export async function crearIndicadorAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
-    const d = parsearFormulario(formData, EsquemaFicha);
+    const d = parsearFormulario(formData, EsquemaFichaDeLaPersona);
     const { codigo } = await crearIndicador(sesion, d).catch(sinInterbloqueoCrudo);
     return rutaDeEdicion(codigo);
   });
@@ -106,7 +106,7 @@ export async function crearIndicadorAccion(_prev: EstadoAccion, formData: FormDa
 /** `id` es el de la versión en borrador. El formulario siempre manda el código: si cambió, la página es otra. */
 export async function guardarBorradorAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
-    const d = parsearFormulario(formData, EsquemaFicha, { omitir: ["id"] });
+    const d = parsearFormulario(formData, EsquemaFichaDeLaPersona, { omitir: ["id"] });
     await guardarBorrador(sesion, idNumerico(formData, "id"), d).catch(sinInterbloqueoCrudo);
     return d.codigo ? rutaDeEdicion(d.codigo) : "/indicadores";
   });

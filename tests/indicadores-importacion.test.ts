@@ -751,6 +751,20 @@ describe("importar el lote", () => {
       expect(await estadoDeLote(tx, loteId)).toBe("por_importar");
     }));
 
+  it("una meta de 1,125 (canónica «1.125») y sus rangos se importan sin que el punto de miles los rechace", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const codigo = `CNT-ID-${unico()}`;
+      const { loteId } = await loteCon(tx, b.admin, [aprobada(b, codigo, { meta: "1,125" })]);
+      expect(await importarLote(b.admin, loteId, datosImportacion({ siglas: { [b.subprocesoId]: "CNT" } }), firmar(tx))).toEqual({
+        aprobadas: 1,
+        borradores: 0,
+        omitidas: 0,
+      });
+      const a = await indicadorDe(tx, codigo);
+      expect(a.rangos.bien).toEqual([{ signo: ">=", valor: "1.125" }]);
+    }));
+
   it("una ficha propuesta sigue el camino de aprobación de la app hasta quedar aprobada", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);

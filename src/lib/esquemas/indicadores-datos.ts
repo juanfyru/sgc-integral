@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { casilla, entero, id, listaDeIds, numero, opcional } from "@/lib/esquemas/indicadores";
+import { casilla, entero, id, listaDeIds, numero, numeroCanonico, opcional } from "@/lib/esquemas/indicadores";
 import { CONSOLIDACIONES, PERIODICIDADES } from "@/lib/indicadores/tipos";
 import { textoAcotado } from "@/lib/validacion";
 
@@ -8,23 +8,33 @@ import { textoAcotado } from "@/lib/validacion";
  * vez como entrada (`guardarDato` lo vuelve a validar). Los ayudantes son los del formulario de la ficha (`indicadores.ts`).
  */
 
-/** Un dato del catálogo; el `id` del que se edita viaja aparte. */
-export const EsquemaDato = z
-  .object({
-    procesoId: id("Elija el proceso"),
-    nombre: textoAcotado("El nombre del dato", 1, 150),
-    descripcion: opcional("La descripción", 500),
-    fuente: opcional("La fuente", 300),
-    unidad: opcional("La unidad", 40),
-    periodicidad: z.enum(PERIODICIDADES, { error: "Elija la periodicidad" }),
-    consolidacion: z.enum(CONSOLIDACIONES, { error: "Elija cómo se junta" }),
-    capturaMin: numero("El mínimo de captura debe ser un número").optional(),
-    capturaMax: numero("El máximo de captura debe ser un número").optional(),
-    admiteNegativos: casilla,
-    plazoReporteDias: entero("El plazo de reporte", 0, 90),
-    dimensionId: id("La dimensión no es válida").optional(),
-  })
-  .strict();
+/**
+ * Un dato del catálogo; el `id` del que se edita viaja aparte. Se arma una vez por lector de cifras (como la ficha): el de
+ * la persona rechaza el punto de miles y el canónico, el de `guardarDato`, que vuelve a validar lo que ya salió del primero.
+ */
+function esquemaDeDato(num: typeof numero) {
+  return z
+    .object({
+      procesoId: id("Elija el proceso"),
+      nombre: textoAcotado("El nombre del dato", 1, 150),
+      descripcion: opcional("La descripción", 500),
+      fuente: opcional("La fuente", 300),
+      unidad: opcional("La unidad", 40),
+      periodicidad: z.enum(PERIODICIDADES, { error: "Elija la periodicidad" }),
+      consolidacion: z.enum(CONSOLIDACIONES, { error: "Elija cómo se junta" }),
+      capturaMin: num("El mínimo de captura debe ser un número", "El mínimo de captura").optional(),
+      capturaMax: num("El máximo de captura debe ser un número", "El máximo de captura").optional(),
+      admiteNegativos: casilla,
+      plazoReporteDias: entero("El plazo de reporte", 0, 90),
+      dimensionId: id("La dimensión no es válida").optional(),
+    })
+    .strict();
+}
+
+/** El dato tal como lo valida el dominio, sobre datos ya normalizados (acepta «2.375»). */
+export const EsquemaDato = esquemaDeDato(numeroCanonico);
+/** El dato tal como lo escribe la persona: el de la Server Action; rechaza el punto de miles. */
+export const EsquemaDatoDeLaPersona = esquemaDeDato(numero);
 
 /** Los responsables del dato: la lista completa, en JSON, como `EsquemaDesignar`; el `id` del dato viaja aparte. */
 export const EsquemaResponsablesDeDato = z

@@ -23,7 +23,7 @@ import {
 import { contextoDePeticion } from "@/lib/contexto-peticion";
 import { EsquemaSinDatos } from "@/lib/esquemas/documentos";
 import { EsquemaDeshacerImportacion, EsquemaImportarLote, EsquemaVistaPreviaImportacion, juntarImportacion } from "@/lib/esquemas/indicadores";
-import { EsquemaDato, EsquemaEstadoDeDato, EsquemaResponsablesDeDato } from "@/lib/esquemas/indicadores-datos";
+import { EsquemaDatoDeLaPersona, EsquemaEstadoDeDato, EsquemaResponsablesDeDato } from "@/lib/esquemas/indicadores-datos";
 import {
   EsquemaActivarMaestro,
   EsquemaCategoria,
@@ -81,7 +81,7 @@ export async function guardarParametrosAccion(_prev: EstadoAccion, formData: For
 /** `id`, si viene, es el del dato que se edita (sin él, se crea). */
 export async function guardarDatoCompartido(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
-    const datos = parsearFormulario(formData, EsquemaDato, { omitir: ["id"] });
+    const datos = parsearFormulario(formData, EsquemaDatoDeLaPersona, { omitir: ["id"] });
     const id = texto(formData, "id") ? idNumerico(formData, "id") : undefined;
     await guardarDato(sesion, { ...datos, ...(id ? { id } : {}) });
   });

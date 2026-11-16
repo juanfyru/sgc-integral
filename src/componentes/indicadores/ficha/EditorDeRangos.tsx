@@ -80,11 +80,12 @@ export function estadoDeRangos(tendencia: Tendencia, inicial: RangosEnTexto | nu
 }
 
 const numero = (t: string) => t.trim().replace(",", ".");
+const comoSeEscribio = (t: string) => t.trim();
 
-/** Lo que se guarda: un `RangosEnTexto`. Sin Atención, esa lista queda vacía; una Atención sin escribir no deja filas. */
-export function rangosDelEditor(e: EstadoEditor): RangosEnTexto {
+/** Los renglones con los números armados por `armar`; sin Atención, esa lista queda vacía; una Atención sin escribir no deja filas. */
+function rangosCon(e: EstadoEditor, armar: (t: string) => string): RangosEnTexto {
   const aTexto = (f: FilaDelEditor): FilaEnTexto =>
-    f.signo === "entre" ? { signo: f.signo, valor: numero(f.valor), hasta: numero(f.hasta) } : { signo: f.signo, valor: numero(f.valor) };
+    f.signo === "entre" ? { signo: f.signo, valor: armar(f.valor), hasta: armar(f.hasta) } : { signo: f.signo, valor: armar(f.valor) };
   const vacia = (f: FilaDelEditor) => numero(f.valor) === "" && (f.signo !== "entre" || numero(f.hasta) === "");
   return {
     bien: e.bien.map(aTexto),
@@ -92,6 +93,15 @@ export function rangosDelEditor(e: EstadoEditor): RangosEnTexto {
     critico: e.critico.map(aTexto),
   };
 }
+
+/** Lo que se guarda: un `RangosEnTexto` con los números con punto. */
+export const rangosDelEditor = (e: EstadoEditor): RangosEnTexto => rangosCon(e, numero);
+
+/**
+ * Lo que viaja en el campo oculto `rangos`: los números tal como se escribieron (con coma). La conversión a punto la hace el
+ * esquema del servidor, que también rechaza un punto de miles; convertirla aquí lo dejaría pasar como un decimal.
+ */
+export const rangosParaEnviar = (e: EstadoEditor): RangosEnTexto => rangosCon(e, comoSeEscribio);
 
 const TODOS: readonly Signo[] = [">=", ">", "<=", "<", "entre"];
 const DE_SUBIDA: readonly Signo[] = [">=", ">", "entre"];
@@ -224,7 +234,7 @@ export function EditorDeRangos({
       {enviar ? (
         <>
           <input type="hidden" name="semaforoModo" value="rangos" />
-          <input type="hidden" name="rangos" value={JSON.stringify(rangosDelEditor(estado))} />
+          <input type="hidden" name="rangos" value={JSON.stringify(rangosParaEnviar(estado))} />
         </>
       ) : null}
     </fieldset>

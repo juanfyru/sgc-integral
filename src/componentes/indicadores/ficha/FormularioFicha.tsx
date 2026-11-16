@@ -89,6 +89,9 @@ export const conOrigen = (v: DatosFicha["variables"][number]): Variable => ({
   ...v,
   origen: v.origen ?? "propia",
   ...(v.origen === "indicador" ? { consolidacion: "suma" as const } : {}),
+  // Los límites se escriben con coma: así viajan, y un valor guardado «2.375» no llega al servidor como punto de miles.
+  ...(v.capturaMin === undefined ? {} : { capturaMin: conComa(v.capturaMin) }),
+  ...(v.capturaMax === undefined ? {} : { capturaMax: conComa(v.capturaMax) }),
 });
 
 function variablesDeForma(forma: Forma, actuales: readonly Variable[]): Variable[] {
@@ -303,7 +306,7 @@ export function campoDeMasOpciones(mensaje: string): string | null {
  * del rango de Bien»): van junto al editor, no junto a la meta.
  */
 const RANGOS_ESCRITOS =
-  /^(Escriba los rangos del semáforo|Un cambio mayor escribe los rangos|Complete los valores de cada rango|Los rangos del semáforo no tienen|Los valores de los rangos|Un estado admite|Solo «entre» lleva|Escriba el rango de|En «|Cada estado lleva|Para mantenerse en un rango|Los rangos de .+ se cruzan|El rango de .+ queda dentro|Entre .+ queda un hueco|La meta debe quedar dentro del rango de Bien)/;
+  /^(Escriba los rangos del semáforo|Un cambio mayor escribe los rangos|Complete los valores de cada rango|Los rangos del semáforo(?::| no tienen)|Los valores de los rangos|Un estado admite|Solo «entre» lleva|Escriba el rango de|En «|Cada estado lleva|Para mantenerse en un rango|Los rangos de .+ se cruzan|El rango de .+ queda dentro|Entre .+ queda un hueco|La meta debe quedar dentro del rango de Bien)/;
 
 /** Los errores del servidor sobre un campo que está a la vista: el `id` del control o del grupo. */
 const CAMPOS_A_LA_VISTA: readonly [RegExp, string][] = [
@@ -1219,7 +1222,7 @@ export function FormularioFicha({
                             <input
                               id={`ficha-variable-${v.letra}-min`}
                               inputMode="decimal"
-                              value={conComa(v.capturaMin)}
+                              value={v.capturaMin ?? ""}
                               onChange={(e) => cambiarVariable(v.letra, { capturaMin: e.target.value })}
                               className={CONTROL}
                             />
@@ -1228,7 +1231,7 @@ export function FormularioFicha({
                             <input
                               id={`ficha-variable-${v.letra}-max`}
                               inputMode="decimal"
-                              value={conComa(v.capturaMax)}
+                              value={v.capturaMax ?? ""}
                               onChange={(e) => cambiarVariable(v.letra, { capturaMax: e.target.value })}
                               className={CONTROL}
                             />
