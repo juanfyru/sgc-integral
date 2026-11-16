@@ -166,6 +166,8 @@ describe("datosVencidos", () => {
       const { jefe, responsable, datoId } = await entorno(tx);
       const periodoId = await octubre(tx, datoId, "1284300000");
       for (const d of [7, 11, 20]) expect(await pasar(tx, noviembre(d))).toEqual(NADA);
+      // Con la firma corta, los días del escalamiento salen de Configuración documental.
+      expect(await datosVencidos({ sql: tx, ahora: noviembre(25) })).toEqual(NADA);
       expect(await avisosDe(tx, responsable.usuarioId)).toEqual([]);
       expect(await avisosDe(tx, jefe.usuarioId)).toEqual([]);
       expect(Object.values(await marcas(tx, periodoId))).toEqual([null, null, null]);

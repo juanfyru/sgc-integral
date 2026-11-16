@@ -57,8 +57,8 @@ export const EsquemaReporteDeDato = z
           }
         },
         z
-          .record(z.string().regex(/^\d{1,15}$/, VALOR_INVALIDO), valorDigitado)
-          .refine((r) => Object.keys(r).length <= 500, VALOR_INVALIDO),
+          .record(z.string(), valorDigitado)
+          .refine((r) => Object.keys(r).length <= 500 && Object.keys(r).every((id) => /^\d{1,15}$/.test(id)), VALOR_INVALIDO),
       )
       .optional(),
     confirmado: casilla,

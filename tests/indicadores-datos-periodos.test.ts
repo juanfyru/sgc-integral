@@ -20,12 +20,14 @@ import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { asegurarPeriodosDeDatos, historialDeDato, periodosDeDato, reportarDato } from "@/db/consultas/indicadores/datos-periodos";
 import { asegurarMediciones } from "@/db/consultas/indicadores/mediciones";
 import { tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
+import { EsquemaReporteDeDato, juntarValoresDeDato } from "@/lib/esquemas/indicadores-datos";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { fechaLimiteDeReporte } from "@/lib/indicadores/periodos";
 import { ErrorIndicador, SIN_RESPONSABLE } from "@/lib/indicadores/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
 import { agruparTareas, type Tarea } from "@/lib/tareas";
 import { fechaLimite } from "@/lib/tramites/plazos";
+import { parsearFormulario } from "@/lib/validacion";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { datoDePrueba, dimensionDePrueba, indicadorDePrueba, periodoDeDatoDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
@@ -435,12 +437,12 @@ describe("lo que se lee de un dato (periodosDeDato, historialDeDato)", () => {
 });
 
 describe("la tarea de reportar el dato", () => {
-  const deDatos = (r: { tareas: { id: string }[] }) => r.tareas.filter((t) => t.id.startsWith("dato:"));
+  const deDatos = (r: { tareas: Tarea[] }) => r.tareas.filter((t) => t.id.startsWith("dato:"));
 
   it("el responsable la tiene; al reportarlo desaparece; quien no responde por el dato no la tiene", () =>
     revertida(sql, async (tx) => {
       const zona = zonaHoraria();
-      const { responsable, datoId } = await entorno(tx);
+      const { procesoId, responsable, datoId } = await entorno(tx);
       const periodoId = await periodoDeDatoDePrueba(tx, { datoId, periodo: "2026-11", ahora: DIC_5 });
       const opciones = { sql: tx, ahora: DIC_5 };
 
@@ -461,6 +463,12 @@ describe("la tarea de reportar el dato", () => {
 
       expect(deDatos(await tareasDeIndicadores(await usuarioDePrueba(tx, { rol: "consulta" }), opciones))).toEqual([]);
       expect(deDatos(await tareasDeIndicadores(await sesionAdmin(tx), opciones))).toEqual([]);
+      // El líder del proceso dueño la tiene solo si el dato no tiene responsable activo.
+      const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [procesoId] });
+      expect(deDatos(await tareasDeIndicadores(lider, opciones))).toEqual([]);
+      await tx`UPDATE usuarios SET activo = false WHERE id = ${responsable.usuarioId}`;
+      expect(deDatos(await tareasDeIndicadores(lider, opciones)).map((t) => [t.id, t.detalle])).toEqual([[`dato:${periodoId}`, expect.stringMatching(/^Proceso Z/)]]);
+      await tx`UPDATE usuarios SET activo = true WHERE id = ${responsable.usuarioId}`;
 
       await reportarCon(tx, responsable, periodoId, { valor: "1284300000" }, DIC_5);
       expect(deDatos(await tareasDeIndicadores(responsable, opciones))).toEqual([]);
@@ -503,5 +511,25 @@ describe("la tarea de reportar el dato", () => {
       },
     ]);
     expect(agruparTareas(varias.slice(0, 5), 5, DIC_5)).toHaveLength(5);
+  });
+});
+
+describe("el formulario del dato (EsquemaReporteDeDato, juntarValoresDeDato)", () => {
+  const leer = (campos: [string, string][]) => {
+    const fd = new FormData();
+    for (const [k, v] of campos) fd.append(k, v);
+    return parsearFormulario(juntarValoresDeDato(fd), EsquemaReporteDeDato, { omitir: ["id"] });
+  };
+
+  it("un valor solo; los valores por categoría, en `porCategoria`; la casilla de confirmar", () => {
+    expect(leer([["id", "7"], ["valor", "1284300000"]])).toEqual({ valor: "1284300000", confirmado: false });
+    expect(leer([["id", "7"], ["categoria_12", "700"], ["categoria_13", "584,3"], ["confirmado", "on"]])).toEqual({
+      porCategoria: { "12": "700", "13": "584,3" },
+      confirmado: true,
+    });
+  });
+
+  it("una categoría que no es un id no pasa", () => {
+    expect(() => leer([["categoria_norte", "700"]])).toThrow("El valor no tiene un formato válido");
   });
 });

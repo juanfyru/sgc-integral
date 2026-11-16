@@ -334,7 +334,8 @@ export async function datoDePrueba(
  * Inserta por SQL un periodo del dato (anexo 14C, §4.3), como lo abriría `asegurarPeriodosDeDatos` a `ahora`: su fecha
  * límite es el fin del periodo más el plazo del dato o, si ya pasó, `ahora` más el plazo (no nace vencido); con dimensión,
  * su lista de categorías. Sin `estado`, `reportado` si trae `valor` y `pendiente` si no; reportado o cerrado, con `valor`
- * (sin él, 0), sin quien lo reportó y a `ahora`. Solo dentro de `revertida`.
+ * (sin él, 0), sin quien lo reportó y a `ahora`. Solo dentro de `revertida`. Ojo: un pendiente que ningún indicador pide
+ * lo quita la siguiente pasada (`asegurarPeriodosDeDatos` también recorre los datos que solo tienen pendientes).
  */
 export async function periodoDeDatoDePrueba(
   tx: TransactionSql,
