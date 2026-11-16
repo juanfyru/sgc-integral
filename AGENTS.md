@@ -662,16 +662,21 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   propagación se lee «El sistema actualizó un componente», y la de uno que se ve, «… (sale de CÓDIGO
   Nombre) …»). El resultado del compuesto, su color, su análisis y sus demás variables no se tocan. **El motivo
   del contagio** (`MOTIVO_COMPONENTE_NO_APLICA`) se guarda sin nombrar; el **vigente** (la fila, `ultimo.frase`,
-  la pantalla de reportar) se resuelve al leer (`contagiosParaQuienLee`, `lectura.ts`): el primer componente de
-  la versión, en el orden de sus variables, que hoy no aplica en ese periodo, «{código} {nombre} no aplicó en el
-  periodo» a quien lo ve y tal cual a quien no (ni si ya ninguno lo causa); la línea del historial de un evento
-  pasado nombra el componente de **ese** evento (`detalle.componente`). «(sale de …)» y el motivo usan el código
+  la pantalla de reportar) se resuelve al leer (`contagiosParaQuienLee`, `lectura.ts`): **entre los componentes
+  que quien lee ve**, el primero de la versión, en el orden de sus variables, que hoy no aplica en ese periodo,
+  «{código} {nombre} no aplicó en el periodo»; si no ve ninguno de los que no aplican, el motivo tal cual se
+  guardó, y también si ya ninguno lo causa. Los que no ve no se miran: si se mirara al primero de todos, quien no
+  ve uno sabría por el motivo si ese aplicó. La línea del historial de un evento pasado nombra el componente de
+  **ese** evento (`detalle.componente`). «(sale de …)» y el motivo usan el código
   y el nombre **de hoy** del componente (`nombresDeComponentes`), no los que firmó la ficha. **El «desde cuándo»**
   (§6.3): junto a la variable tomada de un componente más fino cuyo acumulado empieza después que el periodo,
   «acumulado de junio a diciembre» (`textoAcumulaDesde`), en la tabla del año, el impreso y la nota de origen de
   la pantalla de reportar (no en el Excel); se calcula al leer (`acumulanDesde`, con `valorDeComponente`; nunca
   se guarda), solo a quien ve el componente, solo si su valor ya llegó y es la misma fracción que la copiada, y
-  nunca en un periodo mensual (sin consulta). El aviso de deducción (`restringidosQueToma`) y el aviso y el
+  nunca en un periodo mensual (sin consulta); también en la fila que aún espera su dato propio, que ya pinta la
+  cifra copiada. Cuando el componente es a su vez un compuesto, el «desde» que se lee junto a la variable es el
+  suyo, aunque le venga de un componente suyo que la persona no ve (no dice cuál ni cuánto): es decisión del
+  controlador. El aviso de deducción (`restringidosQueToma`) y el aviso y el
   historial de la cascada nombran por la misma regla; «Lo toman» de la página de un indicador (`loToman`, en la
   pestaña de la ficha) muestra solo los compuestos que la persona ve y, sin ninguno, no existe; los históricos de
   un compuesto no los registra quien no ve alguno de sus componentes (`HISTORICOS_DE_UN_COMPONENTE_OCULTO`,
@@ -683,14 +688,17 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   la página, la matriz, el impreso, el Excel y `resultadoDelPeriodoExterno`): cada variable tomada vale el
   acumulado propio de su componente sobre los periodos que entran al acumulado del compuesto (su valor, o su
   cumplimiento contra la meta del último periodo medido del componente), nunca la suma ni el promedio de lo
-  copiado mes a mes (`fijosDelAcumulado`, con `valorDeComponenteSobre` en su modo `acumulado`). En ese modo, y
-  solo en él, un periodo ordinario del componente sin dato se salta, como en su acumulado propio, y deja el del
-  compuesto parcial; en el valor de un periodo (la propagación, el cierre, `valorDeComponente`) sigue siendo
-  `falta`. Si el componente empieza después o le falta un periodo, «Acumulado parcial: un componente no cubre
-  todos los periodos» (`componenteParcial`); si no tiene resultado en ninguno de los periodos medidos del
-  compuesto, no hay acumulado y el rótulo lo dice, «Sin acumulado: un componente no tiene resultado en estos
-  periodos» (`sinComponente`; la página y el impreso lo pintan en lugar de «Aún no hay periodos medidos»; la
-  constancia queda parcial). **La racha** (`rachasDe`, `firmaDeVersion` en `resultados.ts`) firma, de una
+  copiado mes a mes (`fijosDelAcumulado`, con `valorDeComponenteSobre` en su modo `acumulado`). El acumulado de una
+  ficha que no toma nada de otro indicador es el de siempre, sin una consulta más. En ese modo, y solo en él, un
+  periodo ordinario del componente sin dato se salta, como en su acumulado propio, y deja el del compuesto
+  parcial, igual que un histórico suyo sin registrar que queda después del primero que entró (el de antes lo dice
+  su `desde`); en el valor de un periodo (la propagación, el cierre, `valorDeComponente`) un ordinario sin dato
+  sigue siendo `falta`. Si el componente empieza después, cambió de fórmula o le falta un periodo, «Acumulado
+  parcial: un componente no cubre todos los periodos» (`componenteParcial`); si no tiene resultado en ninguno de
+  los periodos medidos del compuesto (solo cuentan las letras de la fórmula), no hay acumulado y el rótulo lo
+  dice, «Sin acumulado: un componente no tiene resultado en estos periodos» (`sinComponente`; la página y el
+  impreso lo pintan en lugar de «Aún no hay periodos medidos»; la constancia queda parcial, con su propia marca
+  `sinComponente`, y su aviso dice «un componente no tiene resultado en estos periodos»). **La racha** (`rachasDe`, `firmaDeVersion` en `resultados.ts`) firma, de una
   variable tomada, también su `indicadorOrigenId` y su `toma`: cambiar el componente, o el valor por el
   cumplimiento, parte el acumulado (en la página y en la propagación a la vez, así el «coincide» del cierre sigue
   de acuerdo); las demás variables firman como siempre.

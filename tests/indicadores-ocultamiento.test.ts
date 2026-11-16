@@ -489,15 +489,34 @@ describe("el «desde cuándo» junto a la variable (anexo 14C, §6.3)", () => {
       );
 
       // Ana: el campo no viaja, ni la frase.
-      const suyas = [
-        await tablaDelAnio(e.ana, e.k.id, 2003, opc(tx)),
-        await resultadosDelAnio(e.ana, e.k.id, 2003, opc(tx)),
-        await medicionParaReportar(e.ana, e.k.codigo, T1, opc(tx)),
-      ];
+      const suPantalla = await medicionParaReportar(e.ana, e.k.codigo, T1, opc(tx));
+      expect(suPantalla).not.toBeNull();
+      const suyas = [await tablaDelAnio(e.ana, e.k.id, 2003, opc(tx)), await resultadosDelAnio(e.ana, e.k.id, 2003, opc(tx)), suPantalla];
       for (const s of suyas) {
         expect(JSON.stringify(s)).not.toContain("acumulaDesde");
         expect(rastros(s, e.rh, [])).toEqual([]);
       }
+    }));
+
+  it("en un mixto que aún espera su dato propio, la fila ya pinta la cifra copiada y su «desde»", () =>
+    revertida(sql, async (tx) => {
+      const e = await trimestral(tx);
+      const mixto = await indicadorDePrueba(tx, {
+        periodicidad: "trimestral",
+        inicioMedicion: "2003-T1",
+        aprobadaEn: APROBADA,
+        procesoId: e.p1,
+        nivelAcceso: "restringido",
+        mide: [e.ana.usuarioId],
+        formula: "A + B",
+        variables: { A: { indicadorOrigenId: e.rh.id, toma: "valor" }, B: { nombre: "Casos propios" } },
+      });
+      await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: mixto.id });
+      await propagar(opc(tx));
+      const fila = (await tablaDelAnio(e.gerente, mixto.id, 2003, opc(tx))).find((f) => f.periodo === "2003-T1")!;
+      expect(fila.resultado).toBeNull();
+      expect(fila.valores[0]).toMatchObject({ letra: "A", valor: "75", acumulaDesde: "2003-03" });
+      expect(fila.valores[1]).not.toHaveProperty("acumulaDesde");
     }));
 
   it("con enero registrado, el componente cubre el trimestre desde su inicio: nada que decir", () =>
@@ -570,6 +589,57 @@ describe("el motivo vigente del contagio (anexo 14C, §6.3)", () => {
       for (const quien of [e.gerente, e.ana]) {
         expect(JSON.stringify(await fila(quien))).not.toContain(e.g.codigo);
       }
+    }));
+});
+
+describe("el motivo vigente nombra al primero que no aplica entre los que quien lee ve (anexo 14C, §6.5)", () => {
+  /** Dos compuestos con R (oculto a Ana) y G (que ve) en los dos órdenes de variables. */
+  async function dosOrdenes(tx: TransactionSql) {
+    const e = await escenario(tx, { reportados: false });
+    const con = (A: number, B: number) =>
+      indicadorDePrueba(tx, {
+        periodicidad: "mensual",
+        inicioMedicion: MARZO,
+        aprobadaEn: APROBADA,
+        procesoId: e.p1,
+        nivelAcceso: "restringido",
+        analiza: [e.ana.usuarioId, e.gerente.usuarioId],
+        formula: "(A + B) / 2",
+        variables: { A: { indicadorOrigenId: A, toma: "valor" }, B: { indicadorOrigenId: B, toma: "valor" } },
+      });
+    const rg = await con(e.r.id, e.g.id);
+    const gr = await con(e.g.id, e.r.id);
+    for (const i of [rg, gr]) await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: i.id });
+    const motivoDe = async (quien: SesionFlujo, c: IndicadorDePrueba) => (await tablaDelAnio(quien, c.id, 2003, opc(tx))).find((f) => f.periodo === MARZO)!.motivo;
+    return { ...e, rg, gr, motivoDe, porG: `${e.g.codigo} Indicador de prueba ${e.g.codigo} no aplicó en el periodo`, porR: `${e.r.codigo} ${e.nombreDeR} no aplicó en el periodo` };
+  }
+
+  it("G no aplica: Ana lee G en los dos órdenes, aplique R o no; cuando solo R no aplica, el genérico", () =>
+    revertida(sql, async (tx) => {
+      const e = await dosOrdenes(tx);
+      await marcarNoAplica(e.mideG, { medicionId: e.m.g, motivo: "Sin casos en el mes" }, opc(tx));
+      await marcarNoAplica(e.mideR, { medicionId: e.m.r, motivo: "Sin casos en el mes" }, opc(tx));
+      await propagar(opc(tx));
+      // Los dos no aplican: Ana lee G (no puede saber nada de R); la gerente, el primero.
+      expect([await e.motivoDe(e.ana, e.rg), await e.motivoDe(e.ana, e.gr)]).toEqual([e.porG, e.porG]);
+      expect([await e.motivoDe(e.gerente, e.rg), await e.motivoDe(e.gerente, e.gr)]).toEqual([e.porR, e.porG]);
+
+      // G vuelve a aplicar: solo R causa el «No aplica».
+      await quitarNoAplica(e.mideG, e.m.g, opc(tx));
+      await e.reportarAB(e.mideG, e.m.g, "9", "10");
+      await propagar(opc(tx));
+      expect([await e.motivoDe(e.ana, e.rg), await e.motivoDe(e.ana, e.gr)]).toEqual([MOTIVO_COMPONENTE_NO_APLICA, MOTIVO_COMPONENTE_NO_APLICA]);
+      expect([await e.motivoDe(e.gerente, e.rg), await e.motivoDe(e.gerente, e.gr)]).toEqual([e.porR, e.porR]);
+    }));
+
+  it("G no aplica y R sí: Ana lee G en los dos órdenes", () =>
+    revertida(sql, async (tx) => {
+      const e = await dosOrdenes(tx);
+      await marcarNoAplica(e.mideG, { medicionId: e.m.g, motivo: "Sin casos en el mes" }, opc(tx));
+      await e.reportarAB(e.mideR, e.m.r, "3", "8");
+      await propagar(opc(tx));
+      expect([await e.motivoDe(e.ana, e.rg), await e.motivoDe(e.ana, e.gr)]).toEqual([e.porG, e.porG]);
+      expect([await e.motivoDe(e.gerente, e.rg), await e.motivoDe(e.gerente, e.gr)]).toEqual([e.porG, e.porG]);
     }));
 });
 

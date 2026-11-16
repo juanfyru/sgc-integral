@@ -174,11 +174,10 @@ export type ResultadoExterno = {
    * medición (la ficha cambió de fórmula o de variables dentro de él: «agosto de 2026»); `null` en lo demás.
    */
   desde: string | null;
-  /**
-   * En un compuesto, el acumulado de algún componente no cubre todos los periodos, o un componente no tiene resultado en ellos
-   * y no hay acumulado (anexo 14C, §6.4); sin nombrarlo.
-   */
+  /** En un compuesto, el acumulado de algún componente no cubre todos los periodos (anexo 14C, §6.4); sin nombrarlo. */
   componenteParcial?: true;
+  /** En un compuesto, un componente no tiene resultado en estos periodos y no hay acumulado (anexo 14C, §6.4); sin nombrarlo. */
+  sinComponente?: true;
 };
 
 /**
@@ -186,8 +185,9 @@ export type ResultadoExterno = {
  * mismo cálculo y la misma racha) sobre los periodos de medición que el periodo externo contiene, de la periodicidad que
  * rige (`leerPeriodos`). Es parcial si falta el dato de alguno, alguno no está cerrado o acumula desde una racha que empezó
  * dentro del periodo (`desde`): lo que se le dijo al ente cubre solo una parte; se puede registrar igual. El de un compuesto
- * toma de cada componente su acumulado en el tramo (`acumuladoDe`, anexo 14C §6.4), y si el de alguno es parcial, o alguno
- * no tiene resultado en esos periodos (sin acumulado), también lo es (`componenteParcial`).
+ * toma de cada componente su acumulado en el tramo (`acumuladoDe`, anexo 14C §6.4): si el de alguno es parcial, también lo es
+ * (`componenteParcial`); y si alguno no tiene resultado en esos periodos, no hay acumulado y también es parcial
+ * (`sinComponente`).
  */
 export async function resultadoDelPeriodoExterno(sql: Cliente, indicadorId: number, periodo: string, ahora: Date): Promise<ResultadoExterno> {
   const zona = zonaHoraria();
@@ -206,16 +206,15 @@ export async function resultadoDelPeriodoExterno(sql: Cliente, indicadorId: numb
   const etiqueta = (clave: string) => periodoDe(clave, zona)?.etiqueta ?? clave;
   const faltan = a.faltan.map(etiqueta);
   const desde = a.desde === null ? null : etiqueta(a.desde);
-  // Parcial por un componente: no cubre todos los periodos, o no tiene resultado en ellos y no hay acumulado.
-  const porComponente = a.componenteParcial === true || a.sinComponente === true;
   return {
     texto: a.texto,
     exacto: a.exacto,
-    parcial: faltan.length > 0 || sinCerrar.length > 0 || desde !== null || porComponente,
+    parcial: faltan.length > 0 || sinCerrar.length > 0 || desde !== null || a.componenteParcial === true || a.sinComponente === true,
     faltan,
     sinCerrar,
     desde,
-    ...(porComponente ? { componenteParcial: true as const } : {}),
+    ...(a.componenteParcial ? { componenteParcial: true as const } : {}),
+    ...(a.sinComponente ? { sinComponente: true as const } : {}),
   };
 }
 
@@ -287,6 +286,7 @@ export async function registrarConstancia(
       sinCerrar: r.sinCerrar,
       desde: r.desde,
       ...(r.componenteParcial ? { componenteParcial: true } : {}),
+      ...(r.sinComponente ? { sinComponente: true } : {}),
     };
     await tx`UPDATE reportes_externos SET estado = 'registrada', fecha_envio = ${envio.fechaEnvio}, radicado = ${envio.radicado},
         nota = ${envio.nota}, resultado_enviado = ${r.texto}, resultado_detalle = ${tx.json(detalle)},

@@ -732,9 +732,10 @@ const FILA_DE_VARIABLE_OCULTA = { nombre: COMPONENTE_OCULTO, valor: VALOR_OCULTO
 
 /**
  * El motivo vigente del contagio de cada medición «No aplica» por un componente (anexo 14C, §6.3), para quien lee, resuelto al
- * leer como la fuente de una reapertura: el primer componente de la versión que la rige (en el orden de sus variables, el de
- * la propagación) que hoy no aplica en ese periodo, con su código y su nombre de hoy, solo si la persona lo ve. Si ninguno
- * (la propagación aún no quitó el contagio) o no lo ve, la medición no sale: su motivo se lee tal cual se guardó. Solo se
+ * leer como la fuente de una reapertura: **entre los componentes que la persona ve**, el primero de la versión que la rige
+ * (en el orden de sus variables, el de la propagación) que hoy no aplica en ese periodo, con su código y su nombre de hoy. Los
+ * que no ve no se miran: si se mirara al primero de todos, quien no ve uno sabría por el motivo si ese aplicó (§6.5). Si no
+ * ve ninguno de los que no aplican (o ya ninguno lo causa), la medición no sale: su motivo se lee tal cual se guardó. Solo se
  * consulta para las que tienen el contagio.
  */
 async function contagiosParaQuienLee(
@@ -742,10 +743,13 @@ async function contagiosParaQuienLee(
   sesion: SujetoVisibilidad,
   mediciones: readonly { medicionId: number; version: VersionDeCalculo; periodo: Periodo }[],
 ): Promise<Map<number, string>> {
+  if (mediciones.length === 0) return new Map();
+  const tomados = mediciones.flatMap((x) => x.version.variables.flatMap((v) => (v.origen === "indicador" && v.indicadorOrigenId !== null ? [v.indicadorOrigenId] : [])));
+  const visibles = await componentesVisibles(sql, sesion, tomados);
   const causas = new Map<number, number>();
   for (const x of mediciones) {
     for (const v of x.version.variables) {
-      if (v.origen !== "indicador" || v.indicadorOrigenId === null || v.toma === null) continue;
+      if (v.origen !== "indicador" || v.indicadorOrigenId === null || v.toma === null || !visibles.has(v.indicadorOrigenId)) continue;
       const p = x.periodo;
       const r = await valorDeComponente(sql, { indicadorId: v.indicadorOrigenId, toma: v.toma, periodo: p.clave, desde: p.desde, hasta: p.hasta });
       if (r.estado === "no_aplica") {
@@ -755,7 +759,7 @@ async function contagiosParaQuienLee(
     }
   }
   if (causas.size === 0) return new Map();
-  const nombres = await nombresDeComponentes(sql, [...(await componentesVisibles(sql, sesion, [...causas.values()]))]);
+  const nombres = await nombresDeComponentes(sql, [...causas.values()]);
   const salida = new Map<number, string>();
   for (const [medicionId, componente] of causas) {
     const nombre = nombres.get(componente);
@@ -803,7 +807,8 @@ async function paraQuienLee(sql: Cliente, sesion: SujetoVisibilidad, leidos: rea
   const motivos = await contagiosParaQuienLee(sql, sesion, conContagio);
   const desdes = new Map<PeriodoLeido, Map<string, string>>();
   for (const l of leidos) {
-    if (l.fila.medicionId === null || l.resultado === null) continue;
+    // También en la fila que aún espera su dato propio: ya pinta la cifra copiada (`acumulanDesde` mira si llegó).
+    if (l.fila.medicionId === null) continue;
     const suyos = await acumulanDesde(sql, l.periodo, l.version, l.valores, letrasOcultas(l.version, ocultos));
     if (suyos.size > 0) desdes.set(l, suyos);
   }
@@ -1003,7 +1008,8 @@ async function fijosDelAcumulado(
     valores[v.letra] = r?.estado === "listo" ? r.valor : null;
     if (r?.estado === "listo" && (r.desde !== null || r.incompleto === true)) parcial = true;
   }
-  const sinComponente = sobre.length > 0 && Object.values(valores).some((x) => x === null);
+  // Solo cuentan las letras de la fórmula: una tomada que la fórmula no usa (la B de un espejo) no deja sin acumulado.
+  const sinComponente = sobre.length > 0 && t.ficha.letras.some((l) => Object.hasOwn(valores, l) && valores[l] === null);
   return { valores, parcial, sinComponente };
 }
 

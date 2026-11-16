@@ -235,8 +235,9 @@ describe("el componente sin resultado en el tramo del acumulado (anexo 14C, §6.
       expect(html).not.toContain("Aún no hay periodos medidos");
 
       const externo = await resultadoDelPeriodoExterno(tx, c.id, "2004-S1", JULIO);
-      expect(externo).toMatchObject({ texto: null, exacto: null, parcial: true, componenteParcial: true });
-      expect(avisoDeParcial(externo)).toContain(COMPONENTE_PARCIAL);
+      expect(externo).toMatchObject({ texto: null, exacto: null, parcial: true, sinComponente: true });
+      expect(externo).not.toHaveProperty("componenteParcial");
+      expect(avisoDeParcial({ ...externo, sinCerrar: [] })).toBe("El resultado es parcial: un componente no tiene resultado en estos periodos. Puede registrarlo así.");
     }));
 
   it("con un periodo ordinario sin dato bajo un histórico del compuesto: el acumulado sale con los demás y es parcial; el valor del periodo no se salta nada", () =>
@@ -267,6 +268,61 @@ describe("el componente sin resultado en el tramo del acumulado (anexo 14C, §6.
       const delAcumulado = await valorDeComponenteSobre(tx, { indicadorId: r.id, toma: "valor", sobre, acumulado: true });
       expect(delAcumulado).toMatchObject({ estado: "listo", incompleto: true });
       expect(delAcumulado.estado === "listo" && aTexto(delAcumulado.valor)).toBe("90/1");
+    }));
+
+  it("con un histórico del componente sin registrar entre dos que sí: el acumulado sale y es parcial", () =>
+    revertida(sql, async (tx) => {
+      const e = await entorno(tx);
+      // Los dos se aprueban el 5 de abril: enero a marzo son históricos; el 15 de abril, abril aún no termina.
+      const APROBADOS_EN_ABRIL = new Date("2004-04-05T15:00:00Z");
+      const ABRIL = new Date("2004-04-15T15:00:00Z");
+      const r = await e.nuevo({ mide: [e.mide.usuarioId], inicioMedicion: "2004-01", aprobadaEn: APROBADOS_EN_ABRIL });
+      // R registra enero (6 de 10) y marzo (8 de 10); febrero, no.
+      await registrarHistoricos(
+        e.admin,
+        { indicadorId: r.id, filas: [{ periodo: "2004-01", valores: { A: "6", B: "10" } }, { periodo: "2004-03", valores: { A: "8", B: "10" } }] },
+        opc(tx, ABRIL),
+      );
+      const c = await e.nuevo({
+        inicioMedicion: "2004-01",
+        aprobadaEn: APROBADOS_EN_ABRIL,
+        formula: "A",
+        variables: { A: { indicadorOrigenId: r.id, toma: "valor" }, B: { indicadorOrigenId: r.id, toma: "cumplimiento" } },
+      });
+      await historicosDe(tx, e.admin, c.id, ["2004-01", "2004-02", "2004-03"], ABRIL);
+      const deC = await resultadosDelAnio(e.admin, c.id, 2004, opc(tx, ABRIL));
+      // 14 de 20, sin febrero.
+      expect(deC.acumulado).toMatchObject({ exacto: "70/1", componenteParcial: true, rotulo: PARCIAL });
+      // Sin la opción del acumulado, el histórico sin registrar se salta como siempre (el valor del periodo).
+      const sobre = ["2004-01", "2004-02", "2004-03"].map((clave) => {
+        const p = periodoDe(clave, zonaHoraria())!;
+        return { clave, desde: p.desde, hasta: p.hasta };
+      });
+      const sinOpcion = await valorDeComponenteSobre(tx, { indicadorId: r.id, toma: "valor", sobre });
+      expect(sinOpcion).toMatchObject({ estado: "listo", desde: null });
+      expect(sinOpcion).not.toHaveProperty("incompleto");
+    }));
+
+  it("el modo del acumulado baja a un componente compuesto: un ordinario sin dato de su componente deja parcial al de arriba", () =>
+    revertida(sql, async (tx) => {
+      const e = await entorno(tx);
+      // R, aprobado antes, sin dato en mayo; X, compuesto de R, y C, compuesto de X, aprobados en julio con sus históricos.
+      const r = await e.nuevo({ mide: [e.mide.usuarioId], inicioMedicion: "2004-03", aprobadaEn: new Date("2004-02-20T15:00:00Z") });
+      await asegurarMediciones({ sql: tx, ahora: JULIO, indicadorId: r.id });
+      for (const periodo of ["2004-03", "2004-04", "2004-06"]) await reportarEn(tx, e.mide, r.id, periodo, "9", "10", JULIO);
+      const x = await espejoDe(e, r.id, "2004-03");
+      const c = await espejoDe(e, x.id, "2004-03");
+      const tramo = ["2004-03", "2004-04", "2004-05", "2004-06"];
+      await historicosDe(tx, e.admin, x.id, tramo, JULIO);
+      await historicosDe(tx, e.admin, c.id, tramo, JULIO);
+      const sobre = tramo.map((clave) => {
+        const p = periodoDe(clave, zonaHoraria())!;
+        return { clave, desde: p.desde, hasta: p.hasta };
+      });
+      expect(await valorDeComponenteSobre(tx, { indicadorId: x.id, toma: "valor", sobre, acumulado: true })).toMatchObject({ estado: "listo", incompleto: true });
+      expect(await valorDeComponenteSobre(tx, { indicadorId: x.id, toma: "valor", sobre })).toEqual({ estado: "falta" });
+      const deC = await resultadosDelAnio(e.admin, c.id, 2004, opc(tx, JULIO));
+      expect(deC.acumulado).toMatchObject({ exacto: "90/1", componenteParcial: true, rotulo: PARCIAL });
     }));
 
   it("lo que ya funcionaba: julio medido en los dos, con los históricos del componente sin registrar, es parcial", () =>
@@ -369,7 +425,9 @@ describe("la racha distingue de qué componente sale una letra (anexo 14C, §6.4
       expect(v.estado === "listo" ? { valor: aTexto(v.valor), desde: v.desde } : v).toEqual({ valor: "60/1", desde: "2003-T3" });
       const deY = (await tx`SELECT resultado_exacto FROM mediciones WHERE indicador_id = ${y.id} AND periodo = '2003'`)[0];
       expect(deY.resultado_exacto).toBe("60/1");
-    }));
+    }),
+  // Dos componentes reportados los doce meses: más de lo que cabe en el plazo de siempre con la máquina cargada.
+  30_000);
 });
 
 describe("la constancia de un compuesto congela su acumulado (anexo 14C, §6.7)", () => {

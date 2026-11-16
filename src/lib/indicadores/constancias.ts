@@ -4,7 +4,7 @@
  * o corregir una. Funciones puras: sin Node ni BD.
  */
 import { contiene } from "./periodos";
-import { COMPONENTE_PARCIAL } from "./resultados";
+import { COMPONENTE_PARCIAL, COMPONENTE_SIN_RESULTADO } from "./resultados";
 import type { Periodicidad } from "./tipos";
 
 /** Lo que la ficha dice del ente, como lo guarda la versión (`null`) o lo trae el formulario (`undefined`). */
@@ -100,14 +100,16 @@ function enumerar(partes: readonly string[]): string {
 /**
  * El aviso de un resultado parcial antes de registrar (anexo §8): qué periodos de medición faltan y cuáles, con su dato, no
  * están cerrados (uno sin dato no se repite como abierto) y, primero, desde qué periodo acumula si la ficha cambió de versión
- * dentro del periodo externo (`desde`, de `resultadoDelPeriodoExterno`), separados por «; ». En un compuesto cuyo componente
- * acumula desde después (`componenteParcial`, anexo 14C §6.4), también eso, sin nombrarlo. Se puede registrar así.
+ * dentro del periodo externo (`desde`, de `resultadoDelPeriodoExterno`), separados por «; ». En un compuesto, sin nombrar al
+ * componente (anexo 14C, §6.4): que alguno no cubre todos los periodos (`componenteParcial`) o que alguno no tiene resultado
+ * en ellos y no hay acumulado (`sinComponente`). Se puede registrar así.
  */
 export function avisoDeParcial(r: {
   faltan: readonly string[];
   sinCerrar: readonly string[];
   desde: string | null;
   componenteParcial?: boolean;
+  sinComponente?: boolean;
 }): string {
   const abiertos = r.sinCerrar.filter((p) => !r.faltan.includes(p));
   const partes = [
@@ -115,6 +117,7 @@ export function avisoDeParcial(r: {
     r.faltan.length > 0 ? `${r.faltan.length === 1 ? "falta" : "faltan"} ${enumerar(r.faltan)}` : null,
     abiertos.length > 0 ? `${abiertos.length === 1 ? "no está cerrado" : "no están cerrados"} ${enumerar(abiertos)}` : null,
     r.componenteParcial ? COMPONENTE_PARCIAL : null,
+    r.sinComponente ? COMPONENTE_SIN_RESULTADO : null,
   ].filter((p): p is string => p !== null);
   return `El resultado es parcial: ${partes.join("; ")}. Puede registrarlo así.`;
 }

@@ -261,7 +261,8 @@ export type Cubierto = { clave: string; desde: Date; hasta: Date };
  * `valorDeComponente` sobre los periodos `sobre` de quien lo toma, en orden de calendario: el del compuesto o, dentro del
  * acumulado de un componente compuesto, los suyos que entran a ese acumulado. Sin volver a pasar por los indicadores de
  * `camino` (un ciclo, que la ficha no admite, no se recorre). Con `delAcumulado`, un ordinario sin dato se salta y, si es de
- * la racha que manda, el resultado sale `incompleto` (`valorDeComponenteSobre`).
+ * la racha que manda, el resultado sale `incompleto` (`valorDeComponenteSobre`); también un histórico sin registrar de esa
+ * racha que queda después del primero que entró.
  */
 async function valorSobre(
   sql: Cliente,
@@ -307,13 +308,17 @@ async function valorSobre(
   const aprobada = primeraAprobada(versiones)?.aprobadaEn ?? null;
   const entran: { periodo: Periodo; m: Row; rige: VersionDeCalculo }[] = [];
   const saltados: VersionDeCalculo[] = [];
+  const historicosSaltados: { periodo: Periodo; rige: VersionDeCalculo }[] = [];
   for (const p of esperados) {
     const m = porClave.get(p.clave);
     if (!m || !conDato(m)) {
       // Un histórico que nadie registró no lo debe nadie: se salta. Un ordinario sin dato, se espera; en el acumulado del año,
       // se salta como en el del componente, y lo deja incompleto.
       const historico = m ? m.historica === true : aprobada !== null && p.hasta.getTime() < aprobada.getTime();
-      if (historico) continue;
+      if (historico) {
+        historicosSaltados.push({ periodo: p, rige: versionQueRigeEntre(versiones, p, zona)! });
+        continue;
+      }
       if (!delAcumulado) return FALTA;
       saltados.push(versionQueRigeEntre(versiones, p, zona)!);
       continue;
@@ -335,8 +340,13 @@ async function valorSobre(
   const rachas = rachasDe(versiones);
   const rachaDe = (v: VersionDeCalculo) => rachas.get(v.id)?.id ?? v.id;
   const racha = rachaDe(rigeAlFinal);
-  let incompleto = saltados.some((v) => rachaDe(v) === racha);
   const deLaRacha = entran.filter((e) => rachaDe(e.rige) === racha);
+  // En el acumulado del año, también un histórico sin registrar de la racha que queda después del primero que entró (el de
+  // antes lo dice `desde`): el acumulado propio del componente lo cuenta como faltante.
+  const primero = deLaRacha[0]?.periodo.desde.getTime();
+  let incompleto =
+    saltados.some((v) => rachaDe(v) === racha) ||
+    (delAcumulado && primero !== undefined && historicosSaltados.some((h) => rachaDe(h.rige) === racha && h.periodo.desde.getTime() > primero));
   const mediciones = deLaRacha.map((e) => Number(e.m.id));
   const medidos = deLaRacha.filter((e) => e.m.no_aplica !== true);
   if (deLaRacha.length > 0 && medidos.length === 0) return { estado: "no_aplica", mediciones };

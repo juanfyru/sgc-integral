@@ -17,11 +17,11 @@ import type { Consolidacion, LimiteDeGrafica } from "./tipos";
  */
 export const COMPONENTE_PARCIAL = "un componente no cubre todos los periodos";
 
-/**
- * El rótulo de un compuesto con periodos medidos que se queda sin acumulado porque un componente no tiene resultado en
- * ninguno de ellos (anexo 14C, §6.4): no hay con qué juntarlo. Sin nombrarlo.
- */
-export const SIN_ACUMULADO_POR_COMPONENTE = "Sin acumulado: un componente no tiene resultado en estos periodos";
+/** Por qué un compuesto con periodos medidos se queda sin acumulado (anexo 14C, §6.4): no hay con qué juntarlo. Sin nombrarlo. */
+export const COMPONENTE_SIN_RESULTADO = "un componente no tiene resultado en estos periodos";
+
+/** El rótulo de ese acumulado: «Sin acumulado: un componente no tiene resultado en estos periodos». */
+export const SIN_ACUMULADO_POR_COMPONENTE = `Sin acumulado: ${COMPONENTE_SIN_RESULTADO}`;
 
 /**
  * «acumulado de junio a diciembre»: desde el mes en que empieza el periodo `desde` (el primero que entró al acumulado de un
