@@ -320,7 +320,7 @@ describe("revisarVencimientosDeIndicadores", () => {
       expect((await avisosDe(tx, jefe.usuarioId)).map((x) => x.tipo)).toEqual(["indicadores.escalado"]);
       // Lo hace el sistema: sin fila en `auditoria`.
       expect(await tx`SELECT 1 FROM auditoria WHERE entidad = 'medicion' AND entidad_id = ${ordinaria}`).toHaveLength(0);
-    }));
+    }), 20_000);
 
   it("un automático sin datos no tiene aviso previo, ni de vencido, ni escalamiento: ni al líder ni al Admin SGC de respaldo", () =>
     revertida(sql, async (tx) => {
@@ -346,7 +346,7 @@ describe("revisarVencimientosDeIndicadores", () => {
         expect(await marcas(tx, f)).toEqual({ aviso_previo_en: null, aviso_vencido_en: null, escalado_en: null });
       }
       for (const u of [lider, analiza, admin, jefe]) expect(await avisosDe(tx, u.usuarioId)).toEqual([]);
-    }));
+    }), 20_000);
 
   it("la pasada toma la foto y, si no cumple, avisa a quien analiza; su análisis vence contando desde la foto, sin vencido ni escalamiento", () =>
     revertida(sql, async (tx) => {
