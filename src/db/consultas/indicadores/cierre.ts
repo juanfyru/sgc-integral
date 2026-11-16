@@ -1,59 +1,54 @@
 /**
  * El cierre del mes y la reapertura de una medición (spec 14 §8.7, §9 y §19.4; F14-DC3, F14-DC9 y F14-DC31; Tarea 12 de
- * la 14A). Todo es de quien administra, sin clave.
+ * la 14A; anexo 14C, §3.5). Todo es de quien administra, sin clave.
  *
  * - «Cerrar hasta marzo» alcanza toda medición sin cerrar cuyo periodo terminó en marzo o antes, salvo las que siguen
  *   dentro de su plazo de reporte, los históricos sin registrar (F14-DC3) y las de otra periodicidad que dejó un cambio
  *   mayor (`esDeOtraPeriodicidad`). Las cierra como están: la reportada con su resultado, la vacía como «Sin dato» y la que
  *   tiene datos sin el análisis exigido con la marca «sin análisis». También las de un indicador retirado, que siguen su
  *   curso hasta el cierre. Un histórico no tiene plazo: registrado, lo cierra el cierre que lo alcance.
+ * - **Una medición cerrada tiene cerradas todas sus entradas** (anexo 14C, §3.5): las que usó su valor (`revisarFuentes`,
+ *   `dependencias.ts`). No se cierra («espera») la que tiene una entrada que no está cerrada ni se cierra en este mismo
+ *   cierre (un dato o un componente en plazo, o uno que a su vez espera: la espera se contagia hacia arriba, por niveles y
+ *   hasta que no cambie), ni la de un indicador activo cuyo valor copiado ya no coincide con el de su fuente. La de un
+ *   indicador retirado no recibe la propagación: no se le pide que coincida.
+ * - **El cierre cierra los periodos de los datos** que terminaron en el mes o antes: los reportados, y los pendientes que se
+ *   piden y ya vencieron, sin valor («Sin dato»); un pendiente en plazo espera, y uno que ya nadie pide (`se_pide` falso) no
+ *   lo cierra nadie ni lo debe nadie.
  * - Cerrar no es un cálculo: escribe `estado`, `cierre_id` y `sin_analisis` sin pasar por `recalcularMedicion`.
  * - Un cierre no se modifica (trigger): su resumen se calcula antes de insertarlo, sobre las mediciones ya bloqueadas, y
  *   el `UPDATE … RETURNING` debe alcanzar exactamente las que cuenta.
  * - Reabrir es el único cambio que el trigger admite en una medición cerrada (quién, cuándo y por qué); después
  *   `recalcularMedicion`, el único camino de cálculo (spec §8.2), decide si queda reportada o abierta y deja el evento
- *   `reapertura`. Se cierra otra vez con el siguiente cierre o con «Cerrar de nuevo».
+ *   `reapertura` (`reabrirLaMedicion`, `reapertura.ts`). Con dependientes cerrados, la reapertura va en cascada
+ *   (`reabrirEnCascada`). Se cierra otra vez con el siguiente cierre o con «Cerrar de nuevo», si sus fuentes están cerradas.
  *
- * Candados: los indicadores `FOR SHARE`, por id, antes que las mediciones `FOR UPDATE`, y estas por indicador, periodo e
- * id (el orden de `registrarHistoricos` dentro de un indicador): así un cierre no se interbloquea con un reporte ni con un
- * lote de históricos.
+ * Candados (los mismos de la reapertura en cascada, `reapertura.ts`): primero los periodos de los datos `FOR UPDATE`, por id;
+ * después los indicadores `FOR SHARE`, por id; y las mediciones `FOR UPDATE`, por indicador, periodo e id (el orden de
+ * `registrarHistoricos` dentro de un indicador): así un cierre no se interbloquea con un reporte, con un lote de históricos
+ * ni con una cascada. Las fuentes se leen sin candado; lo que el cierre revisa de ellas está ya bloqueado o cerrado.
  */
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
-import { avisarA } from "@/db/consultas/avisos-vencimiento";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
-import {
-  puedeMedir,
-  puedeVerIndicador,
-  puedeVerSoportes,
-  responsablesDeAnalizar,
-  responsablesDeMedir,
-  type SujetoVisibilidad,
-} from "@/lib/alcance";
+import { puedeVerIndicador, puedeVerSoportes, responsablesDeMedir, type SujetoVisibilidad } from "@/lib/alcance";
 import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
 import { analisisCompleto, analisisExigido, cumpleDeMedicion } from "@/lib/indicadores/estados";
-import { JUSTIFICACION_MAXIMA, JUSTIFICACION_MINIMA, mesPorOmisionDe, PATRON_MES } from "@/lib/indicadores/cierre";
+import { mesPorOmisionDe, PATRON_MES } from "@/lib/indicadores/cierre";
 import { historialDeCorreccion, type EntradaDeHistorial, type EventoDeMedicion } from "@/lib/indicadores/historial";
+import { esperaUnDato } from "@/lib/indicadores/origen";
 import { versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import { ErrorIndicador, type Semaforo, type TipoEvento } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede, type SujetoPermiso } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
+import { asegurarPeriodosDeDatos } from "./datos-periodos";
+import { dependientesDe, memoriaNueva, revisarFuentes, type FuenteQueFalta, type RevisionDeFuentes } from "./dependencias";
 import { tomarFotos } from "./fotos";
-import {
-  analisisDe,
-  asegurarMediciones,
-  contextoDeMedicion,
-  esDeOtraPeriodicidad,
-  mide,
-  NO_EXISTE,
-  recalcularMedicion,
-  versionesAprobadas,
-  type CondicionDePersona,
-  type VersionDeCalculo,
-} from "./mediciones";
+import { analisisDe, asegurarMediciones, contextoDeMedicion, esDeOtraPeriodicidad, mide, NO_EXISTE, versionesAprobadas, type VersionDeCalculo } from "./mediciones";
 import { sinRespuestaPorProceso } from "./observaciones";
 import { propagarSinFallar } from "./propagacion";
+import { COMO_ADMINISTRADOR, justificacionDe, LO_QUE_SE_REABRE_CAMBIO, reabrirEnCascada, reabrirLaMedicion } from "./reapertura";
 
 export type { EntradaDeHistorial } from "@/lib/indicadores/historial";
 
@@ -64,6 +59,7 @@ const NO_TERMINO = "Ese mes no ha terminado";
 const YA_CERRADO = "Ese mes ya está cerrado";
 const SOLO_CERRADA = "Solo se reabre una medición cerrada";
 const NO_REABIERTA = "Solo se cierra de nuevo una medición reabierta";
+const FUENTE_ABIERTA = "Su fuente sigue abierta: ciérrela primero";
 
 /** Las cuentas de un proceso en el resumen (spec §9.2). */
 export type CuentasDeProceso = {
@@ -80,7 +76,11 @@ export type ResumenDeCierre = {
   yaCerrado: boolean;
   aCerrar: number;
   reportadas: number;
-  /** Las que quedarán «Sin dato», con quién debía medirlas («El sistema», en una automática); por proceso, código y periodo. */
+  /**
+   * Las que quedarán «Sin dato», con quién debía: quienes miden, si faltó lo propio; «Los responsables del dato «…»», si
+   * faltó un dato; «El indicador …», si faltó el resultado de un componente; «El sistema», en una automática. Por proceso,
+   * código y periodo.
+   */
   sinDato: { codigo: string; nombre: string; proceso: string; periodo: string; quien: string[] }[];
   noAplica: number;
   sinAnalisis: number;
@@ -91,6 +91,13 @@ export type ResumenDeCierre = {
   historicosSinRegistrar: number;
   /** Las mismas cuentas por proceso, ordenadas por su nombre; sin los procesos que quedan en cero. */
   porProceso: CuentasDeProceso[];
+  /**
+   * Los periodos de los datos compartidos que terminaron en el mes o antes (anexo 14C, §3.5): los que se cierran (con los que
+   * se cierran sin valor) y los pendientes que siguen en plazo.
+   */
+  datos: { seCierran: number; sinDato: number; esperan: number };
+  /** No se cierran: esperan una fuente que no está cerrada ni se cierra con este cierre, o lo copiado de ella no coincide. */
+  esperanEntrada: { codigo: string; periodo: string; espera: string }[];
 };
 
 /** Lo que guarda `cierres_indicadores.resumen`: las cuentas del resumen previo, tal como quedaron al cerrar. */
@@ -152,12 +159,21 @@ type Alcanzada = {
   periodo: string;
   estado: string;
   grupo: Grupo;
-  /** La versión que rige su periodo la calcula el sistema: su dato no lo debía nadie (anexo 14B, §4). */
-  automatica: boolean;
+  /** La versión que rige su periodo: dice si la mide alguien o la calcula el sistema. */
+  version: VersionDeCalculo;
+  reportada: boolean;
+  historica: boolean;
+  /** Su indicador está activo: recibe la propagación, y lo copiado debe coincidir con su fuente. */
+  activo: boolean;
 };
 
 /** Quién debía el dato de una medición automática que se cierra «Sin dato». */
 const EL_SISTEMA = "El sistema";
+/** Lo que espera una medición cuyo valor copiado ya no coincide con el de su fuente (la pasada aún no lo copia). */
+const NO_COINCIDE = "Lo copiado de sus fuentes aún no está al día";
+
+/** Un periodo de un dato que se cierra: con valor, o sin él (`sinDato`). */
+type DatoQueSeCierra = { id: number; estado: string; sinDato: boolean };
 
 type Clasificacion = {
   alcanzadas: Alcanzada[];
@@ -165,6 +181,11 @@ type Clasificacion = {
   historicosSinRegistrar: number;
   /** Las versiones aprobadas de cada indicador leído (la primera es la vigente). */
   versiones: Map<number, VersionDeCalculo[]>;
+  /** Las que no se cierran porque esperan una fuente, con lo que esperan, por código y periodo. */
+  esperan: { codigo: string; periodo: string; espera: string }[];
+  datos: { cierran: DatoQueSeCierra[]; esperan: number };
+  /** Las entradas y lo que les falta a las alcanzadas (`revisarFuentes`). */
+  revisiones: Map<number, RevisionDeFuentes>;
 };
 
 /**
@@ -185,15 +206,37 @@ function grupoDe(m: Record<string, unknown>): Grupo {
 }
 
 /**
+ * Los periodos de los datos que terminaron en `hasta` o antes y siguen sin cerrar (con `bloquear`, `FOR UPDATE` y por id: el
+ * primer candado del cierre): los que se cierran (reportados, y pendientes que se piden y vencieron, sin valor) y cuántos
+ * pendientes que se piden siguen en plazo. Un pendiente que ya nadie pide no se cierra ni cuenta (anexo 14C, nota 1 de la
+ * Tarea 16): nadie lo debe y ninguna medición lo tiene de entrada.
+ */
+async function periodosDeDatosDelCierre(sql: Cliente, hasta: Date, ahora: Date, bloquear: boolean): Promise<Clasificacion["datos"]> {
+  const filas = await sql`SELECT id, estado, se_pide, vence_en FROM variable_valores WHERE hasta <= ${hasta} AND estado <> 'cerrado'
+    ORDER BY id ${bloquear ? sql`FOR UPDATE` : sql``}`;
+  const salida: Clasificacion["datos"] = { cierran: [], esperan: 0 };
+  for (const p of filas) {
+    const id = Number(p.id);
+    if (p.estado === "reportado") salida.cierran.push({ id, estado: "reportado", sinDato: false });
+    else if (p.se_pide !== true) continue;
+    else if (new Date(p.vence_en as string).getTime() >= ahora.getTime()) salida.esperan += 1;
+    else salida.cierran.push({ id, estado: p.estado as string, sinDato: true });
+  }
+  return salida;
+}
+
+/**
  * Las mediciones sin cerrar cuyo periodo terminó en `hasta` o antes, repartidas en lo que el cierre alcanza (por grupo)
- * y lo que deja abierto. Una sola regla para el resumen previo y el cierre; con `bloquear`, dentro de la transacción del
- * cierre, con los candados del encabezado. Al bloquear, solo las de los indicadores ya bloqueados: una que aparezca entre
- * las dos sentencias (una reapertura que se confirma en medio) la alcanza el siguiente cierre.
+ * y lo que deja abierto, y los periodos de los datos que se cierran. Una sola regla para el resumen previo y el cierre; con
+ * `bloquear`, dentro de la transacción del cierre, con los candados del encabezado. Al bloquear, solo las de los indicadores
+ * ya bloqueados: una que aparezca entre las dos sentencias (una reapertura que se confirma en medio) la alcanza el siguiente
+ * cierre. Las que el cierre alcanzaría pasan después por `apartarLasQueEsperan`.
  */
 async function clasificar(sql: Cliente, hasta: Date, ahora: Date, bloquear: boolean): Promise<Clasificacion> {
   const zona = zonaHoraria();
   const versiones = new Map<number, VersionDeCalculo[]>();
-  const salida: Clasificacion = { alcanzadas: [], enPlazo: 0, historicosSinRegistrar: 0, versiones };
+  const datos = await periodosDeDatosDelCierre(sql, hasta, ahora, bloquear);
+  const salida: Clasificacion = { alcanzadas: [], enPlazo: 0, historicosSinRegistrar: 0, versiones, esperan: [], datos, revisiones: new Map() };
   let bloqueados: number[] | null = null;
   if (bloquear) {
     bloqueados = (
@@ -205,12 +248,13 @@ async function clasificar(sql: Cliente, hasta: Date, ahora: Date, bloquear: bool
   }
   const filas = await sql`SELECT m.id, m.indicador_id, m.periodo, m.desde, m.estado, m.historica, m.no_aplica, m.reportada_en, m.vence_en,
       m.resultado_exacto, m.semaforo, m.cumple, m.incumplimiento_repetido, m.analisis, m.causa, m.accion_propuesta,
-      i.codigo, p.id AS proceso_id, p.nombre AS proceso
+      i.codigo, i.estado AS indicador_estado, p.id AS proceso_id, p.nombre AS proceso
     FROM mediciones m JOIN indicadores i ON i.id = m.indicador_id JOIN procesos p ON p.id = i.proceso_id
     WHERE m.hasta <= ${hasta} AND m.estado <> 'cerrada'
       ${bloqueados ? sql`AND m.indicador_id = ANY(${sql.array(bloqueados)}::bigint[])` : sql``}
     ORDER BY m.indicador_id, m.desde, m.id
     ${bloquear ? sql`FOR UPDATE OF m` : sql``}`;
+  const candidatas: Alcanzada[] = [];
   for (const m of filas) {
     const indicadorId = Number(m.indicador_id);
     if (!versiones.has(indicadorId)) versiones.set(indicadorId, await versionesAprobadas(sql, indicadorId));
@@ -227,7 +271,7 @@ async function clasificar(sql: Cliente, hasta: Date, ahora: Date, bloquear: bool
       salida.enPlazo += 1;
       continue;
     }
-    salida.alcanzadas.push({
+    candidatas.push({
       id: Number(m.id),
       indicadorId,
       codigo: m.codigo as string,
@@ -236,10 +280,77 @@ async function clasificar(sql: Cliente, hasta: Date, ahora: Date, bloquear: bool
       periodo: clave,
       estado: m.estado as string,
       grupo: grupoDe(m),
-      automatica: version.origenDato === "automatico",
+      version,
+      reportada: m.reportada_en !== null,
+      historica,
+      activo: m.indicador_estado === "activo",
     });
   }
+  await apartarLasQueEsperan(sql, salida, candidatas);
   return salida;
+}
+
+/**
+ * De las `candidatas` (las que el cierre alcanzaría), aparta las que esperan una fuente (anexo 14C, §3.5) y deja las demás en
+ * `c.alcanzadas`. Una espera si alguna de sus entradas (`revisarFuentes`) no está cerrada ni se cierra con este cierre: un
+ * periodo de un dato que no está entre los que se cierran, o una medición de un componente que no es una de las que se
+ * cierran; o si su indicador está activo y lo copiado ya no coincide con su fuente. La espera se contagia: la que toma a una
+ * que espera, espera; se repasa por niveles hasta que nada cambie (a lo sumo tantas vueltas como niveles admite la ficha,
+ * `MAXIMO_NIVELES`, más la del dato). Todo en memoria, con las filas ya bloqueadas, antes del `UPDATE` que cierra.
+ */
+async function apartarLasQueEsperan(sql: Cliente, c: Clasificacion, candidatas: readonly Alcanzada[]): Promise<void> {
+  const revisiones = await revisarFuentes(sql, candidatas.map((a) => a.id), memoriaNueva());
+  c.revisiones = revisiones;
+  const datosDeEntrada = [...new Set([...revisiones.values()].flatMap((r) => r.datos))];
+  const medicionesDeEntrada = [...new Set([...revisiones.values()].flatMap((r) => r.mediciones))];
+  const zona = zonaHoraria();
+  const etiqueta = (clave: string) => periodoDe(clave, zona)?.etiqueta ?? clave;
+  const deDatos = new Map(
+    datosDeEntrada.length === 0
+      ? []
+      : (
+          await sql`SELECT vv.id, vv.estado, vv.periodo, d.nombre FROM variable_valores vv JOIN variables_compartidas d ON d.id = vv.variable_id
+            WHERE vv.id IN ${sql(datosDeEntrada)}`
+        ).map((f) => [Number(f.id), { cerrado: f.estado === "cerrado", texto: `El dato «${f.nombre as string}», ${etiqueta(f.periodo as string)}` }]),
+  );
+  const deMediciones = new Map(
+    medicionesDeEntrada.length === 0
+      ? []
+      : (
+          await sql`SELECT m.id, m.estado, m.periodo, i.codigo FROM mediciones m JOIN indicadores i ON i.id = m.indicador_id
+            WHERE m.id IN ${sql(medicionesDeEntrada)}`
+        ).map((f) => [Number(f.id), { cerrada: f.estado === "cerrada", texto: `El indicador ${f.codigo as string}, ${etiqueta(f.periodo as string)}` }]),
+  );
+  const datosQueSeCierran = new Set(c.datos.cierran.map((d) => d.id));
+  const seCierran = new Set(candidatas.map((a) => a.id));
+  const espera = new Map<number, string>();
+  for (let cambio = true; cambio; ) {
+    cambio = false;
+    for (const a of candidatas) {
+      if (!seCierran.has(a.id)) continue;
+      const r = revisiones.get(a.id);
+      if (!r) continue;
+      const dato = r.datos.find((id) => !datosQueSeCierran.has(id) && deDatos.get(id)?.cerrado !== true);
+      const medicion = dato === undefined ? r.mediciones.find((id) => !seCierran.has(id) && deMediciones.get(id)?.cerrada !== true) : undefined;
+      const motivo =
+        dato !== undefined
+          ? (deDatos.get(dato)?.texto ?? NO_COINCIDE)
+          : medicion !== undefined
+            ? (deMediciones.get(medicion)?.texto ?? NO_COINCIDE)
+            : a.activo && !r.coincide
+              ? NO_COINCIDE
+              : null;
+      if (motivo === null) continue;
+      seCierran.delete(a.id);
+      espera.set(a.id, motivo);
+      cambio = true;
+    }
+  }
+  c.alcanzadas = candidatas.filter((a) => seCierran.has(a.id));
+  c.esperan = candidatas
+    .filter((a) => !seCierran.has(a.id))
+    .map((a) => ({ codigo: a.codigo, periodo: a.periodo, espera: espera.get(a.id)! }))
+    .sort((x, y) => x.codigo.localeCompare(y.codigo, "es") || x.periodo.localeCompare(y.periodo));
 }
 
 /**
@@ -283,14 +394,61 @@ async function nombresDe(sql: Cliente, ids: number[]): Promise<string[]> {
 }
 
 /**
+ * Quién debía lo que falta a las alcanzadas que se cierran «Sin dato» (anexo 14C, §3.5), con la regla única de «Falta un
+ * dato» (`esperaUnDato`): si la medición esperaba un valor que no digita quien la mide, el sistema (un automático) o quienes
+ * debían las fuentes que faltan («Los responsables del dato «…»», «El indicador …»); si no, quienes la miden (faltó lo
+ * propio). Sin fuentes que falten, también quienes la miden: un caso que no debería darse.
+ */
+async function quienDebia(sql: Cliente, c: Clasificacion): Promise<Map<number, string[]>> {
+  const salida = new Map<number, string[]>();
+  const sinDato = c.alcanzadas.filter((a) => a.grupo === "sin_dato");
+  const faltan = sinDato.flatMap((a) => c.revisiones.get(a.id)?.faltan ?? []);
+  const datos = faltan.flatMap((f) => (f.clase === "dato" ? [f.datoId] : []));
+  const indicadores = faltan.flatMap((f) => (f.clase === "indicador" ? [f.indicadorId] : []));
+  const nombreDeDato = new Map(
+    datos.length === 0 ? [] : (await sql`SELECT id, nombre FROM variables_compartidas WHERE id IN ${sql([...new Set(datos)])}`).map((f) => [Number(f.id), f.nombre as string]),
+  );
+  const codigoDe = new Map(
+    indicadores.length === 0 ? [] : (await sql`SELECT id, codigo FROM indicadores WHERE id IN ${sql([...new Set(indicadores)])}`).map((f) => [Number(f.id), f.codigo as string]),
+  );
+  const deLaFuente = (f: FuenteQueFalta) =>
+    f.clase === "dato" ? `Los responsables del dato «${nombreDeDato.get(f.datoId) ?? "?"}»` : `El indicador ${codigoDe.get(f.indicadorId) ?? "?"}`;
+  const quienesMiden = new Map<number, string[]>();
+  for (const a of sinDato) {
+    const lasQueFaltan = c.revisiones.get(a.id)?.faltan ?? [];
+    const espera = esperaUnDato({
+      origenDato: a.version.origenDato,
+      mide: mide(a.version),
+      noAplica: false,
+      historica: a.historica,
+      reportada: a.reportada,
+      faltanAjenas: lasQueFaltan.length > 0,
+    });
+    if (espera && a.version.origenDato === "automatico") {
+      salida.set(a.id, [EL_SISTEMA]);
+      continue;
+    }
+    if (espera && lasQueFaltan.length > 0) {
+      salida.set(a.id, lasQueFaltan.map(deLaFuente));
+      continue;
+    }
+    // Por medición: un indicador que pasó a automático tiene periodos de antes, que debía quien mide.
+    if (!quienesMiden.has(a.indicadorId)) quienesMiden.set(a.indicadorId, await nombresDe(sql, await responsablesDeMedir(a.indicadorId, { sql })));
+    salida.set(a.id, quienesMiden.get(a.indicadorId)!);
+  }
+  return salida;
+}
+
+/**
  * Abre (F14-DC12) los periodos terminados de los indicadores activos que el cierre de `periodo` puede alcanzar (los que se
  * miden desde ese mes o antes), uno por uno (`indicadorIds`): el que falla se registra y el resumen o el cierre siguen; su
- * periodo lo alcanza un cierre posterior, cuando se abra. Después toma las fotos pendientes de los automáticos (anexo 14B,
- * §4 y §5.4), antes de clasificar: una medición no se cierra «Sin dato» si su foto ya tocaba. La foto que pide un análisis
- * y mueve su plazo (la de flujo, o la de estado que llegó con su fecha límite vencida: `laFotoMueveElPlazo`) lo cuenta desde
- * ella, así que sigue en plazo y la alcanza un cierre posterior; la que cumple la meta o queda «No aplica» conserva su fecha
- * y la cierra este mismo cierre. Al final propaga lo que nadie propagó (anexo 14C, §3.3: `propagarSinFallar`), con la misma
- * regla del plazo (`laFuenteMueveElPlazo`).
+ * periodo lo alcanza un cierre posterior, cuando se abra. Abre también los periodos de los datos que se piden (anexo 14C,
+ * §3.5: `asegurarPeriodosDeDatos`). Después toma las fotos pendientes de los automáticos (anexo 14B, §4 y §5.4), antes de
+ * clasificar: una medición no se cierra «Sin dato» si su foto ya tocaba. La foto que pide un análisis y mueve su plazo (la
+ * de flujo, o la de estado que llegó con su fecha límite vencida: `laFotoMueveElPlazo`) lo cuenta desde ella, así que sigue
+ * en plazo y la alcanza un cierre posterior; la que cumple la meta o queda «No aplica» conserva su fecha y la cierra este
+ * mismo cierre. Al final propaga lo que nadie propagó (anexo 14C, §3.3: `propagarSinFallar`), con la misma regla del plazo
+ * (`laFuenteMueveElPlazo`): el cierre clasifica con lo que queda después de propagar.
  */
 async function abrirPeriodosDelCierre(sql: Cliente, periodo: Periodo, ahora: Date): Promise<void> {
   const zona = zonaHoraria();
@@ -300,6 +458,7 @@ async function abrirPeriodosDelCierre(sql: Cliente, periodo: Periodo, ahora: Dat
     return inicio !== null && inicio.desde.getTime() <= periodo.hasta.getTime();
   });
   await asegurarMediciones({ sql, ahora, indicadorIds: alcanzables.map((f) => Number(f.id)) });
+  await asegurarPeriodosDeDatos({ sql, ahora });
   try {
     await tomarFotos({ sql, ahora });
   } catch (err) {
@@ -310,9 +469,10 @@ async function abrirPeriodosDelCierre(sql: Cliente, periodo: Periodo, ahora: Dat
 
 /**
  * El resumen previo del cierre de `mes` (spec §9.2): cuántas mediciones se cerrarán y cómo, las que quedarán sin dato
- * con quién debía medirlas («El sistema», en una automática), las observaciones sin respuesta y los dos grupos que no se
- * cierran. Abre antes los periodos que hayan terminado, toma las fotos pendientes y propaga lo que nadie propagó (F14-DC12,
- * anexo 14B §4 y anexo 14C §3.3, `abrirPeriodosDelCierre`). No escribe nada más.
+ * con quién debía (`quienDebia`), las observaciones sin respuesta, los grupos que no se cierran (en plazo, históricos sin
+ * registrar y las que esperan una fuente, con lo que esperan) y los periodos de los datos que se cierran. Abre antes los
+ * periodos que hayan terminado (de las mediciones y de los datos), toma las fotos pendientes y propaga lo que nadie propagó
+ * (F14-DC12, anexo 14B §4 y anexo 14C §3.3, `abrirPeriodosDelCierre`). No escribe nada más.
  */
 export async function resumenDeCierre(sesion: SujetoPermiso, mes: string, opciones?: Opciones): Promise<ResumenDeCierre> {
   exigirAdministrar(sesion);
@@ -322,20 +482,16 @@ export async function resumenDeCierre(sesion: SujetoPermiso, mes: string, opcion
   await abrirPeriodosDelCierre(sql, periodo, ahora);
   const c = await clasificar(sql, periodo.hasta, ahora, false);
   const n = cuentas(c, await sinRespuestaPorProceso(sql, { hasta: periodo.hasta }));
-  const quien = new Map<number, string[]>();
-  const sinDato: ResumenDeCierre["sinDato"] = [];
-  for (const a of c.alcanzadas) {
-    if (a.grupo !== "sin_dato") continue;
-    // Por medición: un indicador que pasó a automático tiene periodos de antes, que debía quien mide.
-    if (!a.automatica && !quien.has(a.indicadorId)) quien.set(a.indicadorId, await nombresDe(sql, await responsablesDeMedir(a.indicadorId, { sql })));
-    sinDato.push({
+  const quien = await quienDebia(sql, c);
+  const sinDato: ResumenDeCierre["sinDato"] = c.alcanzadas
+    .filter((a) => a.grupo === "sin_dato")
+    .map((a) => ({
       codigo: a.codigo,
       nombre: c.versiones.get(a.indicadorId)?.[0]?.nombre ?? a.codigo,
       proceso: a.proceso,
       periodo: a.periodo,
-      quien: a.automatica ? [EL_SISTEMA] : quien.get(a.indicadorId)!,
-    });
-  }
+      quien: quien.get(a.id) ?? [],
+    }));
   sinDato.sort((x, y) => x.proceso.localeCompare(y.proceso, "es") || x.codigo.localeCompare(y.codigo, "es") || x.periodo.localeCompare(y.periodo));
   return {
     mes: periodo.clave,
@@ -349,6 +505,8 @@ export async function resumenDeCierre(sesion: SujetoPermiso, mes: string, opcion
     enPlazo: n.enPlazo,
     historicosSinRegistrar: n.historicosSinRegistrar,
     porProceso: n.porProceso,
+    datos: { seCierran: c.datos.cierran.length, sinDato: c.datos.cierran.filter((d) => d.sinDato).length, esperan: c.datos.esperan },
+    esperanEntrada: c.esperan,
   };
 }
 
@@ -356,9 +514,10 @@ const mesRepetido = (err: unknown) =>
   (err as { code?: string }).code === "23505" && (err as { constraint_name?: string }).constraint_name === "cierres_indicadores_mes_unique";
 
 /**
- * Cierra `mes` (spec §9): en una transacción, la fila del cierre con las cuentas del resumen y cada medición alcanzada a
- * `cerrada`, con su evento `cierre`. Rechaza un mes que no ha terminado o que ya se cerró (también si otro cierre del
- * mismo mes gana la carrera: el `23505` de su índice único).
+ * Cierra `mes` (spec §9): en una transacción, la fila del cierre con las cuentas del resumen, cada medición alcanzada a
+ * `cerrada` con su evento `cierre` y cada periodo de un dato que se cierra a `cerrado` (sin valor, «Sin dato», el pendiente
+ * que venció), con su evento `cierre` en su historial (anexo 14C, §3.5). Rechaza un mes que no ha terminado o que ya se
+ * cerró (también si otro cierre del mismo mes gana la carrera: el `23505` de su índice único).
  */
 export async function cerrarMes(sesion: SesionFlujo, mes: string, opciones?: Opciones): Promise<{ cierreId: number; cerradas: number }> {
   exigirAdministrar(sesion);
@@ -391,6 +550,25 @@ export async function cerrarMes(sesion: SesionFlujo, mes: string, opciones?: Opc
           SELECT x.id, 'cierre', ${sesion.usuarioId},
             jsonb_build_object('cierreId', ${cierreId}::bigint, 'mes', ${periodo.clave}::text, 'sinAnalisis', x.sin_analisis,
               'antes', jsonb_build_object('estado', x.estado), 'despues', jsonb_build_object('estado', 'cerrada')),
+            ${ahora}
+          FROM ${lote()} ORDER BY x.id`;
+      }
+      const datos = c.datos.cierran;
+      if (datos.length > 0) {
+        const lote = () => tx`unnest(
+          ${tx.array(datos.map((d) => d.id))}::bigint[],
+          ${tx.array(datos.map((d) => d.estado))}::text[],
+          ${tx.array(datos.map((d) => d.sinDato))}::boolean[]
+        ) AS x(id, estado, sin_dato)`;
+        const cerrados = await tx`UPDATE variable_valores vv SET estado = 'cerrado', cierre_id = ${cierreId}
+          FROM ${lote()} WHERE vv.id = x.id AND vv.estado <> 'cerrado' RETURNING vv.id`;
+        if (cerrados.length !== datos.length) {
+          throw new Error(`El cierre alcanzó ${cerrados.length} de los ${datos.length} periodos de datos que contó: no se cerró nada`);
+        }
+        await tx`INSERT INTO variable_eventos (valor_id, tipo, usuario_id, detalle, creado_en)
+          SELECT x.id, 'cierre', ${sesion.usuarioId},
+            jsonb_build_object('cierreId', ${cierreId}::bigint, 'mes', ${periodo.clave}::text, 'sinDato', x.sin_dato,
+              'antes', jsonb_build_object('estado', x.estado), 'despues', jsonb_build_object('estado', 'cerrado')),
             ${ahora}
           FROM ${lote()} ORDER BY x.id`;
       }
@@ -428,20 +606,6 @@ export async function cierres(opciones?: { sql?: Cliente }): Promise<{ id: numbe
 // Reabrir y cerrar de nuevo
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * El permiso ya se exigió: quien administra reabre sin ser quien mide (`contextoDeMedicion` pide medir por omisión).
- * Reabrir no digita datos: también reabre la de un automático.
- */
-const ADMINISTRA: CondicionDePersona = async () => ({ puede: true, sinMedidor: false });
-const COMO_ADMINISTRADOR = { admiteCerrada: true, exigir: ADMINISTRA, digita: false };
-
-function justificacionDe(valor: unknown): string {
-  const t = typeof valor === "string" ? valor.trim() : "";
-  if (t.length < JUSTIFICACION_MINIMA) throw new ErrorIndicador(`La justificación debe tener al menos ${JUSTIFICACION_MINIMA} caracteres`);
-  if (t.length > JUSTIFICACION_MAXIMA) throw new ErrorIndicador(`La justificación no puede pasar de ${JUSTIFICACION_MAXIMA} caracteres`);
-  return t;
-}
-
 function soloCerrada(m: Record<string, unknown>): void {
   if (m.estado !== "cerrada") throw new ErrorIndicador(SOLO_CERRADA);
 }
@@ -450,11 +614,10 @@ const idValido = (id: number) => Number.isSafeInteger(id) && id > 0;
 
 /**
  * Reabre una medición cerrada (spec §8.7, F14-DC31) con justificación y sin clave: queda «Corregida», vuelve a
- * `reportada` o a `abierta` (lo decide `recalcularMedicion`, con el evento `reapertura` cuyo estado de antes es
- * `cerrada`) y se avisa a quienes miden, salvo a quien reabre. Si quien reabre está designado para medir el indicador, el
- * evento y la bitácora lo marcan (`propioMedidor`); si solo mide como respaldo porque nadie más puede, `sinMedidor`. En
- * una automática (la versión que rige su periodo la calcula el sistema) no mide nadie: el aviso va a quienes analizan y no
- * lleva ninguna de las dos marcas (anexo 14B, §4). Un indicador retirado no se reabre: nadie podría corregirlo.
+ * `reportada` o a `abierta` y se avisa a quienes miden (`reabrirLaMedicion`, `reapertura.ts`). Un indicador retirado no se
+ * reabre: nadie podría corregirlo. Si otras mediciones cerradas la usaron (es la de un componente), va en cascada
+ * (`reabrirEnCascada`, anexo 14C §3.5): se reabren también. Sin dependientes, en su transacción, y si una aparece entre la
+ * lectura y los candados, no reabre nada (`LO_QUE_SE_REABRE_CAMBIO`).
  */
 export async function reabrirMedicion(sesion: SesionFlujo, d: { medicionId: number; justificacion: string }, opciones?: Opciones): Promise<void> {
   exigirAdministrar(sesion);
@@ -463,61 +626,23 @@ export async function reabrirMedicion(sesion: SesionFlujo, d: { medicionId: numb
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
   soloCerrada((await contextoDeMedicion(sql, sesion, d.medicionId, false, COMO_ADMINISTRADOR)).medicion);
+  const fuente = { clase: "medicion" as const, medicionId: d.medicionId };
+  if ((await dependientesDe(sql, fuente)).length > 0) {
+    await reabrirEnCascada(sesion, { fuente, justificacion }, { sql, ahora });
+    return;
+  }
   await enTransaccion(sql, async (tx) => {
     const ctx = await contextoDeMedicion(tx, sesion, d.medicionId, true, COMO_ADMINISTRADOR);
-    const m = ctx.medicion;
-    soloCerrada(m);
-    const cierre =
-      m.cierre_id === null
-        ? null
-        : (((await tx`SELECT to_char(mes, 'YYYY-MM') AS mes FROM cierres_indicadores WHERE id = ${m.cierre_id as number}`)[0]?.mes as string | undefined) ?? null);
-    // El único cambio que el trigger admite en una cerrada; el estado lo decide enseguida el cálculo.
-    await tx`UPDATE mediciones SET estado = 'abierta', reabierta_por = ${sesion.usuarioId}, reabierta_en = ${ahora},
-        reabierta_motivo = ${justificacion}, corregida = true, cierre_id = NULL, sin_analisis = false
-      WHERE id = ${m.id}`;
-    // Quien administra mide si está designado (`propioMedidor`) o, sin nadie más, como respaldo (`sinMedidor`); un
-    // automático o un indicador sin variables propias no lo mide nadie (anexo 14C, §3.1).
-    const nadieLoMide = !mide(ctx.version);
-    const capacidad = nadieLoMide ? null : await puedeMedir(ctx.indicador.id, sesion, { sql: tx });
-    const marca = !capacidad?.puede ? {} : capacidad.sinMedidor ? { sinMedidor: true } : { propioMedidor: true };
-    // El estado de antes es el verdadero (`cerrada`), no el provisional del UPDATE: el evento queda siempre.
-    const r = await recalcularMedicion(tx, m.id, {
-      ahora,
-      actorId: sesion.usuarioId,
-      evento: "reapertura",
-      estadoAnterior: "cerrada",
-      detalle: { justificacion, cierre, ...marca },
-    });
-    const codigo = ctx.indicador.codigo;
-    const periodo = m.periodo as string;
-    const responsables = nadieLoMide ? responsablesDeAnalizar : responsablesDeMedir;
-    const destinatarios = (await responsables(ctx.indicador.id, { sql: tx })).filter((u) => u !== sesion.usuarioId);
-    if (destinatarios.length > 0) {
-      await avisarA(
-        tx,
-        {
-          tipo: "indicadores.reabierta",
-          titulo: `Medición reabierta en ${codigo}`,
-          enlace: `/indicadores/${encodeURIComponent(codigo)}?vista=resultados&anio=${periodo.slice(0, 4)}`,
-          entidad: "medicion",
-          entidadId: m.id,
-        },
-        destinatarios.map((usuarioId) => ({ usuarioId, cuerpo: `${sesion.nombre} reabrió ${codigo}, ${ctx.periodo.etiqueta}: ${justificacion}` })),
-      );
-    }
-    await registrarAuditoria(tx, {
-      usuarioId: sesion.usuarioId,
-      accion: "medicion_reabierta",
-      entidad: "medicion",
-      entidadId: m.id,
-      detalle: { codigo, indicadorId: ctx.indicador.id, periodo, justificacion, cierre, estado: r.estado, ...marca },
-    });
+    soloCerrada(ctx.medicion);
+    if ((await dependientesDe(tx, fuente)).length > 0) throw new ErrorIndicador(LO_QUE_SE_REABRE_CAMBIO);
+    await reabrirLaMedicion(tx, sesion, ctx, { justificacion, ahora });
   });
 }
 
 /**
  * «Cerrar de nuevo» (F14-DC31): la reabierta vuelve a `cerrada` con el último cierre, como esté (sin dato, sin análisis o
- * corregida), con su evento `cierre`. También la de un indicador que se retiró mientras estaba reabierta.
+ * corregida), con su evento `cierre`. También la de un indicador que se retiró mientras estaba reabierta. No si alguna de
+ * sus entradas no está cerrada (anexo 14C, §3.5): primero se cierra la fuente.
  */
 export async function cerrarDeNuevo(sesion: SesionFlujo, medicionId: number, opciones?: Opciones): Promise<void> {
   exigirAdministrar(sesion);
@@ -530,6 +655,13 @@ export async function cerrarDeNuevo(sesion: SesionFlujo, medicionId: number, opc
     const [m] = await tx`SELECT * FROM mediciones WHERE id = ${medicionId} FOR UPDATE`;
     if (!i || !m || !(await puedeVerIndicador(Number(i.id), sesion, { sql: tx }))) throw new ErrorIndicador(NO_EXISTE);
     if (m.estado === "cerrada" || m.reabierta_en === null) throw new ErrorIndicador(NO_REABIERTA);
+    const entradas = (await revisarFuentes(tx, [Number(m.id)])).get(Number(m.id));
+    if (entradas && (entradas.datos.length > 0 || entradas.mediciones.length > 0)) {
+      const datos = entradas.datos.length === 0 ? [] : await tx`SELECT 1 FROM variable_valores WHERE id IN ${tx(entradas.datos)} AND estado <> 'cerrado'`;
+      const mediciones =
+        entradas.mediciones.length === 0 ? [] : await tx`SELECT 1 FROM mediciones WHERE id IN ${tx(entradas.mediciones)} AND estado <> 'cerrada'`;
+      if (datos.length > 0 || mediciones.length > 0) throw new ErrorIndicador(FUENTE_ABIERTA);
+    }
     const [c] = await tx`SELECT id, to_char(mes, 'YYYY-MM') AS mes FROM cierres_indicadores ORDER BY mes DESC LIMIT 1`;
     if (!c) throw new ErrorIndicador(NO_REABIERTA);
     const cierreId = Number(c.id);

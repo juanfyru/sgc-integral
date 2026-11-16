@@ -12,6 +12,7 @@ import { MiniTubos } from "@/componentes/ui/MiniTubos";
 import { TuboAcumulado } from "@/componentes/ui/TuboAcumulado";
 import type { DatosDeAnalisis } from "@/db/consultas/indicadores/analisis";
 import type { ResultadosDelAnio, UltimoResultado } from "@/db/consultas/indicadores/lectura";
+import type { ReaperturaEnTexto } from "@/db/consultas/indicadores/reapertura";
 import type { Soporte } from "@/db/consultas/indicadores/soportes";
 import type { EntradaDeHistorial } from "@/lib/indicadores/historial";
 import type { Periodicidad } from "@/lib/indicadores/tipos";
@@ -48,7 +49,15 @@ export type DatosDeResultados = {
    * Reabrir, cerrar de nuevo, volver a calcular la foto de un automático (quien administra; anexo 14B, §5.4) y actualizar las
    * categorías de un desagregado abierto sin reportar (anexo 14C, §5.3), y el historial de cada medición corregida (spec §8.7).
    */
-  cierre: { reabre: boolean; cierraDeNuevo: boolean; recalcula: boolean; actualizaCategorias: boolean; historial: Map<number, EntradaDeHistorial[]> };
+  cierre: {
+    reabre: boolean;
+    cierraDeNuevo: boolean;
+    recalcula: boolean;
+    actualizaCategorias: boolean;
+    historial: Map<number, EntradaDeHistorial[]>;
+    /** Lo que se reabre con cada medición cerrada que otras usaron (anexo 14C, §3.5), a quien reabre. */
+    reaperturas: Map<number, ReaperturaEnTexto>;
+  };
   /** «Por {dimensión}» de un desagregado (anexo 14C, §5.6), con el periodo elegido (`?desglose=`); `null` si no se desagrega. */
   desglose: DatosDeDesglose | null;
 };
@@ -233,6 +242,7 @@ export function VistaResultados(d: DatosDeResultados) {
             puedeVolverACalcular={d.cierre.recalcula}
             puedeActualizarCategorias={d.cierre.actualizaCategorias}
             historial={d.cierre.historial}
+            reaperturas={d.cierre.reaperturas}
             periodosSinCumplir={d.periodosSinCumplir}
           />
         )}

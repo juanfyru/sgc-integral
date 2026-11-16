@@ -11,7 +11,7 @@ import { aprobarFichas, descartarBorrador, devolverFicha, enviarAAprobacion } fr
 import { actualizarCategorias } from "@/db/consultas/indicadores/categorias";
 import { cerrarDeNuevo, cerrarMes, reabrirMedicion } from "@/db/consultas/indicadores/cierre";
 import { corregirConstancia, quitarSoporteDeConstancia, registrarConstancia } from "@/db/consultas/indicadores/constancias";
-import { reportarDato } from "@/db/consultas/indicadores/datos-periodos";
+import { cerrarDeNuevoElDato, reportarDato } from "@/db/consultas/indicadores/datos-periodos";
 import { abrirCambio, crearIndicador, guardarBorrador } from "@/db/consultas/indicadores/fichas";
 import { volverACalcular } from "@/db/consultas/indicadores/fotos";
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
@@ -28,6 +28,7 @@ import {
   retirar,
 } from "@/db/consultas/indicadores/operacion";
 import { propagarSinFallar } from "@/db/consultas/indicadores/propagacion";
+import { reabrirEnCascada, sinInterbloqueoDelCierre } from "@/db/consultas/indicadores/reapertura";
 import { quitarSoporte } from "@/db/consultas/indicadores/soportes";
 import { contextoDePeticion } from "@/lib/contexto-peticion";
 import { EsquemaSinDatos } from "@/lib/esquemas/documentos";
@@ -425,20 +426,44 @@ export async function borrarIndicadorAccion(_prev: EstadoAccion, formData: FormD
  * Cierra el mes elegido (spec §9), sin clave (F14-DC9), y vuelve a «Cierre del mes» con cuántas mediciones cerró
  * (`cerrado=AAAA-MM&cerradas=N`).
  */
+// El cierre del mes y la reapertura en cascada bloquean varios indicadores: un `40P01` con quien reporta o cierra a la vez
+// llega legible (`sinInterbloqueoDelCierre`), sin reintentar.
 export async function cerrarMesAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     const { mes } = parsearFormulario(formData, EsquemaCierreMes);
-    const { cerradas } = await cerrarMes(sesion, mes);
+    const { cerradas } = await cerrarMes(sesion, mes).catch(sinInterbloqueoDelCierre);
     return `/indicadores/cierre?cerrado=${mes}&cerradas=${cerradas}`;
   });
 }
 
-/** `id` es el de la medición cerrada. La reabre con justificación y sin clave; no navega: la tabla se repinta. */
+/**
+ * `id` es el de la medición cerrada. La reabre con justificación y sin clave, con las cerradas que la tomaron (en cascada,
+ * anexo 14C §3.5); no navega: la tabla se repinta.
+ */
 export async function reabrirMedicionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     const { justificacion } = parsearFormulario(formData, EsquemaReapertura, { omitir: ["id"] });
-    await reabrirMedicion(sesion, { medicionId: idNumerico(formData, "id"), justificacion });
+    await reabrirMedicion(sesion, { medicionId: idNumerico(formData, "id"), justificacion }).catch(sinInterbloqueoDelCierre);
     await propagarSinFallar();
+  });
+}
+
+/**
+ * `id` es el del periodo cerrado de un dato compartido (anexo 14C, §3.5). Lo reabre en cascada, con las mediciones cerradas
+ * que lo usaron, con justificación y sin clave; no navega: la página del dato se repinta.
+ */
+export async function reabrirDatoCompartido(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    const { justificacion } = parsearFormulario(formData, EsquemaReapertura, { omitir: ["id"] });
+    await reabrirEnCascada(sesion, { fuente: { clase: "dato", periodoId: idNumerico(formData, "id") }, justificacion }).catch(sinInterbloqueoDelCierre);
+  });
+}
+
+/** `id` es el del periodo reabierto de un dato compartido. Vuelve a cerrado con el último cierre; no navega. */
+export async function cerrarDeNuevoElDatoCompartido(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
+    await cerrarDeNuevoElDato(sesion, idNumerico(formData, "id"));
   });
 }
 

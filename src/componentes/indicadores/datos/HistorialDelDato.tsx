@@ -1,7 +1,9 @@
 import { IconoFormato } from "@/componentes/documentos/IconoFormato";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { celda, celdaNumerica, TablaDatos, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
+import { CerrarDeNuevoDato, DialogoReabrirDato } from "@/componentes/indicadores/cierre/DialogoReabrir";
 import type { EventoDeDato, PeriodoDeDato } from "@/db/consultas/indicadores/datos-periodos";
+import type { ReaperturaEnTexto } from "@/db/consultas/indicadores/reapertura";
 import type { Soporte } from "@/db/consultas/indicadores/soportes";
 import { rutaDeSoporteDeDato } from "@/lib/indicadores/rutas";
 import { cuenta } from "@/lib/plural";
@@ -47,9 +49,11 @@ function fraseDelEvento(e: EventoDeDato, nombres: Map<string, string>): string {
     case "soporte":
       return `${d.accion === "quitado" ? "Quitó" : "Subió"} el soporte «${typeof d.nombre === "string" ? d.nombre : "?"}»${marca}`;
     case "cierre":
-      return "Se cerró el periodo";
-    case "reapertura":
-      return `Se reabrió el periodo${typeof d.justificacion === "string" && d.justificacion ? `: ${d.justificacion}` : ""}${marca}`;
+      return `Se cerró ${d.deNuevo === true ? "de nuevo " : ""}el periodo${d.sinDato === true ? " sin dato" : ""}`;
+    case "reapertura": {
+      const propio = d.propioResponsable === true ? " (quien lo reabrió también lo reporta)" : "";
+      return `Se reabrió el periodo${propio}${marca}${typeof d.justificacion === "string" && d.justificacion ? `: ${d.justificacion}` : ""}`;
+    }
     default:
       return e.tipo;
   }
@@ -57,7 +61,7 @@ function fraseDelEvento(e: EventoDeDato, nombres: Map<string, string>): string {
 
 /** El estado de un periodo en la tabla: el texto lleva el estado, el color no es la única señal. */
 function Estado({ periodo, ahora }: { periodo: PeriodoDeDato; ahora: Date }) {
-  if (periodo.estado === "cerrado") return <Insignia variante="sin-dato">Cerrado</Insignia>;
+  if (periodo.estado === "cerrado") return <Insignia variante="sin-dato">{periodo.valor === null ? "Cerrado sin dato" : "Cerrado"}</Insignia>;
   if (periodo.estado === "reportado") return <Insignia variante="neutra">{periodo.corregido ? "Corregido" : "Reportado"}</Insignia>;
   if (periodo.sePide) return <InsigniaPorReportar venceEn={periodo.venceEn} ahora={ahora} />;
   return <Insignia variante="sin-dato">Ya no se pide</Insignia>;
@@ -85,9 +89,9 @@ function Soportes({ datoId, soportes }: { datoId: number; soportes: Soporte[] })
 /**
  * Los periodos de un dato (anexo 14C, §4.4 y §4.7, maqueta 12), del más reciente al más viejo: su valor y, si se corrigió,
  * el de antes; quién lo reportó y quién lo corrigió; sus soportes y su estado. Con `editable` (quien puede reportar el dato),
- * desde su fila se corrige un periodo reportado sin cerrar y se reporta uno pendiente que se pide. Debajo, el historial de
- * cada periodo, de solo inserción: qué
- * había, qué quedó, quién y cuándo.
+ * desde su fila se corrige un periodo reportado sin cerrar y se reporta uno pendiente que se pide. Con `administra`, se
+ * reabre un periodo cerrado (con la lista de lo que se reabre en cascada, `reaperturas`, anexo 14C §3.5) y se cierra de
+ * nuevo uno reabierto. Debajo, el historial de cada periodo, de solo inserción: qué había, qué quedó, quién y cuándo.
  */
 export function HistorialDelDato({
   datoId,
@@ -95,6 +99,8 @@ export function HistorialDelDato({
   historiales,
   soportes,
   editable,
+  administra = false,
+  reaperturas = new Map(),
   ahora,
 }: {
   datoId: number;
@@ -102,15 +108,18 @@ export function HistorialDelDato({
   historiales: Map<number, EventoDeDato[]>;
   soportes: Map<number, Soporte[]>;
   editable: boolean;
+  administra?: boolean;
+  reaperturas?: Map<number, ReaperturaEnTexto>;
   ahora: Date;
 }) {
+  const conAcciones = editable || administra;
   const columnas: ColumnaTabla[] = [
     { clave: "periodo", etiqueta: "Periodo" },
     { clave: "valor", etiqueta: "Valor", numerica: true },
     { clave: "reporto", etiqueta: "Lo reportó" },
     { clave: "soporte", etiqueta: "Soporte" },
     { clave: "estado", etiqueta: "Estado" },
-    ...(editable ? [{ clave: "accion", etiqueta: "Acción", oculta: true }] : []),
+    ...(conAcciones ? [{ clave: "accion", etiqueta: "Acción", oculta: true }] : []),
   ];
   const conHistoria = periodos.filter((p) => (historiales.get(p.id) ?? []).length > 0);
 
@@ -144,11 +153,19 @@ export function HistorialDelDato({
               <td className={celda}>
                 <Estado periodo={p} ahora={ahora} />
               </td>
-              {editable ? (
+              {conAcciones ? (
                 <td className={celda}>
-                  {seReportaDesdeLaFila(p) ? (
-                    <AccionDelPeriodo datoId={datoId} periodo={paraReportar(p, ahora)} soportes={soportes.get(p.id) ?? []} />
-                  ) : null}
+                  <div className="flex flex-col items-start gap-1">
+                    {editable && seReportaDesdeLaFila(p) ? (
+                      <AccionDelPeriodo datoId={datoId} periodo={paraReportar(p, ahora)} soportes={soportes.get(p.id) ?? []} />
+                    ) : null}
+                    {administra && p.estado === "cerrado" && reaperturas.has(p.id) ? (
+                      <DialogoReabrirDato periodoId={p.id} etiqueta={etiquetaDePeriodo(p.periodo, true)} reapertura={reaperturas.get(p.id)!} />
+                    ) : null}
+                    {administra && p.estado !== "cerrado" && p.reabierto ? (
+                      <CerrarDeNuevoDato periodoId={p.id} etiqueta={etiquetaDePeriodo(p.periodo, true)} />
+                    ) : null}
+                  </div>
                 </td>
               ) : null}
             </tr>

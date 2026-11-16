@@ -10,7 +10,7 @@ import { filtroIndicadores, participaEn, type SujetoVisibilidad } from "@/lib/al
 import { REPORTES_DE_LISTA, SEMAFOROS_DE_LISTA, type ReporteDeLista } from "@/lib/indicadores/filtros";
 import { cumpleDeMedicion, ETIQUETA_ESTADO } from "@/lib/indicadores/estados";
 import { deTexto } from "@/lib/indicadores/formula/fraccion";
-import { letrasAjenas } from "@/lib/indicadores/origen";
+import { esperaUnDato as esperaUnDatoSegunOrigen, letrasAjenas } from "@/lib/indicadores/origen";
 import { reglaDeTexto } from "@/lib/indicadores/reporte";
 import { textoMeta, textoValor } from "@/lib/indicadores/textos";
 import type { EstadoIndicador, Periodicidad, Semaforo } from "@/lib/indicadores/tipos";
@@ -168,15 +168,19 @@ const diasEntre = (desde: Date, hasta: Date, zona: string) =>
 const FALTA_UN_DATO = ETIQUETA_ESTADO.falta_dato;
 
 /**
- * ¿El periodo abierto espera un valor que no digita quien lo mide, y no a quien lo reporte? El de un automático, su foto
- * (anexo 14B, §4); el de una ficha manual con variables ajenas, el valor ajeno, con lo propio ya reportado o sin nadie que
- * lo mida (anexo 14C, §3.1). Un histórico de una ficha manual se registra completo: no espera nada.
+ * ¿El periodo abierto está en «Falta un dato», y no espera a quien lo reporte? La regla única (`esperaUnDato` de
+ * `origen.ts`). La lista no lee los valores: que falte uno ajeno lo dice que la versión tenga ajenas y la medición aún no
+ * tenga resultado.
  */
 function esperaUnDato(m: Row, v: VersionDeCalculo): boolean {
-  if (m.no_aplica === true) return false;
-  if (v.origenDato === "automatico") return m.reportada_en === null;
-  if (m.historica === true || letrasAjenas(v.variables).length === 0 || m.resultado_exacto !== null) return false;
-  return !mide(v) || m.reportada_en !== null;
+  return esperaUnDatoSegunOrigen({
+    origenDato: v.origenDato,
+    mide: mide(v),
+    noAplica: m.no_aplica === true,
+    historica: m.historica === true,
+    reportada: m.reportada_en !== null,
+    faltanAjenas: letrasAjenas(v.variables).length > 0 && m.resultado_exacto === null,
+  });
 }
 
 /**

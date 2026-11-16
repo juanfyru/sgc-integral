@@ -53,10 +53,11 @@ export function esMesTerminado(mes: unknown, ahora: Date): mes is string {
 }
 
 /**
- * Las líneas de «No se cierran» (F14-DC3), con concordancia: lo que sigue en plazo y los históricos sin registrar. Un
- * grupo en cero no tiene línea; sin ninguna, la caja no se muestra.
+ * Las líneas de «No se cierran» (F14-DC3), con concordancia: lo que sigue en plazo, los históricos sin registrar y (anexo
+ * 14C, §3.5) las mediciones que esperan una fuente y los periodos de los datos que siguen en plazo. Un grupo en cero no tiene
+ * línea; sin ninguna, la caja no se muestra.
  */
-export function frasesDeNoSeCierran(r: { enPlazo: number; historicosSinRegistrar: number }): string[] {
+export function frasesDeNoSeCierran(r: { enPlazo: number; historicosSinRegistrar: number; esperanEntrada?: number; datosEnPlazo?: number }): string[] {
   const frases: string[] = [];
   if (r.enPlazo > 0) {
     frases.push(
@@ -72,7 +73,33 @@ export function frasesDeNoSeCierran(r: { enPlazo: number; historicosSinRegistrar
         : `${r.historicosSinRegistrar} históricos sin registrar siguen abiertos hasta que se registren.`,
     );
   }
+  const esperan = r.esperanEntrada ?? 0;
+  if (esperan > 0) {
+    frases.push(
+      esperan === 1
+        ? "1 medición espera una fuente que no se cierra con este cierre: queda para el siguiente."
+        : `${esperan} mediciones esperan una fuente que no se cierra con este cierre: quedan para el siguiente.`,
+    );
+  }
+  const datos = r.datosEnPlazo ?? 0;
+  if (datos > 0) {
+    frases.push(
+      datos === 1
+        ? "1 periodo de un dato compartido sigue dentro de su plazo de reporte: queda para el siguiente cierre."
+        : `${datos} periodos de datos compartidos siguen dentro de su plazo de reporte: quedan para el siguiente cierre.`,
+    );
+  }
   return frases;
+}
+
+/**
+ * Lo que el cierre hace con los periodos de los datos compartidos (anexo 14C, §3.5), para la confirmación: «También se
+ * cerrarán 3 periodos de datos compartidos, 1 sin dato.»; `null` si no cierra ninguno.
+ */
+export function fraseDeDatosDelCierre(d: { seCierran: number; sinDato: number }): string | null {
+  if (d.seCierran === 0) return null;
+  const cuantos = d.seCierran === 1 ? "1 periodo de un dato compartido" : `${d.seCierran} periodos de datos compartidos`;
+  return `También se ${d.seCierran === 1 ? "cerrará" : "cerrarán"} ${cuantos}${d.sinDato > 0 ? `, ${d.sinDato} sin dato` : ""}.`;
 }
 
 /** Lo que va a pasar al confirmar el cierre (spec §9.3), con singular y plural: «Se cerrará 1 medición: 1 reportada, …». */

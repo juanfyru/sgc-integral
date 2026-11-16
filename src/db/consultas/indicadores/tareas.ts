@@ -19,7 +19,7 @@ import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { esAprobadorDe, filtroIndicadores, responsableDe, type Responsabilidad } from "@/lib/alcance";
 import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
 import { analisisCompleto, analisisExigido, cumpleDeMedicion } from "@/lib/indicadores/estados";
-import { alguienMide, faltaSegunOrigen } from "@/lib/indicadores/origen";
+import { alguienMideCon, esperaUnDato, faltaSegunOrigen } from "@/lib/indicadores/origen";
 import { versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import { SIN_RESPONSABLE, type OrigenDato, type Periodicidad, type Semaforo } from "@/lib/indicadores/tipos";
 import { puede } from "@/lib/permisos";
@@ -106,11 +106,14 @@ export function queFalta(filas: readonly Row[]): Map<number, Pendiente> {
       noAplica: false,
     });
     const reportada = f.reportada_en !== null;
-    const automatica = version.origenDato === "automatico";
-    const mide = alguienMide({ origenDato: version.origenDato, variables: version.propias.map((letra) => ({ letra, origen: "propia" as const })) });
+    const mide = alguienMideCon(version.origenDato, version.propias);
     const conValor = new Set((f.con_valor as string[] | null) ?? []);
-    const faltanAjenas = automatica ? !reportada : (version.ajenas ?? []).some((l) => !conValor.has(l));
-    const segun = faltaSegunOrigen({ mide, reportada, faltanAjenas, analisisCompleto: analisisCompleto(exigido, analisisDe(f)) });
+    const faltanAjenas = (version.ajenas ?? []).some((l) => !conValor.has(l));
+    // «Falta un dato», con la regla única (`esPendiente` ya dejó fuera los «No aplica» y los históricos); si no, el reporte
+    // o el análisis, según el origen.
+    const segun = esperaUnDato({ origenDato: version.origenDato, mide, noAplica: false, historica: false, reportada, faltanAjenas })
+      ? "dato"
+      : faltaSegunOrigen({ mide, reportada, faltanAjenas, analisisCompleto: analisisCompleto(exigido, analisisDe(f)) });
     // Con todo y sin resultado, lo que nadie mide espera al sistema (su «No aplica» o su cálculo), no un reporte de alguien.
     const falta: Falta = segun === "reporte" && !mide ? "dato" : segun;
     const faltaSoporte = reportada && mide && f.soporte_obligatorio === true && f.con_soporte !== true;

@@ -23,7 +23,7 @@ import { analisisCompleto, analisisExigido, cumpleDeMedicion, estadoVisible, typ
 import { cuandoSeToma, sePuedeVolverACalcular, textoDeEspera, textoDeFoto } from "@/lib/indicadores/fotos";
 import { enPalabras } from "@/lib/indicadores/formula/formas";
 import { aDecimal, aTexto, comparar, deTexto, type Fraccion } from "@/lib/indicadores/formula/fraccion";
-import { faltaSegunOrigen, letrasAjenas } from "@/lib/indicadores/origen";
+import { esperaUnDato as esperaUnDatoSegunOrigen, letrasAjenas } from "@/lib/indicadores/origen";
 import { clavesDelAnio, clavesFinas, contiene, mismoDelAnioAnterior, periodicidadDe, versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import { fichaDeCalculo, reglaDeTexto, valorEnTexto, type CalculoEnTexto, type ReglaEnTexto } from "@/lib/indicadores/reporte";
 import { anioDeClave, etiquetaDeComparacion, limiteDeLaGrafica, rachasDe, rotuloDelAcumulado, textoDelLimite } from "@/lib/indicadores/resultados";
@@ -295,17 +295,16 @@ async function datosDeReporte(sql: Cliente, ctx: Contexto, ahora: Date): Promise
   };
 }
 
-/**
- * ¿La medición espera un valor que no digita quien la mide? El cálculo de un automático (anexo 14B, §4) o, en una ficha
- * manual, un valor ajeno con lo propio ya reportado, o lo que sea, si nadie la mide (anexo 14C, §3.1): «Falta un dato», que
- * nunca está vencido. Un histórico de una ficha manual no espera nada: se registra completo (§3.6).
- */
+/** ¿La medición está en «Falta un dato», que nunca está vencido? La regla única (`esperaUnDato` de `origen.ts`), con sus valores. */
 function esperaUnDato(m: Record<string, unknown>, version: VersionDeCalculo, valores: Readonly<Record<string, Fraccion>>): boolean {
-  if (m.no_aplica === true) return false;
-  if (version.origenDato === "automatico") return m.reportada_en === null;
-  if (m.historica === true) return false;
-  const faltanAjenas = letrasAjenas(version.variables).some((l) => !valores[l]);
-  return faltaSegunOrigen({ mide: mide(version), reportada: m.reportada_en !== null, faltanAjenas, analisisCompleto: true }) === "dato";
+  return esperaUnDatoSegunOrigen({
+    origenDato: version.origenDato,
+    mide: mide(version),
+    noAplica: m.no_aplica === true,
+    historica: m.historica === true,
+    reportada: m.reportada_en !== null,
+    faltanAjenas: letrasAjenas(version.variables).some((l) => !valores[l]),
+  });
 }
 
 /**

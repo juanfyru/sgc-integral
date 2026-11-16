@@ -38,6 +38,7 @@ import { desagregacionDelAnio, obtenerIndicador, resultadosDelAnio } from "@/db/
 import { obtenerParametros } from "@/db/consultas/indicadores/maestros";
 import { observacionesDe, type ResumenDeObservaciones } from "@/db/consultas/indicadores/observaciones";
 import { asegurarMedicionesConFuentes } from "@/db/consultas/indicadores/propagacion";
+import { reaperturaEnTexto, type ReaperturaEnTexto } from "@/db/consultas/indicadores/reapertura";
 import { soportesDeVarias } from "@/db/consultas/indicadores/soportes";
 import { puedeAnalizar, puedeObservar, puedeRegistrarHistoricos } from "@/lib/alcance";
 import type { EstadoIndicador, Periodicidad } from "@/lib/indicadores/tipos";
@@ -118,6 +119,15 @@ export async function datosDeResultados(
   ]);
   const { puedeMedir: mide, puedeAnalizar: analiza } = vista.permisos;
   const activo = indicador.estado === "activo";
+  // Lo que se reabriría con cada cerrada del año que otras mediciones cerradas usaron (anexo 14C, §3.5), a quien reabre.
+  const reaperturas = new Map<number, ReaperturaEnTexto>();
+  if (c.administra && activo) {
+    for (const f of filas) {
+      if (f.estado !== "cerrada" || f.medicionId === null || f.deOtraPeriodicidad === true) continue;
+      const lista = await reaperturaEnTexto(sesion, { clase: "medicion", medicionId: f.medicionId });
+      if (lista) reaperturas.set(f.medicionId, lista);
+    }
+  }
 
   // Analizar: lo pedido con `?analizar=`, o la primera medición del año a la que le falta el análisis (spec §8.4).
   let analisis: DatosDeAnalisis | null = null;
@@ -182,6 +192,7 @@ export async function datosDeResultados(
       recalcula: c.administra && activo,
       actualizaCategorias: c.administra && activo,
       historial,
+      reaperturas,
     },
     desglose: dimension
       ? { dimension, periodos: desagregacion.medidos.map((x) => ({ periodo: x.periodo, etiqueta: periodoEnPalabras(x.periodo) })), elegido }

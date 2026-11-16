@@ -15,9 +15,13 @@
  * - **Su tarea** (`tareasDeDatos`) y sus recordatorios (`datos-vencidos.ts`) miran lo mismo: lo que se pide
  *   (`periodoQueSePide`).
  *
+ * - **Cerrar** lo hace el cierre del mes (`cierre.ts`); reabrir, la reapertura en cascada (`reapertura.ts`, anexo 14C §3.5);
+ *   «Cerrar de nuevo» un periodo reabierto, `cerrarDeNuevoElDato`.
+ *
  * Candados: el dato `FOR SHARE` y después el periodo `FOR UPDATE` (o, al abrir, las filas del maestro `FOR KEY SHARE`), en
  * una transacción por dato: los indicadores que lo usan se leen sin candado, porque una transacción no bloquea más de un
- * indicador. Quien edita el dato (`datos.ts`) lo toma `FOR UPDATE`.
+ * indicador. Quien edita el dato (`datos.ts`) lo toma `FOR UPDATE`. El cierre y la reapertura en cascada toman los periodos
+ * `FOR UPDATE`, por id, sin la fila del dato.
  *
  * Módulo liviano: lo importan `tareas.ts`, `vencimientos.ts`, `datos-vencidos.ts`, la propagación y el cierre, así que no
  * importa `lectura`, `fichas`, `aprobacion`, `operacion`, `tareas` ni `constancias`.
@@ -71,6 +75,8 @@ export type PeriodoDeDato = {
   reporto: string | null;
   reportadoEn: Date | null;
   corregido: boolean;
+  /** Se reabrió alguna vez (anexo 14C, §3.5): sin cerrar, «Cerrar de nuevo» lo vuelve a cerrar. */
+  reabierto: boolean;
   /** Pendiente y se pide (`periodoQueSePide`): uno que ya nadie pide no es tarea de nadie ni está «por reportar». */
   sePide: boolean;
 };
@@ -79,6 +85,7 @@ export const PERIODO_NO_EXISTE = "El periodo del dato no existe";
 const CERRADO = "El periodo está cerrado: lo reabre el Administrador del SGC";
 const SIN_CAMBIOS = "No hay cambios que corregir";
 const FORMULARIO_CAMBIO = "El formulario no corresponde a este periodo: recargue la página";
+const SOLO_REABIERTO = "Solo se cierra de nuevo un periodo reabierto";
 
 /**
  * Lo que se pide de un dato, para un `WHERE` sobre `variable_valores vv` (anexo 14C, §4.3): un periodo pendiente que alguna
@@ -281,6 +288,7 @@ function aPeriodo(f: Record<string, unknown>): PeriodoDeDato {
     reporto: texto(f.reporto),
     reportadoEn: (f.reportado_en as Date | null) ?? null,
     corregido: f.corregido === true,
+    reabierto: f.reabierto_en !== null && f.reabierto_en !== undefined,
     // El alias calculado, no la columna cruda `se_pide`: un periodo reportado tiene la columna en verdadero.
     sePide: f.pedido === true,
   };
@@ -508,6 +516,38 @@ export async function reportarDato(
       detalle: antes ? { ...base, antes: antes.valor, despues: guardado.valor, ...marca } : { ...base, valor: guardado.valor, ...marca },
     });
     return { ok: true as const, corregido: antes !== null };
+  });
+}
+
+/**
+ * «Cerrar de nuevo» un periodo reabierto del dato (anexo 14C, §3.5), de quien administra: vuelve a `cerrado` con el último
+ * cierre del mes, como esté (sin valor, «Sin dato»), con su evento `cierre` y su bitácora (`dato_cerrado_de_nuevo`). Con los
+ * candados de quien reporta: el dato `FOR SHARE` y el periodo `FOR UPDATE`.
+ */
+export async function cerrarDeNuevoElDato(sesion: SesionFlujo, periodoId: number, opciones?: Opciones): Promise<void> {
+  if (!puede(sesion, "indicadores.administrar")) throw new ErrorPermiso();
+  if (!Number.isInteger(periodoId) || periodoId <= 0) throw new ErrorIndicador(PERIODO_NO_EXISTE);
+  const ahora = opciones?.ahora ?? new Date();
+  await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+    const [d] = await tx`SELECT id, nombre FROM variables_compartidas WHERE id = (SELECT variable_id FROM variable_valores WHERE id = ${periodoId}) FOR SHARE`;
+    const [p] = await tx`SELECT * FROM variable_valores WHERE id = ${periodoId} FOR UPDATE`;
+    if (!d || !p || Number(p.variable_id) !== Number(d.id)) throw new ErrorIndicador(PERIODO_NO_EXISTE);
+    if (p.estado === "cerrado" || p.reabierto_en === null) throw new ErrorIndicador(SOLO_REABIERTO);
+    const [c] = await tx`SELECT id, to_char(mes, 'YYYY-MM') AS mes FROM cierres_indicadores ORDER BY mes DESC LIMIT 1`;
+    if (!c) throw new ErrorIndicador(SOLO_REABIERTO);
+    const cierreId = Number(c.id);
+    const sinDato = p.valor === null ? { sinDato: true as const } : {};
+    await tx`UPDATE variable_valores SET estado = 'cerrado', cierre_id = ${cierreId} WHERE id = ${p.id}`;
+    const detalle = { cierreId, mes: c.mes as string, deNuevo: true, ...sinDato, antes: { estado: p.estado as string }, despues: { estado: "cerrado" } };
+    await tx`INSERT INTO variable_eventos (valor_id, tipo, usuario_id, detalle, creado_en)
+      VALUES (${p.id}, 'cierre', ${sesion.usuarioId}, ${tx.json(detalle)}, ${ahora})`;
+    await registrarAuditoria(tx, {
+      usuarioId: sesion.usuarioId,
+      accion: "dato_cerrado_de_nuevo",
+      entidad: "dato_compartido",
+      entidadId: Number(d.id),
+      detalle: { nombre: d.nombre as string, periodo: p.periodo as string, periodoId: Number(p.id), mes: c.mes as string, cierreId, ...sinDato },
+    });
   });
 }
 

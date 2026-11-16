@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { CerrarDeNuevo, DialogoReabrir } from "@/componentes/indicadores/cierre/DialogoReabrir";
+import type { ReaperturaEnTexto } from "@/db/consultas/indicadores/reapertura";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { celda, celdaNumerica, TablaDatos, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
 import type { FilaDelAnio } from "@/db/consultas/indicadores/lectura";
@@ -159,6 +160,7 @@ export function TablaDelAnio({
   puedeVolverACalcular = false,
   puedeActualizarCategorias = false,
   historial = null,
+  reaperturas = null,
   periodosSinCumplir = 3,
 }: {
   filas: FilaDelAnio[];
@@ -177,6 +179,8 @@ export function TablaDelAnio({
   puedeActualizarCategorias?: boolean;
   /** El historial de cada medición corregida, por medición. */
   historial?: Map<number, EntradaDeHistorial[]> | null;
+  /** Lo que se reabre con cada medición cerrada que otras usaron (anexo 14C, §3.5), por medición; las demás, sin lista. */
+  reaperturas?: Map<number, ReaperturaEnTexto> | null;
   /** El parámetro del incumplimiento repetido (spec §10.3), para la marca «3 periodos sin cumplir». */
   periodosSinCumplir?: number;
 }) {
@@ -276,7 +280,9 @@ export function TablaDelAnio({
                       <span className="sr-only">{` ${f.etiqueta}`}</span>
                     </Link>
                   ) : null}
-                  {reabrible ? <DialogoReabrir medicionId={f.medicionId!} codigo={codigo} etiqueta={f.etiqueta} /> : null}
+                  {reabrible ? (
+                    <DialogoReabrir medicionId={f.medicionId!} codigo={codigo} etiqueta={f.etiqueta} reapertura={reaperturas?.get(f.medicionId!) ?? null} />
+                  ) : null}
                   {reabierta ? <CerrarDeNuevo medicionId={f.medicionId!} etiqueta={f.etiqueta} /> : null}
                   {recalculable ? <VolverACalcular medicionId={f.medicionId!} etiqueta={f.etiqueta} /> : null}
                   {actualizable ? <ActualizarCategorias medicionId={f.medicionId!} etiqueta={f.etiqueta} /> : null}

@@ -518,7 +518,9 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   digita nadie:** reportar, «no aplica», históricos y soportes rechazan una medición cuya versión que
   rige es automática; al aprobarse una versión automática se quitan los designados «mide» y se apaga
   el soporte obligatorio. Mientras espera su valor está en **«Falta un dato»**: no es tarea de nadie,
-  no avisa, no vence ni escala (`queFalta`, `tareas.ts`; los pasos de `vencimientos.ts`). **La foto**
+  no avisa, no vence ni escala (`esperaUnDato` de `src/lib/indicadores/origen.ts`, la regla única, que
+  vale también para lo que espera un valor ajeno; `queFalta`, `tareas.ts`; los pasos de
+  `vencimientos.ts`). **La foto**
   (`fotos.ts`): la de un cálculo de estado, al terminar el periodo y solo del más reciente que
   terminó; la de flujo, al vencer el plazo de reporte; la histórica de un cálculo que se llena hacia
   atrás, sin esperar (`cuandoSeToma`, `src/lib/indicadores/fotos.ts`). La toman la pasada de
@@ -597,6 +599,40 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   (a quienes reciben los de Atención, también cuando lo deja la propagación); la alerta y la «Corrección»
   nombran las categorías en Crítico; no exige análisis ni pone «Requiere acción de mejora», y entra a la
   «Corrección» como un nivel más.
+- **El cierre conoce las entradas y la reapertura va en cascada** (anexo 14C, §3.5; `cierre.ts`,
+  `dependencias.ts` y `reapertura.ts`). **Una medición cerrada tiene cerradas todas sus entradas:** lo que
+  usó su valor, por la versión con que se calculó o, sin resultado, por la que rige (`revisarFuentes` y
+  `entradasDe`: los periodos del dato que se juntan, por categoría en un desagregado, y las mediciones del
+  componente que entraron a su valor; mientras la fuente no lo tiene, las que se esperan, sin los históricos
+  que nadie registró). Una histórica no tiene entradas. La única excepción es la del retirado: su medición
+  cerrada no se reabre cuando su fuente se reabre y se corrige, y queda como estaba (a ella tampoco se le
+  pide que lo copiado coincida: no recibe la propagación). El cierre abre antes los periodos de los datos
+  (`asegurarPeriodosDeDatos`, antes de las fotos) y propaga después; **cierra también los periodos de los
+  datos** que terminaron en el mes o antes (los reportados, aunque ya no se pidan, y los pendientes que se
+  piden y vencieron, sin valor: «Sin dato»), no los pendientes en plazo ni los que ya nadie pide
+  (`se_pide` falso); y **no cierra («espera»)** la medición con una entrada que no está cerrada ni se
+  cierra en ese mismo cierre, ni la de un indicador activo cuyo valor copiado ya no coincide con su fuente.
+  La espera se contagia hacia arriba (por niveles, hasta que no cambie, en memoria y con todo bloqueado
+  antes del `UPDATE`), y el resumen la dice (`esperanEntrada`, `datos`). Quién debía lo que quedó «Sin
+  dato» sale de la regla única de «Falta un dato» (`esperaUnDato`, `src/lib/indicadores/origen.ts`, la
+  misma de la lectura, la lista y las tareas): quienes miden, los responsables del dato o el indicador
+  componente. «Cerrar de nuevo» una medición no la cierra con su fuente abierta; un periodo reabierto de un
+  dato se cierra de nuevo con `cerrarDeNuevoElDato`. **La reapertura en cascada** (`reabrirEnCascada`;
+  `reabrirMedicion` delega en ella cuando la medición tiene dependientes cerradas): reabrir un periodo
+  cerrado de un dato (también para reportarlo tarde) o la medición cerrada de un componente reabre en una
+  transacción cada medición cerrada que lo usó y las que dependen de esas (`dependientesDe`), salvo las de
+  un indicador retirado o de otra periodicidad, que no se tocan; la lista se ve antes de confirmar
+  (`listaDeReapertura`, maqueta 13). Cada una queda «Corregida» con el único `UPDATE` que el trigger admite,
+  su evento `reapertura` (`detalle.porFuente = { clase, id }`, nunca el nombre de la fuente), su aviso (que
+  nombra la fuente solo a quien puede verla, por destinatario; a los demás, «una de sus fuentes») y su
+  bitácora; el periodo del dato vuelve a `reportado` o a `pendiente`, `corregido`, con su evento (con
+  `propioResponsable` si quien reabre también lo reporta) y su bitácora (`dato_reabierto`). Una constancia
+  de envío al ente no cambia. **Orden de candados del cierre y de la cascada**, el mismo en los dos: los
+  periodos de los datos `FOR UPDATE`, por id (sin la fila del dato); después los indicadores `FOR SHARE`, por
+  id; y las mediciones `FOR UPDATE`, por `indicador_id, desde, id` (la cascada, de cada indicador todas desde
+  la más temprana que reabre: `recalcularSiguientes` bloquea las siguientes). Con todo bloqueado, la cascada
+  vuelve a calcular la lista y, si apareció una que no quedó bloqueada, no reabre nada; un `40P01` llega
+  legible a la persona (`sinInterbloqueoDelCierre`).
 - **El cumplimiento de un porcentaje con meta se decide con la razón exacta, en enteros**
   (`cumplePorcentaje`, `src/lib/indicadores-documentales/metas.ts`; `conformidad`,
   `src/lib/distribucion/verificacion.ts`), nunca con el entero que se muestra. `conformidad()`

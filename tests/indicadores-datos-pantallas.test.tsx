@@ -30,7 +30,13 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/indicadores/datos",
   useRouter: () => ({ refresh: () => {}, push: () => {} }),
 }));
-vi.mock("@/app/acciones-indicadores", () => ({ reportarDatoCompartido: vi.fn() }));
+vi.mock("@/app/acciones-indicadores", () => ({
+  reportarDatoCompartido: vi.fn(),
+  reabrirDatoCompartido: vi.fn(),
+  cerrarDeNuevoElDatoCompartido: vi.fn(),
+  reabrirMedicionAccion: vi.fn(),
+  cerrarDeNuevoAccion: vi.fn(),
+}));
 vi.mock("@/app/admin/acciones-indicadores", () => ({
   guardarDatoCompartido: vi.fn(),
   designarResponsablesDelDato: vi.fn(),
@@ -280,6 +286,25 @@ describe("lo que ya no se pide y lo que hace quien administra", () => {
       for (const texto of ["Activar el dato", "Desactivar el dato", "Borrar el dato", "Editar el dato", "Cambiar responsables"]) {
         expect(suya).not.toContain(texto);
       }
+    }));
+});
+
+describe("reabrir y cerrar de nuevo un periodo del dato (anexo 14C, §3.5)", () => {
+  it("quien administra reabre un periodo cerrado y cierra de nuevo uno reabierto desde su fila; quien lo reporta, no", () =>
+    enTransaccion(async (tx) => {
+      const { responsable, datoId } = await entorno(tx);
+      await periodoDeDatoDePrueba(tx, { datoId, periodo: "2026-08", valor: "1240100000", estado: "cerrado", ahora: OCT_6 });
+      const reabierto = await periodoDeDatoDePrueba(tx, { datoId, periodo: "2026-07", valor: "1197850000", ahora: OCT_6 });
+      const admin = await sesionAdmin(tx);
+      await tx`UPDATE variable_valores SET reabierto_por = ${admin.usuarioId}, reabierto_en = ${OCT_9}, reapertura_justificacion = 'Faltaban dos facturas'
+        WHERE id = ${reabierto}`;
+      const delAdmin = await pagina(admin, datoId);
+      expect(delAdmin).toContain(`Reabrir<span class="sr-only"> Agosto de 2026</span>`);
+      expect(delAdmin).toContain(`Cerrar de nuevo<span class="sr-only"> Julio de 2026</span>`);
+      expect(delAdmin).toContain("Cerrado");
+      const suya = await pagina(responsable, datoId);
+      expect(suya).not.toContain("Reabrir<");
+      expect(suya).not.toContain("Cerrar de nuevo");
     }));
 });
 

@@ -10,6 +10,7 @@ import { Insignia } from "@/componentes/ui/Insignia";
 import { indicadoresQueLoUsan, opcionesDeDato, pestanaDeDatos } from "@/db/consultas/indicadores/datos";
 import { asegurarPeriodosDeDatos, historialesDeDato, periodosDeDato } from "@/db/consultas/indicadores/datos-periodos";
 import { soportesDeDato } from "@/db/consultas/indicadores/datos-soporte";
+import { reaperturaEnTexto, type ReaperturaEnTexto } from "@/db/consultas/indicadores/reapertura";
 import { puedeReportarDato } from "@/lib/alcance";
 import { puede } from "@/lib/permisos";
 import { exigirDato } from "../_comun";
@@ -20,9 +21,10 @@ export const metadata: Metadata = { title: "Dato compartido" };
 /**
  * La página de un dato compartido (anexo 14C, §4.4 a §4.7, maqueta 12), para quien lo ve: reportar el periodo que se pide
  * más antiguo (quien responde por él), la ficha del dato, sus periodos con el antes y el después de cada corrección, sus
- * soportes y su historial. Quien administra edita el dato y sus responsables aquí mismo, lo activa o lo desactiva y lo borra;
- * lo que una ficha aprobada congela va de solo lectura. Antes de leer abre los periodos que se piden del dato. Para quien no
- * lo ve, no existe.
+ * soportes y su historial. Quien administra edita el dato y sus responsables aquí mismo, lo activa o lo desactiva y lo borra
+ * (lo que una ficha aprobada congela va de solo lectura), y reabre un periodo cerrado, con la lista de lo que se reabre en
+ * cascada, o cierra de nuevo uno reabierto. Antes de leer abre los periodos que se piden del dato. Para quien no lo ve, no
+ * existe.
  */
 export default async function PaginaDato({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -39,6 +41,15 @@ export default async function PaginaDato({ params }: { params: Promise<{ id: str
     administra ? opcionesDeDato(dato) : null,
   ]);
   const reporta = capacidad.puede && puede(sesion, "indicadores.medir");
+  // Quien administra reabre un periodo cerrado (en cascada: el diálogo lista lo que se reabre, anexo 14C §3.5) y cierra de
+  // nuevo uno reabierto.
+  const reaperturas = new Map<number, ReaperturaEnTexto>();
+  if (administra) {
+    for (const p of (periodos ?? []).filter((x) => x.estado === "cerrado")) {
+      const lista = await reaperturaEnTexto(sesion, { clase: "dato", periodoId: p.id });
+      if (lista) reaperturas.set(p.id, lista);
+    }
+  }
   // Del más reciente al más viejo: el último que se pide es el más antiguo.
   const pedido = (periodos ?? []).filter((p) => p.sePide).at(-1) ?? null;
   const ahora = new Date();
@@ -86,6 +97,8 @@ export default async function PaginaDato({ params }: { params: Promise<{ id: str
           historiales={historiales ?? new Map()}
           soportes={soportes ?? new Map()}
           editable={reporta}
+          administra={administra}
+          reaperturas={reaperturas}
           ahora={ahora}
         />
       </section>

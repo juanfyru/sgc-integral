@@ -55,7 +55,8 @@ export default async function PaginaCierre({ searchParams }: { searchParams: Pro
   if (mes && !opciones.includes(mes)) opciones.unshift(mes);
   const [resumen, anteriores, datos] = await Promise.all([mes ? resumenDeCierre(sesion, mes, { ahora }) : null, cierres(), pestanaDeDatos(sesion)]);
   const aviso = avisoDeCierre(sp);
-  const periodos = Object.fromEntries((resumen?.sinDato ?? []).map((s) => [s.periodo, periodoDe(s.periodo, zona)?.etiqueta ?? s.periodo]));
+  const claves = [...(resumen?.sinDato ?? []), ...(resumen?.esperanEntrada ?? [])].map((s) => s.periodo);
+  const periodos = Object.fromEntries(claves.map((c) => [c, periodoDe(c, zona)?.etiqueta ?? c]));
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -106,7 +107,7 @@ export default async function PaginaCierre({ searchParams }: { searchParams: Pro
 
       {resumen && mes ? (
         resumen.yaCerrado ? (
-          <p className="text-sm">{`${etiquetaDeMes(mes)} ya está cerrado. Para corregir una de sus mediciones, reábrala desde la página del indicador.`}</p>
+          <p className="text-sm">{`${etiquetaDeMes(mes)} ya está cerrado. Para corregir una de sus mediciones, reábrala desde la página del indicador; un periodo de un dato compartido, desde la página del dato.`}</p>
         ) : (
           // Por mes: tras cerrar, la página vuelve con el siguiente y su confirmación empieza cerrada.
           <ResumenDeCierre key={resumen.mes} resumen={resumen} mes={etiquetaDeMes(mes).toLowerCase()} periodos={periodos} />

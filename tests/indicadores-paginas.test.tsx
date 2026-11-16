@@ -69,6 +69,7 @@ import { GET as excelDeResultados } from "@/app/(app)/indicadores/excel/route";
 import ExcelJS from "exceljs";
 import { NextRequest } from "next/server";
 import { crearSesion } from "@/lib/sesion";
+import { encabezadoDeLaLista, ListaDeReapertura, textoDelBoton } from "@/componentes/indicadores/cierre/ListaDeReapertura";
 import { ResumenDeCierre } from "@/componentes/indicadores/cierre/ResumenDeCierre";
 import { TablaDelAnio } from "@/componentes/indicadores/medicion/TablaDelAnio";
 import { obtenerSql } from "@/db/cliente";
@@ -80,6 +81,7 @@ import type { FilaDelAnio } from "@/db/consultas/indicadores/lectura";
 import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
 import { descartarIndicador, retirar } from "@/db/consultas/indicadores/operacion";
 import type { DatosFicha } from "@/lib/esquemas/indicadores";
+import { fraseDeDatosDelCierre } from "@/lib/indicadores/cierre";
 import type { SesionValida } from "@/lib/sesion";
 import { indicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
@@ -505,6 +507,8 @@ describe("el resumen del cierre y la tabla del año, sin navegador", () => {
     enPlazo: 0,
     historicosSinRegistrar: 0,
     porProceso: [],
+    datos: { seCierran: 0, sinDato: 0, esperan: 0 },
+    esperanEntrada: [],
   };
   const resumen = (o: Partial<DatosDelResumen>) =>
     renderToStaticMarkup(<ResumenDeCierre resumen={{ ...RESUMEN, ...o }} mes="marzo de 2003" periodos={{}} />);
@@ -535,6 +539,51 @@ describe("el resumen del cierre y la tabla del año, sin navegador", () => {
     const soloPlazo = resumen({ enPlazo: 2 });
     expect(soloPlazo).toContain("2 mediciones siguen dentro de su plazo de reporte");
     expect(soloPlazo).not.toContain("histórico");
+  });
+
+  it("los datos compartidos que se cierran y las mediciones que esperan una fuente (anexo 14C, §3.5)", () => {
+    expect(resumen({})).toContain("Ningún periodo de un dato compartido se cierra.");
+    expect(resumen({})).not.toContain("Esperan una fuente");
+    const html = resumen({
+      datos: { seCierran: 3, sinDato: 1, esperan: 2 },
+      esperanEntrada: [{ codigo: "ZZ-ID-002", periodo: "2003-03", espera: "El dato «Total facturado en el mes», marzo de 2003" }],
+    });
+    expect(html).toContain("Se cierran 3 periodos de datos compartidos que terminaron en marzo de 2003 o antes; 1 venció sin que lo reportaran: queda sin dato.");
+    expect(html).toContain("Esperan una fuente");
+    expect(html.match(/<table/g)).toHaveLength(1);
+    expect(html).toContain("El dato «Total facturado en el mes», marzo de 2003");
+    expect(html).toContain("1 medición espera una fuente que no se cierra con este cierre: queda para el siguiente.");
+    expect(html).toContain("2 periodos de datos compartidos siguen dentro de su plazo de reporte: quedan para el siguiente cierre.");
+    expect(fraseDeDatosDelCierre({ seCierran: 0, sinDato: 0 })).toBeNull();
+    expect(fraseDeDatosDelCierre({ seCierran: 1, sinDato: 0 })).toBe("También se cerrará 1 periodo de un dato compartido.");
+    expect(fraseDeDatosDelCierre({ seCierran: 3, sinDato: 1 })).toBe("También se cerrarán 3 periodos de datos compartidos, 1 sin dato.");
+  });
+
+  it("la lista de la reapertura en cascada (maqueta 13): lo que se reabre, lo que no y la constancia ya enviada", () => {
+    const reapertura = {
+      titulo: "Reabrir «Total facturado en el mes» · agosto de 2026",
+      deDato: true,
+      seReabren: [
+        { id: 1, texto: "FAC-ID-001 Porcentaje de glosa inicial · agosto de 2026", constancia: null },
+        { id: 2, texto: "CAR-ID-002 Rotación de cartera · tercer trimestre de 2026", constancia: "Ya se reportó al ente el 12 oct 2026" },
+      ],
+      noSeReabren: [{ id: 3, texto: "FAC-ID-004 Facturación radicada a tiempo · agosto de 2026 · indicador retirado: queda como está" }],
+    };
+    const html = renderToStaticMarkup(<ListaDeReapertura reapertura={reapertura} />);
+    expect(html).toContain("Se reabren estas 2 mediciones cerradas y quedan «Corregida»:");
+    expect(html).toContain("Ya se reportó al ente el 12 oct 2026");
+    expect(html).toContain("No se reabre:");
+    expect(html).toContain("indicador retirado: queda como está");
+    expect(html).toContain("La constancia de envío al ente no cambia: guarda lo que se envió.");
+    expect(textoDelBoton(reapertura)).toBe("Reabrir el dato y 2 mediciones");
+    expect(textoDelBoton({ ...reapertura, seReabren: reapertura.seReabren.slice(0, 1) })).toBe("Reabrir el dato y 1 medición");
+    expect(textoDelBoton({ ...reapertura, seReabren: [] })).toBe("Reabrir el dato");
+    expect(textoDelBoton({ ...reapertura, deDato: false })).toBe("Reabrir 2 mediciones");
+    expect(encabezadoDeLaLista(1)).toBe("Se reabre esta medición cerrada y queda «Corregida»:");
+    const sinNada = renderToStaticMarkup(<ListaDeReapertura reapertura={{ ...reapertura, seReabren: [], noSeReabren: [] }} />);
+    expect(sinNada).toContain("Ninguna medición cerrada usa este periodo: solo se reabre el dato.");
+    expect(sinNada).not.toContain("No se reabre");
+    expect(sinNada).not.toContain("La constancia de envío");
   });
 
   it("en la tabla del año, «Reabrir» y «Cerrar de nuevo» no se parten y el historial abierto tiene un ancho que se lee", () => {

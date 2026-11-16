@@ -880,6 +880,18 @@ export function describirEvento(e: EventoAuditoria): string {
     }
     case "dato_soporte_quitado":
       return `Quitó el soporte «${texto(d.archivo) ?? "?"}» ${delPeriodoDelDato(nombre, d.periodo)}${d.sinResponsable === true ? " (sin nadie más que pudiera reportarlo)" : ""}`;
+    // ── Indicadores (14C): la reapertura en cascada y «Cerrar de nuevo» de un periodo de un dato
+    case "dato_reabierto": {
+      const reabiertas = numero(d.reabiertas);
+      const conEllas = reabiertas !== null && reabiertas > 0 ? ` y ${cuenta(reabiertas, "medición que lo usó", "mediciones que lo usaron")}` : "";
+      const marca = d.propioResponsable === true ? ", que también reporta" : d.sinResponsable === true ? " (sin nadie más que pudiera reportarlo)" : "";
+      return `Reabrió ${periodoDelDato(nombre, d.periodo)}${marca}${conEllas}${conMotivo(d.justificacion)}`;
+    }
+    case "dato_cerrado_de_nuevo": {
+      const mes = texto(d.mes);
+      const etiqueta = mes ? (periodoDe(mes, zonaHoraria())?.etiqueta ?? mes) : null;
+      return `Cerró de nuevo ${periodoDelDato(nombre, d.periodo)}${etiqueta ? ` (cierre de ${etiqueta})` : ""}${d.sinDato === true ? ", sin dato" : ""}`;
+    }
     // ── Indicadores (14C): dimensiones y categorías
     case "dimension_guardada":
       return d.creada === true
@@ -1046,8 +1058,11 @@ export function describirEvento(e: EventoAuditoria): string {
       const cerradas = numero(d.cerradas);
       return `Cerró ${etiqueta} en los indicadores${cerradas === null ? "" : `: ${cuenta(cerradas, "medición cerrada", "mediciones cerradas")}`}`;
     }
-    case "medicion_reabierta":
-      return `Reabrió ${medicionDe(cod, d.periodo)}${d.propioMedidor === true ? ", que también mide" : ""}${conMotivo(d.justificacion)}`;
+    case "medicion_reabierta": {
+      // La fuente de una cascada va solo por su referencia (`porFuente`): la frase no la nombra.
+      const porFuente = typeof d.porFuente === "object" && d.porFuente !== null ? ", por un cambio en una de sus fuentes" : "";
+      return `Reabrió ${medicionDe(cod, d.periodo)}${d.propioMedidor === true ? ", que también mide" : ""}${porFuente}${conMotivo(d.justificacion)}`;
+    }
     case "medicion_cerrada_de_nuevo": {
       const mes = texto(d.mes);
       const etiqueta = mes ? (periodoDe(mes, zonaHoraria())?.etiqueta ?? mes) : null;
@@ -1277,6 +1292,8 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   dato_reportado: "Reportó un dato compartido",
   dato_corregido: "Corrigió un dato compartido",
   dato_soporte_quitado: "Quitó un soporte de un dato compartido",
+  dato_reabierto: "Reabrió un periodo de un dato compartido",
+  dato_cerrado_de_nuevo: "Cerró de nuevo un periodo de un dato compartido",
   dimension_guardada: "Guardó una dimensión de indicadores",
   dimension_activada: "Activó una dimensión de indicadores",
   dimension_desactivada: "Desactivó una dimensión de indicadores",

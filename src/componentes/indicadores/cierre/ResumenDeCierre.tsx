@@ -11,7 +11,7 @@ import { useTituloAlDesaparecer } from "@/componentes/ui/foco";
 import { celda, celdaNumerica, TablaDatos } from "@/componentes/ui/TablaDatos";
 import { TarjetaCifra } from "@/componentes/ui/TarjetaCifra";
 import type { ResumenDeCierre as Resumen } from "@/db/consultas/indicadores/cierre";
-import { fraseDelCierre, frasesDeNoSeCierran } from "@/lib/indicadores/cierre";
+import { fraseDeDatosDelCierre, fraseDelCierre, frasesDeNoSeCierran } from "@/lib/indicadores/cierre";
 import { cuenta } from "@/lib/plural";
 
 const COLUMNAS_SIN_DATO = [
@@ -19,6 +19,11 @@ const COLUMNAS_SIN_DATO = [
   { clave: "indicador", etiqueta: "Indicador" },
   { clave: "periodo", etiqueta: "Periodo" },
   { clave: "quien", etiqueta: "Debía medirla" },
+];
+const COLUMNAS_ESPERAN = [
+  { clave: "indicador", etiqueta: "Indicador" },
+  { clave: "periodo", etiqueta: "Periodo" },
+  { clave: "espera", etiqueta: "Espera" },
 ];
 const COLUMNAS_POR_PROCESO = [
   { clave: "proceso", etiqueta: "Proceso" },
@@ -51,9 +56,10 @@ function ConfirmarCierre({ resumen, mes }: { resumen: Resumen; mes: string }) {
               {titulo}
             </p>
             <p className="text-sm">{fraseDelCierre({ ...resumen, sinDato: resumen.sinDato.length })}</p>
+            {fraseDeDatosDelCierre(resumen.datos) ? <p className="text-sm">{fraseDeDatosDelCierre(resumen.datos)}</p> : null}
             <p className="text-sm text-muted-foreground">
               Después del cierre, los datos, el resultado, el análisis y los soportes de esas mediciones no cambian: para corregir una hay que
-              reabrirla con una justificación. Las observaciones se siguen admitiendo. No pide clave.
+              reabrirla con una justificación, y con ella se reabre lo que la usó. Las observaciones se siguen admitiendo. No pide clave.
             </p>
             <ErrorAccion estado={estado} />
             <div className="flex flex-wrap justify-end gap-2">
@@ -73,12 +79,13 @@ function ConfirmarCierre({ resumen, mes }: { resumen: Resumen; mes: string }) {
 
 /**
  * El resumen previo del cierre (spec §9.2): cuántas mediciones se cerrarán y cómo, en total y por proceso, las que
- * quedarán sin dato con quién debía medirlas, las observaciones sin respuesta y los dos grupos que no se cierran
- * (F14-DC3); al final, la confirmación. `mes` es el mes en palabras, en minúscula («marzo de 2026»); `periodos`, cada periodo en palabras.
+ * quedarán sin dato con quién debía, las observaciones sin respuesta, los periodos de los datos compartidos que se cierran y
+ * los grupos que no se cierran (F14-DC3; anexo 14C, §3.5: también las que esperan una fuente, con lo que esperan); al final,
+ * la confirmación. `mes` es el mes en palabras, en minúscula («marzo de 2026»); `periodos`, cada periodo en palabras.
  */
 export function ResumenDeCierre({ resumen, mes, periodos }: { resumen: Resumen; mes: string; periodos: Readonly<Record<string, string>> }) {
   const r = resumen;
-  const noSeCierran = frasesDeNoSeCierran(r);
+  const noSeCierran = frasesDeNoSeCierran({ ...r, esperanEntrada: r.esperanEntrada.length, datosEnPlazo: r.datos.esperan });
   return (
     <section aria-labelledby="cierre-resumen" className="flex min-w-0 flex-col gap-4">
       <h2 id="cierre-resumen" className="text-lg font-semibold">
@@ -142,6 +149,37 @@ export function ResumenDeCierre({ resumen, mes, periodos }: { resumen: Resumen; 
           </TablaDatos>
         )}
       </section>
+
+      <section aria-labelledby="cierre-datos" className="flex min-w-0 flex-col gap-2">
+        <h3 id="cierre-datos" className="font-semibold">
+          Datos compartidos
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          {r.datos.seCierran === 0
+            ? "Ningún periodo de un dato compartido se cierra."
+            : `Se ${r.datos.seCierran === 1 ? "cierra" : "cierran"} ${cuenta(r.datos.seCierran, "periodo", "periodos")} de datos compartidos que terminaron en ${mes} o antes${r.datos.sinDato > 0 ? `; ${cuenta(r.datos.sinDato, "venció sin que lo reportaran: queda", "vencieron sin que los reportaran: quedan")} sin dato` : ""}.`}
+        </p>
+      </section>
+
+      {r.esperanEntrada.length > 0 ? (
+        <section aria-labelledby="cierre-esperan" className="flex min-w-0 flex-col gap-2">
+          <h3 id="cierre-esperan" className="font-semibold">
+            Esperan una fuente
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            Una medición se cierra cuando lo que usa su valor está cerrado: estas quedan para el siguiente cierre.
+          </p>
+          <TablaDatos titulo="Mediciones que esperan una fuente" columnas={COLUMNAS_ESPERAN} filas={r.esperanEntrada.length} vacio="">
+            {r.esperanEntrada.map((e) => (
+              <tr key={`${e.codigo}-${e.periodo}`}>
+                <td className={`${celda} font-mono text-xs`}>{e.codigo}</td>
+                <td className={celda}>{periodos[e.periodo] ?? e.periodo}</td>
+                <td className={`${celda} break-words`}>{e.espera}</td>
+              </tr>
+            ))}
+          </TablaDatos>
+        </section>
+      ) : null}
 
       <ul className="flex list-none flex-col gap-2 text-sm">
         <li>

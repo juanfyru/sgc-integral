@@ -18,7 +18,7 @@ import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { alcanceAdmitido, CALCULOS, type AlcanceDeCalculo, type ClaveDeCalculo } from "@/lib/indicadores/calculos/registro";
 import { reportesATiempo, type MedicionParaPlazo } from "@/lib/indicadores/calculos/reportes-a-tiempo";
 import { objetivosCumplidos } from "@/lib/indicadores/objetivos";
-import { alguienMide } from "@/lib/indicadores/origen";
+import { alguienMideCon } from "@/lib/indicadores/origen";
 import { versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import { MOTIVO_COMPONENTE_NO_APLICA, type OrigenDato, type Periodicidad } from "@/lib/indicadores/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -118,7 +118,7 @@ async function reportesDelPeriodo(sql: Cliente, p: PeticionDeCalculo): Promise<V
     const clave = f.periodo as string;
     const periodo = periodoDe(clave, zona);
     const version = periodo ? versionQueRigeEntre(f.versiones as VersionQueRige[], periodo, zona) : null;
-    const mide = version && alguienMide({ origenDato: version.origenDato, variables: version.propias.map((letra) => ({ letra, origen: "propia" as const })) });
+    const mide = version && alguienMideCon(version.origenDato, version.propias);
     if (!version || esDeOtraPeriodicidad(clave, version) || !mide) return [];
     return [{ venceEn: new Date(f.vence_en as Date), primerReporteEn: f.primer_reporte_en === null ? null : new Date(f.primer_reporte_en as Date) }];
   });
