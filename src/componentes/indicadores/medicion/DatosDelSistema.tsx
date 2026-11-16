@@ -84,14 +84,18 @@ export const FALTA_UN_COMPONENTE = "Falta un dato de un componente.";
 /**
  * El aviso de «Falta un dato» de una variable ajena que aún no llega (anexo 14C, §3.1, maqueta 14); `null` si ya llegó o si
  * la variable es propia. Con `mide` (quien mide y aún no reportó lo suyo), le dice que ya puede reportarlo. La de un
- * componente que la persona no ve, `FALTA_UN_COMPONENTE`.
+ * componente que la persona no ve, `FALTA_UN_COMPONENTE`. Del dato dice cuándo vence su periodo pendiente o, si esa fecha ya
+ * pasó a `ahora`, que venció.
  */
-export function avisoDeFalta(v: VariableDeReporte, mide: boolean): string | null {
+export function avisoDeFalta(v: VariableDeReporte, mide: boolean, ahora: Date = new Date()): string | null {
   const a = v.ajena;
   if (a?.oculta) return a.llego ? null : FALTA_UN_COMPONENTE;
   if (!a || a.valor !== null) return null;
   if (a.clase === "indicador") return `Falta un dato. Sale de ${deIndicador(a)}, que aún no tiene resultado.`;
-  const quien = a.proceso ? `«${a.nombre}» lo reporta ${a.proceso}${a.venceEl ? `; vence el ${a.venceEl}` : ""}.` : `«${a.nombre}» aún no se reporta.`;
+  const vencio = a.venceEn !== null && new Date(a.venceEn).getTime() < ahora.getTime();
+  const quien = a.proceso
+    ? `«${a.nombre}» lo reporta ${a.proceso}${a.venceEl ? `; ${vencio ? "venció" : "vence"} el ${a.venceEl}` : ""}.`
+    : `«${a.nombre}» aún no se reporta.`;
   const despues = mide
     ? "Usted ya puede reportar lo suyo: el resultado se calcula solo cuando el dato llegue."
     : "El resultado se calcula solo cuando el dato llegue.";

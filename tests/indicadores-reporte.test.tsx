@@ -62,7 +62,7 @@ vi.mock("@/app/acciones-indicadores", () => ({
 
 import PaginaIndicador from "@/app/(app)/indicadores/[codigo]/page";
 import PaginaReportar, { generateMetadata as tituloDeReportar } from "@/app/(app)/indicadores/[codigo]/reportar/[periodo]/page";
-import { DatosDelSistema } from "@/componentes/indicadores/medicion/DatosDelSistema";
+import { avisoDeFalta, DatosDelSistema } from "@/componentes/indicadores/medicion/DatosDelSistema";
 import { destinoDelFoco, DialogoMetas } from "@/componentes/indicadores/medicion/DialogoMetas";
 import { FormularioAnalisis } from "@/componentes/indicadores/medicion/FormularioAnalisis";
 import { FormularioReporte } from "@/componentes/indicadores/medicion/FormularioReporte";
@@ -1078,8 +1078,9 @@ describe("la variable que no digita quien mide (anexo 14C, §3.1)", () => {
     reporto: null,
     reportadoEn: null,
     reportadoEl: null,
-    venceEn: new Date("2026-11-11T04:59:59.999Z"),
-    venceEl: "10 de noviembre de 2026",
+    // Lejos en el futuro: el aviso dice «vence» o «venció» según la hora en que se pinta.
+    venceEn: new Date("2099-11-11T04:59:59.999Z"),
+    venceEl: "10 de noviembre de 2099",
   };
   const conDato = (ajena: Partial<VariableAjena> = {}): DatosDeReporte => ({
     ...DATOS,
@@ -1091,7 +1092,7 @@ describe("la variable que no digita quien mide (anexo 14C, §3.1)", () => {
   });
   const formulario = (datos: DatosDeReporte) => renderToStaticMarkup(<FormularioReporte datos={datos} volver="/indicadores/FAC-ID-001" />);
   const FALTA_EL_DATO =
-    "Falta un dato. «Total facturado en el mes» lo reporta Facturación; vence el 10 de noviembre de 2026. Usted ya puede reportar lo suyo: el resultado se calcula solo cuando el dato llegue.";
+    "Falta un dato. «Total facturado en el mes» lo reporta Facturación; vence el 10 de noviembre de 2099. Usted ya puede reportar lo suyo: el resultado se calcula solo cuando el dato llegue.";
 
   it("sin el dato: lo propio tiene su campo, el dato aparece fijo sin campo, con el aviso y «Reportar lo mío»", () => {
     const html = formulario(conDato());
@@ -1110,10 +1111,18 @@ describe("la variable que no digita quien mide (anexo 14C, §3.1)", () => {
     );
   });
 
+  it("un dato cuyo plazo ya pasó «venció», no «vence» (ola final, O10)", () => {
+    const [, variable] = conDato({ venceEn: new Date("2026-11-11T04:59:59.999Z"), venceEl: "10 de noviembre de 2026" }).variables;
+    expect(avisoDeFalta(variable, true, new Date("2026-11-10T15:00:00Z"))).toContain("lo reporta Facturación; vence el 10 de noviembre de 2026.");
+    expect(avisoDeFalta(variable, true, new Date("2026-11-16T15:00:00Z"))).toContain("lo reporta Facturación; venció el 10 de noviembre de 2026.");
+    // En la pantalla, con la hora de hoy: ese plazo ya pasó.
+    expect(formulario(conDato({ venceEn: new Date("2020-01-11T04:59:59.999Z"), venceEl: "10 de enero de 2020" }))).toContain("; venció el 10 de enero de 2020.");
+  });
+
   it("con lo propio ya reportado y el dato sin llegar: el aviso no le pide que reporte lo suyo", () => {
     const html = formulario({ ...conDato(), reportada: true });
     expect(html).toContain(
-      ">Falta un dato. «Total facturado en el mes» lo reporta Facturación; vence el 10 de noviembre de 2026. El resultado se calcula solo cuando el dato llegue.</p>",
+      ">Falta un dato. «Total facturado en el mes» lo reporta Facturación; vence el 10 de noviembre de 2099. El resultado se calcula solo cuando el dato llegue.</p>",
     );
     expect(html).not.toContain("Usted ya puede reportar lo suyo");
   });
@@ -1204,7 +1213,7 @@ describe("la variable que no digita quien mide (anexo 14C, §3.1)", () => {
     expect(html).not.toContain("lo calcula el sistema");
     expect(html).not.toContain("<input");
     expect(html).toContain(
-      ">Falta un dato. «Total facturado en el mes» lo reporta Facturación; vence el 10 de noviembre de 2026. El resultado se calcula solo cuando el dato llegue.</p>",
+      ">Falta un dato. «Total facturado en el mes» lo reporta Facturación; vence el 10 de noviembre de 2099. El resultado se calcula solo cuando el dato llegue.</p>",
     );
     expect(html).not.toContain("Usted ya puede reportar lo suyo");
   });
