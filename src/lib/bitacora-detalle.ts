@@ -883,9 +883,14 @@ export function describirEvento(e: EventoAuditoria): string {
     // ── Indicadores (14C): la reapertura en cascada y «Cerrar de nuevo» de un periodo de un dato
     case "dato_reabierto": {
       const reabiertas = numero(d.reabiertas);
-      const conEllas = reabiertas !== null && reabiertas > 0 ? ` y ${cuenta(reabiertas, "medición que lo usó", "mediciones que lo usaron")}` : "";
-      const marca = d.propioResponsable === true ? ", que también reporta" : d.sinResponsable === true ? " (sin nadie más que pudiera reportarlo)" : "";
-      return `Reabrió ${periodoDelDato(nombre, d.periodo)}${marca}${conEllas}${conMotivo(d.justificacion)}`;
+      const conEllas = reabiertas !== null && reabiertas > 0 ? `, y con él ${cuenta(reabiertas, "medición que lo usó", "mediciones que lo usaron")}` : "";
+      const marca =
+        d.propioResponsable === true
+          ? "; quien lo reabrió también lo reporta"
+          : d.sinResponsable === true
+            ? " (sin nadie más que pudiera reportarlo)"
+            : "";
+      return `Reabrió ${periodoDelDato(nombre, d.periodo)}${conEllas}${marca}${conMotivo(d.justificacion)}`;
     }
     case "dato_cerrado_de_nuevo": {
       const mes = texto(d.mes);
@@ -1059,8 +1064,9 @@ export function describirEvento(e: EventoAuditoria): string {
       return `Cerró ${etiqueta} en los indicadores${cerradas === null ? "" : `: ${cuenta(cerradas, "medición cerrada", "mediciones cerradas")}`}`;
     }
     case "medicion_reabierta": {
-      // La fuente de una cascada va solo por su referencia (`porFuente`): la frase no la nombra.
-      const porFuente = typeof d.porFuente === "object" && d.porFuente !== null ? ", por un cambio en una de sus fuentes" : "";
+      // La fuente de una cascada va solo por su referencia (`porFuente`): la frase dice qué fue, sin nombrarla.
+      const clase = typeof d.porFuente === "object" && d.porFuente !== null ? (d.porFuente as { clase?: unknown }).clase : undefined;
+      const porFuente = clase === "medicion" ? ", por un cambio en un componente" : clase === "dato" ? ", por un cambio en un dato compartido" : "";
       return `Reabrió ${medicionDe(cod, d.periodo)}${d.propioMedidor === true ? ", que también mide" : ""}${porFuente}${conMotivo(d.justificacion)}`;
     }
     case "medicion_cerrada_de_nuevo": {

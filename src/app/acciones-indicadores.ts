@@ -442,20 +442,22 @@ export async function cerrarMesAccion(_prev: EstadoAccion, formData: FormData): 
  */
 export async function reabrirMedicionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
-    const { justificacion } = parsearFormulario(formData, EsquemaReapertura, { omitir: ["id"] });
-    await reabrirMedicion(sesion, { medicionId: idNumerico(formData, "id"), justificacion }).catch(sinInterbloqueoDelCierre);
+    const { justificacion, vistas } = parsearFormulario(formData, EsquemaReapertura, { omitir: ["id"] });
+    await reabrirMedicion(sesion, { medicionId: idNumerico(formData, "id"), justificacion, ...(vistas ? { vistas } : {}) }).catch(sinInterbloqueoDelCierre);
     await propagarSinFallar();
   });
 }
 
 /**
  * `id` es el del periodo cerrado de un dato compartido (anexo 14C, §3.5). Lo reabre en cascada, con las mediciones cerradas
- * que lo usaron, con justificación y sin clave; no navega: la página del dato se repinta.
+ * que lo usaron, con justificación y sin clave, si son las que listó el diálogo (`vistas`); no navega: la página del dato se
+ * repinta.
  */
 export async function reabrirDatoCompartido(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
-    const { justificacion } = parsearFormulario(formData, EsquemaReapertura, { omitir: ["id"] });
-    await reabrirEnCascada(sesion, { fuente: { clase: "dato", periodoId: idNumerico(formData, "id") }, justificacion }).catch(sinInterbloqueoDelCierre);
+    const { justificacion, vistas } = parsearFormulario(formData, EsquemaReapertura, { omitir: ["id"] });
+    const fuente = { clase: "dato" as const, periodoId: idNumerico(formData, "id") };
+    await reabrirEnCascada(sesion, { fuente, justificacion, ...(vistas ? { vistas } : {}) }).catch(sinInterbloqueoDelCierre);
   });
 }
 

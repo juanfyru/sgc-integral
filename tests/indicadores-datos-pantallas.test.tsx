@@ -294,6 +294,8 @@ describe("reabrir y cerrar de nuevo un periodo del dato (anexo 14C, §3.5)", () 
     enTransaccion(async (tx) => {
       const { responsable, datoId } = await entorno(tx);
       await periodoDeDatoDePrueba(tx, { datoId, periodo: "2026-08", valor: "1240100000", estado: "cerrado", ahora: OCT_6 });
+      const sinValor = await periodoDeDatoDePrueba(tx, { datoId, periodo: "2026-06", estado: "cerrado", ahora: OCT_6 });
+      await tx`UPDATE variable_valores SET valor = NULL, reportado_en = NULL WHERE id = ${sinValor}`;
       const reabierto = await periodoDeDatoDePrueba(tx, { datoId, periodo: "2026-07", valor: "1197850000", ahora: OCT_6 });
       const admin = await sesionAdmin(tx);
       await tx`UPDATE variable_valores SET reabierto_por = ${admin.usuarioId}, reabierto_en = ${OCT_9}, reapertura_justificacion = 'Faltaban dos facturas'
@@ -301,7 +303,12 @@ describe("reabrir y cerrar de nuevo un periodo del dato (anexo 14C, §3.5)", () 
       const delAdmin = await pagina(admin, datoId);
       expect(delAdmin).toContain(`Reabrir<span class="sr-only"> Agosto de 2026</span>`);
       expect(delAdmin).toContain(`Cerrar de nuevo<span class="sr-only"> Julio de 2026</span>`);
-      expect(delAdmin).toContain("Cerrado");
+      // La celda del estado: con valor, «Cerrado»; sin él, «Cerrado sin dato».
+      expect(delAdmin).toMatch(/>Cerrado<\/span>/);
+      expect(delAdmin).toMatch(/>Cerrado sin dato<\/span>/);
+      expect(delAdmin).toContain(`Reabrir<span class="sr-only"> Junio de 2026</span>`);
+      // El foco tiene a dónde ir cuando el botón pulsado se va de la fila (M3): el título es enfocable.
+      expect(delAdmin).toContain('<h1 tabindex="-1"');
       const suya = await pagina(responsable, datoId);
       expect(suya).not.toContain("Reabrir<");
       expect(suya).not.toContain("Cerrar de nuevo");

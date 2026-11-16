@@ -23,10 +23,14 @@
  *   `reapertura` (`reabrirLaMedicion`, `reapertura.ts`). Con dependientes cerrados, la reapertura va en cascada
  *   (`reabrirEnCascada`). Se cierra otra vez con el siguiente cierre o con «Cerrar de nuevo», si sus fuentes están cerradas.
  *
- * Candados (los mismos de la reapertura en cascada, `reapertura.ts`): primero los periodos de los datos `FOR UPDATE`, por id;
- * después los indicadores `FOR SHARE`, por id; y las mediciones `FOR UPDATE`, por indicador, periodo e id (el orden de
- * `registrarHistoricos` dentro de un indicador): así un cierre no se interbloquea con un reporte, con un lote de históricos
- * ni con una cascada. Las fuentes se leen sin candado; lo que el cierre revisa de ellas está ya bloqueado o cerrado.
+ * Candados (los mismos de la reapertura en cascada, `reapertura.ts`): antes que nada el candado consultivo del cierre
+ * (`serializarCierreYReapertura`, la primera sentencia de la transacción del cierre, de la cascada, de la reapertura directa y
+ * de «Cerrar de nuevo»); después los periodos de los datos `FOR UPDATE`, por id; los indicadores `FOR SHARE`, por id; y las
+ * mediciones `FOR UPDATE`, por indicador, periodo e id (el orden de `registrarHistoricos` dentro de un indicador): así un
+ * cierre no se interbloquea con un reporte ni con un lote de históricos. Las fuentes se leen sin candado: lo que el cierre
+ * revisa de ellas está bloqueado por él o cerrado, y el candado consultivo impide que una reapertura lo cambie mientras tanto
+ * (sin él, el cierre podía ver cerrada una entrada que la cascada reabría a la vez y cerrar lo que la usa). Toda lectura que
+ * decide va después del candado, en la misma transacción; lo que se lee antes solo elige el camino y se vuelve a leer dentro.
  */
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
@@ -48,7 +52,16 @@ import { tomarFotos } from "./fotos";
 import { analisisDe, asegurarMediciones, contextoDeMedicion, esDeOtraPeriodicidad, mide, NO_EXISTE, versionesAprobadas, type VersionDeCalculo } from "./mediciones";
 import { sinRespuestaPorProceso } from "./observaciones";
 import { propagarSinFallar } from "./propagacion";
-import { COMO_ADMINISTRADOR, justificacionDe, LO_QUE_SE_REABRE_CAMBIO, reabrirEnCascada, reabrirLaMedicion } from "./reapertura";
+import {
+  COMO_ADMINISTRADOR,
+  fuenteEnTexto,
+  justificacionDe,
+  LO_QUE_SE_REABRE_CAMBIO,
+  OCULTA,
+  reabrirEnCascada,
+  reabrirLaMedicion,
+  serializarCierreYReapertura,
+} from "./reapertura";
 
 export type { EntradaDeHistorial } from "@/lib/indicadores/historial";
 
@@ -60,6 +73,7 @@ const YA_CERRADO = "Ese mes ya está cerrado";
 const SOLO_CERRADA = "Solo se reabre una medición cerrada";
 const NO_REABIERTA = "Solo se cierra de nuevo una medición reabierta";
 const FUENTE_ABIERTA = "Su fuente sigue abierta: ciérrela primero";
+const NO_COINCIDE_AL_CERRAR = "Lo copiado de sus fuentes aún no está al día: vuelva a intentarlo en un momento";
 
 /** Las cuentas de un proceso en el resumen (spec §9.2). */
 export type CuentasDeProceso = {
@@ -528,6 +542,7 @@ export async function cerrarMes(sesion: SesionFlujo, mes: string, opciones?: Opc
   await abrirPeriodosDelCierre(sql, periodo, ahora);
   try {
     return await enTransaccion(sql, async (tx) => {
+      await serializarCierreYReapertura(tx);
       if (await estaCerrado(tx, periodo)) throw new ErrorIndicador(YA_CERRADO);
       const c = await clasificar(tx, periodo.hasta, ahora, true);
       const resumen = cuentas(c, await sinRespuestaPorProceso(tx, { hasta: periodo.hasta }));
@@ -616,10 +631,15 @@ const idValido = (id: number) => Number.isSafeInteger(id) && id > 0;
  * Reabre una medición cerrada (spec §8.7, F14-DC31) con justificación y sin clave: queda «Corregida», vuelve a
  * `reportada` o a `abierta` y se avisa a quienes miden (`reabrirLaMedicion`, `reapertura.ts`). Un indicador retirado no se
  * reabre: nadie podría corregirlo. Si otras mediciones cerradas la usaron (es la de un componente), va en cascada
- * (`reabrirEnCascada`, anexo 14C §3.5): se reabren también. Sin dependientes, en su transacción, y si una aparece entre la
- * lectura y los candados, no reabre nada (`LO_QUE_SE_REABRE_CAMBIO`).
+ * (`reabrirEnCascada`, anexo 14C §3.5): se reabren también; también con `vistas` (lo que listó el diálogo), que la cascada
+ * compara con lo que reabriría. Sin dependientes, en su transacción, tras el candado consultivo del cierre; si una aparece
+ * entre la lectura y los candados, no reabre nada (`LO_QUE_SE_REABRE_CAMBIO`).
  */
-export async function reabrirMedicion(sesion: SesionFlujo, d: { medicionId: number; justificacion: string }, opciones?: Opciones): Promise<void> {
+export async function reabrirMedicion(
+  sesion: SesionFlujo,
+  d: { medicionId: number; justificacion: string; vistas?: readonly number[] },
+  opciones?: Opciones,
+): Promise<void> {
   exigirAdministrar(sesion);
   const justificacion = justificacionDe(d.justificacion);
   if (!idValido(d.medicionId)) throw new ErrorIndicador(NO_EXISTE);
@@ -627,11 +647,12 @@ export async function reabrirMedicion(sesion: SesionFlujo, d: { medicionId: numb
   const ahora = opciones?.ahora ?? new Date();
   soloCerrada((await contextoDeMedicion(sql, sesion, d.medicionId, false, COMO_ADMINISTRADOR)).medicion);
   const fuente = { clase: "medicion" as const, medicionId: d.medicionId };
-  if ((await dependientesDe(sql, fuente)).length > 0) {
-    await reabrirEnCascada(sesion, { fuente, justificacion }, { sql, ahora });
+  if (d.vistas !== undefined || (await dependientesDe(sql, fuente)).length > 0) {
+    await reabrirEnCascada(sesion, { fuente, justificacion, ...(d.vistas !== undefined ? { vistas: d.vistas } : {}) }, { sql, ahora });
     return;
   }
   await enTransaccion(sql, async (tx) => {
+    await serializarCierreYReapertura(tx);
     const ctx = await contextoDeMedicion(tx, sesion, d.medicionId, true, COMO_ADMINISTRADOR);
     soloCerrada(ctx.medicion);
     if ((await dependientesDe(tx, fuente)).length > 0) throw new ErrorIndicador(LO_QUE_SE_REABRE_CAMBIO);
@@ -641,17 +662,22 @@ export async function reabrirMedicion(sesion: SesionFlujo, d: { medicionId: numb
 
 /**
  * «Cerrar de nuevo» (F14-DC31): la reabierta vuelve a `cerrada` con el último cierre, como esté (sin dato, sin análisis o
- * corregida), con su evento `cierre`. También la de un indicador que se retiró mientras estaba reabierta. No si alguna de
- * sus entradas no está cerrada (anexo 14C, §3.5): primero se cierra la fuente.
+ * corregida), con su evento `cierre`. También la de un indicador que se retiró mientras estaba reabierta. Con la regla del
+ * cierre (anexo 14C, §3.5): no si alguna de sus entradas no está cerrada (primero se cierra la fuente), ni, en un indicador
+ * activo, si lo copiado no coincide con su fuente; para eso propaga antes lo de su indicador, como el cierre.
  */
 export async function cerrarDeNuevo(sesion: SesionFlujo, medicionId: number, opciones?: Opciones): Promise<void> {
   exigirAdministrar(sesion);
   if (!idValido(medicionId)) throw new ErrorIndicador(NO_EXISTE);
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
+  // Lo que nadie propagó, fuera de la transacción (como `abrirPeriodosDelCierre`): lo que decide se lee dentro.
+  const [suyo] = await sql`SELECT indicador_id FROM mediciones WHERE id = ${medicionId}`;
+  if (suyo) await propagarSinFallar({ sql, ahora, indicadorIds: [Number(suyo.indicador_id)] });
   await enTransaccion(sql, async (tx) => {
+    await serializarCierreYReapertura(tx);
     // Los candados a mano: `contextoDeMedicion` rechaza un indicador retirado.
-    const [i] = await tx`SELECT id, codigo FROM indicadores WHERE id = (SELECT indicador_id FROM mediciones WHERE id = ${medicionId}) FOR SHARE`;
+    const [i] = await tx`SELECT id, codigo, estado FROM indicadores WHERE id = (SELECT indicador_id FROM mediciones WHERE id = ${medicionId}) FOR SHARE`;
     const [m] = await tx`SELECT * FROM mediciones WHERE id = ${medicionId} FOR UPDATE`;
     if (!i || !m || !(await puedeVerIndicador(Number(i.id), sesion, { sql: tx }))) throw new ErrorIndicador(NO_EXISTE);
     if (m.estado === "cerrada" || m.reabierta_en === null) throw new ErrorIndicador(NO_REABIERTA);
@@ -662,6 +688,8 @@ export async function cerrarDeNuevo(sesion: SesionFlujo, medicionId: number, opc
         entradas.mediciones.length === 0 ? [] : await tx`SELECT 1 FROM mediciones WHERE id IN ${tx(entradas.mediciones)} AND estado <> 'cerrada'`;
       if (datos.length > 0 || mediciones.length > 0) throw new ErrorIndicador(FUENTE_ABIERTA);
     }
+    // El retirado no recibe la propagación: a él no se le pide que coincida, como en el cierre.
+    if (i.estado === "activo" && entradas && !entradas.coincide) throw new ErrorIndicador(NO_COINCIDE_AL_CERRAR);
     const [c] = await tx`SELECT id, to_char(mes, 'YYYY-MM') AS mes FROM cierres_indicadores ORDER BY mes DESC LIMIT 1`;
     if (!c) throw new ErrorIndicador(NO_REABIERTA);
     const cierreId = Number(c.id);
@@ -687,7 +715,9 @@ export async function cerrarDeNuevo(sesion: SesionFlujo, medicionId: number, opc
 /**
  * El historial de las mediciones corregidas (reabiertas alguna vez) de `medicionIds`, por medición (spec §8.7 y §6.4):
  * desde la primera reapertura, para quien ve el indicador; los eventos de los soportes, solo para quien ve los soportes.
- * Las demás no salen.
+ * Las demás no salen. Una reapertura en cascada (`detalle.porFuente`, anexo 14C §3.5) dice por qué fuente fue, resuelto al
+ * leer con la visibilidad de quien lee (`fuenteEnTexto`): «Por un cambio en …» con su nombre a quien la ve, y a quien no,
+ * «Por un cambio en un componente» o «Por un cambio en una de sus fuentes» (un dato).
  */
 export async function historialDeCorregidas(
   sesion: SujetoVisibilidad,
@@ -707,6 +737,16 @@ export async function historialDeCorregidas(
     FROM medicion_eventos e LEFT JOIN usuarios u ON u.id = e.usuario_id
     WHERE e.medicion_id IN ${sql(corregidas.map((c) => Number(c.id)))} ${conSoportes ? sql`` : sql`AND e.tipo <> 'soporte'`}
     ORDER BY e.medicion_id, e.id`;
+  const fuentes = new Map<number, string>();
+  const leidas = new Map<string, Awaited<ReturnType<typeof fuenteEnTexto>>>();
+  for (const e of eventos) {
+    const ref = e.tipo === "reapertura" ? (e.detalle as { porFuente?: { clase?: unknown; id?: unknown } } | null)?.porFuente : undefined;
+    if (!ref || (ref.clase !== "dato" && ref.clase !== "medicion") || typeof ref.id !== "number") continue;
+    const clave = `${ref.clase}:${ref.id}`;
+    if (!leidas.has(clave)) leidas.set(clave, await fuenteEnTexto(sql, { clase: ref.clase, id: ref.id }));
+    const f = leidas.get(clave);
+    fuentes.set(Number(e.id), `Por un cambio en ${f && (await f.ve(sesion)) ? f.texto : OCULTA[ref.clase]}`);
+  }
   for (const c of corregidas) {
     const id = Number(c.id);
     const version = versiones.find((v) => v.id === Number(c.version_id)) ?? versiones[0];
@@ -721,7 +761,7 @@ export async function historialDeCorregidas(
         detalle: typeof e.detalle === "object" && e.detalle !== null ? (e.detalle as Record<string, unknown>) : {},
       }));
     const nombres = Object.fromEntries(version.variables.map((v) => [v.letra, v.nombre]));
-    salida.set(id, historialDeCorreccion(propios, { unidad: version.unidad, nombres, conSoportes }));
+    salida.set(id, historialDeCorreccion(propios, { unidad: version.unidad, nombres, conSoportes, fuentes }));
   }
   return salida;
 }

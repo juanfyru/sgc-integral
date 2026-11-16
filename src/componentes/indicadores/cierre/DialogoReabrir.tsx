@@ -59,6 +59,8 @@ function Reabrir({
         {abierto ? (
           <form action={enviar} className="flex flex-col gap-4 p-5">
             <input type="hidden" name="id" value={id} />
+            {/* Lo que se listó: el servidor reabre solo si, con todo bloqueado, es lo mismo (se confirma lo que se vio). */}
+            {reapertura ? <input type="hidden" name="vistas" value={JSON.stringify(reapertura.seReabren.map((x) => x.id).sort((a, b) => a - b))} /> : null}
             <p aria-hidden="true" className="font-semibold">
               {titulo}
             </p>
@@ -137,7 +139,7 @@ export function DialogoReabrirDato({ periodoId, etiqueta, reapertura }: { period
       titulo={reapertura.titulo}
       etiqueta={etiqueta}
       explicacion="El periodo se abre para que sus responsables lo corrijan o lo reporten tarde, y con él las mediciones cerradas que lo usaron. Cada una queda marcada «Corregida», con esta justificación en su historial, y se avisa a quien la mide; se cierran otra vez con el siguiente cierre del mes o con «Cerrar de nuevo». No pide clave."
-      ayuda={`${ENTRE} Queda en el historial del dato y en el de cada medición que se reabre.`}
+      ayuda={`${ENTRE} Queda en el historial del dato y en el de cada medición que se reabre, y la ve quien ve cualquiera de ellas.`}
       boton={textoDelBoton(reapertura)}
       reapertura={reapertura}
     />

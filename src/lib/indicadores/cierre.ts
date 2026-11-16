@@ -93,6 +93,28 @@ export function frasesDeNoSeCierran(r: { enPlazo: number; historicosSinRegistrar
 }
 
 /**
+ * La línea de «Datos compartidos» del resumen (anexo 14C, §3.5), con concordancia: «Se cierra 1 periodo de un dato
+ * compartido que terminó en marzo de 2026 o antes; venció sin que lo reportaran: queda sin dato.» o «Se cierran 3 periodos de
+ * datos compartidos que terminaron en marzo de 2026 o antes; 1 venció sin que lo reportaran: queda sin dato.».
+ */
+export function fraseDeDatosDelResumen(d: { seCierran: number; sinDato: number }, mes: string): string {
+  if (d.seCierran === 0) return "Ningún periodo de un dato compartido se cierra.";
+  const base =
+    d.seCierran === 1
+      ? `Se cierra 1 periodo de un dato compartido que terminó en ${mes} o antes`
+      : `Se cierran ${d.seCierran} periodos de datos compartidos que terminaron en ${mes} o antes`;
+  const sinDato =
+    d.sinDato === 0
+      ? ""
+      : d.seCierran === 1
+        ? "; venció sin que lo reportaran: queda sin dato"
+        : d.sinDato === 1
+          ? "; 1 venció sin que lo reportaran: queda sin dato"
+          : `; ${d.sinDato} vencieron sin que los reportaran: quedan sin dato`;
+  return `${base}${sinDato}.`;
+}
+
+/**
  * Lo que el cierre hace con los periodos de los datos compartidos (anexo 14C, §3.5), para la confirmación: «También se
  * cerrarán 3 periodos de datos compartidos, 1 sin dato.»; `null` si no cierra ninguno.
  */

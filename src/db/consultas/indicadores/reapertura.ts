@@ -8,6 +8,11 @@
  *
  * **Orden de candados**, el mismo del cierre del mes (`clasificar`, en `cierre.ts`), para que la cascada, el cierre y quien
  * reporta no se interbloqueen:
+ *   0. el candado consultivo del cierre (`serializarCierreYReapertura`), la primera sentencia de la transacción del cierre del
+ *      mes, de la cascada, del camino directo de `reabrirMedicion` y de «Cerrar de nuevo»: las cuatro deciden con lo que está
+ *      cerrado y lo que depende de qué, y sin él una puede decidir con lo que la otra está cambiando (el cierre ve cerrada una
+ *      entrada que la cascada reabre a la vez y cierra lo que la usa). Toda lectura que decide va después de él, en la misma
+ *      transacción; lo que se lee antes (para elegir el camino o pintar la lista) se vuelve a leer dentro;
  *   1. los periodos de los datos, `FOR UPDATE`, por id: aquí, el que se reabre. La fila del dato (`variables_compartidas`) no
  *      se toma: quien lo edita la toma `FOR UPDATE` sin tocar sus periodos, y quien reporta la toma `FOR SHARE` antes de su
  *      único periodo;
@@ -15,14 +20,16 @@
  *   3. sus mediciones, `FOR UPDATE`, por `indicador_id, desde, id`: de cada indicador, todas desde la más temprana que se
  *      reabre, también las abiertas que siguen, porque el cálculo único de cada reabierta recalcula después las siguientes de
  *      su racha (`recalcularSiguientes`) y las bloquea: así ninguna fila se bloquea fuera de este orden.
- * Las fuentes se leen sin candado, como en la propagación. Con todo bloqueado se vuelve a calcular la lista: si aparece una
- * dependiente que no quedó bloqueada (otro cierre la cerró entretanto), no se reabre nada (`LO_QUE_SE_REABRE_CAMBIO`). Un
- * `40P01` que se cruce con quien reporta o con el cierre llega legible a la persona (`sinInterbloqueoDelCierre`, en la
- * acción). Después de confirmar, la propagación recalcula lo reabierto con el valor de hoy de su fuente.
+ * Las fuentes se leen sin candado, como en la propagación. Es el candado consultivo, no la relectura, lo que impide el cruce
+ * con un cierre; con todo bloqueado la lista se calcula otra vez, y si no es la que el diálogo mostró (`vistas`, anexo 14C
+ * §3.5: se confirma lo que se vio), no se reabre nada (`LO_QUE_SE_REABRE_CAMBIO`). Un `40P01` que se cruce con quien reporta
+ * llega legible a la persona (`sinInterbloqueoDelCierre`, en la acción). Después de confirmar, la propagación recalcula lo
+ * reabierto con el valor de hoy de su fuente.
  *
  * El aviso de cada dependiente nombra la fuente solo a quien puede verla (un dato, `puedeVerDato`; un componente,
- * `puedeVerIndicador`), por destinatario; a los demás, «una de sus fuentes». El evento y la bitácora guardan solo su
- * referencia (`porFuente`, `{ clase, id }`), nunca su nombre.
+ * `puedeVerIndicador`), por destinatario; a los demás, «un componente» o, si es un dato, «una de sus fuentes». El evento y la
+ * bitácora guardan solo su referencia (`porFuente`, `{ clase, id }`), nunca su nombre: el historial la resuelve al leer
+ * (`fuenteEnTexto`), con la visibilidad de quien lee. Al reabrir un periodo de un dato se avisa también a sus responsables.
  */
 import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
@@ -35,6 +42,7 @@ import {
   puedeVerDato,
   puedeVerIndicador,
   responsablesDeAnalizar,
+  responsablesDeDato,
   responsablesDeMedir,
   type SujetoVisibilidad,
 } from "@/lib/alcance";
@@ -59,6 +67,14 @@ export const INTERBLOQUEO_DEL_CIERRE = "Otra persona estaba reportando o cerrand
 
 function exigirAdministrar(sesion: SujetoPermiso): void {
   if (!puede(sesion, "indicadores.administrar")) throw new ErrorPermiso();
+}
+
+/**
+ * El paso 0 del orden de candados (ver el encabezado): el candado consultivo de transacción que serializan el cierre del mes,
+ * la reapertura en cascada, la reapertura directa de una medición y «Cerrar de nuevo». La primera sentencia de cada una.
+ */
+export async function serializarCierreYReapertura(tx: TransactionSql): Promise<void> {
+  await tx`SELECT pg_advisory_xact_lock(hashtext('sgc.indicadores.cierre'))`;
 }
 
 /**
@@ -94,8 +110,38 @@ async function mesDelCierre(sql: Cliente, cierreId: unknown): Promise<string | n
 /** «marzo de 2026»: la etiqueta de un periodo, o su clave si no es un periodo. */
 const etiquetaDe = (clave: string) => periodoDe(clave, zonaHoraria())?.etiqueta ?? clave;
 
-/** Cómo se nombra la fuente de una cascada en el aviso de un dependiente, para quien puede verla. */
-type FuenteDelAviso = { clase: "dato"; datoId: number; texto: string } | { clase: "medicion"; indicadorId: number; texto: string };
+/**
+ * Cómo se nombra la fuente de una cascada: `texto` para quien la ve (`ve`), «el dato «Total facturado», marzo de 2026» o
+ * «CEX-ID-002 Oportunidad de la cita, marzo de 2026»; `oculta` para quien no, «una de sus fuentes» o «un componente».
+ */
+export type FuenteEnTexto = { texto: string; oculta: string; ve: (sujeto: SujetoVisibilidad) => Promise<boolean> };
+
+/** Lo que se dice de la fuente a quien no la ve (anexo 14C, §3.5: «por un cambio en un componente»). */
+export const OCULTA: Readonly<Record<Fuente["clase"], string>> = { dato: "una de sus fuentes", medicion: "un componente" };
+
+/** La fuente de una cascada (`porFuente`, `{ clase, id }`) en texto, leída hoy; `null` si ya no está. */
+export async function fuenteEnTexto(sql: Cliente, ref: { clase: Fuente["clase"]; id: number }): Promise<FuenteEnTexto | null> {
+  if (ref.clase === "dato") {
+    const [p] = await sql`SELECT vv.periodo, d.id, d.nombre FROM variable_valores vv JOIN variables_compartidas d ON d.id = vv.variable_id
+      WHERE vv.id = ${ref.id}`;
+    if (!p) return null;
+    const datoId = Number(p.id);
+    return {
+      texto: `el dato «${p.nombre as string}», ${etiquetaDe(p.periodo as string)}`,
+      oculta: OCULTA.dato,
+      ve: (sujeto) => puedeVerDato(datoId, sujeto, { sql }),
+    };
+  }
+  const [m] = await sql`SELECT m.periodo, i.id, i.codigo FROM mediciones m JOIN indicadores i ON i.id = m.indicador_id WHERE m.id = ${ref.id}`;
+  if (!m) return null;
+  const indicadorId = Number(m.id);
+  const nombre = (await versionesAprobadas(sql, indicadorId))[0]?.nombre ?? (m.codigo as string);
+  return {
+    texto: `${m.codigo as string} ${nombre}, ${etiquetaDe(m.periodo as string)}`,
+    oculta: OCULTA.medicion,
+    ve: (sujeto) => puedeVerIndicador(indicadorId, sujeto, { sql }),
+  };
+}
 
 /** Quien recibe un aviso, con su rol de hoy: con él se decide si ve la fuente. */
 async function sujetosDe(tx: TransactionSql, ids: readonly number[]): Promise<Map<number, SujetoVisibilidad>> {
@@ -103,9 +149,6 @@ async function sujetosDe(tx: TransactionSql, ids: readonly number[]): Promise<Ma
   const filas = await tx`SELECT id, rol, ver_historial FROM usuarios WHERE id IN ${tx([...ids])}`;
   return new Map(filas.map((u) => [Number(u.id), { usuarioId: Number(u.id), rol: u.rol, verHistorial: u.ver_historial === true }]));
 }
-
-const veLaFuente = (f: FuenteDelAviso, sujeto: SujetoVisibilidad, tx: TransactionSql) =>
-  f.clase === "dato" ? puedeVerDato(f.datoId, sujeto, { sql: tx }) : puedeVerIndicador(f.indicadorId, sujeto, { sql: tx });
 
 /**
  * Reabre una medición cerrada ya bloqueada (`ctx`, de `contextoDeMedicion` con `COMO_ADMINISTRADOR`): queda «Corregida» y
@@ -120,7 +163,7 @@ export async function reabrirLaMedicion(
   tx: TransactionSql,
   sesion: SesionFlujo,
   ctx: Contexto,
-  d: { justificacion: string; ahora: Date; porFuente?: { clase: Fuente["clase"]; id: number; aviso: FuenteDelAviso } },
+  d: { justificacion: string; ahora: Date; porFuente?: { clase: Fuente["clase"]; id: number; aviso: FuenteEnTexto | null } },
 ): Promise<void> {
   const m = ctx.medicion;
   const { justificacion, ahora } = d;
@@ -153,8 +196,9 @@ export async function reabrirLaMedicion(
       let porque = "";
       if (d.porFuente) {
         const sujeto = sujetos.get(usuarioId);
-        const ve = sujeto ? await veLaFuente(d.porFuente.aviso, sujeto, tx) : false;
-        porque = `, por un cambio en ${ve ? d.porFuente.aviso.texto : "una de sus fuentes"}`;
+        const aviso = d.porFuente.aviso;
+        const ve = sujeto && aviso ? await aviso.ve(sujeto) : false;
+        porque = `, por un cambio en ${ve && aviso ? aviso.texto : OCULTA[d.porFuente.clase]}`;
       }
       cuerpos.push({ usuarioId, cuerpo: `${reabrio}${porque}: ${justificacion}` });
     }
@@ -196,13 +240,13 @@ function fuenteValida(f: Fuente): Fuente {
 }
 
 type FuenteLeida =
-  | { clase: "dato"; fila: Record<string, unknown> & { id: number; datoId: number; nombre: string; periodo: string }; titulo: string; aviso: FuenteDelAviso }
-  | { clase: "medicion"; ctx: Contexto; nombre: string; titulo: string; aviso: FuenteDelAviso };
+  | { clase: "dato"; fila: Record<string, unknown> & { id: number; datoId: number; nombre: string; periodo: string }; titulo: string }
+  | { clase: "medicion"; ctx: Contexto; nombre: string; titulo: string };
 
 /**
  * La fuente como está (con `bloquear`, dentro de la transacción y ya bloqueada por `bloquear`): un periodo del dato con el
  * nombre del dato, o la medición con lo que exige reabrirla (`contextoDeMedicion`: un indicador retirado no se reabre, ni lo
- * de otra periodicidad). Con su título («Reabrir «Total facturado en el mes» · agosto de 2026») y su nombre para el aviso.
+ * de otra periodicidad). Con su título («Reabrir «Total facturado en el mes» · agosto de 2026»).
  */
 async function leerFuente(sql: Cliente, sesion: SesionFlujo, f: Fuente, bloquear: boolean): Promise<FuenteLeida> {
   if (f.clase === "dato") {
@@ -210,12 +254,7 @@ async function leerFuente(sql: Cliente, sesion: SesionFlujo, f: Fuente, bloquear
     if (!p) throw new ErrorIndicador(PERIODO_NO_EXISTE);
     const fila = { ...p, id: Number(p.id), datoId: Number(p.variable_id), nombre: p.nombre as string, periodo: p.periodo as string };
     const etiqueta = etiquetaDe(fila.periodo);
-    return {
-      clase: "dato",
-      fila,
-      titulo: `Reabrir «${fila.nombre}» · ${etiqueta}`,
-      aviso: { clase: "dato", datoId: fila.datoId, texto: `el dato «${fila.nombre}», ${etiqueta}` },
-    };
+    return { clase: "dato", fila, titulo: `Reabrir «${fila.nombre}» · ${etiqueta}` };
   }
   const ctx = await contextoDeMedicion(sql, sesion, f.medicionId, bloquear, COMO_ADMINISTRADOR);
   const nombre = (await versionesAprobadas(sql, ctx.indicador.id))[0]?.nombre ?? ctx.indicador.codigo;
@@ -224,7 +263,6 @@ async function leerFuente(sql: Cliente, sesion: SesionFlujo, f: Fuente, bloquear
     ctx,
     nombre,
     titulo: `Reabrir ${ctx.indicador.codigo}, ${ctx.periodo.etiqueta}`,
-    aviso: { clase: "medicion", indicadorId: ctx.indicador.id, texto: `${ctx.indicador.codigo} ${nombre}, ${ctx.periodo.etiqueta}` },
   };
 }
 
@@ -275,12 +313,14 @@ async function bloquear(tx: TransactionSql, fuente: Fuente, seReabren: readonly 
  * `corregido`, con quién, cuándo y por qué y su evento `reapertura` (que marca `propioResponsable` si quien reabre también lo
  * reporta, o `sinResponsable` si lo reporta de respaldo) y su bitácora (`dato_reabierto`); la medición fuente, como una sola
  * (`reabrirLaMedicion`); y cada dependiente que se reabre, igual, con `porFuente`. Las que no se reabren no se tocan.
- * Después de confirmar, propaga a lo reabierto. `reabiertas` cuenta las mediciones reabiertas (con la fuente, si es una);
- * `sinTocar`, las que quedaron como estaban.
+ * Con `vistas` (las mediciones que el diálogo listó en «se reabren», con la fuente si es una medición; anexo 14C §3.5: se
+ * confirma lo que se vio), si lo que se reabriría con todo bloqueado no es eso mismo, no reabre nada. Después de confirmar,
+ * propaga a lo reabierto. `reabiertas` cuenta las mediciones reabiertas (con la fuente, si es una); `sinTocar`, las que
+ * quedaron como estaban.
  */
 export async function reabrirEnCascada(
   sesion: SesionFlujo,
-  d: { fuente: Fuente; justificacion: string },
+  d: { fuente: Fuente; justificacion: string; vistas?: readonly number[] },
   opciones?: Opciones,
 ): Promise<{ reabiertas: number; sinTocar: number }> {
   exigirAdministrar(sesion);
@@ -292,12 +332,18 @@ export async function reabrirEnCascada(
   if (!estaCerrada(await leerFuente(sql, sesion, fuente, false))) throw new ErrorIndicador(SOLO_CERRADO);
 
   const hecho = await enTransaccion(sql, async (tx) => {
+    await serializarCierreYReapertura(tx);
     const bloqueadas = await bloquear(tx, fuente, (await dependientesDe(tx, fuente)).filter((x) => x.seReabre));
     const f = await leerFuente(tx, sesion, fuente, true);
     if (!estaCerrada(f)) throw new ErrorIndicador(SOLO_CERRADO);
     const lista = await dependientesDe(tx, fuente);
     const seReabren = lista.filter((x) => x.seReabre);
     if (seReabren.some((x) => !bloqueadas.has(x.medicionId))) throw new ErrorIndicador(LO_QUE_SE_REABRE_CAMBIO);
+    if (d.vistas !== undefined) {
+      const enOrden = (ids: readonly number[]) => JSON.stringify([...new Set(ids)].sort((a, b) => a - b));
+      const seReabriran = [...(fuente.clase === "medicion" ? [fuente.medicionId] : []), ...seReabren.map((x) => x.medicionId)];
+      if (enOrden(d.vistas) !== enOrden(seReabriran)) throw new ErrorIndicador(LO_QUE_SE_REABRE_CAMBIO);
+    }
     const sinTocar = lista.length - seReabren.length;
     const indicadores = new Set(seReabren.map((x) => x.indicadorId));
     let reabiertas = 0;
@@ -309,7 +355,8 @@ export async function reabrirEnCascada(
       indicadores.add(f.ctx.indicador.id);
       reabiertas += 1;
     }
-    const porFuente = { clase: fuente.clase, id: fuente.clase === "dato" ? fuente.periodoId : fuente.medicionId, aviso: f.aviso };
+    const ref = { clase: fuente.clase, id: fuente.clase === "dato" ? fuente.periodoId : fuente.medicionId };
+    const porFuente = { ...ref, aviso: await fuenteEnTexto(tx, ref) };
     const enOrden = [...seReabren].sort((a, b) => a.indicadorId - b.indicadorId || a.periodo.localeCompare(b.periodo) || a.medicionId - b.medicionId);
     for (const x of enOrden) {
       const ctx = await contextoDeMedicion(tx, sesion, x.medicionId, true, COMO_ADMINISTRADOR);
@@ -323,7 +370,10 @@ export async function reabrirEnCascada(
   return { reabiertas: hecho.reabiertas, sinTocar: hecho.sinTocar };
 }
 
-/** El periodo cerrado del dato, ya bloqueado, vuelve a `reportado` (con valor) o a `pendiente`, con su evento y su bitácora. */
+/**
+ * El periodo cerrado del dato, ya bloqueado, vuelve a `reportado` (con valor) o a `pendiente`, con su evento, el aviso a sus
+ * responsables (salvo a quien reabre) y su bitácora.
+ */
 async function reabrirElPeriodo(
   tx: TransactionSql,
   sesion: SesionFlujo,
@@ -341,6 +391,24 @@ async function reabrirElPeriodo(
   const detalle = { justificacion: d.justificacion, cierre, antes: { estado: "cerrado" }, despues: { estado }, ...marca };
   await tx`INSERT INTO variable_eventos (valor_id, tipo, usuario_id, detalle, creado_en)
     VALUES (${p.id}, 'reapertura', ${sesion.usuarioId}, ${tx.json(detalle)}, ${d.ahora})`;
+  // Sus responsables, para que lo corrijan o lo reporten tarde; su plazo y sus marcas de aviso no se tocan.
+  const responsables = (await responsablesDeDato(tx, p.datoId)).filter((u) => u !== sesion.usuarioId);
+  if (responsables.length > 0) {
+    await avisarA(
+      tx,
+      {
+        tipo: "indicadores.dato_reabierto",
+        titulo: `Dato compartido reabierto: ${p.nombre}`,
+        enlace: `/indicadores/datos/${p.datoId}`,
+        entidad: "dato_compartido",
+        entidadId: p.datoId,
+      },
+      responsables.map((usuarioId) => ({
+        usuarioId,
+        cuerpo: `${sesion.nombre} reabrió el dato «${p.nombre}», ${etiquetaDe(p.periodo)}: ${d.justificacion}`,
+      })),
+    );
+  }
   await registrarAuditoria(tx, {
     usuarioId: sesion.usuarioId,
     accion: "dato_reabierto",

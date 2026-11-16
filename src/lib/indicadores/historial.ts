@@ -13,8 +13,11 @@ import { ETIQUETA_SEMAFORO, type Semaforo, type TipoEvento } from "./tipos";
 /** Un evento de la medición como sale de la BD, con el nombre de quien actuó (`null`, el sistema). */
 export type EventoDeMedicion = { id: number; tipo: TipoEvento; quien: string | null; creadoEn: Date; detalle: Record<string, unknown> };
 
-/** Una línea del historial, ya en texto para la pantalla. */
-export type EntradaDeHistorial = { id: number; que: string; quien: string; cuando: string; porque: string | null; cambios: string[] };
+/**
+ * Una línea del historial, ya en texto para la pantalla. `fuente`, en la reapertura en cascada (anexo 14C, §3.5), por qué
+ * fuente fue («Por un cambio en un componente»), ya resuelta para quien lee.
+ */
+export type EntradaDeHistorial = { id: number; que: string; quien: string; cuando: string; porque: string | null; cambios: string[]; fuente?: string };
 
 const ESTADO: Record<string, string> = { abierta: "Abierta", reportada: "Reportada", cerrada: "Cerrada" };
 const TEXTOS: [clave: string, etiqueta: string][] = [
@@ -199,11 +202,12 @@ function cambiosDe(e: EventoDeMedicion, unidad: Unidad, nombres: Readonly<Record
 /**
  * El historial de la medición desde su primera reapertura, de lo más antiguo a lo más reciente; vacío si nunca se
  * reabrió. Los eventos de los soportes, solo con `conSoportes` (quien ve los soportes). `eventos` van en el orden en que
- * se registraron.
+ * se registraron. `fuentes` trae, por id de evento, la frase de la fuente de una reapertura en cascada, ya resuelta con la
+ * visibilidad de quien lee (`historialDeCorregidas`): aquí no se nombra nada que no llegue hecho.
  */
 export function historialDeCorreccion(
   eventos: readonly EventoDeMedicion[],
-  c: { unidad: Unidad; nombres: Readonly<Record<string, string>>; conSoportes: boolean },
+  c: { unidad: Unidad; nombres: Readonly<Record<string, string>>; conSoportes: boolean; fuentes?: ReadonlyMap<number, string> },
 ): EntradaDeHistorial[] {
   const desde = eventos.findIndex((e) => e.tipo === "reapertura");
   if (desde < 0) return [];
@@ -217,5 +221,6 @@ export function historialDeCorreccion(
       cuando: fechaHoraLarga(e.creadoEn),
       porque: texto(e.detalle.justificacion),
       cambios: cambiosDe(e, c.unidad, c.nombres),
+      ...(c.fuentes?.has(e.id) ? { fuente: c.fuentes.get(e.id)! } : {}),
     }));
 }

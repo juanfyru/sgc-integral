@@ -37,6 +37,7 @@ function Historial({ etiqueta, entradas }: { etiqueta: string; entradas: Entrada
               <b>{e.que}</b>
               {` · ${e.quien} · ${e.cuando}`}
             </span>
+            {e.fuente ? <span>{e.fuente}</span> : null}
             {e.porque ? <span>{`Por qué: ${e.porque}`}</span> : null}
             {e.cambios.map((c, i) => (
               <span key={i} className="text-muted-foreground">

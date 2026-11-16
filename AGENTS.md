@@ -616,23 +616,32 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   antes del `UPDATE`), y el resumen la dice (`esperanEntrada`, `datos`). Quién debía lo que quedó «Sin
   dato» sale de la regla única de «Falta un dato» (`esperaUnDato`, `src/lib/indicadores/origen.ts`, la
   misma de la lectura, la lista y las tareas): quienes miden, los responsables del dato o el indicador
-  componente. «Cerrar de nuevo» una medición no la cierra con su fuente abierta; un periodo reabierto de un
-  dato se cierra de nuevo con `cerrarDeNuevoElDato`. **La reapertura en cascada** (`reabrirEnCascada`;
+  componente. «Cerrar de nuevo» una medición no la cierra con su fuente abierta ni, en un indicador activo,
+  con lo copiado distinto de su fuente (propaga antes lo de su indicador); un periodo reabierto de un dato
+  se cierra de nuevo con `cerrarDeNuevoElDato`. **La reapertura en cascada** (`reabrirEnCascada`;
   `reabrirMedicion` delega en ella cuando la medición tiene dependientes cerradas): reabrir un periodo
   cerrado de un dato (también para reportarlo tarde) o la medición cerrada de un componente reabre en una
   transacción cada medición cerrada que lo usó y las que dependen de esas (`dependientesDe`), salvo las de
   un indicador retirado o de otra periodicidad, que no se tocan; la lista se ve antes de confirmar
-  (`listaDeReapertura`, maqueta 13). Cada una queda «Corregida» con el único `UPDATE` que el trigger admite,
-  su evento `reapertura` (`detalle.porFuente = { clase, id }`, nunca el nombre de la fuente), su aviso (que
-  nombra la fuente solo a quien puede verla, por destinatario; a los demás, «una de sus fuentes») y su
-  bitácora; el periodo del dato vuelve a `reportado` o a `pendiente`, `corregido`, con su evento (con
-  `propioResponsable` si quien reabre también lo reporta) y su bitácora (`dato_reabierto`). Una constancia
-  de envío al ente no cambia. **Orden de candados del cierre y de la cascada**, el mismo en los dos: los
-  periodos de los datos `FOR UPDATE`, por id (sin la fila del dato); después los indicadores `FOR SHARE`, por
-  id; y las mediciones `FOR UPDATE`, por `indicador_id, desde, id` (la cascada, de cada indicador todas desde
-  la más temprana que reabre: `recalcularSiguientes` bloquea las siguientes). Con todo bloqueado, la cascada
-  vuelve a calcular la lista y, si apareció una que no quedó bloqueada, no reabre nada; un `40P01` llega
-  legible a la persona (`sinInterbloqueoDelCierre`).
+  (`listaDeReapertura`, maqueta 13) y se confirma lo que se vio: el diálogo manda lo que listó (`vistas`) y,
+  si con todo bloqueado no es lo mismo, no se reabre nada. Cada una queda «Corregida» con el único `UPDATE`
+  que el trigger admite, su evento `reapertura` (`detalle.porFuente = { clase, id }`, nunca el nombre de la
+  fuente: el historial la nombra al leer, `fuenteEnTexto`, solo a quien puede verla), su aviso (que la nombra
+  solo a quien puede verla, por destinatario; a los demás, «un componente» o, si es un dato, «una de sus
+  fuentes») y su bitácora (sin nombres: «por un cambio en un componente» o «… en un dato compartido»); el
+  periodo del dato vuelve a `reportado` o a `pendiente`, `corregido` (su plazo y sus marcas de aviso no se
+  tocan), con su evento (con `propioResponsable` si quien reabre también lo reporta), el aviso a sus
+  responsables (`indicadores.dato_reabierto`, salvo a quien reabre) y su bitácora (`dato_reabierto`). Una
+  constancia de envío al ente no cambia. **Orden de candados del cierre y de la cascada**, el mismo en los
+  dos: **0.** el candado consultivo del cierre (`serializarCierreYReapertura`, `reapertura.ts`), la primera
+  sentencia de la transacción de `cerrarMes`, `reabrirEnCascada`, el camino directo de `reabrirMedicion` y
+  `cerrarDeNuevo`: es él, y no la relectura con todo bloqueado, lo que impide que un cierre decida con una
+  entrada que una reapertura cambia a la vez; toda lectura que decide va después de él, en la misma
+  transacción (lo que se lee antes solo elige el camino o pinta, y se lee otra vez dentro); **1.** los
+  periodos de los datos `FOR UPDATE`, por id (sin la fila del dato); **2.** los indicadores `FOR SHARE`, por
+  id; y **3.** las mediciones `FOR UPDATE`, por `indicador_id, desde, id` (la cascada, de cada indicador todas
+  desde la más temprana que reabre: `recalcularSiguientes` bloquea las siguientes). Un `40P01` llega legible
+  a la persona (`sinInterbloqueoDelCierre`).
 - **El cumplimiento de un porcentaje con meta se decide con la razón exacta, en enteros**
   (`cumplePorcentaje`, `src/lib/indicadores-documentales/metas.ts`; `conformidad`,
   `src/lib/distribucion/verificacion.ts`), nunca con el entero que se muestra. `conformidad()`

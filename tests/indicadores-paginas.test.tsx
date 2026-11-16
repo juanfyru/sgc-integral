@@ -525,6 +525,8 @@ describe("el resumen del cierre y la tabla del año, sin navegador", () => {
       porProceso: [{ proceso: "Gestión", reportadas: 0, sinDato: 1, noAplica: 0, sinAnalisis: 0, observacionesSinRespuesta: 0 }],
     });
     expect(conFilas.match(/<table/g)).toHaveLength(2);
+    expect(conFilas).toContain("Quién debía");
+    expect(conFilas).not.toContain("Debía medirla");
   });
 
   it("«No se cierran» concuerda en número y no aparece si los dos grupos están vacíos", () => {
@@ -549,6 +551,13 @@ describe("el resumen del cierre y la tabla del año, sin navegador", () => {
       esperanEntrada: [{ codigo: "ZZ-ID-002", periodo: "2003-03", espera: "El dato «Total facturado en el mes», marzo de 2003" }],
     });
     expect(html).toContain("Se cierran 3 periodos de datos compartidos que terminaron en marzo de 2003 o antes; 1 venció sin que lo reportaran: queda sin dato.");
+    expect(resumen({ datos: { seCierran: 1, sinDato: 1, esperan: 0 } })).toContain(
+      "Se cierra 1 periodo de un dato compartido que terminó en marzo de 2003 o antes; venció sin que lo reportaran: queda sin dato.",
+    );
+    expect(resumen({ datos: { seCierran: 1, sinDato: 0, esperan: 0 } })).toContain("Se cierra 1 periodo de un dato compartido que terminó en marzo de 2003 o antes.");
+    expect(resumen({ datos: { seCierran: 4, sinDato: 2, esperan: 0 } })).toContain(
+      "Se cierran 4 periodos de datos compartidos que terminaron en marzo de 2003 o antes; 2 vencieron sin que los reportaran: quedan sin dato.",
+    );
     expect(html).toContain("Esperan una fuente");
     expect(html.match(/<table/g)).toHaveLength(1);
     expect(html).toContain("El dato «Total facturado en el mes», marzo de 2003");

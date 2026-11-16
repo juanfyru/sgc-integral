@@ -502,9 +502,25 @@ export const EsquemaCierreMes = z
   })
   .strict();
 
-/** La justificación de una reapertura (spec §8.7): de 10 a 1000 caracteres; el `id` de la medición viaja aparte. */
+const VISTAS_INVALIDAS = "La lista de lo que se reabre no es válida: recargue la página";
+
+/** Cuántas mediciones puede listar el diálogo de una reapertura en cascada (`vistas`). */
+export const MAXIMO_VISTAS = 1000;
+
+/**
+ * La justificación de una reapertura (spec §8.7): de 10 a 1000 caracteres; el `id` de la medición o del periodo viaja aparte.
+ * En cascada (anexo 14C, §3.5), `vistas`: los ids de las mediciones que el diálogo listó en «se reabren», en JSON.
+ */
 export const EsquemaReapertura = z
-  .object({ justificacion: textoAcotado("La justificación", JUSTIFICACION_MINIMA, JUSTIFICACION_MAXIMA) })
+  .object({
+    justificacion: textoAcotado("La justificación", JUSTIFICACION_MINIMA, JUSTIFICACION_MAXIMA),
+    vistas: enJson(
+      z
+        .array(z.number({ error: VISTAS_INVALIDAS }).int(VISTAS_INVALIDAS).positive(VISTAS_INVALIDAS), { error: VISTAS_INVALIDAS })
+        .max(MAXIMO_VISTAS, VISTAS_INVALIDAS),
+      VISTAS_INVALIDAS,
+    ).optional(),
+  })
   .strict();
 
 /** Programar la meta de un periodo (spec §8.9); el `id` del indicador viaja aparte. Un máximo vacío es «sin máximo». */

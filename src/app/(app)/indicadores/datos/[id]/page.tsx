@@ -59,6 +59,7 @@ export default async function PaginaDato({ params }: { params: Promise<{ id: str
       <EncabezadoPagina
         titulo={dato.nombre}
         descripcion={`Dato compartido de ${dato.proceso}`}
+        tituloEnfocable
         insignias={dato.activa ? undefined : <Insignia variante="sin-dato">Inactivo</Insignia>}
         acciones={
           opciones ? (

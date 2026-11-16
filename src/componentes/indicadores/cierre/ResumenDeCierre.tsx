@@ -11,14 +11,14 @@ import { useTituloAlDesaparecer } from "@/componentes/ui/foco";
 import { celda, celdaNumerica, TablaDatos } from "@/componentes/ui/TablaDatos";
 import { TarjetaCifra } from "@/componentes/ui/TarjetaCifra";
 import type { ResumenDeCierre as Resumen } from "@/db/consultas/indicadores/cierre";
-import { fraseDeDatosDelCierre, fraseDelCierre, frasesDeNoSeCierran } from "@/lib/indicadores/cierre";
+import { fraseDeDatosDelCierre, fraseDeDatosDelResumen, fraseDelCierre, frasesDeNoSeCierran } from "@/lib/indicadores/cierre";
 import { cuenta } from "@/lib/plural";
 
 const COLUMNAS_SIN_DATO = [
   { clave: "proceso", etiqueta: "Proceso" },
   { clave: "indicador", etiqueta: "Indicador" },
   { clave: "periodo", etiqueta: "Periodo" },
-  { clave: "quien", etiqueta: "Debía medirla" },
+  { clave: "quien", etiqueta: "Quién debía" },
 ];
 const COLUMNAS_ESPERAN = [
   { clave: "indicador", etiqueta: "Indicador" },
@@ -155,9 +155,7 @@ export function ResumenDeCierre({ resumen, mes, periodos }: { resumen: Resumen; 
           Datos compartidos
         </h3>
         <p className="text-sm text-muted-foreground">
-          {r.datos.seCierran === 0
-            ? "Ningún periodo de un dato compartido se cierra."
-            : `Se ${r.datos.seCierran === 1 ? "cierra" : "cierran"} ${cuenta(r.datos.seCierran, "periodo", "periodos")} de datos compartidos que terminaron en ${mes} o antes${r.datos.sinDato > 0 ? `; ${cuenta(r.datos.sinDato, "venció sin que lo reportaran: queda", "vencieron sin que los reportaran: quedan")} sin dato` : ""}.`}
+          {fraseDeDatosDelResumen(r.datos, mes)}
         </p>
       </section>
 
