@@ -50,6 +50,8 @@ import PaginaDato from "@/app/(app)/indicadores/datos/[id]/page";
 import PaginaDatos from "@/app/(app)/indicadores/datos/page";
 import { cifraDeDato, conPuntoDeMiles } from "@/componentes/indicadores/datos/comun";
 import { CamposDelDato } from "@/componentes/indicadores/datos/FormularioDato";
+import { EsquemaDatoDeLaPersona } from "@/lib/esquemas/indicadores-datos";
+import { parsearFormulario } from "@/lib/validacion";
 import { preguntaVigente, ReportarElPendiente } from "@/componentes/indicadores/datos/ReportarDato";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
@@ -445,6 +447,24 @@ describe("los campos del dato (CamposDelDato)", () => {
   };
   const campos = (d: DatoCompartido | null) => renderToStaticMarkup(<CamposDelDato dato={d} opciones={opciones} estado={null} prefijo="prueba" />);
   const etiqueta = (html: string, nombre: string) => html.match(new RegExp(`<(input|select)[^>]*name="${nombre}"[^>]*>`))?.[0] ?? "";
+
+  it("ida y vuelta: los límites de captura de un dato guardados «2.375» se envían sin tocar nada y EsquemaDatoDeLaPersona los guarda «2.375»", () => {
+    const html = campos({ ...dato, citado: false, capturaMin: "2.375", capturaMax: "2.375" });
+    expect(etiqueta(html, "capturaMin")).toContain('value="2,375"');
+    expect(etiqueta(html, "capturaMax")).toContain('value="2,375"');
+    const fd = new FormData();
+    for (const [, atributos] of html.matchAll(/<(?:input|select)\b([^>]*)>/g)) {
+      const nombre = /\sname="([^"]+)"/.exec(atributos)?.[1];
+      const valor = /\svalue="([^"]*)"/.exec(atributos)?.[1];
+      if (nombre && valor !== undefined && ["procesoId", "nombre", "periodicidad", "consolidacion", "plazoReporteDias", "capturaMin", "capturaMax"].includes(nombre)) fd.set(nombre, valor);
+    }
+    fd.set("procesoId", "1");
+    fd.set("nombre", "Atenciones");
+    fd.set("plazoReporteDias", "10");
+    fd.set("periodicidad", "mensual");
+    fd.set("consolidacion", "suma");
+    expect(parsearFormulario(fd, EsquemaDatoDeLaPersona)).toMatchObject({ capturaMin: "2.375", capturaMax: "2.375" });
+  });
 
   it("un dato nuevo trae puesto el plazo de reporte de la entidad", () => {
     const html = campos(null);

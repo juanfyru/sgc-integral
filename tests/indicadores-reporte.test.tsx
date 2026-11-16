@@ -666,6 +666,44 @@ describe("FormularioAnalisis y DialogoMetas", () => {
     expect(conTexto).toContain(">Faltó personal</textarea>");
   });
 
+  it("DialogoMetas, ida y vuelta: una meta y un máximo programados «2.375» se envían sin tocar nada y EsquemaMeta los guarda «2.375»", () => {
+    const html = renderToStaticMarkup(
+      <DialogoMetas
+        abierto
+        alCerrar={() => {}}
+        indicadorId={7}
+        codigo="SGC-IND-01"
+        anio={2026}
+        metas={[
+          {
+            periodo: "2026-T4",
+            etiqueta: "Cuarto trimestre de 2026",
+            heredada: "90",
+            heredadaMax: "95",
+            textoHeredada: "90 a 95",
+            programada: "2.375",
+            programadaMax: "2.375",
+            tardia: false,
+            cerrada: false,
+            terminado: false,
+            historica: false,
+            pideJustificacion: false,
+            constante: true,
+            sufijo: "",
+          },
+        ]}
+      />,
+    );
+    const fd = new FormData();
+    for (const [, atributos] of html.matchAll(/<input\b([^>]*)>/g)) {
+      const nombre = /\sname="([^"]+)"/.exec(atributos)?.[1];
+      if (nombre === "periodo" || nombre === "meta" || nombre === "metaMax") fd.set(nombre, /\svalue="([^"]*)"/.exec(atributos)?.[1] ?? "");
+    }
+    expect(fd.get("meta")).toBe("2,375");
+    expect(fd.get("metaMax")).toBe("2,375");
+    expect(parsearFormulario(fd, EsquemaMeta, { omitir: ["id"] })).toMatchObject({ periodo: "2026-T4", meta: "2.375", metaMax: "2.375" });
+  });
+
   it("DialogoMetas: un renglón por periodo con su meta heredada y un campo; justificación si ya terminó", () => {
     const fila = (m: Partial<MetaDelPeriodo>): MetaDelPeriodo => ({
       periodo: "2026-T1",

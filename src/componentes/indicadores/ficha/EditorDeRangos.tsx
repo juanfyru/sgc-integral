@@ -99,7 +99,8 @@ export const rangosDelEditor = (e: EstadoEditor): RangosEnTexto => rangosCon(e, 
 
 /**
  * Lo que viaja en el campo oculto `rangos`: los números tal como se escribieron (con coma). La conversión a punto la hace el
- * esquema del servidor, que también rechaza un punto de miles; convertirla aquí lo dejaría pasar como un decimal.
+ * esquema del servidor, que rechaza un punto de miles: convertir la coma aquí enviaría «2.375» por «2,375» y el servidor lo
+ * rechazaría como punto de miles un valor bien escrito.
  */
 export const rangosParaEnviar = (e: EstadoEditor): RangosEnTexto => rangosCon(e, comoSeEscribio);
 

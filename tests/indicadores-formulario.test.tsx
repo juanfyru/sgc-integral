@@ -1176,12 +1176,54 @@ describe("FormularioFicha: el origen de cada variable y la desagregación (14C, 
     for (const letra of ["A", "B"]) expect(general).toMatch(new RegExp(`<div id="ficha-variable-${letra}-aviso" aria-live="polite"[^>]*></div>`));
   });
 
+  it("ida y vuelta, campo por campo: una versión con todas sus cifras en «2.375» se envía sin tocar nada y el servidor las guarda «2.375»", () => {
+    const TODAS = "2.375";
+    const cifras = {
+      meta: TODAS,
+      metaMax: TODAS,
+      tolerancia: TODAS,
+      limiteCritico: TODAS,
+      resultadoMin: TODAS,
+      resultadoMax: TODAS,
+      lineaBaseValor: TODAS,
+    };
+    const variables = [propia("A", { capturaMin: TODAS, capturaMax: TODAS }), propia("B", { capturaMin: TODAS })];
+    const prueba = { valores: { A: TODAS, B: TODAS } };
+    // Un cambio trae sus datos de operación, como los devuelve `valoresDeVersion`.
+    const operacion = { motivoCambio: "Cambiar la meta", inicioMedicion: "2026-T3", nivelAcceso: "general" as const };
+    const cambio = { versionId: 15, cambio: true, codigoFijo: true };
+    // La regla anterior solo la conserva un cambio sobre una ficha aprobada: constante (con tolerancia) y con límite fijo.
+    const constante = pintar14c(conVariables(variables, { ...cifras, tendencia: "constante", semaforoModo: "fijo", prueba, ...operacion }), cambio);
+    const conLimite = pintar14c(conVariables(variables, { ...cifras, tendencia: "ascendente", semaforoModo: "fijo", prueba, ...operacion }), cambio);
+    const estaba = (r: ReturnType<typeof EsquemaFichaDeLaPersona.safeParse>) => {
+      expect(r.success, r.error?.issues[0]?.message).toBe(true);
+      expect(r.data!.variables.map((v) => [v.capturaMin, v.capturaMax])).toEqual([[TODAS, TODAS], [TODAS, undefined]]);
+      // La prueba de la fórmula se conserva como se escribió (el esquema no la convierte; `fraccion` lee la coma).
+      expect(r.data!.prueba!.valores).toEqual({ A: "2,375", B: "2,375" });
+      return r.data!;
+    };
+    expect(estaba(EsquemaFichaDeLaPersona.safeParse(enviado(constante)))).toMatchObject({
+      meta: TODAS, metaMax: TODAS, tolerancia: TODAS, resultadoMin: TODAS, resultadoMax: TODAS, lineaBaseValor: TODAS,
+    });
+    expect(estaba(EsquemaFichaDeLaPersona.safeParse(enviado(conLimite)))).toMatchObject({
+      meta: TODAS, limiteCritico: TODAS, resultadoMin: TODAS, resultadoMax: TODAS, lineaBaseValor: TODAS,
+    });
+    // Los rangos escritos: un valor de cada estado, con una ficha nueva y con un cambio.
+    const rangos = JSON.stringify({ bien: [{ signo: ">=", valor: TODAS }], atencion: [{ signo: "entre", valor: "1.5", hasta: TODAS }], critico: [{ signo: "<", valor: "1.5" }] });
+    for (const edicion of [undefined, cambio]) {
+      const escritos = pintar14c(conVariables(variables, { ...cifras, rangos, semaforoModo: "rangos", prueba, ...operacion }), edicion);
+      const datos = estaba(EsquemaFichaDeLaPersona.safeParse(enviado(escritos)));
+      const leidos = JSON.parse(datos.rangos!);
+      expect([leidos.bien[0].valor, leidos.atencion[0].hasta]).toEqual([TODAS, TODAS]);
+    }
+  });
+
   it("ida y vuelta: lo que se envía sin tocar nada conserva los tres orígenes, sus referencias y la dimensión", () => {
     const variables = [delDato("A", 50), tomada("B", 70, "cumplimiento"), propia("C", { consolidacion: "promedio", fuente: "Historias clínicas", descripcion: "Las atenciones del mes" })];
     for (const edicion of [undefined, { versionId: 15, cambio: true, codigoFijo: true }]) {
       // Un cambio trae sus datos de operación, como los devuelve `valoresDeVersion`.
       const h = pintar14c(conVariables(variables, { dimensionId: 3, motivoCambio: "Desagregar por sede", inicioMedicion: "2026-T3", nivelAcceso: "general" }), edicion);
-      const r = EsquemaFicha.safeParse(enviado(h));
+      const r = EsquemaFichaDeLaPersona.safeParse(enviado(h));
       expect(r.success, r.error?.issues[0]?.message).toBe(true);
       expect(r.data!.dimensionId).toBe(3);
       expect(r.data!.variables).toEqual([
@@ -1214,7 +1256,7 @@ describe("FormularioFicha: el origen de cada variable y la desagregación (14C, 
     expect(opcionesDe(h, "ficha-variable-E-indicador").map((o) => o.valor)).toEqual(["", "70", "71"]);
     expect(opcionesDe(h, "ficha-variable-A-dato").map((o) => o.valor)).toEqual(["", "50", "51"]);
     expect(opcionesDe(h, "ficha-variable-B-indicador").map((o) => o.valor)).toEqual(["", "70", "71", "72"]);
-    const r = EsquemaFicha.safeParse(enviado(h));
+    const r = EsquemaFichaDeLaPersona.safeParse(enviado(h));
     expect(r.success, r.error?.issues[0]?.message).toBe(true);
     expect(r.data!.dimensionId).toBe(4);
     expect(r.data!.variables.map((v) => [v.letra, v.origen, v.datoId, v.indicadorOrigenId, v.toma])).toEqual([
