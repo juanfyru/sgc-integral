@@ -350,8 +350,9 @@ la Fase 14, su entrega complementaria y el anexo de la 14B, y manda sobre los tr
 del 2026-11-15 están en su §2, las de Claude F14C-DC1 a DC42 en su §13; **el usuario aprobó el anexo el 2026-11-15**
 («acept»), con sus maquetas 9 a 15 y las decisiones 5.1 y 8.1). Plan:
 `docs/superpowers/plans/2026-11-15-fase14c-datos-desagregacion-compuestos.md` (dieciocho tareas, con subagentes). La rama
-`fase-14c-datos-desagregacion-compuestos` (sale de `main` en `44d8b9f`; 82 confirmaciones antes de la de esta verificación
-de cierre: 53 al cerrar la Tarea 18 y su ronda de corrección, 23 de la ola final y 6 de sus residuos) se trabaja en el
+`fase-14c-datos-desagregacion-compuestos` (sale de `main` en `44d8b9f`; 82 confirmaciones antes de las de esta verificación
+de cierre, que son solo de documentos: 53 al cerrar la Tarea 18 y su ronda de corrección, 23 de la ola final y 6 de sus
+residuos) se trabaja en el
 worktree `F:\sgc-integral-f14c` contra la base aparte `sgc_f14c`. **La rama no está fusionada:** con la verificación de
 cierre hecha, espera el visto bueno del usuario a las decisiones de la ejecución («Decisiones adicionales (Fase 14C)») y
 su decisión de fusionar. Con ella se cierra la Fase 14 del diseño maestro. **Sin
@@ -404,7 +405,9 @@ confirmado después son solo documentos.
   por quien coordinó) o en «Deuda técnica (Fase 14C)». Dos casos del soporte obligatorio que la re-revisión dejó como
   hipótesis se corrieron con una sonda temporal, sin confirmarla (decisión 49).
 - **Lo que no se tocó:** el código de `F:\sgc-integral`, su `next dev` del 3002 y la base `sgc`, que solo se leyó esa
-  vez. La base `sgc_f14c` quedó con la demo recién sembrada.
+  vez. La base `sgc_f14c` quedó con la demo recién sembrada. Una salvedad del propio plan: durante la ejecución se
+  consultó una vez `sgc_f14c` con un `SELECT` de solo lectura por `docker exec … psql`, cuando el plan solo admitía Docker
+  para crear y borrar las bases de trabajo; no se repitió.
 
 ### Hecho (Fase 14C)
 
@@ -782,9 +785,10 @@ bueno)
 46. **La confirmación «¿Es correcto?» de una variación grande vale solo para el valor por el que se preguntó.** Base:
     Decisión del usuario 2.1 (se confirma lo que se ve), por analogía.
 47. **«Reportes a tiempo» juzga cada reporte contra la fecha límite que tenía el reporte**, no contra la que el sistema
-    recontó después para el análisis; y juzga el primer reporte contra la primera fecha, también si después el sistema
-    devolvió el reporte a quien mide. La fecha anterior queda en el historial de la medición (`venceAntes`), sin columna
-    nueva. Porque un reporte tardío pasaba a «a tiempo» cuando llegaba el dato. Base: ISO 9.1.1.
+    recontó después para el análisis: la fecha anterior queda en el historial de la medición (`venceAntes`), sin columna
+    nueva, y manda la primera. Cuando es el reporte el que vuelve a quien mide (el sistema quita un «No aplica» suyo que
+    había llegado a tiempo, decisiones 10 y 11), la fecha nueva sí es la del reporte y contra ella se juzga. Porque un
+    reporte tardío pasaba a «a tiempo» cuando llegaba el dato. Base: ISO 9.1.1.
 48. **Cuando un valor que llega de una fuente cambia la racha de incumplimiento y una medición siguiente pasa a pedir
     análisis, su plazo se cuenta de nuevo**, y un cambio posterior del plazo del indicador respeta esa fecha. Porque nacía
     vencida y escalaba al jefe por algo que nadie pudo hacer antes. Base: Anexo aprobado (F14C-DC42), derivada.
